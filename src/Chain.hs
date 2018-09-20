@@ -138,14 +138,14 @@ splitBeforeSlot (ChainFragment t) s =
     (\(l, r) -> (ChainFragment l, ChainFragment r))
   $ FT.split (\v -> maxSlot v >= s) t
 
-findIntersection :: Chain -> Point -> [Point] -> Maybe (Point, Point)
+findIntersection :: Chain -> Point -> [Point] -> Maybe Point
 findIntersection c hpoint points =
-    go hpoint (hpoint : points)
-    where
-    go _ [] = Nothing
-    go p (p':ps)
-        | pointOnChain c p' = Just (p', p)
-        | otherwise         = go p' ps
+    go (hpoint : points)
+  where
+    go [] = Nothing
+    go (p:ps)
+        | pointOnChain c p = Just p
+        | otherwise        = go ps
 
 intersectChains :: Chain -> Chain -> Maybe Point
 intersectChains c (ChainFragment t) =

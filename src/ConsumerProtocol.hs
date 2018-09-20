@@ -64,7 +64,7 @@ data MsgConsumer = MsgRequestNext
 data MsgProducer = MsgRollForward  Block
                  | MsgRollBackward Point
                  | MsgAwaitReply
-                 | MsgIntersectImproved Point Point
+                 | MsgIntersectImproved Point
                  | MsgIntersectUnchanged
     deriving (Show)
 
@@ -140,7 +140,7 @@ exampleConsumer chainvar = ConsumerHandlers {..}
           $ writeTVar chainvar chain'
 
 data ProducerHandlers m r = ProducerHandlers {
-       findIntersectionRange :: Point -> [Point] -> m (Maybe (Point, Point)),
+       findIntersectionRange :: Point -> [Point] -> m (Maybe Point),
        establishReaderState  :: Point -> Point -> m r,
        updateReaderState     :: r -> Point -> Maybe Point -> m (),
        tryReadChainUpdate    :: r -> m (Maybe (ConsumeChain Block)),
@@ -169,11 +169,11 @@ producerSideProtocol1 ProducerHandlers{..} n chan =
       say $ producerId ++ ":awaitOpening:recvMsg: " ++ show msg
       intersection <- findIntersectionRange hpoint points
       case intersection of
-        Just (pt, pt') -> do
+        Just pt -> do
           r <- establishReaderState hpoint pt
-          let msg = MsgIntersectImproved pt pt'
+          let msg = MsgIntersectImproved pt
           say $ producerId ++ ":awaitOpening:sendMsg: " ++ show msg
-          sendMsg chan (MsgIntersectImproved pt pt')
+          sendMsg chan msg
           return r
         Nothing -> do
           say $ producerId ++ ":awaitOpening:sendMsg: " ++ show MsgIntersectUnchanged
@@ -207,9 +207,9 @@ producerSideProtocol1 ProducerHandlers{..} n chan =
       -- point which is not.
       intersection <- findIntersectionRange hpoint points
       case intersection of
-        Just (pt, pt') -> do
+        Just pt -> do
           updateReaderState r hpoint (Just pt)
-          let msg = MsgIntersectImproved pt pt'
+          let msg = MsgIntersectImproved pt
           say $ producerId ++ ":handleSetHead:sendMsg: " ++ show msg
           sendMsg chan msg
         Nothing -> do
@@ -228,7 +228,7 @@ exampleProducer
 exampleProducer chainvar =
     ProducerHandlers {..}
   where
-    findIntersectionRange :: Point -> [Point] -> m (Maybe (Point, Point))
+    findIntersectionRange :: Point -> [Point] -> m (Maybe Point)
     findIntersectionRange hpoint points = do
       ChainProducerState {chainState} <- atomically $ readTVar chainvar
       return $! findIntersection chainState hpoint points
