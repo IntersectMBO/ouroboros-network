@@ -4,8 +4,7 @@ module ChainExperiment2 where
 
 import           Data.List (find)
 
-import           Block (Block (..), Point, ReaderId, ReaderState (..), ReaderStates, blockPoint,
-                        genBlock)
+import           Block (Block (..), Point, blockPoint, genBlock)
 import           Chain (Chain, absChainFragment, applyChainUpdate, invChain, pointOnChain,
                         validChain)
 import qualified Chain
@@ -110,10 +109,36 @@ data ChainProducerState rep = ChainProducerState {
   deriving (Eq, Show)
 
 -- | Readers are represented here as a relation.
+--
+type ReaderStates = [ReaderState]
+
+type ReaderId     = Int
+data ReaderState  = ReaderState {
+       -- | Where the chain of the consumer and producer intersect. If the
+       -- consumer is on the chain then this is the same as the 'readerHead',
+       -- but if the consumer 'readerHead' is off the chain then this is the
+       -- point the consumer will need to rollback to.
+       readerIntersection :: Point,
+
+       -- | Where the chain consumer was last reading from (typically the
+       -- head of the consumer's chain). If this is on the producer chain
+       -- then it is equal to the 'readerIntersection'.
+       readerHead         :: Point,
+
+       -- | A unique tag per reader, to distinguish different readers.
+       readerId           :: ReaderId
+     }
+  deriving (Eq, Show)
+
+-- | Readers are represented here as a relation.
 invChainProducerState :: ChainProducerState Chain -> Bool
 invChainProducerState (ChainProducerState cs rs) =
     invChain cs
- && Chain.invReaderStates cs rs
+ && invReaderStates cs rs
+
+-- like 'Chain.Volatile.invReaderState'
+invReaderStates :: Chain -> readerState -> Bool
+invReaderStates = undefined
 
 
 {-

@@ -27,7 +27,6 @@ module Chain
 
     , applyChainUpdate
     , applyChainUpdates
-    , invReaderStates
 
     , chainHead
     , chainGenesis
@@ -277,10 +276,6 @@ applyChainUpdate (RollBack p) (ChainFragment c) = ChainFragment $ go c
 
 applyChainUpdates :: [ChainUpdate] -> Chain -> Chain
 applyChainUpdates = flip (foldl (flip applyChainUpdate))
-
--- like 'Chain.Volatile.invReaderState'
-invReaderStates :: Chain -> readerState -> Bool
-invReaderStates = undefined
 
 chainBackwardsFrom :: Chain -> BlockId -> Chain
 chainBackwardsFrom c bid = go c

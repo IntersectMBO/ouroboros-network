@@ -37,7 +37,7 @@ import           System.Random (mkStdGen)
 
 import           Test.QuickCheck
 
-import           Block (Block (..), Point, ReaderId, ReaderState (..), blockPoint)
+import           Block (Block (..), Point, blockPoint)
 import           Chain (Chain, ChainFragment (..), absChainFragment, applyChainUpdate, chain,
                         chainGenesis, findIntersection)
 import qualified Chain

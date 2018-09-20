@@ -8,9 +8,6 @@ module Block
     , mkBlock
     , genBlock
     , genNBlocks
-    , ReaderId
-    , ReaderState (..)
-    , ReaderStates
     , Point
     , blockPoint
     )
@@ -60,33 +57,12 @@ genNBlocks n blockid0 slot0 = do
     return (b:c)
 
 
--- | Readers are represented here as a relation.
---
-type ReaderStates = [ReaderState]
-
 -- | A point on the chain is identified by the 'Slot' number and its 'BlockId'.
 -- The 'Slot' tells us where to look and the 'BlockId' either simply serves as
 -- a check, or in some contexts it disambiguates blocks from different forks
 -- that were in the same slot.
 --
 type Point        = (Slot, BlockId)
-type ReaderId     = Int
-data ReaderState  = ReaderState {
-       -- | Where the chain of the consumer and producer intersect. If the
-       -- consumer is on the chain then this is the same as the 'readerHead',
-       -- but if the consumer 'readerHead' is off the chain then this is the
-       -- point the consumer will need to rollback to.
-       readerIntersection :: Point,
-
-       -- | Where the chain consumer was last reading from (typically the
-       -- head of the consumer's chain). If this is on the producer chain
-       -- then it is equal to the 'readerIntersection'.
-       readerHead         :: Point,
-
-       -- | A unique tag per reader, to distinguish different readers.
-       readerId           :: ReaderId
-     }
-  deriving (Eq, Show)
 
 blockPoint :: Block -> Point
 blockPoint b = (blockSlot b, blockId b)
