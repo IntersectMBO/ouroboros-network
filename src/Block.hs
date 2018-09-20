@@ -4,7 +4,6 @@ module Block
     ( Block (..)
     , BlockId
     , Slot
-    , ChainMeasure (..)
     , hashBlock
     , mkBlock
     , genBlock
@@ -28,23 +27,6 @@ data Block = Block {
        blockPayload :: Payload
      }
   deriving (Show, Eq)
-
-data ChainMeasure = ChainMeasure {
-       minSlot :: !Slot,
-       maxSlot :: !Slot,
-       size    :: !Int
-     }
-  deriving Show
-
-instance Monoid ChainMeasure where
-  mempty = ChainMeasure maxBound minBound 0
-  mappend vl vr =
-    ChainMeasure (min (minSlot vl) (minSlot vr))
-                 (max (maxSlot vl) (maxSlot vr))
-                 (size vl + size vr)
-
-instance Measured ChainMeasure Block where
-  measure Block{blockSlot} = ChainMeasure blockSlot blockSlot 1
 
 type BlockId = Int
 type Slot    = Word

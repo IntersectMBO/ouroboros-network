@@ -69,7 +69,7 @@ import qualified Data.List as L
 
 import           Test.QuickCheck hiding ((><))
 
-import           Block (Block (..), BlockId, ChainMeasure (..), Point, Slot, blockPoint, genBlock,
+import           Block (Block (..), BlockId, Point, Slot, blockPoint, genBlock,
                         genNBlocks)
 import qualified Chain.Abstract as Chain.Abs
 import           Chain.Update (ChainUpdate (..))
@@ -88,6 +88,23 @@ newtype ChainFragment = ChainFragment (FingerTree ChainMeasure Block)
   deriving (Show, Eq)
 
 type Chain = ChainFragment
+
+data ChainMeasure = ChainMeasure {
+       minSlot :: !Slot,
+       maxSlot :: !Slot,
+       size    :: !Int
+     }
+  deriving Show
+
+instance Monoid ChainMeasure where
+  mempty = ChainMeasure maxBound minBound 0
+  mappend vl vr =
+    ChainMeasure (min (minSlot vl) (minSlot vr))
+                 (max (maxSlot vl) (maxSlot vr))
+                 (size vl + size vr)
+
+instance Measured ChainMeasure Block where
+  measure Block{blockSlot} = ChainMeasure blockSlot blockSlot 1
 
 emptyChain :: Chain
 emptyChain = ChainFragment FT.empty
