@@ -1,5 +1,7 @@
 {-# LANGAUGE GADTSyntax #-}
 
+module Types where
+
 -- |
 -- = Inter-node messages. Those related to block broadcast are omitted.
 

@@ -2,7 +2,7 @@
 {-# LANGUAGE MultiParamTypeClasses, FunctionalDependencies, TypeFamilies,
              FlexibleContexts, ScopedTypeVariables, GADTs, RankNTypes,
              GeneralizedNewtypeDeriving #-}
-module ConsumerProtocol where
+module ConsumerProtocolSTM where
 
 import Data.Word
 import Data.List (tails, foldl')

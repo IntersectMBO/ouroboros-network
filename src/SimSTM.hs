@@ -258,7 +258,7 @@ schedule simstate@SimState {
       case res of
         StmTxComitted x written wakeup -> do
           let thread'   = Thread tid (k x)
-              unblocked = catMaybes [ blocked Map.!? tid' | (tid', _) <- wakeup ]
+              unblocked = catMaybes [ Map.lookup tid' blocked | (tid', _) <- wakeup ]
               runqueue =  remaining ++ (reverse $ thread' : unblocked)
           trace <- schedule simstate {
                      runqueue,

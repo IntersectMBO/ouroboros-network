@@ -358,10 +358,10 @@ prop_ChainFork (ChainFork pchain cchain) =
   let plen = Chain.length pchain
       clen = Chain.length cchain
   in withMaxSuccess 1000
-    $ cover (pchain == cchain) 3 "chains are equal"
-    $ cover (plen > clen) 38 "producer chain is longer"
-    $ cover (plen == clen) 3 "chains of equal length"
-    $ cover (clen < plen) 38 "consumer chain is longer"
+    $ cover ( 3/100) (pchain == cchain) "chains are equal"
+    $ cover (38/100) (plen >  clen) "producer chain is longer"
+    $ cover ( 3/100) (plen == clen) "chains of equal length"
+    $ cover (38/100) (clen <  plen) "consumer chain is longer"
     $    counterexample (show pchain) (validChain pchain)
     .&&. counterexample (show cchain) (validChain cchain)
 
