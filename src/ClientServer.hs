@@ -241,25 +241,21 @@ data TrChainExchange stFrom stTo where
 
 showTrChainExchange :: TrChainExchange from to -> String
 showTrChainExchange tr = case tr of
-  TrRequest (ReqCheckpoints hhs) -> "Req checkpoints " ++ show hhs
-  TrRequest (ReqFastForward hh) -> "Req fast-forward " ++ show hh
+  TrRequest (ReqSetHead hhs) -> "Req set head " ++ show hhs
   TrRequest _ -> "Other request"
-  TrRespond (ResCheckpoints hh) -> "Res checkpoints " ++ show hh
-  TrRespond (ResFastForward hh) -> "Res fast-forward " ++ show hh
+  TrRespond (ResSetHead hh) -> "Res set head " ++ show hh
   TrRespond _ -> "Other response"
 
 data RequestKind where
-  FastForward :: RequestKind
-  Checkpoints :: RequestKind
-  Headers     :: RequestKind
-  Bodies      :: RequestKind
+  SetHead :: RequestKind
+  Headers :: RequestKind
+  Bodies  :: RequestKind
 
 -- | There are 4 types of requests.
 -- TODO: fast forward and checkpoints can be merged into 1: a nonempty set of
 -- headers.
 data Request (req :: RequestKind) where
-  ReqFastForward :: HeaderHash   ->           Request 'FastForward
-  ReqCheckpoints :: [HeaderHash] ->           Request 'Checkpoints
+  ReqSetHead     :: NonEmpty HeaderHash ->    Request 'SetHead
   ReqHeaders     :: Word16       ->           Request 'Headers
   ReqBodies      :: HeaderHash   -> Word16 -> Request 'Bodies
 
@@ -271,8 +267,7 @@ data Request (req :: RequestKind) where
 data Response (req :: RequestKind) (res :: StChainExchange) where
   ResFork        :: Header -> HeaderHash -> Response anything     'StIdle
   ResExtend      :: Header ->               Response anything     'StIdle
-  ResFastForward :: HeaderHash ->           Response 'FastForward 'StIdle
-  ResCheckpoints :: HeaderHash ->           Response 'Checkpoints 'StIdle
+  ResSetHead     :: HeaderHash ->           Response 'SetHead     'StIdle
   ResHeadersOne  :: Header ->               Response 'Headers     ('StBusy 'Headers)
   ResHeadersDone ::                         Response 'Headers     'StIdle
   ResBodiesOne   :: HeaderHash -> Body ->   Response 'Bodies      ('StBusy 'Bodies)
@@ -324,16 +319,12 @@ zipperServer
   -> Peer ChainExchange TrChainExchange ('Awaiting 'StIdle) ('Awaiting 'StIdle) m (Zipper Block)
 zipperServer z = PeerAwait $ \tr -> case tr of
 
-  TrRequest (ReqFastForward hto) -> case zipTo ((==) hto . headerHash . fst) z of
-    Nothing -> PeerYield (Over (TrRespond (ResFastForward (headerHash (fst (focus z)))))) (done z)
-    Just it -> PeerYield (Over (TrRespond (ResFastForward (headerHash (fst (focus it)))))) (done it)
-
-  TrRequest (ReqCheckpoints cps) ->
-    let zs = mapMaybe (\cp -> zipTo ((==) cp . headerHash . fst) z) cps
+  TrRequest (ReqSetHead cps) ->
+    let zs = mapMaybe (\cp -> zipTo ((==) cp . headerHash . fst) z) (NE.toList cps)
         sorted = List.sortOn (headerSlot . fst . focus) zs
     in  case sorted of
-          [] -> PeerYield (Over (TrRespond (ResCheckpoints (headerHash (fst (focus z)))))) (done z)
-          (z' : _) -> PeerYield (Over (TrRespond (ResCheckpoints (headerHash (fst (focus z')))))) (done z')
+          [] -> PeerYield (Over (TrRespond (ResSetHead (headerHash (fst (focus z)))))) (done z)
+          (z' : _) -> PeerYield (Over (TrRespond (ResSetHead (headerHash (fst (focus z')))))) (done z')
 
   TrRequest (ReqHeaders num)     -> respondHeaders z num
 
@@ -375,8 +366,8 @@ findIntersection
   -> Client ChainExchange TrChainExchange 'StIdle 'StIdle m HeaderHash
 findIntersection bst bestSoFar = case bst of
   BstEmpty -> done bestSoFar
-  BstSplit older t newer -> PeerYield (Over (TrRequest (ReqFastForward t))) $ PeerAwait $ \tr -> case tr of
-    TrRespond (ResFastForward hh) ->
+  BstSplit older t newer -> PeerYield (Over (TrRequest (ReqSetHead (pure t)))) $ PeerAwait $ \tr -> case tr of
+    TrRespond (ResSetHead hh) ->
       if hh == t
       then findIntersection newer t
       else findIntersection older hh
@@ -502,11 +493,6 @@ castTransition
 castTransition _ (SomeTransition (it :: tr from' to)) = case eqT of
   Just (Refl :: from :~: from') -> Expected it
   Nothing -> Unexpected
-
-doesItWork :: TransitionFrom TrChainExchange 'StIdle
-doesItWork = castTransition
-  (Proxy :: Proxy 'StIdle)
-  (SomeTransition (TrRespond (ResFastForward undefined)))
 
 data Channel m t = Channel
   { send :: t -> m ()
