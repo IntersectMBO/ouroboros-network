@@ -3,42 +3,29 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE TypeInType #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE EmptyCase #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE StandaloneDeriving #-}
 
+{-# OPTIONS_GHC "-fwarn-incomplete-patterns" #-}
+
+import Control.Concurrent.Async
 import Control.Concurrent.MVar
-import Control.Exception (throwIO)
-import Control.Monad (ap, forM_, unless)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Except
 import Control.Monad.Trans.State
 import Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
-import Data.Constraint
-import Data.Foldable (find)
-import Data.Functor.Compose
-import Data.Map (Map)
-import qualified Data.Map as Map
-import Data.Maybe (isJust, mapMaybe)
+import Data.Maybe (mapMaybe)
 import qualified Data.List as List
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
-import Data.Semigroup (Semigroup (..))
-import Data.Sequence (Seq)
-import qualified Data.Sequence as Seq
 import Data.Word (Word16)
-import qualified Debug.Trace as Debug
-import Data.Void
 import Data.Kind (Type)
-import System.IO (BufferMode (..), hSetBuffering, stdout)
-import System.IO.Error (userError)
+import Data.Typeable
+import Data.Void
 
 data Header = Header
   { headerHash       :: HeaderHash
@@ -93,205 +80,66 @@ continues header chain = headerParent header == headerHash (tipHeader chain)
 -- one message.
 type Checkpoints = [Header]
 
--- Next step: communication through an effectful channel.
--- There's a problem with receiving. Apparently we need the previous transition
--- before we receive. But then, we don't have that at the start of the server.
--- Could use 'TestEquality': pull out 'SomeTransition' then try to cast it
--- and give unexpected if no.
--- However, we also need to know when to pull the 'TrContinue' transition.
---
+-- |
+-- = Using a type transition system to describe either side of a
+-- request/response application.
 
--- When you send, you have to get the next send/rev.
--- When you receive, you have to get the next transition along with the
--- next send/recv.
---
--- So, what we need is
---
---   send :: forall from to . tr from to -> (m (), Next tr to)
---   recv :: (m (exists from to . (tr from to, forall to' . tr from to' -> Next tr to')))
---
--- Or perhaps: when you send, you get the next receive.
--- When you receive, you get the next send.
---
-
-{-
-data Sent tr to m where
-  Sent :: m () -> Recv tr to m -> Sent tr to m
-
-type Send tr from m = forall to . tr from to -> Sent tr to m -- (m (), Recv tr to m)
-
-data Received tr from m where
-  Received :: tr from to -> Send tr to m -> Received tr from m
-
-type Recv tr from m = m (Received tr from m)
-
-data Channel tr from m = Channel
-  { send :: Send tr from m
-  , recv :: Recv tr from m
-  }
-
-data SomeTransition tr where
-  SomeTransition :: tr from to -> SomeTransition tr
-
-mvarSend :: MVar (SomeTransition TrChainExchange) -> Send TrChainExchange 'StIdle IO
-mvarSend mvar = \tr -> case tr of
-  TrRequest (ReqFastForward _) -> Sent (putMVar mvar (SomeTransition tr)) mvarRecvResponse
-  TrRequest (ReqCheckpoints _) -> undefined
-  TrRequest (ReqHeaders _)     -> undefined
-  TrRequest (ReqBodies _ _)    -> undefined
--}
-
--- Ah no, we don't need an entire chain, we just need the next receive after
--- a send, and the next send after a receive.
--- 
---   -- Interested in (forall from . Send tr from m)
---   type Send tr from m = forall to . tr from to -> (m (), m (TransitionFrom tr to))
---   data TransitionFrom tr from where
---     Expected   :: tr from to -> Recv tr from
---     Unexpected :: String     -> Recv tr from
---
---   -- For receiving, you need to define how to get the next transition, from
---   -- this particular point, but also how to send...
---   type Recv tr from m = m (TransitionFrom tr from, 
---
---   data Received tr from m where
---     Received :: tr from inter -> (forall to . tr inter to -> m ()) -> Received tr from m
---
--- Wouldn't it be enough to have simply:
---   - for every transition, how to send it
---       forall from to . tr from to -> m ()
---   - for every transition, how to receive the next one.
---       forall from to . tr from to -> m (exists to' . tr to to')
--- That alone is enough for the client.
--- The server needs an initial one.
---   - how to receive the first transition
---       m (exists to . tr from to)
---
--- In the receive part, the transition parameter really is a nuisance. It's
--- only there so we can actually get a hold of the transition... another
--- option is to do it by typeclass.
---
---   class SendRecv tr from to m where
---     send :: tr from to -> m ()
---     recv :: m (Either Unexpected (tr from to))
---
--- then we can use quantified constraints?!
---
---   (forall from to . sendRecv tr from to m)
---
--- oooo good idea.
-
--- The following could be a nice solution, but it requires
--- QuantifiedConstraints, available from 8.6.
-{-
-class Channel (thing :: Type) (tr :: state -> state -> Type) (from :: state) (to :: state) (m :: Type -> Type) where
-  send :: thing -> tr from to -> m ()
-  recv :: thing -> m (Either String (tr from to))
-
-qcons
-  :: forall thing tr from to m .
-     (forall x y . Channel thing tr x y m)
-  => thing
-  -> tr from to
-  -> m ()
-qcons thing tr = send thing tr
--}
-
--- So, back to the original idea.
---
---   data Channel tr from m = Channel
---     { send :: forall to . tr from to -> m ()
---     , recv :: m (Unexpected | exists to . tr from to)
---     , next :: forall to . tr from to -> Channel tr to m
---     }
-
-{-
-data Channel tr from m = Channel
-  { send :: forall to . tr from to -> m ()
-  , recv :: m (ReceivedTransition tr from)
-  , next :: forall to . tr from to -> Channel tr to m
-  }
-
--- forall tr from . (exists to . Either String (tr from to))
-data ReceivedTransition tr from where
-  Expected   :: tr from to -> ReceivedTransition tr from
-  Unexpected :: String -> ReceivedTransition tr from
--}
-
--- NB we'll want one special case in which everything goes via serialisation:
--- give the encode/decode, a read/write stream, and you're set.
--- But how to account for the case of the phantom transition? Giving mempty
--- for the serialisation could work, but serialising something as mempty is
--- stupid
-
-{-
-chainExchangeChannel
-  :: MVar (SomeTransition TrChainExchange)
-  -> MVar (SomeTransition TrChainExchange)
-  -> Channel TrChainExchange 'StIdle IO
-chainExchangeChannel _ _ = Channel
-  { send = \tr -> case tr of
-      TrContinue -> pure ()
-  , recv = 
-  }
--}
-
--- What if we had
---
---   type Encode tr serial = forall from to . tr from to -> serial
---   type Decode tr serial = serial -> Either Malformed (exists from to . tr from to)
---
--- So then we have the notion of malformed (serialiser law violation), as well
--- as the notion of unexpected (serialised properly but an invalid transition).
---
-
-type Encode tr serial m = forall from to . tr from to -> m serial
-
-type Decode tr serial m = serial -> m (DecodedTransition tr serial)
-
-data DecodedTransition tr serial where
-  Malformed :: String -> serial -> DecodedTransition tr serial
-  WellFormed :: tr from to -> serial -> DecodedTransition tr serial
-
-
+-- | In a client/server model, one side will be awaiting when the other is
+-- receiving. This type will be included in a description of either side of
+-- the a protocol application. See 'Peer'.
 data Status k where
   Awaiting :: k -> Status k
   Yielding :: k -> Status k
 
-type family Complement (st :: Status k) :: Status k where
-  Complement (Awaiting k) = Yielding k
-  Complement (Yielding k) = Awaiting k
-
+-- | Description of control flow a given instance: either hold onto it or
+-- release it.
 data Control where
   Hold    :: Control
   Release :: Control
 
 -- | 'p' partitions 'k' by picking, for each 'st :: k', one of two options,
--- here called 'black' and 'white'.
+-- here called 'black' and 'white'. Church encoding of boolean.
 type family Partition (p :: r) (st :: k) (black :: t) (white :: t) :: t
 
-type TrControl p from to = Partition p from (Partition p to 'Hold 'Release) (Partition p to 'Release 'Hold)
+-- | Picks 'Hold if 'from' and 'to' lie in the same partition.
+-- Picks 'Release otherwise.
+type TrControl p from to =
+  Partition p from (Partition p to 'Hold 'Release)
+                   (Partition p to 'Release 'Hold)
 
+-- | This family is used in the definition of 'Peer' to determine whether, given
+-- a parituclar transition, a yielding side continues to yield or begins
+-- awaiting, and vice verse for an awaiting side.
 type family ControlNext control a b where
   ControlNext 'Hold    a b = a
   ControlNext 'Release a b = b
 
--- | 'Next p from to current other = other'   iff 'Partition p from =  Partition p to'
---   'Next p from to current other = current' iff 'Partition p from /= Partition p to'
-type Next p from to current other = Partition p from (Partition p to current other) (Partition p to other current)
-
+-- | Included in every yield, this gives not only the transition, but a
+-- 'Control' code to hold or release. The constructor for yielding will
+-- require that 'Hold or 'Release is equal to an application of 'TrControl'
+-- on the relevant state endpoints. In this way, every transition either
+-- picks out exactly one of 'Hold or 'Release, or the type family is "stuck"
+-- and the program won't type check; it means you can't have a transition which
+-- unifies with _both_ 'Hold and 'Release, which would allow the yielding and
+-- awaiting sides to get out of sync.
 data Exchange p tr from to control where
-  Wait :: tr from to -> Exchange p tr from to 'Hold
+  Part :: tr from to -> Exchange p tr from to 'Hold
   -- | Radio terminology. End of transmission and response is expected.
   Over :: tr from to -> Exchange p tr from to 'Release
 
+-- | Get the transition from an 'Exchange'.
+exchangeTransition :: Exchange p tr from to control -> tr from to
+exchangeTransition (Part tr) = tr
+exchangeTransition (Over tr) = tr
+
+-- | This is somewhat like a pipe or conduit, but it's one-sided. It yields
+-- to and awaits from the same end. The type of thing which is produced or
+-- expected depends upon the type transition system 'tr', which also controls,
+-- by way of 'p' and the type family 'Partition p', at what point a yielder
+-- becomes an awaiter.
 data Peer p (tr :: st -> st -> Type) (from :: Status st) (to :: Status st) m t where
-  PeerDone
-    :: t
-    -> Peer p tr end end m t
-  PeerEffect
-    :: m (Peer p tr from to m t)
-    -> Peer p tr from to m t
+  PeerDone :: t -> Peer p tr end end m t
+  PeerEffect :: m (Peer p tr from to m t) -> Peer p tr from to m t
   -- | When yielding a transition, there must be proof that, under 'p', the
   -- transition either holds or releases control. This is enough to allow GHC
   -- to deduce that the continuation in a complementary 'PeerAwait' (one which
@@ -299,13 +147,20 @@ data Peer p (tr :: st -> st -> Type) (from :: Status st) (to :: Status st) m t w
   --   - continue to await if this one continues to yield (hold)
   --   - begin to yield if this one begins to await (release)
   -- See the defition of 'connect', where this property is used explicitly.
+  --
+  -- Typeable is here for the benefit of casting a transition on unknown
+  -- endpoints into one on a known endpoint, to facilitate passing them
+  -- through a channel. It's also in the 'PeerAwait' constructor.
   PeerYield
-    :: ( TrControl p from inter ~ control )
+    :: ( Typeable from
+       , TrControl p from inter ~ control
+       )
     => Exchange p tr from inter control
     -> Peer p tr (ControlNext control 'Yielding 'Awaiting inter) to m t
     -> Peer p tr ('Yielding from) to m t
   PeerAwait
-    :: (forall inter . tr from inter -> Peer p tr (ControlNext (TrControl p from inter) 'Awaiting 'Yielding inter) to m t)
+    :: ( Typeable from )
+    => (forall inter . tr from inter -> Peer p tr (ControlNext (TrControl p from inter) 'Awaiting 'Yielding inter) to m t)
     -> Peer p tr ('Awaiting from) to m t
 
 done :: t -> Peer p tr end end m t
@@ -314,6 +169,8 @@ done = PeerDone
 effect :: Functor m => m t -> Peer p tr end end m t
 effect = PeerEffect . fmap done
 
+-- | Akin to '>>=' but the continuation carries it from the 'inter'mediate
+-- state to the end state.
 andThen
   :: ( Functor m )
   => Peer p tr from inter m s
@@ -334,6 +191,9 @@ feedbackLoop k r = k r `andThen` feedbackLoop k
 type Server p tr from to m = Peer p tr ('Awaiting from) ('Awaiting to) m Void
 type Client p tr from to m t = Peer p tr ('Yielding from) ('Yielding to) m t
 
+-- | Connect a server and client.
+-- The output gives the client's value and the remainder of the server, which
+-- by construction never finishes.
 connect
   :: forall p tr from to x m t .
      ( Monad m )
@@ -345,7 +205,7 @@ connect server          (PeerDone t)     = pure (t, server)
 connect server          (PeerEffect m)   = m >>= connect server
 connect (PeerEffect m)  client           = m >>= flip connect client
 connect (PeerAwait k)  (PeerYield exchange n) = case exchange of
-  Wait tr -> connect (k tr) n
+  Part tr -> connect (k tr) n
   Over tr -> over (k tr) n
 
   where
@@ -359,13 +219,22 @@ connect (PeerAwait k)  (PeerYield exchange n) = case exchange of
   over server                 (PeerEffect m) = m >>= over server
   over (PeerEffect m)         client         = m >>= flip over client
   over (PeerYield exchange n) (PeerAwait k)  = case exchange of
-    Wait tr -> over n (k tr)
+    Part tr -> over n (k tr)
     Over tr -> connect n (k tr)
 
+-- |
+-- = Definition of the chain exchange protocol, and a factoring of it into
+-- consumer and producer sides.
+
+-- | There are 2 state forms, but the busy state is factored by 'RequestKind'
+-- so that the appropriate response can be determined.
 data StChainExchange where
   StIdle :: StChainExchange
   StBusy :: RequestKind -> StChainExchange
 
+-- | Transitions on 'StChainExchange'. A request goes from idle to busy, and
+-- a response may go from busy to idle, or stay on busy in case of multi-part
+-- responses for headers and bodies.
 data TrChainExchange stFrom stTo where
   TrRequest  :: Request  req     -> TrChainExchange 'StIdle ('StBusy req)
   TrRespond  :: Response req res -> TrChainExchange ('StBusy req) res
@@ -385,31 +254,51 @@ data RequestKind where
   Headers     :: RequestKind
   Bodies      :: RequestKind
 
+-- | There are 4 types of requests.
+-- TODO: fast forward and checkpoints can be merged into 1: a nonempty set of
+-- headers.
 data Request (req :: RequestKind) where
   ReqFastForward :: HeaderHash   ->           Request 'FastForward
   ReqCheckpoints :: [HeaderHash] ->           Request 'Checkpoints
   ReqHeaders     :: Word16       ->           Request 'Headers
   ReqBodies      :: HeaderHash   -> Word16 -> Request 'Bodies
 
+-- | Fork and extend can be responses to any request.
+-- Fast forward and checkpoints responses should be merged into 1 (so should
+-- the corresponding requests).
+-- The headers and bodies responses are multi-part: an individual data point
+-- can be sent, or the response can be closed, returning the state to idle.
 data Response (req :: RequestKind) (res :: StChainExchange) where
   ResFork        :: Header -> HeaderHash -> Response anything     'StIdle
-  ResExtend      :: Header               -> Response anything     'StIdle
-  ResFastForward :: HeaderHash           -> Response 'FastForward 'StIdle
-  ResCheckpoints :: HeaderHash           -> Response 'Checkpoints 'StIdle
-  ResHeadersOne  :: Header               -> Response 'Headers     ('StBusy 'Headers)
+  ResExtend      :: Header ->               Response anything     'StIdle
+  ResFastForward :: HeaderHash ->           Response 'FastForward 'StIdle
+  ResCheckpoints :: HeaderHash ->           Response 'Checkpoints 'StIdle
+  ResHeadersOne  :: Header ->               Response 'Headers     ('StBusy 'Headers)
   ResHeadersDone ::                         Response 'Headers     'StIdle
-  ResBodiesOne   :: HeaderHash -> Body   -> Response 'Bodies      ('StBusy 'Bodies)
+  ResBodiesOne   :: HeaderHash -> Body ->   Response 'Bodies      ('StBusy 'Bodies)
   ResBodiesDone  ::                         Response 'Bodies      'StIdle
 
--- | A type to identify our client/server chain exchange.
+-- |
+-- = Paritioning into client/server or consumer/producer
+--
+-- The above transition system 'TrChainExchange' makes no explicit mention
+-- of a client and a server. In theory, the protocol could be run by one
+-- process. In order to write separate client and server sides which are
+-- complementary, we must partition the states into 2 sets.
+
+-- | A type to identify our client/server parition.
 data ChainExchange
 
-type instance Partition ChainExchange st client server = ChainExchangePartition st client server
+type instance Partition ChainExchange st client server =
+  ChainExchangePartition st client server
 
+-- | Idle states are client, producer states are server.
 type family ChainExchangePartition st client server where
   ChainExchangePartition 'StIdle       client server = client
   ChainExchangePartition ('StBusy res) client server = server
 
+-- |
+-- = Example producer and consumer implementations.
 
 data Zipper t = Zipper [t] t [t]
   deriving (Show)
@@ -460,7 +349,7 @@ zipperServer z = PeerAwait $ \tr -> case tr of
   respondHeaders z 0 = PeerYield (Over (TrRespond ResHeadersDone)) (done z)
   respondHeaders z n = case zipNext z of
     Nothing -> PeerYield (Over (TrRespond ResHeadersDone)) (done z)
-    Just (b, z') -> PeerYield (Wait (TrRespond (ResHeadersOne (fst b)))) (respondHeaders z' (n-1))
+    Just (b, z') -> PeerYield (Part (TrRespond (ResHeadersOne (fst b)))) (respondHeaders z' (n-1))
 
   respondBodies
     :: ( Monad m )
@@ -471,13 +360,14 @@ zipperServer z = PeerAwait $ \tr -> case tr of
   respondBodies a z 0 = PeerYield (Over (TrRespond ResBodiesDone)) (done a)
   respondBodies a z n = case zipNext z of
     Nothing -> PeerYield (Over (TrRespond ResBodiesDone)) (done a)
-    Just (b, z') -> PeerYield (Wait (TrRespond (ResBodiesOne (headerHash (fst b)) (snd b)))) (respondBodies a z' (n-1))
+    Just (b, z') -> PeerYield (Part (TrRespond (ResBodiesOne (headerHash (fst b)) (snd b)))) (respondBodies a z' (n-1))
 
 data BinarySearch t where
   BstEmpty :: BinarySearch t
   BstSplit :: BinarySearch t -> t -> BinarySearch t -> BinarySearch t
 
--- | Finds the intersection by binary search.
+-- | Finds the intersection by binary search using the client-side of the
+-- protocol.
 findIntersection
   :: ( Monad m )
   => BinarySearch HeaderHash
@@ -498,6 +388,8 @@ data DownloadedHeaders where
   Complete :: [Header] -> DownloadedHeaders
   deriving (Show)
 
+-- | Downloads headers using the client side of the protocol, stopping when
+-- it's either finished, or the server side forks.
 downloadHeaders
   :: ( Monad m )
   => Word16
@@ -516,6 +408,10 @@ downloadHeaders howMany acc = PeerYield (Over (TrRequest (ReqHeaders howMany))) 
     TrRespond (ResExtend _) -> downloadHeaders remaining acc
     TrRespond (ResFork tip hh) -> done $ Forked (reverse acc) tip
 
+-- | Construct an example chain from a list of hashes for slots: 'Nothing'
+-- means no block, 'Just h' means the block at this slot has hash 'h'. The
+-- block count, slot numbers, and parent hash are filled in. The static
+-- 'genesisBlock' is used as the root.
 mkChain :: [Maybe ByteString] -> NonEmpty Block
 mkChain bs = genesisBlock NE.:| genChain "genesis" 0 0 bs
   where
@@ -566,3 +462,105 @@ app
   -> NonEmpty Block
   -> m DownloadedHeaders -- Continuation TrChainExchange 'StIdle 'StIdle m (Zipper Block) DownloadedHeaders)
 app serverChain clientChain = fmap fst (connect (server serverChain) (client clientChain))
+
+
+-- Next step: communication through some channel.
+-- We'll factor it like this:
+--
+--   - There must be a serialisation of (exists from to . tr from to).
+--     This may give the 'Malformed' case.
+--   - There must be a type-safe cast
+--       forall st . SomeTransition -> Either Unexpected (exists next . tr st next)
+--     If the state type is Typeable then we can do that.
+--
+-- Really the care must be taken in the encode/decode, as that's where things
+-- could go awry. It could decode properly, and into an expected transition,
+-- putting both ends into non-complementary positions: possibility of deadlock,
+-- of both sides yielding, or of an unexpected transition coming in _later on_.
+
+data SomeTransition tr where
+  -- | Must ensure Typeable here, because we can't do it at 'castTransition'.
+  -- That would require stating that every type in the state kind is
+  -- typeable. Quantified constraints could help, although a short attempt at
+  -- that did not work.
+  SomeTransition :: ( Typeable from ) => tr from to -> SomeTransition tr
+
+data TransitionFrom tr from where
+  Expected   :: tr from to -> TransitionFrom tr from
+  Unexpected :: TransitionFrom tr from
+
+showTransitionFrom :: TransitionFrom tr from -> String
+showTransitionFrom (Expected _) = "Expected"
+showTransitionFrom (Unexpected) = "Unexpected"
+
+castTransition
+  :: forall st (tr :: st -> st -> Type) (from :: st) .
+     ( Typeable from )
+  => Proxy from
+  -> SomeTransition tr
+  -> TransitionFrom tr from
+castTransition _ (SomeTransition (it :: tr from' to)) = case eqT of
+  Just (Refl :: from :~: from') -> Expected it
+  Nothing -> Unexpected
+
+doesItWork :: TransitionFrom TrChainExchange 'StIdle
+doesItWork = castTransition
+  (Proxy :: Proxy 'StIdle)
+  (SomeTransition (TrRespond (ResFastForward undefined)))
+
+data Channel m t = Channel
+  { send :: t -> m ()
+  , recv :: m t
+  }
+
+-- Seems we may need a singleton for the states...
+-- the idea we want to express: given any state _type_, we can determine
+-- whether a transition _value_ goes from that type.
+
+useChannel
+  :: forall p tr status from to m t .
+     ( Monad m )
+  => Channel m (SomeTransition tr)
+  -> Peer p tr (status from) to m t
+  -> m (Either String t)
+useChannel chan peer = case peer of
+  PeerDone t -> pure (Right t)
+  PeerEffect m -> m >>= useChannel chan
+  PeerAwait k -> recv chan >>= \some -> case castTransition (Proxy :: Proxy from) some of
+    Unexpected -> pure $ Left "Unexpected transition"
+    Expected tr -> useChannel chan (k tr)
+  PeerYield exch next -> do
+    send chan (SomeTransition (exchangeTransition exch))
+    useChannel chan next
+
+withChannels :: (Channel IO t -> Channel IO t -> IO r) -> IO r
+withChannels k = do
+  left <- newEmptyMVar
+  right <- newEmptyMVar
+  let leftChan  = Channel (putMVar left) (takeMVar right)
+      rightChan = Channel (putMVar right) (takeMVar left)
+  k leftChan rightChan
+
+example :: NonEmpty Block -> NonEmpty Block -> IO ()
+example serverChain clientChain = withChannels $ \serverChan clientChan ->
+  withAsync (useChannel serverChan (server serverChain)) $ \serverAsync -> do
+    t <- useChannel clientChan (client clientChain)
+    print t
+
+-- Next steps: demonstrations of
+-- - forking
+-- - duplex (producer is consumer)
+-- - clusters (more than 2 peers)
+-- So I think what's needed is a configurable and pure demo producer, capable
+-- of forking. This will help in all the items.
+
+-- We'll leave serialisation to later. I don't anticipate any problems there.
+{-
+type Encode tr serial m = forall from to . tr from to -> m serial
+
+type Decode tr serial m = serial -> m (DecodedTransition tr serial)
+
+data DecodedTransition tr serial where
+  Malformed :: String -> serial -> DecodedTransition tr serial
+  WellFormed :: tr from to -> serial -> DecodedTransition tr serial
+-}
