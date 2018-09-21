@@ -251,22 +251,18 @@ data RequestKind where
   Headers :: RequestKind
   Bodies  :: RequestKind
 
--- | There are 4 types of requests.
--- TODO: fast forward and checkpoints can be merged into 1: a nonempty set of
--- headers.
+-- | There are 3 types of requests.
 data Request (req :: RequestKind) where
   ReqSetHead     :: NonEmpty HeaderHash ->    Request 'SetHead
   ReqHeaders     :: Word16       ->           Request 'Headers
   ReqBodies      :: HeaderHash   -> Word16 -> Request 'Bodies
 
 -- | Fork and extend can be responses to any request.
--- Fast forward and checkpoints responses should be merged into 1 (so should
--- the corresponding requests).
 -- The headers and bodies responses are multi-part: an individual data point
 -- can be sent, or the response can be closed, returning the state to idle.
 data Response (req :: RequestKind) (res :: StChainExchange) where
-  ResFork        :: Header -> HeaderHash -> Response anything     'StIdle
-  ResExtend      :: Header ->               Response anything     'StIdle
+  -- | New tip (header) and rollback point (header hash).
+  ResChange      :: Header -> HeaderHash -> Response anything     'StIdle
   ResSetHead     :: HeaderHash ->           Response 'SetHead     'StIdle
   ResHeadersOne  :: Header ->               Response 'Headers     ('StBusy 'Headers)
   ResHeadersDone ::                         Response 'Headers     'StIdle
@@ -371,8 +367,7 @@ findIntersection bst bestSoFar = case bst of
       if hh == t
       then findIntersection newer t
       else findIntersection older hh
-    TrRespond (ResExtend _) -> findIntersection bst bestSoFar
-    TrRespond (ResFork _ hh) -> findIntersection bst hh
+    TrRespond (ResChange _ hh) -> findIntersection bst hh
 
 data DownloadedHeaders where
   Forked :: [Header] -> Header -> DownloadedHeaders
@@ -396,8 +391,7 @@ downloadHeaders howMany acc = PeerYield (Over (TrRequest (ReqHeaders howMany))) 
   downloadLoop !remaining !acc = PeerAwait $ \tr -> case tr of
     TrRespond ResHeadersDone -> done $ Complete (reverse acc)
     TrRespond (ResHeadersOne h) -> downloadLoop (remaining - 1) (h : acc)
-    TrRespond (ResExtend _) -> downloadHeaders remaining acc
-    TrRespond (ResFork tip hh) -> done $ Forked (reverse acc) tip
+    TrRespond (ResChange tip hh) -> done $ Forked (reverse acc) tip
 
 -- | Construct an example chain from a list of hashes for slots: 'Nothing'
 -- means no block, 'Just h' means the block at this slot has hash 'h'. The
@@ -498,10 +492,6 @@ data Channel m t = Channel
   { send :: t -> m ()
   , recv :: m t
   }
-
--- Seems we may need a singleton for the states...
--- the idea we want to express: given any state _type_, we can determine
--- whether a transition _value_ goes from that type.
 
 useChannel
   :: forall p tr status from to m t .
