@@ -1,7 +1,7 @@
-
+{-# LANGUAGE DeriveFunctor #-}
 -- | Reference implementation of a representation of a block chain
 --
-module Chain.Reference where
+module Chain where
 
 import Block ( Block(..), BlockHeader(..), HasHeader(..)
              , Slot(..), HeaderHash(..) {-, BlockId, invBlock
@@ -16,7 +16,7 @@ import Test.QuickCheck
 --
 
 data Chain block = Genesis | Chain block :> block
-  deriving (Eq, Show)
+  deriving (Eq, Show, Functor)
 
 infixl 5 :>
 
@@ -126,6 +126,20 @@ applyChainUpdates = flip (foldl (flip applyChainUpdate))
 -- Generators
 --
 
+{-
+newtype TestBlockChain = TestBlockChain Chain
+    deriving (Show, Eq)
+
+instance Arbitrary TestChain where
+    arbitrary = do
+        Positive n <- arbitrary
+        TestChain <$> genChain n
+    shrink (TestChain c) = TestChain <$> (L.take (length c) $ L.inits c)
+
+
+genChain :: Int -> Gen Chain
+genChain n = genNBlocks n 0 1
+-}
 -- make chain by making bodies and deriving the hashes
 -- shrinking by remaking the hashes
 
