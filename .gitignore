@@ -1,0 +1,12 @@
+doc/protocols.aux
+doc/protocols.bbl
+doc/protocols.blg
+doc/protocols.log
+doc/protocols.out
+doc/protocols.pdf
+doc/protocols.toc
+
+.ghc.environment.*
+cabal.project.local*
+cabal.project.local~
+dist-newstyle/
