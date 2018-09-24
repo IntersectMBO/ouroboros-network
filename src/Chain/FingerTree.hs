@@ -17,6 +17,7 @@ module Chain
     , findNext
 
     , addBlock
+    , rollback
     , drop
     , take
     , append
@@ -32,6 +33,7 @@ module Chain
     , chainGenesis
     , chainHeadBlockId
     , chainHeadSlot
+    , chainHeadPoint
     , chainBackwardsFrom
 
     -- testing
@@ -184,12 +186,21 @@ instance Arbitrary AddBlockTest where
     block <- genBlock (blockId h) (blockSlot h)
     return $ AddBlockTest chain block
 
-addBlock :: Chain -> Block -> Chain
-addBlock (ChainFragment ft) b = ChainFragment (ft |> b)
+addBlock :: Block -> Chain -> Chain
+addBlock b (ChainFragment ft) = ChainFragment (ft |> b)
 
 prop_addBlock :: AddBlockTest -> Bool
 prop_addBlock (AddBlockTest c b) =
-    b : absChainFragment c == absChainFragment (c `addBlock` b)
+    b : absChainFragment c == absChainFragment (addBlock b c)
+
+rollback :: Point -> Chain -> Chain
+rollback p (ChainFragment c) =
+    ChainFragment (go c)
+  where
+    go v = case FT.viewr v of
+        EmptyR  -> v
+        v' :> b | blockPoint b == p -> v
+                | otherwise         -> go v'
 
 drop :: Int -> Chain -> Chain
 drop n (ChainFragment t)
@@ -264,15 +275,13 @@ chainHeadBlockId = maybe 0 blockId . chainHead
 chainHeadSlot :: Chain -> Slot
 chainHeadSlot = maybe 0 blockSlot . chainHead
 
+chainHeadPoint :: Chain -> Point
+chainHeadPoint c = (chainHeadSlot c, chainHeadBlockId c)
+
 -- This is the key operation on chains in this model
 applyChainUpdate :: ChainUpdate -> Chain -> Chain
-applyChainUpdate (AddBlock b) c = c `addBlock` b
-applyChainUpdate (RollBack p) (ChainFragment c) = ChainFragment $ go c
-    where
-    go v = case FT.viewr v of
-        EmptyR  -> v
-        v' :> b | blockPoint b == p -> v
-                | otherwise         -> go v'
+applyChainUpdate (AddBlock b) c = addBlock b c
+applyChainUpdate (RollBack p) c = rollback p c
 
 applyChainUpdates :: [ChainUpdate] -> Chain -> Chain
 applyChainUpdates = flip (foldl (flip applyChainUpdate))
@@ -342,11 +351,11 @@ instance Arbitrary ChainFork where
           else do
             Positive k <- arbitrary
             bs1 <- genNBlocks k (blockId h) (blockSlot h + 1)
-            let chain1 = foldr (flip addBlock) chain bs1
+            let chain1 = foldr addBlock chain bs1
 
             Positive l <- arbitrary
             bs2 <- genNBlocks l (blockId h) (blockSlot h + 1)
-            let chain2 = foldr (flip addBlock) chain bs2
+            let chain2 = foldr addBlock chain bs2
 
             return $ ChainFork chain1 chain2
 
