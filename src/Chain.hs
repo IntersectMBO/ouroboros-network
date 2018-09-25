@@ -3,10 +3,11 @@
 --
 module Chain where
 
-import Prelude hiding (head)
+import Prelude hiding (head, drop)
 
 import Block ( Block(..), BlockHeader(..), HasHeader(..)
-             , Slot(..), BlockNo (..), HeaderHash(..), genNBlocks
+             , Slot(..), BlockNo (..), HeaderHash(..)
+             , genBlock, genNBlocks
              {-, BlockId, invBlock , Point, Slot, blockPoint,
              - pointSlot, pointHash-} )
 import qualified Chain.Abstract as Chain.Abs
@@ -92,9 +93,14 @@ head :: Chain b -> Maybe b
 head Genesis  = Nothing
 head (c :> b) = Just b
 
+drop :: Int -> Chain b -> Chain b
+drop 0 c = c
+drop n Genesis  = Genesis
+drop n (c :> _) = drop (n - 1) c
+
 headPoint :: HasHeader block => Chain block -> Point
 headPoint Genesis  = genesisPoint
-headPoint (c :> b) = blockPoint b
+headPoint (_ :> b) = blockPoint b
 
 headSlot :: HasHeader block => Chain block -> Slot
 headSlot = pointSlot . headPoint
@@ -115,8 +121,8 @@ pointOnChain Genesis  p = p == genesisPoint
 pointOnChain (c :> b) p = p == blockPoint b || pointOnChain c p
 
 rollback :: HasHeader block => Point -> Chain block -> Chain block
-rollback p (c :> b) | blockPoint b == p = c
-                    | otherwise         = rollback p c
+rollback p c@(c' :> b) | blockPoint b == p = c
+                       | otherwise         = rollback p c'
 rollback p Genesis  | p == genesisPoint = Genesis
                     | otherwise         = error "rollback: point not on chain"
 
@@ -227,19 +233,64 @@ instance Arbitrary TestBlockChain where
 
 genChain :: Int -> Gen (Chain Block)
 genChain n = L.foldr (flip (:>)) Genesis <$> genNBlocks n genesisHash (succ genesisSlot) (succ genesisBlockNo)
+
 -- make chain by making bodies and deriving the hashes
 -- shrinking by remaking the hashes
 
 --prop_addBlock:
--- after adding a block, that block is at the head
--- chain is still valid
--- removing the block gives the original
 
+data AddBlockTest = AddBlockTest (Chain Block) Block
+  deriving Show
 
--- prop_rollback:
---   prerequisite: point is on chain
--- chain is a prefix of original
--- chain head point is the rollback point
+instance Arbitrary AddBlockTest where
+  arbitrary = do
+    Positive n <- arbitrary
+    chain <- genChain n
+    let Just h = Chain.head chain
+    block <- genBlock (blockHash h) (succ $ blockSlot h) (succ $ blockNo h)
+    return $ AddBlockTest chain block
+
+  shrink (AddBlockTest Genesis  _)  = []
+  shrink (AddBlockTest (c :> b) _) = [AddBlockTest c b]
+
+prop_addBlock :: AddBlockTest -> Property
+prop_addBlock t@(AddBlockTest c b) =
+  let c' = addBlock b c
+  in
+    -- after adding a block, that block is at the head
+       headPoint c' === blockPoint b
+    -- chain is still valid
+    .&&. valid c'
+    -- removing the block gives the original
+    .&&. rollback (headPoint c) c' === c
+
+data RollbackTest = RollbackTest (Chain Block) Point
+  deriving Show
+
+instance Arbitrary RollbackTest where
+  arbitrary = do
+    Positive n <- arbitrary
+    chain <- genChain n
+    -- choose point from the chain
+    idx <- choose (0, fromIntegral n)
+    let p = headPoint $ drop idx chain
+    return $ RollbackTest chain p
+
+  shrink (RollbackTest c p) | headPoint c == p = []
+                            | otherwise = [RollbackTest (drop 1 c) p]
+
+prop_rollback :: RollbackTest -> Property
+prop_rollback (RollbackTest c p) = 
+  let c' = rollback p c
+  in
+    -- chain is a prefix of original
+       isPrefix c' c
+    -- chain head point is the rollback point
+    .&&. headPoint c' === p
+  where
+  isPrefix (_ :> _) Genesis = False
+  isPrefix c c' | c == c'   = True
+                | otherwise = isPrefix c (drop 1 c')
 
 data ChainFork = ChainFork (Chain Block) (Chain Block)
   deriving Show
