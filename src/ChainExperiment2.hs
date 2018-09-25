@@ -1,22 +1,22 @@
-{-# LANGUAGE NamedFieldPuns  #-}
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module ChainExperiment2 where
 
 import           Data.List (find)
 
-import           Block (Block (..), Point, blockPoint, genBlock)
-import           Chain (Chain, absChainFragment, applyChainUpdate, invChain, pointOnChain,
+import           Block (Block (..), HasHeader (..), genBlock)
+import           Chain (Chain, ChainUpdate (..), Point, absChainFragment, applyChainUpdate, absApplyChainUpdate, blockPoint, invChain, pointOnChain,
                         validChain)
 import qualified Chain
 import qualified Chain.Abstract as Chain.Abs
-import           Chain.Update (ChainUpdate (..))
 
 -- import Control.Applicative
 import           Control.Exception (assert)
 
 import           Test.QuickCheck
 
-validChainUpdate :: ChainUpdate -> Chain -> Bool
+validChainUpdate :: HasHeader block => ChainUpdate block -> Chain block -> Bool
 validChainUpdate cu c = validChain (applyChainUpdate cu c)
 
 k :: Int
@@ -26,24 +26,25 @@ k = 5 -- maximum fork length in these tests
 -- Generating valid chain updates
 --
 
-genChainUpdate :: Chain.Abs.Chain -> Gen ChainUpdate
+genChainUpdate :: Chain.Abs.Chain -> Gen (ChainUpdate Block)
 genChainUpdate chain = do
     let maxRollback = length (take k chain)
     n <- choose (-10, maxRollback)
     if n <= 0
-      then AddBlock <$> genBlock (Chain.Abs.chainHeadBlockId chain)
-                                 (Chain.Abs.chainHeadSlot chain + 1)
+      then AddBlock <$> genBlock (Chain.Abs.chainHeaderHash chain)
+                                 (succ $ Chain.Abs.chainHeadSlot chain)
+                                 (Chain.Abs.chainHeadBlockNo chain)
       else return $ RollBack (blockPoint (head (drop (n - 1) chain)))
 
-genChainUpdates :: Chain.Abs.Chain -> Int -> Gen [ChainUpdate]
+genChainUpdates :: Chain.Abs.Chain -> Int -> Gen [ChainUpdate Block]
 genChainUpdates _     0 = return []
 genChainUpdates chain n = do
     update  <- genChainUpdate chain
-    let chain' = Chain.Abs.applyChainUpdate update chain
+    let chain' = absApplyChainUpdate update chain
     updates <- genChainUpdates chain' (n-1)
     return (update : updates)
 
-data TestChainAndUpdates = TestChainAndUpdates Chain.Abs.Chain [ChainUpdate]
+data TestChainAndUpdates = TestChainAndUpdates Chain.Abs.Chain [ChainUpdate Block]
   deriving Show
 
 instance Arbitrary TestChainAndUpdates where
@@ -73,7 +74,7 @@ prop_switchFork (TestChainAndUpdates chain updates) =
         (Chain.reifyChainFragment chain)
         updates
     chains  = scanl
-        (flip Chain.Abs.applyChainUpdate)
+        (flip absApplyChainUpdate)
         chain
         updates
 
@@ -131,13 +132,13 @@ data ReaderState  = ReaderState {
   deriving (Eq, Show)
 
 -- | Readers are represented here as a relation.
-invChainProducerState :: ChainProducerState Chain -> Bool
+invChainProducerState :: HasHeader block => ChainProducerState (Chain block) -> Bool
 invChainProducerState (ChainProducerState cs rs) =
     invChain cs
  && invReaderStates cs rs
 
 -- like 'Chain.Volatile.invReaderState'
-invReaderStates :: Chain -> readerState -> Bool
+invReaderStates :: HasHeader block => Chain block -> readerState -> Bool
 invReaderStates = undefined
 
 
@@ -167,10 +168,11 @@ initialiseReadPointer checkpoints (ChainState v rs) = do
 --
 
 
-initialiseReader :: Point
+initialiseReader :: HasHeader block
+                 => Point
                  -> Point
-                 -> ChainProducerState Chain
-                 -> (ChainProducerState Chain, ReaderId)
+                 -> ChainProducerState (Chain block)
+                 -> (ChainProducerState (Chain block), ReaderId)
 initialiseReader hpoint ipoint (ChainProducerState cs rs) =
     assert (pointOnChain cs ipoint) $
     (ChainProducerState cs (r:rs), readerId r)
@@ -185,11 +187,12 @@ freshReaderId :: ReaderStates -> ReaderId
 freshReaderId [] = 0
 freshReaderId rs = 1 + maximum [ readerId | ReaderState{readerId} <- rs ]
 
-updateReader :: ReaderId
+updateReader :: HasHeader block
+             => ReaderId
              -> Point       -- ^ new reader head pointer
              -> Maybe Point -- ^ new reader intersection pointer
-             -> ChainProducerState Chain
-             -> ChainProducerState Chain
+             -> ChainProducerState (Chain block)
+             -> ChainProducerState (Chain block)
 updateReader rid hpoint mipoint (ChainProducerState cs rs) =
     ChainProducerState cs [ if readerId r == rid then update r else r
                           | r <- rs ]
@@ -210,23 +213,24 @@ lookupReader (ChainProducerState _ rs) rid = r
 -- |
 -- Compute @'ConsumeChain'@ for the reader and optimistically update
 -- @'ReaderState'@ inside @'ChainProducerState'@.
-readerInstruction :: ChainProducerState Chain
+readerInstruction :: forall block . HasHeader block
+                  => ChainProducerState (Chain block)
                   -> ReaderId
-                  -> Maybe (ChainProducerState Chain, ConsumeChain Block)
+                  -> Maybe (ChainProducerState (Chain block), ConsumeChain block)
 readerInstruction cps@(ChainProducerState cf _) rid =
   if readerHead == readerIntersection
   then
     maybe Nothing
       (Just . uncurry fn . (\b -> (blockPoint b, RollForward b)))
-      (Chain.findNext readerIntersection cf)
+      (Chain.successorBlock readerIntersection cf)
   else
     Just $ fn readerIntersection (RollBackward readerIntersection)
   where
     ReaderState {readerHead, readerIntersection} = lookupReader cps rid
 
     fn :: Point
-       -> ConsumeChain Block
-       -> (ChainProducerState Chain, ConsumeChain Block)
+       -> ConsumeChain block
+       -> (ChainProducerState (Chain block), ConsumeChain block)
     fn p cc =
         ( updateReader rid p (Just p) cps
         , cc

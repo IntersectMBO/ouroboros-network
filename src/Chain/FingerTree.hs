@@ -133,8 +133,8 @@ lookupByIndexFromEnd (ChainFragment t) n =
 
 -- |
 -- Find next block after the given point
-findNext :: Point -> ChainFragment -> Maybe Block
-findNext p cf = case lookupBySlot cf (fst p) of
+successorBlock :: Point -> ChainFragment -> Maybe Block
+successorBlock p cf = case lookupBySlot cf (fst p) of
     Position _ b ft'
         | blockPoint b == p
         -> case FT.viewl ft' of
