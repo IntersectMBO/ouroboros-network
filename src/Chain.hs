@@ -1,4 +1,5 @@
-{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveFunctor   #-}
+{-# LANGUAGE TemplateHaskell #-}
 -- | Reference implementation of a representation of a block chain
 --
 module Chain where
@@ -132,6 +133,7 @@ successorBlock p c0 = go c0
   where
     go (c :> b' :> b) | blockPoint b' == p = Just b
                       | otherwise          = go (c :> b')
+    go (Genesis :> b) | p == genesisPoint  = Just b
     go _ = error "successorBlock: point not on chain"
 
 selectChain
@@ -215,7 +217,7 @@ absApplyChainUpdates :: [ChainUpdate Block] -> Chain.Abs.Chain -> Chain.Abs.Chai
 absApplyChainUpdates = flip (foldl (flip absApplyChainUpdate))
 
 --
--- Generators
+-- Generators & Properties
 --
 
 newtype TestBlockChain = TestBlockChain (Chain Block)
@@ -234,20 +236,16 @@ instance Arbitrary TestBlockChain where
 genChain :: Int -> Gen (Chain Block)
 genChain n = L.foldr (flip (:>)) Genesis <$> genNBlocks n genesisHash (succ genesisSlot) (succ genesisBlockNo)
 
--- make chain by making bodies and deriving the hashes
--- shrinking by remaking the hashes
-
---prop_addBlock:
-
 data AddBlockTest = AddBlockTest (Chain Block) Block
   deriving Show
 
 instance Arbitrary AddBlockTest where
   arbitrary = do
-    Positive n <- arbitrary
+    NonNegative n <- arbitrary
     chain <- genChain n
-    let Just h = Chain.head chain
-    block <- genBlock (blockHash h) (succ $ blockSlot h) (succ $ blockNo h)
+    block <- case Chain.head chain of
+      Nothing -> genBlock genesisHash (succ genesisSlot) (succ genesisBlockNo)
+      Just h  -> genBlock (blockHash h) (succ $ blockSlot h) (succ $ blockNo h)
     return $ AddBlockTest chain block
 
   shrink (AddBlockTest Genesis  _)  = []
@@ -264,23 +262,29 @@ prop_addBlock t@(AddBlockTest c b) =
     -- removing the block gives the original
     .&&. rollback (headPoint c) c' === c
 
-data RollbackTest = RollbackTest (Chain Block) Point
+data ChainWithPointTest = ChainWithPointTest (Chain Block) Point
   deriving Show
 
-instance Arbitrary RollbackTest where
+instance Arbitrary ChainWithPointTest where
+  -- TODO: test when point is off the chain
   arbitrary = do
     Positive n <- arbitrary
     chain <- genChain n
     -- choose point from the chain
-    idx <- choose (0, fromIntegral n)
+    idx <- frequency
+      [ (1, return 0)
+      , (1, return $ fromIntegral n)
+      , (8, choose (1, fromIntegral n - 1))
+      ]
     let p = headPoint $ drop idx chain
-    return $ RollbackTest chain p
+    return $ ChainWithPointTest chain p
 
-  shrink (RollbackTest c p) | headPoint c == p = []
-                            | otherwise = [RollbackTest (drop 1 c) p]
+  shrink (ChainWithPointTest c p)
+    | headPoint c == p = []
+    | otherwise        = [ChainWithPointTest (drop 1 c) p]
 
-prop_rollback :: RollbackTest -> Property
-prop_rollback (RollbackTest c p) = 
+prop_rollback :: ChainWithPointTest -> Property
+prop_rollback (ChainWithPointTest c p) =
   let c' = rollback p c
   in
     -- chain is a prefix of original
@@ -292,25 +296,44 @@ prop_rollback (RollbackTest c p) =
   isPrefix c c' | c == c'   = True
                 | otherwise = isPrefix c (drop 1 c')
 
+prop_successorBlock :: ChainWithPointTest -> Property
+prop_successorBlock (ChainWithPointTest c p) =
+  case successorBlock p c of
+    Nothing -> headPoint c === p
+    Just b  -> property $ pointOnChain c (blockPoint b)
+
+prop_lookupBySlot :: ChainWithPointTest -> Bool
+prop_lookupBySlot (ChainWithPointTest c p) =
+  case lookupBySlot c (pointSlot p) of
+    Just b  -> pointOnChain c (blockPoint b)
+    Nothing | p == genesisPoint -> True
+            | otherwise         -> False
+
 data ChainFork = ChainFork (Chain Block) (Chain Block)
   deriving Show
 
 instance Arbitrary ChainFork where
   arbitrary = do
-    Positive n <- arbitrary
+    NonNegative n <- arbitrary
     chain <- genChain n
-    let Just h = head chain
+    let h = head chain
     -- at least 5% of forks should be equal
     equalChains <- frequency [(1, return True), (19, return False)]
     if equalChains
       then return $ ChainFork chain chain
       else do
-        Positive k <- arbitrary
-        bs1 <- genNBlocks k (blockHash h) (succ $ blockSlot h) (blockNo h)
+        NonNegative k <- arbitrary
+        bs1 <- genNBlocks k
+          (maybe genesisHash blockHash h)
+          (succ $ maybe genesisSlot blockSlot h)
+          (succ $ maybe genesisBlockNo blockNo h)
         let chain1 = foldr addBlock chain bs1
 
-        Positive l <- arbitrary
-        bs2 <- genNBlocks l (blockHash h) (succ $ blockSlot h) (blockNo h)
+        NonNegative l <- arbitrary
+        bs2 <- genNBlocks l
+          (maybe genesisHash blockHash h)
+          (succ $ maybe genesisSlot blockSlot h)
+          (succ $ maybe genesisBlockNo blockNo h)
         let chain2 = foldr addBlock chain bs2
 
         return $ ChainFork chain1 chain2
@@ -318,7 +341,7 @@ instance Arbitrary ChainFork where
   shrink (ChainFork c d) =
     let c_ = toList c
         d_ = toList d
-    in 
+    in
     [ ChainFork (fromList c') d
     | c' <- L.take (length c_ - 1) $ L.inits $ L.reverse $ c_
     , not (null c')
@@ -330,3 +353,14 @@ instance Arbitrary ChainFork where
     case (c, d) of
       (c' :> _, d' :> _) -> [ChainFork c' d']
       _                  -> []
+
+prop_intersectChains :: ChainFork -> Property
+prop_intersectChains (ChainFork c1 c2) =
+  case intersectChains c1 c2 of
+    Nothing -> L.intersect (toList c1) (toList c2) === []
+    Just p  -> counterexample (show (c1, c2, p)) $
+           pointOnChain c1 p
+      .&&. pointOnChain c2 p
+
+return []
+runTests = $quickCheckAll

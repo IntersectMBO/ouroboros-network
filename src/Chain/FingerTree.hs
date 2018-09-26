@@ -14,7 +14,7 @@ module Chain
     , splitBeforeSlot
     , findIntersection
     , intersectChains
-    , findNext
+    , successorBlock
 
     , addBlock
     , rollback
