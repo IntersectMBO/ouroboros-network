@@ -32,6 +32,7 @@ import           Data.FingerTree (ViewL (..))
 import           Data.FingerTree as FT
 import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NE
+import qualified Data.List as L
 import           Data.Maybe (isJust)
 -- import           Data.STRef.Lazy
 import           System.Random (mkStdGen)
@@ -384,30 +385,23 @@ selectChainM
     -> (Chain block -> Chain block -> Chain block)
     -- ^ pure chain selection
     -> [ TVar m (Chain block) ]
-       -- ^ list of consumer's mvars
+    -- ^ list of consumer's mvars
     -> m (TVar m (Chain block))
 selectChainM chain select ts = do
-  v <- atomically $ newTVar chain
-  fork $ go v ts
-  return v
+  chainVar <- atomically $ newTVar chain
+  stateVar <- atomically $ newTVar Chain.genesisPoint
+  fork $ forever (atomically (go stateVar chainVar))
+  return chainVar
   where
-  go v [] = return ()
-  go v (m:ms) = do
-    fork $ listen v m
-    go v ms
-
-  listen
-    :: TVar m (Chain block)
-    -> TVar m (Chain block)
-    -> m ()
-  listen v m = forever $
-      atomically $ do
-        candidateChain <- readTVar m
-        currentChain   <- readTVar v
-        let !newChain = select currentChain candidateChain
-        if newChain /= currentChain
-          then writeTVar v newChain
-          else retry
+  go stateVar chainVar = do
+    currentPoint    <- readTVar stateVar
+    currentChain    <- readTVar chainVar
+    candidateChains <- mapM readTVar ts
+    let chain = L.foldl' select currentChain candidateChains
+        point = Chain.headPoint chain
+    check (currentPoint /= point)
+    writeTVar stateVar point
+    writeTVar chainVar chain
 
 bindProducer
   :: forall block m stm.
