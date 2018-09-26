@@ -3,8 +3,8 @@
 module ChainProducerState where
 
 import           Block (Block)
-import           Chain (Chain, Point(..), blockPoint, ChainUpdate(..), pointOnChain)
-import qualified Chain (valid, addBlock, rollback, successorBlock, applyChainUpdates)
+import           Chain (Chain, Point(..), blockPoint, ChainUpdate(..), pointOnChain, TestBlockChainAndUpdates(..))
+import qualified Chain (valid, headPoint, addBlock, rollback, successorBlock, applyChainUpdates)
 
 import           Data.List (sort, group, find, unfoldr)
 import           Control.Exception (assert)
@@ -207,17 +207,16 @@ prop_update_lookup c rid p =
     let c' = updateReader rid p c in
     lookupReader c' rid == ReaderState p ReaderBackTo rid
 
-{-
-prop_producer_sync (TestChainAndUpdates c us) =
+prop_producer_sync (TestBlockChainAndUpdates c us) =
     let producer0        = initChainProducerState c
-        (producer1, rid) = initReader (chainHeadPoint c) producer0
+        (producer1, rid) = initReader (Chain.headPoint c) producer0
         producer         = applyChainUpdates us producer1
 
-        consumer0        = c'
+        consumer0        = c
         consumerUpdates  = iterateReaderUntilDone rid producer
         consumer         = Chain.applyChainUpdates consumerUpdates consumer0
      in
         consumer == producerChain producer
   where
     iterateReaderUntilDone rid = unfoldr (readerInstruction rid)
--}
+

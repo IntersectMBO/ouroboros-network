@@ -1,5 +1,7 @@
 {-# LANGUAGE DeriveFunctor   #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE NamedFieldPuns  #-}
+
 -- | Reference implementation of a representation of a block chain
 --
 module Chain where
@@ -9,8 +11,9 @@ import Prelude hiding (head, drop)
 import Block ( Block(..), BlockHeader(..), HasHeader(..)
              , Slot(..), BlockNo (..), HeaderHash(..)
              , genBlock, genNBlocks
-             {-, BlockId, invBlock , Point, Slot, blockPoint,
-             - pointSlot, pointHash-} )
+             , BlockBody(..), BodyHash(..)
+             , Slot(..), BlockNo(..), BlockSigner(..)
+             , HeaderHash(..), hashHeader, hashBody )
 import qualified Chain.Abstract as Chain.Abs
 
 import Control.Exception (assert)
@@ -27,12 +30,9 @@ data Chain block = Genesis | Chain block :> block
 
 infixl 5 :>
 
-toList :: Chain block -> [block]
-toList Genesis  = []
-toList (c :> b) = b : toList c
-
-fromList :: [block] -> Chain block
-fromList = L.foldl' (:>) Genesis
+foldChain :: (a -> b -> a) -> a -> Chain b -> a
+foldChain _blk gen Genesis  = gen
+foldChain  blk gen (c :> b) = blk (foldChain blk gen c) b
 
 --
 -- Points on blockchains
@@ -76,28 +76,17 @@ genesisPoint = Point genesisSlot genesisHash
 
 valid :: HasHeader block => Chain block -> Bool
 valid Genesis  = True
-valid (c :> b) = valid c && validChain c
+valid (c :> b) = valid c && validExtension c b
 
 validExtension ::  HasHeader block => Chain block -> block -> Bool
 validExtension c b = blockInvariant b
                   && headHash c == blockPrevHash b
                   && headSlot c <  blockSlot b
-
-validChain :: HasHeader block => Chain block -> Bool
-validChain Genesis   = True
-validChain (bs :> b) = validExtension bs b && validChain bs
-
-invChain :: HasHeader block => Chain block -> Bool
-invChain _ = undefined
+                  && headBlockNo c == pred (blockNo b)
 
 head :: Chain b -> Maybe b
 head Genesis  = Nothing
-head (c :> b) = Just b
-
-drop :: Int -> Chain b -> Chain b
-drop 0 c = c
-drop n Genesis  = Genesis
-drop n (c :> _) = drop (n - 1) c
+head (_ :> b) = Just b
 
 headPoint :: HasHeader block => Chain block -> Point
 headPoint Genesis  = genesisPoint
@@ -113,17 +102,38 @@ headBlockNo :: HasHeader block => Chain block -> BlockNo
 headBlockNo Genesis  = genesisBlockNo
 headBlockNo (_ :> b) = blockNo b
 
+-- | Produce the list of blocks, from most recent back to genesis
+--
+toList :: Chain block -> [block]
+toList = foldChain (flip (:)) []
+
+-- | Make a chain from a list of blocks. The head of the list is the head
+-- of the chain.
+--
+fromList :: HasHeader block => [block] -> Chain block
+fromList bs = assert (valid c) c
+  where
+    c = foldr (flip (:>)) Genesis bs
+
+drop :: Int -> Chain block -> Chain block
+drop 0 c        = c
+drop _ Genesis  = Genesis
+drop n (c :> _) = drop (n - 1) c
+
+length :: Chain block -> Int
+length = foldChain (\n _ -> n+1) 0
+
 addBlock :: HasHeader block => block -> Chain block -> Chain block
 addBlock b c = assert (validExtension c b) $
                c :> b
 
-pointOnChain :: HasHeader block => Chain block -> Point -> Bool
-pointOnChain Genesis  p = p == genesisPoint
-pointOnChain (c :> b) p = p == blockPoint b || pointOnChain c p
+pointOnChain :: HasHeader block => Point -> Chain block -> Bool
+pointOnChain p Genesis  = p == genesisPoint
+pointOnChain p (c :> b) = p == blockPoint b || pointOnChain p c
 
 rollback :: HasHeader block => Point -> Chain block -> Chain block
-rollback p c@(c' :> b) | blockPoint b == p = c
-                       | otherwise         = rollback p c'
+rollback p (c :> b) | blockPoint b == p = c :> b
+                    | otherwise         = rollback p c
 rollback p Genesis  | p == genesisPoint = Genesis
                     | otherwise         = error "rollback: point not on chain"
 
@@ -184,7 +194,7 @@ findIntersection c hpoint points =
   where
     go [] = Nothing
     go (p:ps)
-        | pointOnChain c p = Just p
+        | pointOnChain p c = Just p
         | otherwise        = go ps
 
 intersectChains
@@ -195,7 +205,7 @@ intersectChains
 intersectChains _ Genesis   = Nothing
 intersectChains c (bs :> b) =
   let p = blockPoint b
-  in if pointOnChain c (blockPoint b)
+  in if pointOnChain (blockPoint b) c
        then Just p
        else intersectChains c bs
 
@@ -217,24 +227,175 @@ absApplyChainUpdates :: [ChainUpdate Block] -> Chain.Abs.Chain -> Chain.Abs.Chai
 absApplyChainUpdates = flip (foldl (flip absApplyChainUpdate))
 
 --
--- Generators & Properties
+-- Generators for chains
 --
 
 newtype TestBlockChain = TestBlockChain (Chain Block)
-    deriving (Show, Eq)
+    deriving (Eq, Show)
+
+newtype TestHeaderChain = TestHeaderChain (Chain BlockHeader)
+    deriving (Eq, Show)
 
 instance Arbitrary TestBlockChain where
     arbitrary = do
-        Positive n <- arbitrary
-        TestBlockChain <$> genChain n
-    shrink (TestBlockChain c) = TestBlockChain <$> (L.drop 1 $ inits c)
-      where
-      inits :: Chain block -> [Chain block]
-      inits Genesis     = [Genesis]
-      inits c@(bs :> _) = c : inits bs
+        NonNegative n <- arbitrary
+        TestBlockChain <$> genBlockChain n
 
-genChain :: Int -> Gen (Chain Block)
-genChain n = L.foldr (flip (:>)) Genesis <$> genNBlocks n genesisHash (succ genesisSlot) (succ genesisBlockNo)
+    shrink (TestBlockChain c) =
+        [ TestBlockChain (fromListFixupBlocks c')
+        | c' <- shrinkList (const []) (toList c) ]
+
+instance Arbitrary TestHeaderChain where
+    arbitrary = do
+        NonNegative n <- arbitrary
+        TestHeaderChain <$> genHeaderChain n
+
+    shrink (TestHeaderChain c) =
+        [ TestHeaderChain (fromListFixupHeaders c')
+        | c' <- shrinkList (const []) (toList c) ]
+
+prop_arbitrary_TestBlockChain :: TestBlockChain -> Bool
+prop_arbitrary_TestBlockChain (TestBlockChain c) = valid c
+
+prop_arbitrary_TestHeaderChain :: TestHeaderChain -> Bool
+prop_arbitrary_TestHeaderChain (TestHeaderChain c) = valid c
+
+prop_shrink_TestBlockChain :: TestBlockChain -> Bool
+prop_shrink_TestBlockChain c =
+    and [ valid c' | TestBlockChain c' <- shrink c ]
+
+prop_shrink_TestHeaderChain :: TestHeaderChain -> Bool
+prop_shrink_TestHeaderChain c =
+    and [ valid c' | TestHeaderChain c' <- shrink c ]
+
+genBlockChain :: Int -> Gen (Chain Block)
+genBlockChain n = do
+    bodies <- vector n
+    slots  <- mkSlots <$> vectorOf n genSlotGap
+    return (mkChain slots bodies)
+  where
+    mkSlots :: [Int] -> [Slot]
+    mkSlots = map toEnum . tail . scanl (+) 0
+
+    mkChain :: [Slot] -> [BlockBody] -> Chain Block
+    mkChain slots bodies =
+        fromListFixupBlocks
+      . reverse
+      $ zipWith mkPartialBlock slots bodies
+
+genSlotGap :: Gen Int
+genSlotGap = frequency [(25, pure 1), (5, pure 2), (1, pure 3)]
+
+addSlotGap :: Int -> Slot -> Slot
+addSlotGap g (Slot n) = Slot (n + fromIntegral g)
+
+genHeaderChain :: Int -> Gen (Chain BlockHeader)
+genHeaderChain = fmap (fmap blockHeader) . genBlockChain
+
+mkPartialBlock :: Slot -> BlockBody -> Block
+mkPartialBlock sl body =
+    Block {
+      blockHeader = BlockHeader {
+        headerSlot     = sl,
+        headerSigner   = expectedBFTSigner sl,
+        headerHash     = partialField "headerHash",
+        headerPrevHash = partialField "headerPrevHash",
+        headerBlockNo  = partialField "headerBlockNo",
+        headerBodyHash = hashBody body
+      }
+    , blockBody = body
+    }
+  where
+    partialField n = error ("mkPartialBlock: you didn't fill in field " ++ n)
+
+expectedBFTSigner :: Slot -> BlockSigner
+expectedBFTSigner (Slot n) = BlockSigner (n `mod` 7)
+
+
+-- | To help with chain construction and shrinking it's handy to recalculate
+-- all the hashes.
+--
+fromListFixupBlocks :: [Block] -> Chain Block
+fromListFixupBlocks []      = Genesis
+fromListFixupBlocks (b : c) = c' :> b'
+  where
+    c' = fromListFixupBlocks c
+    b' = fixupBlock (headPoint c') (headBlockNo c') b
+
+fromListFixupHeaders :: [BlockHeader] -> Chain BlockHeader
+fromListFixupHeaders []      = Genesis
+fromListFixupHeaders (b : c) = c' :> b'
+  where
+    c' = fromListFixupHeaders c
+    b' = fixupBlockHeader (headPoint c') (headBlockNo c')
+                          (headerBodyHash b) b
+
+fixupBlock :: Point -> BlockNo -> Block -> Block
+fixupBlock p bn b@Block{blockBody, blockHeader} =
+    b { blockHeader = fixupBlockHeader p bn (hashBody blockBody) blockHeader }
+
+fixupBlockHeader :: Point -> BlockNo -> BodyHash -> BlockHeader -> BlockHeader
+fixupBlockHeader p n h b = b'
+  where
+    b' = BlockHeader {
+      headerHash     = hashHeader b',
+      headerPrevHash = pointHash p,
+      headerSlot     = headerSlot b,   -- keep the existing slot number
+      headerSigner   = headerSigner b, -- and signer
+      headerBlockNo  = succ n,
+      headerBodyHash = h
+    }
+
+k :: Int
+k = 5
+
+--
+-- Generator for chain updates
+--
+
+data TestBlockChainAndUpdates =
+       TestBlockChainAndUpdates (Chain Block) [ChainUpdate Block]
+  deriving Show
+
+instance Arbitrary TestBlockChainAndUpdates where
+  arbitrary = do
+    (NonNegative n, NonNegative m) <- arbitrary
+    chain   <- genBlockChain n
+    updates <- genChainUpdates chain m
+    return (TestBlockChainAndUpdates chain updates)
+
+
+genChainUpdate :: Chain Block -> Gen (ChainUpdate Block)
+genChainUpdate chain = do
+    let maxRollback = Chain.length chain `min` k
+    n <- choose (-10, maxRollback)
+    if n <= 0
+      then AddBlock <$> genAddBlock chain
+      else pure (RollBack (mkRollbackPoint chain n))
+
+genAddBlock :: HasHeader block => Chain block -> Gen Block
+genAddBlock chain = do
+    slotGap <- genSlotGap
+    body    <- arbitrary
+    let pb = mkPartialBlock (addSlotGap slotGap (headSlot chain)) body
+        b  = fixupBlock (headPoint chain) (headBlockNo chain) pb
+    return b
+
+mkRollbackPoint :: HasHeader block => Chain block -> Int -> Point
+mkRollbackPoint chain n = headPoint $ drop n chain
+
+genChainUpdates :: Chain Block -> Int -> Gen [ChainUpdate Block]
+genChainUpdates _     0 = return []
+genChainUpdates chain n = do
+    update  <- genChainUpdate chain
+    let chain' = applyChainUpdate update chain
+    updates <- genChainUpdates chain' (n-1)
+    return (update : updates)
+
+
+--
+-- Properties
+--
 
 data AddBlockTest = AddBlockTest (Chain Block) Block
   deriving Show
@@ -242,7 +403,7 @@ data AddBlockTest = AddBlockTest (Chain Block) Block
 instance Arbitrary AddBlockTest where
   arbitrary = do
     NonNegative n <- arbitrary
-    chain <- genChain n
+    chain <- genBlockChain n
     block <- case Chain.head chain of
       Nothing -> genBlock genesisHash (succ genesisSlot) (succ genesisBlockNo)
       Just h  -> genBlock (blockHash h) (succ $ blockSlot h) (succ $ blockNo h)
@@ -268,8 +429,8 @@ data ChainWithPointTest = ChainWithPointTest (Chain Block) Point
 instance Arbitrary ChainWithPointTest where
   -- TODO: test when point is off the chain
   arbitrary = do
-    Positive n <- arbitrary
-    chain <- genChain n
+    NonNegative n <- arbitrary
+    chain <- genBlockChain n
     -- choose point from the chain
     idx <- frequency
       [ (1, return 0)
@@ -300,12 +461,12 @@ prop_successorBlock :: ChainWithPointTest -> Property
 prop_successorBlock (ChainWithPointTest c p) =
   case successorBlock p c of
     Nothing -> headPoint c === p
-    Just b  -> property $ pointOnChain c (blockPoint b)
+    Just b  -> property $ pointOnChain (blockPoint b) c
 
 prop_lookupBySlot :: ChainWithPointTest -> Bool
 prop_lookupBySlot (ChainWithPointTest c p) =
   case lookupBySlot c (pointSlot p) of
-    Just b  -> pointOnChain c (blockPoint b)
+    Just b  -> pointOnChain (blockPoint b) c
     Nothing | p == genesisPoint -> True
             | otherwise         -> False
 
@@ -315,7 +476,7 @@ data ChainFork = ChainFork (Chain Block) (Chain Block)
 instance Arbitrary ChainFork where
   arbitrary = do
     NonNegative n <- arbitrary
-    chain <- genChain n
+    chain <- genBlockChain n
     let h = head chain
     -- at least 5% of forks should be equal
     equalChains <- frequency [(1, return True), (19, return False)]
@@ -343,11 +504,11 @@ instance Arbitrary ChainFork where
         d_ = toList d
     in
     [ ChainFork (fromList c') d
-    | c' <- L.take (length c_ - 1) $ L.inits $ L.reverse $ c_
+    | c' <- L.take (L.length c_ - 1) $ L.inits $ L.reverse $ c_
     , not (null c')
     ] ++
     [ ChainFork c (fromList d')
-    | d' <- L.take (length d_ - 1) $ L.inits $ L.reverse $ d_
+    | d' <- L.take (L.length d_ - 1) $ L.inits $ L.reverse $ d_
     , not (null d')
     ] ++
     case (c, d) of
@@ -359,8 +520,8 @@ prop_intersectChains (ChainFork c1 c2) =
   case intersectChains c1 c2 of
     Nothing -> L.intersect (toList c1) (toList c2) === []
     Just p  -> counterexample (show (c1, c2, p)) $
-           pointOnChain c1 p
-      .&&. pointOnChain c2 p
+           pointOnChain p c1
+      .&&. pointOnChain p c2
 
 return []
 runTests = $quickCheckAll

@@ -10,7 +10,7 @@ module Block (
     , BlockNo(..)
     , BlockSigner(..)
     , HeaderHash(..)
-    , BodyHash
+    , BodyHash(..)
 
       -- * Hashing
     , hashHeader
@@ -41,7 +41,7 @@ data BlockHeader = BlockHeader {
        headerHash     :: HeaderHash,  -- ^ The cached 'HeaderHash' of this header.
        headerPrevHash :: HeaderHash,  -- ^ The 'headerHash' of the previous block header
        headerSlot     :: Slot,
-       headerNo       :: BlockNo,
+       headerBlockNo  :: BlockNo,
        headerSigner   :: BlockSigner,
        headerBodyHash :: BodyHash
      }
@@ -69,7 +69,7 @@ newtype BlockNo      = BlockNo Word
 -- (which for Ouroboros BFT is actually the case), and omit the crypography
 -- and model things as if the signatures were valid.
 --
-newtype BlockSigner  = BlockSigner Int
+newtype BlockSigner  = BlockSigner Word
   deriving (Show, Eq, Ord, Hashable)
 
 -- | The hash of all the information in a 'BlockHeader'
@@ -110,7 +110,7 @@ instance HasHeader BlockHeader where
     blockHash      = headerHash
     blockPrevHash  = headerPrevHash
     blockSlot      = headerSlot
-    blockNo        = headerNo
+    blockNo        = headerBlockNo
     blockSigner    = headerSigner
     blockBodyHash  = headerBodyHash
 
@@ -120,7 +120,7 @@ instance HasHeader Block where
     blockHash      = headerHash     . blockHeader
     blockPrevHash  = headerPrevHash . blockHeader
     blockSlot      = headerSlot     . blockHeader
-    blockNo        = headerNo       . blockHeader
+    blockNo        = headerBlockNo  . blockHeader
     blockSigner    = headerSigner   . blockHeader
     blockBodyHash  = headerBodyHash . blockHeader
 
@@ -129,6 +129,16 @@ instance HasHeader Block where
     --
     blockInvariant Block { blockBody, blockHeader = BlockHeader {headerBodyHash} } =
         headerBodyHash == hashBody blockBody
+
+--
+-- Generators
+--
+
+instance Arbitrary BlockBody where
+    arbitrary = BlockBody <$> vectorOf 4 (choose ('A', 'Z'))
+    -- probably no need for shrink, the content is arbitrary and opaque
+    -- if we add one, it might be to shrink to an empty block
+
 
 -- |
 -- Generate a valid block
@@ -144,7 +154,7 @@ genBlock headerPrevHash headerSlot headerNo = do
         { headerHash = hashHeader blockHeader,
           headerPrevHash,
           headerSlot,
-          headerNo,
+          headerBlockNo = headerNo,
           headerSigner,
           headerBodyHash = hashBody blockBody
         }
