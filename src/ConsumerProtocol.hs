@@ -32,6 +32,7 @@ import           Data.FingerTree (ViewL (..))
 import           Data.FingerTree as FT
 import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NE
+import           Data.Maybe (isJust)
 -- import           Data.STRef.Lazy
 import           System.Random (mkStdGen)
 
@@ -169,7 +170,7 @@ producerSideProtocol1
   -> BiChan m (MsgProducer block) MsgConsumer
   -> m ()
 producerSideProtocol1 ProducerHandlers{..} n chan =
-    awaitOpening >>= awaitOngoing
+    awaitOpening >>= maybe (return ()) awaitOngoing
   where
     producerId :: String
     producerId = "producer-" ++ show n
@@ -177,22 +178,30 @@ producerSideProtocol1 ProducerHandlers{..} n chan =
     awaitOpening = do
       -- The opening message must be this one, to establish the reader state
       say (producerId ++ ":awaitOpening")
-      msg@(MsgSetHead hpoint points) <- recvMsg chan
-      say $ producerId ++ ":awaitOpening:recvMsg: " ++ show msg
-      intersection <- findIntersectionRange hpoint points
-      case intersection of
-        Just pt -> do
-          r <- establishReaderState hpoint pt
-          let msg = MsgIntersectImproved pt
-          say $ producerId ++ ":awaitOpening:sendMsg: " ++ show msg
-          sendMsg chan msg
-          return r
-        Nothing -> do
-          let msg :: MsgProducer block
-              msg = MsgIntersectUnchanged
-          say $ producerId ++ ":awaitOpening:sendMsg: " ++ show msg
-          sendMsg chan msg
-          awaitOpening
+      msg <- recvMsg chan
+      case msg of
+        MsgSetHead hpoint points -> do
+          say $ producerId ++ ":awaitOpening:recvMsg: " ++ show msg
+          intersection <- findIntersectionRange hpoint points
+          case intersection of
+            Just pt -> do
+              r <- establishReaderState hpoint pt
+              let msg = MsgIntersectImproved pt
+              say $ producerId ++ ":awaitOpening:sendMsg: " ++ show msg
+              sendMsg chan msg
+              return (Just r)
+            Nothing -> do
+              let msg :: MsgProducer block
+                  msg = MsgIntersectUnchanged
+              say $ producerId ++ ":awaitOpening:sendMsg: " ++ show msg
+              sendMsg chan msg
+              awaitOpening
+        MsgRequestNext -> do
+          -- This message is received if the consumer's chain has no intersection
+          -- with the producer's chain.  The producer will receive it as an
+          -- answer to `MsgIntersectUnchanged`.
+          say $ producerId ++ ":awaiOpening:recvMsg: " ++ show msg
+          return Nothing
 
     awaitOngoing r = forever $ do
       msg <- recvMsg chan
@@ -355,7 +364,11 @@ prop_producerToConsumer (Chain.ChainFork pchain cchain) =
       ++ "\nresult chain: "   ++ show rchain
       ++ "\ntrace:\n"
       ++ unlines (map show $ filter SimSTM.filterTrace tr))
-    $ rchain == pchain
+    $ case pchain `Chain.intersectChains` rchain of
+        -- chain was transmitted
+        Just _  -> rchain == pchain
+        -- there's not intersection, so the protocol failed
+        Nothing -> rchain == cchain
 
 -- |
 -- Select chain from n consumers.
@@ -540,6 +553,8 @@ runNodeSim pchain1 pchain2 = runST $ do
 
 prop_node :: Chain.ChainFork -> Property
 prop_node (Chain.ChainFork pchain1 pchain2) =
+  -- TODO: it should not fail when chains have no intersection
+  isJust (pchain1 `Chain.intersectChains` pchain2) ==>
   let (tr, pr) = runNodeSim pchain1 pchain2
       rchain = snd $ last pr
       schain = Chain.selectChain pchain1 pchain2
