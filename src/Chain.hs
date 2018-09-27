@@ -18,6 +18,7 @@ import qualified Chain.Abstract as Chain.Abs
 
 import Control.Exception (assert)
 import qualified Data.List as L
+import Data.Maybe (fromMaybe)
 
 import Test.QuickCheck
 
@@ -132,11 +133,11 @@ pointOnChain :: HasHeader block => Point -> Chain block -> Bool
 pointOnChain p Genesis  = p == genesisPoint
 pointOnChain p (c :> b) = p == blockPoint b || pointOnChain p c
 
-rollback :: HasHeader block => Point -> Chain block -> Chain block
-rollback p (c :> b) | blockPoint b == p = c :> b
+rollback :: HasHeader block => Point -> Chain block -> Maybe (Chain block)
+rollback p (c :> b) | blockPoint b == p = Just (c :> b)
                     | otherwise         = rollback p c
-rollback p Genesis  | p == genesisPoint = Genesis
-                    | otherwise         = error "rollback: point not on chain"
+rollback p Genesis  | p == genesisPoint = Just Genesis
+                    | otherwise         = Nothing
 
 successorBlock :: HasHeader block => Point -> Chain block -> Maybe block
 successorBlock p c0 | headPoint c0 == p = Nothing
@@ -176,7 +177,7 @@ applyChainUpdate :: HasHeader block
                  -> Chain block
                  -> Chain block
 applyChainUpdate (AddBlock b) c = addBlock b c
-applyChainUpdate (RollBack p) c = rollback p c
+applyChainUpdate (RollBack p) c = fromMaybe c $ rollback p c
 
 applyChainUpdates :: HasHeader block
                   => [ChainUpdate block]
@@ -422,7 +423,7 @@ prop_addBlock t@(AddBlockTest c b) =
     -- chain is still valid
     .&&. valid c'
     -- removing the block gives the original
-    .&&. rollback (headPoint c) c' === c
+    .&&. rollback (headPoint c) c' === Just c
 
 data ChainWithPointTest = ChainWithPointTest (Chain Block) Point
   deriving Show
@@ -459,12 +460,13 @@ prop_shrink_ChainWithPointTest cp@(ChainWithPointTest c _) =
 
 prop_rollback :: ChainWithPointTest -> Property
 prop_rollback (ChainWithPointTest c p) =
-  let c' = rollback p c
-  in
-    -- chain is a prefix of original
-       isPrefix c' c
-    -- chain head point is the rollback point
-    .&&. headPoint c' === p
+  case rollback p c of
+    Nothing -> property True
+    Just c' ->
+      -- chain is a prefix of original
+           isPrefix c' c
+      -- chain head point is the rollback point
+      .&&. headPoint c' === p
   where
   isPrefix (_ :> _) Genesis = False
   isPrefix c c' | c == c'   = True

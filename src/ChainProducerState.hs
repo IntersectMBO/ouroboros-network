@@ -167,10 +167,11 @@ addBlock b (ChainProducerState c rs) =
 
 
 rollback :: Point -> ChainProducerState -> ChainProducerState
-rollback p (ChainProducerState c rs) =
-    ChainProducerState c' rs'
+rollback p cps@(ChainProducerState c rs) =
+  case Chain.rollback p c of
+    Just c' -> ChainProducerState c' rs'
+    Nothing -> cps
   where
-    c'  = Chain.rollback p c
     rs' = [ if pointSlot p' > pointSlot p
               then r { readerPoint = p, readerNext = ReaderBackTo }
               else r
