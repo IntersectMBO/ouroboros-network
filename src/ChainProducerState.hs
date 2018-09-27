@@ -1,10 +1,15 @@
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE NamedFieldPuns  #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module ChainProducerState where
 
-import           Block (Block)
-import           Chain (Chain, Point(..), blockPoint, ChainUpdate(..), pointOnChain, TestBlockChainAndUpdates(..))
-import qualified Chain (valid, headPoint, addBlock, rollback, successorBlock, applyChainUpdates)
+import           Block (Block, BlockHeader)
+import           Chain ( Chain, Point(..), blockPoint, ChainUpdate(..)
+                       , genesisPoint, headPoint , pointOnChain
+                       , TestBlockChainAndUpdates(..), mkRollbackPoint
+                       , genBlockChain, genPoint)
+import qualified Chain (valid, headPoint, addBlock, rollback, successorBlock
+                       , applyChainUpdates)
 
 import           Data.List (sort, group, find, unfoldr)
 import           Control.Exception (assert)
@@ -196,18 +201,60 @@ freshReaderId [] = 0
 freshReaderId rs = 1 + maximum [ readerId | ReaderState{readerId} <- rs ]
 
 --
+-- Generators
+--
+
+data ChainProducerStateTest = ChainProducerStateTest ChainProducerState ReaderId Point
+  deriving Show
+
+genReaderState :: Int   -- ^ length of the chain
+               -> Chain Block
+               -> Gen ReaderState
+genReaderState n c = do
+    readerPoint <- frequency
+      [ (2, return (headPoint c))
+      , (2, return (mkRollbackPoint c n))
+      , (8, mkRollbackPoint c <$> choose (1, fromIntegral n - 1))
+      ]
+    readerNext <- oneof
+      [ return ReaderForwardFrom
+      , return ReaderBackTo
+      ]
+    readerId <- arbitrary
+    return $ ReaderState{readerPoint, readerNext, readerId}
+
+fixupReaderStates :: [ReaderState] -> [ReaderState]
+fixupReaderStates = go 0
+  where
+  go _ [] = []
+  go n (r : rs) = r { readerId = n } : go (n + 1) rs
+
+instance Arbitrary ChainProducerStateTest where
+  arbitrary = do
+    NonNegative n <- arbitrary
+    c <- genBlockChain n
+    rs <- fixupReaderStates <$> listOf1 (genReaderState n c)
+    rid <- choose (0, length rs - 1)
+    p <- if n == 0
+         then return genesisPoint
+         else mkRollbackPoint c <$> choose (0, n)
+    return (ChainProducerStateTest (ChainProducerState c rs) rid p)
+
+--
 -- Properties
 --
 
-
-prop_init_lookup c p =
+prop_init_lookup :: ChainProducerStateTest -> Bool
+prop_init_lookup (ChainProducerStateTest c _ p) =
     let (c', rid) = initReader p c in
     lookupReader c' rid == ReaderState p ReaderBackTo rid
 
-prop_update_lookup c rid p =
+prop_update_lookup :: ChainProducerStateTest -> Bool
+prop_update_lookup (ChainProducerStateTest c rid p) =
     let c' = updateReader rid p c in
     lookupReader c' rid == ReaderState p ReaderBackTo rid
 
+prop_producer_sync :: TestBlockChainAndUpdates -> Bool
 prop_producer_sync (TestBlockChainAndUpdates c us) =
     let producer0        = initChainProducerState c
         (producer1, rid) = initReader (Chain.headPoint c) producer0
@@ -221,3 +268,5 @@ prop_producer_sync (TestBlockChainAndUpdates c us) =
   where
     iterateReaderUntilDone rid = unfoldr (readerInstruction rid)
 
+return []
+runTests = $quickCheckAll

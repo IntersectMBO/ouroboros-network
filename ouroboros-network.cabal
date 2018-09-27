@@ -19,6 +19,7 @@ library
   exposed-modules:     Chain,
                        MonadClass,
                        ChainExperiment2,
+                       ChainProducerState,
                        Protocol,
                        Block,
                        ConsumerProtocol,
