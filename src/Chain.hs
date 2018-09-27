@@ -57,6 +57,8 @@ blockPoint b =
       pointHash = blockHash b
     }
 
+genPoint :: Gen Point
+genPoint = (\s h -> Point (Slot s) (HeaderHash h)) <$> arbitrary <*> arbitrary
 
 genesis :: Chain b
 genesis = Genesis
@@ -72,7 +74,6 @@ genesisBlockNo = BlockNo 0
 
 genesisPoint :: Point
 genesisPoint = Point genesisSlot genesisHash
-
 
 valid :: HasHeader block => Chain block -> Bool
 valid Genesis  = True
@@ -427,22 +428,34 @@ data ChainWithPointTest = ChainWithPointTest (Chain Block) Point
   deriving Show
 
 instance Arbitrary ChainWithPointTest where
-  -- TODO: test when point is off the chain
   arbitrary = do
     NonNegative n <- arbitrary
     chain <- genBlockChain n
-    -- choose point from the chain
-    idx <- frequency
-      [ (1, return 0)
-      , (1, return $ fromIntegral n)
-      , (8, choose (1, fromIntegral n - 1))
+    point <- frequency
+      [ (2, return (headPoint chain))
+      , (2, return (mkRollbackPoint chain n))
+      , (8, mkRollbackPoint chain <$> choose (1, fromIntegral n - 1))
+      , (1, genPoint)
       ]
-    let p = headPoint $ drop idx chain
-    return $ ChainWithPointTest chain p
+    return $ ChainWithPointTest chain point
 
   shrink (ChainWithPointTest c p)
-    | headPoint c == p = []
-    | otherwise        = [ChainWithPointTest (drop 1 c) p]
+    | pointOnChain p c = [ChainWithPointTest c' (fixupPoint c' p) | TestBlockChain c' <- shrink (TestBlockChain c)]
+    | otherwise = [ChainWithPointTest c' p | TestBlockChain c' <- shrink (TestBlockChain c) ]
+
+fixupPoint :: HasHeader block => Chain block -> Point -> Point
+fixupPoint c p =
+  case lookupBySlot c (pointSlot p) of
+    Just b  -> blockPoint b
+    Nothing -> headPoint c
+
+prop_arbitrary_ChainWithPointTest :: ChainWithPointTest -> Bool
+prop_arbitrary_ChainWithPointTest (ChainWithPointTest c p) =
+  valid c
+
+prop_shrink_ChainWithPointTest :: ChainWithPointTest -> Bool
+prop_shrink_ChainWithPointTest cp@(ChainWithPointTest c _) =
+  and [ valid c' && (not (pointOnChain p c) || pointOnChain p c') | ChainWithPointTest c' p <- shrink cp]
 
 prop_rollback :: ChainWithPointTest -> Property
 prop_rollback (ChainWithPointTest c p) =
@@ -459,6 +472,7 @@ prop_rollback (ChainWithPointTest c p) =
 
 prop_successorBlock :: ChainWithPointTest -> Property
 prop_successorBlock (ChainWithPointTest c p) =
+  pointOnChain p c ==>
   case successorBlock p c of
     Nothing -> headPoint c === p
     Just b  -> property $ pointOnChain (blockPoint b) c
@@ -468,7 +482,7 @@ prop_lookupBySlot (ChainWithPointTest c p) =
   case lookupBySlot c (pointSlot p) of
     Just b  -> pointOnChain (blockPoint b) c
     Nothing | p == genesisPoint -> True
-            | otherwise         -> False
+            | otherwise         -> not (pointOnChain p c)
 
 data ChainFork = ChainFork (Chain Block) (Chain Block)
   deriving Show
@@ -500,20 +514,13 @@ instance Arbitrary ChainFork where
         return $ ChainFork chain1 chain2
 
   shrink (ChainFork c d) =
-    let c_ = toList c
-        d_ = toList d
-    in
-    [ ChainFork (fromList c') d
-    | c' <- L.take (L.length c_ - 1) $ L.inits $ L.reverse $ c_
-    , not (null c')
-    ] ++
-    [ ChainFork c (fromList d')
-    | d' <- L.take (L.length d_ - 1) $ L.inits $ L.reverse $ d_
-    , not (null d')
-    ] ++
-    case (c, d) of
-      (c' :> _, d' :> _) -> [ChainFork c' d']
-      _                  -> []
+    [ ChainFork c' d | TestBlockChain c' <- shrink (TestBlockChain c) ] ++
+    [ ChainFork c d' | TestBlockChain d' <- shrink (TestBlockChain d) ]
+
+prop_shrink_ChainFork :: ChainFork -> Property
+prop_shrink_ChainFork f =
+  withMaxSuccess 50 $
+  all (\(ChainFork c1 c2) -> valid c1 && valid c2) (shrink f)
 
 prop_intersectChains :: ChainFork -> Property
 prop_intersectChains (ChainFork c1 c2) =
