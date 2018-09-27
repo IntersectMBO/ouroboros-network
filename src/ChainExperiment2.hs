@@ -6,8 +6,7 @@ module ChainExperiment2 where
 import           Data.List (find)
 
 import           Block (Block (..), HasHeader (..), genBlock)
-import           Chain (Chain, ChainUpdate (..), Point, absChainFragment, applyChainUpdate, absApplyChainUpdate, blockPoint, invChain, pointOnChain,
-                        validChain)
+import           Chain (Chain, ChainUpdate (..), Point, absChainFragment, applyChainUpdate, absApplyChainUpdate, blockPoint, pointOnChain)
 import qualified Chain
 import qualified Chain.Abstract as Chain.Abs
 
@@ -17,7 +16,7 @@ import           Control.Exception (assert)
 import           Test.QuickCheck
 
 validChainUpdate :: HasHeader block => ChainUpdate block -> Chain block -> Bool
-validChainUpdate cu c = validChain (applyChainUpdate cu c)
+validChainUpdate cu c = Chain.valid (applyChainUpdate cu c)
 
 k :: Int
 k = 5 -- maximum fork length in these tests
@@ -56,7 +55,7 @@ instance Arbitrary TestChainAndUpdates where
 
 prop_TestChainAndUpdates :: TestChainAndUpdates -> Bool
 prop_TestChainAndUpdates (TestChainAndUpdates chain updates) =
-    all validChain chains
+    all Chain.valid chains
  && all (uncurry validChainUpdate) (zip updates chains)
   where
     chains = scanl (flip applyChainUpdate) (Chain.reifyChainFragment chain) updates
@@ -66,7 +65,7 @@ prop_TestChainAndUpdates (TestChainAndUpdates chain updates) =
 --
 prop_switchFork :: TestChainAndUpdates -> Bool
 prop_switchFork (TestChainAndUpdates chain updates) =
-    all invChain chains'
+    all Chain.valid chains'
     && all (\(c, c') -> c == absChainFragment c') (zip chains chains')
   where
     chains' = scanl
@@ -134,7 +133,7 @@ data ReaderState  = ReaderState {
 -- | Readers are represented here as a relation.
 invChainProducerState :: HasHeader block => ChainProducerState (Chain block) -> Bool
 invChainProducerState (ChainProducerState cs rs) =
-    invChain cs
+    Chain.valid cs
  && invReaderStates cs rs
 
 -- like 'Chain.Volatile.invReaderState'
