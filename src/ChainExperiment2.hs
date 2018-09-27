@@ -174,7 +174,7 @@ initialiseReader :: HasHeader block
                  -> ChainProducerState (Chain block)
                  -> (ChainProducerState (Chain block), ReaderId)
 initialiseReader hpoint ipoint (ChainProducerState cs rs) =
-    assert (pointOnChain cs ipoint) $
+    assert (pointOnChain ipoint cs) $
     (ChainProducerState cs (r:rs), readerId r)
   where
     r = ReaderState {
@@ -199,7 +199,7 @@ updateReader rid hpoint mipoint (ChainProducerState cs rs) =
   where
     update r = case mipoint of
       Nothing     -> r { readerHead = hpoint }
-      Just ipoint -> assert (pointOnChain cs ipoint) $
+      Just ipoint -> assert (pointOnChain ipoint cs) $
                      r {
                        readerHead         = hpoint,
                        readerIntersection = ipoint

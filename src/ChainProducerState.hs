@@ -56,7 +56,7 @@ invChainProducerState (ChainProducerState c rs) =
 
 invReaderStates :: Chain Block -> ReaderStates -> Bool
 invReaderStates c rs =
-    and [ pointOnChain c readerPoint | ReaderState{readerPoint} <- rs ]
+    and [ pointOnChain readerPoint c | ReaderState{readerPoint} <- rs ]
  && noDuplicates [ readerId | ReaderState{readerId} <- rs ]
 
 noDuplicates :: Ord a => [a] -> Bool
@@ -94,7 +94,7 @@ initReader :: Point
            -> ChainProducerState
            -> (ChainProducerState, ReaderId)
 initReader point (ChainProducerState c rs) =
-    assert (pointOnChain c point) $
+    assert (pointOnChain point c) $
     (ChainProducerState c (r:rs), readerId r)
   where
     r = ReaderState {
@@ -120,7 +120,7 @@ updateReader :: ReaderId
              -> ChainProducerState
              -> ChainProducerState
 updateReader rid point (ChainProducerState c rs) =
-    assert (pointOnChain c point) $
+    assert (pointOnChain point c) $
     ChainProducerState c (map update rs)
   where
     update r | readerId r == rid = r { readerPoint = point,
@@ -139,7 +139,7 @@ readerInstruction rid cps@(ChainProducerState c rs) =
     let ReaderState {readerPoint, readerNext} = lookupReader cps rid in
     case readerNext of
       ReaderForwardFrom ->
-          assert (pointOnChain c readerPoint) $
+          assert (pointOnChain readerPoint c) $
           case Chain.successorBlock readerPoint c of
             -- There is no successor block because the reader is at the head
             Nothing -> Nothing
