@@ -486,10 +486,10 @@ prop_lookupBySlot (ChainWithPointTest c p) =
     Nothing | p == genesisPoint -> True
             | otherwise         -> not (pointOnChain p c)
 
-data ChainFork = ChainFork (Chain Block) (Chain Block)
+data TestChainFork = TestChainFork (Chain Block) (Chain Block)
   deriving Show
 
-instance Arbitrary ChainFork where
+instance Arbitrary TestChainFork where
   arbitrary = do
     NonNegative n <- arbitrary
     chain <- genBlockChain n
@@ -497,7 +497,7 @@ instance Arbitrary ChainFork where
     -- at least 5% of forks should be equal
     equalChains <- frequency [(1, return True), (19, return False)]
     if equalChains
-      then return $ ChainFork chain chain
+      then return $ TestChainFork chain chain
       else do
         NonNegative k <- arbitrary
         bs1 <- genNBlocks k
@@ -513,19 +513,19 @@ instance Arbitrary ChainFork where
           (succ $ maybe genesisBlockNo blockNo h)
         let chain2 = foldr addBlock chain bs2
 
-        return $ ChainFork chain1 chain2
+        return $ TestChainFork chain1 chain2
 
-  shrink (ChainFork c d) =
-    [ ChainFork c' d | TestBlockChain c' <- shrink (TestBlockChain c) ] ++
-    [ ChainFork c d' | TestBlockChain d' <- shrink (TestBlockChain d) ]
+  shrink (TestChainFork c d) =
+    [ TestChainFork c' d | TestBlockChain c' <- shrink (TestBlockChain c) ] ++
+    [ TestChainFork c d' | TestBlockChain d' <- shrink (TestBlockChain d) ]
 
-prop_shrink_ChainFork :: ChainFork -> Property
+prop_shrink_ChainFork :: TestChainFork -> Property
 prop_shrink_ChainFork f =
   withMaxSuccess 50 $
-  all (\(ChainFork c1 c2) -> valid c1 && valid c2) (shrink f)
+  all (\(TestChainFork c1 c2) -> valid c1 && valid c2) (shrink f)
 
-prop_intersectChains :: ChainFork -> Property
-prop_intersectChains (ChainFork c1 c2) =
+prop_intersectChains :: TestChainFork -> Property
+prop_intersectChains (TestChainFork c1 c2) =
   case intersectChains c1 c2 of
     Nothing -> L.intersect (toList c1) (toList c2) === []
     Just p  -> counterexample (show (c1, c2, p)) $

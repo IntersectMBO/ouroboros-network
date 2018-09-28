@@ -11,6 +11,7 @@ import           Chain ( Chain, Point(..), blockPoint, ChainUpdate(..)
 import qualified Chain
 
 import           Data.List (sort, group, find, unfoldr)
+import           Data.Maybe (fromMaybe)
 import           Control.Exception (assert)
 
 import           Test.QuickCheck
@@ -134,6 +135,24 @@ updateReader rid point (ChainProducerState c rs) =
              | otherwise         = r
 
 
+-- | Switch chains and update readers; if a reader point falls out of the chain,
+-- replace it with the intersection of both chains and put it in the
+-- `ReaderBackTo` state, otherwise preserve reader state.
+switchFork :: HasHeader block
+           => Chain block
+           -> ChainProducerState block
+           -> ChainProducerState block
+switchFork c (ChainProducerState c' rs) =
+    ChainProducerState c (map update rs)
+  where
+    ipoint = fromMaybe genesisPoint $ Chain.intersectChains c c'
+
+    update r@ReaderState{readerPoint} =
+      if pointOnChain readerPoint c
+        then r
+        else r { readerPoint = ipoint, readerNext = ReaderBackTo }
+          
+
 -- | What a reader needs to do next. Should they move on to the next block or
 -- do they need to roll back to a previous point on their chain. Also update
 -- the producer state assuming that the reader follows the instruction.
@@ -255,6 +274,37 @@ instance Arbitrary ChainProducerStateTest where
          else mkRollbackPoint c <$> choose (0, n)
     return (ChainProducerStateTest (ChainProducerState c rs) rid p)
 
+data ChainProducerStateForkTest
+    = ChainProducerStateForkTest (ChainProducerState Block) (Chain Block)
+  deriving Show
+
+instance Arbitrary ChainProducerStateForkTest where
+  arbitrary = do
+    TestChainFork c f <- arbitrary
+    let l = Chain.length c
+    rs <- fixupReaderStates <$> listOf (genReaderState l c)
+    return $ ChainProducerStateForkTest (ChainProducerState c rs) f
+
+  shrink (ChainProducerStateForkTest (ChainProducerState c rs) f)
+    -- shrink readers
+     = [ ChainProducerStateForkTest (ChainProducerState c rs') f
+       | rs' <- shrinkList (const []) rs
+       ]
+    -- shrink the fork chain
+    ++ [ ChainProducerStateForkTest (ChainProducerState c rs) f'
+       | TestBlockChain f' <- shrink (TestBlockChain f)
+       ]
+    -- shrink chain and fix up readers
+    ++ [ ChainProducerStateForkTest (ChainProducerState c' (fixupReaderPointer c' `map` rs)) f
+       | TestBlockChain c' <- shrink (TestBlockChain c)
+       ]
+    where
+      fixupReaderPointer :: Chain Block -> ReaderState -> ReaderState
+      fixupReaderPointer c r@ReaderState{readerPoint} = 
+        if pointOnChain readerPoint c
+          then r
+          else r { readerPoint = headPoint c }
+
 --
 -- Properties
 --
@@ -282,6 +332,45 @@ prop_producer_sync (TestBlockChainAndUpdates c us) =
         consumer == producerChain producer
   where
     iterateReaderUntilDone rid = unfoldr (readerInstruction rid)
+
+prop_switchFork :: ChainProducerStateForkTest -> Bool
+prop_switchFork (ChainProducerStateForkTest cps f) =
+  let cps'  = switchFork f cps
+      cps'' = switchFork (chainState cps') cps'
+  in
+      invChainProducerState cps'
+      && all
+        (uncurry readerInv)
+        (zip (chainReaders cps) (chainReaders cps'))
+  where
+    readerInv :: ReaderState -> ReaderState -> Bool
+    readerInv r r'
+      -- the order of readers has not changed
+       = readerId r == readerId r'
+      -- points only move backward
+      && pointSlot (readerPoint r') <= pointSlot (readerPoint r)
+      -- if reader's point moves back, `readerNext` is changed to `ReaderBackTo`
+      && ((pointSlot (readerPoint r') < pointSlot (readerPoint r)) `imply` (readerNext r' == ReaderBackTo))
+      -- if reader's point is not changed, also next instruction is not changed
+      && ((pointSlot (readerPoint r') == pointSlot (readerPoint r)) `imply` (readerNext r' == readerNext r))
+
+    imply :: Bool -> Bool -> Bool
+    imply a b = not a || b
+
+--
+-- Generator properties
+--
+
+prop_arbitrary_ChainProducerStateForkTest :: ChainProducerStateForkTest -> Bool
+prop_arbitrary_ChainProducerStateForkTest (ChainProducerStateForkTest c f)
+  = invChainProducerState c && Chain.valid f
+
+prop_shrink_ChainProducerStateForkTest :: ChainProducerStateForkTest -> Property
+prop_shrink_ChainProducerStateForkTest c
+  = withMaxSuccess 25 $ all id
+    [ invChainProducerState c && Chain.valid f
+    | ChainProducerStateForkTest c f <- shrink c
+    ]
 
 return []
 runTests = $quickCheckAll
