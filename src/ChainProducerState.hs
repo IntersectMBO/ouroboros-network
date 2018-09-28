@@ -3,13 +3,12 @@
 
 module ChainProducerState where
 
-import           Block (Block, BlockHeader)
+import           Block (Block, BlockHeader, HasHeader)
 import           Chain ( Chain, Point(..), blockPoint, ChainUpdate(..)
                        , genesisPoint, headPoint , pointOnChain
-                       , TestBlockChainAndUpdates(..), mkRollbackPoint
+                       , TestBlockChainAndUpdates(..), TestBlockChain(..), TestChainFork(..), mkRollbackPoint
                        , genBlockChain, genPoint)
-import qualified Chain (valid, headPoint, addBlock, rollback, successorBlock
-                       , applyChainUpdates)
+import qualified Chain
 
 import           Data.List (sort, group, find, unfoldr)
 import           Control.Exception (assert)
@@ -20,8 +19,8 @@ import           Test.QuickCheck
 
 -- A 'ChainState' plus an associated set of readers/consumers of the chain.
 
-data ChainProducerState = ChainProducerState {
-       chainState   :: Chain Block,
+data ChainProducerState block = ChainProducerState {
+       chainState   :: Chain block,
        chainReaders :: ReaderStates
      }
   deriving (Eq, Show)
@@ -54,12 +53,12 @@ data ReaderNext = ReaderBackTo | ReaderForwardFrom
 -- Invariant
 --
 
-invChainProducerState :: ChainProducerState -> Bool
+invChainProducerState :: HasHeader block => ChainProducerState block -> Bool
 invChainProducerState (ChainProducerState c rs) =
     Chain.valid c
  && invReaderStates c rs
 
-invReaderStates :: Chain Block -> ReaderStates -> Bool
+invReaderStates :: HasHeader block => Chain block -> ReaderStates -> Bool
 invReaderStates c rs =
     and [ pointOnChain readerPoint c | ReaderState{readerPoint} <- rs ]
  && noDuplicates [ readerId | ReaderState{readerId} <- rs ]
@@ -73,14 +72,14 @@ noDuplicates = all ((== 1) . length) . group . sort
 --
 
 
-initChainProducerState :: Chain Block -> ChainProducerState
+initChainProducerState :: Chain block -> ChainProducerState block
 initChainProducerState c = ChainProducerState c []
 
 
 -- | Get the recorded state of a chain consumer. The 'ReaderId' is assumed to
 -- exist.
 --
-lookupReader :: ChainProducerState -> ReaderId -> ReaderState
+lookupReader :: ChainProducerState block -> ReaderId -> ReaderState
 lookupReader (ChainProducerState _ rs) rid =
     assert (rid `elem` map readerId rs) $
     st
@@ -95,9 +94,10 @@ producerChain (ChainProducerState c _) = c
 
 -- | Add a new reader with the given intersection point and return the new
 -- 'ReaderId'.
-initReader :: Point
-           -> ChainProducerState
-           -> (ChainProducerState, ReaderId)
+initReader :: HasHeader block
+           => Point
+           -> ChainProducerState block
+           -> (ChainProducerState block, ReaderId)
 initReader point (ChainProducerState c rs) =
     assert (pointOnChain point c) $
     (ChainProducerState c (r:rs), readerId r)
@@ -111,7 +111,7 @@ initReader point (ChainProducerState c rs) =
 
 -- | Delete an existing reader. The 'ReaderId' is assumed to exist.
 --
-deleteReader :: ReaderId -> ChainProducerState -> ChainProducerState
+deleteReader :: ReaderId -> ChainProducerState block -> ChainProducerState block
 deleteReader rid (ChainProducerState c rs) =
     assert (rid `elem` map readerId rs) $
     ChainProducerState c [ r | r <- rs, readerId r /= rid ]
@@ -120,10 +120,11 @@ deleteReader rid (ChainProducerState c rs) =
 -- | Change the intersection point of a reader. This also puts it into
 -- the 'ReaderBackTo' state.
 --
-updateReader :: ReaderId
+updateReader :: HasHeader block
+             => ReaderId
              -> Point     -- ^ new reader intersection point
-             -> ChainProducerState
-             -> ChainProducerState
+             -> ChainProducerState block
+             -> ChainProducerState block
 updateReader rid point (ChainProducerState c rs) =
     assert (pointOnChain point c) $
     ChainProducerState c (map update rs)
@@ -137,9 +138,10 @@ updateReader rid point (ChainProducerState c rs) =
 -- do they need to roll back to a previous point on their chain. Also update
 -- the producer state assuming that the reader follows the instruction.
 --
-readerInstruction :: ReaderId
-                  -> ChainProducerState
-                  -> Maybe (ChainUpdate Block, ChainProducerState)
+readerInstruction :: HasHeader block
+                  => ReaderId
+                  -> ChainProducerState block
+                  -> Maybe (ChainUpdate block, ChainProducerState block)
 readerInstruction rid cps@(ChainProducerState c rs) =
     let ReaderState {readerPoint, readerNext} = lookupReader cps rid in
     case readerNext of
@@ -166,12 +168,18 @@ readerInstruction rid cps@(ChainProducerState c rs) =
 
 -- | Add a block to the chain.
 --
-addBlock :: Block -> ChainProducerState -> ChainProducerState
+addBlock :: HasHeader block
+         => block
+         -> ChainProducerState block
+         -> ChainProducerState block
 addBlock b (ChainProducerState c rs) =
     ChainProducerState (Chain.addBlock b c) rs
 
 
-rollback :: Point -> ChainProducerState -> ChainProducerState
+rollback :: HasHeader block
+         => Point
+         -> ChainProducerState block
+         -> ChainProducerState block
 rollback p cps@(ChainProducerState c rs) =
   case Chain.rollback p c of
     Just c' -> ChainProducerState c' rs'
@@ -183,12 +191,18 @@ rollback p cps@(ChainProducerState c rs) =
           | r@ReaderState { readerPoint = p' } <- rs ]
 
 
-applyChainUpdate :: ChainUpdate Block -> ChainProducerState -> ChainProducerState
+applyChainUpdate :: HasHeader block
+                 => ChainUpdate block
+                 -> ChainProducerState block
+                 -> ChainProducerState block
 applyChainUpdate (AddBlock b) c = addBlock b c
 applyChainUpdate (RollBack p) c = rollback p c
 
 
-applyChainUpdates :: [ChainUpdate Block] -> ChainProducerState -> ChainProducerState
+applyChainUpdates :: HasHeader block
+                  => [ChainUpdate block]
+                  -> ChainProducerState block
+                  -> ChainProducerState block
 applyChainUpdates = flip (foldl (flip applyChainUpdate))
 
 
@@ -204,7 +218,8 @@ freshReaderId rs = 1 + maximum [ readerId | ReaderState{readerId} <- rs ]
 -- Generators
 --
 
-data ChainProducerStateTest = ChainProducerStateTest ChainProducerState ReaderId Point
+data ChainProducerStateTest
+    = ChainProducerStateTest (ChainProducerState Block) ReaderId Point
   deriving Show
 
 genReaderState :: Int   -- ^ length of the chain
