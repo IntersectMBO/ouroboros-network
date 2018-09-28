@@ -40,10 +40,10 @@ import           System.Random (mkStdGen)
 import           Test.QuickCheck
 
 import           Block (Block (..), HasHeader (..))
-import           Chain (Chain (..), ChainUpdate (..), Point (..), absChainFragment, applyChainUpdate, blockPoint, 
+import           Chain (Chain (..), ChainUpdate (..), Point (..), absChainFragment, blockPoint, 
                         findIntersection)
 import qualified Chain
-import           ChainExperiment2
+import           ChainProducerState
 import           MonadClass
 import           SimSTM (ProbeTrace, SimChan (..), SimF, SimM, Trace, failSim, flipSimChan,
                          newProbe, readProbe, runSimM, runSimMST)
@@ -137,23 +137,23 @@ exampleConsumer chainvar = ConsumerHandlers {..}
     addBlock :: block -> m ()
     addBlock b = void $ atomically $ do
         chain <- readTVar chainvar
-        let !chain' = applyChainUpdate (AddBlock b) chain
+        let !chain' = Chain.applyChainUpdate (AddBlock b) chain
         when (chain /= chain')
           $ writeTVar chainvar chain'
 
     rollbackTo :: Point -> m ()
     rollbackTo p = atomically $ do
         chain <- readTVar chainvar
-        let !chain' = applyChainUpdate (RollBack p) chain
+        let !chain' = Chain.applyChainUpdate (RollBack p) chain
         when (chain /= chain')
           $ writeTVar chainvar chain'
 
 data ProducerHandlers block m r = ProducerHandlers {
        findIntersectionRange :: Point -> [Point] -> m (Maybe Point),
-       establishReaderState  :: Point -> Point -> m r,
-       updateReaderState     :: r -> Point -> Maybe Point -> m (),
-       tryReadChainUpdate    :: r -> m (Maybe (ConsumeChain block)),
-       readChainUpdate       :: r -> m (ConsumeChain block)
+       establishReaderState  :: Point -> m r,
+       updateReaderState     :: r -> Point -> m (),
+       tryReadChainUpdate    :: r -> m (Maybe (ChainUpdate block)),
+       readChainUpdate       :: r -> m (ChainUpdate block)
      }
 
 -- |
@@ -186,7 +186,7 @@ producerSideProtocol1 ProducerHandlers{..} n chan =
           intersection <- findIntersectionRange hpoint points
           case intersection of
             Just pt -> do
-              r <- establishReaderState hpoint pt
+              r <- establishReaderState pt
               let msg = MsgIntersectImproved pt
               say $ producerId ++ ":awaitOpening:sendMsg: " ++ show msg
               sendMsg chan msg
@@ -234,30 +234,28 @@ producerSideProtocol1 ProducerHandlers{..} n chan =
       intersection <- findIntersectionRange hpoint points
       case intersection of
         Just pt -> do
-          updateReaderState r hpoint (Just pt)
+          updateReaderState r pt
           let msg :: MsgProducer block
               msg = MsgIntersectImproved pt
           say $ producerId ++ ":handleSetHead:sendMsg: " ++ show msg
           sendMsg chan msg
         Nothing -> do
-          updateReaderState r hpoint Nothing
           let msg :: MsgProducer block
               msg = MsgIntersectUnchanged
           say $ producerId ++ ":handleSetHead:sendMsg: " ++ show msg
           sendMsg chan msg
 
-    updateMsg (RollForward  b) = MsgRollForward b
-    updateMsg (RollBackward p) = MsgRollBackward p
+    updateMsg (AddBlock b) = MsgRollForward b
+    updateMsg (RollBack p) = MsgRollBackward p
 
 exampleProducer
   :: forall block m stm.
      ( HasHeader block
      , Eq block
-     , Show block
      , MonadSay m
      , MonadSTM m stm
      )
-  => TVar m (ChainProducerState (Chain block))
+  => TVar m (ChainProducerState block)
   -> ProducerHandlers block m ReaderId
 exampleProducer chainvar =
     ProducerHandlers {..}
@@ -267,49 +265,41 @@ exampleProducer chainvar =
       ChainProducerState {chainState} <- atomically $ readTVar chainvar
       return $! findIntersection chainState hpoint points
 
-    establishReaderState :: Point -> Point -> m ReaderId
-    establishReaderState hpoint ipoint = atomically $ do
+    establishReaderState :: Point -> m ReaderId
+    establishReaderState ipoint = atomically $ do
       cps <- readTVar chainvar
-      let (cps', rid) = initialiseReader hpoint ipoint cps
+      let (cps', rid) = initReader ipoint cps
       when (cps /= cps')
         $ writeTVar chainvar cps'
       return rid
 
-    updateReaderState :: ReaderId -> Point -> Maybe Point -> m ()
-    updateReaderState rid hpoint mipoint = do
-      cps <- atomically $ do
+    updateReaderState :: ReaderId -> Point -> m ()
+    updateReaderState rid ipoint =
+      atomically $ do
         cps <- readTVar chainvar
-        let !ncps = updateReader rid hpoint mipoint cps
-        when (cps /= ncps)
-          $ writeTVar chainvar ncps
-        return ncps
-      say $ "updateReaderState: " ++ show cps
+        let !cps' = updateReader rid ipoint cps
+        when (cps /= cps')
+          $ writeTVar chainvar cps'
 
-    tryReadChainUpdate :: ReaderId -> m (Maybe (ConsumeChain block))
-    tryReadChainUpdate rid = do
-      (x, cc) <- atomically $ do
+    tryReadChainUpdate :: ReaderId -> m (Maybe (ChainUpdate block))
+    tryReadChainUpdate rid =
+      atomically $ do
         cps <- readTVar chainvar
-        case readerInstruction cps rid of
-          Nothing        -> return ((cps, cps), Nothing)
-          Just (cps', x) -> do
-            when (cps /= cps')
-              $ writeTVar chainvar cps'
-            return ((cps, cps'), Just x)
-      say $ "tryReadStateUpdate: " ++ show x ++ " " ++ show cc
-      return cc
+        case readerInstruction rid cps of
+          Nothing -> return Nothing
+          Just (u, cps') -> do
+            writeTVar chainvar cps'
+            return $ Just u
 
-    readChainUpdate :: ReaderId -> m (ConsumeChain block)
-    readChainUpdate rid = do
-      (cps, x) <- atomically $ do
+    readChainUpdate :: ReaderId -> m (ChainUpdate block)
+    readChainUpdate rid =
+      atomically $ do
         cps <- readTVar chainvar
-        case readerInstruction cps rid of
+        case readerInstruction rid cps of
           Nothing        -> retry
-          Just (cps', x) -> do
-            when (cps /= cps')
-              $ writeTVar chainvar cps'
-            return (cps', x)
-      say $ "readChainUpdate: " ++ show cps ++ " " ++ show x
-      return x
+          Just (u, cps') -> do
+            writeTVar chainvar cps'
+            return u
 
 -- |
 -- Simulate transfering a chain from a producer to a consumer
@@ -355,8 +345,8 @@ runProducerToConsumer pchain cchain = runST $ do
   probe <- readProbe v
   return (trace, probe)
 
-prop_producerToConsumer :: Chain.ChainFork -> Property
-prop_producerToConsumer (Chain.ChainFork pchain cchain) =
+prop_producerToConsumer :: Chain.TestChainFork -> Property
+prop_producerToConsumer (Chain.TestChainFork pchain cchain) =
   let (tr, pr) = runProducerToConsumer pchain cchain
       rchain = snd $ last pr -- ^ chain transferred to the consumer
   in counterexample
@@ -411,7 +401,7 @@ bindProducer
     , MonadFork m
     )
   => TVar m (Chain block)
-  -> m (TVar m (ChainProducerState (Chain block)))
+  -> m (TVar m (ChainProducerState block))
 bindProducer v = do
   cpsVar <- atomically $ do
     c <- readTVar v
@@ -422,30 +412,10 @@ bindProducer v = do
       c   <- readTVar v
       cps <- readTVar cpsVar
       if (chainState cps /= c)
-        then
-          let cps' = ChainProducerState
-                { chainState   = c
-                , chainReaders = map (updateReader c (chainState cps)) (chainReaders cps)
-                }
-          in writeTVar cpsVar cps'
+        then writeTVar cpsVar (switchFork c cps)
         else retry
 
   return cpsVar
-
-  where
-  updateReader :: Chain block -> Chain block -> ReaderState -> ReaderState
-  updateReader new old r@ReaderState {readerIntersection} =
-    case Chain.lookupBySlot new (pointSlot readerIntersection) of
-      -- reader intersection is on the new chain
-      Just b | blockHash b == pointHash readerIntersection
-             -> r
-      -- reader intersection is not on the new chain
-      _      ->
-        case Chain.intersectChains new old of
-          -- the two chains have intersection
-          Just p -> r { readerIntersection = p }
-          -- the two chains do not intersect
-          _      -> r
 
 bindConsumersToProducerN
   :: forall block m stm.
@@ -457,7 +427,7 @@ bindConsumersToProducerN
   => Chain block
   -> (Chain block -> Chain block -> Chain block)
   -> [TVar m (Chain block)]
-  -> m (TVar m (ChainProducerState (Chain block)))
+  -> m (TVar m (ChainProducerState block))
 bindConsumersToProducerN chain select ts =
   selectChainM chain select ts >>= bindProducer
 
@@ -545,8 +515,8 @@ runNodeSim pchain1 pchain2 = runST $ do
   probe <- readProbe v
   return (trace, probe)
 
-prop_node :: Chain.ChainFork -> Property
-prop_node (Chain.ChainFork pchain1 pchain2) =
+prop_node :: Chain.TestChainFork -> Property
+prop_node (Chain.TestChainFork pchain1 pchain2) =
   -- TODO: it should not fail when chains have no intersection
   isJust (pchain1 `Chain.intersectChains` pchain2) ==>
   let (tr, pr) = runNodeSim pchain1 pchain2
