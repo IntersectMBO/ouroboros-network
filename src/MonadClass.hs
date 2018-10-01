@@ -92,6 +92,12 @@ class (MonadFork m, Monad stm) => MonadSTM m stm | m -> stm, stm -> m where
   newTVar      :: a -> stm (TVar m a)
   readTVar     :: TVar m a -> stm a
   writeTVar    :: TVar m a -> a -> stm ()
+  modifyTVar   :: TVar m a -> (a -> a) -> stm ()
+  modifyTVar  v f = readTVar v >>= writeTVar v . f
+  modifyTVar'  :: TVar m a -> (a -> a) -> stm ()
+  modifyTVar' v f = do
+    a <- readTVar v
+    writeTVar v $! f a
   retry        :: stm a
 --orElse       :: stm a -> stm a -> stm a --TODO
 
@@ -117,11 +123,14 @@ instance MonadFork IO where
 instance MonadSTM IO STM.STM where
   type TVar IO = STM.TVar
 
-  atomically = STM.atomically
-  newTVar    = STM.newTVar
-  readTVar   = STM.readTVar
-  writeTVar  = STM.writeTVar
-  retry      = STM.retry
+  atomically  = STM.atomically
+  newTVar     = STM.newTVar
+  readTVar    = STM.readTVar
+  writeTVar   = STM.writeTVar
+  retry       = STM.retry
+  modifyTVar  = STM.modifyTVar
+  modifyTVar' = STM.modifyTVar'
+  check       = STM.check
 
 instance MonadTimer IO where
   type Time IO = Int -- microseconds
