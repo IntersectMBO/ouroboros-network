@@ -1,17 +1,20 @@
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE NamedFieldPuns #-}
 module Node where
 
 import Data.List
 import Data.Graph
 import Data.Maybe (listToMaybe, catMaybes)
+import Data.Functor (($>))
 import Control.Applicative
 import Control.Monad
 
-import MonadClass
+import MonadClass hiding (sendMsg, recvMsg)
 import Block
 import qualified Chain
 import           Chain (Chain (..), Point)
-import qualified ConsumerProtocol as CP
+import ConsumerProtocol
+import ChainProducerState (ChainProducerState (..), ReaderId, initChainProducerState, switchFork)
 
 import qualified SimSTM as Sim
 
@@ -29,12 +32,45 @@ longestChainSelection candidateChainVars currentChainVar =
     updateCurrentChain = do
       candidateChains <- mapM readTVar candidateChainVars
       currentChain    <- readTVar currentChainVar
-      case longerChain (Chain.length currentChain) (catMaybes candidateChains) of
+      case longestChain (Chain.length currentChain) (catMaybes candidateChains) of
         Nothing -> retry
         Just c  -> writeTVar currentChainVar c
 
-    longerChain :: Int -> [(Chain block)] -> Maybe (Chain block)
-    longerChain curlen = listToMaybe . filter (\c -> Chain.length c > curlen)
+    longestChain :: Int -> [(Chain block)] -> Maybe (Chain block)
+    longestChain curlen
+      = fmap fst
+      . listToMaybe
+      . sortBy (\(_, l1) (_, l2) -> compare l1 l2)
+      . filter (\(_, l) -> l > curlen)
+      . map (\c -> (c, Chain.length c))
+
+-- | 
+-- State-full chain selection (@'ChainProducerState'@).
+longestChainSelectionS :: forall block m stm.
+                          ( HasHeader block
+                          , MonadSTM m stm
+                          )
+                      => [TVar m (Maybe (Chain block))]
+                      -> TVar m (ChainProducerState block)
+                      -> m ()
+longestChainSelectionS candidateChainVars cpsVar =
+    forever (atomically updateCurrentChain)
+  where
+    updateCurrentChain :: stm ()
+    updateCurrentChain = do
+      candidateChains <- mapM readTVar candidateChainVars
+      cps@ChainProducerState{chainState} <- readTVar cpsVar
+      case longestChain (Chain.length chainState) (catMaybes candidateChains) of
+        Nothing -> retry
+        Just c  -> writeTVar cpsVar (switchFork c cps)
+
+    longestChain :: Int -> [(Chain block)] -> Maybe (Chain block)
+    longestChain curlen
+      = fmap fst
+      . listToMaybe
+      . sortBy (\(_, l1) (_, l2) -> compare l1 l2)
+      . filter (\(_, l) -> l > curlen)
+      . map (\c -> (c, Chain.length c))
 
 
 chainValidation :: forall block m stm. (HasHeader block, MonadSTM m stm)
@@ -80,6 +116,46 @@ chainTransferProtocol delay inputVar outputVar = do
       timer delay $ atomically $ writeTVar outputVar input
 
 
+data Chan m send recv = Chan { sendMsg :: send -> m ()
+                             , recvMsg :: m recv
+                             }
+
+
+transferProtocol :: forall send recv m stm.
+                    ( MonadSTM m stm
+                    , MonadTimer m
+                    )
+                 => Duration (Time m)
+                 -> TVar m [send]
+                 -> TVar m [recv]
+                 -> Chan m send recv
+transferProtocol delay sendVar recvVar
+  = Chan sendMsg recvMsg
+  where
+    sendMsg a = timer delay $ atomically $ modifyTVar' sendVar (++[a])
+    recvMsg =
+      atomically $ do
+        xs <- readTVar recvVar
+        case xs of
+          x : xs' -> writeTVar recvVar xs' $> x
+          []      -> retry
+
+
+createCoupledChannels :: forall send recv m stm.
+                         ( MonadSTM m stm
+                         , MonadTimer m
+                         )
+                      => Duration (Time m)
+                      -> Duration (Time m)
+                      -> m (Chan m send recv, Chan m recv send)
+createCoupledChannels delay1 delay2 = do
+  sendVar <- atomically $ newTVar []
+  recvVar <- atomically $ newTVar []
+  let chan1 = transferProtocol delay1 sendVar recvVar
+      chan2 = transferProtocol delay2 recvVar sendVar
+  return (chan1, chan2)
+
+
 chainGenerator :: forall block m stm.
                   ( MonadSTM m stm
                   , MonadTimer m
@@ -122,6 +198,29 @@ observeChain labelPrefix chainVar = do
       say (labelPrefix ++ ": " ++ show (Chain.length chain, Chain.headPoint chain))
 
 
+observeChainProducerState
+  :: forall block m stm.
+     ( HasHeader block
+     , MonadSTM m stm
+     , MonadSay m
+     )
+  => NodeId
+  -> TVar m (ChainProducerState block)
+  -> m ()
+observeChainProducerState nid cpsVar = do
+    st <- atomically (newTVar Chain.genesisPoint)
+    forever (update st)
+  where
+    update :: TVar m Point -> m ()
+    update stateVar = do
+      chain <- atomically $ do
+                ChainProducerState{chainState = chain} <- readTVar cpsVar
+                curPoint <- readTVar stateVar
+                check (Chain.headPoint chain /= curPoint)
+                writeTVar stateVar (Chain.headPoint chain)
+                return chain
+      say (show nid ++ ": " ++ show (Chain.length chain, Chain.headPoint chain))
+
 nodeExample1 :: forall block m stm.
                 ( HasHeader block
                 , MonadSTM m stm
@@ -156,13 +255,62 @@ nodeExample1 c1 c2 = do
     fork $ observeChain "generatorVar2" generatorVar2
     fork $ observeChain "currentChain " currentChainVar
 
+newtype NodeId = NodeId Int
+  deriving (Eq, Ord, Show)
+
+data ConsumerId = ConsumerId NodeId Int
+  deriving (Eq, Ord, Show)
+
+data ProducerId = ProducerId NodeId Int
+  deriving (Eq, Ord, Show)
+
 relayNode :: forall block m stm.
         ( HasHeader block
+        , Eq block
+        , Show block
         , MonadSTM m stm
         , MonadTimer m
         , MonadSay m
         )
-     => [TVar m (Chain block)] -- ^ inputs
-     -> [TVar m (Chain block)] -- ^ outputs
+     => NodeId
+     -> [Chan m MsgConsumer (MsgProducer block)] -- ^ input channels
+     -> [Chan m (MsgProducer block) MsgConsumer] -- ^ output channels
      -> m ()
-relayNode inputs outputs = undefined
+relayNode nid inputs outputs = do
+
+  -- Mutable state
+  -- 1. input chains
+  chainVars <- zipWithM startConsumer [0..] inputs
+  -- 2. candidate chains
+  candidateChainVars <- replicateM (length inputs) (atomically (newTVar Nothing))
+  -- 3. ChainProducerState
+  cpsVar <- atomically $ newTVar (initChainProducerState Genesis)
+
+  -- chain validation thread
+  zipWithM_
+    (\chain cchain -> fork $ chainValidation chain cchain)
+    chainVars
+    candidateChainVars
+  -- chain selection thread
+  fork $ longestChainSelectionS candidateChainVars cpsVar
+
+  -- producer
+  let producer = exampleProducer cpsVar
+  mapM_ (uncurry $ startProducer producer) (zip [0..] outputs)
+
+  where
+    startConsumer :: Int
+                  -> Chan m MsgConsumer (MsgProducer block)
+                  -> m (TVar m (Chain block))
+    startConsumer cid chan = do
+      chainVar <- atomically $ newTVar Genesis
+      let consumer = exampleConsumer chainVar
+      fork $ consumerSideProtocol1 consumer (ConsumerId nid cid) (sendMsg chan) (recvMsg chan)
+      return chainVar
+
+    startProducer :: ProducerHandlers block m ReaderId
+                  -> Int
+                  -> Chan m (MsgProducer block) MsgConsumer
+                  -> m ()
+    startProducer producer pid chan = do
+      fork $ producerSideProtocol1 producer (ProducerId nid pid) (sendMsg chan) (recvMsg chan)

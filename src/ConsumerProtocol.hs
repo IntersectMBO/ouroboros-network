@@ -15,7 +15,20 @@
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 
-module ConsumerProtocol where
+module ConsumerProtocol
+  ( MsgConsumer(..)
+  , MsgProducer(..)
+  , ConsumerHandlers
+  , ProducerHandlers
+  , exampleConsumer
+  , consumerSideProtocol1
+  , exampleProducer
+  , producerSideProtocol1
+  , bindProducer
+
+  , prop_producerToConsumer
+  , prop_node
+  )where
 
 import           Prelude
 
@@ -77,17 +90,17 @@ data ConsumerHandlers block m = ConsumerHandlers {
      }
 
 consumerSideProtocol1
-  :: forall block m.
+  :: forall block cid m.
      ( Show block
-     , MonadSendRecv m
      , MonadSay m
+     , Show cid
      )
   => ConsumerHandlers block m
-  -> Int                     -- ^ consumer id
+  -> cid                     -- ^ consumer id
   -> (MsgConsumer -> m ())   -- ^ send
   -> (m (MsgProducer block)) -- ^ recv
   -> m ()
-consumerSideProtocol1 ConsumerHandlers{..} n send recv = do
+consumerSideProtocol1 ConsumerHandlers{..} cid send recv = do
     -- The consumer opens by sending a list of points on their chain.
     -- This includes the head block and
     (hpoint, points) <- getChainPoints
@@ -96,7 +109,7 @@ consumerSideProtocol1 ConsumerHandlers{..} n send recv = do
     requestNext
   where
     consumerId :: String
-    consumerId = "consumer-" ++ show n
+    consumerId = "consumer-" ++ show cid
 
     requestNext :: m ()
     requestNext = do
@@ -120,7 +133,13 @@ consumerSideProtocol1 ConsumerHandlers{..} n send recv = do
     handleChainUpdate msg = do
         say (consumerId ++ ":handleChainUpdate: " ++ show msg)
 
-exampleConsumer :: forall block m stm. (Eq block, HasHeader block, MonadSay m, MonadSTM m stm)
+
+exampleConsumer :: forall block m stm.
+                   ( Eq block
+                   , HasHeader block
+                   , MonadSay m
+                   , MonadSTM m stm
+                   )
                 => TVar m (Chain block)
                 -> ConsumerHandlers block m
 exampleConsumer chainvar = ConsumerHandlers {..}
@@ -161,22 +180,22 @@ data ProducerHandlers block m r = ProducerHandlers {
 -- TODO:
 --  * n-consumers to producer (currently 1-consumer to producer)
 producerSideProtocol1
-  :: forall block m r.
-     ( HasHeader block
+  :: forall block pid m r.
+     ( Show pid
+     , HasHeader block
      , Show block
-     , MonadSendRecv m
      , MonadSay m
      )
   => ProducerHandlers block m r
-  -> Int -- producer id
-  -> (MsgProducer block -> m ()) -- send
-  -> m MsgConsumer               -- recv
+  -> pid                         -- ^ producer id
+  -> (MsgProducer block -> m ()) -- ^ send
+  -> (m MsgConsumer)             -- ^ recv
   -> m ()
-producerSideProtocol1 ProducerHandlers{..} n send recv =
+producerSideProtocol1 ProducerHandlers{..} pid send recv =
     awaitOpening >>= maybe (return ()) awaitOngoing
   where
     producerId :: String
-    producerId = "producer-" ++ show n
+    producerId = show pid
 
     awaitOpening = do
       -- The opening message must be this one, to establish the reader state
