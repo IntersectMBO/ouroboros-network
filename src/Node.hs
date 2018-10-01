@@ -275,7 +275,7 @@ relayNode :: forall block m stm.
      => NodeId
      -> [Chan m MsgConsumer (MsgProducer block)] -- ^ input channels
      -> [Chan m (MsgProducer block) MsgConsumer] -- ^ output channels
-     -> m ()
+     -> m (TVar m (ChainProducerState block))
 relayNode nid inputs outputs = do
 
   -- Mutable state
@@ -286,7 +286,7 @@ relayNode nid inputs outputs = do
   -- 3. ChainProducerState
   cpsVar <- atomically $ newTVar (initChainProducerState Genesis)
 
-  -- chain validation thread
+  -- chain validation threads
   zipWithM_
     (\chain cchain -> fork $ chainValidation chain cchain)
     chainVars
@@ -294,10 +294,14 @@ relayNode nid inputs outputs = do
   -- chain selection thread
   fork $ longestChainSelectionS candidateChainVars cpsVar
 
-  -- producer
+  -- producers
   let producer = exampleProducer cpsVar
   mapM_ (uncurry $ startProducer producer) (zip [0..] outputs)
 
+  -- chain observer
+  fork $ observeChainProducerState nid cpsVar
+
+  return cpsVar
   where
     startConsumer :: Int
                   -> Chan m MsgConsumer (MsgProducer block)
@@ -314,3 +318,35 @@ relayNode nid inputs outputs = do
                   -> m ()
     startProducer producer pid chan = do
       fork $ producerSideProtocol1 producer (ProducerId nid pid) (sendMsg chan) (recvMsg chan)
+
+
+coreNode :: forall block m stm.
+        ( HasHeader block
+        , Eq block
+        , Show block
+        , MonadSTM m stm
+        , MonadTimer m
+        , MonadSay m
+        )
+     => NodeId
+     -> Duration (Time m)
+     -> Chain block
+     -> [Chan m MsgConsumer (MsgProducer block)] -- ^ input channels
+     -> [Chan m (MsgProducer block) MsgConsumer] -- ^ output channels
+     -> m ()
+coreNode nid offset chain inputs outputs = do
+  cpsVar <- relayNode nid inputs outputs
+
+  chainVar <- chainGenerator offset chain
+  fork $ forever (propagate chainVar cpsVar)
+
+  where
+    propagate :: TVar m (Chain block)
+              -> TVar m (ChainProducerState block)
+              -> m ()
+    propagate chainVar cpsVar = atomically $ do
+      chain <- readTVar chainVar
+      cps@ChainProducerState{chainState} <- readTVar cpsVar
+      check (Chain.length chain > Chain.length chainState)
+      writeTVar cpsVar (switchFork chain cps)
+
