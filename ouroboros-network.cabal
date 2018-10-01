@@ -23,6 +23,7 @@ library
                        Protocol,
                        Block,
                        ConsumerProtocol,
+                       Node,
                        States,
                        SimSTM,
                        Sim,

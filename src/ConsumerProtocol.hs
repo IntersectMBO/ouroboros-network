@@ -83,15 +83,16 @@ consumerSideProtocol1
      , MonadSay m
      )
   => ConsumerHandlers block m
-  -> Int  -- ^ consumer id
-  -> BiChan m MsgConsumer (MsgProducer block)
+  -> Int                     -- ^ consumer id
+  -> (MsgConsumer -> m ())   -- ^ send
+  -> (m (MsgProducer block)) -- ^ recv
   -> m ()
-consumerSideProtocol1 ConsumerHandlers{..} n chan = do
+consumerSideProtocol1 ConsumerHandlers{..} n send recv = do
     -- The consumer opens by sending a list of points on their chain.
     -- This includes the head block and
     (hpoint, points) <- getChainPoints
-    sendMsg chan (MsgSetHead hpoint points)
-    _msg <- recvMsg chan
+    send (MsgSetHead hpoint points)
+    _msg <- recv
     requestNext
   where
     consumerId :: String
@@ -99,8 +100,8 @@ consumerSideProtocol1 ConsumerHandlers{..} n chan = do
 
     requestNext :: m ()
     requestNext = do
-      sendMsg chan MsgRequestNext
-      reply <- recvMsg chan
+      send MsgRequestNext
+      reply <- recv
       handleChainUpdate reply
       requestNext
 
@@ -168,9 +169,10 @@ producerSideProtocol1
      )
   => ProducerHandlers block m r
   -> Int -- producer id
-  -> BiChan m (MsgProducer block) MsgConsumer
+  -> (MsgProducer block -> m ()) -- send
+  -> m MsgConsumer               -- recv
   -> m ()
-producerSideProtocol1 ProducerHandlers{..} n chan =
+producerSideProtocol1 ProducerHandlers{..} n send recv =
     awaitOpening >>= maybe (return ()) awaitOngoing
   where
     producerId :: String
@@ -179,7 +181,7 @@ producerSideProtocol1 ProducerHandlers{..} n chan =
     awaitOpening = do
       -- The opening message must be this one, to establish the reader state
       say (producerId ++ ":awaitOpening")
-      msg <- recvMsg chan
+      msg <- recv
       case msg of
         MsgSetHead hpoint points -> do
           say $ producerId ++ ":awaitOpening:recvMsg: " ++ show msg
@@ -189,13 +191,13 @@ producerSideProtocol1 ProducerHandlers{..} n chan =
               r <- establishReaderState pt
               let msg = MsgIntersectImproved pt
               say $ producerId ++ ":awaitOpening:sendMsg: " ++ show msg
-              sendMsg chan msg
+              send msg
               return (Just r)
             Nothing -> do
               let msg :: MsgProducer block
                   msg = MsgIntersectUnchanged
               say $ producerId ++ ":awaitOpening:sendMsg: " ++ show msg
-              sendMsg chan msg
+              send msg
               awaitOpening
         MsgRequestNext -> do
           -- This message is received if the consumer's chain has no intersection
@@ -205,7 +207,7 @@ producerSideProtocol1 ProducerHandlers{..} n chan =
           return Nothing
 
     awaitOngoing r = forever $ do
-      msg <- recvMsg chan
+      msg <- recv
       say $ producerId ++ ":awaitOngoing:recvMsg: " ++ show msg
       case msg of
         MsgRequestNext           -> handleNext r
@@ -221,11 +223,11 @@ producerSideProtocol1 ProducerHandlers{..} n chan =
           let msg :: MsgProducer block
               msg = MsgAwaitReply
           say $ producerId ++ ":handleNext:sendMsg: " ++ show msg
-          sendMsg chan msg
+          send msg
           readChainUpdate r
       let msg = updateMsg update
       say $ producerId ++ ":handleNext:sendMsg: " ++ show msg
-      sendMsg chan msg
+      send msg
 
     handleSetHead r hpoint points = do
       -- TODO: guard number of points, points sorted
@@ -238,12 +240,12 @@ producerSideProtocol1 ProducerHandlers{..} n chan =
           let msg :: MsgProducer block
               msg = MsgIntersectImproved pt
           say $ producerId ++ ":handleSetHead:sendMsg: " ++ show msg
-          sendMsg chan msg
+          send msg
         Nothing -> do
           let msg :: MsgProducer block
               msg = MsgIntersectUnchanged
           say $ producerId ++ ":handleSetHead:sendMsg: " ++ show msg
-          sendMsg chan msg
+          send msg
 
     updateMsg (AddBlock b) = MsgRollForward b
     updateMsg (RollBack p) = MsgRollBackward p
@@ -320,11 +322,11 @@ producerToConsumerSim v pchain cchain = do
     -- run producer in a new thread
     fork $ do
         chainvar <- atomically $ newTVar (ChainProducerState pchain [])
-        producerSideProtocol1 (exampleProducer chainvar) 1 chan
+        producerSideProtocol1 (exampleProducer chainvar) 1 (sendMsg chan) (recvMsg chan)
 
     chainvar <- atomically $ newTVar cchain
     fork $
-        consumerSideProtocol1 (exampleConsumer chainvar) 1 (flipSimChan chan)
+        consumerSideProtocol1 (exampleConsumer chainvar) 1 (sendMsg (flipSimChan chan)) (recvMsg (flipSimChan chan))
 
     say "done"
     timer 1 $ do
@@ -468,34 +470,34 @@ nodeSim v chain1 chain2 = do
     -- start producer1
     fork $ do
         chainvar <- atomically $ newTVar (ChainProducerState chain1 [])
-        producerSideProtocol1 (exampleProducer chainvar) 1 chan1
+        producerSideProtocol1 (exampleProducer chainvar) 1 (sendMsg chan1) (recvMsg chan1)
 
     -- start producer2
     fork $ do
         chainvar <- atomically $ newTVar (ChainProducerState chain2 [])
-        producerSideProtocol1 (exampleProducer chainvar) 2 chan2
+        producerSideProtocol1 (exampleProducer chainvar) 2 (sendMsg chan2) (recvMsg chan2)
 
     -- consumer listening to producer1
     chainvar1 <- atomically $ newTVar Genesis
     fork $
-        consumerSideProtocol1 (exampleConsumer chainvar1) 1 (flipSimChan chan1)
+        consumerSideProtocol1 (exampleConsumer chainvar1) 1 (sendMsg (flipSimChan chan1)) (recvMsg (flipSimChan chan1))
 
     -- consumer listening to producer2
     chainvar2 <- atomically $ newTVar Genesis
     fork $
-        consumerSideProtocol1 (exampleConsumer chainvar2) 2 (flipSimChan chan2)
+        consumerSideProtocol1 (exampleConsumer chainvar2) 2 (sendMsg (flipSimChan chan2)) (recvMsg (flipSimChan chan2))
 
     fork $ do
         chainvar <- bindConsumersToProducerN
           Genesis
           Chain.selectChain
           [chainvar1, chainvar2]
-        producerSideProtocol1 (exampleProducer chainvar) 3 chan3
+        producerSideProtocol1 (exampleProducer chainvar) 3 (sendMsg chan3) (recvMsg chan3)
 
     -- todo: use a fork here
     chainvar3 <- atomically $ newTVar Genesis
     fork
-      $ consumerSideProtocol1 (exampleConsumer chainvar3) 3 (flipSimChan chan3)
+      $ consumerSideProtocol1 (exampleConsumer chainvar3) 3 (sendMsg (flipSimChan chan3)) (recvMsg (flipSimChan chan3))
 
     timer 1 $ do
       chain <- atomically $ readTVar chainvar3
