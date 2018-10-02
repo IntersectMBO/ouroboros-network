@@ -437,24 +437,32 @@ prop_addBlock (TestAddBlock c b) =
   where
     c' = addBlock b c
 
-data ChainWithPointTest = ChainWithPointTest (Chain Block) Point
+
+--
+-- Generator for chain and single point on the chain
+--
+
+data TestChainAndPoint = TestChainAndPoint (Chain Block) Point
   deriving Show
 
-instance Arbitrary ChainWithPointTest where
+
+instance Arbitrary TestChainAndPoint where
   arbitrary = do
-    NonNegative n <- arbitrary
-    chain <- genBlockChain n
+    TestBlockChain chain <- arbitrary
+    let len = Chain.length chain
     point <- frequency
       [ (2, return (headPoint chain))
-      , (2, return (mkRollbackPoint chain n))
-      , (8, mkRollbackPoint chain <$> choose (1, fromIntegral n - 1))
+      , (2, return (mkRollbackPoint chain len))
+      , (8, mkRollbackPoint chain <$> choose (1, len - 1))
       , (1, genPoint)
       ]
-    return $ ChainWithPointTest chain point
+    return (TestChainAndPoint chain point)
 
-  shrink (ChainWithPointTest c p)
-    | pointOnChain p c = [ChainWithPointTest c' (fixupPoint c' p) | TestBlockChain c' <- shrink (TestBlockChain c)]
-    | otherwise = [ChainWithPointTest c' p | TestBlockChain c' <- shrink (TestBlockChain c) ]
+  shrink (TestChainAndPoint c p)
+    | pointOnChain p c = [ TestChainAndPoint c' (fixupPoint c' p)
+                         | TestBlockChain c' <- shrink (TestBlockChain c)]
+    | otherwise        = [ TestChainAndPoint c' p
+                         | TestBlockChain c' <- shrink (TestBlockChain c) ]
 
 fixupPoint :: HasHeader block => Chain block -> Point -> Point
 fixupPoint c p =
@@ -462,16 +470,17 @@ fixupPoint c p =
     Just b  -> blockPoint b
     Nothing -> headPoint c
 
-prop_arbitrary_ChainWithPointTest :: ChainWithPointTest -> Bool
-prop_arbitrary_ChainWithPointTest (ChainWithPointTest c p) =
+prop_arbitrary_TestChainAndPoint :: TestChainAndPoint -> Bool
+prop_arbitrary_TestChainAndPoint (TestChainAndPoint c p) =
   valid c
 
-prop_shrink_ChainWithPointTest :: ChainWithPointTest -> Bool
-prop_shrink_ChainWithPointTest cp@(ChainWithPointTest c _) =
-  and [ valid c' && (not (pointOnChain p c) || pointOnChain p c') | ChainWithPointTest c' p <- shrink cp]
+prop_shrink_TestChainAndPoint :: TestChainAndPoint -> Bool
+prop_shrink_TestChainAndPoint cp@(TestChainAndPoint c _) =
+  and [ valid c' && (not (pointOnChain p c) || pointOnChain p c')
+      | TestChainAndPoint c' p <- shrink cp ]
 
-prop_rollback :: ChainWithPointTest -> Property
-prop_rollback (ChainWithPointTest c p) =
+prop_rollback :: TestChainAndPoint -> Property
+prop_rollback (TestChainAndPoint c p) =
   case rollback p c of
     Nothing -> property True
     Just c' ->
@@ -484,15 +493,15 @@ prop_rollback (ChainWithPointTest c p) =
   isPrefix c c' | c == c'   = True
                 | otherwise = isPrefix c (drop 1 c')
 
-prop_successorBlock :: ChainWithPointTest -> Property
-prop_successorBlock (ChainWithPointTest c p) =
+prop_successorBlock :: TestChainAndPoint -> Property
+prop_successorBlock (TestChainAndPoint c p) =
   pointOnChain p c ==>
   case successorBlock p c of
     Nothing -> headPoint c === p
     Just b  -> property $ pointOnChain (blockPoint b) c
 
-prop_lookupBySlot :: ChainWithPointTest -> Bool
-prop_lookupBySlot (ChainWithPointTest c p) =
+prop_lookupBySlot :: TestChainAndPoint -> Bool
+prop_lookupBySlot (TestChainAndPoint c p) =
   case lookupBySlot c (pointSlot p) of
     Just b  -> pointOnChain (blockPoint b) c
     Nothing | p == genesisPoint -> True
