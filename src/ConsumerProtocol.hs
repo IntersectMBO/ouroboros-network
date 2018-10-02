@@ -367,7 +367,7 @@ runProducerToConsumer pchain cchain = runST $ do
   return (trace, probe)
 
 prop_producerToConsumer :: Chain.TestChainFork -> Property
-prop_producerToConsumer (Chain.TestChainFork pchain cchain) =
+prop_producerToConsumer (Chain.TestChainFork _ pchain cchain) =
   let (tr, pr) = runProducerToConsumer pchain cchain
       rchain = snd $ last pr -- ^ chain transferred to the consumer
   in counterexample
@@ -537,7 +537,7 @@ runNodeSim pchain1 pchain2 = runST $ do
   return (trace, probe)
 
 prop_node :: Chain.TestChainFork -> Property
-prop_node (Chain.TestChainFork pchain1 pchain2) =
+prop_node (Chain.TestChainFork _ pchain1 pchain2) =
   -- TODO: it should not fail when chains have no intersection
   isJust (pchain1 `Chain.intersectChains` pchain2) ==>
   let (tr, pr) = runNodeSim pchain1 pchain2

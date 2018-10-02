@@ -6,7 +6,8 @@ module ChainProducerState where
 import           Block (Block, BlockHeader, HasHeader)
 import           Chain ( Chain, Point(..), blockPoint, ChainUpdate(..)
                        , genesisPoint, headPoint , pointOnChain
-                       , TestBlockChainAndUpdates(..), TestBlockChain(..), TestChainFork(..), mkRollbackPoint
+                       , TestBlockChainAndUpdates(..), TestBlockChain(..)
+                       , TestChainFork(..), mkRollbackPoint
                        , genBlockChain, genPoint)
 import qualified Chain
 
@@ -280,7 +281,7 @@ data ChainProducerStateForkTest
 
 instance Arbitrary ChainProducerStateForkTest where
   arbitrary = do
-    TestChainFork c f <- arbitrary
+    TestChainFork _ c f <- arbitrary
     let l = Chain.length c
     rs <- fixupReaderStates <$> listOf (genReaderState l c)
     return $ ChainProducerStateForkTest (ChainProducerState c rs) f
