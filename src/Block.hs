@@ -15,10 +15,6 @@ module Block (
       -- * Hashing
     , hashHeader
     , hashBody
-
-      -- * Generators
-    , genBlock
-    , genNBlocks
     )
     where
 
@@ -139,31 +135,3 @@ instance Arbitrary BlockBody where
     -- probably no need for shrink, the content is arbitrary and opaque
     -- if we add one, it might be to shrink to an empty block
 
-
--- |
--- Generate a valid block
-genBlock
-  :: HeaderHash -- ^ previouos header hash
-  -> Slot       -- ^ current slot
-  -> BlockNo    -- ^ current block no
-  -> Gen Block
-genBlock headerPrevHash headerSlot headerNo = do
-  headerSigner <- BlockSigner <$> arbitrary
-  blockBody    <- BlockBody   <$> arbitrary
-  let blockHeader = BlockHeader
-        { headerHash = hashHeader blockHeader,
-          headerPrevHash,
-          headerSlot,
-          headerBlockNo = headerNo,
-          headerSigner,
-          headerBodyHash = hashBody blockBody
-        }
-  return $ Block {blockHeader, blockBody}
-
-genNBlocks :: Int -> HeaderHash -> Slot -> BlockNo -> Gen [Block]
-genNBlocks 0 _ _ _ = return []
-genNBlocks 1 prevHash0 slot0 no0 = (:[]) <$> genBlock prevHash0 slot0 no0
-genNBlocks n prevHash0 slot0 no0 = do
-  bs@(b': _) <- genNBlocks (n - 1) prevHash0 slot0 no0
-  b          <- genBlock (blockHash b') (succ $ blockSlot b') (succ $ blockNo b')
-  return (b : bs)
