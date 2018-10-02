@@ -10,7 +10,6 @@ import Prelude hiding (head, drop)
 
 import Block ( Block(..), BlockHeader(..), HasHeader(..)
              , Slot(..), BlockNo (..), HeaderHash(..)
-             , genBlock
              , BlockBody(..), BodyHash(..)
              , Slot(..), BlockNo(..), BlockSigner(..)
              , HeaderHash(..), hashHeader, hashBody )
@@ -232,9 +231,13 @@ absApplyChainUpdates = flip (foldl (flip absApplyChainUpdate))
 -- Generators for chains
 --
 
+-- | A test generator for a valid chain of blocks.
+--
 newtype TestBlockChain = TestBlockChain (Chain Block)
     deriving (Eq, Show)
 
+-- | A test generator for a valid chain of block headers.
+--
 newtype TestHeaderChain = TestHeaderChain (Chain BlockHeader)
     deriving (Eq, Show)
 
@@ -355,14 +358,17 @@ k = 5
 -- Generator for chain updates
 --
 
+-- | A test generator for a chain and a sequence of updates that can be applied
+-- to it.
+--
 data TestBlockChainAndUpdates =
        TestBlockChainAndUpdates (Chain Block) [ChainUpdate Block]
   deriving Show
 
 instance Arbitrary TestBlockChainAndUpdates where
   arbitrary = do
-    (NonNegative n, NonNegative m) <- arbitrary
-    chain   <- genBlockChain n
+    TestBlockChain chain <- arbitrary
+    NonNegative m <- arbitrary
     updates <- genChainUpdates chain m
     return (TestBlockChainAndUpdates chain updates)
 
@@ -450,10 +456,12 @@ instance Arbitrary TestChainAndPoint where
   arbitrary = do
     TestBlockChain chain <- arbitrary
     let len = Chain.length chain
+    -- either choose point from the chain
     point <- frequency
       [ (2, return (headPoint chain))
       , (2, return (mkRollbackPoint chain len))
       , (8, mkRollbackPoint chain <$> choose (1, len - 1))
+      -- or a few off the chain!
       , (1, genPoint)
       ]
     return (TestChainAndPoint chain point)
@@ -481,17 +489,17 @@ prop_shrink_TestChainAndPoint cp@(TestChainAndPoint c _) =
 
 prop_rollback :: TestChainAndPoint -> Property
 prop_rollback (TestChainAndPoint c p) =
-  case rollback p c of
-    Nothing -> property True
-    Just c' ->
-      -- chain is a prefix of original
-           isPrefix c' c
-      -- chain head point is the rollback point
-      .&&. headPoint c' === p
+    case rollback p c of
+      Nothing -> property True
+      Just c' ->
+        -- chain is a prefix of original
+             isPrefix c' c
+        -- chain head point is the rollback point
+        .&&. headPoint c' === p
   where
-  isPrefix (_ :> _) Genesis = False
-  isPrefix c c' | c == c'   = True
-                | otherwise = isPrefix c (drop 1 c')
+    isPrefix (_ :> _) Genesis = False
+    isPrefix c c' | c == c'   = True
+                  | otherwise = isPrefix c (drop 1 c')
 
 prop_successorBlock :: TestChainAndPoint -> Property
 prop_successorBlock (TestChainAndPoint c p) =
