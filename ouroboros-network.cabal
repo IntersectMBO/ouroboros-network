@@ -77,6 +77,8 @@ test-suite tests
   type:                exitcode-stdio-1.0
   hs-source-dirs:      src, test
   main-is:             Main.hs
+  other-modules:       Block
+                       Chain
   build-depends:       base,
                        stm,
                        transformers,

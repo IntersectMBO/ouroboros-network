@@ -272,6 +272,80 @@ intersectChains c (bs :> b) =
 
 
 --
+-- Properties
+--
+
+prop_length_genesis :: Bool
+prop_length_genesis = Chain.length Genesis == 0
+
+prop_drop_genesis :: TestBlockChain -> Bool
+prop_drop_genesis (TestBlockChain chain) =
+    Chain.drop (Chain.length chain) chain == Genesis
+
+prop_fromList_toList :: TestBlockChain -> Bool
+prop_fromList_toList (TestBlockChain chain) =
+    (fromList . toList) chain == chain
+
+-- The list comes out in reverse order, most recent block at the head
+prop_toList_head :: TestBlockChain -> Bool
+prop_toList_head (TestBlockChain chain) =
+    (listToMaybe . toList) chain == head chain
+
+prop_drop :: TestBlockChain -> Bool
+prop_drop (TestBlockChain chain) =
+    and [ Chain.drop n chain == fromList (L.drop n blocks)
+        | n <- [0..Prelude.length blocks] ]
+  where
+    blocks = toList chain
+
+prop_addBlock :: TestAddBlock -> Bool
+prop_addBlock (TestAddBlock c b) =
+    -- after adding a block, that block is at the head
+    headPoint c' == blockPoint b
+    -- chain is still valid
+ && valid c'
+    -- removing the block gives the original
+ && rollback (headPoint c) c' == Just c
+ && Chain.drop 1 c' == c
+    -- chain is one longer
+ && Chain.length c' == Chain.length c + 1
+  where
+    c' = addBlock b c
+
+prop_rollback :: TestChainAndPoint -> Property
+prop_rollback (TestChainAndPoint c p) =
+    case rollback p c of
+      Nothing -> property True
+      Just c' ->
+        -- chain is a prefix of original
+             isPrefixOf c' c
+        -- chain head point is the rollback point
+        .&&. headPoint c' === p
+
+prop_successorBlock :: TestChainAndPoint -> Property
+prop_successorBlock (TestChainAndPoint c p) =
+  pointOnChain p c ==>
+  case successorBlock p c of
+    Nothing -> headPoint c === p
+    Just b  -> property $ pointOnChain (blockPoint b) c
+
+prop_lookupBySlot :: TestChainAndPoint -> Bool
+prop_lookupBySlot (TestChainAndPoint c p) =
+  case lookupBySlot c (pointSlot p) of
+    Just b  -> pointOnChain (blockPoint b) c
+    Nothing | p == genesisPoint -> True
+            | otherwise         -> not (pointOnChain p c)
+
+prop_intersectChains :: TestChainFork -> Bool
+prop_intersectChains (TestChainFork c l r) =
+  case intersectChains l r of
+    Nothing -> c == Genesis && L.intersect (toList l) (toList r) == []
+    Just p  -> headPoint c == p
+            && pointOnChain p l
+            && pointOnChain p r
+
+
+--
 -- Generators for chains
 --
 
@@ -395,31 +469,47 @@ fixupBlockHeader p n h b = b'
       headerBodyHash = h
     }
 
+-- | The Ouroboros K paramater. This is also the maximum rollback length.
+--
 k :: Int
 k = 5
 
-prop_length_genesis :: Bool
-prop_length_genesis = Chain.length Genesis == 0
 
-prop_drop_genesis :: TestBlockChain -> Bool
-prop_drop_genesis (TestBlockChain chain) =
-    Chain.drop (Chain.length chain) chain == Genesis
+--
+-- Generator for chain and single block
+--
 
-prop_fromList_toList :: TestBlockChain -> Bool
-prop_fromList_toList (TestBlockChain chain) =
-    (fromList . toList) chain == chain
+-- | A test generator for a chain and a block that can be appended to it.
+--
+data TestAddBlock = TestAddBlock (Chain Block) Block
+  deriving Show
 
--- The list comes out in reverse order, most recent block at the head
-prop_toList_head :: TestBlockChain -> Bool
-prop_toList_head (TestBlockChain chain) =
-    (listToMaybe . toList) chain == head chain
+instance Arbitrary TestAddBlock where
+  arbitrary = do
+    TestBlockChain chain <- arbitrary
+    block <- genAddBlock chain
+    return (TestAddBlock chain block)
 
-prop_drop :: TestBlockChain -> Bool
-prop_drop (TestBlockChain chain) =
-    and [ Chain.drop n chain == fromList (L.drop n blocks)
-        | n <- [0..Prelude.length blocks] ]
-  where
-    blocks = toList chain
+  shrink (TestAddBlock c b) =
+    [ TestAddBlock c' b'
+    | TestBlockChain c' <- shrink (TestBlockChain c)
+    , let b' = fixupBlock (headPoint c') (headBlockNo c') b
+    ]
+
+genAddBlock :: HasHeader block => Chain block -> Gen Block
+genAddBlock chain = do
+    slotGap <- genSlotGap
+    body    <- arbitrary
+    let pb = mkPartialBlock (addSlotGap slotGap (headSlot chain)) body
+        b  = fixupBlock (headPoint chain) (headBlockNo chain) pb
+    return b
+
+prop_arbitrary_TestAddBlock :: TestAddBlock -> Bool
+prop_arbitrary_TestAddBlock (TestAddBlock c b) = valid (c :> b)
+
+prop_shrink_TestAddBlock :: TestAddBlock -> Bool
+prop_shrink_TestAddBlock t =
+    and [ valid (c :> b) | TestAddBlock c b <- shrink t ]
 
 
 --
@@ -449,14 +539,6 @@ genChainUpdate chain = do
       then AddBlock <$> genAddBlock chain
       else pure (RollBack (mkRollbackPoint chain n))
 
-genAddBlock :: HasHeader block => Chain block -> Gen Block
-genAddBlock chain = do
-    slotGap <- genSlotGap
-    body    <- arbitrary
-    let pb = mkPartialBlock (addSlotGap slotGap (headSlot chain)) body
-        b  = fixupBlock (headPoint chain) (headBlockNo chain) pb
-    return b
-
 mkRollbackPoint :: HasHeader block => Chain block -> Int -> Point
 mkRollbackPoint chain n = headPoint $ drop n chain
 
@@ -470,55 +552,15 @@ genChainUpdates chain n = do
 
 
 --
--- Generator for chain and single block
---
-
--- | A test generator for a chain and a block that can be appended to it.
---
-data TestAddBlock = TestAddBlock (Chain Block) Block
-  deriving Show
-
-instance Arbitrary TestAddBlock where
-  arbitrary = do
-    TestBlockChain chain <- arbitrary
-    block <- genAddBlock chain
-    return (TestAddBlock chain block)
-
-  shrink (TestAddBlock c b) =
-    [ TestAddBlock c' b'
-    | TestBlockChain c' <- shrink (TestBlockChain c)
-    , let b' = fixupBlock (headPoint c') (headBlockNo c') b
-    ]
-
-prop_arbitrary_TestAddBlock :: TestAddBlock -> Bool
-prop_arbitrary_TestAddBlock (TestAddBlock c b) = valid (c :> b)
-
-prop_shrink_TestAddBlock :: TestAddBlock -> Bool
-prop_shrink_TestAddBlock t =
-    and [ valid (c :> b) | TestAddBlock c b <- shrink t ]
-
-prop_addBlock :: TestAddBlock -> Bool
-prop_addBlock (TestAddBlock c b) =
-    -- after adding a block, that block is at the head
-    headPoint c' == blockPoint b
-    -- chain is still valid
- && valid c'
-    -- removing the block gives the original
- && rollback (headPoint c) c' == Just c
- && Chain.drop 1 c' == c
-    -- chain is one longer
- && Chain.length c' == Chain.length c + 1
-  where
-    c' = addBlock b c
-
-
---
 -- Generator for chain and single point on the chain
 --
 
+-- | A test generator for a chain and a points. In most cases the point is
+-- on the chain, but it also covers at least 5% of cases where the point is
+-- not on the chain.
+--
 data TestChainAndPoint = TestChainAndPoint (Chain Block) Point
   deriving Show
-
 
 instance Arbitrary TestChainAndPoint where
   arbitrary = do
@@ -548,38 +590,24 @@ fixupPoint c p =
 
 prop_arbitrary_TestChainAndPoint :: TestChainAndPoint -> Property
 prop_arbitrary_TestChainAndPoint (TestChainAndPoint c p) =
-  cover (85/100) (pointOnChain p c) "point on chain" $
-  valid c
+  cover (85/100) onChain       "point on chain" $
+  cover ( 5/100) (not onChain) "point not on chain" $
+    valid c
+  where
+    onChain = pointOnChain p c
 
 prop_shrink_TestChainAndPoint :: TestChainAndPoint -> Bool
 prop_shrink_TestChainAndPoint cp@(TestChainAndPoint c _) =
   and [ valid c' && (not (pointOnChain p c) || pointOnChain p c')
       | TestChainAndPoint c' p <- shrink cp ]
 
-prop_rollback :: TestChainAndPoint -> Property
-prop_rollback (TestChainAndPoint c p) =
-    case rollback p c of
-      Nothing -> property True
-      Just c' ->
-        -- chain is a prefix of original
-             isPrefixOf c' c
-        -- chain head point is the rollback point
-        .&&. headPoint c' === p
 
-prop_successorBlock :: TestChainAndPoint -> Property
-prop_successorBlock (TestChainAndPoint c p) =
-  pointOnChain p c ==>
-  case successorBlock p c of
-    Nothing -> headPoint c === p
-    Just b  -> property $ pointOnChain (blockPoint b) c
+--
+-- Generator for chain forks sharing a common prefix
+--
 
-prop_lookupBySlot :: TestChainAndPoint -> Bool
-prop_lookupBySlot (TestChainAndPoint c p) =
-  case lookupBySlot c (pointSlot p) of
-    Just b  -> pointOnChain (blockPoint b) c
-    Nothing | p == genesisPoint -> True
-            | otherwise         -> not (pointOnChain p c)
-
+-- | A test generator for two chains sharing a common prefix.
+--
 data TestChainFork = TestChainFork (Chain Block) -- common prefix
                                    (Chain Block) -- left fork
                                    (Chain Block) -- right fork
@@ -649,13 +677,9 @@ prop_shrink_TestChainFork forks =
                                   + Chain.length r
 
 
-prop_intersectChains :: TestChainFork -> Bool
-prop_intersectChains (TestChainFork c l r) =
-  case intersectChains l r of
-    Nothing -> c == Genesis && L.intersect (toList l) (toList r) == []
-    Just p  -> headPoint c == p
-            && pointOnChain p l
-            && pointOnChain p r
+--
+-- The list of all tests
+--
 
 tests :: TestTree
 tests =
@@ -670,15 +694,12 @@ tests =
     , testProperty "arbitrary for TestAddBlock" prop_arbitrary_TestAddBlock
     , testProperty "shrink for TestAddBlock"    prop_shrink_TestAddBlock
 
-    , testProperty "arbitrary for " prop_arbitrary_TestChainAndPoint
-    , testProperty "shrink for "    prop_shrink_TestChainAndPoint
+    , testProperty "arbitrary for TestChainAndPoint" prop_arbitrary_TestChainAndPoint
+    , testProperty "shrink for TestChainAndPoint"    prop_shrink_TestChainAndPoint
 
-    , testProperty "arbitrary for " prop_arbitrary_TestChainFork
-    , testProperty "shrink for "    prop_shrink_TestChainFork
-{-
-    , testProperty "arbitrary for " prop_arbitrary_
-    , testProperty "shrink for "    prop_shrink_
--}
+    , testProperty "arbitrary for TestChainFork" prop_arbitrary_TestChainFork
+    , testProperty "shrink for TestChainFork"
+                               (mapSize (min 40) prop_shrink_TestChainFork)
     ]
 
   , testProperty "length/Genesis"  prop_length_genesis
@@ -691,8 +712,5 @@ tests =
   , testProperty "successorBlock"  prop_successorBlock
   , testProperty "lookupBySlot"    prop_lookupBySlot
   , testProperty "intersectChains" prop_intersectChains
-{-
-  , testProperty "" prop_
--}
   ]
 
