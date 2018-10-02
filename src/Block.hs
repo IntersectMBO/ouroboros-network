@@ -1,5 +1,8 @@
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+
+-- | Reference implementation of a representation of a block in a block chain.
+--
 module Block (
       -- * Types
       Block (..)
@@ -36,10 +39,10 @@ data Block = Block {
 data BlockHeader = BlockHeader {
        headerHash     :: HeaderHash,  -- ^ The cached 'HeaderHash' of this header.
        headerPrevHash :: HeaderHash,  -- ^ The 'headerHash' of the previous block header
-       headerSlot     :: Slot,
-       headerBlockNo  :: BlockNo,
-       headerSigner   :: BlockSigner,
-       headerBodyHash :: BodyHash
+       headerSlot     :: Slot,        -- ^ The Ouroboros time slot index of this block
+       headerBlockNo  :: BlockNo,     -- ^ The block index from the Genesis
+       headerSigner   :: BlockSigner, -- ^ Who signed this block
+       headerBodyHash :: BodyHash     -- ^ The hash of the corresponding block body
      }
   deriving (Show, Eq)
 
@@ -68,11 +71,13 @@ newtype BlockNo      = BlockNo Word
 newtype BlockSigner  = BlockSigner Word
   deriving (Show, Eq, Ord, Hashable)
 
--- | The hash of all the information in a 'BlockHeader'
+-- | The hash of all the information in a 'BlockHeader'.
+--
 newtype HeaderHash   = HeaderHash Int
   deriving (Show, Eq, Ord, Hashable)
 
--- | The hash of all the information in a 'BlockBody'
+-- | The hash of all the information in a 'BlockBody'.
+--
 newtype BodyHash     = BodyHash Int
   deriving (Show, Eq, Ord, Hashable)
 
@@ -82,6 +87,7 @@ hashBody :: BlockBody -> BodyHash
 hashBody (BlockBody b) = BodyHash (hash b)
 
 -- | Compute the 'HeaderHash' of the 'BlockHeader'.
+--
 hashHeader :: BlockHeader -> HeaderHash
 hashHeader (BlockHeader _ b c d e f) = HeaderHash (hash (b, c, d, e, f))
 
@@ -110,6 +116,8 @@ instance HasHeader BlockHeader where
     blockSigner    = headerSigner
     blockBodyHash  = headerBodyHash
 
+    -- | The header invariant is that the cached header hash is correct.
+    --
     blockInvariant = \b -> hashHeader b == headerHash b
 
 instance HasHeader Block where
