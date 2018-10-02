@@ -218,10 +218,14 @@ lookupBySlot
   => Chain block
   -> Slot
   -> Maybe block
-lookupBySlot Genesis  slot = Nothing
+lookupBySlot Genesis _slot = Nothing
 lookupBySlot (c :> b) slot | blockSlot b == slot = Just b
                            | blockSlot b < slot  = Nothing
                            | otherwise           = lookupBySlot c slot
+
+isPrefixOf :: Eq block => Chain block -> Chain block -> Bool
+a `isPrefixOf` b = reverse (toList a) `L.isPrefixOf` reverse (toList b)
+
 
 data ChainUpdate block = AddBlock block
                        | RollBack Point
@@ -542,8 +546,9 @@ fixupPoint c p =
     Just b  -> blockPoint b
     Nothing -> headPoint c
 
-prop_arbitrary_TestChainAndPoint :: TestChainAndPoint -> Bool
+prop_arbitrary_TestChainAndPoint :: TestChainAndPoint -> Property
 prop_arbitrary_TestChainAndPoint (TestChainAndPoint c p) =
+  cover (85/100) (pointOnChain p c) "point on chain" $
   valid c
 
 prop_shrink_TestChainAndPoint :: TestChainAndPoint -> Bool
@@ -557,13 +562,9 @@ prop_rollback (TestChainAndPoint c p) =
       Nothing -> property True
       Just c' ->
         -- chain is a prefix of original
-             isPrefix c' c
+             isPrefixOf c' c
         -- chain head point is the rollback point
         .&&. headPoint c' === p
-  where
-    isPrefix (_ :> _) Genesis = False
-    isPrefix c c' | c == c'   = True
-                  | otherwise = isPrefix c (drop 1 c')
 
 prop_successorBlock :: TestChainAndPoint -> Property
 prop_successorBlock (TestChainAndPoint c p) =
@@ -633,8 +634,8 @@ instance Arbitrary TestChainFork where
 prop_arbitrary_TestChainFork :: TestChainFork -> Bool
 prop_arbitrary_TestChainFork (TestChainFork c l r) =
     valid c && valid l && valid r
- && reverse (toList c) `L.isPrefixOf` reverse (toList l)
- && reverse (toList c) `L.isPrefixOf` reverse (toList r)
+ && c `isPrefixOf` l
+ && c `isPrefixOf` r
 
 prop_shrink_TestChainFork :: TestChainFork -> Bool
 prop_shrink_TestChainFork forks =
