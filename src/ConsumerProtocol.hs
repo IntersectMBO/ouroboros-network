@@ -53,7 +53,7 @@ import           System.Random (mkStdGen)
 import           Test.QuickCheck
 
 import           Block (Block (..), HasHeader (..))
-import           Chain (Chain (..), ChainUpdate (..), Point (..), absChainFragment, blockPoint, 
+import           Chain (Chain (..), ChainUpdate (..), Point (..), blockPoint, 
                         findIntersection)
 import qualified Chain
 import           ChainProducerState

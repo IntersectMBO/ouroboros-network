@@ -13,7 +13,6 @@ import Block ( Block(..), BlockHeader(..), HasHeader(..)
              , BlockBody(..), BodyHash(..)
              , Slot(..), BlockNo(..), BlockSigner(..)
              , HeaderHash(..), hashHeader, hashBody )
-import qualified Chain.Abstract as Chain.Abs
 
 import Control.Exception (assert)
 import qualified Data.List as L
@@ -210,22 +209,6 @@ intersectChains c (bs :> b) =
        then Just p
        else intersectChains c bs
 
-absChainFragment :: Chain Block -> Chain.Abs.Chain
-absChainFragment = toList
-
-reifyChainFragment :: Chain.Abs.Chain -> Chain Block
-reifyChainFragment = L.foldl' (:>) Genesis
-
-absApplyChainUpdate :: ChainUpdate Block -> Chain.Abs.Chain -> Chain.Abs.Chain
-absApplyChainUpdate (AddBlock     b)  c = b:c
-absApplyChainUpdate (RollBack p)      c = go c
-    where
-    go [] = []
-    go (b : bs) | blockPoint b == p = b : bs
-                | otherwise         = go bs
-
-absApplyChainUpdates :: [ChainUpdate Block] -> Chain.Abs.Chain -> Chain.Abs.Chain
-absApplyChainUpdates = flip (foldl (flip absApplyChainUpdate))
 
 --
 -- Generators for chains

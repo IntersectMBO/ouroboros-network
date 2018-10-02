@@ -18,7 +18,6 @@ library
   -- This has to be tidied up once the design becomes clear.
   exposed-modules:     Chain,
                        MonadClass,
-                       ChainExperiment2,
                        ChainProducerState,
                        Protocol,
                        Block,
@@ -26,9 +25,7 @@ library
                        Node,
                        States,
                        SimSTM,
-                       Sim,
-                       Chain.Abstract,
-                       Chain.Update
+                       Sim
   other-modules:
 -- Old experiments, not currently building:
 --                     Types
