@@ -10,7 +10,7 @@ import Prelude hiding (head, drop)
 
 import Block ( Block(..), BlockHeader(..), HasHeader(..)
              , Slot(..), BlockNo (..), HeaderHash(..)
-             , genBlock, genNBlocks
+             , genBlock
              , BlockBody(..), BodyHash(..)
              , Slot(..), BlockNo(..), BlockSigner(..)
              , HeaderHash(..), hashHeader, hashBody )
@@ -486,51 +486,82 @@ prop_lookupBySlot (ChainWithPointTest c p) =
     Nothing | p == genesisPoint -> True
             | otherwise         -> not (pointOnChain p c)
 
-data TestChainFork = TestChainFork (Chain Block) (Chain Block)
+data TestChainFork = TestChainFork (Chain Block) -- common prefix
+                                   (Chain Block) -- left fork
+                                   (Chain Block) -- right fork
   deriving Show
 
 instance Arbitrary TestChainFork where
   arbitrary = do
-    NonNegative n <- arbitrary
-    chain <- genBlockChain n
-    let h = head chain
+    TestBlockChain chain <- arbitrary
     -- at least 5% of forks should be equal
-    equalChains <- frequency [(1, return True), (19, return False)]
+    equalChains <- frequency [(1, pure True), (19, pure False)]
     if equalChains
-      then return $ TestChainFork chain chain
+      then return (TestChainFork chain chain chain)
       else do
-        NonNegative k <- arbitrary
-        bs1 <- genNBlocks k
-          (maybe genesisHash blockHash h)
-          (succ $ maybe genesisSlot blockSlot h)
-          (succ $ maybe genesisBlockNo blockNo h)
-        let chain1 = foldr addBlock chain bs1
+        (NonNegative l, NonNegative r) <- arbitrary
+        chainL <- genAddBlocks l chain
+        chainR <- genAddBlocks r chain
+        return (TestChainFork chain chainL chainR)
 
-        NonNegative l <- arbitrary
-        bs2 <- genNBlocks l
-          (maybe genesisHash blockHash h)
-          (succ $ maybe genesisSlot blockSlot h)
-          (succ $ maybe genesisBlockNo blockNo h)
-        let chain2 = foldr addBlock chain bs2
+    where
+      genAddBlocks :: Int -> Chain Block -> Gen (Chain Block)
+      genAddBlocks 0 c = return c
+      genAddBlocks n c = do
+          b <- genAddBlock c
+          genAddBlocks (n-1) (addBlock b c)
 
-        return $ TestChainFork chain1 chain2
 
-  shrink (TestChainFork c d) =
-    [ TestChainFork c' d | TestBlockChain c' <- shrink (TestBlockChain c) ] ++
-    [ TestChainFork c d' | TestBlockChain d' <- shrink (TestBlockChain d) ]
+  shrink (TestChainFork common l r) =
+        -- shrink the common prefix
+      [ TestChainFork (fromListFixupBlocks common')
+                      (fromListFixupBlocks (exl ++ common'))
+                      (fromListFixupBlocks (exr ++ common'))
+      | let exl = extensionFragment common l
+            exr = extensionFragment common r
+      , common' <- shrinkList (const []) (toList common)
+      ]
+        -- shrink the left fork
+   ++ [ TestChainFork common l' r
+      | let exl = extensionFragment common l
+      , exl' <- shrinkList (const []) exl
+      , let l' = fromListFixupBlocks (exl' ++ toList common)
+      ]
+        -- shrink the right fork
+   ++ [ TestChainFork common l r'
+      | let exr = extensionFragment common r
+      , exr' <- shrinkList (const []) exr
+      , let r' = fromListFixupBlocks (exr' ++ toList common)
+      ]
+    where
+      extensionFragment :: Chain Block -> Chain Block -> [Block]
+      extensionFragment c = reverse . L.drop (Chain.length c) . reverse . toList
 
-prop_shrink_ChainFork :: TestChainFork -> Property
-prop_shrink_ChainFork f =
-  withMaxSuccess 50 $
-  all (\(TestChainFork c1 c2) -> valid c1 && valid c2) (shrink f)
+prop_arbitrary_TestChainFork :: TestChainFork -> Bool
+prop_arbitrary_TestChainFork (TestChainFork c l r) =
+    valid c && valid l && valid r
+ && reverse (toList c) `L.isPrefixOf` reverse (toList l)
+ && reverse (toList c) `L.isPrefixOf` reverse (toList r)
 
-prop_intersectChains :: TestChainFork -> Property
-prop_intersectChains (TestChainFork c1 c2) =
-  case intersectChains c1 c2 of
-    Nothing -> L.intersect (toList c1) (toList c2) === []
-    Just p  -> counterexample (show (c1, c2, p)) $
-           pointOnChain p c1
-      .&&. pointOnChain p c2
+prop_shrink_TestChainFork :: TestChainFork -> Bool
+prop_shrink_TestChainFork forks =
+  and [    prop_arbitrary_TestChainFork forks'
+        && measure forks' < mforks
+      | let mforks = measure forks
+      , forks' <- shrink forks ]
+  where
+    measure (TestChainFork c l r) = Chain.length c
+                                  + Chain.length l
+                                  + Chain.length r
+
+
+prop_intersectChains :: TestChainFork -> Bool
+prop_intersectChains (TestChainFork c l r) =
+  case intersectChains l r of
+    Nothing -> c == Genesis && L.intersect (toList l) (toList r) == []
+    Just p  -> headPoint c == p
+            && pointOnChain p l
+            && pointOnChain p r
 
 return []
 runTests = $quickCheckAll
