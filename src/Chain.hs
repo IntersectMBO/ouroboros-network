@@ -1,10 +1,64 @@
 {-# LANGUAGE DeriveFunctor   #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE NamedFieldPuns  #-}
 
 -- | Reference implementation of a representation of a block chain
 --
-module Chain where
+module Chain (
+  -- * Chain type and fundamental operations
+  Chain(..),
+  valid,
+  foldChain,
+
+  -- * Point type
+  Point(..),
+  blockPoint,
+
+  -- * Chain construction and inspection
+  -- ** Genesis
+  genesis,
+  genesisPoint,
+  genesisSlot,
+  genesisHash,
+  genesisBlockNo,
+
+  -- ** Head inspection
+  headPoint,
+  headSlot,
+  headHash,
+  headBlockNo,
+
+  -- ** Basic operations
+  head,
+  toList,
+  fromList,
+  drop,
+  Chain.length,
+
+  -- ** Update type and operations
+  ChainUpdate(..),
+  addBlock,
+  rollback,
+  applyChainUpdate,
+  applyChainUpdates,
+
+  -- * Special operations
+  pointOnChain,
+  successorBlock,
+  lookupBySlot,
+  selectChain,
+  findIntersection,
+  intersectChains,
+
+  -- * Generators, test and test utils
+  TestBlockChain(..),
+  TestHeaderChain(..),
+  TestBlockChainAndUpdates(..),
+  TestAddBlock(..),
+  TestChainAndPoint(..),
+  TestChainFork(..),
+  isPrefixOf,
+  tests,
+  ) where
 
 import Prelude hiding (head, drop)
 
@@ -19,6 +73,9 @@ import qualified Data.List as L
 import Data.Maybe (fromMaybe, listToMaybe)
 
 import Test.QuickCheck
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.QuickCheck (testProperty)
+
 
 --
 -- Blockchain type
@@ -599,5 +656,42 @@ prop_intersectChains (TestChainFork c l r) =
             && pointOnChain p l
             && pointOnChain p r
 
-return []
-runTests = $quickCheckAll
+tests :: TestTree
+tests =
+  testGroup "Chain"
+  [ testGroup "generators"
+    [ testProperty "arbitrary for TestBlockChain"  prop_arbitrary_TestBlockChain
+    , testProperty "shrink for TestBlockChain"     prop_shrink_TestBlockChain
+
+    , testProperty "arbitrary for TestHeaderChain" prop_arbitrary_TestHeaderChain
+    , testProperty "shrink for TestHeaderChain"    prop_shrink_TestHeaderChain
+
+    , testProperty "arbitrary for TestAddBlock" prop_arbitrary_TestAddBlock
+    , testProperty "shrink for TestAddBlock"    prop_shrink_TestAddBlock
+
+    , testProperty "arbitrary for " prop_arbitrary_TestChainAndPoint
+    , testProperty "shrink for "    prop_shrink_TestChainAndPoint
+
+    , testProperty "arbitrary for " prop_arbitrary_TestChainFork
+    , testProperty "shrink for "    prop_shrink_TestChainFork
+{-
+    , testProperty "arbitrary for " prop_arbitrary_
+    , testProperty "shrink for "    prop_shrink_
+-}
+    ]
+
+  , testProperty "length/Genesis"  prop_length_genesis
+  , testProperty "drop/Genesis"    prop_drop_genesis
+  , testProperty "fromList/toList" prop_fromList_toList
+  , testProperty "toList/head"     prop_toList_head
+  , testProperty "drop"            prop_drop
+  , testProperty "addBlock"        prop_addBlock
+  , testProperty "rollback"        prop_rollback
+  , testProperty "successorBlock"  prop_successorBlock
+  , testProperty "lookupBySlot"    prop_lookupBySlot
+  , testProperty "intersectChains" prop_intersectChains
+{-
+  , testProperty "" prop_
+-}
+  ]
+
