@@ -17,7 +17,7 @@ import qualified Chain.Abstract as Chain.Abs
 
 import Control.Exception (assert)
 import qualified Data.List as L
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, listToMaybe)
 
 import Test.QuickCheck
 
@@ -353,6 +353,30 @@ fixupBlockHeader p n h b = b'
 
 k :: Int
 k = 5
+
+prop_length_genesis :: Bool
+prop_length_genesis = Chain.length Genesis == 0
+
+prop_drop_genesis :: TestBlockChain -> Bool
+prop_drop_genesis (TestBlockChain chain) =
+    Chain.drop (Chain.length chain) chain == Genesis
+
+prop_fromList_toList :: TestBlockChain -> Bool
+prop_fromList_toList (TestBlockChain chain) =
+    (fromList . toList) chain == chain
+
+-- The list comes out in reverse order, most recent block at the head
+prop_toList_head :: TestBlockChain -> Bool
+prop_toList_head (TestBlockChain chain) =
+    (listToMaybe . toList) chain == head chain
+
+prop_drop :: TestBlockChain -> Bool
+prop_drop (TestBlockChain chain) =
+    and [ Chain.drop n chain == fromList (L.drop n blocks)
+        | n <- [0..Prelude.length blocks] ]
+  where
+    blocks = toList chain
+
 
 --
 -- Generator for chain updates
