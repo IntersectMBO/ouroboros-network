@@ -396,34 +396,46 @@ genChainUpdates chain n = do
 
 
 --
--- Properties
+-- Generator for chain and single block
 --
 
-data AddBlockTest = AddBlockTest (Chain Block) Block
+-- | A test generator for a chain and a block that can be appended to it.
+--
+data TestAddBlock = TestAddBlock (Chain Block) Block
   deriving Show
 
-instance Arbitrary AddBlockTest where
+instance Arbitrary TestAddBlock where
   arbitrary = do
-    NonNegative n <- arbitrary
-    chain <- genBlockChain n
-    block <- case Chain.head chain of
-      Nothing -> genBlock genesisHash (succ genesisSlot) (succ genesisBlockNo)
-      Just h  -> genBlock (blockHash h) (succ $ blockSlot h) (succ $ blockNo h)
-    return $ AddBlockTest chain block
+    TestBlockChain chain <- arbitrary
+    block <- genAddBlock chain
+    return (TestAddBlock chain block)
 
-  shrink (AddBlockTest Genesis  _)  = []
-  shrink (AddBlockTest (c :> b) _) = [AddBlockTest c b]
+  shrink (TestAddBlock c b) =
+    [ TestAddBlock c' b'
+    | TestBlockChain c' <- shrink (TestBlockChain c)
+    , let b' = fixupBlock (headPoint c') (headBlockNo c') b
+    ]
 
-prop_addBlock :: AddBlockTest -> Property
-prop_addBlock t@(AddBlockTest c b) =
-  let c' = addBlock b c
-  in
+prop_arbitrary_TestAddBlock :: TestAddBlock -> Bool
+prop_arbitrary_TestAddBlock (TestAddBlock c b) = valid (c :> b)
+
+prop_shrink_TestAddBlock :: TestAddBlock -> Bool
+prop_shrink_TestAddBlock t =
+    and [ valid (c :> b) | TestAddBlock c b <- shrink t ]
+
+prop_addBlock :: TestAddBlock -> Bool
+prop_addBlock (TestAddBlock c b) =
     -- after adding a block, that block is at the head
-       headPoint c' === blockPoint b
+    headPoint c' == blockPoint b
     -- chain is still valid
-    .&&. valid c'
+ && valid c'
     -- removing the block gives the original
-    .&&. rollback (headPoint c) c' === Just c
+ && rollback (headPoint c) c' == Just c
+ && Chain.drop 1 c' == c
+    -- chain is one longer
+ && Chain.length c' == Chain.length c + 1
+  where
+    c' = addBlock b c
 
 data ChainWithPointTest = ChainWithPointTest (Chain Block) Point
   deriving Show
