@@ -58,9 +58,9 @@ import           Chain (Chain (..), ChainUpdate (..), Point (..), blockPoint,
 import qualified Chain
 import           ChainProducerState
 import           MonadClass
-import           SimSTM (ProbeTrace, SimChan (..), SimF, SimM, Trace, failSim, flipSimChan,
-                         newProbe, readProbe, runSimM, runSimMST)
-import qualified SimSTM
+import           Sim ( ProbeTrace, SimChan (..), SimF, SimM, Trace, failSim
+                     , flipSimChan, newProbe, readProbe, runSimM, runSimMST )
+import qualified Sim
 
 {-# ANN module "HLint: ignore Use readTVarIO" #-}
 
@@ -299,7 +299,7 @@ producerToConsumerSim
        , Eq block
        , Show block
        )
-    => SimSTM.Probe s (Chain block)
+    => Sim.Probe s (Chain block)
     -> Chain block
     -- ^ chain to reproduce on the consumer; ought to be non empty
     -> Chain block
@@ -351,7 +351,7 @@ prop_producerToConsumer (Chain.TestChainFork _ pchain cchain) =
                   ++ "\nconsumer chain: " ++ show cchain
                   ++ "\nresult chain: "   ++ show rchain
                   ++ "\ntrace:\n"
-                  ++ unlines (map show $ filter SimSTM.filterTrace tr)
+                  ++ unlines (map show $ filter Sim.filterTrace tr)
 -}
 
 -- |
@@ -447,7 +447,7 @@ nodeSim
        , Eq block
        , Show block
        )
-    => SimSTM.Probe s (Chain block)
+    => Sim.Probe s (Chain block)
     -> Chain block
     -- ^ initial chain of producer 1
     -> Chain block

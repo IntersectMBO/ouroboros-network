@@ -16,7 +16,7 @@ import           Chain (Chain (..), Point)
 import ConsumerProtocol
 import ChainProducerState (ChainProducerState (..), ReaderId, initChainProducerState, switchFork)
 
-import qualified SimSTM as Sim
+import qualified Sim
 
 import Test.QuickCheck
 

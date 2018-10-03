@@ -19,12 +19,9 @@ library
   exposed-modules:     Chain,
                        MonadClass,
                        ChainProducerState,
-                       Protocol,
                        Block,
                        ConsumerProtocol,
                        Node,
-                       States,
-                       SimSTM,
                        Sim
   other-modules:
 -- Old experiments, not currently building:
