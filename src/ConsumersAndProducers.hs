@@ -25,6 +25,12 @@ import           ProtocolInterfaces
 
 
 
+-- | An instance of the the consumer side of the protocol interface that
+-- consumes into a 'Chain' stored in a 'TVar'.
+--
+-- This is of course only useful in tests and reference implementations since
+-- this is not a realisic chain representation.
+--
 exampleConsumer :: forall block m stm.
                    ( Eq block
                    , HasHeader block
@@ -60,6 +66,12 @@ exampleConsumer chainvar =
 
 
 
+-- | An instance of the producer side of the protocol interface that reads from
+-- a pure 'ChainProducerState' stored in a 'TVar'.
+--
+-- This is of course only useful in tests and reference implementations since
+-- this is not a realisic chain representation.
+--
 exampleProducer
   :: forall block m stm.
      ( HasHeader block
