@@ -13,7 +13,8 @@ import MonadClass hiding (sendMsg, recvMsg)
 import Block
 import qualified Chain
 import           Chain (Chain (..), Point)
-import ConsumerProtocol
+import Protocol
+import ConsumersAndProducers
 import ChainProducerState (ChainProducerState (..), ReaderId, initChainProducerState, switchFork)
 
 import qualified Sim

@@ -250,7 +250,7 @@ findIntersection
   => Chain block
   -> [Point]
   -> Maybe Point
-findIntersection c []     = Nothing
+findIntersection _ []     = Nothing
 findIntersection c (p:ps)
   | pointOnChain p c      = Just p
   | otherwise             = findIntersection c ps

@@ -16,12 +16,15 @@ library
   hs-source-dirs:      src
   -- At this experiment/prototype stage everything is exposed.
   -- This has to be tidied up once the design becomes clear.
-  exposed-modules:     Chain,
-                       MonadClass,
-                       ChainProducerState,
-                       Block,
-                       ConsumerProtocol,
-                       Node,
+  exposed-modules:     Block
+                       Chain
+                       ChainProducerState
+                       MonadClass
+                       Protocol
+                       ProtocolInterfaces
+                       ConsumersAndProducers
+                       Node
+                       NodeExperiment1
                        Sim
   other-modules:
 -- Old experiments, not currently building:
