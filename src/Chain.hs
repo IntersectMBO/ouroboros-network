@@ -248,16 +248,12 @@ applyChainUpdates = flip (foldl (flip applyChainUpdate))
 findIntersection
   :: HasHeader block
   => Chain block
-  -> Point
   -> [Point]
   -> Maybe Point
-findIntersection c hpoint points =
-    go (hpoint : points)
-  where
-    go [] = Nothing
-    go (p:ps)
-        | pointOnChain p c = Just p
-        | otherwise        = go ps
+findIntersection c []     = Nothing
+findIntersection c (p:ps)
+  | pointOnChain p c      = Just p
+  | otherwise             = findIntersection c ps
 
 intersectChains
   :: HasHeader block

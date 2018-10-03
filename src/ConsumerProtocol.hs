@@ -71,7 +71,7 @@ import qualified SimSTM
 -- | In this protocol the consumer always initiates things and the producer
 -- replies. This is the type of messages that the consumer sends.
 data MsgConsumer = MsgRequestNext
-                 | MsgSetHead Point [Point]
+                 | MsgSetHead [Point]
     deriving (Show)
 
 -- | This is the type of messages that the producer sends.
@@ -84,7 +84,7 @@ data MsgProducer block
     deriving (Show)
 
 data ConsumerHandlers block m = ConsumerHandlers {
-       getChainPoints :: m (Point, [Point]),
+       getChainPoints :: m [Point],
        addBlock       :: block -> m (),
        rollbackTo     :: Point -> m ()
      }
@@ -102,10 +102,12 @@ consumerSideProtocol1
   -> m ()
 consumerSideProtocol1 ConsumerHandlers{..} cid send recv = do
     -- The consumer opens by sending a list of points on their chain.
-    -- This includes the head block and
-    (hpoint, points) <- getChainPoints
-    send (MsgSetHead hpoint points)
-    _msg <- recv
+    -- This typically includes the head block and recent points
+    points <- getChainPoints
+    unless (null points) $ do
+      send (MsgSetHead points)
+      _msg <- recv
+      return ()
     requestNext
   where
     consumerId :: String
@@ -144,32 +146,30 @@ exampleConsumer :: forall block m stm.
                 -> ConsumerHandlers block m
 exampleConsumer chainvar = ConsumerHandlers {..}
     where
-    getChainPoints :: m (Point, [Point])
+    getChainPoints :: m [Point]
     getChainPoints = atomically $ do
         chain <- readTVar chainvar
-        -- TODO: bootstraping case (client has no blocks)
-        -- TODO: remove `toList`
-        let (p : ps) = map blockPoint $ Chain.toList $ chain
-        case map blockPoint $ Chain.toList chain of
-          []     -> return (Chain.genesisPoint, [])
-          p : ps -> return (p, ps)
+        -- TODO: improve point selection function, move it elsewhere
+        let ps = map blockPoint $ Chain.toList $ chain
+        return ps
 
     addBlock :: block -> m ()
     addBlock b = void $ atomically $ do
         chain <- readTVar chainvar
-        let !chain' = Chain.applyChainUpdate (AddBlock b) chain
-        when (chain /= chain')
+        let !chain' = Chain.addBlock b chain
+        when (Chain.headPoint chain /= Chain.headPoint chain')
           $ writeTVar chainvar chain'
 
     rollbackTo :: Point -> m ()
     rollbackTo p = atomically $ do
         chain <- readTVar chainvar
-        let !chain' = Chain.applyChainUpdate (RollBack p) chain
-        when (chain /= chain')
+        --TODO: handle rollback failure
+        let (Just !chain') = Chain.rollback p chain
+        when (Chain.headPoint chain /= Chain.headPoint chain')
           $ writeTVar chainvar chain'
 
 data ProducerHandlers block m r = ProducerHandlers {
-       findIntersectionRange :: Point -> [Point] -> m (Maybe Point),
+       findIntersectionRange :: [Point] -> m (Maybe Point),
        establishReaderState  :: Point -> m r,
        updateReaderState     :: r -> Point -> m (),
        tryReadChainUpdate    :: r -> m (Maybe (ChainUpdate block)),
@@ -191,45 +191,17 @@ producerSideProtocol1
   -> (m MsgConsumer)             -- ^ recv
   -> m ()
 producerSideProtocol1 ProducerHandlers{..} pid send recv =
-    awaitOpening >>= maybe (return ()) awaitOngoing
+    establishReaderState Chain.genesisPoint >>= awaitOngoing
   where
     producerId :: String
     producerId = show pid
-
-    awaitOpening = do
-      -- The opening message must be this one, to establish the reader state
-      say (producerId ++ ":awaitOpening")
-      msg <- recv
-      case msg of
-        MsgSetHead hpoint points -> do
-          say $ producerId ++ ":awaitOpening:recvMsg: " ++ show msg
-          intersection <- findIntersectionRange hpoint points
-          case intersection of
-            Just pt -> do
-              r <- establishReaderState pt
-              let msg = MsgIntersectImproved pt
-              say $ producerId ++ ":awaitOpening:sendMsg: " ++ show msg
-              send msg
-              return (Just r)
-            Nothing -> do
-              let msg :: MsgProducer block
-                  msg = MsgIntersectUnchanged
-              say $ producerId ++ ":awaitOpening:sendMsg: " ++ show msg
-              send msg
-              awaitOpening
-        MsgRequestNext -> do
-          -- This message is received if the consumer's chain has no intersection
-          -- with the producer's chain.  The producer will receive it as an
-          -- answer to `MsgIntersectUnchanged`.
-          say $ producerId ++ ":awaiOpening:recvMsg: " ++ show msg
-          return Nothing
 
     awaitOngoing r = forever $ do
       msg <- recv
       say $ producerId ++ ":awaitOngoing:recvMsg: " ++ show msg
       case msg of
-        MsgRequestNext           -> handleNext r
-        MsgSetHead hpoint points -> handleSetHead r hpoint points
+        MsgRequestNext    -> handleNext r
+        MsgSetHead points -> handleSetHead r points
 
     handleNext r = do
       mupdate <- tryReadChainUpdate r
@@ -247,11 +219,10 @@ producerSideProtocol1 ProducerHandlers{..} pid send recv =
       say $ producerId ++ ":handleNext:sendMsg: " ++ show msg
       send msg
 
-    handleSetHead r hpoint points = do
+    handleSetHead r points = do
       -- TODO: guard number of points, points sorted
-      -- Find the most recent point that is on our chain, and the subsequent
-      -- point which is not.
-      intersection <- findIntersectionRange hpoint points
+      -- Find the first point that is on our chain
+      intersection <- findIntersectionRange points
       case intersection of
         Just pt -> do
           updateReaderState r pt
@@ -280,10 +251,10 @@ exampleProducer
 exampleProducer chainvar =
     ProducerHandlers {..}
   where
-    findIntersectionRange :: Point -> [Point] -> m (Maybe Point)
-    findIntersectionRange hpoint points = do
+    findIntersectionRange :: [Point] -> m (Maybe Point)
+    findIntersectionRange points = do
       ChainProducerState {chainState} <- atomically $ readTVar chainvar
-      return $! findIntersection chainState hpoint points
+      return $! findIntersection chainState points
 
     establishReaderState :: Point -> m ReaderId
     establishReaderState ipoint = atomically $ do
@@ -365,21 +336,23 @@ runProducerToConsumer pchain cchain = runST $ do
   probe <- readProbe v
   return (trace, probe)
 
-prop_producerToConsumer :: Chain.TestChainFork -> Property
+prop_producerToConsumer :: Chain.TestChainFork -> Bool
 prop_producerToConsumer (Chain.TestChainFork _ pchain cchain) =
-  let (tr, pr) = runProducerToConsumer pchain cchain
-      rchain = snd $ last pr -- ^ chain transferred to the consumer
-  in counterexample
-      ("producer chain: "     ++ show pchain
-      ++ "\nconsumer chain: " ++ show cchain
-      ++ "\nresult chain: "   ++ show rchain
-      ++ "\ntrace:\n"
-      ++ unlines (map show $ filter SimSTM.filterTrace tr))
-    $ case pchain `Chain.intersectChains` rchain of
-        -- chain was transmitted
-        Just _  -> rchain == pchain
-        -- there's not intersection, so the protocol failed
-        Nothing -> rchain == cchain
+    showFail $
+    -- chain was transmitted
+    rchain == pchain
+  where
+    (tr, pr) = runProducerToConsumer pchain cchain
+    rchain   = snd (last pr) -- ^ chain transferred to the consumer
+    showFail = id
+{-
+    showFail = counterexample $
+                     "producer chain: "     ++ show pchain
+                  ++ "\nconsumer chain: " ++ show cchain
+                  ++ "\nresult chain: "   ++ show rchain
+                  ++ "\ntrace:\n"
+                  ++ unlines (map show $ filter SimSTM.filterTrace tr)
+-}
 
 -- |
 -- Select chain from n consumers.
