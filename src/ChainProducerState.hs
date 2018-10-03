@@ -7,8 +7,7 @@ import           Block (Block, BlockHeader, HasHeader)
 import           Chain ( Chain, Point(..), blockPoint, ChainUpdate(..)
                        , genesisPoint, headPoint , pointOnChain
                        , TestBlockChainAndUpdates(..), TestBlockChain(..)
-                       , TestChainFork(..), mkRollbackPoint
-                       , genBlockChain, genPoint)
+                       , TestChainFork(..), mkRollbackPoint )
 import qualified Chain
 
 import           Data.List (sort, group, find, unfoldr)
@@ -266,8 +265,8 @@ fixupReaderStates = go 0
 
 instance Arbitrary ChainProducerStateTest where
   arbitrary = do
-    NonNegative n <- arbitrary
-    c <- genBlockChain n
+    TestBlockChain c <- arbitrary
+    let n = Chain.length c
     rs <- fixupReaderStates <$> listOf1 (genReaderState n c)
     rid <- choose (0, length rs - 1)
     p <- if n == 0
