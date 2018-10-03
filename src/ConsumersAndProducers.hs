@@ -34,7 +34,6 @@ import           ProtocolInterfaces
 exampleConsumer :: forall block m stm.
                    ( Eq block
                    , HasHeader block
-                   , MonadSay m
                    , MonadSTM m stm
                    )
                 => TVar m (Chain block)
@@ -76,7 +75,6 @@ exampleProducer
   :: forall block m stm.
      ( HasHeader block
      , Eq block
-     , MonadSay m
      , MonadSTM m stm
      )
   => TVar m (ChainProducerState block)
@@ -84,26 +82,23 @@ exampleProducer
 exampleProducer chainvar =
     ProducerHandlers {..}
   where
-    findIntersectionRange :: [Point] -> m (Maybe Point)
-    findIntersectionRange points = do
-      ChainProducerState {chainState} <- atomically $ readTVar chainvar
-      return $! findIntersection chainState points
-
-    establishReaderState :: Point -> m ReaderId
-    establishReaderState ipoint = atomically $ do
+    newReader :: m ReaderId
+    newReader = atomically $ do
       cps <- readTVar chainvar
-      let (cps', rid) = initReader ipoint cps
-      when (cps /= cps')
-        $ writeTVar chainvar cps'
+      let (cps', rid) = initReader Chain.genesisPoint cps
+      writeTVar chainvar cps'
       return rid
 
-    updateReaderState :: ReaderId -> Point -> m ()
-    updateReaderState rid ipoint =
+    improveReadPoint :: ReaderId -> [Point] -> m (Maybe Point)
+    improveReadPoint rid points =
       atomically $ do
         cps <- readTVar chainvar
-        let !cps' = updateReader rid ipoint cps
-        when (cps /= cps')
-          $ writeTVar chainvar cps'
+        case findIntersection (chainState cps) points of
+          Nothing     -> return Nothing
+          Just ipoint -> do
+            let !cps' = updateReader rid ipoint cps
+            writeTVar chainvar cps'
+            return (Just ipoint)
 
     tryReadChainUpdate :: ReaderId -> m (Maybe (ChainUpdate block))
     tryReadChainUpdate rid =

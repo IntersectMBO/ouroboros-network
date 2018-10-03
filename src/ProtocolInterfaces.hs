@@ -21,9 +21,8 @@ data ConsumerHandlers block m = ConsumerHandlers {
 -- to query and read the producers chain.
 --
 data ProducerHandlers block m r = ProducerHandlers {
-       findIntersectionRange :: [Point] -> m (Maybe Point),
-       establishReaderState  :: Point -> m r,
-       updateReaderState     :: r -> Point -> m (),
+       newReader             :: m r,
+       improveReadPoint      :: r -> [Point] -> m (Maybe Point),
        tryReadChainUpdate    :: r -> m (Maybe (ChainUpdate block)),
        readChainUpdate       :: r -> m (ChainUpdate block)
      }

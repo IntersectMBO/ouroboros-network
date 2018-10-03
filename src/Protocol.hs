@@ -14,7 +14,6 @@ import           Control.Monad
 
 import           Block (HasHeader (..))
 import           Chain (ChainUpdate (..), Point (..))
-import qualified Chain
 import           MonadClass
 import           ProtocolInterfaces (ConsumerHandlers(..), ProducerHandlers(..))
 
@@ -101,7 +100,7 @@ producerSideProtocol1
   -> (m MsgConsumer)             -- ^ recv
   -> m ()
 producerSideProtocol1 ProducerHandlers{..} pid send recv =
-    establishReaderState Chain.genesisPoint >>= awaitOngoing
+    newReader >>= awaitOngoing
   where
     producerId :: String
     producerId = show pid
@@ -132,10 +131,9 @@ producerSideProtocol1 ProducerHandlers{..} pid send recv =
     handleSetHead r points = do
       -- TODO: guard number of points, points sorted
       -- Find the first point that is on our chain
-      intersection <- findIntersectionRange points
-      case intersection of
+      changed <- improveReadPoint r points
+      case changed of
         Just pt -> do
-          updateReaderState r pt
           let msg :: MsgProducer block
               msg = MsgIntersectImproved pt
           say $ producerId ++ ":handleSetHead:sendMsg: " ++ show msg
