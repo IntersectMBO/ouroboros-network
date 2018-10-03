@@ -57,6 +57,7 @@ module Chain (
   TestChainAndPoint(..),
   TestChainFork(..),
   isPrefixOf,
+  mkRollbackPoint,
   tests,
   ) where
 

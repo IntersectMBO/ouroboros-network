@@ -42,7 +42,7 @@ import           Control.Monad.Free (Free (..))
 import           Control.Monad.Free as Free
 import           Control.Monad.ST.Lazy (runST)
 import           Data.FingerTree (ViewL (..))
-import           Data.FingerTree as FT
+--import qualified Data.FingerTree as FT
 import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NE
 import qualified Data.List as L
@@ -177,8 +177,7 @@ data ProducerHandlers block m r = ProducerHandlers {
      }
 
 -- |
--- TODO:
---  * n-consumers to producer (currently 1-consumer to producer)
+--
 producerSideProtocol1
   :: forall block pid m r.
      ( Show pid
