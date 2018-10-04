@@ -5,6 +5,8 @@
 module MonadClass (
   MonadSay(..),
   MonadProbe(..),
+  MonadRunProbe(..),
+  ProbeTrace,
   TimeMeasure(..),
   MonadTimer(..),
   MonadFork(..),
@@ -29,9 +31,16 @@ class Monad m => MonadSay m where
 instance MonadSay IO where
   say = print
 
-class Monad m => MonadProbe m where
+type ProbeTrace m a = [(Time m, a)]
+
+class MonadTimer m => MonadProbe m where
   type Probe m :: * -> *
   probeOutput :: Probe m a -> a -> m ()
+
+class (MonadProbe m, Monad n) => MonadRunProbe m n | m -> n, n -> m where
+  newProbe    :: n (Probe m a)
+  readProbe   :: Probe m a -> n (ProbeTrace m a)
+  runM        :: m () -> n ()
 
 class (Monad m, TimeMeasure (Time m)) => MonadTimer m where
   type Time m :: *
@@ -182,4 +191,3 @@ instance MonadSTMTimer IO STM.STM where
   -- manager ran the action multiple times. For example, there can be a race
   -- between firing and cancelling, but one will win and the state will change
   -- only once, so the final state is stable.
-

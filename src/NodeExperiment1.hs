@@ -29,8 +29,7 @@ import           Chain (Chain, genesis)
 import qualified Chain
 import           ChainProducerState
 import           MonadClass
-import           Sim ( ProbeTrace, SimF, Trace
-                     , flipSimChan, newProbe, readProbe, runSimMST )
+import           Sim (SimF, Trace, flipSimChan, runSimMST)
 import qualified Sim
 import           Protocol
 import           ConsumersAndProducers
@@ -77,7 +76,7 @@ runProducerToConsumer
      )
   => Chain block -- ^ producer chain
   -> Chain block -- ^ consumer chain
-  -> (Trace, ProbeTrace (Chain block))
+  -> (Trace, ProbeTrace (Free (SimF s)) (Chain block))
 runProducerToConsumer pchain cchain = runST $ do
   v <- newProbe
   trace <- runSimMST (producerToConsumerSim v pchain cchain)
@@ -208,35 +207,35 @@ nodeSim v chain1 chain2 = do
 
     -- start producer1
     fork $ do
-        let send = loggingSend "1" (sendMsg chan1)
-            recv = loggingRecv "1" (recvMsg chan1)
+        let send = loggingSend 1 (sendMsg chan1)
+            recv = loggingRecv 1 (recvMsg chan1)
         chainvar <- atomically $ newTVar (ChainProducerState chain1 [])
         producerSideProtocol1 (exampleProducer chainvar) send recv
 
     -- start producer2
     fork $ do
-        let send = loggingSend "2" (sendMsg chan2)
-            recv = loggingRecv "2" (recvMsg chan2)
+        let send = loggingSend 2 (sendMsg chan2)
+            recv = loggingRecv 2 (recvMsg chan2)
         chainvar <- atomically $ newTVar (ChainProducerState chain2 [])
         producerSideProtocol1 (exampleProducer chainvar) send recv
 
     -- consumer listening to producer1
     chainvar1 <- atomically $ newTVar genesis
     fork $
-        let send = loggingSend "1" (sendMsg (flipSimChan chan1))
-            recv = loggingRecv "1" (recvMsg (flipSimChan chan1)) in
+        let send = loggingSend 1 (sendMsg (flipSimChan chan1))
+            recv = loggingRecv 1 (recvMsg (flipSimChan chan1)) in
         consumerSideProtocol1 (exampleConsumer chainvar1) send recv
 
     -- consumer listening to producer2
     chainvar2 <- atomically $ newTVar genesis
     fork $
-        let send = loggingSend "2" (sendMsg (flipSimChan chan2))
-            recv = loggingRecv "2" (recvMsg (flipSimChan chan2)) in
+        let send = loggingSend 2 (sendMsg (flipSimChan chan2))
+            recv = loggingRecv 2 (recvMsg (flipSimChan chan2)) in
         consumerSideProtocol1 (exampleConsumer chainvar2) send recv
 
     fork $ do
-        let send = loggingSend "3" (sendMsg chan3)
-            recv = loggingRecv "3" (recvMsg chan3)
+        let send = loggingSend 3 (sendMsg chan3)
+            recv = loggingRecv 3 (recvMsg chan3)
         chainvar <- bindConsumersToProducerN
           genesis
           Chain.selectChain
@@ -246,8 +245,8 @@ nodeSim v chain1 chain2 = do
     -- todo: use a fork here
     chainvar3 <- atomically $ newTVar genesis
     fork $
-        let send = loggingSend "3" (sendMsg (flipSimChan chan3))
-            recv = loggingRecv "3" (recvMsg (flipSimChan chan3)) in
+        let send = loggingSend 3 (sendMsg (flipSimChan chan3))
+            recv = loggingRecv 3 (recvMsg (flipSimChan chan3)) in
         consumerSideProtocol1 (exampleConsumer chainvar3) send recv
 
     timer 1 $ do
@@ -261,7 +260,7 @@ runNodeSim
      )
   => Chain block
   -> Chain block
-  -> (Trace, ProbeTrace (Chain block))
+  -> (Trace, ProbeTrace (Free (SimF s)) (Chain block))
 runNodeSim pchain1 pchain2 = runST $ do
   v <- newProbe
   trace <- runSimMST (nodeSim v pchain1 pchain2)

@@ -114,16 +114,16 @@ producerSideProtocol1 ProducerHandlers{..} send recv =
 
 -- | A wrapper for send that logs the messages
 --
-loggingSend :: (Show msg, MonadSay m) => String -> (msg -> m a) -> msg -> m a
+loggingSend :: (Show msg, MonadSay m, Show id) => id -> (msg -> m a) -> msg -> m a
 loggingSend ident send msg = do
-    say $ ident ++ ":send: " ++ show msg
+    say $ (show ident) ++ ":send: " ++ show msg
     send msg
 
 -- | A wrapper for recv that logs the messages
 --
-loggingRecv :: (Show msg, MonadSay m) => String -> m msg -> m msg
+loggingRecv :: (Show msg, MonadSay m, Show id) => id -> m msg -> m msg
 loggingRecv ident recv = do
     msg <- recv
-    say $ ident ++ ":recv: " ++ show msg
+    say $ (show ident) ++ ":recv: " ++ show msg
     return msg
 

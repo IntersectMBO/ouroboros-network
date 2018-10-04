@@ -7,13 +7,14 @@ import Data.List (partition, sort, sortBy)
 import Control.Applicative
 import Control.Monad
 import Control.Monad.ST.Lazy (ST, runST)
+import Control.Monad.Free (Free)
 
 import Test.QuickCheck
 import Test.Tasty
 import Test.Tasty.QuickCheck
 
 import MonadClass
-import qualified SimSTM as Sim
+import qualified Sim as Sim
 
 tests :: TestTree
 tests =
@@ -147,13 +148,13 @@ prop_timers (TestRationals xs) =
       forM_ (zip xs [0..]) $ \(t, idx) ->
         timer (Sim.VTimeDuration t) $ probeOutput p (t, idx)
 
-    runExperiment :: ST s (Sim.ProbeTrace (Rational, Int))
+    runExperiment :: ST s (ProbeTrace (Free (Sim.SimF s)) (Rational, Int))
     runExperiment = do
-      p <- Sim.newProbe
+      p <- newProbe
       Sim.runSimMST (experiment p)
-      Sim.readProbe p
+      readProbe p
 
-    isValid :: Sim.ProbeTrace (Rational, Int) -> Bool
+    isValid :: ProbeTrace (Free (Sim.SimF s)) (Rational, Int) -> Bool
     isValid tr =
          -- all timers should fire
          length tr == length xs
@@ -169,12 +170,12 @@ prop_fork_order (Positive n) = isValid $ runST runExperiment
       fork $ probeOutput p n
       experiment p (n - 1)
 
-    runExperiment :: ST s (Sim.ProbeTrace Int)
+    runExperiment :: ST s (ProbeTrace (Free (Sim.SimF s)) Int)
     runExperiment = do
-      p <- Sim.newProbe
+      p <- newProbe
       Sim.runSimMST (experiment p n)
-      Sim.readProbe p
+      readProbe p
 
-    isValid :: Sim.ProbeTrace Int -> Property
+    isValid :: ProbeTrace (Free (Sim.SimF s)) Int -> Property
     isValid tr = (map snd tr) === [n,n-1..1]
 

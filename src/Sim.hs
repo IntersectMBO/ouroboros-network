@@ -69,8 +69,7 @@ data StmF (s :: *) a where
 type SimM s a = Free (SimF s) a
 type STM  s   = Free (StmF s)
 
-newtype Probe s a = Probe (STRef s (ProbeTrace a))
-type ProbeTrace a = [(VTime, a)]
+newtype Probe s a = Probe (STRef s (ProbeTrace (Free (SimF s)) a))
 
 failSim :: String -> Free (SimF s) ()
 failSim = Free.liftF . Fail
@@ -106,6 +105,11 @@ instance MonadSay (Free (SimF s)) where
 instance MonadProbe (Free (SimF s)) where
   type Probe (Free (SimF s)) = Probe s
   probeOutput p o = Free.liftF $ Output p o ()
+
+instance MonadRunProbe (Free (SimF s)) (ST s) where
+  newProbe = Probe <$> newSTRef []
+  readProbe (Probe p) = reverse <$> readSTRef p
+  runM = void . runSimMST
 
 instance MonadTimer (Free (SimF s)) where
   type Time (Free (SimF s)) = VTime
@@ -175,12 +179,6 @@ filterTrace _                           = False
 
 filterByThread :: ThreadId -> (VTime, ThreadId, TraceEvent) -> Bool
 filterByThread tid (_, tid', _) = tid == tid'
-
-newProbe :: ST s (Probe s a)
-newProbe = Probe <$> newSTRef []
-
-readProbe :: Probe s a -> ST s (ProbeTrace a)
-readProbe (Probe p) = reverse <$> readSTRef p
 
 runSimM :: (forall s. SimM s ()) -> Trace
 runSimM initialThread = runST (runSimMST initialThread)

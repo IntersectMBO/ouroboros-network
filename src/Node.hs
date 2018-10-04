@@ -310,7 +310,9 @@ relayNode nid inputs outputs = do
     startConsumer cid chan = do
       chainVar <- atomically $ newTVar Genesis
       let consumer = exampleConsumer chainVar
-      fork $ consumerSideProtocol1 consumer (ConsumerId nid cid) (sendMsg chan) (recvMsg chan)
+      fork $ consumerSideProtocol1 consumer
+        (loggingSend (ConsumerId nid cid) (sendMsg chan))
+        (loggingRecv (ConsumerId nid cid) (recvMsg chan))
       return chainVar
 
     startProducer :: ProducerHandlers block m ReaderId
@@ -318,7 +320,9 @@ relayNode nid inputs outputs = do
                   -> Chan m (MsgProducer block) MsgConsumer
                   -> m ()
     startProducer producer pid chan = do
-      fork $ producerSideProtocol1 producer (ProducerId nid pid) (sendMsg chan) (recvMsg chan)
+      fork $ producerSideProtocol1 producer
+        (loggingSend (ProducerId nid pid) (sendMsg chan))
+        (loggingRecv (ProducerId nid pid) (recvMsg chan))
 
 
 coreNode :: forall block m stm.
