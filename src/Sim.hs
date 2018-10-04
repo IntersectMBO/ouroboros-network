@@ -237,7 +237,7 @@ schedule simstate@SimState {
 
     Free (Timer t a k) -> do
       let expiry  = t `addTime` time
-          timers' = PQueue.insert expiry a timers
+          timers' = PQueue.add expiry a timers
           thread' = Thread tid k
       trace <- schedule simstate { runqueue = thread':remaining
                                  , timers   = timers' }
