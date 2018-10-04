@@ -21,6 +21,7 @@ import qualified Control.Concurrent as IO
 import qualified Control.Concurrent.STM.TVar as STM
 import           Control.Monad (void)
 import qualified Control.Monad.STM as STM
+import System.Clock (Clock (Monotonic), TimeSpec, getTime, toNanoSecs)
 
 import qualified GHC.Event as GHC (TimeoutCallback, TimeoutKey, getSystemTimerManager,
                                    registerTimeout, unregisterTimeout, updateTimeout)
@@ -183,6 +184,21 @@ instance MonadSTMTimer IO STM.STM where
           TimeoutCancelled -> return ()
       mgr <- GHC.getSystemTimerManager
       GHC.unregisterTimeout mgr key
+
+newtype ProbeIO a = ProbeIO { getProbeIO :: STM.TVar [(Int, a)] }
+
+instance MonadProbe IO IO where
+  type Probe IO = ProbeIO
+  newProbe  = ProbeIO <$> STM.newTVarIO []
+  readProbe (ProbeIO p) = STM.readTVarIO p
+  probeOutput (ProbeIO p) a = do
+    t <- toMicroseconds <$> getTime Monotonic
+    -- the user is not exposed to the inner TVar, so it should never block for
+    -- too long.
+    atomically $ STM.modifyTVar' p ((0,a):)
+    where
+      toMicroseconds :: TimeSpec -> Int
+      toMicroseconds = fromIntegral . (div 1000) . toNanoSecs
 
   -- In the above the starting state is pending, there is only one transaction
   -- that goes from pending to fired, and only one that goes from pending to
