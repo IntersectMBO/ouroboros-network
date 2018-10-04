@@ -6,6 +6,7 @@ import Data.List
 import Data.Graph
 import Data.Maybe (listToMaybe, catMaybes)
 import Data.Functor (($>))
+import Data.Tuple (swap)
 import Control.Applicative
 import Control.Monad
 
@@ -157,6 +158,61 @@ createCoupledChannels delay1 delay2 = do
   return (chan1, chan2)
 
 
+data NodeChannels m prodMsg consMsg = NodeChannels
+  { consumerChans :: [Chan m consMsg prodMsg]
+    -- ^ channels on which the node will play the consumer role:
+    -- sending @consMsg@ and receiving @prodMsg@ messages.
+  , producerChans :: [Chan m prodMsg consMsg]
+    -- ^ channels on which the node will play the producer role:
+    -- sending @prodMsg@ and receiving @consMsg@ messages.
+  }
+
+instance Semigroup (NodeChannels m prodMsg consMsg) where
+  NodeChannels c1 p1 <> NodeChannels c2 p2 = NodeChannels (c1 ++ c2) (p1 ++ p2)
+
+instance Monoid (NodeChannels m prodMsg consMsg) where
+  mempty = NodeChannels [] []
+
+
+-- |
+-- Create a channels n1 → n2, where n1 is a producer and n2 is the consumer.
+createOneWaySubscriptionChannels
+  :: forall send recv m stm.
+     ( MonadSTM m stm
+     , MonadTimer m
+     )
+  => Duration (Time m)
+  -> Duration (Time m)
+  -> m (NodeChannels m send recv, NodeChannels m send recv)
+createOneWaySubscriptionChannels trDelay1 trDelay2 = do
+  (cr, rc) <- createCoupledChannels trDelay1 trDelay2
+  return
+    ( NodeChannels
+        { consumerChans = []
+        , producerChans = [cr]
+        }
+    , NodeChannels
+        { consumerChans = [rc]
+        , producerChans = []
+        }
+    )
+
+-- |
+-- Create channels for n1 ↔ n2 where both nodes are a consumer and a producer
+-- simulantously.
+createTwoWaySubscriptionChannels
+  :: forall send recv m stm.
+     ( MonadSTM m stm
+     , MonadTimer m
+     )
+  => Duration (Time m)
+  -> Duration (Time m)
+  -> m (NodeChannels m send recv, NodeChannels m send recv)
+createTwoWaySubscriptionChannels trDelay1 trDelay2 = do
+  r12 <- createOneWaySubscriptionChannels trDelay1 trDelay2
+  r21 <- createOneWaySubscriptionChannels trDelay2 trDelay1
+  return $ r12 <> swap r21
+
 chainGenerator :: forall block m stm.
                   ( MonadSTM m stm
                   , MonadTimer m
@@ -174,6 +230,34 @@ chainGenerator offset chain = do
           . unfoldr (\c -> case c of
                               Genesis -> Nothing
                               _       -> Just (c, Chain.drop 1 c))
+
+
+-- |
+-- Generate block from a given chain.
+blockGenerator :: forall block m stm.
+                  ( MonadSTM m stm
+                  , MonadTimer m
+                  )
+               => Duration (Time m)
+               -> Chain block
+               -> m (TVar m (Maybe block))  -- returns an stm transaction which returns block
+blockGenerator offset chain = do
+  outputVar <- atomically (newTVar Nothing)
+  sequence_ [ timer (offset + fromIntegral n) (atomically (writeTVar outputVar (Just b)))
+            | (b, n) <- zip (reverse $ Chain.toList chain) [0,2..] ]
+  return outputVar
+
+-- |
+-- Read one block from the @'blockGenertor'@
+getBlock :: forall block m stm.
+            MonadSTM m stm
+         => TVar m (Maybe block)
+         -> stm block
+getBlock v = do
+  mb <- readTVar v
+  case mb of
+    Nothing -> retry
+    Just b  -> writeTVar v Nothing $> b
 
 
 observeChain :: forall block m stm.
@@ -256,7 +340,8 @@ nodeExample1 c1 c2 = do
     fork $ observeChain "generatorVar2" generatorVar2
     fork $ observeChain "currentChain " currentChainVar
 
-newtype NodeId = NodeId Int
+data NodeId = CoreId Int
+            | RelayId Int
   deriving (Eq, Ord, Show)
 
 data ConsumerId = ConsumerId NodeId Int
@@ -274,16 +359,15 @@ relayNode :: forall block m stm.
         , MonadSay m
         )
      => NodeId
-     -> [Chan m MsgConsumer (MsgProducer block)] -- ^ input channels
-     -> [Chan m (MsgProducer block) MsgConsumer] -- ^ output channels
+     -> NodeChannels m (MsgProducer block) MsgConsumer
      -> m (TVar m (ChainProducerState block))
-relayNode nid inputs outputs = do
+relayNode nid chans = do
 
   -- Mutable state
   -- 1. input chains
-  chainVars <- zipWithM startConsumer [0..] inputs
+  chainVars <- zipWithM startConsumer [0..] (consumerChans chans)
   -- 2. candidate chains
-  candidateChainVars <- replicateM (length inputs) (atomically (newTVar Nothing))
+  candidateChainVars <- replicateM (length $ consumerChans chans) (atomically (newTVar Nothing))
   -- 3. ChainProducerState
   cpsVar <- atomically $ newTVar (initChainProducerState Genesis)
 
@@ -295,9 +379,9 @@ relayNode nid inputs outputs = do
   -- chain selection thread
   fork $ longestChainSelectionS candidateChainVars cpsVar
 
-  -- producers
+  -- producers which share @'ChainProducerState'@
   let producer = exampleProducer cpsVar
-  mapM_ (uncurry $ startProducer producer) (zip [0..] outputs)
+  mapM_ (uncurry $ startProducer producer) (zip [0..] (producerChans chans))
 
   -- chain observer
   fork $ observeChainProducerState nid cpsVar
@@ -324,33 +408,29 @@ relayNode nid inputs outputs = do
         (loggingSend (ProducerId nid pid) (sendMsg chan))
         (loggingRecv (ProducerId nid pid) (recvMsg chan))
 
-
-coreNode :: forall block m stm.
-        ( HasHeader block
-        , Eq block
-        , Show block
-        , MonadSTM m stm
+coreNode :: forall m stm.
+        ( MonadSTM m stm
         , MonadTimer m
         , MonadSay m
         )
      => NodeId
      -> Duration (Time m)
-     -> Chain block
-     -> [Chan m MsgConsumer (MsgProducer block)] -- ^ input channels
-     -> [Chan m (MsgProducer block) MsgConsumer] -- ^ output channels
+     -> Chain Block
+     -> NodeChannels m (MsgProducer Block) MsgConsumer
      -> m ()
-coreNode nid offset chain inputs outputs = do
-  cpsVar <- relayNode nid inputs outputs
+coreNode nid offset chain chans = do
+  cpsVar <- relayNode nid chans
 
-  chainVar <- chainGenerator offset chain
-  fork $ forever (propagate chainVar cpsVar)
+  blockVar <- blockGenerator offset chain
+  fork $ forever $ applyGeneratedBlock blockVar cpsVar
 
   where
-    propagate :: TVar m (Chain block)
-              -> TVar m (ChainProducerState block)
-              -> m ()
-    propagate chainVar cpsVar = atomically $ do
-      chain <- readTVar chainVar
+    applyGeneratedBlock
+      :: TVar m (Maybe Block)
+      -> TVar m (ChainProducerState Block)
+      -> m ()
+    applyGeneratedBlock blockVar cpsVar = atomically $ do
+      block <- getBlock blockVar
       cps@ChainProducerState{chainState} <- readTVar cpsVar
       check (Chain.length chain > Chain.length chainState)
       writeTVar cpsVar (switchFork chain cps)

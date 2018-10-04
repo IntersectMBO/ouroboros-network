@@ -48,6 +48,7 @@ module Chain (
   selectChain,
   findIntersection,
   intersectChains,
+  fixupBlock,
 
   -- * Generators, test and test utils
   TestBlockChain(..),
