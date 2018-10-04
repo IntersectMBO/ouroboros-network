@@ -8,6 +8,8 @@ module Protocol
   , ProducerHandlers
   , consumerSideProtocol1
   , producerSideProtocol1
+  , loggingSend
+  , loggingRecv
   )where
 
 import           Control.Monad
@@ -39,17 +41,13 @@ data MsgProducer block
     deriving (Show)
 
 consumerSideProtocol1
-  :: forall block cid m.
-     ( Show block
-     , MonadSay m
-     , Show cid
-     )
+  :: forall block m.
+     (Show block, Monad m)
   => ConsumerHandlers block m
-  -> cid                     -- ^ consumer id
   -> (MsgConsumer -> m ())   -- ^ send
   -> (m (MsgProducer block)) -- ^ recv
   -> m ()
-consumerSideProtocol1 ConsumerHandlers{..} cid send recv = do
+consumerSideProtocol1 ConsumerHandlers{..} send recv = do
     -- The consumer opens by sending a list of points on their chain.
     -- This typically includes the head block and recent points
     points <- getChainPoints
@@ -59,9 +57,6 @@ consumerSideProtocol1 ConsumerHandlers{..} cid send recv = do
       return ()
     requestNext
   where
-    consumerId :: String
-    consumerId = "consumer-" ++ show cid
-
     requestNext :: m ()
     requestNext = do
       send MsgRequestNext
@@ -70,44 +65,26 @@ consumerSideProtocol1 ConsumerHandlers{..} cid send recv = do
       requestNext
 
     handleChainUpdate :: MsgProducer block -> m ()
-    handleChainUpdate msg@MsgAwaitReply = do
-      say (consumerId ++ ":handleChainUpdate: " ++ show msg)
-
-    handleChainUpdate msg@(MsgRollForward  b) = do
-      say (consumerId ++ ":handleChainUpdate: " ++ show msg)
-      addBlock b
-
-    handleChainUpdate msg@(MsgRollBackward p) = do
-      say (consumerId ++ ":handleChainUpdate: " ++ show msg)
-      rollbackTo p
-
-    handleChainUpdate msg = do
-        say (consumerId ++ ":handleChainUpdate: " ++ show msg)
+    handleChainUpdate MsgAwaitReply       = return ()
+    handleChainUpdate (MsgRollForward  b) = addBlock b
+    handleChainUpdate (MsgRollBackward p) = rollbackTo p
+    handleChainUpdate msg = fail $ "protocol error " ++ show msg
 
 
 -- |
 --
 producerSideProtocol1
-  :: forall block pid m r.
-     ( Show pid
-     , HasHeader block
-     , Show block
-     , MonadSay m
-     )
+  :: forall block m r.
+     (HasHeader block, Monad m)
   => ProducerHandlers block m r
-  -> pid                         -- ^ producer id
   -> (MsgProducer block -> m ()) -- ^ send
   -> (m MsgConsumer)             -- ^ recv
   -> m ()
-producerSideProtocol1 ProducerHandlers{..} pid send recv =
+producerSideProtocol1 ProducerHandlers{..} send recv =
     newReader >>= awaitOngoing
   where
-    producerId :: String
-    producerId = show pid
-
     awaitOngoing r = forever $ do
       msg <- recv
-      say $ producerId ++ ":awaitOngoing:recvMsg: " ++ show msg
       case msg of
         MsgRequestNext    -> handleNext r
         MsgSetHead points -> handleSetHead r points
@@ -119,31 +96,34 @@ producerSideProtocol1 ProducerHandlers{..} pid send recv =
 
         -- Reader is at the head, have to wait for producer state changes.
         Nothing -> do
-          let msg :: MsgProducer block
-              msg = MsgAwaitReply
-          say $ producerId ++ ":handleNext:sendMsg: " ++ show msg
-          send msg
+          send MsgAwaitReply
           readChainUpdate r
-      let msg = updateMsg update
-      say $ producerId ++ ":handleNext:sendMsg: " ++ show msg
-      send msg
+      send (updateMsg update)
 
     handleSetHead r points = do
       -- TODO: guard number of points, points sorted
       -- Find the first point that is on our chain
       changed <- improveReadPoint r points
       case changed of
-        Just pt -> do
-          let msg :: MsgProducer block
-              msg = MsgIntersectImproved pt
-          say $ producerId ++ ":handleSetHead:sendMsg: " ++ show msg
-          send msg
-        Nothing -> do
-          let msg :: MsgProducer block
-              msg = MsgIntersectUnchanged
-          say $ producerId ++ ":handleSetHead:sendMsg: " ++ show msg
-          send msg
+        Just pt -> send (MsgIntersectImproved pt)
+        Nothing -> send MsgIntersectUnchanged
 
     updateMsg (AddBlock b) = MsgRollForward b
     updateMsg (RollBack p) = MsgRollBackward p
+
+
+-- | A wrapper for send that logs the messages
+--
+loggingSend :: (Show msg, MonadSay m) => String -> (msg -> m a) -> msg -> m a
+loggingSend ident send msg = do
+    say $ ident ++ ":send: " ++ show msg
+    send msg
+
+-- | A wrapper for recv that logs the messages
+--
+loggingRecv :: (Show msg, MonadSay m) => String -> m msg -> m msg
+loggingRecv ident recv = do
+    msg <- recv
+    say $ ident ++ ":recv: " ++ show msg
+    return msg
 

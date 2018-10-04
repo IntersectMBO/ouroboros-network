@@ -54,15 +54,16 @@ producerToConsumerSim v pchain cchain = do
 
     -- run producer in a new thread
     fork $ do
+        let send = loggingSend "1" (sendMsg chan)
+            recv = loggingRecv "1" (recvMsg chan)
         chainvar <- atomically $ newTVar (ChainProducerState pchain [])
-        producerSideProtocol1 (exampleProducer chainvar) (1 :: Int)
-                              (sendMsg chan) (recvMsg chan)
+        producerSideProtocol1 (exampleProducer chainvar) send recv
 
     chainvar <- atomically $ newTVar cchain
     fork $
-        consumerSideProtocol1 (exampleConsumer chainvar) (1 :: Int)
-                              (sendMsg (flipSimChan chan))
-                              (recvMsg (flipSimChan chan))
+        let send = loggingSend "1" (sendMsg (flipSimChan chan))
+            recv = loggingRecv "1" (recvMsg (flipSimChan chan)) in
+        consumerSideProtocol1 (exampleConsumer chainvar) send recv
 
     say "done"
     timer 1 $ do
@@ -207,44 +208,47 @@ nodeSim v chain1 chain2 = do
 
     -- start producer1
     fork $ do
+        let send = loggingSend "1" (sendMsg chan1)
+            recv = loggingRecv "1" (recvMsg chan1)
         chainvar <- atomically $ newTVar (ChainProducerState chain1 [])
-        producerSideProtocol1 (exampleProducer chainvar) (1 :: Int)
-                              (sendMsg chan1) (recvMsg chan1)
+        producerSideProtocol1 (exampleProducer chainvar) send recv
 
     -- start producer2
     fork $ do
+        let send = loggingSend "2" (sendMsg chan2)
+            recv = loggingRecv "2" (recvMsg chan2)
         chainvar <- atomically $ newTVar (ChainProducerState chain2 [])
-        producerSideProtocol1 (exampleProducer chainvar) (2 :: Int)
-                              (sendMsg chan2) (recvMsg chan2)
+        producerSideProtocol1 (exampleProducer chainvar) send recv
 
     -- consumer listening to producer1
     chainvar1 <- atomically $ newTVar genesis
     fork $
-        consumerSideProtocol1 (exampleConsumer chainvar1) (1 :: Int)
-                              (sendMsg (flipSimChan chan1))
-                              (recvMsg (flipSimChan chan1))
+        let send = loggingSend "1" (sendMsg (flipSimChan chan1))
+            recv = loggingRecv "1" (recvMsg (flipSimChan chan1)) in
+        consumerSideProtocol1 (exampleConsumer chainvar1) send recv
 
     -- consumer listening to producer2
     chainvar2 <- atomically $ newTVar genesis
     fork $
-        consumerSideProtocol1 (exampleConsumer chainvar2) (2 :: Int)
-                              (sendMsg (flipSimChan chan2))
-                              (recvMsg (flipSimChan chan2))
+        let send = loggingSend "2" (sendMsg (flipSimChan chan2))
+            recv = loggingRecv "2" (recvMsg (flipSimChan chan2)) in
+        consumerSideProtocol1 (exampleConsumer chainvar2) send recv
 
     fork $ do
+        let send = loggingSend "3" (sendMsg chan3)
+            recv = loggingRecv "3" (recvMsg chan3)
         chainvar <- bindConsumersToProducerN
           genesis
           Chain.selectChain
           [chainvar1, chainvar2]
-        producerSideProtocol1 (exampleProducer chainvar) (3 :: Int)
-                              (sendMsg chan3) (recvMsg chan3)
+        producerSideProtocol1 (exampleProducer chainvar) send recv
 
     -- todo: use a fork here
     chainvar3 <- atomically $ newTVar genesis
-    fork
-      $ consumerSideProtocol1 (exampleConsumer chainvar3) (3 :: Int)
-                              (sendMsg (flipSimChan chan3))
-                              (recvMsg (flipSimChan chan3))
+    fork $
+        let send = loggingSend "3" (sendMsg (flipSimChan chan3))
+            recv = loggingRecv "3" (recvMsg (flipSimChan chan3)) in
+        consumerSideProtocol1 (exampleConsumer chainvar3) send recv
 
     timer 1 $ do
       chain <- atomically $ readTVar chainvar3
