@@ -1,4 +1,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE FlexibleContexts    #-}
 module Test.Sim (tests) where
 
 import Data.Array
@@ -21,8 +23,11 @@ tests =
   testGroup "STM simulator"
   [ testProperty "read/write graph (IO)"   prop_stm_graph_io
   , testProperty "read/write graph (SimM)" (withMaxSuccess 1000 prop_stm_graph_sim)
-  , testProperty "timers (SimM)"           (withMaxSuccess 1000 prop_timers)
-  , testProperty "fork order (SimM)"       (withMaxSuccess 1000 prop_fork_order)
+  , testProperty "timers (SimM)"           (withMaxSuccess 1000 prop_timers_ST)
+  -- fails since we just use `threadDelay` to schedule timers in `IO`.
+  , testProperty "timers (IO)"             (expectFailure prop_timers_IO)
+  , testProperty "fork order (SimM)"       (withMaxSuccess 1000 (prop_fork_order_ST))
+  , testProperty "fork order (IO)"         (expectFailure prop_fork_order_IO)
   ]
 
 prop_stm_graph_io :: TestThreadGraph -> Property
@@ -127,10 +132,20 @@ instance Arbitrary TestRationals where
         return $ toRational n / toRational d
   shrink (TestRationals rs) = [ TestRationals rs' | rs' <- shrinkList (const []) rs ]
 
-prop_timers :: TestRationals -> Property
-prop_timers (TestRationals xs) = 
-    label (lbl xs)
-    $ isValid $ runST runExperiment
+test_timers :: forall m n stm.
+               ( MonadFork m
+               , MonadSTM m stm
+               , MonadTimer m
+               , MonadProbe m
+               , MonadRunProbe m n
+               , Eq (Time m)
+               , Show (Time m)
+               , Show (Duration (Time m))
+               )
+            => [Duration (Time m)]
+            -> n Property
+test_timers xs = 
+    label (lbl xs) . isValid <$> runExperiment
   where
     countUnique :: Eq a => [a] -> Int
     countUnique [] = 0
@@ -143,39 +158,74 @@ prop_timers (TestRationals xs) =
       let p = (if null as then 0 else (100 * countUnique as) `div` length as) `mod` 10 * 10
       in show p ++ "% unique"
 
-    experiment :: Sim.Probe s (Rational, Int) -> Sim.SimM s ()
-    experiment p =
-      forM_ (zip xs [0..]) $ \(t, idx) ->
-        timer (Sim.VTimeDuration t) $ probeOutput p (t, idx)
+    experiment :: Probe m (Duration (Time m), Int) -> m ()
+    experiment p = do
+      tvars <- forM (zip xs [0..]) $ \(t, idx) -> do
+        v <- atomically $ newTVar False
+        timer t $ do
+          probeOutput p (t, idx)
+          atomically $ writeTVar v True
+        return v
 
-    runExperiment :: ST s (ProbeTrace (Free (Sim.SimF s)) (Rational, Int))
+      -- wait for all tvars
+      forM_ tvars $ \v -> atomically (readTVar v >>= check)
+
+    runExperiment :: n [(Time m, (Duration (Time m), Int))]
     runExperiment = do
       p <- newProbe
-      Sim.runSimMST (experiment p)
+      runM (experiment p)
       readProbe p
 
-    isValid :: ProbeTrace (Free (Sim.SimF s)) (Rational, Int) -> Bool
+    isValid :: [(Time m, (Duration (Time m), Int))] -> Property
     isValid tr =
          -- all timers should fire
-         length tr == length xs
+         (length tr === length xs)
          -- timers should fire in the right order
-      && sortBy (\(_, a) (_, a') -> compare a a') tr == tr
+      .&&. (sortBy (\(_, a) (_, a') -> compare a a') tr === tr)
 
-prop_fork_order :: Positive Int -> Property
-prop_fork_order (Positive n) = isValid $ runST runExperiment
+prop_timers_ST :: TestRationals -> Property
+prop_timers_ST (TestRationals xs) =
+  let ds = map Sim.VTimeDuration xs
+  in runST $ test_timers ds
+
+prop_timers_IO :: [Positive Int] -> Property
+prop_timers_IO = ioProperty . test_timers . map ((*100) . getPositive)
+
+test_fork_order :: forall m n stm.
+                   ( MonadFork m
+                   , MonadSTM m stm
+                   , MonadTimer m
+                   , MonadProbe m
+                   , MonadRunProbe m n
+                   )
+                => Positive Int
+                -> n Property
+test_fork_order (Positive n) = isValid <$> runExperiment
   where
-    experiment :: Sim.Probe s Int -> Int -> Sim.SimM s ()
+    experiment :: Probe m Int -> Int -> m ()
     experiment _ 0 = return ()
     experiment p n = do
-      fork $ probeOutput p n
+      v <- atomically $ newTVar False
+
+      fork $ do
+        probeOutput p n
+        atomically $ writeTVar v True
       experiment p (n - 1)
 
-    runExperiment :: ST s (ProbeTrace (Free (Sim.SimF s)) Int)
+      -- wait for the spanned thread to finish
+      atomically $ readTVar v >>= check
+
+    runExperiment :: n [(Time m, Int)]
     runExperiment = do
       p <- newProbe
-      Sim.runSimMST (experiment p n)
+      runM (experiment p n)
       readProbe p
 
-    isValid :: ProbeTrace (Free (Sim.SimF s)) Int -> Property
+    isValid :: [(Time m, Int)] -> Property
     isValid tr = (map snd tr) === [n,n-1..1]
 
+prop_fork_order_ST :: Positive Int -> Property
+prop_fork_order_ST n = runST $ test_fork_order n
+
+prop_fork_order_IO :: Positive Int -> Property
+prop_fork_order_IO = ioProperty . test_fork_order
