@@ -2,7 +2,6 @@ name:                ouroboros-network
 version:             0.1.0.0
 synopsis:            A networking layer for the Ouroboros blockchain protocol
 -- description:
-license:             TODO
 license-file:        LICENSE
 author:              Alexander Vieth, Marcin Szamotulski, Duncan Coutts
 maintainer:          
@@ -11,6 +10,10 @@ category:            Network
 build-type:          Simple
 extra-source-files:  ChangeLog.md, README.md
 cabal-version:       >=1.10
+
+source-repository head
+  type:     git
+  location: https://github.com/input-output-hk/ouroboros-network
 
 library
   hs-source-dirs:      src
@@ -55,7 +58,7 @@ library
                        GeneralizedNewtypeDeriving,
                        TupleSections,
                        TypeApplications
-  build-depends:       base         >=4.7 && <4.10,
+  build-depends:       base         >=4.9 && <4.12,
                        clock        >=0.7 && <0.8,
                        fingertree   >=0.1 && <0.2,
                        stm          >=2.4 && <2.5,
@@ -100,4 +103,3 @@ test-suite tests
                        QuickCheck,
                        tasty,
                        tasty-quickcheck
-
