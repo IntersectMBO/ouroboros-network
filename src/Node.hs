@@ -4,11 +4,13 @@ module Node where
 
 import Data.List
 import Data.Graph
+import Data.Semigroup (Semigroup (..))
 import Data.Maybe (listToMaybe, catMaybes)
 import Data.Functor (($>))
 import Data.Tuple (swap)
 import Control.Applicative
 import Control.Monad
+import Control.Exception (evaluate)
 
 import MonadClass hiding (sendMsg, recvMsg)
 import Block
@@ -46,7 +48,7 @@ longestChainSelection candidateChainVars currentChainVar =
       . filter (\(_, l) -> l > curlen)
       . map (\c -> (c, Chain.length c))
 
--- | 
+-- |
 -- State-full chain selection (@'ChainProducerState'@).
 longestChainSelectionS :: forall block m stm.
                           ( HasHeader block
@@ -172,6 +174,8 @@ instance Semigroup (NodeChannels m prodMsg consMsg) where
 
 instance Monoid (NodeChannels m prodMsg consMsg) where
   mempty = NodeChannels [] []
+
+  mappend = (<>)
 
 
 -- |
