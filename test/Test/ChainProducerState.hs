@@ -121,11 +121,11 @@ prop_producer_sync :: TestBlockChainAndUpdates -> Bool
 prop_producer_sync (TestBlockChainAndUpdates c us) =
     let producer0        = initChainProducerState c
         (producer1, rid) = initReader (Chain.headPoint c) producer0
-        producer         = applyChainUpdates us producer1
+        Just producer    = applyChainUpdates us producer1
 
         consumer0        = c
         consumerUpdates  = iterateReaderUntilDone rid producer
-        consumer         = Chain.applyChainUpdates consumerUpdates consumer0
+        Just consumer    = Chain.applyChainUpdates consumerUpdates consumer0
      in
         consumer == producerChain producer
   where

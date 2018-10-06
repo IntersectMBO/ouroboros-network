@@ -246,11 +246,10 @@ addBlock b (ChainProducerState c rs) =
 rollback :: HasHeader block
          => Point
          -> ChainProducerState block
-         -> ChainProducerState block
-rollback p cps@(ChainProducerState c rs) =
-  case Chain.rollback p c of
-    Just c' -> ChainProducerState c' rs'
-    Nothing -> cps
+         -> Maybe (ChainProducerState block)
+rollback p (ChainProducerState c rs) =
+    ChainProducerState <$> Chain.rollback p c
+                       <*> pure rs'
   where
     rs' = [ if pointSlot p' > pointSlot p
               then r { readerPoint = p, readerNext = ReaderBackTo }
@@ -263,9 +262,9 @@ rollback p cps@(ChainProducerState c rs) =
 applyChainUpdate :: HasHeader block
                  => ChainUpdate block
                  -> ChainProducerState block
-                 -> ChainProducerState block
-applyChainUpdate (AddBlock b) c = addBlock b c
-applyChainUpdate (RollBack p) c = rollback p c
+                 -> Maybe (ChainProducerState block)
+applyChainUpdate (AddBlock b) c = Just (addBlock b c)
+applyChainUpdate (RollBack p) c =       rollback p c
 
 
 -- | Apply a list of @'ChainUpdate'@s.
@@ -273,8 +272,9 @@ applyChainUpdate (RollBack p) c = rollback p c
 applyChainUpdates :: HasHeader block
                   => [ChainUpdate block]
                   -> ChainProducerState block
-                  -> ChainProducerState block
-applyChainUpdates = flip (foldl (flip applyChainUpdate))
+                  -> Maybe (ChainProducerState block)
+applyChainUpdates []     c = Just c
+applyChainUpdates (u:us) c = applyChainUpdates us =<< applyChainUpdate u c
 
 
 --

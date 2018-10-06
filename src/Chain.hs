@@ -229,15 +229,16 @@ data ChainUpdate block = AddBlock block
 applyChainUpdate :: HasHeader block
                  => ChainUpdate block
                  -> Chain block
-                 -> Chain block
-applyChainUpdate (AddBlock b) c = addBlock b c
-applyChainUpdate (RollBack p) c = fromMaybe c $ rollback p c
+                 -> Maybe (Chain block)
+applyChainUpdate (AddBlock b) c = Just (addBlock b c)
+applyChainUpdate (RollBack p) c =       rollback p c
 
 applyChainUpdates :: HasHeader block
                   => [ChainUpdate block]
                   -> Chain block
-                  -> Chain block
-applyChainUpdates = flip (foldl (flip applyChainUpdate))
+                  -> Maybe (Chain block)
+applyChainUpdates []     c = Just c
+applyChainUpdates (u:us) c = applyChainUpdates us =<< applyChainUpdate u c
 
 -- | Select a bunch of 'Point's based on offsets from the head of the chain.
 -- This is used in the chain consumer protocol as part of finding the

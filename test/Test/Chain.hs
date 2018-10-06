@@ -315,7 +315,7 @@ genChainUpdates :: Chain Block -> Int -> Gen [ChainUpdate Block]
 genChainUpdates _     0 = return []
 genChainUpdates chain n = do
     update  <- genChainUpdate chain
-    let chain' = Chain.applyChainUpdate update chain
+    let Just chain' = Chain.applyChainUpdate update chain
     updates <- genChainUpdates chain' (n-1)
     return (update : updates)
 
