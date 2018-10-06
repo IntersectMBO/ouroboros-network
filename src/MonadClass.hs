@@ -187,10 +187,8 @@ instance MonadSTMTimer IO STM.STM where
 
 newtype ProbeIO a = ProbeIO { getProbeIO :: STM.TVar [(Int, a)] }
 
-instance MonadProbe IO IO where
+instance MonadProbe IO where
   type Probe IO = ProbeIO
-  newProbe  = ProbeIO <$> STM.newTVarIO []
-  readProbe (ProbeIO p) = STM.readTVarIO p
   probeOutput (ProbeIO p) a = do
     t <- toMicroseconds <$> getTime Monotonic
     -- the user is not exposed to the inner TVar, so it should never block for
@@ -207,3 +205,8 @@ instance MonadProbe IO IO where
   -- manager ran the action multiple times. For example, there can be a race
   -- between firing and cancelling, but one will win and the state will change
   -- only once, so the final state is stable.
+
+instance MonadRunProbe IO IO where
+  newProbe  = ProbeIO <$> STM.newTVarIO []
+  readProbe (ProbeIO p) = STM.readTVarIO p
+  runM = id
