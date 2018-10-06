@@ -27,19 +27,48 @@ import           ProtocolInterfaces (ConsumerHandlers(..), ProducerHandlers(..))
 
 -- | In this protocol the consumer always initiates things and the producer
 -- replies. This is the type of messages that the consumer sends.
-data MsgConsumer = MsgRequestNext
-                 | MsgSetHead [Point]
+data MsgConsumer
+  = MsgRequestNext
+  -- ^ Request next block from the producer
+  | MsgSetHead [Point]
+  -- ^
+  -- Send set of points, it is up to the producer to find the intersection
+  -- point on its chain and send it back to the consumer.
     deriving (Show)
 
 -- | This is the type of messages that the producer sends.
 data MsgProducer block
   = MsgRollForward  block
+  -- ^ Ask the consumer to roll forward to a given block
   | MsgRollBackward Point
+  -- ^
+  -- Ask the consumer to roll backwar to a given Point on its chain
   | MsgAwaitReply
+  -- ^
+  -- Inform the consumer to await for next instructions; This means that the
+  -- producer is synced with the consumer end and its awaiting for its chain to
+  -- be changed.
   | MsgIntersectImproved Point
+  -- ^
+  -- Sends to consumer found intersection, but only if this is an improvement
+  -- over previously established intersection point.  The consumer
+  -- will decide wether to send more points.  They should all be newer than the
+  -- received intersection.
   | MsgIntersectUnchanged
+  -- ^
+  -- After receiving intersection points from the consumer it maybe happen that
+  -- none of the  points is on the producer chain; in this case
+  -- @'MsgIntersectUnchanged'@ is send back.
     deriving (Show)
 
+-- |
+-- A simple version of a consumer which sends set of points, accepts any respond
+-- and steps into the second phase of the protocol in which it sends @'MsgRequestNext'@ and expects one of:
+--   - @'MsgAwaitReplay'@
+--   - @'MsgRollForward'@
+--   - @'MsgRollBackward'@
+-- @'ConsumerHandlers'@ is a record which contains all the callbacks needed to
+-- run the consumer side of the protocol.
 consumerSideProtocol1
   :: forall block m.
      (Show block, Monad m)

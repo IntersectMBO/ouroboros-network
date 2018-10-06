@@ -29,6 +29,41 @@ data ChainProducerState block = ChainProducerState {
 type ReaderStates = [ReaderState]
 
 type ReaderId     = Int
+-- |
+-- Producer keeps track of consumer chain.  The only information for a producer
+-- to know is
+--  * @'readerPoint'@: (some) intersection point of consumer's chain and
+--    producer's chain;
+--  * @'readerNext'@: information what to do on next instruction: either roll
+--    forward from the intersection point or roll back to it.
+--
+-- The second piece of information is needed to distinguish the following two
+-- cases:
+--
+--   * consumer chain is a subchain of the producer chain
+--   * it is a fork.
+--
+-- Since consumer is following the producer chain, the producer has this
+-- information at its end.  If producer updates its chain to use another fork it
+-- may happen that the reader pointer is not on the new chain.  In this case the
+-- producer will set @'RollBackTo'@ and find intersection of the two chains for
+-- @'readerPoint'@.  And upon consumer's request will replay with
+-- @'MsgRollBackward' 'readerPoint'@.  After sending this message, the  producer
+-- assumes that the the consumer is following the protocol (i.e. will rollback
+-- its chain) and will reset the @'readerNext'@ field to @'ReaderForwardFrom'@.
+-- The second case: when the @'readerNext'@ is @'ReaderForwardFrom'@, then when
+-- sending next instruction the producer will either:
+--
+--   * take the next block (or header) on its chain imediatelly folowing the
+--     @'readerPoint'@, updtate @'readerPoint'@ to the point of the new value
+--     and send @'MsgRollForward'@ with the new block (or header).
+--   * if there is no block, which means that the consumer side and producer
+--     side are synchornized, the producer will send @'MsgAwaitResponse'@ and
+--     will wait until its chain is updated: either by a fork or by a new block.
+--
+-- In this implementation a list of @'ReaderState'@ is shared between all
+-- producers running on a single node; hence the unique identifier @'ReaderId'@
+-- for each reader: this is an implementation detail.
 data ReaderState  = ReaderState {
        -- | Where the chain of the consumer and producer intersect. If the
        -- consumer is on the chain then this is the consumer's chain head,
@@ -71,6 +106,9 @@ noDuplicates = all ((== 1) . length) . group . sort
 --
 
 
+-- | Initialise @'ChainProducerState'@ with a given @'Chain'@ and empty list of
+-- readers.
+--
 initChainProducerState :: Chain block -> ChainProducerState block
 initChainProducerState c = ChainProducerState c []
 
@@ -86,13 +124,14 @@ lookupReader (ChainProducerState _ rs) rid =
     Just st = find (\r -> readerId r == rid) rs
 
 
---producerReaders
-
+-- | Extract @'Chain'@ from @'ChainProducerState'@.
+--
 producerChain (ChainProducerState c _) = c
 
 
 -- | Add a new reader with the given intersection point and return the new
 -- 'ReaderId'.
+--
 initReader :: HasHeader block
            => Point
            -> ChainProducerState block
@@ -136,6 +175,7 @@ updateReader rid point (ChainProducerState c rs) =
 -- | Switch chains and update readers; if a reader point falls out of the chain,
 -- replace it with the intersection of both chains and put it in the
 -- `ReaderBackTo` state, otherwise preserve reader state.
+--
 switchFork :: HasHeader block
            => Chain block
            -> ChainProducerState block
@@ -152,8 +192,8 @@ switchFork c (ChainProducerState c' rs) =
           
 
 -- | What a reader needs to do next. Should they move on to the next block or
--- do they need to roll back to a previous point on their chain. Also update
--- the producer state assuming that the reader follows the instruction.
+-- do they need to roll back to a previous point on their chain. It also updates
+-- the producer's state assuming that the reader follows its instruction.
 --
 readerInstruction :: HasHeader block
                   => ReaderId
@@ -183,7 +223,7 @@ readerInstruction rid cps@(ChainProducerState c rs) =
             | otherwise         = r
 
 
--- | Add a block to the chain.
+-- | Add a block to the chain. It does not require any reader's state changes.
 --
 addBlock :: HasHeader block
          => block
@@ -193,6 +233,9 @@ addBlock b (ChainProducerState c rs) =
     ChainProducerState (Chain.addBlock b c) rs
 
 
+-- | Rollback producer chain. It requires to update reader states, since some
+-- @'readerPoint'@s mey not be on the new chain; in this case find intersection
+-- of the two chains and set @'readerNext'@ to @'ReaderBackTo'@.
 rollback :: HasHeader block
          => Point
          -> ChainProducerState block
@@ -208,6 +251,8 @@ rollback p cps@(ChainProducerState c rs) =
           | r@ReaderState { readerPoint = p' } <- rs ]
 
 
+-- | Convenient function which combines both @'addBlock'@ and @'rollback'@.
+--
 applyChainUpdate :: HasHeader block
                  => ChainUpdate block
                  -> ChainProducerState block
@@ -216,6 +261,8 @@ applyChainUpdate (AddBlock b) c = addBlock b c
 applyChainUpdate (RollBack p) c = rollback p c
 
 
+-- | Apply a list of @'ChainUpdate'@s.
+--
 applyChainUpdates :: HasHeader block
                   => [ChainUpdate block]
                   -> ChainProducerState block
@@ -227,6 +274,8 @@ applyChainUpdates = flip (foldl (flip applyChainUpdate))
 -- Helpers
 --
 
+-- | Get a new unique @'ReaderId'@.
+--
 freshReaderId :: ReaderStates -> ReaderId
 freshReaderId [] = 0
 freshReaderId rs = 1 + maximum [ readerId | ReaderState{readerId} <- rs ]
