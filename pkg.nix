@@ -21,4 +21,5 @@ mkDerivation {
   description = "A networking layer for the Ouroboros blockchain protocol";
   license = stdenv.lib.licenses.mit;
   hydraPlatforms = stdenv.lib.platforms.none;
+  enableSeparateDocOutput = false;
 }
