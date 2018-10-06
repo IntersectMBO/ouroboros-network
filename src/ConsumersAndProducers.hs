@@ -10,12 +10,10 @@ module ConsumersAndProducers
   , exampleProducer
   )where
 
-import           Control.Monad
-
 import           Block (HasHeader (..))
 import           Chain
                    ( Chain (..), ChainUpdate (..), Point (..)
-                   , blockPoint, findIntersection )
+                   , findIntersection )
 import qualified Chain
 import           ChainProducerState
                    ( ChainProducerState(..), ReaderId
@@ -42,28 +40,28 @@ exampleConsumer chainvar =
     ConsumerHandlers {..}
   where
     getChainPoints :: m [Point]
-    getChainPoints = atomically $ do
-        chain <- readTVar chainvar
-        -- TODO: improve point selection function, move it elsewhere
-        let ps = map blockPoint $ Chain.toList $ chain
-        return ps
+    getChainPoints =
+        Chain.selectPoints recentOffsets <$> atomically (readTVar chainvar)
 
     addBlock :: block -> m ()
-    addBlock b = void $ atomically $ do
+    addBlock b = atomically $ do
         chain <- readTVar chainvar
         let !chain' = Chain.addBlock b chain
-        when (Chain.headPoint chain /= Chain.headPoint chain')
-          $ writeTVar chainvar chain'
+        writeTVar chainvar chain'
 
     rollbackTo :: Point -> m ()
     rollbackTo p = atomically $ do
         chain <- readTVar chainvar
         --TODO: handle rollback failure
         let (Just !chain') = Chain.rollback p chain
-        when (Chain.headPoint chain /= Chain.headPoint chain')
-          $ writeTVar chainvar chain'
+        writeTVar chainvar chain'
 
-
+-- | Offsets from the head of the chain to select points on the consumer's
+-- chain to send to the producer. The specific choice here is fibbonaci up
+-- to 2160.
+--
+recentOffsets :: [Int]
+recentOffsets = [0,1,2,3,5,8,13,21,34,55,89,144,233,377,610,987,1597,2584]
 
 -- | An instance of the producer side of the protocol interface that reads from
 -- a pure 'ChainProducerState' stored in a 'TVar'.

@@ -47,6 +47,7 @@ module Chain (
   successorBlock,
   lookupBySlot,
   selectChain,
+  selectPoints,
   findIntersection,
   intersectChains,
   fixupBlock,
@@ -234,6 +235,26 @@ applyChainUpdates :: HasHeader block
                   -> Chain block
                   -> Chain block
 applyChainUpdates = flip (foldl (flip applyChainUpdate))
+
+-- | Select a bunch of 'Point's based on offsets from the head of the chain.
+-- This is used in the chain consumer protocol as part of finding the
+-- intersection between a local and remote chain.
+--
+-- The typical pattern is to use a selection of offsets covering the last K
+-- blocks, biased towards more recent blocks. For example:
+--
+-- > selectPoints (0 : [ fib n | n <- [1 .. 17] ])
+--
+selectPoints :: HasHeader block => [Int] -> Chain block -> [Point]
+selectPoints offsets =
+    go relativeOffsets
+  where
+    relativeOffsets = zipWith (-) offsets (0:offsets)
+    go [] _         = []
+    go _  Genesis   = []
+    go (off:offs) c = headPoint c' : go offs c'
+      where
+        c' = drop off c
 
 findIntersection
   :: HasHeader block
