@@ -177,8 +177,11 @@ addBlock b c = assert (validExtension c b) $
                c :> b
 
 pointOnChain :: HasHeader block => Point -> Chain block -> Bool
-pointOnChain p Genesis  = p == genesisPoint
-pointOnChain p (c :> b) = p == blockPoint b || pointOnChain p c
+pointOnChain p Genesis        = p == genesisPoint
+pointOnChain p (c :> b)
+  | pointSlot p >  blockSlot b = False
+  | pointSlot p == blockSlot b = pointHash p == blockHash b
+  | otherwise                  = pointOnChain p c
 
 rollback :: HasHeader block => Point -> Chain block -> Maybe (Chain block)
 rollback p (c :> b) | blockPoint b == p = Just (c :> b)
