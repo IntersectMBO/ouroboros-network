@@ -12,12 +12,14 @@ module ConsumersAndProducers
 
 import           Block (HasHeader (..))
 import           Chain
-                   ( Chain (..), ChainUpdate (..), Point (..)
-                   , findIntersection )
+                   ( Chain (..), ChainUpdate (..), Point (..) )
 import qualified Chain
+                   ( selectPoints, addBlock, rollback, genesisPoint )
 import           ChainProducerState
-                   ( ChainProducerState(..), ReaderId
-                   , initReader, updateReader, readerInstruction )
+                   ( ChainProducerState(..), ReaderId )
+import qualified ChainProducerState
+                   ( initReader, updateReader, readerInstruction
+                   , findFirstPoint )
 import           MonadClass
 import           ProtocolInterfaces
 
@@ -83,7 +85,7 @@ exampleProducer chainvar =
     newReader :: m ReaderId
     newReader = atomically $ do
       cps <- readTVar chainvar
-      let (cps', rid) = initReader Chain.genesisPoint cps
+      let (cps', rid) = ChainProducerState.initReader Chain.genesisPoint cps
       writeTVar chainvar cps'
       return rid
 
@@ -91,10 +93,10 @@ exampleProducer chainvar =
     improveReadPoint rid points =
       atomically $ do
         cps <- readTVar chainvar
-        case findIntersection (chainState cps) points of
+        case ChainProducerState.findFirstPoint points cps of
           Nothing     -> return Nothing
           Just ipoint -> do
-            let !cps' = updateReader rid ipoint cps
+            let !cps' = ChainProducerState.updateReader rid ipoint cps
             writeTVar chainvar cps'
             return (Just ipoint)
 
@@ -102,7 +104,7 @@ exampleProducer chainvar =
     tryReadChainUpdate rid =
       atomically $ do
         cps <- readTVar chainvar
-        case readerInstruction rid cps of
+        case ChainProducerState.readerInstruction rid cps of
           Nothing -> return Nothing
           Just (u, cps') -> do
             writeTVar chainvar cps'
@@ -112,7 +114,7 @@ exampleProducer chainvar =
     readChainUpdate rid =
       atomically $ do
         cps <- readTVar chainvar
-        case readerInstruction rid cps of
+        case ChainProducerState.readerInstruction rid cps of
           Nothing        -> retry
           Just (u, cps') -> do
             writeTVar chainvar cps'

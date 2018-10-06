@@ -126,7 +126,14 @@ lookupReader (ChainProducerState _ rs) rid =
 
 -- | Extract @'Chain'@ from @'ChainProducerState'@.
 --
+producerChain :: ChainProducerState block -> Chain block
 producerChain (ChainProducerState c _) = c
+
+findFirstPoint :: HasHeader block
+               => [Point]
+               -> ChainProducerState block
+               -> Maybe Point
+findFirstPoint ps = Chain.findFirstPoint ps . producerChain
 
 
 -- | Add a new reader with the given intersection point and return the new

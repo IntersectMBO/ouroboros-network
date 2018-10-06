@@ -48,7 +48,7 @@ module Chain (
   lookupBySlot,
   selectChain,
   selectPoints,
-  findIntersection,
+  findFirstPoint,
   intersectChains,
   fixupBlock,
   fixupBlockHeader,
@@ -256,15 +256,15 @@ selectPoints offsets =
       where
         c' = drop off c
 
-findIntersection
+findFirstPoint
   :: HasHeader block
-  => Chain block
-  -> [Point]
+  => [Point]
+  -> Chain block
   -> Maybe Point
-findIntersection _ []     = Nothing
-findIntersection c (p:ps)
-  | pointOnChain p c      = Just p
-  | otherwise             = findIntersection c ps
+findFirstPoint [] _     = Nothing
+findFirstPoint (p:ps) c
+  | pointOnChain p c    = Just p
+  | otherwise           = findFirstPoint ps c
 
 intersectChains
   :: HasHeader block
