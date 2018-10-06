@@ -126,6 +126,8 @@ data Chan m send recv = Chan { sendMsg :: send -> m ()
                              }
 
 
+-- | Simulated transfer protocol.
+--
 transferProtocol :: forall send recv m stm.
                     ( MonadSTM m stm
                     , MonadTimer m
@@ -146,6 +148,8 @@ transferProtocol delay sendVar recvVar
           []      -> retry
 
 
+-- | Create a pair of channels it oposite directions.
+--
 createCoupledChannels :: forall send recv m stm.
                          ( MonadSTM m stm
                          , MonadTimer m
@@ -161,6 +165,8 @@ createCoupledChannels delay1 delay2 = do
   return (chan1, chan2)
 
 
+-- | Simulated network channels for a given network node.
+--
 data NodeChannels m prodMsg consMsg = NodeChannels
   { consumerChans :: [Chan m consMsg prodMsg]
     -- ^ channels on which the node will play the consumer role:
@@ -179,8 +185,8 @@ instance Monoid (NodeChannels m prodMsg consMsg) where
   mappend = (<>)
 
 
--- |
--- Create a channels n1 → n2, where n1 is a producer and n2 is the consumer.
+-- | Create a channels n1 → n2, where n1 is a producer and n2 is the consumer.
+--
 createOneWaySubscriptionChannels
   :: forall send recv m stm.
      ( MonadSTM m stm
@@ -202,9 +208,9 @@ createOneWaySubscriptionChannels trDelay1 trDelay2 = do
         }
     )
 
--- |
--- Create channels for n1 ↔ n2 where both nodes are a consumer and a producer
+-- | Create channels for n1 ↔ n2 where both nodes are a consumer and a producer
 -- simulantously.
+--
 createTwoWaySubscriptionChannels
   :: forall send recv m stm.
      ( MonadSTM m stm
@@ -237,8 +243,9 @@ chainGenerator offset chain = do
                               _       -> Just (c, Chain.drop 1 c))
 
 
--- |
--- Generate block from a given chain.
+-- | Every @'offset'@ interval generate a block from a given chain, until the
+-- chain is exhousted. 
+--
 blockGenerator :: forall block m stm.
                   ( MonadSTM m stm
                   , MonadTimer m
@@ -252,8 +259,8 @@ blockGenerator offset chain = do
             | (b, n) <- zip (reverse $ Chain.toList chain) [0,2..] ]
   return outputVar
 
--- |
--- Read one block from the @'blockGenertor'@
+-- | Read one block from the @'blockGenertor'@.
+--
 getBlock :: forall block m stm.
             MonadSTM m stm
          => TVar m (Maybe block)
@@ -287,7 +294,9 @@ observeChain labelPrefix chainVar = do
                 return chain
       say (labelPrefix ++ ": " ++ show (Chain.length chain, Chain.headPoint chain))
 
-
+-- | Observe @TVar ('ChainProducerState' block)@, and whenever the @TVar@
+-- mutates write, the result to the supplied @'Probe'@.
+--
 observeChainProducerState
   :: forall m stm block.
      ( HasHeader block
@@ -357,6 +366,15 @@ data ConsumerId = ConsumerId NodeId Int
 data ProducerId = ProducerId NodeId Int
   deriving (Eq, Ord, Show)
 
+-- | Relay node, which takes @'NodeChannels'@ to communicate with its peers
+-- (upstream and downstream).  If it is subscribed to n nodes and has
+-- m subscriptions, it will run n consumer end protocols which listen for
+-- updates; verify chains and select the longest one and feed it to the producer
+-- side which sends updates to its m subscribers.
+--
+-- The main thread of the @'releayNode'@ is not blocking; it will return
+-- @TVar ('ChainProducerSate' block)@.  This allows to extend the relay node to
+-- a core node.
 relayNode :: forall block m stm.
         ( HasHeader block
         , Eq block
@@ -412,6 +430,10 @@ relayNode nid chans = do
         (loggingSend (ProducerId nid pid) (sendMsg chan))
         (loggingRecv (ProducerId nid pid) (recvMsg chan))
 
+-- | Core node simulation.  Given a chain, every @offset@ interval it will pick
+-- consecutive block from it, adjust it to the currand chain and apply it.  It
+-- runs a relay node.
+--
 coreNode :: forall m stm.
         ( MonadSTM m stm
         , MonadTimer m
