@@ -27,7 +27,6 @@ library
                        ProtocolInterfaces
                        ConsumersAndProducers
                        Node
-                       NodeExperiment1
                        Sim
   other-modules:
 -- Old experiments, not currently building:
@@ -83,9 +82,12 @@ test-suite tests
   hs-source-dirs:      src, test
   main-is:             Main.hs
   other-modules:       Block
-                       Chain
+                       Test.Chain
+                       Test.ChainProducerState
                        Test.Sim
+                       Test.Node
   default-language:    Haskell2010
+  default-extensions:  NamedFieldPuns
   build-depends:       base,
                        clock,
                        stm,

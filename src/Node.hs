@@ -18,7 +18,7 @@ import qualified Chain
 import           Chain (Chain (..), Point)
 import Protocol
 import ConsumersAndProducers
-import ChainProducerState (ChainProducerState (..), ReaderId, initChainProducerState, switchFork)
+import ChainProducerState (ChainProducerState (..), ReaderId, initChainProducerState, producerChain, switchFork)
 
 import qualified Sim
 
@@ -289,27 +289,29 @@ observeChain labelPrefix chainVar = do
 
 
 observeChainProducerState
-  :: forall block m stm.
+  :: forall m stm block.
      ( HasHeader block
      , MonadSTM m stm
      , MonadSay m
+     , MonadProbe m
      )
   => NodeId
+  -> Probe m (NodeId, Int, Point)
   -> TVar m (ChainProducerState block)
   -> m ()
-observeChainProducerState nid cpsVar = do
+observeChainProducerState nid p cpsVar = do
     st <- atomically (newTVar Chain.genesisPoint)
     forever (update st)
   where
     update :: TVar m Point -> m ()
     update stateVar = do
       chain <- atomically $ do
-                ChainProducerState{chainState = chain} <- readTVar cpsVar
+                chain  <- producerChain <$> readTVar cpsVar
                 curPoint <- readTVar stateVar
                 check (Chain.headPoint chain /= curPoint)
                 writeTVar stateVar (Chain.headPoint chain)
                 return chain
-      say (show nid ++ ": " ++ show (Chain.length chain, Chain.headPoint chain))
+      probeOutput p (nid, Chain.length chain, Chain.headPoint chain)
 
 nodeExample1 :: forall block m stm.
                 ( HasHeader block
@@ -388,9 +390,6 @@ relayNode nid chans = do
   let producer = exampleProducer cpsVar
   mapM_ (uncurry $ startProducer producer) (zip [0..] (producerChans chans))
 
-  -- chain observer
-  fork $ observeChainProducerState nid cpsVar
-
   return cpsVar
   where
     startConsumer :: Int
@@ -422,12 +421,14 @@ coreNode :: forall m stm.
      -> Duration (Time m)
      -> Chain Block
      -> NodeChannels m (MsgProducer Block) MsgConsumer
-     -> m ()
+     -> m (TVar m (ChainProducerState Block))
 coreNode nid offset chain chans = do
   cpsVar <- relayNode nid chans
 
   blockVar <- blockGenerator offset chain
   fork $ forever $ applyGeneratedBlock blockVar cpsVar
+
+  return cpsVar
 
   where
     applyGeneratedBlock
@@ -439,98 +440,3 @@ coreNode nid offset chain chans = do
       cps@ChainProducerState{chainState} <- readTVar cpsVar
       let chain = Chain.addBlock (Chain.fixupBlock (Chain.headPoint chainState) (Chain.headBlockNo chainState) block) chainState
       writeTVar cpsVar (switchFork chain cps)
-
-coreToRelaySim :: ( MonadSTM m stm
-                  , MonadTimer m
-                  , MonadSay m
-                  )
-               => Bool              -- ^ two way subscription
-               -> Chain Block
-               -> Duration (Time m) -- ^ core delay (block creation)
-               -> Duration (Time m) -- ^ core transport delay
-               -> Duration (Time m) -- ^ relay transport delay
-               -> m ()
-coreToRelaySim duplex chain coreDelay coreTrDelay relayTrDelay = do
-  (coreChans, relayChans) <- if duplex
-    then createTwoWaySubscriptionChannels relayTrDelay coreTrDelay
-    else createOneWaySubscriptionChannels coreTrDelay relayTrDelay
-
-  fork $ coreNode (CoreId 0) coreDelay chain coreChans
-  fork $ void $ relayNode (RelayId 1) relayChans
-
-runCoreToRelaySim :: Chain Block
-                  -> Sim.VTimeDuration
-                  -> Sim.VTimeDuration
-                  -> Sim.VTimeDuration
-                  -> Sim.Trace
-runCoreToRelaySim chain coreDelay coreTransportDelay relayTransportDelay =
-  Sim.runSimM $ coreToRelaySim False chain coreDelay coreTransportDelay relayTransportDelay
-
-
--- Node graph: c → r → r
-coreToRelaySim2 :: ( MonadSTM m stm
-                   , MonadTimer m
-                   , MonadSay m
-                   )
-                => Chain Block
-                -> Duration (Time m)
-                -> Duration (Time m)
-                -> Duration (Time m)
-                -> m ()
-coreToRelaySim2 chain coreDelay coreTrDelay relayTrDelay = do
-  (cr1, r1c) <- createOneWaySubscriptionChannels coreTrDelay relayTrDelay
-  (r1r2, r2r1) <- createOneWaySubscriptionChannels relayTrDelay relayTrDelay
-
-  fork $ coreNode (CoreId 0) coreDelay chain cr1
-  fork $ void $ relayNode (RelayId 1) (r1c <> r1r2)
-  fork $ void $ relayNode (RelayId 2) r2r1
-
-runCoreToRelaySim2 :: Chain Block
-                   -> Sim.VTimeDuration
-                   -> Sim.VTimeDuration
-                   -> Sim.VTimeDuration
-                   -> Sim.Trace
-runCoreToRelaySim2 chain coreDelay coreTransportDelay relayTransportDelay =
-  Sim.runSimM $ coreToRelaySim2 chain coreDelay coreTransportDelay relayTransportDelay
-
-
--- Node graph: c ↔ r ↔ r ↔ c
-coreToCoreViaRelaySim :: ( MonadSTM m stm
-                         , MonadTimer m
-                         , MonadSay m
-                         )
-                      => Chain Block
-                      -> Chain Block
-                      -> Duration (Time m)
-                      -> Duration (Time m)
-                      -> Duration (Time m)
-                      -> m ()
-coreToCoreViaRelaySim chain1 chain2 coreDelay coreTrDelay relayTrDelay = do
-  (c1r1, r1c1) <- createTwoWaySubscriptionChannels coreTrDelay relayTrDelay
-  (r1r2, r2r1) <- createTwoWaySubscriptionChannels relayTrDelay relayTrDelay
-  (r2c2, c2r2) <- createTwoWaySubscriptionChannels relayTrDelay coreTrDelay
-  -- (r1c2, c2r1) <- createTwoWaySubscriptionChannels relayTrDelay coreTrDelay
-
-  fork $ coreNode (CoreId 1) coreDelay chain1 c1r1
-  fork $ void $ relayNode (RelayId 1) (r1c1 <> r1r2)
-  fork $ void $ relayNode (RelayId 2) (r2r1 <> r2c2)
-  fork $ coreNode (CoreId 2) coreDelay chain2 c2r2
-  -- fork $ void $ relayNode (RelayId 1) (r1c1 <> r1c2)
-  -- fork $ coreNode (CoreId 2) coreDelay chain2 c2r1
-
-runCoreToCoreViaRelaySim
-  :: Chain Block
-  -> Chain Block
-  -> Sim.VTimeDuration
-  -> Sim.VTimeDuration
-  -> Sim.VTimeDuration
-  -> Sim.Trace
-runCoreToCoreViaRelaySim chain1 chain2 coreDelay coreTrDelay relayTrDelay =
-  Sim.runSimM $ coreToCoreViaRelaySim chain1 chain2 coreDelay coreTrDelay relayTrDelay
-
-
-prop_coreToCoreViaRelay :: Chain.TestChainFork -> Property
-prop_coreToCoreViaRelay (Chain.TestChainFork _ chain1 chain2) =
-  let trace = runCoreToCoreViaRelaySim chain1 chain2 (Sim.VTimeDuration 1) (Sim.VTimeDuration 1) (Sim.VTimeDuration 1)
-  in QC.monadicIO $ do
-    QC.run (evaluate trace) >>= QC.assert . (\tr -> length tr > 0)
