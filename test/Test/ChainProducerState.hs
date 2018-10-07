@@ -20,9 +20,10 @@ tests :: TestTree
 tests =
   testGroup "ChainProducerState"
   [ testGroup "Test Arbitrary instances"
-    [ testProperty "ChainProducerStateForkTest's generator" prop_arbitrary_ChainProducerStateForkTest
+    [ testProperty "ChainProducerStateForkTest's generator"
+                   prop_arbitrary_ChainProducerStateForkTest
     , testProperty "ChainProducerStateForkTest's shrinker"
-      prop_shrink_ChainProducerStateForkTest
+                   (withMaxSuccess 25 prop_shrink_ChainProducerStateForkTest)
     ]
   , testProperty "check initial reader state" prop_init_lookup
   , testProperty "check reader state after updateReader" prop_update_lookup
@@ -157,12 +158,11 @@ instance Arbitrary ChainProducerStateForkTest where
           else r { readerPoint = headPoint c }
 
 prop_arbitrary_ChainProducerStateForkTest :: ChainProducerStateForkTest -> Bool
-prop_arbitrary_ChainProducerStateForkTest (ChainProducerStateForkTest c f)
-  = invChainProducerState c && Chain.valid f
+prop_arbitrary_ChainProducerStateForkTest (ChainProducerStateForkTest c f) =
+    invChainProducerState c && Chain.valid f
 
-prop_shrink_ChainProducerStateForkTest :: ChainProducerStateForkTest -> Property
-prop_shrink_ChainProducerStateForkTest c
-  = withMaxSuccess 25 $ all id
-    [ invChainProducerState c && Chain.valid f
-    | ChainProducerStateForkTest c f <- shrink c
-    ]
+prop_shrink_ChainProducerStateForkTest :: ChainProducerStateForkTest -> Bool
+prop_shrink_ChainProducerStateForkTest c =
+    and [ invChainProducerState c && Chain.valid f
+        | ChainProducerStateForkTest c f <- shrink c
+        ]
