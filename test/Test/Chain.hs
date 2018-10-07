@@ -25,7 +25,10 @@ tests :: TestTree
 tests =
   testGroup "Chain"
   [ testGroup "generators"
-    [ testProperty "arbitrary for TestBlockChain"  prop_arbitrary_TestBlockChain
+    [ testProperty "arbitrary for TestBlockChain" $
+      -- It's important we don't generate too many trivial test cases here
+      -- so check the coverage to enforce it.
+                   checkCoverage prop_arbitrary_TestBlockChain
     , testProperty "shrink for TestBlockChain"     prop_shrink_TestBlockChain
 
     , testProperty "arbitrary for TestHeaderChain" prop_arbitrary_TestHeaderChain
@@ -150,7 +153,7 @@ newtype TestHeaderChain = TestHeaderChain (Chain BlockHeader)
 
 instance Arbitrary TestBlockChain where
     arbitrary = do
-        NonNegative n <- arbitrary
+        n <- genNonNegative
         TestBlockChain <$> genBlockChain n
 
     shrink (TestBlockChain c) =
@@ -159,15 +162,19 @@ instance Arbitrary TestBlockChain where
 
 instance Arbitrary TestHeaderChain where
     arbitrary = do
-        NonNegative n <- arbitrary
+        n <- genNonNegative
         TestHeaderChain <$> genHeaderChain n
 
     shrink (TestHeaderChain c) =
         [ TestHeaderChain (fromListFixupHeaders c')
         | c' <- shrinkList (const []) (Chain.toList c) ]
 
-prop_arbitrary_TestBlockChain :: TestBlockChain -> Bool
-prop_arbitrary_TestBlockChain (TestBlockChain c) = Chain.valid c
+prop_arbitrary_TestBlockChain :: TestBlockChain -> Property
+prop_arbitrary_TestBlockChain (TestBlockChain c) =
+    -- check we get some but not too many zero-length chains
+    cover 95   (not (Chain.null c)) "non-null" $
+    cover 1.5       (Chain.null c)  "null"     $
+    Chain.valid c
 
 prop_arbitrary_TestHeaderChain :: TestHeaderChain -> Bool
 prop_arbitrary_TestHeaderChain (TestHeaderChain c) = Chain.valid c
@@ -179,6 +186,14 @@ prop_shrink_TestBlockChain c =
 prop_shrink_TestHeaderChain :: TestHeaderChain -> Bool
 prop_shrink_TestHeaderChain c =
     and [ Chain.valid c' | TestHeaderChain c' <- shrink c ]
+
+-- | The 'NonNegative' generator produces a large proportion of 0s, so we use
+-- this one instead for now.
+--
+-- https://github.com/nick8325/quickcheck/issues/229
+--
+genNonNegative :: Gen Int
+genNonNegative = (abs <$> arbitrary) `suchThat` (>= 0)
 
 genBlockChain :: Int -> Gen (Chain Block)
 genBlockChain n = do
@@ -397,7 +412,8 @@ instance Arbitrary TestChainFork where
     if equalChains
       then return (TestChainFork chain chain chain)
       else do
-        (NonNegative l, NonNegative r) <- arbitrary
+        l <- genNonNegative
+        r <- genNonNegative
         chainL <- genAddBlocks l chain
         chainR <- genAddBlocks r chain
         return (TestChainFork chain chainL chainR)
