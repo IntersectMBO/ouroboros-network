@@ -26,7 +26,9 @@ tests =
                    (withMaxSuccess 25 prop_shrink_ChainProducerStateForkTest)
     ]
   , testProperty "check initial reader state" prop_init_lookup
+  , testProperty "check second reader state"  prop_init_next_lookup
   , testProperty "check reader state after updateReader" prop_update_lookup
+  , testProperty "check reader state after updateReader2" prop_update_next_lookup
   , testProperty "apply readerInstructions" prop_producer_sync
   , testProperty "swicht fork" prop_switchFork
   ]
@@ -36,15 +38,41 @@ tests =
 -- Properties
 --
 
+-- | Check that readers start in the expected state, at the right point and
+-- in the rollback state.
+--
 prop_init_lookup :: ChainProducerStateTest -> Bool
 prop_init_lookup (ChainProducerStateTest c _ p) =
     let (c', rid) = initReader p c in
     lookupReader c' rid == ReaderState p ReaderBackTo rid
 
+-- | As above but check that when we move the reader on by one, from the
+-- rollback state, they stay at the same point but are now in the forward state.
+--
+prop_init_next_lookup :: ChainProducerStateTest -> Bool
+prop_init_next_lookup (ChainProducerStateTest c _ p) =
+    let (c', rid)     = initReader p c
+        Just (u, c'') = readerInstruction rid c'
+    in u == RollBack p
+    && lookupReader c'' rid == ReaderState p ReaderForwardFrom rid
+
+-- | Check that after moving the reader point that the reader is in the
+-- expected state, at the right point and in the rollback state.
+--
 prop_update_lookup :: ChainProducerStateTest -> Bool
 prop_update_lookup (ChainProducerStateTest c rid p) =
     let c' = updateReader rid p c in
     lookupReader c' rid == ReaderState p ReaderBackTo rid
+
+-- | As above but check that when we move the reader on by one, from the
+-- rollback state, they stay at the same point but are now in the forward state.
+--
+prop_update_next_lookup :: ChainProducerStateTest -> Bool
+prop_update_next_lookup (ChainProducerStateTest c rid p) =
+    let c'            = updateReader rid p c
+        Just (u, c'') = readerInstruction rid c'
+    in u == RollBack p
+    && lookupReader c'' rid == ReaderState p ReaderForwardFrom rid
 
 prop_producer_sync :: TestBlockChainAndUpdates -> Bool
 prop_producer_sync (TestBlockChainAndUpdates c us) =
