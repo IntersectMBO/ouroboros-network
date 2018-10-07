@@ -37,6 +37,10 @@ tests =
     , testProperty "arbitrary for TestAddBlock" prop_arbitrary_TestAddBlock
     , testProperty "shrink for TestAddBlock"    prop_shrink_TestAddBlock
 
+    , testProperty "arbitrary for TestBlockChainAndUpdates" $
+      -- Same deal here applies here with generating trivial test cases.
+                   checkCoverage prop_arbitrary_TestBlockChainAndUpdates
+
     , testProperty "arbitrary for TestChainAndPoint" prop_arbitrary_TestChainAndPoint
     , testProperty "shrink for TestChainAndPoint"    prop_shrink_TestChainAndPoint
 
@@ -313,17 +317,35 @@ data TestBlockChainAndUpdates =
 instance Arbitrary TestBlockChainAndUpdates where
   arbitrary = do
     TestBlockChain chain <- arbitrary
-    NonNegative m <- arbitrary
+    m <- genNonNegative
     updates <- genChainUpdates chain m
     return (TestBlockChainAndUpdates chain updates)
 
 genChainUpdate :: Chain Block -> Gen (ChainUpdate Block)
-genChainUpdate chain = do
-    let maxRollback = Chain.length chain `min` k
-    n <- choose (-10, maxRollback)
-    if n <= 0
-      then AddBlock <$> genAddBlock chain
-      else pure (RollBack (mkRollbackPoint chain n))
+genChainUpdate chain =
+    frequency $
+      -- To ensure we make progress on average w must ensure the weight of
+      -- adding one block is more than the expected rollback length. If we
+      -- used expectedRollbackLength then we would on average make no
+      -- progress. We slightly arbitrarily weight 2:1 for forward progress.
+      [ (expectedRollbackLength * 2, AddBlock <$> genAddBlock chain) ]
+   ++ L.take (Chain.length chain)
+        [ (freq, pure (RollBack (mkRollbackPoint chain len)))
+        | (freq, len) <- rollbackLengthDistribution
+        ]
+  where
+    -- This is the un-normalised expected value since the 'frequency'
+    -- combinator normalises everything anyway.
+    expectedRollbackLength :: Int
+    expectedRollbackLength =
+        sum [ freq * n | (freq, n) <- rollbackLengthDistribution ]
+
+    rollbackLengthDistribution :: [(Int,Int)]
+    rollbackLengthDistribution =
+      (1, 0) :
+      [ let freq = (k+1-n); len = n
+         in (freq, len)
+      | n <- [1..k] ]
 
 mkRollbackPoint :: HasHeader block => Chain block -> Int -> Point
 mkRollbackPoint chain n = Chain.headPoint $ Chain.drop n chain
@@ -335,6 +357,34 @@ genChainUpdates chain n = do
     let Just chain' = Chain.applyChainUpdate update chain
     updates <- genChainUpdates chain' (n-1)
     return (update : updates)
+
+prop_arbitrary_TestBlockChainAndUpdates :: TestBlockChainAndUpdates -> Property
+prop_arbitrary_TestBlockChainAndUpdates (TestBlockChainAndUpdates c us) =
+    cover 1.5 (     null us ) "empty updates"     $
+    cover 95  (not (null us)) "non-empty updates" $
+    tabulate "ChainUpdate" (map updateKind us) $
+    tabulate "Growth" [hist (countBlockChange us c 0)] $
+
+    Chain.valid c
+ && case Chain.applyChainUpdates us c of
+      Nothing -> False
+      Just c' -> Chain.valid c'
+  where
+    hist n = show lower ++ " to " ++ show upper
+      where
+        lower = (n `div` 10)     * 10
+        upper = (n `div` 10 + 1) * 10 - 1
+
+    updateKind AddBlock{} = "AddBlock"
+    updateKind RollBack{} = "RollBack"
+
+    -- Count the number of blocks forward - the number of blocks backward
+    countBlockChange []     c n = n
+    countBlockChange (u:us) c n = countBlockChange us c' n'
+      where
+        Just c' = Chain.applyChainUpdate u c
+        n'      = n + fromEnum (Chain.headBlockNo c')
+                    - fromEnum (Chain.headBlockNo c)
 
 
 --
