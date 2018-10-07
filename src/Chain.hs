@@ -224,7 +224,7 @@ a `isPrefixOf` b = reverse (toList a) `L.isPrefixOf` reverse (toList b)
 
 data ChainUpdate block = AddBlock block
                        | RollBack Point
-  deriving Show
+  deriving (Eq, Show)
 
 applyChainUpdate :: HasHeader block
                  => ChainUpdate block

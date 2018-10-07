@@ -49,14 +49,12 @@ tests =
   , testProperty "drop"            prop_drop
   , testProperty "addBlock"        prop_addBlock
   , testProperty "rollback"        prop_rollback
+  , testProperty "rollback/head"   prop_rollback_head
   , testProperty "successorBlock"  prop_successorBlock
   , testProperty "lookupBySlot"    prop_lookupBySlot
   , testProperty "intersectChains" prop_intersectChains
   ]
 
-
-genPoint :: Gen Point
-genPoint = (\s h -> Point (Slot s) (HeaderHash h)) <$> arbitrary <*> arbitrary
 
 --
 -- Properties
@@ -99,15 +97,19 @@ prop_addBlock (TestAddBlock c b) =
   where
     c' = Chain.addBlock b c
 
-prop_rollback :: TestChainAndPoint -> Property
+prop_rollback :: TestChainAndPoint -> Bool
 prop_rollback (TestChainAndPoint c p) =
     case Chain.rollback p c of
-      Nothing -> property True
+      Nothing -> True
       Just c' ->
         -- chain is a prefix of original
              Chain.isPrefixOf c' c
         -- chain head point is the rollback point
-        .&&. Chain.headPoint c' === p
+        && Chain.headPoint c' == p
+
+prop_rollback_head :: TestBlockChain -> Bool
+prop_rollback_head (TestBlockChain c) =
+    Chain.rollback (Chain.headPoint c) c == Just c
 
 prop_successorBlock :: TestChainAndPoint -> Property
 prop_successorBlock (TestChainAndPoint c p) =
@@ -352,6 +354,9 @@ instance Arbitrary TestChainAndPoint where
     | otherwise
     = [ TestChainAndPoint c' p
       | TestBlockChain c' <- shrink (TestBlockChain c) ]
+
+genPoint :: Gen Point
+genPoint = (\s h -> Point (Slot s) (HeaderHash h)) <$> arbitrary <*> arbitrary
 
 fixupPoint :: HasHeader block => Chain block -> Point -> Point
 fixupPoint c p =
