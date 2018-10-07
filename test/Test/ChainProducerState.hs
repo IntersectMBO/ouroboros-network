@@ -29,7 +29,8 @@ tests =
   , testProperty "check second reader state"  prop_init_next_lookup
   , testProperty "check reader state after updateReader" prop_update_lookup
   , testProperty "check reader state after updateReader2" prop_update_next_lookup
-  , testProperty "apply readerInstructions" prop_producer_sync
+  , testProperty "producer syncronise (1)" prop_producer_sync1
+  , testProperty "producer syncronise (2)" prop_producer_sync2
   , testProperty "swicht fork" prop_switchFork
   ]
 
@@ -74,8 +75,16 @@ prop_update_next_lookup (ChainProducerStateTest c rid p) =
     in u == RollBack p
     && lookupReader c'' rid == ReaderState p ReaderForwardFrom rid
 
-prop_producer_sync :: TestBlockChainAndUpdates -> Bool
-prop_producer_sync (TestBlockChainAndUpdates c us) =
+-- | This says that if we take a chain producer and apply a bunch of updates
+-- and initialise a consumer to the producer's initial chain, then by
+-- applying update instructions from the producer to the consumer then the
+-- consumer ends up in the same final state.
+--
+-- The limitation of this test is that it applies all the updates to the
+-- producer first and then syncronises without changing the producer.
+--
+prop_producer_sync1 :: TestBlockChainAndUpdates -> Bool
+prop_producer_sync1 (TestBlockChainAndUpdates c us) =
     let producer0        = initChainProducerState c
         (producer1, rid) = initReader (Chain.headPoint c) producer0
         Just producer    = applyChainUpdates us producer1
@@ -87,6 +96,42 @@ prop_producer_sync (TestBlockChainAndUpdates c us) =
         consumer == producerChain producer
   where
     iterateReaderUntilDone rid = unfoldr (readerInstruction rid)
+
+-- | A variation on 'prop_producer_sync1' where we take an arbitrary
+-- interleaving of applying changes to the producer and doing syncronisation
+-- steps between the producer and consumer.
+--
+prop_producer_sync2 :: TestBlockChainAndUpdates -> [Bool] -> Bool
+prop_producer_sync2 (TestBlockChainAndUpdates chain0 us0) choices =
+    let producer0        = initChainProducerState chain0
+        (producer1, rid) = initReader (Chain.headPoint chain0) producer0
+
+        consumer0        = chain0
+        (producer,
+         consumer)       = go rid producer1 consumer0 choices us0
+     in consumer == producerChain producer
+  where
+    -- apply update to producer
+    go rid p c (False:bs) (u:us) =
+      let Just p' = applyChainUpdate u p
+       in go rid p' c bs us
+
+    -- all producer updates are done
+    go rid p c (False:_bs) [] = go rid p c [] []
+
+    -- apply update to consumer
+    go rid p c (True:bs) us =
+      case readerInstruction rid p of
+        Nothing      -> go rid p  c  bs us
+        Just (u, p') -> go rid p' c' bs us
+          where Just c' = Chain.applyChainUpdate u c
+
+    -- producer is not changing, just run consumer
+    go rid p c [] _ =
+      case readerInstruction rid p of
+        Nothing      -> (p, c)
+        Just (u, p') -> go rid p' c' [] []
+          where Just c' = Chain.applyChainUpdate u c
 
 prop_switchFork :: ChainProducerStateForkTest -> Bool
 prop_switchFork (ChainProducerStateForkTest cps f) =
