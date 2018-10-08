@@ -386,8 +386,8 @@ countChainUpdateNetProgress :: HasHeader block
                             -> Int
 countChainUpdateNetProgress = go 0
   where
-    go n c []     = n
-    go n c (u:us) = go n' c' us
+    go n _c []     = n
+    go n c  (u:us) = go n' c' us
       where
         Just c' = Chain.applyChainUpdate u c
         n'      = n + fromEnum (Chain.headBlockNo c')

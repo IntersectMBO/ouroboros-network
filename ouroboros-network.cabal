@@ -97,20 +97,21 @@ test-suite tests
   default-language:    Haskell2010
   default-extensions:  NamedFieldPuns
   build-depends:       base,
-                       clock,
-                       stm,
-                       transformers,
-                       bytestring,
-                       containers,
                        array,
+                       bytestring,
+                       clock,
+                       containers,
                        fingertree,
-                       semigroups,
-                       void,
-                       hashable,
-                       random,
                        free,
-                       text,
+                       hashable,
+                       ouroboros-network,
                        QuickCheck,
+                       random,
+                       semigroups,
+                       stm,
                        tasty,
-                       tasty-quickcheck
+                       tasty-quickcheck,
+                       text,
+                       transformers,
+                       void
   ghc-options:         -Wall

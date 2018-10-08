@@ -30,7 +30,7 @@ tests =
   , testProperty "check reader state after updateReader2" prop_update_next_lookup
   , testProperty "producer syncronise (1)" prop_producer_sync1
   , testProperty "producer syncronise (2)" prop_producer_sync2
-  , testProperty "swicht fork" prop_switchFork
+  , testProperty "switch fork" prop_switchFork
   ]
 
 
@@ -134,8 +134,7 @@ prop_producer_sync2 (TestBlockChainAndUpdates chain0 us0) choices =
 
 prop_switchFork :: ChainProducerStateForkTest -> Bool
 prop_switchFork (ChainProducerStateForkTest cps f) =
-  let cps'  = switchFork f cps
-      cps'' = switchFork (chainState cps') cps'
+  let cps' = switchFork f cps
   in
       invChainProducerState cps'
       && all
@@ -149,12 +148,12 @@ prop_switchFork (ChainProducerStateForkTest cps f) =
       -- points only move backward
       && pointSlot (readerPoint r') <= pointSlot (readerPoint r)
       -- if reader's point moves back, `readerNext` is changed to `ReaderBackTo`
-      && ((pointSlot (readerPoint r') < pointSlot (readerPoint r)) `imply` (readerNext r' == ReaderBackTo))
+      && ((pointSlot (readerPoint r') < pointSlot (readerPoint r)) `implies` (readerNext r' == ReaderBackTo))
       -- if reader's point is not changed, also next instruction is not changed
-      && ((pointSlot (readerPoint r') == pointSlot (readerPoint r)) `imply` (readerNext r' == readerNext r))
+      && ((pointSlot (readerPoint r') == pointSlot (readerPoint r)) `implies` (readerNext r' == readerNext r))
 
-    imply :: Bool -> Bool -> Bool
-    imply a b = not a || b
+    implies :: Bool -> Bool -> Bool
+    implies a b = not a || b
 
 
 --

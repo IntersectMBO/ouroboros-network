@@ -28,10 +28,9 @@ tests :: TestTree
 tests =
   testGroup "Node"
   [ testGroup "fixed graph topology"
-    [
-    --   testProperty "core -> relay" prop_coreToRelay
+    [ testProperty "core -> relay" prop_coreToRelay
     -- , testProperty "core -> relay -> relay" prop_coreToRelay2
-    -- , testProperty "core <-> relay <-> core" (prop_coreToCoreViaRelay
+    -- , testProperty "core <-> relay <-> core" prop_coreToCoreViaRelay
     ]
   ]
 
@@ -243,12 +242,8 @@ runCoreToCoreViaRelaySim chain1 chain2 coreDelay coreTrDelay relayTrDelay = runS
 prop_coreToCoreViaRelay :: TestChainFork -> Property
 prop_coreToCoreViaRelay (TestChainFork _ chain1 chain2) =
   let probes = map snd $ runCoreToCoreViaRelaySim chain1 chain2 (Sim.VTimeDuration 1) (Sim.VTimeDuration 1) (Sim.VTimeDuration 1)
-      len1 = Chain.length chain1
-      len2 = Chain.length chain2
-  -- TODO: why when one chain is null this fails?
   in
-        let -- chain = if len1 > len2 then chain1 else chain2
-            dict  = partitionProbe probes
+        let dict  = partitionProbe probes
             tipC1 = Map.lookup (CoreId 1) dict  >>= headM >>= Just . snd
             tipC2 = Map.lookup (CoreId 2) dict  >>= headM >>= Just . snd
             tipR1 = Map.lookup (RelayId 1) dict >>= headM >>= Just . snd
