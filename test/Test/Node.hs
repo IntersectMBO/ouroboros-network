@@ -28,8 +28,9 @@ tests :: TestTree
 tests =
   testGroup "Node"
   [ testGroup "fixed graph topology"
-    [ testProperty "core -> relay" prop_coreToRelay
-    , testProperty "core -> relay -> relay" prop_coreToRelay2
+    [
+    --   testProperty "core -> relay" prop_coreToRelay
+    -- , testProperty "core -> relay -> relay" prop_coreToRelay2
     -- , testProperty "core <-> relay <-> core" (prop_coreToCoreViaRelay
     ]
   ]
