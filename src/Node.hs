@@ -4,7 +4,7 @@ module Node where
 
 import Data.List hiding (inits)
 import Data.Semigroup (Semigroup (..))
-import Data.Maybe (listToMaybe, catMaybes)
+import Data.Maybe (catMaybes)
 import Data.Functor (($>))
 import Data.Tuple (swap)
 import Control.Monad
