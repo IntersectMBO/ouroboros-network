@@ -20,39 +20,16 @@ import ChainProducerState (ChainProducerState (..), ReaderId, initChainProducerS
 
 
 
-longestChainSelection :: forall block m stm. MonadSTM m stm
-                      => [TVar m (Maybe (Chain block))]
-                      -> TVar m (Chain block)
-                      -> m ()
-longestChainSelection candidateChainVars currentChainVar =
-    forever (atomically updateCurrentChain)
-  where
-    updateCurrentChain :: stm ()
-    updateCurrentChain = do
-      candidateChains <- mapM readTVar candidateChainVars
-      currentChain    <- readTVar currentChainVar
-      case longestChain (Chain.length currentChain) (catMaybes candidateChains) of
-        Nothing -> retry
-        Just c  -> writeTVar currentChainVar c
-
-    longestChain :: Int -> [(Chain block)] -> Maybe (Chain block)
-    longestChain curlen
-      = fmap fst
-      . listToMaybe
-      . sortBy (\(_, l1) (_, l2) -> compare l1 l2)
-      . filter (\(_, l) -> l > curlen)
-      . map (\c -> (c, Chain.length c))
-
 -- |
 -- State-full chain selection (@'ChainProducerState'@).
-longestChainSelectionS :: forall block m stm.
-                          ( HasHeader block
-                          , MonadSTM m stm
-                          )
+longestChainSelection :: forall block m stm.
+                         ( HasHeader block
+                         , MonadSTM m stm
+                         )
                       => [TVar m (Maybe (Chain block))]
                       -> TVar m (ChainProducerState block)
                       -> m ()
-longestChainSelectionS candidateChainVars cpsVar =
+longestChainSelection candidateChainVars cpsVar =
     forever (atomically updateCurrentChain)
   where
     updateCurrentChain :: stm ()
@@ -218,24 +195,6 @@ createTwoWaySubscriptionChannels trDelay1 trDelay2 = do
   r21 <- createOneWaySubscriptionChannels trDelay2 trDelay1
   return $ r12 <> swap r21
 
-chainGenerator :: forall block m stm.
-                  ( MonadSTM m stm
-                  , MonadTimer m
-                  )
-               => Duration (Time m)
-               -> Chain block
-               -> m (TVar m (Chain block))
-chainGenerator offset chain = do
-    outputVar <- atomically (newTVar Genesis)
-    sequence_ [ timer (offset + fromIntegral n) (atomically (writeTVar outputVar v))
-              | (v, n) <- zip (inits chain) [0 :: Int, 2 ..] ]
-    return outputVar
-  where
-    inits = reverse
-          . unfoldr (\c -> case c of
-                              Genesis -> Nothing
-                              _       -> Just (c, Chain.drop 1 c))
-
 
 -- | Generate a block from a given chain.  Each @block@ is produced at
 -- @slotDuration * blockSlot block@ time. 
@@ -270,28 +229,6 @@ getBlock v = do
     Just b  -> writeTVar v Nothing $> b
 
 
-observeChain :: forall block m stm.
-                ( HasHeader block
-                , MonadSTM m stm
-                , MonadSay m
-                )
-             => String
-             -> TVar m (Chain block)
-             -> m ()
-observeChain labelPrefix chainVar = do
-    st <- atomically (newTVar Chain.genesisPoint)
-    forever (update st)
-  where
-    update :: TVar m Point -> m ()
-    update stateVar = do
-      chain <- atomically $ do
-                chain    <- readTVar chainVar
-                curPoint <- readTVar stateVar
-                check (Chain.headPoint chain /= curPoint)
-                writeTVar stateVar (Chain.headPoint chain)
-                return chain
-      say (labelPrefix ++ ": " ++ show (Chain.length chain, Chain.headPoint chain))
-
 -- | Observe @TVar ('ChainProducerState' block)@, and whenever the @TVar@
 -- mutates write, the result to the supplied @'Probe'@.
 --
@@ -319,40 +256,6 @@ observeChainProducerState nid p cpsVar = do
                 writeTVar stateVar (Chain.headPoint chain)
                 return chain
       probeOutput p (nid, chain)
-
-nodeExample1 :: forall block m stm.
-                ( HasHeader block
-                , MonadSTM m stm
-                , MonadTimer m
-                , MonadSay m
-                )
-             => (Chain block)
-             -> (Chain block)
-             -> m ()
-nodeExample1 c1 c2 = do
-    generatorVar1 <- chainGenerator 1 c1
-    generatorVar2 <- chainGenerator 2 c2
-
-    peerChainVar1 <- atomically $ newTVar Genesis
-    peerChainVar2 <- atomically $ newTVar Genesis
-
-    candidateChainVar1 <- atomically $ newTVar Nothing
-    candidateChainVar2 <- atomically $ newTVar Nothing
-    let candidateChainVars = [candidateChainVar1, candidateChainVar2]
-
-    currentChainVar <- atomically $ newTVar Genesis
-
-    fork $ chainTransferProtocol 1 generatorVar1 peerChainVar1
-    fork $ chainTransferProtocol 2 generatorVar2 peerChainVar2
-
-    fork $ chainValidation peerChainVar1 candidateChainVar1
-    fork $ chainValidation peerChainVar2 candidateChainVar2
-
-    fork $ longestChainSelection candidateChainVars currentChainVar
-
-    fork $ observeChain "generatorVar1" generatorVar1
-    fork $ observeChain "generatorVar2" generatorVar2
-    fork $ observeChain "currentChain " currentChainVar
 
 data NodeId = CoreId Int
             | RelayId Int
@@ -400,7 +303,7 @@ relayNode nid chans = do
     chainVars
     candidateChainVars
   -- chain selection thread
-  fork $ longestChainSelectionS candidateChainVars cpsVar
+  fork $ longestChainSelection candidateChainVars cpsVar
 
   -- producers which share @'ChainProducerState'@
   let producer = exampleProducer cpsVar
