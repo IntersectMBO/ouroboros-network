@@ -1,7 +1,9 @@
 { compiler ? "ghc843" }:
 with builtins;
 let
-  fetchNixPkgs = import ./fetchNixPkgs.nix;
+  rev = "61deecdc34fc609d0f805b434101f3c8ae3b807a";
+  url = "https://github.com/NixOS/nixpkgs/archive/${rev}.tar.gz";
+
   config = { packageOverrides = super:
       let self = super.pkgs;
           lib = super.haskell.lib;
@@ -30,4 +32,4 @@ let
         };
       };
     };
-in import (fetchNixPkgs {}) { inherit config; }
+in import (builtins.fetchTarball { inherit url; }) { inherit config; }
