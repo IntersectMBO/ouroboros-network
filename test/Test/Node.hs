@@ -213,25 +213,17 @@ prop_coreToCoreViaRelay (TestChainFork _ chain1 chain2) =
             isValid chainC1 chainR1 .&&. isValid chainC1 chainC2
   where
     isValid :: Maybe (Chain Block) -> Maybe (Chain Block) -> Property
-    isValid Nothing   Nothing   = property True
+    isValid Nothing   Nothing   = chain1 === Genesis .&&. chain2 === Genesis
     isValid (Just _)  Nothing   = property False
     isValid Nothing   (Just _)  = property False
     isValid (Just c1) (Just c2) = compareChains c1 c2
 
     compareChains :: Chain Block -> Chain Block -> Property
     compareChains c1 c2 =
-        counterexample (c1_ ++ "\n\n" ++ c2_) (longerChain c1 c2 === c1)
+        counterexample (c1_ ++ "\n\n" ++ c2_) (Chain.selectChain c1 c2 === c1)
       .&&.
-        counterexample (c1_ ++ "\n\n" ++ c2_) (longerChain c2 c1 === c2)
+        counterexample (c1_ ++ "\n\n" ++ c2_) (Chain.selectChain c2 c1 === c2)
       where
         nl  = "\n    "
         c1_ = Chain.prettyPrintChain nl show c1
         c2_ = Chain.prettyPrintChain nl show c2
-
-    longerChain :: Chain Block -> Chain Block -> Chain Block
-    longerChain c1 c2 =
-      let l1 = Chain.length c1
-          l2 = Chain.length c2
-          c | l1 <  l2  = c2
-            | otherwise = c1
-      in c

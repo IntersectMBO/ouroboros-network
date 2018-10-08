@@ -35,18 +35,12 @@ longestChainSelection candidateChainVars cpsVar =
     updateCurrentChain :: stm ()
     updateCurrentChain = do
       candidateChains <- mapM readTVar candidateChainVars
-      cps@ChainProducerState{chainState} <- readTVar cpsVar
-      case longestChain (Chain.length chainState) (catMaybes candidateChains) of
-        Nothing -> retry
-        Just c  -> writeTVar cpsVar (switchFork c cps)
-
-    longestChain :: Int -> [(Chain block)] -> Maybe (Chain block)
-    longestChain curlen
-      = fmap fst
-      . listToMaybe
-      . sortBy (\(_, l1) (_, l2) -> compare l1 l2)
-      . filter (\(_, l) -> l > curlen)
-      . map (\c -> (c, Chain.length c))
+      cps@ChainProducerState{chainState = chain} <- readTVar cpsVar
+      let -- using foldl' since `Chain.selectChain` is left baised
+          chain' = foldl' Chain.selectChain chain (catMaybes candidateChains) 
+      if Chain.headPoint chain' == Chain.headPoint chain
+        then retry
+        else writeTVar cpsVar (switchFork chain' cps)
 
 
 chainValidation :: forall block m stm. (HasHeader block, MonadSTM m stm)
