@@ -104,7 +104,6 @@ test-suite tests
                        fingertree,
                        free,
                        hashable,
-                       ouroboros-network,
                        QuickCheck,
                        random,
                        semigroups,
