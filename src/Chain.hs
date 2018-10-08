@@ -9,6 +9,10 @@ module Chain (
   valid,
   foldChain,
 
+  -- ** Block re-exports
+  Block(..),
+  HasHeader(..),
+
   -- * Point type
   Point(..),
   blockPoint,
@@ -59,13 +63,11 @@ import Prelude hiding (head, drop)
 
 import Block ( Block(..), BlockHeader(..), HasHeader(..)
              , Slot(..), BlockNo (..), HeaderHash(..)
-             , BlockBody(..), BodyHash(..)
-             , Slot(..), BlockNo(..), BlockSigner(..)
+             , BodyHash(..), Slot(..), BlockNo(..)
              , HeaderHash(..), hashHeader, hashBody )
 
 import Control.Exception (assert)
 import qualified Data.List as L
-import Data.Maybe (fromMaybe, listToMaybe)
 
 
 --

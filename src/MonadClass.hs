@@ -13,6 +13,7 @@ module MonadClass (
   MonadConc(..),
   MonadSendRecv(..),
   MonadSTM(..),
+  MonadSTMTimer(..),
   newEmptyMVar,
   newMVar
   ) where
@@ -23,8 +24,9 @@ import           Control.Monad (void)
 import qualified Control.Monad.STM as STM
 import System.Clock (Clock (Monotonic), TimeSpec, getTime, toNanoSecs)
 
-import qualified GHC.Event as GHC (TimeoutCallback, TimeoutKey, getSystemTimerManager,
-                                   registerTimeout, unregisterTimeout, updateTimeout)
+import qualified GHC.Event as GHC
+                   ( TimeoutKey, getSystemTimerManager
+                   , registerTimeout, unregisterTimeout, updateTimeout)
 
 class Monad m => MonadSay m where
   say :: String -> m ()
@@ -190,6 +192,7 @@ newtype ProbeIO a = ProbeIO { getProbeIO :: STM.TVar [(Int, a)] }
 instance MonadProbe IO where
   type Probe IO = ProbeIO
   probeOutput (ProbeIO p) a = do
+    --TODO: why is t unused here?
     t <- toMicroseconds <$> getTime Monotonic
     -- the user is not exposed to the inner TVar, so it should never block for
     -- too long.

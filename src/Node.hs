@@ -2,15 +2,12 @@
 {-# LANGUAGE NamedFieldPuns #-}
 module Node where
 
-import Data.List
-import Data.Graph
+import Data.List hiding (inits)
 import Data.Semigroup (Semigroup (..))
 import Data.Maybe (listToMaybe, catMaybes)
 import Data.Functor (($>))
 import Data.Tuple (swap)
-import Control.Applicative
 import Control.Monad
-import Control.Exception (evaluate)
 
 import MonadClass hiding (sendMsg, recvMsg)
 import Block
@@ -20,10 +17,6 @@ import Protocol
 import ConsumersAndProducers
 import ChainProducerState (ChainProducerState (..), ReaderId, initChainProducerState, producerChain, switchFork)
 
-import qualified Sim
-
-import Test.QuickCheck
-import qualified Test.QuickCheck.Monadic as QC (assert, monadicIO, run)
 
 
 longestChainSelection :: forall block m stm. MonadSTM m stm
@@ -234,7 +227,7 @@ chainGenerator :: forall block m stm.
 chainGenerator offset chain = do
     outputVar <- atomically (newTVar Genesis)
     sequence_ [ timer (offset + fromIntegral n) (atomically (writeTVar outputVar v))
-              | (v, n) <- zip (inits chain) [0,2..] ]
+              | (v, n) <- zip (inits chain) [0 :: Int, 2 ..] ]
     return outputVar
   where
     inits = reverse
@@ -256,7 +249,7 @@ blockGenerator :: forall block m stm.
 blockGenerator offset chain = do
   outputVar <- atomically (newTVar Nothing)
   sequence_ [ timer (offset + fromIntegral n) (atomically (writeTVar outputVar (Just b)))
-            | (b, n) <- zip (reverse $ Chain.toList chain) [0,2..] ]
+            | (b, n) <- zip (reverse $ Chain.toList chain) [0 :: Int, 2 ..] ]
   return outputVar
 
 -- | Read one block from the @'blockGenertor'@.
@@ -460,5 +453,8 @@ coreNode nid offset chain chans = do
     applyGeneratedBlock blockVar cpsVar = atomically $ do
       block <- getBlock blockVar
       cps@ChainProducerState{chainState} <- readTVar cpsVar
-      let chain = Chain.addBlock (Chain.fixupBlock (Chain.headPoint chainState) (Chain.headBlockNo chainState) block) chainState
-      writeTVar cpsVar (switchFork chain cps)
+      let block' = Chain.fixupBlock (Chain.headPoint chainState)
+                                    (Chain.headBlockNo chainState)
+                                    block
+          chain' = Chain.addBlock block' chainState
+      writeTVar cpsVar (switchFork chain' cps)

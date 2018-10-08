@@ -1,12 +1,10 @@
 {-# LANGUAGE RecordWildCards #-}
 module Test.Node where
 
-import Control.Monad.ST.Lazy (ST, runST)
-import Control.Monad.Free (Free)
-import Control.Exception (evaluate)
+import Control.Monad.ST.Lazy (runST)
 import Data.Functor (void)
 import Data.List (find)
-import Data.Maybe (isJust, isNothing, mapMaybe)
+import Data.Maybe (isNothing)
 import Data.Semigroup ((<>))
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -14,7 +12,6 @@ import           Data.Map.Lazy (Map)
 import qualified Data.Map.Lazy as Map
 
 import Test.QuickCheck
-import qualified Test.QuickCheck.Monadic as QC (assert, monadicIO, run)
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
 

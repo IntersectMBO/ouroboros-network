@@ -5,18 +5,16 @@ module Test.Sim (tests) where
 
 import Data.Array
 import Data.Graph
-import Data.List (partition, sort, sortBy)
-import Control.Applicative
+import Data.List (sortBy)
 import Control.Monad
-import Control.Monad.ST.Lazy (ST, runST)
-import Control.Monad.Free (Free)
+import Control.Monad.ST.Lazy (runST)
 
 import Test.QuickCheck
 import Test.Tasty
 import Test.Tasty.QuickCheck
 
 import MonadClass
-import qualified Sim as Sim
+import qualified Sim
 
 tests :: TestTree
 tests =
@@ -200,7 +198,7 @@ test_fork_order :: forall m n stm.
                    )
                 => Positive Int
                 -> n Property
-test_fork_order (Positive n) = isValid <$> runExperiment
+test_fork_order = \(Positive n) -> isValid n <$> runExperiment n
   where
     experiment :: Probe m Int -> Int -> m ()
     experiment _ 0 = return ()
@@ -215,14 +213,14 @@ test_fork_order (Positive n) = isValid <$> runExperiment
       -- wait for the spanned thread to finish
       atomically $ readTVar v >>= check
 
-    runExperiment :: n [(Time m, Int)]
-    runExperiment = do
+    runExperiment :: Int -> n [(Time m, Int)]
+    runExperiment n = do
       p <- newProbe
       runM (experiment p n)
       readProbe p
 
-    isValid :: [(Time m, Int)] -> Property
-    isValid tr = (map snd tr) === [n,n-1..1]
+    isValid :: Int -> [(Time m, Int)] -> Property
+    isValid n tr = (map snd tr) === [n,n-1..1]
 
 prop_fork_order_ST :: Positive Int -> Property
 prop_fork_order_ST n = runST $ test_fork_order n

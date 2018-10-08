@@ -3,16 +3,13 @@
 
 module ChainProducerState where
 
-import           Block (Block, BlockHeader, HasHeader)
-import           Chain ( Chain, Point(..), blockPoint, ChainUpdate(..)
-                       , genesisPoint, headPoint, pointOnChain )
+import           Chain ( Chain, HasHeader, Point(..), blockPoint
+                       , ChainUpdate(..), genesisPoint, pointOnChain )
 import qualified Chain
 
-import           Data.List (sort, group, find, unfoldr)
+import           Data.List (sort, group, find)
 import           Data.Maybe (fromMaybe)
 import           Control.Exception (assert)
-
-import           Test.QuickCheck
 
 
 

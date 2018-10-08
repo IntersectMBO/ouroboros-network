@@ -20,6 +20,8 @@ module Sim {-(
   runSimMST,
   )-} where
 
+import           Prelude hiding (read)
+
 import           Data.PriorityQueue.FingerTree (PQueue)
 import qualified Data.PriorityQueue.FingerTree as PQueue
 
@@ -27,10 +29,8 @@ import qualified Data.List as L
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (catMaybes)
-import           Data.Set (Set)
 import qualified Data.Set as Set
 
-import           Control.Applicative
 import           Control.Exception (assert)
 import           Control.Monad
 import           Control.Monad.Free (Free)
@@ -38,7 +38,7 @@ import           Control.Monad.Free as Free
 import           Control.Monad.ST.Lazy
 import           Data.STRef.Lazy
 
-import           MonadClass hiding (MVar, Probe, STM, TVar)
+import           MonadClass hiding (MVar, Probe, TVar)
 import qualified MonadClass
 
 {-# ANN module "HLint: ignore Use readTVarIO" #-}
@@ -97,7 +97,7 @@ instance Functor (StmF s) where
   fmap f (NewTVar   x k)   = NewTVar   x (f . k)
   fmap f (ReadTVar  v k)   = ReadTVar  v (f . k)
   fmap f (WriteTVar v a b) = WriteTVar v a (f b)
-  fmap f  Retry            = Retry
+  fmap _  Retry            = Retry
 
 instance MonadSay (Free (SimF s)) where
   say msg = Free.liftF $ Say [msg] ()
@@ -428,7 +428,7 @@ ordNub = go Set.empty
 example0 :: (MonadSay m, MonadTimer m, MonadSTM m stm) => m ()
 example0 = do
   say "starting"
-  t <- atomically (newTVar 0)
+  t <- atomically (newTVar (0 :: Int))
   timer 2 $ do
     say "timer fired!"
     atomically $
@@ -441,7 +441,7 @@ example0 = do
 example1 :: Free (SimF s) ()
 example1 = do
   say "starting"
-  chan <- atomically (newTVar [])
+  chan <- atomically (newTVar ([] :: [Int]))
   fork $ forever $ do
     atomically $ do
       x <- readTVar chan

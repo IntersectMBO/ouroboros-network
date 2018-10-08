@@ -6,8 +6,7 @@ import Test.QuickCheck
 import Test.Tasty
 import Test.Tasty.QuickCheck
 
-import           Block (Block, BlockHeader, HasHeader)
-import           Chain ( Chain, Point(..), blockPoint, ChainUpdate(..)
+import           Chain ( Chain, Block, Point(..), ChainUpdate(..)
                        , genesisPoint, headPoint , pointOnChain )
 import qualified Chain
 import ChainProducerState
@@ -225,10 +224,10 @@ instance Arbitrary ChainProducerStateForkTest where
        ]
     where
       fixupReaderPointer :: Chain Block -> ReaderState -> ReaderState
-      fixupReaderPointer c r@ReaderState{readerPoint} = 
-        if pointOnChain readerPoint c
+      fixupReaderPointer c' r@ReaderState{readerPoint} =
+        if pointOnChain readerPoint c'
           then r
-          else r { readerPoint = headPoint c }
+          else r { readerPoint = headPoint c' }
 
 prop_arbitrary_ChainProducerStateForkTest :: ChainProducerStateForkTest -> Bool
 prop_arbitrary_ChainProducerStateForkTest (ChainProducerStateForkTest c f) =

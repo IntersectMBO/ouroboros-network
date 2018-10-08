@@ -73,9 +73,9 @@ library
                        free         >=5.1 && <5.2,
                        text         >=1.2 && <1.3,
 
-                       QuickCheck   >=2.12 && <2.13,
-                       tasty,
-                       tasty-quickcheck
+                       QuickCheck   >=2.12 && <2.13
+
+  ghc-options:         -Wall
 
 test-suite tests
   type:                exitcode-stdio-1.0
@@ -105,3 +105,4 @@ test-suite tests
                        QuickCheck,
                        tasty,
                        tasty-quickcheck
+  ghc-options:         -Wall

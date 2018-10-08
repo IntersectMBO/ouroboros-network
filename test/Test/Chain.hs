@@ -363,7 +363,7 @@ prop_arbitrary_TestBlockChainAndUpdates (TestBlockChainAndUpdates c us) =
     cover 1.5 (     null us ) "empty updates"     $
     cover 95  (not (null us)) "non-empty updates" $
     tabulate "ChainUpdate" (map updateKind us) $
-    tabulate "Growth" [hist (countBlockChange us c 0)] $
+    tabulate "Growth" [hist (countChainUpdateNetProgress c us)] $
 
     Chain.valid c
  && case Chain.applyChainUpdates us c of
@@ -378,9 +378,16 @@ prop_arbitrary_TestBlockChainAndUpdates (TestBlockChainAndUpdates c us) =
     updateKind AddBlock{} = "AddBlock"
     updateKind RollBack{} = "RollBack"
 
-    -- Count the number of blocks forward - the number of blocks backward
-    countBlockChange []     c n = n
-    countBlockChange (u:us) c n = countBlockChange us c' n'
+-- | Count the number of blocks forward - the number of blocks backward.
+--
+countChainUpdateNetProgress :: HasHeader block
+                            => Chain block
+                            -> [ChainUpdate block]
+                            -> Int
+countChainUpdateNetProgress = go 0
+  where
+    go n c []     = n
+    go n c (u:us) = go n' c' us
       where
         Just c' = Chain.applyChainUpdate u c
         n'      = n + fromEnum (Chain.headBlockNo c')
