@@ -23,6 +23,14 @@ library
                        Chain
                        ChainProducerState
                        MonadClass
+                       MonadClass.MonadSay
+                       MonadClass.MonadTimer
+                       MonadClass.MonadProbe
+                       MonadClass.MonadFork
+                       MonadClass.MonadConc
+                       MonadClass.MonadSTM
+                       MonadClass.MonadSTMTimer
+                       MonadClass.MonadSendRecv
                        Protocol
                        ProtocolInterfaces
                        ConsumersAndProducers

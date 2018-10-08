@@ -38,8 +38,12 @@ import           Control.Monad.Free as Free
 import           Control.Monad.ST.Lazy
 import           Data.STRef.Lazy
 
-import           MonadClass hiding (MVar, Probe, TVar)
-import qualified MonadClass
+import           MonadClass.MonadSay
+import           MonadClass.MonadFork
+import           MonadClass.MonadSTM hiding (TVar)
+import qualified MonadClass.MonadSTM as MonadSTM
+import           MonadClass.MonadTimer
+import           MonadClass.MonadSendRecv
 
 {-# ANN module "HLint: ignore Use readTVarIO" #-}
 
@@ -69,7 +73,9 @@ data StmF (s :: *) a where
 type SimM s a = Free (SimF s) a
 type STM  s   = Free (StmF s)
 
-newtype Probe s a = Probe (STRef s (ProbeTrace (Free (SimF s)) a))
+type ProbeTrace a = [(VTime, a)]
+
+newtype Probe s a = Probe (STRef s (ProbeTrace a))
 
 failSim :: String -> Free (SimF s) ()
 failSim = Free.liftF . Fail
@@ -101,15 +107,6 @@ instance Functor (StmF s) where
 
 instance MonadSay (Free (SimF s)) where
   say msg = Free.liftF $ Say [msg] ()
-
-instance MonadProbe (Free (SimF s)) where
-  type Probe (Free (SimF s)) = Probe s
-  probeOutput p o = Free.liftF $ Output p o ()
-
-instance MonadRunProbe (Free (SimF s)) (ST s) where
-  newProbe = Probe <$> newSTRef []
-  readProbe (Probe p) = reverse <$> readSTRef p
-  runM = void . runSimMST
 
 instance MonadTimer (Free (SimF s)) where
   type Time (Free (SimF s)) = VTime
@@ -280,8 +277,8 @@ schedule simstate@SimState {
 -- no runnable threads, advance the time to the next timer event, or stop.
 schedule simstate@SimState {
            runqueue = [],
-           blocked, timers, nextTid,
-           curTime  = time
+           timers, nextTid,
+           curTime = time
          } =
 
     -- important to get all events that expire at this time
