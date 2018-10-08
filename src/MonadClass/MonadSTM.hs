@@ -27,6 +27,7 @@ class (MonadFork m, Monad stm) => MonadSTM m stm | m -> stm, stm -> m where
 
   check        :: Bool -> stm ()
   check True  = return ()
+  check _     = retry
 
 instance MonadSTM IO STM.STM where
   type TVar IO = STM.TVar
