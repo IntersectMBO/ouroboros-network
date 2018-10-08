@@ -1,5 +1,5 @@
-{-# LANGUAGE DeriveFunctor   #-}
-{-# LANGUAGE NamedFieldPuns  #-}
+{-# LANGUAGE DeriveFunctor       #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 
 -- | Reference implementation of a representation of a block chain
 --
@@ -56,7 +56,10 @@ module Chain (
   intersectChains,
   fixupBlock,
   fixupBlockHeader,
-  isPrefixOf
+  isPrefixOf,
+
+  -- * Helper functions
+  prettyPrintChain
   ) where
 
 import Prelude hiding (head, drop)
@@ -82,6 +85,9 @@ infixl 5 :>
 foldChain :: (a -> b -> a) -> a -> Chain b -> a
 foldChain _blk gen Genesis  = gen
 foldChain  blk gen (c :> b) = blk (foldChain blk gen c) b
+
+prettyPrintChain :: String -> (block -> String) -> Chain block -> String
+prettyPrintChain nl ppBlock = foldChain (\s b -> s ++ nl ++ "    " ++ ppBlock b) "Genesis"
 
 --
 -- Points on blockchains
@@ -284,19 +290,24 @@ intersectChains c (bs :> b) =
        then Just p
        else intersectChains c bs
 
+-- | Fixup block so to fit it on top of a chain.  Only block number, previous
+-- hash and block hash are updated; slot number and signers are kept intact.
+--
+fixupBlock :: HasHeader block => Chain block -> Block -> Block
+fixupBlock c b@Block{blockBody, blockHeader} =
+    b { blockHeader = fixupBlockHeader c (hashBody blockBody) blockHeader }
 
-fixupBlock :: Point -> BlockNo -> Block -> Block
-fixupBlock p bn b@Block{blockBody, blockHeader} =
-    b { blockHeader = fixupBlockHeader p bn (hashBody blockBody) blockHeader }
-
-fixupBlockHeader :: Point -> BlockNo -> BodyHash -> BlockHeader -> BlockHeader
-fixupBlockHeader p n h b = b'
+-- | Fixup block header to fit it on top of a chain.  Only block number and
+-- previous hash are updated; the slot and signer are kept unchanged.
+--
+fixupBlockHeader :: HasHeader block => Chain block -> BodyHash -> BlockHeader -> BlockHeader
+fixupBlockHeader c h b = b'
   where
     b' = BlockHeader {
       headerHash     = hashHeader b',
-      headerPrevHash = pointHash p,
+      headerPrevHash = headHash c,
       headerSlot     = headerSlot b,   -- keep the existing slot number
       headerSigner   = headerSigner b, -- and signer
-      headerBlockNo  = succ n,
+      headerBlockNo  = succ $ headBlockNo c,
       headerBodyHash = h
     }

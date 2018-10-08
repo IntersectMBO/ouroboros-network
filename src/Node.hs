@@ -8,6 +8,7 @@ import Data.Maybe (listToMaybe, catMaybes)
 import Data.Functor (($>))
 import Data.Tuple (swap)
 import Control.Monad
+import Control.Exception (assert)
 
 import MonadClass hiding (sendMsg, recvMsg)
 import Block
@@ -87,7 +88,7 @@ chainValidation peerChainVar candidateChainVar = do
       writeTVar stateVar (Chain.headPoint peerChain)
       let candidateChain | Chain.valid peerChain = Just peerChain
                          | otherwise             = Nothing
-      writeTVar candidateChainVar (candidateChain)
+      writeTVar candidateChainVar candidateChain
 
 
 chainTransferProtocol :: forall block m stm.
@@ -236,20 +237,24 @@ chainGenerator offset chain = do
                               _       -> Just (c, Chain.drop 1 c))
 
 
--- | Every @'offset'@ interval generate a block from a given chain, until the
--- chain is exhousted. 
+-- | Generate a block from a given chain.  Each @block@ is produced at
+-- @slotDuration * blockSlot block@ time. 
 --
+-- TODO: invariant: generates blocks for current slots.
 blockGenerator :: forall block m stm.
-                  ( MonadSTM m stm
+                  ( HasHeader block
+                  , MonadSTM m stm
                   , MonadTimer m
                   )
                => Duration (Time m)
+               -- ^ slot duration
                -> Chain block
-               -> m (TVar m (Maybe block))  -- returns an stm transaction which returns block
-blockGenerator offset chain = do
+               -> m (TVar m (Maybe block))
+               -- ^ returns an stm transaction which returns block
+blockGenerator slotDuration chain = do
   outputVar <- atomically (newTVar Nothing)
-  sequence_ [ timer (offset + fromIntegral n) (atomically (writeTVar outputVar (Just b)))
-            | (b, n) <- zip (reverse $ Chain.toList chain) [0 :: Int, 2 ..] ]
+  sequence_ [ timer (slotDuration * fromIntegral (getSlot $ blockSlot b)) (atomically (writeTVar outputVar (Just b)))
+            | b <- reverse (Chain.toList chain)]
   return outputVar
 
 -- | Read one block from the @'blockGenertor'@.
@@ -298,7 +303,7 @@ observeChainProducerState
      , MonadProbe m
      )
   => NodeId
-  -> Probe m (NodeId, Int, Point)
+  -> Probe m (NodeId, Chain block)
   -> TVar m (ChainProducerState block)
   -> m ()
 observeChainProducerState nid p cpsVar = do
@@ -313,7 +318,7 @@ observeChainProducerState nid p cpsVar = do
                 check (Chain.headPoint chain /= curPoint)
                 writeTVar stateVar (Chain.headPoint chain)
                 return chain
-      probeOutput p (nid, Chain.length chain, Chain.headPoint chain)
+      probeOutput p (nid, chain)
 
 nodeExample1 :: forall block m stm.
                 ( HasHeader block
@@ -423,9 +428,10 @@ relayNode nid chans = do
         (loggingSend (ProducerId nid pid) (sendMsg chan))
         (loggingRecv (ProducerId nid pid) (recvMsg chan))
 
--- | Core node simulation.  Given a chain, every @offset@ interval it will pick
--- consecutive block from it, adjust it to the currand chain and apply it.  It
--- runs a relay node.
+-- | Core node simulation.  Given a chain it will generate a @block@ at its 
+-- slot time (i.e. @slotDuration * blockSlot block@).  When the node finds out
+-- that the slot for which it was supposed to generate a block was already
+-- occupied, it will replace it with its block.
 --
 coreNode :: forall m stm.
         ( MonadSTM m stm
@@ -434,13 +440,14 @@ coreNode :: forall m stm.
         )
      => NodeId
      -> Duration (Time m)
+     -- ^ slot duration
      -> Chain Block
      -> NodeChannels m (MsgProducer Block) MsgConsumer
      -> m (TVar m (ChainProducerState Block))
-coreNode nid offset chain chans = do
+coreNode nid slotDuration gchain chans = do
   cpsVar <- relayNode nid chans
 
-  blockVar <- blockGenerator offset chain
+  blockVar <- blockGenerator slotDuration gchain
   fork $ forever $ applyGeneratedBlock blockVar cpsVar
 
   return cpsVar
@@ -452,9 +459,18 @@ coreNode nid offset chain chans = do
       -> m ()
     applyGeneratedBlock blockVar cpsVar = atomically $ do
       block <- getBlock blockVar
-      cps@ChainProducerState{chainState} <- readTVar cpsVar
-      let block' = Chain.fixupBlock (Chain.headPoint chainState)
-                                    (Chain.headBlockNo chainState)
-                                    block
-          chain' = Chain.addBlock block' chainState
-      writeTVar cpsVar (switchFork chain' cps)
+      cps@ChainProducerState{chainState = chain} <- readTVar cpsVar
+      writeTVar cpsVar (switchFork (addBlock chain block) cps)
+
+    addBlock :: Chain Block -> Block -> Chain Block
+    addBlock c b@Block{blockHeader = h} =
+      case headerSlot h `compare` Chain.headSlot c of
+        -- the block is OK
+        GT -> let r = Chain.addBlock (Chain.fixupBlock c b) c in
+              assert (Chain.valid r) r
+        -- the slot @s@ is alread taken; replace the previous block
+        EQ -> let c' = Chain.drop 1 c
+                  b' = Chain.fixupBlock c' b
+                  r  = Chain.addBlock b' c'
+              in assert (Chain.valid r) r
+        LT -> error "blockGenerator invariant vaiolation: generated block is for slot in the past slot"

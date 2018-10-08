@@ -234,6 +234,6 @@ prop_arbitrary_ChainProducerStateForkTest (ChainProducerStateForkTest c f) =
 
 prop_shrink_ChainProducerStateForkTest :: ChainProducerStateForkTest -> Bool
 prop_shrink_ChainProducerStateForkTest c =
-    and [ invChainProducerState c && Chain.valid f
-        | ChainProducerStateForkTest c f <- shrink c
+    and [ invChainProducerState c' && Chain.valid f
+        | ChainProducerStateForkTest c' f <- shrink c
         ]

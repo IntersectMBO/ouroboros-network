@@ -55,7 +55,7 @@ newtype BlockBody    = BlockBody String
   deriving (Show, Eq, Ord)
 
 -- | The Ouroboros time slot index for a block.
-newtype Slot         = Slot Word
+newtype Slot         = Slot { getSlot :: Word }
   deriving (Show, Eq, Ord, Hashable, Enum)
 
 -- | The 0-based index of the block in the blockchain

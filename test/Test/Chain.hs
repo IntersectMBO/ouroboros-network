@@ -251,15 +251,14 @@ fromListFixupBlocks []      = Genesis
 fromListFixupBlocks (b : c) = c' :> b'
   where
     c' = fromListFixupBlocks c
-    b' = Chain.fixupBlock (Chain.headPoint c') (Chain.headBlockNo c') b
+    b' = Chain.fixupBlock c' b
 
 fromListFixupHeaders :: [BlockHeader] -> Chain BlockHeader
 fromListFixupHeaders []      = Genesis
 fromListFixupHeaders (b : c) = c' :> b'
   where
     c' = fromListFixupHeaders c
-    b' = Chain.fixupBlockHeader (Chain.headPoint c') (Chain.headBlockNo c')
-                          (headerBodyHash b) b
+    b' = Chain.fixupBlockHeader c' (headerBodyHash b) b
 
 -- | The Ouroboros K paramater. This is also the maximum rollback length.
 --
@@ -284,7 +283,7 @@ instance Arbitrary TestAddBlock where
   shrink (TestAddBlock c b) =
     [ TestAddBlock c' b'
     | TestBlockChain c' <- shrink (TestBlockChain c)
-    , let b' = Chain.fixupBlock (Chain.headPoint c') (Chain.headBlockNo c') b
+    , let b' = Chain.fixupBlock c' b
     ]
 
 genAddBlock :: HasHeader block => Chain block -> Gen Block
@@ -292,7 +291,7 @@ genAddBlock chain = do
     slotGap <- genSlotGap
     body    <- arbitrary
     let pb = mkPartialBlock (addSlotGap slotGap (Chain.headSlot chain)) body
-        b  = Chain.fixupBlock (Chain.headPoint chain) (Chain.headBlockNo chain) pb
+        b  = Chain.fixupBlock chain pb
     return b
 
 prop_arbitrary_TestAddBlock :: TestAddBlock -> Bool
@@ -459,7 +458,15 @@ prop_shrink_TestChainAndPoint cp@(TestChainAndPoint c _) =
 data TestChainFork = TestChainFork (Chain Block) -- common prefix
                                    (Chain Block) -- left fork
                                    (Chain Block) -- right fork
-  deriving Show
+
+instance Show TestChainFork where
+  show (TestChainFork c f1 f2)
+    = let nl  = "\n    "
+          nnl = "\n" ++ nl
+      in "TestChainFork" ++ nl ++
+      Chain.prettyPrintChain nl show c  ++ nnl ++
+      Chain.prettyPrintChain nl show f1 ++ nnl ++
+      Chain.prettyPrintChain nl show f2
 
 instance Arbitrary TestChainFork where
   arbitrary = do
