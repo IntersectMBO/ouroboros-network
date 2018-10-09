@@ -1379,7 +1379,14 @@ When the producer is switching a chain to another fork it needs to update its st
     } (producer2);
 \end{tikzpicture}
 \end{center}
-After applying a fork, the producer will send to the consumer either $\var{MsgRollForward}\;\var{block}$ or $\var{MsgRollBackward}\;\var{point'}$.
+There are two cases when applying a fork.  Either 
+\begin{enumerate}
+    \item $\var{point}\in\var{pchain'}$, in which case $\var{next'}=\var{next}$.
+    \item $\var{point}\notin\var{pchain'}$, in which case $\var{point'}=\var{intersectChains}\;\var{pchain}\;\var{pchain'}$ and $\var{next'}=\var{ReaderBackTo}$.
+\end{enumerate}
+After applying a fork, the producer will send to the consumer either
+$\var{MsgRollForward}\;\var{block}$ or $\var{MsgRollBackward}\;\var{point'}$
+according to the value of $\var{next'}$.
 
 \bibliographystyle{apalike}
 \bibliography{references}
@@ -1405,6 +1412,5 @@ After applying a fork, the producer will send to the consumer either $\var{MsgRo
 \item Given that a node is not totally eclipsed (i.e $\exists$
   potentially reachable non-adversrial bearer node) how does this help?
 \end{itemize}  
-
 
 \end{document}
