@@ -53,12 +53,12 @@ prop_stm_graph (TestThreadGraph g) = do
           sequence_ [ readTVar  (vars ! var) >>= check | var <- incomming ]
           sequence_ [ writeTVar (vars ! var) True      | var <- outgoing  ]
 
-    let -- the vertices with outgoing but no incomming edges
+    let -- the vertices with outgoing but no incoming edges
         inputs  = [ v
                   | v <- vertices g
                   , not (null (g  ! v))
                   ,      null (g' ! v) ]
-        -- the vertices with incomming but no outgoing edges
+        -- the vertices with incoming but no outgoing edges
         outputs = [ v
                   | v <- vertices g
                   , not (null (g' ! v))
@@ -68,7 +68,7 @@ prop_stm_graph (TestThreadGraph g) = do
     fork $ atomically $ sequence_ [ writeTVar (vars ! var) True | var <- inputs  ]
     atomically $ sequence_ [ readTVar (vars ! var) >>= check | var <- outputs ]
   where
-    g' = transposeG g -- for incomming edges
+    g' = transposeG g -- for incoming edges
 
 newtype TestThreadGraph = TestThreadGraph Graph
   deriving Show
@@ -106,7 +106,7 @@ newtype TestRationals = TestRationals [Rational]
   deriving Show
 
 -- |
--- Arbitrary non negative rational numbers with a high propbability of
+-- Arbitrary non negative rational numbers with a high probability of
 -- repetitions.
 instance Arbitrary TestRationals where
   arbitrary = sized $ \n -> TestRationals <$> genN n []

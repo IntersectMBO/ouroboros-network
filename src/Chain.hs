@@ -95,7 +95,7 @@ prettyPrintChain nl ppBlock = foldChain (\s b -> s ++ nl ++ "    " ++ ppBlock b)
 
 -- | A point on the chain is identified by its 'Slot' and 'HeaderHash'.
 --
--- The 'Slot' tells us where to look and the 'HeaderHash' either simply servesk
+-- The 'Slot' tells us where to look and the 'HeaderHash' either simply serves
 -- as a check, or in some contexts it disambiguates blocks from different forks
 -- that were in the same slot.
 --

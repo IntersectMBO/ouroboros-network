@@ -42,7 +42,7 @@ data MsgProducer block
   -- ^ Ask the consumer to roll forward to a given block
   | MsgRollBackward Point
   -- ^
-  -- Ask the consumer to roll backwar to a given Point on its chain
+  -- Ask the consumer to roll back to a given Point on its chain
   | MsgAwaitReply
   -- ^
   -- Inform the consumer to await for next instructions; This means that the
@@ -52,7 +52,7 @@ data MsgProducer block
   -- ^
   -- Sends to consumer found intersection, but only if this is an improvement
   -- over previously established intersection point.  The consumer
-  -- will decide wether to send more points.  They should all be newer than the
+  -- will decide weather to send more points.  They should all be newer than the
   -- received intersection.
   | MsgIntersectUnchanged
   -- ^

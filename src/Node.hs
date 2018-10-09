@@ -36,7 +36,7 @@ longestChainSelection candidateChainVars cpsVar =
     updateCurrentChain = do
       candidateChains <- mapM readTVar candidateChainVars
       cps@ChainProducerState{chainState = chain} <- readTVar cpsVar
-      let -- using foldl' since `Chain.selectChain` is left baised
+      let -- using foldl' since @Chain.selectChain@ is left biased
           chain' = foldl' Chain.selectChain chain (catMaybes candidateChains) 
       if Chain.headPoint chain' == Chain.headPoint chain
         then retry
@@ -86,6 +86,7 @@ chainTransferProtocol delay inputVar outputVar = do
       timer delay $ atomically $ writeTVar outputVar input
 
 
+-- | One way transport channel.
 data Chan m send recv = Chan { sendMsg :: send -> m ()
                              , recvMsg :: m recv
                              }
@@ -113,7 +114,7 @@ transferProtocol delay sendVar recvVar
           []      -> retry
 
 
--- | Create a pair of channels it oposite directions.
+-- | Create a symmetric pair of channels in opposite directions.
 --
 createCoupledChannels :: forall send recv m stm.
                          ( MonadSTM m stm
@@ -174,7 +175,7 @@ createOneWaySubscriptionChannels trDelay1 trDelay2 = do
     )
 
 -- | Create channels for n1 ↔ n2 where both nodes are a consumer and a producer
--- simulantously.
+-- simultaneously.
 --
 createTwoWaySubscriptionChannels
   :: forall send recv m stm.
@@ -210,7 +211,7 @@ blockGenerator slotDuration chain = do
             | b <- reverse (Chain.toList chain)]
   return outputVar
 
--- | Read one block from the @'blockGenertor'@.
+-- | Read one block from the @'blockGenerator'@.
 --
 getBlock :: forall block m stm.
             MonadSTM m stm
@@ -267,8 +268,8 @@ data ProducerId = ProducerId NodeId Int
 -- updates; verify chains and select the longest one and feed it to the producer
 -- side which sends updates to its m subscribers.
 --
--- The main thread of the @'releayNode'@ is not blocking; it will return
--- @TVar ('ChainProducerSate' block)@.  This allows to extend the relay node to
+-- The main thread of the @'relayNode'@ is not blocking; it will return
+-- @TVar ('ChainProducerState' block)@.  This allows to extend the relay node to
 -- a core node.
 relayNode :: forall block m stm.
         ( HasHeader block
@@ -365,7 +366,7 @@ coreNode nid slotDuration gchain chans = do
         -- the block is OK
         GT -> let r = Chain.addBlock (Chain.fixupBlock c b) c in
               assert (Chain.valid r) r
-        -- the slot @s@ is alread taken; replace the previous block
+        -- the slot @s@ is already taken; replace the previous block
         EQ -> let c' = Chain.drop 1 c
                   b' = Chain.fixupBlock c' b
                   r  = Chain.addBlock b' c'

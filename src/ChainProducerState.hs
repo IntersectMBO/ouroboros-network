@@ -13,7 +13,7 @@ import           Control.Exception (assert)
 
 
 
--- A 'ChainState' plus an associated set of readers/consumers of the chain.
+-- A @'ChainState'@ plus an associated set of readers/consumers of the chain.
 
 data ChainProducerState block = ChainProducerState {
        chainState   :: Chain block,
@@ -238,7 +238,7 @@ addBlock b (ChainProducerState c rs) =
 
 
 -- | Rollback producer chain. It requires to update reader states, since some
--- @'readerPoint'@s mey not be on the new chain; in this case find intersection
+-- @'readerPoint'@s may not be on the new chain; in this case find intersection
 -- of the two chains and set @'readerNext'@ to @'ReaderBackTo'@.
 rollback :: HasHeader block
          => Point

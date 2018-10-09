@@ -8,7 +8,7 @@ import Chain (ChainUpdate (..), Point (..))
 
 
 -- | The interface used on the consumer side of the chain consumer protocol
--- to update a local chain to syncronise it with the producer chain.
+-- to update a local chain to synchronise it with the producer chain.
 --
 data ConsumerHandlers block m = ConsumerHandlers {
        getChainPoints :: m [Point],
@@ -32,7 +32,7 @@ data ProducerHandlers block m r = ProducerHandlers {
        -- ^ allocate new reader state.  The reference implementation is using
        -- @'ChainProducerState.initReader'@ to mutate its internal state.
        improveReadPoint      :: r -> [Point] -> m (Maybe Point),
-       -- ^ find the most optimal intersectino between received list of
+       -- ^ find the most optimal intersection between received list of
        -- @'Point'@s and producers chain.
        tryReadChainUpdate    :: r -> m (Maybe (ChainUpdate block)),
        -- ^ compute chain update for a given reader.  This is a non blocking
