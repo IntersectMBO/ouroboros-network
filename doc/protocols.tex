@@ -14,6 +14,7 @@
 \usepackage{IEEEtrantools}
 \usepackage{microtype}
 \usepackage{graphicx,color}
+\usepackage{tikz}
 
 \usepackage{hyperref}
 \hypersetup{
@@ -40,6 +41,8 @@
 \newcommand{\dcoutts}[1]{\textcolor{orange}{\emph{#1}}}
 \addtolength{\marginparwidth}{-0.1\marginparwidth}
 
+\newcommand{\var}[1]{\mathit{#1}}
+\newcommand{\type}[1]{\mathsf{#1}}
 \newcommand{\powerset}[1]{\mathbb{P}(#1)}
 \newcommand{\order}[1]{\mathcal{O}\left(#1\right)}
 \newcommand{\restrictdom}{\lhd}
@@ -83,6 +86,7 @@
    \and Alex Vieth \\ {\small \texttt{alex@well-typed.com}}
    \and Neil Davies \\ {\small \texttt{neil.davies@pnsol.com}} \\
                        {\small \texttt{neil.davies@iohk.io}}
+   \and Marcin Szamotulski \\ {\small \texttt{marcin.szamotulski@iohk.io}}
    }
 \date{July 17, 2018}
 
@@ -1261,6 +1265,121 @@ that dangerously favour short adversary chains over genuine longer ones? \\
   ratios not preemption (i.e weight not pitch) then a short-chain
   attacker who dawdled would free up resources for a longer one to
   overtake it. We may be able to make this a non-problem.}
+
+\subsection{State machine description of the protocol}
+
+There are to agents in the protocol: a blockchain consumer and blockchain
+producer.  The protocol has two phases:
+\begin{itemize}
+    \item[Phase 1] In which the producer will establish a common intersection
+        of consumer and producer chain;
+    \item[Phase 2] In which the producer will send instructions how to
+        reproduce its chain on the consumer end.
+\end{itemize}
+The two phases have different state machines.
+
+\begin{figure}[H]
+    \emph{Primitive types}
+    \begin{equation*}
+        \begin{array}{r@{~\in~}ll}
+            \var{slot}                                     & \type{Slot}       & \text{slot id} \\
+            \var{hash}                                     & \type{HeaderHash} & \text{hash of a block} \\
+            \var{block}                                    & \type{Block}      & \text{block} \\
+            \var{ReaderBackTo}\;|\;\var{ReaderForwardFrom} & \type{ReaderNext} & \text{roll-back to a reader point, or roll-forward from a reader point} \\
+        \end{array}
+    \end{equation*}
+    \emph{Protocol messages: Phase 1}
+    \begin{equation*}
+        \begin{array}{r@{~\in~}l}
+            \var{MsgSetHead \var{point}}            & \var{consumer} \to \var{producer} \\
+            \var{MsgIntersectImproved \var{point}}  & \var{producer} \to \var{consumer} \\
+            \var{MsgIntersectUnchanged \var{point}} & \var{producer} \to \var{consumer} \\
+        \end{array}
+    \end{equation*}
+    % \emph{Protocol messages: Phase 2}
+    % \begin{equation*}
+        % \begin{array}{r@{~\in~}ll}
+        % \end{array}
+    % \end{eqaution*}
+
+    \emph{Derived types}
+    \begin{equation*}
+        \begin{array}{r@{~\in~}ll}
+            \var{point}                                  & \type{Point} = (\type{Slot}, \type{HeaderHash})                           & \\
+            \var{Genesis}\;|\;\var{chain} :> \var{block} & \type{Chain}                                                              & \text{blockchain} \\
+            \var{chainProducerState}                     & \type{ChainProducerState} = (\type{Chain},\type{Point},\type{ReaderNext}) & \\
+        \end{array}
+    \end{equation*}
+    \emph{Primitive functions}
+    \begin{equation*}
+        \begin{array}{r@{~\in~}ll}
+            \var{blockPoint} & \type{Block} \to \type{Point}                                & \\
+            \var{addBlock}   & \type{Block} \to \type{Chain} \to \type{Chain}               & \text{add a block on top of a chain} \\
+            \var{rollback}   & \type{Point} \to \type{Chain} \to \type{Maybe (Chain Block)} & \text{rollback a chain to a given point}  \\
+        \end{array}
+    \end{equation*}
+\end{figure}
+
+\subsubsection{Phase 1, establishing common intersection}
+
+\begin{center}
+\begin{tikzpicture}
+    \node (consumer1) at (0,0)   [rectangle,draw] {$\var{cchain}\in\type{Chain}$};
+    \node (producer1) at (8,0)  [rectangle,draw] {$(\var{pchain}, \var{point},  \var{next})\in\type{ChainProducerState}$};
+    \node (producer2) at (8,-2) [rectangle,draw] {$(\var{pchain}, \var{point'}, \var{next})\in\type{ChainProducerState}$};
+    \draw[->] (consumer1) --node[above]{$\var{MsgSetHead}\;[\var{point}]$}node[below]{$[\var{point}]\in\var{cchain}$}              (producer1);
+    \draw[->] (producer1) --node[right]{$\var{point'}\in[\var{point}]$ or $\var{point'} = \var{point}$}               (producer2);
+    \draw[->] (producer2) --node[below left]{$\var{MsgIntersectionImproved}\;\var{point'}$ or $\var{MsgIntersectionUnchanged}$} (consumer1);
+\end{tikzpicture}
+\end{center}
+
+\subsubsection{Phase 2, reproducing produer's chain on the consumer's end}
+
+\begin{center}
+\begin{tikzpicture}
+    \node (consumer1)  at (0,0)  [rectangle,draw] {$\var{cchain}\in\type{Chain}$};
+    \node (producer1)  at (10,0) [rectangle,draw] {$(\var{pchain},\var{point}, \var{next})\in\type{ChainProducerState}$};
+    \draw[->] (consumer1) --node[above]{$\var{MsgRequestNext}$} (producer1);
+    \draw[->] (producer1) .. controls +(-1,-1) and +(1,-1) .. node[below]{$\var{MsgAwaitReplay}$} (consumer1);
+\end{tikzpicture}
+\end{center}
+
+\begin{center}
+\begin{tikzpicture}
+    \node (consumer1)  at (0,0)  [rectangle,draw] {$\var{cchain}\in\type{Chain}$};
+    \node (producer1)  at (10,0) [rectangle,draw] {$(\var{pchain}, \var{point}, \var{next})\in\type{ChainProducerState}$};
+    \node (consumer2)  at (0,-2) [rectangle,draw] {$\var{cchain'}\in\type{Chain}$};
+    \draw[->] (producer1) --node[above]{$\var{MsgRollForward\;\var{block}}$} (consumer1);
+    \draw[->] (consumer1) --node[left]{$\var{cchain'} = \var{addBlock}\;\var{block}\;\var{chain}$} (consumer2);
+\end{tikzpicture}
+\end{center}
+
+\begin{center}
+\begin{tikzpicture}
+    \node (consumer1)  at (0,0)  [rectangle,draw]  {$\var{cchain}\in\type{Chain}$};
+    \node (producer1)  at (10,0) [rectangle,draw]  {$(\var{pchain}, \var{point}, \var{next})\in\type{ChainProducerState}$};
+    \node (consumer2)  at (0,-2)  [rectangle,draw] {$\var{cchain'}\in\type{Chain}$};
+    \draw[->] (producer1) --node[above]{$\var{MsgRollBackward\;\var{point}}$} (consumer1);
+    \draw[->] (consumer1) --node[left]{$\var{cchain'} = \var{rollback}\;\var{point}\;\var{chain}$} (consumer2);
+\end{tikzpicture}
+\end{center}
+
+\subsubsection{Producer state transitions}
+When the producer is switching a chain to another fork it needs to update its state.
+\begin{center}
+\begin{tikzpicture}
+    \node (producer1)  at (0,0) [rectangle,draw]  {$(\var{pchain},  \var{point},  \var{next}) \in\type{ChainProducerState}$};
+    \node (producer2)  at (0,-2) [rectangle,draw] {$(\var{pchain'}, \var{point'}, \var{next'})\in\type{ChainProducerState}$};
+    \draw[->] (producer1) --node[right]{
+        $\begin{array}{r@{~\to~}l}
+            \var{pchain} & \var{pchain'}\\
+            \var{point}  & \var{point'}\\
+            \var{next}   & \var{next'}\\
+        \end{array}$
+    } (producer2);
+\end{tikzpicture}
+\end{center}
+After applying a fork, the producer will send to the consumer either $\var{MsgRollForward}\;\var{block}$ or $\var{MsgRollBackward}\;\var{point'}$.
 
 \bibliographystyle{apalike}
 \bibliography{references}
