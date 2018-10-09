@@ -65,7 +65,7 @@ newtype BlockNo      = BlockNo Word
 -- | An identifier for someone signing a block.
 --
 -- We model this as if there were an enumerated set of valid block signers
--- (which for Ouroboros BFT is actually the case), and omit the crypography
+-- (which for Ouroboros BFT is actually the case), and omit the cryptography
 -- and model things as if the signatures were valid.
 --
 newtype BlockSigner  = BlockSigner Word
@@ -96,7 +96,7 @@ hashHeader (BlockHeader _ b c d e f) = HeaderHash (hash (b, c, d, e, f))
 --
 
 -- | This class lets us treat chains of block headers and chains of whole
--- blocks in a paramaterised way.
+-- blocks in a parametrised way.
 --
 class HasHeader b where
     blockHash      :: b -> HeaderHash

@@ -5,6 +5,7 @@
 module MonadClass.MonadProbe
   ( MonadProbe (..)
   , MonadRunProbe (..)
+  , withProbe
   ) where
 
 import qualified Control.Concurrent.STM.TVar as STM
@@ -32,6 +33,14 @@ class (MonadProbe m, Monad n) => MonadRunProbe m n | m -> n, n -> m where
   newProbe    :: n (Probe m a)
   readProbe   :: Probe m a -> n (ProbeTrace m a)
   runM        :: m () -> n ()
+
+withProbe :: (MonadProbe m, MonadRunProbe m n)
+          => (Probe m a -> m ())
+          -> n (ProbeTrace m a)
+withProbe f = do
+  p <- newProbe
+  runM (f p)
+  readProbe p
 
 --
 -- Instances

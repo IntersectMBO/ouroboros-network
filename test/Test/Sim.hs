@@ -143,7 +143,7 @@ test_timers :: forall m n stm.
             => [Duration (Time m)]
             -> n Property
 test_timers xs = 
-    label (lbl xs) . isValid <$> runExperiment
+    label (lbl xs) . isValid <$> withProbe experiment
   where
     countUnique :: Eq a => [a] -> Int
     countUnique [] = 0
@@ -167,12 +167,6 @@ test_timers xs =
 
       -- wait for all tvars
       forM_ tvars $ \v -> atomically (readTVar v >>= check)
-
-    runExperiment :: n [(Time m, (Duration (Time m), Int))]
-    runExperiment = do
-      p <- newProbe
-      runM (experiment p)
-      readProbe p
 
     isValid :: [(Time m, (Duration (Time m), Int))] -> Property
     isValid tr =
@@ -198,26 +192,20 @@ test_fork_order :: forall m n stm.
                    )
                 => Positive Int
                 -> n Property
-test_fork_order = \(Positive n) -> isValid n <$> runExperiment n
+test_fork_order = \(Positive n) -> isValid n <$> withProbe (experiment n)
   where
-    experiment :: Probe m Int -> Int -> m ()
-    experiment _ 0 = return ()
-    experiment p n = do
+    experiment :: Int -> Probe m Int -> m ()
+    experiment 0 _ = return ()
+    experiment n p = do
       v <- atomically $ newTVar False
 
       fork $ do
         probeOutput p n
         atomically $ writeTVar v True
-      experiment p (n - 1)
+      experiment (n - 1) p
 
       -- wait for the spanned thread to finish
       atomically $ readTVar v >>= check
-
-    runExperiment :: Int -> n [(Time m, Int)]
-    runExperiment n = do
-      p <- newProbe
-      runM (experiment p n)
-      readProbe p
 
     isValid :: Int -> [(Time m, Int)] -> Property
     isValid n tr = (map snd tr) === [n,n-1..1]
