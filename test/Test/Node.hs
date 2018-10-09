@@ -134,8 +134,10 @@ instance Arbitrary TestNodeSim where
 
   -- TODO: shrink
 
--- this test relies on the property that when there is a single core node the
--- it will never have to use @'fixupBlock'@ function.
+-- this test relies on the property that when there is a single core node,
+-- it will never have to use @'fixupBlock'@ function (which mangles blocks
+-- picked up from the generator).  This is because all the nodes start with
+-- @'Genesis'@ chain, hence the core node is a single source of truth.
 prop_coreToRelay :: TestNodeSim -> Property
 prop_coreToRelay (TestNodeSim chain slotDuration coreTrDelay relayTrDelay) =
   let probes  = map snd $ runCoreToRelaySim chain slotDuration coreTrDelay relayTrDelay
@@ -205,7 +207,7 @@ prop_coreToRelay2 (TestNodeSim chain slotDuration coreTrDelay relayTrDelay) =
         .&&.
             mchain1 === Just chain
 
--- Node graph: c ↔ r ↔ c
+-- | Node graph: c ↔ r ↔ c
 coreToCoreViaRelaySim :: ( MonadSTM m stm
                          , MonadTimer m
                          , MonadSay m
@@ -244,6 +246,13 @@ runCoreToCoreViaRelaySim chain1 chain2 slotDuration coreTrDelay relayTrDelay = r
   runM $ coreToCoreViaRelaySim chain1 chain2 slotDuration coreTrDelay relayTrDelay probe
   readProbe probe
 
+-- | This properties guarantees that all the nodes picked up the best chain from
+-- all the possible chains.  In this setup there are two producers, hence there
+-- are only two possible chains that each node can finish with.  Note that this
+-- chain might not be the original chain that was passed from the quickcheck
+-- generator: it may happen that a core node will start to build up a chain on
+-- some block supplied by the other node.
+--
 prop_coreToCoreViaRelay :: TestChainFork -> Property
 prop_coreToCoreViaRelay (TestChainFork _ chain1 chain2) =
   let probes = map snd $ runCoreToCoreViaRelaySim chain1 chain2 (Sim.VTimeDuration 3) (Sim.VTimeDuration 1) (Sim.VTimeDuration 1)
