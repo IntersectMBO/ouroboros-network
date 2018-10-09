@@ -1,6 +1,9 @@
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Test.Node where
 
+import Control.Monad (forever)
 import Control.Monad.ST.Lazy (runST)
 import Data.Functor (void)
 import Data.Maybe (isNothing, listToMaybe)
@@ -29,13 +32,53 @@ tests =
     , testProperty "core -> relay -> relay" prop_coreToRelay2
     , testProperty "core <-> relay <-> core" prop_coreToCoreViaRelay
     ]
+  , testProperty "blockGenerator invariant (SimM)" prop_blockGenerator_ST
+  , testProperty "blockGenerator invariant (IO)" prop_blockGenerator_IO
   ]
 
 
--- note: it will reverse the order of probes!
+-- NOTE: it reverses the order of probes
 partitionProbe :: [(NodeId, a)] -> Map NodeId [a]
 partitionProbe
   = Map.fromListWith (++) . map (\(nid, a) -> (nid, [a]))
+
+-- | Block generator should generate blocks in the correct slot time.
+--
+test_blockGenerator
+  :: forall m stm n.
+     ( MonadSTM m stm
+     , MonadTimer m
+     , MonadProbe m
+     , MonadRunProbe m n
+     )
+  => Chain Block
+  -> Duration (Time m)
+  -> n Bool
+test_blockGenerator chain slotDuration = isValid <$> withProbe (experiment slotDuration)
+  where
+    isValid :: [(Time m, Block)] -> Bool
+    isValid = all (\(t, b) -> t == fromStart ((fromIntegral . getSlot . blockSlot $ b) `mult` slotDuration))
+
+    experiment
+      :: ( MonadSTM m stm
+         , MonadTimer m
+         , MonadProbe m
+         )
+      => Duration (Time m)
+      -> Probe m Block
+      -> m ()
+    experiment slotDur p = do
+      v <- blockGenerator slotDur chain
+      fork $ forever $ do
+        b <- atomically $ getBlock v
+        probeOutput p b
+      
+prop_blockGenerator_ST :: TestBlockChain -> Positive Rational -> Bool
+prop_blockGenerator_ST (TestBlockChain chain) (Positive slotDuration) = runST $ test_blockGenerator chain (Sim.VTimeDuration slotDuration)
+
+prop_blockGenerator_IO :: TestBlockChain -> Positive Int -> Property
+prop_blockGenerator_IO (TestBlockChain chain) (Positive slotDuration) = ioProperty $ test_blockGenerator chain slotDuration
+
 
 coreToRelaySim :: ( MonadSTM m stm
                   , MonadTimer m

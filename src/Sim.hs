@@ -90,6 +90,7 @@ instance TimeMeasure VTime where
 
   diffTime (VTime t) (VTime t') = VTimeDuration (t-t')
   addTime  (VTimeDuration d) (VTime t) = VTime (t+d)
+  zero = VTime 0
 
 instance Functor (SimF s) where
   fmap _ (Fail f)         = Fail f
