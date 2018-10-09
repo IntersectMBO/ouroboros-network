@@ -1288,19 +1288,6 @@ The two phases have different state machines.
             \var{ReaderBackTo}\;|\;\var{ReaderForwardFrom} & \type{ReaderNext} & \text{roll-back to a reader point, or roll-forward from a reader point} \\
         \end{array}
     \end{equation*}
-    \emph{Protocol messages: Phase 1}
-    \begin{equation*}
-        \begin{array}{r@{~\in~}l}
-            \var{MsgSetHead \var{point}}            & \var{consumer} \to \var{producer} \\
-            \var{MsgIntersectImproved \var{point}}  & \var{producer} \to \var{consumer} \\
-            \var{MsgIntersectUnchanged \var{point}} & \var{producer} \to \var{consumer} \\
-        \end{array}
-    \end{equation*}
-    % \emph{Protocol messages: Phase 2}
-    % \begin{equation*}
-        % \begin{array}{r@{~\in~}ll}
-        % \end{array}
-    % \end{eqaution*}
 
     \emph{Derived types}
     \begin{equation*}
@@ -1310,6 +1297,26 @@ The two phases have different state machines.
             \var{chainProducerState}                     & \type{ChainProducerState} = (\type{Chain},\type{Point},\type{ReaderNext}) & \\
         \end{array}
     \end{equation*}
+
+    \emph{Protocol messages: Phase 1}
+    \begin{equation*}
+        \begin{array}{r@{~\in~}l}
+            \var{MsgSetHead \var{point}}            & \var{consumer} \to \var{producer} \\
+            \var{MsgIntersectImproved \var{point}}  & \var{producer} \to \var{consumer} \\
+            \var{MsgIntersectUnchanged \var{point}} & \var{producer} \to \var{consumer} \\
+        \end{array}
+    \end{equation*}
+
+    \emph{Protocol messages: Phase 2}
+    \begin{equation*}
+        \begin{array}{r@{~\in~}ll}
+            \var{MsgRequestNext}               & \var{consumer} \to \var{producer} \\
+            \var{MsgRollForward}\;\var{block}  & \var{producer} \to \var{consumer} \\
+            \var{MsgRollBackward}\;\var{point} & \var{producer} \to \var{consumer} \\
+            \var{MsgAwaitReply}                & \var{producer} \to \var{consumer} \\
+        \end{array}
+    \end{equation*}
+
     \emph{Primitive functions}
     \begin{equation*}
         \begin{array}{r@{~\in~}ll}
@@ -1320,7 +1327,7 @@ The two phases have different state machines.
     \end{equation*}
 \end{figure}
 
-\subsubsection{Phase 1, establishing common intersection}
+\subsubsection{Phase 1, establishing common intersection point}
 
 \begin{center}
 \begin{tikzpicture}
