@@ -12,7 +12,7 @@
 
 {-# OPTIONS_GHC "-fwarn-incomplete-patterns" #-}
 
-module Protocol.ChainExchange where
+module Protocol.Chain.StreamProducer where
 
 import Block
 import Data.List.NonEmpty (NonEmpty)

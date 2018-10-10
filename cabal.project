@@ -1,4 +1,5 @@
 packages: .
+          ./typed-transitions
 
 package ouroboros-network
   tests: True
