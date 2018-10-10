@@ -26,7 +26,7 @@ let
                   time-locale-compat = super.time-locale-compat_0_1_1_5;
                 };
             };
-            ghc822 = super.haskell.packages.ghc822.override {
+            ghc843 = super.haskell.packages.ghc843.override {
               overrides = self: super:
                 let QuickCheck = super.callPackage ./QuickCheck-2.12.4.nix {};
                 in
@@ -42,7 +42,7 @@ let
                   time-locale-compat = super.time-locale-compat_0_1_1_5;
                 };
             };
-            ghc843 = super.haskell.packages.ghc843.override {
+            ghc861 = super.haskell.packages.ghc861.override {
               overrides = self: super:
                 let QuickCheck = super.callPackage ./QuickCheck-2.12.4.nix {};
                 in
