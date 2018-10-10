@@ -100,10 +100,10 @@ exampleProducer chainvar =
       atomically $ do
         cps <- readTVar chainvar
         case ChainProducerState.readerInstruction rid cps of
-          Nothing -> return Nothing
+          Nothing -> pure Nothing
           Just (u, cps') -> do
             writeTVar chainvar cps'
-            return $ Just u
+            return $ pure u
 
     readChainUpdate :: ReaderId -> m (ChainUpdate (block p))
     readChainUpdate rid =
