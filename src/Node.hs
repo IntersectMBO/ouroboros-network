@@ -151,7 +151,7 @@ instance Monoid (NodeChannels m prodMsg consMsg) where
   mappend = (<>)
 
 
--- | Create a channels n1 → n2, where n1 is a producer and n2 is the consumer.
+-- | Create channels n1 → n2, where n1 is a producer and n2 is the consumer.
 --
 createOneWaySubscriptionChannels
   :: forall send recv m stm.
@@ -225,7 +225,7 @@ getBlock v = do
 
 
 -- | Observe @TVar ('ChainProducerState' block)@, and whenever the @TVar@
--- mutates write, the result to the supplied @'Probe'@.
+-- mutates, write the result to the supplied @'Probe'@.
 --
 observeChainProducerState
   :: forall m stm block.
@@ -371,4 +371,4 @@ coreNode nid slotDuration gchain chans = do
                   b' = Chain.fixupBlock c' b
                   r  = Chain.addBlock b' c'
               in assert (Chain.valid r) r
-        LT -> error "blockGenerator invariant vaiolation: generated block is for slot in the past slot"
+        LT -> error "blockGenerator invariant vaiolation: generated block is for slot in the past"
