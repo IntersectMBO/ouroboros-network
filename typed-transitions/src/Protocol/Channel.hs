@@ -1,3 +1,4 @@
+{-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE GADTs #-}
 
@@ -8,6 +9,7 @@ module Protocol.Channel
   , FromStream (..)
   , useChannel
   , withChannels
+  , channelSendEffect
   ) where
 
 import Control.Concurrent.MVar (newEmptyMVar, putMVar, takeMVar)
@@ -17,6 +19,11 @@ import Data.Proxy
 import Protocol.Core
 import Protocol.Transition
 
+-- | Abstract duplex ordered channel.
+-- 'send' and 'recv' produce a new 'Channel m t' so that it's possible to
+-- give pure channels without resorting to a state monad.
+-- For common effectful channels this is superfluous. 'uniformChannel' can
+-- take care of the details.
 data Channel m t = Channel
   { send :: t -> m (Channel m t)
   , recv :: m (Maybe (t, Channel m t))
@@ -51,6 +58,8 @@ data FromStream tr f m t where
   -- | Done using the stream.
   StreamDone :: t -> FromStream tr f m t
 
+-- | Supply input and carry output to/from a 'Peer' by way of a 'Channel'.
+-- If the stream ends before the 'Peer' finishes, a continuation is given.
 useChannel
   :: forall p tr status from to f m t .
      ( Functor f, Monad m )
@@ -78,3 +87,10 @@ withChannels k = do
   let leftChan = uniformChannel (putMVar left) (fmap Just (takeMVar right))
       rightChan = uniformChannel (putMVar right) (fmap Just (takeMVar left))
   k leftChan rightChan
+
+-- | Do some effect before sending.
+channelSendEffect :: ( Applicative m ) => (t -> m ()) -> Channel m t -> Channel m t
+channelSendEffect onSend chan = chan
+  { send = \t -> onSend t *> (channelSendEffect onSend <$> send chan t)
+  , recv = (fmap . fmap . fmap) (channelSendEffect onSend) (recv chan)
+  }

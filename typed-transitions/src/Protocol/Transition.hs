@@ -2,9 +2,11 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE RankNTypes #-}
 
 module Protocol.Transition
   ( SomeTransition (..)
+  , withSomeTransition
   , TransitionFrom (..)
   , castTransition
   , showTransitionFrom
@@ -25,6 +27,9 @@ data SomeTransition tr where
   -- typeable. Quantified constraints could help, although a short attempt at
   -- that did not work.
   SomeTransition :: ( Typeable from ) => tr from to -> SomeTransition tr
+
+withSomeTransition :: (forall from to . tr from to -> t) -> SomeTransition tr -> t
+withSomeTransition k (SomeTransition it) = k it
 
 data TransitionFrom tr from where
   Expected   :: tr from to -> TransitionFrom tr from

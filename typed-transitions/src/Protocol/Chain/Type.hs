@@ -9,11 +9,16 @@
 module Protocol.Chain.Type where
 
 import Block
+import Chain (Point)
 import Data.List.NonEmpty
 import Protocol.Core
 
 type Header = BlockHeader
 type Body = BlockBody
+
+-- | Many responses can include a new tip of chain, in case the producer's
+-- chain was extended since the last request (not forked!).
+type MaybeNewTip = Maybe Header
 
 -- |
 -- = Definition of the chain exchange protocol, and a factoring of it into
@@ -30,61 +35,64 @@ data StChainExchange where
 -- responses for headers and bodies.
 data TrChainExchange stFrom stTo where
   -- | The first transition gives the endpoints of the chain.
-  TrInit     :: Header -> Header -> TrChainExchange 'StInit 'StIdle
+  TrInit     :: Point -> Header -> TrChainExchange 'StInit 'StIdle
   TrRequest  :: Request  req     -> TrChainExchange 'StIdle ('StBusy req)
   TrRespond  :: Response req res -> TrChainExchange ('StBusy req) res
 
 showTrChainExchange :: TrChainExchange from to -> String
 showTrChainExchange tr = case tr of
   TrInit _ _ -> "Init"
-  TrRequest (ReqSetHead hhs) -> "Req set head " ++ show hhs
-  TrRequest _ -> "Other request"
-  TrRespond (ResSetHead hh) -> "Res set head " ++ show hh
-  TrRespond _ -> "Other response"
+  TrRequest (ReqSetHead hhs) -> "ReqSetHead " ++ show hhs
+  TrRequest (ReqDownload _) -> "ReqDownload"
+  TrRequest ReqNext -> "ReqNext"
+  TrRespond (ResSetHead hh _) -> "ResSetHead " ++ show hh
+  TrRespond (ResChange _ _) -> "ResChange"
+  TrRespond (ResDownloadOne _ _) -> "ResDownloadOne"
+  TrRespond (ResDownloadDone _) -> "ResDownloadDone"
+  TrRespond _ -> "Res other"
 
 data RequestKind where
-  SetHead :: RequestKind
+  SetHead  :: RequestKind
   Download :: RequestKind
   -- | Request for the next change in the chain.
-  Next    :: RequestKind
+  Next     :: RequestKind
   -- | No 'Request' uses this kind. It's an intermediate state to ensure that a
   -- body follows a header during relay.
-  Relay   :: RequestKind
+  Relay    :: RequestKind
 
 data Request (req :: RequestKind) where
   -- | Request to update the read pointer to the newest of these blocks.
-  ReqSetHead  :: NonEmpty HeaderHash ->    Request 'SetHead
+  ReqSetHead  :: NonEmpty Point -> Request 'SetHead
   -- | Request at most this many headers, from the current read pointer.
-  ReqDownload :: Word         ->           Request 'Download
+  ReqDownload :: Word -> Request 'Download
   -- | Request the next update to the producer's chain.
   -- The response could be a header followed by its body (fast relay)
   -- or a typical change response with a new tip and rollback point (fork).
-  ReqNext     ::                           Request 'Next
+  ReqNext     :: Request 'Next
 
 -- | Fork and extend can be responses to any request.
 -- The headers and bodies responses are multi-part: an individual data point
 -- can be sent, or the response can be closed, returning the state to idle.
---
--- TODO new response to indicate "all done"? Typically this would be implicitly
--- delivered by closing the comm channel.
---
---   ResDone :: Response anything 'StDone
 data Response (req :: RequestKind) (res :: StChainExchange) where
   -- | New tip and rollback point.
-  ResChange       :: Header -> Header -> Response anything 'StIdle
+  ResChange       :: Point -> Header -> Response anything 'StIdle
   -- | The new read pointer, possibly not in the requested set, meaning none of
   -- them are in the chain.
-  ResSetHead      :: HeaderHash -> Response 'SetHead 'StIdle
-  ResDownloadOne  :: Block -> Response 'Download ('StBusy 'Download)
-  ResDownloadDone :: Response 'Download 'StIdle
+  ResSetHead      :: Point -> MaybeNewTip -> Response 'SetHead 'StIdle
+  ResDownloadOne  :: Block -> MaybeNewTip -> Response 'Download ('StBusy 'Download)
+  ResDownloadDone :: MaybeNewTip -> Response 'Download 'StIdle
+  ResExtend       :: Header -> Response 'Next 'StIdle
   -- | Relay of header. Its body (or a change of tip) will follow.
-  ResRelayHeader  :: Header ->          Response 'Next ('StBusy 'Relay)
-  -- | If the chain changes after the header was relayed (ResRelayHeader) but
+  ResExtendRelay  :: Header -> Response 'Next ('StBusy 'Relay)
+  -- | If the chain changes after the header was relayed (ResExtendRelay) but
   -- before the body comes in and is relayed (ResRelayBody), and the new tip
   -- is also a candidate for fast relay (its parent is the read pointer) then
   -- we need to relay the header again.
-  ResRelayHeaderAgain :: Header -> Response 'Relay ('StBusy 'Relay)
-  ResRelayBody        :: Body -> Response 'Relay 'StIdle
+  ResExtendNewRelay :: Header -> Response 'Relay ('StBusy 'Relay)
+  -- | Header extension during a relay, aborting the relay.
+  ResExtendNew      :: Header -> Response 'Relay 'StIdle
+  -- | Body relay finished.
+  ResRelayBody      :: Body -> Response 'Relay 'StIdle
 
 -- |
 -- = Paritioning into client/server or consumer/producer

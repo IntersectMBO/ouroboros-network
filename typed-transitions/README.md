@@ -39,9 +39,50 @@ Better factoring / modularity, and higher assurance / type safety.
   datatypes which back them can be chosen at simulation or production
   implementations.
 
-# Where to go from here / how to use it
+## Factoring through a protocol
 
-All that's missing are `Sim`/`MonadClass` implementations of `BlockStream` and
-`ConsumerStream`. With these, we can run the `streamProducer` and
-`streamConsumer` across a `SimSTM` `TVar` channel
-(`Protocol/Chain/Channel.Sim.hs`), using `MonadConc` for concurrency.
+The `BlockStream m t` and `ConsumerStream m t` types are complementary, as
+witnessed by `Protocol.Chain.Direct.direct`, which feeds the consumer with
+blocks from the producer.
+
+```Haskell
+direct
+  :: ( Monad m )
+  => BlockStream m t
+  -> ConsumerStream m t
+  -> m t
+```
+
+The `BlockStream m t` models the producer side of the protocol, and the
+`ConsumerStream m t` models the consumer side. Linking them `direct`ly, we get
+consumer and producer in the same thread, which isn't even a triviality: it may
+be useful for a wallet application.
+
+A typical use case, however, puts the producer (`BlockStream m t`) and consumer
+(`ConsumerStream m t`) in separate processes, probably on different machines.
+This typed-transitions approach allows us to factor the `direct` link through
+a sequence of transitions. Complementary sides of the `TrChainExchange` protocol
+can be derived:
+
+```Haskell
+streamProducer
+  :: ( Monad m )
+  => BlockStream m t
+  -> Peer ChainExchange TrChainExchange ('Yielding 'StInit) ('Yielding ('StBusy 'Next)) m t
+
+streamConsumer
+  :: ( Monad m )
+  => ConsumerStream m t
+  -> Peer ChainExchange TrChainExchange ('Awaiting 'StInit) ('Yielding 'StInit) m t
+```
+
+As the type indicates, these add no side-effects; the derived `Peer`s will use
+only the side-effects already defined in the `BlockStream m t` or
+`ConsumerStream m t`.
+
+## Integration with `Sim`/`MonadClass` from `ouroboros-network`
+
+Using existing work in `ouroboros-network` is only a matter of creating
+`BlockStream m t` and `ConsumerStream m t` where `m` is constrained by the
+various `MonadClass`es. This has been done in the
+`Protocol.Chain.Sim.*` modules in the `typed-transitions` package.
