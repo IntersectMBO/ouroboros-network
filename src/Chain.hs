@@ -68,6 +68,7 @@ import Block ( Block(..), BlockHeader(..), HasHeader(..)
              , Slot(..), BlockNo (..), HeaderHash(..)
              , BodyHash(..), Slot(..), BlockNo(..)
              , HeaderHash(..), hashHeader, hashBody )
+import Serialise
 
 import Control.Exception (assert)
 import qualified Data.List as L
@@ -311,3 +312,34 @@ fixupBlockHeader c h b = b'
       headerBlockNo  = succ $ headBlockNo c,
       headerBodyHash = h
     }
+
+
+--
+-- Serialisation
+--
+
+instance Serialise block => Serialise (Chain block) where
+
+  encode c = encodeListLen (fromIntegral $ Chain.length c)
+          <> Chain.foldChain (\e b -> e <> encode b) mempty c
+
+  decode = do
+      n <- decodeListLen
+      go Chain.genesis n
+    where
+      go c 0 = return c
+      go c n = do b <- decode
+                  go (c :> b) (n-1)
+
+instance Serialise Point where
+
+  encode Point { pointSlot = Slot s, pointHash = HeaderHash h } =
+      encodeListLen 2
+   <> encodeWord s
+   <> encodeInt  h
+
+  decode = do
+      decodeListLenOf 2
+      Point <$> (Slot <$> decodeWord)
+            <*> (HeaderHash <$> decodeInt)
+

@@ -32,8 +32,7 @@ import           ProtocolInterfaces
 -- this is not a realisic chain representation.
 --
 exampleConsumer :: forall block m stm.
-                   ( Eq block
-                   , HasHeader block
+                   ( HasHeader block
                    , MonadSTM m stm
                    )
                 => TVar m (Chain block)
@@ -74,7 +73,6 @@ recentOffsets = [0,1,2,3,5,8,13,21,34,55,89,144,233,377,610,987,1597,2584]
 exampleProducer
   :: forall block m stm.
      ( HasHeader block
-     , Eq block
      , MonadSTM m stm
      )
   => TVar m (ChainProducerState block)
