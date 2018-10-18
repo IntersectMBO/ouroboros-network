@@ -1,4 +1,4 @@
-
+{-# LANGUAGE CPP #-}
 module Serialise (
       -- * Class
       Serialise(..)
@@ -18,7 +18,9 @@ module Serialise (
     where
 
 import qualified Data.ByteString.Lazy as LBS
+#if __GLASGOW_HASKELL__ < 804
 import Data.Monoid
+#endif
 import Codec.CBOR.Encoding hiding (Encoding(..), Tokens(..))
 import Codec.CBOR.Encoding        (Encoding)
 import Codec.CBOR.Decoding hiding (DecodeAction(..), TokenType(..))
