@@ -154,7 +154,7 @@ prop_serialise_chain (TestBlockChain chain) = prop_serialise chain
 
 -- | A test generator for a valid chain of blocks.
 --
-newtype TestBlockChain = TestBlockChain (Chain Block)
+newtype TestBlockChain = TestBlockChain { getTestBlockChain :: Chain Block }
     deriving (Eq, Show)
 
 -- | A test generator for a valid chain of block headers.

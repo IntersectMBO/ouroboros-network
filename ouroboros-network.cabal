@@ -108,6 +108,7 @@ test-suite tests
                        fingertree,
                        free,
                        hashable,
+                       mtl,
                        QuickCheck,
                        random,
                        semigroups,

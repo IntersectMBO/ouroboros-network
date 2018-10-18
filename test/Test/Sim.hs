@@ -1,7 +1,10 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE FlexibleContexts    #-}
-module Test.Sim (tests) where
+module Test.Sim
+    ( tests
+    , TestThreadGraph (..)
+    ) where
 
 import Data.Array
 import Data.Graph

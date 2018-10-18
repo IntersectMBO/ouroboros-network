@@ -1,15 +1,20 @@
 {-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 module Test.Node where
 
-import Control.Monad (forever)
+import Control.Monad (forever, forM, forM_, replicateM)
 import Control.Monad.ST.Lazy (runST)
+import Control.Monad.State (lift, modify', execStateT)
+import Data.Array
 import Data.Functor (void)
+import Data.Graph
+import Data.List (foldl')
 import Data.Maybe (isNothing, listToMaybe)
 import Data.Semigroup ((<>))
-import           Data.Map.Lazy (Map)
-import qualified Data.Map.Lazy as Map
+import Data.Tuple (swap)
+import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 
 import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)
@@ -21,7 +26,9 @@ import           Chain (Chain (..))
 import Node
 import MonadClass
 import qualified Sim
+import Protocol (MsgProducer, MsgConsumer)
 
+import Test.Sim (TestThreadGraph (..))
 import Test.Chain (TestBlockChain (..), TestChainFork (..))
 
 tests :: TestTree
@@ -32,6 +39,7 @@ tests =
     , testProperty "core -> relay -> relay" prop_coreToRelay2
     , testProperty "core <-> relay <-> core" prop_coreToCoreViaRelay
     ]
+  , testProperty "arbtirary node graph" (withMaxSuccess 50 prop_networkGraph)
   , testProperty "blockGenerator invariant (SimM)" prop_blockGenerator_ST
   , testProperty "blockGenerator invariant (IO)" prop_blockGenerator_IO
   ]
@@ -110,10 +118,7 @@ runCoreToRelaySim :: Chain Block
                   -> Sim.VTimeDuration
                   -> [(Sim.VTime, (NodeId, Chain Block))]
 runCoreToRelaySim chain slotDuration coreTransportDelay relayTransportDelay =
-  runST $ do
-    probe <- newProbe
-    runM $ coreToRelaySim False chain slotDuration coreTransportDelay relayTransportDelay probe
-    readProbe probe
+  runST $ withProbe (coreToRelaySim False chain slotDuration coreTransportDelay relayTransportDelay)
 
 data TestNodeSim = TestNodeSim
   { testChain               :: Chain Block
@@ -193,8 +198,8 @@ runCoreToRelaySim2 chain slotDuration coreTransportDelay relayTransportDelay = r
 
 prop_coreToRelay2 :: TestNodeSim -> Property
 prop_coreToRelay2 (TestNodeSim chain slotDuration coreTrDelay relayTrDelay) =
-  let dict    = partitionProbe probes
-      probes  = map snd $ runCoreToRelaySim2 chain slotDuration coreTrDelay relayTrDelay
+  let probes  = map snd $ runCoreToRelaySim2 chain slotDuration coreTrDelay relayTrDelay
+      dict    = partitionProbe probes
       mchain1 = RelayId 1 `Map.lookup` dict >>= listToMaybe
       mchain2 = RelayId 2 `Map.lookup` dict >>= listToMaybe
   in counterexample (show mchain1) $
@@ -260,7 +265,7 @@ prop_coreToCoreViaRelay (TestChainFork _ chain1 chain2) =
         let dict    = partitionProbe probes
             chainC1 = CoreId 1  `Map.lookup` dict >>= listToMaybe
             chainR1 = RelayId 1 `Map.lookup` dict >>= listToMaybe
-            chainC2 = CoreId 2 `Map.lookup` dict >>= listToMaybe
+            chainC2 = CoreId 2  `Map.lookup` dict >>= listToMaybe
         in
             isValid chainC1 chainR1 .&&. isValid chainC1 chainC2
   where
@@ -279,3 +284,147 @@ prop_coreToCoreViaRelay (TestChainFork _ chain1 chain2) =
         nl  = "\n    "
         c1_ = Chain.prettyPrintChain nl show c1
         c2_ = Chain.prettyPrintChain nl show c2
+
+data TestNetworkGraph = TestNetworkGraph Graph [(Int, Chain Block)]
+    deriving Show
+
+-- Connect disconnected graph components; randomly chose nodes through which
+-- connect them.
+connectGraphG :: Graph -> Gen Graph
+connectGraphG g = do
+    let ts  = scc g
+    vs <- traverse (oneof . map return . nodeVertices) ts
+    return $ accum (flip (:)) g [(i, j) | i <- vs, j <- vs]
+    where
+    nodeVertices :: Tree Vertex -> [Vertex]
+    nodeVertices (Node i ns) = i : concatMap nodeVertices ns
+
+instance Arbitrary TestNetworkGraph where
+    arbitrary = resize 20 $ do
+        TestThreadGraph g <- arbitrary
+        let g' = accum (++) g (assocs $ transposeG g)
+            vs = (vertices g)
+        cs  <- genCoreNodes vs
+        c   <- oneof (map return vs)
+        let cs' = if null cs then [c] else cs
+        g'' <- connectGraphG g'
+        chains <- map getTestBlockChain <$> replicateM (length cs') arbitrary 
+        return $ TestNetworkGraph g'' (zip cs' chains)
+     where
+        genCoreNodes :: [Int] -> Gen [Int]
+        genCoreNodes []       = return []
+        genCoreNodes (x : xs) = do
+            t <- frequency [(2, return True), (1, return False)]
+            if t
+                then (x:) <$> genCoreNodes xs
+                else genCoreNodes xs
+
+    shrink (TestNetworkGraph g cs) =
+        [ TestNetworkGraph g cs' | cs' <- shrinkList (:[]) cs, not (null cs') ]
+
+networkGraphSim :: forall m stm .
+                  ( MonadSTM m stm
+                  , MonadTimer m
+                  , MonadProbe m
+                  , MonadSay m
+                  )
+                => TestNetworkGraph
+                -> Duration (Time m) -- ^ slot duration
+                -> Duration (Time m) -- ^ core transport delay
+                -> Duration (Time m) -- ^ relay transport delay
+                -> Probe m (NodeId, Chain Block)
+                -> m ()
+networkGraphSim (TestNetworkGraph g cs) slotDuration coreTrDelay relayTrDelay probe = do
+  let vs = vertices g
+      channs :: Map Vertex (NodeChannels m (MsgProducer block) MsgConsumer)
+      channs = Map.fromList (map (,mempty) vs)
+
+  -- construct channels between based on the graph
+  channs' <- flip execStateT channs $ forM (assocs g) $ \(i, peers) -> do
+    let isCore = i `elem` map fst cs
+        delay  = if isCore then coreTrDelay else relayTrDelay
+    forM peers $ \j -> do
+      let isCore' = j `elem` map fst cs
+          delay'  = if isCore' then coreTrDelay else relayTrDelay
+      (cij, cji) <- lift $ createOneWaySubscriptionChannels delay delay'
+      modify' (Map.adjust (<> cij) i . Map.adjust (<> cji) j)
+
+  -- run each node
+  forM_ vs $ \i ->
+    fork $ void $
+      case i `lookup` cs of
+        Just chain ->
+          coreNode  (CoreId i) slotDuration chain (channs' Map.! i)
+          >>= observeChainProducerState (CoreId i) probe
+        Nothing ->
+          relayNode (RelayId i) (channs' Map.! i)
+          >>= observeChainProducerState (RelayId i) probe
+
+runNetworkGraphSim
+  :: TestNetworkGraph
+  -> Sim.VTimeDuration
+  -> Sim.VTimeDuration
+  -> Sim.VTimeDuration
+  -> [(Sim.VTime, (NodeId, Chain Block))]
+runNetworkGraphSim g slotDuration coreTrDelay relayTrDelay
+  = runST $ withProbe (networkGraphSim g slotDuration coreTrDelay relayTrDelay)
+
+data NetworkTest = NetworkTest
+  { networkTestGraph        :: TestNetworkGraph
+  , networkTestSlotDuration :: Sim.VTimeDuration
+  , networkTestCoreTrDelay  :: Sim.VTimeDuration
+  , networkTestRelayTrDelay :: Sim.VTimeDuration
+  }
+  deriving Show
+
+instance Arbitrary NetworkTest where
+  arbitrary = NetworkTest <$> arbitrary <*> duration <*> duration <*> duration
+    where 
+      duration = Sim.VTimeDuration . getPositive <$> arbitrary
+
+prop_networkGraph :: NetworkTest
+                  -> Property
+prop_networkGraph (NetworkTest g@(TestNetworkGraph graph cs) slotDuration coreTrDelay relayTrDelay) =
+  let vs = vertices graph
+      es = edges graph
+      gs = map (\i -> removeEdge (minimum vs, maximum vs) (es !! i) es) [0..length es - 1]
+      (cc :: Int) = foldl' (\x y -> if isDisconnected y then x + 1 else x) 0 gs
+
+      probes = map snd $ runNetworkGraphSim g slotDuration coreTrDelay relayTrDelay
+      dict :: Map NodeId (Chain Block)
+      dict = Map.mapMaybe listToMaybe (partitionProbe probes)
+      chains = Map.elems dict
+  in  cover 50 (length vs > 10) "more than 10 vertices"
+    $ cover 80 (100 * length cs `div` length vs > 50) "more than 50% of core nodes"
+    -- Let call a bidirectional connection (two edges `e` and `swap e`) critical
+    -- iff when removed the graph becomes disconnected. The discribution looks
+    -- not that bad:
+    -- 28% 4
+    -- 21% 0
+    -- 13% 6
+    -- 11% 10
+    -- 11% 2
+    -- 10% 8
+    --  3% 14
+    --  2% 16
+    --  1% 20
+    $ cover 50 (cc > 0) "has more than one critical connection (when removed the network graph becomes disconnected)"
+    -- TODO: It might be good to check [closness
+    -- centrality](https://en.wikipedia.org/wiki/Closeness_centrality) of
+    -- generated graphs; we'd like to have some nodes that are on averge very far
+    -- from other nodes.
+    $ Map.foldl' (\v c -> foldl' Chain.selectChain c chains == c && v) True dict
+  where
+  -- graph is disconnected if it has stricly more than one components
+  isDisconnected :: Graph -> Bool
+  isDisconnected gr = case components gr of
+    []       -> False
+    (_ : []) -> False
+    _        -> True
+
+  -- remove two edges: `a -> b` and `b -> a`
+  removeEdge :: Bounds -> Edge -> [Edge] -> Graph
+  removeEdge bs e es =
+    let es' = filter (\e' -> e /= e' && swap e /= e') es
+    in buildG bs es'
+
