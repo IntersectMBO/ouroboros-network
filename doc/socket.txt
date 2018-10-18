@@ -1,0 +1,35 @@
+
+ 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|      conversation id          |              length           |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|               transission time (seconds)                      |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|               transission time (fractions)                    |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|                                                               |
+|                                                               |
+|                                                               |
+|                          CBOR BLOB                            |
+|                                                               |
+|                                                               |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+All fields are in big endian byteorder.
+
+conversation id is a 16 bit number that idientifies a subflow inside
+the connection. The conversation ids are part of the protocol definition,
+i.e not assigned dynamically.
+
+length is a 16bit integer which corresponds to the length of the CBOR blob.
+NB. length is still 32bit, in my branch
+
+transission time will be used to calculate unidirectional latency to
+aid with peer selection
+
+If the message is larger than 16k it will be split into multiple segments,
+and each segment have its own header and be atmost 16k.
+Messages belonging to the same conversation must be delivered in order.
+Messages belonging to different conversations will be serviced in a round-robin fashion.
+
