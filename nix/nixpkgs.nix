@@ -17,24 +17,45 @@ let
                 { free = super.callPackage ./free-5.1.nix {};
                   QuickCheck_2_12_4 = QuickCheck;
                   tasty-quickcheck = super.callPackage ./tasty-quickcheck-0.10.nix { inherit QuickCheck; };
+                  cborg = super.callPackage ./cborg-0.2.1.0.nix {};
+                  # aeson from git@github.com:coot/aeson (QuickCheck-2.12)
+                  aeson = super.callPackage ./aeson.nix {};
+                  # aeson requirement
+                  quickcheck-instances = super.callPackage ./quickcheck-instances-0.3.19.nix { inherit QuickCheck; };
+                  # aeson requirement
+                  time-locale-compat = super.time-locale-compat_0_1_1_5;
                 };
             };
-            ghc843 = super.haskell.packages.ghc802.override {
+            ghc822 = super.haskell.packages.ghc822.override {
               overrides = self: super:
                 let QuickCheck = super.callPackage ./QuickCheck-2.12.4.nix {};
                 in
                 { free = super.callPackage ./free-5.1.nix {};
                   QuickCheck_2_12_4 = QuickCheck;
                   tasty-quickcheck = super.callPackage ./tasty-quickcheck-0.10.nix { inherit QuickCheck; };
+                  cborg = super.callPackage ./cborg-0.2.1.0.nix {};
+                  # aeson from git@github.com:coot/aeson (QuickCheck-2.12)
+                  aeson = super.callPackage ./aeson.nix {};
+                  # aeson requirement
+                  quickcheck-instances = super.callPackage ./quickcheck-instances-0.3.19.nix { inherit QuickCheck; };
+                  # aeson requirement
+                  time-locale-compat = super.time-locale-compat_0_1_1_5;
                 };
             };
-            ghc861 = super.haskell.packages.ghc802.override {
+            ghc843 = super.haskell.packages.ghc843.override {
               overrides = self: super:
                 let QuickCheck = super.callPackage ./QuickCheck-2.12.4.nix {};
                 in
                 { free = super.callPackage ./free-5.1.nix {};
                   QuickCheck_2_12_4 = QuickCheck;
                   tasty-quickcheck = super.callPackage ./tasty-quickcheck-0.10.nix { inherit QuickCheck; };
+                  cborg = super.callPackage ./cborg-0.2.1.0.nix {};
+                  # aeson from git@github.com:coot/aeson (QuickCheck-2.12)
+                  aeson = super.callPackage ./aeson.nix {};
+                  # aeson requirement
+                  quickcheck-instances = super.callPackage ./quickcheck-instances-0.3.19.nix { inherit QuickCheck; };
+                  # aeson requirement
+                  time-locale-compat = super.time-locale-compat_0_1_1_5;
                 };
             };
           };
