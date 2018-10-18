@@ -1,0 +1,29 @@
+language: nix
+script:
+- nix-env -iA cachix -f https://github.com/NixOS/nixpkgs/tarball/1d4de0d552ae9aa66a5b8dee5fb0650a4372d148
+- echo "trusted-users = root ${USER}" | sudo tee -a /etc/nix/nix.conf || true
+- sudo pkill nix-daemon || true
+- cachix use ouroboros-network
+- nix-build --arg dev true -A ouroboros-network -o result --argstr compiler $COMPILER
+- cachix push free-algebras ./result
+matrix:
+  include:
+  - name: "GHC 843"
+    env: COMPILER="ghc843"
+  - name: "GHC 822"
+    env: COMPILER="ghc822"
+  - name: "GHC 802"
+    env: COMPILER="ghc802"
+
+  - name: "GHC 843"
+    env: COMPILER="ghc843"
+    os: osx
+  - name: "GHC 822"
+    env: COMPILER="ghc822"
+    os: osx
+  - name: "GHC 802"
+    env: COMPILER="ghc802"
+    os: osx
+env:
+  global:
+    secure: JNG/73zbLxaMCksAnYFxe809lLiOzUA68TbifdLp2vNnLYHo01I18brcEDb3Zw1pyEbUfa87IsTJtbNIp4oKq5J11Zes2zf7C5kqlI5GKgwrEOQzf1GdvgpjIZ7RkEewxxh+Iwh8JP7cLi8ir9b7XBgvV99XG/xiTcR3RdpSWQYgg2Z6FGjrRvFvnlKr99OAvqE5F6yL80hAJ6n+i41DVj1+SFJ97186zBpxMJ75TcA/JP0wGPjaW3BV/fgzTfjXX44XL9ITVLuPD9yFeeQsesP6TuOo3rOJ25nm6svgXo1bUgXCUb8khE+UDYHB6RLl2SwCPT3BW9vP1Q8k4u8v/1Xuy+X3QoavprXe9/ah/wfukvjpCKJFbBi3NhORANBgfWWsxW3e59DUNuCey1dBelZMlBcpVu2wyv/2lErE07M3D+q8WTiRvpFhdez2IHZAC77FSGok0btxXl2RjRxnm8HCpvnW0sLr8/B6Vgw9Z52rtzA3V/mZu0GUd8WNV+wjnWgoAg/qE1EZ/rk2DA+y9PsT18djAM0LdRkGkECsaN7HAeCp8R+oJbgrdwSvKxIbzDIMl/kQ/BBiqRwk3aXmynKrUkUfPQqO/B+d3XFAmV3IndTyOpFHmAECJhytfvLittxLSkzzB6CNcjfc1p4cBoJLY1zNaqTO+fBuLU9zPNs=
