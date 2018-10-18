@@ -4,11 +4,14 @@ module Test.Chain
   , TestBlockChain(..)
   , TestChainFork(..)
   , mkRollbackPoint
+  , genBlockChain
+  , genHeaderChain
   ) where
 
 import           Block
 import           Chain ( Chain (..), Point (..), ChainUpdate (..), genesisPoint)
 import qualified Chain
+import           Serialise (prop_serialise)
 
 import qualified Data.List as L
 import Data.Maybe (listToMaybe)
@@ -60,6 +63,7 @@ tests =
   , testProperty "successorBlock"  prop_successorBlock
   , testProperty "lookupBySlot"    prop_lookupBySlot
   , testProperty "intersectChains" prop_intersectChains
+  , testProperty "serialise chain" prop_serialise_chain
   ]
 
 
@@ -139,6 +143,9 @@ prop_intersectChains (TestChainFork c l r) =
     Just p  -> Chain.headPoint c == p
             && Chain.pointOnChain p l
             && Chain.pointOnChain p r
+
+prop_serialise_chain :: TestBlockChain -> Bool
+prop_serialise_chain (TestBlockChain chain) = prop_serialise chain
 
 
 --

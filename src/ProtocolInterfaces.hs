@@ -1,7 +1,10 @@
-
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE NamedFieldPuns #-}
 module ProtocolInterfaces (
     ConsumerHandlers(..)
   , ProducerHandlers(..)
+  , liftConsumerHandlers
+  , liftProducerHandlers
   ) where
 
 import Chain (ChainUpdate (..), Point (..))
@@ -41,3 +44,35 @@ data ProducerHandlers block m r = ProducerHandlers {
        -- ^ compute chain update for a given reader.  This maybe block, awaiting
        -- for changes of its internal state (producer's chain).
      }
+
+liftConsumerHandlers :: (forall a. m a -> m' a)
+                     -> ConsumerHandlers block m
+                     -> ConsumerHandlers block m'
+liftConsumerHandlers lift ConsumerHandlers {
+                            getChainPoints,
+                            addBlock,
+                            rollbackTo
+                          } =
+    ConsumerHandlers {
+      getChainPoints = lift getChainPoints,
+      addBlock       = \b -> lift (addBlock b),
+      rollbackTo     = \p -> lift (rollbackTo p)
+    }
+
+
+liftProducerHandlers :: (forall a. m a -> m' a)
+                     -> ProducerHandlers block m  r
+                     -> ProducerHandlers block m' r
+liftProducerHandlers lift ProducerHandlers {
+                            newReader,
+                            improveReadPoint,
+                            tryReadChainUpdate,
+                            readChainUpdate
+                          } =
+    ProducerHandlers {
+      newReader          = lift newReader,
+      improveReadPoint   = \r ps -> lift (improveReadPoint r ps),
+      tryReadChainUpdate = \r -> lift (tryReadChainUpdate r),
+      readChainUpdate    = \r -> lift (readChainUpdate r)
+    }
+

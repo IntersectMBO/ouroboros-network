@@ -14,10 +14,10 @@ module Protocol
 
 import           Control.Monad
 
-import           Block (HasHeader (..))
 import           Chain (ChainUpdate (..), Point (..))
 import           MonadClass
 import           ProtocolInterfaces (ConsumerHandlers(..), ProducerHandlers(..))
+import           Serialise
 
 {-# ANN module "HLint: ignore Use readTVarIO" #-}
 
@@ -34,7 +34,7 @@ data MsgConsumer
   -- ^
   -- Send set of points, it is up to the producer to find the intersection
   -- point on its chain and send it back to the consumer.
-    deriving (Show)
+    deriving (Eq, Show)
 
 -- | This is the type of messages that the producer sends.
 data MsgProducer block
@@ -59,7 +59,7 @@ data MsgProducer block
   -- After receiving intersection points from the consumer it maybe happen that
   -- none of the  points is on the producer chain; in this case
   -- @'MsgIntersectUnchanged'@ is send back.
-    deriving (Show)
+    deriving (Eq, Show)
 
 -- |
 -- A simple version of a consumer which sends set of points, accepts any respond
@@ -71,7 +71,7 @@ data MsgProducer block
 -- run the consumer side of the protocol.
 consumerSideProtocol1
   :: forall block m.
-     (Show block, Monad m)
+     Monad m
   => ConsumerHandlers block m
   -> (MsgConsumer -> m ())   -- ^ send
   -> (m (MsgProducer block)) -- ^ recv
@@ -94,17 +94,18 @@ consumerSideProtocol1 ConsumerHandlers{..} send recv = do
       requestNext
 
     handleChainUpdate :: MsgProducer block -> m ()
-    handleChainUpdate MsgAwaitReply       = return ()
+    handleChainUpdate  MsgAwaitReply      = return ()
     handleChainUpdate (MsgRollForward  b) = addBlock b
     handleChainUpdate (MsgRollBackward p) = rollbackTo p
-    handleChainUpdate msg = fail $ "protocol error " ++ show msg
+    handleChainUpdate (MsgIntersectImproved _) = fail $ "protocol error: MsgIntersectImproved"
+    handleChainUpdate  MsgIntersectUnchanged   = fail $ "protocol error: MsgIntersectUnchanged"
 
 
 -- |
 --
 producerSideProtocol1
   :: forall block m r.
-     (HasHeader block, Monad m)
+     Monad m
   => ProducerHandlers block m r
   -> (MsgProducer block -> m ()) -- ^ send
   -> (m MsgConsumer)             -- ^ recv
@@ -155,4 +156,49 @@ loggingRecv ident recv = do
     msg <- recv
     say $ (show ident) ++ ":recv: " ++ show msg
     return msg
+
+--
+-- Serialisation
+--
+
+encodeMessage :: Word -> Word -> Encoding -> Encoding
+encodeMessage conversationId messageTag messageBody =
+    encodeListLen 3
+ <> encodeWord conversationId
+ <> encodeWord messageTag
+ <> messageBody
+
+instance Serialise MsgConsumer where
+
+    encode MsgRequestNext  = encodeMessage 1 0 $ encodeNull
+    encode (MsgSetHead ps) = encodeMessage 1 1 $ encode ps
+
+    decode = do
+      decodeListLenOf 3
+      decodeWordOf 1
+      tag <- decodeWord
+      case tag of
+        0 -> MsgRequestNext <$ decodeNull
+        1 -> MsgSetHead <$> decode
+        _ -> fail "MsgConsumer unexpected tag"
+
+instance Serialise block => Serialise (MsgProducer block) where
+
+    encode (MsgRollForward  b)      = encodeMessage 2 0 $ encode b
+    encode (MsgRollBackward p)      = encodeMessage 2 1 $ encode p
+    encode  MsgAwaitReply           = encodeMessage 2 2 $ encodeNull
+    encode (MsgIntersectImproved p) = encodeMessage 2 3 $ encode p
+    encode  MsgIntersectUnchanged   = encodeMessage 2 4 $ encodeNull
+
+    decode = do
+      decodeListLenOf 3
+      decodeWordOf 2
+      tag <- decodeWord
+      case tag of
+        0 -> MsgRollForward        <$> decode
+        1 -> MsgRollBackward       <$> decode
+        2 -> MsgAwaitReply         <$  decodeNull
+        3 -> MsgIntersectImproved  <$> decode
+        4 -> MsgIntersectUnchanged <$  decodeNull
+        _ -> fail "MsgProducer unexpected tag"
 

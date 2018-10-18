@@ -22,6 +22,10 @@ module Block (
     where
 
 import Data.Hashable
+import qualified Data.Text as Text
+
+import Serialise
+
 import Test.QuickCheck
 
 -- | Our highly-simplified version of a block. It retains the separation
@@ -142,4 +146,52 @@ instance Arbitrary BlockBody where
     arbitrary = BlockBody <$> vectorOf 4 (choose ('A', 'Z'))
     -- probably no need for shrink, the content is arbitrary and opaque
     -- if we add one, it might be to shrink to an empty block
+
+--
+-- Serialisation
+--
+
+instance Serialise Block where
+
+  encode Block {blockHeader, blockBody} =
+      encodeListLen 2
+   <> encode blockHeader
+   <> encode   blockBody
+
+  decode = do
+      decodeListLenOf 2
+      Block <$> decode <*> decode
+
+instance Serialise BlockHeader where
+
+  encode BlockHeader {
+         headerHash     = HeaderHash headerHash,
+         headerPrevHash = HeaderHash headerPrevHash,
+         headerSlot     = Slot headerSlot,
+         headerBlockNo  = BlockNo headerBlockNo,
+         headerSigner   = BlockSigner headerSigner,
+         headerBodyHash = BodyHash headerBodyHash
+       } =
+      encodeListLen 6
+   <> encodeInt  headerHash
+   <> encodeInt  headerPrevHash
+   <> encodeWord headerSlot
+   <> encodeWord headerBlockNo
+   <> encodeWord headerSigner
+   <> encodeInt  headerBodyHash
+
+  decode = do
+      decodeListLenOf 6
+      BlockHeader <$> (HeaderHash <$> decodeInt)
+                  <*> (HeaderHash <$> decodeInt)
+                  <*> (Slot <$> decodeWord)
+                  <*> (BlockNo <$> decodeWord)
+                  <*> (BlockSigner <$> decodeWord)
+                  <*> (BodyHash <$> decodeInt)
+
+instance Serialise BlockBody where
+
+  encode (BlockBody b) = encodeString (Text.pack b)
+
+  decode = BlockBody . Text.unpack <$> decodeString
 

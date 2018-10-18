@@ -1,5 +1,5 @@
-{ mkDerivation, array, async, base, bytestring, clock, containers
-, fingertree, free, hashable, QuickCheck, random, semigroups
+{ mkDerivation, array, base, bytestring, cborg, clock, containers
+, fingertree, free, hashable, process, QuickCheck, random, semigroups
 , stdenv, stm, tasty, tasty-quickcheck, text, transformers, void
 , nixpkgs
 }:
@@ -9,13 +9,13 @@ mkDerivation {
   src = nixpkgs.lib.sourceFilesBySuffices ./.
     [ ".hs" "LICENSE" "ChangeLog.md" "ouroboros-network.cabal" "cabal.project" ];
   libraryHaskellDepends = [
-    array async base bytestring clock containers fingertree free
-    hashable QuickCheck random semigroups stm tasty tasty-quickcheck
+    array base bytestring cborg clock containers fingertree free
+    hashable process QuickCheck random semigroups stm tasty tasty-quickcheck
     text transformers void
   ];
   testHaskellDepends = [
-    array base bytestring clock containers fingertree free hashable
-    QuickCheck random semigroups stm tasty tasty-quickcheck text
+    array base bytestring cborg clock containers fingertree free hashable
+    process QuickCheck random semigroups stm tasty tasty-quickcheck text
     transformers void
   ];
   description = "A networking layer for the Ouroboros blockchain protocol";
