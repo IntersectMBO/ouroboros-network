@@ -10,3 +10,7 @@ doc/protocols.toc
 cabal.project.local*
 cabal.project.local~
 dist-newstyle/
+*.swp
+*.swo
+*~
+result*
