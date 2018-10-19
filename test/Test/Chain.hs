@@ -38,64 +38,56 @@ import Data.Map.Strict (Map)
 
 tests :: TestTree
 tests =
-  testGroup "Chain" [testProperty "drop/Genesis" (withSt @'OuroborosBFT $ prop_drop_genesis @'OuroborosBFT)]
-{-
+  testGroup "Chain"
   [ testGroup "generators"
     [ testProperty "arbitrary for TestBlockChain" $
       -- It's important we don't generate too many trivial test cases here
       -- so check the coverage to enforce it.
-                   checkCoverage prop_arbitrary_TestBlockChain
-    , testProperty "shrink for TestBlockChain"     prop_shrink_TestBlockChain
+                   checkCoverage (withBft (prop_arbitrary_TestBlockChain @'OuroborosBFT))
+    , testProperty "shrink for TestBlockChain" (withBft (prop_shrink_TestBlockChain @'OuroborosBFT))
 
-    , testProperty "arbitrary for TestHeaderChain" prop_arbitrary_TestHeaderChain
-    , testProperty "shrink for TestHeaderChain"    prop_shrink_TestHeaderChain
+    , testProperty "arbitrary for TestHeaderChain" (withBft $ prop_arbitrary_TestHeaderChain @'OuroborosBFT)
+    , testProperty "shrink for TestHeaderChain"    (withBft $ prop_shrink_TestHeaderChain @'OuroborosBFT)
 
-    , testProperty "arbitrary for TestAddBlock" prop_arbitrary_TestAddBlock
-    , testProperty "shrink for TestAddBlock"    prop_shrink_TestAddBlock
+    , testProperty "arbitrary for TestAddBlock" (withBft $ prop_arbitrary_TestAddBlock @'OuroborosBFT)
+    , testProperty "shrink for TestAddBlock"    (withBft $ prop_shrink_TestAddBlock @'OuroborosBFT)
 
     , testProperty "arbitrary for TestBlockChainAndUpdates" $
       -- Same deal here applies here with generating trivial test cases.
-                   checkCoverage prop_arbitrary_TestBlockChainAndUpdates
+                   checkCoverage (withBft $ prop_arbitrary_TestBlockChainAndUpdates @'OuroborosBFT)
 
-    , testProperty "arbitrary for TestChainAndPoint" prop_arbitrary_TestChainAndPoint
-    , testProperty "shrink for TestChainAndPoint"    prop_shrink_TestChainAndPoint
+    , testProperty "arbitrary for TestChainAndPoint" (withBft $ prop_arbitrary_TestChainAndPoint @'OuroborosBFT)
+    , testProperty "shrink for TestChainAndPoint"    (withBft $ prop_shrink_TestChainAndPoint @'OuroborosBFT)
 
-    , testProperty "arbitrary for TestChainFork" prop_arbitrary_TestChainFork
-    , testProperty "shrink for TestChainFork"
-                               (mapSize (min 40) prop_shrink_TestChainFork)
+    , testProperty "arbitrary for TestChainFork" (withBft $ prop_arbitrary_TestChainFork @'OuroborosBFT)
+    -- , testProperty "shrink for TestChainFork"
+    --                            (withSt @'OuroborosBFT $ mapSize (min 40) prop_shrink_TestChainFork)
     ]
 
   , testProperty "length/Genesis"  prop_length_genesis
-  , testProperty "drop/Genesis"    prop_drop_genesis
-  , testProperty "fromList/toList" prop_fromList_toList
-  , testProperty "toList/head"     prop_toList_head
-  , testProperty "drop"            prop_drop
-  , testProperty "addBlock"        prop_addBlock
-  , testProperty "rollback"        prop_rollback
-  , testProperty "rollback/head"   prop_rollback_head
-  , testProperty "successorBlock"  prop_successorBlock
-  , testProperty "lookupBySlot"    prop_lookupBySlot
-  , testProperty "intersectChains" prop_intersectChains
+  , testProperty "drop/Genesis"    (withBft (prop_drop_genesis @'OuroborosBFT))
+  , testProperty "fromList/toList" (withBft (prop_fromList_toList @'OuroborosBFT))
+  , testProperty "toList/head"     (withBft (prop_toList_head @'OuroborosBFT))
+  , testProperty "drop"            (withBft (prop_drop @'OuroborosBFT))
+  , testProperty "addBlock"        (withBft (prop_addBlock @'OuroborosBFT))
+  , testProperty "rollback"        (withBft (prop_rollback @'OuroborosBFT))
+  , testProperty "rollback/head"   (withBft (prop_rollback_head @'OuroborosBFT))
+  , testProperty "successorBlock"  (withBft (prop_successorBlock @'OuroborosBFT))
+  , testProperty "lookupBySlot"    (withBft (prop_lookupBySlot @'OuroborosBFT))
+  , testProperty "intersectChains" (withBft (prop_intersectChains @'OuroborosBFT))
   ]
--}
+
 
 data WithSt p a = WithSt (GlobalState p) a
 
-withSt :: KnownOuroborosProtocol p => prop -> WithSt p prop
-withSt prop = (WithSt (GlobalState mempty) prop)
+withBft :: prop -> WithSt 'OuroborosBFT prop
+withBft prop = WithSt initialBftState prop
 
 instance (  ArbitrarySt p (a p), Show (a p), Testable prop)
     => Testable (WithSt p ((a p) -> prop)) where
     property (WithSt s f) = property $ do
-      a <- arbitrarySt
+      a <- evalStateT arbitrarySt s
       return $ f a
-
-
--- Useless?
-instance Testable a => Testable (GenSt p a) where
-    property prop = property $ do
-        initSt <- arbitrary
-        evalStateT prop initSt
 
 --
 -- Properties
@@ -177,7 +169,7 @@ prop_intersectChains (TestChainFork c l r) =
 
 class ArbitrarySt p a | a -> p where
     arbitrarySt :: GenSt p a
-    shrink :: a -> [a]
+    shrinkSt :: a -> [a]
 
 
 
@@ -200,20 +192,18 @@ instance KnownOuroborosProtocol p => ArbitrarySt p (TestBlockChain p) where
         n <- lift genNonNegative
         TestBlockChain <$> genBlockChain n
 
-    shrink (TestBlockChain c) =
+    shrinkSt (TestBlockChain c) =
         [ TestBlockChain (fromListFixupBlocks c')
         | c' <- shrinkList (const []) (Chain.toList c) ]
 
-{- 
-instance Arbitrary TestHeaderChain where
-    arbitrary = do
-        n <- genNonNegative
+instance KnownOuroborosProtocol p => ArbitrarySt p (TestHeaderChain p) where
+    arbitrarySt = do
+        n <- lift genNonNegative
         TestHeaderChain <$> genHeaderChain n
 
-    shrink (TestHeaderChain c) =
+    shrinkSt (TestHeaderChain c) =
         [ TestHeaderChain (fromListFixupHeaders c')
         | c' <- shrinkList (const []) (Chain.toList c) ]
--}
 
 prop_arbitrary_TestBlockChain :: KnownOuroborosProtocol p => TestBlockChain p -> Property
 prop_arbitrary_TestBlockChain (TestBlockChain c) =
@@ -225,15 +215,13 @@ prop_arbitrary_TestBlockChain (TestBlockChain c) =
 prop_arbitrary_TestHeaderChain :: KnownOuroborosProtocol p => TestHeaderChain p -> Bool
 prop_arbitrary_TestHeaderChain (TestHeaderChain c) = Chain.valid c
 
-{-
 prop_shrink_TestBlockChain :: KnownOuroborosProtocol p => TestBlockChain p -> Bool
 prop_shrink_TestBlockChain c =
-    and [ Chain.valid c' | TestBlockChain c' <- shrink c ]
+    and [ Chain.valid c' | TestBlockChain c' <- shrinkSt c ]
 
-prop_shrink_TestHeaderChain :: TestHeaderChain p -> Bool
+prop_shrink_TestHeaderChain :: KnownOuroborosProtocol p => TestHeaderChain p -> Bool
 prop_shrink_TestHeaderChain c =
-    and [ Chain.valid c' | TestHeaderChain c' <- shrink c ]
--}
+    and [ Chain.valid c' | TestHeaderChain c' <- shrinkSt c ]
 
 -- | The 'NonNegative' generator produces a large proportion of 0s, so we use
 -- this one instead for now.
@@ -323,19 +311,17 @@ k = 5
 data TestAddBlock p = TestAddBlock (Chain (Block p)) (Block p)
   deriving Show
 
-{-
-instance Arbitrary TestAddBlock where
-  arbitrary = do
-    TestBlockChain chain <- arbitrary
+instance KnownOuroborosProtocol p => ArbitrarySt p (TestAddBlock p) where
+  arbitrarySt = do
+    TestBlockChain chain <- arbitrarySt
     block <- genAddBlock chain
     return (TestAddBlock chain block)
 
-  shrink (TestAddBlock c b) =
+  shrinkSt (TestAddBlock c b) =
     [ TestAddBlock c' b'
-    | TestBlockChain c' <- shrink (TestBlockChain c)
+    | TestBlockChain c' <- shrinkSt (TestBlockChain c)
     , let b' = Chain.fixupBlock c' b
     ]
--}
 
 genAddBlock :: (KnownOuroborosProtocol p, HasHeader block)
             => Chain (block p) -> GenSt p (Block p)
@@ -349,11 +335,10 @@ genAddBlock chain = do
 prop_arbitrary_TestAddBlock :: KnownOuroborosProtocol p => TestAddBlock p -> Bool
 prop_arbitrary_TestAddBlock (TestAddBlock c b) = Chain.valid (c :> b)
 
-{-
+
 prop_shrink_TestAddBlock :: KnownOuroborosProtocol p => TestAddBlock p -> Bool
 prop_shrink_TestAddBlock t =
-    and [ Chain.valid (c :> b) | TestAddBlock c b <- shrink t ]
--}
+    and [ Chain.valid (c :> b) | TestAddBlock c b <- shrinkSt t ]
 
 --
 -- Generator for chain updates
@@ -366,14 +351,12 @@ data TestBlockChainAndUpdates p =
        TestBlockChainAndUpdates (Chain (Block p)) [ChainUpdate (Block p)]
   deriving Show
 
-{-
-instance Arbitrary TestBlockChainAndUpdates where
-  arbitrary = do
-    TestBlockChain chain <- arbitrary
-    m <- genNonNegative
+instance KnownOuroborosProtocol p => ArbitrarySt p (TestBlockChainAndUpdates p) where
+  arbitrarySt = do
+    TestBlockChain chain <- arbitrarySt
+    m <- lift genNonNegative
     updates <- genChainUpdates chain m
     return (TestBlockChainAndUpdates chain updates)
--}
 
 -- | Like 'frequency', but it works in the 'State' monad.
 -- TODO: Is this implementation correct? Are we resetting the state of the
@@ -430,15 +413,16 @@ genChainUpdate chain =
 mkRollbackPoint :: HasHeader block => Chain (block p) -> Int -> Point
 mkRollbackPoint chain n = Chain.headPoint $ Chain.drop n chain
 
-{-
-genChainUpdates :: KnownOuroborosProtocol p => Chain (Block p) -> Int -> Gen [ChainUpdate (Block p)]
+genChainUpdates :: KnownOuroborosProtocol p 
+                => Chain (Block p) 
+                -> Int 
+                -> GenSt p [ChainUpdate (Block p)]
 genChainUpdates _     0 = return []
 genChainUpdates chain n = do
     update  <- genChainUpdate chain
     let Just chain' = Chain.applyChainUpdate update chain
     updates <- genChainUpdates chain' (n-1)
     return (update : updates)
--}
 
 prop_arbitrary_TestBlockChainAndUpdates :: KnownOuroborosProtocol p => TestBlockChainAndUpdates p -> Property
 prop_arbitrary_TestBlockChainAndUpdates (TestBlockChainAndUpdates c us) =
@@ -487,29 +471,27 @@ countChainUpdateNetProgress = go 0
 data TestChainAndPoint p = TestChainAndPoint (Chain (Block p)) Point
   deriving Show
 
-{-
-instance Arbitrary TestChainAndPoint where
-  arbitrary = do
-    TestBlockChain chain <- arbitrary
+instance KnownOuroborosProtocol p => ArbitrarySt p (TestChainAndPoint p) where
+  arbitrarySt = do
+    TestBlockChain chain <- arbitrarySt
     let len = Chain.length chain
     -- either choose point from the chain
-    point <- frequency
+    point <- frequencySt
       [ (2, return (Chain.headPoint chain))
       , (2, return (mkRollbackPoint chain len))
-      , (8, mkRollbackPoint chain <$> choose (1, len - 1))
+      , (8, mkRollbackPoint chain <$> lift (choose (1, len - 1)))
       -- or a few off the chain!
-      , (1, genPoint)
+      , (1, lift genPoint)
       ]
     return (TestChainAndPoint chain point)
 
-  shrink (TestChainAndPoint c p)
+  shrinkSt (TestChainAndPoint c p)
     | Chain.pointOnChain p c
     = [ TestChainAndPoint c' (fixupPoint c' p)
-    | TestBlockChain c' <- shrink (TestBlockChain c)]
+    | TestBlockChain c' <- shrinkSt (TestBlockChain c)]
     | otherwise
     = [ TestChainAndPoint c' p
-      | TestBlockChain c' <- shrink (TestBlockChain c) ]
--}
+      | TestBlockChain c' <- shrinkSt (TestBlockChain c) ]
 
 genPoint :: Gen Point
 genPoint = (\s h -> Point (Slot s) (HeaderHash h)) <$> arbitrary <*> arbitrary
@@ -528,12 +510,10 @@ prop_arbitrary_TestChainAndPoint (TestChainAndPoint c p) =
   where
     onChain = Chain.pointOnChain p c
 
-{-
 prop_shrink_TestChainAndPoint :: KnownOuroborosProtocol p => TestChainAndPoint p -> Bool
 prop_shrink_TestChainAndPoint cp@(TestChainAndPoint c _) =
   and [ Chain.valid c' && (not (Chain.pointOnChain p c) || Chain.pointOnChain p c')
-      | TestChainAndPoint c' p <- shrink cp ]
--}
+      | TestChainAndPoint c' p <- shrinkSt cp ]
 
 --
 -- Generator for chain forks sharing a common prefix
@@ -554,30 +534,29 @@ instance KnownOuroborosProtocol p => Show (TestChainFork p) where
       Chain.prettyPrintChain nl show f1 ++ nnl ++
       Chain.prettyPrintChain nl show f2
 
-{-
-instance Arbitrary TestChainFork where
-  arbitrary = do
-    TestBlockChain chain <- arbitrary
+instance KnownOuroborosProtocol p => ArbitrarySt p (TestChainFork p) where
+  arbitrarySt = do
+    TestBlockChain chain <- arbitrarySt
     -- at least 5% of forks should be equal
-    equalChains <- frequency [(1, pure True), (19, pure False)]
+    equalChains <- frequencySt [(1, pure True), (19, pure False)]
     if equalChains
       then return (TestChainFork chain chain chain)
       else do
-        l <- genNonNegative
-        r <- genNonNegative
+        l <- lift genNonNegative
+        r <- lift genNonNegative
         chainL <- genAddBlocks l chain
         chainR <- genAddBlocks r chain
         return (TestChainFork chain chainL chainR)
 
     where
-      genAddBlocks :: Int -> Chain Block -> Gen (Chain Block)
+      genAddBlocks :: Int -> Chain (Block p) -> GenSt p (Chain (Block p))
       genAddBlocks 0 c = return c
       genAddBlocks n c = do
           b <- genAddBlock c
           genAddBlocks (n-1) (Chain.addBlock b c)
 
 
-  shrink (TestChainFork common l r) =
+  shrinkSt (TestChainFork common l r) =
         -- shrink the common prefix
       [ TestChainFork (fromListFixupBlocks common')
                       (fromListFixupBlocks (exl ++ common'))
@@ -599,9 +578,8 @@ instance Arbitrary TestChainFork where
       , let r' = fromListFixupBlocks (exr' ++ Chain.toList common)
       ]
     where
-      extensionFragment :: Chain Block -> Chain Block -> [Block]
+      extensionFragment :: Chain (Block p) -> Chain (Block p) -> [Block p]
       extensionFragment c = reverse . L.drop (Chain.length c) . reverse . Chain.toList
--}
 
 prop_arbitrary_TestChainFork :: KnownOuroborosProtocol p => TestChainFork p -> Bool
 prop_arbitrary_TestChainFork (TestChainFork c l r) =
@@ -609,15 +587,14 @@ prop_arbitrary_TestChainFork (TestChainFork c l r) =
  && c `Chain.isPrefixOf` l
  && c `Chain.isPrefixOf` r
 
-{-
+
 prop_shrink_TestChainFork :: KnownOuroborosProtocol p => TestChainFork p -> Bool
 prop_shrink_TestChainFork forks =
   and [    prop_arbitrary_TestChainFork forks'
         && measure forks' < mforks
       | let mforks = measure forks
-      , forks' <- shrink forks ]
+      , forks' <- shrinkSt forks ]
   where
     measure (TestChainFork c l r) = Chain.length c
                                   + Chain.length l
                                   + Chain.length r
--}

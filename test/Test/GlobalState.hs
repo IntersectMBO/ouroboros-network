@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -8,6 +9,7 @@
 
 module Test.GlobalState (
     GlobalState(..)
+  , initialBftState
   , forLeaders
     -- * QuickCheck support
   , GenSt
@@ -29,8 +31,8 @@ import Ouroboros
 
 data GlobalState p = GlobalState (Map NodeId (OuroborosState p))
 
-instance Arbitrary (GlobalState p) where
-  arbitrary = return (GlobalState mempty)
+initialBftState :: GlobalState 'OuroborosBFT
+initialBftState = GlobalState $ Map.fromList [(CoreId 0, BftState (CoreId 0))]
 
 stateFor :: NodeId -> GlobalState p -> OuroborosState p
 stateFor nid (GlobalState ss) = ss Map.! nid
