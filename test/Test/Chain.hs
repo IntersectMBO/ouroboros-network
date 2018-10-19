@@ -1,6 +1,11 @@
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE TupleSections       #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE FlexibleContexts       #-}
+{-# LANGUAGE FlexibleInstances      #-}
+{-# LANGUAGE TypeApplications       #-}
+{-# LANGUAGE DataKinds              #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE MultiParamTypeClasses  #-}
+{-# LANGUAGE TupleSections          #-}
+{-# LANGUAGE ScopedTypeVariables    #-}
 
 module Test.Chain
   ( tests
@@ -21,10 +26,11 @@ import Data.Maybe (listToMaybe)
 import qualified Data.List as L
 
 import Test.QuickCheck
-import Test.Tasty (TestTree, testGroup)
+import Test.Tasty (TestTree, TestName, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
 
 import Test.GlobalState
+import Data.Map.Strict (Map)
 
 --
 -- The list of all tests
@@ -32,7 +38,7 @@ import Test.GlobalState
 
 tests :: TestTree
 tests =
-  testGroup "Chain" []
+  testGroup "Chain" [testProperty "drop/Genesis" (withSt @'OuroborosBFT $ prop_drop_genesis @'OuroborosBFT)]
 {-
   [ testGroup "generators"
     [ testProperty "arbitrary for TestBlockChain" $
@@ -72,6 +78,24 @@ tests =
   , testProperty "intersectChains" prop_intersectChains
   ]
 -}
+
+data WithSt p a = WithSt (GlobalState p) a
+
+withSt :: KnownOuroborosProtocol p => prop -> WithSt p prop
+withSt prop = (WithSt (GlobalState mempty) prop)
+
+instance (  ArbitrarySt p (a p), Show (a p), Testable prop)
+    => Testable (WithSt p ((a p) -> prop)) where
+    property (WithSt s f) = property $ do
+      a <- arbitrarySt
+      return $ f a
+
+
+-- Useless?
+instance Testable a => Testable (GenSt p a) where
+    property prop = property $ do
+        initSt <- arbitrary
+        evalStateT prop initSt
 
 --
 -- Properties
@@ -151,6 +175,12 @@ prop_intersectChains (TestChainFork c l r) =
             && Chain.pointOnChain p r
 
 
+class ArbitrarySt p a | a -> p where
+    arbitrarySt :: GenSt p a
+    shrink :: a -> [a]
+
+
+
 --
 -- Generators for chains
 --
@@ -165,16 +195,16 @@ newtype TestBlockChain p = TestBlockChain (Chain (Block p))
 newtype TestHeaderChain p = TestHeaderChain (Chain (BlockHeader p))
     deriving (Eq, Show)
 
-{-
-instance Arbitrary TestBlockChain where
-    arbitrary = do
-        n <- genNonNegative
+instance KnownOuroborosProtocol p => ArbitrarySt p (TestBlockChain p) where
+    arbitrarySt = do
+        n <- lift genNonNegative
         TestBlockChain <$> genBlockChain n
 
     shrink (TestBlockChain c) =
         [ TestBlockChain (fromListFixupBlocks c')
         | c' <- shrinkList (const []) (Chain.toList c) ]
 
+{- 
 instance Arbitrary TestHeaderChain where
     arbitrary = do
         n <- genNonNegative
@@ -354,7 +384,7 @@ frequencySt xs = StateT $ \s -> do
     a <- frequency lowered
     return (a, s)
 
-{-- \"Unrolled\" version.
+{-- \"Unrolled\" version, for reference.
 frequencySt :: [(Int, StateT s Gen a)] -> StateT s Gen a
 frequencySt [] = error "frequencySt used with empty list"
 frequencySt xs0 = do
