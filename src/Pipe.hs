@@ -1,12 +1,15 @@
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE RecordWildCards     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DeriveFunctor              #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 
 module Pipe where
 
 import           Control.Concurrent (forkIO, killThread, threadDelay)
 import           Control.Concurrent.STM
 import           Control.Monad
+import           Control.Monad.Cont (ContT (..))
 import           Control.Monad.IO.Class
 import           Control.Monad.ST (RealWorld, stToIO)
 
@@ -41,38 +44,34 @@ data ProtocolFailure = ProtocolStopped
 
 newtype Protocol s r a = Protocol {
        unwrapProtocol ::
-         forall x. (a -> IO (ProtocolAction s r x)) -> IO (ProtocolAction s r x)
+         forall x. ContT (ProtocolAction s r x) IO a
      }
-
-instance Functor (Protocol s r) where
-    fmap f a = a >>= return . f
+    deriving Functor
 
 instance Applicative (Protocol s r) where
-    pure x = Protocol $ \k -> k x
-    (<*>) = ap
+    pure x = Protocol $ pure x
+    (<*>)  = ap
 
 instance Monad (Protocol s r) where
     return = pure
 
     {-# INLINE (>>=) #-}
-    m >>= f = Protocol $ \k ->
-                unwrapProtocol m $ \x ->
-                  unwrapProtocol (f x) k
+    Protocol m >>= f = Protocol (m >>= unwrapProtocol . f)
 
 instance MonadIO (Protocol s r) where
-    liftIO action = Protocol (\k -> action >>= k)
+    liftIO action = Protocol $ liftIO action
 
 unProtocol :: Protocol s r a -> IO (ProtocolAction s r a)
-unProtocol (Protocol k) = k (\_ -> return (Fail ProtocolStopped))
+unProtocol (Protocol (ContT k)) = k (\_ -> return (Fail ProtocolStopped))
 
 recvMsg :: Protocol s r r
-recvMsg = Protocol (\k -> return (Recv (\msg -> k msg)))
+recvMsg = Protocol $ ContT (\k -> return (Recv (\msg -> k msg)))
 
 sendMsg :: s -> Protocol s r ()
-sendMsg msg = Protocol (\k -> return (Send msg (k ())))
+sendMsg msg = Protocol $ ContT (\k -> return (Send msg (k ())))
 
 protocolFailure :: ProtocolFailure -> Protocol s r a
-protocolFailure failure = Protocol (\_k -> return (Fail failure))
+protocolFailure failure = Protocol $ ContT (\_k -> return (Fail failure))
 
 ----------------------------------------
 
