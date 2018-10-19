@@ -49,7 +49,7 @@ instance Arbitrary block => Arbitrary (MsgProducer block) where
   arbitrary = oneof [ MsgRollBackward <$> arbitrary
                     , MsgRollForward  <$> arbitrary
                     , pure MsgAwaitReply
-                    , MsgIntersectImproved <$> arbitrary
+                    , MsgIntersectImproved <$> arbitrary <*> arbitrary
                     , pure MsgIntersectUnchanged
                     ]
 

@@ -342,4 +342,3 @@ instance Serialise Point where
       decodeListLenOf 2
       Point <$> (Slot <$> decodeWord)
             <*> (HeaderHash <$> decodeInt)
-

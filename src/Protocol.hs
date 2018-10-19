@@ -48,16 +48,17 @@ data MsgProducer block
   -- Inform the consumer to await for next instructions; This means that the
   -- producer is synced with the consumer end and its awaiting for its chain to
   -- be changed.
-  | MsgIntersectImproved Point
+  | MsgIntersectImproved Point Point
   -- ^
   -- Sends to consumer found intersection, but only if this is an improvement
   -- over previously established intersection point.  The consumer
   -- will decide weather to send more points.  They should all be newer than the
-  -- received intersection.
+  -- received intersection.  The first point is the improved point, the second
+  -- is the current tip.
   | MsgIntersectUnchanged
   -- ^
   -- After receiving intersection points from the consumer it maybe happen that
-  -- none of the  points is on the producer chain; in this case
+  -- none of the points is on the producer chain; in this case
   -- @'MsgIntersectUnchanged'@ is send back.
     deriving (Eq, Show)
 
@@ -97,7 +98,7 @@ consumerSideProtocol1 ConsumerHandlers{..} send recv = do
     handleChainUpdate  MsgAwaitReply      = return ()
     handleChainUpdate (MsgRollForward  b) = addBlock b
     handleChainUpdate (MsgRollBackward p) = rollbackTo p
-    handleChainUpdate (MsgIntersectImproved _) = fail $ "protocol error: MsgIntersectImproved"
+    handleChainUpdate (MsgIntersectImproved{}) = fail $ "protocol error: MsgIntersectImproved"
     handleChainUpdate  MsgIntersectUnchanged   = fail $ "protocol error: MsgIntersectUnchanged"
 
 
@@ -135,7 +136,7 @@ producerSideProtocol1 ProducerHandlers{..} send recv =
       -- Find the first point that is on our chain
       changed <- improveReadPoint r points
       case changed of
-        Just pt -> send (MsgIntersectImproved pt)
+        Just (pt, tip) -> send (MsgIntersectImproved pt tip)
         Nothing -> send MsgIntersectUnchanged
 
     updateMsg (AddBlock b) = MsgRollForward b
@@ -184,11 +185,11 @@ instance Serialise MsgConsumer where
 
 instance Serialise block => Serialise (MsgProducer block) where
 
-    encode (MsgRollForward  b)      = encodeMessage 2 0 $ encode b
-    encode (MsgRollBackward p)      = encodeMessage 2 1 $ encode p
-    encode  MsgAwaitReply           = encodeMessage 2 2 $ encodeNull
-    encode (MsgIntersectImproved p) = encodeMessage 2 3 $ encode p
-    encode  MsgIntersectUnchanged   = encodeMessage 2 4 $ encodeNull
+    encode (MsgRollForward  b)        = encodeMessage 2 0 $ encode b
+    encode (MsgRollBackward p)        = encodeMessage 2 1 $ encode p
+    encode  MsgAwaitReply             = encodeMessage 2 2 $ encodeNull
+    encode (MsgIntersectImproved p t) = encodeMessage 2 3 $ encode (p, t)
+    encode  MsgIntersectUnchanged     = encodeMessage 2 4 $ encodeNull
 
     decode = do
       decodeListLenOf 3
@@ -198,7 +199,7 @@ instance Serialise block => Serialise (MsgProducer block) where
         0 -> MsgRollForward        <$> decode
         1 -> MsgRollBackward       <$> decode
         2 -> MsgAwaitReply         <$  decodeNull
-        3 -> MsgIntersectImproved  <$> decode
+        3 -> uncurry MsgIntersectImproved <$> decode
         4 -> MsgIntersectUnchanged <$  decodeNull
         _ -> fail "MsgProducer unexpected tag"
 

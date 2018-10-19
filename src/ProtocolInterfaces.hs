@@ -34,9 +34,9 @@ data ProducerHandlers block m r = ProducerHandlers {
        newReader             :: m r,
        -- ^ allocate new reader state.  The reference implementation is using
        -- @'ChainProducerState.initReader'@ to mutate its internal state.
-       improveReadPoint      :: r -> [Point] -> m (Maybe Point),
+       improveReadPoint      :: r -> [Point] -> m (Maybe (Point, Point)),
        -- ^ find the most optimal intersection between received list of
-       -- @'Point'@s and producers chain.
+       -- @'Point'@s and producers chain.  The second point is the current tip.
        tryReadChainUpdate    :: r -> m (Maybe (ChainUpdate block)),
        -- ^ compute chain update for a given reader.  This is a non blocking
        -- operation.

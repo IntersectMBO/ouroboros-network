@@ -64,4 +64,11 @@ instance Serialise a => Serialise [a] where
     n  <- decodeListLen
     decodeSequenceLenN (flip (:)) [] reverse n decode
 
+instance (Serialise a, Serialise b) => Serialise (a, b) where
+    encode (a, b) = encodeListLen 2
+        <> encode a
+        <> encode b
 
+    decode = do
+        decodeListLenOf 2
+        (,) <$> decode <*> decode

@@ -14,7 +14,7 @@ import           Block (HasHeader (..))
 import           Chain
                    ( Chain (..), ChainUpdate (..), Point (..) )
 import qualified Chain
-                   ( selectPoints, addBlock, rollback, genesisPoint )
+                   ( selectPoints, addBlock, headPoint, rollback, genesisPoint )
 import           ChainProducerState
                    ( ChainProducerState(..), ReaderId )
 import qualified ChainProducerState
@@ -87,7 +87,7 @@ exampleProducer chainvar =
       writeTVar chainvar cps'
       return rid
 
-    improveReadPoint :: ReaderId -> [Point] -> m (Maybe Point)
+    improveReadPoint :: ReaderId -> [Point] -> m (Maybe (Point, Point))
     improveReadPoint rid points =
       atomically $ do
         cps <- readTVar chainvar
@@ -96,7 +96,7 @@ exampleProducer chainvar =
           Just ipoint -> do
             let !cps' = ChainProducerState.updateReader rid ipoint cps
             writeTVar chainvar cps'
-            return (Just ipoint)
+            return (Just (ipoint, Chain.headPoint (ChainProducerState.chainState cps')))
 
     tryReadChainUpdate :: ReaderId -> m (Maybe (ChainUpdate block))
     tryReadChainUpdate rid =
