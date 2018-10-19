@@ -293,11 +293,11 @@ data TestNetworkGraph = TestNetworkGraph Graph [(Int, Chain Block)]
 connectGraphG :: Graph -> Gen Graph
 connectGraphG g = do
     let ts  = scc g
-    vs <- traverse (oneof . map return . nodeVertices) ts
+    vs <- traverse (oneof . map return . treeVertices) ts
     return $ accum (flip (:)) g [(i, j) | i <- vs, j <- vs]
     where
-    nodeVertices :: Tree Vertex -> [Vertex]
-    nodeVertices (Node i ns) = i : concatMap nodeVertices ns
+    treeVertices :: Tree Vertex -> [Vertex]
+    treeVertices (Node i ns) = i : concatMap treeVertices ns
 
 instance Arbitrary TestNetworkGraph where
     arbitrary = resize 20 $ do
@@ -339,7 +339,7 @@ networkGraphSim (TestNetworkGraph g cs) slotDuration coreTrDelay relayTrDelay pr
       channs :: Map Vertex (NodeChannels m (MsgProducer block) MsgConsumer)
       channs = Map.fromList (map (,mempty) vs)
 
-  -- construct channels between based on the graph
+  -- construct communication channels based on the graph
   channs' <- flip execStateT channs $ forM (assocs g) $ \(i, peers) -> do
     let isCore = i `elem` map fst cs
         delay  = if isCore then coreTrDelay else relayTrDelay
@@ -395,9 +395,9 @@ prop_networkGraph (NetworkTest g@(TestNetworkGraph graph cs) slotDuration coreTr
       dict = Map.mapMaybe listToMaybe (partitionProbe probes)
       chains = Map.elems dict
   in  cover 50 (length vs > 10) "more than 10 vertices"
-    $ cover 80 (100 * length cs `div` length vs > 50) "more than 50% of core nodes"
+    $ cover 75 (100 * length cs `div` length vs > 50) "more than 50% of core nodes"
     -- Let call a bidirectional connection (two edges `e` and `swap e`) critical
-    -- iff when removed the graph becomes disconnected. The discribution looks
+    -- iff when removed the graph becomes disconnected. The distribution looks
     -- not that bad:
     -- 28% 4
     -- 21% 0
@@ -411,11 +411,11 @@ prop_networkGraph (NetworkTest g@(TestNetworkGraph graph cs) slotDuration coreTr
     $ cover 50 (cc > 0) "has more than one critical connection (when removed the network graph becomes disconnected)"
     -- TODO: It might be good to check [closness
     -- centrality](https://en.wikipedia.org/wiki/Closeness_centrality) of
-    -- generated graphs; we'd like to have some nodes that are on averge very far
+    -- generated graphs; we'd like to have some nodes that are on average very far
     -- from other nodes.
     $ Map.foldl' (\v c -> foldl' Chain.selectChain c chains == c && v) True dict
   where
-  -- graph is disconnected if it has stricly more than one components
+  -- graph is disconnected if it has strictly more than one component
   isDisconnected :: Graph -> Bool
   isDisconnected gr = case components gr of
     []       -> False
@@ -427,4 +427,3 @@ prop_networkGraph (NetworkTest g@(TestNetworkGraph graph cs) slotDuration coreTr
   removeEdge bs e es =
     let es' = filter (\e' -> e /= e' && swap e /= e') es
     in buildG bs es'
-
