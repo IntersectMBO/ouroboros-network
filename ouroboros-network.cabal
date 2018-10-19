@@ -93,6 +93,24 @@ test-suite tests
   hs-source-dirs:      src, test
   main-is:             Main.hs
   other-modules:       Block
+                       Chain
+                       ChainProducerState
+                       ConsumersAndProducers
+                       MonadClass
+                       MonadClass.MonadConc
+                       MonadClass.MonadFork
+                       MonadClass.MonadProbe
+                       MonadClass.MonadSTM
+                       MonadClass.MonadSTMTimer
+                       MonadClass.MonadSay
+                       MonadClass.MonadSendRecv
+                       MonadClass.MonadTimer
+                       Node
+                       Pipe
+                       Protocol
+                       ProtocolInterfaces
+                       Serialise
+                       Sim
                        Test.Chain
                        Test.ChainProducerState
                        Test.Sim
