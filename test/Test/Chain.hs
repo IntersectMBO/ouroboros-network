@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Test.Chain
@@ -344,9 +345,35 @@ instance Arbitrary TestBlockChainAndUpdates where
     return (TestBlockChainAndUpdates chain updates)
 -}
 
+-- | Like 'frequency', but it works in the 'State' monad.
+-- TODO: Is this implementation correct? Are we resetting the state of the
+-- generator this way?
+frequencySt :: [(Int, StateT s Gen a)] -> StateT s Gen a
+frequencySt xs = StateT $ \s -> do
+    lowered <- forM xs $ \(n,gen) -> return (n, evalStateT gen s)
+    a <- frequency lowered
+    return (a, s)
+
+{-- \"Unrolled\" version.
+frequencySt :: [(Int, StateT s Gen a)] -> StateT s Gen a
+frequencySt [] = error "frequencySt used with empty list"
+frequencySt xs0 = do
+    n <- lift (choose (1, tot))
+    pick n xs0
+ where
+  tot :: Int
+  tot = sum (map fst xs0)
+
+  pick :: Int -> [(Int, StateT s Gen a)] -> StateT s Gen a
+  pick n ((k,x):xs)
+    | n <= k    = x
+    | otherwise = pick (n-k) xs
+  pick _ _  = error "pick used with empty list"
+--}
+
 genChainUpdate :: KnownOuroborosProtocol p => Chain (Block p) -> GenSt p (ChainUpdate (Block p))
 genChainUpdate chain =
-    frequency $
+    frequencySt $
       -- To ensure we make progress on average w must ensure the weight of
       -- adding one block is more than the expected rollback length. If we
       -- used expectedRollbackLength then we would on average make no

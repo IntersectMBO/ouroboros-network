@@ -10,3 +10,5 @@ doc/protocols.toc
 cabal.project.local*
 cabal.project.local~
 dist-newstyle/
+.vimrc
+tags

@@ -93,7 +93,6 @@ test-suite tests
   main-is:             Main.hs
   other-modules:       Test.Chain
                        Test.ChainProducerState
-                       Test.InCtxt
                        Test.Node
                        Test.Sim
                        Test.GlobalState
