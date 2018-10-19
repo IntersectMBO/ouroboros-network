@@ -18,6 +18,7 @@ import           Block (HasHeader (..))
 import           Chain (ChainUpdate (..), Point (..))
 import           MonadClass
 import           ProtocolInterfaces (ConsumerHandlers(..), ProducerHandlers(..))
+import           Ouroboros
 
 {-# ANN module "HLint: ignore Use readTVarIO" #-}
 
@@ -103,11 +104,11 @@ consumerSideProtocol1 ConsumerHandlers{..} send recv = do
 -- |
 --
 producerSideProtocol1
-  :: forall block m r.
-     (HasHeader block, Monad m)
-  => ProducerHandlers block m r
-  -> (MsgProducer block -> m ()) -- ^ send
-  -> (m MsgConsumer)             -- ^ recv
+  :: forall p block m r.
+     (KnownOuroborosProtocol p, HasHeader block, Monad m)
+  => ProducerHandlers (block p) m r
+  -> (MsgProducer (block p) -> m ()) -- ^ send
+  -> (m MsgConsumer)                 -- ^ recv
   -> m ()
 producerSideProtocol1 ProducerHandlers{..} send recv =
     newReader >>= awaitOngoing
@@ -155,4 +156,3 @@ loggingRecv ident recv = do
     msg <- recv
     say $ (show ident) ++ ":recv: " ++ show msg
     return msg
-

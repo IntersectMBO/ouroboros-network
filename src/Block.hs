@@ -1,5 +1,8 @@
-{-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE KindSignatures             #-}
+{-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE StandaloneDeriving         #-}
 
 -- | Reference implementation of a representation of a block in a block chain.
 --
@@ -11,7 +14,6 @@ module Block (
     , HasHeader(..)
     , Slot(..)
     , BlockNo(..)
-    , BlockSigner(..)
     , HeaderHash(..)
     , BodyHash(..)
 
@@ -24,11 +26,13 @@ module Block (
 import Data.Hashable
 import Test.QuickCheck
 
+import Ouroboros
+
 -- | Our highly-simplified version of a block. It retains the separation
 -- between a block header and body, which is a detail needed for the protocols.
 --
-data Block = Block {
-       blockHeader   :: BlockHeader,
+data Block (p :: OuroborosProtocol) = Block {
+       blockHeader   :: BlockHeader p,
        blockBody     :: BlockBody
      }
   deriving (Show, Eq)
@@ -36,15 +40,17 @@ data Block = Block {
 -- | A block header. It retains simplified versions of all the essential
 -- elements.
 --
-data BlockHeader = BlockHeader {
-       headerHash     :: HeaderHash,  -- ^ The cached 'HeaderHash' of this header.
-       headerPrevHash :: HeaderHash,  -- ^ The 'headerHash' of the previous block header
-       headerSlot     :: Slot,        -- ^ The Ouroboros time slot index of this block
-       headerBlockNo  :: BlockNo,     -- ^ The block index from the Genesis
-       headerSigner   :: BlockSigner, -- ^ Who signed this block
-       headerBodyHash :: BodyHash     -- ^ The hash of the corresponding block body
+data BlockHeader (p :: OuroborosProtocol) = BlockHeader {
+       headerHash      :: HeaderHash,         -- ^ The cached 'HeaderHash' of this header.
+       headerPrevHash  :: HeaderHash,         -- ^ The 'headerHash' of the previous block header
+       headerSlot      :: Slot,               -- ^ The Ouroboros time slot index of this block
+       headerBlockNo   :: BlockNo,            -- ^ The block index from the Genesis
+       headerOuroboros :: OuroborosPayload p, -- ^ Ouroboros protocol specific payload
+       headerBodyHash  :: BodyHash            -- ^ The hash of the corresponding block body
      }
-  deriving (Show, Eq)
+
+deriving instance KnownOuroborosProtocol p => Eq   (BlockHeader p)
+deriving instance KnownOuroborosProtocol p => Show (BlockHeader p)
 
 -- | A block body.
 --
@@ -54,22 +60,9 @@ data BlockHeader = BlockHeader {
 newtype BlockBody    = BlockBody String
   deriving (Show, Eq, Ord)
 
--- | The Ouroboros time slot index for a block.
-newtype Slot         = Slot { getSlot :: Word }
-  deriving (Show, Eq, Ord, Hashable, Enum)
-
 -- | The 0-based index of the block in the blockchain
 newtype BlockNo      = BlockNo Word
   deriving (Show, Eq, Ord, Hashable, Enum)
-
--- | An identifier for someone signing a block.
---
--- We model this as if there were an enumerated set of valid block signers
--- (which for Ouroboros BFT is actually the case), and omit the cryptography
--- and model things as if the signatures were valid.
---
-newtype BlockSigner  = BlockSigner Word
-  deriving (Show, Eq, Ord, Hashable)
 
 -- | The hash of all the information in a 'BlockHeader'.
 --
@@ -88,7 +81,7 @@ hashBody (BlockBody b) = BodyHash (hash b)
 
 -- | Compute the 'HeaderHash' of the 'BlockHeader'.
 --
-hashHeader :: BlockHeader -> HeaderHash
+hashHeader :: KnownOuroborosProtocol p => BlockHeader p -> HeaderHash
 hashHeader (BlockHeader _ b c d e f) = HeaderHash (hash (b, c, d, e, f))
 
 --
@@ -98,22 +91,22 @@ hashHeader (BlockHeader _ b c d e f) = HeaderHash (hash (b, c, d, e, f))
 -- | This class lets us treat chains of block headers and chains of whole
 -- blocks in a parametrised way.
 --
-class HasHeader b where
-    blockHash      :: b -> HeaderHash
-    blockPrevHash  :: b -> HeaderHash
-    blockSlot      :: b -> Slot
-    blockNo        :: b -> BlockNo
-    blockSigner    :: b -> BlockSigner
-    blockBodyHash  :: b -> BodyHash
+class HasHeader (b :: OuroborosProtocol -> *) where
+    blockHash      :: b p -> HeaderHash
+    blockPrevHash  :: b p -> HeaderHash
+    blockSlot      :: b p -> Slot
+    blockNo        :: b p -> BlockNo
+    blockOuroboros :: b p -> OuroborosPayload p
+    blockBodyHash  :: b p -> BodyHash
 
-    blockInvariant :: b -> Bool
+    blockInvariant :: KnownOuroborosProtocol p => b p -> Bool
 
 instance HasHeader BlockHeader where
     blockHash      = headerHash
     blockPrevHash  = headerPrevHash
     blockSlot      = headerSlot
     blockNo        = headerBlockNo
-    blockSigner    = headerSigner
+    blockOuroboros = headerOuroboros
     blockBodyHash  = headerBodyHash
 
     -- | The header invariant is that the cached header hash is correct.
@@ -121,12 +114,12 @@ instance HasHeader BlockHeader where
     blockInvariant = \b -> hashHeader b == headerHash b
 
 instance HasHeader Block where
-    blockHash      = headerHash     . blockHeader
-    blockPrevHash  = headerPrevHash . blockHeader
-    blockSlot      = headerSlot     . blockHeader
-    blockNo        = headerBlockNo  . blockHeader
-    blockSigner    = headerSigner   . blockHeader
-    blockBodyHash  = headerBodyHash . blockHeader
+    blockHash      = headerHash      . blockHeader
+    blockPrevHash  = headerPrevHash  . blockHeader
+    blockSlot      = headerSlot      . blockHeader
+    blockNo        = headerBlockNo   . blockHeader
+    blockOuroboros = headerOuroboros . blockHeader
+    blockBodyHash  = headerBodyHash  . blockHeader
 
     -- | The block invariant is just that the actual block body hash matches the
     -- body hash listed in the header.
@@ -142,4 +135,3 @@ instance Arbitrary BlockBody where
     arbitrary = BlockBody <$> vectorOf 4 (choose ('A', 'Z'))
     -- probably no need for shrink, the content is arbitrary and opaque
     -- if we add one, it might be to shrink to an empty block
-
