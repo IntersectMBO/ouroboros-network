@@ -25,11 +25,11 @@ import           ProtocolInterfaces
 
 
 
--- | An instance of the the consumer side of the protocol interface that
+-- | An instance of the consumer side of the protocol interface that
 -- consumes into a 'Chain' stored in a 'TVar'.
 --
 -- This is of course only useful in tests and reference implementations since
--- this is not a realisic chain representation.
+-- this is not a realistic chain representation.
 --
 exampleConsumer :: forall block m stm.
                    ( HasHeader block
@@ -58,7 +58,7 @@ exampleConsumer chainvar =
         writeTVar chainvar chain'
 
 -- | Offsets from the head of the chain to select points on the consumer's
--- chain to send to the producer. The specific choice here is fibbonaci up
+-- chain to send to the producer. The specific choice here is fibonacci up
 -- to 2160.
 --
 recentOffsets :: [Int]
@@ -68,7 +68,7 @@ recentOffsets = [0,1,2,3,5,8,13,21,34,55,89,144,233,377,610,987,1597,2584]
 -- a pure 'ChainProducerState' stored in a 'TVar'.
 --
 -- This is of course only useful in tests and reference implementations since
--- this is not a realisic chain representation.
+-- this is not a realistic chain representation.
 --
 exampleProducer
   :: forall block m stm.
