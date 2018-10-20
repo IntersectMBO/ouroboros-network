@@ -11,6 +11,7 @@ module Protocol.Core where
 
 import Data.Kind (Type)
 import Data.Typeable
+import Data.Void
 
 -- |
 -- = Using a type transition system to describe either side of a
@@ -275,3 +276,6 @@ data Stepping p tr endA endB fa fb a b where
   RightDone :: b -> Peer p tr (Complement st endB) endA fa a -> Stepping p tr endA (st endB) fa fb a b
   LeftHole  :: fa (Stepping p tr endA endB fa fb a b) -> Stepping p tr endA endB fa fb a b
   RightHole :: fb (Stepping p tr endA endB fa fb a b) -> Stepping p tr endA endB fa fb a b
+
+type Progress (tr :: st -> st -> Type) =
+  forall from to . tr from to -> (forall next . tr to next -> Void) -> Void

@@ -6,6 +6,8 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 
+{-# OPTIONS_GHC "-fwarn-incomplete-patterns" #-}
+
 module Protocol.Chain.Type where
 
 import Block
@@ -116,3 +118,26 @@ type family ChainExchangePartition st client server where
   ChainExchangePartition 'StInit       client server = server
   ChainExchangePartition 'StIdle       client server = client
   ChainExchangePartition ('StBusy res) client server = server
+
+-- | Proof that the protocol can always progress (every transition has at least
+-- one out-edge).
+progress :: Progress TrChainExchange
+progress tr noNext = case tr of
+  TrInit _ _                     -> noNext (TrRequest ReqNext)
+  TrRequest _                    -> noNext someChange
+  TrRespond (ResChange _ _)      -> noNext (TrRequest ReqNext)
+  TrRespond (ResSetHead _ _)     -> noNext (TrRequest ReqNext)
+  TrRespond (ResDownloadOne _ _) -> noNext (TrRespond (ResDownloadDone Nothing))
+  TrRespond (ResDownloadDone _)  -> noNext (TrRequest ReqNext)
+  TrRespond (ResExtend _)        -> noNext (TrRequest ReqNext)
+  TrRespond (ResExtendRelay h)   -> noNext (TrRespond (ResExtendNewRelay h))
+  TrRespond (ResExtendNewRelay h) -> noNext (TrRespond (ResExtendNewRelay h))
+  TrRespond (ResRelayBody b)      -> noNext (TrRequest ReqNext)
+  TrRespond (ResExtendNew h)      -> noNext (TrRequest ReqNext)
+  where
+  someChange :: forall req . TrChainExchange ('StBusy req) 'StIdle
+  someChange = TrRespond (ResChange somePoint someHeader)
+  -- Can't be bothered to write out the point and the header, but should do so
+  -- later.
+  somePoint  = undefined
+  someHeader = undefined

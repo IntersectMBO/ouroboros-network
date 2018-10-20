@@ -8,11 +8,13 @@ module Protocol.Channel
   , fixedInputChannel
   , FromStream (..)
   , useChannel
+  , useChannelHomogeneous
   , withChannels
   , channelSendEffect
   ) where
 
 import Control.Concurrent.MVar (newEmptyMVar, putMVar, takeMVar)
+import Control.Monad (join)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Free
 import Data.Proxy
@@ -48,15 +50,15 @@ fixedInputChannel lst = case lst of
   where
   noopSend trs = const (pure (fixedInputChannel trs))
 
-data FromStream tr f m t where
+data FromStream tr k t where
   -- | The stream ended even though more input is expected.
   StreamEnd
-    :: (Channel m (SomeTransition tr) -> FreeT f m (FromStream tr f m t))
-    -> FromStream tr f m t
+    :: (Channel m (SomeTransition tr) -> k (FromStream tr k t))
+    -> FromStream tr k t
   -- | An unexpected transition come in.
-  StreamUnexpected :: SomeTransition tr -> FromStream tr f m t
+  StreamUnexpected :: SomeTransition tr -> FromStream tr k t
   -- | Done using the stream.
-  StreamDone :: t -> FromStream tr f m t
+  StreamDone :: t -> FromStream tr k t
 
 -- | Supply input and carry output to/from a 'Peer' by way of a 'Channel'.
 -- If the stream ends before the 'Peer' finishes, a continuation is given.
@@ -65,7 +67,7 @@ useChannel
      ( Functor f, Monad m )
   => Channel m (SomeTransition tr)
   -> Peer p tr (status from) to f t
-  -> FreeT f m (FromStream tr f m t)
+  -> FreeT f m (FromStream tr (FreeT f m) t)
 useChannel chan peer = case peer of
   PeerDone t -> pure (StreamDone t)
   PeerHole f -> liftF f >>= useChannel chan
@@ -79,6 +81,24 @@ useChannel chan peer = case peer of
   PeerYield exch next -> do
     chan' <- lift $ send chan (SomeTransition (exchangeTransition exch))
     useChannel chan' next
+
+-- | 'useChannel' where the 'Channel' and 'Peer' are in the same monad, and
+-- stop the 'Peer' when/if the channel ends.
+useChannelHomogeneous
+  :: forall p tr status from to m t .
+     ( Monad m )
+  => Channel m (SomeTransition tr)
+  -> Peer p tr (status from) to m t
+  -> m (FromStream tr m t)
+useChannelHomogeneous chan peer =
+  fmap fixupFromStream (iterT join (useChannel chan peer))
+  where
+  fixupFromStream it = case it of
+    StreamDone t        -> StreamDone t
+    StreamUnexpected tr -> StreamUnexpected tr
+    StreamEnd k         -> StreamEnd $ \chan ->
+      let it = k chan
+      in  fmap fixupFromStream (iterT join it)
 
 withChannels :: (Channel IO t -> Channel IO t -> IO r) -> IO r
 withChannels k = do

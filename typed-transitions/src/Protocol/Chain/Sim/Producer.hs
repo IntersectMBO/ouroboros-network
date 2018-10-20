@@ -1,6 +1,7 @@
 {-# LANGUAGE GADTSyntax #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
 
 module Protocol.Chain.Sim.Producer where
 
@@ -52,6 +53,8 @@ data ChainSegment where
   AtTip     :: Seq Block -> Block -> ChainSegment
   -- | Read pointer is behind the tip.
   BehindTip :: Seq Block -> Block -> Seq Block -> Block -> ChainSegment
+
+deriving instance Show ChainSegment
 
 -- | chainSegmentToChain must always give a valid blockchain.
 chainSegmentToChain :: ChainSegment -> NonEmpty Block

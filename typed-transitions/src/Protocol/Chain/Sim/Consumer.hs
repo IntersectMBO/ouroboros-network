@@ -35,6 +35,10 @@ extendWith block chain = chain Seq.|> block
 simpleConsumerStream
   :: forall m stm x .
      ( MonadSTM m stm )
+  -- FIXME FIXME use a blockchain representation which is never empty! The
+  -- consumer invariant is that the end of the chain in this 'TVar' is the
+  -- read pointer, which breaks down if there is no end of the chain because
+  -- it's empty.
   => TVar m (Seq Block)
   -> ConsumerStream m x
 simpleConsumerStream chainVar = ConsumerStream $ \readPointer header -> atomically $ do
