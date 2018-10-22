@@ -34,12 +34,12 @@ tests :: TestTree
 tests =
   testGroup "Node"
   [ testGroup "fixed graph topology"
-    [ testProperty "core -> relay" (withBft $ prop_coreToRelay @'OuroborosBFT)
-    , testProperty "core -> relay -> relay" (withBft $ prop_coreToRelay2 @'OuroborosBFT)
-    , testProperty "core <-> relay <-> core" (withBft $ prop_coreToCoreViaRelay @'OuroborosBFT)
+    [ testProperty "core -> relay" (withBft prop_coreToRelay)
+    , testProperty "core -> relay -> relay" (withBft prop_coreToRelay2)
+    , testProperty "core <-> relay <-> core" (withBft prop_coreToCoreViaRelay)
     ]
-  , testProperty "blockGenerator invariant (SimM)" (withBft $ prop_blockGenerator_ST @'OuroborosBFT)
-  , testProperty "blockGenerator invariant (IO)" (withBft $ prop_blockGenerator_IO @'OuroborosBFT)
+  , testProperty "blockGenerator invariant (SimM)" (withBft prop_blockGenerator_ST)
+  , testProperty "blockGenerator invariant (IO)" (withBft prop_blockGenerator_IO)
   ]
 
 

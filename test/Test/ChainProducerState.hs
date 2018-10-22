@@ -27,17 +27,17 @@ tests =
   testGroup "ChainProducerState"
   [ testGroup "Test Arbitrary instances"
     [ testProperty "ChainProducerStateForkTest's generator"
-      (withBft $ prop_arbitrary_ChainProducerStateForkTest @'OuroborosBFT)
+      (withBft prop_arbitrary_ChainProducerStateForkTest)
     , testProperty "ChainProducerStateForkTest's shrinker"
-                   (withMaxSuccess 25 (withBft $ prop_shrink_ChainProducerStateForkTest @'OuroborosBFT))
+                   (withMaxSuccess 25 (withBft prop_shrink_ChainProducerStateForkTest))
     ]
-  , testProperty "check initial reader state" (withBft $ prop_init_lookup @'OuroborosBFT)
-  , testProperty "check second reader state"  (withBft $ prop_init_next_lookup @'OuroborosBFT)
-  , testProperty "check reader state after updateReader" (withBft $ prop_update_lookup @'OuroborosBFT)
-  , testProperty "check reader state after updateReader2" (withBft $ prop_update_next_lookup @'OuroborosBFT)
-  , testProperty "producer syncronise (1)" (withBft $ prop_producer_sync1 @'OuroborosBFT)
-  , testProperty "producer syncronise (2)" (withBft $ prop_producer_sync2 @'OuroborosBFT)
-  , testProperty "switch fork" (withBft $ prop_switchFork @'OuroborosBFT)
+  , testProperty "check initial reader state" (withBft prop_init_lookup)
+  , testProperty "check second reader state"  (withBft prop_init_next_lookup)
+  , testProperty "check reader state after updateReader" (withBft prop_update_lookup)
+  , testProperty "check reader state after updateReader2" (withBft prop_update_next_lookup)
+  , testProperty "producer syncronise (1)" (withBft prop_producer_sync1)
+  , testProperty "producer syncronise (2)" (withBft prop_producer_sync2)
+  , testProperty "switch fork" (withBft prop_switchFork)
   ]
 
 

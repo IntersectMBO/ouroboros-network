@@ -8,7 +8,6 @@ import Control.Monad.State
 
 import Test.GlobalState
 import Test.QuickCheck
-import Test.QuickCheck.Property (Property(..))
 
 import Ouroboros
 
@@ -24,14 +23,9 @@ data WithSt p a = WithSt (GlobalState p) a
 withBft :: prop -> WithSt 'OuroborosBFT prop
 withBft prop = WithSt initialBftState prop
 
-instance (  ArbitrarySt p (a p), Show (a p), Testable prop)
-    => Testable (WithSt p ((a p) -> prop)) where
+instance (ArbitrarySt p a, Show a, Testable prop)
+    => Testable (WithSt p (a -> prop)) where
     property (WithSt s f) = property $ do
       a <- evalStateT arbitrarySt s
       return $ f a
-
-instance Testable (WithSt p Property) where
-    property (WithSt s p) = property $ do
-      a <- evalStateT (lift . unProperty $ p) s
-      return (MkProperty (return a))
 

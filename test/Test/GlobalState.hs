@@ -41,8 +41,6 @@ initialBftState = GlobalState mempty
                 & putStateFor (CoreId 4) (BftState (CoreId 4))
                 & putStateFor (CoreId 5) (BftState (CoreId 5))
                 & putStateFor (CoreId 6) (BftState (CoreId 6))
-                & putStateFor (CoreId 7) (BftState (CoreId 7))
-                & putStateFor (CoreId 8) (BftState (CoreId 8))
 
 stateFor :: NodeId -> GlobalState p -> OuroborosState p
 stateFor nid (GlobalState ss) = ss Map.! nid

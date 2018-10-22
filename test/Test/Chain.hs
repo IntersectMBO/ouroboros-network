@@ -44,38 +44,38 @@ tests =
     [ testProperty "arbitrary for TestBlockChain" $
       -- It's important we don't generate too many trivial test cases here
       -- so check the coverage to enforce it.
-                   checkCoverage (withBft (prop_arbitrary_TestBlockChain @'OuroborosBFT))
-    , testProperty "shrink for TestBlockChain" (withBft (prop_shrink_TestBlockChain @'OuroborosBFT))
+                   checkCoverage (withBft prop_arbitrary_TestBlockChain)
+    , testProperty "shrink for TestBlockChain" (withBft prop_shrink_TestBlockChain)
 
-    , testProperty "arbitrary for TestHeaderChain" (withBft $ prop_arbitrary_TestHeaderChain @'OuroborosBFT)
-    , testProperty "shrink for TestHeaderChain"    (withBft $ prop_shrink_TestHeaderChain @'OuroborosBFT)
+    , testProperty "arbitrary for TestHeaderChain" (withBft prop_arbitrary_TestHeaderChain)
+    , testProperty "shrink for TestHeaderChain"    (withBft prop_shrink_TestHeaderChain)
 
-    , testProperty "arbitrary for TestAddBlock" (withBft $ prop_arbitrary_TestAddBlock @'OuroborosBFT)
-    , testProperty "shrink for TestAddBlock"    (withBft $ prop_shrink_TestAddBlock @'OuroborosBFT)
+    , testProperty "arbitrary for TestAddBlock" (withBft prop_arbitrary_TestAddBlock)
+    , testProperty "shrink for TestAddBlock"    (withBft prop_shrink_TestAddBlock)
 
     , testProperty "arbitrary for TestBlockChainAndUpdates" $
       -- Same deal here applies here with generating trivial test cases.
-                   checkCoverage (withBft $ prop_arbitrary_TestBlockChainAndUpdates @'OuroborosBFT)
+                   checkCoverage (withBft prop_arbitrary_TestBlockChainAndUpdates)
 
-    , testProperty "arbitrary for TestChainAndPoint" (withBft $ prop_arbitrary_TestChainAndPoint @'OuroborosBFT)
-    , testProperty "shrink for TestChainAndPoint"    (withBft $ prop_shrink_TestChainAndPoint @'OuroborosBFT)
+    , testProperty "arbitrary for TestChainAndPoint" (withBft prop_arbitrary_TestChainAndPoint)
+    , testProperty "shrink for TestChainAndPoint"    (withBft prop_shrink_TestChainAndPoint)
 
-    , testProperty "arbitrary for TestChainFork" (withBft $ prop_arbitrary_TestChainFork @'OuroborosBFT)
+    , testProperty "arbitrary for TestChainFork" (withBft prop_arbitrary_TestChainFork)
     , testProperty "shrink for TestChainFork"
-                               (mapSize (min 40) (withBft $ prop_shrink_TestChainFork @'OuroborosBFT))
+                               (mapSize (min 40) (withBft prop_shrink_TestChainFork))
     ]
 
   , testProperty "length/Genesis"  prop_length_genesis
-  , testProperty "drop/Genesis"    (withBft (prop_drop_genesis @'OuroborosBFT))
-  , testProperty "fromList/toList" (withBft (prop_fromList_toList @'OuroborosBFT))
-  , testProperty "toList/head"     (withBft (prop_toList_head @'OuroborosBFT))
-  , testProperty "drop"            (withBft (prop_drop @'OuroborosBFT))
-  , testProperty "addBlock"        (withBft (prop_addBlock @'OuroborosBFT))
-  , testProperty "rollback"        (withBft (prop_rollback @'OuroborosBFT))
-  , testProperty "rollback/head"   (withBft (prop_rollback_head @'OuroborosBFT))
-  , testProperty "successorBlock"  (withBft (prop_successorBlock @'OuroborosBFT))
-  , testProperty "lookupBySlot"    (withBft (prop_lookupBySlot @'OuroborosBFT))
-  , testProperty "intersectChains" (withBft (prop_intersectChains @'OuroborosBFT))
+  , testProperty "drop/Genesis"    (withBft prop_drop_genesis)
+  , testProperty "fromList/toList" (withBft prop_fromList_toList)
+  , testProperty "toList/head"     (withBft prop_toList_head)
+  , testProperty "drop"            (withBft prop_drop)
+  , testProperty "addBlock"        (withBft prop_addBlock)
+  , testProperty "rollback"        (withBft prop_rollback)
+  , testProperty "rollback/head"   (withBft prop_rollback_head)
+  , testProperty "successorBlock"  (withBft prop_successorBlock)
+  , testProperty "lookupBySlot"    (withBft prop_lookupBySlot)
+  , testProperty "intersectChains" (withBft prop_intersectChains)
   ]
 
 
@@ -343,30 +343,9 @@ instance KnownOuroborosProtocol p => ArbitrarySt p (TestBlockChainAndUpdates p) 
     return (TestBlockChainAndUpdates chain updates)
 
 -- | Like 'frequency', but it works in the 'State' monad.
--- TODO: Is this implementation correct? Are we resetting the state of the
--- generator this way?
 frequencySt :: [(Int, StateT s Gen a)] -> StateT s Gen a
-frequencySt xs = StateT $ \s -> do
-    lowered <- forM xs $ \(n,gen) -> return (n, evalStateT gen s)
-    a <- frequency lowered
-    return (a, s)
-
-{-- \"Unrolled\" version, for reference.
-frequencySt :: [(Int, StateT s Gen a)] -> StateT s Gen a
-frequencySt [] = error "frequencySt used with empty list"
-frequencySt xs0 = do
-    n <- lift (choose (1, tot))
-    pick n xs0
- where
-  tot :: Int
-  tot = sum (map fst xs0)
-
-  pick :: Int -> [(Int, StateT s Gen a)] -> StateT s Gen a
-  pick n ((k,x):xs)
-    | n <= k    = x
-    | otherwise = pick (n-k) xs
-  pick _ _  = error "pick used with empty list"
---}
+frequencySt xs = StateT $ \s ->
+    frequency $ map (\(n,gen) -> (n, runStateT gen s)) xs
 
 genChainUpdate :: KnownOuroborosProtocol p => Chain (Block p) -> GenSt p (ChainUpdate (Block p))
 genChainUpdate chain =
