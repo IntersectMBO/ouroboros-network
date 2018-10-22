@@ -97,6 +97,7 @@ test-suite tests
                        Test.Sim
                        Test.GlobalState
                        Test.ArbitrarySt
+                       Test.Combinators
   default-language:    Haskell2010
   default-extensions:  NamedFieldPuns
   build-depends:       base,

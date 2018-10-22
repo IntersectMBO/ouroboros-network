@@ -6,6 +6,7 @@ import qualified Test.Chain (tests)
 import qualified Test.ChainProducerState (tests)
 import qualified Test.Sim (tests)
 import qualified Test.Node (tests)
+import qualified Test.Combinators (tests)
 
 main :: IO ()
 main = defaultMain tests
@@ -17,4 +18,5 @@ tests =
   , Test.ChainProducerState.tests
   , Test.Sim.tests
   , Test.Node.tests
+  , Test.Combinators.tests
   ]

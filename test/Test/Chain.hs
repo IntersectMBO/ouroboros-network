@@ -13,6 +13,8 @@ module Test.Chain
   , TestBlockChain(..)
   , TestChainFork(..)
   , mkRollbackPoint
+  , frequencySt
+  , genNonNegative
   ) where
 
 import           Block
