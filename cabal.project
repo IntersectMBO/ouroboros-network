@@ -1,1 +1,4 @@
 packages: .
+
+package ouroboros-network
+  tests: True
