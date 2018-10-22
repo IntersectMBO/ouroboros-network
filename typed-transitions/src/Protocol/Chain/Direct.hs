@@ -1,3 +1,5 @@
+{-# LANGUAGE GADTSyntax #-}
+
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 module Protocol.Chain.Direct where
@@ -14,13 +16,13 @@ module Protocol.Chain.Direct where
 import Protocol.Chain.StreamConsumer as Consumer
 import Protocol.Chain.StreamProducer as Producer
 
--- TODO allow different return types for block stream and consumer stream, and
--- return them in a 'These' type.
+-- | An 'Either' is given because the block stream and consumer stream cannot
+-- both end at the same time.
 direct
   :: ( Monad m )
-  => BlockStream p m t
-  -> ConsumerStream p m t
-  -> m t
+  => BlockStream p m producer
+  -> ConsumerStream p m consumer
+  -> m (Either producer consumer)
 direct bs cs = do
   bsAt <- runBlockStream bs
   csStep <- runConsumerStream cs (bsReadPointer bsAt) (bsTip bsAt)
@@ -28,12 +30,12 @@ direct bs cs = do
 
 directMain
   :: ( Monad m )
-  => BlockStreamNext p m t
-  -> ConsumerStreamStep p m t
-  -> m t
+  => BlockStreamNext p m producer
+  -> ConsumerStreamStep p m consumer
+  -> m (Either producer consumer)
 directMain bsNext css = case css of
 
-  Quit t -> pure t
+  Quit consumer -> pure (Right consumer)
 
   Consumer.Improve points forked k -> do
     pStreamStep <- bsImprove bsNext points
@@ -52,7 +54,7 @@ directMain bsNext css = case css of
   NextTip forked k -> do
     pStreamStep <- bsNextChange bsNext
     case pStreamStep of
-      Left x -> pure x
+      Left producer -> pure (Left producer)
       Right (ChangeFork readPointer header bsNext') ->
         runConsumerStream forked readPointer header >>= directMain bsNext'
       Right (ChangeExtend header (NoRelay bsNext')) ->
@@ -65,9 +67,9 @@ directMain bsNext css = case css of
 
 directRelay
   :: ( Monad m )
-  => StreamStep p (RelayBody p) (NextChange p) m t
-  -> ConsumerRelay p m t
-  -> m t
+  => StreamStep p (RelayBody p) (NextChange p) m producer
+  -> ConsumerRelay p m consumer
+  -> m (Either producer consumer)
 directRelay pStreamStep cRelay = case pStreamStep of
   ChangeFork readPointer header bsNext' ->
     runConsumerStream (abandonRelay cRelay) readPointer header >>= directMain bsNext'
@@ -83,9 +85,9 @@ directRelay pStreamStep cRelay = case pStreamStep of
 directDownload
   :: ( Monad m )
   => Word
-  -> ConsumerDownload p m t
-  -> BlockStreamNext p m t
-  -> m t
+  -> ConsumerDownload p m consumer
+  -> BlockStreamNext p m producer
+  -> m (Either producer consumer)
 directDownload 0 cDownload bsNext = downloadOver cDownload Nothing >>= directMain bsNext
 directDownload n cDownload bsNext = bsNextBlock bsNext >>= \ss -> case ss of
   ChangeFork readPointer header bsNext' ->
