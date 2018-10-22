@@ -32,15 +32,15 @@ import Test.ArbitrarySt
 
 tests :: TestTree
 tests =
-  testGroup "Node" []
-  -- [ testGroup "fixed graph topology"
-  --   [ testProperty "core -> relay" (prop_coreToRelay @OuroborosBFT)
-  --   , testProperty "core -> relay -> relay" prop_coreToRelay2
-  --   , testProperty "core <-> relay <-> core" prop_coreToCoreViaRelay
-  --   ]
-  -- , testProperty "blockGenerator invariant (SimM)" prop_blockGenerator_ST
-  -- , testProperty "blockGenerator invariant (IO)" prop_blockGenerator_IO
-  -- ]
+  testGroup "Node"
+  [ testGroup "fixed graph topology"
+    [ testProperty "core -> relay" (withBft $ prop_coreToRelay @'OuroborosBFT)
+    , testProperty "core -> relay -> relay" (withBft $ prop_coreToRelay2 @'OuroborosBFT)
+    , testProperty "core <-> relay <-> core" (withBft $ prop_coreToCoreViaRelay @'OuroborosBFT)
+    ]
+  , testProperty "blockGenerator invariant (SimM)" (withBft $ prop_blockGenerator_ST @'OuroborosBFT)
+  , testProperty "blockGenerator invariant (IO)" (withBft $ prop_blockGenerator_IO @'OuroborosBFT)
+  ]
 
 
 -- NOTE: it reverses the order of probes
