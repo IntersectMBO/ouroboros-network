@@ -3,6 +3,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
 
+{-# OPTIONS_GHC "-fwarn-incomplete-patterns" #-}
+
 module Protocol.Chain.Sim.Producer where
 
 import qualified Data.Foldable as Foldable (toList)
@@ -22,15 +24,17 @@ import qualified Chain (head)
 import MonadClass.MonadSTM
 
 data Changing t where
+  Exhausted :: t -> Changing t
   Forked    :: t -> Changing t
   Extended  :: t -> Changing t
   Unchanged :: t -> Changing t
 
 unChanging :: Changing t -> t
 unChanging it = case it of
-  Forked  t   -> t
-  Extended t  -> t
+  Forked    t -> t
+  Extended  t -> t
   Unchanged t -> t
+  Exhausted t -> t
 
 -- Need to express the idea that if the chain segment is already forked, and
 -- we extend that fork, then it's still forked.
@@ -39,9 +43,11 @@ unChanging it = case it of
 --
 -- If either is forked, the result is forked. If both are extended, it's extended.
 -- If both are unchanged, it's unchanged.
-carryChange :: (s -> Changing t) -> Changing s -> Changing t
-carryChange k (Forked s) = Forked (unChanging (k s))
-carryChange k (Extended s) = case k s of
+carryChange :: (t -> Changing t) -> Changing t -> Changing t
+carryChange _ (Exhausted t) = Exhausted t
+carryChange k (Forked s)    = Forked (unChanging (k s))
+carryChange k (Extended s)  = case k s of
+  Exhausted t -> Exhausted t
   Forked t -> Forked t
   Extended t -> Extended t
   Unchanged t -> Extended t
@@ -75,6 +81,7 @@ chainSegmentFromChain (b NE.:| bs) = case bs of
 switchToChain :: NonEmpty (Block p) -> ChainSegment p -> Maybe (Changing (ChainSegment p))
 switchToChain newChain cs = case cs of
   AtTip prior tip -> case cmpChains (NE.toList newChain) (Foldable.toList (prior Seq.|> tip)) [] of
+    ([], _:_, _:_) -> error "switchToChain: impossible"
     -- They have nothing in common.
     (_, _, []) -> Nothing
     -- They are the same.
@@ -91,6 +98,7 @@ switchToChain newChain cs = case cs of
   -- If it's a proper fork but it includes the read pointer then we call it an
   -- extension.
   BehindTip prior rp mid tip -> case cmpChains (NE.toList newChain) (Foldable.toList (prior Seq.|> rp)) [] of
+    ([], _:_, _:_) -> error "switchToChain: impossible"
     -- Nothing in common with the chain up to the read pointer.
     (_, _, []) -> Nothing
     -- It is the chain up to the read pointer.
@@ -189,7 +197,7 @@ findBestCheckpoint cps cs = case cs of
 simpleBlockStream
   :: ( MonadSTM m stm ) 
   => TVar m (Changing  (ChainSegment p))
-  -> BlockStream p m x
+  -> BlockStream p m ()
 simpleBlockStream chainVar = BlockStream $ atomically $ do
   cs <- unChanging <$> readTVar chainVar
   let tipHeader = blockHeader (chainSegmentTip cs)
@@ -201,10 +209,10 @@ simpleBlockStream chainVar = BlockStream $ atomically $ do
     }
 
 simpleBlockStreamNext
-  :: forall p m stm x .
+  ::forall p m stm .
      ( MonadSTM m stm )
   => TVar m (Changing (ChainSegment p))
-  -> BlockStreamNext p m x
+  -> BlockStreamNext p m ()
 simpleBlockStreamNext chainVar = BlockStreamNext
   { bsNextChange = nextChange
   , bsNextBlock  = nextBlock
@@ -218,10 +226,11 @@ simpleBlockStreamNext chainVar = BlockStreamNext
   --  block download should they be ignored.
   --  Ah no, for download, an extension should be deferred until after the
   --  download, but a fork should inmterrupt it,.
-  nextChange :: forall f . m (Either x (StreamStep p f (NextChange p) m x))
+  nextChange :: forall f . m (Either () (StreamStep p f (NextChange p) m ()))
   nextChange = atomically $ do
     cchain <- readTVar chainVar
     case cchain of
+      Exhausted _     -> pure $ Left ()
       Unchanged _     -> retry
       Forked    chain -> do
         let readPointer = blockPoint (chainSegmentReadPointer chain)
@@ -252,10 +261,16 @@ simpleBlockStreamNext chainVar = BlockStreamNext
   -- - if it was a fork, stop the block download and present the fork
   -- - if it was a continuation, keep going but give the new header too
   --
-  nextBlock :: m (StreamStep p (NextBlock p) (NextBlock p) m x)
+  nextBlock :: m (StreamStep p (NextBlock p) (NextBlock p) m ())
   nextBlock = atomically $ do
     cchain <- readTVar chainVar
     case cchain of
+      Exhausted chain -> case advance chain of
+        Just (b, !chain') -> do
+          writeTVar chainVar (Exhausted chain')
+          pure $ NoChange (NextBlock b (simpleBlockStreamNext chainVar))
+        Nothing ->
+          pure $ NoChange (NoNextBlock (simpleBlockStreamNext chainVar))
       Forked chain    -> do
         let readPointer = blockPoint (chainSegmentReadPointer chain)
             tip         = blockHeader (chainSegmentTip chain)
@@ -286,10 +301,15 @@ simpleBlockStreamNext chainVar = BlockStreamNext
      Seq.EmptyL -> (tip, AtTip (prior Seq.|> rp) tip)
      b Seq.:< bs -> (b, BehindTip (prior Seq.|> rp) b bs tip)
 
-  improve :: NonEmpty Point -> m (StreamStep p (Improve p) (Improve p) m x)
+  improve :: NonEmpty Point -> m (StreamStep p (Improve p) (Improve p) m ())
   improve cps = atomically $ do
     cchain <- readTVar chainVar
     case cchain of
+      Exhausted chain -> do
+        let !chain'        = findBestCheckpoint cps chain
+            newReadPointer = blockPoint (chainSegmentReadPointer chain')
+        writeTVar chainVar (Exhausted chain')
+        pure $ NoChange $ Improve newReadPointer (simpleBlockStreamNext chainVar)
       Unchanged chain -> do
         let !chain'        = findBestCheckpoint cps chain
             newReadPointer = blockPoint (chainSegmentReadPointer chain')

@@ -41,6 +41,9 @@ data BlockStreamNext p m t = BlockStreamNext
     bsNextChange :: forall f . m (Either t (StreamStep p f (NextChange p) m t))
     -- TODO offer a more flexible interface, which allows for streaming n blocks
     -- without doing 'bsNextBlock' every time. Perhaps give a pipe/conduit?
+    --
+    -- Must not block waiting for the next block if the stream is at the tip.
+    -- Must give 'NoNextBlock' instead.
   , bsNextBlock  :: m (StreamStep p (NextBlock p) (NextBlock p) m t)
   , bsImprove    :: NonEmpty Point -> m (StreamStep p (Improve p) (Improve p) m t)
   }

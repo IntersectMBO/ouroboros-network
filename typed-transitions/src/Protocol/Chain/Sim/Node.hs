@@ -197,14 +197,14 @@ standardConsumer
   :: ( MonadSTM m stm )
   => TVar m (Seq (Block p))
   -> Channel m (SomeTransition (TrChainExchange p))
-  -> m (FromStream (TrChainExchange p) m x)
+  -> m (FromStream (TrChainExchange p) m ())
 standardConsumer var chan = useChannelHomogeneous chan (streamConsumer (simpleConsumerStream var))
 
 standardProducer
   :: ( MonadSTM m stm )
   => TVar m (Changing (ChainSegment p))
   -> Channel m (SomeTransition (TrChainExchange p))
-  -> m (FromStream (TrChainExchange p) m x)
+  -> m (FromStream (TrChainExchange p) m ())
 standardProducer var chan = useChannelHomogeneous chan (streamProducer (simpleBlockStream var))
 
 exampleNetDesc :: StaticNetDesc p x
@@ -243,13 +243,13 @@ exampleNetDesc = StaticNetDesc gr nodes
 runNetDescStandardIO
   :: forall p t producer consumer .
      (forall x . StaticNetDesc p x)
-  -> IO [(t, ([FromStream (TrChainExchange p) IO consumer], [FromStream (TrChainExchange p) IO producer]))]
+  -> IO [(t, ([FromStream (TrChainExchange p) IO ()], [FromStream (TrChainExchange p) IO ()]))]
 runNetDescStandardIO netDesc = do
   nodes <- atomically $ realiseStaticNetDescSTM netDesc
   let runNode
-        :: forall x y z .
+        :: forall x .
            StaticNodeDesc p (Channel IO (SomeTransition (TrChainExchange p)))
-        -> IO (x, ([FromStream (TrChainExchange p) IO y], [FromStream (TrChainExchange p) IO z]))
+        -> IO (x, ([FromStream (TrChainExchange p) IO ()], [FromStream (TrChainExchange p) IO ()]))
       runNode snd =
         let selectionAction = \chain -> Debug.traceM (nodeDescName snd ++ ": " ++ show chain)
         in  runWithChainSelection concurrently standardConsumer standardProducer (chainSelectionForever selectionAction) snd
