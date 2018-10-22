@@ -106,8 +106,8 @@ demo1 = consoleProtocolAction example1
 -- | A demonstration that we can run the simple chain consumer protocol
 -- over a pipe with full message serialisation, framing etc.
 --
-demo2 :: (Chain.HasHeader block, Serialise block, Eq block)
-      => Chain block -> [ChainUpdate block] -> IO Bool
+demo2 :: (Chain.HasHeader block, Serialise (block p), Eq (block p))
+      => Chain (block p) -> [ChainUpdate (block p)] -> IO Bool
 demo2 chain0 updates = do
 
     -- Create two pipes (each one is unidirectional) to connect up the
@@ -147,8 +147,8 @@ demo2 chain0 updates = do
 type ConsumerSideProtocol block = Protocol MsgConsumer (MsgProducer block)
 type ProducerSideProtocol block = Protocol (MsgProducer block) MsgConsumer
 
-producer :: forall block. (Chain.HasHeader block, Serialise block)
-         => Handle -> Handle -> TVar (ChainProducerState block) -> IO ()
+producer :: forall p block. (Chain.HasHeader block, Serialise (block p))
+         => Handle -> Handle -> TVar (ChainProducerState (block p)) -> IO ()
 producer hndRead hndWrite producerVar = do
     runProtocolWithPipe
       hndRead hndWrite
@@ -156,7 +156,7 @@ producer hndRead hndWrite producerVar = do
   where
     -- Reuse the generic 'producerSideProtocol1'
     -- but interpret it in our Protocol free monad.
-    producerSideProtocol :: ProducerSideProtocol block ()
+    producerSideProtocol :: ProducerSideProtocol (block p) ()
     producerSideProtocol =
       producerSideProtocol1
         producerHandlers
@@ -165,12 +165,12 @@ producer hndRead hndWrite producerVar = do
 
     -- Reuse the generic 'exampleProducer'
     -- and lift it from IO to the Protocol monad
-    producerHandlers :: ProducerHandlers block (ProducerSideProtocol block) ReaderId
+    producerHandlers :: ProducerHandlers (block p) (ProducerSideProtocol (block p)) ReaderId
     producerHandlers =
       liftProducerHandlers liftIO (exampleProducer producerVar)
 
-consumer :: forall block. (Chain.HasHeader block, Serialise block)
-         => Handle -> Handle -> TVar (Chain block) -> IO ()
+consumer :: forall p block. (Chain.HasHeader block, Serialise (block p))
+         => Handle -> Handle -> TVar (Chain (block p)) -> IO ()
 consumer hndRead hndWrite chainVar =
     runProtocolWithPipe
       hndRead hndWrite
@@ -178,7 +178,7 @@ consumer hndRead hndWrite chainVar =
   where
     -- Reuse the generic 'consumerSideProtocol1'
     -- but interpret it in our Protocol free monad.
-    consumerSideProtocol :: ConsumerSideProtocol block ()
+    consumerSideProtocol :: ConsumerSideProtocol (block p) ()
     consumerSideProtocol =
       consumerSideProtocol1
         consumerHandlers
@@ -187,7 +187,7 @@ consumer hndRead hndWrite chainVar =
 
     -- Reuse the generic 'exampleProducer'
     -- and lift it from IO to the Protocol monad
-    consumerHandlers :: ConsumerHandlers block (ConsumerSideProtocol block)
+    consumerHandlers :: ConsumerHandlers (block p) (ConsumerSideProtocol (block p))
     consumerHandlers =
       liftConsumerHandlers liftIO (exampleConsumer chainVar)
 
@@ -238,4 +238,3 @@ runProtocolWithPipe hndRead hndWrite p =
       chunk <- BS.hGetSome hndRead LBS.smallChunkSize
       stToIO (k (if BS.null chunk then Nothing else Just chunk))
         >>= decodeFromHandle mempty
-

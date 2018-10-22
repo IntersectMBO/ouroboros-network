@@ -84,12 +84,12 @@ data ReaderNext = ReaderBackTo | ReaderForwardFrom
 -- Invariant
 --
 
-invChainProducerState :: HasHeader block => ChainProducerState block -> Bool
+invChainProducerState :: HasHeader block => ChainProducerState (block p) -> Bool
 invChainProducerState (ChainProducerState c rs) =
     Chain.valid c
  && invReaderStates c rs
 
-invReaderStates :: HasHeader block => Chain block -> ReaderStates -> Bool
+invReaderStates :: HasHeader block => Chain (block p) -> ReaderStates -> Bool
 invReaderStates c rs =
     and [ pointOnChain readerPoint c | ReaderState{readerPoint} <- rs ]
  && noDuplicates [ readerId | ReaderState{readerId} <- rs ]
@@ -128,7 +128,7 @@ producerChain (ChainProducerState c _) = c
 
 findFirstPoint :: HasHeader block
                => [Point]
-               -> ChainProducerState block
+               -> ChainProducerState (block p)
                -> Maybe Point
 findFirstPoint ps = Chain.findFirstPoint ps . producerChain
 
@@ -138,8 +138,8 @@ findFirstPoint ps = Chain.findFirstPoint ps . producerChain
 --
 initReader :: HasHeader block
            => Point
-           -> ChainProducerState block
-           -> (ChainProducerState block, ReaderId)
+           -> ChainProducerState (block p)
+           -> (ChainProducerState (block p), ReaderId)
 initReader point (ChainProducerState c rs) =
     assert (pointOnChain point c) $
     (ChainProducerState c (r:rs), readerId r)
@@ -165,8 +165,8 @@ deleteReader rid (ChainProducerState c rs) =
 updateReader :: HasHeader block
              => ReaderId
              -> Point     -- ^ new reader intersection point
-             -> ChainProducerState block
-             -> ChainProducerState block
+             -> ChainProducerState (block p)
+             -> ChainProducerState (block p)
 updateReader rid point (ChainProducerState c rs) =
     assert (pointOnChain point c) $
     ChainProducerState c (map update rs)
@@ -181,9 +181,9 @@ updateReader rid point (ChainProducerState c rs) =
 -- `ReaderBackTo` state, otherwise preserve reader state.
 --
 switchFork :: HasHeader block
-           => Chain block
-           -> ChainProducerState block
-           -> ChainProducerState block
+           => Chain (block p)
+           -> ChainProducerState (block p)
+           -> ChainProducerState (block p)
 switchFork c (ChainProducerState c' rs) =
     ChainProducerState c (map update rs)
   where
@@ -201,8 +201,8 @@ switchFork c (ChainProducerState c' rs) =
 --
 readerInstruction :: HasHeader block
                   => ReaderId
-                  -> ChainProducerState block
-                  -> Maybe (ChainUpdate block, ChainProducerState block)
+                  -> ChainProducerState (block p)
+                  -> Maybe (ChainUpdate (block p), ChainProducerState (block p))
 readerInstruction rid cps@(ChainProducerState c rs) =
     let ReaderState {readerPoint, readerNext} = lookupReader cps rid in
     case readerNext of
@@ -230,9 +230,9 @@ readerInstruction rid cps@(ChainProducerState c rs) =
 -- | Add a block to the chain. It does not require any reader's state changes.
 --
 addBlock :: HasHeader block
-         => block
-         -> ChainProducerState block
-         -> ChainProducerState block
+         => block p
+         -> ChainProducerState (block p)
+         -> ChainProducerState (block p)
 addBlock b (ChainProducerState c rs) =
     ChainProducerState (Chain.addBlock b c) rs
 
@@ -242,8 +242,8 @@ addBlock b (ChainProducerState c rs) =
 -- of the two chains and set @'readerNext'@ to @'ReaderBackTo'@.
 rollback :: HasHeader block
          => Point
-         -> ChainProducerState block
-         -> Maybe (ChainProducerState block)
+         -> ChainProducerState (block p)
+         -> Maybe (ChainProducerState (block p))
 rollback p (ChainProducerState c rs) =
     ChainProducerState <$> Chain.rollback p c
                        <*> pure rs'
@@ -257,9 +257,9 @@ rollback p (ChainProducerState c rs) =
 -- | Convenient function which combines both @'addBlock'@ and @'rollback'@.
 --
 applyChainUpdate :: HasHeader block
-                 => ChainUpdate block
-                 -> ChainProducerState block
-                 -> Maybe (ChainProducerState block)
+                 => ChainUpdate (block p)
+                 -> ChainProducerState (block p)
+                 -> Maybe (ChainProducerState (block p))
 applyChainUpdate (AddBlock b) c = Just (addBlock b c)
 applyChainUpdate (RollBack p) c =       rollback p c
 
@@ -267,9 +267,9 @@ applyChainUpdate (RollBack p) c =       rollback p c
 -- | Apply a list of @'ChainUpdate'@s.
 --
 applyChainUpdates :: HasHeader block
-                  => [ChainUpdate block]
-                  -> ChainProducerState block
-                  -> Maybe (ChainProducerState block)
+                  => [ChainUpdate (block p)]
+                  -> ChainProducerState (block p)
+                  -> Maybe (ChainProducerState (block p))
 applyChainUpdates []     c = Just c
 applyChainUpdates (u:us) c = applyChainUpdates us =<< applyChainUpdate u c
 
