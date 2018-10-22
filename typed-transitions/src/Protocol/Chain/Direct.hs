@@ -16,13 +16,11 @@ module Protocol.Chain.Direct where
 import Protocol.Chain.StreamConsumer as Consumer
 import Protocol.Chain.StreamProducer as Producer
 
--- | An 'Either' is given because the block stream and consumer stream cannot
--- both end at the same time.
 direct
   :: ( Monad m )
   => BlockStream p m producer
   -> ConsumerStream p m consumer
-  -> m (Either producer consumer)
+  -> m (producer, consumer)
 direct bs cs = do
   bsAt <- runBlockStream bs
   csStep <- runConsumerStream cs (bsReadPointer bsAt) (bsTip bsAt)
@@ -32,10 +30,10 @@ directMain
   :: ( Monad m )
   => BlockStreamNext p m producer
   -> ConsumerStreamStep p m consumer
-  -> m (Either producer consumer)
+  -> m (producer, consumer)
 directMain bsNext css = case css of
 
-  Quit consumer -> pure (Right consumer)
+  Quit consumer -> pure (bsDone bsNext, consumer)
 
   Consumer.Improve points forked k -> do
     pStreamStep <- bsImprove bsNext points
@@ -51,10 +49,10 @@ directMain bsNext css = case css of
 
   DownloadBlocks num cDownload -> directDownload num cDownload bsNext
 
-  NextTip forked k -> do
+  NextTip forked k finished -> do
     pStreamStep <- bsNextChange bsNext
     case pStreamStep of
-      Left producer -> pure (Left producer)
+      Left producer -> pure (producer, finished)
       Right (ChangeFork readPointer header bsNext') ->
         runConsumerStream forked readPointer header >>= directMain bsNext'
       Right (ChangeExtend header (NoRelay bsNext')) ->
@@ -69,7 +67,7 @@ directRelay
   :: ( Monad m )
   => StreamStep p (RelayBody p) (NextChange p) m producer
   -> ConsumerRelay p m consumer
-  -> m (Either producer consumer)
+  -> m (producer, consumer)
 directRelay pStreamStep cRelay = case pStreamStep of
   ChangeFork readPointer header bsNext' ->
     runConsumerStream (abandonRelay cRelay) readPointer header >>= directMain bsNext'
@@ -87,7 +85,7 @@ directDownload
   => Word
   -> ConsumerDownload p m consumer
   -> BlockStreamNext p m producer
-  -> m (Either producer consumer)
+  -> m (producer, consumer)
 directDownload 0 cDownload bsNext = downloadOver cDownload Nothing >>= directMain bsNext
 directDownload n cDownload bsNext = bsNextBlock bsNext >>= \ss -> case ss of
   ChangeFork readPointer header bsNext' ->

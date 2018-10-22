@@ -29,8 +29,9 @@ data ConsumerStreamStep p m t where
   -- a 'ConsumerStream').
   DownloadBlocks :: Word -> ConsumerDownload p m t -> ConsumerStreamStep p m t
   -- | Await the next change in tip.
-  NextTip        :: ConsumerStream p m t
-                 -> ConsumerNext p m t
+  NextTip        :: ConsumerStream p m t -- ^ There was a fork
+                 -> ConsumerNext p m t   -- ^ Normal next response
+                 -> t                    -- ^ Stream exhausted
                  -> ConsumerStreamStep p m t
   -- | End the consumer protocol application.
   Quit           :: t -> ConsumerStreamStep p m t
@@ -67,7 +68,7 @@ data ConsumerRelay p m t = ConsumerRelay
 streamConsumer
   :: ( Monad m )
   => ConsumerStream p m t
-  -> Peer ChainExchange (TrChainExchange p) ('Awaiting 'StInit) ('Yielding 'StIdle) m t
+  -> Peer ChainExchange (TrChainExchange p) ('Awaiting 'StInit) ('Finished 'StDone) m t
 streamConsumer cs = await $ \it -> case it of
   TrInit readPointer tip -> hole $ do
     step <- runConsumerStream cs readPointer tip
@@ -77,10 +78,11 @@ streamConsumerMain
   :: forall p m t .
      ( Monad m )
   => ConsumerStreamStep p m t
-  -> Peer ChainExchange (TrChainExchange p) ('Yielding 'StIdle) ('Yielding 'StIdle) m t
+  -> Peer ChainExchange (TrChainExchange p) ('Yielding 'StIdle) ('Finished 'StDone) m t
 streamConsumerMain step = case step of
-  Quit t -> done t
-  NextTip forked k -> over (TrRequest ReqNext) $ await $ \req -> case req of
+  Quit t -> out TrConsumerDone (done t)
+  NextTip forked k exhausted -> over (TrRequest ReqNext) $ await $ \req -> case req of
+    TrProducerDone -> done exhausted
     TrRespond (ResChange readPointer tip) -> hole $ do
       step' <- runConsumerStream forked readPointer tip
       pure $ streamConsumerMain step'
@@ -93,7 +95,7 @@ streamConsumerMain step = case step of
       where
       relayLoop
         :: ConsumerRelay p m t
-        -> Peer ChainExchange (TrChainExchange p) ('Awaiting ('StBusy 'Relay)) ('Yielding 'StIdle) m t
+        -> Peer ChainExchange (TrChainExchange p) ('Awaiting ('StBusy 'Relay)) ('Finished 'StDone) m t
       relayLoop relay = await $ \req -> case req of
         TrRespond (ResRelayBody body) -> hole $ do
           next <- bodyRelay relay body
@@ -119,7 +121,7 @@ streamConsumerMain step = case step of
 streamConsumerDownload
   :: ( Monad m )
   => ConsumerDownload p m t
-  -> Peer ChainExchange (TrChainExchange p) ('Awaiting ('StBusy 'Download)) ('Yielding 'StIdle) m t
+  -> Peer ChainExchange (TrChainExchange p) ('Awaiting ('StBusy 'Download)) ('Finished 'StDone) m t
 streamConsumerDownload cd = await $ \res -> case res of
   TrRespond (ResDownloadDone mNewTip) -> hole $ do
     step <- downloadOver cd mNewTip

@@ -31,15 +31,18 @@ data StChainExchange where
   StInit :: StChainExchange
   StIdle :: StChainExchange
   StBusy :: RequestKind -> StChainExchange
+  StDone :: StChainExchange
 
 -- | Transitions on 'StChainExchange'. A request goes from idle to busy, and
 -- a response may go from busy to idle, or stay on busy in case of multi-part
 -- responses for headers and bodies.
 data TrChainExchange p stFrom stTo where
   -- | The first transition gives the endpoints of the chain.
-  TrInit     :: Point -> Header p   -> TrChainExchange p 'StInit 'StIdle
-  TrRequest  :: Request  req        -> TrChainExchange p 'StIdle ('StBusy req)
-  TrRespond  :: Response p req res  -> TrChainExchange p ('StBusy req) res
+  TrInit         :: Point -> Header p   -> TrChainExchange p 'StInit 'StIdle
+  TrRequest      :: Request  req        -> TrChainExchange p 'StIdle ('StBusy req)
+  TrRespond      :: Response p req res  -> TrChainExchange p ('StBusy req) res
+  TrConsumerDone :: TrChainExchange p 'StIdle         'StDone
+  TrProducerDone :: TrChainExchange p ('StBusy 'Next) 'StDone
 
 showTrChainExchange :: TrChainExchange p from to -> String
 showTrChainExchange tr = case tr of
@@ -52,6 +55,8 @@ showTrChainExchange tr = case tr of
   TrRespond (ResDownloadOne _ _) -> "ResDownloadOne"
   TrRespond (ResDownloadDone _) -> "ResDownloadDone"
   TrRespond _ -> "Res other"
+  TrConsumerDone -> "Consumer done"
+  TrProducerDone -> "Producer done"
 
 data RequestKind where
   SetHead  :: RequestKind
@@ -107,37 +112,15 @@ data Response p (req :: RequestKind) (res :: StChainExchange) where
 -- | A type to identify our client/server parition.
 data ChainExchange
 
-type instance Partition ChainExchange st client server =
-  ChainExchangePartition st client server
+type instance Partition ChainExchange st client server terminal =
+  ChainExchangePartition st client server terminal
 
 -- | Idle states are client, producer states are server.
 -- The init state is server, which is a bit weird. The server starts by giving
 -- its tip-of-chain, so that for the rest of the protocol, the consumer always
 -- knows the read pointer and the tip-of-chain.
-type family ChainExchangePartition st client server where
-  ChainExchangePartition 'StInit       client server = server
-  ChainExchangePartition 'StIdle       client server = client
-  ChainExchangePartition ('StBusy res) client server = server
-
--- | Proof that the protocol can always progress (every transition has at least
--- one out-edge).
-progress :: Progress (TrChainExchange p)
-progress tr noNext = case tr of
-  TrInit _ _                     -> noNext (TrRequest ReqNext)
-  TrRequest _                    -> noNext someChange
-  TrRespond (ResChange _ _)      -> noNext (TrRequest ReqNext)
-  TrRespond (ResSetHead _ _)     -> noNext (TrRequest ReqNext)
-  TrRespond (ResDownloadOne _ _) -> noNext (TrRespond (ResDownloadDone Nothing))
-  TrRespond (ResDownloadDone _)  -> noNext (TrRequest ReqNext)
-  TrRespond (ResExtend _)        -> noNext (TrRequest ReqNext)
-  TrRespond (ResExtendRelay h)   -> noNext (TrRespond (ResExtendNewRelay h))
-  TrRespond (ResExtendNewRelay h) -> noNext (TrRespond (ResExtendNewRelay h))
-  TrRespond (ResRelayBody b)      -> noNext (TrRequest ReqNext)
-  TrRespond (ResExtendNew h)      -> noNext (TrRequest ReqNext)
-  where
-  someChange :: forall p req . TrChainExchange p ('StBusy req) 'StIdle
-  someChange = TrRespond (ResChange somePoint someHeader)
-  -- Can't be bothered to write out the point and the header, but should do so
-  -- later.
-  somePoint  = undefined
-  someHeader = undefined
+type family ChainExchangePartition st client server terminal where
+  ChainExchangePartition 'StInit       client server terminal = server
+  ChainExchangePartition 'StIdle       client server terminal = client
+  ChainExchangePartition ('StBusy res) client server terminal = server
+  ChainExchangePartition 'StDone       client server terminal = terminal

@@ -42,8 +42,6 @@ import MonadClass.MonadSay
 import MonadClass.MonadSTM
 import MonadClass.MonadFork
 
-import qualified Debug.Trace as Debug (traceM)
-
 -- | Description of a static network.
 data StaticNetDesc p x = StaticNetDesc Graph (Map Vertex (StaticNodeDesc p x))
 
@@ -97,12 +95,22 @@ realiseStaticNetDescSTM (StaticNetDesc gr descs) =
                  (Map.adjust (includeOutEdges (fmap fst channelPairs)) v descs)
                  (zip targets (fmap snd channelPairs))
 
-data ChainSelection p m t where
-  Continue :: (Seq (Block p) -> m (ChainSelection p m t)) -> ChainSelection p m t
-  Finished :: t -> ChainSelection p m t
+newtype ChainSelection p m t = ChainSelection
+  { runChainSelection :: Seq (Block p) -> m (Either t (ChainSelection p m t))
+  }
 
 chainSelectionForever :: Applicative m => (Seq (Block p) -> m ()) -> ChainSelection p m x
-chainSelectionForever act = Continue $ \blk -> act blk *> pure (chainSelectionForever act)
+chainSelectionForever act = ChainSelection $ \blks -> act blks *> pure (Right (chainSelectionForever act))
+
+chainSelectionUntil
+  :: ( Monad m )
+  => (Seq (Block p) -> m (Maybe t))
+  -> ChainSelection p m t
+chainSelectionUntil k = ChainSelection $ \blks -> do
+  next <- k blks
+  case next of
+    Just t  -> pure $ Left t
+    Nothing -> pure $ Right $ chainSelectionUntil k
 
 -- | Use STM-backed chain selection to run a 'StaticNodeDesc'.
 --
@@ -113,16 +121,16 @@ chainSelectionForever act = Continue $ \blk -> act blk *> pure (chainSelectionFo
 -- They are all run concurrently, according to the concurrency combinator
 -- provided ('MonadFork' is inadequate).
 --
-runWithChainSelection
+runWithChainSelectionSTM
   :: forall p m stm x consumer producer t .
      ( MonadSTM m stm )
   => (forall s t . m s -> m t -> m (s, t))
   -> (TVar m (Seq (Block p)) -> Channel m x -> m consumer)
-  -> (TVar m (Changing (ChainSegment p)) -> Channel m x -> m producer)
-  -> ChainSelection p m t
+  -> (TVar m (Changing (ChainSegment p), Exhausted) -> Channel m x -> m producer)
+  -> ChainSelection p stm t
   -> StaticNodeDesc p (Channel m x)
   -> m (t, ([consumer], [producer]))
-runWithChainSelection concurrently mkConsumer mkProducer selection nodeDesc = do
+runWithChainSelectionSTM concurrently mkConsumer mkProducer selection nodeDesc = do
 
   let initChain = nodeDescInitialChain nodeDesc
   bestChainVar <- atomically $ newTVar (Seq.fromList (NE.toList initChain))
@@ -132,7 +140,7 @@ runWithChainSelection concurrently mkConsumer mkProducer selection nodeDesc = do
     pure (consumerVar, mkConsumer consumerVar chan)
 
   producers <- forM (nodeDescInEdges nodeDesc) $ \chan -> do
-    producerVar <- atomically $ newTVar (Unchanged (chainSegmentFromChain initChain))
+    producerVar <- atomically $ newTVar (Unchanged (chainSegmentFromChain initChain), False)
     pure (producerVar, mkProducer producerVar chan)
 
   let consumerVars = fmap fst consumers
@@ -151,26 +159,29 @@ runWithChainSelection concurrently mkConsumer mkProducer selection nodeDesc = do
   chainSelectionSTM
     :: TVar m (Seq (Block p))               -- ^ Best chain.
     -> [TVar m (Seq (Block p))]             -- ^ Consumed chains
-    -> [TVar m (Changing (ChainSegment p))] -- ^ Produced chains
-    -> ChainSelection p m t
+    -> [TVar m (Changing (ChainSegment p), Exhausted)] -- ^ Produced chains
+    -> ChainSelection p stm t
     -> m t
-  chainSelectionSTM bestChainVar consumerVars producerVars selection = case selection of
-    Finished t -> pure t
-    Continue k -> do
-      newBest <- atomically $ do
-        currentBest <- readTVar bestChainVar
-        candidates  <- mapM readTVar consumerVars
-        let newBest = foldl' longerChain currentBest candidates
-        if betterChain newBest currentBest
-        then do
-          -- Found a strictly better chain. Update our best, and all of the
-          -- producer vars.
-          writeTVar bestChainVar newBest
-          forM_ producerVars (flip modifyTVar' (carryChange (switchToChain_ newBest)))
-          pure newBest
-        else retry
-      selection' <- k newBest
-      chainSelectionSTM bestChainVar consumerVars producerVars selection'
+  chainSelectionSTM bestChainVar consumerVars producerVars selection =
+    join $ atomically $ do
+      currentBest <- readTVar bestChainVar
+      next <- runChainSelection selection currentBest
+      case next of
+        Left t -> do
+          -- Mark the chain as exhausted.
+          forM_ producerVars (flip modifyTVar' (\it -> (fst it, True)))
+          pure $ pure t
+        Right selection' -> do
+          candidates  <- mapM readTVar consumerVars
+          let newBest = foldl' longerChain currentBest candidates
+          if betterChain newBest currentBest
+          then do
+            -- Found a strictly better chain. Update our best, and all of the
+            -- producer vars.
+            writeTVar bestChainVar newBest
+            forM_ producerVars (flip modifyTVar' (\it -> (carryChange (switchToChain_ newBest) (fst it), snd it)))
+            pure (chainSelectionSTM bestChainVar consumerVars producerVars selection')
+          else retry
 
   switchToChain_ :: Seq (Block p) -> ChainSegment p -> Changing (ChainSegment p)
   switchToChain_ newBest currentSegment = case Foldable.toList newBest of
@@ -195,17 +206,21 @@ runWithChainSelection concurrently mkConsumer mkProducer selection nodeDesc = do
 
 standardConsumer
   :: ( MonadSTM m stm )
-  => TVar m (Seq (Block p))
+  => String
+  -> TVar m (Seq (Block p))
   -> Channel m (SomeTransition (TrChainExchange p))
   -> m (FromStream (TrChainExchange p) m ())
-standardConsumer var chan = useChannelHomogeneous chan (streamConsumer (simpleConsumerStream var))
+standardConsumer name var chan =
+  useChannelHomogeneous chan (streamConsumer (simpleConsumerStream var))
 
 standardProducer
   :: ( MonadSTM m stm )
-  => TVar m (Changing (ChainSegment p))
+  => String
+  -> TVar m (Changing (ChainSegment p), Exhausted)
   -> Channel m (SomeTransition (TrChainExchange p))
   -> m (FromStream (TrChainExchange p) m ())
-standardProducer var chan = useChannelHomogeneous chan (streamProducer (simpleBlockStream var))
+standardProducer name var chan =
+  useChannelHomogeneous chan (streamProducer (simpleBlockStream var))
 
 exampleNetDesc :: StaticNetDesc p x
 exampleNetDesc = StaticNetDesc gr nodes
@@ -241,16 +256,21 @@ exampleNetDesc = StaticNetDesc gr nodes
   chain2 = block1 NE.:| [block2, block3, block4, block5, block6]
 
 runNetDescStandardIO
-  :: forall p t producer consumer .
+  :: forall p producer consumer .
      (forall x . StaticNetDesc p x)
-  -> IO [(t, ([FromStream (TrChainExchange p) IO ()], [FromStream (TrChainExchange p) IO ()]))]
+  -> IO [(Seq (Block p), ([FromStream (TrChainExchange p) IO ()], [FromStream (TrChainExchange p) IO ()]))]
 runNetDescStandardIO netDesc = do
   nodes <- atomically $ realiseStaticNetDescSTM netDesc
   let runNode
-        :: forall x .
-           StaticNodeDesc p (Channel IO (SomeTransition (TrChainExchange p)))
-        -> IO (x, ([FromStream (TrChainExchange p) IO ()], [FromStream (TrChainExchange p) IO ()]))
+        :: StaticNodeDesc p (Channel IO (SomeTransition (TrChainExchange p)))
+        -> IO (Seq (Block p), ([FromStream (TrChainExchange p) IO ()], [FromStream (TrChainExchange p) IO ()]))
       runNode snd =
-        let selectionAction = \chain -> Debug.traceM (nodeDescName snd ++ ": " ++ show chain)
-        in  runWithChainSelection concurrently standardConsumer standardProducer (chainSelectionForever selectionAction) snd
+        let selectionP = \chain -> do
+              case Seq.viewr chain of
+                Seq.EmptyR -> pure Nothing
+                _ Seq.:> newest -> pure $
+                  if blockNo (blockHeader newest) >= BlockNo 6
+                  then Just chain
+                  else Nothing
+        in  runWithChainSelectionSTM concurrently (standardConsumer (nodeDescName snd)) (standardProducer (nodeDescName snd)) (chainSelectionUntil selectionP) snd
   forConcurrently (Map.elems nodes) runNode

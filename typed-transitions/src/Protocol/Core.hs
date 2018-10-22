@@ -42,11 +42,12 @@ data Peer p (tr :: st -> st -> Type) (from :: Status st) (to :: Status st) f t w
        , TrControl p from inter ~ control
        )
     => Exchange p tr from inter control
-    -> Peer p tr (ControlNext control 'Yielding 'Awaiting inter) to f t
+    -> Peer p tr (ControlNext control 'Yielding 'Awaiting 'Finished inter) to f t
     -> Peer p tr ('Yielding from) to f t
+  -- Want to have that the 'PeerAwait' constructor is impossible 
   PeerAwait
     :: ( Typeable from )
-    => (forall inter . tr from inter -> Peer p tr (ControlNext (TrControl p from inter) 'Awaiting 'Yielding inter) to f t)
+    => (forall inter . tr from inter -> Peer p tr (ControlNext (TrControl p from inter) 'Awaiting 'Yielding 'Finished inter) to f t)
     -> Peer p tr ('Awaiting from) to f t
 
 -- | In a client/server model, one side will be awaiting when the other is
@@ -55,6 +56,7 @@ data Peer p (tr :: st -> st -> Type) (from :: Status st) (to :: Status st) f t w
 data Status k where
   Awaiting :: k -> Status k
   Yielding :: k -> Status k
+  Finished :: k -> Status k
 
 -- | This would be far more useful if GHC could understand that
 --
@@ -64,18 +66,20 @@ data Status k where
 type family Complement (status :: st -> Status st) :: st -> Status st where
   Complement 'Awaiting = 'Yielding
   Complement 'Yielding = 'Awaiting
+  Complement 'Finished = 'Finished
 
 -- | Description of control flow: either hold onto it or release it.
 data Control where
-  Hold    :: Control
-  Release :: Control
+  Hold      :: Control
+  Release   :: Control
+  Terminate :: Control
 
--- | 'p' partitions 'k' by picking, for each 'st :: k', one of two options,
--- here called 'a' and 'b'. Church encoding of boolean.
+-- | 'p' partitions 'k' by picking, for each 'st :: k', one of 3 options,
+-- here called 'a', 'b', and 'c'.
 --
 -- To use a 'Peer p (tr :: k -> k -> Type)', there must be an instance of
--- 'Parition p st a b' for all 'st :: k'.
-type family Partition (p :: r) (st :: k) (a :: t) (b :: t) :: t
+-- 'Parition p st a b c' for all 'st :: k'.
+type family Partition (p :: r) (st :: k) (a :: t) (b :: t) (c :: t) :: t
 
 -- | Picks 'Hold if 'from' and 'to' lie in the same partition.
 -- Picks 'Release otherwise.
@@ -87,15 +91,19 @@ type family Partition (p :: r) (st :: k) (a :: t) (b :: t) :: t
 -- It's the same thing except that we're picking 'Hold if the XOR is false
 -- (they are the same) and 'Release otherwise.
 type TrControl p from to =
-  Partition p from (Partition p to 'Hold 'Release)
-                   (Partition p to 'Release 'Hold)
+  Partition p from (Partition p to 'Hold 'Release 'Terminate)
+                   (Partition p to 'Release 'Hold 'Terminate)
+                   -- This part is weird. If 'from' is in the terminal set,
+                   -- then ...
+                   'Terminate
 
 -- | This family is used in the definition of 'Peer' to determine whether, given
 -- a parituclar transition, a yielding side continues to yield or begins
 -- awaiting, and vice verse for an awaiting side.
-type family ControlNext control a b where
-  ControlNext 'Hold    a b = a
-  ControlNext 'Release a b = b
+type family ControlNext control a b c where
+  ControlNext 'Hold      a b c = a
+  ControlNext 'Release   a b c = b
+  ControlNext 'Terminate a b c = c
 
 -- | Included in every yield, this gives not only the transition, but a
 -- 'Control' code to hold or release. The constructor for yielding will
@@ -109,11 +117,13 @@ data Exchange p tr from to control where
   Part :: tr from to -> Exchange p tr from to 'Hold
   -- | Radio terminology. End of transmission and response is expected.
   Over :: tr from to -> Exchange p tr from to 'Release
+  Out  :: tr from to -> Exchange p tr from to 'Terminate
 
 -- | Get the transition from an 'Exchange'.
 exchangeTransition :: Exchange p tr from to control -> tr from to
 exchangeTransition (Part tr) = tr
 exchangeTransition (Over tr) = tr
+exchangeTransition (Out tr)  = tr
 
 -- | Boilerplate: hoist a natural transformation through a 'Peer'.
 hoistPeer
@@ -138,9 +148,18 @@ yield
      , TrControl p from inter ~ control
      )
   => Exchange p tr from inter control
-  -> Peer p tr (ControlNext control 'Yielding 'Awaiting inter) to f t
+  -> Peer p tr (ControlNext control 'Yielding 'Awaiting 'Finished inter) to f t
   -> Peer p tr ('Yielding from) to f t
 yield = PeerYield
+
+out
+  :: ( Typeable from
+     , TrControl p from inter ~ 'Terminate
+     )
+  => tr from inter
+  -> Peer p tr ('Finished inter) to f t
+  -> Peer p tr ('Yielding from) to f t
+out tr = yield (Out tr)
 
 over
   :: ( Typeable from
@@ -162,7 +181,7 @@ part tr = yield (Part tr)
 
 await
   :: ( Typeable from )
-  => (forall inter . tr from inter -> Peer p tr (ControlNext (TrControl p from inter) 'Awaiting 'Yielding inter) to f t)
+  => (forall inter . tr from inter -> Peer p tr (ControlNext (TrControl p from inter) 'Awaiting 'Yielding 'Finished inter) to f t)
   -> Peer p tr ('Awaiting from) to f t
 await = PeerAwait
 
@@ -200,9 +219,11 @@ connect (PeerHole m) peerB = m >>= flip connect peerB
 connect (PeerAwait k) (PeerYield exchange n) = case exchange of
   Part tr -> connect (k tr) n
   Over tr -> fmap flipThese (connect n (k tr))
+  Out  tr -> fmap flipThese (connect n (k tr))
 connect (PeerYield exchange n) (PeerAwait k) = case exchange of
   Part tr -> connect n (k tr)
   Over tr -> fmap flipThese (connect (k tr) n)
+  Out  tr -> fmap flipThese (connect (k tr) n)
 -- NB: this is a complete pattern match.
 -- (PeerAwait _) (PeerAwait _) deadlock is not possible.
 -- (PeerYield _ _) (PeerYield _ _) interjection is not possible.
@@ -253,9 +274,11 @@ stepping (PeerDone a) peerB@(PeerAwait _)   = LeftDone a peerB
 stepping (PeerAwait k) (PeerYield exchange n) = case exchange of
   Part tr -> stepping (k tr) n
   Over tr -> flipStepping (stepping n (k tr))
+  Out  tr -> flipStepping (stepping n (k tr))
 stepping (PeerYield exchange n) (PeerAwait k) = case exchange of
   Part tr -> stepping n (k tr)
   Over tr -> flipStepping (stepping (k tr) n)
+  Out  tr -> flipStepping (stepping (k tr) n)
 
 flipStepping
   :: ( Functor fa

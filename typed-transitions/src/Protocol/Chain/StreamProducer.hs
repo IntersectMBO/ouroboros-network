@@ -46,6 +46,7 @@ data BlockStreamNext p m t = BlockStreamNext
     -- Must give 'NoNextBlock' instead.
   , bsNextBlock  :: m (StreamStep p (NextBlock p) (NextBlock p) m t)
   , bsImprove    :: NonEmpty Point -> m (StreamStep p (Improve p) (Improve p) m t)
+  , bsDone       :: t
   }
 
 data VoidF (f :: Type -> Type) (m :: Type -> Type) (t :: Type) where
@@ -103,7 +104,7 @@ data RelayBody p m t where
 streamProducer
   :: ( Monad m )
   => BlockStream p m t
-  -> Peer ChainExchange (TrChainExchange p) ('Yielding 'StInit) ('Yielding ('StBusy 'Next)) m t
+  -> Peer ChainExchange (TrChainExchange p) ('Yielding 'StInit) ('Finished 'StDone) m t
 streamProducer bs = hole $ runBlockStream bs >>= \bsAt ->
   let msg = TrInit (bsReadPointer bsAt) (bsTip bsAt)
   in  pure $ over msg (streamProducerMain (bsNext bsAt))
@@ -112,8 +113,10 @@ streamProducerMain
   :: forall p m t .
      ( Monad m )
   => BlockStreamNext p m t
-  -> Peer ChainExchange (TrChainExchange p) ('Awaiting 'StIdle) ('Yielding ('StBusy 'Next)) m t
+  -> Peer ChainExchange (TrChainExchange p) ('Awaiting 'StIdle) ('Finished 'StDone) m t
 streamProducerMain bsNext = await $ \req -> case req of
+
+  TrConsumerDone -> done (bsDone bsNext)
 
   TrRequest (ReqSetHead cps) -> hole $ bsImprove bsNext cps >>= \it -> case it of
     ChangeFork readPointer tip bsNext' ->
@@ -129,7 +132,7 @@ streamProducerMain bsNext = await $ \req -> case req of
 
   TrRequest ReqNext -> hole $ bsNextChange bsNext >>= \it -> case it of
 
-    Left t -> pure $ done t
+    Left t -> pure $ out TrProducerDone (done t)
 
     Right (NoChange anything) -> impossible anything
 
@@ -163,7 +166,7 @@ streamProducerMain bsNext = await $ \req -> case req of
   respondDownload
     :: BlockStreamNext p m t
     -> Word
-    -> Peer ChainExchange (TrChainExchange p) ('Yielding ('StBusy 'Download)) ('Yielding ('StBusy 'Next)) m t
+    -> Peer ChainExchange (TrChainExchange p) ('Yielding ('StBusy 'Download)) ('Finished 'StDone) m t
   respondDownload bsNext 0 = over (TrRespond (ResDownloadDone Nothing)) (streamProducerMain bsNext)
   respondDownload bsNext n = hole $ bsNextBlock bsNext >>= \it -> case it of
     ChangeFork readPointer tip bsNext' ->
@@ -187,7 +190,7 @@ streamProducerMain bsNext = await $ \req -> case req of
     => Point    -- ^ Read pointer
     -> Header p -- ^ Tip
     -> BlockStreamNext p m t
-    -> Peer ChainExchange (TrChainExchange p) ('Yielding ('StBusy anything)) ('Yielding ('StBusy 'Next)) m t
+    -> Peer ChainExchange (TrChainExchange p) ('Yielding ('StBusy anything)) ('Finished 'StDone) m t
   streamProducerChanged readPointer tip bsNext = over msg (streamProducerMain bsNext)
     where
     msg = TrRespond (ResChange readPointer tip)

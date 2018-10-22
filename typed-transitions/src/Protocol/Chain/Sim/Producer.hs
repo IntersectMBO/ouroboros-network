@@ -24,7 +24,6 @@ import qualified Chain (head)
 import MonadClass.MonadSTM
 
 data Changing t where
-  Exhausted :: t -> Changing t
   Forked    :: t -> Changing t
   Extended  :: t -> Changing t
   Unchanged :: t -> Changing t
@@ -34,7 +33,8 @@ unChanging it = case it of
   Forked    t -> t
   Extended  t -> t
   Unchanged t -> t
-  Exhausted t -> t
+
+type Exhausted = Bool
 
 -- Need to express the idea that if the chain segment is already forked, and
 -- we extend that fork, then it's still forked.
@@ -44,10 +44,8 @@ unChanging it = case it of
 -- If either is forked, the result is forked. If both are extended, it's extended.
 -- If both are unchanged, it's unchanged.
 carryChange :: (t -> Changing t) -> Changing t -> Changing t
-carryChange _ (Exhausted t) = Exhausted t
 carryChange k (Forked s)    = Forked (unChanging (k s))
 carryChange k (Extended s)  = case k s of
-  Exhausted t -> Exhausted t
   Forked t -> Forked t
   Extended t -> Extended t
   Unchanged t -> Extended t
@@ -196,10 +194,10 @@ findBestCheckpoint cps cs = case cs of
 -- the consumer and probably cause it to terminate the protocol.
 simpleBlockStream
   :: ( MonadSTM m stm ) 
-  => TVar m (Changing  (ChainSegment p))
+  => TVar m (Changing  (ChainSegment p), Exhausted)
   -> BlockStream p m ()
 simpleBlockStream chainVar = BlockStream $ atomically $ do
-  cs <- unChanging <$> readTVar chainVar
+  cs <- unChanging . fst <$> readTVar chainVar
   let tipHeader = blockHeader (chainSegmentTip cs)
       readPointer = blockPoint (chainSegmentReadPointer cs)
   pure $ BlockStreamAt
@@ -211,12 +209,13 @@ simpleBlockStream chainVar = BlockStream $ atomically $ do
 simpleBlockStreamNext
   ::forall p m stm .
      ( MonadSTM m stm )
-  => TVar m (Changing (ChainSegment p))
+  => TVar m (Changing (ChainSegment p), Exhausted)
   -> BlockStreamNext p m ()
 simpleBlockStreamNext chainVar = BlockStreamNext
   { bsNextChange = nextChange
   , bsNextBlock  = nextBlock
   , bsImprove    = improve
+  , bsDone       = ()
   }
   where
 
@@ -230,17 +229,17 @@ simpleBlockStreamNext chainVar = BlockStreamNext
   nextChange = atomically $ do
     cchain <- readTVar chainVar
     case cchain of
-      Exhausted _     -> pure $ Left ()
-      Unchanged _     -> retry
-      Forked    chain -> do
+      (Unchanged _, True)  -> pure $ Left ()
+      (Unchanged _, False) -> retry
+      (Forked chain , exhausted) -> do
         let readPointer = blockPoint (chainSegmentReadPointer chain)
             tip         = blockHeader (chainSegmentTip chain)
         -- Set to unchanged, since the consumer now knows it.
-        writeTVar chainVar (Unchanged chain)
+        writeTVar chainVar (Unchanged chain, exhausted)
         pure $ Right $ ChangeFork readPointer tip (simpleBlockStreamNext chainVar)
       -- In this presentation, we always have the bodies. Fast relaying will
       -- be done whenever the chain segment is AtTip.
-      Extended  chain -> do
+      (Extended chain, exhausted) -> do
         let tip = chainSegmentTip chain
             tipHeader = blockHeader tip
             tipBody = blockBody tip
@@ -249,7 +248,7 @@ simpleBlockStreamNext chainVar = BlockStreamNext
                 Relaying (pure (NoChange (RelayBody tipBody (simpleBlockStreamNext chainVar))))
               _         ->
                 NoRelay (simpleBlockStreamNext chainVar)
-        writeTVar chainVar (Unchanged chain)
+        writeTVar chainVar (Unchanged chain, exhausted)
         pure $ Right $ ChangeExtend tipHeader relaying
 
   -- Blocks are read out from the TVar one-at-a-time, as opposed to, say,
@@ -265,28 +264,22 @@ simpleBlockStreamNext chainVar = BlockStreamNext
   nextBlock = atomically $ do
     cchain <- readTVar chainVar
     case cchain of
-      Exhausted chain -> case advance chain of
-        Just (b, !chain') -> do
-          writeTVar chainVar (Exhausted chain')
-          pure $ NoChange (NextBlock b (simpleBlockStreamNext chainVar))
-        Nothing ->
-          pure $ NoChange (NoNextBlock (simpleBlockStreamNext chainVar))
-      Forked chain    -> do
+      (Forked chain, exhausted) -> do
         let readPointer = blockPoint (chainSegmentReadPointer chain)
             tip         = blockHeader (chainSegmentTip chain)
-        writeTVar chainVar (Unchanged chain)
+        writeTVar chainVar (Unchanged chain, exhausted)
         pure $ ChangeFork readPointer tip (simpleBlockStreamNext chainVar)
-      Extended chain  -> case advance chain of
+      (Extended chain, exhausted) -> case advance chain of
         Just (b, !chain') -> do
           let tip = blockHeader (chainSegmentTip chain)
-          writeTVar chainVar (Unchanged chain')
+          writeTVar chainVar (Unchanged chain', exhausted)
           pure $ ChangeExtend tip (NextBlock b (simpleBlockStreamNext chainVar))
         Nothing -> do
           let tip = blockHeader (chainSegmentTip chain)
           pure $ ChangeExtend tip (NoNextBlock (simpleBlockStreamNext chainVar))
-      Unchanged chain -> case advance chain of
+      (Unchanged chain, exhausted) -> case advance chain of
         Just (b, !chain') -> do
-          writeTVar chainVar (Unchanged chain')
+          writeTVar chainVar (Unchanged chain', exhausted)
           pure $ NoChange (NextBlock b (simpleBlockStreamNext chainVar))
         Nothing ->
           pure $ NoChange (NoNextBlock (simpleBlockStreamNext chainVar))
@@ -305,26 +298,21 @@ simpleBlockStreamNext chainVar = BlockStreamNext
   improve cps = atomically $ do
     cchain <- readTVar chainVar
     case cchain of
-      Exhausted chain -> do
+      (Unchanged chain, exhausted) -> do
         let !chain'        = findBestCheckpoint cps chain
             newReadPointer = blockPoint (chainSegmentReadPointer chain')
-        writeTVar chainVar (Exhausted chain')
+        writeTVar chainVar (Unchanged chain', exhausted)
         pure $ NoChange $ Improve newReadPointer (simpleBlockStreamNext chainVar)
-      Unchanged chain -> do
-        let !chain'        = findBestCheckpoint cps chain
-            newReadPointer = blockPoint (chainSegmentReadPointer chain')
-        writeTVar chainVar (Unchanged chain')
-        pure $ NoChange $ Improve newReadPointer (simpleBlockStreamNext chainVar)
-      Forked chain -> do
+      (Forked chain, exhausted) -> do
         let newReadPointer = blockPoint (chainSegmentReadPointer chain)
             tip            = blockHeader (chainSegmentTip chain)
-        writeTVar chainVar (Unchanged chain)
+        writeTVar chainVar (Unchanged chain, exhausted)
         pure $ ChangeFork newReadPointer tip (simpleBlockStreamNext chainVar)
-      Extended chain  -> do
+      (Extended chain, exhausted) -> do
         let tip            = blockHeader (chainSegmentTip chain)
             -- tip is guaranteed to be the same a chainSegmentTip chain'.
             -- 'findBestCheckpoint never changes the tip.
             !chain'        = findBestCheckpoint cps chain
             newReadPointer = blockPoint (chainSegmentReadPointer chain')
-        writeTVar chainVar (Unchanged chain')
+        writeTVar chainVar (Unchanged chain', exhausted)
         pure $ ChangeExtend tip (Improve newReadPointer (simpleBlockStreamNext chainVar))
