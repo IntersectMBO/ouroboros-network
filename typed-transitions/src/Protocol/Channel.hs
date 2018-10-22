@@ -60,6 +60,12 @@ data FromStream tr k t where
   -- | Done using the stream.
   StreamDone :: t -> FromStream tr k t
 
+instance Show t => Show (FromStream tr k t) where
+  show term = case term of
+    StreamEnd _        -> "StreamEnd"
+    StreamUnexpected _ -> "StreamUnexpected"
+    StreamDone t       -> "StreamDone (" ++ show t ++ ")"
+
 -- | Supply input and carry output to/from a 'Peer' by way of a 'Channel'.
 -- If the stream ends before the 'Peer' finishes, a continuation is given.
 useChannel
