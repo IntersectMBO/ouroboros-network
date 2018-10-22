@@ -1,19 +1,20 @@
+{-# LANGUAGE NamedFieldPuns #-}
+
 module Test.ChainProducerState (tests) where
 
 import           Data.List (unfoldr)
 
-import Test.QuickCheck
-import Test.Tasty
-import Test.Tasty.QuickCheck
+import           Test.QuickCheck
+import           Test.Tasty
+import           Test.Tasty.QuickCheck
 
-import           Chain ( Chain, Block, Point(..), ChainUpdate(..)
-                       , genesisPoint, headPoint , pointOnChain )
+import           Chain (Block, Chain, ChainUpdate (..), Point (..),
+                     genesisPoint, headPoint, pointOnChain)
 import qualified Chain
-import ChainProducerState
+import           ChainProducerState
 
-import           Test.Chain
-                       ( TestBlockChainAndUpdates(..), TestBlockChain(..)
-                       , TestChainFork(..), mkRollbackPoint )
+import           Test.Chain (TestBlockChain (..), TestBlockChainAndUpdates (..),
+                     TestChainFork (..), mkRollbackPoint)
 
 tests :: TestTree
 tests =
@@ -183,7 +184,7 @@ genReaderState n c = do
 fixupReaderStates :: [ReaderState] -> [ReaderState]
 fixupReaderStates = go 0
   where
-  go _ [] = []
+  go _ []       = []
   go n (r : rs) = r { readerId = n } : go (n + 1) rs
 
 instance Arbitrary ChainProducerStateTest where

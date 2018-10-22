@@ -1,17 +1,17 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Test.Pipe (tests) where
 
-import           Block (Block, Slot(..), HeaderHash(..))
-import           Chain (Point(..), Chain(..))
-import           Protocol
+import           Block (Block, HeaderHash (..), Slot (..))
+import           Chain (Chain (..), Point (..))
 import           Pipe (demo2)
+import           Protocol
 import           Serialise (prop_serialise)
 
-import Test.Chain (TestBlockChainAndUpdates(..), genBlockChain)
+import           Test.Chain (TestBlockChainAndUpdates (..), genBlockChain)
 
-import Test.QuickCheck
-import Test.Tasty (TestTree, testGroup)
-import Test.Tasty.QuickCheck (testProperty)
+import           Test.QuickCheck
+import           Test.Tasty (TestTree, testGroup)
+import           Test.Tasty.QuickCheck (testProperty)
 
 --
 -- The list of all tests

@@ -1,5 +1,5 @@
-{-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Protocol
   ( MsgConsumer(..)
@@ -16,7 +16,8 @@ import           Control.Monad
 
 import           Chain (ChainUpdate (..), Point (..))
 import           MonadClass
-import           ProtocolInterfaces (ConsumerHandlers(..), ProducerHandlers(..))
+import           ProtocolInterfaces (ConsumerHandlers (..),
+                     ProducerHandlers (..))
 import           Serialise
 
 {-# ANN module "HLint: ignore Use readTVarIO" #-}
@@ -137,7 +138,7 @@ producerSideProtocol1 ProducerHandlers{..} send recv =
       changed <- improveReadPoint r points
       case changed of
         Just (pt, tip) -> send (MsgIntersectImproved pt tip)
-        Nothing -> send MsgIntersectUnchanged
+        Nothing        -> send MsgIntersectUnchanged
 
     updateMsg (AddBlock b) = MsgRollForward b
     updateMsg (RollBack p) = MsgRollBackward p

@@ -1,11 +1,11 @@
 {-# LANGUAGE TypeFamilies #-}
 module MonadClass.MonadConc (
   MonadConc (..),
-  newEmptyMVar, 
+  newEmptyMVar,
   newMVar
   ) where
 
-import MonadClass.MonadFork
+import           MonadClass.MonadFork
 
 class MonadFork m => MonadConc m where
   type MVar m :: * -> *

@@ -1,5 +1,5 @@
-{-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE NamedFieldPuns             #-}
 
 -- | Reference implementation of a representation of a block in a block chain.
 --
@@ -21,19 +21,19 @@ module Block (
     )
     where
 
-import Data.Hashable
+import           Data.Hashable
 import qualified Data.Text as Text
 
-import Serialise
+import           Serialise
 
-import Test.QuickCheck
+import           Test.QuickCheck
 
 -- | Our highly-simplified version of a block. It retains the separation
 -- between a block header and body, which is a detail needed for the protocols.
 --
 data Block = Block {
-       blockHeader   :: BlockHeader,
-       blockBody     :: BlockBody
+       blockHeader :: BlockHeader,
+       blockBody   :: BlockBody
      }
   deriving (Show, Eq)
 

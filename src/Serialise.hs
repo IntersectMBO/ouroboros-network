@@ -19,14 +19,14 @@ module Serialise (
 
 import qualified Data.ByteString.Lazy as LBS
 #if __GLASGOW_HASKELL__ < 804
-import Data.Monoid
+import           Data.Monoid
 #endif
-import Codec.CBOR.Encoding hiding (Encoding(..), Tokens(..))
-import Codec.CBOR.Encoding        (Encoding)
-import Codec.CBOR.Decoding hiding (DecodeAction(..), TokenType(..))
-import Codec.CBOR.FlatTerm
-import Codec.CBOR.Write (toLazyByteString)
-import Codec.CBOR.Read  (deserialiseFromBytes, DeserialiseFailure)
+import           Codec.CBOR.Decoding hiding (DecodeAction (..), TokenType (..))
+import           Codec.CBOR.Encoding hiding (Encoding (..), Tokens (..))
+import           Codec.CBOR.Encoding (Encoding)
+import           Codec.CBOR.FlatTerm
+import           Codec.CBOR.Read (DeserialiseFailure, deserialiseFromBytes)
+import           Codec.CBOR.Write (toLazyByteString)
 
 
 class Serialise a where

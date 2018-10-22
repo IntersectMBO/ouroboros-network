@@ -1,5 +1,5 @@
-{-# LANGUAGE DeriveFunctor       #-}
-{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE DeriveFunctor  #-}
+{-# LANGUAGE NamedFieldPuns #-}
 
 -- | Reference implementation of a representation of a block chain
 --
@@ -62,15 +62,15 @@ module Chain (
   prettyPrintChain
   ) where
 
-import Prelude hiding (head, drop)
+import           Prelude hiding (drop, head)
 
-import Block ( Block(..), BlockHeader(..), HasHeader(..)
-             , Slot(..), BlockNo (..), HeaderHash(..)
-             , BodyHash(..), Slot(..), BlockNo(..)
-             , HeaderHash(..), hashHeader, hashBody )
-import Serialise
+import           Block (Block (..), BlockHeader (..), BlockNo (..),
+                     BlockNo (..), BodyHash (..), HasHeader (..),
+                     HeaderHash (..), HeaderHash (..), Slot (..), Slot (..),
+                     hashBody, hashHeader)
+import           Serialise
 
-import Control.Exception (assert)
+import           Control.Exception (assert)
 import qualified Data.List as L
 
 
@@ -212,7 +212,7 @@ selectChain
   => Chain block
   -> Chain block
   -> Chain block
-selectChain c1 c2 = 
+selectChain c1 c2 =
   if headBlockNo c1 >= headBlockNo c2
     then c1
     else c2
