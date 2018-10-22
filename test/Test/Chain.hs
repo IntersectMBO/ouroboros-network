@@ -26,12 +26,12 @@ import Data.Maybe (listToMaybe)
 import qualified Data.List as L
 
 import Test.QuickCheck
-import Test.Tasty (TestTree, TestName, testGroup)
+import Test.QuickCheck.Property (Property(..))
+import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
 
 import Test.GlobalState
 import Test.ArbitrarySt
-import Data.Map.Strict (Map)
 
 --
 -- The list of all tests
@@ -61,8 +61,8 @@ tests =
     , testProperty "shrink for TestChainAndPoint"    (withBft $ prop_shrink_TestChainAndPoint @'OuroborosBFT)
 
     , testProperty "arbitrary for TestChainFork" (withBft $ prop_arbitrary_TestChainFork @'OuroborosBFT)
-    -- , testProperty "shrink for TestChainFork"
-    --                            (withSt @'OuroborosBFT $ mapSize (min 40) prop_shrink_TestChainFork)
+    , testProperty "shrink for TestChainFork"
+                               (mapSize (min 40) (withBft $ prop_shrink_TestChainFork @'OuroborosBFT))
     ]
 
   , testProperty "length/Genesis"  prop_length_genesis
@@ -89,6 +89,11 @@ instance (  ArbitrarySt p (a p), Show (a p), Testable prop)
     property (WithSt s f) = property $ do
       a <- evalStateT arbitrarySt s
       return $ f a
+
+instance Testable (WithSt p Property) where
+    property (WithSt s p) = property $ do
+      a <- evalStateT (lift . unProperty $ p) s
+      return (MkProperty (return a))
 
 --
 -- Properties
