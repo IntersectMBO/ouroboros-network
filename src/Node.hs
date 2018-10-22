@@ -17,18 +17,18 @@ import           ChainProducerState (ChainProducerState (..), ReaderId,
                      initChainProducerState, producerChain, switchFork)
 import           ConsumersAndProducers
 import           MonadClass hiding (recvMsg, sendMsg)
+import           Ouroboros
 import           Protocol
-
 
 
 -- |
 -- State-full chain selection (@'ChainProducerState'@).
-longestChainSelection :: forall block m stm.
+longestChainSelection :: forall p block m stm.
                          ( HasHeader block
                          , MonadSTM m stm
                          )
-                      => [TVar m (Maybe (Chain block))]
-                      -> TVar m (ChainProducerState block)
+                      => [TVar m (Maybe (Chain (block p)))]
+                      -> TVar m (ChainProducerState (block p))
                       -> m ()
 longestChainSelection candidateChainVars cpsVar =
     forever (atomically updateCurrentChain)
@@ -44,9 +44,9 @@ longestChainSelection candidateChainVars cpsVar =
         else writeTVar cpsVar (switchFork chain' cps)
 
 
-chainValidation :: forall block m stm. (HasHeader block, MonadSTM m stm)
-                => TVar m (Chain block)
-                -> TVar m (Maybe (Chain block))
+chainValidation :: forall p block m stm. (HasHeader block, MonadSTM m stm)
+                => TVar m (Chain (block p))
+                -> TVar m (Maybe (Chain (block p)))
                 -> m ()
 chainValidation peerChainVar candidateChainVar = do
     st <- atomically (newTVar Chain.genesisPoint)
@@ -63,14 +63,14 @@ chainValidation peerChainVar candidateChainVar = do
       writeTVar candidateChainVar candidateChain
 
 
-chainTransferProtocol :: forall block m stm.
+chainTransferProtocol :: forall p block m stm.
                          ( HasHeader block
                          , MonadSTM m stm
                          , MonadTimer m
                          )
                       => Duration (Time m)
-                      -> TVar m (Chain block)
-                      -> TVar m (Chain block)
+                      -> TVar m (Chain (block p))
+                      -> TVar m (Chain (block p))
                       -> m ()
 chainTransferProtocol delay inputVar outputVar = do
     st <- atomically (newTVar Chain.genesisPoint)
@@ -196,15 +196,15 @@ createTwoWaySubscriptionChannels trDelay1 trDelay2 = do
 -- @slotDuration * blockSlot block@ time.
 --
 -- TODO: invariant: generates blocks for current slots.
-blockGenerator :: forall block m stm.
+blockGenerator :: forall p block m stm.
                   ( HasHeader block
                   , MonadSTM m stm
                   , MonadTimer m
                   )
                => Duration (Time m)
                -- ^ slot duration
-               -> Chain block
-               -> m (TVar m (Maybe block))
+               -> Chain (block p)
+               -> m (TVar m (Maybe (block p)))
                -- ^ returns an stm transaction which returns block
 blockGenerator slotDuration chain = do
   outputVar <- atomically (newTVar Nothing)
@@ -229,15 +229,15 @@ getBlock v = do
 -- mutates, write the result to the supplied @'Probe'@.
 --
 observeChainProducerState
-  :: forall m stm block.
+  :: forall p m stm block.
      ( HasHeader block
      , MonadSTM m stm
      , MonadSay m
      , MonadProbe m
      )
   => NodeId
-  -> Probe m (NodeId, Chain block)
-  -> TVar m (ChainProducerState block)
+  -> Probe m (NodeId, Chain (block p))
+  -> TVar m (ChainProducerState (block p))
   -> m ()
 observeChainProducerState nid p cpsVar = do
     st <- atomically (newTVar Chain.genesisPoint)
@@ -252,10 +252,6 @@ observeChainProducerState nid p cpsVar = do
                 writeTVar stateVar (Chain.headPoint chain)
                 return chain
       probeOutput p (nid, chain)
-
-data NodeId = CoreId Int
-            | RelayId Int
-  deriving (Eq, Ord, Show)
 
 data ConsumerId = ConsumerId NodeId Int
   deriving (Eq, Ord, Show)
@@ -272,17 +268,17 @@ data ProducerId = ProducerId NodeId Int
 -- The main thread of the @'relayNode'@ is not blocking; it will return
 -- @TVar ('ChainProducerState' block)@.  This allows to extend the relay node to
 -- a core node.
-relayNode :: forall block m stm.
+relayNode :: forall p block m stm.
         ( HasHeader block
-        , Eq block
-        , Show block
+        , Eq (block p)
+        , Show (block p)
         , MonadSTM m stm
         , MonadTimer m
         , MonadSay m
         )
      => NodeId
-     -> NodeChannels m (MsgProducer block) MsgConsumer
-     -> m (TVar m (ChainProducerState block))
+     -> NodeChannels m (MsgProducer (block p)) MsgConsumer
+     -> m (TVar m (ChainProducerState (block p)))
 relayNode nid chans = do
 
   -- Mutable state
@@ -308,8 +304,8 @@ relayNode nid chans = do
   return cpsVar
   where
     startConsumer :: Int
-                  -> Chan m MsgConsumer (MsgProducer block)
-                  -> m (TVar m (Chain block))
+                  -> Chan m MsgConsumer (MsgProducer (block p))
+                  -> m (TVar m (Chain (block p)))
     startConsumer cid chan = do
       chainVar <- atomically $ newTVar Genesis
       let consumer = exampleConsumer chainVar
@@ -318,9 +314,9 @@ relayNode nid chans = do
         (loggingRecv (ConsumerId nid cid) (recvMsg chan))
       return chainVar
 
-    startProducer :: ProducerHandlers block m ReaderId
+    startProducer :: ProducerHandlers (block p) m ReaderId
                   -> Int
-                  -> Chan m (MsgProducer block) MsgConsumer
+                  -> Chan m (MsgProducer (block p)) MsgConsumer
                   -> m ()
     startProducer producer pid chan = do
       fork $ producerSideProtocol1 producer
@@ -332,7 +328,7 @@ relayNode nid chans = do
 -- that the slot for which it was supposed to generate a block was already
 -- occupied, it will replace it with its block.
 --
-coreNode :: forall m stm.
+coreNode :: forall p m stm.
         ( MonadSTM m stm
         , MonadTimer m
         , MonadSay m
@@ -340,9 +336,9 @@ coreNode :: forall m stm.
      => NodeId
      -> Duration (Time m)
      -- ^ slot duration
-     -> Chain Block
-     -> NodeChannels m (MsgProducer Block) MsgConsumer
-     -> m (TVar m (ChainProducerState Block))
+     -> Chain (Block p)
+     -> NodeChannels m (MsgProducer (Block p)) MsgConsumer
+     -> m (TVar m (ChainProducerState (Block p)))
 coreNode nid slotDuration gchain chans = do
   cpsVar <- relayNode nid chans
 
@@ -353,15 +349,15 @@ coreNode nid slotDuration gchain chans = do
 
   where
     applyGeneratedBlock
-      :: TVar m (Maybe Block)
-      -> TVar m (ChainProducerState Block)
+      :: TVar m (Maybe (Block p))
+      -> TVar m (ChainProducerState (Block p))
       -> m ()
     applyGeneratedBlock blockVar cpsVar = atomically $ do
       block <- getBlock blockVar
       cps@ChainProducerState{chainState = chain} <- readTVar cpsVar
       writeTVar cpsVar (switchFork (addBlock chain block) cps)
 
-    addBlock :: Chain Block -> Block -> Chain Block
+    addBlock :: Chain (Block p) -> Block p -> Chain (Block p)
     addBlock c b@Block{blockHeader = h} =
       case headerSlot h `compare` Chain.headSlot c of
         -- the block is OK

@@ -1,4 +1,6 @@
+{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE KindSignatures             #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 
 -- | Reference implementation of a representation of a block in a block chain.
@@ -24,6 +26,7 @@ module Block (
 import           Data.Hashable
 import qualified Data.Text as Text
 
+import           Ouroboros
 import           Serialise
 
 import           Test.QuickCheck
@@ -31,8 +34,8 @@ import           Test.QuickCheck
 -- | Our highly-simplified version of a block. It retains the separation
 -- between a block header and body, which is a detail needed for the protocols.
 --
-data Block = Block {
-       blockHeader :: BlockHeader,
+data Block (p :: OuroborosProtocol) = Block {
+       blockHeader :: BlockHeader p,
        blockBody   :: BlockBody
      }
   deriving (Show, Eq)
@@ -40,7 +43,7 @@ data Block = Block {
 -- | A block header. It retains simplified versions of all the essential
 -- elements.
 --
-data BlockHeader = BlockHeader {
+data BlockHeader (p :: OuroborosProtocol) = BlockHeader {
        headerHash     :: HeaderHash,  -- ^ The cached 'HeaderHash' of this header.
        headerPrevHash :: HeaderHash,  -- ^ The 'headerHash' of the previous block header
        headerSlot     :: Slot,        -- ^ The Ouroboros time slot index of this block
@@ -57,10 +60,6 @@ data BlockHeader = BlockHeader {
 --
 newtype BlockBody    = BlockBody String
   deriving (Show, Eq, Ord)
-
--- | The Ouroboros time slot index for a block.
-newtype Slot         = Slot { getSlot :: Word }
-  deriving (Show, Eq, Ord, Hashable, Enum)
 
 -- | The 0-based index of the block in the blockchain
 newtype BlockNo      = BlockNo Word
@@ -92,7 +91,7 @@ hashBody (BlockBody b) = BodyHash (hash b)
 
 -- | Compute the 'HeaderHash' of the 'BlockHeader'.
 --
-hashHeader :: BlockHeader -> HeaderHash
+hashHeader :: BlockHeader p -> HeaderHash
 hashHeader (BlockHeader _ b c d e f) = HeaderHash (hash (b, c, d, e, f))
 
 --
@@ -102,15 +101,15 @@ hashHeader (BlockHeader _ b c d e f) = HeaderHash (hash (b, c, d, e, f))
 -- | This class lets us treat chains of block headers and chains of whole
 -- blocks in a parametrised way.
 --
-class HasHeader b where
-    blockHash      :: b -> HeaderHash
-    blockPrevHash  :: b -> HeaderHash
-    blockSlot      :: b -> Slot
-    blockNo        :: b -> BlockNo
-    blockSigner    :: b -> BlockSigner
-    blockBodyHash  :: b -> BodyHash
+class HasHeader (b :: OuroborosProtocol -> *) where
+    blockHash      :: b p -> HeaderHash
+    blockPrevHash  :: b p -> HeaderHash
+    blockSlot      :: b p -> Slot
+    blockNo        :: b p -> BlockNo
+    blockSigner    :: b p -> BlockSigner
+    blockBodyHash  :: b p -> BodyHash
 
-    blockInvariant :: b -> Bool
+    blockInvariant :: b p -> Bool
 
 instance HasHeader BlockHeader where
     blockHash      = headerHash
@@ -151,7 +150,7 @@ instance Arbitrary BlockBody where
 -- Serialisation
 --
 
-instance Serialise Block where
+instance Serialise (Block p) where
 
   encode Block {blockHeader, blockBody} =
       encodeListLen 2
@@ -162,7 +161,7 @@ instance Serialise Block where
       decodeListLenOf 2
       Block <$> decode <*> decode
 
-instance Serialise BlockHeader where
+instance Serialise (BlockHeader p) where
 
   encode BlockHeader {
          headerHash     = HeaderHash headerHash,
@@ -194,4 +193,3 @@ instance Serialise BlockBody where
   encode (BlockBody b) = encodeString (Text.pack b)
 
   decode = BlockBody . Text.unpack <$> decodeString
-

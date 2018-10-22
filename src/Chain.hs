@@ -106,7 +106,7 @@ data Point = Point {
      }
   deriving (Eq, Ord, Show)
 
-blockPoint :: HasHeader block => block -> Point
+blockPoint :: HasHeader block => block p -> Point
 blockPoint b =
     Point {
       pointSlot = blockSlot b,
@@ -128,11 +128,11 @@ genesisBlockNo = BlockNo 0
 genesisPoint :: Point
 genesisPoint = Point genesisSlot genesisHash
 
-valid :: HasHeader block => Chain block -> Bool
+valid :: HasHeader block => Chain (block p) -> Bool
 valid Genesis  = True
 valid (c :> b) = valid c && validExtension c b
 
-validExtension ::  HasHeader block => Chain block -> block -> Bool
+validExtension ::  HasHeader block => Chain (block p) -> block p -> Bool
 validExtension c b = blockInvariant b
                   && headHash c == blockPrevHash b
                   && headSlot c <  blockSlot b
@@ -142,17 +142,17 @@ head :: Chain b -> Maybe b
 head Genesis  = Nothing
 head (_ :> b) = Just b
 
-headPoint :: HasHeader block => Chain block -> Point
+headPoint :: HasHeader block => Chain (block p) -> Point
 headPoint Genesis  = genesisPoint
 headPoint (_ :> b) = blockPoint b
 
-headSlot :: HasHeader block => Chain block -> Slot
+headSlot :: HasHeader block => Chain (block p) -> Slot
 headSlot = pointSlot . headPoint
 
-headHash :: HasHeader block => Chain block -> HeaderHash
+headHash :: HasHeader block => Chain (block p) -> HeaderHash
 headHash = pointHash . headPoint
 
-headBlockNo :: HasHeader block => Chain block -> BlockNo
+headBlockNo :: HasHeader block => Chain (block p) -> BlockNo
 headBlockNo Genesis  = genesisBlockNo
 headBlockNo (_ :> b) = blockNo b
 
@@ -164,7 +164,7 @@ toList = foldChain (flip (:)) []
 -- | Make a chain from a list of blocks. The head of the list is the head
 -- of the chain.
 --
-fromList :: HasHeader block => [block] -> Chain block
+fromList :: HasHeader block => [block p] -> Chain (block p)
 fromList bs = assert (valid c) c
   where
     c = foldr (flip (:>)) Genesis bs
@@ -181,24 +181,24 @@ null :: Chain block -> Bool
 null Genesis = True
 null _       = False
 
-addBlock :: HasHeader block => block -> Chain block -> Chain block
+addBlock :: HasHeader block => block p -> Chain (block p) -> Chain (block p)
 addBlock b c = assert (validExtension c b) $
                c :> b
 
-pointOnChain :: HasHeader block => Point -> Chain block -> Bool
+pointOnChain :: HasHeader block => Point -> Chain (block p) -> Bool
 pointOnChain p Genesis        = p == genesisPoint
 pointOnChain p (c :> b)
   | pointSlot p >  blockSlot b = False
   | pointSlot p == blockSlot b = pointHash p == blockHash b
   | otherwise                  = pointOnChain p c
 
-rollback :: HasHeader block => Point -> Chain block -> Maybe (Chain block)
+rollback :: HasHeader block => Point -> Chain (block p) -> Maybe (Chain (block p))
 rollback p (c :> b) | blockPoint b == p = Just (c :> b)
                     | otherwise         = rollback p c
 rollback p Genesis  | p == genesisPoint = Just Genesis
                     | otherwise         = Nothing
 
-successorBlock :: HasHeader block => Point -> Chain block -> Maybe block
+successorBlock :: HasHeader block => Point -> Chain (block p) -> Maybe (block p)
 successorBlock p c0 | headPoint c0 == p = Nothing
 successorBlock p c0 = go c0
   where
@@ -209,9 +209,9 @@ successorBlock p c0 = go c0
 
 selectChain
   :: HasHeader block
-  => Chain block
-  -> Chain block
-  -> Chain block
+  => Chain (block p)
+  -> Chain (block p)
+  -> Chain (block p)
 selectChain c1 c2 =
   if headBlockNo c1 >= headBlockNo c2
     then c1
@@ -219,9 +219,9 @@ selectChain c1 c2 =
 
 lookupBySlot
   :: HasHeader block
-  => Chain block
+  => Chain (block p)
   -> Slot
-  -> Maybe block
+  -> Maybe (block p)
 lookupBySlot Genesis _slot = Nothing
 lookupBySlot (c :> b) slot | blockSlot b == slot = Just b
                            | blockSlot b < slot  = Nothing
@@ -236,16 +236,16 @@ data ChainUpdate block = AddBlock block
   deriving (Eq, Show)
 
 applyChainUpdate :: HasHeader block
-                 => ChainUpdate block
-                 -> Chain block
-                 -> Maybe (Chain block)
+                 => ChainUpdate (block p)
+                 -> Chain (block p)
+                 -> Maybe (Chain (block p))
 applyChainUpdate (AddBlock b) c = Just (addBlock b c)
 applyChainUpdate (RollBack p) c =       rollback p c
 
 applyChainUpdates :: HasHeader block
-                  => [ChainUpdate block]
-                  -> Chain block
-                  -> Maybe (Chain block)
+                  => [ChainUpdate (block p)]
+                  -> Chain (block p)
+                  -> Maybe (Chain (block p))
 applyChainUpdates []     c = Just c
 applyChainUpdates (u:us) c = applyChainUpdates us =<< applyChainUpdate u c
 
@@ -258,7 +258,7 @@ applyChainUpdates (u:us) c = applyChainUpdates us =<< applyChainUpdate u c
 --
 -- > selectPoints (0 : [ fib n | n <- [1 .. 17] ])
 --
-selectPoints :: HasHeader block => [Int] -> Chain block -> [Point]
+selectPoints :: HasHeader block => [Int] -> Chain (block p) -> [Point]
 selectPoints offsets =
     go relativeOffsets
   where
@@ -272,7 +272,7 @@ selectPoints offsets =
 findFirstPoint
   :: HasHeader block
   => [Point]
-  -> Chain block
+  -> Chain (block p)
   -> Maybe Point
 findFirstPoint [] _     = Nothing
 findFirstPoint (p:ps) c
@@ -281,8 +281,8 @@ findFirstPoint (p:ps) c
 
 intersectChains
   :: HasHeader block
-  => Chain block
-  -> Chain block
+  => Chain (block p)
+  -> Chain (block p)
   -> Maybe Point
 intersectChains _ Genesis   = Nothing
 intersectChains c (bs :> b) =
@@ -294,14 +294,14 @@ intersectChains c (bs :> b) =
 -- | Fixup block so to fit it on top of a chain.  Only block number, previous
 -- hash and block hash are updated; slot number and signers are kept intact.
 --
-fixupBlock :: HasHeader block => Chain block -> Block -> Block
+fixupBlock :: HasHeader block => Chain (block p) -> Block p -> Block p
 fixupBlock c b@Block{blockBody, blockHeader} =
     b { blockHeader = fixupBlockHeader c (hashBody blockBody) blockHeader }
 
 -- | Fixup block header to fit it on top of a chain.  Only block number and
 -- previous hash are updated; the slot and signer are kept unchanged.
 --
-fixupBlockHeader :: HasHeader block => Chain block -> BodyHash -> BlockHeader -> BlockHeader
+fixupBlockHeader :: HasHeader block => Chain (block p) -> BodyHash -> BlockHeader p -> BlockHeader p
 fixupBlockHeader c h b = b'
   where
     b' = BlockHeader {

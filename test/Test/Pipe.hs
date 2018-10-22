@@ -30,14 +30,14 @@ tests =
 -- Properties
 --
 
-prop_pipe_demo :: TestBlockChainAndUpdates -> Property
+prop_pipe_demo :: TestBlockChainAndUpdates p -> Property
 prop_pipe_demo (TestBlockChainAndUpdates chain updates) =
     ioProperty $ demo2 chain updates
 
 prop_serialise_MsgConsumer :: MsgConsumer -> Bool
 prop_serialise_MsgConsumer = prop_serialise
 
-prop_serialise_MsgProducer :: MsgProducer Block -> Bool
+prop_serialise_MsgProducer :: MsgProducer (Block p) -> Bool
 prop_serialise_MsgProducer = prop_serialise
 
 instance Arbitrary MsgConsumer where
@@ -57,7 +57,6 @@ instance Arbitrary Point where
   arbitrary = Point <$> (Slot <$> arbitraryBoundedIntegral)
                     <*> (HeaderHash <$> arbitraryBoundedIntegral)
 
-instance Arbitrary Block where
+instance Arbitrary (Block p) where
   arbitrary = do _ :> b <- genBlockChain 1
                  return b
-
