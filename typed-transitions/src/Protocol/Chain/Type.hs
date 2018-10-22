@@ -20,7 +20,7 @@ type Body = BlockBody
 
 -- | Many responses can include a new tip of chain, in case the producer's
 -- chain was extended since the last request (not forked!).
-type MaybeNewTip = Maybe Header
+type MaybeNewTip p = Maybe (Header p)
 
 -- |
 -- = Definition of the chain exchange protocol, and a factoring of it into
@@ -35,13 +35,13 @@ data StChainExchange where
 -- | Transitions on 'StChainExchange'. A request goes from idle to busy, and
 -- a response may go from busy to idle, or stay on busy in case of multi-part
 -- responses for headers and bodies.
-data TrChainExchange stFrom stTo where
+data TrChainExchange p stFrom stTo where
   -- | The first transition gives the endpoints of the chain.
-  TrInit     :: Point -> Header -> TrChainExchange 'StInit 'StIdle
-  TrRequest  :: Request  req     -> TrChainExchange 'StIdle ('StBusy req)
-  TrRespond  :: Response req res -> TrChainExchange ('StBusy req) res
+  TrInit     :: Point -> Header p   -> TrChainExchange p 'StInit 'StIdle
+  TrRequest  :: Request  req        -> TrChainExchange p 'StIdle ('StBusy req)
+  TrRespond  :: Response p req res  -> TrChainExchange p ('StBusy req) res
 
-showTrChainExchange :: TrChainExchange from to -> String
+showTrChainExchange :: TrChainExchange p from to -> String
 showTrChainExchange tr = case tr of
   TrInit _ _ -> "Init"
   TrRequest (ReqSetHead hhs) -> "ReqSetHead " ++ show hhs
@@ -75,26 +75,26 @@ data Request (req :: RequestKind) where
 -- | Fork and extend can be responses to any request.
 -- The headers and bodies responses are multi-part: an individual data point
 -- can be sent, or the response can be closed, returning the state to idle.
-data Response (req :: RequestKind) (res :: StChainExchange) where
+data Response p (req :: RequestKind) (res :: StChainExchange) where
   -- | New tip and rollback point.
-  ResChange       :: Point -> Header -> Response anything 'StIdle
+  ResChange       :: Point -> Header p -> Response p anything 'StIdle
   -- | The new read pointer, possibly not in the requested set, meaning none of
   -- them are in the chain.
-  ResSetHead      :: Point -> MaybeNewTip -> Response 'SetHead 'StIdle
-  ResDownloadOne  :: Block -> MaybeNewTip -> Response 'Download ('StBusy 'Download)
-  ResDownloadDone :: MaybeNewTip -> Response 'Download 'StIdle
-  ResExtend       :: Header -> Response 'Next 'StIdle
+  ResSetHead      :: Point   -> MaybeNewTip p -> Response p 'SetHead 'StIdle
+  ResDownloadOne  :: Block p -> MaybeNewTip p -> Response p 'Download ('StBusy 'Download)
+  ResDownloadDone :: MaybeNewTip p -> Response p 'Download 'StIdle
+  ResExtend       :: Header p -> Response p 'Next 'StIdle
   -- | Relay of header. Its body (or a change of tip) will follow.
-  ResExtendRelay  :: Header -> Response 'Next ('StBusy 'Relay)
+  ResExtendRelay  :: Header p -> Response p 'Next ('StBusy 'Relay)
   -- | If the chain changes after the header was relayed (ResExtendRelay) but
   -- before the body comes in and is relayed (ResRelayBody), and the new tip
   -- is also a candidate for fast relay (its parent is the read pointer) then
   -- we need to relay the header again.
-  ResExtendNewRelay :: Header -> Response 'Relay ('StBusy 'Relay)
+  ResExtendNewRelay :: Header p -> Response p 'Relay ('StBusy 'Relay)
   -- | Header extension during a relay, aborting the relay.
-  ResExtendNew      :: Header -> Response 'Relay 'StIdle
+  ResExtendNew      :: Header p -> Response p 'Relay 'StIdle
   -- | Body relay finished.
-  ResRelayBody      :: Body -> Response 'Relay 'StIdle
+  ResRelayBody      :: Body -> Response p 'Relay 'StIdle
 
 -- |
 -- = Paritioning into client/server or consumer/producer
@@ -121,7 +121,7 @@ type family ChainExchangePartition st client server where
 
 -- | Proof that the protocol can always progress (every transition has at least
 -- one out-edge).
-progress :: Progress TrChainExchange
+progress :: Progress (TrChainExchange p)
 progress tr noNext = case tr of
   TrInit _ _                     -> noNext (TrRequest ReqNext)
   TrRequest _                    -> noNext someChange
@@ -135,7 +135,7 @@ progress tr noNext = case tr of
   TrRespond (ResRelayBody b)      -> noNext (TrRequest ReqNext)
   TrRespond (ResExtendNew h)      -> noNext (TrRequest ReqNext)
   where
-  someChange :: forall req . TrChainExchange ('StBusy req) 'StIdle
+  someChange :: forall p req . TrChainExchange p ('StBusy req) 'StIdle
   someChange = TrRespond (ResChange somePoint someHeader)
   -- Can't be bothered to write out the point and the header, but should do so
   -- later.

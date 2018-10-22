@@ -45,18 +45,18 @@ import MonadClass.MonadFork
 import qualified Debug.Trace as Debug (traceM)
 
 -- | Description of a static network.
-data StaticNetDesc x = StaticNetDesc Graph (Map Vertex (StaticNodeDesc x))
+data StaticNetDesc p x = StaticNetDesc Graph (Map Vertex (StaticNodeDesc p x))
 
 -- | Description of a static node (static meaning the in/out edges don't
 -- change).
-data StaticNodeDesc e = StaticNodeDesc
+data StaticNodeDesc p e = StaticNodeDesc
   { nodeDescName         :: String
-  , nodeDescInitialChain :: NonEmpty Block
+  , nodeDescInitialChain :: NonEmpty (Block p)
   , nodeDescOutEdges     :: [e]
   , nodeDescInEdges      :: [e]
   }
 
-staticNodeDesc :: String -> NonEmpty Block -> StaticNodeDesc x
+staticNodeDesc :: String -> NonEmpty (Block p) -> StaticNodeDesc p x
 staticNodeDesc name initialChain = StaticNodeDesc
   { nodeDescName         = name
   , nodeDescInitialChain = initialChain
@@ -64,19 +64,19 @@ staticNodeDesc name initialChain = StaticNodeDesc
   , nodeDescInEdges      = []
   }
 
-includeOutEdges :: [e] -> StaticNodeDesc e -> StaticNodeDesc e
+includeOutEdges :: [e] -> StaticNodeDesc p e -> StaticNodeDesc p e
 includeOutEdges es nd = nd { nodeDescOutEdges = es ++ nodeDescOutEdges nd }
 
-includeInEdge :: e -> StaticNodeDesc e -> StaticNodeDesc e
+includeInEdge :: e -> StaticNodeDesc p e -> StaticNodeDesc p e
 includeInEdge e nd = nd { nodeDescInEdges = e : nodeDescInEdges nd }
 
 -- | Construct 'StaticNodeDesc's from a 'StaticNetDesc' using 'MonadSTM'
 -- channels for in/out edges.
 realiseStaticNetDescSTM
-  :: forall m stm t .
+  :: forall p m stm t .
      ( MonadSTM m stm )
-  => (forall x . StaticNetDesc x)
-  -> stm (Map Vertex (StaticNodeDesc (Channel m t)))
+  => (forall x . StaticNetDesc p x)
+  -> stm (Map Vertex (StaticNodeDesc p (Channel m t)))
 realiseStaticNetDescSTM (StaticNetDesc gr descs) =
   Foldable.foldlM createChannels descs (Array.assocs gr)
   where
@@ -84,9 +84,9 @@ realiseStaticNetDescSTM (StaticNetDesc gr descs) =
   -- | Creates a channel for each target vertex, includes them in the local
   -- vertex's out-edges, and in the target vertex's in-edges.
   createChannels
-    :: Map Vertex (StaticNodeDesc (Channel m t))
+    :: Map Vertex (StaticNodeDesc p (Channel m t))
     -> (Vertex, [Vertex])
-    -> stm (Map Vertex (StaticNodeDesc (Channel m t)))
+    -> stm (Map Vertex (StaticNodeDesc p (Channel m t)))
   createChannels descs (v, targets) = do
     -- Create all necessary channel pairs.
     channelPairs <- forM targets (\_ -> simStmChannels)
@@ -97,11 +97,11 @@ realiseStaticNetDescSTM (StaticNetDesc gr descs) =
                  (Map.adjust (includeOutEdges (fmap fst channelPairs)) v descs)
                  (zip targets (fmap snd channelPairs))
 
-data ChainSelection m t where
-  Continue :: (Seq Block -> m (ChainSelection m t)) -> ChainSelection m t
-  Finished :: t -> ChainSelection m t
+data ChainSelection p m t where
+  Continue :: (Seq (Block p) -> m (ChainSelection p m t)) -> ChainSelection p m t
+  Finished :: t -> ChainSelection p m t
 
-chainSelectionForever :: Applicative m => (Seq Block -> m ()) -> ChainSelection m x
+chainSelectionForever :: Applicative m => (Seq (Block p) -> m ()) -> ChainSelection p m x
 chainSelectionForever act = Continue $ \blk -> act blk *> pure (chainSelectionForever act)
 
 -- | Use STM-backed chain selection to run a 'StaticNodeDesc'.
@@ -114,13 +114,13 @@ chainSelectionForever act = Continue $ \blk -> act blk *> pure (chainSelectionFo
 -- provided ('MonadFork' is inadequate).
 --
 runWithChainSelection
-  :: forall m stm x consumer producer t .
+  :: forall p m stm x consumer producer t .
      ( MonadSTM m stm )
   => (forall s t . m s -> m t -> m (s, t))
-  -> (TVar m (Seq Block) -> Channel m x -> m consumer)
-  -> (TVar m (Changing ChainSegment) -> Channel m x -> m producer)
-  -> ChainSelection m t
-  -> StaticNodeDesc (Channel m x)
+  -> (TVar m (Seq (Block p)) -> Channel m x -> m consumer)
+  -> (TVar m (Changing (ChainSegment p)) -> Channel m x -> m producer)
+  -> ChainSelection p m t
+  -> StaticNodeDesc p (Channel m x)
   -> m (t, ([consumer], [producer]))
 runWithChainSelection concurrently mkConsumer mkProducer selection nodeDesc = do
 
@@ -149,10 +149,10 @@ runWithChainSelection concurrently mkConsumer mkProducer selection nodeDesc = do
   concurrentList = foldr (\m ms -> uncurry (:) <$> concurrently m ms) (pure [])
 
   chainSelectionSTM
-    :: TVar m (Seq Block)               -- ^ Best chain.
-    -> [TVar m (Seq Block)]             -- ^ Consumed chains
-    -> [TVar m (Changing ChainSegment)] -- ^ Produced chains
-    -> ChainSelection m t
+    :: TVar m (Seq (Block p))               -- ^ Best chain.
+    -> [TVar m (Seq (Block p))]             -- ^ Consumed chains
+    -> [TVar m (Changing (ChainSegment p))] -- ^ Produced chains
+    -> ChainSelection p m t
     -> m t
   chainSelectionSTM bestChainVar consumerVars producerVars selection = case selection of
     Finished t -> pure t
@@ -172,7 +172,7 @@ runWithChainSelection concurrently mkConsumer mkProducer selection nodeDesc = do
       selection' <- k newBest
       chainSelectionSTM bestChainVar consumerVars producerVars selection'
 
-  switchToChain_ :: Seq Block -> ChainSegment -> Changing ChainSegment
+  switchToChain_ :: Seq (Block p) -> ChainSegment p -> Changing (ChainSegment p)
   switchToChain_ newBest currentSegment = case Foldable.toList newBest of
     [] -> error $ show name <> " switched to an empty chain"
     (b : bs) -> case switchToChain (b NE.:| bs) currentSegment of
@@ -180,13 +180,13 @@ runWithChainSelection concurrently mkConsumer mkProducer selection nodeDesc = do
       Just it -> it
 
   -- Take the longer chain, favouring the left in case of a tie.
-  longerChain :: Seq Block -> Seq Block -> Seq Block
+  longerChain :: Seq (Block p) -> Seq (Block p) -> Seq (Block p)
   longerChain left right = if betterChain right left
                            then right
                            else left
 
   -- True if the left chain is better (strictly longer) than the right chain.
-  betterChain :: Seq Block -> Seq Block -> Bool
+  betterChain :: Seq (Block p) -> Seq (Block p) -> Bool
   betterChain left right = case (Seq.viewr left, Seq.viewr right) of
     (Seq.EmptyR, Seq.EmptyR) -> False
     (Seq.EmptyR, _)          -> False
@@ -195,19 +195,19 @@ runWithChainSelection concurrently mkConsumer mkProducer selection nodeDesc = do
 
 standardConsumer
   :: ( MonadSTM m stm )
-  => TVar m (Seq Block)
-  -> Channel m (SomeTransition TrChainExchange)
-  -> m (FromStream TrChainExchange m x)
+  => TVar m (Seq (Block p))
+  -> Channel m (SomeTransition (TrChainExchange p))
+  -> m (FromStream (TrChainExchange p) m x)
 standardConsumer var chan = useChannelHomogeneous chan (streamConsumer (simpleConsumerStream var))
 
 standardProducer
   :: ( MonadSTM m stm )
-  => TVar m (Changing ChainSegment)
-  -> Channel m (SomeTransition TrChainExchange)
-  -> m (FromStream TrChainExchange m x)
+  => TVar m (Changing (ChainSegment p))
+  -> Channel m (SomeTransition (TrChainExchange p))
+  -> m (FromStream (TrChainExchange p) m x)
 standardProducer var chan = useChannelHomogeneous chan (streamProducer (simpleBlockStream var))
 
-exampleNetDesc :: StaticNetDesc x
+exampleNetDesc :: StaticNetDesc p x
 exampleNetDesc = StaticNetDesc gr nodes
   where
   -- Very simple graph in which node 0 consumes from node 1, 1 from node 2.
@@ -241,15 +241,15 @@ exampleNetDesc = StaticNetDesc gr nodes
   chain2 = block1 NE.:| [block2, block3, block4, block5, block6]
 
 runNetDescStandardIO
-  :: forall t p c .
-     (forall x . StaticNetDesc x)
-  -> IO [(t, ([FromStream TrChainExchange IO c], [FromStream TrChainExchange IO p]))]
+  :: forall p t producer consumer .
+     (forall x . StaticNetDesc p x)
+  -> IO [(t, ([FromStream (TrChainExchange p) IO consumer], [FromStream (TrChainExchange p) IO producer]))]
 runNetDescStandardIO netDesc = do
   nodes <- atomically $ realiseStaticNetDescSTM netDesc
   let runNode
         :: forall x y z .
-           StaticNodeDesc (Channel IO (SomeTransition TrChainExchange))
-        -> IO (x, ([FromStream TrChainExchange IO y], [FromStream TrChainExchange IO z]))
+           StaticNodeDesc p (Channel IO (SomeTransition (TrChainExchange p)))
+        -> IO (x, ([FromStream (TrChainExchange p) IO y], [FromStream (TrChainExchange p) IO z]))
       runNode snd =
         let selectionAction = \chain -> Debug.traceM (nodeDescName snd ++ ": " ++ show chain)
         in  runWithChainSelection concurrently standardConsumer standardProducer (chainSelectionForever selectionAction) snd

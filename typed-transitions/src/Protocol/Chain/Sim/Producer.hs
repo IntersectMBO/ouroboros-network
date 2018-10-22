@@ -48,23 +48,23 @@ carryChange k (Extended s) = case k s of
 carryChange k (Unchanged t) = k t
 
 -- | A blockchain with a read pointer and a tip picked out. Like a zipper.
-data ChainSegment where
+data ChainSegment p where
   -- | Read pointer is at the tip.
-  AtTip     :: Seq Block -> Block -> ChainSegment
+  AtTip     :: Seq (Block p) -> Block p -> ChainSegment p
   -- | Read pointer is behind the tip.
-  BehindTip :: Seq Block -> Block -> Seq Block -> Block -> ChainSegment
+  BehindTip :: Seq (Block p) -> Block p -> Seq (Block p) -> Block p -> ChainSegment p
 
-deriving instance Show ChainSegment
+deriving instance Show (ChainSegment p)
 
 -- | chainSegmentToChain must always give a valid blockchain.
-chainSegmentToChain :: ChainSegment -> NonEmpty Block
+chainSegmentToChain :: ChainSegment p -> NonEmpty (Block p)
 chainSegmentToChain cs = case cs of
   -- unsafe NE.fromList is clearly safe here.
   AtTip     prior tip         -> NE.fromList $ Foldable.toList $ prior Seq.|> tip
   BehindTip prior rp  mid tip -> NE.fromList $ Foldable.toList $ (prior Seq.|> rp) <> (mid Seq.|> tip)
 
 -- | Read pointer is at the oldest.
-chainSegmentFromChain :: NonEmpty Block -> ChainSegment
+chainSegmentFromChain :: NonEmpty (Block p) -> ChainSegment p
 chainSegmentFromChain (b NE.:| bs) = case bs of
   [] -> AtTip mempty b
   [b'] -> BehindTip mempty b mempty b'
@@ -72,7 +72,7 @@ chainSegmentFromChain (b NE.:| bs) = case bs of
 
 -- | Gives 'Nothing' if the 'NonEmpty Block' has nothing in common with the
 -- 'ChainSegment' (so we don't have a new read pointer).
-switchToChain :: NonEmpty Block -> ChainSegment -> Maybe (Changing ChainSegment)
+switchToChain :: NonEmpty (Block p) -> ChainSegment p -> Maybe (Changing (ChainSegment p))
 switchToChain newChain cs = case cs of
   AtTip prior tip -> case cmpChains (NE.toList newChain) (Foldable.toList (prior Seq.|> tip)) [] of
     -- They have nothing in common.
@@ -117,7 +117,7 @@ switchToChain newChain cs = case cs of
   -- The first element is the suffix of the first chain not in the second.
   -- The second element is the suffix of the second chain not in the first.
   -- The third element is the common prefix, reversed.
-  cmpChains :: [Block] -> [Block] -> [Block] -> ([Block], [Block], [Block])
+  cmpChains :: [Block p] -> [Block p] -> [Block p] -> ([Block p], [Block p], [Block p])
   cmpChains []     bs     acc = ([], bs, acc)
   cmpChains as     []     acc = (as, [], acc)
   cmpChains (a:as) (b:bs) acc =
@@ -125,19 +125,19 @@ switchToChain newChain cs = case cs of
     then cmpChains as bs (a:acc)
     else (a:as, b:bs, acc)
 
-chainSegmentTip :: ChainSegment -> Block
+chainSegmentTip :: ChainSegment p -> Block p
 chainSegmentTip it = case it of
   AtTip     _ b     -> b
   BehindTip _ _ _ b -> b
 
-chainSegmentReadPointer :: ChainSegment -> Block
+chainSegmentReadPointer :: ChainSegment p -> Block p
 chainSegmentReadPointer cs = case cs of
   AtTip     _ b     -> b
   BehindTip _ b _ _ -> b
 
 -- | Simple but inefficient. Bumps up the read pointer to the newest point
 -- that's an ancestor of the tip.
-findBestCheckpoint :: NonEmpty Point -> ChainSegment -> ChainSegment
+findBestCheckpoint :: NonEmpty Point -> ChainSegment p -> ChainSegment p
 findBestCheckpoint cps cs = case cs of
   -- No sense improving when we're already at the tip (nothing is better).
   AtTip     _     _          -> cs
@@ -162,7 +162,7 @@ findBestCheckpoint cps cs = case cs of
   -- The first checkpoint found in the first list is given as the second
   -- component, and on either side of it are the parts of the chain before it
   -- and after it.
-  splitAtCheckpoint :: Seq Block -> Seq Block -> Maybe (Seq Block, Block, Seq Block)
+  splitAtCheckpoint :: Seq (Block p) -> Seq (Block p) -> Maybe (Seq (Block p), Block p, Seq (Block p))
   splitAtCheckpoint mid acc = case Seq.viewr mid of
     Seq.EmptyR       -> Nothing
     mid' Seq.:> here ->
@@ -188,8 +188,8 @@ findBestCheckpoint cps cs = case cs of
 -- the consumer and probably cause it to terminate the protocol.
 simpleBlockStream
   :: ( MonadSTM m stm ) 
-  => TVar m (Changing ChainSegment)
-  -> BlockStream m x
+  => TVar m (Changing  (ChainSegment p))
+  -> BlockStream p m x
 simpleBlockStream chainVar = BlockStream $ atomically $ do
   cs <- unChanging <$> readTVar chainVar
   let tipHeader = blockHeader (chainSegmentTip cs)
@@ -201,10 +201,10 @@ simpleBlockStream chainVar = BlockStream $ atomically $ do
     }
 
 simpleBlockStreamNext
-  :: forall m stm x .
+  :: forall p m stm x .
      ( MonadSTM m stm )
-  => TVar m (Changing ChainSegment)
-  -> BlockStreamNext m x
+  => TVar m (Changing (ChainSegment p))
+  -> BlockStreamNext p m x
 simpleBlockStreamNext chainVar = BlockStreamNext
   { bsNextChange = nextChange
   , bsNextBlock  = nextBlock
@@ -218,7 +218,7 @@ simpleBlockStreamNext chainVar = BlockStreamNext
   --  block download should they be ignored.
   --  Ah no, for download, an extension should be deferred until after the
   --  download, but a fork should inmterrupt it,.
-  nextChange :: forall f . m (Either x (StreamStep f NextChange m x))
+  nextChange :: forall f . m (Either x (StreamStep p f (NextChange p) m x))
   nextChange = atomically $ do
     cchain <- readTVar chainVar
     case cchain of
@@ -252,7 +252,7 @@ simpleBlockStreamNext chainVar = BlockStreamNext
   -- - if it was a fork, stop the block download and present the fork
   -- - if it was a continuation, keep going but give the new header too
   --
-  nextBlock :: m (StreamStep NextBlock NextBlock m x)
+  nextBlock :: m (StreamStep p (NextBlock p) (NextBlock p) m x)
   nextBlock = atomically $ do
     cchain <- readTVar chainVar
     case cchain of
@@ -279,14 +279,14 @@ simpleBlockStreamNext chainVar = BlockStreamNext
   -- | Advance the read pointer, giving Nothing case it's past the tip.
   -- You get the block to send (former oldest block) and the remaining
   -- segment.
-  advance :: ChainSegment -> Maybe (Block, ChainSegment)
+  advance :: ChainSegment p -> Maybe (Block p, ChainSegment p)
   advance chain = case chain of
     AtTip     _     _          -> Nothing
     BehindTip prior rp mid tip -> Just $ case Seq.viewl mid of
      Seq.EmptyL -> (tip, AtTip (prior Seq.|> rp) tip)
      b Seq.:< bs -> (b, BehindTip (prior Seq.|> rp) b bs tip)
 
-  improve :: NonEmpty Point -> m (StreamStep Improve Improve m x)
+  improve :: NonEmpty Point -> m (StreamStep p (Improve p) (Improve p) m x)
   improve cps = atomically $ do
     cchain <- readTVar chainVar
     case cchain of

@@ -24,25 +24,25 @@ import Data.Typeable (Typeable)
 import Protocol.Core
 import Protocol.Chain.Type
 
-newtype BlockStream m t = BlockStream
-  { runBlockStream :: m (BlockStreamAt m t)
+newtype BlockStream p m t = BlockStream
+  { runBlockStream :: m (BlockStreamAt p m t)
   }
 
-data BlockStreamAt m t = BlockStreamAt
-  { bsTip         :: Header
+data BlockStreamAt p m t = BlockStreamAt
+  { bsTip         :: Header p
   , bsReadPointer :: Point
-  , bsNext        :: BlockStreamNext m t
+  , bsNext        :: BlockStreamNext p m t
   }
 
-data BlockStreamNext m t = BlockStreamNext
+data BlockStreamNext p m t = BlockStreamNext
   { -- For next change, the stream can be finished (Left).
     -- The universally quanitified 'f' ensure that you can't get a
     -- 'NoChange' constructor here.
-    bsNextChange :: forall f . m (Either t (StreamStep f NextChange m t))
+    bsNextChange :: forall f . m (Either t (StreamStep p f (NextChange p) m t))
     -- TODO offer a more flexible interface, which allows for streaming n blocks
     -- without doing 'bsNextBlock' every time. Perhaps give a pipe/conduit?
-  , bsNextBlock  :: m (StreamStep NextBlock NextBlock m t)
-  , bsImprove    :: NonEmpty Point -> m (StreamStep Improve Improve m t)
+  , bsNextBlock  :: m (StreamStep p (NextBlock p) (NextBlock p) m t)
+  , bsImprove    :: NonEmpty Point -> m (StreamStep p (Improve p) (Improve p) m t)
   }
 
 data VoidF (f :: Type -> Type) (m :: Type -> Type) (t :: Type) where
@@ -53,36 +53,36 @@ impossible (VoidF absurd) = absurd
 
 -- | At each step in the stream, there could be a change to the tip and/or read
 -- pointer.
-data StreamStep f g m t where
-  NoChange   :: f m t -> StreamStep f g m t
+data StreamStep p f g m t where
+  NoChange   :: f m t -> StreamStep p f g m t
   -- | The tip header changed and it's not a fork. The read pointer is in
   -- the new chain. Here, the 'f m t' is given, because it's still relevant.
   --
   -- This plays a part of fast relay (header upload concurrently with body
   -- download). In that case, 'f ~ NextChange' (see 'bsNextChange').
-  ChangeExtend :: Header -> g m t -> StreamStep f g m t
+  ChangeExtend :: Header p -> g m t -> StreamStep p f g m t
   -- | The tip header changed and it's a fork (not an extension). That's to
   -- say, the read point is not in the new chain.
   -- The new read pointer is included (a hash, not the whole header, since the
   -- consumer knows it).
-  ChangeFork   :: Point -> Header -> BlockStreamNext m t -> StreamStep f g m t
+  ChangeFork   :: Point -> Header p -> BlockStreamNext p m t -> StreamStep p f g m t
 
-data NextBlock m t where
-  NextBlock :: Block -> BlockStreamNext m t -> NextBlock m t
+data NextBlock p m t where
+  NextBlock :: Block p -> BlockStreamNext p m t -> NextBlock p m t
   -- | At the tip; no next block.
-  NoNextBlock :: BlockStreamNext m t -> NextBlock m t
+  NoNextBlock :: BlockStreamNext p m t -> NextBlock p m t
 
-data Improve m t where
-  Improve :: Point -> BlockStreamNext m t -> Improve m t
+data Improve p m t where
+  Improve :: Point -> BlockStreamNext p m t -> Improve p m t
 
-data NextChange m t where
-  NoRelay  :: BlockStreamNext m t -> NextChange m t
-  Relaying :: m (StreamStep RelayBody NextChange m t) -> NextChange m t
+data NextChange p m t where
+  NoRelay  :: BlockStreamNext p m t -> NextChange p m t
+  Relaying :: m (StreamStep p (RelayBody p) (NextChange p) m t) -> NextChange p m t
 
 -- | Follow-up to 'RelayHeader' from 'NextChange'. Either put the body through,
 -- or give a new header to relay.
-data RelayBody m t where
-  RelayBody :: Body -> BlockStreamNext m t -> RelayBody m t
+data RelayBody p m t where
+  RelayBody :: Body -> BlockStreamNext p m t -> RelayBody p m t
 
 --
 -- Can this handle some restriction on fast relay? We don't want every one of
@@ -99,17 +99,17 @@ data RelayBody m t where
 
 streamProducer
   :: ( Monad m )
-  => BlockStream m t
-  -> Peer ChainExchange TrChainExchange ('Yielding 'StInit) ('Yielding ('StBusy 'Next)) m t
+  => BlockStream p m t
+  -> Peer ChainExchange (TrChainExchange p) ('Yielding 'StInit) ('Yielding ('StBusy 'Next)) m t
 streamProducer bs = hole $ runBlockStream bs >>= \bsAt ->
   let msg = TrInit (bsReadPointer bsAt) (bsTip bsAt)
   in  pure $ over msg (streamProducerMain (bsNext bsAt))
 
 streamProducerMain
-  :: forall m t .
+  :: forall p m t .
      ( Monad m )
-  => BlockStreamNext m t
-  -> Peer ChainExchange TrChainExchange ('Awaiting 'StIdle) ('Yielding ('StBusy 'Next)) m t
+  => BlockStreamNext p m t
+  -> Peer ChainExchange (TrChainExchange p) ('Awaiting 'StIdle) ('Yielding ('StBusy 'Next)) m t
 streamProducerMain bsNext = await $ \req -> case req of
 
   TrRequest (ReqSetHead cps) -> hole $ bsImprove bsNext cps >>= \it -> case it of
@@ -158,9 +158,9 @@ streamProducerMain bsNext = await $ \req -> case req of
   where
 
   respondDownload
-    :: BlockStreamNext m t
+    :: BlockStreamNext p m t
     -> Word
-    -> Peer ChainExchange TrChainExchange ('Yielding ('StBusy 'Download)) ('Yielding ('StBusy 'Next)) m t
+    -> Peer ChainExchange (TrChainExchange p) ('Yielding ('StBusy 'Download)) ('Yielding ('StBusy 'Next)) m t
   respondDownload bsNext 0 = over (TrRespond (ResDownloadDone Nothing)) (streamProducerMain bsNext)
   respondDownload bsNext n = hole $ bsNextBlock bsNext >>= \it -> case it of
     ChangeFork readPointer tip bsNext' ->
@@ -181,10 +181,10 @@ streamProducerMain bsNext = await $ \req -> case req of
   -- | Deal with a fork in the block stream.
   streamProducerChanged
     :: ( Monad m, Typeable anything )
-    => Point  -- ^ Read pointer
-    -> Header -- ^ Tip
-    -> BlockStreamNext m t
-    -> Peer ChainExchange TrChainExchange ('Yielding ('StBusy anything)) ('Yielding ('StBusy 'Next)) m t
+    => Point    -- ^ Read pointer
+    -> Header p -- ^ Tip
+    -> BlockStreamNext p m t
+    -> Peer ChainExchange (TrChainExchange p) ('Yielding ('StBusy anything)) ('Yielding ('StBusy 'Next)) m t
   streamProducerChanged readPointer tip bsNext = over msg (streamProducerMain bsNext)
     where
     msg = TrRespond (ResChange readPointer tip)

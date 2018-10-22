@@ -15,7 +15,7 @@ import Chain
 import MonadClass.MonadSTM
 
 -- | Drop the suffix of the chain beginning at and not including the 'Point'.
-dropAfter :: Point -> Seq Block -> Seq Block
+dropAfter :: Point -> Seq (Block p) -> Seq (Block p)
 dropAfter point chain = case Seq.viewr chain of
   Seq.EmptyR  -> mempty
   bs Seq.:> b ->
@@ -23,7 +23,7 @@ dropAfter point chain = case Seq.viewr chain of
     then chain
     else dropAfter point bs
 
-extendWith :: Block -> Seq Block -> Seq Block
+extendWith :: Block p -> Seq (Block p) -> Seq (Block p)
 extendWith block chain = chain Seq.|> block
 
 -- | A 'ConsumerStream' which naively downloads the whole chain, never
@@ -33,25 +33,25 @@ extendWith block chain = chain Seq.|> block
 -- It will continue to request blocks until it gets one which has the same hash
 -- as the read pointer.
 simpleConsumerStream
-  :: forall m stm x .
+  :: forall p m stm x .
      ( MonadSTM m stm )
   -- FIXME FIXME use a blockchain representation which is never empty! The
   -- consumer invariant is that the end of the chain in this 'TVar' is the
   -- read pointer, which breaks down if there is no end of the chain because
   -- it's empty.
-  => TVar m (Seq Block)
-  -> ConsumerStream m x
+  => TVar m (Seq (Block p))
+  -> ConsumerStream p m x
 simpleConsumerStream chainVar = ConsumerStream $ \readPointer header -> atomically $ do
   modifyTVar' chainVar (dropAfter readPointer)
   pure (simpleConsumerStreamStep chainVar readPointer header)
 
 simpleConsumerStreamStep
-  :: forall m stm x .
+  :: forall p m stm x .
      ( MonadSTM m stm )
-  => TVar m (Seq Block)
-  -> Point  -- ^ Read pointer
-  -> Header -- ^ Tip
-  -> ConsumerStreamStep m x
+  => TVar m (Seq (Block p))
+  -> Point    -- ^ Read pointer
+  -> Header p -- ^ Tip
+  -> ConsumerStreamStep p m x
 simpleConsumerStreamStep chainVar readPointer tip =
   -- If we're at the tip we'll just wait.
   --
@@ -68,12 +68,12 @@ simpleConsumerStreamStep chainVar readPointer tip =
   else DownloadBlocks maxBound (simpleConsumerDownload chainVar readPointer tip)
 
 simpleConsumerDownload
-  :: forall m stm x .
+  :: forall p m stm x .
      ( MonadSTM m stm )
-  => TVar m (Seq Block)
+  => TVar m (Seq (Block p))
   -> Point
-  -> Header
-  -> ConsumerDownload m x
+  -> Header p
+  -> ConsumerDownload p m x
 simpleConsumerDownload chainVar readPointer tip = ConsumerDownload
   { downloadBlock       = \block mNewTip -> do
       atomically $ modifyTVar' chainVar (extendWith block)
@@ -88,12 +88,12 @@ simpleConsumerDownload chainVar readPointer tip = ConsumerDownload
   }
 
 simpleConsumerNext
-  :: forall m stm x .
+  :: forall p m stm x .
      ( MonadSTM m stm )
-  => TVar m (Seq Block)
+  => TVar m (Seq (Block p))
   -> Point
-  -> Header
-  -> ConsumerNext m x
+  -> Header p
+  -> ConsumerNext p m x
 simpleConsumerNext chainVar readPointer tip = ConsumerNext
   { -- We now have a new tip, but the read pointer remains the same.
     headerNoRelay = \header -> pure (simpleConsumerStreamStep chainVar readPointer header)
@@ -101,12 +101,12 @@ simpleConsumerNext chainVar readPointer tip = ConsumerNext
   }
 
 simpleConsumerRelay
-  :: forall m stm x .
+  :: forall p m stm x .
      ( MonadSTM m stm )
-  => TVar m (Seq Block)
+  => TVar m (Seq (Block p))
   -> Point
-  -> Header
-  -> ConsumerRelay m x
+  -> Header p
+  -> ConsumerRelay p m x
 simpleConsumerRelay chainVar readPointer header = ConsumerRelay
   { bodyRelay = \body -> do
       let !block = Block header body

@@ -14,10 +14,12 @@ module Protocol.Chain.Direct where
 import Protocol.Chain.StreamConsumer as Consumer
 import Protocol.Chain.StreamProducer as Producer
 
+-- TODO allow different return types for block stream and consumer stream, and
+-- return them in a 'These' type.
 direct
   :: ( Monad m )
-  => BlockStream m t
-  -> ConsumerStream m t
+  => BlockStream p m t
+  -> ConsumerStream p m t
   -> m t
 direct bs cs = do
   bsAt <- runBlockStream bs
@@ -26,8 +28,8 @@ direct bs cs = do
 
 directMain
   :: ( Monad m )
-  => BlockStreamNext m t
-  -> ConsumerStreamStep m t
+  => BlockStreamNext p m t
+  -> ConsumerStreamStep p m t
   -> m t
 directMain bsNext css = case css of
 
@@ -63,8 +65,8 @@ directMain bsNext css = case css of
 
 directRelay
   :: ( Monad m )
-  => StreamStep RelayBody NextChange m t
-  -> ConsumerRelay m t
+  => StreamStep p (RelayBody p) (NextChange p) m t
+  -> ConsumerRelay p m t
   -> m t
 directRelay pStreamStep cRelay = case pStreamStep of
   ChangeFork readPointer header bsNext' ->
@@ -81,8 +83,8 @@ directRelay pStreamStep cRelay = case pStreamStep of
 directDownload
   :: ( Monad m )
   => Word
-  -> ConsumerDownload m t
-  -> BlockStreamNext m t
+  -> ConsumerDownload p m t
+  -> BlockStreamNext p m t
   -> m t
 directDownload 0 cDownload bsNext = downloadOver cDownload Nothing >>= directMain bsNext
 directDownload n cDownload bsNext = bsNextBlock bsNext >>= \ss -> case ss of
