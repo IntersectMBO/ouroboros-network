@@ -1,22 +1,22 @@
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
-{-# LANGUAGE FlexibleContexts    #-}
 module Test.Sim
     ( tests
     , TestThreadGraph (..)
     ) where
 
-import Data.Array
-import Data.Graph
-import Data.List (sortBy)
-import Control.Monad
-import Control.Monad.ST.Lazy (runST)
+import           Control.Monad
+import           Control.Monad.ST.Lazy (runST)
+import           Data.Array
+import           Data.Graph
+import           Data.List (sortBy)
 
-import Test.QuickCheck
-import Test.Tasty
-import Test.Tasty.QuickCheck
+import           Test.QuickCheck
+import           Test.Tasty
+import           Test.Tasty.QuickCheck
 
-import MonadClass
+import           MonadClass
 import qualified Sim
 
 tests :: TestTree
@@ -145,13 +145,13 @@ test_timers :: forall m n stm.
                )
             => [Duration (Time m)]
             -> n Property
-test_timers xs = 
+test_timers xs =
     label (lbl xs) . isValid <$> withProbe experiment
   where
     countUnique :: Eq a => [a] -> Int
     countUnique [] = 0
     countUnique (a:as) =
-      let as' = filter (== a) as 
+      let as' = filter (== a) as
       in 1 + countUnique as'
 
     lbl :: Eq a => [a] -> String

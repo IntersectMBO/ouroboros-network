@@ -1,7 +1,7 @@
 {-# LANGUAGE FlexibleInstances      #-}
-{-# LANGUAGE TypeFamilies           #-}
-{-# LANGUAGE MultiParamTypeClasses  #-}
 {-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE MultiParamTypeClasses  #-}
+{-# LANGUAGE TypeFamilies           #-}
 module MonadClass.MonadProbe
   ( MonadProbe (..)
   , MonadRunProbe (..)
@@ -10,15 +10,15 @@ module MonadClass.MonadProbe
 
 import qualified Control.Concurrent.STM.TVar as STM
 import           Control.Monad (void)
-import System.Clock (Clock (Monotonic), TimeSpec, getTime, toNanoSecs)
 import           Control.Monad.Free (Free)
 import qualified Control.Monad.Free as Free
 import           Control.Monad.ST.Lazy
+import           System.Clock (Clock (Monotonic), TimeSpec, getTime, toNanoSecs)
 
 import           Data.STRef.Lazy
 
-import           MonadClass.MonadTimer
 import           MonadClass.MonadSTM (atomically)
+import           MonadClass.MonadTimer
 
 import           Sim (SimF)
 import qualified Sim

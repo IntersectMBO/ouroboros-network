@@ -38,12 +38,12 @@ import           Control.Monad.Free as Free
 import           Control.Monad.ST.Lazy
 import           Data.STRef.Lazy
 
-import           MonadClass.MonadSay
 import           MonadClass.MonadFork
+import           MonadClass.MonadSay
+import           MonadClass.MonadSendRecv
 import           MonadClass.MonadSTM hiding (TVar)
 import qualified MonadClass.MonadSTM as MonadSTM
 import           MonadClass.MonadTimer
-import           MonadClass.MonadSendRecv
 
 {-# ANN module "HLint: ignore Use readTVarIO" #-}
 

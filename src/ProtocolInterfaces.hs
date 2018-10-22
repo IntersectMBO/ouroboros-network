@@ -1,5 +1,5 @@
-{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE RankNTypes     #-}
 module ProtocolInterfaces (
     ConsumerHandlers(..)
   , ProducerHandlers(..)
@@ -7,7 +7,7 @@ module ProtocolInterfaces (
   , liftProducerHandlers
   ) where
 
-import Chain (ChainUpdate (..), Point (..))
+import           Chain (ChainUpdate (..), Point (..))
 
 
 -- | The interface used on the consumer side of the chain consumer protocol
@@ -31,16 +31,16 @@ data ConsumerHandlers block m = ConsumerHandlers {
 -- to query and read the producers chain.
 --
 data ProducerHandlers block m r = ProducerHandlers {
-       newReader             :: m r,
+       newReader          :: m r,
        -- ^ allocate new reader state.  The reference implementation is using
        -- @'ChainProducerState.initReader'@ to mutate its internal state.
-       improveReadPoint      :: r -> [Point] -> m (Maybe (Point, Point)),
+       improveReadPoint   :: r -> [Point] -> m (Maybe (Point, Point)),
        -- ^ find the most optimal intersection between received list of
        -- @'Point'@s and producers chain.  The second point is the current tip.
-       tryReadChainUpdate    :: r -> m (Maybe (ChainUpdate block)),
+       tryReadChainUpdate :: r -> m (Maybe (ChainUpdate block)),
        -- ^ compute chain update for a given reader.  This is a non blocking
        -- operation.
-       readChainUpdate       :: r -> m (ChainUpdate block)
+       readChainUpdate    :: r -> m (ChainUpdate block)
        -- ^ compute chain update for a given reader.  This maybe block, awaiting
        -- for changes of its internal state (producer's chain).
      }

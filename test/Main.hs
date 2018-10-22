@@ -1,12 +1,12 @@
 module Main (main) where
 
-import Test.Tasty
+import           Test.Tasty
 
 import qualified Test.Chain (tests)
 import qualified Test.ChainProducerState (tests)
-import qualified Test.Sim (tests)
 import qualified Test.Node (tests)
 import qualified Test.Pipe (tests)
+import qualified Test.Sim (tests)
 
 main :: IO ()
 main = defaultMain tests

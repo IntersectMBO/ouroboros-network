@@ -1,13 +1,13 @@
-{-# LANGUAGE TypeFamilies           #-}
-{-# LANGUAGE MultiParamTypeClasses  #-}
 {-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE MultiParamTypeClasses  #-}
+{-# LANGUAGE TypeFamilies           #-}
 module MonadClass.MonadSTM
   ( MonadSTM (..) ) where
 
 import qualified Control.Concurrent.STM.TVar as STM
 import qualified Control.Monad.STM as STM
 
-import MonadClass.MonadFork
+import           MonadClass.MonadFork
 
 class (MonadFork m, Monad stm) => MonadSTM m stm | m -> stm, stm -> m where
   type TVar m :: * -> *
@@ -26,8 +26,8 @@ class (MonadFork m, Monad stm) => MonadSTM m stm | m -> stm, stm -> m where
 --orElse       :: stm a -> stm a -> stm a --TODO
 
   check        :: Bool -> stm ()
-  check True  = return ()
-  check _     = retry
+  check True = return ()
+  check _    = retry
 
 instance MonadSTM IO STM.STM where
   type TVar IO = STM.TVar

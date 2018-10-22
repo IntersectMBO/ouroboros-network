@@ -1,22 +1,23 @@
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE NamedFieldPuns #-}
 module Node where
 
-import Data.List hiding (inits)
-import Data.Semigroup (Semigroup (..))
-import Data.Maybe (catMaybes)
-import Data.Functor (($>))
-import Data.Tuple (swap)
-import Control.Monad
-import Control.Exception (assert)
+import           Control.Exception (assert)
+import           Control.Monad
+import           Data.Functor (($>))
+import           Data.List hiding (inits)
+import           Data.Maybe (catMaybes)
+import           Data.Semigroup (Semigroup (..))
+import           Data.Tuple (swap)
 
-import MonadClass hiding (sendMsg, recvMsg)
-import Block
-import qualified Chain
+import           Block
 import           Chain (Chain (..), Point)
-import Protocol
-import ConsumersAndProducers
-import ChainProducerState (ChainProducerState (..), ReaderId, initChainProducerState, producerChain, switchFork)
+import qualified Chain
+import           ChainProducerState (ChainProducerState (..), ReaderId,
+                     initChainProducerState, producerChain, switchFork)
+import           ConsumersAndProducers
+import           MonadClass hiding (recvMsg, sendMsg)
+import           Protocol
 
 
 
@@ -37,7 +38,7 @@ longestChainSelection candidateChainVars cpsVar =
       candidateChains <- mapM readTVar candidateChainVars
       cps@ChainProducerState{chainState = chain} <- readTVar cpsVar
       let -- using foldl' since @Chain.selectChain@ is left biased
-          chain' = foldl' Chain.selectChain chain (catMaybes candidateChains) 
+          chain' = foldl' Chain.selectChain chain (catMaybes candidateChains)
       if Chain.headPoint chain' == Chain.headPoint chain
         then retry
         else writeTVar cpsVar (switchFork chain' cps)
@@ -192,7 +193,7 @@ createTwoWaySubscriptionChannels trDelay1 trDelay2 = do
 
 
 -- | Generate a block from a given chain.  Each @block@ is produced at
--- @slotDuration * blockSlot block@ time. 
+-- @slotDuration * blockSlot block@ time.
 --
 -- TODO: invariant: generates blocks for current slots.
 blockGenerator :: forall block m stm.
@@ -326,7 +327,7 @@ relayNode nid chans = do
         (loggingSend (ProducerId nid pid) (sendMsg chan))
         (loggingRecv (ProducerId nid pid) (recvMsg chan))
 
--- | Core node simulation.  Given a chain it will generate a @block@ at its 
+-- | Core node simulation.  Given a chain it will generate a @block@ at its
 -- slot time (i.e. @slotDuration * blockSlot block@).  When the node finds out
 -- that the slot for which it was supposed to generate a block was already
 -- occupied, it will replace it with its block.

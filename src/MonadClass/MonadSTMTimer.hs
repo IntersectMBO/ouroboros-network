@@ -1,5 +1,5 @@
-{-# LANGUAGE TypeFamilies           #-}
-{-# LANGUAGE MultiParamTypeClasses  #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TypeFamilies          #-}
 module MonadClass.MonadSTMTimer
   ( MonadSTMTimer (..)
   ) where
@@ -7,12 +7,11 @@ module MonadClass.MonadSTMTimer
 import qualified Control.Concurrent.STM.TVar as STM
 import qualified Control.Monad.STM as STM
 
-import qualified GHC.Event as GHC
-                   ( TimeoutKey, getSystemTimerManager
-                   , registerTimeout, unregisterTimeout, updateTimeout)
+import qualified GHC.Event as GHC (TimeoutKey, getSystemTimerManager,
+                     registerTimeout, unregisterTimeout, updateTimeout)
 
-import MonadClass.MonadSTM
-import MonadClass.MonadTimer
+import           MonadClass.MonadSTM
+import           MonadClass.MonadTimer
 
 data TimeoutState = TimeoutPending | TimeoutFired | TimeoutCancelled
 

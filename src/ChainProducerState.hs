@@ -3,13 +3,13 @@
 
 module ChainProducerState where
 
-import           Chain ( Chain, HasHeader, Point(..), blockPoint
-                       , ChainUpdate(..), genesisPoint, pointOnChain )
+import           Chain (Chain, ChainUpdate (..), HasHeader, Point (..),
+                     blockPoint, genesisPoint, pointOnChain)
 import qualified Chain
 
-import           Data.List (sort, group, find)
-import           Data.Maybe (fromMaybe)
 import           Control.Exception (assert)
+import           Data.List (find, group, sort)
+import           Data.Maybe (fromMaybe)
 
 
 
@@ -193,7 +193,7 @@ switchFork c (ChainProducerState c' rs) =
       if pointOnChain readerPoint c
         then r
         else r { readerPoint = ipoint, readerNext = ReaderBackTo }
-          
+
 
 -- | What a reader needs to do next. Should they move on to the next block or
 -- do they need to roll back to a previous point on their chain. It also updates

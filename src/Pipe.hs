@@ -1,30 +1,29 @@
-{-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE RankNTypes                 #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Pipe where
 
+import           Control.Concurrent (forkIO, killThread, threadDelay)
+import           Control.Concurrent.STM
 import           Control.Monad
 import           Control.Monad.IO.Class
-import           Control.Monad.ST (stToIO, RealWorld)
-import           Control.Concurrent.STM
-import           Control.Concurrent (forkIO, killThread, threadDelay)
+import           Control.Monad.ST (RealWorld, stToIO)
 
 import           Chain (Chain, ChainUpdate)
 import qualified Chain
-import           Serialise
-import           ProtocolInterfaces
-import           Protocol
+import           ChainProducerState as ChainProducer (ChainProducerState,
+                     ReaderId, applyChainUpdate, initChainProducerState)
 import           ConsumersAndProducers
-import           ChainProducerState as ChainProducer
-                   ( ChainProducerState, ReaderId
-                   , initChainProducerState, applyChainUpdate )
+import           Protocol
+import           ProtocolInterfaces
+import           Serialise
 
-import qualified Data.ByteString         as  BS
-import qualified Data.ByteString.Builder as  BS
-import qualified Data.ByteString.Lazy.Internal as LBS (smallChunkSize)
-import qualified Codec.CBOR.Read  as CBOR
+import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Write as CBOR
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Builder as BS
+import qualified Data.ByteString.Lazy.Internal as LBS (smallChunkSize)
 
 import           System.IO (Handle, hFlush)
 import           System.Process (createPipe)

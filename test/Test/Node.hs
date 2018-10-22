@@ -1,35 +1,35 @@
 {-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections       #-}
 module Test.Node where
 
-import Control.Monad (forever, forM, forM_, replicateM)
-import Control.Monad.ST.Lazy (runST)
-import Control.Monad.State (lift, modify', execStateT)
-import Data.Array
-import Data.Functor (void)
-import Data.Graph
-import Data.List (foldl')
-import Data.Maybe (isNothing, listToMaybe)
-import Data.Semigroup ((<>))
-import Data.Tuple (swap)
+import           Control.Monad (forM, forM_, forever, replicateM)
+import           Control.Monad.ST.Lazy (runST)
+import           Control.Monad.State (execStateT, lift, modify')
+import           Data.Array
+import           Data.Functor (void)
+import           Data.Graph
+import           Data.List (foldl')
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Maybe (isNothing, listToMaybe)
+import           Data.Semigroup ((<>))
+import           Data.Tuple (swap)
 
-import Test.QuickCheck
-import Test.Tasty (TestTree, testGroup)
-import Test.Tasty.QuickCheck (testProperty)
+import           Test.QuickCheck
+import           Test.Tasty (TestTree, testGroup)
+import           Test.Tasty.QuickCheck (testProperty)
 
-import Block
-import qualified Chain
+import           Block
 import           Chain (Chain (..))
-import Node
-import MonadClass
+import qualified Chain
+import           MonadClass
+import           Node
+import           Protocol (MsgConsumer, MsgProducer)
 import qualified Sim
-import Protocol (MsgProducer, MsgConsumer)
 
-import Test.Sim (TestThreadGraph (..))
-import Test.Chain (TestBlockChain (..), TestChainFork (..))
+import           Test.Chain (TestBlockChain (..), TestChainFork (..))
+import           Test.Sim (TestThreadGraph (..))
 
 tests :: TestTree
 tests =
@@ -80,7 +80,7 @@ test_blockGenerator chain slotDuration = isValid <$> withProbe (experiment slotD
       fork $ forever $ do
         b <- atomically $ getBlock v
         probeOutput p b
-      
+
 prop_blockGenerator_ST :: TestBlockChain -> Positive Rational -> Bool
 prop_blockGenerator_ST (TestBlockChain chain) (Positive slotDuration) = runST $ test_blockGenerator chain (Sim.VTimeDuration slotDuration)
 
@@ -308,7 +308,7 @@ instance Arbitrary TestNetworkGraph where
         c   <- oneof (map return vs)
         let cs' = if null cs then [c] else cs
         g'' <- connectGraphG g'
-        chains <- map getTestBlockChain <$> replicateM (length cs') arbitrary 
+        chains <- map getTestBlockChain <$> replicateM (length cs') arbitrary
         return $ TestNetworkGraph g'' (zip cs' chains)
      where
         genCoreNodes :: [Int] -> Gen [Int]
@@ -379,7 +379,7 @@ data NetworkTest = NetworkTest
 
 instance Arbitrary NetworkTest where
   arbitrary = NetworkTest <$> arbitrary <*> duration <*> duration <*> duration
-    where 
+    where
       duration = Sim.VTimeDuration . getPositive <$> arbitrary
 
 prop_networkGraph :: NetworkTest

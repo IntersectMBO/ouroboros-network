@@ -9,16 +9,16 @@ module Test.Chain
   ) where
 
 import           Block
-import           Chain ( Chain (..), Point (..), ChainUpdate (..), genesisPoint)
+import           Chain (Chain (..), ChainUpdate (..), Point (..), genesisPoint)
 import qualified Chain
 import           Serialise (prop_serialise)
 
 import qualified Data.List as L
-import Data.Maybe (listToMaybe)
+import           Data.Maybe (listToMaybe)
 
-import Test.QuickCheck
-import Test.Tasty (TestTree, testGroup)
-import Test.Tasty.QuickCheck (testProperty)
+import           Test.QuickCheck
+import           Test.Tasty (TestTree, testGroup)
+import           Test.Tasty.QuickCheck (testProperty)
 
 --
 -- The list of all tests

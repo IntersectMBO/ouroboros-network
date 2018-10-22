@@ -1,7 +1,7 @@
-{-# LANGUAGE BangPatterns               #-}
-{-# LANGUAGE NamedFieldPuns             #-}
-{-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module ConsumersAndProducers
   ( ConsumerHandlers
@@ -11,15 +11,12 @@ module ConsumersAndProducers
   )where
 
 import           Block (HasHeader (..))
-import           Chain
-                   ( Chain (..), ChainUpdate (..), Point (..) )
-import qualified Chain
-                   ( selectPoints, addBlock, headPoint, rollback, genesisPoint )
-import           ChainProducerState
-                   ( ChainProducerState(..), ReaderId )
-import qualified ChainProducerState
-                   ( initReader, updateReader, readerInstruction
-                   , findFirstPoint )
+import           Chain (Chain (..), ChainUpdate (..), Point (..))
+import qualified Chain (addBlock, genesisPoint, headPoint, rollback,
+                     selectPoints)
+import           ChainProducerState (ChainProducerState (..), ReaderId)
+import qualified ChainProducerState (findFirstPoint, initReader,
+                     readerInstruction, updateReader)
 import           MonadClass
 import           ProtocolInterfaces
 

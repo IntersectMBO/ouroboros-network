@@ -1,30 +1,36 @@
-{-# LANGUAGE RecordWildCards, NamedFieldPuns #-}
-{-# LANGUAGE MultiParamTypeClasses, FunctionalDependencies, TypeFamilies,
-             FlexibleContexts, ScopedTypeVariables, GADTs, RankNTypes,
-             GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FunctionalDependencies     #-}
+{-# LANGUAGE GADTs                      #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TypeFamilies               #-}
 module ConsumerProtocolSTM where
 
-import Data.Word
-import Data.List (tails, foldl')
+import           Data.List (foldl', tails)
+import           Data.Word
 --import Data.Maybe
-import Data.Hashable
+import           Data.Hashable
 --import qualified Data.Set as Set
-import qualified Data.Map as Map
 import           Data.Map (Map)
+import qualified Data.Map as Map
 import           Data.PriorityQueue.FingerTree (PQueue)
 import qualified Data.PriorityQueue.FingerTree as PQueue
 
-import Control.Applicative
-import Control.Monad
-import Control.Concurrent.STM (STM, retry)
-import Control.Exception (assert)
-import Control.Monad.ST.Lazy
-import Data.STRef.Lazy
-import System.Random (StdGen, mkStdGen, randomR)
+import           Control.Applicative
+import           Control.Concurrent.STM (STM, retry)
+import           Control.Exception (assert)
+import           Control.Monad
+import           Control.Monad.ST.Lazy
+import           Data.STRef.Lazy
+import           System.Random (StdGen, mkStdGen, randomR)
 
-import Test.QuickCheck
+import           Test.QuickCheck
 
-import ChainExperiment2
+import           ChainExperiment2
 
 
 --
@@ -50,7 +56,7 @@ type MaxReadBlocks = Int
 readRollForwardOnly :: ChainConsumer -> MaxReadBlocks -> STM [Block]
 readRollForwardOnly ChainConsumer{tryPeekChain, tryReadChain} maxBlocks =
     go maxBlocks
-  where 
+  where
     go 0 = return []
     go n = do
       res <- tryPeekChain
