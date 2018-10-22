@@ -20,6 +20,7 @@ import Control.Monad.State
 import Data.Map.Strict (Map)
 import Data.Maybe (catMaybes)
 import Data.Traversable (for)
+import Data.Function ((&))
 import Test.QuickCheck
 import qualified Data.Map.Strict as Map
 
@@ -32,7 +33,16 @@ import Ouroboros
 data GlobalState p = GlobalState (Map NodeId (OuroborosState p))
 
 initialBftState :: GlobalState 'OuroborosBFT
-initialBftState = GlobalState $ Map.fromList [(CoreId 0, BftState (CoreId 0))]
+initialBftState = GlobalState mempty
+                & putStateFor (CoreId 0) (BftState (CoreId 0))
+                & putStateFor (CoreId 1) (BftState (CoreId 1))
+                & putStateFor (CoreId 2) (BftState (CoreId 2))
+                & putStateFor (CoreId 3) (BftState (CoreId 3))
+                & putStateFor (CoreId 4) (BftState (CoreId 4))
+                & putStateFor (CoreId 5) (BftState (CoreId 5))
+                & putStateFor (CoreId 6) (BftState (CoreId 6))
+                & putStateFor (CoreId 7) (BftState (CoreId 7))
+                & putStateFor (CoreId 8) (BftState (CoreId 8))
 
 stateFor :: NodeId -> GlobalState p -> OuroborosState p
 stateFor nid (GlobalState ss) = ss Map.! nid

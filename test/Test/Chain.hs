@@ -30,6 +30,7 @@ import Test.Tasty (TestTree, TestName, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
 
 import Test.GlobalState
+import Test.ArbitrarySt
 import Data.Map.Strict (Map)
 
 --
@@ -165,12 +166,6 @@ prop_intersectChains (TestChainFork c l r) =
     Just p  -> Chain.headPoint c == p
             && Chain.pointOnChain p l
             && Chain.pointOnChain p r
-
-
-class ArbitrarySt p a | a -> p where
-    arbitrarySt :: GenSt p a
-    shrinkSt :: a -> [a]
-
 
 
 --
