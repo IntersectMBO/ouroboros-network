@@ -2,7 +2,6 @@ module Protocol.Channel.Sim
   ( simStmChannels
   ) where
 
-import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 
 import MonadClass.MonadSTM

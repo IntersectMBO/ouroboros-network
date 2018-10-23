@@ -18,9 +18,6 @@ import qualified Data.Set as Set
 
 import Protocol.Chain.StreamProducer
 
-import Block
-import Chain
-import qualified Chain (head)
 import MonadClass.MonadSTM
 
 data Changing t where
@@ -52,23 +49,23 @@ carryChange k (Extended s)  = case k s of
 carryChange k (Unchanged t) = k t
 
 -- | A blockchain with a read pointer and a tip picked out. Like a zipper.
-data ChainSegment p where
+data ChainSegment header where
   -- | Read pointer is at the tip.
-  AtTip     :: Seq (Block p) -> Block p -> ChainSegment p
+  AtTip     :: Seq header -> header -> ChainSegment header
   -- | Read pointer is behind the tip.
-  BehindTip :: Seq (Block p) -> Block p -> Seq (Block p) -> Block p -> ChainSegment p
+  BehindTip :: Seq header -> header -> Seq header -> header -> ChainSegment header
 
-deriving instance Show (ChainSegment p)
+deriving instance Show header => Show (ChainSegment header)
 
 -- | chainSegmentToChain must always give a valid blockchain.
-chainSegmentToChain :: ChainSegment p -> NonEmpty (Block p)
+chainSegmentToChain :: ChainSegment header -> NonEmpty header
 chainSegmentToChain cs = case cs of
   -- unsafe NE.fromList is clearly safe here.
   AtTip     prior tip         -> NE.fromList $ Foldable.toList $ prior Seq.|> tip
   BehindTip prior rp  mid tip -> NE.fromList $ Foldable.toList $ (prior Seq.|> rp) <> (mid Seq.|> tip)
 
 -- | Read pointer is at the oldest.
-chainSegmentFromChain :: NonEmpty (Block p) -> ChainSegment p
+chainSegmentFromChain :: NonEmpty header -> ChainSegment header
 chainSegmentFromChain (b NE.:| bs) = case bs of
   [] -> AtTip mempty b
   [b'] -> BehindTip mempty b mempty b'
@@ -76,8 +73,13 @@ chainSegmentFromChain (b NE.:| bs) = case bs of
 
 -- | Gives 'Nothing' if the 'NonEmpty Block' has nothing in common with the
 -- 'ChainSegment' (so we don't have a new read pointer).
-switchToChain :: NonEmpty (Block p) -> ChainSegment p -> Maybe (Changing (ChainSegment p))
-switchToChain newChain cs = case cs of
+switchToChain
+  :: forall header .
+     (header -> header -> Bool) -- ^ Header equality
+  -> NonEmpty header
+  -> ChainSegment header
+  -> Maybe (Changing (ChainSegment header))
+switchToChain headerEq newChain cs = case cs of
   AtTip prior tip -> case cmpChains (NE.toList newChain) (Foldable.toList (prior Seq.|> tip)) [] of
     ([], _:_, _:_) -> error "switchToChain: impossible"
     -- They have nothing in common.
@@ -114,7 +116,7 @@ switchToChain newChain cs = case cs of
             -- then it's Unchanged.
             -- Assuming the chain and chain segment are well-formed, we can
             -- just check the tip hashes.
-            [] -> if headerHash (blockHeader tip') == headerHash (blockHeader tip)
+            [] -> if tip' `headerEq` tip
                   then Just (Unchanged cs')
                   else Just (Extended cs')
             -- Forks before the read pointer (does not include it). Always a fork.
@@ -123,35 +125,41 @@ switchToChain newChain cs = case cs of
   -- The first element is the suffix of the first chain not in the second.
   -- The second element is the suffix of the second chain not in the first.
   -- The third element is the common prefix, reversed.
-  cmpChains :: [Block p] -> [Block p] -> [Block p] -> ([Block p], [Block p], [Block p])
+  cmpChains :: [header] -> [header] -> [header] -> ([header], [header], [header])
   cmpChains []     bs     acc = ([], bs, acc)
   cmpChains as     []     acc = (as, [], acc)
   cmpChains (a:as) (b:bs) acc =
-    if headerHash (blockHeader a) == headerHash (blockHeader b)
+    if a `headerEq` b
     then cmpChains as bs (a:acc)
     else (a:as, b:bs, acc)
 
-chainSegmentTip :: ChainSegment p -> Block p
+chainSegmentTip :: ChainSegment header -> header
 chainSegmentTip it = case it of
   AtTip     _ b     -> b
   BehindTip _ _ _ b -> b
 
-chainSegmentReadPointer :: ChainSegment p -> Block p
+chainSegmentReadPointer :: ChainSegment header -> header
 chainSegmentReadPointer cs = case cs of
   AtTip     _ b     -> b
   BehindTip _ b _ _ -> b
 
 -- | Simple but inefficient. Bumps up the read pointer to the newest point
 -- that's an ancestor of the tip.
-findBestCheckpoint :: NonEmpty Point -> ChainSegment p -> ChainSegment p
-findBestCheckpoint cps cs = case cs of
+findBestCheckpoint
+  :: forall point header .
+     ( Ord point )
+  => (header -> point)
+  -> NonEmpty point
+  -> ChainSegment header
+  -> ChainSegment header
+findBestCheckpoint mkPoint cps cs = case cs of
   -- No sense improving when we're already at the tip (nothing is better).
   AtTip     _     _          -> cs
   -- We'll traverse (mid |> tip) in reverse checking whether any of them are
   -- checkpoints. The first one that is becomes the new read pointer, and the
   -- prefix of the list is put into prior.
   BehindTip prior rp mid tip ->
-    if isCheckpoint (blockPoint tip)
+    if isCheckpoint (mkPoint tip)
     then AtTip (prior <> (rp Seq.<| mid)) tip
     else case splitAtCheckpoint mid mempty of
             -- No checkpoint found in there; no change.
@@ -159,24 +167,24 @@ findBestCheckpoint cps cs = case cs of
             -- Found one. The old read pointer 'tp' goes into the prior.
             Just (prior', rp', mid') -> BehindTip (prior <> (rp Seq.<| prior')) rp' mid' tip
   where
-  cpSet :: Set Point
+  cpSet :: Set point
   cpSet = Set.fromList (NE.toList cps)
-  isCheckpoint :: Point -> Bool
+  isCheckpoint :: point -> Bool
   isCheckpoint = flip Set.member cpSet
   -- First argument is a chain to search (newest-to-oldest)
   -- Second argument is an accumulator for the consumed part of the list.
   -- The first checkpoint found in the first list is given as the second
   -- component, and on either side of it are the parts of the chain before it
   -- and after it.
-  splitAtCheckpoint :: Seq (Block p) -> Seq (Block p) -> Maybe (Seq (Block p), Block p, Seq (Block p))
+  splitAtCheckpoint :: Seq header -> Seq header -> Maybe (Seq header, header, Seq header)
   splitAtCheckpoint mid acc = case Seq.viewr mid of
     Seq.EmptyR       -> Nothing
     mid' Seq.:> here ->
-      if isCheckpoint (blockPoint here)
+      if isCheckpoint (mkPoint here)
       then Just (mid', here, acc)
       else splitAtCheckpoint mid' (here Seq.<| acc)
 
--- | Derive a 'BlockStream' from a mutable 'ChainSegment'.
+-- | Derive a 'HeaderStream' from a mutable 'ChainSegment'.
 --
 -- The oldest block in the segment is the read pointer: what the consumer will
 -- get on the next request for a block (the consumer must know the parent of
@@ -192,28 +200,30 @@ findBestCheckpoint cps cs = case cs of
 --
 -- Failing any of these will not cause any protocol errors, it'll just confuse
 -- the consumer and probably cause it to terminate the protocol.
-simpleBlockStream
-  :: ( MonadSTM m stm ) 
-  => TVar m (Changing  (ChainSegment p), Exhausted)
-  -> BlockStream p m ()
-simpleBlockStream chainVar = BlockStream $ atomically $ do
+simpleHeaderStream
+  :: ( MonadSTM m stm, Ord point )
+  => (header -> point)
+  -> TVar m (Changing  (ChainSegment header), Exhausted)
+  -> HeaderStream point header m ()
+simpleHeaderStream mkPoint chainVar = HeaderStream $ atomically $ do
   cs <- unChanging . fst <$> readTVar chainVar
-  let tipHeader = blockHeader (chainSegmentTip cs)
-      readPointer = blockPoint (chainSegmentReadPointer cs)
-  pure $ BlockStreamAt
+  let tipHeader = chainSegmentTip cs
+      readPointer = mkPoint (chainSegmentReadPointer cs)
+  pure $ HeaderStreamAt
     { bsTip = tipHeader
     , bsReadPointer = readPointer
-    , bsNext = simpleBlockStreamNext chainVar
+    , bsNext = simpleHeaderStreamNext mkPoint chainVar
     }
 
-simpleBlockStreamNext
-  ::forall p m stm .
-     ( MonadSTM m stm )
-  => TVar m (Changing (ChainSegment p), Exhausted)
-  -> BlockStreamNext p m ()
-simpleBlockStreamNext chainVar = BlockStreamNext
+simpleHeaderStreamNext
+  ::forall point header m stm .
+     ( MonadSTM m stm, Ord point )
+  => (header -> point)
+  -> TVar m (Changing (ChainSegment header), Exhausted)
+  -> HeaderStreamNext point header m ()
+simpleHeaderStreamNext mkPoint chainVar = HeaderStreamNext
   { bsNextChange = nextChange
-  , bsNextBlock  = nextBlock
+  , bsNextHeader  = nextBlock
   , bsImprove    = improve
   , bsDone       = ()
   }
@@ -221,35 +231,26 @@ simpleBlockStreamNext chainVar = BlockStreamNext
 
   -- A subtle point here: for nextChange we want to wake up and send the
   -- message even if it's not a fork (just an extension).
-  --  But for the other ones, extensions can be ignored.... no, only for
-  --  block download should they be ignored.
-  --  Ah no, for download, an extension should be deferred until after the
-  --  download, but a fork should inmterrupt it,.
-  nextChange :: forall f . m (Either () (StreamStep p f (NextChange p) m ()))
+  -- For download, an extension should be deferred until after the
+  -- download, but a fork should interrupt it.
+  nextChange :: forall f . m (Either () (StreamStep point header f (NextChange point header) m ()))
   nextChange = atomically $ do
     cchain <- readTVar chainVar
     case cchain of
       (Unchanged _, True)  -> pure $ Left ()
       (Unchanged _, False) -> retry
       (Forked chain , exhausted) -> do
-        let readPointer = blockPoint (chainSegmentReadPointer chain)
-            tip         = blockHeader (chainSegmentTip chain)
+        let readPointer = mkPoint (chainSegmentReadPointer chain)
+            tip         = chainSegmentTip chain
         -- Set to unchanged, since the consumer now knows it.
         writeTVar chainVar (Unchanged chain, exhausted)
-        pure $ Right $ ChangeFork readPointer tip (simpleBlockStreamNext chainVar)
+        pure $ Right $ ChangeFork readPointer tip (simpleHeaderStreamNext mkPoint chainVar)
       -- In this presentation, we always have the bodies. Fast relaying will
       -- be done whenever the chain segment is AtTip.
       (Extended chain, exhausted) -> do
         let tip = chainSegmentTip chain
-            tipHeader = blockHeader tip
-            tipBody = blockBody tip
-            relaying = case chain of
-              AtTip _ b ->
-                Relaying (pure (NoChange (RelayBody tipBody (simpleBlockStreamNext chainVar))))
-              _         ->
-                NoRelay (simpleBlockStreamNext chainVar)
         writeTVar chainVar (Unchanged chain, exhausted)
-        pure $ Right $ ChangeExtend tipHeader relaying
+        pure $ Right $ ChangeExtend tip (NextChange (simpleHeaderStreamNext mkPoint chainVar))
 
   -- Blocks are read out from the TVar one-at-a-time, as opposed to, say,
   -- getting a batch out and then serving them all up before checking again,
@@ -260,59 +261,59 @@ simpleBlockStreamNext chainVar = BlockStreamNext
   -- - if it was a fork, stop the block download and present the fork
   -- - if it was a continuation, keep going but give the new header too
   --
-  nextBlock :: m (StreamStep p (NextBlock p) (NextBlock p) m ())
+  nextBlock :: m (StreamStep point header (NextHeader point header) (NextHeader point header) m ())
   nextBlock = atomically $ do
     cchain <- readTVar chainVar
     case cchain of
       (Forked chain, exhausted) -> do
-        let readPointer = blockPoint (chainSegmentReadPointer chain)
-            tip         = blockHeader (chainSegmentTip chain)
+        let readPointer = mkPoint (chainSegmentReadPointer chain)
+            tip         = chainSegmentTip chain
         writeTVar chainVar (Unchanged chain, exhausted)
-        pure $ ChangeFork readPointer tip (simpleBlockStreamNext chainVar)
+        pure $ ChangeFork readPointer tip (simpleHeaderStreamNext mkPoint chainVar)
       (Extended chain, exhausted) -> case advance chain of
         Just (b, !chain') -> do
-          let tip = blockHeader (chainSegmentTip chain)
+          let tip = chainSegmentTip chain
           writeTVar chainVar (Unchanged chain', exhausted)
-          pure $ ChangeExtend tip (NextBlock b (simpleBlockStreamNext chainVar))
+          pure $ ChangeExtend tip (NextHeader b (simpleHeaderStreamNext mkPoint chainVar))
         Nothing -> do
-          let tip = blockHeader (chainSegmentTip chain)
-          pure $ ChangeExtend tip (NoNextBlock (simpleBlockStreamNext chainVar))
+          let tip = chainSegmentTip chain
+          pure $ ChangeExtend tip (NoNextHeader (simpleHeaderStreamNext mkPoint chainVar))
       (Unchanged chain, exhausted) -> case advance chain of
         Just (b, !chain') -> do
           writeTVar chainVar (Unchanged chain', exhausted)
-          pure $ NoChange (NextBlock b (simpleBlockStreamNext chainVar))
+          pure $ NoChange (NextHeader b (simpleHeaderStreamNext mkPoint chainVar))
         Nothing ->
-          pure $ NoChange (NoNextBlock (simpleBlockStreamNext chainVar))
+          pure $ NoChange (NoNextHeader (simpleHeaderStreamNext mkPoint chainVar))
 
   -- | Advance the read pointer, giving Nothing case it's past the tip.
   -- You get the block to send (former oldest block) and the remaining
   -- segment.
-  advance :: ChainSegment p -> Maybe (Block p, ChainSegment p)
+  advance :: ChainSegment header -> Maybe (header, ChainSegment header)
   advance chain = case chain of
     AtTip     _     _          -> Nothing
     BehindTip prior rp mid tip -> Just $ case Seq.viewl mid of
      Seq.EmptyL -> (tip, AtTip (prior Seq.|> rp) tip)
      b Seq.:< bs -> (b, BehindTip (prior Seq.|> rp) b bs tip)
 
-  improve :: NonEmpty Point -> m (StreamStep p (Improve p) (Improve p) m ())
+  improve :: NonEmpty point -> m (StreamStep point header (Improve point header) (Improve point header) m ())
   improve cps = atomically $ do
     cchain <- readTVar chainVar
     case cchain of
       (Unchanged chain, exhausted) -> do
-        let !chain'        = findBestCheckpoint cps chain
-            newReadPointer = blockPoint (chainSegmentReadPointer chain')
+        let !chain'        = findBestCheckpoint mkPoint cps chain
+            newReadPointer = mkPoint (chainSegmentReadPointer chain')
         writeTVar chainVar (Unchanged chain', exhausted)
-        pure $ NoChange $ Improve newReadPointer (simpleBlockStreamNext chainVar)
+        pure $ NoChange $ Improve newReadPointer (simpleHeaderStreamNext mkPoint chainVar)
       (Forked chain, exhausted) -> do
-        let newReadPointer = blockPoint (chainSegmentReadPointer chain)
-            tip            = blockHeader (chainSegmentTip chain)
+        let newReadPointer = mkPoint (chainSegmentReadPointer chain)
+            tip            = chainSegmentTip chain
         writeTVar chainVar (Unchanged chain, exhausted)
-        pure $ ChangeFork newReadPointer tip (simpleBlockStreamNext chainVar)
+        pure $ ChangeFork newReadPointer tip (simpleHeaderStreamNext mkPoint chainVar)
       (Extended chain, exhausted) -> do
-        let tip            = blockHeader (chainSegmentTip chain)
+        let tip            = chainSegmentTip chain
             -- tip is guaranteed to be the same a chainSegmentTip chain'.
             -- 'findBestCheckpoint never changes the tip.
-            !chain'        = findBestCheckpoint cps chain
-            newReadPointer = blockPoint (chainSegmentReadPointer chain')
+            !chain'        = findBestCheckpoint mkPoint cps chain
+            newReadPointer = mkPoint (chainSegmentReadPointer chain')
         writeTVar chainVar (Unchanged chain', exhausted)
-        pure $ ChangeExtend tip (Improve newReadPointer (simpleBlockStreamNext chainVar))
+        pure $ ChangeExtend tip (Improve newReadPointer (simpleHeaderStreamNext mkPoint chainVar))
