@@ -44,7 +44,6 @@ data Peer p (tr :: st -> st -> Type) (from :: Status st) (to :: Status st) f t w
     => Exchange p tr from inter control
     -> Peer p tr (ControlNext control 'Yielding 'Awaiting 'Finished inter) to f t
     -> Peer p tr ('Yielding from) to f t
-  -- Want to have that the 'PeerAwait' constructor is impossible 
   PeerAwait
     :: ( Typeable from )
     => (forall inter . tr from inter -> Peer p tr (ControlNext (TrControl p from inter) 'Awaiting 'Yielding 'Finished inter) to f t)
