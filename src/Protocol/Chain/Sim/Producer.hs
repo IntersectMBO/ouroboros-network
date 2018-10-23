@@ -87,9 +87,9 @@ switchToChain headerEq newChain cs = case cs of
     -- They are the same.
     ([], [], _) -> Just (Unchanged cs)
     (m:ms, excluded, p:ps) ->
-      let tip = NE.last (m NE.:| ms)
-          mid = NE.init (m NE.:| ms)
-          cs' = BehindTip (Seq.reverse (Seq.fromList ps)) p (Seq.fromList mid) tip
+      let tip' = NE.last (m NE.:| ms)
+          mid  = NE.init (m NE.:| ms)
+          cs'  = BehindTip (Seq.reverse (Seq.fromList ps)) p (Seq.fromList mid) tip'
       in  case excluded of
             -- All of the current chain is in the new.
             [] -> Just (Extended cs')
@@ -97,7 +97,7 @@ switchToChain headerEq newChain cs = case cs of
             _  -> Just (Forked cs')
   -- If it's a proper fork but it includes the read pointer then we call it an
   -- extension.
-  BehindTip prior rp mid tip -> case cmpChains (NE.toList newChain) (Foldable.toList (prior Seq.|> rp)) [] of
+  BehindTip prior rp _ tip -> case cmpChains (NE.toList newChain) (Foldable.toList (prior Seq.|> rp)) [] of
     ([], _:_, _:_) -> error "switchToChain: impossible"
     -- Nothing in common with the chain up to the read pointer.
     (_, _, []) -> Nothing

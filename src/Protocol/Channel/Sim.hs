@@ -1,3 +1,5 @@
+{-# OPTIONS_GHC "-fno-warn-name-shadowing" #-}
+
 module Protocol.Channel.Sim
   ( simStmChannels
   ) where

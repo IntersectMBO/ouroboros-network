@@ -4,6 +4,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE GADTSyntax #-}
 
+{-# OPTIONS_GHC "-fno-warn-name-shadowing" #-}
+
 module Protocol.Chain.Sim.Node where
 
 import Control.Concurrent.Async (concurrently, forConcurrently)
@@ -114,7 +116,7 @@ chainSelectionForever act = chainSelectionUntil (\blks -> Nothing <$ act blks)
 runWithChainSelectionSTM
   :: forall p m stm x consumer producer t .
      ( MonadSTM m stm )
-  => (forall s t . m s -> m t -> m (s, t))
+  => (forall a b . m a -> m b -> m (a, b))
      -- ^ Concurrency
   -> (TVar m (Seq (BlockHeader p)) -> Channel m x -> m consumer)
      -- ^ Create a consumer
@@ -125,7 +127,7 @@ runWithChainSelectionSTM
   -> StaticNodeDesc (BlockHeader p) (Channel m x)
      -- ^ Description of the node (name, initial chain, and adjacency)
   -> m (t, ([consumer], [producer]))
-runWithChainSelectionSTM concurrently mkConsumer mkProducer selection nodeDesc = do
+runWithChainSelectionSTM conc mkConsumer mkProducer selection nodeDesc = do
 
   let initChain = nodeDescInitialChain nodeDesc
   bestChainVar <- atomically $ newTVar (Seq.fromList (NE.toList initChain))
@@ -141,15 +143,15 @@ runWithChainSelectionSTM concurrently mkConsumer mkProducer selection nodeDesc =
   let consumerVars = fmap fst consumers
       producerVars = fmap fst producers
 
-  concurrently (chainSelectionSTM bestChainVar consumerVars producerVars selection)
-               (concurrently (concurrentList (fmap snd consumers)) (concurrentList (fmap snd producers)))
+  conc (chainSelectionSTM bestChainVar consumerVars producerVars selection)
+       (conc (concurrentList (fmap snd consumers)) (concurrentList (fmap snd producers)))
 
   where
 
   name = nodeDescName nodeDesc
 
   concurrentList :: forall t . [m t] -> m [t]
-  concurrentList = foldr (\m ms -> uncurry (:) <$> concurrently m ms) (pure [])
+  concurrentList = foldr (\m ms -> uncurry (:) <$> conc m ms) (pure [])
 
   chainSelectionSTM
     :: TVar m (Seq (BlockHeader p))               -- ^ Best chain.
@@ -208,7 +210,7 @@ standardConsumer
   -> TVar m (Seq (BlockHeader p))
   -> Channel m (SomeTransition (TrChainExchange Point (BlockHeader p)))
   -> m (FromStream (TrChainExchange Point (BlockHeader p)) m ())
-standardConsumer name var chan =
+standardConsumer _ var chan =
   useChannelHomogeneous chan (streamConsumer (simpleConsumerStream blockPoint (==) var))
 
 standardProducer
@@ -217,7 +219,7 @@ standardProducer
   -> TVar m (Changing (ChainSegment (BlockHeader p)), Exhausted)
   -> Channel m (SomeTransition (TrChainExchange Point (BlockHeader p)))
   -> m (FromStream (TrChainExchange Point (BlockHeader p)) m ())
-standardProducer name var chan =
+standardProducer _ var chan =
   useChannelHomogeneous chan (streamProducer (simpleHeaderStream blockPoint var))
   -- NB blockPoint is a bad name, since in this case it specializes to type
   -- BlockHeader p -> Point
@@ -254,12 +256,12 @@ exampleNetDesc = StaticNetDesc gr nodes
   chain2 = header1 NE.:| [header2, header3, header4, header5, header6]
 
 runNetDescStandardIO
-  :: forall p producer consumer .
+  :: forall p .
      (forall x . StaticNetDesc (BlockHeader p) x)
   -> IO [(Seq (BlockHeader p), ([FromStream (TrChainExchange Point (BlockHeader p)) IO ()], [FromStream (TrChainExchange Point (BlockHeader p)) IO ()]))]
 runNetDescStandardIO netDesc = do
   nodes <- atomically $ realiseStaticNetDescSTM netDesc
-  let runNode snd =
+  let runNode desc =
         let selectionP = \chain -> do
               case Seq.viewr chain of
                 Seq.EmptyR -> pure Nothing
@@ -268,8 +270,8 @@ runNetDescStandardIO netDesc = do
                   then Just chain
                   else Nothing
         in  runWithChainSelectionSTM concurrently
-                                     (standardConsumer (nodeDescName snd))
-                                     (standardProducer (nodeDescName snd))
+                                     (standardConsumer (nodeDescName desc))
+                                     (standardProducer (nodeDescName desc))
                                      (chainSelectionUntil selectionP)
-                                     snd
+                                     desc
   forConcurrently (Map.elems nodes) runNode

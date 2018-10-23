@@ -17,7 +17,6 @@ cabal-version:       >=1.10
 
 library
   exposed-modules:     Protocol.Channel
-                     , Protocol.Channel.Sim
                      , Protocol.Transition
                      , Protocol.Nat
                      , Protocol.Core
@@ -25,9 +24,6 @@ library
                      , Protocol.Chain.Type
                      , Protocol.Chain.StreamProducer
                      , Protocol.Chain.Direct
-                     , Protocol.Chain.Sim.Consumer
-                     , Protocol.Chain.Sim.Producer
-                     , Protocol.Chain.Sim.Node
   -- other-modules:       
   other-extensions:    GADTs
                      , RankNTypes
@@ -40,14 +36,8 @@ library
                      , BangPatterns
                      , StandaloneDeriving
   build-depends:       base >=4.11 && <4.12
-                     , async >=2.2 && <2.3
-                     , array
-                     , containers >= 0.4.0.0 && < 1.0
                      , transformers >=0.5 && <0.6
                      , free >=5.1 && <5.2
-                     , bytestring >=0.10 && <0.11
-                     , primitive >=0.6 && <0.7
-                     , ouroboros-network
 
   hs-source-dirs:      src
   default-language:    Haskell2010

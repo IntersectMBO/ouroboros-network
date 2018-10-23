@@ -70,7 +70,7 @@ simpleConsumerStreamStep mkPoint eqPoint chainVar readPointer tip =
   -- "next tip" request to those from whom it wishes to receive fast relay, and
   -- no request to the others.
   if readPointer `eqPoint` mkPoint tip
-  then NextTip (simpleConsumerStream mkPoint eqPoint chainVar) (simpleConsumerNext mkPoint eqPoint chainVar readPointer tip) ()
+  then NextTip (simpleConsumerStream mkPoint eqPoint chainVar) (simpleConsumerNext mkPoint eqPoint chainVar readPointer) ()
   else DownloadHeaders maxBound (simpleConsumerDownload mkPoint eqPoint chainVar readPointer tip)
 
 simpleConsumerDownload
@@ -102,9 +102,8 @@ simpleConsumerNext
   -> (point -> point -> Bool)
   -> TVar m (Seq header)
   -> point
-  -> header
   -> ConsumerNext point header m ()
-simpleConsumerNext mkPoint eqPoint chainVar readPointer tip = ConsumerNext
+simpleConsumerNext mkPoint eqPoint chainVar readPointer = ConsumerNext
   { -- We now have a new tip, but the read pointer remains the same.
     runConsumerNext = \header -> pure (simpleConsumerStreamStep mkPoint eqPoint chainVar readPointer header)
   }
