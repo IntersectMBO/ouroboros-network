@@ -2,6 +2,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE KindSignatures             #-}
 {-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE StandaloneDeriving         #-}
 
 -- | Reference implementation of a representation of a block in a block chain.
 --
@@ -38,7 +39,9 @@ data Block (p :: OuroborosProtocol) = Block {
        blockHeader :: BlockHeader p,
        blockBody   :: BlockBody
      }
-  deriving (Show, Eq)
+
+deriving instance KnownOuroborosProtocol p => Show (Block p)
+deriving instance KnownOuroborosProtocol p => Eq   (Block p)
 
 -- | A block header. It retains simplified versions of all the essential
 -- elements.
@@ -51,7 +54,9 @@ data BlockHeader (p :: OuroborosProtocol) = BlockHeader {
        headerSigner   :: BlockSigner, -- ^ Who signed this block
        headerBodyHash :: BodyHash     -- ^ The hash of the corresponding block body
      }
-  deriving (Show, Eq)
+
+deriving instance KnownOuroborosProtocol p => Show (BlockHeader p)
+deriving instance KnownOuroborosProtocol p => Eq   (BlockHeader p)
 
 -- | A block body.
 --

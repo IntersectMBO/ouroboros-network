@@ -329,7 +329,8 @@ relayNode nid chans = do
 -- occupied, it will replace it with its block.
 --
 coreNode :: forall p m stm.
-        ( MonadSTM m stm
+        ( KnownOuroborosProtocol p
+        , MonadSTM m stm
         , MonadTimer m
         , MonadSay m
         )
