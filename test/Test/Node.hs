@@ -211,7 +211,7 @@ prop_coreToRelay2 (TestNodeSim chain slotDuration coreTrDelay relayTrDelay) =
       else
             mchain1 === Just chain
         .&&.
-            mchain1 === Just chain
+            mchain2 === Just chain
 
 -- | Node graph: c ↔ r ↔ c
 coreToCoreViaRelaySim :: ( MonadSTM m stm
