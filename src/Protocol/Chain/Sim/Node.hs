@@ -1,8 +1,8 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE PolyKinds #-}
-{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE GADTSyntax #-}
+{-# LANGUAGE RankNTypes #-}
 
 {-# OPTIONS_GHC "-fno-warn-name-shadowing" #-}
 
@@ -20,6 +20,7 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
+import Data.Void (Void, absurd)
 
 import Protocol.Chain.Sim.Producer
 import Protocol.Chain.Sim.Consumer
@@ -35,7 +36,8 @@ import Chain
 import MonadClass.MonadSTM
 
 -- | Description of a static network.
-data StaticNetDesc header x = StaticNetDesc Graph (Map Vertex (StaticNodeDesc header x))
+data StaticNetDesc header = StaticNetDesc Graph (Map Vertex (StaticNodeDesc header Void))
+  deriving (Show)
 
 -- | Description of a static node (static meaning the in/out edges don't
 -- change).
@@ -45,6 +47,13 @@ data StaticNodeDesc header e = StaticNodeDesc
   , nodeDescOutEdges     :: [e]
   , nodeDescInEdges      :: [e]
   }
+  deriving (Show)
+
+instance Functor (StaticNodeDesc header) where
+  fmap f desc = desc
+    { nodeDescOutEdges = fmap f (nodeDescOutEdges desc)
+    , nodeDescInEdges  = fmap f (nodeDescInEdges desc)
+    }
 
 staticNodeDesc :: String -> NonEmpty header -> StaticNodeDesc header x
 staticNodeDesc name initialChain = StaticNodeDesc
@@ -65,10 +74,10 @@ includeInEdge e nd = nd { nodeDescInEdges = e : nodeDescInEdges nd }
 realiseStaticNetDescSTM
   :: forall header m stm t .
      ( MonadSTM m stm )
-  => (forall x . StaticNetDesc header x)
+  => StaticNetDesc header
   -> stm (Map Vertex (StaticNodeDesc header (Channel m t)))
 realiseStaticNetDescSTM (StaticNetDesc gr descs) =
-  Foldable.foldlM createChannels descs (Array.assocs gr)
+  Foldable.foldlM createChannels ((fmap . fmap) absurd descs) (Array.assocs gr)
   where
 
   -- | Creates a channel for each target vertex, includes them in the local
@@ -224,7 +233,7 @@ standardProducer _ var chan =
   -- NB blockPoint is a bad name, since in this case it specializes to type
   -- BlockHeader p -> Point
 
-exampleNetDesc :: StaticNetDesc (BlockHeader p) x
+exampleNetDesc :: StaticNetDesc (BlockHeader p)
 exampleNetDesc = StaticNetDesc gr nodes
   where
   -- Very simple graph in which node 0 consumes from node 1, 1 from node 2.
@@ -256,22 +265,16 @@ exampleNetDesc = StaticNetDesc gr nodes
   chain2 = header1 NE.:| [header2, header3, header4, header5, header6]
 
 runNetDescStandardIO
-  :: forall p .
-     (forall x . StaticNetDesc (BlockHeader p) x)
-  -> IO [(Seq (BlockHeader p), ([FromStream (TrChainExchange Point (BlockHeader p)) IO ()], [FromStream (TrChainExchange Point (BlockHeader p)) IO ()]))]
-runNetDescStandardIO netDesc = do
+  :: forall p t .
+     StaticNetDesc (BlockHeader p)
+  -> (forall m . Monad m => ChainSelection (BlockHeader p) m t)
+  -> IO (Map Int (t, ([FromStream (TrChainExchange Point (BlockHeader p)) IO ()], [FromStream (TrChainExchange Point (BlockHeader p)) IO ()])))
+runNetDescStandardIO netDesc chainSelection = do
   nodes <- atomically $ realiseStaticNetDescSTM netDesc
-  let runNode desc =
-        let selectionP = \chain -> do
-              case Seq.viewr chain of
-                Seq.EmptyR -> pure Nothing
-                _ Seq.:> newest -> pure $
-                  if blockNo newest >= BlockNo 6
-                  then Just chain
-                  else Nothing
-        in  runWithChainSelectionSTM concurrently
-                                     (standardConsumer (nodeDescName desc))
-                                     (standardProducer (nodeDescName desc))
-                                     (chainSelectionUntil selectionP)
-                                     desc
-  forConcurrently (Map.elems nodes) runNode
+  let runNode desc = runWithChainSelectionSTM
+        concurrently
+        (standardConsumer (nodeDescName desc))
+        (standardProducer (nodeDescName desc))
+        chainSelection
+        desc
+  Map.fromList <$> forConcurrently (Map.toList nodes) (\(v, desc) -> (,) v <$> runNode desc)
