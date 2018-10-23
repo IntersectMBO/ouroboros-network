@@ -40,8 +40,8 @@ data Block (p :: OuroborosProtocol) = Block {
        blockBody   :: BlockBody
      }
 
-deriving instance KnownOuroborosProtocol p => Show (Block p)
-deriving instance KnownOuroborosProtocol p => Eq   (Block p)
+deriving instance Show (Block p)
+deriving instance Eq   (Block p)
 
 -- | A block header. It retains simplified versions of all the essential
 -- elements.
@@ -55,8 +55,8 @@ data BlockHeader (p :: OuroborosProtocol) = BlockHeader {
        headerBodyHash :: BodyHash     -- ^ The hash of the corresponding block body
      }
 
-deriving instance KnownOuroborosProtocol p => Show (BlockHeader p)
-deriving instance KnownOuroborosProtocol p => Eq   (BlockHeader p)
+deriving instance Show (BlockHeader p)
+deriving instance Eq   (BlockHeader p)
 
 -- | A block body.
 --

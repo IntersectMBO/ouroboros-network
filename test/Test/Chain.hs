@@ -10,6 +10,7 @@ module Test.Chain
   , mkRollbackPoint
   , genBlockChain
   , genHeaderChain
+  , genNonNegative
   ) where
 
 import           Block

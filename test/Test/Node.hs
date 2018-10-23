@@ -2,6 +2,9 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeOperators       #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE GADTs               #-}
+
 module Test.Node where
 
 import           Control.Monad (forM, forM_, forever, replicateM)
@@ -11,11 +14,16 @@ import           Data.Array
 import           Data.Functor (void)
 import           Data.Graph
 import           Data.List (foldl')
+import           Data.List.NonEmpty (NonEmpty)
+import qualified Data.List.NonEmpty as NE
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (isNothing, listToMaybe)
 import           Data.Semigroup ((<>))
+import           Data.Sequence (Seq)
+import qualified Data.Sequence as Seq
 import           Data.Tuple (swap)
+import           Data.Void (Void)
 
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
@@ -30,10 +38,13 @@ import           Ouroboros
 import           Protocol (MsgConsumer, MsgProducer)
 import qualified Sim
 
-import           Test.Chain (TestBlockChain (..), TestChainFork (..))
+import           Protocol.Chain.Sim.Node
+
+import           Test.Chain (TestBlockChain (..), TestChainFork (..),
+                             genNonNegative, genHeaderChain)
 import           Test.DepFn
 import           Test.Ouroboros
-import           Test.Sim (TestThreadGraph (..))
+import           Test.Sim (TestThreadGraph (..), arbitraryAcyclicGraph)
 
 tests :: TestTree
 tests =
@@ -46,6 +57,14 @@ tests =
 --  , testProperty "arbtirary node graph" (withMaxSuccess 50 prop_networkGraph)
   , testProperty "blockGenerator invariant (SimM)" prop_blockGenerator_ST
   , testProperty "blockGenerator invariant (IO)" prop_blockGenerator_IO
+  , testProperty "consensus in arbitrary graph" $
+      -- We need a common genesis block, or we actually would not expect
+      -- consensus to be reached.
+      let genesis = BlockHeader (HeaderHash 0) (HeaderHash 0) (Slot 0) (BlockNo 0) (BlockSigner 0) (BodyHash 0)
+          graphGen = resize 40 genConnectedBidirectionalGraph
+          nameGen = pure . show
+          chainGen = const (resize 40 (genNonEmptyHeaderChain genesis))
+      in  forAll (genStaticNetDesc graphGen nameGen chainGen) prop_consensus
   ]
 
 
@@ -432,15 +451,87 @@ prop_networkGraph = simpleProp $ \(_ :: Sing p) (NetworkTest g@(TestNetworkGraph
     -- from other nodes.
     $ Map.foldl' (\v c -> foldl' Chain.selectChain c chains == c && v) True dict
   where
-  -- graph is disconnected if it has strictly more than one component
-  isDisconnected :: Graph -> Bool
-  isDisconnected gr = case components gr of
-    []       -> False
-    (_ : []) -> False
-    _        -> True
-
   -- remove two edges: `a -> b` and `b -> a`
   removeEdge :: Bounds -> Edge -> [Edge] -> Graph
   removeEdge bs e es =
     let es' = filter (\e' -> e /= e' && swap e /= e') es
     in buildG bs es'
+
+-- graph is disconnected if it has strictly more than one component
+isDisconnected :: Graph -> Bool
+isDisconnected gr = case components gr of
+  []       -> False
+  (_ : []) -> False
+  _        -> True
+
+genConnectedBidirectionalGraph :: Gen Graph
+genConnectedBidirectionalGraph = do
+  g <- sized $ \sz -> arbitraryAcyclicGraph
+    (choose (2, 8 `min` (sz `div` 3)))
+    (choose (1, 8 `min` (sz `div` 3)))
+    0.3
+  let g' = accum (++) g (assocs $ transposeG g)
+  connectGraphG g'
+
+-- | Generate a non-empty chain starting with this block header.
+genNonEmptyHeaderChain :: BlockHeader p -> Gen (NonEmpty (BlockHeader p))
+genNonEmptyHeaderChain genesis = do
+  n <- genNonNegative
+  chain <- reverse . Chain.toList <$> genHeaderChain n
+  pure $ genesis NE.:| chain
+
+-- | Convert a 'TestNetworkGraph p' into a 'StaticNetDesc (BlockHeader p) x'.
+-- They both have the same adjacency. The mismatch is that the former only gives
+-- chains for the core nodes, and it uses 'Chain (Block p)' which has a
+-- genesis block built-in implicitly. The latter requires a
+-- 'NonEmpty (BlockHeader p)' for _each_ node, which morally should always be
+-- possible because every node must have _a_ genesis block, and there is no
+-- one true genesis block. 
+genStaticNetDesc
+  :: forall p .
+     Gen Graph                               -- ^ Generate adjacency.
+                                             -- Out-edge means "consume from".
+  -> (Int -> Gen String)                     -- ^ Name assignment.
+  -> (Int -> Gen (NonEmpty (BlockHeader p))) -- ^ Generate header chains.
+  -> Gen (StaticNetDesc (BlockHeader p))
+genStaticNetDesc genGraph genName genChain = do
+  gr <- genGraph
+  let vs = vertices gr
+  vs' <- forM vs $ \v -> do
+    desc <- genStaticNodeDesc (genName v) (genChain v)
+    pure (v, desc)
+  let nodeDescs :: Map Vertex (StaticNodeDesc (BlockHeader p) Void)
+      nodeDescs = Map.fromList vs'
+  pure $ StaticNetDesc gr nodeDescs
+
+genStaticNodeDesc
+  :: Gen String
+  -> Gen (NonEmpty (BlockHeader p))
+  -> Gen (StaticNodeDesc (BlockHeader p) Void)
+genStaticNodeDesc genName genChain = staticNodeDesc <$> genName <*> genChain
+
+-- | Asserts that all nodes in a connected graph reach consensus up to
+-- block count.
+prop_consensus :: StaticNetDesc (BlockHeader p) -> Property
+prop_consensus netDesc@(StaticNetDesc graph nodes) =
+  not (isDisconnected graph) ==> ioProperty $ do
+    -- Take the longest chain in the net and use that as a stop condition. This
+    -- means cycles in the graph are OK: every node should stop producing when
+    -- they get a chain that meets the length condition.
+    let newestBlockNos :: Map Int BlockNo
+        newestBlockNos = fmap (blockNo . NE.last . nodeDescInitialChain) nodes
+        highestBlockNo = foldl max (BlockNo 0) newestBlockNos
+        chainSelection :: forall m p . Monad m => ChainSelection (BlockHeader p) m (Seq (BlockHeader p))
+        chainSelection = chainSelectionUntil $ \chain -> case Seq.viewr chain of
+          Seq.EmptyR -> pure Nothing
+          _ Seq.:> newest -> pure $
+            if blockNo newest >= highestBlockNo
+            then Just chain
+            else Nothing
+    chainAssocs :: Map Vertex (Seq (BlockHeader p)) <- (fmap . fmap) fst (runNetDescStandardIO netDesc chainSelection)
+    let chains = Map.elems chainAssocs
+    -- subtract 1 from the length of the chain, because the genesis block has
+    -- block number 0.
+    pure $ counterexample (show highestBlockNo)
+         $ counterexample (show chainAssocs)
+         $ all (== highestBlockNo) (fmap (BlockNo . fromIntegral . (flip (-) 1) . length) chains)
