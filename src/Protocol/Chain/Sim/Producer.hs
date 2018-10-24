@@ -16,7 +16,7 @@ import qualified Data.Sequence as Seq
 import Data.Set (Set)
 import qualified Data.Set as Set
 
-import Protocol.Chain.StreamProducer
+import Protocol.Chain.ProducerStream
 
 import MonadClass.MonadSTM
 
@@ -184,7 +184,7 @@ findBestCheckpoint mkPoint cps cs = case cs of
       then Just (mid', here, acc)
       else splitAtCheckpoint mid' (here Seq.<| acc)
 
--- | Derive a 'HeaderStream' from a mutable 'ChainSegment'.
+-- | Derive a 'ProducerStream' from a mutable 'ChainSegment'.
 --
 -- The oldest block in the segment is the read pointer: what the consumer will
 -- get on the next request for a block (the consumer must know the parent of
@@ -200,28 +200,28 @@ findBestCheckpoint mkPoint cps cs = case cs of
 --
 -- Failing any of these will not cause any protocol errors, it'll just confuse
 -- the consumer and probably cause it to terminate the protocol.
-simpleHeaderStream
+simpleProducerStream
   :: ( MonadSTM m stm, Ord point )
   => (header -> point)
   -> TVar m (Changing  (ChainSegment header), Exhausted)
-  -> HeaderStream point header m ()
-simpleHeaderStream mkPoint chainVar = HeaderStream $ atomically $ do
+  -> ProducerStream point header m ()
+simpleProducerStream mkPoint chainVar = ProducerStream $ atomically $ do
   cs <- unChanging . fst <$> readTVar chainVar
   let tipHeader = chainSegmentTip cs
       readPointer = mkPoint (chainSegmentReadPointer cs)
-  pure $ HeaderStreamAt
+  pure $ ProducerStreamAt
     { bsTip = tipHeader
     , bsReadPointer = readPointer
-    , bsNext = simpleHeaderStreamNext mkPoint chainVar
+    , bsNext = simpleProducerStreamNext mkPoint chainVar
     }
 
-simpleHeaderStreamNext
+simpleProducerStreamNext
   ::forall point header m stm .
      ( MonadSTM m stm, Ord point )
   => (header -> point)
   -> TVar m (Changing (ChainSegment header), Exhausted)
-  -> HeaderStreamNext point header m ()
-simpleHeaderStreamNext mkPoint chainVar = HeaderStreamNext
+  -> ProducerStreamNext point header m ()
+simpleProducerStreamNext mkPoint chainVar = ProducerStreamNext
   { bsNextChange = nextChange
   , bsNextHeader  = nextBlock
   , bsImprove    = improve
@@ -244,13 +244,13 @@ simpleHeaderStreamNext mkPoint chainVar = HeaderStreamNext
             tip         = chainSegmentTip chain
         -- Set to unchanged, since the consumer now knows it.
         writeTVar chainVar (Unchanged chain, exhausted)
-        pure $ Right $ ChangeFork readPointer tip (simpleHeaderStreamNext mkPoint chainVar)
+        pure $ Right $ ChangeFork readPointer tip (simpleProducerStreamNext mkPoint chainVar)
       -- In this presentation, we always have the bodies. Fast relaying will
       -- be done whenever the chain segment is AtTip.
       (Extended chain, exhausted) -> do
         let tip = chainSegmentTip chain
         writeTVar chainVar (Unchanged chain, exhausted)
-        pure $ Right $ ChangeExtend tip (NextChange (simpleHeaderStreamNext mkPoint chainVar))
+        pure $ Right $ ChangeExtend tip (NextChange (simpleProducerStreamNext mkPoint chainVar))
 
   -- Blocks are read out from the TVar one-at-a-time, as opposed to, say,
   -- getting a batch out and then serving them all up before checking again,
@@ -269,21 +269,21 @@ simpleHeaderStreamNext mkPoint chainVar = HeaderStreamNext
         let readPointer = mkPoint (chainSegmentReadPointer chain)
             tip         = chainSegmentTip chain
         writeTVar chainVar (Unchanged chain, exhausted)
-        pure $ ChangeFork readPointer tip (simpleHeaderStreamNext mkPoint chainVar)
+        pure $ ChangeFork readPointer tip (simpleProducerStreamNext mkPoint chainVar)
       (Extended chain, exhausted) -> case advance chain of
         Just (b, !chain') -> do
           let tip = chainSegmentTip chain
           writeTVar chainVar (Unchanged chain', exhausted)
-          pure $ ChangeExtend tip (NextHeader b (simpleHeaderStreamNext mkPoint chainVar))
+          pure $ ChangeExtend tip (NextHeader b (simpleProducerStreamNext mkPoint chainVar))
         Nothing -> do
           let tip = chainSegmentTip chain
-          pure $ ChangeExtend tip (NoNextHeader (simpleHeaderStreamNext mkPoint chainVar))
+          pure $ ChangeExtend tip (NoNextHeader (simpleProducerStreamNext mkPoint chainVar))
       (Unchanged chain, exhausted) -> case advance chain of
         Just (b, !chain') -> do
           writeTVar chainVar (Unchanged chain', exhausted)
-          pure $ NoChange (NextHeader b (simpleHeaderStreamNext mkPoint chainVar))
+          pure $ NoChange (NextHeader b (simpleProducerStreamNext mkPoint chainVar))
         Nothing ->
-          pure $ NoChange (NoNextHeader (simpleHeaderStreamNext mkPoint chainVar))
+          pure $ NoChange (NoNextHeader (simpleProducerStreamNext mkPoint chainVar))
 
   -- | Advance the read pointer, giving Nothing case it's past the tip.
   -- You get the block to send (former oldest block) and the remaining
@@ -303,12 +303,12 @@ simpleHeaderStreamNext mkPoint chainVar = HeaderStreamNext
         let !chain'        = findBestCheckpoint mkPoint cps chain
             newReadPointer = mkPoint (chainSegmentReadPointer chain')
         writeTVar chainVar (Unchanged chain', exhausted)
-        pure $ NoChange $ Improve newReadPointer (simpleHeaderStreamNext mkPoint chainVar)
+        pure $ NoChange $ Improve newReadPointer (simpleProducerStreamNext mkPoint chainVar)
       (Forked chain, exhausted) -> do
         let newReadPointer = mkPoint (chainSegmentReadPointer chain)
             tip            = chainSegmentTip chain
         writeTVar chainVar (Unchanged chain, exhausted)
-        pure $ ChangeFork newReadPointer tip (simpleHeaderStreamNext mkPoint chainVar)
+        pure $ ChangeFork newReadPointer tip (simpleProducerStreamNext mkPoint chainVar)
       (Extended chain, exhausted) -> do
         let tip            = chainSegmentTip chain
             -- tip is guaranteed to be the same a chainSegmentTip chain'.
@@ -316,4 +316,4 @@ simpleHeaderStreamNext mkPoint chainVar = HeaderStreamNext
             !chain'        = findBestCheckpoint mkPoint cps chain
             newReadPointer = mkPoint (chainSegmentReadPointer chain')
         writeTVar chainVar (Unchanged chain', exhausted)
-        pure $ ChangeExtend tip (Improve newReadPointer (simpleHeaderStreamNext mkPoint chainVar))
+        pure $ ChangeExtend tip (Improve newReadPointer (simpleProducerStreamNext mkPoint chainVar))

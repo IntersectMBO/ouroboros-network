@@ -12,7 +12,7 @@
 
 {-# OPTIONS_GHC "-fwarn-incomplete-patterns" #-}
 
-module Protocol.Chain.StreamProducer where
+module Protocol.Chain.ProducerStream where
 
 import Data.Kind (Type)
 import Data.List.NonEmpty (NonEmpty)
@@ -20,17 +20,17 @@ import Data.Typeable (Typeable)
 import Protocol.Core
 import Protocol.Chain.Type
 
-newtype HeaderStream point header m t = HeaderStream
-  { runHeaderStream :: m (HeaderStreamAt point header m t)
+newtype ProducerStream point header m t = ProducerStream
+  { runProducerStream :: m (ProducerStreamAt point header m t)
   }
 
-data HeaderStreamAt point header m t = HeaderStreamAt
+data ProducerStreamAt point header m t = ProducerStreamAt
   { bsTip         :: header
   , bsReadPointer :: point
-  , bsNext        :: HeaderStreamNext point header m t
+  , bsNext        :: ProducerStreamNext point header m t
   }
 
-data HeaderStreamNext point header m t = HeaderStreamNext
+data ProducerStreamNext point header m t = ProducerStreamNext
   { -- For next change, the stream can be finished (Left).
     -- The universally quanitified 'f' ensure that you can't get a
     -- 'NoChange' constructor here.
@@ -66,31 +66,31 @@ data StreamStep point header f g m t where
   -- say, the read point is not in the new chain.
   -- The new read pointer is included (a hash, not the whole header, since the
   -- consumer knows it).
-  ChangeFork   :: point -> header -> HeaderStreamNext point header m t -> StreamStep point header f g m t
+  ChangeFork   :: point -> header -> ProducerStreamNext point header m t -> StreamStep point header f g m t
 
 data NextHeader point header m t where
-  NextHeader :: header -> HeaderStreamNext point header m t -> NextHeader point header m t
+  NextHeader :: header -> ProducerStreamNext point header m t -> NextHeader point header m t
   -- | At the tip; no next block.
-  NoNextHeader :: HeaderStreamNext point header m t -> NextHeader point header m t
+  NoNextHeader :: ProducerStreamNext point header m t -> NextHeader point header m t
 
 data Improve point header m t where
-  Improve :: point -> HeaderStreamNext point header m t -> Improve point header m t
+  Improve :: point -> ProducerStreamNext point header m t -> Improve point header m t
 
 data NextChange point header m t where
-  NextChange :: HeaderStreamNext point header m t -> NextChange point header m t
+  NextChange :: ProducerStreamNext point header m t -> NextChange point header m t
 
 streamProducer
   :: ( Monad m )
-  => HeaderStream point header m t
+  => ProducerStream point header m t
   -> Peer ChainExchange (TrChainExchange point header) ('Yielding 'StInit) ('Finished 'StDone) m t
-streamProducer bs = hole $ runHeaderStream bs >>= \bsAt ->
+streamProducer bs = hole $ runProducerStream bs >>= \bsAt ->
   let msg = TrInit (bsReadPointer bsAt) (bsTip bsAt)
   in  pure $ over msg (streamProducerMain (bsNext bsAt))
 
 streamProducerMain
   :: forall point header m t .
      ( Monad m )
-  => HeaderStreamNext point header m t
+  => ProducerStreamNext point header m t
   -> Peer ChainExchange (TrChainExchange point header) ('Awaiting 'StIdle) ('Finished 'StDone) m t
 streamProducerMain bsNext = await $ \req -> case req of
 
@@ -124,7 +124,7 @@ streamProducerMain bsNext = await $ \req -> case req of
   where
 
   respondDownload
-    :: HeaderStreamNext point header m t
+    :: ProducerStreamNext point header m t
     -> Word
     -> Peer ChainExchange (TrChainExchange point header) ('Yielding ('StBusy 'Download)) ('Finished 'StDone) m t
   respondDownload bsNext 0 = over (TrRespond (ResDownloadDone Nothing)) (streamProducerMain bsNext)
@@ -149,7 +149,7 @@ streamProducerMain bsNext = await $ \req -> case req of
     :: ( Monad m, Typeable anything )
     => point  -- ^ Read pointer
     -> header -- ^ Tip
-    -> HeaderStreamNext point header m t
+    -> ProducerStreamNext point header m t
     -> Peer ChainExchange (TrChainExchange point header) ('Yielding ('StBusy anything)) ('Finished 'StDone) m t
   streamProducerChanged readPointer tip bsNext = over msg (streamProducerMain bsNext)
     where

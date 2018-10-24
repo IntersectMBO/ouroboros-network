@@ -20,9 +20,9 @@ library
                      , Protocol.Transition
                      , Protocol.Nat
                      , Protocol.Core
-                     , Protocol.Chain.StreamConsumer
+                     , Protocol.Chain.ConsumerStream
                      , Protocol.Chain.Type
-                     , Protocol.Chain.StreamProducer
+                     , Protocol.Chain.ProducerStream
                      , Protocol.Chain.Direct
   -- other-modules:       
   other-extensions:    GADTs

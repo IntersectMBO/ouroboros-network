@@ -4,7 +4,7 @@
 
 {-# OPTIONS_GHC "-fwarn-incomplete-patterns" #-}
 
-module Protocol.Chain.StreamConsumer where
+module Protocol.Chain.ConsumerStream where
 
 import Data.List.NonEmpty (NonEmpty)
 import Protocol.Core

@@ -25,8 +25,8 @@ import Data.Void (Void, absurd)
 
 import Protocol.Chain.Sim.Producer
 import Protocol.Chain.Sim.Consumer
-import Protocol.Chain.StreamConsumer
-import Protocol.Chain.StreamProducer
+import Protocol.Chain.ConsumerStream
+import Protocol.Chain.ProducerStream
 import Protocol.Chain.Type
 import Protocol.Channel
 import Protocol.Channel.Sim (simStmChannels)
@@ -230,7 +230,7 @@ standardProducer
   -> Channel m (SomeTransition (TrChainExchange Point (BlockHeader p)))
   -> m (FromStream (TrChainExchange Point (BlockHeader p)) m ())
 standardProducer _ var chan =
-  useChannelHomogeneous chan (streamProducer (simpleHeaderStream blockPoint var))
+  useChannelHomogeneous chan (streamProducer (simpleProducerStream blockPoint var))
   -- NB blockPoint is a bad name, since in this case it specializes to type
   -- BlockHeader p -> Point
 

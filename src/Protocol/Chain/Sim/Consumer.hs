@@ -7,7 +7,7 @@ module Protocol.Chain.Sim.Consumer where
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 
-import Protocol.Chain.StreamConsumer
+import Protocol.Chain.ConsumerStream
 
 import MonadClass.MonadSTM
 

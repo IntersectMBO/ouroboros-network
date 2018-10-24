@@ -4,31 +4,31 @@
 
 module Protocol.Chain.Direct where
 
--- The 'HeaderStream m' and 'ConsumerStream m' types are complementary. The
+-- The 'ProducerStream m' and 'ConsumerStream m' types are complementary. The
 -- former can be used to feed the latter directly, in the same thread.
 -- That's demonstrated here by constructing 'direct'.
 --
 -- The 'streamProducer' and 'streamConsumer' from the modules imported
--- below will construct 'Peer's from 'HeaderStream' and 'ConsumerStream'
+-- below will construct 'Peer's from 'ProducerStream' and 'ConsumerStream'
 -- in such a way that this 'direct' linking factors through the
 -- 'TrChainExchange' transition system.
 
-import Protocol.Chain.StreamConsumer as Consumer
-import Protocol.Chain.StreamProducer as Producer
+import Protocol.Chain.ConsumerStream as Consumer
+import Protocol.Chain.ProducerStream as Producer
 
 direct
   :: ( Monad m )
-  => HeaderStream point header m producer
+  => ProducerStream point header m producer
   -> ConsumerStream point header m consumer
   -> m (producer, consumer)
 direct bs cs = do
-  bsAt <- runHeaderStream bs
+  bsAt <- runProducerStream bs
   csStep <- runConsumerStream cs (bsReadPointer bsAt) (bsTip bsAt)
   directMain (bsNext bsAt) csStep
 
 directMain
   :: ( Monad m )
-  => HeaderStreamNext point header m producer
+  => ProducerStreamNext point header m producer
   -> ConsumerStreamStep point header m consumer
   -> m (producer, consumer)
 directMain bsNext css = case css of
@@ -63,7 +63,7 @@ directDownload
   :: ( Monad m )
   => Word
   -> ConsumerDownload point header m consumer
-  -> HeaderStreamNext point header m producer
+  -> ProducerStreamNext point header m producer
   -> m (producer, consumer)
 directDownload 0 cDownload bsNext = downloadOver cDownload Nothing >>= directMain bsNext
 directDownload n cDownload bsNext = bsNextHeader bsNext >>= \ss -> case ss of
