@@ -39,6 +39,7 @@ library
                        ProtocolInterfaces
                        Serialise
                        Sim
+                       Util.Singletons
   other-modules:
 -- Old experiments, not currently building:
 --                     Types
@@ -96,7 +97,9 @@ test-suite tests
   main-is:             Main.hs
   other-modules:       Test.Chain
                        Test.ChainProducerState
+                       Test.DepFn
                        Test.Node
+                       Test.Ouroboros
                        Test.Pipe
                        Test.Sim
   default-language:    Haskell2010
