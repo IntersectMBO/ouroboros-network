@@ -1,3 +1,4 @@
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -14,17 +15,15 @@ module Ouroboros.Network.Protocol
   , producerBlockLayer
   , loggingSend
   , loggingRecv
-  )where
+  ) where
 
 import           Control.Monad
-import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
-
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (ChainUpdate (..), Point (..), blockPoint)
 import           Ouroboros.Network.MonadClass
-import           Ouroboros.Network.ProtocolInterfaces (ConsumerHandlers (..),
-                     ProducerHandlers (..))
+import           Ouroboros.Network.ProtocolInterfaces (BlockConsumerHandlers (..),
+                     BlockProducerHandlers (..), ConsumerHandlers (..),
+                     ProducerHandlers (..), Promise (..))
 import           Ouroboros.Network.Serialise
 
 {-# ANN module "HLint: ignore Use readTVarIO" #-}
@@ -167,34 +166,28 @@ data MsgProducerBlock blockBody
     -- ^ Producer requested a block, and is awaiting
     deriving (Eq, Show)
 
-data Promise b
-    = Fullfilled b
-    | Awaiting
-    deriving (Eq, Show)
-
 withConsumerBlockLayer
     :: forall m blockHeader blockBody.
        ( MonadFork m
        , MonadSTM  m
        , HasHeader blockHeader
        )
-    => (blockHeader -> blockBody -> Bool)                   -- ^ verify block body
-    -> (MsgConsumerBlock blockHeader -> m ())               -- ^ request a block
-    -> m (MsgProducerBlock blockBody)                       -- ^ receive a block 
-    -> TVar m (Map (Point blockHeader) (Promise blockBody)) -- ^ simple block storage layer
-    -> ((blockHeader -> m ()) -> m ())                      -- ^ continuation
+    => BlockConsumerHandlers blockHeader blockBody m
+    -> (MsgConsumerBlock blockHeader -> m ()) -- ^ request a block
+    -> m (MsgProducerBlock blockBody)         -- ^ receive a block
+    -> ((blockHeader -> m ()) -> m ())        -- ^ continuation
     -> m ()
-withConsumerBlockLayer verifyBlockBody requestBlock recvBlock blockStorage k = k (fork . requestBlockConv)
+withConsumerBlockLayer BlockConsumerHandlers{..} requestBlock recvBlock k = k (fork . requestBlockConv)
   where
     requestBlockConv :: blockHeader -> m ()
     requestBlockConv h = do
         let point = blockPoint h
         requestBlock (MsgRequestBlock point)
-        atomically $ modifyTVar' blockStorage (Map.insert point Awaiting)
+        putBlock point Awaiting
         msg <- recvBlock
         case msg of
             MsgBlock bb   | verifyBlockBody h bb
-                          -> atomically $ modifyTVar' blockStorage (Map.insert point (Fullfilled bb))
+                          -> putBlock point (Fullfilled bb)
                           | otherwise
                           -- TODO: the node presented us an invalid block; this
                           -- is a protocol violation, we should not speak with
@@ -205,39 +198,27 @@ withConsumerBlockLayer verifyBlockBody requestBlock recvBlock blockStorage k = k
             MsgAwaitBlock -> requestBlockConv h
 
 producerBlockLayer
-    :: forall m block blockBody.
+    :: forall m blockHeader blockBody.
        ( MonadFork m
        , MonadSTM  m
-       , StandardHash block
+       , StandardHash blockHeader
        )
-    => (MsgProducerBlock blockBody -> m ())           -- ^ send a block
-    -> m (MsgConsumerBlock block)                     -- ^ receive a request
-    -> TVar m (Map (Point block) (Promise blockBody)) -- ^ simple block storage layer
+    => BlockProducerHandlers blockHeader blockBody m
+    -> (MsgProducerBlock blockBody -> m ()) -- ^ send a block
+    -> m (MsgConsumerBlock blockHeader)     -- ^ receive a request
     -> m ()
-producerBlockLayer sendBlock recvBlockRequest blockStorage = fork $ forever $ do
+producerBlockLayer BlockProducerHandlers {..} sendBlock recvBlockRequest = fork $ forever $ do
     MsgRequestBlock p <- recvBlockRequest
-    mbb <- atomically (getBlock p)
+    mbb <- getBlock p
     case mbb of
         Just (Fullfilled bb) -> sendBlock (MsgBlock bb)
         Just Awaiting -> do
             sendBlock MsgAwaitBlock
-            mbb' <- atomically (awaitBlock p)
+            mbb' <- awaitBlock p
             case mbb' of
                 Nothing -> sendBlock MsgNoBlock
                 Just bb -> sendBlock (MsgBlock bb)
         Nothing -> sendBlock MsgNoBlock
-
-  where
-    getBlock :: Point block -> Tr m (Maybe (Promise blockBody))
-    getBlock p = Map.lookup p <$> (readTVar blockStorage)
-
-    awaitBlock :: Point block -> Tr m (Maybe blockBody)
-    awaitBlock p = do
-        mbb <- getBlock p
-        case mbb of
-            Just (Fullfilled bb) -> return (Just bb)
-            Just Awaiting        -> retry
-            Nothing              -> return Nothing
 
 -- | A wrapper for send that logs the messages
 --

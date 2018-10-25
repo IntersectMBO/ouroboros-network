@@ -4,13 +4,22 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Network.ConsumersAndProducers
-  ( ConsumerHandlers
+  ( -- * Chain consumer protocol handlers
+    ConsumerHandlers
   , ProducerHandlers
   , exampleConsumer
   , exampleProducer
-  )where
+    -- * Block layer of chain consumer protocol handlers
+  , BlockConsumerHandlers
+  , BlockProducerHandlers
+  , exampleBlockConsumer
+  , exampleBlockProducer
+  ) where
 
-import           Ouroboros.Network.Block (HasHeader (..))
+import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
+
+import           Ouroboros.Network.Block (HasHeader (..), StandardHash)
 import           Ouroboros.Network.Chain (Chain (..), ChainUpdate (..),
                      Point (..))
 import qualified Ouroboros.Network.Chain as Chain
@@ -114,3 +123,45 @@ exampleProducer chainvar =
           Just (u, cps') -> do
             writeTVar chainvar cps'
             return u
+
+-- |
+-- An instance of the consumer side of the block layer responsible for
+-- requesting block bodies (@'BlockBody'@).
+exampleBlockConsumer
+  :: forall m blockHeader blockBody.
+     ( MonadSTM m
+     , StandardHash blockHeader
+     )
+  => TVar m (Map (Point blockHeader) (Promise blockBody))
+  -> (blockHeader -> blockBody -> Bool)
+  -> BlockConsumerHandlers blockHeader blockBody m
+exampleBlockConsumer blockStorage verifyBlockBody = BlockConsumerHandlers
+    { putBlock = \point -> atomically . modifyTVar' blockStorage . Map.insert point
+    , verifyBlockBody
+    }
+
+-- |
+-- An instance of the producer side of the block layer responsible for
+-- diffusion of block bodies (@'BlockBody'@).
+exampleBlockProducer
+  :: forall m blockHeader blockBody.
+     ( MonadSTM m
+     , StandardHash blockHeader
+     )
+  => TVar m (Map (Point blockHeader) (Promise blockBody))
+  -> BlockProducerHandlers blockHeader blockBody m
+exampleBlockProducer blockStorage = BlockProducerHandlers
+    { getBlock = atomically . getBlock_
+    , awaitBlock
+    }
+    where
+    getBlock_ :: Point blockHeader -> Tr m (Maybe (Promise blockBody))
+    getBlock_ p = Map.lookup p <$> readTVar blockStorage
+
+    awaitBlock :: Point blockHeader -> m (Maybe blockBody)
+    awaitBlock p = atomically $ do
+        mbb <- getBlock_ p
+        case mbb of
+            Just (Fullfilled bb) -> return (Just bb)
+            Just Awaiting        -> retry
+            Nothing              -> return Nothing
