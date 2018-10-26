@@ -1,6 +1,5 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# OPTIONS_GHC -fwarn-redundant-constraints #-}
 module Node where
 
 import           Control.Exception (assert)
