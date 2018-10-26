@@ -66,8 +66,7 @@ import           Prelude hiding (drop, head)
 
 import           Block (Block (..), BlockHeader (..), BlockNo (..),
                      BlockNo (..), BodyHash (..), HasHeader (..),
-                     HeaderHash (..), HeaderHash (..), Slot (..), Slot (..),
-                     hashBody, hashHeader)
+                     HeaderHash (..), Slot (..), hashBody, hashHeader)
 import           Serialise
 
 import           Control.Exception (assert)

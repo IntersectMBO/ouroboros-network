@@ -1,10 +1,17 @@
 {-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 
-module Pipe where
+module Pipe (
+    -- * Run producer/consumer over a pipe
+    runProducer
+  , runConsumer
+    -- * Demos
+  , demo1
+  , demo2
+  ) where
 
 import           Control.Concurrent (forkIO, killThread, threadDelay)
 import           Control.Concurrent.STM
@@ -12,11 +19,12 @@ import           Control.Monad
 import           Control.Monad.Cont (ContT (..))
 import           Control.Monad.IO.Class
 import           Control.Monad.ST (RealWorld, stToIO)
+import           System.IO (Handle, hFlush)
+import           System.Process (createPipe)
 
 import           Chain (Chain, ChainUpdate)
 import qualified Chain
-import           ChainProducerState as ChainProducer (ChainProducerState,
-                     ReaderId, applyChainUpdate, initChainProducerState)
+import qualified ChainProducerState as CPS
 import           ConsumersAndProducers
 import           Protocol
 import           ProtocolInterfaces
@@ -27,11 +35,6 @@ import qualified Codec.CBOR.Write as CBOR
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Builder as BS
 import qualified Data.ByteString.Lazy.Internal as LBS (smallChunkSize)
-
-import           System.IO (Handle, hFlush)
-import           System.Process (createPipe)
-
-
 
 data ProtocolAction s r a
   = Send s (IO (ProtocolAction s r a))
@@ -70,8 +73,8 @@ recvMsg = Protocol $ ContT (\k -> return (Recv (\msg -> k msg)))
 sendMsg :: s -> Protocol s r ()
 sendMsg msg = Protocol $ ContT (\k -> return (Send msg (k ())))
 
-protocolFailure :: ProtocolFailure -> Protocol s r a
-protocolFailure failure = Protocol $ ContT (\_k -> return (Fail failure))
+_protocolFailure :: ProtocolFailure -> Protocol s r a
+_protocolFailure failure = Protocol $ ContT (\_k -> return (Fail failure))
 
 ----------------------------------------
 
@@ -115,19 +118,19 @@ demo2 chain0 updates = do
     (hndRead2, hndWrite2) <- createPipe
 
     -- Initialise the producer and consumer state to be the same
-    producerVar <- newTVarIO (initChainProducerState chain0)
+    producerVar <- newTVarIO (CPS.initChainProducerState chain0)
     consumerVar <- newTVarIO chain0
 
     -- Fork the producer and consumer
-    ptid <- forkIO $ producer hndRead2 hndWrite1 producerVar
-    ctid <- forkIO $ consumer hndRead1 hndWrite2 consumerVar
+    ptid <- forkIO $ runProducer hndRead2 hndWrite1 (exampleProducer producerVar)
+    ctid <- forkIO $ runConsumer hndRead1 hndWrite2 (exampleConsumer consumerVar)
 
     -- Apply updates to the producer's chain and let them sync
     _ <- forkIO $ sequence_
            [ do threadDelay 1000 -- just to provide interest
                 atomically $ do
                   p <- readTVar producerVar
-                  let Just p' = ChainProducer.applyChainUpdate update p
+                  let Just p' = CPS.applyChainUpdate update p
                   writeTVar producerVar p'
            | update <- updates ]
 
@@ -146,9 +149,9 @@ demo2 chain0 updates = do
 type ConsumerSideProtocol block = Protocol MsgConsumer (MsgProducer block)
 type ProducerSideProtocol block = Protocol (MsgProducer block) MsgConsumer
 
-producer :: forall p block. (Chain.HasHeader block, Serialise (block p))
-         => Handle -> Handle -> TVar (ChainProducerState (block p)) -> IO ()
-producer hndRead hndWrite producerVar = do
+runProducer :: forall p block r. (Chain.HasHeader block, Serialise (block p))
+            => Handle -> Handle -> ProducerHandlers (block p) IO r -> IO ()
+runProducer hndRead hndWrite producer = do
     runProtocolWithPipe
       hndRead hndWrite
       producerSideProtocol
@@ -158,19 +161,13 @@ producer hndRead hndWrite producerVar = do
     producerSideProtocol :: ProducerSideProtocol (block p) ()
     producerSideProtocol =
       producerSideProtocol1
-        producerHandlers
+        (liftProducerHandlers liftIO producer)
         sendMsg
         recvMsg
 
-    -- Reuse the generic 'exampleProducer'
-    -- and lift it from IO to the Protocol monad
-    producerHandlers :: ProducerHandlers (block p) (ProducerSideProtocol (block p)) ReaderId
-    producerHandlers =
-      liftProducerHandlers liftIO (exampleProducer producerVar)
-
-consumer :: forall p block. (Chain.HasHeader block, Serialise (block p))
-         => Handle -> Handle -> TVar (Chain (block p)) -> IO ()
-consumer hndRead hndWrite chainVar =
+runConsumer :: forall p block. (Chain.HasHeader block, Serialise (block p))
+            => Handle -> Handle -> ConsumerHandlers (block p) IO -> IO ()
+runConsumer hndRead hndWrite consumer =
     runProtocolWithPipe
       hndRead hndWrite
       consumerSideProtocol
@@ -180,16 +177,9 @@ consumer hndRead hndWrite chainVar =
     consumerSideProtocol :: ConsumerSideProtocol (block p) ()
     consumerSideProtocol =
       consumerSideProtocol1
-        consumerHandlers
+        (liftConsumerHandlers liftIO consumer)
         sendMsg
         recvMsg
-
-    -- Reuse the generic 'exampleProducer'
-    -- and lift it from IO to the Protocol monad
-    consumerHandlers :: ConsumerHandlers (block p) (ConsumerSideProtocol (block p))
-    consumerHandlers =
-      liftConsumerHandlers liftIO (exampleConsumer chainVar)
-
 
 ------------------------------------------------
 
