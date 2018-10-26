@@ -1,5 +1,6 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# OPTIONS_GHC -fwarn-redundant-constraints #-}
 module Node where
 
 import           Control.Exception (assert)
@@ -232,7 +233,6 @@ observeChainProducerState
   :: forall p m stm block.
      ( HasHeader block
      , MonadSTM m stm
-     , MonadSay m
      , MonadProbe m
      )
   => NodeId
@@ -268,34 +268,53 @@ data ProducerId = ProducerId NodeId Int
 -- The main thread of the @'relayNode'@ is not blocking; it will return
 -- @TVar ('ChainProducerState' block)@.  This allows to extend the relay node to
 -- a core node.
-relayNode :: forall p block m stm.
-        ( HasHeader block
-        , Eq (block p)
-        , Show (block p)
-        , MonadSTM m stm
-        , MonadTimer m
-        , MonadSay m
-        )
-     => NodeId
-     -> NodeChannels m (MsgProducer (block p)) MsgConsumer
-     -> m (TVar m (ChainProducerState (block p)))
-relayNode nid chans = do
-
+forkRelayKernel :: forall p block m stm.
+                ( HasHeader block
+                , MonadSTM m stm
+                )
+                => [TVar m (Chain (block p))]
+                -- ^ These will track the upstream producers.
+                -> TVar m (ChainProducerState (block p))
+                -- ^ This is tracking the current node and the downstream.
+                -> m ()
+forkRelayKernel upstream cpsVar = do
   -- Mutable state
-  -- 1. input chains
-  chainVars <- zipWithM startConsumer [0..] (consumerChans chans)
   -- 2. candidate chains
-  candidateChainVars <- replicateM (length $ consumerChans chans) (atomically (newTVar Nothing))
-  -- 3. ChainProducerState
-  cpsVar <- atomically $ newTVar (initChainProducerState Genesis)
-
+  candidateChainVars <- replicateM (length upstream) (atomically (newTVar Nothing))
   -- chain validation threads
   zipWithM_
     (\chain cchain -> fork $ chainValidation chain cchain)
-    chainVars
+    upstream
     candidateChainVars
   -- chain selection thread
   fork $ longestChainSelection candidateChainVars cpsVar
+
+-- | Relay node, which takes @'NodeChannels'@ to communicate with its peers
+-- (upstream and downstream).  If it is subscribed to n nodes and has
+-- m subscriptions, it will run n consumer end protocols which listen for
+-- updates; verify chains and select the longest one and feed it to the producer
+-- side which sends updates to its m subscribers.
+--
+-- The main thread of the @'relayNode'@ is not blocking; it will return
+-- @TVar ('ChainProducerState' block)@.  This allows to extend the relay node to
+-- a core node.
+relayNode :: forall p block m stm.
+             ( HasHeader block
+             , Show (block p)
+             , MonadSTM m stm
+             , MonadSay m
+             )
+          => NodeId
+          -> NodeChannels m (MsgProducer (block p)) MsgConsumer
+          -> m (TVar m (ChainProducerState (block p)))
+relayNode nid chans = do
+  -- Mutable state
+  -- 1. input chains
+  upstream <- zipWithM startConsumer [0..] (consumerChans chans)
+  -- 2. ChainProducerState
+  cpsVar <- atomically $ newTVar (initChainProducerState Genesis)
+
+  forkRelayKernel upstream cpsVar
 
   -- producers which share @'ChainProducerState'@
   let producer = exampleProducer cpsVar
@@ -328,6 +347,48 @@ relayNode nid chans = do
 -- that the slot for which it was supposed to generate a block was already
 -- occupied, it will replace it with its block.
 --
+forkCoreKernel :: forall block p m stm.
+                  ( HasHeader block
+                  , MonadSTM m stm
+                  , MonadTimer m
+                  )
+               => Duration (Time m)
+               -- ^ slot duration
+               -> Chain (block p)
+               -> (Chain (block p) -> block p -> block p)
+               -> TVar m (ChainProducerState (block p))
+               -> m ()
+forkCoreKernel slotDuration gchain fixupBlock cpsVar = do
+  blockVar <- blockGenerator slotDuration gchain
+  fork $ forever $ applyGeneratedBlock blockVar
+
+  where
+    applyGeneratedBlock
+      :: TVar m (Maybe (block p))
+      -> m ()
+    applyGeneratedBlock blockVar = atomically $ do
+      block <- getBlock blockVar
+      cps@ChainProducerState{chainState = chain} <- readTVar cpsVar
+      writeTVar cpsVar (switchFork (addBlock chain block) cps)
+
+    addBlock :: Chain (block p) -> block p -> Chain (block p)
+    addBlock c b =
+      case blockSlot b `compare` Chain.headSlot c of
+        -- the block is OK
+        GT -> let r = Chain.addBlock (fixupBlock c b) c in
+              assert (Chain.valid r) r
+        -- the slot @s@ is already taken; replace the previous block
+        EQ -> let c' = Chain.drop 1 c
+                  b' = fixupBlock c' b
+                  r  = Chain.addBlock b' c'
+              in assert (Chain.valid r) r
+        LT -> error "blockGenerator invariant vaiolation: generated block is for slot in the past"
+
+-- | Core node simulation.  Given a chain it will generate a @block@ at its
+-- slot time (i.e. @slotDuration * blockSlot block@).  When the node finds out
+-- that the slot for which it was supposed to generate a block was already
+-- occupied, it will replace it with its block.
+--
 coreNode :: forall p m stm.
         ( KnownOuroborosProtocol p
         , MonadSTM m stm
@@ -342,31 +403,5 @@ coreNode :: forall p m stm.
      -> m (TVar m (ChainProducerState (Block p)))
 coreNode nid slotDuration gchain chans = do
   cpsVar <- relayNode nid chans
-
-  blockVar <- blockGenerator slotDuration gchain
-  fork $ forever $ applyGeneratedBlock blockVar cpsVar
-
+  forkCoreKernel slotDuration gchain Chain.fixupBlock cpsVar
   return cpsVar
-
-  where
-    applyGeneratedBlock
-      :: TVar m (Maybe (Block p))
-      -> TVar m (ChainProducerState (Block p))
-      -> m ()
-    applyGeneratedBlock blockVar cpsVar = atomically $ do
-      block <- getBlock blockVar
-      cps@ChainProducerState{chainState = chain} <- readTVar cpsVar
-      writeTVar cpsVar (switchFork (addBlock chain block) cps)
-
-    addBlock :: Chain (Block p) -> Block p -> Chain (Block p)
-    addBlock c b@Block{blockHeader = h} =
-      case headerSlot h `compare` Chain.headSlot c of
-        -- the block is OK
-        GT -> let r = Chain.addBlock (Chain.fixupBlock c b) c in
-              assert (Chain.valid r) r
-        -- the slot @s@ is already taken; replace the previous block
-        EQ -> let c' = Chain.drop 1 c
-                  b' = Chain.fixupBlock c' b
-                  r  = Chain.addBlock b' c'
-              in assert (Chain.valid r) r
-        LT -> error "blockGenerator invariant vaiolation: generated block is for slot in the past"
