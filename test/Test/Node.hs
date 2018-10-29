@@ -1,39 +1,40 @@
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeOperators       #-}
 module Test.Node where
 
-import           Control.Monad (forM, forM_, forever, replicateM)
+import           Control.Monad         (forM, forM_, forever, replicateM)
 import           Control.Monad.ST.Lazy (runST)
-import           Control.Monad.State (execStateT, lift, modify')
+import           Control.Monad.State   (execStateT, lift, modify')
 import           Data.Array
-import           Data.Functor (void)
+import           Data.Functor          (void)
 import           Data.Graph
-import           Data.List (foldl')
-import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
-import           Data.Maybe (isNothing, listToMaybe)
-import           Data.Semigroup ((<>))
-import           Data.Tuple (swap)
+import           Data.List             (foldl')
+import           Data.Map.Strict       (Map)
+import qualified Data.Map.Strict       as Map
+import           Data.Maybe            (isNothing, listToMaybe)
+import           Data.Semigroup        ((<>))
+import           Data.Tuple            (swap)
 
 import           Test.QuickCheck
-import           Test.Tasty (TestTree, testGroup)
+import           Test.Tasty            (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
 import           Block
-import           Chain (Chain (..))
+import           Chain                 (Chain (..))
 import qualified Chain
 import           MonadClass
 import           Node
 import           Ouroboros
-import           Protocol (MsgConsumer, MsgProducer)
+import           Protocol              (MsgConsumer, MsgProducer)
 import qualified Sim
 
-import           Test.Chain (TestBlockChain (..), TestChainFork (..))
+import           Test.Chain            (TestBlockChain (..), TestChainFork (..))
 import           Test.DepFn
 import           Test.Ouroboros
-import           Test.Sim (TestThreadGraph (..))
+import           Test.Sim              (TestThreadGraph (..))
 
 tests :: TestTree
 tests =
@@ -57,18 +58,20 @@ partitionProbe
 -- | Block generator should generate blocks in the correct slot time.
 --
 test_blockGenerator
-  :: forall p m stm n.
+  :: forall dom p m stm n.
      ( MonadSTM m stm
      , MonadTimer m
      , MonadProbe m
      , MonadRunProbe m n
+     , MonadRunProbe m n
+     , HasHeader (Block dom)
      )
-  => Chain (Block p)
+  => Chain (Block dom p)
   -> Duration (Time m)
   -> n Bool
 test_blockGenerator chain slotDuration = isValid <$> withProbe (experiment slotDuration)
   where
-    isValid :: [(Time m, Block p)] -> Bool
+    isValid :: [(Time m, Block dom p)] -> Bool
     isValid = all (\(t, b) -> t == fromStart ((fromIntegral . getSlot . blockSlot $ b) `mult` slotDuration))
 
     experiment
@@ -77,7 +80,7 @@ test_blockGenerator chain slotDuration = isValid <$> withProbe (experiment slotD
          , MonadProbe m
          )
       => Duration (Time m)
-      -> Probe m (Block p)
+      -> Probe m (Block dom p)
       -> m ()
     experiment slotDur p = do
       v <- blockGenerator slotDur chain
@@ -98,13 +101,16 @@ coreToRelaySim :: ( MonadSTM m stm
                   , MonadSay m
                   , MonadProbe m
                   , KnownOuroborosProtocol p
+                  , KnownLedgerDomain dom
+                  , HasHeader (Block dom)
+                  , Show (BlockBody dom)
                   )
                => Bool              -- ^ two way subscription
-               -> Chain (Block p)
+               -> Chain (Block dom p)
                -> Duration (Time m) -- ^ slot duration
                -> Duration (Time m) -- ^ core transport delay
                -> Duration (Time m) -- ^ relay transport delay
-               -> Probe m (NodeId, Chain (Block p))
+               -> Probe m (NodeId, Chain (Block dom p))
                -> m ()
 coreToRelaySim duplex chain slotDuration coreTrDelay relayTrDelay probe = do
   (coreChans, relayChans) <- if duplex
@@ -118,17 +124,21 @@ coreToRelaySim duplex chain slotDuration coreTrDelay relayTrDelay probe = do
     cps <- relayNode (RelayId 0) relayChans
     fork $ observeChainProducerState (RelayId 0) probe cps
 
-runCoreToRelaySim :: KnownOuroborosProtocol p
-                  => Chain (Block p)
+runCoreToRelaySim :: ( KnownOuroborosProtocol p
+                     , KnownLedgerDomain dom
+                     , HasHeader (Block dom)
+                     , Show (BlockBody dom)
+                     )
+                  => Chain (Block dom p)
                   -> Sim.VTimeDuration
                   -> Sim.VTimeDuration
                   -> Sim.VTimeDuration
-                  -> [(Sim.VTime, (NodeId, Chain (Block p)))]
+                  -> [(Sim.VTime, (NodeId, Chain (Block dom p)))]
 runCoreToRelaySim chain slotDuration coreTransportDelay relayTransportDelay =
   runST $ withProbe (coreToRelaySim False chain slotDuration coreTransportDelay relayTransportDelay)
 
 data TestNodeSim p = TestNodeSim
-  { testChain               :: Chain (Block p)
+  { testChain               :: Chain (Block 'TestLedgerDomain p)
   , testSlotDuration        :: Sim.VTimeDuration
   , testCoreTransportDelay  :: Sim.VTimeDuration
   , testRealyTransportDelay :: Sim.VTimeDuration
@@ -156,9 +166,9 @@ instance SingArbitrary TestNodeSim where
 prop_coreToRelay :: TestNodeSim :-> Property
 prop_coreToRelay = simpleProp $ \(_ :: Sing p) (TestNodeSim chain slotDuration coreTrDelay relayTrDelay) ->
   let probes  = map snd $ runCoreToRelaySim chain slotDuration coreTrDelay relayTrDelay
-      dict    :: Map NodeId [Chain (Block p)]
+      dict    :: Map NodeId [Chain (Block 'TestLedgerDomain p)]
       dict    = partitionProbe probes
-      mchain1 :: Maybe (Chain (Block p))
+      mchain1 :: Maybe (Chain (Block 'TestLedgerDomain p))
       mchain1 = RelayId 0 `Map.lookup` dict >>= listToMaybe
   in counterexample (show mchain1) $
     if Chain.null chain
@@ -169,19 +179,22 @@ prop_coreToRelay = simpleProp $ \(_ :: Sing p) (TestNodeSim chain slotDuration c
 
 -- Node graph: c → r → r
 coreToRelaySim2 :: ( KnownOuroborosProtocol p
+                   , KnownLedgerDomain dom
                    , MonadSTM m stm
                    , MonadTimer m
                    , MonadSay m
                    , MonadProbe m
+                   , HasHeader (Block dom)
+                   , Show (BlockBody dom)
                    )
-                => Chain (Block p)
+                => Chain (Block dom p)
                 -> Duration (Time m)
                 -- ^ slot length
                 -> Duration (Time m)
                 -- ^ core transport delay
                 -> Duration (Time m)
                 -- ^ relay transport delay
-                -> Probe m (NodeId, Chain (Block p))
+                -> Probe m (NodeId, Chain (Block dom p))
                 -> m ()
 coreToRelaySim2 chain slotDuration coreTrDelay relayTrDelay probe = do
   (cr1, r1c) <- createOneWaySubscriptionChannels coreTrDelay relayTrDelay
@@ -197,12 +210,16 @@ coreToRelaySim2 chain slotDuration coreTrDelay relayTrDelay probe = do
     cps <- relayNode (RelayId 2) r2r1
     fork $ observeChainProducerState (RelayId 2) probe cps
 
-runCoreToRelaySim2 :: KnownOuroborosProtocol p
-                   => Chain (Block p)
+runCoreToRelaySim2 :: ( KnownOuroborosProtocol p
+                      , KnownLedgerDomain dom
+                      , Show (BlockBody dom)
+                      , HasHeader (Block dom)
+                      )
+                   => Chain (Block dom p)
                    -> Sim.VTimeDuration
                    -> Sim.VTimeDuration
                    -> Sim.VTimeDuration
-                   -> [(Sim.VTime, (NodeId, Chain (Block p)))]
+                   -> [(Sim.VTime, (NodeId, Chain (Block dom p)))]
 runCoreToRelaySim2 chain slotDuration coreTransportDelay relayTransportDelay = runST $ do
   probe <- newProbe
   runM $ coreToRelaySim2 chain slotDuration coreTransportDelay relayTransportDelay probe
@@ -225,18 +242,21 @@ prop_coreToRelay2 = simpleProp $ \_ (TestNodeSim chain slotDuration coreTrDelay 
             mchain2 === Just chain
 
 -- | Node graph: c ↔ r ↔ c
-coreToCoreViaRelaySim :: ( KnownOuroborosProtocol p
+coreToCoreViaRelaySim :: ( KnownLedgerDomain dom
+                         , KnownOuroborosProtocol p
                          , MonadSTM m stm
                          , MonadTimer m
                          , MonadSay m
                          , MonadProbe m
+                         , Show (BlockBody dom)
+                         , HasHeader (Block dom)
                          )
-                      => Chain (Block p)
-                      -> Chain (Block p)
+                      => Chain (Block dom p)
+                      -> Chain (Block dom p)
                       -> Duration (Time m)
                       -> Duration (Time m)
                       -> Duration (Time m)
-                      -> Probe m (NodeId, Chain (Block p))
+                      -> Probe m (NodeId, Chain (Block dom p))
                       -> m ()
 coreToCoreViaRelaySim chain1 chain2 slotDuration coreTrDelay relayTrDelay probe = do
   (c1r1, r1c1) <- createTwoWaySubscriptionChannels coreTrDelay relayTrDelay
@@ -253,13 +273,17 @@ coreToCoreViaRelaySim chain1 chain2 slotDuration coreTrDelay relayTrDelay probe 
     fork $ observeChainProducerState (CoreId 2) probe cps
 
 runCoreToCoreViaRelaySim
-  :: KnownOuroborosProtocol p
-  => Chain (Block p)
-  -> Chain (Block p)
+  :: ( KnownOuroborosProtocol p
+     , KnownLedgerDomain dom
+     , HasHeader (Block dom)
+     , Show (BlockBody dom)
+     )
+  => Chain (Block dom p)
+  -> Chain (Block dom p)
   -> Sim.VTimeDuration
   -> Sim.VTimeDuration
   -> Sim.VTimeDuration
-  -> [(Sim.VTime, (NodeId, Chain (Block p)))]
+  -> [(Sim.VTime, (NodeId, Chain (Block dom p)))]
 runCoreToCoreViaRelaySim chain1 chain2 slotDuration coreTrDelay relayTrDelay = runST $ do
   probe <- newProbe
   runM $ coreToCoreViaRelaySim chain1 chain2 slotDuration coreTrDelay relayTrDelay probe
@@ -276,7 +300,9 @@ prop_coreToCoreViaRelay :: TestChainFork :-> Property
 prop_coreToCoreViaRelay = simpleProp $ \(_ :: Sing p) (TestChainFork _ chain1 chain2) ->
   let probes = map snd $ runCoreToCoreViaRelaySim chain1 chain2 (Sim.VTimeDuration 3) (Sim.VTimeDuration 1) (Sim.VTimeDuration 1)
 
-      isValid :: Maybe (Chain (Block p)) -> Maybe (Chain (Block p)) -> Property
+      isValid :: Maybe (Chain (Block 'TestLedgerDomain p))
+              -> Maybe (Chain (Block 'TestLedgerDomain p))
+              -> Property
       isValid Nothing   Nothing   = chain1 === Genesis .&&. chain2 === Genesis
       isValid (Just _)  Nothing   = property False
       isValid Nothing   (Just _)  = property False
@@ -291,7 +317,10 @@ prop_coreToCoreViaRelay = simpleProp $ \(_ :: Sing p) (TestChainFork _ chain1 ch
         in
             isValid chainC1 chainR1 .&&. isValid chainC1 chainC2
   where
-    compareChains :: KnownOuroborosProtocol p => Chain (Block p) -> Chain (Block p) -> Property
+    compareChains :: KnownOuroborosProtocol p
+                  => Chain (Block 'TestLedgerDomain p)
+                  -> Chain (Block 'TestLedgerDomain p)
+                  -> Property
     compareChains c1 c2 =
         counterexample (c1_ ++ "\n\n" ++ c2_) (Chain.selectChain c1 c2 === c1)
       .&&.
@@ -301,7 +330,7 @@ prop_coreToCoreViaRelay = simpleProp $ \(_ :: Sing p) (TestChainFork _ chain1 ch
         c1_ = Chain.prettyPrintChain nl show c1
         c2_ = Chain.prettyPrintChain nl show c2
 
-data TestNetworkGraph p = TestNetworkGraph Graph [(Int, Chain (Block p))]
+data TestNetworkGraph p = TestNetworkGraph Graph [(Int, Chain (Block 'TestLedgerDomain p))]
     deriving Show
 
 -- Connect disconnected graph components; randomly chose nodes through which
@@ -349,7 +378,7 @@ networkGraphSim :: forall p m stm .
                 -> Duration (Time m) -- ^ slot duration
                 -> Duration (Time m) -- ^ core transport delay
                 -> Duration (Time m) -- ^ relay transport delay
-                -> Probe m (NodeId, Chain (Block p))
+                -> Probe m (NodeId, Chain (Block 'TestLedgerDomain p))
                 -> m ()
 networkGraphSim (TestNetworkGraph g cs) slotDuration coreTrDelay relayTrDelay probe = do
   let vs = vertices g
@@ -383,7 +412,7 @@ runNetworkGraphSim
   -> Sim.VTimeDuration
   -> Sim.VTimeDuration
   -> Sim.VTimeDuration
-  -> [(Sim.VTime, (NodeId, Chain (Block p)))]
+  -> [(Sim.VTime, (NodeId, Chain (Block 'TestLedgerDomain p)))]
 runNetworkGraphSim g slotDuration coreTrDelay relayTrDelay
   = runST $ withProbe (networkGraphSim g slotDuration coreTrDelay relayTrDelay)
 
@@ -408,7 +437,7 @@ prop_networkGraph = simpleProp $ \(_ :: Sing p) (NetworkTest g@(TestNetworkGraph
       (cc :: Int) = foldl' (\x y -> if isDisconnected y then x + 1 else x) 0 gs
 
       probes = map snd $ runNetworkGraphSim g slotDuration coreTrDelay relayTrDelay
-      dict :: Map NodeId (Chain (Block p))
+      dict :: Map NodeId (Chain (Block 'TestLedgerDomain p))
       dict = Map.mapMaybe listToMaybe (partitionProbe probes)
       chains = Map.elems dict
   in  cover 50 (length vs > 10) "more than 10 vertices"

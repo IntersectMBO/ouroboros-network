@@ -1,8 +1,11 @@
 {-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE KindSignatures             #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeFamilies               #-}
 
 -- | Reference implementation of a representation of a block in a block chain.
 --
@@ -18,6 +21,10 @@ module Block (
     , HeaderHash(..)
     , BodyHash(..)
 
+      -- * Working with different ledger domains
+    , LedgerDomain(..)
+    , KnownLedgerDomain
+
       -- * Hashing
     , hashHeader
     , hashBody
@@ -25,23 +32,29 @@ module Block (
     where
 
 import           Data.Hashable
-import qualified Data.Text as Text
+import qualified Data.Text       as Text
 
 import           Ouroboros
 import           Serialise
 
 import           Test.QuickCheck
 
+data LedgerDomain =
+    TestLedgerDomain
+  -- ^ A test domain (i.e. unit tests & properties)
+  | CardanoLedgerDomain
+  -- ^ A \"real world\" ledger domain.
+
 -- | Our highly-simplified version of a block. It retains the separation
 -- between a block header and body, which is a detail needed for the protocols.
 --
-data Block (p :: OuroborosProtocol) = Block {
+data Block (dom :: LedgerDomain) (p :: OuroborosProtocol) = Block {
        blockHeader :: BlockHeader p,
-       blockBody   :: BlockBody
+       blockBody   :: BlockBody dom
      }
 
-deriving instance KnownOuroborosProtocol p => Show (Block p)
-deriving instance KnownOuroborosProtocol p => Eq   (Block p)
+deriving instance (KnownOuroborosProtocol p, Show (BlockBody dom)) => Show (Block dom p)
+deriving instance (KnownOuroborosProtocol p, Eq (BlockBody dom))   => Eq   (Block dom p)
 
 -- | A block header. It retains simplified versions of all the essential
 -- elements.
@@ -58,13 +71,24 @@ data BlockHeader (p :: OuroborosProtocol) = BlockHeader {
 deriving instance KnownOuroborosProtocol p => Show (BlockHeader p)
 deriving instance KnownOuroborosProtocol p => Eq   (BlockHeader p)
 
+-- | Similarly to the 'KnownOuroborosProtocol' class, a 'KnownLedgerDomain'
+-- class allow us to talk about different ledger domains, each with its own
+-- 'BlockBody'.
+class KnownLedgerDomain (dom :: LedgerDomain) where
+  data family BlockBody dom :: *
+  -- | Compute the 'BodyHash' of the 'BlockBody'
+  --
+  hashBody :: BlockBody dom -> BodyHash
+
 -- | A block body.
 --
 -- For this model we use an opaque string as we do not care about the content
 -- because we focus on the blockchain layer (rather than the ledger layer).
 --
-newtype BlockBody    = BlockBody String
-  deriving (Show, Eq, Ord)
+instance KnownLedgerDomain 'TestLedgerDomain where
+  data BlockBody 'TestLedgerDomain = BlockBody String deriving (Show, Eq, Ord)
+
+  hashBody (BlockBody b) = BodyHash (hash b)
 
 -- | The 0-based index of the block in the blockchain
 newtype BlockNo      = BlockNo Word
@@ -89,10 +113,6 @@ newtype HeaderHash   = HeaderHash Int
 newtype BodyHash     = BodyHash Int
   deriving (Show, Eq, Ord, Hashable)
 
--- | Compute the 'BodyHash' of the 'BlockBody'
---
-hashBody :: BlockBody -> BodyHash
-hashBody (BlockBody b) = BodyHash (hash b)
 
 -- | Compute the 'HeaderHash' of the 'BlockHeader'.
 --
@@ -128,7 +148,7 @@ instance HasHeader BlockHeader where
     --
     blockInvariant = \b -> hashHeader b == headerHash b
 
-instance HasHeader Block where
+instance HasHeader (Block 'TestLedgerDomain) where
     blockHash      = headerHash     . blockHeader
     blockPrevHash  = headerPrevHash . blockHeader
     blockSlot      = headerSlot     . blockHeader
@@ -146,7 +166,7 @@ instance HasHeader Block where
 -- Generators
 --
 
-instance Arbitrary BlockBody where
+instance Arbitrary (BlockBody 'TestLedgerDomain) where
     arbitrary = BlockBody <$> vectorOf 4 (choose ('A', 'Z'))
     -- probably no need for shrink, the content is arbitrary and opaque
     -- if we add one, it might be to shrink to an empty block
@@ -155,7 +175,7 @@ instance Arbitrary BlockBody where
 -- Serialisation
 --
 
-instance Serialise (Block p) where
+instance Serialise (Block 'TestLedgerDomain p) where
 
   encode Block {blockHeader, blockBody} =
       encodeListLen 2
@@ -193,7 +213,7 @@ instance Serialise (BlockHeader p) where
                   <*> (BlockSigner <$> decodeWord)
                   <*> (BodyHash <$> decodeInt)
 
-instance Serialise BlockBody where
+instance Serialise (BlockBody 'TestLedgerDomain) where
 
   encode (BlockBody b) = encodeString (Text.pack b)
 
