@@ -81,8 +81,8 @@ consumerSideProtocol1
   :: forall block m.
      Monad m
   => ConsumerHandlers block m
-  -> (MsgConsumer block -> m ())   -- ^ send
-  -> (m (MsgProducer block))       -- ^ recv
+  -> (MsgConsumer block -> m ()) -- ^ send
+  -> (m (MsgProducer block))     -- ^ recv
   -> m ()
 consumerSideProtocol1 ConsumerHandlers{..} send recv = do
     -- The consumer opens by sending a list of points on their chain.
@@ -175,27 +175,29 @@ withConsumerBlockLayer
     => BlockConsumerHandlers blockHeader blockBody m
     -> (MsgConsumerBlock blockHeader -> m ()) -- ^ request a block
     -> m (MsgProducerBlock blockBody)         -- ^ receive a block
-    -> ((blockHeader -> m ()) -> m ())        -- ^ continuation
+    -> ((blockHeader -> m ()) -> m ())
+                                  -- ^
+                                  -- conversation which requests a block body
+                                  -- and runs the continuation
+    -> (Maybe blockBody -> m ())
+                                  -- ^
+                                  -- continuation; @'Nothing'@ signifies that
+                                  -- the producer responded with @'MsgNoBlock'@
     -> m ()
-withConsumerBlockLayer BlockConsumerHandlers{..} requestBlock recvBlock k = k (fork . requestBlockConv)
-  where
-    requestBlockConv :: blockHeader -> m ()
-    requestBlockConv h = do
-        let point = blockPoint h
-        requestBlock (MsgRequestBlock point)
-        putBlock point Awaiting
-        msg <- recvBlock
+withConsumerBlockLayer BlockConsumerHandlers{..} send recv conv k = conv forkRequestBlockConv
+    where
+    forkRequestBlockConv :: blockHeader -> m ()
+    forkRequestBlockConv h = fork $ do
+        send (MsgRequestBlock (blockPoint h))
+        recvBlock
+
+    recvBlock :: m ()
+    recvBlock = do
+        msg <- recv
         case msg of
-            MsgBlock bb   | verifyBlockBody h bb
-                          -> putBlock point (Fullfilled bb)
-                          | otherwise
-                          -- TODO: the node presented us an invalid block; this
-                          -- is a protocol violation, we should not speak with
-                          -- this node any further.
-                          -> error "blockLayer: invalid block"
-                          -- TODO: request from another node
-            MsgNoBlock    -> return ()
-            MsgAwaitBlock -> requestBlockConv h
+            MsgBlock bb   -> k (Just bb)
+            MsgNoBlock    -> k Nothing
+            MsgAwaitBlock -> recvBlock
 
 producerBlockLayer
     :: forall m blockHeader blockBody.
@@ -207,18 +209,18 @@ producerBlockLayer
     -> (MsgProducerBlock blockBody -> m ()) -- ^ send a block
     -> m (MsgConsumerBlock blockHeader)     -- ^ receive a request
     -> m ()
-producerBlockLayer BlockProducerHandlers {..} sendBlock recvBlockRequest = fork $ forever $ do
-    MsgRequestBlock p <- recvBlockRequest
+producerBlockLayer BlockProducerHandlers {..} send recv = fork $ forever $ do
+    MsgRequestBlock p <- recv
     mbb <- getBlock p
     case mbb of
-        Just (Fullfilled bb) -> sendBlock (MsgBlock bb)
+        Just (Fullfilled bb) -> send (MsgBlock bb)
         Just Awaiting -> do
-            sendBlock MsgAwaitBlock
+            send MsgAwaitBlock
             mbb' <- awaitBlock p
             case mbb' of
-                Nothing -> sendBlock MsgNoBlock
-                Just bb -> sendBlock (MsgBlock bb)
-        Nothing -> sendBlock MsgNoBlock
+                Nothing -> send MsgNoBlock
+                Just bb -> send (MsgBlock bb)
+        Nothing -> send MsgNoBlock
 
 -- | A wrapper for send that logs the messages
 --
