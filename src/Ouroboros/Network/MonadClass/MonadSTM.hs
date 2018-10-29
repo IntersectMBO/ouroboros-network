@@ -5,6 +5,7 @@
 {-# LANGUAGE TypeFamilyDependencies #-}
 module Ouroboros.Network.MonadClass.MonadSTM
   ( MonadSTM (..)
+  , MonadTBQueue (..)
   , TMVarDefault (..)
   , newTMVarDefault
   , newTMVarIODefault
@@ -22,7 +23,9 @@ module Ouroboros.Network.MonadClass.MonadSTM
 
 import qualified Control.Concurrent.STM.TVar    as STM
 import qualified Control.Concurrent.STM.TMVar   as STM
+import qualified Control.Concurrent.STM.TBQueue as STM
 import qualified Control.Monad.STM              as STM
+import           Numeric.Natural (Natural)
 
 import           Ouroboros.Network.MonadClass.MonadFork
 
@@ -184,3 +187,18 @@ isEmptyTMVarDefault (TMVar t) = do
     Nothing -> return True
     Just _  -> return False
 
+class MonadSTM m => MonadTBQueue m where
+    type TBQueue m :: * -> *
+
+    newTBQueue     :: Natural   -> Tr m (TBQueue m a)
+    readTBQueue    :: TBQueue m a -> Tr m a
+    writeTBQueue   :: TBQueue m a -> a -> Tr m ()
+    lengthTBQueue  :: TBQueue m a -> Tr m Natural
+
+instance MonadTBQueue IO where
+    type TBQueue IO = STM.TBQueue
+
+    newTBQueue     = STM.newTBQueue
+    readTBQueue    = STM.readTBQueue
+    writeTBQueue   = STM.writeTBQueue
+    lengthTBQueue  = STM.lengthTBQueue
