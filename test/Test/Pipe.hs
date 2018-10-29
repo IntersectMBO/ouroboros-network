@@ -2,20 +2,20 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Test.Pipe (tests) where
 
-import Block                 (Block, HeaderHash (..), Slot (..))
-import Chain                 (Chain (..), Point (..))
-import Ouroboros
-import Pipe                  (demo2)
-import Protocol
-import Serialise             (prop_serialise)
+import           Block (Block, HeaderHash (..), Slot (..))
+import           Chain (Chain (..), Point (..))
+import           Ouroboros
+import           Pipe (demo2)
+import           Protocol
+import           Serialise (prop_serialise)
 
-import Test.Chain            (TestBlockChainAndUpdates (..), genBlockChain)
-import Test.DepFn
-import Test.Ouroboros
+import           Test.Chain (TestBlockChainAndUpdates (..), genBlockChain)
+import           Test.DepFn
+import           Test.Ouroboros
 
-import Test.QuickCheck
-import Test.Tasty            (TestTree, testGroup)
-import Test.Tasty.QuickCheck (testProperty)
+import           Test.QuickCheck
+import           Test.Tasty (TestTree, testGroup)
+import           Test.Tasty.QuickCheck (testProperty)
 
 --
 -- The list of all tests

@@ -8,20 +8,20 @@ module Infra.Crypto.Hash
     , fromHash
     ) where
 
-import qualified Crypto.Hash            as H
+import qualified Crypto.Hash as H
 import           Crypto.Hash.Algorithms (MD5)
-import qualified Data.ByteArray         as BA
-import qualified Data.ByteString        as SB
+import qualified Data.ByteArray as BA
+import qualified Data.ByteString as SB
 import qualified Data.ByteString.Base16 as B16
-import qualified Data.ByteString.Char8  as SB8
-import qualified Data.ByteString.Lazy   as LB
-import           Data.List              (foldl')
-import           Data.Maybe             (fromJust)
-import           Data.String            (IsString (..))
-import           GHC.Generics           (Generic)
+import qualified Data.ByteString.Char8 as SB8
+import qualified Data.ByteString.Lazy as LB
+import           Data.List (foldl')
+import           Data.Maybe (fromJust)
+import           Data.String (IsString (..))
+import           GHC.Generics (Generic)
 import           Numeric.Natural
 import           Serialise
-import           Test.QuickCheck        (Arbitrary (..), Gen)
+import           Test.QuickCheck (Arbitrary (..), Gen)
 
 import           Infra.Util
 

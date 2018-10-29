@@ -33,11 +33,12 @@ module Infra.Util.HList (
   , afterFn
   ) where
 
-import Codec.Serialise
-import Codec.Serialise.Decoding
-import Data.Kind                (Constraint)
-import Data.Proxy
-import Prelude                  hiding (foldMap, foldl, foldr)
+import           Codec.Serialise
+import           Codec.Serialise.Decoding
+import           Data.Kind (Constraint)
+import           Data.Monoid ((<>))
+import           Data.Proxy
+import           Prelude hiding (foldMap, foldl, foldr)
 
 {-------------------------------------------------------------------------------
   Basic definitions

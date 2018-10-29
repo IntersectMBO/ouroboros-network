@@ -18,13 +18,13 @@ module Infra.Crypto.Mock.DSIGN
   , verSigDSIGN
   ) where
 
-import Control.Monad.Except
-import Crypto.Random        (MonadRandom)
-import GHC.Generics         (Generic)
-import GHC.Stack
+import           Control.Monad.Except
+import           Crypto.Random (MonadRandom)
+import           GHC.Generics (Generic)
+import           GHC.Stack
 
-import Infra.Util
-import Serialise
+import           Infra.Util
+import           Serialise
 
 newtype VerKeyDSIGN = VerKeyDSIGN Int
     deriving (Show, Eq, Ord, Generic)

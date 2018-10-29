@@ -18,16 +18,16 @@ module Infra.Crypto.Mock.VRF
   , VerErrorVRF (..)
   ) where
 
-import Control.Monad.Except
-import Crypto.Random        (MonadRandom)
-import GHC.Generics         (Generic)
-import GHC.Stack
-import Numeric.Natural
+import           Control.Monad.Except
+import           Crypto.Random (MonadRandom)
+import           GHC.Generics (Generic)
+import           GHC.Stack
+import           Numeric.Natural
 
-import Infra.Crypto.Hash
-import Infra.Util
-import Infra.Util.HList
-import Serialise
+import           Infra.Crypto.Hash
+import           Infra.Util
+import           Infra.Util.HList
+import           Serialise
 
 newtype VerKeyVRF = VerKeyVRF Int
     deriving (Show, Eq, Ord, Generic)

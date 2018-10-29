@@ -13,6 +13,6 @@ module Infra.Crypto.Mock (
   , module Infra.Crypto.Mock.VRF
   ) where
 
-import Infra.Crypto.Mock.DSIGN
-import Infra.Crypto.Mock.KES
-import Infra.Crypto.Mock.VRF
+import           Infra.Crypto.Mock.DSIGN
+import           Infra.Crypto.Mock.KES
+import           Infra.Crypto.Mock.VRF

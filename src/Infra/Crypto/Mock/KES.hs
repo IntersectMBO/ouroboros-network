@@ -21,14 +21,14 @@ module Infra.Crypto.Mock.KES
   , verSigKES
   ) where
 
-import Control.Monad.Except
-import Crypto.Random
-import GHC.Generics         (Generic)
-import GHC.Stack
-import Numeric.Natural
+import           Control.Monad.Except
+import           Crypto.Random
+import           GHC.Generics (Generic)
+import           GHC.Stack
+import           Numeric.Natural
 
-import Infra.Util
-import Serialise
+import           Infra.Util
+import           Serialise
 
 newtype VerKeyKES = VerKeyKES Int
     deriving (Show, Eq, Ord, Generic)
