@@ -1,6 +1,7 @@
-{-# LANGUAGE DataKinds     #-}
-{-# LANGUAGE GADTs         #-}
-{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE DataKinds        #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GADTs            #-}
+{-# LANGUAGE TypeOperators    #-}
 
 module Test.Chain
   ( tests
@@ -13,16 +14,17 @@ module Test.Chain
   ) where
 
 import           Block
-import           Chain (Chain (..), ChainUpdate (..), Point (..), genesisPoint)
+import           Chain                 (Chain (..), ChainUpdate (..),
+                                        Point (..), genesisPoint)
 import qualified Chain
 import           Ouroboros
-import           Serialise (prop_serialise)
+import           Serialise             (prop_serialise)
 
-import qualified Data.List as L
-import           Data.Maybe (listToMaybe)
+import qualified Data.List             as L
+import           Data.Maybe            (listToMaybe)
 
 import           Test.QuickCheck
-import           Test.Tasty (TestTree, testGroup)
+import           Test.Tasty            (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
 import           Test.DepFn
@@ -158,7 +160,7 @@ prop_serialise_chain = simpleProp $ \_ (TestBlockChain chain) ->
 
 -- | A test generator for a valid chain of blocks.
 --
-newtype TestBlockChain p = TestBlockChain { getTestBlockChain :: Chain (Block p) }
+newtype TestBlockChain p = TestBlockChain { getTestBlockChain :: Chain (Block 'TestLedgerDomain p) }
     deriving (Eq, Show)
 
 instance SingShow TestBlockChain where
@@ -217,7 +219,7 @@ prop_shrink_TestHeaderChain = simpleProp $ \p c ->
 genNonNegative :: Gen Int
 genNonNegative = (abs <$> arbitrary) `suchThat` (>= 0)
 
-genBlockChain :: Int -> Gen (Chain (Block p))
+genBlockChain :: Int -> Gen (Chain (Block 'TestLedgerDomain p))
 genBlockChain n = do
     bodies <- vector n
     slots  <- mkSlots <$> vectorOf n genSlotGap
@@ -226,7 +228,7 @@ genBlockChain n = do
     mkSlots :: [Int] -> [Slot]
     mkSlots = map toEnum . tail . scanl (+) 0
 
-    mkChain :: [Slot] -> [BlockBody] -> Chain (Block p)
+    mkChain :: [Slot] -> [BlockBody 'TestLedgerDomain] -> Chain (Block 'TestLedgerDomain p)
     mkChain slots bodies =
         fromListFixupBlocks
       . reverse
@@ -241,7 +243,7 @@ addSlotGap g (Slot n) = Slot (n + fromIntegral g)
 genHeaderChain :: Int -> Gen (Chain (BlockHeader p))
 genHeaderChain = fmap (fmap blockHeader) . genBlockChain
 
-mkPartialBlock :: Slot -> BlockBody -> Block p
+mkPartialBlock :: Slot -> BlockBody 'TestLedgerDomain -> Block 'TestLedgerDomain p
 mkPartialBlock sl body =
     Block {
       blockHeader = BlockHeader {
@@ -264,7 +266,8 @@ expectedBFTSigner (Slot n) = BlockSigner (n `mod` 7)
 -- | To help with chain construction and shrinking it's handy to recalculate
 -- all the hashes.
 --
-fromListFixupBlocks :: [Block p] -> Chain (Block p)
+fromListFixupBlocks :: (HasHeader (Block dom), KnownLedgerDomain dom)
+                    => [Block dom p] -> Chain (Block dom p)
 fromListFixupBlocks []      = Genesis
 fromListFixupBlocks (b : c) = c' :> b'
   where
@@ -289,7 +292,7 @@ k = 5
 
 -- | A test generator for a chain and a block that can be appended to it.
 --
-data TestAddBlock p = TestAddBlock (Chain (Block p)) (Block p)
+data TestAddBlock p = TestAddBlock (Chain (Block 'TestLedgerDomain p)) (Block 'TestLedgerDomain p)
   deriving Show
 
 instance SingShow TestAddBlock where
@@ -307,7 +310,7 @@ instance SingArbitrary TestAddBlock where
     , let b' = Chain.fixupBlock c' b
     ]
 
-genAddBlock :: HasHeader block => Chain (block p) -> Gen (Block p)
+genAddBlock :: HasHeader block => Chain (block p) -> Gen (Block 'TestLedgerDomain p)
 genAddBlock chain = do
     slotGap <- genSlotGap
     body    <- arbitrary
@@ -331,7 +334,7 @@ prop_shrink_TestAddBlock = simpleProp $ \p t ->
 -- to it.
 --
 data TestBlockChainAndUpdates p =
-       TestBlockChainAndUpdates (Chain (Block p)) [ChainUpdate (Block p)]
+       TestBlockChainAndUpdates (Chain (Block 'TestLedgerDomain p)) [ChainUpdate (Block 'TestLedgerDomain p)]
   deriving Show
 
 instance SingShow TestBlockChainAndUpdates where
@@ -344,7 +347,8 @@ instance SingArbitrary TestBlockChainAndUpdates where
     updates <- genChainUpdates chain m
     return (TestBlockChainAndUpdates chain updates)
 
-genChainUpdate :: Chain (Block p) -> Gen (ChainUpdate (Block p))
+genChainUpdate :: Chain (Block 'TestLedgerDomain p)
+               -> Gen (ChainUpdate (Block 'TestLedgerDomain p))
 genChainUpdate chain =
     frequency $
       -- To ensure we make progress on average w must ensure the weight of
@@ -373,7 +377,9 @@ genChainUpdate chain =
 mkRollbackPoint :: HasHeader block => Chain (block p) -> Int -> Point
 mkRollbackPoint chain n = Chain.headPoint $ Chain.drop n chain
 
-genChainUpdates :: Chain (Block p) -> Int -> Gen [ChainUpdate (Block p)]
+genChainUpdates :: Chain (Block 'TestLedgerDomain p)
+                -> Int
+                -> Gen [ChainUpdate (Block 'TestLedgerDomain p)]
 genChainUpdates _     0 = return []
 genChainUpdates chain n = do
     update  <- genChainUpdate chain
@@ -424,7 +430,7 @@ countChainUpdateNetProgress = go 0
 -- on the chain, but it also covers at least 5% of cases where the point is
 -- not on the chain.
 --
-data TestChainAndPoint p = TestChainAndPoint (Chain (Block p)) Point
+data TestChainAndPoint p = TestChainAndPoint (Chain (Block 'TestLedgerDomain p)) Point
   deriving Show
 
 instance SingShow TestChainAndPoint where
@@ -479,9 +485,9 @@ prop_shrink_TestChainAndPoint = simpleProp $ \protocol cp@(TestChainAndPoint c _
 
 -- | A test generator for two chains sharing a common prefix.
 --
-data TestChainFork p = TestChainFork (Chain (Block p)) -- common prefix
-                                     (Chain (Block p)) -- left fork
-                                     (Chain (Block p)) -- right fork
+data TestChainFork p = TestChainFork (Chain (Block 'TestLedgerDomain p)) -- common prefix
+                                     (Chain (Block 'TestLedgerDomain p)) -- left fork
+                                     (Chain (Block 'TestLedgerDomain p)) -- right fork
 
 instance KnownOuroborosProtocol p => Show (TestChainFork p) where
   show (TestChainFork c f1 f2)
@@ -510,7 +516,9 @@ instance SingArbitrary TestChainFork where
         return (TestChainFork chain chainL chainR)
 
     where
-      genAddBlocks :: Int -> Chain (Block p) -> Gen (Chain (Block p))
+      genAddBlocks :: Int
+                   -> Chain (Block 'TestLedgerDomain p)
+                   -> Gen (Chain (Block 'TestLedgerDomain p))
       genAddBlocks 0 c = return c
       genAddBlocks n c = do
           b <- genAddBlock c
@@ -539,8 +547,8 @@ instance SingArbitrary TestChainFork where
       , let r' = fromListFixupBlocks (exr' ++ Chain.toNewestFirst common)
       ]
     where
-      extensionFragment :: Chain (Block p) -> Chain (Block p) -> [Block p]
-      extensionFragment c = reverse . L.drop (Chain.length c) . reverse . Chain.toNewestFirst
+      extensionFragment :: Chain (Block dom p) -> Chain (Block dom p) -> [Block dom p]
+      extensionFragment c = reverse . L.drop (Chain.length c) . Chain.toOldestFirst
 
 prop_arbitrary_TestChainFork :: TestChainFork :-> Bool
 prop_arbitrary_TestChainFork = simpleProp $ \_ (TestChainFork c l r) ->

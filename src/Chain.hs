@@ -63,15 +63,16 @@ module Chain (
   prettyPrintChain
   ) where
 
-import           Prelude hiding (drop, head)
+import           Prelude           hiding (drop, head)
 
-import           Block (Block (..), BlockHeader (..), BlockNo (..),
-                     BlockNo (..), BodyHash (..), HasHeader (..),
-                     HeaderHash (..), Slot (..), hashBody, hashHeader)
+import           Block             (Block (..), BlockHeader (..), BlockNo (..),
+                                    BlockNo (..), BodyHash (..), HasHeader (..),
+                                    HeaderHash (..), KnownLedgerDomain,
+                                    Slot (..), hashBody, hashHeader)
 import           Serialise
 
 import           Control.Exception (assert)
-import qualified Data.List as L
+import qualified Data.List         as L
 
 
 --
@@ -298,7 +299,8 @@ intersectChains c (bs :> b) =
 -- | Fixup block so to fit it on top of a chain.  Only block number, previous
 -- hash and block hash are updated; slot number and signers are kept intact.
 --
-fixupBlock :: HasHeader block => Chain (block p) -> Block p -> Block p
+fixupBlock :: (HasHeader block, KnownLedgerDomain dom)
+           => Chain (block p) -> Block dom p -> Block dom p
 fixupBlock c b@Block{blockBody, blockHeader} =
     b { blockHeader = fixupBlockHeader c (hashBody blockBody) blockHeader }
 

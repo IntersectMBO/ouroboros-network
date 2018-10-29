@@ -1,22 +1,26 @@
+{-# LANGUAGE DataKinds      #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE TypeOperators  #-}
 
 module Test.ChainProducerState (tests) where
 
-import           Data.List (unfoldr)
+import           Data.List             (unfoldr)
 
 import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
-import           Chain (Block, Chain, ChainUpdate (..), Point (..),
-                     genesisPoint, headPoint, pointOnChain)
+import           Block                 (LedgerDomain (TestLedgerDomain))
+import           Chain                 (Block, Chain, ChainUpdate (..),
+                                        Point (..), genesisPoint, headPoint,
+                                        pointOnChain)
 import qualified Chain
 import           ChainProducerState
 import           Ouroboros
 
-import           Test.Chain (TestBlockChain (..), TestBlockChainAndUpdates (..),
-                     TestChainFork (..), mkRollbackPoint)
+import           Test.Chain            (TestBlockChain (..),
+                                        TestBlockChainAndUpdates (..),
+                                        TestChainFork (..), mkRollbackPoint)
 import           Test.DepFn
 import           Test.Ouroboros
 
@@ -166,14 +170,14 @@ prop_switchFork = simpleProp $ \_ (ChainProducerStateForkTest cps f) ->
 --
 
 data ChainProducerStateTest p
-    = ChainProducerStateTest (ChainProducerState (Block p)) ReaderId Point
+    = ChainProducerStateTest (ChainProducerState (Block 'TestLedgerDomain p)) ReaderId Point
   deriving Show
 
 instance SingShow ChainProducerStateTest where
   singShow s = singKnownOuroborosProtocol s $ show
 
 genReaderState :: Int   -- ^ length of the chain
-               -> Chain (Block p)
+               -> Chain (Block 'TestLedgerDomain p)
                -> Gen ReaderState
 genReaderState n c = do
     readerPoint <- frequency
@@ -206,7 +210,7 @@ instance SingArbitrary ChainProducerStateTest where
     return (ChainProducerStateTest (ChainProducerState c rs) rid p)
 
 data ChainProducerStateForkTest p
-    = ChainProducerStateForkTest (ChainProducerState (Block p)) (Chain (Block p))
+    = ChainProducerStateForkTest (ChainProducerState (Block 'TestLedgerDomain p)) (Chain (Block 'TestLedgerDomain p))
   deriving Show
 
 instance SingShow ChainProducerStateForkTest where
@@ -233,7 +237,7 @@ instance SingArbitrary ChainProducerStateForkTest where
        | TestBlockChain c' <- singShrink p (TestBlockChain c)
        ]
     where
-      fixupReaderPointer :: Chain (Block p) -> ReaderState -> ReaderState
+      fixupReaderPointer :: Chain (Block 'TestLedgerDomain p) -> ReaderState -> ReaderState
       fixupReaderPointer c' r@ReaderState{readerPoint} =
         if pointOnChain readerPoint c'
           then r
