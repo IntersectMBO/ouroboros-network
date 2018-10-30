@@ -33,6 +33,7 @@ module Block (
 import           Data.Hashable
 import qualified Data.Text       as Text
 
+import           Infra.Util
 import           Ouroboros
 import           Serialise
 
@@ -97,6 +98,9 @@ instance KnownLedgerDomain 'TestLedgerDomain where
 newtype BlockNo      = BlockNo Word
   deriving (Show, Eq, Ord, Hashable, Enum)
 
+instance Condense BlockNo where
+    condense (BlockNo w) = show w
+
 -- | An identifier for someone signing a block.
 --
 -- We model this as if there were an enumerated set of valid block signers
@@ -109,12 +113,12 @@ newtype BlockSigner  = BlockSigner Word
 -- | The hash of all the information in a 'BlockHeader'.
 --
 newtype HeaderHash   = HeaderHash Int
-  deriving (Show, Eq, Ord, Hashable)
+  deriving (Show, Eq, Ord, Hashable, Condense)
 
 -- | The hash of all the information in a 'BlockBody'.
 --
 newtype BodyHash     = BodyHash Int
-  deriving (Show, Eq, Ord, Hashable)
+  deriving (Show, Eq, Ord, Hashable, Condense)
 
 
 -- | Compute the 'HeaderHash' of the 'BlockHeader'.

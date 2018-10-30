@@ -1,5 +1,9 @@
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Logging (
     LogEvent -- opaque
@@ -9,14 +13,15 @@ module Logging (
 
 import           Control.Concurrent.STM
 import           Control.Monad
-import           Data.Semigroup ((<>))
+import           Data.Semigroup         ((<>))
 import           GHC.Stack
 
 import           Block
-import           Chain (Chain (..))
+import           Chain                  (Chain (..))
 import qualified Chain
 import           ConsumersAndProducers
-import           Ouroboros (NodeId)
+import           Infra.Util
+import           Ouroboros              (NodeId, OuroborosProtocol (..))
 import           ProtocolInterfaces
 
 data LogEvent = LogEvent {
@@ -29,8 +34,15 @@ showNetworkTraffic q = forever $ do
     LogEvent{..} <- atomically $ readTBQueue q
     putStrLn $ "[conv_with:" <> show sender <> "] " <> msg
 
+instance Condense (BlockHeader 'OuroborosBFT) where
+    condense BlockHeader{..} =
+      "{hash: " <> condense headerHash
+                <> ", blockNo: "
+                <> condense headerBlockNo
+                <> "}"
+
 -- | Add logging to the example consumer
-loggerConsumer :: forall p block. (Show (block p), HasHeader block)
+loggerConsumer :: forall p block. (Condense (block p), HasHeader block)
                => TBQueue LogEvent
                -> TVar (Chain (block p))
                -> NodeId
@@ -46,7 +58,7 @@ loggerConsumer q chainvar ourProducer =
             return pts
 
         , addBlock = \b -> do
-            logMsg $ "Received " <> show b <> " from " <> show ourProducer
+            logMsg $ "Received " <> condense b <> " from " <> show ourProducer
             addBlock c b
             logChain
 
@@ -59,7 +71,7 @@ loggerConsumer q chainvar ourProducer =
     logChain :: IO ()
     logChain = atomically $ do
         chain <- readTVar chainvar
-        let m = "Current chain candidate: " <> show (Chain.toOldestFirst chain)
+        let m = "Current chain candidate: " <> condense (Chain.toOldestFirst chain)
         writeTBQueue q $ LogEvent m ourProducer
 
     logMsg :: String -> IO ()

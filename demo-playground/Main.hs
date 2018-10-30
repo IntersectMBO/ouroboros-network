@@ -9,29 +9,30 @@
 module Main (main) where
 
 import qualified Control.Concurrent.Async as Async
-import           Control.Concurrent.STM (TBQueue, TVar, atomically, newTBQueue,
-                     newTVar)
+import           Control.Concurrent.STM   (TBQueue, TVar, atomically,
+                                           newTBQueue, newTVar)
 import           Control.Monad
 import           Data.Aeson
 import           Data.Aeson.TH
-import qualified Data.ByteString as B
+import qualified Data.ByteString          as B
 import           Data.Foldable
-import           Data.Map (Map)
-import qualified Data.Map.Strict as M
+import           Data.Map                 (Map)
+import qualified Data.Map.Strict          as M
 import           Data.Maybe
-import           Data.Semigroup ((<>))
-import           Data.String.Conv (toS)
+import           Data.Semigroup           ((<>))
+import           Data.String.Conv         (toS)
 import           Options.Applicative
 
-import           Chain (Chain (..))
+import           Chain                    (Chain (..))
 import           ChainProducerState
 import           ConsumersAndProducers
 import qualified Node
 import           Ouroboros
 
-import           DummyPayload
 import           Logging
 import qualified NamedPipe
+import           Payload
+
 
 data NodeRole = CoreNode
               -- ^ In our experiment, these can actually produce blocks.
@@ -61,11 +62,7 @@ instance FromJSON (Chain Payload) where
         pure $ toChain xs
 
 toChain :: [Int] -> Chain Payload
-toChain = go Genesis
-  where
-      go :: Chain Payload -> [Int] -> Chain Payload
-      go acc []     = acc
-      go acc (x:xs) = go (acc :> (DummyPayload x)) xs
+toChain = foldl' (\c i -> chainFrom c i) Genesis
 
 deriveFromJSON defaultOptions ''NodeSetup
 
@@ -183,10 +180,6 @@ runNode CLI{..} = do
       spawnProducer cps consumerNodeId = Async.async $
           NamedPipe.runProducer myNodeId consumerNodeId $
             exampleProducer cps
-
-chainFrom :: Chain Payload -> Int -> [Payload]
-chainFrom Genesis               n = [DummyPayload i | i <- [1..n]]
-chainFrom (_ :> DummyPayload x) n = [DummyPayload i | i <- [x+1..x+n]]
 
 slotDuration :: Int
 slotDuration = 2 * 1000000

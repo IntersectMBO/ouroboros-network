@@ -4,18 +4,15 @@
 
 module DummyPayload (
     DummyPayload(..)
-  , Payload
   , fixupBlock
   ) where
 
 import           Block
-import           Chain (Chain (..))
+import           Chain     (Chain (..))
 import           Ouroboros
 import           Serialise
 
 data DummyPayload (p :: OuroborosProtocol) = DummyPayload Int
-
-type Payload = DummyPayload 'OuroborosBFT
 
 instance Show (DummyPayload p) where
     show (DummyPayload x) = show x
@@ -35,6 +32,6 @@ instance HasHeader DummyPayload where
     blockBodyHash  (DummyPayload x) = BodyHash x
     blockInvariant _ = True
 
-fixupBlock :: Chain Payload -> DummyPayload p -> DummyPayload p
-fixupBlock Genesis                _ = DummyPayload 1
-fixupBlock (_ :> DummyPayload x) _  = DummyPayload $! x + 1
+fixupBlock :: Chain (DummyPayload p) -> DummyPayload p -> DummyPayload p
+fixupBlock Genesis               _ = DummyPayload 1
+fixupBlock (_ :> DummyPayload x) _ = DummyPayload $! x + 1
