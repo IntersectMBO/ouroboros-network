@@ -13,6 +13,8 @@ module Ouroboros.Network.ProtocolInterfaces (
   , Promise(..)
   ) where
 
+import           Streaming (Stream, Of)
+
 import           Ouroboros.Network.Chain (ChainUpdate (..), Point (..))
 
 
@@ -96,9 +98,10 @@ data BlockProducerHandlers blockHeader blockBody m = BlockProducerHandlers {
       -- ^ get block from the block storage layer.  It is non blocking.
       -- @'Promise'@ indicates that a block has been requested and the node is
       -- awaiting it.
-      awaitBlock :: Point blockHeader -> m (Maybe blockBody)
+      awaitBlock :: Point blockHeader -> m (Maybe blockBody),
       -- ^ blocking operation of getting a block.  It will block until a block is
       -- received from a peer.
+      streamBlocks :: Point blockHeader -> Point blockHeader -> Stream (Of blockBody) m ()
     }
 
 -- |

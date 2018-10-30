@@ -1,7 +1,10 @@
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 
 module Ouroboros.Network.ConsumersAndProducers
   ( -- * Chain consumer protocol handlers
@@ -16,8 +19,11 @@ module Ouroboros.Network.ConsumersAndProducers
   , exampleBlockProducer
   ) where
 
+import           Control.Monad.Trans.Class (lift)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Streaming.Prelude (Stream, Of)
+import qualified Streaming.Prelude as S
 
 import           Ouroboros.Network.Block (HasHeader (..), StandardHash)
 import           Ouroboros.Network.Chain (Chain (..), ChainUpdate (..),
@@ -146,13 +152,15 @@ exampleBlockConsumer blockStorage verifyBlockBody = BlockConsumerHandlers
 exampleBlockProducer
   :: forall m blockHeader blockBody.
      ( MonadSTM m
-     , StandardHash blockHeader
+     , HasHeader blockHeader
      )
-  => TVar m (Map (Point blockHeader) (Promise blockBody))
+  => TVar m (ChainProducerState blockHeader)
+  -> TVar m (Map (Point blockHeader) (Promise blockBody))
   -> BlockProducerHandlers blockHeader blockBody m
-exampleBlockProducer blockStorage = BlockProducerHandlers
+exampleBlockProducer chainvar blockStorage = BlockProducerHandlers
     { getBlock = atomically . getBlock_
     , awaitBlock
+    , streamBlocks
     }
     where
     getBlock_ :: Point blockHeader -> Tr m (Maybe (Promise blockBody))
@@ -165,3 +173,30 @@ exampleBlockProducer blockStorage = BlockProducerHandlers
             Just (Fullfilled bb) -> return (Just bb)
             Just Awaiting        -> retry
             Nothing              -> return Nothing
+
+    streamBlock :: Point blockHeader -> Stream (Of blockBody) m ()
+    streamBlock p = do
+        mpbb <- lift $ atomically (getBlock_ p)
+        case mpbb of
+            Nothing -> return ()
+            Just (Fullfilled bb) -> S.yield bb
+            Just Awaiting -> do
+                mbb <- lift $ awaitBlock p
+                case mbb of
+                    Nothing -> return ()
+                    Just bb -> S.yield bb
+
+    -- |
+    -- stream blocks, at every @yield@ we need to check that @to@ is is still
+    -- on the chain, otherwise we would stream whole blockchain.
+    streamBlocks :: Point blockHeader -> Point blockHeader -> Stream (Of blockBody) m ()
+    streamBlocks from to | from == to = streamBlock from
+                         | otherwise  = do
+                            streamBlock from
+                            chain <- lift $ atomically (ChainProducerState.chainState <$> readTVar chainvar)
+                            case (Chain.successorBlock from chain, Chain.pointOnChain to chain) of
+                                (_,       False) -> return ()
+                                (Nothing, _)     -> return ()
+                                (Just h,  _)     -> do
+                                    let p = Chain.blockPoint h
+                                    streamBlocks p to
