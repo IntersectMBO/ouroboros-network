@@ -20,6 +20,7 @@ library
   -- At this experiment/prototype stage everything is exposed.
   -- This has to be tidied up once the design becomes clear.
   exposed-modules:     Block
+                       Block.Mock
                        Chain
                        ChainProducerState
                        ConsumersAndProducers

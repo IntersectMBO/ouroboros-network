@@ -23,11 +23,10 @@ module Block (
 
       -- * Working with different ledger domains
     , LedgerDomain(..)
-    , KnownLedgerDomain
+    , KnownLedgerDomain(..)
 
       -- * Hashing
     , hashHeader
-    , hashBody
     )
     where
 
@@ -42,6 +41,10 @@ import           Test.QuickCheck
 data LedgerDomain =
     TestLedgerDomain
   -- ^ A test domain (i.e. unit tests & properties)
+  | MockLedgerDomain
+  -- ^ A mock domain, useful to instrument examples and prototypes. It can
+  -- provide semi-realistic types which are not as-easy to construct as the
+  -- test ones, but definitely less complicated than the \"real\" ones.
   | CardanoLedgerDomain
   -- ^ A \"real world\" ledger domain.
 
