@@ -62,14 +62,17 @@ test_blockGenerator
      , MonadTimer m
      , MonadProbe m
      , MonadRunProbe m n
+     , Show (Time m)
      )
   => Chain (Block p)
   -> Duration (Time m)
-  -> n Bool
+  -> n Property
 test_blockGenerator chain slotDuration = isValid <$> withProbe (experiment slotDuration)
   where
-    isValid :: [(Time m, Block p)] -> Bool
-    isValid = all (\(t, b) -> t == fromStart ((fromIntegral . getSlot . blockSlot $ b) `mult` slotDuration))
+    isValid :: [(Time m, Block p)] -> Property
+    isValid = foldl'
+        (\r (t, b) -> r .&&. t === fromStart ((fromIntegral . getSlot . blockSlot $ b) `mult` slotDuration))
+        (property True)
 
     experiment
       :: ( MonadSTM m stm
@@ -85,13 +88,13 @@ test_blockGenerator chain slotDuration = isValid <$> withProbe (experiment slotD
         b <- atomically $ getBlock v
         probeOutput p b
 
-prop_blockGenerator_ST :: TestBlockChain :-> (Positive Rational -> Bool)
+prop_blockGenerator_ST :: TestBlockChain :-> (Positive Rational -> Property)
 prop_blockGenerator_ST = simpleProp $ \_ (TestBlockChain chain) (Positive slotDuration) ->
     runST $ test_blockGenerator chain (Sim.VTimeDuration slotDuration)
 
 prop_blockGenerator_IO :: TestBlockChain :-> (Positive Int -> Property)
 prop_blockGenerator_IO = simpleProp $ \_ (TestBlockChain chain) (Positive slotDuration) ->
-    ioProperty $ test_blockGenerator chain slotDuration
+    ioProperty $ test_blockGenerator chain (slotDuration * 100)
 
 coreToRelaySim :: ( MonadSTM m stm
                   , MonadTimer m

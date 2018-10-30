@@ -102,6 +102,7 @@ library
                        QuickCheck   >=2.12 && <2.13
 
   ghc-options:         -Wall
+                       -fno-ignore-asserts
 
 executable demo-playground
   hs-source-dirs:      demo-playground
