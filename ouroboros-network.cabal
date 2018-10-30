@@ -137,6 +137,7 @@ test-suite tests
   other-modules:       Test.Chain
                        Test.ChainProducerState
                        Test.DepFn
+                       Test.Dynamic
                        Test.Node
                        Test.Ouroboros
                        Test.Pipe

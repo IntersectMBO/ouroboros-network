@@ -309,14 +309,15 @@ relayNode :: forall dom p m stm.
              , MonadSay m
              )
           => NodeId
+          -> Chain (Block dom p)
           -> NodeChannels m (MsgProducer (Block dom p)) MsgConsumer
           -> m (TVar m (ChainProducerState (Block dom p)))
-relayNode nid chans = do
+relayNode nid initChain chans = do
   -- Mutable state
   -- 1. input chains
   upstream <- zipWithM startConsumer [0..] (consumerChans chans)
   -- 2. ChainProducerState
-  cpsVar <- atomically $ newTVar (initChainProducerState Genesis)
+  cpsVar <- atomically $ newTVar (initChainProducerState initChain)
 
   forkRelayKernel upstream cpsVar
 
@@ -410,6 +411,6 @@ coreNode :: forall dom p m stm.
      -> NodeChannels m (MsgProducer (Block dom p)) MsgConsumer
      -> m (TVar m (ChainProducerState (Block dom p)))
 coreNode nid slotDuration gchain chans = do
-  cpsVar <- relayNode nid chans
+  cpsVar <- relayNode nid Genesis chans
   forkCoreKernel slotDuration gchain Chain.fixupBlock cpsVar
   return cpsVar

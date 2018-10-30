@@ -126,7 +126,7 @@ coreToRelaySim duplex chain slotDuration coreTrDelay relayTrDelay probe = do
     cps <- coreNode (CoreId 0) slotDuration (Chain.toOldestFirst chain) coreChans
     fork $ observeChainProducerState (CoreId 0) probe cps
   fork $ void $ do
-    cps <- relayNode (RelayId 0) relayChans
+    cps <- relayNode (RelayId 0) Genesis relayChans
     fork $ observeChainProducerState (RelayId 0) probe cps
 
 runCoreToRelaySim :: ( KnownOuroborosProtocol p
@@ -209,10 +209,10 @@ coreToRelaySim2 chain slotDuration coreTrDelay relayTrDelay probe = do
     cps <- coreNode (CoreId 0) slotDuration (Chain.toOldestFirst chain) cr1
     fork $ observeChainProducerState (CoreId 0) probe cps
   fork $ void $ do
-    cps <- relayNode (RelayId 1) (r1c <> r1r2)
+    cps <- relayNode (RelayId 1) Genesis(r1c <> r1r2)
     fork $ observeChainProducerState (RelayId 1) probe cps
   fork $ void $ do
-    cps <- relayNode (RelayId 2) r2r1
+    cps <- relayNode (RelayId 2) Genesis r2r1
     fork $ observeChainProducerState (RelayId 2) probe cps
 
 runCoreToRelaySim2 :: ( KnownOuroborosProtocol p
@@ -271,7 +271,7 @@ coreToCoreViaRelaySim chain1 chain2 slotDuration coreTrDelay relayTrDelay probe 
     cps <- coreNode (CoreId 1) slotDuration (Chain.toOldestFirst chain1) c1r1
     fork $ observeChainProducerState (CoreId 1) probe cps
   fork $ void $ do
-    cps <- relayNode (RelayId 1) (r1c1 <> r1c2)
+    cps <- relayNode (RelayId 1) Genesis (r1c1 <> r1c2)
     fork $ observeChainProducerState (RelayId 1) probe cps
   fork $ void $ do
     cps <- coreNode (CoreId 2) slotDuration (Chain.toOldestFirst chain2) c2r1
@@ -412,7 +412,7 @@ networkGraphSim (TestNetworkGraph g cs) slotDuration coreTrDelay relayTrDelay pr
           coreNode  (CoreId i) slotDuration (Chain.toOldestFirst chain) (channs' Map.! i)
           >>= observeChainProducerState (CoreId i) probe
         Nothing ->
-          relayNode (RelayId i) (channs' Map.! i)
+          relayNode (RelayId i) Genesis (channs' Map.! i)
           >>= observeChainProducerState (RelayId i) probe
 
 runNetworkGraphSim
