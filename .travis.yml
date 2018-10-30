@@ -8,17 +8,16 @@ script:
 - cachix push free-algebras ./result
 matrix:
   include:
-  - name: "GHC 843"
+  - name: GHC 843
     env: COMPILER="ghc843"
-  - name: "GHC 802"
+  - name: GHC 802
     env: COMPILER="ghc802"
-
-  - name: "GHC 843"
+  - name: GHC 843
     env: COMPILER="ghc843"
     os: osx
-  - name: "GHC 802"
+  - name: GHC 802
     env: COMPILER="ghc802"
     os: osx
 env:
   global:
-    secure: JNG/73zbLxaMCksAnYFxe809lLiOzUA68TbifdLp2vNnLYHo01I18brcEDb3Zw1pyEbUfa87IsTJtbNIp4oKq5J11Zes2zf7C5kqlI5GKgwrEOQzf1GdvgpjIZ7RkEewxxh+Iwh8JP7cLi8ir9b7XBgvV99XG/xiTcR3RdpSWQYgg2Z6FGjrRvFvnlKr99OAvqE5F6yL80hAJ6n+i41DVj1+SFJ97186zBpxMJ75TcA/JP0wGPjaW3BV/fgzTfjXX44XL9ITVLuPD9yFeeQsesP6TuOo3rOJ25nm6svgXo1bUgXCUb8khE+UDYHB6RLl2SwCPT3BW9vP1Q8k4u8v/1Xuy+X3QoavprXe9/ah/wfukvjpCKJFbBi3NhORANBgfWWsxW3e59DUNuCey1dBelZMlBcpVu2wyv/2lErE07M3D+q8WTiRvpFhdez2IHZAC77FSGok0btxXl2RjRxnm8HCpvnW0sLr8/B6Vgw9Z52rtzA3V/mZu0GUd8WNV+wjnWgoAg/qE1EZ/rk2DA+y9PsT18djAM0LdRkGkECsaN7HAeCp8R+oJbgrdwSvKxIbzDIMl/kQ/BBiqRwk3aXmynKrUkUfPQqO/B+d3XFAmV3IndTyOpFHmAECJhytfvLittxLSkzzB6CNcjfc1p4cBoJLY1zNaqTO+fBuLU9zPNs=
+    secure: WTE6zHkeaOUTYjEImQiZ8/um8H9qf/n+ntUggKmY75EIYC+hzMHof9qvKiFdZ+rzCpU0xKK+OxYlcrKYUH9XjJxo7nEQJ23ez6vbB4qZy5Kf/2r0G+s03PRMuyrRs94Hav0DX1psf659meDtGKMkM1OAmys/ib86TV49uO9zAwwOHjhkjPF/Cnn1X89VyinCQoeh3XOzx7D0CujVJ/5TfTJ9PkMVYwcVeUKj23liUrj8AfyjtHa0fOLpqOQqi6PsTOJ149unecI0Mw8mFOJGDBqHEjBdSn+eEg4ya+ttYNsymzWDJYeQHpetg8g6SXxngu/gjoSrnieZqHHvw/3ZWyqst3GVDLF0xpV8co/XdS+v8D9kVRZSvY38Yw3mJLw6L39D9ZF7NBkSZou4FhOuDcqqw1OnesUO4K1OLd50UDoJKIcThdNQyUDmGNfj1eypq69tSwSCMZRRBVLAQOAFfXAM3oTapcGkwJ/1pRbUFG5pQfdIxM2eD800mTdWq7NOb73RZM8EQ2T5B3NMKx2ViGgXgrIx1PcknhSE1gcxDC5Gjb4n1GkO7493JOvs1R05Ewjpj7q29xBeir9e4DRSNZh3JKw48U9ZZCthMmmRq5ItleHUHiS4D2+tOVKnFKleBqg3IEmzfWTDWii+hkLJy2XpeBf4Axqpe5jzk+VmqTU=
