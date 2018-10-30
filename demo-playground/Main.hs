@@ -1,8 +1,14 @@
+{-# LANGUAGE ConstraintKinds     #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE TypeApplications    #-}
 
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
@@ -23,11 +29,14 @@ import           Data.Semigroup           ((<>))
 import           Data.String.Conv         (toS)
 import           Options.Applicative
 
-import           Chain                    (Chain (..))
+import           Chain                    (Chain (..), HasHeader)
 import           ChainProducerState
 import           ConsumersAndProducers
+import           Infra.Util
 import qualified Node
 import           Ouroboros
+import           Serialise                hiding ((<>))
+import           Util.Singletons          (withSomeSing)
 
 import           Logging
 import qualified NamedPipe
@@ -40,11 +49,11 @@ data NodeRole = CoreNode
               deriving (Show, Eq)
 
 data NodeSetup = NodeSetup {
-    nodeId       :: NodeId
-  , producers    :: [NodeId]
-  , consumers    :: [NodeId]
-  , initialChain :: Chain Payload
-  , role         :: NodeRole
+    nodeId    :: NodeId
+  , producers :: [NodeId]
+  , consumers :: [NodeId]
+  -- , initialChain :: Chain (Payload pt)
+  , role      :: NodeRole
   }
 
 instance FromJSON NodeRole where
@@ -56,13 +65,13 @@ instance FromJSON NodeRole where
 instance FromJSON NodeId where
     parseJSON v = CoreId <$> parseJSON v
 
-instance FromJSON (Chain Payload) where
-    parseJSON = withArray "initialChain" $ \a -> do
-        (xs :: [Int]) <- parseJSON (Array a)
-        pure $ toChain xs
+-- instance FromJSON (Chain Payload) where
+--     parseJSON = withArray "initialChain" $ \a -> do
+--         (xs :: [Int]) <- parseJSON (Array a)
+--         pure $ toChain xs
 
-toChain :: [Int] -> Chain Payload
-toChain = foldl' (\c i -> chainFrom c i) Genesis
+--toChain :: [Int] -> Chain Payload
+--toChain = foldl' (\c i -> chainFrom c i) Genesis
 
 deriveFromJSON defaultOptions ''NodeSetup
 
@@ -79,6 +88,7 @@ toNetworkMap (NetworkTopology xs) =
 data CLI = CLI
   { myNodeId     :: NodeId
   , topologyFile :: FilePath
+  , payloadType  :: PayloadType
   }
 
 sample :: Parser CLI
@@ -94,6 +104,13 @@ sample = CLI
          <> metavar "FILEPATH"
          <> help "The path to a file describing the topology."
          )
+      <*> (option (readPayloadType <$> str) (
+               long "payload-type"
+            <> short 'p'
+            <> metavar allPayloadTypes
+            <> value DummyPayloadType
+            <> help "The content of the payload in the messages"
+            ))
 
 main :: IO ()
 main = runNode =<< execParser opts
@@ -102,6 +119,17 @@ main = runNode =<< execParser opts
       ( fullDesc
      <> progDesc "Run a node with the chain-following protocol hooked in."
      )
+
+data Dict a where
+    Dict :: a => Dict a
+
+toDict :: Sing (pt :: PayloadType)
+       -> Dict ( Serialise (Payload pt 'OuroborosBFT)
+               , Condense  (Payload pt 'OuroborosBFT)
+               , PayloadImplementation pt
+               )
+toDict SDummyPayload = Dict
+toDict SMockPayload  = Dict
 
 runNode :: CLI -> IO ()
 runNode CLI{..} = do
@@ -128,53 +156,70 @@ runNode CLI{..} = do
                     True  -> (:[]) <$> spawnTerminalLogger loggingQueue
                     False -> mempty
 
-             -- The calls to the 'Unix' functions are flipped here, as for each
-             -- of my producers I want to create a consumer node and for each
-             -- of my consumers I want to produce something.
-             (upstream, consumerThreads) <-
-               fmap unzip $ forM producers $ \pId ->
-                 case isLogger of
-                      True  -> spawnLogger loggingQueue pId
-                      False -> spawnConsumer initialChain pId
+             withSomeSing payloadType $ \(sPayloadType :: Sing pt) ->
+               case toDict sPayloadType of
+                 Dict -> do
 
-             cps <- atomically $ newTVar (initChainProducerState initialChain)
-             producerThreads <- forM consumers (spawnProducer cps)
+                   let initialChain :: Chain (Payload pt 'OuroborosBFT)
+                       initialChain = Genesis
 
-             Node.forkRelayKernel upstream cps
-             when (role == CoreNode) $ do
-                 Node.forkCoreKernel slotDuration
-                                     (chainFrom initialChain 100)
-                                     fixupBlock
-                                     cps
+                   -- The calls to the 'Unix' functions are flipped here, as for each
+                   -- of my producers I want to create a consumer node and for each
+                   -- of my consumers I want to produce something.
+                   (upstream, consumerThreads) <-
+                     fmap unzip $ forM producers $ \pId ->
+                       case isLogger of
+                            True  -> spawnLogger loggingQueue pId
+                            False -> spawnConsumer initialChain pId
 
-             let allThreads = terminalThread <> producerThreads
-                                             <> consumerThreads
-             void $ Async.waitAnyCancel allThreads
+                   cps <- atomically $ newTVar (initChainProducerState initialChain)
+                   producerThreads <- forM consumers (spawnProducer cps)
+
+                   Node.forkRelayKernel upstream cps
+                   when (role == CoreNode) $ do
+                       Node.forkCoreKernel slotDuration
+                                           (chainFrom initialChain 100)
+                                           fixupBlock
+                                           cps
+
+                   let allThreads = terminalThread <> producerThreads
+                                                   <> consumerThreads
+                   void $ Async.waitAnyCancel allThreads
 
   where
       spawnTerminalLogger :: TBQueue LogEvent -> IO (Async.Async ())
       spawnTerminalLogger q = do
           Async.async $ showNetworkTraffic q
 
-      spawnLogger :: TBQueue LogEvent
+      spawnLogger :: ( HasHeader (Payload pt)
+                     , Serialise (Payload pt 'OuroborosBFT)
+                     , Condense  (Payload pt 'OuroborosBFT)
+                     )
+                  => TBQueue LogEvent
                   -> NodeId
-                  -> IO (TVar (Chain Payload), Async.Async ())
+                  -> IO (TVar (Chain (Payload pt 'OuroborosBFT)), Async.Async ())
       spawnLogger q targetId = do
           chVar <- atomically $ newTVar Genesis
           a     <- Async.async $ NamedPipe.runConsumer myNodeId targetId $
                      loggerConsumer q chVar targetId
           pure (chVar, a)
 
-      spawnConsumer :: Chain Payload
+      spawnConsumer :: (HasHeader (Payload pt)
+                      , Serialise (Payload pt 'OuroborosBFT)
+                      )
+                    => Chain (Payload pt 'OuroborosBFT)
                     -> NodeId
-                    -> IO (TVar (Chain Payload), Async.Async ())
+                    -> IO (TVar (Chain (Payload pt 'OuroborosBFT)), Async.Async ())
       spawnConsumer myChain producerNodeId = do
           chVar <- atomically $ newTVar myChain
           a     <- Async.async $ NamedPipe.runConsumer myNodeId producerNodeId $
                      exampleConsumer chVar
           pure (chVar, a)
 
-      spawnProducer :: TVar (ChainProducerState Payload)
+      spawnProducer :: (HasHeader (Payload pt)
+                      , Serialise (Payload pt 'OuroborosBFT)
+                      )
+                    => TVar (ChainProducerState (Payload pt 'OuroborosBFT))
                     -> NodeId
                     -> IO (Async.Async ())
       spawnProducer cps consumerNodeId = Async.async $

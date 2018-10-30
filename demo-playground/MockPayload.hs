@@ -2,7 +2,8 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE NamedFieldPuns   #-}
 {-# LANGUAGE RankNTypes       #-}
-module MockPayload (fixupBlock, chainFrom) where
+{-# LANGUAGE TypeFamilies     #-}
+module MockPayload (MockBlock, fixupBlock, chainFrom) where
 
 import           Block      hiding (BlockBody)
 import           Block.Mock (BlockBody (..))

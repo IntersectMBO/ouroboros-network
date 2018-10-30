@@ -23,9 +23,10 @@ instance KnownLedgerDomain 'MockLedgerDomain where
     data BlockBody 'MockLedgerDomain = BlockBody {
           blockData :: Set (Mock.Tx)
         } deriving Show
-    hashBody (BlockBody b) = BodyHash (maybe maxBound fromEnum $ naturalToWordMaybe $ H.fromHash $ H.hash b)
+    hashBody (BlockBody b) =
+      BodyHash (maybe maxBound fromEnum $ naturalToWordMaybe $ H.fromHash $ H.hash b)
 
-instance HasUtxo Mock.Tx => HasUtxo (BlockBody 'MockLedgerDomain) where
+instance HasUtxo (BlockBody 'MockLedgerDomain) where
   txIns      = txIns      . blockData
   txOuts     = txOuts     . blockData
   updateUtxo = updateUtxo . blockData
