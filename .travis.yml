@@ -10,16 +10,11 @@ matrix:
   include:
   - name: "GHC 843"
     env: COMPILER="ghc843"
-  - name: "GHC 822"
-    env: COMPILER="ghc822"
   - name: "GHC 802"
     env: COMPILER="ghc802"
 
   - name: "GHC 843"
     env: COMPILER="ghc843"
-    os: osx
-  - name: "GHC 822"
-    env: COMPILER="ghc822"
     os: osx
   - name: "GHC 802"
     env: COMPILER="ghc802"
