@@ -4,13 +4,10 @@
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE UndecidableInstances       #-}
-{-# LANGUAGE ViewPatterns               #-}
 
 module Ouroboros.UTxO.Mock (
     -- * Basic definitions
-    PreTx(..)
-  , Tx(..)
-  , mkTx
+    Tx(..)
   , TxIn
   , TxOut
   , Addr
@@ -20,33 +17,29 @@ module Ouroboros.UTxO.Mock (
   , utxo
   ) where
 
-import           Data.Map                    (Map)
-import qualified Data.Map.Strict             as Map
+import           Codec.Serialise
+import           Data.Map          (Map)
+import qualified Data.Map.Strict   as Map
 import           Data.Proxy
-import           Data.Set                    (Set)
-import qualified Data.Set                    as Set
-import           GHC.Generics                (Generic)
+import           Data.Set          (Set)
+import qualified Data.Set          as Set
+import           GHC.Generics      (Generic)
 
-import           Ouroboros.Infra.Crypto.Mock
-import           Ouroboros.Infra.Util
-import           Ouroboros.Infra.Util.HList  (All, HList)
-import qualified Ouroboros.Infra.Util.HList  as HList
+import           Infra.Crypto.Hash
+import           Infra.Util
+import           Infra.Util.HList  (All, HList)
+import qualified Infra.Util.HList  as HList
+
 
 {-------------------------------------------------------------------------------
   Basic definitions
 -------------------------------------------------------------------------------}
 
-data PreTx = PreTx (Set TxIn) [TxOut]
+data Tx = Tx (Set TxIn) [TxOut]
   deriving (Show, Eq, Ord, Generic)
 
-instance Condense PreTx where
-  condense (PreTx ins outs) = condense (ins, outs)
-
-newtype Tx = Tx (Hashable Tx PreTx)
-  deriving (Show, Eq, Ord, Generic, Decorates PreTx, Condense)
-
-mkTx :: Hash Tx -> PreTx -> Tx
-mkTx = decorateWith
+instance Condense Tx where
+  condense (Tx ins outs) = condense (ins, outs)
 
 type TxIn  = (Hash Tx, Int)
 type TxOut = (Addr, Int)
@@ -67,12 +60,12 @@ utxo :: HasUtxo a => a -> Utxo
 utxo a = updateUtxo a Map.empty
 
 instance HasUtxo Tx where
-  txIns     (undecorate -> PreTx ins _outs) = ins
-  txOuts tx@(undecorate -> PreTx _ins outs) =
+  txIns     (Tx ins _outs) = ins
+  txOuts tx@(Tx _ins outs) =
       Map.fromList $ map aux (zip [0..] outs)
     where
       aux :: (Int, TxOut) -> (TxIn, TxOut)
-      aux (ix, out) = ((decoration tx, ix), out)
+      aux (ix, out) = ((hash tx, ix), out)
 
   confirmed       = Set.singleton
   updateUtxo tx u = u `Map.union` txOuts tx
@@ -94,3 +87,9 @@ instance All HasUtxo as => HasUtxo (HList as) where
   txOuts     = HList.foldr (Proxy @HasUtxo) (Map.union . txOuts)    Map.empty
   confirmed  = HList.foldr (Proxy @HasUtxo) (Set.union . confirmed) Set.empty
   updateUtxo = HList.repeatedly (Proxy @HasUtxo) updateUtxo
+
+{-------------------------------------------------------------------------------
+  Serialisation
+-------------------------------------------------------------------------------}
+
+instance Serialise Tx
