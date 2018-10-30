@@ -43,7 +43,7 @@ tests =
     , testProperty "core -> relay -> relay" prop_coreToRelay2
     , testProperty "core <-> relay <-> core" prop_coreToCoreViaRelay
     ]
---  , testProperty "arbtirary node graph" (withMaxSuccess 50 prop_networkGraph)
+  , testProperty "arbtirary node graph" (withMaxSuccess 50 prop_networkGraph)
   , testProperty "blockGenerator invariant (SimM)" prop_blockGenerator_ST
   , testProperty "blockGenerator invariant (IO)" prop_blockGenerator_IO
   ]
@@ -341,6 +341,10 @@ instance SingArbitrary TestNetworkGraph where
     singShrink _ (TestNetworkGraph g cs) =
         [ TestNetworkGraph g cs' | cs' <- shrinkList (:[]) cs, not (null cs') ]
 
+instance SingShow TestNetworkGraph where
+    -- TODO: we need `SingShow` instance for `Chain (Block p)`
+    singShow _p (TestNetworkGraph g _cs) = "TestNetworkGraph " ++ show g 
+
 networkGraphSim :: forall p m stm .
                   ( KnownOuroborosProtocol p
                   , MonadSTM m stm
@@ -402,6 +406,13 @@ instance SingArbitrary NetworkTest where
   singArbitrary p = NetworkTest <$> singArbitrary p <*> duration <*> duration <*> duration
     where
       duration = Sim.VTimeDuration . getPositive <$> arbitrary
+
+instance SingShow NetworkTest where
+  singShow p (NetworkTest g slotDuration coreDelay relayDelay) =
+      "NetworkTest { networkTestGraph=" ++ singShow p g
+      ++ ", networkTestSlotDuration=" ++ show slotDuration
+      ++ ", networkTestCoreTrDelay=" ++ show coreDelay
+      ++ ", networkTestRelayTrDealy=" ++ show relayDelay ++ "}"
 
 prop_networkGraph :: NetworkTest :-> Property
 prop_networkGraph = simpleProp $ \(_ :: Sing p) (NetworkTest g@(TestNetworkGraph graph cs) slotDuration coreTrDelay relayTrDelay) ->
