@@ -1,8 +1,11 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
 -- | Mock implementations of digital signatures.
@@ -50,7 +53,13 @@ newtype SigDSIGN a = SigDSIGN SignKeyDSIGN
   deriving (Show, Eq, Ord, Generic, Condense)
 
 newtype SignedDSIGN a = SignedDSIGN (DecoratedWith (SigDSIGN a) a)
-  deriving (Show, Eq, Ord, Generic, Decorates a, Condense)
+  deriving (Show, Eq, Ord, Generic, Condense)
+
+instance Decorates a (SignedDSIGN a) where
+  type Decoration (SignedDSIGN a) = SigDSIGN a
+  decoration (SignedDSIGN (DecoratedWith b _)) = b
+  decorateWith b a = SignedDSIGN (DecoratedWith b a)
+  undecorate (SignedDSIGN (DecoratedWith _ a)) = a
 
 signDSIGN :: MonadRandom m => SignKeyDSIGN -> a -> m (SigDSIGN a)
 signDSIGN sk _ = return $ SigDSIGN sk

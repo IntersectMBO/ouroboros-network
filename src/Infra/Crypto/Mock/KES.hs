@@ -1,8 +1,11 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
 -- | Mock implementations of a Key Evolving Scheme (KES).
@@ -64,7 +67,13 @@ newtype SigKES a = SigKES SignKeyKES
   deriving (Show, Eq, Ord, Generic, Condense)
 
 newtype SignedKES a = Signed (DecoratedWith (SigKES a) a)
-  deriving (Show, Eq, Ord, Generic, Decorates a, Condense)
+  deriving (Show, Eq, Ord, Generic, Condense)
+
+instance Decorates a (SignedKES a) where
+  type Decoration (SignedKES a) = SigKES a
+  decoration (Signed (DecoratedWith b _)) = b
+  decorateWith b a = Signed (DecoratedWith b a)
+  undecorate (Signed (DecoratedWith _ a)) = a
 
 signKES :: (MonadRandom m, HasCallStack)
         => SignKeyKES

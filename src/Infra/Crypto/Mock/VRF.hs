@@ -1,8 +1,11 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
 -- | Mock implementations of verifiable random functions.
@@ -56,7 +59,13 @@ instance Condense a => Condense (CertVRF a) where
     condense (CertVRF sk a) = condense (sk, a)
 
 newtype CertifiedVRF a = CertifiedVRF (DecoratedWith (CertVRF a) Natural)
-    deriving (Show, Eq, Ord, Generic, Decorates Natural, Condense, Serialise)
+    deriving (Show, Eq, Ord, Generic, Condense, Serialise)
+
+instance Decorates Natural (CertifiedVRF a) where
+    type Decoration (CertifiedVRF a) = CertVRF a
+    decoration (CertifiedVRF (DecoratedWith b _)) = b
+    decorateWith b a = CertifiedVRF (DecoratedWith b a)
+    undecorate (CertifiedVRF (DecoratedWith _ a)) = a
 
 evalVRF :: Serialise a => a -> SignKeyVRF -> CertifiedVRF a
 evalVRF a sk =
