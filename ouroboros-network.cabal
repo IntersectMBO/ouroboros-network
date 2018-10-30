@@ -76,6 +76,9 @@ library
                        Ouroboros.Network.Protocol.Chain.Node
                        Ouroboros.Network.Protocol.Channel.Sim
                        Ouroboros.Network.Protocol.Untyped
+                       Ouroboros.Network.Protocol.Stream.Type
+                       Ouroboros.Network.Protocol.Stream.Client
+                       Ouroboros.Network.Protocol.Stream.Server
   other-modules:
 -- Old experiments, not currently building:
 --                     Types
@@ -126,6 +129,7 @@ library
                        semigroups   >=0.18 && <0.19,
                        serialise    >=0.2 && <0.3,
                        stm          >=2.5 && <2.6,
+                       streaming    >=0.2.1 && <0.2.3,
                        text         >=1.2 && <1.3,
                        transformers >=0.5 && <0.6,
                        typed-transitions >= 0.1 && < 1.0,
