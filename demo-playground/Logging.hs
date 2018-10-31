@@ -59,7 +59,7 @@ loggerConsumer q chainvar ourProducer =
     logChain :: IO ()
     logChain = atomically $ do
         chain <- readTVar chainvar
-        let m = "Current chain candidate: " <> show (Chain.toList chain)
+        let m = "Current chain candidate: " <> show (Chain.toOldestFirst chain)
         writeTBQueue q $ LogEvent m ourProducer
 
     logMsg :: String -> IO ()
