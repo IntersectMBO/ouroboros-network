@@ -65,7 +65,7 @@ instance Condense PayloadType where
 class HasHeader (Payload block) => PayloadImplementation (block :: PayloadType) where
     type Payload block = (b :: OuroborosProtocol -> *) | b -> block
     fixupBlock :: KnownOuroborosProtocol p => Chain (Payload block p) -> (Payload block p) -> (Payload block p)
-    chainFrom  :: KnownOuroborosProtocol p => Chain (Payload block p) -> Int -> Chain (Payload block p)
+    chainFrom  :: KnownOuroborosProtocol p => Chain (Payload block p) -> Int -> [Payload block p]
     toChain    :: KnownOuroborosProtocol p => [Int] -> Chain (Payload block p)
 
 instance PayloadImplementation 'MockPayloadType where

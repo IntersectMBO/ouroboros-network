@@ -11,7 +11,7 @@ module DummyPayload (
   ) where
 
 import           Block
-import           Chain      (Chain (..), addBlock)
+import           Chain      (Chain (..))
 import           Infra.Util
 import           Ouroboros
 import           Serialise
@@ -47,8 +47,6 @@ toChain = go Genesis
       go acc []     = acc
       go acc (x:xs) = go (acc :> (DummyPayload x)) xs
 
-chainFrom :: Chain (DummyPayload p) -> Int -> Chain (DummyPayload p)
-chainFrom Genesis n =
-    foldl (\acc b -> addBlock (DummyPayload b) acc) Genesis [1..n]
-chainFrom c@(_ :> DummyPayload x) n =
-    foldl (\acc b -> addBlock (DummyPayload b) acc) c [x+1..x+n]
+chainFrom :: Chain (DummyPayload p) -> Int -> [DummyPayload p]
+chainFrom Genesis               n = [DummyPayload i | i <- [1..n]]
+chainFrom (_ :> DummyPayload x) n = [DummyPayload i | i <- [x+1..x+n]]

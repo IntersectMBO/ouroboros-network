@@ -10,8 +10,6 @@ module MockPayload (
     , toChain
     ) where
 
-import           Data.List  (foldl')
-
 import           Block      hiding (BlockBody)
 import           Block.Mock (BlockBody (..))
 import           Chain      (Chain (..))
@@ -24,36 +22,45 @@ fixupBlock :: Chain (MockBlock p) -> MockBlock p -> MockBlock p
 fixupBlock = C.fixupBlock
 
 toChain :: KnownOuroborosProtocol p => [Int] -> Chain (MockBlock p)
-toChain = foldl' (\c i -> chainFrom c i) Genesis
+toChain = undefined -- foldl' (\c i -> chainFrom c i) Genesis
 
 chainFrom :: forall p. KnownOuroborosProtocol p
           => Chain (MockBlock p)
           -> Int
-          -> Chain (MockBlock p)
-chainFrom initialChain n = go initialChain 0
+          -> [MockBlock p]
+chainFrom = \startingChain n ->
+    go (C.headHash    startingChain)
+       (C.headBlockNo startingChain)
+       (  headSlot    startingChain)
+       n
   where
-    go :: KnownOuroborosProtocol p => Chain (MockBlock p) -> Int -> Chain (MockBlock p)
-    go acc i | i == n = acc
-    go acc i =
-      let newHead = mkBlock i (C.head acc)
-      in go (acc :> newHead) (i + 1)
+    go :: HeaderHash -> BlockNo -> Slot -> Int -> [MockBlock p]
+    go _       _       _        0    = []
+    go prevHash prevNo prevSlot todo =
+          block
+        : go (blockHash block) (blockNo block) (blockSlot block) (todo - 1)
+      where
+        block = mkBlock prevHash prevNo prevSlot
 
-    mkBlock :: Int -> Maybe (MockBlock p) -> MockBlock p
-    mkBlock currentInt mbHead =
-      let body = BlockBody mempty
-      in Block {
-           blockHeader = mkBlockHeader currentInt mbHead (hashBody body)
-         , blockBody   = body
-         }
-    mkBlockHeader :: Int -> Maybe (MockBlock p) -> BodyHash -> BlockHeader p
-    mkBlockHeader slotNo mbHead bHash =
+    mkBlock :: HeaderHash -> BlockNo -> Slot -> MockBlock p
+    mkBlock prevHash prevNo prevSlot = Block {
+          blockHeader = mkBlockHeader prevHash prevNo prevSlot (hashBody body)
+        , blockBody   = body
+        }
+      where
+        body = BlockBody mempty
+
+    mkBlockHeader :: HeaderHash -> BlockNo -> Slot -> BodyHash -> BlockHeader p
+    mkBlockHeader prevHash prevNo prevSlot bHash =
         let hdr = BlockHeader {
              headerHash     = hashHeader hdr
-          ,  headerPrevHash = maybe C.genesisHash (hashHeader . blockHeader) mbHead
-          ,  headerSlot     = Slot (fromIntegral $! slotNo + 1)
-          ,  headerBlockNo  = case mbHead of
-                                   Nothing           -> BlockNo 1
-                                   Just (Block bh _) -> succ (headerBlockNo bh)
+          ,  headerPrevHash = prevHash
+          ,  headerSlot     = succ prevSlot
+          ,  headerBlockNo  = succ prevNo
           ,  headerSigner   = BlockSigner 0
           ,  headerBodyHash = bHash
           } in hdr
+
+headSlot :: HasHeader block => Chain (block p) -> Slot
+headSlot Genesis  = Slot 0
+headSlot (_ :> b) = blockSlot b
