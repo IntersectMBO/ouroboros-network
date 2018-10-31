@@ -12,5 +12,8 @@ in
     ouroboros-network = if nixpkgs.lib.inNixShell
       then default.ouroboros-network.env
       else default.ouroboros-network;
+    typed-transitions = if nixpkgs.lib.inNixShell
+      then default.typed-transitions.env
+      else default.typed-transitions;
   }
 
