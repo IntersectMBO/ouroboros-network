@@ -7,6 +7,7 @@ module DummyPayload (
     DummyPayload(..)
   , fixupBlock
   , chainFrom
+  , toChain
   ) where
 
 import           Block
@@ -38,6 +39,13 @@ instance HasHeader DummyPayload where
 fixupBlock :: Chain (DummyPayload p) -> DummyPayload p -> DummyPayload p
 fixupBlock Genesis               _ = DummyPayload 1
 fixupBlock (_ :> DummyPayload x) _ = DummyPayload $! x + 1
+
+toChain :: KnownOuroborosProtocol p => [Int] -> Chain (DummyPayload p)
+toChain = go Genesis
+  where
+      go :: Chain (DummyPayload p) -> [Int] -> Chain (DummyPayload p)
+      go acc []     = acc
+      go acc (x:xs) = go (acc :> (DummyPayload x)) xs
 
 chainFrom :: Chain (DummyPayload p) -> Int -> Chain (DummyPayload p)
 chainFrom Genesis n =

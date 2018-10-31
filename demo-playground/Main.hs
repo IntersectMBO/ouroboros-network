@@ -49,11 +49,14 @@ data NodeRole = CoreNode
               deriving (Show, Eq)
 
 data NodeSetup = NodeSetup {
-    nodeId    :: NodeId
-  , producers :: [NodeId]
-  , consumers :: [NodeId]
-  -- , initialChain :: Chain (Payload pt)
-  , role      :: NodeRole
+    nodeId           :: NodeId
+  , producers        :: [NodeId]
+  , consumers        :: [NodeId]
+  , initialChainData :: [Int]
+  -- ^ A very naive representation of an \"initial chain\". Essentially, given
+  -- a list of integers, is up to the different payloads to use them to come
+  -- up with sensible implementations for a chain.
+  , role             :: NodeRole
   }
 
 instance FromJSON NodeRole where
@@ -64,14 +67,6 @@ instance FromJSON NodeRole where
 
 instance FromJSON NodeId where
     parseJSON v = CoreId <$> parseJSON v
-
--- instance FromJSON (Chain Payload) where
---     parseJSON = withArray "initialChain" $ \a -> do
---         (xs :: [Int]) <- parseJSON (Array a)
---         pure $ toChain xs
-
---toChain :: [Int] -> Chain Payload
---toChain = foldl' (\c i -> chainFrom c i) Genesis
 
 deriveFromJSON defaultOptions ''NodeSetup
 
@@ -157,7 +152,7 @@ runNode CLI{..} = do
                case dictPayloadImplementation sPayloadType of
                  Dict -> do
                    let initialChain :: Chain (Payload pt 'OuroborosBFT)
-                       initialChain = Genesis
+                       initialChain = toChain initialChainData
 
                    -- The calls to the 'Unix' functions are flipped here, as for each
                    -- of my producers I want to create a consumer node and for each

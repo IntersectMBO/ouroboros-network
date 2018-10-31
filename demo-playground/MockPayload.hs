@@ -3,7 +3,14 @@
 {-# LANGUAGE NamedFieldPuns   #-}
 {-# LANGUAGE RankNTypes       #-}
 {-# LANGUAGE TypeFamilies     #-}
-module MockPayload (MockBlock, fixupBlock, chainFrom) where
+module MockPayload (
+      MockBlock
+    , fixupBlock
+    , chainFrom
+    , toChain
+    ) where
+
+import           Data.List  (foldl')
 
 import           Block      hiding (BlockBody)
 import           Block.Mock (BlockBody (..))
@@ -15,6 +22,9 @@ type MockBlock p = Block 'MockLedgerDomain p
 
 fixupBlock :: Chain (MockBlock p) -> MockBlock p -> MockBlock p
 fixupBlock = C.fixupBlock
+
+toChain :: KnownOuroborosProtocol p => [Int] -> Chain (MockBlock p)
+toChain = foldl' (\c i -> chainFrom c i) Genesis
 
 chainFrom :: forall p. KnownOuroborosProtocol p
           => Chain (MockBlock p)

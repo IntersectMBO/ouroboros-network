@@ -14,6 +14,7 @@ module Payload (
     , PayloadImplementation
     , fixupBlock
     , chainFrom
+    , toChain
     ) where
 
 import           Data.List       (intercalate)
@@ -65,13 +66,16 @@ class HasHeader (Payload block) => PayloadImplementation (block :: PayloadType) 
     type Payload block = (b :: OuroborosProtocol -> *) | b -> block
     fixupBlock :: KnownOuroborosProtocol p => Chain (Payload block p) -> (Payload block p) -> (Payload block p)
     chainFrom  :: KnownOuroborosProtocol p => Chain (Payload block p) -> Int -> Chain (Payload block p)
+    toChain    :: KnownOuroborosProtocol p => [Int] -> Chain (Payload block p)
 
 instance PayloadImplementation 'MockPayloadType where
     type Payload 'MockPayloadType = Block 'MockLedgerDomain
     fixupBlock = Mock.fixupBlock
     chainFrom  = Mock.chainFrom
+    toChain    = Mock.toChain
 
 instance PayloadImplementation 'DummyPayloadType where
     type Payload 'DummyPayloadType = Dummy.DummyPayload
     fixupBlock = Dummy.fixupBlock
     chainFrom  = Dummy.chainFrom
+    toChain    = Dummy.toChain
