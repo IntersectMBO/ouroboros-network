@@ -4,36 +4,36 @@
 {-# LANGUAGE TypeOperators       #-}
 module Test.Node where
 
-import           Control.Monad (forM, forM_, forever, replicateM)
+import           Control.Monad         (forM, forM_, forever, replicateM)
 import           Control.Monad.ST.Lazy (runST)
-import           Control.Monad.State (execStateT, lift, modify')
+import           Control.Monad.State   (execStateT, lift, modify')
 import           Data.Array
-import           Data.Functor (void)
+import           Data.Functor          (void)
 import           Data.Graph
-import           Data.List (foldl')
-import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
-import           Data.Maybe (isNothing, listToMaybe)
-import           Data.Semigroup ((<>))
-import           Data.Tuple (swap)
+import           Data.List             (foldl')
+import           Data.Map.Strict       (Map)
+import qualified Data.Map.Strict       as Map
+import           Data.Maybe            (isNothing, listToMaybe)
+import           Data.Semigroup        ((<>))
+import           Data.Tuple            (swap)
 
 import           Test.QuickCheck
-import           Test.Tasty (TestTree, testGroup)
+import           Test.Tasty            (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
 import           Block
-import           Chain (Chain (..))
+import           Chain                 (Chain (..))
 import qualified Chain
 import           MonadClass
 import           Node
 import           Ouroboros
-import           Protocol (MsgConsumer, MsgProducer)
+import           Protocol              (MsgConsumer, MsgProducer)
 import qualified Sim
 
-import           Test.Chain (TestBlockChain (..), TestChainFork (..))
+import           Test.Chain            (TestBlockChain (..), TestChainFork (..))
 import           Test.DepFn
 import           Test.Ouroboros
-import           Test.Sim (TestThreadGraph (..))
+import           Test.Sim              (TestThreadGraph (..))
 
 tests :: TestTree
 tests =
@@ -83,7 +83,7 @@ test_blockGenerator chain slotDuration = isValid <$> withProbe (experiment slotD
       -> Probe m (Block p)
       -> m ()
     experiment slotDur p = do
-      v <- blockGenerator slotDur chain
+      v <- blockGenerator slotDur (reverse $ Chain.toList chain)
       fork $ forever $ do
         b <- atomically $ getBlock v
         probeOutput p b
@@ -343,7 +343,7 @@ instance SingArbitrary TestNetworkGraph where
 
 instance SingShow TestNetworkGraph where
     -- TODO: we need `SingShow` instance for `Chain (Block p)`
-    singShow _p (TestNetworkGraph g _cs) = "TestNetworkGraph " ++ show g 
+    singShow _p (TestNetworkGraph g _cs) = "TestNetworkGraph " ++ show g
 
 networkGraphSim :: forall p m stm .
                   ( KnownOuroborosProtocol p

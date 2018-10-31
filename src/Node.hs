@@ -2,21 +2,22 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Node where
 
-import           Control.Exception (assert)
+import           Control.Exception     (assert)
 import           Control.Monad
-import           Data.Functor (($>))
-import           Data.List hiding (inits)
-import           Data.Maybe (catMaybes)
-import           Data.Semigroup (Semigroup (..))
-import           Data.Tuple (swap)
+import           Data.Functor          (($>))
+import           Data.List             hiding (inits)
+import           Data.Maybe            (catMaybes)
+import           Data.Semigroup        (Semigroup (..))
+import           Data.Tuple            (swap)
 
 import           Block
-import           Chain (Chain (..), Point)
+import           Chain                 (Chain (..), Point)
 import qualified Chain
-import           ChainProducerState (ChainProducerState (..), ReaderId,
-                     initChainProducerState, producerChain, switchFork)
+import           ChainProducerState    (ChainProducerState (..), ReaderId,
+                                        initChainProducerState, producerChain,
+                                        switchFork)
 import           ConsumersAndProducers
-import           MonadClass hiding (recvMsg, sendMsg)
+import           MonadClass            hiding (recvMsg, sendMsg)
 import           Ouroboros
 import           Protocol
 
@@ -203,13 +204,16 @@ blockGenerator :: forall p block m stm.
                   )
                => Duration (Time m)
                -- ^ slot duration
-               -> Chain (block p)
+               -> [block p]
+               -- ^ The list of blocks to generate. This allows for upstream
+               -- users to generate \"half chains\" in case we want to simulate
+               -- nodes having access to already part of the overall chain.
                -> m (TVar m (Maybe (block p)))
                -- ^ returns an stm transaction which returns block
 blockGenerator slotDuration chain = do
   outputVar <- atomically (newTVar Nothing)
   sequence_ [ timer (slotDuration * fromIntegral (getSlot $ blockSlot b)) (atomically (writeTVar outputVar (Just b)))
-            | b <- reverse (Chain.toList chain)]
+            | b <- chain]
   return outputVar
 
 -- | Read one block from the @'blockGenerator'@.
@@ -358,7 +362,7 @@ forkCoreKernel :: forall block p m stm.
                -> TVar m (ChainProducerState (block p))
                -> m ()
 forkCoreKernel slotDuration gchain fixupBlock cpsVar = do
-  blockVar <- blockGenerator slotDuration gchain
+  blockVar <- blockGenerator slotDuration (reverse $ Chain.toList gchain)
   fork $ forever $ applyGeneratedBlock blockVar
 
   where
