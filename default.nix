@@ -20,10 +20,14 @@ let
     then lib.doBenchmark
     else nixpkgs.lib.id;
 
-  ouroboros-network = lib.enableCabalFlag (doHaddock(doTest(doBench(
+  typed-transitions = doHaddock(doTest(doBench(
+    callPackage ./typed-transitions/default.nix { inherit nixpkgs; }
+  )));
+
+  ouroboros-network = doHaddock(doTest(doBench(
     callPackage ./pkg.nix {
       QuickCheck = pkgs.QuickCheck_2_12_4;
-      inherit nixpkgs;
-    })))) "test-with-cabal";
+      inherit typed-transitions nixpkgs;
+    })));
 
-in { inherit ouroboros-network; }
+in { inherit ouroboros-network typed-transitions; }
