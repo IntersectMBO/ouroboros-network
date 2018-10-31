@@ -12,6 +12,8 @@ import           Pipe                  (demo2)
 import           Protocol
 import           Serialise             (prop_serialise)
 
+import           Util.Singletons       (Dict (..))
+
 import           Test.Chain            (TestBlockChainAndUpdates (..),
                                         genBlockChain)
 import           Test.DepFn
@@ -51,7 +53,7 @@ newtype BlockProducer p = BlockProducer {
   deriving (Show)
 
 instance SingShow BlockProducer where
-  singShow s = singKnownOuroborosProtocol s $ show
+  singShow s = case dictKnownOuroborosProtocol s of Dict -> show
 
 prop_serialise_MsgProducer :: BlockProducer :-> Bool
 prop_serialise_MsgProducer = simpleProp $ \_ -> prop_serialise . blockProducer

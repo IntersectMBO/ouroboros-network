@@ -18,6 +18,8 @@ import qualified Chain
 import           ChainProducerState
 import           Ouroboros
 
+import           Util.Singletons       (Dict (..))
+
 import           Test.Chain            (TestBlockChain (..),
                                         TestBlockChainAndUpdates (..),
                                         TestChainFork (..), mkRollbackPoint)
@@ -174,7 +176,7 @@ data ChainProducerStateTest p
   deriving Show
 
 instance SingShow ChainProducerStateTest where
-  singShow s = singKnownOuroborosProtocol s $ show
+  singShow s = case dictKnownOuroborosProtocol s of Dict -> show
 
 genReaderState :: Int   -- ^ length of the chain
                -> Chain (Block 'TestLedgerDomain p)
@@ -214,7 +216,7 @@ data ChainProducerStateForkTest p
   deriving Show
 
 instance SingShow ChainProducerStateForkTest where
-  singShow s = singKnownOuroborosProtocol s $ show
+  singShow s = case dictKnownOuroborosProtocol s of Dict -> show
 
 instance SingArbitrary ChainProducerStateForkTest where
   singArbitrary p = do

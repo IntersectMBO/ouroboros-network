@@ -14,7 +14,7 @@ module Ouroboros (
   , OuroborosProtocol(..)
   , Sing(..)
   , KnownOuroborosProtocol
-  , singKnownOuroborosProtocol
+  , dictKnownOuroborosProtocol
   ) where
 
 import           Data.Hashable
@@ -70,9 +70,9 @@ instance SingKind OuroborosProtocol where
 
 class KnownOuroborosProtocol (p :: OuroborosProtocol) where
 
-singKnownOuroborosProtocol :: Sing p -> (KnownOuroborosProtocol p => r) -> r
-singKnownOuroborosProtocol SingBFT   k = k
-singKnownOuroborosProtocol SingPraos k = k
+dictKnownOuroborosProtocol :: Sing p -> Dict (KnownOuroborosProtocol p)
+dictKnownOuroborosProtocol SingBFT   = Dict
+dictKnownOuroborosProtocol SingPraos = Dict
 
 {-------------------------------------------------------------------------------
   BFT

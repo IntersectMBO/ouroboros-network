@@ -36,7 +36,7 @@ import           Infra.Util
 import qualified Node
 import           Ouroboros
 import           Serialise                hiding ((<>))
-import           Util.Singletons          (withSomeSing)
+import           Util.Singletons          (Dict (..), withSomeSing)
 
 import           Logging
 import qualified NamedPipe
@@ -120,16 +120,13 @@ main = runNode =<< execParser opts
      <> progDesc "Run a node with the chain-following protocol hooked in."
      )
 
-data Dict a where
-    Dict :: a => Dict a
-
-toDict :: Sing (pt :: PayloadType)
-       -> Dict ( Serialise (Payload pt 'OuroborosBFT)
-               , Condense  (Payload pt 'OuroborosBFT)
-               , PayloadImplementation pt
-               )
-toDict SDummyPayload = Dict
-toDict SMockPayload  = Dict
+dictPayloadImplementation :: Sing (pt :: PayloadType)
+                          -> Dict ( Serialise (Payload pt 'OuroborosBFT)
+                                  , Condense  (Payload pt 'OuroborosBFT)
+                                  , PayloadImplementation pt
+                                  )
+dictPayloadImplementation SDummyPayload = Dict
+dictPayloadImplementation SMockPayload  = Dict
 
 runNode :: CLI -> IO ()
 runNode CLI{..} = do
@@ -157,9 +154,8 @@ runNode CLI{..} = do
                     False -> mempty
 
              withSomeSing payloadType $ \(sPayloadType :: Sing pt) ->
-               case toDict sPayloadType of
+               case dictPayloadImplementation sPayloadType of
                  Dict -> do
-
                    let initialChain :: Chain (Payload pt 'OuroborosBFT)
                        initialChain = Genesis
 

@@ -18,6 +18,8 @@ import           Data.Maybe            (isNothing, listToMaybe)
 import           Data.Semigroup        ((<>))
 import           Data.Tuple            (swap)
 
+import           Util.Singletons       (Dict (..))
+
 import           Test.QuickCheck
 import           Test.Tasty            (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
@@ -149,7 +151,7 @@ data TestNodeSim p = TestNodeSim
   deriving (Show, Eq)
 
 instance SingShow TestNodeSim where
-  singShow s = singKnownOuroborosProtocol s $ show
+  singShow s = case dictKnownOuroborosProtocol s of Dict -> show
 
 instance SingArbitrary TestNodeSim where
   singArbitrary p = do

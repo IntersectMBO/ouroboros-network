@@ -23,6 +23,8 @@ import           Serialise             (prop_serialise)
 import qualified Data.List             as L
 import           Data.Maybe            (listToMaybe)
 
+import           Util.Singletons       (Dict (..))
+
 import           Test.QuickCheck
 import           Test.Tasty            (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
@@ -164,7 +166,7 @@ newtype TestBlockChain p = TestBlockChain { getTestBlockChain :: Chain (Block 'T
     deriving (Eq, Show)
 
 instance SingShow TestBlockChain where
-  singShow s = singKnownOuroborosProtocol s $ show
+  singShow s = case dictKnownOuroborosProtocol s of Dict -> show
 
 -- | A test generator for a valid chain of block headers.
 --
@@ -172,7 +174,7 @@ newtype TestHeaderChain p = TestHeaderChain (Chain (BlockHeader p))
     deriving (Eq, Show)
 
 instance SingShow TestHeaderChain where
-  singShow s = singKnownOuroborosProtocol s $ show
+  singShow s = case dictKnownOuroborosProtocol s of Dict -> show
 
 instance SingArbitrary TestBlockChain where
     singArbitrary _ = do
@@ -296,7 +298,7 @@ data TestAddBlock p = TestAddBlock (Chain (Block 'TestLedgerDomain p)) (Block 'T
   deriving Show
 
 instance SingShow TestAddBlock where
-  singShow s = singKnownOuroborosProtocol s $ show
+  singShow s = case dictKnownOuroborosProtocol s of Dict -> show
 
 instance SingArbitrary TestAddBlock where
   singArbitrary p = do
@@ -338,7 +340,7 @@ data TestBlockChainAndUpdates p =
   deriving Show
 
 instance SingShow TestBlockChainAndUpdates where
-  singShow s = singKnownOuroborosProtocol s $ show
+  singShow s = case dictKnownOuroborosProtocol s of Dict -> show
 
 instance SingArbitrary TestBlockChainAndUpdates where
   singArbitrary p = do
@@ -434,7 +436,7 @@ data TestChainAndPoint p = TestChainAndPoint (Chain (Block 'TestLedgerDomain p))
   deriving Show
 
 instance SingShow TestChainAndPoint where
-  singShow s = singKnownOuroborosProtocol s $ show
+  singShow s = case dictKnownOuroborosProtocol s of Dict -> show
 
 instance SingArbitrary TestChainAndPoint where
   singArbitrary p = do
@@ -499,7 +501,7 @@ instance KnownOuroborosProtocol p => Show (TestChainFork p) where
       Chain.prettyPrintChain nl show f2
 
 instance SingShow TestChainFork where
-  singShow s = singKnownOuroborosProtocol s $ show
+  singShow s = case dictKnownOuroborosProtocol s of Dict -> show
 
 instance SingArbitrary TestChainFork where
   singArbitrary p = do

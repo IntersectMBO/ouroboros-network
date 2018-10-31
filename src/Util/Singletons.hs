@@ -1,3 +1,5 @@
+{-# LANGUAGE ConstraintKinds        #-}
+{-# LANGUAGE DataKinds              #-}
 {-# LANGUAGE GADTs                  #-}
 {-# LANGUAGE PolyKinds              #-}
 {-# LANGUAGE RankNTypes             #-}
@@ -18,6 +20,8 @@ module Util.Singletons (
   , SomeSing(..)
   , withSomeSing
   , SingKind(..)
+  -- * Carrying around witnesses
+  , Dict(..)
   ) where
 
 import           Data.Kind (Type)
@@ -54,3 +58,14 @@ class SingKind k where
 
   fromSing :: Sing (a :: k) -> Demote k
   toSing :: Demote k -> SomeSing k
+
+
+-- | Carrying around witnesses
+-- A 'Dict' is a tiny but incredibly useful data structure that allows one to
+-- pass around typeclass instances as if they were first class values. It does
+-- so by capturing the constraints in the type constructor itself. \"Opening\"
+-- the dictionary via pattern matching is enough for GHC to bring in any
+-- instances \"trapped inside the dictionary\" into the rest of the code block.
+
+data Dict a where
+    Dict :: a => Dict a
