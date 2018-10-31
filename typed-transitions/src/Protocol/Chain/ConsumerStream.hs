@@ -20,16 +20,16 @@ newtype ConsumerStream point header m t = ConsumerStream
 -- | A consumer choice: improve, download, wait for next, or stop.
 data ConsumerStreamStep point header m t where
   Improve        :: NonEmpty point
-                 -> ConsumerStream point header m t -- ^ Forked
+                 -> ConsumerStream point header m t -- Forked
                  -> (point -> Maybe header -> m (ConsumerStreamStep point header m t))
                  -> ConsumerStreamStep point header m t
   -- | Download at most this many blocks from the read pointer (in scope from
   -- a 'ConsumerStream').
   DownloadHeaders :: Word -> ConsumerDownload point header m t -> ConsumerStreamStep point header m t
   -- | Await the next change in tip.
-  NextTip        :: ConsumerStream point header m t -- ^ There was a fork
-                 -> ConsumerNext point header m t   -- ^ Normal next response
-                 -> t                               -- ^ Stream exhausted (producer side)
+  NextTip        :: ConsumerStream point header m t -- There was a fork
+                 -> ConsumerNext point header m t   -- Normal next response
+                 -> t                               -- Stream exhausted (producer side)
                  -> ConsumerStreamStep point header m t
   -- | End the consumer protocol application.
   Quit           :: t -> ConsumerStreamStep point header m t
