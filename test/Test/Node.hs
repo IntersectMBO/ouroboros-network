@@ -83,7 +83,7 @@ test_blockGenerator chain slotDuration = isValid <$> withProbe (experiment slotD
       -> Probe m (Block p)
       -> m ()
     experiment slotDur p = do
-      v <- blockGenerator slotDur chain
+      v <- blockGenerator slotDur (reverse $ Chain.toList chain)
       fork $ forever $ do
         b <- atomically $ getBlock v
         probeOutput p b
@@ -343,7 +343,7 @@ instance SingArbitrary TestNetworkGraph where
 
 instance SingShow TestNetworkGraph where
     -- TODO: we need `SingShow` instance for `Chain (Block p)`
-    singShow _p (TestNetworkGraph g _cs) = "TestNetworkGraph " ++ show g 
+    singShow _p (TestNetworkGraph g _cs) = "TestNetworkGraph " ++ show g
 
 networkGraphSim :: forall p m stm .
                   ( KnownOuroborosProtocol p
