@@ -83,7 +83,7 @@ test_blockGenerator chain slotDuration = isValid <$> withProbe (experiment slotD
       -> Probe m (Block p)
       -> m ()
     experiment slotDur p = do
-      v <- blockGenerator slotDur (reverse $ Chain.toList chain)
+      v <- blockGenerator slotDur (Chain.toOldestFirst chain)
       fork $ forever $ do
         b <- atomically $ getBlock v
         probeOutput p b
@@ -115,7 +115,7 @@ coreToRelaySim duplex chain slotDuration coreTrDelay relayTrDelay probe = do
     else createOneWaySubscriptionChannels coreTrDelay relayTrDelay
 
   fork $ do
-    cps <- coreNode (CoreId 0) slotDuration chain coreChans
+    cps <- coreNode (CoreId 0) slotDuration (Chain.toOldestFirst chain) coreChans
     fork $ observeChainProducerState (CoreId 0) probe cps
   fork $ void $ do
     cps <- relayNode (RelayId 0) relayChans
@@ -191,7 +191,7 @@ coreToRelaySim2 chain slotDuration coreTrDelay relayTrDelay probe = do
   (r1r2, r2r1) <- createOneWaySubscriptionChannels relayTrDelay relayTrDelay
 
   fork $ void $ do
-    cps <- coreNode (CoreId 0) slotDuration chain cr1
+    cps <- coreNode (CoreId 0) slotDuration (Chain.toOldestFirst chain) cr1
     fork $ observeChainProducerState (CoreId 0) probe cps
   fork $ void $ do
     cps <- relayNode (RelayId 1) (r1c <> r1r2)
@@ -246,13 +246,13 @@ coreToCoreViaRelaySim chain1 chain2 slotDuration coreTrDelay relayTrDelay probe 
   (r1c2, c2r1) <- createTwoWaySubscriptionChannels relayTrDelay coreTrDelay
 
   fork $ void $ do
-    cps <- coreNode (CoreId 1) slotDuration chain1 c1r1
+    cps <- coreNode (CoreId 1) slotDuration (Chain.toOldestFirst chain1) c1r1
     fork $ observeChainProducerState (CoreId 1) probe cps
   fork $ void $ do
     cps <- relayNode (RelayId 1) (r1c1 <> r1c2)
     fork $ observeChainProducerState (RelayId 1) probe cps
   fork $ void $ do
-    cps <- coreNode (CoreId 2) slotDuration chain2 c2r1
+    cps <- coreNode (CoreId 2) slotDuration (Chain.toOldestFirst chain2) c2r1
     fork $ observeChainProducerState (CoreId 2) probe cps
 
 runCoreToCoreViaRelaySim
@@ -378,7 +378,7 @@ networkGraphSim (TestNetworkGraph g cs) slotDuration coreTrDelay relayTrDelay pr
     fork $ void $
       case i `lookup` cs of
         Just chain ->
-          coreNode  (CoreId i) slotDuration chain (channs' Map.! i)
+          coreNode  (CoreId i) slotDuration (Chain.toOldestFirst chain) (channs' Map.! i)
           >>= observeChainProducerState (CoreId i) probe
         Nothing ->
           relayNode (RelayId i) (channs' Map.! i)

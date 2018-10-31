@@ -33,8 +33,9 @@ module Chain (
 
   -- ** Basic operations
   head,
-  toList,
-  fromList,
+  toNewestFirst,
+  toOldestFirst,
+  fromNewestFirst,
   drop,
   Chain.length,
   Chain.null,
@@ -157,14 +158,18 @@ headBlockNo (_ :> b) = blockNo b
 
 -- | Produce the list of blocks, from most recent back to genesis
 --
-toList :: Chain block -> [block]
-toList = foldChain (flip (:)) []
+toNewestFirst :: Chain block -> [block]
+toNewestFirst = foldChain (flip (:)) []
+
+-- | Produce the list of blocks, from genesis to the most recent
+toOldestFirst :: Chain block -> [block]
+toOldestFirst = reverse . toNewestFirst
 
 -- | Make a chain from a list of blocks. The head of the list is the head
 -- of the chain.
 --
-fromList :: HasHeader block => [block p] -> Chain (block p)
-fromList bs = assert (valid c) c
+fromNewestFirst :: HasHeader block => [block p] -> Chain (block p)
+fromNewestFirst bs = assert (valid c) c
   where
     c = foldr (flip (:>)) Genesis bs
 
@@ -227,7 +232,7 @@ lookupBySlot (c :> b) slot | blockSlot b == slot = Just b
                            | otherwise           = lookupBySlot c slot
 
 isPrefixOf :: Eq block => Chain block -> Chain block -> Bool
-a `isPrefixOf` b = reverse (toList a) `L.isPrefixOf` reverse (toList b)
+a `isPrefixOf` b = reverse (toNewestFirst a) `L.isPrefixOf` reverse (toNewestFirst b)
 
 
 data ChainUpdate block = AddBlock block

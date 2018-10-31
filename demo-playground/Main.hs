@@ -24,7 +24,6 @@ import           Data.String.Conv (toS)
 import           Options.Applicative
 
 import           Chain (Chain (..))
-import qualified Chain
 import           ChainProducerState
 import           ConsumersAndProducers
 import qualified Node
@@ -185,11 +184,9 @@ runNode CLI{..} = do
           NamedPipe.runProducer myNodeId consumerNodeId $
             exampleProducer cps
 
-chainFrom :: Chain Payload -> Int -> Chain Payload
-chainFrom Genesis n =
-    foldl (\acc b -> Chain.addBlock (DummyPayload b) acc) Genesis [1..n]
-chainFrom c@(_ :> DummyPayload x) n =
-    foldl (\acc b -> Chain.addBlock (DummyPayload b) acc) c [x+1..x+n]
+chainFrom :: Chain Payload -> Int -> [Payload]
+chainFrom Genesis               n = [DummyPayload i | i <- [1..n]]
+chainFrom (_ :> DummyPayload x) n = [DummyPayload i | i <- [x+1..x+n]]
 
 slotDuration :: Int
 slotDuration = 2 * 1000000

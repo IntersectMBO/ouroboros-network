@@ -86,17 +86,17 @@ prop_drop_genesis = simpleProp $ \_ (TestBlockChain chain) ->
 
 prop_fromList_toList :: TestBlockChain :-> Bool
 prop_fromList_toList = simpleProp $ \_ (TestBlockChain chain) ->
-    (Chain.fromList . Chain.toList) chain == chain
+    (Chain.fromNewestFirst . Chain.toNewestFirst) chain == chain
 
 -- The list comes out in reverse order, most recent block at the head
 prop_toList_head :: TestBlockChain :-> Bool
 prop_toList_head = simpleProp $ \_ (TestBlockChain chain) ->
-    (listToMaybe . Chain.toList) chain == Chain.head chain
+    (listToMaybe . Chain.toNewestFirst) chain == Chain.head chain
 
 prop_drop :: TestBlockChain :-> Bool
 prop_drop = simpleProp $ \_ (TestBlockChain chain) ->
-    let blocks = Chain.toList chain in
-    and [ Chain.drop n chain == Chain.fromList (L.drop n blocks)
+    let blocks = Chain.toNewestFirst chain in
+    and [ Chain.drop n chain == Chain.fromNewestFirst (L.drop n blocks)
         | n <- [0..Prelude.length blocks] ]
 
 prop_addBlock :: TestAddBlock :-> Bool
@@ -143,7 +143,7 @@ prop_lookupBySlot = simpleProp $ \_ (TestChainAndPoint c p) ->
 prop_intersectChains :: TestChainFork :-> Bool
 prop_intersectChains = simpleProp $ \_ (TestChainFork c l r) ->
   case Chain.intersectChains l r of
-    Nothing -> c == Genesis && L.intersect (Chain.toList l) (Chain.toList r) == []
+    Nothing -> c == Genesis && L.intersect (Chain.toNewestFirst l) (Chain.toNewestFirst r) == []
     Just p  -> Chain.headPoint c == p
             && Chain.pointOnChain p l
             && Chain.pointOnChain p r
@@ -179,7 +179,7 @@ instance SingArbitrary TestBlockChain where
 
     singShrink _ (TestBlockChain c) =
         [ TestBlockChain (fromListFixupBlocks c')
-        | c' <- shrinkList (const []) (Chain.toList c) ]
+        | c' <- shrinkList (const []) (Chain.toNewestFirst c) ]
 
 instance SingArbitrary TestHeaderChain where
     singArbitrary _ = do
@@ -188,7 +188,7 @@ instance SingArbitrary TestHeaderChain where
 
     singShrink _ (TestHeaderChain c) =
         [ TestHeaderChain (fromListFixupHeaders c')
-        | c' <- shrinkList (const []) (Chain.toList c) ]
+        | c' <- shrinkList (const []) (Chain.toNewestFirst c) ]
 
 prop_arbitrary_TestBlockChain :: TestBlockChain :-> Property
 prop_arbitrary_TestBlockChain = simpleProp $ \_ (TestBlockChain c) ->
@@ -524,23 +524,23 @@ instance SingArbitrary TestChainFork where
                       (fromListFixupBlocks (exr ++ common'))
       | let exl = extensionFragment common l
             exr = extensionFragment common r
-      , common' <- shrinkList (const []) (Chain.toList common)
+      , common' <- shrinkList (const []) (Chain.toNewestFirst common)
       ]
         -- shrink the left fork
    ++ [ TestChainFork common l' r
       | let exl = extensionFragment common l
       , exl' <- shrinkList (const []) exl
-      , let l' = fromListFixupBlocks (exl' ++ Chain.toList common)
+      , let l' = fromListFixupBlocks (exl' ++ Chain.toNewestFirst common)
       ]
         -- shrink the right fork
    ++ [ TestChainFork common l r'
       | let exr = extensionFragment common r
       , exr' <- shrinkList (const []) exr
-      , let r' = fromListFixupBlocks (exr' ++ Chain.toList common)
+      , let r' = fromListFixupBlocks (exr' ++ Chain.toNewestFirst common)
       ]
     where
       extensionFragment :: Chain (Block p) -> Chain (Block p) -> [Block p]
-      extensionFragment c = reverse . L.drop (Chain.length c) . reverse . Chain.toList
+      extensionFragment c = reverse . L.drop (Chain.length c) . reverse . Chain.toNewestFirst
 
 prop_arbitrary_TestChainFork :: TestChainFork :-> Bool
 prop_arbitrary_TestChainFork = simpleProp $ \_ (TestChainFork c l r) ->

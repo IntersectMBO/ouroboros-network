@@ -356,12 +356,13 @@ forkCoreKernel :: forall block p m stm.
                   )
                => Duration (Time m)
                -- ^ slot duration
-               -> Chain (block p)
+               -> [block p]
+               -- ^ Blocks to produce (in order they should be produced)
                -> (Chain (block p) -> block p -> block p)
                -> TVar m (ChainProducerState (block p))
                -> m ()
 forkCoreKernel slotDuration gchain fixupBlock cpsVar = do
-  blockVar <- blockGenerator slotDuration (reverse $ Chain.toList gchain)
+  blockVar <- blockGenerator slotDuration gchain
   fork $ forever $ applyGeneratedBlock blockVar
 
   where
@@ -400,7 +401,8 @@ coreNode :: forall p m stm.
      => NodeId
      -> Duration (Time m)
      -- ^ slot duration
-     -> Chain (Block p)
+     -> [Block p]
+     -- ^ Blocks to produce (in order they should be produced)
      -> NodeChannels m (MsgProducer (Block p)) MsgConsumer
      -> m (TVar m (ChainProducerState (Block p)))
 coreNode nid slotDuration gchain chans = do
