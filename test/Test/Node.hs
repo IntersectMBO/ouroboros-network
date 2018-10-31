@@ -4,36 +4,36 @@
 {-# LANGUAGE TypeOperators       #-}
 module Test.Node where
 
-import           Control.Monad         (forM, forM_, forever, replicateM)
+import           Control.Monad (forM, forM_, forever, replicateM)
 import           Control.Monad.ST.Lazy (runST)
-import           Control.Monad.State   (execStateT, lift, modify')
+import           Control.Monad.State (execStateT, lift, modify')
 import           Data.Array
-import           Data.Functor          (void)
+import           Data.Functor (void)
 import           Data.Graph
-import           Data.List             (foldl')
-import           Data.Map.Strict       (Map)
-import qualified Data.Map.Strict       as Map
-import           Data.Maybe            (isNothing, listToMaybe)
-import           Data.Semigroup        ((<>))
-import           Data.Tuple            (swap)
+import           Data.List (foldl')
+import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
+import           Data.Maybe (isNothing, listToMaybe)
+import           Data.Semigroup ((<>))
+import           Data.Tuple (swap)
 
 import           Test.QuickCheck
-import           Test.Tasty            (TestTree, testGroup)
+import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
 import           Block
-import           Chain                 (Chain (..))
+import           Chain (Chain (..))
 import qualified Chain
 import           MonadClass
 import           Node
 import           Ouroboros
-import           Protocol              (MsgConsumer, MsgProducer)
+import           Protocol (MsgConsumer, MsgProducer)
 import qualified Sim
 
-import           Test.Chain            (TestBlockChain (..), TestChainFork (..))
+import           Test.Chain (TestBlockChain (..), TestChainFork (..))
 import           Test.DepFn
 import           Test.Ouroboros
-import           Test.Sim              (TestThreadGraph (..))
+import           Test.Sim (TestThreadGraph (..))
 
 tests :: TestTree
 tests =
