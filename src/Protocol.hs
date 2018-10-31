@@ -92,13 +92,16 @@ consumerSideProtocol1 ConsumerHandlers{..} send recv = do
     requestNext = do
       send MsgRequestNext
       reply <- recv
-      handleChainUpdate reply
+      case reply of
+        MsgAwaitReply -> do reply' <- recv
+                            handleChainUpdate reply'
+        _             -> handleChainUpdate reply
       requestNext
 
     handleChainUpdate :: MsgProducer block -> m ()
-    handleChainUpdate  MsgAwaitReply      = return ()
     handleChainUpdate (MsgRollForward  b) = addBlock b
     handleChainUpdate (MsgRollBackward p) = rollbackTo p
+    handleChainUpdate  MsgAwaitReply           = fail $ "protocol error: MsgAwaitReply"
     handleChainUpdate (MsgIntersectImproved{}) = fail $ "protocol error: MsgIntersectImproved"
     handleChainUpdate  MsgIntersectUnchanged   = fail $ "protocol error: MsgIntersectUnchanged"
 
