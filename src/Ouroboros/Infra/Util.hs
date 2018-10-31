@@ -24,22 +24,22 @@ module Ouroboros.Infra.Util (
   , Condense(..)
   ) where
 
-import qualified Data.ByteString             as Strict
+import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Base16.Lazy as Lazy.Base16
-import qualified Data.ByteString.Lazy        as Lazy
-import qualified Data.ByteString.Lazy.Char8  as Lazy.Char8
-import           Data.List                   (foldl', intercalate)
-import           Data.Map                    (Map)
-import qualified Data.Map.Strict             as Map
+import qualified Data.ByteString.Lazy as Lazy
+import qualified Data.ByteString.Lazy.Char8 as Lazy.Char8
+import           Data.List (foldl', intercalate)
+import           Data.Map (Map)
+import qualified Data.Map.Strict as Map
 import           Data.Proxy
-import           Data.Set                    (Set)
-import qualified Data.Set                    as Set
-import           GHC.Generics                (Generic)
-import           System.IO.Unsafe            (unsafePerformIO)
+import           Data.Set (Set)
+import qualified Data.Set as Set
+import           GHC.Generics (Generic)
+import           System.IO.Unsafe (unsafePerformIO)
 import           UnliftIO
 
-import           Ouroboros.Infra.Util.HList  (All, HList (..))
-import qualified Ouroboros.Infra.Util.HList  as HList
+import           Ouroboros.Infra.Util.HList (All, HList (..))
+import qualified Ouroboros.Infra.Util.HList as HList
 
 {-------------------------------------------------------------------------------
   Miscellaneous

@@ -31,9 +31,9 @@ module Ouroboros.Infra.Util.HList (
   , afterFn
   ) where
 
-import Prelude hiding (foldl, foldr)
-import Data.Kind (Constraint)
-import Data.Proxy
+import           Data.Kind (Constraint)
+import           Data.Proxy
+import           Prelude hiding (foldl, foldr)
 
 {-------------------------------------------------------------------------------
   Basic definitions

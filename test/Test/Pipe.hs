@@ -4,23 +4,21 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Test.Pipe (tests) where
 
-import           Block                 (Block, HeaderHash (..),
-                                        LedgerDomain (..), Slot (..))
-import           Chain                 (Chain (..), Point (..))
+import           Block (Block, HeaderHash (..), LedgerDomain (..), Slot (..))
+import           Chain (Chain (..), Point (..))
 import           Ouroboros
-import           Pipe                  (demo2)
+import           Pipe (demo2)
 import           Protocol
-import           Serialise             (prop_serialise)
+import           Serialise (prop_serialise)
 
-import           Util.Singletons       (Dict (..))
+import           Util.Singletons (Dict (..))
 
-import           Test.Chain            (TestBlockChainAndUpdates (..),
-                                        genBlockChain)
+import           Test.Chain (TestBlockChainAndUpdates (..), genBlockChain)
 import           Test.DepFn
 import           Test.Ouroboros
 
 import           Test.QuickCheck
-import           Test.Tasty            (TestTree, testGroup)
+import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
 --

@@ -4,25 +4,23 @@
 
 module Test.ChainProducerState (tests) where
 
-import           Data.List             (unfoldr)
+import           Data.List (unfoldr)
 
 import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
-import           Block                 (LedgerDomain (TestLedgerDomain))
-import           Chain                 (Block, Chain, ChainUpdate (..),
-                                        Point (..), genesisPoint, headPoint,
-                                        pointOnChain)
+import           Block (LedgerDomain (TestLedgerDomain))
+import           Chain (Block, Chain, ChainUpdate (..), Point (..),
+                     genesisPoint, headPoint, pointOnChain)
 import qualified Chain
 import           ChainProducerState
 import           Ouroboros
 
-import           Util.Singletons       (Dict (..))
+import           Util.Singletons (Dict (..))
 
-import           Test.Chain            (TestBlockChain (..),
-                                        TestBlockChainAndUpdates (..),
-                                        TestChainFork (..), mkRollbackPoint)
+import           Test.Chain (TestBlockChain (..), TestBlockChainAndUpdates (..),
+                     TestChainFork (..), mkRollbackPoint)
 import           Test.DepFn
 import           Test.Ouroboros
 

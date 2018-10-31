@@ -15,28 +15,28 @@
 module Main (main) where
 
 import qualified Control.Concurrent.Async as Async
-import           Control.Concurrent.STM   (TBQueue, TVar, atomically,
-                                           newTBQueue, newTVar)
+import           Control.Concurrent.STM (TBQueue, TVar, atomically, newTBQueue,
+                     newTVar)
 import           Control.Monad
 import           Data.Aeson
 import           Data.Aeson.TH
-import qualified Data.ByteString          as B
+import qualified Data.ByteString as B
 import           Data.Foldable
-import           Data.Map                 (Map)
-import qualified Data.Map.Strict          as M
+import           Data.Map (Map)
+import qualified Data.Map.Strict as M
 import           Data.Maybe
-import           Data.Semigroup           ((<>))
-import           Data.String.Conv         (toS)
+import           Data.Semigroup ((<>))
+import           Data.String.Conv (toS)
 import           Options.Applicative
 
-import           Chain                    (Chain (..), HasHeader)
+import           Chain (Chain (..), HasHeader)
 import           ChainProducerState
 import           ConsumersAndProducers
 import           Infra.Util
 import qualified Node
 import           Ouroboros
-import           Serialise                hiding ((<>))
-import           Util.Singletons          (Dict (..), withSomeSing)
+import           Serialise hiding ((<>))
+import           Util.Singletons (Dict (..), withSomeSing)
 
 import           Logging
 import qualified NamedPipe
@@ -148,7 +148,7 @@ runNode CLI{..} = do
                     True  -> (:[]) <$> spawnTerminalLogger loggingQueue
                     False -> mempty
 
-             withSomeSing payloadType $ \(sPayloadType :: Sing pt) ->
+             withSomeSing payloadType $ \(sPayloadType :: Sing (pt :: PayloadType)) ->
                case dictPayloadImplementation sPayloadType of
                  Dict -> do
                    let initialChain :: Chain (Payload pt 'OuroborosBFT)

@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                    #-}
 {-# LANGUAGE DeriveGeneric          #-}
 {-# LANGUAGE FlexibleContexts       #-}
 {-# LANGUAGE FlexibleInstances      #-}
@@ -21,6 +22,8 @@ module Infra.Util (
   , threadSafeOutput
   , threadSafeOutputHex
   , threadSafeInput
+    -- * Containers
+  , withoutKeys
     -- * Pretty-printing
   , Condense(..)
   ) where
@@ -145,3 +148,14 @@ instance Condense a => Condense (Set a) where
 
 instance (Condense k, Condense a) => Condense (Map k a) where
   condense = condense . Map.toList
+
+{-------------------------------------------------------------------------------
+  Containers
+-------------------------------------------------------------------------------}
+
+withoutKeys :: Ord k => Map k a -> Set k -> Map k a
+#if MIN_VERSION_containers(0,5,8)
+withoutKeys = Map.withoutKeys
+#else
+m `withoutKeys` s = Map.filterWithKey (\k _ -> k `Set.notMember` s) m
+#endif

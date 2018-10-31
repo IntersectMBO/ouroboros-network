@@ -6,12 +6,12 @@ module Ouroboros.Infra.Exception (
   , wrapExceptionsIO
   ) where
 
-import Data.List (intercalate)
-import Data.Proxy
-import GHC.Stack
-import UnliftIO
+import           Data.List (intercalate)
+import           Data.Proxy
+import           GHC.Stack
+import           UnliftIO
 
-import Ouroboros.Infra.Util.HList
+import           Ouroboros.Infra.Util.HList
 
 {-------------------------------------------------------------------------------
   Wrap exceptions

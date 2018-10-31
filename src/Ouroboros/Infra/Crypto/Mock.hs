@@ -30,7 +30,7 @@ module Ouroboros.Infra.Crypto.Mock (
   ) where
 
 import           Control.Monad.Except
-import           GHC.Generics         (Generic)
+import           GHC.Generics (Generic)
 import           GHC.Stack
 
 import           Ouroboros.Infra.Util

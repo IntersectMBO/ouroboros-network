@@ -63,16 +63,16 @@ module Chain (
   prettyPrintChain
   ) where
 
-import           Prelude           hiding (drop, head)
+import           Prelude hiding (drop, head)
 
-import           Block             (Block (..), BlockHeader (..), BlockNo (..),
-                                    BlockNo (..), BodyHash (..), HasHeader (..),
-                                    HeaderHash (..), KnownLedgerDomain,
-                                    Slot (..), hashBody, hashHeader)
+import           Block (Block (..), BlockHeader (..), BlockNo (..),
+                     BlockNo (..), BodyHash (..), HasHeader (..),
+                     HeaderHash (..), KnownLedgerDomain, Slot (..), hashBody,
+                     hashHeader)
 import           Serialise
 
 import           Control.Exception (assert)
-import qualified Data.List         as L
+import qualified Data.List as L
 
 
 --

@@ -6,15 +6,14 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Block.Mock where
 
-import           Block               (Block (..), BlockHeader (..),
-                                      BodyHash (..), HasHeader (..),
-                                      KnownLedgerDomain (..), LedgerDomain (..))
-import           Data.Maybe          (maybe)
-import           Data.Set            (Set)
-import           GHC.Natural         (naturalToWordMaybe)
+import           Block (Block (..), BlockHeader (..), BodyHash (..),
+                     HasHeader (..), KnownLedgerDomain (..), LedgerDomain (..))
+import           Data.Maybe (maybe)
+import           Data.Set (Set)
+import           GHC.Natural (naturalToWordMaybe)
 
-import qualified Infra.Crypto.Hash   as H
-import           Infra.Util          (Condense (..))
+import qualified Infra.Crypto.Hash as H
+import           Infra.Util (Condense (..))
 import           Ouroboros.UTxO.Mock (HasUtxo (..))
 import qualified Ouroboros.UTxO.Mock as Mock
 import           Serialise

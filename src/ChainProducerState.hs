@@ -3,14 +3,13 @@
 
 module ChainProducerState where
 
-import           Chain             (Chain, ChainUpdate (..), HasHeader,
-                                    Point (..), blockPoint, genesisPoint,
-                                    pointOnChain)
+import           Chain (Chain, ChainUpdate (..), HasHeader, Point (..),
+                     blockPoint, genesisPoint, pointOnChain)
 import qualified Chain
 
 import           Control.Exception (assert)
-import           Data.List         (find, group, sort)
-import           Data.Maybe        (fromMaybe)
+import           Data.List (find, group, sort)
+import           Data.Maybe (fromMaybe)
 
 
 

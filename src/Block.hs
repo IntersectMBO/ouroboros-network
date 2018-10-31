@@ -31,7 +31,7 @@ module Block (
     where
 
 import           Data.Hashable
-import qualified Data.Text       as Text
+import qualified Data.Text as Text
 
 import           Infra.Util
 import           Ouroboros

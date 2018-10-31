@@ -3,22 +3,21 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Node where
 
-import           Control.Exception     (assert)
+import           Control.Exception (assert)
 import           Control.Monad
-import           Data.Functor          (($>))
-import           Data.List             hiding (inits)
-import           Data.Maybe            (catMaybes)
-import           Data.Semigroup        (Semigroup (..))
-import           Data.Tuple            (swap)
+import           Data.Functor (($>))
+import           Data.List hiding (inits)
+import           Data.Maybe (catMaybes)
+import           Data.Semigroup (Semigroup (..))
+import           Data.Tuple (swap)
 
 import           Block
-import           Chain                 (Chain (..), Point)
+import           Chain (Chain (..), Point)
 import qualified Chain
-import           ChainProducerState    (ChainProducerState (..), ReaderId,
-                                        initChainProducerState, producerChain,
-                                        switchFork)
+import           ChainProducerState (ChainProducerState (..), ReaderId,
+                     initChainProducerState, producerChain, switchFork)
 import           ConsumersAndProducers
-import           MonadClass            hiding (recvMsg, sendMsg)
+import           MonadClass hiding (recvMsg, sendMsg)
 import           Ouroboros
 import           Protocol
 

@@ -18,17 +18,17 @@ module Ouroboros.UTxO.Mock (
   ) where
 
 import           Codec.Serialise
-import           Data.Map          (Map)
-import qualified Data.Map.Strict   as Map
+import           Data.Map (Map)
+import qualified Data.Map.Strict as Map
 import           Data.Proxy
-import           Data.Set          (Set)
-import qualified Data.Set          as Set
-import           GHC.Generics      (Generic)
+import           Data.Set (Set)
+import qualified Data.Set as Set
+import           GHC.Generics (Generic)
 
 import           Infra.Crypto.Hash
 import           Infra.Util
-import           Infra.Util.HList  (All, HList)
-import qualified Infra.Util.HList  as HList
+import           Infra.Util.HList (All, HList)
+import qualified Infra.Util.HList as HList
 
 
 {-------------------------------------------------------------------------------
@@ -74,7 +74,7 @@ instance HasUtxo a => HasUtxo (Set a) where
   txIns           = txIns     . Set.toList
   txOuts          = txOuts    . Set.toList
   confirmed       = confirmed . Set.toList
-  updateUtxo as u = (u `Map.union` txOuts as) `Map.withoutKeys` txIns as
+  updateUtxo as u = (u `Map.union` txOuts as) `withoutKeys` txIns as
 
 instance HasUtxo a => HasUtxo [a] where
   txIns      = foldr (Set.union . txIns)     Set.empty

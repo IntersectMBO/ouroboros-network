@@ -14,19 +14,18 @@ module Test.Chain
   ) where
 
 import           Block
-import           Chain                 (Chain (..), ChainUpdate (..),
-                                        Point (..), genesisPoint)
+import           Chain (Chain (..), ChainUpdate (..), Point (..), genesisPoint)
 import qualified Chain
 import           Ouroboros
-import           Serialise             (prop_serialise)
+import           Serialise (prop_serialise)
 
-import qualified Data.List             as L
-import           Data.Maybe            (listToMaybe)
+import qualified Data.List as L
+import           Data.Maybe (listToMaybe)
 
-import           Util.Singletons       (Dict (..))
+import           Util.Singletons (Dict (..))
 
 import           Test.QuickCheck
-import           Test.Tasty            (TestTree, testGroup)
+import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
 import           Test.DepFn
