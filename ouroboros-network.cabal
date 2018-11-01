@@ -85,7 +85,7 @@ library
                        base16-bytestring       <0.2,
                        cborg        >=0.2.1 && <0.3,
                        clock        >=0.7 && <0.8,
-                       containers   >=0.5.8.0 && <0.6,
+                       containers   >=0.5 && <0.6,
                        cryptonite   >=0.25 && <0.26,
                        fingertree   >=0.1 && <0.2,
                        free         >=5.1 && <5.2,
