@@ -17,6 +17,8 @@ cabal-version:       >=1.10
 
 library
   exposed-modules:     Protocol.Channel
+                     , Protocol.Channel.Multiplex
+                     , Protocol.Codec
                      , Protocol.Transition
                      , Protocol.Nat
                      , Protocol.Core
@@ -38,8 +40,24 @@ library
   build-depends:       base >=4.11 && <4.12
                      , transformers >=0.5 && <0.6
                      , free >=5.1 && <5.2
+                     , text
 
   hs-source-dirs:      src
   default-language:    Haskell2010
   ghc-options:         -fwarn-unused-imports
                        -fwarn-incomplete-patterns
+
+test-suite test-typed-transitions
+  type:           exitcode-stdio-1.0
+  main-is:        Main.hs
+  hs-source-dirs: test
+  other-modules:    Test.Protocol.Codec
+                  , Test.Protocol.Channel
+  build-depends:    base >=4.11 && <4.12
+                  , async
+                  , bytestring
+                  , QuickCheck >=2.12 && <2.13
+                  , tasty
+                  , tasty-quickcheck
+                  , text
+                  , typed-transitions

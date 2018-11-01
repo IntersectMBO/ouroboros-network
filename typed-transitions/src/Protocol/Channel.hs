@@ -6,10 +6,12 @@ module Protocol.Channel
   ( Channel (..)
   , uniformChannel
   , fixedInputChannel
+  , hoistChannel
   , FromStream (..)
   , useChannel
   , useChannelHomogeneous
-  , withChannels
+  , mvarChannels
+  , withMVarChannels
   , channelSendEffect
   ) where
 
@@ -26,6 +28,10 @@ import Protocol.Transition
 -- give pure channels without resorting to a state monad.
 -- For common effectful channels this is superfluous. 'uniformChannel' can
 -- take care of the details.
+--
+-- A 'Channel' is morally an additive conjunction (linear logic):
+-- you cannot use _both_ 'send' and 'recv'. If you 'send', you can 'recv' from
+-- the 'Channel' that it returns, not the original 'Channel'.
 data Channel m t = Channel
   { send :: t -> m (Channel m t)
   , recv :: m (Maybe (t, Channel m t))
@@ -49,6 +55,16 @@ fixedInputChannel lst = case lst of
     }
   where
   noopSend trs = const (pure (fixedInputChannel trs))
+
+hoistChannel
+  :: ( Functor n )
+  => (forall x . m x -> n x)
+  -> Channel m t
+  -> Channel n t
+hoistChannel nat channel = Channel
+  { send = fmap (hoistChannel nat) . nat . send channel
+  , recv = (fmap . fmap . fmap) (hoistChannel nat) (nat (recv channel))
+  }
 
 data FromStream tr k t where
   -- | The stream ended even though more input is expected.
@@ -106,13 +122,18 @@ useChannelHomogeneous chan peer =
       let it = k chan
       in  fmap fixupFromStream (iterT join it)
 
-withChannels :: (Channel IO t -> Channel IO t -> IO r) -> IO r
-withChannels k = do
+mvarChannels :: IO (Channel IO t, Channel IO t)
+mvarChannels = do
   left <- newEmptyMVar
   right <- newEmptyMVar
-  let leftChan = uniformChannel (putMVar left) (fmap Just (takeMVar right))
+  let leftChan  = uniformChannel (putMVar left)  (fmap Just (takeMVar right))
       rightChan = uniformChannel (putMVar right) (fmap Just (takeMVar left))
-  k leftChan rightChan
+  pure (leftChan, rightChan)
+
+withMVarChannels :: (Channel IO t -> Channel IO t -> IO r) -> IO r
+withMVarChannels k = do
+  (left, right) <- mvarChannels
+  k left right
 
 -- | Do some effect before sending.
 channelSendEffect :: ( Applicative m ) => (t -> m ()) -> Channel m t -> Channel m t
