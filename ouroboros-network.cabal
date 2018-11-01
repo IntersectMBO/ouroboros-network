@@ -20,6 +20,7 @@ library
   -- At this experiment/prototype stage everything is exposed.
   -- This has to be tidied up once the design becomes clear.
   exposed-modules:     Block
+                       Block.Mock
                        Chain
                        ChainProducerState
                        ConsumersAndProducers
@@ -41,6 +42,7 @@ library
                        MonadClass.MonadTimer
                        Node
                        Ouroboros
+                       Ouroboros.UTxO.Mock
                        Pipe
                        Protocol
                        ProtocolInterfaces
@@ -80,6 +82,7 @@ library
                        array,
                        base16-bytestring >= 0.1 && <0.2,
                        bytestring   >=0.10 && <0.11,
+                       base16-bytestring       <0.2,
                        cborg        >=0.2.1 && <0.3,
                        clock        >=0.7 && <0.8,
                        containers   >=0.5 && <0.6,
@@ -98,6 +101,7 @@ library
                        transformers >=0.5 && <0.6,
                        unliftio     >=0.2 && <0.3,
                        void         >=0.7 && <0.8,
+                       unliftio     >=0.2.6.0 && <0.3.0.0,
 
                        QuickCheck   >=2.12 && <2.13
 
@@ -109,6 +113,8 @@ executable demo-playground
   main-is:             Main.hs
   ghc-options:         -threaded -Wall -O2 "-with-rtsopts=-N"
   other-modules:       DummyPayload
+                       MockPayload
+                       Payload
                        Logging
                        NamedPipe
   build-depends:       base,

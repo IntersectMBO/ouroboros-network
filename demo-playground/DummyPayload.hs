@@ -1,21 +1,22 @@
-{-# LANGUAGE DataKinds          #-}
-{-# LANGUAGE KindSignatures     #-}
-{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE KindSignatures             #-}
+{-# LANGUAGE StandaloneDeriving         #-}
 
 module DummyPayload (
     DummyPayload(..)
-  , Payload
   , fixupBlock
+  , chainFrom
+  , toChain
   ) where
 
 import           Block
-import           Chain (Chain (..))
+import           Chain      (Chain (..))
+import           Infra.Util
 import           Ouroboros
 import           Serialise
 
-data DummyPayload (p :: OuroborosProtocol) = DummyPayload Int
-
-type Payload = DummyPayload 'OuroborosBFT
+newtype DummyPayload (p :: OuroborosProtocol) = DummyPayload Int deriving Condense
 
 instance Show (DummyPayload p) where
     show (DummyPayload x) = show x
@@ -35,6 +36,17 @@ instance HasHeader DummyPayload where
     blockBodyHash  (DummyPayload x) = BodyHash x
     blockInvariant _ = True
 
-fixupBlock :: Chain Payload -> DummyPayload p -> DummyPayload p
-fixupBlock Genesis                _ = DummyPayload 1
-fixupBlock (_ :> DummyPayload x) _  = DummyPayload $! x + 1
+fixupBlock :: Chain (DummyPayload p) -> DummyPayload p -> DummyPayload p
+fixupBlock Genesis               _ = DummyPayload 1
+fixupBlock (_ :> DummyPayload x) _ = DummyPayload $! x + 1
+
+toChain :: KnownOuroborosProtocol p => [Int] -> Chain (DummyPayload p)
+toChain = go Genesis
+  where
+      go :: Chain (DummyPayload p) -> [Int] -> Chain (DummyPayload p)
+      go acc []     = acc
+      go acc (x:xs) = go (acc :> (DummyPayload x)) xs
+
+chainFrom :: Chain (DummyPayload p) -> Int -> [DummyPayload p]
+chainFrom Genesis               n = [DummyPayload i | i <- [1..n]]
+chainFrom (_ :> DummyPayload x) n = [DummyPayload i | i <- [x+1..x+n]]

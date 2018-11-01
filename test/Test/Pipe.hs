@@ -1,13 +1,17 @@
-{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE TypeOperators     #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Test.Pipe (tests) where
 
-import           Block (Block, HeaderHash (..), Slot (..))
+import           Block (Block, HeaderHash (..), LedgerDomain (..), Slot (..))
 import           Chain (Chain (..), Point (..))
 import           Ouroboros
 import           Pipe (demo2)
 import           Protocol
 import           Serialise (prop_serialise)
+
+import           Util.Singletons (Dict (..))
 
 import           Test.Chain (TestBlockChainAndUpdates (..), genBlockChain)
 import           Test.DepFn
@@ -42,12 +46,12 @@ prop_serialise_MsgConsumer :: MsgConsumer -> Bool
 prop_serialise_MsgConsumer = prop_serialise
 
 newtype BlockProducer p = BlockProducer {
-    blockProducer :: MsgProducer (Block p)
+    blockProducer :: MsgProducer (Block 'TestLedgerDomain p)
   }
   deriving (Show)
 
 instance SingShow BlockProducer where
-  singShow s = singKnownOuroborosProtocol s $ show
+  singShow s = case dictKnownOuroborosProtocol s of Dict -> show
 
 prop_serialise_MsgProducer :: BlockProducer :-> Bool
 prop_serialise_MsgProducer = simpleProp $ \_ -> prop_serialise . blockProducer
@@ -70,7 +74,7 @@ instance Arbitrary Point where
   arbitrary = Point <$> (Slot <$> arbitraryBoundedIntegral)
                     <*> (HeaderHash <$> arbitraryBoundedIntegral)
 
-instance SingArbitrary Block where
+instance SingArbitrary (Block 'TestLedgerDomain) where
   singArbitrary _ = do
     c <- genBlockChain 1
     case c of

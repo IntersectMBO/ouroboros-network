@@ -1,15 +1,13 @@
-{-# LANGUAGE CPP                    #-}
 {-# LANGUAGE DeriveGeneric          #-}
 {-# LANGUAGE FlexibleContexts       #-}
 {-# LANGUAGE FlexibleInstances      #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE MultiParamTypeClasses  #-}
-{-# LANGUAGE RankNTypes             #-}
 {-# LANGUAGE TypeApplications       #-}
 {-# LANGUAGE TypeFamilies           #-}
 {-# LANGUAGE UndecidableInstances   #-}
 
-module Infra.Util (
+module Ouroboros.Infra.Util (
     -- * Miscellaneous
     repeatedly
   , chunks
@@ -22,13 +20,10 @@ module Infra.Util (
   , threadSafeOutput
   , threadSafeOutputHex
   , threadSafeInput
-    -- * Containers
-  , withoutKeys
     -- * Pretty-printing
   , Condense(..)
   ) where
 
-import           Codec.Serialise
 import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Base16.Lazy as Lazy.Base16
 import qualified Data.ByteString.Lazy as Lazy
@@ -40,13 +35,11 @@ import           Data.Proxy
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           GHC.Generics (Generic)
-import           Numeric.Natural
 import           System.IO.Unsafe (unsafePerformIO)
-import           Text.Printf (printf)
 import           UnliftIO
 
-import           Infra.Util.HList (All, HList (..))
-import qualified Infra.Util.HList as HList
+import           Ouroboros.Infra.Util.HList (All, HList (..))
+import qualified Ouroboros.Infra.Util.HList as HList
 
 {-------------------------------------------------------------------------------
   Miscellaneous
@@ -75,8 +68,6 @@ lazyByteStringChunks n bs
 
 data DecoratedWith b a = DecoratedWith b a
   deriving (Show, Eq, Ord, Generic)
-
-instance (Serialise b, Serialise a) => Serialise (DecoratedWith b a)
 
 class Decorates b a | a -> b where
   type Decoration a :: *
@@ -125,12 +116,6 @@ instance Condense String where
 instance Condense Int where
   condense = show
 
-instance Condense Natural where
-  condense = show
-
-instance Condense Rational where
-  condense = printf "%.8f" . (fromRational :: Rational -> Double)
-
 instance {-# OVERLAPPING #-} Condense [String] where
   condense ss = "[" ++ intercalate "," ss ++ "]"
 
@@ -148,14 +133,3 @@ instance Condense a => Condense (Set a) where
 
 instance (Condense k, Condense a) => Condense (Map k a) where
   condense = condense . Map.toList
-
-{-------------------------------------------------------------------------------
-  Containers
--------------------------------------------------------------------------------}
-
-withoutKeys :: Ord k => Map k a -> Set k -> Map k a
-#if MIN_VERSION_containers(0,5,8)
-withoutKeys = Map.withoutKeys
-#else
-m `withoutKeys` s = Map.filterWithKey (\k _ -> k `Set.notMember` s) m
-#endif
