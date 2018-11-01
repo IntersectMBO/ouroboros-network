@@ -286,7 +286,7 @@ schedule simstate@SimState {
     case removeMinimums timers of
       Nothing -> return []
 
-      Just (time', events, timers') -> assert (time' > time) $ do
+      Just (time', events, timers') -> assert (time' >= time) $ do
         trace <- schedule simstate {
                    runqueue = map (Thread nextTid) events,
                    curTime  = time',
