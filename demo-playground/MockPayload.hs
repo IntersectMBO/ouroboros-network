@@ -10,10 +10,10 @@ module MockPayload (
     , toChain
     ) where
 
-import           Block      hiding (BlockBody)
+import           Block hiding (BlockBody)
 import           Block.Mock (BlockBody (..))
-import           Chain      (Chain (..))
-import qualified Chain      as C
+import           Chain (Chain (..))
+import qualified Chain as C
 import           Ouroboros
 
 type MockBlock p = Block 'MockLedgerDomain p
@@ -61,6 +61,6 @@ chainFrom = \startingChain n ->
           ,  headerBodyHash = bHash
           } in hdr
 
-headSlot :: HasHeader block => Chain (block p) -> Slot
+headSlot :: HasHeader block => Chain block -> Slot
 headSlot Genesis  = Slot 0
 headSlot (_ :> b) = blockSlot b

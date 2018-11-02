@@ -7,7 +7,7 @@
 module Block.Mock where
 
 import           Block (Block (..), BlockHeader (..), BodyHash (..),
-                     HasHeader (..), KnownLedgerDomain (..), LedgerDomain (..))
+                     KnownLedgerDomain (..), LedgerDomain (..))
 import           Data.Maybe (maybe)
 import           Data.Set (Set)
 import           GHC.Natural (naturalToWordMaybe)
@@ -38,20 +38,6 @@ instance Condense (BlockHeader p) => Condense (Block 'MockLedgerDomain p) where
                  <> condense (hashBody body)
                  <> "}"
 
-instance HasHeader (Block 'MockLedgerDomain) where
-    blockHash      = headerHash     . blockHeader
-    blockPrevHash  = headerPrevHash . blockHeader
-    blockSlot      = headerSlot     . blockHeader
-    blockNo        = headerBlockNo  . blockHeader
-    blockSigner    = headerSigner   . blockHeader
-    blockBodyHash  = headerBodyHash . blockHeader
-
-    -- | The block invariant is just that the actual block body hash matches the
-    -- body hash listed in the header.
-    --
-    blockInvariant Block { blockBody, blockHeader = BlockHeader {headerBodyHash} } =
-        headerBodyHash == hashBody blockBody
-
 --
 -- Serialisation
 --
@@ -74,4 +60,3 @@ instance Serialise (Block 'MockLedgerDomain p) where
   decode = do
       decodeListLenOf 2
       Block <$> decode <*> decode
-

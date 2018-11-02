@@ -267,7 +267,7 @@ expectedBFTSigner (Slot n) = BlockSigner (n `mod` 7)
 -- | To help with chain construction and shrinking it's handy to recalculate
 -- all the hashes.
 --
-fromListFixupBlocks :: (HasHeader (Block dom), KnownLedgerDomain dom)
+fromListFixupBlocks :: (HasHeader (Block dom p), KnownLedgerDomain dom)
                     => [Block dom p] -> Chain (Block dom p)
 fromListFixupBlocks []      = Genesis
 fromListFixupBlocks (b : c) = c' :> b'
@@ -311,7 +311,7 @@ instance SingArbitrary TestAddBlock where
     , let b' = Chain.fixupBlock c' b
     ]
 
-genAddBlock :: HasHeader block => Chain (block p) -> Gen (Block 'TestLedgerDomain p)
+genAddBlock :: HasHeader block => Chain block -> Gen (Block 'TestLedgerDomain p)
 genAddBlock chain = do
     slotGap <- genSlotGap
     body    <- arbitrary
@@ -375,7 +375,7 @@ genChainUpdate chain =
          in (freq, len)
       | n <- [1..k] ]
 
-mkRollbackPoint :: HasHeader block => Chain (block p) -> Int -> Point
+mkRollbackPoint :: HasHeader block => Chain block -> Int -> Point
 mkRollbackPoint chain n = Chain.headPoint $ Chain.drop n chain
 
 genChainUpdates :: Chain (Block 'TestLedgerDomain p)
@@ -411,8 +411,8 @@ prop_arbitrary_TestBlockChainAndUpdates = simpleProp $ \_ (TestBlockChainAndUpda
 -- | Count the number of blocks forward - the number of blocks backward.
 --
 countChainUpdateNetProgress :: HasHeader block
-                            => Chain (block p)
-                            -> [ChainUpdate (block p)]
+                            => Chain block
+                            -> [ChainUpdate block]
                             -> Int
 countChainUpdateNetProgress = go 0
   where
@@ -462,7 +462,7 @@ instance SingArbitrary TestChainAndPoint where
 genPoint :: Gen Point
 genPoint = (\s h -> Point (Slot s) (HeaderHash h)) <$> arbitrary <*> arbitrary
 
-fixupPoint :: HasHeader block => Chain (block p) -> Point -> Point
+fixupPoint :: HasHeader block => Chain block -> Point -> Point
 fixupPoint c p =
   case Chain.lookupBySlot c (pointSlot p) of
     Just b  -> Chain.blockPoint b

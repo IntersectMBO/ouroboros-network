@@ -133,17 +133,17 @@ hashHeader (BlockHeader _ b c d e f) = HeaderHash (hash (b, c, d, e, f))
 -- | This class lets us treat chains of block headers and chains of whole
 -- blocks in a parametrised way.
 --
-class HasHeader (b :: OuroborosProtocol -> *) where
-    blockHash      :: b p -> HeaderHash
-    blockPrevHash  :: b p -> HeaderHash
-    blockSlot      :: b p -> Slot
-    blockNo        :: b p -> BlockNo
-    blockSigner    :: b p -> BlockSigner
-    blockBodyHash  :: b p -> BodyHash
+class HasHeader b where
+    blockHash      :: b -> HeaderHash
+    blockPrevHash  :: b -> HeaderHash
+    blockSlot      :: b -> Slot
+    blockNo        :: b -> BlockNo
+    blockSigner    :: b -> BlockSigner
+    blockBodyHash  :: b -> BodyHash
 
-    blockInvariant :: b p -> Bool
+    blockInvariant :: b -> Bool
 
-instance HasHeader BlockHeader where
+instance HasHeader (BlockHeader p) where
     blockHash      = headerHash
     blockPrevHash  = headerPrevHash
     blockSlot      = headerSlot
@@ -155,7 +155,7 @@ instance HasHeader BlockHeader where
     --
     blockInvariant = \b -> hashHeader b == headerHash b
 
-instance HasHeader (Block 'TestLedgerDomain) where
+instance KnownLedgerDomain dom => HasHeader (Block dom p) where
     blockHash      = headerHash     . blockHeader
     blockPrevHash  = headerPrevHash . blockHeader
     blockSlot      = headerSlot     . blockHeader

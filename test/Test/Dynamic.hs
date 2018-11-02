@@ -124,8 +124,8 @@ broadcastNetwork :: forall p m stm (dom :: LedgerDomain) st.
                     , MonadSTM   m stm
                     , MonadTimer m
                     , MonadSay   m
-                    , Show     (Block dom p)
-                    , HasHeader (Block dom)
+                    , Show      (Block dom p)
+                    , HasHeader (Block dom p)
                     )
                  => Int
                  -- ^ Number of slots to run for

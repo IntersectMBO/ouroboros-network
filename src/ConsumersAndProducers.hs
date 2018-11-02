@@ -28,12 +28,12 @@ import           ProtocolInterfaces
 -- This is of course only useful in tests and reference implementations since
 -- this is not a realistic chain representation.
 --
-exampleConsumer :: forall p block m stm.
+exampleConsumer :: forall block m stm.
                    ( HasHeader block
                    , MonadSTM m stm
                    )
-                => TVar m (Chain (block p))
-                -> ConsumerHandlers (block p) m
+                => TVar m (Chain block)
+                -> ConsumerHandlers block m
 exampleConsumer chainvar =
     ConsumerHandlers {..}
   where
@@ -41,7 +41,7 @@ exampleConsumer chainvar =
     getChainPoints =
         Chain.selectPoints recentOffsets <$> atomically (readTVar chainvar)
 
-    addBlock :: block p -> m ()
+    addBlock :: block -> m ()
     addBlock b = atomically $ do
         chain <- readTVar chainvar
         let !chain' = Chain.addBlock b chain
@@ -68,12 +68,12 @@ recentOffsets = [0,1,2,3,5,8,13,21,34,55,89,144,233,377,610,987,1597,2584]
 -- this is not a realistic chain representation.
 --
 exampleProducer
-  :: forall p block m stm.
+  :: forall block m stm.
      ( HasHeader block
      , MonadSTM m stm
      )
-  => TVar m (ChainProducerState (block p))
-  -> ProducerHandlers (block p) m ReaderId
+  => TVar m (ChainProducerState block)
+  -> ProducerHandlers block m ReaderId
 exampleProducer chainvar =
     ProducerHandlers {..}
   where
@@ -95,7 +95,7 @@ exampleProducer chainvar =
             writeTVar chainvar cps'
             return (Just (ipoint, Chain.headPoint (ChainProducerState.chainState cps')))
 
-    tryReadChainUpdate :: ReaderId -> m (Maybe (ChainUpdate (block p)))
+    tryReadChainUpdate :: ReaderId -> m (Maybe (ChainUpdate block))
     tryReadChainUpdate rid =
       atomically $ do
         cps <- readTVar chainvar
@@ -105,7 +105,7 @@ exampleProducer chainvar =
             writeTVar chainvar cps'
             return $ Just u
 
-    readChainUpdate :: ReaderId -> m (ChainUpdate (block p))
+    readChainUpdate :: ReaderId -> m (ChainUpdate block)
     readChainUpdate rid =
       atomically $ do
         cps <- readTVar chainvar

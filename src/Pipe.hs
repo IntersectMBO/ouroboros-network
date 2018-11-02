@@ -108,8 +108,8 @@ demo1 = consoleProtocolAction example1
 -- | A demonstration that we can run the simple chain consumer protocol
 -- over a pipe with full message serialisation, framing etc.
 --
-demo2 :: (Chain.HasHeader block, Serialise (block p), Eq (block p))
-      => Chain (block p) -> [ChainUpdate (block p)] -> IO Bool
+demo2 :: (Chain.HasHeader block, Serialise block, Eq block)
+      => Chain block -> [ChainUpdate block] -> IO Bool
 demo2 chain0 updates = do
 
     -- Create two pipes (each one is unidirectional) to connect up the
@@ -149,8 +149,8 @@ demo2 chain0 updates = do
 type ConsumerSideProtocol block = Protocol MsgConsumer (MsgProducer block)
 type ProducerSideProtocol block = Protocol (MsgProducer block) MsgConsumer
 
-runProducer :: forall p block r. (Chain.HasHeader block, Serialise (block p))
-            => Handle -> Handle -> ProducerHandlers (block p) IO r -> IO ()
+runProducer :: forall block r. (Chain.HasHeader block, Serialise block)
+            => Handle -> Handle -> ProducerHandlers block IO r -> IO ()
 runProducer hndRead hndWrite producer = do
     runProtocolWithPipe
       hndRead hndWrite
@@ -158,15 +158,15 @@ runProducer hndRead hndWrite producer = do
   where
     -- Reuse the generic 'producerSideProtocol1'
     -- but interpret it in our Protocol free monad.
-    producerSideProtocol :: ProducerSideProtocol (block p) ()
+    producerSideProtocol :: ProducerSideProtocol block ()
     producerSideProtocol =
       producerSideProtocol1
         (liftProducerHandlers liftIO producer)
         sendMsg
         recvMsg
 
-runConsumer :: forall p block. (Chain.HasHeader block, Serialise (block p))
-            => Handle -> Handle -> ConsumerHandlers (block p) IO -> IO ()
+runConsumer :: forall block. (Chain.HasHeader block, Serialise block)
+            => Handle -> Handle -> ConsumerHandlers block IO -> IO ()
 runConsumer hndRead hndWrite consumer =
     runProtocolWithPipe
       hndRead hndWrite
@@ -174,7 +174,7 @@ runConsumer hndRead hndWrite consumer =
   where
     -- Reuse the generic 'consumerSideProtocol1'
     -- but interpret it in our Protocol free monad.
-    consumerSideProtocol :: ConsumerSideProtocol (block p) ()
+    consumerSideProtocol :: ConsumerSideProtocol block ()
     consumerSideProtocol =
       consumerSideProtocol1
         (liftConsumerHandlers liftIO consumer)
