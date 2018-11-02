@@ -19,37 +19,39 @@ library
   hs-source-dirs:      src
   -- At this experiment/prototype stage everything is exposed.
   -- This has to be tidied up once the design becomes clear.
-  exposed-modules:     Block
-                       Block.Mock
-                       Block.Concrete
-                       Chain
-                       ChainProducerState
-                       ConsumersAndProducers
-                       Infra.Crypto.Hash
-                       Infra.Crypto.Mock
-                       Infra.Crypto.Mock.DSIGN
-                       Infra.Crypto.Mock.KES
-                       Infra.Crypto.Mock.VRF
-                       Infra.Util
-                       Infra.Util.HList
-                       MonadClass
-                       MonadClass.MonadConc
-                       MonadClass.MonadFork
-                       MonadClass.MonadProbe
-                       MonadClass.MonadSay
-                       MonadClass.MonadSendRecv
-                       MonadClass.MonadSTM
-                       MonadClass.MonadSTMTimer
-                       MonadClass.MonadTimer
-                       Node
-                       Ouroboros
-                       Ouroboros.UTxO.Mock
-                       Pipe
-                       Protocol
-                       ProtocolInterfaces
-                       Serialise
-                       Sim
-                       Util.Singletons
+  exposed-modules:
+                       Ouroboros.Consensus.Block.SimpleUTxO
+                       Ouroboros.Consensus.Infra.Crypto.Hash
+                       Ouroboros.Consensus.Infra.Crypto.Mock
+                       Ouroboros.Consensus.Infra.Crypto.Mock.DSIGN
+                       Ouroboros.Consensus.Infra.Crypto.Mock.KES
+                       Ouroboros.Consensus.Infra.Crypto.Mock.VRF
+                       Ouroboros.Consensus.Infra.DepFn
+                       Ouroboros.Consensus.Infra.Singletons
+                       Ouroboros.Consensus.Infra.Util
+                       Ouroboros.Consensus.Infra.Util.HList
+                       Ouroboros.Consensus.Protocol
+                       Ouroboros.Consensus.UTxO.Mock
+                       Ouroboros.Network.Block
+                       Ouroboros.Network.Chain
+                       Ouroboros.Network.ChainProducerState
+                       Ouroboros.Network.ConsumersAndProducers
+                       Ouroboros.Network.MonadClass
+                       Ouroboros.Network.MonadClass.MonadConc
+                       Ouroboros.Network.MonadClass.MonadFork
+                       Ouroboros.Network.MonadClass.MonadProbe
+                       Ouroboros.Network.MonadClass.MonadSay
+                       Ouroboros.Network.MonadClass.MonadSendRecv
+                       Ouroboros.Network.MonadClass.MonadSTM
+                       Ouroboros.Network.MonadClass.MonadSTMTimer
+                       Ouroboros.Network.MonadClass.MonadTimer
+                       Ouroboros.Network.Node
+                       Ouroboros.Network.Pipe
+                       Ouroboros.Network.Protocol
+                       Ouroboros.Network.ProtocolInterfaces
+                       Ouroboros.Network.Serialise
+                       Ouroboros.Network.Sim
+                       Ouroboros.Network.Testing.ConcreteBlock
   other-modules:
 -- Old experiments, not currently building:
 --                     Types
@@ -137,7 +139,6 @@ test-suite tests
   main-is:             Main.hs
   other-modules:       Test.Chain
                        Test.ChainProducerState
-                       Test.DepFn
                        Test.Dynamic
                        Test.Node
                        Test.Ouroboros

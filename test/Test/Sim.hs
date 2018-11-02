@@ -16,8 +16,8 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
-import           MonadClass
-import qualified Sim
+import           Ouroboros.Network.MonadClass
+import qualified Ouroboros.Network.Sim as Sim
 
 tests :: TestTree
 tests =

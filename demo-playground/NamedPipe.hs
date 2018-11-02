@@ -12,11 +12,11 @@ import           System.IO
 import           System.Posix.Files (createNamedPipe, otherReadMode, ownerModes,
                      unionFileModes)
 
-import           Block (HasHeader)
-import           ConsumersAndProducers
-import           Ouroboros
-import qualified Pipe as P
-import           Serialise (Serialise)
+import           Ouroboros.Network.Block (HasHeader)
+import           Ouroboros.Network.ConsumersAndProducers
+import           Ouroboros.Network.Node (NodeId (..))
+import qualified Ouroboros.Network.Pipe as P
+import           Ouroboros.Network.Serialise (Serialise)
 
 -- | Creates two pipes, one for reading, one for writing.
 withPipe :: HasCallStack

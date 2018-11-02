@@ -11,11 +11,11 @@ module DummyPayload (
   , toChain
   ) where
 
-import           Block
-import           Block.Concrete hiding (fixupBlock)
-import           Chain (Chain (..))
-import           Infra.Util
-import           Serialise
+import           Ouroboros.Consensus.Infra.Util
+import           Ouroboros.Network.Block
+import           Ouroboros.Network.Chain (Chain (..))
+import           Ouroboros.Network.Serialise
+import           Ouroboros.Network.Testing.ConcreteBlock hiding (fixupBlock)
 
 newtype DummyPayload = DummyPayload Int deriving Condense
 

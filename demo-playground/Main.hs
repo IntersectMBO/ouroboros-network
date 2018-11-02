@@ -29,14 +29,14 @@ import           Data.Semigroup ((<>))
 import           Data.String.Conv (toS)
 import           Options.Applicative
 
-import           Chain (Chain (..), HasHeader)
-import           ChainProducerState
-import           ConsumersAndProducers
-import           Infra.Util
-import qualified Node
-import           Ouroboros
-import           Serialise hiding ((<>))
-import           Util.Singletons (Dict (..), withSomeSing)
+import           Ouroboros.Consensus.Infra.Singletons (Dict (..), withSomeSing)
+import           Ouroboros.Consensus.Infra.Util
+import           Ouroboros.Network.Chain (Chain (..), HasHeader)
+import           Ouroboros.Network.ChainProducerState
+import           Ouroboros.Network.ConsumersAndProducers
+import           Ouroboros.Network.Node (NodeId (..))
+import qualified Ouroboros.Network.Node as Node
+import           Ouroboros.Network.Serialise hiding ((<>))
 
 import           Logging
 import qualified NamedPipe
