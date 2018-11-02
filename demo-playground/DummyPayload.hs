@@ -34,12 +34,10 @@ instance HasHeader DummyPayload where
     type HeaderHash DummyPayload = ConcreteHeaderHash
 
     blockHash      (DummyPayload x) = HeaderHash x
-    blockPrevHash  (DummyPayload x) = HeaderHash (pred x)
+    blockPrevHash  (DummyPayload x) = BlockHash (HeaderHash (pred x))
     blockSlot      (DummyPayload x) = Slot (toEnum x)
     blockNo        (DummyPayload x) = BlockNo (toEnum x)
     blockInvariant _ = True
-
-    genesisHash _ = HeaderHash 0
 
 fixupBlock :: Chain DummyPayload -> DummyPayload -> DummyPayload
 fixupBlock Genesis               _ = DummyPayload 1

@@ -9,7 +9,6 @@
 
 module Block.Mock where
 
-import           Data.Proxy
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           GHC.Generics (Generic)
@@ -36,7 +35,7 @@ data SimpleUtxoBlock = SimpleUtxoBlock {
 instance Condense SimpleUtxoBlock where
   condense = show -- TODO
 
-simpleUtxoBodyHash :: Set Mock.Tx -> ConcreteBodyHash
+simpleUtxoBodyHash :: Set Mock.Tx -> BodyHash
 simpleUtxoBodyHash = BodyHash
                    . maybe 0 fromIntegral
                    . naturalToWordMaybe
@@ -53,18 +52,16 @@ instance HasUtxo SimpleUtxoBlock where
 instance HasHeader SimpleUtxoBlock where
     type HeaderHash SimpleUtxoBlock = ConcreteHeaderHash
 
-    blockHash      = headerHash     . simpleUtxoHeader
-    blockPrevHash  = headerPrevHash . simpleUtxoHeader
-    blockSlot      = headerSlot     . simpleUtxoHeader
-    blockNo        = headerBlockNo  . simpleUtxoHeader
+    blockHash      =            headerHash     . simpleUtxoHeader
+    blockPrevHash  = castHash . headerPrevHash . simpleUtxoHeader
+    blockSlot      =            headerSlot     . simpleUtxoHeader
+    blockNo        =            headerBlockNo  . simpleUtxoHeader
 
     -- | The block invariant is just that the actual block body hash matches the
     -- body hash listed in the header.
     --
     blockInvariant (SimpleUtxoBlock header body) =
         simpleUtxoBodyHash body == headerBodyHash header
-
-    genesisHash _ = genesisHash (Proxy @BlockHeader)
 
 {-
 instance KnownLedgerDomain 'MockLedgerDomain where

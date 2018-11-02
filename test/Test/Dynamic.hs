@@ -84,7 +84,7 @@ test_simple_bft_convergence =
             header :: BlockHeader
             header = BlockHeader {
                 headerHash     = hashHeader header -- not actually recursive!
-              , headerPrevHash = headHash c
+              , headerPrevHash = castHash (headHash c)
               , headerSlot     = Slot slot
               , headerBlockNo  = succ $ headBlockNo c
               , headerSigner   = BlockSigner (fromIntegral us)

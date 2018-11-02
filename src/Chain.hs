@@ -67,7 +67,6 @@ import           Prelude hiding (drop, head)
 
 import           Control.Exception (assert)
 import qualified Data.List as L
-import           Data.Proxy
 
 import           Block
 import           Serialise
@@ -100,7 +99,7 @@ prettyPrintChain nl ppBlock = foldChain (\s b -> s ++ nl ++ "    " ++ ppBlock b)
 --
 data Point block = Point {
        pointSlot :: Slot,
-       pointHash :: HeaderHash block
+       pointHash :: Hash block
      }
 
 deriving instance HasHeader block => Eq   (Point block)
@@ -111,7 +110,7 @@ blockPoint :: HasHeader block => block -> Point block
 blockPoint b =
     Point {
       pointSlot = blockSlot b,
-      pointHash = blockHash b
+      pointHash = BlockHash (blockHash b)
     }
 
 genesis :: Chain b
@@ -123,8 +122,8 @@ genesisSlot = Slot 0
 genesisBlockNo :: BlockNo
 genesisBlockNo = BlockNo 0
 
-genesisPoint :: forall block. HasHeader block => Point block
-genesisPoint = Point genesisSlot (genesisHash (Proxy @block))
+genesisPoint :: HasHeader block => Point block
+genesisPoint = Point genesisSlot GenesisHash
 
 valid :: HasHeader block => Chain block -> Bool
 valid Genesis  = True
@@ -147,7 +146,7 @@ headPoint (_ :> b) = blockPoint b
 headSlot :: HasHeader block => Chain block -> Slot
 headSlot = pointSlot . headPoint
 
-headHash :: HasHeader block => Chain block -> HeaderHash block
+headHash :: HasHeader block => Chain block -> Hash block
 headHash = pointHash . headPoint
 
 headBlockNo :: HasHeader block => Chain block -> BlockNo
@@ -191,7 +190,7 @@ pointOnChain :: HasHeader block => Point block -> Chain block -> Bool
 pointOnChain p Genesis        = p == genesisPoint
 pointOnChain p (c :> b)
   | pointSlot p >  blockSlot b = False
-  | pointSlot p == blockSlot b = pointHash p == blockHash b
+  | pointSlot p == blockSlot b = pointHash p == BlockHash (blockHash b)
   | otherwise                  = pointOnChain p c
 
 rollback :: HasHeader block => Point block -> Chain block -> Maybe (Chain block)
