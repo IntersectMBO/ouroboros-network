@@ -15,6 +15,7 @@ module Block.Concrete (
     Block(..)
   , BlockHeader(..)
   , BlockBody(..)
+  , BlockSigner(..)
   , hashHeader
   , ConcreteBodyHash(..)
   , ConcreteHeaderHash(..)
@@ -67,6 +68,17 @@ data BlockHeader = BlockHeader {
      }
    deriving (Show, Eq)
 
+-- | An identifier for someone signing a block.
+--
+-- We model this as if there were an enumerated set of valid block signers
+-- (which for Ouroboros BFT is actually the case), and omit the cryptography
+-- and model things as if the signatures were valid.
+--
+-- TODO: This can probably go, the network layer does not need to worry
+-- about signatures.
+newtype BlockSigner = BlockSigner Word
+  deriving (Show, Eq, Ord, Hashable)
+
 -- | Compute the 'HeaderHash' of the 'BlockHeader'.
 --
 hashHeader :: BlockHeader -> ConcreteHeaderHash
@@ -88,14 +100,11 @@ newtype ConcreteBodyHash     = BodyHash Int
 
 instance HasHeader BlockHeader where
     type HeaderHash BlockHeader = ConcreteHeaderHash
-    type BodyHash   BlockHeader = ConcreteBodyHash
 
     blockHash      = headerHash
     blockPrevHash  = headerPrevHash
     blockSlot      = headerSlot
     blockNo        = headerBlockNo
-    blockSigner    = headerSigner
-    blockBodyHash  = headerBodyHash
 
     -- | The header invariant is that the cached header hash is correct.
     --
@@ -105,14 +114,11 @@ instance HasHeader BlockHeader where
 
 instance HasHeader Block where
     type HeaderHash Block = ConcreteHeaderHash
-    type BodyHash   Block = ConcreteBodyHash
 
     blockHash      = headerHash     . blockHeader
     blockPrevHash  = headerPrevHash . blockHeader
     blockSlot      = headerSlot     . blockHeader
     blockNo        = headerBlockNo  . blockHeader
-    blockSigner    = headerSigner   . blockHeader
-    blockBodyHash  = headerBodyHash . blockHeader
 
     -- | The block invariant is just that the actual block body hash matches the
     -- body hash listed in the header.
