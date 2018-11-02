@@ -14,6 +14,7 @@ module Protocol
 
 import           Control.Monad
 
+import           Block
 import           Chain (ChainUpdate (..), Point (..))
 import           MonadClass
 import           ProtocolInterfaces (ConsumerHandlers (..),
@@ -28,10 +29,10 @@ import           Serialise
 
 -- | In this protocol the consumer always initiates things and the producer
 -- replies. This is the type of messages that the consumer sends.
-data MsgConsumer
+data MsgConsumer block
   = MsgRequestNext
   -- ^ Request next block from the producer
-  | MsgSetHead [Point]
+  | MsgSetHead [Point block]
   -- ^
   -- Send set of points, it is up to the producer to find the intersection
   -- point on its chain and send it back to the consumer.
@@ -41,7 +42,7 @@ data MsgConsumer
 data MsgProducer block
   = MsgRollForward  block
   -- ^ Ask the consumer to roll forward to a given block
-  | MsgRollBackward Point
+  | MsgRollBackward (Point block)
   -- ^
   -- Ask the consumer to roll back to a given Point on its chain
   | MsgAwaitReply
@@ -49,7 +50,7 @@ data MsgProducer block
   -- Inform the consumer to await for next instructions; This means that the
   -- producer is synced with the consumer end and its awaiting for its chain to
   -- be changed.
-  | MsgIntersectImproved Point Point
+  | MsgIntersectImproved (Point block) (Point block)
   -- ^
   -- Sends to consumer found intersection, but only if this is an improvement
   -- over previously established intersection point.  The consumer
@@ -75,8 +76,8 @@ consumerSideProtocol1
   :: forall block m.
      Monad m
   => ConsumerHandlers block m
-  -> (MsgConsumer -> m ())   -- ^ send
-  -> (m (MsgProducer block)) -- ^ recv
+  -> (MsgConsumer block -> m ())   -- ^ send
+  -> (m (MsgProducer block))       -- ^ recv
   -> m ()
 consumerSideProtocol1 ConsumerHandlers{..} send recv = do
     -- The consumer opens by sending a list of points on their chain.
@@ -113,7 +114,7 @@ producerSideProtocol1
      Monad m
   => ProducerHandlers block m r
   -> (MsgProducer block -> m ()) -- ^ send
-  -> (m MsgConsumer)             -- ^ recv
+  -> (m (MsgConsumer block))     -- ^ recv
   -> m ()
 producerSideProtocol1 ProducerHandlers{..} send recv =
     newReader >>= awaitOngoing
@@ -173,7 +174,7 @@ encodeMessage conversationId messageTag messageBody =
  <> encodeWord messageTag
  <> messageBody
 
-instance Serialise MsgConsumer where
+instance HasHeader block => Serialise (MsgConsumer block) where
 
     encode MsgRequestNext  = encodeMessage 1 0 $ encodeNull
     encode (MsgSetHead ps) = encodeMessage 1 1 $ encode ps
@@ -187,7 +188,7 @@ instance Serialise MsgConsumer where
         1 -> MsgSetHead <$> decode
         _ -> fail "MsgConsumer unexpected tag"
 
-instance Serialise block => Serialise (MsgProducer block) where
+instance (Serialise block, HasHeader block) => Serialise (MsgProducer block) where
 
     encode (MsgRollForward  b)        = encodeMessage 2 0 $ encode b
     encode (MsgRollBackward p)        = encodeMessage 2 1 $ encode p
@@ -206,4 +207,3 @@ instance Serialise block => Serialise (MsgProducer block) where
         3 -> uncurry MsgIntersectImproved <$> decode
         4 -> MsgIntersectUnchanged <$  decodeNull
         _ -> fail "MsgProducer unexpected tag"
-

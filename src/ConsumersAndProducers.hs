@@ -37,7 +37,7 @@ exampleConsumer :: forall block m stm.
 exampleConsumer chainvar =
     ConsumerHandlers {..}
   where
-    getChainPoints :: m [Point]
+    getChainPoints :: m [Point block]
     getChainPoints =
         Chain.selectPoints recentOffsets <$> atomically (readTVar chainvar)
 
@@ -47,7 +47,7 @@ exampleConsumer chainvar =
         let !chain' = Chain.addBlock b chain
         writeTVar chainvar chain'
 
-    rollbackTo :: Point -> m ()
+    rollbackTo :: Point block -> m ()
     rollbackTo p = atomically $ do
         chain <- readTVar chainvar
         --TODO: handle rollback failure
@@ -84,7 +84,7 @@ exampleProducer chainvar =
       writeTVar chainvar cps'
       return rid
 
-    improveReadPoint :: ReaderId -> [Point] -> m (Maybe (Point, Point))
+    improveReadPoint :: ReaderId -> [Point block] -> m (Maybe (Point block, Point block))
     improveReadPoint rid points =
       atomically $ do
         cps <- readTVar chainvar

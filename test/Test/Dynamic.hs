@@ -22,6 +22,9 @@ import           Data.Proxy
 import           Test.QuickCheck
 
 import           Block
+-- for now we use Block.Concrete, but this is the point where we will introduce
+-- the new abstractions
+import           Block.Concrete
 import           Chain
 import           ChainProducerState
 import           MonadClass
@@ -50,7 +53,7 @@ test_simple_bft_convergence :: forall m n stm.
 test_simple_bft_convergence =
     fmap isValid $ withProbe $ go
   where
-    go :: Probe m (Map NodeId (Chain (Block 'TestLedgerDomain 'OuroborosBFT))) -> m ()
+    go :: Probe m (Map NodeId (Chain Block)) -> m ()
     go p = do
       finalChains <- broadcastNetwork
                        numSlots
@@ -66,19 +69,19 @@ test_simple_bft_convergence =
 
     appendBlock :: NodeId
                 -> Slot
-                -> Chain (Block 'TestLedgerDomain 'OuroborosBFT)
-                -> StateT Int stm (Chain (Block 'TestLedgerDomain 'OuroborosBFT))
+                -> Chain Block
+                -> StateT Int stm (Chain Block)
     appendBlock (RelayId _) _ _ = error "appendBlock: relay cant be leader"
     appendBlock (CoreId us) (Slot slot) c = do
         count <- state $ \n -> (n + 1, n + 1)
-        let body :: BlockBody 'TestLedgerDomain
+        let body :: BlockBody
             body = BlockBody $ concat [
                        "Block " ++ show count
                      , " produced in slot " ++ show slot
                      , " by core node " ++ show us
                      ]
 
-            header :: BlockHeader 'OuroborosBFT
+            header :: BlockHeader
             header = BlockHeader {
                 headerHash     = hashHeader header -- not actually recursive!
               , headerPrevHash = headHash c
@@ -88,17 +91,17 @@ test_simple_bft_convergence =
               , headerBodyHash = hashBody body
               }
 
-            block :: Block 'TestLedgerDomain 'OuroborosBFT
+            block :: Block
             block = Block header body
 
         return $ c :> block
 
-    nodeInit :: Map NodeId (Int, Chain (Block 'TestLedgerDomain 'OuroborosBFT))
+    nodeInit :: Map NodeId (Int, Chain Block)
     nodeInit = Map.fromList $ [ (CoreId i, (0, Genesis))
                               | i <- [0 .. numNodes - 1]
                               ]
 
-    isValid :: [(Time m, Map NodeId (Chain (Block 'TestLedgerDomain 'OuroborosBFT)))] -> Property
+    isValid :: [(Time m, Map NodeId (Chain Block))] -> Property
     isValid trace = counterexample (show trace) $
       case trace of
         [(_, final)] -> Map.keys final == Map.keys nodeInit
@@ -117,33 +120,30 @@ prop_simple_bft_convergence = runST test_simple_bft_convergence
 --
 -- We run for the specified number of blocks, then return the final state of
 -- each node.
-broadcastNetwork :: forall p m stm (dom :: LedgerDomain) st.
-                    ( p   ~ 'OuroborosBFT     -- for now
-                    , dom ~ 'TestLedgerDomain -- for now
-                    , KnownOuroborosProtocol p
-                    , MonadSTM   m stm
+broadcastNetwork :: forall m stm st block.
+                    ( MonadSTM   m stm
                     , MonadTimer m
                     , MonadSay   m
-                    , Show      (Block dom p)
-                    , HasHeader (Block dom p)
+                    , Show      block
+                    , HasHeader block
                     )
                  => Int
                  -- ^ Number of slots to run for
-                 -> Map NodeId (st, Chain (Block dom p))
+                 -> Map NodeId (st, Chain block)
                  -- ^ Node initial state and initial chain
                  -> (   NodeId
                      -> Slot
-                     -> Chain (Block dom p) -> StateT st stm (Chain (Block dom p))
+                     -> Chain block -> StateT st stm (Chain block)
                     )
                  -- ^ Produce a block
-                 -> m (Map NodeId (Chain (Block dom p)))
+                 -> m (Map NodeId (Chain block))
 broadcastNetwork numSlots nodeInit mkBlock = do
     chans <- fmap Map.fromList $ forM nodeIds $ \us -> do
                fmap (us, ) $ fmap Map.fromList $ forM (filter (/= us) nodeIds) $ \them ->
                  fmap (them, ) $
                    createCoupledChannels
-                     @(MsgProducer (Block dom p))
-                     @MsgConsumer
+                     @(MsgProducer block)
+                     @(MsgConsumer block)
                      0
                      0
 

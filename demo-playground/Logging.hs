@@ -1,8 +1,10 @@
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE RecordWildCards     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Logging (
@@ -17,11 +19,12 @@ import           Data.Semigroup ((<>))
 import           GHC.Stack
 
 import           Block
+import           Block.Concrete
 import           Chain (Chain (..))
 import qualified Chain
 import           ConsumersAndProducers
 import           Infra.Util
-import           Ouroboros (NodeId, OuroborosProtocol (..))
+import           Ouroboros (NodeId)
 import           ProtocolInterfaces
 
 data LogEvent = LogEvent {
@@ -34,7 +37,9 @@ showNetworkTraffic q = forever $ do
     LogEvent{..} <- atomically $ readTBQueue q
     putStrLn $ "[conv_with:" <> show sender <> "] " <> msg
 
-instance Condense (BlockHeader 'OuroborosBFT) where
+deriving instance Condense BlockNo
+
+instance Condense BlockHeader where
     condense BlockHeader{..} =
       "{hash: " <> condense headerHash
                 <> ", blockNo: "

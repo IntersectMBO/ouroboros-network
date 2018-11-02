@@ -21,6 +21,7 @@ library
   -- This has to be tidied up once the design becomes clear.
   exposed-modules:     Block
                        Block.Mock
+                       Block.Concrete
                        Chain
                        ChainProducerState
                        ConsumersAndProducers

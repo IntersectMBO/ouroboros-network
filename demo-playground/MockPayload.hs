@@ -4,63 +4,63 @@
 {-# LANGUAGE RankNTypes       #-}
 {-# LANGUAGE TypeFamilies     #-}
 module MockPayload (
-      MockBlock
+      SimpleUtxoBlock(..) -- re-export
     , fixupBlock
     , chainFrom
     , toChain
     ) where
 
-import           Block hiding (BlockBody)
-import           Block.Mock (BlockBody (..))
+import           Block
+import           Block.Concrete hiding (fixupBlock)
+import           Block.Mock
 import           Chain (Chain (..))
 import qualified Chain as C
-import           Ouroboros
 
-type MockBlock p = Block 'MockLedgerDomain p
+fixupBlock :: Chain SimpleUtxoBlock -> SimpleUtxoBlock -> SimpleUtxoBlock
+fixupBlock c (SimpleUtxoBlock header body) =
+    SimpleUtxoBlock (fixupBlockHeader c (simpleUtxoBodyHash body) header) body
 
-fixupBlock :: Chain (MockBlock p) -> MockBlock p -> MockBlock p
-fixupBlock = C.fixupBlock
-
-toChain :: KnownOuroborosProtocol p => [Int] -> Chain (MockBlock p)
-toChain = undefined -- foldl' (\c i -> chainFrom c i) Genesis
-
-chainFrom :: forall p. KnownOuroborosProtocol p
-          => Chain (MockBlock p)
-          -> Int
-          -> [MockBlock p]
-chainFrom = \startingChain n ->
-    go (C.headHash    startingChain)
-       (C.headBlockNo startingChain)
-       (  headSlot    startingChain)
-       n
+toChain :: [Int] -> Chain SimpleUtxoBlock
+toChain = C.fromNewestFirst
+        . reverse
+        . chainWithSlots (C.headHash genesis) (C.headBlockNo genesis)
+        . map (Slot . fromIntegral)
   where
-    go :: HeaderHash -> BlockNo -> Slot -> Int -> [MockBlock p]
-    go _       _       _        0    = []
-    go prevHash prevNo prevSlot todo =
-          block
-        : go (blockHash block) (blockNo block) (blockSlot block) (todo - 1)
-      where
-        block = mkBlock prevHash prevNo prevSlot
+    genesis :: Chain SimpleUtxoBlock
+    genesis = Genesis
 
-    mkBlock :: HeaderHash -> BlockNo -> Slot -> MockBlock p
-    mkBlock prevHash prevNo prevSlot = Block {
-          blockHeader = mkBlockHeader prevHash prevNo prevSlot (hashBody body)
-        , blockBody   = body
+-- | Dummy chain with empty bodies in the specified slots
+chainWithSlots :: ConcreteHeaderHash -> BlockNo -> [Slot] -> [SimpleUtxoBlock]
+chainWithSlots _        _      []     = []
+chainWithSlots prevHash prevNo (s:ss) =
+    let block = mkBlock s
+    in chainWithSlots (blockHash block) (blockNo block) ss
+  where
+    mkBlock :: Slot -> SimpleUtxoBlock
+    mkBlock slot = SimpleUtxoBlock {
+          simpleUtxoHeader = mkBlockHeader slot (simpleUtxoBodyHash body)
+        , simpleUtxoBody   = body
         }
       where
-        body = BlockBody mempty
+        body = mempty
 
-    mkBlockHeader :: HeaderHash -> BlockNo -> Slot -> BodyHash -> BlockHeader p
-    mkBlockHeader prevHash prevNo prevSlot bHash =
+    mkBlockHeader :: Slot -> ConcreteBodyHash -> BlockHeader
+    mkBlockHeader slot bHash =
         let hdr = BlockHeader {
              headerHash     = hashHeader hdr
           ,  headerPrevHash = prevHash
-          ,  headerSlot     = succ prevSlot
+          ,  headerSlot     = slot
           ,  headerBlockNo  = succ prevNo
           ,  headerSigner   = BlockSigner 0
           ,  headerBodyHash = bHash
           } in hdr
 
-headSlot :: HasHeader block => Chain block -> Slot
-headSlot Genesis  = Slot 0
-headSlot (_ :> b) = blockSlot b
+chainFrom :: Chain SimpleUtxoBlock
+          -> Int
+          -> [SimpleUtxoBlock]
+chainFrom c n =
+    chainWithSlots (C.headHash c)
+                   (C.headBlockNo c)
+                   [Slot (headSlot + s) | s <- [1 .. fromIntegral n]]
+  where
+    Slot headSlot = C.headSlot c

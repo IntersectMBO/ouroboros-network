@@ -125,6 +125,9 @@ instance Condense String where
 instance Condense Int where
   condense = show
 
+instance Condense Word where
+  condense = show
+
 instance Condense Natural where
   condense = show
 
