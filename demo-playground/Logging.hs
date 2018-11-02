@@ -18,14 +18,14 @@ import           Control.Monad
 import           Data.Semigroup ((<>))
 import           GHC.Stack
 
-import           Block
-import           Block.Concrete
-import           Chain (Chain (..))
-import qualified Chain
-import           ConsumersAndProducers
-import           Infra.Util
-import           Ouroboros (NodeId)
-import           ProtocolInterfaces
+import           Ouroboros.Consensus.Infra.Util
+import           Ouroboros.Network.Block
+import           Ouroboros.Network.Chain (Chain (..))
+import qualified Ouroboros.Network.Chain as Chain
+import           Ouroboros.Network.ConsumersAndProducers
+import           Ouroboros.Network.Node (NodeId)
+import           Ouroboros.Network.ProtocolInterfaces
+import           Ouroboros.Network.Testing.ConcreteBlock
 
 data LogEvent = LogEvent {
     msg    :: String
@@ -36,8 +36,6 @@ showNetworkTraffic :: HasCallStack => TBQueue LogEvent -> IO ()
 showNetworkTraffic q = forever $ do
     LogEvent{..} <- atomically $ readTBQueue q
     putStrLn $ "[conv_with:" <> show sender <> "] " <> msg
-
-deriving instance Condense BlockNo
 
 instance Condense BlockHeader where
     condense BlockHeader{..} =
@@ -81,3 +79,10 @@ loggerConsumer q chainvar ourProducer =
 
     logMsg :: String -> IO ()
     logMsg m = atomically $ writeTBQueue q $ LogEvent m ourProducer
+
+{-------------------------------------------------------------------------------
+  Orphans
+-------------------------------------------------------------------------------}
+
+deriving instance Condense BlockNo
+deriving instance Condense ConcreteHeaderHash

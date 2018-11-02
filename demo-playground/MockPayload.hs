@@ -10,11 +10,11 @@ module MockPayload (
     , toChain
     ) where
 
-import           Block
-import           Block.Concrete hiding (fixupBlock)
-import           Block.Mock
-import           Chain (Chain (..))
-import qualified Chain as C
+import           Ouroboros.Consensus.Block.SimpleUTxO
+import           Ouroboros.Network.Block
+import           Ouroboros.Network.Chain (Chain (..))
+import qualified Ouroboros.Network.Chain as C
+import           Ouroboros.Network.Testing.ConcreteBlock hiding (fixupBlock)
 
 fixupBlock :: Chain SimpleUtxoBlock -> SimpleUtxoBlock -> SimpleUtxoBlock
 fixupBlock c (SimpleUtxoBlock header body) =

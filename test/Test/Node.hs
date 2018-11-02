@@ -22,15 +22,14 @@ import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
-import           Block
-import           Block.Concrete
-import           Chain (Chain (..))
-import qualified Chain
-import           MonadClass
-import           Node
-import           Ouroboros
-import           Protocol (MsgConsumer, MsgProducer)
-import qualified Sim
+import           Ouroboros.Network.Block
+import           Ouroboros.Network.Chain (Chain (..))
+import qualified Ouroboros.Network.Chain as Chain
+import           Ouroboros.Network.MonadClass
+import           Ouroboros.Network.Node
+import           Ouroboros.Network.Protocol (MsgConsumer, MsgProducer)
+import qualified Ouroboros.Network.Sim as Sim
+import           Ouroboros.Network.Testing.ConcreteBlock
 
 import           Test.Chain (TestBlockChain (..), TestChainFork (..))
 import           Test.Sim (TestThreadGraph (..))

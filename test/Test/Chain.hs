@@ -13,18 +13,20 @@ module Test.Chain
   , genHeaderChain
   ) where
 
-import           Block
-import           Block.Concrete
-import           Chain (Chain (..), ChainUpdate (..), Point (..), genesisPoint)
-import qualified Chain
-import           Serialise (prop_serialise)
-
 import qualified Data.List as L
 import           Data.Maybe (listToMaybe)
 
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
+
+import           Ouroboros.Network.Block
+import           Ouroboros.Network.Chain (Chain (..), ChainUpdate (..),
+                     Point (..), genesisPoint)
+import qualified Ouroboros.Network.Chain as Chain
+import           Ouroboros.Network.Serialise (prop_serialise)
+import           Ouroboros.Network.Testing.ConcreteBlock
+
 
 --
 -- The list of all tests

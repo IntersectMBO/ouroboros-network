@@ -11,9 +11,9 @@ module Test.Ouroboros (
   , simpleProp
   ) where
 
-import           Ouroboros
-import           Test.DepFn
-import           Util.Singletons (Dict (..))
+import           Ouroboros.Consensus.Infra.DepFn
+import           Ouroboros.Consensus.Infra.Singletons (Dict (..))
+import           Ouroboros.Consensus.Protocol
 
 -- TODO: We may wish to make this a type family so that we can write stuff like
 -- @a :-> b :-> c@ to mean @DepFn '[a, b] c@. For now this will do though.

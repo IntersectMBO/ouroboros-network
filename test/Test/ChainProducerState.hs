@@ -10,11 +10,11 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
-import           Block.Concrete (Block (..))
-import           Chain (Chain, ChainUpdate (..), Point (..), genesisPoint,
-                     headPoint, pointOnChain)
-import qualified Chain
-import           ChainProducerState
+import           Ouroboros.Network.Chain (Chain, ChainUpdate (..), Point (..),
+                     genesisPoint, headPoint, pointOnChain)
+import qualified Ouroboros.Network.Chain as Chain
+import           Ouroboros.Network.ChainProducerState
+import           Ouroboros.Network.Testing.ConcreteBlock (Block (..))
 
 import           Test.Chain (TestBlockChain (..), TestBlockChainAndUpdates (..),
                      TestChainFork (..), mkRollbackPoint)

@@ -21,19 +21,19 @@ import qualified Data.Map.Strict as Map
 import           Data.Proxy
 import           Test.QuickCheck
 
-import           Block
--- for now we use Block.Concrete, but this is the point where we will introduce
--- the new abstractions
-import           Block.Concrete
-import           Chain
-import           ChainProducerState
-import           MonadClass
-import           Node
-import           Ouroboros
-import           Protocol
-
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
+
+-- for now we use Block.Concrete, but this is the point where we will introduce
+-- the new abstractions
+
+import           Ouroboros.Network.Block
+import           Ouroboros.Network.Chain
+import           Ouroboros.Network.ChainProducerState
+import           Ouroboros.Network.MonadClass
+import           Ouroboros.Network.Node
+import           Ouroboros.Network.Protocol
+import           Ouroboros.Network.Testing.ConcreteBlock
 
 tests :: TestTree
 tests = testGroup "Dynamic chain generation" [

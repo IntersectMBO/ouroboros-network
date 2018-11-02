@@ -20,12 +20,11 @@ module Payload (
 import           Data.List (intercalate)
 import           Data.Semigroup ((<>))
 
-import           Chain (Chain)
 import qualified DummyPayload as Dummy
-import           Infra.Util
 import qualified MockPayload as Mock
-import           Ouroboros
-import           Util.Singletons
+import           Ouroboros.Consensus.Infra.Singletons
+import           Ouroboros.Consensus.Infra.Util
+import           Ouroboros.Network.Chain (Chain)
 
 data PayloadType =
     DummyPayloadType
