@@ -4,7 +4,7 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Test.Pipe (tests) where
 
-import           Block (Slot (..))
+import           Block
 import           Block.Concrete (Block, ConcreteHeaderHash (..))
 import           Chain (Chain (..), Point (..))
 import           Pipe (demo2)
@@ -65,7 +65,7 @@ instance Arbitrary BlockProducer where
 
 instance Arbitrary (Point Block) where
   arbitrary = Point <$> (Slot <$> arbitraryBoundedIntegral)
-                    <*> (HeaderHash <$> arbitraryBoundedIntegral)
+                    <*> (BlockHash . HeaderHash <$> arbitraryBoundedIntegral)
 
 instance Arbitrary Block where
   arbitrary = do

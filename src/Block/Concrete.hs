@@ -17,7 +17,7 @@ module Block.Concrete (
   , BlockBody(..)
   , BlockSigner(..)
   , hashHeader
-  , ConcreteBodyHash(..)
+  , BodyHash(..)
   , ConcreteHeaderHash(..)
   , hashBody
   , fixupBlock
@@ -25,7 +25,6 @@ module Block.Concrete (
   ) where
 
 import           Data.Hashable
-import           Data.Proxy
 import qualified Data.Text as Text
 import           Test.QuickCheck
 
@@ -52,19 +51,19 @@ data Block = Block {
 data BlockBody = BlockBody String
   deriving (Show, Eq, Ord)
 
-hashBody :: BlockBody -> ConcreteBodyHash
+hashBody :: BlockBody -> BodyHash
 hashBody (BlockBody b) = BodyHash (hash b)
 
 -- | A block header. It retains simplified versions of all the essential
 -- elements.
 --
 data BlockHeader = BlockHeader {
-       headerHash     :: ConcreteHeaderHash,  -- ^ The cached 'HeaderHash' of this header.
-       headerPrevHash :: ConcreteHeaderHash,  -- ^ The 'headerHash' of the previous block header
-       headerSlot     :: Slot,                -- ^ The Ouroboros time slot index of this block
-       headerBlockNo  :: BlockNo,             -- ^ The block index from the Genesis
-       headerSigner   :: BlockSigner,         -- ^ Who signed this block
-       headerBodyHash :: ConcreteBodyHash     -- ^ The hash of the corresponding block body
+       headerHash     :: HeaderHash BlockHeader,  -- ^ The cached 'HeaderHash' of this header.
+       headerPrevHash :: Hash BlockHeader,        -- ^ The 'headerHash' of the previous block header
+       headerSlot     :: Slot,                    -- ^ The Ouroboros time slot index of this block
+       headerBlockNo  :: BlockNo,                 -- ^ The block index from the Genesis
+       headerSigner   :: BlockSigner,             -- ^ Who signed this block
+       headerBodyHash :: BodyHash                 -- ^ The hash of the corresponding block body
      }
    deriving (Show, Eq)
 
@@ -91,7 +90,7 @@ newtype ConcreteHeaderHash   = HeaderHash Int
 
 -- | The hash of all the information in a 'BlockBody'.
 --
-newtype ConcreteBodyHash     = BodyHash Int
+newtype BodyHash = BodyHash Int
   deriving (Show, Eq, Ord, Hashable, Condense)
 
 {-------------------------------------------------------------------------------
@@ -110,23 +109,19 @@ instance HasHeader BlockHeader where
     --
     blockInvariant = \b -> hashHeader b == headerHash b
 
-    genesisHash _ = HeaderHash 0
-
 instance HasHeader Block where
     type HeaderHash Block = ConcreteHeaderHash
 
-    blockHash      = headerHash     . blockHeader
-    blockPrevHash  = headerPrevHash . blockHeader
-    blockSlot      = headerSlot     . blockHeader
-    blockNo        = headerBlockNo  . blockHeader
+    blockHash      =            headerHash     . blockHeader
+    blockPrevHash  = castHash . headerPrevHash . blockHeader
+    blockSlot      =            headerSlot     . blockHeader
+    blockNo        =            headerBlockNo  . blockHeader
 
     -- | The block invariant is just that the actual block body hash matches the
     -- body hash listed in the header.
     --
     blockInvariant Block { blockBody, blockHeader = BlockHeader {headerBodyHash} } =
         headerBodyHash == hashBody blockBody
-
-    genesisHash _ = genesisHash (Proxy @BlockHeader)
 
 {-------------------------------------------------------------------------------
   "Fixup" is used for chain construction in the network tests. These functions
@@ -136,7 +131,7 @@ instance HasHeader Block where
 -- | Fixup block so to fit it on top of a chain.  Only block number, previous
 -- hash and block hash are updated; slot number and signers are kept intact.
 --
-fixupBlock :: (HasHeader block, HeaderHash block ~ ConcreteHeaderHash)
+fixupBlock :: (HasHeader block, HeaderHash block ~ HeaderHash Block)
            => Chain block -> Block -> Block
 fixupBlock c b@Block{blockBody, blockHeader} =
     b { blockHeader = fixupBlockHeader c (hashBody blockBody) blockHeader }
@@ -144,13 +139,13 @@ fixupBlock c b@Block{blockBody, blockHeader} =
 -- | Fixup block header to fit it on top of a chain.  Only block number and
 -- previous hash are updated; the slot and signer are kept unchanged.
 --
-fixupBlockHeader :: (HasHeader block, HeaderHash block ~ ConcreteHeaderHash)
-                 => Chain block -> ConcreteBodyHash -> BlockHeader -> BlockHeader
+fixupBlockHeader :: (HasHeader block, HeaderHash block ~ HeaderHash Block)
+                 => Chain block -> BodyHash -> BlockHeader -> BlockHeader
 fixupBlockHeader c h b = b'
   where
     b' = BlockHeader {
       headerHash     = hashHeader b',
-      headerPrevHash = headHash c,
+      headerPrevHash = castHash (headHash c),
       headerSlot     = headerSlot b,   -- keep the existing slot number
       headerSigner   = headerSigner b, -- and signer
       headerBlockNo  = succ $ headBlockNo c,
@@ -181,7 +176,7 @@ instance Serialise ConcreteHeaderHash where
   encode (HeaderHash h) = encodeInt h
   decode = HeaderHash <$> decodeInt
 
-instance Serialise ConcreteBodyHash where
+instance Serialise BodyHash where
   encode (BodyHash h) = encodeInt h
   decode = BodyHash <$> decodeInt
 
@@ -199,16 +194,16 @@ instance Serialise Block where
 instance Serialise BlockHeader where
 
   encode BlockHeader {
-         headerHash     = HeaderHash headerHash,
-         headerPrevHash = HeaderHash headerPrevHash,
+         headerHash     = headerHash,
+         headerPrevHash = headerPrevHash,
          headerSlot     = Slot headerSlot,
          headerBlockNo  = BlockNo headerBlockNo,
          headerSigner   = BlockSigner headerSigner,
          headerBodyHash = BodyHash headerBodyHash
        } =
       encodeListLen 6
-   <> encodeInt  headerHash
-   <> encodeInt  headerPrevHash
+   <> encode     headerHash
+   <> encode     headerPrevHash
    <> encodeWord headerSlot
    <> encodeWord headerBlockNo
    <> encodeWord headerSigner
@@ -216,8 +211,8 @@ instance Serialise BlockHeader where
 
   decode = do
       decodeListLenOf 6
-      BlockHeader <$> (HeaderHash <$> decodeInt)
-                  <*> (HeaderHash <$> decodeInt)
+      BlockHeader <$> decode
+                  <*> decode
                   <*> (Slot <$> decodeWord)
                   <*> (BlockNo <$> decodeWord)
                   <*> (BlockSigner <$> decodeWord)

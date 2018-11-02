@@ -440,7 +440,7 @@ instance Arbitrary TestChainAndPoint where
       | TestBlockChain c' <- shrink (TestBlockChain c) ]
 
 genPoint :: Gen (Point Block)
-genPoint = (\s h -> Point (Slot s) (HeaderHash h)) <$> arbitrary <*> arbitrary
+genPoint = (\s h -> Point (Slot s) (BlockHash (HeaderHash h))) <$> arbitrary <*> arbitrary
 
 fixupPoint :: HasHeader block => Chain block -> Point block -> Point block
 fixupPoint c p =

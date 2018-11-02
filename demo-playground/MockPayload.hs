@@ -23,18 +23,18 @@ fixupBlock c (SimpleUtxoBlock header body) =
 toChain :: [Int] -> Chain SimpleUtxoBlock
 toChain = C.fromNewestFirst
         . reverse
-        . chainWithSlots (C.headHash genesis) (C.headBlockNo genesis)
+        . chainWithSlots (castHash (C.headHash genesis)) (C.headBlockNo genesis)
         . map (Slot . fromIntegral)
   where
     genesis :: Chain SimpleUtxoBlock
     genesis = Genesis
 
 -- | Dummy chain with empty bodies in the specified slots
-chainWithSlots :: ConcreteHeaderHash -> BlockNo -> [Slot] -> [SimpleUtxoBlock]
+chainWithSlots :: Hash BlockHeader -> BlockNo -> [Slot] -> [SimpleUtxoBlock]
 chainWithSlots _        _      []     = []
 chainWithSlots prevHash prevNo (s:ss) =
     let block = mkBlock s
-    in chainWithSlots (blockHash block) (blockNo block) ss
+    in chainWithSlots (BlockHash (blockHash block)) (blockNo block) ss
   where
     mkBlock :: Slot -> SimpleUtxoBlock
     mkBlock slot = SimpleUtxoBlock {
@@ -44,7 +44,7 @@ chainWithSlots prevHash prevNo (s:ss) =
       where
         body = mempty
 
-    mkBlockHeader :: Slot -> ConcreteBodyHash -> BlockHeader
+    mkBlockHeader :: Slot -> BodyHash -> BlockHeader
     mkBlockHeader slot bHash =
         let hdr = BlockHeader {
              headerHash     = hashHeader hdr
@@ -59,7 +59,7 @@ chainFrom :: Chain SimpleUtxoBlock
           -> Int
           -> [SimpleUtxoBlock]
 chainFrom c n =
-    chainWithSlots (C.headHash c)
+    chainWithSlots (castHash (C.headHash c))
                    (C.headBlockNo c)
                    [Slot (headSlot + s) | s <- [1 .. fromIntegral n]]
   where
