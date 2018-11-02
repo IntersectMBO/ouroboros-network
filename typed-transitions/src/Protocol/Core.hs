@@ -210,31 +210,25 @@ connect
   :: ( Monad m )
   => Peer p tr (st begin)            endA m a
   -> Peer p tr (Complement st begin) endB m b
-  -> m (These a b)
-connect _            (PeerDone b) = pure (That b)
-connect (PeerDone a) _            = pure (This a)
+  -> m (Either a b)
+connect _            (PeerDone b) = pure (Right b)
+connect (PeerDone a) _            = pure (Left a)
 connect peerA (PeerHole m) = m >>= connect peerA
 connect (PeerHole m) peerB = m >>= flip connect peerB
 connect (PeerAwait k) (PeerYield exchange n) = case exchange of
   Part tr -> connect (k tr) n
-  Over tr -> fmap flipThese (connect n (k tr))
-  Out  tr -> fmap flipThese (connect n (k tr))
+  Over tr -> fmap flipEither (connect n (k tr))
+  Out  tr -> fmap flipEither (connect n (k tr))
 connect (PeerYield exchange n) (PeerAwait k) = case exchange of
   Part tr -> connect n (k tr)
-  Over tr -> fmap flipThese (connect (k tr) n)
-  Out  tr -> fmap flipThese (connect (k tr) n)
+  Over tr -> fmap flipEither (connect (k tr) n)
+  Out  tr -> fmap flipEither (connect (k tr) n)
 -- NB: this is a complete pattern match.
 -- (PeerAwait _) (PeerAwait _) deadlock is not possible.
 -- (PeerYield _ _) (PeerYield _ _) interjection is not possible.
 
-data These a b = This a | That b | Those a b
-  deriving (Show)
-
-flipThese :: These a b -> These b a
-flipThese term = case term of
-  This a -> That a
-  That b -> This b
-  Those a b -> Those b a
+flipEither :: Either a b -> Either b a
+flipEither = either Right Left
 
 -- | Like 'connect' but if one side ends before the other, the continuation is
 -- retained.
