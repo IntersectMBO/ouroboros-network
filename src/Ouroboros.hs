@@ -8,8 +8,7 @@
 
 module Ouroboros (
     -- * Typed used across all protocols
-    Slot(..)
-  , NodeId(..)
+    NodeId(..)
     -- * Generalize over the Ouroboros protocols
   , OuroborosProtocol(..)
   , Sing(..)
@@ -26,10 +25,6 @@ import           Util.Singletons
 {-------------------------------------------------------------------------------
   Types used across all protocols
 -------------------------------------------------------------------------------}
-
--- | The Ouroboros time slot index for a block.
-newtype Slot = Slot { getSlot :: Word }
-  deriving (Show, Eq, Ord, Hashable, Enum)
 
 data NodeId = CoreId Int
             | RelayId Int

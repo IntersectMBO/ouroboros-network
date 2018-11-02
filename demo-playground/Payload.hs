@@ -20,7 +20,6 @@ module Payload (
 import           Data.List (intercalate)
 import           Data.Semigroup ((<>))
 
-import           Block
 import           Chain (Chain)
 import qualified DummyPayload as Dummy
 import           Infra.Util
@@ -62,14 +61,14 @@ instance Condense PayloadType where
     condense DummyPayloadType = "dummy"
     condense MockPayloadType  = "mock"
 
-class PayloadImplementation (block :: PayloadType) where
-    type Payload block = (b :: OuroborosProtocol -> *) | b -> block
-    fixupBlock :: KnownOuroborosProtocol p => Chain (Payload block p) -> (Payload block p) -> (Payload block p)
-    chainFrom  :: KnownOuroborosProtocol p => Chain (Payload block p) -> Int -> [Payload block p]
-    toChain    :: KnownOuroborosProtocol p => [Int] -> Chain (Payload block p)
+class PayloadImplementation (pt :: PayloadType) where
+    type Payload pt = b | b -> pt
+    fixupBlock :: Chain (Payload pt) -> (Payload pt) -> (Payload pt)
+    chainFrom  :: Chain (Payload pt) -> Int -> [Payload pt]
+    toChain    :: [Int] -> Chain (Payload pt)
 
 instance PayloadImplementation 'MockPayloadType where
-    type Payload 'MockPayloadType = Block 'MockLedgerDomain
+    type Payload 'MockPayloadType = Mock.SimpleUtxoBlock
     fixupBlock = Mock.fixupBlock
     chainFrom  = Mock.chainFrom
     toChain    = Mock.toChain

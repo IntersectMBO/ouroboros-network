@@ -1,5 +1,8 @@
-{-# LANGUAGE DeriveFunctor  #-}
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE DeriveFunctor       #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving  #-}
+{-# LANGUAGE TypeApplications    #-}
 
 -- | Reference implementation of a representation of a block chain
 --
@@ -10,7 +13,6 @@ module Chain (
   foldChain,
 
   -- ** Block re-exports
-  Block(..),
   HasHeader(..),
 
   -- * Point type
@@ -22,7 +24,7 @@ module Chain (
   genesis,
   genesisPoint,
   genesisSlot,
-  genesisHash,
+--  genesisHash, -- TODO: currently (temporarily) exported by HasHeader
   genesisBlockNo,
 
   -- ** Head inspection
@@ -55,8 +57,6 @@ module Chain (
   selectPoints,
   findFirstPoint,
   intersectChains,
-  fixupBlock,
-  fixupBlockHeader,
   isPrefixOf,
 
   -- * Helper functions
@@ -65,15 +65,12 @@ module Chain (
 
 import           Prelude hiding (drop, head)
 
-import           Block (Block (..), BlockHeader (..), BlockNo (..),
-                     BlockNo (..), BodyHash (..), HasHeader (..),
-                     HeaderHash (..), KnownLedgerDomain, Slot (..), hashBody,
-                     hashHeader)
-import           Serialise
-
 import           Control.Exception (assert)
 import qualified Data.List as L
+import           Data.Proxy
 
+import           Block
+import           Serialise
 
 --
 -- Blockchain type
@@ -101,13 +98,16 @@ prettyPrintChain nl ppBlock = foldChain (\s b -> s ++ nl ++ "    " ++ ppBlock b)
 -- as a check, or in some contexts it disambiguates blocks from different forks
 -- that were in the same slot.
 --
-data Point = Point {
+data Point block = Point {
        pointSlot :: Slot,
-       pointHash :: HeaderHash
+       pointHash :: HeaderHash block
      }
-  deriving (Eq, Ord, Show)
 
-blockPoint :: HasHeader block => block -> Point
+deriving instance HasHeader block => Eq   (Point block)
+deriving instance HasHeader block => Ord  (Point block)
+deriving instance HasHeader block => Show (Point block)
+
+blockPoint :: HasHeader block => block -> Point block
 blockPoint b =
     Point {
       pointSlot = blockSlot b,
@@ -120,14 +120,11 @@ genesis = Genesis
 genesisSlot :: Slot
 genesisSlot = Slot 0
 
-genesisHash :: HeaderHash
-genesisHash = HeaderHash 0
-
 genesisBlockNo :: BlockNo
 genesisBlockNo = BlockNo 0
 
-genesisPoint :: Point
-genesisPoint = Point genesisSlot genesisHash
+genesisPoint :: forall block. HasHeader block => Point block
+genesisPoint = Point genesisSlot (genesisHash (Proxy @block))
 
 valid :: HasHeader block => Chain block -> Bool
 valid Genesis  = True
@@ -143,14 +140,14 @@ head :: Chain b -> Maybe b
 head Genesis  = Nothing
 head (_ :> b) = Just b
 
-headPoint :: HasHeader block => Chain block -> Point
+headPoint :: HasHeader block => Chain block -> Point block
 headPoint Genesis  = genesisPoint
 headPoint (_ :> b) = blockPoint b
 
 headSlot :: HasHeader block => Chain block -> Slot
 headSlot = pointSlot . headPoint
 
-headHash :: HasHeader block => Chain block -> HeaderHash
+headHash :: HasHeader block => Chain block -> HeaderHash block
 headHash = pointHash . headPoint
 
 headBlockNo :: HasHeader block => Chain block -> BlockNo
@@ -190,20 +187,20 @@ addBlock :: HasHeader block => block -> Chain block -> Chain block
 addBlock b c = assert (validExtension c b) $
                c :> b
 
-pointOnChain :: HasHeader block => Point -> Chain block -> Bool
+pointOnChain :: HasHeader block => Point block -> Chain block -> Bool
 pointOnChain p Genesis        = p == genesisPoint
 pointOnChain p (c :> b)
   | pointSlot p >  blockSlot b = False
   | pointSlot p == blockSlot b = pointHash p == blockHash b
   | otherwise                  = pointOnChain p c
 
-rollback :: HasHeader block => Point -> Chain block -> Maybe (Chain block)
+rollback :: HasHeader block => Point block -> Chain block -> Maybe (Chain block)
 rollback p (c :> b) | blockPoint b == p = Just (c :> b)
                     | otherwise         = rollback p c
 rollback p Genesis  | p == genesisPoint = Just Genesis
                     | otherwise         = Nothing
 
-successorBlock :: HasHeader block => Point -> Chain block -> Maybe block
+successorBlock :: HasHeader block => Point block -> Chain block -> Maybe block
 successorBlock p c0 | headPoint c0 == p = Nothing
 successorBlock p c0 = go c0
   where
@@ -237,7 +234,7 @@ a `isPrefixOf` b = reverse (toNewestFirst a) `L.isPrefixOf` reverse (toNewestFir
 
 
 data ChainUpdate block = AddBlock block
-                       | RollBack Point
+                       | RollBack (Point block)
   deriving (Eq, Show)
 
 applyChainUpdate :: HasHeader block
@@ -263,7 +260,7 @@ applyChainUpdates (u:us) c = applyChainUpdates us =<< applyChainUpdate u c
 --
 -- > selectPoints (0 : [ fib n | n <- [1 .. 17] ])
 --
-selectPoints :: HasHeader block => [Int] -> Chain block -> [Point]
+selectPoints :: HasHeader block => [Int] -> Chain block -> [Point block]
 selectPoints offsets =
     go relativeOffsets
   where
@@ -276,9 +273,9 @@ selectPoints offsets =
 
 findFirstPoint
   :: HasHeader block
-  => [Point]
+  => [Point block]
   -> Chain block
-  -> Maybe Point
+  -> Maybe (Point block)
 findFirstPoint [] _     = Nothing
 findFirstPoint (p:ps) c
   | pointOnChain p c    = Just p
@@ -288,7 +285,7 @@ intersectChains
   :: HasHeader block
   => Chain block
   -> Chain block
-  -> Maybe Point
+  -> Maybe (Point block)
 intersectChains _ Genesis   = Nothing
 intersectChains c (bs :> b) =
   let p = blockPoint b
@@ -296,28 +293,6 @@ intersectChains c (bs :> b) =
        then Just p
        else intersectChains c bs
 
--- | Fixup block so to fit it on top of a chain.  Only block number, previous
--- hash and block hash are updated; slot number and signers are kept intact.
---
-fixupBlock :: (HasHeader block, KnownLedgerDomain dom)
-           => Chain block -> Block dom p -> Block dom p
-fixupBlock c b@Block{blockBody, blockHeader} =
-    b { blockHeader = fixupBlockHeader c (hashBody blockBody) blockHeader }
-
--- | Fixup block header to fit it on top of a chain.  Only block number and
--- previous hash are updated; the slot and signer are kept unchanged.
---
-fixupBlockHeader :: HasHeader block => Chain block -> BodyHash -> BlockHeader p -> BlockHeader p
-fixupBlockHeader c h b = b'
-  where
-    b' = BlockHeader {
-      headerHash     = hashHeader b',
-      headerPrevHash = headHash c,
-      headerSlot     = headerSlot b,   -- keep the existing slot number
-      headerSigner   = headerSigner b, -- and signer
-      headerBlockNo  = succ $ headBlockNo c,
-      headerBodyHash = h
-    }
 
 
 --
@@ -337,14 +312,14 @@ instance Serialise block => Serialise (Chain block) where
       go c n = do b <- decode
                   go (c :> b) (n-1)
 
-instance Serialise Point where
+instance HasHeader block => Serialise (Point block) where
 
-  encode Point { pointSlot = Slot s, pointHash = HeaderHash h } =
+  encode Point { pointSlot = s, pointHash = h } =
       encodeListLen 2
-   <> encodeWord s
-   <> encodeInt  h
+   <> encode s
+   <> encode h
 
   decode = do
       decodeListLenOf 2
-      Point <$> (Slot <$> decodeWord)
-            <*> (HeaderHash <$> decodeInt)
+      Point <$> decode
+            <*> decode

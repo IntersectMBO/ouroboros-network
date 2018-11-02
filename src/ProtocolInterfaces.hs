@@ -14,14 +14,14 @@ import           Chain (ChainUpdate (..), Point (..))
 -- to update a local chain to synchronise it with the producer chain.
 --
 data ConsumerHandlers block m = ConsumerHandlers {
-       getChainPoints :: m [Point],
+       getChainPoints :: m [Point block],
        -- ^ get a list of points from which the producer will pick the common
        -- intersection point.  The reference implementation just sends whole
        -- chain.
        addBlock       :: block -> m (),
        -- ^ apply received @'block'@ to its chain.  The reference implementation
        -- is using @'Chain.addBlock'@ to update its internal state.
-       rollbackTo     :: Point -> m ()
+       rollbackTo     :: Point block -> m ()
        -- ^ rollback to a given point.  The reference implementation is using
        -- @'Chain.rollback'@ to update its internal state.
      }
@@ -34,7 +34,7 @@ data ProducerHandlers block m r = ProducerHandlers {
        newReader          :: m r,
        -- ^ allocate new reader state.  The reference implementation is using
        -- @'ChainProducerState.initReader'@ to mutate its internal state.
-       improveReadPoint   :: r -> [Point] -> m (Maybe (Point, Point)),
+       improveReadPoint   :: r -> [Point block] -> m (Maybe (Point block, Point block)),
        -- ^ find the most optimal intersection between received list of
        -- @'Point'@s and producers chain.  The second point is the current tip.
        tryReadChainUpdate :: r -> m (Maybe (ChainUpdate block)),
@@ -75,4 +75,3 @@ liftProducerHandlers lift ProducerHandlers {
       tryReadChainUpdate = \r -> lift (tryReadChainUpdate r),
       readChainUpdate    = \r -> lift (readChainUpdate r)
     }
-

@@ -12,6 +12,8 @@ import           Data.Semigroup (Semigroup (..))
 import           Data.Tuple (swap)
 
 import           Block
+import           Block.Concrete hiding (fixupBlock)
+import qualified Block.Concrete as Concrete
 import           Chain (Chain (..), Point)
 import qualified Chain
 import           ChainProducerState (ChainProducerState (..), ReaderId,
@@ -53,7 +55,7 @@ chainValidation peerChainVar candidateChainVar = do
     st <- atomically (newTVar Chain.genesisPoint)
     forever (atomically (update st))
   where
-    update :: TVar m Point -> stm ()
+    update :: TVar m (Point block) -> stm ()
     update stateVar = do
       peerChain      <- readTVar peerChainVar
       candidatePoint <- readTVar stateVar
@@ -77,7 +79,7 @@ chainTransferProtocol delay inputVar outputVar = do
     st <- atomically (newTVar Chain.genesisPoint)
     forever (update st)
   where
-    update :: TVar m Point -> m ()
+    update :: TVar m (Point block) -> m ()
     update stateVar = do
       input <- atomically $ do
                 input    <- readTVar inputVar
@@ -246,7 +248,7 @@ observeChainProducerState nid p cpsVar = do
     st <- atomically (newTVar Chain.genesisPoint)
     forever (update st)
   where
-    update :: TVar m Point -> m ()
+    update :: TVar m (Point block) -> m ()
     update stateVar = do
       chain <- atomically $ do
                 chain  <- producerChain <$> readTVar cpsVar
@@ -301,17 +303,16 @@ forkRelayKernel upstream cpsVar = do
 -- The main thread of the @'relayNode'@ is not blocking; it will return
 -- @TVar ('ChainProducerState' block)@.  This allows to extend the relay node to
 -- a core node.
-relayNode :: forall dom p m stm.
-             ( KnownOuroborosProtocol p
-             , KnownLedgerDomain dom
-             , Show (BlockBody dom)
-             , MonadSTM m stm
+relayNode :: forall m stm block.
+             ( MonadSTM m stm
              , MonadSay m
+             , HasHeader block
+             , Show block
              )
           => NodeId
-          -> Chain (Block dom p)
-          -> NodeChannels m (MsgProducer (Block dom p)) MsgConsumer
-          -> m (TVar m (ChainProducerState (Block dom p)))
+          -> Chain block
+          -> NodeChannels m (MsgProducer block) (MsgConsumer block)
+          -> m (TVar m (ChainProducerState block))
 relayNode nid initChain chans = do
   -- Mutable state
   -- 1. input chains
@@ -328,8 +329,8 @@ relayNode nid initChain chans = do
   return cpsVar
   where
     startConsumer :: Int
-                  -> Chan m MsgConsumer (MsgProducer (Block dom p))
-                  -> m (TVar m (Chain (Block dom p)))
+                  -> Chan m (MsgConsumer block) (MsgProducer block)
+                  -> m (TVar m (Chain block))
     startConsumer cid chan = do
       chainVar <- atomically $ newTVar Genesis
       let consumer = exampleConsumer chainVar
@@ -338,9 +339,9 @@ relayNode nid initChain chans = do
         (loggingRecv (ConsumerId nid cid) (recvMsg chan))
       return chainVar
 
-    startProducer :: ProducerHandlers (Block dom p) m ReaderId
+    startProducer :: ProducerHandlers block m ReaderId
                   -> Int
-                  -> Chan m (MsgProducer (Block dom p)) MsgConsumer
+                  -> Chan m (MsgProducer block) (MsgConsumer block)
                   -> m ()
     startProducer producer pid chan = do
       fork $ producerSideProtocol1 producer
@@ -351,6 +352,11 @@ relayNode nid initChain chans = do
 -- slot time (i.e. @slotDuration * blockSlot block@).  When the node finds out
 -- that the slot for which it was supposed to generate a block was already
 -- occupied, it will replace it with its block.
+--
+-- TODO: This should not take a list of blocks, but rather a monadic action
+-- to generate the blocks. At that point the 'fixup' argument can go also.
+-- Alternatively, we should move this to the tests, and remove it from the
+-- public network layer altogether.
 --
 forkCoreKernel :: forall block m stm.
                   ( HasHeader block
@@ -395,21 +401,18 @@ forkCoreKernel slotDuration gchain fixupBlock cpsVar = do
 -- that the slot for which it was supposed to generate a block was already
 -- occupied, it will replace it with its block.
 --
-coreNode :: forall dom p m stm.
-        ( KnownOuroborosProtocol p
-        , KnownLedgerDomain dom
-        , Show (BlockBody dom)
-        , MonadSTM m stm
+coreNode :: forall  m stm.
+        ( MonadSTM m stm
         , MonadTimer m
         , MonadSay m
         )
      => NodeId
      -> Duration (Time m)
      -- ^ slot duration
-     -> [Block dom p]
-     -> NodeChannels m (MsgProducer (Block dom p)) MsgConsumer
-     -> m (TVar m (ChainProducerState (Block dom p)))
+     -> [Block]
+     -> NodeChannels m (MsgProducer Block) (MsgConsumer Block)
+     -> m (TVar m (ChainProducerState Block))
 coreNode nid slotDuration gchain chans = do
   cpsVar <- relayNode nid Genesis chans
-  forkCoreKernel slotDuration gchain Chain.fixupBlock cpsVar
+  forkCoreKernel slotDuration gchain Concrete.fixupBlock cpsVar
   return cpsVar

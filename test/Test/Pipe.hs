@@ -4,18 +4,14 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Test.Pipe (tests) where
 
-import           Block (Block, HeaderHash (..), LedgerDomain (..), Slot (..))
+import           Block (Slot (..))
+import           Block.Concrete (Block, ConcreteHeaderHash (..))
 import           Chain (Chain (..), Point (..))
-import           Ouroboros
 import           Pipe (demo2)
 import           Protocol
 import           Serialise (prop_serialise)
 
-import           Util.Singletons (Dict (..))
-
 import           Test.Chain (TestBlockChainAndUpdates (..), genBlockChain)
-import           Test.DepFn
-import           Test.Ouroboros
 
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
@@ -38,44 +34,41 @@ tests =
 -- Properties
 --
 
-prop_pipe_demo :: TestBlockChainAndUpdates :-> Property
-prop_pipe_demo = simpleProp $ \_ (TestBlockChainAndUpdates chain updates) ->
+prop_pipe_demo :: TestBlockChainAndUpdates -> Property
+prop_pipe_demo (TestBlockChainAndUpdates chain updates) =
     ioProperty $ demo2 chain updates
 
-prop_serialise_MsgConsumer :: MsgConsumer -> Bool
+prop_serialise_MsgConsumer :: MsgConsumer Block -> Bool
 prop_serialise_MsgConsumer = prop_serialise
 
-newtype BlockProducer p = BlockProducer {
-    blockProducer :: MsgProducer (Block 'TestLedgerDomain p)
+newtype BlockProducer = BlockProducer {
+    blockProducer :: MsgProducer Block
   }
   deriving (Show)
 
-instance SingShow BlockProducer where
-  singShow s = case dictKnownOuroborosProtocol s of Dict -> show
+prop_serialise_MsgProducer :: BlockProducer -> Bool
+prop_serialise_MsgProducer = prop_serialise . blockProducer
 
-prop_serialise_MsgProducer :: BlockProducer :-> Bool
-prop_serialise_MsgProducer = simpleProp $ \_ -> prop_serialise . blockProducer
-
-instance Arbitrary MsgConsumer where
+instance Arbitrary (MsgConsumer Block) where
   arbitrary = oneof [ pure MsgRequestNext
                     , MsgSetHead <$> arbitrary
                     ]
 
-instance SingArbitrary BlockProducer where
-  singArbitrary s = BlockProducer <$>
+instance Arbitrary BlockProducer where
+  arbitrary = BlockProducer <$>
       oneof [ MsgRollBackward <$> arbitrary
-            , MsgRollForward  <$> singArbitrary s
+            , MsgRollForward  <$> arbitrary
             , pure MsgAwaitReply
             , MsgIntersectImproved <$> arbitrary <*> arbitrary
             , pure MsgIntersectUnchanged
             ]
 
-instance Arbitrary Point where
+instance Arbitrary (Point Block) where
   arbitrary = Point <$> (Slot <$> arbitraryBoundedIntegral)
                     <*> (HeaderHash <$> arbitraryBoundedIntegral)
 
-instance SingArbitrary (Block 'TestLedgerDomain) where
-  singArbitrary _ = do
+instance Arbitrary Block where
+  arbitrary = do
     c <- genBlockChain 1
     case c of
         _ :> b -> return b

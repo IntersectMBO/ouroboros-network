@@ -146,8 +146,8 @@ demo2 chain0 updates = do
 
     return (expectedChain == chain')
 
-type ConsumerSideProtocol block = Protocol MsgConsumer (MsgProducer block)
-type ProducerSideProtocol block = Protocol (MsgProducer block) MsgConsumer
+type ConsumerSideProtocol block = Protocol (MsgConsumer block) (MsgProducer block)
+type ProducerSideProtocol block = Protocol (MsgProducer block) (MsgConsumer block)
 
 runProducer :: forall block r. (Chain.HasHeader block, Serialise block)
             => Handle -> Handle -> ProducerHandlers block IO r -> IO ()

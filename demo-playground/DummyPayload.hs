@@ -2,6 +2,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE KindSignatures             #-}
 {-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeFamilies               #-}
 
 module DummyPayload (
     DummyPayload(..)
@@ -11,23 +12,28 @@ module DummyPayload (
   ) where
 
 import           Block
+import           Block.Concrete hiding (fixupBlock)
 import           Chain (Chain (..))
 import           Infra.Util
-import           Ouroboros
 import           Serialise
 
-newtype DummyPayload (p :: OuroborosProtocol) = DummyPayload Int deriving Condense
+newtype DummyPayload = DummyPayload Int deriving Condense
 
-instance Show (DummyPayload p) where
+instance Show DummyPayload where
     show (DummyPayload x) = show x
 
-deriving instance Eq (DummyPayload p)
+deriving instance Eq DummyPayload
 
-instance Serialise (DummyPayload p) where
+instance Serialise DummyPayload where
     encode  (DummyPayload x) = encodeInt x
     decode  = DummyPayload <$> decodeInt
 
-instance HasHeader (DummyPayload p) where
+-- TODO: For now this uses the representation from Block.Concrete
+-- There is no need for this.
+instance HasHeader DummyPayload where
+    type HeaderHash DummyPayload = ConcreteHeaderHash
+    type BodyHash   DummyPayload = ConcreteBodyHash
+
     blockHash      (DummyPayload x) = HeaderHash x
     blockPrevHash  (DummyPayload x) = HeaderHash (pred x)
     blockSlot      (DummyPayload x) = Slot (toEnum x)
@@ -36,17 +42,19 @@ instance HasHeader (DummyPayload p) where
     blockBodyHash  (DummyPayload x) = BodyHash x
     blockInvariant _ = True
 
-fixupBlock :: Chain (DummyPayload p) -> DummyPayload p -> DummyPayload p
+    genesisHash _ = HeaderHash 0
+
+fixupBlock :: Chain DummyPayload -> DummyPayload -> DummyPayload
 fixupBlock Genesis               _ = DummyPayload 1
 fixupBlock (_ :> DummyPayload x) _ = DummyPayload $! x + 1
 
-toChain :: KnownOuroborosProtocol p => [Int] -> Chain (DummyPayload p)
+toChain :: [Int] -> Chain (DummyPayload)
 toChain = go Genesis
   where
-      go :: Chain (DummyPayload p) -> [Int] -> Chain (DummyPayload p)
+      go :: Chain DummyPayload -> [Int] -> Chain (DummyPayload)
       go acc []     = acc
       go acc (x:xs) = go (acc :> (DummyPayload x)) xs
 
-chainFrom :: Chain (DummyPayload p) -> Int -> [DummyPayload p]
+chainFrom :: Chain DummyPayload -> Int -> [DummyPayload]
 chainFrom Genesis               n = [DummyPayload i | i <- [1..n]]
 chainFrom (_ :> DummyPayload x) n = [DummyPayload i | i <- [x+1..x+n]]
