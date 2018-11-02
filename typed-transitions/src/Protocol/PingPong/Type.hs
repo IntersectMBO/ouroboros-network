@@ -28,7 +28,7 @@ type instance Partition PingPongProtocol st client server terminal =
 -- | Idle states are where it is for the client to send a message,
 -- busy states are where the server is expected to send a reply.
 --
-type family PingPongStatePartition st client server terminal where
+type family PingPongStatePartition st client server terminal :: k where
   PingPongStatePartition StIdle client server terminal = client
   PingPongStatePartition StBusy client server terminal = server
   PingPongStatePartition StDone client server terminal = terminal

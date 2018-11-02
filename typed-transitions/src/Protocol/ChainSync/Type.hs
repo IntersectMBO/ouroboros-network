@@ -1,5 +1,6 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE TypeFamilies #-}
 
 -- | The type of the chain synchronisation protocol.
@@ -56,7 +57,7 @@ type instance Partition ChainSyncProtocol st client server terminal =
 -- | Idle states are where it is for the client to send a message,
 -- busy states are where the server is expected to send a reply.
 --
-type family ChainSyncStatePartition st client server terminal where
+type family ChainSyncStatePartition st client server terminal :: k where
   ChainSyncStatePartition  StIdle      client server terminal = client
   ChainSyncStatePartition (StNext k)   client server terminal = server
   ChainSyncStatePartition  StIntersect client server terminal = server
@@ -85,13 +86,13 @@ data ChainSyncMessage header point from to where
   --
   -- The message also tells the consumer about the head point of the producer.
   --
-  MsgRollForward :: header -> point -> ChainSyncMessage header point (StNext _any) StIdle
+  MsgRollForward :: header -> point -> ChainSyncMessage header point (StNext any) StIdle
 
   -- | Tell the consumer to roll back to a given point on their chain.
   --
   -- The message also tells the consumer about the head point of the producer.
   --
-  MsgRollBackward :: point  -> point -> ChainSyncMessage header point (StNext _any) StIdle
+  MsgRollBackward :: point  -> point -> ChainSyncMessage header point (StNext any) StIdle
 
   -- | Ask the producer to try to find an improved intersection point between
   -- the consumer and producer's chains. The consumer sends a sequence of
