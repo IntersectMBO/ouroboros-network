@@ -52,20 +52,17 @@ instance HasUtxo SimpleUtxoBlock where
 
 instance HasHeader SimpleUtxoBlock where
     type HeaderHash SimpleUtxoBlock = ConcreteHeaderHash
-    type BodyHash   SimpleUtxoBlock = ConcreteBodyHash
 
     blockHash      = headerHash     . simpleUtxoHeader
     blockPrevHash  = headerPrevHash . simpleUtxoHeader
     blockSlot      = headerSlot     . simpleUtxoHeader
     blockNo        = headerBlockNo  . simpleUtxoHeader
-    blockSigner    = headerSigner   . simpleUtxoHeader
-    blockBodyHash  = headerBodyHash . simpleUtxoHeader
 
     -- | The block invariant is just that the actual block body hash matches the
     -- body hash listed in the header.
     --
     blockInvariant (SimpleUtxoBlock header body) =
-        simpleUtxoBodyHash body == blockBodyHash header
+        simpleUtxoBodyHash body == headerBodyHash header
 
     genesisHash _ = genesisHash (Proxy @BlockHeader)
 

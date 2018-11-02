@@ -32,14 +32,11 @@ instance Serialise DummyPayload where
 -- There is no need for this.
 instance HasHeader DummyPayload where
     type HeaderHash DummyPayload = ConcreteHeaderHash
-    type BodyHash   DummyPayload = ConcreteBodyHash
 
     blockHash      (DummyPayload x) = HeaderHash x
     blockPrevHash  (DummyPayload x) = HeaderHash (pred x)
     blockSlot      (DummyPayload x) = Slot (toEnum x)
     blockNo        (DummyPayload x) = BlockNo (toEnum x)
-    blockSigner    (DummyPayload _) = BlockSigner 0
-    blockBodyHash  (DummyPayload x) = BodyHash x
     blockInvariant _ = True
 
     genesisHash _ = HeaderHash 0
