@@ -66,8 +66,7 @@ test_blockGenerator
      , MonadProbe m
      , MonadRunProbe m n
      , Show (Time m)
-     , MonadRunProbe m n
-     , HasHeader (Block dom)
+     , KnownLedgerDomain dom
      )
   => Chain (Block dom p)
   -> Duration (Time m)
@@ -107,7 +106,6 @@ coreToRelaySim :: ( MonadSTM m stm
                   , MonadProbe m
                   , KnownOuroborosProtocol p
                   , KnownLedgerDomain dom
-                  , HasHeader (Block dom)
                   , Show (BlockBody dom)
                   )
                => Bool              -- ^ two way subscription
@@ -131,7 +129,6 @@ coreToRelaySim duplex chain slotDuration coreTrDelay relayTrDelay probe = do
 
 runCoreToRelaySim :: ( KnownOuroborosProtocol p
                      , KnownLedgerDomain dom
-                     , HasHeader (Block dom)
                      , Show (BlockBody dom)
                      )
                   => Chain (Block dom p)
@@ -189,7 +186,6 @@ coreToRelaySim2 :: ( KnownOuroborosProtocol p
                    , MonadTimer m
                    , MonadSay m
                    , MonadProbe m
-                   , HasHeader (Block dom)
                    , Show (BlockBody dom)
                    )
                 => Chain (Block dom p)
@@ -218,7 +214,6 @@ coreToRelaySim2 chain slotDuration coreTrDelay relayTrDelay probe = do
 runCoreToRelaySim2 :: ( KnownOuroborosProtocol p
                       , KnownLedgerDomain dom
                       , Show (BlockBody dom)
-                      , HasHeader (Block dom)
                       )
                    => Chain (Block dom p)
                    -> Sim.VTimeDuration
@@ -254,7 +249,6 @@ coreToCoreViaRelaySim :: ( KnownLedgerDomain dom
                          , MonadSay m
                          , MonadProbe m
                          , Show (BlockBody dom)
-                         , HasHeader (Block dom)
                          )
                       => Chain (Block dom p)
                       -> Chain (Block dom p)
@@ -280,7 +274,6 @@ coreToCoreViaRelaySim chain1 chain2 slotDuration coreTrDelay relayTrDelay probe 
 runCoreToCoreViaRelaySim
   :: ( KnownOuroborosProtocol p
      , KnownLedgerDomain dom
-     , HasHeader (Block dom)
      , Show (BlockBody dom)
      )
   => Chain (Block dom p)

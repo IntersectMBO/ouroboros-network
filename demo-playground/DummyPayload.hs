@@ -11,7 +11,7 @@ module DummyPayload (
   ) where
 
 import           Block
-import           Chain      (Chain (..))
+import           Chain (Chain (..))
 import           Infra.Util
 import           Ouroboros
 import           Serialise
@@ -27,7 +27,7 @@ instance Serialise (DummyPayload p) where
     encode  (DummyPayload x) = encodeInt x
     decode  = DummyPayload <$> decodeInt
 
-instance HasHeader DummyPayload where
+instance HasHeader (DummyPayload p) where
     blockHash      (DummyPayload x) = HeaderHash x
     blockPrevHash  (DummyPayload x) = HeaderHash (pred x)
     blockSlot      (DummyPayload x) = Slot (toEnum x)

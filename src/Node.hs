@@ -24,12 +24,12 @@ import           Protocol
 
 -- |
 -- State-full chain selection (@'ChainProducerState'@).
-longestChainSelection :: forall p block m stm.
+longestChainSelection :: forall block m stm.
                          ( HasHeader block
                          , MonadSTM m stm
                          )
-                      => [TVar m (Maybe (Chain (block p)))]
-                      -> TVar m (ChainProducerState (block p))
+                      => [TVar m (Maybe (Chain block))]
+                      -> TVar m (ChainProducerState block)
                       -> m ()
 longestChainSelection candidateChainVars cpsVar =
     forever (atomically updateCurrentChain)
@@ -45,9 +45,9 @@ longestChainSelection candidateChainVars cpsVar =
         else writeTVar cpsVar (switchFork chain' cps)
 
 
-chainValidation :: forall p block m stm. (HasHeader block, MonadSTM m stm)
-                => TVar m (Chain (block p))
-                -> TVar m (Maybe (Chain (block p)))
+chainValidation :: forall block m stm. (HasHeader block, MonadSTM m stm)
+                => TVar m (Chain block)
+                -> TVar m (Maybe (Chain block))
                 -> m ()
 chainValidation peerChainVar candidateChainVar = do
     st <- atomically (newTVar Chain.genesisPoint)
@@ -64,14 +64,14 @@ chainValidation peerChainVar candidateChainVar = do
       writeTVar candidateChainVar candidateChain
 
 
-chainTransferProtocol :: forall p block m stm.
+chainTransferProtocol :: forall block m stm.
                          ( HasHeader block
                          , MonadSTM m stm
                          , MonadTimer m
                          )
                       => Duration (Time m)
-                      -> TVar m (Chain (block p))
-                      -> TVar m (Chain (block p))
+                      -> TVar m (Chain block)
+                      -> TVar m (Chain block)
                       -> m ()
 chainTransferProtocol delay inputVar outputVar = do
     st <- atomically (newTVar Chain.genesisPoint)
@@ -197,18 +197,18 @@ createTwoWaySubscriptionChannels trDelay1 trDelay2 = do
 -- @slotDuration * blockSlot block@ time.
 --
 -- TODO: invariant: generates blocks for current slots.
-blockGenerator :: forall p block m stm.
+blockGenerator :: forall block m stm.
                   ( HasHeader block
                   , MonadSTM m stm
                   , MonadTimer m
                   )
                => Duration (Time m)
                -- ^ slot duration
-               -> [block p]
+               -> [block]
                -- ^ The list of blocks to generate. This allows for upstream
                -- users to generate \"half chains\" in case we want to simulate
                -- nodes having access to already part of the overall chain.
-               -> m (TVar m (Maybe (block p)))
+               -> m (TVar m (Maybe block))
                -- ^ returns an stm transaction which returns block
 blockGenerator slotDuration chain = do
   outputVar <- atomically (newTVar Nothing)
@@ -233,14 +233,14 @@ getBlock v = do
 -- mutates, write the result to the supplied @'Probe'@.
 --
 observeChainProducerState
-  :: forall p m stm block.
+  :: forall m stm block.
      ( HasHeader block
      , MonadSTM m stm
      , MonadProbe m
      )
   => NodeId
-  -> Probe m (NodeId, Chain (block p))
-  -> TVar m (ChainProducerState (block p))
+  -> Probe m (NodeId, Chain block)
+  -> TVar m (ChainProducerState block)
   -> m ()
 observeChainProducerState nid p cpsVar = do
     st <- atomically (newTVar Chain.genesisPoint)
@@ -271,13 +271,13 @@ data ProducerId = ProducerId NodeId Int
 -- The main thread of the @'relayNode'@ is not blocking; it will return
 -- @TVar ('ChainProducerState' block)@.  This allows to extend the relay node to
 -- a core node.
-forkRelayKernel :: forall p block m stm.
+forkRelayKernel :: forall block m stm.
                 ( HasHeader block
                 , MonadSTM m stm
                 )
-                => [TVar m (Chain (block p))]
+                => [TVar m (Chain block)]
                 -- ^ These will track the upstream producers.
-                -> TVar m (ChainProducerState (block p))
+                -> TVar m (ChainProducerState block)
                 -- ^ This is tracking the current node and the downstream.
                 -> m ()
 forkRelayKernel upstream cpsVar = do
@@ -303,8 +303,8 @@ forkRelayKernel upstream cpsVar = do
 -- a core node.
 relayNode :: forall dom p m stm.
              ( KnownOuroborosProtocol p
+             , KnownLedgerDomain dom
              , Show (BlockBody dom)
-             , HasHeader (Block dom)
              , MonadSTM m stm
              , MonadSay m
              )
@@ -352,17 +352,17 @@ relayNode nid initChain chans = do
 -- that the slot for which it was supposed to generate a block was already
 -- occupied, it will replace it with its block.
 --
-forkCoreKernel :: forall block p m stm.
+forkCoreKernel :: forall block m stm.
                   ( HasHeader block
                   , MonadSTM m stm
                   , MonadTimer m
                   )
                => Duration (Time m)
                -- ^ slot duration
-               -> [block p]
+               -> [block]
                -- ^ Blocks to produce (in order they should be produced)
-               -> (Chain (block p) -> block p -> block p)
-               -> TVar m (ChainProducerState (block p))
+               -> (Chain block -> block -> block)
+               -> TVar m (ChainProducerState block)
                -> m ()
 forkCoreKernel slotDuration gchain fixupBlock cpsVar = do
   blockVar <- blockGenerator slotDuration gchain
@@ -370,14 +370,14 @@ forkCoreKernel slotDuration gchain fixupBlock cpsVar = do
 
   where
     applyGeneratedBlock
-      :: TVar m (Maybe (block p))
+      :: TVar m (Maybe block)
       -> m ()
     applyGeneratedBlock blockVar = atomically $ do
       block <- getBlock blockVar
       cps@ChainProducerState{chainState = chain} <- readTVar cpsVar
       writeTVar cpsVar (switchFork (addBlock chain block) cps)
 
-    addBlock :: Chain (block p) -> block p -> Chain (block p)
+    addBlock :: Chain block -> block -> Chain block
     addBlock c b =
       case blockSlot b `compare` Chain.headSlot c of
         -- the block is OK
@@ -399,7 +399,6 @@ coreNode :: forall dom p m stm.
         ( KnownOuroborosProtocol p
         , KnownLedgerDomain dom
         , Show (BlockBody dom)
-        , HasHeader (Block dom)
         , MonadSTM m stm
         , MonadTimer m
         , MonadSay m

@@ -13,15 +13,15 @@ module Logging (
 
 import           Control.Concurrent.STM
 import           Control.Monad
-import           Data.Semigroup         ((<>))
+import           Data.Semigroup ((<>))
 import           GHC.Stack
 
 import           Block
-import           Chain                  (Chain (..))
+import           Chain (Chain (..))
 import qualified Chain
 import           ConsumersAndProducers
 import           Infra.Util
-import           Ouroboros              (NodeId, OuroborosProtocol (..))
+import           Ouroboros (NodeId, OuroborosProtocol (..))
 import           ProtocolInterfaces
 
 data LogEvent = LogEvent {
@@ -42,15 +42,15 @@ instance Condense (BlockHeader 'OuroborosBFT) where
                 <> "}"
 
 -- | Add logging to the example consumer
-loggerConsumer :: forall p block. (Condense (block p), HasHeader block)
+loggerConsumer :: forall block. (Condense [block], Condense block, HasHeader block)
                => TBQueue LogEvent
-               -> TVar (Chain (block p))
+               -> TVar (Chain block)
                -> NodeId
-               -> ConsumerHandlers (block p) IO
+               -> ConsumerHandlers block IO
 loggerConsumer q chainvar ourProducer =
     addLogging $ exampleConsumer chainvar
   where
-    addLogging :: ConsumerHandlers (block p) IO -> ConsumerHandlers (block p) IO
+    addLogging :: ConsumerHandlers block IO -> ConsumerHandlers block IO
     addLogging c = ConsumerHandlers {
           getChainPoints = do
             pts <- getChainPoints c

@@ -118,6 +118,7 @@ main = runNode =<< execParser opts
 dictPayloadImplementation :: Sing (pt :: PayloadType)
                           -> Dict ( Serialise (Payload pt 'OuroborosBFT)
                                   , Condense  (Payload pt 'OuroborosBFT)
+                                  , HasHeader (Payload pt 'OuroborosBFT)
                                   , PayloadImplementation pt
                                   )
 dictPayloadImplementation SDummyPayload = Dict
@@ -182,7 +183,7 @@ runNode CLI{..} = do
       spawnTerminalLogger q = do
           Async.async $ showNetworkTraffic q
 
-      spawnLogger :: ( HasHeader (Payload pt)
+      spawnLogger :: ( HasHeader (Payload pt 'OuroborosBFT)
                      , Serialise (Payload pt 'OuroborosBFT)
                      , Condense  (Payload pt 'OuroborosBFT)
                      )
@@ -195,9 +196,9 @@ runNode CLI{..} = do
                      loggerConsumer q chVar targetId
           pure (chVar, a)
 
-      spawnConsumer :: (HasHeader (Payload pt)
-                      , Serialise (Payload pt 'OuroborosBFT)
-                      )
+      spawnConsumer :: ( HasHeader (Payload pt 'OuroborosBFT)
+                       , Serialise (Payload pt 'OuroborosBFT)
+                       )
                     => Chain (Payload pt 'OuroborosBFT)
                     -> NodeId
                     -> IO (TVar (Chain (Payload pt 'OuroborosBFT)), Async.Async ())
@@ -207,9 +208,9 @@ runNode CLI{..} = do
                      exampleConsumer chVar
           pure (chVar, a)
 
-      spawnProducer :: (HasHeader (Payload pt)
-                      , Serialise (Payload pt 'OuroborosBFT)
-                      )
+      spawnProducer :: ( HasHeader (Payload pt 'OuroborosBFT)
+                       , Serialise (Payload pt 'OuroborosBFT)
+                       )
                     => TVar (ChainProducerState (Payload pt 'OuroborosBFT))
                     -> NodeId
                     -> IO (Async.Async ())

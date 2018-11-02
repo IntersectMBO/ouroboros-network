@@ -17,14 +17,14 @@ module Payload (
     , toChain
     ) where
 
-import           Data.List       (intercalate)
-import           Data.Semigroup  ((<>))
+import           Data.List (intercalate)
+import           Data.Semigroup ((<>))
 
 import           Block
-import           Chain           (Chain)
-import qualified DummyPayload    as Dummy
+import           Chain (Chain)
+import qualified DummyPayload as Dummy
 import           Infra.Util
-import qualified MockPayload     as Mock
+import qualified MockPayload as Mock
 import           Ouroboros
 import           Util.Singletons
 
@@ -62,7 +62,7 @@ instance Condense PayloadType where
     condense DummyPayloadType = "dummy"
     condense MockPayloadType  = "mock"
 
-class HasHeader (Payload block) => PayloadImplementation (block :: PayloadType) where
+class PayloadImplementation (block :: PayloadType) where
     type Payload block = (b :: OuroborosProtocol -> *) | b -> block
     fixupBlock :: KnownOuroborosProtocol p => Chain (Payload block p) -> (Payload block p) -> (Payload block p)
     chainFrom  :: KnownOuroborosProtocol p => Chain (Payload block p) -> Int -> [Payload block p]

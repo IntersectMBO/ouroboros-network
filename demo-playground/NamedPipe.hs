@@ -50,10 +50,10 @@ withPipe (fromNode, toNode) action = do
 
 -- | Runs a producer protocol over a named pipe (technically speaking two
 -- pipes, one for reads, one for writes).
-runProducer :: (HasHeader block, Serialise (block p))
+runProducer :: (HasHeader block, Serialise block)
             => NodeId
             -> NodeId
-            -> ProducerHandlers (block p) IO r
+            -> ProducerHandlers block IO r
             -> IO ()
 runProducer myId targetId producer =
     withPipe (myId, targetId) $ \(hndRead, hndWrite) ->
@@ -61,10 +61,10 @@ runProducer myId targetId producer =
 
 -- | Runs a consumer protocol over a named pipe (technically speaking two
 -- pipes, one for reads, one for writes).
-runConsumer :: (HasHeader block, Serialise (block p))
+runConsumer :: (HasHeader block, Serialise block)
             => NodeId
             -> NodeId
-            -> ConsumerHandlers (block p) IO
+            -> ConsumerHandlers block IO
             -> IO ()
 runConsumer myNodeId targetId consumer =
     withPipe (myNodeId, targetId) $ \(hndRead, hndWrite) ->
