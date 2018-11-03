@@ -231,6 +231,38 @@ connect (PeerYield exchange n) (PeerAwait k) = case exchange of
 flipEither :: Either a b -> Either b a
 flipEither = either Right Left
 
+-- | Like 'connect' but allows to run holes even if one of the side completed.
+connect'
+  :: ( Monad m )
+  => Peer p tr (st begin)            endA m a
+  -> Peer p tr (Complement st begin) endB m b
+  -> m (Those a b)
+connect' peerA (PeerLift m) = m >>= connect' peerA
+connect' (PeerLift m) peerB = m >>= flip connect' peerB
+connect' (PeerDone a) (PeerDone b) = pure (These a b)
+connect' _            (PeerDone b) = pure (That b)
+connect' (PeerDone a) _            = pure (This a)
+connect' (PeerAwait k) (PeerYield exchange n) = case exchange of
+  Part tr -> connect' (k tr) n
+  Over tr -> fmap flipThose (connect' n (k tr))
+  Out  tr -> fmap flipThose (connect' n (k tr))
+connect' (PeerYield exchange n) (PeerAwait k) = case exchange of
+  Part tr -> connect' n (k tr)
+  Over tr -> fmap flipThose (connect' (k tr) n)
+  Out  tr -> fmap flipThose (connect' (k tr) n)
+
+data Those a b
+  = These a b
+  | This a
+  | That b
+  deriving (Eq, Ord, Show)
+
+flipThose :: Those a b -> Those b a
+flipThose (These a b) = These b a
+flipThose (This a)    = That a
+flipThose (That b)    = This b
+
+
 -- | Like 'connect' but if one side ends before the other, the continuation is
 -- retained.
 -- This is not ready.
