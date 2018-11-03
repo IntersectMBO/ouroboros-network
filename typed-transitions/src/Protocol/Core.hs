@@ -197,22 +197,31 @@ connect
   :: ( Monad m )
   => Peer p tr (st begin)            endA m a
   -> Peer p tr (Complement st begin) endB m b
-  -> m (Either a b)
-connect _            (PeerDone b) = pure (Right b)
-connect (PeerDone a) _            = pure (Left a)
+  -> m (Those a b)
 connect peerA (PeerLift m) = m >>= connect peerA
 connect (PeerLift m) peerB = m >>= flip connect peerB
+connect (PeerDone a) (PeerDone b) = pure (These a b)
+connect _            (PeerDone b) = pure (That b)
+connect (PeerDone a) _            = pure (This a)
 connect (PeerAwait k) (PeerYield exchange n) = case exchange of
   Part tr -> connect (k tr) n
-  Over tr -> fmap flipEither (connect n (k tr))
-  Out  tr -> fmap flipEither (connect n (k tr))
+  Over tr -> fmap flipThose (connect n (k tr))
+  Out  tr -> fmap flipThose (connect n (k tr))
 connect (PeerYield exchange n) (PeerAwait k) = case exchange of
   Part tr -> connect n (k tr)
-  Over tr -> fmap flipEither (connect (k tr) n)
-  Out  tr -> fmap flipEither (connect (k tr) n)
+  Over tr -> fmap flipThose (connect (k tr) n)
+  Out  tr -> fmap flipThose (connect (k tr) n)
 -- NB: this is a complete pattern match.
 -- (PeerAwait _) (PeerAwait _) deadlock is not possible.
 -- (PeerYield _ _) (PeerYield _ _) interjection is not possible.
 
-flipEither :: Either a b -> Either b a
-flipEither = either Right Left
+data Those a b
+  = These a b
+  | This a
+  | That b
+  deriving (Eq, Ord, Show)
+
+flipThose :: Those a b -> Those b a
+flipThose (These a b) = These b a
+flipThose (This a)    = That a
+flipThose (That b)    = This b
