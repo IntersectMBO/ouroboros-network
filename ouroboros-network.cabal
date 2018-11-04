@@ -57,6 +57,10 @@ library
                        Ouroboros.Network.Protocol.PingPong.Client
                        Ouroboros.Network.Protocol.PingPong.Server
                        Ouroboros.Network.Protocol.PingPong.Direct
+                       Ouroboros.Network.Protocol.ChainSync.Type
+                       Ouroboros.Network.Protocol.ChainSync.Client
+                       Ouroboros.Network.Protocol.ChainSync.Server
+                       Ouroboros.Network.Protocol.ChainSync.Direct
   other-modules:
 -- Old experiments, not currently building:
 --                     Types
