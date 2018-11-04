@@ -1,8 +1,6 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE DataKinds #-}
 
-{-# OPTIONS_GHC "-fwarn-incomplete-patterns" #-}
-
 module Protocol.PingPong.Client where
 
 import Protocol.Core
