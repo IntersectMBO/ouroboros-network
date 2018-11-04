@@ -52,6 +52,7 @@ library
                        Ouroboros.Network.Serialise
                        Ouroboros.Network.Sim
                        Ouroboros.Network.Testing.ConcreteBlock
+                       Ouroboros.Network.Protocol.Typed
   other-modules:
 -- Old experiments, not currently building:
 --                     Types
@@ -120,6 +121,7 @@ executable demo-playground
                        Payload
                        Logging
                        NamedPipe
+  default-language:    Haskell2010
   build-depends:       base,
                        aeson,
                        async,
