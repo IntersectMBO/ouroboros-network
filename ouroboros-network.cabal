@@ -133,6 +133,7 @@ library
                        QuickCheck   >=2.12 && <2.13
 
   ghc-options:         -Wall
+                       -Wno-unticked-promoted-constructors
                        -fno-ignore-asserts
 
 executable demo-playground
