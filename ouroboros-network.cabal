@@ -53,6 +53,10 @@ library
                        Ouroboros.Network.Sim
                        Ouroboros.Network.Testing.ConcreteBlock
                        Ouroboros.Network.Protocol.Typed
+                       Ouroboros.Network.Protocol.PingPong.Type
+                       Ouroboros.Network.Protocol.PingPong.Client
+                       Ouroboros.Network.Protocol.PingPong.Server
+                       Ouroboros.Network.Protocol.PingPong.Direct
   other-modules:
 -- Old experiments, not currently building:
 --                     Types
