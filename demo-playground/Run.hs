@@ -38,6 +38,7 @@ import           Ouroboros.Network.Serialise hiding ((<>))
 
 import           CLI
 import           Logging
+import           Mock.TxSubmission (handleTxSubmission)
 import qualified NamedPipe
 import           Payload
 
@@ -88,10 +89,18 @@ dictPayloadImplementation :: Sing (pt :: PayloadType)
 dictPayloadImplementation SDummyPayload = Dict
 dictPayloadImplementation SMockPayload  = Dict
 
-
 runNode :: CLI -> IO ()
-runNode CLI{..} = do
+runNode cli@CLI{..} = do
+    -- If the user asked to submit a transaction, we don't have to spin up a
+    -- full node, we simply transmit it and exit.
+    case command of
+         TxSubmitter tx -> handleTxSubmission tx
+         SimpleNode pt  -> handleSimpleNode cli pt
+
+handleSimpleNode :: CLI -> PayloadType -> IO ()
+handleSimpleNode CLI{..} payloadType = do
     let isLogger   = myNodeId == CoreId 0
+
     topoE <- eitherDecode . toS <$> B.readFile topologyFile
     case topoE of
          Left e -> error e

@@ -1,5 +1,6 @@
 module CLI (
     CLI(..)
+  , Command(..)
   , parseCLI
   -- * Handy re-exports
   , execParser
@@ -22,10 +23,12 @@ import           Payload (PayloadType (..), allPayloadTypes, readPayloadType)
 data CLI = CLI
   { myNodeId     :: NodeId
   , topologyFile :: FilePath
-  , payloadType  :: PayloadType
-  , txs          :: Maybe Mock.Tx
-  -- ^ A 'Tx' to submit, if any.
+  , command      :: Command
   }
+
+data Command =
+    SimpleNode PayloadType
+  | TxSubmitter Mock.Tx
 
 parseCLI :: Parser CLI
 parseCLI = CLI
@@ -40,13 +43,22 @@ parseCLI = CLI
          <> metavar "FILEPATH"
          <> help "The path to a file describing the topology."
          )
-      <*> (option (readPayloadType <$> str) (
+      <*> parseCommand
+
+parseCommand :: Parser Command
+parseCommand = subparser $ mconcat [
+    command' "node" "Run a node." $
+      fmap SimpleNode parsePayloadType
+  , command' "submit" "Submit a transaction." $
+      fmap TxSubmitter parseMockTx
+  ]
+
+parsePayloadType :: Parser PayloadType
+parsePayloadType =
+    option (readPayloadType <$> str) (
                long "payload-type"
             <> short 'p'
             <> metavar allPayloadTypes
             <> value DummyPayloadType
             <> help "The content of the payload in the messages"
-            ))
-      <*> optional (subparser (
-          command' "submit" "Submit a transaction" parseMockTx
-      ))
+    )
