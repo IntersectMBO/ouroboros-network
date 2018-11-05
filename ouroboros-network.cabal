@@ -74,6 +74,7 @@ library
                        Ouroboros.Network.Protocol.Chain.Producer
                        Ouroboros.Network.Protocol.Chain.Node
                        Ouroboros.Network.Protocol.Channel.Sim
+                       Ouroboros.Network.Protocol.Untyped
   other-modules:
 -- Old experiments, not currently building:
 --                     Types
