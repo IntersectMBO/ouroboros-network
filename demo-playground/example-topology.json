@@ -1,0 +1,42 @@
+[
+    { "nodeId": 0
+    , "producers": [1,2,3,4,5]
+    , "consumers": []
+    , "initialChainData": []
+    , "role": "relay"
+    },
+    { "nodeId": 1
+    , "producers": [2,3]
+    , "consumers": [0,4,5]
+    , "initialChainData": [1]
+    , "role": "relay"
+    }
+    ,
+    { "nodeId": 2
+    , "producers": []
+    , "consumers": [0, 1]
+    , "initialChainData": [1,2,3]
+    , "role": "core"
+    }
+    ,
+    { "nodeId": 3
+    , "producers": []
+    , "consumers": [0,1]
+    , "initialChainData": [1,2,3,4]
+    , "role": "core"
+    }
+    ,
+    { "nodeId": 4
+    , "producers": [1]
+    , "consumers": [0]
+    , "initialChainData": []
+    , "role": "relay"
+    }
+    ,
+    { "nodeId": 5
+    , "producers": [1]
+    , "consumers": [0]
+    , "initialChainData": []
+    , "role": "relay"
+    }
+]

@@ -1,17 +1,18 @@
-{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE TypeOperators     #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Test.Pipe (tests) where
 
-import           Block (Block, HeaderHash (..), Slot (..))
-import           Chain (Chain (..), Point (..))
-import           Ouroboros
-import           Pipe (demo2)
-import           Protocol
-import           Serialise (prop_serialise)
+import           Ouroboros.Network.Block
+import           Ouroboros.Network.Chain (Chain (..), Point (..))
+import           Ouroboros.Network.Pipe (demo2)
+import           Ouroboros.Network.Protocol
+import           Ouroboros.Network.Serialise (prop_serialise)
+import           Ouroboros.Network.Testing.ConcreteBlock (Block,
+                     ConcreteHeaderHash (..))
 
 import           Test.Chain (TestBlockChainAndUpdates (..), genBlockChain)
-import           Test.DepFn
-import           Test.Ouroboros
 
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
@@ -34,42 +35,42 @@ tests =
 -- Properties
 --
 
-prop_pipe_demo :: TestBlockChainAndUpdates :-> Property
-prop_pipe_demo = simpleProp $ \_ (TestBlockChainAndUpdates chain updates) ->
+prop_pipe_demo :: TestBlockChainAndUpdates -> Property
+prop_pipe_demo (TestBlockChainAndUpdates chain updates) =
     ioProperty $ demo2 chain updates
 
-prop_serialise_MsgConsumer :: MsgConsumer -> Bool
+prop_serialise_MsgConsumer :: MsgConsumer Block -> Bool
 prop_serialise_MsgConsumer = prop_serialise
 
-newtype BlockProducer p = BlockProducer {
-    blockProducer :: MsgProducer (Block p)
+newtype BlockProducer = BlockProducer {
+    blockProducer :: MsgProducer Block
   }
   deriving (Show)
 
-instance SingShow BlockProducer where
-  singShow s = singKnownOuroborosProtocol s $ show
+prop_serialise_MsgProducer :: BlockProducer -> Bool
+prop_serialise_MsgProducer = prop_serialise . blockProducer
 
-prop_serialise_MsgProducer :: BlockProducer :-> Bool
-prop_serialise_MsgProducer = simpleProp $ \_ -> prop_serialise . blockProducer
-
-instance Arbitrary MsgConsumer where
+instance Arbitrary (MsgConsumer Block) where
   arbitrary = oneof [ pure MsgRequestNext
                     , MsgSetHead <$> arbitrary
                     ]
 
-instance SingArbitrary BlockProducer where
-  singArbitrary s = BlockProducer <$>
+instance Arbitrary BlockProducer where
+  arbitrary = BlockProducer <$>
       oneof [ MsgRollBackward <$> arbitrary
-            , MsgRollForward  <$> singArbitrary s
+            , MsgRollForward  <$> arbitrary
             , pure MsgAwaitReply
             , MsgIntersectImproved <$> arbitrary <*> arbitrary
             , pure MsgIntersectUnchanged
             ]
 
-instance Arbitrary Point where
+instance Arbitrary (Point Block) where
   arbitrary = Point <$> (Slot <$> arbitraryBoundedIntegral)
-                    <*> (HeaderHash <$> arbitraryBoundedIntegral)
+                    <*> (BlockHash . HeaderHash <$> arbitraryBoundedIntegral)
 
-instance SingArbitrary Block where
-  singArbitrary _ = do _ :> b <- genBlockChain 1
-                       return b
+instance Arbitrary Block where
+  arbitrary = do
+    c <- genBlockChain 1
+    case c of
+        _ :> b -> return b
+        _      -> error "expected chain with exactly one block"

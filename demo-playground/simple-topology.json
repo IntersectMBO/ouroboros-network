@@ -1,0 +1,20 @@
+[
+    { "nodeId": 0
+    , "producers": [1,2]
+    , "consumers": []
+    , "initialChainData": []
+    , "role": "relay"
+    },
+    { "nodeId": 1
+    , "producers": [2]
+    , "consumers": [0]
+    , "initialChainData": []
+    , "role": "relay"
+    },
+    { "nodeId": 2
+    , "producers": []
+    , "consumers": [0, 1]
+    , "initialChainData": [1,2,3]
+    , "role": "core"
+    }
+]
