@@ -34,7 +34,7 @@ chainWithSlots :: Hash BlockHeader -> BlockNo -> [Slot] -> [SimpleUtxoBlock]
 chainWithSlots _        _      []     = []
 chainWithSlots prevHash prevNo (s:ss) =
     let block = mkBlock s
-    in chainWithSlots (BlockHash (blockHash block)) (blockNo block) ss
+    in block : chainWithSlots (BlockHash (blockHash block)) (blockNo block) ss
   where
     mkBlock :: Slot -> SimpleUtxoBlock
     mkBlock slot = SimpleUtxoBlock {
