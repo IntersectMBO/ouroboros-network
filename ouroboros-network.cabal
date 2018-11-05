@@ -62,6 +62,10 @@ library
                        Ouroboros.Network.Protocol.ChainSync.Client
                        Ouroboros.Network.Protocol.ChainSync.Server
                        Ouroboros.Network.Protocol.ChainSync.Direct
+                       Ouroboros.Network.Protocol.Get.Type
+                       Ouroboros.Network.Protocol.Get.Client
+                       Ouroboros.Network.Protocol.Get.Server
+                       Ouroboros.Network.Protocol.Get.Direct
   other-modules:
 -- Old experiments, not currently building:
 --                     Types
