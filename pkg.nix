@@ -11,7 +11,7 @@ mkDerivation {
     [ ".hs" "LICENSE" "ChangeLog.md" "ouroboros-network.cabal" "cabal.project" ];
   libraryHaskellDepends = [
     array aeson base base16-bytestring bytestring cborg clock containers
-    cryptonite fingertree free hashable memory mtl psqueues process QuickCheck
+    cryptonite fingertree free hashable memory mtl process psqueues QuickCheck
     random semigroups serialise stm string-conv tasty tasty-quickcheck text
     transformers unliftio void
   ];
