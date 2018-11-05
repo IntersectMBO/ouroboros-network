@@ -114,6 +114,7 @@ library
                        memory       >=0.14 && <0.15,
                        mtl,
                        process,
+                       psqueues     >=0.2 && <0.3,
                        random       >=1.1 && <1.2,
                        semigroups   >=0.18 && <0.19,
                        serialise    >=0.2 && <0.3,

@@ -17,8 +17,6 @@ import           Data.Hashable
 --import qualified Data.Set as Set
 import           Data.Map (Map)
 import qualified Data.Map as Map
-import           Data.PriorityQueue.FingerTree (PQueue)
-import qualified Data.PriorityQueue.FingerTree as PQueue
 
 import           Control.Applicative
 import           Control.Concurrent.STM (STM, retry)
