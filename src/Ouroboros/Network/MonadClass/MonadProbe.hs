@@ -18,7 +18,7 @@ import           System.Clock (Clock (Monotonic), TimeSpec, getTime, toNanoSecs)
 import           Data.STRef.Lazy
 
 import           Ouroboros.Network.MonadClass.MonadSTM (atomically)
-import           Ouroboros.Network.MonadClass.MonadSTMTimer (Time)
+import           Ouroboros.Network.MonadClass.MonadTimer (Time)
 
 import           Ouroboros.Network.Sim (SimF)
 import qualified Ouroboros.Network.Sim as Sim

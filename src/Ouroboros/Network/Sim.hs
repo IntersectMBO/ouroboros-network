@@ -43,7 +43,7 @@ import           Ouroboros.Network.MonadClass.MonadSay
 import           Ouroboros.Network.MonadClass.MonadSendRecv
 import           Ouroboros.Network.MonadClass.MonadSTM hiding (TVar)
 import qualified Ouroboros.Network.MonadClass.MonadSTM as MonadSTM
-import           Ouroboros.Network.MonadClass.MonadSTMTimer
+import           Ouroboros.Network.MonadClass.MonadTimer
 
 {-# ANN module "HLint: ignore Use readTVarIO" #-}
 

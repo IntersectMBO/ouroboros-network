@@ -1,7 +1,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE FlexibleContexts      #-}
-module Ouroboros.Network.MonadClass.MonadSTMTimer (
+module Ouroboros.Network.MonadClass.MonadTimer (
     MonadTimer(..)
   , TimeoutState(..)
   , TimeMeasure(..)
