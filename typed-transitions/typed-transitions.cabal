@@ -31,6 +31,10 @@ library
                      , Protocol.PingPong.Server
                      , Protocol.PingPong.Direct
                      , Protocol.PingPongExamples
+                     , Protocol.Get.Type
+                     , Protocol.Get.Client
+                     , Protocol.Get.Server
+                     , Protocol.Get.Direct
   -- other-modules:       
   other-extensions:    GADTs
                      , RankNTypes
