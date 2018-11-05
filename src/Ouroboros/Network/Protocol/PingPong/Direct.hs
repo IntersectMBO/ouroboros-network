@@ -9,15 +9,15 @@ import Ouroboros.Network.Protocol.PingPong.Server as Server
 -- That's demonstrated here by constructing 'direct'.
 --
 direct :: Monad m
-       => ServerStream m a
-       -> ClientStream m b
+       => PingPongServer m a
+       -> PingPongClient m b
        -> m (a, b)
 
-direct ServerStream{handleDone} (Client.Stop clientResult) =
-    pure (handleDone, clientResult)
+direct PingPongServer{recvMsgDone} (Client.SendMsgStop clientResult) =
+    pure (recvMsgDone, clientResult)
 
-direct ServerStream{handlePing} (Client.Ping kPong) = do
-    server' <- handlePing
+direct PingPongServer{recvMsgPing} (Client.SendMsgPing kPong) = do
+    server' <- recvMsgPing
     client' <- kPong
     direct server' client'
 

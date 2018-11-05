@@ -21,39 +21,39 @@ import Ouroboros.Network.Protocol.PingPong.Type
 -- recursive if we can get in both directions, or perhaps just one way such
 -- as a special initialising state or special terminating state.
 --
-data ClientStream m a where
+data PingPongClient m a where
   -- | Choose to go for sending a ping message. The ping has no body so
   -- all we have to provide here is a continuation for the single legal
   -- reply message.
   --
-  Ping           :: m (ClientStream m a) -- ^ continuation for Pong response
-                 -> ClientStream m a
+  SendMsgPing    :: m (PingPongClient m a) -- ^ continuation for Pong response
+                 -> PingPongClient m a
 
   -- | Choose to terminate the protocol. This is an actual but nullary message,
   -- we terminate with the local result value. So this ends up being much like
   -- 'return' in this case, but in general the termination is a message that
   -- can communicate final information.
   --
-  Stop           :: a -> ClientStream m a
+  SendMsgStop    :: a -> PingPongClient m a
 
 
 -- | Interpret a particular client action sequence into the client side of the
 -- 'PingPong' protocol.
 --
-streamClient
+pingPongClientPeer
   :: Monad m
-  => ClientStream m a
+  => PingPongClient m a
   -> Peer PingPongProtocol PingPongMessage
           (Yielding StIdle) (Finished StDone)
           m a
 
-streamClient (Stop result) =
+pingPongClientPeer (SendMsgStop result) =
     -- We do an actual transition using 'out', meaning sending a message, to go
     -- from the 'StIdle' to 'StDone' state. Once in the 'StDone' state we can
     -- actually stop using 'done', with a return value.
     out MsgDone (done result)
 
-streamClient (Ping kPong) =
+pingPongClientPeer (SendMsgPing kPong) =
 
     -- Send our message with 'over'.
     over MsgPing $
@@ -70,5 +70,5 @@ streamClient (Ping kPong) =
     case resp of
       MsgPong -> hole $ do
         next <- kPong
-        pure $ streamClient next
+        pure $ pingPongClientPeer next
 
