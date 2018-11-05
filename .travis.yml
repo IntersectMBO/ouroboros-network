@@ -5,15 +5,17 @@ script:
 - sudo pkill nix-daemon || true
 - cachix use ouroboros-network
 - nix-build --arg dev true -A ouroboros-network -o result --argstr compiler $COMPILER
+after_success:
 - cachix push ouroboros-network ./result
 matrix:
   include:
-  - name: GHC 843
-    env: COMPILER="ghc843"
-  - name: GHC 802
-    env: COMPILER="ghc802"
-  - name: GHC 843
-    env: COMPILER="ghc843"
+  - name: GHC 844
+    env: COMPILER="ghc844"
+  # issue https://github.com/cachix/cachix/issues/147
+  # - name: GHC 802
+    # env: COMPILER="ghc802"
+  - name: GHC 844
+    env: COMPILER="ghc844"
     os: osx
   - name: GHC 802
     env: COMPILER="ghc802"
