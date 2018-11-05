@@ -1,7 +1,8 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeFamilies          #-}
-module Ouroboros.Network.MonadClass.MonadSTMTimer
-  ( MonadSTMTimer (..)
+module Ouroboros.Network.MonadClass.MonadSTMTimer (
+    MonadSTMTimer(..)
+  , TimeoutState(..)
   ) where
 
 import qualified Control.Concurrent.STM.TVar as STM
@@ -18,7 +19,7 @@ data TimeoutState = TimeoutPending | TimeoutFired | TimeoutCancelled
 class MonadSTM m => MonadSTMTimer m where
   data Timeout m :: *
 
-  timeoutState   :: Timeout m -> Tr m TimeoutState
+  readTimeout    :: Timeout m -> stm TimeoutState
 
   newTimeout     :: Duration (Time m) -> m (Timeout m)
   updateTimeout  :: Timeout m -> Duration (Time m) -> m ()
@@ -27,7 +28,7 @@ class MonadSTM m => MonadSTMTimer m where
 instance MonadSTMTimer IO where
   data Timeout IO = TimeoutIO !(STM.TVar TimeoutState) !GHC.TimeoutKey
 
-  timeoutState (TimeoutIO var _key) = STM.readTVar var
+  readTimeout (TimeoutIO var _key) = STM.readTVar var
 
   newTimeout = \usec -> do
       var <- STM.newTVarIO TimeoutPending
