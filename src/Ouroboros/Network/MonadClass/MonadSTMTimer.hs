@@ -1,8 +1,13 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE FlexibleContexts      #-}
 module Ouroboros.Network.MonadClass.MonadSTMTimer (
-    MonadSTMTimer(..)
+    MonadTimer(..)
   , TimeoutState(..)
+  , TimeMeasure(..)
+  , mult
+  , fromStart
+  , timer
   ) where
 
 import           Data.Functor (void)
@@ -13,12 +18,31 @@ import qualified Control.Monad.STM           as STM
 import qualified GHC.Event as GHC (TimeoutKey, getSystemTimerManager,
                      registerTimeout, unregisterTimeout, updateTimeout)
 
+import           Ouroboros.Network.MonadClass.MonadFork
 import           Ouroboros.Network.MonadClass.MonadSTM
-import           Ouroboros.Network.MonadClass.MonadTimer
+
+
+class (Ord t, Ord (Duration t), Num (Duration t)) => TimeMeasure t where
+  type Duration t :: *
+
+  diffTime :: t -> t -> Duration t
+  addTime  :: Duration t -> t -> t
+  zero :: t
+
+-- | Helper function to multiply `Duration t` by an `Int`.
+--
+mult :: Num d => Int -> d -> d
+mult n = sum . replicate n
+
+-- | Count time since @'zero'@.
+--
+fromStart :: TimeMeasure t => Duration t -> t
+fromStart = flip addTime zero
 
 data TimeoutState = TimeoutPending | TimeoutFired | TimeoutCancelled
 
-class MonadSTM m => MonadSTMTimer m where
+class (MonadSTM m, TimeMeasure (Time m)) => MonadTimer m where
+  type Time    m :: *
   data Timeout m :: *
 
   -- | Create a new timeout which will fire at the given time duration in
@@ -75,7 +99,23 @@ class MonadSTM m => MonadSTMTimer m where
   threadDelay    :: Duration (Time m) -> m ()
   threadDelay d   = void . atomically . awaitTimeout =<< newTimeout d
 
-instance MonadSTMTimer IO where
+{-# DEPRECATED timer "Use threadDelay or the new timer API instead" #-}
+timer :: MonadTimer m => Duration (Time m) -> m () -> m ()
+timer d action = fork (threadDelay d >> action)
+
+--
+-- Instances for IO
+--
+
+instance TimeMeasure Int where
+  type Duration Int = Int -- microseconds
+
+  diffTime t t' = t-t'
+  addTime  d t  = t+d
+  zero = 0
+
+instance MonadTimer IO where
+  type Time    IO = Int -- microseconds
   data Timeout IO = TimeoutIO !(STM.TVar TimeoutState) !GHC.TimeoutKey
 
   readTimeout (TimeoutIO var _key) = STM.readTVar var
@@ -90,7 +130,7 @@ instance MonadSTMTimer IO where
         x <- STM.readTVar var
         case x of
           TimeoutPending   -> STM.writeTVar var TimeoutFired
-          TimeoutFired     -> error "MonadSTMTimer(IO): invariant violation"
+          TimeoutFired     -> error "MonadTimer(IO): invariant violation"
           TimeoutCancelled -> return ()
 
   -- In GHC's TimerManager this has no effect if the timer already fired.

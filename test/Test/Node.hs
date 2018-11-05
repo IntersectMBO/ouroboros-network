@@ -10,6 +10,7 @@ import           Control.Monad.ST.Lazy (runST)
 import           Control.Monad.State (execStateT, lift, modify')
 import           Data.Array
 import           Data.Functor (void)
+import           Data.Fixed (Micro)
 import           Data.Graph
 import           Data.List (foldl')
 import           Data.Map.Strict (Map)
@@ -83,7 +84,7 @@ test_blockGenerator chain slotDuration = isValid <$> withProbe (experiment slotD
         b <- atomically $ getBlock v
         probeOutput p b
 
-prop_blockGenerator_ST :: TestBlockChain -> Positive Rational -> Property
+prop_blockGenerator_ST :: TestBlockChain -> Positive Micro -> Property
 prop_blockGenerator_ST (TestBlockChain chain) (Positive slotDuration) =
     runST $ test_blockGenerator chain (Sim.VTimeDuration slotDuration)
 
@@ -94,6 +95,7 @@ prop_blockGenerator_IO (TestBlockChain chain) (Positive slotDuration) =
 coreToRelaySim :: ( MonadSTM m
                   , MonadSay m
                   , MonadProbe m
+                  , MonadTimer m
                   )
                => Bool              -- ^ two way subscription
                -> Chain Block
@@ -163,6 +165,7 @@ prop_coreToRelay (TestNodeSim chain slotDuration coreTrDelay relayTrDelay) =
 coreToRelaySim2 :: ( MonadSTM m
                    , MonadSay m
                    , MonadProbe m
+                   , MonadTimer m
                    )
                 => Chain Block
                 -> Duration (Time m)
@@ -217,6 +220,7 @@ prop_coreToRelay2 (TestNodeSim chain slotDuration coreTrDelay relayTrDelay) =
 coreToCoreViaRelaySim :: ( MonadSTM m
                          , MonadSay m
                          , MonadProbe m
+                         , MonadTimer m
                          )
                       => Chain Block
                       -> Chain Block
@@ -332,6 +336,7 @@ networkGraphSim :: forall m.
                   ( MonadSTM m
                   , MonadProbe m
                   , MonadSay m
+                  , MonadTimer m
                   )
                 => TestNetworkGraph
                 -> Duration (Time m) -- ^ slot duration

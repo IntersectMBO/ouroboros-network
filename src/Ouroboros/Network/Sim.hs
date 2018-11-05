@@ -43,7 +43,6 @@ import           Ouroboros.Network.MonadClass.MonadSay
 import           Ouroboros.Network.MonadClass.MonadSendRecv
 import           Ouroboros.Network.MonadClass.MonadSTM hiding (TVar)
 import qualified Ouroboros.Network.MonadClass.MonadSTM as MonadSTM
-import           Ouroboros.Network.MonadClass.MonadTimer
 import           Ouroboros.Network.MonadClass.MonadSTMTimer
 
 {-# ANN module "HLint: ignore Use readTVarIO" #-}
@@ -114,10 +113,6 @@ instance Functor (StmF s) where
 instance MonadSay (Free (SimF s)) where
   say msg = Free.liftF $ Say msg ()
 
-instance MonadTimer (Free (SimF s)) where
-  type Time (Free (SimF s)) = VTime
-  timer d action = fork (threadDelay d >> action)
-
 instance MonadFork (Free (SimF s)) where
   fork          task = Free.liftF $ Fork task ()
 
@@ -130,7 +125,8 @@ instance MonadSTM (Free (SimF s)) where
   writeTVar  tvar x = Free.liftF $ WriteTVar tvar x ()
   retry             = Free.liftF $ Retry
 
-instance MonadSTMTimer (Free (SimF s)) (Free (StmF s)) where
+instance MonadTimer (Free (SimF s)) where
+  type Time    (Free (SimF s)) = VTime
   data Timeout (Free (SimF s)) = Timeout !(TVar s TimeoutState) !TimeoutId
 
   readTimeout (Timeout var _key) = readTVar var
@@ -357,7 +353,7 @@ schedule simstate@SimState {
       x <- readTVar var
       case x of
         TimeoutPending   -> writeTVar var TimeoutFired
-        TimeoutFired     -> error "MonadSTMTimer(IO): invariant violation"
+        TimeoutFired     -> error "MonadTimer(Sim): invariant violation"
         TimeoutCancelled -> return ()
 
 removeMinimums :: (Ord k, Ord p)

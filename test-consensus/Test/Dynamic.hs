@@ -56,6 +56,7 @@ test_simple_bft_convergence :: forall m n.
                                ( MonadSTM m
                                , MonadRunProbe m n
                                , MonadSay m
+                               , MonadTimer m
                                , Show (Time m)
                                )
                             => Seed -> n Property
