@@ -1,13 +1,12 @@
-{ compiler   ? "ghc843"
+{ compiler   ? "ghc844"
 , haddock    ? true
 , test       ? true
 , benchmarks ? false
 }:
 with builtins;
 let
-  nixpkgs = import ./nix/nixpkgs.nix { inherit compiler; };
+  nixpkgs = import ./nix/nixpkgs.nix {};
   lib = nixpkgs.haskell.lib;
-  pkgs = nixpkgs.haskell.packages.${compiler};
   callPackage = nixpkgs.haskell.packages.${compiler}.callPackage;
 
   doHaddock = if haddock
@@ -26,8 +25,7 @@ let
 
   ouroboros-network = doHaddock(doTest(doBench(
     callPackage ./pkg.nix {
-      QuickCheck = pkgs.QuickCheck_2_12_4;
-      inherit typed-transitions nixpkgs;
-    })));
+      inherit nixpkgs;
+    })))) "test-with-cabal";
 
 in { inherit ouroboros-network typed-transitions; }
