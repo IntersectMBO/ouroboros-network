@@ -26,6 +26,6 @@ let
   ouroboros-network = doHaddock(doTest(doBench(
     callPackage ./pkg.nix {
       inherit nixpkgs;
-    })))) "test-with-cabal";
+    }))) "test-with-cabal";
 
 in { inherit ouroboros-network typed-transitions; }
