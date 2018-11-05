@@ -5,9 +5,13 @@
 {-# LANGUAGE ScopedTypeVariables        #-}
 
 module Ouroboros.Network.Pipe (
+    Protocol
+  , recvMsg
+  , sendMsg
     -- * Run producer/consumer over a pipe
-    runProducer
+  , runProducer
   , runConsumer
+  , runProtocolWithPipe
     -- * Demos
   , demo1
   , demo2
@@ -207,7 +211,11 @@ runProtocolWithPipe hndRead hndWrite p =
           -- print ("Recv", msg)
           k msg >>= go trailing'
 
-    go _trailing (Fail failure) = fail (show failure)
+    go _trailing (Fail failure) = do
+        -- Exit gracefully so that upstream users of this function can still
+        -- run a protocol end-to-end.
+        print failure
+        return ()
 
     decodeFromHandle :: BS.ByteString
                      -> CBOR.IDecode RealWorld rmsg

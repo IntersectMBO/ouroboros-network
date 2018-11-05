@@ -38,6 +38,7 @@ library
                        Ouroboros.Consensus.Crypto.VRF.Mock
                        Ouroboros.Consensus.Crypto.VRF.Simple
                        Ouroboros.Consensus.Ledger.Abstract
+                       Ouroboros.Consensus.Ledger.Mempool
                        Ouroboros.Consensus.Ledger.Mock
                        Ouroboros.Consensus.Protocol.Abstract
                        Ouroboros.Consensus.Protocol.BFT
@@ -132,22 +133,30 @@ executable demo-playground
   hs-source-dirs:      demo-playground
   main-is:             Main.hs
   ghc-options:         -threaded -Wall -O2 "-with-rtsopts=-N"
-  other-modules:       DummyPayload
-                       MockPayload
-                       Payload
+  other-modules:       CLI
+                       BlockGeneration
+                       Dummy.Payload
+                       LedgerState
                        Logging
+                       Mock.Payload
+                       Mock.TxSubmission
                        NamedPipe
+                       Payload
+                       Run
+                       Topology
   build-depends:       base,
+                       QuickCheck,
                        aeson,
                        async,
                        bytestring,
-                       directory,
-                       string-conv,
-                       stm,
+                       cborg,
                        containers,
-                       QuickCheck,
+                       directory,
+                       mtl,
                        optparse-applicative,
                        ouroboros-network,
+                       stm,
+                       string-conv,
                        unix
 
 test-suite tests

@@ -38,7 +38,7 @@ import           Test.Tasty.QuickCheck
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain
 import           Ouroboros.Network.ChainProducerState
-import           Ouroboros.Network.MonadClass hiding (recvMsg, sendMsg)
+import           Ouroboros.Network.MonadClass
 import           Ouroboros.Network.Node
 import           Ouroboros.Network.Protocol
 import           Ouroboros.Network.Serialise

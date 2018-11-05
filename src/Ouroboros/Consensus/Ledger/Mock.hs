@@ -50,6 +50,7 @@ import           Ouroboros.Consensus.Util.HList (All, HList)
 import qualified Ouroboros.Consensus.Util.HList as HList
 import           Ouroboros.Network.Block hiding (Hash)
 import qualified Ouroboros.Network.Block as Network
+import           Ouroboros.Network.Chain (Chain, toOldestFirst)
 
 {-------------------------------------------------------------------------------
   Basic definitions
@@ -103,6 +104,13 @@ instance HasUtxo a => HasUtxo [a] where
   txOuts     = foldr (Map.union . txOuts)    Map.empty
   confirmed  = foldr (Set.union . confirmed) Set.empty
   updateUtxo = repeatedly updateUtxo
+
+
+instance HasUtxo a => HasUtxo (Chain a) where
+  txIns      = txIns      . toOldestFirst
+  txOuts     = txOuts     . toOldestFirst
+  updateUtxo = updateUtxo . toOldestFirst
+  confirmed  = confirmed  . toOldestFirst
 
 instance All HasUtxo as => HasUtxo (HList as) where
   txIns      = HList.foldr (Proxy @HasUtxo) (Set.union . txIns)     Set.empty

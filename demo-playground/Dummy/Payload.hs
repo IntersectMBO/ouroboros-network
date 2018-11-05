@@ -4,13 +4,14 @@
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeFamilies               #-}
 
-module DummyPayload (
+module Dummy.Payload (
     DummyPayload(..)
   , fixupBlock
   , chainFrom
   , toChain
   ) where
 
+import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (Chain (..))
@@ -29,6 +30,12 @@ instance Serialise DummyPayload where
     decode  = DummyPayload <$> decodeInt
 
 instance StandardHash DummyPayload
+
+instance HasUtxo DummyPayload where
+    txIns      = const mempty
+    txOuts     = const mempty
+    confirmed  = const mempty
+    updateUtxo _ = id
 
 -- TODO: For now this uses the representation from Block.Concrete
 -- There is no need for this.
