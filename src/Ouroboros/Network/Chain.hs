@@ -63,10 +63,10 @@ module Ouroboros.Network.Chain (
   prettyPrintChain
   ) where
 
-import           Prelude hiding (drop, head, length, null)
+import           Prelude                     hiding (drop, head, length, null)
 
-import           Control.Exception (assert)
-import qualified Data.List as L
+import           Control.Exception           (assert)
+import qualified Data.List                   as L
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Serialise

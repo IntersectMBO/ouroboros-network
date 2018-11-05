@@ -13,7 +13,7 @@ module DummyPayload (
 
 import           Ouroboros.Consensus.Infra.Util
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Chain (Chain (..))
+import           Ouroboros.Network.Chain                 (Chain (..))
 import           Ouroboros.Network.Serialise
 import           Ouroboros.Network.Testing.ConcreteBlock hiding (fixupBlock)
 
@@ -34,7 +34,9 @@ instance HasHeader DummyPayload where
     type HeaderHash DummyPayload = ConcreteHeaderHash
 
     blockHash      (DummyPayload x) = HeaderHash x
-    blockPrevHash  (DummyPayload x) = BlockHash (HeaderHash (pred x))
+    blockPrevHash  (DummyPayload x) = case x of
+                                           1 -> GenesisHash
+                                           _ -> BlockHash (HeaderHash (pred x))
     blockSlot      (DummyPayload x) = Slot (toEnum x)
     blockNo        (DummyPayload x) = BlockNo (toEnum x)
     blockInvariant _ = True
