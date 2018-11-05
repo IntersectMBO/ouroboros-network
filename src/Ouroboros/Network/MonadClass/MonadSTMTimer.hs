@@ -21,10 +21,47 @@ data TimeoutState = TimeoutPending | TimeoutFired | TimeoutCancelled
 class MonadSTM m => MonadSTMTimer m where
   data Timeout m :: *
 
+  -- | Create a new timeout which will fire at the given time duration in
+  -- the future.
+  --
+  -- The timeout will start in the 'TimeoutPending' state and either
+  -- fire at or after the given time leaving it in the 'TimeoutFired' state,
+  -- or it may be cancelled with 'cancelTimeout', leaving it in the
+  -- 'TimeoutCancelled' state.
+  --
+  -- Timeouts /cannot/ be reset to the pending state once fired or cancelled
+  -- (as this would be very racy). You should create a new timeout if you need
+  -- this functionality.
+  --
+  newTimeout     :: Duration (Time m) -> m (Timeout m)
+
+  -- | Read the current state of a timeout. This does not block, but returns
+  -- the current state. It is your responsibility to use 'retry' to wait.
+  --
+  -- Alternatively you may wish to use the convenience utility 'awaitTimeout'
+  -- to wait for just the fired or cancelled outcomes.
+  --
+  -- You should consider the cancelled state if you plan to use 'cancelTimeout'.
+  --
   readTimeout    :: Timeout m -> Tr m TimeoutState
 
-  newTimeout     :: Duration (Time m) -> m (Timeout m)
+  -- Adjust when this timer will fire, to the given duration into the future.
+  --
+  -- It is safe to race this concurrently against the timer firing. It will
+  -- have no effect if the timer fires first.
+  --
+  -- The new time can be before or after the original expiry time, though
+  -- arguably it is an application design flaw to move timeouts sooner.
+  --
   updateTimeout  :: Timeout m -> Duration (Time m) -> m ()
+
+  -- | Cancel a timeout (unless it has already fired), putting it into the
+  -- 'TimeoutCancelled' state. Code reading and acting on the timeout state
+  -- need to handle such cancellation appropriately.
+  --
+  -- It is safe to race this concurrently against the timer firing. It will
+  -- have no effect if the timer fires first.
+  --
   cancelTimeout  :: Timeout m -> m ()
 
   -- | Returns @True@ when the timeout is fired, or @False@ if it is cancelled.
@@ -56,6 +93,8 @@ instance MonadSTMTimer IO where
           TimeoutFired     -> error "MonadSTMTimer(IO): invariant violation"
           TimeoutCancelled -> return ()
 
+  -- In GHC's TimerManager this has no effect if the timer already fired.
+  -- It is safe to race against the timer firing.
   updateTimeout (TimeoutIO _var key) usec = do
       mgr <- GHC.getSystemTimerManager
       GHC.updateTimeout mgr key usec
