@@ -54,6 +54,7 @@ prop_simple_bft_convergence seed = runST $ test_simple_bft_convergence seed
 -- same final chain
 test_simple_bft_convergence :: forall m n.
                                ( MonadSTM m
+                               , MonadTimer m
                                , MonadRunProbe m n
                                , MonadSay m
                                , MonadTimer m

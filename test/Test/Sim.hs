@@ -187,6 +187,8 @@ prop_timers_IO = ioProperty . test_timers . map ((*100) . getPositive)
 test_fork_order :: forall m n.
                    ( MonadFork m
                    , MonadSTM m
+                   , MonadTimer m
+                   , MonadProbe m
                    , MonadRunProbe m n
                    )
                 => Positive Int

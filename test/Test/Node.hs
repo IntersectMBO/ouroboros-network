@@ -75,7 +75,11 @@ test_blockGenerator chain slotDuration = isValid <$> withProbe (experiment slotD
         (property True)
 
     experiment
-      :: Duration (Time m)
+      :: ( MonadSTM m
+         , MonadTimer m
+         , MonadProbe m
+         )
+      => Duration (Time m)
       -> Probe m Block
       -> m ()
     experiment slotDur p = do
@@ -93,6 +97,7 @@ prop_blockGenerator_IO (TestBlockChain chain) (Positive slotDuration) =
     ioProperty $ test_blockGenerator chain (slotDuration * 100)
 
 coreToRelaySim :: ( MonadSTM m
+                  , MonadTimer m
                   , MonadSay m
                   , MonadProbe m
                   , MonadTimer m
@@ -163,6 +168,7 @@ prop_coreToRelay (TestNodeSim chain slotDuration coreTrDelay relayTrDelay) =
 
 -- Node graph: c → r → r
 coreToRelaySim2 :: ( MonadSTM m
+                   , MonadTimer m
                    , MonadSay m
                    , MonadProbe m
                    , MonadTimer m
@@ -218,6 +224,7 @@ prop_coreToRelay2 (TestNodeSim chain slotDuration coreTrDelay relayTrDelay) =
 
 -- | Node graph: c ↔ r ↔ c
 coreToCoreViaRelaySim :: ( MonadSTM m
+                         , MonadTimer m
                          , MonadSay m
                          , MonadProbe m
                          , MonadTimer m
@@ -334,6 +341,7 @@ instance Arbitrary TestNetworkGraph where
 
 networkGraphSim :: forall m.
                   ( MonadSTM m
+                  , MonadTimer m
                   , MonadProbe m
                   , MonadSay m
                   , MonadTimer m
