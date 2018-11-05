@@ -28,7 +28,7 @@ data PingPongClient m a where
   -- all we have to provide here is a continuation for the single legal
   -- reply message.
   --
-  SendMsgPing    :: m (PingPongClient m a) -- ^ continuation for Pong response
+  SendMsgPing    :: m (PingPongClient m a) -- continuation for Pong response
                  -> PingPongClient m a
 
   -- | Choose to terminate the protocol. This is an actual but nullary message,
