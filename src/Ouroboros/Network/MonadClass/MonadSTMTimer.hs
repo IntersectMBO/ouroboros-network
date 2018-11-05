@@ -5,8 +5,10 @@ module Ouroboros.Network.MonadClass.MonadSTMTimer (
   , TimeoutState(..)
   ) where
 
+import           Data.Functor (void)
+import qualified Control.Concurrent          as IO
 import qualified Control.Concurrent.STM.TVar as STM
-import qualified Control.Monad.STM as STM
+import qualified Control.Monad.STM           as STM
 
 import qualified GHC.Event as GHC (TimeoutKey, getSystemTimerManager,
                      registerTimeout, unregisterTimeout, updateTimeout)
@@ -19,11 +21,22 @@ data TimeoutState = TimeoutPending | TimeoutFired | TimeoutCancelled
 class MonadSTM m => MonadSTMTimer m where
   data Timeout m :: *
 
-  readTimeout    :: Timeout m -> stm TimeoutState
+  readTimeout    :: Timeout m -> Tr m TimeoutState
 
   newTimeout     :: Duration (Time m) -> m (Timeout m)
   updateTimeout  :: Timeout m -> Duration (Time m) -> m ()
   cancelTimeout  :: Timeout m -> m ()
+
+  -- | Returns @True@ when the timeout is fired, or @False@ if it is cancelled.
+  awaitTimeout   :: Timeout m -> Tr m Bool
+  awaitTimeout t  = do s <- readTimeout t
+                       case s of
+                         TimeoutPending   -> retry
+                         TimeoutFired     -> return True
+                         TimeoutCancelled -> return False
+
+  threadDelay    :: Duration (Time m) -> m ()
+  threadDelay d   = void . atomically . awaitTimeout =<< newTimeout d
 
 instance MonadSTMTimer IO where
   data Timeout IO = TimeoutIO !(STM.TVar TimeoutState) !GHC.TimeoutKey
@@ -56,3 +69,5 @@ instance MonadSTMTimer IO where
           TimeoutCancelled -> return ()
       mgr <- GHC.getSystemTimerManager
       GHC.unregisterTimeout mgr key
+
+  threadDelay d = IO.threadDelay d
