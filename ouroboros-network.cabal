@@ -115,9 +115,12 @@ executable demo-playground
   hs-source-dirs:      demo-playground
   main-is:             Main.hs
   ghc-options:         -threaded -Wall -O2 "-with-rtsopts=-N"
-  other-modules:       DummyPayload
-                       MockPayload
+  other-modules:       CLI
+                       Dummy.Payload
+                       Mock.Payload
+                       Mock.TxSubmission
                        Payload
+                       Run
                        Logging
                        NamedPipe
   build-depends:       base,

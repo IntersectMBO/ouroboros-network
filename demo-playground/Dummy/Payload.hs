@@ -4,7 +4,7 @@
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeFamilies               #-}
 
-module DummyPayload (
+module Dummy.Payload (
     DummyPayload(..)
   , fixupBlock
   , chainFrom

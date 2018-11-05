@@ -3,7 +3,7 @@
 {-# LANGUAGE NamedFieldPuns   #-}
 {-# LANGUAGE RankNTypes       #-}
 {-# LANGUAGE TypeFamilies     #-}
-module MockPayload (
+module Mock.Payload (
       SimpleUtxoBlock(..) -- re-export
     , fixupBlock
     , chainFrom

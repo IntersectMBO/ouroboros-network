@@ -20,8 +20,8 @@ module Payload (
 import           Data.List (intercalate)
 import           Data.Semigroup ((<>))
 
-import qualified DummyPayload as Dummy
-import qualified MockPayload as Mock
+import qualified Dummy.Payload as Dummy
+import qualified Mock.Payload as Mock
 import           Ouroboros.Consensus.Infra.Singletons
 import           Ouroboros.Consensus.Infra.Util
 import           Ouroboros.Network.Chain (Chain)
