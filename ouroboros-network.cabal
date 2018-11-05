@@ -53,6 +53,7 @@ library
                        Ouroboros.Network.Sim
                        Ouroboros.Network.Testing.ConcreteBlock
                        Ouroboros.Network.Protocol.Typed
+                       Ouroboros.Network.Protocol.Untyped
                        Ouroboros.Network.Protocol.PingPong.Type
                        Ouroboros.Network.Protocol.PingPong.Client
                        Ouroboros.Network.Protocol.PingPong.Server
