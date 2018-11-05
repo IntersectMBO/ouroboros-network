@@ -1,8 +1,10 @@
-{-# LANGUAGE DeriveFunctor       #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving  #-}
-{-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE DeriveFunctor         #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE StandaloneDeriving    #-}
+{-# LANGUAGE TypeApplications      #-}
 
 -- | Reference implementation of a representation of a block chain
 --
@@ -64,6 +66,7 @@ module Ouroboros.Network.Chain (
   ) where
 
 import           Prelude hiding (drop, head, length, null)
+import           Data.Monoid.MSet (MSet (..))
 
 import           Control.Exception (assert)
 import qualified Data.List as L
@@ -236,19 +239,23 @@ data ChainUpdate block = AddBlock block
                        | RollBack (Point block)
   deriving (Eq, Show)
 
+instance HasHeader block => MSet (Maybe (Chain block)) [ChainUpdate block] where
+  Nothing <| _                 = Nothing
+  c       <| []                = c
+  Just c  <| (AddBlock b : us) = Just (addBlock b c) <| us
+  Just c  <| (RollBack p : us) = rollback p c <| us
+
 applyChainUpdate :: HasHeader block
                  => ChainUpdate block
                  -> Chain block
                  -> Maybe (Chain block)
-applyChainUpdate (AddBlock b) c = Just (addBlock b c)
-applyChainUpdate (RollBack p) c =       rollback p c
+applyChainUpdate a c = Just c <| [a]
 
 applyChainUpdates :: HasHeader block
                   => [ChainUpdate block]
                   -> Chain block
                   -> Maybe (Chain block)
-applyChainUpdates []     c = Just c
-applyChainUpdates (u:us) c = applyChainUpdates us =<< applyChainUpdate u c
+applyChainUpdates us c = Just c <| us
 
 -- | Select a bunch of 'Point's based on offsets from the head of the chain.
 -- This is used in the chain consumer protocol as part of finding the

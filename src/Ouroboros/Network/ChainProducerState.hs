@@ -1,7 +1,11 @@
-{-# LANGUAGE NamedFieldPuns  #-}
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TemplateHaskell       #-}
 
 module Ouroboros.Network.ChainProducerState where
+
+import           Data.Monoid.MSet (MSet (..))
 
 import           Ouroboros.Network.Chain (Chain, ChainUpdate (..), HasHeader,
                      Point (..), blockPoint, genesisPoint, pointOnChain)
@@ -253,6 +257,11 @@ rollback p (ChainProducerState c rs) =
               else r
           | r@ReaderState { readerPoint = p' } <- rs ]
 
+instance HasHeader block => MSet (Maybe (ChainProducerState block)) [ChainUpdate block] where
+  Nothing <| _                 = Nothing
+  c       <| []                = c
+  Just c  <| (AddBlock b : us) = Just (addBlock b c) <| us
+  Just c  <| (RollBack p : us) = rollback p c <| us
 
 -- | Convenient function which combines both @'addBlock'@ and @'rollback'@.
 --
@@ -260,9 +269,7 @@ applyChainUpdate :: HasHeader block
                  => ChainUpdate block
                  -> ChainProducerState block
                  -> Maybe (ChainProducerState block)
-applyChainUpdate (AddBlock b) c = Just (addBlock b c)
-applyChainUpdate (RollBack p) c =       rollback p c
-
+applyChainUpdate u c = Just c <| [u]
 
 -- | Apply a list of @'ChainUpdate'@s.
 --
@@ -270,9 +277,7 @@ applyChainUpdates :: HasHeader block
                   => [ChainUpdate block]
                   -> ChainProducerState block
                   -> Maybe (ChainProducerState block)
-applyChainUpdates []     c = Just c
-applyChainUpdates (u:us) c = applyChainUpdates us =<< applyChainUpdate u c
-
+applyChainUpdates us c = Just c <| us
 
 --
 -- Helpers

@@ -52,6 +52,7 @@ library
                        Ouroboros.Network.Serialise
                        Ouroboros.Network.Sim
                        Ouroboros.Network.Testing.ConcreteBlock
+                       Data.Monoid.MSet
   other-modules:
 -- Old experiments, not currently building:
 --                     Types
