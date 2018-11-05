@@ -13,7 +13,7 @@ module DummyPayload (
 
 import           Ouroboros.Consensus.Infra.Util
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Chain                 (Chain (..))
+import           Ouroboros.Network.Chain (Chain (..))
 import           Ouroboros.Network.Serialise
 import           Ouroboros.Network.Testing.ConcreteBlock hiding (fixupBlock)
 
