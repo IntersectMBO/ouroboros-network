@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE NamedFieldPuns    #-}
+{-# LANGUAGE RecordWildCards   #-}
 {-# LANGUAGE TypeApplications  #-}
 {-# LANGUAGE TypeFamilies      #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
@@ -14,6 +15,7 @@ import qualified Data.Set as Set
 import           GHC.Generics (Generic)
 import           GHC.Natural (naturalToWordMaybe)
 
+import qualified Data.Hashable as Hashable
 import qualified Ouroboros.Consensus.Infra.Crypto.Hash as H
 import           Ouroboros.Consensus.Infra.Util (Condense (..))
 import           Ouroboros.Consensus.UTxO.Mock (HasUtxo (..))
@@ -32,7 +34,27 @@ data SimpleUtxoBlock = SimpleUtxoBlock {
   deriving (Generic, Show)
 
 instance Condense SimpleUtxoBlock where
-  condense = show -- TODO
+  condense (SimpleUtxoBlock hdr bdy) =  "("  <> condenseBlockHeader hdr
+                                     <> ", " <> condense bdy
+                                     <> ")))"
+    where
+      condenseBlockHeader :: BlockHeader -> String
+      condenseBlockHeader BlockHeader{..} =
+          let (HeaderHash hsh)  = headerHash
+              prevH = case headerPrevHash of
+                           GenesisHash              ->
+                             Hashable.hash (GenesisHash :: Hash SimpleUtxoBlock)
+                           BlockHash (HeaderHash b) ->
+                             b
+              (BlockSigner sig) = headerSigner
+          -- Grab the absolute value in case of negative integers, only for
+          -- the sake of having a slightly more readable output. This will go
+          -- away once we will transition to short hashes or to use 'Hash'
+          -- from the Crypto module.
+          in show (abs hsh) <>
+             "-" <> show (abs prevH) <>
+             ",(" <> show sig <>
+             ",(" <> show (getSlot headerSlot)
 
 simpleUtxoBodyHash :: Set Mock.Tx -> BodyHash
 simpleUtxoBodyHash = BodyHash

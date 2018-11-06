@@ -125,16 +125,16 @@ executable demo-playground
                        Logging
                        NamedPipe
   build-depends:       base,
+                       QuickCheck,
                        aeson,
                        async,
                        bytestring,
-                       directory,
-                       string-conv,
-                       stm,
                        containers,
-                       QuickCheck,
+                       directory,
                        optparse-applicative,
                        ouroboros-network,
+                       stm,
+                       string-conv,
                        unix
 
 test-suite tests
