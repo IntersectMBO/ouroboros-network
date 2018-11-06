@@ -59,9 +59,9 @@ tests =
       -- We need a common genesis block, or we actually would not expect
       -- consensus to be reached.
       let genesis = BlockHeader (HeaderHash 0) (BlockHash (ConcreteBlock.HeaderHash 0)) (Slot 0) (BlockNo 0) (BlockSigner 0) (BodyHash 0)
-          graphGen = resize 40 genConnectedBidirectionalGraph
+          graphGen = resize 42 genConnectedBidirectionalGraph
           nameGen = pure . show
-          chainGen = const (resize 40 (genNonEmptyHeaderChain genesis))
+          chainGen = const (resize 42 (genNonEmptyHeaderChain genesis))
       in  forAll (genStaticNetDesc graphGen nameGen chainGen) prop_consensus
   ]
 
@@ -539,5 +539,5 @@ prop_consensus netDesc@(StaticNetDesc graph nodes) =
     -- subtract 1 from the length of the chain, because the genesis block has
     -- block number 0.
     pure $ counterexample (show highestBlockNo)
-         $ counterexample (show chainAssocs)
+         $ counterexample (show ((fmap . fmap) headerHash chainAssocs))
          $ all (== highestBlockNo) (fmap (BlockNo . fromIntegral . (flip (-) 1) . length) chains)

@@ -20,60 +20,60 @@ direct
   :: ( Monad m )
   => ProducerStream point header m producer
   -> ConsumerStream point header m consumer
-  -> m (producer, consumer)
-direct bs cs = do
-  bsAt <- runProducerStream bs
-  csStep <- runConsumerStream cs (bsReadPointer bsAt) (bsTip bsAt)
-  directMain (bsNext bsAt) csStep
+  -> m (consumer, producer)
+direct ps cs = do
+  psInit   <- runProducerStream ps
+  csChoice <- runConsumerStream cs (initPoints psInit)
+  directMain csChoice (producerChoice psInit)
 
 directMain
   :: ( Monad m )
-  => ProducerStreamNext point header m producer
-  -> ConsumerStreamStep point header m consumer
-  -> m (producer, consumer)
-directMain bsNext css = case css of
+  => ConsumerChoice point header m consumer
+  -> ProducerChoice point header m producer
+  -> m (consumer, producer)
+directMain cchoice pchoice = case cchoice of
 
-  Quit consumer -> pure (bsDone bsNext, consumer)
+  Consumer.Improve points cimprove -> do
+    pimprove <- producerImprove pchoice points
+    case pimprove of
+      ImprovePoint improvement pchoice' ->  do
+        cchoice' <- improvePoint cimprove improvement
+        directMain cchoice' pchoice'
+      ImproveForked points pchoice' -> do
+        cchoice' <- improveForked cimprove points
+        directMain cchoice' pchoice'
 
-  Consumer.Improve points forked k -> do
-    pStreamStep <- bsImprove bsNext points
-    case pStreamStep of
-      ChangeFork readPointer header bsNext' ->
-        runConsumerStream forked readPointer header >>= directMain bsNext'
-      ChangeExtend header (Producer.Improve point bsNext') -> do
-        cStreamStep <- k point (Just header)
-        directMain bsNext' cStreamStep
-      NoChange (Producer.Improve point bsNext') -> do
-        cStreamStep <- k point Nothing
-        directMain bsNext' cStreamStep
+  Consumer.Next unit cnext -> do
+    pnext <- producerNext pchoice unit
+    case pnext of
+      NextForked points pchoice' -> do
+        cchoice' <- nextForked cnext points
+        directMain cchoice' pchoice'
+      NextExtended point pchoice' -> do
+        cchoice' <- nextExtended cnext point
+        directMain cchoice' pchoice'
+      NextExhausted producerValue ->
+        pure (nextExhausted cnext, producerValue)
 
-  DownloadHeaders num cDownload -> directDownload num cDownload bsNext
+  Consumer.Download num cdownload -> do
+    pdownload <- producerDownload pchoice num
+    directDownload cdownload pdownload
 
-  NextTip forked k finished -> do
-    pStreamStep <- bsNextChange bsNext
-    case pStreamStep of
-      Left producer -> pure (producer, finished)
-      Right (ChangeFork readPointer header bsNext') ->
-        runConsumerStream forked readPointer header >>= directMain bsNext'
-      Right (ChangeExtend header (NextChange bsNext')) ->
-        runConsumerNext k header >>= directMain bsNext'
-      Right (NoChange f) -> impossible f
+  Stop consumerValue -> pure (consumerValue, producerDone pchoice)
 
 directDownload
   :: ( Monad m )
-  => Word
-  -> ConsumerDownload point header m consumer
-  -> ProducerStreamNext point header m producer
-  -> m (producer, consumer)
-directDownload 0 cDownload bsNext = downloadOver cDownload Nothing >>= directMain bsNext
-directDownload n cDownload bsNext = bsNextHeader bsNext >>= \ss -> case ss of
-  ChangeFork readPointer header bsNext' ->
-    runConsumerStream (downloadInterrupted cDownload) readPointer header >>= directMain bsNext'
-  ChangeExtend header (NextHeader block bsNext') ->
-    downloadHeader cDownload block (Just header) >>= flip (directDownload (n-1)) bsNext'
-  ChangeExtend header (NoNextHeader bsNext') ->
-    downloadOver cDownload (Just header) >>= directMain bsNext'
-  NoChange (NextHeader block bsNext') ->
-    downloadHeader cDownload block Nothing >>= flip (directDownload (n-1)) bsNext'
-  NoChange (NoNextHeader bsNext') ->
-    downloadOver cDownload Nothing >>= directMain bsNext'
+  => ConsumerDownload point header m consumer
+  -> ProducerDownload point header m producer
+  -> m (consumer, producer)
+directDownload cdownload pdownload = case pdownload of
+  DownloadForked points pchoice -> do
+    cchoice <- downloadForked cdownload points
+    directMain cchoice pchoice
+  DownloadOver mNewTip pchoice -> do
+    cchoice <- downloadOver cdownload mNewTip
+    directMain cchoice pchoice
+  DownloadHeader datum pnext -> do
+    cdownload' <- downloadHeader cdownload datum
+    pdownload' <- pnext
+    directDownload cdownload' pdownload'

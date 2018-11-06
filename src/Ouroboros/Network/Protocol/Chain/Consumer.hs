@@ -4,6 +4,7 @@
 
 module Ouroboros.Network.Protocol.Chain.Consumer where
 
+import Data.Maybe (fromMaybe)
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 
@@ -45,20 +46,32 @@ simpleConsumerStream
   -- it's empty.
   -> TVar m (Seq header)
   -> ConsumerStream point header m ()
-simpleConsumerStream mkPoint eqPoint chainVar = ConsumerStream $ \readPointer header -> atomically $ do
-  modifyTVar' chainVar (dropAfter mkPoint eqPoint readPointer)
-  pure (simpleConsumerStreamStep mkPoint eqPoint chainVar readPointer header)
+simpleConsumerStream mkPoint eqPoint chainVar = ConsumerStream $
+  -- It's the same as a fork: set the new read pointer and tip, then go
+  -- to 'simpleConsumerChoice'.
+  simpleConsumerForked mkPoint eqPoint chainVar
 
-simpleConsumerStreamStep
+simpleConsumerForked
   :: forall point header m stm .
      ( MonadSTM m stm )
   => (header -> point)
   -> (point -> point -> Bool)
   -> TVar m (Seq header)
-  -> point  -- ^ Read pointer
-  -> header -- ^ Tip
-  -> ConsumerStreamStep point header m ()
-simpleConsumerStreamStep mkPoint eqPoint chainVar readPointer tip =
+  -> (point, point) -- ^ Read pointer, followed by tip
+  -> m (ConsumerChoice point header m ())
+simpleConsumerForked mkPoint eqPoint chainVar points = atomically $ do
+  modifyTVar' chainVar (dropAfter mkPoint eqPoint (fst points))
+  pure (simpleConsumerChoice mkPoint eqPoint chainVar points)
+
+simpleConsumerChoice
+  :: forall point header m stm .
+     ( MonadSTM m stm )
+  => (header -> point)
+  -> (point -> point -> Bool)
+  -> TVar m (Seq header)
+  -> (point, point) -- ^ Read pointer, followed by tip
+  -> ConsumerChoice point header m ()
+simpleConsumerChoice mkPoint eqPoint chainVar points =
   -- If we're at the tip we'll just wait.
   --
   -- Alternatively, we could DownloadBlocks, but that would mean we would not
@@ -69,31 +82,9 @@ simpleConsumerStreamStep mkPoint eqPoint chainVar readPointer tip =
   -- opt to receive a fast relay from only particular peers. It can send the
   -- "next tip" request to those from whom it wishes to receive fast relay, and
   -- no request to the others.
-  if readPointer `eqPoint` mkPoint tip
-  then NextTip (simpleConsumerStream mkPoint eqPoint chainVar) (simpleConsumerNext mkPoint eqPoint chainVar readPointer) ()
-  else DownloadHeaders maxBound (simpleConsumerDownload mkPoint eqPoint chainVar readPointer tip)
-
-simpleConsumerDownload
-  :: forall point header m stm .
-     ( MonadSTM m stm )
-  => (header -> point)
-  -> (point -> point -> Bool)
-  -> TVar m (Seq header)
-  -> point
-  -> header
-  -> ConsumerDownload point header m ()
-simpleConsumerDownload mkPoint eqPoint chainVar readPointer tip = ConsumerDownload
-  { downloadHeader     = \header mNewTip -> do
-      atomically $ modifyTVar' chainVar (extendWith header)
-      let readPointer' = mkPoint header
-      case mNewTip of
-        Nothing   -> pure $ simpleConsumerDownload mkPoint eqPoint chainVar readPointer' tip
-        Just tip' -> pure $ simpleConsumerDownload mkPoint eqPoint chainVar readPointer' tip'
-  , downloadOver        = \mNewTip -> case mNewTip of
-      Nothing   -> pure $ simpleConsumerStreamStep mkPoint eqPoint chainVar readPointer tip
-      Just tip' -> pure $ simpleConsumerStreamStep mkPoint eqPoint chainVar readPointer tip'
-  , downloadInterrupted = simpleConsumerStream mkPoint eqPoint chainVar
-  }
+  if fst points `eqPoint` snd points
+  then Next () (simpleConsumerNext mkPoint eqPoint chainVar (fst points))
+  else Download maxBound (simpleConsumerDownload mkPoint eqPoint chainVar points)
 
 simpleConsumerNext
   :: forall point header m stm .
@@ -101,9 +92,32 @@ simpleConsumerNext
   => (header -> point)
   -> (point -> point -> Bool)
   -> TVar m (Seq header)
-  -> point
+  -> point  -- ^ Read pointer
   -> ConsumerNext point header m ()
 simpleConsumerNext mkPoint eqPoint chainVar readPointer = ConsumerNext
-  { -- We now have a new tip, but the read pointer remains the same.
-    runConsumerNext = \header -> pure (simpleConsumerStreamStep mkPoint eqPoint chainVar readPointer header)
+  { nextForked    = \points ->
+      simpleConsumerForked mkPoint eqPoint chainVar points
+  , nextExtended  = \tip    ->
+      pure $ simpleConsumerChoice mkPoint eqPoint chainVar (readPointer, tip)
+  , nextExhausted = ()
+  }
+
+simpleConsumerDownload
+  :: forall point header m stm .
+     ( MonadSTM m stm )
+  => (header -> point)
+  -> (point -> point -> Bool)
+  -> TVar m (Seq header)
+  -> (point, point) -- ^ Read pointer, followed by tip
+  -> ConsumerDownload point header m ()
+simpleConsumerDownload mkPoint eqPoint chainVar points = ConsumerDownload
+  { downloadHeader = \datum   -> do
+      atomically $ modifyTVar' chainVar (extendWith (fst datum))
+      let readPointer' = mkPoint (fst datum)
+          tip' = fromMaybe (snd points) (snd datum)
+      pure $ simpleConsumerDownload mkPoint eqPoint chainVar (readPointer', tip')
+  , downloadOver   = \mNewTip ->
+      pure $ simpleConsumerChoice mkPoint eqPoint chainVar (fst points, fromMaybe (snd points) mNewTip)
+  , downloadForked = \points'  ->
+      simpleConsumerForked mkPoint eqPoint chainVar points'
   }

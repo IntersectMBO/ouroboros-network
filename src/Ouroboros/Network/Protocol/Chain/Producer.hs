@@ -81,7 +81,7 @@ switchToChain
   -> Maybe (Changing (ChainSegment header))
 switchToChain headerEq newChain cs = case cs of
   AtTip prior tip -> case cmpChains (NE.toList newChain) (Foldable.toList (prior Seq.|> tip)) [] of
-    ([], _:_, _:_) -> error "switchToChain: impossible"
+    ([], _:_, _:_) -> error "switchToChain: impossible" -- because it's NonEmpty
     -- They have nothing in common.
     (_, _, []) -> Nothing
     -- They are the same.
@@ -98,7 +98,7 @@ switchToChain headerEq newChain cs = case cs of
   -- If it's a proper fork but it includes the read pointer then we call it an
   -- extension.
   BehindTip prior rp _ tip -> case cmpChains (NE.toList newChain) (Foldable.toList (prior Seq.|> rp)) [] of
-    ([], _:_, _:_) -> error "switchToChain: impossible"
+    ([], _:_, _:_) -> error "switchToChain: impossible" -- because it's NonEmpty
     -- Nothing in common with the chain up to the read pointer.
     (_, _, []) -> Nothing
     -- It is the chain up to the read pointer.
@@ -207,50 +207,74 @@ simpleProducerStream
   -> ProducerStream point header m ()
 simpleProducerStream mkPoint chainVar = ProducerStream $ atomically $ do
   cs <- unChanging . fst <$> readTVar chainVar
-  let tipHeader = chainSegmentTip cs
+  let tip = mkPoint (chainSegmentTip cs)
       readPointer = mkPoint (chainSegmentReadPointer cs)
-  pure $ ProducerStreamAt
-    { bsTip = tipHeader
-    , bsReadPointer = readPointer
-    , bsNext = simpleProducerStreamNext mkPoint chainVar
+  pure $ ProducerInit
+    { initPoints     = (readPointer, tip)
+    , producerChoice = simpleProducerChoice mkPoint chainVar
     }
 
-simpleProducerStreamNext
-  ::forall point header m stm .
+simpleProducerChoice
+  :: forall point header m stm .
      ( MonadSTM m stm, Ord point )
   => (header -> point)
   -> TVar m (Changing (ChainSegment header), Exhausted)
-  -> ProducerStreamNext point header m ()
-simpleProducerStreamNext mkPoint chainVar = ProducerStreamNext
-  { bsNextChange = nextChange
-  , bsNextHeader  = nextBlock
-  , bsImprove    = improve
-  , bsDone       = ()
+  -> ProducerChoice point header m ()
+simpleProducerChoice mkPoint chainVar = ProducerChoice
+  { producerImprove  = simpleProducerImprove
+  , producerDownload = simpleProducerDownload
+  , producerNext     = simpleProducerNext
+  , producerDone     = ()
   }
   where
+
+  simpleProducerImprove
+    :: NonEmpty point
+    -> m (ProducerImprove point header m ())
+  simpleProducerImprove cps = atomically $ do
+    cchain <- readTVar chainVar
+    case cchain of
+      (Unchanged chain, exhausted) -> do
+        let !chain'        = findBestCheckpoint mkPoint cps chain
+            newReadPointer = mkPoint (chainSegmentReadPointer chain')
+        writeTVar chainVar (Unchanged chain', exhausted)
+        pure $ ImprovePoint (newReadPointer, Nothing) (simpleProducerChoice mkPoint chainVar)
+      (Extended chain, exhausted) -> do
+        let newTip         = mkPoint (chainSegmentTip chain)
+            -- tip is guaranteed to be the same a chainSegmentTip chain'.
+            -- 'findBestCheckpoint never changes the tip.
+            !chain'        = findBestCheckpoint mkPoint cps chain
+            newReadPointer = mkPoint (chainSegmentReadPointer chain')
+        writeTVar chainVar (Unchanged chain', exhausted)
+        pure $ ImprovePoint (newReadPointer, Just newTip) (simpleProducerChoice mkPoint chainVar)
+      (Forked chain, exhausted) -> do
+        let newReadPointer = mkPoint (chainSegmentReadPointer chain)
+            newTip         = mkPoint (chainSegmentTip chain)
+        writeTVar chainVar (Unchanged chain, exhausted)
+        pure $ ImproveForked (newReadPointer, newTip) (simpleProducerChoice mkPoint chainVar)
 
   -- A subtle point here: for nextChange we want to wake up and send the
   -- message even if it's not a fork (just an extension).
   -- For download, an extension should be deferred until after the
   -- download, but a fork should interrupt it.
-  nextChange :: forall f . m (Either () (StreamStep point header f (NextChange point header) m ()))
-  nextChange = atomically $ do
+  simpleProducerNext
+    :: ()
+    -> m (ProducerNext point header m ())
+  simpleProducerNext () = atomically $ do
     cchain <- readTVar chainVar
     case cchain of
-      (Unchanged _, True)  -> pure $ Left ()
       (Unchanged _, False) -> retry
-      (Forked chain , exhausted) -> do
+      (Unchanged _, True)  -> pure $ NextExhausted ()
+      (Forked chain, exhausted) -> do
         let readPointer = mkPoint (chainSegmentReadPointer chain)
-            tip         = chainSegmentTip chain
+            tip         = mkPoint (chainSegmentTip chain)
         -- Set to unchanged, since the consumer now knows it.
         writeTVar chainVar (Unchanged chain, exhausted)
-        pure $ Right $ ChangeFork readPointer tip (simpleProducerStreamNext mkPoint chainVar)
-      -- In this presentation, we always have the bodies. Fast relaying will
-      -- be done whenever the chain segment is AtTip.
+        pure $ NextForked (readPointer, tip) (simpleProducerChoice mkPoint chainVar)
       (Extended chain, exhausted) -> do
-        let tip = chainSegmentTip chain
+        let tip = mkPoint (chainSegmentTip chain)
         writeTVar chainVar (Unchanged chain, exhausted)
-        pure $ Right $ ChangeExtend tip (NextChange (simpleProducerStreamNext mkPoint chainVar))
+        pure $ NextExtended tip (simpleProducerChoice mkPoint chainVar)
 
   -- Blocks are read out from the TVar one-at-a-time, as opposed to, say,
   -- getting a batch out and then serving them all up before checking again,
@@ -261,29 +285,32 @@ simpleProducerStreamNext mkPoint chainVar = ProducerStreamNext
   -- - if it was a fork, stop the block download and present the fork
   -- - if it was a continuation, keep going but give the new header too
   --
-  nextBlock :: m (StreamStep point header (NextHeader point header) (NextHeader point header) m ())
-  nextBlock = atomically $ do
+  simpleProducerDownload
+    :: Word
+    -> m (ProducerDownload point header m ())
+  simpleProducerDownload 0 = pure $ DownloadOver Nothing (simpleProducerChoice mkPoint chainVar)
+  simpleProducerDownload n = atomically $ do
     cchain <- readTVar chainVar
     case cchain of
       (Forked chain, exhausted) -> do
         let readPointer = mkPoint (chainSegmentReadPointer chain)
-            tip         = chainSegmentTip chain
+            tip         = mkPoint (chainSegmentTip chain)
         writeTVar chainVar (Unchanged chain, exhausted)
-        pure $ ChangeFork readPointer tip (simpleProducerStreamNext mkPoint chainVar)
+        pure $ DownloadForked (readPointer, tip) (simpleProducerChoice mkPoint chainVar)
       (Extended chain, exhausted) -> case advance chain of
-        Just (b, !chain') -> do
-          let tip = chainSegmentTip chain
+        Just (h, !chain') -> do
+          let tip = mkPoint (chainSegmentTip chain)
           writeTVar chainVar (Unchanged chain', exhausted)
-          pure $ ChangeExtend tip (NextHeader b (simpleProducerStreamNext mkPoint chainVar))
+          pure $ DownloadHeader (h, Just tip) (simpleProducerDownload (n-1))
         Nothing -> do
-          let tip = chainSegmentTip chain
-          pure $ ChangeExtend tip (NoNextHeader (simpleProducerStreamNext mkPoint chainVar))
+          let tip = mkPoint (chainSegmentTip chain)
+          pure $ DownloadOver (Just tip) (simpleProducerChoice mkPoint chainVar)
       (Unchanged chain, exhausted) -> case advance chain of
-        Just (b, !chain') -> do
+        Just (h, !chain') -> do
           writeTVar chainVar (Unchanged chain', exhausted)
-          pure $ NoChange (NextHeader b (simpleProducerStreamNext mkPoint chainVar))
+          pure $ DownloadHeader (h, Nothing) (simpleProducerDownload (n-1))
         Nothing ->
-          pure $ NoChange (NoNextHeader (simpleProducerStreamNext mkPoint chainVar))
+          pure $ DownloadOver Nothing (simpleProducerChoice mkPoint chainVar)
 
   -- | Advance the read pointer, giving Nothing case it's past the tip.
   -- You get the block to send (former oldest block) and the remaining
@@ -294,26 +321,3 @@ simpleProducerStreamNext mkPoint chainVar = ProducerStreamNext
     BehindTip prior rp mid tip -> Just $ case Seq.viewl mid of
      Seq.EmptyL -> (tip, AtTip (prior Seq.|> rp) tip)
      b Seq.:< bs -> (b, BehindTip (prior Seq.|> rp) b bs tip)
-
-  improve :: NonEmpty point -> m (StreamStep point header (Improve point header) (Improve point header) m ())
-  improve cps = atomically $ do
-    cchain <- readTVar chainVar
-    case cchain of
-      (Unchanged chain, exhausted) -> do
-        let !chain'        = findBestCheckpoint mkPoint cps chain
-            newReadPointer = mkPoint (chainSegmentReadPointer chain')
-        writeTVar chainVar (Unchanged chain', exhausted)
-        pure $ NoChange $ Improve newReadPointer (simpleProducerStreamNext mkPoint chainVar)
-      (Forked chain, exhausted) -> do
-        let newReadPointer = mkPoint (chainSegmentReadPointer chain)
-            tip            = chainSegmentTip chain
-        writeTVar chainVar (Unchanged chain, exhausted)
-        pure $ ChangeFork newReadPointer tip (simpleProducerStreamNext mkPoint chainVar)
-      (Extended chain, exhausted) -> do
-        let tip            = chainSegmentTip chain
-            -- tip is guaranteed to be the same a chainSegmentTip chain'.
-            -- 'findBestCheckpoint never changes the tip.
-            !chain'        = findBestCheckpoint mkPoint cps chain
-            newReadPointer = mkPoint (chainSegmentReadPointer chain')
-        writeTVar chainVar (Unchanged chain', exhausted)
-        pure $ ChangeExtend tip (Improve newReadPointer (simpleProducerStreamNext mkPoint chainVar))

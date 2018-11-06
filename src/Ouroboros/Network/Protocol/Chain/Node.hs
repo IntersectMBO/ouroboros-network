@@ -192,8 +192,9 @@ runWithChainSelectionSTM eqBlockHeader headerBlockNo conc mkConsumer mkProducer 
           then do
             -- Found a strictly better chain. Update our best, and all of the
             -- producer vars.
+            -- We also set the second component to False :: Exhausted.
             writeTVar bestChainVar newBest
-            forM_ producerVars (flip modifyTVar' (\it -> (carryChange (switchToChain_ newBest) (fst it), snd it)))
+            forM_ producerVars (flip modifyTVar' (\it -> (carryChange (switchToChain_ newBest) (fst it), False)))
             pure (chainSelectionSTM bestChainVar consumerVars producerVars selection')
           else retry
 

@@ -25,7 +25,8 @@ import Data.Void
 -- at what point a yielder becomes an awaiter.
 data Peer p (tr :: st -> st -> Type) (from :: Status st) (to :: Status st) f t where
   PeerDone :: t -> Peer p tr end end f t
-  PeerHole :: f (Peer p tr from to f t) -> Peer p tr from to f t
+  -- | Lift an effect.
+  PeerLift :: f (Peer p tr from to f t) -> Peer p tr from to f t
   -- | When yielding a transition, there must be proof that, under 'p', the
   -- transition either holds or releases control. This is enough to allow GHC
   -- to deduce that the continuation in a complementary 'PeerAwait' (one which
@@ -132,15 +133,15 @@ hoistPeer
   -> Peer p tr from to g t
 hoistPeer nat term = case term of
   PeerDone t -> PeerDone t
-  PeerHole f -> PeerHole (fmap (hoistPeer nat) (nat f))
+  PeerLift f -> PeerLift (fmap (hoistPeer nat) (nat f))
   PeerYield ex next -> PeerYield ex (hoistPeer nat next)
   PeerAwait k -> PeerAwait (hoistPeer nat . k)
 
 done :: t -> Peer p tr end end m t
 done = PeerDone
 
-hole :: f (Peer p tr from to f t) -> Peer p tr from to f t
-hole = PeerHole
+lift :: f (Peer p tr from to f t) -> Peer p tr from to f t
+lift = PeerLift
 
 yield
   :: ( Typeable from
@@ -193,7 +194,7 @@ andThen
   -> Peer p tr from to f t
 andThen peer k = case peer of
   PeerDone t -> k t
-  PeerHole m -> PeerHole $ (fmap (`andThen` k) m)
+  PeerLift m -> PeerLift $ (fmap (`andThen` k) m)
   PeerYield tr next -> PeerYield tr $ next `andThen` k
   PeerAwait l -> PeerAwait $ (`andThen` k) . l
 
@@ -213,8 +214,8 @@ connect
   -> m (Either a b)
 connect _            (PeerDone b) = pure (Right b)
 connect (PeerDone a) _            = pure (Left a)
-connect peerA (PeerHole m) = m >>= connect peerA
-connect (PeerHole m) peerB = m >>= flip connect peerB
+connect peerA (PeerLift m) = m >>= connect peerA
+connect (PeerLift m) peerB = m >>= flip connect peerB
 connect (PeerAwait k) (PeerYield exchange n) = case exchange of
   Part tr -> connect (k tr) n
   Over tr -> fmap flipEither (connect n (k tr))
@@ -240,16 +241,16 @@ stepping
   => Peer p tr (st begin)            endA fa a
   -> Peer p tr (Complement st begin) endB fb b
   -> Stepping p tr endA endB fa fb a b
--- If either peer is at a hole, stop there, even if the other one is done.
+-- If either peer is at a lift, stop there, even if the other one is done.
 -- This avoids the problematic
---   (PeerHole _, PeerDone b)
+--   (PeerLift _, PeerDone b)
 -- case in which GHC rejects the program because it doesn't know that
 --   Complement . Complement = Id
-stepping (PeerHole fa) peerB         = LeftHole (fmap (flip stepping peerB) fa)
-stepping peerA         (PeerHole fb) = RightHole (fmap (stepping peerA) fb)
+stepping (PeerLift fa) peerB         = LeftLift (fmap (flip stepping peerB) fa)
+stepping peerA         (PeerLift fb) = RightLift (fmap (stepping peerA) fb)
 stepping (PeerDone a) (PeerDone b)   = BothDone a b
 {-
-stepping peerA@(PeerHole _) (PeerDone b) =
+stepping peerA@(PeerLift _) (PeerDone b) =
   -- We need to give a
   --   Peer p tr (Complement (Complement st) begin) endA fa a
   -- GHC can't figure out that (Complement (Complement st)) ~ st for all st,
@@ -283,15 +284,15 @@ flipStepping term = case term of
   BothDone a b -> BothDone b a
   LeftDone a k -> RightDone a k
   RightDone b k -> LeftDone b k
-  LeftHole it -> RightHole (fmap flipStepping it)
-  RightHole it -> LeftHole (fmap flipStepping it)
+  LeftLift it -> RightLift (fmap flipStepping it)
+  RightLift it -> LeftLift (fmap flipStepping it)
 
 data Stepping p tr endA endB fa fb a b where
   BothDone  :: a -> b -> Stepping p tr endA endB fa fb a b
   LeftDone  :: a -> Peer p tr (Complement st endA) endB fb b -> Stepping p tr (st endA) endB fa fb a b
   RightDone :: b -> Peer p tr (Complement st endB) endA fa a -> Stepping p tr endA (st endB) fa fb a b
-  LeftHole  :: fa (Stepping p tr endA endB fa fb a b) -> Stepping p tr endA endB fa fb a b
-  RightHole :: fb (Stepping p tr endA endB fa fb a b) -> Stepping p tr endA endB fa fb a b
+  LeftLift  :: fa (Stepping p tr endA endB fa fb a b) -> Stepping p tr endA endB fa fb a b
+  RightLift :: fb (Stepping p tr endA endB fa fb a b) -> Stepping p tr endA endB fa fb a b
 
 type Progress (tr :: st -> st -> Type) =
   forall from to . tr from to -> (forall next . tr to next -> Void) -> Void

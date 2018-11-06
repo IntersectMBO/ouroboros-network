@@ -17,7 +17,7 @@ module Protocol.Channel
 
 import Control.Concurrent.MVar (newEmptyMVar, putMVar, takeMVar)
 import Control.Monad (join)
-import Control.Monad.Trans.Class (lift)
+import qualified Control.Monad.Trans.Class as Trans (lift)
 import Control.Monad.Trans.Free
 import Data.Proxy
 import Protocol.Core
@@ -92,16 +92,16 @@ useChannel
   -> FreeT f m (FromStream tr (FreeT f m) t)
 useChannel chan peer = case peer of
   PeerDone t -> pure (StreamDone t)
-  PeerHole f -> liftF f >>= useChannel chan
+  PeerLift f -> liftF f >>= useChannel chan
   PeerAwait k -> do
-    next <- lift $ recv chan
+    next <- Trans.lift $ recv chan
     case next of
       Nothing -> pure $ StreamEnd (flip useChannel peer)
       Just (some, chan') -> case castTransition (Proxy :: Proxy from) some of
         Unexpected -> pure (StreamUnexpected some)
         Expected tr -> useChannel chan' (k tr)
   PeerYield exch next -> do
-    chan' <- lift $ send chan (SomeTransition (exchangeTransition exch))
+    chan' <- Trans.lift $ send chan (SomeTransition (exchangeTransition exch))
     useChannel chan' next
 
 -- | 'useChannel' where the 'Channel' and 'Peer' are in the same monad, and
