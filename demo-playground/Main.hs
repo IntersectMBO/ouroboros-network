@@ -29,8 +29,8 @@ import           Data.Semigroup ((<>))
 import           Data.String.Conv (toS)
 import           Options.Applicative
 
-import           Ouroboros.Consensus.Infra.Singletons (Dict (..), withSomeSing)
-import           Ouroboros.Consensus.Infra.Util
+import           Ouroboros.Consensus.Util
+import           Ouroboros.Consensus.Util.Singletons (Dict (..), withSomeSing)
 import           Ouroboros.Network.Chain (Chain (..), HasHeader)
 import           Ouroboros.Network.ChainProducerState
 import           Ouroboros.Network.ConsumersAndProducers

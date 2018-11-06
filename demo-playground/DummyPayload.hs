@@ -11,7 +11,7 @@ module DummyPayload (
   , toChain
   ) where
 
-import           Ouroboros.Consensus.Infra.Util
+import           Ouroboros.Consensus.Util
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (Chain (..))
 import           Ouroboros.Network.Serialise
