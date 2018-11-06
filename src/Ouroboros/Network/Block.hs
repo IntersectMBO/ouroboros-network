@@ -3,6 +3,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 -- | Abstract view over blocks
 --
@@ -34,7 +35,6 @@ class ( Eq        (HeaderHash b)
       , Ord       (HeaderHash b)
       , Show      (HeaderHash b)
       , Serialise (HeaderHash b)
-      , Hashable  (HeaderHash b)
       ) => HasHeader b where
     -- TODO: I /think/ we should be able to make this injective, but I'd have
     -- to check after the redesign of the block abstraction (which will live
@@ -57,7 +57,7 @@ deriving instance HasHeader block => Eq       (Hash block)
 deriving instance HasHeader block => Ord      (Hash block)
 deriving instance HasHeader block => Show     (Hash block)
 
-instance HasHeader block => Hashable (Hash block)
+instance (HasHeader block, Hashable (HeaderHash block)) => Hashable (Hash block)
   -- use generic instance
 
 castHash :: HeaderHash b ~ HeaderHash b' => Hash b -> Hash b'
