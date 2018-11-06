@@ -40,7 +40,6 @@ import           Data.STRef.Lazy
 
 import           Ouroboros.Network.MonadClass.MonadFork
 import           Ouroboros.Network.MonadClass.MonadSay
-import           Ouroboros.Network.MonadClass.MonadSendRecv
 import           Ouroboros.Network.MonadClass.MonadSTM hiding (TVar)
 import qualified Ouroboros.Network.MonadClass.MonadSTM as MonadSTM
 import           Ouroboros.Network.MonadClass.MonadTimer
@@ -81,6 +80,10 @@ newtype Probe s a = Probe (STRef s (ProbeTrace a))
 
 failSim :: String -> Free (SimF s) ()
 failSim = Free.liftF . Fail
+
+--
+-- Monad class instances
+--
 
 newtype VTime         = VTime Micro
   deriving (Eq, Ord, Show)
@@ -135,21 +138,9 @@ instance MonadTimer (Free (SimF s)) where
   updateTimeout t d = Free.liftF $ UpdateTimeout t d ()
   cancelTimeout t   = Free.liftF $ CancelTimeout t   ()
 
-instance MonadSendRecv (Free (SimF s)) where
-  type BiChan (Free (SimF s)) = SimChan s
-
-  newChan = SimChan <$> atomically (newTVar Nothing) <*> atomically (newTVar Nothing)
-  sendMsg (SimChan  s _r) = atomically . writeTVar s . Just
-  recvMsg (SimChan _s  r) = atomically $ do
-      mmsg <- readTVar r
-      case mmsg of
-        Nothing  -> retry
-        Just msg -> writeTVar r Nothing >> return msg
-
-data SimChan s send recv = SimChan (TVar s (Maybe send)) (TVar s (Maybe recv))
-
-flipSimChan :: SimChan s recv send -> SimChan s send recv
-flipSimChan (SimChan unichanAB unichanBA) = SimChan unichanBA unichanAB
+--
+-- Simulation interpreter
+--
 
 data Thread s = Thread ThreadId (SimM s ())
 

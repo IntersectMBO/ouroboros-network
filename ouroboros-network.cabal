@@ -59,7 +59,6 @@ library
                        Ouroboros.Network.MonadClass.MonadFork
                        Ouroboros.Network.MonadClass.MonadProbe
                        Ouroboros.Network.MonadClass.MonadSay
-                       Ouroboros.Network.MonadClass.MonadSendRecv
                        Ouroboros.Network.MonadClass.MonadSTM
                        Ouroboros.Network.MonadClass.MonadTimer
                        Ouroboros.Network.Node
