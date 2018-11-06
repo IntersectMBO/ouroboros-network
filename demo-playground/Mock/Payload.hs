@@ -8,9 +8,14 @@ module Mock.Payload (
     , fixupBlock
     , chainFrom
     , toChain
+    , addTxs
     ) where
 
+import           Data.Semigroup ((<>))
+import           Data.Set (Set)
+
 import           Ouroboros.Consensus.Block.SimpleUTxO
+import qualified Ouroboros.Consensus.UTxO.Mock as Mock
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (Chain (..))
 import qualified Ouroboros.Network.Chain as C
@@ -64,3 +69,8 @@ chainFrom c n =
                    [Slot (headSlot + s) | s <- [1 .. fromIntegral n]]
   where
     Slot headSlot = C.headSlot c
+
+addTxs :: Set Mock.Tx
+       -> SimpleUtxoBlock
+       -> SimpleUtxoBlock
+addTxs txs b = b { simpleUtxoBody = txs <> simpleUtxoBody b }

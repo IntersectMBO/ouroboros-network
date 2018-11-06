@@ -117,13 +117,14 @@ executable demo-playground
   main-is:             Main.hs
   ghc-options:         -threaded -Wall -O2 "-with-rtsopts=-N"
   other-modules:       CLI
+                       BlockGeneration
                        Dummy.Payload
+                       Logging
                        Mock.Payload
                        Mock.TxSubmission
+                       NamedPipe
                        Payload
                        Run
-                       Logging
-                       NamedPipe
   build-depends:       base,
                        QuickCheck,
                        aeson,

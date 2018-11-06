@@ -13,7 +13,6 @@ module Run (
       runNode
     ) where
 
-import           Control.Concurrent (newMVar)
 import qualified Control.Concurrent.Async as Async
 import           Control.Concurrent.STM (TBQueue, TVar, atomically, newTBQueue,
                      newTVar)
@@ -30,14 +29,17 @@ import           Data.String.Conv (toS)
 
 import           Ouroboros.Consensus.Infra.Singletons (Dict (..), withSomeSing)
 import           Ouroboros.Consensus.Infra.Util
+import           Ouroboros.Consensus.UTxO.Mempool (Mempool, mempoolInsert)
 import qualified Ouroboros.Consensus.UTxO.Mock as Mock
 import           Ouroboros.Network.Chain (Chain (..), HasHeader)
 import           Ouroboros.Network.ChainProducerState
 import           Ouroboros.Network.ConsumersAndProducers
+import           Ouroboros.Network.MonadClass hiding (TVar, atomically, newTVar)
 import           Ouroboros.Network.Node (NodeId (..))
 import qualified Ouroboros.Network.Node as Node
 import           Ouroboros.Network.Serialise hiding ((<>))
 
+import           BlockGeneration (blockGenerator)
 import           CLI
 import           Logging
 import qualified NamedPipe
@@ -132,13 +134,23 @@ handleSimpleNode CLI{..} payloadType = do
                    let initialChain :: Chain (Payload pt)
                        initialChain = toChain initialChainData
 
+                       initialPool :: Mempool Mock.Tx
+                       initialPool = case tx of
+                                    Nothing -> mempty
+                                    Just tr -> mempoolInsert tr mempty
+
+                   -- Each node has a mempool, regardless from its consumer
+                   -- and producer threads.
+                   nodeMempool <- newMVar initialPool
+
+
                    -- The calls to the 'Unix' functions are flipped here, as for each
                    -- of my producers I want to create a consumer node and for each
                    -- of my consumers I want to produce something.
                    (upstream, consumerThreads) <-
                      fmap unzip $ forM producers $ \pId ->
                        case isLogger of
-                            True  -> spawnLogger loggingQueue pId
+                            True  -> spawnLogger nodeMempool loggingQueue pId
                             False -> spawnConsumer initialChain pId
 
                    cps <- atomically $ newTVar (initChainProducerState initialChain)
@@ -146,8 +158,11 @@ handleSimpleNode CLI{..} payloadType = do
 
                    Node.forkRelayKernel upstream cps
                    when (role == CoreNode) $ do
-                       Node.forkCoreKernel slotDuration
-                                           (chainFrom initialChain 100)
+                       blockVar <- blockGenerator nodeMempool
+                                                  cps
+                                                  slotDuration
+                                                  (chainFrom initialChain 100)
+                       Node.forkCoreKernel blockVar
                                            fixupBlock
                                            cps
 
@@ -167,13 +182,13 @@ handleSimpleNode CLI{..} payloadType = do
                      , Mock.HasUtxo (Payload pt)
                      , Mock.HasUtxo (Chain (Payload pt))
                      )
-                  => TBQueue LogEvent
+                  => MVar IO (Mempool Mock.Tx)
+                  -> TBQueue LogEvent
                   -> NodeId
                   -> IO (TVar (Chain (Payload pt)), Async.Async ())
-      spawnLogger q targetId = do
+      spawnLogger mempoolVar q targetId = do
           chVar <- atomically $ newTVar Genesis
-          emptyPool <- newMVar mempty
-          let handler = LoggerHandler q chVar emptyPool
+          let handler = LoggerHandler q chVar mempoolVar
           a     <- Async.async $ NamedPipe.runConsumer myNodeId targetId $
                      loggerConsumer handler targetId
           pure (chVar, a)

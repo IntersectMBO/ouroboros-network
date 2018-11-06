@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 module Ouroboros.Network.Node where
 
@@ -202,7 +203,6 @@ createTwoWaySubscriptionChannels trDelay1 trDelay2 = do
   r21 <- createOneWaySubscriptionChannels trDelay2 trDelay1
   return $ r12 <> swap r21
 
-
 -- | Generate a block from a given chain.  Each @block@ is produced at
 -- @slotDuration * blockSlot block@ time.
 --
@@ -219,7 +219,6 @@ blockGenerator :: forall block m stm.
                -- users to generate \"half chains\" in case we want to simulate
                -- nodes having access to already part of the overall chain.
                -> m (TVar m (Maybe block))
-               -- ^ returns an stm transaction which returns block
 blockGenerator slotDuration chain = do
   outputVar <- atomically (newTVar Nothing)
   sequence_ [ timer (slotDuration * fromIntegral (getSlot $ blockSlot b)) (atomically (writeTVar outputVar (Just b)))
@@ -371,22 +370,16 @@ forkCoreKernel :: forall block m stm.
                   , MonadSTM m stm
                   , MonadTimer m
                   )
-               => Duration (Time m)
-               -- ^ slot duration
-               -> [block]
-               -- ^ Blocks to produce (in order they should be produced)
+               => TVar m (Maybe block)
                -> (Chain block -> block -> block)
                -> TVar m (ChainProducerState block)
                -> m ()
-forkCoreKernel slotDuration gchain fixupBlock cpsVar = do
-  blockVar <- blockGenerator slotDuration gchain
-  fork $ forever $ applyGeneratedBlock blockVar
+forkCoreKernel blockVar fixupBlock cpsVar = do
+  fork $ forever applyGeneratedBlock
 
   where
-    applyGeneratedBlock
-      :: TVar m (Maybe block)
-      -> m ()
-    applyGeneratedBlock blockVar = atomically $ do
+    applyGeneratedBlock :: m ()
+    applyGeneratedBlock = atomically $ do
       block <- getBlock blockVar
       cps@ChainProducerState{chainState = chain} <- readTVar cpsVar
       writeTVar cpsVar (switchFork (addBlock chain block) cps)
@@ -421,6 +414,7 @@ coreNode :: forall  m stm.
      -> NodeChannels m (MsgProducer Block) (MsgConsumer Block)
      -> m (TVar m (ChainProducerState Block))
 coreNode nid slotDuration gchain chans = do
-  cpsVar <- relayNode nid Genesis chans
-  forkCoreKernel slotDuration gchain Concrete.fixupBlock cpsVar
+  cpsVar   <- relayNode nid Genesis chans
+  blockVar <- blockGenerator slotDuration gchain
+  forkCoreKernel blockVar Concrete.fixupBlock cpsVar
   return cpsVar

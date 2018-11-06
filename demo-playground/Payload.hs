@@ -15,15 +15,18 @@ module Payload (
     , fixupBlock
     , chainFrom
     , toChain
+    , addTxs
     ) where
 
 import           Data.List (intercalate)
 import           Data.Semigroup ((<>))
+import           Data.Set (Set)
 
 import qualified Dummy.Payload as Dummy
 import qualified Mock.Payload as Mock
 import           Ouroboros.Consensus.Infra.Singletons
 import           Ouroboros.Consensus.Infra.Util
+import qualified Ouroboros.Consensus.UTxO.Mock as Mock
 import           Ouroboros.Network.Chain (Chain)
 
 data PayloadType =
@@ -65,15 +68,18 @@ class PayloadImplementation (pt :: PayloadType) where
     fixupBlock :: Chain (Payload pt) -> (Payload pt) -> (Payload pt)
     chainFrom  :: Chain (Payload pt) -> Int -> [Payload pt]
     toChain    :: [Int] -> Chain (Payload pt)
+    addTxs     :: Set Mock.Tx -> Payload pt -> Payload pt
 
 instance PayloadImplementation 'MockPayloadType where
     type Payload 'MockPayloadType = Mock.SimpleUtxoBlock
     fixupBlock = Mock.fixupBlock
     chainFrom  = Mock.chainFrom
     toChain    = Mock.toChain
+    addTxs     = Mock.addTxs
 
 instance PayloadImplementation 'DummyPayloadType where
     type Payload 'DummyPayloadType = Dummy.DummyPayload
     fixupBlock = Dummy.fixupBlock
     chainFrom  = Dummy.chainFrom
     toChain    = Dummy.toChain
+    addTxs   _ = id
