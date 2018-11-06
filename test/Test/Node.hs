@@ -488,38 +488,40 @@ genNonEmptyHeaderChain genesis = do
 -- possible because every node must have _a_ genesis block, and there is no
 -- one true genesis block. 
 genStaticNetDesc
-  :: forall p .
-     Gen Graph                               -- ^ Generate adjacency.
+  :: forall m .
+     ( Applicative m )
+  => Gen Graph                               -- ^ Generate adjacency.
                                              -- Out-edge means "consume from".
   -> (Int -> Gen String)                     -- ^ Name assignment.
   -> (Int -> Gen (NonEmpty BlockHeader))     -- ^ Generate header chains.
-  -> Gen (StaticNetDesc BlockHeader)
+  -> Gen (StaticNetDesc BlockHeader m ())
 genStaticNetDesc genGraph genName genChain = do
   gr <- genGraph
   let vs = vertices gr
   vs' <- forM vs $ \v -> do
     desc <- genStaticNodeDesc (genName v) (genChain v)
     pure (v, desc)
-  let nodeDescs :: Map Vertex (StaticNodeDesc BlockHeader Void)
+  let nodeDescs :: Map Vertex (StaticNodeDesc Void BlockHeader m ())
       nodeDescs = Map.fromList vs'
   pure $ StaticNetDesc gr nodeDescs
 
 genStaticNodeDesc
-  :: Gen String
+  :: ( Applicative m )
+  => Gen String
   -> Gen (NonEmpty BlockHeader)
-  -> Gen (StaticNodeDesc BlockHeader Void)
-genStaticNodeDesc genName genChain = staticNodeDesc <$> genName <*> genChain
+  -> Gen (StaticNodeDesc Void BlockHeader m ())
+genStaticNodeDesc genName genChain = staticNodeDesc <$> genName <*> (staticChain <$> genChain)
 
 -- | Asserts that all nodes in a connected graph reach consensus up to
 -- block count.
-prop_consensus :: StaticNetDesc BlockHeader -> Property
+prop_consensus :: StaticNetDesc BlockHeader IO () -> Property
 prop_consensus netDesc@(StaticNetDesc graph nodes) =
   not (isDisconnected graph) ==> ioProperty $ do
     -- Take the longest chain in the net and use that as a stop condition. This
     -- means cycles in the graph are OK: every node should stop producing when
     -- they get a chain that meets the length condition.
     let newestBlockNos :: Map Int BlockNo
-        newestBlockNos = fmap (blockNo . NE.last . nodeDescInitialChain) nodes
+        newestBlockNos = fmap (blockNo . NE.last . ecInitial . nodeDescChain) nodes
         highestBlockNo = foldl max (BlockNo 0) newestBlockNos
         chainSelection :: forall m p . Monad m => ChainSelection BlockHeader m (Seq BlockHeader)
         chainSelection = chainSelectionUntil $ \chain -> case Seq.viewr chain of
