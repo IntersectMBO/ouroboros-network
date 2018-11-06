@@ -5,6 +5,8 @@
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
+{-# OPTIONS_GHC -fno-warn-orphans #-}
+
 module Ouroboros.Consensus.UTxO.Mock (
     -- * Basic definitions
     Tx(..)
@@ -29,6 +31,7 @@ import           Ouroboros.Consensus.Infra.Crypto.Hash
 import           Ouroboros.Consensus.Infra.Util
 import           Ouroboros.Consensus.Infra.Util.HList (All, HList)
 import qualified Ouroboros.Consensus.Infra.Util.HList as HList
+import           Ouroboros.Network.Chain (Chain, toNewestFirst)
 
 
 {-------------------------------------------------------------------------------
@@ -81,6 +84,13 @@ instance HasUtxo a => HasUtxo [a] where
   txOuts     = foldr (Map.union . txOuts)    Map.empty
   confirmed  = foldr (Set.union . confirmed) Set.empty
   updateUtxo = repeatedly updateUtxo
+
+instance HasUtxo a => HasUtxo (Chain a) where
+  txIns      = txIns      . toNewestFirst
+  txOuts     = txOuts     . toNewestFirst
+  updateUtxo = updateUtxo . toNewestFirst
+  confirmed  = confirmed  . toNewestFirst
+
 
 instance All HasUtxo as => HasUtxo (HList as) where
   txIns      = HList.foldr (Proxy @HasUtxo) (Set.union . txIns)     Set.empty

@@ -1,15 +1,25 @@
+{-# LANGUAGE FlexibleContexts #-}
 module Mock.TxSubmission (
       command'
     , parseMockTx
-    , handleTxSubmission
+    -- * Decorating consumers
+    , addMempool
     ) where
 
+import           Control.Concurrent (MVar, modifyMVar_)
+import           Control.Concurrent.STM
+import           Control.Monad.Except
+import           Control.Monad.Identity
 import qualified Data.Set as Set
 import           Data.String
 import           Options.Applicative
 
 import           Ouroboros.Consensus.Infra.Crypto.Hash
+import           Ouroboros.Consensus.UTxO.Mempool (Mempool, consistent,
+                     mempoolInsert)
 import qualified Ouroboros.Consensus.UTxO.Mock as Mock
+import           Ouroboros.Network.Chain (Chain)
+import           Ouroboros.Network.ProtocolInterfaces (ConsumerHandlers (..))
 
 import           Debug.Trace
 
@@ -64,8 +74,35 @@ command' c descr p =
       ]
 
 {-------------------------------------------------------------------------------
-  Tx-submission logic
+  Main logic
 -------------------------------------------------------------------------------}
+
 
 handleTxSubmission :: Mock.Tx -> IO ()
 handleTxSubmission tx = traceShow "here" (print tx)
+
+-- | Adds a 'Mempool' to a consumer.
+addMempool :: Mock.HasUtxo block
+           => MVar (Mempool Mock.Tx)
+           -> TVar (Chain block)
+           -> ConsumerHandlers block IO
+           -> ConsumerHandlers block IO
+addMempool poolVar chainVar c = ConsumerHandlers {
+          getChainPoints = getChainPoints c
+
+        , addBlock = \b -> do
+            chain <- atomically $ readTVar chainVar
+            modifyMVar_ poolVar $ \mempool -> do
+              let updateMempool tx pool =
+                    let isConsistent = runExceptT $ consistent (Mock.utxo chain) mempool tx
+                    in case runIdentity isConsistent of
+                         Left _err -> pool
+                         Right ()  -> mempoolInsert tx mempool
+              return $ foldr updateMempool mempool (Mock.confirmed b)
+            addBlock c b
+
+        , rollbackTo = \p -> do
+            rollbackTo c p
+        }
+
+>>>>>>> 659f679... Add the 'addMempool' decorator

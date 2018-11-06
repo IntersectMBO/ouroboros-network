@@ -5,17 +5,19 @@ module Ouroboros.Consensus.UTxO.Mempool (
     Mempool(..)
   , mempoolToList
   , mempoolInsert
-  , consistent
-  , collect
+  , Transaction(..)
   ) where
 
 import           Control.Monad.Except
+import qualified Data.Map.Strict as Map
+import           Data.Semigroup ((<>))
 import           Data.Set (Set)
 import qualified Data.Set as Set
 
-import           Ouroboros.Consensus.Infra.Util (Condense)
-import           Ouroboros.Consensus.UTxO.Mock (HasUtxo)
-import           Ouroboros.Network.Chain (Chain)
+import           Ouroboros.Consensus.Infra.Util (Condense (..))
+import           Ouroboros.Consensus.Infra.Util.HList
+import           Ouroboros.Consensus.UTxO.Mock (HasUtxo, Tx, TxIn, Utxo, txIns,
+                     updateUtxo, utxo)
 import           Ouroboros.Network.Serialise (Serialise)
 
 {-------------------------------------------------------------------------------
@@ -23,7 +25,7 @@ import           Ouroboros.Network.Serialise (Serialise)
 -------------------------------------------------------------------------------}
 
 newtype Mempool tx = Mempool { mempoolToSet :: Set tx }
-  deriving (HasUtxo, Condense)
+  deriving (HasUtxo, Condense, Monoid)
 
 mempoolToList :: Mempool tx -> [tx]
 mempoolToList = Set.toList . mempoolToSet
@@ -45,5 +47,46 @@ class ( Show      tx
       ) => Transaction tx where
   type Inconsistent tx :: *
 
-  consistent :: Monad m => Chain tx -> Mempool tx -> tx -> ExceptT (Inconsistent tx) m ()
-  collect    ::            Chain tx -> Mempool tx -> (Set tx, Mempool tx)
+  consistent :: Monad m => Utxo -> Mempool tx -> tx -> ExceptT (Inconsistent tx) m ()
+  collect    ::            Utxo -> Mempool tx -> Set tx -> (Set tx, Mempool tx)
+
+
+
+{-------------------------------------------------------------------------------
+  Very simple model for transactions
+-------------------------------------------------------------------------------}
+
+data InconsistentTx =
+    InputNotAvailable Utxo TxIn
+  deriving (Show)
+
+instance Condense InconsistentTx where
+  condense (InputNotAvailable _ inp) = condense inp
+
+instance Transaction Tx where
+  type Inconsistent Tx = InconsistentTx
+
+  consistent chainUtxo mempool tx =
+      forM_ (txIns tx) $ \inp ->
+        unless (inp `Map.member` curUtxo) $
+          throwError $ InputNotAvailable curUtxo inp
+    where
+      curUtxo :: Utxo
+      curUtxo = chainUtxo <> utxo (mempool :* Nil)
+
+  collect chainUtxo mempool alreadyConfirmed =
+      go chainUtxo Set.empty Set.empty (mempoolToList mempool)
+    where
+      go :: Utxo    -- ^ Accumulator: UTxO
+         -> Set Tx  -- ^ Accumulator: valid
+         -> Set Tx  -- ^ Accumulator: invalid
+         -> [Tx]
+         -> (Set Tx, Mempool Tx)
+      go _ accValid accInvalid [] = (accValid, Mempool accInvalid)
+      go accUtxo accValid accInvalid (tx:txs)
+        | tx `Set.member` alreadyConfirmed =
+            go accUtxo accValid accInvalid txs
+        | all (`Map.member` accUtxo) (txIns tx) =
+            go (updateUtxo tx accUtxo) (Set.insert tx accValid) accInvalid txs
+        | otherwise =
+            go accUtxo accValid (Set.insert tx accInvalid) txs

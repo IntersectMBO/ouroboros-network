@@ -12,6 +12,7 @@ module Dummy.Payload (
   ) where
 
 import           Ouroboros.Consensus.Infra.Util
+import           Ouroboros.Consensus.UTxO.Mock
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (Chain (..))
 import           Ouroboros.Network.Serialise
@@ -27,6 +28,12 @@ deriving instance Eq DummyPayload
 instance Serialise DummyPayload where
     encode  (DummyPayload x) = encodeInt x
     decode  = DummyPayload <$> decodeInt
+
+instance HasUtxo DummyPayload where
+    txIns      = const mempty
+    txOuts     = const mempty
+    confirmed  = const mempty
+    updateUtxo _ = id
 
 -- TODO: For now this uses the representation from Block.Concrete
 -- There is no need for this.

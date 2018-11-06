@@ -9,16 +9,21 @@
 
 module Logging (
     LogEvent -- opaque
+  , LoggerHandler(..)
   , loggerConsumer
   , showNetworkTraffic
   ) where
 
+import           Control.Concurrent (MVar, readMVar)
 import           Control.Concurrent.STM
 import           Control.Monad
+import           Data.Function ((&))
 import           Data.Semigroup ((<>))
 import           GHC.Stack
 
 import           Ouroboros.Consensus.Infra.Util
+import           Ouroboros.Consensus.UTxO.Mempool
+import qualified Ouroboros.Consensus.UTxO.Mock as Mock
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (Chain (..))
 import qualified Ouroboros.Network.Chain as Chain
@@ -26,6 +31,8 @@ import           Ouroboros.Network.ConsumersAndProducers
 import           Ouroboros.Network.Node (NodeId)
 import           Ouroboros.Network.ProtocolInterfaces
 import           Ouroboros.Network.Testing.ConcreteBlock
+
+import           Mock.TxSubmission (addMempool)
 
 data LogEvent = LogEvent {
     msg    :: String
@@ -44,14 +51,24 @@ instance Condense BlockHeader where
                 <> condense headerBlockNo
                 <> "}"
 
+data LoggerHandler block = LoggerHandler {
+    loggingQueue :: TBQueue LogEvent
+  , chainVar     :: TVar (Chain block)
+  , mempoolVar   :: MVar (Mempool Mock.Tx)
+  }
+
 -- | Add logging to the example consumer
-loggerConsumer :: forall block. (Condense [block], Condense block, HasHeader block)
-               => TBQueue LogEvent
-               -> TVar (Chain block)
+loggerConsumer :: forall block. ( Mock.HasUtxo block
+                                , Condense [block]
+                                , Condense block
+                                , HasHeader block
+                                )
+               => LoggerHandler block
                -> NodeId
                -> ConsumerHandlers block IO
-loggerConsumer q chainvar ourProducer =
-    addLogging $ exampleConsumer chainvar
+loggerConsumer LoggerHandler{..} ourProducer =
+    exampleConsumer chainVar & addLogging
+                             & addMempool mempoolVar chainVar
   where
     addLogging :: ConsumerHandlers block IO -> ConsumerHandlers block IO
     addLogging c = ConsumerHandlers {
@@ -63,6 +80,7 @@ loggerConsumer q chainvar ourProducer =
         , addBlock = \b -> do
             logMsg $ "Received " <> condense b <> " from " <> show ourProducer
             addBlock c b
+            logMempool
             logChain
 
         , rollbackTo = \p -> do
@@ -73,12 +91,18 @@ loggerConsumer q chainvar ourProducer =
 
     logChain :: IO ()
     logChain = atomically $ do
-        chain <- readTVar chainvar
+        chain <- readTVar chainVar
         let m = "Current chain candidate: " <> condense (Chain.toOldestFirst chain)
-        writeTBQueue q $ LogEvent m ourProducer
+        writeTBQueue loggingQueue $ LogEvent m ourProducer
+
+    logMempool :: IO ()
+    logMempool = do
+        pool <- readMVar mempoolVar
+        let m = "My mempool: " <> condense pool
+        atomically $ writeTBQueue loggingQueue $ LogEvent m ourProducer
 
     logMsg :: String -> IO ()
-    logMsg m = atomically $ writeTBQueue q $ LogEvent m ourProducer
+    logMsg m = atomically $ writeTBQueue loggingQueue $ LogEvent m ourProducer
 
 {-------------------------------------------------------------------------------
   Orphans

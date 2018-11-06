@@ -13,6 +13,7 @@ module Run (
       runNode
     ) where
 
+import           Control.Concurrent (newMVar)
 import qualified Control.Concurrent.Async as Async
 import           Control.Concurrent.STM (TBQueue, TVar, atomically, newTBQueue,
                      newTVar)
@@ -29,6 +30,7 @@ import           Data.String.Conv (toS)
 
 import           Ouroboros.Consensus.Infra.Singletons (Dict (..), withSomeSing)
 import           Ouroboros.Consensus.Infra.Util
+import qualified Ouroboros.Consensus.UTxO.Mock as Mock
 import           Ouroboros.Network.Chain (Chain (..), HasHeader)
 import           Ouroboros.Network.ChainProducerState
 import           Ouroboros.Network.ConsumersAndProducers
@@ -38,7 +40,6 @@ import           Ouroboros.Network.Serialise hiding ((<>))
 
 import           CLI
 import           Logging
-import           Mock.TxSubmission (handleTxSubmission)
 import qualified NamedPipe
 import           Payload
 
@@ -85,6 +86,8 @@ dictPayloadImplementation :: Sing (pt :: PayloadType)
                                   , Condense  [Payload pt]
                                   , HasHeader (Payload pt)
                                   , PayloadImplementation pt
+                                  , Mock.HasUtxo (Payload pt)
+                                  , Mock.HasUtxo (Chain (Payload pt))
                                   )
 dictPayloadImplementation SDummyPayload = Dict
 dictPayloadImplementation SMockPayload  = Dict
@@ -161,14 +164,18 @@ handleSimpleNode CLI{..} payloadType = do
                      , Serialise (Payload pt)
                      , Condense  (Payload pt)
                      , Condense  [Payload pt]
+                     , Mock.HasUtxo (Payload pt)
+                     , Mock.HasUtxo (Chain (Payload pt))
                      )
                   => TBQueue LogEvent
                   -> NodeId
                   -> IO (TVar (Chain (Payload pt)), Async.Async ())
       spawnLogger q targetId = do
           chVar <- atomically $ newTVar Genesis
+          emptyPool <- newMVar mempty
+          let handler = LoggerHandler q chVar emptyPool
           a     <- Async.async $ NamedPipe.runConsumer myNodeId targetId $
-                     loggerConsumer q chVar targetId
+                     loggerConsumer handler targetId
           pure (chVar, a)
 
       spawnConsumer :: ( HasHeader (Payload pt)

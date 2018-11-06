@@ -131,6 +131,7 @@ executable demo-playground
                        bytestring,
                        containers,
                        directory,
+                       mtl,
                        optparse-applicative,
                        ouroboros-network,
                        stm,
