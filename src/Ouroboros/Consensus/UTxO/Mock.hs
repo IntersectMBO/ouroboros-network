@@ -31,7 +31,7 @@ import           Ouroboros.Consensus.Infra.Crypto.Hash
 import           Ouroboros.Consensus.Infra.Util
 import           Ouroboros.Consensus.Infra.Util.HList (All, HList)
 import qualified Ouroboros.Consensus.Infra.Util.HList as HList
-import           Ouroboros.Network.Chain (Chain, toNewestFirst)
+import           Ouroboros.Network.Chain (Chain, toOldestFirst)
 
 
 {-------------------------------------------------------------------------------
@@ -86,10 +86,10 @@ instance HasUtxo a => HasUtxo [a] where
   updateUtxo = repeatedly updateUtxo
 
 instance HasUtxo a => HasUtxo (Chain a) where
-  txIns      = txIns      . toNewestFirst
-  txOuts     = txOuts     . toNewestFirst
-  updateUtxo = updateUtxo . toNewestFirst
-  confirmed  = confirmed  . toNewestFirst
+  txIns      = txIns      . toOldestFirst
+  txOuts     = txOuts     . toOldestFirst
+  updateUtxo = updateUtxo . toOldestFirst
+  confirmed  = confirmed  . toOldestFirst
 
 
 instance All HasUtxo as => HasUtxo (HList as) where

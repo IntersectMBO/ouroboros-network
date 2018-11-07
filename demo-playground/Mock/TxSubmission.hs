@@ -114,9 +114,11 @@ readIncomingTx poolVar chainVar = do
         chain <- chainState <$> atomically (readTVar chainVar)
         modifyMVar_ poolVar $ \mempool -> do
             isConsistent <- runExceptT $ consistent (Mock.utxo chain) mempool newTx
-            return $ case isConsistent of
-                Left _err -> mempool
-                Right ()  -> mempoolInsert newTx mempool
+            case isConsistent of
+                Left err -> do
+                    liftIO $ print err
+                    return mempool
+                Right ()  -> return $ mempoolInsert newTx mempool
         threadDelay 1000
     -- Loop over
     readIncomingTx poolVar chainVar
