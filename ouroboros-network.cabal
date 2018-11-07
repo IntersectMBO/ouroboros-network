@@ -125,11 +125,13 @@ executable demo-playground
                        NamedPipe
                        Payload
                        Run
+                       Topology
   build-depends:       base,
                        QuickCheck,
                        aeson,
                        async,
                        bytestring,
+                       cborg,
                        containers,
                        directory,
                        mtl,

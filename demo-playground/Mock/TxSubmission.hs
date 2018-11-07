@@ -3,19 +3,21 @@ module Mock.TxSubmission (
       command'
     , parseMockTx
     , handleTxSubmission
-    , TopologyInfo(..)
     ) where
 
+import qualified Codec.CBOR.Write as CBOR
+import qualified Data.ByteString.Builder as B
+import qualified Data.Map.Strict as M
 import qualified Data.Set as Set
 import           Options.Applicative
+import           System.IO (hFlush)
 
 import qualified Ouroboros.Consensus.UTxO.Mock as Mock
 import           Ouroboros.Network.Node (NodeId (..))
+import           Ouroboros.Network.Serialise
 
-data TopologyInfo = TopologyInfo {
-    node         :: NodeId
-  , topologyFile :: FilePath
-  }
+import           NamedPipe
+import           Topology
 
 {-------------------------------------------------------------------------------
   Parsers for the mock UTxO model
@@ -68,7 +70,23 @@ command' c descr p =
 
 
 handleTxSubmission :: TopologyInfo -> Mock.Tx -> IO ()
-handleTxSubmission _nodeId tx = print tx
+handleTxSubmission tinfo tx = do
+    topoE <- readTopologyFile (topologyFile tinfo)
+    case topoE of
+         Left e  -> error e
+         Right t ->
+             case M.lookup (node tinfo) (toNetworkMap t) of
+                  Nothing -> error "Target node not found."
+                  Just n -> case role n of
+                                 CoreNode -> submitTx (node tinfo) tx
+                                 _ -> error "The target node is not a core one."
+
+
+submitTx :: NodeId -> Mock.Tx -> IO ()
+submitTx n tx =
+    withTxPipe n False $ \hdl -> do
+        B.hPutBuilder hdl (CBOR.toBuilder (encode tx))
+        hFlush hdl
 
 {-
 -- | Adds a 'Mempool' to a consumer.

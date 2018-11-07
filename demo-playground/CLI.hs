@@ -18,8 +18,9 @@ import           Options.Applicative
 import qualified Ouroboros.Consensus.UTxO.Mock as Mock
 import           Ouroboros.Network.Node (NodeId (..))
 
-import           Mock.TxSubmission (TopologyInfo (..), command', parseMockTx)
+import           Mock.TxSubmission (command', parseMockTx)
 import           Payload (PayloadType (..), allPayloadTypes, readPayloadType)
+import           Topology (TopologyInfo (..))
 
 data CLI = CLI
   { command      :: Command
