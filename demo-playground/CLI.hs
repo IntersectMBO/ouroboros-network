@@ -1,5 +1,6 @@
 module CLI (
     CLI(..)
+  , TopologyInfo(..)
   , Command(..)
   , parseCLI
   -- * Handy re-exports
@@ -17,44 +18,51 @@ import           Options.Applicative
 import qualified Ouroboros.Consensus.UTxO.Mock as Mock
 import           Ouroboros.Network.Node (NodeId (..))
 
-import           Mock.TxSubmission (command', parseMockTx)
+import           Mock.TxSubmission (TopologyInfo (..), command', parseMockTx)
 import           Payload (PayloadType (..), allPayloadTypes, readPayloadType)
 
 data CLI = CLI
-  { myNodeId     :: NodeId
-  , topologyFile :: FilePath
-  , command      :: Command
+  { command      :: Command
   }
 
 data Command =
-    SimpleNode PayloadType
-  | TxSubmitter Mock.Tx
+    SimpleNode  TopologyInfo
+  | TxSubmitter TopologyInfo Mock.Tx
 
 parseCLI :: Parser CLI
-parseCLI = CLI
-      <$> option (fmap CoreId auto)
-          ( long "node-id"
-         <> short 'n'
-         <> metavar "NODE-ID"
-         <> help "The ID for this node" )
-      <*> strOption
-         ( long "topology"
-         <> short 't'
-         <> metavar "FILEPATH"
-         <> help "The path to a file describing the topology."
-         )
-      <*> parseCommand
+parseCLI = CLI <$> parseCommand
 
 parseCommand :: Parser Command
 parseCommand = subparser $ mconcat [
     command' "node" "Run a node." $
-      fmap SimpleNode parsePayloadType
+      SimpleNode <$> parseTopologyInfo
   , command' "submit" "Submit a transaction." $
-      fmap TxSubmitter parseMockTx
+      TxSubmitter <$> parseTopologyInfo <*> parseMockTx
   ]
 
-parsePayloadType :: Parser PayloadType
-parsePayloadType =
+parseNodeId :: Parser NodeId
+parseNodeId =
+    option (fmap CoreId auto) (
+            long "node-id"
+         <> short 'n'
+         <> metavar "NODE-ID"
+         <> help "The ID for this node"
+    )
+
+parseTopologyFile :: Parser FilePath
+parseTopologyFile =
+    strOption (
+            long "topology"
+         <> short 't'
+         <> metavar "FILEPATH"
+         <> help "The path to a file describing the topology."
+    )
+
+parseTopologyInfo :: Parser TopologyInfo
+parseTopologyInfo = TopologyInfo <$> parseNodeId <*> parseTopologyFile
+
+_parsePayloadType :: Parser PayloadType
+_parsePayloadType =
     option (readPayloadType <$> str) (
                long "payload-type"
             <> short 'p'

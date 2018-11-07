@@ -29,7 +29,7 @@ import           Data.String.Conv (toS)
 
 import           Ouroboros.Consensus.Infra.Singletons (Dict (..), withSomeSing)
 import           Ouroboros.Consensus.Infra.Util
-import           Ouroboros.Consensus.UTxO.Mempool (Mempool, mempoolInsert)
+import           Ouroboros.Consensus.UTxO.Mempool (Mempool)
 import qualified Ouroboros.Consensus.UTxO.Mock as Mock
 import           Ouroboros.Network.Chain (Chain (..), HasHeader)
 import           Ouroboros.Network.ChainProducerState
@@ -42,6 +42,7 @@ import           Ouroboros.Network.Serialise hiding ((<>))
 import           BlockGeneration (blockGenerator)
 import           CLI
 import           Logging
+import           Mock.TxSubmission
 import qualified NamedPipe
 import           Payload
 
@@ -95,15 +96,16 @@ dictPayloadImplementation SDummyPayload = Dict
 dictPayloadImplementation SMockPayload  = Dict
 
 runNode :: CLI -> IO ()
-runNode cli@CLI{..} = do
+runNode CLI{..} = do
     -- If the user asked to submit a transaction, we don't have to spin up a
     -- full node, we simply transmit it and exit.
     case command of
-         TxSubmitter tx -> handleTxSubmission tx
-         SimpleNode pt  -> handleSimpleNode cli pt
+         TxSubmitter topology tx -> handleTxSubmission topology tx
+         -- Use the mock payload as default.
+         SimpleNode t            -> handleSimpleNode t MockPayloadType
 
-handleSimpleNode :: CLI -> PayloadType -> IO ()
-handleSimpleNode CLI{..} payloadType = do
+handleSimpleNode :: TopologyInfo -> PayloadType -> IO ()
+handleSimpleNode (TopologyInfo myNodeId topologyFile) payloadType = do
     let isLogger   = myNodeId == CoreId 0
 
     topoE <- eitherDecode . toS <$> B.readFile topologyFile
@@ -135,9 +137,7 @@ handleSimpleNode CLI{..} payloadType = do
                        initialChain = toChain initialChainData
 
                        initialPool :: Mempool Mock.Tx
-                       initialPool = case tx of
-                                    Nothing -> mempty
-                                    Just tr -> mempoolInsert tr mempty
+                       initialPool = mempty
 
                    -- Each node has a mempool, regardless from its consumer
                    -- and producer threads.
@@ -150,7 +150,7 @@ handleSimpleNode CLI{..} payloadType = do
                    (upstream, consumerThreads) <-
                      fmap unzip $ forM producers $ \pId ->
                        case isLogger of
-                            True  -> spawnLogger nodeMempool loggingQueue pId
+                            True  -> spawnLogger loggingQueue pId
                             False -> spawnConsumer initialChain pId
 
                    cps <- atomically $ newTVar (initChainProducerState initialChain)
@@ -179,16 +179,13 @@ handleSimpleNode CLI{..} payloadType = do
                      , Serialise (Payload pt)
                      , Condense  (Payload pt)
                      , Condense  [Payload pt]
-                     , Mock.HasUtxo (Payload pt)
-                     , Mock.HasUtxo (Chain (Payload pt))
                      )
-                  => MVar IO (Mempool Mock.Tx)
-                  -> TBQueue LogEvent
+                  => TBQueue LogEvent
                   -> NodeId
                   -> IO (TVar (Chain (Payload pt)), Async.Async ())
-      spawnLogger mempoolVar q targetId = do
+      spawnLogger q targetId = do
           chVar <- atomically $ newTVar Genesis
-          let handler = LoggerHandler q chVar mempoolVar
+          let handler = LoggerHandler q chVar
           a     <- Async.async $ NamedPipe.runConsumer myNodeId targetId $
                      loggerConsumer handler targetId
           pure (chVar, a)

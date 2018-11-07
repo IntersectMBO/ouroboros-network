@@ -2,26 +2,20 @@
 module Mock.TxSubmission (
       command'
     , parseMockTx
-    -- * Decorating consumers
-    , addMempool
+    , handleTxSubmission
+    , TopologyInfo(..)
     ) where
 
-import           Control.Concurrent (MVar, modifyMVar_)
-import           Control.Concurrent.STM
-import           Control.Monad.Except
-import           Control.Monad.Identity
 import qualified Data.Set as Set
-import           Data.String
 import           Options.Applicative
 
-import           Ouroboros.Consensus.Infra.Crypto.Hash
-import           Ouroboros.Consensus.UTxO.Mempool (Mempool, consistent,
-                     mempoolInsert)
 import qualified Ouroboros.Consensus.UTxO.Mock as Mock
-import           Ouroboros.Network.Chain (Chain)
-import           Ouroboros.Network.ProtocolInterfaces (ConsumerHandlers (..))
+import           Ouroboros.Network.Node (NodeId (..))
 
-import           Debug.Trace
+data TopologyInfo = TopologyInfo {
+    node         :: NodeId
+  , topologyFile :: FilePath
+  }
 
 {-------------------------------------------------------------------------------
   Parsers for the mock UTxO model
@@ -33,16 +27,11 @@ parseMockTx = mkTx
     <*> many parseMockTxOut
   where
     mkTx :: [Mock.TxIn] -> [Mock.TxOut] -> Mock.Tx
-    mkTx ins = traceShow ins . Mock.Tx (Set.fromList ins)
-
--- A simple mock 'Hash' where the user is requested to input only the last
--- hexadecimal digit.
-readSimpleMockHash :: ReadM (Hash Mock.Tx)
-readSimpleMockHash = fromString . mappend (replicate 31 '0') <$> str
+    mkTx ins = Mock.Tx (Set.fromList ins)
 
 parseMockTxIn :: Parser Mock.TxIn
 parseMockTxIn = (,)
-    <$> option readSimpleMockHash (mconcat [
+    <$> strOption (mconcat [
             long "txin"
           , help "Hash of the input transaction. Single hex char."
           ])
@@ -78,9 +67,10 @@ command' c descr p =
 -------------------------------------------------------------------------------}
 
 
-handleTxSubmission :: Mock.Tx -> IO ()
-handleTxSubmission tx = traceShow "here" (print tx)
+handleTxSubmission :: TopologyInfo -> Mock.Tx -> IO ()
+handleTxSubmission _nodeId tx = print tx
 
+{-
 -- | Adds a 'Mempool' to a consumer.
 addMempool :: Mock.HasUtxo block
            => MVar (Mempool Mock.Tx)
@@ -104,5 +94,4 @@ addMempool poolVar chainVar c = ConsumerHandlers {
         , rollbackTo = \p -> do
             rollbackTo c p
         }
-
->>>>>>> 659f679... Add the 'addMempool' decorator
+-}
