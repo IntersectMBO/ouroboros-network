@@ -7,12 +7,9 @@ module Ouroboros.Network.Protocol.Get.Client where
 import Ouroboros.Network.Protocol.Typed
 import Ouroboros.Network.Protocol.Get.Type
 
-data Client m resource resourceId a = Client {
-    -- | Handle incoming data.
-    handleData :: Maybe resource -> m a,
-    -- | Request resource indenfied by @'getResourceId'@
-    getResourceId :: resourceId
-  }
+-- | Client reqeusting a resource identified by a resouce id.
+data Client m resource resourceId a where
+    Request :: resourceId -> (Maybe resource -> m a) -> Client m resource resourceId a
 
 -- | Interpret @'Client'@ as a client side of the typed @'GetProtocol'@
 --
@@ -22,7 +19,7 @@ streamClient
   -> Peer GetProtocol (GetMessage resource resourceId)
           (Yielding StIdle) (Finished StDone)
           m a
-streamClient Client {..} = over (MsgRequest getResourceId) $ await $ \msg -> 
+streamClient (Request resourceId handleData) = over (MsgRequest resourceId) $ await $ \msg -> 
   case msg of
     MsgResponse r -> hole (done <$> handleData (Just r))
     MsgNoData     -> hole (done <$> handleData Nothing)

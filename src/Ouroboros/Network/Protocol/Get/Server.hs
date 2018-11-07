@@ -9,10 +9,10 @@ import Ouroboros.Network.Protocol.Get.Type
 
 data Server m resource resourceId a = Server {
     -- | The client requested data identified by `resourceId`.
-    getData :: resourceId -> m (Maybe resource),
+    serverRequest :: resourceId -> m (Maybe resource),
 
     -- | The terminal value returned by the server.
-    handleDone :: a
+    serverDone :: a
   }
 
 -- | Create server side of the @'GetProtocol'@.
@@ -26,7 +26,7 @@ streamServer
 streamServer Server {..} = await $ \msg ->
   case msg of
     MsgRequest rid -> hole $ do
-      mr <- getData rid
+      mr <- serverRequest rid
       case mr of
-        Just r  -> pure $ out (MsgResponse r) (done handleDone)
-        Nothing -> pure $ out MsgNoData (done handleDone)
+        Just r  -> pure $ out (MsgResponse r) (done serverDone)
+        Nothing -> pure $ out MsgNoData (done serverDone)

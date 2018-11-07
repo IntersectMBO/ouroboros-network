@@ -13,7 +13,7 @@ direct
   => Server m resource resourceId a
   -> Client m resource resourceId b
   -> m (a, b)
-direct Server {..} Client {..} = do
-  mr <- getData getResourceId
-  (handleDone,) <$> handleData mr
+direct Server {..} (Request resourceId req) = do
+  mr <- serverRequest resourceId
+  (serverDone,) <$> req mr
   
