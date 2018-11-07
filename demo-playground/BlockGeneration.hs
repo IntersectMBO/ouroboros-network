@@ -30,7 +30,10 @@ blockGenerator mempoolVar cps slotDuration chain = do
     forM_ chain $ \b ->
         timer (slotDuration * fromIntegral (getSlot $ blockSlot b)) $ do
             currentChain <- chainState <$> atomically (readTVar cps)
-            -- Before generating a new block, look at the mempool.
+            -- Before generating a new block, look for incoming transactions.
+            -- If there are, check if the mempool is consistent and, if it is,
+            -- grab the valid new transactions and incorporate them into a
+            -- new block.
             valid <- modifyMVar mempoolVar $ \mempool ->
                          return $ swap
                                 $ collect (Mock.utxo currentChain) mempool

@@ -114,6 +114,12 @@ handleSimpleNode (TopologyInfo myNodeId topologyFile) payloadType = do
                    cps <- atomically $ newTVar (initChainProducerState initialChain)
                    producerThreads <- forM consumers (spawnProducer cps)
 
+                   -- Spawn the thread which listens to the mempool.
+                   mempoolThread <-
+                       case role of
+                           CoreNode -> (:[]) <$> spawnMempoolListener myNodeId nodeMempool cps
+                           _ -> mempty
+
                    Node.forkRelayKernel upstream cps
                    when (role == CoreNode) $ do
                        blockVar <- blockGenerator nodeMempool
@@ -124,8 +130,10 @@ handleSimpleNode (TopologyInfo myNodeId topologyFile) payloadType = do
                                            fixupBlock
                                            cps
 
+
                    let allThreads = terminalThread <> producerThreads
                                                    <> consumerThreads
+                                                   <> mempoolThread
                    void $ Async.waitAnyCancel allThreads
 
   where
@@ -171,4 +179,4 @@ handleSimpleNode (TopologyInfo myNodeId topologyFile) payloadType = do
             exampleProducer cps
 
 slotDuration :: Int
-slotDuration = 2 * 1000000
+slotDuration = 5 * 1000000

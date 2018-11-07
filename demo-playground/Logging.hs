@@ -36,7 +36,8 @@ data LogEvent = LogEvent {
 showNetworkTraffic :: HasCallStack => TBQueue LogEvent -> IO ()
 showNetworkTraffic q = forever $ do
     LogEvent{..} <- atomically $ readTBQueue q
-    putStrLn $ "[conv_with:" <> show sender <> "] " <> msg
+    -- Add an extra newline to help readability.
+    putStrLn $ "[conv_with:" <> show sender <> "] " <> msg <> "\n"
 
 instance Condense BlockHeader where
     condense BlockHeader{..} =

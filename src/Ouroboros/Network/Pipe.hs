@@ -5,9 +5,12 @@
 {-# LANGUAGE ScopedTypeVariables        #-}
 
 module Ouroboros.Network.Pipe (
+    Protocol
+  , recvMsg
     -- * Run producer/consumer over a pipe
-    runProducer
+  , runProducer
   , runConsumer
+  , runProtocolWithPipe
     -- * Demos
   , demo1
   , demo2

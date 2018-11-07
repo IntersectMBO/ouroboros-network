@@ -1,22 +1,36 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 module Mock.TxSubmission (
       command'
     , parseMockTx
     , handleTxSubmission
+    , spawnMempoolListener
     ) where
 
 import qualified Codec.CBOR.Write as CBOR
+import           Control.Concurrent (threadDelay)
+import qualified Control.Concurrent.Async as Async
+import           Control.Monad.Except
 import qualified Data.ByteString.Builder as B
 import qualified Data.Map.Strict as M
 import qualified Data.Set as Set
+import           Data.Void
 import           Options.Applicative
 import           System.IO (hFlush)
 
+import qualified Ouroboros.Consensus.Infra.Crypto.Hash as H
+import           Ouroboros.Consensus.Infra.Util (Condense (..))
+import           Ouroboros.Consensus.UTxO.Mempool (Mempool (..), consistent,
+                     mempoolInsert)
 import qualified Ouroboros.Consensus.UTxO.Mock as Mock
+import           Ouroboros.Network.ChainProducerState
+import           Ouroboros.Network.MonadClass hiding (recvMsg)
 import           Ouroboros.Network.Node (NodeId (..))
+import           Ouroboros.Network.Pipe
 import           Ouroboros.Network.Serialise
 
 import           NamedPipe
+import           Payload
 import           Topology
 
 {-------------------------------------------------------------------------------
@@ -83,33 +97,42 @@ handleTxSubmission tinfo tx = do
 
 
 submitTx :: NodeId -> Mock.Tx -> IO ()
-submitTx n tx =
+submitTx n tx = do
+    let txId = H.hash tx
     withTxPipe n False $ \hdl -> do
         B.hPutBuilder hdl (CBOR.toBuilder (encode tx))
         hFlush hdl
+    putStrLn $ "The Id for this transaction is: " <> condense txId
 
-{-
--- | Adds a 'Mempool' to a consumer.
-addMempool :: Mock.HasUtxo block
-           => MVar (Mempool Mock.Tx)
-           -> TVar (Chain block)
-           -> ConsumerHandlers block IO
-           -> ConsumerHandlers block IO
-addMempool poolVar chainVar c = ConsumerHandlers {
-          getChainPoints = getChainPoints c
+readIncomingTx :: Mock.HasUtxo (Payload pt)
+               => MVar IO (Mempool Mock.Tx)
+               -> TVar IO (ChainProducerState (Payload pt))
+               -> Protocol Void Mock.Tx ()
+readIncomingTx poolVar chainVar = do
+    newTx <- recvMsg
+    liftIO $ do
+        chain <- chainState <$> atomically (readTVar chainVar)
+        modifyMVar_ poolVar $ \mempool -> do
+            isConsistent <- runExceptT $ consistent (Mock.utxo chain) mempool newTx
+            return $ case isConsistent of
+                Left _err -> mempool
+                Right ()  -> mempoolInsert newTx mempool
+        threadDelay 1000
+    -- Loop over
+    readIncomingTx poolVar chainVar
 
-        , addBlock = \b -> do
-            chain <- atomically $ readTVar chainVar
-            modifyMVar_ poolVar $ \mempool -> do
-              let updateMempool tx pool =
-                    let isConsistent = runExceptT $ consistent (Mock.utxo chain) mempool tx
-                    in case runIdentity isConsistent of
-                         Left _err -> pool
-                         Right ()  -> mempoolInsert tx mempool
-              return $ foldr updateMempool mempool (Mock.confirmed b)
-            addBlock c b
+instance Serialise Void where
+    encode = error "You cannot encode Void."
+    decode = error "You cannot decode Void."
 
-        , rollbackTo = \p -> do
-            rollbackTo c p
-        }
--}
+spawnMempoolListener :: Mock.HasUtxo (Payload pt)
+                     => NodeId
+                     -> MVar IO (Mempool Mock.Tx)
+                     -> TVar IO (ChainProducerState (Payload pt))
+                     -> IO (Async.Async ())
+spawnMempoolListener myNodeId poolVar chainVar = do
+    Async.async $ do
+        withTxPipe myNodeId True $ \hdl -> do
+            -- Doesn't really matter we are using the same handle twice,
+            -- as our Protocol has type 'Protocol Void Mock.Tx'.
+            runProtocolWithPipe hdl hdl (readIncomingTx poolVar chainVar)

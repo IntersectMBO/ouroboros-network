@@ -13,7 +13,7 @@ import           GHC.Stack
 import           System.Directory (removeFile)
 import           System.IO
 import           System.Posix.Files (createNamedPipe, otherReadMode,
-                     otherWriteMode, ownerModes, ownerReadMode, unionFileModes)
+                     otherWriteMode, ownerModes, unionFileModes)
 
 import           Ouroboros.Network.Block (HasHeader)
 import           Ouroboros.Network.ConsumersAndProducers
@@ -66,7 +66,7 @@ withTxPipe :: HasCallStack
           -> IO a
 withTxPipe node destroyAfterUse action = do
     let pipeName = namedTxPipeFor node
-    bracket (do createNamedPipe pipeName (unionFileModes ownerReadMode otherWriteMode)
+    bracket (do createNamedPipe pipeName (unionFileModes ownerModes otherWriteMode)
                     `catch` (\(_ :: SomeException) -> pure ())
                 openFile pipeName ReadWriteMode
             ) (\p -> do
