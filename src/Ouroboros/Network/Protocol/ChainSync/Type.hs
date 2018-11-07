@@ -40,9 +40,9 @@ data ChainSyncState where
 -- either send one reply back, or two.
 --
 data StNextKind where
-  StCanAwait  :: StNextKind -- ^ The server can reply or send an await msg.
-  StMustReply :: StNextKind -- ^ The server must now reply, having already
-                                -- sent an await message.
+  StCanAwait  :: StNextKind -- The server can reply or send an await msg.
+  StMustReply :: StNextKind -- The server must now reply, having already
+                            -- sent an await message.
 
 
 -- | A type to identify the client\/server partition of states in our protocol.

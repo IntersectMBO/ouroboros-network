@@ -26,7 +26,7 @@ data ClientStream m a where
   -- all we have to provide here is a continuation for the single legal
   -- reply message.
   --
-  Ping           :: m (ClientStream m a) -- ^ continuation for Pong response
+  Ping           :: m (ClientStream m a) -- continuation for Pong response
                  -> ClientStream m a
 
   -- | Choose to terminate the protocol. This is an actual but nullary message,
