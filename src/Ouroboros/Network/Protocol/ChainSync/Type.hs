@@ -78,7 +78,7 @@ data ChainSyncMessage header point from to where
 
   -- | Acknowledge the request but require the consumer to wait for the next
   -- update. This means that the consumer is synced with the producer, and
-  -- the producer its waiting for its own chain state to change.
+  -- the producer is waiting for its own chain state to change.
   --
   MsgAwaitReply :: ChainSyncMessage header point (StNext StCanAwait) (StNext StMustReply)
 
