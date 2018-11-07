@@ -174,5 +174,5 @@ test-suite tests
                        text,
                        transformers,
                        void
-  ghc-options:         -Wall,
+  ghc-options:         -Wall
                        -fno-ignore-asserts

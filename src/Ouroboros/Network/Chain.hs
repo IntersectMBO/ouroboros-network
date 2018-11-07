@@ -127,7 +127,7 @@ genesisSlot = Slot 0
 genesisBlockNo :: BlockNo
 genesisBlockNo = BlockNo 0
 
-genesisPoint :: HasHeader block => Point block
+genesisPoint :: Point block
 genesisPoint = Point genesisSlot GenesisHash
 
 valid :: HasHeader block => Chain block -> Bool

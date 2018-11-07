@@ -259,7 +259,7 @@ expectedBFTSigner (Slot n) = BlockSigner (n `mod` 7)
 -- | To help with chain construction and shrinking it's handy to recalculate
 -- all the hashes.
 --
-fromListFixupBlocks :: HasHeader Block => [Block] -> Chain Block
+fromListFixupBlocks :: [Block] -> Chain Block
 fromListFixupBlocks []      = Genesis
 fromListFixupBlocks (b : c) = c' :> b'
   where
