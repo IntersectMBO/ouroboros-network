@@ -53,11 +53,15 @@ class ( Eq        (HeaderHash b)
 data Hash b = GenesisHash | BlockHash (HeaderHash b)
   deriving (Generic)
 
-deriving instance HasHeader block => Eq       (Hash block)
-deriving instance HasHeader block => Ord      (Hash block)
-deriving instance HasHeader block => Show     (Hash block)
+deriving instance HasHeader block => Eq   (Hash block)
+deriving instance HasHeader block => Ord  (Hash block)
+deriving instance HasHeader block => Show (Hash block)
 
-instance (HasHeader block, Hashable (HeaderHash block)) => Hashable (Hash block)
+-- | 'Hashable' instance for 'Hash'
+--
+-- Requires 'UndecidableInstances' because @Hashable (HeaderHash block)@
+-- is no smaller than @Hash block@.
+instance Hashable (HeaderHash block) => Hashable (Hash block)
   -- use generic instance
 
 castHash :: HeaderHash b ~ HeaderHash b' => Hash b -> Hash b'
