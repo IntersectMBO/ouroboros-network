@@ -48,6 +48,8 @@ instance HasUtxo SimpleUtxoBlock where
   updateUtxo = updateUtxo . simpleUtxoBody
   confirmed  = confirmed  . simpleUtxoBody
 
+instance StandardHash SimpleUtxoBlock
+
 instance HasHeader SimpleUtxoBlock where
     type HeaderHash SimpleUtxoBlock = ConcreteHeaderHash
 

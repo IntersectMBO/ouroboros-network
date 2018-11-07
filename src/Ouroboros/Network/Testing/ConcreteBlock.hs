@@ -96,6 +96,9 @@ newtype BodyHash = BodyHash Int
   HasHeader instances
 -------------------------------------------------------------------------------}
 
+instance StandardHash BlockHeader
+instance StandardHash Block
+
 instance HasHeader BlockHeader where
     type HeaderHash BlockHeader = ConcreteHeaderHash
 

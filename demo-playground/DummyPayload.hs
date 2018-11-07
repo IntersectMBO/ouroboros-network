@@ -28,6 +28,8 @@ instance Serialise DummyPayload where
     encode  (DummyPayload x) = encodeInt x
     decode  = DummyPayload <$> decodeInt
 
+instance StandardHash DummyPayload
+
 -- TODO: For now this uses the representation from Block.Concrete
 -- There is no need for this.
 instance HasHeader DummyPayload where
