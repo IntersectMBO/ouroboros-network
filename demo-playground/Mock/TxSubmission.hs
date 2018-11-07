@@ -7,16 +7,14 @@ module Mock.TxSubmission (
     , spawnMempoolListener
     ) where
 
-import qualified Codec.CBOR.Write as CBOR
 import           Control.Concurrent (threadDelay)
 import qualified Control.Concurrent.Async as Async
 import           Control.Monad.Except
-import qualified Data.ByteString.Builder as B
 import qualified Data.Map.Strict as M
 import qualified Data.Set as Set
 import           Data.Void
 import           Options.Applicative
-import           System.IO (hFlush)
+import           System.IO (IOMode (..))
 
 import qualified Ouroboros.Consensus.Infra.Crypto.Hash as H
 import           Ouroboros.Consensus.Infra.Util (Condense (..))
@@ -24,7 +22,7 @@ import           Ouroboros.Consensus.UTxO.Mempool (Mempool (..), consistent,
                      mempoolInsert)
 import qualified Ouroboros.Consensus.UTxO.Mock as Mock
 import           Ouroboros.Network.ChainProducerState
-import           Ouroboros.Network.MonadClass hiding (recvMsg)
+import           Ouroboros.Network.MonadClass hiding (recvMsg, sendMsg)
 import           Ouroboros.Network.Node (NodeId (..))
 import           Ouroboros.Network.Pipe
 import           Ouroboros.Network.Serialise
@@ -98,11 +96,13 @@ handleTxSubmission tinfo tx = do
 
 submitTx :: NodeId -> Mock.Tx -> IO ()
 submitTx n tx = do
-    let txId = H.hash tx
-    withTxPipe n False $ \hdl -> do
-        B.hPutBuilder hdl (CBOR.toBuilder (encode tx))
-        hFlush hdl
-    putStrLn $ "The Id for this transaction is: " <> condense txId
+    withTxPipe n WriteMode False $ \hdl -> do
+        let x = error "submitTx: this handle wasn't supposed to be used"
+        runProtocolWithPipe x hdl proto
+    putStrLn $ "The Id for this transaction is: " <> condense (H.hash tx)
+  where
+      proto :: Protocol Mock.Tx Void ()
+      proto = sendMsg tx
 
 readIncomingTx :: Mock.HasUtxo (Payload pt)
                => MVar IO (Mempool Mock.Tx)
@@ -134,7 +134,9 @@ spawnMempoolListener :: Mock.HasUtxo (Payload pt)
                      -> IO (Async.Async ())
 spawnMempoolListener myNodeId poolVar chainVar = do
     Async.async $ do
-        withTxPipe myNodeId True $ \hdl -> do
-            -- Doesn't really matter we are using the same handle twice,
-            -- as our Protocol has type 'Protocol Void Mock.Tx'.
-            runProtocolWithPipe hdl hdl (readIncomingTx poolVar chainVar)
+        -- Apparently I have to pass 'ReadWriteMode' here, otherwise the
+        -- node will die prematurely with a (DeserialiseFailure 0 "end of input")
+        -- error.
+        withTxPipe myNodeId ReadWriteMode True $ \hdl -> do
+            let x = error "spawnMempoolListener: this handle shouldn't have been used"
+            runProtocolWithPipe hdl x (readIncomingTx poolVar chainVar)

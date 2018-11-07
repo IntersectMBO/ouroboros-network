@@ -60,15 +60,16 @@ namedTxPipeFor n = "ouroboros-" <> dashify n <> "-tx-pipe"
 -- | Creates a unidirectional pipe for Tx transmission.
 withTxPipe :: HasCallStack
           => NodeId
+          -> IOMode
           -> Bool
           -- ^ Whether or not to destroy the pipe at teardown.
           -> (Handle -> IO a)
           -> IO a
-withTxPipe node destroyAfterUse action = do
+withTxPipe node ioMode destroyAfterUse action = do
     let pipeName = namedTxPipeFor node
     bracket (do createNamedPipe pipeName (unionFileModes ownerModes otherWriteMode)
                     `catch` (\(_ :: SomeException) -> pure ())
-                openFile pipeName ReadWriteMode
+                openFile pipeName ioMode
             ) (\p -> do
                 hClose p
                 when destroyAfterUse $

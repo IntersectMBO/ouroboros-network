@@ -10,7 +10,7 @@ module Ouroboros.Consensus.UTxO.Mempool (
 
 import           Control.Monad.Except
 import qualified Data.Map.Strict as Map
-import           Data.Semigroup ((<>))
+import           Data.Semigroup (Semigroup, (<>))
 import           Data.Set (Set)
 import qualified Data.Set as Set
 
@@ -25,7 +25,7 @@ import           Ouroboros.Network.Serialise (Serialise)
 -------------------------------------------------------------------------------}
 
 newtype Mempool tx = Mempool { mempoolToSet :: Set tx }
-  deriving (HasUtxo, Condense, Monoid)
+  deriving (HasUtxo, Condense, Semigroup, Monoid)
 
 mempoolToList :: Mempool tx -> [tx]
 mempoolToList = Set.toList . mempoolToSet
