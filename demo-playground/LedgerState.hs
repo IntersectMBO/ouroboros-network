@@ -7,18 +7,28 @@ module LedgerState (
 import qualified Control.Concurrent.Async as Async
 import           Control.Concurrent.STM (TBQueue, TVar, atomically, modifyTVar',
                      newTVar, readTVar, retry, writeTVar)
+import           Control.Monad.State
+import           Data.Function ((&))
 import           Data.Functor (($>))
 
 import           Ouroboros.Consensus.Infra.Util
 import           Ouroboros.Network.Chain (Chain (..), HasHeader)
-import           Ouroboros.Network.ChainProducerState
+import           Ouroboros.Network.ChainProducerState (ChainProducerState)
 import           Ouroboros.Network.ConsumersAndProducers
 import           Ouroboros.Network.Node (NodeId (..))
 import           Ouroboros.Network.Protocol (consumerSideProtocol1,
                      producerSideProtocol1)
+import           Ouroboros.Network.ProtocolInterfaces
 import           Ouroboros.Network.Serialise
 
 import           Logging
+
+
+data SomeState = SomeState { howManyRollbacks :: !Int
+                           , howManyAddBlocks :: !Int
+                           } deriving Show
+
+type M = StateT SomeState IO
 
 spawnLedgerStateListeners :: forall block. ( HasHeader block
                              , Serialise block
@@ -34,15 +44,16 @@ spawnLedgerStateListeners ourselves q initialChain cps = do
     chainV <- atomically $ newTVar initialChain
     let handler = Logging.LoggerHandler q chainV ourselves
 
-    let consumer = (Logging.addSimpleLogging handler $ exampleConsumer chainV)
+    let consumer = exampleConsumer chainV & (liftConsumerHandlers lift . Logging.addSimpleLogging handler)
+                                          & addPostProcessing
 
     consumerVar <- atomically $ newTVar []
     producerVar <- atomically $ newTVar []
 
-    ourOwnConsumer <- Async.async $
+    ourOwnConsumer <- Async.async $ flip evalStateT (SomeState 0 0) $
                           consumerSideProtocol1 consumer
-                          (sendMsg consumerVar)
-                          (recvMsg producerVar)
+                          (lift . sendMsg consumerVar)
+                          (lift $ recvMsg producerVar)
 
     ourOwnProducer <- Async.async $
                           producerSideProtocol1 (exampleProducer cps)
@@ -60,7 +71,20 @@ spawnLedgerStateListeners ourselves q initialChain cps = do
           []      -> retry
 
 
+addPostProcessing :: ConsumerHandlers block M -> ConsumerHandlers block M
+addPostProcessing c = ConsumerHandlers {
+      getChainPoints = getChainPoints c
 
+    , addBlock = \b -> do
+        addBlock c b
+        modify (\s -> s { howManyAddBlocks = howManyAddBlocks s + 1 })
+        get >>= lift . print
+
+    , rollbackTo = \p -> do
+        rollbackTo c p
+        modify (\s -> s { howManyRollbacks = howManyRollbacks s + 1 })
+        get >>= lift . print
+    }
 
 
 
