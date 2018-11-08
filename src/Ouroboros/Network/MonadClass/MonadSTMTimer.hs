@@ -15,16 +15,16 @@ import           Ouroboros.Network.MonadClass.MonadTimer
 
 data TimeoutState = TimeoutPending | TimeoutFired | TimeoutCancelled
 
-class MonadSTM m stm => MonadSTMTimer m stm where
+class MonadSTM m => MonadSTMTimer m where
   data Timeout m :: *
 
-  timeoutState   :: Timeout m -> stm TimeoutState
+  timeoutState   :: Timeout m -> Tr m TimeoutState
 
   newTimeout     :: Duration (Time m) -> m (Timeout m)
   updateTimeout  :: Timeout m -> Duration (Time m) -> m ()
   cancelTimeout  :: Timeout m -> m ()
 
-instance MonadSTMTimer IO STM.STM where
+instance MonadSTMTimer IO where
   data Timeout IO = TimeoutIO !(STM.TVar TimeoutState) !GHC.TimeoutKey
 
   timeoutState (TimeoutIO var _key) = STM.readTVar var

@@ -34,7 +34,7 @@ class (MonadProbe m, Monad n) => MonadRunProbe m n | m -> n, n -> m where
   readProbe   :: Probe m a -> n (ProbeTrace m a)
   runM        :: m () -> n ()
 
-withProbe :: (MonadProbe m, MonadRunProbe m n)
+withProbe :: MonadRunProbe m n
           => (Probe m a -> m ())
           -> n (ProbeTrace m a)
 withProbe f = do

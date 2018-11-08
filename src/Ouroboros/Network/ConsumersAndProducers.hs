@@ -28,9 +28,9 @@ import           Ouroboros.Network.ProtocolInterfaces
 -- This is of course only useful in tests and reference implementations since
 -- this is not a realistic chain representation.
 --
-exampleConsumer :: forall block m stm.
+exampleConsumer :: forall block m.
                    ( HasHeader block
-                   , MonadSTM m stm
+                   , MonadSTM m
                    )
                 => TVar m (Chain block)
                 -> ConsumerHandlers block m
@@ -68,9 +68,9 @@ recentOffsets = [0,1,2,3,5,8,13,21,34,55,89,144,233,377,610,987,1597,2584]
 -- this is not a realistic chain representation.
 --
 exampleProducer
-  :: forall block m stm.
+  :: forall block m.
      ( HasHeader block
-     , MonadSTM m stm
+     , MonadSTM m
      )
   => TVar m (ChainProducerState block)
   -> ProducerHandlers block m ReaderId

@@ -42,11 +42,10 @@ tests = testGroup "Dynamic chain generation" [
 
 -- Run BFT on the broadcast network, and check that all nodes converge to the
 -- same final chain
-test_simple_bft_convergence :: forall m n stm.
-                               ( MonadSTM m stm
+test_simple_bft_convergence :: forall m n.
+                               ( MonadSTM m
                                , MonadRunProbe m n
                                , MonadSay m
-                               , MonadProbe m
                                , Show (Time m)
                                )
                             => n Property
@@ -70,7 +69,7 @@ test_simple_bft_convergence =
     appendBlock :: NodeId
                 -> Slot
                 -> Chain Block
-                -> StateT Int stm (Chain Block)
+                -> StateT Int (Tr m) (Chain Block)
     appendBlock (RelayId _) _ _ = error "appendBlock: relay cant be leader"
     appendBlock (CoreId us) (Slot slot) c = do
         count <- state $ \n -> (n + 1, n + 1)
@@ -120,8 +119,8 @@ prop_simple_bft_convergence = runST test_simple_bft_convergence
 --
 -- We run for the specified number of blocks, then return the final state of
 -- each node.
-broadcastNetwork :: forall m stm st block.
-                    ( MonadSTM   m stm
+broadcastNetwork :: forall m st block.
+                    ( MonadSTM   m
                     , MonadTimer m
                     , MonadSay   m
                     , Show      block
@@ -133,7 +132,7 @@ broadcastNetwork :: forall m stm st block.
                  -- ^ Node initial state and initial chain
                  -> (   NodeId
                      -> Slot
-                     -> Chain block -> StateT st stm (Chain block)
+                     -> Chain block -> StateT st (Tr m) (Chain block)
                     )
                  -- ^ Produce a block
                  -> m (Map NodeId (Chain block))
@@ -189,10 +188,10 @@ slotDuration _ = 1000000
   Auxiliary
 -------------------------------------------------------------------------------}
 
-collectAllJust :: MonadSTM m stm => [TVar m (Maybe a)] -> stm [a]
+collectAllJust :: MonadSTM m => [TVar m (Maybe a)] -> Tr m [a]
 collectAllJust = mapM collectJust
 
-collectJust :: MonadSTM m stm => TVar m (Maybe a) -> stm a
+collectJust :: MonadSTM m => TVar m (Maybe a) -> Tr m a
 collectJust var = do
     ma <- readTVar var
     case ma of

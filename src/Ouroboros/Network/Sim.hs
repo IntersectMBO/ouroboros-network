@@ -116,7 +116,8 @@ instance MonadTimer (Free (SimF s)) where
 instance MonadFork (Free (SimF s)) where
   fork          task = Free.liftF $ Fork task ()
 
-instance MonadSTM (Free (SimF s)) (Free (StmF s)) where
+instance MonadSTM (Free (SimF s)) where
+  type Tr   (Free (SimF s)) = Free (StmF s)
   type TVar (Free (SimF s)) = TVar s
   atomically action = Free.liftF $ Atomically action id
   newTVar         x = Free.liftF $ NewTVar x id
@@ -423,7 +424,7 @@ ordNub = go Set.empty
 -- Examples
 --
 
-example0 :: (MonadSay m, MonadTimer m, MonadSTM m stm) => m ()
+example0 :: (MonadSay m, MonadTimer m, MonadSTM m) => m ()
 example0 = do
   say "starting"
   t <- atomically (newTVar (0 :: Int))
@@ -454,7 +455,7 @@ example1 = do
     say $ show x
 
 -- the trace should contain "1" followed by "2"
-example2 :: (MonadSay m, MonadSTM m stm) => m ()
+example2 :: (MonadSay m, MonadSTM m) => m ()
 example2 = do
   say "starting"
   v <- atomically $ newTVar Nothing
