@@ -12,7 +12,7 @@ import qualified Control.Monad.STM as STM
 import           Ouroboros.Network.MonadClass.MonadFork
 
 class (MonadFork m, Monad (Tr m)) => MonadSTM m where
-  type Tr   m = (n :: * -> *) | n -> m -- ^ STM transactions
+  type Tr   m = (n :: * -> *) | n -> m -- STM transactions
   type TVar m :: * -> *
 
   atomically   :: Tr m a -> m a
