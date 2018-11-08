@@ -33,6 +33,7 @@ import           Ouroboros.Network.Serialise hiding ((<>))
 
 import           BlockGeneration (blockGenerator)
 import           CLI
+import           LedgerState
 import           Logging
 import           Mock.TxSubmission
 import qualified NamedPipe
@@ -83,10 +84,7 @@ handleSimpleNode (TopologyInfo myNodeId topologyFile) payloadType = do
              -- Creates a TBQueue to be used by all the logger threads to monitor
              -- the traffic.
              loggingQueue    <- atomically $ newTBQueue 50
-             terminalThread  <-
-               case isLogger of
-                    True  -> (:[]) <$> spawnTerminalLogger loggingQueue
-                    False -> mempty
+             terminalThread  <- (:[]) <$> spawnTerminalLogger loggingQueue
 
              withSomeSing payloadType $ \(sPayloadType :: Sing (pt :: PayloadType)) ->
                case dictPayloadImplementation sPayloadType of
@@ -130,10 +128,15 @@ handleSimpleNode (TopologyInfo myNodeId topologyFile) payloadType = do
                                            fixupBlock
                                            cps
 
+                   ledgerStateThreads <- spawnLedgerStateListeners myNodeId
+                                                                   loggingQueue
+                                                                   initialChain
+                                                                   cps
 
                    let allThreads = terminalThread <> producerThreads
                                                    <> consumerThreads
                                                    <> mempoolThread
+                                                   <> ledgerStateThreads
                    void $ Async.waitAnyCancel allThreads
 
   where
@@ -151,9 +154,9 @@ handleSimpleNode (TopologyInfo myNodeId topologyFile) payloadType = do
                   -> IO (TVar (Chain (Payload pt)), Async.Async ())
       spawnLogger q targetId = do
           chVar <- atomically $ newTVar Genesis
-          let handler = LoggerHandler q chVar
+          let handler = LoggerHandler q chVar targetId
           a     <- Async.async $ NamedPipe.runConsumer myNodeId targetId $
-                     loggerConsumer handler targetId
+                     loggerConsumer handler
           pure (chVar, a)
 
       spawnConsumer :: ( HasHeader (Payload pt)

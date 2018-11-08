@@ -119,6 +119,7 @@ executable demo-playground
   other-modules:       CLI
                        BlockGeneration
                        Dummy.Payload
+                       LedgerState
                        Logging
                        Mock.Payload
                        Mock.TxSubmission

@@ -14,7 +14,7 @@
     ,
     { "nodeId": 2
     , "producers": []
-    , "consumers": [0, 1]
+    , "consumers": [0, 1, 5]
     , "initialChainData": [1,2,3]
     , "role": "core"
     }
@@ -34,9 +34,9 @@
     }
     ,
     { "nodeId": 5
-    , "producers": [1]
-    , "consumers": [0]
-    , "initialChainData": []
+    , "producers": [2]
+    , "consumers": []
+    , "initialChainData": [1,2,3,4,5,6,7,8]
     , "role": "relay"
     }
 ]
