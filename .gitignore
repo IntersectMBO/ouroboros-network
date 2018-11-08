@@ -10,6 +10,7 @@ doc/protocols.toc
 cabal.project.local*
 cabal.project.local~
 dist-newstyle/
+dist/
 *.swp
 *.swo
 *~
@@ -17,3 +18,4 @@ result*
 tags
 
 .stack-work/
+*.tix

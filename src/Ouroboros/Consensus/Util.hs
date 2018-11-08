@@ -16,6 +16,7 @@ module Ouroboros.Consensus.Util (
   , chunks
   , byteStringChunks
   , lazyByteStringChunks
+  , whenJust
     -- * Decorating one value with another
   , DecoratedWith(..)
   , Decorates(..)
@@ -74,6 +75,11 @@ lazyByteStringChunks n bs
   | Lazy.null bs = []
   | otherwise    = let (chunk, bs') = Lazy.splitAt (fromIntegral n) bs
                    in chunk : lazyByteStringChunks n bs'
+
+whenJust :: Applicative f => Maybe a -> (a -> f ()) -> f ()
+whenJust (Just x) f = f x
+whenJust Nothing _  = pure ()
+{-# INLINE whenJust #-}
 
 {-------------------------------------------------------------------------------
   Decorating one value with another

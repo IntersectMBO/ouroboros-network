@@ -17,6 +17,12 @@ source-repository head
 
 library
   hs-source-dirs:      src
+
+  if os(windows)
+     hs-Source-Dirs:   src-win32/
+  else
+     hs-Source-Dirs:   src-unix/
+
   -- At this experiment/prototype stage everything is exposed.
   -- This has to be tidied up once the design becomes clear.
   exposed-modules:
@@ -96,11 +102,19 @@ library
                        -- TODO rename.
                        Ouroboros.Network.ChainSyncExamples
 
+                       -- Storing things on disk
+                       Ouroboros.Storage.Immutable.DB
+                       Ouroboros.Storage.FS.Class
+                       Ouroboros.Storage.FS.Sim
+                       Ouroboros.Storage.FS.IO
+                       Ouroboros.Storage.Util
+
   other-modules:
                        Ouroboros.Network.ByteChannel
                        Ouroboros.Network.Codec
                        Ouroboros.Network.Framing
                        Ouroboros.Network.MsgChannel
+                       Ouroboros.Storage.IO
   default-language:    Haskell2010
   other-extensions:    BangPatterns,
                        DataKinds,
@@ -134,7 +148,10 @@ library
                        clock        >=0.7 && <0.8,
                        containers   >=0.6 && <0.7,
                        cryptonite   >=0.25 && <0.26,
+                       directory    < 1.5,
+                       exceptions   < 0.11,
                        fingertree   >=0.1 && <0.2,
+                       filepath     < 1.5.0.0,
                        free         >=5.1 && <5.2,
                        hashable     >=1.2 && <1.3,
                        memory       >=0.14 && <0.15,
@@ -155,6 +172,10 @@ library
                        void         >=0.7 && <0.8,
 
                        QuickCheck   >=2.12 && <2.13
+  if os(windows)
+     Build-depends:       Win32
+  else
+     Build-depends:       unix
 
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
@@ -257,5 +278,32 @@ test-suite test-consensus
                     tasty-expected-failure,
                     tasty-quickcheck,
                     typed-transitions
+  ghc-options:      -Wall
+                    -fno-ignore-asserts
+
+test-suite test-storage
+  type:             exitcode-stdio-1.0
+  hs-source-dirs:   test-storage
+  default-language: Haskell2010
+  main-is:          Main.hs
+  other-modules:
+                    Test.Ouroboros.Storage
+                    Test.Ouroboros.Storage.Immutable.Sim
+  build-depends:    base,
+                    ouroboros-network,
+
+                    QuickCheck,
+                    bytestring,
+                    containers,
+                    cryptonite,
+                    directory,
+                    exceptions,
+                    filepath,
+                    mtl,
+                    tasty,
+                    tasty-expected-failure,
+                    tasty-hunit,
+                    tasty-quickcheck,
+                    temporary
   ghc-options:      -Wall
                     -fno-ignore-asserts
