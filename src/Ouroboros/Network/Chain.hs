@@ -101,10 +101,7 @@ data Point block = Point {
        pointSlot :: Slot,
        pointHash :: Hash block
      }
-
-deriving instance HasHeader block => Eq   (Point block)
-deriving instance HasHeader block => Ord  (Point block)
-deriving instance HasHeader block => Show (Point block)
+   deriving (Eq, Ord, Show)
 
 blockPoint :: HasHeader block => block -> Point block
 blockPoint b =
