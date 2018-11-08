@@ -75,7 +75,9 @@ codecChannel codec = codecChannel' Nothing
     -> ExceptT (DecodeFailure fail) m (Maybe (t, Channel (ExceptT (DecodeFailure fail) m) t))
   codecRecv leftover channel = case leftover of
     Just piece -> codecRecvLeftover piece channel (decode codec)
-    Nothing -> codecRecvNoLeftover channel (decode codec)
+    -- If there's no input, give 'Nothing' rather than 'UnexpectedEndOfInput',
+    -- since in this case the end of input is normal.
+    Nothing -> codecRecvNoLeftover (pure Nothing) channel (decode codec)
 
   -- Receive using leftovers.
   codecRecvLeftover
@@ -88,19 +90,20 @@ codecChannel codec = codecChannel' Nothing
       -- Done without even using the channel.
       Done t leftover' -> pure $ Just (t, codecChannel' (Just leftover') channel)
       Fail fail _      -> throwE $ DecodeFailure fail
-      Partial decoder' -> codecRecvNoLeftover channel decoder'
+      Partial decoder' -> codecRecvNoLeftover (throwE UnexpectedEndOfInput) channel decoder'
 
   -- Receive without any leftovers: go straight to the channel 'recv'.
   codecRecvNoLeftover
-    :: Channel m piece
+    :: (forall x . ExceptT (DecodeFailure fail) m (Maybe x)) -- ^ End of input.
+    -> Channel m piece
     -> Decoder fail piece m t
     -> ExceptT (DecodeFailure fail) m (Maybe (t, Channel (ExceptT (DecodeFailure fail) m) t))
-  codecRecvNoLeftover channel decoder = lift (recv channel) >>= \it -> case it of
-    Nothing -> throwE $ UnexpectedEndOfInput
+  codecRecvNoLeftover onEnd channel decoder = lift (recv channel) >>= \it -> case it of
+    Nothing -> onEnd
     Just (piece, channel') -> lift (runDecoder decoder piece) >>= \it -> case it of
       Done t leftover  -> pure $ Just (t, codecChannel' (Just leftover) channel')
       Fail fail _      -> throwE $ DecodeFailure fail
-      Partial decoder' -> codecRecvNoLeftover channel' decoder'
+      Partial decoder' -> codecRecvNoLeftover (throwE UnexpectedEndOfInput) channel' decoder'
 
 eliminateDecodeFailure
   :: ( Monad m )
