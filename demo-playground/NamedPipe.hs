@@ -6,7 +6,6 @@ module NamedPipe (
 
 import           Control.Exception (SomeException, bracket, catch)
 import           Data.Semigroup ((<>))
-import           GHC.Stack
 import           System.Directory (removeFile)
 import           System.IO
 import           System.Posix.Files (createNamedPipe, otherReadMode, ownerModes,
@@ -19,8 +18,7 @@ import qualified Ouroboros.Network.Pipe as P
 import           Ouroboros.Network.Serialise (Serialise)
 
 -- | Creates two pipes, one for reading, one for writing.
-withPipe :: HasCallStack
-         => (NodeId, NodeId)
+withPipe :: (NodeId, NodeId)
          -> ((Handle, Handle) -> IO a)
          -> IO a
 withPipe (fromNode, toNode) action = do

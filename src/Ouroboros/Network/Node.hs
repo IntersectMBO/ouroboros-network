@@ -34,9 +34,9 @@ instance Hashable NodeId -- let generic instance do the job
 
 -- |
 -- State-full chain selection (@'ChainProducerState'@).
-longestChainSelection :: forall block m stm.
+longestChainSelection :: forall block m.
                          ( HasHeader block
-                         , MonadSTM m stm
+                         , MonadSTM m
                          )
                       => [TVar m (Maybe (Chain block))]
                       -> TVar m (ChainProducerState block)
@@ -44,7 +44,7 @@ longestChainSelection :: forall block m stm.
 longestChainSelection candidateChainVars cpsVar =
     forever (atomically updateCurrentChain)
   where
-    updateCurrentChain :: stm ()
+    updateCurrentChain :: Tr m ()
     updateCurrentChain = do
       candidateChains <- mapM readTVar candidateChainVars
       cps@ChainProducerState{chainState = chain} <- readTVar cpsVar
@@ -55,7 +55,7 @@ longestChainSelection candidateChainVars cpsVar =
         else writeTVar cpsVar (switchFork chain' cps)
 
 
-chainValidation :: forall block m stm. (HasHeader block, MonadSTM m stm)
+chainValidation :: forall block m. (HasHeader block, MonadSTM m)
                 => TVar m (Chain block)
                 -> TVar m (Maybe (Chain block))
                 -> m ()
@@ -63,7 +63,7 @@ chainValidation peerChainVar candidateChainVar = do
     st <- atomically (newTVar Chain.genesisPoint)
     forever (atomically (update st))
   where
-    update :: TVar m (Point block) -> stm ()
+    update :: TVar m (Point block) -> Tr m ()
     update stateVar = do
       peerChain      <- readTVar peerChainVar
       candidatePoint <- readTVar stateVar
@@ -74,9 +74,9 @@ chainValidation peerChainVar candidateChainVar = do
       writeTVar candidateChainVar candidateChain
 
 
-chainTransferProtocol :: forall block m stm.
+chainTransferProtocol :: forall block m.
                          ( HasHeader block
-                         , MonadSTM m stm
+                         , MonadSTM m
                          , MonadTimer m
                          )
                       => Duration (Time m)
@@ -106,8 +106,8 @@ data Chan m send recv = Chan { sendMsg :: send -> m ()
 
 -- | Simulated transfer protocol.
 --
-transferProtocol :: forall send recv m stm.
-                    ( MonadSTM m stm
+transferProtocol :: forall send recv m.
+                    ( MonadSTM m
                     , MonadTimer m
                     )
                  => Duration (Time m)
@@ -128,8 +128,8 @@ transferProtocol delay sendVar recvVar
 
 -- | Create a symmetric pair of channels in opposite directions.
 --
-createCoupledChannels :: forall send recv m stm.
-                         ( MonadSTM m stm
+createCoupledChannels :: forall send recv m.
+                         ( MonadSTM m
                          , MonadTimer m
                          )
                       => Duration (Time m)
@@ -166,8 +166,8 @@ instance Monoid (NodeChannels m prodMsg consMsg) where
 -- | Create channels n1 → n2, where n1 is a producer and n2 is the consumer.
 --
 createOneWaySubscriptionChannels
-  :: forall send recv m stm.
-     ( MonadSTM m stm
+  :: forall send recv m.
+     ( MonadSTM m
      , MonadTimer m
      )
   => Duration (Time m)
@@ -190,8 +190,8 @@ createOneWaySubscriptionChannels trDelay1 trDelay2 = do
 -- simultaneously.
 --
 createTwoWaySubscriptionChannels
-  :: forall send recv m stm.
-     ( MonadSTM m stm
+  :: forall send recv m.
+     ( MonadSTM m
      , MonadTimer m
      )
   => Duration (Time m)
@@ -207,9 +207,9 @@ createTwoWaySubscriptionChannels trDelay1 trDelay2 = do
 -- @slotDuration * blockSlot block@ time.
 --
 -- TODO: invariant: generates blocks for current slots.
-blockGenerator :: forall block m stm.
+blockGenerator :: forall block m.
                   ( HasHeader block
-                  , MonadSTM m stm
+                  , MonadSTM m
                   , MonadTimer m
                   )
                => Duration (Time m)
@@ -228,10 +228,10 @@ blockGenerator slotDuration chain = do
 
 -- | Read one block from the @'blockGenerator'@.
 --
-getBlock :: forall block m stm.
-            MonadSTM m stm
+getBlock :: forall block m.
+            MonadSTM m
          => TVar m (Maybe block)
-         -> stm block
+         -> Tr m block
 getBlock v = do
   mb <- readTVar v
   case mb of
@@ -243,9 +243,9 @@ getBlock v = do
 -- mutates, write the result to the supplied @'Probe'@.
 --
 observeChainProducerState
-  :: forall m stm block.
+  :: forall m block.
      ( HasHeader block
-     , MonadSTM m stm
+     , MonadSTM m
      , MonadProbe m
      )
   => NodeId
@@ -281,9 +281,9 @@ data ProducerId = ProducerId NodeId Int
 -- The main thread of the @'relayNode'@ is not blocking; it will return
 -- @TVar ('ChainProducerState' block)@.  This allows to extend the relay node to
 -- a core node.
-forkRelayKernel :: forall block m stm.
+forkRelayKernel :: forall block m.
                 ( HasHeader block
-                , MonadSTM m stm
+                , MonadSTM m
                 )
                 => [TVar m (Chain block)]
                 -- ^ These will track the upstream producers.
@@ -311,8 +311,8 @@ forkRelayKernel upstream cpsVar = do
 -- The main thread of the @'relayNode'@ is not blocking; it will return
 -- @TVar ('ChainProducerState' block)@.  This allows to extend the relay node to
 -- a core node.
-relayNode :: forall m stm block.
-             ( MonadSTM m stm
+relayNode :: forall m block.
+             ( MonadSTM m
              , MonadSay m
              , HasHeader block
              , Show block
@@ -366,9 +366,9 @@ relayNode nid initChain chans = do
 -- Alternatively, we should move this to the tests, and remove it from the
 -- public network layer altogether.
 --
-forkCoreKernel :: forall block m stm.
+forkCoreKernel :: forall block m.
                   ( HasHeader block
-                  , MonadSTM m stm
+                  , MonadSTM m
                   , MonadTimer m
                   )
                => Duration (Time m)
@@ -409,8 +409,8 @@ forkCoreKernel slotDuration gchain fixupBlock cpsVar = do
 -- that the slot for which it was supposed to generate a block was already
 -- occupied, it will replace it with its block.
 --
-coreNode :: forall  m stm.
-        ( MonadSTM m stm
+coreNode :: forall m.
+        ( MonadSTM m
         , MonadTimer m
         , MonadSay m
         )

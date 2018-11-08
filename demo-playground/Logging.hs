@@ -16,7 +16,6 @@ module Logging (
 import           Control.Concurrent.STM
 import           Control.Monad
 import           Data.Semigroup ((<>))
-import           GHC.Stack
 
 import           Ouroboros.Consensus.Infra.Util
 import           Ouroboros.Network.Block
@@ -32,7 +31,7 @@ data LogEvent = LogEvent {
   , sender :: NodeId
   }
 
-showNetworkTraffic :: HasCallStack => TBQueue LogEvent -> IO ()
+showNetworkTraffic :: TBQueue LogEvent -> IO ()
 showNetworkTraffic q = forever $ do
     LogEvent{..} <- atomically $ readTBQueue q
     putStrLn $ "[conv_with:" <> show sender <> "] " <> msg
