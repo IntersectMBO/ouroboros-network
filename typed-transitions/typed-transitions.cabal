@@ -52,7 +52,7 @@ test-suite test-typed-transitions
   hs-source-dirs: test
   other-modules:    Test.Protocol.Codec
                   , Test.Protocol.Channel
-  build-depends:    base >=4.11 && <4.12
+  build-depends:    base >=4.9 && <4.12
                   , async
                   , bytestring
                   , QuickCheck >=2.12 && <2.13
