@@ -1,0 +1,2 @@
+#NIX_PATH="nixpkgs=$(nix-build ./nix/fetch-nixpkgs.nix -o nixpkgs)"
+#export NIX_PATH

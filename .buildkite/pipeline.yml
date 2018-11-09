@@ -1,0 +1,7 @@
+steps:
+  - label: 'hello buildkite!'
+    env:
+    command:
+      - "echo hello buildkite"
+    agents:
+      system: x86_64-linux
