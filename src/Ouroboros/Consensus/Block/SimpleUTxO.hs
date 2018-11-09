@@ -14,10 +14,11 @@ import qualified Data.Set as Set
 import           GHC.Generics (Generic)
 import           GHC.Natural (naturalToWordMaybe)
 
-import qualified Ouroboros.Consensus.Infra.Crypto.Hash as H
-import           Ouroboros.Consensus.Infra.Util (Condense (..))
-import           Ouroboros.Consensus.UTxO.Mock (HasUtxo (..))
-import qualified Ouroboros.Consensus.UTxO.Mock as Mock
+import qualified Ouroboros.Consensus.Crypto.Hash as H
+import           Ouroboros.Consensus.Crypto.Hash.MD5 (MD5)
+import           Ouroboros.Consensus.Test.MockLedger (HasUtxo (..))
+import qualified Ouroboros.Consensus.Test.MockLedger as Mock
+import           Ouroboros.Consensus.Util (Condense (..))
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Serialise
 import           Ouroboros.Network.Testing.ConcreteBlock
@@ -39,7 +40,7 @@ simpleUtxoBodyHash = BodyHash
                    . maybe 0 fromIntegral
                    . naturalToWordMaybe
                    . H.fromHash
-                   . H.hash
+                   . (H.hash @MD5)
                    . Set.toList
 
 instance HasUtxo SimpleUtxoBlock where
@@ -63,23 +64,6 @@ instance HasHeader SimpleUtxoBlock where
     --
     blockInvariant (SimpleUtxoBlock header body) =
         simpleUtxoBodyHash body == headerBodyHash header
-
-{-
-instance KnownLedgerDomain 'MockLedgerDomain where
-    data BlockBody 'MockLedgerDomain = MockBlockBody {
-          blockData :: Set (Mock.Tx)
-        } deriving (Show, Eq)
-    hashBody (MockBlockBody b) =
-      BodyHash (maybe maxBound fromEnum $ naturalToWordMaybe $ H.fromHash $ H.hash b)
-
-
-instance Condense (BlockHeader p) => Condense (Block 'MockLedgerDomain p) where
-    condense (Block hdr body) =
-        "{hdr: " <> condense hdr
-                 <> ", body: "
-                 <> condense (hashBody body)
-                 <> "}"
--}
 
 instance Serialise SimpleUtxoBlock where
   -- rely on generics instance

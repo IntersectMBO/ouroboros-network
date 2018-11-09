@@ -25,11 +25,11 @@ import           Ouroboros.Network.Serialise
 
 -- | The Ouroboros time slot index for a block.
 newtype Slot = Slot { getSlot :: Word }
-  deriving (Show, Eq, Ord, Hashable, Enum)
+  deriving (Show, Eq, Ord, Hashable, Enum, Serialise)
 
 -- | The 0-based index of the block in the blockchain
 newtype BlockNo = BlockNo Word
-  deriving (Show, Eq, Ord, Hashable, Enum)
+  deriving (Show, Eq, Ord, Hashable, Enum, Serialise)
 
 -- | Abstract over the shape of blocks (or indeed just block headers)
 class StandardHash b => HasHeader b where
@@ -95,10 +95,6 @@ castHash (BlockHash b) = BlockHash b
 {-------------------------------------------------------------------------------
   Serialisation
 -------------------------------------------------------------------------------}
-
-instance Serialise Slot where
-  encode (Slot s) = encodeWord s
-  decode = Slot <$> decodeWord
 
 instance StandardHash b => Serialise (Hash b) where
   -- use the Generic instance

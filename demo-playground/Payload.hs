@@ -22,8 +22,8 @@ import           Data.Semigroup ((<>))
 
 import qualified DummyPayload as Dummy
 import qualified MockPayload as Mock
-import           Ouroboros.Consensus.Infra.Singletons
-import           Ouroboros.Consensus.Infra.Util
+import           Ouroboros.Consensus.Util
+import           Ouroboros.Consensus.Util.Singletons
 import           Ouroboros.Network.Chain (Chain)
 
 data PayloadType =
