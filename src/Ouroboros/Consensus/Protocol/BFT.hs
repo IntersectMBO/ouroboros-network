@@ -19,6 +19,7 @@ module Ouroboros.Consensus.Protocol.BFT (
   , BftCrypto(..)
     -- * BFT specific types
   , OuroborosState(..)
+  , OuroborosLedgerState(..)
   ) where
 
 import           GHC.Generics (Generic)
@@ -54,12 +55,19 @@ instance BftCrypto c => OuroborosTag (Bft c) where
   -- | For BFT the proof that we are a leader is trivial
   data ProofIsLeader (Bft c) = BftProof
 
+  -- | For BFT the ledger state is trivial.
+  -- NOTE: For \"permissive BFT\" this would not be trivial, because validation
+  -- would need to know statistical properties about the whole chain.
+  data OuroborosLedgerState (Bft c) = BftLedgerState deriving Show
+
   mkOuroborosPayload BftProof preheader = do
       BftState{..} <- getOuroborosState
       signature <- signed preheader bftSignKey
       return $ BftPayload {
           bftSignature = signature
         }
+
+  applyOuroborosLedgerState _ _ = BftLedgerState
 
 deriving instance BftCrypto c => Show (OuroborosPayload (Bft c) ph)
 deriving instance BftCrypto c => Eq   (OuroborosPayload (Bft c) ph)

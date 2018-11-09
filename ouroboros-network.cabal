@@ -20,7 +20,6 @@ library
   -- At this experiment/prototype stage everything is exposed.
   -- This has to be tidied up once the design becomes clear.
   exposed-modules:
-                       Ouroboros.Consensus.Block.Abstract
                        Ouroboros.Consensus.Block.SimpleUTxO
                        Ouroboros.Consensus.Crypto.DSIGN
                        Ouroboros.Consensus.Crypto.DSIGN.Class
@@ -38,11 +37,12 @@ library
                        Ouroboros.Consensus.Crypto.VRF.Class
                        Ouroboros.Consensus.Crypto.VRF.Mock
                        Ouroboros.Consensus.Crypto.VRF.Simple
+                       Ouroboros.Consensus.Ledger.Abstract
+                       Ouroboros.Consensus.Ledger.Mock
                        Ouroboros.Consensus.Protocol.Abstract
                        Ouroboros.Consensus.Protocol.BFT
                        Ouroboros.Consensus.Protocol.Praos
                        Ouroboros.Consensus.Protocol.Test
-                       Ouroboros.Consensus.Test.MockLedger
                        Ouroboros.Consensus.Util
                        Ouroboros.Consensus.Util.DepFn
                        Ouroboros.Consensus.Util.HList

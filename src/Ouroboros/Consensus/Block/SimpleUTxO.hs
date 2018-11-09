@@ -16,8 +16,8 @@ import           GHC.Natural (naturalToWordMaybe)
 
 import qualified Ouroboros.Consensus.Crypto.Hash as H
 import           Ouroboros.Consensus.Crypto.Hash.MD5 (MD5)
-import           Ouroboros.Consensus.Test.MockLedger (HasUtxo (..))
-import qualified Ouroboros.Consensus.Test.MockLedger as Mock
+import           Ouroboros.Consensus.Ledger.Mock (HasUtxo (..))
+import qualified Ouroboros.Consensus.Ledger.Mock as Mock
 import           Ouroboros.Consensus.Util (Condense (..))
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Serialise
