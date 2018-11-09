@@ -43,7 +43,7 @@ prop_stm_graph_sim g =
   where
     trace = Sim.runSimM (prop_stm_graph g)
 
-prop_stm_graph :: MonadSTM m stm => TestThreadGraph -> m ()
+prop_stm_graph :: MonadSTM m => TestThreadGraph -> m ()
 prop_stm_graph (TestThreadGraph g) = do
     vars <- listArray (bounds g) <$>
             sequence [ atomically (newTVar False) | _ <- vertices g ]
@@ -134,13 +134,12 @@ instance Arbitrary TestRationals where
         return $ toRational n / toRational d
   shrink (TestRationals rs) = [ TestRationals rs' | rs' <- shrinkList (const []) rs ]
 
-test_timers :: forall m n stm.
+test_timers :: forall m n.
                ( MonadFork m
-               , MonadSTM m stm
+               , MonadSTM m
                , MonadTimer m
                , MonadProbe m
                , MonadRunProbe m n
-               , Eq (Time m)
                , Show (Time m)
                , Show (Duration (Time m))
                )
@@ -187,11 +186,9 @@ prop_timers_ST (TestRationals xs) =
 prop_timers_IO :: [Positive Int] -> Property
 prop_timers_IO = ioProperty . test_timers . map ((*100) . getPositive)
 
-test_fork_order :: forall m n stm.
+test_fork_order :: forall m n.
                    ( MonadFork m
-                   , MonadSTM m stm
-                   , MonadTimer m
-                   , MonadProbe m
+                   , MonadSTM m
                    , MonadRunProbe m n
                    )
                 => Positive Int

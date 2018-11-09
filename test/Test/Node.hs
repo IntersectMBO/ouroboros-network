@@ -74,8 +74,8 @@ partitionProbe
 -- | Block generator should generate blocks in the correct slot time.
 --
 test_blockGenerator
-  :: forall m stm n.
-     ( MonadSTM m stm
+  :: forall m n.
+     ( MonadSTM m
      , MonadTimer m
      , MonadProbe m
      , MonadRunProbe m n
@@ -92,11 +92,7 @@ test_blockGenerator chain slotDuration = isValid <$> withProbe (experiment slotD
         (property True)
 
     experiment
-      :: ( MonadSTM m stm
-         , MonadTimer m
-         , MonadProbe m
-         )
-      => Duration (Time m)
+      :: Duration (Time m)
       -> Probe m Block
       -> m ()
     experiment slotDur p = do
@@ -113,8 +109,7 @@ prop_blockGenerator_IO :: TestBlockChain -> Positive Int -> Property
 prop_blockGenerator_IO (TestBlockChain chain) (Positive slotDuration) =
     ioProperty $ test_blockGenerator chain (slotDuration * 100)
 
-coreToRelaySim :: ( MonadSTM m stm
-                  , MonadTimer m
+coreToRelaySim :: ( MonadSTM m
                   , MonadSay m
                   , MonadProbe m
                   )
@@ -183,8 +178,7 @@ prop_coreToRelay (TestNodeSim chain slotDuration coreTrDelay relayTrDelay) =
       else mchain1 === Just chain
 
 -- Node graph: c → r → r
-coreToRelaySim2 :: ( MonadSTM m stm
-                   , MonadTimer m
+coreToRelaySim2 :: ( MonadSTM m
                    , MonadSay m
                    , MonadProbe m
                    )
@@ -238,8 +232,7 @@ prop_coreToRelay2 (TestNodeSim chain slotDuration coreTrDelay relayTrDelay) =
             mchain2 === Just chain
 
 -- | Node graph: c ↔ r ↔ c
-coreToCoreViaRelaySim :: ( MonadSTM m stm
-                         , MonadTimer m
+coreToCoreViaRelaySim :: ( MonadSTM m
                          , MonadSay m
                          , MonadProbe m
                          )
@@ -353,9 +346,8 @@ instance Arbitrary TestNetworkGraph where
     shrink (TestNetworkGraph g cs) =
         [ TestNetworkGraph g cs' | cs' <- shrinkList (:[]) cs, not (null cs') ]
 
-networkGraphSim :: forall m stm .
-                  ( MonadSTM m stm
-                  , MonadTimer m
+networkGraphSim :: forall m.
+                  ( MonadSTM m
                   , MonadProbe m
                   , MonadSay m
                   )

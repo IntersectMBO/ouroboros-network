@@ -20,18 +20,36 @@ library
   -- At this experiment/prototype stage everything is exposed.
   -- This has to be tidied up once the design becomes clear.
   exposed-modules:
+                       Ouroboros.Consensus.Block.Abstract
                        Ouroboros.Consensus.Block.SimpleUTxO
-                       Ouroboros.Consensus.Infra.Crypto.Hash
-                       Ouroboros.Consensus.Infra.Crypto.Mock
-                       Ouroboros.Consensus.Infra.Crypto.Mock.DSIGN
-                       Ouroboros.Consensus.Infra.Crypto.Mock.KES
-                       Ouroboros.Consensus.Infra.Crypto.Mock.VRF
-                       Ouroboros.Consensus.Infra.DepFn
-                       Ouroboros.Consensus.Infra.Singletons
-                       Ouroboros.Consensus.Infra.Util
-                       Ouroboros.Consensus.Infra.Util.HList
-                       Ouroboros.Consensus.Protocol
-                       Ouroboros.Consensus.UTxO.Mock
+                       Ouroboros.Consensus.Crypto.DSIGN
+                       Ouroboros.Consensus.Crypto.DSIGN.Class
+                       Ouroboros.Consensus.Crypto.DSIGN.Ed448
+                       Ouroboros.Consensus.Crypto.DSIGN.Mock
+                       Ouroboros.Consensus.Crypto.DSIGN.RSAPSS
+                       Ouroboros.Consensus.Crypto.Hash
+                       Ouroboros.Consensus.Crypto.Hash.Class
+                       Ouroboros.Consensus.Crypto.Hash.MD5
+                       Ouroboros.Consensus.Crypto.Hash.SHA256
+                       Ouroboros.Consensus.Crypto.KES
+                       Ouroboros.Consensus.Crypto.KES.Class
+                       Ouroboros.Consensus.Crypto.KES.Mock
+                       Ouroboros.Consensus.Crypto.VRF
+                       Ouroboros.Consensus.Crypto.VRF.Class
+                       Ouroboros.Consensus.Crypto.VRF.Mock
+                       Ouroboros.Consensus.Crypto.VRF.Simple
+                       Ouroboros.Consensus.Protocol.Abstract
+                       Ouroboros.Consensus.Protocol.BFT
+                       Ouroboros.Consensus.Protocol.Praos
+                       Ouroboros.Consensus.Protocol.Test
+                       Ouroboros.Consensus.Test.MockLedger
+                       Ouroboros.Consensus.Util
+                       Ouroboros.Consensus.Util.DepFn
+                       Ouroboros.Consensus.Util.HList
+                       Ouroboros.Consensus.Util.Random
+                       Ouroboros.Consensus.Util.Serialise
+                       Ouroboros.Consensus.Util.Singletons
+                       Ouroboros.Consensus.Util.STM
                        Ouroboros.Network.Block
                        Ouroboros.Network.Chain
                        Ouroboros.Network.ChainProducerState
@@ -85,7 +103,7 @@ library
                        TypeApplications,
                        TypeFamilies,
                        TypeInType
-  build-depends:       base         >=4.9 && <4.12,
+  build-depends:       base         >=4.9 && <4.13,
                        array,
                        async        >= 2.2 && <2.3,
                        base16-bytestring >= 0.1 && <0.2,
@@ -145,9 +163,7 @@ test-suite tests
   main-is:             Main.hs
   other-modules:       Test.Chain
                        Test.ChainProducerState
-                       Test.Dynamic
                        Test.Node
-                       Test.Ouroboros
                        Test.Pipe
                        Test.Sim
   default-language:    Haskell2010
@@ -176,3 +192,23 @@ test-suite tests
                        void
   ghc-options:         -Wall
                        -fno-ignore-asserts
+
+test-suite test-consensus
+  type:             exitcode-stdio-1.0
+  hs-source-dirs:   test-consensus
+  default-language: Haskell2010
+  main-is:          Main.hs
+  other-modules:
+                    Test.Dynamic
+                    Test.Ouroboros
+  build-depends:    base,
+                    ouroboros-network,
+
+                    QuickCheck,
+                    containers,
+                    cryptonite,
+                    mtl,
+                    tasty,
+                    tasty-quickcheck
+  ghc-options:      -Wall
+                    -fno-ignore-asserts

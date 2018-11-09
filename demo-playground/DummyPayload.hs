@@ -11,7 +11,7 @@ module DummyPayload (
   , toChain
   ) where
 
-import           Ouroboros.Consensus.Infra.Util
+import           Ouroboros.Consensus.Util
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (Chain (..))
 import           Ouroboros.Network.Serialise
@@ -27,6 +27,8 @@ deriving instance Eq DummyPayload
 instance Serialise DummyPayload where
     encode  (DummyPayload x) = encodeInt x
     decode  = DummyPayload <$> decodeInt
+
+instance StandardHash DummyPayload
 
 -- TODO: For now this uses the representation from Block.Concrete
 -- There is no need for this.
