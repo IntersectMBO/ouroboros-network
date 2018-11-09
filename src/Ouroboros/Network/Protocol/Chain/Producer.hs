@@ -201,7 +201,7 @@ findBestCheckpoint mkPoint cps cs = case cs of
 -- Failing any of these will not cause any protocol errors, it'll just confuse
 -- the consumer and probably cause it to terminate the protocol.
 simpleProducerStream
-  :: ( MonadSTM m stm, Ord point )
+  :: ( MonadSTM m, Ord point )
   => (header -> point)
   -> TVar m (Changing  (ChainSegment header), Exhausted)
   -> ProducerStream point header m ()
@@ -215,8 +215,8 @@ simpleProducerStream mkPoint chainVar = ProducerStream $ atomically $ do
     }
 
 simpleProducerChoice
-  :: forall point header m stm .
-     ( MonadSTM m stm, Ord point )
+  :: forall point header m .
+     ( MonadSTM m, Ord point )
   => (header -> point)
   -> TVar m (Changing (ChainSegment header), Exhausted)
   -> ProducerChoice point header m ()

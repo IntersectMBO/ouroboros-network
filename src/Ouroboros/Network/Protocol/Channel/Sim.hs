@@ -15,8 +15,8 @@ import Protocol.Channel
 --
 -- The channels are unbounded.
 simStmChannels
-  :: ( Monad m, MonadSTM m stm )
-  => stm (Channel m t, Channel m t)
+  :: ( Monad m, MonadSTM m )
+  => Tr m (Channel m t, Channel m t)
 simStmChannels = do
   varA <- newTVar mempty
   varB <- newTVar mempty

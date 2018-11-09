@@ -122,10 +122,10 @@ includeInEdge e nd = nd { nodeDescInEdges = e : nodeDescInEdges nd }
 -- | Construct 'StaticNodeDesc's from a 'StaticNetDesc' using 'MonadSTM'
 -- channels for in/out edges.
 realiseStaticNetDescSTM
-  :: forall header n m stm t r .
-     ( MonadSTM m stm )
+  :: forall header n m t r .
+     ( MonadSTM m )
   => StaticNetDesc header n r
-  -> stm (Map Vertex (StaticNodeDesc (Channel m t) header n r))
+  -> Tr m (Map Vertex (StaticNodeDesc (Channel m t) header n r))
 realiseStaticNetDescSTM (StaticNetDesc gr descs) =
   Foldable.foldlM createChannels (fmap (mapEdges absurd) descs) (Array.assocs gr)
   where
@@ -135,7 +135,7 @@ realiseStaticNetDescSTM (StaticNetDesc gr descs) =
   createChannels
     :: Map Vertex (StaticNodeDesc (Channel m t) header n r)
     -> (Vertex, [Vertex])
-    -> stm (Map Vertex (StaticNodeDesc (Channel m t) header n r))
+    -> Tr m (Map Vertex (StaticNodeDesc (Channel m t) header n r))
   createChannels descs (v, targets) = do
     -- Create all necessary channel pairs.
     channelPairs <- forM targets (\_ -> simStmChannels)
@@ -173,8 +173,8 @@ chainSelectionForever act = chainSelectionUntil (\blks -> Nothing <$ act blks)
 -- provided ('MonadFork' is inadequate).
 --
 runWithChainSelectionSTM
-  :: forall header m stm x consumer producer r t .
-     ( MonadSTM m stm, Show header )
+  :: forall header m x consumer producer r t .
+     ( MonadSTM m, Show header )
   => (header -> header -> Bool)
      -- ^ Block header equality
   -> (header -> BlockNo)
@@ -185,7 +185,7 @@ runWithChainSelectionSTM
      -- ^ Create a consumer
   -> (TVar m (Changing (ChainSegment header), Exhausted) -> Channel m x -> m producer)
      -- ^ Create a producer
-  -> ChainSelection header stm t
+  -> ChainSelection header (Tr m) t
      -- ^ Chain selection termination condition.
   -> (Seq header -> m ())
      -- ^ Tracing: run this whenever a new best chain is selected.
@@ -250,7 +250,7 @@ runWithChainSelectionSTM eqBlockHeader headerBlockNo conc mkConsumer mkProducer 
     :: TVar m (Seq header)               -- ^ Best chain.
     -> [TVar m (Seq header)]             -- ^ Consumed chains
     -> [TVar m (Changing (ChainSegment header), Exhausted)] -- ^ Produced chains
-    -> ChainSelection header stm t
+    -> ChainSelection header (Tr m) t
     -> m t
   chainSelectionSTM bestChainVar consumerVars producerVars selection =
     join $ atomically $ do
@@ -298,7 +298,7 @@ runWithChainSelectionSTM eqBlockHeader headerBlockNo conc mkConsumer mkProducer 
     (_ Seq.:> l, _ Seq.:> r) -> headerBlockNo l > headerBlockNo r
 
 standardConsumer
-  :: ( MonadSTM m stm, Ord point )
+  :: ( MonadSTM m, Ord point )
   => String
   -> (header -> point)
   -> TVar m (Seq header)
@@ -308,7 +308,7 @@ standardConsumer _ mkPoint var chan =
   useChannelHomogeneous chan (streamConsumer (simpleConsumerStream mkPoint (==) var))
 
 standardProducer
-  :: ( MonadSTM m stm, Ord point )
+  :: ( MonadSTM m, Ord point )
   => String
   -> (header -> point)
   -> TVar m (Changing (ChainSegment header), Exhausted)

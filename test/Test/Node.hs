@@ -515,7 +515,7 @@ prop_consensus netDesc@(StaticNetDesc graph nodes) =
     let newestBlockNos :: Map Int BlockNo
         newestBlockNos = fmap (blockNo . NE.last . ecInitial . nodeDescChain) nodes
         highestBlockNo = foldl max (BlockNo 0) newestBlockNos
-        chainSelection :: forall m p . Monad m => ChainSelection BlockHeader m (Seq BlockHeader)
+        chainSelection :: forall m . Monad m => ChainSelection BlockHeader m (Seq BlockHeader)
         chainSelection = chainSelectionUntil $ \chain -> case Seq.viewr chain of
           Seq.EmptyR -> pure Nothing
           _ Seq.:> newest -> pure $

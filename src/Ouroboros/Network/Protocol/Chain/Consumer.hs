@@ -36,8 +36,8 @@ extendWith block chain = chain Seq.|> block
 -- It will continue to request blocks until it gets one which has the same hash
 -- as the read pointer.
 simpleConsumerStream
-  :: forall point header m stm .
-     ( MonadSTM m stm )
+  :: forall point header m .
+     ( MonadSTM m )
   => (header -> point)
   -> (point -> point -> Bool)
   -- FIXME FIXME use a blockchain representation which is never empty! The
@@ -52,8 +52,8 @@ simpleConsumerStream mkPoint eqPoint chainVar = ConsumerStream $
   simpleConsumerForked mkPoint eqPoint chainVar
 
 simpleConsumerForked
-  :: forall point header m stm .
-     ( MonadSTM m stm )
+  :: forall point header m .
+     ( MonadSTM m )
   => (header -> point)
   -> (point -> point -> Bool)
   -> TVar m (Seq header)
@@ -64,8 +64,8 @@ simpleConsumerForked mkPoint eqPoint chainVar points = atomically $ do
   pure (simpleConsumerChoice mkPoint eqPoint chainVar points)
 
 simpleConsumerChoice
-  :: forall point header m stm .
-     ( MonadSTM m stm )
+  :: forall point header m .
+     ( MonadSTM m )
   => (header -> point)
   -> (point -> point -> Bool)
   -> TVar m (Seq header)
@@ -87,8 +87,8 @@ simpleConsumerChoice mkPoint eqPoint chainVar points =
   else Download maxBound (simpleConsumerDownload mkPoint eqPoint chainVar points)
 
 simpleConsumerNext
-  :: forall point header m stm .
-     ( MonadSTM m stm )
+  :: forall point header m .
+     ( MonadSTM m )
   => (header -> point)
   -> (point -> point -> Bool)
   -> TVar m (Seq header)
@@ -103,8 +103,8 @@ simpleConsumerNext mkPoint eqPoint chainVar readPointer = ConsumerNext
   }
 
 simpleConsumerDownload
-  :: forall point header m stm .
-     ( MonadSTM m stm )
+  :: forall point header m .
+     ( MonadSTM m )
   => (header -> point)
   -> (point -> point -> Bool)
   -> TVar m (Seq header)
