@@ -3,10 +3,11 @@
 {-# LANGUAGE GADTs #-}
 
 module Protocol.Channel
-  ( Channel (..)
+  ( Duplex (..)
+  , hoistDuplex
+  , Channel
   , uniformChannel
   , fixedInputChannel
-  , hoistChannel
   , FromStream (..)
   , useChannel
   , useChannelHomogeneous
@@ -29,42 +30,45 @@ import Protocol.Transition
 -- For common effectful channels this is superfluous. 'uniformChannel' can
 -- take care of the details.
 --
--- A 'Channel' is morally an additive conjunction (linear logic):
+-- A 'Duplex' is morally an additive conjunction (linear logic):
 -- you cannot use _both_ 'send' and 'recv'. If you 'send', you can 'recv' from
--- the 'Channel' that it returns, not the original 'Channel'.
-data Channel m t = Channel
-  { send :: t -> m (Channel m t)
-  , recv :: m (Maybe (t, Channel m t))
+-- the 'Duplex' that it returns, not the original 'Duplex'.
+data Duplex sm rm send recv = Duplex
+  { send :: send -> sm (Duplex sm rm send recv)
+  , recv :: rm (Maybe (recv, Duplex sm rm send recv))
   }
 
+hoistDuplex
+  :: ( Functor sn, Functor rn )
+  => (forall x . sm x -> sn x)
+  -> (forall x . rm x -> rn x)
+  -> Duplex sm rm send recv
+  -> Duplex sn rn send recv
+hoistDuplex snat rnat duplex = Duplex
+  { send = fmap (hoistDuplex snat rnat) . snat . send duplex
+  , recv = (fmap . fmap . fmap) (hoistDuplex snat rnat) (rnat (recv duplex))
+  }
+
+type Channel m t = Duplex m m t t
+
 uniformChannel :: Functor m => (t -> m ()) -> m (Maybe t) -> Channel m t
-uniformChannel send recv = Channel
+uniformChannel send recv = Duplex
   { send = \t -> uniformChannel send recv <$ send t
   , recv = (fmap . fmap) (flip (,) (uniformChannel send recv)) recv
   }
 
 fixedInputChannel :: Applicative m => [t] -> Channel m t
 fixedInputChannel lst = case lst of
-  [] -> Channel
+  [] -> Duplex
     { send = noopSend []
     , recv = pure Nothing
     }
-  it@(tr : trs) -> Channel
+  it@(tr : trs) -> Duplex
     { send = noopSend it
     , recv = pure (Just (tr, fixedInputChannel trs))
     }
   where
   noopSend trs = const (pure (fixedInputChannel trs))
-
-hoistChannel
-  :: ( Functor n )
-  => (forall x . m x -> n x)
-  -> Channel m t
-  -> Channel n t
-hoistChannel nat channel = Channel
-  { send = fmap (hoistChannel nat) . nat . send channel
-  , recv = (fmap . fmap . fmap) (hoistChannel nat) (nat (recv channel))
-  }
 
 data FromStream tr k t where
   -- | The stream ended even though more input is expected.

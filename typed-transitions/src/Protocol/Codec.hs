@@ -2,7 +2,7 @@
 -- = Protocol.Codec
 --
 -- Defition of encode/decode for transitions and its compatibility with a
--- 'Channel'.
+-- 'Duplex'.
 
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE PolyKinds #-}
@@ -45,34 +45,34 @@ data DecodeFailure fail where
   UnexpectedEndOfInput :: DecodeFailure fail
   DecodeFailure        :: fail -> DecodeFailure fail
 
--- | Use a 'Codec' to transform a 'Channel'.
-codecChannel
+-- | Use a 'Codec' to transform a 'Duplex'.
+codecDuplex
   :: forall fail t m piece .
      ( Monad m )
   => Codec fail t m piece
-  -> Channel m piece
-  -> Channel (ExceptT (DecodeFailure fail) m) t
-codecChannel codec = codecChannel' Nothing
+  -> Duplex m m piece piece
+  -> Duplex m (ExceptT (DecodeFailure fail) m) t t
+codecDuplex codec = codecDuplex' Nothing
   where
-  codecChannel'
+  codecDuplex'
     :: Maybe piece -- ^ Leftovers from prior 'recv'
-    -> Channel m piece
-    -> Channel (ExceptT (DecodeFailure fail) m) t
-  codecChannel' leftover channel = Channel
+    -> Duplex m m piece piece
+    -> Duplex m (ExceptT (DecodeFailure fail) m) t t
+  codecDuplex' leftover channel = Duplex
     { send = codecSend channel
     , recv = codecRecv leftover channel
     }
 
   codecSend
-    :: Channel m piece
+    :: Duplex m m piece piece
     -> t
-    -> ExceptT (DecodeFailure fail) m (Channel (ExceptT (DecodeFailure fail) m) t)
-  codecSend channel t = lift (encode codec t) >>= fmap (codecChannel' Nothing) . lift . send channel
+    -> m (Duplex m (ExceptT (DecodeFailure fail) m) t t)
+  codecSend channel t = encode codec t >>= fmap (codecDuplex' Nothing) . send channel
 
   codecRecv
     :: Maybe piece
-    -> Channel m piece
-    -> ExceptT (DecodeFailure fail) m (Maybe (t, Channel (ExceptT (DecodeFailure fail) m) t))
+    -> Duplex m m piece piece
+    -> ExceptT (DecodeFailure fail) m (Maybe (t, Duplex m (ExceptT (DecodeFailure fail) m) t t))
   codecRecv leftover channel = case leftover of
     Just piece -> codecRecvLeftover piece channel (decode codec)
     -- If there's no input, give 'Nothing' rather than 'UnexpectedEndOfInput',
@@ -82,26 +82,26 @@ codecChannel codec = codecChannel' Nothing
   -- Receive using leftovers.
   codecRecvLeftover
     :: piece
-    -> Channel m piece
+    -> Duplex m m piece piece
     -> Decoder fail piece m t
-    -> ExceptT (DecodeFailure fail) m (Maybe (t, Channel (ExceptT (DecodeFailure fail) m) t))
+    -> ExceptT (DecodeFailure fail) m (Maybe (t, Duplex m (ExceptT (DecodeFailure fail) m) t t))
   codecRecvLeftover leftover channel decoder =
     lift (runDecoder decoder leftover) >>= \it -> case it of
       -- Done without even using the channel.
-      Done t leftover' -> pure $ Just (t, codecChannel' (Just leftover') channel)
+      Done t leftover' -> pure $ Just (t, codecDuplex' (Just leftover') channel)
       Fail fail _      -> throwE $ DecodeFailure fail
       Partial decoder' -> codecRecvNoLeftover (throwE UnexpectedEndOfInput) channel decoder'
 
   -- Receive without any leftovers: go straight to the channel 'recv'.
   codecRecvNoLeftover
     :: (forall x . ExceptT (DecodeFailure fail) m (Maybe x)) -- ^ End of input.
-    -> Channel m piece
+    -> Duplex m m piece piece
     -> Decoder fail piece m t
-    -> ExceptT (DecodeFailure fail) m (Maybe (t, Channel (ExceptT (DecodeFailure fail) m) t))
+    -> ExceptT (DecodeFailure fail) m (Maybe (t, Duplex m (ExceptT (DecodeFailure fail) m) t t))
   codecRecvNoLeftover onEnd channel decoder = lift (recv channel) >>= \it -> case it of
     Nothing -> onEnd
     Just (piece, channel') -> lift (runDecoder decoder piece) >>= \it -> case it of
-      Done t leftover  -> pure $ Just (t, codecChannel' (Just leftover) channel')
+      Done t leftover  -> pure $ Just (t, codecDuplex' (Just leftover) channel')
       Fail fail _      -> throwE $ DecodeFailure fail
       Partial decoder' -> codecRecvNoLeftover (throwE UnexpectedEndOfInput) channel' decoder'
 

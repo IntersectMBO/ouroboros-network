@@ -69,11 +69,13 @@ prop_codec_channel_consistent codec send1 send2 chan1 chan2 =
   prop_channel_reliable_ordered send1 send2 chan1' chan2'
   where
   chan1' :: Channel IO subject
-  chan1' = hoistChannel (eliminateDecodeFailure (error "decode error"))
-                        (codecChannel codec chan1)
+  chan1' = hoistDuplex id
+                       (eliminateDecodeFailure (error "decode error"))
+                       (codecDuplex codec chan1)
   chan2' :: Channel IO subject
-  chan2' = hoistChannel (eliminateDecodeFailure (error "decode error"))
-                        (codecChannel codec chan2)
+  chan2' = hoistDuplex id
+                       (eliminateDecodeFailure (error "decode error"))
+                       (codecDuplex codec chan2)
 
 prop_codec_channel_consistent_mvar :: Property
 prop_codec_channel_consistent_mvar =
