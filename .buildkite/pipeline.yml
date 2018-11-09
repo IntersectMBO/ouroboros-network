@@ -2,6 +2,8 @@ steps:
   - label: 'hello buildkite!'
     env:
     command:
-      - "echo hello buildkite"
+      - "nix-shell -p git --run 'git help'"
+      - "echo failing hard"
+      - "false"
     agents:
       system: x86_64-linux
