@@ -36,11 +36,13 @@ import           Control.Monad
 import           Control.Monad.Free (Free)
 import           Control.Monad.Free as Free
 import           Control.Monad.ST.Lazy
+import qualified Control.Monad.ST.Strict as StrictST
 import           Data.STRef.Lazy
 
 import           Ouroboros.Network.MonadClass.MonadFork
 import           Ouroboros.Network.MonadClass.MonadSay
 import           Ouroboros.Network.MonadClass.MonadSendRecv
+import           Ouroboros.Network.MonadClass.MonadST
 import           Ouroboros.Network.MonadClass.MonadSTM hiding (TVar)
 import qualified Ouroboros.Network.MonadClass.MonadSTM as MonadSTM
 import           Ouroboros.Network.MonadClass.MonadTimer
@@ -57,6 +59,8 @@ data SimF (s :: *) a where
 
   Say          :: [String] -> b -> SimF s b
   Output       :: Probe s o -> o -> b -> SimF s b
+
+  LiftST       :: StrictST.ST s a -> (a -> b) -> SimF s b
 
   Timer        :: VTimeDuration -> Free (SimF s) () -> b -> SimF s b
 
@@ -96,6 +100,7 @@ instance Functor (SimF s) where
   fmap _ (Fail f)         = Fail f
   fmap f (Say ss b)       = Say ss $ f b
   fmap f (Output p o b)   = Output p o $ f b
+  fmap f (LiftST a b)     = LiftST a (f . b)
   fmap f (Timer d s b)    = Timer d s $ f b
   fmap f (Fork s b)       = Fork s $ f b
   fmap f (Atomically a k) = Atomically a (f . k)
@@ -123,6 +128,12 @@ instance MonadSTM (Free (SimF s)) (Free (StmF s)) where
   readTVar   tvar   = Free.liftF $ ReadTVar tvar id
   writeTVar  tvar x = Free.liftF $ WriteTVar tvar x ()
   retry             = Free.liftF $ Retry
+
+instance MonadST (Free (SimF s)) where
+  withLiftST f = f liftST
+    where
+      liftST :: StrictST.ST s a -> Free (SimF s) a
+      liftST action = Free.liftF (LiftST action id)
 
 instance MonadSendRecv (Free (SimF s)) where
   type BiChan (Free (SimF s)) = SimChan s
@@ -229,6 +240,11 @@ schedule simstate@SimState {
     Free (Output (Probe p) o k) -> do
       modifySTRef p ((time, o):)
       let thread' = Thread tid k
+      schedule simstate { runqueue = thread':remaining }
+
+    Free (LiftST st k) -> do
+      x <- strictToLazyST st
+      let thread' = Thread tid (k x)
       schedule simstate { runqueue = thread':remaining }
 
     Free (Timer t a k) -> do
