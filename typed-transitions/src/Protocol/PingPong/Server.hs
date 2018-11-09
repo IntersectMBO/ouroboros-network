@@ -43,7 +43,7 @@ pingPongServerPeer PingPongServer{..} =
 
       -- The client sent us a ping request, so now we're in the 'StBusy' state
       -- which means it's the server's turn to send.
-      MsgPing -> hole $ do
+      MsgPing -> lift $ do
         next <- recvMsgPing
         pure $ over MsgPong (pingPongServerPeer next)
 

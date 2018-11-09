@@ -1,5 +1,5 @@
 {-# LANGUAGE NamedFieldPuns #-}
-module Protocol.Chain.Direct where
+module Protocol.PingPong.Direct where
 
 import Protocol.PingPong.Client as Client
 import Protocol.PingPong.Server as Server

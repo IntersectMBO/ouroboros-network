@@ -25,6 +25,11 @@ library
                      , Protocol.Chain.Type
                      , Protocol.Chain.ProducerStream
                      , Protocol.Chain.Direct
+                     , Protocol.PingPong.Type
+                     , Protocol.PingPong.Client
+                     , Protocol.PingPong.Server
+                     , Protocol.PingPong.Direct
+                     , Protocol.PingPongExamples
   -- other-modules:       
   other-extensions:    GADTs
                      , RankNTypes

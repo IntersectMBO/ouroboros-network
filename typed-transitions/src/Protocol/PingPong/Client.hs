@@ -70,7 +70,7 @@ pingPongClientPeer (SendMsgPing kPong) =
     -- The pong reply has no content so there's nothing to pass to our
     -- continuation, but if there were we would.
     case resp of
-      MsgPong -> hole $ do
+      MsgPong -> lift $ do
         next <- kPong
         pure $ pingPongClientPeer next
 
