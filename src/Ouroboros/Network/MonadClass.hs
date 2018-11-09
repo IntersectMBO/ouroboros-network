@@ -9,6 +9,7 @@ module Ouroboros.Network.MonadClass (
   module MonadFork,
   module MonadConc,
   module MonadSTM,
+  module MonadST,
   module MonadSTMTimer,
   module MonadSendRecv
   ) where
