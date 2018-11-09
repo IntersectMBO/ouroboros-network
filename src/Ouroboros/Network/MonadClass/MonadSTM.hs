@@ -3,9 +3,22 @@
 {-# LANGUAGE MultiParamTypeClasses  #-}
 {-# LANGUAGE TypeFamilies           #-}
 {-# LANGUAGE TypeFamilyDependencies #-}
-{-# LANGUAGE DefaultSignatures      #-}
 module Ouroboros.Network.MonadClass.MonadSTM
-  ( MonadSTM (..) ) where
+  ( MonadSTM (..)
+  , TMVarDefault (..)
+  , newTMVarDefault
+  , newTMVarIODefault
+  , newEmptyTMVarDefault
+  , newEmptyTMVarIODefault
+  , takeTMVarDefault
+  , tryTakeTMVarDefault
+  , putTMVarDefault
+  , tryPutTMVarDefault
+  , readTMVarDefault
+  , tryReadTMVarDefault
+  , swapTMVarDefault
+  , isEmptyTMVarDefault
+  ) where
 
 import qualified Control.Concurrent.STM.TVar    as STM
 import qualified Control.Concurrent.STM.TMVar   as STM
@@ -57,34 +70,6 @@ class (MonadFork m, Monad (Tr m)) => MonadSTM m where
   tryReadTMVar    :: TMVar m a      -> Tr m (Maybe a)
   swapTMVar       :: TMVar m a -> a -> Tr m a
   isEmptyTMVar    :: TMVar m a      -> Tr m Bool
-
-  -- Default impl
-  type instance TMVar m = TMVarDefault m
-  default newTMVar        :: a -> Tr m (TMVarDefault m a)
-  default newTMVarIO      :: a -> m   (TMVarDefault m a)
-  default newEmptyTMVar   ::      Tr m (TMVarDefault m a)
-  default newEmptyTMVarIO ::      m   (TMVarDefault m a)
-  default takeTMVar       :: TMVarDefault m a      -> Tr m a
-  default tryTakeTMVar    :: TMVarDefault m a      -> Tr m (Maybe a)
-  default putTMVar        :: TMVarDefault m a -> a -> Tr m ()
-  default tryPutTMVar     :: TMVarDefault m a -> a -> Tr m Bool
-  default readTMVar       :: TMVarDefault m a      -> Tr m a
-  default tryReadTMVar    :: TMVarDefault m a      -> Tr m (Maybe a)
-  default swapTMVar       :: TMVarDefault m a -> a -> Tr m a
-  default isEmptyTMVar    :: TMVarDefault m a      -> Tr m Bool
-
-  newTMVar        = newTMVarDefault
-  newTMVarIO      = newTMVarIODefault
-  newEmptyTMVar   = newEmptyTMVarDefault
-  newEmptyTMVarIO = newEmptyTMVarIODefault
-  takeTMVar       = takeTMVarDefault
-  tryTakeTMVar    = tryTakeTMVarDefault
-  putTMVar        = putTMVarDefault
-  tryPutTMVar     = tryPutTMVarDefault
-  readTMVar       = readTMVarDefault
-  tryReadTMVar    = tryReadTMVarDefault
-  swapTMVar       = swapTMVarDefault
-  isEmptyTMVar    = isEmptyTMVarDefault
 
 
 --

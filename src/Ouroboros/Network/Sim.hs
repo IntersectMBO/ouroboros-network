@@ -120,13 +120,28 @@ instance MonadFork (Free (SimF s)) where
   fork          task = Free.liftF $ Fork task ()
 
 instance MonadSTM (Free (SimF s)) where
-  type Tr   (Free (SimF s)) = Free (StmF s)
-  type TVar (Free (SimF s)) = TVar s
+  type Tr    (Free (SimF s)) = Free (StmF s)
+  type TVar  (Free (SimF s)) = TVar s
+  type TMVar (Free (SimF s)) = TMVarDefault (Free (SimF s))
+
   atomically action = Free.liftF $ Atomically action id
   newTVar         x = Free.liftF $ NewTVar x id
   readTVar   tvar   = Free.liftF $ ReadTVar tvar id
   writeTVar  tvar x = Free.liftF $ WriteTVar tvar x ()
   retry             = Free.liftF $ Retry
+
+  newTMVar          = newTMVarDefault
+  newTMVarIO        = newTMVarIODefault
+  newEmptyTMVar     = newEmptyTMVarDefault
+  newEmptyTMVarIO   = newEmptyTMVarIODefault
+  takeTMVar         = takeTMVarDefault
+  tryTakeTMVar      = tryTakeTMVarDefault
+  putTMVar          = putTMVarDefault
+  tryPutTMVar       = tryPutTMVarDefault
+  readTMVar         = readTMVarDefault
+  tryReadTMVar      = tryReadTMVarDefault
+  swapTMVar         = swapTMVarDefault
+  isEmptyTMVar      = isEmptyTMVarDefault
 
 instance MonadTimer (Free (SimF s)) where
   type Time    (Free (SimF s)) = VTime
