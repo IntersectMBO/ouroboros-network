@@ -10,6 +10,7 @@ import           Control.Monad.ST.Lazy (runST)
 import           Control.Monad.State (execStateT, lift, modify')
 import           Data.Array
 import           Data.Functor (void)
+import           Data.Fixed (Micro)
 import           Data.Graph
 import           Data.List (foldl')
 import           Data.Map.Strict (Map)
@@ -74,7 +75,11 @@ test_blockGenerator chain slotDuration = isValid <$> withProbe (experiment slotD
         (property True)
 
     experiment
-      :: Duration (Time m)
+      :: ( MonadSTM m
+         , MonadTimer m
+         , MonadProbe m
+         )
+      => Duration (Time m)
       -> Probe m Block
       -> m ()
     experiment slotDur p = do
@@ -83,7 +88,7 @@ test_blockGenerator chain slotDuration = isValid <$> withProbe (experiment slotD
         b <- atomically $ getBlock v
         probeOutput p b
 
-prop_blockGenerator_ST :: TestBlockChain -> Positive Rational -> Property
+prop_blockGenerator_ST :: TestBlockChain -> Positive Micro -> Property
 prop_blockGenerator_ST (TestBlockChain chain) (Positive slotDuration) =
     runST $ test_blockGenerator chain (Sim.VTimeDuration slotDuration)
 
@@ -92,8 +97,10 @@ prop_blockGenerator_IO (TestBlockChain chain) (Positive slotDuration) =
     ioProperty $ test_blockGenerator chain (slotDuration * 100)
 
 coreToRelaySim :: ( MonadSTM m
+                  , MonadTimer m
                   , MonadSay m
                   , MonadProbe m
+                  , MonadTimer m
                   )
                => Bool              -- ^ two way subscription
                -> Chain Block
@@ -161,8 +168,10 @@ prop_coreToRelay (TestNodeSim chain slotDuration coreTrDelay relayTrDelay) =
 
 -- Node graph: c → r → r
 coreToRelaySim2 :: ( MonadSTM m
+                   , MonadTimer m
                    , MonadSay m
                    , MonadProbe m
+                   , MonadTimer m
                    )
                 => Chain Block
                 -> Duration (Time m)
@@ -215,8 +224,10 @@ prop_coreToRelay2 (TestNodeSim chain slotDuration coreTrDelay relayTrDelay) =
 
 -- | Node graph: c ↔ r ↔ c
 coreToCoreViaRelaySim :: ( MonadSTM m
+                         , MonadTimer m
                          , MonadSay m
                          , MonadProbe m
+                         , MonadTimer m
                          )
                       => Chain Block
                       -> Chain Block
@@ -330,8 +341,10 @@ instance Arbitrary TestNetworkGraph where
 
 networkGraphSim :: forall m.
                   ( MonadSTM m
+                  , MonadTimer m
                   , MonadProbe m
                   , MonadSay m
+                  , MonadTimer m
                   )
                 => TestNetworkGraph
                 -> Duration (Time m) -- ^ slot duration

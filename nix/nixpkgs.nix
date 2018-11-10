@@ -11,6 +11,7 @@ let
             { free = super.free_5_1;
               stm = super.stm_2_5_0_0;
               QuickCheck = super.QuickCheck_2_12_6_1;
+              psqueues = lib.dontCheck(super.psqueues);
               # aeson from git@github.com:coot/aeson (QuickCheck-2.12)
               aeson = super.callPackage ./aeson.nix {};
               # aeson requirement

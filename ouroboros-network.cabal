@@ -59,9 +59,7 @@ library
                        Ouroboros.Network.MonadClass.MonadFork
                        Ouroboros.Network.MonadClass.MonadProbe
                        Ouroboros.Network.MonadClass.MonadSay
-                       Ouroboros.Network.MonadClass.MonadSendRecv
                        Ouroboros.Network.MonadClass.MonadSTM
-                       Ouroboros.Network.MonadClass.MonadSTMTimer
                        Ouroboros.Network.MonadClass.MonadTimer
                        Ouroboros.Network.Node
                        Ouroboros.Network.Pipe
@@ -114,6 +112,7 @@ library
                        memory       >=0.14 && <0.15,
                        mtl,
                        process,
+                       psqueues     >=0.2 && <0.3,
                        random       >=1.1 && <1.2,
                        semigroups   >=0.18 && <0.19,
                        serialise    >=0.2 && <0.3,
