@@ -173,6 +173,7 @@ test-suite tests
                        Test.ChainProducerState
                        Test.Node
                        Test.Pipe
+                       Test.Protocol.Stream
                        Test.Sim
   default-language:    Haskell2010
   default-extensions:  NamedFieldPuns
@@ -193,10 +194,12 @@ test-suite tests
                        random,
                        semigroups,
                        stm,
+                       streaming,
                        tasty,
                        tasty-quickcheck,
                        text,
                        transformers,
+                       typed-transitions,
                        void
   ghc-options:         -Wall
                        -fno-ignore-asserts

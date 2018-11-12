@@ -82,6 +82,17 @@ type ProbeTrace a = [(VTime, a)]
 
 newtype Probe s a = Probe (STRef s (ProbeTrace a))
 
+-- | Like @'withProbe'@, but also returns the trace.
+--
+withProbeAndTrace
+  :: (Probe s a -> Free (SimF s) ())
+  -> ST s (ProbeTrace a, Trace)
+withProbeAndTrace f = do
+  p <- newSTRef []
+  t <- runSimMST $ f (Probe p)
+  ps <- reverse <$> readSTRef p
+  return (ps, t)
+
 failSim :: String -> Free (SimF s) ()
 failSim = Free.liftF . Fail
 

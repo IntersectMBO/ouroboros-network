@@ -16,9 +16,9 @@ mkDerivation {
     tasty-quickcheck text transformers typed-transitions unliftio void
   ];
   testHaskellDepends = [
-    array base bytestring cborg clock containers
-    fingertree free hashable mtl process QuickCheck random semigroups stm tasty
-    tasty-quickcheck text transformers void
+    array base bytestring cborg clock containers fingertree free hashable mtl
+    process QuickCheck random semigroups stm tasty tasty-quickcheck text
+    transformers typed-transitions void
   ];
   description = "A networking layer for the Ouroboros blockchain protocol";
   license = stdenv.lib.licenses.mit;
