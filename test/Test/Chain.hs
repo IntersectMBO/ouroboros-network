@@ -22,7 +22,7 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (Chain (..), ChainUpdate (..),
-                     Point (..), genesisPoint)
+                                          Point (..), genesisPoint)
 import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.Serialise (prop_serialise)
 import           Ouroboros.Network.Testing.ConcreteBlock
@@ -148,7 +148,7 @@ prop_intersectChains (TestChainFork c l r) =
             && Chain.pointOnChain p l
             && Chain.pointOnChain p r
 
-prop_serialise_chain :: TestBlockChain -> Bool
+prop_serialise_chain :: TestBlockChain -> Property
 prop_serialise_chain (TestBlockChain chain) =
   prop_serialise chain
 

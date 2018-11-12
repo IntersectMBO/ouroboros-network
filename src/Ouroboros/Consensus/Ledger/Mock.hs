@@ -179,7 +179,7 @@ data SimplePreHeader p c = SimplePreHeader {
     , headerBlockNo  :: BlockNo
     , headerBodyHash :: Hash (SimpleBlockHash c) SimpleBody
     }
-  deriving (Generic, Show, Eq)
+  deriving (Generic, Show, Eq, Ord)
 
 instance SimpleBlockCrypto c => Condense (SimplePreHeader p c) where
     condense = show

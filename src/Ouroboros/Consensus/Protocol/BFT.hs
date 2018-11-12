@@ -53,7 +53,7 @@ data Bft c
 instance BftCrypto c => OuroborosTag (Bft c) where
   -- | The BFT payload is just the signature
   newtype Payload (Bft c) ph = BftPayload {
-        bftSignature :: Signed (BftDSIGN c) ph
+        bftSignature :: SignedDSIGN (BftDSIGN c) ph
       }
     deriving (Generic)
 
@@ -73,7 +73,7 @@ instance BftCrypto c => OuroborosTag (Bft c) where
   type ChainState     (Bft c) = ()
 
   mkPayload BftNodeConfig{..} _proof preheader = do
-      signature <- signed preheader bftSignKey
+      signature <- signedDSIGN preheader bftSignKey
       return $ BftPayload {
           bftSignature = signature
         }
@@ -87,7 +87,7 @@ instance BftCrypto c => OuroborosTag (Bft c) where
 
   applyChainState BftNodeConfig{..} _l b _cs = do
       -- TODO: Should deal with unknown node IDs
-      if verifySigned (bftVerKeys Map.! expectedLeader)
+      if verifySignedDSIGN (bftVerKeys Map.! expectedLeader)
                       (blockPreHeader b)
                       (bftSignature (blockPayload (Proxy @(Bft c)) b))
         then return ()

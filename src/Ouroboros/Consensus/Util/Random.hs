@@ -1,8 +1,13 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Ouroboros.Consensus.Util.Random
-    ( Seed
+    ( MonadRandom (..)
+    , Seed
     , nonNegIntR
+    , genNatBetween
+    , genNat
+    , shrinkNat
+    , withSeed
     , MonadPseudoRandomT -- opaque
     , withDRGT
     , seedToChaCha
@@ -10,11 +15,15 @@ module Ouroboros.Consensus.Util.Random
     where
 
 import           Control.Monad.State
-import           Crypto.Random (ChaChaDRG, DRG, MonadRandom (..), drgNewTest,
-                     randomBytesGenerate)
+import           Crypto.Random (ChaChaDRG, DRG, MonadPseudoRandom,
+                                MonadRandom (..), drgNewTest,
+                                randomBytesGenerate, withDRG)
 import           Data.ByteString (ByteString, unpack)
 import           Data.Word (Word64)
+import           Numeric.Natural (Natural)
 import           Test.QuickCheck
+
+import           Ouroboros.Network.Serialise (Serialise)
 
 nonNegIntR :: MonadRandom m => m Int
 nonNegIntR = toInt <$> getRandomBytes 4
@@ -24,8 +33,21 @@ nonNegIntR = toInt <$> getRandomBytes 4
         let [a, b, c, d] = map fromIntegral $ unpack bs
         in  a + 256 * b + 65536 * c + 16777216 * d
 
+genNatBetween :: Natural -> Natural -> Gen Natural
+genNatBetween from to = do
+    i <- choose (toInteger from, toInteger to)
+    return $ fromIntegral i
+
+genNat :: Gen Natural
+genNat = do
+    NonNegative i <- arbitrary :: Gen (NonNegative Integer)
+    return $ fromIntegral i
+
+shrinkNat :: Natural -> [Natural]
+shrinkNat = map fromIntegral . shrink . toInteger
+
 newtype Seed = Seed {getSeed :: (Word64, Word64, Word64, Word64, Word64)}
-    deriving (Show, Eq, Ord)
+    deriving (Show, Eq, Ord, Serialise)
 
 instance Arbitrary Seed where
 
@@ -33,6 +55,9 @@ instance Arbitrary Seed where
                 <$> arbitrary <*> arbitrary <*> arbitrary <*> arbitrary <*> arbitrary
 
     shrink = const []
+
+withSeed :: Seed -> MonadPseudoRandom ChaChaDRG a -> a
+withSeed s = fst . withDRG (drgNewTest $ getSeed s)
 
 seedToChaCha :: Seed -> ChaChaDRG
 seedToChaCha = drgNewTest . getSeed

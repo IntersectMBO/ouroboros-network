@@ -17,8 +17,12 @@
 {-# OPTIONS -fno-warn-unused-binds #-}
 {-# OPTIONS -fno-warn-orphans #-}
 
-module Test.Dynamic (
+module Test.DynamicBFT (
     tests
+  , TestConfig(..)
+  , allEqual
+  , nodeStake
+  , broadcastNetwork
   ) where
 
 import           Control.Monad
@@ -52,6 +56,7 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.Test
+import           Ouroboros.Consensus.Util (Condense (..))
 import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Consensus.Util.STM
 
@@ -361,7 +366,8 @@ collectJust var = do
       Nothing -> retry
       Just a  -> return a
 
-allEqual :: Eq a => [a] -> Bool
-allEqual []       = True
-allEqual [_]      = True
-allEqual (x:y:xs) = x == y && allEqual (y:xs)
+allEqual :: (Condense a, Eq a) => [a] -> Property
+allEqual []       = property True
+allEqual [_]      = property True
+allEqual (x:y:xs) = counterexample (condense x <> " /= " <> condense y) (x == y)
+               .&&. allEqual (y:xs)

@@ -72,11 +72,10 @@ fromHash = foldl' f 0 . SB.unpack . getHash
     f n b = n * 256 + fromIntegral b
 
 prop_hash_correct_byteCount :: forall h a. (HashAlgorithm h, Serialise a)
-                            => Proxy h
-                            -> a
+                            => Hash h a
                             -> Property
-prop_hash_correct_byteCount h a =
-    (SB.length $ getHash $ hash @h a) === (fromIntegral $ byteCount h)
+prop_hash_correct_byteCount h =
+    (SB.length $ getHash h) === (fromIntegral $ byteCount (Proxy :: Proxy h))
 
 prop_hash_show_fromString :: Hash h a -> Property
 prop_hash_show_fromString h = h === fromString (show h)
