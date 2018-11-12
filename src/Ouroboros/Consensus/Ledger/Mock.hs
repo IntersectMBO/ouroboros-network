@@ -9,7 +9,7 @@
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
-module Ouroboros.Consensus.Test.MockLedger (
+module Ouroboros.Consensus.Ledger.Mock (
     -- * Basic definitions
     Tx(..)
   , TxIn
@@ -28,6 +28,8 @@ module Ouroboros.Consensus.Test.MockLedger (
   , SimplePreHeader(..)
   , SimpleBody(..)
   , forgeBlock
+    -- * Updating the Ledger state
+  , LedgerState(..)
   ) where
 
 import           Codec.Serialise
@@ -41,6 +43,7 @@ import           GHC.Generics (Generic)
 
 import           Ouroboros.Consensus.Crypto.Hash.Class
 import           Ouroboros.Consensus.Crypto.Hash.MD5 (MD5)
+import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.HList (All, HList)
@@ -212,9 +215,10 @@ forgeBlock :: forall m p c.
            => Slot                            -- ^ Current slot
            -> BlockNo                         -- ^ Current block number
            -> Network.Hash (SimpleHeader p c) -- ^ Previous hash
+           -> Set Tx                          -- ^ Txs to add in the block
            -> ProofIsLeader p
            -> m (SimpleBlock p c)
-forgeBlock curSlot curNo prevHash proof = do
+forgeBlock curSlot curNo prevHash txs proof = do
     ouroborosPayload <- mkOuroborosPayload proof preHeader
     return $ SimpleBlock {
         simpleHeader = SimpleHeader preHeader ouroborosPayload
@@ -222,7 +226,7 @@ forgeBlock curSlot curNo prevHash proof = do
       }
   where
     body :: SimpleBody
-    body = SimpleBody mempty -- TODO: this is where Alfredo's stuff comes in
+    body = SimpleBody txs
 
     preHeader :: SimplePreHeader p c
     preHeader = SimplePreHeader {
@@ -231,6 +235,29 @@ forgeBlock curSlot curNo prevHash proof = do
         , headerBlockNo  = curNo
         , headerBodyHash = hash body
         }
+
+{-------------------------------------------------------------------------------
+  Updating the Ledger
+-------------------------------------------------------------------------------}
+
+instance OuroborosTag p => UpdateLedger (SimpleBlock p c) where
+  data LedgerState (SimpleBlock p c) = SimpleLedgerState {
+        simpleUtxo :: Utxo
+      , simpleProtocolState :: OuroborosLedgerState p
+      }
+
+  -- Apply a block to the ledger state
+  --
+  -- TODO: We need to support rollback, so this probably won't be a pure
+  -- function but rather something that lives in a monad with some actions
+  -- that we can compute a "running diff" so that we can go back in time.
+  applyLedgerState (SimpleBlock hdr (SimpleBody txs)) sls = SimpleLedgerState {
+        simpleUtxo = updateUtxo txs (simpleUtxo sls)
+      , simpleProtocolState = applyOuroborosLedgerState (headerOuroboros hdr)
+                                                        (simpleProtocolState sls)
+      }
+
+deriving instance OuroborosTag p => Show (LedgerState (SimpleBlock p c))
 
 {-------------------------------------------------------------------------------
   Serialisation

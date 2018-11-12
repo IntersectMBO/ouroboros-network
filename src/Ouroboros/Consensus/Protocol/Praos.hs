@@ -66,6 +66,9 @@ instance PraosCrypto c => OuroborosTag (Praos c) where
       , praosLeaderId :: Int
       }
 
+  -- This is a placeholder for now (Lars).
+  data OuroborosLedgerState (Praos c) = PraosLedgerState deriving Show
+
   mkOuroborosPayload PraosProof{..} preheader = do
       PraosState{..} <- getOuroborosState
       let extraFields = PraosExtraFields {
@@ -78,6 +81,8 @@ instance PraosCrypto c => OuroborosTag (Praos c) where
           praosSignature   = signature
         , praosExtraFields = extraFields
         }
+
+  applyOuroborosLedgerState _ _ = PraosLedgerState
 
 instance (PraosCrypto c, PraosLedgerView l) => RunOuroboros (Praos c) l where
     checkIsLeader slot l = do
