@@ -511,7 +511,7 @@ example0 :: (MonadSay m, MonadTimer m, MonadSTM m) => m ()
 example0 = do
   say "starting"
   t <- atomically (newTVar (0 :: Int))
-  timer 2 $ do
+  fork $ threadDelay 2 >> do
     say "timer fired!"
     atomically $
       writeTVar t 1
@@ -536,7 +536,7 @@ example1 = do
   -- it is quite happy to let you do an infinite amount of work
   -- in zero time. These two busy loops do not progress in time.
 
-  timer 1 $ do
+  threadDelay 1 >> do
     x <- atomically $ readTVar chan
     say $ show x
 

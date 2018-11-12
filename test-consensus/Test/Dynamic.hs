@@ -286,7 +286,8 @@ broadcastNetwork numSlots nodeInit txMap initLedger initRNG = do
                       $ id
 
       forM_ [1 .. numSlots] $ \slotId ->
-        timer (slotDuration (Proxy @m) * fromIntegral slotId) $ do
+        fork $ do
+          threadDelay (slotDuration (Proxy @m) * fromIntegral slotId)
           let slot = Slot (fromIntegral slotId)
 
           -- TODO: We *do not* update the ledger state here. That's done in
@@ -305,7 +306,8 @@ broadcastNetwork numSlots nodeInit txMap initLedger initRNG = do
               block <- runProtocol $ forgeBlock slot curNo prevHash txs proof
               writeTVar varCPS cps{ chainState = chain :> block }
 
-      timer (slotDuration (Proxy @m) * fromIntegral (numSlots + 10)) $
+      fork $ do
+        threadDelay (slotDuration (Proxy @m) * fromIntegral (numSlots + 10))
         atomically $ do
           cps <- readTVar varCPS
           writeTVar varRes $ Just (us, chainState cps)

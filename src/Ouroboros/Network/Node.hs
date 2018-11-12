@@ -21,7 +21,7 @@ import           Ouroboros.Network.ChainProducerState (ChainProducerState (..),
                      ReaderId, initChainProducerState, producerChain,
                      switchFork)
 import           Ouroboros.Network.ConsumersAndProducers
-import           Ouroboros.Network.MonadClass hiding (recvMsg, sendMsg)
+import           Ouroboros.Network.MonadClass
 import           Ouroboros.Network.Protocol
 import           Ouroboros.Network.Testing.ConcreteBlock hiding (fixupBlock)
 import qualified Ouroboros.Network.Testing.ConcreteBlock as Concrete
@@ -95,7 +95,7 @@ chainTransferProtocol delay inputVar outputVar = do
                 check (Chain.headPoint input /= curPoint)
                 writeTVar stateVar (Chain.headPoint input)
                 return input
-      timer delay $ atomically $ writeTVar outputVar input
+      fork $ threadDelay delay >> atomically (writeTVar outputVar input)
 
 
 -- | One way transport channel.
@@ -117,7 +117,7 @@ transferProtocol :: forall send recv m.
 transferProtocol delay sendVar recvVar
   = Chan sendMsg recvMsg
   where
-    sendMsg a = timer delay $ atomically $ modifyTVar' sendVar (++[a])
+    sendMsg a = fork $ threadDelay delay >> atomically (modifyTVar' sendVar (++[a]))
     recvMsg =
       atomically $ do
         xs <- readTVar recvVar
@@ -222,7 +222,7 @@ blockGenerator :: forall block m.
                -- ^ returns an stm transaction which returns block
 blockGenerator slotDuration chain = do
   outputVar <- atomically (newTVar Nothing)
-  sequence_ [ timer (slotDuration * fromIntegral (getSlot $ blockSlot b)) (atomically (writeTVar outputVar (Just b)))
+  sequence_ [ fork $ threadDelay (slotDuration * fromIntegral (getSlot $ blockSlot b)) >> (atomically (writeTVar outputVar (Just b)))
             | b <- chain]
   return outputVar
 
