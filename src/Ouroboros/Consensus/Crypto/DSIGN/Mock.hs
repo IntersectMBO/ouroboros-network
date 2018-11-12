@@ -7,6 +7,7 @@
 module Ouroboros.Consensus.Crypto.DSIGN.Mock
     ( MockDSIGN
     , SignKeyDSIGN(..)
+    , VerKeyDSIGN(..)
     ) where
 
 import qualified Data.ByteString.Base16 as B16

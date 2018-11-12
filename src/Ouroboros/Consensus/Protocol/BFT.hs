@@ -10,29 +10,34 @@
 {-# LANGUAGE UndecidableInstances  #-}
 
 module Ouroboros.Consensus.Protocol.BFT (
-    -- * Tags
     Bft
+    -- * Classes
+  , BftCrypto(..)
   , BftStandardCrypto
   , BftMockCrypto
-    -- * Classes
-  , BftLedgerView(..)
-  , BftCrypto(..)
-    -- * BFT specific types
-  , OuroborosState(..)
-  , OuroborosLedgerState(..)
+    -- * Type instances
+  , OuroborosChainState(..)
+  , OuroborosLedgerView(..)
+  , OuroborosNodeConfig(..)
+  , OuroborosNodeState(..)
   ) where
 
+import           Control.Monad.Except
+import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
+import           Data.Proxy
 import           GHC.Generics (Generic)
+
+import           Ouroboros.Network.Block
+import           Ouroboros.Network.Serialise
 
 import           Ouroboros.Consensus.Crypto.DSIGN.Class
 import           Ouroboros.Consensus.Crypto.DSIGN.Ed448 (Ed448DSIGN)
 import           Ouroboros.Consensus.Crypto.DSIGN.Mock (MockDSIGN)
+import           Ouroboros.Consensus.Node (NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Test
 import           Ouroboros.Consensus.Util
-import           Ouroboros.Network.Block (Slot (..))
-import           Ouroboros.Network.Node (NodeId (..))
-import           Ouroboros.Network.Serialise
 
 {-------------------------------------------------------------------------------
   Protocol proper
@@ -47,31 +52,64 @@ instance BftCrypto c => OuroborosTag (Bft c) where
       }
     deriving (Generic)
 
-  -- | We need our own node ID and our key
-  data OuroborosState (Bft c) = BftState {
-        bftNodeId  :: NodeId
-      , bftSignKey :: SignKeyDSIGN (BftDSIGN c)
+  -- | (Static) node configuration
+  data OuroborosNodeConfig (Bft c) = BftNodeConfig {
+        bftNodeId   :: NodeId
+      , bftSignKey  :: SignKeyDSIGN (BftDSIGN c)
+      , bftNumNodes :: Word
+      , bftVerKeys  :: Map NodeId (VerKeyDSIGN (BftDSIGN c))
       }
+
+  -- | BFT does not need any state
+  data OuroborosNodeState (Bft c) = BftNodeState
+
+  -- | Ledger view
+  --
+  -- Basic BFT does not need any info from the ledger.
+  -- Cardano BFT will need to know about delegation.
+  data OuroborosLedgerView (Bft c) = BftLedgerView
 
   -- | For BFT the proof that we are a leader is trivial
   data ProofIsLeader (Bft c) = BftProof
 
-  -- | For BFT the ledger state is trivial.
-  -- NOTE: For \"permissive BFT\" this would not be trivial, because validation
-  -- would need to know statistical properties about the whole chain.
-  data OuroborosLedgerState (Bft c) = BftLedgerState deriving Show
+  type OuroborosValidationError (Bft c) = BftValidationError
 
-  mkOuroborosPayload BftProof preheader = do
-      BftState{..} <- getOuroborosState
+  -- | Chain state
+  --
+  -- Basic BFT does not need to record any chain state.
+  -- Cardano BFT will need to record % blocks signed/key, to detect abnomalies.
+  data OuroborosChainState (Bft c) = BftChainState
+
+  type SupportedBlock (Bft c) = HasOuroborosPayload (Bft c)
+
+  mkOuroborosPayload BftNodeConfig{..} BftProof preheader = do
       signature <- signed preheader bftSignKey
       return $ BftPayload {
           bftSignature = signature
         }
 
-  applyOuroborosLedgerState _ _ = BftLedgerState
+  checkIsLeader BftNodeConfig{..} (Slot n) BftLedgerView BftChainState = do
+      return $ case bftNodeId of
+                 RelayId _ -> Nothing -- relays are never leaders
+                 CoreId  i -> if n `mod` bftNumNodes == fromIntegral i
+                                then Just BftProof
+                                else Nothing
+
+  applyOuroborosChainState BftNodeConfig{..} b BftLedgerView BftChainState = do
+      -- TODO: Should deal with unknown node IDs
+      if verifySigned @(BftDSIGN c)
+                      (bftVerKeys Map.! expectedLeader)
+                      (blockPreHeader b)
+                      (bftSignature (blockOuroborosPayload (Proxy @(Bft c)) b))
+        then return BftChainState
+        else throwError BftInvalidSignature
+    where
+      Slot n         = blockSlot b
+      expectedLeader = CoreId $ fromIntegral (n `mod` bftNumNodes)
 
 deriving instance BftCrypto c => Show (OuroborosPayload (Bft c) ph)
 deriving instance BftCrypto c => Eq   (OuroborosPayload (Bft c) ph)
+deriving instance BftCrypto c => Show (OuroborosChainState (Bft c))
 
 instance BftCrypto c => Condense (OuroborosPayload (Bft c) ph) where
     condense (BftPayload sig) = condense sig
@@ -79,24 +117,8 @@ instance BftCrypto c => Condense (OuroborosPayload (Bft c) ph) where
 instance BftCrypto c => Serialise (OuroborosPayload (Bft c) ph) where
   -- use generic instance
 
-instance (BftCrypto c, BftLedgerView l) => RunOuroboros (Bft c) l where
-  checkIsLeader (Slot n) l = do
-      BftState{..} <- getOuroborosState
-      return $ case bftNodeId of
-                 RelayId _ -> Nothing -- relays are never leaders
-                 CoreId  i -> if n `mod` numNodes == fromIntegral i
-                                then Just BftProof
-                                else Nothing
-    where
-      numNodes = bftNumNodes l
-
-{-------------------------------------------------------------------------------
-  Ledger view
--------------------------------------------------------------------------------}
-
--- | Ledger state that BFT needs
-class BftLedgerView l where
-  bftNumNodes :: l -> Word
+data BftValidationError = BftInvalidSignature
+  deriving (Show)
 
 {-------------------------------------------------------------------------------
   Crypto models
@@ -119,5 +141,7 @@ instance BftCrypto BftMockCrypto where
   TestProtocol support
 -------------------------------------------------------------------------------}
 
+{-
 instance TestProtocolStateView (Bft c) where
   getOurNodeId = bftNodeId
+-}
