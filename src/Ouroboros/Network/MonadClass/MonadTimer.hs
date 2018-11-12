@@ -99,6 +99,13 @@ class (MonadSTM m, TimeMeasure (Time m)) => MonadTimer m where
   threadDelay    :: Duration (Time m) -> m ()
   threadDelay d   = void . atomically . awaitTimeout =<< newTimeout d
 
+  registerDelay :: Duration (Time m) -> m (TVar m Bool)
+  registerDelay d = do
+    v <- atomically $ newTVar False
+    t <- newTimeout d
+    fork $ atomically (awaitTimeout t >>= writeTVar v)
+    return v
+
 {-# DEPRECATED timer "Use threadDelay or the new timer API instead" #-}
 timer :: MonadTimer m => Duration (Time m) -> m () -> m ()
 timer d action = fork (threadDelay d >> action)
@@ -150,3 +157,5 @@ instance MonadTimer IO where
       GHC.unregisterTimeout mgr key
 
   threadDelay d = IO.threadDelay d
+
+  registerDelay = STM.registerDelay
