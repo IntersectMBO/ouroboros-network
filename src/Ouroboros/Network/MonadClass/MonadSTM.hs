@@ -4,10 +4,14 @@
 {-# LANGUAGE TypeFamilies           #-}
 {-# LANGUAGE TypeFamilyDependencies #-}
 module Ouroboros.Network.MonadClass.MonadSTM
-  ( MonadSTM (..) ) where
+  ( MonadSTM (..)
+  , MonadTBQueue (..)
+  ) where
 
 import qualified Control.Concurrent.STM.TVar as STM
+import qualified Control.Concurrent.STM.TBQueue as STM
 import qualified Control.Monad.STM as STM
+import           Numeric.Natural (Natural)
 
 import           Ouroboros.Network.MonadClass.MonadFork
 
@@ -44,3 +48,23 @@ instance MonadSTM IO where
   modifyTVar  = STM.modifyTVar
   modifyTVar' = STM.modifyTVar'
   check       = STM.check
+
+class MonadSTM m => MonadTBQueue m where
+    type TBQueue m :: * -> *
+
+    newTBQueue     :: Natural   -> Tr m (TBQueue m a)
+    readTBQueue    :: TBQueue m a -> Tr m a
+    writeTBQueue   :: TBQueue m a -> a -> Tr m ()
+    lengthTBQueue  :: TBQueue m a -> Tr m Natural
+    isEmptyTBQueue :: TBQueue m a -> Tr m Bool
+    isFullTBQueue  :: TBQueue m a -> Tr m Bool
+
+instance MonadTBQueue IO where
+    type TBQueue IO = STM.TBQueue
+
+    newTBQueue     = STM.newTBQueue
+    readTBQueue    = STM.readTBQueue
+    writeTBQueue   = STM.writeTBQueue
+    lengthTBQueue  = STM.lengthTBQueue
+    isEmptyTBQueue = STM.isEmptyTBQueue
+    isFullTBQueue  = STM.isFullTBQueue
