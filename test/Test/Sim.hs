@@ -161,7 +161,7 @@ test_timers xs =
     experiment p = do
       tvars <- forM (zip xs [0..]) $ \(t, idx) -> do
         v <- atomically $ newTVar False
-        timer t $ do
+        fork $ threadDelay t >> do
           probeOutput p (t, idx)
           atomically $ writeTVar v True
         return v

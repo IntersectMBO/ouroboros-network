@@ -7,7 +7,6 @@ module Ouroboros.Network.MonadClass.MonadTimer (
   , TimeMeasure(..)
   , mult
   , fromStart
-  , timer
   ) where
 
 import           Data.Functor (void)
@@ -18,7 +17,7 @@ import qualified Control.Monad.STM           as STM
 import qualified GHC.Event as GHC (TimeoutKey, getSystemTimerManager,
                      registerTimeout, unregisterTimeout, updateTimeout)
 
-import           Ouroboros.Network.MonadClass.MonadFork
+import           Ouroboros.Network.MonadClass.MonadFork (fork)
 import           Ouroboros.Network.MonadClass.MonadSTM
 
 
@@ -105,10 +104,6 @@ class (MonadSTM m, TimeMeasure (Time m)) => MonadTimer m where
     t <- newTimeout d
     fork $ atomically (awaitTimeout t >>= writeTVar v)
     return v
-
-{-# DEPRECATED timer "Use threadDelay or the new timer API instead" #-}
-timer :: MonadTimer m => Duration (Time m) -> m () -> m ()
-timer d action = fork (threadDelay d >> action)
 
 --
 -- Instances for IO
