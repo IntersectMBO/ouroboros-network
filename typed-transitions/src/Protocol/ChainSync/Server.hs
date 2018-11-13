@@ -82,15 +82,15 @@ chainSyncServerPeer ServerStIdle{recvMsgRequestNext, recvMsgFindIntersect} =
 
     await $ \req ->
     case req of
-      MsgRequestNext -> hole $ do
+      MsgRequestNext -> lift $ do
         mresp <- recvMsgRequestNext
         pure $ case mresp of
           Left  resp    -> handleStNext resp
-          Right waiting -> part MsgAwaitReply $ hole $ do
+          Right waiting -> part MsgAwaitReply $ lift $ do
                              resp <- waiting
                              pure $ handleStNext resp
 
-      MsgFindIntersect points -> hole $ do
+      MsgFindIntersect points -> lift $ do
         resp <- recvMsgFindIntersect points
         pure $ handleStIntersect resp 
 
