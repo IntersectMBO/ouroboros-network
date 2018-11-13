@@ -1,7 +1,8 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE RankNTypes       #-}
 module LedgerState (
-    spawnLedgerStateListeners
+      spawnLedgerStateListeners
+    , DemoLedgerState(..)
     ) where
 
 import qualified Control.Concurrent.Async as Async
@@ -11,6 +12,7 @@ import           Control.Monad.State
 import           Data.Function ((&))
 import           Data.Functor (($>))
 
+import           Ouroboros.Consensus.Protocol.BFT (BftLedgerView (..))
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Network.Chain (Chain (..), HasHeader)
 import           Ouroboros.Network.ChainProducerState (ChainProducerState)
@@ -23,6 +25,12 @@ import           Ouroboros.Network.Serialise
 
 import           Logging
 
+data DemoLedgerState = DemoLedgerState {
+    numNodes :: !Int
+  } deriving Show
+
+instance BftLedgerView DemoLedgerState where
+  bftNumNodes = fromIntegral . numNodes
 
 data SomeState = SomeState { howManyRollbacks :: !Int
                            , howManyAddBlocks :: !Int
@@ -30,6 +38,7 @@ data SomeState = SomeState { howManyRollbacks :: !Int
 
 type M = StateT SomeState IO
 
+-- TODO: This can be replaced with the 'LedgerState' abstraction proper.
 spawnLedgerStateListeners :: forall block. ( HasHeader block
                              , Serialise block
                              , Condense  block

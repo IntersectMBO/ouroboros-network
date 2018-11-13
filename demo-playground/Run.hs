@@ -19,38 +19,24 @@ import qualified Data.Map.Strict as M
 import           Data.Maybe
 import           Data.Semigroup ((<>))
 
+import           Ouroboros.Consensus.Crypto.DSIGN.Mock
 import           Ouroboros.Consensus.Ledger.Mempool (Mempool)
 import qualified Ouroboros.Consensus.Ledger.Mock as Mock
-import           Ouroboros.Consensus.Util
-import           Ouroboros.Consensus.Util.Singletons (Dict (..), withSomeSing)
-import           Ouroboros.Network.Chain (Chain (..), HasHeader)
+import           Ouroboros.Consensus.Protocol.BFT
+import           Ouroboros.Network.Chain (Chain (..))
 import           Ouroboros.Network.ChainProducerState
 import           Ouroboros.Network.ConsumersAndProducers
 import           Ouroboros.Network.MonadClass hiding (TVar, atomically, newTVar)
 import           Ouroboros.Network.Node (NodeId (..))
 import qualified Ouroboros.Network.Node as Node
-import           Ouroboros.Network.Serialise hiding ((<>))
 
-import           BlockGeneration (blockGenerator)
+import           BlockGeneration (forkCoreNode)
 import           CLI
 import           LedgerState
 import           Logging
 import           Mock.TxSubmission
 import qualified NamedPipe
-import           Payload
 import           Topology
-
-dictPayloadImplementation :: Sing (pt :: PayloadType)
-                          -> Dict ( Serialise (Payload pt)
-                                  , Condense  (Payload pt)
-                                  , Condense  [Payload pt]
-                                  , HasHeader (Payload pt)
-                                  , PayloadImplementation pt
-                                  , Mock.HasUtxo (Payload pt)
-                                  , Mock.HasUtxo (Chain (Payload pt))
-                                  )
-dictPayloadImplementation SDummyPayload = Dict
-dictPayloadImplementation SMockPayload  = Dict
 
 runNode :: CLI -> IO ()
 runNode CLI{..} = do
@@ -58,27 +44,29 @@ runNode CLI{..} = do
     -- full node, we simply transmit it and exit.
     case command of
          TxSubmitter topology tx -> handleTxSubmission topology tx
-         -- Use the mock payload as default.
-         SimpleNode t            -> handleSimpleNode t MockPayloadType
+         SimpleNode t            -> handleSimpleNode t
+
+-- The concrete block this demo will run with.
+type Block = Mock.SimpleBlock (Bft BftMockCrypto) Mock.SimpleBlockStandardCrypto
 
 -- | Setups a simple node, which will run the chain-following protocol and,
 -- if core, will also look at the mempool when trying to create a new block.
-handleSimpleNode :: TopologyInfo -> PayloadType -> IO ()
-handleSimpleNode (TopologyInfo myNodeId topologyFile) payloadType = do
+handleSimpleNode :: TopologyInfo -> IO ()
+handleSimpleNode (TopologyInfo myNodeId topologyFile) = do
     let isLogger   = myNodeId == CoreId 0
 
     topoE <- readTopologyFile topologyFile
     case topoE of
          Left e -> error e
-         Right t -> do
-             let topology      = toNetworkMap t
-                 NodeSetup{..} = fromMaybe (error "node not found.") $
+         Right t@(NetworkTopology nodeSetups) -> do
+             let topology  = toNetworkMap t
+                 nodeSetup = fromMaybe (error "node not found.") $
                                    M.lookup myNodeId topology
 
              putStrLn $ "**************************************"
              putStrLn $ "I am Node = " <> show myNodeId
-             putStrLn $ "My consumers are " <> show consumers
-             putStrLn $ "My producers are " <> show producers
+             putStrLn $ "My consumers are " <> show (consumers nodeSetup)
+             putStrLn $ "My producers are " <> show (producers nodeSetup)
              putStrLn $ "**************************************"
 
              -- Creates a TBQueue to be used by all the logger threads to monitor
@@ -86,72 +74,66 @@ handleSimpleNode (TopologyInfo myNodeId topologyFile) payloadType = do
              loggingQueue    <- atomically $ newTBQueue 50
              terminalThread  <- (:[]) <$> spawnTerminalLogger loggingQueue
 
-             withSomeSing payloadType $ \(sPayloadType :: Sing (pt :: PayloadType)) ->
-               case dictPayloadImplementation sPayloadType of
-                 Dict -> do
-                   let initialChain :: Chain (Payload pt)
-                       initialChain = toChain initialChainData
+             let initialPool :: Mempool Mock.Tx
+                 initialPool = mempty
 
-                       initialPool :: Mempool Mock.Tx
-                       initialPool = mempty
-
-                   -- Each node has a mempool, regardless from its consumer
-                   -- and producer threads.
-                   nodeMempool <- newMVar initialPool
+             -- Each node has a mempool, regardless from its consumer
+             -- and producer threads.
+             nodeMempool <- newTMVarIO initialPool
 
 
-                   -- The calls to the 'Unix' functions are flipped here, as for each
-                   -- of my producers I want to create a consumer node and for each
-                   -- of my consumers I want to produce something.
-                   (upstream, consumerThreads) <-
-                     fmap unzip $ forM producers $ \pId ->
-                       case isLogger of
-                            True  -> spawnLogger loggingQueue pId
-                            False -> spawnConsumer initialChain pId
+             -- The calls to the 'Unix' functions are flipped here, as for each
+             -- of my producers I want to create a consumer node and for each
+             -- of my consumers I want to produce something.
+             (upstream, consumerThreads) <-
+               fmap unzip $ forM (producers nodeSetup) $ \pId ->
+                 case isLogger of
+                      True  -> spawnLogger loggingQueue pId
+                      False -> spawnConsumer Genesis pId
 
-                   cps <- atomically $ newTVar (initChainProducerState initialChain)
-                   producerThreads <- forM consumers (spawnProducer cps)
+             cps <- atomically $ newTVar (initChainProducerState Genesis)
+             producerThreads <- forM (consumers nodeSetup) (spawnProducer cps)
 
-                   -- Spawn the thread which listens to the mempool.
-                   mempoolThread <-
-                       case role of
-                           CoreNode -> (:[]) <$> spawnMempoolListener myNodeId nodeMempool cps
-                           _ -> mempty
+             -- Spawn the thread which listens to the mempool.
+             mempoolThread <-
+                 case (role nodeSetup) of
+                     CoreNode -> (:[]) <$> spawnMempoolListener myNodeId nodeMempool cps
+                     _ -> mempty
 
-                   Node.forkRelayKernel upstream cps
-                   when (role == CoreNode) $ do
-                       blockVar <- blockGenerator nodeMempool
-                                                  cps
-                                                  slotDuration
-                                                  (chainFrom initialChain 100)
-                       Node.forkCoreKernel blockVar
-                                           fixupBlock
-                                           cps
+             Node.forkRelayKernel upstream cps
+             when (role nodeSetup == CoreNode) $ do
+                 let numCoreNodes = length (filter ((== CoreNode) . role) nodeSetups)
+                 let nid = case myNodeId of
+                                CoreId n  -> n
+                                RelayId n -> n
+                 let protocolState = BftState myNodeId (SignKeyMockDSIGN nid)
+                 let ledgerState = DemoLedgerState numCoreNodes
 
-                   ledgerStateThreads <- spawnLedgerStateListeners myNodeId
-                                                                   loggingQueue
-                                                                   initialChain
-                                                                   cps
+                 forkCoreNode ledgerState
+                              protocolState
+                              nodeMempool
+                              cps
+                              slotDuration
 
-                   let allThreads = terminalThread <> producerThreads
-                                                   <> consumerThreads
-                                                   <> mempoolThread
-                                                   <> ledgerStateThreads
-                   void $ Async.waitAnyCancel allThreads
+             ledgerStateThreads <- spawnLedgerStateListeners myNodeId
+                                                             loggingQueue
+                                                             Genesis
+                                                             cps
+
+             let allThreads = terminalThread <> producerThreads
+                                             <> consumerThreads
+                                             <> mempoolThread
+                                             <> ledgerStateThreads
+             void $ Async.waitAnyCancel allThreads
 
   where
       spawnTerminalLogger :: TBQueue LogEvent -> IO (Async.Async ())
       spawnTerminalLogger q = do
           Async.async $ showNetworkTraffic q
 
-      spawnLogger :: ( HasHeader (Payload pt)
-                     , Serialise (Payload pt)
-                     , Condense  (Payload pt)
-                     , Condense  [Payload pt]
-                     )
-                  => TBQueue LogEvent
+      spawnLogger :: TBQueue LogEvent
                   -> NodeId
-                  -> IO (TVar (Chain (Payload pt)), Async.Async ())
+                  -> IO (TVar (Chain Block), Async.Async ())
       spawnLogger q targetId = do
           chVar <- atomically $ newTVar Genesis
           let handler = LoggerHandler q chVar targetId
@@ -159,22 +141,16 @@ handleSimpleNode (TopologyInfo myNodeId topologyFile) payloadType = do
                      loggerConsumer handler
           pure (chVar, a)
 
-      spawnConsumer :: ( HasHeader (Payload pt)
-                       , Serialise (Payload pt)
-                       )
-                    => Chain (Payload pt)
+      spawnConsumer :: Chain Block
                     -> NodeId
-                    -> IO (TVar (Chain (Payload pt)), Async.Async ())
+                    -> IO (TVar (Chain Block), Async.Async ())
       spawnConsumer myChain producerNodeId = do
           chVar <- atomically $ newTVar myChain
           a     <- Async.async $ NamedPipe.runConsumer myNodeId producerNodeId $
                      exampleConsumer chVar
           pure (chVar, a)
 
-      spawnProducer :: ( HasHeader (Payload pt)
-                       , Serialise (Payload pt)
-                       )
-                    => TVar (ChainProducerState (Payload pt))
+      spawnProducer :: TVar (ChainProducerState Block)
                     -> NodeId
                     -> IO (Async.Async ())
       spawnProducer cps consumerNodeId = Async.async $

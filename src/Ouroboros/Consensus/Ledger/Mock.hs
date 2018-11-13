@@ -105,6 +105,17 @@ instance HasUtxo a => HasUtxo [a] where
   confirmed  = foldr (Set.union . confirmed) Set.empty
   updateUtxo = repeatedly updateUtxo
 
+instance HasUtxo SimpleBody where
+  txIns      = txIns      . getSimpleBody
+  txOuts     = txOuts     . getSimpleBody
+  updateUtxo = updateUtxo . getSimpleBody
+  confirmed  = confirmed  . getSimpleBody
+
+instance HasUtxo (SimpleBlock p c) where
+  txIns      = txIns      . simpleBody
+  txOuts     = txOuts     . simpleBody
+  updateUtxo = updateUtxo . simpleBody
+  confirmed  = confirmed  . simpleBody
 
 instance HasUtxo a => HasUtxo (Chain a) where
   txIns      = txIns      . toOldestFirst
@@ -165,13 +176,13 @@ data SimplePreHeader p c = SimplePreHeader {
     }
   deriving (Generic, Show, Eq)
 
-data SimpleBody = SimpleBody (Set Tx)
+data SimpleBody = SimpleBody { getSimpleBody :: Set Tx }
   deriving (Generic, Show, Eq)
 
 data SimpleBlock p c = SimpleBlock {
       simpleHeader :: SimpleHeader p c
     , simpleBody   :: SimpleBody
-    }
+    } deriving (Generic)
 
 deriving instance ( SimpleBlockCrypto c
                   , Show (OuroborosPayload p (SimplePreHeader p c))
@@ -179,6 +190,13 @@ deriving instance ( SimpleBlockCrypto c
 deriving instance ( SimpleBlockCrypto c
                   , Eq (OuroborosPayload p (SimplePreHeader p c))
                   ) => Eq (SimpleBlock p c)
+
+-- TODO: Write a proper condensed instance.
+instance ( SimpleBlockCrypto c
+         , Show (OuroborosPayload p (SimplePreHeader p c))
+         )
+        => Condense (SimpleBlock p c) where
+  condense b = show b
 
 instance SimpleBlockCrypto c => StandardHash (SimpleHeader p c)
 instance SimpleBlockCrypto c => StandardHash (SimpleBlock  p c)
@@ -281,3 +299,6 @@ instance ( SimpleBlockCrypto c
 instance ( SimpleBlockCrypto c
          , Serialise (OuroborosPayload p (SimplePreHeader p c))
          ) => Serialise (SimplePreHeader p c)
+instance ( SimpleBlockCrypto c
+         , Serialise (OuroborosPayload p (SimplePreHeader p c))
+         ) => Serialise (SimpleBlock p c)

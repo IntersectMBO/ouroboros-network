@@ -1,76 +1,125 @@
-{-# LANGUAGE DataKinds        #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE NamedFieldPuns   #-}
-{-# LANGUAGE RankNTypes       #-}
-{-# LANGUAGE TypeFamilies     #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE TypeFamilies        #-}
 module Mock.Payload (
-      SimpleUtxoBlock(..) -- re-export
+      SimpleBlock(..) -- re-export
     , fixupBlock
     , chainFrom
     , toChain
     , addTxs
     ) where
 
-import           Data.Semigroup ((<>))
 import           Data.Set (Set)
 
-import           Ouroboros.Consensus.Block.SimpleUTxO
-import qualified Ouroboros.Consensus.Ledger.Mock as Mock
-import           Ouroboros.Network.Block
-import           Ouroboros.Network.Chain (Chain (..))
+import qualified Ouroboros.Consensus.Crypto.Hash as H
+import           Ouroboros.Consensus.Ledger.Mock (SimpleBlock (..),
+                     SimpleBlockHash (..), SimpleBody (..), SimpleHeader (..),
+                     SimplePreHeader (..), Tx)
+import           Ouroboros.Consensus.Protocol.Abstract
+
+import           Ouroboros.Network.Block (BlockNo (..), Slot (..), castHash)
+import qualified Ouroboros.Network.Block as Network
+import           Ouroboros.Network.Chain (Chain (..), headBlockNo, headHash)
 import qualified Ouroboros.Network.Chain as C
-import           Ouroboros.Network.Testing.ConcreteBlock hiding (fixupBlock)
+import           Ouroboros.Network.Serialise
 
-fixupBlock :: Chain SimpleUtxoBlock -> SimpleUtxoBlock -> SimpleUtxoBlock
-fixupBlock c (SimpleUtxoBlock header body) =
-    SimpleUtxoBlock (fixupBlockHeader c (simpleUtxoBodyHash body) header) body
+fixupBlock :: forall p c.
+           ( SimpleBlockCrypto c
+           , Serialise (OuroborosPayload p (SimplePreHeader p c))
+           )
+           => Chain (SimpleBlock p c)
+           -> SimpleBlock p c
+           -> SimpleBlock p c
+fixupBlock c (SimpleBlock header body) =
+    let bodyHash  = H.hash body
+        preHeader = headerPreHeader header
+    in SimpleBlock {
+        simpleHeader = header { headerPreHeader = fixupPreHeader bodyHash preHeader }
+      , simpleBody   = body
+      }
+  where
+    fixupPreHeader :: ( SimpleBlockCrypto c
+                      , Serialise (OuroborosPayload p (SimplePreHeader p c))
+                      )
+                   => H.Hash (SimpleBlockHash c) SimpleBody
+                   -> SimplePreHeader p c
+                   -> SimplePreHeader p c
+    fixupPreHeader h b = b'
+      where
+        b' = SimplePreHeader {
+          headerPrev     = castHash (headHash c)
+        , headerSlot     = headerSlot b
+        , headerBlockNo  = succ $ headBlockNo c
+        , headerBodyHash = h
+        }
 
-toChain :: [Int] -> Chain SimpleUtxoBlock
+
+toChain :: ( SimpleBlockCrypto c
+           , Serialise (OuroborosPayload p (SimplePreHeader p c))
+           )
+         => [Int] -> Chain (SimpleBlock p c)
 toChain = C.fromNewestFirst
         . reverse
-        . chainWithSlots (castHash (C.headHash genesis)) (C.headBlockNo genesis)
+        . chainWithSlots (C.headHash Genesis) C.genesisBlockNo
         . map (Slot . fromIntegral)
-  where
-    genesis :: Chain SimpleUtxoBlock
-    genesis = Genesis
 
 -- | Dummy chain with empty bodies in the specified slots
-chainWithSlots :: Hash BlockHeader -> BlockNo -> [Slot] -> [SimpleUtxoBlock]
+chainWithSlots :: forall p c.
+               ( SimpleBlockCrypto c
+               , Serialise (OuroborosPayload p (SimplePreHeader p c))
+               )
+               => Network.Hash (SimpleHeader p c)
+               -> BlockNo
+               -> [Slot]
+               -> [SimpleBlock p c]
 chainWithSlots _        _      []     = []
 chainWithSlots prevHash prevNo (s:ss) =
     let block = mkBlock s
-    in block : chainWithSlots (BlockHash (blockHash block)) (blockNo block) ss
+    in block : chainWithSlots (Network.BlockHash (C.blockHash block)) (C.blockNo block) ss
   where
-    mkBlock :: Slot -> SimpleUtxoBlock
-    mkBlock slot = SimpleUtxoBlock {
-          simpleUtxoHeader = mkBlockHeader slot (simpleUtxoBodyHash body)
-        , simpleUtxoBody   = body
+    mkBlock :: SimpleBlockCrypto c => Slot -> SimpleBlock p c
+    mkBlock slot = SimpleBlock {
+          simpleHeader = mkBlockHeader slot (H.hash body)
+        , simpleBody   = body
         }
       where
-        body = mempty
+        body = SimpleBody mempty
 
-    mkBlockHeader :: Slot -> BodyHash -> BlockHeader
+    mkBlockHeader :: SimpleBlockCrypto c
+                  => Slot
+                  -> H.Hash (SimpleBlockHash c) SimpleBody
+                  -> SimpleHeader p c
     mkBlockHeader slot bHash =
-        let hdr = BlockHeader {
-             headerHash     = hashHeader hdr
-          ,  headerPrevHash = prevHash
-          ,  headerSlot     = slot
-          ,  headerBlockNo  = succ prevNo
-          ,  headerSigner   = BlockSigner 0
-          ,  headerBodyHash = bHash
-          } in hdr
+        let ph = SimplePreHeader {
+                 headerPrev     = prevHash
+               , headerSlot     = slot
+               , headerBlockNo  = succ prevNo
+               , headerBodyHash = bHash
+               }
+        in SimpleHeader {
+             headerPreHeader = ph
+           , headerOuroboros = undefined -- mkOuroborosPayload proofLeader ph
+           }
 
-chainFrom :: Chain SimpleUtxoBlock
+chainFrom :: ( SimpleBlockCrypto c
+             , Serialise (OuroborosPayload p (SimplePreHeader p c))
+             )
+          => Chain (SimpleBlock p c)
           -> Int
-          -> [SimpleUtxoBlock]
+          -> [SimpleBlock p c]
 chainFrom c n =
-    chainWithSlots (castHash (C.headHash c))
+    chainWithSlots (castHash . C.headHash $ c)
                    (C.headBlockNo c)
                    [Slot (headSlot + s) | s <- [1 .. fromIntegral n]]
   where
     Slot headSlot = C.headSlot c
 
-addTxs :: Set Mock.Tx
-       -> SimpleUtxoBlock
-       -> SimpleUtxoBlock
-addTxs txs b = b { simpleUtxoBody = txs <> simpleUtxoBody b }
+addTxs :: Set Tx
+       -> (SimpleBlock p c)
+       -> (SimpleBlock p c)
+addTxs txs b@(SimpleBlock _ (SimpleBody t)) =
+    b { simpleBody = SimpleBody (txs <> t) }

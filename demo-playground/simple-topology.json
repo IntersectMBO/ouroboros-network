@@ -16,8 +16,19 @@
     , "consumers": [0, 1,5]
     , "initialChainData": [1,2,3]
     , "role": "core"
-    }
-    ,
+    },
+    { "nodeId": 2
+    , "producers": []
+    , "consumers": [0,1,5]
+    , "initialChainData": []
+    , "role": "core"
+    },
+    { "nodeId": 4
+    , "producers": []
+    , "consumers": [0,1,5]
+    , "initialChainData": []
+    , "role": "core"
+    },
     { "nodeId": 5
     , "producers": [2]
     , "consumers": []

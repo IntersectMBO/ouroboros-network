@@ -19,7 +19,6 @@ import qualified Ouroboros.Consensus.Ledger.Mock as Mock
 import           Ouroboros.Network.Node (NodeId (..))
 
 import           Mock.TxSubmission (command', parseMockTx)
-import           Payload (PayloadType (..), allPayloadTypes, readPayloadType)
 import           Topology (TopologyInfo (..))
 
 data CLI = CLI
@@ -61,13 +60,3 @@ parseTopologyFile =
 
 parseTopologyInfo :: Parser TopologyInfo
 parseTopologyInfo = TopologyInfo <$> parseNodeId <*> parseTopologyFile
-
-_parsePayloadType :: Parser PayloadType
-_parsePayloadType =
-    option (readPayloadType <$> str) (
-               long "payload-type"
-            <> short 'p'
-            <> metavar allPayloadTypes
-            <> value DummyPayloadType
-            <> help "The content of the payload in the messages"
-    )

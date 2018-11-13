@@ -29,8 +29,8 @@ import           Ouroboros.Network.Node (NodeId (..))
 import           Ouroboros.Network.Pipe
 import           Ouroboros.Network.Serialise
 
+import           Mock.Payload
 import           NamedPipe
-import           Payload
 import           Topology
 
 {-------------------------------------------------------------------------------
@@ -106,22 +106,19 @@ submitTx n tx = do
       proto :: Protocol Mock.Tx Void ()
       proto = sendMsg tx
 
-readIncomingTx :: Mock.HasUtxo (Payload pt)
-               => MVar IO (Mempool Mock.Tx)
-               -> TVar IO (ChainProducerState (Payload pt))
+readIncomingTx :: TMVar IO (Mempool Mock.Tx)
+               -> TVar IO (ChainProducerState (SimpleBlock p c))
                -> Protocol Void Mock.Tx ()
 readIncomingTx poolVar chainVar = do
     newTx <- recvMsg
-    liftIO $ do
-        chain <- chainState <$> atomically (readTVar chainVar)
-        modifyMVar_ poolVar $ \mempool -> do
-            isConsistent <- runExceptT $ consistent (Mock.utxo chain) mempool newTx
-            case isConsistent of
-                Left err -> do
-                    liftIO $ print err
-                    return mempool
-                Right ()  -> return $ mempoolInsert newTx mempool
-        threadDelay 1000
+    liftIO $ atomically $ do
+        chain <- chainState <$> readTVar chainVar
+        mempool <- takeTMVar poolVar
+        isConsistent <- runExceptT $ consistent (Mock.utxo chain) mempool newTx
+        case isConsistent of
+            Left _err -> return ()
+            Right ()  -> putTMVar poolVar (mempoolInsert newTx mempool)
+    liftIO $ threadDelay 1000
     -- Loop over
     readIncomingTx poolVar chainVar
 
@@ -129,10 +126,9 @@ instance Serialise Void where
     encode = error "You cannot encode Void."
     decode = error "You cannot decode Void."
 
-spawnMempoolListener :: Mock.HasUtxo (Payload pt)
-                     => NodeId
-                     -> MVar IO (Mempool Mock.Tx)
-                     -> TVar IO (ChainProducerState (Payload pt))
+spawnMempoolListener :: NodeId
+                     -> TMVar IO (Mempool Mock.Tx)
+                     -> TVar IO (ChainProducerState (SimpleBlock p c))
                      -> IO (Async.Async ())
 spawnMempoolListener myNodeId poolVar chainVar = do
     Async.async $ do

@@ -1,44 +1,78 @@
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE RankNTypes       #-}
-module BlockGeneration (blockGenerator) where
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+module BlockGeneration (forkCoreNode) where
 
-import           Control.Monad
-import           Data.Tuple (swap)
+import           Control.Monad.State
+import           Crypto.Random
 
 import           Ouroboros.Consensus.Ledger.Mempool (Mempool, collect)
 import qualified Ouroboros.Consensus.Ledger.Mock as Mock
+import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Network.Block
+import           Ouroboros.Network.Chain (Chain (..), headBlockNo, headHash)
 import           Ouroboros.Network.ChainProducerState
 import           Ouroboros.Network.MonadClass
+import           Ouroboros.Network.Serialise
 
-import           Payload
+import           LedgerState
+import           Mock.Payload
 
-blockGenerator :: ( HasHeader (Payload pt)
+
+forkCoreNode :: forall m p c. ( Mock.SimpleBlockCrypto c
+                  , Serialise (OuroborosPayload p (Mock.SimplePreHeader p c))
                   , MonadSTM m
                   , MonadTimer m
                   , MonadConc m
-                  , Mock.HasUtxo (Payload pt)
-                  , PayloadImplementation pt
+                  , MonadFork m
+                  , MonadIO m
+                  , RunOuroboros p DemoLedgerState
                   )
-               => MVar m (Mempool Mock.Tx)
-               -> TVar m (ChainProducerState (Payload pt))
+               => DemoLedgerState
+               -> OuroborosState p
+               -> TMVar m (Mempool Mock.Tx)
+               -> TVar m (ChainProducerState (SimpleBlock p c))
                -> Duration (Time m)
-               -> [Payload pt]
-               -> m (TVar m (Maybe (Payload pt)))
-blockGenerator mempoolVar cps slotDuration chain = do
-    outputVar <- atomically (newTVar Nothing)
-    forM_ chain $ \b ->
-        timer (slotDuration * fromIntegral (getSlot $ blockSlot b)) $ do
-            currentChain <- chainState <$> atomically (readTVar cps)
-            -- Before generating a new block, look for incoming transactions.
-            -- If there are, check if the mempool is consistent and, if it is,
-            -- grab the valid new transactions and incorporate them into a
-            -- new block.
-            valid <- modifyMVar mempoolVar $ \mempool ->
-                         return $ swap
-                                $ collect (Mock.utxo currentChain) mempool
-                                $ (Mock.confirmed currentChain)
+               -> m ()
+forkCoreNode initLedger protocolState mempoolVar varCPS slotDuration = do
+    ledgerVar <- atomically $ newTVar initLedger
+    slotVar   <- atomically $ newTVar 1
+    initDRG   <- liftIO getSystemDRG
 
-            let b' = addTxs valid b
-            atomically (writeTVar outputVar (Just b'))
-    return outputVar
+    let runProtocol :: MonadPseudoRandomT SystemDRG (OuroborosStateT p (Tr m)) a
+                    -> Tr m a
+        runProtocol m =
+            fst <$> runOuroborosStateT (fst <$> withDRGT m initDRG) protocolState
+
+    fork $ forever $ do
+        threadDelay slotDuration
+        atomically $ do
+            currentLedger <- readTVar ledgerVar
+            slot          <- readTVar slotVar
+            mIsLeader <- runProtocol $ checkIsLeader (Slot slot) currentLedger
+            case mIsLeader of
+              Nothing    -> return ()
+              Just proof -> do
+                cps    <- readTVar varCPS
+                let chain    = chainState cps
+                    prevHash = castHash (headHash chain)
+                    prevNo   = headBlockNo chain
+                    curNo    = succ prevNo
+
+                -- Before generating a new block, look for incoming transactions.
+                -- If there are, check if the mempool is consistent and, if it is,
+                -- grab the valid new transactions and incorporate them into a
+                -- new block.
+                mpMb  <- tryTakeTMVar mempoolVar
+                txs   <- case mpMb of
+                              Nothing -> return mempty
+                              Just mp -> do
+                                  let (ts, mp') = collect (Mock.utxo chain) mp
+                                                $ (Mock.confirmed chain)
+                                  putTMVar mempoolVar mp'
+                                  return ts
+
+                block <- runProtocol $ Mock.forgeBlock (Slot slot) curNo prevHash txs proof
+                writeTVar varCPS cps{ chainState = chain :> block }
+            writeTVar slotVar (succ slot)

@@ -20,7 +20,6 @@ library
   -- At this experiment/prototype stage everything is exposed.
   -- This has to be tidied up once the design becomes clear.
   exposed-modules:
-                       Ouroboros.Consensus.Block.SimpleUTxO
                        Ouroboros.Consensus.Crypto.DSIGN
                        Ouroboros.Consensus.Crypto.DSIGN.Class
                        Ouroboros.Consensus.Crypto.DSIGN.Ed448
@@ -135,13 +134,11 @@ executable demo-playground
   ghc-options:         -threaded -Wall -O2 "-with-rtsopts=-N"
   other-modules:       CLI
                        BlockGeneration
-                       Dummy.Payload
                        LedgerState
                        Logging
                        Mock.Payload
                        Mock.TxSubmission
                        NamedPipe
-                       Payload
                        Run
                        Topology
   build-depends:       base,
@@ -150,6 +147,7 @@ executable demo-playground
                        async,
                        bytestring,
                        cborg,
+                       cryptonite,
                        containers,
                        directory,
                        mtl,
