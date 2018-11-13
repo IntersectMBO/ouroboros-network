@@ -232,16 +232,16 @@ producerBlockLayer BlockProducerHandlers {..} send recv = fork $ forever $ do
         Just bb -> send (MsgBlock bb)
     Nothing -> send MsgNoBlock
 
--- |
--- Request a range of blocks which the producer will stream
+-- | Request a range of blocks which the producer will stream
+--
 data MsgConsumerBlocks blockHeader
   = MsgRequestBlocks (Point blockHeader) (Point blockHeader) Window
   -- ^ Ask for a range of blocks with a given window size
   | MsgUpdateWindow Window
   -- ^ update streaming window
 
--- |
--- When requesting a range of blocks the producer will stream block bodies.
+-- | When requesting a range of blocks the producer will stream block bodies.
+--
 data MsgStreamBlocks blockBody
   = MsgStreamBlock blockBody
   -- ^ Response with a single block body
@@ -249,6 +249,14 @@ data MsgStreamBlocks blockBody
   -- ^ if the consumer requested a range of blocks, the producer will respond
   -- with a sequence of @'MsgBlock'@ finalised with @'MsgStreamEnd'@
   deriving (Eq, Show)
+
+-- | Type which is used to pack elements of a `TBQueue` which gives information
+-- when a stream of elements ends.
+--
+data StreamElement a
+  = StreamElement a
+  | EndOfStream
+  deriving (Eq, Ord, Show)
 
 -- | Window size for the block layer streaming protocol.
 --
@@ -316,7 +324,7 @@ withConsumerBlockStreamLayer
     -- blocks and runs the continuation.  Size
     -- is the size of queue and it should be non
     -- zero.
-  -> (TBQueue m blockBody -> m ())
+  -> (TBQueue m (StreamElement blockBody) -> m ())
     -- ^
     -- continuation, which is run in a new thread
   -> m ()
@@ -333,24 +341,29 @@ withConsumerBlockStreamLayer BlockConsumerHandlers{..} send recv conv k
         fork (k queue)
         recvBlock window threshold 0 queue
 
-  recvBlock :: Window -> Threshold -> Word32 -> TBQueue m blockBody -> m ()
+  recvBlock :: Window -> Threshold -> Word32 -> TBQueue m (StreamElement blockBody) -> m ()
   recvBlock window threshold !writes queue = do
     msg <- recv
     case msg of
       MsgStreamBlock bb -> do
-        atomically $ writeTBQueue queue bb
+        -- at most `window - threshold` `writeTBQueue` calls will
+        -- await writting to the queue, which size is `window`.
+        atomically $ writeTBQueue queue (StreamElement bb)
         if writes >= fromIntegral threshold
+          -- threshold reached, update the window
           then do
             send $ MsgUpdateWindow (window - fromIntegral threshold)
             recvBlock window threshold 0 queue
           else do
             recvBlock window threshold (writes + 1) queue
-      MsgStreamEnd -> return ()
+      MsgStreamEnd ->
+        atomically $ writeTBQueue queue EndOfStream
 
 
 -- | Producer of the block streams. It awaits for initial `MsgRequestBlocks`
 -- message which commands how many blocks the producer can stream before it
 -- needs to wait for `MsgUpdateWindow`.
+--
 producerBlockStreamLayer
   :: forall m blockHeader blockBody.
      ( MonadFork m
