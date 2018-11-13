@@ -37,6 +37,7 @@ import           Crypto.Random (MonadRandom)
 import           Data.Map (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy
+import           Data.Semigroup ((<>))
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           GHC.Generics (Generic)
@@ -56,7 +57,6 @@ import           Ouroboros.Network.Chain (Chain, toOldestFirst)
 {-------------------------------------------------------------------------------
   Basic definitions
 
-  TODO: We should make the hash configurable.
 -------------------------------------------------------------------------------}
 
 data Tx = Tx (Set TxIn) [TxOut]
@@ -181,9 +181,22 @@ data SimpleBlock p c = SimpleBlock {
     }
   deriving (Generic, Show, Eq)
 
--- TODO: Write a proper condensed instance.
 instance (SimpleBlockCrypto c, OuroborosTag p) => Condense (SimpleBlock p c) where
-  condense b = show b
+  condense (SimpleBlock hdr@(SimpleHeader _ pl) (SimpleBody txs)) =
+      condensedHash (blockPrevHash hdr)
+          <> "-"
+          <> condense (blockHash hdr)
+          <> ",("
+          <> show pl -- TODO: Ideally we would like to show only the condensed signer.
+          <> ",("
+          <> condense (getSlot $ blockSlot hdr)
+          <> ","
+          <> condense txs
+          <> "))])))"
+
+condensedHash :: Show (HeaderHash b) => Network.Hash b -> String
+condensedHash GenesisHash     = "genesis"
+condensedHash (BlockHash hdr) = show hdr
 
 instance (SimpleBlockCrypto c, OuroborosTag p) => HasHeader (SimpleHeader p c) where
   type HeaderHash (SimpleHeader p c) = Hash (SimpleBlockHash c) (SimpleHeader p c)
