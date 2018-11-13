@@ -2,6 +2,8 @@
 {-# LANGUAGE DataKinds       #-}
 {-# LANGUAGE NamedFieldPuns  #-}
 
+{-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
+
 -- | A view of the chain synchronisation protocol from the point of view of the
 -- server.
 --
@@ -32,8 +34,13 @@ type ChainSyncServer header point m a = ServerStIdle header point m a
 
 
 -- | In the 'StIdle' protocol state, the server does not have agency. Instead
--- it is waiting for either a next update request or a find intersection
--- request. It must be prepared to handle either.
+-- it is waiting for:
+--
+--  * a next update request
+--  * a find intersection request
+--  * a termination messge
+--
+-- It must be prepared to handle either.
 --
 data ServerStIdle header point m a = ServerStIdle {
 
@@ -41,32 +48,47 @@ data ServerStIdle header point m a = ServerStIdle {
                                       (m (ServerStNext header point m a))),
 
        recvMsgFindIntersect :: [point]
-                            -> m (ServerStIntersect header point m a)
+                            -> m (ServerStIntersect header point m a),
+
+       recvMsgDoneClient :: a
      }
 
--- | In the 'StNext' protocol state, the server has agency and must send either
--- a roll forward or roll back message.
+-- | In the 'StNext' protocol state, the server has agency and must send either:
+--
+--  * a roll forward
+--  * a roll back message
+--  * a termination message
 --
 data ServerStNext header point m a where
-   SendMsgRollForward  :: header -> point
-                       -> ServerStIdle header point m a
-                       -> ServerStNext header point m a
+  SendMsgRollForward  :: header -> point
+                      -> ServerStIdle header point m a
+                      -> ServerStNext header point m a
 
-   SendMsgRollBackward :: point -> point
-                       -> ServerStIdle header point m a
-                       -> ServerStNext header point m a
+  SendMsgRollBackward :: point -> point
+                      -> ServerStIdle header point m a
+                      -> ServerStNext header point m a
+
+  SendMsgDoneNext     :: a
+                      -> ServerStNext header point m a
 
 -- | In the 'StIntersect' protocol state, the server has agency and must send
--- either an intersection improved or unchanged message.
+-- either:
+--
+--  * an intersection improved,
+--  * unchanged message,
+--  * termination message
 --
 data ServerStIntersect header point m a where
-   SendMsgIntersectImproved  :: point -> point
-                             -> ServerStIdle header point m a
-                             -> ServerStIntersect header point m a
+  SendMsgIntersectImproved  :: point -> point
+                            -> ServerStIdle header point m a
+                            -> ServerStIntersect header point m a
 
-   SendMsgIntersectUnchanged :: point
-                             -> ServerStIdle header point m a
-                             -> ServerStIntersect header point m a
+  SendMsgIntersectUnchanged :: point
+                            -> ServerStIdle header point m a
+                            -> ServerStIntersect header point m a
+
+  SendMsgDoneIntersect      :: a
+                            -> ServerStIntersect header point m a
 
 
 -- | Interpret a 'ChainSyncServer' action sequence as a 'Peer' on the server
@@ -78,7 +100,7 @@ chainSyncServerPeer
   -> Peer ChainSyncProtocol (ChainSyncMessage header point)
           (Awaiting StIdle) (Finished StDone)
           m a
-chainSyncServerPeer ServerStIdle{recvMsgRequestNext, recvMsgFindIntersect} =
+chainSyncServerPeer ServerStIdle{recvMsgRequestNext, recvMsgFindIntersect, recvMsgDoneClient} =
 
     await $ \req ->
     case req of
@@ -94,6 +116,8 @@ chainSyncServerPeer ServerStIdle{recvMsgRequestNext, recvMsgFindIntersect} =
         resp <- recvMsgFindIntersect points
         pure $ handleStIntersect resp 
 
+      MsgDone -> done recvMsgDoneClient
+
   where
     handleStNext (SendMsgRollForward  header pHead next) =
       over (MsgRollForward header pHead)
@@ -103,6 +127,9 @@ chainSyncServerPeer ServerStIdle{recvMsgRequestNext, recvMsgFindIntersect} =
       over (MsgRollBackward pIntersect pHead)
            (chainSyncServerPeer next)
 
+    handleStNext (SendMsgDoneNext a) =
+      out MsgDone (done a)
+
     handleStIntersect (SendMsgIntersectImproved pIntersect pHead next) =
       over (MsgIntersectImproved pIntersect pHead)
            (chainSyncServerPeer next)
@@ -111,3 +138,5 @@ chainSyncServerPeer ServerStIdle{recvMsgRequestNext, recvMsgFindIntersect} =
       over (MsgIntersectUnchanged pHead)
            (chainSyncServerPeer next)
 
+    handleStIntersect (SendMsgDoneIntersect a) =
+      out MsgDone (done a)

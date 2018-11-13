@@ -34,7 +34,6 @@ data ChainSyncState where
 
   -- | Both the client and server are in the terminal state. They're done.
   StDone      :: ChainSyncState
-  --TODO: currently there is no termination mechanism
 
 -- | Sub-cases of the 'StNext' state. This is needed since the server can
 -- either send one reply back, or two.
@@ -117,6 +116,11 @@ data ChainSyncMessage header point from to where
   --
   MsgIntersectUnchanged ::          point -> ChainSyncMessage header point StIntersect StIdle
 
+  -- | The consumer or producer decided to terminate the protocol.  Termination
+  -- might happen at any point of the protocol.
+  --
+  MsgDone :: ChainSyncMessage header point any StDone
+
 instance Show (ChainSyncMessage header point from to) where
   show MsgRequestNext          = "MsgRequestNext"
   show MsgAwaitReply           = "MsgAwaitReply"
@@ -125,4 +129,6 @@ instance Show (ChainSyncMessage header point from to) where
   show MsgFindIntersect{}      = "MsgFindIntersect"
   show MsgIntersectImproved{}  = "MsgIntersectImproved"
   show MsgIntersectUnchanged{} = "MsgIntersectUnchanged"
+  show MsgDone{}               = "MsgDone"
+
 

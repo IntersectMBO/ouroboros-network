@@ -59,24 +59,42 @@ data ClientStIdle header point m a where
     -> ClientStIntersect header point m a
     -> ClientStIdle header point m a
 
+  -- | The client decided to end the protocol.
+  --
+  SendMsgDone
+    :: a
+    -> ClientStIdle header point m a
+
 -- | In the 'StNext' protocol state, the client does not have agency and is
--- waiting to receive either a roll forward or roll back message. It must be
--- prepared to handle either.
+-- waiting to receive either
+--
+--  * a roll forward,
+--  * roll back message,
+--  * the terminating message.
+--
+-- It must be prepared to handle any of these.
 --
 data ClientStNext header point m a =
      ClientStNext {
        recvMsgRollForward  :: header -> point -> m (ClientStIdle header point m a),
-       recvMsgRollBackward :: point  -> point -> m (ClientStIdle header point m a)
+       recvMsgRollBackward :: point  -> point -> m (ClientStIdle header point m a),
+       recvMsgDoneServer   :: a
      }
 
 -- | In the 'StIntersect' protocol state, the client does not have agency and
--- is waiting to receive either an intersection improved or unchanged message.
--- It must be prepared to handle either.
+-- is waiting to receive:
+--
+--  * an intersection improved,
+--  * unchanged message,
+--  * the termination message.
+--
+-- It must be prepared to handle any of these.
 --
 data ClientStIntersect header point m a =
      ClientStIntersect {
        recvMsgIntersectImproved  :: point -> point -> m (ClientStIdle header point m a),
-       recvMsgIntersectUnchanged ::          point -> m (ClientStIdle header point m a)
+       recvMsgIntersectUnchanged ::          point -> m (ClientStIdle header point m a),
+       recvMsgIntersectDone      :: a
      }
 
 
@@ -110,7 +128,7 @@ chainSyncClientPeer (SendMsgRequestNext stNext stAwait) =
       -- to put both roll forward and back under a single constructor.
       MsgAwaitReply ->
         lift $ do
-          ClientStNext{recvMsgRollForward, recvMsgRollBackward} <- stAwait
+          ClientStNext{recvMsgRollForward, recvMsgRollBackward, recvMsgDoneServer} <- stAwait
           pure $ await $ \resp' ->
             case resp' of
               MsgRollForward header pHead -> lift $ do
@@ -119,6 +137,13 @@ chainSyncClientPeer (SendMsgRequestNext stNext stAwait) =
               MsgRollBackward pRollback pHead -> lift $ do
                 next <- recvMsgRollBackward pRollback pHead
                 pure $ chainSyncClientPeer next
+              MsgDone ->
+                done recvMsgDoneServer
+
+      -- The server decided to end the protocol.
+      MsgDone -> done recvMsgDoneServer
+        where
+          ClientStNext{recvMsgDoneServer} = stNext
 
 chainSyncClientPeer (SendMsgFindIntersect points stIntersect) =
     over (MsgFindIntersect points) $
@@ -131,9 +156,15 @@ chainSyncClientPeer (SendMsgFindIntersect points stIntersect) =
       MsgIntersectUnchanged pHead -> lift $ do
         next <- recvMsgIntersectUnchanged pHead
         pure $ chainSyncClientPeer next
+
+      -- The server decided to end the protocol
+      MsgDone -> done recvMsgIntersectDone
   where
     ClientStIntersect {
       recvMsgIntersectImproved,
-      recvMsgIntersectUnchanged
+      recvMsgIntersectUnchanged,
+      recvMsgIntersectDone
     } = stIntersect
 
+chainSyncClientPeer (SendMsgDone a) = 
+  out MsgDone (done a)
