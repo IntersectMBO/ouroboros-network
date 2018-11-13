@@ -18,9 +18,6 @@ module Ouroboros.Network.Serialise (
     )
     where
 
-#if __GLASGOW_HASKELL__ < 804
-import           Data.Monoid
-#endif
 import           Codec.CBOR.Decoding hiding (DecodeAction (..), TokenType (..))
 import           Codec.CBOR.Encoding hiding (Encoding (..), Tokens (..))
 import           Codec.CBOR.Encoding (Encoding)

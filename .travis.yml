@@ -1,6 +1,6 @@
 language: nix
 script:
-- nix-env -iA cachix -f https://github.com/NixOS/nixpkgs/tarball/1d4de0d552ae9aa66a5b8dee5fb0650a4372d148
+- nix-env -f ./nix/nixpkgs.nix -iA cachix
 - echo "trusted-users = root ${USER}" | sudo tee -a /etc/nix/nix.conf || true
 - sudo pkill nix-daemon || true
 - cachix use ouroboros-network
@@ -9,16 +9,10 @@ after_success:
 - cachix push ouroboros-network ./result
 matrix:
   include:
-  - name: GHC 844
-    env: COMPILER="ghc844"
-  # issue https://github.com/cachix/cachix/issues/147
-  # - name: GHC 802
-    # env: COMPILER="ghc802"
-  - name: GHC 844
-    env: COMPILER="ghc844"
-    os: osx
-  - name: GHC 802
-    env: COMPILER="ghc802"
+  - name: GHC 862
+    env: COMPILER="ghc862"
+  - name: GHC 862
+    env: COMPILER="ghc862"
     os: osx
 env:
   global:
