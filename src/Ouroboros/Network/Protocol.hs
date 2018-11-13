@@ -97,31 +97,31 @@ consumerSideProtocol1
   -> (m (MsgProducer block))     -- ^ recv
   -> m ()
 consumerSideProtocol1 ConsumerHandlers{..} send recv = do
-    -- The consumer opens by sending a list of points on their chain.
-    -- This typically includes the head block and recent points
-    points <- getChainPoints
-    unless (null points) $ do
-      send (MsgSetHead points)
-      _msg <- recv
-      return ()
+  -- The consumer opens by sending a list of points on their chain.
+  -- This typically includes the head block and recent points
+  points <- getChainPoints
+  unless (null points) $ do
+    send (MsgSetHead points)
+    _msg <- recv
+    return ()
+  requestNext
+ where
+  requestNext :: m ()
+  requestNext = do
+    send MsgRequestNext
+    reply <- recv
+    case reply of
+      MsgAwaitReply -> do reply' <- recv
+                          handleChainUpdate reply'
+      _             -> handleChainUpdate reply
     requestNext
-  where
-    requestNext :: m ()
-    requestNext = do
-      send MsgRequestNext
-      reply <- recv
-      case reply of
-        MsgAwaitReply -> do reply' <- recv
-                            handleChainUpdate reply'
-        _             -> handleChainUpdate reply
-      requestNext
 
-    handleChainUpdate :: MsgProducer block -> m ()
-    handleChainUpdate (MsgRollForward  b) = addBlock b
-    handleChainUpdate (MsgRollBackward p) = rollbackTo p
-    handleChainUpdate  MsgAwaitReply           = fail $ "protocol error: MsgAwaitReply"
-    handleChainUpdate (MsgIntersectImproved{}) = fail $ "protocol error: MsgIntersectImproved"
-    handleChainUpdate  MsgIntersectUnchanged   = fail $ "protocol error: MsgIntersectUnchanged"
+  handleChainUpdate :: MsgProducer block -> m ()
+  handleChainUpdate (MsgRollForward  b) = addBlock b
+  handleChainUpdate (MsgRollBackward p) = rollbackTo p
+  handleChainUpdate  MsgAwaitReply           = fail $ "protocol error: MsgAwaitReply"
+  handleChainUpdate (MsgIntersectImproved{}) = fail $ "protocol error: MsgIntersectImproved"
+  handleChainUpdate  MsgIntersectUnchanged   = fail $ "protocol error: MsgIntersectUnchanged"
 
 
 -- |
@@ -134,128 +134,126 @@ producerSideProtocol1
   -> (m (MsgConsumer block))     -- ^ recv
   -> m ()
 producerSideProtocol1 ProducerHandlers{..} send recv =
-    newReader >>= awaitOngoing
-  where
-    awaitOngoing r = forever $ do
-      msg <- recv
-      case msg of
-        MsgRequestNext    -> handleNext r
-        MsgSetHead points -> handleSetHead r points
+  newReader >>= awaitOngoing
+ where
+  awaitOngoing r = forever $ do
+    msg <- recv
+    case msg of
+      MsgRequestNext    -> handleNext r
+      MsgSetHead points -> handleSetHead r points
 
-    handleNext r = do
-      mupdate <- tryReadChainUpdate r
-      update  <- case mupdate of
-        Just update -> return update
+  handleNext r = do
+    mupdate <- tryReadChainUpdate r
+    update  <- case mupdate of
+      Just update -> return update
 
-        -- Reader is at the head, have to wait for producer state changes.
-        Nothing -> do
-          send MsgAwaitReply
-          readChainUpdate r
-      send (updateMsg update)
+      -- Reader is at the head, have to wait for producer state changes.
+      Nothing -> do
+        send MsgAwaitReply
+        readChainUpdate r
+    send (updateMsg update)
 
-    handleSetHead r points = do
-      -- TODO: guard number of points, points sorted
-      -- Find the first point that is on our chain
-      changed <- improveReadPoint r points
-      case changed of
-        Just (pt, tip) -> send (MsgIntersectImproved pt tip)
-        Nothing        -> send MsgIntersectUnchanged
+  handleSetHead r points = do
+    -- TODO: guard number of points, points sorted
+    -- Find the first point that is on our chain
+    changed <- improveReadPoint r points
+    case changed of
+      Just (pt, tip) -> send (MsgIntersectImproved pt tip)
+      Nothing        -> send MsgIntersectUnchanged
 
-    updateMsg (AddBlock b) = MsgRollForward b
-    updateMsg (RollBack p) = MsgRollBackward p
+  updateMsg (AddBlock b) = MsgRollForward b
+  updateMsg (RollBack p) = MsgRollBackward p
 
 data MsgConsumerBlock block
-    = MsgRequestBlock (Point block)
-    -- ^ Ask for a block
-    deriving (Eq, Show)
+  = MsgRequestBlock (Point block)
+  -- ^ Ask for a block
+  deriving (Eq, Show)
 
 data MsgProducerBlock blockBody
-    = MsgBlock blockBody
-    -- ^ Respond with a block body
-    | MsgNoBlock
-    -- ^ Producer has no such block
-    | MsgAwaitBlock
-    -- ^ Producer requested a block, and is awaiting
-    deriving (Eq, Show)
+  = MsgBlock blockBody
+  -- ^ Respond with a block body
+  | MsgNoBlock
+  -- ^ Producer has no such block
+  | MsgAwaitBlock
+  -- ^ Producer requested a block, and is awaiting
+  deriving (Eq, Show)
 
 withConsumerBlockLayer
-    :: forall m blockHeader blockBody.
-       ( MonadFork m
-       , MonadSTM  m
-       , HasHeader blockHeader
-       )
-    => BlockConsumerHandlers blockHeader blockBody m
-    -> (MsgConsumerBlock blockHeader -> m ()) -- ^ request a block
-    -> m (MsgProducerBlock blockBody)         -- ^ receive a block
-    -> ((blockHeader -> m ()) -> m ())
-                                  -- ^
-                                  -- conversation which requests a block body
-                                  -- and runs the continuation
-    -> (Maybe blockBody -> m ())
-                                  -- ^
-                                  -- continuation; @'Nothing'@ signifies that
-                                  -- the producer responded with @'MsgNoBlock'@
-    -> m ()
+  :: forall m blockHeader blockBody.
+     ( MonadFork m
+     , MonadSTM  m
+     , HasHeader blockHeader
+     )
+  => BlockConsumerHandlers blockHeader blockBody m
+  -> (MsgConsumerBlock blockHeader -> m ()) -- ^ request a block
+  -> m (MsgProducerBlock blockBody)         -- ^ receive a block
+  -> ((blockHeader -> m ()) -> m ())
+      -- ^ conversation which requests a block body
+      -- and runs the continuation
+  -> (Maybe blockBody -> m ())
+      -- ^ continuation; @'Nothing'@ signifies that
+      -- the producer responded with @'MsgNoBlock'@
+  -> m ()
 withConsumerBlockLayer BlockConsumerHandlers{..} send recv conv k = conv forkRequestBlockConv
-    where
-    forkRequestBlockConv :: blockHeader -> m ()
-    forkRequestBlockConv h = fork $ do
-        send $ MsgRequestBlock (blockPoint h)
-        recvBlock
+ where
+  forkRequestBlockConv :: blockHeader -> m ()
+  forkRequestBlockConv h = fork $ do
+    send $ MsgRequestBlock (blockPoint h)
+    recvBlock
 
-    recvBlock :: m ()
-    recvBlock = do
-        msg <- recv
-        case msg of
-            MsgBlock bb   -> k (Just bb)
-            MsgNoBlock    -> k Nothing
-            MsgAwaitBlock -> recvBlock
+  recvBlock :: m ()
+  recvBlock = do
+    msg <- recv
+    case msg of
+      MsgBlock bb   -> k (Just bb)
+      MsgNoBlock    -> k Nothing
+      MsgAwaitBlock -> recvBlock
 
 producerBlockLayer
-    :: forall m blockHeader blockBody.
-       ( MonadFork m
-       , MonadSTM  m
-       , StandardHash blockHeader
-       )
-    => BlockProducerHandlers blockHeader blockBody m
-    -> (MsgProducerBlock blockBody -> m ()) -- ^ send a block
-    -> m (MsgConsumerBlock blockHeader)     -- ^ receive a request
-    -> m ()
+  :: forall m blockHeader blockBody.
+     ( MonadFork m
+     , MonadSTM  m
+     , StandardHash blockHeader
+     )
+  => BlockProducerHandlers blockHeader blockBody m
+  -> (MsgProducerBlock blockBody -> m ()) -- ^ send a block
+  -> m (MsgConsumerBlock blockHeader)     -- ^ receive a request
+  -> m ()
 producerBlockLayer BlockProducerHandlers {..} send recv = fork $ forever $ do
-    MsgRequestBlock p <- recv
-    mbb <- getBlock p
-    case mbb of
-        Just (Fullfilled bb) -> send (MsgBlock bb)
-        Just Awaiting -> do
-            send MsgAwaitBlock
-            mbb' <- awaitBlock p
-            case mbb' of
-                Nothing -> send MsgNoBlock
-                Just bb -> send (MsgBlock bb)
+  MsgRequestBlock p <- recv
+  mbb <- getBlock p
+  case mbb of
+    Just (Fullfilled bb) -> send (MsgBlock bb)
+    Just Awaiting -> do
+      send MsgAwaitBlock
+      mbb' <- awaitBlock p
+      case mbb' of
         Nothing -> send MsgNoBlock
+        Just bb -> send (MsgBlock bb)
+    Nothing -> send MsgNoBlock
 
 -- |
 -- Request a range of blocks which the producer will stream
 data MsgConsumerBlocks blockHeader
-    = MsgRequestBlocks (Point blockHeader) (Point blockHeader) Word32
-    -- ^ Ask for a range of blocks with a given window size
-    | MsgUpdateWindow Word32
-    -- ^ update streaming window
+  = MsgRequestBlocks (Point blockHeader) (Point blockHeader) Word32
+  -- ^ Ask for a range of blocks with a given window size
+  | MsgUpdateWindow Word32
+  -- ^ update streaming window
 
 -- |
 -- When requesting a range of blocks the producer will stream block bodies.
 data MsgStreamBlocks blockBody
-    = MsgStreamBlock blockBody
-    -- ^ Response with a single block body
-    | MsgStreamEnd
-    -- ^ if the consumer requested a range of blocks, the producer will respond
-    -- with a sequence of @'MsgBlock'@ finalised with @'MsgStreamEnd'@
-    deriving (Eq, Show)
+  = MsgStreamBlock blockBody
+  -- ^ Response with a single block body
+  | MsgStreamEnd
+  -- ^ if the consumer requested a range of blocks, the producer will respond
+  -- with a sequence of @'MsgBlock'@ finalised with @'MsgStreamEnd'@
+  deriving (Eq, Show)
 
 -- | Window size for the block layer streaming protocol.
 --
 newtype Window = Window { runWindow :: Word32 }
-    deriving (Eq, Show, Ord, Enum, Num)
+  deriving (Eq, Show, Ord, Enum, Num)
 
 deriving instance Real Window
 deriving instance Integral Window
@@ -304,97 +302,97 @@ deriving instance Integral Threshold
 --  client ---------------x-------
 --
 withConsumerBlockStreamLayer
-    :: forall m blockHeader blockBody.
-       ( MonadSTM m
-       , MonadTBQueue m
-       , HasHeader blockHeader
-       )
-    => BlockConsumerHandlers blockHeader blockBody m
-    -> (MsgConsumerBlocks blockHeader -> m ()) -- ^ request blocks
-    -> m (MsgStreamBlocks blockBody)           -- ^ receive a block
-    -> ((Window -> Threshold -> Point blockHeader -> Point blockHeader -> m ()) -> m ())
-                                   -- ^
-                                   -- conversation which requests a stream of
-                                   -- blocks and runs the continuation.  Size
-                                   -- is the size of queue and it should be non
-                                   -- zero.
-    -> (TBQueue m blockBody -> m ())
-                                   -- ^
-                                   -- continuation, which is run in a new thread
-    -> m ()
+  :: forall m blockHeader blockBody.
+     ( MonadSTM m
+     , MonadTBQueue m
+     , HasHeader blockHeader
+     )
+  => BlockConsumerHandlers blockHeader blockBody m
+  -> (MsgConsumerBlocks blockHeader -> m ()) -- ^ request blocks
+  -> m (MsgStreamBlocks blockBody)           -- ^ receive a block
+  -> ((Window -> Threshold -> Point blockHeader -> Point blockHeader -> m ()) -> m ())
+    -- ^
+    -- conversation which requests a stream of
+    -- blocks and runs the continuation.  Size
+    -- is the size of queue and it should be non
+    -- zero.
+  -> (TBQueue m blockBody -> m ())
+    -- ^
+    -- continuation, which is run in a new thread
+  -> m ()
 withConsumerBlockStreamLayer BlockConsumerHandlers{..} send recv conv k
-    = conv forkRequestBlockStreamConv
-  where
-    forkRequestBlockStreamConv :: Window -> Threshold -> Point blockHeader -> Point blockHeader -> m ()
-    forkRequestBlockStreamConv window threshold from to
-      = assert
-          (window /= Window 0 && runWindow window > runThreshold threshold)
-        $ fork $ do
-          send $ MsgRequestBlocks from to (fromIntegral window)
-          queue <- atomically $ newTBQueue (fromIntegral window)
-          fork (k queue)
-          recvBlock window threshold 0 queue
+  = conv forkRequestBlockStreamConv
+ where
+  forkRequestBlockStreamConv :: Window -> Threshold -> Point blockHeader -> Point blockHeader -> m ()
+  forkRequestBlockStreamConv window threshold from to
+    = assert
+        (window /= Window 0 && runWindow window > runThreshold threshold)
+      $ fork $ do
+        send $ MsgRequestBlocks from to (fromIntegral window)
+        queue <- atomically $ newTBQueue (fromIntegral window)
+        fork (k queue)
+        recvBlock window threshold 0 queue
 
-    recvBlock :: Window -> Threshold -> Word32 -> TBQueue m blockBody -> m ()
-    recvBlock window threshold !writes queue = do
-        msg <- recv
-        case msg of
-            MsgStreamBlock bb -> do
-                atomically $ writeTBQueue queue bb
-                if writes >= fromIntegral threshold
-                    then do
-                        send $ MsgUpdateWindow (runWindow window - runThreshold threshold)
-                        recvBlock window threshold 0 queue
-                    else do
-                        recvBlock window threshold (writes + 1) queue
-            MsgStreamEnd -> return ()
+  recvBlock :: Window -> Threshold -> Word32 -> TBQueue m blockBody -> m ()
+  recvBlock window threshold !writes queue = do
+    msg <- recv
+    case msg of
+      MsgStreamBlock bb -> do
+        atomically $ writeTBQueue queue bb
+        if writes >= fromIntegral threshold
+          then do
+            send $ MsgUpdateWindow (runWindow window - runThreshold threshold)
+            recvBlock window threshold 0 queue
+          else do
+            recvBlock window threshold (writes + 1) queue
+      MsgStreamEnd -> return ()
 
 
 producerBlockStreamLayer
-    :: forall m blockHeader blockBody.
-       ( MonadFork m
-       , MonadSTM  m
-       )
-    => BlockProducerHandlers blockHeader blockBody m
-    -> (MsgStreamBlocks blockBody -> m ()) -- ^ send a block
-    -> m (MsgConsumerBlocks blockHeader)   -- ^ receive a request
-    -> m ()
+  :: forall m blockHeader blockBody.
+     ( MonadFork m
+     , MonadSTM  m
+     )
+  => BlockProducerHandlers blockHeader blockBody m
+  -> (MsgStreamBlocks blockBody -> m ()) -- ^ send a block
+  -> m (MsgConsumerBlocks blockHeader)   -- ^ receive a request
+  -> m ()
 producerBlockStreamLayer BlockProducerHandlers {..} send recv = fork $ forever $ do
-    msg <- recv
-    case msg of
-        MsgUpdateWindow{} -> error "producerBlockStreamLayer: protocol error"
-        MsgRequestBlocks from to size -> do
-            sizeVar <- atomically $ newTVar size
-            S.mapM_ (fn sizeVar) (streamBlocks from to)
-  where
-    fn sizeVar bb = do
-        size <- atomically (readTVar sizeVar)
-        if size <= 0
-            then do
-                msg' <- recv
-                case msg' of
-                    MsgUpdateWindow size' -> do
-                        send (MsgStreamBlock bb)
-                        atomically $ writeTVar sizeVar (pred size')
-                    MsgRequestBlocks{}    -> error "producerBlockStreamLayer: block streaming: protocol error"
-            else do
-                send (MsgStreamBlock bb)
-                atomically $ modifyTVar' sizeVar pred
+  msg <- recv
+  case msg of
+    MsgUpdateWindow{} -> error "producerBlockStreamLayer: protocol error"
+    MsgRequestBlocks from to size -> do
+      sizeVar <- atomically $ newTVar size
+      S.mapM_ (fn sizeVar) (streamBlocks from to)
+ where
+  fn sizeVar bb = do
+    size <- atomically (readTVar sizeVar)
+    if size <= 0
+      then do
+        msg' <- recv
+        case msg' of
+          MsgUpdateWindow size' -> do
+            send (MsgStreamBlock bb)
+            atomically $ writeTVar sizeVar (pred size')
+          MsgRequestBlocks{}    -> error "producerBlockStreamLayer: block streaming: protocol error"
+      else do
+        send (MsgStreamBlock bb)
+        atomically $ modifyTVar' sizeVar pred
 
 -- | A wrapper for send that logs the messages
 --
 loggingSend :: (Show msg, MonadSay m, Show id) => id -> (msg -> m a) -> msg -> m a
 loggingSend ident send msg = do
-    say $ (show ident) ++ ":send: " ++ show msg
-    send msg
+  say $ (show ident) ++ ":send: " ++ show msg
+  send msg
 
 -- | A wrapper for recv that logs the messages
 --
 loggingRecv :: (Show msg, MonadSay m, Show id) => id -> m msg -> m msg
 loggingRecv ident recv = do
-    msg <- recv
-    say $ (show ident) ++ ":recv: " ++ show msg
-    return msg
+  msg <- recv
+  say $ (show ident) ++ ":recv: " ++ show msg
+  return msg
 
 --
 -- Serialisation
@@ -409,34 +407,34 @@ encodeMessage conversationId messageTag messageBody =
 
 instance HasHeader block => Serialise (MsgConsumer block) where
 
-    encode MsgRequestNext  = encodeMessage 1 0 $ encodeNull
-    encode (MsgSetHead ps) = encodeMessage 1 1 $ encode ps
+  encode MsgRequestNext  = encodeMessage 1 0 $ encodeNull
+  encode (MsgSetHead ps) = encodeMessage 1 1 $ encode ps
 
-    decode = do
-      decodeListLenOf 3
-      decodeWordOf 1
-      tag <- decodeWord
-      case tag of
-        0 -> MsgRequestNext <$ decodeNull
-        1 -> MsgSetHead <$> decode
-        _ -> fail "MsgConsumer unexpected tag"
+  decode = do
+    decodeListLenOf 3
+    decodeWordOf 1
+    tag <- decodeWord
+    case tag of
+      0 -> MsgRequestNext <$ decodeNull
+      1 -> MsgSetHead <$> decode
+      _ -> fail "MsgConsumer unexpected tag"
 
 instance (Serialise block, HasHeader block) => Serialise (MsgProducer block) where
 
-    encode (MsgRollForward  b)        = encodeMessage 2 0 $ encode b
-    encode (MsgRollBackward p)        = encodeMessage 2 1 $ encode p
-    encode  MsgAwaitReply             = encodeMessage 2 2 $ encodeNull
-    encode (MsgIntersectImproved p t) = encodeMessage 2 3 $ encode (p, t)
-    encode  MsgIntersectUnchanged     = encodeMessage 2 4 $ encodeNull
+  encode (MsgRollForward  b)        = encodeMessage 2 0 $ encode b
+  encode (MsgRollBackward p)        = encodeMessage 2 1 $ encode p
+  encode  MsgAwaitReply             = encodeMessage 2 2 $ encodeNull
+  encode (MsgIntersectImproved p t) = encodeMessage 2 3 $ encode (p, t)
+  encode  MsgIntersectUnchanged     = encodeMessage 2 4 $ encodeNull
 
-    decode = do
-      decodeListLenOf 3
-      decodeWordOf 2
-      tag <- decodeWord
-      case tag of
-        0 -> MsgRollForward        <$> decode
-        1 -> MsgRollBackward       <$> decode
-        2 -> MsgAwaitReply         <$  decodeNull
-        3 -> uncurry MsgIntersectImproved <$> decode
-        4 -> MsgIntersectUnchanged <$  decodeNull
-        _ -> fail "MsgProducer unexpected tag"
+  decode = do
+    decodeListLenOf 3
+    decodeWordOf 2
+    tag <- decodeWord
+    case tag of
+      0 -> MsgRollForward        <$> decode
+      1 -> MsgRollBackward       <$> decode
+      2 -> MsgAwaitReply         <$  decodeNull
+      3 -> uncurry MsgIntersectImproved <$> decode
+      4 -> MsgIntersectUnchanged <$  decodeNull
+      _ -> fail "MsgProducer unexpected tag"
