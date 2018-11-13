@@ -235,9 +235,9 @@ producerBlockLayer BlockProducerHandlers {..} send recv = fork $ forever $ do
 -- |
 -- Request a range of blocks which the producer will stream
 data MsgConsumerBlocks blockHeader
-  = MsgRequestBlocks (Point blockHeader) (Point blockHeader) Word32
+  = MsgRequestBlocks (Point blockHeader) (Point blockHeader) Window
   -- ^ Ask for a range of blocks with a given window size
-  | MsgUpdateWindow Word32
+  | MsgUpdateWindow Window
   -- ^ update streaming window
 
 -- |
@@ -328,7 +328,7 @@ withConsumerBlockStreamLayer BlockConsumerHandlers{..} send recv conv k
     = assert
         (window /= Window 0 && runWindow window > runThreshold threshold)
       $ fork $ do
-        send $ MsgRequestBlocks from to (fromIntegral window)
+        send $ MsgRequestBlocks from to window
         queue <- atomically $ newTBQueue (fromIntegral window)
         fork (k queue)
         recvBlock window threshold 0 queue
@@ -341,13 +341,16 @@ withConsumerBlockStreamLayer BlockConsumerHandlers{..} send recv conv k
         atomically $ writeTBQueue queue bb
         if writes >= fromIntegral threshold
           then do
-            send $ MsgUpdateWindow (runWindow window - runThreshold threshold)
+            send $ MsgUpdateWindow (window - fromIntegral threshold)
             recvBlock window threshold 0 queue
           else do
             recvBlock window threshold (writes + 1) queue
       MsgStreamEnd -> return ()
 
 
+-- | Producer of the block streams. It awaits for initial `MsgRequestBlocks`
+-- message which commands how many blocks the producer can stream before it
+-- needs to wait for `MsgUpdateWindow`.
 producerBlockStreamLayer
   :: forall m blockHeader blockBody.
      ( MonadFork m
@@ -361,23 +364,23 @@ producerBlockStreamLayer BlockProducerHandlers {..} send recv = fork $ forever $
   msg <- recv
   case msg of
     MsgUpdateWindow{} -> error "producerBlockStreamLayer: protocol error"
-    MsgRequestBlocks from to size -> do
-      sizeVar <- atomically $ newTVar size
-      S.mapM_ (fn sizeVar) (streamBlocks from to)
+    MsgRequestBlocks from to window -> do
+      windowVar <- atomically $ newTVar window
+      S.mapM_ (fn windowVar) (streamBlocks from to)
  where
-  fn sizeVar bb = do
-    size <- atomically (readTVar sizeVar)
-    if size <= 0
+  fn windowVar bb = do
+    window <- atomically (readTVar windowVar)
+    if window <= 0
       then do
         msg' <- recv
         case msg' of
-          MsgUpdateWindow size' -> do
+          MsgUpdateWindow window' -> do
             send (MsgStreamBlock bb)
-            atomically $ writeTVar sizeVar (pred size')
+            atomically $ writeTVar windowVar (pred window')
           MsgRequestBlocks{}    -> error "producerBlockStreamLayer: block streaming: protocol error"
       else do
         send (MsgStreamBlock bb)
-        atomically $ modifyTVar' sizeVar pred
+        atomically $ modifyTVar' windowVar pred
 
 -- | A wrapper for send that logs the messages
 --
