@@ -5,9 +5,14 @@
 {-# LANGUAGE ScopedTypeVariables        #-}
 
 module Ouroboros.Network.Pipe (
+    Protocol
+  , ProtocolFailure(..)
+  , recvMsg
+  , sendMsg
     -- * Run producer/consumer over a pipe
-    runProducer
+  , runProducer
   , runConsumer
+  , runProtocolWithPipe
     -- * Demos
   , demo1
   , demo2
@@ -15,6 +20,7 @@ module Ouroboros.Network.Pipe (
 
 import           Control.Concurrent (forkIO, killThread, threadDelay)
 import           Control.Concurrent.STM
+import           Control.Exception
 import           Control.Monad
 import           Control.Monad.Cont (ContT (..))
 import           Control.Monad.IO.Class
@@ -44,6 +50,8 @@ data ProtocolAction s r a
 data ProtocolFailure = ProtocolStopped
                      | ProtocolFailure String
   deriving Show
+
+instance Exception ProtocolFailure
 
 newtype Protocol s r a = Protocol {
        unwrapProtocol ::
@@ -207,7 +215,7 @@ runProtocolWithPipe hndRead hndWrite p =
           -- print ("Recv", msg)
           k msg >>= go trailing'
 
-    go _trailing (Fail failure) = fail (show failure)
+    go _trailing (Fail ex) = throwIO ex
 
     decodeFromHandle :: BS.ByteString
                      -> CBOR.IDecode RealWorld rmsg
