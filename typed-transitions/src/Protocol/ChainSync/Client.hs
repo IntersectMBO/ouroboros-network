@@ -94,13 +94,13 @@ chainSyncClientPeer (SendMsgRequestNext stNext stAwait) =
     over MsgRequestNext $
     await $ \resp ->
     case resp of
-      MsgRollForward header pHead -> hole $ do
+      MsgRollForward header pHead -> lift $ do
           next <- recvMsgRollForward header pHead
           pure $ chainSyncClientPeer next
         where
           ClientStNext{recvMsgRollForward} = stNext
 
-      MsgRollBackward pRollback pHead -> hole $ do
+      MsgRollBackward pRollback pHead -> lift $ do
           next <- recvMsgRollBackward pRollback pHead
           pure $ chainSyncClientPeer next
         where
@@ -109,14 +109,14 @@ chainSyncClientPeer (SendMsgRequestNext stNext stAwait) =
       -- This code could be factored more easily by changing the protocol type
       -- to put both roll forward and back under a single constructor.
       MsgAwaitReply ->
-        hole $ do
+        lift $ do
           ClientStNext{recvMsgRollForward, recvMsgRollBackward} <- stAwait
           pure $ await $ \resp' ->
             case resp' of
-              MsgRollForward header pHead -> hole $ do
+              MsgRollForward header pHead -> lift $ do
                 next <- recvMsgRollForward header pHead
                 pure $ chainSyncClientPeer next
-              MsgRollBackward pRollback pHead -> hole $ do
+              MsgRollBackward pRollback pHead -> lift $ do
                 next <- recvMsgRollBackward pRollback pHead
                 pure $ chainSyncClientPeer next
 
@@ -124,11 +124,11 @@ chainSyncClientPeer (SendMsgFindIntersect points stIntersect) =
     over (MsgFindIntersect points) $
     await $ \resp ->
     case resp of
-      MsgIntersectImproved pIntersect pHead -> hole $ do
+      MsgIntersectImproved pIntersect pHead -> lift $ do
         next <- recvMsgIntersectImproved pIntersect pHead
         pure $ chainSyncClientPeer next
 
-      MsgIntersectUnchanged pHead -> hole $ do
+      MsgIntersectUnchanged pHead -> lift $ do
         next <- recvMsgIntersectUnchanged pHead
         pure $ chainSyncClientPeer next
   where
