@@ -1,12 +1,12 @@
-{ compiler   ? "ghc844"
+{ compiler   ? "ghc862"
 , haddock    ? true
 , test       ? true
 , benchmarks ? false
 }:
 with builtins;
 let
-  nixpkgs = import ./nix/nixpkgs.nix {};
-  lib = nixpkgs.haskell.lib;
+  nixpkgs     = import ./nix/nixpkgs.nix {};
+  lib         = nixpkgs.haskell.lib;
   callPackage = nixpkgs.haskell.packages.${compiler}.callPackage;
 
   doHaddock = if haddock
@@ -19,9 +19,9 @@ let
     then lib.doBenchmark
     else nixpkgs.lib.id;
 
-  ouroboros-network = lib.enableCabalFlag (doHaddock(doTest(doBench(
+  ouroboros-network = doHaddock(doTest(doBench(
     callPackage ./pkg.nix {
       inherit nixpkgs;
-    })))) "test-with-cabal";
+    })));
 
 in { inherit ouroboros-network; }
