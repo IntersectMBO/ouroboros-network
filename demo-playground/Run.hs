@@ -1,11 +1,8 @@
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE EmptyDataDecls      #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 module Run (
       runNode
@@ -20,6 +17,7 @@ import           Data.Maybe
 import           Data.Semigroup ((<>))
 
 import           Ouroboros.Consensus.Crypto.DSIGN.Mock
+import           Ouroboros.Consensus.Crypto.Hash
 import qualified Ouroboros.Consensus.Ledger.Mock as Mock
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Network.Chain (Chain (..))
@@ -46,7 +44,12 @@ runNode CLI{..} = do
          SimpleNode t            -> handleSimpleNode t
 
 -- The concrete block this demo will run with.
-type Block = Mock.SimpleBlock (Bft BftMockCrypto) Mock.SimpleBlockStandardCrypto
+data DemoCrypto
+
+instance Mock.SimpleBlockCrypto DemoCrypto where
+  type SimpleBlockHash DemoCrypto = ShortHash
+
+type Block = Mock.SimpleBlock (Bft BftMockCrypto) DemoCrypto
 
 -- | Setups a simple node, which will run the chain-following protocol and,
 -- if core, will also look at the mempool when trying to create a new block.

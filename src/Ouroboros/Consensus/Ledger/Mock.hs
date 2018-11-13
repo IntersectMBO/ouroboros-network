@@ -43,6 +43,7 @@ import           GHC.Generics (Generic)
 
 import           Ouroboros.Consensus.Crypto.Hash.Class
 import           Ouroboros.Consensus.Crypto.Hash.MD5 (MD5)
+import           Ouroboros.Consensus.Crypto.Hash.Short (ShortHash)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util
@@ -64,7 +65,7 @@ data Tx = Tx (Set TxIn) [TxOut]
 instance Condense Tx where
   condense (Tx ins outs) = condense (ins, outs)
 
-type TxIn  = (Hash MD5 Tx, Int)
+type TxIn  = (Hash ShortHash Tx, Int)
 type TxOut = (Addr, Int)
 type Addr  = String
 type Utxo  = Map TxIn TxOut
@@ -132,7 +133,6 @@ instance All HasUtxo as => HasUtxo (HList as) where
 {-------------------------------------------------------------------------------
   Crypto needed for simple blocks
 
-  TODO: We may want to introduce a "short hash" variation to use in testing.
 -------------------------------------------------------------------------------}
 
 class HashAlgorithm (SimpleBlockHash c) => SimpleBlockCrypto c where
