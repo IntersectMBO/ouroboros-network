@@ -14,8 +14,6 @@ direct :: Monad m
        -> ChainSyncClient header point m b
        -> m (a, b)
 
---TODO: note that currently these protocols are non-terminating.
-
 direct  ServerStIdle{recvMsgRequestNext}
        (Client.SendMsgRequestNext stNext stAwait) = do
     mresp <- recvMsgRequestNext
@@ -35,10 +33,15 @@ direct  ServerStIdle{recvMsgRequestNext}
       client' <- recvMsgRollBackward pIntersect pHead
       direct server' client'
 
+    directStNext (SendMsgDoneNext serverDone)
+                 ClientStNext{recvMsgDoneServer} =
+      return (serverDone, recvMsgDoneServer)
+
 direct  ServerStIdle{recvMsgFindIntersect}
        (Client.SendMsgFindIntersect points
           ClientStIntersect{recvMsgIntersectImproved,
-                            recvMsgIntersectUnchanged}) = do
+                            recvMsgIntersectUnchanged,
+                            recvMsgIntersectDone}) = do
     sIntersect <- recvMsgFindIntersect points
     case sIntersect of
       SendMsgIntersectImproved  pIntersect pHead server' -> do
@@ -49,3 +52,9 @@ direct  ServerStIdle{recvMsgFindIntersect}
         client' <- recvMsgIntersectUnchanged pHead
         direct server' client'
 
+      SendMsgDoneIntersect serverDone ->
+        return (serverDone, recvMsgIntersectDone)
+
+direct ServerStIdle{recvMsgDoneClient}
+       (Client.SendMsgDone clientDone) =
+    return (recvMsgDoneClient, clientDone)
