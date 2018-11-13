@@ -30,6 +30,10 @@ library
                      , Protocol.PingPong.Server
                      , Protocol.PingPong.Direct
                      , Protocol.PingPongExamples
+                     , Protocol.ChainSync.Type
+                     , Protocol.ChainSync.Client
+                     , Protocol.ChainSync.Server
+                     , Protocol.ChainSync.Direct
   -- other-modules:       
   other-extensions:    GADTs
                      , RankNTypes
