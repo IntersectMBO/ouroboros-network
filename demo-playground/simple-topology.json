@@ -17,7 +17,7 @@
     , "initialChainData": [1,2,3]
     , "role": "core"
     },
-    { "nodeId": 2
+    { "nodeId": 3
     , "producers": []
     , "consumers": [0,1,5]
     , "initialChainData": []

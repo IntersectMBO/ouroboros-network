@@ -20,13 +20,11 @@ import           Data.Maybe
 import           Data.Semigroup ((<>))
 
 import           Ouroboros.Consensus.Crypto.DSIGN.Mock
-import           Ouroboros.Consensus.Ledger.Mempool (Mempool)
 import qualified Ouroboros.Consensus.Ledger.Mock as Mock
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Network.Chain (Chain (..))
 import           Ouroboros.Network.ChainProducerState
 import           Ouroboros.Network.ConsumersAndProducers
-import           Ouroboros.Network.MonadClass hiding (TVar, atomically, newTVar)
 import           Ouroboros.Network.Node (NodeId (..))
 import qualified Ouroboros.Network.Node as Node
 
@@ -34,6 +32,7 @@ import           BlockGeneration (forkCoreNode)
 import           CLI
 import           LedgerState
 import           Logging
+import           Mock.Mempool (Mempool)
 import           Mock.TxSubmission
 import qualified NamedPipe
 import           Topology
@@ -79,7 +78,7 @@ handleSimpleNode (TopologyInfo myNodeId topologyFile) = do
 
              -- Each node has a mempool, regardless from its consumer
              -- and producer threads.
-             nodeMempool <- newTMVarIO initialPool
+             nodeMempool <- atomically $ newTVar initialPool
 
 
              -- The calls to the 'Unix' functions are flipped here, as for each

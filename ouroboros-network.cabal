@@ -37,7 +37,6 @@ library
                        Ouroboros.Consensus.Crypto.VRF.Mock
                        Ouroboros.Consensus.Crypto.VRF.Simple
                        Ouroboros.Consensus.Ledger.Abstract
-                       Ouroboros.Consensus.Ledger.Mempool
                        Ouroboros.Consensus.Ledger.Mock
                        Ouroboros.Consensus.Protocol.Abstract
                        Ouroboros.Consensus.Protocol.BFT
@@ -136,8 +135,8 @@ executable demo-playground
                        BlockGeneration
                        LedgerState
                        Logging
-                       Mock.Payload
                        Mock.TxSubmission
+                       Mock.Mempool
                        NamedPipe
                        Run
                        Topology

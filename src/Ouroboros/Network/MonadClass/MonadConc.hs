@@ -5,7 +5,6 @@ module Ouroboros.Network.MonadClass.MonadConc (
   newMVar
   ) where
 
-import qualified Control.Concurrent as IO
 import           Ouroboros.Network.MonadClass.MonadFork
 
 class MonadFork m => MonadConc m where
@@ -39,15 +38,3 @@ newEmptyMVar = newEmptyNamedMVar Nothing
 
 newMVar :: MonadConc m => a -> m (MVar m a)
 newMVar = newNamedMVar Nothing
-
-instance MonadConc IO where
-  type MVar IO = IO.MVar
-  newEmptyNamedMVar _ = IO.newEmptyMVar
-  newNamedMVar _ = IO.newMVar
-  takeMVar     = IO.takeMVar
-  tryTakeMVar  = IO.tryTakeMVar
-  putMVar      = IO.putMVar
-  tryPutMVar   = IO.tryPutMVar
-  readMVar     = IO.readMVar
-  modifyMVar   = IO.modifyMVar
-  modifyMVar_  = IO.modifyMVar_

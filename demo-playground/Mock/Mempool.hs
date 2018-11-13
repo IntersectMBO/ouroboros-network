@@ -1,7 +1,7 @@
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE TypeFamilies               #-}
-module Ouroboros.Consensus.Ledger.Mempool (
+module Mock.Mempool (
     Mempool(..)
   , mempoolToList
   , mempoolInsert

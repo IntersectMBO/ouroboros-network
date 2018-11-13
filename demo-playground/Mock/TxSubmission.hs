@@ -10,6 +10,7 @@ module Mock.TxSubmission (
 
 import           Control.Concurrent (threadDelay)
 import qualified Control.Concurrent.Async as Async
+import           Control.Exception (catch)
 import           Control.Monad.Except
 import qualified Data.Map.Strict as M
 import qualified Data.Set as Set
@@ -19,8 +20,6 @@ import           System.IO (IOMode (..))
 
 import           Ouroboros.Consensus.Crypto.Hash (MD5)
 import qualified Ouroboros.Consensus.Crypto.Hash as H
-import           Ouroboros.Consensus.Ledger.Mempool (Mempool (..), consistent,
-                     mempoolInsert)
 import qualified Ouroboros.Consensus.Ledger.Mock as Mock
 import           Ouroboros.Consensus.Util (Condense (..))
 import           Ouroboros.Network.ChainProducerState
@@ -29,7 +28,7 @@ import           Ouroboros.Network.Node (NodeId (..))
 import           Ouroboros.Network.Pipe
 import           Ouroboros.Network.Serialise
 
-import           Mock.Payload
+import           Mock.Mempool (Mempool (..), consistent, mempoolInsert)
 import           NamedPipe
 import           Topology
 
@@ -100,24 +99,24 @@ submitTx :: NodeId -> Mock.Tx -> IO ()
 submitTx n tx = do
     withTxPipe n WriteMode False $ \hdl -> do
         let x = error "submitTx: this handle wasn't supposed to be used"
-        runProtocolWithPipe x hdl proto
+        runProtocolWithPipe x hdl proto `catch` (\ProtocolStopped -> return ())
     putStrLn $ "The Id for this transaction is: " <> condense (H.hash @MD5 tx)
   where
       proto :: Protocol Mock.Tx Void ()
       proto = sendMsg tx
 
-readIncomingTx :: TMVar IO (Mempool Mock.Tx)
-               -> TVar IO (ChainProducerState (SimpleBlock p c))
+readIncomingTx :: TVar IO (Mempool Mock.Tx)
+               -> TVar IO (ChainProducerState (Mock.SimpleBlock p c))
                -> Protocol Void Mock.Tx ()
 readIncomingTx poolVar chainVar = do
     newTx <- recvMsg
     liftIO $ atomically $ do
         chain <- chainState <$> readTVar chainVar
-        mempool <- takeTMVar poolVar
+        mempool <- readTVar poolVar
         isConsistent <- runExceptT $ consistent (Mock.utxo chain) mempool newTx
         case isConsistent of
             Left _err -> return ()
-            Right ()  -> putTMVar poolVar (mempoolInsert newTx mempool)
+            Right ()  -> writeTVar poolVar (mempoolInsert newTx mempool)
     liftIO $ threadDelay 1000
     -- Loop over
     readIncomingTx poolVar chainVar
@@ -127,8 +126,8 @@ instance Serialise Void where
     decode = error "You cannot decode Void."
 
 spawnMempoolListener :: NodeId
-                     -> TMVar IO (Mempool Mock.Tx)
-                     -> TVar IO (ChainProducerState (SimpleBlock p c))
+                     -> TVar IO (Mempool Mock.Tx)
+                     -> TVar IO (ChainProducerState (Mock.SimpleBlock p c))
                      -> IO (Async.Async ())
 spawnMempoolListener myNodeId poolVar chainVar = do
     Async.async $ do
