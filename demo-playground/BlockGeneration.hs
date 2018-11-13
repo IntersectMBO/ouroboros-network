@@ -13,7 +13,6 @@ import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (Chain (..), headBlockNo, headHash)
 import           Ouroboros.Network.ChainProducerState
 import           Ouroboros.Network.MonadClass
-import           Ouroboros.Network.Serialise
 
 import           LedgerState
 import           Mock.Mempool (Mempool, collect)
