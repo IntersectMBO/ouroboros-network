@@ -22,6 +22,7 @@ module Ouroboros.Consensus.Ledger.Mock (
     -- * Block crypto
   , SimpleBlockCrypto(..)
   , SimpleBlockStandardCrypto -- just a tag
+  , SimpleBlockMockCrypto -- just a tag
     -- * Blocks
   , SimpleBlock(..)
   , SimpleHeader(..)
@@ -37,12 +38,14 @@ import           Crypto.Random (MonadRandom)
 import           Data.Map (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy
+import           Data.Semigroup ((<>))
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           GHC.Generics (Generic)
 
 import           Ouroboros.Consensus.Crypto.Hash.Class
 import           Ouroboros.Consensus.Crypto.Hash.MD5 (MD5)
+import           Ouroboros.Consensus.Crypto.Hash.Short (ShortHash)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util
@@ -55,7 +58,6 @@ import           Ouroboros.Network.Chain (Chain, toOldestFirst)
 {-------------------------------------------------------------------------------
   Basic definitions
 
-  TODO: We should make the hash configurable.
 -------------------------------------------------------------------------------}
 
 data Tx = Tx (Set TxIn) [TxOut]
@@ -64,7 +66,7 @@ data Tx = Tx (Set TxIn) [TxOut]
 instance Condense Tx where
   condense (Tx ins outs) = condense (ins, outs)
 
-type TxIn  = (Hash MD5 Tx, Int)
+type TxIn  = (Hash ShortHash Tx, Int)
 type TxOut = (Addr, Int)
 type Addr  = String
 type Utxo  = Map TxIn TxOut
@@ -132,7 +134,6 @@ instance All HasUtxo as => HasUtxo (HList as) where
 {-------------------------------------------------------------------------------
   Crypto needed for simple blocks
 
-  TODO: We may want to introduce a "short hash" variation to use in testing.
 -------------------------------------------------------------------------------}
 
 class HashAlgorithm (SimpleBlockHash c) => SimpleBlockCrypto c where
@@ -142,6 +143,13 @@ data SimpleBlockStandardCrypto
 
 instance SimpleBlockCrypto SimpleBlockStandardCrypto where
   type SimpleBlockHash SimpleBlockStandardCrypto = MD5
+
+-- A mock crypto using the 'ShortHash' variant.
+data SimpleBlockMockCrypto
+
+instance SimpleBlockCrypto SimpleBlockMockCrypto where
+  type SimpleBlockHash SimpleBlockMockCrypto = ShortHash
+
 
 {-------------------------------------------------------------------------------
   Simple blocks
@@ -172,6 +180,9 @@ data SimplePreHeader p c = SimplePreHeader {
     }
   deriving (Generic, Show, Eq)
 
+instance SimpleBlockCrypto c => Condense (SimplePreHeader p c) where
+    condense = show
+
 data SimpleBody = SimpleBody { getSimpleBody :: Set Tx }
   deriving (Generic, Show, Eq)
 
@@ -181,9 +192,22 @@ data SimpleBlock p c = SimpleBlock {
     }
   deriving (Generic, Show, Eq)
 
--- TODO: Write a proper condensed instance.
 instance (SimpleBlockCrypto c, OuroborosTag p) => Condense (SimpleBlock p c) where
-  condense b = show b
+  condense (SimpleBlock hdr@(SimpleHeader _ pl) (SimpleBody txs)) =
+      condensedHash (blockPrevHash hdr)
+          <> "-"
+          <> condense (blockHash hdr)
+          <> ",("
+          <> condense pl
+          <> ",("
+          <> condense (getSlot $ blockSlot hdr)
+          <> ","
+          <> condense txs
+          <> "))])))"
+
+condensedHash :: Show (HeaderHash b) => Network.Hash b -> String
+condensedHash GenesisHash     = "genesis"
+condensedHash (BlockHash hdr) = show hdr
 
 instance (SimpleBlockCrypto c, OuroborosTag p) => HasHeader (SimpleHeader p c) where
   type HeaderHash (SimpleHeader p c) = Hash (SimpleBlockHash c) (SimpleHeader p c)

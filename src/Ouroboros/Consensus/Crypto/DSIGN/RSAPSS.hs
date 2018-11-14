@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 
@@ -11,12 +12,15 @@ module Ouroboros.Consensus.Crypto.DSIGN.RSAPSS
 
 import           Crypto.PubKey.RSA
 import           Crypto.PubKey.RSA.PSS
+import           Data.ByteString (unpack)
 import           Data.ByteString.Lazy (toStrict)
 import           Data.Function (on)
 import           GHC.Generics (Generic)
+import           Text.Printf (printf)
 
 import           Ouroboros.Consensus.Crypto.DSIGN.Class
 import           Ouroboros.Consensus.Crypto.Hash
+import           Ouroboros.Consensus.Util
 import           Ouroboros.Network.Serialise
 
 data RSAPSSDSIGN
@@ -69,6 +73,11 @@ instance Serialise (VerKeyDSIGN RSAPSSDSIGN) where
 instance Serialise (SignKeyDSIGN RSAPSSDSIGN) where
     encode (SignKeyRSAPSSDSIGN sk) = encode $ skToTuple sk
     decode                         = (SignKeyRSAPSSDSIGN . skFromTuple) <$> decode
+
+instance Condense (SigDSIGN RSAPSSDSIGN) where
+    condense (SigRSAPSSDSIGN b) =
+        let (str :: String) = map (toEnum . fromEnum) . unpack $ b
+        in printf "%x" str
 
 vkToTuple :: PublicKey -> (Int, Integer, Integer)
 vkToTuple vk = (public_size vk, public_n vk, public_e vk)

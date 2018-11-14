@@ -13,9 +13,9 @@ to inspect the traffic. For example, to setup a minimal example, runs in three
 separate terminal (in this order):
 
 ```
-cabal new-run demo-playground -- -t demo-playground/simple-topology.json -n 0
-cabal new-run demo-playground -- -t demo-playground/simple-topology.json -n 2
-cabal new-run demo-playground -- -t demo-playground/simple-topology.json -n 1
+cabal new-run demo-playground -- node -t demo-playground/simple-topology.json -n 0
+cabal new-run demo-playground -- node -t demo-playground/simple-topology.json -n 2
+cabal new-run demo-playground -- node -t demo-playground/simple-topology.json -n 1
 ```
 
 You will see that the logger waits to receive traffic from the core node 2,
@@ -23,23 +23,26 @@ and when 1 start, the logger will receive the (up-to-date) chain from both peers
 which means that node 1 and node 2 synced and now node 1 is following the chain
 of node 2.
 
-## Picking a block type
+## Submitting transactions
 
-By default, if you run the example the way specified above, the underlying
-protocol will exchange messages where the "block" is a simple `DummyPayload`,
-which is virtually just an integer. However, this can be replaced by more
-interesting (and in the future realistic) implementations for a block by 
-specifying the `-p` flag at the startup. For example:
+To submit transactions, first spin up the node you want to target, then type:
 
 ```
-cabal new-run demo-playground -- -t demo-playground/simple-topology.json -n 2 -p dummy
+cabal new-run demo-playground -- submit -t demo-playground/simple-topology.json \
+  -n 2 --address a --amount 1000
 ```
 
-Would run `Node 2` with the `DummyPayload`, whereas:
+This would send the transaction to the node 2. The node would then add the Tx
+to its mempool and incorporate it into a block when he's elected leader.
+You can chain transactions once you know the hash, which is printed after you
+submit the transaction:
 
 ```
-cabal new-run demo-playground -- -t demo-playground/simple-topology.json -n 2 -p mock
+> cabal new-run demo-playground -- submit -t demo-playground/simple-topology.json -n 2 --address a --amount 1000
+Up to date
+The Id for this transaction is: 6f6e1118
+------------------------------------------------------------
+> cabal new-run demo-playground -- submit -t demo-playground/simple-topology.json -n 2 --txin 6f6e1118 --txix 0 --address a --amount 200 --address b --amount 800
+Up to date
+The Id for this transaction is: 6dc4c580
 ```
-
-Will use a `MockPayload` which uses a BlockBody which can host (mock) transactions
-within it.

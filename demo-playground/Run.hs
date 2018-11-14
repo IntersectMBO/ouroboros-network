@@ -1,11 +1,8 @@
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE EmptyDataDecls      #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 module Run (
       runNode
@@ -45,8 +42,7 @@ runNode CLI{..} = do
          TxSubmitter topology tx -> handleTxSubmission topology tx
          SimpleNode t            -> handleSimpleNode t
 
--- The concrete block this demo will run with.
-type Block = Mock.SimpleBlock (Bft BftMockCrypto) Mock.SimpleBlockStandardCrypto
+type Block = Mock.SimpleBlock (Bft BftMockCrypto) Mock.SimpleBlockMockCrypto
 
 -- | Setups a simple node, which will run the chain-following protocol and,
 -- if core, will also look at the mempool when trying to create a new block.

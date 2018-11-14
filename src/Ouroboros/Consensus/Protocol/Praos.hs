@@ -28,6 +28,7 @@ import           Ouroboros.Consensus.Crypto.VRF.Class
 import           Ouroboros.Consensus.Crypto.VRF.Mock (MockVRF)
 import           Ouroboros.Consensus.Crypto.VRF.Simple (SimpleVRF)
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.HList (HList)
 import           Ouroboros.Network.Block (Slot)
 import           Ouroboros.Network.Node (NodeId (..))
@@ -91,6 +92,12 @@ instance PraosCrypto c => OuroborosTag (Praos c) where
 
 deriving instance (PraosCrypto c, Show ph) => Show (OuroborosPayload (Praos c) ph)
 deriving instance (PraosCrypto c, Eq   ph) => Eq   (OuroborosPayload (Praos c) ph)
+
+instance ( PraosCrypto c
+         , Condense ph
+         )
+         => Condense (OuroborosPayload (Praos c) ph) where
+    condense (PraosPayload sig _) = condense sig
 
 instance (PraosCrypto c, Serialise ph) => Serialise (OuroborosPayload (Praos c) ph) where
   -- use generic instance

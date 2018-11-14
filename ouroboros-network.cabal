@@ -29,6 +29,7 @@ library
                        Ouroboros.Consensus.Crypto.Hash.Class
                        Ouroboros.Consensus.Crypto.Hash.MD5
                        Ouroboros.Consensus.Crypto.Hash.SHA256
+                       Ouroboros.Consensus.Crypto.Hash.Short
                        Ouroboros.Consensus.Crypto.KES
                        Ouroboros.Consensus.Crypto.KES.Class
                        Ouroboros.Consensus.Crypto.KES.Mock

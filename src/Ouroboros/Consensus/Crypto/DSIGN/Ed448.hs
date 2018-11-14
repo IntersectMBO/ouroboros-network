@@ -17,6 +17,7 @@ import           GHC.Generics (Generic)
 
 import           Ouroboros.Consensus.Crypto.DSIGN.Class
 import           Ouroboros.Consensus.Crypto.Hash
+import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.Serialise
 import           Ouroboros.Network.Serialise
 
@@ -55,6 +56,9 @@ instance Ord (SignKeyDSIGN Ed448DSIGN) where
 
 instance Ord (SigDSIGN Ed448DSIGN) where
     compare = compare `on` show
+
+instance Condense (SigDSIGN Ed448DSIGN) where
+    condense (SigEd448DSIGN s) = show s
 
 instance Serialise (VerKeyDSIGN Ed448DSIGN) where
     encode = encodeBA
