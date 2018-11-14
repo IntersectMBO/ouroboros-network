@@ -61,14 +61,11 @@ instance OuroborosTag p => OuroborosTag (TestProtocol p) where
   applyOuroborosLedgerState (TestPayload std _) (TestLedgerState ls) =
       TestLedgerState (applyOuroborosLedgerState std ls)
 
-deriving instance (OuroborosTag p) => Show (OuroborosLedgerState (TestProtocol p))
+deriving instance (OuroborosTag p)          => Show (OuroborosLedgerState (TestProtocol p))
+deriving instance (OuroborosTag p, Show ph) => Show (OuroborosPayload (TestProtocol p) ph)
+deriving instance (OuroborosTag p, Eq   ph) => Eq   (OuroborosPayload (TestProtocol p) ph)
 
-deriving instance Show (OuroborosPayload p ph)
-               => Show (OuroborosPayload (TestProtocol p) ph)
-deriving instance Eq (OuroborosPayload p ph)
-               => Eq (OuroborosPayload (TestProtocol p) ph)
-
-instance Serialise (OuroborosPayload p ph)
+instance (OuroborosTag p, Serialise ph)
       => Serialise (OuroborosPayload (TestProtocol p) ph) where
   -- use generic instance
 
