@@ -8,6 +8,7 @@ module Ouroboros.Consensus.Crypto.Hash.Class
     ( HashAlgorithm (..)
     , ByteString
     , Hash
+    , getHash
     , hash
     , fromHash
     , prop_hash_correct_byteCount

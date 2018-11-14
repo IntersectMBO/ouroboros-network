@@ -9,8 +9,9 @@ module Ouroboros.Consensus.Crypto.DSIGN.Mock
     , SignKeyDSIGN(..)
     ) where
 
+import qualified Data.ByteString.Base16 as B16
+import qualified Data.ByteString.Char8 as SB8
 import           GHC.Generics (Generic)
-import           Numeric.Natural (Natural)
 
 import           Ouroboros.Consensus.Crypto.DSIGN.Class
 import           Ouroboros.Consensus.Crypto.Hash
@@ -28,7 +29,7 @@ instance DSIGNAlgorithm MockDSIGN where
     newtype SignKeyDSIGN MockDSIGN = SignKeyMockDSIGN Int
         deriving (Show, Eq, Ord, Generic)
 
-    data SigDSIGN MockDSIGN = SigMockDSIGN Natural Int
+    data SigDSIGN MockDSIGN = SigMockDSIGN ByteString Int
         deriving (Show, Eq, Ord, Generic)
 
     genKeyDSIGN = SignKeyMockDSIGN <$> nonNegIntR
@@ -40,10 +41,12 @@ instance DSIGNAlgorithm MockDSIGN where
     verifyDSIGN (VerKeyMockDSIGN n) a s = s == mkSig a (SignKeyMockDSIGN n)
 
 mkSig :: Serialise a => a -> SignKeyDSIGN MockDSIGN -> SigDSIGN MockDSIGN
-mkSig a (SignKeyMockDSIGN n) = SigMockDSIGN (fromHash $ hash @MD5 a) n
+mkSig a (SignKeyMockDSIGN n) = SigMockDSIGN (getHash $ hash @ShortHash a) n
 
 instance Condense (SigDSIGN MockDSIGN) where
-    condense (SigMockDSIGN n i) = show n <> ":" <> show i
+    condense (SigMockDSIGN n i) = (SB8.unpack . B16.encode $ n)
+                                <> ":"
+                                <> show i
 
 instance Serialise (VerKeyDSIGN MockDSIGN)
 instance Serialise (SignKeyDSIGN MockDSIGN)
