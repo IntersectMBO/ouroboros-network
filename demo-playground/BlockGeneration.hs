@@ -13,7 +13,6 @@ import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (Chain (..), headBlockNo, headHash)
 import           Ouroboros.Network.ChainProducerState
 import           Ouroboros.Network.MonadClass
-import           Ouroboros.Network.Serialise
 
 import           LedgerState
 import           Mock.Mempool (Mempool, collect)
@@ -25,16 +24,15 @@ forkCoreNode :: forall m p c.
                 , MonadTimer m
                 , MonadFork m
                 , MonadIO m
-                , RunOuroboros p DemoLedgerState
+                , RunOuroboros p (DemoLedgerState (Mock.SimpleBlock p c))
                 )
-             => DemoLedgerState
+             => TVar m (DemoLedgerState (Mock.SimpleBlock p c))
              -> OuroborosState p
              -> TVar m (Mempool Mock.Tx)
              -> TVar m (ChainProducerState (Mock.SimpleBlock p c))
              -> Duration (Time m)
              -> m ()
-forkCoreNode initLedger protocolState mempoolVar varCPS slotDuration = do
-    ledgerVar <- atomically $ newTVar initLedger
+forkCoreNode ledgerVar protocolState mempoolVar varCPS slotDuration = do
     slotVar   <- atomically $ newTVar 1
     initDRG   <- liftIO getSystemDRG
 

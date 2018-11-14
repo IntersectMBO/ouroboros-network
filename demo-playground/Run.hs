@@ -100,15 +100,21 @@ handleSimpleNode (TopologyInfo myNodeId topologyFile) = do
                      _ -> mempty
 
              Node.forkRelayKernel upstream cps
-             when (role nodeSetup == CoreNode) $ do
-                 let numCoreNodes = length (filter ((== CoreNode) . role) nodeSetups)
-                 let nid = case myNodeId of
-                                CoreId n  -> n
-                                RelayId n -> n
-                 let protocolState = BftState myNodeId (SignKeyMockDSIGN nid)
-                 let ledgerState = DemoLedgerState numCoreNodes
 
-                 forkCoreNode ledgerState
+             let numCoreNodes = length (filter ((== CoreNode) . role) nodeSetups)
+             let nid = case myNodeId of
+                            CoreId n  -> n
+                            RelayId n -> n
+             let protocolState = BftState myNodeId (SignKeyMockDSIGN nid)
+             let ledgerState  = Mock.SimpleLedgerState {
+                                simpleUtxo = mempty
+                              , simpleProtocolState = BftLedgerState
+                              }
+             initLedger <- atomically $
+                 newTVar (DemoLedgerState ledgerState 0 0 numCoreNodes)
+
+             when (role nodeSetup == CoreNode) $ do
+                 forkCoreNode initLedger
                               protocolState
                               nodeMempool
                               cps
@@ -117,6 +123,7 @@ handleSimpleNode (TopologyInfo myNodeId topologyFile) = do
              ledgerStateThreads <- spawnLedgerStateListeners myNodeId
                                                              loggingQueue
                                                              Genesis
+                                                             initLedger
                                                              cps
 
              let allThreads = terminalThread <> producerThreads
