@@ -1,5 +1,7 @@
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE RankNTypes       #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE RankNTypes           #-}
+{-# LANGUAGE StandaloneDeriving   #-}
+{-# LANGUAGE UndecidableInstances #-}
 module LedgerState (
       spawnLedgerStateListeners
     , DemoLedgerState(..)
@@ -8,10 +10,11 @@ module LedgerState (
 import qualified Control.Concurrent.Async as Async
 import           Control.Concurrent.STM (TBQueue, TVar, atomically, modifyTVar',
                      newTVar, readTVar, retry, writeTVar)
-import           Control.Monad.State
+import           Control.Monad.Reader
 import           Data.Function ((&))
 import           Data.Functor (($>))
 
+import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.BFT (BftLedgerView (..))
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Network.Chain (Chain (..), HasHeader)
@@ -25,31 +28,36 @@ import           Ouroboros.Network.Serialise
 
 import           Logging
 
-data DemoLedgerState = DemoLedgerState {
-    numNodes :: !Int
-  } deriving Show
+data DemoLedgerState b = DemoLedgerState {
+    ledgerState      :: !(LedgerState b)
+    -- ^ The ledger state specific for the protocol in use.
+  , howManyRollbacks :: !Int
+  , howManyAddBlocks :: !Int
+  , numNodes         :: !Int
+  }
 
-instance BftLedgerView DemoLedgerState where
+deriving instance (Show b, Show (LedgerState b)) => Show (DemoLedgerState b)
+
+instance BftLedgerView (DemoLedgerState b) where
   bftNumNodes = fromIntegral . numNodes
 
-data SomeState = SomeState { howManyRollbacks :: !Int
-                           , howManyAddBlocks :: !Int
-                           } deriving Show
+type M b = ReaderT (TVar (DemoLedgerState b)) IO
 
-type M = StateT SomeState IO
-
--- TODO: This can be replaced with the 'LedgerState' abstraction proper.
 spawnLedgerStateListeners :: forall block. ( HasHeader block
                              , Serialise block
                              , Condense  block
                              , Condense  [block]
+                             , UpdateLedger block
+                             , Show block
+                             , Show (LedgerState block)
                              )
                           => NodeId
                           -> TBQueue LogEvent
                           -> Chain block
+                          -> TVar (DemoLedgerState block)
                           -> TVar (ChainProducerState block)
                           -> IO [Async.Async ()]
-spawnLedgerStateListeners ourselves q initialChain cps = do
+spawnLedgerStateListeners ourselves q initialChain initLedger cps = do
     chainV <- atomically $ newTVar initialChain
     let handler = Logging.LoggerHandler q chainV ourselves
 
@@ -59,7 +67,7 @@ spawnLedgerStateListeners ourselves q initialChain cps = do
     consumerVar <- atomically $ newTVar []
     producerVar <- atomically $ newTVar []
 
-    ourOwnConsumer <- Async.async $ flip evalStateT (SomeState 0 0) $
+    ourOwnConsumer <- Async.async $ flip runReaderT initLedger $
                           consumerSideProtocol1 consumer
                           (lift . sendMsg consumerVar)
                           (lift $ recvMsg producerVar)
@@ -80,20 +88,34 @@ spawnLedgerStateListeners ourselves q initialChain cps = do
           []      -> retry
 
 
-addPostProcessing :: ConsumerHandlers block M -> ConsumerHandlers block M
+addPostProcessing :: (Show block, Show (LedgerState block), UpdateLedger block)
+                  => ConsumerHandlers block (M block)
+                  -> ConsumerHandlers block (M block)
 addPostProcessing c = ConsumerHandlers {
       getChainPoints = getChainPoints c
 
     , addBlock = \b -> do
         addBlock c b
-        modify (\s -> s { howManyAddBlocks = howManyAddBlocks s + 1 })
-        get >>= lift . print
+
+        modifyLedger $ \l ->
+            l {
+              howManyAddBlocks = howManyAddBlocks l + 1
+            , ledgerState = applyLedgerState b (ledgerState l)
+            }
 
     , rollbackTo = \p -> do
         rollbackTo c p
-        modify (\s -> s { howManyRollbacks = howManyRollbacks s + 1 })
-        get >>= lift . print
+        modifyLedger $ \l -> l { howManyRollbacks = howManyRollbacks l + 1 }
     }
 
-
+modifyLedger :: (Show b, Show (LedgerState b))
+             => (DemoLedgerState b -> DemoLedgerState b)
+             -> M b ()
+modifyLedger updateFn = do
+    ledgerVar <- ask
+    currentLedger <- lift (atomically $ readTVar ledgerVar)
+    let l' = updateFn currentLedger
+    lift $ do
+        atomically $ writeTVar ledgerVar l'
+        print l'
 
