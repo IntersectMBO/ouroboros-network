@@ -17,7 +17,6 @@ import qualified Crypto.PubKey.ECC.Types as C
 import           Crypto.Random (MonadRandom (..))
 import           Data.Function (on)
 import           Data.Proxy (Proxy (..))
-import           Data.Semigroup
 import           GHC.Generics (Generic)
 import           Numeric.Natural (Natural)
 

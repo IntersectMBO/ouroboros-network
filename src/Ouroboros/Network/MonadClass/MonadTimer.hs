@@ -1,6 +1,6 @@
+{-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeFamilies          #-}
-{-# LANGUAGE FlexibleContexts      #-}
 module Ouroboros.Network.MonadClass.MonadTimer (
     MonadTimer(..)
   , TimeoutState(..)
@@ -9,10 +9,10 @@ module Ouroboros.Network.MonadClass.MonadTimer (
   , fromStart
   ) where
 
-import           Data.Functor (void)
-import qualified Control.Concurrent          as IO
+import qualified Control.Concurrent as IO
 import qualified Control.Concurrent.STM.TVar as STM
-import qualified Control.Monad.STM           as STM
+import qualified Control.Monad.STM as STM
+import           Data.Functor (void)
 
 import qualified GHC.Event as GHC (TimeoutKey, getSystemTimerManager,
                      registerTimeout, unregisterTimeout, updateTimeout)
@@ -40,7 +40,7 @@ fromStart = flip addTime zero
 
 data TimeoutState = TimeoutPending | TimeoutFired | TimeoutCancelled
 
-class (MonadSTM m, TimeMeasure (Time m)) => MonadTimer m where
+class (MonadSTM m, TimeMeasure (Time m), Show (Time m)) => MonadTimer m where
   type Time    m :: *
   data Timeout m :: *
 

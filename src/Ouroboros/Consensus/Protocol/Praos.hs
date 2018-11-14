@@ -4,6 +4,7 @@
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE UndecidableInstances  #-}
 
@@ -45,6 +46,9 @@ data PraosExtraFields c = PraosExtraFields {
     }
   deriving (Generic)
 
+deriving instance PraosCrypto c => Show (PraosExtraFields c)
+deriving instance PraosCrypto c => Eq   (PraosExtraFields c)
+
 instance VRFAlgorithm (PraosVRF c) => Serialise (PraosExtraFields c)
   -- use Generic instance for now
 
@@ -53,6 +57,7 @@ instance PraosCrypto c => OuroborosTag (Praos c) where
         praosSignature   :: Signed (PraosDSIGN c) (ph, PraosExtraFields c)
       , praosExtraFields :: PraosExtraFields c
       }
+    deriving (Generic)
 
   data OuroborosState (Praos c) = PraosState {
         praosNodeId       :: Int
@@ -83,6 +88,12 @@ instance PraosCrypto c => OuroborosTag (Praos c) where
         }
 
   applyOuroborosLedgerState _ _ = PraosLedgerState
+
+deriving instance (PraosCrypto c, Show ph) => Show (OuroborosPayload (Praos c) ph)
+deriving instance (PraosCrypto c, Eq   ph) => Eq   (OuroborosPayload (Praos c) ph)
+
+instance (PraosCrypto c, Serialise ph) => Serialise (OuroborosPayload (Praos c) ph) where
+  -- use generic instance
 
 instance (PraosCrypto c, PraosLedgerView l) => RunOuroboros (Praos c) l where
     checkIsLeader slot l = do

@@ -41,7 +41,6 @@ import           Ouroboros.Network.ChainProducerState
 import           Ouroboros.Network.MonadClass
 import           Ouroboros.Network.Node
 import           Ouroboros.Network.Protocol
-import           Ouroboros.Network.Serialise
 
 import           Ouroboros.Consensus.Crypto.DSIGN.Mock
 import           Ouroboros.Consensus.Crypto.Hash.Class (hash)
@@ -65,11 +64,9 @@ prop_simple_bft_convergence seed = runST $ test_simple_bft_convergence seed
 -- same final chain
 test_simple_bft_convergence :: forall m n.
                                ( MonadSTM m
-                               , MonadTimer m
                                , MonadRunProbe m n
                                , MonadSay m
                                , MonadTimer m
-                               , Show (Time m)
                                )
                             => Seed -> n Property
 test_simple_bft_convergence seed = do
@@ -215,9 +212,6 @@ broadcastNetwork :: forall m p c gen.
                     ( MonadSTM   m
                     , MonadTimer m
                     , MonadSay   m
-                    , Show      (OuroborosPayload p (SimplePreHeader p c))
-                    , Show      (LedgerState (SimpleBlock p c))
-                    , Serialise (OuroborosPayload p (SimplePreHeader p c))
                     , SimpleBlockCrypto c
                     , RunOuroboros p (ExtLedgerState (SimpleBlock p c))
                     , DRG gen
