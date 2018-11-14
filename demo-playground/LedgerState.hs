@@ -57,7 +57,7 @@ spawnLedgerStateListeners :: forall block. ( HasHeader block
                           -> TVar (DemoLedgerState block)
                           -> TVar (ChainProducerState block)
                           -> IO [Async.Async ()]
-spawnLedgerStateListeners ourselves q initialChain initLedger cps = do
+spawnLedgerStateListeners ourselves q initialChain ledgerVar cps = do
     chainV <- atomically $ newTVar initialChain
     let handler = Logging.LoggerHandler q chainV ourselves
 
@@ -67,7 +67,7 @@ spawnLedgerStateListeners ourselves q initialChain initLedger cps = do
     consumerVar <- atomically $ newTVar []
     producerVar <- atomically $ newTVar []
 
-    ourOwnConsumer <- Async.async $ flip runReaderT initLedger $
+    ourOwnConsumer <- Async.async $ flip runReaderT ledgerVar $
                           consumerSideProtocol1 consumer
                           (lift . sendMsg consumerVar)
                           (lift $ recvMsg producerVar)
@@ -113,9 +113,10 @@ modifyLedger :: (Show b, Show (LedgerState b))
              -> M b ()
 modifyLedger updateFn = do
     ledgerVar <- ask
-    currentLedger <- lift (atomically $ readTVar ledgerVar)
-    let l' = updateFn currentLedger
-    lift $ do
-        atomically $ writeTVar ledgerVar l'
-        print l'
+    newLedger <- lift $ atomically $ do
+        currentLedger <- readTVar ledgerVar
+        let l' = updateFn currentLedger
+        writeTVar ledgerVar l'
+        return l'
+    lift (print newLedger)
 
