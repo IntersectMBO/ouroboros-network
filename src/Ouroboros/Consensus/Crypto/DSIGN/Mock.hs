@@ -14,6 +14,7 @@ import           Numeric.Natural (Natural)
 
 import           Ouroboros.Consensus.Crypto.DSIGN.Class
 import           Ouroboros.Consensus.Crypto.Hash
+import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Network.Serialise
 
@@ -40,6 +41,9 @@ instance DSIGNAlgorithm MockDSIGN where
 
 mkSig :: Serialise a => a -> SignKeyDSIGN MockDSIGN -> SigDSIGN MockDSIGN
 mkSig a (SignKeyMockDSIGN n) = SigMockDSIGN (fromHash $ hash @MD5 a) n
+
+instance Condense (SigDSIGN MockDSIGN) where
+    condense (SigMockDSIGN n i) = show n <> ":" <> show i
 
 instance Serialise (VerKeyDSIGN MockDSIGN)
 instance Serialise (SignKeyDSIGN MockDSIGN)

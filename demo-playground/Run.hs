@@ -17,7 +17,6 @@ import           Data.Maybe
 import           Data.Semigroup ((<>))
 
 import           Ouroboros.Consensus.Crypto.DSIGN.Mock
-import           Ouroboros.Consensus.Crypto.Hash
 import qualified Ouroboros.Consensus.Ledger.Mock as Mock
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Network.Chain (Chain (..))
@@ -43,13 +42,7 @@ runNode CLI{..} = do
          TxSubmitter topology tx -> handleTxSubmission topology tx
          SimpleNode t            -> handleSimpleNode t
 
--- The concrete block this demo will run with.
-data DemoCrypto
-
-instance Mock.SimpleBlockCrypto DemoCrypto where
-  type SimpleBlockHash DemoCrypto = ShortHash
-
-type Block = Mock.SimpleBlock (Bft BftMockCrypto) DemoCrypto
+type Block = Mock.SimpleBlock (Bft BftMockCrypto) Mock.SimpleBlockMockCrypto
 
 -- | Setups a simple node, which will run the chain-following protocol and,
 -- if core, will also look at the mempool when trying to create a new block.

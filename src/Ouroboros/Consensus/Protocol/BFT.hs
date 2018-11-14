@@ -29,6 +29,7 @@ import           Ouroboros.Consensus.Crypto.DSIGN.Ed448 (Ed448DSIGN)
 import           Ouroboros.Consensus.Crypto.DSIGN.Mock (MockDSIGN)
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Test
+import           Ouroboros.Consensus.Util
 import           Ouroboros.Network.Block (Slot (..))
 import           Ouroboros.Network.Node (NodeId (..))
 import           Ouroboros.Network.Serialise
@@ -71,6 +72,9 @@ instance BftCrypto c => OuroborosTag (Bft c) where
 
 deriving instance BftCrypto c => Show (OuroborosPayload (Bft c) ph)
 deriving instance BftCrypto c => Eq   (OuroborosPayload (Bft c) ph)
+
+instance BftCrypto c => Condense (OuroborosPayload (Bft c) ph) where
+    condense (BftPayload sig) = condense sig
 
 instance BftCrypto c => Serialise (OuroborosPayload (Bft c) ph) where
   -- use generic instance

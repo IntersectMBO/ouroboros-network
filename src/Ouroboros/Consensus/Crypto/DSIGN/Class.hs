@@ -14,6 +14,7 @@ module Ouroboros.Consensus.Crypto.DSIGN.Class
 
 import           Crypto.Random (MonadRandom)
 import           GHC.Generics (Generic)
+import           Ouroboros.Consensus.Util
 
 import           Ouroboros.Network.Serialise
 
@@ -24,6 +25,7 @@ class ( Show (VerKeyDSIGN v)
       , Ord (SignKeyDSIGN v)
       , Serialise (SignKeyDSIGN v)
       , Show (SigDSIGN v)
+      , Condense (SigDSIGN v)
       , Ord (SigDSIGN v)
       , Serialise (SigDSIGN v)
       )
@@ -44,6 +46,9 @@ newtype Signed v a = Signed (SigDSIGN v)
 deriving instance DSIGNAlgorithm v => Show (Signed v a)
 deriving instance DSIGNAlgorithm v => Eq   (Signed v a)
 deriving instance DSIGNAlgorithm v => Ord  (Signed v a)
+
+instance Condense (SigDSIGN v) => Condense (Signed v a) where
+    condense (Signed sig) = condense sig
 
 instance DSIGNAlgorithm v => Serialise (Signed v a) where
   -- use Generic instance

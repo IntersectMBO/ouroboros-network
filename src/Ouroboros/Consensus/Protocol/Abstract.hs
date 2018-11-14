@@ -27,6 +27,7 @@ import           Crypto.Random (MonadRandom (..))
 import           Data.Functor.Identity
 
 import           Ouroboros.Consensus.Util.Random
+import           Ouroboros.Consensus.Util
 import           Ouroboros.Network.Block (Slot)
 import           Ouroboros.Network.Serialise (Serialise)
 
@@ -36,6 +37,7 @@ import           Ouroboros.Network.Serialise (Serialise)
 -- block representation.
 class ( Show (OuroborosLedgerState p)
       , forall ph. Show      ph => Show      (OuroborosPayload p ph)
+      , forall ph. Condense  ph => Condense  (OuroborosPayload p ph)
       , forall ph. Eq        ph => Eq        (OuroborosPayload p ph)
       , forall ph. Serialise ph => Serialise (OuroborosPayload p ph)
       ) => OuroborosTag (p :: *) where

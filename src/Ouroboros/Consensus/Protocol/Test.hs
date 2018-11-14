@@ -25,6 +25,7 @@ module Ouroboros.Consensus.Protocol.Test (
 import           GHC.Generics (Generic)
 
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Util
 import           Ouroboros.Network.Node (NodeId)
 import           Ouroboros.Network.Serialise
 
@@ -64,6 +65,11 @@ instance OuroborosTag p => OuroborosTag (TestProtocol p) where
 deriving instance (OuroborosTag p)          => Show (OuroborosLedgerState (TestProtocol p))
 deriving instance (OuroborosTag p, Show ph) => Show (OuroborosPayload (TestProtocol p) ph)
 deriving instance (OuroborosTag p, Eq   ph) => Eq   (OuroborosPayload (TestProtocol p) ph)
+
+instance Condense (OuroborosPayload p ph)
+     => Condense (OuroborosPayload (TestProtocol p) ph) where
+    condense (TestPayload pld stake) =
+        condense pld <> ",stake=" <> condense stake
 
 instance (OuroborosTag p, Serialise ph)
       => Serialise (OuroborosPayload (TestProtocol p) ph) where

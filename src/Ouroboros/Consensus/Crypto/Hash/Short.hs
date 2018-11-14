@@ -18,5 +18,5 @@ data ShortHash
 instance HashAlgorithm ShortHash where
     byteCount _ = 4
     digest p = B.take (fromIntegral $ byteCount p)
-             . BA.convert @(H.Digest H.MD5) -- Internally, treat it like MD5.
-             . H.hash
+             . BA.convert
+             . H.hash @ByteString @H.MD5 -- Internally, treat it like MD5.

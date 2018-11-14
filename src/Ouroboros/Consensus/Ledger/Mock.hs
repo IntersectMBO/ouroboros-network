@@ -22,6 +22,7 @@ module Ouroboros.Consensus.Ledger.Mock (
     -- * Block crypto
   , SimpleBlockCrypto(..)
   , SimpleBlockStandardCrypto -- just a tag
+  , SimpleBlockMockCrypto -- just a tag
     -- * Blocks
   , SimpleBlock(..)
   , SimpleHeader(..)
@@ -143,6 +144,13 @@ data SimpleBlockStandardCrypto
 instance SimpleBlockCrypto SimpleBlockStandardCrypto where
   type SimpleBlockHash SimpleBlockStandardCrypto = MD5
 
+-- A mock crypto using the 'ShortHash' variant.
+data SimpleBlockMockCrypto
+
+instance SimpleBlockCrypto SimpleBlockMockCrypto where
+  type SimpleBlockHash SimpleBlockMockCrypto = ShortHash
+
+
 {-------------------------------------------------------------------------------
   Simple blocks
 
@@ -172,6 +180,9 @@ data SimplePreHeader p c = SimplePreHeader {
     }
   deriving (Generic, Show, Eq)
 
+instance SimpleBlockCrypto c => Condense (SimplePreHeader p c) where
+    condense = show
+
 data SimpleBody = SimpleBody { getSimpleBody :: Set Tx }
   deriving (Generic, Show, Eq)
 
@@ -187,7 +198,7 @@ instance (SimpleBlockCrypto c, OuroborosTag p) => Condense (SimpleBlock p c) whe
           <> "-"
           <> condense (blockHash hdr)
           <> ",("
-          <> show pl -- TODO: Ideally we would like to show only the condensed signer.
+          <> condense pl
           <> ",("
           <> condense (getSlot $ blockSlot hdr)
           <> ","
