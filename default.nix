@@ -21,7 +21,11 @@ let
 
   ouroboros-network = doHaddock(doTest(doBench(
     callPackage ./pkg.nix {
-      inherit nixpkgs;
+      inherit nixpkgs typed-transitions;
     })));
 
-in { inherit ouroboros-network; }
+  typed-transitions = doHaddock(doTest(doBench(
+    callPackage ./typed-transitions/default.nix { inherit nixpkgs; }
+  )));
+
+in { inherit ouroboros-network typed-transitions; }

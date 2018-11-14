@@ -4,6 +4,7 @@
 module Test.Sim
     ( tests
     , TestThreadGraph (..)
+    , arbitraryAcyclicGraph
     ) where
 
 import           Control.Monad

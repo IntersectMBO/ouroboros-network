@@ -11,6 +11,7 @@ module Ouroboros.Network.Chain (
   Chain(..),
   valid,
   foldChain,
+  chainToList,
 
   -- ** Block re-exports
   HasHeader(..),
@@ -83,6 +84,10 @@ infixl 5 :>
 foldChain :: (a -> b -> a) -> a -> Chain b -> a
 foldChain _blk gen Genesis  = gen
 foldChain  blk gen (c :> b) = blk (foldChain blk gen c) b
+
+-- | Make a list from a 'Chain', in newest-to-oldest order.
+chainToList :: Chain block -> [block]
+chainToList = foldChain (flip (:)) []
 
 prettyPrintChain :: String -> (block -> String) -> Chain block -> String
 prettyPrintChain nl ppBlock = foldChain (\s b -> s ++ nl ++ "    " ++ ppBlock b) "Genesis"

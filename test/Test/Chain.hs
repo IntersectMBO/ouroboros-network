@@ -11,6 +11,7 @@ module Test.Chain
   , mkRollbackPoint
   , genBlockChain
   , genHeaderChain
+  , genNonNegative
   ) where
 
 import qualified Data.List as L

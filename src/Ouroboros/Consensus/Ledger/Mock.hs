@@ -156,12 +156,8 @@ data SimpleHeader p c = SimpleHeader {
     }
   deriving (Generic)
 
-deriving instance ( SimpleBlockCrypto c
-                  , Show (OuroborosPayload p (SimplePreHeader p c))
-                  ) => Show (SimpleHeader p c)
-deriving instance ( SimpleBlockCrypto c
-                  , Eq (OuroborosPayload p (SimplePreHeader p c))
-                  ) => Eq (SimpleHeader p c)
+deriving instance (SimpleBlockCrypto c, OuroborosTag p) => Show (SimpleHeader p c)
+deriving instance (SimpleBlockCrypto c, OuroborosTag p) => Eq   (SimpleHeader p c)
 
 -- | The preheader is the header without the ouroboros protocol specific payload
 --
@@ -182,28 +178,14 @@ data SimpleBody = SimpleBody { getSimpleBody :: Set Tx }
 data SimpleBlock p c = SimpleBlock {
       simpleHeader :: SimpleHeader p c
     , simpleBody   :: SimpleBody
-    } deriving (Generic)
-
-deriving instance ( SimpleBlockCrypto c
-                  , Show (OuroborosPayload p (SimplePreHeader p c))
-                  ) => Show (SimpleBlock p c)
-deriving instance ( SimpleBlockCrypto c
-                  , Eq (OuroborosPayload p (SimplePreHeader p c))
-                  ) => Eq (SimpleBlock p c)
+    }
+  deriving (Generic, Show, Eq)
 
 -- TODO: Write a proper condensed instance.
-instance ( SimpleBlockCrypto c
-         , Show (OuroborosPayload p (SimplePreHeader p c))
-         )
-        => Condense (SimpleBlock p c) where
+instance (SimpleBlockCrypto c, OuroborosTag p) => Condense (SimpleBlock p c) where
   condense b = show b
 
-instance SimpleBlockCrypto c => StandardHash (SimpleHeader p c)
-instance SimpleBlockCrypto c => StandardHash (SimpleBlock  p c)
-
-instance ( SimpleBlockCrypto c
-         , Serialise (OuroborosPayload p (SimplePreHeader p c))
-         ) => HasHeader (SimpleHeader p c) where
+instance (SimpleBlockCrypto c, OuroborosTag p) => HasHeader (SimpleHeader p c) where
   type HeaderHash (SimpleHeader p c) = Hash (SimpleBlockHash c) (SimpleHeader p c)
 
   blockHash      = hash
@@ -213,9 +195,7 @@ instance ( SimpleBlockCrypto c
 
   blockInvariant _ = True
 
-instance ( SimpleBlockCrypto c
-         , Serialise (OuroborosPayload p (SimplePreHeader p c))
-         ) => HasHeader (SimpleBlock p c) where
+instance (SimpleBlockCrypto c, OuroborosTag p) => HasHeader (SimpleBlock p c) where
   type HeaderHash (SimpleBlock p c) = Hash (SimpleBlockHash c) (SimpleHeader p c)
 
   blockHash      = blockHash . simpleHeader
@@ -227,6 +207,9 @@ instance ( SimpleBlockCrypto c
        blockInvariant simpleHeader
     && hash simpleBody == headerBodyHash (headerPreHeader simpleHeader)
 
+instance SimpleBlockCrypto c => StandardHash (SimpleHeader p c)
+instance SimpleBlockCrypto c => StandardHash (SimpleBlock  p c)
+
 {-------------------------------------------------------------------------------
   Creating blocks
 -------------------------------------------------------------------------------}
@@ -236,7 +219,6 @@ forgeBlock :: forall m p c.
               , MonadRandom m
               , OuroborosTag p
               , SimpleBlockCrypto c
-              , Serialise (OuroborosPayload p (SimplePreHeader p c))
               )
            => Slot                            -- ^ Current slot
            -> BlockNo                         -- ^ Current block number
@@ -290,15 +272,8 @@ deriving instance OuroborosTag p => Show (LedgerState (SimpleBlock p c))
 -------------------------------------------------------------------------------}
 
 instance Serialise Tx
-
 instance Serialise SimpleBody
 
-instance ( SimpleBlockCrypto c
-         , Serialise (OuroborosPayload p (SimplePreHeader p c))
-         ) => Serialise (SimpleHeader p c)
-instance ( SimpleBlockCrypto c
-         , Serialise (OuroborosPayload p (SimplePreHeader p c))
-         ) => Serialise (SimplePreHeader p c)
-instance ( SimpleBlockCrypto c
-         , Serialise (OuroborosPayload p (SimplePreHeader p c))
-         ) => Serialise (SimpleBlock p c)
+instance (SimpleBlockCrypto c, OuroborosTag p) => Serialise (SimpleHeader    p c)
+instance (SimpleBlockCrypto c, OuroborosTag p) => Serialise (SimplePreHeader p c)
+instance (SimpleBlockCrypto c, OuroborosTag p) => Serialise (SimpleBlock     p c)

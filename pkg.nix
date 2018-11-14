@@ -1,8 +1,8 @@
 { mkDerivation, aeson, array, base, base16-bytestring, bytestring, cborg
 , clock, containers, cryptonite, fingertree, free, hashable, memory, mtl
-, process, psqueues, QuickCheck, random , semigroups , stdenv, stm, serialise
+, network, process, psqueues, QuickCheck, random, semigroups, stdenv, stm, serialise
 , streaming, string-conv, tasty, tasty-quickcheck , text , transformers
-, unliftio, void, nixpkgs
+, typed-transitions , unliftio, void, nixpkgs
 }:
 mkDerivation {
   pname = "ouroboros-network";
@@ -11,9 +11,9 @@ mkDerivation {
     [ ".hs" "LICENSE" "ChangeLog.md" "ouroboros-network.cabal" "cabal.project" ];
   libraryHaskellDepends = [
     array aeson base base16-bytestring bytestring cborg clock containers
-    cryptonite fingertree free hashable memory mtl process psqueues QuickCheck
-    random semigroups serialise stm streaming string-conv tasty
-    tasty-quickcheck text transformers unliftio void
+    cryptonite fingertree free hashable memory mtl network psqueues process
+    psqueues QuickCheck random semigroups serialise stm streaming string-conv
+    tasty tasty-quickcheck text transformers typed-transitions unliftio void
   ];
   testHaskellDepends = [
     array base bytestring cborg clock containers

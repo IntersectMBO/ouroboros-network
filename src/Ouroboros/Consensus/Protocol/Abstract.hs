@@ -4,6 +4,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE KindSignatures             #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE QuantifiedConstraints      #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
@@ -33,7 +34,11 @@ import           Ouroboros.Network.Serialise (Serialise)
 --
 -- This class encodes the part that is independent from any particular
 -- block representation.
-class Show (OuroborosLedgerState p) => OuroborosTag (p :: *) where
+class ( Show (OuroborosLedgerState p)
+      , forall ph. Show      ph => Show      (OuroborosPayload p ph)
+      , forall ph. Eq        ph => Eq        (OuroborosPayload p ph)
+      , forall ph. Serialise ph => Serialise (OuroborosPayload p ph)
+      ) => OuroborosTag (p :: *) where
   -- | The protocol specific part that should included in the block
   --
   -- The type argument is the type of the block header /without/ the

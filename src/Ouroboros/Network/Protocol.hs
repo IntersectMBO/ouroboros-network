@@ -124,8 +124,11 @@ consumerSideProtocol1 ConsumerHandlers{..} send recv = do
   handleChainUpdate  MsgIntersectUnchanged   = fail $ "protocol error: MsgIntersectUnchanged"
 
 
--- |
---
+-- | Producer side of the chain following protocol.
+-- It awaits and serves requests from the consumer side: next or set head.
+-- These are backed by the 'ProducerHandlers' parameter.
+-- The other two parameter are for sending and receiving messages to/from the
+-- consumer. This producer never terminates.
 producerSideProtocol1
   :: forall block m r.
      Monad m

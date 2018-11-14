@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving  #-}
 {-# LANGUAGE TypeFamilies        #-}
 
 -- | Abstract Verifiable Random Functions.
@@ -44,6 +45,9 @@ data CertifiedVRF v a = CertifiedVRF {
     , certifiedProof   :: CertVRF v
     }
   deriving (Generic)
+
+deriving instance VRFAlgorithm v => Show (CertifiedVRF v a)
+deriving instance VRFAlgorithm v => Eq   (CertifiedVRF v a)
 
 instance VRFAlgorithm v => Serialise (CertifiedVRF v a) where
   -- use generic instance for now

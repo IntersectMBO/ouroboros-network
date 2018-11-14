@@ -19,20 +19,20 @@ import           LedgerState
 import           Mock.Mempool (Mempool, collect)
 
 
-forkCoreNode :: forall m p c. ( Mock.SimpleBlockCrypto c
-                  , Serialise (OuroborosPayload p (Mock.SimplePreHeader p c))
-                  , MonadSTM m
-                  , MonadTimer m
-                  , MonadFork m
-                  , MonadIO m
-                  , RunOuroboros p DemoLedgerState
-                  )
-               => DemoLedgerState
-               -> OuroborosState p
-               -> TVar m (Mempool Mock.Tx)
-               -> TVar m (ChainProducerState (Mock.SimpleBlock p c))
-               -> Duration (Time m)
-               -> m ()
+forkCoreNode :: forall m p c.
+                ( Mock.SimpleBlockCrypto c
+                , MonadSTM m
+                , MonadTimer m
+                , MonadFork m
+                , MonadIO m
+                , RunOuroboros p DemoLedgerState
+                )
+             => DemoLedgerState
+             -> OuroborosState p
+             -> TVar m (Mempool Mock.Tx)
+             -> TVar m (ChainProducerState (Mock.SimpleBlock p c))
+             -> Duration (Time m)
+             -> m ()
 forkCoreNode initLedger protocolState mempoolVar varCPS slotDuration = do
     ledgerVar <- atomically $ newTVar initLedger
     slotVar   <- atomically $ newTVar 1
