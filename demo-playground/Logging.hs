@@ -9,6 +9,9 @@
 
 module Logging (
     LogEvent -- opaque
+  , LoggerHandler(..)
+  , addDetailedLogging
+  , addSimpleLogging
   , loggerConsumer
   , showNetworkTraffic
   ) where
@@ -34,7 +37,8 @@ data LogEvent = LogEvent {
 showNetworkTraffic :: TBQueue LogEvent -> IO ()
 showNetworkTraffic q = forever $ do
     LogEvent{..} <- atomically $ readTBQueue q
-    putStrLn $ "[conv_with:" <> show sender <> "] " <> msg
+    -- Add an extra newline to help readability.
+    putStrLn $ "[conv_with:" <> show sender <> "] " <> msg <> "\n"
 
 instance Condense BlockHeader where
     condense BlockHeader{..} =
@@ -43,41 +47,85 @@ instance Condense BlockHeader where
                 <> condense headerBlockNo
                 <> "}"
 
+data LoggerHandler block = LoggerHandler {
+    loggingQueue :: TBQueue LogEvent
+  , chainVar     :: TVar (Chain block)
+  , ourProducer  :: NodeId
+  }
+
 -- | Add logging to the example consumer
-loggerConsumer :: forall block. (Condense [block], Condense block, HasHeader block)
-               => TBQueue LogEvent
-               -> TVar (Chain block)
-               -> NodeId
+loggerConsumer :: forall block. ( Condense [block]
+                                , Condense block
+                                , HasHeader block
+                                )
+               => LoggerHandler block
                -> ConsumerHandlers block IO
-loggerConsumer q chainvar ourProducer =
-    addLogging $ exampleConsumer chainvar
+loggerConsumer handler =
+    addDetailedLogging handler $ exampleConsumer (chainVar handler)
+
+addDetailedLogging :: ( HasHeader block
+                      , Condense block
+                      , Condense [block]
+                      )
+                   => LoggerHandler block
+                   -> ConsumerHandlers block IO
+                   -> ConsumerHandlers block IO
+addDetailedLogging hdl@LoggerHandler{..} c = ConsumerHandlers {
+      getChainPoints = do
+        pts <- getChainPoints c
+        logMsg hdl $ "getChainPoints, sending " <> show pts <> " to " <> show ourProducer
+        return pts
+
+    , addBlock = \b -> do
+        logMsg hdl $ "Received " <> condense b <> " from " <> show ourProducer
+        addBlock c b
+        logChain hdl
+
+    , rollbackTo = \p -> do
+        logMsg hdl $ "Rolling back to " <> show p
+        rollbackTo c p
+        logChain hdl
+    }
+
+addSimpleLogging :: ( HasHeader block
+                    , Condense block
+                    , Condense [block]
+                    )
+                 => LoggerHandler block
+                 -> ConsumerHandlers block IO
+                 -> ConsumerHandlers block IO
+addSimpleLogging hdl@LoggerHandler{..} c = ConsumerHandlers {
+      getChainPoints = do
+        pts <- getChainPoints c
+        logMsg hdl "GetChainPoints"
+        return pts
+
+    , addBlock = \b -> do
+        logMsg hdl $ "AddBlock: " <> condense b
+        addBlock c b
+
+    , rollbackTo = \p -> do
+        logMsg hdl $ "Rollback: " <> condensedPoint p
+        rollbackTo c p
+    }
   where
-    addLogging :: ConsumerHandlers block IO -> ConsumerHandlers block IO
-    addLogging c = ConsumerHandlers {
-          getChainPoints = do
-            pts <- getChainPoints c
-            logMsg $ "getChainPoints, sending " <> show pts <> " to " <> show ourProducer
-            return pts
+      condensedPoint :: HasHeader block => Chain.Point block -> String
+      condensedPoint (Chain.Point s h) = "P["
+                                      <> show (getSlot s)
+                                      <> ","
+                                      <> show h <> "]"
 
-        , addBlock = \b -> do
-            logMsg $ "Received " <> condense b <> " from " <> show ourProducer
-            addBlock c b
-            logChain
+logChain :: ( Condense block
+            , Condense [block]
+            ) => LoggerHandler block -> IO ()
+logChain LoggerHandler{..} = atomically $ do
+    chain <- readTVar chainVar
+    let m = "Current chain candidate: " <> condense (Chain.toOldestFirst chain)
+    writeTBQueue loggingQueue $ LogEvent m ourProducer
 
-        , rollbackTo = \p -> do
-            logMsg $ "Rolling back to " <> show p
-            rollbackTo c p
-            logChain
-        }
-
-    logChain :: IO ()
-    logChain = atomically $ do
-        chain <- readTVar chainvar
-        let m = "Current chain candidate: " <> condense (Chain.toOldestFirst chain)
-        writeTBQueue q $ LogEvent m ourProducer
-
-    logMsg :: String -> IO ()
-    logMsg m = atomically $ writeTBQueue q $ LogEvent m ourProducer
+logMsg :: LoggerHandler block -> String -> IO ()
+logMsg LoggerHandler{..} m = atomically $
+    writeTBQueue loggingQueue $ LogEvent m ourProducer
 
 {-------------------------------------------------------------------------------
   Orphans

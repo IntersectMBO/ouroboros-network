@@ -1,6 +1,6 @@
-{ compiler ? "ghc843"
-, haddock ? true
-, test ? true
+{ compiler   ? "ghc862"
+, haddock    ? true
+, test       ? true
 , benchmarks ? false
 }:
 with builtins;

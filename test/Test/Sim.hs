@@ -10,6 +10,7 @@ module Test.Sim
 import           Control.Monad
 import           Control.Monad.ST.Lazy (runST)
 import           Data.Array
+import           Data.Fixed (Fixed (..), Micro)
 import           Data.Graph
 import           Data.List (sortBy)
 
@@ -106,33 +107,31 @@ arbitraryAcyclicGraph genNRanks genNPerRank edgeChance = do
     pick :: Float -> Gen Bool
     pick chance = (< chance) <$> choose (0,1)
 
-newtype TestRationals = TestRationals [Rational]
+newtype TestMicro = TestMicro [Micro]
   deriving Show
 
 -- |
--- Arbitrary non negative rational numbers with a high probability of
+-- Arbitrary non negative micro numbers with a high probability of
 -- repetitions.
-instance Arbitrary TestRationals where
-  arbitrary = sized $ \n -> TestRationals <$> genN n []
+instance Arbitrary TestMicro where
+  arbitrary = sized $ \n -> TestMicro <$> genN n []
     where
-      genN :: Int -> [Rational] -> Gen [Rational]
+      genN :: Int -> [Micro] -> Gen [Micro]
       genN 0 rs = return rs
       genN n [] = do
-        r <- genPositiveRational
+        r <- genPositiveMicro
         genN (n - 1) [r]
       genN n rs = do
         r <- frequency
           [ (2, elements rs)
-          , (1, genPositiveRational)
+          , (1, genPositiveMicro)
           ]
         genN (n - 1) (r : rs)
 
-      genPositiveRational :: Gen Rational
-      genPositiveRational = do
-        Positive (n :: Int) <- arbitrary
-        Positive (d :: Int) <- arbitrary
-        return $ toRational n / toRational d
-  shrink (TestRationals rs) = [ TestRationals rs' | rs' <- shrinkList (const []) rs ]
+      genPositiveMicro :: Gen Micro
+      genPositiveMicro = MkFixed . getPositive <$> arbitrary
+
+  shrink (TestMicro rs) = [ TestMicro rs' | rs' <- shrinkList (const []) rs ]
 
 test_timers :: forall m n.
                ( MonadFork m
@@ -163,7 +162,7 @@ test_timers xs =
     experiment p = do
       tvars <- forM (zip xs [0..]) $ \(t, idx) -> do
         v <- atomically $ newTVar False
-        timer t $ do
+        fork $ threadDelay t >> do
           probeOutput p (t, idx)
           atomically $ writeTVar v True
         return v
@@ -178,8 +177,8 @@ test_timers xs =
          -- timers should fire in the right order
       .&&. (sortBy (\(_, a) (_, a') -> compare a a') tr === tr)
 
-prop_timers_ST :: TestRationals -> Property
-prop_timers_ST (TestRationals xs) =
+prop_timers_ST :: TestMicro -> Property
+prop_timers_ST (TestMicro xs) =
   let ds = map Sim.VTimeDuration xs
   in runST $ test_timers ds
 
@@ -189,6 +188,8 @@ prop_timers_IO = ioProperty . test_timers . map ((*100) . getPositive)
 test_fork_order :: forall m n.
                    ( MonadFork m
                    , MonadSTM m
+                   , MonadTimer m
+                   , MonadProbe m
                    , MonadRunProbe m n
                    )
                 => Positive Int

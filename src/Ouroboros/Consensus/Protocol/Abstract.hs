@@ -1,8 +1,10 @@
+{-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE FunctionalDependencies     #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE KindSignatures             #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE QuantifiedConstraints      #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
@@ -32,7 +34,11 @@ import           Ouroboros.Network.Serialise (Serialise)
 --
 -- This class encodes the part that is independent from any particular
 -- block representation.
-class OuroborosTag (p :: *) where
+class ( Show (OuroborosLedgerState p)
+      , forall ph. Show      ph => Show      (OuroborosPayload p ph)
+      , forall ph. Eq        ph => Eq        (OuroborosPayload p ph)
+      , forall ph. Serialise ph => Serialise (OuroborosPayload p ph)
+      ) => OuroborosTag (p :: *) where
   -- | The protocol specific part that should included in the block
   --
   -- The type argument is the type of the block header /without/ the
@@ -45,11 +51,21 @@ class OuroborosTag (p :: *) where
   -- | Evidence that a node is the leader
   data family ProofIsLeader p :: *
 
+  -- | Protocol-specific part of the ledger state
+  data family OuroborosLedgerState p :: *
+
   -- | Construct the ouroboros-specific payload of a block
   --
   -- Gets the proof that we are the leader and the preheader as arguments.
   mkOuroborosPayload :: (MonadOuroborosState p m, MonadRandom m, Serialise ph)
                      => ProofIsLeader p -> ph -> m (OuroborosPayload p ph)
+
+  applyOuroborosLedgerState :: OuroborosPayload p ph
+                            -> OuroborosLedgerState p
+                            -> OuroborosLedgerState p
+
+  -- TODO: We need the dual of 'applyOuroborosLedgerState' for rollbacks.
+  -- rollbackOuroborosLedgerState :: ...
 
 -- | Interaction between the Ouroboros protocol and the ledger state
 class OuroborosTag p => RunOuroboros p l where

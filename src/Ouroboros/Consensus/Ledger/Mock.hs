@@ -9,7 +9,7 @@
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
-module Ouroboros.Consensus.Test.MockLedger (
+module Ouroboros.Consensus.Ledger.Mock (
     -- * Basic definitions
     Tx(..)
   , TxIn
@@ -28,6 +28,8 @@ module Ouroboros.Consensus.Test.MockLedger (
   , SimplePreHeader(..)
   , SimpleBody(..)
   , forgeBlock
+    -- * Updating the Ledger state
+  , LedgerState(..)
   ) where
 
 import           Codec.Serialise
@@ -41,12 +43,14 @@ import           GHC.Generics (Generic)
 
 import           Ouroboros.Consensus.Crypto.Hash.Class
 import           Ouroboros.Consensus.Crypto.Hash.MD5 (MD5)
+import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.HList (All, HList)
 import qualified Ouroboros.Consensus.Util.HList as HList
 import           Ouroboros.Network.Block hiding (Hash)
 import qualified Ouroboros.Network.Block as Network
+import           Ouroboros.Network.Chain (Chain, toOldestFirst)
 
 {-------------------------------------------------------------------------------
   Basic definitions
@@ -101,6 +105,24 @@ instance HasUtxo a => HasUtxo [a] where
   confirmed  = foldr (Set.union . confirmed) Set.empty
   updateUtxo = repeatedly updateUtxo
 
+instance HasUtxo SimpleBody where
+  txIns      = txIns      . getSimpleBody
+  txOuts     = txOuts     . getSimpleBody
+  updateUtxo = updateUtxo . getSimpleBody
+  confirmed  = confirmed  . getSimpleBody
+
+instance HasUtxo (SimpleBlock p c) where
+  txIns      = txIns      . simpleBody
+  txOuts     = txOuts     . simpleBody
+  updateUtxo = updateUtxo . simpleBody
+  confirmed  = confirmed  . simpleBody
+
+instance HasUtxo a => HasUtxo (Chain a) where
+  txIns      = txIns      . toOldestFirst
+  txOuts     = txOuts     . toOldestFirst
+  updateUtxo = updateUtxo . toOldestFirst
+  confirmed  = confirmed  . toOldestFirst
+
 instance All HasUtxo as => HasUtxo (HList as) where
   txIns      = HList.foldr (Proxy @HasUtxo) (Set.union . txIns)     Set.empty
   txOuts     = HList.foldr (Proxy @HasUtxo) (Map.union . txOuts)    Map.empty
@@ -134,12 +156,8 @@ data SimpleHeader p c = SimpleHeader {
     }
   deriving (Generic)
 
-deriving instance ( SimpleBlockCrypto c
-                  , Show (OuroborosPayload p (SimplePreHeader p c))
-                  ) => Show (SimpleHeader p c)
-deriving instance ( SimpleBlockCrypto c
-                  , Eq (OuroborosPayload p (SimplePreHeader p c))
-                  ) => Eq (SimpleHeader p c)
+deriving instance (SimpleBlockCrypto c, OuroborosTag p) => Show (SimpleHeader p c)
+deriving instance (SimpleBlockCrypto c, OuroborosTag p) => Eq   (SimpleHeader p c)
 
 -- | The preheader is the header without the ouroboros protocol specific payload
 --
@@ -154,27 +172,20 @@ data SimplePreHeader p c = SimplePreHeader {
     }
   deriving (Generic, Show, Eq)
 
-data SimpleBody = SimpleBody (Set Tx)
+data SimpleBody = SimpleBody { getSimpleBody :: Set Tx }
   deriving (Generic, Show, Eq)
 
 data SimpleBlock p c = SimpleBlock {
       simpleHeader :: SimpleHeader p c
     , simpleBody   :: SimpleBody
     }
+  deriving (Generic, Show, Eq)
 
-deriving instance ( SimpleBlockCrypto c
-                  , Show (OuroborosPayload p (SimplePreHeader p c))
-                  ) => Show (SimpleBlock p c)
-deriving instance ( SimpleBlockCrypto c
-                  , Eq (OuroborosPayload p (SimplePreHeader p c))
-                  ) => Eq (SimpleBlock p c)
+-- TODO: Write a proper condensed instance.
+instance (SimpleBlockCrypto c, OuroborosTag p) => Condense (SimpleBlock p c) where
+  condense b = show b
 
-instance SimpleBlockCrypto c => StandardHash (SimpleHeader p c)
-instance SimpleBlockCrypto c => StandardHash (SimpleBlock  p c)
-
-instance ( SimpleBlockCrypto c
-         , Serialise (OuroborosPayload p (SimplePreHeader p c))
-         ) => HasHeader (SimpleHeader p c) where
+instance (SimpleBlockCrypto c, OuroborosTag p) => HasHeader (SimpleHeader p c) where
   type HeaderHash (SimpleHeader p c) = Hash (SimpleBlockHash c) (SimpleHeader p c)
 
   blockHash      = hash
@@ -184,9 +195,7 @@ instance ( SimpleBlockCrypto c
 
   blockInvariant _ = True
 
-instance ( SimpleBlockCrypto c
-         , Serialise (OuroborosPayload p (SimplePreHeader p c))
-         ) => HasHeader (SimpleBlock p c) where
+instance (SimpleBlockCrypto c, OuroborosTag p) => HasHeader (SimpleBlock p c) where
   type HeaderHash (SimpleBlock p c) = Hash (SimpleBlockHash c) (SimpleHeader p c)
 
   blockHash      = blockHash . simpleHeader
@@ -198,6 +207,9 @@ instance ( SimpleBlockCrypto c
        blockInvariant simpleHeader
     && hash simpleBody == headerBodyHash (headerPreHeader simpleHeader)
 
+instance SimpleBlockCrypto c => StandardHash (SimpleHeader p c)
+instance SimpleBlockCrypto c => StandardHash (SimpleBlock  p c)
+
 {-------------------------------------------------------------------------------
   Creating blocks
 -------------------------------------------------------------------------------}
@@ -207,14 +219,14 @@ forgeBlock :: forall m p c.
               , MonadRandom m
               , OuroborosTag p
               , SimpleBlockCrypto c
-              , Serialise (OuroborosPayload p (SimplePreHeader p c))
               )
            => Slot                            -- ^ Current slot
            -> BlockNo                         -- ^ Current block number
            -> Network.Hash (SimpleHeader p c) -- ^ Previous hash
+           -> Set Tx                          -- ^ Txs to add in the block
            -> ProofIsLeader p
            -> m (SimpleBlock p c)
-forgeBlock curSlot curNo prevHash proof = do
+forgeBlock curSlot curNo prevHash txs proof = do
     ouroborosPayload <- mkOuroborosPayload proof preHeader
     return $ SimpleBlock {
         simpleHeader = SimpleHeader preHeader ouroborosPayload
@@ -222,7 +234,7 @@ forgeBlock curSlot curNo prevHash proof = do
       }
   where
     body :: SimpleBody
-    body = SimpleBody mempty -- TODO: this is where Alfredo's stuff comes in
+    body = SimpleBody txs
 
     preHeader :: SimplePreHeader p c
     preHeader = SimplePreHeader {
@@ -233,16 +245,35 @@ forgeBlock curSlot curNo prevHash proof = do
         }
 
 {-------------------------------------------------------------------------------
+  Updating the Ledger
+-------------------------------------------------------------------------------}
+
+instance OuroborosTag p => UpdateLedger (SimpleBlock p c) where
+  data LedgerState (SimpleBlock p c) = SimpleLedgerState {
+        simpleUtxo :: Utxo
+      , simpleProtocolState :: OuroborosLedgerState p
+      }
+
+  -- Apply a block to the ledger state
+  --
+  -- TODO: We need to support rollback, so this probably won't be a pure
+  -- function but rather something that lives in a monad with some actions
+  -- that we can compute a "running diff" so that we can go back in time.
+  applyLedgerState (SimpleBlock hdr (SimpleBody txs)) sls = SimpleLedgerState {
+        simpleUtxo = updateUtxo txs (simpleUtxo sls)
+      , simpleProtocolState = applyOuroborosLedgerState (headerOuroboros hdr)
+                                                        (simpleProtocolState sls)
+      }
+
+deriving instance OuroborosTag p => Show (LedgerState (SimpleBlock p c))
+
+{-------------------------------------------------------------------------------
   Serialisation
 -------------------------------------------------------------------------------}
 
 instance Serialise Tx
-
 instance Serialise SimpleBody
 
-instance ( SimpleBlockCrypto c
-         , Serialise (OuroborosPayload p (SimplePreHeader p c))
-         ) => Serialise (SimpleHeader p c)
-instance ( SimpleBlockCrypto c
-         , Serialise (OuroborosPayload p (SimplePreHeader p c))
-         ) => Serialise (SimplePreHeader p c)
+instance (SimpleBlockCrypto c, OuroborosTag p) => Serialise (SimpleHeader    p c)
+instance (SimpleBlockCrypto c, OuroborosTag p) => Serialise (SimplePreHeader p c)
+instance (SimpleBlockCrypto c, OuroborosTag p) => Serialise (SimpleBlock     p c)

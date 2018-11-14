@@ -19,6 +19,7 @@ module Ouroboros.Consensus.Protocol.Test (
   , TestProtocolStateView(..)
     -- * Constructors
   , OuroborosState(..)
+  , OuroborosLedgerState(..)
   ) where
 
 import           GHC.Generics (Generic)
@@ -33,7 +34,8 @@ data TestProtocol p
 
 instance OuroborosTag p => OuroborosTag (TestProtocol p) where
   -- The state is unchanged
-  newtype OuroborosState (TestProtocol p) = TestState (OuroborosState p)
+  newtype OuroborosState (TestProtocol p)       = TestState (OuroborosState p)
+  newtype OuroborosLedgerState (TestProtocol p) = TestLedgerState (OuroborosLedgerState p)
 
   -- Payload is the standard payload plus additional fields we want to test for
   data OuroborosPayload (TestProtocol p) ph = TestPayload {
@@ -56,12 +58,14 @@ instance OuroborosTag p => OuroborosTag (TestProtocol p) where
         , testPayloadStake = testProofStake
         }
 
-deriving instance Show (OuroborosPayload p ph)
-               => Show (OuroborosPayload (TestProtocol p) ph)
-deriving instance Eq (OuroborosPayload p ph)
-               => Eq (OuroborosPayload (TestProtocol p) ph)
+  applyOuroborosLedgerState (TestPayload std _) (TestLedgerState ls) =
+      TestLedgerState (applyOuroborosLedgerState std ls)
 
-instance Serialise (OuroborosPayload p ph)
+deriving instance (OuroborosTag p)          => Show (OuroborosLedgerState (TestProtocol p))
+deriving instance (OuroborosTag p, Show ph) => Show (OuroborosPayload (TestProtocol p) ph)
+deriving instance (OuroborosTag p, Eq   ph) => Eq   (OuroborosPayload (TestProtocol p) ph)
+
+instance (OuroborosTag p, Serialise ph)
       => Serialise (OuroborosPayload (TestProtocol p) ph) where
   -- use generic instance
 

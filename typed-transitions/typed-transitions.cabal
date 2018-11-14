@@ -45,7 +45,7 @@ library
                      , TypeOperators
                      , BangPatterns
                      , StandaloneDeriving
-  build-depends:       base >=4.9 && <4.12
+  build-depends:       base >=4.9 && <4.13
                      , transformers >=0.5 && <0.6
                      , free >=5.1 && <5.2
                      , text
@@ -61,7 +61,7 @@ test-suite test-typed-transitions
   hs-source-dirs: test
   other-modules:    Test.Protocol.Codec
                   , Test.Protocol.Channel
-  build-depends:    base >=4.9 && <4.12
+  build-depends:    base >=4.9 && <4.13
                   , async
                   , bytestring
                   , QuickCheck >=2.12 && <2.13
