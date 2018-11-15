@@ -11,6 +11,8 @@
 --
 module Ouroboros.Network.Protocol.ChainSync.Type where
 
+import Data.Typeable (Typeable)
+
 import Protocol.Core
 
 
@@ -35,6 +37,8 @@ data ChainSyncState where
 
   -- | Both the client and server are in the terminal state. They're done.
   StDone      :: ChainSyncState
+
+deriving instance Typeable ChainSyncState
 
 -- | Sub-cases of the 'StNext' state. This is needed since the server can
 -- either send one reply back, or two.
