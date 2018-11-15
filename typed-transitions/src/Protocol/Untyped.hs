@@ -5,6 +5,8 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE QuantifiedConstraints #-}
+
 
 -- | An view of the typed protocol where we forget the strong typing on the
 -- protocol state transitions and just retain the protocol actions.
@@ -43,7 +45,9 @@ asUntypedPeer :: forall p st
                         (from    :: st)
                         (to      :: st)
                         m a .
-                 Monad m
+                 ( Monad m
+                 , forall (t :: st). Typeable t
+                 )
               => Typed.Peer p msg (statusf from) (statust to) m a
               -> Peer msg m a
 
@@ -63,11 +67,7 @@ asUntypedPeer (Typed.PeerAwait k) =
 
 
 data SomeMessage (msg :: st -> st -> Type) where
-  -- | Must ensure Typeable here, because we can't do it at 'castTransition'.
-  -- That would require stating that every type in the state kind is
-  -- typeable. Quantified constraints could help, although a short attempt at
-  -- that did not work.
-  SomeMessage :: Typeable from => msg from to -> SomeMessage msg
+  SomeMessage :: msg from to -> SomeMessage msg
 
 
 data TransitionFrom msg from where
@@ -76,7 +76,8 @@ data TransitionFrom msg from where
 
 castTransition
   :: forall st (msg :: st -> st -> Type) (from :: st) .
-     ( Typeable from )
+     ( forall (t :: st). Typeable t
+     )
   => Proxy from
   -> SomeMessage msg
   -> TransitionFrom msg from
