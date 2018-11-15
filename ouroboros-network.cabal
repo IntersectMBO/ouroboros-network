@@ -76,6 +76,7 @@ library
                        Ouroboros.Network.Protocol.ChainSync.Direct
                        Ouroboros.Network.Protocol.ChainSync.Server
                        Ouroboros.Network.Protocol.ChainSync.Type
+                       Ouroboros.Network.Protocol.ChainSync.Encoding
   other-modules:
 -- Old experiments, not currently building:
 --                     Types
