@@ -78,11 +78,8 @@ library
                        Ouroboros.Network.Protocol.ChainSync.Type
                        Ouroboros.Network.Protocol.ChainSync.Encoding
   other-modules:
--- Old experiments, not currently building:
---                     Types
---                     ChainSelection
---                     ConsumerProtocolSTM
---                     Chain.Volatile,
+                       Ouroboros.Network.Pipe2
+                       Ouroboros.Network.ChainSyncExamples
   default-language:    Haskell2010
   other-extensions:    BangPatterns,
                        DataKinds,

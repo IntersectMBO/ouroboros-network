@@ -25,7 +25,7 @@ import           Ouroboros.Network.Protocol.ChainSync.Server
 -- this is not a realistic chain representation.
 --
 chainSyncClientExample :: forall header m stm a.
-                          (HasHeader header, MonadSTM m stm)
+                          (HasHeader header, MonadSTM m)
                        => TVar m (Chain header)
                        -> m (ChainSyncClient header (Point header) m a)
 chainSyncClientExample chainvar =
