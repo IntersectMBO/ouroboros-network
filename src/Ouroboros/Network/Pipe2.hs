@@ -7,7 +7,7 @@ import           Codec.Serialise.Class (Serialise)
 import qualified Codec.CBOR.Read as CBOR (DeserialiseFailure)
 import           Data.ByteString (ByteString)
 
-import           Ouroboros.Network.Protocol.Untyped
+import           Protocol.Untyped
 import           Ouroboros.Network.ByteChannel (ByteChannel)
 import           Ouroboros.Network.MsgChannel
 import           Ouroboros.Network.Codec

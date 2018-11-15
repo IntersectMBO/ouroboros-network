@@ -12,7 +12,7 @@
 --
 -- For execution, a conversion into the typed protocol is provided.
 --
-module Protocol.ChainSync.Client (
+module Ouroboros.Network.Protocol.ChainSync.Client (
       -- * Protocol type for the client
       -- | The protocol states from the point of view of the client.
       ChainSyncClient
@@ -25,7 +25,7 @@ module Protocol.ChainSync.Client (
     ) where
 
 import Protocol.Core
-import Protocol.ChainSync.Type
+import Ouroboros.Network.Protocol.ChainSync.Type
 
 
 -- | A chain sync protocol client, on top of some effect 'm'.

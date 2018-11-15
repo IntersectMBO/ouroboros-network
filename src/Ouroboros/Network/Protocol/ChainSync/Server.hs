@@ -12,7 +12,7 @@
 --
 -- For execution, a conversion into the typed protocol is provided.
 --
-module Protocol.ChainSync.Server  (
+module Ouroboros.Network.Protocol.ChainSync.Server  (
       -- * Protocol type for the server
       -- | The protocol states from the point of view of the server.
       ChainSyncServer
@@ -25,7 +25,7 @@ module Protocol.ChainSync.Server  (
     ) where
 
 import Protocol.Core
-import Protocol.ChainSync.Type
+import Ouroboros.Network.Protocol.ChainSync.Type
 
 
 -- | A chain sync protocol server, on top of some effect 'm'.

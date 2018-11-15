@@ -11,7 +11,7 @@
 --
 -- This view is useful for executing protocols.
 --
-module Ouroboros.Network.Protocol.Untyped where
+module Protocol.Untyped where
 
 import qualified Protocol.Core as Typed
 
