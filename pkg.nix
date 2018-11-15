@@ -1,4 +1,4 @@
-{ mkDerivation, aeson, async, array, base, base16-bytestring, binary,
+{ mkDerivation, aeson, async, array, base, base16-bytestring, binary
 , bytestring , cborg , clock, containers, cryptonite, fingertree, free
 , hashable, memory, mtl, network, process, psqueues, QuickCheck, random
 , semigroups , stdenv, stm, serialise , string-conv, tasty
