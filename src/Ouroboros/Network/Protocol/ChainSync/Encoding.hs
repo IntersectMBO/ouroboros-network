@@ -4,8 +4,8 @@
 
 module Ouroboros.Network.Protocol.ChainSync.Encoding where
 
-import Ouroboros.Network.Protocol.ChainSync.Type
-import Ouroboros.Network.Protocol.Untyped (SomeMessage(..))
+import Protocol.ChainSync.Type
+import Protocol.Untyped (SomeMessage(..))
 
 import Data.Monoid ((<>))
 import Codec.CBOR.Encoding (Encoding, encodeListLen, encodeWord)

@@ -2,13 +2,14 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE StandaloneDeriving #-}
 
 -- | The type of the chain synchronisation protocol.
 --
 -- Since we are using a typed protocol framework this is in some sense /the/
 -- definition of the protocol: what is allowed and what is not allowed.
 --
-module Protocol.ChainSync.Type where
+module Ouroboros.Network.Protocol.ChainSync.Type where
 
 import Protocol.Core
 
