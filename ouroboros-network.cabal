@@ -63,6 +63,8 @@ library
                        Ouroboros.Network.MonadClass.MonadTimer
                        Ouroboros.Network.Node
                        Ouroboros.Network.Pipe
+                       Ouroboros.Network.Pipe2
+                       Ouroboros.Network.ChainSyncExamples
                        Ouroboros.Network.Protocol
                        Ouroboros.Network.ProtocolInterfaces
                        Ouroboros.Network.Serialise
