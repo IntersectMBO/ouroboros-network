@@ -3,14 +3,19 @@
 , test       ? true
 , benchmarks ? false
 }:
-with builtins;
 let
-  nixpkgs = import ./nix/nixpkgs.nix {};
-  default = import ./default.nix {inherit compiler haddock test;};
+  localLib = import ./lib.nix;
 in
-  {
-    ouroboros-network = if nixpkgs.lib.inNixShell
-      then default.ouroboros-network.env
-      else default.ouroboros-network;
-  }
+{ system ? builtins.currentSystem
+, config ? {}
+, pkgs ? localLib.pkgs
+}:
 
+let
+  localPackages = import ./. { inherit compiler; };
+  shell = localPackages.haskellPackages.shellFor {
+    packages = p: (map (x: p.${x}) localLib.localPkgList);
+    nativeBuildInputs = [ pkgs.cabal-install pkgs.haskellPackages.ghcid ];
+  };
+
+in shell
