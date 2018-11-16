@@ -40,9 +40,8 @@ in pkgs.lib.fix (jobsets: mapped // {
         all = x: map (system: x.${system}) supportedSystems;
       in
     [
-      (builtins.concatLists (map pkgs.lib.attrValues (all jobsets.ouroboros-network-tests)))
-      (all jobsets.ouroboros-network)
+      #(builtins.concatLists (map pkgs.lib.attrValues (all jobsets.ouroboros-network-tests)))
+      #(all jobsets.ouroboros-network)
     ];
   });
 })
-
