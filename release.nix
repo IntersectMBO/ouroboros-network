@@ -31,6 +31,7 @@ in pkgs.lib.fix (jobsets: mapped // {
   inherit (pkgs) cabal2nix;
   # the result of running every cardano test-suite on 64bit linux
   ouroboros-network-tests.x86_64-linux = makeTestRuns "x86_64-linux";
+  ouroboros-network-tests.x86_64-darwin = makeTestRuns "x86_64-darwin";
   # hydra will create a special aggregate job, that relies on all of these sub-jobs passing
   required = pkgs.lib.hydraJob (pkgs.releaseTools.aggregate {
     name = "ouroboros-network-required-checks";
@@ -40,8 +41,8 @@ in pkgs.lib.fix (jobsets: mapped // {
         all = x: map (system: x.${system}) supportedSystems;
       in
     [
-      #(builtins.concatLists (map pkgs.lib.attrValues (all jobsets.ouroboros-network-tests)))
-      #(all jobsets.ouroboros-network)
+      (builtins.concatLists (map pkgs.lib.attrValues (all jobsets.ouroboros-network-tests)))
+      jobsets.ouroboros-network
     ];
   });
 })
