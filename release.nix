@@ -13,7 +13,7 @@ in
 
 let
   inherit (pkgs) lib;
-  makeRelease = fun: platforms: builtins.mapAttrs (key: value: (fun value).${key}) platforms;
+  makeRelease = fun: platforms: lib.mapAttrs (key: value: (fun value).${key}) platforms;
   compilers = [ "ghc843" "ghc861" ];
   pkgs = import fixedNixpkgs { config = {}; };
   platforms = {
