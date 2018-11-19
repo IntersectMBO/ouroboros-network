@@ -24,7 +24,7 @@ import           Ouroboros.Network.Protocol.ChainSync.Server
 -- This is of course only useful in tests and reference implementations since
 -- this is not a realistic chain representation.
 --
-chainSyncClientExample :: forall header m stm a.
+chainSyncClientExample :: forall header m a.
                           (HasHeader header, MonadSTM m)
                        => TVar m (Chain header)
                        -> m (ChainSyncClient header (Point header) m a)
@@ -97,18 +97,20 @@ recentOffsets = [0,1,2,3,5,8,13,21,34,55,89,144,233,377,610,987,1597,2584]
 -- This is of course only useful in tests and reference implementations since
 -- this is not a realistic chain representation.
 --
-chainSyncServerExample :: forall header m stm a.
-                          (HasHeader header, MonadSTM m stm)
-                       => TVar m (ChainProducerState header)
+chainSyncServerExample :: forall header m a.
+                          (HasHeader header, MonadSTM m)
+                       => a
+                       -> TVar m (ChainProducerState header)
                        -> m (ChainSyncServer header (Point header) m a)
-chainSyncServerExample chainvar =
+chainSyncServerExample recvMsgDoneClient chainvar =
     idle <$> newReader
   where
     idle :: ReaderId -> ServerStIdle header (Point header) m a
     idle r =
       ServerStIdle {
         recvMsgRequestNext   = handleRequestNext r,
-        recvMsgFindIntersect = handleFindIntersect r
+        recvMsgFindIntersect = handleFindIntersect r,
+        recvMsgDoneClient
       }
 
     handleRequestNext :: ReaderId
