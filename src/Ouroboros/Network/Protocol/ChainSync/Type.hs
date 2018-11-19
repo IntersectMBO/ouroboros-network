@@ -119,12 +119,11 @@ data ChainSyncMessage header point from to where
   --
   -- The message also tells the consumer about the head point of the producer.
   --
-  MsgIntersectUnchanged ::          point -> ChainSyncMessage header point StIntersect StIdle
+  MsgIntersectUnchanged :: point -> ChainSyncMessage header point StIntersect StIdle
 
-  -- | The consumer or producer decided to terminate the protocol.  Termination
-  -- might happen at any point of the protocol.
+  -- | Terminating messages
   --
-  MsgDone :: ChainSyncMessage header point any StDone
+  MsgDone :: ChainSyncMessage header point StIdle StDone
 
 instance Show (ChainSyncMessage header point from to) where
   show MsgRequestNext          = "MsgRequestNext"
