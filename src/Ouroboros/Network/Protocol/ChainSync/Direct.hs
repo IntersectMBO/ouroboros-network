@@ -33,15 +33,10 @@ direct  ServerStIdle{recvMsgRequestNext}
       client' <- recvMsgRollBackward pIntersect pHead
       direct server' client'
 
-    directStNext (SendMsgDoneNext serverDone)
-                 ClientStNext{recvMsgDoneServer} =
-      return (serverDone, recvMsgDoneServer)
-
 direct  ServerStIdle{recvMsgFindIntersect}
        (Client.SendMsgFindIntersect points
           ClientStIntersect{recvMsgIntersectImproved,
-                            recvMsgIntersectUnchanged,
-                            recvMsgIntersectDone}) = do
+                            recvMsgIntersectUnchanged}) = do
     sIntersect <- recvMsgFindIntersect points
     case sIntersect of
       SendMsgIntersectImproved  pIntersect pHead server' -> do
@@ -51,9 +46,6 @@ direct  ServerStIdle{recvMsgFindIntersect}
       SendMsgIntersectUnchanged            pHead server' -> do
         client' <- recvMsgIntersectUnchanged pHead
         direct server' client'
-
-      SendMsgDoneIntersect serverDone ->
-        return (serverDone, recvMsgIntersectDone)
 
 direct ServerStIdle{recvMsgDoneClient}
        (Client.SendMsgDone clientDone) =
