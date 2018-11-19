@@ -24,14 +24,14 @@ import           Ouroboros.Network.Protocol.ChainSync.Server
 -- This is of course only useful in tests and reference implementations since
 -- this is not a realistic chain representation.
 --
-chainSyncClientExample :: forall header m stm a.
+chainSyncClientExample :: forall header m.
                           (HasHeader header, MonadSTM m)
                        => TVar m (Chain header)
-                       -> m (ChainSyncClient header (Point header) m a)
+                       -> m (ChainSyncClient header (Point header) m ())
 chainSyncClientExample chainvar =
     initialise <$> getChainPoints
   where
-    initialise :: [Point header] -> ClientStIdle header (Point header) m a
+    initialise :: [Point header] -> ClientStIdle header (Point header) m ()
     initialise points =
       SendMsgFindIntersect points $
       -- In this consumer example, we do not care about whether the server
@@ -43,10 +43,11 @@ chainSyncClientExample chainvar =
       --
       ClientStIntersect {
         recvMsgIntersectImproved  = \_ _ -> return requestNext,
-        recvMsgIntersectUnchanged = \  _ -> return requestNext
+        recvMsgIntersectUnchanged = \  _ -> return requestNext,
+        recvMsgIntersectDone      = ()
       }
 
-    requestNext :: ClientStIdle header (Point header) m a
+    requestNext :: ClientStIdle header (Point header) m ()
     requestNext =
       SendMsgRequestNext
         handleNext
@@ -54,7 +55,7 @@ chainSyncClientExample chainvar =
         -- something. In this example we don't take up that opportunity.
         (return handleNext)
 
-    handleNext :: ClientStNext header (Point header) m a
+    handleNext :: ClientStNext header (Point header) m ()
     handleNext =
       ClientStNext {
         recvMsgRollForward  = \header _pHead -> do
@@ -64,6 +65,7 @@ chainSyncClientExample chainvar =
       , recvMsgRollBackward = \pIntersect _pHead -> do
           rollback pIntersect
           return requestNext 
+      , recvMsgDoneServer   = ()
       }
 
     getChainPoints :: m [Point header]
@@ -97,23 +99,24 @@ recentOffsets = [0,1,2,3,5,8,13,21,34,55,89,144,233,377,610,987,1597,2584]
 -- This is of course only useful in tests and reference implementations since
 -- this is not a realistic chain representation.
 --
-chainSyncServerExample :: forall header m stm a.
-                          (HasHeader header, MonadSTM m stm)
+chainSyncServerExample :: forall header m.
+                          (HasHeader header, MonadSTM m)
                        => TVar m (ChainProducerState header)
-                       -> m (ChainSyncServer header (Point header) m a)
+                       -> m (ChainSyncServer header (Point header) m ())
 chainSyncServerExample chainvar =
     idle <$> newReader
   where
-    idle :: ReaderId -> ServerStIdle header (Point header) m a
+    idle :: ReaderId -> ServerStIdle header (Point header) m ()
     idle r =
       ServerStIdle {
         recvMsgRequestNext   = handleRequestNext r,
-        recvMsgFindIntersect = handleFindIntersect r
+        recvMsgFindIntersect = handleFindIntersect r,
+        recvMsgDoneClient    = ()
       }
 
     handleRequestNext :: ReaderId
-                      -> m (Either (ServerStNext header (Point header) m a)
-                                (m (ServerStNext header (Point header) m a)))
+                      -> m (Either (ServerStNext header (Point header) m ())
+                                (m (ServerStNext header (Point header) m ())))
     handleRequestNext r = do
       mupdate <- tryReadChainUpdate r
       case mupdate of
@@ -124,13 +127,13 @@ chainSyncServerExample chainvar =
 
     sendNext :: ReaderId
              -> ChainUpdate header
-             -> ServerStNext header (Point header) m a
+             -> ServerStNext header (Point header) m ()
     sendNext r (AddBlock b) = SendMsgRollForward  b undefined (idle r)
     sendNext r (RollBack p) = SendMsgRollBackward p undefined (idle r)
 
     handleFindIntersect :: ReaderId
                         -> [Point header]
-                        -> m (ServerStIntersect header (Point header) m a)
+                        -> m (ServerStIntersect header (Point header) m ())
     handleFindIntersect r points = do
       -- TODO: guard number of points
       -- Find the first point that is on our chain
