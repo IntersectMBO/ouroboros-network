@@ -139,7 +139,7 @@ test_simple_bft_convergence seed = do
     initLedgerState :: ExtLedgerState BlockUnderTest
     initLedgerState = ExtLedgerState {
           ledgerState         = SimpleLedgerState (utxo genesisTx)
-        , ouroborosChainState = ENCChainState $ TestChainState $ BftChainState
+        , ouroborosChainState = ()
         }
 
     nodeInit :: Map NodeId ( OuroborosNodeConfig ProtocolUnderTest
@@ -168,7 +168,7 @@ test_simple_bft_convergence seed = do
             }
 
         mkState :: Int -> OuroborosNodeState ProtocolUnderTest
-        mkState _ = ENCNodeState $ TestNodeState $ BftNodeState
+        mkState _ = ()
 
     isValid :: [(Time m, Map NodeId (Chain BlockUnderTest))] -> Property
     isValid trace = counterexample (show trace) $
@@ -234,12 +234,8 @@ instance HasOuroborosPayload (Bft BftMockCrypto) BlockUnderTest where
                           . simpleHeader
 
 instance ProtocolLedgerView BlockUnderTest where
-  protocolLedgerView (ENCNodeConfig _ cfg)
-                     (SimpleLedgerState u) = ENCLedgerView $
-      TestLedgerView {
-          testLedgerViewP     = BftLedgerView
-        , testLedgerViewStake = nodeStake cfg u
-        }
+  protocolLedgerView (ENCNodeConfig _ cfg) (SimpleLedgerState u) =
+      ((), nodeStake cfg u)
 
 {-------------------------------------------------------------------------------
   Infrastructure

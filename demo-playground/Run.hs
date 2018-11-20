@@ -106,7 +106,7 @@ handleSimpleNode (TopologyInfo myNodeId topologyFile) = do
              let nid           = case myNodeId of
                                    CoreId  n -> n
                                    RelayId n -> n
-             let protocolState = BftNodeState
+             let protocolState = ()
              let ledgerState   = Mock.SimpleLedgerState mempty
              let bftConfig     = BftNodeConfig {
                                      bftNodeId   = myNodeId
@@ -119,7 +119,7 @@ handleSimpleNode (TopologyInfo myNodeId topologyFile) = do
                                        ]
                                    }
              initLedger <- atomically $ newTVar $ DemoLedgerState {
-                 extLedgerState   = ExtLedgerState ledgerState BftChainState
+                 extLedgerState   = ExtLedgerState ledgerState ()
                , howManyRollbacks = 0
                , howManyAddBlocks = 0
                , numNodes         = numCoreNodes
@@ -178,7 +178,7 @@ handleSimpleNode (TopologyInfo myNodeId topologyFile) = do
             exampleProducer cps
 
 instance ProtocolLedgerView Block where
-  protocolLedgerView _ _ = BftLedgerView
+  protocolLedgerView _ _ = ()
 
 slotDuration :: Int
 slotDuration = 5 * 1000000

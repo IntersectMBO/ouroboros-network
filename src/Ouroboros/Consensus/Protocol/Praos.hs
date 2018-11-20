@@ -16,9 +16,8 @@ module Ouroboros.Consensus.Protocol.Praos (
   , PraosStandardCrypto
   , PraosMockCrypto
     -- * Type instances
-  , OuroborosNodeState(..)
-  , OuroborosChainState(..)
-  , OuroborosLedgerView(..)
+  , OuroborosNodeConfig(..)
+  , OuroborosPayload(..)
   ) where
 
 import           GHC.Generics (Generic)
@@ -56,6 +55,27 @@ deriving instance PraosCrypto c => Eq   (PraosExtraFields c)
 instance VRFAlgorithm (PraosVRF c) => Serialise (PraosExtraFields c)
   -- use Generic instance for now
 
+data PraosNodeState c = PraosNodeState {
+      praosNodeId       :: Int
+    , praosSignKeyDSIGN :: SignKeyDSIGN (PraosDSIGN c) -- TODO: should be KES
+    , praosSignKeyVRF   :: SignKeyVRF (PraosVRF c)
+    }
+
+data PraosProof c = PraosProof {
+      praosProofRho :: CertifiedVRF (PraosVRF c) (HList [Natural, Slot, VRFType])
+    , praosProofY   :: CertifiedVRF (PraosVRF c) (HList [Natural, Slot, VRFType])
+    , praosLeaderId :: Int
+    }
+
+data PraosLedgerView c = PraosLedgerView {
+    praosRhoYT :: Slot
+               -> NodeId
+               -> ( HList '[Natural, Slot, VRFType]
+                  , HList '[Natural, Slot, VRFType]
+                  , Double
+                  )
+  }
+
 instance PraosCrypto c => OuroborosTag (Praos c) where
   data OuroborosPayload (Praos c) ph = PraosPayload {
         praosSignature   :: Signed (PraosDSIGN c) (ph, PraosExtraFields c)
@@ -65,30 +85,15 @@ instance PraosCrypto c => OuroborosTag (Praos c) where
 
   data OuroborosNodeConfig (Praos c) = PraosNodeConfig
 
-  data OuroborosNodeState (Praos c) = PraosNodeState {
-        praosNodeId       :: Int
-      , praosSignKeyDSIGN :: SignKeyDSIGN (PraosDSIGN c) -- TODO: should be KES
-      , praosSignKeyVRF   :: SignKeyVRF (PraosVRF c)
-      }
+  type OuroborosNodeState (Praos c) = PraosNodeState c
 
   -- This is a placeholder for now (Lars).
-  data OuroborosChainState (Praos c) = PraosChainState deriving Show
+  type OuroborosChainState (Praos c) = ()
 
   -- View on the ledger (this will be changed by Lars)
-  data OuroborosLedgerView (Praos c) = PraosLedgerView {
-      praosRhoYT :: Slot
-                 -> NodeId
-                 -> ( HList '[Natural, Slot, VRFType]
-                    , HList '[Natural, Slot, VRFType]
-                    , Double
-                    )
-    }
+  type OuroborosLedgerView (Praos c) = PraosLedgerView c
 
-  data ProofIsLeader (Praos c) = PraosProof {
-        praosProofRho :: CertifiedVRF (PraosVRF c) (HList [Natural, Slot, VRFType])
-      , praosProofY   :: CertifiedVRF (PraosVRF c) (HList [Natural, Slot, VRFType])
-      , praosLeaderId :: Int
-      }
+  type ProofIsLeader (Praos c) = PraosProof c
 
   type OuroborosValidationError (Praos c) = PraosValidationError
   type SupportedBlock           (Praos c) = HasOuroborosPayload (Praos c)
@@ -106,7 +111,7 @@ instance PraosCrypto c => OuroborosTag (Praos c) where
         , praosExtraFields = extraFields
         }
 
-  checkIsLeader PraosNodeConfig slot PraosLedgerView{..} PraosChainState = do
+  checkIsLeader PraosNodeConfig slot PraosLedgerView{..} _cs = do
       PraosNodeState{..} <- getOuroborosNodeState
       let (rho', y', t) = praosRhoYT slot (CoreId praosNodeId)
       rho <- evalCertified rho' praosSignKeyVRF
@@ -122,8 +127,8 @@ instance PraosCrypto c => OuroborosTag (Praos c) where
   applyOuroborosChainState PraosNodeConfig
                            _b
                            PraosLedgerView{..}
-                           PraosChainState =
-    return PraosChainState -- TODO (Lars)
+                           _cs =
+    return () -- TODO (Lars)
 
 deriving instance (PraosCrypto c, Show ph) => Show (OuroborosPayload (Praos c) ph)
 deriving instance (PraosCrypto c, Eq   ph) => Eq   (OuroborosPayload (Praos c) ph)

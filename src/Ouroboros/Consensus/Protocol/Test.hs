@@ -14,10 +14,7 @@
 module Ouroboros.Consensus.Protocol.Test (
     TestProtocol
     -- * Type instances
-  , OuroborosChainState(..)
-  , OuroborosLedgerView(..)
   , OuroborosNodeConfig(..)
-  , OuroborosNodeState(..)
   , OuroborosPayload(..)
   ) where
 
@@ -34,15 +31,6 @@ import           Ouroboros.Consensus.Util
 data TestProtocol p
 
 instance OuroborosTag p => OuroborosTag (TestProtocol p) where
-  -- Node state is unchanged
-  newtype OuroborosNodeState (TestProtocol p) = TestNodeState {
-      testNodeStateP :: OuroborosNodeState p
-    }
-
-  -- Chain state is unchanged
-  newtype OuroborosChainState (TestProtocol p) = TestChainState {
-      testChainStateP :: OuroborosChainState p
-    }
 
   -- We need at least the node ID
   data OuroborosNodeConfig (TestProtocol p) = TestNodeConfig {
@@ -52,10 +40,10 @@ instance OuroborosTag p => OuroborosTag (TestProtocol p) where
 
   -- In this example, the test protocol records the (absolute) stake, so we
   -- should be to compute that from the ledger
-  data OuroborosLedgerView (TestProtocol p) = TestLedgerView {
-        testLedgerViewP     :: OuroborosLedgerView p
-      , testLedgerViewStake :: NodeId -> Int
-      }
+  type OuroborosLedgerView (TestProtocol p) = (
+      OuroborosLedgerView p
+    , NodeId -> Int
+    )
 
   -- Payload is the standard payload plus additional fields we want to test for
   data OuroborosPayload (TestProtocol p) ph = TestPayload {
@@ -66,45 +54,43 @@ instance OuroborosTag p => OuroborosTag (TestProtocol p) where
 
   -- Proof is the standard proof plus whatever additional info we need to
   -- create the additional fields in the payload
-  data ProofIsLeader (TestProtocol p) = TestProof {
-        testProofP     :: ProofIsLeader p
-      , testProofStake :: Int
-      }
+  type ProofIsLeader (TestProtocol p) = (ProofIsLeader p, Int)
 
+  --
+  -- The other types are unchanged
+  --
+
+  -- Node state is unchanged
+  type OuroborosNodeState       (TestProtocol p) = OuroborosNodeState       p
+  type OuroborosChainState      (TestProtocol p) = OuroborosChainState      p
   type OuroborosValidationError (TestProtocol p) = OuroborosValidationError p
-  type SupportedBlock (TestProtocol p) = SupportedBlock p
+  type SupportedBlock           (TestProtocol p) = SupportedBlock           p
 
-  mkOuroborosPayload (TestNodeConfig cfg _) TestProof{..} ph = do
-      standardPayload <- liftState $ mkOuroborosPayload cfg testProofP ph
+  mkOuroborosPayload (TestNodeConfig cfg _) (proof, stake) ph = do
+      standardPayload <- mkOuroborosPayload cfg proof ph
       return TestPayload {
           testPayloadP     = standardPayload
-        , testPayloadStake = testProofStake
+        , testPayloadStake = stake
         }
 
-  checkIsLeader TestNodeConfig{..} slot TestLedgerView{..} (TestChainState cs) = do
-      mStandardProof <- liftState $ checkIsLeader testNodeConfigP slot testLedgerViewP cs
-      case mStandardProof of
-        Nothing -> return Nothing
-        Just standardProof ->
-          return $ Just TestProof {
-              testProofP     = standardProof
-            , testProofStake = testLedgerViewStake testNodeConfigId
-            }
+  checkIsLeader TestNodeConfig{..} slot (l, stakeOf) cs = do
+      mProof <- checkIsLeader testNodeConfigP slot l cs
+      case mProof of
+        Nothing    -> return $ Nothing
+        Just proof -> return $ Just (proof, stakeOf testNodeConfigId)
 
   selectChain = selectChain . testNodeConfigP
 
   applyOuroborosChainState TestNodeConfig{..}
                            b
-                           TestLedgerView{..}
-                           TestChainState{..} =
-      TestChainState <$>
-        applyOuroborosChainState
-          testNodeConfigP
-          b
-          testLedgerViewP
-          testChainStateP
+                           (l, _)
+                           cs =
+      applyOuroborosChainState
+        testNodeConfigP
+        b
+        l
+        cs
 
-deriving instance (OuroborosTag p)          => Show (OuroborosChainState (TestProtocol p))
 deriving instance (OuroborosTag p, Show ph) => Show (OuroborosPayload (TestProtocol p) ph)
 deriving instance (OuroborosTag p, Eq   ph) => Eq   (OuroborosPayload (TestProtocol p) ph)
 

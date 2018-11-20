@@ -42,9 +42,9 @@ simStateT tvar k (StateT f) = do
     return a
 
 simOuroborosStateT :: MonadSTM m
-                   => TVar m (OuroborosNodeState p)
+                   => TVar m s
                    -> Sim n m
-                   -> Sim (OuroborosNodeStateT p n) m
+                   -> Sim (OuroborosNodeStateT_ s n) m
 simOuroborosStateT tvar k n = do
     st       <- readTVar tvar
     (a, st') <- k (runOuroborosNodeStateT n st)
