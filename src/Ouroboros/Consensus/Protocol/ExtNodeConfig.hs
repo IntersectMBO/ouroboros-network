@@ -12,8 +12,8 @@
 module Ouroboros.Consensus.Protocol.ExtNodeConfig (
     ExtNodeConfig
     -- * Type family instances
-  , OuroborosNodeConfig(..)
-  , OuroborosPayload(..)
+  , NodeConfig(..)
+  , Payload(..)
   ) where
 
 import           GHC.Generics (Generic)
@@ -23,8 +23,7 @@ import           Ouroboros.Network.Serialise
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util
 
--- | Extension of protocol @p@ by additional static node configuration data
--- @config@.
+-- | Extension of protocol @p@ by additional static node configuration @cfg@.
 data ExtNodeConfig cfg p
 
 instance OuroborosTag p => OuroborosTag (ExtNodeConfig cfg p) where
@@ -33,24 +32,24 @@ instance OuroborosTag p => OuroborosTag (ExtNodeConfig cfg p) where
   -- Most types remain the same
   --
 
-  newtype OuroborosPayload (ExtNodeConfig cfg p) ph = EncOuroborosPayload {
-        encPayloadP :: OuroborosPayload p ph
+  newtype Payload (ExtNodeConfig cfg p) ph = EncPayload {
+        encPayloadP :: Payload p ph
       }
     deriving (Generic)
 
-  type OuroborosChainState      (ExtNodeConfig cfg p)    = OuroborosChainState      p
-  type OuroborosNodeState       (ExtNodeConfig cfg p)    = OuroborosNodeState       p
-  type OuroborosLedgerView      (ExtNodeConfig cfg p)    = OuroborosLedgerView      p
-  type OuroborosValidationError (ExtNodeConfig cfg p)    = OuroborosValidationError p
-  type ProofIsLeader            (ExtNodeConfig cfg p)    = ProofIsLeader            p
-  type SupportedBlock           (ExtNodeConfig cfg p)    = SupportedBlock           p
+  type ChainState     (ExtNodeConfig cfg p) = ChainState     p
+  type NodeState      (ExtNodeConfig cfg p) = NodeState      p
+  type LedgerView     (ExtNodeConfig cfg p) = LedgerView     p
+  type ValidationErr  (ExtNodeConfig cfg p) = ValidationErr  p
+  type IsLeader       (ExtNodeConfig cfg p) = IsLeader       p
+  type SupportedBlock (ExtNodeConfig cfg p) = SupportedBlock p
 
   --
   -- Only type that changes is the node config
   --
 
-  data OuroborosNodeConfig (ExtNodeConfig cfg p) = ENCNodeConfig {
-        encNodeConfigP   :: OuroborosNodeConfig p
+  data NodeConfig (ExtNodeConfig cfg p) = EncNodeConfig {
+        encNodeConfigP   :: NodeConfig p
       , encNodeConfigExt :: cfg
       }
 
@@ -58,32 +57,16 @@ instance OuroborosTag p => OuroborosTag (ExtNodeConfig cfg p) where
   -- Propagate changes
   --
 
-  mkOuroborosPayload cfg proof ph =
-      EncOuroborosPayload <$>
-        mkOuroborosPayload
-          (encNodeConfigP cfg)
-          proof
-          ph
+  mkPayload (EncNodeConfig cfg _) proof ph =
+      EncPayload <$> mkPayload cfg proof ph
 
-  selectChain = selectChain . encNodeConfigP
+  selectChain     (EncNodeConfig cfg _) = selectChain     cfg
+  checkIsLeader   (EncNodeConfig cfg _) = checkIsLeader   cfg
+  applyChainState (EncNodeConfig cfg _) = applyChainState cfg
 
-  checkIsLeader cfg slot l cs =
-      checkIsLeader
-        (encNodeConfigP cfg)
-        slot
-        l
-        cs
+deriving instance (OuroborosTag p, Eq       ph) => Eq       (Payload (ExtNodeConfig cfg p) ph)
+deriving instance (OuroborosTag p, Show     ph) => Show     (Payload (ExtNodeConfig cfg p) ph)
+deriving instance (OuroborosTag p, Condense ph) => Condense (Payload (ExtNodeConfig cfg p) ph)
 
-  applyOuroborosChainState cfg b l cs =
-      applyOuroborosChainState
-        (encNodeConfigP cfg)
-        b
-        l
-        cs
-
-deriving instance (OuroborosTag p, Eq       ph) => Eq       (OuroborosPayload (ExtNodeConfig cfg p) ph)
-deriving instance (OuroborosTag p, Show     ph) => Show     (OuroborosPayload (ExtNodeConfig cfg p) ph)
-deriving instance (OuroborosTag p, Condense ph) => Condense (OuroborosPayload (ExtNodeConfig cfg p) ph)
-
-instance (OuroborosTag p, Serialise ph) => Serialise (OuroborosPayload (ExtNodeConfig cfg p) ph) where
+instance (OuroborosTag p, Serialise ph) => Serialise (Payload (ExtNodeConfig cfg p) ph) where
   -- use Generic instance

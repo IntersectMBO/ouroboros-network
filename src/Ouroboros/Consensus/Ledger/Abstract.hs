@@ -32,11 +32,11 @@ import           Ouroboros.Network.Chain (Chain (..))
 -------------------------------------------------------------------------------}
 
 -- | Interaction with the ledger layer
-class ( Show (LedgerState     b)
-      , Show (ValidationError b)
+class ( Show (LedgerState b)
+      , Show (LedgerError b)
       ) => UpdateLedger (b :: *) where
-  data family LedgerState     b :: *
-  data family ValidationError b :: *
+  data family LedgerState b :: *
+  data family LedgerError b :: *
 
   -- | Apply a block to the ledger state
   --
@@ -45,7 +45,7 @@ class ( Show (LedgerState     b)
   -- that we can compute a "running diff" so that we can go back in time.
   applyLedgerState :: b
                    -> LedgerState b
-                   -> Except (ValidationError b) (LedgerState b)
+                   -> Except (LedgerError b) (LedgerState b)
 
 -- | Link blocks to their unique protocol
 type family BlockProtocol b :: *
@@ -56,9 +56,9 @@ class ( OuroborosTag (BlockProtocol b)
       , HasHeader b
       , SupportedBlock (BlockProtocol b) b
       ) => ProtocolLedgerView b where
-  protocolLedgerView :: OuroborosNodeConfig (BlockProtocol b)
+  protocolLedgerView :: NodeConfig (BlockProtocol b)
                      -> LedgerState b
-                     -> OuroborosLedgerView (BlockProtocol b)
+                     -> LedgerView (BlockProtocol b)
 
 {-------------------------------------------------------------------------------
   Extended ledger state
@@ -69,20 +69,20 @@ class ( OuroborosTag (BlockProtocol b)
 -- This is the combination of the ouroboros state and the ledger state proper.
 data ExtLedgerState b = ExtLedgerState {
       ledgerState         :: LedgerState b
-    , ouroborosChainState :: OuroborosChainState (BlockProtocol b)
+    , ouroborosChainState :: ChainState (BlockProtocol b)
     }
 
 deriving instance ProtocolLedgerView b => Show (ExtLedgerState b)
 
 data ExtValidationError b =
-    ExtValidationErrorLedger (ValidationError b)
-  | ExtValidationErrorOuroboros (OuroborosValidationError (BlockProtocol b))
+    ExtValidationErrorLedger (LedgerError b)
+  | ExtValidationErrorOuroboros (ValidationErr (BlockProtocol b))
   | ExtValidationErrorEnvelope -- TODO (check back pointers etc)
 
 deriving instance ProtocolLedgerView b => Show (ExtValidationError b)
 
 applyExtLedgerState :: ProtocolLedgerView b
-                    => OuroborosNodeConfig (BlockProtocol b)
+                    => NodeConfig (BlockProtocol b)
                     -> b
                     -> ExtLedgerState b
                     -> Except (ExtValidationError b) (ExtLedgerState b)
@@ -90,16 +90,16 @@ applyExtLedgerState cfg b ExtLedgerState{..} = do
     ledgerState'         <- withExcept ExtValidationErrorLedger $
                               applyLedgerState b ledgerState
     ouroborosChainState' <- withExcept ExtValidationErrorOuroboros $
-                              applyOuroborosChainState
+                              applyChainState
                                 cfg
-                                b
                                 (protocolLedgerView cfg ledgerState')
+                                b
                                 ouroborosChainState
     return $ ExtLedgerState ledgerState' ouroborosChainState'
 
 -- TODO: This should check stuff like backpointers also
 chainExtLedgerState :: ProtocolLedgerView b
-                    => OuroborosNodeConfig (BlockProtocol b)
+                    => NodeConfig (BlockProtocol b)
                     -> Chain b
                     -> ExtLedgerState b
                     -> Except (ExtValidationError b) (ExtLedgerState b)
@@ -109,7 +109,7 @@ chainExtLedgerState cfg (c :> b) st = chainExtLedgerState cfg c st >>=
 
 -- | Validation of an entire chain
 verifyChain :: ProtocolLedgerView b
-            => OuroborosNodeConfig (BlockProtocol b)
+            => NodeConfig (BlockProtocol b)
             -> Chain b
             -> ExtLedgerState b
             -> Bool

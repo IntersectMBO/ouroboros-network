@@ -59,7 +59,7 @@ relayNode :: ( MonadSTM m
              , Ord pid
              )
           => NodeId
-          -> OuroborosNodeConfig (BlockProtocol b)
+          -> NodeConfig (BlockProtocol b)
           -> ExtLedgerState b
           -> Chain b
           -> m (RelayNode m pid cid b)
@@ -104,7 +104,7 @@ intRegisterProducer :: ( MonadSTM m
                        , Ord pid
                        )
                     => NodeId
-                    -> OuroborosNodeConfig (BlockProtocol b)
+                    -> NodeConfig (BlockProtocol b)
                     -> ExtLedgerState b
                     -> TVar m (Map pid (TVar m (Maybe (Chain b))))
                     -> Chan m (MsgConsumer b) (MsgProducer b)
@@ -120,7 +120,7 @@ intRegisterProducer nid cfg initLedgerState upstream chan pid = do
     atomically $ modifyTVar' upstream $ Map.insert pid candidateVar
 
 chainValidation :: forall b m. (MonadSTM m, ProtocolLedgerView b)
-                => OuroborosNodeConfig (BlockProtocol b)
+                => NodeConfig (BlockProtocol b)
                 -> ExtLedgerState b
                 -> TVar m (Chain b)
                 -> TVar m (Maybe (Chain b))
@@ -145,7 +145,7 @@ chainSelection :: forall b m pid.
                   , SupportedBlock (BlockProtocol b) b
                   , HasHeader b
                   )
-               => OuroborosNodeConfig (BlockProtocol b)
+               => NodeConfig (BlockProtocol b)
                -> TVar m (Map pid (TVar m (Maybe (Chain b))))
                -> TVar m (ChainProducerState b)
                -> m ()

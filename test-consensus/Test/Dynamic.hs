@@ -142,8 +142,8 @@ test_simple_bft_convergence seed = do
         , ouroborosChainState = ()
         }
 
-    nodeInit :: Map NodeId ( OuroborosNodeConfig ProtocolUnderTest
-                           , OuroborosNodeState ProtocolUnderTest
+    nodeInit :: Map NodeId ( NodeConfig ProtocolUnderTest
+                           , NodeState ProtocolUnderTest
                            , Chain BlockUnderTest
                            )
     nodeInit = Map.fromList $ [ (CoreId i, ( mkConfig i
@@ -153,8 +153,8 @@ test_simple_bft_convergence seed = do
                               | i <- [0 .. numNodes - 1]
                               ]
       where
-        mkConfig :: Int -> OuroborosNodeConfig ProtocolUnderTest
-        mkConfig i = ENCNodeConfig {
+        mkConfig :: Int -> NodeConfig ProtocolUnderTest
+        mkConfig i = EncNodeConfig {
               encNodeConfigP = TestNodeConfig {
                   testNodeConfigP = BftNodeConfig {
                       bftNodeId   = CoreId i
@@ -167,7 +167,7 @@ test_simple_bft_convergence seed = do
             , encNodeConfigExt = testConfig
             }
 
-        mkState :: Int -> OuroborosNodeState ProtocolUnderTest
+        mkState :: Int -> NodeState ProtocolUnderTest
         mkState _ = ()
 
     isValid :: [(Time m, Map NodeId (Chain BlockUnderTest))] -> Property
@@ -227,14 +227,14 @@ nodeStake cfg u nodeId =
         0
         u
 
-instance HasOuroborosPayload (Bft BftMockCrypto) BlockUnderTest where
-  blockOuroborosPayload _ = testPayloadP
-                          . encPayloadP
-                          . headerOuroboros
-                          . simpleHeader
+instance HasPayload (Bft BftMockCrypto) BlockUnderTest where
+  blockPayload _ = testPayloadP
+                 . encPayloadP
+                 . headerOuroboros
+                 . simpleHeader
 
 instance ProtocolLedgerView BlockUnderTest where
-  protocolLedgerView (ENCNodeConfig _ cfg) (SimpleLedgerState u) =
+  protocolLedgerView (EncNodeConfig _ cfg) (SimpleLedgerState u) =
       ((), nodeStake cfg u)
 
 {-------------------------------------------------------------------------------
@@ -256,8 +256,8 @@ broadcastNetwork :: forall m p c gen.
                     )
                  => Int
                  -- ^ Number of slots to run for
-                 -> Map NodeId ( OuroborosNodeConfig p
-                               , OuroborosNodeState p
+                 -> Map NodeId ( NodeConfig p
+                               , NodeState p
                                , Chain (SimpleBlock p c)
                                )
                  -- ^ Node initial state and initial chain
@@ -316,7 +316,7 @@ broadcastNetwork numSlots nodeInit txMap initLedger initRNG = do
               map (\them -> fst (chans Map.! us Map.! them)) nodeIds
         }
 
-      let runProtocol :: MonadPseudoRandomT gen (OuroborosNodeStateT p (Tr m)) a
+      let runProtocol :: MonadPseudoRandomT gen (NodeStateT p (Tr m)) a
                       -> Tr m a
           runProtocol = simMonadPseudoRandomT varRNG
                       $ simOuroborosStateT varSt

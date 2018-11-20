@@ -14,8 +14,8 @@
 module Ouroboros.Consensus.Protocol.Test (
     TestProtocol
     -- * Type instances
-  , OuroborosNodeConfig(..)
-  , OuroborosPayload(..)
+  , NodeConfig(..)
+  , Payload(..)
   ) where
 
 import           GHC.Generics (Generic)
@@ -33,72 +33,59 @@ data TestProtocol p
 instance OuroborosTag p => OuroborosTag (TestProtocol p) where
 
   -- We need at least the node ID
-  data OuroborosNodeConfig (TestProtocol p) = TestNodeConfig {
-      testNodeConfigP  :: OuroborosNodeConfig p
+  data NodeConfig (TestProtocol p) = TestNodeConfig {
+      testNodeConfigP  :: NodeConfig p
     , testNodeConfigId :: NodeId
     }
 
-  -- In this example, the test protocol records the (absolute) stake, so we
-  -- should be to compute that from the ledger
-  type OuroborosLedgerView (TestProtocol p) = (
-      OuroborosLedgerView p
-    , NodeId -> Int
-    )
-
   -- Payload is the standard payload plus additional fields we want to test for
-  data OuroborosPayload (TestProtocol p) ph = TestPayload {
-        testPayloadP     :: OuroborosPayload p ph
+  data Payload (TestProtocol p) ph = TestPayload {
+        testPayloadP     :: Payload p ph
       , testPayloadStake :: Int
       }
     deriving (Generic)
 
+  -- In this example, the test protocol records the (absolute) stake, so we
+  -- should be to compute that from the ledger
+  type LedgerView (TestProtocol p) = (LedgerView p, NodeId -> Int)
+
   -- Proof is the standard proof plus whatever additional info we need to
   -- create the additional fields in the payload
-  type ProofIsLeader (TestProtocol p) = (ProofIsLeader p, Int)
+  type IsLeader (TestProtocol p) = (IsLeader p, Int)
 
   --
   -- The other types are unchanged
   --
 
-  -- Node state is unchanged
-  type OuroborosNodeState       (TestProtocol p) = OuroborosNodeState       p
-  type OuroborosChainState      (TestProtocol p) = OuroborosChainState      p
-  type OuroborosValidationError (TestProtocol p) = OuroborosValidationError p
-  type SupportedBlock           (TestProtocol p) = SupportedBlock           p
+  type NodeState       (TestProtocol p) = NodeState      p
+  type ChainState      (TestProtocol p) = ChainState     p
+  type ValidationErr   (TestProtocol p) = ValidationErr  p
+  type SupportedBlock  (TestProtocol p) = SupportedBlock p
 
-  mkOuroborosPayload (TestNodeConfig cfg _) (proof, stake) ph = do
-      standardPayload <- mkOuroborosPayload cfg proof ph
+  mkPayload (TestNodeConfig cfg _) (proof, stake) ph = do
+      standardPayload <- mkPayload cfg proof ph
       return TestPayload {
           testPayloadP     = standardPayload
         , testPayloadStake = stake
         }
 
-  checkIsLeader TestNodeConfig{..} slot (l, stakeOf) cs = do
-      mProof <- checkIsLeader testNodeConfigP slot l cs
+  checkIsLeader (TestNodeConfig cfg nodeId) slot (l, stakeOf) cs = do
+      mProof <- checkIsLeader cfg slot l cs
       case mProof of
         Nothing    -> return $ Nothing
-        Just proof -> return $ Just (proof, stakeOf testNodeConfigId)
+        Just proof -> return $ Just (proof, stakeOf nodeId)
 
-  selectChain = selectChain . testNodeConfigP
+  selectChain     (TestNodeConfig cfg _) = selectChain     cfg
+  applyChainState (TestNodeConfig cfg _) = applyChainState cfg . fst
 
-  applyOuroborosChainState TestNodeConfig{..}
-                           b
-                           (l, _)
-                           cs =
-      applyOuroborosChainState
-        testNodeConfigP
-        b
-        l
-        cs
+deriving instance (OuroborosTag p, Show ph) => Show (Payload (TestProtocol p) ph)
+deriving instance (OuroborosTag p, Eq   ph) => Eq   (Payload (TestProtocol p) ph)
 
-deriving instance (OuroborosTag p, Show ph) => Show (OuroborosPayload (TestProtocol p) ph)
-deriving instance (OuroborosTag p, Eq   ph) => Eq   (OuroborosPayload (TestProtocol p) ph)
-
-instance Condense (OuroborosPayload p ph)
-     => Condense (OuroborosPayload (TestProtocol p) ph) where
+instance Condense (Payload p ph)
+      => Condense (Payload (TestProtocol p) ph) where
     condense (TestPayload pld stake) =
         condense pld <> ",stake=" <> condense stake
 
 instance (OuroborosTag p, Serialise ph)
-      => Serialise (OuroborosPayload (TestProtocol p) ph) where
+      => Serialise (Payload (TestProtocol p) ph) where
   -- use generic instance

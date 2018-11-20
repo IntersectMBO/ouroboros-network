@@ -28,8 +28,8 @@ forkCoreNode :: forall m p c.
                 , ProtocolLedgerView (Mock.SimpleBlock p c)
                 )
              => TVar m (DemoLedgerState (Mock.SimpleBlock p c))
-             -> OuroborosNodeConfig p
-             -> OuroborosNodeState p
+             -> NodeConfig p
+             -> NodeState p
              -> TVar m (Mempool Mock.Tx)
              -> TVar m (ChainProducerState (Mock.SimpleBlock p c))
              -> Duration (Time m)
@@ -38,12 +38,12 @@ forkCoreNode ledgerVar cfg initState mempoolVar varCPS slotDuration = do
     slotVar   <- atomically $ newTVar 1
     initDRG   <- liftIO getSystemDRG
 
-    let runProtocol :: forall a. MonadPseudoRandomT SystemDRG (OuroborosNodeStateT p (Tr m)) a
+    let runProtocol :: forall a. MonadPseudoRandomT SystemDRG (NodeStateT p (Tr m)) a
                     -> Tr m a
         runProtocol m =
             -- TODO: This is not correct, this re-runs from the initial state
             -- each time.
-            fst <$> runOuroborosNodeStateT (fst <$> withDRGT m initDRG) initState
+            fst <$> runNodeStateT (fst <$> withDRGT m initDRG) initState
 
     fork $ forever $ do
         threadDelay slotDuration

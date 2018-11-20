@@ -161,7 +161,7 @@ instance SimpleBlockCrypto SimpleBlockMockCrypto where
 
 data SimpleHeader p c = SimpleHeader {
       headerPreHeader :: SimplePreHeader p c
-    , headerOuroboros :: OuroborosPayload p (SimplePreHeader p c)
+    , headerOuroboros :: Payload p (SimplePreHeader p c)
     }
   deriving (Generic)
 
@@ -240,20 +240,20 @@ instance SimpleBlockCrypto c => StandardHash (SimpleBlock  p c)
 -------------------------------------------------------------------------------}
 
 forgeBlock :: forall m p c.
-              ( HasOuroborosNodeState p m
+              ( HasNodeState p m
               , MonadRandom m
               , OuroborosTag p
               , SimpleBlockCrypto c
               )
-           => OuroborosNodeConfig p
+           => NodeConfig p
            -> Slot                            -- ^ Current slot
            -> BlockNo                         -- ^ Current block number
            -> Network.Hash (SimpleHeader p c) -- ^ Previous hash
            -> Set Tx                          -- ^ Txs to add in the block
-           -> ProofIsLeader p
+           -> IsLeader p
            -> m (SimpleBlock p c)
 forgeBlock cfg curSlot curNo prevHash txs proof = do
-    ouroborosPayload <- mkOuroborosPayload cfg proof preHeader
+    ouroborosPayload <- mkPayload cfg proof preHeader
     return $ SimpleBlock {
         simpleHeader = SimpleHeader preHeader ouroborosPayload
       , simpleBody   = body
@@ -278,19 +278,19 @@ type instance BlockProtocol (SimpleBlock p c) = p
 
 instance (SimpleBlockCrypto c, OuroborosTag p)
       => HasPreHeader (SimpleBlock p c) where
-  type BlockPreHeader (SimpleBlock p c) = SimplePreHeader p c
+  type PreHeader (SimpleBlock p c) = SimplePreHeader p c
 
   blockPreHeader = headerPreHeader . simpleHeader
 
 instance (SimpleBlockCrypto c, OuroborosTag p)
-      => HasOuroborosPayload p (SimpleBlock p c) where
-  blockOuroborosPayload _ = headerOuroboros . simpleHeader
+      => HasPayload p (SimpleBlock p c) where
+  blockPayload _ = headerOuroboros . simpleHeader
 
 instance OuroborosTag p => UpdateLedger (SimpleBlock p c) where
   data LedgerState (SimpleBlock p c) = SimpleLedgerState Utxo
 
   -- TODO: Modify UTxO model to return errors
-  data ValidationError (SimpleBlock p c) -- no constructors for now
+  data LedgerError (SimpleBlock p c) -- no constructors for now
     deriving (Show)
 
   -- Apply a block to the ledger state

@@ -46,7 +46,7 @@ spawnLedgerStateListeners :: forall block.
                              , ProtocolLedgerView block
                              )
                           => NodeId
-                          -> OuroborosNodeConfig (BlockProtocol block)
+                          -> NodeConfig (BlockProtocol block)
                           -> TBQueue LogEvent
                           -> Chain block
                           -> TVar (DemoLedgerState block)
@@ -84,7 +84,7 @@ spawnLedgerStateListeners ourselves cfg q initialChain ledgerVar cps = do
 
 
 addPostProcessing :: ProtocolLedgerView block
-                  => OuroborosNodeConfig (BlockProtocol block)
+                  => NodeConfig (BlockProtocol block)
                   -> ConsumerHandlers block (M block)
                   -> ConsumerHandlers block (M block)
 addPostProcessing cfg c = ConsumerHandlers {
