@@ -2,13 +2,16 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE StandaloneDeriving #-}
 
 -- | The type of the chain synchronisation protocol.
 --
 -- Since we are using a typed protocol framework this is in some sense /the/
 -- definition of the protocol: what is allowed and what is not allowed.
 --
-module Protocol.ChainSync.Type where
+module Ouroboros.Network.Protocol.ChainSync.Type where
+
+import Data.Typeable (Typeable)
 
 import Protocol.Core
 
@@ -34,6 +37,8 @@ data ChainSyncState where
 
   -- | Both the client and server are in the terminal state. They're done.
   StDone      :: ChainSyncState
+
+deriving instance Typeable ChainSyncState
 
 -- | Sub-cases of the 'StNext' state. This is needed since the server can
 -- either send one reply back, or two.
@@ -114,12 +119,11 @@ data ChainSyncMessage header point from to where
   --
   -- The message also tells the consumer about the head point of the producer.
   --
-  MsgIntersectUnchanged ::          point -> ChainSyncMessage header point StIntersect StIdle
+  MsgIntersectUnchanged :: point -> ChainSyncMessage header point StIntersect StIdle
 
-  -- | The consumer or producer decided to terminate the protocol.  Termination
-  -- might happen at any point of the protocol.
+  -- | Terminating messages
   --
-  MsgDone :: ChainSyncMessage header point any StDone
+  MsgDone :: ChainSyncMessage header point StIdle StDone
 
 instance Show (ChainSyncMessage header point from to) where
   show MsgRequestNext          = "MsgRequestNext"

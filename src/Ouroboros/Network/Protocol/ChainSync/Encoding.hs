@@ -4,8 +4,9 @@
 
 module Ouroboros.Network.Protocol.ChainSync.Encoding where
 
+import Protocol.Untyped (SomeMessage(..))
+
 import Ouroboros.Network.Protocol.ChainSync.Type
-import Ouroboros.Network.Protocol.Untyped (SomeMessage(..))
 
 import Data.Monoid ((<>))
 import Codec.CBOR.Encoding (Encoding, encodeListLen, encodeWord)
@@ -24,6 +25,7 @@ encodeChainSyncMessage (SomeMessage msg) =
     MsgFindIntersect     ps   -> encodeListLen 2 <> encodeWord 4 <> encode ps
     MsgIntersectImproved p p' -> encodeListLen 3 <> encodeWord 5 <> encode p <> encode p'
     MsgIntersectUnchanged  p  -> encodeListLen 2 <> encodeWord 6 <> encode p
+    MsgDone                   -> encodeListLen 1 <> encodeWord 7
 
 decodeChainSyncMessage :: forall header point s.
                           (Serialise header, Serialise point)
@@ -41,4 +43,5 @@ decodeChainSyncMessage = do
     4 -> SomeMessage <$> (MsgFindIntersect      <$> decode)
     5 -> SomeMessage <$> (MsgIntersectImproved  <$> decode <*> decode)
     6 -> SomeMessage <$> (MsgIntersectUnchanged <$> decode)
+    7 -> return (SomeMessage MsgDone)
 

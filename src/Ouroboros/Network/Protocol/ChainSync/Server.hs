@@ -12,7 +12,7 @@
 --
 -- For execution, a conversion into the typed protocol is provided.
 --
-module Protocol.ChainSync.Server  (
+module Ouroboros.Network.Protocol.ChainSync.Server  (
       -- * Protocol type for the server
       -- | The protocol states from the point of view of the server.
       ChainSyncServer
@@ -25,7 +25,7 @@ module Protocol.ChainSync.Server  (
     ) where
 
 import Protocol.Core
-import Protocol.ChainSync.Type
+import Ouroboros.Network.Protocol.ChainSync.Type
 
 
 -- | A chain sync protocol server, on top of some effect 'm'.
@@ -68,9 +68,6 @@ data ServerStNext header point m a where
                       -> ServerStIdle header point m a
                       -> ServerStNext header point m a
 
-  SendMsgDoneNext     :: a
-                      -> ServerStNext header point m a
-
 -- | In the 'StIntersect' protocol state, the server has agency and must send
 -- either:
 --
@@ -85,9 +82,6 @@ data ServerStIntersect header point m a where
 
   SendMsgIntersectUnchanged :: point
                             -> ServerStIdle header point m a
-                            -> ServerStIntersect header point m a
-
-  SendMsgDoneIntersect      :: a
                             -> ServerStIntersect header point m a
 
 
@@ -127,9 +121,6 @@ chainSyncServerPeer ServerStIdle{recvMsgRequestNext, recvMsgFindIntersect, recvM
       over (MsgRollBackward pIntersect pHead)
            (chainSyncServerPeer next)
 
-    handleStNext (SendMsgDoneNext a) =
-      out MsgDone (done a)
-
     handleStIntersect (SendMsgIntersectImproved pIntersect pHead next) =
       over (MsgIntersectImproved pIntersect pHead)
            (chainSyncServerPeer next)
@@ -137,6 +128,3 @@ chainSyncServerPeer ServerStIdle{recvMsgRequestNext, recvMsgFindIntersect, recvM
     handleStIntersect (SendMsgIntersectUnchanged pHead next) =
       over (MsgIntersectUnchanged pHead)
            (chainSyncServerPeer next)
-
-    handleStIntersect (SendMsgDoneIntersect a) =
-      out MsgDone (done a)

@@ -7,7 +7,7 @@ import           Codec.Serialise.Class (Serialise)
 import qualified Codec.CBOR.Read as CBOR (DeserialiseFailure)
 import           Data.ByteString (ByteString)
 
-import           Ouroboros.Network.Protocol.Untyped
+import           Protocol.Untyped
 import           Ouroboros.Network.ByteChannel (ByteChannel)
 import           Ouroboros.Network.MsgChannel
 import           Ouroboros.Network.Codec
@@ -49,16 +49,17 @@ runConsumer client channel =
 
 ------------------------------------------------
 
-runExampleProducer :: (MonadST m, MonadSTM m stm,
+runExampleProducer :: (MonadST m, MonadSTM m,
                        HasHeader header, Serialise header)
-                   => TVar m (ChainProducerState header)
+                   => a
+                   -> TVar m (ChainProducerState header)
                    -> ByteChannel ByteString m
                    -> m (Either (ProtocolError CBOR.DeserialiseFailure) a)
-runExampleProducer cpsVar channel = do
-    server <- chainSyncServerExample cpsVar
+runExampleProducer recvMsgDone cpsVar channel = do
+    server <- chainSyncServerExample recvMsgDone cpsVar
     runProducer server channel
 
-runExampleConsumer :: (MonadST m, MonadSTM m stm,
+runExampleConsumer :: (MonadST m, MonadSTM m,
                        HasHeader header, Serialise header)
                    => TVar m (Chain header)
                    -> ByteChannel ByteString m
@@ -88,7 +89,7 @@ runPeerWithChannel codec peer0 bytechannel =
        -> m (Either (ProtocolError failure) a)
     go _ (PeerDone x) = return (Right x)
 
-    go channel (PeerHole effect) =
+    go channel (PeerLift effect) =
       effect >>= \peer' -> go channel peer'
 
     go channel (PeerYield msg peer') =

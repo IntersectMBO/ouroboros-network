@@ -72,13 +72,18 @@ library
                        Ouroboros.Network.Protocol.Chain.Producer
                        Ouroboros.Network.Protocol.Chain.Node
                        Ouroboros.Network.Protocol.Channel.Sim
-                       Ouroboros.Network.Protocol.Untyped
+                       Ouroboros.Network.Protocol.ChainSync.Client
+                       Ouroboros.Network.Protocol.ChainSync.Direct
+                       Ouroboros.Network.Protocol.ChainSync.Server
+                       Ouroboros.Network.Protocol.ChainSync.Type
+                       Ouroboros.Network.Protocol.ChainSync.Encoding
   other-modules:
--- Old experiments, not currently building:
---                     Types
---                     ChainSelection
---                     ConsumerProtocolSTM
---                     Chain.Volatile,
+                       Ouroboros.Network.Pipe2
+                       Ouroboros.Network.ChainSyncExamples
+                       Ouroboros.Network.ByteChannel
+                       Ouroboros.Network.Codec
+                       Ouroboros.Network.Framing
+                       Ouroboros.Network.MsgChannel
   default-language:    Haskell2010
   other-extensions:    BangPatterns,
                        DataKinds,

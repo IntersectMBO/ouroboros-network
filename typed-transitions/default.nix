@@ -15,4 +15,5 @@ mkDerivation {
     base async bytestring QuickCheck tasty tasty-quickcheck text
   ];
   license = stdenv.lib.licenses.bsd3;
+  enableSeparateDocOutput = false;
 }
