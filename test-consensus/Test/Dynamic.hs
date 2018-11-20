@@ -193,28 +193,6 @@ data TestConfig = TestConfig {
       -- transactions in a way that we can accumulate the stake properly.
     }
 
-
-{-
-data ExtLedgerState b = ExtLedgerState {
-      testNumNodes            :: Word
-    , testLedgerState         :: LedgerState b
-    }
-
-deriving instance Show (LedgerState b) => Show (ExtLedgerState b)
-
-
-{-
-instance BftLedgerView (ExtLedgerState b) where
-  bftNumNodes = testNumNodes
-
-instance TestProtocolLedgerView (ExtLedgerState (SimpleBlock p c)) where
-  stakeForNode nodeId st =
-      Map.foldl (\acc (a, stake) ->
-                 if ourAddr nodeId a st then acc + stake else acc
-                ) 0 (simpleUtxo . testLedgerState $ st)
--}
--}
-
 ourAddr :: TestConfig -> NodeId -> Addr -> Bool
 ourAddr TestConfig{..} myNodeId address =
     fmap ((==) myNodeId) (Map.lookup address testAddressDistribution)
