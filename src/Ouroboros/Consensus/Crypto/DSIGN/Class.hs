@@ -10,6 +10,7 @@ module Ouroboros.Consensus.Crypto.DSIGN.Class
       -- TODO: Added on top of Lars' stuff
     , Signed
     , signed
+    , verifySigned
     ) where
 
 import           Crypto.Random (MonadRandom)
@@ -56,3 +57,7 @@ instance DSIGNAlgorithm v => Serialise (Signed v a) where
 signed :: (DSIGNAlgorithm v, MonadRandom m, Serialise a)
        => a -> SignKeyDSIGN v -> m (Signed v a)
 signed a key = Signed <$> signDSIGN a key
+
+verifySigned :: (DSIGNAlgorithm v, Serialise a)
+             => VerKeyDSIGN v -> a -> Signed v a -> Bool
+verifySigned key a (Signed s) = verifyDSIGN key a s

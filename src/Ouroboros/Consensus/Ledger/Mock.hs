@@ -1,7 +1,9 @@
 {-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE EmptyDataDeriving          #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
@@ -150,7 +152,6 @@ data SimpleBlockMockCrypto
 instance SimpleBlockCrypto SimpleBlockMockCrypto where
   type SimpleBlockHash SimpleBlockMockCrypto = ShortHash
 
-
 {-------------------------------------------------------------------------------
   Simple blocks
 
@@ -160,7 +161,7 @@ instance SimpleBlockCrypto SimpleBlockMockCrypto where
 
 data SimpleHeader p c = SimpleHeader {
       headerPreHeader :: SimplePreHeader p c
-    , headerOuroboros :: OuroborosPayload p (SimplePreHeader p c)
+    , headerOuroboros :: Payload p (SimplePreHeader p c)
     }
   deriving (Generic)
 
@@ -239,19 +240,20 @@ instance SimpleBlockCrypto c => StandardHash (SimpleBlock  p c)
 -------------------------------------------------------------------------------}
 
 forgeBlock :: forall m p c.
-              ( MonadOuroborosState p m
+              ( HasNodeState p m
               , MonadRandom m
               , OuroborosTag p
               , SimpleBlockCrypto c
               )
-           => Slot                            -- ^ Current slot
+           => NodeConfig p
+           -> Slot                            -- ^ Current slot
            -> BlockNo                         -- ^ Current block number
            -> Network.Hash (SimpleHeader p c) -- ^ Previous hash
            -> Set Tx                          -- ^ Txs to add in the block
-           -> ProofIsLeader p
+           -> IsLeader p
            -> m (SimpleBlock p c)
-forgeBlock curSlot curNo prevHash txs proof = do
-    ouroborosPayload <- mkOuroborosPayload proof preHeader
+forgeBlock cfg curSlot curNo prevHash txs proof = do
+    ouroborosPayload <- mkPayload cfg proof preHeader
     return $ SimpleBlock {
         simpleHeader = SimpleHeader preHeader ouroborosPayload
       , simpleBody   = body
@@ -272,22 +274,31 @@ forgeBlock curSlot curNo prevHash txs proof = do
   Updating the Ledger
 -------------------------------------------------------------------------------}
 
+type instance BlockProtocol (SimpleBlock p c) = p
+
+instance (SimpleBlockCrypto c, OuroborosTag p)
+      => HasPreHeader (SimpleBlock p c) where
+  type PreHeader (SimpleBlock p c) = SimplePreHeader p c
+
+  blockPreHeader = headerPreHeader . simpleHeader
+
+instance (SimpleBlockCrypto c, OuroborosTag p)
+      => HasPayload p (SimpleBlock p c) where
+  blockPayload _ = headerOuroboros . simpleHeader
+
 instance OuroborosTag p => UpdateLedger (SimpleBlock p c) where
-  data LedgerState (SimpleBlock p c) = SimpleLedgerState {
-        simpleUtxo :: Utxo
-      , simpleProtocolState :: OuroborosLedgerState p
-      }
+  data LedgerState (SimpleBlock p c) = SimpleLedgerState Utxo
+
+  -- TODO: Modify UTxO model to return errors
+  data LedgerError (SimpleBlock p c) -- no constructors for now
+    deriving (Show)
 
   -- Apply a block to the ledger state
-  --
-  -- TODO: We need to support rollback, so this probably won't be a pure
-  -- function but rather something that lives in a monad with some actions
-  -- that we can compute a "running diff" so that we can go back in time.
-  applyLedgerState (SimpleBlock hdr (SimpleBody txs)) sls = SimpleLedgerState {
-        simpleUtxo = updateUtxo txs (simpleUtxo sls)
-      , simpleProtocolState = applyOuroborosLedgerState (headerOuroboros hdr)
-                                                        (simpleProtocolState sls)
-      }
+  applyLedgerState b (SimpleLedgerState u) = do
+      -- TODO: Updating the UTxO should throw an error also rather than
+      -- silently removing transactions that do double spending
+      let u' = updateUtxo b u
+      return $ SimpleLedgerState u'
 
 deriving instance OuroborosTag p => Show (LedgerState (SimpleBlock p c))
 

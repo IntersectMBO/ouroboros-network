@@ -1,8 +1,11 @@
 {-# LANGUAGE EmptyDataDecls      #-}
+{-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
+
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Run (
       runNode
@@ -16,14 +19,16 @@ import qualified Data.Map.Strict as M
 import           Data.Maybe
 import           Data.Semigroup ((<>))
 
-import           Ouroboros.Consensus.Crypto.DSIGN.Mock
-import qualified Ouroboros.Consensus.Ledger.Mock as Mock
-import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Network.Chain (Chain (..))
 import           Ouroboros.Network.ChainProducerState
 import           Ouroboros.Network.ConsumersAndProducers
 import           Ouroboros.Network.Node (NodeId (..))
 import qualified Ouroboros.Network.Node as Node
+
+import           Ouroboros.Consensus.Crypto.DSIGN.Mock
+import           Ouroboros.Consensus.Ledger.Abstract
+import qualified Ouroboros.Consensus.Ledger.Mock as Mock
+import           Ouroboros.Consensus.Protocol.BFT
 
 import           BlockGeneration (forkCoreNode)
 import           CLI
@@ -97,26 +102,39 @@ handleSimpleNode (TopologyInfo myNodeId topologyFile) = do
 
              Node.forkRelayKernel upstream cps
 
-             let numCoreNodes = length (filter ((== CoreNode) . role) nodeSetups)
-             let nid = case myNodeId of
-                            CoreId n  -> n
-                            RelayId n -> n
-             let protocolState = BftState myNodeId (SignKeyMockDSIGN nid)
-             let ledgerState  = Mock.SimpleLedgerState {
-                                simpleUtxo = mempty
-                              , simpleProtocolState = BftLedgerState
-                              }
-             initLedger <- atomically $
-                 newTVar (DemoLedgerState ledgerState 0 0 numCoreNodes)
+             let numCoreNodes  = length (filter ((== CoreNode) . role) nodeSetups)
+             let nid           = case myNodeId of
+                                   CoreId  n -> n
+                                   RelayId n -> n
+             let protocolState = ()
+             let ledgerState   = Mock.SimpleLedgerState mempty
+             let bftConfig     = BftNodeConfig {
+                                     bftNodeId   = myNodeId
+                                   , bftSignKey  = SignKeyMockDSIGN nid
+                                   , bftNumNodes = fromIntegral numCoreNodes
+                                   , bftVerKeys  = M.fromList [
+                                         (CoreId n, VerKeyMockDSIGN n)
+                                       | setup    <- nodeSetups
+                                       , CoreId n <- [nodeId setup]
+                                       ]
+                                   }
+             initLedger <- atomically $ newTVar $ DemoLedgerState {
+                 extLedgerState   = ExtLedgerState ledgerState ()
+               , howManyRollbacks = 0
+               , howManyAddBlocks = 0
+               , numNodes         = numCoreNodes
+               }
 
              when (role nodeSetup == CoreNode) $ do
                  forkCoreNode initLedger
+                              bftConfig
                               protocolState
                               nodeMempool
                               cps
                               slotDuration
 
              ledgerStateThreads <- spawnLedgerStateListeners myNodeId
+                                                             bftConfig
                                                              loggingQueue
                                                              Genesis
                                                              initLedger
@@ -158,6 +176,9 @@ handleSimpleNode (TopologyInfo myNodeId topologyFile) = do
       spawnProducer cps consumerNodeId = Async.async $
           NamedPipe.runProducer myNodeId consumerNodeId $
             exampleProducer cps
+
+instance ProtocolLedgerView Block where
+  protocolLedgerView _ _ = ()
 
 slotDuration :: Int
 slotDuration = 5 * 1000000

@@ -12,98 +12,80 @@
 -- | Testing form of BFT that stores additional information in the Ouroboros
 -- payload, which we can then verify in unit tests.
 module Ouroboros.Consensus.Protocol.Test (
-    -- * Tags
     TestProtocol
-    -- * Classes
-  , TestProtocolLedgerView(..)
-  , TestProtocolStateView(..)
-    -- * Constructors
-  , OuroborosState(..)
-  , OuroborosLedgerState(..)
+    -- * Type instances
+  , NodeConfig(..)
+  , Payload(..)
   ) where
 
 import           GHC.Generics (Generic)
 
+import           Ouroboros.Network.Serialise
+
+import           Ouroboros.Consensus.Node (NodeId)
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util
-import           Ouroboros.Network.Node (NodeId)
-import           Ouroboros.Network.Serialise
 
 -- | Add additional information to the payload of an existing protocol
 -- for verification purposes in the unit tests
 data TestProtocol p
 
 instance OuroborosTag p => OuroborosTag (TestProtocol p) where
-  -- The state is unchanged
-  newtype OuroborosState (TestProtocol p)       = TestState (OuroborosState p)
-  newtype OuroborosLedgerState (TestProtocol p) = TestLedgerState (OuroborosLedgerState p)
+
+  -- We need at least the node ID
+  data NodeConfig (TestProtocol p) = TestNodeConfig {
+      testNodeConfigP  :: NodeConfig p
+    , testNodeConfigId :: NodeId
+    }
 
   -- Payload is the standard payload plus additional fields we want to test for
-  data OuroborosPayload (TestProtocol p) ph = TestPayload {
-        testPayloadStd   :: OuroborosPayload p ph
+  data Payload (TestProtocol p) ph = TestPayload {
+        testPayloadP     :: Payload p ph
       , testPayloadStake :: Int
       }
     deriving (Generic)
 
+  -- In this example, the test protocol records the (absolute) stake, so we
+  -- should be to compute that from the ledger
+  type LedgerView (TestProtocol p) = (LedgerView p, NodeId -> Int)
+
   -- Proof is the standard proof plus whatever additional info we need to
   -- create the additional fields in the payload
-  data ProofIsLeader (TestProtocol p) = TestProof {
-        testProofStd   :: ProofIsLeader p
-      , testProofStake :: Int
-      }
+  type IsLeader (TestProtocol p) = (IsLeader p, Int)
 
-  mkOuroborosPayload TestProof{..} ph = do
-      standardPayload <- liftState $ mkOuroborosPayload testProofStd ph
+  --
+  -- The other types are unchanged
+  --
+
+  type NodeState       (TestProtocol p) = NodeState      p
+  type ChainState      (TestProtocol p) = ChainState     p
+  type ValidationErr   (TestProtocol p) = ValidationErr  p
+  type SupportedBlock  (TestProtocol p) = SupportedBlock p
+
+  mkPayload (TestNodeConfig cfg _) (proof, stake) ph = do
+      standardPayload <- mkPayload cfg proof ph
       return TestPayload {
-          testPayloadStd   = standardPayload
-        , testPayloadStake = testProofStake
+          testPayloadP     = standardPayload
+        , testPayloadStake = stake
         }
 
-  applyOuroborosLedgerState (TestPayload std _) (TestLedgerState ls) =
-      TestLedgerState (applyOuroborosLedgerState std ls)
+  checkIsLeader (TestNodeConfig cfg nodeId) slot (l, stakeOf) cs = do
+      mProof <- checkIsLeader cfg slot l cs
+      case mProof of
+        Nothing    -> return $ Nothing
+        Just proof -> return $ Just (proof, stakeOf nodeId)
 
-deriving instance (OuroborosTag p)          => Show (OuroborosLedgerState (TestProtocol p))
-deriving instance (OuroborosTag p, Show ph) => Show (OuroborosPayload (TestProtocol p) ph)
-deriving instance (OuroborosTag p, Eq   ph) => Eq   (OuroborosPayload (TestProtocol p) ph)
+  selectChain     (TestNodeConfig cfg _) = selectChain     cfg
+  applyChainState (TestNodeConfig cfg _) = applyChainState cfg . fst
 
-instance Condense (OuroborosPayload p ph)
-     => Condense (OuroborosPayload (TestProtocol p) ph) where
+deriving instance (OuroborosTag p, Show ph) => Show (Payload (TestProtocol p) ph)
+deriving instance (OuroborosTag p, Eq   ph) => Eq   (Payload (TestProtocol p) ph)
+
+instance Condense (Payload p ph)
+      => Condense (Payload (TestProtocol p) ph) where
     condense (TestPayload pld stake) =
         condense pld <> ",stake=" <> condense stake
 
 instance (OuroborosTag p, Serialise ph)
-      => Serialise (OuroborosPayload (TestProtocol p) ph) where
+      => Serialise (Payload (TestProtocol p) ph) where
   -- use generic instance
-
-instance ( RunOuroboros p l
-         , TestProtocolLedgerView l
-         , TestProtocolStateView p
-         ) => RunOuroboros (TestProtocol p) l where
-  checkIsLeader slot l = do
-      mStandardProof <- liftState $ checkIsLeader slot l
-      case mStandardProof of
-        Nothing -> return Nothing
-        Just standardProof -> do
-          TestState st <- getOuroborosState
-          -- derive any additional info from the ledger here (eg., stake)
-          return $ Just TestProof {
-              testProofStd   = standardProof
-            , testProofStake = stakeForNode (getOurNodeId st) l
-            }
-
--- | Additional constraints we need for the debugging fields
-class TestProtocolLedgerView l where
-  stakeForNode :: NodeId -> l -> Int
-
--- | Constraints on the state of the underlying protocol
-class TestProtocolStateView p where
-  getOurNodeId :: OuroborosState p -> NodeId
-
-liftState :: MonadOuroborosState (TestProtocol p) m
-          => OuroborosStateT p m a
-          -> m a
-liftState k = do
-    TestState st <- getOuroborosState
-    (a, st') <- runOuroborosStateT k st
-    putOuroborosState (TestState st')
-    return a
