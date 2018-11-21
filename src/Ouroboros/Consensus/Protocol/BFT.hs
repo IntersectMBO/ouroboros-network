@@ -98,6 +98,7 @@ instance BftCrypto c => OuroborosTag (Bft c) where
 
 deriving instance BftCrypto c => Show     (Payload (Bft c) ph)
 deriving instance BftCrypto c => Eq       (Payload (Bft c) ph)
+deriving instance BftCrypto c => Ord      (Payload (Bft c) ph)
 deriving instance BftCrypto c => Condense (Payload (Bft c) ph)
 
 instance BftCrypto c => Serialise (Payload (Bft c) ph) where

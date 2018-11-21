@@ -27,7 +27,7 @@ module Test.DynamicBFT (
 
 import           Control.Monad
 import           Control.Monad.Except
-import           Control.Monad.ST.Lazy
+import           Control.Monad.ST.Lazy (runST)
 import           Crypto.Random (DRG)
 import           Data.Foldable (foldl', foldlM)
 import           Data.Map.Strict (Map)
@@ -47,7 +47,6 @@ import           Protocol.Transition (SomeTransition (..))
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain
 import qualified Ouroboros.Network.Chain as Chain
-import           Ouroboros.Network.ChainProducerState
 import           Ouroboros.Network.MonadClass
 import           Ouroboros.Network.Node
 import           Ouroboros.Network.Protocol.ChainSync.Type
@@ -56,6 +55,7 @@ import           Ouroboros.Consensus.Crypto.DSIGN.Mock
 import           Ouroboros.Consensus.Crypto.Hash.Class (hash)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Mock
+import           Ouroboros.Consensus.Node
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
@@ -280,26 +280,28 @@ broadcastNetwork numSlots nodeInit txMap initLedger initRNG = do
       varSt  <- atomically $ newTVar initSt
       varL   <- atomically $ newTVar initLedger
 
-      let ourOwnConsumer :: Channel m (SomeTransition (ChainSyncMessage (SimpleBlock p c) (Point (SimpleBlock p c))))
-          ourOwnConsumer =
-              let loopbackRecv = snd (chans Map.! us Map.! us)
-                  recvEff mMsgToMyself = case mMsgToMyself of
-                    Just (SomeTransition (MsgRollForward b _)) -> do
-                        atomically $
-                          modifyTVar' varL $ \st ->
-                            case runExcept (applyExtLedgerState cfg b st) of
-                              Left err  -> error (show err)
-                              Right st' -> st'
-                    _ -> return ()
-              in channelRecvEffect recvEff loopbackRecv
+      -- TODO: New chain only to fake rollback
+      let respondToUpdate :: Chain (SimpleBlock p c)
+                          -> [ChainUpdate (SimpleBlock p c)]
+                          -> Tr m ()
+          respondToUpdate newChain (RollBack _:_) =
+              modifyTVar' varL $ \_st ->
+                case runExcept (chainExtLedgerState cfg newChain initLedger) of
+                  Left err  -> error (show err)
+                  Right st' -> st'
+          respondToUpdate _ upd = do
+              let newBlock :: ChainUpdate (SimpleBlock p c) -> SimpleBlock p c
+                  newBlock (RollBack _) = error "newBlock: unexpected rollback"
+                  newBlock (AddBlock b) = b
+              modifyTVar' varL $ \st ->
+                case runExcept (foldExtLedgerState cfg (map newBlock upd) st) of
+                  Left err  -> error (show err)
+                  Right st' -> st'
 
-      varCPS <- relayNode us initChain $ NodeChannels {
-          consumerChans =
-              map (\them -> snd (chans Map.! them Map.! us)) (filter (/= us) nodeIds)
-              <> [ourOwnConsumer]
-        , producerChans =
-              map (\them -> fst (chans Map.! us Map.! them)) nodeIds
-        }
+      node <- nodeKernel us cfg initLedger initChain respondToUpdate
+      forM_ (filter (/= us) nodeIds) $ \them -> do
+        registerDownstream node them $ fst (chans Map.! us Map.! them)
+        registerUpstream   node them $ snd (chans Map.! them Map.! us)
 
       let runProtocol :: MonadPseudoRandomT gen (NodeStateT p (Tr m)) a
                       -> Tr m a
@@ -312,33 +314,34 @@ broadcastNetwork numSlots nodeInit txMap initLedger initRNG = do
           threadDelay (slotDuration (Proxy @m) * fromIntegral slotId)
           let slot = Slot (fromIntegral slotId)
 
-          -- TODO: We *do not* update the ledger state here. That's done in
-          -- our \"loopback\" consumer.
-          ExtLedgerState{..} <- atomically $ readTVar varL
+          publishBlock node slot $ \prevPoint prevNo -> do
+            let prevHash = castHash (pointHash prevPoint)
+                curNo    = succ prevNo
+                txs      = fromMaybe mempty $ Map.lookup slot txMap
 
-          mIsLeader <- atomically $ runProtocol $
-                         checkIsLeader
-                           cfg
-                           slot
-                           (protocolLedgerView cfg ledgerState)
-                           ouroborosChainState
-          case mIsLeader of
-            Nothing    -> return ()
-            Just proof -> atomically $ do
-              cps    <- readTVar varCPS
-              let chain    = chainState cps
-                  prevHash = castHash (headHash chain)
-                  prevNo   = headBlockNo chain
-                  curNo    = succ prevNo
-                  txs      = fromMaybe mempty $ Map.lookup slot txMap
-              block <- runProtocol $ forgeBlock cfg slot curNo prevHash txs proof
-              writeTVar varCPS cps{ chainState = chain :> block }
+            -- NOTE: Ledger state is updated in 'respondToUpdate'
+            --
+            -- Since the leader proof is (partially) based on the ledger state,
+            -- it is important that we get the ledger state and check if we
+            -- are a leader in a single transaction.
+
+            ExtLedgerState{..} <- readTVar varL
+            mIsLeader          <- runProtocol $
+                                     checkIsLeader
+                                       cfg
+                                       slot
+                                       (protocolLedgerView cfg ledgerState)
+                                       ouroborosChainState
+            case mIsLeader of
+              Nothing    -> return Nothing
+              Just proof -> runProtocol $ Just <$>
+                              forgeBlock cfg slot curNo prevHash txs proof
 
       fork $ do
         threadDelay (slotDuration (Proxy @m) * fromIntegral (numSlots + 10))
         atomically $ do
-          cps <- readTVar varCPS
-          writeTVar varRes $ Just (us, chainState cps)
+          chain <- getCurrentChain node
+          writeTVar varRes $ Just (us, chain)
 
       return varRes
 
@@ -352,7 +355,7 @@ broadcastNetwork numSlots nodeInit txMap initLedger initRNG = do
 
 
 slotDuration :: MonadTimer m => proxy m -> Duration (Time m)
-slotDuration _ = 1000000
+slotDuration _ = 100000
 
 {-------------------------------------------------------------------------------
   Auxiliary

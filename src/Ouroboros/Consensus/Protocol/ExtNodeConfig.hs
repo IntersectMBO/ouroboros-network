@@ -65,6 +65,7 @@ instance OuroborosTag p => OuroborosTag (ExtNodeConfig cfg p) where
   applyChainState (EncNodeConfig cfg _) = applyChainState cfg
 
 deriving instance (OuroborosTag p, Eq       ph) => Eq       (Payload (ExtNodeConfig cfg p) ph)
+deriving instance (OuroborosTag p, Ord      ph) => Ord      (Payload (ExtNodeConfig cfg p) ph)
 deriving instance (OuroborosTag p, Show     ph) => Show     (Payload (ExtNodeConfig cfg p) ph)
 deriving instance (OuroborosTag p, Condense ph) => Condense (Payload (ExtNodeConfig cfg p) ph)
 

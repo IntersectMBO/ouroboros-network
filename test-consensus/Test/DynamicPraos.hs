@@ -21,7 +21,7 @@ module Test.DynamicPraos (
     tests
   ) where
 
-import           Control.Monad.ST.Lazy
+import           Control.Monad.ST.Lazy (runST)
 import           Data.Foldable (foldlM)
 import qualified Data.IntMap.Strict as IntMap
 import           Data.Map.Strict (Map)
