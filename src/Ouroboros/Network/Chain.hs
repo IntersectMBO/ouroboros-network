@@ -77,7 +77,7 @@ import           Ouroboros.Network.Serialise
 --
 
 data Chain block = Genesis | Chain block :> block
-  deriving (Eq, Show, Functor)
+  deriving (Eq, Ord, Show, Functor)
 
 infixl 5 :>
 

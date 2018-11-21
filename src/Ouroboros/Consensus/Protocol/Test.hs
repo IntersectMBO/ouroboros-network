@@ -80,6 +80,7 @@ instance OuroborosTag p => OuroborosTag (TestProtocol p) where
 
 deriving instance (OuroborosTag p, Show ph) => Show (Payload (TestProtocol p) ph)
 deriving instance (OuroborosTag p, Eq   ph) => Eq   (Payload (TestProtocol p) ph)
+deriving instance (OuroborosTag p, Ord  ph) => Ord  (Payload (TestProtocol p) ph)
 
 instance Condense (Payload p ph)
       => Condense (Payload (TestProtocol p) ph) where

@@ -20,7 +20,7 @@ import           Data.Proxy (Proxy (..))
 import           GHC.Generics (Generic)
 import           Numeric.Natural
 import           Test.QuickCheck (Arbitrary (..), Gen, Property, counterexample,
-                                  (==>))
+                     (==>))
 
 import           Ouroboros.Consensus.Util.Random (Seed, withSeed)
 import           Ouroboros.Network.Serialise
@@ -54,8 +54,8 @@ data CertifiedVRF v a = CertifiedVRF {
   deriving Generic
 
 deriving instance VRFAlgorithm v => Show (CertifiedVRF v a)
-deriving instance VRFAlgorithm v => Eq (CertifiedVRF v a)
-deriving instance VRFAlgorithm v => Ord (CertifiedVRF v a)
+deriving instance VRFAlgorithm v => Eq   (CertifiedVRF v a)
+deriving instance VRFAlgorithm v => Ord  (CertifiedVRF v a)
 
 instance VRFAlgorithm v => Serialise (CertifiedVRF v a) where
   -- use generic instance for now

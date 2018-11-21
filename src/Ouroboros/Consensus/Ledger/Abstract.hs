@@ -110,10 +110,10 @@ chainExtLedgerState cfg (c :> b) st = chainExtLedgerState cfg c st >>=
 -- | Validation of an entire chain
 verifyChain :: ProtocolLedgerView b
             => NodeConfig (BlockProtocol b)
-            -> Chain b
             -> ExtLedgerState b
+            -> Chain b
             -> Bool
-verifyChain cfg c st =
-    case runExcept (chainExtLedgerState cfg c st) of
+verifyChain cfg initSt c =
+    case runExcept (chainExtLedgerState cfg c initSt) of
       Left  _err -> False
       Right _st' -> True

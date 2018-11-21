@@ -67,7 +67,8 @@ data PraosExtraFields c = PraosExtraFields {
   deriving Generic
 
 deriving instance PraosCrypto c => Show (PraosExtraFields c)
-deriving instance PraosCrypto c => Eq (PraosExtraFields c)
+deriving instance PraosCrypto c => Eq   (PraosExtraFields c)
+deriving instance PraosCrypto c => Ord  (PraosExtraFields c)
 
 instance VRFAlgorithm (PraosVRF c) => Serialise (PraosExtraFields c)
   -- use Generic instance for now
@@ -170,6 +171,7 @@ instance PraosCrypto c => OuroborosTag (Praos c) where
 
 deriving instance PraosCrypto c => Show (Payload (Praos c) ph)
 deriving instance PraosCrypto c => Eq   (Payload (Praos c) ph)
+deriving instance PraosCrypto c => Ord  (Payload (Praos c) ph)
 
 instance PraosCrypto c => Condense (Payload (Praos c) ph) where
     condense (PraosPayload sig _) = condense sig
