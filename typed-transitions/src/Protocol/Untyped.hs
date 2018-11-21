@@ -35,6 +35,14 @@ data Peer msg m a
   | PeerYield (SomeMessage msg) (Peer msg m a)
   | PeerAwait (SomeMessage msg -> Maybe (Peer msg m a))
 
+yield :: Typeable from => msg from to -> Peer msg m a -> Peer msg m a
+yield msg p = PeerYield (SomeMessage msg) p
+
+lift :: m (Peer msg m a) -> Peer msg m a
+lift = PeerLift
+
+await :: (SomeMessage msg -> Maybe (Peer msg m a)) -> Peer msg m a
+await = PeerAwait
 
 asUntypedPeer :: forall p st
                         (msg     :: st -> st -> Type)
