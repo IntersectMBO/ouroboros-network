@@ -1,6 +1,7 @@
-{-# LANGUAGE GADTs           #-}
-{-# LANGUAGE DataKinds       #-}
-{-# LANGUAGE NamedFieldPuns  #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 {-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
 
@@ -15,7 +16,7 @@
 module Ouroboros.Network.Protocol.ChainSync.Client (
       -- * Protocol type for the client
       -- | The protocol states from the point of view of the client.
-      ChainSyncClient
+      ChainSyncClient(..)
     , ClientStIdle(..)
     , ClientStNext(..)
     , ClientStIntersect(..)
@@ -29,8 +30,10 @@ import Ouroboros.Network.Protocol.ChainSync.Type
 
 
 -- | A chain sync protocol client, on top of some effect 'm'.
---
-type ChainSyncClient header point m a = ClientStIdle header point m a
+-- The first choice of request is within that 'm'.
+newtype ChainSyncClient header point m a = ChainSyncClient {
+    runChainSyncClient :: m (ClientStIdle header point m a)
+  }
 
 
 -- | In the 'StIdle' protocol state, the server does not have agency and can choose to
@@ -76,8 +79,8 @@ data ClientStIdle header point m a where
 --
 data ClientStNext header point m a =
      ClientStNext {
-       recvMsgRollForward  :: header -> point -> m (ClientStIdle header point m a),
-       recvMsgRollBackward :: point  -> point -> m (ClientStIdle header point m a)
+       recvMsgRollForward  :: header -> point -> ChainSyncClient header point m a,
+       recvMsgRollBackward :: point  -> point -> ChainSyncClient header point m a
      }
 
 -- | In the 'StIntersect' protocol state, the client does not have agency and
@@ -91,8 +94,8 @@ data ClientStNext header point m a =
 --
 data ClientStIntersect header point m a =
      ClientStIntersect {
-       recvMsgIntersectImproved  :: point -> point -> m (ClientStIdle header point m a),
-       recvMsgIntersectUnchanged ::          point -> m (ClientStIdle header point m a)
+       recvMsgIntersectImproved  :: point -> point -> ChainSyncClient header point m a,
+       recvMsgIntersectUnchanged ::          point -> ChainSyncClient header point m a
      }
 
 
@@ -100,58 +103,59 @@ data ClientStIntersect header point m a =
 -- side of the 'ChainSyncProtocol'.
 --
 chainSyncClientPeer
-  :: Monad m
+  :: forall header point m a .
+     ( Monad m )
   => ChainSyncClient header point m a
   -> Peer ChainSyncProtocol (ChainSyncMessage header point)
           (Yielding StIdle) (Finished StDone)
           m a
-
-chainSyncClientPeer (SendMsgRequestNext stNext stAwait) =
-    over MsgRequestNext $
-    await $ \resp ->
-    case resp of
-      MsgRollForward header pHead -> lift $ do
-          next <- recvMsgRollForward header pHead
-          pure $ chainSyncClientPeer next
-        where
-          ClientStNext{recvMsgRollForward} = stNext
-
-      MsgRollBackward pRollback pHead -> lift $ do
-          next <- recvMsgRollBackward pRollback pHead
-          pure $ chainSyncClientPeer next
-        where
-          ClientStNext{recvMsgRollBackward} = stNext
-
-      -- This code could be factored more easily by changing the protocol type
-      -- to put both roll forward and back under a single constructor.
-      MsgAwaitReply ->
-        lift $ do
-          ClientStNext{recvMsgRollForward, recvMsgRollBackward} <- stAwait
-          pure $ await $ \resp' ->
-            case resp' of
-              MsgRollForward header pHead -> lift $ do
-                next <- recvMsgRollForward header pHead
-                pure $ chainSyncClientPeer next
-              MsgRollBackward pRollback pHead -> lift $ do
-                next <- recvMsgRollBackward pRollback pHead
-                pure $ chainSyncClientPeer next
-
-chainSyncClientPeer (SendMsgFindIntersect points stIntersect) =
-    over (MsgFindIntersect points) $
-    await $ \resp ->
-    case resp of
-      MsgIntersectImproved pIntersect pHead -> lift $ do
-        next <- recvMsgIntersectImproved pIntersect pHead
-        pure $ chainSyncClientPeer next
-
-      MsgIntersectUnchanged pHead -> lift $ do
-        next <- recvMsgIntersectUnchanged pHead
-        pure $ chainSyncClientPeer next
+chainSyncClientPeer (ChainSyncClient mclient) = lift $ fmap chainSyncClientPeer_ mclient
   where
-    ClientStIntersect {
-      recvMsgIntersectImproved,
-      recvMsgIntersectUnchanged
-    } = stIntersect
+    chainSyncClientPeer_
+      :: ClientStIdle header point m a
+      -> Peer ChainSyncProtocol (ChainSyncMessage header point)
+              (Yielding StIdle) (Finished StDone)
+              m a
+    chainSyncClientPeer_ (SendMsgRequestNext stNext stAwait) =
+        over MsgRequestNext $
+        await $ \resp ->
+        case resp of
+          MsgRollForward header pHead ->
+              chainSyncClientPeer (recvMsgRollForward header pHead)
+            where
+              ClientStNext{recvMsgRollForward} = stNext
 
-chainSyncClientPeer (SendMsgDone a) = 
-  out MsgDone (done a)
+          MsgRollBackward pRollback pHead ->
+              chainSyncClientPeer (recvMsgRollBackward pRollback pHead)
+            where
+              ClientStNext{recvMsgRollBackward} = stNext
+
+          -- This code could be factored more easily by changing the protocol type
+          -- to put both roll forward and back under a single constructor.
+          MsgAwaitReply ->
+            lift $ do
+              ClientStNext{recvMsgRollForward, recvMsgRollBackward} <- stAwait
+              pure $ await $ \resp' ->
+                case resp' of
+                  MsgRollForward header pHead ->
+                    chainSyncClientPeer (recvMsgRollForward header pHead)
+                  MsgRollBackward pRollback pHead ->
+                    chainSyncClientPeer (recvMsgRollBackward pRollback pHead)
+
+    chainSyncClientPeer_ (SendMsgFindIntersect points stIntersect) =
+        over (MsgFindIntersect points) $
+        await $ \resp ->
+        case resp of
+          MsgIntersectImproved pIntersect pHead ->
+            chainSyncClientPeer (recvMsgIntersectImproved pIntersect pHead)
+
+          MsgIntersectUnchanged pHead ->
+            chainSyncClientPeer (recvMsgIntersectUnchanged pHead)
+      where
+        ClientStIntersect {
+          recvMsgIntersectImproved,
+          recvMsgIntersectUnchanged
+        } = stIntersect
+
+    chainSyncClientPeer_ (SendMsgDone a) = 
+      out MsgDone (done a)

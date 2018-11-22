@@ -13,9 +13,17 @@ direct :: Monad m
        => ChainSyncServer header point m a
        -> ChainSyncClient header point m b
        -> m (a, b)
+direct (ChainSyncServer mserver) (ChainSyncClient mclient) = do
+  server <- mserver
+  client <- mclient
+  direct_ server client
 
-direct  ServerStIdle{recvMsgRequestNext}
-       (Client.SendMsgRequestNext stNext stAwait) = do
+direct_ :: Monad m
+        => ServerStIdle header point m a
+        -> ClientStIdle header point m b
+        -> m (a, b)
+direct_  ServerStIdle{recvMsgRequestNext}
+        (Client.SendMsgRequestNext stNext stAwait) = do
     mresp <- recvMsgRequestNext
     case mresp of
       Left  resp    -> directStNext resp stNext
@@ -25,28 +33,24 @@ direct  ServerStIdle{recvMsgRequestNext}
   where
     directStNext (SendMsgRollForward header pHead server')
                   ClientStNext{recvMsgRollForward} = do
-      client' <- recvMsgRollForward header pHead
-      direct server' client'
+      direct server' (recvMsgRollForward header pHead)
 
     directStNext (SendMsgRollBackward pIntersect pHead server')
                   ClientStNext{recvMsgRollBackward} = do
-      client' <- recvMsgRollBackward pIntersect pHead
-      direct server' client'
+      direct server' (recvMsgRollBackward pIntersect pHead)
 
-direct  ServerStIdle{recvMsgFindIntersect}
-       (Client.SendMsgFindIntersect points
+direct_  ServerStIdle{recvMsgFindIntersect}
+        (Client.SendMsgFindIntersect points
           ClientStIntersect{recvMsgIntersectImproved,
                             recvMsgIntersectUnchanged}) = do
     sIntersect <- recvMsgFindIntersect points
     case sIntersect of
-      SendMsgIntersectImproved  pIntersect pHead server' -> do
-        client' <- recvMsgIntersectImproved pIntersect pHead
-        direct server' client'
+      SendMsgIntersectImproved  pIntersect pHead server' ->
+        direct server' (recvMsgIntersectImproved pIntersect pHead)
 
-      SendMsgIntersectUnchanged            pHead server' -> do
-        client' <- recvMsgIntersectUnchanged pHead
-        direct server' client'
+      SendMsgIntersectUnchanged            pHead server' ->
+        direct server' (recvMsgIntersectUnchanged pHead)
 
-direct ServerStIdle{recvMsgDoneClient}
+direct_ ServerStIdle{recvMsgDoneClient}
        (Client.SendMsgDone clientDone) =
     return (recvMsgDoneClient, clientDone)

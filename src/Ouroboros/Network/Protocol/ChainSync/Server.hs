@@ -1,6 +1,7 @@
-{-# LANGUAGE GADTs           #-}
-{-# LANGUAGE DataKinds       #-}
-{-# LANGUAGE NamedFieldPuns  #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 {-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
 
@@ -15,7 +16,7 @@
 module Ouroboros.Network.Protocol.ChainSync.Server  (
       -- * Protocol type for the server
       -- | The protocol states from the point of view of the server.
-      ChainSyncServer
+      ChainSyncServer(..)
     , ServerStIdle(..)
     , ServerStNext(..)
     , ServerStIntersect(..)
@@ -30,7 +31,9 @@ import Ouroboros.Network.Protocol.ChainSync.Type
 
 -- | A chain sync protocol server, on top of some effect 'm'.
 --
-type ChainSyncServer header point m a = ServerStIdle header point m a
+newtype ChainSyncServer header point m a = ChainSyncServer {
+    runChainSyncServer :: m (ServerStIdle header point m a)
+  }
 
 
 -- | In the 'StIdle' protocol state, the server does not have agency. Instead
@@ -61,11 +64,11 @@ data ServerStIdle header point m a = ServerStIdle {
 --
 data ServerStNext header point m a where
   SendMsgRollForward  :: header -> point
-                      -> ServerStIdle header point m a
+                      -> ChainSyncServer header point m a
                       -> ServerStNext header point m a
 
   SendMsgRollBackward :: point -> point
-                      -> ServerStIdle header point m a
+                      -> ChainSyncServer header point m a
                       -> ServerStNext header point m a
 
 -- | In the 'StIntersect' protocol state, the server has agency and must send
@@ -77,11 +80,11 @@ data ServerStNext header point m a where
 --
 data ServerStIntersect header point m a where
   SendMsgIntersectImproved  :: point -> point
-                            -> ServerStIdle header point m a
+                            -> ChainSyncServer header point m a
                             -> ServerStIntersect header point m a
 
   SendMsgIntersectUnchanged :: point
-                            -> ServerStIdle header point m a
+                            -> ChainSyncServer header point m a
                             -> ServerStIntersect header point m a
 
 
@@ -94,9 +97,10 @@ chainSyncServerPeer
   -> Peer ChainSyncProtocol (ChainSyncMessage header point)
           (Awaiting StIdle) (Finished StDone)
           m a
-chainSyncServerPeer ServerStIdle{recvMsgRequestNext, recvMsgFindIntersect, recvMsgDoneClient} =
+chainSyncServerPeer (ChainSyncServer mterm) = lift $ mterm >>=
+    \(ServerStIdle{recvMsgRequestNext, recvMsgFindIntersect, recvMsgDoneClient}) ->
 
-    await $ \req ->
+    pure $ await $ \req ->
     case req of
       MsgRequestNext -> lift $ do
         mresp <- recvMsgRequestNext
