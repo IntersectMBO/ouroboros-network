@@ -6,14 +6,7 @@ module Ouroboros.Network.ProtocolInterfaces (
   , ProducerHandlers(..)
   , liftConsumerHandlers
   , liftProducerHandlers
-    -- Block layer consumer / producer
-  , BlockProducerHandlers(..)
-  , BlockConsumerHandlers(..)
-    -- * Auxiliary types
-  , Promise(..)
   ) where
-
-import           Streaming (Stream, Of)
 
 import           Ouroboros.Network.Chain (ChainUpdate (..), Point (..))
 
@@ -82,36 +75,4 @@ liftProducerHandlers lift ProducerHandlers {
       improveReadPoint   = \r ps -> lift (improveReadPoint r ps),
       tryReadChainUpdate = \r -> lift (tryReadChainUpdate r),
       readChainUpdate    = \r -> lift (readChainUpdate r)
-    }
-
-data Promise b
-    = Fullfilled b
-    | Awaiting
-    deriving (Eq, Show)
-
--- |
--- The interface usef by block layer of the producer side of the chain consumer
--- protocol.
---
-data BlockProducerHandlers blockHeader blockBody m = BlockProducerHandlers {
-      getBlock :: Point blockHeader -> m (Maybe (Promise blockBody)),
-      -- ^ get block from the block storage layer.  It is non blocking.
-      -- @'Promise'@ indicates that a block has been requested and the node is
-      -- awaiting it.
-      awaitBlock :: Point blockHeader -> m (Maybe blockBody),
-      -- ^ blocking operation of getting a block.  It will block until a block is
-      -- received from a peer.
-      streamBlocks :: Point blockHeader -> Point blockHeader -> Stream (Of blockBody) m ()
-    }
-
--- |
--- The interface used by block layer of the consumer side of the chain consumer
--- protocol.
---
--- TODO: add block validation
-data BlockConsumerHandlers blockHeader blockBody m = BlockConsumerHandlers {
-      putBlock :: Point blockHeader -> Promise blockBody -> m (),
-      -- ^ store a block body received from the network
-      verifyBlockBody :: blockHeader -> blockBody -> Bool
-      -- ^ verify block body
     }

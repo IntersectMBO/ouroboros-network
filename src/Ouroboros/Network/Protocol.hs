@@ -1,9 +1,7 @@
 {-# LANGUAGE BangPatterns               #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE StandaloneDeriving         #-}
 
 module Ouroboros.Network.Protocol
   ( MsgConsumer(..)
@@ -12,30 +10,17 @@ module Ouroboros.Network.Protocol
   , ProducerHandlers
   , consumerSideProtocol1
   , producerSideProtocol1
-  , MsgConsumerBlock(..)
-  , MsgProducerBlock(..)
-  , withConsumerBlockLayer
-  , producerBlockLayer
-  , Window (..)
-  , MsgConsumerBlocks(..)
-  , MsgStreamBlocks(..)
-  , withConsumerBlockStreamLayer
-  , producerBlockStreamLayer
   , loggingSend
   , loggingRecv
   ) where
 
 import           Control.Monad
-import           Control.Exception (assert)
-import           Data.Word (Word32)
-import qualified Streaming.Prelude as S
 
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Chain (ChainUpdate (..), Point (..), blockPoint)
+import           Ouroboros.Network.Chain (ChainUpdate (..), Point (..))
 import           Ouroboros.Network.MonadClass
-import           Ouroboros.Network.ProtocolInterfaces (BlockConsumerHandlers (..),
-                     BlockProducerHandlers (..), ConsumerHandlers (..),
-                     ProducerHandlers (..), Promise (..))
+import           Ouroboros.Network.ProtocolInterfaces (ConsumerHandlers (..),
+                   ProducerHandlers (..))
 import           Ouroboros.Network.Serialise
 
 {-# ANN module "HLint: ignore Use readTVarIO" #-}
@@ -166,237 +151,6 @@ producerSideProtocol1 ProducerHandlers{..} send recv =
 
   updateMsg (AddBlock b) = MsgRollForward b
   updateMsg (RollBack p) = MsgRollBackward p
-
-data MsgConsumerBlock block
-  = MsgRequestBlock (Point block)
-  -- ^ Ask for a block
-  deriving (Eq, Show)
-
-data MsgProducerBlock blockBody
-  = MsgBlock blockBody
-  -- ^ Respond with a block body
-  | MsgNoBlock
-  -- ^ Producer has no such block
-  | MsgAwaitBlock
-  -- ^ Producer requested a block, and is awaiting
-  deriving (Eq, Show)
-
-withConsumerBlockLayer
-  :: forall m blockHeader blockBody.
-     ( MonadFork m
-     , MonadSTM  m
-     , HasHeader blockHeader
-     )
-  => BlockConsumerHandlers blockHeader blockBody m
-  -> (MsgConsumerBlock blockHeader -> m ()) -- ^ request a block
-  -> m (MsgProducerBlock blockBody)         -- ^ receive a block
-  -> ((blockHeader -> m ()) -> m ())
-      -- ^ conversation which requests a block body
-      -- and runs the continuation
-  -> (Maybe blockBody -> m ())
-      -- ^ continuation; @'Nothing'@ signifies that
-      -- the producer responded with @'MsgNoBlock'@
-  -> m ()
-withConsumerBlockLayer BlockConsumerHandlers{..} send recv conv k = conv forkRequestBlockConv
- where
-  forkRequestBlockConv :: blockHeader -> m ()
-  forkRequestBlockConv h = fork $ do
-    send $ MsgRequestBlock (blockPoint h)
-    recvBlock
-
-  recvBlock :: m ()
-  recvBlock = do
-    msg <- recv
-    case msg of
-      MsgBlock bb   -> k (Just bb)
-      MsgNoBlock    -> k Nothing
-      MsgAwaitBlock -> recvBlock
-
-producerBlockLayer
-  :: forall m blockHeader blockBody.
-     ( MonadFork m
-     , MonadSTM  m
-     , StandardHash blockHeader
-     )
-  => BlockProducerHandlers blockHeader blockBody m
-  -> (MsgProducerBlock blockBody -> m ()) -- ^ send a block
-  -> m (MsgConsumerBlock blockHeader)     -- ^ receive a request
-  -> m ()
-producerBlockLayer BlockProducerHandlers {..} send recv = fork $ forever $ do
-  MsgRequestBlock p <- recv
-  mbb <- getBlock p
-  case mbb of
-    Just (Fullfilled bb) -> send (MsgBlock bb)
-    Just Awaiting -> do
-      send MsgAwaitBlock
-      mbb' <- awaitBlock p
-      case mbb' of
-        Nothing -> send MsgNoBlock
-        Just bb -> send (MsgBlock bb)
-    Nothing -> send MsgNoBlock
-
--- | Request a range of blocks which the producer will stream
---
-data MsgConsumerBlocks blockHeader
-  = MsgRequestBlocks (Point blockHeader) (Point blockHeader) Window
-  -- ^ Ask for a range of blocks with a given window size
-  | MsgUpdateWindow Window
-  -- ^ update streaming window
-
--- | When requesting a range of blocks the producer will stream block bodies.
---
-data MsgStreamBlocks blockBody
-  = MsgStreamBlock blockBody
-  -- ^ Response with a single block body
-  | MsgStreamEnd
-  -- ^ if the consumer requested a range of blocks, the producer will respond
-  -- with a sequence of @'MsgBlock'@ finalised with @'MsgStreamEnd'@
-  deriving (Eq, Show)
-
--- | Type which is used to pack elements of a `TBQueue` which gives information
--- when a stream of elements ends.
---
-data StreamElement a
-  = StreamElement a
-  | EndOfStream
-  deriving (Eq, Ord, Show)
-
--- | Window size for the block layer streaming protocol.
---
-newtype Window = Window { runWindow :: Word32 }
-  deriving (Eq, Show, Ord, Enum, Num)
-
-deriving instance Real Window
-deriving instance Integral Window
-
--- | Threshold for the block layer protocol.  It should be striclly smaller
--- than the window size.
---
-newtype Threshold = Threshold { runThreshold :: Word32 }
-  deriving (Eq, Show, Ord, Enum, Num)
-
-deriving instance Real Threshold
-deriving instance Integral Threshold
-
--- | Consumer part of the block streaming protocol.
---
--- When the consumer will receive `Threshold` messages it will send
--- `MsgUpdateWindow` with the difference between window and the threshold.
--- This means that the receivers queue might have at most `window + (window
--- threshold)` writes.  After `window` writes its queue will block (`TBQueue`).
---
---  In the following digrams, lines from client to server represent
---  `MsgRequestBlock` (the initial line), or `MsgUpdateWindow`.  The lines from
---  server to client represent `MsgStreamBlock`.
---
---  `x` represent the point when the client will block (not sending next
---  `MsgUpdateQueue`) if the consumer was not reading from its queue.  This is
---  after receiving `window + (window - threshold)` messages.  This is the
---  maximum number of allocations the client must be prepared for.
---
---  window    = 3
---  threshold = 2
---
---  server -----------------------
---            / \ \ \  /\    /\
---           /   \ \ \/  \  /  \
---          /     \ \/\   \/    \
---  client ---------------x-------
---
---  window    = 4
---  threshold = 2
---  
---  server -----------------------
---            / \ \ \ \/\ \  /\ \
---           /   \ \ \/\ \ \/  \ \
---          /     \ \/\ \ \/\   \ \
---  client ---------------x-------
---
-withConsumerBlockStreamLayer
-  :: forall m blockHeader blockBody.
-     ( MonadSTM m
-     , MonadTBQueue m
-     , HasHeader blockHeader
-     )
-  => BlockConsumerHandlers blockHeader blockBody m
-  -> (MsgConsumerBlocks blockHeader -> m ()) -- ^ request blocks
-  -> m (MsgStreamBlocks blockBody)           -- ^ receive a block
-  -> ((Window -> Threshold -> Point blockHeader -> Point blockHeader -> m ()) -> m ())
-    -- ^
-    -- conversation which requests a stream of
-    -- blocks and runs the continuation.  Size
-    -- is the size of queue and it should be non
-    -- zero.
-  -> (TBQueue m (StreamElement blockBody) -> m ())
-    -- ^
-    -- continuation, which is run in a new thread
-  -> m ()
-withConsumerBlockStreamLayer BlockConsumerHandlers{..} send recv conv k
-  = conv forkRequestBlockStreamConv
- where
-  forkRequestBlockStreamConv :: Window -> Threshold -> Point blockHeader -> Point blockHeader -> m ()
-  forkRequestBlockStreamConv window threshold from to
-    = assert
-        (window /= Window 0 && runWindow window > runThreshold threshold)
-      $ fork $ do
-        send $ MsgRequestBlocks from to window
-        queue <- atomically $ newTBQueue (fromIntegral window)
-        fork (k queue)
-        recvBlock window threshold 0 queue
-
-  recvBlock :: Window -> Threshold -> Word32 -> TBQueue m (StreamElement blockBody) -> m ()
-  recvBlock window threshold !writes queue = do
-    msg <- recv
-    case msg of
-      MsgStreamBlock bb -> do
-        -- at most `window - threshold` `writeTBQueue` calls will
-        -- await writting to the queue, which size is `window`.
-        atomically $ writeTBQueue queue (StreamElement bb)
-        if writes >= fromIntegral threshold
-          -- threshold reached, update the window
-          then do
-            send $ MsgUpdateWindow (window - fromIntegral threshold)
-            recvBlock window threshold 0 queue
-          else do
-            recvBlock window threshold (writes + 1) queue
-      MsgStreamEnd ->
-        atomically $ writeTBQueue queue EndOfStream
-
-
--- | Producer of the block streams. It awaits for initial `MsgRequestBlocks`
--- message which commands how many blocks the producer can stream before it
--- needs to wait for `MsgUpdateWindow`.
---
-producerBlockStreamLayer
-  :: forall m blockHeader blockBody.
-     ( MonadFork m
-     , MonadSTM  m
-     )
-  => BlockProducerHandlers blockHeader blockBody m
-  -> (MsgStreamBlocks blockBody -> m ()) -- ^ send a block
-  -> m (MsgConsumerBlocks blockHeader)   -- ^ receive a request
-  -> m ()
-producerBlockStreamLayer BlockProducerHandlers {..} send recv = fork $ forever $ do
-  msg <- recv
-  case msg of
-    MsgUpdateWindow{} -> error "producerBlockStreamLayer: protocol error"
-    MsgRequestBlocks from to window -> do
-      windowVar <- atomically $ newTVar window
-      S.mapM_ (fn windowVar) (streamBlocks from to)
- where
-  fn windowVar bb = do
-    window <- atomically (readTVar windowVar)
-    if window <= 0
-      then do
-        msg' <- recv
-        case msg' of
-          MsgUpdateWindow window' -> do
-            send (MsgStreamBlock bb)
-            atomically $ writeTVar windowVar (pred window')
-          MsgRequestBlocks{}    -> error "producerBlockStreamLayer: block streaming: protocol error"
-      else do
-        send (MsgStreamBlock bb)
-        atomically $ modifyTVar' windowVar pred
 
 -- | A wrapper for send that logs the messages
 --
