@@ -1,3 +1,4 @@
+{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -10,19 +11,13 @@ module Ouroboros.Consensus.Crypto.VRF.Class
     -- TODO: Added to Lars' stuff, might need to modify
   , CertifiedVRF(..)
   , evalCertified
-  , prop_vrf_max
-  , prop_vrf_verify_pos
-  , prop_vrf_verify_neg
+  , verifyCertified
   ) where
 
 import           Crypto.Random (MonadRandom)
-import           Data.Proxy (Proxy (..))
 import           GHC.Generics (Generic)
 import           Numeric.Natural
-import           Test.QuickCheck (Arbitrary (..), Gen, Property, counterexample,
-                     (==>))
 
-import           Ouroboros.Consensus.Util.Random (Seed, withSeed)
 import           Ouroboros.Network.Serialise
 
 class ( Show (VerKeyVRF v)
@@ -64,55 +59,6 @@ evalCertified :: (VRFAlgorithm v, MonadRandom m, Serialise a)
               => a -> SignKeyVRF v -> m (CertifiedVRF v a)
 evalCertified a key = uncurry CertifiedVRF <$> evalVRF a key
 
-instance VRFAlgorithm v => Arbitrary (SignKeyVRF v) where
-
-    arbitrary = do
-        seed <- arbitrary
-        return $ withSeed seed genKeyVRF
-
-    shrink = const []
-
-instance VRFAlgorithm v => Arbitrary (VerKeyVRF v) where
-    arbitrary = deriveVerKeyVRF <$> arbitrary
-    shrink = const []
-
-instance VRFAlgorithm v => Arbitrary (CertVRF v) where
-
-    arbitrary = do
-        a    <- arbitrary :: Gen Int
-        sk   <- arbitrary
-        seed <- arbitrary
-        return $ withSeed seed $ fmap snd $ evalVRF a sk
-
-    shrink = const []
-
-prop_vrf_max :: forall a v. (Serialise a, VRFAlgorithm v)
-             => Seed
-             -> a
-             -> SignKeyVRF v
-             -> Property
-prop_vrf_max seed a sk =
-    let (y, _) = withSeed seed $ evalVRF a sk
-        m      = maxVRF (Proxy :: Proxy v)
-    in  counterexample ("expected " ++ show y ++ " <= " ++ show m) $ y <= m
-
-prop_vrf_verify_pos :: forall a v. (Serialise a, VRFAlgorithm v)
-                    => Seed
-                    -> a
-                    -> SignKeyVRF v
-                    -> Bool
-prop_vrf_verify_pos seed a sk =
-    let (y, c) = withSeed seed $ evalVRF a sk
-        vk     = deriveVerKeyVRF sk
-    in  verifyVRF vk a (y, c)
-
-prop_vrf_verify_neg :: forall a v. (Serialise a, VRFAlgorithm v)
-                    => Seed
-                    -> a
-                    -> SignKeyVRF v
-                    -> SignKeyVRF v
-                    -> Property
-prop_vrf_verify_neg seed a sk sk' = sk /= sk' ==>
-    let (y, c) = withSeed seed $ evalVRF a sk'
-        vk     = deriveVerKeyVRF sk
-    in  not $ verifyVRF vk a (y, c)
+verifyCertified :: (VRFAlgorithm v, Serialise a)
+                => VerKeyVRF v -> a -> CertifiedVRF v a -> Bool
+verifyCertified vk a CertifiedVRF{..} = verifyVRF vk a (certifiedNatural, certifiedProof)

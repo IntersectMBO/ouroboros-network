@@ -11,37 +11,37 @@
 {-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE TupleSections         #-}
 {-# LANGUAGE TypeApplications      #-}
-{-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE UndecidableInstances  #-}
 
-{-# OPTIONS -fno-warn-unused-binds #-}
-{-# OPTIONS -fno-warn-orphans #-}
-
-module Test.DynamicBFT (
-    tests
-  , TestConfig(..)
+module Test.Dynamic.General (
+    prop_simple_protocol_convergence
+  , BlockUnderTest
+  , TestConfig (..)
+  , VTime
   , allEqual
   , nodeStake
-  , broadcastNetwork
+  , numNodes
+  , k
+  , kPerEpoch
+  , numEpochs
+  , numSlots
+  , shortestLength
   ) where
 
 import           Control.Monad
 import           Control.Monad.Except
 import           Control.Monad.ST.Lazy (runST)
-import           Crypto.Random (DRG)
-import           Data.Foldable (foldl', foldlM)
+import           Crypto.Number.Generate (generateBetween)
+import           Crypto.Random (DRG, withDRG)
+import           Data.Foldable (foldl')
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Maybe
 import           Data.Proxy
-import           Data.Set (Set)
 import qualified Data.Set as Set
+import           GHC.Stack (HasCallStack)
+import           Numeric.Natural (Natural)
 import           Test.QuickCheck
 
-import           Test.Tasty
-import           Test.Tasty.QuickCheck
-
-import           Protocol.Channel (Channel, channelRecvEffect)
 import           Protocol.Transition (SomeTransition (..))
 
 import           Ouroboros.Network.Block
@@ -50,155 +50,18 @@ import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.MonadClass
 import           Ouroboros.Network.Node
 import           Ouroboros.Network.Protocol.ChainSync.Type
+import           Ouroboros.Network.Sim (VTime)
 
-import           Ouroboros.Consensus.Crypto.DSIGN.Mock
-import           Ouroboros.Consensus.Crypto.Hash.Class (hash)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Node
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.Test
 import           Ouroboros.Consensus.Util (Condense (..))
 import qualified Ouroboros.Consensus.Util.Chain as Chain
 import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Consensus.Util.STM
-
-tests :: TestTree
-tests = testGroup "Dynamic chain generation" [
-      testProperty "simple BFT convergence" prop_simple_bft_convergence
-    ]
-
-prop_simple_bft_convergence :: Seed -> Property
-prop_simple_bft_convergence seed = runST $ test_simple_bft_convergence seed
-
--- Run BFT on the broadcast network, and check that all nodes converge to the
--- same final chain
-test_simple_bft_convergence :: forall m n.
-                               ( MonadSTM m
-                               , MonadRunProbe m n
-                               , MonadSay m
-                               , MonadTimer m
-                               )
-                            => Seed -> n Property
-test_simple_bft_convergence seed = do
-    fmap isValid $ withProbe $ go
-  where
-    numNodes, numSlots :: Int
-    numNodes = 3
-    numSlots = 10
-
-    go :: Probe m (Map NodeId (Chain BlockUnderTest)) -> m ()
-    go p = do
-      txMap <- genTxMap
-      finalChains <- broadcastNetwork
-                       numSlots
-                       nodeInit
-                       txMap
-                       initLedgerState
-                       (seedToChaCha seed)
-      probeOutput p finalChains
-
-    -- Give everybody 1000 coins at the beginning.
-    genesisTx :: Tx
-    genesisTx = Tx mempty [ (a, 1000)
-                          | a <- Map.keys (testAddressDistribution testConfig)
-                          ]
-
-    -- TODO: We might want to have some more interesting transactions in
-    -- the future here.
-    genTxMap :: m (Map Slot (Set Tx))
-    genTxMap = do
-            -- TODO: This doesn't do anything at the moment, but ideally
-            -- we would need some randomness to shuffle the TxOut, divvy the
-            -- unspent output and distribute it randomly to the nodes, to
-            -- create an interesting test.
-        let divvy :: Int -> [TxOut] -> m [TxOut]
-            divvy currentSlot xs = do
-              let totalCoins = foldl (\acc (_,c) -> acc + c) 0 xs
-              return $ foldl (\acc ((addr, _),nid) ->
-                               if currentSlot `mod` nid == 0 then (addr, totalCoins) : acc
-                                                             else (addr, 0) : acc
-                             ) mempty (zip xs [1..])
-
-        -- Move the stake around. Use the previous Tx in the accumulator a
-        -- like a UTxO, as we are moving all the stake all the time, in order
-        -- to make the observable state interesting.
-        Map.fromList . snd <$>
-            foldlM (\(prevTx@(Tx _ oldTxOut), acc) sl -> do
-                    let txIn  = Set.fromList $ [ (hash prevTx, n) | n <- [0 .. numNodes - 1] ]
-                    txOut <- divvy sl oldTxOut
-                    let newTx = Tx txIn txOut
-                    return (newTx, (Slot $ fromIntegral sl, Set.singleton newTx) : acc)
-                  ) (genesisTx, [(Slot 1, Set.singleton genesisTx)]) [2 .. numSlots]
-
-    testConfig :: TestConfig
-    testConfig = TestConfig {
-          testAddressDistribution =
-            Map.fromList $
-              zip (map (:[]) $ take numNodes ['a' .. 'z'])
-                  (map CoreId [0 .. numNodes - 1])
-        }
-
-    verKeys :: Map NodeId (VerKeyDSIGN (BftDSIGN BftMockCrypto))
-    verKeys = Map.fromList [ (CoreId i, VerKeyMockDSIGN i)
-                           | i <- [0 .. numNodes - 1]
-                           ]
-
-    initLedgerState :: ExtLedgerState BlockUnderTest
-    initLedgerState = ExtLedgerState {
-          ledgerState         = SimpleLedgerState (utxo genesisTx)
-        , ouroborosChainState = ()
-        }
-
-    nodeInit :: Map NodeId ( NodeConfig ProtocolUnderTest
-                           , NodeState ProtocolUnderTest
-                           , Chain BlockUnderTest
-                           )
-    nodeInit = Map.fromList $ [ (CoreId i, ( mkConfig i
-                                           , mkState i
-                                           , Genesis)
-                                           )
-                              | i <- [0 .. numNodes - 1]
-                              ]
-      where
-        mkConfig :: Int -> NodeConfig ProtocolUnderTest
-        mkConfig i = EncNodeConfig {
-              encNodeConfigP = TestNodeConfig {
-                  testNodeConfigP = BftNodeConfig {
-                      bftNodeId   = CoreId i
-                    , bftSignKey  = SignKeyMockDSIGN i
-                    , bftNumNodes = fromIntegral numNodes
-                    , bftVerKeys  = verKeys
-                    }
-                , testNodeConfigId = CoreId i
-                }
-            , encNodeConfigExt = testConfig
-            }
-
-        mkState :: Int -> NodeState ProtocolUnderTest
-        mkState _ = ()
-
-    isValid :: [(Time m, Map NodeId (Chain BlockUnderTest))] -> Property
-    isValid trace = counterexample (show trace) $
-      case trace of
-        [(_, final)] -> Map.keys final == Map.keys nodeInit
-                   .&&. allEqual (takeChainPrefix <$> Map.elems final)
-        _otherwise   -> property False
-
-    takeChainPrefix :: Chain BlockUnderTest -> Chain BlockUnderTest
-    takeChainPrefix = id -- in BFT, chains should indeed all be equal.
-
-{-------------------------------------------------------------------------------
-  Test blocks
-
-  TODO: We'll want to test other protocols also
--------------------------------------------------------------------------------}
-
-type ProtocolUnderTest = ExtNodeConfig TestConfig (TestProtocol (Bft BftMockCrypto))
-type BlockUnderTest    = SimpleBlock ProtocolUnderTest SimpleBlockStandardCrypto
-type HeaderUnderTest   = SimpleHeader ProtocolUnderTest SimpleBlockStandardCrypto
 
 data TestConfig = TestConfig {
       testAddressDistribution :: Map Addr NodeId
@@ -218,19 +81,94 @@ nodeStake cfg u nodeId =
         0
         u
 
-instance HasPayload (Bft BftMockCrypto) BlockUnderTest where
-  blockPayload _ = testPayloadP
-                 . encPayloadP
-                 . headerOuroboros
-                 . simpleHeader
+numNodes, numEpochs, k, kPerEpoch, numSlots :: Int
+numNodes  = 3
+numEpochs = 4
+k         = 5
+kPerEpoch = 3
+numSlots  = k * kPerEpoch * numEpochs
 
-instance ProtocolLedgerView BlockUnderTest where
-  protocolLedgerView (EncNodeConfig _ cfg) (SimpleLedgerState u) =
-      ((), nodeStake cfg u)
+type ProtocolUnderTest p = ExtNodeConfig TestConfig (TestProtocol p)
+type BlockUnderTest p    = SimpleBlock (ProtocolUnderTest p) SimpleBlockStandardCrypto
 
-{-------------------------------------------------------------------------------
-  Infrastructure
--------------------------------------------------------------------------------}
+prop_simple_protocol_convergence :: forall p. ProtocolLedgerView (BlockUnderTest p)
+                                 => (Int -> NodeConfig p)
+                                 -> (Int -> NodeState (ProtocolUnderTest p))
+                                 -> ChainState p
+                                 -> (   [NodeId]
+                                     -> [(VTime, Map NodeId (Chain (BlockUnderTest p)))]
+                                     -> Property)
+                                 -> Seed
+                                 -> Property
+prop_simple_protocol_convergence mkConfig mkState initialChainState isValid seed =
+    runST $ test_simple_protocol_convergence mkConfig mkState initialChainState isValid seed
+
+-- Run protocol on the broadcast network, and check resulting chains on all nodes.
+test_simple_protocol_convergence :: forall m n p.
+                                    ( HasCallStack
+                                    , MonadSTM m
+                                    , MonadRunProbe m n
+                                    , MonadSay m
+                                    , MonadTimer m
+                                    , ProtocolLedgerView (BlockUnderTest p)
+                                    )
+                                 => (Int -> NodeConfig p)
+                                 -> (Int -> NodeState (ProtocolUnderTest p))
+                                 -> ChainState p
+                                 -> (   [NodeId]
+                                     -> [(Time m, Map NodeId (Chain (BlockUnderTest p)))]
+                                     -> Property)
+                                 -> Seed
+                                 -> n Property
+test_simple_protocol_convergence mkConfig mkState initialChainState isValid seed = do
+    fmap (isValid $ Map.keys nodeInit) $ withProbe $ go
+  where
+    go :: Probe m (Map NodeId (Chain (BlockUnderTest p))) -> m ()
+    go p = do
+      finalChains <- broadcastNetwork
+                       nodeInit
+                       initLedgerState
+                       (seedToChaCha seed)
+      probeOutput p finalChains
+
+    -- Give everybody 1000 coins at the beginning.
+    genesisTx :: Tx
+    genesisTx = Tx mempty [ (a, 1000)
+                          | a <- Map.keys (testAddressDistribution testConfig)
+                          ]
+
+    testConfig :: TestConfig
+    testConfig = TestConfig {
+          testAddressDistribution =
+            Map.fromList $
+              zip (map (:[]) $ take numNodes ['a' .. 'z'])
+                  (map CoreId [0 .. numNodes - 1])
+        }
+
+    initLedgerState :: ExtLedgerState (BlockUnderTest p)
+    initLedgerState = ExtLedgerState {
+          ledgerState         = SimpleLedgerState (utxo genesisTx)
+        , ouroborosChainState = initialChainState
+        }
+
+    nodeInit :: Map NodeId ( NodeConfig (ProtocolUnderTest p)
+                           , NodeState (ProtocolUnderTest p)
+                           , Chain (BlockUnderTest p)
+                           )
+    nodeInit = Map.fromList $ [ (CoreId i, ( mkEncConfig i
+                                           , mkState i
+                                           , Genesis)
+                                           )
+                              | i <- [0 .. numNodes - 1]
+                              ]
+    mkEncConfig :: Int -> NodeConfig (ProtocolUnderTest p)
+    mkEncConfig i = EncNodeConfig
+        { encNodeConfigP   = TestNodeConfig
+            { testNodeConfigP  = mkConfig i
+            , testNodeConfigId = CoreId i
+            }
+        , encNodeConfigExt = testConfig
+        }
 
 -- | Setup fully-connected topology, where every node is both a producer
 -- and a consumer
@@ -238,29 +176,29 @@ instance ProtocolLedgerView BlockUnderTest where
 -- We run for the specified number of blocks, then return the final state of
 -- each node.
 broadcastNetwork :: forall m p c gen.
-                    ( MonadSTM   m
+                    ( HasCallStack
+                    , MonadSTM   m
                     , MonadTimer m
                     , MonadSay   m
                     , SimpleBlockCrypto c
                     , ProtocolLedgerView (SimpleBlock p c)
                     , DRG gen
                     )
-                 => Int
-                 -- ^ Number of slots to run for
-                 -> Map NodeId ( NodeConfig p
+                 => Map NodeId ( NodeConfig p
                                , NodeState p
                                , Chain (SimpleBlock p c)
                                )
                  -- ^ Node initial state and initial chain
-                 -> Map Slot (Set Tx)
-                 -- ^ For each slot, the transactions to be incorporated into
-                 -- a block.
                  -> ExtLedgerState (SimpleBlock p c)
                  -- ^ Initial ledger state
                  -> gen
                  -- ^ Initial random number state
                  -> m (Map NodeId (Chain (SimpleBlock p c)))
-broadcastNetwork numSlots nodeInit txMap initLedger initRNG = do
+broadcastNetwork nodeInit initLedger initRNG = do
+
+    -- all known addresses
+    let addrs = Set.toList $ Set.fromList $ map fst $ Map.elems $ getUtxo initLedger
+
     -- Creates the communication channels, /including/ the one to be used
     -- to talk to ourselves. Such \"feedback loop\" is handy to be able to
     -- /actually/ apply the ledger rules.
@@ -317,7 +255,6 @@ broadcastNetwork numSlots nodeInit txMap initLedger initRNG = do
           publishBlock node slot $ \prevPoint prevNo -> do
             let prevHash = castHash (pointHash prevPoint)
                 curNo    = succ prevNo
-                txs      = fromMaybe mempty $ Map.lookup slot txMap
 
             -- NOTE: Ledger state is updated in 'respondToUpdate'
             --
@@ -325,17 +262,22 @@ broadcastNetwork numSlots nodeInit txMap initLedger initRNG = do
             -- it is important that we get the ledger state and check if we
             -- are a leader in a single transaction.
 
-            ExtLedgerState{..} <- readTVar varL
-            mIsLeader          <- runProtocol $
-                                     checkIsLeader
+            l@ExtLedgerState{..} <- readTVar varL
+            mIsLeader            <- runProtocol $
+                                       checkIsLeader
                                        cfg
                                        slot
                                        (protocolLedgerView cfg ledgerState)
                                        ouroborosChainState
             case mIsLeader of
               Nothing    -> return Nothing
-              Just proof -> runProtocol $ Just <$>
-                              forgeBlock cfg slot curNo prevHash txs proof
+              Just proof -> do
+                rng <- readTVar varRNG
+                let u           = getUtxo l
+                    (txs, rng') = withDRG rng $ genTxs addrs u
+                writeTVar varRNG rng'
+                runProtocol $
+                    Just <$> forgeBlock cfg slot curNo prevHash (Set.fromList txs) proof
 
       fork $ do
         threadDelay (slotDuration (Proxy @m) * fromIntegral (numSlots + 10))
@@ -350,9 +292,8 @@ broadcastNetwork numSlots nodeInit txMap initLedger initRNG = do
     nodeIds :: [NodeId]
     nodeIds = Map.keys nodeInit
 
-    numNodes :: Int
-    numNodes = Map.size nodeInit
-
+    getUtxo :: ExtLedgerState (SimpleBlock p c) -> Utxo
+    getUtxo l = let SimpleLedgerState u = ledgerState l in u
 
 slotDuration :: MonadTimer m => proxy m -> Duration (Time m)
 slotDuration _ = 100000
@@ -403,3 +344,40 @@ allEqual (x : xs@(_:_)) =
                               <> condense c
                               <> " /= "
                               <> condense d
+
+shortestLength :: Map NodeId (Chain b) -> Natural
+shortestLength = fromIntegral . minimum . map Chain.length . Map.elems
+
+{-------------------------------------------------------------------------------
+  Generating random transactions
+-------------------------------------------------------------------------------}
+
+genTx :: MonadRandom m => [Addr] -> Utxo -> m Tx
+genTx addrs u = do
+    let senders = Set.toList . Set.fromList . map fst . Map.elems $ u -- people with funds
+    sender    <- genElt senders
+    recipient <- genElt $ filter (/= sender) addrs
+    let assets  = filter (\(_, (a, _)) -> a == sender) $ Map.toList u
+        fortune = sum [c | (_, (_, c)) <- assets]
+        ins     = Set.fromList $ map fst assets
+    amount <- fromIntegral <$> generateBetween 1 (fromIntegral fortune)
+    let outRecipient = (recipient, amount)
+        outs         = if amount == fortune
+            then [outRecipient]
+            else [outRecipient, (sender, fortune - amount)]
+    return $ Tx ins outs
+  where
+    genElt xs = do
+        m <- generateElement xs
+        case m of
+            Nothing -> error "expected nonempty list"
+            Just x  -> return x
+
+genTxs :: MonadRandom m => [Addr] -> Utxo -> m [Tx]
+genTxs addr u = do
+    b <- generateBetween 0 1
+    if b == 0
+        then return []
+        else do
+            tx <- genTx addr u
+            return [tx]

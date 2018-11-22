@@ -8,15 +8,13 @@
 -- | Abstract key evolving signatures.
 module Ouroboros.Consensus.Crypto.KES.Class
     ( KESAlgorithm (..)
-    , SignedKES
+    , SignedKES (..)
     , signedKES
-    , Duration_Seed_SK (..)
-    , Duration_Seed_SK_Times (..)
+    , verifySignedKES
     ) where
 
 import           GHC.Generics (Generic)
 import           Numeric.Natural (Natural)
-import           Test.QuickCheck (Arbitrary (..), Gen)
 
 import           Ouroboros.Consensus.Util (Condense (..))
 import           Ouroboros.Consensus.Util.Random
@@ -48,7 +46,7 @@ class ( Show (VerKeyKES v)
             -> m (Maybe (SigKES v, SignKeyKES v))
     verifyKES :: Serialise a => VerKeyKES v -> Natural -> a -> SigKES v -> Bool
 
-newtype SignedKES v a = SignedKES (SigKES v)
+newtype SignedKES v a = SignedKES {getSig :: SigKES v}
   deriving (Generic)
 
 deriving instance KESAlgorithm v => Show (SignedKES v a)
@@ -69,69 +67,6 @@ signedKES time a key = do
         Nothing          -> Nothing
         Just (sig, key') -> Just (SignedKES sig, key')
 
---
--- Testing
---
-
-data Duration_Seed_SK v = Duration_Seed_SK Natural Seed (SignKeyKES v)
-    deriving Generic
-
-deriving instance KESAlgorithm v => Show (Duration_Seed_SK v)
-deriving instance KESAlgorithm v => Eq (Duration_Seed_SK v)
-deriving instance KESAlgorithm v => Serialise (Duration_Seed_SK v)
-
-instance KESAlgorithm v => Arbitrary (Duration_Seed_SK v) where
-
-    arbitrary = do
-        duration <- genNat
-        seed <- arbitrary
-        return $ duration_Seed_SK duration seed
-
-    shrink (Duration_Seed_SK duration seed _) =
-        [duration_Seed_SK d seed | d <- shrinkNat duration]
-
-instance KESAlgorithm v => Arbitrary (VerKeyKES v) where
-
-    arbitrary = do
-        Duration_Seed_SK _ _ sk <- arbitrary
-        return $ deriveVerKeyKES sk
-
-    shrink = const []
-
-data Duration_Seed_SK_Times v a =
-    Duration_Seed_SK_Times Natural Seed (SignKeyKES v) [(Natural, a)]
-    deriving Generic
-
-instance (KESAlgorithm v, Arbitrary a) => Arbitrary (Duration_Seed_SK_Times v a) where
-
-    arbitrary = arbitrary >>= gen_Duration_Seed_SK_Times
-
-    shrink (Duration_Seed_SK_Times d s sk ts) = do
-        Duration_Seed_SK d' s' sk' <- shrink $ Duration_Seed_SK d s sk
-        let ts' = filter ((< d') . fst) ts
-        return $ Duration_Seed_SK_Times d' s' sk' ts'
-
-deriving instance (KESAlgorithm v, Show a) => Show (Duration_Seed_SK_Times v a)
-deriving instance (KESAlgorithm v, Eq a) => Eq (Duration_Seed_SK_Times v a)
-deriving instance (KESAlgorithm v, Serialise a) => Serialise (Duration_Seed_SK_Times v a)
-
-duration_Seed_SK :: KESAlgorithm v => Natural -> Seed -> Duration_Seed_SK v
-duration_Seed_SK duration seed =
-    let sk = withSeed seed $ genKeyKES duration
-    in  Duration_Seed_SK duration seed sk
-
-gen_Duration_Seed_SK_Times :: Arbitrary a
-                           => Duration_Seed_SK v
-                           -> Gen (Duration_Seed_SK_Times v a)
-gen_Duration_Seed_SK_Times (Duration_Seed_SK duration seed sk) = do
-    ts <- genTimes 0
-    return $ Duration_Seed_SK_Times duration seed sk ts
-  where
-    genTimes :: Arbitrary a => Natural -> Gen [(Natural, a)]
-    genTimes j
-        | j >= duration = return []
-        | otherwise = do
-            k  <- genNatBetween j (duration - 1)
-            a  <- arbitrary
-            ns <- genTimes $ k + 1
-            return ((k, a) : ns)
+verifySignedKES :: (KESAlgorithm v, Serialise a)
+                => VerKeyKES v -> Natural -> a -> SignedKES v a -> Bool
+verifySignedKES vk j a (SignedKES sig) = verifyKES vk j a sig

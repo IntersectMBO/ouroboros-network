@@ -49,9 +49,11 @@ library
                        Ouroboros.Consensus.Node
                        Ouroboros.Consensus.Protocol.Abstract
                        Ouroboros.Consensus.Protocol.BFT
+                       Ouroboros.Consensus.Protocol.Genesis
                        Ouroboros.Consensus.Protocol.Praos
                        Ouroboros.Consensus.Protocol.Test
                        Ouroboros.Consensus.Protocol.ExtNodeConfig
+                       Ouroboros.Consensus.Protocol.ModChainSel
                        Ouroboros.Consensus.Util
                        Ouroboros.Consensus.Util.Chain
                        Ouroboros.Consensus.Util.DepFn
@@ -263,13 +265,15 @@ test-suite test-consensus
                     Test.Crypto.Hash
                     Test.Crypto.KES
                     Test.Crypto.VRF
-                    Test.DynamicBFT
-                    Test.DynamicPraos
+                    Test.Dynamic.BFT
+                    Test.Dynamic.General
+                    Test.Dynamic.Praos
                     Test.Ouroboros
   build-depends:    base,
                     ouroboros-network,
 
                     QuickCheck,
+                    bytestring,
                     containers,
                     cryptonite,
                     mtl,

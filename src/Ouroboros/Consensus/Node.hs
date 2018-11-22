@@ -83,6 +83,7 @@ data NodeKernel m up down b = NodeKernel {
 nodeKernel :: forall m b up down. ( MonadSTM m
              , MonadSay m
              , ProtocolLedgerView b
+             , Eq b
              , Show b
              , Show down
              , Show up
@@ -101,12 +102,13 @@ nodeKernel :: forall m b up down. ( MonadSTM m
 nodeKernel us cfg initLedgerState initChain notifyUpdates = do
     ourChainVar <- atomically $ newTVar initChain
     updatesVar  <- atomically $ newEmptyTMVar -- TODO: use bounded queue instead
+    slotVar     <- atomically $ newTVar 0
 
     -- NOTE: Right now "header validation" is actually just "full validation",
     -- because we cannot validate headers without also having the ledger. Once
     -- we have the header/body split, we're going to have to be more precise
     -- about what we can and cannot validate.
-    nw <- initNetworkLayer us initChain NetworkCallbacks {
+    nw <- initNetworkLayer us initChain slotVar NetworkCallbacks {
               prioritizeChains     = selectChain cfg
             , validateChainHeaders = verifyChain cfg initLedgerState
             , chainDownloaded      = \newChain -> atomically $
@@ -128,9 +130,10 @@ nodeKernel us cfg initLedgerState initChain notifyUpdates = do
          newChain <- atomically $ takeTMVar updatesVar
          -- ... validating ... mumble mumble mumble ...
          atomically $ do
+           slot     <- readTVar slotVar
            ourChain <- readTVar ourChainVar
            -- Check: do we still want this chain? (things might have changed)
-           when (selectChain cfg ourChain [newChain] `sameChainAs` newChain) $ do
+           when (selectChain cfg slot ourChain [newChain] `sameChainAs` newChain) $ do
              let i :: Point b
                  i = fromMaybe Chain.genesisPoint $
                        Chain.intersectChains newChain ourChain
@@ -148,6 +151,7 @@ nodeKernel us cfg initLedgerState initChain notifyUpdates = do
       , registerDownstream = networkRegisterDownstream nw
       , getCurrentChain    = readTVar ourChainVar
       , publishBlock       = \slot mkBlock -> atomically $ do
+            writeTVar slotVar slot
             (ourChain, upd) <- overrideBlock slot <$> readTVar ourChainVar
             mNewBlock       <- mkBlock (Chain.headPoint   ourChain)
                                        (Chain.headBlockNo ourChain)
@@ -208,7 +212,7 @@ data NetworkCallbacks b m = NetworkCallbacks {
       --
       -- TODO: This should eventually return a list, rather than a single chain.
                            -- Chain Block -> Chain Header -> Chain Header (?)
-    , prioritizeChains     :: Chain b -> [Chain b] -> Chain b
+    , prioritizeChains     :: Slot -> Chain b -> [Chain b] -> Chain b
     }
 
 initNetworkLayer :: forall m b up down.
@@ -221,9 +225,10 @@ initNetworkLayer :: forall m b up down.
                     )
                  => NodeId   -- ^ Our node ID
                  -> Chain b  -- ^ Our initial (current) chain
+                 -> TVar m Slot
                  -> NetworkCallbacks b m
                  -> m (NetworkLayer up down b m)
-initNetworkLayer us initChain NetworkCallbacks{..} = do
+initNetworkLayer us initChain slotVar NetworkCallbacks{..} = do
     cpsVar <- atomically $ newTVar $ initChainProducerState initChain
 
     -- PotentialsVar is modelling state in the network layer tracking the
@@ -271,11 +276,12 @@ initNetworkLayer us initChain NetworkCallbacks{..} = do
       -- these chains is "now available".
 
       mDownloaded <- atomically $ do
+        slot       <- readTVar slotVar
         ourChain   <- chainState <$> readTVar cpsVar
         potentials <- readTVar potentialsVar
         return $ do
             guard $ not (Map.null potentials)
-            let preferred = prioritizeChains ourChain (Map.elems potentials)
+            let preferred = prioritizeChains slot ourChain (Map.elems potentials)
             guard $ not (preferred `sameChainAs` ourChain)
             return preferred
 

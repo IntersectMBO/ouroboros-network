@@ -41,6 +41,7 @@ import           Ouroboros.Network.Serialise (Serialise)
 import qualified Ouroboros.Network.Chain as Chain
 
 import           Ouroboros.Consensus.Util
+import           Ouroboros.Consensus.Util.Chain (upToSlot)
 import           Ouroboros.Consensus.Util.Random
 
 -- | The (open) universe of Ouroboros protocols
@@ -102,15 +103,17 @@ class ( Show (ChainState    p)
             -> m (Payload p ph)
 
   -- | Chain selection
-  selectChain :: SupportedBlock p b
+  selectChain :: (Eq b, HasHeader b, SupportedBlock p b)
               => NodeConfig p
+              -> Slot       -- ^ Present slot
               -> Chain b    -- ^ Our chain
               -> [Chain b]  -- ^ Upstream chains
               -> Chain b
-  selectChain _ ourChain candidates =
+  selectChain _ slot ourChain candidates =
       -- will prioritize our own since sortBy is stable
-      -- TODO: .. but not forking more than k? for all protocols?
-      head $ sortBy (flip (comparing Chain.length)) (ourChain : candidates)
+      head $ sortBy (flip (comparing Chain.length))
+           $ map (upToSlot slot)
+           $ ourChain : candidates
 
   -- | Check if a node is the leader
   checkIsLeader :: (HasNodeState p m, MonadRandom m)

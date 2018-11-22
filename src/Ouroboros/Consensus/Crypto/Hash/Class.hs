@@ -11,8 +11,6 @@ module Ouroboros.Consensus.Crypto.Hash.Class
     , getHash
     , hash
     , fromHash
-    , prop_hash_correct_byteCount
-    , prop_hash_show_fromString
     ) where
 
 import           Data.ByteString (ByteString)
@@ -25,7 +23,6 @@ import           Data.Proxy (Proxy (..))
 import           Data.String (IsString (..))
 import           GHC.Generics (Generic)
 import           Numeric.Natural
-import           Test.QuickCheck (Arbitrary (..), Property, (===))
 
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Network.Serialise
@@ -61,21 +58,7 @@ instance HashAlgorithm h => Serialise (Hash h a) where
 hash :: forall h a. (HashAlgorithm h, Serialise a) => a -> Hash h a
 hash = Hash . digest (Proxy :: Proxy h)  . LB.toStrict . toLazyByteString . encode
 
-instance (Serialise a, Arbitrary a, HashAlgorithm h) => Arbitrary (Hash h a) where
-
-    arbitrary = hash <$> arbitrary
-    shrink = const []
-
 fromHash :: Hash h a -> Natural
 fromHash = foldl' f 0 . SB.unpack . getHash
   where
     f n b = n * 256 + fromIntegral b
-
-prop_hash_correct_byteCount :: forall h a. HashAlgorithm h
-                            => Hash h a
-                            -> Property
-prop_hash_correct_byteCount h =
-    (SB.length $ getHash h) === (fromIntegral $ byteCount (Proxy :: Proxy h))
-
-prop_hash_show_fromString :: Hash h a -> Property
-prop_hash_show_fromString h = h === fromString (show h)
