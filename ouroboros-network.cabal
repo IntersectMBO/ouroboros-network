@@ -47,6 +47,7 @@ library
                        Ouroboros.Consensus.Protocol.Test
                        Ouroboros.Consensus.Protocol.ExtNodeConfig
                        Ouroboros.Consensus.Util
+                       Ouroboros.Consensus.Util.Chain
                        Ouroboros.Consensus.Util.DepFn
                        Ouroboros.Consensus.Util.HList
                        Ouroboros.Consensus.Util.Orphans

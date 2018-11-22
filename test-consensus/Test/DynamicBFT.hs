@@ -29,7 +29,7 @@ import           Control.Monad
 import           Control.Monad.Except
 import           Control.Monad.ST.Lazy
 import           Crypto.Random (DRG)
-import           Data.Foldable (foldlM)
+import           Data.Foldable (foldl', foldlM)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe
@@ -43,6 +43,7 @@ import           Test.Tasty.QuickCheck
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain
+import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.ChainProducerState
 import           Ouroboros.Network.MonadClass
 import           Ouroboros.Network.Node
@@ -57,6 +58,7 @@ import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.Test
 import           Ouroboros.Consensus.Util (Condense (..))
+import qualified Ouroboros.Consensus.Util.Chain as Chain
 import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Consensus.Util.STM
 
@@ -179,8 +181,11 @@ test_simple_bft_convergence seed = do
     isValid trace = counterexample (show trace) $
       case trace of
         [(_, final)] -> Map.keys final == Map.keys nodeInit
-                   .&&. allEqual (Map.elems final)
+                   .&&. allEqual (takeChainPrefix <$> Map.elems final)
         _otherwise   -> property False
+
+    takeChainPrefix :: Chain BlockUnderTest -> Chain BlockUnderTest
+    takeChainPrefix = id -- in BFT, chains should indeed all be equal.
 
 {-------------------------------------------------------------------------------
   Test blocks
@@ -366,8 +371,35 @@ collectJust var = do
       Nothing -> retry
       Just a  -> return a
 
-allEqual :: (Condense a, Eq a) => [a] -> Property
-allEqual []       = property True
-allEqual [_]      = property True
-allEqual (x:y:xs) = counterexample (condense x <> " /= " <> condense y) (x == y)
-               .&&. allEqual (y:xs)
+allEqual :: forall b. (Condense b, Eq b, HasHeader b) => [Chain b] -> Property
+allEqual []             = property True
+allEqual [_]            = property True
+allEqual (x : xs@(_:_)) =
+    let c = foldl' Chain.commonPrefix x xs
+    in  foldl' (\prop d -> prop .&&. f c d) (property True) xs
+  where
+    f :: Chain b -> Chain b -> Property
+    f c d = counterexample (g c d) $ c == d
+
+    g :: Chain b -> Chain b -> String
+    g c d = case (Chain.lastSlot c, Chain.lastSlot d) of
+        (Nothing, Nothing) -> error "impossible case"
+        (Nothing, Just t)  ->    "empty intersection of non-empty chains (one reaches slot "
+                              <> show (getSlot t)
+                              <> " and contains "
+                              <> show (Chain.length d)
+                              <> "blocks): "
+                              <> condense d
+        (Just _, Nothing)  -> error "impossible case"
+        (Just s, Just t)   ->    "intersection reaches slot "
+                              <> show (getSlot s)
+                              <> " and has length "
+                              <> show (Chain.length c)
+                              <> ", but at least one chain reaches slot "
+                              <> show (getSlot t)
+                              <> " and has length "
+                              <> show (Chain.length d)
+                              <> ": "
+                              <> condense c
+                              <> " /= "
+                              <> condense d

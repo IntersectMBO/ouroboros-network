@@ -31,7 +31,6 @@ import qualified Data.Set as Set
 import           Test.QuickCheck
 
 import           Test.Tasty
-import           Test.Tasty.ExpectedFailure
 import           Test.Tasty.QuickCheck
 
 import           Ouroboros.Network.Block
@@ -49,13 +48,14 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.Praos
 import           Ouroboros.Consensus.Protocol.Test
+import qualified Ouroboros.Consensus.Util.Chain as Chain
 import           Ouroboros.Consensus.Util.Random
 
 import           Test.DynamicBFT (TestConfig (..), allEqual, broadcastNetwork,
                      nodeStake)
 
-tests :: TestTree
-tests = expectFail $ testGroup "Dynamic chain generation" [
+tests ::TestTree
+tests = testGroup "Dynamic chain generation" [
       testProperty "simple Praos convergence" prop_simple_praos_convergence
     ]
 
@@ -76,7 +76,7 @@ test_simple_praos_convergence seed = do
   where
     numNodes, numSlots :: Int
     numNodes = 3
-    numSlots = 10
+    numSlots = 50
 
     go :: Probe m (Map NodeId (Chain BlockUnderTest)) -> m ()
     go p = do
@@ -175,8 +175,14 @@ test_simple_praos_convergence seed = do
     isValid trace = counterexample (show trace) $
       case trace of
         [(_, final)] -> Map.keys final == Map.keys nodeInit
-                   .&&. allEqual (Map.elems final)
+                   .&&. allEqual (takeChainPrefix <$> Map.elems final)
         _otherwise   -> property False
+
+    takeChainPrefix :: Chain BlockUnderTest -> Chain BlockUnderTest
+    takeChainPrefix = Chain.upToSlot lastSlotToCheck
+
+    lastSlotToCheck :: Slot
+    lastSlotToCheck = Slot $ round $ (0.9 :: Double) * fromIntegral numSlots
 
     initialStake :: StakeDist
     initialStake =

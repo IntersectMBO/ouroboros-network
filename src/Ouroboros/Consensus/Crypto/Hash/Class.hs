@@ -71,7 +71,7 @@ fromHash = foldl' f 0 . SB.unpack . getHash
   where
     f n b = n * 256 + fromIntegral b
 
-prop_hash_correct_byteCount :: forall h a. (HashAlgorithm h, Serialise a)
+prop_hash_correct_byteCount :: forall h a. HashAlgorithm h
                             => Hash h a
                             -> Property
 prop_hash_correct_byteCount h =
