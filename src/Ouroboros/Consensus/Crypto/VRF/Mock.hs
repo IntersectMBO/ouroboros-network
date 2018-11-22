@@ -6,6 +6,7 @@
 -- | Mock implementations of verifiable random functions.
 module Ouroboros.Consensus.Crypto.VRF.Mock
   ( MockVRF
+  , SignKeyVRF(..)
   ) where
 
 import           Data.Proxy (Proxy (..))

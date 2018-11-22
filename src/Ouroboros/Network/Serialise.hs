@@ -25,15 +25,21 @@ import           Codec.CBOR.FlatTerm
 import           Codec.CBOR.Write (toLazyByteString)
 import           Codec.Serialise
 import           Codec.Serialise.Decoding (decodeBytes)
+import           Test.QuickCheck (Property, counterexample, (.&&.), (===))
 
 -- Class properties
 --
-prop_serialise :: (Serialise a, Eq a) => a -> Bool
-prop_serialise x = prop_serialise_valid x
-                && prop_serialise_roundtrip x
 
-prop_serialise_valid :: Serialise a => a -> Bool
-prop_serialise_valid = validFlatTerm . toFlatTerm . encode
+prop_serialise :: (Serialise a, Eq a, Show a) => a -> Property
+prop_serialise x =     prop_serialise_valid x
+                  .&&. prop_serialise_roundtrip x
 
-prop_serialise_roundtrip :: (Serialise a, Eq a) => a -> Bool
-prop_serialise_roundtrip x = deserialiseOrFail (serialise x) == Right x
+prop_serialise_valid :: Serialise a => a -> Property
+prop_serialise_valid a =
+    let e = encode a
+        f = toFlatTerm e
+        s = "invalid flat term " ++ show f ++ " from encoding " ++ show e
+    in  counterexample s $ validFlatTerm f
+
+prop_serialise_roundtrip :: (Serialise a, Eq a, Show a) => a -> Property
+prop_serialise_roundtrip x = deserialiseOrFail (serialise x) === Right x

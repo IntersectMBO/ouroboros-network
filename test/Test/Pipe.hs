@@ -39,7 +39,7 @@ prop_pipe_demo :: TestBlockChainAndUpdates -> Property
 prop_pipe_demo (TestBlockChainAndUpdates chain updates) =
     ioProperty $ demo2 chain updates
 
-prop_serialise_MsgConsumer :: MsgConsumer Block -> Bool
+prop_serialise_MsgConsumer :: MsgConsumer Block -> Property
 prop_serialise_MsgConsumer = prop_serialise
 
 newtype BlockProducer = BlockProducer {
@@ -47,7 +47,7 @@ newtype BlockProducer = BlockProducer {
   }
   deriving (Show)
 
-prop_serialise_MsgProducer :: BlockProducer -> Bool
+prop_serialise_MsgProducer :: BlockProducer -> Property
 prop_serialise_MsgProducer = prop_serialise . blockProducer
 
 instance Arbitrary (MsgConsumer Block) where

@@ -148,7 +148,7 @@ prop_intersectChains (TestChainFork c l r) =
             && Chain.pointOnChain p l
             && Chain.pointOnChain p r
 
-prop_serialise_chain :: TestBlockChain -> Bool
+prop_serialise_chain :: TestBlockChain -> Property
 prop_serialise_chain (TestBlockChain chain) =
   prop_serialise chain
 
