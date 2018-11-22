@@ -9,7 +9,8 @@ import           Ouroboros.Network.Chain (Chain (..), Point (..))
 import           Ouroboros.Network.Pipe (demo2)
 import           Ouroboros.Network.Protocol
 import           Ouroboros.Network.Serialise (prop_serialise)
-import           Ouroboros.Network.Testing.ConcreteBlock (Block, ConcreteHeaderHash (..))
+import           Ouroboros.Network.Testing.ConcreteBlock (Block,
+                     ConcreteHeaderHash (..))
 
 import           Test.Chain (TestBlockChainAndUpdates (..), genBlockChain)
 

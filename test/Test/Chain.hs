@@ -22,7 +22,7 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (Chain (..), ChainUpdate (..),
-                                          Point (..), genesisPoint)
+                     Point (..), genesisPoint)
 import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.Serialise (prop_serialise)
 import           Ouroboros.Network.Testing.ConcreteBlock

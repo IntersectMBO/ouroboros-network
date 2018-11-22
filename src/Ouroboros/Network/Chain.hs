@@ -69,7 +69,6 @@ import           Prelude hiding (drop, head, length, null)
 import           Control.Exception (assert)
 import qualified Data.List as L
 
-import           Ouroboros.Consensus.Util (Condense (..))
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Serialise
 
@@ -81,10 +80,6 @@ data Chain block = Genesis | Chain block :> block
   deriving (Eq, Show, Functor)
 
 infixl 5 :>
-
-instance Condense block => Condense (Chain block) where
-    condense Genesis   = "Genesis"
-    condense (cs :> b) = condense cs <> " :> " <> condense b
 
 foldChain :: (a -> b -> a) -> a -> Chain b -> a
 foldChain _blk gen Genesis  = gen

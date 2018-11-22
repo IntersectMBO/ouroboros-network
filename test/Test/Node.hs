@@ -9,8 +9,8 @@ import           Control.Monad (forM, forM_, forever, replicateM)
 import           Control.Monad.ST.Lazy (runST)
 import           Control.Monad.State (execStateT, lift, modify')
 import           Data.Array
-import           Data.Functor (void)
 import           Data.Fixed (Micro)
+import           Data.Functor (void)
 import           Data.Graph
 import           Data.List (foldl')
 import           Data.Map.Strict (Map)

@@ -218,6 +218,7 @@ test-suite test-consensus
                     cryptonite,
                     mtl,
                     tasty,
+                    tasty-expected-failure,
                     tasty-quickcheck
   ghc-options:      -Wall
                     -fno-ignore-asserts

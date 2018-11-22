@@ -31,7 +31,7 @@ import           Numeric.Natural
 
 import           Ouroboros.Consensus.Crypto.DSIGN.Ed448 (Ed448DSIGN)
 import           Ouroboros.Consensus.Crypto.Hash.Class (HashAlgorithm (..),
-                                                        fromHash, hash)
+                     fromHash, hash)
 import           Ouroboros.Consensus.Crypto.Hash.MD5 (MD5)
 import           Ouroboros.Consensus.Crypto.Hash.SHA256 (SHA256)
 import           Ouroboros.Consensus.Crypto.KES.Class
@@ -131,7 +131,7 @@ instance PraosCrypto c => OuroborosTag (Praos c) where
           , praosY       = praosProofY
           }
       m <- signedKES
-        (fromIntegral praosProofSlot)
+        (fromIntegral (getSlot praosProofSlot))
         (preheader, extraFields)
         keyKES
       case m of
@@ -202,7 +202,7 @@ infosEta l xs e =
         eta' = infosEta l xs e'
         from = epochStart l e'
         n    = div (2 * praosSlotsPerEpoch l) 3
-        to   = from + fromIntegral (n - 1)
+        to   = Slot $ getSlot from + fromIntegral (n - 1)
         rhos = reverse [biRho b | b <- infosSlice from to xs]
     in  fromHash $ hash @(PraosHash c) $ eta' :* e :* rhos :* Nil
 

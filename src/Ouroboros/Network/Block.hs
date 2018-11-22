@@ -25,14 +25,14 @@ import           Ouroboros.Network.Serialise
 
 -- | The Ouroboros time slot index for a block.
 newtype Slot = Slot { getSlot :: Word }
-  deriving (Show, Eq, Ord, Hashable, Enum, Serialise, Integral, Real, Num)
+  deriving (Show, Eq, Ord, Hashable, Enum, Serialise)
 
 -- | The 0-based index of the block in the blockchain
 newtype BlockNo = BlockNo Word
   deriving (Show, Eq, Ord, Hashable, Enum, Serialise)
 
 -- | Abstract over the shape of blocks (or indeed just block headers)
-class (Serialise b, StandardHash b) => HasHeader b where
+class StandardHash b => HasHeader b where
     -- TODO: I /think/ we should be able to make this injective, but I'd have
     -- to check after the redesign of the block abstraction (which will live
     -- in the consensus layer), to make sure injectivity is compatible with that
