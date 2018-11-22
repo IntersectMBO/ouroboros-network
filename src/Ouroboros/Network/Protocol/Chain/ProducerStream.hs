@@ -12,12 +12,12 @@
 
 {-# OPTIONS_GHC "-fwarn-incomplete-patterns" #-}
 
-module Protocol.Chain.ProducerStream where
+module Ouroboros.Network.Protocol.Chain.ProducerStream where
 
 import Data.List.NonEmpty (NonEmpty)
 import Data.Typeable (Typeable)
 import Protocol.Core
-import Protocol.Chain.Type hiding (Improve)
+import Ouroboros.Network.Protocol.Chain.Type hiding (Improve)
 
 newtype ProducerStream point header m t = ProducerStream
   { runProducerStream :: m (ProducerInit point header m t)

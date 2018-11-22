@@ -2,7 +2,7 @@
 
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
-module Protocol.Chain.Direct where
+module Ouroboros.Network.Protocol.Chain.Direct where
 
 -- The 'ProducerStream m' and 'ConsumerStream m' types are complementary. The
 -- former can be used to feed the latter directly, in the same thread.
@@ -13,8 +13,8 @@ module Protocol.Chain.Direct where
 -- in such a way that this 'direct' linking factors through the
 -- 'TrChainExchange' transition system.
 
-import Protocol.Chain.ConsumerStream as Consumer
-import Protocol.Chain.ProducerStream as Producer
+import Ouroboros.Network.Protocol.Chain.ConsumerStream as Consumer
+import Ouroboros.Network.Protocol.Chain.ProducerStream as Producer
 
 direct
   :: ( Monad m )

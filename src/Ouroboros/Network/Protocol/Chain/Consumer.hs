@@ -8,7 +8,7 @@ import Data.Maybe (fromMaybe)
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 
-import Protocol.Chain.ConsumerStream
+import Ouroboros.Network.Protocol.Chain.ConsumerStream
 
 import Ouroboros.Network.MonadClass.MonadSTM
 

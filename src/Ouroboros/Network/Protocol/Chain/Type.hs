@@ -8,7 +8,7 @@
 
 {-# OPTIONS_GHC "-fwarn-incomplete-patterns" #-}
 
-module Protocol.Chain.Type where
+module Ouroboros.Network.Protocol.Chain.Type where
 
 import Data.List.NonEmpty
 import Protocol.Core

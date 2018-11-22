@@ -16,7 +16,7 @@ import qualified Data.Sequence as Seq
 import Data.Set (Set)
 import qualified Data.Set as Set
 
-import Protocol.Chain.ProducerStream
+import Ouroboros.Network.Protocol.Chain.ProducerStream
 
 import Ouroboros.Network.MonadClass.MonadSTM
 
