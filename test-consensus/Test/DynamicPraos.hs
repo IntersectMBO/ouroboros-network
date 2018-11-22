@@ -22,12 +22,12 @@ module Test.DynamicPraos (
   ) where
 
 import           Control.Monad.ST.Lazy
-import           Data.Foldable                              (foldlM)
-import qualified Data.IntMap.Strict                         as IntMap
-import           Data.Map.Strict                            (Map)
-import qualified Data.Map.Strict                            as Map
-import           Data.Set                                   (Set)
-import qualified Data.Set                                   as Set
+import           Data.Foldable (foldlM)
+import qualified Data.IntMap.Strict as IntMap
+import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
+import           Data.Set (Set)
+import qualified Data.Set as Set
 import           Test.QuickCheck
 
 import           Test.Tasty
@@ -38,8 +38,8 @@ import           Ouroboros.Network.Chain
 import           Ouroboros.Network.MonadClass
 import           Ouroboros.Network.Node
 
-import           Ouroboros.Consensus.Crypto.Hash.Class      (hash)
-import           Ouroboros.Consensus.Crypto.KES             (VerKeyKES)
+import           Ouroboros.Consensus.Crypto.Hash.Class (hash)
+import           Ouroboros.Consensus.Crypto.KES (VerKeyKES)
 import           Ouroboros.Consensus.Crypto.KES.Mock
 import           Ouroboros.Consensus.Crypto.VRF.Mock
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -48,6 +48,7 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.Praos
 import           Ouroboros.Consensus.Protocol.Test
+import qualified Ouroboros.Consensus.Util.Chain as Chain
 import           Ouroboros.Consensus.Util.Random
 
 import           Test.DynamicBFT (TestConfig (..), allEqual, broadcastNetwork,
@@ -178,7 +179,7 @@ test_simple_praos_convergence seed = do
         _otherwise   -> property False
 
     takeChainPrefix :: Chain BlockUnderTest -> Chain BlockUnderTest
-    takeChainPrefix = chainUpToSlot lastSlotToCheck
+    takeChainPrefix = Chain.upToSlot lastSlotToCheck
 
     lastSlotToCheck :: Slot
     lastSlotToCheck = Slot $ round $ (0.9 :: Double) * fromIntegral numSlots

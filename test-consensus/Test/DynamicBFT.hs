@@ -28,14 +28,14 @@ module Test.DynamicBFT (
 import           Control.Monad
 import           Control.Monad.Except
 import           Control.Monad.ST.Lazy
-import           Crypto.Random                              (DRG)
-import           Data.Foldable                              (foldl', foldlM)
-import           Data.Map.Strict                            (Map)
-import qualified Data.Map.Strict                            as Map
+import           Crypto.Random (DRG)
+import           Data.Foldable (foldl', foldlM)
+import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import           Data.Maybe
 import           Data.Proxy
-import           Data.Set                                   (Set)
-import qualified Data.Set                                   as Set
+import           Data.Set (Set)
+import qualified Data.Set as Set
 import           Test.QuickCheck
 
 import           Test.Tasty
@@ -43,22 +43,22 @@ import           Test.Tasty.QuickCheck
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain
-import qualified Ouroboros.Network.Chain                    as Chain
+import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.ChainProducerState
 import           Ouroboros.Network.MonadClass
 import           Ouroboros.Network.Node
 import           Ouroboros.Network.Protocol
 
 import           Ouroboros.Consensus.Crypto.DSIGN.Mock
-import           Ouroboros.Consensus.Crypto.Hash.Class      (hash)
+import           Ouroboros.Consensus.Crypto.Hash.Class (hash)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
-import qualified Ouroboros.Consensus.Protocol.Praos         as Praos
 import           Ouroboros.Consensus.Protocol.Test
-import           Ouroboros.Consensus.Util                   (Condense (..))
+import           Ouroboros.Consensus.Util (Condense (..))
+import qualified Ouroboros.Consensus.Util.Chain as Chain
 import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Consensus.Util.STM
 
@@ -375,14 +375,14 @@ allEqual :: forall b. (Condense b, Eq b, HasHeader b) => [Chain b] -> Property
 allEqual []             = property True
 allEqual [_]            = property True
 allEqual (x : xs@(_:_)) =
-    let c = foldl' Praos.intersectChains x xs
+    let c = foldl' Chain.commonPrefix x xs
     in  foldl' (\prop d -> prop .&&. f c d) (property True) xs
   where
     f :: Chain b -> Chain b -> Property
     f c d = counterexample (g c d) $ c == d
 
     g :: Chain b -> Chain b -> String
-    g c d = case (Praos.lastSlotInChain c, Praos.lastSlotInChain d) of
+    g c d = case (Chain.lastSlot c, Chain.lastSlot d) of
         (Nothing, Nothing) -> error "impossible case"
         (Nothing, Just t)  ->    "empty intersection of non-empty chains (one reaches slot "
                               <> show (getSlot t)
@@ -403,4 +403,3 @@ allEqual (x : xs@(_:_)) =
                               <> condense c
                               <> " /= "
                               <> condense d
-
