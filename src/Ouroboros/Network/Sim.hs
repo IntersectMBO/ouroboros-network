@@ -38,7 +38,6 @@ import           Control.Monad.Free as Free
 import           Control.Monad.ST.Lazy
 import qualified Control.Monad.ST.Strict as StrictST
 import           Data.STRef.Lazy
-import           Numeric.Natural (Natural)
 
 import           Ouroboros.Network.MonadClass.MonadFork
 import           Ouroboros.Network.MonadClass.MonadSay
@@ -126,9 +125,10 @@ instance MonadFork (Free (SimF s)) where
   fork          task = Free.liftF $ Fork task ()
 
 instance MonadSTM (Free (SimF s)) where
-  type Tr    (Free (SimF s)) = Free (StmF s)
-  type TVar  (Free (SimF s)) = TVar s
-  type TMVar (Free (SimF s)) = TMVarDefault (Free (SimF s))
+  type Tr    (Free (SimF s))   = Free (StmF s)
+  type TVar  (Free (SimF s))   = TVar s
+  type TMVar (Free (SimF s))   = TMVarDefault (Free (SimF s))
+  type TBQueue (Free (SimF s)) = TBQueueDefault (Free (SimF s))
 
   atomically action = Free.liftF $ Atomically action id
   newTVar         x = Free.liftF $ NewTVar x id
@@ -149,64 +149,16 @@ instance MonadSTM (Free (SimF s)) where
   swapTMVar         = swapTMVarDefault
   isEmptyTMVar      = isEmptyTMVarDefault
 
+  newTBQueue        = newTBQueueDefault
+  readTBQueue       = readTBQueueDefault
+  writeTBQueue      = writeTBQueueDefault
+  lengthTBQueue     = lengthTBQueueDefault
+
 instance MonadST (Free (SimF s)) where
   withLiftST f = f liftST
     where
       liftST :: StrictST.ST s a -> Free (SimF s) a
       liftST action = Free.liftF (LiftST action id)
-
-data TBQueueSim s a = TBQueueSim
-  !(TVar s Natural) -- read capacity
-  !(TVar s [a]) -- elements waiting for read
-  !(TVar s Natural) -- write capacity 
-  !(TVar s [a]) -- written elements
-  !Natural
-
-instance MonadTBQueue (Free (SimF s)) where
-  type TBQueue (Free (SimF s)) = TBQueueSim s
-  newTBQueue size = do
-    rsize <- newTVar 0
-    read  <- newTVar []
-    wsize <- newTVar size
-    write <- newTVar []
-    return (TBQueueSim rsize read wsize write size)
-
-  readTBQueue (TBQueueSim rsize read _wsize write _size) = do
-    xs <- readTVar read
-    r <- readTVar rsize
-    writeTVar rsize $! r + 1
-    case xs of
-      (x:xs') -> do
-        writeTVar read xs'
-        return x
-      [] -> do
-        ys <- readTVar write
-        case ys of
-          [] -> retry
-          _  -> do
-            let (z:zs) = reverse ys -- NB. lazy: we want the transaction to be
-                                    -- short, otherwise it will conflict
-            writeTVar write []
-            writeTVar read zs
-            return z
-
-  writeTBQueue (TBQueueSim rsize _read wsize write _size) a = do
-    w <- readTVar wsize
-    if (w > 0)
-      then do writeTVar wsize $! w - 1
-      else do
-            r <- readTVar rsize
-            if (r > 0)
-              then do writeTVar rsize 0
-                      writeTVar wsize $! r - 1
-              else retry
-    listend <- readTVar write
-    writeTVar write (a:listend)
-
-  lengthTBQueue (TBQueueSim rsize _read wsize _write size) = do
-    r <- readTVar rsize
-    w <- readTVar wsize
-    return $! size - r - w
 
 instance MonadTimer (Free (SimF s)) where
   type Time    (Free (SimF s)) = VTime

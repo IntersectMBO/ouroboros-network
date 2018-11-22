@@ -89,7 +89,7 @@ data StreamElement a
 -- outstanding messages.
 --
 streamClient
-  :: forall m range a. MonadTBQueue m
+  :: forall m range a. MonadSTM m
   => range
   -> Window
   -> Threshold
