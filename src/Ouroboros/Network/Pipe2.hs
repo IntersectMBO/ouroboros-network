@@ -55,18 +55,18 @@ runExampleProducer :: (MonadST m, MonadSTM m,
                    -> TVar m (ChainProducerState header)
                    -> ByteChannel ByteString m
                    -> m (Either (ProtocolError CBOR.DeserialiseFailure) a)
-runExampleProducer recvMsgDone cpsVar channel = do
-    server <- chainSyncServerExample recvMsgDone cpsVar
-    runProducer server channel
+runExampleProducer recvMsgDone cpsVar channel =
+  let server = chainSyncServerExample recvMsgDone cpsVar
+  in  runProducer server channel
 
 runExampleConsumer :: (MonadST m, MonadSTM m,
                        HasHeader header, Serialise header)
                    => TVar m (Chain header)
                    -> ByteChannel ByteString m
                    -> m (Either (ProtocolError CBOR.DeserialiseFailure) a)
-runExampleConsumer chainVar channel = do
-    client <- chainSyncClientExample chainVar
-    runConsumer client channel
+runExampleConsumer chainVar channel =
+  let client = chainSyncClientExample chainVar
+  in  runConsumer client channel
 
 ------------------------------------------------
 

@@ -27,8 +27,8 @@ import           Ouroboros.Network.Protocol.ChainSync.Server
 chainSyncClientExample :: forall header m a.
                           (HasHeader header, MonadSTM m)
                        => TVar m (Chain header)
-                       -> m (ChainSyncClient header (Point header) m a)
-chainSyncClientExample chainvar =
+                       -> ChainSyncClient header (Point header) m a
+chainSyncClientExample chainvar = ChainSyncClient $
     initialise <$> getChainPoints
   where
     initialise :: [Point header] -> ClientStIdle header (Point header) m a
@@ -42,8 +42,8 @@ chainSyncClientExample chainvar =
       --  rejecting the server if there is no intersection in the last K blocks
       --
       ClientStIntersect {
-        recvMsgIntersectImproved  = \_ _ -> return requestNext,
-        recvMsgIntersectUnchanged = \  _ -> return requestNext
+        recvMsgIntersectImproved  = \_ _ -> ChainSyncClient (return requestNext),
+        recvMsgIntersectUnchanged = \  _ -> ChainSyncClient (return requestNext)
       }
 
     requestNext :: ClientStIdle header (Point header) m a
@@ -57,11 +57,11 @@ chainSyncClientExample chainvar =
     handleNext :: ClientStNext header (Point header) m a
     handleNext =
       ClientStNext {
-        recvMsgRollForward  = \header _pHead -> do
+        recvMsgRollForward  = \header _pHead -> ChainSyncClient $ do
           addBlock header
           return requestNext
 
-      , recvMsgRollBackward = \pIntersect _pHead -> do
+      , recvMsgRollBackward = \pIntersect _pHead -> ChainSyncClient $ do
           rollback pIntersect
           return requestNext 
       }
@@ -101,8 +101,8 @@ chainSyncServerExample :: forall header m a.
                           (HasHeader header, MonadSTM m)
                        => a
                        -> TVar m (ChainProducerState header)
-                       -> m (ChainSyncServer header (Point header) m a)
-chainSyncServerExample recvMsgDoneClient chainvar =
+                       -> ChainSyncServer header (Point header) m a
+chainSyncServerExample recvMsgDoneClient chainvar = ChainSyncServer $
     idle <$> newReader
   where
     idle :: ReaderId -> ServerStIdle header (Point header) m a
@@ -112,6 +112,9 @@ chainSyncServerExample recvMsgDoneClient chainvar =
         recvMsgFindIntersect = handleFindIntersect r,
         recvMsgDoneClient
       }
+
+    idle' :: ReaderId -> ChainSyncServer header (Point header) m a
+    idle' = ChainSyncServer . pure . idle
 
     handleRequestNext :: ReaderId
                       -> m (Either (ServerStNext header (Point header) m a)
@@ -127,8 +130,8 @@ chainSyncServerExample recvMsgDoneClient chainvar =
     sendNext :: ReaderId
              -> ChainUpdate header
              -> ServerStNext header (Point header) m a
-    sendNext r (AddBlock b) = SendMsgRollForward  b undefined (idle r)
-    sendNext r (RollBack p) = SendMsgRollBackward p undefined (idle r)
+    sendNext r (AddBlock b) = SendMsgRollForward  b undefined (idle' r)
+    sendNext r (RollBack p) = SendMsgRollBackward p undefined (idle' r)
 
     handleFindIntersect :: ReaderId
                         -> [Point header]
@@ -138,8 +141,8 @@ chainSyncServerExample recvMsgDoneClient chainvar =
       -- Find the first point that is on our chain
       changed <- improveReadPoint r points
       case changed of
-        Just (pt, tip) -> return $ SendMsgIntersectImproved pt tip     (idle r)
-        Nothing        -> return $ SendMsgIntersectUnchanged undefined (idle r)
+        Just (pt, tip) -> return $ SendMsgIntersectImproved pt tip     (idle' r)
+        Nothing        -> return $ SendMsgIntersectUnchanged undefined (idle' r)
 
     newReader :: m ReaderId
     newReader = atomically $ do
