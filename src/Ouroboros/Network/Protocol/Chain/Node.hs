@@ -31,17 +31,17 @@ import Data.Semigroup ((<>))
 #endif
 import Data.Void (Void, absurd)
 
-import Protocol.Chain.ConsumerStream
-import Protocol.Chain.ProducerStream
-import Protocol.Chain.Type
 import Protocol.Channel
 import Protocol.Transition (SomeTransition)
 
 import Ouroboros.Network.Block
 import Ouroboros.Network.MonadClass.MonadSTM
+import Ouroboros.Network.Protocol.Chain.ProducerStream
 import Ouroboros.Network.Protocol.Chain.Producer
+import Ouroboros.Network.Protocol.Chain.ConsumerStream
 import Ouroboros.Network.Protocol.Chain.Consumer
 import Ouroboros.Network.Protocol.Channel.Sim (simStmChannels)
+import Ouroboros.Network.Protocol.Chain.Type
 
 -- For an example, we need concrete blocks.
 import qualified Ouroboros.Network.Testing.ConcreteBlock as Testing

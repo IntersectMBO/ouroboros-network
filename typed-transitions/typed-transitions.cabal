@@ -23,10 +23,6 @@ library
                      , Protocol.Nat
                      , Protocol.Core
                      , Protocol.Untyped
-                     , Protocol.Chain.ConsumerStream
-                     , Protocol.Chain.Type
-                     , Protocol.Chain.ProducerStream
-                     , Protocol.Chain.Direct
                      , Protocol.PingPong.Type
                      , Protocol.PingPong.Client
                      , Protocol.PingPong.Codec

@@ -75,8 +75,12 @@ library
                        Ouroboros.Network.Sim
                        Ouroboros.Network.Testing.ConcreteBlock
                        Ouroboros.Network.Protocol.Chain.Consumer
+                       Ouroboros.Network.Protocol.Chain.ConsumerStream
+                       Ouroboros.Network.Protocol.Chain.Direct
                        Ouroboros.Network.Protocol.Chain.Producer
+                       Ouroboros.Network.Protocol.Chain.ProducerStream
                        Ouroboros.Network.Protocol.Chain.Node
+                       Ouroboros.Network.Protocol.Chain.Type
                        Ouroboros.Network.Protocol.Channel.Sim
                        Ouroboros.Network.Protocol.ChainSync.Client
                        Ouroboros.Network.Protocol.ChainSync.Codec

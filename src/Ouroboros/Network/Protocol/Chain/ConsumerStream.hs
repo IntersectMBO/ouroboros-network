@@ -15,12 +15,12 @@
 -- read pointer and tip of the producer's chain. This means that the consumer
 -- in fact begins as a server, awaiting data from the producer.
 
-module Protocol.Chain.ConsumerStream where
+module Ouroboros.Network.Protocol.Chain.ConsumerStream where
 
 import Data.List.NonEmpty (NonEmpty)
 import Protocol.Core
-import Protocol.Chain.Type hiding (Next, Download, Improve)
-import qualified Protocol.Chain.Type as Type
+import Ouroboros.Network.Protocol.Chain.Type hiding (Next, Download, Improve)
+import qualified Ouroboros.Network.Protocol.Chain.Type as Type
 
 -- | A consumer stream always has a read pointer header and a tip header.
 -- From these, it determines where to take the consumer protocol application,
