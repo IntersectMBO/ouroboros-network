@@ -22,16 +22,15 @@ module Test.DynamicPraos (
   ) where
 
 import           Control.Monad.ST.Lazy
-import           Data.Foldable (foldlM)
-import qualified Data.IntMap.Strict as IntMap
-import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
-import           Data.Set (Set)
-import qualified Data.Set as Set
+import           Data.Foldable                              (foldlM)
+import qualified Data.IntMap.Strict                         as IntMap
+import           Data.Map.Strict                            (Map)
+import qualified Data.Map.Strict                            as Map
+import           Data.Set                                   (Set)
+import qualified Data.Set                                   as Set
 import           Test.QuickCheck
 
 import           Test.Tasty
-import           Test.Tasty.ExpectedFailure
 import           Test.Tasty.QuickCheck
 
 import           Ouroboros.Network.Block
@@ -39,8 +38,8 @@ import           Ouroboros.Network.Chain
 import           Ouroboros.Network.MonadClass
 import           Ouroboros.Network.Node
 
-import           Ouroboros.Consensus.Crypto.Hash.Class (hash)
-import           Ouroboros.Consensus.Crypto.KES (VerKeyKES)
+import           Ouroboros.Consensus.Crypto.Hash.Class      (hash)
+import           Ouroboros.Consensus.Crypto.KES             (VerKeyKES)
 import           Ouroboros.Consensus.Crypto.KES.Mock
 import           Ouroboros.Consensus.Crypto.VRF.Mock
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -54,8 +53,8 @@ import           Ouroboros.Consensus.Util.Random
 import           Test.DynamicBFT (TestConfig (..), allEqual, broadcastNetwork,
                      nodeStake)
 
-tests :: TestTree
-tests = expectFail $ testGroup "Dynamic chain generation" [
+tests ::TestTree
+tests = testGroup "Dynamic chain generation" [
       testProperty "simple Praos convergence" prop_simple_praos_convergence
     ]
 
@@ -76,7 +75,7 @@ test_simple_praos_convergence seed = do
   where
     numNodes, numSlots :: Int
     numNodes = 3
-    numSlots = 10
+    numSlots = 50
 
     go :: Probe m (Map NodeId (Chain BlockUnderTest)) -> m ()
     go p = do
@@ -175,8 +174,14 @@ test_simple_praos_convergence seed = do
     isValid trace = counterexample (show trace) $
       case trace of
         [(_, final)] -> Map.keys final == Map.keys nodeInit
-                   .&&. allEqual (Map.elems final)
+                   .&&. allEqual (takeChainPrefix <$> Map.elems final)
         _otherwise   -> property False
+
+    takeChainPrefix :: Chain BlockUnderTest -> Chain BlockUnderTest
+    takeChainPrefix = chainUpToSlot lastSlotToCheck
+
+    lastSlotToCheck :: Slot
+    lastSlotToCheck = Slot $ round $ (0.9 :: Double) * fromIntegral numSlots
 
     initialStake :: StakeDist
     initialStake =

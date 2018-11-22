@@ -21,33 +21,41 @@ module Ouroboros.Consensus.Protocol.Praos (
     -- * Type instances
   , NodeConfig(..)
   , Payload(..)
+    -- * Utility functions
+  , lastSlotInChain
+  , intersectChains
+  , chainUpToSlot
   ) where
 
-import           Data.IntMap.Strict (IntMap)
-import qualified Data.IntMap.Strict as IntMap
-import           Data.Proxy (Proxy (..))
-import           GHC.Generics (Generic)
+import           Data.Foldable                          (foldl')
+import           Data.IntMap.Strict                     (IntMap)
+import qualified Data.IntMap.Strict                     as IntMap
+import           Data.Proxy                             (Proxy (..))
+import           Data.Sequence                          (Seq (..))
+import           GHC.Generics                           (Generic)
 import           Numeric.Natural
 
 import           Ouroboros.Consensus.Crypto.DSIGN.Ed448 (Ed448DSIGN)
 import           Ouroboros.Consensus.Crypto.Hash.Class (HashAlgorithm (..),
                      fromHash, hash)
-import           Ouroboros.Consensus.Crypto.Hash.MD5 (MD5)
+import           Ouroboros.Consensus.Crypto.Hash.MD5    (MD5)
 import           Ouroboros.Consensus.Crypto.Hash.SHA256 (SHA256)
 import           Ouroboros.Consensus.Crypto.KES.Class
 import           Ouroboros.Consensus.Crypto.KES.Mock
 import           Ouroboros.Consensus.Crypto.KES.Simple
 import           Ouroboros.Consensus.Crypto.VRF.Class
-import           Ouroboros.Consensus.Crypto.VRF.Mock (MockVRF)
-import           Ouroboros.Consensus.Crypto.VRF.Simple (SimpleVRF)
-import           Ouroboros.Consensus.Node (NodeId (..))
+import           Ouroboros.Consensus.Crypto.VRF.Mock    (MockVRF)
+import           Ouroboros.Consensus.Crypto.VRF.Simple  (SimpleVRF)
+import           Ouroboros.Consensus.Node               (NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Test
 import           Ouroboros.Consensus.Util
-import           Ouroboros.Consensus.Util.HList (HList)
-import           Ouroboros.Consensus.Util.HList (HList (..))
-import           Ouroboros.Network.Block (HasHeader (..), Slot (..))
-import           Ouroboros.Network.Serialise (Serialise)
+import           Ouroboros.Consensus.Util.HList         (HList)
+import           Ouroboros.Consensus.Util.HList         (HList (..))
+import           Ouroboros.Network.Block                (HasHeader (..),
+                                                         Slot (..))
+import           Ouroboros.Network.Chain                (Chain (..), foldChain)
+import           Ouroboros.Network.Serialise            (Serialise)
 
 {-------------------------------------------------------------------------------
   Praos specific types
@@ -243,6 +251,34 @@ rhoYT st xs s n =
         y   = eta :* s :* TEST  :* Nil
         t   = leaderThreshold st xs s n
     in  (rho, y, t)
+
+lastSlotInChain :: HasHeader b => Chain b -> Maybe Slot
+lastSlotInChain Genesis  = Nothing
+lastSlotInChain (_ :> b) = Just $ blockSlot b
+
+chainToSeq :: Chain b -> Seq b
+chainToSeq = foldChain (:|>) Empty
+
+chainFromSeq :: Seq b -> Chain b
+chainFromSeq = foldl' (:>) Genesis
+
+intersectChains :: Eq b => Chain b -> Chain b -> Chain b
+intersectChains c d = chainFromSeq $ go (chainToSeq c) (chainToSeq d)
+  where
+    go :: Eq b => Seq b -> Seq b -> Seq b
+    go Empty      _          = Empty
+    go _          Empty      = Empty
+    go (x :<| xs) (y :<| ys)
+        | x == y             = x :<| go xs ys
+        | otherwise          = Empty
+
+chainUpToSlot :: HasHeader b => Slot -> Chain b -> Chain b
+chainUpToSlot slot = go
+  where
+    go Genesis = Genesis
+    go bs@(cs :> b)
+        | blockSlot b <= slot = bs
+        | otherwise           = go cs
 
 {-------------------------------------------------------------------------------
   Crypto models
