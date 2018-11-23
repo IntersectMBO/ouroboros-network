@@ -83,6 +83,10 @@ library
                        Ouroboros.Network.Protocol.ChainSync.Server
                        Ouroboros.Network.Protocol.ChainSync.Type
                        Ouroboros.Network.Protocol.ChainSync.Encoding
+                       Ouroboros.Network.Protocol.Stream.Type
+                       Ouroboros.Network.Protocol.Stream.Client
+                       Ouroboros.Network.Protocol.Stream.Server
+                       Ouroboros.Network.Protocol.Stream.Direct
   other-modules:
                        Ouroboros.Network.Pipe2
                        Ouroboros.Network.ChainSyncExamples
@@ -129,6 +133,7 @@ library
                        memory       >=0.14 && <0.15,
                        mtl,
                        network      >=2.6 && <2.8,
+                       pipes        >=4.3 && <4.4,
                        process,
                        psqueues     >=0.2 && <0.3,
                        random       >=1.1 && <1.2,
