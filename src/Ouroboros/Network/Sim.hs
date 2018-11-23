@@ -127,9 +127,10 @@ instance MonadFork (Free (SimF s)) where
   fork          task = Free.liftF $ Fork task ()
 
 instance MonadSTM (Free (SimF s)) where
-  type Tr    (Free (SimF s)) = Free (StmF s)
-  type TVar  (Free (SimF s)) = TVar s
-  type TMVar (Free (SimF s)) = TMVarDefault (Free (SimF s))
+  type Tr    (Free (SimF s))   = Free (StmF s)
+  type TVar  (Free (SimF s))   = TVar s
+  type TMVar (Free (SimF s))   = TMVarDefault (Free (SimF s))
+  type TBQueue (Free (SimF s)) = TBQueueDefault (Free (SimF s))
 
   atomically action = Free.liftF $ Atomically action id
   newTVar         x = Free.liftF $ NewTVar x id
@@ -149,6 +150,11 @@ instance MonadSTM (Free (SimF s)) where
   tryReadTMVar      = tryReadTMVarDefault
   swapTMVar         = swapTMVarDefault
   isEmptyTMVar      = isEmptyTMVarDefault
+
+  newTBQueue        = newTBQueueDefault
+  readTBQueue       = readTBQueueDefault
+  writeTBQueue      = writeTBQueueDefault
+  lengthTBQueue     = lengthTBQueueDefault
 
 instance MonadST (Free (SimF s)) where
   withLiftST f = f liftST

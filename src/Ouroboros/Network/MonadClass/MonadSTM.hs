@@ -18,11 +18,20 @@ module Ouroboros.Network.MonadClass.MonadSTM
   , tryReadTMVarDefault
   , swapTMVarDefault
   , isEmptyTMVarDefault
+  , TBQueueDefault (..)
+  , newTBQueueDefault
+  , readTBQueueDefault
+  , writeTBQueueDefault
+  , lengthTBQueueDefault
   ) where
 
+import Prelude hiding (read)
+
+import qualified Control.Concurrent.STM.TBQueue as STM
 import qualified Control.Concurrent.STM.TVar    as STM
 import qualified Control.Concurrent.STM.TMVar   as STM
 import qualified Control.Monad.STM              as STM
+import           Numeric.Natural (Natural)
 
 import           Ouroboros.Network.MonadClass.MonadFork
 
@@ -71,6 +80,12 @@ class (MonadFork m, Monad (Tr m)) => MonadSTM m where
   swapTMVar       :: TMVar m a -> a -> Tr m a
   isEmptyTMVar    :: TMVar m a      -> Tr m Bool
 
+  type TBQueue m :: * -> *
+  newTBQueue     :: Natural -> Tr m (TBQueue m a)
+  readTBQueue    :: TBQueue m a -> Tr m a
+  writeTBQueue   :: TBQueue m a -> a -> Tr m ()
+  lengthTBQueue  :: TBQueue m a -> Tr m Natural
+
 
 --
 -- Instance for IO uses the existing STM library implementations
@@ -105,6 +120,13 @@ instance MonadSTM IO where
   tryReadTMVar    = STM.tryReadTMVar
   swapTMVar       = STM.swapTMVar
   isEmptyTMVar    = STM.isEmptyTMVar
+
+  type TBQueue IO = STM.TBQueue
+
+  newTBQueue     = STM.newTBQueue
+  readTBQueue    = STM.readTBQueue
+  writeTBQueue   = STM.writeTBQueue
+  lengthTBQueue  = STM.lengthTBQueue
 
 --
 -- Default TMVar implementation in terms of TVars (used by sim)
@@ -184,3 +206,57 @@ isEmptyTMVarDefault (TMVar t) = do
     Nothing -> return True
     Just _  -> return False
 
+data TBQueueDefault m a = TBQueue
+  !(TVar m Natural) -- read capacity
+  !(TVar m [a])     -- elements waiting for read
+  !(TVar m Natural) -- write capacity
+  !(TVar m [a])     -- written elements
+  !Natural
+
+newTBQueueDefault :: MonadSTM m => Natural -> Tr m (TBQueueDefault m a)
+newTBQueueDefault size = do
+  rsize <- newTVar 0
+  read  <- newTVar []
+  wsize <- newTVar size
+  write <- newTVar []
+  return (TBQueue rsize read wsize write size)
+
+readTBQueueDefault :: MonadSTM m => TBQueueDefault m a -> Tr m a
+readTBQueueDefault (TBQueue rsize read _wsize write _size) = do
+  xs <- readTVar read
+  r <- readTVar rsize
+  writeTVar rsize $! r + 1
+  case xs of
+    (x:xs') -> do
+      writeTVar read xs'
+      return x
+    [] -> do
+      ys <- readTVar write
+      case ys of
+        [] -> retry
+        _  -> do
+          let (z:zs) = reverse ys -- NB. lazy: we want the transaction to be
+                                  -- short, otherwise it will conflict
+          writeTVar write []
+          writeTVar read zs
+          return z
+
+writeTBQueueDefault :: MonadSTM m => TBQueueDefault m a -> a -> Tr m ()
+writeTBQueueDefault (TBQueue rsize _read wsize write _size) a = do
+  w <- readTVar wsize
+  if (w > 0)
+    then do writeTVar wsize $! w - 1
+    else do
+          r <- readTVar rsize
+          if (r > 0)
+            then do writeTVar rsize 0
+                    writeTVar wsize $! r - 1
+            else retry
+  listend <- readTVar write
+  writeTVar write (a:listend)
+
+lengthTBQueueDefault :: MonadSTM m => TBQueueDefault m a -> Tr m Natural
+lengthTBQueueDefault (TBQueue rsize _read wsize _write size) = do
+  r <- readTVar rsize
+  w <- readTVar wsize
+  return $! size - r - w
