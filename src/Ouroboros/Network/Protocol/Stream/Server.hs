@@ -63,7 +63,8 @@ streamServer
   :: forall m range a t. Monad m
   => (range -> Producer a m t)
   -> StreamServer m range a t
-streamServer stream = StreamServer $ \range -> server (stream range)
+streamServer stream = StreamServer $ \range -> do
+  server (stream range)
  where
   server :: Producer a m t -> m (ServerHandleData m a t)
   server p =
