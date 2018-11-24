@@ -188,6 +188,7 @@ test-suite tests
   main-is:             Main.hs
   other-modules:       Test.Chain
                        Test.ChainProducerState
+                       Test.Ouroboros.Network.Protocol.Stream
                        Test.Node
                        Test.Pipe
                        Test.Sim
@@ -205,6 +206,7 @@ test-suite tests
                        free,
                        hashable,
                        mtl,
+                       pipes,
                        process,
                        QuickCheck,
                        random,
