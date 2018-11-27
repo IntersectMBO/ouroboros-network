@@ -19,6 +19,8 @@ mkDerivation {
     array base bytestring cborg clock containers
     fingertree free hashable mtl process QuickCheck random semigroups stm tasty
     tasty-expected-failure tasty-quickcheck text transformers void
+    tasty-expected-failure tasty-quickcheck text transformers typed-transitions
+    void
   ];
   description = "A networking layer for the Ouroboros blockchain protocol";
   license = stdenv.lib.licenses.mit;

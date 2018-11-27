@@ -191,6 +191,7 @@ test-suite tests
   other-modules:       Test.Chain
                        Test.ChainProducerState
                        Test.Ouroboros.Network.Protocol.Stream
+                       Test.Ouroboros.Network.Protocol.BlockStream
                        Test.Node
                        Test.Pipe
                        Test.Sim
@@ -198,7 +199,7 @@ test-suite tests
   default-extensions:  NamedFieldPuns
   build-depends:       base,
                        ouroboros-network,
-
+                       typed-transitions,
                        array,
                        bytestring,
                        cborg,
