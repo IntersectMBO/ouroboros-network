@@ -61,6 +61,7 @@ data SimF (s :: *) a where
 
   LiftST       :: StrictST.ST s a -> (a -> b) -> SimF s b
 
+  GetTime      :: (VTime -> b) -> SimF s b
   NewTimeout   :: VTimeDuration -> (Timeout (Free (SimF s)) -> b) -> SimF s b
   UpdateTimeout:: Timeout (Free (SimF s)) -> VTimeDuration -> b -> SimF s b
   CancelTimeout:: Timeout (Free (SimF s)) -> b -> SimF s b
@@ -108,6 +109,7 @@ instance Functor (SimF s) where
   fmap f (LiftST a b)     = LiftST a (f . b)
   fmap f (Fork s b)       = Fork s $ f b
   fmap f (Atomically a k) = Atomically a (f . k)
+  fmap f (GetTime           b) = GetTime           (f . b)
   fmap f (NewTimeout      d b) = NewTimeout      d (f . b)
   fmap f (UpdateTimeout t d b) = UpdateTimeout t d (f b)
   fmap f (CancelTimeout t   b) = CancelTimeout t   (f b)
@@ -154,8 +156,12 @@ instance MonadST (Free (SimF s)) where
       liftST :: StrictST.ST s a -> Free (SimF s) a
       liftST action = Free.liftF (LiftST action id)
 
+instance MonadTime (Free (SimF s)) where
+  type Time (Free (SimF s)) = VTime
+
+  getMonotonicTime = Free.liftF $ GetTime id
+
 instance MonadTimer (Free (SimF s)) where
-  type Time    (Free (SimF s)) = VTime
   data Timeout (Free (SimF s)) = Timeout !(TVar s TimeoutState) !TimeoutId
 
   readTimeout (Timeout var _key) = readTVar var
@@ -262,6 +268,10 @@ schedule simstate@SimState {
     Free (LiftST st k) -> do
       x <- strictToLazyST st
       let thread' = Thread tid (k x)
+      schedule simstate { runqueue = thread':remaining }
+
+    Free (GetTime k) -> do
+      let thread' = Thread tid (k time)
       schedule simstate { runqueue = thread':remaining }
 
     Free (NewTimeout d k) -> do

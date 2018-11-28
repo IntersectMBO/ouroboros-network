@@ -2,7 +2,8 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeFamilies          #-}
 module Ouroboros.Network.MonadClass.MonadTimer (
-    MonadTimer(..)
+    MonadTime(..)
+  , MonadTimer(..)
   , TimeoutState(..)
   , TimeMeasure(..)
   , mult
@@ -13,6 +14,7 @@ import qualified Control.Concurrent as IO
 import qualified Control.Concurrent.STM.TVar as STM
 import qualified Control.Monad.STM as STM
 import           Data.Functor (void)
+import           Data.Word (Word64)
 
 import qualified GHC.Event as GHC (TimeoutKey, getSystemTimerManager,
                      registerTimeout, unregisterTimeout, updateTimeout)
@@ -38,10 +40,14 @@ mult n = sum . replicate n
 fromStart :: TimeMeasure t => Duration t -> t
 fromStart = flip addTime zero
 
+class (Monad m, TimeMeasure (Time m), Show (Time m)) => MonadTime m where
+  type Time m :: *
+
+  getMonotonicTime :: m (Time m)
+
 data TimeoutState = TimeoutPending | TimeoutFired | TimeoutCancelled
 
-class (MonadSTM m, TimeMeasure (Time m), Show (Time m)) => MonadTimer m where
-  type Time    m :: *
+class (MonadSTM m, MonadTime m) => MonadTimer m where
   data Timeout m :: *
 
   -- | Create a new timeout which will fire at the given time duration in
@@ -116,8 +122,14 @@ instance TimeMeasure Int where
   addTime  d t  = t+d
   zero = 0
 
+instance MonadTime IO where
+  type Time IO = Int -- microseconds
+  getMonotonicTime = fmap (fromIntegral . (`div` 1000)) getMonotonicNSec
+
+foreign import ccall unsafe "getMonotonicNSec"
+    getMonotonicNSec :: IO Word64
+
 instance MonadTimer IO where
-  type Time    IO = Int -- microseconds
   data Timeout IO = TimeoutIO !(STM.TVar TimeoutState) !GHC.TimeoutKey
 
   readTimeout (TimeoutIO var _key) = STM.readTVar var
