@@ -1,7 +1,9 @@
 {-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE EmptyDataDeriving          #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
@@ -22,6 +24,7 @@ module Ouroboros.Consensus.Ledger.Mock (
     -- * Block crypto
   , SimpleBlockCrypto(..)
   , SimpleBlockStandardCrypto -- just a tag
+  , SimpleBlockMockCrypto -- just a tag
     -- * Blocks
   , SimpleBlock(..)
   , SimpleHeader(..)
@@ -37,12 +40,14 @@ import           Crypto.Random (MonadRandom)
 import           Data.Map (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy
+import           Data.Semigroup ((<>))
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           GHC.Generics (Generic)
 
 import           Ouroboros.Consensus.Crypto.Hash.Class
 import           Ouroboros.Consensus.Crypto.Hash.MD5 (MD5)
+import           Ouroboros.Consensus.Crypto.Hash.Short (ShortHash)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util
@@ -55,7 +60,6 @@ import           Ouroboros.Network.Chain (Chain, toOldestFirst)
 {-------------------------------------------------------------------------------
   Basic definitions
 
-  TODO: We should make the hash configurable.
 -------------------------------------------------------------------------------}
 
 data Tx = Tx (Set TxIn) [TxOut]
@@ -64,7 +68,7 @@ data Tx = Tx (Set TxIn) [TxOut]
 instance Condense Tx where
   condense (Tx ins outs) = condense (ins, outs)
 
-type TxIn  = (Hash MD5 Tx, Int)
+type TxIn  = (Hash ShortHash Tx, Int)
 type TxOut = (Addr, Int)
 type Addr  = String
 type Utxo  = Map TxIn TxOut
@@ -132,7 +136,6 @@ instance All HasUtxo as => HasUtxo (HList as) where
 {-------------------------------------------------------------------------------
   Crypto needed for simple blocks
 
-  TODO: We may want to introduce a "short hash" variation to use in testing.
 -------------------------------------------------------------------------------}
 
 class HashAlgorithm (SimpleBlockHash c) => SimpleBlockCrypto c where
@@ -143,6 +146,12 @@ data SimpleBlockStandardCrypto
 instance SimpleBlockCrypto SimpleBlockStandardCrypto where
   type SimpleBlockHash SimpleBlockStandardCrypto = MD5
 
+-- A mock crypto using the 'ShortHash' variant.
+data SimpleBlockMockCrypto
+
+instance SimpleBlockCrypto SimpleBlockMockCrypto where
+  type SimpleBlockHash SimpleBlockMockCrypto = ShortHash
+
 {-------------------------------------------------------------------------------
   Simple blocks
 
@@ -152,7 +161,7 @@ instance SimpleBlockCrypto SimpleBlockStandardCrypto where
 
 data SimpleHeader p c = SimpleHeader {
       headerPreHeader :: SimplePreHeader p c
-    , headerOuroboros :: OuroborosPayload p (SimplePreHeader p c)
+    , headerOuroboros :: Payload p (SimplePreHeader p c)
     }
   deriving (Generic)
 
@@ -170,7 +179,10 @@ data SimplePreHeader p c = SimplePreHeader {
     , headerBlockNo  :: BlockNo
     , headerBodyHash :: Hash (SimpleBlockHash c) SimpleBody
     }
-  deriving (Generic, Show, Eq)
+  deriving (Generic, Show, Eq, Ord)
+
+instance SimpleBlockCrypto c => Condense (SimplePreHeader p c) where
+    condense = show
 
 data SimpleBody = SimpleBody { getSimpleBody :: Set Tx }
   deriving (Generic, Show, Eq)
@@ -181,9 +193,22 @@ data SimpleBlock p c = SimpleBlock {
     }
   deriving (Generic, Show, Eq)
 
--- TODO: Write a proper condensed instance.
 instance (SimpleBlockCrypto c, OuroborosTag p) => Condense (SimpleBlock p c) where
-  condense b = show b
+  condense (SimpleBlock hdr@(SimpleHeader _ pl) (SimpleBody txs)) =
+      condensedHash (blockPrevHash hdr)
+          <> "-"
+          <> condense (blockHash hdr)
+          <> ",("
+          <> condense pl
+          <> ",("
+          <> condense (getSlot $ blockSlot hdr)
+          <> ","
+          <> condense txs
+          <> "))])))"
+
+condensedHash :: Show (HeaderHash b) => Network.Hash b -> String
+condensedHash GenesisHash     = "genesis"
+condensedHash (BlockHash hdr) = show hdr
 
 instance (SimpleBlockCrypto c, OuroborosTag p) => HasHeader (SimpleHeader p c) where
   type HeaderHash (SimpleHeader p c) = Hash (SimpleBlockHash c) (SimpleHeader p c)
@@ -215,19 +240,20 @@ instance SimpleBlockCrypto c => StandardHash (SimpleBlock  p c)
 -------------------------------------------------------------------------------}
 
 forgeBlock :: forall m p c.
-              ( MonadOuroborosState p m
+              ( HasNodeState p m
               , MonadRandom m
               , OuroborosTag p
               , SimpleBlockCrypto c
               )
-           => Slot                            -- ^ Current slot
+           => NodeConfig p
+           -> Slot                            -- ^ Current slot
            -> BlockNo                         -- ^ Current block number
            -> Network.Hash (SimpleHeader p c) -- ^ Previous hash
            -> Set Tx                          -- ^ Txs to add in the block
-           -> ProofIsLeader p
+           -> IsLeader p
            -> m (SimpleBlock p c)
-forgeBlock curSlot curNo prevHash txs proof = do
-    ouroborosPayload <- mkOuroborosPayload proof preHeader
+forgeBlock cfg curSlot curNo prevHash txs proof = do
+    ouroborosPayload <- mkPayload cfg proof preHeader
     return $ SimpleBlock {
         simpleHeader = SimpleHeader preHeader ouroborosPayload
       , simpleBody   = body
@@ -248,22 +274,31 @@ forgeBlock curSlot curNo prevHash txs proof = do
   Updating the Ledger
 -------------------------------------------------------------------------------}
 
+type instance BlockProtocol (SimpleBlock p c) = p
+
+instance (SimpleBlockCrypto c, OuroborosTag p)
+      => HasPreHeader (SimpleBlock p c) where
+  type PreHeader (SimpleBlock p c) = SimplePreHeader p c
+
+  blockPreHeader = headerPreHeader . simpleHeader
+
+instance (SimpleBlockCrypto c, OuroborosTag p)
+      => HasPayload p (SimpleBlock p c) where
+  blockPayload _ = headerOuroboros . simpleHeader
+
 instance OuroborosTag p => UpdateLedger (SimpleBlock p c) where
-  data LedgerState (SimpleBlock p c) = SimpleLedgerState {
-        simpleUtxo :: Utxo
-      , simpleProtocolState :: OuroborosLedgerState p
-      }
+  data LedgerState (SimpleBlock p c) = SimpleLedgerState Utxo
+
+  -- TODO: Modify UTxO model to return errors
+  data LedgerError (SimpleBlock p c) -- no constructors for now
+    deriving (Show)
 
   -- Apply a block to the ledger state
-  --
-  -- TODO: We need to support rollback, so this probably won't be a pure
-  -- function but rather something that lives in a monad with some actions
-  -- that we can compute a "running diff" so that we can go back in time.
-  applyLedgerState (SimpleBlock hdr (SimpleBody txs)) sls = SimpleLedgerState {
-        simpleUtxo = updateUtxo txs (simpleUtxo sls)
-      , simpleProtocolState = applyOuroborosLedgerState (headerOuroboros hdr)
-                                                        (simpleProtocolState sls)
-      }
+  applyLedgerState b (SimpleLedgerState u) = do
+      -- TODO: Updating the UTxO should throw an error also rather than
+      -- silently removing transactions that do double spending
+      let u' = updateUtxo b u
+      return $ SimpleLedgerState u'
 
 deriving instance OuroborosTag p => Show (LedgerState (SimpleBlock p c))
 

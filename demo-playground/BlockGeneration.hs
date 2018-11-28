@@ -6,14 +6,15 @@ module BlockGeneration (forkCoreNode) where
 import           Control.Monad.State
 import           Crypto.Random
 
-import qualified Ouroboros.Consensus.Ledger.Mock as Mock
-import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (Chain (..), headBlockNo, headHash)
 import           Ouroboros.Network.ChainProducerState
 import           Ouroboros.Network.MonadClass
-import           Ouroboros.Network.Serialise
+
+import           Ouroboros.Consensus.Ledger.Abstract
+import qualified Ouroboros.Consensus.Ledger.Mock as Mock
+import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Util.Random
 
 import           LedgerState
 import           Mock.Mempool (Mempool, collect)
@@ -23,32 +24,38 @@ forkCoreNode :: forall m p c.
                 ( Mock.SimpleBlockCrypto c
                 , MonadSTM m
                 , MonadTimer m
-                , MonadFork m
                 , MonadIO m
-                , RunOuroboros p DemoLedgerState
+                , ProtocolLedgerView (Mock.SimpleBlock p c)
                 )
-             => DemoLedgerState
-             -> OuroborosState p
+             => TVar m (DemoLedgerState (Mock.SimpleBlock p c))
+             -> NodeConfig p
+             -> NodeState p
              -> TVar m (Mempool Mock.Tx)
              -> TVar m (ChainProducerState (Mock.SimpleBlock p c))
              -> Duration (Time m)
              -> m ()
-forkCoreNode initLedger protocolState mempoolVar varCPS slotDuration = do
-    ledgerVar <- atomically $ newTVar initLedger
+forkCoreNode ledgerVar cfg initState mempoolVar varCPS slotDuration = do
     slotVar   <- atomically $ newTVar 1
     initDRG   <- liftIO getSystemDRG
 
-    let runProtocol :: MonadPseudoRandomT SystemDRG (OuroborosStateT p (Tr m)) a
+    let runProtocol :: forall a. MonadPseudoRandomT SystemDRG (NodeStateT p (Tr m)) a
                     -> Tr m a
         runProtocol m =
-            fst <$> runOuroborosStateT (fst <$> withDRGT m initDRG) protocolState
+            -- TODO: This is not correct, this re-runs from the initial state
+            -- each time.
+            fst <$> runNodeStateT (fst <$> withDRGT m initDRG) initState
 
     fork $ forever $ do
         threadDelay slotDuration
         atomically $ do
             currentLedger <- readTVar ledgerVar
             slot          <- readTVar slotVar
-            mIsLeader <- runProtocol $ checkIsLeader (Slot slot) currentLedger
+            mIsLeader     <- runProtocol $
+                               checkIsLeader
+                                 cfg
+                                 (Slot slot)
+                                 (protocolLedgerView cfg . ledgerState $ extLedgerState currentLedger)
+                                 (ouroborosChainState $ extLedgerState currentLedger)
             case mIsLeader of
               Nothing    -> return ()
               Just proof -> do
@@ -68,6 +75,6 @@ forkCoreNode initLedger protocolState mempoolVar varCPS slotDuration = do
                           writeTVar mempoolVar mp'
                           return ts
 
-                block <- runProtocol $ Mock.forgeBlock (Slot slot) curNo prevHash txs proof
+                block <- runProtocol $ Mock.forgeBlock cfg (Slot slot) curNo prevHash txs proof
                 writeTVar varCPS cps{ chainState = chain :> block }
             writeTVar slotVar (succ slot)

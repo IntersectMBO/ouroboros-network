@@ -1,29 +1,35 @@
-{-# LANGUAGE DataKinds            #-}
-{-# LANGUAGE FlexibleContexts     #-}
-{-# LANGUAGE FlexibleInstances    #-}
-{-# LANGUAGE GADTs                #-}
-{-# LANGUAGE KindSignatures       #-}
-{-# LANGUAGE NamedFieldPuns       #-}
-{-# LANGUAGE RankNTypes           #-}
-{-# LANGUAGE RecordWildCards      #-}
-{-# LANGUAGE ScopedTypeVariables  #-}
-{-# LANGUAGE StandaloneDeriving   #-}
-{-# LANGUAGE TupleSections        #-}
-{-# LANGUAGE TypeApplications     #-}
-{-# LANGUAGE TypeFamilies         #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE KindSignatures        #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE StandaloneDeriving    #-}
+{-# LANGUAGE TupleSections         #-}
+{-# LANGUAGE TypeApplications      #-}
+{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE UndecidableInstances  #-}
 
 {-# OPTIONS -fno-warn-unused-binds #-}
 {-# OPTIONS -fno-warn-orphans #-}
 
-module Test.Dynamic (
+module Test.DynamicBFT (
     tests
+  , TestConfig(..)
+  , allEqual
+  , nodeStake
+  , broadcastNetwork
   ) where
 
 import           Control.Monad
+import           Control.Monad.Except
 import           Control.Monad.ST.Lazy
 import           Crypto.Random (DRG)
-import           Data.Foldable (foldlM)
+import           Data.Foldable (foldl', foldlM)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe
@@ -37,6 +43,7 @@ import           Test.Tasty.QuickCheck
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain
+import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.ChainProducerState
 import           Ouroboros.Network.MonadClass
 import           Ouroboros.Network.Node
@@ -48,7 +55,10 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
+import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.Test
+import           Ouroboros.Consensus.Util (Condense (..))
+import qualified Ouroboros.Consensus.Util.Chain as Chain
 import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Consensus.Util.STM
 
@@ -83,24 +93,25 @@ test_simple_bft_convergence seed = do
                        numSlots
                        nodeInit
                        txMap
-                       initialLedgerState
+                       initLedgerState
                        (seedToChaCha seed)
       probeOutput p finalChains
+
+    -- Give everybody 1000 coins at the beginning.
+    genesisTx :: Tx
+    genesisTx = Tx mempty [ (a, 1000)
+                          | a <- Map.keys (testAddressDistribution testConfig)
+                          ]
 
     -- TODO: We might want to have some more interesting transactions in
     -- the future here.
     genTxMap :: m (Map Slot (Set Tx))
     genTxMap = do
-        -- Give everybody 1000 coins at the beginning.
-        let genesisTx = Tx mempty [(a, 1000)
-                                  | a <- Map.keys (testAddressDistribution initialLedgerState)
-                                  ]
-
             -- TODO: This doesn't do anything at the moment, but ideally
             -- we would need some randomness to shuffle the TxOut, divvy the
             -- unspent output and distribute it randomly to the nodes, to
             -- create an interesting test.
-            divvy :: Int -> [TxOut] -> m [TxOut]
+        let divvy :: Int -> [TxOut] -> m [TxOut]
             divvy currentSlot xs = do
               let totalCoins = foldl (\acc (_,c) -> acc + c) 0 xs
               return $ foldl (\acc ((addr, _),nid) ->
@@ -119,36 +130,62 @@ test_simple_bft_convergence seed = do
                     return (newTx, (Slot $ fromIntegral sl, Set.singleton newTx) : acc)
                   ) (genesisTx, [(Slot 1, Set.singleton genesisTx)]) [2 .. numSlots]
 
-    initialLedgerState :: ExtLedgerState BlockUnderTest
-    initialLedgerState = ExtLedgerState {
-          testNumNodes = fromIntegral numNodes
-        -- NOTE: We could in principle move this into the 'OuroborosState'
-        -- for the protocol under test, but we would need a way to expose it
-        -- in our ledger view, as we do need this mapping to compute the stake
-        -- given an incoming transaction.
-        , testAddressDistribution = Map.fromList $
+    testConfig :: TestConfig
+    testConfig = TestConfig {
+          testAddressDistribution =
+            Map.fromList $
               zip (map (:[]) $ take numNodes ['a' .. 'z'])
                   (map CoreId [0 .. numNodes - 1])
-        , testLedgerState = SimpleLedgerState mempty (TestLedgerState BftLedgerState)
         }
 
-    nodeInit :: Map NodeId (OuroborosState ProtocolUnderTest, Chain BlockUnderTest)
-    nodeInit = Map.fromList $ [ (CoreId i, (mkState i, Genesis))
+    verKeys :: Map NodeId (VerKeyDSIGN (BftDSIGN BftMockCrypto))
+    verKeys = Map.fromList [ (CoreId i, VerKeyMockDSIGN i)
+                           | i <- [0 .. numNodes - 1]
+                           ]
+
+    initLedgerState :: ExtLedgerState BlockUnderTest
+    initLedgerState = ExtLedgerState {
+          ledgerState         = SimpleLedgerState (utxo genesisTx)
+        , ouroborosChainState = ()
+        }
+
+    nodeInit :: Map NodeId ( NodeConfig ProtocolUnderTest
+                           , NodeState ProtocolUnderTest
+                           , Chain BlockUnderTest
+                           )
+    nodeInit = Map.fromList $ [ (CoreId i, ( mkConfig i
+                                           , mkState i
+                                           , Genesis)
+                                           )
                               | i <- [0 .. numNodes - 1]
                               ]
       where
-        mkState :: Int -> OuroborosState ProtocolUnderTest
-        mkState nodeId = TestState BftState {
-              bftNodeId  = CoreId nodeId
-            , bftSignKey = SignKeyMockDSIGN nodeId
+        mkConfig :: Int -> NodeConfig ProtocolUnderTest
+        mkConfig i = EncNodeConfig {
+              encNodeConfigP = TestNodeConfig {
+                  testNodeConfigP = BftNodeConfig {
+                      bftNodeId   = CoreId i
+                    , bftSignKey  = SignKeyMockDSIGN i
+                    , bftNumNodes = fromIntegral numNodes
+                    , bftVerKeys  = verKeys
+                    }
+                , testNodeConfigId = CoreId i
+                }
+            , encNodeConfigExt = testConfig
             }
+
+        mkState :: Int -> NodeState ProtocolUnderTest
+        mkState _ = ()
 
     isValid :: [(Time m, Map NodeId (Chain BlockUnderTest))] -> Property
     isValid trace = counterexample (show trace) $
       case trace of
         [(_, final)] -> Map.keys final == Map.keys nodeInit
-                   .&&. allEqual (Map.elems final)
+                   .&&. allEqual (takeChainPrefix <$> Map.elems final)
         _otherwise   -> property False
+
+    takeChainPrefix :: Chain BlockUnderTest -> Chain BlockUnderTest
+    takeChainPrefix = id -- in BFT, chains should indeed all be equal.
 
 {-------------------------------------------------------------------------------
   Test blocks
@@ -156,48 +193,37 @@ test_simple_bft_convergence seed = do
   TODO: We'll want to test other protocols also
 -------------------------------------------------------------------------------}
 
-type ProtocolUnderTest = TestProtocol (Bft BftMockCrypto)
+type ProtocolUnderTest = ExtNodeConfig TestConfig (TestProtocol (Bft BftMockCrypto))
 type BlockUnderTest    = SimpleBlock ProtocolUnderTest SimpleBlockStandardCrypto
 type HeaderUnderTest   = SimpleHeader ProtocolUnderTest SimpleBlockStandardCrypto
 
-
-data ExtLedgerState b = ExtLedgerState {
-      testNumNodes            :: Word
-    , testAddressDistribution :: Map Addr NodeId
-    -- ^ Some form of mapping that allows us to partition incoming transactions
-    -- in a way that we can accumulate the stake properly.
-    , testLedgerState         :: LedgerState b
+data TestConfig = TestConfig {
+      testAddressDistribution :: Map Addr NodeId
+      -- ^ Some form of mapping that allows us to partition incoming
+      -- transactions in a way that we can accumulate the stake properly.
     }
 
-deriving instance Show (LedgerState b) => Show (ExtLedgerState b)
-
-applyExtLedgerState :: UpdateLedger b
-                     => b
-                     -> ExtLedgerState b
-                     -> ExtLedgerState b
-applyExtLedgerState b ExtLedgerState{..} =
-    ExtLedgerState {
-          testNumNodes = testNumNodes
-        , testAddressDistribution = testAddressDistribution
-        , testLedgerState = applyLedgerState b testLedgerState
-    }
-
-
--- Simple function which can answer the question: "Is this address owned by
--- this node?"
-ourAddr :: NodeId -> Addr -> ExtLedgerState b -> Bool
-ourAddr myNodeId address st =
-    fmap ((==) myNodeId) (Map.lookup address (testAddressDistribution st))
+ourAddr :: TestConfig -> NodeId -> Addr -> Bool
+ourAddr TestConfig{..} myNodeId address =
+    fmap ((==) myNodeId) (Map.lookup address testAddressDistribution)
         == Just True
 
-instance BftLedgerView (ExtLedgerState b) where
-  bftNumNodes = testNumNodes
+nodeStake :: TestConfig -> Utxo -> NodeId -> Int
+nodeStake cfg u nodeId =
+    Map.foldl
+        (\acc (a, stake) -> if ourAddr cfg nodeId a then acc + stake else acc)
+        0
+        u
 
-instance TestProtocolLedgerView (ExtLedgerState (SimpleBlock p c)) where
-  stakeForNode nodeId st =
-      Map.foldl (\acc (a, stake) ->
-                 if ourAddr nodeId a st then acc + stake else acc
-                ) 0 (simpleUtxo . testLedgerState $ st)
+instance HasPayload (Bft BftMockCrypto) BlockUnderTest where
+  blockPayload _ = testPayloadP
+                 . encPayloadP
+                 . headerOuroboros
+                 . simpleHeader
+
+instance ProtocolLedgerView BlockUnderTest where
+  protocolLedgerView (EncNodeConfig _ cfg) (SimpleLedgerState u) =
+      ((), nodeStake cfg u)
 
 {-------------------------------------------------------------------------------
   Infrastructure
@@ -213,12 +239,15 @@ broadcastNetwork :: forall m p c gen.
                     , MonadTimer m
                     , MonadSay   m
                     , SimpleBlockCrypto c
-                    , RunOuroboros p (ExtLedgerState (SimpleBlock p c))
+                    , ProtocolLedgerView (SimpleBlock p c)
                     , DRG gen
                     )
                  => Int
                  -- ^ Number of slots to run for
-                 -> Map NodeId (OuroborosState p, Chain (SimpleBlock p c))
+                 -> Map NodeId ( NodeConfig p
+                               , NodeState p
+                               , Chain (SimpleBlock p c)
+                               )
                  -- ^ Node initial state and initial chain
                  -> Map Slot (Set Tx)
                  -- ^ For each slot, the transactions to be incorporated into
@@ -243,7 +272,7 @@ broadcastNetwork numSlots nodeInit txMap initLedger initRNG = do
 
     varRNG <- atomically $ newTVar initRNG
 
-    nodes <- forM (Map.toList nodeInit) $ \(us, (initSt, initChain)) -> do
+    nodes <- forM (Map.toList nodeInit) $ \(us, (cfg, initSt, initChain)) -> do
       varRes <- atomically $ newTVar Nothing
       varSt  <- atomically $ newTVar initSt
       varL   <- atomically $ newTVar initLedger
@@ -259,7 +288,10 @@ broadcastNetwork numSlots nodeInit txMap initLedger initRNG = do
                        case msgToMyself of
                            MsgRollForward b -> do
                                atomically $
-                                 modifyTVar' varL (applyExtLedgerState b)
+                                 modifyTVar' varL $ \st ->
+                                   case runExcept (applyExtLedgerState cfg b st) of
+                                     Left err  -> error (show err)
+                                     Right st' -> st'
                            _ -> return ()
                        return msgToMyself
                   }
@@ -272,8 +304,7 @@ broadcastNetwork numSlots nodeInit txMap initLedger initRNG = do
               map (\them -> fst (chans Map.! us Map.! them)) nodeIds
         }
 
-
-      let runProtocol :: MonadPseudoRandomT gen (OuroborosStateT p (Tr m)) a
+      let runProtocol :: MonadPseudoRandomT gen (NodeStateT p (Tr m)) a
                       -> Tr m a
           runProtocol = simMonadPseudoRandomT varRNG
                       $ simOuroborosStateT varSt
@@ -286,8 +317,14 @@ broadcastNetwork numSlots nodeInit txMap initLedger initRNG = do
 
           -- TODO: We *do not* update the ledger state here. That's done in
           -- our \"loopback\" consumer.
-          currentLedger <- atomically $ readTVar varL
-          mIsLeader <- atomically $ runProtocol $ checkIsLeader slot currentLedger
+          ExtLedgerState{..} <- atomically $ readTVar varL
+
+          mIsLeader <- atomically $ runProtocol $
+                         checkIsLeader
+                           cfg
+                           slot
+                           (protocolLedgerView cfg ledgerState)
+                           ouroborosChainState
           case mIsLeader of
             Nothing    -> return ()
             Just proof -> atomically $ do
@@ -297,7 +334,7 @@ broadcastNetwork numSlots nodeInit txMap initLedger initRNG = do
                   prevNo   = headBlockNo chain
                   curNo    = succ prevNo
                   txs      = fromMaybe mempty $ Map.lookup slot txMap
-              block <- runProtocol $ forgeBlock slot curNo prevHash txs proof
+              block <- runProtocol $ forgeBlock cfg slot curNo prevHash txs proof
               writeTVar varCPS cps{ chainState = chain :> block }
 
       fork $ do
@@ -334,7 +371,35 @@ collectJust var = do
       Nothing -> retry
       Just a  -> return a
 
-allEqual :: Eq a => [a] -> Bool
-allEqual []       = True
-allEqual [_]      = True
-allEqual (x:y:xs) = x == y && allEqual (y:xs)
+allEqual :: forall b. (Condense b, Eq b, HasHeader b) => [Chain b] -> Property
+allEqual []             = property True
+allEqual [_]            = property True
+allEqual (x : xs@(_:_)) =
+    let c = foldl' Chain.commonPrefix x xs
+    in  foldl' (\prop d -> prop .&&. f c d) (property True) xs
+  where
+    f :: Chain b -> Chain b -> Property
+    f c d = counterexample (g c d) $ c == d
+
+    g :: Chain b -> Chain b -> String
+    g c d = case (Chain.lastSlot c, Chain.lastSlot d) of
+        (Nothing, Nothing) -> error "impossible case"
+        (Nothing, Just t)  ->    "empty intersection of non-empty chains (one reaches slot "
+                              <> show (getSlot t)
+                              <> " and contains "
+                              <> show (Chain.length d)
+                              <> "blocks): "
+                              <> condense d
+        (Just _, Nothing)  -> error "impossible case"
+        (Just s, Just t)   ->    "intersection reaches slot "
+                              <> show (getSlot s)
+                              <> " and has length "
+                              <> show (Chain.length c)
+                              <> ", but at least one chain reaches slot "
+                              <> show (getSlot t)
+                              <> " and has length "
+                              <> show (Chain.length d)
+                              <> ": "
+                              <> condense c
+                              <> " /= "
+                              <> condense d

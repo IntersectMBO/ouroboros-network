@@ -10,6 +10,7 @@ module Ouroboros.Network.Chain (
   -- * Chain type and fundamental operations
   Chain(..),
   valid,
+  validExtension,
   foldChain,
   chainToList,
 

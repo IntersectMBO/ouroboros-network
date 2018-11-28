@@ -18,8 +18,10 @@ import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (Chain (..), Point)
 import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.ChainProducerState (ChainProducerState (..),
-                     ReaderId, initChainProducerState, producerChain,
-                     switchFork)
+                                                       ReaderId,
+                                                       initChainProducerState,
+                                                       producerChain,
+                                                       switchFork)
 import           Ouroboros.Network.ConsumersAndProducers
 import           Ouroboros.Network.MonadClass
 import           Ouroboros.Network.Protocol

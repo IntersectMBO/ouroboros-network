@@ -15,3 +15,5 @@ dist-newstyle/
 *~
 result*
 tags
+
+.stack-work/

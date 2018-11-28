@@ -18,7 +18,7 @@ import           Data.Void
 import           Options.Applicative
 import           System.IO (IOMode (..))
 
-import           Ouroboros.Consensus.Crypto.Hash (MD5)
+import           Ouroboros.Consensus.Crypto.Hash (ShortHash)
 import qualified Ouroboros.Consensus.Crypto.Hash as H
 import qualified Ouroboros.Consensus.Ledger.Mock as Mock
 import           Ouroboros.Consensus.Util (Condense (..))
@@ -100,7 +100,7 @@ submitTx n tx = do
     withTxPipe n WriteMode False $ \hdl -> do
         let x = error "submitTx: this handle wasn't supposed to be used"
         runProtocolWithPipe x hdl proto `catch` (\ProtocolStopped -> return ())
-    putStrLn $ "The Id for this transaction is: " <> condense (H.hash @MD5 tx)
+    putStrLn $ "The Id for this transaction is: " <> condense (H.hash @ShortHash tx)
   where
       proto :: Protocol Mock.Tx Void ()
       proto = sendMsg tx

@@ -1,5 +1,7 @@
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE RankNTypes       #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE RankNTypes           #-}
+{-# LANGUAGE StandaloneDeriving   #-}
+{-# LANGUAGE UndecidableInstances #-}
 module LedgerState (
       spawnLedgerStateListeners
     , DemoLedgerState(..)
@@ -8,58 +10,59 @@ module LedgerState (
 import qualified Control.Concurrent.Async as Async
 import           Control.Concurrent.STM (TBQueue, TVar, atomically, modifyTVar',
                      newTVar, readTVar, retry, writeTVar)
-import           Control.Monad.State
+import           Control.Monad.Except
+import           Control.Monad.Reader
 import           Data.Function ((&))
 import           Data.Functor (($>))
 
-import           Ouroboros.Consensus.Protocol.BFT (BftLedgerView (..))
-import           Ouroboros.Consensus.Util
-import           Ouroboros.Network.Chain (Chain (..), HasHeader)
+import           Ouroboros.Network.Chain (Chain (..))
 import           Ouroboros.Network.ChainProducerState (ChainProducerState)
 import           Ouroboros.Network.ConsumersAndProducers
 import           Ouroboros.Network.Node (NodeId (..))
 import           Ouroboros.Network.Protocol (consumerSideProtocol1,
                      producerSideProtocol1)
 import           Ouroboros.Network.ProtocolInterfaces
-import           Ouroboros.Network.Serialise
+
+import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Util
 
 import           Logging
 
-data DemoLedgerState = DemoLedgerState {
-    numNodes :: !Int
-  } deriving Show
+data DemoLedgerState b = DemoLedgerState {
+      extLedgerState   :: !(ExtLedgerState b)
+      -- ^ The ledger state specific for the protocol in use.
+    , howManyRollbacks :: !Int
+    , howManyAddBlocks :: !Int
+    , numNodes         :: !Int
+    }
+  deriving (Show)
 
-instance BftLedgerView DemoLedgerState where
-  bftNumNodes = fromIntegral . numNodes
+type M b = ReaderT (TVar (DemoLedgerState b)) IO
 
-data SomeState = SomeState { howManyRollbacks :: !Int
-                           , howManyAddBlocks :: !Int
-                           } deriving Show
-
-type M = StateT SomeState IO
-
--- TODO: This can be replaced with the 'LedgerState' abstraction proper.
-spawnLedgerStateListeners :: forall block. ( HasHeader block
-                             , Serialise block
-                             , Condense  block
-                             , Condense  [block]
+spawnLedgerStateListeners :: forall block.
+                             ( Condense block
+                             , Condense [block]
+                             , ProtocolLedgerView block
                              )
                           => NodeId
+                          -> NodeConfig (BlockProtocol block)
                           -> TBQueue LogEvent
                           -> Chain block
+                          -> TVar (DemoLedgerState block)
                           -> TVar (ChainProducerState block)
                           -> IO [Async.Async ()]
-spawnLedgerStateListeners ourselves q initialChain cps = do
+spawnLedgerStateListeners ourselves cfg q initialChain ledgerVar cps = do
     chainV <- atomically $ newTVar initialChain
     let handler = Logging.LoggerHandler q chainV ourselves
 
     let consumer = exampleConsumer chainV & (liftConsumerHandlers lift . Logging.addSimpleLogging handler)
-                                          & addPostProcessing
+                                          & addPostProcessing cfg
 
     consumerVar <- atomically $ newTVar []
     producerVar <- atomically $ newTVar []
 
-    ourOwnConsumer <- Async.async $ flip evalStateT (SomeState 0 0) $
+    ourOwnConsumer <- Async.async $ flip runReaderT ledgerVar $
                           consumerSideProtocol1 consumer
                           (lift . sendMsg consumerVar)
                           (lift $ recvMsg producerVar)
@@ -80,20 +83,37 @@ spawnLedgerStateListeners ourselves q initialChain cps = do
           []      -> retry
 
 
-addPostProcessing :: ConsumerHandlers block M -> ConsumerHandlers block M
-addPostProcessing c = ConsumerHandlers {
+addPostProcessing :: ProtocolLedgerView block
+                  => NodeConfig (BlockProtocol block)
+                  -> ConsumerHandlers block (M block)
+                  -> ConsumerHandlers block (M block)
+addPostProcessing cfg c = ConsumerHandlers {
       getChainPoints = getChainPoints c
 
     , addBlock = \b -> do
         addBlock c b
-        modify (\s -> s { howManyAddBlocks = howManyAddBlocks s + 1 })
-        get >>= lift . print
+        modifyLedger $ \l ->
+            case runExcept (applyExtLedgerState cfg b (extLedgerState l)) of
+              Left err ->
+                error (show err) -- TODO: Proper error handling (Alfredo)
+              Right ledgerState' ->
+                l { howManyAddBlocks = howManyAddBlocks l + 1
+                  , extLedgerState   = ledgerState'
+                  }
 
     , rollbackTo = \p -> do
         rollbackTo c p
-        modify (\s -> s { howManyRollbacks = howManyRollbacks s + 1 })
-        get >>= lift . print
+        modifyLedger $ \l -> l { howManyRollbacks = howManyRollbacks l + 1 }
     }
 
-
-
+modifyLedger :: ProtocolLedgerView b
+             => (DemoLedgerState b -> DemoLedgerState b)
+             -> M b ()
+modifyLedger updateFn = do
+    ledgerVar <- ask
+    newLedger <- lift $ atomically $ do
+        currentLedger <- readTVar ledgerVar
+        let l' = updateFn currentLedger
+        writeTVar ledgerVar l'
+        return l'
+    lift (print newLedger)

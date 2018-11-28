@@ -1,11 +1,11 @@
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE EmptyDataDecls      #-}
+{-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE TypeFamilies        #-}
+
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Run (
       runNode
@@ -19,14 +19,16 @@ import qualified Data.Map.Strict as M
 import           Data.Maybe
 import           Data.Semigroup ((<>))
 
-import           Ouroboros.Consensus.Crypto.DSIGN.Mock
-import qualified Ouroboros.Consensus.Ledger.Mock as Mock
-import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Network.Chain (Chain (..))
 import           Ouroboros.Network.ChainProducerState
 import           Ouroboros.Network.ConsumersAndProducers
 import           Ouroboros.Network.Node (NodeId (..))
 import qualified Ouroboros.Network.Node as Node
+
+import           Ouroboros.Consensus.Crypto.DSIGN.Mock
+import           Ouroboros.Consensus.Ledger.Abstract
+import qualified Ouroboros.Consensus.Ledger.Mock as Mock
+import           Ouroboros.Consensus.Protocol.BFT
 
 import           BlockGeneration (forkCoreNode)
 import           CLI
@@ -45,8 +47,7 @@ runNode CLI{..} = do
          TxSubmitter topology tx -> handleTxSubmission topology tx
          SimpleNode t            -> handleSimpleNode t
 
--- The concrete block this demo will run with.
-type Block = Mock.SimpleBlock (Bft BftMockCrypto) Mock.SimpleBlockStandardCrypto
+type Block = Mock.SimpleBlock (Bft BftMockCrypto) Mock.SimpleBlockMockCrypto
 
 -- | Setups a simple node, which will run the chain-following protocol and,
 -- if core, will also look at the mempool when trying to create a new block.
@@ -100,23 +101,43 @@ handleSimpleNode (TopologyInfo myNodeId topologyFile) = do
                      _ -> mempty
 
              Node.forkRelayKernel upstream cps
-             when (role nodeSetup == CoreNode) $ do
-                 let numCoreNodes = length (filter ((== CoreNode) . role) nodeSetups)
-                 let nid = case myNodeId of
-                                CoreId n  -> n
-                                RelayId n -> n
-                 let protocolState = BftState myNodeId (SignKeyMockDSIGN nid)
-                 let ledgerState = DemoLedgerState numCoreNodes
 
-                 forkCoreNode ledgerState
+             let numCoreNodes  = length (filter ((== CoreNode) . role) nodeSetups)
+             let nid           = case myNodeId of
+                                   CoreId  n -> n
+                                   RelayId n -> n
+             let protocolState = ()
+             let ledgerState   = Mock.SimpleLedgerState mempty
+             let bftConfig     = BftNodeConfig {
+                                     bftNodeId   = myNodeId
+                                   , bftSignKey  = SignKeyMockDSIGN nid
+                                   , bftNumNodes = fromIntegral numCoreNodes
+                                   , bftVerKeys  = M.fromList [
+                                         (CoreId n, VerKeyMockDSIGN n)
+                                       | setup    <- nodeSetups
+                                       , CoreId n <- [nodeId setup]
+                                       ]
+                                   }
+             initLedger <- atomically $ newTVar $ DemoLedgerState {
+                 extLedgerState   = ExtLedgerState ledgerState ()
+               , howManyRollbacks = 0
+               , howManyAddBlocks = 0
+               , numNodes         = numCoreNodes
+               }
+
+             when (role nodeSetup == CoreNode) $ do
+                 forkCoreNode initLedger
+                              bftConfig
                               protocolState
                               nodeMempool
                               cps
                               slotDuration
 
              ledgerStateThreads <- spawnLedgerStateListeners myNodeId
+                                                             bftConfig
                                                              loggingQueue
                                                              Genesis
+                                                             initLedger
                                                              cps
 
              let allThreads = terminalThread <> producerThreads
@@ -155,6 +176,9 @@ handleSimpleNode (TopologyInfo myNodeId topologyFile) = do
       spawnProducer cps consumerNodeId = Async.async $
           NamedPipe.runProducer myNodeId consumerNodeId $
             exampleProducer cps
+
+instance ProtocolLedgerView Block where
+  protocolLedgerView _ _ = ()
 
 slotDuration :: Int
 slotDuration = 5 * 1000000

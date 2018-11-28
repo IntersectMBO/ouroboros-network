@@ -1,124 +1,188 @@
+{-# LANGUAGE ConstraintKinds            #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE FunctionalDependencies     #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE KindSignatures             #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE QuantifiedConstraints      #-}
 {-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
 module Ouroboros.Consensus.Protocol.Abstract (
+    -- * Abstract definition of the Ouroboros protocl
     OuroborosTag(..)
-  , RunOuroboros(..)
+  , HasPreHeader(..)
+  , HasPayload(..)
     -- * State monad for Ouroboros state
-  , MonadOuroborosState(..)
-  , OuroborosStateT -- opaque
-  , ouroborosStateT
-  , runOuroborosStateT
-  , evalOuroborosStateT
-  , runOuroborosState
-  , evalOuroborosState
+  , HasNodeState
+  , HasNodeState_(..)
+  , NodeStateT
+  , NodeStateT_ -- opaque
+  , nodeStateT
+  , runNodeStateT
+  , evalNodeStateT
+  , runNodeState
+  , evalNodeState
   ) where
 
+import           Control.Monad.Except
 import           Control.Monad.State
 import           Crypto.Random (MonadRandom (..))
 import           Data.Functor.Identity
+import           Data.Kind (Constraint)
+import           Data.List (sortBy)
+import           Data.Ord (comparing)
 
-import           Ouroboros.Consensus.Util.Random
-import           Ouroboros.Network.Block (Slot)
+import           Ouroboros.Network.Block (HasHeader(..), Slot)
+import           Ouroboros.Network.Chain (Chain (..))
 import           Ouroboros.Network.Serialise (Serialise)
+import qualified Ouroboros.Network.Chain as Chain
+
+import           Ouroboros.Consensus.Util
+import           Ouroboros.Consensus.Util.Random
 
 -- | The (open) universe of Ouroboros protocols
 --
 -- This class encodes the part that is independent from any particular
 -- block representation.
-class ( Show (OuroborosLedgerState p)
-      , forall ph. Show      ph => Show      (OuroborosPayload p ph)
-      , forall ph. Eq        ph => Eq        (OuroborosPayload p ph)
-      , forall ph. Serialise ph => Serialise (OuroborosPayload p ph)
-      ) => OuroborosTag (p :: *) where
+class ( Show (ChainState    p)
+      , Show (ValidationErr p)
+      , forall ph. Show      ph => Show      (Payload p ph)
+      , forall ph. Eq        ph => Eq        (Payload p ph)
+      , forall ph. Condense  ph => Condense  (Payload p ph)
+      , forall ph. Serialise ph => Serialise (Payload p ph)
+      ) => OuroborosTag p where
+
+  -- | Static node configuration
+  --
+  -- Every method in this class takes the node configuration as a parameter,
+  -- so having this as a data family rather than a type family resolves most
+  -- ambiguity.
+  data family NodeConfig p :: *
+
+  -- | State of the node required to run the protocol
+  type family NodeState p :: *
+
   -- | The protocol specific part that should included in the block
   --
   -- The type argument is the type of the block header /without/ the
   -- Ouroboros specific part
-  data family OuroborosPayload p :: * -> *
+  --
+  -- This is a data family because of limitations in GHC's support for
+  -- quantified constraints; see
+  -- <https://ghc.haskell.org/trac/ghc/ticket/14860>
+  -- <https://ghc.haskell.org/trac/ghc/ticket/15347>
+  data family Payload p :: * -> *
 
-  -- | Protocol specific state needed when executing the protocol
-  data family OuroborosState p :: *
+  -- | Blockchain dependent protocol-specific state
+  type family ChainState p :: *
 
   -- | Evidence that a node is the leader
-  data family ProofIsLeader p :: *
+  type family IsLeader p :: *
 
-  -- | Protocol-specific part of the ledger state
-  data family OuroborosLedgerState p :: *
+  -- | Projection of the ledger state the Ouroboros protocol needs access to
+  type family LedgerView p :: *
+
+  -- | Validation errors
+  type family ValidationErr p :: *
+
+  -- | Blocks that the protocol can run on
+  type family SupportedBlock p :: * -> Constraint
 
   -- | Construct the ouroboros-specific payload of a block
   --
   -- Gets the proof that we are the leader and the preheader as arguments.
-  mkOuroborosPayload :: (MonadOuroborosState p m, MonadRandom m, Serialise ph)
-                     => ProofIsLeader p -> ph -> m (OuroborosPayload p ph)
+  mkPayload :: (HasNodeState p m, MonadRandom m, Serialise ph)
+            => NodeConfig p
+            -> IsLeader p
+            -> ph
+            -> m (Payload p ph)
 
-  applyOuroborosLedgerState :: OuroborosPayload p ph
-                            -> OuroborosLedgerState p
-                            -> OuroborosLedgerState p
+  -- | Chain selection
+  selectChain :: SupportedBlock p b
+              => NodeConfig p
+              -> Chain b    -- ^ Our chain
+              -> [Chain b]  -- ^ Upstream chains
+              -> Chain b
+  selectChain _ ourChain candidates =
+      -- will prioritize our own since sortBy is stable
+      head $ sortBy (flip (comparing Chain.length)) (ourChain : candidates)
 
-  -- TODO: We need the dual of 'applyOuroborosLedgerState' for rollbacks.
-  -- rollbackOuroborosLedgerState :: ...
-
--- | Interaction between the Ouroboros protocol and the ledger state
-class OuroborosTag p => RunOuroboros p l where
   -- | Check if a node is the leader
-  checkIsLeader :: (MonadOuroborosState p m, MonadRandom m)
-                => Slot -> l -> m (Maybe (ProofIsLeader p))
+  checkIsLeader :: (HasNodeState p m, MonadRandom m)
+                => NodeConfig p -> Slot
+                -> LedgerView p
+                -> ChainState p
+                -> m (Maybe (IsLeader p))
+
+  -- | Apply a block
+  applyChainState :: SupportedBlock p b
+                  => NodeConfig p
+                  -> LedgerView p -- /Updated/ ledger state
+                  -> b
+                  -> ChainState p -- /Previous/ Ouroboros state
+                  -> Except (ValidationErr p) (ChainState p)
+
+-- | Extract the pre-header from a block
+class (HasHeader b, Serialise (PreHeader b)) => HasPreHeader b where
+  type family PreHeader b :: *
+  blockPreHeader :: b -> PreHeader b
+
+-- | Blocks that contain the ouroboros payload
+--
+-- We do /not/ impose a functional dependency here, so that in principle
+-- blocks can be defined to have payloads for multiple protocols. This is
+-- important for protocol combinators.
+class HasPreHeader b => HasPayload p b where
+  blockPayload :: proxy p -> b -> Payload p (PreHeader b)
 
 {-------------------------------------------------------------------------------
   State monad
 -------------------------------------------------------------------------------}
 
+type HasNodeState p = HasNodeState_ (NodeState p)
+
 -- | State monad for the Ouroboros specific state
 --
 -- We introduce this so that we can have both MonadState and OuroborosState
 -- in a monad stack.
-class Monad m => MonadOuroborosState p m | m -> p where
-  getOuroborosState :: m (OuroborosState p)
-  putOuroborosState :: OuroborosState p -> m ()
+class Monad m => HasNodeState_ s m | m -> s where
+  getNodeState :: m s
+  putNodeState :: s -> m ()
 
-newtype OuroborosStateT p m a = OuroborosStateT {
-      unOuroborosStateT :: StateT (OuroborosState p) m a
-    }
+instance HasNodeState_ s m => HasNodeState_ s (MonadPseudoRandomT gen m) where
+  getNodeState = lift $ getNodeState
+  putNodeState = lift . putNodeState
+
+{-------------------------------------------------------------------------------
+  Monad transformer introducing 'HasNodeState_'
+-------------------------------------------------------------------------------}
+
+newtype NodeStateT_ s m a = NodeStateT { unNodeStateT :: StateT s m a }
   deriving (Functor, Applicative, Monad, MonadTrans)
 
-ouroborosStateT :: (OuroborosState p -> m (a, OuroborosState p))
-                -> OuroborosStateT p m a
-ouroborosStateT = OuroborosStateT . StateT
+type NodeStateT p = NodeStateT_ (NodeState p)
 
-runOuroborosStateT :: OuroborosStateT p m a
-                   -> OuroborosState p -> m (a, OuroborosState p)
-runOuroborosStateT = runStateT . unOuroborosStateT
+nodeStateT :: (s -> m (a, s)) -> NodeStateT_ s m a
+nodeStateT = NodeStateT . StateT
 
-evalOuroborosStateT :: Monad m
-                    => OuroborosStateT p m a
-                    -> OuroborosState p -> m a
-evalOuroborosStateT act = fmap fst . runOuroborosStateT act
+runNodeStateT :: NodeStateT_ s m a -> s -> m (a, s)
+runNodeStateT = runStateT . unNodeStateT
 
-runOuroborosState :: (forall m. Monad m => OuroborosStateT p m a)
-                  -> OuroborosState p -> (a, OuroborosState p)
-runOuroborosState act = runIdentity . runOuroborosStateT act
+evalNodeStateT :: Monad m => NodeStateT_ s m a -> s -> m a
+evalNodeStateT act = fmap fst . runNodeStateT act
 
-evalOuroborosState :: (forall m. Monad m => OuroborosStateT p m a)
-                   -> OuroborosState p -> a
-evalOuroborosState act = fst . runOuroborosState act
+runNodeState :: (forall m. Monad m => NodeStateT_ s m a) -> s -> (a, s)
+runNodeState act = runIdentity . runNodeStateT act
 
-instance Monad m => MonadOuroborosState p (OuroborosStateT p m) where
-  getOuroborosState = OuroborosStateT $ get
-  putOuroborosState = OuroborosStateT . put
+evalNodeState :: (forall m. Monad m => NodeStateT_ s m a) -> s -> a
+evalNodeState act = fst . runNodeState act
 
-instance MonadOuroborosState p m
-      => MonadOuroborosState p (MonadPseudoRandomT gen m) where
-  getOuroborosState = lift $ getOuroborosState
-  putOuroborosState = lift . putOuroborosState
+instance Monad m => HasNodeState_ s (NodeStateT_ s m) where
+  getNodeState = NodeStateT $ get
+  putNodeState = NodeStateT . put
 
-instance MonadRandom m => MonadRandom (OuroborosStateT p m) where
+instance MonadRandom m => MonadRandom (NodeStateT_ s m) where
   getRandomBytes = lift . getRandomBytes
