@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE DataKinds           #-}
@@ -112,6 +113,15 @@ chainTransferProtocol delay inputVar outputVar = do
                 return input
       fork $ threadDelay delay >> atomically (writeTVar outputVar input)
 
+delayChannel :: forall sm rm send recv.
+                ( MonadSTM rm
+                , MonadTimer rm
+                )
+             => Duration (Time rm)
+             -> Duplex sm rm send recv
+             -> Duplex sm rm send recv
+delayChannel delay = channelRecvEffect (\_ -> threadDelay delay)
+
 -- | Simulated transfer protocol.
 --
 transferProtocol :: forall send recv m.
@@ -123,9 +133,9 @@ transferProtocol :: forall send recv m.
                  -> TVar m [recv]
                  -> Duplex m m send recv
 transferProtocol delay sendVar recvVar
-  = uniformDuplex sendMsg recvMsg
+  = delayChannel delay $ uniformDuplex sendMsg recvMsg
   where
-    sendMsg a = fork $ threadDelay delay >> atomically (modifyTVar' sendVar (++[a]))
+    sendMsg a = atomically (modifyTVar' sendVar (++[a]))
     recvMsg =
       atomically $ do
         xs <- readTVar recvVar
@@ -167,9 +177,6 @@ instance Semigroup (NodeChannels m block) where
 
 instance Monoid (NodeChannels m block) where
   mempty = NodeChannels [] []
-
-  mappend = (<>)
-
 
 -- | Create channels n1 → n2, where n1 is a producer and n2 is the consumer.
 --
@@ -280,6 +287,32 @@ data ConsumerId = ConsumerId NodeId Int
 data ProducerId = ProducerId NodeId Int
   deriving (Eq, Ord, Show)
 
+-- | Channel which logs sent and received messages.
+--
+-- TODO: use a proper logger rather than @'MonadSay'@ constraint.
+loggingChannel :: ( MonadSay sm
+                  , MonadSay rm
+                  , Show id
+                  )
+               => id
+               -> (send -> String)
+               -> (recv -> String)
+               -> Duplex sm rm send recv
+               -> Duplex sm rm send recv
+loggingChannel ident showSend showRecv Duplex{send,recv} = Duplex {
+    send = loggingSend,
+    recv = loggingRecv
+  }
+ where
+  loggingSend a = do
+    say (show ident ++ ":send:" ++ showSend a)
+    loggingChannel ident showSend showRecv <$> send a
+  loggingRecv = do
+    msg <- recv
+    case msg of
+      (Nothing, _) -> return msg
+      (Just a, _)  -> say (show ident ++ ":recv:" ++ showRecv a) $> fmap (loggingChannel ident showSend showRecv) msg
+
 -- | Relay node, which takes @'NodeChannels'@ to communicate with its peers
 -- (upstream and downstream).  If it is subscribed to n nodes and has
 -- m subscriptions, it will run n consumer end protocols which listen for
@@ -352,21 +385,18 @@ relayNode nid initChain chans = do
                  'StIdle
     codec = codecChainSync
 
+    -- Note: there is asymmetry between producers and consumers: we run single
+    -- @'ProducerHandlers'@ and multiple @'ConsumerHandlers'@.  An efficient
+    -- implementation should run a as many producers as channels and not share
+    -- state between producers than necessary (here are producers share chain
+    -- state and all the reader states, while we could share just the chain).
     startConsumer :: Int
                   -> Channel m (SomeTransition (ChainSyncMessage block (Point block)))
                   -> m (TVar m (Chain block))
     startConsumer cid channel = do
       chainVar <- atomically $ newTVar Genesis
       let consumer = chainSyncClientPeer (chainSyncClientExample chainVar pureClient)
-      fork $ void $ useCodecWithDuplex channel codec consumer
-      -- FIXME re-introduce logging on the channel.
-      -- Requires a show instance like thing
-      --   forall from to . ChainSyncMessage header point from to -> String
-      {-
-      fork $ consumerSideProtocol1 consumer
-        (loggingSend (ConsumerId nid cid) (sendMsg chan))
-        (loggingRecv (ConsumerId nid cid) (recvMsg chan))
-      -}
+      fork $ void $ useCodecWithDuplex (loggingChannel (ConsumerId nid cid) (withSomeTransition show) (withSomeTransition show) channel) codec consumer
       return chainVar
 
     startProducer :: Peer ChainSyncProtocol (ChainSyncMessage block (Point block))
@@ -379,13 +409,7 @@ relayNode nid initChain chans = do
       -- use 'void' because 'fork' only works with 'm ()'
       -- No sense throwing on Unexpected right? since fork will just squelch
       -- it. FIXME: use async...
-      fork $ void $ useCodecWithDuplex channel codec producer
-      -- FIXME re-introduce logging on the channel.
-      {-
-      fork $ producerSideProtocol1 producer
-        (loggingSend (ProducerId nid pid) (sendMsg chan))
-        (loggingRecv (ProducerId nid pid) (recvMsg chan))
-      -}
+      fork $ void $ useCodecWithDuplex (loggingChannel (ProducerId nid pid) (withSomeTransition show) (withSomeTransition show) channel) codec producer
 
 -- | Core node simulation.  Given a chain it will generate a @block@ at its
 -- slot time (i.e. @slotDuration * blockSlot block@).  When the node finds out
