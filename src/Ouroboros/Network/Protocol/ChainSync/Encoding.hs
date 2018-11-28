@@ -4,6 +4,9 @@
 
 module Ouroboros.Network.Protocol.ChainSync.Encoding where
 
+import Prelude hiding (fail)
+import Control.Monad.Fail (fail)
+
 import Protocol.Untyped (SomeMessage(..))
 
 import Ouroboros.Network.Protocol.ChainSync.Type
@@ -31,7 +34,7 @@ decodeChainSyncMessage :: forall header point s.
                           (Serialise header, Serialise point)
                        => Decoder s (SomeMessage (ChainSyncMessage header point))
 decodeChainSyncMessage = do
-  len <- decodeListLen
+  _len <- decodeListLen
   key <- decodeWord
   case key of
     0 -> return (SomeMessage MsgRequestNext)
@@ -44,4 +47,5 @@ decodeChainSyncMessage = do
     5 -> SomeMessage <$> (MsgIntersectImproved  <$> decode <*> decode)
     6 -> SomeMessage <$> (MsgIntersectUnchanged <$> decode)
     7 -> return (SomeMessage MsgDone)
+    _ -> fail "ChainSyncMessage: unexpected key"
 
