@@ -79,7 +79,7 @@
 \begin{document}
 
 \title{Design of IPC protocols for Cardano Shelly \\
-       {\small (Version 0.6)} \\
+       {\small (Version 0.7)} \\
        {\large \sc An IOHK technical report}}
 \author{Duncan Coutts \\ {\small \texttt{duncan@well-typed.com}} \\
                          {\small \texttt{duncan.coutts@iohk.io}}
@@ -87,8 +87,9 @@
    \and Neil Davies \\ {\small \texttt{neil.davies@pnsol.com}} \\
                        {\small \texttt{neil.davies@iohk.io}}
    \and Marcin Szamotulski \\ {\small \texttt{marcin.szamotulski@iohk.io}}
+   \and Karl Knutsson \\ {\small \texttt{karl.knutsson@iohk.io}}
    }
-\date{July 17, 2018}
+\date{November 29, 2018}
 
 \maketitle
 
@@ -97,6 +98,10 @@ This document is intended as a discussion, leading to a design, of IPC
 protocols for Cardano's Shelly release. The structure of the discussion is to
 look at the requirements and ideas for application-level protocols, before
 looking at how those can map onto lower level IPC protocols.
+
+It is a work-in-progress but it is being evolved into a more general document
+for the network layer, covering requirements, design and documentation of
+lower level protocol details.
 \end{abstract}
 
 \tableofcontents
@@ -114,6 +119,7 @@ looking at how those can map onto lower level IPC protocols.
 \item[Version 0.5, July 13, 2018] Extend the discussion of the alternative broadcast approach.
 \item[Version 0.6, July 17, 2018] Fleshed out section on chain following protocols.
 \item[Version 0.6.1, July 19, 2018] Minor additional text, to aid understanding.
+\item[Version 0.7, November 29, 2018] Consolodated requirements into this document
 \end{description}
 
 \section{Introduction}
@@ -225,6 +231,307 @@ the more efficient (less resource costly) node-to-consumer protocol
 instead of the node-to-node protocol; Similarly it allows for wallet
 or explorer-like applications that need to scale out, and are able to
 make use of a trusted node.
+
+\section{Requirements}
+
+\subsection{High level requirements}
+
+These are the high level business requirements for the networking that were
+gathered and signed off in late 2017. As such they are expressed in an informal
+prose style, and often following a ``user story'' style.
+
+\subsubsection{Network connectivity}
+
+\paragraph{Participate as a user who has delegated}
+
+As a Daedalus home user with my stake delegated to other users I would like to
+join the Cardano network so I can participate in the network.
+\begin{itemize}
+\item The system be designed to provide this user segment with the ability
+      catch up and keep up with the blockchain without having to do any local
+      network configuration.
+\item The system be designed to provide this user segment with the ability to
+      continuously find and maintain a discovery of a sufficient number of
+      other network participants that have reasonable connectivity.
+\item The system be designed to provide this user segment with the ability to
+      find and maintain a minimum of 3 other network participants to maintain
+      connectivity with performance that is sufficient to catch up with the
+      blockchain.
+\item The system design will take into account that this user will probably be
+      behind a firewall.
+\item Users in the segment can be defined by as having all their stake
+      delegated to other network participants.
+\end{itemize}
+
+
+\paragraph{Participate in network as small stakeholder}
+
+As a Deadalus home user operating a core node with a small stake, I would like
+to join the Cardano network so I can participate in the network as a core node
+that produces blocks i.e. have not delegated to someone else.
+
+\begin{itemize}
+\item The system be designed to provide this user segment with the ability to
+      receive the transactions that will be incorporated into blocks (although
+      sizing the operation of the distributed system to ensure that all such
+      participants would be able to receive all transactions is not a bounding
+      constraint)
+\item The system be designed to provide this user segment with the ability to
+      participate in the MPC protocol\footnote{This requirement is now
+      redundant because the MPC protocol is specific to Ouroboros Classic.}.
+\item The system will be designed to provide this user segment with the ability
+      to catch up and keep up with the blockchain without having to do any local
+      network configuration (this is a bounding constraint).
+\item The user will have sufficient connectivity and performance to receive a
+      block within a time slot {\sc and} they have to be able to create and
+      broadcast a block within a time slot in which the block is received by
+      other core nodes.
+\item The system will be designed to maximise the likelihood that 50\% of home
+      users operating a core node are compliant with the previous requirement
+      at any one time.
+\item The system will be designed to provide this user segment with the ability
+      to continuously find and maintain a discovery of a sufficient number of
+      other network participants that have reasonable connectivity.
+\item The system will provide a discovery mechanism that will find and maintain
+      a minimum of 3 other network participants to maintain connectivity with
+      performance that is sufficient to catch up with the blockchain.
+\item The system design will take into account that this user may be behind a
+      firewall (i.e being behind a firewall should not preclude a user
+      participating in this fashion).
+\item The Delegation workstream will provide a UI feature for the user to
+      choose to control their own stake.
+\item Users in this segment will be defined as {\sc not}
+      \begin{itemize}
+      \item[a)] being in the top 100 users ranked by stake or
+      \item[b)] in a ranked set of users who combined control 80\% of the stake
+      \end{itemize}
+\item Users in this segment will not be part of the Core Diff, but still
+      subject to the normal incentives related to creating blocks.
+\end{itemize}
+
+
+\paragraph{Participate in network as a large stakeholder}
+
+As a user running a core node on a server and with large stake in the network,
+I would like to join the Cardano network so I can participate in the network as
+a core server node that produces blocks i.e. have not delegated to someone else.
+
+\begin{itemize}
+\item A large stakeholder will be defined as
+      \begin{itemize}
+      \item[a)] being in the top 100 users ranked by stake; or
+      \item[b)] in a ranked set of users who combined control 80\% of the stake
+      \end{itemize}
+\item Assuming that this user has sufficient connectivity and performance, the
+      system should ensure that the collective operation of the distributed
+      system will ensure that they have a high probability, of receiving a
+      block within a time slot such that they have sufficient time to be able
+      to create and broadcast a block within a time slot where the block is
+      received by other core nodes.
+\item It is expected that the previous requirement will be fulfilled to a high
+      degree of reliability between nodes in this category -- assuming normal
+      network operations
+
+      \begin{tabular}{rl}
+      Threshold & $>95\%$ \\
+      Target    & $>98\%$ \\
+      Stretch   & $>99\%$ 
+      \end{tabular}
+\item The system will be designed to provide this user segment with the ability
+      continuously find and maintain a discovery of a sufficient number of
+      other network participants that have reasonable connectivity.
+\item Discovery will find and maintain a minimum of 10 other network
+      participants to maintain connectivity with performance that is sufficient
+      to catch up with the blockchain.
+\item Ability to receive the transactions that will be incorporated into blocks.
+\item Ability to participate in the MPC protocol\footnote{This requirement is
+      now redundant because the MPC protocol is specific to Ouroboros Classic.}
+\item The user will catch up and keep up with the blockchain.
+\item The server firewall rules will be such that it can communicate with other
+      core nodes on the system (and vice versa) -- The system will provide the
+      necessary information to update firewall rules if the server is operating
+      behind a firewall to ensure the server can communicate with other core
+      nodes.
+\item The threshold which defines the group of large stakeholders may be
+      configurable on the network layer. The configuration may include toggling
+      between the rules a) and b) in the previous requirement and the threshold
+      numbers within these (this is pending a decision from the Incentives
+      workstream.
+\item The rules and threshold configuration may need to be a protocol parameter
+      that is updated by the update system.
+\end{itemize}
+
+
+\paragraph{Poor network connectivity notification}
+
+As a home user, I want to see a network connection status on Daedalus so that
+I know the state of my network connection.
+%
+\begin{itemize}
+\item If the user receives a notification that they in red or amber mode,
+      Daedalus will give the user some helpful information on how to resolve
+      common connectivity issues.
+\end{itemize}
+%
+There are three (at least) distinct modes that the network can be operating in:
+each one has a red, green, amber status.
+
+%
+\begin{center}
+\begin{tabular}{ll}
+Initial block sync \\
+\hline
+red   & receiving $<1$ blocks per 10s \\
+amber & receiving $<10$ blocks per 10s \\
+green & otherwise  \\[1em]
+
+Recovery \\
+\hline
+red   & receiving $<1$ slot block per 10s \\
+amber & otherwise  \\
+green & (not applicable) \\[1em]
+
+Block chain following \\
+\hline
+red   & it has been more that 200s since a slot indication was received. \\
+amber & it has been more than 60s since a slot indiction was received. \\
+green & otherwise. 
+\end{tabular}
+\end{center}
+
+This assumes that the slot time remains 20 seconds.
+
+
+\subsubsection{Distributed System Performance}
+
+\paragraph{Transaction Throughput}
+
+The transaction per second of the system as a whole will be:
+%
+\begin{center}
+\begin{tabular}{lr}
+Threshold &  8 tps  \\
+Target    & 16 tps  \\
+Stretch   & 50 tps  \\
+\end{tabular}
+\end{center}
+
+This assumes that the slot time remains 20 seconds.
+
+\paragraph{Transaction Latency}
+
+As a user I want my transaction to be submitted to the blockchain and received
+by the target user within the following time period:
+%
+\begin{center}
+\begin{tabular}{lr}
+Threshold & 100 seconds \\
+Target    & 60 seconds  \\
+Stretch   & 30 seconds  \\
+\end{tabular}
+\end{center}
+%
+The above time-frames will be achieved for $>95\%$ of all transactions
+
+\paragraph{Network Bearer Resource Use -- end user control}
+
+As a user operating on the network as a home user not behind a firewall, I
+would like a cap on the total amount of network capacity in terms of short-term
+bandwidth that other network users can request from my connection so I am
+assured my network resource is not eaten up by the data diffusion function.
+
+\begin{itemize}
+\item The cap should be based on a fraction of a typical home internet
+      connection -- it can be changed by configuration including ``don't act
+      as a super node''.
+\item The system will allow users synching with the latest version of the
+      blockchain to download blocks from more then one and up to five network
+      peers concurrently.
+\item A cap on no. of incoming subscribers.
+\item A cap on number of outbound requests for block syncing from other users.
+\item The cap will not be imposed on core nodes running on a server.
+\item If these resources are available, a reasonable connection speed should be
+      available to users requesting to sync the latest version of the
+      blockchain e.g. downloading blocks from 5 peers concurrently to aggregate
+      the bandwidth.
+\item (nice to have) the actual number and capacity being used is available to
+      user.
+\end{itemize}
+
+\paragraph{Participant performance measurement}
+
+There may be a requirement for measuring if a large stakeholder is not meeting
+their network obligation.
+
+It is accepted that this requirement is a ``nice to have'', and it has not been
+established that it is possible, nor has it been incorporated into the
+incentives mechanism.
+
+\subsubsection{Distributed System Resilience and Security}
+
+\paragraph{Resilience to abuse}
+
+As a user I should not be able to attack the system using an asymmetric denial
+of service attack that will deplete network resources from other users.
+
+\begin{itemize}
+\item The system should achieve its connectivity and performance requirements
+      even in the presence of a non-trivial proportion of bad actors on the
+      network.
+\item There is an assumption that there are not a large numbers of bad actors
+      in the network.
+\item The previous assumption does not follow from the assumptions of Ourboros
+      which states that the users that control 50\% of the stake are
+      non-adversarial.
+\end{itemize}
+
+
+\paragraph{DDoS protection}
+
+As a large stakeholder running a core node on a server, I should still be able
+to communicate with other user in this segment, even if the system comes under
+a DDoS attack.
+
+\begin{itemize}
+\item Users in this segment will be able to generate and broadcast blocks to
+      each other within the usual timing constraints in this situation.
+\end{itemize}
+
+IP addresses will be hidden
+
+\begin{itemize}
+\item Encrypted IP addresses will be published by 10 of the other members of
+      the group of large stakeholder core nodes.
+\end{itemize}
+
+Assumption
+
+\begin{itemize}
+\item Core node operators will not publish their IP addresses publicly.
+\item Encrypted IP addresses will be published by the 10 of the other members
+      of the group of large stakeholder core nodes.
+\item If a node operators IP address is compromised the operator will respond
+      and change the IP address of their node.
+\item The system will allow operators to change the address of their core nodes
+      and communicate with that new IP address within a reasonable period of
+      time.
+\end{itemize}
+
+
+\subsubsection{Network decentralization}
+
+\paragraph{No hegemony}
+
+As a user I want to be assured that IOHK and its business partners are not in
+an especially privileged position in terms of trust, responsibility and
+necessity to the network so that network hegemony is avoided.
+
+\begin{itemize}
+\item IOHK should be in the same position on the network as any other
+      stakeholder with an equivalent amount of stake.
+\item There is more general requirement that no other actor could do this
+      either.
+\end{itemize}
 
 
 \section{Node-to-consumer protocols}
@@ -987,7 +1294,7 @@ selection rules.
     \item \avieth{If the parent of the header is not known, some protocol to find
           the intersection is engaged. It could be a naive request for headers
           of ancestors, or something more complicated such as the one described
-          in the ``A protocol proposal" section of this document. In any case,
+          in the ``A protocol proposal'' section of this document. In any case,
           eventually either the intersection is found and the complete peer's
           chain downloaded (up to at most $k$ blocks), or the peer fails to
           provide enough information and the chain is eventually discarded.}
