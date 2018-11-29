@@ -2,7 +2,7 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
-{-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 -- | Reference implementation of a representation of a block chain
 --
@@ -19,6 +19,7 @@ module Ouroboros.Network.Chain (
 
   -- * Point type
   Point(..),
+  castPoint,
   blockPoint,
 
   -- * Chain construction and inspection
@@ -113,6 +114,9 @@ data Point block = Point {
      }
    deriving (Eq, Ord, Show)
 
+castPoint :: (HeaderHash a ~ HeaderHash b) => Point a -> Point b
+castPoint (Point a b) = Point a (castHash b)
+
 blockPoint :: HasHeader block => block -> Point block
 blockPoint b =
     Point {
@@ -193,7 +197,9 @@ addBlock :: HasHeader block => block -> Chain block -> Chain block
 addBlock b c = assert (validExtension c b) $
                c :> b
 
-pointOnChain :: HasHeader block => Point block -> Chain block -> Bool
+pointOnChain :: (StandardHash block1, HasHeader block2,
+                 HeaderHash block1 ~ HeaderHash block2)
+             => Point block1 -> Chain block2 -> Bool
 pointOnChain p Genesis        = p == genesisPoint
 pointOnChain p (c :> b)
   | pointSlot p >  blockSlot b = False
@@ -315,14 +321,14 @@ findFirstPoint (p:ps) c
   | otherwise           = findFirstPoint ps c
 
 intersectChains
-  :: HasHeader block
-  => Chain block
-  -> Chain block
-  -> Maybe (Point block)
+  :: (HasHeader block1, HasHeader block2, HeaderHash block1 ~ HeaderHash block2)
+  => Chain block1
+  -> Chain block2
+  -> Maybe (Point block2)
 intersectChains _ Genesis   = Nothing
 intersectChains c (bs :> b) =
   let p = blockPoint b
-  in if pointOnChain (blockPoint b) c
+  in if pointOnChain p c
        then Just p
        else intersectChains c bs
 

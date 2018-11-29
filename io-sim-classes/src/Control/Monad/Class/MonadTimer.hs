@@ -47,6 +47,7 @@ class (Monad m, TimeMeasure (Time m), Show (Time m)) => MonadTime m where
   getMonotonicTime :: m (Time m)
 
 data TimeoutState = TimeoutPending | TimeoutFired | TimeoutCancelled
+  deriving Eq
 
 class (MonadSTM m, MonadTime m) => MonadTimer m where
   data Timeout m :: *
