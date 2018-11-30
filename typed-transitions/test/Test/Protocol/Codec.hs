@@ -31,7 +31,7 @@ genSubject1 = oneof
   , Subject1Pong <$> choose (minBound, maxBound)
   ]
 
-subject1Codec :: Applicative m => Codec Text Subject1 m LBS.ByteString
+subject1Codec :: Applicative m => Codec Text Subject1 m LBS.ByteString LBS.ByteString
 subject1Codec = Codec
   { encode = subject1Encode
   , decode = subject1Decode
@@ -43,15 +43,15 @@ subject1Encode term = pure $ case term of
   Subject1Pong w -> LBS.pack [1, w]
 
 subject1Decode :: Applicative m => Decoder Text LBS.ByteString m Subject1
-subject1Decode = Decoder $ \lbs -> pure $ case LBS.uncons lbs of
-  Nothing -> Partial subject1Decode
+subject1Decode = Decoder $ pure $ Partial $ \lbs -> case LBS.uncons lbs of
+  Nothing -> subject1Decode
   Just (0, rest) -> Subject1Ping <$> decodeWord rest
   Just (1, rest) -> Subject1Pong <$> decodeWord rest
-  Just (w, rest) -> Fail (T.pack ("Unexpected tag " ++ show w)) rest
+  Just (w, rest) -> Decoder $ pure $ Fail (T.pack ("Unexpected tag " ++ show w)) rest
   where
-  decodeWord lbs = case LBS.uncons lbs of
-    Nothing -> Partial $ Decoder $ pure . decodeWord
-    Just (w, rest) -> Done w rest
+  decodeWord = \lbs -> case LBS.uncons lbs of
+    Nothing -> Decoder $ pure $ Partial decodeWord
+    Just (w, rest) -> Decoder $ pure $ Done w rest
 
 -- | The reliable/ordered property from Test.Protocol.Channel, lifted though
 -- the codec. If the channels used satisfy 'prop_channel_reliable_ordered'
@@ -59,7 +59,7 @@ subject1Decode = Decoder $ \lbs -> pure $ case LBS.uncons lbs of
 prop_codec_channel_consistent
   :: forall fail subject piece .
      ( Eq subject, Show subject )
-  => Codec fail subject IO piece
+  => Codec fail subject IO piece piece
   -> [subject]
   -> [subject]
   -> Channel IO piece

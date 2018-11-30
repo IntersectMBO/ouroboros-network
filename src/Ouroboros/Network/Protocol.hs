@@ -4,21 +4,13 @@
 module Ouroboros.Network.Protocol
   ( MsgConsumer(..)
   , MsgProducer(..)
-  , ConsumerHandlers
-  , ProducerHandlers
-  , consumerSideProtocol1
-  , producerSideProtocol1
   , loggingSend
   , loggingRecv
   )where
 
-import           Control.Monad
-
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Chain (ChainUpdate (..), Point (..))
+import           Ouroboros.Network.Chain (Point (..))
 import           Ouroboros.Network.MonadClass
-import           Ouroboros.Network.ProtocolInterfaces (ConsumerHandlers (..),
-                     ProducerHandlers (..))
 import           Ouroboros.Network.Serialise
 
 {-# ANN module "HLint: ignore Use readTVarIO" #-}
@@ -63,93 +55,6 @@ data MsgProducer block
   -- none of the points is on the producer chain; in this case
   -- @'MsgIntersectUnchanged'@ is send back.
     deriving (Eq, Show)
-
--- |
--- A simple version of a consumer which sends set of points, accepts any respond
--- and steps into the second phase of the protocol in which it sends @'MsgRequestNext'@ and expects one of:
---   - @'MsgAwaitReplay'@
---   - @'MsgRollForward'@
---   - @'MsgRollBackward'@
--- @'ConsumerHandlers'@ is a record which contains all the callbacks needed to
--- run the consumer side of the protocol.
-consumerSideProtocol1
-  :: forall block m.
-     Monad m
-  => ConsumerHandlers block m
-  -> (MsgConsumer block -> m ())   -- ^ send
-  -> (m (MsgProducer block))       -- ^ recv
-  -> m ()
-consumerSideProtocol1 ConsumerHandlers{..} send recv = do
-    -- The consumer opens by sending a list of points on their chain.
-    -- This typically includes the head block and recent points
-    points <- getChainPoints
-    unless (null points) $ do
-      send (MsgSetHead points)
-      _msg <- recv
-      return ()
-    requestNext
-  where
-    requestNext :: m ()
-    requestNext = do
-      send MsgRequestNext
-      reply <- recv
-      case reply of
-        MsgAwaitReply -> do reply' <- recv
-                            handleChainUpdate reply'
-        _             -> handleChainUpdate reply
-      requestNext
-
-    handleChainUpdate :: MsgProducer block -> m ()
-    handleChainUpdate (MsgRollForward  b) = addBlock b
-    handleChainUpdate (MsgRollBackward p) = rollbackTo p
-    handleChainUpdate  MsgAwaitReply           = fail $ "protocol error: MsgAwaitReply"
-    handleChainUpdate (MsgIntersectImproved{}) = fail $ "protocol error: MsgIntersectImproved"
-    handleChainUpdate  MsgIntersectUnchanged   = fail $ "protocol error: MsgIntersectUnchanged"
-
-
--- | Producer side of the chain following protocol.
--- It awaits and serves requests from the consumer side: next or set head.
--- These are backed by the 'ProducerHandlers' parameter.
--- The other two parameter are for sending and receiving messages to/from the
--- consumer. This producer never terminates.
-producerSideProtocol1
-  :: forall block m r.
-     Monad m
-  => ProducerHandlers block m r
-  -> (MsgProducer block -> m ()) -- ^ send
-  -> (m (MsgConsumer block))     -- ^ recv
-  -> m ()
-producerSideProtocol1 ProducerHandlers{..} send recv =
-    newReader >>= awaitOngoing
-  where
-    awaitOngoing r = forever $ do
-      msg <- recv
-      case msg of
-        MsgRequestNext    -> handleNext r
-        MsgSetHead points -> handleSetHead r points
-
-    handleNext r = do
-      mupdate <- tryReadChainUpdate r
-      update  <- case mupdate of
-        Just update -> return update
-
-        -- Reader is at the head, have to wait for producer state changes.
-        Nothing -> do
-          send MsgAwaitReply
-          readChainUpdate r
-      send (updateMsg update)
-
-    handleSetHead r points = do
-      -- TODO: guard number of points, points sorted
-      -- Find the first point that is on our chain
-      changed <- improveReadPoint r points
-      case changed of
-        Just (pt, tip) -> send (MsgIntersectImproved pt tip)
-        Nothing        -> send MsgIntersectUnchanged
-
-    updateMsg (AddBlock b) = MsgRollForward b
-    updateMsg (RollBack p) = MsgRollBackward p
-
 
 -- | A wrapper for send that logs the messages
 --

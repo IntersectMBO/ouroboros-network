@@ -128,10 +128,10 @@ chainSyncServerExample recvMsgDoneClient chainvar = ChainSyncServer $
                        -- the producer's state to change.
 
     sendNext :: ReaderId
-             -> ChainUpdate header
+             -> (Point header, ChainUpdate header)
              -> ServerStNext header (Point header) m a
-    sendNext r (AddBlock b) = SendMsgRollForward  b undefined (idle' r)
-    sendNext r (RollBack p) = SendMsgRollBackward p undefined (idle' r)
+    sendNext r (tip, AddBlock b) = SendMsgRollForward  b tip (idle' r)
+    sendNext r (tip, RollBack p) = SendMsgRollBackward p tip (idle' r)
 
     handleFindIntersect :: ReaderId
                         -> [Point header]
@@ -141,8 +141,8 @@ chainSyncServerExample recvMsgDoneClient chainvar = ChainSyncServer $
       -- Find the first point that is on our chain
       changed <- improveReadPoint r points
       case changed of
-        Just (pt, tip) -> return $ SendMsgIntersectImproved pt tip     (idle' r)
-        Nothing        -> return $ SendMsgIntersectUnchanged undefined (idle' r)
+        (Just pt, tip) -> return $ SendMsgIntersectImproved  pt tip (idle' r)
+        (Nothing, tip) -> return $ SendMsgIntersectUnchanged    tip (idle' r)
 
     newReader :: m ReaderId
     newReader = atomically $ do
@@ -151,18 +151,18 @@ chainSyncServerExample recvMsgDoneClient chainvar = ChainSyncServer $
       writeTVar chainvar cps'
       return rid
 
-    improveReadPoint :: ReaderId -> [Point header] -> m (Maybe (Point header, Point header))
+    improveReadPoint :: ReaderId -> [Point header] -> m (Maybe (Point header), Point header)
     improveReadPoint rid points =
       atomically $ do
         cps <- readTVar chainvar
         case ChainProducerState.findFirstPoint points cps of
-          Nothing     -> return Nothing
+          Nothing     -> pure (Nothing, Chain.headPoint (ChainProducerState.chainState cps))
           Just ipoint -> do
             let !cps' = ChainProducerState.updateReader rid ipoint cps
             writeTVar chainvar cps'
-            return (Just (ipoint, Chain.headPoint (ChainProducerState.chainState cps')))
+            pure (Just ipoint, Chain.headPoint (ChainProducerState.chainState cps'))
 
-    tryReadChainUpdate :: ReaderId -> m (Maybe (ChainUpdate header))
+    tryReadChainUpdate :: ReaderId -> m (Maybe (Point header, ChainUpdate header))
     tryReadChainUpdate rid =
       atomically $ do
         cps <- readTVar chainvar
@@ -170,9 +170,9 @@ chainSyncServerExample recvMsgDoneClient chainvar = ChainSyncServer $
           Nothing -> return Nothing
           Just (u, cps') -> do
             writeTVar chainvar cps'
-            return $ Just u
+            return $ Just (Chain.headPoint (ChainProducerState.chainState cps'), u)
 
-    readChainUpdate :: ReaderId -> m (ChainUpdate header)
+    readChainUpdate :: ReaderId -> m (Point header, ChainUpdate header)
     readChainUpdate rid =
       atomically $ do
         cps <- readTVar chainvar
@@ -180,5 +180,5 @@ chainSyncServerExample recvMsgDoneClient chainvar = ChainSyncServer $
           Nothing        -> retry
           Just (u, cps') -> do
             writeTVar chainvar cps'
-            return u
+            return (Chain.headPoint (ChainProducerState.chainState cps'), u)
 

@@ -58,7 +58,6 @@ library
                        Ouroboros.Network.Block
                        Ouroboros.Network.Chain
                        Ouroboros.Network.ChainProducerState
-                       Ouroboros.Network.ConsumersAndProducers
                        Ouroboros.Network.MonadClass
                        Ouroboros.Network.MonadClass.MonadConc
                        Ouroboros.Network.MonadClass.MonadFork
@@ -70,7 +69,6 @@ library
                        Ouroboros.Network.Node
                        Ouroboros.Network.Pipe
                        Ouroboros.Network.Protocol
-                       Ouroboros.Network.ProtocolInterfaces
                        Ouroboros.Network.Serialise
                        Ouroboros.Network.Sim
                        Ouroboros.Network.Testing.ConcreteBlock
@@ -82,9 +80,11 @@ library
                        Ouroboros.Network.Protocol.Chain.ProducerStream
                        Ouroboros.Network.Protocol.Chain.Node
                        Ouroboros.Network.Protocol.Chain.Type
+                       Ouroboros.Network.Protocol.Codec.Cbor
                        Ouroboros.Network.Protocol.Channel.Sim
                        Ouroboros.Network.Protocol.ChainSync.Client
-                       Ouroboros.Network.Protocol.ChainSync.Codec
+                       Ouroboros.Network.Protocol.ChainSync.Codec.Cbor
+                       Ouroboros.Network.Protocol.ChainSync.Codec.Id
                        Ouroboros.Network.Protocol.ChainSync.Direct
                        Ouroboros.Network.Protocol.ChainSync.Server
                        Ouroboros.Network.Protocol.ChainSync.Type
@@ -93,6 +93,9 @@ library
                        Ouroboros.Network.Protocol.Stream.Client
                        Ouroboros.Network.Protocol.Stream.Server
                        Ouroboros.Network.Protocol.Stream.Direct
+
+                       Ouroboros.Network.ProtocolInterfaces
+                       Ouroboros.Network.ConsumersAndProducers
   other-modules:
                        Ouroboros.Network.Pipe2
                        Ouroboros.Network.ChainSyncExamples
@@ -222,6 +225,7 @@ test-suite tests
                        tasty-quickcheck,
                        text,
                        transformers,
+                       typed-transitions,
                        void
   ghc-options:         -Wall
                        -fno-ignore-asserts
@@ -248,6 +252,7 @@ test-suite test-consensus
                     mtl,
                     tasty,
                     tasty-expected-failure,
-                    tasty-quickcheck
+                    tasty-quickcheck,
+                    typed-transitions
   ghc-options:      -Wall
                     -fno-ignore-asserts

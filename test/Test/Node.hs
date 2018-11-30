@@ -36,7 +36,6 @@ import           Ouroboros.Network.Chain (Chain (..), chainToList)
 import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.MonadClass
 import           Ouroboros.Network.Node
-import           Ouroboros.Network.Protocol (MsgConsumer, MsgProducer)
 import qualified Ouroboros.Network.Sim as Sim
 import           Ouroboros.Network.Testing.ConcreteBlock as ConcreteBlock
 
@@ -372,7 +371,7 @@ networkGraphSim :: forall m.
                 -> m ()
 networkGraphSim (TestNetworkGraph g cs) slotDuration coreTrDelay relayTrDelay probe = do
   let vs = vertices g
-      channs :: Map Vertex (NodeChannels m (MsgProducer block) (MsgConsumer block))
+      channs :: Map Vertex (NodeChannels m block)
       channs = Map.fromList (map (,mempty) vs)
 
   -- construct communication channels based on the graph

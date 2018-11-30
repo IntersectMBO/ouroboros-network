@@ -2,6 +2,9 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE PolyKinds           #-}
+
 module Ouroboros.Network.Node where
 
 import           Control.Exception (assert)
@@ -14,17 +17,27 @@ import           Data.Semigroup (Semigroup (..))
 import           Data.Tuple (swap)
 import           GHC.Generics (Generic)
 
+import           Protocol.Codec
+import           Protocol.Core
+import           Protocol.Channel
+import           Protocol.Driver
+import           Protocol.Transition
+
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (Chain (..), Point)
 import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.ChainProducerState (ChainProducerState (..),
-                                                       ReaderId,
                                                        initChainProducerState,
                                                        producerChain,
                                                        switchFork)
-import           Ouroboros.Network.ConsumersAndProducers
 import           Ouroboros.Network.MonadClass
-import           Ouroboros.Network.Protocol
+import           Ouroboros.Network.Protocol.ChainSync.Codec.Id (codecChainSync)
+import           Ouroboros.Network.Protocol.ChainSync.Client
+import           Ouroboros.Network.Protocol.ChainSync.Server
+import           Ouroboros.Network.Protocol.ChainSync.Type
+-- FIXME bad module name below. They're examples, sure, but they're also
+-- legit useful.
+import           Ouroboros.Network.ChainSyncExamples
 import           Ouroboros.Network.Testing.ConcreteBlock hiding (fixupBlock)
 import qualified Ouroboros.Network.Testing.ConcreteBlock as Concrete
 
@@ -99,13 +112,6 @@ chainTransferProtocol delay inputVar outputVar = do
                 return input
       fork $ threadDelay delay >> atomically (writeTVar outputVar input)
 
-
--- | One way transport channel.
-data Chan m send recv = Chan { sendMsg :: send -> m ()
-                             , recvMsg :: m recv
-                             }
-
-
 -- | Simulated transfer protocol.
 --
 transferProtocol :: forall send recv m.
@@ -115,16 +121,16 @@ transferProtocol :: forall send recv m.
                  => Duration (Time m)
                  -> TVar m [send]
                  -> TVar m [recv]
-                 -> Chan m send recv
+                 -> Duplex m m send recv
 transferProtocol delay sendVar recvVar
-  = Chan sendMsg recvMsg
+  = uniformDuplex sendMsg recvMsg
   where
     sendMsg a = fork $ threadDelay delay >> atomically (modifyTVar' sendVar (++[a]))
     recvMsg =
       atomically $ do
         xs <- readTVar recvVar
         case xs of
-          x : xs' -> writeTVar recvVar xs' $> x
+          x : xs' -> writeTVar recvVar xs' $> Just x
           []      -> retry
 
 
@@ -136,7 +142,7 @@ createCoupledChannels :: forall send recv m.
                          )
                       => Duration (Time m)
                       -> Duration (Time m)
-                      -> m (Chan m send recv, Chan m recv send)
+                      -> m (Duplex m m send recv, Duplex m m recv send)
 createCoupledChannels delay1 delay2 = do
   sendVar <- atomically $ newTVar []
   recvVar <- atomically $ newTVar []
@@ -147,19 +153,19 @@ createCoupledChannels delay1 delay2 = do
 
 -- | Simulated network channels for a given network node.
 --
-data NodeChannels m prodMsg consMsg = NodeChannels
-  { consumerChans :: [Chan m consMsg prodMsg]
+data NodeChannels m block = NodeChannels
+  { consumerChans :: [Channel m (SomeTransition (ChainSyncMessage block (Point block)))]
     -- ^ channels on which the node will play the consumer role:
     -- sending @consMsg@ and receiving @prodMsg@ messages.
-  , producerChans :: [Chan m prodMsg consMsg]
+  , producerChans :: [Channel m (SomeTransition (ChainSyncMessage block (Point block)))]
     -- ^ channels on which the node will play the producer role:
     -- sending @prodMsg@ and receiving @consMsg@ messages.
   }
 
-instance Semigroup (NodeChannels m prodMsg consMsg) where
+instance Semigroup (NodeChannels m block) where
   NodeChannels c1 p1 <> NodeChannels c2 p2 = NodeChannels (c1 ++ c2) (p1 ++ p2)
 
-instance Monoid (NodeChannels m prodMsg consMsg) where
+instance Monoid (NodeChannels m block) where
   mempty = NodeChannels [] []
 
   mappend = (<>)
@@ -168,13 +174,13 @@ instance Monoid (NodeChannels m prodMsg consMsg) where
 -- | Create channels n1 → n2, where n1 is a producer and n2 is the consumer.
 --
 createOneWaySubscriptionChannels
-  :: forall send recv m.
+  :: forall block m.
      ( MonadSTM m
      , MonadTimer m
      )
   => Duration (Time m)
   -> Duration (Time m)
-  -> m (NodeChannels m send recv, NodeChannels m send recv)
+  -> m (NodeChannels m block, NodeChannels m block)
 createOneWaySubscriptionChannels trDelay1 trDelay2 = do
   (cr, rc) <- createCoupledChannels trDelay1 trDelay2
   return
@@ -192,13 +198,13 @@ createOneWaySubscriptionChannels trDelay1 trDelay2 = do
 -- simultaneously.
 --
 createTwoWaySubscriptionChannels
-  :: forall send recv m.
+  :: forall block m.
      ( MonadSTM m
      , MonadTimer m
      )
   => Duration (Time m)
   -> Duration (Time m)
-  -> m (NodeChannels m send recv, NodeChannels m send recv)
+  -> m (NodeChannels m block, NodeChannels m block)
 createTwoWaySubscriptionChannels trDelay1 trDelay2 = do
   r12 <- createOneWaySubscriptionChannels trDelay1 trDelay2
   r21 <- createOneWaySubscriptionChannels trDelay2 trDelay1
@@ -321,7 +327,7 @@ relayNode :: forall m block.
              )
           => NodeId
           -> Chain block
-          -> NodeChannels m (MsgProducer block) (MsgConsumer block)
+          -> NodeChannels m block
           -> m (TVar m (ChainProducerState block))
 relayNode nid initChain chans = do
   -- Mutable state
@@ -333,30 +339,49 @@ relayNode nid initChain chans = do
   forkRelayKernel upstream cpsVar
 
   -- producers which share @'ChainProducerState'@
-  let producer = exampleProducer cpsVar
+  let producer = chainSyncServerPeer (chainSyncServerExample () cpsVar)
   mapM_ (uncurry $ startProducer producer) (zip [0..] (producerChans chans))
 
   return cpsVar
   where
+
+    codec
+      :: Codec m (SomeTransition (ChainSyncMessage block (Point block)))
+                 (SomeTransition (ChainSyncMessage block (Point block)))
+                 (ChainSyncMessage block (Point block))
+                 'StIdle
+    codec = codecChainSync
+
     startConsumer :: Int
-                  -> Chan m (MsgConsumer block) (MsgProducer block)
+                  -> Channel m (SomeTransition (ChainSyncMessage block (Point block)))
                   -> m (TVar m (Chain block))
-    startConsumer cid chan = do
+    startConsumer cid channel = do
       chainVar <- atomically $ newTVar Genesis
-      let consumer = exampleConsumer chainVar
+      let consumer = chainSyncClientPeer (chainSyncClientExample chainVar)
+      fork $ void $ useCodecWithDuplex channel codec consumer
+      {-
       fork $ consumerSideProtocol1 consumer
         (loggingSend (ConsumerId nid cid) (sendMsg chan))
         (loggingRecv (ConsumerId nid cid) (recvMsg chan))
+      -}
       return chainVar
 
-    startProducer :: ProducerHandlers block m ReaderId
+    startProducer :: Peer ChainSyncProtocol (ChainSyncMessage block (Point block))
+                          ('Awaiting 'StIdle) ('Finished 'StDone)
+                          m ()
                   -> Int
-                  -> Chan m (MsgProducer block) (MsgConsumer block)
+                  -> Channel m (SomeTransition (ChainSyncMessage block (Point block)))
                   -> m ()
-    startProducer producer pid chan = do
+    startProducer producer pid channel =
+      -- use 'void' because 'fork' only works with 'm ()'
+      -- No sense throwing on Unexpected right? since fork will just squelch
+      -- it. FIXME: use async...
+      fork $ void $ useCodecWithDuplex channel codec producer
+      {-
       fork $ producerSideProtocol1 producer
         (loggingSend (ProducerId nid pid) (sendMsg chan))
         (loggingRecv (ProducerId nid pid) (recvMsg chan))
+      -}
 
 -- | Core node simulation.  Given a chain it will generate a @block@ at its
 -- slot time (i.e. @slotDuration * blockSlot block@).  When the node finds out
@@ -420,7 +445,7 @@ coreNode :: forall m.
      -> Duration (Time m)
      -- ^ slot duration
      -> [Block]
-     -> NodeChannels m (MsgProducer Block) (MsgConsumer Block)
+     -> NodeChannels m Block
      -> m (TVar m (ChainProducerState Block))
 coreNode nid slotDuration gchain chans = do
   cpsVar <- relayNode nid Genesis chans
