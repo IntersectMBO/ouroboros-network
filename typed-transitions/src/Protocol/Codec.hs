@@ -31,18 +31,6 @@ data Decoded tr from codec = forall to . Decoded
   , decCodec   :: codec to
   }
 
-{-
-data Encoded m concrete tr from = Encoded
-  { representation :: concreteTo
-  , encCodec       :: Codec m concreteTo concreteFrom tr from
-  }
-
-data Decoded m tr from concrete = forall to . Decoded
-  { transition :: tr from to
-  , decCodec   :: Codec m concrete tr to
-  }
--}
-
 newtype Encoder tr from encoded = Encoder
   { runEncoder :: forall to . tr from to -> encoded to
   }
