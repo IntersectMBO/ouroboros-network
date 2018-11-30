@@ -29,9 +29,10 @@ library
                      , Protocol.Chain.Direct
                      , Protocol.PingPong.Type
                      , Protocol.PingPong.Client
+                     , Protocol.PingPong.Codec
                      , Protocol.PingPong.Server
                      , Protocol.PingPong.Direct
-                     , Protocol.PingPongExamples
+                     , Protocol.PingPong.Examples
                      , Protocol.Get.Type
                      , Protocol.Get.Client
                      , Protocol.Get.Server
@@ -48,6 +49,7 @@ library
                      , BangPatterns
                      , StandaloneDeriving
   build-depends:       base >=4.9 && <4.13
+                     , async
                      , transformers >=0.5 && <0.6
                      , free >=5.1 && <5.2
                      , text
