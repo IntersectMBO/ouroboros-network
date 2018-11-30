@@ -126,6 +126,34 @@ lower level protocol details.
 
 \subsection{Scope}
 
+This document is intended to cover a number of aspects of the Cardano Shelly
+networking system.
+
+It covers the informal high level business requirements. It is intended to
+cover the key functional and non-functional requirements, and other technical
+and practical constraints
+
+It covers a discussion of the design space within the technical constraints
+which is intended to motivate and explain the design choices. It is intended
+to be elaborated over time to cover the chosen design. It is also intended
+to be extended to document various details needed for interoperability between
+implementations: both syntax and semantics.
+
+In understanding the scope of the networking system it is important to
+understand that it is not just a local point to point or peer to peer IPC
+protocol. It is a distributed IPC facility that has to achieve network-level
+outcomes in support of the Ouroboros blockchain distributed application
+facility. It must use only local point to point IPC, local knowledge, and
+suitable policies together in combination to achieve the network-level
+outcomes. It has to achieve this under the constraint of adversarial behaviour
+at the network and Ouroboros protocol levels.
+
+It is also worth noting that it is not a general purpose distributed IPC
+facility. It is specifically for supporting the Ouroboros blockchain protocol.
+Our analysis of the constraints leads us to the conclusion that we must rely
+on features of Ouroboros to be able to achieve the information exchange
+requirements in the face of adversarial network level behaviour.
+
 In scope for this discussion is IPC that Cardano nodes engage in. We do want
 to consider IPC between Cardano nodes and components such as wallets and
 explorers, but not between wallets/explorers and other components.
@@ -480,7 +508,7 @@ of service attack that will deplete network resources from other users.
       network.
 \item There is an assumption that there are not a large numbers of bad actors
       in the network.
-\item The previous assumption does not follow from the assumptions of Ourboros
+\item The previous assumption does not follow from the assumptions of Ouroboros
       which states that the users that control 50\% of the stake are
       non-adversarial.
 \end{itemize}
