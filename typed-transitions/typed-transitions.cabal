@@ -18,6 +18,7 @@ cabal-version:       >=1.10
 library
   exposed-modules:     Protocol.Channel
                      , Protocol.Codec
+                     , Protocol.Driver
                      , Protocol.Transition
                      , Protocol.Nat
                      , Protocol.Core

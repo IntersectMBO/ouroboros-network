@@ -35,7 +35,10 @@ import Protocol.Transition
 -- the 'Duplex' that it returns, not the original 'Duplex'.
 data Duplex sm rm send recv = Duplex
   { send :: send -> sm (Duplex sm rm send recv)
-  , recv :: rm (Maybe (recv, Duplex sm rm send recv))
+    -- | If the first component is Nothing then recv on the second component
+    -- also gives Nothing. This means there's no more input, but sending
+    -- is still possible.
+  , recv :: rm (Maybe recv, Duplex sm rm send recv)
   }
 
 hoistDuplex
@@ -46,7 +49,7 @@ hoistDuplex
   -> Duplex sn rn send recv
 hoistDuplex snat rnat duplex = Duplex
   { send = fmap (hoistDuplex snat rnat) . snat . send duplex
-  , recv = (fmap . fmap . fmap) (hoistDuplex snat rnat) (rnat (recv duplex))
+  , recv = (fmap . fmap) (hoistDuplex snat rnat) (rnat (recv duplex))
   }
 
 type Channel m t = Duplex m m t t
@@ -54,18 +57,18 @@ type Channel m t = Duplex m m t t
 uniformChannel :: Functor m => (t -> m ()) -> m (Maybe t) -> Channel m t
 uniformChannel send recv = Duplex
   { send = \t -> uniformChannel send recv <$ send t
-  , recv = (fmap . fmap) (flip (,) (uniformChannel send recv)) recv
+  , recv = fmap (flip (,) (uniformChannel send recv)) recv
   }
 
 fixedInputChannel :: Applicative m => [t] -> Channel m t
 fixedInputChannel lst = case lst of
   [] -> Duplex
     { send = noopSend []
-    , recv = pure Nothing
+    , recv = pure (Nothing, fixedInputChannel [])
     }
   it@(tr : trs) -> Duplex
     { send = noopSend it
-    , recv = pure (Just (tr, fixedInputChannel trs))
+    , recv = pure (Just tr, fixedInputChannel trs)
     }
   where
   noopSend trs = const (pure (fixedInputChannel trs))
@@ -100,8 +103,8 @@ useChannel chan peer = case peer of
   PeerAwait k -> do
     next <- Trans.lift $ recv chan
     case next of
-      Nothing -> pure $ StreamEnd (flip useChannel peer)
-      Just (some, chan') -> case castTransition (Proxy :: Proxy from) some of
+      (Nothing, chan') -> pure $ StreamEnd (flip useChannel peer)
+      (Just some, chan') -> case castTransition (Proxy :: Proxy from) some of
         Unexpected -> pure (StreamUnexpected some)
         Expected tr -> useChannel chan' (k tr)
   PeerYield exch next -> do
@@ -143,5 +146,5 @@ withMVarChannels k = do
 channelSendEffect :: ( Applicative m ) => (t -> m ()) -> Channel m t -> Channel m t
 channelSendEffect onSend chan = chan
   { send = \t -> onSend t *> (channelSendEffect onSend <$> send chan t)
-  , recv = (fmap . fmap . fmap) (channelSendEffect onSend) (recv chan)
+  , recv = (fmap . fmap) (channelSendEffect onSend) (recv chan)
   }
