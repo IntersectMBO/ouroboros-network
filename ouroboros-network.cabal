@@ -97,9 +97,6 @@ library
                        -- TODO rename.
                        Ouroboros.Network.ChainSyncExamples
 
-                       -- TODO remove soon.
-                       Ouroboros.Network.ProtocolInterfaces
-                       Ouroboros.Network.ConsumersAndProducers
   other-modules:
                        Ouroboros.Network.Pipe2
                        Ouroboros.Network.ByteChannel
