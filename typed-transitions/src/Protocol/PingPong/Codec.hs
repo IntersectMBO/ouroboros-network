@@ -12,7 +12,7 @@ import Protocol.Codec
 
 import Protocol.PingPong.Type
 
-pingPongCodec :: Monad m => Codec m String PingPongMessage 'StIdle
+pingPongCodec :: Monad m => Codec m String String PingPongMessage 'StIdle
 pingPongCodec = pingPongCodecIdle
 
 -- | Here is a complete codec for the ping/pong protocol at 'StIdle.
@@ -33,7 +33,7 @@ pingPongCodec = pingPongCodecIdle
 --   TrGood :: Transition ('Idle param) ('Busy param)
 --
 --
-pingPongCodecIdle :: Monad m => Codec m String PingPongMessage 'StIdle
+pingPongCodecIdle :: Monad m => Codec m String String PingPongMessage 'StIdle
 pingPongCodecIdle = Codec
   { encode = Encoder $ \tr -> case tr of
       MsgPing -> Encoded "ping" pingPongCodecBusy
@@ -51,7 +51,7 @@ pingPongCodecIdle = Codec
         "done" -> Decoder $ pure $ Done (drop 4 (acc ++ str)) (Decoded MsgDone pingPongCodecDone)
         _      -> Decoder $ pure $ Fail (drop 4 (acc ++ str)) (pack "expected ping")
 
-pingPongCodecBusy :: Monad m => Codec m String PingPongMessage 'StBusy
+pingPongCodecBusy :: Monad m => Codec m String String PingPongMessage 'StBusy
 pingPongCodecBusy = Codec
   { encode = Encoder $ \tr -> case tr of
       MsgPong -> Encoded "pong" pingPongCodecIdle
@@ -67,7 +67,7 @@ pingPongCodecBusy = Codec
         "pong" -> Decoder $ pure $ Done (drop 4 (acc ++ str)) (Decoded MsgPong pingPongCodecIdle)
         _      -> Decoder $ pure $ Fail (drop 4 (acc ++ str)) (pack "expected pong")
 
-pingPongCodecDone :: Monad m => Codec m String PingPongMessage 'StDone
+pingPongCodecDone :: Monad m => Codec m String String PingPongMessage 'StDone
 pingPongCodecDone = Codec
   { encode = Encoder $ \tr -> case tr of { }
   , decode = Decoder $ pure $ Fail "" (pack "done")

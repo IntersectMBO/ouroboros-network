@@ -62,7 +62,7 @@ demoCodec n = do
       -- but also dies with unexpected end of input.
       throwOnUnexpected (Normal t) = pure t
       throwOnUnexpected (Unexpected text) = error (unpack text)
-      client = throwOnUnexpected =<< useCodecWithChannel clientChannel pingPongCodec clientPeer
-      server = throwOnUnexpected =<< useCodecWithChannel serverChannel pingPongCodec serverPeer
+      client = throwOnUnexpected =<< useCodecWithDuplex clientChannel pingPongCodec clientPeer
+      server = throwOnUnexpected =<< useCodecWithDuplex serverChannel pingPongCodec serverPeer
   ((), m) <- concurrently client server
   pure m
