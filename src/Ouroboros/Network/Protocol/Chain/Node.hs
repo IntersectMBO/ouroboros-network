@@ -32,10 +32,12 @@ import Data.Semigroup ((<>))
 import Data.Void (Void, absurd)
 
 import Protocol.Channel
+import Protocol.Driver
 import Protocol.Transition (SomeTransition)
 
 import Ouroboros.Network.Block
 import Ouroboros.Network.MonadClass.MonadSTM
+import Ouroboros.Network.Protocol.Chain.Codec.Id
 import Ouroboros.Network.Protocol.Chain.ProducerStream
 import Ouroboros.Network.Protocol.Chain.Producer
 import Ouroboros.Network.Protocol.Chain.ConsumerStream
@@ -297,15 +299,19 @@ runWithChainSelectionSTM eqBlockHeader headerBlockNo conc mkConsumer mkProducer 
     (_, Seq.EmptyR)          -> True
     (_ Seq.:> l, _ Seq.:> r) -> headerBlockNo l > headerBlockNo r
 
+throwOnUnexpected :: Applicative m => Result t -> m t
+throwOnUnexpected (Unexpected txt) = error (show txt)
+throwOnUnexpected (Normal t) = pure t
+
 standardConsumer
   :: ( MonadSTM m, Ord point )
   => String
   -> (header -> point)
   -> TVar m (Seq header)
   -> Channel m (SomeTransition (TrChainExchange point header))
-  -> m (FromStream (TrChainExchange point header) m ())
-standardConsumer _ mkPoint var chan =
-  useChannelHomogeneous chan (streamConsumer (simpleConsumerStream mkPoint (==) var))
+  -> m ()
+standardConsumer _ mkPoint var chan = throwOnUnexpected =<<
+  useCodecWithDuplex chan codecChainExchange (streamConsumer (simpleConsumerStream mkPoint (==) var))
 
 standardProducer
   :: ( MonadSTM m, Ord point )
@@ -313,9 +319,9 @@ standardProducer
   -> (header -> point)
   -> TVar m (Changing (ChainSegment header), Exhausted)
   -> Channel m (SomeTransition (TrChainExchange point header))
-  -> m (FromStream (TrChainExchange point header) m ())
-standardProducer _ mkPoint var chan =
-  useChannelHomogeneous chan (streamProducer (simpleProducerStream mkPoint var))
+  -> m ()
+standardProducer _ mkPoint var chan = throwOnUnexpected =<<
+  useCodecWithDuplex chan codecChainExchange (streamProducer (simpleProducerStream mkPoint var))
   -- NB blockPoint is a bad name, since in this case it specializes to type
   -- header p -> Point p
 
@@ -327,13 +333,10 @@ runNetDescStandardIO
   -> (header -> BlockNo)
   -> (header -> point)
   -> (forall m . Monad m => ChainSelection header m t)
-  -> IO (Map Int (t, (r, (([FromStream (TrChainExchange point header) IO ()], [FromStream (TrChainExchange point header) IO ()])))))
+  -> IO (Map Int (t, (r, (([()], [()])))))
 runNetDescStandardIO netDesc eqBlockHeader headerBlockNo mkPoint chainSelection = do
   nodes <- atomically $ realiseStaticNetDescSTM netDesc
   stdoutLock <- newMVar ()
-  let echoBestChain name = \bestChain -> withMVar stdoutLock $ \_ -> case Seq.viewr bestChain of
-        Seq.EmptyR -> putStrLn $ name ++ ": empty chain"
-        _ Seq.:> h -> putStrLn $ name ++ ": tip is " ++ show h
   let runNode desc = runWithChainSelectionSTM
         eqBlockHeader
         headerBlockNo
@@ -341,7 +344,7 @@ runNetDescStandardIO netDesc eqBlockHeader headerBlockNo mkPoint chainSelection 
         (standardConsumer (nodeDescName desc) mkPoint)
         (standardProducer (nodeDescName desc) mkPoint)
         chainSelection
-        (echoBestChain (nodeDescName desc))
+        (const (pure ()))
         desc
   Map.fromList <$> forConcurrently (Map.toList nodes) (\(v, desc) -> (,) v <$> runNode desc)
 
