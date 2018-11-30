@@ -14,33 +14,46 @@
 module Protocol.Codec where
 
 import Data.Text (Text)
+import Data.Kind (Type)
 
-data Codec m concrete tr from = Codec
-  { encode :: Encoder tr from (Encoded m concrete)
-  , decode :: Decoder m concrete (Decoded m tr from)
+data Codec m concreteTo concreteFrom tr from = Codec
+  { encode :: Encoder tr from (Encoded concreteTo (Codec m concreteTo concreteFrom tr))
+  , decode :: Decoder m concreteFrom (Decoded tr from (Codec m concreteTo concreteFrom tr))
   }
 
-data Encoded m concrete tr from = Encoded
+data Encoded concrete codec to = Encoded
   { representation :: concrete
-  , encCodec       :: Codec m concrete tr from
+  , encCodec       :: codec to
+  }
+
+data Decoded tr from codec = forall to . Decoded
+  { transition :: tr from to
+  , decCodec   :: codec to
+  }
+
+{-
+data Encoded m concrete tr from = Encoded
+  { representation :: concreteTo
+  , encCodec       :: Codec m concreteTo concreteFrom tr from
   }
 
 data Decoded m tr from concrete = forall to . Decoded
   { transition :: tr from to
   , decCodec   :: Codec m concrete tr to
   }
+-}
 
 newtype Encoder tr from encoded = Encoder
-  { runEncoder :: forall to . tr from to -> encoded tr to
+  { runEncoder :: forall to . tr from to -> encoded to
   }
 
-newtype Decoder m concrete decoded = Decoder
+newtype Decoder (m :: Type -> Type) (concrete :: Type) (decoded :: Type) = Decoder
   { runDecoder :: m (DecoderStep m concrete decoded)
   }
 
-data DecoderStep m concrete decoded where
+data DecoderStep (m :: Type -> Type) (concrete :: Type) (decoded :: Type) where
   -- | Finished with leftovers.
-  Done    :: concrete -> decoded concrete -> DecoderStep m concrete decoded
+  Done    :: concrete -> decoded -> DecoderStep m concrete decoded
   -- | Failed to decode, with leftovers.
   Fail    :: concrete -> Text -> DecoderStep m concrete decoded
   -- | Partial decode.
