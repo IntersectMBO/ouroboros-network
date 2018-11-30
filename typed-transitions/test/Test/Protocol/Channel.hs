@@ -39,5 +39,5 @@ prop_channel_reliable_ordered send1 send2 chan1 chan2 = ioProperty $ do
     | otherwise = do
         it <- recv chan
         case it of
-          Nothing         -> pure []
-          Just (t, chan') -> fmap ((:) t) (receiveThese (n-1) chan')
+          (Nothing, chan') -> pure []
+          (Just t, chan')  -> fmap ((:) t) (receiveThese (n-1) chan')

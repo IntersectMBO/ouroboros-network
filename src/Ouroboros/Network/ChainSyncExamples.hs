@@ -5,6 +5,8 @@
 
 module Ouroboros.Network.ChainSyncExamples (
     chainSyncClientExample
+  , Client (..)
+  , pureClient
   , chainSyncServerExample
   ) where
 
@@ -17,6 +19,21 @@ import           Ouroboros.Network.MonadClass
 import           Ouroboros.Network.Protocol.ChainSync.Client
 import           Ouroboros.Network.Protocol.ChainSync.Server
 
+data Client header m t = Client
+  { rollbackward :: Point header -> Point header -> m (Either t (Client header m t))
+  , rollforward  :: header -> m (Either t (Client header m t))
+  , points       :: [Point header] -> m (Client header m t)
+  }
+
+-- | A client which doesn't do anything and never ends. Used with
+-- 'chainSyncClientExample', the TVar m (Chain header) will be updated but
+-- nothing further will happen.
+pureClient :: Applicative m => Client header m x
+pureClient = Client
+  { rollbackward = \_ _ -> pure (Right pureClient)
+  , rollforward  = \_ -> pure (Right pureClient)
+  , points       = \_ -> pure pureClient
+  }
 
 -- | An instance of the client side of the chain sync protocol that
 -- consumes into a 'Chain' stored in a 'TVar'.
@@ -27,12 +44,13 @@ import           Ouroboros.Network.Protocol.ChainSync.Server
 chainSyncClientExample :: forall header m a.
                           (HasHeader header, MonadSTM m)
                        => TVar m (Chain header)
+                       -> Client header m a
                        -> ChainSyncClient header (Point header) m a
-chainSyncClientExample chainvar = ChainSyncClient $
+chainSyncClientExample chainvar client = ChainSyncClient $
     initialise <$> getChainPoints
   where
-    initialise :: [Point header] -> ClientStIdle header (Point header) m a
-    initialise points =
+    initialise :: ([Point header], Client header m a) -> ClientStIdle header (Point header) m a
+    initialise (points, client) =
       SendMsgFindIntersect points $
       -- In this consumer example, we do not care about whether the server
       -- found an intersection or not. If not, we'll just sync from genesis.
@@ -42,33 +60,41 @@ chainSyncClientExample chainvar = ChainSyncClient $
       --  rejecting the server if there is no intersection in the last K blocks
       --
       ClientStIntersect {
-        recvMsgIntersectImproved  = \_ _ -> ChainSyncClient (return requestNext),
-        recvMsgIntersectUnchanged = \  _ -> ChainSyncClient (return requestNext)
+        recvMsgIntersectImproved  = \_ _ -> ChainSyncClient (return (requestNext client)),
+        recvMsgIntersectUnchanged = \  _ -> ChainSyncClient (return (requestNext client))
       }
 
-    requestNext :: ClientStIdle header (Point header) m a
-    requestNext =
+    requestNext :: Client header m a -> ClientStIdle header (Point header) m a
+    requestNext client =
       SendMsgRequestNext
-        handleNext
+        (handleNext client)
         -- We received a wait message, and we have the opportunity to do
         -- something. In this example we don't take up that opportunity.
-        (return handleNext)
+        (return (handleNext client))
 
-    handleNext :: ClientStNext header (Point header) m a
-    handleNext =
+    handleNext :: Client header m a -> ClientStNext header (Point header) m a
+    handleNext client =
       ClientStNext {
         recvMsgRollForward  = \header _pHead -> ChainSyncClient $ do
           addBlock header
-          return requestNext
+          choice <- rollforward client header
+          pure $ case choice of
+            Left a -> SendMsgDone a
+            Right client' -> requestNext client'
 
-      , recvMsgRollBackward = \pIntersect _pHead -> ChainSyncClient $ do
+      , recvMsgRollBackward = \pIntersect pHead -> ChainSyncClient $ do
           rollback pIntersect
-          return requestNext 
+          choice <- rollbackward client pIntersect pHead
+          pure $ case choice of
+            Left a -> SendMsgDone a
+            Right client' -> requestNext client'
       }
 
-    getChainPoints :: m [Point header]
-    getChainPoints =
-        Chain.selectPoints recentOffsets <$> atomically (readTVar chainvar)
+    getChainPoints :: m ([Point header], Client header m a)
+    getChainPoints = do
+      pts <- Chain.selectPoints recentOffsets <$> atomically (readTVar chainvar)
+      client' <- points client pts
+      pure (pts, client')
 
     addBlock :: header -> m ()
     addBlock b = atomically $ do

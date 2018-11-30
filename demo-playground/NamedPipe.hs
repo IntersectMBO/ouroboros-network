@@ -1,25 +1,29 @@
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE PolyKinds #-}
 module NamedPipe (
-    runConsumer
-  , runProducer
+    runPeerUsingNamedPipeCbor
   -- * Sending & receiving txs
   , withTxPipe
   ) where
 
 import           Control.Exception (SomeException, bracket, catch)
 import           Control.Monad (when)
+import qualified Codec.CBOR.Encoding as CBOR (Encoding)
+import           Data.ByteString (ByteString)
 import           Data.Semigroup ((<>))
+import qualified Data.Text as T (unpack)
 import           GHC.Stack
 import           System.Directory (removeFile)
 import           System.IO
 import           System.Posix.Files (createNamedPipe, otherReadMode,
                      otherWriteMode, ownerModes, unionFileModes)
 
-import           Ouroboros.Network.Block (HasHeader)
-import           Ouroboros.Network.ConsumersAndProducers
+import           Protocol.Codec (Codec)
+import           Protocol.Core (Peer)
+import           Protocol.Driver (Result (..), useCodecWithDuplex)
+
 import           Ouroboros.Network.Node (NodeId (..))
 import qualified Ouroboros.Network.Pipe as P
-import           Ouroboros.Network.Serialise (Serialise)
 
 -- | Creates two pipes, one for reading, one for writing.
 withPipe :: HasCallStack
@@ -79,24 +83,18 @@ withTxPipe node ioMode destroyAfterUse action = do
                 )
             action
 
--- | Runs a producer protocol over a named pipe (technically speaking two
--- pipes, one for reads, one for writes).
-runProducer :: (HasHeader block, Serialise block)
-            => NodeId
-            -> NodeId
-            -> ProducerHandlers block IO r
-            -> IO ()
-runProducer myId targetId producer =
+-- | Runs a peer over a named pipe using a cbor-encoded transition (technically
+-- speaking two pipes, one for reads, one for writes).
+runPeerUsingNamedPipeCbor
+  :: NodeId
+  -> NodeId
+  -> Codec IO CBOR.Encoding ByteString tr begin
+  -> Peer proto tr (status begin) end IO a
+  -> IO a
+runPeerUsingNamedPipeCbor myId targetId codec peer =
     withPipe (myId, targetId) $ \(hndRead, hndWrite) ->
-      P.runProducer hndRead hndWrite producer
-
--- | Runs a consumer protocol over a named pipe (technically speaking two
--- pipes, one for reads, one for writes).
-runConsumer :: (HasHeader block, Serialise block)
-            => NodeId
-            -> NodeId
-            -> ConsumerHandlers block IO
-            -> IO ()
-runConsumer myNodeId targetId consumer =
-    withPipe (myNodeId, targetId) $ \(hndRead, hndWrite) ->
-      P.runConsumer hndRead hndWrite consumer
+      let channel = P.pipeDuplex hndRead hndWrite
+       in throwOnUnexpected =<< useCodecWithDuplex channel codec peer
+  where
+  throwOnUnexpected (Normal t) = pure t
+  throwOnUnexpected (Unexpected txt) = error (T.unpack txt)

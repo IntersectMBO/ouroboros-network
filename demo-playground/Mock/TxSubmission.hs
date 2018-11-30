@@ -25,11 +25,11 @@ import           Ouroboros.Consensus.Util (Condense (..))
 import           Ouroboros.Network.ChainProducerState
 import           Ouroboros.Network.MonadClass hiding (threadDelay)
 import           Ouroboros.Network.Node (NodeId (..))
-import           Ouroboros.Network.Pipe
 import           Ouroboros.Network.Serialise
 
 import           Mock.Mempool (Mempool (..), consistent, mempoolInsert)
 import           NamedPipe
+import           Protocol
 import           Topology
 
 {-------------------------------------------------------------------------------

@@ -73,7 +73,7 @@ demo chain0 updates = do
         consumerPeer :: Peer ChainSyncProtocol (ChainSyncMessage block (Point block))
                              (Yielding StIdle) (Finished StDone)
                              IO ()
-        consumerPeer = chainSyncClientPeer (chainSyncClientExample consumerVar)
+        consumerPeer = chainSyncClientPeer (chainSyncClientExample consumerVar pureClient)
 
         codec :: Codec IO CBOR.Encoding BS.ByteString (ChainSyncMessage block (Point block)) 'StIdle
         codec = hoistCodec stToIO codecChainSync

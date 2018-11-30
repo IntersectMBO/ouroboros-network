@@ -357,8 +357,11 @@ relayNode nid initChain chans = do
                   -> m (TVar m (Chain block))
     startConsumer cid channel = do
       chainVar <- atomically $ newTVar Genesis
-      let consumer = chainSyncClientPeer (chainSyncClientExample chainVar)
+      let consumer = chainSyncClientPeer (chainSyncClientExample chainVar pureClient)
       fork $ void $ useCodecWithDuplex channel codec consumer
+      -- FIXME re-introduce logging on the channel.
+      -- Requires a show instance like thing
+      --   forall from to . ChainSyncMessage header point from to -> String
       {-
       fork $ consumerSideProtocol1 consumer
         (loggingSend (ConsumerId nid cid) (sendMsg chan))
@@ -377,6 +380,7 @@ relayNode nid initChain chans = do
       -- No sense throwing on Unexpected right? since fork will just squelch
       -- it. FIXME: use async...
       fork $ void $ useCodecWithDuplex channel codec producer
+      -- FIXME re-introduce logging on the channel.
       {-
       fork $ producerSideProtocol1 producer
         (loggingSend (ProducerId nid pid) (sendMsg chan))
