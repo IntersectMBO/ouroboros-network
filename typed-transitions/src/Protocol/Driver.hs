@@ -80,7 +80,7 @@ useCodecWithDuplex = go Nothing
     Fail _ txt -> pure $ Unexpected txt
     -- Leftovers are given as 'Just' even if they are empty.
     -- Not ideal but shouldn't be a problem in practice.
-    Done leftovers (Decoded tr codec') -> go (Just leftovers) duplex codec' (k tr)
+    Done leftovers (Decoded tr codec') -> go leftovers duplex codec' (k tr)
     -- Read from the duplex and carry on. A premature end-of-input will
     -- result in a Fail and therefore an Unexpected.
     Partial l -> recv duplex >>= \next -> case next of

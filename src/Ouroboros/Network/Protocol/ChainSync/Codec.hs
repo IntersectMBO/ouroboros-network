@@ -182,6 +182,6 @@ cborDecoder decoder = Decoder (idecode <$> deserialiseIncremental decoder)
     :: IDecode s (Decoded tr state (Codec (ST s) Encoding ByteString tr))
     -> DecoderStep (ST s) ByteString (Decoded tr state (Codec (ST s) Encoding ByteString tr))
   idecode term = case term of
-    CBOR.Fail bs _ (DeserialiseFailure _ str) -> Fail bs (T.pack str)
-    CBOR.Done bs _ it -> Done bs it
+    CBOR.Fail bs _ (DeserialiseFailure _ str) -> Fail (Just bs) (T.pack str)
+    CBOR.Done bs _ it -> Done (Just bs) it
     CBOR.Partial k -> Partial $ Decoder . fmap idecode . k
