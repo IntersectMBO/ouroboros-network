@@ -38,6 +38,11 @@ data Peer p (tr :: st -> st -> Type) (from :: Status st) (to :: Status st) f t w
   -- Typeable is here for the benefit of casting a transition on unknown
   -- endpoints into one on a known endpoint, to facilitate passing them
   -- through a channel. It's also in the 'PeerAwait' constructor.
+  --
+  -- FIXME this should be removed. Instead of relying on Typeable, a
+  -- 'Protocol.Codec.Codec' should be defined. Typeable remains in here
+  -- because we still have things in this project which depend upon it, such
+  -- as 'Protocol.Untyped'.
   PeerYield
     :: ( Typeable from
        , TrControl p from inter ~ control
