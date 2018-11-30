@@ -79,6 +79,7 @@ library
                        Ouroboros.Network.Protocol.Chain.Node
                        Ouroboros.Network.Protocol.Channel.Sim
                        Ouroboros.Network.Protocol.ChainSync.Client
+                       Ouroboros.Network.Protocol.ChainSync.Codec
                        Ouroboros.Network.Protocol.ChainSync.Direct
                        Ouroboros.Network.Protocol.ChainSync.Server
                        Ouroboros.Network.Protocol.ChainSync.Type
