@@ -71,7 +71,7 @@ runExampleConsumer :: (MonadST m, MonadSTM m,
                    -> ByteChannel ByteString m
                    -> m (Either (ProtocolError CBOR.DeserialiseFailure) a)
 runExampleConsumer chainVar channel =
-  let client = chainSyncClientExample chainVar
+  let client = chainSyncClientExample chainVar pureClient
   in  runConsumer client channel
 
 ------------------------------------------------

@@ -94,11 +94,14 @@ library
                        Ouroboros.Network.Protocol.Stream.Server
                        Ouroboros.Network.Protocol.Stream.Direct
 
+                       -- TODO rename.
+                       Ouroboros.Network.ChainSyncExamples
+
+                       -- TODO remove soon.
                        Ouroboros.Network.ProtocolInterfaces
                        Ouroboros.Network.ConsumersAndProducers
   other-modules:
                        Ouroboros.Network.Pipe2
-                       Ouroboros.Network.ChainSyncExamples
                        Ouroboros.Network.ByteChannel
                        Ouroboros.Network.Codec
                        Ouroboros.Network.Framing
@@ -173,6 +176,7 @@ executable demo-playground
                        Mock.TxSubmission
                        Mock.Mempool
                        NamedPipe
+                       Protocol
                        Run
                        Topology
   build-depends:       base,
@@ -187,8 +191,11 @@ executable demo-playground
                        mtl,
                        optparse-applicative,
                        ouroboros-network,
+                       process,
                        stm,
                        string-conv,
+                       text,
+                       typed-transitions,
                        unix
 
 test-suite tests

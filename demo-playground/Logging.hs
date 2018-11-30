@@ -24,10 +24,9 @@ import           Ouroboros.Consensus.Util
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (Chain (..))
 import qualified Ouroboros.Network.Chain as Chain
-import           Ouroboros.Network.ConsumersAndProducers
 import           Ouroboros.Network.Node (NodeId)
-import           Ouroboros.Network.ProtocolInterfaces
 import           Ouroboros.Network.Testing.ConcreteBlock
+import           Ouroboros.Network.ChainSyncExamples
 
 data LogEvent = LogEvent {
     msg    :: String
@@ -54,37 +53,39 @@ data LoggerHandler block = LoggerHandler {
   }
 
 -- | Add logging to the example consumer
-loggerConsumer :: forall block. ( Condense [block]
-                                , Condense block
-                                , HasHeader block
-                                )
+loggerConsumer :: forall block x. ( Condense [block]
+                                  , Condense block
+                                  , HasHeader block
+                                  )
                => LoggerHandler block
-               -> ConsumerHandlers block IO
+               -> Client block IO x
 loggerConsumer handler =
-    addDetailedLogging handler $ exampleConsumer (chainVar handler)
+    addDetailedLogging handler pureClient
 
 addDetailedLogging :: ( HasHeader block
                       , Condense block
                       , Condense [block]
                       )
                    => LoggerHandler block
-                   -> ConsumerHandlers block IO
-                   -> ConsumerHandlers block IO
-addDetailedLogging hdl@LoggerHandler{..} c = ConsumerHandlers {
-      getChainPoints = do
-        pts <- getChainPoints c
+                   -> Client block IO x
+                   -> Client block IO x
+addDetailedLogging hdl@LoggerHandler{..} c = c {
+      points = \pts -> do
+        next <- points c pts
         logMsg hdl $ "getChainPoints, sending " <> show pts <> " to " <> show ourProducer
-        return pts
+        return next
 
-    , addBlock = \b -> do
+    , rollforward = \b -> do
         logMsg hdl $ "Received " <> condense b <> " from " <> show ourProducer
-        addBlock c b
+        next <- rollforward c b
         logChain hdl
+        pure next
 
-    , rollbackTo = \p -> do
-        logMsg hdl $ "Rolling back to " <> show p
-        rollbackTo c p
+    , rollbackward = \p1 p2 -> do
+        logMsg hdl $ "Rolling back to " <> show p1
+        next <- rollbackward c p1 p2
         logChain hdl
+        pure next
     }
 
 addSimpleLogging :: ( HasHeader block
@@ -92,21 +93,21 @@ addSimpleLogging :: ( HasHeader block
                     , Condense [block]
                     )
                  => LoggerHandler block
-                 -> ConsumerHandlers block IO
-                 -> ConsumerHandlers block IO
-addSimpleLogging hdl@LoggerHandler{..} c = ConsumerHandlers {
-      getChainPoints = do
-        pts <- getChainPoints c
+                 -> Client block IO x
+                 -> Client block IO x
+addSimpleLogging hdl@LoggerHandler{..} c = Client {
+      points = \pts -> do
+        next <- points c pts
         logMsg hdl "GetChainPoints"
-        return pts
+        return next
 
-    , addBlock = \b -> do
+    , rollforward = \b -> do
         logMsg hdl $ "AddBlock: " <> condense b
-        addBlock c b
+        rollforward c b
 
-    , rollbackTo = \p -> do
-        logMsg hdl $ "Rollback: " <> condensedPoint p
-        rollbackTo c p
+    , rollbackward = \p1 p2 -> do
+        logMsg hdl $ "Rollback: " <> condensedPoint p1
+        rollbackward c p1 p2
     }
   where
       condensedPoint :: HasHeader block => Chain.Point block -> String

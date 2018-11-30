@@ -15,15 +15,21 @@ import qualified Control.Concurrent.Async as Async
 import           Control.Concurrent.STM (TBQueue, TVar, atomically, newTBQueue,
                      newTVar)
 import           Control.Monad
+import           Control.Monad.ST (stToIO)
 import qualified Data.Map.Strict as M
 import           Data.Maybe
 import           Data.Semigroup ((<>))
 
+import           Protocol.Codec (hoistCodec)
+
 import           Ouroboros.Network.Chain (Chain (..))
 import           Ouroboros.Network.ChainProducerState
-import           Ouroboros.Network.ConsumersAndProducers
 import           Ouroboros.Network.Node (NodeId (..))
 import qualified Ouroboros.Network.Node as Node
+import           Ouroboros.Network.Protocol.ChainSync.Client
+import           Ouroboros.Network.Protocol.ChainSync.Codec.Cbor
+import           Ouroboros.Network.Protocol.ChainSync.Server
+import           Ouroboros.Network.ChainSyncExamples
 
 import           Ouroboros.Consensus.Crypto.DSIGN.Mock
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -157,8 +163,10 @@ handleSimpleNode (TopologyInfo myNodeId topologyFile) = do
       spawnLogger q targetId = do
           chVar <- atomically $ newTVar Genesis
           let handler = LoggerHandler q chVar targetId
-          a     <- Async.async $ NamedPipe.runConsumer myNodeId targetId $
-                     loggerConsumer handler
+          a     <- Async.async $
+            NamedPipe.runPeerUsingNamedPipeCbor myNodeId targetId
+              (hoistCodec stToIO codecChainSync)
+              (chainSyncClientPeer (chainSyncClientExample chVar (loggerConsumer handler)))
           pure (chVar, a)
 
       spawnConsumer :: Chain Block
@@ -166,16 +174,19 @@ handleSimpleNode (TopologyInfo myNodeId topologyFile) = do
                     -> IO (TVar (Chain Block), Async.Async ())
       spawnConsumer myChain producerNodeId = do
           chVar <- atomically $ newTVar myChain
-          a     <- Async.async $ NamedPipe.runConsumer myNodeId producerNodeId $
-                     exampleConsumer chVar
+          a     <- Async.async $
+            NamedPipe.runPeerUsingNamedPipeCbor myNodeId producerNodeId
+              (hoistCodec stToIO codecChainSync)
+              (chainSyncClientPeer (chainSyncClientExample chVar pureClient))
           pure (chVar, a)
 
       spawnProducer :: TVar (ChainProducerState Block)
                     -> NodeId
                     -> IO (Async.Async ())
       spawnProducer cps consumerNodeId = Async.async $
-          NamedPipe.runProducer myNodeId consumerNodeId $
-            exampleProducer cps
+        NamedPipe.runPeerUsingNamedPipeCbor myNodeId consumerNodeId
+          (hoistCodec stToIO codecChainSync)
+          (chainSyncServerPeer (chainSyncServerExample () cps))
 
 instance ProtocolLedgerView Block where
   protocolLedgerView _ _ = ()
