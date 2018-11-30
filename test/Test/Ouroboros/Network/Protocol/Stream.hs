@@ -28,7 +28,7 @@ tests =
 listStreamServer
   :: Monad m
   => StreamServer m (Int, Int) Int [Int]
-listStreamServer = streamServer (go [])
+listStreamServer = streamServer (Right . go [])
  where
   go acc (x, y) | x >= y    = yield x >> return (x:acc)
                 | otherwise = yield x >> go (x:acc) (succ x, y)
@@ -47,7 +47,7 @@ readQueue queue = go []
   go acc = do
     r <- atomically $ readTBQueue queue
     case r of
-      EndOfStream     -> return acc
+      EndOfStream{}   -> return acc
       StreamElement a -> go (a : acc)
 
 -- | Transfer a request a list of integers from a server and check that the

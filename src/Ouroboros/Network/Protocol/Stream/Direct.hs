@@ -1,4 +1,5 @@
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 module Ouroboros.Network.Protocol.Stream.Direct where
 
@@ -17,10 +18,11 @@ direct (StreamServer{recvMsgRequest}) (SendMsgRequest rng client) = do
   go server client
  where
   go :: ServerHandleData m a x -> ClientHandleData m a y -> m (x, y)
-  go (SendMsgData a mserver) (ClientHandleData{recvMsgData}) = do
+  go (SendMsgData a mserver) ClientHandleData{recvMsgData} = do
+    server <- mserver
     client' <- recvMsgData a
-    server  <- mserver
     go server client'
-  go (SendMsgStreamEnd x) (ClientHandleData{recvMsgStreamEnd}) = do
-    y <- recvMsgStreamEnd
-    return (x, y)
+  go (SendMsgStreamEnd x) ClientHandleData{recvMsgStreamEnd} =
+    (x,) <$> recvMsgStreamEnd
+  go (SendMsgNoData x) ClientHandleData{recvMsgNoData} =
+    (x,) <$> recvMsgNoData

@@ -32,6 +32,10 @@ data ServerHandleData m a t where
     :: t
     -> ServerHandleData m a t
 
+  SendMsgNoData
+    :: t
+    -> ServerHandleData m a t
+
 -- | Interpret @'StreamServer'@ as a @'Peer'@.
 --
 streamServerPeer
@@ -56,15 +60,19 @@ streamServerPeer StreamServer{recvMsgRequest}
       return $ serverHandleData server
   serverHandleData (SendMsgStreamEnd t) =
     out MsgStreamEnd (done t)
+  serverHandleData (SendMsgNoData t) =
+    out MsgNoData (done t)
 
 -- | Create a @'StreamServer'@ from a @'Producer'@ stream of values.
 --
 streamServer
   :: forall m range a t. Monad m
-  => (range -> Producer a m t)
+  => (range -> Either t (Producer a m t))
   -> StreamServer m range a t
-streamServer stream = StreamServer $ \range -> do
-  server (stream range)
+streamServer stream = StreamServer $ \range ->
+  case stream range of
+    Left t -> return (SendMsgNoData t)
+    Right pr -> server pr
  where
   server :: Producer a m t -> m (ServerHandleData m a t)
   server p =

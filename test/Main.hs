@@ -8,7 +8,6 @@ import qualified Test.Node (tests)
 import qualified Test.Pipe (tests)
 import qualified Test.Sim (tests)
 import qualified Test.Ouroboros.Network.Protocol.Stream (tests)
-import qualified Test.Ouroboros.Network.Protocol.BlockStream (tests)
 
 main :: IO ()
 main = defaultMain tests
@@ -22,5 +21,4 @@ tests =
   , Test.Node.tests
   , Test.Pipe.tests
   , Test.Ouroboros.Network.Protocol.Stream.tests
-  , Test.Ouroboros.Network.Protocol.BlockStream.tests
   ]

@@ -50,8 +50,10 @@ data StreamMessage range a from to where
   MsgRequest      :: range -> StreamMessage range a 'StIdle 'StBusy -- request a range 
   MsgData         :: a -> StreamMessage range a 'StBusy 'StBusy     -- response with data
   MsgStreamEnd    :: StreamMessage range a 'StBusy 'StDone          -- the stream is over
+  MsgNoData       :: StreamMessage range a 'StBusy 'StDone          -- error message
 
 instance  Show a => Show (StreamMessage range a from to) where
   show (MsgRequest _r) = "MsgRequest"
   show (MsgData a)     = "MsgData " ++ show a
   show MsgStreamEnd    = "MsgStreamEnd"
+  show MsgNoData       = "MsgNoData"

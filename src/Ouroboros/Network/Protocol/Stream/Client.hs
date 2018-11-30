@@ -29,7 +29,8 @@ import Ouroboros.Network.MonadClass.MonadSTM (MonadSTM (..))
 --
 data StreamElement a
   = StreamElement !a
-  | EndOfStream
+  | EndOfStream Bool
+  -- ^ if @False@ the server signaled an error with @'MsgNoData'@ message.
   deriving (Eq, Ord, Show)
 
 -- | Client which accumulates a values delivered by a corresponding server.
@@ -43,7 +44,8 @@ data StreamClient m range a t where
 data ClientHandleData m a t =
   ClientHandleData {
     recvMsgData      :: a -> m (ClientHandleData m a t),
-    recvMsgStreamEnd :: m t
+    recvMsgStreamEnd :: m t,
+    recvMsgNoData    :: m t
   }
 
 -- | Interpret @'StreamClient'@ as a @'Peer'@.
@@ -62,11 +64,12 @@ streamClientPeer (SendMsgRequest range client) =
     -> Peer StreamProtocol (StreamMessage range a)
         ('Awaiting 'StBusy) ('Finished 'StDone)
         m t
-  clientHandleData ClientHandleData{recvMsgData,recvMsgStreamEnd} = await $ \msg -> case msg of
+  clientHandleData ClientHandleData{recvMsgData,recvMsgStreamEnd,recvMsgNoData} = await $ \msg -> case msg of
     MsgData a -> lift $ do
       client' <- recvMsgData a
       return $ clientHandleData client'
     MsgStreamEnd -> lift $ done <$> recvMsgStreamEnd
+    MsgNoData -> lift $ done <$> recvMsgNoData
 
 -- | Create a @'StreamClient'@ which writes to a @'TBQueue'@.
 --
@@ -80,5 +83,6 @@ streamClient queue range = SendMsgRequest range client
   client :: ClientHandleData m a ()
   client = ClientHandleData {
     recvMsgData      = \a -> client <$ atomically (writeTBQueue queue (StreamElement a)),
-    recvMsgStreamEnd = void $ atomically (writeTBQueue queue EndOfStream)
+    recvMsgStreamEnd = void $ atomically (writeTBQueue queue (EndOfStream True)),
+    recvMsgNoData    = void $ atomically (writeTBQueue queue (EndOfStream False))
   }
