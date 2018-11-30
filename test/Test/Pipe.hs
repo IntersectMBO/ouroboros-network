@@ -6,7 +6,7 @@ module Test.Pipe (tests) where
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (Chain (..), Point (..))
-import           Ouroboros.Network.Pipe (demo2)
+import           Ouroboros.Network.Pipe (demo)
 import           Ouroboros.Network.Protocol
 import           Ouroboros.Network.Serialise (prop_serialise)
 import           Ouroboros.Network.Testing.ConcreteBlock (Block,
@@ -37,7 +37,7 @@ tests =
 
 prop_pipe_demo :: TestBlockChainAndUpdates -> Property
 prop_pipe_demo (TestBlockChainAndUpdates chain updates) =
-    ioProperty $ demo2 chain updates
+    ioProperty $ demo chain updates
 
 prop_serialise_MsgConsumer :: MsgConsumer Block -> Property
 prop_serialise_MsgConsumer = prop_serialise

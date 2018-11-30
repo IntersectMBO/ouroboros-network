@@ -48,3 +48,36 @@ data DecoderStep (m :: Type -> Type) (concrete :: Type) (decoded :: Type) where
   -- Giving 'Nothing' means no more input is available. The next decoder
   -- should therefore be either 'Done' or 'Fail'.
   Partial :: (Maybe concrete -> Decoder m concrete decoded) -> DecoderStep m concrete decoded
+
+hoistCodec
+  :: ( Functor n )
+  => (forall x . m x -> n x)
+  -> Codec m cto cfrom tr st
+  -> Codec n cto cfrom tr st
+hoistCodec nat codec = codec
+  { encode = hoistEncoder nat (encode codec)
+  , decode = hoistDecoder nat (decode codec)
+  }
+
+hoistEncoder
+  :: ( Functor n )
+  => (forall x . m x -> n x)
+  -> Encoder tr from (Encoded cto (Codec m cto cfrom tr))
+  -> Encoder tr from (Encoded cto (Codec n cto cfrom tr))
+hoistEncoder nat encoder = Encoder $ \tr ->
+  let encoded = runEncoder encoder tr
+  in  encoded { encCodec = hoistCodec nat (encCodec encoded) }
+
+hoistDecoder
+  :: forall m n cfrom cto tr from .
+     ( Functor n )
+  => (forall x . m x -> n x)
+  -> Decoder m cfrom (Decoded tr from (Codec m cto cfrom tr))
+  -> Decoder n cfrom (Decoded tr from (Codec n cto cfrom tr))
+hoistDecoder nat decoder = Decoder $ flip fmap (nat (runDecoder decoder)) $ \step -> case step of
+  Fail leftover txt -> Fail leftover txt
+  Done leftover (Decoded tr (codec :: Codec m cto cfrom tr someState)) ->
+    let hoisted :: Codec n cto cfrom tr someState
+        hoisted = hoistCodec nat codec
+    in  Done leftover (Decoded tr hoisted)
+  Partial k -> Partial $ hoistDecoder nat . k

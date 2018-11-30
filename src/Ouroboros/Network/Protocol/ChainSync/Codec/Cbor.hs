@@ -6,7 +6,7 @@
 
 {-# OPTIONS_GHC "-fwarn-incomplete-patterns" #-}
 
-module Ouroboros.Network.Protocol.ChainSync.Codec where
+module Ouroboros.Network.Protocol.ChainSync.Codec.Cbor where
 
 import Prelude hiding (fail)
 import Control.Monad.Fail (fail)
@@ -18,14 +18,19 @@ import qualified Data.Text as T
 import Codec.CBOR.Encoding (Encoding, encodeListLen, encodeWord)
 import Codec.CBOR.Decoding (decodeListLen, decodeWord)
 import qualified Codec.CBOR.Decoding as CBOR (Decoder)
-import Codec.CBOR.Read (IDecode, DeserialiseFailure (..), deserialiseIncremental)
-import qualified Codec.CBOR.Read as CBOR
 import Codec.Serialise.Class (Serialise)
 import qualified Codec.Serialise.Class as CBOR
 
 import Protocol.Codec (Codec (..), Encoder (..), Decoder (..), DecoderStep (..), Encoded (..), Decoded (..))
 
 import Ouroboros.Network.Protocol.ChainSync.Type
+import Ouroboros.Network.Protocol.Codec.Cbor (cborDecoder)
+
+codecChainSync
+  :: forall s header point .
+     ( Serialise header, Serialise point )
+  => Codec (ST s) Encoding ByteString (ChainSyncMessage header point) 'StIdle
+codecChainSync = codecIdle
 
 codecIdle
   :: forall s header point .
@@ -169,19 +174,3 @@ codecDone = Codec
   { encode = Encoder $ \tr -> case tr of { }
   , decode = Decoder $ pure $ Fail mempty (T.pack "no transitions from done")
   }
-
-
--- TODO separate module
-cborDecoder
-  :: forall s tr state .
-     CBOR.Decoder s (Decoded tr state (Codec (ST s) Encoding ByteString tr))
-  -> Decoder (ST s) ByteString (Decoded tr state (Codec (ST s) Encoding ByteString tr))
-cborDecoder decoder = Decoder (idecode <$> deserialiseIncremental decoder)
-  where
-  idecode
-    :: IDecode s (Decoded tr state (Codec (ST s) Encoding ByteString tr))
-    -> DecoderStep (ST s) ByteString (Decoded tr state (Codec (ST s) Encoding ByteString tr))
-  idecode term = case term of
-    CBOR.Fail bs _ (DeserialiseFailure _ str) -> Fail (Just bs) (T.pack str)
-    CBOR.Done bs _ it -> Done (Just bs) it
-    CBOR.Partial k -> Partial $ Decoder . fmap idecode . k

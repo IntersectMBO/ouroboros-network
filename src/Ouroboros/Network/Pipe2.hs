@@ -1,11 +1,14 @@
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE DataKinds #-}
 
 module Ouroboros.Network.Pipe2 where
 
 import           Codec.Serialise.Class (Serialise)
 import qualified Codec.CBOR.Read as CBOR (DeserialiseFailure)
 import           Data.ByteString (ByteString)
+import           Data.Typeable (Typeable)
 
 import           Protocol.Untyped
 import           Ouroboros.Network.ByteChannel (ByteChannel)
@@ -23,10 +26,11 @@ import           Ouroboros.Network.ChainProducerState (ChainProducerState)
 import           Ouroboros.Network.Protocol.ChainSync.Server
 import           Ouroboros.Network.Protocol.ChainSync.Client
 import           Ouroboros.Network.Protocol.ChainSync.Encoding
+import           Ouroboros.Network.Protocol.ChainSync.Type
 import           Ouroboros.Network.ChainSyncExamples
 
 
-runProducer :: (MonadST m, Chain.HasHeader header, Serialise header)
+runProducer :: (MonadST m, Chain.HasHeader header, Serialise header, forall (it :: ChainSyncState) . Typeable it)
             => ChainSyncServer header (Point header) m a
             -> ByteChannel ByteString m
             -> m (Either (ProtocolError CBOR.DeserialiseFailure) a)
@@ -36,7 +40,7 @@ runProducer server channel =
     peer  = asUntypedPeer (chainSyncServerPeer server)
     codec = cborCodec encodeChainSyncMessage decodeChainSyncMessage
 
-runConsumer :: (MonadST m, Chain.HasHeader header, Serialise header)
+runConsumer :: (MonadST m, Chain.HasHeader header, Serialise header, forall (it :: ChainSyncState) . Typeable it)
             => ChainSyncClient header (Point header) m a
             -> ByteChannel ByteString m
             -> m (Either (ProtocolError CBOR.DeserialiseFailure) a)
@@ -50,7 +54,8 @@ runConsumer client channel =
 ------------------------------------------------
 
 runExampleProducer :: (MonadST m, MonadSTM m,
-                       HasHeader header, Serialise header)
+                       HasHeader header, Serialise header,
+                       forall (it :: ChainSyncState) . Typeable it)
                    => a
                    -> TVar m (ChainProducerState header)
                    -> ByteChannel ByteString m
@@ -60,7 +65,8 @@ runExampleProducer recvMsgDone cpsVar channel =
   in  runProducer server channel
 
 runExampleConsumer :: (MonadST m, MonadSTM m,
-                       HasHeader header, Serialise header)
+                       HasHeader header, Serialise header,
+                       forall (it :: ChainSyncState) . Typeable it)
                    => TVar m (Chain header)
                    -> ByteChannel ByteString m
                    -> m (Either (ProtocolError CBOR.DeserialiseFailure) a)
@@ -76,7 +82,7 @@ data ProtocolError e = ProtocolDecodeFailure e
                      | ProtocolStateError
 
 runPeerWithChannel :: forall bytes failure msg m a.
-                      Monad m
+                      ( Monad m, forall (it :: ChainSyncState) . Typeable it)
                    => Codec bytes failure m (SomeMessage msg)
                    -> Peer msg m a
                    -> ByteChannel bytes m

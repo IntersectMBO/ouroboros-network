@@ -41,13 +41,16 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
+import           Protocol.Channel (Channel, Duplex (..))
+import           Protocol.Transition (SomeTransition (..))
+
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain
 import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.ChainProducerState
 import           Ouroboros.Network.MonadClass
 import           Ouroboros.Network.Node
-import           Ouroboros.Network.Protocol
+import           Ouroboros.Network.Protocol.ChainSync.Type
 
 import           Ouroboros.Consensus.Crypto.DSIGN.Mock
 import           Ouroboros.Consensus.Crypto.Hash.Class (hash)
@@ -265,8 +268,8 @@ broadcastNetwork numSlots nodeInit txMap initLedger initRNG = do
                fmap (us, ) $ fmap Map.fromList $ forM nodeIds $ \them ->
                  fmap (them, ) $
                    createCoupledChannels
-                     @(MsgProducer (SimpleBlock p c))
-                     @(MsgConsumer (SimpleBlock p c))
+                     @(SomeTransition (ChainSyncMessage (SimpleBlock p c) (Point (SimpleBlock p c))))
+                     @(SomeTransition (ChainSyncMessage (SimpleBlock p c) (Point (SimpleBlock p c))))
                      0
                      0
 
@@ -277,23 +280,26 @@ broadcastNetwork numSlots nodeInit txMap initLedger initRNG = do
       varSt  <- atomically $ newTVar initSt
       varL   <- atomically $ newTVar initLedger
 
-      let ourOwnConsumer :: Chan m (MsgConsumer (SimpleBlock p c))
-                                   (MsgProducer (SimpleBlock p c))
+      let ourOwnConsumer :: Channel m
+            (SomeTransition (ChainSyncMessage (SimpleBlock p c)
+                            (Point (SimpleBlock p c))))
+          -- FIXME this needs a comment. What's going on here? Why do we need
+          -- special treatment for loopback?
           ourOwnConsumer =
               let loopbackRecv = snd (chans Map.! us Map.! us)
-              in Chan {
-                     sendMsg = sendMsg loopbackRecv
-                   , recvMsg = do
-                       msgToMyself <- recvMsg loopbackRecv
-                       case msgToMyself of
-                           MsgRollForward b -> do
-                               atomically $
-                                 modifyTVar' varL $ \st ->
-                                   case runExcept (applyExtLedgerState cfg b st) of
-                                     Left err  -> error (show err)
-                                     Right st' -> st'
-                           _ -> return ()
-                       return msgToMyself
+              in  Duplex {
+                      send = send loopbackRecv
+                    , recv = do
+                         (msgToMyself, next) <- recv loopbackRecv
+                         case msgToMyself of
+                             Just (SomeTransition (MsgRollForward b _)) -> do
+                                 atomically $
+                                   modifyTVar' varL $ \st ->
+                                     case runExcept (applyExtLedgerState cfg b st) of
+                                       Left err  -> error (show err)
+                                       Right st' -> st'
+                             _ -> return ()
+                         return (msgToMyself, next)
                   }
 
       varCPS <- relayNode us initChain $ NodeChannels {

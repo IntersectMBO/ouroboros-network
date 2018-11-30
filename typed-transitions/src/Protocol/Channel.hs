@@ -5,6 +5,7 @@
 module Protocol.Channel
   ( Duplex (..)
   , hoistDuplex
+  , uniformDuplex
   , Channel
   , uniformChannel
   , fixedInputChannel
@@ -43,13 +44,16 @@ hoistDuplex snat rnat duplex = Duplex
   , recv = (fmap . fmap) (hoistDuplex snat rnat) (rnat (recv duplex))
   }
 
+uniformDuplex :: (Functor rm, Functor sm) => (s -> sm ()) -> rm (Maybe r) -> Duplex sm rm s r
+uniformDuplex send recv = Duplex
+  { send = \s -> uniformDuplex send recv <$ send s
+  , recv = fmap (flip (,) (uniformDuplex send recv)) recv
+  }
+
 type Channel m t = Duplex m m t t
 
 uniformChannel :: Functor m => (t -> m ()) -> m (Maybe t) -> Channel m t
-uniformChannel send recv = Duplex
-  { send = \t -> uniformChannel send recv <$ send t
-  , recv = fmap (flip (,) (uniformChannel send recv)) recv
-  }
+uniformChannel = uniformDuplex
 
 fixedInputChannel :: Applicative m => [t] -> Channel m t
 fixedInputChannel lst = case lst of
