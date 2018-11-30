@@ -42,14 +42,14 @@ pingPongCodecIdle = Codec
   }
   where
   decodeIdle acc = Decoder $ pure $ Partial $ \mStr -> case mStr of
-    Nothing -> Decoder $ pure $ Fail acc (pack "expected ping or done")
+    Nothing -> Decoder $ pure $ Fail (Just acc) (pack "expected ping or done")
     Just str ->
       if length acc + length str < 4
       then decodeIdle (acc ++ str)
       else case take 4 (acc ++ str) of
-        "ping" -> Decoder $ pure $ Done (drop 4 (acc ++ str)) (Decoded MsgPing pingPongCodecBusy)
-        "done" -> Decoder $ pure $ Done (drop 4 (acc ++ str)) (Decoded MsgDone pingPongCodecDone)
-        _      -> Decoder $ pure $ Fail (drop 4 (acc ++ str)) (pack "expected ping")
+        "ping" -> Decoder $ pure $ Done (Just (drop 4 (acc ++ str))) (Decoded MsgPing pingPongCodecBusy)
+        "done" -> Decoder $ pure $ Done (Just (drop 4 (acc ++ str))) (Decoded MsgDone pingPongCodecDone)
+        _      -> Decoder $ pure $ Fail (Just (drop 4 (acc ++ str))) (pack "expected ping")
 
 pingPongCodecBusy :: Monad m => Codec m String String PingPongMessage 'StBusy
 pingPongCodecBusy = Codec
@@ -59,16 +59,16 @@ pingPongCodecBusy = Codec
   }
   where
   decodePong acc = Decoder $ pure $ Partial $ \mStr -> case mStr of
-    Nothing -> Decoder $ pure $ Fail acc (pack "expected pong")
+    Nothing -> Decoder $ pure $ Fail (Just acc) (pack "expected pong")
     Just str ->
       if length acc + length str < 4
       then decodePong (acc ++ str)
       else case take 4 (acc ++ str) of
-        "pong" -> Decoder $ pure $ Done (drop 4 (acc ++ str)) (Decoded MsgPong pingPongCodecIdle)
-        _      -> Decoder $ pure $ Fail (drop 4 (acc ++ str)) (pack "expected pong")
+        "pong" -> Decoder $ pure $ Done (Just (drop 4 (acc ++ str))) (Decoded MsgPong pingPongCodecIdle)
+        _      -> Decoder $ pure $ Fail (Just (drop 4 (acc ++ str))) (pack "expected pong")
 
 pingPongCodecDone :: Monad m => Codec m String String PingPongMessage 'StDone
 pingPongCodecDone = Codec
   { encode = Encoder $ \tr -> case tr of { }
-  , decode = Decoder $ pure $ Fail "" (pack "done")
+  , decode = Decoder $ pure $ Fail Nothing (pack "done")
   }

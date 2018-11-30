@@ -41,9 +41,9 @@ newtype Decoder (m :: Type -> Type) (concrete :: Type) (decoded :: Type) = Decod
 
 data DecoderStep (m :: Type -> Type) (concrete :: Type) (decoded :: Type) where
   -- | Finished with leftovers.
-  Done    :: concrete -> decoded -> DecoderStep m concrete decoded
+  Done    :: Maybe concrete -> decoded -> DecoderStep m concrete decoded
   -- | Failed to decode, with leftovers.
-  Fail    :: concrete -> Text -> DecoderStep m concrete decoded
+  Fail    :: Maybe concrete -> Text -> DecoderStep m concrete decoded
   -- | Partial decode.
   -- Giving 'Nothing' means no more input is available. The next decoder
   -- should therefore be either 'Done' or 'Fail'.
