@@ -59,8 +59,7 @@ test-suite test-typed-transitions
   type:           exitcode-stdio-1.0
   main-is:        Main.hs
   hs-source-dirs: test
-  other-modules:    Test.Protocol.Codec
-                  , Test.Protocol.Channel
+  other-modules:    Test.Protocol.Channel
   build-depends:    base >=4.9 && <4.13
                   , async
                   , bytestring
