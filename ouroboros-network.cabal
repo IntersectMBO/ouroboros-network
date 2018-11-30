@@ -74,6 +74,7 @@ library
                        Ouroboros.Network.Serialise
                        Ouroboros.Network.Sim
                        Ouroboros.Network.Testing.ConcreteBlock
+                       Ouroboros.Network.Protocol.Chain.Codec.Id
                        Ouroboros.Network.Protocol.Chain.Consumer
                        Ouroboros.Network.Protocol.Chain.ConsumerStream
                        Ouroboros.Network.Protocol.Chain.Direct
