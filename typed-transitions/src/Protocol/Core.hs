@@ -10,7 +10,6 @@
 module Protocol.Core where
 
 import Data.Kind (Type)
-import Data.Typeable
 import Data.Void
 
 -- |
@@ -34,25 +33,13 @@ data Peer p (tr :: st -> st -> Type) (from :: Status st) (to :: Status st) f t w
   --   - continue to await if this one continues to yield (hold)
   --   - begin to yield if this one begins to await (release)
   -- See the defition of 'connect', where this property is used explicitly.
-  --
-  -- Typeable is here for the benefit of casting a transition on unknown
-  -- endpoints into one on a known endpoint, to facilitate passing them
-  -- through a channel. It's also in the 'PeerAwait' constructor.
-  --
-  -- FIXME this should be removed. Instead of relying on Typeable, a
-  -- 'Protocol.Codec.Codec' should be defined. Typeable remains in here
-  -- because we still have things in this project which depend upon it, such
-  -- as 'Protocol.Untyped'.
   PeerYield
-    :: ( Typeable from
-       , TrControl p from inter ~ control
-       )
+    :: ( TrControl p from inter ~ control )
     => Exchange p tr from inter control
     -> Peer p tr (ControlNext control Yielding Awaiting Finished inter) to f t
     -> Peer p tr (Yielding from) to f t
   PeerAwait
-    :: ( Typeable from )
-    => (forall inter . tr from inter -> Peer p tr (ControlNext (TrControl p from inter) Awaiting Yielding Finished inter) to f t)
+    :: (forall inter . tr from inter -> Peer p tr (ControlNext (TrControl p from inter) Awaiting Yielding Finished inter) to f t)
     -> Peer p tr (Awaiting from) to f t
 
 -- | In a client/server model, one side will be awaiting when the other is
@@ -149,44 +136,35 @@ lift :: f (Peer p tr from to f t) -> Peer p tr from to f t
 lift = PeerLift
 
 yield
-  :: ( Typeable from
-     , TrControl p from inter ~ control
-     )
+  :: ( TrControl p from inter ~ control )
   => Exchange p tr from inter control
   -> Peer p tr (ControlNext control Yielding Awaiting Finished inter) to f t
   -> Peer p tr (Yielding from) to f t
 yield = PeerYield
 
 out
-  :: ( Typeable from
-     , TrControl p from inter ~ Terminate
-     )
+  :: ( TrControl p from inter ~ Terminate )
   => tr from inter
   -> Peer p tr (Finished inter) to f t
   -> Peer p tr (Yielding from) to f t
 out tr = yield (Out tr)
 
 over
-  :: ( Typeable from
-     , TrControl p from inter ~ Release
-     )
+  :: ( TrControl p from inter ~ Release )
   => tr from inter
   -> Peer p tr (Awaiting inter) to f t
   -> Peer p tr (Yielding from) to f t
 over tr = yield (Over tr)
 
 part
-  :: ( Typeable from
-     , TrControl p from inter ~ Hold
-     )
+  :: ( TrControl p from inter ~ Hold )
   => tr from inter
   -> Peer p tr (Yielding inter) to f t
   -> Peer p tr (Yielding from) to f t
 part tr = yield (Part tr)
 
 await
-  :: ( Typeable from )
-  => (forall inter . tr from inter -> Peer p tr (ControlNext (TrControl p from inter) Awaiting Yielding Finished inter) to f t)
+  :: (forall inter . tr from inter -> Peer p tr (ControlNext (TrControl p from inter) Awaiting Yielding Finished inter) to f t)
   -> Peer p tr (Awaiting from) to f t
 await = PeerAwait
 

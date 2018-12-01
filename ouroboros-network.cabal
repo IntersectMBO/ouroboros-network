@@ -88,7 +88,6 @@ library
                        Ouroboros.Network.Protocol.ChainSync.Direct
                        Ouroboros.Network.Protocol.ChainSync.Server
                        Ouroboros.Network.Protocol.ChainSync.Type
-                       Ouroboros.Network.Protocol.ChainSync.Encoding
                        Ouroboros.Network.Protocol.Stream.Type
                        Ouroboros.Network.Protocol.Stream.Client
                        Ouroboros.Network.Protocol.Stream.Server
@@ -98,7 +97,6 @@ library
                        Ouroboros.Network.ChainSyncExamples
 
   other-modules:
-                       Ouroboros.Network.Pipe2
                        Ouroboros.Network.ByteChannel
                        Ouroboros.Network.Codec
                        Ouroboros.Network.Framing

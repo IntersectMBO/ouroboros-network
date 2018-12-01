@@ -20,9 +20,7 @@ library
                      , Protocol.Codec
                      , Protocol.Driver
                      , Protocol.Transition
-                     , Protocol.Nat
                      , Protocol.Core
-                     , Protocol.Untyped
                      , Protocol.PingPong.Type
                      , Protocol.PingPong.Client
                      , Protocol.PingPong.Codec
