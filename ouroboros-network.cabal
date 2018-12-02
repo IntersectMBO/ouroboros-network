@@ -200,7 +200,7 @@ test-suite tests
   other-modules:       Test.Chain
                        Test.ChainProducerState
                        Test.Ouroboros.Network.Protocol.Stream
-                       Test.Node
+                       Test.Ouroboros.Network.Node
                        Test.Pipe
                        Test.Sim
   default-language:    Haskell2010
