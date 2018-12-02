@@ -11,10 +11,13 @@ module Protocol.Channel
   , fixedInputChannel
   , mvarChannels
   , withMVarChannels
+  , channelEffect
   , channelSendEffect
+  , channelRecvEffect
   ) where
 
 import Control.Concurrent.MVar (newEmptyMVar, putMVar, takeMVar)
+import Data.Functor (($>))
 
 -- | Abstract duplex ordered channel.
 -- 'send' and 'recv' produce a new 'Channel m t' so that it's possible to
@@ -81,9 +84,34 @@ withMVarChannels k = do
   (left, right) <- mvarChannels
   k left right
 
--- | Do some effect before sending.
-channelSendEffect :: ( Applicative m ) => (t -> m ()) -> Channel m t -> Channel m t
-channelSendEffect onSend chan = chan
-  { send = \t -> onSend t *> (channelSendEffect onSend <$> send chan t)
-  , recv = (fmap . fmap) (channelSendEffect onSend) (recv chan)
+-- | Do some effect before sending and after receiving.
+channelEffect :: ( Applicative sm
+                 , Monad rm
+                 )
+              => (send -> sm ())
+              -> (Maybe recv -> rm ())
+              -> Duplex sm rm send recv
+              -> Duplex sm rm send recv
+channelEffect onSend onRecv chan = chan
+  { send = \t -> onSend t *> (channelEffect onSend onRecv <$> send chan t)
+  , recv = recv chan >>= \msg -> onRecv (fst msg) $> fmap (channelEffect onSend onRecv) msg
   }
+
+-- | Do some effect before sending.
+channelSendEffect :: ( Applicative sm
+                     , Monad rm
+                     )
+                  => (send -> sm ())
+                  -> Duplex sm rm send recv
+                  -> Duplex sm rm send recv
+channelSendEffect onSend = channelEffect onSend (\_ -> return ())
+
+-- | Run some effect after receiving a message.
+channelRecvEffect
+  :: ( Applicative sm
+     , Monad rm
+     )
+  => (Maybe recv -> rm ())
+  -> Duplex sm rm send recv
+  -> Duplex sm rm send recv
+channelRecvEffect onRecv = channelEffect (\_ -> pure ()) onRecv
