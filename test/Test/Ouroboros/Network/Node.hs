@@ -6,7 +6,7 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE GADTs               #-}
 
-module Test.Node where
+module Test.Ouroboros.Network.Node where
 
 import           Control.Monad (forM, forM_, forever, replicateM)
 import           Control.Monad.ST.Lazy (runST)
