@@ -113,8 +113,11 @@ chainTransferProtocol delay inputVar outputVar = do
                 return input
       fork $ threadDelay delay >> atomically (writeTVar outputVar input)
 
+-- FIXME: neads a better place, it's not in 'typed-protocol' since it needs
+-- 'MonadSTM' and 'MonadTimer' constraints.
 delayChannel :: forall sm rm send recv.
-                ( MonadSTM rm
+                ( Applicative sm
+                , MonadSTM rm
                 , MonadTimer rm
                 )
              => Duration (Time rm)
