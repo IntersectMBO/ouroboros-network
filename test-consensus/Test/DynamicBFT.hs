@@ -41,7 +41,7 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
-import           Protocol.Channel (Channel, Duplex (..))
+import           Protocol.Channel (Channel, channelRecvEffect)
 import           Protocol.Transition (SomeTransition (..))
 
 import           Ouroboros.Network.Block
@@ -280,27 +280,18 @@ broadcastNetwork numSlots nodeInit txMap initLedger initRNG = do
       varSt  <- atomically $ newTVar initSt
       varL   <- atomically $ newTVar initLedger
 
-      let ourOwnConsumer :: Channel m
-            (SomeTransition (ChainSyncMessage (SimpleBlock p c)
-                            (Point (SimpleBlock p c))))
-          -- FIXME this needs a comment. What's going on here? Why do we need
-          -- special treatment for loopback?
+      let ourOwnConsumer :: Channel m (SomeTransition (ChainSyncMessage (SimpleBlock p c) (Point (SimpleBlock p c))))
           ourOwnConsumer =
               let loopbackRecv = snd (chans Map.! us Map.! us)
-              in  Duplex {
-                      send = send loopbackRecv
-                    , recv = do
-                         (msgToMyself, next) <- recv loopbackRecv
-                         case msgToMyself of
-                             Just (SomeTransition (MsgRollForward b _)) -> do
-                                 atomically $
-                                   modifyTVar' varL $ \st ->
-                                     case runExcept (applyExtLedgerState cfg b st) of
-                                       Left err  -> error (show err)
-                                       Right st' -> st'
-                             _ -> return ()
-                         return (msgToMyself, next)
-                  }
+                  recvEff mMsgToMyself = case mMsgToMyself of
+                    Just (SomeTransition (MsgRollForward b _)) -> do
+                        atomically $
+                          modifyTVar' varL $ \st ->
+                            case runExcept (applyExtLedgerState cfg b st) of
+                              Left err  -> error (show err)
+                              Right st' -> st'
+                    _ -> return ()
+              in channelRecvEffect recvEff loopbackRecv
 
       varCPS <- relayNode us initChain $ NodeChannels {
           consumerChans =
