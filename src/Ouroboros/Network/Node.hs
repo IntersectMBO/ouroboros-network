@@ -36,6 +36,7 @@ import           Ouroboros.Network.Protocol.ChainSync.Codec.Id (codecChainSync)
 import           Ouroboros.Network.Protocol.ChainSync.Client
 import           Ouroboros.Network.Protocol.ChainSync.Server
 import           Ouroboros.Network.Protocol.ChainSync.Type
+import           Ouroboros.Network.Protocol.Channel.Sim (delayChannel)
 -- FIXME bad module name below. They're examples, sure, but they're also
 -- legit useful.
 import           Ouroboros.Network.ChainSyncExamples
@@ -112,18 +113,6 @@ chainTransferProtocol delay inputVar outputVar = do
                 writeTVar stateVar (Chain.headPoint input)
                 return input
       fork $ threadDelay delay >> atomically (writeTVar outputVar input)
-
--- FIXME: neads a better place, it's not in 'typed-protocol' since it needs
--- 'MonadSTM' and 'MonadTimer' constraints.
-delayChannel :: forall sm rm send recv.
-                ( Applicative sm
-                , MonadSTM rm
-                , MonadTimer rm
-                )
-             => Duration (Time rm)
-             -> Duplex sm rm send recv
-             -> Duplex sm rm send recv
-delayChannel delay = channelRecvEffect (\_ -> threadDelay delay)
 
 -- | Simulated transfer protocol.
 --

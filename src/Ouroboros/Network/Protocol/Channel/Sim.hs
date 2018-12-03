@@ -2,12 +2,15 @@
 
 module Ouroboros.Network.Protocol.Channel.Sim
   ( simStmChannels
+  , delayChannel
   ) where
 
 import qualified Data.Sequence as Seq
 
 import Ouroboros.Network.MonadClass.MonadSTM
+import Ouroboros.Network.MonadClass.MonadTimer
 import Protocol.Channel
+
 
 -- | Use the simulation STM (via MonadClass) to get 2 channels, one for each
 -- peer. There's no notion of EOF for such a channel, so receiving never gives
@@ -29,3 +32,14 @@ simStmChannels = do
       channelA = uniformChannel (send varA) (recv varB)
       channelB = uniformChannel (send varB) (recv varA)
   pure (channelA, channelB)
+
+-- | Delay a channel on the receiver end.
+--
+delayChannel :: ( Applicative sm
+                , MonadSTM rm
+                , MonadTimer rm
+                )
+             => Duration (Time rm)
+             -> Duplex sm rm send recv
+             -> Duplex sm rm send recv
+delayChannel delay = channelRecvEffect (\_ -> threadDelay delay)
