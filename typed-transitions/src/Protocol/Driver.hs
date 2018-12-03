@@ -12,6 +12,32 @@ import Protocol.Channel
 import Protocol.Core
 import Protocol.Codec
 
+-- |
+-- = Driving a Peer by was of a Duplex and Channel
+--
+-- A 'Duplex' allows for sending and receiving pieces of some concrete type.
+-- In applications, this will probably be some sort of socket. In order to
+-- use it to drive a typed protocol application (represented by a 'Peer'),
+-- there must be a way to encode typed transitions of that protocol to the
+-- concrete type, and to parse pieces of that concrete type incrementally into
+-- a typed transition. This is defined by a 'Codec'.
+--
+-- A 'Codec' and a 'Duplex' alone is not enough to do encoding and decoding,
+-- because the 'Codec' does not make any _decisions_ about the way in which
+-- the protocol application progresses. It defines encodings for _all_ possible
+-- transitions from a state, and an inverse for that encoder. It's the 'Peer'
+-- term which decides which transitions to encode, thereby leading the 'Codec'
+-- through a path in the protocol type.
+--
+-- Driving a 'Peer' in this way may give rise to an exception, given by
+-- 'Unexpected :: Result t'.
+
+-- | The outcome of a 'Peer' when driven by a 'Duplex' and 'Codec'.
+-- It's possible that an unexpected transition was given, either because the
+-- other end made a protocol error, or because the 'Codec' is not coherent
+-- (decode is not inverse to encode). It's also possible that a decoder
+-- fails because a transition was expected, but the 'Duplex' closed. This also
+-- gives rise to an 'Unexpected' value, because the decoder will fail.
 data Result t where
   Normal     :: t -> Result t
   -- | Unexpected data was given. This includes the case of an EOF.
@@ -42,11 +68,17 @@ useCodecWithDuplex = go Nothing
   go leftovers duplex codec peer = case peer of
     PeerDone t -> pure $ Normal t
     PeerLift m -> m >>= go leftovers duplex codec
+    -- Encode the transition, dump it to the duplex, and continue with the
+    -- new codec and duplex.
     PeerYield exc next -> do
       let enc = runEncoder (encode codec) (exchangeTransition exc)
           codec' = encCodec enc
       duplex' <- send duplex (representation enc)
       go leftovers duplex' codec' next
+    -- Awaiting is more complex than yielding, because we need to deal with
+    -- the possibility of leftovers.
+    -- Alternatively, we could redefine the 'Duplex' type so that it has a
+    -- way to push leftovers back onto the channel.
     PeerAwait k -> runDecoder (decode codec) >>= startDecoding leftovers duplex k
 
   startDecoding
