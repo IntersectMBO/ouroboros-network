@@ -3,6 +3,8 @@
 {-# LANGUAGE MultiParamTypeClasses  #-}
 {-# LANGUAGE TypeFamilies           #-}
 {-# LANGUAGE TypeFamilyDependencies #-}
+{-# LANGUAGE UndecidableInstances   #-}
+{-# OPTIONS_GHC -fno-warn-orphans   #-}
 module Ouroboros.Network.MonadClass.MonadSTM
   ( MonadSTM (..)
   , TMVarDefault (..)
@@ -25,12 +27,14 @@ module Ouroboros.Network.MonadClass.MonadSTM
   , lengthTBQueueDefault
   ) where
 
-import Prelude hiding (read)
+import           Prelude hiding (read)
 
 import qualified Control.Concurrent.STM.TBQueue as STM
-import qualified Control.Concurrent.STM.TVar    as STM
-import qualified Control.Concurrent.STM.TMVar   as STM
-import qualified Control.Monad.STM              as STM
+import qualified Control.Concurrent.STM.TMVar as STM
+import qualified Control.Concurrent.STM.TVar as STM
+import           Control.Monad.Except
+import           Control.Monad.Reader
+import qualified Control.Monad.STM as STM
 import           Numeric.Natural (Natural)
 
 import           Ouroboros.Network.MonadClass.MonadFork
@@ -85,6 +89,74 @@ class (MonadFork m, Monad (Tr m)) => MonadSTM m where
   readTBQueue    :: TBQueue m a -> Tr m a
   writeTBQueue   :: TBQueue m a -> a -> Tr m ()
   lengthTBQueue  :: TBQueue m a -> Tr m Natural
+
+
+instance MonadFork m => MonadFork (ReaderT e m) where
+  fork (ReaderT f) = ReaderT $ \e -> fork (f e)
+
+instance MonadSTM m => MonadSTM (ReaderT e m) where
+  type Tr (ReaderT e m)    = ReaderT e (Tr m)
+  type TVar (ReaderT e m)  = TVar m
+  type TMVar (ReaderT e m) = TMVar m
+  type TBQueue (ReaderT e m) = TBQueue m
+
+  atomically (ReaderT t) = ReaderT $ \e -> atomically (t e)
+  newTVar          = lift . newTVar
+  readTVar         = lift . readTVar
+  writeTVar t a    = lift $ writeTVar t a
+  retry            = lift retry
+
+  newTMVar         = lift . newTMVar
+  newTMVarIO       = lift . newTMVarIO
+  newEmptyTMVar    = lift newEmptyTMVar
+  newEmptyTMVarIO  = lift newEmptyTMVarIO
+  takeTMVar        = lift . takeTMVar
+  tryTakeTMVar     = lift . tryTakeTMVar
+  putTMVar   t a   = lift $ putTMVar t a
+  tryPutTMVar t a  = lift $ tryPutTMVar t a
+  readTMVar        = lift . readTMVar
+  tryReadTMVar     = lift . tryReadTMVar
+  swapTMVar t a    = lift $ swapTMVar t a
+  isEmptyTMVar     = lift . isEmptyTMVar
+
+  newTBQueue       = lift . newTBQueue
+  readTBQueue      = lift . readTBQueue
+  writeTBQueue q a = lift $ writeTBQueue q a
+  lengthTBQueue    = lift . lengthTBQueue
+
+-- NOTE(adn): Is this a sensible instance?
+instance (Show e, MonadFork m) => MonadFork (ExceptT e m) where
+  fork (ExceptT m) = ExceptT $ Right <$> fork (either (error . show) id <$> m)
+
+instance (Show e, MonadSTM m) => MonadSTM (ExceptT e m) where
+  type Tr (ExceptT e m)      = ExceptT e (Tr m)
+  type TVar (ExceptT e m)    = TVar m
+  type TMVar (ExceptT e m)   = TMVar m
+  type TBQueue (ExceptT e m) = TBQueue m
+
+  atomically (ExceptT t) = ExceptT $ atomically t
+  newTVar                = lift . newTVar
+  readTVar               = lift . readTVar
+  writeTVar t a          = lift $ writeTVar t a
+  retry                  = lift retry
+
+  newTMVar               = lift . newTMVar
+  newTMVarIO             = lift . newTMVarIO
+  newEmptyTMVar          = lift newEmptyTMVar
+  newEmptyTMVarIO        = lift newEmptyTMVarIO
+  takeTMVar              = lift . takeTMVar
+  tryTakeTMVar           = lift . tryTakeTMVar
+  putTMVar   t a         = lift $ putTMVar t a
+  tryPutTMVar t a        = lift $ tryPutTMVar t a
+  readTMVar              = lift . readTMVar
+  tryReadTMVar           = lift . tryReadTMVar
+  swapTMVar t a          = lift $ swapTMVar t a
+  isEmptyTMVar           = lift . isEmptyTMVar
+
+  newTBQueue       = lift . newTBQueue
+  readTBQueue      = lift . readTBQueue
+  writeTBQueue q a = lift $ writeTBQueue q a
+  lengthTBQueue    = lift . lengthTBQueue
 
 
 --
@@ -196,7 +268,7 @@ swapTMVarDefault :: MonadSTM m => TMVarDefault m a -> a -> Tr m a
 swapTMVarDefault (TMVar t) new = do
   m <- readTVar t
   case m of
-    Nothing -> retry
+    Nothing  -> retry
     Just old -> do writeTVar t (Just new); return old
 
 isEmptyTMVarDefault :: MonadSTM m => TMVarDefault m a -> Tr m Bool
