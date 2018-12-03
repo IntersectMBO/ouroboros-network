@@ -94,7 +94,7 @@ class (MonadFork m, Monad (Tr m)) => MonadSTM m where
 instance MonadFork m => MonadFork (ReaderT e m) where
   fork (ReaderT f) = ReaderT $ \e -> fork (f e)
 
-instance (MonadFork m, MonadSTM m) => MonadSTM (ReaderT e m) where
+instance MonadSTM m => MonadSTM (ReaderT e m) where
   type Tr (ReaderT e m)    = ReaderT e (Tr m)
   type TVar (ReaderT e m)  = TVar m
   type TMVar (ReaderT e m) = TMVar m
@@ -128,7 +128,7 @@ instance (MonadFork m, MonadSTM m) => MonadSTM (ReaderT e m) where
 instance (Show e, MonadFork m) => MonadFork (ExceptT e m) where
   fork (ExceptT m) = ExceptT $ Right <$> fork (either (error . show) id <$> m)
 
-instance (Show e, MonadFork m, MonadSTM m) => MonadSTM (ExceptT e m) where
+instance (Show e, MonadSTM m) => MonadSTM (ExceptT e m) where
   type Tr (ExceptT e m)      = ExceptT e (Tr m)
   type TVar (ExceptT e m)    = TVar m
   type TMVar (ExceptT e m)   = TMVar m
