@@ -93,6 +93,7 @@ spawnLedgerStateListeners ourselves cfg q initialChain ledgerVar cps = do
           , rollbackward = \to head -> flip runReaderT ledgerVar $ do
               modifyLedger $ \l -> l { howManyRollbacks = howManyRollbacks l + 1 }
               pure (Right client)
+          , points = \_ -> pure client
           }
 
         throwOnUnexpected :: Result t -> IO t
