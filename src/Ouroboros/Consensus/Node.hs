@@ -18,9 +18,10 @@ module Ouroboros.Consensus.Node (
   ) where
 
 import           Control.Monad
+import           Data.Function (on)
+import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe)
-import           Data.Set (Set)
-import qualified Data.Set as Set
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (Chain (..), ChainUpdate (..), Point)
@@ -62,7 +63,14 @@ data NodeKernel m pid cid b = NodeKernel {
     , getCurrentChain :: Tr m (Chain b)
 
       -- | Publish block
-    , publishBlock :: (Point b -> BlockNo -> Tr m b) -> m ()
+      --
+      -- The 'Slot' parameter is used by the caller to indicate the slot for
+      -- which it is producing a block. If the current chain already contains
+      -- a block for that slot (which must have been produced by an upstream
+      -- node), we throw away that block (basically overriding upstream).
+
+      -- When the callback returns 'Nothing' the chain is left unchanged.
+    , publishBlock :: Slot -> (Point b -> BlockNo -> Tr m (Maybe b)) -> m ()
     }
 
 nodeKernel :: forall m b up down. ( MonadSTM m
@@ -71,17 +79,21 @@ nodeKernel :: forall m b up down. ( MonadSTM m
              , Show b
              , Show down
              , Show up
-             , Ord b
+             , Ord up
              )
           => NodeId
           -> NodeConfig (BlockProtocol b)
           -> ExtLedgerState b
           -> Chain b
-          -> ([ChainUpdate b] -> Tr m ())
+          -> (Chain b -> [ChainUpdate b] -> Tr m ())
+          -- ^ Callback whenever we adopt a new chain.
+          -- The callback is provided with the chain updates.
+          -- TODO: For now, we also provide it with the entire new chain in
+          -- order to "fake" rollback; this should go.
           -> m (NodeKernel m up down b)
 nodeKernel us cfg initLedgerState initChain notifyUpdates = do
     ourChainVar <- atomically $ newTVar initChain
-    updatesVar  <- atomically $ newEmptyTMVar
+    updatesVar  <- atomically $ newEmptyTMVar -- TODO: use bounded queue instead
 
     -- NOTE: Right now "header validation" is actually just "full validation",
     -- because we cannot validate headers without also having the ledger. Once
@@ -101,7 +113,7 @@ nodeKernel us cfg initLedgerState initChain notifyUpdates = do
     let updateChain :: Chain b -> [ChainUpdate b] -> Tr m ()
         updateChain newChain upd = do
           writeTVar ourChainVar newChain
-          notifyUpdates upd
+          notifyUpdates newChain upd
           networkChainAdopted nw newChain
 
     -- Thread to do chain validation and adoption
@@ -110,7 +122,8 @@ nodeKernel us cfg initLedgerState initChain notifyUpdates = do
          -- ... validating ... mumble mumble mumble ...
          atomically $ do
            ourChain <- readTVar ourChainVar
-           when (newChain `longerThan` ourChain) $ do
+           -- Check: do we still want this chain? (things might have changed)
+           when (selectChain cfg ourChain [newChain] `sameChainAs` newChain) $ do
              let i :: Point b
                  i = fromMaybe Chain.genesisPoint $
                        Chain.intersectChains newChain ourChain
@@ -127,13 +140,23 @@ nodeKernel us cfg initLedgerState initChain notifyUpdates = do
         registerUpstream   = networkRegisterUpstream   nw
       , registerDownstream = networkRegisterDownstream nw
       , getCurrentChain    = readTVar ourChainVar
-      , publishBlock       = \mkBlock -> atomically $ do
-            ourChain <- readTVar ourChainVar
-            newBlock <- mkBlock (Chain.headPoint ourChain)
-                                (Chain.headBlockNo ourChain)
-            let newChain = ourChain :> newBlock
-            updateChain newChain [AddBlock newBlock]
+      , publishBlock       = \slot mkBlock -> atomically $ do
+            ourChain  <- overrideBlock slot <$> readTVar ourChainVar
+            mNewBlock <- mkBlock (Chain.headPoint   ourChain)
+                                 (Chain.headBlockNo ourChain)
+            case mNewBlock of
+              Nothing       -> return ()
+              Just newBlock -> do
+                let newChain = ourChain :> newBlock
+                updateChain newChain [AddBlock newBlock]
       }
+  where
+    -- Drop the most recent block if it occupies the current slot
+    overrideBlock :: Slot -> Chain b -> Chain b
+    overrideBlock slot c
+      | Chain.headSlot c <  slot = c
+      | Chain.headSlot c == slot = dropMostRecent c
+      | otherwise                = error "overrideBlock: block in future"
 
 {-------------------------------------------------------------------------------
   Attempt to mock what the network API will eventually look like
@@ -169,14 +192,15 @@ data NetworkCallbacks b m = NetworkCallbacks {
       --
       -- It is up to the consensus layer now to validate the blocks and
       -- (potentially) adopt the chain.
-      chainDownloaded      :: Chain b -> m ()
+      chainDownloaded      :: Chain b -> m () -- Chain Block -> ..
 
       -- | Validate chain headers
-    , validateChainHeaders :: Chain b -> Bool
+    , validateChainHeaders :: Chain b -> Bool -- Chain Header -> ..
 
       -- | Prioritize chains
       --
       -- TODO: This should eventually return a list, rather than a single chain.
+                           -- Chain Block -> Chain Header -> Chain Header (?)
     , prioritizeChains     :: Chain b -> [Chain b] -> Chain b
     }
 
@@ -187,15 +211,18 @@ initNetworkLayer :: forall m b up down.
                     , Show b
                     , Show down
                     , Show up
-                    , Ord b
+                    , Ord up
                     )
                  => NodeId   -- ^ Our node ID
-                 -> Chain b  -- ^ Initial chain
+                 -> Chain b  -- ^ Our initial (current) chain
                  -> NetworkCallbacks b m
                  -> m (NetworkLayer up down b m)
 initNetworkLayer us initChain NetworkCallbacks{..} = do
-    cpsVar        <- atomically $ newTVar $ initChainProducerState initChain
-    potentialsVar <- atomically $ newTVar Set.empty
+    cpsVar <- atomically $ newTVar $ initChainProducerState initChain
+
+    -- PotentialsVar is modelling state in the network layer tracking the
+    -- potential chains we might like to be downloaded and from whom.
+    potentialsVar <- atomically $ newTVar Map.empty
 
     return $ NetworkLayer {
         networkChainAdopted = modifyTVar cpsVar . switchFork
@@ -212,23 +239,21 @@ initNetworkLayer us initChain NetworkCallbacks{..} = do
                          Chain.genesisPoint
                          chainVar $ \newChain ->
               if validateChainHeaders newChain
-                then newPotentialChain cpsVar potentialsVar newChain
+                then newPotentialChain cpsVar potentialsVar up newChain
                 else -- We should at this point disregard this peer,
                      -- but the MonadSTM abstraction we work with doesn't
-                     -- give us thread IDs. For now we just ignore the
-                     -- chain and keep monitoring the peer
-                     return ()
+                     -- give us thread IDs. For now we just error out, we're
+                     -- not (yet) testing with invbalid chains.
+                     error "ERROR: Received invalid chain from peer"
       }
   where
     newPotentialChain :: TVar m (ChainProducerState b)
-                      -> TVar m (Set (Chain b))
+                      -> TVar m (Map up (Chain b))
+                      -> up
                       -> Chain b
                       -> m ()
-    newPotentialChain cpsVar potentialsVar newChain = do
-      atomically $ do
-        ourChain <- chainState <$> readTVar cpsVar
-        when (newChain `longerThan` ourChain) $
-          modifyTVar potentialsVar $ Set.insert newChain
+    newPotentialChain cpsVar potentialsVar up newChain = do
+      atomically $ modifyTVar potentialsVar $ Map.insert up newChain
 
       -- At this point we would download blocks, which will be ready
       -- some point later. For now of course we have the entire chain
@@ -238,12 +263,10 @@ initNetworkLayer us initChain NetworkCallbacks{..} = do
       mDownloaded <- atomically $ do
         ourChain   <- chainState <$> readTVar cpsVar
         potentials <- readTVar potentialsVar
-        let potentials' = Set.filter (`longerThan` ourChain) potentials
-        writeTVar potentialsVar potentials'
         return $ do
-            guard $ not (Set.null potentials')
-            let preferred = prioritizeChains ourChain (Set.toList potentials')
-            guard $ preferred /= ourChain
+            guard $ not (Map.null potentials)
+            let preferred = prioritizeChains ourChain (Map.elems potentials)
+            guard $ not (preferred `sameChainAs` ourChain)
             return preferred
 
       case mDownloaded of
@@ -278,9 +301,6 @@ instance Condense pid => Condense (ConsumerId pid) where
   Auxiliary
 -------------------------------------------------------------------------------}
 
-longerThan :: Chain b -> Chain b -> Bool
-c `longerThan` c' = Chain.length c > Chain.length c'
-
 monitor :: (MonadSTM m, Eq b)
         => (a -> b) -> b -> TVar m a -> (a -> m ()) -> m ()
 monitor f b tvar notify = do
@@ -297,3 +317,10 @@ monitor f b tvar notify = do
 fromPoint :: HasHeader b => Point b -> Chain b -> [b]
 fromPoint p = dropWhile (\b -> blockSlot b < Chain.pointSlot p)
             . Chain.toOldestFirst
+
+sameChainAs :: HasHeader b => Chain b -> Chain b -> Bool
+sameChainAs = (==) `on` Chain.headPoint
+
+dropMostRecent :: Chain b -> Chain b
+dropMostRecent Genesis  = error "dropMostRecent: empty chain"
+dropMostRecent (c :> _) = c

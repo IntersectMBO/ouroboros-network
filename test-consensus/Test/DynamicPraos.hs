@@ -21,7 +21,7 @@ module Test.DynamicPraos (
     tests
   ) where
 
-import           Control.Monad.ST.Lazy
+import           Control.Monad.ST.Lazy (runST)
 import           Data.Foldable (foldlM)
 import qualified Data.IntMap.Strict as IntMap
 import           Data.Map.Strict (Map)
@@ -60,7 +60,7 @@ tests = testGroup "Dynamic chain generation" [
     ]
 
 prop_simple_praos_convergence :: Seed -> Property
-prop_simple_praos_convergence seed = ioProperty $ test_simple_praos_convergence seed
+prop_simple_praos_convergence seed = runST $ test_simple_praos_convergence seed
 
 -- Run Praos on the broadcast network, and check that all nodes converge to the
 -- same final chain

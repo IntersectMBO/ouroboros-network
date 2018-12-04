@@ -27,7 +27,7 @@ module Test.DynamicBFT (
 
 import           Control.Monad
 import           Control.Monad.Except
-import           Control.Monad.ST.Lazy
+import           Control.Monad.ST.Lazy (runST)
 import           Crypto.Random (DRG)
 import           Data.Foldable (foldl', foldlM)
 import           Data.Map.Strict (Map)
@@ -277,15 +277,25 @@ broadcastNetwork numSlots nodeInit txMap initLedger initRNG = do
       varSt  <- atomically $ newTVar initSt
       varL   <- atomically $ newTVar initLedger
 
-      let respondToUpdate :: ChainUpdate (SimpleBlock p c) -> Tr m ()
-          respondToUpdate (RollBack _) = error "respondToUpdate: RollBack"
-          respondToUpdate (AddBlock b) =
+      -- TODO: New chain only to fake rollback
+      let respondToUpdate :: Chain (SimpleBlock p c)
+                          -> [ChainUpdate (SimpleBlock p c)]
+                          -> Tr m ()
+          respondToUpdate newChain (RollBack _:_) =
+              modifyTVar' varL $ \_st ->
+                case runExcept (chainExtLedgerState cfg newChain initLedger) of
+                  Left err  -> error (show err)
+                  Right st' -> st'
+          respondToUpdate _ upd = do
+              let newBlock :: ChainUpdate (SimpleBlock p c) -> SimpleBlock p c
+                  newBlock (RollBack _) = error "newBlock: unexpected rollback"
+                  newBlock (AddBlock b) = b
               modifyTVar' varL $ \st ->
-                case runExcept (applyExtLedgerState cfg b st) of
+                case runExcept (foldExtLedgerState cfg (map newBlock upd) st) of
                   Left err  -> error (show err)
                   Right st' -> st'
 
-      node <- nodeKernel us cfg initLedger initChain (mapM_ respondToUpdate)
+      node <- nodeKernel us cfg initLedger initChain respondToUpdate
       forM_ (filter (/= us) nodeIds) $ \them -> do
         registerDownstream node them $ fst (chans Map.! us Map.! them)
         registerUpstream   node them $ snd (chans Map.! them Map.! us)
@@ -301,22 +311,28 @@ broadcastNetwork numSlots nodeInit txMap initLedger initRNG = do
           threadDelay (slotDuration (Proxy @m) * fromIntegral slotId)
           let slot = Slot (fromIntegral slotId)
 
-          -- NOTE: Ledger state is updated in 'respondToUpdate'
-          ExtLedgerState{..} <- atomically $ readTVar varL
+          publishBlock node slot $ \prevPoint prevNo -> do
+            let prevHash = castHash (pointHash prevPoint)
+                curNo    = succ prevNo
+                txs      = fromMaybe mempty $ Map.lookup slot txMap
 
-          mIsLeader <- atomically $ runProtocol $
-                         checkIsLeader
-                           cfg
-                           slot
-                           (protocolLedgerView cfg ledgerState)
-                           ouroborosChainState
-          case mIsLeader of
-            Nothing    -> return ()
-            Just proof -> publishBlock node $ \prevPoint prevNo -> do
-              let prevHash = castHash (pointHash prevPoint)
-                  curNo    = succ prevNo
-                  txs      = fromMaybe mempty $ Map.lookup slot txMap
-              runProtocol $ forgeBlock cfg slot curNo prevHash txs proof
+            -- NOTE: Ledger state is updated in 'respondToUpdate'
+            --
+            -- Since the leader proof is (partially) based on the ledger state,
+            -- it is important that we get the ledger state and check if we
+            -- are a leader in a single transaction.
+
+            ExtLedgerState{..} <- readTVar varL
+            mIsLeader          <- runProtocol $
+                                     checkIsLeader
+                                       cfg
+                                       slot
+                                       (protocolLedgerView cfg ledgerState)
+                                       ouroborosChainState
+            case mIsLeader of
+              Nothing    -> return Nothing
+              Just proof -> runProtocol $ Just <$>
+                              forgeBlock cfg slot curNo prevHash txs proof
 
       fork $ do
         threadDelay (slotDuration (Proxy @m) * fromIntegral (numSlots + 10))
