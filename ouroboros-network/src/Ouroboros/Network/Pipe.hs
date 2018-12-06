@@ -18,7 +18,7 @@ import           Control.Concurrent (forkIO, threadDelay)
 import           Control.Concurrent.Async
 import           Control.Concurrent.STM
 import           Control.Monad.ST (stToIO)
-import qualified Data.Text as T (unpack)
+import           Data.Text (Text, unpack)
 import           System.IO (Handle, hIsEOF, hFlush)
 import           System.Process (createPipe)
 
@@ -75,11 +75,11 @@ demo chain0 updates = do
                              IO ()
         consumerPeer = chainSyncClientPeer (chainSyncClientExample consumerVar pureClient)
 
-        codec :: Codec IO CBOR.Encoding BS.ByteString (ChainSyncMessage block (Point block)) 'StIdle
+        codec :: Codec IO Text CBOR.Encoding BS.ByteString (ChainSyncMessage block (Point block)) 'StIdle
         codec = hoistCodec stToIO codecChainSync
 
-        throwOnUnexpected :: String -> Result t -> IO t
-        throwOnUnexpected str (Unexpected txt) = error $ str ++ " " ++ T.unpack txt
+        throwOnUnexpected :: String -> Result Text t -> IO t
+        throwOnUnexpected str (Unexpected txt) = error $ str ++ " " ++ unpack txt
         throwOnUnexpected _   (Normal t) = pure t
 
     -- Fork the producer and consumer

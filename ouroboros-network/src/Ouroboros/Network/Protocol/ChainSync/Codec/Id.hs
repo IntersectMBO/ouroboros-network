@@ -2,17 +2,23 @@
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE EmptyCase #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 {-# OPTIONS_GHC "-fwarn-incomplete-patterns" #-}
 
 module Ouroboros.Network.Protocol.ChainSync.Codec.Id where
 
-import Data.Text (pack)
+import Data.Text (Text, pack)
 
 import Protocol.Codec
 import Protocol.Transition
 
 import Ouroboros.Network.Protocol.ChainSync.Type
+
+type DecoderAt point header m state =
+  Decoder Text (SomeTransition (ChainSyncMessage point header)) m
+    (Decoded (ChainSyncMessage point header) state
+      (Codec m Text (SomeTransition (ChainSyncMessage point header)) (SomeTransition (ChainSyncMessage point header)) (ChainSyncMessage point header)))
 
 -- | A codec for the chain exchange protocol in which the concrete encode and
 -- decode types are 'SomeTransition (TrChainExchange point header)'.
@@ -21,17 +27,17 @@ import Ouroboros.Network.Protocol.ChainSync.Type
 -- have the appropriate initial state type.
 codecChainSync
   :: Applicative m =>
-     Codec m
+     Codec m Text
            (SomeTransition (ChainSyncMessage point header))
            (SomeTransition (ChainSyncMessage point header))
            (ChainSyncMessage point header)
            'StIdle
 codecChainSync = codecIdle
 
-
 codecIdle
-  :: Applicative m =>
-     Codec m
+  :: forall m point header .
+     ( Applicative m )
+  => Codec m Text
            (SomeTransition (ChainSyncMessage point header))
            (SomeTransition (ChainSyncMessage point header))
            (ChainSyncMessage point header)
@@ -41,19 +47,27 @@ codecIdle = Codec
       MsgRequestNext     -> Encoded (SomeTransition tr) codecNext_CanAwait
       MsgFindIntersect _ -> Encoded (SomeTransition tr) codecIntersect
       MsgDone            -> Encoded (SomeTransition tr) codecDone
-  , decode = Decoder $ pure $ Partial $ \mtr -> case mtr of
-      Just (SomeTransition MsgRequestNext) ->
-        Decoder $ pure $ Done Nothing (Decoded MsgRequestNext codecNext_CanAwait)
-      Just (SomeTransition tr@(MsgFindIntersect _)) ->
-        Decoder $ pure $ Done Nothing (Decoded tr codecIntersect)
-      Just (SomeTransition MsgDone) ->
-        Decoder $ pure $ Done Nothing (Decoded MsgDone codecDone)
-      _ -> Decoder $ pure $ Fail Nothing (pack "expected request")
+  , decode =
+      let loop :: DecoderAt point header m 'StIdle
+          loop = Fold $ pure $ Partial $ Response
+            { end  = pure $ Left $ pack "expected request"
+            , more = \trs -> case trs of
+                SomeTransition MsgRequestNext : rest ->
+                  Fold $ pure $ Complete rest $ pure $ Right $ Decoded MsgRequestNext codecNext_CanAwait
+                SomeTransition tr@(MsgFindIntersect _) : rest->
+                  Fold $ pure $ Complete rest $ pure $ Right $ Decoded tr codecIntersect
+                SomeTransition MsgDone : rest ->
+                  Fold $ pure $ Complete rest $ pure $ Right $ Decoded MsgDone codecDone
+                _ : rest -> Fold $ pure $ Complete rest $ pure $ Left $ pack "expected request"
+                [] -> loop
+            }
+      in loop
   }
 
 codecNext_CanAwait
-  :: Applicative m =>
-     Codec m
+  :: forall m point header .
+     ( Applicative m )
+  => Codec m Text
            (SomeTransition (ChainSyncMessage point header))
            (SomeTransition (ChainSyncMessage point header))
            (ChainSyncMessage point header)
@@ -63,19 +77,28 @@ codecNext_CanAwait = Codec
       MsgAwaitReply -> Encoded (SomeTransition tr) codecNext_MustReply
       MsgRollForward _ _ -> Encoded (SomeTransition tr) codecIdle
       MsgRollBackward _ _ -> Encoded (SomeTransition tr) codecIdle
-  , decode = Decoder $ pure $ Partial $ \mtr -> case mtr of
-      Just (SomeTransition MsgAwaitReply) ->
-        Decoder $ pure $ Done Nothing (Decoded MsgAwaitReply codecNext_MustReply)
-      Just (SomeTransition (MsgRollForward a b)) ->
-        Decoder $ pure $ Done Nothing (Decoded (MsgRollForward a b) codecIdle)
-      Just (SomeTransition (MsgRollBackward a b)) ->
-        Decoder $ pure $ Done Nothing (Decoded (MsgRollBackward a b) codecIdle)
-      _ -> Decoder $ pure $ Fail Nothing (pack "expected can await response")
+  , decode =
+      let loop :: DecoderAt point header m ('StNext 'StCanAwait)
+          loop = Fold $ pure $ Partial $ Response
+            { end  = pure $ Left $ pack "expected can await response"
+            , more = \trs -> case trs of
+                SomeTransition MsgAwaitReply : rest ->
+                  Fold $ pure $ Complete rest $ pure $ Right $ Decoded MsgAwaitReply codecNext_MustReply
+                SomeTransition (MsgRollForward a b) : rest ->
+                  Fold $ pure $ Complete rest $ pure $ Right $ Decoded (MsgRollForward a b) codecIdle
+                SomeTransition (MsgRollBackward a b) : rest ->
+                  Fold $ pure $ Complete rest $ pure $ Right $ Decoded (MsgRollBackward a b) codecIdle
+                _ : rest ->
+                  Fold $ pure $ Complete rest $ pure $ Left $ pack "expected can await response"
+                [] -> loop
+            }
+      in loop
   }
 
 codecNext_MustReply
-  :: Applicative m =>
-     Codec m
+  :: forall m point header .
+     ( Applicative m )
+  => Codec m Text
            (SomeTransition (ChainSyncMessage point header))
            (SomeTransition (ChainSyncMessage point header))
            (ChainSyncMessage point header)
@@ -84,17 +107,26 @@ codecNext_MustReply = Codec
   { encode = Encoder $ \tr -> case tr of
       MsgRollForward _ _ -> Encoded (SomeTransition tr) codecIdle
       MsgRollBackward _ _ -> Encoded (SomeTransition tr) codecIdle
-  , decode = Decoder $ pure $ Partial $ \mtr -> case mtr of
-      Just (SomeTransition (MsgRollForward a b)) ->
-        Decoder $ pure $ Done Nothing (Decoded (MsgRollForward a b) codecIdle)
-      Just (SomeTransition (MsgRollBackward a b)) ->
-        Decoder $ pure $ Done Nothing (Decoded (MsgRollBackward a b) codecIdle)
-      _ -> Decoder $ pure $ Fail Nothing (pack "expected must reply response")
+  , decode =
+      let loop :: DecoderAt point header m ('StNext 'StMustReply)
+          loop = Fold $ pure $ Partial $ Response
+            { end  = pure $ Left $ pack "expected must reply response"
+            , more = \trs -> case trs of
+                SomeTransition (MsgRollForward a b) : rest ->
+                  Fold $ pure $ Complete rest $ pure $ Right $ Decoded (MsgRollForward a b) codecIdle
+                SomeTransition (MsgRollBackward a b) : rest ->
+                  Fold $ pure $ Complete rest $ pure $ Right $ Decoded (MsgRollBackward a b) codecIdle
+                _ : rest ->
+                  Fold $ pure $ Complete rest $ pure $ Left $ pack "expected must reply response"
+                [] -> loop
+            }
+      in loop
   }
 
 codecIntersect
-  :: Applicative m =>
-     Codec m
+  :: forall m point header .
+     ( Applicative m )
+  => Codec m Text
            (SomeTransition (ChainSyncMessage point header))
            (SomeTransition (ChainSyncMessage point header))
            (ChainSyncMessage point header)
@@ -103,22 +135,30 @@ codecIntersect = Codec
   { encode = Encoder $ \tr -> case tr of
       MsgIntersectImproved _ _ -> Encoded (SomeTransition tr) codecIdle
       MsgIntersectUnchanged _ -> Encoded (SomeTransition tr) codecIdle
-  , decode = Decoder $ pure $ Partial $ \mtr -> case mtr of
-      Just (SomeTransition tr@(MsgIntersectImproved _ _)) ->
-        Decoder $ pure $ Done Nothing (Decoded tr codecIdle)
-      Just (SomeTransition tr@(MsgIntersectUnchanged _)) ->
-        Decoder $ pure $ Done Nothing (Decoded tr codecIdle)
-      _ -> Decoder $ pure $ Fail Nothing (pack "expected improvement response")
+  , decode =
+      let loop :: DecoderAt point header m 'StIntersect
+          loop = Fold $ pure $ Partial $ Response
+            { end  = pure $ Left $ pack "expected improvement response"
+            , more = \trs -> case trs of
+                SomeTransition tr@(MsgIntersectImproved _ _) : rest ->
+                  Fold $ pure $ Complete rest $ pure $ Right $ Decoded tr codecIdle
+                SomeTransition tr@(MsgIntersectUnchanged _) : rest ->
+                  Fold $ pure $ Complete rest $ pure $ Right $ Decoded tr codecIdle
+                _ : rest ->
+                  Fold $ pure $ Complete rest $ pure $ Left $ pack "expected improvement response"
+                [] -> loop
+            }
+      in loop
   }
 
 codecDone
   :: Applicative m =>
-     Codec m
+     Codec m Text
            (SomeTransition (ChainSyncMessage point header))
            (SomeTransition (ChainSyncMessage point header))
            (ChainSyncMessage point header)
            'StDone
 codecDone = Codec
   { encode = Encoder $ \tr -> case tr of { }
-  , decode = Decoder $ pure $ Fail Nothing (pack "expected no more transitions")
+  , decode = Fold $ pure $ Complete [] $ pure $ Left $ pack "expected no more transitions"
   }

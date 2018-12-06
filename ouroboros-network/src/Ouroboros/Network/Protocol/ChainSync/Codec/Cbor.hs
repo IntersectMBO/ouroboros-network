@@ -14,6 +14,7 @@ import Control.Monad.ST
 
 import Data.ByteString (ByteString)
 import Data.Monoid ((<>))
+import Data.Text (Text)
 import qualified Data.Text as T
 import Codec.CBOR.Encoding (Encoding, encodeListLen, encodeWord)
 import Codec.CBOR.Decoding (decodeListLen, decodeWord)
@@ -21,7 +22,7 @@ import qualified Codec.CBOR.Decoding as CBOR (Decoder)
 import Codec.Serialise.Class (Serialise)
 import qualified Codec.Serialise.Class as CBOR
 
-import Protocol.Codec (Codec (..), Encoder (..), Decoder (..), DecoderStep (..), Encoded (..), Decoded (..))
+import Protocol.Codec
 
 import Ouroboros.Network.Protocol.ChainSync.Type
 import Ouroboros.Network.Protocol.Codec.Cbor (cborDecoder)
@@ -29,13 +30,13 @@ import Ouroboros.Network.Protocol.Codec.Cbor (cborDecoder)
 codecChainSync
   :: forall s header point .
      ( Serialise header, Serialise point )
-  => Codec (ST s) Encoding ByteString (ChainSyncMessage header point) 'StIdle
+  => Codec (ST s) Text Encoding ByteString (ChainSyncMessage header point) 'StIdle
 codecChainSync = codecIdle
 
 codecIdle
   :: forall s header point .
      ( Serialise header, Serialise point )
-  => Codec (ST s) Encoding ByteString (ChainSyncMessage header point) 'StIdle
+  => Codec (ST s) Text Encoding ByteString (ChainSyncMessage header point) 'StIdle
 codecIdle = Codec
   { encode = cborEncodeIdle
   , decode = cborDecoder cborDecodeIdle
@@ -43,14 +44,14 @@ codecIdle = Codec
   where
 
   cborEncodeIdle
-    :: Encoder (ChainSyncMessage header point) 'StIdle (Encoded Encoding (Codec (ST s) Encoding ByteString (ChainSyncMessage header point)))
+    :: Encoder (ChainSyncMessage header point) 'StIdle (Encoded Encoding (Codec (ST s) Text Encoding ByteString (ChainSyncMessage header point)))
   cborEncodeIdle = Encoder $ \tr -> case tr of
     MsgRequestNext -> Encoded (encodeListLen 1 <> encodeWord 0) codecNext_CanAwait
     MsgFindIntersect pts -> Encoded (encodeListLen 2 <> encodeWord 4 <> CBOR.encode pts) codecIntersect
     MsgDone -> Encoded (encodeListLen 1 <> encodeWord 7) codecDone
 
   cborDecodeIdle
-    :: CBOR.Decoder s (Decoded (ChainSyncMessage header point) 'StIdle (Codec (ST s) Encoding ByteString (ChainSyncMessage header point)))
+    :: CBOR.Decoder s (Decoded (ChainSyncMessage header point) 'StIdle (Codec (ST s) Text Encoding ByteString (ChainSyncMessage header point)))
   cborDecodeIdle = do
     _ <- decodeListLen
     key <- decodeWord
@@ -74,7 +75,7 @@ codecIdle = Codec
 codecNext_CanAwait
   :: forall s header point .
      ( Serialise header, Serialise point )
-  => Codec (ST s) Encoding ByteString (ChainSyncMessage header point) ('StNext 'StCanAwait)
+  => Codec (ST s) Text Encoding ByteString (ChainSyncMessage header point) ('StNext 'StCanAwait)
 codecNext_CanAwait = Codec
   { encode = cborEncodeNext
   , decode = cborDecoder cborDecodeNext
@@ -82,14 +83,14 @@ codecNext_CanAwait = Codec
   where
 
   cborEncodeNext
-    :: Encoder (ChainSyncMessage header point) ('StNext 'StCanAwait) (Encoded Encoding (Codec (ST s) Encoding ByteString (ChainSyncMessage header point)))
+    :: Encoder (ChainSyncMessage header point) ('StNext 'StCanAwait) (Encoded Encoding (Codec (ST s) Text Encoding ByteString (ChainSyncMessage header point)))
   cborEncodeNext = Encoder $ \tr -> case tr of
     MsgAwaitReply -> Encoded (encodeListLen 1 <> encodeWord 1) codecNext_MustReply
     MsgRollForward h p -> Encoded (encodeListLen 3 <> encodeWord 2 <> CBOR.encode h <> CBOR.encode p) codecIdle
     MsgRollBackward p p' -> Encoded (encodeListLen 3 <> encodeWord 3 <> CBOR.encode p <> CBOR.encode p') codecIdle
 
   cborDecodeNext
-    :: CBOR.Decoder s (Decoded (ChainSyncMessage header point) ('StNext 'StCanAwait) (Codec (ST s) Encoding ByteString (ChainSyncMessage header point)))
+    :: CBOR.Decoder s (Decoded (ChainSyncMessage header point) ('StNext 'StCanAwait) (Codec (ST s) Text Encoding ByteString (ChainSyncMessage header point)))
   cborDecodeNext = do
     _ <- decodeListLen
     key <- decodeWord
@@ -108,7 +109,7 @@ codecNext_CanAwait = Codec
 codecNext_MustReply
   :: forall s header point .
      ( Serialise header, Serialise point )
-  => Codec (ST s) Encoding ByteString (ChainSyncMessage header point) ('StNext 'StMustReply)
+  => Codec (ST s) Text Encoding ByteString (ChainSyncMessage header point) ('StNext 'StMustReply)
 codecNext_MustReply = Codec
   { encode = cborEncodeNext
   , decode = cborDecoder cborDecodeNext
@@ -116,13 +117,13 @@ codecNext_MustReply = Codec
   where
 
   cborEncodeNext
-    :: Encoder (ChainSyncMessage header point) ('StNext 'StMustReply) (Encoded Encoding (Codec (ST s) Encoding ByteString (ChainSyncMessage header point)))
+    :: Encoder (ChainSyncMessage header point) ('StNext 'StMustReply) (Encoded Encoding (Codec (ST s) Text Encoding ByteString (ChainSyncMessage header point)))
   cborEncodeNext = Encoder $ \tr -> case tr of
     MsgRollForward h p -> Encoded (encodeListLen 3 <> encodeWord 2 <> CBOR.encode h <> CBOR.encode p) codecIdle
     MsgRollBackward p p' -> Encoded (encodeListLen 3 <> encodeWord 3 <> CBOR.encode p <> CBOR.encode p') codecIdle
 
   cborDecodeNext
-    :: CBOR.Decoder s (Decoded (ChainSyncMessage header point) ('StNext 'StMustReply) (Codec (ST s) Encoding ByteString (ChainSyncMessage header point)))
+    :: CBOR.Decoder s (Decoded (ChainSyncMessage header point) ('StNext 'StMustReply) (Codec (ST s) Text Encoding ByteString (ChainSyncMessage header point)))
   cborDecodeNext = do
     _ <- decodeListLen
     key <- decodeWord
@@ -140,7 +141,7 @@ codecNext_MustReply = Codec
 codecIntersect
   :: forall s header point .
      ( Serialise header, Serialise point )
-  => Codec (ST s) Encoding ByteString (ChainSyncMessage header point) 'StIntersect
+  => Codec (ST s) Text Encoding ByteString (ChainSyncMessage header point) 'StIntersect
 codecIntersect = Codec
   { encode = cborEncodeIntersect
   , decode = cborDecoder cborDecodeIntersect
@@ -148,13 +149,13 @@ codecIntersect = Codec
   where
 
   cborEncodeIntersect
-    :: Encoder (ChainSyncMessage header point) 'StIntersect (Encoded Encoding (Codec (ST s) Encoding ByteString (ChainSyncMessage header point)))
+    :: Encoder (ChainSyncMessage header point) 'StIntersect (Encoded Encoding (Codec (ST s) Text Encoding ByteString (ChainSyncMessage header point)))
   cborEncodeIntersect = Encoder $ \tr -> case tr of
     MsgIntersectImproved p p' -> Encoded (encodeListLen 3 <> encodeWord 5 <> CBOR.encode p <> CBOR.encode p') codecIdle
     MsgIntersectUnchanged p -> Encoded (encodeListLen 2 <> encodeWord 6 <> CBOR.encode p) codecIdle
 
   cborDecodeIntersect
-    :: CBOR.Decoder s (Decoded (ChainSyncMessage header point) 'StIntersect (Codec (ST s) Encoding ByteString (ChainSyncMessage header point)))
+    :: CBOR.Decoder s (Decoded (ChainSyncMessage header point) 'StIntersect (Codec (ST s) Text Encoding ByteString (ChainSyncMessage header point)))
   cborDecodeIntersect = do
     _ <- decodeListLen
     key <- decodeWord
@@ -169,8 +170,8 @@ codecIntersect = Codec
       _ -> fail "ChainSyncMessage.intersect: unexpected key"
 
 
-codecDone :: Codec (ST s) Encoding ByteString (ChainSyncMessage header point) 'StDone
+codecDone :: Codec (ST s) Text Encoding ByteString (ChainSyncMessage header point) 'StDone
 codecDone = Codec
   { encode = Encoder $ \tr -> case tr of { }
-  , decode = Decoder $ pure $ Fail mempty (T.pack "no transitions from done")
+  , decode = Fold $ pure $ Complete [] $ pure $ Left $ T.pack "no transitions from done"
   }

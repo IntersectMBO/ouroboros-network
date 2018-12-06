@@ -298,7 +298,7 @@ runWithChainSelectionSTM eqBlockHeader headerBlockNo conc mkConsumer mkProducer 
     (_, Seq.EmptyR)          -> True
     (_ Seq.:> l, _ Seq.:> r) -> headerBlockNo l > headerBlockNo r
 
-throwOnUnexpected :: Applicative m => Result t -> m t
+throwOnUnexpected :: (Show fail, Applicative m) => Result fail t -> m t
 throwOnUnexpected (Unexpected txt) = error (show txt)
 throwOnUnexpected (Normal t) = pure t
 

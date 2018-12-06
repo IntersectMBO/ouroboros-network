@@ -8,17 +8,122 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE GADTSyntax #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE GADTs #-}
 
 module Protocol.Codec where
 
-import Data.Text (Text)
-import Data.Kind (Type)
+-- | Monadic fold over an input stream with the notions of end of stream
+-- and end of fold.
+--
+-- The 'Choice' type allows the fold to express its end, and the
+-- 'Response' type forces the fold to deal with the input stream end.
+--
+-- A decoder is a `Fold concrete m (Either fail t)`.
+-- This is a sharper representation compared to 'IDecode' from cborg: if the
+-- input is exhausted (`Nothing` is given to the 'IDecode') then the decoder
+-- cannot possibly give another `Partial`; it must choose a result.
+--
+newtype Fold input m r = Fold
+  { runFold :: m (Choice input m r)
+  }
 
-data Codec m concreteTo concreteFrom tr from = Codec
-  { encode :: Encoder tr from (Encoded concreteTo (Codec m concreteTo concreteFrom tr))
-  , decode :: Decoder m concreteFrom (Decoded tr from (Codec m concreteTo concreteFrom tr))
+instance Functor m => Functor (Fold input m) where
+  fmap f fold = Fold $ fmap recurse (runFold fold)
+    where
+    recurse choice = case choice of
+      Complete leftover term -> Complete leftover $ fmap f term
+      Partial response       -> Partial $ response
+        { more = fmap f . more response
+        , end  = fmap f (end response)
+        }
+
+data Choice input m r where
+  Complete :: input -> m r -> Choice input m r
+  Partial  :: Response input (Fold input m r) (m r) -> Choice input m r
+
+-- | Morally an additive conjunction: only one of 'more' or 'end' is allowed
+-- to be used.
+data Response input more end = Response
+  { more :: input -> more
+    -- ^ If there is more input.
+  , end  :: end
+    -- ^ If there's no more input.
+  }
+
+hoistFold
+  :: forall input m n r .
+     ( Functor n )
+  => (forall x . m x -> n x)
+  -> Fold input m r
+  -> Fold input n r
+hoistFold nat fold = Fold $ fmap recurse (nat (runFold fold))
+  where
+  recurse :: Choice input m r -> Choice input n r
+  recurse choice = case choice of
+    Complete leftover term -> Complete leftover $ nat term
+    Partial response       -> Partial $ response
+      { more = hoistFold nat . more response
+      , end  = nat (end response)
+      }
+
+newtype Input input m = Input
+  { runInput :: m (Maybe (input, Input input m))
+  }
+
+drainInput :: Monad m => Input input m -> m [input]
+drainInput inp = runInput inp >>= \it -> case it of
+  Nothing        -> pure []
+  Just (i, inp') -> fmap ((:) i) (drainInput inp')
+
+noInput :: Applicative m => Input input m
+noInput = Input $ pure Nothing
+
+singletonInput :: Applicative m => input -> Input input m
+singletonInput inp = Input $ pure $ Just $ (inp, noInput)
+
+prependInput :: Applicative m => [input] -> Input input m -> Input input m
+prependInput inp tail = case inp of
+  []      -> tail
+  (i : is) -> Input $ pure (Just (i, prependInput is tail))
+
+-- | Use an 'Input' to run a 'Fold'.
+-- Notice how, no matter what, the output of the fold is given. That's
+-- a great thing to have: it eliminates the case in which a decoder gives
+-- a partial parse even after the end of the input stream.
+--
+-- Any _unconsumed_ input is given back. Unconsumed means the monadic thing
+-- which defines it was never run. It could still be exhausted.
+-- In other words: it's 'Just' whenever the fold finished before the input
+-- was exhausted. It's 'Nothing' whenever the input was exhausted before
+-- the fold chose to finish ('Complete').
+foldOverInput
+  :: ( Monad m )
+  => Fold input m r
+  -> Input input m
+  -> m (r, Maybe (Input input m))
+foldOverInput fold input = runFold fold >>= \choice -> case choice of
+  Complete leftovers it -> flip (,) (Just (prependInput [leftovers] input)) <$> it
+  Partial step -> runInput input >>= \it -> case it of
+    Nothing -> flip (,) Nothing <$> end step
+    Just (i, input') -> foldOverInput (more step i) input'
+
+-- Why bother with all this? Well, it makes using a decoder easier: we can
+-- just pass all of the input and we know we'll get a result, no possibility
+-- of a partial!
+
+type Decoder fail input m r = Fold [input] m (Either fail r)
+
+feedInput
+  :: ( Monad m )
+  => Decoder fail input m r
+  -> Input [input] m
+  -> m (Either fail r, Maybe (Input [input] m))
+feedInput = foldOverInput
+
+data Codec m fail concreteTo concreteFrom tr from = Codec
+  { encode :: Encoder tr from (Encoded concreteTo (Codec m fail concreteTo concreteFrom tr))
+  , decode :: Decoder fail concreteFrom m (Decoded tr from (Codec m fail concreteTo concreteFrom tr))
   }
 
 data Encoded concrete codec to = Encoded
@@ -35,25 +140,11 @@ newtype Encoder tr from encoded = Encoder
   { runEncoder :: forall to . tr from to -> encoded to
   }
 
-newtype Decoder (m :: Type -> Type) (concrete :: Type) (decoded :: Type) = Decoder
-  { runDecoder :: m (DecoderStep m concrete decoded)
-  }
-
-data DecoderStep (m :: Type -> Type) (concrete :: Type) (decoded :: Type) where
-  -- | Finished with leftovers.
-  Done    :: Maybe concrete -> decoded -> DecoderStep m concrete decoded
-  -- | Failed to decode, with leftovers.
-  Fail    :: Maybe concrete -> Text -> DecoderStep m concrete decoded
-  -- | Partial decode.
-  -- Giving 'Nothing' means no more input is available. The next decoder
-  -- should therefore be either 'Done' or 'Fail'.
-  Partial :: (Maybe concrete -> Decoder m concrete decoded) -> DecoderStep m concrete decoded
-
 hoistCodec
   :: ( Functor n )
   => (forall x . m x -> n x)
-  -> Codec m cto cfrom tr st
-  -> Codec n cto cfrom tr st
+  -> Codec m fail cto cfrom tr st
+  -> Codec n fail cto cfrom tr st
 hoistCodec nat codec = codec
   { encode = hoistEncoder nat (encode codec)
   , decode = hoistDecoder nat (decode codec)
@@ -62,22 +153,21 @@ hoistCodec nat codec = codec
 hoistEncoder
   :: ( Functor n )
   => (forall x . m x -> n x)
-  -> Encoder tr from (Encoded cto (Codec m cto cfrom tr))
-  -> Encoder tr from (Encoded cto (Codec n cto cfrom tr))
+  -> Encoder tr from (Encoded cto (Codec m fail cto cfrom tr))
+  -> Encoder tr from (Encoded cto (Codec n fail cto cfrom tr))
 hoistEncoder nat encoder = Encoder $ \tr ->
   let encoded = runEncoder encoder tr
   in  encoded { encCodec = hoistCodec nat (encCodec encoded) }
 
 hoistDecoder
-  :: forall m n cfrom cto tr from .
+  :: forall m n fail cfrom cto tr from .
      ( Functor n )
   => (forall x . m x -> n x)
-  -> Decoder m cfrom (Decoded tr from (Codec m cto cfrom tr))
-  -> Decoder n cfrom (Decoded tr from (Codec n cto cfrom tr))
-hoistDecoder nat decoder = Decoder $ flip fmap (nat (runDecoder decoder)) $ \step -> case step of
-  Fail leftover txt -> Fail leftover txt
-  Done leftover (Decoded tr (codec :: Codec m cto cfrom tr someState)) ->
-    let hoisted :: Codec n cto cfrom tr someState
-        hoisted = hoistCodec nat codec
-    in  Done leftover (Decoded tr hoisted)
-  Partial k -> Partial $ hoistDecoder nat . k
+  -> Decoder fail cfrom m (Decoded tr from (Codec m fail cto cfrom tr))
+  -> Decoder fail cfrom n (Decoded tr from (Codec n fail cto cfrom tr))
+hoistDecoder nat = (fmap . fmap) hoistDecoded . hoistFold nat
+  where
+  -- fmap'd twice because
+  --   Decoder fail input m r = Fold input m (Either fail r)
+  -- the `Decoded` is inside an `Either fail`.
+  hoistDecoded (Decoded it codec) = Decoded it (hoistCodec nat codec)

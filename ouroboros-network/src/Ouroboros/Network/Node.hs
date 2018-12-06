@@ -15,6 +15,7 @@ import           Data.Hashable
 import           Data.List hiding (inits)
 import           Data.Maybe (catMaybes)
 import           Data.Semigroup (Semigroup (..))
+import           Data.Text (Text)
 import           Data.Tuple (swap)
 import           GHC.Generics (Generic)
 
@@ -370,7 +371,8 @@ relayNode nid initChain chans = do
   where
 
     codec
-      :: Codec m (SomeTransition (ChainSyncMessage block (Point block)))
+      :: Codec m Text
+                 (SomeTransition (ChainSyncMessage block (Point block)))
                  (SomeTransition (ChainSyncMessage block (Point block)))
                  (ChainSyncMessage block (Point block))
                  'StIdle
