@@ -20,7 +20,7 @@ directBlockFetchClient BlockFetchServerReceiver {recvMessageRequestRange} (SendB
   sender <- msender
   directBlockFetchClient server sender
 directBlockFetchClient BlockFetchServerReceiver {recvMessageDone} (SendMsgDone b) = return (recvMessageDone, b)
-       
+
 -- | Direclty connect server and client adts of @'BlockFetchServerProtocol'@.
 --
 directBlockFetchServer
@@ -46,7 +46,7 @@ directBlockFetchServer server client = do
   directSender (SendMessageNoBlocks server') BlockFetchClientReceiver {recvMsgNoBlocks} = do
     client' <- recvMsgNoBlocks
     directBlockFetchServer server' client'
-  directSender (SendMessageDone a) BlockFetchClientReceiver {recvMsgDoneClient} = return (a, recvMsgDoneClient)
+  directSender (SendMessageServerDone a) BlockFetchClientReceiver {recvMsgDoneClient} = return (a, recvMsgDoneClient)
 
   directBlocks
     :: BlockFetchSendBlocks header block m a

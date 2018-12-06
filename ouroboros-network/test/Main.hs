@@ -8,6 +8,7 @@ import qualified Test.ChainProducerState (tests)
 import qualified Test.Pipe (tests)
 import qualified Test.Ouroboros.Network.Node (tests)
 import qualified Test.Ouroboros.Network.Protocol.Stream (tests)
+import qualified Test.Ouroboros.Network.Protocol.BlockFetch (tests)
 
 main :: IO ()
 main = defaultMain tests
@@ -21,4 +22,5 @@ tests =
   , Test.Pipe.tests
   , Test.Ouroboros.Network.Node.tests
   , Test.Ouroboros.Network.Protocol.Stream.tests
+  , Test.Ouroboros.Network.Protocol.BlockFetch.tests
   ]
