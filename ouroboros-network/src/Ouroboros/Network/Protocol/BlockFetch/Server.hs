@@ -7,7 +7,7 @@ module Ouroboros.Network.Protocol.BlockFetch.Server
   ( BlockFetchServerReceiver (..)
   , constantReceiver
   , blockFetchServerReceiverStream
-  , BlockFetchServer (..)
+  , BlockFetchServerSender (..)
   , BlockFetchSender (..)
   , BlockFetchSendBlocks (..)
   , blockFetchServerStream
@@ -15,7 +15,9 @@ module Ouroboros.Network.Protocol.BlockFetch.Server
   )
   where
 
+import Control.Monad (join)
 import Data.Functor (($>))
+import Data.Void (Void)
 import Numeric.Natural (Natural)
 import Pipes (Producer)
 import qualified Pipes
@@ -73,8 +75,8 @@ blockFetchServerReceiverStream BlockFetchServerReceiver{recvMessageRequestRange,
 
 -- | @'BlockFetchServer'@ serves blocks to the corresponding client.
 --
-newtype BlockFetchServer header block m a = BlockFetchServer {
-    runBlockFetchServer :: m (BlockFetchSender header block m a)
+newtype BlockFetchServerSender header block m a = BlockFetchServerSender {
+    runBlockFetchServerSender :: m (BlockFetchSender header block m a)
   }
 
 -- | Send batches of blocks, when a batch is sent loop using
@@ -87,9 +89,9 @@ data BlockFetchSender header block m a where
     :: m (BlockFetchSendBlocks header block m a)
     -> BlockFetchSender header block m a
 
-  -- | We served a batch, now loop using @'BlockFetchServer'@
+  -- | We served a batch, now loop using @'BlockFetchServerSender'@
   SendMessageNoBlocks
-    :: BlockFetchServer header block m a
+    :: BlockFetchServerSender header block m a
     -> BlockFetchSender header block m a
 
   -- | Server decided to end the protocol.
@@ -111,22 +113,22 @@ data BlockFetchSendBlocks header block m a where
   -- | End of the stream of blocks.
   --
   SendMessageBatchDone
-    :: BlockFetchServer header block m a
+    :: BlockFetchServerSender header block m a
     -> BlockFetchSendBlocks header block m a
 
--- | Interpratation of @'BlockFetchServer'@ as a @'Peer'@ of the
+-- | Interpratation of @'BlockFetchServerSender'@ as a @'Peer'@ of the
 -- @'BlockFetchServerProtocol'@ protocol.
 --
 blockFetchServerStream
   :: forall header block m a.
      Functor m
-  => BlockFetchServer header block m a
+  => BlockFetchServerSender header block m a
   -> Peer BlockFetchServerProtocol
       (BlockRequestServerMessage header block)
       (Yielding StServerAwaiting)
       (Finished StServerDone)
       m a
-blockFetchServerStream server = lift $ handleStAwait <$> runBlockFetchServer server
+blockFetchServerStream server = lift $ handleStAwait <$> runBlockFetchServerSender server
  where
   handleStAwait
     :: BlockFetchSender header block m a
@@ -161,15 +163,15 @@ connectThroughQueue'
   => TBQueue m (ChainRange header)
   -> (ChainRange header -> m (Maybe (Producer block m ())))
   -> ( BlockFetchServerReceiver header m ()
-     , BlockFetchServer header block m ()
+     , BlockFetchServerSender header block m ()
      )
 connectThroughQueue' queue blockStream = (receiver, server)
  where
   receiver :: BlockFetchServerReceiver header m ()
   receiver = constantReceiver (atomically . writeTBQueue queue) ()
 
-  server :: BlockFetchServer header block m ()
-  server = BlockFetchServer $ do
+  server :: BlockFetchServerSender header block m ()
+  server = BlockFetchServerSender $ do
     mstream <- atomically (readTBQueue queue) >>= blockStream
     case mstream :: Maybe (Producer block m ()) of
       Nothing     -> return $ SendMessageNoBlocks server
@@ -200,7 +202,7 @@ connectThroughQueue
   -- ^ queue size
   -> (ChainRange header -> m (Maybe (Producer block m ())))
   -> m ( BlockFetchServerReceiver header m ()
-       , BlockFetchServer header block m ()
+       , BlockFetchServerSender header block m ()
        )
 connectThroughQueue queueSize blockStream = do
   queue <- atomically $ newTBQueue queueSize

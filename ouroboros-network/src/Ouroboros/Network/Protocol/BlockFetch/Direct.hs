@@ -26,13 +26,13 @@ directBlockFetchClient BlockFetchServerReceiver {recvMessageDone} (SendMsgDone b
 directBlockFetchServer
   :: forall header block m a b.
      Monad m
-  => BlockFetchServer header block m a
+  => BlockFetchServerSender header block m a
   -- ^ server of the @'BlockFetchServerProtocol'@ protocol
   -> BlockFetchClientReceiver block m b
   -- ^ client of the @'BlockFetchServerProtocol'@ protocol
   -> m (a, b)
 directBlockFetchServer server client = do
-  sender <- runBlockFetchServer server
+  sender <- runBlockFetchServerSender server
   directSender sender client
  where
   directSender
