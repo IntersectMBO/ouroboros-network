@@ -1,8 +1,9 @@
 { mkDerivation, aeson, array, base, base16-bytestring, bytestring, cborg
 , clock, containers, cryptonite, fingertree, free, hashable, memory, mtl
 , network, pipes, process, psqueues, QuickCheck, random, semigroups, stdenv
-, stm, serialise, string-conv, tasty, tasty-expected-failure, tasty-quickcheck
-, text, transformers, typed-transitions, unliftio, void, nixpkgs
+, stm, serialise, string-conv, tasty, tasty-expected-failure, tasty-hunit
+, tasty-quickcheck, temporary, text, transformers, typed-transitions, unliftio
+, void, nixpkgs
 }:
 mkDerivation {
   pname = "ouroboros-network";
@@ -13,14 +14,14 @@ mkDerivation {
     array aeson base base16-bytestring bytestring cborg clock containers
     cryptonite fingertree free hashable memory mtl network pipes process
     psqueues QuickCheck random semigroups serialise stm string-conv tasty
-    tasty-quickcheck text transformers typed-transitions unliftio void
+    tasty-quickcheck tasty-hunit temporary text transformers typed-transitions
+    unliftio void
   ];
   testHaskellDepends = [
     array base bytestring cborg clock containers
     fingertree free hashable mtl process QuickCheck random semigroups stm tasty
-    tasty-expected-failure tasty-quickcheck text transformers void
-    tasty-expected-failure tasty-quickcheck text transformers typed-transitions
-    void
+    tasty-expected-failure tasty-hunit tasty-quickcheck temporary text
+    transformers typed-transitions void
   ];
   description = "A networking layer for the Ouroboros blockchain protocol";
   license = stdenv.lib.licenses.mit;
