@@ -51,7 +51,7 @@ data BlockFetchClientReceiver block m a =
 
        -- | The server has started streaming blocks.
        --
-       recvMsgStartBatch :: block -> m (BlockFetchClientReceiveBlocks block m a),
+       recvMsgStartBatch :: m (BlockFetchClientReceiveBlocks block m a),
 
        -- | The block fetch request failed because a requested range was not on
        -- a producer's chain.
@@ -86,9 +86,9 @@ blockFetchClientReceiverStream
       m a
 blockFetchClientReceiverStream BlockFetchClientReceiver{recvMsgStartBatch,recvMsgNoBlocks,recvMsgDoneClient} =
   await $ \msg -> case msg of
-    MessageStartBatch block -> lift (fetchBlocks <$> recvMsgStartBatch block)
-    MessageNoBlocks         -> lift (blockFetchClientReceiverStream <$> recvMsgNoBlocks)
-    MessageServerDone       -> done recvMsgDoneClient
+    MessageStartBatch -> lift (fetchBlocks <$> recvMsgStartBatch)
+    MessageNoBlocks   -> lift (blockFetchClientReceiverStream <$> recvMsgNoBlocks)
+    MessageServerDone -> done recvMsgDoneClient
  where
   fetchBlocks
     :: BlockFetchClientReceiveBlocks block m a

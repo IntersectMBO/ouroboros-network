@@ -39,9 +39,9 @@ directBlockFetchServer server client = do
     :: BlockFetchSender header block m a
     -> BlockFetchClientReceiver block m b
     -> m (a, b)
-  directSender (SendMessageStartBatch block mBlockStream) BlockFetchClientReceiver {recvMsgStartBatch} = do
+  directSender (SendMessageStartBatch mBlockStream) BlockFetchClientReceiver {recvMsgStartBatch} = do
     blockStream <- mBlockStream
-    receiveBlocks <- recvMsgStartBatch block
+    receiveBlocks <- recvMsgStartBatch
     directBlocks blockStream receiveBlocks
   directSender (SendMessageNoBlocks server') BlockFetchClientReceiver {recvMsgNoBlocks} = do
     client' <- recvMsgNoBlocks

@@ -80,8 +80,7 @@ data BlockRequestServerMessage header block from to where
 
   -- | Block fetching messages; First block from a batch
   MessageStartBatch
-    :: block
-    -> BlockRequestServerMessage header block StServerAwaiting StServerSending
+    :: BlockRequestServerMessage header block StServerAwaiting StServerSending
   -- | Block streaming
   MessageBlock
     :: block
@@ -104,7 +103,7 @@ data BlockRequestServerMessage header block from to where
     :: BlockRequestServerMessage header block StServerAwaiting StServerDone
 
 instance (Show header, Show block) => Show (BlockRequestServerMessage header block from to) where
-  show (MessageStartBatch block) = "MessageStartBatch " ++ show block
+  show MessageStartBatch         = "MessageStartBatch"
   show (MessageBlock block)      = "MessageBlock " ++ show block
   show MessageBatchDone          = "MessageBatchDone"
   show MessageServerError        = "MessageServerError"
