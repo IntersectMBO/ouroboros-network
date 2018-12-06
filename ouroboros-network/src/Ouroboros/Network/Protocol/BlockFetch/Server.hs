@@ -84,8 +84,7 @@ data BlockFetchSender header block m a where
 
   -- | Initiate a batch of blocks.
   SendMessageStartBatch
-    :: block
-    -> m (BlockFetchSendBlocks header block m a)
+    :: m (BlockFetchSendBlocks header block m a)
     -> BlockFetchSender header block m a
 
   -- | We served a batch, now loop using @'BlockFetchServer'@
@@ -136,8 +135,8 @@ blockFetchServerStream server = lift $ handleStAwait <$> runBlockFetchServer ser
         (Yielding StServerAwaiting)
         (Finished StServerDone)
         m a
-  handleStAwait (SendMessageStartBatch block msender)
-    = part (MessageStartBatch block) (lift $ sendBlocks <$> msender)
+  handleStAwait (SendMessageStartBatch msender)
+    = part MessageStartBatch (lift $ sendBlocks <$> msender)
   handleStAwait (SendMessageNoBlocks server') = blockFetchServerStream server'
   handleStAwait (SendMessageDone a)           = out MessageServerDone (done a)
 
@@ -177,17 +176,19 @@ connectThroughQueue' queue blockStream = (receiver, server)
       Just stream -> do
         nxt <- Pipes.next stream
         case nxt of
-          Left _                 -> return $ SendMessageNoBlocks server
-          Right (block, stream') -> return $ SendMessageStartBatch block (sendStream stream')
+          Left _             -> return $ SendMessageNoBlocks server
+          Right (b, stream') -> return $ SendMessageStartBatch (sendStream b stream')
 
   sendStream
-    :: Producer block m ()
+    :: block
+    -> Producer block m ()
     -> m (BlockFetchSendBlocks header block m ())
-  sendStream stream = do
+  sendStream b stream =
+    return $ SendMessageBlock b $ do
     nxt <- Pipes.next stream
     case nxt of
-      Left _             -> return $ SendMessageBatchDone server
-      Right (b, stream') -> return $ SendMessageBlock b (sendStream stream')
+      Left _              -> return $ SendMessageBatchDone server
+      Right (b', stream') -> sendStream b' stream'
 
 -- | Connect server side of @'BlockFetchClientProtocol'@ and
 -- @'BlockFetchSErverProtocol'@ thought a freshly constructed @'TBQueue'@.
