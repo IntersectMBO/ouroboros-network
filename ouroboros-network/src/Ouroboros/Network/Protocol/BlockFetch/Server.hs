@@ -2,15 +2,18 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE RankNTypes #-}
 
 module Ouroboros.Network.Protocol.BlockFetch.Server
   ( BlockFetchServerReceiver (..)
   , constantReceiver
   , blockFetchServerReceiverStream
+  , blockFetchServerReceiverPipe
   , BlockFetchServerSender (..)
   , BlockFetchSender (..)
   , BlockFetchSendBlocks (..)
   , blockFetchServerStream
+  , blockFetchServerProducer
   , connectThroughQueue
   )
   where
@@ -19,7 +22,7 @@ import Control.Monad (join)
 import Data.Functor (($>))
 import Data.Void (Void)
 import Numeric.Natural (Natural)
-import Pipes (Producer)
+import Pipes (Producer', Pipe)
 import qualified Pipes
 
 import Protocol.Core
@@ -69,6 +72,17 @@ blockFetchServerReceiverStream BlockFetchServerReceiver{recvMessageRequestRange,
     MessageRequestRange range -> lift (blockFetchServerReceiverStream <$> recvMessageRequestRange range)
     MessageDone -> done recvMessageDone
 
+blockFetchServerReceiverPipe
+  :: forall header block m a.
+     Monad m
+  => (ChainRange header -> Pipes.Producer' block m a)
+  -> BlockFetchServerReceiver header m Void
+  -> Pipe (ChainRange header) block m a
+blockFetchServerReceiverPipe blockStream BlockFetchServerReceiver {recvMessageRequestRange} = do
+  range <- Pipes.await
+  _ <- blockStream range
+  join $ Pipes.lift $ blockFetchServerReceiverPipe blockStream <$> recvMessageRequestRange range
+
 {-------------------------------------------------------------------------------
   Server stream of @'BlockFetchServerProtocol'@ protocol
 -------------------------------------------------------------------------------}
@@ -99,7 +113,7 @@ data BlockFetchSender header block m a where
     :: a
     -> BlockFetchSender header block m a
 
--- | Stream batch of blocks until 
+-- | Stream batch of blocks until
 --
 data BlockFetchSendBlocks header block m a where
 
@@ -154,6 +168,27 @@ blockFetchServerStream server = lift $ handleStAwait <$> runBlockFetchServerSend
   sendBlocks (SendMessageBatchDone server') =
     part MessageBatchDone (blockFetchServerStream server')
 
+blockFetchServerProducer
+  :: forall header block m a. Monad m
+  => BlockFetchServerSender header block m a
+  -> Producer' block m a
+blockFetchServerProducer (BlockFetchServerSender mserver) =
+  join $ Pipes.lift (sendBlocks <$> mserver)
+ where
+  sendBlocks :: BlockFetchSender header block m a
+             -> Producer' block m a
+  sendBlocks (SendMessageStartBatch msender) =
+    join $ Pipes.lift $ streamBlocks <$> msender
+  sendBlocks (SendMessageNoBlocks server) = blockFetchServerProducer server
+  sendBlocks (SendMessageDone a) = return a
+
+  streamBlocks :: BlockFetchSendBlocks header block m a
+               -> Producer' block m a
+  streamBlocks (SendMessageBlock block mstreamer) = do
+    Pipes.yield block
+    join $ Pipes.lift (streamBlocks <$> mstreamer)
+  streamBlocks (SendMessageBatchDone sender) = blockFetchServerProducer sender
+
 -- | Connection between the server side of @'BlockFetchClientProtocol'@ and the
 -- server side of @'BlockFetchServerProtocol'@>
 --
@@ -161,7 +196,7 @@ connectThroughQueue'
   :: forall header block m.
      MonadSTM m
   => TBQueue m (ChainRange header)
-  -> (ChainRange header -> m (Maybe (Producer block m ())))
+  -> (ChainRange header -> Pipes.Producer' block m ())
   -> ( BlockFetchServerReceiver header m ()
      , BlockFetchServerSender header block m ()
      )
@@ -172,18 +207,14 @@ connectThroughQueue' queue blockStream = (receiver, server)
 
   server :: BlockFetchServerSender header block m ()
   server = BlockFetchServerSender $ do
-    mstream <- atomically (readTBQueue queue) >>= blockStream
-    case mstream :: Maybe (Producer block m ()) of
-      Nothing     -> return $ SendMessageNoBlocks server
-      Just stream -> do
-        nxt <- Pipes.next stream
-        case nxt of
-          Left _             -> return $ SendMessageNoBlocks server
-          Right (b, stream') -> return $ SendMessageStartBatch (sendStream b stream')
+    stream <- atomically (readTBQueue queue) >>= Pipes.next . blockStream
+    case stream of
+      Left _             -> return $ SendMessageNoBlocks server
+      Right (b, stream') -> return $ SendMessageStartBatch (sendStream b stream')
 
   sendStream
     :: block
-    -> Producer block m ()
+    -> Pipes.Producer block m ()
     -> m (BlockFetchSendBlocks header block m ())
   sendStream b stream =
     return $ SendMessageBlock b $ do
@@ -200,7 +231,7 @@ connectThroughQueue
      MonadSTM m
   => Natural
   -- ^ queue size
-  -> (ChainRange header -> m (Maybe (Producer block m ())))
+  -> (ChainRange header -> Producer' block m ())
   -> m ( BlockFetchServerReceiver header m ()
        , BlockFetchServerSender header block m ()
        )
