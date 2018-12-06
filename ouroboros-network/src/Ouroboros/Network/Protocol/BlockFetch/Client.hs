@@ -4,7 +4,11 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Ouroboros.Network.Protocol.BlockFetch.Client where
 
+import Control.Monad (join)
+
 import Protocol.Core
+import Pipes (Producer, Consumer)
+import qualified Pipes
 
 import Ouroboros.Network.Protocol.BlockFetch.Type
 
@@ -26,6 +30,15 @@ data BlockFetchClientSender header m a where
   SendMsgDone
     :: a
     -> BlockFetchClientSender header m a
+
+blockFetchClientSenderToProducer
+  :: Monad m
+  => BlockFetchClientSender header m a
+  -> Producer (ChainRange header) m a
+blockFetchClientSenderToProducer (SendBlockRequestMsg range next) = do
+  Pipes.yield range
+  join $ Pipes.lift (blockFetchClientSenderToProducer <$> next)
+blockFetchClientSenderToProducer (SendMsgDone a) = return a
 
 blockFetchClientSenderStream
   :: ( Functor m )
