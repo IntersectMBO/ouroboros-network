@@ -59,8 +59,8 @@ blockFetchServerReceiverStream
   => BlockFetchServerReceiver header m a
   -> Peer BlockFetchClientProtocol
       (BlockRequestClientMessage header)
-        ('Awaiting 'StClientIdle)
-        ('Finished 'StClientDone)
+        (Awaiting StClientIdle)
+        (Finished StClientDone)
         m a
 blockFetchServerReceiverStream BlockFetchServerReceiver{recvMessageRequestRange,recvMessageDone} =
   await $ \msg -> case msg of
@@ -124,8 +124,8 @@ blockFetchServerStream
   => BlockFetchServer header block m a
   -> Peer BlockFetchServerProtocol
       (BlockRequestServerMessage header block)
-      ('Yielding 'StServerAwaiting)
-      ('Finished 'StServerDone)
+      (Yielding StServerAwaiting)
+      (Finished StServerDone)
       m a
 blockFetchServerStream server = lift $ handleStAwait <$> runBlockFetchServer server
  where
@@ -133,8 +133,8 @@ blockFetchServerStream server = lift $ handleStAwait <$> runBlockFetchServer ser
     :: BlockFetchSender header block m a
     -> Peer BlockFetchServerProtocol
         (BlockRequestServerMessage header block)
-        ('Yielding 'StServerAwaiting)
-        ('Finished 'StServerDone)
+        (Yielding StServerAwaiting)
+        (Finished StServerDone)
         m a
   handleStAwait (SendMessageStartBatch block msender)
     = part (MessageStartBatch block) (lift $ sendBlocks <$> msender)
@@ -145,8 +145,8 @@ blockFetchServerStream server = lift $ handleStAwait <$> runBlockFetchServer ser
     :: BlockFetchSendBlocks header block m a
     -> Peer BlockFetchServerProtocol
         (BlockRequestServerMessage header block)
-        ('Yielding 'StServerSending)
-        ('Finished 'StServerDone)
+        (Yielding StServerSending)
+        (Finished StServerDone)
         m a
   sendBlocks (SendMessageBlock block msender) =
     part (MessageBlock block) (lift $ sendBlocks <$> msender)
