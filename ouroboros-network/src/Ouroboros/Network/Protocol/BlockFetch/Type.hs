@@ -1,6 +1,43 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE TypeFamilies #-}
+
+{-
+ Block fetching consists of two protocols: submission of block ranges 'BlockFetchClientProtocol', and
+ streaming of blocks 'BlockFetchServerProtocol'.
+
+  client server
+   |       |
+   | \     |
+   |  \    | 'BlockFetchClientProtocol' (requesting a range)
+   |   \   |
+   |    \  |
+   |     \ |
+   |     / |
+   |    /  |
+   |\  / / | 'BlockFetchServerProtocol' (streaming blocks)
+   | \/ /  |
+   | /\/ / |
+   |  /\/  |
+   | / /\  |
+   |  /  \ |
+   | /   / |
+   |    /  |
+   |   / / |
+   |  / /  |
+   | / / / |
+   |  / /  |
+   | / /   |
+   |  /    |
+
+  Request submitted by @'BlockFetchClientProtocol'@ are recorded by the server
+  and supplied to the @'BlockFetchServerProtocol'@.  This way we achieve
+  protocol pipelining.
+
+  Both protocol never shift the agency: the 'BlockFetchClientProtocol' keep
+  agancy on the client side and the 'BlockFetchServerProtocol' keeps it on the
+  server side.
+-}
 module Ouroboros.Network.Protocol.BlockFetch.Type where
 
 import Protocol.Core
@@ -14,7 +51,7 @@ data ChainRange header = ChainRange !(Point header) !(Point header)
   deriving (Show, Eq, Ord)
 
 {-------------------------------------------------------------------------------
-  Client protocol: request range submission
+  Client protocol: requesting range of blocks
 -------------------------------------------------------------------------------}
 
 -- | Protocol tag.  @'BlockFetchClientProtocol'@ is a protocol in which the
