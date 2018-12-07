@@ -5,12 +5,15 @@ module Test.Crypto.Hash
     ( tests
     ) where
 
+import qualified Data.ByteString as SB
 import           Data.Proxy (Proxy (..))
+import           Data.String (IsString (..))
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
 import           Ouroboros.Consensus.Crypto.Hash
+import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Network.Serialise
 
 --
@@ -33,3 +36,12 @@ testHashAlgorithm _ n =
 
 prop_hash_serialise :: HashAlgorithm h => Hash h Int -> Property
 prop_hash_serialise = prop_serialise
+
+prop_hash_correct_byteCount :: forall h a. HashAlgorithm h
+                            => Hash h a
+                            -> Property
+prop_hash_correct_byteCount h =
+    (SB.length $ getHash h) === (fromIntegral $ byteCount (Proxy :: Proxy h))
+
+prop_hash_show_fromString :: Hash h a -> Property
+prop_hash_show_fromString h = h === fromString (show h)

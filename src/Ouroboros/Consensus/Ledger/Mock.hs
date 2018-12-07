@@ -167,6 +167,7 @@ data SimpleHeader p c = SimpleHeader {
 
 deriving instance (SimpleBlockCrypto c, OuroborosTag p) => Show (SimpleHeader p c)
 deriving instance (SimpleBlockCrypto c, OuroborosTag p) => Eq   (SimpleHeader p c)
+deriving instance (SimpleBlockCrypto c, OuroborosTag p) => Ord  (SimpleHeader p c)
 
 -- | The preheader is the header without the ouroboros protocol specific payload
 --
@@ -185,13 +186,13 @@ instance SimpleBlockCrypto c => Condense (SimplePreHeader p c) where
     condense = show
 
 data SimpleBody = SimpleBody { getSimpleBody :: Set Tx }
-  deriving (Generic, Show, Eq)
+  deriving (Generic, Show, Eq, Ord)
 
 data SimpleBlock p c = SimpleBlock {
       simpleHeader :: SimpleHeader p c
     , simpleBody   :: SimpleBody
     }
-  deriving (Generic, Show, Eq)
+  deriving (Generic, Show, Eq, Ord)
 
 instance (SimpleBlockCrypto c, OuroborosTag p) => Condense (SimpleBlock p c) where
   condense (SimpleBlock hdr@(SimpleHeader _ pl) (SimpleBody txs)) =

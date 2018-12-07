@@ -17,6 +17,7 @@ module Ouroboros.Consensus.Ledger.Abstract (
   , ExtLedgerState(..)
   , ExtValidationError(..)
   , applyExtLedgerState
+  , foldExtLedgerState
   , chainExtLedgerState
   , verifyChain
   ) where
@@ -24,8 +25,9 @@ module Ouroboros.Consensus.Ledger.Abstract (
 import           Control.Monad.Except
 
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Util (repeatedlyM)
 import           Ouroboros.Network.Block (HasHeader (..))
-import           Ouroboros.Network.Chain (Chain (..))
+import           Ouroboros.Network.Chain (Chain, toOldestFirst)
 
 {-------------------------------------------------------------------------------
   Interaction with the ledger layer
@@ -97,23 +99,28 @@ applyExtLedgerState cfg b ExtLedgerState{..} = do
                                 ouroborosChainState
     return $ ExtLedgerState ledgerState' ouroborosChainState'
 
+foldExtLedgerState :: ProtocolLedgerView b
+                   => NodeConfig (BlockProtocol b)
+                   -> [b] -- ^ Blocks to apply, oldest first
+                   -> ExtLedgerState b
+                   -> Except (ExtValidationError b) (ExtLedgerState b)
+foldExtLedgerState = repeatedlyM . applyExtLedgerState
+
 -- TODO: This should check stuff like backpointers also
 chainExtLedgerState :: ProtocolLedgerView b
                     => NodeConfig (BlockProtocol b)
                     -> Chain b
                     -> ExtLedgerState b
                     -> Except (ExtValidationError b) (ExtLedgerState b)
-chainExtLedgerState _   Genesis  st = return st
-chainExtLedgerState cfg (c :> b) st = chainExtLedgerState cfg c st >>=
-                                      applyExtLedgerState cfg b
+chainExtLedgerState cfg = foldExtLedgerState cfg . toOldestFirst
 
 -- | Validation of an entire chain
 verifyChain :: ProtocolLedgerView b
             => NodeConfig (BlockProtocol b)
-            -> Chain b
             -> ExtLedgerState b
+            -> Chain b
             -> Bool
-verifyChain cfg c st =
-    case runExcept (chainExtLedgerState cfg c st) of
+verifyChain cfg initSt c =
+    case runExcept (chainExtLedgerState cfg c initSt) of
       Left  _err -> False
       Right _st' -> True

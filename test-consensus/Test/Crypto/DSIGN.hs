@@ -6,11 +6,15 @@ module Test.Crypto.DSIGN
     ) where
 
 import           Data.Proxy (Proxy (..))
+import           Test.QuickCheck (Property, (==>))
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
 import           Ouroboros.Consensus.Crypto.DSIGN
+import           Ouroboros.Consensus.Util.Orphans ()
+import           Ouroboros.Consensus.Util.Random (Seed, withSeed)
 import           Ouroboros.Network.Serialise (prop_serialise)
+import           Ouroboros.Network.Serialise (Serialise)
 
 --
 -- The list of all tests
@@ -33,3 +37,35 @@ testDSIGNAlgorithm _ n =
         , testProperty "verify newgative (wrong key)"     $ prop_dsign_verify_neg_key @Int @v
         , testProperty "verify newgative (wrong message)" $ prop_dsign_verify_neg_msg @Int @v
         ]
+
+prop_dsign_verify_pos :: forall a v. (Serialise a, DSIGNAlgorithm v)
+                      => Seed
+                      -> a
+                      -> SignKeyDSIGN v
+                      -> Bool
+prop_dsign_verify_pos seed a sk =
+    let sig = withSeed seed $ signDSIGN a sk
+        vk  = deriveVerKeyDSIGN sk
+    in  verifyDSIGN vk a sig
+
+prop_dsign_verify_neg_key :: forall a v. (Serialise a, DSIGNAlgorithm v)
+                          => Seed
+                          -> a
+                          -> SignKeyDSIGN v
+                          -> SignKeyDSIGN v
+                          -> Property
+prop_dsign_verify_neg_key seed a sk sk' = sk /= sk' ==>
+    let sig = withSeed seed $ signDSIGN a sk'
+        vk  = deriveVerKeyDSIGN sk
+    in  not $ verifyDSIGN vk a sig
+
+prop_dsign_verify_neg_msg :: forall a v. (Serialise a, Eq a, DSIGNAlgorithm v)
+                          => Seed
+                          -> a
+                          -> a
+                          -> SignKeyDSIGN v
+                          -> Property
+prop_dsign_verify_neg_msg seed a a' sk = a /= a' ==>
+    let sig = withSeed seed $ signDSIGN a sk
+        vk  = deriveVerKeyDSIGN sk
+    in  not $ verifyDSIGN vk a' sig

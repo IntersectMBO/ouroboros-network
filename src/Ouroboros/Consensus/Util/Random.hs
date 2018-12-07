@@ -2,7 +2,7 @@
 
 module Ouroboros.Consensus.Util.Random
     ( MonadRandom (..)
-    , Seed
+    , Seed (..)
     , nonNegIntR
     , genNatBetween
     , genNat
@@ -11,14 +11,17 @@ module Ouroboros.Consensus.Util.Random
     , MonadPseudoRandomT -- opaque
     , withDRGT
     , seedToChaCha
+    , generateElement
     )
     where
 
 import           Control.Monad.State
+import           Crypto.Number.Generate (generateBetween)
 import           Crypto.Random (ChaChaDRG, DRG, MonadPseudoRandom,
                                 MonadRandom (..), drgNewTest,
                                 randomBytesGenerate, withDRG)
 import           Data.ByteString (ByteString, unpack)
+import           Data.List (genericLength)
 import           Data.Word (Word64)
 import           Numeric.Natural (Natural)
 import           Test.QuickCheck
@@ -51,8 +54,10 @@ newtype Seed = Seed {getSeed :: (Word64, Word64, Word64, Word64, Word64)}
 
 instance Arbitrary Seed where
 
-    arbitrary =  (\w1 w2 w3 w4 w5 -> Seed (w1, w2, w3, w4, w5))
-                <$> arbitrary <*> arbitrary <*> arbitrary <*> arbitrary <*> arbitrary
+    arbitrary = do  (\w1 w2 w3 w4 w5 -> Seed (w1, w2, w3, w4, w5))
+                <$> gen <*> gen <*> gen <*> gen <*> gen
+      where
+        gen = getLarge <$> arbitrary
 
     shrink = const []
 
@@ -76,3 +81,9 @@ instance (Monad m, DRG gen) => MonadRandom (MonadPseudoRandomT gen m) where
 -- This is the analogue of cryptonite's 'withDRG'.
 withDRGT :: MonadPseudoRandomT gen m a -> gen -> m (a, gen)
 withDRGT = runStateT  . unMonadPseudoRandomT
+
+generateElement :: MonadRandom m => [a] -> m (Maybe a)
+generateElement [] = return Nothing
+generateElement xs = do
+    i <- fromIntegral <$> generateBetween 0 (genericLength xs - 1)
+    return $ Just $ xs !! i

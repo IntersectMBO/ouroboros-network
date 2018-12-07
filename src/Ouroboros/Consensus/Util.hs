@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns           #-}
 {-# LANGUAGE CPP                    #-}
 {-# LANGUAGE DeriveGeneric          #-}
 {-# LANGUAGE FlexibleContexts       #-}
@@ -12,7 +13,9 @@
 
 module Ouroboros.Consensus.Util (
     -- * Miscellaneous
-    repeatedly
+    foldlM'
+  , repeatedly
+  , repeatedlyM
   , chunks
   , byteStringChunks
   , lazyByteStringChunks
@@ -59,8 +62,18 @@ import qualified Ouroboros.Consensus.Util.HList as HList
   Miscellaneous
 -------------------------------------------------------------------------------}
 
+foldlM' :: forall m a b. Monad m => (b -> a -> m b) -> b -> [a] -> m b
+foldlM' f = go
+  where
+    go :: b -> [a] -> m b
+    go !acc []     = return acc
+    go !acc (x:xs) = f acc x >>= \acc' -> go acc' xs
+
 repeatedly :: (a -> b -> b) -> ([a] -> b -> b)
 repeatedly = flip . foldl' . flip
+
+repeatedlyM :: Monad m => (a -> b -> m b) -> ([a] -> b -> m b)
+repeatedlyM = flip . foldlM' . flip
 
 chunks :: Int -> [a] -> [[a]]
 chunks _ [] = []

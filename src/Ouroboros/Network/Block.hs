@@ -25,7 +25,7 @@ import           Ouroboros.Network.Serialise
 
 -- | The Ouroboros time slot index for a block.
 newtype Slot = Slot { getSlot :: Word }
-  deriving (Show, Eq, Ord, Hashable, Enum, Serialise)
+  deriving (Show, Eq, Ord, Hashable, Enum, Serialise, Num, Real, Integral)
 
 -- | The 0-based index of the block in the blockchain
 newtype BlockNo = BlockNo Word

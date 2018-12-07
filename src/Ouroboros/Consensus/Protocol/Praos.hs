@@ -23,15 +23,17 @@ module Ouroboros.Consensus.Protocol.Praos (
   , Payload(..)
   ) where
 
+import           Control.Monad (unless)
+import           Control.Monad.Except (throwError)
 import           Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
+import           Data.List (foldl')
 import           Data.Proxy (Proxy (..))
 import           GHC.Generics (Generic)
 import           Numeric.Natural
 
 import           Ouroboros.Consensus.Crypto.DSIGN.Ed448 (Ed448DSIGN)
-import           Ouroboros.Consensus.Crypto.Hash.Class (HashAlgorithm (..),
-                     fromHash, hash)
+import           Ouroboros.Consensus.Crypto.Hash.Class (HashAlgorithm (..), fromHash, hash)
 import           Ouroboros.Consensus.Crypto.Hash.MD5 (MD5)
 import           Ouroboros.Consensus.Crypto.Hash.SHA256 (SHA256)
 import           Ouroboros.Consensus.Crypto.KES.Class
@@ -44,10 +46,12 @@ import           Ouroboros.Consensus.Node (NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Test
 import           Ouroboros.Consensus.Util
+import           Ouroboros.Consensus.Util.Chain (forksAtMostKBlocks, upToSlot)
 import           Ouroboros.Consensus.Util.HList (HList)
 import           Ouroboros.Consensus.Util.HList (HList (..))
 import           Ouroboros.Network.Block (HasHeader (..), Slot (..))
-import           Ouroboros.Network.Serialise (Serialise)
+import qualified Ouroboros.Network.Chain as Chain
+import           Ouroboros.Network.Serialise (Encoding, Serialise, encode)
 
 {-------------------------------------------------------------------------------
   Praos specific types
@@ -67,7 +71,8 @@ data PraosExtraFields c = PraosExtraFields {
   deriving Generic
 
 deriving instance PraosCrypto c => Show (PraosExtraFields c)
-deriving instance PraosCrypto c => Eq (PraosExtraFields c)
+deriving instance PraosCrypto c => Eq   (PraosExtraFields c)
+deriving instance PraosCrypto c => Ord  (PraosExtraFields c)
 
 instance VRFAlgorithm (PraosVRF c) => Serialise (PraosExtraFields c)
   -- use Generic instance for now
@@ -79,8 +84,14 @@ data PraosProof c = PraosProof {
     , praosProofSlot :: Slot
     }
 
-data PraosValidationError
-  deriving (Show)
+data PraosValidationError c =
+      PraosInvalidSlot Slot Slot
+    | PraosUnknownCoreId Int
+    | PraosInvalidSig (VerKeyKES (PraosKES c)) Natural (SigKES (PraosKES c))
+    | PraosInvalidCert (VerKeyVRF (PraosVRF c)) Encoding Natural (CertVRF (PraosVRF c))
+    | PraosInsufficientStake Double Natural
+
+deriving instance PraosCrypto c => Show (PraosValidationError c)
 
 type Epoch = Word
 type StakeDist = IntMap Rational
@@ -114,12 +125,14 @@ instance PraosCrypto c => OuroborosTag (Praos c) where
     , praosInitialEta    :: Natural
     , praosInitialStake  :: StakeDist
     , praosLeaderF       :: Double
+    , praosK             :: Word
+    , praosVerKeys       :: IntMap (VerKeyKES (PraosKES c), VerKeyVRF (PraosVRF c))
     }
 
   type NodeState      (Praos c) = SignKeyKES (PraosKES c)
   type LedgerView     (Praos c) = StakeDist
   type IsLeader       (Praos c) = PraosProof c
-  type ValidationErr  (Praos c) = PraosValidationError
+  type ValidationErr  (Praos c) = PraosValidationError c
   type SupportedBlock (Praos c) = HasPayload (Praos c)
   type ChainState     (Praos c) = [BlockInfo c]
 
@@ -159,17 +172,76 @@ instance PraosCrypto c => OuroborosTag (Praos c) where
                      }
               else Nothing
 
-  applyChainState PraosNodeConfig{..} sd b cs = do
+  applyChainState cfg@PraosNodeConfig{..} sd b cs = do
     let PraosPayload{..} = blockPayload (Proxy :: Proxy (Praos c)) b
-        bi = BlockInfo
+        ph               = blockPreHeader b
+        slot             = blockSlot b
+        nid              = praosCreator praosExtraFields
+
+    -- check that the new block advances time
+    case cs of
+        (c : _)
+            | biSlot c >= slot -> throwError $ PraosInvalidSlot slot (biSlot c)
+        _                      -> return ()
+
+    -- check that block creator is a known core node
+    (vkKES, vkVRF) <- case IntMap.lookup nid praosVerKeys of
+        Nothing  -> throwError $ PraosUnknownCoreId nid
+        Just vks -> return vks
+    let j = fromIntegral slot
+
+    -- verify block signature
+    unless (verifySignedKES
+                vkKES
+                j
+                (ph, praosExtraFields)
+                praosSignature) $
+        throwError $ PraosInvalidSig vkKES j (getSig praosSignature)
+
+    let (rho', y', t) = rhoYT cfg cs slot nid
+        rho           = praosRho praosExtraFields
+        y             = praosY   praosExtraFields
+
+    -- verify rho proof
+    unless (verifyCertified vkVRF rho' rho) $
+        throwError $ PraosInvalidCert
+            vkVRF
+            (encode rho')
+            (certifiedNatural rho)
+            (certifiedProof rho)
+
+    -- verify y proof
+    unless (verifyCertified vkVRF y' y) $
+        throwError $ PraosInvalidCert
+            vkVRF
+            (encode y')
+            (certifiedNatural y)
+            (certifiedProof y)
+
+    -- verify stake
+    unless (fromIntegral (certifiedNatural y) < t) $
+        throwError $ PraosInsufficientStake t $ certifiedNatural y
+
+    let bi = BlockInfo
             { biSlot  = blockSlot b
             , biRho   = praosRho praosExtraFields
             , biStake = sd
             }
+
     return $ bi : cs
+
+  selectChain PraosNodeConfig{..} slot ours = foldl' f ours . map (upToSlot slot)
+    where
+      k :: Int
+      k = fromIntegral praosK
+
+      f cmax c
+        | forksAtMostKBlocks k cmax c && Chain.length c > Chain.length cmax = c
+        | otherwise                                                         = cmax
 
 deriving instance PraosCrypto c => Show (Payload (Praos c) ph)
 deriving instance PraosCrypto c => Eq   (Payload (Praos c) ph)
+deriving instance PraosCrypto c => Ord  (Payload (Praos c) ph)
 
 instance PraosCrypto c => Condense (Payload (Praos c) ph) where
     condense (PraosPayload sig _) = condense sig

@@ -41,6 +41,7 @@ import           Ouroboros.Network.Serialise (Serialise)
 import qualified Ouroboros.Network.Chain as Chain
 
 import           Ouroboros.Consensus.Util
+import           Ouroboros.Consensus.Util.Chain (upToSlot)
 import           Ouroboros.Consensus.Util.Random
 
 -- | The (open) universe of Ouroboros protocols
@@ -51,6 +52,7 @@ class ( Show (ChainState    p)
       , Show (ValidationErr p)
       , forall ph. Show      ph => Show      (Payload p ph)
       , forall ph. Eq        ph => Eq        (Payload p ph)
+      , forall ph. Ord       ph => Ord       (Payload p ph)
       , forall ph. Condense  ph => Condense  (Payload p ph)
       , forall ph. Serialise ph => Serialise (Payload p ph)
       ) => OuroborosTag p where
@@ -101,18 +103,22 @@ class ( Show (ChainState    p)
             -> m (Payload p ph)
 
   -- | Chain selection
-  selectChain :: SupportedBlock p b
+  selectChain :: (Eq b, HasHeader b, SupportedBlock p b)
               => NodeConfig p
+              -> Slot       -- ^ Present slot
               -> Chain b    -- ^ Our chain
               -> [Chain b]  -- ^ Upstream chains
               -> Chain b
-  selectChain _ ourChain candidates =
+  selectChain _ slot ourChain candidates =
       -- will prioritize our own since sortBy is stable
-      head $ sortBy (flip (comparing Chain.length)) (ourChain : candidates)
+      head $ sortBy (flip (comparing Chain.length))
+           $ map (upToSlot slot)
+           $ ourChain : candidates
 
   -- | Check if a node is the leader
   checkIsLeader :: (HasNodeState p m, MonadRandom m)
-                => NodeConfig p -> Slot
+                => NodeConfig p
+                -> Slot
                 -> LedgerView p
                 -> ChainState p
                 -> m (Maybe (IsLeader p))
