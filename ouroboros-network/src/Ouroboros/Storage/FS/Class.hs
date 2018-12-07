@@ -68,6 +68,8 @@ data FsErrorType
   | FsResourceDoesNotExist
   | FsResourceAlreadyExist
   | FsReachedEOF
+  | FsDeviceFull
+  | FsInsufficientPermissions
   deriving (Show, Eq)
 
 -- | We define a 'FsUnexpectedException' separated by the rest so that we

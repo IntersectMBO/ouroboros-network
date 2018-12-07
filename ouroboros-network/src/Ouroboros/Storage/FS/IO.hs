@@ -99,11 +99,16 @@ catchFSErrorIO (splitDirectories -> mountPoint) action = do
           = throwFsErrorIO FsReachedEOF
           | eType == InappropriateType
           = throwFsErrorIO FsResourceInappropriateType
+          | isFullErrorType eType
+          = throwFsErrorIO FsDeviceFull
+          | isPermissionErrorType eType
+          = throwFsErrorIO FsInsufficientPermissions
           | otherwise
           = throwIO (FsUnexpectedException ioErr callStack)
          where
            eType :: IOErrorType
            eType = ioeGetErrorType ioErr
+
            throwFsErrorIO :: HasCallStack => FsErrorType -> IO (Either FsError a)
            throwFsErrorIO et = do
              fp <- getPath ioErr
