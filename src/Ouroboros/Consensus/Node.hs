@@ -19,8 +19,12 @@ import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain hiding (selectChain)
 import           Ouroboros.Network.ChainProducerState
 import           Ouroboros.Network.MonadClass
-import           Ouroboros.Network.Protocol
+import           Ouroboros.Network.Protocol.ChainSync.Client
+import           Ouroboros.Network.Protocol.ChainSync.Server
 import           Ouroboros.Network.Protocol.ChainSync.Type
+import           Ouroboros.Network.Protocol.ChainSync.Codec.Id
+import           Ouroboros.Network.ChainSyncExamples
+import           Ouroboros.Network.Node (loggingChannel)
 
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -32,6 +36,7 @@ import           Ouroboros.Consensus.Util.Orphans ()
 -- in the networking layer to make the division clearer.
 
 import           Protocol.Channel
+import           Protocol.Driver
 import           Protocol.Transition
 
 import           Ouroboros.Network.Node (NodeId (..))
@@ -94,12 +99,12 @@ intRegisterConsumer :: ( MonadSTM m
                     -> Channel m (SomeTransition (ChainSyncMessage b (Point b)))
                     -> cid
                     -> m ()
-intRegisterConsumer nid cpsVar chan cid = error "intRegisterConsumer"
-{-
-    fork $ producerSideProtocol1 (exampleProducer cpsVar)
-             (loggingSend (ProducerId nid cid) (sendMsg chan))
-             (loggingRecv (ProducerId nid cid) (recvMsg chan))
--}
+intRegisterConsumer nid cpsVar chan cid =
+    let producer = chainSyncServerPeer (chainSyncServerExample () cpsVar)
+    in  fork $ void $ useCodecWithDuplex
+          (loggingChannel (ProducerId nid cid) (withSomeTransition show) (withSomeTransition show) chan)
+          codecChainSync
+          producer
 
 {-------------------------------------------------------------------------------
   Dealing with producers (upstream nodes)
@@ -119,14 +124,16 @@ intRegisterProducer :: ( MonadSTM m
                     -> Channel m (SomeTransition (ChainSyncMessage b (Point b)))
                     -> pid
                     -> m ()
-intRegisterProducer nid cfg initLedgerState upstream chan pid = error "intRegisterProducer" {- do
+intRegisterProducer nid cfg initLedgerState upstream chan pid = do
     chainVar     <- atomically $ newTVar Genesis
     candidateVar <- atomically $ newTVar Nothing
-    fork $ consumerSideProtocol1 (exampleConsumer chainVar)
-             (loggingSend (ConsumerId nid pid) (sendMsg chan))
-             (loggingRecv (ConsumerId nid pid) (recvMsg chan))
+    let consumer = chainSyncClientPeer (chainSyncClientExample chainVar pureClient)
+    fork $ void $ useCodecWithDuplex
+      (loggingChannel (ConsumerId nid pid) (withSomeTransition show) (withSomeTransition show) chan)
+      codecChainSync
+      consumer
     fork $ chainValidation cfg initLedgerState chainVar candidateVar
-    atomically $ modifyTVar' upstream $ Map.insert pid candidateVar -}
+    atomically $ modifyTVar' upstream $ Map.insert pid candidateVar
 
 chainValidation :: forall b m. (MonadSTM m, ProtocolLedgerView b)
                 => NodeConfig (BlockProtocol b)
