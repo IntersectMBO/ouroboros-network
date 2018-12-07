@@ -1,11 +1,18 @@
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 
 module Ouroboros.Consensus.Node (
-    NodeKernel(..)
+    -- * Blockchain time
+    BlockchainTime(..)
+  , onSlot
+  , testBlockchainTime
+    -- * Node
+  , NodeKernel(..)
+  , NodeCallbacks(..)
   , nodeKernel
     -- * Network layer abstraction
   , NetworkLayer(..)
@@ -18,6 +25,8 @@ module Ouroboros.Consensus.Node (
   ) where
 
 import           Control.Monad
+import           Control.Monad.Except
+import           Crypto.Random (MonadRandom)
 import           Data.Function (on)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -42,6 +51,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.Orphans ()
+import           Ouroboros.Consensus.Util.STM
 
 -- TODO: We currently stil import /some/ stuff from the network layer Node
 -- module. We should audit this and perhaps move these to different modules
@@ -49,6 +59,53 @@ import           Ouroboros.Consensus.Util.Orphans ()
 
 import           Ouroboros.Network.Node (NodeId (..), loggingChannel)
 import qualified Ouroboros.Network.Node as Network
+
+{-------------------------------------------------------------------------------
+  "Blockchain time"
+-------------------------------------------------------------------------------}
+
+-- | Blockchain time
+--
+-- When we run the blockchain, there is a single, global time. We abstract over
+-- this here to allow to query this time (in terms of the current slot), and
+-- execute an action each time we advance a slot.
+data BlockchainTime m = BlockchainTime {
+      -- | Get current slot
+      getCurrentSlot :: Tr m Slot
+
+      -- | Spawn a thread to run an action each time the slot changes
+    , onSlotChange   :: (Slot -> m ()) -> m ()
+    }
+
+-- | Execute action on specific slot
+onSlot :: MonadSTM m => BlockchainTime m -> Slot -> m () -> m ()
+onSlot BlockchainTime{..} slot act = onSlotChange $ \slot' -> do
+    when (slot == slot') act
+
+-- | Construct new blockchain time that ticks at the specified slot duration
+--
+-- NOTE: This is just one way to construct time. We can of course also connect
+-- this to the real time (if we are in IO), or indeed to a manual tick
+-- (in a demo).
+--
+-- NOTE: The number of slots is only there to make sure we terminate the
+-- thread (otherwise the system will keep waiting).
+testBlockchainTime :: forall m. (MonadSTM m, MonadTimer m)
+                   => Int                -- ^ Number of slots
+                   -> Duration (Time m)  -- ^ Slot duration
+                   -> m (BlockchainTime m)
+testBlockchainTime numSlots slotDuration = do
+    slotVar <- atomically $ newTVar firstSlot
+    fork $ replicateM_ numSlots $ do
+        threadDelay slotDuration
+        atomically $ modifyTVar slotVar succ
+    return BlockchainTime {
+        getCurrentSlot = readTVar slotVar
+      , onSlotChange   = monitorTVar id firstSlot slotVar
+      }
+  where
+    firstSlot :: Slot
+    firstSlot = 0
 
 {-------------------------------------------------------------------------------
   Relay node
@@ -68,49 +125,75 @@ data NodeKernel m up down b = NodeKernel {
 
       -- | Get current chain
     , getCurrentChain :: Tr m (Chain b)
-
-      -- | Publish block
-      --
-      -- The 'Slot' parameter is used by the caller to indicate the slot for
-      -- which it is producing a block. If the current chain already contains
-      -- a block for that slot (which must have been produced by an upstream
-      -- node), we throw away that block (basically overriding upstream).
-
-      -- When the callback returns 'Nothing' the chain is left unchanged.
-    , publishBlock :: Slot -> (Point b -> BlockNo -> Tr m (Maybe b)) -> m ()
     }
 
-nodeKernel :: forall m b up down. ( MonadSTM m
-             , MonadSay m
-             , ProtocolLedgerView b
-             , Eq b
-             , Show b
-             , Show down
-             , Show up
-             , Ord up
-             )
-          => NodeId
-          -> NodeConfig (BlockProtocol b)
-          -> ExtLedgerState b
-          -> Chain b
-          -> (Chain b -> [ChainUpdate b] -> Tr m ())
-          -- ^ Callback whenever we adopt a new chain.
-          -- The callback is provided with the chain updates.
-          -- TODO: For now, we also provide it with the entire new chain in
-          -- order to "fake" rollback; this should go.
-          -> m (NodeKernel m up down b)
-nodeKernel us cfg initLedgerState initChain notifyUpdates = do
+-- | Callbacks required when initializing the node
+data NodeCallbacks b = NodeCallbacks {
+      -- | Produce a block
+      produceBlock :: forall m.
+                      ( MonadRandom m
+                      , HasNodeState (BlockProtocol b) m
+                      )
+                   => IsLeader (BlockProtocol b) -- Proof we are leader
+                   -> ExtLedgerState b -- Current ledger state
+                   -> Slot             -- Current slot
+                   -> Point b          -- Previous point
+                   -> BlockNo          -- Previous block number
+                   -> m b
+    }
+
+nodeKernel :: forall m (rndT :: (* -> *) -> (* -> *)) b up down.
+              ( MonadSTM m
+              , MonadSay m
+              , MonadRandom (rndT (Tr m))
+              , ProtocolLedgerView b
+              , Eq b
+              , Show down
+              , Show up
+              , Ord up
+              )
+           => NodeId
+           -> NodeConfig (BlockProtocol b)
+           -> NodeState (BlockProtocol b)
+           -> (forall m'. Sim m' m -> Sim (rndT m') m)
+           -- ^ Provide access to a random number generator
+           -> BlockchainTime m
+           -> ExtLedgerState b
+           -> Chain b
+           -> NodeCallbacks b
+           -> m (NodeKernel m up down b)
+nodeKernel us cfg initState simRnd btime initLedger initChain NodeCallbacks{..} = do
+    stateVar    <- atomically $ newTVar initState
     ourChainVar <- atomically $ newTVar initChain
     updatesVar  <- atomically $ newEmptyTMVar -- TODO: use bounded queue instead
-    slotVar     <- atomically $ newTVar 0
+    ledgerVar   <- atomically $ newTVar initLedger
+
+    let runProtocol :: NodeStateT (BlockProtocol b) (rndT (Tr m)) a -> Tr m a
+        runProtocol = simOuroborosStateT stateVar $ simRnd $ id
+
+    -- TODO: New chain only to fake rollback
+    let updateLedgerState :: Chain b -> [ChainUpdate b] -> Tr m ()
+        updateLedgerState newChain (RollBack _:_) =
+            modifyTVar' ledgerVar $ \_st ->
+              case runExcept (chainExtLedgerState cfg newChain initLedger) of
+                Left err  -> error (show err)
+                Right st' -> st'
+        updateLedgerState _ upd = do
+            let newBlock :: ChainUpdate b -> b
+                newBlock (RollBack _) = error "newBlock: unexpected rollback"
+                newBlock (AddBlock b) = b
+            modifyTVar' ledgerVar $ \st ->
+              case runExcept (foldExtLedgerState cfg (map newBlock upd) st) of
+                Left err  -> error (show err)
+                Right st' -> st'
 
     -- NOTE: Right now "header validation" is actually just "full validation",
     -- because we cannot validate headers without also having the ledger. Once
     -- we have the header/body split, we're going to have to be more precise
     -- about what we can and cannot validate.
-    nw <- initNetworkLayer us initChain slotVar NetworkCallbacks {
+    nw <- initNetworkLayer us initChain btime NetworkCallbacks {
               prioritizeChains     = selectChain cfg
-            , validateChainHeaders = verifyChain cfg initLedgerState
+            , validateChainHeaders = verifyChain cfg initLedger
             , chainDownloaded      = \newChain -> atomically $
                 -- We are supposed to validate the chain bodies now
                 -- This is a potentially expensive operation, which we model
@@ -122,7 +205,7 @@ nodeKernel us cfg initLedgerState initChain notifyUpdates = do
     let updateChain :: Chain b -> [ChainUpdate b] -> Tr m ()
         updateChain newChain upd = do
           writeTVar ourChainVar newChain
-          notifyUpdates newChain upd
+          updateLedgerState newChain upd
           networkChainAdopted nw newChain
 
     -- Thread to do chain validation and adoption
@@ -130,7 +213,7 @@ nodeKernel us cfg initLedgerState initChain notifyUpdates = do
          newChain <- atomically $ takeTMVar updatesVar
          -- ... validating ... mumble mumble mumble ...
          atomically $ do
-           slot     <- readTVar slotVar
+           slot     <- getCurrentSlot btime
            ourChain <- readTVar ourChainVar
            -- Check: do we still want this chain? (things might have changed)
            when (selectChain cfg slot ourChain [newChain] `sameChainAs` newChain) $ do
@@ -146,20 +229,30 @@ nodeKernel us cfg initLedgerState initChain notifyUpdates = do
 
              updateChain newChain upd
 
+    -- Block production
+    onSlotChange btime $ \slot -> atomically $ do
+      l@ExtLedgerState{..} <- readTVar ledgerVar
+      mIsLeader            <- runProtocol $
+                                 checkIsLeader
+                                 cfg
+                                 slot
+                                 (protocolLedgerView cfg ledgerState)
+                                 ouroborosChainState
+
+      case mIsLeader of
+        Nothing    -> return ()
+        Just proof -> do
+          (ourChain, upd) <- overrideBlock slot <$> readTVar ourChainVar
+          let prevPoint = Chain.headPoint   ourChain
+              prevNo    = Chain.headBlockNo ourChain
+          newBlock <- runProtocol $ produceBlock proof l slot prevPoint prevNo
+          let newChain = ourChain :> newBlock
+          updateChain newChain $ upd ++ [AddBlock newBlock]
+
     return NodeKernel {
         registerUpstream   = networkRegisterUpstream   nw
       , registerDownstream = networkRegisterDownstream nw
       , getCurrentChain    = readTVar ourChainVar
-      , publishBlock       = \slot mkBlock -> atomically $ do
-            writeTVar slotVar slot
-            (ourChain, upd) <- overrideBlock slot <$> readTVar ourChainVar
-            mNewBlock       <- mkBlock (Chain.headPoint   ourChain)
-                                       (Chain.headBlockNo ourChain)
-            case mNewBlock of
-              Nothing       -> return ()
-              Just newBlock -> do
-                let newChain = ourChain :> newBlock
-                updateChain newChain $ upd ++ [AddBlock newBlock]
       }
   where
     -- Drop the most recent block if it occupies the current slot
@@ -225,10 +318,10 @@ initNetworkLayer :: forall m b up down.
                     )
                  => NodeId   -- ^ Our node ID
                  -> Chain b  -- ^ Our initial (current) chain
-                 -> TVar m Slot
+                 -> BlockchainTime m
                  -> NetworkCallbacks b m
                  -> m (NetworkLayer up down b m)
-initNetworkLayer us initChain slotVar NetworkCallbacks{..} = do
+initNetworkLayer us initChain btime NetworkCallbacks{..} = do
     cpsVar <- atomically $ newTVar $ initChainProducerState initChain
 
     -- PotentialsVar is modelling state in the network layer tracking the
@@ -250,9 +343,7 @@ initNetworkLayer us initChain slotVar NetworkCallbacks{..} = do
             (loggingChannel (ConsumerId us up) (withSomeTransition show) (withSomeTransition show) chan)
             codecChainSync
             consumer
-          fork $ monitor Chain.headPoint
-                         Chain.genesisPoint
-                         chainVar $ \newChain ->
+          monitorTVar Chain.headPoint Chain.genesisPoint chainVar $ \newChain ->
               if validateChainHeaders newChain
                 then newPotentialChain cpsVar potentialsVar up newChain
                 else -- We should at this point disregard this peer,
@@ -276,7 +367,7 @@ initNetworkLayer us initChain slotVar NetworkCallbacks{..} = do
       -- these chains is "now available".
 
       mDownloaded <- atomically $ do
-        slot       <- readTVar slotVar
+        slot       <- getCurrentSlot btime
         ourChain   <- chainState <$> readTVar cpsVar
         potentials <- readTVar potentialsVar
         return $ do
@@ -316,18 +407,6 @@ instance Condense pid => Condense (ConsumerId pid) where
 {-------------------------------------------------------------------------------
   Auxiliary
 -------------------------------------------------------------------------------}
-
-monitor :: (MonadSTM m, Eq b)
-        => (a -> b) -> b -> TVar m a -> (a -> m ()) -> m ()
-monitor f b tvar notify = do
-    (a, b') <- atomically $ do
-                 a <- readTVar tvar
-                 let b' = f a
-                 if b' == b
-                   then retry
-                   else return (a, b')
-    notify a
-    monitor f b' tvar notify
 
 -- | The suffix of the chain starting after the specified point
 afterPoint :: HasHeader b => Point b -> Chain b -> [b]

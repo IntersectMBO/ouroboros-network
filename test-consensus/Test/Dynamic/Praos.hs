@@ -25,7 +25,6 @@ import           Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           GHC.Stack (HasCallStack)
 import           Test.QuickCheck
 
 import           Test.Tasty
@@ -46,8 +45,8 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.Praos
 import           Ouroboros.Consensus.Util (Condense (..))
-import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Consensus.Util.Chain (dropLastBlocks, lastSlot)
+import           Ouroboros.Consensus.Util.Random
 
 import           Test.Dynamic.General
 
@@ -70,7 +69,7 @@ instance ProtocolLedgerView (BlockUnderTest Protocol) where
         , nodeStake cfg u
         )
 
-prop_simple_praos_convergence :: HasCallStack => Seed -> Property
+prop_simple_praos_convergence :: Seed -> Property
 prop_simple_praos_convergence =
     prop_simple_protocol_convergence mkConfig mkState initialChainState isValid
   where

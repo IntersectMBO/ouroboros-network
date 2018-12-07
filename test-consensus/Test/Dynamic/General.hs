@@ -29,16 +29,13 @@ module Test.Dynamic.General (
   ) where
 
 import           Control.Monad
-import           Control.Monad.Except
 import           Control.Monad.ST.Lazy (runST)
 import           Crypto.Number.Generate (generateBetween)
-import           Crypto.Random (DRG, withDRG)
+import           Crypto.Random (DRG)
 import           Data.Foldable (foldl')
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Proxy
 import qualified Data.Set as Set
-import           GHC.Stack (HasCallStack)
 import           Numeric.Natural (Natural)
 import           Test.QuickCheck
 
@@ -105,8 +102,7 @@ prop_simple_protocol_convergence mkConfig mkState initialChainState isValid seed
 
 -- Run protocol on the broadcast network, and check resulting chains on all nodes.
 test_simple_protocol_convergence :: forall m n p.
-                                    ( HasCallStack
-                                    , MonadSTM m
+                                    ( MonadSTM m
                                     , MonadRunProbe m n
                                     , MonadSay m
                                     , MonadTimer m
@@ -125,7 +121,9 @@ test_simple_protocol_convergence mkConfig mkState initialChainState isValid seed
   where
     go :: Probe m (Map NodeId (Chain (BlockUnderTest p))) -> m ()
     go p = do
+      btime <- testBlockchainTime numSlots 100000
       finalChains <- broadcastNetwork
+                       btime
                        nodeInit
                        initLedgerState
                        (seedToChaCha seed)
@@ -176,15 +174,15 @@ test_simple_protocol_convergence mkConfig mkState initialChainState isValid seed
 -- We run for the specified number of blocks, then return the final state of
 -- each node.
 broadcastNetwork :: forall m p c gen.
-                    ( HasCallStack
-                    , MonadSTM   m
+                    ( MonadSTM   m
                     , MonadTimer m
                     , MonadSay   m
                     , SimpleBlockCrypto c
                     , ProtocolLedgerView (SimpleBlock p c)
                     , DRG gen
                     )
-                 => Map NodeId ( NodeConfig p
+                 => BlockchainTime m
+                 -> Map NodeId ( NodeConfig p
                                , NodeState p
                                , Chain (SimpleBlock p c)
                                )
@@ -194,7 +192,7 @@ broadcastNetwork :: forall m p c gen.
                  -> gen
                  -- ^ Initial random number state
                  -> m (Map NodeId (Chain (SimpleBlock p c)))
-broadcastNetwork nodeInit initLedger initRNG = do
+broadcastNetwork btime nodeInit initLedger initRNG = do
 
     -- all known addresses
     let addrs = Set.toList $ Set.fromList $ map fst $ Map.elems $ getUtxo initLedger
@@ -215,75 +213,35 @@ broadcastNetwork nodeInit initLedger initRNG = do
 
     nodes <- forM (Map.toList nodeInit) $ \(us, (cfg, initSt, initChain)) -> do
       varRes <- atomically $ newTVar Nothing
-      varSt  <- atomically $ newTVar initSt
-      varL   <- atomically $ newTVar initLedger
 
-      -- TODO: New chain only to fake rollback
-      let respondToUpdate :: Chain (SimpleBlock p c)
-                          -> [ChainUpdate (SimpleBlock p c)]
-                          -> Tr m ()
-          respondToUpdate newChain (RollBack _:_) =
-              modifyTVar' varL $ \_st ->
-                case runExcept (chainExtLedgerState cfg newChain initLedger) of
-                  Left err  -> error (show err)
-                  Right st' -> st'
-          respondToUpdate _ upd = do
-              let newBlock :: ChainUpdate (SimpleBlock p c) -> SimpleBlock p c
-                  newBlock (RollBack _) = error "newBlock: unexpected rollback"
-                  newBlock (AddBlock b) = b
-              modifyTVar' varL $ \st ->
-                case runExcept (foldExtLedgerState cfg (map newBlock upd) st) of
-                  Left err  -> error (show err)
-                  Right st' -> st'
+      let callbacks :: NodeCallbacks (SimpleBlock p c)
+          callbacks = NodeCallbacks {
+              produceBlock = \proof l slot prevPoint prevNo -> do
+                let prevHash  = castHash (Chain.pointHash prevPoint)
+                    curNo     = succ prevNo
 
-      node <- nodeKernel us cfg initLedger initChain respondToUpdate
+                -- Produce some random transactions
+                txs <- genTxs addrs (getUtxo l)
+                forgeBlock cfg slot curNo prevHash (Set.fromList txs) proof
+            }
+
+      node <- nodeKernel
+                us
+                cfg
+                initSt
+                (simMonadPseudoRandomT varRNG)
+                btime
+                initLedger
+                initChain
+                callbacks
+
       forM_ (filter (/= us) nodeIds) $ \them -> do
         registerDownstream node them $ fst (chans Map.! us Map.! them)
         registerUpstream   node them $ snd (chans Map.! them Map.! us)
 
-      let runProtocol :: MonadPseudoRandomT gen (NodeStateT p (Tr m)) a
-                      -> Tr m a
-          runProtocol = simMonadPseudoRandomT varRNG
-                      $ simOuroborosStateT varSt
-                      $ id
-
-      forM_ [1 .. numSlots] $ \slotId ->
-        fork $ do
-          threadDelay (slotDuration (Proxy @m) * fromIntegral slotId)
-          let slot = Slot (fromIntegral slotId)
-
-          publishBlock node slot $ \prevPoint prevNo -> do
-            let prevHash = castHash (pointHash prevPoint)
-                curNo    = succ prevNo
-
-            -- NOTE: Ledger state is updated in 'respondToUpdate'
-            --
-            -- Since the leader proof is (partially) based on the ledger state,
-            -- it is important that we get the ledger state and check if we
-            -- are a leader in a single transaction.
-
-            l@ExtLedgerState{..} <- readTVar varL
-            mIsLeader            <- runProtocol $
-                                       checkIsLeader
-                                       cfg
-                                       slot
-                                       (protocolLedgerView cfg ledgerState)
-                                       ouroborosChainState
-            case mIsLeader of
-              Nothing    -> return Nothing
-              Just proof -> do
-                rng <- readTVar varRNG
-                let u           = getUtxo l
-                    (txs, rng') = withDRG rng $ genTxs addrs u
-                writeTVar varRNG rng'
-                runProtocol $
-                    Just <$> forgeBlock cfg slot curNo prevHash (Set.fromList txs) proof
-
-      fork $ do
-        threadDelay (slotDuration (Proxy @m) * fromIntegral (numSlots + 10))
-        atomically $ do
-          chain <- getCurrentChain node
-          writeTVar varRes $ Just (us, chain)
+      onSlot btime (fromIntegral numSlots) $ atomically $ do
+        chain <- getCurrentChain node
+        writeTVar varRes $ Just (us, chain)
 
       return varRes
 
@@ -294,9 +252,6 @@ broadcastNetwork nodeInit initLedger initRNG = do
 
     getUtxo :: ExtLedgerState (SimpleBlock p c) -> Utxo
     getUtxo l = let SimpleLedgerState u = ledgerState l in u
-
-slotDuration :: MonadTimer m => proxy m -> Duration (Time m)
-slotDuration _ = 100000
 
 {-------------------------------------------------------------------------------
   Auxiliary
