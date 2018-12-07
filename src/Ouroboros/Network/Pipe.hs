@@ -19,7 +19,7 @@ import           Control.Concurrent.Async
 import           Control.Concurrent.STM
 import           Control.Monad.ST (stToIO)
 import qualified Data.Text as T (unpack)
-import           System.IO (Handle, hFlush)
+import           System.IO (Handle, hIsEOF, hFlush)
 import           System.Process (createPipe)
 
 import           Ouroboros.Network.Chain (Chain, ChainUpdate, Point)
@@ -118,7 +118,7 @@ pipeDuplex hndRead hndWrite = uniformDuplex send recv
     send = \encoding -> do
       BS.hPutBuilder hndWrite (CBOR.toBuilder encoding)
       hFlush hndWrite
-    recv = do
-      chunk <- BS.hGetSome hndRead LBS.smallChunkSize
-      -- chunk will be null only if EOF (confirm?)
-      pure $ if BS.null chunk then Nothing else Just chunk
+    recv = hIsEOF hndRead >>= \eof ->
+      if eof
+      then pure Nothing
+      else fmap Just (BS.hGetSome hndRead LBS.smallChunkSize)
