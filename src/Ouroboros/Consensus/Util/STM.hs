@@ -1,7 +1,11 @@
-{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Consensus.Util.STM (
-    Sim
+    -- * Misc
+    monitorTVar
+    -- * Simulate various monad stacks in STM
+  , Sim
   , simId
   , simReaderT
   , simWriterT
@@ -17,6 +21,30 @@ import           Control.Monad.Writer
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Network.MonadClass
+
+{-------------------------------------------------------------------------------
+  Misc
+-------------------------------------------------------------------------------}
+
+-- | Spawn a new thread that executes an action each time a TVar changes
+monitorTVar :: forall m a b. (MonadSTM m, Eq b)
+            => (a -> b) -> b -> TVar m a -> (a -> m ()) -> m ()
+monitorTVar f initB tvar notify = fork $ go initB
+  where
+    go :: b -> m ()
+    go b = do
+      (a, b') <- atomically $ do
+                   a <- readTVar tvar
+                   let b' = f a
+                   if b' == b
+                     then retry
+                     else return (a, b')
+      notify a
+      go b'
+
+{-------------------------------------------------------------------------------
+  Simulate monad stacks
+-------------------------------------------------------------------------------}
 
 type Sim n m = forall a. n a -> Tr m a
 
