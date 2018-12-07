@@ -17,7 +17,7 @@ import qualified Data.ByteString.Builder as BL
 import qualified Data.ByteString.Builder.Extra as BL
 import qualified Data.ByteString.Lazy.Char8 as C8
 import           Data.Either (isRight)
-import           Data.List (sort)
+import           Data.List (reverse, sort)
 import qualified Data.Map.Strict as M
 import           Data.Maybe (isJust)
 import           System.IO.Temp
@@ -82,6 +82,8 @@ tests = testGroup "Storage"
     , testProperty "Read from invalid epoch error equivalence" prop_slotDoesNotExistErrorEquivalence
       -- demoScript
     , testProperty "demoScript equivalence" prop_demoSimEquivalence
+      -- iterator
+    , testProperty "iterator works across epoch boundaries" prop_iteratorEpochBoundaries
     ]
   , testGroup "Volatile Storage"
     [ ]
@@ -104,6 +106,19 @@ withMockFSE :: MonadSTM m
             -> ((Either FsError a, MockFS) -> m b)
             -> m b
 withMockFSE = withMockFS
+
+consumeIterator :: (MonadMask m, MonadSTM m, HasFSE m)
+                => ImmutableDB m
+                -> Iterator m
+                -> m [C8.ByteString]
+consumeIterator db it = go mempty
+  where
+      go acc = do
+          next <- iteratorNext db it
+          case next of
+               Left _               -> return $ reverse acc
+               Right (Just (_,_,x)) -> go (C8.fromStrict x : acc)
+               Right Nothing        -> return $ reverse acc
 
 expectError :: (HasCallStack, Show a)
             => (FsError -> Bool)
@@ -431,4 +446,19 @@ prop_epochIsReadOnlyErrorEquivalence = monadicIO $ do
                              -- The second withDB should fail.
                              ExceptT $ withDB ["demo"] 0 $ \_ -> return $ Right ()
                              return ()
+                         ) sameDBError prettyImmutableDBError
+
+prop_iteratorEpochBoundaries :: HasCallStack => Property
+prop_iteratorEpochBoundaries = monadicIO $ do
+    run $ apiEquivalence (runExceptT $ do
+                             ExceptT $ withDB ["demo"] 0 $ \db -> runExceptT $ do
+                               ExceptT $ appendBinaryBlob db (0, RelativeSlot 0)
+                                                             (BL.lazyByteString . C8.pack $ "test")
+                               ExceptT $ appendBinaryBlob db (0, RelativeSlot 1)
+                                                             (BL.lazyByteString . C8.pack $ "dog")
+                               ExceptT $ appendBinaryBlob db (1, RelativeSlot 0)
+                                                             (BL.lazyByteString . C8.pack $ "haskell")
+                               it <- ExceptT $ streamBinaryBlob db (0, RelativeSlot 0)
+                                                                   (1, RelativeSlot 0)
+                               ExceptT $ Right <$> consumeIterator db it
                          ) sameDBError prettyImmutableDBError

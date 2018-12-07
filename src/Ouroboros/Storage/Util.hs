@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 module Ouroboros.Storage.Util (
     encodeIndexEntry
   , decodeIndexEntry
@@ -37,7 +38,7 @@ decodeIndexEntryAt :: Int
 decodeIndexEntryAt = readWord64BE
 
 readWord64BE :: Int -> BS.ByteString -> Word64
-readWord64BE i bs =
+readWord64BE !i bs =
     assert (i >= 0 && i+7 <= BS.length bs - 1) $
     fromIntegral (BS.unsafeIndex bs (i + 0)) `shiftL` 56
   + fromIntegral (BS.unsafeIndex bs (i + 1)) `shiftL` 48

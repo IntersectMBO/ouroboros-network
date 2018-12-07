@@ -22,20 +22,29 @@ module Ouroboros.Storage.Immutable.DB (
   , sameDBError
   , withDB
   , getBinaryBlob
+  , streamBinaryBlob
   , appendBinaryBlob
+  -- * Low-level Iterator
+  , Iterator -- opaque
+  , iteratorNext
+  , iteratorClose
   -- * Utility functions
   , liftFsError
   -- * Pretty-printing things
   , prettyImmutableDBError
   ) where
 
+import           Control.Exception (assert)
 import           Control.Monad
 import           Control.Monad.Catch
 import           Control.Monad.Except
 
 import           Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Builder as BS
+import qualified Data.ByteString.Lazy as BL
 import qualified Data.Text as T
+import qualified Data.Vector as U
 import           Data.Word
 import           Text.Printf
 import           Text.Read (readMaybe)
@@ -46,7 +55,6 @@ import           Ouroboros.Storage.FS.Class
 import           Ouroboros.Storage.Util as I
 
 import           Ouroboros.Network.MonadClass
-
 
 {-- | Our database is structured on disk this way:
 
@@ -70,7 +78,7 @@ type Epoch = Word
 
 -- | A /relative/ 'Slot' within an Epoch.
 newtype RelativeSlot = RelativeSlot { getRelativeSlot :: Word }
-                       deriving (Eq, Num, Show)
+                       deriving (Eq, Ord, Num, Show)
 
 {------------------------------------------------------------------------------
   Main types
@@ -139,6 +147,7 @@ data ImmutableDBError =
   -- ^ When trying to read from the given 'Epoch' the input 'RelativeSlot'
   -- was not there, either because it's too far in the future or because is
   -- in the process of being written.
+  | UnexpectedEndOfIterator CallStack
   deriving Show
 
 -- | Check two 'ImmutableDBError for shallow equality, i.e. if they have the same
@@ -156,6 +165,8 @@ sameDBError e1 e2 = case (e1, e2) of
     (SlotDoesNotExistError expected actual _, SlotDoesNotExistError exp2 act2 _) ->
         expected == exp2 && actual == act2
     (SlotDoesNotExistError _ _ _, _) -> False
+    (UnexpectedEndOfIterator _, UnexpectedEndOfIterator _) -> True
+    (UnexpectedEndOfIterator _, _) -> False
 
 prettyImmutableDBError :: ImmutableDBError -> String
 prettyImmutableDBError = \case
@@ -178,6 +189,9 @@ prettyImmutableDBError = \case
         <> ", requested was "
         <> show requested
         <> "): "
+        <> prettyCallStack cs
+    UnexpectedEndOfIterator cs   ->
+           "UnexpectedEndOfIterator: "
         <> prettyCallStack cs
 
 renderFile :: String -> Epoch -> FsPath
@@ -282,45 +296,192 @@ modifyInternalState db newEpoch action = do
                 action ns
             False -> action oldState
 
-getBinaryBlob :: forall m. (HasFSE m, MonadSTM m)
+
+-- | Loads an index file in memory.
+loadIndex :: forall m. HasFSE m
+          => ImmutableDB m
+          -> Epoch
+          -> ExceptT FsError m (U.Vector (Word64, Word64))
+loadIndex ImmutableDB{..} epoch = do
+    let indexFile = _dbFolder <> renderFile "index" epoch
+    fullIndex <- withFile indexFile ReadMode $ \hnd ->
+                     BL.toStrict . BS.toLazyByteString <$> readAll hnd mempty
+    let fullLen    = fromIntegral (BS.length fullIndex)
+        -- We need to divide by 2 at the end as we store tuples.
+        -- Example: We have stored only 1 slot in our index, so we have stored
+        -- an offset and an size for a total of 2 * sizeof(Word64) = 16 bytes.
+        -- To get the right size back we need to divide 16 by sizeof(Word64)
+        -- and finally by 2.
+        vectorSize = ceiling $
+            (fullLen / (fromIntegral indexEntrySizeBytes) :: Double) / 2.0
+        mkEntry ix =
+          let start = decodeIndexEntryAt (ix * indexEntrySizeBytes) fullIndex
+              end   = decodeIndexEntryAt ((ix + 1) * indexEntrySizeBytes) fullIndex
+              in (start, end - start)
+    return $ U.generate vectorSize mkEntry
+  where
+    -- Reads the data from the index file 64k bytes at the time.
+    readAll :: FsHandleE m
+            -> BS.Builder
+            -> ExceptT FsError m BS.Builder
+    readAll hnd acc = do
+        bytesRead <- hGet hnd 64000
+        let acc' = acc <> BS.byteString bytesRead
+        case BS.length bytesRead < 64000 of
+             True  -> return acc'
+             False -> readAll hnd acc'
+
+-- | An Iterator is a read handle which can be used to efficiently stream
+-- binary blobs across multiple epochs.
+data Iterator m = Iterator
+                { _it_current      :: TVar m (Epoch, RelativeSlot)
+                , _it_end          :: (Epoch, RelativeSlot)
+                , _it_epoch_handle :: TVar m (FsHandleE m)
+                , _it_epoch_index  :: TVar m (U.Vector (Word64, Word64))
+                -- ^ We load in memory the index file for the epoch we are
+                -- currently iterating on, as it's going to be small anyway
+                -- (usually ~150kb).
+                }
+
+type IteratorResult = Maybe (Epoch, RelativeSlot, ByteString)
+
+-- | Steps an 'Iterator, yielding either an 'ImmutableDBError' or some data
+-- alongside with the 'RelativeSlot' and 'Epoch' this data refers to.
+-- Returns Nothing when there is no more data to be fetched.
+-- NOTE(adn): This works under the assumption that the user is the exclusive
+-- owner of the iterator.
+iteratorNext :: forall m. (MonadSTM m, MonadMask m, HasFSE m)
+             => ImmutableDB m
+             -> Iterator m
+             -> m (Either ImmutableDBError IteratorResult)
+iteratorNext db it@Iterator{..} = do
+  current <- atomically $ readTVar _it_current
+  case outOfBounds current _it_end of
+      True  -> runExceptT $ do
+          ExceptT $ iteratorClose it
+          return Nothing
+      False -> do
+          -- Read more data and step the iterator
+          (eHnd, fullIndex) <- atomically $ do
+              e <- readTVar _it_epoch_handle
+              i <- readTVar _it_epoch_index
+              return (e,i)
+          r <- readNext eHnd fullIndex (snd current)
+          runExceptT $ case r of
+              Left err -> liftFsError $ do
+                  hClose eHnd
+                  throwError err
+              Right bs -> do
+                  -- Step the iterator
+                  iteratorStep
+                  return  $ Just (fst current, snd current, bs)
+  where
+    outOfBounds :: (Epoch, RelativeSlot) -> (Epoch, RelativeSlot) -> Bool
+    outOfBounds (currentEpoch, currentSlot) (endEpoch, endSlot)
+      | currentEpoch > endEpoch                           = True
+      | currentEpoch == endEpoch && currentSlot > endSlot = True
+      | otherwise                                         = False
+
+    readNext :: (Monad m, HasFSE m)
+             => FsHandleE m
+             -> U.Vector (Word64, Word64)
+             -> RelativeSlot
+             -> m (Either FsError ByteString)
+    readNext eHnd fullIndex (RelativeSlot slot) = runExceptT $ do
+          -- Step 1: grab from the cached index the blobSize.
+          let (_, !blobSize) = fullIndex U.! (fromIntegral slot)
+
+          -- Step 2: Read from the epoch file. No need for seeking: as we
+          -- are streaming, we are already positioned at the correct place.
+          hGet eHnd (fromEnum blobSize)
+
+    -- Steps the internal state of an 'Iterator'. Internal use only.
+    iteratorStep :: (MonadSTM m, MonadMask m, HasFSE m)
+                 => ExceptT ImmutableDBError m ()
+    iteratorStep = liftFsError $ do
+        ((epoch, RelativeSlot slot), fullIndex) <- atomically $ do
+            (,) <$> readTVar _it_current <*> readTVar _it_epoch_index
+
+        let epoch' = epoch + 1
+        -- If the current relative slot is equal to the size of the index, it
+        -- means we reached the end of the epoch and we need to open the next
+        -- epoch file.
+        case fromIntegral (slot + 1) == U.length fullIndex &&
+             not (outOfBounds (epoch', 0) _it_end) of
+             True  -> do
+                 eHnd <- atomically $ readTVar _it_epoch_handle
+                 eHnd' <- hOpen (_dbFolder db <> renderFile "epoch" epoch') ReadMode
+                          `finally` hClose eHnd
+                 index' <- loadIndex db epoch'
+                 atomically $ do
+                     writeTVar _it_epoch_handle eHnd'
+                     writeTVar _it_epoch_index index'
+                     writeTVar _it_current (epoch', RelativeSlot 0)
+             False -> atomically $ writeTVar _it_current (epoch, RelativeSlot $ slot + 1)
+
+-- | Dispose of the 'Iterator'.
+iteratorClose :: (MonadSTM m, MonadMask m, HasFSE m)
+              => Iterator m
+              -> m (Either ImmutableDBError ())
+iteratorClose Iterator{..} = runExceptT $ liftFsError $ do
+    atomically (readTVar _it_epoch_handle) >>= hClose
+
+-- | When given a start and a stop position, this function returns an
+-- 'Iterator' suitable to be used to efficiently stream binary blocks out of
+-- the 'ImmutableDB'.
+streamBinaryBlob :: forall m. (HasFSE m, MonadSTM m)
+                 => ImmutableDB m
+                 -> (Epoch, RelativeSlot)
+                 -- ^ When to start streaming.
+                 -> (Epoch, RelativeSlot)
+                 -- ^ When to stop streaming.
+                 -> m (Either ImmutableDBError (Iterator m))
+streamBinaryBlob db@ImmutableDB{..} start@(epoch,RelativeSlot slot) end = do
+    runExceptT $ liftFsError $ do
+        eHnd      <- hOpen (_dbFolder <> renderFile "epoch" epoch) ReadMode
+        fullIndex <- loadIndex db epoch
+
+        -- Position the epoch handle at the right place
+        _ <- hSeek eHnd AbsoluteSeek (fst $ fullIndex U.! fromIntegral slot)
+
+        (current, eVar, iVar) <- atomically $ do
+            (,,) <$> newTVar start <*> newTVar eHnd <*> newTVar fullIndex
+
+        return $ Iterator {
+            _it_current      = current
+          , _it_end          = end
+          , _it_epoch_handle = eVar
+          , _it_epoch_index  = iVar
+          }
+
+getBinaryBlob :: forall m. (HasFSE m, MonadSTM m, MonadMask m)
               => ImmutableDB m
               -> (Epoch, RelativeSlot)
               -> m (Either ImmutableDBError ByteString)
-getBinaryBlob ImmutableDB{..} (epoch, RelativeSlot relativeSlot) = do
+getBinaryBlob db@ImmutableDB{..} start@(epoch, RelativeSlot relativeSlot) = do
     InternalState{..} <- atomically (readTMVar _dbInternalState)
+    runExceptT $ do
+        withSlotGuard _currentEpoch _currentNextExpectedRelativeSlot $ do
+            it  <- ExceptT $ streamBinaryBlob db start start
+            res <- ExceptT $ iteratorNext db it
+            case res of
+                Nothing -> throwError (UnexpectedEndOfIterator callStack)
+                Just (e,s,bs) ->
+                    assert (e == fst start && s == snd start) $ return bs
+    where
+      -- Checks that the slot we are trying to access is valid.
+      withSlotGuard :: Epoch
+                    -> RelativeSlot
+                    -> ExceptT ImmutableDBError m a
+                    -> ExceptT ImmutableDBError m a
+      withSlotGuard currentEpoch (RelativeSlot nextExpectedSlot) action
+        | epoch > currentEpoch || relativeSlot >= nextExpectedSlot =
+            throwError
+               $ SlotDoesNotExistError (currentEpoch, RelativeSlot nextExpectedSlot)
+                                       (epoch, RelativeSlot relativeSlot)
+                                       callStack
+        | otherwise = action
 
-    -- Check whether or not the requested slot can be accessed.
-    withSlotGuard _currentEpoch _currentNextExpectedRelativeSlot $ do
-        runExceptT $ liftFsError $ do
-            withFile (_dbFolder <> renderFile "epoch" epoch) ReadMode $ \eHnd ->
-                withFile (_dbFolder <> renderFile "index" epoch) ReadMode $ \iHnd -> do
-                    -- Step 1: grab the offset in bytes of the requested slot.
-                    let indexSeekPosition = fromEnum relativeSlot * indexEntrySizeBytes
-                    _ <- hSeek iHnd AbsoluteSeek (toEnum indexSeekPosition)
-
-                    -- Step 1: computes the offset on disk and the blob size.
-                    (blobOffset, !blobSize) <- do
-                        bytes <- hGet iHnd (indexEntrySizeBytes * 2)
-                        let !start = decodeIndexEntry   bytes
-                        let !end   = decodeIndexEntryAt indexEntrySizeBytes bytes
-                        return (start, end - start)
-
-                    -- Step 2: Seek in the epoch file
-                    _ <- hSeek eHnd AbsoluteSeek blobOffset
-                    hGet eHnd (fromEnum blobSize)
-  where
-    -- Checks that the slot we are trying to access is valid.
-    withSlotGuard :: Epoch
-                  -> RelativeSlot
-                  -> m (Either ImmutableDBError a)
-                  -> m (Either ImmutableDBError a)
-    withSlotGuard currentEpoch (RelativeSlot nextExpectedSlot) action
-      | epoch > currentEpoch || relativeSlot >= nextExpectedSlot =
-          return $ Left
-                 $ SlotDoesNotExistError (currentEpoch, RelativeSlot nextExpectedSlot)
-                                         (epoch, RelativeSlot relativeSlot)
-                                         callStack
-      | otherwise = action
 
 
 -- | The size of each entry in the index file, namely 8 bytes for the offset
