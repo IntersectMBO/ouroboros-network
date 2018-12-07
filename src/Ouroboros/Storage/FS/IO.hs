@@ -97,6 +97,10 @@ catchFSErrorIO (splitDirectories -> mountPoint) action = do
             return . Left =<< (FsResourceAlreadyInUse <$> getPath ioErr <*> pure callStack)
           | isEOFErrorType eType =
             return . Left =<< (FsReachedEOF <$> getPath ioErr <*> pure callStack)
+          | isFullErrorType eType =
+            return . Left =<< (FsDeviceFull <$> getPath ioErr <*> pure callStack)
+          | isPermissionErrorType eType =
+            return . Left =<< (FsInsufficientPermissions <$> getPath ioErr <*> pure callStack)
           | eType == InappropriateType =
             return . Left =<< (FsResourceInappropriateType <$> getPath ioErr <*> pure callStack)
           | otherwise = throwIO (FsUnexpectedException ioErr callStack)

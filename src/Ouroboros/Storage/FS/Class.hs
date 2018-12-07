@@ -65,6 +65,8 @@ data FsError =
   | FsResourceDoesNotExist FsPath CallStack
   | FsResourceAlreadyExist FsPath CallStack
   | FsReachedEOF FsPath CallStack
+  | FsDeviceFull FsPath CallStack
+  | FsInsufficientPermissions FsPath CallStack
   deriving Show
 
 -- | We define a 'FsUnexpectedException' separated by the rest so that we
@@ -98,6 +100,10 @@ prettyFSError = \case
         "FsResourceAlreadyInUse for " <> show fp <> ": " <> prettyCallStack cs
     FsReachedEOF fp cs                ->
         "FsReachedEOF for " <> show fp <> ": " <> prettyCallStack cs
+    FsDeviceFull fp cs                ->
+        "FsDeviceFull for " <> show fp <> ": " <> prettyCallStack cs
+    FsInsufficientPermissions fp cs   ->
+        "FsInsufficientPermissions for " <> show fp <> ": " <> prettyCallStack cs
 
 
 -- | Check two 'FsError' for shallow equality, i.e. if they have the same
@@ -121,6 +127,10 @@ sameFsError e1 e2 = case (e1, e2) of
     (FsResourceAlreadyExist _ _, _)                                        -> False
     (FsReachedEOF fp1 _, FsReachedEOF fp2 _)                               -> fp1 == fp2
     (FsReachedEOF _ _, _)                                                  -> False
+    (FsDeviceFull fp1 _, FsDeviceFull fp2 _)                               -> fp1 == fp2
+    (FsDeviceFull _ _, _)                                                  -> False
+    (FsInsufficientPermissions fp1 _, FsInsufficientPermissions fp2 _)     -> fp1 == fp2
+    (FsInsufficientPermissions _ _, _)                                     -> False
 
 {------------------------------------------------------------------------------
  Typeclass which abstracts over the filesystem
