@@ -3,11 +3,11 @@ packages:
 - .
 flags: {}
 extra-package-dbs: []
-allow-newer: true
+allow-newer: false
 nix:
     enable: false
-    shell-file: shell.nix.lars
 extra-deps:
+- typed-transitions/
 - cborg-0.2.1.0
 - serialise-0.2.1.0
 - QuickCheck-2.12.6.1
