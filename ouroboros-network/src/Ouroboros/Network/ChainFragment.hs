@@ -52,7 +52,7 @@ module Ouroboros.Network.ChainFragment (
   splitBeforeSlot,
   splitAfterSlot,
   splitAfterPoint,
-  lookupByIndexFromEnd,
+  lookupByIndexFromEnd, FT.SearchResult(..),
   selectPoints,
   findFirstPoint,
   intersectChainFragments,

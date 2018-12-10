@@ -14,7 +14,6 @@ module Test.ChainFragment
   , genHeaderChainFragment
   ) where
 
-import qualified Data.FingerTree as FT
 import qualified Data.List as L
 import           Data.Maybe (listToMaybe, maybeToList, maybe, fromMaybe, fromJust)
 
@@ -276,7 +275,7 @@ prop_foldChainFragment (TestBlockChainFragment c) =
 prop_lookupByIndexFromEnd :: TestChainFragmentAndIndex -> Property
 prop_lookupByIndexFromEnd (TestChainFragmentAndIndex c i) =
   case CF.lookupByIndexFromEnd c i of
-    FT.Position _ b _  -> b === CF.toNewestFirst c !! i
+    CF.Position _ b _  -> b === CF.toNewestFirst c !! i
     _                  -> property (i < 0 || i >= CF.length c)
 
 prop_selectPoints :: TestBlockChainFragment -> Property
