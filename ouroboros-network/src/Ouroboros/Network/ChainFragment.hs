@@ -318,14 +318,12 @@ selectPoints offsets = go relativeOffsets
 -- This function is used to verify whether 'selectPoints' behaves as expected.
 selectPointsSpec :: HasHeader block
                 => [Int] -> ChainFragment block -> [Point block]
-selectPointsSpec offsets = go relativeOffsets
-  where
-    relativeOffsets = zipWith (-) offsets (0:offsets)
-    go [] _         = []
-    go _  Empty     = []
-    go (off:offs) c
-      | c'@(_ :> b) <- dropNewest off c = blockPoint b : go offs c'
-      | otherwise                       = []
+selectPointsSpec offsets c =
+    [ blockPoint (bs !! offset)
+    | let bs = toNewestFirst c
+          len = L.length bs
+    , offset <- offsets
+    , offset < len ]
 
 -- | Find the block after the given point.
 successorBlock :: HasHeader block
