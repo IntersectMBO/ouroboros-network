@@ -214,7 +214,7 @@ broadcastNetwork btime nodeInit initLedger initRNG = do
     nodes <- forM (Map.toList nodeInit) $ \(us, (cfg, initSt, initChain)) -> do
       varRes <- atomically $ newTVar Nothing
 
-      let callbacks :: NodeCallbacks (SimpleBlock p c)
+      let callbacks :: NodeCallbacks (MonadPseudoRandomT gen (Tr m)) (SimpleBlock p c)
           callbacks = NodeCallbacks {
               produceBlock = \proof l slot prevPoint prevNo -> do
                 let prevHash  = castHash (Chain.pointHash prevPoint)
