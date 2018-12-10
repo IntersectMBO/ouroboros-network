@@ -139,7 +139,7 @@ foldChainFragment blk gen (ChainFragment c) = Foldable.foldl' blk gen c
 foldChainFragmentSpec :: HasHeader block
                       => (a -> block -> a) -> a -> ChainFragment block -> a
 foldChainFragmentSpec _blk gen Empty    = gen
-foldChainFragmentSpec  blk gen (c :> b) = blk (foldChainFragment blk gen c) b
+foldChainFragmentSpec  blk gen (c :> b) = blk (foldChainFragmentSpec blk gen c) b
 
 prettyPrintChainFragment :: HasHeader block
                          => String -> (block -> String) -> ChainFragment block -> String
