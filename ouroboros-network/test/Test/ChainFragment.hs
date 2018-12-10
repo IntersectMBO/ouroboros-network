@@ -84,11 +84,6 @@ tests = testGroup "ChainFragment"
   , testProperty "pointOnChainFragment"                      prop_pointOnChainFragment
   , testProperty "lookupByIndexFromEnd"                      prop_lookupByIndexFromEnd
   , testProperty "selectPoints"                              prop_selectPoints
-  , testGroup "splitBeforeSlot"
-    [ testProperty "splitBeforeSlot join"                    prop_splitBeforeSlot_join
-    , testProperty "splitBefore pointOnChainFragment"        prop_splitBeforeSlot_pointOnChainFragment
-    , testProperty "splitBefore slots"                       prop_splitBeforeSlot_slots
-    ]
   , testGroup "splitAfterSlot"
     [ testProperty "splitAfterSlot join"                     prop_splitAfterSlot_join
     , testProperty "splitAfter pointOnChainFragment"         prop_splitAfterSlot_pointOnChainFragment
@@ -211,33 +206,6 @@ prop_slotOnChainFragment (TestChainFragmentAndPoint c p) =
 prop_pointOnChainFragment :: TestChainFragmentAndPoint -> Bool
 prop_pointOnChainFragment (TestChainFragmentAndPoint c p) =
   CF.pointOnChainFragment p c == CF.pointOnChainFragmentSpec p c
-
-prop_splitBeforeSlot_join :: TestChainFragmentAndPoint -> Property
-prop_splitBeforeSlot_join (TestChainFragmentAndPoint c p) =
-  case CF.splitBeforeSlot c (pointSlot p) of
-    Just (l, r) -> CF.joinChainFragments l r === Just c
-    Nothing     -> property $ not (CF.pointOnChainFragment p c)
-
-prop_splitBeforeSlot_pointOnChainFragment :: TestChainFragmentAndPoint -> Bool
-prop_splitBeforeSlot_pointOnChainFragment (TestChainFragmentAndPoint c p) =
-  case CF.splitBeforeSlot c (pointSlot p) of
-    Just (l, r) -> not (CF.pointOnChainFragment p l)
-                && CF.joinChainFragments l r == Just c
-                && pointSlot p == blockSlot (head (CF.toOldestFirst r))
-                && if CF.pointOnChainFragment p c
-                   then CF.pointOnChainFragment p r
-                   else True
-    Nothing     -> not (CF.pointOnChainFragment p c)
-
-prop_splitBeforeSlot_slots :: TestChainFragmentAndPoint -> Bool
-prop_splitBeforeSlot_slots (TestChainFragmentAndPoint c p) =
-  case CF.splitBeforeSlot c (pointSlot p) of
-    Just (l, r) -> all (<  pointSlot p) (slots l)
-                && all (>= pointSlot p) (slots r)
-    Nothing     -> not (CF.pointOnChainFragment p c)
-  where
-    slots :: ChainFragment Block -> [Slot]
-    slots = map blockSlot . CF.toOldestFirst
 
 prop_splitAfterSlot_join :: TestChainFragmentAndPoint -> Property
 prop_splitAfterSlot_join (TestChainFragmentAndPoint c p) =

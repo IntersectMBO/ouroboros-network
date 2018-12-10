@@ -49,7 +49,6 @@ module Ouroboros.Network.ChainFragment (
   pointOnChainFragment,
   successorBlock,
   lookupBySlot,
-  splitBeforeSlot,
   splitAfterSlot,
   splitAfterPoint,
   lookupByIndexFromEnd, FT.SearchResult(..),
@@ -334,21 +333,6 @@ successorBlock p c = case lookupBySlotFT c (pointSlot p) of
     , n FT.:< _ <- FT.viewl ft'
     -> Just n
   _ -> Nothing
-
--- | Split the 'ChainFragment' before the block with given slot.
---
--- If the chain fragment contained such a block, it will be the first
--- (oldest/leftmost) block on the second returned chain.
-splitBeforeSlot :: HasHeader block
-                => ChainFragment block
-                -> Slot
-                -> Maybe (ChainFragment block, ChainFragment block)
-splitBeforeSlot (ChainFragment t) s = do
-  let (l, r) = FT.split (\v -> bmMaxSlot v >= s) t
-  guard $ case FT.viewl r of
-            b FT.:< _ -> blockSlot b == s
-            _         -> False
-  return (ChainFragment l, ChainFragment r)
 
 -- | Split the 'ChainFragment' after the block with given slot.
 --
