@@ -78,15 +78,15 @@ instance OuroborosTag p => OuroborosTag (TestProtocol p) where
   selectChain     (TestNodeConfig cfg _) = selectChain     cfg
   applyChainState (TestNodeConfig cfg _) = applyChainState cfg . fst
 
-deriving instance (OuroborosTag p, Show ph) => Show (Payload (TestProtocol p) ph)
-deriving instance (OuroborosTag p, Eq   ph) => Eq   (Payload (TestProtocol p) ph)
-deriving instance (OuroborosTag p, Ord  ph) => Ord  (Payload (TestProtocol p) ph)
+deriving instance (OuroborosTag p, Show (Payload p ph)) => Show (Payload (TestProtocol p) ph)
+deriving instance (OuroborosTag p, Eq   (Payload p ph)) => Eq   (Payload (TestProtocol p) ph)
+deriving instance (OuroborosTag p, Ord  (Payload p ph)) => Ord  (Payload (TestProtocol p) ph)
 
 instance Condense (Payload p ph)
       => Condense (Payload (TestProtocol p) ph) where
     condense (TestPayload pld stake) =
         condense pld <> ",stake=" <> condense stake
 
-instance (OuroborosTag p, Serialise ph)
+instance (OuroborosTag p, Serialise (Payload p ph))
       => Serialise (Payload (TestProtocol p) ph) where
   -- use generic instance

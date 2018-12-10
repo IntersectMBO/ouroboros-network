@@ -1,7 +1,6 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE KindSignatures      #-}
-{-# LANGUAGE NumericUnderscores  #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -117,7 +116,7 @@ realBlockchainTime systemStart slotDuration = do
     first   <- currentSlot
     slotVar <- atomically $ newTVar first
     fork $ forever $ do
-      threadDelay $ round (slotDuration * 1_000_000)
+      threadDelay $ round (slotDuration * 1000000)
       atomically . writeTVar slotVar =<< currentSlot
     return BlockchainTime {
         getCurrentSlot = readTVar slotVar

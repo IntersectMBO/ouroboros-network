@@ -68,8 +68,8 @@ instance ( OuroborosTag p
 
     selectChain     (McsNodeConfig cfg) = selectChain' (Proxy :: Proxy c) cfg
 
-deriving instance (OuroborosTag p, Show      ph) => Show      (Payload (ModChainSel p c) ph)
-deriving instance (OuroborosTag p, Eq        ph) => Eq        (Payload (ModChainSel p c) ph)
-deriving instance (OuroborosTag p, Ord       ph) => Ord       (Payload (ModChainSel p c) ph)
-deriving instance (OuroborosTag p, Condense  ph) => Condense  (Payload (ModChainSel p c) ph)
-deriving instance (OuroborosTag p, Serialise ph) => Serialise (Payload (ModChainSel p c) ph)
+deriving instance (OuroborosTag p, Show      (Payload p ph)) => Show      (Payload (ModChainSel p c) ph)
+deriving instance (OuroborosTag p, Eq        (Payload p ph)) => Eq        (Payload (ModChainSel p c) ph)
+deriving instance (OuroborosTag p, Ord       (Payload p ph)) => Ord       (Payload (ModChainSel p c) ph)
+deriving instance (OuroborosTag p, Condense  (Payload p ph)) => Condense  (Payload (ModChainSel p c) ph)
+deriving instance (OuroborosTag p, Serialise (Payload p ph)) => Serialise (Payload (ModChainSel p c) ph)
