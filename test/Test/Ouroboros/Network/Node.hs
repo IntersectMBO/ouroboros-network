@@ -31,12 +31,8 @@ import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
-import           Protocol.Transition (SomeTransition)
-
-import           Ouroboros.Network.Protocol.ChainSync.Type (ChainSyncMessage)
-
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Chain (Chain (..), Point, chainToList)
+import           Ouroboros.Network.Chain (Chain (..), chainToList)
 import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.MonadClass
 import           Ouroboros.Network.Node

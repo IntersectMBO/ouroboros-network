@@ -39,8 +39,8 @@ directMain cchoice pchoice = case cchoice of
       ImprovePoint improvement pchoice' ->  do
         cchoice' <- improvePoint cimprove improvement
         directMain cchoice' pchoice'
-      ImproveForked points pchoice' -> do
-        cchoice' <- improveForked cimprove points
+      ImproveForked points' pchoice' -> do
+        cchoice' <- improveForked cimprove points'
         directMain cchoice' pchoice'
 
   Consumer.Next unit cnext -> do

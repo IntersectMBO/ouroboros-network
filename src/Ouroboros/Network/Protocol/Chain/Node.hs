@@ -13,7 +13,6 @@
 module Ouroboros.Network.Protocol.Chain.Node where
 
 import Control.Concurrent.Async (concurrently, forConcurrently)
-import Control.Concurrent.MVar (newMVar, withMVar)
 import Control.Concurrent (threadDelay)
 import Control.Monad (forM, forM_, join)
 import qualified Data.Array as Array (assocs)
@@ -336,7 +335,6 @@ runNetDescStandardIO
   -> IO (Map Int (t, (r, (([()], [()])))))
 runNetDescStandardIO netDesc eqBlockHeader headerBlockNo mkPoint chainSelection = do
   nodes <- atomically $ realiseStaticNetDescSTM netDesc
-  stdoutLock <- newMVar ()
   let runNode desc = runWithChainSelectionSTM
         eqBlockHeader
         headerBlockNo

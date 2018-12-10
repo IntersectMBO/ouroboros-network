@@ -26,7 +26,7 @@ pingPongServerPeer
   :: Monad m
   => PingPongServer m a
   -> Peer PingPongProtocol PingPongMessage
-          (Awaiting StIdle) (Finished StDone)
+          ('Awaiting 'StIdle) ('Finished 'StDone)
           m a
 pingPongServerPeer PingPongServer{..} =
 

@@ -67,7 +67,7 @@ spawnLedgerStateListeners :: forall block.
                           -> TVar (DemoLedgerState block)
                           -> TVar (ChainProducerState block)
                           -> IO [Async.Async ()]
-spawnLedgerStateListeners ourselves cfg q initialChain ledgerVar cps = do
+spawnLedgerStateListeners _ourselves cfg _q initialChain ledgerVar cps = do
     chainV <- atomically $ newTVar initialChain
 
     queueA <- atomically $ newTVar []
@@ -90,7 +90,7 @@ spawnLedgerStateListeners ourselves cfg q initialChain ledgerVar cps = do
                       , extLedgerState   = ledgerState'
                       }
               pure (Right client)
-          , rollbackward = \to head -> flip runReaderT ledgerVar $ do
+          , rollbackward = \_to _head -> flip runReaderT ledgerVar $ do
               modifyLedger $ \l -> l { howManyRollbacks = howManyRollbacks l + 1 }
               pure (Right client)
           , points = \_ -> pure client

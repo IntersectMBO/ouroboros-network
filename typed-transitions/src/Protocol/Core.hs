@@ -10,7 +10,6 @@
 module Protocol.Core where
 
 import Data.Kind (Type)
-import Data.Void
 
 -- |
 -- = Using a type transition system to describe either side of a
@@ -36,11 +35,11 @@ data Peer p (tr :: st -> st -> Type) (from :: Status st) (to :: Status st) f t w
   PeerYield
     :: ( TrControl p from inter ~ control )
     => Exchange p tr from inter control
-    -> Peer p tr (ControlNext control Yielding Awaiting Finished inter) to f t
-    -> Peer p tr (Yielding from) to f t
+    -> Peer p tr (ControlNext control 'Yielding 'Awaiting 'Finished inter) to f t
+    -> Peer p tr ('Yielding from) to f t
   PeerAwait
-    :: (forall inter . tr from inter -> Peer p tr (ControlNext (TrControl p from inter) Awaiting Yielding Finished inter) to f t)
-    -> Peer p tr (Awaiting from) to f t
+    :: (forall inter . tr from inter -> Peer p tr (ControlNext (TrControl p from inter) 'Awaiting 'Yielding 'Finished inter) to f t)
+    -> Peer p tr ('Awaiting from) to f t
 
 -- | In a client/server model, one side will be awaiting when the other is
 -- receiving. This type will be included in a description of either side of
@@ -56,9 +55,9 @@ data Status k where
 --
 -- See 'stepping'.
 type family Complement (status :: st -> Status st) :: st -> Status st where
-  Complement Awaiting = Yielding
-  Complement Yielding = Awaiting
-  Complement Finished = Finished
+  Complement 'Awaiting = 'Yielding
+  Complement 'Yielding = 'Awaiting
+  Complement 'Finished = 'Finished
 
 -- | Description of control flow: either hold onto it or release it.
 data Control where
@@ -83,19 +82,19 @@ type family Partition (p :: r) (st :: k) (a :: t) (b :: t) (c :: t) :: t
 -- It's the same thing except that we're picking 'Hold if the XOR is false
 -- (they are the same) and 'Release otherwise.
 type TrControl p from to =
-  Partition p from (Partition p to Hold Release Terminate)
-                   (Partition p to Release Hold Terminate)
+  Partition p from (Partition p to 'Hold 'Release 'Terminate)
+                   (Partition p to 'Release 'Hold 'Terminate)
                    -- This part is weird. If 'from' is in the terminal set,
                    -- then ...
-                   Terminate
+                   'Terminate
 
 -- | This family is used in the definition of 'Peer' to determine whether, given
 -- a parituclar transition, a yielding side continues to yield or begins
 -- awaiting, and vice verse for an awaiting side.
 type family ControlNext control a b c where
-  ControlNext Hold      a b c = a
-  ControlNext Release   a b c = b
-  ControlNext Terminate a b c = c
+  ControlNext 'Hold      a b c = a
+  ControlNext 'Release   a b c = b
+  ControlNext 'Terminate a b c = c
 
 -- | Included in every yield, this gives not only the transition, but a
 -- 'Control' code to hold or release. The constructor for yielding will
@@ -106,10 +105,10 @@ type family ControlNext control a b c where
 -- unifies with _both_ 'Hold and 'Release, which would allow the yielding and
 -- awaiting sides to get out of sync.
 data Exchange p tr from to control where
-  Part :: tr from to -> Exchange p tr from to Hold
+  Part :: tr from to -> Exchange p tr from to 'Hold
   -- | Radio terminology. End of transmission and response is expected.
-  Over :: tr from to -> Exchange p tr from to Release
-  Out  :: tr from to -> Exchange p tr from to Terminate
+  Over :: tr from to -> Exchange p tr from to 'Release
+  Out  :: tr from to -> Exchange p tr from to 'Terminate
 
 -- | Get the transition from an 'Exchange'.
 exchangeTransition :: Exchange p tr from to control -> tr from to
@@ -120,7 +119,7 @@ exchangeTransition (Out tr)  = tr
 -- | Boilerplate: hoist a natural transformation through a 'Peer'.
 hoistPeer
   :: ( Functor g )
-  => (forall t . f t -> g t)
+  => (forall x . f x -> g x)
   -> Peer p tr from to f t
   -> Peer p tr from to g t
 hoistPeer nat term = case term of
@@ -138,34 +137,34 @@ lift = PeerLift
 yield
   :: ( TrControl p from inter ~ control )
   => Exchange p tr from inter control
-  -> Peer p tr (ControlNext control Yielding Awaiting Finished inter) to f t
-  -> Peer p tr (Yielding from) to f t
+  -> Peer p tr (ControlNext control 'Yielding 'Awaiting 'Finished inter) to f t
+  -> Peer p tr ('Yielding from) to f t
 yield = PeerYield
 
 out
-  :: ( TrControl p from inter ~ Terminate )
+  :: ( TrControl p from inter ~ 'Terminate )
   => tr from inter
-  -> Peer p tr (Finished inter) to f t
-  -> Peer p tr (Yielding from) to f t
+  -> Peer p tr ('Finished inter) to f t
+  -> Peer p tr ('Yielding from) to f t
 out tr = yield (Out tr)
 
 over
-  :: ( TrControl p from inter ~ Release )
+  :: ( TrControl p from inter ~ 'Release )
   => tr from inter
-  -> Peer p tr (Awaiting inter) to f t
-  -> Peer p tr (Yielding from) to f t
+  -> Peer p tr ('Awaiting inter) to f t
+  -> Peer p tr ('Yielding from) to f t
 over tr = yield (Over tr)
 
 part
-  :: ( TrControl p from inter ~ Hold )
+  :: ( TrControl p from inter ~ 'Hold )
   => tr from inter
-  -> Peer p tr (Yielding inter) to f t
-  -> Peer p tr (Yielding from) to f t
+  -> Peer p tr ('Yielding inter) to f t
+  -> Peer p tr ('Yielding from) to f t
 part tr = yield (Part tr)
 
 await
-  :: (forall inter . tr from inter -> Peer p tr (ControlNext (TrControl p from inter) Awaiting Yielding Finished inter) to f t)
-  -> Peer p tr (Awaiting from) to f t
+  :: (forall inter . tr from inter -> Peer p tr (ControlNext (TrControl p from inter) 'Awaiting 'Yielding 'Finished inter) to f t)
+  -> Peer p tr ('Awaiting from) to f t
 await = PeerAwait
 
 -- | Akin to '>>=' but the continuation carries it from the 'inter'mediate
@@ -213,69 +212,3 @@ connect (PeerYield exchange n) (PeerAwait k) = case exchange of
 
 flipEither :: Either a b -> Either b a
 flipEither = either Right Left
-
--- | Like 'connect' but if one side ends before the other, the continuation is
--- retained.
--- This is not ready.
-stepping
-  :: forall p tr st begin endA endB fa fb a b .
-     ( Functor fa, Functor fb
-     )
-  => Peer p tr (st begin)            endA fa a
-  -> Peer p tr (Complement st begin) endB fb b
-  -> Stepping p tr endA endB fa fb a b
--- If either peer is at a lift, stop there, even if the other one is done.
--- This avoids the problematic
---   (PeerLift _, PeerDone b)
--- case in which GHC rejects the program because it doesn't know that
---   Complement . Complement = Id
-stepping (PeerLift fa) peerB         = LeftLift (fmap (flip stepping peerB) fa)
-stepping peerA         (PeerLift fb) = RightLift (fmap (stepping peerA) fb)
-stepping (PeerDone a) (PeerDone b)   = BothDone a b
-{-
-stepping peerA@(PeerLift _) (PeerDone b) =
-  -- We need to give a
-  --   Peer p tr (Complement (Complement st) begin) endA fa a
-  -- GHC can't figure out that (Complement (Complement st)) ~ st for all st,
-  -- so we'll tell it to take a break.
-  let peerA' :: Peer p tr (Complement (Complement st) begin) endA fa a
-      peerA' = unsafeCoerce peerA
-  in  RightDone b peerA'
--}
--- These 2 cases, GHC can figure it out, because it knows that 'begin' is
--- 'Yielding' or 'Awaiting'.
-stepping peerA@(PeerYield _ _) (PeerDone b) = RightDone b peerA
-stepping peerA@(PeerAwait _)   (PeerDone b) = RightDone b peerA
-stepping (PeerDone a) peerB@(PeerYield _ _) = LeftDone a peerB
-stepping (PeerDone a) peerB@(PeerAwait _)   = LeftDone a peerB
-stepping (PeerAwait k) (PeerYield exchange n) = case exchange of
-  Part tr -> stepping (k tr) n
-  Over tr -> flipStepping (stepping n (k tr))
-  Out  tr -> flipStepping (stepping n (k tr))
-stepping (PeerYield exchange n) (PeerAwait k) = case exchange of
-  Part tr -> stepping n (k tr)
-  Over tr -> flipStepping (stepping (k tr) n)
-  Out  tr -> flipStepping (stepping (k tr) n)
-
-flipStepping
-  :: ( Functor fa
-     , Functor fb
-     )
-  => Stepping p tr endA endB fa fb a b
-  -> Stepping p tr endB endA fb fa b a
-flipStepping term = case term of
-  BothDone a b -> BothDone b a
-  LeftDone a k -> RightDone a k
-  RightDone b k -> LeftDone b k
-  LeftLift it -> RightLift (fmap flipStepping it)
-  RightLift it -> LeftLift (fmap flipStepping it)
-
-data Stepping p tr endA endB fa fb a b where
-  BothDone  :: a -> b -> Stepping p tr endA endB fa fb a b
-  LeftDone  :: a -> Peer p tr (Complement st endA) endB fb b -> Stepping p tr (st endA) endB fa fb a b
-  RightDone :: b -> Peer p tr (Complement st endB) endA fa a -> Stepping p tr endA (st endB) fa fb a b
-  LeftLift  :: fa (Stepping p tr endA endB fa fb a b) -> Stepping p tr endA endB fa fb a b
-  RightLift :: fb (Stepping p tr endA endB fa fb a b) -> Stepping p tr endA endB fa fb a b
-
-type Progress (tr :: st -> st -> Type) =
-  forall from to . tr from to -> (forall next . tr to next -> Void) -> Void

@@ -59,11 +59,11 @@ useCodecWithDuplex
 useCodecWithDuplex = go Nothing
   where
   -- Tracks leftovers from the duplex.
-  go :: forall status state .
+  go :: forall status' state .
         Maybe concreteRecv
      -> Duplex m m concreteSend concreteRecv
      -> Codec m concreteSend concreteRecv tr state
-     -> Peer p tr (status state) end m t
+     -> Peer p tr (status' state) end m t
      -> m (Result t)
   go leftovers duplex codec peer = case peer of
     PeerDone t -> pure $ Normal t
@@ -85,7 +85,7 @@ useCodecWithDuplex = go Nothing
     :: forall state .
        Maybe concreteRecv
     -> Duplex m m concreteSend concreteRecv
-    -> (forall inter . tr state inter -> Peer p tr (ControlNext (TrControl p state inter) Awaiting Yielding Finished inter) end m t)
+    -> (forall inter . tr state inter -> Peer p tr (ControlNext (TrControl p state inter) 'Awaiting 'Yielding 'Finished inter) end m t)
     -> DecoderStep m concreteRecv (Decoded tr state (Codec m concreteSend concreteRecv tr))
     -> m (Result t)
   startDecoding leftovers duplex k step = case step of
@@ -94,7 +94,7 @@ useCodecWithDuplex = go Nothing
     -- decoder is done. That's bizarre but not necessarily wrong. It _must_ be
     -- the case that `leftovers'` is empty, otherwise the decoder conjured
     -- some leftovers from nothing.
-    Done leftovers' (Decoded tr codec') -> go leftovers duplex codec' (k tr)
+    Done _ (Decoded tr codec') -> go leftovers duplex codec' (k tr)
     -- Typically, the decoder will be partial. We start by passing the
     -- leftovers if any. NB: giving `Nothing` to `l` means there's no more
     -- input.
@@ -105,7 +105,7 @@ useCodecWithDuplex = go Nothing
   decodeFromDuplex
     :: forall state .
        Duplex m m concreteSend concreteRecv
-    -> (forall inter . tr state inter -> Peer p tr (ControlNext (TrControl p state inter) Awaiting Yielding Finished inter) end m t)
+    -> (forall inter . tr state inter -> Peer p tr (ControlNext (TrControl p state inter) 'Awaiting 'Yielding 'Finished inter) end m t)
     -> DecoderStep m concreteRecv (Decoded tr state (Codec m concreteSend concreteRecv tr))
     -> m (Result t)
   decodeFromDuplex duplex k step = case step of

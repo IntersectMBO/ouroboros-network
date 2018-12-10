@@ -44,7 +44,7 @@ pingPongClientPeer
   :: Monad m
   => PingPongClient m a
   -> Peer PingPongProtocol PingPongMessage
-          (Yielding StIdle) (Finished StDone)
+          ('Yielding 'StIdle) ('Finished 'StDone)
           m a
 
 pingPongClientPeer (SendMsgStop result) =
