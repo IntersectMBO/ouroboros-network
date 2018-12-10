@@ -128,18 +128,14 @@ data NodeKernel m up down b = NodeKernel {
     }
 
 -- | Callbacks required when initializing the node
-data NodeCallbacks b = NodeCallbacks {
+data NodeCallbacks m b = NodeCallbacks {
       -- | Produce a block
-      produceBlock :: forall m.
-                      ( MonadRandom m
-                      , HasNodeState (BlockProtocol b) m
-                      )
-                   => IsLeader (BlockProtocol b) -- Proof we are leader
+      produceBlock :: IsLeader (BlockProtocol b) -- Proof we are leader
                    -> ExtLedgerState b -- Current ledger state
                    -> Slot             -- Current slot
                    -> Point b          -- Previous point
                    -> BlockNo          -- Previous block number
-                   -> m b
+                   -> NodeStateT (BlockProtocol b) m b
     }
 
 nodeKernel :: forall m (rndT :: (* -> *) -> (* -> *)) b up down.
@@ -160,7 +156,7 @@ nodeKernel :: forall m (rndT :: (* -> *) -> (* -> *)) b up down.
            -> BlockchainTime m
            -> ExtLedgerState b
            -> Chain b
-           -> NodeCallbacks b
+           -> NodeCallbacks (rndT (Tr m)) b
            -> m (NodeKernel m up down b)
 nodeKernel us cfg initState simRnd btime initLedger initChain NodeCallbacks{..} = do
     stateVar    <- atomically $ newTVar initState
