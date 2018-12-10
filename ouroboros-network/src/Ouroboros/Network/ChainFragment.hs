@@ -140,8 +140,11 @@ foldChainFragmentSpec _blk gen Empty    = gen
 foldChainFragmentSpec  blk gen (c :> b) = blk (foldChainFragmentSpec blk gen c) b
 
 prettyPrintChainFragment :: HasHeader block
-                         => String -> (block -> String) -> ChainFragment block -> String
-prettyPrintChainFragment nl ppBlock = foldChainFragment (\s b -> s ++ nl ++ "    " ++ ppBlock b) "ChainFragment:"
+                         => String -> (block -> String)
+                         -> ChainFragment block
+                         -> String
+prettyPrintChainFragment nl ppBlock =
+    foldChainFragment (\s b -> s ++ nl ++ "    " ++ ppBlock b) "ChainFragment:"
 
 mapChainFragment :: (HasHeader block1, HasHeader block2)
                  => (block1 -> block2) -> ChainFragment block1 -> ChainFragment block2
