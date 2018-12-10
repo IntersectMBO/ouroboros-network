@@ -60,7 +60,7 @@ instance OuroborosTag p => OuroborosTag (ExtNodeConfig cfg p) where
   mkPayload (EncNodeConfig cfg _) proof ph =
       EncPayload <$> mkPayload cfg proof ph
 
-  selectChain     (EncNodeConfig cfg _) = selectChain     cfg
+  compareChain    (EncNodeConfig cfg _) = compareChain    cfg
   checkIsLeader   (EncNodeConfig cfg _) = checkIsLeader   cfg
   applyChainState (EncNodeConfig cfg _) = applyChainState cfg
 

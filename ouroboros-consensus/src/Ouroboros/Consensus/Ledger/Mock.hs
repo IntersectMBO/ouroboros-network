@@ -62,6 +62,7 @@ import           Ouroboros.Consensus.Node (NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
+import           Ouroboros.Consensus.Protocol.LeaderSchedule
 import           Ouroboros.Consensus.Protocol.Praos
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.Condense
@@ -358,6 +359,10 @@ instance (PraosCrypto c, SimpleBlockCrypto c')
       => ProtocolLedgerView (SimpleBlock (ExtNodeConfig AddrDist (Praos c)) c') where
   protocolLedgerView (EncNodeConfig _ addrDist) (SimpleLedgerState u _) =
       relativeStakes $ totalStakes addrDist u
+
+instance (PraosCrypto c, SimpleBlockCrypto c')
+      => ProtocolLedgerView (SimpleBlock (WithLeaderSchedule (Praos c)) c') where
+  protocolLedgerView _ _ = ()
 
 {-------------------------------------------------------------------------------
   Compute relative stake

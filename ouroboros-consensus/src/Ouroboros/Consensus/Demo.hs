@@ -13,6 +13,7 @@ module Ouroboros.Consensus.Demo (
     DemoProtocol(..)
   , DemoBFT
   , DemoPraos
+  , DemoLeaderSchedule
   , Block
   , NumCoreNodes(..)
   , ProtocolInfo(..)
@@ -44,6 +45,7 @@ import           Ouroboros.Consensus.Node (CoreNodeId (..), NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
+import           Ouroboros.Consensus.Protocol.LeaderSchedule
 import           Ouroboros.Consensus.Protocol.Praos
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.Condense
@@ -52,13 +54,15 @@ import           Ouroboros.Consensus.Util.Condense
   Abstract over the various protocols
 -------------------------------------------------------------------------------}
 
-type DemoBFT   = Bft BftMockCrypto
-type DemoPraos = ExtNodeConfig AddrDist (Praos PraosMockCrypto)
+type DemoBFT            = Bft BftMockCrypto
+type DemoPraos          = ExtNodeConfig AddrDist (Praos PraosMockCrypto)
+type DemoLeaderSchedule = WithLeaderSchedule (Praos PraosMockCrypto)
 
 -- | Consensus protocol to use
 data DemoProtocol p where
-  DemoBFT   :: DemoProtocol DemoBFT
-  DemoPraos :: PraosParams -> DemoProtocol DemoPraos
+  DemoBFT            :: DemoProtocol DemoBFT
+  DemoPraos          :: PraosParams -> DemoProtocol DemoPraos
+  DemoLeaderSchedule :: LeaderSchedule -> PraosParams -> DemoProtocol DemoLeaderSchedule
 
 -- | Our 'Block' type stays the same.
 type Block p = SimpleBlock p SimpleBlockMockCrypto
@@ -80,8 +84,9 @@ type DemoProtocolConstraints p = (
   )
 
 demoProtocolConstraints :: DemoProtocol p -> Dict (DemoProtocolConstraints p)
-demoProtocolConstraints DemoBFT       = Dict
-demoProtocolConstraints (DemoPraos _) = Dict
+demoProtocolConstraints DemoBFT                  = Dict
+demoProtocolConstraints (DemoPraos _)            = Dict
+demoProtocolConstraints (DemoLeaderSchedule _ _) = Dict
 
 newtype NumCoreNodes = NumCoreNodes Int
 
@@ -137,6 +142,44 @@ protocolInfo (DemoPraos params) (NumCoreNodes numCoreNodes) (CoreNodeId nid) =
     verKeys = IntMap.fromList [ (nd, (VerKeyMockKES nd, VerKeyMockVRF nd))
                               | nd <- [0 .. numCoreNodes - 1]
                               ]
+protocolInfo (DemoLeaderSchedule schedule params)
+             (NumCoreNodes numCoreNodes)
+             (CoreNodeId nid) =
+    ProtocolInfo
+    { pInfoConfig    = WLSNodeConfig
+        { lsNodeConfigSchedule = schedule
+        , lsNodeConfigP        = PraosNodeConfig
+            { praosParams       = params
+            , praosNodeId       = CoreId nid
+            , praosSignKeyVRF   = SignKeyMockVRF nid
+            , praosInitialEta   = 0
+            , praosInitialStake = genesisStakeDist addrDist
+            , praosVerKeys      = verKeys
+            }
+        , lsNodeConfigNodeId   = nid
+        }
+    , pInfoInitChain  = Genesis
+    , pInfoInitLedger = ExtLedgerState
+        { ledgerState         = genesisLedgerState addrDist
+        , ouroborosChainState = ()
+        }
+    , pInfoInitState  = ()
+    }
+  where
+    addrDist = mkAddrDist numCoreNodes
+
+    verKeys :: IntMap (VerKeyKES MockKES, VerKeyVRF MockVRF)
+    verKeys = IntMap.fromList [ (nd, (VerKeyMockKES nd, VerKeyMockVRF nd))
+                              | nd <- [0 .. numCoreNodes - 1]
+                              ]
+
+{-
+  data NodeConfig (WithLeaderSchedule p) = WLSNodeConfig
+    { lsNodeConfigWithLeaderSchedule :: LeaderSchedule
+    , lsNodeConfigP                  :: NodeConfig p
+    , lsNodeConfigNodeId             :: Int
+    }
+    -}
 
 {-------------------------------------------------------------------------------
   Support for running the demos

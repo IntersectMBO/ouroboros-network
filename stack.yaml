@@ -1,13 +1,25 @@
 ﻿resolver: nightly-2018-11-15
 packages:
-- .
+- ouroboros-consensus/
 flags: {}
 extra-package-dbs: []
-allow-newer: false
+allow-newer: true
 nix:
     enable: false
 extra-deps:
 - typed-transitions/
+- ouroboros-network/
 - cborg-0.2.1.0
+- ekg-0.4.0.15
+- ekg-core-0.1.1.6
+- ekg-json-0.1.0.6
+- fgl-5.7.0.1
+- graphviz-2999.20.0.2
+- io-streams-haproxy-1.0.0.2
 - serialise-0.2.1.0
+- snap-core-1.0.3.2
+- snap-server-1.1.0.0
 - QuickCheck-2.12.6.1
+- time-units-1.0.0
+- git: https://github.com/input-output-hk/iohk-monitoring-framework
+  commit: 09b269cd1926303902e8dea3c8703b6e588004f5

@@ -33,44 +33,39 @@ import           Ouroboros.Network.Serialise
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.Condense
 
-class OuroborosTag (Protocol c) => ChainSelection c where
+class OuroborosTag p => ChainSelection p s where
 
-    type Protocol c :: *
+    compareChain' :: (Eq b, HasHeader b)
+                  => proxy s
+                  -> NodeConfig p
+                  -> Slot
+                  -> Chain b
+                  -> Chain b
+                  -> PreferredChain
 
-    selectChain' :: (Eq b, HasHeader b, SupportedBlock (Protocol c) b)
-                 => proxy c
-                 -> NodeConfig (Protocol c)
-                 -> Slot
-                 -> Chain b
-                 -> [Chain b]
-                 -> Chain b
+data ModChainSel p s
 
-data ModChainSel p c
+instance ChainSelection p s => OuroborosTag (ModChainSel p s) where
 
-instance ( OuroborosTag p
-         , ChainSelection c
-         , p ~ Protocol c
-         ) => OuroborosTag (ModChainSel p c) where
+    newtype NodeConfig     (ModChainSel p s)    = McsNodeConfig (NodeConfig p)
+    newtype Payload        (ModChainSel p s) ph = McsPayload (Payload p ph)
 
-    newtype NodeConfig (ModChainSel p c) = McsNodeConfig (NodeConfig p)
-    newtype Payload (ModChainSel p c) ph = McsPayload (Payload p ph)
-
-    type NodeState (ModChainSel p c) = NodeState p
-    type ChainState (ModChainSel p c) = ChainState p
-    type IsLeader (ModChainSel p c) = IsLeader p
-    type LedgerView (ModChainSel p c) = LedgerView p
-    type ValidationErr (ModChainSel p c) = ValidationErr p
-    type SupportedBlock (ModChainSel p c) = SupportedBlock p
+    type    NodeState      (ModChainSel p s)    = NodeState p
+    type    ChainState     (ModChainSel p s)    = ChainState p
+    type    IsLeader       (ModChainSel p s)    = IsLeader p
+    type    LedgerView     (ModChainSel p s)    = LedgerView p
+    type    ValidationErr  (ModChainSel p s)    = ValidationErr p
+    type    SupportedBlock (ModChainSel p s)    = SupportedBlock p
 
     mkPayload       (McsNodeConfig cfg) proof ph = McsPayload <$> mkPayload cfg proof ph
 
     checkIsLeader   (McsNodeConfig cfg) = checkIsLeader   cfg
     applyChainState (McsNodeConfig cfg) = applyChainState cfg
 
-    selectChain     (McsNodeConfig cfg) = selectChain' (Proxy :: Proxy c) cfg
+    compareChain    (McsNodeConfig cfg) = compareChain' (Proxy :: Proxy s) cfg
 
-deriving instance Show      (Payload p ph) => Show      (Payload (ModChainSel p c) ph)
-deriving instance Eq        (Payload p ph) => Eq        (Payload (ModChainSel p c) ph)
-deriving instance Ord       (Payload p ph) => Ord       (Payload (ModChainSel p c) ph)
-deriving instance Condense  (Payload p ph) => Condense  (Payload (ModChainSel p c) ph)
-deriving instance Serialise (Payload p ph) => Serialise (Payload (ModChainSel p c) ph)
+deriving instance Show      (Payload p ph) => Show      (Payload (ModChainSel p s) ph)
+deriving instance Eq        (Payload p ph) => Eq        (Payload (ModChainSel p s) ph)
+deriving instance Ord       (Payload p ph) => Ord       (Payload (ModChainSel p s) ph)
+deriving instance Condense  (Payload p ph) => Condense  (Payload (ModChainSel p s) ph)
+deriving instance Serialise (Payload p ph) => Serialise (Payload (ModChainSel p s) ph)

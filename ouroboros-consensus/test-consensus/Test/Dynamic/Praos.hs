@@ -14,11 +14,11 @@
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE UndecidableInstances  #-}
 
-{-# OPTIONS -fno-warn-unused-binds #-}
 {-# OPTIONS -fno-warn-orphans #-}
 
 module Test.Dynamic.Praos (
     tests
+  , prop_all_common_prefix
   ) where
 
 import           Data.Map.Strict (Map)
@@ -76,7 +76,7 @@ prop_simple_praos_convergence numSlots numCoreNodes params =
     isValid nodeIds trace = counterexample (show trace) $
       case trace of
         [(_, final)] ->   collect (shortestLength final)
-                     $    Map.keys final == nodeIds
+                     $    Map.keys final === nodeIds
                      .&&. prop_all_common_prefix praosK (Map.elems final)
         _otherwise   -> property False
 
@@ -90,20 +90,28 @@ prop_common_prefix :: forall b. (HasHeader b, Condense b, Eq b)
 prop_common_prefix l x y = go x y .&&. go y x
   where
     go c d =
-        let c' = dropLastBlocks (fromIntegral l) c
-            e  = "after dropping "
-                 <> show l
+        let (l', c') = findPrefix c d
+            e        = "after dropping "
+                 <> show l'
                  <> " blocks from "
                  <> showChain c
-                 <> ", the resulting "
+                 <> ",\n\nthe resulting "
                  <> showChain c'
-                 <> " is not a prefix of "
+                 <> "\n\nis a prefix of "
                  <> showChain d
-        in  counterexample "" $ c' `isPrefixOf` d
+                 <> ",\n\nbut only "
+                 <> show l
+                 <> " block(s) should have been necessary"
+        in  counterexample e $ l' <= l
+
+    findPrefix c' d
+        | c' `isPrefixOf` d = (0, c')
+        | otherwise         = let (l', c'') = findPrefix (dropLastBlocks 1 c') d
+                              in  (l' + 1, c'')
 
     showChain :: Chain b -> String
     showChain c = condense c
-                  <> "(length "
+                  <> "\n(length "
                   <> show (Chain.length c)
                   <> case lastSlot c of
                         Nothing -> ")"

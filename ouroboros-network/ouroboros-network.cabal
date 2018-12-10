@@ -8,7 +8,7 @@ maintainer:
 copyright:           2018 IOHK
 category:            Network
 build-type:          Simple
-extra-source-files:  ChangeLog.md, README.md
+extra-source-files:  ChangeLog.md
 cabal-version:       >=1.10
 
 source-repository head
