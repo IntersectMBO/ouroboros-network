@@ -422,7 +422,12 @@ pointOnChainFragmentSpec p = go
 --
 -- @l1@ and @l2@ will have same last block, i.e. /head/. The original chain
 -- @c1@ can be obtained by putting @r1@ after @l1@, similarly for @c2@: by
--- putting @r2@ after @l2@.
+-- putting @r2@ after @l2@:
+--
+-- @
+-- Just c1 = 'joinChainFragments' l1 r1
+-- Just c1 = 'joinChainFragments' l1 r1
+-- @
 --
 -- Chains that intersect will always have the exact same common prefix, but
 -- chain fragments might have prefixes that differ in length. The blocks they

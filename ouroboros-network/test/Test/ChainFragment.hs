@@ -194,9 +194,8 @@ prop_intersectChainFragments (TestChainFragmentFork origL1 origL2 c1 c2) =
     Just (l1, l2, r1, r2) ->
       l1 == origL1 && l2 == origL2 &&
       CF.headPoint l1 == CF.headPoint l2 &&
-      CF.toNewestFirst r1 ++ CF.toNewestFirst l1 == CF.toNewestFirst c1 &&
-      CF.toNewestFirst r2 ++ CF.toNewestFirst l2 == CF.toNewestFirst c2
-
+      CF.joinChainFragments l1 r1 == Just c1 &&
+      CF.joinChainFragments l2 r2 == Just c2
 
 prop_serialise_chain :: TestBlockChainFragment -> Property
 prop_serialise_chain (TestBlockChainFragment chain) =
