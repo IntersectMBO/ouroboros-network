@@ -71,7 +71,6 @@ module Ouroboros.Network.ChainFragment (
 import           Prelude hiding (drop, head, length, null)
 
 import           Control.Exception (assert)
-import           Control.Monad (guard)
 import           Data.FingerTree (FingerTree)
 import qualified Data.FingerTree as FT
 import qualified Data.Foldable as Foldable
@@ -334,37 +333,38 @@ successorBlock p c = case lookupBySlotFT c (pointSlot p) of
     -> Just n
   _ -> Nothing
 
--- | Split the 'ChainFragment' after the block with given slot.
+-- | Split the 'ChainFragment' after the block with given slot. Or, if there
+-- is no block with the given slot in the chain fragment, split at the
+-- location where it would have been.
 --
 -- If the chain fragment contained such a block, it will be the head
 -- (newest/rightmost) block on the first returned chain.
 splitAfterSlot :: HasHeader block
                => ChainFragment block
                -> Slot
-               -> Maybe (ChainFragment block, ChainFragment block)
-splitAfterSlot (ChainFragment t) s = do
-  let (l, r) = FT.split (\v -> bmMaxSlot v > s) t
-  guard $ case FT.viewr l of
-            _ FT.:> b -> blockSlot b == s
-            _         -> False
-  return (ChainFragment l, ChainFragment r)
+               -> (ChainFragment block, ChainFragment block)
+splitAfterSlot (ChainFragment t) s = (ChainFragment l, ChainFragment r)
+  where
+   (l, r) = FT.split (\v -> bmMaxSlot v > s) t
 
--- | Split the 'ChainFragment' after the block with given 'Point'.
+-- | Split the 'ChainFragment' after the block at the given 'Point'. Return
+--  Nothing if the 'ChainFragment' does not contain a block at the given
+--  'Point'.
 --
--- Like 'splitAfterSlot', but checks whether the head (newest/rightmost) block
--- of the first returned chain is the same 'Point' as the given one.
+-- If the chain fragment contained a block at the given 'Point', it will be
+-- the (newest/rightmost) block of the first returned chain.
 splitAfterPoint :: HasHeader block
                 => ChainFragment block
                 -> Point block
                 -> Maybe (ChainFragment block, ChainFragment block)
-splitAfterPoint (ChainFragment t) p = do
-  let (l, r) = FT.split (\v -> bmMaxSlot v > pointSlot p) t
-  guard $ case FT.viewr l of
-            _ FT.:> b -> blockPoint b == p
-            _         -> False
-  return (ChainFragment l, ChainFragment r)
+splitAfterPoint c p
+  | (l@(ChainFragment lt), r) <- splitAfterSlot c (pointSlot p)
+  , _ FT.:> b <- FT.viewr lt
+  , blockPoint b == p
+  = Just (l, r)
+  | otherwise
+  = Nothing
 
--- | Find the first 'Point' in the list of points that is on the given
 -- 'ChainFragment'. Return 'Nothing' if none of them are on the
 -- 'ChainFragment'. TODO test?
 findFirstPoint
