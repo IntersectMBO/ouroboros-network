@@ -232,9 +232,9 @@ dropOldest :: HasHeader block
 dropOldest n (ChainFragment c) =
     ChainFragment $ FT.dropUntil (\v -> bmSize v > n) c
 
-
-length :: ChainFragment block -> Int
-length (ChainFragment c) = Foldable.length c
+-- | \( O(1) \).
+length :: HasHeader block => ChainFragment block -> Int
+length (ChainFragment c) = bmSize $ FT.measure c
 
 null :: ChainFragment block -> Bool
 null (ChainFragment c) = Foldable.null c
