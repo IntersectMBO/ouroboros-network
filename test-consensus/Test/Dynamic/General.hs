@@ -39,13 +39,14 @@ import qualified Data.Set as Set
 import           Numeric.Natural (Natural)
 import           Test.QuickCheck
 
-import           Protocol.Transition (SomeTransition (..))
+import           Protocol.Channel
+import           Protocol.Transition
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain
 import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.MonadClass
-import           Ouroboros.Network.Node
+import           Ouroboros.Network.Protocol.ChainSync.Codec.Id
 import           Ouroboros.Network.Protocol.ChainSync.Type
 import           Ouroboros.Network.Sim (VTime)
 
@@ -57,6 +58,7 @@ import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.Test
 import           Ouroboros.Consensus.Util (Condense (..))
 import qualified Ouroboros.Consensus.Util.Chain as Chain
+import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Consensus.Util.STM
 
@@ -168,6 +170,12 @@ test_simple_protocol_convergence mkConfig mkState initialChainState isValid seed
         , encNodeConfigExt = testConfig
         }
 
+-- | Communication channel
+type NodeChan  m b = Channel m (SomeTransition (ChainSyncMessage b (Point b)))
+
+-- | All connections between all nodes
+type NodeChans m b = Map NodeId (Map NodeId (NodeChan m b, NodeChan m b))
+
 -- | Setup fully-connected topology, where every node is both a producer
 -- and a consumer
 --
@@ -200,7 +208,8 @@ broadcastNetwork btime nodeInit initLedger initRNG = do
     -- Creates the communication channels, /including/ the one to be used
     -- to talk to ourselves. Such \"feedback loop\" is handy to be able to
     -- /actually/ apply the ledger rules.
-    chans <- fmap Map.fromList $ forM nodeIds $ \us -> do
+    chans :: NodeChans m (SimpleBlock p c)
+       <- fmap Map.fromList $ forM nodeIds $ \us -> do
                fmap (us, ) $ fmap Map.fromList $ forM nodeIds $ \them ->
                  fmap (them, ) $
                    createCoupledChannels
@@ -214,7 +223,7 @@ broadcastNetwork btime nodeInit initLedger initRNG = do
     nodes <- forM (Map.toList nodeInit) $ \(us, (cfg, initSt, initChain)) -> do
       varRes <- atomically $ newTVar Nothing
 
-      let callbacks :: NodeCallbacks (MonadPseudoRandomT gen (Tr m)) (SimpleBlock p c)
+      let callbacks :: NodeCallbacks m (MonadPseudoRandomT gen) (SimpleBlock p c)
           callbacks = NodeCallbacks {
               produceBlock = \proof l slot prevPoint prevNo -> do
                 let prevHash  = castHash (Chain.pointHash prevPoint)
@@ -223,10 +232,11 @@ broadcastNetwork btime nodeInit initLedger initRNG = do
                 -- Produce some random transactions
                 txs <- genTxs addrs (getUtxo l)
                 forgeBlock cfg slot curNo prevHash (Set.fromList txs) proof
+
+            , adoptedNewChain = \_newChain -> return ()
             }
 
       node <- nodeKernel
-                us
                 cfg
                 initSt
                 (simMonadPseudoRandomT varRNG)
@@ -235,9 +245,21 @@ broadcastNetwork btime nodeInit initLedger initRNG = do
                 initChain
                 callbacks
 
+      let withLogging :: Show id
+                      => id
+                      -> NodeChan m (SimpleBlock p c)
+                      -> NodeChan m (SimpleBlock p c)
+          withLogging chId = loggingChannel chId
+                                            (withSomeTransition show)
+                                            (withSomeTransition show)
+
       forM_ (filter (/= us) nodeIds) $ \them -> do
-        registerDownstream node them $ fst (chans Map.! us Map.! them)
-        registerUpstream   node them $ snd (chans Map.! them Map.! us)
+        registerDownstream (nodeNetworkLayer node) codecChainSync $ \cc ->
+          cc $ withLogging (TalkingToConsumer us them) $
+                 fst (chans Map.! us Map.! them)
+        registerUpstream (nodeNetworkLayer node) them codecChainSync $ \cc ->
+          cc $ withLogging (TalkingToProducer us them) $
+                 snd (chans Map.! them Map.! us)
 
       onSlot btime (fromIntegral numSlots) $ atomically $ do
         chain <- getCurrentChain node
@@ -336,3 +358,27 @@ genTxs addr u = do
         else do
             tx <- genTx addr u
             return [tx]
+
+{-------------------------------------------------------------------------------
+  Logging support
+-------------------------------------------------------------------------------}
+
+-- | Message sent by or to a producer
+data TalkingToProducer pid = TalkingToProducer {
+      producerUs   :: NodeId
+    , producerThem :: pid
+    }
+  deriving (Show)
+
+-- | Message sent by or to a consumer
+data TalkingToConsumer cid = TalkingToConsumer {
+      consumerUs   :: NodeId
+    , consumerThem :: cid
+    }
+  deriving (Show)
+
+instance Condense pid => Condense (TalkingToProducer pid) where
+  condense TalkingToProducer{..} = condense (producerUs, producerThem)
+
+instance Condense pid => Condense (TalkingToConsumer pid) where
+  condense TalkingToConsumer{..} = condense (consumerUs, consumerThem)
