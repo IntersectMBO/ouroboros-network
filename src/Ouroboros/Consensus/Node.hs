@@ -1,5 +1,7 @@
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE NumericUnderscores  #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -10,6 +12,7 @@ module Ouroboros.Consensus.Node (
     BlockchainTime(..)
   , onSlot
   , testBlockchainTime
+  , realBlockchainTime
     -- * Node
   , NodeKernel(..)
   , NodeCallbacks(..)
@@ -22,6 +25,7 @@ module Ouroboros.Consensus.Node (
   , NodeId(..)
   , Channel
   , Network.createCoupledChannels
+  , Network.loggingChannel
   ) where
 
 import           Control.Monad
@@ -31,10 +35,11 @@ import           Data.Function (on)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe)
+import           Data.Time
 
 import           Protocol.Channel
+import           Protocol.Codec
 import           Protocol.Driver
-import           Protocol.Transition
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (Chain (..), ChainUpdate (..), Point)
@@ -43,21 +48,18 @@ import           Ouroboros.Network.ChainProducerState
 import           Ouroboros.Network.ChainSyncExamples
 import           Ouroboros.Network.MonadClass
 import           Ouroboros.Network.Protocol.ChainSync.Client
-import           Ouroboros.Network.Protocol.ChainSync.Codec.Id
 import           Ouroboros.Network.Protocol.ChainSync.Server
 import           Ouroboros.Network.Protocol.ChainSync.Type
 
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util
-import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.STM
 
 -- TODO: We currently stil import /some/ stuff from the network layer Node
 -- module. We should audit this and perhaps move these to different modules
 -- in the networking layer to make the division clearer.
 
-import           Ouroboros.Network.Node (NodeId (..), loggingChannel)
+import           Ouroboros.Network.Node (NodeId (..))
 import qualified Ouroboros.Network.Node as Network
 
 {-------------------------------------------------------------------------------
@@ -107,58 +109,82 @@ testBlockchainTime numSlots slotDuration = do
     firstSlot :: Slot
     firstSlot = 0
 
+-- | Real blockchain time
+realBlockchainTime :: UTCTime -- ^ Chain start time
+                   -> Double  -- ^ Slot duration (seconds)
+                   -> IO (BlockchainTime IO)
+realBlockchainTime systemStart slotDuration = do
+    first   <- currentSlot
+    slotVar <- atomically $ newTVar first
+    fork $ forever $ do
+      threadDelay $ round (slotDuration * 1_000_000)
+      atomically . writeTVar slotVar =<< currentSlot
+    return BlockchainTime {
+        getCurrentSlot = readTVar slotVar
+      , onSlotChange   = monitorTVar id first slotVar
+      }
+  where
+    currentSlot :: IO Slot
+    currentSlot = do
+      now <- getCurrentTime
+      let diff :: Double -- system duration in seconds
+          diff = realToFrac $ now `diffUTCTime` systemStart
+      return $ Slot $ floor (diff / slotDuration) + 1
+
 {-------------------------------------------------------------------------------
   Relay node
 -------------------------------------------------------------------------------}
 
 -- | Interface against running relay node
-data NodeKernel m up down b = NodeKernel {
-      -- | Register a new upstream node (chain producer)
-      registerUpstream :: up
-                       -> Channel m (SomeTransition (ChainSyncMessage b (Point b)))
-                       -> m ()
-
-      -- | Register a new downstream node (chain consumer)
-    , registerDownstream :: down
-                         -> Channel m (SomeTransition (ChainSyncMessage b (Point b)))
-                         -> m ()
+data NodeKernel m up b = NodeKernel {
+      -- | Access to underlying network layer
+      --
+      -- Can be used for registering upstream and downstream nodes.
+      nodeNetworkLayer  :: NetworkLayer up b m
 
       -- | Get current chain
-    , getCurrentChain :: Tr m (Chain b)
+    , getCurrentChain   :: Tr m (Chain b)
+
+      -- | Get current extended ledger state
+    , getExtLedgerState :: Tr m (ExtLedgerState b)
     }
 
 -- | Callbacks required when initializing the node
-data NodeCallbacks m b = NodeCallbacks {
+data NodeCallbacks m rndT b = NodeCallbacks {
       -- | Produce a block
+      --
+      -- This has access to the random number generator
       produceBlock :: IsLeader (BlockProtocol b) -- Proof we are leader
                    -> ExtLedgerState b -- Current ledger state
                    -> Slot             -- Current slot
                    -> Point b          -- Previous point
                    -> BlockNo          -- Previous block number
-                   -> NodeStateT (BlockProtocol b) m b
+                   -> NodeStateT (BlockProtocol b) (rndT (Tr m)) b
+
+      -- | Callback called whenever we adopt a new chain
+      --
+      -- NOTE: This intentionally lives in @m@ rather than @Tr m@ so that this
+      -- callback can have side effects.
+    , adoptedNewChain   :: Chain b -> m ()
     }
 
-nodeKernel :: forall m (rndT :: (* -> *) -> (* -> *)) b up down.
+nodeKernel :: forall m (rndT :: (* -> *) -> (* -> *)) b up.
               ( MonadSTM m
-              , MonadSay m
               , MonadRandom (rndT (Tr m))
               , ProtocolLedgerView b
               , Eq b
-              , Show down
-              , Show up
               , Ord up
               )
-           => NodeId
-           -> NodeConfig (BlockProtocol b)
+           => NodeConfig (BlockProtocol b)
            -> NodeState (BlockProtocol b)
            -> (forall m'. Sim m' m -> Sim (rndT m') m)
            -- ^ Provide access to a random number generator
            -> BlockchainTime m
            -> ExtLedgerState b
            -> Chain b
-           -> NodeCallbacks (rndT (Tr m)) b
-           -> m (NodeKernel m up down b)
-nodeKernel us cfg initState simRnd btime initLedger initChain NodeCallbacks{..} = do
+           -> NodeCallbacks m rndT b
+           -> m (NodeKernel m up b)
+nodeKernel cfg initState simRnd btime initLedger initChain NodeCallbacks{..} = do
     stateVar    <- atomically $ newTVar initState
     ourChainVar <- atomically $ newTVar initChain
     updatesVar  <- atomically $ newEmptyTMVar -- TODO: use bounded queue instead
@@ -187,7 +213,7 @@ nodeKernel us cfg initState simRnd btime initLedger initChain NodeCallbacks{..} 
     -- because we cannot validate headers without also having the ledger. Once
     -- we have the header/body split, we're going to have to be more precise
     -- about what we can and cannot validate.
-    nw <- initNetworkLayer us initChain btime NetworkCallbacks {
+    nw <- initNetworkLayer initChain btime NetworkCallbacks {
               prioritizeChains     = selectChain cfg
             , validateChainHeaders = verifyChain cfg initLedger
             , chainDownloaded      = \newChain -> atomically $
@@ -202,7 +228,7 @@ nodeKernel us cfg initState simRnd btime initLedger initChain NodeCallbacks{..} 
         updateChain newChain upd = do
           writeTVar ourChainVar newChain
           updateLedgerState newChain upd
-          networkChainAdopted nw newChain
+          chainAdopted nw newChain
 
     -- Thread to do chain validation and adoption
     fork $ forever $ do
@@ -225,30 +251,41 @@ nodeKernel us cfg initState simRnd btime initLedger initChain NodeCallbacks{..} 
 
              updateChain newChain upd
 
-    -- Block production
-    onSlotChange btime $ \slot -> atomically $ do
-      l@ExtLedgerState{..} <- readTVar ledgerVar
-      mIsLeader            <- runProtocol $
-                                 checkIsLeader
-                                 cfg
-                                 slot
-                                 (protocolLedgerView cfg ledgerState)
-                                 ouroborosChainState
+         -- Inform layer above us that we adopted a new chain
+         -- NOTE: This is used in tests only for now.
+         adoptedNewChain newChain
 
-      case mIsLeader of
-        Nothing    -> return ()
-        Just proof -> do
-          (ourChain, upd) <- overrideBlock slot <$> readTVar ourChainVar
-          let prevPoint = Chain.headPoint   ourChain
-              prevNo    = Chain.headBlockNo ourChain
-          newBlock <- runProtocol $ produceBlock proof l slot prevPoint prevNo
-          let newChain = ourChain :> newBlock
-          updateChain newChain $ upd ++ [AddBlock newBlock]
+    -- Block production
+    onSlotChange btime $ \slot -> do
+      mNewChain <- atomically $ do
+        l@ExtLedgerState{..} <- readTVar ledgerVar
+        mIsLeader            <- runProtocol $
+                                   checkIsLeader
+                                   cfg
+                                   slot
+                                   (protocolLedgerView cfg ledgerState)
+                                   ouroborosChainState
+
+        case mIsLeader of
+          Nothing    -> return Nothing
+          Just proof -> do
+            (ourChain, upd) <- overrideBlock slot <$> readTVar ourChainVar
+            let prevPoint = Chain.headPoint   ourChain
+                prevNo    = Chain.headBlockNo ourChain
+            newBlock <- runProtocol $ produceBlock proof l slot prevPoint prevNo
+            let newChain = ourChain :> newBlock
+            updateChain newChain $ upd ++ [AddBlock newBlock]
+            return $ Just newChain
+
+      -- Make sure the callback is also called when /we/ make a new chain
+      case mNewChain of
+        Nothing       -> return ()
+        Just newChain -> adoptedNewChain newChain
 
     return NodeKernel {
-        registerUpstream   = networkRegisterUpstream   nw
-      , registerDownstream = networkRegisterDownstream nw
-      , getCurrentChain    = readTVar ourChainVar
+        nodeNetworkLayer  = nw
+      , getCurrentChain   = readTVar ourChainVar
+      , getExtLedgerState = readTVar ledgerVar
       }
   where
     -- Drop the most recent block if it occupies the current slot
@@ -263,28 +300,39 @@ nodeKernel us cfg initState simRnd btime initLedger initChain NodeCallbacks{..} 
   Attempt to mock what the network API will eventually look like
 -------------------------------------------------------------------------------}
 
-data NetworkLayer up down b m = NetworkLayer {
+data NetworkLayer up b m = NetworkLayer {
       -- | Notify network layer that a new chain is adopted
       --
       -- This can be used when adopting upstream chains (in response to
       -- 'chainDownloaded'), but also when producing new blocks locally.
-      networkChainAdopted :: Chain b -> Tr m ()
+      chainAdopted :: Chain b -> Tr m ()
 
       -- | Notify network layer of new upstream node
       --
       -- NOTE: Eventually it will be the responsibility of the network layer
       -- itself to register and deregister peers.
-    , networkRegisterUpstream :: up
-                              -> Channel m (SomeTransition (ChainSyncMessage b (Point b)))
-                              -> m ()
+      --
+      -- Instead of passing a channel directly, we pass in a function that
+      -- is given the chance to /create/ a channel for the lifetime of the
+      -- connection.
+    , registerUpstream :: forall concreteSend concreteRecv.
+                          up
+                       -> Codec m concreteSend concreteRecv (ChainSyncMessage b (Point b)) 'StIdle
+                       -> (forall a. (Duplex m m concreteSend concreteRecv -> m a) -> m a)
+                       -> m ()
 
       -- | Notify netwok layer of a new downstream node
       --
       -- NOTE: Eventually it will be the responsibility of the network layer
       -- itself to register and deregister peers.
-    , networkRegisterDownstream :: down
-                                -> Channel m (SomeTransition (ChainSyncMessage b (Point b)))
-                                -> m ()
+      --
+      -- Instead of passing a channel directly, we pass in a function that
+      -- is given the chance to /create/ a channel for the lifetime of the
+      -- connection.
+    , registerDownstream :: forall concreteSend concreteRecv.
+                            Codec m concreteSend concreteRecv (ChainSyncMessage b (Point b)) 'StIdle
+                         -> (forall a. (Duplex m m concreteSend concreteRecv -> m a) -> m a)
+                         -> m ()
     }
 
 data NetworkCallbacks b m = NetworkCallbacks {
@@ -304,20 +352,12 @@ data NetworkCallbacks b m = NetworkCallbacks {
     , prioritizeChains     :: Slot -> Chain b -> [Chain b] -> Chain b
     }
 
-initNetworkLayer :: forall m b up down.
-                    ( MonadSTM m
-                    , MonadSay m
-                    , HasHeader b
-                    , Show down
-                    , Show up
-                    , Ord up
-                    )
-                 => NodeId   -- ^ Our node ID
-                 -> Chain b  -- ^ Our initial (current) chain
+initNetworkLayer :: forall m b up. (MonadSTM m, HasHeader b, Ord up)
+                 => Chain b  -- ^ Our initial (current) chain
                  -> BlockchainTime m
                  -> NetworkCallbacks b m
-                 -> m (NetworkLayer up down b m)
-initNetworkLayer us initChain btime NetworkCallbacks{..} = do
+                 -> m (NetworkLayer up b m)
+initNetworkLayer initChain btime NetworkCallbacks{..} = do
     cpsVar <- atomically $ newTVar $ initChainProducerState initChain
 
     -- PotentialsVar is modelling state in the network layer tracking the
@@ -325,20 +365,14 @@ initNetworkLayer us initChain btime NetworkCallbacks{..} = do
     potentialsVar <- atomically $ newTVar Map.empty
 
     return $ NetworkLayer {
-        networkChainAdopted = modifyTVar cpsVar . switchFork
-      , networkRegisterDownstream = \down chan -> do
+        chainAdopted = modifyTVar cpsVar . switchFork
+      , registerDownstream = \codec withChan -> do
           let producer = chainSyncServerPeer (chainSyncServerExample () cpsVar)
-          fork $ void $ useCodecWithDuplex
-            (loggingChannel (ProducerId us down) (withSomeTransition show) (withSomeTransition show) chan)
-            codecChainSync
-            producer
-      , networkRegisterUpstream = \up chan -> do
+          fork $ void $ withChan $ \chan -> useCodecWithDuplex chan codec producer
+      , registerUpstream = \up codec withChan -> do
           chainVar     <- atomically $ newTVar Genesis
           let consumer = chainSyncClientPeer (chainSyncClientExample chainVar pureClient)
-          fork $ void $ useCodecWithDuplex
-            (loggingChannel (ConsumerId us up) (withSomeTransition show) (withSomeTransition show) chan)
-            codecChainSync
-            consumer
+          fork $ void $ withChan $ \chan -> useCodecWithDuplex chan codec consumer
           monitorTVar Chain.headPoint Chain.genesisPoint chainVar $ \newChain ->
               if validateChainHeaders newChain
                 then newPotentialChain cpsVar potentialsVar up newChain
@@ -375,30 +409,6 @@ initNetworkLayer us initChain btime NetworkCallbacks{..} = do
       case mDownloaded of
         Nothing -> return ()
         Just c  -> chainDownloaded c
-
-{-------------------------------------------------------------------------------
-  Logging support
--------------------------------------------------------------------------------}
-
--- | Message sent by or to a producer
-data ProducerId pid = ProducerId {
-      producerUs   :: NodeId
-    , producerThem :: pid
-    }
-  deriving (Show)
-
--- | Message sent by or to a consumer
-data ConsumerId cid = ConsumerId {
-      consumerUs   :: NodeId
-    , consumerThem :: cid
-    }
-  deriving (Show)
-
-instance Condense pid => Condense (ProducerId pid) where
-  condense ProducerId{..} = condense (producerUs, producerThem)
-
-instance Condense pid => Condense (ConsumerId pid) where
-  condense ConsumerId{..} = condense (consumerUs, consumerThem)
 
 {-------------------------------------------------------------------------------
   Auxiliary
