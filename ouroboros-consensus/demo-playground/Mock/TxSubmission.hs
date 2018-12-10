@@ -20,9 +20,10 @@ import           System.IO (IOMode (..))
 
 import           Ouroboros.Consensus.Crypto.Hash (ShortHash)
 import qualified Ouroboros.Consensus.Crypto.Hash as H
+import           Ouroboros.Consensus.Ledger.Abstract
 import qualified Ouroboros.Consensus.Ledger.Mock as Mock
+import           Ouroboros.Consensus.Node (NodeKernel (getExtLedgerState))
 import           Ouroboros.Consensus.Util (Condense (..))
-import           Ouroboros.Network.ChainProducerState
 import           Ouroboros.Network.MonadClass hiding (threadDelay)
 import           Ouroboros.Network.Node (NodeId (..))
 import           Ouroboros.Network.Serialise
@@ -90,10 +91,7 @@ handleTxSubmission tinfo tx = do
          Right t ->
              case M.lookup (node tinfo) (toNetworkMap t) of
                   Nothing -> error "Target node not found."
-                  Just n -> case role n of
-                                 CoreNode -> submitTx (node tinfo) tx
-                                 _ -> error "The target node is not a core one."
-
+                  Just _  -> submitTx (node tinfo) tx
 
 submitTx :: NodeId -> Mock.Tx -> IO ()
 submitTx n tx = do
@@ -106,20 +104,21 @@ submitTx n tx = do
       proto = sendMsg tx
 
 readIncomingTx :: TVar IO (Mempool Mock.Tx)
-               -> TVar IO (ChainProducerState (Mock.SimpleBlock p c))
+               -> NodeKernel IO NodeId (Mock.SimpleBlock p c)
                -> Protocol Void Mock.Tx ()
-readIncomingTx poolVar chainVar = do
+readIncomingTx poolVar kernel = do
     newTx <- recvMsg
     liftIO $ atomically $ do
-        chain <- chainState <$> readTVar chainVar
+        l <- getExtLedgerState kernel
         mempool <- readTVar poolVar
-        isConsistent <- runExceptT $ consistent (Mock.utxo chain) mempool newTx
+        isConsistent <- runExceptT $ consistent (Mock.slsUtxo . ledgerState $ l) mempool newTx
         case isConsistent of
             Left _err -> return ()
             Right ()  -> writeTVar poolVar (mempoolInsert newTx mempool)
     liftIO $ threadDelay 1000
     -- Loop over
-    readIncomingTx poolVar chainVar
+    readIncomingTx poolVar kernel
+
 
 instance Serialise Void where
     encode = error "You cannot encode Void."
@@ -127,13 +126,13 @@ instance Serialise Void where
 
 spawnMempoolListener :: NodeId
                      -> TVar IO (Mempool Mock.Tx)
-                     -> TVar IO (ChainProducerState (Mock.SimpleBlock p c))
+                     -> NodeKernel IO NodeId (Mock.SimpleBlock p c)
                      -> IO (Async.Async ())
-spawnMempoolListener myNodeId poolVar chainVar = do
+spawnMempoolListener myNodeId poolVar kernel = do
     Async.async $ do
         -- Apparently I have to pass 'ReadWriteMode' here, otherwise the
         -- node will die prematurely with a (DeserialiseFailure 0 "end of input")
         -- error.
         withTxPipe myNodeId ReadWriteMode True $ \hdl -> do
             let x = error "spawnMempoolListener: this handle shouldn't have been used"
-            runProtocolWithPipe hdl x (readIncomingTx poolVar chainVar)
+            runProtocolWithPipe hdl x (readIncomingTx poolVar kernel)

@@ -1,15 +1,13 @@
+{-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE PolyKinds #-}
 module NamedPipe (
-    runPeerUsingNamedPipeCbor
   -- * Sending & receiving txs
-  , withTxPipe
+    withTxPipe
+  , withPipe
   ) where
 
 import           Control.Exception (SomeException, bracket, catch)
 import           Control.Monad (when)
-import qualified Codec.CBOR.Encoding as CBOR (Encoding)
-import           Data.ByteString (ByteString)
 import           Data.Semigroup ((<>))
 import           Data.Text (Text, unpack)
 import           GHC.Stack
@@ -18,22 +16,18 @@ import           System.IO
 import           System.Posix.Files (createNamedPipe, otherReadMode,
                      otherWriteMode, ownerModes, unionFileModes)
 
-import           Protocol.Codec (Codec)
-import           Protocol.Core (Peer)
-import           Protocol.Driver (Result (..), useCodecWithDuplex)
-
 import           Ouroboros.Network.Node (NodeId (..))
-import qualified Ouroboros.Network.Pipe as P
 
 -- | Creates two pipes, one for reading, one for writing.
 withPipe :: HasCallStack
-          => (NodeId, NodeId)
+          => String
+          -> (NodeId, NodeId)
           -> ((Handle, Handle) -> IO a)
           -> IO a
-withPipe (fromNode, toNode) action = do
+withPipe prefix (fromNode, toNode) action = do
     let (src,tgt) = (dashify fromNode, dashify toNode)
-    let readName  = "ouroboros-" <> tgt <> "-to-" <> src
-    let writeName = "ouroboros-" <> src <> "-to-" <> tgt
+    let readName  = prefix <> "-" <> tgt <> "-to-" <> src
+    let writeName = prefix <> "-" <> src <> "-to-" <> tgt
     bracket (do createNamedPipe readName  (unionFileModes ownerModes otherReadMode)
                     `catch` (\(_ :: SomeException) -> pure ())
                 createNamedPipe writeName (unionFileModes ownerModes otherReadMode)
@@ -82,19 +76,3 @@ withTxPipe node ioMode destroyAfterUse action = do
                     `catch` (\(_ :: SomeException) -> pure ())
                 )
             action
-
--- | Runs a peer over a named pipe using a cbor-encoded transition (technically
--- speaking two pipes, one for reads, one for writes).
-runPeerUsingNamedPipeCbor
-  :: NodeId
-  -> NodeId
-  -> Codec IO Text CBOR.Encoding ByteString tr begin
-  -> Peer proto tr (status begin) end IO a
-  -> IO a
-runPeerUsingNamedPipeCbor myId targetId codec peer =
-    withPipe (myId, targetId) $ \(hndRead, hndWrite) ->
-      let channel = P.pipeDuplex hndRead hndWrite
-       in throwOnUnexpected =<< useCodecWithDuplex channel codec peer
-  where
-  throwOnUnexpected (Normal t) = pure t
-  throwOnUnexpected (Unexpected txt) = error (unpack txt)

@@ -1,21 +1,25 @@
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TypeFamilies               #-}
 module Mock.Mempool (
     Mempool(..)
   , mempoolToList
   , mempoolInsert
-  , Transaction(..)
+  , mempoolRemove
+  , collect
+  , consistent
   ) where
 
 import           Control.Monad.Except
+import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Semigroup (Semigroup, (<>))
 import           Data.Set (Set)
 import qualified Data.Set as Set
 
-import           Ouroboros.Consensus.Ledger.Mock (HasUtxo, Tx, TxIn, Utxo,
-                     txIns, updateUtxo, utxo)
+import           Ouroboros.Consensus.Crypto.Hash
+import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Util (Condense (..))
 import           Ouroboros.Consensus.Util.HList
 import           Ouroboros.Network.Serialise (Serialise)
@@ -24,69 +28,38 @@ import           Ouroboros.Network.Serialise (Serialise)
   Mempool
 -------------------------------------------------------------------------------}
 
-newtype Mempool tx = Mempool { mempoolToSet :: Set tx }
+newtype Mempool tx = Mempool { mempoolToMap :: Map (Hash ShortHash tx) tx }
   deriving (HasUtxo, Condense, Semigroup, Monoid)
 
 mempoolToList :: Mempool tx -> [tx]
-mempoolToList = Set.toList . mempoolToSet
+mempoolToList = Map.elems . mempoolToMap
 
-mempoolInsert :: Ord tx => tx -> Mempool tx -> Mempool tx
-mempoolInsert tx (Mempool txs) = Mempool (Set.insert tx txs)
+mempoolRemove :: Set (Hash ShortHash tx) -> Mempool tx -> Mempool tx
+mempoolRemove toRemove (Mempool m) = Mempool (m `Map.withoutKeys` toRemove)
+
+mempoolInsert :: Serialise tx => tx -> Mempool tx -> Mempool tx
+mempoolInsert tx (Mempool txs) = Mempool (Map.insert (hash tx) tx txs)
 
 {-------------------------------------------------------------------------------
   Abstract away from specific form of transactions
 -------------------------------------------------------------------------------}
 
-class ( Show      tx
-      , Ord       tx
-      , Serialise tx
-      , Condense  tx
-      , HasUtxo   tx
-      , Show     (Inconsistent tx)
-      , Condense (Inconsistent tx)
-      ) => Transaction tx where
-  type Inconsistent tx :: *
+consistent :: (HasUtxo tx, Monad m)
+           => Utxo
+           -> Mempool tx
+           -> tx
+           -> ExceptT InvalidInputs m ()
+consistent chainUtxo mempool tx = void $ updateUtxo tx curUtxo
+  where
+    curUtxo :: Utxo
+    curUtxo =
+        let Right u = runExcept $ utxo (mempool :* Nil)
+        in chainUtxo <> u
 
-  consistent :: Monad m => Utxo -> Mempool tx -> tx -> ExceptT (Inconsistent tx) m ()
-  collect    ::            Utxo -> Mempool tx -> Set tx -> (Set tx, Mempool tx)
-
-
-
-{-------------------------------------------------------------------------------
-  Very simple model for transactions
--------------------------------------------------------------------------------}
-
-data InconsistentTx =
-    InputNotAvailable Utxo TxIn
-  deriving (Show)
-
-instance Condense InconsistentTx where
-  condense (InputNotAvailable _ inp) = condense inp
-
-instance Transaction Tx where
-  type Inconsistent Tx = InconsistentTx
-
-  consistent chainUtxo mempool tx =
-      forM_ (txIns tx) $ \inp ->
-        unless (inp `Map.member` curUtxo) $
-          throwError $ InputNotAvailable curUtxo inp
-    where
-      curUtxo :: Utxo
-      curUtxo = chainUtxo <> utxo (mempool :* Nil)
-
-  collect chainUtxo mempool alreadyConfirmed =
-      go chainUtxo Set.empty Set.empty (mempoolToList mempool)
-    where
-      go :: Utxo    -- ^ Accumulator: UTxO
-         -> Set Tx  -- ^ Accumulator: valid
-         -> Set Tx  -- ^ Accumulator: invalid
-         -> [Tx]
-         -> (Set Tx, Mempool Tx)
-      go _ accValid accInvalid [] = (accValid, Mempool accInvalid)
-      go accUtxo accValid accInvalid (tx:txs)
-        | tx `Set.member` alreadyConfirmed =
-            go accUtxo accValid accInvalid txs
-        | all (`Map.member` accUtxo) (txIns tx) =
-            go (updateUtxo tx accUtxo) (Set.insert tx accValid) accInvalid txs
-        | otherwise =
-            go accUtxo accValid (Set.insert tx accInvalid) txs
+-- | Collect the transactions from the mempool that can now be confirmed.
+collect :: forall tx. HasUtxo tx
+        => Utxo
+        -> Mempool tx
+        -> Map (Hash ShortHash tx) tx
+collect chainUtxo =
+    Map.filter (\tx -> txIns tx `Set.isSubsetOf` Map.keysSet chainUtxo) . mempoolToMap

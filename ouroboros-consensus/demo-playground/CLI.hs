@@ -13,6 +13,7 @@ module CLI (
   ) where
 
 import           Data.Semigroup ((<>))
+import           Data.Time
 import           Options.Applicative
 
 import qualified Ouroboros.Consensus.Ledger.Mock as Mock
@@ -23,6 +24,8 @@ import           Topology (TopologyInfo (..))
 
 data CLI = CLI
   { command      :: Command
+  , systemStart  :: UTCTime
+  , slotDuration :: Double
   }
 
 data Command =
@@ -30,7 +33,18 @@ data Command =
   | TxSubmitter TopologyInfo Mock.Tx
 
 parseCLI :: Parser CLI
-parseCLI = CLI <$> parseCommand
+parseCLI = CLI <$> parseCommand <*> parseSystemStart <*> parseSlotDuration
+
+parseSystemStart :: Parser UTCTime
+parseSystemStart = option auto (long "system-start" <>
+                                help "The start time of the system (e.g. \"2018-12-10 15:58:06\""
+                               )
+
+parseSlotDuration :: Parser Double
+parseSlotDuration = option auto (long "slot-duration" <>
+                                 value 5.0 <>
+                                 help "The slot duration (seconds)"
+                                )
 
 parseCommand :: Parser Command
 parseCommand = subparser $ mconcat [

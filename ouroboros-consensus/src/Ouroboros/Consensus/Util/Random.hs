@@ -11,6 +11,7 @@ module Ouroboros.Consensus.Util.Random
     , MonadPseudoRandomT -- opaque
     , withDRGT
     , seedToChaCha
+    , nullSeed
     , generateElement
     )
     where
@@ -18,8 +19,8 @@ module Ouroboros.Consensus.Util.Random
 import           Control.Monad.State
 import           Crypto.Number.Generate (generateBetween)
 import           Crypto.Random (ChaChaDRG, DRG, MonadPseudoRandom,
-                                MonadRandom (..), drgNewTest,
-                                randomBytesGenerate, withDRG)
+                     MonadRandom (..), drgNewTest, randomBytesGenerate,
+                     withDRG)
 import           Data.ByteString (ByteString, unpack)
 import           Data.List (genericLength)
 import           Data.Word (Word64)
@@ -66,6 +67,9 @@ withSeed s = fst . withDRG (drgNewTest $ getSeed s)
 
 seedToChaCha :: Seed -> ChaChaDRG
 seedToChaCha = drgNewTest . getSeed
+
+nullSeed :: Seed
+nullSeed = Seed (0,0,0,0,0)
 
 -- | Monad transformer version of 'MonadPseudoRandom'
 newtype MonadPseudoRandomT gen m a = MonadPseudoRandomT {

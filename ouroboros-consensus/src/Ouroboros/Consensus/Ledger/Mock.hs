@@ -18,6 +18,7 @@ module Ouroboros.Consensus.Ledger.Mock (
   , TxOut
   , Addr
   , Utxo
+  , InvalidInputs(..)
     -- * Compute UTxO
   , HasUtxo(..)
   , utxo
@@ -36,6 +37,7 @@ module Ouroboros.Consensus.Ledger.Mock (
   ) where
 
 import           Codec.Serialise
+import           Control.Monad.Except
 import           Crypto.Random (MonadRandom)
 import           Data.Map (Map)
 import qualified Data.Map.Strict as Map
@@ -77,13 +79,15 @@ type Utxo  = Map TxIn TxOut
   Computing UTxO
 -------------------------------------------------------------------------------}
 
+newtype InvalidInputs = InvalidInputs (Set TxIn) deriving (Show, Condense)
+
 class HasUtxo a where
   txIns      :: a -> Set TxIn
   txOuts     :: a -> Utxo
-  confirmed  :: a -> Set Tx
-  updateUtxo :: a -> Utxo -> Utxo
+  confirmed  :: a -> Set (Hash ShortHash Tx)
+  updateUtxo :: Monad m => a -> Utxo -> ExceptT InvalidInputs m Utxo
 
-utxo :: HasUtxo a => a -> Utxo
+utxo :: (Monad m, HasUtxo a) => a -> ExceptT InvalidInputs m Utxo
 utxo a = updateUtxo a Map.empty
 
 instance HasUtxo Tx where
@@ -94,20 +98,28 @@ instance HasUtxo Tx where
       aux :: (Int, TxOut) -> (TxIn, TxOut)
       aux (ix, out) = ((hash tx, ix), out)
 
-  confirmed       = Set.singleton
-  updateUtxo tx u = u `Map.union` txOuts tx
-
-instance HasUtxo a => HasUtxo (Set a) where
-  txIns           = txIns     . Set.toList
-  txOuts          = txOuts    . Set.toList
-  confirmed       = confirmed . Set.toList
-  updateUtxo as u = (u `Map.union` txOuts as) `Map.withoutKeys` txIns as
+  confirmed       = Set.singleton . hash
+  updateUtxo tx u =
+      let notInUtxo = txIns tx Set.\\ (Map.keysSet u)
+      in case Set.null notInUtxo of
+           True  -> return $ (u `Map.union` txOuts tx) `Map.withoutKeys` txIns tx
+           False -> throwError $ InvalidInputs notInUtxo
 
 instance HasUtxo a => HasUtxo [a] where
   txIns      = foldr (Set.union . txIns)     Set.empty
   txOuts     = foldr (Map.union . txOuts)    Map.empty
   confirmed  = foldr (Set.union . confirmed) Set.empty
-  updateUtxo = repeatedly updateUtxo
+  updateUtxo = repeatedlyM updateUtxo
+
+instance HasUtxo tx => HasUtxo (Map (Hash h tx) tx) where
+  txIns           = txIns     . Map.elems
+  txOuts          = txOuts    . Map.elems
+  confirmed       = confirmed . Map.elems
+  updateUtxo as u =
+      let notInUtxo = txIns as Set.\\ (Map.keysSet u)
+      in case Set.null notInUtxo of
+           True  -> return $ (u `Map.union` txOuts as) `withoutKeys` txIns as
+           False -> throwError $ InvalidInputs notInUtxo
 
 instance HasUtxo SimpleBody where
   txIns      = txIns      . getSimpleBody
@@ -131,7 +143,7 @@ instance All HasUtxo as => HasUtxo (HList as) where
   txIns      = HList.foldr (Proxy @HasUtxo) (Set.union . txIns)     Set.empty
   txOuts     = HList.foldr (Proxy @HasUtxo) (Map.union . txOuts)    Map.empty
   confirmed  = HList.foldr (Proxy @HasUtxo) (Set.union . confirmed) Set.empty
-  updateUtxo = HList.repeatedly (Proxy @HasUtxo) updateUtxo
+  updateUtxo = HList.repeatedlyM (Proxy @HasUtxo) updateUtxo
 
 {-------------------------------------------------------------------------------
   Crypto needed for simple blocks
@@ -185,7 +197,7 @@ data SimplePreHeader p c = SimplePreHeader {
 instance SimpleBlockCrypto c => Condense (SimplePreHeader p c) where
     condense = show
 
-data SimpleBody = SimpleBody { getSimpleBody :: Set Tx }
+data SimpleBody = SimpleBody { getSimpleBody :: Map (Hash ShortHash Tx) Tx }
   deriving (Generic, Show, Eq, Ord)
 
 data SimpleBlock p c = SimpleBlock {
@@ -255,7 +267,7 @@ forgeBlock :: forall m p c.
            -> Slot                            -- ^ Current slot
            -> BlockNo                         -- ^ Current block number
            -> Network.Hash (SimpleHeader p c) -- ^ Previous hash
-           -> Set Tx                          -- ^ Txs to add in the block
+           -> Map (Hash ShortHash Tx) Tx      -- ^ Txs to add in the block
            -> IsLeader p
            -> m (SimpleBlock p c)
 forgeBlock cfg curSlot curNo prevHash txs proof = do
@@ -293,18 +305,19 @@ instance (SimpleBlockCrypto c, OuroborosTag p, Serialise (Payload p (SimplePreHe
   blockPayload _ = headerOuroboros . simpleHeader
 
 instance OuroborosTag p => UpdateLedger (SimpleBlock p c) where
-  data LedgerState (SimpleBlock p c) = SimpleLedgerState Utxo
+  data LedgerState (SimpleBlock p c) =
+      SimpleLedgerState {
+          slsUtxo      :: Utxo
+        , slsConfirmed :: Set (Hash ShortHash Tx)
+        }
 
-  -- TODO: Modify UTxO model to return errors
-  data LedgerError (SimpleBlock p c) -- no constructors for now
+  data LedgerError (SimpleBlock p c) = LedgerErrorInvalidInputs InvalidInputs
     deriving (Show)
 
   -- Apply a block to the ledger state
-  applyLedgerState b (SimpleLedgerState u) = do
-      -- TODO: Updating the UTxO should throw an error also rather than
-      -- silently removing transactions that do double spending
-      let u' = updateUtxo b u
-      return $ SimpleLedgerState u'
+  applyLedgerState b (SimpleLedgerState u c) = do
+      u' <- withExceptT LedgerErrorInvalidInputs $ updateUtxo b u
+      return $ SimpleLedgerState u' (c `Set.union` confirmed b)
 
 deriving instance OuroborosTag p => Show (LedgerState (SimpleBlock p c))
 
