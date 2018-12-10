@@ -125,11 +125,11 @@ streamProducerMain choice = await $ \req -> case req of
     :: ProducerDownload point header m t
     -> Peer ChainExchange (TrChainExchange point header) ('Yielding ('StBusy 'Download)) ('Finished 'StDone) m t
   respondDownload download = case download of
-    DownloadForked points choice ->
-      streamProducerForked points choice
-    DownloadOver mNewTip choice ->
+    DownloadForked points choice' ->
+      streamProducerForked points choice'
+    DownloadOver mNewTip choice' ->
       let msg = TrRespond (ResDownloadDone mNewTip)
-      in  over msg (streamProducerMain choice)
+      in  over msg (streamProducerMain choice')
     DownloadHeader datum nextDownload ->
       let msg = TrRespond (ResDownloadOne datum)
       in  part msg $ lift $ fmap respondDownload nextDownload
@@ -140,6 +140,6 @@ streamProducerMain choice = await $ \req -> case req of
     => (point, point) -- ^ Read pointer, then tip
     -> ProducerChoice point header m t
     -> Peer ChainExchange (TrChainExchange point header) ('Yielding ('StBusy anything)) ('Finished 'StDone) m t
-  streamProducerForked points choice = over msg (streamProducerMain choice)
+  streamProducerForked points choice' = over msg (streamProducerMain choice')
     where
     msg = TrRespond (ResForked points)

@@ -50,7 +50,7 @@ chainSyncClientExample chainvar client = ChainSyncClient $
     initialise <$> getChainPoints
   where
     initialise :: ([Point header], Client header m a) -> ClientStIdle header (Point header) m a
-    initialise (points, client) =
+    initialise (points, client') =
       SendMsgFindIntersect points $
       -- In this consumer example, we do not care about whether the server
       -- found an intersection or not. If not, we'll just sync from genesis.
@@ -60,34 +60,34 @@ chainSyncClientExample chainvar client = ChainSyncClient $
       --  rejecting the server if there is no intersection in the last K blocks
       --
       ClientStIntersect {
-        recvMsgIntersectImproved  = \_ _ -> ChainSyncClient (return (requestNext client)),
-        recvMsgIntersectUnchanged = \  _ -> ChainSyncClient (return (requestNext client))
+        recvMsgIntersectImproved  = \_ _ -> ChainSyncClient (return (requestNext client')),
+        recvMsgIntersectUnchanged = \  _ -> ChainSyncClient (return (requestNext client'))
       }
 
     requestNext :: Client header m a -> ClientStIdle header (Point header) m a
-    requestNext client =
+    requestNext client' =
       SendMsgRequestNext
-        (handleNext client)
+        (handleNext client')
         -- We received a wait message, and we have the opportunity to do
         -- something. In this example we don't take up that opportunity.
-        (return (handleNext client))
+        (return (handleNext client'))
 
     handleNext :: Client header m a -> ClientStNext header (Point header) m a
-    handleNext client =
+    handleNext client' =
       ClientStNext {
         recvMsgRollForward  = \header _pHead -> ChainSyncClient $ do
           addBlock header
-          choice <- rollforward client header
+          choice <- rollforward client' header
           pure $ case choice of
             Left a -> SendMsgDone a
-            Right client' -> requestNext client'
+            Right client'' -> requestNext client''
 
       , recvMsgRollBackward = \pIntersect pHead -> ChainSyncClient $ do
           rollback pIntersect
-          choice <- rollbackward client pIntersect pHead
+          choice <- rollbackward client' pIntersect pHead
           pure $ case choice of
             Left a -> SendMsgDone a
-            Right client' -> requestNext client'
+            Right client'' -> requestNext client''
       }
 
     getChainPoints :: m ([Point header], Client header m a)
