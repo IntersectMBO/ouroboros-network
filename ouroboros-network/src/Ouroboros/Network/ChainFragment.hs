@@ -236,8 +236,9 @@ dropOldest n (ChainFragment c) =
 length :: HasHeader block => ChainFragment block -> Int
 length (ChainFragment c) = bmSize $ FT.measure c
 
+-- | \( O(1) \).
 null :: ChainFragment block -> Bool
-null (ChainFragment c) = Foldable.null c
+null (ChainFragment c) = FT.null c
 
 addBlock :: HasHeader block => block -> ChainFragment block -> ChainFragment block
 addBlock b c = c :> b
