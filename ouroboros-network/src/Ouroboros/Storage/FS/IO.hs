@@ -87,21 +87,29 @@ catchFSErrorIO (splitDirectories -> mountPoint) action = do
 
         handleError :: HasCallStack => IOError -> IO (Either FsError a)
         handleError ioErr
-          | isIllegalOperationErrorType eType =
-            return . Left =<< (FsIllegalOperation <$> getPath ioErr <*> pure callStack)
-          | isAlreadyExistsErrorType eType =
-            return . Left =<< (FsResourceAlreadyExist <$> getPath ioErr <*> pure callStack)
-          | isDoesNotExistErrorType eType =
-            return . Left =<< (FsResourceDoesNotExist <$> getPath ioErr <*> pure callStack)
-          | isAlreadyInUseErrorType eType =
-            return . Left =<< (FsResourceAlreadyInUse <$> getPath ioErr <*> pure callStack)
-          | isEOFErrorType eType =
-            return . Left =<< (FsReachedEOF <$> getPath ioErr <*> pure callStack)
-          | eType == InappropriateType =
-            return . Left =<< (FsResourceInappropriateType <$> getPath ioErr <*> pure callStack)
-          | otherwise = throwIO (FsUnexpectedException ioErr callStack)
-         where eType :: IOErrorType
-               eType = ioeGetErrorType ioErr
+          | isIllegalOperationErrorType eType
+          = throwFsErrorIO FsIllegalOperation
+          | isAlreadyExistsErrorType eType
+          = throwFsErrorIO FsResourceAlreadyExist
+          | isDoesNotExistErrorType eType
+          = throwFsErrorIO FsResourceDoesNotExist
+          | isAlreadyInUseErrorType eType
+          = throwFsErrorIO FsResourceAlreadyInUse
+          | isEOFErrorType eType
+          = throwFsErrorIO FsReachedEOF
+          | eType == InappropriateType
+          = throwFsErrorIO FsResourceInappropriateType
+          | otherwise
+          = throwIO (FsUnexpectedException ioErr callStack)
+         where
+           eType :: IOErrorType
+           eType = ioeGetErrorType ioErr
+           throwFsErrorIO :: HasCallStack => FsErrorType -> IO (Either FsError a)
+           throwFsErrorIO et = do
+             fp <- getPath ioErr
+             return $ Left $ FsError et fp $ popCallStack callStack
+             -- Pop the call to mkFsError from the callStack
+
 
 {------------------------------------------------------------------------------
   The IOFS monad
