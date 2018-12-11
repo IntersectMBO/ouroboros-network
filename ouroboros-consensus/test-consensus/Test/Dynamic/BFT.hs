@@ -28,7 +28,6 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
-import           Ouroboros.Network.Chain (Chain)
 import           Ouroboros.Consensus.Crypto.DSIGN.Mock
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Mock
@@ -37,6 +36,7 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Util.Random
+import           Ouroboros.Network.Chain (Chain)
 
 import           Test.Dynamic.General
 
@@ -55,7 +55,7 @@ instance HasPayload (Bft BftMockCrypto) (BlockUnderTest Protocol) where
                  . simpleHeader
 
 instance ProtocolLedgerView (BlockUnderTest Protocol) where
-  protocolLedgerView (EncNodeConfig _ cfg) (SimpleLedgerState u) =
+  protocolLedgerView (EncNodeConfig _ cfg) (SimpleLedgerState u _) =
       ((), nodeStake cfg u)
 
 prop_simple_bft_convergence :: Seed -> Property

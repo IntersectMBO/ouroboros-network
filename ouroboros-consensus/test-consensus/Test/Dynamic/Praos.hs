@@ -64,7 +64,7 @@ instance HasPayload (Praos PraosMockCrypto) (BlockUnderTest Protocol) where
                  . simpleHeader
 
 instance ProtocolLedgerView (BlockUnderTest Protocol) where
-    protocolLedgerView (EncNodeConfig _ cfg) (SimpleLedgerState u) =
+    protocolLedgerView (EncNodeConfig _ cfg) (SimpleLedgerState u _) =
         ( relativeStakes $ totalStakes cfg u
         , nodeStake cfg u
         )

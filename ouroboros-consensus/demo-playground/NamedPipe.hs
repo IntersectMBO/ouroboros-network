@@ -4,6 +4,8 @@ module NamedPipe (
   -- * Sending & receiving txs
     withTxPipe
   , withPipe
+  , DataFlow(..)
+  , NodeMapping((:==>:))
   ) where
 
 import           Control.Exception (SomeException, bracket, catch)
@@ -18,16 +20,22 @@ import           System.Posix.Files (createNamedPipe, otherReadMode,
 
 import           Ouroboros.Network.Node (NodeId (..))
 
--- | Creates two pipes, one for reading, one for writing.
+
+data NodeMapping src tgt = src :==>: tgt
+
+data DataFlow =
+     Upstream   (NodeMapping NodeId NodeId)
+   | Downstream (NodeMapping NodeId NodeId)
+
+-- | Creates two pipes, one for reading, one for writing. The 'DataFlow' input
+-- type is there to make it easier to correctly specify the pipes so that
+-- correct communication can occur.
 withPipe :: HasCallStack
-          => String
-          -> (NodeId, NodeId)
-          -> ((Handle, Handle) -> IO a)
-          -> IO a
-withPipe prefix (fromNode, toNode) action = do
-    let (src,tgt) = (dashify fromNode, dashify toNode)
-    let readName  = prefix <> "-" <> tgt <> "-to-" <> src
-    let writeName = prefix <> "-" <> src <> "-to-" <> tgt
+         => DataFlow
+         -> ((Handle, Handle) -> IO a)
+         -> IO a
+withPipe dataflow action = do
+    let (readName, writeName) = mkNames
     bracket (do createNamedPipe readName  (unionFileModes ownerModes otherReadMode)
                     `catch` (\(_ :: SomeException) -> pure ())
                 createNamedPipe writeName (unionFileModes ownerModes otherReadMode)
@@ -44,6 +52,22 @@ withPipe prefix (fromNode, toNode) action = do
                   `catch` (\(_ :: SomeException) -> pure ())
                 )
             action
+
+    -- Creates the correct names for the read and write handles based on the
+    -- topology (upstream vs downstream nodes).
+  where
+    mkNames :: (String, String)
+    mkNames = case dataflow of
+        Downstream (source :==>: destination) ->
+            let [src,tgt] = map dashify [source, destination]
+            in ( "upstream-"   <> src <> "-" <> tgt
+               , "downstream-" <> src <> "-" <> tgt
+               )
+        Upstream   (source :==>: destination) ->
+            let [src,tgt] = map dashify [source, destination]
+            in ( "downstream-" <> src <> "-" <> tgt
+               , "upstream-"   <> src <> "-" <> tgt
+               )
 
 -- | Given a 'NodeId', it dashifies it.
 dashify :: NodeId -> String

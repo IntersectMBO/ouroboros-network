@@ -24,7 +24,7 @@ import           Data.Semigroup ((<>))
 
 import           Protocol.Codec (hoistCodec)
 
-import           Ouroboros.Network.Block (castHash)
+import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (Chain (..), pointHash)
 import qualified Ouroboros.Network.Pipe as P
 import           Ouroboros.Network.Protocol.ChainSync.Codec.Cbor
@@ -42,6 +42,7 @@ import           CLI
 import           Logging
 import           Mock.Mempool
 import           Mock.TxSubmission
+import           NamedPipe (DataFlow (..), NodeMapping ((:==>:)))
 import qualified NamedPipe
 import           Topology
 
@@ -55,10 +56,12 @@ runNode cli@CLI{..} = do
 
 type Block = Mock.SimpleBlock (Bft BftMockCrypto) Mock.SimpleBlockMockCrypto
 
+
 -- | Setups a simple node, which will run the chain-following protocol and,
 -- if core, will also look at the mempool when trying to create a new block.
 handleSimpleNode :: CLI -> TopologyInfo -> IO ()
 handleSimpleNode CLI{systemStart, slotDuration} (TopologyInfo myNodeId topologyFile) = do
+    putStrLn $ "System started at " <> show systemStart
     topoE <- readTopologyFile topologyFile
     case topoE of
          Left e -> error e
@@ -163,22 +166,22 @@ handleSimpleNode CLI{systemStart, slotDuration} (TopologyInfo myNodeId topologyF
                   -> NodeId
                   -> IO ()
       addUpstream kernel producerNodeId = do
-        let prefix = if myNodeId < producerNodeId then "upstream" else "downstream"
+        let direction = Upstream (producerNodeId :==>: myNodeId)
         registerUpstream (nodeNetworkLayer kernel)
                          producerNodeId
                          (hoistCodec stToIO codecChainSync) $ \cc ->
-          NamedPipe.withPipe prefix (myNodeId, producerNodeId) $ \(hndRead, hndWrite) ->
+          NamedPipe.withPipe direction $ \(hndRead, hndWrite) ->
             cc (P.pipeDuplex hndRead hndWrite)
 
       addDownstream :: NodeKernel IO NodeId Block
                     -> NodeId
                     -> IO ()
       addDownstream kernel consumerNodeId = do
-        let prefix = if myNodeId < consumerNodeId then "downstream" else "upstream"
+        let direction = Downstream (myNodeId :==>: consumerNodeId)
         registerDownstream (nodeNetworkLayer kernel)
                            (hoistCodec stToIO codecChainSync)
                            $ \cc ->
-          NamedPipe.withPipe prefix (myNodeId, consumerNodeId) $ \(hndRead, hndWrite) -> do
+          NamedPipe.withPipe direction $ \(hndRead, hndWrite) -> do
               cc (P.pipeDuplex hndRead hndWrite)
 
 instance ProtocolLedgerView Block where
