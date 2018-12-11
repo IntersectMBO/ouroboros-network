@@ -160,7 +160,6 @@ data MockHandle m = MockHandle {
 
 instance (MonadMask m, MonadSTM m) => HasFS (SimFSE m) where
     type FsHandle (SimFSE m) = MockHandle m
-    type FsPtr    (SimFSE m) = DiskOffset
     data Buffer   (SimFSE m) = BufferMock !BS.ByteString
 
     dumpState  = mockDumpState

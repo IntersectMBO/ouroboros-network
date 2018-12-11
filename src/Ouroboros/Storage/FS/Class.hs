@@ -28,7 +28,6 @@ module Ouroboros.Storage.FS.Class (
     -- * Actual HasFS monad stacks will have ExceptT at the top
     , HasFSE
     , FsHandleE
-    , FsPtrE
     , BufferE
     -- * Re-exports from System.IO
     , SeekMode(..)
@@ -128,7 +127,6 @@ sameFsError e1 e2 = case (e1, e2) of
 
 class Monad m => HasFS m where
     type FsHandle m :: *
-    type FsPtr m    :: *
     data Buffer m   :: *
 
     newBuffer :: Int -> m (Buffer m)
@@ -166,5 +164,4 @@ class Monad m => HasFS m where
 
 type HasFSE    m = HasFS    (ExceptT FsError m)
 type FsHandleE m = FsHandle (ExceptT FsError m)
-type FsPtrE    m = FsPtr    (ExceptT FsError m)
 type BufferE   m = Buffer   (ExceptT FsError m)

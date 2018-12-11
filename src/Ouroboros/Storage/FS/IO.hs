@@ -126,7 +126,6 @@ withAbsPath p act = asks (makeAbsolute p) >>= liftIOE . act
 
 instance HasFS IOFSE where
     type FsHandle IOFSE = F.FHandle
-    type FsPtr    IOFSE = Ptr Word8
     data Buffer   IOFSE =
         BufferIO {-# UNPACK #-} !(ForeignPtr Word8) {-# UNPACK #-} !Int
 
@@ -198,7 +197,7 @@ newBufferIO len = do
     return $! BufferIO fptr len
 
 withBuffer :: Buffer IOFSE
-           -> (FsPtr IOFSE -> Int -> IO a)
+           -> (Ptr Word8 -> Int -> IO a)
            -> IO a
 withBuffer (BufferIO fptr len) action =
     withForeignPtr fptr $ \ptr -> action ptr len
