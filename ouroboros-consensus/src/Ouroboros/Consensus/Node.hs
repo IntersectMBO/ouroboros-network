@@ -187,7 +187,7 @@ nodeKernel :: forall m (rndT :: (* -> *) -> (* -> *)) b up.
 nodeKernel cfg initState simRnd btime initLedger initChain NodeCallbacks{..} = do
     stateVar    <- atomically $ newTVar initState
     ourChainVar <- atomically $ newTVar initChain
-    updatesVar  <- atomically $ newEmptyTMVar -- TODO: use bounded queue instead
+    updatesVar  <- atomically $ newTBQueue 64
     ledgerVar   <- atomically $ newTVar initLedger
 
     let runProtocol :: NodeStateT (BlockProtocol b) (rndT (Tr m)) a -> Tr m a
@@ -220,7 +220,7 @@ nodeKernel cfg initState simRnd btime initLedger initChain NodeCallbacks{..} = d
                 -- We are supposed to validate the chain bodies now
                 -- This is a potentially expensive operation, which we model
                 -- by putting it in a processing queue
-                putTMVar updatesVar newChain
+                writeTBQueue updatesVar newChain
             }
 
     -- We should never write to the chain without calling 'notifyUpdates'
@@ -232,7 +232,7 @@ nodeKernel cfg initState simRnd btime initLedger initChain NodeCallbacks{..} = d
 
     -- Thread to do chain validation and adoption
     fork $ forever $ do
-         newChain <- atomically $ takeTMVar updatesVar
+         newChain <- atomically $ readTBQueue updatesVar
          -- ... validating ... mumble mumble mumble ...
          atomically $ do
            slot     <- getCurrentSlot btime
