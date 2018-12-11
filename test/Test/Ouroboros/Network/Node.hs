@@ -57,8 +57,8 @@ tests =
     , testProperty "core <-> relay <-> core" prop_coreToCoreViaRelay
     ]
   , testProperty "arbtirary node graph" (withMaxSuccess 50 prop_networkGraph)
-  , testProperty "blockGenerator invariant (SimM)" prop_blockGenerator_ST
-  , testProperty "blockGenerator invariant (IO)" prop_blockGenerator_IO
+  , testProperty "blockGenerator invariant SimM" prop_blockGenerator_ST
+  , testProperty "blockGenerator invariant IO" prop_blockGenerator_IO
   , testProperty "consensus in arbitrary graph" $
       -- We need a common genesis block, or we actually would not expect
       -- consensus to be reached.
@@ -104,10 +104,14 @@ test_blockGenerator chain slotDuration = isValid <$> withProbe (experiment slotD
       -> Probe m Block
       -> m ()
     experiment slotDur p = do
-      v <- blockGenerator slotDur (Chain.toOldestFirst chain)
-      fork $ forever $ do
-        b <- atomically $ getBlock v
-        probeOutput p b
+      getBlock <- blockGenerator slotDur (Chain.toOldestFirst chain)
+      fork $ go getBlock
+     where
+      go getBlock = do
+        mb <- atomically $ getBlock
+        case mb of
+          Just b  -> probeOutput p b >> go getBlock
+          Nothing -> return ()
 
 prop_blockGenerator_ST :: TestBlockChain -> Positive Micro -> Property
 prop_blockGenerator_ST (TestBlockChain chain) (Positive slotDuration) =

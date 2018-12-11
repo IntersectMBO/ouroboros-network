@@ -22,7 +22,7 @@ import           Protocol.Codec
 import           Protocol.Core
 import           Protocol.Channel
 import           Protocol.Driver
-import           Protocol.Transition
+import           Protocol.Transition (SomeTransition (..), withSomeTransition)
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (Chain (..), Point)
@@ -209,11 +209,8 @@ createTwoWaySubscriptionChannels trDelay1 trDelay2 = do
   r21 <- createOneWaySubscriptionChannels trDelay2 trDelay1
   return $ r12 <> swap r21
 
-
 -- | Generate a block from a given chain.  Each @block@ is produced at
 -- @slotDuration * blockSlot block@ time.
---
--- TODO: invariant: generates blocks for current slots.
 blockGenerator :: forall block m.
                   ( HasHeader block
                   , MonadSTM m
@@ -222,29 +219,31 @@ blockGenerator :: forall block m.
                => Duration (Time m)
                -- ^ slot duration
                -> [block]
-               -- ^ The list of blocks to generate. This allows for upstream
-               -- users to generate \"half chains\" in case we want to simulate
-               -- nodes having access to already part of the overall chain.
-               -> m (TVar m (Maybe block))
-               -- ^ returns an stm transaction which returns block
+               -- ^ The list of blocks to generate in increasing slot order.
+               -- This allows for upstream users to generate \"half chains\" in
+               -- case we want to simulate nodes having access to already part
+               -- of the overall chain.
+               -> m (Tr m (Maybe block))
+               -- ^ returns an stm transaction which returns block.  @Nothing@
+               -- signifies that there will be no more blocks.  It is the caller
+               -- responsibility to read this transaction untill @Nothing@ is
+               -- returned.
 blockGenerator slotDuration chain = do
-  outputVar <- atomically (newTVar Nothing)
-  sequence_ [ fork $ threadDelay (slotDuration * fromIntegral (getSlot $ blockSlot b)) >> (atomically (writeTVar outputVar (Just b)))
-            | b <- chain]
-  return outputVar
-
--- | Read one block from the @'blockGenerator'@.
---
-getBlock :: forall block m.
-            MonadSTM m
-         => TVar m (Maybe block)
-         -> Tr m block
-getBlock v = do
-  mb <- readTVar v
-  case mb of
-    Nothing -> retry
-    Just b  -> writeTVar v Nothing $> b
-
+  -- communicate through a @TBQueue@, it is enough to make it very shallow,
+  -- since it is supposed to be written and read once a slot time.
+  var <- atomically (newTBQueue 1)
+  fork $ go var Nothing chain
+  return (readTBQueue var)
+ where
+  go :: TBQueue m (Maybe block) -> Maybe Slot -> [block] -> m ()
+  go var _ [] = do
+    atomically (writeTBQueue var Nothing)
+  go var mslot (b : bs) = do
+    let slot  = blockSlot b
+        delay = getSlot slot - maybe 0 getSlot mslot
+    threadDelay (slotDuration * fromIntegral delay)
+    atomically (writeTBQueue var (Just b))
+    go var (Just slot) bs
 
 -- | Observe @TVar ('ChainProducerState' block)@, and whenever the @TVar@
 -- mutates, write the result to the supplied @'Probe'@.
@@ -426,17 +425,25 @@ forkCoreKernel :: forall block m.
                -> TVar m (ChainProducerState block)
                -> m ()
 forkCoreKernel slotDuration gchain fixupBlock cpsVar = do
-  blockVar <- blockGenerator slotDuration gchain
-  fork $ forever $ applyGeneratedBlock blockVar
+  getBlock <- blockGenerator slotDuration gchain
+  fork $ applyGeneratedBlock getBlock
 
   where
     applyGeneratedBlock
-      :: TVar m (Maybe block)
+      :: Tr m (Maybe block)
       -> m ()
-    applyGeneratedBlock blockVar = atomically $ do
-      block <- getBlock blockVar
-      cps@ChainProducerState{chainState = chain} <- readTVar cpsVar
-      writeTVar cpsVar (switchFork (addBlock chain block) cps)
+    applyGeneratedBlock getBlock = do
+      cont <- atomically $ do
+        mblock <- getBlock
+        case mblock of
+          Nothing    -> return False
+          Just block -> do
+            cps@ChainProducerState{chainState = chain} <- readTVar cpsVar
+            writeTVar cpsVar (switchFork (addBlock chain block) cps)
+            return True
+      if cont
+        then applyGeneratedBlock getBlock
+        else return ()
 
     addBlock :: Chain block -> block -> Chain block
     addBlock c b =
