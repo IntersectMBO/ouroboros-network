@@ -9,10 +9,11 @@ let
   nixpkgs = import ./nix/nixpkgs.nix {};
   overrides = import ./nix/overrides.nix { inherit nixpkgs; };
 
+  # Special cardano branch for iohk montiroing framework compat
   cardanoroot = nixpkgs.fetchgit {
     url = "https://github.com/input-output-hk/cardano-sl";
-    rev = "5a4eee1ebded257d785d39a090a216c4a261eb22";
-    sha256 = "0wr3vn7vdc455dfh57aslqr59fx1vgmi6xwdrrfjh8gg00q1dkng";
+    rev = "69d3e02dd75375270aac2e255bb0a90a1fca4260";
+    sha256 = "0r44rzd7n001bxpjis8s75n5rzi90spm1ianqnl202gh5pawqdv4";
   };
   cardanopkgs = import ./nix/cardanopkgs.nix { inherit nixpkgs cardanoroot; };
 
