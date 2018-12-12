@@ -28,8 +28,8 @@ import           Ouroboros.Network.Node (NodeId (..))
 import           Ouroboros.Network.Serialise
 
 import           Mock.Mempool (Mempool (..), consistent, mempoolInsert)
+import           Mock.Protocol
 import           NamedPipe
-import           Protocol
 import           Topology
 
 {-------------------------------------------------------------------------------

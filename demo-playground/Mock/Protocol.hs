@@ -8,7 +8,7 @@
 -- This one is just a free monad over IO with sending, receiving, and failing.
 -- It's used in the demo-playground so it was preserved.
 
-module Protocol (
+module Mock.Protocol (
     Protocol
   , ProtocolFailure(..)
   , recvMsg
