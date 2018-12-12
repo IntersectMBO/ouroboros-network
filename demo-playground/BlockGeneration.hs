@@ -3,6 +3,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module BlockGeneration (forkCoreNode) where
 
+import           Codec.Serialise.Class (Serialise)
 import           Control.Monad.State
 import           Crypto.Random
 
@@ -26,6 +27,7 @@ forkCoreNode :: forall m p c.
                 , MonadTimer m
                 , MonadIO m
                 , ProtocolLedgerView (Mock.SimpleBlock p c)
+                , Serialise (Payload p (Mock.SimplePreHeader p c))
                 )
              => TVar m (DemoLedgerState (Mock.SimpleBlock p c))
              -> NodeConfig p
