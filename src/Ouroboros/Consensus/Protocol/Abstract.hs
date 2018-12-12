@@ -4,7 +4,6 @@
 {-# LANGUAGE FunctionalDependencies     #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
-{-# LANGUAGE QuantifiedConstraints      #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TypeFamilies               #-}
@@ -50,11 +49,6 @@ import           Ouroboros.Consensus.Util.Random
 -- block representation.
 class ( Show (ChainState    p)
       , Show (ValidationErr p)
-      , forall ph. Show      ph => Show      (Payload p ph)
-      , forall ph. Eq        ph => Eq        (Payload p ph)
-      , forall ph. Ord       ph => Ord       (Payload p ph)
-      , forall ph. Condense  ph => Condense  (Payload p ph)
-      , forall ph. Serialise ph => Serialise (Payload p ph)
       ) => OuroborosTag p where
 
   -- | Static node configuration

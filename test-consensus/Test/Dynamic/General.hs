@@ -28,6 +28,7 @@ module Test.Dynamic.General (
   , shortestLength
   ) where
 
+import           Codec.Serialise.Class (Serialise)
 import           Control.Monad
 import           Control.Monad.ST.Lazy (runST)
 import           Crypto.Number.Generate (generateBetween)
@@ -90,7 +91,11 @@ numSlots  = k * kPerEpoch * numEpochs
 type ProtocolUnderTest p = ExtNodeConfig TestConfig (TestProtocol p)
 type BlockUnderTest p    = SimpleBlock (ProtocolUnderTest p) SimpleBlockStandardCrypto
 
-prop_simple_protocol_convergence :: forall p. ProtocolLedgerView (BlockUnderTest p)
+prop_simple_protocol_convergence :: forall p.
+                                    ( ProtocolLedgerView (BlockUnderTest p), OuroborosTag p
+                                    , Serialise (Payload p (SimplePreHeader (ProtocolUnderTest p) SimpleBlockStandardCrypto))
+                                    , Eq (Payload p (SimplePreHeader (ProtocolUnderTest p) SimpleBlockStandardCrypto))
+                                    )
                                  => (Int -> NodeConfig p)
                                  -> (Int -> NodeState (ProtocolUnderTest p))
                                  -> ChainState p
@@ -109,6 +114,9 @@ test_simple_protocol_convergence :: forall m n p.
                                     , MonadSay m
                                     , MonadTimer m
                                     , ProtocolLedgerView (BlockUnderTest p)
+                                    , OuroborosTag p
+                                    , Serialise (Payload p (SimplePreHeader (ProtocolUnderTest p) SimpleBlockStandardCrypto))
+                                    , Eq (Payload p (SimplePreHeader (ProtocolUnderTest p) SimpleBlockStandardCrypto))
                                     )
                                  => (Int -> NodeConfig p)
                                  -> (Int -> NodeState (ProtocolUnderTest p))
@@ -187,6 +195,8 @@ broadcastNetwork :: forall m p c gen.
                     , MonadSay   m
                     , SimpleBlockCrypto c
                     , ProtocolLedgerView (SimpleBlock p c)
+                    , Serialise (Payload p (SimplePreHeader p c))
+                    , Eq (Payload p (SimplePreHeader p c))
                     , DRG gen
                     )
                  => BlockchainTime m

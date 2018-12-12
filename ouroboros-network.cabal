@@ -272,6 +272,7 @@ test-suite test-consensus
                     containers,
                     cryptonite,
                     mtl,
+                    serialise,
                     tasty,
                     tasty-quickcheck,
                     typed-transitions
