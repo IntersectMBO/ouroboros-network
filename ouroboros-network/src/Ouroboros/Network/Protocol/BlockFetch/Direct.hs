@@ -10,9 +10,9 @@ import Ouroboros.Network.Protocol.BlockFetch.Server
 --
 directBlockFetchClient
   :: Monad m
-  => BlockFetchServerReceiver header m a
+  => BlockFetchServerReceiver range m a
   -- ^ server of the @'BlockFetchClientProtocol'@ protocol
-  -> BlockFetchClientSender header m b
+  -> BlockFetchClientSender range m b
   -- ^ client of the @'BlockFetchClientProtocol'@ protocol
   -> m (a, b)
 directBlockFetchClient BlockFetchServerReceiver {recvMessageRequestRange} (SendBlockRequestMsg range msender) = do
@@ -24,9 +24,9 @@ directBlockFetchClient BlockFetchServerReceiver {recvMessageDone} (SendMsgDone b
 -- | Direclty connect server and client adts of @'BlockFetchServerProtocol'@.
 --
 directBlockFetchServer
-  :: forall header block m a b.
+  :: forall block m a b.
      Monad m
-  => BlockFetchServerSender header block m a
+  => BlockFetchServerSender block m a
   -- ^ server of the @'BlockFetchServerProtocol'@ protocol
   -> BlockFetchClientReceiver block m b
   -- ^ client of the @'BlockFetchServerProtocol'@ protocol
@@ -36,7 +36,7 @@ directBlockFetchServer server client = do
   directSender sender client
  where
   directSender
-    :: BlockFetchSender header block m a
+    :: BlockFetchSender block m a
     -> BlockFetchClientReceiver block m b
     -> m (a, b)
   directSender (SendMessageStartBatch mBlockStream) BlockFetchClientReceiver {recvMsgStartBatch} = do
@@ -49,7 +49,7 @@ directBlockFetchServer server client = do
   directSender (SendMessageServerDone a) BlockFetchClientReceiver {recvMsgDoneClient} = return (a, recvMsgDoneClient)
 
   directBlocks
-    :: BlockFetchSendBlocks header block m a
+    :: BlockFetchSendBlocks block m a
     -> BlockFetchClientReceiveBlocks block m b
     -> m (a, b)
   directBlocks (SendMessageBlock block mBlockStream) BlockFetchClientReceiveBlocks {recvMsgBlock} = do

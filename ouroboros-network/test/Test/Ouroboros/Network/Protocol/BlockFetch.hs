@@ -82,7 +82,7 @@ runExperiment exp_ = isValid <$> withProbe exp_
 --
 accumulatingBlockFetchServerReceiver
   :: Monad m
-  => BlockFetchServerReceiver header m [ChainRange header]
+  => BlockFetchServerReceiver range m [range]
 accumulatingBlockFetchServerReceiver = go []
  where
   go acc =
@@ -130,7 +130,7 @@ blockFetchClientProtocol_experiment
      , MonadTimer m
      , MonadProbe m
      )
-  => (forall a b. BlockFetchServerReceiver BlockHeader m a -> BlockFetchClientSender BlockHeader m b -> m ())
+  => (forall a b. BlockFetchServerReceiver (ChainRange BlockHeader) m a -> BlockFetchClientSender (ChainRange BlockHeader) m b -> m ())
   -- ^ either 'directBlockFetchClient' or @'connect'@
   -> [(ArbitraryPoint, ArbitraryPoint)]
   -> Probe m Property

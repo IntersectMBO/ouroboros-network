@@ -42,7 +42,6 @@ module Ouroboros.Network.Protocol.BlockFetch.Type where
 
 import Protocol.Core
 
-import Ouroboros.Network.Block (StandardHash)
 import Ouroboros.Network.Chain (Point)
 
 -- | Range of headers
@@ -73,16 +72,16 @@ type family BlockFetchClientPartition st (client :: Control) (server :: Control)
   BlockFetchClientPartition StClientIdle client server termianl = client
   BlockFetchClientPartition StClientDone client server terminal = terminal
 
-data BlockRequestClientMessage header from to where
+data BlockRequestClientMessage range from to where
 
   MessageRequestRange
-    :: ChainRange header
-    -> BlockRequestClientMessage header StClientIdle StClientIdle
+    :: range
+    -> BlockRequestClientMessage range StClientIdle StClientIdle
 
   MessageDone
-    :: BlockRequestClientMessage header StClientIdle StClientDone
+    :: BlockRequestClientMessage range StClientIdle StClientDone
 
-instance StandardHash header => Show (BlockRequestClientMessage header from to) where
+instance (Show range) => Show (BlockRequestClientMessage range from to) where
   show (MessageRequestRange range) = "MessageRequestRange " ++ show range
   show MessageDone                 = "MessageDone"
   
@@ -113,33 +112,33 @@ type family BlockFetchServerPartition st (client :: Control) (server :: Control)
   BlockFetchServerPartition StServerSending  client server terminal = server
   BlockFetchServerPartition StServerDone     client server terminal = terminal
 
-data BlockRequestServerMessage header block from to where
+data BlockRequestServerMessage block from to where
 
   -- | Block fetching messages; First block from a batch
   MessageStartBatch
-    :: BlockRequestServerMessage header block StServerAwaiting StServerSending
+    :: BlockRequestServerMessage block StServerAwaiting StServerSending
   -- | Block streaming
   MessageBlock
     :: block
-    -> BlockRequestServerMessage header block StServerSending StServerSending
+    -> BlockRequestServerMessage block StServerSending StServerSending
   -- | End of batch
   MessageBatchDone
-    :: BlockRequestServerMessage header block StServerSending StServerAwaiting
+    :: BlockRequestServerMessage block StServerSending StServerAwaiting
 
   -- | Server errors
   MessageServerError
-    :: BlockRequestServerMessage header block StServerSending StServerAwaiting
+    :: BlockRequestServerMessage block StServerSending StServerAwaiting
   MessageNoBlocks
-    :: BlockRequestServerMessage header block StServerAwaiting StServerAwaiting
+    :: BlockRequestServerMessage block StServerAwaiting StServerAwaiting
 
   -- | Server side of this protocol can terminate the protocol.  This will
   -- usually be send when the corresponding client in the
   -- @'BlockFetchClientProtocol'@ protocol running along will send
   -- @'MessageDone'@.
   MessageServerDone
-    :: BlockRequestServerMessage header block StServerAwaiting StServerDone
+    :: BlockRequestServerMessage block StServerAwaiting StServerDone
 
-instance (Show header, Show block) => Show (BlockRequestServerMessage header block from to) where
+instance (Show block) => Show (BlockRequestServerMessage block from to) where
   show MessageStartBatch         = "MessageStartBatch"
   show (MessageBlock block)      = "MessageBlock " ++ show block
   show MessageBatchDone          = "MessageBatchDone"
