@@ -1,5 +1,8 @@
-packages: .
-          ./typed-transitions
+packages: ./typed-transitions
+          ./ouroboros-network
+
+package typed-transitions
+  tests: True
 
 package ouroboros-network
   tests: True

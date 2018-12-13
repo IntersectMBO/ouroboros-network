@@ -1,19 +1,13 @@
-{ mkDerivation, stdenv, base, bytestring, async, free, network, QuickCheck
-, tasty, tasty-quickcheck, text, transformers, nixpkgs
+{ mkDerivation, async, base, bytestring, free, QuickCheck, stdenv
+, tasty, tasty-quickcheck, text, transformers
 }:
 mkDerivation {
   pname = "typed-transitions";
-  version = "0.0.0";
-  src = nixpkgs.lib.sourceFilesBySuffices ./.
-    [ ".hs" "LICENSE" "ChangeLog.md" "typed-transitions.cabal" "cabal.project" ];
-  isLibrary = true;
-  isExecutable = false;
-  libraryHaskellDepends = [
-    base transformers free text
-  ];
+  version = "0.1.0.0";
+  src = ./.;
+  libraryHaskellDepends = [ async base free text transformers ];
   testHaskellDepends = [
-    base async bytestring QuickCheck tasty tasty-quickcheck text
+    async base bytestring QuickCheck tasty tasty-quickcheck text
   ];
   license = stdenv.lib.licenses.bsd3;
-  enableSeparateDocOutput = false;
 }

@@ -19,13 +19,12 @@ let
     then lib.doBenchmark
     else nixpkgs.lib.id;
 
-  ouroboros-network = doHaddock(doTest(doBench(
-    callPackage ./pkg.nix {
-      inherit nixpkgs typed-transitions;
-    })));
-
   typed-transitions = doHaddock(doTest(doBench(
-    callPackage ./typed-transitions/default.nix { inherit nixpkgs; }
+    callPackage ./typed-transitions/default.nix {}
+  )));
+
+  ouroboros-network = doHaddock(doTest(doBench(
+    callPackage ./ouroboros-network/default.nix { inherit typed-transitions; }
   )));
 
 in { inherit ouroboros-network typed-transitions; }
