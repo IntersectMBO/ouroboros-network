@@ -164,25 +164,33 @@ prop_directBlockFetchClientProtocol_ST
   :: [(ArbitraryPoint, ArbitraryPoint)]
   -> Property
 prop_directBlockFetchClientProtocol_ST as = runST $ runExperiment $
-  blockFetchClientProtocol_experiment (\ser cli -> void $ directBlockFetchClient ser cli) as
+  blockFetchClientProtocol_experiment
+    (\ser cli -> void $ directBlockFetchClient ser cli) as
 
 prop_directBlockFetchClientProtocol_IO
   :: [(ArbitraryPoint, ArbitraryPoint)]
   -> Property
 prop_directBlockFetchClientProtocol_IO as = ioProperty $ runExperiment $
-  blockFetchClientProtocol_experiment (\ser cli -> void $ directBlockFetchClient ser cli)  as
+  blockFetchClientProtocol_experiment
+    (\ser cli -> void $ directBlockFetchClient ser cli)  as
 
 prop_connectBlockFetchClientProtocol_ST
   :: [(ArbitraryPoint, ArbitraryPoint)]
   -> Property
 prop_connectBlockFetchClientProtocol_ST as = runST $ runExperiment $
-  blockFetchClientProtocol_experiment (\ser cli -> void $ connect (blockFetchServerReceiverStream ser) (blockFetchClientSenderStream cli)) as
+  blockFetchClientProtocol_experiment
+    (\ser cli -> void $ connect
+      (blockFetchServerReceiverStream ser)
+      (blockFetchClientSenderStream cli)) as
 
 prop_connectBlockFetchClientProtocol_IO
   :: [(ArbitraryPoint, ArbitraryPoint)]
   -> Property
 prop_connectBlockFetchClientProtocol_IO as = ioProperty $ runExperiment $
-  blockFetchClientProtocol_experiment (\ser cli -> void $ connect (blockFetchServerReceiverStream ser) (blockFetchClientSenderStream cli)) as
+  blockFetchClientProtocol_experiment
+    (\ser cli -> void $ connect
+      (blockFetchServerReceiverStream ser)
+      (blockFetchClientSenderStream cli)) as
 
 -- | @'BlockFetchClientReceiver'@ which accumulates received blocks.
 --
@@ -249,12 +257,14 @@ blockFetchServerProtocol_experiment ranges probe = do
 prop_blockFetchServerProtocol_ST
   :: NonEmptyList (Int, Int)
   -> Property
-prop_blockFetchServerProtocol_ST (NonEmpty as) = runST $ runExperiment $ blockFetchServerProtocol_experiment as
+prop_blockFetchServerProtocol_ST (NonEmpty as) = runST $ runExperiment $
+  blockFetchServerProtocol_experiment as
 
 prop_blockFetchServerProtocol_IO
   :: NonEmptyList (Int, Int)
   -> Property
-prop_blockFetchServerProtocol_IO (NonEmpty as) = ioProperty $ runExperiment $ blockFetchServerProtocol_experiment as
+prop_blockFetchServerProtocol_IO (NonEmpty as) = ioProperty $ runExperiment $
+  blockFetchServerProtocol_experiment as
 
 {-------------------------------------------------------------------------------
 -- Round trip tests
