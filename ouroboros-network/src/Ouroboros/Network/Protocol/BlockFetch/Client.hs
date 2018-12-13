@@ -14,34 +14,34 @@ import Ouroboros.Network.Protocol.BlockFetch.Type
   Client stream of @'BlockFetchClientProtocol'@ protocol
 -------------------------------------------------------------------------------}
 
-data BlockFetchClientSender header m a where
+data BlockFetchClientSender range m a where
 
   -- | Send a request for a range of blocks.
   --
   SendBlockRequestMsg
-    :: ChainRange header
-    -> m (BlockFetchClientSender header m a)
-    -> BlockFetchClientSender header m a
+    :: range
+    -> m (BlockFetchClientSender range m a)
+    -> BlockFetchClientSender range m a
 
   -- | The client decided to end the protocol.
   --
   SendMsgDone
     :: a
-    -> BlockFetchClientSender header m a
+    -> BlockFetchClientSender range m a
 
 blockFetchClientSenderFromProducer
   :: Monad m
-  => Producer (ChainRange header) m a
-  -> m (BlockFetchClientSender header m a)
+  => Producer range m a
+  -> m (BlockFetchClientSender range m a)
 blockFetchClientSenderFromProducer producer = Pipes.next producer >>= \nxt -> case nxt of
   Left a                   -> return $ SendMsgDone a
   Right (range, producer') -> return $ SendBlockRequestMsg range (blockFetchClientSenderFromProducer producer')
 
 blockFetchClientSenderStream
   :: ( Functor m )
-  => BlockFetchClientSender header m a
+  => BlockFetchClientSender range m a
   -> Peer BlockFetchClientProtocol
-      (BlockRequestClientMessage header)
+      (BlockRequestClientMessage range)
       (Yielding StClientIdle)
       (Finished StClientDone)
       m a
@@ -86,11 +86,11 @@ data BlockFetchClientReceiveBlocks block m a =
 -- @'BlockFetchClientReceiver'@.
 --
 blockFetchClientReceiverStream
-  :: forall m block header a.
+  :: forall m block a.
      ( Functor m )
   => BlockFetchClientReceiver block m a
   -> Peer BlockFetchServerProtocol
-      (BlockRequestServerMessage header block)
+      (BlockRequestServerMessage block)
       (Awaiting StServerAwaiting)
       (Finished StServerDone)
       m a
@@ -103,7 +103,7 @@ blockFetchClientReceiverStream BlockFetchClientReceiver{recvMsgStartBatch,recvMs
   fetchBlocks
     :: BlockFetchClientReceiveBlocks block m a
     -> Peer BlockFetchServerProtocol
-        (BlockRequestServerMessage header block)
+        (BlockRequestServerMessage block)
         (Awaiting StServerSending)
         (Finished StServerDone)
         m a
