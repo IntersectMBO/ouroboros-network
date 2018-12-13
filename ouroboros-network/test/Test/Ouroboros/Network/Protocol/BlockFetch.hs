@@ -18,7 +18,14 @@ import           Protocol.Core (Those (..), connect)
 
 -- import Ouroboros.Network.Block (StandardHash)
 -- import Ouroboros.Network.Chain (Point (..))
-import Ouroboros.Network.MonadClass (MonadProbe (..), MonadRunProbe (..), MonadSTM (..), MonadTime (..), MonadTimer (..), withProbe)
+import Ouroboros.Network.MonadClass ( MonadProbe (..)
+                                    , MonadFork (..)
+                                    , MonadRunProbe (..)
+                                    , MonadSTM (..)
+                                    , MonadTime (..)
+                                    , MonadTimer (..)
+                                    , withProbe
+                                    )
 
 import Ouroboros.Network.Protocol.BlockFetch.Type
 import Ouroboros.Network.Protocol.BlockFetch.Client
@@ -59,7 +66,10 @@ tests =
         prop_blockFetchServerProtocol_IO
     ]
   , testGroup "BlockFetchServer: round trip tests"
-    [
+    [ testProperty "direct: round trip in ST" prop_directRoundTripST
+    , testProperty "direct: round trip in IO" prop_directRoundTripIO
+    , testProperty "connect: round trip in ST" prop_connectRoundTripST
+    , testProperty "connect: round trip in IO" prop_connectRoundTripIO
     ]
   ]
 
@@ -77,6 +87,10 @@ runExperiment exp_ = isValid <$> withProbe exp_
  where
   isValid :: [(Time m, Property)] -> Property
   isValid = foldl' (\acu (_,p) -> acu .&&. p) (property True)
+
+{-------------------------------------------------------------------------------
+-- @'BlockFetchClientProtocol' tests
+-------------------------------------------------------------------------------}
 
 -- | Testing server which accumulates received value in its return value.
 --
@@ -188,6 +202,10 @@ blockFetchClientReceiver = receiver []
       recvMsgServerError = pure (receiver acc)
     }
 
+{-------------------------------------------------------------------------------
+-- @'BlockFetchServerProtocol' tests
+-------------------------------------------------------------------------------}
+
 -- | Test @'BlockFetchServerProtocol'@ using both @'directBlockFetchServer'@
 -- and @'connect\''@.
 --
@@ -203,14 +221,6 @@ blockFetchServerProtocol_experiment
 blockFetchServerProtocol_experiment ranges probe = do
   var  <- atomically $ newTVar ranges
   var' <- atomically $ newTVar ranges
-  let readRequest v = atomically $ do
-        rs <- readTVar v
-        case rs of
-          []        -> return Nothing
-          (r : rs') -> writeTVar v rs' $> Just r
-
-  let blockStream (Just (x, y)) = return (Just (Pipes.each [x..y] >> return ()))
-      blockStream Nothing       = return Nothing
 
   let sender = blockFetchServerSender () (readRequest var) blockStream
   (_, resDirect) <- directBlockFetchServer sender blockFetchClientReceiver
@@ -221,11 +231,20 @@ blockFetchServerProtocol_experiment ranges probe = do
     (blockFetchClientReceiverStream blockFetchClientReceiver)
 
   let res = reverse $ concatMap (\(x, y) -> [x..y]) ranges
-
   case resConn of
     This _       -> probeOutput probe $ property False
     That res'    -> probeOutput probe $ res' === res .&&. resDirect === res
     These _ res' -> probeOutput probe $ res' === res .&&. resDirect === res
+
+ where
+  blockStream (Just (x, y)) = return (Just (Pipes.each [x..y] >> return ()))
+  blockStream Nothing       = return Nothing
+
+  readRequest v = atomically $ do
+    rs <- readTVar v
+    case rs of
+      []        -> return Nothing
+      (r : rs') -> writeTVar v rs' $> Just r
 
 prop_blockFetchServerProtocol_ST
   :: NonEmptyList (Int, Int)
@@ -236,3 +255,96 @@ prop_blockFetchServerProtocol_IO
   :: NonEmptyList (Int, Int)
   -> Property
 prop_blockFetchServerProtocol_IO (NonEmpty as) = ioProperty $ runExperiment $ blockFetchServerProtocol_experiment as
+
+{-------------------------------------------------------------------------------
+-- Round trip tests
+-------------------------------------------------------------------------------}
+
+roundTrip_experiment
+  :: forall m.
+     ( MonadSTM m
+     , MonadTimer m
+     , MonadProbe m
+     )
+  => (forall a b. BlockFetchServerReceiver (Maybe (Int, Int)) m a
+        -> BlockFetchClientSender (Maybe (Int, Int)) m b
+        -> m ())
+        -- ^ run @'BlockFetchClientProtocol'@
+  -> (forall a. BlockFetchServerSender Int m a
+        -> BlockFetchClientReceiver Int m [Int]
+        -> m (Maybe [Int]))
+        -- ^ run @'BlockFetchServerProtocol'@
+  -> [(Int, Int)] -- ^ ranges to send
+  -> Positive Int -- ^ size of queue connecting both servers
+  -> Probe m Property
+  -> m ()
+roundTrip_experiment runClient runServer ranges (Positive queueSize) probe = do
+  (serverReceiver, serverSender) <- connectThroughQueue (fromIntegral queueSize) blockStream
+  clientSender <- blockFetchClientSenderFromProducer
+    (Pipes.each (map Just ranges ++ [Nothing]) >> return ())
+  fork $ runClient serverReceiver clientSender
+  fork $ do
+    res <- runServer serverSender blockFetchClientReceiver
+    let expected = concatMap (\(x, y) -> [x..y]) ranges
+    probeOutput probe ((reverse <$> res) === Just expected)
+ where
+  blockStream :: Maybe (Int, Int) -> m (Maybe (Pipes.Producer Int m ()))
+  blockStream (Just (x, y)) = return (Just (Pipes.each [x..y] >> return ()))
+  blockStream Nothing       = return Nothing
+
+prop_directRoundTripST
+  :: [(Int, Int)]
+  -> Positive Int
+  -> Property
+prop_directRoundTripST ranges queueSize = runST $ runExperiment $
+  roundTrip_experiment
+    (\ser cli -> void $ directBlockFetchClient ser cli)
+    (\ser cli -> (Just . snd) <$> directBlockFetchServer ser cli)
+    ranges
+    queueSize
+
+prop_directRoundTripIO
+  :: [(Int, Int)]
+  -> Positive Int
+  -> Property
+prop_directRoundTripIO ranges queueSize = ioProperty $ runExperiment $
+  roundTrip_experiment
+    (\ser cli -> void $ directBlockFetchClient ser cli)
+    (\ser cli -> (Just . snd) <$> directBlockFetchServer ser cli)
+    ranges
+    queueSize
+
+that :: Those a b -> Maybe b
+that (These _ b) = Just b
+that (That b)    = Just b
+that (This _)    = Nothing
+
+prop_connectRoundTripST
+  :: [(Int, Int)]
+  -> Positive Int
+  -> Property
+prop_connectRoundTripST ranges queueSize = runST $ runExperiment $
+  roundTrip_experiment
+    (\ser cli -> void $ connect
+      (blockFetchServerReceiverStream ser)
+      (blockFetchClientSenderStream cli))
+    (\ser cli -> that <$> connect
+      (blockFetchServerStream ser)
+      (blockFetchClientReceiverStream cli))
+    ranges
+    queueSize
+
+prop_connectRoundTripIO
+  :: [(Int, Int)]
+  -> Positive Int
+  -> Property
+prop_connectRoundTripIO ranges queueSize = ioProperty $ runExperiment $
+  roundTrip_experiment
+    (\ser cli -> void $ connect
+      (blockFetchServerReceiverStream ser)
+      (blockFetchClientSenderStream cli))
+    (\ser cli -> that <$> connect
+      (blockFetchServerStream ser)
+      (blockFetchClientReceiverStream cli))
+    ranges
+    queueSize
