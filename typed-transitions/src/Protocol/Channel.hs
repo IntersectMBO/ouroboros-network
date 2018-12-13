@@ -2,6 +2,8 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE GADTs #-}
 
+{-# OPTIONS_GHC "-fno-warn-name-shadowing" #-}
+
 module Protocol.Channel
   ( Duplex (..)
   , hoistDuplex

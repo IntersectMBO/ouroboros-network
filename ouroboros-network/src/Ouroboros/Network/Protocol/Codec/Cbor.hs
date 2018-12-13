@@ -2,12 +2,13 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
+{-# OPTIONS_GHC "-fno-warn-name-shadowing" #-}
+
 module Ouroboros.Network.Protocol.Codec.Cbor where
 
 import           Control.Monad.ST
 
 import           Data.ByteString (ByteString)
-import qualified Data.ByteString as BS (null)
 import           Data.Text (Text, pack)
 
 import qualified Codec.CBOR.Decoding as CBOR hiding (DecodeAction(Fail, Done))
@@ -47,11 +48,11 @@ cborDecoder decoder = Fold (idecode [] =<< CBOR.deserialiseIncremental decoder)
               -- If there's more input, recurse on 'idecode' with the input
               -- chunks.
               { end  = k Nothing >>= \final -> case final of
-                  CBOR.Fail bs _ (CBOR.DeserialiseFailure _ str) ->
-                    -- 'bs' ought to be null, but we won't check.
+                  CBOR.Fail _bs _ (CBOR.DeserialiseFailure _ str) ->
+                    -- '_bs' ought to be null, but we won't check.
                     pure $ Left $ pack str
-                  CBOR.Done bs _ it ->
-                    -- 'bs' ought to be null, but we won't check.
+                  CBOR.Done _bs _ it ->
+                    -- '_bs' ought to be null, but we won't check.
                     pure $ Right it
                   -- The `IDecode` representation isn't as sharp as the
                   -- `Decoder` representation: it can give a partial decode even after
