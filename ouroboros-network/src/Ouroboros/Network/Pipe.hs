@@ -120,8 +120,8 @@ demo chain0 updates = do
         _ <- wait consumer
         _ <- wait producer
 
-        -- Problem: if it doesn't sync, it times out. That was the case before,
-        -- though.
+        -- FIXME: if it doesn't sync, it times out. Is it possible to decide
+        -- when the chain will certainly _not_ sync?
         return True
 
 pipeDuplex
