@@ -20,11 +20,11 @@ let
     else nixpkgs.lib.id;
 
   typed-transitions = doHaddock(doTest(doBench(
-    callPackage ./typed-transitions/default.nix {}
+    callPackage ./typed-transitions/default.nix { inherit nixpkgs; } 
   )));
 
   ouroboros-network = doHaddock(doTest(doBench(
-    callPackage ./ouroboros-network/default.nix { inherit typed-transitions; }
+    callPackage ./ouroboros-network/default.nix { inherit nixpkgs typed-transitions; }
   )));
 
   ouroboros-consensus = doHaddock(doTest(doBench(
