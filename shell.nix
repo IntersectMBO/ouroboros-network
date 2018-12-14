@@ -9,11 +9,14 @@ let
   default = import ./default.nix {inherit compiler haddock test;};
 in
   {
-    ouroboros-network = if nixpkgs.lib.inNixShell
-      then default.ouroboros-network.env
-      else default.ouroboros-network;
     typed-transitions = if nixpkgs.lib.inNixShell
       then default.typed-transitions.env
       else default.typed-transitions;
+    ouroboros-network = if nixpkgs.lib.inNixShell
+      then default.ouroboros-network.env
+      else default.ouroboros-network;
+    ouroboros-consensus = if nixpkgs.lib.inNixShell
+      then default.ouroboros-consensus.env
+      else default.ouroboros-consensus;
   }
 
