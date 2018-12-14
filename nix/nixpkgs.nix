@@ -1,7 +1,7 @@
 {}:
 with builtins;
 let
-  rev = "cb95a3c1d1b6cd9da65650be269436cbe9e265fa";
+  rev = "475d653afdbd8fe3e00ccfd22a30014b0df7aeaa";
   url = "https://github.com/NixOS/nixpkgs/archive/${rev}.tar.gz";
 
   config = { packageOverrides = super:
@@ -10,6 +10,12 @@ let
           overrides = self: super:
             { psqueues = lib.dontCheck super.psqueues;
               aeson    = lib.dontCheck super.aeson;
+              QuickCheck = super.QuickCheck_2_12_6_1;
+              hspec = super.hspec_2_6_0;
+              hspec-core = super.hspec-core_2_6_0;
+              hspec-discover = super.hspec-discover_2_6_0;
+              hspec-meta = super.hspec-meta_2_6_0;
+              tasty-hspec = super.tasty-hspec_1_1_5_1;
             };
       in {
         haskell = super.haskell // {
