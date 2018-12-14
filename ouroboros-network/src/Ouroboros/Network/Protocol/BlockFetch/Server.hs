@@ -12,6 +12,7 @@ module Ouroboros.Network.Protocol.BlockFetch.Server
   , BlockFetchServerSender (..)
   , BlockFetchSender (..)
   , BlockFetchSendBlocks (..)
+  , StreamElement (..)
   , blockFetchServerStream
   , blockFetchServerSender
   , blockFetchServerSenderToProducer
@@ -43,7 +44,7 @@ data BlockFetchServerReceiver range m a =
     recvMessageRequestRange :: range -> m (BlockFetchServerReceiver range m a),
     -- | handler for @'MessageDone'@ of the @'BlockFetchClientProtocol'@
     --
-    recvMessageDone :: a
+    recvMessageDone :: m a
   }
 
 -- | A receiver which applies an action to the received input, e.g. writting the
@@ -52,7 +53,7 @@ data BlockFetchServerReceiver range m a =
 constantReceiver
   :: Functor m
   => (range -> m ())
-  -> a
+  -> m a
   -> BlockFetchServerReceiver range m a
 constantReceiver handleRequest recvMessageDone = BlockFetchServerReceiver {
     recvMessageRequestRange = \range -> handleRequest range $> constantReceiver handleRequest recvMessageDone,
@@ -71,7 +72,7 @@ blockFetchServerReceiverStream
 blockFetchServerReceiverStream BlockFetchServerReceiver{recvMessageRequestRange,recvMessageDone} =
   await $ \msg -> case msg of
     MessageRequestRange range -> lift (blockFetchServerReceiverStream <$> recvMessageRequestRange range)
-    MessageDone -> done recvMessageDone
+    MessageDone -> lift (done <$> recvMessageDone)
 
 blockFetchServerReceiverPipe
   :: forall range block m a.
@@ -180,7 +181,7 @@ blockFetchServerSenderToProducer (BlockFetchServerSender mserver) =
   sendBlocks (SendMessageStartBatch msender) =
     join $ Pipes.lift $ streamBlocks <$> msender
   sendBlocks (SendMessageNoBlocks sender) = blockFetchServerSenderToProducer sender
-  sendBlocks (SendMessageServerDone a) = return a
+  sendBlocks (SendMessageServerDone a)    = return a
 
   streamBlocks :: BlockFetchSendBlocks block m a
                -> Producer' block m a
@@ -189,23 +190,37 @@ blockFetchServerSenderToProducer (BlockFetchServerSender mserver) =
     join $ Pipes.lift (streamBlocks <$> mstreamer)
   streamBlocks (SendMessageBatchDone sender) = blockFetchServerSenderToProducer sender
 
+-- | Sender of the @'BlockFetchServerProtocol'@.  It may sand
+-- @'MessageServerDone'@ under two conditions:
+--
+--  * @'StreamElement' range@ returned @'End'@, which means that the
+--    corresponding @'BlockFetchClientProtocol'@ has terminated
+--  * the @'blockStream'@ handler returned @'Nothing'@
+--
 blockFetchServerSender
   :: forall m range block a.
      Monad m
   => a
-  -> m range
+  -- ^ return value
+  -> m (StreamElement range)
+  -- ^ stream of ranges; when @'End'@ is read the protocol will terminate.
   -> (range -> m (Maybe (Pipes.Producer block m a)))
+  -- ^ range handler returning a stream of blocks, when it return @'Nothing'@
+  -- the @'MessageServerDone'@ will terminate the protocol.
   -> BlockFetchServerSender block m a
 blockFetchServerSender serverDone mrange blockStream = BlockFetchServerSender $ do
-  range <- mrange
-  mstream <- blockStream range
-  case mstream of
-    Nothing     -> return $ SendMessageServerDone serverDone
-    Just stream -> do
-      stream' <- Pipes.next stream
-      case stream' of
-        Left _             -> return $ SendMessageNoBlocks (blockFetchServerSender serverDone mrange blockStream)
-        Right (b, next) -> return $ SendMessageStartBatch (sendStream b next)
+  element <- mrange
+  case element of
+    End           -> return $ SendMessageServerDone serverDone
+    Element range -> do
+      mstream <- blockStream range
+      case mstream of
+        Nothing     -> return $ SendMessageServerDone serverDone
+        Just stream -> do
+          stream' <- Pipes.next stream
+          case stream' of
+            Left _             -> return $ SendMessageNoBlocks (blockFetchServerSender serverDone mrange blockStream)
+            Right (b, next) -> return $ SendMessageStartBatch (sendStream b next)
  where
   sendStream
     :: block
@@ -218,13 +233,18 @@ blockFetchServerSender serverDone mrange blockStream = BlockFetchServerSender $ 
       Left _              -> return $ SendMessageBatchDone (blockFetchServerSender serverDone mrange blockStream)
       Right (b', stream') -> sendStream b' stream'
 
+data StreamElement a
+    = Element a
+    | End
+  deriving (Show, Eq)
+
 -- | Connection between the server side of @'BlockFetchClientProtocol'@ and the
 -- server side of @'BlockFetchServerProtocol'@>
 --
 connectThroughQueue'
   :: forall range block m.
      MonadSTM m
-  => TBQueue m range
+  => TBQueue m (StreamElement range)
   -> (range -> m (Maybe (Pipes.Producer block m ())))
   -> ( BlockFetchServerReceiver range m ()
      , BlockFetchServerSender block m ()
@@ -232,7 +252,7 @@ connectThroughQueue'
 connectThroughQueue' queue blockStream = (receiver, server)
  where
   receiver :: BlockFetchServerReceiver range m ()
-  receiver = constantReceiver (atomically . writeTBQueue queue) ()
+  receiver = constantReceiver (atomically . writeTBQueue queue . Element) (atomically (writeTBQueue queue End))
 
   server :: BlockFetchServerSender block m ()
   server = blockFetchServerSender () (atomically $ readTBQueue queue) blockStream

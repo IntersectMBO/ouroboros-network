@@ -96,7 +96,7 @@ accumulatingBlockFetchServerReceiver = go []
   go acc =
     BlockFetchServerReceiver {
       recvMessageRequestRange = \range -> return $ go (range : acc),
-      recvMessageDone         = reverse acc
+      recvMessageDone         = return (reverse acc)
     }
 
 -- | @'directBlockFetchClient'@ is an identity
@@ -146,7 +146,7 @@ blockFetchClientProtocol_experiment
 blockFetchClientProtocol_experiment run as probe = do
   let ranges = map (\(ArbitraryPoint p, ArbitraryPoint p') -> ChainRange p p') as
   var <- atomically $ newTVar []
-  let server = constantReceiver (\a -> atomically $ modifyTVar var (a:)) ()
+  let server = constantReceiver (\a -> atomically $ modifyTVar var (a:)) (return ())
   client <- blockFetchClientSenderFromProducer (void $ Pipes.each ranges)
 
   _ <- run server client
@@ -221,8 +221,8 @@ blockFetchServerProtocol_experiment
   -> Probe m Property
   -> m ()
 blockFetchServerProtocol_experiment ranges probe = do
-  var  <- atomically $ newTVar ranges
-  var' <- atomically $ newTVar ranges
+  var  <- atomically $ newTVar (map Element ranges ++ [End])
+  var' <- atomically $ newTVar (map Element ranges ++ [End])
 
   let sender = blockFetchServerSender () (readRequest var) blockStream
   (_, resDirect) <- directBlockFetchServer sender blockFetchClientReceiver
@@ -239,14 +239,13 @@ blockFetchServerProtocol_experiment ranges probe = do
     These _ res' -> probeOutput probe $ res' === res .&&. resDirect === res
 
  where
-  blockStream (Just (x, y)) = return (Just (Pipes.each [x..y] >> return ()))
-  blockStream Nothing       = return Nothing
+  blockStream (x, y) = return (Just (Pipes.each [x..y] >> return ()))
 
   readRequest v = atomically $ do
     rs <- readTVar v
     case rs of
-      []        -> return Nothing
-      (r : rs') -> writeTVar v rs' $> Just r
+      []        -> retry
+      (r : rs') -> writeTVar v rs' $> r
 
 prop_blockFetchServerProtocol_ST
   :: NonEmptyList (Int, Int)
