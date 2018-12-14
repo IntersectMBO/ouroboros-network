@@ -54,6 +54,7 @@ library
                        Ouroboros.Network.Protocol.BlockFetch.Client
                        Ouroboros.Network.Protocol.BlockFetch.Server
                        Ouroboros.Network.Protocol.BlockFetch.Direct
+                       Ouroboros.Network.Protocol.BlockFetch.Codec.Cbor
 
                        -- TODO rename.
                        Ouroboros.Network.ChainSyncExamples
