@@ -20,6 +20,7 @@ module Ouroboros.Storage.FS.Class (
     -- * Opaque types and main API
       HasFS(..)
     , FsError(..)
+    , FsErrorType(..)
     , FsUnexpectedException(..)
     , FsPath
     , sameFsError
@@ -28,7 +29,6 @@ module Ouroboros.Storage.FS.Class (
     -- * Actual HasFS monad stacks will have ExceptT at the top
     , HasFSE
     , FsHandleE
-    , FsPtrE
     , BufferE
     -- * Re-exports from System.IO
     , SeekMode(..)
@@ -57,15 +57,20 @@ type FsPath = [String]
  Handling failure
 ------------------------------------------------------------------------------}
 
-data FsError =
-    FsIllegalOperation FsPath CallStack
-  | FsResourceInappropriateType FsPath CallStack
-  -- ^ e.g the user tried to open a directory with hOpen rather than a file.
-  | FsResourceAlreadyInUse FsPath CallStack
-  | FsResourceDoesNotExist FsPath CallStack
-  | FsResourceAlreadyExist FsPath CallStack
-  | FsReachedEOF FsPath CallStack
+data FsError = FsError FsErrorType FsPath CallStack
   deriving Show
+
+data FsErrorType
+  = FsIllegalOperation
+  | FsResourceInappropriateType
+  -- ^ e.g the user tried to open a directory with hOpen rather than a file.
+  | FsResourceAlreadyInUse
+  | FsResourceDoesNotExist
+  | FsResourceAlreadyExist
+  | FsReachedEOF
+  | FsDeviceFull
+  | FsInsufficientPermissions
+  deriving (Show, Eq)
 
 -- | We define a 'FsUnexpectedException' separated by the rest so that we
 -- can still \"tag\" any exception coming from the underlying concrete monad
@@ -81,46 +86,22 @@ instance Exception FsError where
     displayException = prettyFSError
 
 isResourceDoesNotExistError :: FsError -> Bool
-isResourceDoesNotExistError (FsResourceDoesNotExist _ _) = True
-isResourceDoesNotExistError _                            = False
+isResourceDoesNotExistError (FsError FsResourceDoesNotExist _ _) = True
+isResourceDoesNotExistError _                                    = False
 
 prettyFSError :: FsError -> String
-prettyFSError = \case
-    FsIllegalOperation fp cs          ->
-        "FsIllegalOperation for " <> show fp <> ": " <> prettyCallStack cs
-    FsResourceInappropriateType fp cs ->
-        "FsResourceInappropriateType for " <> show fp <> ": " <> prettyCallStack cs
-    FsResourceAlreadyInUse fp cs      ->
-        "FsResourceAlreadyInUse for " <> show fp <> ": " <> prettyCallStack cs
-    FsResourceDoesNotExist fp cs      ->
-        "FsResourceDoesNotExist for " <> show fp <> ": " <> prettyCallStack cs
-    FsResourceAlreadyExist fp cs      ->
-        "FsResourceAlreadyInUse for " <> show fp <> ": " <> prettyCallStack cs
-    FsReachedEOF fp cs                ->
-        "FsReachedEOF for " <> show fp <> ": " <> prettyCallStack cs
+prettyFSError (FsError et fp cs) =
+    show et <> " for " <> show fp <> ": " <> prettyCallStack cs
 
 
 -- | Check two 'FsError' for shallow equality, i.e. if they have the same
--- type constructor, ignoring the 'CallStack' and the filepath, as different
--- implementations we will use different ways of representing it. For example
--- IO will use an absolute one, a mock implementation only a relative one.
--- This is very useful during tests
--- when comparing different 'HasFS' implementations and assert that they throw
--- the same FsError type, even though the callstack is naturally different.
+-- error type ('FsErrorType') and filepath, ignoring the 'CallStack'.
+--
+-- This is very useful during tests when comparing different 'HasFS'
+-- implementations and assert that they throw the same 'FsErrorType', even
+-- though the callstack is naturally different.
 sameFsError :: FsError -> FsError -> Bool
-sameFsError e1 e2 = case (e1, e2) of
-    (FsIllegalOperation fp1 _, FsIllegalOperation fp2 _)                   -> fp1 == fp2
-    (FsIllegalOperation _ _, _)                                            -> False
-    (FsResourceAlreadyInUse fp1 _, FsResourceAlreadyInUse fp2 _)           -> fp1 == fp2
-    (FsResourceAlreadyInUse _ _, _)                                        -> False
-    (FsResourceInappropriateType fp1 _, FsResourceInappropriateType fp2 _) -> fp1 == fp2
-    (FsResourceInappropriateType _ _, _)                                   -> False
-    (FsResourceDoesNotExist fp1 _, FsResourceDoesNotExist fp2 _)           -> fp1 == fp2
-    (FsResourceDoesNotExist _ _, _)                                        -> False
-    (FsResourceAlreadyExist fp1 _, FsResourceAlreadyExist fp2 _)           -> fp1 == fp2
-    (FsResourceAlreadyExist _ _, _)                                        -> False
-    (FsReachedEOF fp1 _, FsReachedEOF fp2 _)                               -> fp1 == fp2
-    (FsReachedEOF _ _, _)                                                  -> False
+sameFsError (FsError et1 fp1 _) (FsError et2 fp2 _) = et1 == et2 && fp1 == fp2
 
 {------------------------------------------------------------------------------
  Typeclass which abstracts over the filesystem
@@ -128,7 +109,6 @@ sameFsError e1 e2 = case (e1, e2) of
 
 class Monad m => HasFS m where
     type FsHandle m :: *
-    type FsPtr m    :: *
     data Buffer m   :: *
 
     newBuffer :: Int -> m (Buffer m)
@@ -166,5 +146,4 @@ class Monad m => HasFS m where
 
 type HasFSE    m = HasFS    (ExceptT FsError m)
 type FsHandleE m = FsHandle (ExceptT FsError m)
-type FsPtrE    m = FsPtr    (ExceptT FsError m)
 type BufferE   m = Buffer   (ExceptT FsError m)

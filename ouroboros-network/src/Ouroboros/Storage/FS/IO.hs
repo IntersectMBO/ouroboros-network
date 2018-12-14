@@ -87,21 +87,34 @@ catchFSErrorIO (splitDirectories -> mountPoint) action = do
 
         handleError :: HasCallStack => IOError -> IO (Either FsError a)
         handleError ioErr
-          | isIllegalOperationErrorType eType =
-            return . Left =<< (FsIllegalOperation <$> getPath ioErr <*> pure callStack)
-          | isAlreadyExistsErrorType eType =
-            return . Left =<< (FsResourceAlreadyExist <$> getPath ioErr <*> pure callStack)
-          | isDoesNotExistErrorType eType =
-            return . Left =<< (FsResourceDoesNotExist <$> getPath ioErr <*> pure callStack)
-          | isAlreadyInUseErrorType eType =
-            return . Left =<< (FsResourceAlreadyInUse <$> getPath ioErr <*> pure callStack)
-          | isEOFErrorType eType =
-            return . Left =<< (FsReachedEOF <$> getPath ioErr <*> pure callStack)
-          | eType == InappropriateType =
-            return . Left =<< (FsResourceInappropriateType <$> getPath ioErr <*> pure callStack)
-          | otherwise = throwIO (FsUnexpectedException ioErr callStack)
-         where eType :: IOErrorType
-               eType = ioeGetErrorType ioErr
+          | isIllegalOperationErrorType eType
+          = throwFsErrorIO FsIllegalOperation
+          | isAlreadyExistsErrorType eType
+          = throwFsErrorIO FsResourceAlreadyExist
+          | isDoesNotExistErrorType eType
+          = throwFsErrorIO FsResourceDoesNotExist
+          | isAlreadyInUseErrorType eType
+          = throwFsErrorIO FsResourceAlreadyInUse
+          | isEOFErrorType eType
+          = throwFsErrorIO FsReachedEOF
+          | eType == InappropriateType
+          = throwFsErrorIO FsResourceInappropriateType
+          | isFullErrorType eType
+          = throwFsErrorIO FsDeviceFull
+          | isPermissionErrorType eType
+          = throwFsErrorIO FsInsufficientPermissions
+          | otherwise
+          = throwIO (FsUnexpectedException ioErr callStack)
+         where
+           eType :: IOErrorType
+           eType = ioeGetErrorType ioErr
+
+           throwFsErrorIO :: HasCallStack => FsErrorType -> IO (Either FsError a)
+           throwFsErrorIO et = do
+             fp <- getPath ioErr
+             return $ Left $ FsError et fp $ popCallStack callStack
+             -- Pop the call to mkFsError from the callStack
+
 
 {------------------------------------------------------------------------------
   The IOFS monad
@@ -126,7 +139,6 @@ withAbsPath p act = asks (makeAbsolute p) >>= liftIOE . act
 
 instance HasFS IOFSE where
     type FsHandle IOFSE = F.FHandle
-    type FsPtr    IOFSE = Ptr Word8
     data Buffer   IOFSE =
         BufferIO {-# UNPACK #-} !(ForeignPtr Word8) {-# UNPACK #-} !Int
 
@@ -198,7 +210,7 @@ newBufferIO len = do
     return $! BufferIO fptr len
 
 withBuffer :: Buffer IOFSE
-           -> (FsPtr IOFSE -> Int -> IO a)
+           -> (Ptr Word8 -> Int -> IO a)
            -> IO a
 withBuffer (BufferIO fptr len) action =
     withForeignPtr fptr $ \ptr -> action ptr len
