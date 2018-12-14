@@ -41,7 +41,7 @@ data Duplex sm rm send recv = Duplex
   , recv :: rm (Maybe recv, Duplex sm rm send recv)
   }
 
--- | Change the receive type, as you would fmap a covariant functor.
+-- | Change the send type, as you would fmap a covariant functor.
 fmapDuplex
   :: ( Functor sm, Functor rm )
   => (recv -> recv')
