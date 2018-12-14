@@ -6,6 +6,8 @@
 
 module Protocol.Channel
   ( Duplex (..)
+  , fmapDuplex
+  , contramapDuplex
   , hoistDuplex
   , prependDuplexRecv
   , uniformDuplex
@@ -37,6 +39,28 @@ data Duplex sm rm send recv = Duplex
     -- also gives Nothing. This means there's no more input, but sending
     -- is still possible.
   , recv :: rm (Maybe recv, Duplex sm rm send recv)
+  }
+
+-- | Change the receive type, as you would fmap a covariant functor.
+fmapDuplex
+  :: ( Functor sm, Functor rm )
+  => (recv -> recv')
+  -> Duplex sm rm send recv
+  -> Duplex sm rm send recv'
+fmapDuplex f duplex = duplex
+  { send = fmap (fmapDuplex f) . send duplex
+  , recv = fmap (\(it, duplex') -> (fmap f it, fmapDuplex f duplex')) (recv duplex)
+  }
+
+-- | Change the receive type, as you would contramap a contravariant functor.
+contramapDuplex
+  :: ( Functor sm, Functor rm )
+  => (send' -> send)
+  -> Duplex sm rm send recv
+  -> Duplex sm rm send' recv
+contramapDuplex f duplex = duplex
+  { send = fmap (contramapDuplex f) . send duplex . f
+  , recv = (fmap . fmap) (contramapDuplex f) (recv duplex)
   }
 
 hoistDuplex
