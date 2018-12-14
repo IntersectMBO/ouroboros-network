@@ -14,7 +14,7 @@ import           Control.Concurrent.STM (TBQueue, TVar, atomically, modifyTVar',
 import           Control.Monad.Except
 import           Control.Monad.Reader
 import           Data.Functor (($>))
-import qualified Data.Text as T (unpack)
+import           Data.Text (Text, unpack)
 
 import           Protocol.Driver
 import           Protocol.Channel
@@ -96,8 +96,8 @@ spawnLedgerStateListeners _ourselves cfg _q initialChain ledgerVar cps = do
           , points = \_ -> pure client
           }
 
-        throwOnUnexpected :: Result t -> IO t
-        throwOnUnexpected (Unexpected txt) = error (T.unpack txt)
+        throwOnUnexpected :: Result Text t -> IO t
+        throwOnUnexpected (Unexpected txt) = error (unpack txt)
         throwOnUnexpected (Normal t)       = pure t
 
         consumerPeer = chainSyncClientPeer (chainSyncClientExample chainV client)

@@ -2,9 +2,12 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE GADTs #-}
 
+{-# OPTIONS_GHC "-fno-warn-name-shadowing" #-}
+
 module Protocol.Channel
   ( Duplex (..)
   , hoistDuplex
+  , prependDuplexRecv
   , uniformDuplex
   , Channel
   , uniformChannel
@@ -46,6 +49,19 @@ hoistDuplex snat rnat duplex = Duplex
   { send = fmap (hoistDuplex snat rnat) . snat . send duplex
   , recv = (fmap . fmap) (hoistDuplex snat rnat) (rnat (recv duplex))
   }
+
+-- | Put some data at the head of the duplex receive side.
+prependDuplexRecv
+  :: ( Functor sm, Applicative rm )
+  => [recv]
+  -> Duplex sm rm send recv
+  -> Duplex sm rm send recv
+prependDuplexRecv lst duplex = case lst of
+  [] -> duplex
+  (i : is) -> Duplex
+    { send = fmap (prependDuplexRecv lst) . send duplex
+    , recv = pure (Just i, prependDuplexRecv is duplex)
+    }
 
 uniformDuplex :: (Functor rm, Functor sm) => (s -> sm ()) -> rm (Maybe r) -> Duplex sm rm s r
 uniformDuplex send recv = Duplex

@@ -11,7 +11,7 @@ import           Control.Monad (when)
 import qualified Codec.CBOR.Encoding as CBOR (Encoding)
 import           Data.ByteString (ByteString)
 import           Data.Semigroup ((<>))
-import qualified Data.Text as T (unpack)
+import           Data.Text (Text, unpack)
 import           GHC.Stack
 import           System.Directory (removeFile)
 import           System.IO
@@ -88,7 +88,7 @@ withTxPipe node ioMode destroyAfterUse action = do
 runPeerUsingNamedPipeCbor
   :: NodeId
   -> NodeId
-  -> Codec IO CBOR.Encoding ByteString tr begin
+  -> Codec IO Text CBOR.Encoding ByteString tr begin
   -> Peer proto tr (status begin) end IO a
   -> IO a
 runPeerUsingNamedPipeCbor myId targetId codec peer =
@@ -97,4 +97,4 @@ runPeerUsingNamedPipeCbor myId targetId codec peer =
        in throwOnUnexpected =<< useCodecWithDuplex channel codec peer
   where
   throwOnUnexpected (Normal t) = pure t
-  throwOnUnexpected (Unexpected txt) = error (T.unpack txt)
+  throwOnUnexpected (Unexpected txt) = error (unpack txt)

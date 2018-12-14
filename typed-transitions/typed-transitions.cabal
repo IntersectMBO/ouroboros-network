@@ -18,9 +18,10 @@ cabal-version:       >=1.10
 library
   exposed-modules:     Protocol.Channel
                      , Protocol.Codec
-                     , Protocol.Driver
-                     , Protocol.Transition
                      , Protocol.Core
+                     , Protocol.Driver
+                     , Protocol.Path
+                     , Protocol.Transition
                      , Protocol.PingPong.Type
                      , Protocol.PingPong.Client
                      , Protocol.PingPong.Codec
@@ -59,6 +60,9 @@ test-suite test-typed-transitions
   main-is:        Main.hs
   hs-source-dirs: test
   other-modules:    Test.Protocol.Channel
+                    Test.Protocol.Codec
+                    Test.Protocol.Codec.Coherent
+                    Test.Protocol.Codec.PingPong
   build-depends:    base >=4.9 && <4.13
                   , async
                   , bytestring
@@ -66,4 +70,6 @@ test-suite test-typed-transitions
                   , tasty
                   , tasty-quickcheck
                   , text
+                  , transformers
                   , typed-transitions
+  ghc-options:    -rtsopts

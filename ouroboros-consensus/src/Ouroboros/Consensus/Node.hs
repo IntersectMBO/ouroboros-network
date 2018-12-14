@@ -34,6 +34,7 @@ import           Data.Function (on)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe)
+import           Data.Text (Text)
 import           Data.Time
 
 import           Protocol.Channel
@@ -316,7 +317,7 @@ data NetworkLayer up b m = NetworkLayer {
       -- connection.
     , registerUpstream :: forall concreteSend concreteRecv.
                           up
-                       -> Codec m concreteSend concreteRecv (ChainSyncMessage b (Point b)) 'StIdle
+                       -> Codec m Text concreteSend concreteRecv (ChainSyncMessage b (Point b)) 'StIdle
                        -> (forall a. (Duplex m m concreteSend concreteRecv -> m a) -> m a)
                        -> m ()
 
@@ -329,7 +330,7 @@ data NetworkLayer up b m = NetworkLayer {
       -- is given the chance to /create/ a channel for the lifetime of the
       -- connection.
     , registerDownstream :: forall concreteSend concreteRecv.
-                            Codec m concreteSend concreteRecv (ChainSyncMessage b (Point b)) 'StIdle
+                            Codec m Text concreteSend concreteRecv (ChainSyncMessage b (Point b)) 'StIdle
                          -> (forall a. (Duplex m m concreteSend concreteRecv -> m a) -> m a)
                          -> m ()
     }
