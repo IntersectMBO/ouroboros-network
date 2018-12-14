@@ -1,5 +1,6 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections #-}
 
 module Ouroboros.Network.Protocol.BlockFetch.Direct where
 
@@ -19,7 +20,7 @@ directBlockFetchClient BlockFetchServerReceiver {recvMessageRequestRange} (SendB
   server <- recvMessageRequestRange range
   sender <- msender
   directBlockFetchClient server sender
-directBlockFetchClient BlockFetchServerReceiver {recvMessageDone} (SendMsgDone b) = return (recvMessageDone, b)
+directBlockFetchClient BlockFetchServerReceiver {recvMessageDone} (SendMsgDone b) = (,b) <$> recvMessageDone
 
 -- | Direclty connect server and client adts of @'BlockFetchServerProtocol'@.
 --

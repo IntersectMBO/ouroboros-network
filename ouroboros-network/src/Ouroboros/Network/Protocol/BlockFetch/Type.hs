@@ -37,6 +37,24 @@
   Both protocol never shift the agency: the 'BlockFetchClientProtocol' keep
   agancy on the client side and the 'BlockFetchServerProtocol' keeps it on the
   server side.
+
+  The receiver of @'BlockFetchClientProtocol'@ writes received ranges to
+  a queue which acumulates @'RangeStream' range@ elements.  The sender of
+  @'BlockFetchServerProtocol'@ is reading this queue and sending back blocks to
+  a @'BlockFetchServerReceiver'@.
+
+  Termination
+
+  If the @'BlockFetchClientSender'@ (of the @'BlockFetchClientProtoco'@) will
+  send @'MessageDone'@ the corresponding @'BlockFetchServerReciever'@ will
+  write @'End'@ to the queue which connects both protocols.  When the
+  @'BlockFetchServerSender'@ will encounter @'End'@, it will send
+  @'MessageServerDone'@ which will terminate the protocol.
+
+  Note: there is no mechanism which ensures that if the
+  @'BlockFetchServerSender'@ will send @'MessageServerDone'@ that the
+  corresponding @'BlockFetchClientProtocol@ will terminate.
+
 -}
 module Ouroboros.Network.Protocol.BlockFetch.Type where
 
