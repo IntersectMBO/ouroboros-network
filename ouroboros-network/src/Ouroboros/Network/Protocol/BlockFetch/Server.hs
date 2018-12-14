@@ -8,23 +8,18 @@ module Ouroboros.Network.Protocol.BlockFetch.Server
   ( BlockFetchServerReceiver (..)
   , constantReceiver
   , blockFetchServerReceiverStream
-  , blockFetchServerReceiverPipe
   , BlockFetchServerSender (..)
   , BlockFetchSender (..)
   , BlockFetchSendBlocks (..)
   , StreamElement (..)
   , blockFetchServerStream
   , blockFetchServerSender
-  , blockFetchServerSenderToProducer
   , connectThroughQueue
   )
   where
 
-import Control.Monad (join)
 import Data.Functor (($>))
-import Data.Void (Void)
 import Numeric.Natural (Natural)
-import Pipes (Producer', Pipe)
 import qualified Pipes
 
 import Protocol.Core
@@ -73,17 +68,6 @@ blockFetchServerReceiverStream BlockFetchServerReceiver{recvMessageRequestRange,
   await $ \msg -> case msg of
     MessageRequestRange range -> lift (blockFetchServerReceiverStream <$> recvMessageRequestRange range)
     MessageDone -> lift (done <$> recvMessageDone)
-
-blockFetchServerReceiverPipe
-  :: forall range block m a.
-     Monad m
-  => (range -> Pipes.Producer' block m a)
-  -> BlockFetchServerReceiver range m Void
-  -> Pipe range block m a
-blockFetchServerReceiverPipe blockStream BlockFetchServerReceiver {recvMessageRequestRange} = do
-  range <- Pipes.await
-  _ <- blockStream range
-  join $ Pipes.lift $ blockFetchServerReceiverPipe blockStream <$> recvMessageRequestRange range
 
 {-------------------------------------------------------------------------------
   Server stream of @'BlockFetchServerProtocol'@ protocol
@@ -168,27 +152,6 @@ blockFetchServerStream server = lift $ handleStAwait <$> runBlockFetchServerSend
     part (MessageBlock block) (lift $ sendBlocks <$> msender)
   sendBlocks (SendMessageBatchDone server') =
     part MessageBatchDone (blockFetchServerStream server')
-
-blockFetchServerSenderToProducer
-  :: forall block m a. Monad m
-  => BlockFetchServerSender block m a
-  -> Producer' block m a
-blockFetchServerSenderToProducer (BlockFetchServerSender mserver) =
-  join $ Pipes.lift (sendBlocks <$> mserver)
- where
-  sendBlocks :: BlockFetchSender block m a
-             -> Producer' block m a
-  sendBlocks (SendMessageStartBatch msender) =
-    join $ Pipes.lift $ streamBlocks <$> msender
-  sendBlocks (SendMessageNoBlocks sender) = blockFetchServerSenderToProducer sender
-  sendBlocks (SendMessageServerDone a)    = return a
-
-  streamBlocks :: BlockFetchSendBlocks block m a
-               -> Producer' block m a
-  streamBlocks (SendMessageBlock block mstreamer) = do
-    Pipes.yield block
-    join $ Pipes.lift (streamBlocks <$> mstreamer)
-  streamBlocks (SendMessageBatchDone sender) = blockFetchServerSenderToProducer sender
 
 -- | Sender of the @'BlockFetchServerProtocol'@.  It may sand
 -- @'MessageServerDone'@ under two conditions:
