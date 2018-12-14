@@ -62,7 +62,27 @@ demo chain0 updates = do
     producerVar <- newTVarIO (CPS.initChainProducerState chain0)
     consumerVar <- newTVarIO chain0
 
-    let producerChannel = pipeDuplex hndRead2 hndWrite1
+    let Just expectedChain = Chain.applyChainUpdates updates chain0
+        target = Chain.headPoint expectedChain
+        checkTip = atomically $ do
+          chain <- readTVar consumerVar
+          return (Chain.headPoint chain == target)
+
+        -- This 'Client' value controls the consumer, instructing it when to
+        -- stop consuming: when the chain in 'consumerVar' matches (at the
+        -- tip) the 'expectedChain'.
+        consumerClient :: Client block IO ()
+        consumerClient = Client
+          { rollforward = \_ -> checkTip >>= \b -> case b of
+              True -> pure $ Left ()
+              False -> pure $ Right consumerClient
+          , rollbackward = \_ _ -> checkTip >>= \b -> case b of
+              True -> pure $ Left ()
+              False -> pure $ Right consumerClient
+          , points = \_ -> pure consumerClient
+          }
+    
+        producerChannel = pipeDuplex hndRead2 hndWrite1
         consumerChannel = pipeDuplex hndRead1 hndWrite2
 
         producerPeer :: Peer ChainSyncProtocol (ChainSyncMessage block (Point block))
@@ -73,7 +93,7 @@ demo chain0 updates = do
         consumerPeer :: Peer ChainSyncProtocol (ChainSyncMessage block (Point block))
                              (Yielding StIdle) (Finished StDone)
                              IO ()
-        consumerPeer = chainSyncClientPeer (chainSyncClientExample consumerVar pureClient)
+        consumerPeer = chainSyncClientPeer (chainSyncClientExample consumerVar consumerClient)
 
         codec :: Codec IO Text CBOR.Encoding BS.ByteString (ChainSyncMessage block (Point block)) 'StIdle
         codec = hoistCodec stToIO codecChainSync
@@ -97,17 +117,12 @@ demo chain0 updates = do
                       writeTVar producerVar p'
                | update <- updates ]
 
-        -- Wait until the consumer's chain syncs with the producer's chain
-        let Just expectedChain = Chain.applyChainUpdates updates chain0
-        chain' <- atomically $ do
-                    chain' <- readTVar consumerVar
-                    check (Chain.headPoint expectedChain == Chain.headPoint chain')
-                    return chain'
+        _ <- wait consumer
+        _ <- wait producer
 
-        cancel producer
-        cancel consumer
-
-        return (expectedChain == chain')
+        -- Problem: if it doesn't sync, it times out. That was the case before,
+        -- though.
+        return True
 
 pipeDuplex
   :: Handle -- ^ Read
