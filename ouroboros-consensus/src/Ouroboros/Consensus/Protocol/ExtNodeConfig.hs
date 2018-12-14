@@ -64,10 +64,10 @@ instance OuroborosTag p => OuroborosTag (ExtNodeConfig cfg p) where
   checkIsLeader   (EncNodeConfig cfg _) = checkIsLeader   cfg
   applyChainState (EncNodeConfig cfg _) = applyChainState cfg
 
-deriving instance (OuroborosTag p, Eq       (Payload p ph)) => Eq       (Payload (ExtNodeConfig cfg p) ph)
-deriving instance (OuroborosTag p, Ord      (Payload p ph)) => Ord      (Payload (ExtNodeConfig cfg p) ph)
-deriving instance (OuroborosTag p, Show     (Payload p ph)) => Show     (Payload (ExtNodeConfig cfg p) ph)
-deriving instance (OuroborosTag p, Condense (Payload p ph)) => Condense (Payload (ExtNodeConfig cfg p) ph)
+deriving instance Eq       (Payload p ph) => Eq       (Payload (ExtNodeConfig cfg p) ph)
+deriving instance Ord      (Payload p ph) => Ord      (Payload (ExtNodeConfig cfg p) ph)
+deriving instance Show     (Payload p ph) => Show     (Payload (ExtNodeConfig cfg p) ph)
+deriving instance Condense (Payload p ph) => Condense (Payload (ExtNodeConfig cfg p) ph)
 
-instance (OuroborosTag p, Serialise (Payload p ph)) => Serialise (Payload (ExtNodeConfig cfg p) ph) where
+instance Serialise (Payload p ph) => Serialise (Payload (ExtNodeConfig cfg p) ph) where
   -- use Generic instance

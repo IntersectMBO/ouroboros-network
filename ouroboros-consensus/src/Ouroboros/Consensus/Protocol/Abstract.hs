@@ -34,12 +34,11 @@ import           Data.Kind (Constraint)
 import           Data.List (sortBy)
 import           Data.Ord (comparing)
 
-import           Ouroboros.Network.Block (HasHeader(..), Slot)
+import           Ouroboros.Network.Block (HasHeader (..), Slot)
 import           Ouroboros.Network.Chain (Chain (..))
-import           Ouroboros.Network.Serialise (Serialise)
 import qualified Ouroboros.Network.Chain as Chain
+import           Ouroboros.Network.Serialise (Serialise)
 
-import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.Chain (upToSlot)
 import           Ouroboros.Consensus.Util.Random
 

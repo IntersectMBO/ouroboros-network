@@ -1,39 +1,38 @@
+{-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE PolyKinds #-}
 module NamedPipe (
-    runPeerUsingNamedPipeCbor
   -- * Sending & receiving txs
-  , withTxPipe
+    withTxPipe
+  , withPipe
+  , DataFlow(..)
+  , NodeMapping((:==>:))
   ) where
 
 import           Control.Exception (SomeException, bracket, catch)
 import           Control.Monad (when)
-import qualified Codec.CBOR.Encoding as CBOR (Encoding)
-import           Data.ByteString (ByteString)
 import           Data.Semigroup ((<>))
-import           Data.Text (Text, unpack)
-import           GHC.Stack
 import           System.Directory (removeFile)
 import           System.IO
 import           System.Posix.Files (createNamedPipe, otherReadMode,
                      otherWriteMode, ownerModes, unionFileModes)
 
-import           Protocol.Codec (Codec)
-import           Protocol.Core (Peer)
-import           Protocol.Driver (Result (..), useCodecWithDuplex)
-
 import           Ouroboros.Network.Node (NodeId (..))
-import qualified Ouroboros.Network.Pipe as P
 
--- | Creates two pipes, one for reading, one for writing.
-withPipe :: HasCallStack
-          => (NodeId, NodeId)
-          -> ((Handle, Handle) -> IO a)
-          -> IO a
-withPipe (fromNode, toNode) action = do
-    let (src,tgt) = (dashify fromNode, dashify toNode)
-    let readName  = "ouroboros-" <> tgt <> "-to-" <> src
-    let writeName = "ouroboros-" <> src <> "-to-" <> tgt
+
+data NodeMapping src tgt = src :==>: tgt
+
+data DataFlow =
+     Upstream   (NodeMapping NodeId NodeId)
+   | Downstream (NodeMapping NodeId NodeId)
+
+-- | Creates two pipes, one for reading, one for writing. The 'DataFlow' input
+-- type is there to make it easier to correctly specify the pipes so that
+-- correct communication can occur.
+withPipe :: DataFlow
+         -> ((Handle, Handle) -> IO a)
+         -> IO a
+withPipe dataflow action = do
+    let (readName, writeName) = mkNames
     bracket (do createNamedPipe readName  (unionFileModes ownerModes otherReadMode)
                     `catch` (\(_ :: SomeException) -> pure ())
                 createNamedPipe writeName (unionFileModes ownerModes otherReadMode)
@@ -51,6 +50,22 @@ withPipe (fromNode, toNode) action = do
                 )
             action
 
+    -- Creates the correct names for the read and write handles based on the
+    -- topology (upstream vs downstream nodes).
+  where
+    mkNames :: (String, String)
+    mkNames = case dataflow of
+        Downstream (source :==>: destination) ->
+            let [src,tgt] = map dashify [source, destination]
+            in ( "upstream-"   <> src <> "-" <> tgt
+               , "downstream-" <> src <> "-" <> tgt
+               )
+        Upstream   (source :==>: destination) ->
+            let [src,tgt] = map dashify [source, destination]
+            in ( "downstream-" <> src <> "-" <> tgt
+               , "upstream-"   <> src <> "-" <> tgt
+               )
+
 -- | Given a 'NodeId', it dashifies it.
 dashify :: NodeId -> String
 dashify (CoreId n)  = "core-node-"  <> show n
@@ -62,13 +77,12 @@ namedTxPipeFor :: NodeId -> String
 namedTxPipeFor n = "ouroboros-" <> dashify n <> "-tx-pipe"
 
 -- | Creates a unidirectional pipe for Tx transmission.
-withTxPipe :: HasCallStack
-          => NodeId
-          -> IOMode
-          -> Bool
-          -- ^ Whether or not to destroy the pipe at teardown.
-          -> (Handle -> IO a)
-          -> IO a
+withTxPipe :: NodeId
+           -> IOMode
+           -> Bool
+           -- ^ Whether or not to destroy the pipe at teardown.
+           -> (Handle -> IO a)
+           -> IO a
 withTxPipe node ioMode destroyAfterUse action = do
     let pipeName = namedTxPipeFor node
     bracket (do createNamedPipe pipeName (unionFileModes ownerModes otherWriteMode)
@@ -82,19 +96,3 @@ withTxPipe node ioMode destroyAfterUse action = do
                     `catch` (\(_ :: SomeException) -> pure ())
                 )
             action
-
--- | Runs a peer over a named pipe using a cbor-encoded transition (technically
--- speaking two pipes, one for reads, one for writes).
-runPeerUsingNamedPipeCbor
-  :: NodeId
-  -> NodeId
-  -> Codec IO Text CBOR.Encoding ByteString tr begin
-  -> Peer proto tr (status begin) end IO a
-  -> IO a
-runPeerUsingNamedPipeCbor myId targetId codec peer =
-    withPipe (myId, targetId) $ \(hndRead, hndWrite) ->
-      let channel = P.pipeDuplex hndRead hndWrite
-       in throwOnUnexpected =<< useCodecWithDuplex channel codec peer
-  where
-  throwOnUnexpected (Normal t) = pure t
-  throwOnUnexpected (Unexpected txt) = error (unpack txt)

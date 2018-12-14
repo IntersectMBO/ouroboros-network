@@ -30,10 +30,12 @@ module Test.Dynamic.General (
 
 import           Codec.Serialise.Class (Serialise)
 import           Control.Monad
+import           Control.Monad.Except
 import           Control.Monad.ST.Lazy (runST)
 import           Crypto.Number.Generate (generateBetween)
 import           Crypto.Random (DRG)
 import           Data.Foldable (foldl')
+import           Data.Functor.Identity
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
@@ -51,6 +53,7 @@ import           Ouroboros.Network.Protocol.ChainSync.Codec.Id
 import           Ouroboros.Network.Protocol.ChainSync.Type
 import           Ouroboros.Network.Sim (VTime)
 
+import           Ouroboros.Consensus.Crypto.Hash
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Node
@@ -155,7 +158,9 @@ test_simple_protocol_convergence mkConfig mkState initialChainState isValid seed
 
     initLedgerState :: ExtLedgerState (BlockUnderTest p)
     initLedgerState = ExtLedgerState {
-          ledgerState         = SimpleLedgerState (utxo genesisTx)
+          ledgerState         =
+              let Right u = runIdentity . runExceptT $ utxo genesisTx
+              in SimpleLedgerState u mempty
         , ouroborosChainState = initialChainState
         }
 
@@ -241,7 +246,12 @@ broadcastNetwork btime nodeInit initLedger initRNG = do
 
                 -- Produce some random transactions
                 txs <- genTxs addrs (getUtxo l)
-                forgeBlock cfg slot curNo prevHash (Set.fromList txs) proof
+                forgeBlock cfg
+                           slot
+                           curNo
+                           prevHash
+                           (Map.fromList $ [(hash t, t) | t <- txs])
+                           proof
 
             , adoptedNewChain = \_newChain -> return ()
             }
@@ -283,7 +293,7 @@ broadcastNetwork btime nodeInit initLedger initRNG = do
     nodeIds = Map.keys nodeInit
 
     getUtxo :: ExtLedgerState (SimpleBlock p c) -> Utxo
-    getUtxo l = let SimpleLedgerState u = ledgerState l in u
+    getUtxo l = let SimpleLedgerState u _ = ledgerState l in u
 
 {-------------------------------------------------------------------------------
   Auxiliary

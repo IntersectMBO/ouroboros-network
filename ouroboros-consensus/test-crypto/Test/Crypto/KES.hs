@@ -1,8 +1,8 @@
-{-# LANGUAGE DeriveGeneric       #-}
-{-# LANGUAGE StandaloneDeriving  #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE DeriveAnyClass      #-}
+{-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving  #-}
+{-# LANGUAGE TypeApplications    #-}
 
 module Test.Crypto.KES
     ( tests
@@ -112,7 +112,7 @@ prop_KES_verify_neg_time _ d i =
             Left e   -> counterexample e False
             Right xs -> conjoin [t /= j ==> not $ verifyKES vk t a sig | (j, a, sig) <- xs]
 
-getDuration :: KESAlgorithm v => Duration_Seed_SK_Times v a -> Natural
+getDuration :: Duration_Seed_SK_Times v a -> Natural
 getDuration d = case d of
     (Duration_Seed_SK_Times duration _ _ _ _) -> duration
 
@@ -120,7 +120,7 @@ getFirstVerKey :: KESAlgorithm v => Duration_Seed_SK_Times v a -> VerKeyKES v
 getFirstVerKey d = case d of
     (Duration_Seed_SK_Times _ _ sk _ _) -> deriveVerKeyKES sk
 
-getSecondVerKey :: KESAlgorithm v => Duration_Seed_SK_Times v a -> VerKeyKES v
+getSecondVerKey :: Duration_Seed_SK_Times v a -> VerKeyKES v
 getSecondVerKey d = case d of
     (Duration_Seed_SK_Times _ _ _ vk _) -> vk
 

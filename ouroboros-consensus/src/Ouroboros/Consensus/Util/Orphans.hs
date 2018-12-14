@@ -1,16 +1,21 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Ouroboros.Consensus.Util.Orphans () where
 
+import           Control.Monad.Identity
+import           Control.Monad.Trans
+import           Crypto.Random
+
 import           Test.QuickCheck (Arbitrary (..), Gen)
 
-import           Ouroboros.Network.Chain (Chain (..))
-import           Ouroboros.Network.Node (NodeId (..))
 import           Ouroboros.Consensus.Crypto.DSIGN.Class (DSIGNAlgorithm (..))
-import           Ouroboros.Consensus.Crypto.Hash.Class (HashAlgorithm (..), Hash, hash)
+import           Ouroboros.Consensus.Crypto.Hash.Class (Hash,
+                     HashAlgorithm (..), hash)
 import           Ouroboros.Consensus.Crypto.VRF.Class (VRFAlgorithm (..))
-import           Ouroboros.Network.Serialise (Serialise)
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.Random (withSeed)
+import           Ouroboros.Network.Chain (Chain (..))
+import           Ouroboros.Network.Node (NodeId (..))
+import           Ouroboros.Network.Serialise (Serialise)
 
 instance Condense NodeId where
   condense (CoreId  i) = "c" ++ show i
@@ -68,3 +73,6 @@ instance VRFAlgorithm v => Arbitrary (CertVRF v) where
         return $ withSeed seed $ fmap snd $ evalVRF a sk
 
     shrink = const []
+
+instance MonadRandom m => MonadRandom (IdentityT m) where
+     getRandomBytes = lift . getRandomBytes

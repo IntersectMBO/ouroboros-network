@@ -20,9 +20,11 @@ module Ouroboros.Consensus.Util.HList (
   , All
     -- * Folding
   , foldl
+  , foldlM
   , foldr
   , foldMap
   , repeatedly
+  , repeatedlyM
   , collapse
     -- * Singletons
   , SList
@@ -94,6 +96,15 @@ foldl _ f = go
     go !acc Nil       = acc
     go !acc (a :* as) = go (f acc a) as
 
+foldlM :: forall c as m b proxy. (All c as, Monad m)
+       => proxy c
+       -> (forall a. c a => b -> a -> m b) -> b -> HList as -> m b
+foldlM _ f = go
+  where
+    go :: All c as' => b -> HList as' -> m b
+    go !acc Nil       = return acc
+    go !acc (a :* as) = f acc a >>= \acc' -> go acc' as
+
 foldr :: forall c as b proxy. All c as
       => proxy c
       -> (forall a. c a => a -> b -> b) -> b -> HList as -> b
@@ -117,6 +128,11 @@ repeatedly :: forall c as b proxy. All c as
            => proxy c
            -> (forall a. c a => a -> b -> b) -> (HList as -> b -> b)
 repeatedly p f as e = foldl p (\b a -> f a b) e as
+
+repeatedlyM :: forall c as b proxy m. (Monad m, All c as)
+            => proxy c
+            -> (forall a. c a => a -> b -> m b) -> (HList as -> b -> m b)
+repeatedlyM p f as e = foldlM p (\b a -> f a b) e as
 
 collapse :: forall c as b proxy. All c as
          => proxy c
