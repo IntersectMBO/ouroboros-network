@@ -1,4 +1,4 @@
-{ compiler   ? "ghc862"
+{ compiler   ? "ghc844"
 , haddock    ? true
 , test       ? true
 , benchmarks ? false
@@ -19,12 +19,18 @@ let
     then lib.doBenchmark
     else nixpkgs.lib.id;
 
+  iohk-monitoring-src = builtins.fetchGit {
+    url = "https://github.com/input-output-hk/iohk-monitoring-framework.git";
+    rev = "721e672973ecade1e43fbf97c5f2f173d4fb3020";
+  };
+  iohk-monitoring = callPackage (iohk-monitoring-src + /iohk-monitoring.nix) {};
+
   typed-transitions = doHaddock(doTest(doBench(
     callPackage ./typed-transitions/default.nix { inherit nixpkgs; } 
   )));
 
   ouroboros-network = doHaddock(doTest(doBench(
-    callPackage ./ouroboros-network/default.nix { inherit nixpkgs typed-transitions; }
+    callPackage ./ouroboros-network/default.nix { inherit nixpkgs typed-transitions iohk-monitoring; }
   )));
 
   ouroboros-consensus = doHaddock(doTest(doBench(
