@@ -4,6 +4,7 @@
 {-# LANGUAGE TypeFamilies           #-}
 {-# LANGUAGE TypeFamilyDependencies #-}
 {-# LANGUAGE UndecidableInstances   #-}
+{-# LANGUAGE CPP                    #-}
 {-# OPTIONS_GHC -fno-warn-orphans   #-}
 module Ouroboros.Network.MonadClass.MonadSTM
   ( MonadSTM (..)
@@ -88,8 +89,9 @@ class (MonadFork m, Monad (Tr m)) => MonadSTM m where
   newTBQueue     :: Natural -> Tr m (TBQueue m a)
   readTBQueue    :: TBQueue m a -> Tr m a
   writeTBQueue   :: TBQueue m a -> a -> Tr m ()
+#if MIN_VERSION_stm(2,5,0)
   lengthTBQueue  :: TBQueue m a -> Tr m Natural
-
+#endif
 
 instance MonadFork m => MonadFork (ReaderT e m) where
   fork (ReaderT f) = ReaderT $ \e -> fork (f e)
@@ -122,7 +124,9 @@ instance MonadSTM m => MonadSTM (ReaderT e m) where
   newTBQueue       = lift . newTBQueue
   readTBQueue      = lift . readTBQueue
   writeTBQueue q a = lift $ writeTBQueue q a
+#if MIN_VERSION_stm(2,5,0)
   lengthTBQueue    = lift . lengthTBQueue
+#endif
 
 -- NOTE(adn): Is this a sensible instance?
 instance (Show e, MonadFork m) => MonadFork (ExceptT e m) where
@@ -156,8 +160,9 @@ instance (Show e, MonadSTM m) => MonadSTM (ExceptT e m) where
   newTBQueue       = lift . newTBQueue
   readTBQueue      = lift . readTBQueue
   writeTBQueue q a = lift $ writeTBQueue q a
+#if MIN_VERSION_stm(2,5,0)
   lengthTBQueue    = lift . lengthTBQueue
-
+#endif
 
 --
 -- Instance for IO uses the existing STM library implementations
@@ -195,10 +200,17 @@ instance MonadSTM IO where
 
   type TBQueue IO = STM.TBQueue
 
+#if MIN_VERSION_stm(2,5,0)
   newTBQueue     = STM.newTBQueue
+#else
+  -- STM prior to 2.5.0 takes an Int
+  newTBQueue     = STM.newTBQueue . fromEnum
+#endif
   readTBQueue    = STM.readTBQueue
   writeTBQueue   = STM.writeTBQueue
+#if MIN_VERSION_stm(2,5,0)
   lengthTBQueue  = STM.lengthTBQueue
+#endif
 
 --
 -- Default TMVar implementation in terms of TVars (used by sim)
