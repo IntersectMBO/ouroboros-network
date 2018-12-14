@@ -143,8 +143,6 @@ executable demo-playground
   main-is:             Main.hs
   ghc-options:         -threaded -Wall -O2 "-with-rtsopts=-N"
   other-modules:       CLI
-                       BlockGeneration
-                       LedgerState
                        Logging
                        Mock.TxSubmission
                        Mock.Mempool
@@ -170,6 +168,7 @@ executable demo-playground
                        stm,
                        string-conv,
                        text,
+                       time,
                        unix
 
 test-suite test-consensus
@@ -189,6 +188,7 @@ test-suite test-consensus
 
                     containers,
                     cryptonite,
+                    mtl,
                     QuickCheck,
                     serialise,
                     tasty,

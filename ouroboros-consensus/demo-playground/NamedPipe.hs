@@ -11,8 +11,6 @@ module NamedPipe (
 import           Control.Exception (SomeException, bracket, catch)
 import           Control.Monad (when)
 import           Data.Semigroup ((<>))
-import           Data.Text (Text, unpack)
-import           GHC.Stack
 import           System.Directory (removeFile)
 import           System.IO
 import           System.Posix.Files (createNamedPipe, otherReadMode,
@@ -30,8 +28,7 @@ data DataFlow =
 -- | Creates two pipes, one for reading, one for writing. The 'DataFlow' input
 -- type is there to make it easier to correctly specify the pipes so that
 -- correct communication can occur.
-withPipe :: HasCallStack
-         => DataFlow
+withPipe :: DataFlow
          -> ((Handle, Handle) -> IO a)
          -> IO a
 withPipe dataflow action = do
@@ -80,13 +77,12 @@ namedTxPipeFor :: NodeId -> String
 namedTxPipeFor n = "ouroboros-" <> dashify n <> "-tx-pipe"
 
 -- | Creates a unidirectional pipe for Tx transmission.
-withTxPipe :: HasCallStack
-          => NodeId
-          -> IOMode
-          -> Bool
-          -- ^ Whether or not to destroy the pipe at teardown.
-          -> (Handle -> IO a)
-          -> IO a
+withTxPipe :: NodeId
+           -> IOMode
+           -> Bool
+           -- ^ Whether or not to destroy the pipe at teardown.
+           -> (Handle -> IO a)
+           -> IO a
 withTxPipe node ioMode destroyAfterUse action = do
     let pipeName = namedTxPipeFor node
     bracket (do createNamedPipe pipeName (unionFileModes ownerModes otherWriteMode)

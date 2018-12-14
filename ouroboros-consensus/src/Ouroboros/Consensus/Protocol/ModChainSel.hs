@@ -5,10 +5,10 @@
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
 
 module Ouroboros.Consensus.Protocol.ModChainSel (
     ChainSelection (..)
@@ -28,7 +28,7 @@ import           Data.Proxy (Proxy (..))
 
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util
-import           Ouroboros.Network.Block (Slot, HasHeader)
+import           Ouroboros.Network.Block (HasHeader, Slot)
 import           Ouroboros.Network.Chain (Chain)
 import           Ouroboros.Network.Serialise
 
@@ -68,8 +68,8 @@ instance ( OuroborosTag p
 
     selectChain     (McsNodeConfig cfg) = selectChain' (Proxy :: Proxy c) cfg
 
-deriving instance (OuroborosTag p, Show      (Payload p ph)) => Show      (Payload (ModChainSel p c) ph)
-deriving instance (OuroborosTag p, Eq        (Payload p ph)) => Eq        (Payload (ModChainSel p c) ph)
-deriving instance (OuroborosTag p, Ord       (Payload p ph)) => Ord       (Payload (ModChainSel p c) ph)
-deriving instance (OuroborosTag p, Condense  (Payload p ph)) => Condense  (Payload (ModChainSel p c) ph)
-deriving instance (OuroborosTag p, Serialise (Payload p ph)) => Serialise (Payload (ModChainSel p c) ph)
+deriving instance Show      (Payload p ph) => Show      (Payload (ModChainSel p c) ph)
+deriving instance Eq        (Payload p ph) => Eq        (Payload (ModChainSel p c) ph)
+deriving instance Ord       (Payload p ph) => Ord       (Payload (ModChainSel p c) ph)
+deriving instance Condense  (Payload p ph) => Condense  (Payload (ModChainSel p c) ph)
+deriving instance Serialise (Payload p ph) => Serialise (Payload (ModChainSel p c) ph)

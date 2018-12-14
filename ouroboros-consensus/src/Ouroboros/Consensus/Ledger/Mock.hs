@@ -118,7 +118,7 @@ instance HasUtxo tx => HasUtxo (Map (Hash h tx) tx) where
   updateUtxo as u =
       let notInUtxo = txIns as Set.\\ (Map.keysSet u)
       in case Set.null notInUtxo of
-           True  -> return $ (u `Map.union` txOuts as) `withoutKeys` txIns as
+           True  -> return $ (u `Map.union` txOuts as) `Map.withoutKeys` txIns as
            False -> throwError $ InvalidInputs notInUtxo
 
 instance HasUtxo SimpleBody where

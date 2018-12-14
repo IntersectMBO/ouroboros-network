@@ -40,7 +40,7 @@ instance Condense BlockHeader where
                 <> condense headerBlockNo
                 <> "}"
 
-logChain :: (Condense b , Condense [b])
+logChain :: Condense [b]
          => TBQueue LogEvent
          -> Chain b
          -> IO ()
