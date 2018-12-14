@@ -27,4 +27,8 @@ let
     callPackage ./ouroboros-network/default.nix { inherit typed-transitions; }
   )));
 
-in { inherit ouroboros-network typed-transitions; }
+  ouroboros-consensus = doHaddock(doTest(doBench(
+    callPackage ./ouroboros-consensus/default.nix { inherit nixpkgs typed-transitions ouroboros-network; }
+  )));
+
+in { inherit typed-transitions ouroboros-network ouroboros-consensus; }

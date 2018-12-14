@@ -101,7 +101,7 @@ instance HasUtxo a => HasUtxo (Set a) where
   txIns           = txIns     . Set.toList
   txOuts          = txOuts    . Set.toList
   confirmed       = confirmed . Set.toList
-  updateUtxo as u = (u `Map.union` txOuts as) `withoutKeys` txIns as
+  updateUtxo as u = (u `Map.union` txOuts as) `Map.withoutKeys` txIns as
 
 instance HasUtxo a => HasUtxo [a] where
   txIns      = foldr (Set.union . txIns)     Set.empty

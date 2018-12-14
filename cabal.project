@@ -1,8 +1,12 @@
 packages: ./typed-transitions
           ./ouroboros-network
+          ./ouroboros-consensus
 
 package typed-transitions
   tests: True
 
 package ouroboros-network
+  tests: True
+
+package ouroboros-consensus
   tests: True
