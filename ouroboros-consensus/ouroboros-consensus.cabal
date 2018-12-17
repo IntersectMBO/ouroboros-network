@@ -145,10 +145,11 @@ executable demo-playground
   ghc-options:         -threaded -Wall -O2 "-with-rtsopts=-N"
   other-modules:       CLI
                        Logging
-                       Mock.TxSubmission
                        Mock.Mempool
                        Mock.Protocol
+                       Mock.TxSubmission
                        NamedPipe
+                       Protocol
                        Run
                        Topology
   build-depends:       base,

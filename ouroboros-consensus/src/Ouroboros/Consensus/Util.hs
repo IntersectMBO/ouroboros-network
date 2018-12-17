@@ -26,7 +26,7 @@ data Dict (a :: Constraint) where
     Dict :: a => Dict a
 
 data Some (f :: k -> *) where
-    Exists :: f a -> Some f
+    Some :: f a -> Some f
 
 foldlM' :: forall m a b. Monad m => (b -> a -> m b) -> b -> [a] -> m b
 foldlM' f = go

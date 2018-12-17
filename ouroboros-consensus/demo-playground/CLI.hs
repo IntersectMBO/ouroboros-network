@@ -12,19 +12,23 @@ module CLI (
   , progDesc
   ) where
 
+import           Data.Foldable (asum)
 import           Data.Semigroup ((<>))
 import           Data.Time
 import           Options.Applicative
 
 import qualified Ouroboros.Consensus.Ledger.Mock as Mock
-import           Ouroboros.Network.Node (NodeId (..))
+import           Ouroboros.Consensus.Node (NodeId (..))
+import           Ouroboros.Consensus.Util
 
 import           Mock.TxSubmission (command', parseMockTx)
+import           Protocol
 import           Topology (TopologyInfo (..))
 
 data CLI = CLI {
     systemStart  :: UTCTime
   , slotDuration :: Double
+  , protocol     :: Some DemoProtocol
   , command      :: Command
   }
 
@@ -33,7 +37,11 @@ data Command =
   | TxSubmitter TopologyInfo Mock.Tx
 
 parseCLI :: Parser CLI
-parseCLI = CLI <$> parseSystemStart <*> parseSlotDuration <*> parseCommand
+parseCLI = CLI
+    <$> parseSystemStart
+    <*> parseSlotDuration
+    <*> parseProtocol
+    <*> parseCommand
 
 parseSystemStart :: Parser UTCTime
 parseSystemStart = option auto (long "system-start" <>
@@ -45,6 +53,18 @@ parseSlotDuration = option auto (long "slot-duration" <>
                                  value 5.0 <>
                                  help "The slot duration (seconds)"
                                 )
+
+parseProtocol :: Parser (Some DemoProtocol)
+parseProtocol = asum [
+      flag' (Some DemoBFT) $ mconcat [
+          long "bft"
+        , help "Use the BFT consensus algorithm"
+        ]
+    , flag' (Some DemoPraos) $ mconcat [
+          long "praos"
+        , help "Use the Praos consensus algorithm"
+        ]
+    ]
 
 parseCommand :: Parser Command
 parseCommand = subparser $ mconcat [

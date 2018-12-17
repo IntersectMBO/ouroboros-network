@@ -10,6 +10,12 @@ function ctrl_c() {
 
 now=`date "+%Y-%m-%d 00:00:00"`
 
+if [ $# -ne 2 ]
+then
+  echo "Usage: $0 [--bft | --praos] <nodeid>"
+  exit
+fi
+
 cabal new-run demo-playground -- \
-    --system-start "$now" --slot-duration 2 \
-    node -t demo-playground/simple-topology.json -n $1 \
+    --system-start "$now" --slot-duration 2 $1 \
+    node -t demo-playground/simple-topology.json -n $2 \
