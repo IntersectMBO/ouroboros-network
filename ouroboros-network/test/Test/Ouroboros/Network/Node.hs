@@ -8,7 +8,7 @@
 
 module Test.Ouroboros.Network.Node where
 
-import           Control.Monad (forM, forM_, forever, replicateM)
+import           Control.Monad (forM, forM_, replicateM)
 import           Control.Monad.ST.Lazy (runST)
 import           Control.Monad.State (execStateT, lift, modify')
 import           Data.Array

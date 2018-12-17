@@ -83,9 +83,9 @@ singletonInput :: Applicative m => input -> Input input m
 singletonInput inp = Input $ pure $ Just $ (inp, noInput)
 
 prependInput :: Applicative m => [input] -> Input input m -> Input input m
-prependInput inp tail = case inp of
-  []      -> tail
-  (i : is) -> Input $ pure (Just (i, prependInput is tail))
+prependInput inp tail_ = case inp of
+  []      -> tail_
+  (i : is) -> Input $ pure (Just (i, prependInput is tail_))
 
 -- | Use an 'Input' to run a 'Fold'.
 -- Notice how, no matter what, the output of the fold is given. That's

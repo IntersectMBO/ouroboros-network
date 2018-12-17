@@ -29,7 +29,7 @@ data From (begin :: st) (path :: [st] -> Type) where
 
 foldPath
   :: forall cons states b .
-     (forall k states . (k -> b) -> cons k states -> b)
+     (forall k states' . (k -> b) -> cons k states' -> b)
   -> b
   -> Path cons states
   -> b

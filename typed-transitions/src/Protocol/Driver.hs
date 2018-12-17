@@ -82,5 +82,5 @@ useCodecWithDuplex duplex codec peer = case peer of
   PeerAwait k -> do
     (result, duplex') <- foldOverDuplex (decode codec) duplex
     case result of
-      Left fail -> pure $ Unexpected fail
+      Left fail_ -> pure $ Unexpected fail_
       Right (Decoded tr codec') -> useCodecWithDuplex duplex' codec' (k tr)
