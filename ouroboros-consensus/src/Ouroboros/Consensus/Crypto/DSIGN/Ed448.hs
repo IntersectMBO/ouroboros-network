@@ -15,11 +15,12 @@ import           Data.ByteString.Lazy (toStrict)
 import           Data.Function (on)
 import           GHC.Generics (Generic)
 
+import           Ouroboros.Network.Serialise
+
 import           Ouroboros.Consensus.Crypto.DSIGN.Class
 import           Ouroboros.Consensus.Crypto.Hash
-import           Ouroboros.Consensus.Util
+import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Serialise
-import           Ouroboros.Network.Serialise
 
 data Ed448DSIGN
 

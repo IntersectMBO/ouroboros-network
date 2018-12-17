@@ -32,8 +32,13 @@ import           Data.Proxy (Proxy (..))
 import           GHC.Generics (Generic)
 import           Numeric.Natural
 
+import           Ouroboros.Network.Block (HasHeader (..), Slot (..))
+import qualified Ouroboros.Network.Chain as Chain
+import           Ouroboros.Network.Serialise (Encoding, Serialise, encode)
+
 import           Ouroboros.Consensus.Crypto.DSIGN.Ed448 (Ed448DSIGN)
-import           Ouroboros.Consensus.Crypto.Hash.Class (HashAlgorithm (..), fromHash, hash)
+import           Ouroboros.Consensus.Crypto.Hash.Class (HashAlgorithm (..),
+                     fromHash, hash)
 import           Ouroboros.Consensus.Crypto.Hash.MD5 (MD5)
 import           Ouroboros.Consensus.Crypto.Hash.SHA256 (SHA256)
 import           Ouroboros.Consensus.Crypto.KES.Class
@@ -45,13 +50,10 @@ import           Ouroboros.Consensus.Crypto.VRF.Simple (SimpleVRF)
 import           Ouroboros.Consensus.Node (NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Test
-import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.Chain (forksAtMostKBlocks, upToSlot)
+import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.HList (HList)
 import           Ouroboros.Consensus.Util.HList (HList (..))
-import           Ouroboros.Network.Block (HasHeader (..), Slot (..))
-import qualified Ouroboros.Network.Chain as Chain
-import           Ouroboros.Network.Serialise (Encoding, Serialise, encode)
 
 {-------------------------------------------------------------------------------
   Praos specific types

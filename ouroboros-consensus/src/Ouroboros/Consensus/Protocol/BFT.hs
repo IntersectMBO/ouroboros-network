@@ -34,7 +34,7 @@ import           Ouroboros.Consensus.Crypto.DSIGN.Mock (MockDSIGN)
 import           Ouroboros.Consensus.Node (NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Test
-import           Ouroboros.Consensus.Util
+import           Ouroboros.Consensus.Util.Condense
 
 {-------------------------------------------------------------------------------
   Protocol proper

@@ -17,11 +17,12 @@ import           Control.Concurrent.STM
 import           Control.Monad
 import           Data.Semigroup ((<>))
 
-import           Ouroboros.Consensus.Util
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (Chain (..))
 import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.Testing.ConcreteBlock
+
+import           Ouroboros.Consensus.Util.Condense
 
 data LogEvent = LogEvent {
     msg    :: String

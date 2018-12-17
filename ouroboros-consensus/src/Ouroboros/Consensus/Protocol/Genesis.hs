@@ -1,6 +1,6 @@
-{-# LANGUAGE RecordWildCards       #-}
-{-# LANGUAGE StandaloneDeriving    #-}
-{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE RecordWildCards    #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TypeFamilies       #-}
 
 module Ouroboros.Consensus.Protocol.Genesis (
     Genesis
@@ -12,7 +12,8 @@ import           Numeric.Natural (Natural)
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.ModChainSel
 import           Ouroboros.Consensus.Protocol.Praos
-import           Ouroboros.Consensus.Util.Chain (forksAtMostKBlocks, intersectionSlot, upToSlot)
+import           Ouroboros.Consensus.Util.Chain (forksAtMostKBlocks,
+                     intersectionSlot, upToSlot)
 import           Ouroboros.Network.Block (Slot (..))
 import qualified Ouroboros.Network.Chain as Chain
 

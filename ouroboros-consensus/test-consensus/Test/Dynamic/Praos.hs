@@ -44,8 +44,8 @@ import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.Praos
-import           Ouroboros.Consensus.Util (Condense (..))
 import           Ouroboros.Consensus.Util.Chain (dropLastBlocks, lastSlot)
+import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Random
 
 import           Test.Dynamic.General

@@ -425,7 +425,7 @@ mockListDirectory :: (HasCallStack, MonadSTM m)
                   -> SimFSE m [String]
 mockListDirectory fp = withMockFS $ \fs -> do
     case index fp (getMockFS fs) of
-      Nothing -> throwFsError FsResourceDoesNotExist fp
+      Nothing               -> throwFsError FsResourceDoesNotExist fp
       Just (FileOnDisk _)   -> throwFsError FsResourceInappropriateType fp
       Just (FolderOnDisk m) -> return (M.keys m)
 

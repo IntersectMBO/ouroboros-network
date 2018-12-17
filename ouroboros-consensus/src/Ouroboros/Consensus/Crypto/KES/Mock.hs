@@ -14,11 +14,12 @@ module Ouroboros.Consensus.Crypto.KES.Mock
 import           GHC.Generics (Generic)
 import           Numeric.Natural (Natural)
 
+import           Ouroboros.Network.Serialise (Serialise)
+
 import           Ouroboros.Consensus.Crypto.Hash
 import           Ouroboros.Consensus.Crypto.KES.Class
-import           Ouroboros.Consensus.Util (Condense (..))
+import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Random
-import           Ouroboros.Network.Serialise (Serialise)
 
 data MockKES
 

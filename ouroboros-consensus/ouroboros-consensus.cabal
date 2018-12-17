@@ -54,6 +54,7 @@ library
                        Ouroboros.Consensus.Protocol.ModChainSel
                        Ouroboros.Consensus.Util
                        Ouroboros.Consensus.Util.Chain
+                       Ouroboros.Consensus.Util.Condense
                        Ouroboros.Consensus.Util.DepFn
                        Ouroboros.Consensus.Util.HList
                        Ouroboros.Consensus.Util.Orphans

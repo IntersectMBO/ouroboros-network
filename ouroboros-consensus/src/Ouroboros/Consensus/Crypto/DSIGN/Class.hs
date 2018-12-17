@@ -14,9 +14,10 @@ module Ouroboros.Consensus.Crypto.DSIGN.Class
 
 import           Crypto.Random (MonadRandom)
 import           GHC.Generics (Generic)
-import           Ouroboros.Consensus.Util
 
 import           Ouroboros.Network.Serialise
+
+import           Ouroboros.Consensus.Util.Condense
 
 class ( Show (VerKeyDSIGN v)
       , Ord (VerKeyDSIGN v)

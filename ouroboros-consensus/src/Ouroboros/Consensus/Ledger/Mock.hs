@@ -47,17 +47,19 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           GHC.Generics (Generic)
 
+import           Ouroboros.Network.Block hiding (Hash)
+import qualified Ouroboros.Network.Block as Network
+import           Ouroboros.Network.Chain (Chain, toOldestFirst)
+
 import           Ouroboros.Consensus.Crypto.Hash.Class
 import           Ouroboros.Consensus.Crypto.Hash.MD5 (MD5)
 import           Ouroboros.Consensus.Crypto.Hash.Short (ShortHash)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util
+import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.HList (All, HList)
 import qualified Ouroboros.Consensus.Util.HList as HList
-import           Ouroboros.Network.Block hiding (Hash)
-import qualified Ouroboros.Network.Block as Network
-import           Ouroboros.Network.Chain (Chain, toOldestFirst)
 
 {-------------------------------------------------------------------------------
   Basic definitions

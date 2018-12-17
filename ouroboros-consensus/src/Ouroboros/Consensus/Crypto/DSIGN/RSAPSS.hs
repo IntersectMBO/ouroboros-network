@@ -18,10 +18,11 @@ import           Data.Function (on)
 import           GHC.Generics (Generic)
 import           Text.Printf (printf)
 
+import           Ouroboros.Network.Serialise
+
 import           Ouroboros.Consensus.Crypto.DSIGN.Class
 import           Ouroboros.Consensus.Crypto.Hash
-import           Ouroboros.Consensus.Util
-import           Ouroboros.Network.Serialise
+import           Ouroboros.Consensus.Util.Condense
 
 data RSAPSSDSIGN
 

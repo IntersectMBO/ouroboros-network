@@ -60,8 +60,8 @@ import           Ouroboros.Consensus.Node
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.Test
-import           Ouroboros.Consensus.Util (Condense (..))
 import qualified Ouroboros.Consensus.Util.Chain as Chain
+import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Consensus.Util.STM
