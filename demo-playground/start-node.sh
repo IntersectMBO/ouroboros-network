@@ -11,6 +11,5 @@ function ctrl_c() {
 now=`date "+%Y-%m-%d 00:00:00"`
 
 cabal new-run demo-playground -- \
+    --system-start "$now" --slot-duration 2 \
     node -t demo-playground/simple-topology.json -n $1 \
-    --system-start "$now" --slot-duration 2
-

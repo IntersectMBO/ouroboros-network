@@ -22,10 +22,10 @@ import           Ouroboros.Network.Node (NodeId (..))
 import           Mock.TxSubmission (command', parseMockTx)
 import           Topology (TopologyInfo (..))
 
-data CLI = CLI
-  { command      :: Command
-  , systemStart  :: UTCTime
+data CLI = CLI {
+    systemStart  :: UTCTime
   , slotDuration :: Double
+  , command      :: Command
   }
 
 data Command =
@@ -33,7 +33,7 @@ data Command =
   | TxSubmitter TopologyInfo Mock.Tx
 
 parseCLI :: Parser CLI
-parseCLI = CLI <$> parseCommand <*> parseSystemStart <*> parseSlotDuration
+parseCLI = CLI <$> parseSystemStart <*> parseSlotDuration <*> parseCommand
 
 parseSystemStart :: Parser UTCTime
 parseSystemStart = option auto (long "system-start" <>
