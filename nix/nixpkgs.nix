@@ -10,6 +10,7 @@ let
           overrides = self: super:
             { psqueues = lib.dontCheck super.psqueues;
               aeson    = lib.dontCheck super.aeson;
+              fingertree = super.callPackage ./fingertree-0.1.4.2.nix {};
               graphviz = lib.dontCheck super.graphviz;
               QuickCheck = super.QuickCheck_2_12_6_1;
               hspec = super.hspec_2_6_0;

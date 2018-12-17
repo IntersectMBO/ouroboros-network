@@ -1,6 +1,6 @@
 { mkDerivation, aeson, async, base, base16-bytestring, bytestring
 , cborg, containers, cryptonite, directory, exceptions, fgl
-, filepath, graphviz ,memory, mtl, optparse-applicative
+, filepath, fingertree, graphviz ,memory, mtl, optparse-applicative
 , ouroboros-network, QuickCheck, serialise, stdenv, stm
 , string-conv, tasty, tasty-hunit, tasty-quickcheck, temporary
 , text, time, typed-transitions, unix , vector, nixpkgs
@@ -14,7 +14,7 @@ mkDerivation {
   isExecutable = true;
   libraryHaskellDepends = [
     base base16-bytestring bytestring cborg containers cryptonite
-    directory exceptions filepath memory mtl
+    directory exceptions filepath fingertree memory mtl
     ouroboros-network QuickCheck serialise text time
     typed-transitions unix vector
   ];
