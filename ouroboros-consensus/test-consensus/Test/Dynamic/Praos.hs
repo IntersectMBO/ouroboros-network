@@ -86,10 +86,11 @@ prop_simple_praos_convergence =
         }
 
     mkState :: Int -> NodeState Protocol
-    mkState nid = SignKeyMockKES ( fst $ verKeys IntMap.! nid
-                                 , 0
-                                 , 1 + fromIntegral numSlots
-                                 )
+    mkState nid = SignKeyMockKES (
+          fst $ verKeys IntMap.! nid  -- key ID
+        , 0                           -- KES initial slot
+        , 1 + fromIntegral numSlots   -- KES lifetime
+        )
 
     verKeys :: IntMap (VerKeyKES MockKES, VerKeyVRF MockVRF)
     verKeys = IntMap.fromList [ (nid, (VerKeyMockKES nid, VerKeyMockVRF nid))

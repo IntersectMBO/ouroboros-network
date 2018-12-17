@@ -18,18 +18,22 @@ module Protocol (
   , protocolInfo
   ) where
 
+import           Control.Monad.Except
+import           Data.Either (fromRight)
 import           Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import qualified Data.Set as Set
 
 import           Ouroboros.Network.Serialise (Serialise)
 
 import           Ouroboros.Consensus.Crypto.DSIGN
+import           Ouroboros.Consensus.Crypto.Hash
 import           Ouroboros.Consensus.Crypto.KES
 import           Ouroboros.Consensus.Crypto.VRF
 import           Ouroboros.Consensus.Ledger.Abstract
-import qualified Ouroboros.Consensus.Ledger.Mock as Mock
+import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Node (NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
@@ -39,9 +43,7 @@ import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.Condense
 
 type DemoBFT   = Bft BftMockCrypto
-type DemoPraos = ExtNodeConfig
-                   (Map Mock.Addr NodeId)
-                   (Praos PraosMockCrypto)
+type DemoPraos = ExtNodeConfig (Map Addr NodeId) (Praos PraosMockCrypto)
 
 -- | Consensus protocol to use
 data DemoProtocol p where
@@ -49,7 +51,7 @@ data DemoProtocol p where
   DemoPraos :: DemoProtocol DemoPraos
 
 -- | Our 'Block' type stays the same.
-type Block p = Mock.SimpleBlock p Mock.SimpleBlockMockCrypto
+type Block p = SimpleBlock p SimpleBlockMockCrypto
 
 -- | Data required to run the specified protocol
 data ProtocolInfo p = ProtocolInfo {
@@ -60,9 +62,9 @@ data ProtocolInfo p = ProtocolInfo {
 
 type DemoProtocolConstraints p = (
     ProtocolLedgerView (Block p)
-  , Condense  (Payload p (Mock.SimplePreHeader p Mock.SimpleBlockMockCrypto))
-  , Eq        (Payload p (Mock.SimplePreHeader p Mock.SimpleBlockMockCrypto))
-  , Serialise (Payload p (Mock.SimplePreHeader p Mock.SimpleBlockMockCrypto))
+  , Condense  (Payload p (SimplePreHeader p SimpleBlockMockCrypto))
+  , Eq        (Payload p (SimplePreHeader p SimpleBlockMockCrypto))
+  , Serialise (Payload p (SimplePreHeader p SimpleBlockMockCrypto))
   )
 
 demoProtocolConstraints :: DemoProtocol p -> Dict (DemoProtocolConstraints p)
@@ -79,7 +81,7 @@ protocolInfo :: DemoProtocol p  -- ^ Protocol to run
              -> Int             -- ^ Total number of core nodes in the system
              -> ProtocolInfo p
 protocolInfo DemoBFT nid numCoreNodes = ProtocolInfo {
-      initLedger     = ExtLedgerState (Mock.SimpleLedgerState mempty mempty) ()
+      initLedger     = ExtLedgerState genesisLedgerState ()
     , nodeState      = ()
     , protocolConfig = BftNodeConfig {
           bftNodeId   = CoreId nid
@@ -93,13 +95,13 @@ protocolInfo DemoBFT nid numCoreNodes = ProtocolInfo {
     }
 protocolInfo DemoPraos nid numCoreNodes = ProtocolInfo {
       initLedger = ExtLedgerState {
-          ledgerState         = Mock.SimpleLedgerState mempty mempty
+          ledgerState         = genesisLedgerState
         , ouroborosChainState = []
         }
     , nodeState = SignKeyMockKES (
-          fst $ verKeys IntMap.! nid
-         , 0
-         , 1 + fromIntegral numSlots
+           fst $ verKeys IntMap.! nid  -- key ID
+         , 0                           -- KES initial slot
+         , 1 + fromIntegral numSlots   -- KES lifetime
          )
     , protocolConfig = EncNodeConfig {
         encNodeConfigP = PraosNodeConfig {
@@ -107,23 +109,21 @@ protocolInfo DemoPraos nid numCoreNodes = ProtocolInfo {
           , praosSignKeyVRF    = SignKeyMockVRF nid
           , praosSlotsPerEpoch = fromIntegral $ k * kPerEpoch
           , praosInitialEta    = 0
-          , praosInitialStake  = initialStake
+          , praosInitialStake  = genesisStakeDist addrDist
           , praosLeaderF       = 0.5
           , praosK             = fromIntegral k
           , praosVerKeys       = verKeys
           }
-      , encNodeConfigExt = Map.fromList [
-            ("a", CoreId 0)
-          , ("b", CoreId 1)
-          , ("c", CoreId 2)
-          ]
+      , encNodeConfigExt = addrDist
       }
     }
   where
-    initialStake :: StakeDist
-    initialStake =
-        let q = recip $ fromIntegral numCoreNodes
-        in  IntMap.fromList [(i, q) | i <- [0 .. numCoreNodes - 1]]
+    addrDist :: Map Addr NodeId
+    addrDist = Map.fromList [
+          ("a", CoreId 0)
+        , ("b", CoreId 1)
+        , ("c", CoreId 2)
+        ]
 
     verKeys :: IntMap (VerKeyKES MockKES, VerKeyVRF MockVRF)
     verKeys = IntMap.fromList [ (nd, (VerKeyMockKES nd, VerKeyMockVRF nd))
@@ -133,7 +133,27 @@ protocolInfo DemoPraos nid numCoreNodes = ProtocolInfo {
     k, kPerEpoch, numSlots :: Int
     k         = 5
     kPerEpoch = 3
-    numSlots  = maxBound
+    numSlots  = maxBound - 1 -- avoid overflow in nodeState computation
+
+{-------------------------------------------------------------------------------
+  Parameters common to all protocols
+-------------------------------------------------------------------------------}
+
+genesisTx :: Tx
+genesisTx = Tx mempty [(addr, 1000) | addr <- ["a", "b", "c"]]
+
+genesisUtxo :: Utxo
+genesisUtxo = fromRight (error "genesisLedger: invalid genesis tx") $
+                 runExcept (utxo genesisTx)
+
+genesisLedgerState :: LedgerState (SimpleBlock p c)
+genesisLedgerState = SimpleLedgerState {
+      slsUtxo      = genesisUtxo
+    , slsConfirmed = Set.singleton (hash genesisTx)
+    }
+
+genesisStakeDist :: Map Addr NodeId -> StakeDist
+genesisStakeDist addrDist = relativeStakes $ totalStakes addrDist genesisUtxo
 
 {-------------------------------------------------------------------------------
   Required instances
@@ -141,14 +161,14 @@ protocolInfo DemoPraos nid numCoreNodes = ProtocolInfo {
 
 instance HasPayload (Praos PraosMockCrypto) (Block DemoPraos) where
   blockPayload _ = encPayloadP
-                 . Mock.headerOuroboros
-                 . Mock.simpleHeader
+                 . headerOuroboros
+                 . simpleHeader
 
 instance ProtocolLedgerView (Block DemoBFT) where
   protocolLedgerView _ _ = ()
 
 instance ProtocolLedgerView (Block DemoPraos) where
-  protocolLedgerView (EncNodeConfig _nodeConfig extCfg) (Mock.SimpleLedgerState u _) =
+  protocolLedgerView (EncNodeConfig _nodeConfig extCfg) (SimpleLedgerState u _) =
       relativeStakes $ totalStakes extCfg u
 
 {-------------------------------------------------------------------------------
@@ -162,12 +182,16 @@ relativeStakes m =
                        | (Just nid, stake) <- Map.toList m
                        ]
 
-totalStakes :: Map Mock.Addr NodeId
-            -> Mock.Utxo
+-- | Compute stakes of all nodes
+--
+-- The 'Nothing' value holds the total stake of all addresses that don't
+-- get mapped to a NodeId.
+totalStakes :: Map Addr NodeId
+            -> Utxo
             -> Map (Maybe Int) Int
 totalStakes addrDist = foldl f Map.empty
  where
-   f :: Map (Maybe Int) Int -> Mock.TxOut -> Map (Maybe Int) Int
+   f :: Map (Maybe Int) Int -> TxOut -> Map (Maybe Int) Int
    f m (a, stake) = case Map.lookup a addrDist of
        Just (CoreId nid) -> Map.insertWith (+) (Just nid) stake m
        _                 -> Map.insertWith (+) Nothing stake m
