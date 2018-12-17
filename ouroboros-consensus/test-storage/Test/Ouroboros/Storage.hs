@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -77,6 +78,7 @@ tests = testGroup "Storage"
   , testGroup "Immutable Storage"
     [ testCase "What you store is what you get" test_appendAndGet
     , testProperty "append/get roundtrip" prop_appendAndGetRoundtrip
+    , testProperty "Appending and getting to/from different slots" prop_appendAndGet
     , testProperty "Inconsistent slot error equivalence" prop_inconsistentSlotErrorEquivalence
     , testProperty "Epoch is read only error equivalence" prop_epochIsReadOnlyErrorEquivalence
     , testProperty "Read from invalid epoch error equivalence" prop_slotDoesNotExistErrorEquivalence
@@ -376,45 +378,128 @@ test_doesDirectoryExistKO =
 -- Tests for the immutable storage
 --
 
+data AppendAndGet = AppendAndGet
+  { _append :: RelativeSlot
+  , _get    :: EpochSlot
+  }
+
+instance Show AppendAndGet where
+  show (AppendAndGet (RelativeSlot aSlot)
+                     (EpochSlot gEpoch (RelativeSlot gSlot))) =
+    "Append: " <> show (1 :: Epoch, aSlot) <> ", Get: " <> show (gEpoch, gSlot)
+
+instance Arbitrary AppendAndGet where
+  arbitrary = do
+    _append <- elements [0..12]
+    _get    <- EpochSlot <$> elements [0..1] <*> elements [0..12]
+    return $ AppendAndGet _append _get
+
+-- Instead of testing all combinations of getting/appending from/to a
+-- present/missing slot from a past/current/future epoch, generate these cases
+prop_appendAndGet :: AppendAndGet -> Property
+prop_appendAndGet (AppendAndGet append get) = label labelToApply $
+    monadicIO $ do
+      let mkB = BL.lazyByteString . C8.pack
+      let script = withDB ["demo"] 0 (M.singleton 0 epochSize) $ \db -> runExceptT $ do
+            ExceptT $ appendBinaryBlob db 5 (mkB "first")
+            ExceptT $ startNewEpoch db epochSize
+            ExceptT $ appendBinaryBlob db 3 (mkB "second")
+            ExceptT $ appendBinaryBlob db append (mkB "haskell")
+            ExceptT $ getBinaryBlob db get
+      (r, _) <- run $ runSimFS script newEmptyMockFS
+      assertion r
+  where
+    epochSize = 10
+    maxSlot = RelativeSlot (epochSize - 1)
+    -- Where we appended the first blob: "first"
+    firstAppend = EpochSlot 0 5
+    -- Where we appended the second blob: "second"
+    secondAppend = EpochSlot 1 3
+    -- The next expected append to the DB
+    nextAppend = EpochSlot 1 4
+
+    (labelToApply, assertion)
+      | append < _relativeSlot nextAppend
+      = ("append to a slot in the past",
+         \case
+            Left (AppendToSlotInThePastError {}) -> return ()
+            r -> fail ("Expected AppendToSlotInThePastError, got: " ++ show r))
+      | append > maxSlot
+      = ("append past the last slot of the epoch",
+         \case
+            Left (SlotGreaterThanEpochSizeError {}) -> return ()
+            r -> fail ("Expected SlotGreaterThanEpochSizeError, got: " ++ show r))
+      | get > EpochSlot 1 append
+      = ("get a blob from a slot in the future",
+         \case
+            Left (ReadFutureSlotError {}) -> return ()
+            r -> fail ("Expected ReadFutureSlotError, got: " ++ show r))
+      | _relativeSlot get > maxSlot
+      = ("get past the last slot of the epoch",
+         \case
+            Left (SlotGreaterThanEpochSizeError {}) -> return ()
+            r -> fail ("Expected SlotGreaterThanEpochSizeError, got: " ++ show r))
+      | get == firstAppend
+      = ("get the first blob from the first epoch",
+         \case
+            Right (Just b) | b == "first" -> return ()
+            r -> fail ("Expected Just \"first\", got: " ++ show r))
+      | get == secondAppend
+      = ("get the second blob from the second epoch",
+         \case
+            Right (Just b) | b == "second" -> return ()
+            r -> fail ("Expected Just \"second\", got: " ++ show r))
+      | get == EpochSlot 1 append
+      = ("get the append blob from the second epoch",
+         \case
+            Right (Just b) | b == "haskell" -> return ()
+            r -> fail ("Expected Just \"haskell\", got: " ++ show r))
+      | otherwise
+      = ("get a missing slot from an epoch",
+         \case
+            Right Nothing -> return ()
+            r -> fail ("Expected Nothing, got: " ++ show r))
+
+
 test_appendAndGet :: Assertion
 test_appendAndGet =
-    withMockFS (withDB ["demo"] 0 $ \db -> runExceptT $ do
-          ExceptT $ appendBinaryBlob db (0, RelativeSlot 0) (BL.lazyByteString . C8.pack $ "haskell")
-          ExceptT $ getBinaryBlob db (0, RelativeSlot 0)
+    withMockFS (withDB ["demo"] 0 (M.singleton 0 10) $ \db -> runExceptT $ do
+          ExceptT $ appendBinaryBlob db 0 (BL.lazyByteString . C8.pack $ "haskell")
+          ExceptT $ getBinaryBlob db (EpochSlot 0 0)
     ) $ \(r, _) ->
       case r of
            Left e  -> fail $ prettyImmutableDBError e
-           Right b -> b @?= "haskell"
+           Right b -> b @?= Just "haskell"
 
 prop_appendAndGetRoundtrip :: Property
 prop_appendAndGetRoundtrip = monadicIO $ do
     input <- C8.pack <$> pick arbitrary
-    run $ apiEquivalence (withDB ["demo"] 0 $ \db -> runExceptT $ do
-            ExceptT $ appendBinaryBlob db (0, RelativeSlot 0) (BL.lazyByteString input)
-            r <- ExceptT $ getBinaryBlob db (0, RelativeSlot 0)
-            return (r == C8.toStrict input, r)
+    run $ apiEquivalence (withDB ["demo"] 0 (M.singleton 0 10) $ \db -> runExceptT $ do
+            ExceptT $ appendBinaryBlob db 0 (BL.lazyByteString input)
+            r <- ExceptT $ getBinaryBlob db (EpochSlot 0 0)
+            return (r == Just (C8.toStrict input), r)
         ) sameDBError prettyImmutableDBError
 
 prop_demoSimEquivalence :: HasCallStack => Property
-prop_demoSimEquivalence = monadicIO $ do
+prop_demoSimEquivalence = monadicIO $
     run $ apiEquivalence demoScript sameDBError prettyImmutableDBError
 
 -- Trying to append to a slot \"in the past\" should be an error, both in Sim
 -- and IO.
 prop_inconsistentSlotErrorEquivalence :: HasCallStack => Property
-prop_inconsistentSlotErrorEquivalence = monadicIO $ do
-    run $ apiEquivalence (withDB ["demo"] 0 $ \db -> runExceptT $ do
-                             ExceptT $ appendBinaryBlob db (0, RelativeSlot 3)
-                                                           (BL.lazyByteString . C8.pack $ "test")
-                             ExceptT $ appendBinaryBlob db (0, RelativeSlot 2)
-                                                           (BL.lazyByteString . C8.pack $ "haskell")
+prop_inconsistentSlotErrorEquivalence = monadicIO $
+    run $ apiEquivalence (withDB ["demo"] 0 (M.singleton 0 10) $ \db -> runExceptT $ do
+                             ExceptT $ appendBinaryBlob db 3
+                                       (BL.lazyByteString . C8.pack $ "test")
+                             ExceptT $ appendBinaryBlob db 2
+                                       (BL.lazyByteString . C8.pack $ "haskell")
                              return ()
                          ) sameDBError prettyImmutableDBError
 
 prop_slotDoesNotExistErrorEquivalence :: HasCallStack => Property
 prop_slotDoesNotExistErrorEquivalence = monadicIO $ do
-    run $ apiEquivalence (withDB ["demo"] 0 $ \db -> runExceptT $ do
-                             _   <- ExceptT $ getBinaryBlob db (0, RelativeSlot 0)
+    run $ apiEquivalence (withDB ["demo"] 0 (M.singleton 0 10) $ \db -> runExceptT $ do
+                             _   <- ExceptT $ getBinaryBlob db (EpochSlot 0 0)
                              return ()
                          ) sameDBError prettyImmutableDBError
 
@@ -423,12 +508,14 @@ prop_slotDoesNotExistErrorEquivalence = monadicIO $ do
 prop_epochIsReadOnlyErrorEquivalence :: HasCallStack => Property
 prop_epochIsReadOnlyErrorEquivalence = monadicIO $ do
     run $ apiEquivalence (runExceptT $ do
-                             ExceptT $ withDB ["demo"] 0 $ \db -> runExceptT $ do
-                               ExceptT $ appendBinaryBlob db (0, RelativeSlot 0)
-                                                             (BL.lazyByteString . C8.pack $ "test")
-                               ExceptT $ appendBinaryBlob db (1, RelativeSlot 0)
-                                                             (BL.lazyByteString . C8.pack $ "haskell")
+                             ExceptT $ withDB ["demo"] 0 (M.singleton 0 10) $ \db -> runExceptT $ do
+                               ExceptT $ appendBinaryBlob db 0
+                                         (BL.lazyByteString . C8.pack $ "test")
+                               ExceptT $ startNewEpoch db 10
+                               ExceptT $ appendBinaryBlob db 0
+                                         (BL.lazyByteString . C8.pack $ "haskell")
                              -- The second withDB should fail.
-                             ExceptT $ withDB ["demo"] 0 $ \_ -> return $ Right ()
+                             ExceptT $ withDB ["demo"] 0 (M.fromList [(0, 10), (1, 10)]) $ \_ ->
+                                       return $ Right ()
                              return ()
                          ) sameDBError prettyImmutableDBError

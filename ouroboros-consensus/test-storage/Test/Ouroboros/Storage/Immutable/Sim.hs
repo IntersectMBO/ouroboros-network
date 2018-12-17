@@ -9,6 +9,7 @@ module Test.Ouroboros.Storage.Immutable.Sim
 
 import qualified Data.ByteString.Builder as BS
 import qualified Data.ByteString.Char8 as C8
+import qualified Data.Map as Map
 
 import           Control.Exception (assert)
 import           Control.Monad.Catch (MonadMask)
@@ -35,22 +36,24 @@ demoScript = runExceptT $ do
         h2 <- hOpen ["demo", "index-006.dat"] IO.WriteMode
         hClose h1
         hClose h2
-    ExceptT $ withDB ["demo"] 7 $ \db -> runExceptT $ do
+    let epochSizes = Map.fromList $ (7, 10) : zip [0..6] (repeat 0)
+    ExceptT $ withDB ["demo"] 7 epochSizes $ \db -> runExceptT $ do
         -- Append some blob in the DB
-        ExceptT $ appendBinaryBlob db (7, RelativeSlot 0) (BS.byteString . C8.pack $ "haskell")
-        ExceptT $ appendBinaryBlob db (7, RelativeSlot 1) (BS.byteString . C8.pack $ "nice")
-        ExceptT $ appendBinaryBlob db (7, RelativeSlot 5) (BS.byteString . C8.pack $ "cardano")
-        ExceptT $ appendBinaryBlob db (7, RelativeSlot 7) (BS.byteString . C8.pack $ "blockchain")
-        ExceptT $ appendBinaryBlob db (8, RelativeSlot 3) (BS.byteString . C8.pack $ "test")
+        ExceptT $ appendBinaryBlob db 0 (BS.byteString . C8.pack $ "haskell")
+        ExceptT $ appendBinaryBlob db 1 (BS.byteString . C8.pack $ "nice")
+        ExceptT $ appendBinaryBlob db 5 (BS.byteString . C8.pack $ "cardano")
+        ExceptT $ appendBinaryBlob db 7 (BS.byteString . C8.pack $ "blockchain")
+        ExceptT $ startNewEpoch db 10
+        ExceptT $ appendBinaryBlob db 3 (BS.byteString . C8.pack $ "test")
 
         -- Retrieve some blobs
-        q0 <- ExceptT $ getBinaryBlob db (7, RelativeSlot 0)
-        q1 <- ExceptT $ getBinaryBlob db (7, RelativeSlot 1)
-        q2 <- ExceptT $ getBinaryBlob db (7, RelativeSlot 5)
-        q3 <- ExceptT $ getBinaryBlob db (8, RelativeSlot 3)
+        q0 <- ExceptT $ getBinaryBlob db (EpochSlot 7 0)
+        q1 <- ExceptT $ getBinaryBlob db (EpochSlot 7 1)
+        q2 <- ExceptT $ getBinaryBlob db (EpochSlot 7 5)
+        q3 <- ExceptT $ getBinaryBlob db (EpochSlot 8 3)
 
-        assert (q0 == "haskell" &&
-                q1 == "nice" &&
-                q2 == "cardano" &&
-                q3 == "test"
+        assert (q0 == Just "haskell" &&
+                q1 == Just "nice" &&
+                q2 == Just "cardano" &&
+                q3 == Just "test"
                ) $ return ()
