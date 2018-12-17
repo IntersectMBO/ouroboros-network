@@ -19,10 +19,11 @@ import           Data.Semigroup ((<>))
 import           Protocol.Codec (hoistCodec)
 
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Chain (Chain (..), pointHash)
+import           Ouroboros.Network.Chain (pointHash)
 import qualified Ouroboros.Network.Pipe as P
 import           Ouroboros.Network.Protocol.ChainSync.Codec.Cbor
 
+import           Ouroboros.Consensus.Demo
 import           Ouroboros.Consensus.Ledger.Abstract
 import qualified Ouroboros.Consensus.Ledger.Mock as Mock
 import           Ouroboros.Consensus.Node
@@ -37,7 +38,6 @@ import           Mock.Mempool
 import           Mock.TxSubmission
 import           NamedPipe (DataFlow (..), NodeMapping ((:==>:)))
 import qualified NamedPipe
-import           Protocol
 import           Topology
 
 runNode :: CLI -> IO ()
@@ -72,8 +72,10 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
              putStrLn $ "My producers are " <> show (producers nodeSetup)
              putStrLn $ "**************************************"
 
-             let protocolInUse :: ProtocolInfo p
-                 protocolInUse = protocolInfo p nid (length nodeSetups)
+             let ProtocolInfo{..} = protocolInfo
+                                      p
+                                      (NumCoreNodes (length nodeSetups))
+                                      (CoreNodeId nid)
 
              -- Creates a TBQueue to be used by all the logger threads to monitor
              -- the traffic.
@@ -103,7 +105,7 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
                                   lift . lift $ writeTVar nodeMempool mp'
                                   return ts
 
-                        Mock.forgeBlock (protocolConfig protocolInUse)
+                        Mock.forgeBlock pInfoConfig
                                         slot
                                         curNo
                                         prevHash
@@ -119,12 +121,12 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
 
 
              kernelHandle <-
-                 nodeKernel (protocolConfig protocolInUse)
-                            (nodeState protocolInUse)
+                 nodeKernel pInfoConfig
+                            pInfoInitState
                             (simMonadPseudoRandomT randomnessSource)
                             blockchainTime
-                            (initLedger protocolInUse)
-                            Genesis
+                            pInfoInitLedger
+                            pInfoInitChain
                             callbacks
 
              -- Spawn the thread which listens to the mempool.

@@ -17,12 +17,12 @@ import           Data.Semigroup ((<>))
 import           Data.Time
 import           Options.Applicative
 
+import           Ouroboros.Consensus.Demo
 import qualified Ouroboros.Consensus.Ledger.Mock as Mock
 import           Ouroboros.Consensus.Node (NodeId (..))
 import           Ouroboros.Consensus.Util
 
 import           Mock.TxSubmission (command', parseMockTx)
-import           Protocol
 import           Topology (TopologyInfo (..))
 
 data CLI = CLI {

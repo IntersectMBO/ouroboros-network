@@ -42,6 +42,7 @@ library
                        Ouroboros.Consensus.Crypto.VRF.Class
                        Ouroboros.Consensus.Crypto.VRF.Mock
                        Ouroboros.Consensus.Crypto.VRF.Simple
+                       Ouroboros.Consensus.Demo
                        Ouroboros.Consensus.Ledger.Abstract
                        Ouroboros.Consensus.Ledger.Mock
                        Ouroboros.Consensus.Node
@@ -81,7 +82,6 @@ library
                        DeriveFunctor
                        DeriveGeneric
                        EmptyDataDecls
-                       EmptyDataDeriving
                        FlexibleContexts
                        FlexibleInstances
                        FunctionalDependencies
@@ -142,6 +142,7 @@ library
 executable demo-playground
   hs-source-dirs:      demo-playground
   main-is:             Main.hs
+  default-language:    Haskell2010
   ghc-options:         -threaded -Wall -O2 "-with-rtsopts=-N"
   other-modules:       CLI
                        Logging
@@ -149,7 +150,6 @@ executable demo-playground
                        Mock.Protocol
                        Mock.TxSubmission
                        NamedPipe
-                       Protocol
                        Run
                        Topology
   build-depends:       base,
@@ -181,6 +181,7 @@ test-suite test-consensus
   other-modules:
                     Test.Dynamic.BFT
                     Test.Dynamic.General
+                    Test.Dynamic.Network
                     Test.Dynamic.Praos
                     Test.Ouroboros
   build-depends:    base,
