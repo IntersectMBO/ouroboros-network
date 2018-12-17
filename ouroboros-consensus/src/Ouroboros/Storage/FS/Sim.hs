@@ -9,6 +9,7 @@
 {-# LANGUAGE TupleSections              #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE CPP                        #-}
 
 {-- |
 
@@ -62,6 +63,7 @@ import qualified System.IO as IO
 
 import           Ouroboros.Network.MonadClass
 import           Ouroboros.Storage.FS.Class
+
 
 {------------------------------------------------------------------------------
   The simulation-related types
@@ -119,7 +121,9 @@ instance (MonadFork (SimFS m) , MonadSTM m) => MonadSTM (SimFS m) where
   newTBQueue             = lift . newTBQueue
   readTBQueue            = lift . readTBQueue
   writeTBQueue q a       = lift $ writeTBQueue q a
+#if MIN_VERSION_stm(2,5,0)
   lengthTBQueue          = lift . lengthTBQueue
+#endif
 
 
 {-------------------------------------------------------------------------------
