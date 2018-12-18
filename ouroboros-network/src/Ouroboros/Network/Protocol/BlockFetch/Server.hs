@@ -24,7 +24,7 @@ import qualified Pipes
 
 import Protocol.Core
 
-import Ouroboros.Network.MonadClass.MonadSTM (MonadSTM (..))
+import Control.Monad.Class.MonadSTM (MonadSTM (..))
 
 import Ouroboros.Network.Protocol.BlockFetch.Type
 
