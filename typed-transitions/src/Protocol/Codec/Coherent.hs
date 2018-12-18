@@ -6,15 +6,12 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE StandaloneDeriving #-}
 
-module Test.Protocol.Codec.Coherent where
+module Protocol.Codec.Coherent where
 
 import Data.Either (partitionEithers)
 import Data.List (intercalate, sortBy)
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
-import Data.Functor.Identity (Identity (..))
-import Data.Kind (Type)
-import Data.Maybe (mapMaybe)
 import Data.Type.Equality
 
 import Test.QuickCheck
@@ -111,8 +108,8 @@ prop_coherent eq showTr showEncoding showFail tree =
   -- Combine `t`s into matching pairs (witnessed by `r`), and filter
   -- other `t`s w.r.t. that matching pair.
   pairs :: (r -> t -> Bool) -> (t -> t -> Maybe r) -> [t] -> [r]
-  pairs p f [] = []
-  pairs p f (t:ts) =
+  pairs _p _f [] = []
+  pairs p  f  (t:ts) =
     -- Run the matcher with `t` against the rest of the list to find
     -- an `[r]`, and also a shorter `[t]`: everything in `ts'` was false
     -- under `p r` for every `r` in `rs`.
@@ -121,10 +118,10 @@ prop_coherent eq showTr showEncoding showFail tree =
     in  rs ++ rs'
     where
     go :: (r -> t -> Bool) -> (t -> Maybe r) -> [t] -> ([r], [t])
-    go p f [] = ([], [])
-    go p f (t : ts) = case f t of
-      Nothing -> go p f ts
-      Just r  -> let (rs, ts') = go p f (filter (not . p r) ts) in (r:rs, ts')
+    go _p' _f' [] = ([], [])
+    go p'  f'  (t' : ts') = case f' t' of
+      Nothing -> go p' f' ts'
+      Just r  -> let (rs, ts'') = go p' f' (filter (not . p' r) ts') in (r:rs, ts'')
 
   -- True if the locally-coherent path contains the coherent part of the
   -- mutually-incoherent path: that is, the same "trace" of `Encode | Decode`
@@ -185,8 +182,8 @@ data Bad fail concrete tr from to = forall to' . Bad
 data Coherence fail concrete tr k states where
   Coherent
     :: Good concrete tr a b
-    -> k -- ^ Encoder path
-    -> k -- ^ Decoder path
+    -> k -- Encoder path
+    -> k -- Decoder path
     -> Coherence fail concrete tr k (a ': b ': rest)
   Incoherent
     :: Bad fail concrete tr a b
@@ -203,10 +200,22 @@ type CodecTree fail concrete tr = Path (Coherence fail concrete tr)
 data SomeTransitionPath tr begin where
   SomeTransitionPath :: TransitionPath tr (begin ': next ': rest) -> SomeTransitionPath tr begin
 
+showSomeTransitionPath
+  :: forall tr st. 
+     (forall from to. tr from to -> String)
+  -> SomeTransitionPath tr st
+  -> String
+showSomeTransitionPath showTransition (SomeTransitionPath path) = foldPath fn "" path
+ where
+  fn :: (k -> String)
+      -> Transition tr k states
+      -> String
+  fn g (Transition tr next) = showTransition tr ++ " : " ++ g next
+
 codecTree
-  :: forall m tr concreteEnc concreteDec a b states fail r .
+  :: forall m tr concreteEnc concreteDec a b states fail .
      ( Monad m )
-  => (forall from x . concreteEnc -> Decoder fail concreteDec m x -> m (Either fail x))
+  => (forall x . concreteEnc -> Decoder fail concreteDec m x -> m (Either fail x))
      -- ^ How to decode from a concrete encoded type.
      -- Useful that this is abstract. In the case of a CBOR decoder, the encoded
      -- thing can be sliced up as you like, perhaps even at random (put the
@@ -223,7 +232,7 @@ codecTree unencode match codec (PathCons (Transition tr next)) = do
   let Encoded concrete codecE = runEncoder (encode codec) tr
   result <- unencode concrete (decode codec)
   case result of
-    Left fail -> pure $ PathCons (Incoherent (Bad tr concrete (Left fail)))
+    Left fail_ -> pure $ PathCons (Incoherent (Bad tr concrete (Left fail_)))
     Right (Decoded tr' codecD) -> case match tr tr' of
       Nothing -> pure $ PathCons (Incoherent (Bad tr concrete (Right tr')))
       Just Refl -> case next of
@@ -280,7 +289,7 @@ codecTreePaths path = case path of
     Coherent good byEncoder@(PathCons _) byDecoder@(PathCons _) ->
       let encoderPaths = codecTreePaths byEncoder
           decoderPaths = codecTreePaths byDecoder
-          prependGood tag path = PathCons (GoodResult good tag path)
+          prependGood tag path' = PathCons (GoodResult good tag path')
       in  (prependGood Encode <$> encoderPaths) <> (prependGood Decode <$> decoderPaths)
 
 -- What we'll do is partition the list of CodecPaths into those which are all
@@ -337,9 +346,9 @@ showLocalIncoherence
   -> (fail -> String)
   -> LocallyIncoherent fail concrete tr states
   -> String
-showLocalIncoherence showTr showEncoding showFail = foldPath showOne mempty
+showLocalIncoherence showTr _showEncoding showFail = foldPath showOne mempty
   where
-  showOne :: (forall k states . (k -> String) -> LocalIncoherence fail concrete tr k states -> String)
+  showOne :: (forall k states' . (k -> String) -> LocalIncoherence fail concrete tr k states' -> String)
   showOne recurse it = case it of
     IncoherentThere good side k -> mconcat
       [ showTr (goodTransition good)
@@ -355,9 +364,9 @@ showLocalIncoherence showTr showEncoding showFail = foldPath showOne mempty
         -- Can't pattern match on (badDecoding bad) because of the existential
         -- type variable.
       , case bad of
-          Bad _ _ (Left fail) -> mconcat
+          Bad _ _ (Left fail_) -> mconcat
             [ "failed to decode with reason "
-            , showFail fail
+            , showFail fail_
             ]
           Bad _ _ (Right tr) -> mconcat
             [ "decoded a different transition "
@@ -418,7 +427,7 @@ showNonAgreement
   -> String
 showNonAgreement showTr showEncoding = foldPath showOne mempty
   where
-  showOne :: (forall k states . (k -> String) -> MutualIncoherence concrete tr k states -> String)
+  showOne :: (forall k states' . (k -> String) -> MutualIncoherence concrete tr k states' -> String)
   showOne recurse it = case it of
     MutuallyIncoherentThere tr _ sideA sideB k -> mconcat
       [ showTr tr
