@@ -15,15 +15,10 @@
 
 module Test.Dynamic.General (
     prop_simple_protocol_convergence
-  , TestConfig (..)
   , VTime
   , allEqual
-  , nodeStake
   , numNodes
   , k
-  , kPerEpoch
-  , numEpochs
-  , numSlots
   , shortestLength
   ) where
 
@@ -41,7 +36,6 @@ import           Ouroboros.Network.MonadClass
 import           Ouroboros.Network.Sim (VTime)
 
 import           Ouroboros.Consensus.Demo
-import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Node
 import qualified Ouroboros.Consensus.Util.Chain as Chain
 import           Ouroboros.Consensus.Util.Condense
@@ -49,24 +43,6 @@ import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random
 
 import           Test.Dynamic.Network
-
-data TestConfig = TestConfig {
-      testAddressDistribution :: Map Addr NodeId
-      -- ^ Some form of mapping that allows us to partition incoming
-      -- transactions in a way that we can accumulate the stake properly.
-    }
-
-ourAddr :: TestConfig -> NodeId -> Addr -> Bool
-ourAddr TestConfig{..} myNodeId address =
-    fmap ((==) myNodeId) (Map.lookup address testAddressDistribution)
-        == Just True
-
-nodeStake :: TestConfig -> Utxo -> NodeId -> Int
-nodeStake cfg u nodeId =
-    Map.foldl
-        (\acc (a, stake) -> if ourAddr cfg nodeId a then acc + stake else acc)
-        0
-        u
 
 numNodes, numEpochs, k, kPerEpoch, numSlots :: Int
 numNodes  = 3
