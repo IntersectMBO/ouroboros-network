@@ -8,7 +8,6 @@ module Test.Protocol.Codec.PingPong where
 
 import Data.Functor.Identity (runIdentity)
 import Data.Type.Equality
-import Data.Text (Text, pack)
 
 import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)
@@ -56,7 +55,7 @@ prop_ping_pong_coherent = forAllShow genPath showPath doTest
   eqTr MsgDone MsgDone = Just Refl
   eqTr _       _       = Nothing
 
-  decodeFull :: Monad m => String -> Decoder Text String m x -> m (Either Text x)
+  decodeFull :: Monad m => String -> Decoder String String m x -> m (Either String x)
   decodeFull str decoder = do
     (it, remaining) <- foldOverInput decoder (singletonInput [str])
     case remaining of
@@ -66,7 +65,7 @@ prop_ping_pong_coherent = forAllShow genPath showPath doTest
       -- we mconcat it twice to get the entire remaining input as a String.
       Just input -> drainInput input >>= \lst -> case mconcat (mconcat lst) of
         []    -> pure it
-        bad@(_ : _) -> pure $ Left $ pack $ "decoder did not use all of its input: " ++ bad
+        bad@(_ : _) -> pure $ Left $ "decoder did not use all of its input: " ++ bad
 
 tests :: TestTree
 tests = testGroup "PingPong"

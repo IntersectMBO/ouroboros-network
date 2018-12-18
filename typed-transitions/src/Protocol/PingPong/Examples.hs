@@ -2,11 +2,9 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE RankNTypes          #-}
 
 module Protocol.PingPong.Examples where
-
-import           Control.Concurrent.Async
-import           Data.Text (unpack)
 
 import           Protocol.Channel (mvarChannels)
 import           Protocol.Driver
@@ -52,8 +50,8 @@ pingPongClientCount n = SendMsgPing (pure (pingPongClientCount (n-1)))
 -- | Client and server run concurrently, communcating via an MVar channel.
 -- The input is how many pings to send, the output is how many the server has
 -- received when it finishes. We'll find they're always equal.
-demoCodec :: Int -> IO Int
-demoCodec n = do
+demoCodec :: (forall a b . IO a -> IO b -> IO (a,b)) -> Int -> IO Int
+demoCodec concurrently n = do
   (clientChannel, serverChannel) <- mvarChannels
   let clientPeer = pingPongClientPeer (pingPongClientCount n)
       serverPeer = pingPongServerPeer (pingPongServerCounting 0)
@@ -61,7 +59,7 @@ demoCodec n = do
       -- throwing an error, so that if one dies, the other doesn't starve,
       -- but also dies with unexpected end of input.
       throwOnUnexpected (Normal t) = pure t
-      throwOnUnexpected (Unexpected text) = error (unpack text)
+      throwOnUnexpected (Unexpected str) = error str
       client = throwOnUnexpected =<< useCodecWithDuplex clientChannel pingPongCodec clientPeer
       server = throwOnUnexpected =<< useCodecWithDuplex serverChannel pingPongCodec serverPeer
   ((), m) <- concurrently client server
