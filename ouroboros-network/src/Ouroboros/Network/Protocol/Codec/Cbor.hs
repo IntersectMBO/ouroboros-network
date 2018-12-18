@@ -13,6 +13,11 @@ import           Data.ByteString (ByteString)
 import qualified Codec.CBOR.Decoding as CBOR hiding (DecodeAction(Fail, Done))
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Read as CBOR
+import qualified Codec.CBOR.Write as CBOR
+import qualified Data.ByteString.Builder as BS
+import qualified Data.ByteString.Builder.Extra as BS
+import qualified Data.ByteString.Lazy.Internal as LBS (smallChunkSize)
+import qualified Data.ByteString.Lazy          as LBS
 
 import           Protocol.Codec
 
@@ -63,3 +68,35 @@ cborDecoder packError decoder = Fold (idecode [] =<< CBOR.deserialiseIncremental
               , more = \bss -> Fold $ idecode bss term
               }
       in  feedInputs inputs k
+
+convertCborEncoder :: (a -> CBOR.Encoding) -> a -> [ByteString]
+convertCborEncoder cborEncode =
+    LBS.toChunks
+  . toLazyByteString
+  . CBOR.toBuilder
+  . cborEncode
+
+{-# NOINLINE toLazyByteString #-}
+toLazyByteString :: BS.Builder -> LBS.ByteString
+toLazyByteString = BS.toLazyByteStringWith strategy LBS.empty
+  where
+    strategy = BS.untrimmedStrategy 800 LBS.smallChunkSize
+
+-- | Convert @'Codec'@ with @'CBOR.Encoding'@ as its concrete representation to
+-- a codec with a list of strict @'ByteString'@ as its concrete representation
+-- (via lazy bytestring).
+--
+convertCborCodec
+  :: Functor m
+  => Codec m fail CBOR.Encoding ByteString tr from
+  -> Codec m fail [ByteString]  ByteString tr from
+convertCborCodec = mapCodec (convertCborEncoder id)
+
+-- | Convert @'Codec'@ with @'CBOR.Encoding'@ as its concrete representation to
+-- a codec with strict @'ByteString'@ as its concrete representation.
+--
+convertCborCodec'
+  :: Functor m
+  => Codec m fail CBOR.Encoding ByteString tr from
+  -> Codec m fail ByteString    ByteString tr from
+convertCborCodec' = mapCodec CBOR.toStrictByteString
