@@ -23,6 +23,16 @@ import Protocol.Codec
 import Ouroboros.Network.Protocol.BlockFetch.Type
 import Ouroboros.Network.Protocol.Codec.Cbor (cborDecoder)
 
+{-------------------------------------------------------------------------------
+ @'BlockFetchClientProtocol'@ codec
+-------------------------------------------------------------------------------}
+
+blockFetchClientCodec
+  :: forall s range .
+     ( Serialise range )
+  => Codec (ST s) Text Encoding ByteString (BlockRequestClientMessage range) StClientIdle
+blockFetchClientCodec = blockFetchClientCodecIdle
+
 blockFetchClientCodecIdle
   :: forall s range .
      ( Serialise range )
@@ -58,6 +68,16 @@ blockFetchClientCodecDone = Codec
   { encode = Encoder $ \tr -> case tr of { }
   , decode = Fold $ pure $ Complete [] $ pure $ Left $ T.pack "no transitions from done"
   }
+
+{-------------------------------------------------------------------------------
+ @'BlockFetchServerProtocol'@ codec
+-------------------------------------------------------------------------------}
+
+blockFetchServerCodec
+  :: forall s block .
+     ( Serialise block )
+  => Codec (ST s) Text Encoding ByteString (BlockRequestServerMessage block) StServerAwaiting
+blockFetchServerCodec = blockFetchServerCodecAwaiting
 
 blockFetchServerCodecAwaiting
   :: forall s block .
