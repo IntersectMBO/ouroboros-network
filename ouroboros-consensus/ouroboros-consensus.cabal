@@ -183,6 +183,7 @@ test-suite test-consensus
                     Test.Dynamic.General
                     Test.Dynamic.Network
                     Test.Dynamic.Praos
+                    Test.Dynamic.Util
                     Test.Ouroboros
   build-depends:    base,
                     typed-transitions,

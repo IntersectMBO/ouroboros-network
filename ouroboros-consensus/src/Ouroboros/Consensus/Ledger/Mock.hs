@@ -34,6 +34,8 @@ module Ouroboros.Consensus.Ledger.Mock (
     -- * Updating the Ledger state
   , LedgerState(..)
   , AddrDist
+  , relativeStakes
+  , totalStakes
   ) where
 
 import           Codec.Serialise
@@ -357,26 +359,36 @@ instance (PraosCrypto c, SimpleBlockCrypto c')
   protocolLedgerView (EncNodeConfig _ addrDist) (SimpleLedgerState u _) =
       relativeStakes $ totalStakes addrDist u
 
-relativeStakes :: Map (Maybe Int) Int -> StakeDist
+{-------------------------------------------------------------------------------
+  Compute relative stake
+-------------------------------------------------------------------------------}
+
+data StakeHolder =
+    -- | Stake of a core node
+    StakeCore Int
+
+    -- | Stake for everybody else (we don't need to distinguish)
+  | StakeEverybodyElse
+  deriving (Show, Eq, Ord)
+
+relativeStakes :: Map StakeHolder Int -> StakeDist
 relativeStakes m =
    let totalStake    = fromIntegral $ sum $ Map.elems m
    in  IntMap.fromList [ (nid, fromIntegral stake / totalStake)
-                       | (Just nid, stake) <- Map.toList m
+                       | (StakeCore nid, stake) <- Map.toList m
                        ]
 
 -- | Compute stakes of all nodes
 --
 -- The 'Nothing' value holds the total stake of all addresses that don't
 -- get mapped to a NodeId.
-totalStakes :: Map Addr NodeId
-            -> Utxo
-            -> Map (Maybe Int) Int
+totalStakes :: Map Addr NodeId -> Utxo -> Map StakeHolder Int
 totalStakes addrDist = foldl f Map.empty
  where
-   f :: Map (Maybe Int) Int -> TxOut -> Map (Maybe Int) Int
+   f :: Map StakeHolder Int -> TxOut -> Map StakeHolder Int
    f m (a, stake) = case Map.lookup a addrDist of
-       Just (CoreId nid) -> Map.insertWith (+) (Just nid) stake m
-       _                 -> Map.insertWith (+) Nothing stake m
+       Just (CoreId nid) -> Map.insertWith (+) (StakeCore nid)    stake m
+       _                 -> Map.insertWith (+) StakeEverybodyElse stake m
 
 {-------------------------------------------------------------------------------
   Serialisation

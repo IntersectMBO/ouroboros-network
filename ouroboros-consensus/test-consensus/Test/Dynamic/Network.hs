@@ -50,10 +50,10 @@ broadcastNetwork :: forall m p gen.
                  => BlockchainTime m
                  -> NumCoreNodes
                  -> (CoreNodeId -> ProtocolInfo p)
-                 -> gen -- ^ Initial random number state
-                 -> Int -- ^ Number of slots
+                 -> gen
+                 -> NumSlots
                  -> m (Map NodeId (Chain (Block p)))
-broadcastNetwork btime (NumCoreNodes numCoreNodes) pInfo initRNG numSlots = do
+broadcastNetwork btime numCoreNodes pInfo initRNG numSlots = do
 
     -- all known addresses
     let addrs :: [Addr]
@@ -125,7 +125,7 @@ broadcastNetwork btime (NumCoreNodes numCoreNodes) pInfo initRNG numSlots = do
           cc $ withLogging (TalkingToProducer us them) $
                  snd (chans Map.! them Map.! us)
 
-      onSlot btime (fromIntegral numSlots) $ atomically $ do
+      onSlot btime (finalSlot numSlots) $ atomically $ do
         chain <- getCurrentChain node
         writeTVar varRes $ Just (us, chain)
 
@@ -137,7 +137,7 @@ broadcastNetwork btime (NumCoreNodes numCoreNodes) pInfo initRNG numSlots = do
     nodeIds = map fromCoreNodeId coreNodeIds
 
     coreNodeIds :: [CoreNodeId]
-    coreNodeIds = [CoreNodeId n | n <- [0 .. numCoreNodes - 1]]
+    coreNodeIds = enumCoreNodes numCoreNodes
 
     getUtxo :: ExtLedgerState (Block p) -> Utxo
     getUtxo = slsUtxo . ledgerState

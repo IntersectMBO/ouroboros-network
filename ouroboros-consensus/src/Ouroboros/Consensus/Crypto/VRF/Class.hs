@@ -8,7 +8,6 @@
 -- | Abstract Verifiable Random Functions.
 module Ouroboros.Consensus.Crypto.VRF.Class
   ( VRFAlgorithm (..)
-    -- TODO: Added to Lars' stuff, might need to modify
   , CertifiedVRF(..)
   , evalCertified
   , verifyCertified

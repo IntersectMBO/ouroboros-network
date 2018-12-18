@@ -60,7 +60,7 @@ parseProtocol = asum [
           long "bft"
         , help "Use the BFT consensus algorithm"
         ]
-    , flag' (Some DemoPraos) $ mconcat [
+    , flag' (Some (DemoPraos defaultDemoPraosParams)) $ mconcat [
           long "praos"
         , help "Use the Praos consensus algorithm"
         ]

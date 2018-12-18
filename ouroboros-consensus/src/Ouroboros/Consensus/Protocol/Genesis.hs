@@ -27,6 +27,8 @@ instance PraosCrypto c => ChainSelection (GenesisChainSelection c) where
 
     selectChain' _ EncNodeConfig{..} slot ours = foldl' f ours . map (upToSlot slot)
       where
+        PraosParams{..} = praosParams encNodeConfigP
+
         f cmax c
             | forksAtMostKBlocks k cmax c = if Chain.length c > Chain.length cmax
                                                 then c
@@ -42,7 +44,7 @@ instance PraosCrypto c => ChainSelection (GenesisChainSelection c) where
                         else cmax
 
         k :: Int
-        k = fromIntegral $ praosK encNodeConfigP
+        k = fromIntegral praosK
 
         s :: Word
         s = fromIntegral encNodeConfigExt

@@ -34,23 +34,42 @@ import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.Node
 
 import           Ouroboros.Consensus.Demo
+import           Ouroboros.Consensus.Node (NumSlots (..))
+import           Ouroboros.Consensus.Protocol.Praos
 import           Ouroboros.Consensus.Util.Chain (dropLastBlocks, lastSlot)
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Random
 
 import           Test.Dynamic.General
+import           Test.Dynamic.Util
 
 tests :: TestTree
 tests = testGroup "Dynamic chain generation" [
-      testProperty "simple Praos convergence" prop_simple_praos_convergence
+      testProperty "simple Praos convergence" $
+        prop_simple_praos_convergence
+          (NumSlots (fromIntegral numSlots))
+          (NumCoreNodes 3)
+          params
     ]
-
-prop_simple_praos_convergence :: Seed -> Property
-prop_simple_praos_convergence =
-    prop_simple_protocol_convergence
-      (protocolInfo DemoPraos (NumCoreNodes numNodes))
-      isValid
   where
+    params@PraosParams{..} = defaultDemoPraosParams
+    numSlots  = praosK * praosSlotsPerEpoch * numEpochs
+    numEpochs = 3
+
+prop_simple_praos_convergence :: NumSlots
+                              -> NumCoreNodes
+                              -> PraosParams
+                              -> Seed
+                              -> Property
+prop_simple_praos_convergence numSlots numCoreNodes params =
+    prop_simple_protocol_convergence
+      (protocolInfo (DemoPraos params) numCoreNodes)
+      isValid
+      numSlots
+      numCoreNodes
+  where
+    PraosParams{..} = params
+
     isValid :: [NodeId]
             -> [(VTime, Map NodeId (Chain (Block DemoPraos)))]
             -> Property
@@ -58,20 +77,20 @@ prop_simple_praos_convergence =
       case trace of
         [(_, final)] ->   collect (shortestLength final)
                      $    Map.keys final == nodeIds
-                     .&&. prop_all_common_prefix k (Map.elems final)
+                     .&&. prop_all_common_prefix praosK (Map.elems final)
         _otherwise   -> property False
 
 prop_all_common_prefix :: (HasHeader b, Condense b, Eq b)
-                       => Int -> [Chain b] -> Property
+                       => Word -> [Chain b] -> Property
 prop_all_common_prefix _ []     = property True
 prop_all_common_prefix l (c:cs) = conjoin [prop_common_prefix l c d | d <- cs]
 
 prop_common_prefix :: forall b. (HasHeader b, Condense b, Eq b)
-                   => Int -> Chain b -> Chain b -> Property
+                   => Word -> Chain b -> Chain b -> Property
 prop_common_prefix l x y = go x y .&&. go y x
   where
     go c d =
-        let c' = dropLastBlocks l c
+        let c' = dropLastBlocks (fromIntegral l) c
             e  = "after dropping "
                  <> show l
                  <> " blocks from "
