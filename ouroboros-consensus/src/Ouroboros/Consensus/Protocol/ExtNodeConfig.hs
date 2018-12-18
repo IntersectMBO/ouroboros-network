@@ -21,7 +21,7 @@ import           GHC.Generics (Generic)
 import           Ouroboros.Network.Serialise
 
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util
+import           Ouroboros.Consensus.Util.Condense
 
 -- | Extension of protocol @p@ by additional static node configuration @cfg@.
 data ExtNodeConfig cfg p

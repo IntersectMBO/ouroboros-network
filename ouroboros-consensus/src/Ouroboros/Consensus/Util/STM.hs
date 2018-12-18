@@ -3,7 +3,10 @@
 
 module Ouroboros.Consensus.Util.STM (
     -- * Misc
-    monitorTVar
+    blockUntilChanged
+  , onEachChange
+  , blockUntilJust
+  , blockUntilAllJust
     -- * Simulate various monad stacks in STM
   , Sim
   , simId
@@ -26,21 +29,36 @@ import           Ouroboros.Network.MonadClass
   Misc
 -------------------------------------------------------------------------------}
 
+-- | Wait until the TVar changed
+blockUntilChanged :: forall m a b. (MonadSTM m, Eq b)
+                  => (a -> b) -> b -> Tr m a -> Tr m (a, b)
+blockUntilChanged f b getA = do
+    a <- getA
+    let b' = f a
+    if b' == b
+      then retry
+      else return (a, b')
+
 -- | Spawn a new thread that executes an action each time a TVar changes
-monitorTVar :: forall m a b. (MonadSTM m, Eq b)
-            => (a -> b) -> b -> TVar m a -> (a -> m ()) -> m ()
-monitorTVar f initB tvar notify = fork $ go initB
+onEachChange :: forall m a b. (MonadSTM m, Eq b)
+             => (a -> b) -> b -> Tr m a -> (a -> m ()) -> m ()
+onEachChange f initB getA notify = fork $ go initB
   where
     go :: b -> m ()
     go b = do
-      (a, b') <- atomically $ do
-                   a <- readTVar tvar
-                   let b' = f a
-                   if b' == b
-                     then retry
-                     else return (a, b')
+      (a, b') <- atomically $ blockUntilChanged f b getA
       notify a
       go b'
+
+blockUntilJust :: MonadSTM m => TVar m (Maybe a) -> Tr m a
+blockUntilJust var = do
+    ma <- readTVar var
+    case ma of
+      Nothing -> retry
+      Just a  -> return a
+
+blockUntilAllJust :: MonadSTM m => [TVar m (Maybe a)] -> Tr m [a]
+blockUntilAllJust = mapM blockUntilJust
 
 {-------------------------------------------------------------------------------
   Simulate monad stacks

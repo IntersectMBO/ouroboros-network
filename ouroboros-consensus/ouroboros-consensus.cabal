@@ -42,6 +42,7 @@ library
                        Ouroboros.Consensus.Crypto.VRF.Class
                        Ouroboros.Consensus.Crypto.VRF.Mock
                        Ouroboros.Consensus.Crypto.VRF.Simple
+                       Ouroboros.Consensus.Demo
                        Ouroboros.Consensus.Ledger.Abstract
                        Ouroboros.Consensus.Ledger.Mock
                        Ouroboros.Consensus.Node
@@ -54,6 +55,7 @@ library
                        Ouroboros.Consensus.Protocol.ModChainSel
                        Ouroboros.Consensus.Util
                        Ouroboros.Consensus.Util.Chain
+                       Ouroboros.Consensus.Util.Condense
                        Ouroboros.Consensus.Util.DepFn
                        Ouroboros.Consensus.Util.HList
                        Ouroboros.Consensus.Util.Orphans
@@ -80,7 +82,6 @@ library
                        DeriveFunctor
                        DeriveGeneric
                        EmptyDataDecls
-                       EmptyDataDeriving
                        FlexibleContexts
                        FlexibleInstances
                        FunctionalDependencies
@@ -142,12 +143,13 @@ library
 executable demo-playground
   hs-source-dirs:      demo-playground
   main-is:             Main.hs
+  default-language:    Haskell2010
   ghc-options:         -threaded -Wall -O2 "-with-rtsopts=-N"
   other-modules:       CLI
                        Logging
-                       Mock.TxSubmission
                        Mock.Mempool
                        Mock.Protocol
+                       Mock.TxSubmission
                        NamedPipe
                        Run
                        Topology
@@ -180,7 +182,9 @@ test-suite test-consensus
   other-modules:
                     Test.Dynamic.BFT
                     Test.Dynamic.General
+                    Test.Dynamic.Network
                     Test.Dynamic.Praos
+                    Test.Dynamic.Util
                     Test.Ouroboros
   build-depends:    base,
                     typed-transitions,

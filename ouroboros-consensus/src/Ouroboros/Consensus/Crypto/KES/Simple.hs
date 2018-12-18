@@ -16,10 +16,11 @@ import           Data.Vector (Vector, fromList, (!?))
 import           GHC.Generics (Generic)
 import           Numeric.Natural (Natural)
 
+import           Ouroboros.Network.Serialise (Serialise)
+
 import           Ouroboros.Consensus.Crypto.DSIGN
 import           Ouroboros.Consensus.Crypto.KES.Class
-import           Ouroboros.Consensus.Util (Condense (..))
-import           Ouroboros.Network.Serialise (Serialise)
+import           Ouroboros.Consensus.Util.Condense
 
 data SimpleKES d
 

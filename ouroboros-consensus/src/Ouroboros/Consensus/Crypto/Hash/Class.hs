@@ -24,7 +24,7 @@ import           Data.String (IsString (..))
 import           GHC.Generics (Generic)
 import           Numeric.Natural
 
-import           Ouroboros.Consensus.Util
+import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Network.Serialise
 
 class HashAlgorithm h where

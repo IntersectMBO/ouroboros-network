@@ -16,9 +16,10 @@ module Ouroboros.Consensus.Crypto.KES.Class
 import           GHC.Generics (Generic)
 import           Numeric.Natural (Natural)
 
-import           Ouroboros.Consensus.Util (Condense (..))
-import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Network.Serialise
+
+import           Ouroboros.Consensus.Util.Condense
+import           Ouroboros.Consensus.Util.Random
 
 class ( Show (VerKeyKES v)
       , Ord (VerKeyKES v)

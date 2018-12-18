@@ -11,8 +11,8 @@ import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
 import           Ouroboros.Consensus.Crypto.VRF
-import           Ouroboros.Consensus.Util.Random (Seed, withSeed)
 import           Ouroboros.Consensus.Util.Orphans ()
+import           Ouroboros.Consensus.Util.Random (Seed, withSeed)
 import           Ouroboros.Network.Serialise (Serialise, prop_serialise)
 
 --

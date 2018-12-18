@@ -24,7 +24,7 @@ import           Ouroboros.Network.Serialise
 
 import           Ouroboros.Consensus.Node (NodeId)
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util
+import           Ouroboros.Consensus.Util.Condense
 
 -- | Add additional information to the payload of an existing protocol
 -- for verification purposes in the unit tests

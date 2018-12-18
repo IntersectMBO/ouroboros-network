@@ -1,6 +1,5 @@
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE DeriveGeneric         #-}
-{-# LANGUAGE EmptyDataDeriving     #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -14,6 +13,7 @@
 module Ouroboros.Consensus.Protocol.Praos (
     StakeDist
   , Praos
+  , PraosParams(..)
     -- * Tags
   , PraosCrypto(..)
   , PraosStandardCrypto
@@ -32,8 +32,13 @@ import           Data.Proxy (Proxy (..))
 import           GHC.Generics (Generic)
 import           Numeric.Natural
 
+import           Ouroboros.Network.Block (HasHeader (..), Slot (..))
+import qualified Ouroboros.Network.Chain as Chain
+import           Ouroboros.Network.Serialise (Encoding, Serialise, encode)
+
 import           Ouroboros.Consensus.Crypto.DSIGN.Ed448 (Ed448DSIGN)
-import           Ouroboros.Consensus.Crypto.Hash.Class (HashAlgorithm (..), fromHash, hash)
+import           Ouroboros.Consensus.Crypto.Hash.Class (HashAlgorithm (..),
+                     fromHash, hash)
 import           Ouroboros.Consensus.Crypto.Hash.MD5 (MD5)
 import           Ouroboros.Consensus.Crypto.Hash.SHA256 (SHA256)
 import           Ouroboros.Consensus.Crypto.KES.Class
@@ -45,13 +50,10 @@ import           Ouroboros.Consensus.Crypto.VRF.Simple (SimpleVRF)
 import           Ouroboros.Consensus.Node (NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Test
-import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.Chain (forksAtMostKBlocks, upToSlot)
+import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.HList (HList)
 import           Ouroboros.Consensus.Util.HList (HList (..))
-import           Ouroboros.Network.Block (HasHeader (..), Slot (..))
-import qualified Ouroboros.Network.Chain as Chain
-import           Ouroboros.Network.Serialise (Encoding, Serialise, encode)
 
 {-------------------------------------------------------------------------------
   Praos specific types
@@ -110,6 +112,14 @@ deriving instance PraosCrypto c => Show (BlockInfo c)
 
 data Praos c
 
+-- | Praos parameters that are node independent
+data PraosParams = PraosParams {
+      praosLeaderF       :: Double
+    , praosK             :: Word
+    , praosSlotsPerEpoch :: Word
+    , praosLifetimeKES   :: Natural
+    }
+
 instance PraosCrypto c => OuroborosTag (Praos c) where
 
   data Payload (Praos c) ph = PraosPayload {
@@ -119,13 +129,11 @@ instance PraosCrypto c => OuroborosTag (Praos c) where
     deriving (Generic)
 
   data NodeConfig (Praos c) = PraosNodeConfig
-    { praosNodeId        :: NodeId
-    , praosSignKeyVRF    :: SignKeyVRF (PraosVRF c)
-    , praosSlotsPerEpoch :: Word
+    { praosParams        :: PraosParams
     , praosInitialEta    :: Natural
     , praosInitialStake  :: StakeDist
-    , praosLeaderF       :: Double
-    , praosK             :: Word
+    , praosNodeId        :: NodeId
+    , praosSignKeyVRF    :: SignKeyVRF (PraosVRF c)
     , praosVerKeys       :: IntMap (VerKeyKES (PraosKES c), VerKeyVRF (PraosVRF c))
     }
 
@@ -232,6 +240,8 @@ instance PraosCrypto c => OuroborosTag (Praos c) where
 
   selectChain PraosNodeConfig{..} slot ours = foldl' f ours . map (upToSlot slot)
     where
+      PraosParams{..} = praosParams
+
       k :: Int
       k = fromIntegral praosK
 
@@ -252,12 +262,16 @@ instance (PraosCrypto c, Serialise ph) => Serialise (Payload (Praos c) ph) where
 slotEpoch :: NodeConfig (Praos c) -> Slot -> Epoch
 slotEpoch PraosNodeConfig{..} s =
     fromIntegral $ 1 + div (getSlot s - 1) praosSlotsPerEpoch
+  where
+    PraosParams{..} = praosParams
 
 blockInfoEpoch :: NodeConfig (Praos c) -> BlockInfo c -> Epoch
 blockInfoEpoch l = slotEpoch l . biSlot
 
 epochStart :: NodeConfig (Praos c) -> Epoch -> Slot
 epochStart PraosNodeConfig{..} e = Slot $ (e - 1) * praosSlotsPerEpoch + 1
+  where
+    PraosParams{..} = praosParams
 
 infosSlice :: Slot -> Slot -> [BlockInfo c] -> [BlockInfo c]
 infosSlice from to xs = takeWhile (\b -> biSlot b >= from)
@@ -273,21 +287,27 @@ infosEta l xs e =
     let e'   = e - 1
         eta' = infosEta l xs e'
         from = epochStart l e'
-        n    = div (2 * praosSlotsPerEpoch l) 3
+        n    = div (2 * praosSlotsPerEpoch) 3
         to   = Slot $ getSlot from + fromIntegral (n - 1)
         rhos = reverse [biRho b | b <- infosSlice from to xs]
     in  fromHash $ hash @(PraosHash c) $ eta' :* e :* rhos :* Nil
+  where
+    PraosParams{..} = praosParams l
 
 infosStake :: NodeConfig (Praos c) -> [BlockInfo c] -> Epoch -> StakeDist
 infosStake s@PraosNodeConfig{..} xs e = case ys of
     []                  -> praosInitialStake
     (BlockInfo{..} : _) -> biStake
   where
+    PraosParams{..} = praosParams
+
     e' = if e >= 2 then e - 2 else 0
     ys = dropWhile (\b -> blockInfoEpoch s b > e') xs
 
 phi :: NodeConfig (Praos c) -> Rational -> Double
 phi PraosNodeConfig{..} r = 1 - (1 - praosLeaderF) ** fromRational r
+  where
+    PraosParams{..} = praosParams
 
 leaderThreshold :: forall c. PraosCrypto c
                 => NodeConfig (Praos c)

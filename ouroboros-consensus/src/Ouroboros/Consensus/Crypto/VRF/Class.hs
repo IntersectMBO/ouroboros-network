@@ -1,6 +1,6 @@
-{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
 {-# LANGUAGE TypeFamilies        #-}
@@ -8,7 +8,6 @@
 -- | Abstract Verifiable Random Functions.
 module Ouroboros.Consensus.Crypto.VRF.Class
   ( VRFAlgorithm (..)
-    -- TODO: Added to Lars' stuff, might need to modify
   , CertifiedVRF(..)
   , evalCertified
   , verifyCertified

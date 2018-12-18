@@ -1,6 +1,6 @@
-{-# LANGUAGE RecordWildCards       #-}
-{-# LANGUAGE StandaloneDeriving    #-}
-{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE RecordWildCards    #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TypeFamilies       #-}
 
 module Ouroboros.Consensus.Protocol.Genesis (
     Genesis
@@ -12,7 +12,8 @@ import           Numeric.Natural (Natural)
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.ModChainSel
 import           Ouroboros.Consensus.Protocol.Praos
-import           Ouroboros.Consensus.Util.Chain (forksAtMostKBlocks, intersectionSlot, upToSlot)
+import           Ouroboros.Consensus.Util.Chain (forksAtMostKBlocks,
+                     intersectionSlot, upToSlot)
 import           Ouroboros.Network.Block (Slot (..))
 import qualified Ouroboros.Network.Chain as Chain
 
@@ -26,6 +27,8 @@ instance PraosCrypto c => ChainSelection (GenesisChainSelection c) where
 
     selectChain' _ EncNodeConfig{..} slot ours = foldl' f ours . map (upToSlot slot)
       where
+        PraosParams{..} = praosParams encNodeConfigP
+
         f cmax c
             | forksAtMostKBlocks k cmax c = if Chain.length c > Chain.length cmax
                                                 then c
@@ -41,7 +44,7 @@ instance PraosCrypto c => ChainSelection (GenesisChainSelection c) where
                         else cmax
 
         k :: Int
-        k = fromIntegral $ praosK encNodeConfigP
+        k = fromIntegral praosK
 
         s :: Word
         s = fromIntegral encNodeConfigExt

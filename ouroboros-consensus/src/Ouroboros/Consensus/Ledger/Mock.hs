@@ -1,5 +1,4 @@
 {-# LANGUAGE DeriveGeneric              #-}
-{-# LANGUAGE EmptyDataDeriving          #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -34,11 +33,15 @@ module Ouroboros.Consensus.Ledger.Mock (
   , forgeBlock
     -- * Updating the Ledger state
   , LedgerState(..)
+  , AddrDist
+  , relativeStakes
+  , totalStakes
   ) where
 
 import           Codec.Serialise
 import           Control.Monad.Except
 import           Crypto.Random (MonadRandom)
+import qualified Data.IntMap.Strict as IntMap
 import           Data.Map (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy
@@ -47,17 +50,23 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           GHC.Generics (Generic)
 
+import           Ouroboros.Network.Block hiding (Hash)
+import qualified Ouroboros.Network.Block as Network
+import           Ouroboros.Network.Chain (Chain, toOldestFirst)
+
 import           Ouroboros.Consensus.Crypto.Hash.Class
 import           Ouroboros.Consensus.Crypto.Hash.MD5 (MD5)
 import           Ouroboros.Consensus.Crypto.Hash.Short (ShortHash)
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Node (NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Protocol.BFT
+import           Ouroboros.Consensus.Protocol.ExtNodeConfig
+import           Ouroboros.Consensus.Protocol.Praos
 import           Ouroboros.Consensus.Util
+import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.HList (All, HList)
 import qualified Ouroboros.Consensus.Util.HList as HList
-import           Ouroboros.Network.Block hiding (Hash)
-import qualified Ouroboros.Network.Block as Network
-import           Ouroboros.Network.Chain (Chain, toOldestFirst)
 
 {-------------------------------------------------------------------------------
   Basic definitions
@@ -300,9 +309,20 @@ instance (SimpleBlockCrypto c, OuroborosTag p, Serialise (Payload p (SimplePreHe
 
   blockPreHeader = headerPreHeader . simpleHeader
 
-instance (SimpleBlockCrypto c, OuroborosTag p, Serialise (Payload p (SimplePreHeader p c)))
+instance ( SimpleBlockCrypto c
+         , OuroborosTag p
+         , Serialise (Payload p (SimplePreHeader p c))
+         )
       => HasPayload p (SimpleBlock p c) where
   blockPayload _ = headerOuroboros . simpleHeader
+
+-- TODO: This instance is ugly.. can we avoid it?
+instance ( OuroborosTag p
+         , SimpleBlockCrypto c
+         , Serialise (Payload p (SimplePreHeader (ExtNodeConfig cfg p) c))
+         )
+      => HasPayload p (SimpleBlock (ExtNodeConfig cfg p) c) where
+  blockPayload _ = encPayloadP . headerOuroboros . simpleHeader
 
 instance OuroborosTag p => UpdateLedger (SimpleBlock p c) where
   data LedgerState (SimpleBlock p c) =
@@ -320,6 +340,55 @@ instance OuroborosTag p => UpdateLedger (SimpleBlock p c) where
       return $ SimpleLedgerState u' (c `Set.union` confirmed b)
 
 deriving instance OuroborosTag p => Show (LedgerState (SimpleBlock p c))
+
+{-------------------------------------------------------------------------------
+  Support for various consensus algorithms
+-------------------------------------------------------------------------------}
+
+-- | Mapping from addresses to node IDs
+--
+-- This is needed in order to assign stake to nodes.
+type AddrDist = Map Addr NodeId
+
+instance (BftCrypto c, SimpleBlockCrypto c')
+      => ProtocolLedgerView (SimpleBlock (Bft c) c') where
+  protocolLedgerView _ _ = ()
+
+instance (PraosCrypto c, SimpleBlockCrypto c')
+      => ProtocolLedgerView (SimpleBlock (ExtNodeConfig AddrDist (Praos c)) c') where
+  protocolLedgerView (EncNodeConfig _ addrDist) (SimpleLedgerState u _) =
+      relativeStakes $ totalStakes addrDist u
+
+{-------------------------------------------------------------------------------
+  Compute relative stake
+-------------------------------------------------------------------------------}
+
+data StakeHolder =
+    -- | Stake of a core node
+    StakeCore Int
+
+    -- | Stake for everybody else (we don't need to distinguish)
+  | StakeEverybodyElse
+  deriving (Show, Eq, Ord)
+
+relativeStakes :: Map StakeHolder Int -> StakeDist
+relativeStakes m =
+   let totalStake    = fromIntegral $ sum $ Map.elems m
+   in  IntMap.fromList [ (nid, fromIntegral stake / totalStake)
+                       | (StakeCore nid, stake) <- Map.toList m
+                       ]
+
+-- | Compute stakes of all nodes
+--
+-- The 'Nothing' value holds the total stake of all addresses that don't
+-- get mapped to a NodeId.
+totalStakes :: Map Addr NodeId -> Utxo -> Map StakeHolder Int
+totalStakes addrDist = foldl f Map.empty
+ where
+   f :: Map StakeHolder Int -> TxOut -> Map StakeHolder Int
+   f m (a, stake) = case Map.lookup a addrDist of
+       Just (CoreId nid) -> Map.insertWith (+) (StakeCore nid)    stake m
+       _                 -> Map.insertWith (+) StakeEverybodyElse stake m
 
 {-------------------------------------------------------------------------------
   Serialisation

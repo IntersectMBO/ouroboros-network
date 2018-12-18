@@ -1,15 +1,22 @@
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE KindSignatures      #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE RecordWildCards     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE KindSignatures             #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TypeApplications           #-}
 
 module Ouroboros.Consensus.Node (
+    -- * Node IDs
+    NodeId(..)
+  , CoreNodeId(..)
+  , fromCoreNodeId
     -- * Blockchain time
-    BlockchainTime(..)
+  , BlockchainTime(..)
   , onSlot
+  , NumSlots(..)
+  , finalSlot
   , testBlockchainTime
   , realBlockchainTime
     -- * Node
@@ -20,8 +27,7 @@ module Ouroboros.Consensus.Node (
   , NetworkLayer(..)
   , NetworkCallbacks(..)
   , initNetworkLayer
-    -- * Re-exports from the network layer
-  , NodeId(..)
+    -- * Channels (re-exports from the network layer)
   , Channel
   , Network.createCoupledChannels
   , Network.loggingChannel
@@ -53,6 +59,7 @@ import           Ouroboros.Network.Protocol.ChainSync.Type
 
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.STM
 
 -- TODO: We currently stil import /some/ stuff from the network layer Node
@@ -61,6 +68,17 @@ import           Ouroboros.Consensus.Util.STM
 
 import           Ouroboros.Network.Node (NodeId (..))
 import qualified Ouroboros.Network.Node as Network
+
+{-------------------------------------------------------------------------------
+  Node IDs
+-------------------------------------------------------------------------------}
+
+-- | Core node ID
+newtype CoreNodeId = CoreNodeId Int
+  deriving (Show, Eq, Ord, Condense)
+
+fromCoreNodeId :: CoreNodeId -> NodeId
+fromCoreNodeId (CoreNodeId n) = CoreId n
 
 {-------------------------------------------------------------------------------
   "Blockchain time"
@@ -84,6 +102,12 @@ onSlot :: MonadSTM m => BlockchainTime m -> Slot -> m () -> m ()
 onSlot BlockchainTime{..} slot act = onSlotChange $ \slot' -> do
     when (slot == slot') act
 
+-- | Number of slots
+newtype NumSlots = NumSlots Int
+
+finalSlot :: NumSlots -> Slot
+finalSlot (NumSlots n) = Slot (fromIntegral n)
+
 -- | Construct new blockchain time that ticks at the specified slot duration
 --
 -- NOTE: This is just one way to construct time. We can of course also connect
@@ -93,17 +117,17 @@ onSlot BlockchainTime{..} slot act = onSlotChange $ \slot' -> do
 -- NOTE: The number of slots is only there to make sure we terminate the
 -- thread (otherwise the system will keep waiting).
 testBlockchainTime :: forall m. (MonadSTM m, MonadTimer m)
-                   => Int                -- ^ Number of slots
+                   => NumSlots           -- ^ Number of slots
                    -> Duration (Time m)  -- ^ Slot duration
                    -> m (BlockchainTime m)
-testBlockchainTime numSlots slotDuration = do
+testBlockchainTime (NumSlots numSlots) slotDuration = do
     slotVar <- atomically $ newTVar firstSlot
     fork $ replicateM_ numSlots $ do
         threadDelay slotDuration
         atomically $ modifyTVar slotVar succ
     return BlockchainTime {
         getCurrentSlot = readTVar slotVar
-      , onSlotChange   = monitorTVar id firstSlot slotVar
+      , onSlotChange   = onEachChange id firstSlot (readTVar slotVar)
       }
   where
     firstSlot :: Slot
@@ -121,7 +145,7 @@ realBlockchainTime systemStart slotDuration = do
       atomically . writeTVar slotVar =<< currentSlot
     return BlockchainTime {
         getCurrentSlot = readTVar slotVar
-      , onSlotChange   = monitorTVar id first slotVar
+      , onSlotChange   = onEachChange id first (readTVar slotVar)
       }
   where
     currentSlot :: IO Slot
@@ -231,6 +255,9 @@ nodeKernel cfg initState simRnd btime initLedger initChain NodeCallbacks{..} = d
           chainAdopted nw newChain
 
     -- Thread to do chain validation and adoption
+    --
+    -- TODO: Once everything flips, this gets the pool of /all/ candidates,
+    -- and it can decide to verify on the best.
     fork $ forever $ do
          newChain <- atomically $ readTBQueue updatesVar
          -- ... validating ... mumble mumble mumble ...
@@ -257,6 +284,7 @@ nodeKernel cfg initState simRnd btime initLedger initChain NodeCallbacks{..} = d
 
     -- Block production
     onSlotChange btime $ \slot -> do
+      -- TODO: Construct a ChaCha RNG using proper MonadRandom to use inside tr
       mNewChain <- atomically $ do
         l@ExtLedgerState{..} <- readTVar ledgerVar
         mIsLeader            <- runProtocol $
@@ -305,7 +333,10 @@ data NetworkLayer up b m = NetworkLayer {
       --
       -- This can be used when adopting upstream chains (in response to
       -- 'chainDownloaded'), but also when producing new blocks locally.
+      --
+      -- TODO: Make this a query instead  @Tr m (Chain block)@
       chainAdopted :: Chain b -> Tr m ()
+
 
       -- | Notify network layer of new upstream node
       --
@@ -321,7 +352,7 @@ data NetworkLayer up b m = NetworkLayer {
                        -> (forall a. (Duplex m m concreteSend concreteRecv -> m a) -> m a)
                        -> m ()
 
-      -- | Notify netwok layer of a new downstream node
+      -- | Notify network layer of a new downstream node
       --
       -- NOTE: Eventually it will be the responsibility of the network layer
       -- itself to register and deregister peers.
@@ -340,15 +371,26 @@ data NetworkCallbacks b m = NetworkCallbacks {
       --
       -- It is up to the consensus layer now to validate the blocks and
       -- (potentially) adopt the chain.
+      --
+      -- TODO: Change this to a query "give us the downloaded chains"
+      -- > getDownloadedChains :: Tr m [Chain b]
       chainDownloaded      :: Chain b -> m () -- Chain Block -> ..
 
       -- | Validate chain headers
+      --
+      -- NOTE: We can only validate up to a certain point in the
+      -- future (as well as up to a certain point in the past),
+      -- but we switch to genesis before we get to that point.
+      --
+      -- TODO: Do /not/ use chainSyncClientExample, instead
+      -- /provide/ a ChainSyncClient /to/ the network layer, which implements
+      -- the logic /and/ validation (and can deal with genesis also).
     , validateChainHeaders :: Chain b -> Bool -- Chain Header -> ..
 
       -- | Prioritize chains
       --
       -- TODO: This should eventually return a list, rather than a single chain.
-                           -- Chain Block -> Chain Header -> Chain Header (?)
+      --                      forall peer. Slot -> Chain Block -> [(peer, Chain Header)] -> [(peer, Chain Header)] (?)
     , prioritizeChains     :: Slot -> Chain b -> [Chain b] -> Chain b
     }
 
@@ -358,6 +400,8 @@ initNetworkLayer :: forall m b up. (MonadSTM m, HasHeader b, Ord up)
                  -> NetworkCallbacks b m
                  -> m (NetworkLayer up b m)
 initNetworkLayer initChain btime NetworkCallbacks{..} = do
+    -- cpsVar records chain for server side of the node
+    -- NOTE: This does /not/ need to be updated synchronously with our chain.
     cpsVar <- atomically $ newTVar $ initChainProducerState initChain
 
     -- PotentialsVar is modelling state in the network layer tracking the
@@ -373,7 +417,9 @@ initNetworkLayer initChain btime NetworkCallbacks{..} = do
           chainVar     <- atomically $ newTVar Genesis
           let consumer = chainSyncClientPeer (chainSyncClientExample chainVar pureClient)
           fork $ void $ withChan $ \chan -> useCodecWithDuplex chan codec consumer
-          monitorTVar Chain.headPoint Chain.genesisPoint chainVar $ \newChain ->
+          onEachChange Chain.headPoint
+                       Chain.genesisPoint
+                       (readTVar chainVar) $ \newChain ->
               if validateChainHeaders newChain
                 then newPotentialChain cpsVar potentialsVar up newChain
                 else -- We should at this point disregard this peer,

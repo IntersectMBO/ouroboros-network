@@ -18,11 +18,12 @@ import           Data.Semigroup (Semigroup, (<>))
 import           Data.Set (Set)
 import qualified Data.Set as Set
 
+import           Ouroboros.Network.Serialise (Serialise)
+
 import           Ouroboros.Consensus.Crypto.Hash
 import           Ouroboros.Consensus.Ledger.Mock
-import           Ouroboros.Consensus.Util (Condense (..))
+import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.HList
-import           Ouroboros.Network.Serialise (Serialise)
 
 {-------------------------------------------------------------------------------
   Mempool

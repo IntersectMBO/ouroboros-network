@@ -7,15 +7,16 @@ import           Crypto.Random
 
 import           Test.QuickCheck (Arbitrary (..), Gen)
 
+import           Ouroboros.Network.Chain (Chain (..))
+import           Ouroboros.Network.Node (NodeId (..))
+import           Ouroboros.Network.Serialise (Serialise)
+
 import           Ouroboros.Consensus.Crypto.DSIGN.Class (DSIGNAlgorithm (..))
 import           Ouroboros.Consensus.Crypto.Hash.Class (Hash,
                      HashAlgorithm (..), hash)
 import           Ouroboros.Consensus.Crypto.VRF.Class (VRFAlgorithm (..))
-import           Ouroboros.Consensus.Util
+import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Random (withSeed)
-import           Ouroboros.Network.Chain (Chain (..))
-import           Ouroboros.Network.Node (NodeId (..))
-import           Ouroboros.Network.Serialise (Serialise)
 
 instance Condense NodeId where
   condense (CoreId  i) = "c" ++ show i

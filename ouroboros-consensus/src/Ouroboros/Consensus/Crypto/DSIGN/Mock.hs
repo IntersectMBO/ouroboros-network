@@ -14,11 +14,12 @@ import qualified Data.ByteString.Base16 as B16
 import qualified Data.ByteString.Char8 as SB8
 import           GHC.Generics (Generic)
 
+import           Ouroboros.Network.Serialise
+
 import           Ouroboros.Consensus.Crypto.DSIGN.Class
 import           Ouroboros.Consensus.Crypto.Hash
-import           Ouroboros.Consensus.Util
+import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Random
-import           Ouroboros.Network.Serialise
 
 data MockDSIGN
 
