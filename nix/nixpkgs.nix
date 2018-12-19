@@ -8,7 +8,8 @@ let
       let self      = super.pkgs;
           lib       = super.haskell.lib;
           overrides = self: super:
-            { psqueues = lib.dontCheck super.psqueues;
+            { mkDerivation = args: super.mkDerivation (args // { doCheck = false; });
+              psqueues = lib.dontCheck super.psqueues;
               aeson    = lib.dontCheck super.aeson;
               QuickCheck = super.QuickCheck_2_12_6_1;
               hspec = super.hspec_2_6_0;
