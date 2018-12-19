@@ -116,7 +116,7 @@ prop_directBlockFetchClientProtocol_acc as =
     fst (runIdentity
       $ directBlockFetchClient
           accumulatingBlockFetchServerReceiver
-          (runIdentity $ blockFetchClientSenderFromProducer (Pipes.each ranges >> return ())))
+          (blockFetchClientSenderFromProducer (Pipes.each ranges >> return ())))
     === ranges
 
 -- | Test @'blockFetchServerReceiverStream'@ against
@@ -127,7 +127,7 @@ prop_connectBlockFetchClientProtocol_acc
   -> Property
 prop_connectBlockFetchClientProtocol_acc as =
   let ranges = map (\(ArbitraryPoint p, ArbitraryPoint p') -> ChainRange p p') as
-      client = runIdentity $ blockFetchClientSenderFromProducer (Pipes.each ranges >> return ())
+      client = blockFetchClientSenderFromProducer (Pipes.each ranges >> return ())
   in case  runIdentity $ connect
             (blockFetchServerReceiverStream accumulatingBlockFetchServerReceiver)
             (blockFetchClientSenderStream client) of
@@ -153,7 +153,7 @@ blockFetchClientProtocol_experiment run as probe = do
   let ranges = map (\(ArbitraryPoint p, ArbitraryPoint p') -> ChainRange p p') as
   var <- atomically $ newTVar []
   let server = constantReceiver (\a -> atomically $ modifyTVar var (a:)) (return ())
-  client <- blockFetchClientSenderFromProducer (Pipes.each ranges >> return ())
+      client = blockFetchClientSenderFromProducer (Pipes.each ranges >> return ())
 
   _ <- run server client
 
@@ -289,8 +289,8 @@ roundTrip_experiment
   -> m ()
 roundTrip_experiment runClient runServer ranges (Positive queueSize) probe = do
   (serverReceiver, serverSender) <- connectThroughQueue (fromIntegral queueSize) blockStream
-  clientSender <- blockFetchClientSenderFromProducer
-    (Pipes.each (map Just ranges ++ [Nothing]) >> return ())
+  let clientSender = blockFetchClientSenderFromProducer
+        (Pipes.each (map Just ranges ++ [Nothing]) >> return ())
   fork $ runClient serverReceiver clientSender
   fork $ do
     res <- runServer serverSender blockFetchClientReceiver
