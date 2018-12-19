@@ -35,6 +35,7 @@ import           Ouroboros.Network.Node
 
 import           Ouroboros.Consensus.Demo
 import           Ouroboros.Consensus.Node (NumSlots (..))
+import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Praos
 import           Ouroboros.Consensus.Util.Chain (dropLastBlocks, lastSlot)
 import           Ouroboros.Consensus.Util.Condense
@@ -64,30 +65,31 @@ tests = testGroup "Dynamic chain generation"
   where
     testPraos :: Seed -> Property
     testPraos = prop_simple_praos_convergence
-          (NumSlots (fromIntegral numSlots))
-          (NumCoreNodes 3)
-          params
+                  params
+                  (NumCoreNodes 3)
+                  (NumSlots (fromIntegral numSlots))
 
     params@PraosParams{..} = defaultDemoPraosParams
-    numSlots  = praosK * praosSlotsPerEpoch * numEpochs
+    numSlots  = maxRollbacks praosSecurityParam * praosSlotsPerEpoch * numEpochs
     numEpochs = 3
 
-prop_simple_praos_convergence :: NumSlots
+prop_simple_praos_convergence :: PraosParams
                               -> NumCoreNodes
-                              -> PraosParams
+                              -> NumSlots
                               -> Seed
                               -> Property
-prop_simple_praos_convergence numSlots numCoreNodes params =
+prop_simple_praos_convergence params numCoreNodes numSlots =
     prop_simple_protocol_convergence
       (protocolInfo (DemoPraos params) numCoreNodes)
       isValid
-      numSlots
       numCoreNodes
+      numSlots
   where
     PraosParams{..} = params
 
-    isValid :: [NodeId]
-            -> [(VTime, Map NodeId (Chain (Block DemoPraos)))]
+    isValid :: Show time
+            => [NodeId]
+            -> [(time, Map NodeId (Chain (Block DemoPraos)))]
             -> Property
     isValid nodeIds trace = counterexample (show trace) $
       case trace of
@@ -101,10 +103,12 @@ prop_simple_praos_convergence numSlots numCoreNodes params =
                 $ label ("longest crowded run " <> show crowded)
                 $ collect (shortestLength final)
                 $ (Map.keys final === nodeIds)
-                  .&&. if crowded > fromIntegral praosK
+                  .&&. if crowded > maxRollbacks praosSecurityParam
                         then label "too crowded"     $ property True
                         else label "not too crowded" $
-                                prop_all_common_prefix praosK (Map.elems final)
+                                prop_all_common_prefix
+                                  (maxRollbacks praosSecurityParam)
+                                  (Map.elems final)
         _otherwise   -> property False
 
 prop_all_common_prefix :: (HasHeader b, Condense b, Eq b)

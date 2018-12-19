@@ -21,6 +21,7 @@ module Ouroboros.Consensus.Demo (
   , DemoProtocolConstraints
   , demoProtocolConstraints
     -- * Support for runnig the demos
+  , defaultSecurityParam
   , defaultDemoPraosParams
   , enumCoreNodes
   , HasCreator(..)
@@ -62,7 +63,7 @@ type DemoLeaderSchedule = WithLeaderSchedule (Praos PraosMockCrypto)
 
 -- | Consensus protocol to use
 data DemoProtocol p where
-  DemoBFT            :: DemoProtocol DemoBFT
+  DemoBFT            :: SecurityParam -> DemoProtocol DemoBFT
   DemoPraos          :: PraosParams -> DemoProtocol DemoPraos
   DemoLeaderSchedule :: LeaderSchedule -> PraosParams -> DemoProtocol DemoLeaderSchedule
 
@@ -87,20 +88,24 @@ type DemoProtocolConstraints p = (
   )
 
 demoProtocolConstraints :: DemoProtocol p -> Dict (DemoProtocolConstraints p)
-demoProtocolConstraints DemoBFT                  = Dict
-demoProtocolConstraints (DemoPraos _)            = Dict
-demoProtocolConstraints (DemoLeaderSchedule _ _) = Dict
+demoProtocolConstraints DemoBFT{}            = Dict
+demoProtocolConstraints DemoPraos{}          = Dict
+demoProtocolConstraints DemoLeaderSchedule{} = Dict
 
 newtype NumCoreNodes = NumCoreNodes Int
+  deriving (Show)
 
 -- | Info needed to run the selected protocol
 protocolInfo :: DemoProtocol p -> NumCoreNodes -> CoreNodeId -> ProtocolInfo p
-protocolInfo DemoBFT (NumCoreNodes numCoreNodes) (CoreNodeId nid) =
+protocolInfo (DemoBFT securityParam) (NumCoreNodes numCoreNodes) (CoreNodeId nid) =
     ProtocolInfo {
         pInfoConfig = BftNodeConfig {
-            bftNodeId   = CoreId nid
+            bftParams   = BftParams {
+                              bftNumNodes      = fromIntegral numCoreNodes
+                            , bftSecurityParam = securityParam
+                            }
+          , bftNodeId   = CoreId nid
           , bftSignKey  = SignKeyMockDSIGN nid
-          , bftNumNodes = fromIntegral numCoreNodes
           , bftVerKeys  = Map.fromList [
                 (CoreId n, VerKeyMockDSIGN n)
               | n <- [0 .. numCoreNodes - 1]
@@ -188,9 +193,12 @@ protocolInfo (DemoLeaderSchedule schedule params)
   Support for running the demos
 -------------------------------------------------------------------------------}
 
+defaultSecurityParam :: SecurityParam
+defaultSecurityParam = SecurityParam 5
+
 defaultDemoPraosParams :: PraosParams
 defaultDemoPraosParams = PraosParams {
-      praosK             = 5
+      praosSecurityParam = defaultSecurityParam
     , praosSlotsPerEpoch = 3
     , praosLeaderF       = 0.5
     , praosLifetimeKES   = 1000000

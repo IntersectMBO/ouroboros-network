@@ -1,26 +1,32 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 
-module Ouroboros.Consensus.Util.Random
-    ( MonadRandom (..)
-    , Seed (..)
-    , nonNegIntR
+module Ouroboros.Consensus.Util.Random (
+      -- * Producing values in MonadRandom
+      nonNegIntR
+    , generateElement
+      -- * Producing values in Gen
     , genNatBetween
     , genNat
     , shrinkNat
+      -- * Connecting MonadRandom to Gen
+    , Seed (..)
     , withSeed
-    , MonadPseudoRandomT -- opaque
-    , withDRGT
     , seedToChaCha
     , nullSeed
-    , generateElement
+      -- * Adding DRNG to a monad stack
+    , ChaChaT -- opaque
+    , runChaChaT
+      -- * Convenience re-exports
+    , MonadRandom (..)
+    , ChaChaDRG
     )
     where
 
 import           Control.Monad.State
 import           Crypto.Number.Generate (generateBetween)
-import           Crypto.Random (ChaChaDRG, DRG, MonadPseudoRandom,
-                     MonadRandom (..), drgNewTest, randomBytesGenerate,
-                     withDRG)
+import           Crypto.Random (ChaChaDRG, MonadPseudoRandom, MonadRandom (..),
+                     drgNewTest, randomBytesGenerate, withDRG)
 import           Data.ByteString (ByteString, unpack)
 import           Data.List (genericLength)
 import           Data.Word (Word64)
@@ -29,6 +35,10 @@ import           Test.QuickCheck
 
 import           Ouroboros.Network.Serialise (Serialise)
 
+{-------------------------------------------------------------------------------
+  Producing values in MonadRandom
+-------------------------------------------------------------------------------}
+
 nonNegIntR :: MonadRandom m => m Int
 nonNegIntR = toInt <$> getRandomBytes 4
   where
@@ -36,6 +46,16 @@ nonNegIntR = toInt <$> getRandomBytes 4
     toInt bs =
         let [a, b, c, d] = map fromIntegral $ unpack bs
         in  a + 256 * b + 65536 * c + 16777216 * d
+
+generateElement :: MonadRandom m => [a] -> m (Maybe a)
+generateElement [] = return Nothing
+generateElement xs = do
+    i <- fromIntegral <$> generateBetween 0 (genericLength xs - 1)
+    return $ Just $ xs !! i
+
+{-------------------------------------------------------------------------------
+  Producing values in Gen
+-------------------------------------------------------------------------------}
 
 genNatBetween :: Natural -> Natural -> Gen Natural
 genNatBetween from to = do
@@ -49,6 +69,10 @@ genNat = do
 
 shrinkNat :: Natural -> [Natural]
 shrinkNat = map fromIntegral . shrink . toInteger
+
+{-------------------------------------------------------------------------------
+  Connecting MonadRandom to Gen
+-------------------------------------------------------------------------------}
 
 newtype Seed = Seed {getSeed :: (Word64, Word64, Word64, Word64, Word64)}
     deriving (Show, Eq, Ord, Serialise)
@@ -71,23 +95,19 @@ seedToChaCha = drgNewTest . getSeed
 nullSeed :: Seed
 nullSeed = Seed (0,0,0,0,0)
 
--- | Monad transformer version of 'MonadPseudoRandom'
-newtype MonadPseudoRandomT gen m a = MonadPseudoRandomT {
-      unMonadPseudoRandomT :: StateT gen m a
-    }
+{-------------------------------------------------------------------------------
+  Adding DRNG to a monad stack
+-------------------------------------------------------------------------------}
+
+-- | Add DRNG to a monad stack
+newtype ChaChaT m a = ChaChaT { unChaChaT :: StateT ChaChaDRG m a }
   deriving (Functor, Applicative, Monad, MonadTrans)
 
-instance (Monad m, DRG gen) => MonadRandom (MonadPseudoRandomT gen m) where
-  getRandomBytes = MonadPseudoRandomT . state . randomBytesGenerate
+instance Monad m => MonadRandom (ChaChaT m) where
+  getRandomBytes = ChaChaT . state . randomBytesGenerate
 
 -- | Run the 'MonadPseudoRandomT' monad
 --
 -- This is the analogue of cryptonite's 'withDRG'.
-withDRGT :: MonadPseudoRandomT gen m a -> gen -> m (a, gen)
-withDRGT = runStateT  . unMonadPseudoRandomT
-
-generateElement :: MonadRandom m => [a] -> m (Maybe a)
-generateElement [] = return Nothing
-generateElement xs = do
-    i <- fromIntegral <$> generateBetween 0 (genericLength xs - 1)
-    return $ Just $ xs !! i
+runChaChaT :: ChaChaT m a -> ChaChaDRG -> m (a, ChaChaDRG)
+runChaChaT = runStateT  . unChaChaT

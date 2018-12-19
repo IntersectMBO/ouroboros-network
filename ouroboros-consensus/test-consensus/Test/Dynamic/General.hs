@@ -22,10 +22,10 @@ import           Control.Monad.ST.Lazy (runST)
 import           Data.Map.Strict (Map)
 import           Test.QuickCheck
 
+import           Control.Monad.Class.MonadProbe
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTimer
-import           Control.Monad.Class.MonadProbe
 import           Control.Monad.IOSim (VTime)
 
 import           Ouroboros.Network.Chain
@@ -39,15 +39,16 @@ import           Test.Dynamic.Network
 
 prop_simple_protocol_convergence :: forall p. DemoProtocolConstraints p
                                  => (CoreNodeId -> ProtocolInfo p)
-                                 -> (   [NodeId]
-                                     -> [(VTime, Map NodeId (Chain (Block p)))]
+                                 -> (forall time. Show time
+                                     => [NodeId]
+                                     -> [(time, Map NodeId (Chain (Block p)))]
                                      -> Property)
-                                 -> NumSlots
                                  -> NumCoreNodes
+                                 -> NumSlots
                                  -> Seed
                                  -> Property
-prop_simple_protocol_convergence pInfo isValid numSlots numCoreNodes seed =
-    runST $ test_simple_protocol_convergence pInfo isValid numSlots numCoreNodes seed
+prop_simple_protocol_convergence pInfo isValid numCoreNodes numSlots seed =
+    runST $ test_simple_protocol_convergence pInfo isValid numCoreNodes numSlots seed
 
 -- Run protocol on the broadcast network, and check resulting chains on all nodes.
 test_simple_protocol_convergence :: forall m n p.
@@ -61,11 +62,11 @@ test_simple_protocol_convergence :: forall m n p.
                                  -> (   [NodeId]
                                      -> [(Time m, Map NodeId (Chain (Block p)))]
                                      -> Property)
-                                 -> NumSlots
                                  -> NumCoreNodes
+                                 -> NumSlots
                                  -> Seed
                                  -> n Property
-test_simple_protocol_convergence pInfo isValid numSlots numCoreNodes seed = do
+test_simple_protocol_convergence pInfo isValid numCoreNodes numSlots seed =
     fmap (isValid nodeIds) $ withProbe $ go
   where
     go :: Probe m (Map NodeId (Chain (Block p))) -> m ()

@@ -19,12 +19,16 @@ module Ouroboros.Consensus.Util (
   , pickOne
   , markLast
   , lastMaybe
+  , fib
+  , allDisjoint
   ) where
 
 import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Kind (Constraint)
 import           Data.List (foldl')
+import           Data.Set (Set)
+import qualified Data.Set as Set
 import           GHC.Stack
 
 data Dict (a :: Constraint) where
@@ -98,3 +102,19 @@ lastMaybe :: [a] -> Maybe a
 lastMaybe []     = Nothing
 lastMaybe [x]    = Just x
 lastMaybe (_:xs) = lastMaybe xs
+
+-- | Fast Fibonacci computation, using Binet's formula
+fib :: Word -> Word
+fib n = round $ phi ** fromIntegral n / sq5
+  where
+    sq5, phi :: Double
+    sq5 = sqrt 5
+    phi = (1 + sq5) / 2
+
+-- | Check that a bunch of sets are all mutually disjoint
+allDisjoint :: forall a. Ord a => [Set a] -> Bool
+allDisjoint = go Set.empty
+  where
+    go :: Set a -> [Set a] -> Bool
+    go _   []       = True
+    go acc (xs:xss) = Set.disjoint acc xs && go (Set.union acc xs) xss

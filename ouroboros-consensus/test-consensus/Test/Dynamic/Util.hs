@@ -211,10 +211,10 @@ leaderScheduleFromTrace (NumSlots numSlots) =
 -- more than one leader, possibly interrupted by slots without leader.
 -- There can be no such sequence, but if there is, first slot and number of
 -- multi-leader slots are given.
-newtype CrowdedRun = CrowdedRun (Maybe (Slot, Int))
+newtype CrowdedRun = CrowdedRun (Maybe (Slot, Word))
     deriving (Show, Eq)
 
-crowdedRunLength :: CrowdedRun -> Int
+crowdedRunLength :: CrowdedRun -> Word
 crowdedRunLength (CrowdedRun m) = maybe 0 snd m
 
 instance Ord CrowdedRun where

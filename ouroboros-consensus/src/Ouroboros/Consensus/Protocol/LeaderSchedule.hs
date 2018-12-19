@@ -59,7 +59,9 @@ instance OuroborosTag p => OuroborosTag (WithLeaderSchedule p) where
 
   mkPayload cfg () _ph = return $ WLSPayload $ lsNodeConfigNodeId cfg
 
-  compareChain WLSNodeConfig{..} = compareChain lsNodeConfigP
+  preferCandidate       WLSNodeConfig{..} = preferCandidate       lsNodeConfigP
+  compareCandidates     WLSNodeConfig{..} = compareCandidates     lsNodeConfigP
+  protocolSecurityParam WLSNodeConfig{..} = protocolSecurityParam lsNodeConfigP
 
   checkIsLeader WLSNodeConfig{..} slot _ _ = return $
     case Map.lookup slot $ getLeaderSchedule lsNodeConfigSchedule of

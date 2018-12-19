@@ -34,6 +34,7 @@ import           Ouroboros.Network.Node
 
 import           Ouroboros.Consensus.Demo
 import           Ouroboros.Consensus.Node
+import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.LeaderSchedule
 import           Ouroboros.Consensus.Protocol.Praos
 import           Ouroboros.Consensus.Util.Condense (Condense (..))
@@ -54,7 +55,7 @@ tests = testGroup "Dynamic chain generation"
     ]
   where
     params@PraosParams{..} = defaultDemoPraosParams
-    numSlots  = praosK * praosSlotsPerEpoch * numEpochs
+    numSlots  = maxRollbacks praosSecurityParam * praosSlotsPerEpoch * numEpochs
     numEpochs = 3
 
 prop_simple_leader_schedule_convergence :: NumSlots
@@ -73,12 +74,12 @@ prop_simple_leader_schedule_convergence numSlots numCoreNodes params seed =
                 $ prop_simple_protocol_convergence
                     (protocolInfo (DemoLeaderSchedule schedule params) numCoreNodes)
                     isValid
-                    numSlots
                     numCoreNodes
+                    numSlots
                     seed
   where
     isValid :: [NodeId]
-            -> [(VTime, Map NodeId (Chain (Block DemoLeaderSchedule)))]
+            -> [(time, Map NodeId (Chain (Block DemoLeaderSchedule)))]
             -> Property
     isValid nodeIds trace =
       case trace of
@@ -86,7 +87,7 @@ prop_simple_leader_schedule_convergence numSlots numCoreNodes params seed =
                      $    collect (shortestLength final)
                      $    Map.keys final === nodeIds
                      .&&. prop_all_common_prefix
-                            (fromIntegral $ praosK params)
+                            (fromIntegral (maxRollbacks $ praosSecurityParam params))
                             (Map.elems final)
         _otherwise   -> property False
 
@@ -121,7 +122,7 @@ genLeaderSchedule (NumSlots numSlots) (NumCoreNodes numCoreNodes) PraosParams{..
 
         notTooCrowded :: LeaderSchedule -> Bool
         notTooCrowded schedule =
-            crowdedRunLength (longestCrowdedRun schedule) <= fromIntegral praosK
+            crowdedRunLength (longestCrowdedRun schedule) <= maxRollbacks praosSecurityParam
 
 shrinkLeaderSchedule :: NumSlots -> LeaderSchedule -> [LeaderSchedule]
 shrinkLeaderSchedule (NumSlots numSlots) (LeaderSchedule m) =

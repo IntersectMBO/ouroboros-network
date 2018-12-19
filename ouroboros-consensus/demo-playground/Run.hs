@@ -29,8 +29,6 @@ import qualified Ouroboros.Consensus.Ledger.Mock as Mock
 import           Ouroboros.Consensus.Node
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.Orphans ()
-import           Ouroboros.Consensus.Util.Random
-import           Ouroboros.Consensus.Util.STM
 
 import           CLI
 import           Logging
@@ -89,7 +87,7 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
              -- and producer threads.
              nodeMempool <- atomically $ newTVar initialPool
 
-             let callbacks :: NodeCallbacks IO (MonadPseudoRandomT ChaChaDRG) (Block p)
+             let callbacks :: NodeCallbacks IO (Block p)
                  callbacks = NodeCallbacks {
                      produceBlock = \proof l slot prevPoint prevBlockNo -> do
                         let curNo    = succ prevBlockNo
@@ -111,31 +109,24 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
                                         prevHash
                                         txs
                                         proof
+                 , produceDRG      = drgNew
                  , adoptedNewChain = logChain loggingQueue
                  }
 
-             -- TODO: This use of STM is actually not correct, we need to revisit
-             -- this one and use a SystemDRG (which lives in IO).
-             randomnessSource <- atomically $ newTVar (seedToChaCha nullSeed)
-             blockchainTime <- realBlockchainTime systemStart slotDuration
-
-
-             kernelHandle <-
-                 nodeKernel pInfoConfig
-                            pInfoInitState
-                            (simMonadPseudoRandomT randomnessSource)
-                            blockchainTime
-                            pInfoInitLedger
-                            pInfoInitChain
-                            callbacks
+             btime  <- realBlockchainTime systemStart slotDuration
+             kernel <- nodeKernel
+                         pInfoConfig
+                         pInfoInitState
+                         btime
+                         pInfoInitLedger
+                         pInfoInitChain
+                         callbacks
 
              -- Spawn the thread which listens to the mempool.
-             mempoolThread <-
-                     spawnMempoolListener myNodeId nodeMempool kernelHandle
+             mempoolThread <- spawnMempoolListener myNodeId nodeMempool kernel
 
-
-             forM_ (producers nodeSetup) (addUpstream kernelHandle)
-             forM_ (consumers nodeSetup) (addDownstream kernelHandle)
+             forM_ (producers nodeSetup) (addUpstream'   kernel)
+             forM_ (consumers nodeSetup) (addDownstream' kernel)
 
              let allThreads = terminalThread : [mempoolThread]
              void $ Async.waitAnyCancel allThreads
@@ -153,24 +144,30 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
       -- We need to make sure that both nodes read from the same file
       -- We therefore use the convention to distinguish between
       -- upstream and downstream from the perspective of the "lower numbered" node
-      addUpstream :: NodeKernel IO NodeId (Block p)
-                  -> NodeId
-                  -> IO ()
-      addUpstream kernel producerNodeId = do
-        let direction = Upstream (producerNodeId :==>: myNodeId)
-        registerUpstream (nodeNetworkLayer kernel)
-                         producerNodeId
-                         (hoistCodec stToIO codecChainSync) $ \cc ->
-          NamedPipe.withPipe direction $ \(hndRead, hndWrite) ->
-            cc (P.pipeDuplex hndRead hndWrite)
+      addUpstream' :: NodeKernel IO NodeId (Block p)
+                   -> NodeId
+                   -> IO ()
+      addUpstream' kernel producerNodeId =
+          addUpstream kernel producerNodeId nodeComms
+        where
+          direction = Upstream (producerNodeId :==>: myNodeId)
+          nodeComms = NodeComms {
+              ncCodec    = hoistCodec stToIO codecChainSync
+            , ncWithChan = \cc ->
+                NamedPipe.withPipe direction $ \(hndRead, hndWrite) ->
+                  cc (P.pipeDuplex hndRead hndWrite)
+            }
 
-      addDownstream :: NodeKernel IO NodeId (Block p)
-                    -> NodeId
-                    -> IO ()
-      addDownstream kernel consumerNodeId = do
-        let direction = Downstream (myNodeId :==>: consumerNodeId)
-        registerDownstream (nodeNetworkLayer kernel)
-                           (hoistCodec stToIO codecChainSync)
-                           $ \cc ->
-          NamedPipe.withPipe direction $ \(hndRead, hndWrite) -> do
-              cc (P.pipeDuplex hndRead hndWrite)
+      addDownstream' :: NodeKernel IO NodeId (Block p)
+                     -> NodeId
+                     -> IO ()
+      addDownstream' kernel consumerNodeId =
+          addDownstream kernel nodeComms
+        where
+          direction = Downstream (myNodeId :==>: consumerNodeId)
+          nodeComms = NodeComms {
+              ncCodec    = hoistCodec stToIO codecChainSync
+            , ncWithChan = \cc ->
+                NamedPipe.withPipe direction $ \(hndRead, hndWrite) ->
+                 cc (P.pipeDuplex hndRead hndWrite)
+            }

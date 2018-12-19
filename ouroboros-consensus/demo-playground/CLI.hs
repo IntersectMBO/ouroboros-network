@@ -56,7 +56,7 @@ parseSlotDuration = option auto (long "slot-duration" <>
 
 parseProtocol :: Parser (Some DemoProtocol)
 parseProtocol = asum [
-      flag' (Some DemoBFT) $ mconcat [
+      flag' (Some (DemoBFT defaultSecurityParam)) $ mconcat [
           long "bft"
         , help "Use the BFT consensus algorithm"
         ]
