@@ -14,41 +14,48 @@ import Ouroboros.Network.Protocol.BlockFetch.Type
   Client stream of @'BlockFetchClientProtocol'@ protocol
 -------------------------------------------------------------------------------}
 
-data BlockFetchClientSender range m a where
+newtype BlockFetchClientSender range m a = BlockFetchClientSender {
+    runBlockFetchClientSender :: m (BlockFetchClientRequest range m a)
+  }
+
+data BlockFetchClientRequest range m a where
 
   -- | Send a request for a range of blocks.
   --
-  SendBlockRequestMsg
+  BlockFetchClientRange
     :: range
-    -> m (BlockFetchClientSender range m a)
     -> BlockFetchClientSender range m a
+    -> BlockFetchClientRequest range m a
 
   -- | The client decided to end the protocol.
   --
-  SendMsgDone
+  BlockFetchClientDone
     :: a
-    -> BlockFetchClientSender range m a
+    -> BlockFetchClientRequest range m a
 
 blockFetchClientSenderFromProducer
   :: Monad m
   => Producer range m a
-  -> m (BlockFetchClientSender range m a)
-blockFetchClientSenderFromProducer producer = Pipes.next producer >>= \nxt -> case nxt of
-  Left a                   -> return $ SendMsgDone a
-  Right (range, producer') -> return $ SendBlockRequestMsg range (blockFetchClientSenderFromProducer producer')
+  -> BlockFetchClientSender range m a
+blockFetchClientSenderFromProducer producer = BlockFetchClientSender $
+  Pipes.next producer >>= \nxt -> case nxt of
+  Left a                   -> return $ BlockFetchClientDone a
+  Right (range, producer') -> return $ BlockFetchClientRange range (blockFetchClientSenderFromProducer producer')
 
 blockFetchClientSenderStream
-  :: ( Functor m )
+  :: ( Monad m )
   => BlockFetchClientSender range m a
   -> Peer BlockFetchClientProtocol
       (BlockRequestClientMessage range)
       (Yielding StClientIdle)
       (Finished StClientDone)
       m a
-blockFetchClientSenderStream (SendBlockRequestMsg range next) =
-  part (MessageRequestRange range) $
-    lift (blockFetchClientSenderStream <$> next)
-blockFetchClientSenderStream (SendMsgDone a) = out MessageDone (done a)
+blockFetchClientSenderStream (BlockFetchClientSender sender) = lift $ sender >>= return . request
+ where
+  request (BlockFetchClientRange range next) =
+    part (MessageRequestRange range) $
+      (blockFetchClientSenderStream next)
+  request (BlockFetchClientDone a) = out MessageDone (done a)
 
 {-------------------------------------------------------------------------------
   Client stream of @'BlockFetchServerProtocol'@ protocol

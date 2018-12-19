@@ -16,11 +16,13 @@ directBlockFetchClient
   -> BlockFetchClientSender range m b
   -- ^ client of the @'BlockFetchClientProtocol'@ protocol
   -> m (a, b)
-directBlockFetchClient BlockFetchServerReceiver {recvMessageRequestRange} (SendBlockRequestMsg range msender) = do
-  server <- recvMessageRequestRange range
-  sender <- msender
-  directBlockFetchClient server sender
-directBlockFetchClient BlockFetchServerReceiver {recvMessageDone} (SendMsgDone b) = (,b) <$> recvMessageDone
+directBlockFetchClient BlockFetchServerReceiver {recvMessageRequestRange,recvMessageDone} (BlockFetchClientSender sender) =
+  sender >>= request
+ where
+  request (BlockFetchClientRange range sender') = do
+    server <- recvMessageRequestRange range
+    directBlockFetchClient server sender'
+  request (BlockFetchClientDone b) = (,b) <$> recvMessageDone
 
 -- | Direclty connect server and client adts of @'BlockFetchServerProtocol'@.
 --
