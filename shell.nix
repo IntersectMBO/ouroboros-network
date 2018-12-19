@@ -1,4 +1,4 @@
-{ compiler   ? "ghc862"
+{ compiler   ? "ghc844"
 , haddock    ? true
 , test       ? true
 , benchmarks ? false
