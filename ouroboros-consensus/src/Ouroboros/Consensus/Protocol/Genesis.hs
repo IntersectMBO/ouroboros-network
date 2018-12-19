@@ -1,14 +1,17 @@
-{-# LANGUAGE RecordWildCards    #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE TypeFamilies       #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE StandaloneDeriving    #-}
+{-# LANGUAGE TypeFamilies          #-}
 
 module Ouroboros.Consensus.Protocol.Genesis (
-    Genesis
+    HasK (..)
+  , Genesis
   ) where
 
-import           Data.List (foldl')
 import           Numeric.Natural (Natural)
 
+import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.ModChainSel
 import           Ouroboros.Consensus.Protocol.Praos
@@ -17,34 +20,37 @@ import           Ouroboros.Consensus.Util.Chain (forksAtMostKBlocks,
 import           Ouroboros.Network.Block (Slot (..))
 import qualified Ouroboros.Network.Chain as Chain
 
-type Genesis c = ExtNodeConfig Natural (Praos c)
+class OuroborosTag p => HasK p where
+    getK :: NodeConfig p -> Word
 
-data GenesisChainSelection c
+type Genesis p = ModChainSel (ExtNodeConfig Natural p) (GenesisChainSelection p)
 
-instance PraosCrypto c => ChainSelection (GenesisChainSelection c) where
+data GenesisChainSelection p
 
-    type Protocol (GenesisChainSelection c) = Genesis c
+instance HasK p => ChainSelection (ExtNodeConfig Natural p) (GenesisChainSelection p) where
 
-    selectChain' _ EncNodeConfig{..} slot ours = foldl' f ours . map (upToSlot slot)
-      where
-        PraosParams{..} = praosParams encNodeConfigP
-
-        f cmax c
-            | forksAtMostKBlocks k cmax c = if Chain.length c > Chain.length cmax
-                                                then c
-                                                else cmax
-            | otherwise                   =
-                let sl = case intersectionSlot cmax c of
+    compareChain' _ EncNodeConfig{..} slot ours theirs
+        | forksAtMostKBlocks k ours' theirs' = compareChain encNodeConfigP slot ours theirs
+        | otherwise                          =
+            let sl    = case intersectionSlot ours' theirs' of
                             Nothing -> Slot s
                             Just j  -> Slot $ s + getSlot j
-                    cmax' = upToSlot sl cmax
-                    c'    = upToSlot sl c
-                in  if Chain.length c' > Chain.length cmax'
-                        then c
-                        else cmax
+                ours''   = upToSlot sl ours'
+                theirs'' = upToSlot sl theirs'
+            in  if Chain.length theirs'' > Chain.length ours''
+                    then Theirs
+                    else Ours
+      where
+        clip = upToSlot slot
+
+        ours'   = clip ours
+        theirs' = clip theirs
 
         k :: Int
-        k = fromIntegral praosK
+        k = fromIntegral $ getK encNodeConfigP
 
         s :: Word
         s = fromIntegral encNodeConfigExt
+
+instance PraosCrypto c => HasK (Praos c) where
+    getK = praosK . praosParams

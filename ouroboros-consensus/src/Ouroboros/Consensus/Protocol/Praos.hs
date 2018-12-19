@@ -27,7 +27,6 @@ import           Control.Monad (unless)
 import           Control.Monad.Except (throwError)
 import           Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
-import           Data.List (foldl')
 import           Data.Proxy (Proxy (..))
 import           GHC.Generics (Generic)
 import           Numeric.Natural
@@ -238,16 +237,20 @@ instance PraosCrypto c => OuroborosTag (Praos c) where
 
     return $ bi : cs
 
-  selectChain PraosNodeConfig{..} slot ours = foldl' f ours . map (upToSlot slot)
+  compareChain PraosNodeConfig{..} slot ours theirs
+    |    forksAtMostKBlocks k ours' theirs'
+      && Chain.length theirs' > Chain.length ours' = Theirs
+    | otherwise                                    = Ours
     where
+      clip = upToSlot slot
+
+      ours'   = clip ours
+      theirs' = clip theirs
+
       PraosParams{..} = praosParams
 
       k :: Int
       k = fromIntegral praosK
-
-      f cmax c
-        | forksAtMostKBlocks k cmax c && Chain.length c > Chain.length cmax = c
-        | otherwise                                                         = cmax
 
 deriving instance PraosCrypto c => Show (Payload (Praos c) ph)
 deriving instance PraosCrypto c => Eq   (Payload (Praos c) ph)

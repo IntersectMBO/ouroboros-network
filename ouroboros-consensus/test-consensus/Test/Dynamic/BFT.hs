@@ -14,7 +14,6 @@
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE UndecidableInstances  #-}
 
-{-# OPTIONS -fno-warn-unused-binds #-}
 {-# OPTIONS -fno-warn-orphans #-}
 
 module Test.Dynamic.BFT (

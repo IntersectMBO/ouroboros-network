@@ -8,7 +8,6 @@ maintainer:          operations@iohk.io
 copyright:           2018 IOHK
 category:            Network
 build-type:          Simple
-extra-source-files:  ChangeLog.md, README.md
 cabal-version:       >=1.10
 
 source-repository head
@@ -49,6 +48,7 @@ library
                        Ouroboros.Consensus.Protocol.Abstract
                        Ouroboros.Consensus.Protocol.BFT
                        Ouroboros.Consensus.Protocol.Genesis
+                       Ouroboros.Consensus.Protocol.LeaderSchedule
                        Ouroboros.Consensus.Protocol.Praos
                        Ouroboros.Consensus.Protocol.Test
                        Ouroboros.Consensus.Protocol.ExtNodeConfig
@@ -182,6 +182,7 @@ test-suite test-consensus
   other-modules:
                     Test.Dynamic.BFT
                     Test.Dynamic.General
+                    Test.Dynamic.LeaderSchedule
                     Test.Dynamic.Network
                     Test.Dynamic.Praos
                     Test.Dynamic.Util
@@ -193,11 +194,14 @@ test-suite test-consensus
 
                     containers,
                     cryptonite,
+                    fgl,
+                    graphviz,
                     mtl,
                     QuickCheck,
                     serialise,
                     tasty,
-                    tasty-quickcheck
+                    tasty-quickcheck,
+                    text
 
   ghc-options:      -Wall
                     -fno-ignore-asserts

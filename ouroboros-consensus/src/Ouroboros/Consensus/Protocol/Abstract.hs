@@ -10,8 +10,10 @@
 {-# LANGUAGE UndecidableInstances       #-}
 
 module Ouroboros.Consensus.Protocol.Abstract (
+    PreferredChain(..)
     -- * Abstract definition of the Ouroboros protocl
-    OuroborosTag(..)
+  , OuroborosTag(..)
+  , selectChain
   , HasPreHeader(..)
   , HasPayload(..)
     -- * State monad for Ouroboros state
@@ -31,8 +33,7 @@ import           Control.Monad.State
 import           Crypto.Random (MonadRandom (..))
 import           Data.Functor.Identity
 import           Data.Kind (Constraint)
-import           Data.List (sortBy)
-import           Data.Ord (comparing)
+import           Data.List (foldl')
 
 import           Ouroboros.Network.Block (HasHeader (..), Slot)
 import           Ouroboros.Network.Chain (Chain (..))
@@ -41,6 +42,9 @@ import           Ouroboros.Network.Serialise (Serialise)
 
 import           Ouroboros.Consensus.Util.Chain (upToSlot)
 import           Ouroboros.Consensus.Util.Random
+
+data PreferredChain = Ours | Theirs
+    deriving (Show, Read, Eq, Ord)
 
 -- | The (open) universe of Ouroboros protocols
 --
@@ -96,17 +100,17 @@ class ( Show (ChainState    p)
             -> m (Payload p ph)
 
   -- | Chain selection
-  selectChain :: (Eq b, HasHeader b, SupportedBlock p b)
-              => NodeConfig p
-              -> Slot       -- ^ Present slot
-              -> Chain b    -- ^ Our chain
-              -> [Chain b]  -- ^ Upstream chains
-              -> Chain b
-  selectChain _ slot ourChain candidates =
-      -- will prioritize our own since sortBy is stable
-      head $ sortBy (flip (comparing Chain.length))
-           $ map (upToSlot slot)
-           $ ourChain : candidates
+  compareChain :: (Eq b, HasHeader b)
+               => NodeConfig p
+               -> Slot         -- ^ Present slot
+               -> Chain b      -- ^ Our chain
+               -> Chain b      -- ^ Upstream chain
+               -> PreferredChain
+  compareChain _ slot ourChain theirChain
+    | len ourChain >= len theirChain = Ours
+    | otherwise                      = Theirs
+    where
+      len = Chain.length . upToSlot slot
 
   -- | Check if a node is the leader
   checkIsLeader :: (HasNodeState p m, MonadRandom m)
@@ -123,6 +127,19 @@ class ( Show (ChainState    p)
                   -> b
                   -> ChainState p -- /Previous/ Ouroboros state
                   -> Except (ValidationErr p) (ChainState p)
+
+selectChain :: forall p b. (OuroborosTag p, Eq b, HasHeader b)
+            => NodeConfig p
+            -> Slot         -- ^ Present slot
+            -> Chain b      -- ^ Our chain
+            -> [Chain b]    -- ^ Upstream chains
+            -> Chain b
+selectChain cfg slot ourChain = foldl' f ourChain
+  where
+    f :: Chain b -> Chain b -> Chain b
+    f ours theirs = case compareChain cfg slot ours theirs of
+        Ours   -> ours
+        Theirs -> theirs
 
 -- | Extract the pre-header from a block
 class (HasHeader b, Serialise (PreHeader b)) => HasPreHeader b where

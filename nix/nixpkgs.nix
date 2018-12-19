@@ -10,6 +10,7 @@ let
           overrides = self: super:
             { psqueues = lib.dontCheck super.psqueues;
               aeson    = lib.dontCheck super.aeson;
+              graphviz = lib.dontCheck super.graphviz;
               QuickCheck = super.QuickCheck_2_12_6_1;
               hspec = super.hspec_2_6_0;
               hspec-core = super.hspec-core_2_6_0;
