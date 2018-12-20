@@ -19,15 +19,17 @@ import           GHC.Generics (Generic)
 import           Ouroboros.Network.Block (Slot (..))
 import           Ouroboros.Network.Serialise (Serialise)
 
+import           Ouroboros.Consensus.Node (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.Condense (Condense (..))
 
-newtype LeaderSchedule = LeaderSchedule {getLeaderSchedule :: Map Slot [Int]}
+newtype LeaderSchedule = LeaderSchedule {getLeaderSchedule :: Map Slot [CoreNodeId]}
     deriving (Show, Eq, Ord)
 
 instance Condense LeaderSchedule where
     condense (LeaderSchedule m) = show
-                                $ map (\(s, ls) -> (getSlot s, ls))
+                                $ map (\(s, ls) ->
+                                    (getSlot s, map (\(CoreNodeId nid) -> nid) ls))
                                 $ Map.toList m
 
 -- | Extension of protocol @p@ by a static leader schedule.
@@ -39,7 +41,7 @@ instance NoConstraint a
 instance OuroborosTag p => OuroborosTag (WithLeaderSchedule p) where
 
   -- | The payload is just the id of the block creator (just for testing).
-  newtype Payload (WithLeaderSchedule p) ph = WLSPayload {getWLSPayload :: Int}
+  newtype Payload (WithLeaderSchedule p) ph = WLSPayload {getWLSPayload :: CoreNodeId}
     deriving (Generic, Condense)
 
   type ChainState     (WithLeaderSchedule p) = ()
@@ -52,7 +54,7 @@ instance OuroborosTag p => OuroborosTag (WithLeaderSchedule p) where
   data NodeConfig (WithLeaderSchedule p) = WLSNodeConfig
     { lsNodeConfigSchedule :: LeaderSchedule
     , lsNodeConfigP        :: NodeConfig p
-    , lsNodeConfigNodeId   :: Int
+    , lsNodeConfigNodeId   :: CoreNodeId
     }
 
   mkPayload cfg () _ph = return $ WLSPayload $ lsNodeConfigNodeId cfg
