@@ -15,6 +15,17 @@
 \usepackage{microtype}
 \usepackage{graphicx,color}
 \usepackage{tikz}
+\usetikzlibrary{automata, positioning, arrows}
+\tikzset{
+    state/.style={
+           rectangle,
+           rounded corners,
+           draw=black, very thick,
+           minimum height=2em,
+           inner sep=2pt,
+           text centered,
+           },
+}
 
 \usepackage{hyperref}
 \hypersetup{
@@ -32,8 +43,6 @@
 \makeatletter
 \let\if@IEEEissubequation\iffalse
 \makeatother
-
-\usetikzlibrary{arrows}
 
 \newcommand{\coot}[1]{\textcolor{violet}{\emph{#1}}}
 \newcommand{\njd}[1]{\textcolor{purple}{\emph{#1}}}
@@ -1602,6 +1611,139 @@ that dangerously favour short adversary chains over genuine longer ones? \\
   overtake it. We may be able to make this a non-problem.}
 
 \subsection{State machine description of the protocol}
+\subsubsection{Notation} \marginpar{\njd{Generic for all protocols that follow the typed transition framework}}
+\begin{description}
+\item[State Machine]
+  The Protocols are described as a state machine.
+  The specification uses different representations of the state machine that all describe the same protocol
+  but may leave out some aspects.
+  \begin{itemize}
+  \item The state machine can be represented as a collection of tables (States, Transitions/Messages..).
+  There is a one to one correspondence between these tables and the Haskell source.
+\item A transition graph of the global view of the state machine.
+\item A transition graph of the client view.
+\item A transition graph of the server view.
+\end{itemize}
+
+\item[States]
+  We need to distinguish between the global state of a system
+  which includes the values of all local variable stored on the nodes and
+  the abstract states of the the state machines.
+  The abstract states are equivalent classes of the global state.
+  Every global state belongs to exactly one abstract state.
+  This specification describes the state machine in terms of the abstract states.
+  By definition, client and server are always in identical states
+  which also means that client and server simultaneously transit to new states.
+  The concrete implementation needs to relax the definition of state.
+  In the concrete implementation of the abstract view of state is replaced with
+  client state and server state and transitions on either side happens independently when a message
+  is send or received. While a message is in-flight the state of the receiver is undefined.
+  The state determines which side is active the client or the server.
+\footnote{The Haskell implementation uses the concept of the dual of a state. Here it is sufficient to consider the state and the dual of the state as identical}
+
+
+\item[Messages/Events]
+  A tuple $(lable,data)$. Can be serialized transferred over the network and de-serialized.
+  (authenticity of messages not handled here)
+\item[Transitions]
+  This part of the document describes the transitions of the abstract state of the protocol
+  as the result of messages passed between client and the server.
+  In sync with abstract state the  client and server update the local data to compute the
+  the actual "outcome" of a protocol-run, for example "update the block chain".
+  Parts of the local updates are specific to the implementation language and the underlying
+  data structures, but they are also relevant for the protocol (to determine the next transition).
+\end{description}
+\subsubsection{Description}
+\begin{description}
+\item[purpose of the protocol]
+
+The Chain Synchronization Protocol is used by the block chain consumer
+to synchronize its block chain with the block chain producer.
+It is polymorphic on blocks. And for some clients it will synchronize just headers (node-to-node),
+for others it can be used to synchronize actual block (e.g., node-to-wallet).
+
+\item[Who is communicating]
+  A node communicates with several upstream and downstream node.
+  The node runs an independent agents for every other node
+  it communicates with. The typically a node runs agents where it acts as a server and also instances
+  where it acts as a client.(See Figure \ref{chain-diagram-read-pointers}.)
+\end{description}
+
+\subsubsection{State machine}
+\begin{figure}[H]
+\begin{tabular}{|l|l|}
+  \hline
+  \multicolumn{2}{|c|}{States} \\ \hline
+  Name  & Agency \\ \hline \hline
+  Idle       & client \\ \hline
+  CanAwait   & server \\ \hline
+  MustReply  & server \\ \hline
+  Intersect  & server \\ \hline
+  Done       &        \\ \hline
+  \hline
+\end{tabular}
+\end{figure}
+
+\begin{figure}[H]
+\begin{tabular}{|l|l|l|l|}
+  \hline
+  \multicolumn{4}{|c|}{Transitions} \\ \hline
+  message/event      & parameter              & from        & to       \\ \hline\hline
+  RequestNext        &                        & Idle        & CanAwait \\ \hline
+  AwaitReply         &                        & CanAwait    & MustReply \\ \hline
+  RollForward        & $header$,$point$       & CanAwait    & Idle \\ \hline
+  RollForward        & $header$,$point$       & MustReply   & Idle \\ \hline
+  RollBackward       & $header$,$point$       & CanAwait    & Idle \\ \hline
+  RollBackward       & $point$,$point$       & MustReply    & Idle \\ \hline
+  FindIntersect      & $points$               & Idle        & Intersect \\ \hline
+  IntersectImproved  & $point_1$,$point_2$     & Intersect   & Idle \\ \hline
+  IntersectUnchanged & $point$                 & Intersect   & Idle \\ \hline
+  Done               &                         & Idle        & Done \\ \hline
+\end{tabular}
+\end{figure}
+
+Client states are green and server states blue.
+Arrows denote state transitions of the abstract state and \emph{not} the sender and receiver of messages.
+In particular AwaitReply is a transition between the server states CanAwait and MustReply
+but the corresponding message is send from the server to the client.
+
+\begin{figure}[H]
+\begin{tikzpicture}[->,>=stealth',shorten >=1pt,auto,node distance=4.5cm, semithick]
+  \tikzstyle{every state}=[fill=red,draw=none,text=white]
+  \node[state, green, initial]                                   (Idle)      {Idle};
+  \node[state, right of=Idle]                             (Done)      {Done};
+  \node[state, blue, below left of=Idle]                        (CanAwait)  {CanAwait};
+  \node[state, blue, right of=CanAwait]                         (MustReply) {MustReply};
+  \node[state, blue, above of=Idle]                        (Intersect) {Intersect};
+
+%  MsgRequestNext :: ChainSyncMessage header point StIdle (StNext StCanAwait)
+  \draw (Idle)         edge[left, bend right]      node{RequestNext}           (CanAwait);
+
+%  MsgAwaitReply :: ChainSyncMessage header point (StNext StCanAwait) (StNext StMustReply)
+  \draw (CanAwait)     edge[above, bend right]     node{AwaitReply}            (MustReply);
+
+%  MsgRollForward :: header -> point -> ChainSyncMessage header point (StNext any) StIdle
+  \draw (CanAwait)     edge[above,bend right=45]     node{RollForward}           (Idle);
+  \draw (MustReply)    edge[right,bend right=45]     node{RollForward}           (Idle);
+
+%  MsgRollBackward :: point  -> point -> ChainSyncMessage header point (StNext any) StIdle
+  \draw (CanAwait)     edge[above,bend right=80]     node{RollBackward}          (Idle);
+  \draw (MustReply)    edge[right,bend right=80]     node{RollBackward}          (Idle);
+
+%  MsgFindIntersect :: [point] -> ChainSyncMessage header point StIdle StIntersect
+  \draw (Idle)         edge[right, bend right]    node{FindIntersect}         (Intersect);
+
+%  MsgIntersectImproved  :: point -> point -> ChainSyncMessage header point StIntersect StIdle
+  \draw (Intersect)    edge[above, bend right=45]    node[below = 4mm]{IntersectImproved}     (Idle);
+
+%  MsgIntersectUnchanged :: point -> ChainSyncMessage header point StIntersect StIdle
+  \draw (Intersect)    edge[above, bend right=80]    node[above = 4mm]{IntersectUnchanged}    (Idle);
+
+%  MsgDone :: ChainSyncMessage header point StIdle StDone
+  \draw (Idle)         edge[above]                node{Done}                  (Done);
+
+\end{tikzpicture}
+\end{figure}
 
 There are to agents in the protocol: a blockchain consumer and blockchain
 producer.  The protocol has two phases:

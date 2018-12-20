@@ -1,0 +1,228 @@
+\documentclass{report}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath, amssymb, stmaryrd, latexsym, amsthm, mathtools}
+\usepackage{mathpazo, times}
+\usepackage{float}
+\usepackage{listings}
+\usepackage{url}
+\usepackage{natbib}
+% \usepackage{parskip} % very ugly with lemmas, invariants, etc without intervening text
+\usepackage[disable]{todonotes}
+\usepackage{slashed}
+\usepackage{tikz}
+\usetikzlibrary{automata, positioning, arrows}
+\tikzset{
+    state/.style={
+           rectangle,
+           rounded corners,
+           draw=black, very thick,
+           minimum height=2em,
+           inner sep=2pt,
+           text centered,
+           },
+}
+
+\usepackage{forest}
+\usepackage{IEEEtrantools}
+\usepackage{microtype}
+\usepackage{graphicx,color}
+
+\usepackage{hyperref}
+\hypersetup{
+  colorlinks=false,
+  linkcolor={blue},
+  citecolor={blue},
+  urlcolor={blue},
+  linkbordercolor={white},
+  citebordercolor={white},
+  urlbordercolor={white}
+}
+\usepackage[capitalise,noabbrev,nameinlink]{cleveref}
+
+% https://tex.stackexchange.com/questions/132823/ieeetrantools-clash-with-cleveref
+\makeatletter
+\let\if@IEEEissubequation\iffalse
+\makeatother
+
+\usetikzlibrary{arrows}
+
+\newcommand{\coot}[1]{\textcolor{violet}{\emph{#1}}}
+\newcommand{\njd}[1]{\textcolor{purple}{\emph{#1}}}
+\newcommand{\avieth}[1]{\textcolor{blue}{\emph{#1}}}
+\newcommand{\dcoutts}[1]{\textcolor{orange}{\emph{#1}}}
+\addtolength{\marginparwidth}{-0.1\marginparwidth}
+
+\newcommand{\var}[1]{\mathit{#1}}
+\newcommand{\type}[1]{\mathsf{#1}}
+\newcommand{\powerset}[1]{\mathbb{P}(#1)}
+\newcommand{\order}[1]{\mathcal{O}\left(#1\right)}
+\newcommand{\restrictdom}{\lhd}
+\newcommand{\subtractdom}{\mathbin{\slashed{\restrictdom}}}
+\newcommand{\restrictrange}{\rhd}
+
+\DeclareMathOperator{\dom}{dom}
+\DeclareMathOperator{\range}{range}
+\DeclareMathOperator*{\argmin}{arg\,min} % thin space, limits underneath in displays
+\DeclareMathOperator*{\minimum}{min}
+\DeclareMathOperator*{\maximum}{max}
+
+% Number within sections, and don't have separate counters for separate environments
+\theoremstyle{definition}{
+  \newtheorem{lemma}{Lemma}[section] % Number within sections
+  \newtheorem{definition}[lemma]{Definition}
+}
+\theoremstyle{theorem}{
+  \newtheorem{invariant}[lemma]{Invariant}
+  \newtheorem{proofobligation}[lemma]{Proof Obligation}
+}
+
+\Crefname{invariant}{Invariant}{Invariants}
+
+\numberwithin{equation}{lemma}
+
+%\floatstyle{boxed}
+%\restylefloat{figure}
+
+\lstset{basicstyle=\ttfamily\small}
+
+\raggedbottom
+
+\begin{document}
+
+\title{The Shelley Network Layer\\
+       {\small (Version 0.1)} \\
+       {\large \sc An IOHK technical report}}
+\author{Duncan Coutts \\ {\small \texttt{duncan@well-typed.com}} \\
+                         {\small \texttt{duncan.coutts@iohk.io}}
+   \and Alex Vieth \\ {\small \texttt{alex@well-typed.com}}
+   \and Neil Davies \\ {\small \texttt{neil.davies@pnsol.com}} \\
+                       {\small \texttt{neil.davies@iohk.io}}
+   \and Marcin Szamotulski \\ {\small \texttt{marcin.szamotulski@iohk.io}}
+   \and Karl Knutsson \\ {\small \texttt{karl.knutsson@iohk.io}}
+   \and Marc Fontaine \\ {\small \texttt{marc.fontaine@iohk.io}}
+   }
+\date{December 20, 2018}
+
+\maketitle
+
+\begin{abstract}
+  This document describes the Shelley network protocol.
+\end{abstract}
+
+\tableofcontents
+
+\section*{Version history}
+
+\begin{description}
+\item[Version 0.1, Dez 20, 2018  Draft of the table of contents.]
+                                  
+\end{description}
+
+\chapter{Overview}
+\section{Layout of the Document}
+\begin{itemize}
+\item What goes in which section ?
+\item In which order to read ?
+\item Which sections can be skipped ?
+\end{itemize}
+\section{Notation}
+
+\chapter{Requirements}
+\subsection{Classes of Participants}
+\subsection{Stake pool} % lookup what this is called in the protocols.tex
+\subsection{Small stakeholder}
+\subsection{User who has delegated}
+
+\section{Node to Node and Node to Consumer}
+\begin{itemize}
+\item Different protocols for different kinds of participant
+ 
+\item Design discussions in the discussions section.
+\end{itemize}
+
+\section{Nodes}
+\section{Ouroboros}
+\section{Delegation}
+
+\chapter{System Architecture}
+\section{Overview}
+\section{Design Choices}
+\begin{itemize}
+\item Only the design choices that have been taken.
+\item Design discussions in the discussions section.
+\end{itemize}
+\section{Nodes}
+\section{Protocol Layers}
+\section{Components}
+\section{Interfaces Between the Layers}
+
+\chapter{Infrastructure}
+Specific assumptions about the infrastructure that are relevant for the discussion.
+\section{Internet}
+\section{Firewall}
+\section{TCP}
+\section{Operating Systems}
+
+\chapter{Protocols}
+\section{State-machine Framework}
+\section{Chain Following Protocol}
+\section{Block Retrieval Protocol}
+\section{What other Protocols ?}
+\section{Peer Discovery}
+\section{Binary Formats and Low-Level Protocols}
+The binary formats are automatically derived from the Haskell data types
+That are used.
+
+\chapter{Haskell}
+The network protocol itself does not rely on Haskell
+But, at the same time, the protocol is being developed in parallel with the
+Haskell reference implementation.
+
+
+\chapter{Discussion}
+Alternative view: Exploratory work.
+The real work goes here
+The Why is at least as important as the What.
+\section{Overview}
+\section{Design Discussion}
+\section{Requirements}
+\section{Thread Vectors}
+\subsubsection{Asymptotic Resource consumption}
+\subsection{Results from Simulations}
+\section{Pub Sub}
+\section{Of the Shelf Protocols}
+\section{Meta Requirements}
+\subparagraph{Work in Progress}
+This document is evolved in parallel with the work on the protocol design and
+the reference implementation.
+
+\subparagraph{The Document should be Comprehensive}
+\begin{itemize}
+\item Top down approach.
+\item Provide the big picture.
+\item Usable as a reference point for a broader discussion.
+\item Cover every aspect that is related to network connections.
+\item Every aspect should at least have a place in the table of contents.
+  If there are holes and parts that are not covered the document should say what is missing.
+\item Stand alone readable with links to where missing pieces can be found.
+\end{itemize}
+
+\subparagraph{Detailed}
+\begin{itemize}
+\item Sufficient details to allow for new independent implementations that are compatible with
+the reference implementation
+\item Language agnostic (it is save to skip the Haskell specific parts)
+\item Design discussions
+\end{itemize}
+\subparagraph{Structured}
+\begin{itemize}
+\item Parts of the document should be in a logical connection
+\end{itemize}
+\subparagraph{Workflow}
+
+\bibliographystyle{apalike}
+\bibliography{references}
+
+\appendix
+
+\end{document}
