@@ -39,7 +39,7 @@ codecIdle
   => Codec (ST s) Text Encoding ByteString (ChainSyncMessage header point) StIdle
 codecIdle = Codec
   { encode = cborEncodeIdle
-  , decode = cborDecoder cborDecodeIdle
+  , decode = cborDecoder T.pack cborDecodeIdle
   }
   where
 
@@ -78,7 +78,7 @@ codecNext_CanAwait
   => Codec (ST s) Text Encoding ByteString (ChainSyncMessage header point) (StNext StCanAwait)
 codecNext_CanAwait = Codec
   { encode = cborEncodeNext
-  , decode = cborDecoder cborDecodeNext
+  , decode = cborDecoder T.pack cborDecodeNext
   }
   where
 
@@ -112,7 +112,7 @@ codecNext_MustReply
   => Codec (ST s) Text Encoding ByteString (ChainSyncMessage header point) (StNext StMustReply)
 codecNext_MustReply = Codec
   { encode = cborEncodeNext
-  , decode = cborDecoder cborDecodeNext
+  , decode = cborDecoder T.pack cborDecodeNext
   }
   where
 
@@ -144,7 +144,7 @@ codecIntersect
   => Codec (ST s) Text Encoding ByteString (ChainSyncMessage header point) StIntersect
 codecIntersect = Codec
   { encode = cborEncodeIntersect
-  , decode = cborDecoder cborDecodeIntersect
+  , decode = cborDecoder T.pack cborDecodeIntersect
   }
   where
 
