@@ -8,6 +8,7 @@ module Ouroboros.Consensus.Crypto.DSIGN.Mock
     ( MockDSIGN
     , SignKeyDSIGN(..)
     , VerKeyDSIGN(..)
+    , verKeyIdFromSigned
     ) where
 
 import qualified Data.ByteString.Base16 as B16
@@ -53,3 +54,7 @@ instance Condense (SigDSIGN MockDSIGN) where
 instance Serialise (VerKeyDSIGN MockDSIGN)
 instance Serialise (SignKeyDSIGN MockDSIGN)
 instance Serialise (SigDSIGN MockDSIGN)
+
+-- | Get the id of the signer from a signature. Used for testing.
+verKeyIdFromSigned :: SignedDSIGN MockDSIGN a -> Int
+verKeyIdFromSigned (SignedDSIGN (SigMockDSIGN _ i)) = i

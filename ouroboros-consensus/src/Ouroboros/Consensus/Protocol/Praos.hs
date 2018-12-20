@@ -13,6 +13,7 @@
 module Ouroboros.Consensus.Protocol.Praos (
     StakeDist
   , Praos
+  , PraosExtraFields(..)
   , PraosParams(..)
     -- * Tags
   , PraosCrypto(..)
@@ -46,7 +47,7 @@ import           Ouroboros.Consensus.Crypto.KES.Simple
 import           Ouroboros.Consensus.Crypto.VRF.Class
 import           Ouroboros.Consensus.Crypto.VRF.Mock (MockVRF)
 import           Ouroboros.Consensus.Crypto.VRF.Simple (SimpleVRF)
-import           Ouroboros.Consensus.Node (NodeId (..))
+import           Ouroboros.Consensus.Node (CoreNodeId (..), NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Test
 import           Ouroboros.Consensus.Util.Chain (forksAtMostKBlocks, upToSlot)
@@ -65,7 +66,7 @@ instance Serialise VRFType
   -- use generic instance
 
 data PraosExtraFields c = PraosExtraFields {
-      praosCreator :: Int
+      praosCreator :: CoreNodeId
     , praosRho     :: CertifiedVRF (PraosVRF c) (HList [Natural, Slot, VRFType])
     , praosY       :: CertifiedVRF (PraosVRF c) (HList [Natural, Slot, VRFType])
     }
@@ -81,7 +82,7 @@ instance VRFAlgorithm (PraosVRF c) => Serialise (PraosExtraFields c)
 data PraosProof c = PraosProof {
       praosProofRho  :: CertifiedVRF (PraosVRF c) (HList [Natural, Slot, VRFType])
     , praosProofY    :: CertifiedVRF (PraosVRF c) (HList [Natural, Slot, VRFType])
-    , praosLeaderId  :: Int
+    , praosLeader    :: CoreNodeId
     , praosProofSlot :: Slot
     }
 
@@ -146,7 +147,7 @@ instance PraosCrypto c => OuroborosTag (Praos c) where
   mkPayload PraosNodeConfig{..} PraosProof{..} preheader = do
       keyKES <- getNodeState
       let extraFields = PraosExtraFields {
-            praosCreator = praosLeaderId
+            praosCreator = praosLeader
           , praosRho     = praosProofRho
           , praosY       = praosProofY
           }
@@ -174,7 +175,7 @@ instance PraosCrypto c => OuroborosTag (Praos c) where
               then Just PraosProof {
                        praosProofRho  = rho
                      , praosProofY    = y
-                     , praosLeaderId  = nid
+                     , praosLeader    = CoreNodeId nid
                      , praosProofSlot = slot
                      }
               else Nothing
@@ -183,7 +184,7 @@ instance PraosCrypto c => OuroborosTag (Praos c) where
     let PraosPayload{..} = blockPayload (Proxy :: Proxy (Praos c)) b
         ph               = blockPreHeader b
         slot             = blockSlot b
-        nid              = praosCreator praosExtraFields
+        CoreNodeId nid   = praosCreator praosExtraFields
 
     -- check that the new block advances time
     case cs of

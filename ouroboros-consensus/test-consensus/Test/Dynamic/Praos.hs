@@ -44,14 +44,23 @@ import           Test.Dynamic.General
 import           Test.Dynamic.Util
 
 tests :: TestTree
-tests = testGroup "Dynamic chain generation" [
-      testProperty "simple Praos convergence" $
-        prop_simple_praos_convergence
+tests = testGroup "Dynamic chain generation"
+    [ testProperty "simple Praos convergence - special crowded case" $
+        testPraos $ Seed ( 49644418094676
+                         , 40315957626756
+                         , 42668365444963
+                         , 9796082466547
+                         , 32684299622558
+                         )
+    , testProperty "simple Praos convergence" testPraos
+    ]
+  where
+    testPraos :: Seed -> Property
+    testPraos = prop_simple_praos_convergence
           (NumSlots (fromIntegral numSlots))
           (NumCoreNodes 3)
           params
-    ]
-  where
+
     params@PraosParams{..} = defaultDemoPraosParams
     numSlots  = praosK * praosSlotsPerEpoch * numEpochs
     numEpochs = 3
@@ -75,9 +84,20 @@ prop_simple_praos_convergence numSlots numCoreNodes params =
             -> Property
     isValid nodeIds trace = counterexample (show trace) $
       case trace of
-        [(_, final)] ->   collect (shortestLength final)
-                     $    Map.keys final === nodeIds
-                     .&&. prop_all_common_prefix praosK (Map.elems final)
+        [(_, final)] ->
+            let schedule = leaderScheduleFromTrace numSlots final
+                longest  = longestCrowdedRun schedule
+                crowded  = crowdedRunLength longest
+            in    counterexample (tracesToDot final)
+                $ counterexample (condense schedule)
+                $ counterexample (show longest)
+                $ label ("longest crowded run " <> show crowded)
+                $ collect (shortestLength final)
+                $ (Map.keys final === nodeIds)
+                  .&&. if crowded >= fromIntegral praosK
+                        then label "too crowded"     $ property True
+                        else label "not too crowded" $
+                                prop_all_common_prefix praosK (Map.elems final)
         _otherwise   -> property False
 
 prop_all_common_prefix :: (HasHeader b, Condense b, Eq b)

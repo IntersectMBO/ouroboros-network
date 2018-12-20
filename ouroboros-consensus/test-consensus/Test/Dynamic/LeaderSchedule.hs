@@ -21,8 +21,6 @@ module Test.Dynamic.LeaderSchedule (
   ) where
 
 import           Control.Monad (replicateM)
-import           Data.Function (on)
-import           Data.List (foldl')
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Test.QuickCheck
@@ -35,7 +33,6 @@ import           Ouroboros.Network.Chain (Chain)
 import           Ouroboros.Network.Node
 
 import           Ouroboros.Consensus.Demo
-import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Node
 import           Ouroboros.Consensus.Protocol.LeaderSchedule
 import           Ouroboros.Consensus.Protocol.Praos
@@ -85,22 +82,13 @@ prop_simple_leader_schedule_convergence numSlots numCoreNodes params seed =
             -> Property
     isValid nodeIds trace =
       case trace of
-        [(_, final)] ->   counterexample (tracesToDot' final)
+        [(_, final)] ->   counterexample (tracesToDot final)
                      $    collect (shortestLength final)
                      $    Map.keys final === nodeIds
                      .&&. prop_all_common_prefix
                             (fromIntegral $ praosK params)
                             (Map.elems final)
         _otherwise   -> property False
-
-    creator :: Block DemoLeaderSchedule -> NodeId
-    creator = CoreId
-            . getWLSPayload
-            . headerOuroboros
-            . simpleHeader
-
-    tracesToDot' :: Map NodeId (Chain (Block DemoLeaderSchedule)) -> String
-    tracesToDot' = tracesToDot creator
 
 {-------------------------------------------------------------------------------
   Dependent generation and shrinking of leader schedules
@@ -120,16 +108,16 @@ genLeaderSchedule (NumSlots numSlots) (NumCoreNodes numCoreNodes) PraosParams{..
             ]
         return $ LeaderSchedule $ Map.fromList $ zip [1..] leaders
       where
-        pick :: Int -> Gen [Int]
+        pick :: Int -> Gen [CoreNodeId]
         pick = go [0 .. numCoreNodes - 1]
           where
-            go :: [Int] -> Int -> Gen [Int]
+            go :: [Int] -> Int -> Gen [CoreNodeId]
             go []   _ = return []
             go _    0 = return []
             go nids n = do
                 nid <- elements nids
                 xs  <- go (filter (/= nid) nids) (n - 1)
-                return $ nid : xs
+                return $ CoreNodeId nid : xs
 
         notTooCrowded :: LeaderSchedule -> Bool
         notTooCrowded schedule =
@@ -142,46 +130,10 @@ shrinkLeaderSchedule (NumSlots numSlots) (LeaderSchedule m) =
     , m'   <- reduceSlot slot m
     ]
   where
-    reduceSlot :: Slot -> Map Slot [Int] -> [Map Slot [Int]]
+    reduceSlot :: Slot -> Map Slot [CoreNodeId] -> [Map Slot [CoreNodeId]]
     reduceSlot s m' = [Map.insert s xs m' | xs <- reduceList $ m' Map.! s]
 
     reduceList :: [a] -> [[a]]
     reduceList []       = []
     reduceList [_]      = []
     reduceList (x : xs) = xs : map (x :) (reduceList xs)
-
-{-------------------------------------------------------------------------------
-  Crowded Run - longest multi-leader section of a leader schedule
--------------------------------------------------------------------------------}
-
--- | Describes a sequence of slots in a leader schedule with slots with
--- more than one leader, possibly interrupted by slots without leader.
--- There can be no such sequence, but if there is, first slot and number of
--- multi-leader slots are given.
-newtype CrowdedRun = CrowdedRun (Maybe (Slot, Int))
-    deriving (Show, Eq)
-
-crowdedRunLength :: CrowdedRun -> Int
-crowdedRunLength (CrowdedRun m) = maybe 0 snd m
-
-instance Ord CrowdedRun where
-    compare = compare `on` crowdedRunLength
-
-noRun :: CrowdedRun
-noRun = CrowdedRun Nothing
-
-incCrowdedRun :: Slot -> CrowdedRun -> CrowdedRun
-incCrowdedRun slot (CrowdedRun Nothing)          = CrowdedRun (Just (slot, 1))
-incCrowdedRun _    (CrowdedRun (Just (slot, n))) = CrowdedRun (Just (slot, n + 1))
-
-longestCrowdedRun :: LeaderSchedule -> CrowdedRun
-longestCrowdedRun (LeaderSchedule m) = fst
-                                     $ foldl' go (noRun, noRun)
-                                     $ Map.toList
-                                     $ fmap length m
-  where
-    go :: (CrowdedRun, CrowdedRun) -> (Slot, Int) -> (CrowdedRun, CrowdedRun)
-    go (x, y) (slot, n)
-        | n == 0    = (x, y)
-        | n == 1    = (x, noRun)
-        | otherwise = let y' = incCrowdedRun slot y in (max x y', y')

@@ -6,9 +6,14 @@ module Test.Dynamic.Util (
     allEqual
   , shortestLength
   , tracesToDot
+  , leaderScheduleFromTrace
+  , CrowdedRun (..)
+  , crowdedRunLength
+  , longestCrowdedRun
   ) where
 
 import           Data.Foldable (foldl')
+import           Data.Function (on)
 import           Data.Graph.Inductive.Graph
 import           Data.Graph.Inductive.PatriciaTree
 import           Data.GraphViz
@@ -23,10 +28,13 @@ import           Numeric.Natural (Natural)
 import           Test.QuickCheck
 
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Chain
+import           Ouroboros.Network.Chain (Chain (..))
 import qualified Ouroboros.Network.Chain as Chain
 
+import           Ouroboros.Consensus.Demo (HasCreator (..))
 import           Ouroboros.Consensus.Node
+import           Ouroboros.Consensus.Protocol.LeaderSchedule
+                     (LeaderSchedule (..))
 import qualified Ouroboros.Consensus.Util.Chain as Chain
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
@@ -73,7 +81,7 @@ shortestLength = fromIntegral . minimum . map Chain.length . Map.elems
 
 data BlockInfo b = BlockInfo
     { biSlot     :: !Slot
-    , biCreator  :: !(Maybe NodeId)
+    , biCreator  :: !(Maybe CoreNodeId)
     , biHash     :: !(Hash b)
     , biPrevious :: !(Maybe (Hash b))
     }
@@ -86,17 +94,17 @@ genesisBlockInfo = BlockInfo
     , biPrevious = Nothing
     }
 
-blockInfo :: HasHeader b => (b -> NodeId) -> b -> BlockInfo b
-blockInfo creator b = BlockInfo
+blockInfo :: (HasHeader b, HasCreator b) => b -> BlockInfo b
+blockInfo b = BlockInfo
     { biSlot     = blockSlot b
-    , biCreator  = Just $ creator b
+    , biCreator  = Just $ getCreator b
     , biHash     = BlockHash $ blockHash b
     , biPrevious = Just $ blockPrevHash b
     }
 
 data NodeLabel = NodeLabel
     { nlSlot      :: Slot
-    , nlCreator   :: Maybe NodeId
+    , nlCreator   :: Maybe CoreNodeId
     , nlBelievers :: Set NodeId
     }
 
@@ -104,7 +112,7 @@ instance Labellable NodeLabel where
     toLabelValue NodeLabel{..} = StrLabel $ Text.pack $
            show (getSlot nlSlot)
         <> " "
-        <> maybe "" showNodeId nlCreator
+        <> maybe "" (showNodeId . fromCoreNodeId) nlCreator
         <> showNodeIds nlBelievers
       where
         fromNodeId :: NodeId -> Maybe Int
@@ -124,16 +132,15 @@ data EdgeLabel = EdgeLabel
 instance Labellable EdgeLabel where
     toLabelValue = const $ StrLabel Text.empty
 
-tracesToDot :: forall b. HasHeader b
-            => (b -> NodeId)
-            -> Map NodeId (Chain b)
+tracesToDot :: forall b. (HasHeader b, HasCreator b)
+            => Map NodeId (Chain b)
             -> String
-tracesToDot creator traces = Text.unpack $ printDotGraph $ graphToDot quickParams graph
+tracesToDot traces = Text.unpack $ printDotGraph $ graphToDot quickParams graph
   where
     chainBlockInfos :: Chain b -> Map (Hash b) (BlockInfo b)
-    chainBlockInfos = foldChain f (Map.singleton GenesisHash genesisBlockInfo)
+    chainBlockInfos = Chain.foldChain f (Map.singleton GenesisHash genesisBlockInfo)
       where
-        f m b = let info = blockInfo creator b
+        f m b = let info = blockInfo b
                 in  Map.insert (biHash info) info m
 
     blockInfos :: Map (Hash b) (BlockInfo b)
@@ -177,3 +184,57 @@ tracesToDot creator traces = Text.unpack $ printDotGraph $ graphToDot quickParam
 
     graph :: Gr NodeLabel EdgeLabel
     graph = mkGraph ns es
+
+leaderScheduleFromTrace :: forall b. (HasCreator b, HasHeader b)
+                        => NumSlots
+                        -> Map NodeId (Chain b)
+                        -> LeaderSchedule
+leaderScheduleFromTrace (NumSlots numSlots) =
+    LeaderSchedule . Map.foldl' (Chain.foldChain step) initial
+  where
+    initial :: Map Slot [CoreNodeId]
+    initial = Map.fromList [(slot, []) | slot <- [1 .. fromIntegral numSlots]]
+
+    step :: Map Slot [CoreNodeId] -> b -> Map Slot [CoreNodeId]
+    step m b = Map.adjust (insert $ getCreator b) (blockSlot b) m
+
+    insert :: CoreNodeId -> [CoreNodeId] -> [CoreNodeId]
+    insert nid xs
+        | nid `elem` xs = xs
+        | otherwise     = nid : xs
+
+{-------------------------------------------------------------------------------
+  Crowded Run - longest multi-leader section of a leader schedule
+-------------------------------------------------------------------------------}
+
+-- | Describes a sequence of slots in a leader schedule with slots with
+-- more than one leader, possibly interrupted by slots without leader.
+-- There can be no such sequence, but if there is, first slot and number of
+-- multi-leader slots are given.
+newtype CrowdedRun = CrowdedRun (Maybe (Slot, Int))
+    deriving (Show, Eq)
+
+crowdedRunLength :: CrowdedRun -> Int
+crowdedRunLength (CrowdedRun m) = maybe 0 snd m
+
+instance Ord CrowdedRun where
+    compare = compare `on` crowdedRunLength
+
+noRun :: CrowdedRun
+noRun = CrowdedRun Nothing
+
+incCrowdedRun :: Slot -> CrowdedRun -> CrowdedRun
+incCrowdedRun slot (CrowdedRun Nothing)          = CrowdedRun (Just (slot, 1))
+incCrowdedRun _    (CrowdedRun (Just (slot, n))) = CrowdedRun (Just (slot, n + 1))
+
+longestCrowdedRun :: LeaderSchedule -> CrowdedRun
+longestCrowdedRun (LeaderSchedule m) = fst
+                                     $ foldl' go (noRun, noRun)
+                                     $ Map.toList
+                                     $ fmap length m
+  where
+    go :: (CrowdedRun, CrowdedRun) -> (Slot, Int) -> (CrowdedRun, CrowdedRun)
+    go (x, y) (slot, n)
+        | n == 0    = (x, y)
+        | n == 1    = (x, noRun)
+        | otherwise = let y' = incCrowdedRun slot y in (max x y', y')

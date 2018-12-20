@@ -7,7 +7,7 @@
 -- | Abstract digital signatures.
 module Ouroboros.Consensus.Crypto.DSIGN.Class
     ( DSIGNAlgorithm (..)
-    , SignedDSIGN
+    , SignedDSIGN (..)
     , signedDSIGN
     , verifySignedDSIGN
     ) where
