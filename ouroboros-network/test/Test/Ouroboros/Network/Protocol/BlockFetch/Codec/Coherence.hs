@@ -14,7 +14,6 @@ import Control.Monad.ST (runST)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Data.Type.Equality
-import Data.Text (Text, pack)
 
 import Codec.Serialise.Class (Serialise)
 
@@ -65,7 +64,7 @@ prop_block_fetch_client_cbor_coherent = forAllShow genPath (showSomeTransitionPa
   eqTr MessageDone           MessageDone           = Just Refl
   eqTr _                     _                     = Nothing
 
-  decodeFull :: Monad m => ByteString -> Decoder Text ByteString m x -> m (Either Text x)
+  decodeFull :: Monad m => ByteString -> Decoder BlockFetchClientCodecError ByteString m x -> m (Either BlockFetchClientCodecError x)
   decodeFull str decoder = do
     (it, remaining) <- foldOverInput decoder (singletonInput [str])
     case remaining of
@@ -77,7 +76,7 @@ prop_block_fetch_client_cbor_coherent = forAllShow genPath (showSomeTransitionPa
         let rest = mconcat (mconcat lst)
         in if BS.null rest
              then pure it
-             else pure $ Left $ pack $ "decoder did not use all of its input: " ++ (show rest)
+             else pure $ Left $ BFClientCodecErrInputLeft (show rest)
 
 prop_block_fetch_server_cbor_coherent
   :: forall block.
@@ -141,7 +140,7 @@ prop_block_fetch_server_cbor_coherent = forAllShow genPath (showSomeTransitionPa
   eqTr MessageServerDone  MessageServerDone  = Just Refl
   eqTr _                  _                  = Nothing
 
-  decodeFull :: Monad m => ByteString -> Decoder Text ByteString m x -> m (Either Text x)
+  decodeFull :: Monad m => ByteString -> Decoder BlockFetchServerCodecError ByteString m x -> m (Either BlockFetchServerCodecError x)
   decodeFull str decoder = do
     (it, remaining) <- foldOverInput decoder (singletonInput [str])
     case remaining of
@@ -153,7 +152,7 @@ prop_block_fetch_server_cbor_coherent = forAllShow genPath (showSomeTransitionPa
         let rest = mconcat (mconcat lst)
         in if BS.null rest
              then pure it
-             else pure $ Left $ pack $ "decoder did not use all of its input: " ++ (show rest)
+             else pure $ Left $ BFServerCodecErrInputLeft (show rest)
 
 tests :: TestTree
 tests = testGroup "BlockFetchProtocol.Codec.Cbor"

@@ -121,6 +121,7 @@ data ServerState where
   StServerSending  :: ServerState
   -- server termination message
   StServerDone     :: ServerState
+  deriving (Show, Eq)
 
 type instance Partition BlockFetchServerProtocol st client server terminal =
   BlockFetchServerPartition st client server terminal
