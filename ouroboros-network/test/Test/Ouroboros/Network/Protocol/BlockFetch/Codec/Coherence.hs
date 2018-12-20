@@ -8,7 +8,7 @@
 {-# LANGUAGE TypeApplications #-}
 
 {-# OPTIONS_GHC "-Wno-unticked-promoted-constructors" #-}
-module Test.Ouroboros.Network.Protocol.BlockFetch.Codec where
+module Test.Ouroboros.Network.Protocol.BlockFetch.Codec.Coherence where
 
 import Control.Monad.ST (runST)
 import Data.ByteString (ByteString)

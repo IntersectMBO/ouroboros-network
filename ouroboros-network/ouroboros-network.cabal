@@ -118,7 +118,7 @@ test-suite tests
                        Test.Ouroboros.Network.Testing.Arbitrary
                        Test.Ouroboros.Network.Protocol.Stream
                        Test.Ouroboros.Network.Protocol.BlockFetch
-                       Test.Ouroboros.Network.Protocol.BlockFetch.Codec
+                       Test.Ouroboros.Network.Protocol.BlockFetch.Codec.Coherence
                        Test.Ouroboros.Network.Node
                        Test.Pipe
   default-language:    Haskell2010
