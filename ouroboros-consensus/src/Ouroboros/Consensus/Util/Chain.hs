@@ -66,7 +66,7 @@ forksAtMostKBlocks k ours = go
         else go bs
 
     forkingPoints :: Set (Hash b)
-    forkingPoints = takeR (chainToSeq' ours) k
+    forkingPoints = takeR (chainToSeq' ours) $ k + 1 -- we can roll back at most k blocks
 
     chainToSeq' :: Chain b -> Seq (Hash b)
     chainToSeq' c = GenesisHash :<| (BlockHash . blockHash <$> chainToSeq c)
