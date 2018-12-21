@@ -45,12 +45,19 @@ import           Test.Dynamic.Util
 
 tests :: TestTree
 tests = testGroup "Dynamic chain generation"
-    [ testProperty "simple Praos convergence - special crowded case" $
+    [ testProperty "simple Praos convergence - special case (issue #131)" $
         testPraos $ Seed ( 49644418094676
                          , 40315957626756
                          , 42668365444963
                          , 9796082466547
                          , 32684299622558
+                         )
+    , testProperty "simple Praos convergence - special crowded case" $
+        testPraos $ Seed ( 8871923881324151440
+                         , 881094692332313449
+                         , 3091285302407489889
+                         , 6410351877547894330
+                         , 14676014321459888687
                          )
     , testProperty "simple Praos convergence" testPraos
     ]
@@ -94,7 +101,7 @@ prop_simple_praos_convergence numSlots numCoreNodes params =
                 $ label ("longest crowded run " <> show crowded)
                 $ collect (shortestLength final)
                 $ (Map.keys final === nodeIds)
-                  .&&. if crowded >= fromIntegral praosK
+                  .&&. if crowded > fromIntegral praosK
                         then label "too crowded"     $ property True
                         else label "not too crowded" $
                                 prop_all_common_prefix praosK (Map.elems final)

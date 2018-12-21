@@ -121,7 +121,7 @@ genLeaderSchedule (NumSlots numSlots) (NumCoreNodes numCoreNodes) PraosParams{..
 
         notTooCrowded :: LeaderSchedule -> Bool
         notTooCrowded schedule =
-            crowdedRunLength (longestCrowdedRun schedule) < fromIntegral praosK
+            crowdedRunLength (longestCrowdedRun schedule) <= fromIntegral praosK
 
 shrinkLeaderSchedule :: NumSlots -> LeaderSchedule -> [LeaderSchedule]
 shrinkLeaderSchedule (NumSlots numSlots) (LeaderSchedule m) =
