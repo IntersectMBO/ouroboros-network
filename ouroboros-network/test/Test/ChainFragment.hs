@@ -23,6 +23,7 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 import           Test.Chain (genNonNegative, genSlotGap, addSlotGap,
                              mkPartialBlock, genPoint)
+import           Test.Ouroboros.Network.Testing.Arbitrary (ArbitraryBlockBody (..))
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (ChainUpdate(..), Point(..))
 import           Ouroboros.Network.ChainFragment (ChainFragment,
@@ -324,7 +325,7 @@ prop_shrink_TestHeaderChainFragment c =
 
 genBlockChainFragment :: Int -> Gen (ChainFragment Block)
 genBlockChainFragment n = do
-    bodies <- vector n
+    bodies <- map getArbitraryBlockBody <$> vector n
     slots  <- mkSlots <$> vectorOf n genSlotGap
     return (mkChainFragment slots bodies)
   where
@@ -387,7 +388,7 @@ genAddBlock :: (HasHeader block, HeaderHash block ~ ConcreteHeaderHash)
             => ChainFragment block -> Gen Block
 genAddBlock chain = do
     slotGap <- genSlotGap
-    body    <- arbitrary
+    body    <- getArbitraryBlockBody <$> arbitrary
     let pb = mkPartialBlock (addSlotGap slotGap
                                         (fromMaybe (Slot 0) $ CF.headSlot chain))
                                         body

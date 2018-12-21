@@ -134,6 +134,7 @@ test-suite tests
                        cborg,
                        containers,
                        fingertree,
+                       free,
                        mtl,
                        pipes,
                        QuickCheck,

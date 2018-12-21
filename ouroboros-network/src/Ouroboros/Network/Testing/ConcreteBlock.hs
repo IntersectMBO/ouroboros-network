@@ -30,7 +30,6 @@ module Ouroboros.Network.Testing.ConcreteBlock (
 import           Data.FingerTree (Measured(measure))
 import           Data.Hashable
 import qualified Data.Text as Text
-import           Test.QuickCheck
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain
@@ -196,23 +195,6 @@ fixupBlockHeaderCF c h b = b'
                        -- See the comment for 'headerPrevHash'
       headerBodyHash = h
     }
-
-
-{-------------------------------------------------------------------------------
-  Arbitrary instances
-
-  TODO: Should we have a policy that Arbitrary instances should not live
-  in the main modules?
--------------------------------------------------------------------------------}
-
---
--- Generators
---
-
-instance Arbitrary BlockBody where
-    arbitrary = BlockBody <$> vectorOf 4 (choose ('A', 'Z'))
-    -- probably no need for shrink, the content is arbitrary and opaque
-    -- if we add one, it might be to shrink to an empty block
 
 {-------------------------------------------------------------------------------
   Serialisation

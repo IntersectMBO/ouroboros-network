@@ -8,24 +8,24 @@ import qualified Pipes
 
 import           Control.Monad.ST.Lazy (runST)
 import           Control.Monad (void)
+import           Control.Monad.Free (Free)
+import           Control.Monad.IOSim (SimF)
+
 import           Data.Functor (($>))
 import           Data.Functor.Identity (Identity (..))
 import           Data.List (foldl')
--- import           Data.Word (Word)
--- import           Data.ByteString (ByteString)
 
 import           Protocol.Core (Those (..), connect)
 
--- import Ouroboros.Network.Block (StandardHash)
--- import Ouroboros.Network.Chain (Point (..))
-import Ouroboros.Network.MonadClass ( MonadProbe (..)
-                                    , MonadFork (..)
-                                    , MonadRunProbe (..)
-                                    , MonadSTM (..)
-                                    , MonadTime (..)
-                                    , MonadTimer (..)
-                                    , withProbe
-                                    )
+import Control.Monad.Class.MonadProbe ( MonadProbe (..)
+                                      , MonadRunProbe (..)
+                                      , withProbe
+                                      )
+import Control.Monad.Class.MonadFork ( MonadFork (..))
+import Control.Monad.Class.MonadSTM ( MonadSTM (..))
+import Control.Monad.Class.MonadTimer ( MonadTime (..)
+                                      , MonadTimer (..)
+                                      )
 
 import Ouroboros.Network.Protocol.BlockFetch.Type
 import Ouroboros.Network.Protocol.BlockFetch.Client
@@ -164,7 +164,7 @@ prop_directBlockFetchClientProtocol_ST
   :: [(ArbitraryPoint, ArbitraryPoint)]
   -> Property
 prop_directBlockFetchClientProtocol_ST as = runST $ runExperiment $
-  blockFetchClientProtocol_experiment
+  blockFetchClientProtocol_experiment @(Free (SimF _))
     (\ser cli -> void $ directBlockFetchClient ser cli) as
 
 prop_directBlockFetchClientProtocol_IO

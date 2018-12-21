@@ -32,6 +32,8 @@ import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.Serialise (prop_serialise)
 import           Ouroboros.Network.Testing.ConcreteBlock
 
+import           Test.Ouroboros.Network.Testing.Arbitrary
+
 
 --
 -- The list of all tests
@@ -218,7 +220,7 @@ genNonNegative = (abs <$> arbitrary) `suchThat` (>= 0)
 
 genBlockChain :: Int -> Gen (Chain Block)
 genBlockChain n = do
-    bodies <- vector n
+    bodies <- map getArbitraryBlockBody <$> vector n
     slots  <- mkSlots <$> vectorOf n genSlotGap
     return (mkChain slots bodies)
   where
@@ -307,7 +309,7 @@ genAddBlock :: (HasHeader block, HeaderHash block ~ ConcreteHeaderHash)
             => Chain block -> Gen Block
 genAddBlock chain = do
     slotGap <- genSlotGap
-    body    <- arbitrary
+    body    <- getArbitraryBlockBody <$> arbitrary
     let pb = mkPartialBlock (addSlotGap slotGap (Chain.headSlot chain)) body
         b  = fixupBlock chain pb
     return b
