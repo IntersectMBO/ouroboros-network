@@ -215,7 +215,10 @@ blockFetchClientReceiver = receiver []
 -------------------------------------------------------------------------------}
 
 -- | Test @'BlockFetchServerProtocol'@ using both @'directBlockFetchServer'@
--- and @'connect\''@.
+-- and @'connect\''@.  The test is requesting ranges of integers @(n, m) ::
+-- (Int, In)@.  If ranges for which @x > y@ will be treated as there are no
+-- corresponding blocks (@'Int'@s), otherwise it will stream the list of all
+-- @[x .. y]@.
 --
 blockFetchServerProtocol_experiment
   :: forall m.
@@ -269,6 +272,10 @@ prop_blockFetchServerProtocol_IO (NonEmpty as) = ioProperty $ runExperiment $
 -- Round trip tests
 -------------------------------------------------------------------------------}
 
+-- | Round trip test in either @'IO'@ or in @Free ('SimF' s)@ monad.  It
+-- assures that there can be multiple outstanding range requests, and that the
+-- server returns the exepcted ranges.
+--
 roundTrip_experiment
   :: forall m.
      ( MonadSTM m

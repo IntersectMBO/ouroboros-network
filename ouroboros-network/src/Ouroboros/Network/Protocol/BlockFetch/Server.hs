@@ -153,7 +153,7 @@ blockFetchServerStream server = lift $ handleStAwait <$> runBlockFetchServerSend
   sendBlocks (SendMessageBatchDone server') =
     part MessageBatchDone (blockFetchServerStream server')
 
--- | Sender of the @'BlockFetchServerProtocol'@.  It may sand
+-- | Sender of the @'BlockFetchServerProtocol'@.  It may send
 -- @'MessageServerDone'@ under two conditions:
 --
 --  * @'StreamElement' range@ returned @'End'@, which means that the
@@ -182,7 +182,7 @@ blockFetchServerSender serverDone mrange blockStream = BlockFetchServerSender $ 
         Just stream -> do
           stream' <- Pipes.next stream
           case stream' of
-            Left _             -> return $ SendMessageNoBlocks (blockFetchServerSender serverDone mrange blockStream)
+            Left _          -> return $ SendMessageNoBlocks (blockFetchServerSender serverDone mrange blockStream)
             Right (b, next) -> return $ SendMessageStartBatch (sendStream b next)
  where
   sendStream

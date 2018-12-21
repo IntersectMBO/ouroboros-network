@@ -39,8 +39,8 @@ blockFetchClientSenderFromProducer
   -> BlockFetchClientSender range m a
 blockFetchClientSenderFromProducer producer = BlockFetchClientSender $
   Pipes.next producer >>= \nxt -> case nxt of
-  Left a                   -> return $ BlockFetchClientDone a
-  Right (range, producer') -> return $ BlockFetchClientRange range (blockFetchClientSenderFromProducer producer')
+    Left a                   -> return $ BlockFetchClientDone a
+    Right (range, producer') -> return $ BlockFetchClientRange range (blockFetchClientSenderFromProducer producer')
 
 blockFetchClientSenderStream
   :: ( Monad m )
