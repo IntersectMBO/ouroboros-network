@@ -184,7 +184,7 @@ instance (MonadMask m, MonadSTM m) => HasFS (SimFSE m) where
     doesFileExist            = mockDoesFileExist
 
 
-modifyMockFS :: MonadSTM m
+modifyMockFS :: (HasCallStack, MonadSTM m)
              => (MockFS -> ExceptT FsError (Tr m) (MockFS, b))
              -> SimFSE m b
 modifyMockFS action = do
@@ -197,7 +197,7 @@ modifyMockFS action = do
         Right (fs', b) -> writeTVar fsVar fs' >> return (Right b)
 
 
-withMockFS :: MonadSTM m
+withMockFS :: (HasCallStack, MonadSTM m)
            => (MockFS -> ExceptT FsError (Tr m) b)
            -> SimFSE m b
 withMockFS action = modifyMockFS $ \fs -> (fs, ) <$> action fs
@@ -265,7 +265,7 @@ mockSeek (MockHandle fp _mode curOffsetVar) mode offset = withMockFS $ \fs ->
         writeTVar curOffsetVar offset'
         return offset'
   where
-    checkOverflow :: DiskOffset -> Int -> ExceptT FsError (Tr m) ()
+    checkOverflow :: HasCallStack => DiskOffset -> Int -> ExceptT FsError (Tr m) ()
     checkOverflow newOffset blockSize
         | newOffset > toEnum blockSize = throwFsError FsReachedEOF fp
         | otherwise = return ()
@@ -304,7 +304,7 @@ replaceFileContent fp content =
               _              ->
                   error $ "replaceFileContent: found a folder, not a file for fp " <> show fp
 
-mockPut :: MonadSTM m
+mockPut :: (HasCallStack, MonadSTM m)
         => MockHandle m
         -> Builder
         -> SimFSE m Word64
@@ -327,14 +327,14 @@ mockPut (MockHandle fp _mode handleOffsetVar) builder = modifyMockFS $ \fs -> do
     toWrite      = BL.toStrict . toLazyByteString $ builder
     bytesWritten = toEnum $ BS.length toWrite
 
-mockPutBuffer :: MonadSTM m
+mockPutBuffer :: (HasCallStack, MonadSTM m)
               => MockHandle m
               -> Buffer (SimFSE m)
               -> Builder
               -> SimFSE m Word64
 mockPutBuffer hnd _buf builder = mockPut hnd builder
 
-mockTruncate :: MonadSTM m
+mockTruncate :: (HasCallStack, MonadSTM m)
              => MockHandle m
              -> Word64
              -> SimFSE m ()
@@ -347,7 +347,7 @@ mockTruncate (MockHandle fp _ _) sz = modifyMockFS $ \fs ->
             replaceFileContent fp (BS.take (fromEnum sz) block) (getMockFS fs)
           }), ())
 
-mockWithFile :: (MonadMask m, MonadSTM m)
+mockWithFile :: (HasCallStack, MonadMask m, MonadSTM m)
              => FsPath
              -> IOMode
              -> (MockHandle m -> SimFSE m r)
@@ -358,7 +358,7 @@ mockWithFile fp ioMode = bracket (mockOpen fp ioMode) mockClose
   Operations on directories
 ------------------------------------------------------------------------------}
 
-mockCreateDirectoryIfMissing :: MonadSTM m
+mockCreateDirectoryIfMissing :: (HasCallStack, MonadSTM m)
                              => Bool
                              -> FsPath
                              -> SimFSE m ()
@@ -370,7 +370,8 @@ mockCreateDirectoryIfMissing createParents path = modifyMockFS $ \fs -> do
                                                    (getMockFS fs)
       }, ())
 
-mockCreateDirectoryIfMissingInternal :: Bool
+mockCreateDirectoryIfMissingInternal :: HasCallStack
+                                     => Bool
                                      -> FsPath
                                      -> FsTree a
                                      -> FsTree a
