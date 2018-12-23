@@ -34,6 +34,22 @@ module Ouroboros.Storage.FS.Sim (
     , mockDemo
     , mockDemoScript
     , demoMockFS
+    -- * mock 2
+    , MockHandle2 (..)
+    , mockOpen2
+    , mockClose2
+    , mockSeek2
+    , mockGet2
+    , mockPut2
+    , modifyMockFS2
+    , withMockFS2
+    , mockTruncate2
+    , mockWithFile2
+    , mockCreateDirectoryIfMissing2
+    , mockCreateDirectory2
+    , mockListDirectory2
+    , mockDoesDirectoryExist2
+    , mockDoesFileExist2
     ) where
 
 import           Control.Monad.Catch (MonadCatch (..), MonadMask (..),
@@ -624,3 +640,190 @@ mockDemo = do
   where
     demo :: ExceptT FsError (SimFS IO) [ByteString]
     demo = mockDemoScript
+
+-- Keeping ExceptT on top of State, makes sure that we always get
+-- a result MockFS state, even if exceptions occur. This intermediate
+-- state can be useful for debugging.
+type SimFSE2 = ExceptT FsError SimFS2
+type SimFS2 = State MockFS
+
+-- | A mock handle to a file on disk.
+data MockHandle2 = MockHandle2 {
+      mockHandleFilePath2 :: FsPath
+    , mockHandleIOMode2   :: IOMode
+    , mockHandleOffset2   :: DiskOffset
+    }
+    deriving (Show, Generic)
+
+mockOpen2 :: HasCallStack
+          => FsPath
+          -> IOMode
+          -> SimFSE2 MockHandle2
+mockOpen2 fp ioMode = modifyMockFS2 $ \fs -> do
+    -- Check if the parent exists
+    parent <- noteT (FsError FsResourceDoesNotExist (Just fp) callStack) $
+                index (init fp) (getMockFS fs)
+    (fs', _fileSize) <- case index [last fp] parent of
+        Nothing | ioMode /= IO.ReadMode -> do
+            let tree' = touchFile fp (getMockFS fs)
+            return (fs { getMockFS = tree' }, 0)
+        Just (FileOnDisk f   ) -> return (fs, BS.length f)
+        Just (FolderOnDisk _ ) -> throwFsError FsResourceInappropriateType (Just fp)
+        _ -> throwFsError FsResourceDoesNotExist (Just fp)
+    let initialOffset = 0
+        hnd = MockHandle2 fp ioMode (toEnum initialOffset)
+    return (fs', hnd)
+
+-- | Mock implementation of 'close', which is trivial.
+mockClose2 :: MockHandle2 -> SimFSE2 ()
+mockClose2 _ = return ()
+
+-- | Mock implementation of 'hSeek'
+mockSeek2 :: HasCallStack
+          => MockHandle2
+          -> SeekMode
+          -> Word64
+          -> SimFSE2 (Word64, MockHandle2)
+mockSeek2 m@(MockHandle2 fp _mode currentOffset) mode offset = withMockFS2 $ \fs ->
+    case index fp (getMockFS fs) of
+      Nothing -> throwFsError FsResourceDoesNotExist (Just fp)
+      Just (FolderOnDisk _) -> throwFsError FsResourceInappropriateType (Just fp)
+      Just (FileOnDisk block) -> do
+        let offset' = case mode of
+             IO.AbsoluteSeek -> offset
+             IO.RelativeSeek -> currentOffset + offset
+             IO.SeekFromEnd  -> (toEnum $ BS.length block) + offset
+        checkOverflow offset' (BS.length block)
+        return (offset', m{mockHandleOffset2 = offset'})
+  where
+    checkOverflow :: DiskOffset -> Int -> SimFSE2 ()
+    checkOverflow newOffset blockSize
+        | newOffset > toEnum blockSize = return () -- throwFsError FsReachedEOF fp
+        | otherwise = return ()
+
+mockGet2 :: HasCallStack
+         => MockHandle2
+         -> Int
+         -> SimFSE2 (ByteString, MockHandle2)
+mockGet2 m@(MockHandle2 _fp _ _) 0 = return (BS.empty, m)
+mockGet2 (MockHandle2 _fp AppendMode _) _ =
+    throwFsError FsInvalidArgument Nothing
+mockGet2 m@(MockHandle2 fp _mode offsetVar) bytesToRead = withMockFS2 $ \fs -> do
+    case index fp (getMockFS fs) of
+      Nothing -> throwFsError FsResourceDoesNotExist (Just fp)
+      Just (FolderOnDisk _) -> throwFsError FsResourceInappropriateType (Just fp)
+      Just (FileOnDisk block) -> do
+        let offset = offsetVar
+        let r = BS.take bytesToRead . BS.drop (fromEnum offset) $ block
+            offset' = offset + (fromIntegral $ BS.length r)
+        return (r, m {mockHandleOffset2 = offset'})
+
+mockPut2 :: MockHandle2
+         -> Builder
+         -> SimFSE2 (Word64, MockHandle2)
+mockPut2 (MockHandle2 _fp IO.ReadMode _) _ =
+    -- the IOException in IOFS gives us no FilePath in this case, so we must follow to get
+    -- equivalent results (even though we actually know the fp here).
+    throwFsError FsInvalidArgument Nothing
+mockPut2 m@(MockHandle2 fp mode offset) builder = modifyMockFS2 $ \fs -> do
+    case index fp (getMockFS fs) of
+      Nothing -> throwFsError FsResourceDoesNotExist (Just fp)
+      Just (FolderOnDisk _) -> throwFsError FsResourceInappropriateType (Just fp)
+      Just (FileOnDisk block) -> do
+        let offsetBefore =
+                if mode == AppendMode then fromIntegral $ BS.length block
+                                      else offset
+        let (unchanged, toModify) = BS.splitAt (fromEnum offsetBefore) block
+            block' = unchanged <> toWrite <> BS.drop (BS.length toWrite) toModify
+        -- Update the offset
+            offset' = (offsetBefore + bytesWritten)
+        return ((fs { getMockFS =
+              replaceFileContent fp block' (getMockFS fs)
+          }), (bytesWritten, m{mockHandleOffset2 = offset'}))
+  where
+    toWrite      = BL.toStrict . toLazyByteString $ builder
+    bytesWritten = toEnum $ BS.length toWrite
+
+modifyMockFS2 :: (MockFS -> SimFSE2 (MockFS, b))
+              -> SimFSE2 b
+modifyMockFS2 action = do
+    fs <- lift $ (get :: StateT MockFS Identity MockFS)
+    (fs', b) <- action fs
+    lift $ put fs'
+    return b
+
+withMockFS2 :: (MockFS -> SimFSE2 b)
+            -> SimFSE2 b
+withMockFS2 action = modifyMockFS2 $ \fs -> (fs, ) <$> action fs
+
+mockTruncate2 :: MockHandle2
+              -> Word64
+              -> SimFSE2 ()
+mockTruncate2 (MockHandle2 fp _ _) sz = modifyMockFS2 $ \fs ->
+    case index fp (getMockFS fs) of
+      Nothing -> throwFsError FsResourceDoesNotExist (Just fp)
+      Just (FolderOnDisk _) -> throwFsError FsResourceInappropriateType (Just fp)
+      Just (FileOnDisk block) -> do
+        return ((fs { getMockFS =
+            replaceFileContent fp (BS.take (fromEnum sz) block) (getMockFS fs)
+          }), ())
+
+mockWithFile2 :: FsPath
+              -> IOMode
+              -> (MockHandle2 -> SimFSE2 r)
+              -> SimFSE2 r
+mockWithFile2 fp ioMode a = do
+    hd <- mockOpen2 fp ioMode
+    r <- a hd
+    mockClose2 hd
+    return r
+
+{------------------------------------------------------------------------------
+  Operations on directories
+------------------------------------------------------------------------------}
+
+mockCreateDirectoryIfMissing2 :: Bool
+                              -> FsPath
+                              -> SimFSE2 ()
+mockCreateDirectoryIfMissing2 createParents path
+    | createParents =
+        modifyMockFS2 $ \fs -> do
+            return (fs {
+                getMockFS = undefined
+                    mockCreateDirectoryIfMissingInternal path
+                                                            (getMockFS fs)
+            }, ())
+    | otherwise = mockCreateDirectory2 path
+
+mockCreateDirectory2 :: HasCallStack
+                     => FsPath
+                     -> SimFSE2 ()
+mockCreateDirectory2 dir = modifyMockFS2 $ \fs -> do
+    _parent <- noteT (FsError FsResourceDoesNotExist (Just dir) callStack) $
+                   index (init dir) (getMockFS fs)
+    fs'     <- noteT (FsError FsResourceAlreadyExist (Just dir) callStack) $
+                   mockCreateDirectoryStrict dir (getMockFS fs)
+    return (fs { getMockFS = fs' }, ())
+
+mockListDirectory2 :: HasCallStack
+                   => FsPath
+                   -> SimFSE2 [String]
+mockListDirectory2 fp = withMockFS2 $ \fs -> do
+    case index fp (getMockFS fs) of
+      Nothing -> throwFsError FsResourceDoesNotExist (Just fp)
+      Just (FileOnDisk _)   -> throwFsError FsResourceInappropriateType (Just fp)
+      Just (FolderOnDisk m) -> return (M.keys m)
+
+mockDoesDirectoryExist2 :: FsPath
+                        -> SimFSE2 Bool
+mockDoesDirectoryExist2 fp = withMockFS2 $ \fs ->
+    return $ case index fp (getMockFS fs) of
+               Just (FolderOnDisk _) -> True
+               _                     -> False
+
+mockDoesFileExist2 :: FsPath
+                   -> SimFSE2 Bool
+mockDoesFileExist2 fp = withMockFS2 $ \fs ->
+    return $ case index fp (getMockFS fs) of
+         Just (FileOnDisk _) -> True
+         _                   -> False

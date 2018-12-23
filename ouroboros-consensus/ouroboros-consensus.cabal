@@ -129,6 +129,7 @@ library
                        stm,
                        text              >=1.2   && <1.3,
                        time,
+                       transformers,
                        vector            >=0.12  && <0.13,
 
                        QuickCheck        >=2.12 && <2.13
