@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -39,7 +40,9 @@ import           Control.Monad.Catch (MonadCatch (..), MonadMask (..),
                      MonadThrow (..), bracket)
 import           Control.Monad.Except
 import           Control.Monad.Reader
+import           Control.Monad.Trans.State.Lazy as State
 
+import           GHC.Generics (Generic)
 import           GHC.Stack
 
 import           Data.ByteString (ByteString)
@@ -129,7 +132,7 @@ instance (MonadFork (SimFS m) , MonadSTM m) => MonadSTM (SimFS m) where
 
 data MockFS = MockFS {
     getMockFS :: FsTree ByteString
-  } deriving Show
+  } deriving (Generic, Show)
 
 
 instance Show (MockHandle m) where
@@ -146,7 +149,7 @@ type DiskOffset = Word64
 data FsTree a =
       FileOnDisk a
     | FolderOnDisk (Map String (FsTree a))
-    deriving (Show, Eq)
+    deriving (Show, Eq, Generic)
 
 -- | A mock handle to a file on disk.
 data MockHandle m = MockHandle {
@@ -210,7 +213,7 @@ mockDumpState = do
     fs <- atomically $ readTVar fsVar
     return $ prettyShowFS fs
 
-throwFsError :: (HasCallStack, MonadError FsError m) => FsErrorType -> FsPath -> m a
+throwFsError :: (HasCallStack, MonadError FsError m) => FsErrorType -> Maybe FsPath -> m a
 throwFsError et fp = throwError (FsError et fp callStack)
 
 -- | Mock implementation of 'hOpen'.
@@ -220,21 +223,19 @@ mockOpen :: (HasCallStack, MonadSTM m)
          -> SimFSE m (MockHandle m)
 mockOpen fp ioMode = modifyMockFS $ \fs -> do
     -- Check if the parent exists
-    parent <- noteT (FsError FsResourceDoesNotExist fp callStack) $
+    parent <- noteT (FsError FsResourceDoesNotExist (Just fp) callStack) $
                 index (init fp) (getMockFS fs)
 
     -- Check if the file exist
-    (fs', fileSize) <- case index [last fp] parent of
+    (fs', _fileSize) <- case index [last fp] parent of
         Nothing | ioMode /= IO.ReadMode -> do
             let tree' = touchFile fp (getMockFS fs)
             return (fs { getMockFS = tree' }, 0)
         Just (FileOnDisk f   ) -> return (fs, BS.length f)
-        Just (FolderOnDisk _ ) -> throwFsError FsResourceInappropriateType fp
-        _ -> throwFsError FsResourceDoesNotExist fp
+        Just (FolderOnDisk _ ) -> throwFsError FsResourceInappropriateType (Just fp)
+        _ -> throwFsError FsResourceDoesNotExist (Just fp)
 
-    let initialOffset
-          | ioMode == IO.AppendMode = fileSize
-          | otherwise = 0
+    let initialOffset = 0
     hnd <- MockHandle fp ioMode <$> newTVar (toEnum initialOffset)
     return (fs', hnd)
 
@@ -250,35 +251,38 @@ mockSeek :: forall m. (HasCallStack, MonadSTM m)
          -> SimFSE m Word64
 mockSeek (MockHandle fp _mode curOffsetVar) mode offset = withMockFS $ \fs ->
     case index fp (getMockFS fs) of
-      Nothing -> throwFsError FsResourceDoesNotExist fp
-      Just (FolderOnDisk _) -> throwFsError FsResourceInappropriateType fp
+      Nothing -> throwFsError FsResourceDoesNotExist (Just fp)
+      Just (FolderOnDisk _) -> throwFsError FsResourceInappropriateType (Just fp)
       Just (FileOnDisk block) -> do
         currentOffset <- readTVar curOffsetVar
         let offset' = case mode of
              IO.AbsoluteSeek -> offset
              IO.RelativeSeek -> currentOffset + offset
-             IO.SeekFromEnd  -> (toEnum $ BS.length block) - offset
+             IO.SeekFromEnd  -> (toEnum $ BS.length block) + offset
         checkOverflow offset' (BS.length block)
         writeTVar curOffsetVar offset'
         return offset'
   where
     checkOverflow :: DiskOffset -> Int -> ExceptT FsError (Tr m) ()
     checkOverflow newOffset blockSize
-        | newOffset > toEnum blockSize = throwFsError FsReachedEOF fp
+        | newOffset > toEnum blockSize = return () -- throwFsError FsReachedEOF fp
         | otherwise = return ()
 
 mockGet :: (HasCallStack, MonadSTM m)
         => MockHandle m
         -> Int
         -> SimFSE m ByteString
+mockGet (MockHandle _fp _ _) 0 = return BS.empty
+mockGet (MockHandle _fp AppendMode _) _ =
+    throwFsError FsInvalidArgument Nothing
 mockGet (MockHandle fp _mode offsetVar) bytesToRead = withMockFS $ \fs -> do
     case index fp (getMockFS fs) of
-      Nothing -> throwFsError FsResourceDoesNotExist fp
-      Just (FolderOnDisk _) -> throwFsError FsResourceInappropriateType fp
+      Nothing -> throwFsError FsResourceDoesNotExist (Just fp)
+      Just (FolderOnDisk _) -> throwFsError FsResourceInappropriateType (Just fp)
       Just (FileOnDisk block) -> do
         offset <- readTVar offsetVar
         let r = BS.take bytesToRead . BS.drop (fromEnum offset) $ block
-        writeTVar offsetVar (offset + toEnum bytesToRead)
+        writeTVar offsetVar (offset + (fromIntegral $ BS.length r))
         return r
 
 touchFile :: HasCallStack => FsPath -> FsTree ByteString -> FsTree ByteString
@@ -305,18 +309,23 @@ mockPut :: MonadSTM m
         => MockHandle m
         -> Builder
         -> SimFSE m Word64
-mockPut (MockHandle fp IO.ReadMode _) _ =
-    throwFsError FsIllegalOperation fp
-mockPut (MockHandle fp _mode handleOffsetVar) builder = modifyMockFS $ \fs -> do
+mockPut (MockHandle _ IO.ReadMode _) _ =
+    -- The IOException in IOFS gives us no FilePath in this case, so we must follow to get
+    -- equivalent results (even though we actually know the fp here).
+    throwFsError FsInvalidArgument Nothing
+mockPut (MockHandle fp mode handleOffsetVar) builder = modifyMockFS $ \fs -> do
     handleOffset <- readTVar handleOffsetVar
     case index fp (getMockFS fs) of
-      Nothing -> throwFsError FsResourceDoesNotExist fp
-      Just (FolderOnDisk _) -> throwFsError FsResourceInappropriateType fp
+      Nothing -> throwFsError FsResourceDoesNotExist (Just fp)
+      Just (FolderOnDisk _) -> throwFsError FsResourceInappropriateType (Just fp)
       Just (FileOnDisk block) -> do
-        let (unchanged, toModify) = BS.splitAt (fromEnum handleOffset) block
+        let offsetBefore =
+                if mode == AppendMode then fromIntegral $ BS.length block
+                                      else handleOffset
+        let (unchanged, toModify) = BS.splitAt (fromEnum offsetBefore) block
             block' = unchanged <> toWrite <> BS.drop (BS.length toWrite) toModify
         -- Update the offset
-        writeTVar handleOffsetVar (handleOffset + bytesWritten)
+        writeTVar handleOffsetVar (offsetBefore + bytesWritten)
         return ((fs { getMockFS =
               replaceFileContent fp block' (getMockFS fs)
           }), bytesWritten)
@@ -337,8 +346,8 @@ mockTruncate :: MonadSTM m
              -> SimFSE m ()
 mockTruncate (MockHandle fp _ _) sz = modifyMockFS $ \fs ->
     case index fp (getMockFS fs) of
-      Nothing -> throwFsError FsResourceDoesNotExist fp
-      Just (FolderOnDisk _) -> throwFsError FsResourceInappropriateType fp
+      Nothing -> throwFsError FsResourceDoesNotExist (Just fp)
+      Just (FolderOnDisk _) -> throwFsError FsResourceInappropriateType (Just fp)
       Just (FileOnDisk block) -> do
         return ((fs { getMockFS =
             replaceFileContent fp (BS.take (fromEnum sz) block) (getMockFS fs)
@@ -360,19 +369,19 @@ mockCreateDirectoryIfMissing :: MonadSTM m
                              -> FsPath
                              -> SimFSE m ()
 mockCreateDirectoryIfMissing createParents path = modifyMockFS $ \fs -> do
-    return (fs {
-          getMockFS =
-              mockCreateDirectoryIfMissingInternal createParents
-                                                   path
-                                                   (getMockFS fs)
-      }, ())
+            return (fs {
+                getMockFS =
+                    mockCreateDirectoryIfMissingInternal createParents
+                                                         path
+                                                         (getMockFS fs)
+            }, ())
 
 mockCreateDirectoryIfMissingInternal :: Bool
                                      -> FsPath
                                      -> FsTree a
                                      -> FsTree a
 mockCreateDirectoryIfMissingInternal createParents path0 files
-  | createParents =
+    | createParents =
       -- returns the parents paths, but not the empty list [].
       -- >    inits ["a", "b", "c"]
       -- > == [[], ["a"], ["a", "b"], ["a", "b", "c"]]
@@ -415,9 +424,9 @@ mockCreateDirectory :: (HasCallStack, MonadSTM m)
                     => FsPath
                     -> SimFSE m ()
 mockCreateDirectory dir = modifyMockFS $ \fs -> do
-    _parent <- noteT (FsError FsResourceDoesNotExist dir callStack) $
+    _parent <- noteT (FsError FsResourceDoesNotExist (Just dir) callStack) $
                    index (init dir) (getMockFS fs)
-    fs'     <- noteT (FsError FsResourceAlreadyExist dir callStack) $
+    fs'     <- noteT (FsError FsResourceAlreadyExist (Just dir) callStack) $
                    mockCreateDirectoryStrict dir (getMockFS fs)
     return (fs { getMockFS = fs' }, ())
 
@@ -426,8 +435,8 @@ mockListDirectory :: (HasCallStack, MonadSTM m)
                   -> SimFSE m [String]
 mockListDirectory fp = withMockFS $ \fs -> do
     case index fp (getMockFS fs) of
-      Nothing               -> throwFsError FsResourceDoesNotExist fp
-      Just (FileOnDisk _)   -> throwFsError FsResourceInappropriateType fp
+      Nothing               -> throwFsError FsResourceDoesNotExist (Just fp)
+      Just (FileOnDisk _)   -> throwFsError FsResourceInappropriateType (Just fp)
       Just (FolderOnDisk m) -> return (M.keys m)
 
 mockDoesDirectoryExist :: MonadSTM m

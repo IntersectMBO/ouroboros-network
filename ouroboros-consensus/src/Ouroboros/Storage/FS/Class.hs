@@ -57,7 +57,7 @@ type FsPath = [String]
  Handling failure
 ------------------------------------------------------------------------------}
 
-data FsError = FsError FsErrorType FsPath CallStack
+data FsError = FsError FsErrorType (Maybe FsPath) CallStack
   deriving Show
 
 data FsErrorType
@@ -70,6 +70,7 @@ data FsErrorType
   | FsReachedEOF
   | FsDeviceFull
   | FsInsufficientPermissions
+  | FsInvalidArgument
   deriving (Show, Eq)
 
 -- | We define a 'FsUnexpectedException' separated by the rest so that we

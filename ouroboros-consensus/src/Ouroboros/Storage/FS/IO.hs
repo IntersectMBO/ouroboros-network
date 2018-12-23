@@ -21,6 +21,7 @@ An abstract view over the filesystem.
 module Ouroboros.Storage.FS.IO (
     -- * IO implementation & monad
       IOFS -- opaque
+    , IOFSE
     , runIOFS
     ) where
 
@@ -72,15 +73,13 @@ catchFSErrorIO (splitDirectories -> mountPoint) action = do
          Left err -> handleError err
          Right a  -> return (Right a)
     where
-        getPath :: IOError -> IO FsPath
+        getPath :: IOError -> IO (Maybe FsPath)
         getPath ioe = case ioe_filename ioe of
             Nothing ->
-              throwIO $ FsUnexpectedException
-                  (userError $ "getPath: ioe_filename was empty in " ++ displayException ioe)
-                  callStack
+                return Nothing
             Just fp ->
                  case stripPrefix mountPoint (splitDirectories fp) of
-                      Just path -> return path
+                      Just path -> return $ Just path
                       Nothing -> throwIO $ FsUnexpectedException
                           (userError $ "getPath: stripPrefix returned empty path in " ++ displayException ioe)
                           callStack
@@ -103,6 +102,8 @@ catchFSErrorIO (splitDirectories -> mountPoint) action = do
           = throwFsErrorIO FsDeviceFull
           | isPermissionErrorType eType
           = throwFsErrorIO FsInsufficientPermissions
+          | ioe_type ioErr == InvalidArgument
+          = throwFsErrorIO FsInvalidArgument
           | otherwise
           = throwIO (FsUnexpectedException ioErr callStack)
          where
@@ -114,7 +115,6 @@ catchFSErrorIO (splitDirectories -> mountPoint) action = do
              fp <- getPath ioErr
              return $ Left $ FsError et fp $ popCallStack callStack
              -- Pop the call to mkFsError from the callStack
-
 
 {------------------------------------------------------------------------------
   The IOFS monad
