@@ -54,7 +54,12 @@ tests = testGroup "Storage"
     , testProperty "hOpen(Sim) == hOpen(IO)"     $ prop_hOpenEquivalence
     , testProperty "hOpen read contention"       $ prop_hOpenReadContention
     , testProperty "hOpen read/write contention" $ prop_hOpenReadWriteContention
-    , testProperty "hOpen on directories fails"  $ prop_hOpenDirectory
+    , testProperty "hOpen ReadOnly and hput"     $ prop_hOpenWriteInvalid
+    , testProperty "hOpen WriteOnly and hGet "   $ prop_hOpenReadInvalid
+    , testProperty "hOpen WriteOnly and hGet 0B" $ prop_hOpenReadInvalidZero
+    , testProperty "hOpen and hPut with Append " $ prop_hOpenAppend
+    , testProperty "hOpen and Offset with Append" $ prop_hOpenAppendOffset
+    , testProperty "hOpen on directories fails"   $ prop_hOpenDirectory
       -- hClose
     , testCase     "hClose twice no-op "  $ test_hCloseTwice
     , testProperty "hClose twice no-op equivalence"  $ prop_hCloseTwiceEquivalence
@@ -64,8 +69,14 @@ tests = testGroup "Storage"
     , testProperty "hPutBuffer chunk boundaries"  $ prop_hPutBufferBoundaries
       -- hGet
     , testProperty "hGet equivalence"  $ prop_hGetEquivalence
+      -- hSeek
+    , testProperty "hSeek overflow " $ prop_hSeekOverflow
+    , testProperty "hSeek overflow " $ prop_hSeekFromEnd
+    , testProperty "hGet moves offset" $ prop_hGetOffset
       -- hTruncate
     , testProperty "hTruncate equivalence"  $ prop_hTruncateEquivalence
+      -- hCreateDirectory
+    , testProperty "hCreate directories and parents" $ prop_hCreateDirectory
       -- doesFileExist
     , testCase "doesFileExist yields True  for an existing file" $ test_doesFileExistOK
     , testCase "doesFileExist yields False for a non-existing file" $ test_doesFileExistKO
@@ -74,7 +85,7 @@ tests = testGroup "Storage"
     , testCase "doesDirectoryExist yields False for a non-existing directory" $ test_doesDirectoryExistKO
       -- mockDemo
     , testProperty "mockDemo equivalence"        $ prop_mockDemo
-    ]
+  ]
   , testGroup "Immutable Storage"
     [ testCase "What you store is what you get" test_appendAndGet
     , testProperty "append/get roundtrip" prop_appendAndGetRoundtrip
@@ -221,6 +232,60 @@ prop_hOpenEquivalence = monadicIO $ do
                              hClose h
                          ) sameFsError prettyFSError
 
+prop_hOpenWriteInvalid :: Property
+prop_hOpenWriteInvalid = monadicIO $ do
+    run $ apiEquivalence (runExceptT $ do
+                             _ <- hOpen ["foo.txt"] WriteMode
+                             h2 <- hOpen ["foo.txt"] ReadMode
+                             hPut h2 (BL.lazyByteString $ C8.pack "haskell-is-nice")
+                         ) sameFsError prettyFSError
+
+prop_hOpenReadInvalid :: Property
+prop_hOpenReadInvalid = monadicIO $ do
+    run $ apiEquivalence (runExceptT $ do
+                            h2 <- hOpen ["foo.txt"] AppendMode
+                            hGet h2 5
+                        ) sameFsError prettyFSError
+
+prop_hOpenReadInvalidZero :: Property
+prop_hOpenReadInvalidZero = monadicIO $ do
+    run $ apiEquivalence (runExceptT $ do
+                            h2 <- hOpen ["foo.txt"] AppendMode
+                            hGet h2 0
+                        ) sameFsError prettyFSError
+
+prop_hOpenAppend :: Property
+prop_hOpenAppend = monadicIO $ do
+    run $ apiEquivalence (runExceptT $ do
+                            h1 <- hOpen ["foo.txt"] AppendMode
+                            h2 <- hOpen ["foo.txt"] AppendMode
+                            h3 <- hOpen ["foo.txt"] ReadMode
+                            ls <- sequence
+                                [
+                                  hPut h1 (BL.lazyByteString $ C8.pack "12")
+                                , hPut h2 (BL.lazyByteString $ C8.pack "34")
+                                , hPut h1 (BL.lazyByteString $ C8.pack "56")
+                                , hPut h2 (BL.lazyByteString $ C8.pack "78")
+                                ]
+                            -- AppendMode moves offset at the end of file before each hPut.
+                            -- This means the file consists of all 8 bytes written above.
+                            bs <- hGet h3 8
+                            offset <- hSeek h3 RelativeSeek 0
+                            return (ls, bs, offset)
+                        ) sameFsError prettyFSError
+
+prop_hOpenAppendOffset :: Property
+prop_hOpenAppendOffset = monadicIO $ do
+    run $ apiEquivalence (runExceptT $ do
+                            h1 <- hOpen ["foo.txt"] AppendMode
+                            w <- hPut h1 (BL.lazyByteString $ C8.pack "12")
+                            h2 <- hOpen ["foo.txt"] AppendMode
+                            -- We heck the initial offset when we open with AppendMode.
+                            offset <- hSeek h2 RelativeSeek 0
+                            return (w, offset)
+                        ) sameFsError prettyFSError
+
+
 -- Opening two read handles on the same file should be allowed in both
 -- implementations.
 prop_hOpenReadContention :: Property
@@ -324,6 +389,37 @@ prop_hGetEquivalence = monadicIO $ do
                   return (b, [r1,r2,r3])
         ) sameFsError prettyFSError
 
+prop_hSeekOverflow :: Property
+prop_hSeekOverflow = monadicIO $ do
+    run $ apiEquivalence (runExceptT $
+                withFile ["foo.txt"] WriteMode $ \h1 -> do
+                    b  <- hPut h1 (BL.lazyByteString $ C8.pack "haskell-is-nice")
+                    r <- hSeek h1 AbsoluteSeek 100
+                    return (b,r)
+
+        ) sameFsError prettyFSError
+
+prop_hSeekFromEnd :: Property
+prop_hSeekFromEnd = monadicIO $ do
+    run $ apiEquivalence (runExceptT $
+                withFile ["foo.txt"] WriteMode $ \h1 -> do
+                    b  <- hPut h1 (BL.lazyByteString $ C8.pack "haskell-is-nice")
+                    r <- hSeek h1 SeekFromEnd 5
+                    return (b,r)
+
+        ) sameFsError prettyFSError
+
+
+prop_hGetOffset :: Property
+prop_hGetOffset = monadicIO $ do
+    run $ apiEquivalence (runExceptT $
+                withFile ["foo.txt"] WriteMode $ \h1 -> do
+                    b  <- hGet h1 7
+                    r  <- hSeek h1 RelativeSeek 5
+                    return (b,r)
+
+        ) sameFsError prettyFSError
+
 prop_hTruncateEquivalence :: Property
 prop_hTruncateEquivalence = monadicIO $ do
     run $ apiEquivalence (runExceptT $
@@ -337,6 +433,12 @@ prop_hTruncateEquivalence = monadicIO $ do
                  hClose h1
                  return (b, [r1,r2])
        ) sameFsError prettyFSError
+
+prop_hCreateDirectory :: Property
+prop_hCreateDirectory = withMaxSuccess 1 $ monadicIO $ do
+    run $ apiEquivalence (runExceptT $ do
+                            createDirectoryIfMissing True ["xxx", "yyy"]
+                        ) sameFsError prettyFSError
 
 test_doesFileExistOK :: Assertion
 test_doesFileExistOK =
