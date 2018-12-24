@@ -42,6 +42,7 @@ import           Codec.Serialise
 import           Control.Monad.Except
 import           Crypto.Random (MonadRandom)
 import qualified Data.IntMap.Strict as IntMap
+import           Data.FingerTree (Measured(measure))
 import           Data.Map (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy
@@ -236,6 +237,13 @@ instance (SimpleBlockCrypto c, OuroborosTag p, Condense (Payload p (SimplePreHea
 condensedHash :: Show (HeaderHash b) => Network.Hash b -> String
 condensedHash GenesisHash     = "genesis"
 condensedHash (BlockHash hdr) = show hdr
+
+instance (SimpleBlockCrypto c, OuroborosTag p, Serialise (Payload p (SimplePreHeader p c))) => Measured BlockMeasure (SimpleHeader p c) where
+  measure = blockMeasure
+
+instance (SimpleBlockCrypto c, OuroborosTag p, Serialise (Payload p (SimplePreHeader p c))) => Measured BlockMeasure (SimpleBlock p c) where
+  measure = blockMeasure
+
 
 instance (SimpleBlockCrypto c, OuroborosTag p, Serialise (Payload p (SimplePreHeader p c))) => HasHeader (SimpleHeader p c) where
   type HeaderHash (SimpleHeader p c) = Hash (SimpleBlockHash c) (SimpleHeader p c)
