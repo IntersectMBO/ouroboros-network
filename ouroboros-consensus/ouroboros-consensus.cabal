@@ -55,6 +55,7 @@ library
                        Ouroboros.Consensus.Protocol.ModChainSel
                        Ouroboros.Consensus.Util
                        Ouroboros.Consensus.Util.Chain
+                       Ouroboros.Consensus.Util.Classify
                        Ouroboros.Consensus.Util.Condense
                        Ouroboros.Consensus.Util.DepFn
                        Ouroboros.Consensus.Util.HList
@@ -67,8 +68,13 @@ library
                        -- Storing things on disk
                        Ouroboros.Storage.Immutable.DB
                        Ouroboros.Storage.FS.Class
-                       Ouroboros.Storage.FS.Sim
+                       Ouroboros.Storage.FS.Class.Example
+                       Ouroboros.Storage.FS.Class.Types
                        Ouroboros.Storage.FS.IO
+                       Ouroboros.Storage.FS.Sim.FsTree
+                       Ouroboros.Storage.FS.Sim.MockFS
+                       Ouroboros.Storage.FS.Sim.Pure
+                       Ouroboros.Storage.FS.Sim.STM
                        Ouroboros.Storage.Util
                        Ouroboros.Storage.IO
 
@@ -236,25 +242,30 @@ test-suite test-crypto
 
 test-suite test-storage
   type:             exitcode-stdio-1.0
-  hs-source-dirs:   test-storage
+  hs-source-dirs:   test-storage test-util
   default-language: Haskell2010
   main-is:          Main.hs
   other-modules:
                     Test.Ouroboros.StateMachine
                     Test.Ouroboros.Storage
                     Test.Ouroboros.Storage.Immutable.Sim
+                    Test.Util.RefEnv
   build-depends:    base,
                     ouroboros-network,
                     ouroboros-consensus,
                     io-sim-classes,
 
+                    bifunctors,
                     bytestring,
                     containers,
                     directory,
                     exceptions,
+                    generics-sop,
                     mtl,
+                    pretty-show,
                     QuickCheck,
-                    quickcheck-state-machine ==0.4.3,
+                    quickcheck-state-machine >=0.6.0,
+                    random,
                     tasty,
                     tasty-hunit,
                     tasty-quickcheck,

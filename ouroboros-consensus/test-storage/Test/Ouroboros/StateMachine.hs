@@ -1,482 +1,1000 @@
-{-# LANGUAGE BangPatterns               #-}
-{-# LANGUAGE DataKinds                  #-}
-{-# LANGUAGE DeriveAnyClass             #-}
-{-# LANGUAGE DeriveFunctor              #-}
-{-# LANGUAGE DeriveGeneric              #-}
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE FlexibleInstances          #-}
-{-# LANGUAGE GADTs                      #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE KindSignatures             #-}
-{-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE PartialTypeSignatures      #-}
-{-# LANGUAGE PolyKinds                  #-}
-{-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE StandaloneDeriving         #-}
-{-# LANGUAGE TypeApplications           #-}
-{-# LANGUAGE TypeOperators              #-}
-{-# LANGUAGE TypeFamilies               #-}
-{-# LANGUAGE UndecidableInstances       #-}
-{-# OPTIONS_GHC -fno-warn-orphans       #-}
+{-# LANGUAGE DeriveAnyClass       #-}
+{-# LANGUAGE DeriveFoldable       #-}
+{-# LANGUAGE DeriveGeneric        #-}
+{-# LANGUAGE DeriveTraversable    #-}
+{-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE LambdaCase           #-}
+{-# LANGUAGE PolyKinds            #-}
+{-# LANGUAGE RecordWildCards      #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE StandaloneDeriving   #-}
+{-# LANGUAGE TemplateHaskell      #-}
+{-# LANGUAGE TupleSections        #-}
+{-# LANGUAGE TypeApplications     #-}
+{-# LANGUAGE TypeFamilies         #-}
+{-# LANGUAGE TypeOperators        #-}
+{-# LANGUAGE UndecidableInstances #-}
 
-module Test.Ouroboros.StateMachine (tests) where
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
-import           Prelude hiding (elem)
+module Test.Ouroboros.StateMachine (
+    tests
+  , showLabelledExamples
+  ) where
 
+import           Control.Monad
+import           Control.Monad.IO.Class (liftIO)
+import           Data.Bifoldable
+import           Data.Bifunctor
+import qualified Data.Bifunctor.TH as TH
+import           Data.Bitraversable
 import           Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Builder as BL
-import           Data.Kind (Type)
-import qualified Data.Map as Map
-import           Data.Map (Map, (!))
-import           Data.Set (fromList)
-import           Data.TreeDiff (ToExpr, defaultExprViaShow)
-import           Data.TreeDiff.Class
+import qualified Data.ByteString.Lazy as BL
+import           Data.Functor.Classes
+import           Data.Int (Int64)
+import qualified Data.List as L
+import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
+import           Data.Maybe (isJust)
+import           Data.Proxy
+import           Data.Set (Set)
+import qualified Data.Set as Set
+import           Data.TreeDiff (ToExpr)
 import           Data.Word (Word64)
-import           Control.Monad.State.Lazy
-import           Control.Monad.Except
-import           GHC.Generics (Generic, Generic1)
+import qualified Generics.SOP as SOP
+import           GHC.Generics
 import           GHC.Stack
-import           System.IO (IOMode (..), SeekMode (..))
-import qualified System.Directory as Dir
+import           System.Directory (removeDirectoryRecursive)
+import           System.IO (IOMode, SeekMode)
+import qualified System.IO as IO
+import           System.IO.Temp (createTempDirectory)
+import           System.Random (getStdRandom, randomR)
+import           Text.Read (readMaybe)
+import           Text.Show.Pretty (ppShow)
 
-import           Test.Tasty
-                   (TestTree, testGroup)
-import           Test.Tasty.QuickCheck (testProperty)
-import           Test.QuickCheck (arbitrary, Gen, Property, (===),
-                     choose, elements, frequency, sublistOf, suchThat)
-import           Test.QuickCheck.Monadic (monadicIO, run)
-import           Test.StateMachine
+import           Test.QuickCheck
+import           Test.QuickCheck.Monadic (monadicIO)
+import           Test.QuickCheck.Random (mkQCGen)
+import           Test.StateMachine (Concrete, Symbolic)
+import qualified Test.StateMachine as QSM
+import qualified Test.StateMachine.Sequential as QSM
+import qualified Test.StateMachine.Types as QSM
 import qualified Test.StateMachine.Types.Rank2 as Rank2
+import           Test.Tasty (TestTree, testGroup)
+import           Test.Tasty.QuickCheck
 
 import           Ouroboros.Storage.FS.Class
+import           Ouroboros.Storage.FS.Class.Types
 import           Ouroboros.Storage.FS.IO
-import           Ouroboros.Storage.FS.Sim
+import           Ouroboros.Storage.FS.Sim.FsTree (FsTree (..))
+import           Ouroboros.Storage.FS.Sim.MockFS (MockFS)
+import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
+import           Ouroboros.Storage.FS.Sim.Pure
+import qualified Ouroboros.Storage.IO as F
 
+import           Ouroboros.Consensus.Util
+import qualified Ouroboros.Consensus.Util.Classify as C
+import           Ouroboros.Consensus.Util.Condense
 
--- Fd here is assigned by the Model for each new file. It saves us from
--- implementing Eq instances on OpenFile which needs using pointer equality.
-type Fd = Int
+import           Test.Util.RefEnv (RefEnv)
+import qualified Test.Util.RefEnv as RE
 
--- Our wraper around an open file. When we run with r = Concrete, the handle can
--- be accessed using @opaque@.
+{-------------------------------------------------------------------------------
+  Path expressions
+-------------------------------------------------------------------------------}
+
+data PathExpr fp =
+    PExpPath     FsPath
+  | PExpRef      fp
+  | PExpParentOf fp
+  deriving (Show, Eq, Ord, Functor, Foldable, Traversable, Generic)
+
+evalPathExpr :: PathExpr FsPath -> FsPath
+evalPathExpr (PExpPath     fp) = fp
+evalPathExpr (PExpRef      fp) = fp
+evalPathExpr (PExpParentOf fp) = init fp
+
+{-------------------------------------------------------------------------------
+  Abstract model
+
+  TODO: This does not currently test newBuffer/hPutBuffer.
+-------------------------------------------------------------------------------}
+
+-- | Commands
 --
--- Opaque adds a Show instance to sth that does not have.
--- Reference is used so that we are able to use symbolic references while generating.
-type OpenFile r = Reference (Opaque (FsHandle IOFSE)) r
+-- We will be interested in three different instantiations of @h@:
+--
+-- > Cmd Mock.Handle
+-- > Cmd (Reference (Opaque (FsHandle IOFSE)) Concrete)
+-- > Cmd (Reference (Opaque (FsHandle IOFSE)) Symbolic)
+--
+-- Key idea is that all this infrastructure will be applicable both to
+-- the model and to the system under test.
+--
+-- TODO: Program such as "copy what you read" is currently not expressible
+-- in our language. Does this matter?
+data Cmd fp h =
+    Open               (PathExpr fp) IOMode
+  | Close              h
+  | Seek               h SeekMode Int64
+  | Get                h Int
+  | Put                h BL.ByteString
+  | Truncate           h Word64
+  | GetSize            h
+  | CreateDir          (PathExpr fp)
+  | CreateDirIfMissing Bool (PathExpr fp)
+  | ListDirectory      (PathExpr fp)
+  | DoesDirectoryExist (PathExpr fp)
+  | DoesFileExist      (PathExpr fp)
+  deriving (Generic, Show, Functor, Foldable, Traversable)
 
-data Model (r :: Type -> Type) = Model {
-          mockFs    :: MockFS -- The FS tree.
-        , counter   :: Int    -- Number steps that have been taken from the initial model state.
-        , nextFd    :: Fd     -- This is increased every time a new file is opened.
-        , openFiles :: Map Fd (MockHandle2, OpenFile r) -- The open files.
-        } deriving (Show, Generic)
+deriving instance SOP.Generic         (Cmd fp h)
+deriving instance SOP.HasDatatypeInfo (Cmd fp h)
 
-instance ToExpr MockFS
-instance ToExpr (FsTree ByteString)
-instance ToExpr (Model Symbolic)
-instance ToExpr (Model Concrete)
-instance ToExpr IOMode where
-    toExpr = defaultExprViaShow
-instance ToExpr MockHandle2
+-- | Successful result
+data Success fp h =
+    WHandle    fp h
+  | RHandle    h
+  | Unit       ()
+  | Path       fp ()
+  | Word64     Word64
+  | ByteString ByteString
+  | Strings    (Set String)
+  | Bool       Bool
+  deriving (Eq, Show, Functor, Foldable)
 
-data Command (r :: Type -> Type)
-    = Open                      FsPath IOMode
-    | Close                     (Fd, OpenFile r)
-    | Seek                      (Fd, OpenFile r) SeekMode Word64
-    | Get                       (Fd, OpenFile r) Int
-    | Put                       (Fd, OpenFile r) BL.ByteString
-    | CreateDirectory           FsPath
-    | CreateDirectoryIfMissing  Bool FsPath
-    | ListDirectory             FsPath
-    | DoesDirectoryExist        FsPath
-    | DoesFileExist             FsPath
-    | Dummy  -- A command which should always be  discarded from precondition.
-      deriving (Generic1, Rank2.Foldable, Rank2.Traversable, Rank2.Functor)
+-- | Successful semantics
+run :: forall m. HasFS m
+    => Cmd FsPath (FsHandle m) -> m (Success FsPath (FsHandle m))
+run = go
+  where
+    go :: Cmd FsPath (FsHandle m) -> m (Success FsPath (FsHandle m))
+    go (Open pe mode) =
+        case mode of
+          IO.ReadMode -> withPE pe (\_ -> RHandle) $ \fp -> hOpen fp mode
+          _otherwise  -> withPE pe WHandle         $ \fp -> hOpen fp mode
 
-deriving instance Show (Command Symbolic)
-deriving instance Show (Command Concrete)
+    go (CreateDir            pe) = withPE pe Path   $ createDirectory
+    go (CreateDirIfMissing b pe) = withPE pe Path   $ createDirectoryIfMissing b
+    go (Close    h             ) = Unit       <$> hClose    h
+    go (Seek     h mode sz     ) = Unit       <$> hSeek     h mode sz
+    go (Get      h n           ) = ByteString <$> hGet      h n
+    go (Put      h bs          ) = Word64     <$> hPut      h (BL.lazyByteString bs)
+    go (Truncate h sz          ) = Unit       <$> hTruncate h sz
+    go (GetSize  h             ) = Word64     <$> hGetSize  h
+    go (ListDirectory      pe  ) = withPE pe (const Strings) $ listDirectory
+    go (DoesDirectoryExist pe  ) = withPE pe (const Bool)    $ doesDirectoryExist
+    go (DoesFileExist      pe  ) = withPE pe (const Bool)    $ doesFileExist
 
-data Response (r :: Type -> Type)
-  = OpenR                            (Either FsError (OpenFile r))
-  | CloseR                           (Either FsError ())
-  | SeekR                            (Either FsError Word64)
-  | GetR                             (Either FsError ByteString)
-  | PutR                             (Either FsError Word64)
-  | CreateDirectoryR                 (Either FsError ())
-  | CreateDirectoryIfMissingR        (Either FsError ())
-  | ListDirectoryR                   (Either FsError [String])
-  | DoesDirectoryExistR              (Either FsError Bool)
-  | DoesFileExistR                   (Either FsError Bool)
-  | DummyR
-  deriving (Generic1, Rank2.Foldable)
+    withPE :: PathExpr FsPath
+           -> (FsPath -> a -> Success FsPath (FsHandle m))
+           -> (FsPath -> m a)
+           -> m (Success FsPath (FsHandle m))
+    withPE pe r f = let fp = evalPathExpr pe in r fp <$> f fp
 
-deriving instance Show (Response Symbolic)
-deriving instance Show (Response Concrete)
+{-------------------------------------------------------------------------------
+  Instantiating the semantics
+-------------------------------------------------------------------------------}
 
+-- | Responses are either succesful termination or an error
+newtype Resp fp h = Resp { getResp :: Either FsError (Success fp h) }
+  deriving (Show, Functor, Foldable)
+
+-- | The 'Eq' instance for 'Resp' uses 'sameFsError'
+instance (Eq fp, Eq h) => Eq (Resp fp h) where
+  Resp (Left  e) == Resp (Left  e') = sameFsError e e'
+  Resp (Right a) == Resp (Right a') = a == a'
+  _              == _               = False
+
+runPure :: Cmd FsPath Mock.Handle -> MockFS -> (Resp FsPath Mock.Handle, MockFS)
+runPure cmd = first Resp . runPureSimFSE (run cmd)
+
+runIO :: MountPoint -> Cmd FsPath (FsHandle IOFSE) -> IO (Resp FsPath (FsHandle IOFSE))
+runIO mount cmd = Resp <$> runIOFSE mount (run cmd)
+
+{-------------------------------------------------------------------------------
+  Bitraversable instances
+-------------------------------------------------------------------------------}
+
+TH.deriveBifunctor     ''Cmd
+TH.deriveBifoldable    ''Cmd
+TH.deriveBitraversable ''Cmd
+
+TH.deriveBifunctor     ''Success
+TH.deriveBifoldable    ''Success
+TH.deriveBitraversable ''Success
+
+TH.deriveBifunctor     ''Resp
+TH.deriveBifoldable    ''Resp
+TH.deriveBitraversable ''Resp
+
+{-------------------------------------------------------------------------------
+  Collect arguments
+-------------------------------------------------------------------------------}
+
+paths :: Bitraversable t => t fp h -> [fp]
+paths = bifoldMap (:[]) (const [])
+
+handles :: Bitraversable t => t fp h -> [h]
+handles = bifoldMap (const []) (:[])
+
+{-------------------------------------------------------------------------------
+  Model
+-------------------------------------------------------------------------------}
+
+-- | Concrete or symbolic reference to a path
+type PathRef = QSM.Reference FsPath
+
+-- | Concrete or symbolic reference to an IO file handle
+type HandleRef = QSM.Reference (QSM.Opaque (FsHandle IOFSE))
+
+-- | Mapping between real IO file handles and mock file handles
+type KnownHandles = RefEnv (QSM.Opaque (FsHandle IOFSE)) Mock.Handle
+
+-- | Mapping between path references and paths
+type KnownPaths = RefEnv FsPath FsPath
+
+resolvePathExpr :: Eq1 r => KnownPaths r -> PathExpr (PathRef r) -> FsPath
+resolvePathExpr knownPaths = evalPathExpr . fmap (knownPaths RE.!)
+
+-- | Execution model
+data Model r = Model {
+      mockFS       :: MockFS
+    , knownPaths   :: KnownPaths   r
+    , knownHandles :: KnownHandles r
+    }
+  deriving (Show, Generic)
+
+-- | Initial model
 initModel :: Model r
-initModel = Model newEmptyMockFS 0 0 Map.empty
+initModel = Model Mock.empty RE.empty RE.empty
 
--- In this Model we try to keep preconditions minimal. We handle failures,
--- at the form of Left in the postconditions.
-preconditions :: Model Symbolic -> Command Symbolic -> Logic
-preconditions (Model fs _ _ mp) cmd = case cmd of
-    Open _ _ ->
-        -- frequency of 'opens' reduces when openfds rises
-        -- and becomes 0 when there are 200 files to avoid EMFILE.
-        Map.size mp .< 100
-    Seek (fd, _) seekMode offset ->
-        if seekMode == SeekFromEnd && offset > 0
-        then Bot .// "we only allow SeekFromEnd with 0 offset."
-        else
-            case Map.lookup fd mp of
-                Nothing -> Bot .// "fd does not exist in open files Map."
-                Just ((MockHandle2 fp _mode currentOffset), _) ->
-                    case index fp (getMockFS fs) of
-                        Nothing -> Top
-                        Just (FolderOnDisk _) -> Top
-                        Just (FileOnDisk block) ->
-                            let offset' = case seekMode of
-                                    AbsoluteSeek -> offset
-                                    RelativeSeek -> currentOffset + offset
-                                    SeekFromEnd  -> (toEnum $ BS.length block) + offset
-                            in (toEnum $ BS.length block) .>= offset' -- we don't allow overflow.
-    Get (fd, _) _ ->
-        case Map.lookup fd mp of
-            Nothing -> Bot .// "fd does not exist in open files Map."
-            Just (_mockHandle, _) -> Top
-    Put (fd, _) _ ->
-        case Map.lookup fd mp of
-            Nothing -> Bot .// "fd does not exist in open files Map."
-            Just (_mockHandle, _) -> Top
-    -- TODO(kde) until the bug is fixed. In IO this throws an exception when the path
-    -- does not exist. In Sim it is a no op. Not sure which we want to follow.
-    CreateDirectoryIfMissing b _path -> Boolean b
-    Dummy -> Bot
-    _ -> Top
+-- | Key property of the model is that we can go from real to mock responses
+toMock :: (Bifunctor t, Eq1 r) => Model r -> t :@ r -> t FsPath Mock.Handle
+toMock Model{..} (At r) = bimap (knownPaths RE.!) (knownHandles RE.!) r
 
-postconditions :: Model Concrete -> Command Concrete -> Response Concrete -> Logic
-postconditions (Model fs _ _nextFd mp) cmd resp = case (cmd,resp) of
-    (Open fsPath ioMode, OpenR r1) ->
-        let (r2, _) = runState (runExceptT $ mockOpen2 fsPath ioMode) fs
-        in standardPostCondition allTop r1 r2
-    (Close (fd, _), CloseR r1) ->
-        let (r2, _) = runState (runExceptT $ mockClose2 $ fst $ mp Map.! fd) fs
-        in standardPostCondition (.==) r1 r2
-    (Seek (fd, _) seekMode w, SeekR r1) ->
-        let (r2, _) = runState (runExceptT $ mockSeek2 (fst $ mp Map.! fd) seekMode w) fs
-        in standardPostCondition (.==) r1 (fst <$> r2)
-    (Get (fd, _) n, GetR r1) ->
-        let (r2, _) = runState (runExceptT $ mockGet2 (fst $ mp Map.! fd) n) fs
-        in standardPostCondition (.==) r1 (fst <$> r2)
-    (Put (fd, _) bytes, PutR r1) ->
-        let (r2, _) = runState (runExceptT $ mockPut2 (fst $ mp Map.! fd) (BL.lazyByteString bytes)) fs
-        in standardPostCondition (.==) r1 (fst <$> r2)
-    (CreateDirectory path , CreateDirectoryR r1) ->
-        let (r2, _) = runState (runExceptT $ mockCreateDirectory2 path) fs
-        in standardPostCondition (.==) r1 r2
-    (CreateDirectoryIfMissing b path, CreateDirectoryIfMissingR r1) ->
-        let (r2, _) = runState (runExceptT $ mockCreateDirectoryIfMissing2 b path) fs
-        in standardPostCondition (.==) r1 r2
-    (ListDirectory path , ListDirectoryR r1) ->
-        let (r2, _) = runState (runExceptT $ mockListDirectory2 path) fs
-        in standardPostCondition (\ls1 ls2 -> fromList ls1 .== fromList ls2) r1 r2 -- compare as Set.
-    (DoesDirectoryExist path , DoesDirectoryExistR r1) ->
-        let (r2, _) = runState (runExceptT $ mockDoesDirectoryExist2 path) fs
-        in standardPostCondition (.==) r1 r2
-    (DoesFileExist path , DoesFileExistR r1) ->
-        let (r2, _) = runState (runExceptT $ mockDoesFileExist2 path) fs
-        in standardPostCondition (.==) r1 r2
-    (Dummy, DummyR) -> Bot
-    _ -> Bot
+-- | Step the mock semantics
+--
+-- We cannot step the whole Model here (see 'event', below)
+step :: Eq1 r => Model r -> Cmd :@ r -> (Resp FsPath Mock.Handle, MockFS)
+step model@Model{..} cmd = runPure (toMock model cmd) mockFS
 
+-- | Pair a handle with the path it points to
+resolveHandle :: MockFS -> Mock.Handle -> (Mock.Handle, FsPath)
+resolveHandle mockFS h = (h, Mock.handleFsPath mockFS h)
 
-standardPostCondition :: (a -> b -> Logic) -> Either FsError a -> Either FsError b -> Logic
-standardPostCondition _ (Left e1) (Left e2) =
-    if e1 `sameFsError` e2 then Top
-    else Bot .// ("IO returned error " ++ show e1 ++ " while Sim returned " ++ show e2)
-standardPostCondition _ (Left e1) (Right _) = Bot .// "IO returned " ++ (show e1)
-standardPostCondition _ (Right _) (Left e2) = Bot .// "Sim returned " ++ (show e2)
-standardPostCondition checkEq (Right a) (Right b) = checkEq a b
+-- | Open read handles and the files they point to
+openHandles :: Model r -> [(Mock.Handle, FsPath)]
+openHandles Model{..} =
+    map (resolveHandle mockFS) $ filter isOpen (RE.elems knownHandles)
+  where
+    isOpen :: Mock.Handle -> Bool
+    isOpen h = isJust $ Mock.handleIOMode mockFS h
 
-allTop :: a -> b -> Logic
-allTop _ _ = Top
+{-------------------------------------------------------------------------------
+  Wrapping in quickcheck-state-machine references
+-------------------------------------------------------------------------------}
 
-generator :: Model Symbolic -> Gen (Command Symbolic)
-generator (Model _ _ _ mp) =
-    let openfds = Map.size mp
-        -- we want 0 probability when there are no open files.
-        fClose = if openfds == 0 then 0 else 1 + (div (max (openfds) 0) 25)
-        fFileExist = if openfds == 0 then 0 else 1
-        genFD :: Gen (Fd, Reference (Opaque (FsHandle IOFSE)) Symbolic)
-        genFD = do
-            (fd :: Fd) <- elements $ Map.keys mp
-            let x = snd (mp ! fd)
-            pure (fd, x)
-    in
-        frequency
-        [(3, Open <$> genFile <*> genMode)
-        ,(fClose, Close <$> genFD)
-        ,(fFileExist, Seek <$> genFD <*> genSeekMode <*> genOffset)
-        ,(fFileExist, Get <$> genFD <*> suchThat arbitrary (>=0))
-        ,(fFileExist, Put <$> genFD <*> (BL.pack <$> arbitrary))
-        ,(1, CreateDirectory <$> genPath)
-        ,(1, ListDirectory <$> genPath)
-        ,(1, DoesDirectoryExist <$> genPath)
-        ,(1, DoesFileExist <$> genPath)
-        ,(1, return Dummy)
+-- | Instantiate functor @f@ to @f (PathRef r) (HRef r)@
+--
+-- > Cmd :@ Concrete ~ Cmd (PathRef Concrete) (HandleRef Concrete)
+newtype At t r = At (t (PathRef r) (HandleRef r))
+  deriving (Generic)
+
+-- | Alias for 'At'
+type (:@) t r = At t r
+
+deriving instance Show1 r => Show (Cmd  :@ r)
+deriving instance Show1 r => Show (Resp :@ r)
+deriving instance Eq1   r => Eq   (Resp :@ r)
+
+instance Bifoldable t => Rank2.Foldable (At t) where
+  foldMap = \f (At x) -> bifoldMap (app f) (app f) x
+    where
+      app :: (r x -> m) -> QSM.Reference x r -> m
+      app f (QSM.Reference x) = f x
+
+instance Bifunctor t => Rank2.Functor (At t) where
+  fmap = \f (At x) -> At (bimap (app f) (app f) x)
+    where
+      app :: (r x -> r' x) -> QSM.Reference x r -> QSM.Reference x r'
+      app f (QSM.Reference x) = QSM.Reference (f x)
+
+instance Bitraversable t => Rank2.Traversable (At t) where
+  traverse = \f (At x) -> At <$> bitraverse (app f) (app f) x
+    where
+      app :: Functor f
+          => (r x -> f (r' x)) -> QSM.Reference x r -> f (QSM.Reference x r')
+      app f (QSM.Reference x) = QSM.Reference <$> f x
+
+{-------------------------------------------------------------------------------
+  Events
+-------------------------------------------------------------------------------}
+
+-- | An event records the model before and after a command along with the
+-- command itself and its response
+data Event r = Event {
+      eventBefore   :: Model  r
+    , eventCmd      :: Cmd :@ r
+    , eventAfter    :: Model  r
+    , eventMockResp :: Resp FsPath Mock.Handle
+    }
+  deriving (Show)
+
+eventMockCmd :: Eq1 r => Event r -> Cmd FsPath Mock.Handle
+eventMockCmd Event{..} = toMock eventBefore eventCmd
+
+-- | Bundle handles with the paths they refer to
+resolveCmd :: Eq1 r => Event r -> Cmd FsPath (Mock.Handle, FsPath)
+resolveCmd ev@Event{..} = resolveHandle (mockFS eventBefore) <$> eventMockCmd ev
+
+-- | Construct an event
+--
+-- In order to step the entire model, we need a way to map new mock
+-- handles to new handles in the model. We can do this in a few ways:
+--
+-- * using a real response ('lockstep')
+-- * using already generated symbolic references ('execCmd')
+event :: forall r. (Show1 r, Ord1 r, HasCallStack)
+      => Model r
+      -> Cmd :@ r
+      -> (Resp FsPath Mock.Handle -> (KnownPaths r, KnownHandles r))
+      -> Event r
+event model@Model{..} cmd newRefs = Event {
+      eventBefore   = model
+    , eventCmd      = cmd
+    , eventAfter    = Model {
+                          mockFS       = mockFS'
+                        , knownPaths   = knownPaths   `RE.union` newPaths
+                        , knownHandles = knownHandles `RE.union` newHandles
+                        }
+    , eventMockResp = resp'
+    }
+  where
+    (resp', mockFS') = step model cmd
+    (newPaths, newHandles) = newRefs resp'
+
+-- | Step the model using real response
+lockstep :: (Show1 r, Ord1 r, HasCallStack)
+         => Model r -> Cmd :@ r -> Resp :@ r -> Event r
+lockstep model cmd (At resp) = event model cmd $ \resp' -> (
+      RE.fromList $ zip (paths   resp) (paths   resp')
+    , RE.fromList $ zip (handles resp) (handles resp')
+    )
+
+{-------------------------------------------------------------------------------
+  Generator
+-------------------------------------------------------------------------------}
+
+generator :: Model Symbolic -> Gen (Cmd :@ Symbolic)
+generator Model{..} = oneof $ concat [
+      withoutHandle
+    , if RE.null knownHandles then [] else withHandle
+    ]
+  where
+    withoutHandle :: [Gen (Cmd :@ Symbolic)]
+    withoutHandle = [
+          fmap At $ Open               <$> genPathExpr <*> genMode
+        , fmap At $ CreateDir          <$> genPathExpr
+        , fmap At $ CreateDirIfMissing <$> arbitrary <*> genPathExpr
+        , fmap At $ ListDirectory      <$> genPathExpr
+        , fmap At $ DoesDirectoryExist <$> genPathExpr
+        , fmap At $ DoesFileExist      <$> genPathExpr
         ]
 
-genPath :: Gen FsPath
-genPath =
-    let ls = ["xx", "yy", "zz", "ww"]
-    in suchThat (sublistOf ls) (\x -> Prelude.length x > 0)
+    withHandle :: [Gen (Cmd :@ Symbolic)]
+    withHandle = [
+          fmap At $ Close    <$> genHandle
+        , fmap At $ Seek     <$> genHandle <*> genSeekMode <*> genOffset
+        , fmap At $ Get      <$> genHandle <*> (getNonNegative <$> arbitrary)
+        , fmap At $ Put      <$> genHandle <*> (BL.pack <$> arbitrary)
+        , fmap At $ Truncate <$> genHandle <*> (getSmall . getNonNegative <$> arbitrary)
+        , fmap At $ GetSize  <$> genHandle
+        ]
 
-genFile :: Gen FsPath
-genFile =
-    let ls = [["aa"], ["bb"], ["cc"], ["dd"]]
-    in elements ls
+    -- Wrap path in a simple path expression
+    -- (References are generated during shrinking only)
+    genPathExpr :: Gen (PathExpr fp)
+    genPathExpr = PExpPath <$> genPath
 
-genMode :: Gen IOMode
-genMode = elements [ReadMode, AppendMode, ReadWriteMode]
+    -- We choose from a small list of names so that we reuse names often
+    -- We use the same set of files and directories so that we can test
+    -- things like trying to open a directory as if it were a file
+    genPath :: Gen FsPath
+    genPath = choose (0, 3) >>= \n -> replicateM n (elements ["x", "y", "z"])
 
-genSeekMode :: Gen SeekMode
-genSeekMode = elements [AbsoluteSeek, RelativeSeek, SeekFromEnd]
+    genHandle :: Gen (HandleRef Symbolic)
+    genHandle = elements (RE.keys knownHandles)
 
--- Keeping the offset completely arbitrary, ends up in offset which gets
--- rejected by precondition almost always.
-genOffset :: Gen Word64
-genOffset = frequency
-     [ (2, return 0)
-     , (3, choose (1, 10))
-     , (1, arbitrary)
-     ]
+    genMode :: Gen IOMode
+    genMode = elements [
+          IO.ReadMode
+        , IO.WriteMode
+        , IO.AppendMode
+        , IO.ReadWriteMode
+        ]
 
-shrinker :: Command r -> [Command r]
-shrinker _ = []
+    genSeekMode :: Gen SeekMode
+    genSeekMode = elements [
+          IO.AbsoluteSeek
+        , IO.RelativeSeek
+        , IO.SeekFromEnd
+        ]
 
-semantics :: FilePath -> Command Concrete -> IO (Response Concrete)
-semantics tmpDir cmd = do
+    genOffset :: Gen Int64
+    genOffset = oneof
+         [ return 0
+         , choose (1, 10)
+         , choose (-1, -10)
+         ]
+
+{-------------------------------------------------------------------------------
+  Temporary files (used in shrinking)
+-------------------------------------------------------------------------------}
+
+-- | Temp files are numbered from 1
+newtype TempFile = TempFile Int
+  deriving (Show)
+
+instance Condense TempFile where -- basically GNTD
+  condense (TempFile n) = condense n
+
+tempToExpr :: TempFile -> PathExpr fp
+tempToExpr (TempFile n) = PExpPath ['t' : show n]
+
+tempFromPath :: FsPath -> Maybe TempFile
+tempFromPath ['t' : suf] = do n <- readMaybe suf
+                              guard (n >= 1)
+                              return $ TempFile n
+tempFromPath _otherwise  = Nothing
+
+{-------------------------------------------------------------------------------
+  Shrinking
+
+  When we replace one reference with another, we are careful to impose an order
+  so that we don't end up flipping between references. Since shrinking is greedy
+  this does mean that the choice of reference may influence how much we can
+  shrink later. This is hard to avoid in greedy algorithms.
+-------------------------------------------------------------------------------}
+
+shrinker :: Model Symbolic -> Cmd :@ Symbolic -> [Cmd :@ Symbolic]
+shrinker Model{..} (At cmd) =
     case cmd of
-        Open fsPath ioMode ->
-            let
-                act = hOpen fsPath ioMode
-                script :: IOFS (Either FsError (FsHandle IOFSE)) = runExceptT act
-                io :: IO (Either FsError (FsHandle IOFSE)) = runIOFS script tmpDir
-            in
-                (OpenR . (fmap $ reference . Opaque)) <$> io
-        Close (_, fshandle) ->
-            let
-                act = hClose (opaque fshandle)
-                script = runExceptT act
-                io = runIOFS script tmpDir
-            in
-                CloseR <$> io
-        Seek (_, fshandle) seekMode sz ->
-            let
-                act = hSeek (opaque fshandle) seekMode sz
-                script = runExceptT act
-                io = runIOFS script tmpDir
-            in
-                SeekR <$> io
-        Get (_, fshandle) n ->
-            let
-                act = hGet (opaque fshandle) n
-                script = runExceptT act
-                io = runIOFS script tmpDir
-            in
-                GetR <$> io
-        Put (_, fshandle) bytes ->
-            let
-                act = hPut (opaque fshandle) (BL.lazyByteString bytes)
-                script = runExceptT act
-                io = runIOFS script tmpDir
-            in
-                PutR <$> io
-        CreateDirectory path ->
-            let
-                act = createDirectory path
-                script = runExceptT act
-                io = runIOFS script tmpDir
-            in
-                CreateDirectoryR <$> io
-        CreateDirectoryIfMissing b path ->
-            let
-                act = createDirectoryIfMissing b path
-                script = runExceptT act
-                io = runIOFS script tmpDir
-            in
-                CreateDirectoryIfMissingR <$> io
-        ListDirectory path ->
-            let
-                act = listDirectory path
-                script = runExceptT act
-                io = runIOFS script tmpDir
-            in
-                ListDirectoryR <$> io
-        DoesDirectoryExist path ->
-            let
-                act = doesDirectoryExist path
-                script = runExceptT act
-                io = runIOFS script tmpDir
-            in
-                DoesDirectoryExistR <$> io
-        DoesFileExist path ->
-            let
-                act = doesFileExist path
-                script = runExceptT act
-                io = runIOFS script tmpDir
-            in
-                DoesFileExistR <$> io
-        Dummy -> return DummyR
+      Open pe mode -> concat [
+            case tempFromPath fp of
+              Just n ->
+                map (\n' -> At $ Open (tempToExpr n') mode)
+                  $ shrinkTempFile n
+              Nothing ->
+                let mode' = case mode of
+                             IO.ReadMode -> IO.ReadWriteMode
+                             _otherwise  -> mode
+                in [At $ Open (tempToExpr (TempFile numTempFiles)) mode']
+          , case mode of
+              IO.ReadWriteMode -> [
+                  At $ Open pe IO.ReadMode
+                , At $ Open pe IO.WriteMode
+                ]
+              _otherwise ->
+                []
+          , map (\pe' -> At $ Open pe' mode) $
+              replaceWithRef pe (== fp) PExpRef
+          ]
+        where
+          fp :: FsPath
+          fp = resolvePathExpr knownPaths pe
 
-next :: Model r -> Model r
-next m@Model{..} = m{ counter = counter + 1}
+      ListDirectory pe -> concat [
+            map (At . ListDirectory) $
+              replaceWithRef pe ((== fp) . init) PExpParentOf
+          ]
+        where
+          fp :: FsPath
+          fp = resolvePathExpr knownPaths pe
 
-transitions :: Model r -> Command r -> Response r -> Model r
-transitions m@(Model fs n nextFd mp) cmd resp = case (cmd,resp) of
-    (Open fsPath ioMode, OpenR r1) ->
-        let (r2, fs') = runState (runExceptT $ mockOpen2 fsPath ioMode) fs
-        in case (r1,r2) of
-            (Left _, Left _) -> next m
-            (Right _, Left _)  -> error "Right-Left"
-            (Left _, Right _)  -> error "Left-Right"
-            (Right realHandle, Right simHandle) ->
-                Model fs' (n + 1) (nextFd + 1) (Map.insert nextFd (simHandle, realHandle) mp)
-    (Close (fd, _), CloseR r1) ->
-        let Just handle = fst <$> Map.lookup fd mp
-            (r2, fs') = runState (runExceptT $ mockClose2 handle) fs
-        in standardTranstion r1 r2 m $ Model fs' (n + 1) nextFd (Map.delete fd mp)
-    (Seek (fd, _) seekMode w, SeekR r1) ->
-        let Just (handle, ref) = Map.lookup fd mp
-            (r2, fs') = runState (runExceptT $ mockSeek2 handle seekMode w) fs
-        in transitionWithHandle r1 r2 m
-                $ \(_w, handle') -> Model fs' (n + 1) nextFd (Map.insert fd (handle', ref) mp)
-    (Get (fd, _) size, GetR r1) ->
-        let Just (handle, ref) = Map.lookup fd mp
-            (r2, fs') = runState (runExceptT $ mockGet2 handle size) fs
-        in transitionWithHandle r1 r2 m
-                $ \(_bytes, handle') -> Model fs' (n + 1) nextFd (Map.insert fd (handle', ref) mp)
-    (Put (fd, _) bytes, PutR r1) ->
-        let Just (handle, ref) = Map.lookup fd mp
-            (r2, fs') = runState (runExceptT $ mockPut2 handle (BL.lazyByteString bytes)) fs
-        in transitionWithHandle r1 r2 m
-                $ \(_w, handle') -> Model fs' (n + 1) nextFd (Map.insert fd (handle', ref) mp)
-    (CreateDirectory path, CreateDirectoryR r1) ->
-        let (r2, fs') = runState (runExceptT $ mockCreateDirectory2 path) fs
-        in standardTranstion r1 r2 m $ Model fs' (n + 1) nextFd mp
-    (CreateDirectoryIfMissing b path, CreateDirectoryIfMissingR r1) ->
-        let (r2, fs') = runState (runExceptT $ mockCreateDirectoryIfMissing2 b path) fs
-        in standardTranstion r1 r2 m $ Model fs' (n + 1) nextFd mp
-    (ListDirectory path, ListDirectoryR r1) ->
-        let (r2, fs') = runState (runExceptT $ mockListDirectory2 path) fs
-        in standardTranstion r1 r2 m $ Model fs' (n + 1) nextFd mp
-    (DoesDirectoryExist path, DoesDirectoryExistR r1) ->
-        let (r2, fs') = runState (runExceptT $ mockDoesDirectoryExist2 path) fs
-        in standardTranstion r1 r2 m $ Model fs' (n + 1) nextFd mp
-    (DoesFileExist path, DoesFileExistR r1) ->
-        let (r2, fs') = runState (runExceptT $ mockDoesFileExist2 path) fs
-        in standardTranstion r1 r2 m $ Model fs' (n + 1) nextFd mp
-    (Dummy, DummyR) -> next m
-    _ -> error "transition impossible"
+      Get      h n  -> At . Get      h <$> shrink n
+      Put      h bs -> At . Put      h <$> shrinkBytes bs
+      Truncate h n  -> At . Truncate h <$> shrink n
 
-standardTranstion :: Either e a -> Either e b -> Model r -> Model r -> Model r
-standardTranstion a b startingModel model' = case (a,b) of
-    (Left _, Left _)   -> next startingModel
-    (Right _, Left _)  -> error "Right-Left"
-    (Left _, Right _)  -> error "Left-Right"
-    (Right _, Right _) -> model'
+      _otherwise ->
+          []
+  where
+    -- Replace path with reference
+    --
+    -- If we are replacing one reference with another, be careful to impose
+    -- an ordering so that we don't end up toggling between references.
+    replaceWithRef :: PathExpr (PathRef Symbolic)
+                   -- current
+                   -> (FsPath -> Bool)
+                   -- evaluate candidate
+                   -> (PathRef Symbolic -> PathExpr (PathRef Symbolic))
+                   -- construct replacement
+                   -> [PathExpr (PathRef Symbolic)]
+    replaceWithRef pe p f =
+        filter (canReplace pe) $ map f $ (RE.reverseLookup p knownPaths)
+      where
+        canReplace :: PathExpr (PathRef Symbolic)  -- current
+                   -> PathExpr (PathRef Symbolic)  -- candidate
+                   -> Bool
+        canReplace (PExpRef      ref) (PExpRef      ref') = ref' < ref
+        canReplace (PExpParentOf ref) (PExpParentOf ref') = ref' < ref
+        canReplace _                  _                   = True
 
--- the difference with the standard one is that in case of Right result, we
--- need the mockHandle to create the new Model.
-transitionWithHandle :: Either e a -> Either e b -> Model r -> (b -> Model r ) -> Model r
-transitionWithHandle a b startModel mkModel' = case (a,b) of
-    (Left _, Left _)   -> next startModel
-    (Right _, Left _)  -> error "Right-Left"
-    (Left _, Right _)  -> error "Left-Right"
-    (Right _, Right x) -> mkModel' x
+    shrinkTempFile :: TempFile -> [TempFile]
+    shrinkTempFile (TempFile n) = TempFile . getPositive <$> shrink (Positive n)
 
-mock :: Model Symbolic -> Command Symbolic -> GenSym (Response Symbolic)
-mock (Model fs n _nextFd mp) cmd = case cmd of
-    Open fsPath ioMode ->
-        let res = evalState (runExceptT $ mockOpen2 fsPath ioMode) fs
-        in case res of
-            Left e -> return $ OpenR $ Left e
-            Right _ -> OpenR . Right <$> genSym
-    Close (fd, _) ->
-        let Just handle = fst <$> Map.lookup fd mp
-            res = evalState (runExceptT $ mockClose2 handle) fs
-        in return $ CloseR res
-    Seek (fd, _) seekMode w ->
-        let Just handle = fst <$> Map.lookup fd mp
-            res = evalState (runExceptT $ mockSeek2 handle seekMode w) fs
-        in return $ SeekR (fst <$> res)
-    Get (fd, _) size ->
-        let Just handle = fst <$> Map.lookup fd mp
-            res = evalState (runExceptT $ mockGet2 handle size) fs
-        in return $ GetR (fst <$> res)
-    Put (fd, _) bytes ->
-        let Just handle = fst <$> Map.lookup fd mp
-            res = evalState (runExceptT $ mockPut2 handle $ BL.lazyByteString bytes) fs
-        in return $ PutR (fst <$> res)
-    CreateDirectory path ->
-        let res = evalState (runExceptT $ mockCreateDirectory2 path) fs
-        in return $ CreateDirectoryR res
-    CreateDirectoryIfMissing b path ->
-        let res = evalState (runExceptT $ mockCreateDirectoryIfMissing2 b path) fs
-        in return $ CreateDirectoryIfMissingR res
-    ListDirectory path ->
-        let res = evalState (runExceptT $ mockListDirectory2 path) fs
-        in return $ ListDirectoryR res
-    DoesDirectoryExist path ->
-        let res = evalState (runExceptT $ mockDoesDirectoryExist2 path) fs
-        in return $ DoesDirectoryExistR res
-    DoesFileExist path ->
-        let res = evalState (runExceptT $ mockDoesFileExist2 path) fs
-        in return $ DoesFileExistR res
-    Dummy -> return DummyR
+    shrinkBytes :: BL.ByteString -> [BL.ByteString]
+    shrinkBytes = map BL.pack . shrink . BL.unpack
 
-sm :: FilePath -> StateMachine Model Command IO Response
-sm tmpDir = StateMachine initModel transitions preconditions postconditions
-       Nothing generator Nothing shrinker (semantics tmpDir) mock
+    numTempFiles :: Int
+    numTempFiles = 100
 
+{-------------------------------------------------------------------------------
+  Limitations/known bugs
+-------------------------------------------------------------------------------}
 
-newtype HideProperty = HideProperty {unProperty :: Property}
+-- | Known limitations/bugs that we don't want to test for
+--
+-- NOTE: Can assume all used handles are in known in the model.
+knownLimitation :: Model Symbolic -> Cmd :@ Symbolic -> QSM.Logic
+knownLimitation model cmd =
+    case getResp resp of
+      Left FsError{..} -> QSM.Boolean fsLimitation
+      _otherwise       -> QSM.Bot
+  where
+    (resp, _mockFS') = step model cmd
 
--- we keep this hidden here to avoid using it easily with quickcheck
--- from ghci, since it would write on a random file path.
-propertyImmutableStorage :: FilePath -> HideProperty
-propertyImmutableStorage tmpDir = HideProperty $ do
-    forAllCommands (sm tmpDir) Nothing $ \cmds -> monadicIO $ do
-        ls <- run $ Dir.listDirectory tmpDir
-        let lsn :: [Int] = read <$> ls
-            newn = 1 + Prelude.foldl max 0 lsn
-            tmpDir' = tmpDir ++ "/" ++ show newn
-        run $ Dir.createDirectory tmpDir'
-        -- run $ putStrLn $ "Test On " ++ show newn
-        -- run $ print cmds
-        (hist, model, res) <- runCommands (sm tmpDir') cmds
-        prettyCommands (sm tmpDir') hist $
-            checkCommandNames cmds (res === Ok)
-        run $ garbageCollect model
+{-------------------------------------------------------------------------------
+  The final state machine
+-------------------------------------------------------------------------------}
 
--- That's important to do after each test, or we may end up with too
--- many open files. This can result in us getting a EMFILE. Depending
--- on the GC to close these fd's would be a bad idea.
-garbageCollect :: Model Concrete -> IO ()
-garbageCollect (Model _ _ _ mp) = do
-    let f :: (MockHandle2, Reference (Opaque (FsHandle IOFSE)) Concrete)
-          -> IO (Either FsError ())
-        f (_, ref) = do
-            let handle = opaque ref
-            -- we provide a dummy fs, since closing files does not use them.
-            runIOFS (runExceptT $ hClose handle) undefined
-    forM_ (Map.elems mp) f
+-- | Mock a response
+--
+-- We do this by running the pure semantics and then generating mock
+-- references for any new handles.
+mock :: Model               Symbolic
+     -> Cmd              :@ Symbolic
+     -> QSM.GenSym (Resp :@ Symbolic)
+mock model cmd = At <$> bitraverse (const QSM.genSym) (const QSM.genSym) resp
+  where
+    (resp, _mockFS') = step model cmd
 
+precondition :: Model Symbolic -> Cmd :@ Symbolic -> QSM.Logic
+precondition m@Model{..} (At cmd) =
+            QSM.forall (handles cmd) (`QSM.elem` RE.keys knownHandles)
+    QSM.:&& QSM.Boolean (Mock.numOpenHandles mockFS < maxNumOpenHandles)
+    QSM.:&& QSM.Not (knownLimitation m (At cmd))
+  where
+    -- Limit number of open handles to avoid exceeding OS limits
+    maxNumOpenHandles = 100
 
-tests :: HasCallStack => FilePath -> TestTree
-tests tmpDir = testGroup "Immutable State Machine Tests"
-    [ testProperty "" (unProperty $ propertyImmutableStorage tmpDir)]
+-- | Step the model
+--
+-- NOTE: This function /must/ be polymorphic in @r@.
+transition :: (Show1 r, Ord1 r) => Model r -> Cmd :@ r -> Resp :@ r -> Model r
+transition model cmd = eventAfter . lockstep model cmd
 
+postcondition :: Model   Concrete
+              -> Cmd  :@ Concrete
+              -> Resp :@ Concrete
+              -> QSM.Logic
+postcondition model cmd resp =
+    toMock (eventAfter ev) resp QSM..== eventMockResp ev
+  where
+    ev = lockstep model cmd resp
+
+semantics :: MountPoint -> Cmd :@ Concrete -> IO (Resp :@ Concrete)
+semantics mount (At cmd) =
+    At . bimap QSM.reference (QSM.reference . QSM.Opaque) <$>
+      runIO mount (bimap QSM.concrete QSM.opaque cmd)
+
+-- | The state machine proper
+sm :: MountPoint -> QSM.StateMachine Model (At Cmd) IO (At Resp)
+sm mount = QSM.StateMachine {
+               initModel     = initModel
+             , transition    = transition
+             , precondition  = precondition
+             , postcondition = postcondition
+             , generator     = Just . generator
+             , shrinker      = shrinker
+             , semantics     = semantics mount
+             , mock          = mock
+             , invariant     = Nothing
+             , distribution  = Nothing
+             }
+
+{-------------------------------------------------------------------------------
+  Labelling
+-------------------------------------------------------------------------------}
+
+data Tag =
+    -- | Create directory then list its parent
+    --
+    -- > CreateDir [x, .., y, z]
+    -- > ListDirectory [x, .., y]
+    TagCreateDirThenListDir
+
+    -- | Create a directory with its parents, then list its parents
+    --
+    -- > CreateDirIfMissing True [x, .., y, z]
+    -- > ListDirectory [x, .., y]
+    --
+    -- Note that this implies all directories must have been created.
+  | TagCreateDirWithParentsThenListDir
+
+    -- | Have a least N open files
+    --
+    -- > Open ..
+    -- > .. --
+    -- > Open ..
+    --
+    -- (with not too many Close calls in between).
+  | TagAtLeastNOpenFiles Int
+
+    -- | Write, then truncate, then write again
+    --
+    -- > Put ..
+    -- > Truncate .. (deleting some but not all of the bytes already written)
+    -- > Put         (write some different bytes)
+    --
+    -- Verifies that we correctly modify the file pointer.
+  | TagPutTruncatePut
+
+    -- | Concurrent writer and reader
+    --
+    -- > h1 <- Open fp WriteMode ..
+    -- > h2 <- Open fp ReadMode ..
+    -- > Put h1 ..
+    -- > Get h2 ..
+  | TagConcurrentWriterReader
+  deriving (Show, Eq)
+
+-- | Predicate on events
+type EventPred = C.Predicate (Event Symbolic) Tag
+
+-- | Convenience combinator for creating classifiers for successful commands
+--
+-- For convenience we pair handles with the paths they refer to
+successful :: (    Event Symbolic
+                -> Success FsPath Mock.Handle
+                -> Either Tag EventPred
+              )
+           -> EventPred
+successful f = C.predicate $ \ev ->
+                 case eventMockResp ev of
+                   Resp (Left  _ ) -> Right $ successful f
+                   Resp (Right ok) -> f ev ok
+
+-- | Tag commands
+--
+-- Tagging works on symbolic events, so that we can tag without doing real IO.
+tag :: [Event Symbolic] -> [Tag]
+tag = C.classify [
+      tagCreateDirThenListDir Set.empty
+    , tagCreateDirWithParentsThenListDir Set.empty
+    , tagAtLeastNOpenFiles 0
+    , tagPutTruncatePut Map.empty Map.empty Map.empty
+    , tagConcurrentWriterReader Map.empty
+    ]
+  where
+    tagCreateDirThenListDir :: Set FsPath -> EventPred
+    tagCreateDirThenListDir created = successful $ \ev _ ->
+        case eventMockCmd ev of
+          CreateDir fe ->
+              Right $ tagCreateDirThenListDir (Set.insert fp created)
+            where
+              fp = evalPathExpr fe
+          ListDirectory fe | fp `Set.member` (Set.map init created) ->
+              Left TagCreateDirThenListDir
+            where
+              fp = evalPathExpr fe
+          _otherwise ->
+            Right $ tagCreateDirThenListDir created
+
+    tagCreateDirWithParentsThenListDir :: Set FsPath -> EventPred
+    tagCreateDirWithParentsThenListDir created = successful $ \ev _ ->
+        case eventMockCmd ev of
+          CreateDirIfMissing True fe | length fp > 1 ->
+              Right $ tagCreateDirWithParentsThenListDir (Set.insert fp created)
+            where
+              fp = evalPathExpr fe
+          ListDirectory fe | fp `Set.member` (Set.map init created) ->
+              Left TagCreateDirWithParentsThenListDir
+            where
+              fp = evalPathExpr fe
+          _otherwise ->
+            Right $ tagCreateDirWithParentsThenListDir created
+
+    -- TODO: It turns out we never hit the 10 (or higher) open handles case
+    -- Not sure if this is a problem or not.
+    tagAtLeastNOpenFiles :: Int -> EventPred
+    tagAtLeastNOpenFiles maxNumOpen = C.Predicate {
+          predApply = \ev ->
+            let maxNumOpen' = max maxNumOpen (countOpen (eventAfter ev))
+            in Right $ tagAtLeastNOpenFiles maxNumOpen'
+        , predFinish = case maxNumOpen of
+                         0 -> Nothing
+                         1 -> Just $ TagAtLeastNOpenFiles 1
+                         2 -> Just $ TagAtLeastNOpenFiles 2
+                         n | n < 10 -> Just $ TagAtLeastNOpenFiles 3
+                         n -> Just $ TagAtLeastNOpenFiles (n `div` 10 * 10)
+        }
+      where
+        countOpen :: Model r -> Int
+        countOpen = Mock.numOpenHandles . mockFS
+
+    tagPutTruncatePut :: Map Mock.Handle BL.ByteString
+                      -> Map Mock.Handle BL.ByteString
+                      -> Map Mock.Handle BL.ByteString
+                      -> EventPred
+    tagPutTruncatePut before truncated after = successful $ \ev _ ->
+        case eventMockCmd ev of
+          Put h bs | BL.length bs /= 0 ->
+            case Map.lookup h truncated of
+              Nothing -> -- not yet truncated
+                let before' = Map.alter (appTo bs) h before in
+                Right $ tagPutTruncatePut before' truncated after
+              Just deleted ->
+                let putAfter = Map.findWithDefault mempty h after <> bs
+                    after'   = Map.insert h putAfter after in
+                if deleted /= BL.take (BL.length deleted) putAfter
+                  then Left  $ TagPutTruncatePut
+                  else Right $ tagPutTruncatePut before truncated after'
+          Truncate h sz | sz > 0 ->
+            let putBefore  = Map.findWithDefault mempty h before
+                (putBefore', deleted) = BL.splitAt (fromIntegral sz) putBefore
+                before'    = Map.insert h putBefore' before
+                truncated' = Map.insert h deleted    truncated
+                after'     = Map.delete h            after
+            in Right $ tagPutTruncatePut before' truncated' after'
+          _otherwise ->
+            Right $ tagPutTruncatePut before truncated after
+      where
+        appTo :: Monoid a => a -> Maybe a -> Maybe a
+        appTo b Nothing  = Just b
+        appTo b (Just a) = Just (a <> b)
+
+    tagConcurrentWriterReader :: Map Mock.Handle (Set Mock.Handle) -> EventPred
+    tagConcurrentWriterReader put = successful $ \ev@Event{..} _ ->
+        case resolveCmd ev of
+          Put (h, fp) bs | BL.length bs > 0 ->
+            -- Remember the other handles to the same file open at this time
+            let readHs :: Set Mock.Handle
+                readHs = Set.fromList
+                       $ map fst
+                       $ filter (\(h', fp') -> h /= h' && fp == fp')
+                       $ openHandles eventBefore
+
+                put' :: Map Mock.Handle (Set Mock.Handle)
+                put' = Map.alter (Just . maybe readHs (Set.union readHs)) h put
+
+            in Right $ tagConcurrentWriterReader put'
+          Close (h, _) ->
+            Right $ tagConcurrentWriterReader (Map.delete h put)
+          Get (h, _) n | h `elem` Set.unions (Map.elems put), n > 0 ->
+            Left TagConcurrentWriterReader
+          _otherwise ->
+            Right $ tagConcurrentWriterReader put
+
+-- | Step the model using a 'QSM.Command' (i.e., a command associated with
+-- an explicit set of variables)
+execCmd :: Model Symbolic -> QSM.Command (At Cmd) (At Resp) -> Event Symbolic
+execCmd model (QSM.Command cmd resp _vars) = lockstep model cmd resp
+
+-- | 'execCmds' is just the repeated form of 'execCmd'
+execCmds :: QSM.Commands (At Cmd) (At Resp) -> [Event Symbolic]
+execCmds = \(QSM.Commands cs) -> go initModel cs
+  where
+    go :: Model Symbolic -> [QSM.Command (At Cmd) (At Resp)] -> [Event Symbolic]
+    go _ []       = []
+    go m (c : cs) = let ev = execCmd m c in ev : go (eventAfter ev) cs
+
+{-------------------------------------------------------------------------------
+  Required instances
+
+  The 'ToExpr' constraints come from "Data.TreeDiff".
+-------------------------------------------------------------------------------}
+
+instance QSM.CommandNames (At Cmd) where
+  cmdName  (At cmd) = constrName cmd
+  cmdNames _        = constrNames (Proxy @(Cmd () ()))
+
+deriving instance ToExpr a => ToExpr (FsTree a)
+deriving instance ToExpr fp => ToExpr (PathExpr fp)
+
+deriving instance ToExpr MockFS
+deriving instance ToExpr Mock.Handle
+deriving instance ToExpr Mock.HandleState
+deriving instance ToExpr Mock.OpenHandleState
+deriving instance ToExpr Mock.ClosedHandleState
+deriving instance ToExpr Mock.FilePtr
+
+deriving instance ToExpr (Model Concrete)
+
+{-------------------------------------------------------------------------------
+  Top-level tests
+-------------------------------------------------------------------------------}
+
+-- | Show minimal examples for each of the generated tags
+--
+-- TODO: The examples listed are not always minimal. I'm not entirely sure why.
+showLabelledExamples' :: Maybe Int
+                      -- ^ Seed
+                      -> Int
+                      -- ^ Number of tests to run to find examples
+                      -> (Tag -> Bool)
+                      -- ^ Tag filter (can be @const True@)
+                      -> IO ()
+showLabelledExamples' mReplay numTests focus = do
+    replaySeed <- case mReplay of
+      Nothing   -> getStdRandom (randomR (1,999999))
+      Just seed -> return seed
+
+    labelledExamplesWith (stdArgs { replay     = Just (mkQCGen replaySeed, 0)
+                                  , maxSuccess = numTests
+                                  })
+      $ forAllShrinkShow (QSM.generateCommands sm' Nothing)
+                         (QSM.shrinkCommands   sm')
+                         pp $ \cmds ->
+          collects (filter focus . tag . execCmds $ cmds) (property True)
+
+    putStrLn $ "Used replaySeed " ++ show replaySeed
+  where
+    sm' = sm mountUnused
+    pp  = \x -> ppShow x ++ "\n" ++ condense x
+
+showLabelledExamples :: IO ()
+showLabelledExamples = showLabelledExamples' Nothing 1000 (const True)
+
+prop_sequential :: FilePath -> Property
+prop_sequential tmpDir =
+    QSM.forAllCommands (sm mountUnused) Nothing $ \cmds -> monadicIO $ do
+      tstTmpDir <- liftIO $ createTempDirectory tmpDir "HasFS"
+
+      let mount = MountPoint tstTmpDir
+          sm'   = sm mount
+
+      (hist, model, res) <- QSM.runCommands sm' cmds
+
+      -- | Close all open handles and delete the temp directory
+      liftIO $ do
+        forM_ (RE.keys (knownHandles model)) $ F.close . snd . QSM.opaque
+        removeDirectoryRecursive tstTmpDir
+
+      QSM.prettyCommands sm' hist
+        $ collects (tag (execCmds cmds))
+        $ counterexample ("Mount point: " ++ tstTmpDir)
+        $ res === QSM.Ok
+
+tests :: FilePath -> TestTree
+tests tmpDir = testGroup "HasFS" [
+      testProperty "q-s-m" $ prop_sequential tmpDir
+    ]
+
+-- | Unused mount mount
+--
+-- 'forAllCommands' wants the entire state machine as argument, but we
+-- need the mount point only when /executing/ the commands in IO. We can
+-- therefore generate the commands with a dummy mount point, and then
+-- inside the property construct a temporary directory which we can use
+-- for execution.
+mountUnused :: MountPoint
+mountUnused = error "mount point not used during command generation"
+
+{-------------------------------------------------------------------------------
+  QuickCheck auxiliary
+-------------------------------------------------------------------------------}
+
+collects :: Show a => [a] -> Property -> Property
+collects = repeatedly collect
+
+{-------------------------------------------------------------------------------
+  Debugging
+-------------------------------------------------------------------------------}
+
+-- | Debugging: show @n@ levels of shrink steps (with some required tags)
+--
+-- This can be useful when debugging the shrinker
+_showTaggedShrinks :: ([Tag] -> Bool)  -- ^ Required tags
+                   -> Int              -- ^ Number of shrink steps
+                   -> QSM.Commands (At Cmd) (At Resp)
+                   -> IO ()
+_showTaggedShrinks hasRequiredTags numLevels = go 0
+  where
+    go :: Int -> QSM.Commands (At Cmd) (At Resp) -> IO ()
+    go n _ | n == numLevels = return ()
+    go n cmds = do
+      if hasRequiredTags tags then do
+        putStrLn $ replicate n '\t' ++ condense (cmds, tags)
+        forM_ shrinks $ go (n + 1)
+      else
+        return ()
+      where
+        tags    = tag $ execCmds cmds
+        shrinks = QSM.shrinkCommands (sm mountUnused) cmds
+
+{-------------------------------------------------------------------------------
+  Pretty-printing
+-------------------------------------------------------------------------------}
+
+instance Condense fp => Condense (PathExpr fp) where
+  condense (PExpPath     fp) = show $ "/" ++ L.intercalate "/" fp
+  condense (PExpRef      fp) = condense fp
+  condense (PExpParentOf fp) = condense fp ++ "/.."
+
+instance (Condense fp, Condense h) => Condense (Cmd fp h) where
+  condense = L.intercalate " " . go
+    where
+      go (Open fp mode)            = ["open", condense fp, condense mode]
+      go (Close h)                 = ["close", condense h]
+      go (Seek h mode o)           = ["seek", condense h, condense mode, condense o]
+      go (Get h n)                 = ["get", condense h, condense n]
+      go (Put h bs)                = ["put", condense h, condense bs]
+      go (Truncate h sz)           = ["truncate", condense h, condense sz]
+      go (GetSize h)               = ["getSize", condense h]
+      go (CreateDir fp)            = ["createDir", condense fp]
+      go (CreateDirIfMissing p fp) = ["createDirIfMissing", condense p, condense fp]
+      go (ListDirectory fp)        = ["listDirectory", condense fp]
+      go (DoesDirectoryExist fp)   = ["doesDirectoryExist", condense fp]
+      go (DoesFileExist fp)        = ["doesFileExist", condense fp]
+
+instance Condense1 r => Condense (Cmd :@ r) where
+  condense (At cmd) = condense cmd
+
+instance Condense Tag where
+  condense = show
+
+{-------------------------------------------------------------------------------
+  (Orphan) condense instance for QSM types
+-------------------------------------------------------------------------------}
+
+instance Condense QSM.Var where
+  condense (QSM.Var i) = "x" ++ condense i
+
+instance Condense1 Symbolic where
+  liftCondense _ (QSM.Symbolic a) = condense a
+
+instance Condense (QSM.Opaque a) where
+  condense _ = "<>"
+
+instance (Condense1 r, Condense a) => Condense (QSM.Reference a r) where
+  condense (QSM.Reference ra) = condense1 ra
+
+instance Condense (cmd Symbolic) => Condense (QSM.Command cmd resp) where
+  condense = \(QSM.Command cmd _resp vars) ->
+      L.intercalate " " $ go cmd vars
+    where
+      go :: cmd Symbolic -> [QSM.Var] -> [String]
+      go cmd [] = [condense cmd]
+      go cmd xs = [condense xs, "<-", condense cmd]
+
+instance Condense (cmd Symbolic) => Condense (QSM.Commands cmd resp) where
+  condense (QSM.Commands cmds) = unlines $ "do" : map (indent . condense) cmds
+    where
+      indent :: String -> String
+      indent = ("  " ++)
+
+{-------------------------------------------------------------------------------
+  generics-sop auxiliary
+-------------------------------------------------------------------------------}
+
+cmdConstrInfo :: Proxy (Cmd fp h)
+              -> SOP.NP SOP.ConstructorInfo (SOP.Code (Cmd fp h))
+cmdConstrInfo = SOP.constructorInfo . SOP.datatypeInfo
+
+constrName :: forall fp h. Cmd fp h -> String
+constrName a =
+    SOP.hcollapse $ SOP.hliftA2 go (cmdConstrInfo p) (SOP.unSOP (SOP.from a))
+  where
+    go :: SOP.ConstructorInfo a -> SOP.NP SOP.I a -> SOP.K String a
+    go nfo _ = SOP.K $ SOP.constructorName nfo
+
+    p = Proxy @(Cmd fp h)
+
+constrNames :: Proxy (Cmd fp h) -> [String]
+constrNames p =
+    SOP.hcollapse $ SOP.hmap go (cmdConstrInfo p)
+  where
+    go :: SOP.ConstructorInfo a -> SOP.K String a
+    go nfo = SOP.K $ SOP.constructorName nfo

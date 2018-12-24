@@ -1,101 +1,142 @@
 {-# LANGUAGE LambdaCase #-}
 module Ouroboros.Storage.IO (
-      FHandle --opaque(TM)
+      FHandle --opaque
     , open
     , truncate
     , seek
     , read
     , write
     , close
+    , getSize
+    , isHandleClosedException
     ) where
 
 import           Prelude hiding (read, truncate)
 
-import           Control.Concurrent.MVar (MVar, modifyMVar, newMVar, withMVar)
-import           Control.Exception (throwIO)
+import           Control.Concurrent.MVar
+import           Control.Exception (IOException, throwIO)
+import           Control.Monad (void)
 import           Data.ByteString (ByteString)
 import           Data.ByteString.Internal as Internal
 
+import           Data.Int (Int64)
 import           Data.Word (Word32, Word64, Word8)
 import           Foreign (Ptr)
 import           System.IO (IOMode (..), SeekMode (..))
-import           System.Posix (Fd (..), OpenFileFlags (..), OpenMode (..),
-                     closeFd, fdReadBuf, fdSeek, fdWriteBuf, openFd,
-                     stdFileMode)
-import           System.Posix.Files (setFdSize)
+import qualified System.IO.Error as IO
+import           System.Posix (Fd)
+import qualified System.Posix as Posix
 
--- A thin wrapper over a POSIX 'Fd', guarded by an MVar so that we can
--- implement 'close' as an idempotent operation.
-newtype FHandle = FHandle (MVar (Maybe Fd))
+-- | Opaque wrapper around a POSIX 'Fd'
+--
+-- The 'MVar' is used to implement 'close'; the 'FilePath' is used to
+-- improve error messages.
+data FHandle = FHandle FilePath (MVar (Maybe Fd))
+  deriving Eq
 
--- | Some sensible defaults for the 'OpenFileFlags'. Note that the 'unix'
--- package /already/ exports a smart constructor called @defaultFileFlags@
--- already, but we define our own to not be depedent by whichever default
--- choice unix's library authors made, and to be able to change our minds
--- later if necessary.
--- In particular, we are interested in the 'append' and 'exclusive' flags,
--- which were largely the reason why we introduced this low-level module.
-defaultFileFlags :: OpenFileFlags
-defaultFileFlags = OpenFileFlags {
-    append    = False
-  , exclusive = False
-  , noctty    = False
-  , nonBlock  = False
-  , trunc     = False
-  }
+instance Show FHandle where
+  show (FHandle fp _) = "<FHandle " ++ fp ++ ">"
+
+-- | Some sensible defaults for the 'OpenFileFlags'.
+--
+-- NOTE: the 'unix' package /already/ exports a smart constructor called
+-- @defaultFileFlags@ already, but we define our own to not be depedent by
+-- whichever default choice unix's library authors made, and to be able to
+-- change our minds later if necessary. In particular, we are interested in the
+-- 'append' and 'exclusive' flags, which were largely the reason why we
+-- introduced this low-level module.
+defaultFileFlags :: Posix.OpenFileFlags
+defaultFileFlags = Posix.OpenFileFlags {
+      Posix.append    = False
+    , Posix.exclusive = False
+    , Posix.noctty    = False
+    , Posix.nonBlock  = False
+    , Posix.trunc     = False
+    }
 
 -- | Opens a file from disk.
 open :: FilePath -> IOMode -> IO FHandle
-open filename ioMode = do
-  let (openMode, fileMode, fileFlags)
-       | ioMode == ReadMode    = ( ReadOnly
-                                 , Nothing
-                                 , defaultFileFlags)
-       | ioMode == AppendMode  = ( WriteOnly
-                                 , Just stdFileMode
-                                 , defaultFileFlags { append = True })
-       | otherwise             = ( ReadWrite
-                                 , Just stdFileMode
-                                 , defaultFileFlags)
-  fd <- openFd filename openMode fileMode fileFlags
-  FHandle <$> newMVar (Just fd)
+open fp ioMode = do
+    fd <- Posix.openFd fp openMode fileMode fileFlags
+    FHandle fp <$> newMVar (Just fd)
+  where
+    (openMode, fileMode, fileFlags)
+      | ioMode == ReadMode   = ( Posix.ReadOnly
+                               , Nothing
+                               , defaultFileFlags
+                               )
+      | ioMode == AppendMode = ( Posix.WriteOnly
+                               , Just Posix.stdFileMode
+                               , defaultFileFlags { Posix.append = True }
+                               )
+      | otherwise            = ( Posix.ReadWrite
+                               , Just Posix.stdFileMode
+                               , defaultFileFlags
+                               )
 
 -- | Writes the data pointed by the input 'Ptr Word8' into the input 'FHandle'.
-write :: FHandle -> Ptr Word8 -> Word32 -> IO Word32
-write (FHandle fdVar) data' bytes =
-    withMVar fdVar $ \case
-        Nothing -> throwIO (userError "write: the FHandle is closed.")
-        Just fd -> fmap fromIntegral . fdWriteBuf fd data'
-                                     $ fromIntegral bytes
+write :: FHandle -> Ptr Word8 -> Int64 -> IO Word32
+write h data' bytes = withOpenHandle "write" h $ \fd ->
+    fromIntegral <$> Posix.fdWriteBuf fd data' (fromIntegral bytes)
 
--- | Seek within the file. Returns the offset within the file after the seek.
-seek :: FHandle -> SeekMode -> Word64 -> IO Word64
-seek (FHandle fdVar) seekMode bytes =
-    withMVar fdVar $ \case
-        Nothing -> throwIO (userError "seek: the FHandle is closed.")
-        Just fd -> fromIntegral <$> fdSeek fd seekMode (fromIntegral bytes)
+-- | Seek within the file.
+--
+-- The offset may be negative.
+--
+-- We don't return the new offset since the behaviour of lseek is rather odd
+-- (e.g., the file pointer may not actually be moved until a subsequent write)
+seek :: FHandle -> SeekMode -> Int64 -> IO ()
+seek h seekMode offset = withOpenHandle "seek" h $ \fd ->
+    void $ Posix.fdSeek fd seekMode (fromIntegral offset)
 
 -- | Reads a given number of bytes from the input 'FHandle'.
 read :: FHandle -> Int -> IO ByteString
-read (FHandle fdVar) bytes =
-    withMVar fdVar $ \case
-        Nothing -> throwIO (userError "read: the FHandle is closed.")
-        Just fd -> Internal.createUptoN bytes $ \ptr ->
-                       fromIntegral <$> fdReadBuf fd ptr (fromIntegral bytes)
+read h bytes = withOpenHandle "read" h $ \fd ->
+    Internal.createUptoN bytes $ \ptr ->
+      fromIntegral <$> Posix.fdReadBuf fd ptr (fromIntegral bytes)
 
 -- | Truncates the file managed by the input 'FHandle' to the input size.
 truncate :: FHandle -> Word64 -> IO ()
-truncate (FHandle fdVar) size =
-    withMVar fdVar $ \case
-        Nothing -> throwIO (userError "truncate: the FHandle is closed.")
-        Just fd -> setFdSize fd (fromIntegral size)
+truncate h sz = withOpenHandle "truncate" h $ \fd ->
+    Posix.setFdSize fd (fromIntegral sz)
 
-
--- | Closes a 'FHandle'. It's nice to be slightly more lenient here, as the
--- 'hClose' equivalent from 'System.IO' allows for this operation to be
--- idempotent.
+-- | Close handle
+--
+-- This is a no-op when the handle is already closed.
 close :: FHandle -> IO ()
-close (FHandle fdVar) =
+close (FHandle _ fdVar) =
     modifyMVar fdVar $ \case
         Nothing -> return (Nothing, ())
-        Just fd -> closeFd fd >> return (Nothing, ())
+        Just fd -> Posix.closeFd fd >> return (Nothing, ())
+
+-- | File size of the given file pointer
+--
+-- NOTE: This is not thread safe (changes made to the file in other threads
+-- may affect this thread).
+getSize :: FHandle -> IO Word64
+getSize h = withOpenHandle "getSize" h $ \fd ->
+     fromIntegral . Posix.fileSize <$> Posix.getFdStatus fd
+
+{-------------------------------------------------------------------------------
+  Exceptions
+-------------------------------------------------------------------------------}
+
+withOpenHandle :: String -> FHandle -> (Fd -> IO a) -> IO a
+withOpenHandle label (FHandle fp fdVar) k =
+    withMVar fdVar $ \case
+        Nothing -> throwIO (handleClosedException fp label)
+        Just fd -> k fd
+
+isHandleClosedException :: IOException -> Bool
+isHandleClosedException ioErr =
+    IO.isUserErrorType (IO.ioeGetErrorType ioErr)
+
+{-------------------------------------------------------------------------------
+  Internal auxiliary
+-------------------------------------------------------------------------------}
+
+handleClosedException :: FilePath -> String -> IOException
+handleClosedException fp label =
+      flip IO.ioeSetErrorType IO.illegalOperationErrorType
+    $ flip IO.ioeSetFileName fp
+    $ userError (label ++ ": FHandle closed")

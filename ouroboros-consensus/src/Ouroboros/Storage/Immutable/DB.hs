@@ -32,19 +32,20 @@ module Ouroboros.Storage.Immutable.DB (
 import           Control.Monad
 import           Control.Monad.Catch
 import           Control.Monad.Except
-
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString.Builder as BS
+import qualified Data.Set as Set
 import qualified Data.Text as T
 import           Data.Word
+import           GHC.Stack
+import qualified System.IO as IO
 import           Text.Printf
 import           Text.Read (readMaybe)
-
-import           GHC.Stack
 
 import           Control.Monad.Class.MonadSTM
 
 import           Ouroboros.Storage.FS.Class
+import           Ouroboros.Storage.FS.Class.Types
 import           Ouroboros.Storage.Util as I
 
 
@@ -104,10 +105,10 @@ mkInternalState :: forall m. (HasCallStack, MonadCatch m, HasFSE m)
 mkInternalState dbFolder epoch = do
     let epochFile = dbFolder <> renderFile "epoch" epoch
     let indexFile = dbFolder <> renderFile "index" epoch
-    eHnd <- liftFsError (hOpen epochFile AppendMode)
+    eHnd <- liftFsError (hOpen epochFile IO.AppendMode)
     iHnd <- liftFsError (do
-                h <- hOpen indexFile AppendMode
-                isNewFile <- ((==) 0) <$> hSeek h RelativeSeek 0
+                h <- hOpen indexFile IO.AppendMode
+                isNewFile <- ((==) 0) <$> hGetSize h
                 -- Initialise the new index file properly, if needed.
                 when isNewFile $ void (hPut h (I.encodeIndexEntry 0))
                 return h
@@ -160,7 +161,7 @@ sameDBError e1 e2 = case (e1, e2) of
 
 prettyImmutableDBError :: ImmutableDBError -> String
 prettyImmutableDBError = \case
-    FileSystemError fs   -> prettyFSError fs
+    FileSystemError fs   -> prettyFsError fs
     EpochIsReadOnlyError e1 e2 cs ->
            "EpochIsReadOnlyError (input epoch was "
         <> show e1
@@ -202,7 +203,7 @@ openDB fp currentEpoch = do
       allFiles <- liftFsError $ do
           createDirectoryIfMissing True fp
           listDirectory fp
-      checkEpochConsistency allFiles
+      checkEpochConsistency (Set.toList allFiles)
       st    <- mkInternalState fp currentEpoch
       stVar <- atomically $ newTMVar st
       return $ ImmutableDB stVar fp
@@ -283,7 +284,7 @@ modifyInternalState db newEpoch action = do
                 action ns
             False -> action oldState
 
-getBinaryBlob :: forall m. (HasFSE m, MonadSTM m)
+getBinaryBlob :: forall m. (HasFSE m, MonadSTM m, MonadMask m)
               => ImmutableDB m
               -> (Epoch, RelativeSlot)
               -> m (Either ImmutableDBError ByteString)
@@ -293,11 +294,11 @@ getBinaryBlob ImmutableDB{..} (epoch, RelativeSlot relativeSlot) = do
     -- Check whether or not the requested slot can be accessed.
     withSlotGuard _currentEpoch _currentNextExpectedRelativeSlot $ do
         runExceptT $ liftFsError $ do
-            withFile (_dbFolder <> renderFile "epoch" epoch) ReadMode $ \eHnd ->
-                withFile (_dbFolder <> renderFile "index" epoch) ReadMode $ \iHnd -> do
+            withFile (_dbFolder <> renderFile "epoch" epoch) IO.ReadMode $ \eHnd ->
+                withFile (_dbFolder <> renderFile "index" epoch) IO.ReadMode $ \iHnd -> do
                     -- Step 1: grab the offset in bytes of the requested slot.
                     let indexSeekPosition = fromEnum relativeSlot * indexEntrySizeBytes
-                    _ <- hSeek iHnd AbsoluteSeek (toEnum indexSeekPosition)
+                    _ <- hSeek iHnd IO.AbsoluteSeek (toEnum indexSeekPosition)
 
                     -- Step 1: computes the offset on disk and the blob size.
                     (blobOffset, !blobSize) <- do
@@ -307,7 +308,7 @@ getBinaryBlob ImmutableDB{..} (epoch, RelativeSlot relativeSlot) = do
                         return (start, end - start)
 
                     -- Step 2: Seek in the epoch file
-                    _ <- hSeek eHnd AbsoluteSeek blobOffset
+                    _ <- hSeek eHnd IO.AbsoluteSeek (fromIntegral blobOffset)
                     hGet eHnd (fromEnum blobSize)
   where
     -- Checks that the slot we are trying to access is valid.
