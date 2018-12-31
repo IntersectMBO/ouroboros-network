@@ -17,6 +17,8 @@ module Test.ChainGenerators
   , TestBlockChain (..)
   , TestHeaderChain (..)
   , TestChainAndPoint (..)
+  , TestChainAndRange (..)
+  , TestChainAndPoints (..)
   , TestChainFork (..)
 
     -- * Utility functions
@@ -34,7 +36,7 @@ module Test.ChainGenerators
   where
 
 import qualified Data.List as L
-import           Data.Maybe (fromJust)
+import           Data.Maybe (fromJust, catMaybes)
 
 import           Ouroboros.Network.Testing.ConcreteBlock
 import           Ouroboros.Network.Block (Slot (..), Hash (..) , HasHeader (..))
@@ -68,8 +70,17 @@ tests = testGroup "Chain"
     -- Same deal here applies here with generating trivial test cases.
                  checkCoverage prop_arbitrary_TestBlockChainAndUpdates
 
-  , testProperty "arbitrary for TestChainAndPoint" prop_arbitrary_TestChainAndPoint
+  , testProperty "arbitrary for TestChainAndPoint" $
+                                     checkCoverage prop_arbitrary_TestChainAndPoint
   , testProperty "shrink for TestChainAndPoint"    prop_shrink_TestChainAndPoint
+
+  , testProperty "arbitrary for TestChainAndRange" $
+                                     checkCoverage prop_arbitrary_TestChainAndRange
+  , testProperty "shrink for TestChainAndRange"    prop_shrink_TestChainAndRange
+
+  , testProperty "arbitrary for TestChainAndPoints" $
+                                      checkCoverage prop_arbitrary_TestChainAndPoints
+  , testProperty "shrink for TestChainAndPoints"    prop_shrink_TestChainAndPoints
 
   , testProperty "arbitrary for TestChainFork" prop_arbitrary_TestChainFork
   , testProperty "shrink for TestChainFork"
@@ -409,8 +420,8 @@ fixupPoint c p =
 prop_arbitrary_TestChainAndPoint :: TestChainAndPoint -> Property
 prop_arbitrary_TestChainAndPoint (TestChainAndPoint c p) =
   let onChain = Chain.pointOnChain p c in
-  cover (85/100) onChain       "point on chain" $
-  cover ( 5/100) (not onChain) "point not on chain" $
+  cover  85 onChain       "point on chain" $
+  cover   5 (not onChain) "point not on chain" $
     Chain.valid c
 
 prop_shrink_TestChainAndPoint :: TestChainAndPoint -> Bool
@@ -423,6 +434,111 @@ implies :: Bool -> Bool -> Bool
 a `implies` b = not a || b
 
 infix 1 `implies`
+
+
+--
+-- Generator for chain and range on the chain
+--
+
+-- | A test generator for a chain and a range defined by a pair of points.
+-- In most cases the range is on the chain, but it also covers at least 5% of
+-- cases where the point is not on the chain.
+--
+data TestChainAndRange = TestChainAndRange (Chain Block) (Point Block) (Point Block)
+  deriving Show
+
+instance Arbitrary TestChainAndRange where
+  arbitrary = do
+    TestBlockChain chain <- arbitrary
+    -- either choose range from the chain or a few off the chain!
+    (point1, point2) <- frequency [ (10, genRangeOnChain chain)
+                                  , (1, (,) <$> genPoint <*> genPoint) ]
+    return (TestChainAndRange chain point1 point2)
+
+  shrink (TestChainAndRange c p1 p2) =
+    [ TestChainAndRange c' (fixupPoint c' p1) (fixupPoint c' p2)
+    | TestBlockChain c' <- shrink (TestBlockChain c) ]
+
+genRangeOnChain :: HasHeader block
+                => Chain block
+                -> Gen (Point block, Point block)
+genRangeOnChain chain = do
+    point1 <- genPointOnChain chain
+    let Just point1Depth = (\c -> Chain.length chain - Chain.length c) <$>
+                           Chain.rollback point1 chain
+    point2 <- frequency $
+        [ (1, return (Chain.headPoint chain))
+        , (1, return (mkRollbackPoint chain point1Depth))
+        , (8, mkRollbackPoint chain <$> choose (0, point1Depth))
+        ]
+    return (point1, point2)
+
+prop_arbitrary_TestChainAndRange :: TestChainAndRange -> Property
+prop_arbitrary_TestChainAndRange (TestChainAndRange c p1 p2) =
+  let onChain = Chain.pointOnChain p1 c && Chain.pointOnChain p2 c in
+  cover 85 onChain               "points on chain" $
+  cover  5 (onChain && p1 == p2) "empty range" $
+  cover  5 (not onChain)         "points not on chain" $
+    Chain.valid c
+ && onChain `implies` pointSlot p2 >= pointSlot p1
+
+prop_shrink_TestChainAndRange :: TestChainAndRange -> Bool
+prop_shrink_TestChainAndRange cp@(TestChainAndRange c _ _) =
+  and [    Chain.valid c'
+        && (Chain.pointOnChain p1 c && Chain.pointOnChain p2 c
+            `implies`
+            Chain.pointOnChain p1 c' && Chain.pointOnChain p2 c')
+      | TestChainAndRange c' p1 p2 <- shrink cp ]
+
+
+-- | A test generator for a chain and a list of points, some of which may not be
+-- on the chain.  Only 50% of the blocks are selected, one fifth of selected
+-- ones are not on the chain.  Points which come from the chain are given in the
+-- newest to oldest order, but the intermediate points which are not in the
+-- chain might break the order.
+--
+data TestChainAndPoints = TestChainAndPoints (Chain Block) [Point Block]
+  deriving Show
+
+instance Arbitrary TestChainAndPoints where
+  arbitrary = do
+    TestBlockChain chain <- arbitrary
+    let fn p = frequency
+          [ (4, return $ Just p)
+          , (1, Just <$> genPoint)
+          , (5, return Nothing)
+          ]
+        points = map Chain.blockPoint (Chain.chainToList chain)
+                  ++ [Chain.genesisPoint]
+    points' <- catMaybes <$> mapM fn points
+    return $ TestChainAndPoints chain points'
+
+  shrink (TestChainAndPoints chain points) =
+    [ TestChainAndPoints chain' points'
+    | TestBlockChain chain' <- shrink (TestBlockChain chain)
+      -- Leave only points that are on the @chain'@ or the ones that where not on the
+      -- original @chain@.
+    , let points' = filter (\p ->        p `Chain.pointOnChain` chain'
+                                 || not (p `Chain.pointOnChain` chain)) points
+    ] ++
+    [ TestChainAndPoints chain points'
+    | points' <- shrinkList shrinkNothing points
+    ]
+
+prop_arbitrary_TestChainAndPoints :: TestChainAndPoints -> Property
+prop_arbitrary_TestChainAndPoints (TestChainAndPoints c ps) =
+  cover 85 (any (`Chain.pointOnChain` c) ps)       "any points on chain"     $
+  cover 65 (not (all (`Chain.pointOnChain` c) ps)) "not all points on chain" $
+  cover 90 (not (null ps))                         "some points"             $
+    Chain.valid c
+
+prop_shrink_TestChainAndPoints :: TestChainAndPoints -> Bool
+prop_shrink_TestChainAndPoints cps@(TestChainAndPoints c _) =
+  -- can't really say much about the points without duplicating the logic above
+  and [    Chain.valid c'
+        && all (\p ->      p `Chain.pointOnChain` c'
+                   || not (p `Chain.pointOnChain` c)) ps'
+      | TestChainAndPoints c' ps' <- shrink cps ]
 
 
 --
