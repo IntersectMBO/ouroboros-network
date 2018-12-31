@@ -28,16 +28,16 @@ type instance Partition GetProtocol st client server terminal =
 -- server responds with data and terminates.
 --
 type family GetStatePartition st client server terminal :: k where
- GetStatePartition 'StIdle client server terminal = client
- GetStatePartition 'StBusy client server terminal = server
- GetStatePartition 'StDone client server terminal = terminal
+ GetStatePartition StIdle client server terminal = client
+ GetStatePartition StBusy client server terminal = server
+ GetStatePartition StDone client server terminal = terminal
 
 -- | Message protocol
 --
 data GetMessage resource resourceId from to where
-  MsgRequest  :: resourceId -> GetMessage resource resourceId 'StIdle 'StBusy
-  MsgResponse :: resource -> GetMessage resource resourceId 'StBusy 'StDone
-  MsgNoData   :: GetMessage resource resourceId 'StBusy 'StDone
+  MsgRequest  :: resourceId -> GetMessage resource resourceId StIdle StBusy
+  MsgResponse :: resource -> GetMessage resource resourceId StBusy StDone
+  MsgNoData   :: GetMessage resource resourceId StBusy StDone
 
 instance
   (Show resource, Show resourceId)

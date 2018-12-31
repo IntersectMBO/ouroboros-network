@@ -31,7 +31,7 @@ codecChainSync
            (SomeTransition (ChainSyncMessage point header))
            (SomeTransition (ChainSyncMessage point header))
            (ChainSyncMessage point header)
-           'StIdle
+           StIdle
 codecChainSync = codecIdle
 
 codecIdle
@@ -41,14 +41,14 @@ codecIdle
            (SomeTransition (ChainSyncMessage point header))
            (SomeTransition (ChainSyncMessage point header))
            (ChainSyncMessage point header)
-           'StIdle
+           StIdle
 codecIdle = Codec
   { encode = Encoder $ \tr -> case tr of
       MsgRequestNext     -> Encoded (SomeTransition tr) codecNext_CanAwait
       MsgFindIntersect _ -> Encoded (SomeTransition tr) codecIntersect
       MsgDone            -> Encoded (SomeTransition tr) codecDone
   , decode =
-      let loop :: DecoderAt point header m 'StIdle
+      let loop :: DecoderAt point header m StIdle
           loop = Fold $ pure $ Partial $ Response
             { end  = pure $ Left $ pack "expected request"
             , more = \trs -> case trs of
@@ -71,14 +71,14 @@ codecNext_CanAwait
            (SomeTransition (ChainSyncMessage point header))
            (SomeTransition (ChainSyncMessage point header))
            (ChainSyncMessage point header)
-           ('StNext 'StCanAwait)
+           (StNext StCanAwait)
 codecNext_CanAwait = Codec
   { encode = Encoder $ \tr -> case tr of
       MsgAwaitReply -> Encoded (SomeTransition tr) codecNext_MustReply
       MsgRollForward _ _ -> Encoded (SomeTransition tr) codecIdle
       MsgRollBackward _ _ -> Encoded (SomeTransition tr) codecIdle
   , decode =
-      let loop :: DecoderAt point header m ('StNext 'StCanAwait)
+      let loop :: DecoderAt point header m (StNext StCanAwait)
           loop = Fold $ pure $ Partial $ Response
             { end  = pure $ Left $ pack "expected can await response"
             , more = \trs -> case trs of
@@ -102,13 +102,13 @@ codecNext_MustReply
            (SomeTransition (ChainSyncMessage point header))
            (SomeTransition (ChainSyncMessage point header))
            (ChainSyncMessage point header)
-           ('StNext 'StMustReply)
+           (StNext StMustReply)
 codecNext_MustReply = Codec
   { encode = Encoder $ \tr -> case tr of
       MsgRollForward _ _ -> Encoded (SomeTransition tr) codecIdle
       MsgRollBackward _ _ -> Encoded (SomeTransition tr) codecIdle
   , decode =
-      let loop :: DecoderAt point header m ('StNext 'StMustReply)
+      let loop :: DecoderAt point header m (StNext StMustReply)
           loop = Fold $ pure $ Partial $ Response
             { end  = pure $ Left $ pack "expected must reply response"
             , more = \trs -> case trs of
@@ -130,13 +130,13 @@ codecIntersect
            (SomeTransition (ChainSyncMessage point header))
            (SomeTransition (ChainSyncMessage point header))
            (ChainSyncMessage point header)
-           'StIntersect
+           StIntersect
 codecIntersect = Codec
   { encode = Encoder $ \tr -> case tr of
       MsgIntersectImproved _ _ -> Encoded (SomeTransition tr) codecIdle
       MsgIntersectUnchanged _ -> Encoded (SomeTransition tr) codecIdle
   , decode =
-      let loop :: DecoderAt point header m 'StIntersect
+      let loop :: DecoderAt point header m StIntersect
           loop = Fold $ pure $ Partial $ Response
             { end  = pure $ Left $ pack "expected improvement response"
             , more = \trs -> case trs of
@@ -157,7 +157,7 @@ codecDone
            (SomeTransition (ChainSyncMessage point header))
            (SomeTransition (ChainSyncMessage point header))
            (ChainSyncMessage point header)
-           'StDone
+           StDone
 codecDone = Codec
   { encode = Encoder $ \tr -> case tr of { }
   , decode = Fold $ pure $ Complete [] $ pure $ Left $ pack "expected no more transitions"

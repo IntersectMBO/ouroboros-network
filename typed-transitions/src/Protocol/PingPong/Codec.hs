@@ -2,15 +2,13 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE EmptyCase #-}
 
-{-# OPTIONS_GHC "-fwarn-incomplete-patterns" #-}
-
 module Protocol.PingPong.Codec where
 
 import Protocol.Codec
 
 import Protocol.PingPong.Type
 
-pingPongCodec :: Monad m => Codec m String String String PingPongMessage 'StIdle
+pingPongCodec :: Monad m => Codec m String String String PingPongMessage StIdle
 pingPongCodec = pingPongCodecIdle
 
 -- | Here is a complete codec for the ping/pong protocol at 'StIdle.
@@ -31,7 +29,7 @@ pingPongCodec = pingPongCodecIdle
 --   TrGood :: Transition ('Idle param) ('Busy param)
 --
 --
-pingPongCodecIdle :: Monad m => Codec m String String String PingPongMessage 'StIdle
+pingPongCodecIdle :: Monad m => Codec m String String String PingPongMessage StIdle
 pingPongCodecIdle = Codec
   { encode = Encoder $ \tr -> case tr of
       MsgPing -> Encoded "ping" pingPongCodecBusy
@@ -51,7 +49,7 @@ pingPongCodecIdle = Codec
               _      -> Left    "expected ping"
     }
 
-pingPongCodecBusy :: Monad m => Codec m String String String PingPongMessage 'StBusy
+pingPongCodecBusy :: Monad m => Codec m String String String PingPongMessage StBusy
 pingPongCodecBusy = Codec
   { encode = Encoder $ \tr -> case tr of
       MsgPong -> Encoded "pong" pingPongCodecIdle
@@ -69,7 +67,7 @@ pingPongCodecBusy = Codec
              _      -> Left    "expected pong"
     }
 
-pingPongCodecDone :: Monad m => Codec m String String String PingPongMessage 'StDone
+pingPongCodecDone :: Monad m => Codec m String String String PingPongMessage StDone
 pingPongCodecDone = Codec
   { encode = Encoder $ \tr -> case tr of { }
   , decode = Fold $ pure $ Complete [] $ pure $ Left "done"

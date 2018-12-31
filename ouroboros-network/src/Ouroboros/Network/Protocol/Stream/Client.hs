@@ -54,7 +54,7 @@ streamClientPeer
   :: forall m range a t. Monad m
   => StreamClient m range a t
   -> Peer StreamProtocol (StreamMessage range a)
-      ('Yielding 'StIdle) ('Finished 'StDone)
+      (Yielding StIdle) (Finished StDone)
       m t
 streamClientPeer (SendMsgRequest range client) =
   over (MsgRequest range) $ clientHandleData client
@@ -62,7 +62,7 @@ streamClientPeer (SendMsgRequest range client) =
   clientHandleData
     :: ClientHandleData m a t
     -> Peer StreamProtocol (StreamMessage range a)
-        ('Awaiting 'StBusy) ('Finished 'StDone)
+        (Awaiting StBusy) (Finished StDone)
         m t
   clientHandleData ClientHandleData{recvMsgData,recvMsgStreamEnd,recvMsgNoData} = await $ \msg -> case msg of
     MsgData a -> lift $ do

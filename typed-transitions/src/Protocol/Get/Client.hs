@@ -17,7 +17,7 @@ streamClient
   :: Monad m
   => Client m resource resourceId a
   -> Peer GetProtocol (GetMessage resource resourceId)
-          ('Yielding 'StIdle) ('Finished 'StDone)
+          (Yielding StIdle) (Finished StDone)
           m a
 streamClient (Request resourceId handleData) = over (MsgRequest resourceId) $ await $ \msg ->
   case msg of
