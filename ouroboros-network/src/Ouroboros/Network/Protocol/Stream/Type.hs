@@ -35,9 +35,9 @@ type instance Partition StreamProtocol st client server terminal =
   StreamStatePartition st client server terminal
 
 type family StreamStatePartition st client server terminal where
-  StreamStatePartition 'StIdle client server terminal = client
-  StreamStatePartition 'StBusy client server terminal = server   -- server is in charge of streaming data
-  StreamStatePartition 'StDone client server terminal = terminal
+  StreamStatePartition StIdle client server terminal = client
+  StreamStatePartition StBusy client server terminal = server   -- server is in charge of streaming data
+  StreamStatePartition StDone client server terminal = terminal
 
 -- |
 -- Messages in the stream message protocol.  It is a simple single request,
@@ -47,10 +47,10 @@ type family StreamStatePartition st client server terminal where
 -- create a server from a stream (e.g. a @'Producer'@ from @'pipes'@ package).
 --
 data StreamMessage range a from to where
-  MsgRequest      :: range -> StreamMessage range a 'StIdle 'StBusy -- request a range 
-  MsgData         :: a -> StreamMessage range a 'StBusy 'StBusy     -- response with data
-  MsgStreamEnd    :: StreamMessage range a 'StBusy 'StDone          -- the stream is over
-  MsgNoData       :: StreamMessage range a 'StBusy 'StDone          -- error message
+  MsgRequest      :: range -> StreamMessage range a StIdle StBusy -- request a range
+  MsgData         :: a -> StreamMessage range a StBusy StBusy     -- response with data
+  MsgStreamEnd    :: StreamMessage range a StBusy StDone          -- the stream is over
+  MsgNoData       :: StreamMessage range a StBusy StDone          -- error message
 
 instance  Show a => Show (StreamMessage range a from to) where
   show (MsgRequest _r) = "MsgRequest"

@@ -42,7 +42,7 @@ streamServerPeer
   :: forall m range a t. Monad m
   => StreamServer m range a t
   -> Peer StreamProtocol (StreamMessage range a)
-      ('Awaiting 'StIdle) ('Finished 'StDone)
+      (Awaiting StIdle) (Finished StDone)
       m t
 streamServerPeer StreamServer{recvMsgRequest}
   = await $ \msg ->
@@ -52,7 +52,7 @@ streamServerPeer StreamServer{recvMsgRequest}
   serverHandleData
     :: ServerHandleData m a t
     -> Peer StreamProtocol (StreamMessage range a)
-        ('Yielding 'StBusy) ('Finished 'StDone)
+        (Yielding StBusy) (Finished StDone)
         m t
   serverHandleData (SendMsgData a mserver) =
     part (MsgData a) $ lift $ do
