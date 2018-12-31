@@ -379,24 +379,23 @@ data TestChainAndPoint = TestChainAndPoint (Chain Block) (Point Block)
 instance Arbitrary TestChainAndPoint where
   arbitrary = do
     TestBlockChain chain <- arbitrary
-    let len = Chain.length chain
-    -- either choose point from the chain
-    point <- frequency
-      [ (2, return (Chain.headPoint chain))
-      , (2, return (mkRollbackPoint chain len))
-      , (8, mkRollbackPoint chain <$> choose (1, len - 1))
-      -- or a few off the chain!
-      , (1, genPoint)
-      ]
+    -- either choose point from the chain or a few off the chain!
+    point <- frequency [ (10, genPointOnChain chain), (1, genPoint) ]
     return (TestChainAndPoint chain point)
 
-  shrink (TestChainAndPoint c p)
-    | Chain.pointOnChain p c
-    = [ TestChainAndPoint c' (fixupPoint c' p)
-    | TestBlockChain c' <- shrink (TestBlockChain c)]
-    | otherwise
-    = [ TestChainAndPoint c' p
-      | TestBlockChain c' <- shrink (TestBlockChain c) ]
+  shrink (TestChainAndPoint c p) =
+    [ TestChainAndPoint c' (fixupPoint c' p)
+    | TestBlockChain c' <- shrink (TestBlockChain c) ]
+
+genPointOnChain :: HasHeader block => Chain block -> Gen (Point block)
+genPointOnChain chain =
+    frequency
+      [ (1, return (Chain.headPoint chain))
+      , (1, return (mkRollbackPoint chain len))
+      , (8, mkRollbackPoint chain <$> choose (1, len - 1))
+      ]
+  where
+    len = Chain.length chain
 
 genPoint :: Gen (Point Block)
 genPoint = (\s h -> Point (Slot s) (BlockHash (HeaderHash h))) <$> arbitrary <*> arbitrary
@@ -416,8 +415,14 @@ prop_arbitrary_TestChainAndPoint (TestChainAndPoint c p) =
 
 prop_shrink_TestChainAndPoint :: TestChainAndPoint -> Bool
 prop_shrink_TestChainAndPoint cp@(TestChainAndPoint c _) =
-  and [ Chain.valid c' && (not (Chain.pointOnChain p c) || Chain.pointOnChain p c')
+  and [     Chain.valid c'
+        && (Chain.pointOnChain p c `implies` Chain.pointOnChain p c')
       | TestChainAndPoint c' p <- shrink cp ]
+
+implies :: Bool -> Bool -> Bool
+a `implies` b = not a || b
+
+infix 1 `implies`
 
 
 --
