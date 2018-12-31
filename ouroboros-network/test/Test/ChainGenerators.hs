@@ -30,6 +30,8 @@ module Test.ChainGenerators
   , mkPartialBlock
   , mkRollbackPoint
   , genPoint
+  , fixupPoint
+  , genRangeOnChain
 
     -- * Tests of the generators
   , tests
@@ -418,7 +420,9 @@ genPointOnChain chain =
     len = Chain.length chain
 
 genPoint :: Gen (Point Block)
-genPoint = (\s h -> Point (SlotNo s) (BlockHash (HeaderHash h))) <$> arbitrary <*> arbitrary
+genPoint = mkPoint <$> arbitrary <*> arbitrary
+  where
+    mkPoint s h = Point (SlotNo s) (BlockHash (HeaderHash h))
 
 fixupPoint :: HasHeader block => Chain block -> Point block -> Point block
 fixupPoint c p =

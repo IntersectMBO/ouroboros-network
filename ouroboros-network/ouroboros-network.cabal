@@ -148,6 +148,7 @@ test-suite tests
                        Test.ChainGenerators
                        Test.ChainFragment
                        Test.ChainProducerState
+                       Test.FetchLogic
                        Test.Ouroboros.Network.Testing.Utils
                        Test.Ouroboros.Network.Node
                        Test.Mux
