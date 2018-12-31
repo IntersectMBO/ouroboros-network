@@ -14,6 +14,7 @@ import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
+import           Ouroboros.Network.Block (blockPrevHash)
 import           Ouroboros.Network.Chain (Chain (..), Point (..), genesisPoint)
 import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.Serialise (prop_serialise)
@@ -38,6 +39,7 @@ tests = testGroup "Chain"
   , testProperty "successorBlock"  prop_successorBlock
   , testProperty "lookupBySlot"    prop_lookupBySlot
   , testProperty "intersectChains" prop_intersectChains
+  , testProperty "selectBlockRange"prop_selectBlockRange
   , testProperty "serialise chain" prop_serialise_chain
   ]
 
@@ -107,6 +109,17 @@ prop_lookupBySlot (TestChainAndPoint c p) =
     Just b  -> Chain.pointOnChain (Chain.blockPoint b) c
     Nothing | p == genesisPoint -> True
             | otherwise         -> not (Chain.pointOnChain p c)
+
+prop_selectBlockRange :: TestChainAndRange -> Bool
+prop_selectBlockRange (TestChainAndRange c p1 p2) =
+  case Chain.selectBlockRange c p1 p2 of
+    Just [] -> p1 == p2 && Chain.pointOnChain p1 c
+
+    Just bs@(b:_) -> blockPrevHash b == pointHash p1
+                  && Chain.blockPoint (last bs) == p2
+
+    Nothing -> not (Chain.pointOnChain p1 c)
+            || not (Chain.pointOnChain p2 c)
 
 prop_intersectChains :: TestChainFork -> Bool
 prop_intersectChains (TestChainFork c l r) =
