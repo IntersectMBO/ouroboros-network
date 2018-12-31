@@ -57,6 +57,8 @@ module Ouroboros.Network.Chain (
   lookupBySlot,
   selectChain,
   selectPoints,
+  findBlock,
+  selectBlockRange,
   findFirstPoint,
   intersectChains,
   isPrefixOf,
@@ -272,6 +274,33 @@ selectPoints offsets =
     go (off:offs) c = headPoint c' : go offs c'
       where
         c' = drop off c
+
+findBlock
+  :: (block -> Bool)
+  -> Chain block
+  -> Maybe block
+findBlock _ Genesis  = Nothing
+findBlock p (c :> b)
+  | p b              = Just b
+  | otherwise        = findBlock p c
+
+selectBlockRange :: HasHeader block
+                 => Chain block
+                 -> Point block
+                 -> Point block
+                 -> Maybe [block]
+selectBlockRange c from to
+  | pointOnChain from c
+  , pointOnChain to c
+  =   Just
+    . reverse
+    . takeWhile (\b -> blockPoint b /= from)
+    . dropWhile (\b -> blockPoint b /= to)
+    . toNewestFirst
+    $ c
+
+  | otherwise
+  = Nothing
 
 findFirstPoint
   :: HasHeader block

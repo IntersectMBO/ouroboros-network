@@ -12,14 +12,16 @@ module Test.Chain
   , genBlockChain
   , genHeaderChain
   , genNonNegative
+  , genRangeOnChain
+  , genPoint
   , genSlotGap
   , addSlotGap
-  , genPoint
   , mkPartialBlock
+  , fixupPoint
   ) where
 
 import qualified Data.List as L
-import           Data.Maybe (listToMaybe)
+import           Data.Maybe (catMaybes, listToMaybe)
 
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
@@ -59,6 +61,9 @@ tests = testGroup "Chain"
     , testProperty "arbitrary for TestChainAndPoint" prop_arbitrary_TestChainAndPoint
     , testProperty "shrink for TestChainAndPoint"    prop_shrink_TestChainAndPoint
 
+    , testProperty "arbitrary for TestChainAndRange" prop_arbitrary_TestChainAndRange
+    , testProperty "shrink for TestChainAndRange"    prop_shrink_TestChainAndRange
+
     , testProperty "arbitrary for TestChainFork" prop_arbitrary_TestChainFork
     , testProperty "shrink for TestChainFork"
                                (mapSize (min 40) prop_shrink_TestChainFork)
@@ -75,6 +80,7 @@ tests = testGroup "Chain"
   , testProperty "successorBlock"  prop_successorBlock
   , testProperty "lookupBySlot"    prop_lookupBySlot
   , testProperty "intersectChains" prop_intersectChains
+  , testProperty "selectBlockRange"prop_selectBlockRange
   , testProperty "serialise chain" prop_serialise_chain
   ]
 
@@ -144,6 +150,17 @@ prop_lookupBySlot (TestChainAndPoint c p) =
     Just b  -> Chain.pointOnChain (Chain.blockPoint b) c
     Nothing | p == genesisPoint -> True
             | otherwise         -> not (Chain.pointOnChain p c)
+
+prop_selectBlockRange :: TestChainAndRange -> Bool
+prop_selectBlockRange (TestChainAndRange c p1 p2) =
+  case Chain.selectBlockRange c p1 p2 of
+    Just [] -> p1 == p2 && Chain.pointOnChain p1 c
+
+    Just bs@(b:_) -> blockPrevHash b == pointHash p1
+                  && Chain.blockPoint (last bs) == p2
+
+    Nothing -> not (Chain.pointOnChain p1 c)
+            || not (Chain.pointOnChain p2 c)
 
 prop_intersectChains :: TestChainFork -> Bool
 prop_intersectChains (TestChainFork c l r) =
@@ -427,27 +444,60 @@ data TestChainAndPoint = TestChainAndPoint (Chain Block) (Point Block)
 instance Arbitrary TestChainAndPoint where
   arbitrary = do
     TestBlockChain chain <- arbitrary
-    let len = Chain.length chain
-    -- either choose point from the chain
-    point <- frequency
-      [ (2, return (Chain.headPoint chain))
-      , (2, return (mkRollbackPoint chain len))
-      , (8, mkRollbackPoint chain <$> choose (1, len - 1))
-      -- or a few off the chain!
-      , (1, genPoint)
-      ]
+    -- either choose point from the chain or a few off the chain!
+    point <- frequency [ (10, genPointOnChain chain), (1, genPoint) ]
     return (TestChainAndPoint chain point)
 
-  shrink (TestChainAndPoint c p)
-    | Chain.pointOnChain p c
-    = [ TestChainAndPoint c' (fixupPoint c' p)
-    | TestBlockChain c' <- shrink (TestBlockChain c)]
-    | otherwise
-    = [ TestChainAndPoint c' p
-      | TestBlockChain c' <- shrink (TestBlockChain c) ]
+  shrink (TestChainAndPoint c p) =
+    [ TestChainAndPoint c' (fixupPoint c' p)
+    | TestBlockChain c' <- shrink (TestBlockChain c) ]
+
+genPointOnChain :: HasHeader block => Chain block -> Gen (Point block)
+genPointOnChain chain =
+    frequency
+      [ (1, return (Chain.headPoint chain))
+      , (1, return (mkRollbackPoint chain len))
+      , (8, mkRollbackPoint chain <$> choose (1, len - 1))
+      ]
+  where
+    len = Chain.length chain
+
+-- | A test generator for a chain and a list of points some of which may not be
+-- on the chain.  Only 50% of the blocks are selected, one fifth of selected
+-- ones is not on the chain.  Points which come from the chain are given in the
+-- newest to oldest order, but the intermittent points which are not in the
+-- chain might break the order.
+--
+data TestChainAndPoints = TestChainAndPoints (Chain Block) [Point Block]
+  deriving Show
+
+instance Arbitrary TestChainAndPoints where
+  arbitrary = do
+    TestBlockChain chain <- arbitrary
+    let fn p = frequency
+          [ (4, return $ Just p)
+          , (1, Just <$> genPoint)
+          , (5, return Nothing)
+          ]
+        points = map Chain.blockPoint (Chain.chainToList chain) ++ [Chain.genesisPoint]
+    points' <- catMaybes <$> mapM fn points
+    return $ TestChainAndPoints chain points'
+
+  shrink (TestChainAndPoints chain points) =
+    [ TestChainAndPoints chain' points'
+    | TestBlockChain chain' <- shrink (TestBlockChain chain)
+      -- Leave only points that are on the @chain'@ or the ones that where not on the
+      -- original @chain@.
+    , let points' = filter (\p -> p `Chain.pointOnChain` chain' || not (p `Chain.pointOnChain` chain)) points
+    ] ++
+    [ TestChainAndPoints chain points'
+    | points' <- shrinkList shrinkNothing points
+    ]
 
 genPoint :: Gen (Point Block)
-genPoint = (\s h -> Point (Slot s) (BlockHash (HeaderHash h))) <$> arbitrary <*> arbitrary
+genPoint = mkPoint <$> arbitrary <*> arbitrary
+  where
+    mkPoint s h = Point (Slot s) (BlockHash (HeaderHash h))
 
 fixupPoint :: HasHeader block => Chain block -> Point block -> Point block
 fixupPoint c p =
@@ -464,8 +514,69 @@ prop_arbitrary_TestChainAndPoint (TestChainAndPoint c p) =
 
 prop_shrink_TestChainAndPoint :: TestChainAndPoint -> Bool
 prop_shrink_TestChainAndPoint cp@(TestChainAndPoint c _) =
-  and [ Chain.valid c' && (not (Chain.pointOnChain p c) || Chain.pointOnChain p c')
+  and [     Chain.valid c'
+        && (Chain.pointOnChain p c `implies` Chain.pointOnChain p c')
       | TestChainAndPoint c' p <- shrink cp ]
+
+implies :: Bool -> Bool -> Bool
+a `implies` b = not a || b
+
+infix 1 `implies`
+
+
+--
+-- Generator for chain and single point on the chain
+--
+
+-- | A test generator for a chain and a range defined by a pair of points.
+-- In most cases the range is on the chain, but it also covers at least 5% of
+-- cases where the point is not on the chain.
+--
+data TestChainAndRange = TestChainAndRange (Chain Block) (Point Block) (Point Block)
+  deriving Show
+
+instance Arbitrary TestChainAndRange where
+  arbitrary = do
+    TestBlockChain chain <- arbitrary
+    -- either choose range from the chain or a few off the chain!
+    (point1, point2) <- frequency [ (10, genRangeOnChain chain)
+                                  , (1, (,) <$> genPoint <*> genPoint) ]
+    return (TestChainAndRange chain point1 point2)
+
+  shrink (TestChainAndRange c p1 p2) =
+    [ TestChainAndRange c' (fixupPoint c' p1) (fixupPoint c' p2)
+    | TestBlockChain c' <- shrink (TestBlockChain c) ]
+
+genRangeOnChain :: HasHeader block
+                => Chain block
+                -> Gen (Point block, Point block)
+genRangeOnChain chain = do
+    point1 <- genPointOnChain chain
+    let Just point1Depth = (\c -> Chain.length chain - Chain.length c) <$>
+                           Chain.rollback point1 chain
+    point2 <- frequency $
+        [ (1, return (Chain.headPoint chain))
+        , (1, return (mkRollbackPoint chain point1Depth))
+        , (8, mkRollbackPoint chain <$> choose (0, point1Depth))
+        ]
+    return (point1, point2)
+
+prop_arbitrary_TestChainAndRange :: TestChainAndRange -> Property
+prop_arbitrary_TestChainAndRange (TestChainAndRange c p1 p2) =
+  let onChain = Chain.pointOnChain p1 c && Chain.pointOnChain p2 c in
+  cover (85/100) onChain               "points on chain" $
+  cover ( 5/100) (onChain && p1 == p2) "empty range" $
+  cover ( 5/100) (not onChain)         "points not on chain" $
+    Chain.valid c
+ && onChain `implies` pointSlot p2 >= pointSlot p1
+
+prop_shrink_TestChainAndRange :: TestChainAndRange -> Bool
+prop_shrink_TestChainAndRange cp@(TestChainAndRange c _ _) =
+  and [    Chain.valid c'
+        && (Chain.pointOnChain p1 c && Chain.pointOnChain p2 c
+            `implies`
+            Chain.pointOnChain p1 c' && Chain.pointOnChain p2 c')
+      | TestChainAndRange c' p1 p2 <- shrink cp ]
 
 --
 -- Generator for chain forks sharing a common prefix
