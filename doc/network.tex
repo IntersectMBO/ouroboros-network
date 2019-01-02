@@ -119,6 +119,7 @@
 \end{description}
 
 \chapter{Overview}
+\section{Scope}
 \section{Layout of the Document}
 \begin{itemize}
 \item What goes in which section ?
@@ -128,29 +129,48 @@
 \section{Notation}
 
 \chapter{Requirements}
-\section{Performance Requirements user View}
-\subsection{Classes of Participants}
-\subsection{Stake pool} % lookup what this is called in the protocols.tex
-\subsection{Small stakeholder}
-\subsection{User who has delegated}
 
-\subsection{Protocol Updates on the Blockchain}
+\section{Performance Requirements and User Stories}
+
+
+\subsection{Classes of Participants}
+There are two kinds of Requirements:
+
+\begin{enumerate}
+\item Requirements that a user must satisfy to take part in the protocol.
+\item What services that the system provides to the user.
+\end{enumerate}
+
+\subsubsection{Stake pool} % lookup what this is called in the protocols.tex
+\subsubsection{Small stakeholder}
+\subsubsection{User who has delegated}
+
+
+\section{Protocol Updates on the Blockchain}
 \begin{itemize}
 \item Hydrid phase of federation and decentralization
 \item Gradually transition between protocol variants on a life blockchain.
 \item Several protocol variant active in parallel.
 \item Communication between Shelley Nodes and existing core nodes.
 \end{itemize}
+
+\section{Node to Node and Node to Consumer IPC}
+There are two basic variants of inter-process-communication in the network:
+\begin{itemize}
+\item IPC between Cardano nodes that are engaged in the high level Ouroboros
+      blockchain consensus protocol.
+\item IPC between a Cardano node and a `chain consumer' component such as a
+      wallet, explorer or other custom application.
+\end{itemize}
+Both variants of IPC in the network follow destinct requirements and contraints, and
+,while the first version of Cardano used a single protocol, the new version will
+use different sets of protocols for both uses cases.
+(See Section \ref{why_distinguish_protocols} for the motivation for this design decision.)
+Throughout the document it will be clear which variant of we are referening to.
+
 \section{Threat Model}
 Todo: find out what a threat model is and whether it should be part of this document.
 
-\section{Node to Node and Node to Consumer}
-\begin{itemize}
-\item Different protocols for different kinds of participant
-\item Design discussions in the discussions section.
-\end{itemize}
-
-\section{Nodes}
 \section{Ouroboros}
 \section{Delegation}
 
@@ -169,6 +189,7 @@ Todo: find out what a threat model is and whether it should be part of this docu
 \chapter{Infrastructure}
 Specific assumptions about the infrastructure that are relevant for the discussion.
 \section{Internet}
+\section{Network Toplogy}
 \section{Firewall}
 \section{TCP}
 \section{Operating Systems}
@@ -184,10 +205,9 @@ The binary formats are automatically derived from the Haskell data types
 That are used.
 
 \chapter{Haskell}
-The network protocol itself does not rely on Haskell
+The network protocol itself does not rely on Haskell.
 But, at the same time, the protocol is being developed in parallel with the
 Haskell reference implementation.
-
 
 \chapter{Discussion}
 Alternative view: Exploratory work.
@@ -195,10 +215,93 @@ The real work goes here
 The Why is at least as important as the What.
 \section{Overview}
 \section{Design Discussion}
+\subsubsection{Why distinguish between node to node and node-to-consumer IPC}
+\label{why_distinguish_protocols}
+We use two different sets of protocols for the these two use cases.
+
+\begin{description}
+\item[node-to-node] IPC beween nodes that are engaged in the high level Ouroboros
+      blockchain consensus protocol.
+\item[node-to-consumer] IPC between a Cardano node and a `chain consumer' component such as a
+      wallet, explorer or other custom application.
+\end{description}
+
+This section describes the differences between those two variants of IPC and why both use
+different protocols.
+
+The node-to-node protocol is conducted in a P2P environment
+with very limited trust between peers. The node-to-node protocol utilises
+store-and-forward over selected \emph{bearers} which form the underlying
+connectivity graph. A concern in this setting is asymmetric resource consumption
+attacks. Ease of implementation is a nice to have, but is subordinate to the
+other hard constraints.
+
+A node-to-consumer protocol is intended to support blockchain applications
+like wallets and explorers, or Cardano-specific caches or proxies. The setting
+here is that a consumer trusts a node (a `chain producer') and just wants to
+catch up and keep up with the blockchain of that producer. It is assumed that
+a consumer only consumes from one producer (or one of a related set of
+producers), so unlike in the node-to-node protocol there is no need to choose
+between different available chains. The producer may still not fully trust the
+consumer and does not want to be subject to highly asymmetric resource
+consumption attacks. In this use case, because of the wider range of
+applications that wish to consume the blockchain, having some options that are
+easy to implement is more important, even if this involves a trade-off with
+performance. That said, there are also use cases where tight integration is
+possible and making the most efficient use of resources is more desirable.
+
+There are a number of applications that simply want to consume the blockchain,
+but are able to rely on an upstream trusted or semi-trusted Cardano consensus
+node. These applications do not need to engage in the full consensus protocol,
+and may be happy to delegate the necessary chain validation.
+
+Examples include 3rd party applications that want to observe the blockchain,
+examples being business processes triggered by transactions or analytics.  It
+may also include certain kinds of light client that wish to follow the
+blockchain but not do full validation.
+
+Once one considers a node-to-consumer protocol as a first class citizen then it
+opens up opportunities for different system architecture choices.
+The architecture of the original Cardano Mainnet release was entirely homogeneous:
+every node behaved the same, each trusted nothing but itself and paid the full
+networking and processing cost of engaging in the consensus protocol.  In
+particular everything was integrated into a single process: the consensus
+algorithm itself, serving data to other peers and components such as the wallet
+or explorer. If we were to have a robust and efficient node-to-consumer protocol
+then we can make many other choices.
+
+With an efficient \emph{local} IPC protocol we can have applications
+like wallets and explorers as separate processes. Even for tightly
+integrated components it can make sense to run them in separate OS
+processes and the associated OS mamagement tools. Not only is the
+timing constraints for a consensus node are much easier to manage when
+it does not have to share CPU resources with chain consumers, but it
+enables the use of operating system features to give finer control
+over resource consumption for sophisticated end-users.  There have
+been cases in production where a highly loaded wallet component takes
+more than its allowed allocation of CPU resources and causes the local
+node to miss its deadlines.  By giving a consensus node a dedicated
+CPU core it becomes more plausible to provide the necessary hard real
+time guarantees. In addition, scaling on multi-core machines is
+significantly easier with multiple OS processes than with a
+multi-threaded OS process with a shared-heap. This could allow for
+larger capacity Cardano relay deployments where there are multiple
+network facing proxy processes that all get their chain from a single
+local consensus node.
+
+With an efficient \emph{network} IPC protocol we can do similar things
+but extend it across multiple machines. This permits: large
+organisations to achieve better alignment with their security
+policies; clusters of relays operated by a single organisation to use
+the more efficient (less resource costly) node-to-consumer protocol
+instead of the node-to-node protocol; Similarly it allows for wallet
+or explorer-like applications that need to scale out, and are able to
+make use of a trusted node.
+
 \section{Requirements}
 \section{Threat Vectors}
 \subsubsection{Asymptotic Resource consumption}
-\subsection{Results from Simulations}
+\section{Results from Simulations}
 \section{Pub Sub}
 \section{Of the Shelf Protocols}
 \section{Meta Requirements}
