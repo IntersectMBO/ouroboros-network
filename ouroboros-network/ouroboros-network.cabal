@@ -35,7 +35,6 @@ library
                        Ouroboros.Network.MonadClass.MonadTimer
                        Ouroboros.Network.Node
                        Ouroboros.Network.Pipe
-                       Ouroboros.Network.Protocol
                        Ouroboros.Network.Serialise
                        Ouroboros.Network.Sim
                        Ouroboros.Network.Testing.ConcreteBlock
