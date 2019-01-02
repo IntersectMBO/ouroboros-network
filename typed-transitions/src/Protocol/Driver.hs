@@ -4,12 +4,6 @@
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
 
-module Protocol.Driver where
-
-import Protocol.Channel
-import Protocol.Core
-import Protocol.Codec
-
 -- |
 -- = Driving a Peer by was of a Duplex and Channel
 --
@@ -21,14 +15,20 @@ import Protocol.Codec
 -- a typed transition. This is defined by a 'Codec'.
 --
 -- A 'Codec' and a 'Duplex' alone is not enough to do encoding and decoding,
--- because the 'Codec' does not make any _decisions_ about the way in which
--- the protocol application progresses. It defines encodings for _all_ possible
+-- because the 'Codec' does not make any /decisions/ about the way in which
+-- the protocol application progresses. It defines encodings for /all/ possible
 -- transitions from a state, and an inverse for that encoder. It's the 'Peer'
 -- term which decides which transitions to encode, thereby leading the 'Codec'
 -- through a path in the protocol type.
 --
 -- Driving a 'Peer' in this way may give rise to an exception, given by
--- 'Unexpected :: Result t'.
+-- @'Unexpected' :: 'Result' t@.
+
+module Protocol.Driver where
+
+import Protocol.Channel
+import Protocol.Core
+import Protocol.Codec
 
 -- | The outcome of a 'Peer' when driven by a 'Duplex' and 'Codec'.
 -- It's possible that an unexpected transition was given, either because the

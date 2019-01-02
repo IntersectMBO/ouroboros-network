@@ -11,10 +11,10 @@ import Protocol.PingPong.Type
 pingPongCodec :: Monad m => Codec m String String String PingPongMessage StIdle
 pingPongCodec = pingPongCodecIdle
 
--- | Here is a complete codec for the ping/pong protocol at 'StIdle.
+-- | Here is a complete codec for the ping\/pong protocol at 'StIdle.
 -- The decoder is inverse to the encoder. Codecs at other states are allowed
 -- to overlap in their encodings. The encoding of MsgPong, for instance, could
--- be "ping", and there would be no problem, for a user of the ping/pong
+-- be "ping", and there would be no problem, for a user of the ping\/pong
 -- protocol always knows which state it's at... well, that's true if
 --
 --   for every transition constructor, if the initial state is fully specialised
