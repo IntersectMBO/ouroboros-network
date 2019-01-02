@@ -122,9 +122,19 @@ feedInput
 feedInput = foldOverInput
 
 data Codec m fail concreteTo concreteFrom tr from = Codec
-  { encode :: Encoder tr from (Encoded concreteTo (Codec m fail concreteTo concreteFrom tr))
-  , decode :: Decoder fail concreteFrom m (Decoded tr from (Codec m fail concreteTo concreteFrom tr))
+  { encode :: Encoder tr from
+                      (EncodedCodec m fail concreteTo concreteFrom tr)
+  , decode :: Decoder fail concreteFrom m
+                      (DecodedCodec m fail concreteTo concreteFrom tr from)
   }
+
+-- | Type alias just to make the type expressions shorter
+type EncodedCodec m fail concreteTo concreteFrom tr =
+       Encoded concreteTo (Codec m fail concreteTo concreteFrom tr)
+
+-- | Type alias just to make the type expressions shorter
+type DecodedCodec m fail concreteTo concreteFrom tr from =
+       Decoded tr from (Codec m fail concreteTo concreteFrom tr)
 
 data Encoded concrete codec to = Encoded
   { representation :: concrete

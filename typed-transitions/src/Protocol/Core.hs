@@ -36,7 +36,10 @@ data Peer p (tr :: st -> st -> Type) (from :: Status st) (to :: Status st) f t w
     -> Peer p tr (ControlNext control Yielding Awaiting Finished inter) to f t
     -> Peer p tr (Yielding from) to f t
   PeerAwait
-    :: (forall inter . tr from inter -> Peer p tr (ControlNext (TrControl p from inter) Awaiting Yielding Finished inter) to f t)
+    :: (forall inter . tr from inter
+                    -> Peer p tr (ControlNext (TrControl p from inter)
+                                              Awaiting Yielding Finished inter)
+                            to f t)
     -> Peer p tr (Awaiting from) to f t
 
 -- | In a client/server model, one side will be awaiting when the other is
@@ -161,7 +164,10 @@ part
 part tr = yield (Part tr)
 
 await
-  :: (forall inter . tr from inter -> Peer p tr (ControlNext (TrControl p from inter) Awaiting Yielding Finished inter) to f t)
+  :: (forall inter . tr from inter
+                  -> Peer p tr (ControlNext (TrControl p from inter)
+                                            Awaiting Yielding Finished inter)
+                          to f t)
   -> Peer p tr (Awaiting from) to f t
 await = PeerAwait
 
