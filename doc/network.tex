@@ -121,11 +121,13 @@
 \chapter{Overview}
 \section{Scope}
 \section{Layout of the Document}
+
 \begin{itemize}
-\item What goes in which section ?
-\item In which order to read ?
-\item Which sections can be skipped ?
+  \item What goes in which section ?
+  \item In which order to read ?
+  \item Which sections can be skipped ?
 \end{itemize}
+
 \section{Notation}
 
 \chapter{Requirements}
@@ -174,6 +176,14 @@ Todo: find out what a threat model is and whether it should be part of this docu
 
 
 \section{Ouroboros}
+
+How PoS is different from PoW in its network requirements:
+
+\begin{itemize}
+  \item No capability to sustain an undetected Eclipse attack
+  \item Sustained liveness requirement
+\end{itemize}
+
 \section{Delegation}
 
 \chapter{System Architecture}
@@ -202,14 +212,21 @@ Specific assumptions about the infrastructure that are relevant for the discussi
 \section{Operating Systems}
 
 \chapter{Protocols}
+\begin{itemize}
+  \item IER - Information Exchange Requirement
+  \item CBOR - https://tools.ietf.org/html/rfc7049
+\end{itemize}
 \section{State-machine Framework}
 \section{Chain Following Protocol}
 \section{Block Retrieval Protocol}
 \section{What other Protocols ?}
 \section{Peer Discovery}
-\section{Binary Formats and Low-Level Protocols}
-The binary formats are automatically derived from the Haskell data types
-That are used.
+\section{Abstract and concrete representation}
+
+\begin{itemize}
+  \item CBOR as the concrete representation for the information exchanges
+  \item Haskell to CBOR 
+\end{itemize}
 
 \chapter{Haskell}
 The network protocol itself does not rely on Haskell.
