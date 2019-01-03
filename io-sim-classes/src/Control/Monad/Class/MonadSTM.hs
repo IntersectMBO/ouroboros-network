@@ -26,7 +26,6 @@ module Control.Monad.Class.MonadSTM
   , newTBQueueDefault
   , readTBQueueDefault
   , writeTBQueueDefault
-  , lengthTBQueueDefault
   ) where
 
 import           Prelude hiding (read)
@@ -90,9 +89,6 @@ class (MonadFork m, Monad (Tr m)) => MonadSTM m where
   newTBQueue     :: Natural -> Tr m (TBQueue m a)
   readTBQueue    :: TBQueue m a -> Tr m a
   writeTBQueue   :: TBQueue m a -> a -> Tr m ()
-#if MIN_VERSION_stm(2,5,0)
-  lengthTBQueue  :: TBQueue m a -> Tr m Natural
-#endif
 
 instance MonadFork m => MonadFork (ReaderT e m) where
   fork (ReaderT f) = ReaderT $ \e -> fork (f e)
@@ -125,9 +121,6 @@ instance MonadSTM m => MonadSTM (ReaderT e m) where
   newTBQueue       = lift . newTBQueue
   readTBQueue      = lift . readTBQueue
   writeTBQueue q a = lift $ writeTBQueue q a
-#if MIN_VERSION_stm(2,5,0)
-  lengthTBQueue    = lift . lengthTBQueue
-#endif
 
 -- NOTE(adn): Is this a sensible instance?
 instance (Show e, MonadFork m) => MonadFork (ExceptT e m) where
@@ -161,9 +154,6 @@ instance (Show e, MonadSTM m) => MonadSTM (ExceptT e m) where
   newTBQueue       = lift . newTBQueue
   readTBQueue      = lift . readTBQueue
   writeTBQueue q a = lift $ writeTBQueue q a
-#if MIN_VERSION_stm(2,5,0)
-  lengthTBQueue    = lift . lengthTBQueue
-#endif
 
 --
 -- Instance for IO uses the existing STM library implementations
@@ -209,9 +199,6 @@ instance MonadSTM IO where
 #endif
   readTBQueue    = STM.readTBQueue
   writeTBQueue   = STM.writeTBQueue
-#if MIN_VERSION_stm(2,5,0)
-  lengthTBQueue  = STM.lengthTBQueue
-#endif
 
 --
 -- Default TMVar implementation in terms of TVars (used by sim)
@@ -340,8 +327,3 @@ writeTBQueueDefault (TBQueue rsize _read wsize write _size) a = do
   listend <- readTVar write
   writeTVar write (a:listend)
 
-lengthTBQueueDefault :: MonadSTM m => TBQueueDefault m a -> Tr m Natural
-lengthTBQueueDefault (TBQueue rsize _read wsize _write size) = do
-  r <- readTVar rsize
-  w <- readTVar wsize
-  return $! size - r - w

@@ -158,9 +158,6 @@ instance MonadSTM (Free (SimF s)) where
   newTBQueue        = newTBQueueDefault
   readTBQueue       = readTBQueueDefault
   writeTBQueue      = writeTBQueueDefault
-#if MIN_VERSION_stm(2,5,0)
-  lengthTBQueue     = lengthTBQueueDefault
-#endif
 
 instance MonadST (Free (SimF s)) where
   withLiftST f = f liftST

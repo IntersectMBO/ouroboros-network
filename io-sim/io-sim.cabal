@@ -34,8 +34,7 @@ library
                        io-sim-classes    >=0.1 && <0.2,
                        containers,
                        free,
-                       psqueues          >=0.2 && <0.3,
-                       stm               >=2.4 && <2.6
+                       psqueues          >=0.2 && <0.3
 
   ghc-options:         -Wall
                        -fno-ignore-asserts
