@@ -2,6 +2,7 @@
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE MultiParamTypeClasses  #-}
 {-# LANGUAGE TypeFamilies           #-}
+
 module Control.Monad.Class.MonadProbe
   ( MonadProbe (..)
   , MonadRunProbe (..)
@@ -9,10 +10,9 @@ module Control.Monad.Class.MonadProbe
   ) where
 
 import qualified Control.Concurrent.STM.TVar as STM
-import           System.Clock (Clock (Monotonic), TimeSpec, getTime, toNanoSecs)
 
 import           Control.Monad.Class.MonadSTM (atomically)
-import           Control.Monad.Class.MonadTimer (Time)
+import           Control.Monad.Class.MonadTimer (Time, getMonotonicTime)
 
 
 type ProbeTrace m a = [(Time m, a)]
@@ -43,13 +43,10 @@ newtype ProbeIO a = ProbeIO (STM.TVar [(Int, a)])
 instance MonadProbe IO where
   type Probe IO = ProbeIO
   probeOutput (ProbeIO p) a = do
-    t <- toMicroseconds <$> getTime Monotonic
+    t <- getMonotonicTime
     -- the user is not exposed to the inner TVar, so it should never block for
     -- too long.
     atomically $ STM.modifyTVar' p ((t,a):)
-    where
-      toMicroseconds :: TimeSpec -> Int
-      toMicroseconds = fromIntegral . (div 1000) . toNanoSecs
 
   -- In the above the starting state is pending, there is only one transaction
   -- that goes from pending to fired, and only one that goes from pending to
@@ -63,4 +60,3 @@ instance MonadRunProbe IO IO where
   newProbe  = ProbeIO <$> STM.newTVarIO []
   readProbe (ProbeIO p) = STM.readTVarIO p
   runM = id
-
