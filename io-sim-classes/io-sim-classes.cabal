@@ -39,7 +39,6 @@ library
                        ScopedTypeVariables
                        RankNTypes
   build-depends:       base  >=4.9 && <4.13,
-                       clock >=0.7 && <0.8,
                        mtl   >=2.2 && <2.3,
                        stm   >=2.4 && <2.6
   ghc-options:         -Wall
