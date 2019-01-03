@@ -1,7 +1,8 @@
 { mkDerivation, array, async, base, bytestring, cborg, clock
 , containers, fingertree, free, hashable, mtl, network, pipes, process
 , psqueues, QuickCheck, serialise, stdenv, stm, tasty
-, tasty-quickcheck, text, typed-transitions, iohk-monitoring, nixpkgs
+, tasty-quickcheck, text, typed-transitions, iohk-monitoring, io-sim
+, io-sim-classes, nixpkgs
 }:
 mkDerivation {
   pname = "ouroboros-network";
@@ -11,7 +12,7 @@ mkDerivation {
   libraryHaskellDepends = [
     array async base bytestring cborg clock containers fingertree free hashable
     mtl network pipes process psqueues QuickCheck serialise stm text
-    typed-transitions iohk-monitoring
+    typed-transitions iohk-monitoring io-sim io-sim-classes
   ];
   testHaskellDepends = [
     array base containers fingertree mtl pipes QuickCheck tasty tasty-quickcheck

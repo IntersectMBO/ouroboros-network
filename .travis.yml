@@ -4,10 +4,14 @@ script:
 - echo "trusted-users = root ${USER}" | sudo tee -a /etc/nix/nix.conf || true
 - sudo pkill nix-daemon || true
 - cachix use ouroboros-network
+- nix-build --arg dev true -A io-sim-classes      -o result-io-sim-classes      --argstr compiler $COMPILER
+- nix-build --arg dev true -A io-sim              -o result-io-sim              --argstr compiler $COMPILER
 - nix-build --arg dev true -A typed-transitions   -o result-typed-transitions   --argstr compiler $COMPILER
 - nix-build --arg dev true -A ouroboros-network   -o result-ouroboros-network   --argstr compiler $COMPILER
 - nix-build --arg dev true -A ouroboros-consensus -o result-ouroboros-consensus --argstr compiler $COMPILER
 after_success:
+- cachix push ouroboros-network ./result-typed-io-sim-classes
+- cachix push ouroboros-network ./result-typed-io-sim
 - cachix push ouroboros-network ./result-typed-transitions
 - cachix push ouroboros-network ./result-ouroboros-network
 - cachix push ouroboros-network ./result-ouroboros-consensus
