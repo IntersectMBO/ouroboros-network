@@ -1,5 +1,5 @@
 {-# LANGUAGE RankNTypes #-}
-module Ouroboros.Network.MonadClass.MonadST where
+module Control.Monad.Class.MonadST where
 
 import Control.Monad.ST (ST, stToIO)
 

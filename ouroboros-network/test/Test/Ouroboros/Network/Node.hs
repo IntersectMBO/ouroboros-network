@@ -8,7 +8,7 @@
 
 module Test.Ouroboros.Network.Node where
 
-import           Control.Monad (forM, forM_, replicateM)
+import           Control.Monad (forM, forM_, replicateM, filterM)
 import           Control.Monad.ST.Lazy (runST)
 import           Control.Monad.State (execStateT, lift, modify')
 import           Data.Array
@@ -31,17 +31,20 @@ import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
+import           Control.Monad.Class.MonadSay
+import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadProbe
+import qualified Control.Monad.IOSim as Sim
+
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (Chain (..), chainToList)
 import qualified Ouroboros.Network.Chain as Chain
-import           Ouroboros.Network.MonadClass
 import           Ouroboros.Network.Node
-import qualified Ouroboros.Network.Sim as Sim
 import           Ouroboros.Network.Testing.ConcreteBlock as ConcreteBlock
 
 import           Test.Chain (TestBlockChain (..), TestChainFork (..),
                              genNonNegative, genHeaderChain)
-import           Test.Sim (TestThreadGraph (..), arbitraryAcyclicGraph)
 import           Ouroboros.Network.Protocol.Chain.Node
 
 tests :: TestTree
@@ -339,7 +342,7 @@ connectGraphG g = do
 
 instance Arbitrary TestNetworkGraph where
     arbitrary = resize 20 $ do
-        TestThreadGraph g <- arbitrary
+        g <- arbitraryAcyclicGraphSmall
         let g' = accum (++) g (assocs $ transposeG g)
             vs = (vertices g)
         cs  <- genCoreNodes vs
@@ -472,12 +475,38 @@ isDisconnected gr = case components gr of
   (_ : []) -> False
   _        -> True
 
+arbitraryAcyclicGraph :: Gen Int -> Gen Int -> Float -> Gen Graph
+arbitraryAcyclicGraph genNRanks genNPerRank edgeChance = do
+    nranks    <- genNRanks
+    rankSizes <- replicateM nranks genNPerRank
+    let rankStarts = scanl (+) 0 rankSizes
+        rankRanges = drop 1 (zip rankStarts (tail rankStarts))
+        totalRange = sum rankSizes
+    rankEdges <- mapM (uncurry genRank) rankRanges
+    return $ buildG (0, totalRange-1) (concat rankEdges)
+  where
+    genRank :: Vertex -> Vertex -> Gen [Edge]
+    genRank rankStart rankEnd =
+      filterM (const (pick edgeChance))
+        [ (i,j)
+        | i <- [0..rankStart-1]
+        , j <- [rankStart..rankEnd-1]
+        ]
+
+    pick :: Float -> Gen Bool
+    pick chance = (< chance) <$> choose (0,1)
+
+
+arbitraryAcyclicGraphSmall :: Gen Graph
+arbitraryAcyclicGraphSmall =
+    sized $ \sz ->
+    arbitraryAcyclicGraph (choose (2, 8 `min` (sz `div` 3)))
+                          (choose (1, 8 `min` (sz `div` 3)))
+                          0.3
+
 genConnectedBidirectionalGraph :: Gen Graph
 genConnectedBidirectionalGraph = do
-  g <- sized $ \sz -> arbitraryAcyclicGraph
-    (choose (2, 8 `min` (sz `div` 3)))
-    (choose (1, 8 `min` (sz `div` 3)))
-    0.3
+  g <- arbitraryAcyclicGraphSmall
   let g' = accum (++) g (assocs $ transposeG g)
   connectGraphG g'
 

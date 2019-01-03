@@ -18,7 +18,7 @@ import qualified Data.Set as Set
 
 import Ouroboros.Network.Protocol.Chain.ProducerStream
 
-import Ouroboros.Network.MonadClass.MonadSTM
+import Control.Monad.Class.MonadSTM
 
 data Changing t where
   Forked    :: t -> Changing t

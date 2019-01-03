@@ -10,12 +10,13 @@ module Ouroboros.Network.ChainSyncExamples (
   , chainSyncServerExample
   ) where
 
+import           Control.Monad.Class.MonadSTM
+
 import           Ouroboros.Network.Block (HasHeader (..))
 import           Ouroboros.Network.Chain (Chain (..), Point (..), ChainUpdate(..))
 import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.ChainProducerState (ChainProducerState, ReaderId)
 import qualified Ouroboros.Network.ChainProducerState as ChainProducerState
-import           Ouroboros.Network.MonadClass
 import           Ouroboros.Network.Protocol.ChainSync.Client
 import           Ouroboros.Network.Protocol.ChainSync.Server
 

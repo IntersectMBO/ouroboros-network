@@ -42,10 +42,11 @@ import           Text.Read (readMaybe)
 
 import           GHC.Stack
 
+import           Control.Monad.Class.MonadSTM
+
 import           Ouroboros.Storage.FS.Class
 import           Ouroboros.Storage.Util as I
 
-import           Ouroboros.Network.MonadClass
 
 
 {-- | Our database is structured on disk this way:

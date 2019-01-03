@@ -15,13 +15,16 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 
+import           Control.Monad.Class.MonadSay
+import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadTimer
+
 import           Protocol.Channel
 import           Protocol.Transition
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain
 import qualified Ouroboros.Network.Chain as Chain
-import           Ouroboros.Network.MonadClass
 import           Ouroboros.Network.Protocol.ChainSync.Codec.Id
 import           Ouroboros.Network.Protocol.ChainSync.Type
 

@@ -1,0 +1,59 @@
+name:                io-sim
+version:             0.1.0.0
+synopsis:            A pure simlator for monadic concurrency with STM
+-- description:
+license-file:        LICENSE
+author:              Alexander Vieth, Marcin Szamotulski, Duncan Coutts
+maintainer:
+copyright:           2018 IOHK
+category:            Testing
+build-type:          Simple
+cabal-version:       >=1.10
+
+source-repository head
+  type:     git
+  location: https://github.com/input-output-hk/ouroboros-network
+  subdir:   io-sim
+
+library
+  hs-source-dirs:      src
+  exposed-modules:     Control.Monad.IOSim
+  default-language:    Haskell2010
+  other-extensions:    BangPatterns,
+                       ExistentialQuantification,
+                       FlexibleInstances,
+                       GADTSyntax,
+                       GeneralizedNewtypeDeriving,
+                       MultiParamTypeClasses,
+                       NamedFieldPuns,
+                       RankNTypes,
+                       ScopedTypeVariables,
+                       TypeApplications,
+                       TypeFamilies
+  build-depends:       base              >=4.9 && <4.13,
+                       io-sim-classes    >=0.1 && <0.2,
+                       containers,
+                       free,
+                       psqueues          >=0.2 && <0.3,
+                       stm               >=2.4 && <2.6
+
+  ghc-options:         -Wall
+                       -fno-ignore-asserts
+
+test-suite tests
+  type:                exitcode-stdio-1.0
+  hs-source-dirs:      test
+  main-is:             Main.hs
+  other-modules:       Test.IOSim
+  default-language:    Haskell2010
+  build-depends:       base,
+                       array,
+                       containers,
+                       io-sim,
+                       io-sim-classes,
+                       QuickCheck,
+                       tasty,
+                       tasty-quickcheck
+
+  ghc-options:         -Wall
+                       -fno-ignore-asserts

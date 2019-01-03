@@ -43,6 +43,9 @@ import           Data.Maybe (fromMaybe)
 import           Data.Text (Text)
 import           Data.Time
 
+import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadTimer
+
 import           Protocol.Channel
 import           Protocol.Codec
 import           Protocol.Driver
@@ -52,7 +55,6 @@ import           Ouroboros.Network.Chain (Chain (..), ChainUpdate (..), Point)
 import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.ChainProducerState
 import           Ouroboros.Network.ChainSyncExamples
-import           Ouroboros.Network.MonadClass
 import           Ouroboros.Network.Protocol.ChainSync.Client
 import           Ouroboros.Network.Protocol.ChainSync.Server
 import           Ouroboros.Network.Protocol.ChainSync.Type

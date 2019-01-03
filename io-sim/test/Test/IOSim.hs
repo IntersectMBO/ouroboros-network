@@ -1,7 +1,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
-module Test.Sim
+module Test.IOSim
     ( tests
     , TestThreadGraph (..)
     , arbitraryAcyclicGraph
@@ -18,8 +18,11 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
-import           Ouroboros.Network.MonadClass
-import qualified Ouroboros.Network.Sim as Sim
+import           Control.Monad.Class.MonadFork
+import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadProbe
+import qualified Control.Monad.IOSim as Sim
 
 tests :: TestTree
 tests =

@@ -10,8 +10,9 @@
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE CPP                        #-}
+{-# OPTIONS_GHC -Wno-orphans            #-}
 
-module Ouroboros.Network.Sim {-(
+module Control.Monad.IOSim {-(
   SimF,
   SimM,
   Probe,
@@ -40,12 +41,14 @@ import           Control.Monad.ST.Lazy
 import qualified Control.Monad.ST.Strict as StrictST
 import           Data.STRef.Lazy
 
-import           Ouroboros.Network.MonadClass.MonadFork
-import           Ouroboros.Network.MonadClass.MonadSay
-import           Ouroboros.Network.MonadClass.MonadST
-import           Ouroboros.Network.MonadClass.MonadSTM hiding (TVar)
-import qualified Ouroboros.Network.MonadClass.MonadSTM as MonadSTM
-import           Ouroboros.Network.MonadClass.MonadTimer
+import           Control.Monad.Class.MonadFork
+import           Control.Monad.Class.MonadSay
+import           Control.Monad.Class.MonadST
+import           Control.Monad.Class.MonadSTM hiding (TVar)
+import qualified Control.Monad.Class.MonadSTM as MonadSTM
+import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadProbe hiding (Probe)
+import qualified Control.Monad.Class.MonadProbe as MonadProbe
 
 {-# ANN module "HLint: ignore Use readTVarIO" #-}
 
@@ -178,6 +181,15 @@ instance MonadTimer (Free (SimF s)) where
   newTimeout      d = Free.liftF $ NewTimeout      d id
   updateTimeout t d = Free.liftF $ UpdateTimeout t d ()
   cancelTimeout t   = Free.liftF $ CancelTimeout t   ()
+
+instance MonadProbe (Free (SimF s)) where
+  type Probe (Free (SimF s)) = Probe s
+  probeOutput p o = Free.liftF $ Output p o ()
+
+instance MonadRunProbe (Free (SimF s)) (ST s) where
+  newProbe = Probe <$> newSTRef []
+  readProbe (Probe p) = reverse <$> readSTRef p
+  runM = void . runSimMST
 
 --
 -- Simulation interpreter

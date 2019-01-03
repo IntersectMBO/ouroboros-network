@@ -12,7 +12,9 @@ import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
-import Ouroboros.Network.MonadClass (MonadProbe (..), MonadRunProbe (..), MonadSTM (..), fork, withProbe)
+import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadProbe
+import           Control.Monad.IOSim ()
 
 import Ouroboros.Network.Protocol.Stream.Client
 import Ouroboros.Network.Protocol.Stream.Server

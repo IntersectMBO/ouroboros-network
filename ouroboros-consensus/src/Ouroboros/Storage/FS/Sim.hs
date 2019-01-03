@@ -61,7 +61,8 @@ import           Data.Word (Word64)
 import           System.IO (IOMode, SeekMode)
 import qualified System.IO as IO
 
-import           Ouroboros.Network.MonadClass
+import           Control.Monad.Class.MonadSTM
+
 import           Ouroboros.Storage.FS.Class
 
 

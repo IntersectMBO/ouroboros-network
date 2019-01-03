@@ -112,6 +112,7 @@ library
   build-depends:       base              >=4.9 && <4.13,
                        ouroboros-network,
                        typed-transitions,
+                       io-sim-classes,
 
                        base16-bytestring >=0.1   && <0.2,
                        bytestring        >=0.10  && <0.11,
@@ -192,6 +193,8 @@ test-suite test-consensus
                     typed-transitions,
                     ouroboros-network,
                     ouroboros-consensus,
+                    io-sim-classes,
+                    io-sim,
 
                     containers,
                     cryptonite,
@@ -240,6 +243,7 @@ test-suite test-storage
   build-depends:    base,
                     ouroboros-network,
                     ouroboros-consensus,
+                    io-sim-classes,
 
                     bytestring,
                     containers,

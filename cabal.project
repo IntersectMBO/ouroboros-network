@@ -1,6 +1,8 @@
 packages: ./typed-transitions
           ./ouroboros-network
           ./ouroboros-consensus
+          ./io-sim
+          ./io-sim-classes
 
 package typed-transitions
   tests: True

@@ -8,9 +8,10 @@ import Data.Maybe (fromMaybe)
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 
+import Control.Monad.Class.MonadSTM
+
 import Ouroboros.Network.Protocol.Chain.ConsumerStream
 
-import Ouroboros.Network.MonadClass.MonadSTM
 
 -- | Drop the suffix of the chain beginning at and not including the 'Point'.
 dropAfter

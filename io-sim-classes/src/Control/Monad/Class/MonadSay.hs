@@ -1,4 +1,4 @@
-module Ouroboros.Network.MonadClass.MonadSay where
+module Control.Monad.Class.MonadSay where
 
 class Monad m => MonadSay m where
   say :: String -> m ()
