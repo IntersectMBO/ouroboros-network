@@ -44,7 +44,7 @@ let
   )));
 
   ouroboros-consensus = doHaddock(doTest(doBench(
-    callPackage ./ouroboros-consensus/default.nix { inherit nixpkgs typed-transitions ouroboros-network; }
+    callPackage ./ouroboros-consensus/default.nix { inherit nixpkgs io-sim-classes typed-transitions ouroboros-network; }
   )));
 
 in { inherit io-sim-classes io-sim typed-transitions ouroboros-network ouroboros-consensus; }

@@ -159,6 +159,7 @@ executable demo-playground
                        typed-transitions,
                        ouroboros-network,
                        ouroboros-consensus,
+                       io-sim-classes,
 
                        aeson,
                        async,
