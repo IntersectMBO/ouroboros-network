@@ -9,7 +9,6 @@
 {-# LANGUAGE TupleSections              #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
-{-# LANGUAGE CPP                        #-}
 
 {-- |
 
@@ -122,9 +121,6 @@ instance (MonadFork (SimFS m) , MonadSTM m) => MonadSTM (SimFS m) where
   newTBQueue             = lift . newTBQueue
   readTBQueue            = lift . readTBQueue
   writeTBQueue q a       = lift $ writeTBQueue q a
-#if MIN_VERSION_stm(2,5,0)
-  lengthTBQueue          = lift . lengthTBQueue
-#endif
 
 
 {-------------------------------------------------------------------------------
