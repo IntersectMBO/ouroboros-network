@@ -43,7 +43,8 @@ prop_stm_graph_io g =
 
 prop_stm_graph_sim :: TestThreadGraph -> Bool
 prop_stm_graph_sim g =
-    not $ null [ () | (_t, Sim.ThreadId 0, Sim.EventThreadStopped) <- trace ]
+    not $ null [ () | (_t, tid, Sim.EventThreadStopped) <- trace
+                    , tid == toEnum 0 ]
   where
     trace = Sim.runSimM (prop_stm_graph g)
 

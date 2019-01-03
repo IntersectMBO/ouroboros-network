@@ -7,19 +7,20 @@
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
-{-# LANGUAGE CPP                        #-}
 {-# OPTIONS_GHC -Wno-orphans            #-}
 
-module Control.Monad.IOSim {-(
+module Control.Monad.IOSim (
   SimF,
   SimM,
-  Probe,
-  SimChan (..),
   runSimM,
   runSimMST,
-  )-} where
+  VTime(..),
+  VTimeDuration(..),
+  ThreadId,
+  Trace,
+  TraceEvent(..),
+  ) where
 
 import           Prelude hiding (read)
 
@@ -87,8 +88,6 @@ type ProbeTrace a = [(VTime, a)]
 
 newtype Probe s a = Probe (STRef s (ProbeTrace a))
 
-failSim :: String -> Free (SimF s) ()
-failSim = Free.liftF . Fail
 
 --
 -- Monad class instances
@@ -194,9 +193,6 @@ instance MonadRunProbe (Free (SimF s)) (ST s) where
 
 data Thread s = Thread ThreadId (SimM s ())
 
-threadId :: Thread s -> ThreadId
-threadId (Thread tid _) = tid
-
 newtype ThreadId  = ThreadId  Int deriving (Eq, Ord, Enum, Show)
 newtype TVarId    = TVarId    Int deriving (Eq, Ord, Enum, Show)
 newtype TimeoutId = TimeoutId Int deriving (Eq, Ord, Enum, Show)
@@ -217,16 +213,6 @@ data TraceEvent
   | EventTimerCancelled TimeoutId
   | EventTimerExpired   TimeoutId
   deriving Show
-
-filterTrace :: (VTime, ThreadId, TraceEvent) -> Bool
-filterTrace (_, _, EventFail _)         = True
-filterTrace (_, _, EventSay _)          = True
-filterTrace (_, _, EventThreadForked _) = True
-filterTrace (_, _, EventThreadStopped)  = True
-filterTrace _                           = False
-
-filterByThread :: ThreadId -> (VTime, ThreadId, TraceEvent) -> Bool
-filterByThread tid (_, tid', _) = tid == tid'
 
 runSimM :: (forall s. SimM s ()) -> Trace
 runSimM initialThread = runST (runSimMST initialThread)
@@ -550,7 +536,7 @@ ordNub = go Set.empty
 --
 -- Examples
 --
-
+{-
 example0 :: (MonadSay m, MonadTimer m, MonadSTM m) => m ()
 example0 = do
   say "starting"
@@ -604,3 +590,4 @@ example2 = do
         Just _  -> return ()
     say "2"
   atomically $ writeTVar v (Just ())
+-}
