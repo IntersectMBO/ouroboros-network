@@ -7,8 +7,8 @@ module Ouroboros.Network.Protocol.Channel.Sim
 
 import qualified Data.Sequence as Seq
 
-import Ouroboros.Network.MonadClass.MonadSTM
-import Ouroboros.Network.MonadClass.MonadTimer
+import Control.Monad.Class.MonadSTM
+import Control.Monad.Class.MonadTimer
 import Protocol.Channel
 
 

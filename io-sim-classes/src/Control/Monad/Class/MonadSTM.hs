@@ -6,8 +6,9 @@
 {-# LANGUAGE UndecidableInstances   #-}
 {-# LANGUAGE CPP                    #-}
 {-# OPTIONS_GHC -fno-warn-orphans   #-}
-module Ouroboros.Network.MonadClass.MonadSTM
+module Control.Monad.Class.MonadSTM
   ( MonadSTM (..)
+  , MonadFork (..)
   , TMVarDefault (..)
   , newTMVarDefault
   , newTMVarIODefault
@@ -38,7 +39,7 @@ import           Control.Monad.Reader
 import qualified Control.Monad.STM as STM
 import           Numeric.Natural (Natural)
 
-import           Ouroboros.Network.MonadClass.MonadFork
+import           Control.Monad.Class.MonadFork
 
 class (MonadFork m, Monad (Tr m)) => MonadSTM m where
 

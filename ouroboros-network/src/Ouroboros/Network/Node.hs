@@ -19,6 +19,12 @@ import           Data.Text (Text)
 import           Data.Tuple (swap)
 import           GHC.Generics (Generic)
 
+import           Control.Monad.Class.MonadSay
+import           Control.Monad.Class.MonadFork
+import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadProbe
+
 import           Protocol.Codec
 import           Protocol.Core
 import           Protocol.Channel
@@ -32,7 +38,6 @@ import           Ouroboros.Network.ChainProducerState (ChainProducerState (..),
                                                        initChainProducerState,
                                                        producerChain,
                                                        switchFork)
-import           Ouroboros.Network.MonadClass
 import           Ouroboros.Network.Protocol.ChainSync.Codec.Id (codecChainSync)
 import           Ouroboros.Network.Protocol.ChainSync.Client
 import           Ouroboros.Network.Protocol.ChainSync.Server

@@ -14,11 +14,11 @@ module Ouroboros.Network.Protocol.Stream.Client
     ) where
 
 import Control.Monad (void)
+import Control.Monad.Class.MonadSTM (MonadSTM (..))
 
 import Protocol.Core
 import Ouroboros.Network.Protocol.Stream.Type
 
-import Ouroboros.Network.MonadClass.MonadSTM (MonadSTM (..))
 
 -- | A specialised type used to put elements in a @'TBQueue'@.  Reading
 -- @'EndOfStream'@ means no more elements will be written to the queue.

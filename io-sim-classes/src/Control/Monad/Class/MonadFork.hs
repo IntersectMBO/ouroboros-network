@@ -1,5 +1,5 @@
 {-# LANGUAGE ScopedTypeVariables #-}
-module Ouroboros.Network.MonadClass.MonadFork
+module Control.Monad.Class.MonadFork
   ( MonadFork (..)
   ) where
 

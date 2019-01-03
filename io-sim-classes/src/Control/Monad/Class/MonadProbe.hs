@@ -2,26 +2,18 @@
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE MultiParamTypeClasses  #-}
 {-# LANGUAGE TypeFamilies           #-}
-module Ouroboros.Network.MonadClass.MonadProbe
+module Control.Monad.Class.MonadProbe
   ( MonadProbe (..)
   , MonadRunProbe (..)
   , withProbe
   ) where
 
 import qualified Control.Concurrent.STM.TVar as STM
-import           Control.Monad (void)
-import           Control.Monad.Free (Free)
-import qualified Control.Monad.Free as Free
-import           Control.Monad.ST.Lazy
 import           System.Clock (Clock (Monotonic), TimeSpec, getTime, toNanoSecs)
 
-import           Data.STRef.Lazy
+import           Control.Monad.Class.MonadSTM (atomically)
+import           Control.Monad.Class.MonadTimer (Time)
 
-import           Ouroboros.Network.MonadClass.MonadSTM (atomically)
-import           Ouroboros.Network.MonadClass.MonadTimer (Time)
-
-import           Ouroboros.Network.Sim (SimF)
-import qualified Ouroboros.Network.Sim as Sim
 
 type ProbeTrace m a = [(Time m, a)]
 
@@ -72,11 +64,3 @@ instance MonadRunProbe IO IO where
   readProbe (ProbeIO p) = STM.readTVarIO p
   runM = id
 
-instance MonadProbe (Free (SimF s)) where
-  type Probe (Free (SimF s)) = Sim.Probe s
-  probeOutput p o = Free.liftF $ Sim.Output p o ()
-
-instance MonadRunProbe (Free (SimF s)) (ST s) where
-  newProbe = Sim.Probe <$> newSTRef []
-  readProbe (Sim.Probe p) = reverse <$> readSTRef p
-  runM = void . Sim.runSimMST
