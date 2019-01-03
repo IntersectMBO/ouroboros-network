@@ -1,11 +1,8 @@
 {-# LANGUAGE FlexibleContexts       #-}
-{-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE MultiParamTypeClasses  #-}
 {-# LANGUAGE TypeFamilies           #-}
 {-# LANGUAGE TypeFamilyDependencies #-}
-{-# LANGUAGE UndecidableInstances   #-}
 {-# LANGUAGE CPP                    #-}
-{-# OPTIONS_GHC -fno-warn-orphans   #-}
 module Control.Monad.Class.MonadSTM
   ( MonadSTM (..)
   , MonadFork (..)
@@ -90,9 +87,6 @@ class (MonadFork m, Monad (Tr m)) => MonadSTM m where
   readTBQueue    :: TBQueue m a -> Tr m a
   writeTBQueue   :: TBQueue m a -> a -> Tr m ()
 
-instance MonadFork m => MonadFork (ReaderT e m) where
-  fork (ReaderT f) = ReaderT $ \e -> fork (f e)
-
 instance MonadSTM m => MonadSTM (ReaderT e m) where
   type Tr (ReaderT e m)    = ReaderT e (Tr m)
   type TVar (ReaderT e m)  = TVar m
@@ -121,10 +115,6 @@ instance MonadSTM m => MonadSTM (ReaderT e m) where
   newTBQueue       = lift . newTBQueue
   readTBQueue      = lift . readTBQueue
   writeTBQueue q a = lift $ writeTBQueue q a
-
--- NOTE(adn): Is this a sensible instance?
-instance (Show e, MonadFork m) => MonadFork (ExceptT e m) where
-  fork (ExceptT m) = ExceptT $ Right <$> fork (either (error . show) id <$> m)
 
 instance (Show e, MonadSTM m) => MonadSTM (ExceptT e m) where
   type Tr (ExceptT e m)      = ExceptT e (Tr m)
