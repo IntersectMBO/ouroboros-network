@@ -12,13 +12,13 @@ import           Control.Concurrent (threadDelay)
 import qualified Control.Concurrent.Async as Async
 import           Control.Exception (catch)
 import           Control.Monad.Except
+import           Control.Monad.Class.MonadSTM
 import qualified Data.Map.Strict as M
 import qualified Data.Set as Set
 import           Data.Void
 import           Options.Applicative
 import           System.IO (IOMode (..))
 
-import           Ouroboros.Network.MonadClass hiding (threadDelay)
 import           Ouroboros.Network.Node (NodeId (..))
 import           Ouroboros.Network.Serialise
 

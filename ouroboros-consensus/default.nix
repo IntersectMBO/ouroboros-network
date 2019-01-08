@@ -1,9 +1,9 @@
 { mkDerivation, aeson, async, base, base16-bytestring, bytestring
 , cborg, containers, cryptonite, directory, exceptions, fgl
-, filepath, graphviz ,memory, mtl, optparse-applicative
-, ouroboros-network, QuickCheck, serialise, stdenv, stm
+, filepath, fingertree, graphviz, io-sim-classes, memory, mtl
+, optparse-applicative , ouroboros-network, QuickCheck, serialise, stdenv, stm
 , string-conv, tasty, tasty-hunit, tasty-quickcheck, temporary
-, text, time, typed-transitions, unix , vector, nixpkgs
+, text, time, typed-transitions, unix, vector, nixpkgs
 }:
 mkDerivation {
   pname = "ouroboros-consensus";
@@ -14,13 +14,13 @@ mkDerivation {
   isExecutable = true;
   libraryHaskellDepends = [
     base base16-bytestring bytestring cborg containers cryptonite
-    directory exceptions filepath memory mtl
+    directory exceptions filepath fingertree memory mtl
     ouroboros-network QuickCheck serialise text time
     typed-transitions unix vector
   ];
   executableHaskellDepends = [
     aeson async base bytestring cborg containers cryptonite directory
-    mtl optparse-applicative ouroboros-network serialise stm
+    io-sim-classes mtl optparse-applicative ouroboros-network serialise stm
     string-conv text typed-transitions unix
   ];
   testHaskellDepends = [

@@ -16,23 +16,26 @@ module Ouroboros.Network.Block (
   , StandardHash
   , Hash(..)
   , castHash
+  , BlockMeasure(..)
+  , blockMeasure
   ) where
 
 import           Data.Hashable
+import           Data.FingerTree (Measured)
 import           GHC.Generics (Generic)
 
 import           Ouroboros.Network.Serialise
 
 -- | The Ouroboros time slot index for a block.
 newtype Slot = Slot { getSlot :: Word }
-  deriving (Show, Eq, Ord, Hashable, Enum, Serialise, Num, Real, Integral)
+  deriving (Show, Eq, Ord, Hashable, Enum, Bounded, Serialise, Num, Real, Integral)
 
 -- | The 0-based index of the block in the blockchain
 newtype BlockNo = BlockNo Word
-  deriving (Show, Eq, Ord, Hashable, Enum, Serialise)
+  deriving (Show, Eq, Ord, Hashable, Enum, Bounded, Serialise)
 
 -- | Abstract over the shape of blocks (or indeed just block headers)
-class StandardHash b => HasHeader b where
+class (StandardHash b, Measured BlockMeasure b) => HasHeader b where
     -- TODO: I /think/ we should be able to make this injective, but I'd have
     -- to check after the redesign of the block abstraction (which will live
     -- in the consensus layer), to make sure injectivity is compatible with that
@@ -46,6 +49,11 @@ class StandardHash b => HasHeader b where
     blockNo        :: b -> BlockNo
 
     blockInvariant :: b -> Bool
+
+-- | When implementing 'HasHeader', use this method to implement the 'measure'
+-- method of the 'Measured' super class.
+blockMeasure :: HasHeader b => b -> BlockMeasure
+blockMeasure b = BlockMeasure (blockSlot b) (blockSlot b) 1
 
 -- | 'StandardHash' summarises the constraints we want header hashes to have
 --
@@ -98,3 +106,26 @@ castHash (BlockHash b) = BlockHash b
 
 instance StandardHash b => Serialise (Hash b) where
   -- use the Generic instance
+
+{-------------------------------------------------------------------------------
+  Finger Tree Measure
+-------------------------------------------------------------------------------}
+
+-- | The measure used for 'Ouroboros.Network.ChainFragment.ChainFragment'.
+data BlockMeasure = BlockMeasure {
+       bmMinSlot :: !Slot,
+       bmMaxSlot :: !Slot,
+       bmSize    :: !Int
+     }
+  deriving Show
+
+
+instance Semigroup BlockMeasure where
+  vl <> vr =
+    BlockMeasure (min (bmMinSlot vl) (bmMinSlot vr))
+                 (max (bmMaxSlot vl) (bmMaxSlot vr))
+                 (bmSize vl + bmSize vr)
+
+instance Monoid BlockMeasure where
+  mempty = BlockMeasure maxBound minBound 0
+  mappend = (<>)

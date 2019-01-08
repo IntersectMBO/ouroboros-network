@@ -2,26 +2,18 @@
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE MultiParamTypeClasses  #-}
 {-# LANGUAGE TypeFamilies           #-}
-module Ouroboros.Network.MonadClass.MonadProbe
+
+module Control.Monad.Class.MonadProbe
   ( MonadProbe (..)
   , MonadRunProbe (..)
   , withProbe
   ) where
 
 import qualified Control.Concurrent.STM.TVar as STM
-import           Control.Monad (void)
-import           Control.Monad.Free (Free)
-import qualified Control.Monad.Free as Free
-import           Control.Monad.ST.Lazy
-import           System.Clock (Clock (Monotonic), TimeSpec, getTime, toNanoSecs)
 
-import           Data.STRef.Lazy
+import           Control.Monad.Class.MonadSTM (atomically)
+import           Control.Monad.Class.MonadTimer (Time, getMonotonicTime)
 
-import           Ouroboros.Network.MonadClass.MonadSTM (atomically)
-import           Ouroboros.Network.MonadClass.MonadTimer (Time)
-
-import           Ouroboros.Network.Sim (SimF)
-import qualified Ouroboros.Network.Sim as Sim
 
 type ProbeTrace m a = [(Time m, a)]
 
@@ -51,13 +43,10 @@ newtype ProbeIO a = ProbeIO (STM.TVar [(Int, a)])
 instance MonadProbe IO where
   type Probe IO = ProbeIO
   probeOutput (ProbeIO p) a = do
-    t <- toMicroseconds <$> getTime Monotonic
+    t <- getMonotonicTime
     -- the user is not exposed to the inner TVar, so it should never block for
     -- too long.
     atomically $ STM.modifyTVar' p ((t,a):)
-    where
-      toMicroseconds :: TimeSpec -> Int
-      toMicroseconds = fromIntegral . (div 1000) . toNanoSecs
 
   -- In the above the starting state is pending, there is only one transaction
   -- that goes from pending to fired, and only one that goes from pending to
@@ -71,12 +60,3 @@ instance MonadRunProbe IO IO where
   newProbe  = ProbeIO <$> STM.newTVarIO []
   readProbe (ProbeIO p) = STM.readTVarIO p
   runM = id
-
-instance MonadProbe (Free (SimF s)) where
-  type Probe (Free (SimF s)) = Sim.Probe s
-  probeOutput p o = Free.liftF $ Sim.Output p o ()
-
-instance MonadRunProbe (Free (SimF s)) (ST s) where
-  newProbe = Sim.Probe <$> newSTRef []
-  readProbe (Sim.Probe p) = reverse <$> readSTRef p
-  runM = void . Sim.runSimMST

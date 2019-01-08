@@ -29,9 +29,9 @@ type instance Partition PingPongProtocol st client server terminal =
 -- busy states are where the server is expected to send a reply.
 --
 type family PingPongStatePartition st client server terminal :: k where
-  PingPongStatePartition 'StIdle client server terminal = client
-  PingPongStatePartition 'StBusy client server terminal = server
-  PingPongStatePartition 'StDone client server terminal = terminal
+  PingPongStatePartition StIdle client server terminal = client
+  PingPongStatePartition StBusy client server terminal = server
+  PingPongStatePartition StDone client server terminal = terminal
 
 -- | The actual messages in our protocol.
 --
@@ -46,9 +46,9 @@ type family PingPongStatePartition st client server terminal :: k where
 -- usual GADT tricks).
 --
 data PingPongMessage from to where
-  MsgPing :: PingPongMessage 'StIdle 'StBusy
-  MsgPong :: PingPongMessage 'StBusy 'StIdle
-  MsgDone :: PingPongMessage 'StIdle 'StDone
+  MsgPing :: PingPongMessage StIdle StBusy
+  MsgPong :: PingPongMessage StBusy StIdle
+  MsgDone :: PingPongMessage StIdle StDone
 
 instance Show (PingPongMessage from to) where
   show MsgPing = "MsgPing"

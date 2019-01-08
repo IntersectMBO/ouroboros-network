@@ -17,7 +17,8 @@ import           Control.Monad.Except
 import           GHC.Stack
 import qualified System.IO as IO
 
-import           Ouroboros.Network.MonadClass
+import           Control.Monad.Class.MonadSTM
+
 import           Ouroboros.Storage.FS.Class
 import           Ouroboros.Storage.Immutable.DB
 

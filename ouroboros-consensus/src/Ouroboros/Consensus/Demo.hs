@@ -23,6 +23,7 @@ module Ouroboros.Consensus.Demo (
     -- * Support for runnig the demos
   , defaultDemoPraosParams
   , enumCoreNodes
+  , HasCreator(..)
   ) where
 
 import           Control.Monad.Except
@@ -36,6 +37,7 @@ import           Ouroboros.Network.Chain (Chain (..))
 import           Ouroboros.Network.Serialise (Serialise)
 
 import           Ouroboros.Consensus.Crypto.DSIGN
+import           Ouroboros.Consensus.Crypto.DSIGN.Mock (verKeyIdFromSigned)
 import           Ouroboros.Consensus.Crypto.Hash
 import           Ouroboros.Consensus.Crypto.KES
 import           Ouroboros.Consensus.Crypto.VRF
@@ -78,6 +80,7 @@ data ProtocolInfo p = ProtocolInfo {
 type DemoProtocolConstraints p = (
     OuroborosTag p
   , ProtocolLedgerView (Block p)
+  , HasCreator (Block p)
   , Condense  (Payload p (SimplePreHeader p SimpleBlockMockCrypto))
   , Eq        (Payload p (SimplePreHeader p SimpleBlockMockCrypto))
   , Serialise (Payload p (SimplePreHeader p SimpleBlockMockCrypto))
@@ -156,7 +159,7 @@ protocolInfo (DemoLeaderSchedule schedule params)
             , praosInitialStake = genesisStakeDist addrDist
             , praosVerKeys      = verKeys
             }
-        , lsNodeConfigNodeId   = nid
+        , lsNodeConfigNodeId   = CoreNodeId nid
         }
     , pInfoInitChain  = Genesis
     , pInfoInitLedger = ExtLedgerState
@@ -228,3 +231,29 @@ genesisLedgerState addrDist = SimpleLedgerState {
 genesisStakeDist :: AddrDist -> StakeDist
 genesisStakeDist addrDist =
     relativeStakes (totalStakes addrDist (genesisUtxo addrDist))
+
+{-------------------------------------------------------------------------------
+  Who created a block?
+-------------------------------------------------------------------------------}
+
+class HasCreator b where
+    getCreator :: b -> CoreNodeId
+
+instance HasCreator (Block DemoBFT) where
+    getCreator = CoreNodeId
+               . verKeyIdFromSigned
+               . bftSignature
+               . headerOuroboros
+               . simpleHeader
+
+instance HasCreator (Block DemoPraos) where
+    getCreator = praosCreator
+               . praosExtraFields
+               . encPayloadP
+               . headerOuroboros
+               . simpleHeader
+
+instance HasCreator (Block DemoLeaderSchedule) where
+    getCreator = getWLSPayload
+               . headerOuroboros
+               . simpleHeader

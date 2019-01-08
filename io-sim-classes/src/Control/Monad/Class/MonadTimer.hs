@@ -1,7 +1,7 @@
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeFamilies          #-}
-module Ouroboros.Network.MonadClass.MonadTimer (
+module Control.Monad.Class.MonadTimer (
     MonadTime(..)
   , MonadTimer(..)
   , TimeoutState(..)
@@ -19,8 +19,8 @@ import           Data.Word (Word64)
 import qualified GHC.Event as GHC (TimeoutKey, getSystemTimerManager,
                      registerTimeout, unregisterTimeout, updateTimeout)
 
-import           Ouroboros.Network.MonadClass.MonadFork (fork)
-import           Ouroboros.Network.MonadClass.MonadSTM
+import           Control.Monad.Class.MonadFork (fork)
+import           Control.Monad.Class.MonadSTM
 
 
 class (Ord t, Ord (Duration t), Num (Duration t)) => TimeMeasure t where

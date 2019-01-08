@@ -21,9 +21,10 @@ import           Control.Monad.Reader
 import           Control.Monad.State
 import           Control.Monad.Writer
 
+import           Control.Monad.Class.MonadSTM
+
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.Random
-import           Ouroboros.Network.MonadClass
 
 {-------------------------------------------------------------------------------
   Misc

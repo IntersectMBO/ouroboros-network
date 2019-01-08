@@ -14,11 +14,11 @@ module Ouroboros.Network.Protocol.Stream.Client
     ) where
 
 import Control.Monad (void)
+import Control.Monad.Class.MonadSTM (MonadSTM (..))
 
 import Protocol.Core
 import Ouroboros.Network.Protocol.Stream.Type
 
-import Ouroboros.Network.MonadClass.MonadSTM (MonadSTM (..))
 
 -- | A specialised type used to put elements in a @'TBQueue'@.  Reading
 -- @'EndOfStream'@ means no more elements will be written to the queue.
@@ -54,7 +54,7 @@ streamClientPeer
   :: forall m range a t. Monad m
   => StreamClient m range a t
   -> Peer StreamProtocol (StreamMessage range a)
-      ('Yielding 'StIdle) ('Finished 'StDone)
+      (Yielding StIdle) (Finished StDone)
       m t
 streamClientPeer (SendMsgRequest range client) =
   over (MsgRequest range) $ clientHandleData client
@@ -62,7 +62,7 @@ streamClientPeer (SendMsgRequest range client) =
   clientHandleData
     :: ClientHandleData m a t
     -> Peer StreamProtocol (StreamMessage range a)
-        ('Awaiting 'StBusy) ('Finished 'StDone)
+        (Awaiting StBusy) (Finished StDone)
         m t
   clientHandleData ClientHandleData{recvMsgData,recvMsgStreamEnd,recvMsgNoData} = await $ \msg -> case msg of
     MsgData a -> lift $ do

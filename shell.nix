@@ -12,6 +12,12 @@ in
     typed-transitions = if nixpkgs.lib.inNixShell
       then default.typed-transitions.env
       else default.typed-transitions;
+    io-sim-classes = if nixpkgs.lib.inNixShell
+      then default.io-sim-classes.env
+      else default.io-sim-classes;
+    io-sim = if nixpkgs.lib.inNixShell
+      then default.io-sim.env
+      else default.io-sim;
     ouroboros-network = if nixpkgs.lib.inNixShell
       then default.ouroboros-network.env
       else default.ouroboros-network;

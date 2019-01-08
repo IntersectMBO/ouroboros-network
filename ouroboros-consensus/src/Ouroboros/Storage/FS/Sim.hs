@@ -9,7 +9,6 @@
 {-# LANGUAGE TupleSections              #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
-{-# LANGUAGE CPP                        #-}
 
 {-- |
 
@@ -61,7 +60,8 @@ import           Data.Word (Word64)
 import           System.IO (IOMode, SeekMode)
 import qualified System.IO as IO
 
-import           Ouroboros.Network.MonadClass
+import           Control.Monad.Class.MonadSTM
+
 import           Ouroboros.Storage.FS.Class
 
 
@@ -121,9 +121,6 @@ instance (MonadFork (SimFS m) , MonadSTM m) => MonadSTM (SimFS m) where
   newTBQueue             = lift . newTBQueue
   readTBQueue            = lift . readTBQueue
   writeTBQueue q a       = lift $ writeTBQueue q a
-#if MIN_VERSION_stm(2,5,0)
-  lengthTBQueue          = lift . lengthTBQueue
-#endif
 
 
 {-------------------------------------------------------------------------------

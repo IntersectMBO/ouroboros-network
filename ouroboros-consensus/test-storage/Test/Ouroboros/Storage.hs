@@ -31,7 +31,8 @@ import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.HUnit
 import           Test.Tasty.QuickCheck (testProperty)
 
-import           Ouroboros.Network.MonadClass
+import           Control.Monad.Class.MonadSTM
+
 import           Ouroboros.Storage.FS.Class
 import           Ouroboros.Storage.FS.IO (runIOFS)
 import           Ouroboros.Storage.FS.Sim

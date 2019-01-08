@@ -1,0 +1,47 @@
+name:                io-sim-classes
+version:             0.1.0.0
+synopsis:            Type classes for concurrency with STM, ST and timing
+-- description:
+license-file:        LICENSE
+author:              Alexander Vieth, Marcin Szamotulski, Duncan Coutts
+maintainer:
+copyright:           2018 IOHK
+category:            Control
+build-type:          Simple
+extra-source-files:  ChangeLog.md
+cabal-version:       >=1.10
+
+source-repository head
+  type:     git
+  location: https://github.com/input-output-hk/ouroboros-network
+  subdir:   io-sim-classes
+
+library
+  hs-source-dirs:      src
+
+  -- At this experiment/prototype stage everything is exposed.
+  -- This has to be tidied up once the design becomes clear.
+  exposed-modules:
+                       Control.Monad.Class.MonadFork
+                       Control.Monad.Class.MonadProbe
+                       Control.Monad.Class.MonadSay
+                       Control.Monad.Class.MonadST
+                       Control.Monad.Class.MonadSTM
+                       Control.Monad.Class.MonadTimer
+  default-language:    Haskell2010
+  other-extensions:    CPP
+                       TypeFamilies
+                       TypeFamilyDependencies
+                       MultiParamTypeClasses
+                       FunctionalDependencies
+                       FlexibleInstances
+                       FlexibleContexts
+                       ScopedTypeVariables
+                       RankNTypes
+  build-depends:       base  >=4.9 && <4.13,
+                       mtl   >=2.2 && <2.3,
+                       stm   >=2.4 && <2.6
+  ghc-options:         -Wall
+                       -Wno-unticked-promoted-constructors
+                       -fno-ignore-asserts
+

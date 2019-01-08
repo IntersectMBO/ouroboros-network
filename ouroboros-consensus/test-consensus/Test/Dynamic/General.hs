@@ -22,9 +22,13 @@ import           Control.Monad.ST.Lazy (runST)
 import           Data.Map.Strict (Map)
 import           Test.QuickCheck
 
+import           Control.Monad.Class.MonadSay
+import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadProbe
+import           Control.Monad.IOSim (VTime)
+
 import           Ouroboros.Network.Chain
-import           Ouroboros.Network.MonadClass
-import           Ouroboros.Network.Sim (VTime)
 
 import           Ouroboros.Consensus.Demo
 import           Ouroboros.Consensus.Node

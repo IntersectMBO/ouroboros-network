@@ -1,13 +1,11 @@
 {-# LANGUAGE FlexibleContexts       #-}
-{-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE MultiParamTypeClasses  #-}
 {-# LANGUAGE TypeFamilies           #-}
 {-# LANGUAGE TypeFamilyDependencies #-}
-{-# LANGUAGE UndecidableInstances   #-}
 {-# LANGUAGE CPP                    #-}
-{-# OPTIONS_GHC -fno-warn-orphans   #-}
-module Ouroboros.Network.MonadClass.MonadSTM
+module Control.Monad.Class.MonadSTM
   ( MonadSTM (..)
+  , MonadFork (..)
   , TMVarDefault (..)
   , newTMVarDefault
   , newTMVarIODefault
@@ -25,7 +23,6 @@ module Ouroboros.Network.MonadClass.MonadSTM
   , newTBQueueDefault
   , readTBQueueDefault
   , writeTBQueueDefault
-  , lengthTBQueueDefault
   ) where
 
 import           Prelude hiding (read)
@@ -38,7 +35,7 @@ import           Control.Monad.Reader
 import qualified Control.Monad.STM as STM
 import           Numeric.Natural (Natural)
 
-import           Ouroboros.Network.MonadClass.MonadFork
+import           Control.Monad.Class.MonadFork
 
 class (MonadFork m, Monad (Tr m)) => MonadSTM m where
 
@@ -89,12 +86,6 @@ class (MonadFork m, Monad (Tr m)) => MonadSTM m where
   newTBQueue     :: Natural -> Tr m (TBQueue m a)
   readTBQueue    :: TBQueue m a -> Tr m a
   writeTBQueue   :: TBQueue m a -> a -> Tr m ()
-#if MIN_VERSION_stm(2,5,0)
-  lengthTBQueue  :: TBQueue m a -> Tr m Natural
-#endif
-
-instance MonadFork m => MonadFork (ReaderT e m) where
-  fork (ReaderT f) = ReaderT $ \e -> fork (f e)
 
 instance MonadSTM m => MonadSTM (ReaderT e m) where
   type Tr (ReaderT e m)    = ReaderT e (Tr m)
@@ -124,13 +115,6 @@ instance MonadSTM m => MonadSTM (ReaderT e m) where
   newTBQueue       = lift . newTBQueue
   readTBQueue      = lift . readTBQueue
   writeTBQueue q a = lift $ writeTBQueue q a
-#if MIN_VERSION_stm(2,5,0)
-  lengthTBQueue    = lift . lengthTBQueue
-#endif
-
--- NOTE(adn): Is this a sensible instance?
-instance (Show e, MonadFork m) => MonadFork (ExceptT e m) where
-  fork (ExceptT m) = ExceptT $ Right <$> fork (either (error . show) id <$> m)
 
 instance (Show e, MonadSTM m) => MonadSTM (ExceptT e m) where
   type Tr (ExceptT e m)      = ExceptT e (Tr m)
@@ -160,9 +144,6 @@ instance (Show e, MonadSTM m) => MonadSTM (ExceptT e m) where
   newTBQueue       = lift . newTBQueue
   readTBQueue      = lift . readTBQueue
   writeTBQueue q a = lift $ writeTBQueue q a
-#if MIN_VERSION_stm(2,5,0)
-  lengthTBQueue    = lift . lengthTBQueue
-#endif
 
 --
 -- Instance for IO uses the existing STM library implementations
@@ -208,9 +189,6 @@ instance MonadSTM IO where
 #endif
   readTBQueue    = STM.readTBQueue
   writeTBQueue   = STM.writeTBQueue
-#if MIN_VERSION_stm(2,5,0)
-  lengthTBQueue  = STM.lengthTBQueue
-#endif
 
 --
 -- Default TMVar implementation in terms of TVars (used by sim)
@@ -339,8 +317,3 @@ writeTBQueueDefault (TBQueue rsize _read wsize write _size) a = do
   listend <- readTVar write
   writeTVar write (a:listend)
 
-lengthTBQueueDefault :: MonadSTM m => TBQueueDefault m a -> Tr m Natural
-lengthTBQueueDefault (TBQueue rsize _read wsize _write size) = do
-  r <- readTVar rsize
-  w <- readTVar wsize
-  return $! size - r - w

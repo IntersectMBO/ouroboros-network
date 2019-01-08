@@ -6,8 +6,6 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE StandaloneDeriving #-}
 
-{-# OPTIONS_GHC "-fwarn-incomplete-patterns" #-}
-
 module Test.Protocol.Codec.Coherent where
 
 import Data.Either (partitionEithers)

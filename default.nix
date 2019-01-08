@@ -23,18 +23,28 @@ let
     url = "https://github.com/input-output-hk/iohk-monitoring-framework.git";
     rev = "721e672973ecade1e43fbf97c5f2f173d4fb3020";
   };
-  iohk-monitoring = callPackage (iohk-monitoring-src + /iohk-monitoring.nix) {};
+  iohk-monitoring = doHaddock(doTest(doBench(
+    callPackage (iohk-monitoring-src + /iohk-monitoring.nix) {}
+  )));
+
+  io-sim-classes = doHaddock(doTest(doBench(
+    callPackage ./io-sim-classes/default.nix { inherit nixpkgs; }
+  )));
+
+  io-sim = doHaddock(doTest(doBench(
+    callPackage ./io-sim/default.nix { inherit  nixpkgs io-sim-classes; }
+  )));
 
   typed-transitions = doHaddock(doTest(doBench(
     callPackage ./typed-transitions/default.nix { inherit nixpkgs; } 
   )));
 
   ouroboros-network = doHaddock(doTest(doBench(
-    callPackage ./ouroboros-network/default.nix { inherit nixpkgs typed-transitions iohk-monitoring; }
+    callPackage ./ouroboros-network/default.nix { inherit nixpkgs io-sim io-sim-classes typed-transitions iohk-monitoring; }
   )));
 
   ouroboros-consensus = doHaddock(doTest(doBench(
-    callPackage ./ouroboros-consensus/default.nix { inherit nixpkgs typed-transitions ouroboros-network; }
+    callPackage ./ouroboros-consensus/default.nix { inherit nixpkgs io-sim-classes typed-transitions ouroboros-network; }
   )));
 
-in { inherit typed-transitions ouroboros-network ouroboros-consensus; }
+in { inherit io-sim-classes io-sim typed-transitions ouroboros-network ouroboros-consensus; }

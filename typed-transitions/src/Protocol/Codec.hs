@@ -1,8 +1,5 @@
--- |
--- = Protocol.Codec
---
--- Definition of codecs for typed transitions, permitting a representation in
--- a monomorphic type such as ByteString.
+-- | Definition of codecs for typed transitions, permitting a representation in
+-- a monomorphic type such as @ByteString@.
 
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -19,7 +16,7 @@ module Protocol.Codec where
 -- The 'Choice' type allows the fold to express its end, and the
 -- 'Response' type forces the fold to deal with the input stream end.
 --
--- A decoder is a `Fold concrete m (Either fail t)`.
+-- A decoder is a @Fold concrete m (Either fail t)@.
 -- This is a sharper representation compared to 'IDecode' from cborg: if the
 -- input is exhausted (`Nothing` is given to the 'IDecode') then the decoder
 -- cannot possibly give another `Partial`; it must choose a result.
@@ -122,9 +119,19 @@ feedInput
 feedInput = foldOverInput
 
 data Codec m fail concreteTo concreteFrom tr from = Codec
-  { encode :: Encoder tr from (Encoded concreteTo (Codec m fail concreteTo concreteFrom tr))
-  , decode :: Decoder fail concreteFrom m (Decoded tr from (Codec m fail concreteTo concreteFrom tr))
+  { encode :: Encoder tr from
+                      (EncodedCodec m fail concreteTo concreteFrom tr)
+  , decode :: Decoder fail concreteFrom m
+                      (DecodedCodec m fail concreteTo concreteFrom tr from)
   }
+
+-- | Type alias just to make the type expressions shorter
+type EncodedCodec m fail concreteTo concreteFrom tr =
+       Encoded concreteTo (Codec m fail concreteTo concreteFrom tr)
+
+-- | Type alias just to make the type expressions shorter
+type DecodedCodec m fail concreteTo concreteFrom tr from =
+       Decoded tr from (Codec m fail concreteTo concreteFrom tr)
 
 data Encoded concrete codec to = Encoded
   { representation :: concrete

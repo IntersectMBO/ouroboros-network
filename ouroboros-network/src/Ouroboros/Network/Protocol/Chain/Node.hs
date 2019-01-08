@@ -30,12 +30,13 @@ import Data.Semigroup ((<>))
 #endif
 import Data.Void (Void, absurd)
 
+import Control.Monad.Class.MonadSTM
+
 import Protocol.Channel
 import Protocol.Driver
 import Protocol.Transition (SomeTransition)
 
 import Ouroboros.Network.Block
-import Ouroboros.Network.MonadClass.MonadSTM
 import Ouroboros.Network.Protocol.Chain.Codec.Id
 import Ouroboros.Network.Protocol.Chain.ProducerStream
 import Ouroboros.Network.Protocol.Chain.Producer
@@ -48,6 +49,7 @@ import Ouroboros.Network.Protocol.Chain.Type
 import qualified Ouroboros.Network.Testing.ConcreteBlock as Testing
 import Ouroboros.Network.Block (Hash (..))
 import qualified Ouroboros.Network.Chain as Chain (blockPoint)
+
 
 -- | A list of 'elem' which changes within some 'm'.
 data EvolvingChain elem m t = EvolvingChain

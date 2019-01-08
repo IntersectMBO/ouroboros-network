@@ -21,9 +21,10 @@ streamServer
   :: Monad m
   => Server m resource resourceId a
   -> Peer GetProtocol (GetMessage resource resourceId)
-          ('Awaiting 'StIdle) ('Finished 'StDone)
+          (Awaiting StIdle) (Finished StDone)
           m a
-streamServer Server {..} = await $ \msg ->
+streamServer Server {..} =
+  await $ \msg ->
   case msg of
     MsgRequest rid -> lift $ do
       mr <- serverRequest rid

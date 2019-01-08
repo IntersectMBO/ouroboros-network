@@ -1,4 +1,5 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
@@ -22,14 +23,18 @@ module Ouroboros.Network.Testing.ConcreteBlock (
   , hashBody
   , fixupBlock
   , fixupBlockHeader
+  , fixupBlockCF
+  , fixupBlockHeaderCF
   ) where
 
+import           Data.FingerTree (Measured(measure))
 import           Data.Hashable
 import qualified Data.Text as Text
 import           Test.QuickCheck
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain
+import qualified Ouroboros.Network.ChainFragment as CF
 import           Ouroboros.Network.Serialise
 
 {-------------------------------------------------------------------------------
@@ -99,6 +104,12 @@ newtype BodyHash = BodyHash Int
 instance StandardHash BlockHeader
 instance StandardHash Block
 
+instance Measured BlockMeasure BlockHeader where
+  measure = blockMeasure
+
+instance Measured BlockMeasure Block where
+  measure = blockMeasure
+
 instance HasHeader BlockHeader where
     type HeaderHash BlockHeader = ConcreteHeaderHash
 
@@ -153,6 +164,39 @@ fixupBlockHeader c h b = b'
       headerBlockNo  = succ $ headBlockNo c,
       headerBodyHash = h
     }
+
+{-------------------------------------------------------------------------------
+  Variants of "Fixup" for ChainFragment
+-------------------------------------------------------------------------------}
+
+-- | Fixup block so to fit it on top of a chain.  Only block number, previous
+-- hash and block hash are updated; slot number and signers are kept intact.
+--
+fixupBlockCF :: (HasHeader block, HeaderHash block ~ HeaderHash Block)
+             => CF.ChainFragment block -> Block -> Block
+fixupBlockCF c b@Block{blockBody, blockHeader} =
+    b { blockHeader = fixupBlockHeaderCF c (hashBody blockBody) blockHeader }
+
+-- | Fixup block header to fit it on top of a chain.  Only block number and
+-- previous hash are updated; the slot and signer are kept unchanged.
+--
+fixupBlockHeaderCF :: (HasHeader block, HeaderHash block ~ HeaderHash Block)
+                   => CF.ChainFragment block -> BodyHash -> BlockHeader -> BlockHeader
+fixupBlockHeaderCF c h b = b'
+  where
+    b' = BlockHeader {
+      headerHash     = hashHeader b',
+      headerPrevHash = maybe GenesisHash castHash $ CF.headHash c,
+                       -- In case c is empty, default to the 'GenesisHash'
+                       -- instead of @'headerPrevHash' b@, as it can end up
+                       -- being a 'partialField'.
+      headerSlot     = headerSlot b,   -- keep the existing slot number
+      headerSigner   = headerSigner b, -- and signer
+      headerBlockNo  = maybe (BlockNo 1) succ $ CF.headBlockNo c,
+                       -- See the comment for 'headerPrevHash'
+      headerBodyHash = h
+    }
+
 
 {-------------------------------------------------------------------------------
   Arbitrary instances

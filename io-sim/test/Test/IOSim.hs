@@ -1,7 +1,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
-module Test.Sim
+module Test.IOSim
     ( tests
     , TestThreadGraph (..)
     , arbitraryAcyclicGraph
@@ -18,8 +18,11 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
-import           Ouroboros.Network.MonadClass
-import qualified Ouroboros.Network.Sim as Sim
+import           Control.Monad.Class.MonadFork
+import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadProbe
+import qualified Control.Monad.IOSim as Sim
 
 tests :: TestTree
 tests =
@@ -40,7 +43,8 @@ prop_stm_graph_io g =
 
 prop_stm_graph_sim :: TestThreadGraph -> Bool
 prop_stm_graph_sim g =
-    not $ null [ () | (_t, Sim.ThreadId 0, Sim.EventThreadStopped) <- trace ]
+    not $ null [ () | (_t, tid, Sim.EventThreadStopped) <- trace
+                    , tid == toEnum 0 ]
   where
     trace = Sim.runSimM (prop_stm_graph g)
 

@@ -50,6 +50,7 @@ library
   ghc-options:         -fwarn-unused-imports
                        -fwarn-incomplete-patterns
                        -Wall
+                       -Wno-unticked-promoted-constructors
 
 test-suite test-typed-transitions
   type:           exitcode-stdio-1.0

@@ -43,6 +43,9 @@ import           Data.Maybe (fromMaybe)
 import           Data.Text (Text)
 import           Data.Time
 
+import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadTimer
+
 import           Protocol.Channel
 import           Protocol.Codec
 import           Protocol.Driver
@@ -52,10 +55,10 @@ import           Ouroboros.Network.Chain (Chain (..), ChainUpdate (..), Point)
 import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.ChainProducerState
 import           Ouroboros.Network.ChainSyncExamples
-import           Ouroboros.Network.MonadClass
 import           Ouroboros.Network.Protocol.ChainSync.Client
 import           Ouroboros.Network.Protocol.ChainSync.Server
 import           Ouroboros.Network.Protocol.ChainSync.Type
+import           Ouroboros.Network.Serialise (Serialise)
 
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -75,7 +78,7 @@ import qualified Ouroboros.Network.Node as Network
 
 -- | Core node ID
 newtype CoreNodeId = CoreNodeId Int
-  deriving (Show, Eq, Ord, Condense)
+  deriving (Show, Eq, Ord, Condense, Serialise)
 
 fromCoreNodeId :: CoreNodeId -> NodeId
 fromCoreNodeId (CoreNodeId n) = CoreId n

@@ -12,6 +12,10 @@ module Test.Chain
   , genBlockChain
   , genHeaderChain
   , genNonNegative
+  , genSlotGap
+  , addSlotGap
+  , genPoint
+  , mkPartialBlock
   ) where
 
 import qualified Data.List as L
