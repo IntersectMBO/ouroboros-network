@@ -89,7 +89,7 @@
 
 \begin{document}
 
-\title{The Shelley Network Layer\\
+\title{Data Diffusion and Peer Networking in Shelly\\
        {\small (Version 0.1)} \\
        {\large \sc An IOHK technical report}}
 \author{Duncan Coutts \\ {\small \texttt{duncan@well-typed.com}} \\
@@ -101,12 +101,12 @@
    \and Karl Knutsson \\ {\small \texttt{karl.knutsson@iohk.io}}
    \and Marc Fontaine \\ {\small \texttt{marc.fontaine@iohk.io}}
    }
-\date{December 20, 2018}
+\date{January 08 2019}
 
 \maketitle
 
 \begin{abstract}
-  This document describes the Shelley network protocol.
+  This document describes .....
 \end{abstract}
 
 \tableofcontents
@@ -115,11 +115,70 @@
 
 \begin{description}
 \item[Version 0.1, Dez 20, 2018  Draft of the table of contents.]
-                                  
+\item[Version 0.1.1, Jan 08, 2019 Structure and outline]
 \end{description}
 
 \chapter{Overview}
-\section{Scope}
+\section{Context and Introduction}
+
+How this work relates (in general terms) to the rest of the Shelly
+development and the Ourbouros papers.
+
+\subsection{Data Diffusion assumptions in Ourbouros}
+\begin{quote}
+  This is the ``telling them what you are going to tell them'' part -
+  outline of the data diffusion and overlay network bringing out the
+  key functional and non-functional relationships - aim to serve as a
+  general executive overview as well as a framing of PoS issues.
+\end{quote}
+\begin{itemize}
+  \item Assumptions of the mathematical model(s)
+  \item Goal of the data diffusion functionality
+  \item Strong requirement on collective performance
+  \begin{itemize}
+    \item Chain growth quality
+    \item Adverserial actor assumption
+  \end{itemize}
+\end{itemize}
+\subsection{Functional Layering}
+pictures as to how the various functional layers relate; How the Data
+diffustion layer relates to Ledger etc; How data diffusion relates to
+point-to-point overlay network.
+
+\subsubsection{Non-function aspects}
+Performance; trustworthiness; Forwarding as an expression of confirmed
+``trust'' (and corollary - forwarding of \emph{clearly} incorrect information
+seen as prima-facia evidence of adversarial action.
+\subsection{Protocol Roles}
+Peer relationship between various nodes; Limited trust and
+verification; (Brief) description of the expectations and assumptions across
+the functionality boundaries; 
+
+\subsubsection{Mini Protocols}
+\begin{description}
+\item[Chain Tip Following] (or whatever the agreed name is)
+\item[Bulk Chain Download] ....
+\item[Transaction Difussion] ....
+\item[$\Delta Q$ Measurement] (not really an mini protocol, in that it
+  is point to point and not part of the diffusion process itself,
+  placed here because it ``sits'' on top of the overlay network. Role
+  to generate active endpoint performance data to help optimise
+  time-to-diffuse critical information exchanges (e.g. newly minted
+  block diffusion)
+\end{description}  
+\subsubsection{Point to point Overlay Network}
+need picture; note that long term eclipse attacks are not an issue
+here (cover why a bit later); tie in chain growth requirements with
+need for ``better'' communications performance between (major)
+stakepools (notion of Core DIF); association explain need for
+\begin{itemize}
+\item fixed configuration (with/without others from this list)
+\item Core DIF
+\item Distributed endpoint discovery (subset of notion of peer in
+  other approaches)
+\end{itemize}
+
+  
 \section{Layout of the Document}
 
 \begin{itemize}
@@ -542,5 +601,17 @@ the reference implementation
 \bibliography{references}
 
 \appendix
+\section{Nomencenture}
+\begin{description}
+\item[Adversry / Adversarial Action] acting in way to subvert the
+  correct (or performant) operation of the distributed protocol. Note
+  that non-performance of certain functions at appropriate times can
+  fall into this category.
+\item[Core DIF] The set of end points that belong to the (major)
+  stakepools; (the term DIF taken from RINA\ref{RINA} where it denotes
+  a (potentially closed) set of potential participants.
+  
+
+\end{description}
 
 \end{document}
