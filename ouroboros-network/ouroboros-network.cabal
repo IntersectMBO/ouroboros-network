@@ -46,6 +46,9 @@ library
                        Ouroboros.Network.Protocol.ChainSync.Direct
                        Ouroboros.Network.Protocol.ChainSync.Server
                        Ouroboros.Network.Protocol.ChainSync.Type
+                       Ouroboros.Network.Protocol.TxSubmission.Type
+                       Ouroboros.Network.Protocol.TxSubmission.Client
+                       Ouroboros.Network.Protocol.TxSubmission.Server
                        Ouroboros.Network.Protocol.Stream.Type
                        Ouroboros.Network.Protocol.Stream.Client
                        Ouroboros.Network.Protocol.Stream.Server
