@@ -89,6 +89,7 @@ library
                        cborg             >=0.2.1 && <0.3,
                        containers,
                        fingertree        >=0.1.4.2 && <0.2,
+                       exceptions        >=0.10.0 && <0.11.0,
                        hashable          >=1.2 && <1.3,
                        iohk-monitoring,
                        mtl               >=2.2 && <2.3,

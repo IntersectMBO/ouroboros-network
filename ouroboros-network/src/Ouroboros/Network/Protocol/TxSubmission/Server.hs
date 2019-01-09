@@ -2,8 +2,12 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE TypeInType          #-}
 module Ouroboros.Network.Protocol.TxSubmission.Server where
 
+import Control.Monad.Catch (MonadThrow (..))
+import Control.Exception (Exception (..))
 import Data.Functor (($>))
 
 import Protocol.Core
@@ -39,24 +43,39 @@ txSubmissionServer handleTx validateTx handleErr result = TxSubmissionServer $ p
         _  -> Left <$> handleErr errs
     }
 
+data TxSubmissionProtocolError
+  = TxSubmissionExidedCapacityError
+  deriving (Show, Eq, Ord)
+
+instance Exception TxSubmissionProtocolError
+
+-- | Submission server stream.  It will throw @'TxSubmissionProtocolError'@ when
+-- the server recieved more than @n@ transactions.
+--
 txSubmissionServerStream
-  :: forall tx err m a.
-     Monad m
-  => TxSubmissionServer tx err m a
-  -> Peer TxSubmissionProtocol (TxSubmissionMessage tx err)
-      (Awaiting StIdle)
+  :: forall (n :: Nat) tx err m a.
+     ( Monad m
+     , MonadThrow m
+     )
+  => SNat n
+  -> TxSubmissionServer tx err m a
+  -> Peer (TxSubmissionProtocolN n) (TxSubmissionMessage n tx err)
+      (Awaiting (StIdle Zero))
       (Finished StDone)
       m (Maybe a)
-txSubmissionServerStream (TxSubmissionServer server) = lift $ go <$> server
+txSubmissionServerStream sn (TxSubmissionServer server) = lift $ go SZero <$> server
  where
-  go :: TxSubmissionHandlers tx err m a
-     -> Peer TxSubmissionProtocol (TxSubmissionMessage tx err)
-          (Awaiting StIdle)
+  go :: SNat i
+     -> TxSubmissionServer tx err m a
+     -> Peer (TxSubmissionProtocolN n) (TxSubmissionMessage n tx err)
+          (Awaiting (StIdle k))
           (Finished StDone)
           m (Maybe a)
-  go TxSubmissionHandlers {handleTx, handleTxDone} =
+  go si TxSubmissionHandlers {handleTx, handleTxDone} =
     await $ \msg -> case msg of
-      MsgTx tx      -> lift $ go <$> handleTx tx
+      MsgTx tx -> case SSucc si `lessEqualThan` sn of
+        STrue  -> lift $ go (SSucc si) <$> handleTx tx
+        SFalse -> lift $ throwM TxSubmissionExidedCapacityError
       MsgClientDone -> lift $ handleTxDone >>= \r -> case r of
         Right a  -> pure $ out (MsgServerDone Nothing) (done $ Just a)
         Left err -> pure $ out (MsgServerDone (Just err)) (done Nothing)

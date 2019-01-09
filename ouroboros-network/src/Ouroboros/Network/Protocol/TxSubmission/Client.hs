@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE PolyKinds           #-}
 module Ouroboros.Network.Protocol.TxSubmission.Client where
 
 import Protocol.Core
@@ -10,58 +11,93 @@ import Data.List.NonEmpty (NonEmpty (..))
 import Pipes (Producer)
 import qualified Pipes
 
-newtype TxSubmissionClient tx err m a = TxSubmissionClient {
-    runTxSubmissionClient :: m (TxSubmission tx err m a)
+newtype TxSubmissionClient (n :: Nat) tx err m a = TxSubmissionClient {
+    runTxSubmissionClient :: m (TxSubmission n tx err m a)
   }
 
-data TxSubmission tx err m a where
-  TxSubmission
-    :: tx
-    -> TxSubmissionClient tx err m a
-    -> TxSubmission tx err m a
-  TxSubmissionDone
-    :: TxSubmissionHandler err m a
-    -> TxSubmission tx err m a
+instance Functor m => Functor (TxSubmissionClient n tx err m) where
+  fmap f (TxSubmissionClient cli) = TxSubmissionClient $ (fmap . fmap) f cli
 
-newtype TxSubmissionHandler err m a = TxSubmissionHandler {
-    runTxSubmissionHandler :: Maybe err -> m a
+data TxSubmission (n :: Nat) tx err m a where
+  TxSubmission
+    :: LessEqualThan (Succ Zero) n ~ True
+    => tx
+    -> TxSubmissionClient (Pred n) tx err m a
+    -> TxSubmission n tx err m a
+  TxSubmissionDone
+    :: a
+    -> TxSubmissionHandler err m
+    -> TxSubmission n tx err m a
+
+instance Functor m => Functor (TxSubmission n tx err m) where
+  fmap f (TxSubmission tx cli) = TxSubmission tx (fmap f cli)
+  fmap f (TxSubmissionDone a h) = TxSubmissionDone (f a) h
+
+newtype TxSubmissionHandler err m = TxSubmissionHandler {
+    runTxSubmissionHandler :: Maybe err -> m ()
   }
 
 txSubmissionClientFromList
-  :: Applicative m
-  => NonEmpty tx
-  -> TxSubmissionHandler err m a
-  -> TxSubmissionClient tx err m a
-txSubmissionClientFromList (tx :| []) txHandler
-  = TxSubmissionClient $ pure $ TxSubmission tx (TxSubmissionClient $ pure $ TxSubmissionDone txHandler)
-txSubmissionClientFromList (tx :| (tx' : txs')) txHandler
-  = TxSubmissionClient $ pure $ TxSubmission tx (txSubmissionClientFromList (tx' :| txs') txHandler)
+  :: ( Applicative m
+     )
+  => SNat l
+  -> NonEmpty tx
+  -> TxSubmissionHandler err m
+  -> TxSubmissionClient l tx err m [tx]
+txSubmissionClientFromList (SSucc _)  (tx :| []) txHandler
+  = TxSubmissionClient $ pure $ TxSubmission tx (TxSubmissionClient $ pure $ TxSubmissionDone [] txHandler)
+txSubmissionClientFromList (SSucc sl) (tx :| (tx' : txs')) txHandler
+  = TxSubmissionClient $ pure $ TxSubmission tx (txSubmissionClientFromList sl (tx' :| txs') txHandler)
+txSubmissionClientFromList SZero (tx :| txs) txHandler
+  = TxSubmissionClient $ pure $ TxSubmissionDone (tx : txs) txHandler
 
 txSubmissionClientFromProducer
   :: Monad m
-  => Producer tx m ()
-  -> TxSubmissionHandler err m a
-  -> TxSubmissionClient tx err m a
-txSubmissionClientFromProducer producer txHandler = TxSubmissionClient $
+  => SNat l
+  -> Producer tx m ()
+  -> TxSubmissionHandler err m
+  -> TxSubmissionClient l tx err m (Producer tx m ())
+txSubmissionClientFromProducer (SSucc sl) producer txHandler = TxSubmissionClient $
   Pipes.next producer >>= \nxt -> case nxt of
-    Left _                -> pure $ TxSubmissionDone txHandler
-    Right (tx, producer') -> pure $ TxSubmission tx (txSubmissionClientFromProducer producer' txHandler)
+    Left _                -> pure $ TxSubmissionDone (return ()) txHandler
+    Right (tx, producer') -> pure $ TxSubmission tx (txSubmissionClientFromProducer sl producer' txHandler)
+txSubmissionClientFromProducer SZero producer txHandler = TxSubmissionClient $ pure $ TxSubmissionDone producer txHandler
 
 txSubmissionClientStream
-  :: Monad m
-  => TxSubmissionClient tx err m a
-  -> Peer TxSubmissionProtocol (TxSubmissionMessage tx err)
-    (Yielding StIdle)
-    (Finished StDone)
-    m a
-txSubmissionClientStream (TxSubmissionClient submit) = lift $ submit >>= \cli -> case cli of
-  TxSubmission tx scli       ->
-    -- recursievly send all transactions
-    pure $ part (MsgTx tx) (txSubmissionClientStream scli)
-  TxSubmissionDone txHandler ->
-    -- client sent all transactions
-    pure $ over MsgClientDone $
-    -- await for server response
-    await $ \(MsgServerDone merr) ->
-    -- end the protocol
-    lift $ done <$> runTxSubmissionHandler txHandler merr
+  :: ( LessEqualThan l n ~ True
+     , LessEqualThan (Succ Zero) l ~ True
+     , Monad m
+     )
+  => SNat n -- protocol bound
+  -> SNat l -- number of txs to send
+  -> TxSubmissionClient l tx err m a
+  -> Peer (TxSubmissionProtocolN n) (TxSubmissionMessage n tx err)
+      (Yielding (StIdle Zero))
+      (Finished StDone)
+      m ()
+txSubmissionClientStream = f SZero
+ where 
+  f :: forall (k :: Nat) (n :: Nat) (l :: Nat) tx err m a.
+       Monad m
+    => SNat k -- progress
+    -> SNat n
+    -> SNat l 
+    -> TxSubmissionClient l tx err m a
+    -> Peer (TxSubmissionProtocolN n) (TxSubmissionMessage n tx err)
+        (Yielding (StIdle k))
+        (Finished StDone)
+        m ()
+  f sk sn sl (TxSubmissionClient submit) = lift $ submit >>= \cli -> case cli of
+    TxSubmission tx scli       ->
+      -- recursievly send all transactions
+      case lessEqualThan sk sn of
+        -- pattern match on the result to satisfy `MsgTx` constraint
+        STrue  -> pure $ part (MsgTx tx) (f (SSucc sk) sn (spred sl) scli)
+        SFalse -> error "protocol error: the impossible happend"
+    TxSubmissionDone _ txHandler ->
+      -- client sent all transactions
+      pure $ over MsgClientDone $
+      -- await for server response
+      await $ \(MsgServerDone merr) ->
+      -- end the protocol
+      lift $ done <$> runTxSubmissionHandler txHandler merr
