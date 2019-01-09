@@ -17,7 +17,6 @@ let
               hspec-core = super.hspec-core_2_6_0;
               hspec-discover = super.hspec-discover_2_6_0;
               hspec-meta = super.hspec-meta_2_6_0;
-              tasty-hspec = super.tasty-hspec_1_1_5_1;
             };
       in {
         haskell = super.haskell // {
