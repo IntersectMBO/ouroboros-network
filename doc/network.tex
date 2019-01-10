@@ -250,14 +250,27 @@ How PoS is different from PoW in its network requirements:
 
 \chapter{System Architecture}
 \section{Overview}
+
+Traditionally network protocols are presented as a stack of layers where
+upper layers build on services provided by lower layers and lower layers
+are agnostic of the implementation of the upper layers.
+This concept of layers is misleading when discussing Shelly.
+It is {\em not} the case that the consensus (layer) is build on top of the network (layer).
+It is more appropriate to talk about a network component than a network layer.
+The network component provides services to the consensus component and also vice versa.
+The network component uses the consensus component to carefully validate every piece of
+information that it distributes to other nodes.
+This is essential to guard against certain kinds of DoS attacks.
+This is also the reason why the network component in Shelly cannot be replaced
+with an of-the-shelf peer-to-peer protocol.
+
 \section{Design Choices}
 \begin{itemize}
 \item Only the design choices that have been taken.
 \item Design discussions in the discussions section.
 \end{itemize}
 \section{Nodes}
-\section{Protocol Layers}
-\section{Components}\section{Interfaces Between the Layers}
+\subsection{Node Components}
 
 \chapter{Infrastructure}
 Specific assumptions about the infrastructure that are relevant for the discussion.
@@ -272,37 +285,42 @@ Specific assumptions about the infrastructure that are relevant for the discussi
 \section{Nodes and Hosting}
 
 \chapter{Protocols}
-\subsection{Protocols as State-machines}
+\section{Protocols as State-machines}
 The reference implementation of serveral sub-protocols uses a generic framework
 for state-machines.
-Therefore it makes sense to also describe the protocols with a generic pattern,
-that resembles the framework that is used for the implementation.
-For each sub-protocol that is based on this underlying framework, the protocol description
-will consist of the following items:
+
+A Haskell implementation of the state machine framework is described in Section
+\ref{Haskell-state-machine}. It uses correct by construction techniques to guarantee
+several properties of the protocol and the implementation.
+In particular it guaratees that there are no deadlocks. At any time, one side has agency
+(is expected to transmit the next message) and the other side is waiting for the message,
+or both sides agree the the protocol has terminated.
+The transmission of a message that is not expected by the protocol aborts the exectution
+of the protocol.
+
+For each sub-protocol that is based on this underlying framework, the description provides the
+following pieces of information:
 
 \begin{itemize}
 \item An informal description of the protocol.
 \item Who is communication.
-\item Where is the protocol located the protocol stack.
 \item States of the state-machine
 \item The messages that are exchanged
 \item A transition graph of the global view of the state machine.
 \item A transition graph of the client view.
 \item A transition graph of the server view.
 \end{itemize}
-  
-\item The State Machine
+
+\begin{description}
+\item[State Machine]
   The Protocols are described as a state machine.
-  The specification uses different representations of the state machine that all describe the same protocol
-  but may leave out some aspects.
-  \begin{itemize}
-  \item The state machine can be represented as a collection of tables (States, Transitions/Messages..).
-\end{itemize}
+  The specification uses different representations of the state machine,
+  for example transition tables or diagrams, that all describe the same protocol.
 
 \item[States]
-  We need to distinguish between the global state of a system
-  which includes the values of all local variable stored on the nodes and
-  the abstract states of the the state machines.
+  We need to distinguish between the global state of a system,
+  which includes the values of all local variable stored on the nodes,
+  and the abstract states of the the state machines.
   The abstract states are equivalent classes of the global state.
   Every global state belongs to exactly one abstract state.
   This specification describes the state machine in terms of the abstract states.
@@ -312,14 +330,16 @@ will consist of the following items:
   In the concrete implementation the abstract view of state is replaced with
   client state and server state and transitions on either side happens independently
   when a message is send or received.
-  While a message is in-flight the state of the receiver is undefined.(?)
+  While a message is in-flight the state of the receiver is undefined.
   The state determines which side is active the client or the server.
-\footnote{The Haskell implementation uses the concept of the dual of a state. Here it is sufficient to consider the state and the dual of the state as identical}
-
-
+  
 \item[Messages/Events]
-  A tuple $(lable,data)$. Can be serialized transferred over the network and de-serialized.
-  (authenticity of messages not handled here)
+  Messages are elements from the set
+  $\{(lable, data) \mid lable \in Labels, data \in Data\}$.
+  Protocols use a small set of $Lables$ typically $|Labels| \leq 10$.
+  State-machine frame work requieres that messages can be serialized,
+  transferred over the network and de-serialized by the receiver.
+  The binary format for messages is described in Section \ref{CBOR-section}.
 \item[Transitions]
   This part of the document describes the transitions of the abstract state of the protocol
   as the result of messages passed between client and the server.
@@ -329,7 +349,7 @@ will consist of the following items:
   data structures, but they are also relevant for the protocol (to determine the next transition).
 \end{description}
 
-\subsection{Single Phase Chain Synchronization Protocol}
+\section{Single Phase Chain Synchronization Protocol}
 \subsubsection{Description}
 \begin{description}
 \item[purpose of the protocol]
@@ -444,7 +464,7 @@ but the corresponding message is send from the server to the client.
 \section{What other Protocols ?}
 \section{Peer Discovery}
 \section{Abstract and concrete representation}
-
+\label{CBOR-section}
 \begin{itemize}
   \item IER - Information Exchange Requirement
   \item CBOR - https://tools.ietf.org/html/rfc7049
@@ -471,7 +491,9 @@ For understanding the protocol, it is save to skip this section.
 \caption{Dataflow within a node.}
 \label{node-diagram-concurency}
 \end{figure}
-\subsection{Constant Memory Consumption}
+\section{Constant Memory Consumption}
+\section{The State-Machine-Framework}
+\label{Haskell-state-machine}
 
 \chapter{Discussion}
 Alternative view: Exploratory work.
