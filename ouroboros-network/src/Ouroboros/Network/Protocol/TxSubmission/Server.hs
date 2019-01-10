@@ -13,12 +13,8 @@ import Data.Functor (($>))
 import Protocol.Core
 import Ouroboros.Network.Protocol.TxSubmission.Type
 
-newtype TxSubmissionServer tx err m a = TxSubmissionServer {
-    runTxSubmissionServer :: m (TxSubmissionHandlers tx err m a)
-  }
-
-data TxSubmissionHandlers tx err m a = TxSubmissionHandlers {
-    handleTx     :: tx -> m (TxSubmissionHandlers tx err m a),
+data TxSubmissionServer tx err m a = TxSubmissionServer {
+    handleTx     :: tx -> m (TxSubmissionServer tx err m a),
     handleTxDone :: m (Either err a)
   }
 
@@ -30,11 +26,11 @@ txSubmissionServer
   -> ([tx] -> m err) -- error handler
   -> a
   -> TxSubmissionServer tx err m a
-txSubmissionServer handleTx validateTx handleErr result = TxSubmissionServer $ pure (go [])
+txSubmissionServer handleTx validateTx handleErr result = go []
  where
   go :: [tx] -- malformed transactions
-     -> TxSubmissionHandlers tx err m a
-  go errs = TxSubmissionHandlers {
+     -> TxSubmissionServer tx err m a
+  go errs = TxSubmissionServer {
       handleTx = \tx -> validateTx tx >>= \txValid -> if txValid
                           then handleTx tx $> go errs
                           else pure $ go (tx : errs),
@@ -63,7 +59,7 @@ txSubmissionServerStream
       (Awaiting (StIdle Zero))
       (Finished StDone)
       m (Maybe a)
-txSubmissionServerStream sn (TxSubmissionServer server) = lift $ go SZero <$> server
+txSubmissionServerStream sn = go SZero
  where
   go :: SNat i
      -> TxSubmissionServer tx err m a
@@ -71,7 +67,7 @@ txSubmissionServerStream sn (TxSubmissionServer server) = lift $ go SZero <$> se
           (Awaiting (StIdle k))
           (Finished StDone)
           m (Maybe a)
-  go si TxSubmissionHandlers {handleTx, handleTxDone} =
+  go si TxSubmissionServer {handleTx, handleTxDone} =
     await $ \msg -> case msg of
       MsgTx tx -> case SSucc si `lessEqualThan` sn of
         STrue  -> lift $ go (SSucc si) <$> handleTx tx

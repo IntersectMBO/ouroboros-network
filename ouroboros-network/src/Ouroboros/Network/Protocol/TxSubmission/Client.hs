@@ -26,23 +26,26 @@ data TxSubmission (n :: Nat) tx err m a where
     -> TxSubmission n tx err m a
   TxSubmissionDone
     :: a
-    -> TxSubmissionHandler err m
+    -> TxSubmissionErrHandler err m a
     -> TxSubmission n tx err m a
 
 instance Functor m => Functor (TxSubmission n tx err m) where
   fmap f (TxSubmission tx cli) = TxSubmission tx (fmap f cli)
-  fmap f (TxSubmissionDone a h) = TxSubmissionDone (f a) h
+  fmap f (TxSubmissionDone a h) = TxSubmissionDone (f a) (fmap f h)
 
-newtype TxSubmissionHandler err m = TxSubmissionHandler {
-    runTxSubmissionHandler :: Maybe err -> m ()
+newtype TxSubmissionErrHandler err m a = TxSubmissionErrHandler {
+    runTxSubmissionErrHandler :: Maybe err -> m a
   }
+
+instance Functor m => Functor (TxSubmissionErrHandler err m) where
+  fmap f (TxSubmissionErrHandler g) = TxSubmissionErrHandler $ (fmap . fmap) f g
 
 txSubmissionClientFromList
   :: ( Applicative m
      )
   => SNat l
   -> NonEmpty tx
-  -> TxSubmissionHandler err m
+  -> TxSubmissionErrHandler err m [tx]
   -> TxSubmissionClient l tx err m [tx]
 txSubmissionClientFromList (SSucc _)  (tx :| []) txHandler
   = TxSubmissionClient $ pure $ TxSubmission tx (TxSubmissionClient $ pure $ TxSubmissionDone [] txHandler)
@@ -55,7 +58,7 @@ txSubmissionClientFromProducer
   :: Monad m
   => SNat l
   -> Producer tx m ()
-  -> TxSubmissionHandler err m
+  -> TxSubmissionErrHandler err m (Producer tx m ())
   -> TxSubmissionClient l tx err m (Producer tx m ())
 txSubmissionClientFromProducer (SSucc sl) producer txHandler = TxSubmissionClient $
   Pipes.next producer >>= \nxt -> case nxt of
@@ -74,7 +77,7 @@ txSubmissionClientStream
   -> Peer (TxSubmissionProtocolN n) (TxSubmissionMessage n tx err)
       (Yielding (StIdle Zero))
       (Finished StDone)
-      m ()
+      m a
 txSubmissionClientStream = f SZero
  where 
   f :: forall (k :: Nat) (n :: Nat) (l :: Nat) tx err m a.
@@ -86,7 +89,7 @@ txSubmissionClientStream = f SZero
     -> Peer (TxSubmissionProtocolN n) (TxSubmissionMessage n tx err)
         (Yielding (StIdle k))
         (Finished StDone)
-        m ()
+        m a
   f sk sn sl (TxSubmissionClient submit) = lift $ submit >>= \cli -> case cli of
     TxSubmission tx scli       ->
       -- recursievly send all transactions
@@ -100,4 +103,4 @@ txSubmissionClientStream = f SZero
       -- await for server response
       await $ \(MsgServerDone merr) ->
       -- end the protocol
-      lift $ done <$> runTxSubmissionHandler txHandler merr
+      lift $ done <$> runTxSubmissionErrHandler txHandler merr
