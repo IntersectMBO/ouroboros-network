@@ -1,9 +1,9 @@
 {-# LANGUAGE TupleSections #-}
 
-module Protocol.ReqResp.Direct where
+module Ouroboros.Network.Protocol.ReqResp.Direct where
 
-import Protocol.ReqResp.Client
-import Protocol.ReqResp.Server
+import Ouroboros.Network.Protocol.ReqResp.Client
+import Ouroboros.Network.Protocol.ReqResp.Server
 
 -- | The @'Ouroboros.Network.Protocol.Get.Client'@ and
 -- @'Ouroboros.Network.Protocol.Get.Server'@ are dual (complementary) to each
