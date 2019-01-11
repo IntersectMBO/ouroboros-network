@@ -29,10 +29,10 @@ library
                      , Protocol.PingPong.Server
                      , Protocol.PingPong.Direct
                      , Protocol.PingPong.Examples
-                     , Protocol.Get.Type
-                     , Protocol.Get.Client
-                     , Protocol.Get.Server
-                     , Protocol.Get.Direct
+                     , Protocol.ReqResp.Type
+                     , Protocol.ReqResp.Client
+                     , Protocol.ReqResp.Server
+                     , Protocol.ReqResp.Direct
   -- other-modules:       
   other-extensions:    GADTs
                      , RankNTypes

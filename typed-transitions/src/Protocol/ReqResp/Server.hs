@@ -1,24 +1,23 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE RecordWildCards #-}
 
-module Protocol.Get.Server where
+module Protocol.ReqResp.Server where
 
 import Protocol.Core
-import Protocol.Get.Type
+import Protocol.ReqResp.Type
 
 newtype Server m request response a = Server {
     -- | The client requested data identified by `resourceId`.
     runServer :: request -> m (response, a)
   }
 
--- | Create server side of the @'GetProtocol'@.
+-- | Create server side of the @'ReqRespProtocol'@.
 --
 streamServer
   :: Monad m
   => Server m request response a
-  -> Peer (GetProtocol request response) (GetMessage request response)
+  -> Peer (ReqRespProtocol request response) (ReqRespMessage request response)
           (Awaiting StIdle) (Finished StDone)
           m a
 streamServer server =
