@@ -5,7 +5,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 
-module Protocol.ReqResp.Type where
+module Ouroboros.Network.Protocol.ReqResp.Type where
 
 import Protocol.Core
 

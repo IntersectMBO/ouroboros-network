@@ -1,10 +1,10 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
 
-module Protocol.ReqResp.Client where
+module Ouroboros.Network.Protocol.ReqResp.Client where
 
 import Protocol.Core
-import Protocol.ReqResp.Type
+import Ouroboros.Network.Protocol.ReqResp.Type
 
 -- | Client reqeust with a handle for a response.
 --

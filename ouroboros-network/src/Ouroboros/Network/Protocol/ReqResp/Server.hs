@@ -2,10 +2,10 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE NamedFieldPuns #-}
 
-module Protocol.ReqResp.Server where
+module Ouroboros.Network.Protocol.ReqResp.Server where
 
 import Protocol.Core
-import Protocol.ReqResp.Type
+import Ouroboros.Network.Protocol.ReqResp.Type
 
 newtype Server m request response a = Server {
     -- | The client requested data identified by `resourceId`.
