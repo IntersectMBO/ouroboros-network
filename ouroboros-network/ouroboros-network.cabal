@@ -54,6 +54,7 @@ library
                        Ouroboros.Network.Protocol.ReqResp.Client
                        Ouroboros.Network.Protocol.ReqResp.Server
                        Ouroboros.Network.Protocol.ReqResp.Direct
+                       Ouroboros.Network.Protocol.ReqResp.Codec.Cbor
 
                        -- TODO rename.
                        Ouroboros.Network.ChainSyncExamples
