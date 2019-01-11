@@ -19,9 +19,9 @@ data GetState where
 -- | A type to ideintiy the client \/server partition of states in the get
 -- protocol.
 --
-data GetProtocol
+data GetProtocol request response
 
-type instance Partition GetProtocol st client server terminal =
+type instance Partition (GetProtocol request response) st client server terminal =
   GetStatePartition st client server terminal
 
 -- | Idle state is when the client sends a request, busy state is when the
@@ -34,15 +34,13 @@ type family GetStatePartition st client server terminal :: k where
 
 -- | Message protocol
 --
-data GetMessage resource resourceId from to where
-  MsgRequest  :: resourceId -> GetMessage resource resourceId StIdle StBusy
-  MsgResponse :: resource -> GetMessage resource resourceId StBusy StDone
-  MsgNoData   :: GetMessage resource resourceId StBusy StDone
+data GetMessage request response from to where
+  MsgRequest  :: request -> GetMessage request response StIdle StBusy
+  MsgResponse :: response -> GetMessage request response StBusy StDone
 
 instance
-  (Show resource, Show resourceId)
-  => Show (GetMessage resource resourceId from to)
+  (Show request, Show response)
+  => Show (GetMessage request response from to)
  where
-  show (MsgRequest resourceId) = "MsgRequest " ++ show resourceId
-  show (MsgResponse resource)  = "MsgResponse " ++ show resource
-  show MsgNoData               = "MsgNoData"
+  show (MsgRequest request)   = "MsgRequest "  ++ show request
+  show (MsgResponse response) = "MsgResponse " ++ show response
