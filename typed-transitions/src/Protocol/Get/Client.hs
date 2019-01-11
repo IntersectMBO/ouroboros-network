@@ -1,29 +1,28 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE RecordWildCards #-}
 
 module Protocol.Get.Client where
 
 import Protocol.Core
 import Protocol.Get.Type
 
--- | Client reqeusting a resource identified by a resouce id.
-data Client m resource resourceId a where
-    Request :: resourceId
-            -> (Maybe resource -> m a)
-            -> Client m resource resourceId a
+-- | Client reqeust with a handle for a response.
+--
+data Client m request response a where
+    Request :: request
+            -> (response -> m a)
+            -> Client m request response a
 
 -- | Interpret @'Client'@ as a client side of the typed @'GetProtocol'@
 --
 streamClient
   :: Monad m
-  => Client m resource resourceId a
-  -> Peer GetProtocol (GetMessage resource resourceId)
+  => Client m request response a
+  -> Peer (GetProtocol request response) (GetMessage request response)
           (Yielding StIdle) (Finished StDone)
           m a
-streamClient (Request resourceId handleData) =
-  over (MsgRequest resourceId) $
+streamClient (Request request handleResponse) =
+  over (MsgRequest request) $
   await $ \msg ->
   case msg of
-    MsgResponse r -> lift (done <$> handleData (Just r))
-    MsgNoData     -> lift (done <$> handleData Nothing)
+    MsgResponse r -> lift (done <$> handleResponse r)
