@@ -10,6 +10,7 @@ import qualified Test.Ouroboros.Network.Node (tests)
 import qualified Test.Ouroboros.Network.Protocol.Stream (tests)
 import qualified Test.Ouroboros.Network.Protocol.BlockFetch (tests)
 import qualified Test.Ouroboros.Network.Protocol.BlockFetch.Codec.Coherence (tests)
+import qualified Test.Ouroboros.Network.Protocol.BlockFetch.Pipe (tests)
 
 main :: IO ()
 main = defaultMain tests
@@ -25,4 +26,5 @@ tests =
   , Test.Ouroboros.Network.Protocol.Stream.tests
   , Test.Ouroboros.Network.Protocol.BlockFetch.tests
   , Test.Ouroboros.Network.Protocol.BlockFetch.Codec.Coherence.tests
+  , Test.Ouroboros.Network.Protocol.BlockFetch.Pipe.tests
   ]

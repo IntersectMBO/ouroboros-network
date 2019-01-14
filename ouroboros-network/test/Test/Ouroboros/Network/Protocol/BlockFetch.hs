@@ -13,19 +13,13 @@ import           Control.Monad.IOSim (SimF)
 
 import           Data.Functor (($>))
 import           Data.Functor.Identity (Identity (..))
-import           Data.List (foldl')
 
 import           Protocol.Core (Those (..), connect)
 
-import Control.Monad.Class.MonadProbe ( MonadProbe (..)
-                                      , MonadRunProbe (..)
-                                      , withProbe
-                                      )
-import Control.Monad.Class.MonadFork ( MonadFork (..))
-import Control.Monad.Class.MonadSTM ( MonadSTM (..))
-import Control.Monad.Class.MonadTimer ( MonadTime (..)
-                                      , MonadTimer (..)
-                                      )
+import Control.Monad.Class.MonadProbe (MonadProbe (..))
+import Control.Monad.Class.MonadFork (MonadFork (..))
+import Control.Monad.Class.MonadSTM (MonadSTM (..))
+import Control.Monad.Class.MonadTimer (MonadTimer (..))
 
 import Ouroboros.Network.Protocol.BlockFetch.Type
 import Ouroboros.Network.Protocol.BlockFetch.Client
@@ -34,6 +28,9 @@ import Ouroboros.Network.Protocol.BlockFetch.Direct
 
 import Ouroboros.Network.Testing.ConcreteBlock (BlockHeader)
 import Test.Ouroboros.Network.Testing.Arbitrary
+import Test.Ouroboros.Network.Testing.Utils (runExperiment)
+import Test.Ouroboros.Network.Protocol.BlockFetch.Client
+import Test.Ouroboros.Network.Protocol.BlockFetch.Server
 
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
@@ -73,37 +70,9 @@ tests =
     ]
   ]
 
--- | FIXME: find a better place for it, this might be useful elsewhere too.
-runExperiment
-  :: forall m n.
-     ( MonadSTM m
-     , MonadTimer m
-     , MonadProbe m
-     , MonadRunProbe m n
-     )
-  => (Probe m Property -> m ())
-  -> n Property
-runExperiment exp_ = isValid <$> withProbe exp_
- where
-  isValid :: [(Time m, Property)] -> Property
-  isValid = foldl' (\acu (_,p) -> acu .&&. p) (property True)
-
 {-------------------------------------------------------------------------------
 -- @'BlockFetchClientProtocol' tests
 -------------------------------------------------------------------------------}
-
--- | Testing server which accumulates received value in its return value.
---
-accumulatingBlockFetchServerReceiver
-  :: Monad m
-  => BlockFetchServerReceiver range m [range]
-accumulatingBlockFetchServerReceiver = go []
- where
-  go acc =
-    BlockFetchServerReceiver {
-      recvMessageRequestRange = \range -> return $ go (range : acc),
-      recvMessageDone         = return (reverse acc)
-    }
 
 -- | @'directBlockFetchClient'@ is an identity
 --
@@ -191,24 +160,6 @@ prop_connectBlockFetchClientProtocol_IO as = ioProperty $ runExperiment $
     (\ser cli -> void $ connect
       (blockFetchServerReceiverStream ser)
       (blockFetchClientSenderStream cli)) as
-
--- | @'BlockFetchClientReceiver'@ which accumulates received blocks.
---
-blockFetchClientReceiver
-  :: Applicative m
-  => BlockFetchClientReceiver block m [block]
-blockFetchClientReceiver = receiver []
- where
-  receiver acc = BlockFetchClientReceiver {
-      recvMsgStartBatch = pure (blockReceiver acc),
-      recvMsgNoBlocks   = pure (receiver acc),
-      recvMsgDoneClient = acc
-    }
-  blockReceiver acc = BlockFetchClientReceiveBlocks {
-      recvMsgBlock       = \b -> pure (blockReceiver (b : acc)),
-      recvMsgBatchDone   = pure (receiver acc),
-      recvMsgServerError = pure (receiver acc)
-    }
 
 {-------------------------------------------------------------------------------
 -- @'BlockFetchServerProtocol' tests

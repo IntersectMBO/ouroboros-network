@@ -119,7 +119,10 @@ test-suite tests
                        Test.Ouroboros.Network.Testing.Utils
                        Test.Ouroboros.Network.Protocol.Stream
                        Test.Ouroboros.Network.Protocol.BlockFetch
+                       Test.Ouroboros.Network.Protocol.BlockFetch.Client
+                       Test.Ouroboros.Network.Protocol.BlockFetch.Server
                        Test.Ouroboros.Network.Protocol.BlockFetch.Codec.Coherence
+                       Test.Ouroboros.Network.Protocol.BlockFetch.Pipe
                        Test.Ouroboros.Network.Node
                        Test.Pipe
   default-language:    Haskell2010
@@ -130,6 +133,7 @@ test-suite tests
                        io-sim-classes,
                        io-sim            >=0.1 && < 0.2,
 
+                       async,
                        array,
                        bytestring,
                        cborg,
@@ -138,8 +142,10 @@ test-suite tests
                        free,
                        mtl,
                        pipes,
+                       process,
                        QuickCheck,
                        serialise,
+                       stm,
                        tasty,
                        tasty-quickcheck,
                        text
