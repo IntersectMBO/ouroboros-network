@@ -32,7 +32,7 @@ codecIdle
   => Codec (ST s) Text Encoding ByteString (ReqRespMessage request response) StIdle
 codecIdle = Codec
   { encode = cborEncodeIdle
-  , decode = cborDecoder cborDecodeIdle
+  , decode = cborDecoder T.pack cborDecodeIdle
   }
  where
   cborEncodeIdle 
@@ -52,7 +52,7 @@ codecBusy
   => Codec (ST s) Text Encoding ByteString (ReqRespMessage request response) StBusy
 codecBusy = Codec
   { encode = cborEncodeBusy
-  , decode = cborDecoder cborDecodeBusy
+  , decode = cborDecoder T.pack cborDecodeBusy
   }
  where
   cborEncodeBusy
