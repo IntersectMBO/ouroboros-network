@@ -136,6 +136,7 @@ test-suite tests
                        free,
                        mtl,
                        pipes,
+                       process,
                        QuickCheck,
                        serialise,
                        tasty,
