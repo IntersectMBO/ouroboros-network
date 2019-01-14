@@ -138,6 +138,7 @@ test-suite tests
                        bytestring,
                        cborg,
                        containers,
+                       free,
                        fingertree,
                        free,
                        mtl,

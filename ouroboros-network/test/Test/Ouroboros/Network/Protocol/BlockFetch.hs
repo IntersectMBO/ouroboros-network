@@ -307,7 +307,7 @@ prop_directRoundTripST
   -> Positive Int
   -> Property
 prop_directRoundTripST ranges queueSize = runST $ runExperiment $
-  roundTrip_experiment
+  roundTrip_experiment @(Free (SimF _))
     (\ser cli -> void $ directBlockFetchClient ser cli)
     (\ser cli -> (Just . snd) <$> directBlockFetchServer ser cli)
     ranges
