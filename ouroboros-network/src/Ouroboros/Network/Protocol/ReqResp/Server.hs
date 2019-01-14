@@ -14,13 +14,13 @@ newtype Server m request response a = Server {
 
 -- | Create server side of the @'ReqRespProtocol'@.
 --
-streamServer
+reqRespServerPeer
   :: Monad m
   => Server m request response a
   -> Peer (ReqRespProtocol request response) (ReqRespMessage request response)
           (Awaiting StIdle) (Finished StDone)
           m a
-streamServer server =
+reqRespServerPeer server =
   await $ \msg ->
   case msg of
     MsgRequest request -> lift $ do
