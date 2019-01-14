@@ -116,6 +116,7 @@ test-suite tests
                        Test.ChainProducerState
                        Test.Ouroboros.Network.Testing.Utils
                        Test.Ouroboros.Network.Protocol.Stream
+                       Test.Ouroboros.Network.Protocol.ReqResp.Codec.Coherence
                        Test.Ouroboros.Network.Node
                        Test.Pipe
   default-language:    Haskell2010
@@ -134,8 +135,10 @@ test-suite tests
                        mtl,
                        pipes,
                        QuickCheck,
+                       serialise,
                        tasty,
-                       tasty-quickcheck
+                       tasty-quickcheck,
+                       text
 
   ghc-options:         -Wall
                        -fno-ignore-asserts
