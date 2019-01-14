@@ -116,6 +116,7 @@ test-suite tests
                        Test.ChainProducerState
                        Test.Ouroboros.Network.Testing.Utils
                        Test.Ouroboros.Network.Testing.Arbitrary
+                       Test.Ouroboros.Network.Testing.Utils
                        Test.Ouroboros.Network.Protocol.Stream
                        Test.Ouroboros.Network.Protocol.BlockFetch
                        Test.Ouroboros.Network.Protocol.BlockFetch.Codec.Coherence
