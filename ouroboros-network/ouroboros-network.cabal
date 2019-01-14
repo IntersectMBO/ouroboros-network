@@ -109,6 +109,7 @@ test-suite tests
   other-modules:       Test.Chain
                        Test.ChainFragment
                        Test.ChainProducerState
+                       Test.Ouroboros.Network.Testing.Utils
                        Test.Ouroboros.Network.Protocol.Stream
                        Test.Ouroboros.Network.Node
                        Test.Pipe
@@ -121,6 +122,8 @@ test-suite tests
                        io-sim            >=0.1 && < 0.2,
 
                        array,
+                       bytestring,
+                       cborg,
                        containers,
                        fingertree,
                        mtl,
