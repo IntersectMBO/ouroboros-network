@@ -8,6 +8,7 @@ import qualified Test.ChainProducerState (tests)
 import qualified Test.Pipe (tests)
 import qualified Test.Ouroboros.Network.Node (tests)
 import qualified Test.Ouroboros.Network.Protocol.Stream (tests)
+import qualified Test.Ouroboros.Network.Protocol.ReqResp (tests)
 import qualified Test.Ouroboros.Network.Protocol.ReqResp.Codec.Coherence (tests)
 
 main :: IO ()
@@ -22,5 +23,6 @@ tests =
   , Test.Pipe.tests
   , Test.Ouroboros.Network.Node.tests
   , Test.Ouroboros.Network.Protocol.Stream.tests
+  , Test.Ouroboros.Network.Protocol.ReqResp.tests
   , Test.Ouroboros.Network.Protocol.ReqResp.Codec.Coherence.tests
   ]
