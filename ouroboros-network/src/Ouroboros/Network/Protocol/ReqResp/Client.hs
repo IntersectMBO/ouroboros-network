@@ -15,13 +15,13 @@ data Client m request response a where
 
 -- | Interpret @'Client'@ as a client side of the typed @'ReqRespProtocol'@
 --
-streamClient
+reqRespClientPeer
   :: Monad m
   => Client m request response a
   -> Peer (ReqRespProtocol request response) (ReqRespMessage request response)
           (Yielding StIdle) (Finished StDone)
           m a
-streamClient (Request request handleResponse) =
+reqRespClientPeer (Request request handleResponse) =
   over (MsgRequest request) $
   await $ \msg ->
   case msg of
