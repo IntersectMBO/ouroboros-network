@@ -15,12 +15,16 @@ module Ouroboros.Consensus.Util (
   , byteStringChunks
   , lazyByteStringChunks
   , whenJust
+  , checkThat
+  , pickOne
+  , markLast
   ) where
 
 import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Kind (Constraint)
 import           Data.List (foldl')
+import           GHC.Stack
 
 data Dict (a :: Constraint) where
     Dict :: a => Dict a
@@ -58,3 +62,33 @@ lazyByteStringChunks n bs
 whenJust :: Applicative f => Maybe a -> (a -> f ()) -> f ()
 whenJust (Just x) f = f x
 whenJust Nothing _  = pure ()
+
+-- | Assertion
+--
+-- Variation on 'assert' for use in testing code.
+checkThat :: (Show a, Monad m)
+          => String
+          -> (a -> Bool)
+          -> a
+          -> m ()
+checkThat label prd a
+  | prd a     = return ()
+  | otherwise = error $ label ++ " failed on " ++ show a ++ "\n"
+                     ++ prettyCallStack callStack
+
+-- | All possible ways to pick on element from a list, preserving order
+--
+-- > pickOne [1,2,3] = [ ([], 1, [2, 3])
+-- >                   , ([1], 2, [3])
+-- >                   , ([1,2], 3, [])
+-- >                   ]
+pickOne :: [a] -> [([a], a, [a])]
+pickOne []     = []
+pickOne (x:xs) = ([], x, xs)
+               : map (\(as, b, cs) -> (x:as, b, cs)) (pickOne xs)
+
+-- | Mark the last element of the list as 'Right'
+markLast :: [a] -> [Either a a]
+markLast [] = []
+markLast xs = let (y:ys) = reverse xs
+              in reverse $ Right y : map Left ys

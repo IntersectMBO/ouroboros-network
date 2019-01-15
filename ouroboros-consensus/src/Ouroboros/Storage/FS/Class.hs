@@ -1,107 +1,28 @@
-{-# LANGUAGE ConstraintKinds            #-}
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE FlexibleInstances          #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE LambdaCase                 #-}
-{-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE RankNTypes                 #-}
-{-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE StandaloneDeriving         #-}
-{-# LANGUAGE TypeFamilies               #-}
-{-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE ConstraintKinds  #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE TypeFamilies     #-}
 
-{-- |
-
-An abstract view over the filesystem.
-
---}
-
+-- | An abstract view over the filesystem.
 module Ouroboros.Storage.FS.Class (
-    -- * Opaque types and main API
       HasFS(..)
-    , FsError(..)
-    , FsErrorType(..)
-    , FsUnexpectedException(..)
-    , FsPath
-    , sameFsError
-    , isResourceDoesNotExistError
-    , prettyFSError
-    -- * Actual HasFS monad stacks will have ExceptT at the top
+    , withFile
+      -- * Actual HasFS monad stacks will have ExceptT at the top
     , HasFSE
     , FsHandleE
     , BufferE
-    -- * Re-exports from System.IO
-    , SeekMode(..)
-    , IOMode(..)
     ) where
 
-import           Control.Exception (Exception (..), IOException)
+import           Control.Monad.Catch
 import           Control.Monad.Except
-
-import           GHC.Stack
-
 import           Data.ByteString (ByteString)
 import           Data.ByteString.Builder (Builder)
-import           Data.Semigroup ((<>))
+import           Data.Int (Int64)
+import           Data.Set (Set)
 import           Data.Word (Word64)
+import           GHC.Stack
+import           System.IO (IOMode, SeekMode)
 
-import           System.IO (IOMode (..), SeekMode (..))
-
-{------------------------------------------------------------------------------
- Abstracting over file paths
-------------------------------------------------------------------------------}
-
-type FsPath = [String]
-
-{------------------------------------------------------------------------------
- Handling failure
-------------------------------------------------------------------------------}
-
-data FsError = FsError FsErrorType FsPath CallStack
-  deriving Show
-
-data FsErrorType
-  = FsIllegalOperation
-  | FsResourceInappropriateType
-  -- ^ e.g the user tried to open a directory with hOpen rather than a file.
-  | FsResourceAlreadyInUse
-  | FsResourceDoesNotExist
-  | FsResourceAlreadyExist
-  | FsReachedEOF
-  | FsDeviceFull
-  | FsInsufficientPermissions
-  deriving (Show, Eq)
-
--- | We define a 'FsUnexpectedException' separated by the rest so that we
--- can still \"tag\" any exception coming from the underlying concrete monad
--- that we don't support in our 'HasFS' abstraction, but without the risk of
--- polluting the 'FsError' sum type, as introducing such a new type constructor
--- would force us to catch and deal with this \"unexpected\" exception.
-data FsUnexpectedException = FsUnexpectedException IOException CallStack
-                             deriving Show
-
-instance Exception FsUnexpectedException
-
-instance Exception FsError where
-    displayException = prettyFSError
-
-isResourceDoesNotExistError :: FsError -> Bool
-isResourceDoesNotExistError (FsError FsResourceDoesNotExist _ _) = True
-isResourceDoesNotExistError _                                    = False
-
-prettyFSError :: FsError -> String
-prettyFSError (FsError et fp cs) =
-    show et <> " for " <> show fp <> ": " <> prettyCallStack cs
-
-
--- | Check two 'FsError' for shallow equality, i.e. if they have the same
--- error type ('FsErrorType') and filepath, ignoring the 'CallStack'.
---
--- This is very useful during tests when comparing different 'HasFS'
--- implementations and assert that they throw the same 'FsErrorType', even
--- though the callstack is naturally different.
-sameFsError :: FsError -> FsError -> Bool
-sameFsError (FsError et1 fp1 _) (FsError et2 fp2 _) = et1 == et2 && fp1 == fp2
+import           Ouroboros.Storage.FS.Class.Types
 
 {------------------------------------------------------------------------------
  Typeclass which abstracts over the filesystem
@@ -115,22 +36,63 @@ class Monad m => HasFS m where
     dumpState :: m String
 
     -- Operations of files
-    -- hOpen returns a 'Bool' stating whether the input file is new or not.
-    hOpen      :: HasCallStack => FsPath     -> IOMode -> m (FsHandle m)
+
+    -- | Open a file
+    hOpen      :: HasCallStack => FsPath -> IOMode -> m (FsHandle m)
+
+    -- | Close a file
     hClose     :: HasCallStack => FsHandle m -> m ()
-    hSeek      :: HasCallStack => FsHandle m -> SeekMode -> Word64 -> m Word64
+
+    -- | Seek handle
+    --
+    -- The offset is an 'Int64' rather than a 'Word64' because it may be
+    -- negative (for use in relative positioning).
+    --
+    -- Unlike the Posix @lseek@, 'hSeek' does not return the new seek position
+    -- because the value returned by Posix is rather strange and unreliable
+    -- and we don't want to emulate it's behaviour.
+    hSeek      :: HasCallStack => FsHandle m -> SeekMode -> Int64 -> m ()
+
+    -- | Try to read @n@ bytes from a handle
     hGet       :: HasCallStack => FsHandle m -> Int -> m ByteString
+
+    -- | Write to a handle
     hPut       :: HasCallStack => FsHandle m -> Builder -> m Word64
+
+    -- | Write to a handle using the given buffer (see 'newBuffer')
     hPutBuffer :: HasCallStack => FsHandle m -> Buffer m -> Builder -> m Word64
+
+    -- | Truncate the file to the specified size
     hTruncate  :: HasCallStack => FsHandle m -> Word64 -> m ()
-    withFile   :: HasCallStack => FsPath     -> IOMode -> (FsHandle m -> m r) -> m r
+
+    -- | Return current file size
+    --
+    -- NOTE: This is not thread safe (changes made to the file in other threads
+    -- may affect this thread).
+    hGetSize   :: HasCallStack => FsHandle m -> m Word64
 
     -- Operations of directories
+
+    -- | Create new directory
     createDirectory          :: HasCallStack => FsPath -> m ()
+
+    -- | Create new directory if it doesn't exist.
+    --
+    -- @createDirectoryIfMissing True@ will also try to create all parent dirs.
     createDirectoryIfMissing :: HasCallStack => Bool -> FsPath -> m ()
-    listDirectory            :: HasCallStack => FsPath -> m [String]
+
+    -- | List contents of a directory
+    listDirectory            :: HasCallStack => FsPath -> m (Set String)
+
+    -- | Check if the path exists and is a directory
     doesDirectoryExist       :: HasCallStack => FsPath -> m Bool
+
+    -- | Check if the path exists and is a file
     doesFileExist            :: HasCallStack => FsPath -> m Bool
+
+withFile :: (HasCallStack, MonadMask m, HasFS m)
+         => FsPath -> IOMode -> (FsHandle m -> m a) -> m a
+withFile fp ioMode = bracket (hOpen fp ioMode) hClose
 
 {-------------------------------------------------------------------------------
   ExceptT support

@@ -4,15 +4,22 @@
 
 module Ouroboros.Consensus.Util.Condense (
     Condense(..)
+  , Condense1(..)
+  , condense1
   ) where
 
+import qualified Data.ByteString as BS.Strict
+import qualified Data.ByteString.Lazy as BS.Lazy
+import           Data.Int
 import           Data.List (intercalate)
 import           Data.Map (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy
 import           Data.Set (Set)
 import qualified Data.Set as Set
+import           Data.Word
 import           Numeric.Natural
+import qualified System.IO as IO
 import           Text.Printf (printf)
 
 import           Ouroboros.Consensus.Util.HList (All, HList (..))
@@ -22,13 +29,29 @@ import qualified Ouroboros.Consensus.Util.HList as HList
 class Condense a where
   condense :: a -> String
 
+class Condense1 f where
+  liftCondense :: (a -> String) -> f a -> String
+
+-- | Lift the standard 'condense' function through the type constructor
+condense1 :: (Condense1 f, Condense a) => f a -> String
+condense1 = liftCondense condense
+
 instance Condense String where
   condense = id
+
+instance Condense Bool where
+  condense = show
 
 instance Condense Int where
   condense = show
 
+instance Condense Int64 where
+  condense = show
+
 instance Condense Word where
+  condense = show
+
+instance Condense Word64 where
   condense = show
 
 instance Condense Natural where
@@ -37,11 +60,20 @@ instance Condense Natural where
 instance Condense Rational where
   condense = printf "%.8f" . (fromRational :: Rational -> Double)
 
+instance Condense1 [] where
+  liftCondense f as = "[" ++ intercalate "," (map f as) ++ "]"
+
+instance Condense1 Set where
+  liftCondense f = liftCondense f . Set.toList
+
 instance {-# OVERLAPPING #-} Condense [String] where
   condense ss = "[" ++ intercalate "," ss ++ "]"
 
 instance {-# OVERLAPPABLE #-} Condense a => Condense [a] where
-  condense as = "[" ++ intercalate "," (map condense as) ++ "]"
+  condense = condense1
+
+instance Condense a => Condense (Set a) where
+  condense = condense1
 
 instance All Condense as => Condense (HList as) where
   condense as = "(" ++ intercalate "," (HList.collapse (Proxy @Condense) condense as) ++ ")"
@@ -49,8 +81,22 @@ instance All Condense as => Condense (HList as) where
 instance (Condense a, Condense b) => Condense (a, b) where
   condense (a, b) = condense (a :* b :* Nil)
 
-instance Condense a => Condense (Set a) where
-  condense = condense . Set.toList
-
 instance (Condense k, Condense a) => Condense (Map k a) where
   condense = condense . Map.toList
+
+instance Condense IO.SeekMode where
+  condense IO.RelativeSeek = "r"
+  condense IO.AbsoluteSeek = "a"
+  condense IO.SeekFromEnd  = "e"
+
+instance Condense IO.IOMode where
+  condense IO.ReadMode      = "r"
+  condense IO.WriteMode     = "w"
+  condense IO.ReadWriteMode = "rw"
+  condense IO.AppendMode    = "a"
+
+instance Condense BS.Strict.ByteString where
+  condense bs = show bs ++ "<" ++ show (BS.Strict.length bs) ++ "b>"
+
+instance Condense BS.Lazy.ByteString where
+  condense bs = show bs ++ "<" ++ show (BS.Lazy.length bs) ++ "b>"

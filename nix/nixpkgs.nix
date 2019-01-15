@@ -9,7 +9,7 @@ let
           lib       = super.haskell.lib;
           overrides = self: super:
             { psqueues = lib.dontCheck super.psqueues;
-              aeson    = lib.dontCheck super.aeson;
+              aeson    = lib.dontCheck super.aeson_1_4_2_0;
               fingertree = super.callPackage ./fingertree-0.1.4.2.nix {};
               graphviz = lib.dontCheck super.graphviz;
               QuickCheck = super.QuickCheck_2_12_6_1;
@@ -17,6 +17,7 @@ let
               hspec-core = super.hspec-core_2_6_0;
               hspec-discover = super.hspec-discover_2_6_0;
               hspec-meta = super.hspec-meta_2_6_0;
+              quickcheck-state-machine = lib.dontCheck (self.callPackage ./quickcheck-state-machine-0.6.0.nix {});
             };
       in {
         haskell = super.haskell // {
