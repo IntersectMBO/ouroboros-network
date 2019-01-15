@@ -8,17 +8,22 @@
 
 module Ouroboros.Network.Socket (
       SocketBearer (..)
+    , demo
     ) where
 
+import           Control.Monad
 import           Control.Monad.IO.Class
 import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadFork
 import           Data.Bits
 import           Data.Int
 import qualified Data.ByteString.Lazy as BL
+import           Data.ByteString.Lazy.Char8 (pack)
 import qualified Ouroboros.Network.Mux as Mx
 import           Network.Socket hiding (recv, recvFrom, send, sendTo)
 import           Network.Socket.ByteString.Lazy (sendAll, recv)
 
+import           Text.Printf
 
 newtype SocketBearer m = SocketBearer {
     runSocketBearer :: IO m
@@ -31,7 +36,7 @@ instance Monad SocketBearer where
     SocketBearer m >>= f = SocketBearer (m >>= runSocketBearer . f)
 
 instance MonadIO SocketBearer where
-    liftIO action =  liftIO action
+    liftIO action =  SocketBearer $ liftIO action
 
 data SocketCtx = SocketCtx {
       scSocket :: Socket
@@ -44,10 +49,17 @@ instance Mx.MuxBearer SocketBearer where
 
     open addr = liftIO $ do
         sd <- socket (addrFamily addr) Stream defaultProtocol
-        setSocketOption sd ReuseAddr 1
-        bind sd (addrAddress addr)
-        listen sd 2
+        connect sd (addrAddress addr)
         return $ SocketCtx sd
+
+    server addr fn = do
+        sd <- liftIO $ socket (addrFamily addr) Stream defaultProtocol
+        liftIO $ setSocketOption sd ReuseAddr 1
+        liftIO $ bind sd (addrAddress addr)
+        liftIO $ listen sd 2
+        forever $ do
+            (client, _) <- liftIO $ accept sd
+            fn $ SocketCtx client
 
     sduSize _ = return 1480 -- XXX query socket for PMTU/MSS
 
@@ -78,4 +90,39 @@ recvLen' sd l bufs = do
           then error "socket closed" -- XXX throw exception
           else recvLen' sd (l - fromIntegral (BL.length buf)) (buf : bufs)
 
+
+demo :: IO ()
+demo = do
+    addr:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "6060")
+    fork $ server addr
+    threadDelay 1000000 -- give the server time to bind to the port
+    runSocketBearer $ client addr
+    return ()
+
+  where
+    server addr = do
+        forever $ do
+            runSocketBearer $ Mx.server addr serverAccept
+
+    serverAccept :: Mx.MuxBearerHandle SocketBearer -> SocketBearer ()
+    serverAccept ctx = do
+        (_, _) <- Mx.read ctx
+        -- liftIO $ printf "read '%s'\n" (show $ Mx.msBlob sdu0)
+        let msg = pack "Pong"
+        let sdu1 = Mx.MuxSDU (Mx.RemoteClockModel 0) Mx.Muxcontrol 0 msg
+        _ <- Mx.write ctx (cb sdu1)
+
+        Mx.close ctx
+
+    client :: Mx.AssociationDetails SocketBearer -> SocketBearer ()
+    client addr = do
+        ctx <- Mx.open addr
+        let msg = pack "Ping"
+        let sdu0 = Mx.MuxSDU (Mx.RemoteClockModel 0) Mx.Muxcontrol 0 msg
+        ts0 <- Mx.write ctx (cb sdu0)
+        (_, ts1) <- Mx.read ctx
+        liftIO $ printf "rtt %d\n" $ ts1 - ts0
+        return ()
+
+    cb sdu ts = sdu {Mx.msTimestamp = ts}
 

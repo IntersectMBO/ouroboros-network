@@ -2,8 +2,9 @@
 {-# LANGUAGE TypeFamilies          #-}
 
 module Ouroboros.Network.Mux (
-      MuxSDU (..)
+      MiniProtocolId (..)
     , MuxBearer (..)
+    , MuxSDU (..)
     , RemoteClockModel (..)
     , encodeMuxSDU
     , decodeMuxSDUHeader
@@ -14,10 +15,9 @@ import qualified Data.Binary.Get as Bin
 import qualified Data.ByteString.Lazy as BL
 import           Data.Word
 
-import           Control.Monad.Class.MonadTimer
-
-
-data RemoteClockModel = RemoteClockModel Word32
+data RemoteClockModel = RemoteClockModel {
+    unRemoteClockModel :: !Word32
+  }
 
 data MiniProtocolId = Muxcontrol
                     | DeltaQ
@@ -28,7 +28,7 @@ data MiniProtocolId = Muxcontrol
                     deriving (Show, Eq)
 
 data MuxSDU = MuxSDU {
-      msTimestamp :: !Word32
+      msTimestamp :: !RemoteClockModel
     , msId        :: !MiniProtocolId
     , msLength    :: !Word16
     , msBlob      :: !BL.ByteString
@@ -40,7 +40,7 @@ encodeMuxSDU sdu =
   BL.append hdr $ msBlob sdu
   where
     enc = do
-        Bin.putWord32be $ msTimestamp sdu
+        Bin.putWord32be $ unRemoteClockModel $ msTimestamp sdu
         putId $ msId sdu
         Bin.putWord16be $ fromIntegral $ BL.length $ msBlob sdu
 
@@ -62,24 +62,25 @@ decodeMuxSDUHeader buf =
         ts <- Bin.getWord32be
         id_ <- Bin.getWord16be
         len <- Bin.getWord16be
-        return $ MuxSDU ts (getId id_) len BL.empty
+        return $ MuxSDU (RemoteClockModel ts) (getId id_) len BL.empty
 
-    getId 1 = Muxcontrol
-    getId 2 = DeltaQ
-    getId 3 = ChainSync
-    getId 4 = Blockdownload
-    getId 5 = DelegationCertificates
-    getId 6 = TxSubmission
+    getId 0 = Muxcontrol
+    getId 1 = DeltaQ
+    getId 2 = ChainSync
+    getId 3 = Blockdownload
+    getId 4 = DelegationCertificates
+    getId 5 = TxSubmission
     getId a = error $ "unknow miniprotocol " ++ show a -- XXX
 
-remoteClockTimestampFromLocalClock :: (MonadTime m) => m RemoteClockModel
-remoteClockTimestampFromLocalClock = undefined -- use getMonotonicTime
+--remoteClockTimestampFromLocalClock :: (MonadTime m) => m RemoteClockModel
+--remoteClockTimestampFromLocalClock = undefined -- use getMonotonicTime
 
-class  MuxBearer m where
+class MuxBearer m where
   type LocalClockModel m :: *
   type AssociationDetails m :: *
   type MuxBearerHandle m :: *
   open :: AssociationDetails m -> m (MuxBearerHandle m)
+  server :: AssociationDetails m -> (MuxBearerHandle m -> m ()) -> m (MuxBearerHandle m)
   sduSize :: MuxBearerHandle m-> m Int
   write :: MuxBearerHandle m -> (RemoteClockModel -> MuxSDU) -> m (LocalClockModel m)
   read :: MuxBearerHandle m -> m (MuxSDU, LocalClockModel m)
