@@ -8,16 +8,16 @@ import Ouroboros.Network.Protocol.ReqResp.Type
 
 -- | Client reqeust with a handle for a response.
 --
-data Client m request response a where
+data ReqRespClient m request response a where
     Request :: request
             -> (response -> m a)
-            -> Client m request response a
+            -> ReqRespClient m request response a
 
--- | Interpret @'Client'@ as a client side of the typed @'ReqRespProtocol'@
+-- | Interpret @'ReqRespClient'@ as a client side of the typed @'ReqRespProtocol'@
 --
 reqRespClientPeer
   :: Monad m
-  => Client m request response a
+  => ReqRespClient m request response a
   -> Peer (ReqRespProtocol request response) (ReqRespMessage request response)
           (Yielding StIdle) (Finished StDone)
           m a

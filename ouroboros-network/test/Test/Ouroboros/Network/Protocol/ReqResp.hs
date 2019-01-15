@@ -60,7 +60,7 @@ prop_direct
   -> response
   -> Property
 prop_direct request response =
-  case runIdentity $ direct (Server $ \req -> return (response, req)) (Request request return) of
+  case runIdentity $ direct (ReqRespServer $ \req -> return (response, req)) (Request request return) of
     (request', response') -> request' === request .&&. response' === response
 
 prop_connect
@@ -78,7 +78,7 @@ prop_connect request response =
     These request' response' -> request' === request .&&. response' === response
     _                        -> property False
  where
-  server = reqRespServerPeer (Server $ \req -> return (response, req))
+  server = reqRespServerPeer (ReqRespServer $ \req -> return (response, req))
   client = reqRespClientPeer (Request request return)
 
 reqRespDemoExperiment
@@ -103,7 +103,7 @@ reqRespDemoExperiment clientChan serverChan request response probe = withLiftST 
 
   doneVar <- atomically $ newTVar False
   
-  let serverPeer = reqRespServerPeer (Server $ \req -> return (response, req))
+  let serverPeer = reqRespServerPeer (ReqRespServer $ \req -> return (response, req))
       clientPeer = reqRespClientPeer (Request request return)
 
       codec = hoistCodec liftST codecReqResp

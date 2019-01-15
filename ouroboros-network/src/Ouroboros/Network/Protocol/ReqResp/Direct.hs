@@ -11,9 +11,9 @@ import Ouroboros.Network.Protocol.ReqResp.Server
 --
 direct
   :: Monad m
-  => Server m request response a
-  -> Client m request response b
+  => ReqRespServer m request response a
+  -> ReqRespClient m request response b
   -> m (a, b)
 direct server (Request request handleResponse) = do
-  (resp, a) <- runServer server request
+  (resp, a) <- runReqRespServer server request
   (a,) <$> handleResponse resp
