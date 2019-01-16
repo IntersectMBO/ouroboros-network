@@ -25,9 +25,9 @@ import Numeric.Natural (Natural)
 import Pipes (Producer', Pipe)
 import qualified Pipes
 
-import Protocol.Core
+import Control.Monad.Class.MonadSTM (MonadSTM (..))
 
-import Ouroboros.Network.MonadClass.MonadSTM (MonadSTM (..))
+import Protocol.Core
 
 import Ouroboros.Network.Protocol.BlockFetch.Type
 
