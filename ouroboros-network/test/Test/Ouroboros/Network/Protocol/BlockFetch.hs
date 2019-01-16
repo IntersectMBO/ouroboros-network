@@ -147,7 +147,7 @@ blockFetchClientProtocol_experiment run as probe = do
   let ranges = map (\(ArbitraryPoint p, ArbitraryPoint p') -> ChainRange p p') as
   var <- atomically $ newTVar []
   let server = constantReceiver (\a -> atomically $ modifyTVar var (a:)) ()
-  client <- blockFetchClientSenderFromProducer (Pipes.each ranges >> return ())
+  client <- blockFetchClientSenderFromProducer (void $ Pipes.each ranges)
 
   _ <- run server client
 
