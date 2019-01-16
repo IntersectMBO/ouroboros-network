@@ -55,6 +55,10 @@ library
                        Ouroboros.Network.Protocol.ReqResp.Server
                        Ouroboros.Network.Protocol.ReqResp.Direct
                        Ouroboros.Network.Protocol.ReqResp.Codec.Cbor
+                       Ouroboros.Network.Protocol.BlockFetch.Type
+                       Ouroboros.Network.Protocol.BlockFetch.Client
+                       Ouroboros.Network.Protocol.BlockFetch.Server
+                       Ouroboros.Network.Protocol.BlockFetch.Direct
 
                        -- TODO rename.
                        Ouroboros.Network.ChainSyncExamples
@@ -114,10 +118,12 @@ test-suite tests
   other-modules:       Test.Chain
                        Test.ChainFragment
                        Test.ChainProducerState
+                       Test.Ouroboros.Network.Testing.Arbitrary
                        Test.Ouroboros.Network.Testing.Utils
                        Test.Ouroboros.Network.Protocol.Stream
                        Test.Ouroboros.Network.Protocol.ReqResp.Codec.Coherence
                        Test.Ouroboros.Network.Protocol.ReqResp
+                       Test.Ouroboros.Network.Protocol.BlockFetch
                        Test.Ouroboros.Network.Node
                        Test.Pipe
   default-language:    Haskell2010
@@ -132,6 +138,7 @@ test-suite tests
                        bytestring,
                        cborg,
                        containers,
+                       free,
                        fingertree,
                        free,
                        mtl,
