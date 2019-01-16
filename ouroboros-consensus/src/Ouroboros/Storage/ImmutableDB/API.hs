@@ -5,7 +5,7 @@ module Ouroboros.Storage.ImmutableDB.API
   , withDB
   , getCurrentEpoch
   , Iterator(..)
-
+  , withIterator
   , IteratorResult(..)
   , iteratorToList
   , blobProducer
@@ -182,6 +182,23 @@ data Iterator m = Iterator
     -- TODO how can we avoid this abstraction leak?
   , iteratorID  :: IteratorID
   }
+
+-- | Create an iterator from the given 'ImmutableDB' using 'streamBinaryBlob'
+-- and the given @start@ and @end@ 'EpochSlot's. Perform the given action
+-- using the iterator, and close the iterator using its 'iteratorClose'
+-- function, in case of success or when an exception was raised.
+withIterator :: (HasCallStack, MonadMask m)
+             => ImmutableDB m
+                -- ^ The database
+             -> EpochSlot -- ^ Start streaming from here (inclusive)
+             -> EpochSlot -- ^ End streaming here (inclusive)
+             -> (Iterator m -> m (Either ImmutableDBError a))
+                -- ^ Action to perform using the iterator
+             -> m (Either ImmutableDBError a)
+withIterator db start end action = runExceptT $
+    bracket (ExceptT (streamBinaryBlobs db start end)) (ExceptT . iteratorClose)
+            (ExceptT . action)
+
 
 -- | Equality based on 'iteratorID'
 instance Eq (Iterator m) where

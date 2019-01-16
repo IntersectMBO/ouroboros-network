@@ -431,8 +431,7 @@ test_iterator_basics = apiEquivalenceDB
       _ <- ExceptT $ startNewEpoch db 5 -- Now in epoch 3
       _ <- ExceptT $ startNewEpoch db 5 -- Now in epoch 4
       ExceptT $ appendBinaryBlob db 4 "not included"
-      it <- ExceptT $ streamBinaryBlobs db (EpochSlot 0 0) (EpochSlot 4 2)
-      ExceptT $ iteratorToList it
+      ExceptT $ withIterator db (EpochSlot 0 0) (EpochSlot 4 2) iteratorToList
 
 data DBAction
   = StartNewEpoch
@@ -542,8 +541,7 @@ prop_iterator IteratorContentsAndRange {..} = monadicIO $ do
       lastAppended = fromMaybe (EpochSlot 0 0) $ contentsLastAppended contents
       script = withTestDB 0 (M.singleton 0 fixedEpochSize) $ \db -> runExceptT $ do
         ExceptT $ executeDBActions db _dbActions
-        it <- ExceptT $ streamBinaryBlobs db _start _end
-        ExceptT $ iteratorToList it
+        ExceptT $ withIterator db _start _end iteratorToList
   (r, _) <- run $ runSimFS script Mock.empty
   case r of
     Left (UserError (SlotGreaterThanEpochSizeError {}) _)
