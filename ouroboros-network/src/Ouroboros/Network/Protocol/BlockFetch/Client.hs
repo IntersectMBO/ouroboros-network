@@ -11,11 +11,11 @@ import qualified Pipes
 import Ouroboros.Network.Protocol.BlockFetch.Type
 
 {-------------------------------------------------------------------------------
-  Client stream of @'BlockFetchClientProtocol'@ protocol
+  Client stream of @'BlockRequestProtocol'@ protocol
 -------------------------------------------------------------------------------}
 
-newtype BlockFetchClientSender range m a = BlockFetchClientSender {
-    runBlockFetchClientSender :: m (BlockFetchClientRequest range m a)
+newtype BlockRequestSender range m a = BlockRequestSender {
+    runBlockRequestSender :: m (BlockFetchClientRequest range m a)
   }
 
 data BlockFetchClientRequest range m a where
@@ -24,7 +24,7 @@ data BlockFetchClientRequest range m a where
   --
   BlockFetchClientRange
     :: range
-    -> BlockFetchClientSender range m a
+    -> BlockRequestSender range m a
     -> BlockFetchClientRequest range m a
 
   -- | The client decided to end the protocol.
@@ -33,47 +33,47 @@ data BlockFetchClientRequest range m a where
     :: a
     -> BlockFetchClientRequest range m a
 
-blockFetchClientSenderFromProducer
+blockRequestSenderFromProducer
   :: Monad m
   => Producer range m a
-  -> BlockFetchClientSender range m a
-blockFetchClientSenderFromProducer producer = BlockFetchClientSender $
+  -> BlockRequestSender range m a
+blockRequestSenderFromProducer producer = BlockRequestSender $
   Pipes.next producer >>= \nxt -> case nxt of
     Left a                   -> return $ BlockFetchClientDone a
-    Right (range, producer') -> return $ BlockFetchClientRange range (blockFetchClientSenderFromProducer producer')
+    Right (range, producer') -> return $ BlockFetchClientRange range (blockRequestSenderFromProducer producer')
 
-blockFetchClientSenderStream
+blockRequestSenderStream
   :: ( Monad m )
-  => BlockFetchClientSender range m a
-  -> Peer BlockFetchClientProtocol
-      (BlockRequestClientMessage range)
+  => BlockRequestSender range m a
+  -> Peer BlockRequestProtocol
+      (BlockRequestMessage range)
       (Yielding StClientIdle)
       (Finished StClientDone)
       m a
-blockFetchClientSenderStream (BlockFetchClientSender sender) = lift $ sender >>= return . request
+blockRequestSenderStream (BlockRequestSender sender) = lift $ sender >>= return . request
  where
   request (BlockFetchClientRange range next) =
     part (MessageRequestRange range) $
-      (blockFetchClientSenderStream next)
-  request (BlockFetchClientDone a) = out MessageDone (done a)
+      (blockRequestSenderStream next)
+  request (BlockFetchClientDone a) = out MessageRequestDone (done a)
 
 {-------------------------------------------------------------------------------
-  Client stream of @'BlockFetchServerProtocol'@ protocol
+  Client stream of @'BlockFetchProtocol'@ protocol
 -------------------------------------------------------------------------------}
 
 -- | Handlers for server responses>
 --
-data BlockFetchClientReceiver block m a =
-     BlockFetchClientReceiver {
+data BlockFetchReceiver block m a =
+     BlockFetchReceiver {
 
        -- | The server has started streaming blocks.
        --
-       recvMsgStartBatch :: m (BlockFetchClientReceiveBlocks block m a),
+       recvMsgStartBatch :: m (BlockFetchReceiveBlocks block m a),
 
        -- | The block fetch request failed because a requested range was not on
        -- a producer's chain.
        --
-       recvMsgNoBlocks   :: m (BlockFetchClientReceiver block m a),
+       recvMsgNoBlocks   :: m (BlockFetchReceiver block m a),
 
        -- | The server terminated the protocol.
        --
@@ -82,40 +82,40 @@ data BlockFetchClientReceiver block m a =
 
 -- | Block download handlers.
 --
-data BlockFetchClientReceiveBlocks block m a =
-     BlockFetchClientReceiveBlocks {
-       recvMsgBlock       :: block -> m (BlockFetchClientReceiveBlocks block m a),
-       recvMsgBatchDone   :: m (BlockFetchClientReceiver block m a),
-       recvMsgServerError :: m (BlockFetchClientReceiver block m a)
+data BlockFetchReceiveBlocks block m a =
+     BlockFetchReceiveBlocks {
+       recvMsgBlock       :: block -> m (BlockFetchReceiveBlocks block m a),
+       recvMsgBatchDone   :: m (BlockFetchReceiver block m a),
+       recvMsgServerError :: m (BlockFetchReceiver block m a)
      }
 
--- | Construct @'Peer' 'BlockFetchServerProtocol'@ from
--- @'BlockFetchClientReceiver'@.
+-- | Construct @'Peer' 'BlockFetchProtocol'@ from
+-- @'BlockFetchReceiver'@.
 --
-blockFetchClientReceiverStream
+blockFetchReceiverStream
   :: forall m block a.
      ( Functor m )
-  => BlockFetchClientReceiver block m a
-  -> Peer BlockFetchServerProtocol
-      (BlockRequestServerMessage block)
+  => BlockFetchReceiver block m a
+  -> Peer BlockFetchProtocol
+      (BlockFetchMessage block)
       (Awaiting StServerAwaiting)
       (Finished StServerDone)
       m a
-blockFetchClientReceiverStream BlockFetchClientReceiver{recvMsgStartBatch,recvMsgNoBlocks,recvMsgDoneClient} =
+blockFetchReceiverStream BlockFetchReceiver{recvMsgStartBatch,recvMsgNoBlocks,recvMsgDoneClient} =
   await $ \msg -> case msg of
     MessageStartBatch -> lift (fetchBlocks <$> recvMsgStartBatch)
-    MessageNoBlocks   -> lift (blockFetchClientReceiverStream <$> recvMsgNoBlocks)
+    MessageNoBlocks   -> lift (blockFetchReceiverStream <$> recvMsgNoBlocks)
     MessageServerDone -> done recvMsgDoneClient
  where
   fetchBlocks
-    :: BlockFetchClientReceiveBlocks block m a
-    -> Peer BlockFetchServerProtocol
-        (BlockRequestServerMessage block)
+    :: BlockFetchReceiveBlocks block m a
+    -> Peer BlockFetchProtocol
+        (BlockFetchMessage block)
         (Awaiting StServerSending)
         (Finished StServerDone)
         m a
-  fetchBlocks BlockFetchClientReceiveBlocks{recvMsgBlock,recvMsgBatchDone,recvMsgServerError} =
+  fetchBlocks BlockFetchReceiveBlocks{recvMsgBlock,recvMsgBatchDone,recvMsgServerError} =
     await $ \msg -> case msg of
       MessageBlock block -> lift (fetchBlocks <$> recvMsgBlock block)
-      MessageBatchDone   -> lift (blockFetchClientReceiverStream <$> recvMsgBatchDone)
-      MessageServerError -> lift (blockFetchClientReceiverStream <$> recvMsgServerError)
+      MessageBatchDone   -> lift (blockFetchReceiverStream <$> recvMsgBatchDone)
+      MessageServerError -> lift (blockFetchReceiverStream <$> recvMsgServerError)

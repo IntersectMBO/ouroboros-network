@@ -11,14 +11,13 @@ import           Control.Monad (void)
 import           Control.Monad.Free (Free)
 import           Data.Functor (($>))
 import           Data.Functor.Identity (Identity (..))
-import           Data.List (foldl')
 
 import           Protocol.Core (Those (..), connect)
 
 import Control.Monad.Class.MonadFork (MonadFork (..))
-import Control.Monad.Class.MonadProbe (MonadProbe (..), MonadRunProbe (..), withProbe)
+import Control.Monad.Class.MonadProbe (MonadProbe (..))
 import Control.Monad.Class.MonadSTM (MonadSTM (..))
-import Control.Monad.Class.MonadTimer (MonadTime (..), MonadTimer (..))
+import Control.Monad.Class.MonadTimer (MonadTimer (..))
 import Control.Monad.IOSim (SimF)
 
 import Ouroboros.Network.Protocol.BlockFetch.Type
@@ -28,6 +27,7 @@ import Ouroboros.Network.Protocol.BlockFetch.Direct
 
 import Ouroboros.Network.Testing.ConcreteBlock (BlockHeader)
 import Test.Ouroboros.Network.Testing.Arbitrary
+import Test.Ouroboros.Network.Testing.Utils (runExperiment)
 
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
@@ -36,28 +36,28 @@ import           Test.Tasty.QuickCheck (testProperty)
 tests :: TestTree
 tests =
   testGroup "Ouroboros.Network.Protocol.BlockFetch"
-  [ testGroup "BlockFetchClientProtocol"
-    [ testProperty "Test directBlockFetchClient using testing server"
-        prop_directBlockFetchClientProtocol_acc
+  [ testGroup "BlockRequestProtocol"
+    [ testProperty "Test directBlockRequest using testing server"
+        prop_directBlockRequestProtocol_acc
     , testProperty "Test connect using testing server"
-        prop_connectBlockFetchClientProtocol_acc
-    , testProperty "Run blockFetchClientProtocol_experiment using connect in ST"
-        prop_connectBlockFetchClientProtocol_ST
-    , testProperty "Run blockFetchClientProtocol_experiment using connect in IO"
-        prop_connectBlockFetchClientProtocol_IO
-    , testProperty "Run blockFetchClientProtocol_experiment using directBlockFetchClient in ST"
-        prop_directBlockFetchClientProtocol_ST
-    , testProperty "Run blockFetchClientProtocol_experiment using directBlockFetchClient in IO"
-        prop_directBlockFetchClientProtocol_IO
+        prop_connectBlockRequestProtocol_acc
+    , testProperty "Run blockRequestProtocol_experiment using connect in ST"
+        prop_connectBlockRequestProtocol_ST
+    , testProperty "Run blockRequestProtocol_experiment using connect in IO"
+        prop_connectBlockRequestProtocol_IO
+    , testProperty "Run blockRequestProtocol_experiment using directBlockRequest in ST"
+        prop_directBlockRequestProtocol_ST
+    , testProperty "Run blockRequestProtocol_experiment using directBlockRequest in IO"
+        prop_directBlockRequestProtocol_IO
     ]
-  , testGroup "BlockFetchServerProtocol"
-    -- These two tests cover the same scope as the @'BlockFetchClientProtocol'@
+  , testGroup "BlockFetchProtocol"
+    -- These two tests cover the same scope as the @'BlockRequestProtocol'@
     -- tests above, this is because here we can have a receiver that
     -- accumulates all received values.
     [ testProperty "blockFetchServerProtocol_ST"
-        prop_blockFetchServerProtocol_ST
+        prop_blockFetchProtocol_ST
     , testProperty "blockFetchServerProtocol_IO"
-        prop_blockFetchServerProtocol_IO
+        prop_blockFetchProtocol_IO
     ]
   , testGroup "BlockFetchServer: round trip tests"
     [ testProperty "direct: round trip in ST" prop_directRoundTripST
@@ -67,154 +67,139 @@ tests =
     ]
   ]
 
--- | FIXME: find a better place for it, this might be useful elsewhere too.
-runExperiment
-  :: forall m n.
-     ( MonadSTM m
-     , MonadTimer m
-     , MonadProbe m
-     , MonadRunProbe m n
-     )
-  => (Probe m Property -> m ())
-  -> n Property
-runExperiment exp_ = isValid <$> withProbe exp_
- where
-  isValid :: [(Time m, Property)] -> Property
-  isValid = foldl' (\acu (_,p) -> acu .&&. p) (property True)
-
 {-------------------------------------------------------------------------------
--- @'BlockFetchClientProtocol' tests
+-- @'BlockRequestProtocol' tests
 -------------------------------------------------------------------------------}
 
 -- | Testing server which accumulates received value in its return value.
 --
-accumulatingBlockFetchServerReceiver
+accumulatingBlockRequestReceiver
   :: Monad m
-  => BlockFetchServerReceiver range m [range]
-accumulatingBlockFetchServerReceiver = go []
+  => BlockRequestReceiver range m [range]
+accumulatingBlockRequestReceiver = go []
  where
   go acc =
-    BlockFetchServerReceiver {
+    BlockRequestReceiver {
       recvMessageRequestRange = \range -> return $ go (range : acc),
       recvMessageDone         = return (reverse acc)
     }
 
--- | @'directBlockFetchClient'@ is an identity
+-- | @'directBlockRequest'@ is an identity
 --
-prop_directBlockFetchClientProtocol_acc
+prop_directBlockRequestProtocol_acc
   :: [(ArbitraryPoint, ArbitraryPoint)]
   -> Property
-prop_directBlockFetchClientProtocol_acc as =
+prop_directBlockRequestProtocol_acc as =
   let ranges = map (\(ArbitraryPoint p, ArbitraryPoint p') -> ChainRange p p') as
   in
     fst (runIdentity
-      $ directBlockFetchClient
-          accumulatingBlockFetchServerReceiver
-          (blockFetchClientSenderFromProducer (Pipes.each ranges >> return ())))
+      $ directBlockRequest
+          accumulatingBlockRequestReceiver
+          (blockRequestSenderFromProducer (Pipes.each ranges >> return ())))
     === ranges
 
--- | Test @'blockFetchServerReceiverStream'@ against
--- @'blockFetchClientSenderStream'@ using @'connect'@.
+-- | Test @'blockRequestReceiverStream'@ against
+-- @'blockRequestSenderStream'@ using @'connect'@.
 --
-prop_connectBlockFetchClientProtocol_acc
+prop_connectBlockRequestProtocol_acc
   :: [(ArbitraryPoint, ArbitraryPoint)]
   -> Property
-prop_connectBlockFetchClientProtocol_acc as =
+prop_connectBlockRequestProtocol_acc as =
   let ranges = map (\(ArbitraryPoint p, ArbitraryPoint p') -> ChainRange p p') as
-      client = blockFetchClientSenderFromProducer (Pipes.each ranges >> return ())
+      client = blockRequestSenderFromProducer (Pipes.each ranges >> return ())
   in case  runIdentity $ connect
-            (blockFetchServerReceiverStream accumulatingBlockFetchServerReceiver)
-            (blockFetchClientSenderStream client) of
+            (blockRequestReceiverStream accumulatingBlockRequestReceiver)
+            (blockRequestSenderStream client) of
         These res _ -> res === ranges
         This res    -> res === ranges
         That _      -> property False
 
--- | Test @'constantReceiver'@ against @'blockFetchClientSenderFromProducer'@ using either
--- @'directBlockFetchClient'@ or @'connect'@.
+-- | Test @'constantReceiver'@ against @'blockRequestSenderFromProducer'@ using either
+-- @'directBlockRequest'@ or @'connect'@.
 --
-blockFetchClientProtocol_experiment
+blockRequestProtocol_experiment
   :: forall m.
      ( MonadSTM m
      , MonadTimer m
      , MonadProbe m
      )
-  => (forall a b. BlockFetchServerReceiver (ChainRange BlockHeader) m a -> BlockFetchClientSender (ChainRange BlockHeader) m b -> m ())
-  -- ^ either 'directBlockFetchClient' or @'connect'@
+  => (forall a b. BlockRequestReceiver (ChainRange BlockHeader) m a -> BlockRequestSender (ChainRange BlockHeader) m b -> m ())
+  -- ^ either 'directBlockRequest' or @'connect'@
   -> [(ArbitraryPoint, ArbitraryPoint)]
   -> Probe m Property
   -> m ()
-blockFetchClientProtocol_experiment run as probe = do
+blockRequestProtocol_experiment run as probe = do
   let ranges = map (\(ArbitraryPoint p, ArbitraryPoint p') -> ChainRange p p') as
   var <- atomically $ newTVar []
   let server = constantReceiver (\a -> atomically $ modifyTVar var (a:)) (return ())
-      client = blockFetchClientSenderFromProducer (void $ Pipes.each ranges)
+      client = blockRequestSenderFromProducer (void $ Pipes.each ranges)
 
   _ <- run server client
 
   res <- atomically $ readTVar var
   probeOutput probe $ reverse res === ranges
 
-prop_directBlockFetchClientProtocol_ST
+prop_directBlockRequestProtocol_ST
   :: [(ArbitraryPoint, ArbitraryPoint)]
   -> Property
-prop_directBlockFetchClientProtocol_ST as = runST $ runExperiment $
-  blockFetchClientProtocol_experiment @(Free (SimF _))
-    (\ser cli -> void $ directBlockFetchClient ser cli) as
+prop_directBlockRequestProtocol_ST as = runST $ runExperiment $
+  blockRequestProtocol_experiment @(Free (SimF _))
+    (\ser cli -> void $ directBlockRequest ser cli) as
 
-prop_directBlockFetchClientProtocol_IO
+prop_directBlockRequestProtocol_IO
   :: [(ArbitraryPoint, ArbitraryPoint)]
   -> Property
-prop_directBlockFetchClientProtocol_IO as = ioProperty $ runExperiment $
-  blockFetchClientProtocol_experiment
-    (\ser cli -> void $ directBlockFetchClient ser cli)  as
+prop_directBlockRequestProtocol_IO as = ioProperty $ runExperiment $
+  blockRequestProtocol_experiment
+    (\ser cli -> void $ directBlockRequest ser cli)  as
 
-prop_connectBlockFetchClientProtocol_ST
+prop_connectBlockRequestProtocol_ST
   :: [(ArbitraryPoint, ArbitraryPoint)]
   -> Property
-prop_connectBlockFetchClientProtocol_ST as = runST $ runExperiment $
-  blockFetchClientProtocol_experiment @(Free (SimF _))
+prop_connectBlockRequestProtocol_ST as = runST $ runExperiment $
+  blockRequestProtocol_experiment @(Free (SimF _))
     (\ser cli -> void $ connect
-      (blockFetchServerReceiverStream ser)
-      (blockFetchClientSenderStream cli)) as
+      (blockRequestReceiverStream ser)
+      (blockRequestSenderStream cli)) as
 
-prop_connectBlockFetchClientProtocol_IO
+prop_connectBlockRequestProtocol_IO
   :: [(ArbitraryPoint, ArbitraryPoint)]
   -> Property
-prop_connectBlockFetchClientProtocol_IO as = ioProperty $ runExperiment $
-  blockFetchClientProtocol_experiment
+prop_connectBlockRequestProtocol_IO as = ioProperty $ runExperiment $
+  blockRequestProtocol_experiment
     (\ser cli -> void $ connect
-      (blockFetchServerReceiverStream ser)
-      (blockFetchClientSenderStream cli)) as
+      (blockRequestReceiverStream ser)
+      (blockRequestSenderStream cli)) as
 
--- | @'BlockFetchClientReceiver'@ which accumulates received blocks.
+-- | @'BlockFetchReceiver'@ which accumulates received blocks.
 --
 blockFetchClientReceiver
   :: Applicative m
-  => BlockFetchClientReceiver block m [block]
+  => BlockFetchReceiver block m [block]
 blockFetchClientReceiver = receiver []
  where
-  receiver acc = BlockFetchClientReceiver {
+  receiver acc = BlockFetchReceiver {
       recvMsgStartBatch = pure (blockReceiver acc),
       recvMsgNoBlocks   = pure (receiver acc),
       recvMsgDoneClient = acc
     }
-  blockReceiver acc = BlockFetchClientReceiveBlocks {
+  blockReceiver acc = BlockFetchReceiveBlocks {
       recvMsgBlock       = \b -> pure (blockReceiver (b : acc)),
       recvMsgBatchDone   = pure (receiver acc),
       recvMsgServerError = pure (receiver acc)
     }
 
 {-------------------------------------------------------------------------------
--- @'BlockFetchServerProtocol' tests
+-- @'BlockFetchProtocol' tests
 -------------------------------------------------------------------------------}
 
--- | Test @'BlockFetchServerProtocol'@ using both @'directBlockFetchServer'@
+-- | Test @'BlockFetchProtocol'@ using both @'directBlockFetch'@
 -- and @'connect\''@.  The test is requesting ranges of integers @(n, m) ::
 -- (Int, In)@.  If ranges for which @x > y@ will be treated as there are no
 -- corresponding blocks (@'Int'@s), otherwise it will stream the list of all
 -- @[x .. y]@.
 --
-blockFetchServerProtocol_experiment
+blockFetchProtocol_experiment
   :: forall m.
      ( MonadSTM m
      , MonadTimer m
@@ -223,17 +208,17 @@ blockFetchServerProtocol_experiment
   => [(Int, Int)]
   -> Probe m Property
   -> m ()
-blockFetchServerProtocol_experiment ranges probe = do
+blockFetchProtocol_experiment ranges probe = do
   var  <- atomically $ newTVar (map Element ranges ++ [End])
   var' <- atomically $ newTVar (map Element ranges ++ [End])
 
   let sender = blockFetchServerSender () (readRequest var) blockStream
-  (_, resDirect) <- directBlockFetchServer sender blockFetchClientReceiver
+  (_, resDirect) <- directBlockFetch sender blockFetchClientReceiver
 
   let sender' = blockFetchServerSender () (readRequest var') blockStream
   resConn <- connect
     (blockFetchServerStream sender')
-    (blockFetchClientReceiverStream blockFetchClientReceiver)
+    (blockFetchReceiverStream blockFetchClientReceiver)
 
   let res = reverse $ concatMap (\(x, y) -> [x..y]) ranges
   case resConn of
@@ -250,17 +235,17 @@ blockFetchServerProtocol_experiment ranges probe = do
       []        -> retry
       (r : rs') -> writeTVar v rs' $> r
 
-prop_blockFetchServerProtocol_ST
+prop_blockFetchProtocol_ST
   :: NonEmptyList (Int, Int)
   -> Property
-prop_blockFetchServerProtocol_ST (NonEmpty as) = runST $ runExperiment $
-  blockFetchServerProtocol_experiment as
+prop_blockFetchProtocol_ST (NonEmpty as) = runST $ runExperiment $
+  blockFetchProtocol_experiment as
 
-prop_blockFetchServerProtocol_IO
+prop_blockFetchProtocol_IO
   :: NonEmptyList (Int, Int)
   -> Property
-prop_blockFetchServerProtocol_IO (NonEmpty as) = ioProperty $ runExperiment $
-  blockFetchServerProtocol_experiment as
+prop_blockFetchProtocol_IO (NonEmpty as) = ioProperty $ runExperiment $
+  blockFetchProtocol_experiment as
 
 {-------------------------------------------------------------------------------
 -- Round trip tests
@@ -276,21 +261,21 @@ roundTrip_experiment
      , MonadTimer m
      , MonadProbe m
      )
-  => (forall a b. BlockFetchServerReceiver (Maybe (Int, Int)) m a
-        -> BlockFetchClientSender (Maybe (Int, Int)) m b
+  => (forall a b. BlockRequestReceiver (Maybe (Int, Int)) m a
+        -> BlockRequestSender (Maybe (Int, Int)) m b
         -> m ())
-        -- ^ run @'BlockFetchClientProtocol'@
+        -- ^ run @'BlockRequestProtocol'@
   -> (forall a. BlockFetchServerSender Int m a
-        -> BlockFetchClientReceiver Int m [Int]
+        -> BlockFetchReceiver Int m [Int]
         -> m (Maybe [Int]))
-        -- ^ run @'BlockFetchServerProtocol'@
+        -- ^ run @'BlockFetchProtocol'@
   -> [(Int, Int)] -- ^ ranges to send
   -> Positive Int -- ^ size of queue connecting both servers
   -> Probe m Property
   -> m ()
 roundTrip_experiment runClient runServer ranges (Positive queueSize) probe = do
   (serverReceiver, serverSender) <- connectThroughQueue (fromIntegral queueSize) blockStream
-  let clientSender = blockFetchClientSenderFromProducer
+  let clientSender = blockRequestSenderFromProducer
         (Pipes.each (map Just ranges ++ [Nothing]) >> return ())
   fork $ runClient serverReceiver clientSender
   fork $ do
@@ -308,8 +293,8 @@ prop_directRoundTripST
   -> Property
 prop_directRoundTripST ranges queueSize = runST $ runExperiment $
   roundTrip_experiment @(Free (SimF _))
-    (\ser cli -> void $ directBlockFetchClient ser cli)
-    (\ser cli -> (Just . snd) <$> directBlockFetchServer ser cli)
+    (\ser cli -> void $ directBlockRequest ser cli)
+    (\ser cli -> Just . snd <$> directBlockFetch ser cli)
     ranges
     queueSize
 
@@ -319,8 +304,8 @@ prop_directRoundTripIO
   -> Property
 prop_directRoundTripIO ranges queueSize = ioProperty $ runExperiment $
   roundTrip_experiment
-    (\ser cli -> void $ directBlockFetchClient ser cli)
-    (\ser cli -> (Just . snd) <$> directBlockFetchServer ser cli)
+    (\ser cli -> void $ directBlockRequest ser cli)
+    (\ser cli -> Just . snd <$> directBlockFetch ser cli)
     ranges
     queueSize
 
@@ -336,11 +321,11 @@ prop_connectRoundTripST
 prop_connectRoundTripST ranges queueSize = runST $ runExperiment $
   roundTrip_experiment
     (\ser cli -> void $ connect
-      (blockFetchServerReceiverStream ser)
-      (blockFetchClientSenderStream cli))
+      (blockRequestReceiverStream ser)
+      (blockRequestSenderStream cli))
     (\ser cli -> that <$> connect
       (blockFetchServerStream ser)
-      (blockFetchClientReceiverStream cli))
+      (blockFetchReceiverStream cli))
     ranges
     queueSize
 
@@ -351,10 +336,10 @@ prop_connectRoundTripIO
 prop_connectRoundTripIO ranges queueSize = ioProperty $ runExperiment $
   roundTrip_experiment
     (\ser cli -> void $ connect
-      (blockFetchServerReceiverStream ser)
-      (blockFetchClientSenderStream cli))
+      (blockRequestReceiverStream ser)
+      (blockRequestSenderStream cli))
     (\ser cli -> that <$> connect
       (blockFetchServerStream ser)
-      (blockFetchClientReceiverStream cli))
+      (blockFetchReceiverStream cli))
     ranges
     queueSize
