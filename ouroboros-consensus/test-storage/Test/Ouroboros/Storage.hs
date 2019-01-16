@@ -34,7 +34,7 @@ import qualified System.Directory as Dir
 import qualified System.IO as IO
 import           System.IO.Temp
 
-import           Test.Ouroboros.Storage.Immutable.Sim (demoScript)
+import           Test.Ouroboros.Storage.ImmutableDB.Sim (demoScript)
 import           Test.QuickCheck
 import           Test.QuickCheck.Monadic
 import           Test.Tasty (TestTree, testGroup)
@@ -43,6 +43,7 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 import           Control.Monad.Class.MonadSTM
 
+import           Ouroboros.Storage.ImmutableDB
 import           Ouroboros.Storage.FS.Class
 import qualified Ouroboros.Storage.FS.Class.Example as FS.Class.Example
 import           Ouroboros.Storage.FS.Class.Types
@@ -52,7 +53,6 @@ import qualified Ouroboros.Storage.FS.Sim.FsTree as FS
 import           Ouroboros.Storage.FS.Sim.MockFS (MockFS)
 import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
 import           Ouroboros.Storage.FS.Sim.STM
-import           Ouroboros.Storage.Immutable.DB
 
 --
 -- The list of all tests

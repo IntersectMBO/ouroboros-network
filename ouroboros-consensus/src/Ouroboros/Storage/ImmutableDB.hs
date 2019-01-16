@@ -15,7 +15,7 @@ sophisticated ones.
 
 --}
 
-module Ouroboros.Storage.Immutable.DB (
+module Ouroboros.Storage.ImmutableDB (
     ImmutableDB -- opaque
   , RelativeSlot(..)
   , ImmutableDBError(..)

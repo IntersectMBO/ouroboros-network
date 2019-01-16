@@ -1,6 +1,6 @@
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE OverloadedStrings #-}
-module Test.Ouroboros.Storage.Immutable.Sim
+module Test.Ouroboros.Storage.ImmutableDB.Sim
     ( demoScript ) where
 
 {-- | An example interaction with the immutable data store using the
@@ -20,7 +20,7 @@ import qualified System.IO as IO
 import           Control.Monad.Class.MonadSTM
 
 import           Ouroboros.Storage.FS.Class
-import           Ouroboros.Storage.Immutable.DB
+import           Ouroboros.Storage.ImmutableDB
 
 
 demoScript :: ( MonadMask m
