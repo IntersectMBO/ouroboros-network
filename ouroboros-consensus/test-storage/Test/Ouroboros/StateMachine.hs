@@ -823,11 +823,12 @@ showLabelledExamples' mReplay numTests focus = do
 
     labelledExamplesWith (stdArgs { replay     = Just (mkQCGen replaySeed, 0)
                                   , maxSuccess = numTests
-                                  })
-      $ forAllShrinkShow (QSM.generateCommands sm' Nothing)
-                         (QSM.shrinkCommands   sm')
-                         pp $ \cmds ->
-          collects (filter focus . tag . execCmds $ cmds) (property True)
+                                  }) $
+      forAllShrinkShow (QSM.generateCommands sm' Nothing)
+                       (QSM.shrinkCommands   sm')
+                       pp $ \cmds ->
+        collects (filter focus . tag . execCmds $ cmds) $
+          property True
 
     putStrLn $ "Used replaySeed " ++ show replaySeed
   where
@@ -853,7 +854,7 @@ prop_sequential tmpDir =
         removeDirectoryRecursive tstTmpDir
 
       QSM.prettyCommands sm' hist
-        $ collects (tag (execCmds cmds))
+        $ tabulate "Tags" (map show $ tag (execCmds cmds))
         $ counterexample ("Mount point: " ++ tstTmpDir)
         $ res === QSM.Ok
 
