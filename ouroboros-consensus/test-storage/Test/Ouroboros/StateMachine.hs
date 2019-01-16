@@ -331,17 +331,14 @@ resolveCmd ev@Event{..} = resolveHandle (mockFS eventBefore) <$> eventMockCmd ev
 
 -- | Construct an event
 --
--- In order to step the entire model, we need a way to map new mock
--- handles to new handles in the model. We can do this in a few ways:
---
--- * using a real response ('lockstep')
--- * using already generated symbolic references ('execCmd')
-event :: forall r. (Show1 r, Ord1 r, HasCallStack)
-      => Model r
-      -> Cmd :@ r
-      -> (Resp FsPath Mock.Handle -> (KnownPaths r, KnownHandles r))
-      -> Event r
-event model@Model{..} cmd newRefs = Event {
+-- When we execute both the model and the real implementation in lockstep,
+-- we get two responses: this suffices to update the model.
+lockstep :: forall r. (Show1 r, Ord1 r, HasCallStack)
+         => Model r
+         -> Cmd :@ r
+         -> Resp :@ r
+         -> Event r
+lockstep model@Model{..} cmd (At resp) = Event {
       eventBefore   = model
     , eventCmd      = cmd
     , eventAfter    = Model {
@@ -353,15 +350,8 @@ event model@Model{..} cmd newRefs = Event {
     }
   where
     (resp', mockFS') = step model cmd
-    (newPaths, newHandles) = newRefs resp'
-
--- | Step the model using real response
-lockstep :: (Show1 r, Ord1 r, HasCallStack)
-         => Model r -> Cmd :@ r -> Resp :@ r -> Event r
-lockstep model cmd (At resp) = event model cmd $ \resp' -> (
-      RE.fromList $ zip (paths   resp) (paths   resp')
-    , RE.fromList $ zip (handles resp) (handles resp')
-    )
+    newPaths   = RE.fromList $ zip (paths   resp) (paths   resp')
+    newHandles = RE.fromList $ zip (handles resp) (handles resp')
 
 {-------------------------------------------------------------------------------
   Generator
