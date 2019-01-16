@@ -75,6 +75,11 @@ library
                        Ouroboros.Storage.FS.Sim.Pure
                        Ouroboros.Storage.FS.Sim.STM
                        Ouroboros.Storage.ImmutableDB
+                       Ouroboros.Storage.ImmutableDB.API
+                       Ouroboros.Storage.ImmutableDB.Impl
+                       Ouroboros.Storage.ImmutableDB.Index
+                       Ouroboros.Storage.ImmutableDB.Types
+                       Ouroboros.Storage.ImmutableDB.Util
                        Ouroboros.Storage.Util
                        Ouroboros.Storage.IO
 
@@ -131,6 +136,7 @@ library
                        fingertree        >=0.1.4.2 && <0.2,
                        memory            >=0.14  && <0.15,
                        mtl               >=2.2   && <2.3,
+                       pipes             >=4.3   && <4.4,
                        serialise         >=0.2   && <0.3,
                        stm,
                        text              >=1.2   && <1.3,

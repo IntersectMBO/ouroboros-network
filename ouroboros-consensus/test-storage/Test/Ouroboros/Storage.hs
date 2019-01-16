@@ -9,7 +9,6 @@ import qualified Test.Ouroboros.Storage.ImmutableDB as ImmutableDB
 import           Test.Tasty (TestTree, testGroup)
 
 
-
 --
 -- The list of all tests
 --

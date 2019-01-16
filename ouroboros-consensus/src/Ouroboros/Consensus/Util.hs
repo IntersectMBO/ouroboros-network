@@ -18,6 +18,7 @@ module Ouroboros.Consensus.Util (
   , checkThat
   , pickOne
   , markLast
+  , lastMaybe
   ) where
 
 import qualified Data.ByteString as Strict
@@ -92,3 +93,8 @@ markLast :: [a] -> [Either a a]
 markLast [] = []
 markLast xs = let (y:ys) = reverse xs
               in reverse $ Right y : map Left ys
+
+lastMaybe :: [a] -> Maybe a
+lastMaybe []     = Nothing
+lastMaybe [x]    = Just x
+lastMaybe (_:xs) = lastMaybe xs

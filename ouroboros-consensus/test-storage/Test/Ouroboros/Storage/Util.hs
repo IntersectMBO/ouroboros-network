@@ -72,6 +72,23 @@ expectDBError :: (HasCallStack, Show a)
               -> Assertion
 expectDBError = expectError prettyImmutableDBError
 
+expectUserError :: (HasCallStack, Show a)
+                => (UserError -> Bool)
+                -> Either ImmutableDBError a
+                -> Assertion
+expectUserError userErrPred = expectDBError $ \case
+    UserError ue _ | userErrPred ue -> True
+    _ -> False
+
+expectUnexpectedError :: (HasCallStack, Show a)
+                      => (UnexpectedError -> Bool)
+                      -> Either ImmutableDBError a
+                      -> Assertion
+expectUnexpectedError unexpectetdErrPred = expectDBError $ \case
+    UnexpectedError ue | unexpectetdErrPred ue -> True
+    _ -> False
+
+
 expectResult :: (HasCallStack, Eq a, Show a)
              => (e -> String)
              -> a
@@ -147,4 +164,4 @@ apiEquivalenceDB :: (HasCallStack, Eq a, Show a)
                  -> (forall m. (MonadMask m, MonadSTM m, HasCallStack, HasFSE m)
                             => m (Either ImmutableDBError a))
                  -> Assertion
-apiEquivalenceDB = apiEquivalence prettyImmutableDBError sameDBError
+apiEquivalenceDB = apiEquivalence prettyImmutableDBError sameImmutableDBError
