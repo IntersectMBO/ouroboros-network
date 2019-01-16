@@ -43,43 +43,42 @@ tests :: HasCallStack => FilePath -> TestTree
 tests tmpDir = testGroup "HasFS"
     [ StateMachine.tests tmpDir
 
-      -- testCase     "touchFile works" test_touchFile
+    -- , testCase     "touchFile works"       test_touchFile
     , testCase     "createDirectory works" test_createDirectory
-    , testCase     "listDirectory works" test_listDirectory
+    , testCase     "listDirectory works"   test_listDirectory
       -- hOpen
     , testCase     "hOpen on an existent folder succeeds"  test_hOpenDoesExist
     , testCase     "hOpen on an non-existent folder fails" test_hOpenDoesNotExist
-    , testProperty "hOpen(Sim) == hOpen(IO)"     $ prop_hOpenEquivalence
-    , testProperty "hOpen read contention"       $ prop_hOpenReadContention
-    , testProperty "hOpen read/write contention" $ prop_hOpenReadWriteContention
-    , testProperty "hOpen ReadOnly and hput"     $ prop_hOpenWriteInvalid
-    , testProperty "hOpen WriteOnly and hGet "   $ prop_hOpenReadInvalid
-    , testProperty "hOpen and hPut with Append " $ prop_hOpenAppend
-    , testProperty "hOpen on directories fails"   $ prop_hOpenDirectory
+    , testProperty "hOpen(Sim) == hOpen(IO)"     prop_hOpen
+    , testCase     "hOpen read contention"       test_hOpenReadContention
+    , testCase     "hOpen read/write contention" test_hOpenReadWriteContention
+    , testCase     "hOpen ReadOnly and hPut"     test_hOpenWriteInvalid
+    , testCase     "hOpen WriteOnly and hGet "   test_hOpenReadInvalid
+    , testCase     "hOpen and hPut with Append " test_hOpenAppend
+    , testCase     "hOpen on directories fails"  test_hOpenDirectory
       -- hClose
-    , testCase     "hClose twice no-op "  $ test_hCloseTwice
-    , testProperty "hClose twice no-op equivalence"  $ prop_hCloseTwiceEquivalence
+    , testCase     "hClose twice no-op " test_hCloseTwice
       -- hPut
-    , testProperty "hPut equivalence"  $ prop_hPutEquivalence
+    , testCase     "hPut equivalence" test_hPut
       -- hPutBuffer
-    , testProperty "hPutBuffer chunk boundaries"  $ prop_hPutBufferBoundaries
+    , testProperty "hPutBuffer chunk boundaries" prop_hPutBufferBoundaries
       -- hGet
-    , testProperty "hGet equivalence"  $ prop_hGetEquivalence
+    , testCase     "hGet equivalence"  test_hGet
+    , testCase     "hGet moves offset" test_hGetOffset
       -- hSeek
-    , testProperty "hSeek from end" $ prop_hSeekFromEnd
-    , testProperty "hGet moves offset" $ prop_hGetOffset
+    , testCase     "hSeek from end" test_hSeekFromEnd
       -- hTruncate
-    , testProperty "hTruncate equivalence"  $ prop_hTruncateEquivalence
+    , testCase     "hTruncate equivalence" test_hTruncate
       -- hCreateDirectory
-    , testProperty "hCreate directories and parents" $ prop_hCreateDirectory
+    , testCase     "hCreate directories and parents" test_hCreateDirectory
       -- doesFileExist
-    , testCase "doesFileExist yields True  for an existing file" $ test_doesFileExistOK
-    , testCase "doesFileExist yields False for a non-existing file" $ test_doesFileExistKO
+    , testCase     "doesFileExist yields True  for an existing file"    test_doesFileExistOK
+    , testCase     "doesFileExist yields False for a non-existing file" test_doesFileExistKO
       -- doesDirectoryExist
-    , testCase "doesDirectoryExist yields True  for an existing directory" $ test_doesDirectoryExistOK
-    , testCase "doesDirectoryExist yields False for a non-existing directory" $ test_doesDirectoryExistKO
-      -- mockDemo
-    , testProperty "mockDemo equivalence" $ prop_mockDemo
+    , testCase     "doesDirectoryExist yields True  for an existing directory"    test_doesDirectoryExistOK
+    , testCase     "doesDirectoryExist yields False for a non-existing directory" test_doesDirectoryExistKO
+      -- example
+    , testCase     "example equivalence" test_example
     ]
 
 
@@ -104,27 +103,26 @@ test_touchFile = do
 
 test_createDirectory :: Assertion
 test_createDirectory = do
-    let action1 = createDirectory ["foo"]
-        result1 = Folder $ M.fromList [("foo", Folder mempty)]
-        action2 = createDirectoryIfMissing True ["demo", "foo"]
-        result2 = (Folder $ M.fromList [
-                    ("demo", Folder $ M.fromList [("foo", Folder mempty)]
-                  )])
-    withMockFSE (runExceptT action1) $ \(_, fs1) -> Mock.mockFiles fs1 @?= result1
-    withMockFSE (runExceptT action2) $ \(_, fs2) -> Mock.mockFiles fs2 @?= result2
+    withMockFSE (\(_, fs1) -> Mock.mockFiles fs1 @?= result1) $ runExceptT $
+      createDirectory ["foo"]
+    withMockFSE (\(_, fs2) -> Mock.mockFiles fs2 @?= result2) $ runExceptT $
+      createDirectoryIfMissing True ["demo", "foo"]
+  where
+     result1 = Folder $ M.fromList [("foo", Folder mempty)]
+     result2 = (Folder $ M.fromList [
+                 ("demo", Folder $ M.fromList [("foo", Folder mempty)]
+               )])
 
 test_listDirectory :: Assertion
-test_listDirectory = do
-    let script = runExceptT $ do
-             createDirectory ["foo"]
-             withFile ["foo", "foo.txt"] IO.WriteMode $ \_ -> return ()
-             withFile ["foo", "bar.txt"] IO.WriteMode $ \_ -> return ()
-             withFile ["foo", "quux.md"] IO.WriteMode $ \_ -> return ()
-             listDirectory ["foo"]
-    withMockFSE script $ \(r, _) ->
-        case r of
-             Left e     -> fail (show e)
-             Right dirs -> dirs @?= Set.fromList ["foo.txt", "bar.txt", "quux.md"]
+test_listDirectory =
+    withMockFSE (\(r, _) -> expectFsResult files r) $ runExceptT $ do
+      createDirectory ["foo"]
+      withFile ["foo", "foo.txt"] IO.WriteMode $ \_ -> return ()
+      withFile ["foo", "bar.txt"] IO.WriteMode $ \_ -> return ()
+      withFile ["foo", "quux.md"] IO.WriteMode $ \_ -> return ()
+      listDirectory ["foo"]
+  where
+    files = Set.fromList ["foo.txt", "bar.txt", "quux.md"]
 
 --
 -- hOpen tests
@@ -132,126 +130,113 @@ test_listDirectory = do
 
 test_hOpenDoesExist :: Assertion
 test_hOpenDoesExist =
-    withMockFSE (runExceptT $ hOpen ["foo.txt"] IO.WriteMode) $ \(r, fs) -> do
-    assertBool "hOpen failed" (isRight r)
-    -- The file must have been created
-    assertBool "file not in the mock FS" $
+    flip withMockFSE (runExceptT $ hOpen ["foo.txt"] IO.WriteMode) $ \(r, fs) -> do
+      assertBool "hOpen failed" (isRight r)
+      -- The file must have been created
+      assertBool "file not in the mock FS" $
         isRight (FS.index ["foo.txt"] (Mock.mockFiles fs))
 
 test_hOpenDoesNotExist :: Assertion
 test_hOpenDoesNotExist =
-    withMockFS (runExceptT $ hOpen ["test", "foo.txt"] IO.WriteMode) $ \(r, _) ->
-    expectError (isFsErrorType FsResourceDoesNotExist) r "return type was not FsResourceDoesNotExist"
+    withMockFS (\(r, _) -> expectFsError FsResourceDoesNotExist r) $
+      runExceptT $ hOpen ["test", "foo.txt"] IO.WriteMode
 
-prop_hOpenEquivalence :: Property
-prop_hOpenEquivalence = monadicIO $ do
-    ioMode   <- pick $ elements [IO.ReadMode, IO.AppendMode, IO.ReadWriteMode]
-    run $ apiEquivalence (runExceptT $ do
-                             h <- hOpen ["foo.txt"] ioMode
-                             hClose h
-                         ) sameFsError prettyFsError
 
-prop_hOpenWriteInvalid :: Property
-prop_hOpenWriteInvalid = monadicIO $ do
-    run $ apiEquivalence (runExceptT $ do
-                             _ <- hOpen ["foo.txt"] IO.WriteMode
-                             h2 <- hOpen ["foo.txt"] IO.ReadMode
-                             hPut h2 "haskell-is-nice"
-                         ) sameFsError prettyFsError
+prop_hOpen :: Property
+prop_hOpen = monadicIO $ do
+    ioMode <- pick $ elements [IO.ReadMode, IO.AppendMode, IO.ReadWriteMode]
+    let assrt =
+          if ioMode == IO.ReadMode
+          then expectFsError FsResourceDoesNotExist
+          else expectFsResult ()
+    run $ apiEquivalenceFs assrt $ runExceptT $ do
+      h <- hOpen ["foo.txt"] ioMode
+      hClose h
 
-prop_hOpenReadInvalid :: Property
-prop_hOpenReadInvalid = monadicIO $ do
-    run $ apiEquivalence (runExceptT $ do
-                            h2 <- hOpen ["foo.txt"] IO.AppendMode
-                            hGet h2 5
-                        ) sameFsError prettyFsError
+test_hOpenWriteInvalid :: Assertion
+test_hOpenWriteInvalid = apiEquivalenceFs (expectFsError FsInvalidArgument) $
+    runExceptT $ do
+      _  <- hOpen ["foo.txt"] IO.WriteMode
+      h2 <- hOpen ["foo.txt"] IO.ReadMode
+      hPut h2 "haskell-is-nice"
 
-prop_hOpenAppend :: Property
-prop_hOpenAppend = monadicIO $ do
-    run $ apiEquivalence (runExceptT $ do
-                            h1 <- hOpen ["foo.txt"] IO.AppendMode
-                            h2 <- hOpen ["foo.txt"] IO.ReadMode
-                            ls <- sequence
-                                [
-                                  hPut h1 "12"
-                                , hPut h1 "34"
-                                , hPut h1 "56"
-                                , hPut h1 "78"
-                                ]
-                            -- IO.AppendMode moves offset at the end of file before each hPut.
-                            -- This means the file consists of all 8 bytes written above.
-                            bs <- hGet h2 8
-                            offset <- hSeek h2 IO.RelativeSeek 0
-                            return (ls, bs, offset)
-                        ) sameFsError prettyFsError
+test_hOpenReadInvalid :: Assertion
+test_hOpenReadInvalid = apiEquivalenceFs (expectFsError FsInvalidArgument) $
+    runExceptT $ do
+      h2 <- hOpen ["foo.txt"] IO.AppendMode
+      hGet h2 5
 
--- Opening two read handles on the same file should be allowed in both
--- implementations.
-prop_hOpenReadContention :: Property
-prop_hOpenReadContention = monadicIO $ do
-    run $ apiEquivalence (runExceptT $ do
-                             h1 <- hOpen ["foo.txt"] IO.ReadMode
-                             h2 <- hOpen ["foo.txt"] IO.ReadMode
-                             hClose h1
-                             hClose h2
-                         ) sameFsError prettyFsError
+test_hOpenAppend :: Assertion
+test_hOpenAppend = apiEquivalenceFs (expectFsResult res) $
+    runExceptT $ do
+      h1 <- hOpen ["foo.txt"] IO.AppendMode
+      h2 <- hOpen ["foo.txt"] IO.ReadMode
+      ls <- sequence
+        [ hPut h1 "12"
+        , hPut h1 "34"
+        , hPut h1 "56"
+        , hPut h1 "78"
+        ]
+      -- IO.AppendMode moves offset at the end of file before each hPut.
+      -- This means the file consists of all 8 bytes written above.
+      bs <- hGet h2 8
+      hSeek h2 IO.RelativeSeek 0
+      return (ls, bs)
+  where
+    res = ([2, 2, 2, 2], "12345678")
 
-prop_hOpenReadWriteContention :: Property
-prop_hOpenReadWriteContention = monadicIO $ do
-    run $ apiEquivalence (runExceptT $ do
-                             h2 <- hOpen ["foo.txt"] IO.WriteMode
-                             h1 <- hOpen ["foo.txt"] IO.ReadMode
-                             hClose h1
-                             hClose h2
-                         ) sameFsError prettyFsError
+test_hOpenReadContention :: Assertion
+test_hOpenReadContention = apiEquivalenceFs (expectFsResult ()) $
+    runExceptT $ do
+      -- First create it
+      h0 <- hOpen ["foo.txt"] IO.WriteMode
+      hClose h0
+      h1 <- hOpen ["foo.txt"] IO.ReadMode
+      h2 <- hOpen ["foo.txt"] IO.ReadMode
+      hClose h1
+      hClose h2
 
-prop_hOpenDirectory :: Property
-prop_hOpenDirectory = monadicIO $ do
-    run $ apiEquivalence (runExceptT $ do
-                             createDirectoryIfMissing True ["foo"]
-                             h1 <- hOpen ["foo"] IO.WriteMode
-                             hClose h1
-                         ) sameFsError prettyFsError
+test_hOpenReadWriteContention :: Assertion
+test_hOpenReadWriteContention = apiEquivalenceFs (expectFsResult ()) $
+    runExceptT $ do
+      h2 <- hOpen ["foo.txt"] IO.WriteMode
+      h1 <- hOpen ["foo.txt"] IO.ReadMode
+      hClose h1
+      hClose h2
 
-prop_mockDemo :: Property
-prop_mockDemo = monadicIO $ run $
-    apiEquivalence (runExceptT $ do
-                       -- The mockDemoScript assumes the presence of some
-                       -- files and dirs.
-                       createDirectoryIfMissing True ["var", "tmp"]
-                       withFile ["var", "tmp", "foo.txt"] IO.WriteMode $ \_ ->
-                          return ()
-                       FS.Class.Example.example
-                   ) sameFsError prettyFsError
+test_hOpenDirectory :: Assertion
+test_hOpenDirectory =
+    apiEquivalenceFs (expectFsError FsResourceInappropriateType) $
+    runExceptT $ do
+      createDirectoryIfMissing True ["foo"]
+      h1 <- hOpen ["foo"] IO.WriteMode
+      hClose h1
+
+test_example :: Assertion
+test_example = apiEquivalenceFs (expectFsResult ["test", "block"]) $
+    runExceptT $ do
+      -- The example assumes the presence of some files and dirs.
+      createDirectoryIfMissing True ["var", "tmp"]
+      withFile ["var", "tmp", "foo.txt"] IO.WriteMode $ \_ -> return ()
+      FS.Class.Example.example
 
 --
 -- hClose tests
 --
+
 test_hCloseTwice :: Assertion
-test_hCloseTwice =
-    withMockFS (runExceptT $ do
-                  h1 <- hOpen ["foo.txt"] IO.WriteMode
-                  hClose h1
-                  hClose h1
-               ) $ \(r, _) ->
-    case r of
-         Left e   -> fail $ prettyFsError e
-         Right () -> return ()
+test_hCloseTwice = apiEquivalenceFs (expectFsResult ()) $
+    runExceptT $ do
+      h1 <- hOpen ["test.txt"] IO.WriteMode
+      hClose h1
+      hClose h1
 
-prop_hCloseTwiceEquivalence :: Property
-prop_hCloseTwiceEquivalence = monadicIO $ do
-    run $ apiEquivalence (runExceptT $ do
-                             h1 <- hOpen ["test.txt"] IO.WriteMode
-                             hClose h1
-                             hClose h1
-                         ) sameFsError prettyFsError
+test_hPut :: Assertion
+test_hPut = apiEquivalenceFs (expectFsResult 15) $
+    runExceptT $
+      withFile ["test.txt"] IO.WriteMode $ \h1 ->
+        hPut h1 "haskell-is-nice"
 
-prop_hPutEquivalence :: Property
-prop_hPutEquivalence = monadicIO $ do
-    run $ apiEquivalence (runExceptT $
-              withFile ["test.txt"] IO.WriteMode $ \h1 ->
-                  hPut h1 "haskell-is-nice"
-        ) sameFsError prettyFsError
 
 -- In this test purposefully create a very small buffer and we test that our
 -- 'bytesWritten' count is consistent across chunks boundaries.
@@ -260,111 +245,83 @@ prop_hPutBufferBoundaries = monadicIO $ do
     bufferSize <- pick $ choose (1, 64)
     input      <- pick $ C8.pack <$> listOf1 (elements ['a' .. 'z'])
     threshold  <- pick $ choose (1, 512)
-    run $ apiEquivalence (runExceptT $ do
-                             b  <- newBuffer bufferSize
-                             h1 <- hOpen ["test.txt"] IO.WriteMode
-                             bytesWritten  <-
-                                 hPutBuffer h1 b (BL.lazyByteStringThreshold threshold input)
-                             _ <- hSeek h1 IO.AbsoluteSeek 0
-                             r <- hGet h1 (fromIntegral $ C8.length input)
-                             hClose h1
-                             return ( fromIntegral bytesWritten == (C8.length input)
-                                    , bytesWritten
-                                    , r
-                                    , C8.toStrict input == r
-                                    )
-                         ) sameFsError prettyFsError
+    run $ apiEquivalenceFs (expectFsResult (True, True)) $ runExceptT $ do
+      b  <- newBuffer bufferSize
+      h1 <- hOpen ["test.txt"] IO.WriteMode
+      bytesWritten  <-
+          hPutBuffer h1 b (BL.lazyByteStringThreshold threshold input)
+      _ <- hSeek h1 IO.AbsoluteSeek 0
+      r <- hGet h1 (fromIntegral $ C8.length input)
+      hClose h1
+      return ( fromIntegral bytesWritten == (C8.length input)
+             , C8.toStrict input == r )
 
-prop_hGetEquivalence :: Property
-prop_hGetEquivalence = monadicIO $ do
-    run $ apiEquivalence (runExceptT $
-              withFile ["test.txt"] IO.WriteMode $ \h1 -> do
-                  b  <- hPut h1 "haskell-is-nice"
-                  _ <- hSeek h1 IO.AbsoluteSeek 0
-                  r1 <- hGet h1 4
-                  r2 <- hGet h1 3
-                  _ <- hSeek h1 IO.RelativeSeek 3
-                  r3 <- hGet h1 4
-                  return (b, [r1,r2,r3])
-        ) sameFsError prettyFsError
+test_hGet :: Assertion
+test_hGet =
+    apiEquivalenceFs (expectFsResult (15, ["hask", "ell", "-nic"])) $
+    runExceptT $ withFile ["test.txt"] IO.WriteMode $ \h1 -> do
+      b  <- hPut h1 "haskell-is-nice"
+      _  <- hSeek h1 IO.AbsoluteSeek 0
+      r1 <- hGet h1 4
+      r2 <- hGet h1 3
+      _  <- hSeek h1 IO.RelativeSeek 3
+      r3 <- hGet h1 4
+      return (b, [r1, r2, r3])
 
-prop_hSeekFromEnd :: Property
-prop_hSeekFromEnd = monadicIO $ do
-    run $ apiEquivalence (runExceptT $
-                withFile ["foo.txt"] IO.WriteMode $ \h1 -> do
-                    b <- hPut  h1 "haskell-is-nice"
-                    r <- hSeek h1 IO.SeekFromEnd (-4)
-                    _ <- hPut  h1 "NICE"
-                    return (b,r)
-        ) sameFsError prettyFsError
+test_hSeekFromEnd :: Assertion
+test_hSeekFromEnd = apiEquivalenceFs (expectFsResult 15) $
+    runExceptT $ withFile ["foo.txt"] IO.WriteMode $ \h1 -> do
+      b <- hPut  h1 "haskell-is-nice"
+      hSeek h1 IO.SeekFromEnd (-4)
+      _ <- hPut  h1 "NICE"
+      return b
 
+test_hGetOffset :: Assertion
+test_hGetOffset = apiEquivalenceFs (expectFsResult ("01234", "A67")) $
+    runExceptT $ withFile ["foo.txt"] IO.WriteMode $ \h1 -> do
+      _  <- hPut h1 "0123456789"
+      hSeek h1 IO.AbsoluteSeek 0
+      b1 <- hGet h1 5
+      _  <- hPut h1 "A"
+      hSeek h1 IO.RelativeSeek (-1)
+      b2 <- hGet h1 3
+      return (b1, b2)
 
-prop_hGetOffset :: Property
-prop_hGetOffset = monadicIO $ do
-    run $ apiEquivalence (runExceptT $
-                withFile ["foo.txt"] IO.WriteMode $ \h1 -> do
-                    _  <- hPut h1 "0123456789"
-                    hSeek h1 IO.AbsoluteSeek 0
-                    b1 <- hGet h1 5
-                    _  <- hPut h1 "A"
-                    hSeek h1 IO.RelativeSeek (-1)
-                    b2 <- hGet h1 3
-                    return (b1, b2)
+test_hTruncate :: Assertion
+test_hTruncate =
+    apiEquivalenceFs (expectFsResult (15, ["haskell-is-nice", "haskell"])) $
+    runExceptT $
+      withFile ["test.txt"] IO.AppendMode $ \h1 ->
+      withFile ["test.txt"] IO.ReadMode $ \h2 -> do
+        b  <- hPut h1 "haskell-is-nice"
+        r1 <- hGet h2 15
+        hTruncate h1 7
+        _  <- hSeek h2 IO.AbsoluteSeek 0
+        r2 <- hGet h2 15
+        hClose h1
+        return (b, [r1,r2])
 
-        ) sameFsError prettyFsError
-
-prop_hTruncateEquivalence :: Property
-prop_hTruncateEquivalence = monadicIO $ do
-    run $ apiEquivalence (runExceptT $
-             withFile ["test.txt"] IO.AppendMode $ \h1 -> do
-               withFile ["test.txt"] IO.ReadMode $ \h2 -> do
-                 b  <- hPut h1 "haskell-is-nice"
-                 r1 <- hGet h2 15
-                 hTruncate h1 7
-                 _  <- hSeek h2 IO.AbsoluteSeek 0
-                 r2 <- hGet h2 15
-                 hClose h1
-                 return (b, [r1,r2])
-       ) sameFsError prettyFsError
-
-prop_hCreateDirectory :: Property
-prop_hCreateDirectory = withMaxSuccess 1 $ monadicIO $ do
-    run $ apiEquivalence (runExceptT $ do
-                            createDirectoryIfMissing True ["xxx", "yyy"]
-                        ) sameFsError prettyFsError
+test_hCreateDirectory :: Assertion
+test_hCreateDirectory = apiEquivalenceFs (expectFsResult ()) $
+    runExceptT $ createDirectoryIfMissing True ["xxx", "yyy"]
 
 test_doesFileExistOK :: Assertion
-test_doesFileExistOK =
-    withMockFS (runExceptT $ do
-                  h1 <- hOpen ["foo.txt"] IO.WriteMode
-                  hClose h1
-                  doesFileExist ["foo.txt"]
-               ) $ \(r, _) ->
-    case r of
-         Left e  -> fail $ prettyFsError e
-         Right b -> b @? "doesFileExist didn't work as expected"
+test_doesFileExistOK = withMockFSE (\(r, _) -> expectFsResult True r) $
+    runExceptT $ do
+      h1 <- hOpen ["foo.txt"] IO.WriteMode
+      hClose h1
+      doesFileExist ["foo.txt"]
 
 test_doesFileExistKO :: Assertion
-test_doesFileExistKO =
-    withMockFS (runExceptT $ doesFileExist ["foo.txt"]) $ \(r, _) ->
-    case r of
-         Left e  -> fail $ prettyFsError e
-         Right b -> not b @? "doesFileExist didn't work as expected"
+test_doesFileExistKO = withMockFSE (\(r, _) -> expectFsResult False r) $
+    runExceptT $ doesFileExist ["foo.txt"]
 
 test_doesDirectoryExistOK :: Assertion
-test_doesDirectoryExistOK =
-    withMockFS (runExceptT $ do
-                  createDirectoryIfMissing True ["test-dir"]
-                  doesDirectoryExist ["test-dir"]
-               ) $ \(r, _) ->
-    case r of
-         Left e  -> fail $ prettyFsError e
-         Right b -> b @? "doesDirectoryExist didn't work as expected"
+test_doesDirectoryExistOK = withMockFSE (\(r, _) -> expectFsResult True r) $
+    runExceptT $ do
+      createDirectoryIfMissing True ["test-dir"]
+      doesDirectoryExist ["test-dir"]
 
 test_doesDirectoryExistKO :: Assertion
-test_doesDirectoryExistKO =
-    withMockFS (runExceptT $ doesDirectoryExist ["test-dir"]) $ \(r, _) ->
-    case r of
-         Left e  -> fail $ prettyFsError e
-         Right b -> not b @? "doesDirectoryExist didn't work as expected"
-
+test_doesDirectoryExistKO = withMockFSE (\(r, _) -> expectFsResult False r) $
+    runExceptT $ doesDirectoryExist ["test-dir"]
