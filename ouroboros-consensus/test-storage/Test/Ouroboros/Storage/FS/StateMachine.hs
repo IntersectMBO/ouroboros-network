@@ -17,7 +17,7 @@
 
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
-module Test.Ouroboros.StateMachine (
+module Test.Ouroboros.Storage.FS.StateMachine (
     tests
   , showLabelledExamples
   ) where
