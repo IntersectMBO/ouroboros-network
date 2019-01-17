@@ -7,6 +7,7 @@ import qualified Test.ChainFragment (tests)
 import qualified Test.ChainProducerState (tests)
 import qualified Test.Pipe (tests)
 import qualified Test.Ouroboros.Network.Node (tests)
+import qualified Test.Ouroboros.Network.Protocol.ChainSync (tests)
 import qualified Test.Ouroboros.Network.Protocol.BlockFetch (tests)
 import qualified Test.Ouroboros.Network.Protocol.ReqResp (tests)
 import qualified Test.Ouroboros.Network.Protocol.ReqResp.Codec.Coherence (tests)
@@ -23,6 +24,7 @@ tests =
   , Test.ChainProducerState.tests
   , Test.Pipe.tests
   , Test.Ouroboros.Network.Node.tests
+  , Test.Ouroboros.Network.Protocol.ChainSync.tests
   , Test.Ouroboros.Network.Protocol.BlockFetch.tests
   , Test.Ouroboros.Network.Protocol.Stream.tests
   , Test.Ouroboros.Network.Protocol.ReqResp.tests
