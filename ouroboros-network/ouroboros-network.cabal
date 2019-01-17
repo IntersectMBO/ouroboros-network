@@ -46,6 +46,7 @@ library
                        Ouroboros.Network.Protocol.ChainSync.Direct
                        Ouroboros.Network.Protocol.ChainSync.Server
                        Ouroboros.Network.Protocol.ChainSync.Type
+                       Ouroboros.Network.Protocol.ChainSync.Examples
                        Ouroboros.Network.Protocol.Stream.Type
                        Ouroboros.Network.Protocol.Stream.Client
                        Ouroboros.Network.Protocol.Stream.Server
@@ -59,9 +60,6 @@ library
                        Ouroboros.Network.Protocol.BlockFetch.Client
                        Ouroboros.Network.Protocol.BlockFetch.Server
                        Ouroboros.Network.Protocol.BlockFetch.Direct
-
-                       -- TODO rename.
-                       Ouroboros.Network.ChainSyncExamples
   default-language:    Haskell2010
   other-extensions:    BangPatterns,
                        DataKinds,
