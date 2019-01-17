@@ -81,8 +81,6 @@
 -- Now epoch 0 is finalised and can never again be appended to.
 -- 'getNextEpochSlot' will now return @'EpochSlot' 1 0@.
 --
--- You can use 'getEpochSize' to find out the size of the current epoch.
---
 -- Besides appending blobs to the database, you can also retrieve blobs from
 -- the database using 'getBinaryBlob'. Given an 'EpochSlot', it will retrieve
 -- the binary blob at that location in the database. In case the 'EpochSlot'

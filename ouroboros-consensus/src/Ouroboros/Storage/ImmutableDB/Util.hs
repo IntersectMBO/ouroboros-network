@@ -95,7 +95,7 @@ hGetRightSize hnd size file = do
   where
     errMsg = "different number of bytes read by hGet than expected"
 
--- | Look up the size of the given 'Epoch'. Variant of 'getEpochSize'.
+-- | Look up the size of the given 'Epoch'.
 --
 -- This should should not fail if the epoch <= the currently opened epoch and
 -- the given mapping is retrieved from the DB, as 'openDB' and 'startNewEpoch'
