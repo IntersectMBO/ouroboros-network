@@ -21,11 +21,6 @@ import           Ouroboros.Storage.FS.Sim.MockFS (MockFS)
 import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
 import           Ouroboros.Storage.FS.Sim.STM (SimFS, runSimFS)
 
-
-{------------------------------------------------------------------------------
- Handy combinators
--------------------------------------------------------------------------------}
-
 {------------------------------------------------------------------------------
  Handy combinators
 -------------------------------------------------------------------------------}
