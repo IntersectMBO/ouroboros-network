@@ -67,7 +67,8 @@
 -- @'EpochSlot' 0 4@.
 --
 -- The function 'startNewEpoch' finalises the current epoch (full or not) and
--- starts a new empty epoch with the given size.
+-- starts a new empty epoch with the given size. The size of an epoch may not
+-- be 0. TODO check this
 --
 -- For example, continuing with the last example, starting a new epoch with
 -- size 4 gives us:
@@ -95,13 +96,17 @@
 --
 -- = (Re)opening the database
 --
+-- TODO update with new story for reopening and validation
+--
 -- The database can be closed and reopened. However, you cannot reopen the
 -- database on a finalised epoch. It is possible to reopen the same epoch the
 -- database was appending to the last time it was open. It is not allowed to
 -- skip epochs when reopening the database. When opening a database, an error
 -- will be thrown if any of the files corresponding to past epochs are
--- missing. The contents of these files are not checked, you can use
--- 'validateDB' for this.
+-- missing.
+--
+-- TODO replace the current 'openDB' with a function to reopen the database at
+-- the right place, i.e. the last epoch, looking at the files on disk.
 --
 --
 -- = Errors
@@ -109,9 +114,7 @@
 -- Whenever a 'FileSystemError' is thrown during a write operation
 -- ('appendBinaryBlob', 'startNewEpoch'), the database will be automatically
 -- closed because we can not guarantee a consistent state in the face of file
--- system errors. The open database files are truncated to their last valid
--- state, i.e. the state before the failed write operation. The userq is
--- advised to use 'validateDB' and before reopening the database.
+-- system errors. TODO which guarantees TODO validation + reopen.
 --
 --
 -- = Concurrency
@@ -121,7 +124,7 @@
 -- TODO Should we ensure this with a lock file?
 -- https://hackage.haskell.org/package/filelock-0.1.1.2/docs/System-FileLock.html
 --
--- However, an opened database is thread-safe.
+-- The database can have multiple readers, but should only have one writer.
 --
 --
 -- = Layout on disk
@@ -199,12 +202,10 @@ module Ouroboros.Storage.ImmutableDB.Impl
     openDB
   ) where
 
-import           Control.Monad (void, when, unless, forM_, zipWithM_)
-import           Control.Monad.Catch (MonadMask, ExitCase(..), generalBracket,
-                                      finally)
+import           Control.Monad (when, unless, forM_, zipWithM_)
+import           Control.Monad.Catch (MonadMask, ExitCase(..), generalBracket)
 import           Control.Monad.Class.MonadSTM (MonadSTM(..))
-import           Control.Monad.Except (ExceptT(ExceptT), runExceptT,
-                                       throwError, catchError)
+import           Control.Monad.Except (ExceptT(ExceptT), runExceptT)
 
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString.Builder as BS
@@ -251,8 +252,6 @@ data InternalState m = InternalState
     -- ^ The current 'Epoch' the immutable store is writing into.
     , _currentEpochWriteHandle  :: !(FsHandleE m)
     -- ^ The write handle for the current epoch file.
-    , _currentIndexWriteHandle  :: !(FsHandleE m)
-    -- ^ The write handle for the current index file.
     , _currentEpochOffsets      :: NonEmpty SlotOffset
     -- ^ The offsets to which blobs have been written in the current epoch
     -- file, stored from last to first.
@@ -329,6 +328,7 @@ openDBImpl dbFolder currentEpoch epochSizes = runExceptT $ do
         st <- mkInternalState dbFolder 0 epochSizes initialIteratorId
         stVar <- atomically $ newTMVar (Just st)
         return $ ImmutableDBHandle stVar dbFolder
+
       -- If it is not the first epoch, first open the previous epoch and
       -- finalise it using 'startNewEpochImpl'.
       _ -> do
@@ -384,12 +384,14 @@ closeDBImpl ImmutableDBHandle {..} = runExceptT $ do
     case mbInternalState of
       -- Already closed
       Nothing -> return ()
-      Just InternalState {..} -> liftFsError $
-        hClose _currentEpochWriteHandle `finally`
-          hClose _currentIndexWriteHandle
+      Just InternalState {..} -> liftFsError $ do
+        hClose _currentEpochWriteHandle
+        -- Also write an index file of the current (possible incomplete) epoch
+        writeSlotOffsets _dbFolder _currentEpoch _currentEpochOffsets
 
 isOpenImpl :: MonadSTM m => ImmutableDBHandle m -> m Bool
-isOpenImpl ImmutableDBHandle {..} = isJust <$> atomically (readTMVar _dbInternalState)
+isOpenImpl ImmutableDBHandle {..} =
+    isJust <$> atomically (readTMVar _dbInternalState)
 
 getNextEpochSlotImpl :: (HasCallStack, MonadSTM m)
                      => ImmutableDBHandle m
@@ -420,39 +422,48 @@ getBinaryBlobImpl db@ImmutableDBHandle {..} readEpochSlot = runExceptT $ do
       throwUserError $ SlotGreaterThanEpochSizeError relativeSlot epoch
                        epochSize
 
-    -- We don't have to check if the epoch and index file exists thanks to the
-    -- checks in 'openDB'. If they have disappeared after the check in
-    -- 'openDB', an error at the 'HasFS' level will be thrown.
     let epochFile = _dbFolder <> renderFile "epoch" epoch
         indexFile = _dbFolder <> renderFile "index" epoch
 
-    -- TODO We're reading from a file we're also writing to. Are we guaranteed
-    -- to read what have written? The HasFS tests say so, but we prefer a
-    -- (POSIX) reference.
-    liftFsError $
-      withFile epochFile ReadMode $ \eHnd ->
-      withFile indexFile ReadMode $ \iHnd -> do
+    (blobOffset, blobSize) <- case epoch == _currentEpoch of
+      -- If the requested epoch is the current epoch, the offsets are still in
+      -- memory
+      True ->
+        case NE.drop toDrop _currentEpochOffsets of
+            (offsetAfter:offset:_) -> return (offset, offsetAfter - offset)
+            _ -> error "impossible: _currentEpochOffsets out of sync"
+          where
+            toDrop = fromEnum lastSlot - fromEnum relativeSlot
+            lastSlot = _nextExpectedRelativeSlot - 1
+
+      -- Otherwise, the offsets will have to be read from an index file
+      False -> liftFsError $ withFile indexFile ReadMode $ \iHnd -> do
         -- Grab the offset in bytes of the requested slot.
         let indexSeekPosition = fromEnum relativeSlot * indexEntrySizeBytes
-        _ <- hSeek iHnd AbsoluteSeek (toEnum indexSeekPosition)
-
+        hSeek iHnd AbsoluteSeek (toEnum indexSeekPosition)
         -- Compute the offset on disk and the blob size.
-        (blobOffset, !blobSize) <- do
-          let nbBytesToGet = indexEntrySizeBytes * 2
-          -- Note the use of hGetRightSize: we must get enough bytes from the
-          -- index file, otherwise 'decodeIndexEntry' (and its variant) would
-          -- fail.
-          bytes <- hGetRightSize iHnd nbBytesToGet indexFile
-          let !start = decodeIndexEntry   bytes
-          let !end   = decodeIndexEntryAt indexEntrySizeBytes bytes
-          return (fromIntegral start, fromIntegral (end - start))
+        let nbBytesToGet = indexEntrySizeBytes * 2
+        -- Note the use of hGetRightSize: we must get enough bytes from the
+        -- index file, otherwise 'decodeIndexEntry' (and its variant) would
+        -- fail.
+        bytes <- hGetRightSize iHnd nbBytesToGet indexFile
+        let !start = decodeIndexEntry   bytes
+            !end   = decodeIndexEntryAt indexEntrySizeBytes bytes
+        return (start, end - start)
 
-        case blobSize of
-          0 -> return Nothing
-          _ -> do
-            -- Seek in the epoch file
-            _ <- hSeek eHnd AbsoluteSeek blobOffset
-            Just <$> hGetRightSize eHnd blobSize epochFile
+    -- In case the requested is still the current epoch, we will be reading
+    -- from the epoch file while we're also writing to it. Are we guaranteed
+    -- to read what have written? Duncan says: this is guaranteed at the OS
+    -- level (POSIX), but not for Haskell handles, which might perform other
+    -- buffering. However, the 'HasFS' implementation we're using uses POSIX
+    -- file handles ("Ouroboros.Storage.IO") so we're safe (other
+    -- implementations of the 'HasFS' API guarantee this too).
+    case blobSize of
+      0 -> return Nothing
+      _ -> liftFsError $ withFile epochFile ReadMode $ \eHnd -> do
+        -- Seek in the epoch file
+        hSeek eHnd AbsoluteSeek (fromIntegral blobOffset)
+        Just <$> hGetRightSize eHnd (fromIntegral blobSize) epochFile
 
 appendBinaryBlobImpl :: (HasCallStack, HasFSE m, MonadSTM m, MonadMask m)
                      => ImmutableDBHandle m
@@ -462,7 +473,6 @@ appendBinaryBlobImpl :: (HasCallStack, HasFSE m, MonadSTM m, MonadMask m)
 appendBinaryBlobImpl db relativeSlot builder = runExceptT $
     modifyInternalState db $ \st@InternalState {..} -> do
       let eHnd = _currentEpochWriteHandle
-          iHnd = _currentIndexWriteHandle
 
       -- Check that the slot is >= the expected next slot and thus not in the
       -- past.
@@ -479,19 +489,13 @@ appendBinaryBlobImpl db relativeSlot builder = runExceptT $
 
       -- If necessary, backfill the index file for any slot we missed.
       let lastEpochOffset = NE.head _currentEpochOffsets
-          (backfillOffsets, backfill) =
-            indexBackfill relativeSlot _nextExpectedRelativeSlot
-                          lastEpochOffset
+          backfillOffsets = indexBackfill relativeSlot _nextExpectedRelativeSlot
+                                          lastEpochOffset
 
-      newOffset <- truncateToLastStateOnError st $ do
-            -- Append to the end of the epoch file.
-            bytesWritten <- hPut eHnd builder
-
-            -- Update the index file.
-            let newOffset = lastEpochOffset + bytesWritten
-            void $ hPut iHnd (backfill <> encodeIndexEntry newOffset)
-
-            return newOffset
+      newOffset <- liftFsError $ do
+        -- Append to the end of the epoch file.
+        bytesWritten <- hPut eHnd builder
+        return (lastEpochOffset + bytesWritten)
 
       return (st { _currentEpochOffsets =
                      (newOffset NE.:| backfillOffsets) <> _currentEpochOffsets
@@ -504,8 +508,13 @@ startNewEpochImpl :: (HasCallStack, HasFSE m, MonadSTM m, MonadMask m)
                   -> m (Either ImmutableDBError Epoch)
 startNewEpochImpl db newEpochSize = runExceptT $ modifyInternalState db $ \st -> do
     let InternalState {..} = st
-    -- First pad the index file of the current epoch to full size so that it
-    -- is clear when opening it again later on that it was finalised.
+
+    -- We can close the epoch file
+    liftFsError $ hClose _currentEpochWriteHandle
+
+    -- Find out the size of the epoch, so we can pad the _currentEpochOffsets
+    -- to match the size before writing them to the index file. When looking
+    -- at the index file, it will then be clear that the epoch is finalised.
     epochSize <- lookupEpochSize _currentEpoch _epochSizes
 
     -- Calculate what to pad the file with
@@ -513,29 +522,20 @@ startNewEpochImpl db newEpochSize = runExceptT $ modifyInternalState db $ \st ->
         -- An index file of n slots has n + 1 offsets, so pretend we need to
         -- backfill to slot n
         lastSlot = RelativeSlot epochSize
-        (_backfillOffsets, backfill) =
-          indexBackfill lastSlot _nextExpectedRelativeSlot
-            lastEpochOffset
+        backfillOffsets = indexBackfill lastSlot _nextExpectedRelativeSlot
+                                        lastEpochOffset
+        -- Prepend the backfillOffsets to the current offsets to get a
+        -- non-empty list of all the offsets. Note that this list is stored in
+        -- reverse order.
+        allOffsets = foldr NE.cons _currentEpochOffsets backfillOffsets
 
-    truncateToLastStateOnError st $
-      void $ hPut _currentIndexWriteHandle backfill
-      -- Don't close the handle here, because 'truncateToLastStateOnError'
-      -- will try to truncate the files in case of an FsError.
-
-    liftFsError $
-      hClose _currentIndexWriteHandle `finally`
-        hClose _currentEpochWriteHandle
+    -- Now write the offsets to the index file to disk
+    liftFsError $ writeSlotOffsets (_dbFolder db) _currentEpoch allOffsets
 
     let newEpoch      = succ _currentEpoch
         newEpochSizes = Map.insert newEpoch newEpochSize _epochSizes
     newState <- mkInternalState (_dbFolder db) newEpoch newEpochSizes
-                  _nextIteratorID
-                `catchError` \e -> do
-                  -- In case 'mkInternalState' fails, truncate to the last
-                  -- state to match the state 'modifyInternalState' will
-                  -- restore to.
-                  liftFsError $ truncateToLastState st
-                  throwError e
+                _nextIteratorID
     return (newState, newEpoch)
 
 
@@ -647,8 +647,7 @@ streamBinaryBlobsImpl db@ImmutableDBHandle {..} start end = runExceptT $ do
         -- Invariant 3 = OK by the search above for a filled slot
 
         -- Position the epoch handle at the right place. Invariant 4 = OK
-        _ <- hSeek eHnd AbsoluteSeek (fromIntegral
-                                        (offsetOfSlot index nextSlot))
+        hSeek eHnd AbsoluteSeek (fromIntegral (offsetOfSlot index nextSlot))
 
         return $ Just IteratorState
           { _it_next = next
@@ -791,14 +790,11 @@ iteratorCloseImpl IteratorHandle {..} = runExceptT $ do
 
 -- | Create the internal state based on a potentially empty epoch.
 --
--- Open the epoch and index files for appending. If they already existed, the
--- state is reconstructed from the index file on disk.
+-- Open the epoch file for appending. If it already existed, the state is
+-- reconstructed from the index file on disk.
 --
 -- If the existing index file is invalid ('isValidIndex'), an
 -- 'InvalidFileError' is thrown.
---
--- If no index file exists for the given epoch, it is created and initialised
--- by writing a 0 to it.
 mkInternalState :: (HasCallStack, MonadMask m, HasFSE m)
                 => FsPath
                 -> Epoch
@@ -808,48 +804,50 @@ mkInternalState :: (HasCallStack, MonadMask m, HasFSE m)
 mkInternalState dbFolder epoch epochSizes nextIteratorID = do
     let epochFile = dbFolder <> renderFile "epoch" epoch
         indexFile = dbFolder <> renderFile "index" epoch
-    -- TODO in case of an FsError, we leave new files behind, preventing the
-    -- DB from being reopened (OpenFinalisedEpochError)
-    (indexExists, eHnd, iHnd) <- liftFsError $ (,,) <$>
-      doesFileExist indexFile <*>
-      hOpen epochFile AppendMode <*> hOpen indexFile AppendMode
-    -- Previously, we used @((==) 0) <$> hSeek iHnd RelativeSeek 0@ to detect
-    -- whether the index file is a new file. This assumed that opening a file
-    -- in @AppendMode@ has the effect of immediately seeking to the end of the
-    -- file. In reality, the initial seek position is simply 0, but each write
-    -- is automatically preceded with a seek to the end. So instead, simply
-    -- use @doesFileExist@. TODO see Edsko's comment -> hGetFileSize
+    indexExists <- liftFsError $ doesFileExist indexFile
     epochOffsets <- case indexExists of
       -- TODO this function is also called by 'startNewEpoch', in which case
       -- it should never happen that the index file of the (future) epoch
       -- already exists. This is checked when opening the database, but
       -- somebody might have created the index file afterwards, behind our
-      -- backs. Should we throw an error for this?
+      -- backs.
       True -> do
-        -- If the index file already existed, read it in its entirety and
+        -- If the index file already exists, read it in its entirety and
         -- reconstruct the list of offsets from it.
-        existingIndex <- liftFsError $ withFile indexFile ReadMode $ \hnd ->
+        existingIndex <- liftFsError $ withFile indexFile ReadMode $ \iHnd ->
           indexFromByteString . BL.toStrict . BS.toLazyByteString <$>
-          readAll hnd
+          readAll iHnd
         -- An already existing index may be invalid.
         unless (isValidIndex existingIndex) $
           throwUnexpectedError $ InvalidFileError indexFile callStack
         return $ indexToSlotOffsets existingIndex
 
-      False -> do
-        -- Initialise the new index file
-        _ <- liftFsError $ hPut iHnd (encodeIndexEntry 0)
-        return $ 0 NE.:| []
+      False -> return $ 0 NE.:| []
+
+    -- Recalculate nextExpectedRelativeSlot based on the offsets from the
+    -- index file (if there was one)
+    let nextExpectedRelativeSlot :: RelativeSlot
+        nextExpectedRelativeSlot = fromIntegral (length epochOffsets - 1)
+    epochSize <- lookupEpochSize epoch epochSizes
+    when (nextExpectedRelativeSlot >= fromIntegral epochSize) $
+      throwUserError $ SlotGreaterThanEpochSizeError nextExpectedRelativeSlot
+                       epoch epochSize
+
+    (eHnd, epochFileSize) <- liftFsError $ do
+      eHnd          <- hOpen epochFile AppendMode
+      epochFileSize <- hGetSize eHnd
+      return (eHnd, epochFileSize)
+
+    -- The last offset of the index file must match the epoch file size
+    when (epochFileSize /= NE.head epochOffsets) $ do
+      liftFsError $ hClose eHnd
+      throwUnexpectedError $ InvalidFileError epochFile callStack
 
     return InternalState
       { _currentEpoch             = epoch
       , _currentEpochWriteHandle  = eHnd
-      , _currentIndexWriteHandle  = iHnd
       , _currentEpochOffsets      = epochOffsets
-      , _nextExpectedRelativeSlot = fromIntegral (length epochOffsets - 1)
-                                    -- TODO what if it is > epochSize? Check
-                                    -- how startNewEpoch deals with this.
-                                    -- -> Error
+      , _nextExpectedRelativeSlot = nextExpectedRelativeSlot
       , _epochSizes               = epochSizes
       , _nextIteratorID           = nextIteratorID
       }
@@ -916,40 +914,14 @@ modifyInternalState ImmutableDBHandle {..} action = ExceptT $
     mutation Nothing   = throwUserError ClosedDBError
     mutation (Just st) = action st
 
--- | Perform the given action, restoring the last valid state in case of an
--- 'FsError' (see 'truncateToLastState'). The 'FsError' is rethrown.
-truncateToLastStateOnError :: (MonadMask m, HasFSE m)
-                           => InternalState m
-                           -> ExceptT FsError m a
-                           -> ExceptT ImmutableDBError m a
-truncateToLastStateOnError st m = liftFsError $
-    m `catchError` \e -> do
-      truncateToLastState st
-      throwError e
 
--- | Restore the last valid state by truncating the epoch and index files to
--- their last valid offsets, derived from the given valid 'InternalState'.
-truncateToLastState :: (MonadMask m, HasFSE m)
-                    => InternalState m
-                    -> ExceptT FsError m ()
-truncateToLastState InternalState {..} = do
-    let lastValidEpochOffset = NE.head _currentEpochOffsets
-        lastValidIndexOffset = fromIntegral $
-          (fromEnum _nextExpectedRelativeSlot + 1) *
-          indexEntrySizeBytes
-    -- TODO what if one of the truncates fails?
-    hTruncate _currentEpochWriteHandle lastValidEpochOffset `finally`
-      hTruncate _currentIndexWriteHandle lastValidIndexOffset
-    return ()
-
-
--- | Return what to backfill the index file with.
+-- | Return the slots to backfill the index file with.
 --
--- Such situation may arise in case we \"skip\" some relative slots, and we
--- write into the DB, say, for example, every other relative slot. In this
--- case, we do need to backfill the index file with offsets for the skipped
--- relative slots. Similarly, before we start a new epoch, we must backfill
--- the index file of the current epoch file to indicate that it is finalised.
+-- A situation may arise in which we \"skip\" some relative slots, and we
+-- write into the DB, for example, every other relative slot. In this case, we
+-- need to backfill the index file with offsets for the skipped relative
+-- slots. Similarly, before we start a new epoch, we must backfill the index
+-- file of the current epoch file to indicate that it is finalised.
 --
 -- For example, say we have written \"a\" to relative slot 0 and \"bravo\" to
 -- relative slot 1. We have the following index file:
@@ -976,12 +948,13 @@ truncateToLastState InternalState {..} = do
 -- > offset: │ 0 │ 1 │ 6 │ 6 │ 6 │ 13│
 -- >         └───┴───┴───┴───┴───┴───┘
 --
+-- For the example above, the output of this funciton would thus be: @[6, 6]@.
+--
 indexBackfill :: RelativeSlot  -- ^ The slot to write to (>= next expected slot)
               -> RelativeSlot  -- ^ The next expected slot to write to
               -> SlotOffset    -- ^ The last 'SlotOffset' written to
-              -> ([SlotOffset], BS.Builder)
+              -> [SlotOffset]
 indexBackfill (RelativeSlot slot) (RelativeSlot nextExpected) lastOffset =
-    (replicate gap lastOffset,
-     mconcat $ replicate gap (encodeIndexEntry lastOffset))
+    replicate gap lastOffset
   where
     gap = fromIntegral $ slot - nextExpected

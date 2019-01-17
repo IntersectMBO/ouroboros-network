@@ -40,7 +40,7 @@ import           Ouroboros.Storage.FS.Sim.FsTree (FsTree (..))
 import qualified Ouroboros.Storage.FS.Sim.FsTree as FS
 import           Ouroboros.Storage.FS.Sim.MockFS (MockFS)
 import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
-import           Ouroboros.Storage.FS.Sim.STM (runSimFS)
+import           Ouroboros.Storage.FS.Sim.STM (SimFS, runSimFS)
 import           Ouroboros.Storage.ImmutableDB
 import           Ouroboros.Storage.ImmutableDB.Index
 import           Ouroboros.Storage.ImmutableDB.Util
@@ -378,7 +378,7 @@ byteStringToWord64s bs = go 0
          | otherwise    = []
 
 -- TODO replace unit tests with property tests
-
+--
 -- For example, say we have written "a" to relative slot 0, "bravo" to
 -- relative slot 1, and "haskell" to slot 4. We get the following index file:
 --
@@ -401,12 +401,13 @@ test_startNewEpochPadsTheIndexFile = withMockFS assrt $
       ExceptT $ appendBinaryBlob db 1 "bravo"
       ExceptT $ appendBinaryBlob db 4 "haskell"
       _ <- ExceptT $ startNewEpoch db 5 -- Now in epoch 1
-      ExceptT $ startNewEpoch db 10 -- Now in epoch 2
+      _ <- ExceptT $ startNewEpoch db 10 -- Now in epoch 2
+      ExceptT $ appendBinaryBlob db 1 "c"
   where
     assrt (_, fs) = do
       getIndexContents fs ["test", "index-000.dat"] @?= [0, 1, 6, 6, 6, 13, 13, 13, 13, 13, 13]
       getIndexContents fs ["test", "index-001.dat"] @?= [0, 0, 0, 0, 0, 0]
-      getIndexContents fs ["test", "index-002.dat"] @?= [0]
+      getIndexContents fs ["test", "index-002.dat"] @?= [0, 0, 1]
 
 
 {------------------------------------------------------------------------------
@@ -586,3 +587,26 @@ prop_filledSlots_isFilledSlot (SlotOffsets offsets) = conjoin
           | otherwise       = map RelativeSlot [0..indexSlots idx-1]
     totalSlots = indexSlots idx
     idx = indexFromSlotOffsets offsets
+
+prop_writeSlotOffsets_loadIndex_indexToSlotOffsets :: SlotOffsets -> Property
+prop_writeSlotOffsets_loadIndex_indexToSlotOffsets (SlotOffsets offsets) =
+    monadicIO $ run $ runS $ runE prop
+  where
+    dbFolder = []
+    epoch = 0
+
+    prop :: ExceptT FsError (SimFS IO) Property
+    prop = do
+      writeSlotOffsets dbFolder epoch offsets
+      index <- loadIndex dbFolder epoch
+      return $ indexToSlotOffsets index === offsets
+
+    runE :: ExceptT FsError (SimFS IO) Property -> SimFS IO Property
+    runE em = do
+      me <- runExceptT em
+      case me of
+        Left e -> fail (prettyFsError e)
+        Right p -> return p
+
+    runS :: SimFS IO Property -> IO Property
+    runS m = fst <$> runSimFS m Mock.empty

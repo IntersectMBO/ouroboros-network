@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 module Ouroboros.Storage.ImmutableDB.Index where
 
+import           Control.Monad (void)
 import           Control.Monad.Catch (MonadMask)
 import           Control.Monad.Except (ExceptT)
 
@@ -49,6 +50,28 @@ loadIndex dbFolder epoch = do
     indexContents <- withFile indexFile ReadMode $ \hnd ->
       BL.toStrict . BS.toLazyByteString <$> readAll hnd
     return $ indexFromByteString indexContents
+
+-- | Write a non-empty list of 'SlotOffset's to a file.
+--
+-- Property: for @dbFolder@, @epoch@, and @offsets@:
+--
+-- > 'writeSlotOffsets' dbFolder epoch offsets
+-- > index <- loadIndex dbFolder epoch
+--
+-- Then it must be that:
+--
+-- > indexToSlotOffsets index === offsets
+writeSlotOffsets :: (HasFSE m, MonadMask m)
+                 => FsPath
+                 -> Epoch
+                 -> NonEmpty SlotOffset
+                 -> ExceptT FsError m ()
+writeSlotOffsets dbFolder epoch sos = do
+    let indexFile = dbFolder <> renderFile "index" epoch
+    withFile indexFile WriteMode $ \iHnd ->
+      void $ hPut iHnd (foldMap encodeIndexEntry (NE.reverse sos))
+  -- TODO efficient enough?
+
 
 -- | Check if the index is valid.
 --
