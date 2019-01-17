@@ -3,7 +3,7 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Ouroboros.Network.ChainSyncExamples (
+module Ouroboros.Network.Protocol.ChainSync.Examples (
     chainSyncClientExample
   , Client (..)
   , pureClient

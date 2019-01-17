@@ -42,10 +42,10 @@ import           Ouroboros.Network.Protocol.ChainSync.Codec.Id (codecChainSync)
 import           Ouroboros.Network.Protocol.ChainSync.Client
 import           Ouroboros.Network.Protocol.ChainSync.Server
 import           Ouroboros.Network.Protocol.ChainSync.Type
+import           Ouroboros.Network.Protocol.ChainSync.Examples
 import           Ouroboros.Network.Protocol.Channel.Sim (delayChannel)
 -- FIXME bad module name below. They're examples, sure, but they're also
 -- legit useful.
-import           Ouroboros.Network.ChainSyncExamples
 import           Ouroboros.Network.Testing.ConcreteBlock hiding (fixupBlock)
 import qualified Ouroboros.Network.Testing.ConcreteBlock as Concrete
 
