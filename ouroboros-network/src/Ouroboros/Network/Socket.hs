@@ -109,7 +109,7 @@ demo = do
         (_, _) <- Mx.read ctx
         -- liftIO $ printf "read '%s'\n" (show $ Mx.msBlob sdu0)
         let msg = pack "Pong"
-        let sdu1 = Mx.MuxSDU (Mx.RemoteClockModel 0) Mx.Muxcontrol 0 msg
+        let sdu1 = Mx.MuxSDU (Mx.RemoteClockModel 0) Mx.Muxcontrol Mx.ModeResponder 0 msg
         _ <- Mx.write ctx (cb sdu1)
 
         Mx.close ctx
@@ -118,7 +118,7 @@ demo = do
     client addr = do
         ctx <- Mx.open addr
         let msg = pack "Ping"
-        let sdu0 = Mx.MuxSDU (Mx.RemoteClockModel 0) Mx.Muxcontrol 0 msg
+        let sdu0 = Mx.MuxSDU (Mx.RemoteClockModel 0) Mx.Muxcontrol Mx.ModeInitiator 0 msg
         ts0 <- Mx.write ctx (cb sdu0)
         (_, ts1) <- Mx.read ctx
         liftIO $ printf "rtt %d\n" $ ts1 - ts0

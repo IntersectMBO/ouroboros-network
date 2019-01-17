@@ -3,7 +3,10 @@
 {-# LANGUAGE TypeFamilies          #-}
 
 module Ouroboros.Network.Mux (
-      MiniProtocolId (..)
+      MiniProtocolDescription (..)
+    , MiniProtocolDescriptions (..)
+    , MiniProtocolId (..)
+    , MiniProtocolMode (..)
     , MuxBearer (..)
     , MuxSDU (..)
     , RemoteClockModel (..)
@@ -16,13 +19,16 @@ import           Control.Monad
 import           Control.Monad.Class.MonadSTM
 import qualified Data.Binary.Put as Bin
 import qualified Data.Binary.Get as Bin
+import           Data.Bits
 import qualified Data.ByteString.Lazy as BL
+import qualified Data.Map.Strict as M
 import           Data.Word
 
 import           Protocol.Channel
 
 import qualified Codec.CBOR.Encoding as CBOR (Encoding)
 import qualified Codec.CBOR.Write as CBOR (toLazyByteString)
+import           Text.Printf
 
 
 data RemoteClockModel = RemoteClockModel {
@@ -33,22 +39,30 @@ data MiniProtocolId = Muxcontrol
                     | DeltaQ
                     | ChainSync
                     | Blockdownload
-                    | DelegationCertificates
                     | TxSubmission
                     deriving (Eq, Ord, Show)
 
-data MiniProtocolTable m = MiniProtocolTable {
-      mpcbMuxControl :: TBQueue m BL.ByteString
-    , mpcbDeltaQ     :: TBQueue m BL.ByteString
-    , mpcbChainSync  :: TBQueue m BL.ByteString
-    , mpcbBlockdownload :: TBQueue m BL.ByteString
-    , mpcbDelegationCertificates :: TBQueue m BL.ByteString
-    , mpcbTxSubmission :: TBQueue m BL.ByteString
+data MiniProtocolDescription m = MiniProtocolDescription {
+      mpdId :: MiniProtocolId
+    , mpdInitiator :: Duplex m m CBOR.Encoding BL.ByteString -> m ()
+    , mpdResponder :: Duplex m m CBOR.Encoding BL.ByteString -> m ()
     }
+
+data MiniProtocolDescriptions m = MiniProtocolDescriptions (M.Map MiniProtocolId (MiniProtocolDescription m))
+
+data MiniProtocolDispatch m = MiniProtocolDispatch (M.Map (MiniProtocolId, MiniProtocolMode)
+                                                   (TBQueue m BL.ByteString))
+
+data MiniProtocolMode = ModeInitiator | ModeResponder deriving (Eq, Ord, Show)
+
+negMiniProtocolMode :: MiniProtocolMode -> MiniProtocolMode
+negMiniProtocolMode ModeInitiator = ModeResponder
+negMiniProtocolMode ModeResponder = ModeInitiator
 
 data MuxSDU = MuxSDU {
       msTimestamp :: !RemoteClockModel
     , msId        :: !MiniProtocolId
+    , msMode      :: !MiniProtocolMode
     , msLength    :: !Word16
     , msBlob      :: !BL.ByteString
     }
@@ -60,15 +74,18 @@ encodeMuxSDU sdu =
   where
     enc = do
         Bin.putWord32be $ unRemoteClockModel $ msTimestamp sdu
-        putId $ msId sdu
+        putId (msId sdu) (putMode $ msMode sdu)
         Bin.putWord16be $ fromIntegral $ BL.length $ msBlob sdu
 
-    putId Muxcontrol             = Bin.putWord16be 0
-    putId DeltaQ                 = Bin.putWord16be 1
-    putId ChainSync              = Bin.putWord16be 2
-    putId Blockdownload          = Bin.putWord16be 3
-    putId DelegationCertificates = Bin.putWord16be 4
-    putId TxSubmission           = Bin.putWord16be 5
+    putId Muxcontrol mode        = Bin.putWord16be $ 0 .|. mode
+    putId DeltaQ mode            = Bin.putWord16be $ 1 .|. mode
+    putId ChainSync mode         = Bin.putWord16be $ 2 .|. mode
+    putId Blockdownload mode     = Bin.putWord16be $ 3 .|. mode
+    putId TxSubmission mode      = Bin.putWord16be $ 4 .|. mode
+
+    putMode :: MiniProtocolMode -> Word16
+    putMode ModeInitiator = 0
+    putMode ModeResponder = 0x8000
 
 decodeMuxSDUHeader :: BL.ByteString -> Maybe MuxSDU
 decodeMuxSDUHeader buf =
@@ -79,16 +96,19 @@ decodeMuxSDUHeader buf =
   where
     dec = do
         ts <- Bin.getWord32be
-        id_ <- Bin.getWord16be
+        mid <- Bin.getWord16be
         len <- Bin.getWord16be
-        return $ MuxSDU (RemoteClockModel ts) (getId id_) len BL.empty
+        return $ MuxSDU (RemoteClockModel ts) (getId (mid .&. 0x7fff)) (getMode (mid .&. 0x8000))
+                        len BL.empty
+
+    getMode 0      = ModeInitiator
+    getMode 0x8000 = ModeResponder
 
     getId 0 = Muxcontrol
     getId 1 = DeltaQ
     getId 2 = ChainSync
     getId 3 = Blockdownload
-    getId 4 = DelegationCertificates
-    getId 5 = TxSubmission
+    getId 4 = TxSubmission
     getId a = error $ "unknow miniprotocol " ++ show a -- XXX
 
 --remoteClockTimestampFromLocalClock :: (MonadTime m) => m RemoteClockModel
@@ -109,18 +129,20 @@ class MuxBearer m where
 demux :: forall m. (MuxBearer m, MonadSTM m) => PerMuxSharedState m -> m ()
 demux pmss = forever $ do
     (sdu, _) <- Ouroboros.Network.Mux.read (bearerHandle pmss)
-    atomically $ writeTBQueue (ingressQueue (dispatchTable pmss) (msId sdu)) (msBlob sdu)
+    atomically $ writeTBQueue (ingressQueue (dispatchTable pmss) (msId sdu) (msMode sdu)) (msBlob sdu)
 
-ingressQueue :: (MuxBearer m) => MiniProtocolTable m -> MiniProtocolId -> TBQueue m BL.ByteString
-ingressQueue idmap Muxcontrol = mpcbMuxControl idmap
-ingressQueue idmap DeltaQ = mpcbDeltaQ idmap
-ingressQueue idmap ChainSync = mpcbChainSync idmap
-ingressQueue idmap Blockdownload = mpcbBlockdownload idmap
-ingressQueue idmap DelegationCertificates = mpcbDelegationCertificates idmap
-ingressQueue idmap TxSubmission = mpcbTxSubmission idmap
+ingressQueue :: (MuxBearer m) => MiniProtocolDispatch m -> MiniProtocolId -> MiniProtocolMode -> TBQueue m BL.ByteString
+ingressQueue (MiniProtocolDispatch tbl) dis mode =
+  -- Notice the mode reversal, ModeResponder is delivered to ModeInitiator and vice versa.
+  case M.lookup (dis, negMiniProtocolMode mode) tbl of
+       Nothing -> error $ printf "Missing MiniProtocol %s mode %s in dispatch table"
+                                 (show dis) (show mode) -- XXX
+       Just q  -> q
 
-start :: (MuxBearer m, MonadSTM m, MonadFork m) => AssociationDetails m -> m ()
-start addr = do
+start :: (MuxBearer m, MonadSTM m, MonadFork m) =>
+    MiniProtocolDescriptions m ->
+    AssociationDetails m -> m ()
+start (MiniProtocolDescriptions udesc) addr = do
     tbl <- setupTbl
     handle <- open addr
     tq <- atomically $ newTBQueue 100
@@ -129,28 +151,48 @@ start addr = do
 
     fork $ demux pmss
     fork $ mux pmss
+
+    mapM_ (spawnHandler pmss) $ M.elems udesc
+    return ()
+
   where
+
+    spawnHandler pmss mpd = do
+        w_i <- atomically newEmptyTMVar
+        fork $ (mpdInitiator mpd) $ muxDuplex pmss (mpdId mpd) ModeInitiator w_i
+
+        w_r <- atomically newEmptyTMVar
+        fork $ (mpdResponder mpd) $ muxDuplex pmss (mpdId mpd) ModeResponder w_r
+        return ()
+
     setupTbl = do
-        mc <- atomically $ newTBQueue 2
-        dq <- atomically $ newTBQueue 2
-        cs <- atomically $ newTBQueue 2
-        bd <- atomically $ newTBQueue 2
-        dc <- atomically $ newTBQueue 2
-        td <- atomically $ newTBQueue 2
-        return $ MiniProtocolTable mc dq cs bd dc td
+        let ps = [Muxcontrol, DeltaQ] ++ (M.keys udesc)
+        tbl <- foldM addMp M.empty ps
+        return $ MiniProtocolDispatch tbl
+
+    addMp t p = do
+        a <- atomically $ newTBQueue 2
+        b <- atomically $ newTBQueue 2
+        return $ M.insert (p, ModeInitiator) a $ M.insert (p, ModeResponder) b t
 
 muxDuplex :: (MuxBearer m, MonadSTM m) =>
     PerMuxSharedState m ->
     MiniProtocolId ->
+    MiniProtocolMode ->
+    TMVar m BL.ByteString ->
     Duplex m m CBOR.Encoding BL.ByteString
-muxDuplex pmss mid = uniformDuplex send recv
+muxDuplex pmss mid md w = do
+  uniformDuplex snd_ rcv
   where
-    send = undefined
-    recv = do
-        blob <- atomically $ readTBQueue (ingressQueue (dispatchTable pmss) mid)
+    snd_ = \encoding -> do
+        atomically $ putTMVar w (CBOR.toLazyByteString encoding)
+        atomically $ writeTBQueue (tsrQueue pmss) (TLSRDemand mid md (Wanton w))
+    rcv = do
+        blob <- atomically $ readTBQueue (ingressQueue (dispatchTable pmss) mid md)
         if BL.null blob
            then pure Nothing
            else return $ Just BL.empty
+
 
 -- | Desired servicing semantics
 --   ===========================
@@ -209,12 +251,8 @@ muxDuplex pmss mid = uniformDuplex send recv
 --  appropriate SDU's for onward transmission.
 
 data TranslocationServiceRequest m
-  = TLSRDemand  { protocolIndex :: MiniProtocolId
-                , demand        :: Wanton m
-                }
-  | TLSRControl { protocolIndex :: MiniProtocolId
-                , action        :: TLSRAction
-                }
+  = TLSRDemand MiniProtocolId MiniProtocolMode (Wanton m)
+  | TLSRControl MiniProtocolId TLSRAction
 
 data TLSRAction = Abort | Done
 
@@ -228,7 +266,7 @@ data Wanton m = Wanton { want :: TMVar m BL.ByteString }
 -- protocols) and for dispatching incoming SDUs.  This is shared
 -- between the muxIngress and the bearerIngress processes.
 data PerMuxSharedState m = PerMuxSS {
-      dispatchTable  :: MiniProtocolTable m -- fixed, known at instantiation
+      dispatchTable  :: MiniProtocolDispatch m -- fixed, known at instantiation
   ,   bearerHandle  :: MuxBearerHandle m
   ,   tsrQueue      :: TBQueue m (TranslocationServiceRequest m)
    -- handles to senders or pipes or whatever
@@ -245,8 +283,8 @@ mux :: (MonadSTM m, MuxBearer m)
 mux pmss = do
     w <- atomically $ readTBQueue $ tsrQueue pmss
     case w of
-         TLSRDemand mid d
-             -> processSingleWanton pmss mid d >> mux pmss
+         TLSRDemand mid md d
+             -> processSingleWanton pmss mid md d >> mux pmss
          TLSRControl _ _
              -> undefined
 
@@ -257,9 +295,10 @@ mux pmss = do
 processSingleWanton :: (MonadSTM m, MuxBearer m)
                     => PerMuxSharedState m
                     -> MiniProtocolId
+                    -> MiniProtocolMode
                     -> Wanton m
                     -> m ()
-processSingleWanton pmss mpi wanton = do
+processSingleWanton pmss mpi md wanton = do
     maxSDU <- sduSize (bearerHandle pmss)
     blob <- atomically $ do
       -- extract next SDU
@@ -268,10 +307,10 @@ processSingleWanton pmss mpi wanton = do
       -- if more to process then enqueue remaining work
       unless (BL.null rest) $
         do putTMVar (want wanton) rest
-           writeTBQueue (tsrQueue pmss) (TLSRDemand mpi wanton)
+           writeTBQueue (tsrQueue pmss) (TLSRDemand mpi md wanton)
       -- return data to send
       pure frag
-    let sdu = MuxSDU (RemoteClockModel 0) mpi (fromIntegral $ BL.length blob) blob
+    let sdu = MuxSDU (RemoteClockModel 0) mpi md (fromIntegral $ BL.length blob) blob
     tNow <- write (bearerHandle pmss) (cb sdu)
     --paceTransmission tNow
     return ()
