@@ -2,7 +2,12 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE TypeOperators  #-}
 
-module Test.ChainProducerState (tests) where
+module Test.ChainProducerState
+  ( ChainProducerStateTest (..)
+  , ChainProducerStateForkTest (..)
+  , tests
+  )
+ where
 
 import           Data.List (unfoldr)
 
@@ -165,7 +170,10 @@ prop_switchFork (ChainProducerStateForkTest cps f) =
 --
 
 data ChainProducerStateTest
-    = ChainProducerStateTest (ChainProducerState Block) ReaderId (Point Block)
+    = ChainProducerStateTest
+        (ChainProducerState Block) -- ^ producer state with a single reader
+        ReaderId                   -- ^ reader's id
+        (Point Block)              -- ^ intersection point of the reader
   deriving Show
 
 genReaderState :: Int   -- ^ length of the chain
@@ -202,7 +210,9 @@ instance Arbitrary ChainProducerStateTest where
     return (ChainProducerStateTest (ChainProducerState c rs) rid p)
 
 data ChainProducerStateForkTest
-    = ChainProducerStateForkTest (ChainProducerState Block) (Chain Block)
+    = ChainProducerStateForkTest
+        (ChainProducerState Block) -- ^ chain producer state
+        (Chain Block)              -- ^ fork of the producer's chain
   deriving Show
 
 instance Arbitrary ChainProducerStateForkTest where
