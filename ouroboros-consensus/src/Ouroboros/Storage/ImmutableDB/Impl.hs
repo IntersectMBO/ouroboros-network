@@ -93,11 +93,6 @@
 --
 -- You can use 'isOpen' to check whether a database is open or closed.
 --
--- You can use 'getDBFolder' to find out in which folder the database was
--- opened.
---
--- The database can be validated using the 'validateDB' function.
---
 -- = (Re)opening the database
 --
 -- The database can be closed and reopened. However, you cannot reopen the
@@ -304,7 +299,6 @@ openDB dbFolder epoch epochSizes = runExceptT $ do
       { closeDB           = closeDBImpl           dbh
       , isOpen            = isOpenImpl            dbh
       , getNextEpochSlot  = getNextEpochSlotImpl  dbh
-      , getDBFolder       = dbFolder
       , getBinaryBlob     = getBinaryBlobImpl     dbh
       , appendBinaryBlob  = appendBinaryBlobImpl  dbh
       , startNewEpoch     = startNewEpochImpl     dbh

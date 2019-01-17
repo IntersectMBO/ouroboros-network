@@ -25,7 +25,6 @@ import GHC.Stack (HasCallStack)
 
 import Pipes (Producer, yield, lift)
 
-import Ouroboros.Storage.FS.Class.Types
 import Ouroboros.Storage.ImmutableDB.Types
 
 
@@ -74,9 +73,6 @@ data ImmutableDB m = ImmutableDB
     -- Throws a 'ClosedDBError' if the database is closed.
   , getNextEpochSlot
       :: HasCallStack => m (Either ImmutableDBError EpochSlot)
-
-    -- | Return the folder in which the database was opened.
-  , getDBFolder :: FsPath
 
     -- | Get the binary blob stored at the given 'EpochSlot'.
     --
