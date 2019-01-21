@@ -60,6 +60,8 @@
 \newcommand{\subtractdom}{\mathbin{\slashed{\restrictdom}}}
 \newcommand{\restrictrange}{\rhd}
 
+\newcommand{\hsref}[1]{} % add reference to the relevant Haskell source (as comment)
+
 \DeclareMathOperator{\dom}{dom}
 \DeclareMathOperator{\range}{range}
 \DeclareMathOperator*{\argmin}{arg\,min} % thin space, limits underneath in displays
@@ -350,9 +352,9 @@ following pieces of information:
 \end{description}
 
 \section{Single Phase Chain Synchronization Protocol}
-\subsubsection{Description}
+\subsection{Description}
 \begin{description}
-\item[purpose of the protocol]
+\item[Purpose of the protocol]
 
 The Chain Synchronization Protocol is used by the block chain consumer
 to synchronize its block chain with the block chain producer.
@@ -364,25 +366,11 @@ for others it can be used to synchronize actual block (e.g., node-to-wallet).
   The node runs an independent agents for every other node
   it communicates with. The typically a node runs agents where it acts as a server and also instances
   where it acts as a client.(See Figure \ref{chain-diagram-read-pointers}.)
-\end{description}
-
-
-\begin{description}
-\item[purpose of the protocol]
-The Chain Synchronization Protocol is used by the block chain consumer
-to synchronize its block chain with the block chain producer.
-\item[Who is communicating]
-  A node communicates with several upstream and downstream node.
-  The node runs an independent agents for every other node
-  it communicates with. The typically a node runs agents where it acts as a server and also instances
-  where it acts as a client.
-\item[Where is located in the protocol stack ?]
 \item[What are the interfaces to the lower layers of the stack ?]
   The chain synchronization protocol can send and receive messages. (via a point to point channel.)
-\item[Initialization of an instance of the protocol]
 \end{description}
 
-\subsubsection{State machine}
+\subsection{State machine}
 \begin{figure}[H]
 \begin{tabular}{|l|l|}
   \hline
@@ -458,11 +446,77 @@ but the corresponding message is send from the server to the client.
 \end{tikzpicture}
 \end{figure}
 
+\section{Transaction Synchronization Protocol}
+\subsection{Description}
+\begin{description}
+\item[Purpose of the protocol]
+  Nodes use the transaction synchronization protocol to forward transactions that have been
+  submitted to the network.
+\end{description}
 
-\section{Chain Following Protocol}
-\section{Block Retrieval Protocol}
-\section{What other Protocols ?}
-\section{Peer Discovery}
+\subsection{State machine}
+\hsref{ouroboros-network/src/Ouroboros/Network/Protocol/ReqResp/Type.hs}
+\begin{figure}[H]
+\begin{tabular}{|l|l|}
+  \hline
+  \multicolumn{2}{|c|}{States} \\ \hline
+  Name  & Agency \\ \hline \hline
+  Idle       & client \\ \hline
+  Busy   & server \\ \hline
+  Done       &        \\ \hline
+  \hline
+\end{tabular}
+\end{figure}
+
+\begin{figure}[H]
+\begin{tabular}{|l|l|l|l|}
+  \hline
+  \multicolumn{4}{|c|}{Transitions} \\ \hline
+  message/event      & parameter              & from        & to       \\ \hline\hline
+  Request            & $request$              & Idle        & Busy      \\ \hline
+  AwaitReply         & $response$             & Busy        & Done \\ \hline
+\end{tabular}
+\end{figure}
+
+Client states are green and server states blue.
+
+\begin{figure}[H]
+\begin{tikzpicture}[->,>=stealth',shorten >=1pt,auto,node distance=4.5cm, semithick]
+  \tikzstyle{every state}=[fill=red,draw=none,text=white]
+  \node[state, green, initial]                                   (Idle)      {Idle};
+  \node[state, blue, right of=Idle]                              (Busy)      {Busy};
+  \node[state, right of=Busy]                                    (Done)      {Done};
+
+  \draw (Idle)         edge[]      node{Request}           (Busy);
+  \draw (Busy)         edge[]      node{Response}          (Done);
+
+\end{tikzpicture}
+\end{figure}
+
+\section{Block Fetching}
+\hsref{ouroboros-network/ouroboros-network/src/Ouroboros/Network/Protocol/BlockFetch/Type.hs}
+\subsection{Description}
+The block fetching mechanism enables one node to download a range of blocks.
+Technically, the block fetching mechanism consists of two protocols that run
+indepently.
+
+Block fetching consists of two protocols: submission of block ranges 'BlockFetchClientProtocol', and
+ streaming of blocks 'BlockFetchServerProtocol'.
+
+\begin{description}
+\item[Purpose of the protocols]
+  The downstream nodes uses the block request protocol to ask a upstream node
+  for the transmission of a range of blocks.
+  Upstream nodes batch all incomming requests and use the Block Reply Protocol to
+  send the requiered blocks.
+\item[]
+  The downstream nodes uses the block request protocol to ask a upstream node
+  for the transmission of a rang of blocks.
+  Upstream nodes batch all incomming requests and use the Block Reply Protocol to
+  send the requiered blocks.
+\end{description}
+
+\section{Multiplexing multiple Mini Protocols}
 \section{Abstract and concrete representation}
 \label{CBOR-section}
 \begin{itemize}
@@ -637,3 +691,5 @@ the reference implementation
 \end{description}
 
 \end{document}
+
+concreate cbor syntax
