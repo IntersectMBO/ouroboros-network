@@ -44,9 +44,9 @@
 --
 module Network.TypedProtocol.Pipelined where
 
-import           Network.TypedProtocol.Core hiding (Peer(..))
---import qualified Network.TypedProtocol.Core as Core
---import           Control.Monad.Class.MonadSTM
+import           Network.TypedProtocol.Core (Agency (..), CurrentAgency, Protocol (..), PeerKind)
+import           Network.TypedProtocol.Codec (SomeMessage (..))
+import           Control.Monad.Class.MonadSTM
 
 
 
@@ -65,6 +65,34 @@ data PeerSender (pk :: PeerKind) (st :: ps) m a where
          -> PeerSender   pk (st'' :: ps) m a
          -> PeerSender   pk (st   :: ps) m a
 
+effect
+  :: m (PeerSender pk st m a)
+  -> PeerSender pk st m a
+effect = Effect
+
+done
+  :: (CurrentAgency pk (AgencyInState st) ~ Finished)
+  => a
+  -> PeerSender pk st m a
+done = Done
+
+yield
+  :: (CurrentAgency pk (AgencyInState st) ~ Yielding)
+  => Message st st'
+  -> PeerReceiver pk (st'  :: ps) (st'' :: ps) m
+  -> PeerSender   pk (st'' :: ps) m a
+  -> PeerSender   pk (st   :: ps) m a
+yield = Yield
+
+complete
+  :: ( CurrentAgency pk (AgencyInState st) ~ Yielding
+     , CurrentAgency pk (AgencyInState st') ~ Finished
+     )
+  => Message st st'
+  -> a
+  -> PeerSender   pk (st  :: ps) m a
+complete msg a = yield msg Completed (done a)
+
 data PeerReceiver (pk :: PeerKind) (st :: ps) (st' :: ps) m where
 
   Effect'   :: m (PeerReceiver pk st st' m)
@@ -77,5 +105,14 @@ data PeerReceiver (pk :: PeerKind) (st :: ps) (st' :: ps) m where
             -> (forall st''. Message st st'' -> PeerReceiver pk st'' st' m)
             -> PeerReceiver pk st st' m
 
+effect'
+  :: m (PeerReceiver pk st st' m)
+  ->    PeerReceiver pk st st' m
+effect' = Effect'
 
-
+await
+  :: (CurrentAgency pk (AgencyInState st) ~ Awaiting)
+  => StateToken st
+  -> (forall st''. Message st st'' -> PeerReceiver pk st'' st' m)
+  -> PeerReceiver pk st st' m
+await = Await
