@@ -1,4 +1,5 @@
 packages: ./typed-transitions
+          ./typed-protocols
           ./ouroboros-network
           ./ouroboros-consensus
           ./io-sim
