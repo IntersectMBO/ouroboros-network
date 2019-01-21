@@ -677,6 +677,27 @@ the reference implementation
 \bibliography{references}
 
 \appendix
+\section{CDDL Specification of the Protocol Messages}
+\label{included-cddl}
+This Sections contains the CDDL\cite{cddl} specification
+of the binary serialisation format of the network protocol messages.
+
+To keep this Section in close sync with the actual Haskell implementation
+the names of the Haskell identifiers have been reused for the corresponding
+CBOR types (with the first letter converted to lower case).
+Note, that, for readablitiy, the previous Sections used simplified message identifiers,
+for example \tt{RequestNext} instead of \tt{msgRequestNext}, etc.
+Both identifiers refere to the same message format.
+
+All transmitted messages satisfy the shown CDDL specification.
+However, CDDL, by design, also permits variants in the encoding that are not valid in the protocol.
+In particular, the notation $\tt{[} ... \tt{]}$ in CDDL can be used for both fixed-length  
+and variable-length CBOR-list, while only either of the two encodings is valid in the protocol.
+We add comments in specification to make clear which encoding must be used.
+%%\lstinputlisting{messages.cddl}
+
+\end{appendices}
+
 \section{Nomencenture}
 \begin{description}
 \item[Adversry / Adversarial Action] acting in way to subvert the
