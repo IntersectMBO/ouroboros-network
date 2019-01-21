@@ -45,11 +45,9 @@ data PingPongClient m a where
 pingPongClientFixed
   :: Applicative m
   => Natural
-  -> PingPongClient m Natural
-pingPongClientFixed n = go 0
- where
-  go 0 = SendMsgDone n
-  go m = SendMsgPing $ pure (pingPongClientFixed (pred m))
+  -> PingPongClient m ()
+pingPongClientFixed 0 = SendMsgDone ()
+pingPongClientFixed m = SendMsgPing $ pure (pingPongClientFixed (pred m))
 
 -- | Interpret a particular client action sequence into the client side of the
 -- 'PingPong' protocol.
