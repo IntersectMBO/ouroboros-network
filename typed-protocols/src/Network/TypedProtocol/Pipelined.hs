@@ -45,8 +45,7 @@
 module Network.TypedProtocol.Pipelined where
 
 import           Network.TypedProtocol.Core (Agency (..), CurrentAgency, Protocol (..), PeerKind)
-import           Network.TypedProtocol.Codec (SomeMessage (..))
-import           Control.Monad.Class.MonadSTM
+import qualified Network.TypedProtocol.Core as Core
 
 
 
@@ -116,3 +115,27 @@ await
   -> (forall st''. Message st st'' -> PeerReceiver pk st'' st' m)
   -> PeerReceiver pk st st' m
 await = Await
+
+-- |
+-- Like `Network.Protocol.Core.connect`, it is also a partial function.
+--
+connect
+  :: forall pk st m a b. Monad m
+  => PeerSender pk st m a
+  -> Core.Peer Core.AsServer st m b
+  -> m (a, b)
+connect (Effect a) b = a >>= \a' -> connect a' b
+connect a (Core.Effect b) = b >>= \b' -> connect a b'
+connect (Done a) (Core.Done b) = return (a, b)
+connect (Yield msg receiver a) (Core.Await _tok b) = connectReceiver receiver (b msg) >>= \b' -> connect a b'
+ where
+  connectReceiver
+    :: PeerReceiver pk st0 st1 m
+    -> Core.Peer Core.AsServer st0 m b
+    -> m (Core.Peer Core.AsServer st1 m b)
+  connectReceiver (Effect' x) y = x >>= \x' -> connectReceiver x' y
+  connectReceiver x (Core.Effect y) = y >>= \y' -> connectReceiver x y'
+  connectReceiver Completed y = return y
+  connectReceiver (Await _tok x) (Core.Yield msg_ y) = connectReceiver (x msg_) y
+  connectReceiver _ _ = error "Network.TypedProtocol.connectReceiver: impossible happend"
+connect _ _ = error "Network.TypedProtocol.connect: impossible happend"
