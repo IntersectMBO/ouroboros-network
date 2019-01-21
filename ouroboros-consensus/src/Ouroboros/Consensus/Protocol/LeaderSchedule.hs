@@ -70,9 +70,9 @@ instance OuroborosTag p => OuroborosTag (WithLeaderSchedule p) where
 
   applyChainState _ _ _ _ = return ()
 
-deriving instance (OuroborosTag p, Eq   ph) => Eq   (Payload (WithLeaderSchedule p) ph)
-deriving instance (OuroborosTag p, Ord  ph) => Ord  (Payload (WithLeaderSchedule p) ph)
-deriving instance (OuroborosTag p, Show ph) => Show (Payload (WithLeaderSchedule p) ph)
+deriving instance Eq   (Payload (WithLeaderSchedule p) ph)
+deriving instance Ord  (Payload (WithLeaderSchedule p) ph)
+deriving instance Show (Payload (WithLeaderSchedule p) ph)
 
-instance (OuroborosTag p, Serialise ph) => Serialise (Payload (WithLeaderSchedule p) ph) where
+instance Serialise (Payload (WithLeaderSchedule p) ph) where
   -- use Generic instance

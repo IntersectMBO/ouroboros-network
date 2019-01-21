@@ -7,6 +7,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE NamedFieldPuns #-}
 
 module Protocol.Codec where
 
@@ -178,3 +179,61 @@ hoistDecoder nat = (fmap . fmap) hoistDecoded . hoistFold nat
   --   Decoder fail input m r = Fold input m (Either fail r)
   -- the `Decoded` is inside an `Either fail`.
   hoistDecoded (Decoded it codec) = Decoded it (hoistCodec nat codec)
+
+-- | @'Encoded'@ is functor with respect to the @'cto'@ (concrete encoding)
+-- parameter.
+--
+mapEncoded
+  :: Functor m
+  => (cto -> cto')
+  -> Encoded cto  (Codec m fail cto  cfrom tr) to
+  -> Encoded cto' (Codec m fail cto' cfrom tr) to
+mapEncoded f Encoded {representation, encCodec} = Encoded
+  { representation = f representation
+  , encCodec       = mapCodec f encCodec
+  }
+
+-- | @'Decoded'@ is functor with respect to the @'coded'@
+-- parameter.
+--
+mapDecoded
+  :: (forall to. codec to -> codec' to)
+  -> Decoded tr from codec
+  -> Decoded tr from codec'
+mapDecoded f Decoded {transition, decCodec}= Decoded
+  { transition = transition
+  , decCodec   = f decCodec
+  }
+
+-- | @'Codec'@ is a functor with respoect to the @'cto'@ (concrete encoding)
+-- parameter.
+--
+mapCodec
+  :: Functor m
+  => (cto -> cto')
+  -> Codec m fail cto  cfrom tr from
+  -> Codec m fail cto' cfrom tr from
+mapCodec f Codec {encode, decode} = Codec
+  { encode = mapEncoder f encode
+  , decode = mapDecoder f decode
+  }
+
+-- | @'Encoder'@ is a functor with respect to the @'cto'@ (concrete encoding)
+-- parameter.
+--
+mapEncoder
+  :: Functor m
+  => (cto -> cto')
+  -> Encoder tr from (Encoded cto  (Codec m fail cto  cfrom tr))
+  -> Encoder tr from (Encoded cto' (Codec m fail cto' cfrom tr))
+mapEncoder f (Encoder encoder) = Encoder (mapEncoded f . encoder)
+
+-- | @'Decoder'@ is a functor with respect to the @'cto'@ (concrete encoding)
+-- parameter.
+--
+mapDecoder
+  :: Functor m
+  => (cto -> cto')
+  -> Decoder fail cfrom m (Decoded tr from (Codec m fail cto  cfrom tr))
+  -> Decoder fail cfrom m (Decoded tr from (Codec m fail cto' cfrom tr))
+mapDecoder f = (fmap . fmap) (mapDecoded (mapCodec f))

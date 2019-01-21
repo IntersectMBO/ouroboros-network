@@ -14,12 +14,11 @@ import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
 
 import Protocol.Codec
+import Protocol.Codec.Coherent
 import Protocol.Path
 
 import Protocol.PingPong.Codec
 import Protocol.PingPong.Type
-
-import Test.Protocol.Codec.Coherent
 
 prop_ping_pong_coherent :: Property
 prop_ping_pong_coherent = forAllShow genPath showPath doTest

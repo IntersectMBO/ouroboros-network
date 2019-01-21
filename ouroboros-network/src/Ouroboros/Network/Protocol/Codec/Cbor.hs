@@ -9,28 +9,33 @@ module Ouroboros.Network.Protocol.Codec.Cbor where
 import           Control.Monad.ST
 
 import           Data.ByteString (ByteString)
-import           Data.Text (Text, pack)
 
 import qualified Codec.CBOR.Decoding as CBOR hiding (DecodeAction(Fail, Done))
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Read as CBOR
+import qualified Codec.CBOR.Write as CBOR
+import qualified Data.ByteString.Builder as BS
+import qualified Data.ByteString.Builder.Extra as BS
+import qualified Data.ByteString.Lazy.Internal as LBS (smallChunkSize)
+import qualified Data.ByteString.Lazy          as LBS
 
 import           Protocol.Codec
 
 -- | Convert a CBOR decoder type into a Protocol.Codec.Decoder.
 cborDecoder
-  :: forall s tr state .
-     CBOR.Decoder s (Decoded tr state (Codec (ST s) Text CBOR.Encoding ByteString tr))
-  -> Decoder Text ByteString (ST s) (Decoded tr state (Codec (ST s) Text CBOR.Encoding ByteString tr))
-cborDecoder decoder = Fold (idecode [] =<< CBOR.deserialiseIncremental decoder)
+  :: forall s fail tr state .
+     (String -> fail)
+  -> CBOR.Decoder s (Decoded tr state (Codec (ST s) fail CBOR.Encoding ByteString tr))
+  -> Decoder fail ByteString (ST s) (Decoded tr state (Codec (ST s) fail CBOR.Encoding ByteString tr))
+cborDecoder packError decoder = Fold (idecode [] =<< CBOR.deserialiseIncremental decoder)
   where
   idecode
     :: [ByteString]
-    -> CBOR.IDecode s (Decoded tr state (Codec (ST s) Text CBOR.Encoding ByteString tr))
-    -> ST s (Choice [ByteString] (ST s) (Either Text (Decoded tr state (Codec (ST s) Text CBOR.Encoding ByteString tr))))
+    -> CBOR.IDecode s (Decoded tr state (Codec (ST s) fail CBOR.Encoding ByteString tr))
+    -> ST s (Choice [ByteString] (ST s) (Either fail (Decoded tr state (Codec (ST s) fail CBOR.Encoding ByteString tr))))
   idecode inputs term = case term of
     CBOR.Fail bs _ (CBOR.DeserialiseFailure _ str) ->
-      pure $ Complete (bs : inputs) $ pure $ Left $ pack str
+      pure $ Complete (bs : inputs) $ pure $ Left $ packError str
     CBOR.Done bs _ it ->
       pure $ Complete (bs : inputs) $ pure $ Right $ it
     -- At a partial, feed all of the inputs we have in scope before presenting
@@ -38,8 +43,8 @@ cborDecoder decoder = Fold (idecode [] =<< CBOR.deserialiseIncremental decoder)
     CBOR.Partial k ->
       let feedInputs
             :: [ByteString]
-            -> (Maybe ByteString -> ST s (CBOR.IDecode s (Decoded tr state (Codec (ST s) Text CBOR.Encoding ByteString tr))))
-            -> ST s (Choice [ByteString] (ST s) (Either Text (Decoded tr state (Codec (ST s) Text CBOR.Encoding ByteString tr))))
+            -> (Maybe ByteString -> ST s (CBOR.IDecode s (Decoded tr state (Codec (ST s) fail CBOR.Encoding ByteString tr))))
+            -> ST s (Choice [ByteString] (ST s) (Either fail (Decoded tr state (Codec (ST s) fail CBOR.Encoding ByteString tr))))
           feedInputs inputs k = case inputs of
             (i : is) -> k (Just i) >>= idecode is
             [] -> pure $ Partial $ Response
@@ -50,7 +55,7 @@ cborDecoder decoder = Fold (idecode [] =<< CBOR.deserialiseIncremental decoder)
               { end  = k Nothing >>= \final -> case final of
                   CBOR.Fail _bs _ (CBOR.DeserialiseFailure _ str) ->
                     -- '_bs' ought to be null, but we won't check.
-                    pure $ Left $ pack str
+                    pure $ Left $ packError str
                   CBOR.Done _bs _ it ->
                     -- '_bs' ought to be null, but we won't check.
                     pure $ Right it
@@ -59,7 +64,39 @@ cborDecoder decoder = Fold (idecode [] =<< CBOR.deserialiseIncremental decoder)
                   -- the end of stream is given, and so the user is in limbo with
                   -- neither a success, nor a failure...
                   CBOR.Partial _ ->
-                    pure $ Left $ pack "CBOR decoder is still partial after end of input stream"
+                    pure $ Left $ packError "CBOR decoder is still partial after end of input stream"
               , more = \bss -> Fold $ idecode bss term
               }
       in  feedInputs inputs k
+
+convertCborEncoder :: (a -> CBOR.Encoding) -> a -> [ByteString]
+convertCborEncoder cborEncode =
+    LBS.toChunks
+  . toLazyByteString
+  . CBOR.toBuilder
+  . cborEncode
+
+{-# NOINLINE toLazyByteString #-}
+toLazyByteString :: BS.Builder -> LBS.ByteString
+toLazyByteString = BS.toLazyByteStringWith strategy LBS.empty
+  where
+    strategy = BS.untrimmedStrategy 800 LBS.smallChunkSize
+
+-- | Convert @'Codec'@ with @'CBOR.Encoding'@ as its concrete representation to
+-- a codec with a list of strict @'ByteString'@ as its concrete representation
+-- (via lazy bytestring).
+--
+convertCborCodec
+  :: Functor m
+  => Codec m fail CBOR.Encoding ByteString tr from
+  -> Codec m fail [ByteString]  ByteString tr from
+convertCborCodec = mapCodec (convertCborEncoder id)
+
+-- | Convert @'Codec'@ with @'CBOR.Encoding'@ as its concrete representation to
+-- a codec with strict @'ByteString'@ as its concrete representation.
+--
+convertCborCodec'
+  :: Functor m
+  => Codec m fail CBOR.Encoding ByteString tr from
+  -> Codec m fail ByteString    ByteString tr from
+convertCborCodec' = mapCodec CBOR.toStrictByteString

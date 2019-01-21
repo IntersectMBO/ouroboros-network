@@ -55,6 +55,7 @@ library
                        Ouroboros.Consensus.Protocol.ModChainSel
                        Ouroboros.Consensus.Util
                        Ouroboros.Consensus.Util.Chain
+                       Ouroboros.Consensus.Util.Classify
                        Ouroboros.Consensus.Util.Condense
                        Ouroboros.Consensus.Util.DepFn
                        Ouroboros.Consensus.Util.HList
@@ -65,10 +66,20 @@ library
                        Ouroboros.Consensus.Util.STM
 
                        -- Storing things on disk
-                       Ouroboros.Storage.Immutable.DB
                        Ouroboros.Storage.FS.Class
-                       Ouroboros.Storage.FS.Sim
+                       Ouroboros.Storage.FS.Class.Example
+                       Ouroboros.Storage.FS.Class.Types
                        Ouroboros.Storage.FS.IO
+                       Ouroboros.Storage.FS.Sim.FsTree
+                       Ouroboros.Storage.FS.Sim.MockFS
+                       Ouroboros.Storage.FS.Sim.Pure
+                       Ouroboros.Storage.FS.Sim.STM
+                       Ouroboros.Storage.ImmutableDB
+                       Ouroboros.Storage.ImmutableDB.API
+                       Ouroboros.Storage.ImmutableDB.Impl
+                       Ouroboros.Storage.ImmutableDB.Index
+                       Ouroboros.Storage.ImmutableDB.Types
+                       Ouroboros.Storage.ImmutableDB.Util
                        Ouroboros.Storage.Util
                        Ouroboros.Storage.IO
 
@@ -125,10 +136,12 @@ library
                        fingertree        >=0.1.4.2 && <0.2,
                        memory            >=0.14  && <0.15,
                        mtl               >=2.2   && <2.3,
+                       pipes             >=4.3   && <4.4,
                        serialise         >=0.2   && <0.3,
                        stm,
                        text              >=1.2   && <1.3,
                        time,
+                       transformers,
                        vector            >=0.12  && <0.13,
 
                        QuickCheck        >=2.12 && <2.13
@@ -235,27 +248,39 @@ test-suite test-crypto
 
 test-suite test-storage
   type:             exitcode-stdio-1.0
-  hs-source-dirs:   test-storage
+  hs-source-dirs:   test-storage test-util
   default-language: Haskell2010
   main-is:          Main.hs
   other-modules:
                     Test.Ouroboros.Storage
-                    Test.Ouroboros.Storage.Immutable.Sim
+                    Test.Ouroboros.Storage.Util
+                    Test.Ouroboros.Storage.FS
+                    Test.Ouroboros.Storage.FS.StateMachine
+                    Test.Ouroboros.Storage.ImmutableDB
+                    Test.Ouroboros.Storage.ImmutableDB.Sim
+                    Test.Util.RefEnv
   build-depends:    base,
                     ouroboros-network,
                     ouroboros-consensus,
                     io-sim-classes,
 
+                    bifunctors,
                     bytestring,
                     containers,
                     directory,
                     exceptions,
+                    generics-sop,
                     mtl,
+                    pretty-show,
                     QuickCheck,
+                    quickcheck-state-machine >=0.6.0,
+                    random,
                     tasty,
                     tasty-hunit,
                     tasty-quickcheck,
-                    temporary
+                    temporary,
+                    transformers,
+                    tree-diff
 
   ghc-options:      -Wall
                     -fno-ignore-asserts
