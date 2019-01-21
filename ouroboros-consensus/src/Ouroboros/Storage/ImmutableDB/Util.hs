@@ -19,6 +19,8 @@ import           GHC.Stack (HasCallStack, callStack, popCallStack)
 import           Text.Printf (printf)
 import           Text.Read (readMaybe)
 
+import           Ouroboros.Consensus.Util (whenJust)
+
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.ImmutableDB.Types
@@ -134,36 +136,38 @@ validateIteratorRange
   -> EpochSlot            -- ^ Next expected write
   -> (Epoch -> m EpochSize)
      -- ^ How to look up the size of an epoch
-  -> EpochSlot            -- ^ range start (inclusive)
-  -> EpochSlot            -- ^ range end (inclusive)
+  -> Maybe EpochSlot  -- ^ range start (inclusive)
+  -> Maybe EpochSlot  -- ^ range end (inclusive)
   -> m ()
-validateIteratorRange err next getEpochSize start end = do
-    let EpochSlot startEpoch   startSlot = start
-        EpochSlot endEpoch     endSlot   = end
+validateIteratorRange err next getEpochSize mbStart mbEnd = do
+    case (mbStart, mbEnd) of
+      (Just start, Just end) ->
+        when (start > end) $
+          throwUserError err $ InvalidIteratorRangeError start end
+      _ -> return ()
 
-    when (start > end) $
-      throwUserError err $ InvalidIteratorRangeError start end
+    whenJust mbStart $ \start@(EpochSlot startEpoch startSlot) -> do
+      -- Check that the start is not >= the next expected slot
+      when (start >= next) $
+        throwUserError err $ ReadFutureSlotError start next
 
-    -- Check that the start is not >= the next expected slot
-    when (start >= next) $
-      throwUserError err $ ReadFutureSlotError start next
+      -- Check that the start slot does not exceed its epoch size
+      startEpochSize <- getEpochSize startEpoch
+      when (getRelativeSlot startSlot >= startEpochSize) $
+        throwUserError err $ SlotGreaterThanEpochSizeError
+                               startSlot
+                               startEpoch
+                               startEpochSize
 
-    -- Check that the end is not >= the next expected slot
-    when (end >= next) $
-      throwUserError err $ ReadFutureSlotError end next
+    whenJust mbEnd $ \end@(EpochSlot endEpoch endSlot) -> do
+      -- Check that the end is not >= the next expected slot
+      when (end >= next) $
+        throwUserError err $ ReadFutureSlotError end next
 
-    -- Check that the start slot does not exceed its epoch size
-    startEpochSize <- getEpochSize startEpoch
-    when (getRelativeSlot startSlot >= startEpochSize) $
-      throwUserError err $ SlotGreaterThanEpochSizeError
-                              startSlot
-                              startEpoch
-                              startEpochSize
-
-    -- Check that the end slot does not exceed its epoch size
-    endEpochSize <- getEpochSize endEpoch
-    when (getRelativeSlot endSlot >= endEpochSize) $
-      throwUserError err $ SlotGreaterThanEpochSizeError
-                             endSlot
-                             endEpoch
-                             endEpochSize
+      -- Check that the end slot does not exceed its epoch size
+      endEpochSize <- getEpochSize endEpoch
+      when (getRelativeSlot endSlot >= endEpochSize) $
+        throwUserError err $ SlotGreaterThanEpochSizeError
+                               endSlot
+                               endEpoch
+                               endEpochSize

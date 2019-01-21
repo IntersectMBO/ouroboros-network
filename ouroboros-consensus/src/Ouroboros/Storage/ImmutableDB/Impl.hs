@@ -213,7 +213,7 @@ import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import           Data.Map (Map)
 import qualified Data.Map as Map
-import           Data.Maybe (isJust)
+import           Data.Maybe (isJust, fromMaybe)
 import qualified Data.Set as Set
 
 import           GHC.Stack (HasCallStack, callStack)
@@ -609,101 +609,129 @@ streamBinaryBlobsImpl :: forall m
                       => HasFS m
                       -> ErrorHandling ImmutableDBError m
                       -> ImmutableDBHandle m
-                      -> EpochSlot  -- ^ When to start streaming (inclusive).
-                      -> EpochSlot  -- ^ When to stop streaming (inclusive).
+                      -> Maybe EpochSlot  -- ^ When to start streaming (inclusive).
+                      -> Maybe EpochSlot  -- ^ When to stop streaming (inclusive).
                       -> m (Iterator m)
-streamBinaryBlobsImpl hasFS@HasFS{..} err db@ImmutableDBHandle {..} start end = do
+streamBinaryBlobsImpl hasFS@HasFS{..} err db@ImmutableDBHandle {..} mbStart mbEnd = do
     InternalState {..} <- getInternalState err db
-    let EpochSlot startEpoch startSlot = start
-        nextExpectedEpochSlot =
+    let nextExpectedEpochSlot =
           EpochSlot _currentEpoch _nextExpectedRelativeSlot
 
     validateIteratorRange err nextExpectedEpochSlot
-      (\epoch -> lookupEpochSize err epoch _epochSizes) start end
+      (\epoch -> lookupEpochSize err epoch _epochSizes) mbStart mbEnd
 
-    -- Helper function to open the index file of an epoch.
-    let openIndex epoch
-          | epoch == _currentEpoch
-          = return $ indexFromSlotOffsets _currentEpochOffsets
-          | otherwise
-          = do
-            index <- loadIndex hasFS _dbFolder epoch
-            unless (isValidIndex index) $
-              throwUnexpectedError err $
-                InvalidFileError
-                  (_dbFolder <> renderFile "index" epoch)
-                  callStack
-            return index
+    -- If the database is empty, just return an empty iterator (directly
+    -- exhausted)
+    if nextExpectedEpochSlot == EpochSlot 0 0
+    then mkEmptyIterator
+    else do
 
-    startIndex <- openIndex startEpoch
+      -- Fill in missing bounds
+      lastAppendedSlot <- case nextExpectedEpochSlot of
+        -- EpochSlot 0 0 is already handled before, so we can ignore it.
+        EpochSlot epoch 0 -> do
+          epochSize <- lookupEpochSize err (epoch - 1) _epochSizes
+          return $ EpochSlot (epoch - 1) (fromIntegral epochSize - 1)
+        EpochSlot epoch relSlot ->
+          return $ EpochSlot epoch (pred relSlot)
+      let start = fromMaybe (EpochSlot 0 0) mbStart
+          EpochSlot startEpoch startSlot = start
+          end = fromMaybe lastAppendedSlot mbEnd
 
-    -- Check if the index slot is filled, otherwise find the next filled
-    -- one. If there is none in this epoch, open the next epoch until you
-    -- find one. If we didn't find a filled slot before reaching 'end',
-    -- return Nothing.
-    mbIndexAndNext <- case containsSlot startIndex startSlot &&
-                           isFilledSlot startIndex startSlot of
-      -- The above 'containsSlot' condition is needed because we do not know
-      -- whether the index has the right size.
-      True  -> return $ Just (startIndex, start)
-      False -> case nextFilledSlot startIndex startSlot of
-        Just slot
-          -- There is a filled slot, but we've gone too far
-          | EpochSlot startEpoch slot > end -> return Nothing
-          -- There is a filled slot after startSlot in this epoch
-          | otherwise -> return $ Just (startIndex, EpochSlot startEpoch slot)
-        -- No filled slot in the start epoch, open the next
-        Nothing -> lookInLaterEpochs (startEpoch + 1)
-          where
-            lookInLaterEpochs epoch
-              -- Because we have checked that end is valid, this check is
-              -- enough to guarantee that we will never open an epoch in the
-              -- future
-              | epoch > _epoch end = return Nothing
-              | otherwise = do
-                index <- openIndex epoch
-                case firstFilledSlot index of
-                  Just slot
-                    -- We've gone too far
-                    | EpochSlot epoch slot > end -> return Nothing
-                    | otherwise -> return $ Just (index, EpochSlot epoch slot)
-                  Nothing -> lookInLaterEpochs (epoch + 1)
+      -- Helper function to open the index file of an epoch.
+      let openIndex epoch
+            | epoch == _currentEpoch
+            = return $ indexFromSlotOffsets _currentEpochOffsets
+            | otherwise
+            = do
+              index <- loadIndex hasFS _dbFolder epoch
+              unless (isValidIndex index) $
+                throwUnexpectedError err $
+                  InvalidFileError
+                    (_dbFolder <> renderFile "index" epoch)
+                    callStack
+              return index
 
-    mbIteratorState <- case mbIndexAndNext of
-      -- No filled slot found, so just create a closed iterator
-      Nothing -> return Nothing
-      Just (index, next@(EpochSlot nextEpoch nextSlot)) -> do
-        -- Invariant 1 = OK by the search above for a filled slot
+      startIndex <- openIndex startEpoch
 
-        eHnd <- hOpen (_dbFolder <> renderFile "epoch" nextEpoch) ReadMode
-        -- Invariant 2 = OK
+      -- Check if the index slot is filled, otherwise find the next filled
+      -- one. If there is none in this epoch, open the next epoch until you
+      -- find one. If we didn't find a filled slot before reaching 'end',
+      -- return Nothing.
+      mbIndexAndNext <- case containsSlot startIndex startSlot &&
+                             isFilledSlot startIndex startSlot of
+        -- The above 'containsSlot' condition is needed because we do not know
+        -- whether the index has the right size.
+        True  -> return $ Just (startIndex, start)
+        False -> case nextFilledSlot startIndex startSlot of
+          Just slot
+            -- There is a filled slot, but we've gone too far
+            | EpochSlot startEpoch slot > end -> return Nothing
+            -- There is a filled slot after startSlot in this epoch
+            | otherwise -> return $ Just (startIndex, EpochSlot startEpoch slot)
+          -- No filled slot in the start epoch, open the next
+          Nothing -> lookInLaterEpochs (startEpoch + 1)
+            where
+              lookInLaterEpochs epoch
+                -- Because we have checked that end is valid, this check is
+                -- enough to guarantee that we will never open an epoch in the
+                -- future
+                | epoch > _epoch end = return Nothing
+                | otherwise = do
+                  index <- openIndex epoch
+                  case firstFilledSlot index of
+                    Just slot
+                      -- We've gone too far
+                      | EpochSlot epoch slot > end -> return Nothing
+                      | otherwise -> return $ Just (index, EpochSlot epoch slot)
+                    Nothing -> lookInLaterEpochs (epoch + 1)
 
-        -- Invariant 3 = OK by the search above for a filled slot
+      mbIteratorState <- case mbIndexAndNext of
+        -- No filled slot found, so just create a closed iterator
+        Nothing -> return Nothing
+        Just (index, next@(EpochSlot nextEpoch nextSlot)) -> do
+          -- Invariant 1 = OK by the search above for a filled slot
 
-        -- Position the epoch handle at the right place. Invariant 4 = OK
-        hSeek eHnd AbsoluteSeek (fromIntegral (offsetOfSlot index nextSlot))
+          eHnd <- hOpen (_dbFolder <> renderFile "epoch" nextEpoch) ReadMode
+          -- Invariant 2 = OK
 
-        return $ Just IteratorState
-          { _it_next = next
-          , _it_epoch_handle = eHnd
-          , _it_epoch_index = index
-          }
+          -- Invariant 3 = OK by the search above for a filled slot
 
-    itState <- atomically $ newTVar mbIteratorState
+          -- Position the epoch handle at the right place. Invariant 4 = OK
+          hSeek eHnd AbsoluteSeek (fromIntegral (offsetOfSlot index nextSlot))
 
-    let ith = IteratorHandle
-          { _it_state = itState
-          , _it_end   = end
-          }
-    -- Safely increment '_nextIteratorID' in the 'InternalState'.
-    modifyInternalState err db $ \st@InternalState {..} ->
-      let it = Iterator
-            { iteratorNext  = iteratorNextImpl  hasFS err db ith
-            , iteratorClose = iteratorCloseImpl hasFS        ith
-            , iteratorID    = _nextIteratorID
+          return $ Just IteratorState
+            { _it_next = next
+            , _it_epoch_handle = eHnd
+            , _it_epoch_index = index
             }
-          st' = st { _nextIteratorID = succ _nextIteratorID }
-      in return (st', it)
+
+      itState <- atomically $ newTVar mbIteratorState
+
+      let ith = IteratorHandle
+            { _it_state = itState
+            , _it_end   = end
+            }
+      -- Safely increment '_nextIteratorID' in the 'InternalState'.
+      modifyInternalState err db $ \st@InternalState {..} ->
+        let it = Iterator
+              { iteratorNext  = iteratorNextImpl  hasFS err db ith
+              , iteratorClose = iteratorCloseImpl hasFS        ith
+              , iteratorID    = _nextIteratorID
+              }
+            st' = st { _nextIteratorID = succ _nextIteratorID }
+        in return (st', it)
+  where
+    mkEmptyIterator :: m (Iterator m)
+    mkEmptyIterator =
+      modifyInternalState err db $ \st@InternalState {..} ->
+        let it = Iterator
+              { iteratorNext  = return IteratorExhausted
+              , iteratorClose = return ()
+              , iteratorID    = _nextIteratorID
+              }
+            st' = st { _nextIteratorID = succ _nextIteratorID }
+        in return (st', it)
 
 iteratorNextImpl :: forall m. (HasCallStack, MonadSTM m, MonadMask m)
                  => HasFS m
