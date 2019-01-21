@@ -4,9 +4,13 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Network.TypedProtocol.PingPong.Client where
 
+import           Data.Functor (($>))
 import           Numeric.Natural (Natural)
 
+import           Control.Monad.Class.MonadSTM (MonadSTM (..))
+
 import           Network.TypedProtocol.Core
+import qualified Network.TypedProtocol.Pipelined as Pipelined
 import           Network.TypedProtocol.PingPong.Type
 
 -- | A ping-pong client, on top of some effect 'm'.
@@ -78,3 +82,51 @@ pingPongClientPeer (SendMsgPing next) =
       effect $ do
         client <- next
         pure $ pingPongClientPeer client
+
+-- |
+-- A ping-pong client designed for running piplined ping-pong protocol.
+--
+data PingPongSender m a where
+  -- | 
+  -- Send a `Ping` message but alike in `PingPongClient` do not await for the
+  -- resopnse, instead supply a monadic action which will run on a received
+  -- `Pong` message.
+  SendMsgPingPipelined
+    :: m ()               -- receive action
+    -> PingPongSender m a -- continuation
+    -> PingPongSender m a
+
+  -- | Termination of the ping-pong protocol.
+  SendMsgDonePipelined
+    :: a -> PingPongSender m a
+
+pingPongSenderCount
+  :: MonadSTM m
+  => TVar m Natural
+  -> Natural
+  -> PingPongSender m ()
+pingPongSenderCount var = go
+ where
+  go 0 = SendMsgDonePipelined ()
+  go n = SendMsgPingPipelined
+    (atomically $ modifyTVar var succ)
+    (go (pred n))
+
+pingPongClientPeerSender
+  :: Monad m
+  => PingPongSender m a
+  -> Pipelined.PeerSender AsClient StIdle m a
+
+pingPongClientPeerSender (SendMsgDonePipelined result) =
+  -- Send `MsgDone` and complete the protocol
+  Pipelined.complete MsgDone result
+
+pingPongClientPeerSender (SendMsgPingPipelined receive next) =
+  -- Piplined yield: send `MsgPing`, imediatelly follow with the next step.
+  -- Await for a response in a continuation.
+  Pipelined.yield
+    MsgPing
+    -- response handler
+    (Pipelined.await TokBusy $ \MsgPong -> Pipelined.effect' $ receive $> Pipelined.Completed)
+    -- run the next step of the ping-pong protocol.
+    (Pipelined.effect $ return $ pingPongClientPeerSender next)
