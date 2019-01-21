@@ -618,7 +618,8 @@ streamBinaryBlobsImpl hasFS@HasFS{..} err db@ImmutableDBHandle {..} start end = 
         nextExpectedEpochSlot =
           EpochSlot _currentEpoch _nextExpectedRelativeSlot
 
-    validateIteratorRange err nextExpectedEpochSlot _epochSizes start end
+    validateIteratorRange err nextExpectedEpochSlot
+      (\epoch -> lookupEpochSize err epoch _epochSizes) start end
 
     -- Helper function to open the index file of an epoch.
     let openIndex epoch

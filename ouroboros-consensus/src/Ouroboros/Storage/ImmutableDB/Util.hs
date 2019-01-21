@@ -132,11 +132,12 @@ validateIteratorRange
   :: Monad m
   => ErrorHandling ImmutableDBError m
   -> EpochSlot            -- ^ Next expected write
-  -> Map Epoch EpochSize  -- ^ Epoch sizes
+  -> (Epoch -> m EpochSize)
+     -- ^ How to look up the size of an epoch
   -> EpochSlot            -- ^ range start (inclusive)
   -> EpochSlot            -- ^ range end (inclusive)
   -> m ()
-validateIteratorRange err next epochSizes start end = do
+validateIteratorRange err next getEpochSize start end = do
     let EpochSlot startEpoch   startSlot = start
         EpochSlot endEpoch     endSlot   = end
 
@@ -152,7 +153,7 @@ validateIteratorRange err next epochSizes start end = do
       throwUserError err $ ReadFutureSlotError end next
 
     -- Check that the start slot does not exceed its epoch size
-    startEpochSize <- lookupEpochSize err startEpoch epochSizes
+    startEpochSize <- getEpochSize startEpoch
     when (getRelativeSlot startSlot >= startEpochSize) $
       throwUserError err $ SlotGreaterThanEpochSizeError
                               startSlot
@@ -160,7 +161,7 @@ validateIteratorRange err next epochSizes start end = do
                               startEpochSize
 
     -- Check that the end slot does not exceed its epoch size
-    endEpochSize <- lookupEpochSize err endEpoch epochSizes
+    endEpochSize <- getEpochSize endEpoch
     when (getRelativeSlot endSlot >= endEpochSize) $
       throwUserError err $ SlotGreaterThanEpochSizeError
                              endSlot
