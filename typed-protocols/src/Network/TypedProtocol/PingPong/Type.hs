@@ -66,25 +66,12 @@ pingPongClientFlood =
     Yield MsgPing $
     Await TokBusy $ \MsgPong -> pingPongClientFlood
 
-pingPongClientFixed :: Int -> Peer AsClient StIdle m ()
-pingPongClientFixed 0 = Yield MsgDone (Done ())
-pingPongClientFixed n =
-    Yield MsgPing $
-    Await TokBusy $ \MsgPong -> (pingPongClientFixed (n-1))
-
 pingPongServerStandard :: Peer AsServer StIdle m ()
 pingPongServerStandard =
     Await TokIdle $ \msg ->
     case msg of
       MsgPing -> Yield MsgPong pingPongServerStandard
       MsgDone -> Done ()
-
-pingPongServerCount :: Int -> Peer AsServer StIdle m Int
-pingPongServerCount !c =
-    Await TokIdle $ \msg ->
-    case msg of
-      MsgPing -> Yield MsgPong (pingPongServerCount (c+1))
-      MsgDone -> Done c
 
 decodePingPongMessage :: forall (st :: PingPongState).
                          StateToken st
@@ -94,9 +81,6 @@ decodePingPongMessage TokIdle "ping" = Just (SomeMessage MsgPing)
 decodePingPongMessage TokIdle "done" = Just (SomeMessage MsgDone)
 decodePingPongMessage TokBusy "pong" = Just (SomeMessage MsgPong)
 decodePingPongMessage _       _      = Nothing
-
-example1 :: Monad m => Int -> m ((), Int)
-example1 n = connect (pingPongClientFixed n) (pingPongServerCount 0)
 
 example2 :: Monad m => m (Maybe ())
 example2 = runPeerWithCodec decodePingPongMessage input pingPongServerStandard
