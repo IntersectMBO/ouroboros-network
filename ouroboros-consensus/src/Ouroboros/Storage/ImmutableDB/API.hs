@@ -95,6 +95,9 @@ data ImmutableDB m = ImmutableDB
     -- | Appends a binary blob at the given relative slot in the current epoch
     -- file.
     --
+    -- After appending the last available blob to the current epoch, the user
+    -- must first manually call 'startNewEpoch'.
+    --
     -- Throws an 'AppendToSlotInThePastError' if the given relative slot is
     -- before the one returned by 'getNextEpochSlot'.
     --

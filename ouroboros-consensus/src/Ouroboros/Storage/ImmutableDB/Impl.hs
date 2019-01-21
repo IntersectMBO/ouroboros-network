@@ -96,8 +96,6 @@
 --
 -- = (Re)opening the database
 --
--- TODO update with new story for reopening and validation
---
 -- The database can be closed and reopened. However, you cannot reopen the
 -- database on a finalised epoch. It is possible to reopen the same epoch the
 -- database was appending to the last time it was open. It is not allowed to
@@ -497,6 +495,11 @@ appendBinaryBlobImpl db relativeSlot builder = runExceptT $
         bytesWritten <- hPut eHnd builder
         return (lastEpochOffset + bytesWritten)
 
+      -- When the '_nextExpectedRelativeSlot' is the last one of the epoch
+      -- (according to the epoch size), we still increment it, but an
+      -- 'appendBinaryBlob' call for that slot will fail with a
+      -- 'SlotGreaterThanEpochSizeError'. The user is required to first
+      -- manually call 'startNewEpoch'.
       return (st { _currentEpochOffsets =
                      (newOffset NE.:| backfillOffsets) <> _currentEpochOffsets
                  , _nextExpectedRelativeSlot = relativeSlot + 1
@@ -597,11 +600,15 @@ streamBinaryBlobsImpl db@ImmutableDBHandle {..} start end = runExceptT $ do
           | epoch == _currentEpoch
           = return $ indexFromSlotOffsets _currentEpochOffsets
           | otherwise
-          = liftFsError $ loadIndex _dbFolder epoch
+          = do
+            index <- liftFsError $ loadIndex _dbFolder epoch
+            unless (isValidIndex index) $
+              throwUnexpectedError $
+                InvalidFileError (_dbFolder <> renderFile "index" epoch)
+                callStack
+            return index
 
     startIndex <- openIndex startEpoch
-    -- TODO validate the index? check monotonically increasing + final offset
-    -- = length epoch file
 
     -- Check if the index slot is filled, otherwise find the next filled
     -- one. If there is none in this epoch, open the next epoch until you
