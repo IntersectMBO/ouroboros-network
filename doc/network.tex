@@ -197,8 +197,8 @@ todo: make a nice table
 \subsubsection{Stake pool} % lookup what this is called in the protocols.tex
 \subsubsection{Small stakeholder}
 \subsubsection{User who has delegated}
-\subsubsection{Requiremts for Participants}
-\subsubsection{Requiremts for Stake Pools}
+\subsubsection{Requirements for Participants}
+\subsubsection{Requirements for Stake Pools}
 \subsubsection{Services that the System should provide}
 
 There are two kinds of Requirements:
@@ -212,7 +212,7 @@ There are two kinds of Requirements:
 
 \section{Protocol Updates on the Blockchain}
 \begin{itemize}
-\item Hydrid phase of federation and decentralization
+\item Hybrid phase of federation and decentralization
 \item Gradually transition between protocol variants on a life blockchain.
 \item Several protocol variant active in parallel.
 \item Communication between Shelley Nodes and existing core nodes.
@@ -226,11 +226,11 @@ There are two basic variants of inter-process-communication in the network:
 \item IPC between a Cardano node and a `chain consumer' component such as a
       wallet, explorer or other custom application.
 \end{itemize}
-Both variants of IPC in the network follow destinct requirements and contraints, and
+Both variants of IPC in the network follow distinct requirements and constraints, and
 ,while the first version of Cardano used a single protocol, the new version will
 use different sets of protocols for both uses cases.
-(See Section \ref{why_distinguish_protocols} for the motivation for this design decision.)
-Throughout the document it will be clear which variant of we are referening to.
+(See Section~\ref{why_distinguish_protocols} for the motivation for this design decision.)
+Throughout the document it will be clear which variant of we are referring to.
 
 \section{Threat Model}
 Todo: find out what a threat model is and whether it should be part of this document.
@@ -257,7 +257,7 @@ are agnostic of the implementation of the upper layers.
 This concept of layers is misleading when discussing Shelly.
 It is {\em not} the case that the consensus (layer) is build on top of the network (layer).
 It is more appropriate to talk about a network component than a network layer.
-The network component provides services to the consensus component and also vice versa.
+The network component provides services to the consensus component and vice versa.
 The network component uses the consensus component to carefully validate every piece of
 information that it distributes to other nodes.
 This is essential to guard against certain kinds of DoS attacks.
@@ -276,7 +276,7 @@ with an of-the-shelf peer-to-peer protocol.
 Specific assumptions about the infrastructure that are relevant for the discussion.
 
 \section{Internet}
-\section{Network Toplogy}
+\section{Network Topology}
 \section{Topographical distribution of block creating nodes}
 \section{TCP}
 
@@ -286,16 +286,17 @@ Specific assumptions about the infrastructure that are relevant for the discussi
 
 \chapter{Protocols}
 \section{Protocols as State-machines}
-The reference implementation of serveral sub-protocols uses a generic framework
+The reference implementation of several sub-protocols uses a generic framework
 for state-machines.
 
-A Haskell implementation of the state machine framework is described in Section
-\ref{Haskell-state-machine}. It uses correct by construction techniques to guarantee
+A Haskell implementation of the state machine framework is described in
+Section~\ref{Haskell-state-machine}. It uses correct by construction
+techniques to guarantee
 several properties of the protocol and the implementation.
-In particular it guaratees that there are no deadlocks. At any time, one side has agency
+In particular it guarantees that there are no deadlocks. At any time, one side has agency
 (is expected to transmit the next message) and the other side is waiting for the message,
-or both sides agree the the protocol has terminated.
-The transmission of a message that is not expected by the protocol aborts the exectution
+or both sides agree the protocol has terminated.
+The transmission of a message that is not expected by the protocol aborts the execution
 of the protocol.
 
 For each sub-protocol that is based on this underlying framework, the description provides the
@@ -303,7 +304,7 @@ following pieces of information:
 
 \begin{itemize}
 \item An informal description of the protocol.
-\item Who is communication.
+\item Who is communicating.
 \item States of the state-machine
 \item The messages that are exchanged
 \item A transition graph of the global view of the state machine.
@@ -320,16 +321,16 @@ following pieces of information:
 \item[States]
   We need to distinguish between the global state of a system,
   which includes the values of all local variable stored on the nodes,
-  and the abstract states of the the state machines.
+  and the abstract states of the state machines.
   The abstract states are equivalent classes of the global state.
   Every global state belongs to exactly one abstract state.
   This specification describes the state machine in terms of the abstract states.
   By definition, client and server are always in identical states
   which also means that client and server simultaneously transit to new states.
-  The concrete implementation needs to relax the definition of state.
+  The concrete implementation needs to relax the definition of the abstract state.
   In the concrete implementation the abstract view of state is replaced with
   client state and server state and transitions on either side happens independently
-  when a message is send or received.
+  when a message is either send or received.
   While a message is in-flight the state of the receiver is undefined.
   The state determines which side is active the client or the server.
   
@@ -337,14 +338,15 @@ following pieces of information:
   Messages are elements from the set
   $\{(lable, data) \mid lable \in Labels, data \in Data\}$.
   Protocols use a small set of $Lables$ typically $|Labels| \leq 10$.
-  State-machine frame work requieres that messages can be serialized,
+  State-machine frame work requires that messages can be serialized,
   transferred over the network and de-serialized by the receiver.
-  The binary format for messages is described in Section \ref{CBOR-section}.
+  The binary format for messages is described in Section~\ref{CBOR-section}.
 \item[Transitions]
   This part of the document describes the transitions of the abstract state of the protocol
   as the result of messages passed between client and the server.
-  In sync with abstract state the  client and server update the local data to compute the
-  the actual "outcome" of a protocol-run, for example "update the block chain".
+  In sync with abstract state the client and the server update the local data
+  to compute the actual "outcome" of a protocol-run, for example "update the
+  blockchain".
   Parts of the local updates are specific to the implementation language and the underlying
   data structures, but they are also relevant for the protocol (to determine the next transition).
 \end{description}
@@ -354,30 +356,28 @@ following pieces of information:
 \begin{description}
 \item[purpose of the protocol]
 
-The Chain Synchronization Protocol is used by the block chain consumer
-to synchronize its block chain with the block chain producer.
-It is polymorphic on blocks. And for some clients it will synchronize just headers (node-to-node),
-for others it can be used to synchronize actual block (e.g., node-to-wallet).
+The Chain Synchronization Protocol is used by the blockchain consumer
+to replicate the producer's blockchain locally.  It is polymorphic in blocks
+as it is designed to support family of Ouroboros protocols, but
+also for some clients it will synchronize just headers (node-to-node), for
+others it can be used to synchronize actual blockchain (e.g., node-to-wallet).
 
 \item[Who is communicating]
-  A node communicates with several upstream and downstream node.
-  The node runs an independent agents for every other node
-  it communicates with. The typically a node runs agents where it acts as a server and also instances
-  where it acts as a client.(See Figure \ref{chain-diagram-read-pointers}.)
-\end{description}
+  A node communicates with several upstream and downstream nodes.
+  The node runs independent agents for every other node
+  it communicates with, whether it acts as an upstream or a downstream peer.
+  (See Figure~\ref{node-diagram-chains-state}.)
+  \begin{figure}
+  \pgfdeclareimage[height=6cm]{node-diagram-chains-state}{node-diagram-chains-state.pdf}
+  \begin{center}
+  \pgfuseimage{node-diagram-chains-state}
+  \end{center}
+  \caption{}
+  \label{node-diagram-chains-state}
+  \end{figure}
 
-
-\begin{description}
-\item[purpose of the protocol]
-The Chain Synchronization Protocol is used by the block chain consumer
-to synchronize its block chain with the block chain producer.
-\item[Who is communicating]
-  A node communicates with several upstream and downstream node.
-  The node runs an independent agents for every other node
-  it communicates with. The typically a node runs agents where it acts as a server and also instances
-  where it acts as a client.
-\item[Where is located in the protocol stack ?]
-\item[What are the interfaces to the lower layers of the stack ?]
+\item[Where is located in the protocol stack?]
+\item[What are the interfaces to the lower layers of the stack?]
   The chain synchronization protocol can send and receive messages. (via a point to point channel.)
 \item[Initialization of an instance of the protocol]
 \end{description}
@@ -415,7 +415,7 @@ to synchronize its block chain with the block chain producer.
 \end{tabular}
 \end{figure}
 
-Client states are green and server states blue.
+Client states are green while server states are blue.
 Arrows denote state transitions of the abstract state and \emph{not} the sender and receiver of messages.
 In particular AwaitReply is a transition between the server states CanAwait and MustReply
 but the corresponding message is send from the server to the client.
@@ -477,11 +477,12 @@ but the corresponding message is send from the server to the client.
 
 \chapter{Haskell}
 While the network protocol itself can be implemented in many programming languages,
-it has been developed in parallel with the Haskell reference implementation.
-In addition to the language agnostic protocol decription in the other parts of this document,
+it has been developed in parallel with a Haskell reference implementation.
+In addition to the language agnostic protocol description in the other parts of this document,
 this section discusses key aspects of the Haskell implementation.
 This section is most useful for people who work with the Haskell reference implementation and
-may give some extra insights for anybody who is interested in implementing the network.
+may give some extra insights for anybody who is interested in implementing the
+network component.
 For understanding the protocol, it is save to skip this section.
 \begin{figure}
 \pgfdeclareimage[height=10cm]{node-diagram-concurency}{node-diagram-concurency.pdf}
@@ -503,10 +504,10 @@ The Why is at least as important as the What.
 \section{Design Discussion}
 \subsubsection{Why distinguish between node to node and node-to-consumer IPC}
 \label{why_distinguish_protocols}
-We use two different sets of protocols for the these two use cases.
+We use two different sets of protocols for these two use cases.
 
 \begin{description}
-\item[node-to-node] IPC beween nodes that are engaged in the high level Ouroboros
+\item[node-to-node] IPC between nodes that are engaged in the high level Ouroboros
       blockchain consensus protocol.
 \item[node-to-consumer] IPC between a Cardano node and a `chain consumer' component such as a
       wallet, explorer or other custom application.
@@ -518,9 +519,9 @@ different protocols.
 The node-to-node protocol is conducted in a P2P environment
 with very limited trust between peers. The node-to-node protocol utilises
 store-and-forward over selected \emph{bearers} which form the underlying
-connectivity graph. A concern in this setting is asymmetric resource consumption
-attacks. Ease of implementation is a nice to have, but is subordinate to the
-other hard constraints.
+connectivity graph. A concern in this setting are asymmetric resource
+consumption attacks. Ease of implementation is a nice to have, but is
+subordinate to the other hard constraints.
 
 A node-to-consumer protocol is intended to support blockchain applications
 like wallets and explorers, or Cardano-specific caches or proxies. The setting
@@ -559,7 +560,7 @@ then we can make many other choices.
 With an efficient \emph{local} IPC protocol we can have applications
 like wallets and explorers as separate processes. Even for tightly
 integrated components it can make sense to run them in separate OS
-processes and the associated OS mamagement tools. Not only is the
+processes and the associated OS management tools. Not only is the
 timing constraints for a consensus node are much easier to manage when
 it does not have to share CPU resources with chain consumers, but it
 enables the use of operating system features to give finer control
@@ -623,9 +624,9 @@ the reference implementation
 \bibliography{references}
 
 \appendix
-\section{Nomencenture}
+\section{Nomenclature}
 \begin{description}
-\item[Adversry / Adversarial Action] acting in way to subvert the
+\item[Adversary / Adversarial Action] acting in way to subvert the
   correct (or performant) operation of the distributed protocol. Note
   that non-performance of certain functions at appropriate times can
   fall into this category.
