@@ -51,6 +51,9 @@ test-suite tests
   build-depends:     base
                    , async
                    , bytestring
+                   , free
+                   , io-sim-classes
+                   , io-sim
                    , QuickCheck
                    , tasty
                    , tasty-quickcheck
