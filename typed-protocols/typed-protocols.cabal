@@ -19,6 +19,9 @@ library
                    , Network.TypedProtocol.Channel
                    , Network.TypedProtocol.Codec
                    , Network.TypedProtocol.Driver
+                   , Network.TypedProtocol.PingPong.Client
+                   , Network.TypedProtocol.PingPong.Server
+                   , Network.TypedProtocol.PingPong.Direct
   other-extensions:  GADTs
                    , RankNTypes
                    , PolyKinds
@@ -40,20 +43,17 @@ library
   ghc-options:       -Wall
                      -Wno-unticked-promoted-constructors
 
-test-suite test-typed-transitions
+test-suite tests
   type:              exitcode-stdio-1.0
   main-is:           Main.hs
   hs-source-dirs:    test
-  other-modules:     Test.Protocol.Channel
-                     Test.Protocol.Codec
-                     Test.Protocol.Codec.Coherent
-                     Test.Protocol.Codec.PingPong
+  other-modules:     Test.Network.TypedProtocol.PingPong
   build-depends:     base
                    , async
                    , bytestring
                    , QuickCheck
                    , tasty
                    , tasty-quickcheck
-                   , typed-transitions
+                   , typed-protocols
   default-language:  Haskell2010
   ghc-options:      -rtsopts
