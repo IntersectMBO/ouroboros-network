@@ -2,18 +2,32 @@
 {-# LANGUAGE TypeApplications #-}
 module Test.Network.TypedProtocol.PingPong where
 
+import           Control.Monad.Class.MonadFork (MonadFork (..))
+import           Control.Monad.Class.MonadST (MonadST (..))
 import           Control.Monad.Class.MonadSTM (MonadSTM (..))
-import           Control.Monad.Class.MonadProbe (MonadProbe (..), MonadRunProbe (..), withProbe)
+import           Control.Monad.Class.MonadProbe
+  ( MonadProbe (..)
+  , MonadRunProbe (..)
+  , withProbe
+  )
 import           Control.Monad.Class.MonadTimer (MonadTimer (..))
 import           Control.Monad.ST.Lazy (runST)
 import           Control.Monad.Free (Free)
 import           Control.Monad.IOSim (SimF)
 
+import           Data.ByteString (ByteString)
+import qualified Data.ByteString.Char8 as BSC
 import           Data.Functor.Identity (Identity (..))
 import           Data.List (foldl')
 
 
-import           Network.TypedProtocol.Core (connect)
+import           Network.TypedProtocol.Codec (transformCodec)
+import           Network.TypedProtocol.Channel
+  ( Channel
+  , createConnectedChannels
+  , createPipeConnectedChannels
+  )
+import           Network.TypedProtocol.Driver (connect, runPeer)
 import qualified Network.TypedProtocol.Pipelined as Pipelined
 
 import           Network.TypedProtocol.PingPong.Client
@@ -22,6 +36,7 @@ import           Network.TypedProtocol.PingPong.Client
   , pingPongSenderCount
   , pingPongClientPeerSender
   )
+import           Network.TypedProtocol.PingPong.Codec (pingPongCodec)
 import           Network.TypedProtocol.PingPong.Server
   ( pingPongServerCount
   , pingPongServerPeer
@@ -38,6 +53,9 @@ tests = testGroup "Network.TypedProtocol.PingPong"
   , testProperty "connect" prop_connect
   , testProperty "connect_piplined ST" prop_connect_pipelined_ST
   , testProperty "connect_piplined IO" prop_connect_pipelined_IO
+  , testProperty "channel ST" prop_channel_ST
+  , testProperty "channel IO" prop_channel_IO
+  , testProperty "pipe" prop_pipe
   ]
 
 runExperiment
@@ -96,3 +114,53 @@ prop_connect_pipelined_IO
   -> Property
 prop_connect_pipelined_IO p = ioProperty $ runExperiment
   (connect_pipelined_experiment p)
+
+channel_experiment
+  :: forall m.
+     ( MonadST m
+     , MonadSTM m
+     , MonadProbe m
+     )
+  => Channel m ByteString
+  -> Channel m ByteString
+  -> Positive Int
+  -> Probe m Property
+  -> m ()
+channel_experiment clientChannel serverChannel (Positive x) probe = do
+  serverVar <- newEmptyTMVarIO
+  let c = fromIntegral x
+      clientPeer = pingPongClientPeer $ pingPongClientFixed c
+      serverPeer = pingPongServerPeer pingPongServerCount
+      codec = transformCodec BSC.pack BSC.unpack pingPongCodec
+
+  fork $ do
+    res <- runPeer codec serverChannel serverPeer
+    atomically $ putTMVar serverVar res
+  fork $ runPeer codec clientChannel clientPeer
+
+  res <- atomically $ takeTMVar serverVar
+  probeOutput probe (res === c)
+
+prop_channel_ST
+  :: Positive Int
+  -> Property
+prop_channel_ST p =
+  runST $ runExperiment $ \probe -> do
+    (clientChannel, serverChannel) <- createConnectedChannels
+    channel_experiment clientChannel serverChannel p probe
+
+prop_channel_IO
+  :: Positive Int
+  -> Property
+prop_channel_IO p =
+  ioProperty $ runExperiment $ \probe -> do
+    (clientChannel, serverChannel) <- createConnectedChannels
+    channel_experiment clientChannel serverChannel p probe
+
+prop_pipe
+  :: Positive Int
+  -> Property
+prop_pipe p =
+  ioProperty $ runExperiment $ \probe -> do
+    (clientChannel, serverChannel) <- createPipeConnectedChannels
+    channel_experiment clientChannel serverChannel p probe
