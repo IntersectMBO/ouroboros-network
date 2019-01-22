@@ -187,7 +187,8 @@ data PeerKind = AsClient | AsServer        -- Only used as promoted types
 
 data WhoHasAgency = ClientHasAgency | ServerHasAgency | NobodyHasAgency
 
-type family CurrentAgency (peer :: PeerKind) (agency :: WhoHasAgency) :: Agency where
+type family CurrentAgency (peer   :: PeerKind)
+                          (agency :: WhoHasAgency) :: Agency where
   CurrentAgency AsClient ClientHasAgency = Yielding
   CurrentAgency AsClient ServerHasAgency = Awaiting
   CurrentAgency AsClient NobodyHasAgency = Finished
