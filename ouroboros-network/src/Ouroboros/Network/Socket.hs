@@ -5,6 +5,7 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE CPP #-}
 
 module Ouroboros.Network.Socket (
       SocketBearer (..)
@@ -15,13 +16,29 @@ import           Control.Monad
 import           Control.Monad.IO.Class
 import           Control.Monad.Class.MonadTimer
 import           Control.Monad.Class.MonadFork
+import           Control.Monad.Class.MonadSTM
+import qualified Control.Monad.STM as STM
+import qualified Control.Concurrent.STM.TBQueue as STM
+import qualified Control.Concurrent.STM.TMVar as STM
+import qualified Control.Concurrent.STM.TVar as STM
 import           Data.Bits
 import           Data.Int
 import qualified Data.ByteString.Lazy as BL
 import           Data.ByteString.Lazy.Char8 (pack)
-import qualified Ouroboros.Network.Mux as Mx
+import qualified Data.Map.Strict as M
 import           Network.Socket hiding (recv, recvFrom, send, sendTo)
 import           Network.Socket.ByteString.Lazy (sendAll, recv)
+
+import           Ouroboros.Network.Chain (Chain, ChainUpdate, Point)
+import qualified Ouroboros.Network.Chain as Chain
+import qualified Ouroboros.Network.ChainProducerState as CPS
+import           Ouroboros.Network.ChainSyncExamples
+import qualified Ouroboros.Network.Mux as Mx
+import           Ouroboros.Network.Protocol.ChainSync.Codec.Cbor
+import           Ouroboros.Network.Protocol.ChainSync.Type
+import           Ouroboros.Network.Protocol.ChainSync.Client
+import           Ouroboros.Network.Protocol.ChainSync.Server
+import           Ouroboros.Network.Serialise
 
 import           Text.Printf
 
@@ -41,6 +58,48 @@ instance MonadIO SocketBearer where
 data SocketCtx = SocketCtx {
       scSocket :: Socket
     }
+
+{- instance MonadSTM SocketBearer where
+    type Tr   SocketBearer = SocketBearer STM.STM
+    type TVar SocketBearer = SocketBearer STM.TVar
+
+    atomically  = liftIO $ STM.atomically
+    newTVar     = liftIO $ STM.newTVar
+    readTVar    = liftIO $ STM.readTVar
+    writeTVar   = liftIO $ STM.writeTVar
+    retry       = liftIO $ STM.retry
+
+    newTVarIO   = liftIO $ STM.newTVarIO
+    modifyTVar  = liftIO $ STM.modifyTVar
+    modifyTVar' = liftIO $ STM.modifyTVar'
+    check       = liftIO $ STM.check
+
+    type TMVar SocketBearer = SocketBearer STM.TMVar
+
+    newTMVar        = liftIO $ STM.newTMVar
+    newTMVarIO      = liftIO $ STM.newTMVarIO
+    newEmptyTMVar   = liftIO $ STM.newEmptyTMVar
+    newEmptyTMVarIO = liftIO $ STM.newEmptyTMVarIO
+    takeTMVar       = liftIO $ STM.takeTMVar
+    tryTakeTMVar    = liftIO $ STM.tryTakeTMVar
+    putTMVar        = liftIO $ STM.putTMVar
+    tryPutTMVar     = liftIO $ STM.tryPutTMVar
+    readTMVar       = liftIO $ STM.readTMVar
+    tryReadTMVar    = liftIO $ STM.tryReadTMVar
+    swapTMVar       = liftIO $ STM.swapTMVar
+    isEmptyTMVar    = liftIO $ STM.isEmptyTMVar
+
+    type TBQueue SocketBearer = SocketBearer STM.TBQueue
+
+#if MIN_VERSION_stm(2,5,0)
+   newTBQueue     =liftIO $  STM.newTBQueue
+#else
+    -- STM prior to 2.5.0 takes an Int
+    newTBQueue     = liftIO $ STM.newTBQueue . fromEnum
+#endif
+    readTBQueue    = liftIO $ STM.readTBQueue
+    writeTBQueue   = liftIO $ STM.writeTBQueue-}
+
 
 instance Mx.MuxBearer SocketBearer where
     type AssociationDetails SocketBearer = AddrInfo
@@ -89,6 +148,28 @@ recvLen' sd l bufs = do
     if BL.null buf
           then error "socket closed" -- XXX throw exception
           else recvLen' sd (l - fromIntegral (BL.length buf)) (buf : bufs)
+
+
+demo2 :: forall block .
+        (Chain.HasHeader block, Serialise block, Eq block )
+     => Chain block -> [ChainUpdate block] -> IO Bool
+demo2 chain0 updates = do
+    a:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "6060")
+    b:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
+
+    producerVar <- newTVarIO (CPS.initChainProducerState chain0)
+    consumerVar <- newTVarIO chain0
+
+    let a_mps = Mx.MiniProtocolDescriptions $ M.fromList [(Mx.ChainSync, Mx.MiniProtocolDescription Mx.ChainSync consumerInit consumerRsp)]
+
+    runSocketBearer $ Mx.start a_mps a
+
+    return True
+  where
+    consumerInit channel = liftIO $ return ()
+    consumerRsp channel = liftIO $ return ()
+
+
 
 
 demo :: IO ()
