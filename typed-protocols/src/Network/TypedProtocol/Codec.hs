@@ -36,6 +36,17 @@ data Codec ps failure m bytes = Codec {
               -> m (DecodeStep bytes failure m (SomeMessage st))
      }
 
+transformCodec
+  :: Functor m
+  => (bytes  -> bytes')
+  -> (bytes' -> bytes)
+  -> Codec ps failure m bytes
+  -> Codec ps failure m bytes'
+transformCodec to from Codec {encode, decode} = Codec {
+    encode = to . encode,
+    decode = fmap (transformDecodeStep to from) . decode
+  }
+
 -- The types here are pretty fancy. The decode is polymorphic in the protocol
 -- state, but only for kinds that are the same kind as the protocol state.
 -- The StateToken is a type family that resolves to a singleton, and the
@@ -64,6 +75,16 @@ data DecodeStep bytes failure m a =
     -- @'DeserialiseFailure'@ exception describing the reason why the
     -- failure occurred.
   | Fail failure
+
+transformDecodeStep
+  :: Functor m
+  => (bytes -> bytes')
+  -> (bytes' -> bytes)
+  -> DecodeStep bytes  failure m a
+  -> DecodeStep bytes' failure m a
+transformDecodeStep to from (Partial fn) = Partial $ fmap (transformDecodeStep to from) . fn . fmap from
+transformDecodeStep to _ (Done a bs) = Done a (to bs)
+transformDecodeStep _ _ (Fail failure) = Fail failure
 
 data SomeMessage (st :: ps) where
      SomeMessage :: Message st st' -> SomeMessage st
