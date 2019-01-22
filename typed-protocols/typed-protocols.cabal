@@ -18,6 +18,7 @@ library
                    , Network.TypedProtocol.PingPong.Type
                    , Network.TypedProtocol.Channel
                    , Network.TypedProtocol.Codec
+                   , Network.TypedProtocol.Driver
   other-extensions:  GADTs
                    , RankNTypes
                    , PolyKinds

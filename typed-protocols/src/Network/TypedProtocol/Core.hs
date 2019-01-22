@@ -50,16 +50,10 @@ module Network.TypedProtocol.Core (
   done,
   yield,
   await,
-  connect,
 
   -- * Internals
   Agency(..),
   CurrentAgency,
-  
-  -- TODO: move
-  runPeer,
-  runPeerWithCodec,
-  SomeMessage(..),
   ) where
 
 import Data.Kind (Type)
@@ -216,63 +210,4 @@ await :: (CurrentAgency pk (AgencyInState st) ~ Awaiting)
       -> (forall st'. Message st st' -> Peer pk st' m a)
       -> Peer pk st m a
 await = Await
-
-
--- | The 'connect' function takes two peers that agree on a protocol and runs
--- them in lock step, until (and if) they complete.
---
--- The 'connect' function serves a few purposes.
---
--- * The fact we can define this function at at all proves some minimal
--- sanity property of the typed protocol framework.
---
--- * It demonstrates that all protocols defined in the framework can be run
--- with synchronous communication rather than requiring buffered communication.
---
--- * It is useful for testing peer implementations against each other in a
--- minimalistic setting. The typed framework guarantees
---
-connect :: Monad m
-        => Peer AsClient st m a
-        -> Peer AsServer st m b
-        -> m (a, b)
-connect (Effect a) b  = a >>= \a' -> connect a' b
-connect a  (Effect b) = b >>= \b' -> connect a  b'
-connect (Done a) (Done b) = return (a, b)
-connect (Yield msg a) (Await _ b) = connect a (b msg)
-connect (Await _ a) (Yield msg b) = connect (a msg) b
---connect (Done _) (Yield _ _) = 
-
-runPeer :: Monad m => Peer pk st m a -> m a
-runPeer (Effect k)    = k >>= runPeer
-runPeer (Done x)      = return x
-runPeer (Yield _m k)  = runPeer k
-runPeer (Await _ k)   = runPeer (k msg) where msg = undefined
-
-data SomeMessage st where
-     SomeMessage :: Message st st' -> SomeMessage st
-
-
-runPeerWithCodec
-  :: forall ps (st :: ps) pk m a bytes.
-     Monad m
-  => (forall (st'' :: ps). StateToken st'' -> bytes -> Maybe (SomeMessage st''))
-  -> [bytes]
-  -> Peer pk st m a
-  -> m (Maybe a)
-
--- The type here is pretty fancy. The decode is polymorphic in the protocol
--- state, but only for kinds that are the same kind as the protocol state.
--- The StateToken is a type family that resolves to a singleton, and the
--- result uses existential types to hide the unknown type of the state we're
--- transitioning to.
-
-runPeerWithCodec decode msgs (Effect k)     = k >>= runPeerWithCodec decode msgs
-runPeerWithCodec _      _    (Done x)       = return (Just x)
-runPeerWithCodec decode msgs (Yield _msg k) = runPeerWithCodec decode msgs k
-runPeerWithCodec decode (msg:msgs) (Await tok   k) =
-    case decode tok msg of
-      Just (SomeMessage tr) -> runPeerWithCodec decode msgs (k tr)
-      Nothing               -> return Nothing
-runPeerWithCodec _ [] (Await _ _) = return Nothing
 
