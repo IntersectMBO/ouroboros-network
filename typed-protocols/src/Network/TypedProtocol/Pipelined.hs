@@ -46,7 +46,7 @@ module Network.TypedProtocol.Pipelined where
 
 import           Network.TypedProtocol.Core hiding (Peer(..))
 --import qualified Network.TypedProtocol.Core as Core
-import           Control.Monad.Class.MonadSTM
+--import           Control.Monad.Class.MonadSTM
 
 
 
@@ -77,56 +77,5 @@ data PeerReceiver (pk :: PeerKind) (st :: ps) (st' :: ps) m where
             -> (forall st''. Message st st'' -> PeerReceiver pk st'' st' m)
             -> PeerReceiver pk st st' m
 
-data ReceiveHandler pk ps m where
-     ReceiveHandler :: PeerReceiver pk (st :: ps) (st' :: ps) m
-                    -> ReceiveHandler pk ps m
 
-runPipelinedPeerWithCodec
-  :: forall ps (st :: ps) pk m a bytes.
-     (Monad m, MonadSTM m)
-  => (forall (st'' :: ps). StateToken st'' -> bytes -> Maybe (SomeMessage st''))
-  -> [bytes]
-  -> PeerSender pk st m a
-  -> m (Maybe a)
-runPipelinedPeerWithCodec decode msgs0 sender = do
-    queue <- atomically $ newTBQueue 10
-    fork $ runReceiver' queue msgs0
-    runSender queue sender
-  where
-    runSender :: forall st.
-                 TBQueue m (ReceiveHandler pk ps m)
-              -> PeerSender pk st m a
-              -> m (Maybe a)
-
-    runSender queue (Effect k) = k >>= runSender queue
-
-    runSender _queue (Done x) = return (Just x)
-
-    runSender queue (Yield _msg receiver k) = do
-      {- serialise and send msg -}
-      atomically $ writeTBQueue queue (ReceiveHandler receiver)
-      runSender queue k
-
-    runReceiver' :: TBQueue m (ReceiveHandler pk ps m) -> [bytes] -> m ()
-    runReceiver' queue msgs = do
-      receiver <- atomically $ readTBQueue queue
-      case receiver of
-        ReceiveHandler handler ->
-          runReceiver decode msgs handler >>= runReceiver' queue
-
-runReceiver :: Monad m
-            => (forall (st'' :: ps). StateToken st'' -> bytes -> Maybe (SomeMessage st''))
-            -> [bytes]
-            -> PeerReceiver pk (st :: ps) (st' :: ps) m
-            -> m [bytes]
-runReceiver decode msgs (Effect' k) = k >>= runReceiver decode msgs
-
-runReceiver _decode msgs Completed = return msgs
-
-runReceiver decode (msg:msgs) (Await tok k) =
-    case decode tok msg of
-      Just (SomeMessage msg') -> runReceiver decode msgs (k msg')
-      Nothing                 -> undefined
-
-runReceiver _ [] (Await _ _) = undefined
 
