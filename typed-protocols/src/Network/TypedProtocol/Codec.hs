@@ -1,15 +1,17 @@
-{-# LANGUAGE DeriveFunctor              #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes                 #-}
-{-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE GADTSyntax                 #-}
+{-# LANGUAGE ExistentialQuantification  #-}
+{-# LANGUAGE NamedFieldPuns             #-}
 
 module Network.TypedProtocol.Codec where
 
-import           Control.Monad.ST (ST)
-import           Control.Monad.Class.MonadST
+import           Network.TypedProtocol.Core
 
+--import           Control.Monad.ST (ST)
+--import           Control.Monad.Class.MonadST
+{-
 import qualified Codec.CBOR.Encoding as CBOR (Encoding)
 import qualified Codec.CBOR.Read     as CBOR
 import qualified Codec.CBOR.Decoding as CBOR (Decoder)
@@ -22,13 +24,28 @@ import qualified Data.ByteString.Builder as BS
 import qualified Data.ByteString.Builder.Extra as BS
 import qualified Data.ByteString.Lazy.Internal as LBS (smallChunkSize)
 import qualified Data.ByteString.Lazy          as LBS
+-}
 
+data Codec ps failure m bytes = Codec {
+       encode :: forall (st :: ps) (st' :: ps).
+                 Message st st'
+              -> bytes,
 
-data Codec bytes failure m a = Codec {
-       encode    :: a -> [bytes],
-       decode    :: m (DecodeStep bytes failure m a)
---       chunkNull :: bytes -> Bool
+       decode :: forall (st :: ps).
+                 StateToken st
+              -> m (DecodeStep bytes failure m (SomeMessage st))
      }
+
+-- The types here are pretty fancy. The decode is polymorphic in the protocol
+-- state, but only for kinds that are the same kind as the protocol state.
+-- The StateToken is a type family that resolves to a singleton, and the
+-- result uses existential types to hide the unknown type of the state we're
+-- transitioning to.
+--
+-- Both the Message and StateToken data families are indexed on the kind ps
+-- which is why it has to be a paramater here, otherwise these functions
+-- are unusable.
+
 
 data DecodeStep bytes failure m a =
     -- | The decoder has consumed the available input and needs more
@@ -48,8 +65,11 @@ data DecodeStep bytes failure m a =
     -- failure occurred.
   | Fail failure
 
+data SomeMessage (st :: ps) where
+     SomeMessage :: Message st st' -> SomeMessage st
 
 
+{-
 serialiseCodec :: (MonadST m, Serialise.Serialise a)
                => Codec ByteString CBOR.DeserialiseFailure m a
 serialiseCodec = cborCodec Serialise.encode Serialise.decode 
@@ -94,4 +114,4 @@ convertCborDecoder cborDecode liftST =
     go (CBOR.Done  trailing _ x)          = Done x trailing
     go (CBOR.Fail _trailing _off failure) = Fail failure
     go (CBOR.Partial k)                   = Partial (fmap go . liftST . k)
-
+-}
