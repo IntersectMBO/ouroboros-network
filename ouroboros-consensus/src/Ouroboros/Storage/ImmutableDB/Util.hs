@@ -2,6 +2,7 @@
 {-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
+{-# LANGUAGE TupleSections     #-}
 
 module Ouroboros.Storage.ImmutableDB.Util where
 
@@ -57,18 +58,17 @@ throwUnexpectedError :: ErrorHandling ImmutableDBError m
                      -> UnexpectedError -> m a
 throwUnexpectedError = throwError . handleUnexpected
 
--- | Parse the epoch number from the filename of an index or epoch file.
+-- | Parse the prefix and epoch number from the filename of an index or epoch
+-- file.
 --
--- > parseEpochNumber "epoch-001.dat"
--- Just 1
-parseEpochNumber :: String -> Maybe Epoch
-parseEpochNumber = readMaybe
-                 . T.unpack
-                 . snd
-                 . T.breakOnEnd "-"
-                 . fst
-                 . T.breakOn "."
-                 . T.pack
+-- > parseDBFile "epoch-001.dat"
+-- Just ("epoch", 1)
+-- > parseDBFile "index-012.dat"
+-- Just ("index", 12)
+parseDBFile :: String -> Maybe (String, Epoch)
+parseDBFile s = case T.splitOn "-" . fst . T.breakOn "." . T.pack $ s of
+    [prefix, n] -> (T.unpack prefix,) <$> readMaybe (T.unpack n)
+    _           -> Nothing
 
 -- | Read all the data from the given file handle 64kB at a time.
 --

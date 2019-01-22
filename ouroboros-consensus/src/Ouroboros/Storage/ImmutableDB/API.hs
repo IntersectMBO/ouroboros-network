@@ -30,12 +30,12 @@ import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
 -- using the database, and closes the database using its 'closeDB' function,
 -- in case of success or when an exception was raised.
 withDB :: (HasCallStack, MonadMask m)
-       => m (ImmutableDB m)
+       => m (ImmutableDB m, Maybe EpochSlot)
           -- ^ How to open the database
-       -> (ImmutableDB m -> m a)
+       -> (ImmutableDB m -> Maybe EpochSlot -> m a)
           -- ^ Action to perform using the database
        -> m a
-withDB openDB = bracket openDB closeDB
+withDB openDB action = bracket openDB (\(db, _) -> closeDB db) (uncurry action)
 
 -- | API for the 'ImmutableDB'.
 --
@@ -49,20 +49,24 @@ data ImmutableDB m = ImmutableDB
     -- __Note__: Use 'withDB' instead of this function.
     closeDB
       :: HasCallStack => m ()
-      -- TODO remove this operation from the public API, replace it with a
-      -- reopen + validate function that can be used in case of an error.
-      --
-      -- The idea is that the 'ImmutableDB' handle/record can be stored in a
-      -- Reader (instead of State), so in case of an error, we can reopen the
-      -- same database (after validation) instead of having to create a new
-      -- 'ImmutableDB' record for the same on-disk database.
-      --
-      -- We should still expose this field in an internal record so it can be
-      -- used by 'withDB'.
+      -- TODO remove this operation from the public API and expose it using an
+      -- internal record so it can be used by 'withDB'.
 
     -- | Return 'True' when the database is open.
   , isOpen
       :: HasCallStack => m Bool
+
+    -- | When the database was closed, manually or because of an
+    -- 'UnexpectedError' during a write operation, recover using the given
+    -- 'RecoveryPolicy' and reopen it at the most recent epoch.
+    --
+    -- Returns the 'EpochSlot' corresponding to reopened epoch and the last
+    -- relative slot that stores a blob, or 'Nothing' in case of an empty
+    -- database.
+    --
+    -- When the database is still open, this is a no-op.
+  , reopen
+      :: forall e. HasCallStack => RecoveryPolicy e m -> m (Maybe EpochSlot)
 
     -- | Return the next free 'RelativeSlot' in the current epoch as an
     -- 'EpochSlot'.
