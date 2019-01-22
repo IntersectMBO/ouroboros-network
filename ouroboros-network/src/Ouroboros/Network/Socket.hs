@@ -59,46 +59,53 @@ data SocketCtx = SocketCtx {
       scSocket :: Socket
     }
 
-{- instance MonadSTM SocketBearer where
-    type Tr   SocketBearer = SocketBearer STM.STM
-    type TVar SocketBearer = SocketBearer STM.TVar
+newtype SocketBearerSTM a = SocketBearerSTM {
+    runSocketBearerSTM :: STM.STM a
+  } deriving (Functor, Applicative, Monad)
 
-    atomically  = liftIO $ STM.atomically
-    newTVar     = liftIO $ STM.newTVar
-    readTVar    = liftIO $ STM.readTVar
-    writeTVar   = liftIO $ STM.writeTVar
-    retry       = liftIO $ STM.retry
+instance MonadFork SocketBearer where
+  fork (SocketBearer io) = SocketBearer (fork io)
 
-    newTVarIO   = liftIO $ STM.newTVarIO
-    modifyTVar  = liftIO $ STM.modifyTVar
-    modifyTVar' = liftIO $ STM.modifyTVar'
-    check       = liftIO $ STM.check
+instance MonadSTM SocketBearer where
+    type Tr   SocketBearer = SocketBearerSTM
+    type TVar SocketBearer = STM.TVar
 
-    type TMVar SocketBearer = SocketBearer STM.TMVar
+    atomically  =  SocketBearer . STM.atomically . runSocketBearerSTM
+    newTVar     = SocketBearerSTM . STM.newTVar
+    readTVar    = SocketBearerSTM . STM.readTVar
+    writeTVar   = fmap SocketBearerSTM . STM.writeTVar
+    retry       = SocketBearerSTM STM.retry
 
-    newTMVar        = liftIO $ STM.newTMVar
-    newTMVarIO      = liftIO $ STM.newTMVarIO
-    newEmptyTMVar   = liftIO $ STM.newEmptyTMVar
-    newEmptyTMVarIO = liftIO $ STM.newEmptyTMVarIO
-    takeTMVar       = liftIO $ STM.takeTMVar
-    tryTakeTMVar    = liftIO $ STM.tryTakeTMVar
-    putTMVar        = liftIO $ STM.putTMVar
-    tryPutTMVar     = liftIO $ STM.tryPutTMVar
-    readTMVar       = liftIO $ STM.readTMVar
-    tryReadTMVar    = liftIO $ STM.tryReadTMVar
-    swapTMVar       = liftIO $ STM.swapTMVar
-    isEmptyTMVar    = liftIO $ STM.isEmptyTMVar
+    newTVarIO   = SocketBearer . STM.newTVarIO
+    modifyTVar  = fmap SocketBearerSTM . STM.modifyTVar
+    modifyTVar' = fmap SocketBearerSTM . STM.modifyTVar'
+    check       = SocketBearerSTM . STM.check
 
-    type TBQueue SocketBearer = SocketBearer STM.TBQueue
+    type TMVar SocketBearer = STM.TMVar
+
+    newTMVar        = SocketBearerSTM . STM.newTMVar
+    newTMVarIO      = SocketBearer . STM.newTMVarIO
+    newEmptyTMVar   = SocketBearerSTM STM.newEmptyTMVar
+    newEmptyTMVarIO = SocketBearer STM.newEmptyTMVarIO
+    takeTMVar       = SocketBearerSTM . STM.takeTMVar
+    tryTakeTMVar    = SocketBearerSTM . STM.tryTakeTMVar
+    putTMVar        = fmap SocketBearerSTM . STM.putTMVar
+    tryPutTMVar     = fmap SocketBearerSTM . STM.tryPutTMVar
+    readTMVar       = SocketBearerSTM . STM.readTMVar
+    tryReadTMVar    = SocketBearerSTM . STM.tryReadTMVar
+    swapTMVar       = fmap SocketBearerSTM . STM.swapTMVar
+    isEmptyTMVar    = SocketBearerSTM . STM.isEmptyTMVar
+
+    type TBQueue SocketBearer = STM.TBQueue
 
 #if MIN_VERSION_stm(2,5,0)
-   newTBQueue     =liftIO $  STM.newTBQueue
+    newTBQueue     = SocketBearerSTM . STM.newTBQueue
 #else
     -- STM prior to 2.5.0 takes an Int
-    newTBQueue     = liftIO $ STM.newTBQueue . fromEnum
+    newTBQueue     = SocketBearerSTM . STM.newTBQueue . fromEnum
 #endif
-    readTBQueue    = liftIO $ STM.readTBQueue
-    writeTBQueue   = liftIO $ STM.writeTBQueue-}
+    readTBQueue    = SocketBearerSTM . STM.readTBQueue
+    writeTBQueue   = fmap SocketBearerSTM . STM.writeTBQueue
 
 
 instance Mx.MuxBearer SocketBearer where
