@@ -10,7 +10,9 @@
 module Network.TypedProtocol.PingPong.Type where
 
 import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Codec hiding (Done)
 import qualified Network.TypedProtocol.Pipelined as Pipelined
+import           Network.TypedProtocol.Driver
 
 
 -- | States in the ping pong system.
@@ -119,7 +121,7 @@ pingPongClientPipelined n =
 
 example3 :: IO (Maybe ())
 example3 =
-    Pipelined.runPipelinedPeerWithCodec
+    runPipelinedPeerWithCodec
       decodePingPongMessage
       input
       (pingPongClientPipelined 2)
