@@ -1,4 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards   #-}
+
 -- TODO: This module consists of
 --
 -- * Unit tests for the HasFS mock implementation.
@@ -9,8 +11,6 @@
 module Test.Ouroboros.Storage.FS
   ( tests
   ) where
-
-import           Control.Monad.Except
 
 import qualified Data.ByteString.Builder.Extra as BL
 import qualified Data.ByteString.Lazy.Char8 as C8
@@ -28,9 +28,9 @@ import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.HUnit
 import           Test.Tasty.QuickCheck (testProperty)
 
-import           Ouroboros.Storage.FS.Class
-import qualified Ouroboros.Storage.FS.Class.Example as FS.Class.Example
-import           Ouroboros.Storage.FS.Class.Types
+import           Ouroboros.Storage.FS.API
+import qualified Ouroboros.Storage.FS.API.Example as FS.API.Example
+import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.FS.Sim.FsTree (FsTree (..))
 import qualified Ouroboros.Storage.FS.Sim.FsTree as FS
 import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
@@ -39,7 +39,7 @@ import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
 -- The list of all tests
 --
 
-tests :: HasCallStack => FilePath -> TestTree
+tests :: FilePath -> TestTree
 tests tmpDir = testGroup "HasFS"
     [ StateMachine.tests tmpDir
 
@@ -81,7 +81,6 @@ tests tmpDir = testGroup "HasFS"
     , testCase     "example equivalence" test_example
     ]
 
-
 {------------------------------------------------------------------------------
  The tests proper
 -------------------------------------------------------------------------------}
@@ -103,9 +102,9 @@ test_touchFile = do
 
 test_createDirectory :: Assertion
 test_createDirectory = do
-    withMockFSE (\(_, fs1) -> Mock.mockFiles fs1 @?= result1) $ runExceptT $
+    withMockFS tryAny (\(Right (_, fs1)) -> Mock.mockFiles fs1 @?= result1) $ \HasFS{..} _err ->
       createDirectory ["foo"]
-    withMockFSE (\(_, fs2) -> Mock.mockFiles fs2 @?= result2) $ runExceptT $
+    withMockFS tryAny (\(Right (_, fs2)) -> Mock.mockFiles fs2 @?= result2) $ \HasFS{..} _err ->
       createDirectoryIfMissing True ["demo", "foo"]
   where
      result1 = Folder $ M.fromList [("foo", Folder mempty)]
@@ -115,11 +114,11 @@ test_createDirectory = do
 
 test_listDirectory :: Assertion
 test_listDirectory =
-    withMockFSE (\(r, _) -> expectFsResult files r) $ runExceptT $ do
+    withMockFS tryFS (expectFsResult $ \(r, _) -> r @?= files) $ \hasFS@HasFS{..} _err  -> do
       createDirectory ["foo"]
-      withFile ["foo", "foo.txt"] IO.WriteMode $ \_ -> return ()
-      withFile ["foo", "bar.txt"] IO.WriteMode $ \_ -> return ()
-      withFile ["foo", "quux.md"] IO.WriteMode $ \_ -> return ()
+      withFile hasFS ["foo", "foo.txt"] IO.WriteMode $ \_ -> return ()
+      withFile hasFS ["foo", "bar.txt"] IO.WriteMode $ \_ -> return ()
+      withFile hasFS ["foo", "quux.md"] IO.WriteMode $ \_ -> return ()
       listDirectory ["foo"]
   where
     files = Set.fromList ["foo.txt", "bar.txt", "quux.md"]
@@ -130,17 +129,15 @@ test_listDirectory =
 
 test_hOpenDoesExist :: Assertion
 test_hOpenDoesExist =
-    flip withMockFSE (runExceptT $ hOpen ["foo.txt"] IO.WriteMode) $ \(r, fs) -> do
-      assertBool "hOpen failed" (isRight r)
+    flip (withMockFS tryFS) (\HasFS{..} _err -> hOpen ["foo.txt"] IO.WriteMode) $ \(Right (_r, fs)) -> do
       -- The file must have been created
       assertBool "file not in the mock FS" $
         isRight (FS.index ["foo.txt"] (Mock.mockFiles fs))
 
 test_hOpenDoesNotExist :: Assertion
 test_hOpenDoesNotExist =
-    withMockFS (\(r, _) -> expectFsError FsResourceDoesNotExist r) $
-      runExceptT $ hOpen ["test", "foo.txt"] IO.WriteMode
-
+    withMockFS tryFS (expectFsError FsResourceDoesNotExist) $ \HasFS{..} _err ->
+      hOpen ["test", "foo.txt"] IO.WriteMode
 
 prop_hOpen :: Property
 prop_hOpen = monadicIO $ do
@@ -148,95 +145,84 @@ prop_hOpen = monadicIO $ do
     let assrt =
           if ioMode == IO.ReadMode
           then expectFsError FsResourceDoesNotExist
-          else expectFsResult ()
-    run $ apiEquivalenceFs assrt $ runExceptT $ do
+          else expectFsResult (@?= ())
+    run $ apiEquivalenceFs assrt $ \HasFS{..} _err -> do
       h <- hOpen ["foo.txt"] ioMode
       hClose h
 
 test_hOpenWriteInvalid :: Assertion
-test_hOpenWriteInvalid = apiEquivalenceFs (expectFsError FsInvalidArgument) $
-    runExceptT $ do
-      _  <- hOpen ["foo.txt"] IO.WriteMode
-      h2 <- hOpen ["foo.txt"] IO.ReadMode
-      hPut h2 "haskell-is-nice"
+test_hOpenWriteInvalid = apiEquivalenceFs (expectFsError FsInvalidArgument) $ \HasFS{..} _err -> do
+    _  <- hOpen ["foo.txt"] IO.WriteMode
+    h2 <- hOpen ["foo.txt"] IO.ReadMode
+    hPut h2 "haskell-is-nice"
 
 test_hOpenReadInvalid :: Assertion
-test_hOpenReadInvalid = apiEquivalenceFs (expectFsError FsInvalidArgument) $
-    runExceptT $ do
-      h2 <- hOpen ["foo.txt"] IO.AppendMode
-      hGet h2 5
+test_hOpenReadInvalid = apiEquivalenceFs (expectFsError FsInvalidArgument) $ \HasFS{..} _err -> do
+    h2 <- hOpen ["foo.txt"] IO.AppendMode
+    hGet h2 5
 
 test_hOpenAppend :: Assertion
-test_hOpenAppend = apiEquivalenceFs (expectFsResult res) $
-    runExceptT $ do
-      h1 <- hOpen ["foo.txt"] IO.AppendMode
-      h2 <- hOpen ["foo.txt"] IO.ReadMode
-      ls <- sequence
-        [ hPut h1 "12"
-        , hPut h1 "34"
-        , hPut h1 "56"
-        , hPut h1 "78"
-        ]
-      -- IO.AppendMode moves offset at the end of file before each hPut.
-      -- This means the file consists of all 8 bytes written above.
-      bs <- hGet h2 8
-      hSeek h2 IO.RelativeSeek 0
-      return (ls, bs)
+test_hOpenAppend = apiEquivalenceFs (expectFsResult (@?= res)) $ \HasFS{..} _err -> do
+    h1 <- hOpen ["foo.txt"] IO.AppendMode
+    h2 <- hOpen ["foo.txt"] IO.ReadMode
+    ls <- sequence
+      [ hPut h1 "12"
+      , hPut h1 "34"
+      , hPut h1 "56"
+      , hPut h1 "78"
+      ]
+    -- IO.AppendMode moves offset at the end of file before each hPut.
+    -- This means the file consists of all 8 bytes written above.
+    bs <- hGet h2 8
+    hSeek h2 IO.RelativeSeek 0
+    return (ls, bs)
   where
     res = ([2, 2, 2, 2], "12345678")
 
 test_hOpenReadContention :: Assertion
-test_hOpenReadContention = apiEquivalenceFs (expectFsResult ()) $
-    runExceptT $ do
-      -- First create it
-      h0 <- hOpen ["foo.txt"] IO.WriteMode
-      hClose h0
-      h1 <- hOpen ["foo.txt"] IO.ReadMode
-      h2 <- hOpen ["foo.txt"] IO.ReadMode
-      hClose h1
-      hClose h2
+test_hOpenReadContention = apiEquivalenceFs (expectFsResult (@?= ())) $ \HasFS{..} _err -> do
+    -- First create it
+    h0 <- hOpen ["foo.txt"] IO.WriteMode
+    hClose h0
+    h1 <- hOpen ["foo.txt"] IO.ReadMode
+    h2 <- hOpen ["foo.txt"] IO.ReadMode
+    hClose h1
+    hClose h2
 
 test_hOpenReadWriteContention :: Assertion
-test_hOpenReadWriteContention = apiEquivalenceFs (expectFsResult ()) $
-    runExceptT $ do
-      h2 <- hOpen ["foo.txt"] IO.WriteMode
-      h1 <- hOpen ["foo.txt"] IO.ReadMode
-      hClose h1
-      hClose h2
+test_hOpenReadWriteContention = apiEquivalenceFs (expectFsResult (@?= ())) $ \HasFS{..} _err -> do
+    h2 <- hOpen ["foo.txt"] IO.WriteMode
+    h1 <- hOpen ["foo.txt"] IO.ReadMode
+    hClose h1
+    hClose h2
 
 test_hOpenDirectory :: Assertion
-test_hOpenDirectory =
-    apiEquivalenceFs (expectFsError FsResourceInappropriateType) $
-    runExceptT $ do
-      createDirectoryIfMissing True ["foo"]
-      h1 <- hOpen ["foo"] IO.WriteMode
-      hClose h1
+test_hOpenDirectory = apiEquivalenceFs (expectFsError FsResourceInappropriateType) $ \HasFS{..} _err -> do
+    createDirectoryIfMissing True ["foo"]
+    h1 <- hOpen ["foo"] IO.WriteMode
+    hClose h1
 
 test_example :: Assertion
-test_example = apiEquivalenceFs (expectFsResult ["test", "block"]) $
-    runExceptT $ do
-      -- The example assumes the presence of some files and dirs.
-      createDirectoryIfMissing True ["var", "tmp"]
-      withFile ["var", "tmp", "foo.txt"] IO.WriteMode $ \_ -> return ()
-      FS.Class.Example.example
+test_example = apiEquivalenceFs (expectFsResult (@?= ["test", "block"])) $ \hasFS@HasFS{..} _err -> do
+    -- The example assumes the presence of some files and dirs.
+    createDirectoryIfMissing True ["var", "tmp"]
+    withFile hasFS ["var", "tmp", "foo.txt"] IO.WriteMode $ \_ -> return ()
+    FS.API.Example.example hasFS
 
 --
 -- hClose tests
 --
 
 test_hCloseTwice :: Assertion
-test_hCloseTwice = apiEquivalenceFs (expectFsResult ()) $
-    runExceptT $ do
-      h1 <- hOpen ["test.txt"] IO.WriteMode
-      hClose h1
-      hClose h1
+test_hCloseTwice = apiEquivalenceFs (expectFsResult (@?= ())) $ \HasFS{..} _err -> do
+    h1 <- hOpen ["test.txt"] IO.WriteMode
+    hClose h1
+    hClose h1
 
 test_hPut :: Assertion
-test_hPut = apiEquivalenceFs (expectFsResult 15) $
-    runExceptT $
-      withFile ["test.txt"] IO.WriteMode $ \h1 ->
-        hPut h1 "haskell-is-nice"
-
+test_hPut = apiEquivalenceFs (expectFsResult (@?= 15)) $ \hasFS@HasFS{..} _err -> do
+    withFile hasFS ["test.txt"] IO.WriteMode $ \h1 ->
+      hPut h1 "haskell-is-nice"
 
 -- In this test purposefully create a very small buffer and we test that our
 -- 'bytesWritten' count is consistent across chunks boundaries.
@@ -245,7 +231,7 @@ prop_hPutBufferBoundaries = monadicIO $ do
     bufferSize <- pick $ choose (1, 64)
     input      <- pick $ C8.pack <$> listOf1 (elements ['a' .. 'z'])
     threshold  <- pick $ choose (1, 512)
-    run $ apiEquivalenceFs (expectFsResult (True, True)) $ runExceptT $ do
+    run $ apiEquivalenceFs (expectFsResult (@?= (True, True))) $ \HasFS{..} _err -> do
       b  <- newBuffer bufferSize
       h1 <- hOpen ["test.txt"] IO.WriteMode
       bytesWritten  <-
@@ -257,9 +243,8 @@ prop_hPutBufferBoundaries = monadicIO $ do
              , C8.toStrict input == r )
 
 test_hGet :: Assertion
-test_hGet =
-    apiEquivalenceFs (expectFsResult (15, ["hask", "ell", "-nic"])) $
-    runExceptT $ withFile ["test.txt"] IO.WriteMode $ \h1 -> do
+test_hGet = apiEquivalenceFs (expectFsResult (@?= (15, ["hask", "ell", "-nic"]))) $ \hasFS@HasFS{..} _err ->
+    withFile hasFS ["test.txt"] IO.WriteMode $ \h1 -> do
       b  <- hPut h1 "haskell-is-nice"
       _  <- hSeek h1 IO.AbsoluteSeek 0
       r1 <- hGet h1 4
@@ -269,16 +254,16 @@ test_hGet =
       return (b, [r1, r2, r3])
 
 test_hSeekFromEnd :: Assertion
-test_hSeekFromEnd = apiEquivalenceFs (expectFsResult 15) $
-    runExceptT $ withFile ["foo.txt"] IO.WriteMode $ \h1 -> do
+test_hSeekFromEnd = apiEquivalenceFs (expectFsResult (@?= 15)) $ \hasFS@HasFS{..} _err ->
+    withFile hasFS ["foo.txt"] IO.WriteMode $ \h1 -> do
       b <- hPut  h1 "haskell-is-nice"
       hSeek h1 IO.SeekFromEnd (-4)
       _ <- hPut  h1 "NICE"
       return b
 
 test_hGetOffset :: Assertion
-test_hGetOffset = apiEquivalenceFs (expectFsResult ("01234", "A67")) $
-    runExceptT $ withFile ["foo.txt"] IO.WriteMode $ \h1 -> do
+test_hGetOffset = apiEquivalenceFs (expectFsResult (@?= ("01234", "A67"))) $ \hasFS@HasFS{..} _err ->
+    withFile hasFS ["foo.txt"] IO.WriteMode $ \h1 -> do
       _  <- hPut h1 "0123456789"
       hSeek h1 IO.AbsoluteSeek 0
       b1 <- hGet h1 5
@@ -289,10 +274,9 @@ test_hGetOffset = apiEquivalenceFs (expectFsResult ("01234", "A67")) $
 
 test_hTruncate :: Assertion
 test_hTruncate =
-    apiEquivalenceFs (expectFsResult (15, ["haskell-is-nice", "haskell"])) $
-    runExceptT $
-      withFile ["test.txt"] IO.AppendMode $ \h1 ->
-      withFile ["test.txt"] IO.ReadMode $ \h2 -> do
+    apiEquivalenceFs (expectFsResult (@?= (15, ["haskell-is-nice", "haskell"]))) $ \hasFS@HasFS{..} _err ->
+      withFile hasFS ["test.txt"] IO.AppendMode $ \h1 ->
+      withFile hasFS ["test.txt"] IO.ReadMode $ \h2 -> do
         b  <- hPut h1 "haskell-is-nice"
         r1 <- hGet h2 15
         hTruncate h1 7
@@ -302,26 +286,24 @@ test_hTruncate =
         return (b, [r1,r2])
 
 test_hCreateDirectory :: Assertion
-test_hCreateDirectory = apiEquivalenceFs (expectFsResult ()) $
-    runExceptT $ createDirectoryIfMissing True ["xxx", "yyy"]
+test_hCreateDirectory = apiEquivalenceFs (expectFsResult (@?= ())) $ \HasFS{..} _err ->
+    createDirectoryIfMissing True ["xxx", "yyy"]
 
 test_doesFileExistOK :: Assertion
-test_doesFileExistOK = withMockFSE (\(r, _) -> expectFsResult True r) $
-    runExceptT $ do
-      h1 <- hOpen ["foo.txt"] IO.WriteMode
-      hClose h1
-      doesFileExist ["foo.txt"]
+test_doesFileExistOK = withMockFS tryFS (expectFsResult ((@?= True) . fst)) $ \HasFS{..} _err -> do
+    h1 <- hOpen ["foo.txt"] IO.WriteMode
+    hClose h1
+    doesFileExist ["foo.txt"]
 
 test_doesFileExistKO :: Assertion
-test_doesFileExistKO = withMockFSE (\(r, _) -> expectFsResult False r) $
-    runExceptT $ doesFileExist ["foo.txt"]
+test_doesFileExistKO = withMockFS tryFS (expectFsResult ((@?= False) . fst)) $ \HasFS{..} _err ->
+    doesFileExist ["foo.txt"]
 
 test_doesDirectoryExistOK :: Assertion
-test_doesDirectoryExistOK = withMockFSE (\(r, _) -> expectFsResult True r) $
-    runExceptT $ do
-      createDirectoryIfMissing True ["test-dir"]
-      doesDirectoryExist ["test-dir"]
+test_doesDirectoryExistOK = withMockFS tryFS (expectFsResult ((@?= True) . fst)) $ \HasFS{..} _err -> do
+    createDirectoryIfMissing True ["test-dir"]
+    doesDirectoryExist ["test-dir"]
 
 test_doesDirectoryExistKO :: Assertion
-test_doesDirectoryExistKO = withMockFSE (\(r, _) -> expectFsResult False r) $
-    runExceptT $ doesDirectoryExist ["test-dir"]
+test_doesDirectoryExistKO = withMockFS tryFS (expectFsResult ((@?= False) . fst )) $ \HasFS{..} _err ->
+    doesDirectoryExist ["test-dir"]

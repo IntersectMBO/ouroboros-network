@@ -1,28 +1,30 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards   #-}
 
-module Ouroboros.Storage.FS.Class.Example (
+module Ouroboros.Storage.FS.API.Example (
     example
   , exampleSimFS
   ) where
 
-import           Control.Monad.Except
+import           Control.Exception (try)
 import           Data.ByteString (ByteString)
 import qualified Data.Set as Set
 import           GHC.Stack
 import qualified System.IO as IO
 
 import           Ouroboros.Consensus.Util
-import           Ouroboros.Storage.FS.Class
-import           Ouroboros.Storage.FS.Class.Types
+import           Ouroboros.Storage.FS.API
+import           Ouroboros.Storage.FS.API.Types
 import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
 import           Ouroboros.Storage.FS.Sim.STM
+import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
 {-------------------------------------------------------------------------------
   Example program that can run in any monad with file system support
 -------------------------------------------------------------------------------}
 
-example :: (HasCallStack, HasFS m) => m [ByteString]
-example = do
+example :: (HasCallStack, Monad m) => HasFS m -> m [ByteString]
+example HasFS{..} = do
     h1 <- hOpen ["cardano.txt"] IO.ReadWriteMode
     _  <- hPut h1 "test"
     _  <- hSeek h1 IO.AbsoluteSeek 0
@@ -50,10 +52,10 @@ example = do
 
 exampleSimFS :: IO ()
 exampleSimFS = do
-    (res, fs) <- runSimFS (runExceptT demo) Mock.example
-    case res of
-      Left  err -> putStrLn (prettyFsError err)
-      Right bs  -> putStrLn (Mock.pretty fs) >> print bs
+    mRes <- try $ runSimFS demo Mock.example
+    case mRes of
+      Left  err      -> putStrLn (prettyFsError err)
+      Right (bs, fs) -> putStrLn (Mock.pretty fs) >> print bs
   where
-    demo :: ExceptT FsError (SimFS IO) [ByteString]
-    demo = example
+    demo :: SimFS IO [ByteString]
+    demo = example (simHasFS EH.exceptions)

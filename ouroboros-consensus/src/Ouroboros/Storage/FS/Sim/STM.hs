@@ -1,8 +1,9 @@
 {-# LANGUAGE CPP                        #-}
 {-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
@@ -10,29 +11,31 @@
 module Ouroboros.Storage.FS.Sim.STM (
     -- * Mock FS implementation & monad
       SimFS
-    , SimFSE
     , runSimFS
+    , simHasFS
+    , liftErrSimFS
     ) where
 
 import           Control.Monad.Catch
-import           Control.Monad.Except
 import           Control.Monad.Reader
 import           Control.Monad.State
+import           Data.Proxy
+import           Data.Type.Coercion
 
 import           Control.Monad.Class.MonadSTM
 
-import           Ouroboros.Storage.FS.Class
-import           Ouroboros.Storage.FS.Class.Types
+import           Ouroboros.Storage.FS.API
+import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.FS.Sim.MockFS (MockFS)
 import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
+import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
+import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
 {------------------------------------------------------------------------------
   The simulation-related types
 ------------------------------------------------------------------------------}
 
-type SimFSE m = ExceptT FsError (SimFS m)
-
-newtype SimFS m a = SimFS { unSimFs :: ReaderT (TVar m MockFS) m a }
+newtype SimFS m a = SimFS { unSimFS :: ReaderT (TVar m MockFS) m a }
   deriving ( Functor
            , Applicative
            , Monad
@@ -41,13 +44,16 @@ newtype SimFS m a = SimFS { unSimFs :: ReaderT (TVar m MockFS) m a }
            , MonadMask
            )
 
+type instance FsHandle (SimFS m) = Mock.Handle
+data instance Buffer   (SimFS m) = MockBufferUnused
+
 -- | Runs a 'SimFs' computation provided an initial 'MockFS', producing a
 -- result, the final state of the filesystem and a sequence of actions occurred
 -- in the filesystem.
 runSimFS :: MonadSTM m => SimFS m a -> MockFS -> m (a, MockFS)
 runSimFS m s = do
     fs  <- atomically (newTVar s)
-    a   <- runReaderT (unSimFs m) fs
+    a   <- runReaderT (unSimFS m) fs
     fs' <- atomically (readTVar fs)
     return (a, fs')
 
@@ -102,22 +108,29 @@ instance (MonadFork (SimFS m) , MonadSTM m) => MonadSTM (SimFS m) where
   lengthTBQueue     = lift . lengthTBQueue
 #endif
 
-instance (MonadMask m, MonadSTM m) => HasFS (SimFSE m) where
-    type FsHandle (SimFSE m) = Mock.Handle
-    data Buffer   (SimFSE m) = MockBufferUnused
+simHasFS :: forall m. MonadSTM m => ErrorHandling FsError m -> HasFS (SimFS m)
+simHasFS err = HasFS {
+      dumpState                = Mock.dumpState
+    , newBuffer                = \_ -> return MockBufferUnused
+    , hOpen                    = Mock.hOpen                    err'
+    , hClose                   = Mock.hClose                   err'
+    , hSeek                    = Mock.hSeek                    err'
+    , hGet                     = Mock.hGet                     err'
+    , hPut                     = Mock.hPut                     err'
+    , hPutBuffer               = Mock.hPutBuffer               err'
+    , hTruncate                = Mock.hTruncate                err'
+    , hGetSize                 = Mock.hGetSize                 err'
+    , createDirectory          = Mock.createDirectory          err'
+    , createDirectoryIfMissing = Mock.createDirectoryIfMissing err'
+    , listDirectory            = Mock.listDirectory            err'
+    , doesDirectoryExist       = Mock.doesDirectoryExist       err'
+    , doesFileExist            = Mock.doesFileExist            err'
+    , hasFsErr                 = err'
+    }
+  where
+    err' :: ErrorHandling FsError (SimFS m)
+    err' = liftErrSimFS err
 
-    dumpState                = Mock.dumpState
-    newBuffer                = \_ -> return MockBufferUnused
-    hOpen                    = Mock.hOpen
-    hClose                   = Mock.hClose
-    hSeek                    = Mock.hSeek
-    hGet                     = Mock.hGet
-    hPut                     = Mock.hPut
-    hPutBuffer               = Mock.hPutBuffer
-    hTruncate                = Mock.hTruncate
-    hGetSize                 = Mock.hGetSize
-    createDirectory          = Mock.createDirectory
-    createDirectoryIfMissing = Mock.createDirectoryIfMissing
-    listDirectory            = Mock.listDirectory
-    doesDirectoryExist       = Mock.doesDirectoryExist
-    doesFileExist            = Mock.doesFileExist
+liftErrSimFS :: forall e m. ErrorHandling e m -> ErrorHandling e (SimFS m)
+liftErrSimFS = EH.liftErrNewtype Coercion
+             . EH.liftErrReader (Proxy @(TVar m MockFS))
