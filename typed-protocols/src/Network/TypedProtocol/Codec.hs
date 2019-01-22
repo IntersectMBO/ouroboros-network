@@ -8,7 +8,7 @@
 module Network.TypedProtocol.Codec where
 
 import           Control.Monad.ST (ST)
-import           Ouroboros.Network.MonadClass.MonadST
+import           Control.Monad.Class.MonadST
 
 import qualified Codec.CBOR.Encoding as CBOR (Encoding)
 import qualified Codec.CBOR.Read     as CBOR
@@ -17,7 +17,7 @@ import qualified Codec.CBOR.Write    as CBOR
 import qualified Codec.Serialise     as Serialise
 
 import           Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
+--import qualified Data.ByteString as BS
 import qualified Data.ByteString.Builder as BS
 import qualified Data.ByteString.Builder.Extra as BS
 import qualified Data.ByteString.Lazy.Internal as LBS (smallChunkSize)
@@ -26,8 +26,8 @@ import qualified Data.ByteString.Lazy          as LBS
 
 data Codec bytes failure m a = Codec {
        encode    :: a -> [bytes],
-       decode    :: m (DecodeStep bytes failure m a),
-       chunkNull :: bytes -> Bool
+       decode    :: m (DecodeStep bytes failure m a)
+--       chunkNull :: bytes -> Bool
      }
 
 data DecodeStep bytes failure m a =
@@ -61,8 +61,8 @@ cborCodec :: MonadST m
 cborCodec cborEncode cborDecode =
     Codec {
       encode = convertCborEncoder  cborEncode,
-      decode = convertCborDecoder' cborDecode,
-      chunkNull = BS.null
+      decode = convertCborDecoder' cborDecode
+--      chunkNull = BS.null
     }
 
 convertCborEncoder :: (a -> CBOR.Encoding) -> a -> [ByteString]
