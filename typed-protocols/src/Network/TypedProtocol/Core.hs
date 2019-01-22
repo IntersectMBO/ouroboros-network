@@ -210,4 +210,3 @@ await :: (CurrentAgency pk (AgencyInState st) ~ Awaiting)
       -> (forall st'. Message st st' -> Peer pk st' m a)
       -> Peer pk st m a
 await = Await
-
