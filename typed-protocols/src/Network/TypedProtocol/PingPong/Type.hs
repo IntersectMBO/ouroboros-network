@@ -61,6 +61,29 @@ instance Show (Message (from :: PingPongState) (to :: PingPongState)) where
   show MsgPong = "MsgPong"
   show MsgDone = "MsgDone"
 
+{--
+  - instance Serialise (Message from to) where
+  -   encode MsgPing = Encoding.encodeWord 0
+  -   encode MsgPong = Encoding.encodeWord 1
+  -   encode MsgDone = Encoding.encodeWord 2
+  - 
+  -   decode MsgPing = do
+  -     tag <- Decoding.decodeWord 
+  -     case tag of
+  -       0 -> return MsgPing
+  -       _ -> error "PingPong: decoding error"
+  -   decode MsgPong = do
+  -     tag <- Decoding.decodeWord
+  -     case tag of
+  -       1 -> return MsgPong
+  -       _ -> error "PingPong: decoding error"
+  -   decode MsgDone = do
+  -     tag <- Decoding.decodeWord
+  -     case tag of
+  -       2 -> return MsgDone
+  -       _ -> error "PingPong: decoding error"
+  --}
+
 pingPongClientFlood :: Peer AsClient StIdle m a
 pingPongClientFlood =
     Yield MsgPing $
@@ -73,19 +96,12 @@ pingPongServerStandard =
       MsgPing -> Yield MsgPong pingPongServerStandard
       MsgDone -> Done ()
 
-decodePingPongMessage :: forall (st :: PingPongState).
-                         StateToken st
-                      -> String
-                      -> Maybe (SomeMessage st)
-decodePingPongMessage TokIdle "ping" = Just (SomeMessage MsgPing)
-decodePingPongMessage TokIdle "done" = Just (SomeMessage MsgDone)
-decodePingPongMessage TokBusy "pong" = Just (SomeMessage MsgPong)
-decodePingPongMessage _       _      = Nothing
-
-example2 :: Monad m => m (Maybe ())
-example2 = runPeerWithCodec decodePingPongMessage input pingPongServerStandard
-  where
-    input = ["ping", "done"]
+{--
+  - example2 :: Monad m => m (Maybe ())
+  - example2 = runPeerWithCodec decodePingPongMessage input pingPongServerStandard
+  -   where
+  -     input = ["ping", "done"]
+  --}
 
 pingPongClientPipelined :: Int -> Pipelined.PeerSender AsClient StIdle IO ()
 pingPongClientPipelined 0 =
@@ -103,11 +119,13 @@ pingPongClientPipelined n =
            return Pipelined.Completed)
       (pingPongClientPipelined (n-1))
 
-example3 :: IO (Maybe ())
-example3 =
-    runPipelinedPeerWithCodec
-      decodePingPongMessage
-      input
-      (pingPongClientPipelined 2)
-  where
-    input = ["pong", "pong"]
+{--
+  - example3 :: IO (Maybe ())
+  - example3 =
+  -     Pipelined.runPipelinedPeerWithCodec
+  -       decodePingPongMessage
+  -       input
+  -       (pingPongClientPipelined 2)
+  -   where
+  -     input = ["pong", "pong"]
+  --}
