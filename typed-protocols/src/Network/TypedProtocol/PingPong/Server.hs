@@ -21,6 +21,20 @@ data PingPongServer m a = PingPongServer {
   , recvMsgDone  :: a
   }
 
+-- | The standard stateless ping-pong server instance.
+--
+pingPongServerStandard
+  :: Applicative m
+  => PingPongServer m ()
+pingPongServerStandard =
+    PingPongServer {
+      recvMsgPing = pure pingPongServerStandard,
+      recvMsgDone = ()
+    }
+
+-- | An example ping-pong server instance that counts the number of ping
+-- messages.
+--
 pingPongServerCount
   :: Applicative m
   => PingPongServer m Natural

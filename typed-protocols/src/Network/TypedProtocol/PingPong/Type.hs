@@ -10,9 +10,6 @@
 module Network.TypedProtocol.PingPong.Type where
 
 import           Network.TypedProtocol.Core
-import           Network.TypedProtocol.Codec hiding (Done)
-import qualified Network.TypedProtocol.Pipelined as Pipelined
-import           Network.TypedProtocol.Driver
 
 
 -- | States in the ping pong system.
@@ -60,72 +57,3 @@ instance Show (Message (from :: PingPongState) (to :: PingPongState)) where
   show MsgPing = "MsgPing"
   show MsgPong = "MsgPong"
   show MsgDone = "MsgDone"
-
-{--
-  - instance Serialise (Message from to) where
-  -   encode MsgPing = Encoding.encodeWord 0
-  -   encode MsgPong = Encoding.encodeWord 1
-  -   encode MsgDone = Encoding.encodeWord 2
-  - 
-  -   decode MsgPing = do
-  -     tag <- Decoding.decodeWord 
-  -     case tag of
-  -       0 -> return MsgPing
-  -       _ -> error "PingPong: decoding error"
-  -   decode MsgPong = do
-  -     tag <- Decoding.decodeWord
-  -     case tag of
-  -       1 -> return MsgPong
-  -       _ -> error "PingPong: decoding error"
-  -   decode MsgDone = do
-  -     tag <- Decoding.decodeWord
-  -     case tag of
-  -       2 -> return MsgDone
-  -       _ -> error "PingPong: decoding error"
-  --}
-
-pingPongClientFlood :: Peer AsClient StIdle m a
-pingPongClientFlood =
-    Yield MsgPing $
-    Await TokBusy $ \MsgPong -> pingPongClientFlood
-
-pingPongServerStandard :: Peer AsServer StIdle m ()
-pingPongServerStandard =
-    Await TokIdle $ \msg ->
-    case msg of
-      MsgPing -> Yield MsgPong pingPongServerStandard
-      MsgDone -> Done ()
-
-{--
-  - example2 :: Monad m => m (Maybe ())
-  - example2 = runPeerWithCodec decodePingPongMessage input pingPongServerStandard
-  -   where
-  -     input = ["ping", "done"]
-  --}
-
-pingPongClientPipelined :: Int -> Pipelined.PeerSender AsClient StIdle IO ()
-pingPongClientPipelined 0 =
-    Pipelined.Yield
-      MsgDone
-      (Pipelined.Completed)
-      (Pipelined.Done ())
-
-pingPongClientPipelined n =
-    Pipelined.Yield
-      MsgPing
-      (Pipelined.Await TokBusy $ \MsgPong ->
-         Pipelined.Effect' $ do
-           print "pong"
-           return Pipelined.Completed)
-      (pingPongClientPipelined (n-1))
-
-{--
-  - example3 :: IO (Maybe ())
-  - example3 =
-  -     Pipelined.runPipelinedPeerWithCodec
-  -       decodePingPongMessage
-  -       input
-  -       (pingPongClientPipelined 2)
-  -   where
-  -     input = ["pong", "pong"]
-  --}
