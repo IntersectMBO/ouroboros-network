@@ -4,8 +4,8 @@ synopsis:            A framework for strongly typed protocols
 -- description:         
 license:             MIT
 license-file:        LICENSE
-author:              Alexander Vieth, Duncan Coutts
-maintainer:          alex@well-typed.com, duncan@well-typed.com
+author:              Alexander Vieth, Duncan Coutts, Marcin Szamotulski
+maintainer:          alex@well-typed.com, duncan@well-typed.com, marcin.szamotulski@iohk.io
 copyright:           2018-2019 IOHK
 category:            Control
 build-type:          Simple
@@ -19,6 +19,10 @@ library
                    , Network.TypedProtocol.Channel
                    , Network.TypedProtocol.Codec
                    , Network.TypedProtocol.Driver
+                   , Network.TypedProtocol.PingPong.Client
+                   , Network.TypedProtocol.PingPong.Server
+                   , Network.TypedProtocol.PingPong.Direct
+                   , Network.TypedProtocol.PingPong.Codec
   other-extensions:  GADTs
                    , RankNTypes
                    , PolyKinds
@@ -32,28 +36,27 @@ library
                      -- TODO: do we want these here or move elsewhere?
                      bytestring,
                      process,
-                     cborg,
-                     serialise
+                     cborg
 
   hs-source-dirs:    src
   default-language:  Haskell2010
   ghc-options:       -Wall
                      -Wno-unticked-promoted-constructors
 
-test-suite test-typed-transitions
+test-suite tests
   type:              exitcode-stdio-1.0
   main-is:           Main.hs
   hs-source-dirs:    test
-  other-modules:     Test.Protocol.Channel
-                     Test.Protocol.Codec
-                     Test.Protocol.Codec.Coherent
-                     Test.Protocol.Codec.PingPong
+  other-modules:     Test.Network.TypedProtocol.PingPong
   build-depends:     base
                    , async
                    , bytestring
+                   , free
+                   , io-sim-classes
+                   , io-sim
                    , QuickCheck
                    , tasty
                    , tasty-quickcheck
-                   , typed-transitions
+                   , typed-protocols
   default-language:  Haskell2010
   ghc-options:      -rtsopts

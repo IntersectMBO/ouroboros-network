@@ -1,4 +1,4 @@
-{-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE PolyKinds                  #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE GADTSyntax                 #-}
@@ -7,16 +7,15 @@
 
 module Network.TypedProtocol.Codec where
 
-import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Core (StateToken, Message)
 
---import           Control.Monad.ST (ST)
---import           Control.Monad.Class.MonadST
-{-
+import           Control.Monad.ST (ST)
+import           Control.Monad.Class.MonadST
+
 import qualified Codec.CBOR.Encoding as CBOR (Encoding)
 import qualified Codec.CBOR.Read     as CBOR
 import qualified Codec.CBOR.Decoding as CBOR (Decoder)
 import qualified Codec.CBOR.Write    as CBOR
-import qualified Codec.Serialise     as Serialise
 
 import           Data.ByteString (ByteString)
 --import qualified Data.ByteString as BS
@@ -24,7 +23,6 @@ import qualified Data.ByteString.Builder as BS
 import qualified Data.ByteString.Builder.Extra as BS
 import qualified Data.ByteString.Lazy.Internal as LBS (smallChunkSize)
 import qualified Data.ByteString.Lazy          as LBS
--}
 
 data Codec ps failure m bytes = Codec {
        encode :: forall (st :: ps) (st' :: ps).
@@ -35,6 +33,17 @@ data Codec ps failure m bytes = Codec {
                  StateToken st
               -> m (DecodeStep bytes failure m (SomeMessage st))
      }
+
+transformCodec
+  :: Functor m
+  => (bytes  -> bytes')
+  -> (bytes' -> bytes)
+  -> Codec ps failure m bytes
+  -> Codec ps failure m bytes'
+transformCodec to from Codec {encode, decode} = Codec {
+    encode = to . encode,
+    decode = fmap (transformDecodeStep to from) . decode
+  }
 
 -- The types here are pretty fancy. The decode is polymorphic in the protocol
 -- state, but only for kinds that are the same kind as the protocol state.
@@ -65,6 +74,16 @@ data DecodeStep bytes failure m a =
     -- failure occurred.
   | Fail failure
 
+transformDecodeStep
+  :: Functor m
+  => (bytes -> bytes')
+  -> (bytes' -> bytes)
+  -> DecodeStep bytes  failure m a
+  -> DecodeStep bytes' failure m a
+transformDecodeStep to from (Partial fn) = Partial $ fmap (transformDecodeStep to from) . fn . fmap from
+transformDecodeStep to _ (Done a bs) = Done a (to bs)
+transformDecodeStep _ _ (Fail failure) = Fail failure
+
 data SomeMessage (st :: ps) where
      SomeMessage :: Message st st' -> SomeMessage st
 
@@ -73,23 +92,21 @@ data SomeMessage (st :: ps) where
 serialiseCodec :: (MonadST m, Serialise.Serialise a)
                => Codec ByteString CBOR.DeserialiseFailure m a
 serialiseCodec = cborCodec Serialise.encode Serialise.decode 
+-}
 
-cborCodec :: MonadST m
-          => (a -> CBOR.Encoding)
-          -> (forall s. CBOR.Decoder s a)
-          -> Codec ByteString CBOR.DeserialiseFailure m a
+cborCodec :: forall m ps. MonadST m
+          => (forall (st :: ps) (st' :: ps). Message st st' -> CBOR.Encoding)
+          -> (forall (st :: ps) s. StateToken st -> CBOR.Decoder s (SomeMessage st))
+          -> Codec ps CBOR.DeserialiseFailure m ByteString
 cborCodec cborEncode cborDecode =
     Codec {
-      encode = convertCborEncoder  cborEncode,
-      decode = convertCborDecoder' cborDecode
---      chunkNull = BS.null
+      encode = convertCborEncoder cborEncode,
+      decode = \tok -> convertCborDecoder' (cborDecode tok)
     }
 
-convertCborEncoder :: (a -> CBOR.Encoding) -> a -> [ByteString]
+convertCborEncoder :: (a -> CBOR.Encoding) -> a -> ByteString
 convertCborEncoder cborEncode =
-    LBS.toChunks
-  . toLazyByteString
-  . CBOR.toBuilder
+    CBOR.toStrictByteString
   . cborEncode
 
 {-# NOINLINE toLazyByteString #-}
@@ -105,7 +122,7 @@ convertCborDecoder' cborDecode =
     withLiftST (convertCborDecoder cborDecode)
 
 convertCborDecoder :: forall s m a. Functor m
-                   => CBOR.Decoder s a
+                   => (CBOR.Decoder s a)
                    -> (forall b. ST s b -> m b)
                    -> m (DecodeStep ByteString CBOR.DeserialiseFailure m a)
 convertCborDecoder cborDecode liftST =
@@ -114,4 +131,3 @@ convertCborDecoder cborDecode liftST =
     go (CBOR.Done  trailing _ x)          = Done x trailing
     go (CBOR.Fail _trailing _off failure) = Fail failure
     go (CBOR.Partial k)                   = Partial (fmap go . liftST . k)
--}
