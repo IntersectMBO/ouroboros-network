@@ -2,6 +2,7 @@ name:                ouroboros-consensus
 version:             0.1.0.0
 synopsis:            Consensus layer for the Ouroboros blockchain protocol
 -- description:
+license:             MIT
 license-file:        LICENSE
 author:              IOHK Engineering Team
 maintainer:          operations@iohk.io
