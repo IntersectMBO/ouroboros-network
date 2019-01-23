@@ -2,6 +2,7 @@ name:                io-sim-classes
 version:             0.1.0.0
 synopsis:            Type classes for concurrency with STM, ST and timing
 -- description:
+license:             MIT
 license-file:        LICENSE
 author:              Alexander Vieth, Marcin Szamotulski, Duncan Coutts
 maintainer:
