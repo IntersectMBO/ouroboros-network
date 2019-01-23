@@ -104,9 +104,6 @@ instance (MonadFork (SimFS m) , MonadSTM m) => MonadSTM (SimFS m) where
   newTBQueue        = lift . newTBQueue
   readTBQueue       = lift . readTBQueue
   writeTBQueue    q = lift . writeTBQueue q
-#if MIN_VERSION_stm(2,5,0)
-  lengthTBQueue     = lift . lengthTBQueue
-#endif
 
 simHasFS :: forall m. MonadSTM m => ErrorHandling FsError m -> HasFS (SimFS m)
 simHasFS err = HasFS {
