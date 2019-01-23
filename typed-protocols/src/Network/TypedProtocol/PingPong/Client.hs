@@ -42,12 +42,23 @@ data PingPongClient m a where
   --
   SendMsgDone    :: a -> PingPongClient m a
 
-pingPongClientFixed
+
+-- | An example ping-pong client that sends pings as fast as possible forever‽
+--
+-- This may not be a good idea‼
+--
+pingPongClientFlood :: Applicative m => PingPongClient m a
+pingPongClientFlood = SendMsgPing (pure pingPongClientFlood)
+
+-- | An example ping-pong client that sends a fixed number of ping messages
+-- and then stops.
+--
+pingPongClientCount
   :: Applicative m
   => Natural
   -> PingPongClient m ()
-pingPongClientFixed 0 = SendMsgDone ()
-pingPongClientFixed m = SendMsgPing $ pure (pingPongClientFixed (pred m))
+pingPongClientCount 0 = SendMsgDone ()
+pingPongClientCount m = SendMsgPing $ pure (pingPongClientCount (pred m))
 
 -- | Interpret a particular client action sequence into the client side of the
 -- 'PingPong' protocol.
