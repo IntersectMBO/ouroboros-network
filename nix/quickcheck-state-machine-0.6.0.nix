@@ -1,6 +1,6 @@
 { mkDerivation, ansi-wl-pprint, base, bytestring, containers
-, directory, doctest, exceptions, fetchgit, filelock, filepath
-, http-client, matrix, monad-logger, mtl, network, persistent
+, directory, doctest, exceptions, filelock, filepath, http-client
+, matrix, monad-logger, mtl, network, persistent
 , persistent-postgresql, persistent-template, pretty-show, process
 , QuickCheck, quickcheck-instances, random, resourcet, servant
 , servant-client, servant-server, stdenv, strict
@@ -10,12 +10,7 @@
 mkDerivation {
   pname = "quickcheck-state-machine";
   version = "0.6.0";
-  src = fetchgit {
-    url = "https://github.com/advancedtelematic/quickcheck-state-machine";
-    sha256 = "0dn45kzx4hgb5bhj03nvx74jqk2a0rnj894gvqrxad3f7zd05y0f";
-    rev = "619620343ad2c862c5855166c815c478a619b76f";
-    fetchSubmodules = true;
-  };
+  sha256 = "3e5f7199282c185986eedbf7cd22e2c68d4ec6ef24bec80c27a33429c555727d";
   libraryHaskellDepends = [
     ansi-wl-pprint base containers exceptions matrix mtl pretty-show
     QuickCheck tree-diff unliftio vector

@@ -4,7 +4,7 @@
 mkDerivation {
   pname = "fingertree";
   version = "0.1.4.2";
-  sha256 = "0zvandj8fysck7ygpn0dw5bhrhmj1s63i326nalxbfkh2ls4iacm";
+  sha256 = "95a948341570bad5a9b2468c388c0eb2c20c57e10dd8fbfc994c7b8764b36a7f";
   libraryHaskellDepends = [ base ];
   testHaskellDepends = [
     base HUnit QuickCheck test-framework test-framework-hunit
