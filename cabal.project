@@ -18,3 +18,41 @@ source-repository-package
   location: https://github.com/input-output-hk/iohk-monitoring-framework
   tag: 09b269cd1926303902e8dea3c8703b6e588004f5
 
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/cardano-chain
+  tag: 4124f07ea977c915bfabe97c28c38e75876a1468
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/cardano-chain
+  tag: 4124f07ea977c915bfabe97c28c38e75876a1468
+  subdir: crypto
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/cardano-chain
+  tag: 4124f07ea977c915bfabe97c28c38e75876a1468
+  subdir: binary
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/cardano-chain
+  tag: 4124f07ea977c915bfabe97c28c38e75876a1468
+  subdir: specs/semantics/hs
+
+source-repository-package
+  type: git
+  location: https://github.com/avieth/plutus-prototype
+  tag: d094be301195fcd8ab864d793f114970426a4478
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/cardano-prelude
+  tag: e2d1dfb1ebfd9a8b1a2357bad1bdbdf9d5a7a17b
+  -- f2802079ba2c07c4d408e3c0aa000fc363792398
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/cardano-crypto
+  tag: f5cecb6e424cc84f85b6a3e1f803517bb7b4cfb1
