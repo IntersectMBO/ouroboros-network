@@ -31,7 +31,7 @@ import           Network.TypedProtocol.Driver (connect, runPeer)
 import qualified Network.TypedProtocol.Pipelined as Pipelined
 
 import           Network.TypedProtocol.PingPong.Client
-  ( pingPongClientFixed
+  ( pingPongClientCount
   , pingPongClientPeer
   , pingPongSenderCount
   , pingPongClientPeerSender
@@ -76,7 +76,7 @@ prop_direct
   -> Property
 prop_direct (Positive x) =
   let c = fromIntegral x
-  in case runIdentity $ direct (pingPongClientFixed c) pingPongServerCount of
+  in case runIdentity $ direct (pingPongClientCount c) pingPongServerCount of
     (_, c') -> c === c'
 
 prop_connect
@@ -84,7 +84,7 @@ prop_connect
   -> Property
 prop_connect (Positive x) =
   let c = fromIntegral x
-  in case runIdentity $ connect (pingPongClientPeer $ pingPongClientFixed c) (pingPongServerPeer pingPongServerCount) of
+  in case runIdentity $ connect (pingPongClientPeer $ pingPongClientCount c) (pingPongServerPeer pingPongServerCount) of
     (_, c') -> c === c'
 
 connect_pipelined_experiment
@@ -129,7 +129,7 @@ channel_experiment
 channel_experiment clientChannel serverChannel (Positive x) probe = do
   serverVar <- newEmptyTMVarIO
   let c = fromIntegral x
-      clientPeer = pingPongClientPeer $ pingPongClientFixed c
+      clientPeer = pingPongClientPeer $ pingPongClientCount c
       serverPeer = pingPongServerPeer pingPongServerCount
       codec = transformCodec BSC.pack BSC.unpack pingPongCodec
 
