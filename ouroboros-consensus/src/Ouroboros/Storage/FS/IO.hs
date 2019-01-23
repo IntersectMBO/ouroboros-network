@@ -3,20 +3,13 @@
 {-# LANGUAGE TupleSections     #-}
 {-# LANGUAGE TypeFamilies      #-}
 
-{-# OPTIONS_GHC -fno-warn-orphans #-}
-
 -- | IO implementation of the 'HasFS' class
 module Ouroboros.Storage.FS.IO (
     -- * IO implementation & monad
-      IOFS -- opaque
-    , IOFSE
-    , runIOFS
-    , runIOFSE
+      ioHasFS
     ) where
 
-import           Control.Exception (throwIO)
-import           Control.Monad.Except
-import           Control.Monad.Reader
+import qualified Control.Exception as E
 import           Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder.Extra as BS
 import qualified Data.ByteString.Unsafe as BS
@@ -26,110 +19,97 @@ import           Foreign (ForeignPtr, Ptr, castPtr, withForeignPtr)
 import           GHC.ForeignPtr (mallocPlainForeignPtrBytes)
 import           GHC.Stack
 import qualified System.Directory as Dir
-import           System.IO.Error
 
-import           Ouroboros.Storage.FS.Class
-import           Ouroboros.Storage.FS.Class.Types
+import           Ouroboros.Storage.FS.API
+import           Ouroboros.Storage.FS.API.Types
 import qualified Ouroboros.Storage.IO as F
+import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
--- | Catch IO exceptions and return them as 'FsError'
---
--- See comments for 'ioToFsError'
-catchFSErrorIO :: HasCallStack => FsPath -> IO a -> IO (Either FsError a)
-catchFSErrorIO fp action = do
-    res <- tryIOError action
-    case res of
-      Left err -> handleError err
-      Right a  -> return (Right a)
-  where
-    handleError :: HasCallStack => IOError -> IO (Either FsError a)
-    handleError ioErr =
-      case ioToFsError fp ioErr of
-        Left  unexpected -> throwIO unexpected
-        Right err        -> return (Left err)
-
-{------------------------------------------------------------------------------
-  The IOFS monad
+{-------------------------------------------------------------------------------
+  I/O implementation of HasFS
 -------------------------------------------------------------------------------}
 
-type IOFSE = ExceptT FsError IOFS
-type IOFS  = ReaderT MountPoint IO
+type instance FsHandle IO = (FsPath, F.FHandle)
+data instance Buffer   IO = BufferIO !(ForeignPtr Word8) !Int
 
--- | Lifts an 'IO' action into the 'IOFSE' monad. Note how this /must/ be
--- used as a drop-in replacement for 'liftIO', as the former would also correctly
--- catch any relevant IO exception and reify it into a 'FsError' one.
-liftIOE :: HasCallStack => FsPath -> IO a -> IOFSE a
-liftIOE fp act = ExceptT $ lift $ catchFSErrorIO fp act
+ioHasFS :: MountPoint -> HasFS IO
+ioHasFS mount = HasFS {
+      -- TODO(adn) Might be useful to implement this properly by reading all
+      -- the stuff available at the 'MountPoint'.
+      dumpState = return "<dumpState@IO>"
+    , newBuffer = newBufferIO
+    , hOpen = \fp ioMode -> rethrowFsError fp $
+        (fp, ) <$> F.open (root fp) ioMode
+    , hClose = \(fp, h) -> rethrowFsError fp $
+        F.close h
+    , hSeek = \(fp, h) mode o -> rethrowFsError fp $
+        F.seek h mode o
+    , hGet = \(fp, h) n -> rethrowFsError fp $
+        F.read h n
+    , hTruncate = \(fp, h) sz -> rethrowFsError fp $
+        F.truncate h sz
+    , hPutBuffer = \(fp, h) buf bldr -> rethrowFsError fp $
+        hPutBufferIO h buf bldr
+    , hGetSize = \(fp, h) -> rethrowFsError fp $
+        F.getSize h
+    , hPut = \(fp, h) builder -> rethrowFsError fp $ do
+        buf0 <- newBufferIO BS.defaultChunkSize
+        hPutBufferIO h buf0 builder
+    , createDirectory = \fp -> rethrowFsError fp $
+        Dir.createDirectory (root fp)
+    , listDirectory = \fp -> rethrowFsError fp $
+        Set.fromList <$>  Dir.listDirectory (root fp)
+    , doesDirectoryExist= \fp -> rethrowFsError fp $
+        Dir.doesDirectoryExist (root fp)
+    , doesFileExist = \fp -> rethrowFsError fp $
+        Dir.doesFileExist (root fp)
+    , createDirectoryIfMissing = \createParent fp -> rethrowFsError fp $
+        Dir.createDirectoryIfMissing createParent (root fp)
+    , hasFsErr = EH.exceptions
+    }
+  where
+    root :: FsPath -> FilePath
+    root = fsToFilePath mount
 
-runIOFS :: MountPoint -> IOFS a -> IO a
-runIOFS = flip runReaderT
-
-runIOFSE :: MountPoint -> IOFSE a -> IO (Either FsError a)
-runIOFSE mount = runIOFS mount . runExceptT
-
-withAbsPath :: FsPath -> (FilePath -> IO a) -> IOFSE a
-withAbsPath fp act = asks (`fsToFilePath` fp) >>= liftIOE fp . act
-
-withHandle :: FsHandle IOFSE -> (F.FHandle -> IO a) -> IOFSE a
-withHandle (fp, h) k = liftIOE fp $ k h
-
-instance HasFS IOFSE where
-    type FsHandle IOFSE = (FsPath, F.FHandle)
-    data Buffer   IOFSE =
-        BufferIO {-# UNPACK #-} !(ForeignPtr Word8) {-# UNPACK #-} !Int
-
-    -- TODO(adn) Might be useful to implement this properly by reading all
-    -- the stuff available at the 'MountPoint'.
-    dumpState = return "<dumpState@IO>"
-
-    -- Buffer creation never throws I/O exceptions
-    newBuffer = lift . lift . newBufferIO
-
-
-    hOpen path ioMode = withAbsPath path $ \fp -> (path, ) <$> F.open fp ioMode
-
-    hClose     h          = withHandle h $ \h' -> F.close      h'
-    hSeek      h mode o   = withHandle h $ \h' -> F.seek       h' mode o
-    hGet       h n        = withHandle h $ \h' -> F.read       h' n
-    hTruncate  h sz       = withHandle h $ \h' -> F.truncate   h' sz
-    hPutBuffer h buf bldr = withHandle h $ \h' -> hPutBufferIO h' buf bldr
-    hGetSize   h          = withHandle h $ \h' -> F.getSize    h'
-
-    hPut h builder = do
-        buf0 <- newBuffer BS.defaultChunkSize
-        hPutBuffer h buf0 builder
-
-    createDirectory    path = withAbsPath path $ Dir.createDirectory
-    listDirectory      path = withAbsPath path $ fmap Set.fromList . Dir.listDirectory
-    doesDirectoryExist path = withAbsPath path $ Dir.doesDirectoryExist
-    doesFileExist      path = withAbsPath path $ Dir.doesFileExist
-
-    createDirectoryIfMissing createParent path = withAbsPath path $
-        Dir.createDirectoryIfMissing createParent
+-- | Catch IO exceptions and rethrow them as 'FsError'
+--
+-- See comments for 'ioToFsError'
+rethrowFsError :: HasCallStack => FsPath -> IO a -> IO a
+rethrowFsError fp action = do
+    res <- E.try action
+    case res of
+      Left err -> handleError err
+      Right a  -> return a
+  where
+    handleError :: HasCallStack => IOError -> IO a
+    handleError ioErr =
+      case ioToFsError fp ioErr of
+        Left  unexpected -> E.throwIO unexpected
+        Right err        -> E.throwIO err
 
 {-------------------------------------------------------------------------------
   Auxiliary: buffers
 -------------------------------------------------------------------------------}
 
-bufferSize :: Buffer IOFSE -> Int
+bufferSize :: Buffer IO -> Int
 bufferSize (BufferIO _fptr len) = len
 
-newBufferIO :: Int -> IO (Buffer IOFSE)
+newBufferIO :: Int -> IO (Buffer IO)
 newBufferIO len = do
     fptr <- mallocPlainForeignPtrBytes len
     return $! BufferIO fptr len
 
-withBuffer :: Buffer IOFSE
+withBuffer :: Buffer IO
            -> (Ptr Word8 -> Int -> IO a)
            -> IO a
 withBuffer (BufferIO fptr len) action =
     withForeignPtr fptr $ \ptr -> action ptr len
 
-hPutBufferIO :: F.FHandle -> Buffer IOFSE -> Builder -> IO Word64
+hPutBufferIO :: F.FHandle -> Buffer IO -> Builder -> IO Word64
 hPutBufferIO hnd buf0 = go 0 buf0 . BS.runBuilder
   where
     go :: Word64
-       -> Buffer IOFSE
+       -> Buffer IO
        -> BS.BufferWriter
        -> IO Word64
     go !bytesWritten buf write = do

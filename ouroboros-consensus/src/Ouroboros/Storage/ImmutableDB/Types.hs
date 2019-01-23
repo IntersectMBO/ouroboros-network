@@ -19,13 +19,14 @@ module Ouroboros.Storage.ImmutableDB.Types
   , prettyUnexpectedError
   ) where
 
+import           Control.Exception (Exception (..))
 import           Data.Word (Word, Word64)
 
 import           GHC.Generics (Generic)
 import           GHC.Stack (CallStack, prettyCallStack)
 
-import           Ouroboros.Storage.FS.Class.Types (FsError, FsPath, sameFsError,
-                                                   prettyFsError)
+import           Ouroboros.Storage.FS.API.Types (FsError, FsPath, prettyFsError,
+                     sameFsError)
 
 -- This is just a placeholder as we don't have (yet) a proper 'Epoch' type in
 -- this codebase.
@@ -67,6 +68,9 @@ data ImmutableDBError
     -- ^ An unexpected error thrown because something went wrong on a lower
     -- layer.
   deriving (Show, Generic)
+
+instance Exception ImmutableDBError where
+  displayException = prettyImmutableDBError
 
 -- | Check if two 'ImmutableDBError's are equal while ignoring their
 -- 'CallStack's.

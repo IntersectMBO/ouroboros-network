@@ -1,6 +1,6 @@
 {-# LANGUAGE RecordWildCards #-}
 
-module Ouroboros.Storage.FS.Class.Types (
+module Ouroboros.Storage.FS.API.Types (
     -- * Paths
     FsPath
   , MountPoint(..)
