@@ -62,9 +62,7 @@ connect a  (Core.Effect b) = b >>= \b' -> connect a  b'
 connect (Core.Done a) (Core.Done b) = return (a, b)
 connect (Core.Yield msg a) (Core.Await _ b) = connect a (b msg)
 connect (Core.Await _ a) (Core.Yield msg b) = connect (a msg) b
---connect (Done _) (Yield _ _) = 
-
-
+connect _ _ = error "Network.TypedProtocol.Driver.connect: impossible happend"
 
 runPeer :: forall ps (st :: ps) pk failure bytes m a .
            Monad m
