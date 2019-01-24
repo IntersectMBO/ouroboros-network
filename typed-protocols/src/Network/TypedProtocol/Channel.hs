@@ -227,20 +227,22 @@ channelEffect beforeSend afterRecv = go
           return (mx, go chan')
       }
 
-{-
--- | Prepend extra data at the head of a 'Channel's receive side.
+
+-- | Prepend extra data at a 'Channel's receive side.
 --
--- This 
+-- This is handy to deal with trailing data from a message decoder.
 --
-prependDuplexRecv
-  :: ( Functor sm, Applicative rm )
-  => [recv]
-  -> Duplex sm rm send recv
-  -> Duplex sm rm send recv
-prependDuplexRecv lst duplex = case lst of
-  [] -> duplex
-  (i : is) -> Duplex
-    { send = fmap (prependDuplexRecv lst) . send duplex
-    , recv = pure (Just i, prependDuplexRecv is duplex)
+prependChannelRecv
+  :: Applicative m
+  => a
+  -> Channel m a
+  -> Channel m a
+prependChannelRecv a channel =
+    Channel {
+      -- recv is easy, replace what we recv before moving on to the original
+      recv = pure (Just a, channel),
+
+      -- for send, we didn't prepend the input yet, so have to go round again
+      send = \x -> prependChannelRecv a <$> send channel x
     }
--}
+
