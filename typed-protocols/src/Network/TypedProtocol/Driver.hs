@@ -7,7 +7,6 @@
 {-# LANGUAGE NamedFieldPuns #-}
 
 --TODO: just temporary while hacking:
-{-# OPTIONS_GHC -Wno-name-shadowing -Wno-incomplete-patterns #-}
 
 -- |
 -- = Driving a Peer by was of a Duplex and Channel
@@ -32,11 +31,11 @@
 module Network.TypedProtocol.Driver where
 
 import Network.TypedProtocol.Core      as Core
---import Network.TypedProtocol.Pipelined as Pipelined
+import Network.TypedProtocol.Pipelined as Pipelined hiding (connect)
 import Network.TypedProtocol.Channel
 import Network.TypedProtocol.Codec     as Codec
 
---import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM
 
 
 -- | The 'connect' function takes two peers that agree on a protocol and runs
@@ -64,12 +63,14 @@ connect (Core.Yield msg a) (Core.Await _ b) = connect a (b msg)
 connect (Core.Await _ a) (Core.Yield msg b) = connect (a msg) b
 connect _ _ = error "Network.TypedProtocol.Driver.connect: impossible happend"
 
-runPeer :: forall ps (st :: ps) pk failure bytes m a .
-           Monad m
-        => Codec ps failure m bytes
-        -> Channel m bytes
-        -> Peer pk st m a
-        -> m a
+runPeer
+  :: forall ps (st :: ps) pk failure bytes m a .
+     Monad m
+  => Codec ps failure m bytes
+  -> Channel m bytes
+  -> Peer pk st m a
+  -> m a
+
 runPeer codec channel (Core.Effect k) =
     k >>= runPeer codec channel
 
@@ -77,9 +78,7 @@ runPeer _codec _channel (Core.Done x) =
     return x
 
 runPeer codec@Codec{encode} Channel{send} (Core.Yield msg k) = do
-    let msgbytes :: bytes
-        msgbytes = encode msg
-    channel' <- send msgbytes
+    channel' <- send (encode msg)
     runPeer codec channel' k
 
 runPeer codec@Codec{decode} channel (Core.Await stok k) = do
@@ -89,15 +88,95 @@ runPeer codec@Codec{decode} channel (Core.Await stok k) = do
       Right (SomeMessage msg, channel') -> runPeer codec channel' (k msg)
       Left failure                      -> undefined
 
+
 runDecoder :: Monad m
            => Channel m bytes
            -> Codec.DecodeStep bytes failure m a
            -> m (Either failure (a, Channel m bytes))
-runDecoder channel (Codec.Done x trailing) = return (Right (x, channel)) --TODO: prepend trailing
 
-runDecoder _channel (Codec.Fail failure) = return (Left failure)
+runDecoder channel (Codec.Done x Nothing) =
+    return (Right (x, channel))
+
+runDecoder channel (Codec.Done x (Just trailing)) =
+    return (Right (x, prependChannelRecv trailing channel))
+
+runDecoder _channel (Codec.Fail failure) =
+    return (Left failure)
 
 runDecoder Channel{recv} (Codec.Partial k) = do
     (minput, channel') <- recv
     runDecoder channel' =<< k minput
+
+
+runPipelinedPeer
+  :: forall ps (st :: ps) pk failure bytes m a.
+     MonadSTM m
+  => Codec ps failure m bytes
+  -> Channel m bytes
+  -> Pipelined.PeerSender pk st m a
+  -> m a
+runPipelinedPeer codec channel peer = do
+    queue <- atomically $ newTBQueue 10  --TODO: size?
+    fork $ manageReceiverQueue queue channel
+    runPipelinedPeerSender queue codec channel peer
+  where
+    --TODO: here we're forking the channel, which breaks it's invariants
+    manageReceiverQueue queue channel = do
+      ReceiveHandler receiver <- atomically (readTBQueue queue)
+      channel' <- runPipelinedPeerReceiver codec channel receiver
+      manageReceiverQueue queue channel'
+
+
+data ReceiveHandler pk ps m where
+     ReceiveHandler :: PeerReceiver pk (st :: ps) (st' :: ps) m
+                    -> ReceiveHandler pk ps m
+
+
+runPipelinedPeerSender
+  :: forall ps (st :: ps) pk failure bytes m a.
+     MonadSTM m
+  => TBQueue m (ReceiveHandler pk ps m)
+  -> Codec ps failure m bytes
+  -> Channel m bytes
+  -> PeerSender pk st m a
+  -> m a
+runPipelinedPeerSender queue Codec{encode} = go
+  where
+    go :: forall st'.
+          Channel m bytes
+       -> PeerSender pk st' m a
+       -> m a
+    go  channel (Pipelined.Effect k) = k >>= go channel
+
+    go _channel (Pipelined.Done   x) = return x
+
+    go Channel{send} (Pipelined.Yield msg receiver k) = do
+      atomically (writeTBQueue queue (ReceiveHandler receiver))
+      channel' <- send (encode msg)
+      go channel' k
+
+
+runPipelinedPeerReceiver
+  :: forall ps (st :: ps) (st' :: ps) pk failure bytes m.
+     Monad m
+  => Codec ps failure m bytes
+  -> Channel m bytes
+  -> PeerReceiver pk (st :: ps) (st' :: ps) m
+  -> m (Channel m bytes)
+runPipelinedPeerReceiver Codec{decode} = go
+  where
+    go :: forall st st'.
+          Channel m bytes
+       -> PeerReceiver pk st st' m
+       -> m (Channel m bytes)
+    go channel (Pipelined.Effect' k) = k >>= go channel
+
+    go channel Pipelined.Completed = return channel
+
+    go channel (Pipelined.Await stok k) = do
+      decoder <- decode stok
+      res <- runDecoder channel decoder
+      case res of
+        Right (SomeMessage msg, channel') -> go channel' (k msg)
+        Left failure                      -> undefined
 
