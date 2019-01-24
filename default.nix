@@ -4,7 +4,11 @@ let
 
   overrides = import ./nix/overrides.nix { inherit nixpkgs; };
 
-  cardanoroot = ../cardano-sl;
+  cardanoroot = nixpkgs.fetchgit {
+    url = "https://github.com/input-output-hk/cardano-sl";
+    rev = "808bcfba81753e4996b3eeead797dee27da59fc9";
+    sha256 = "1qh2338w39pdgnwkzjydy93qxr2m5cg2ij70c4048fz379kdcyrl";
+  };
   cardanopkgs = import ./nix/cardanopkgs.nix { inherit nixpkgs; inherit cardanoroot; };
 
   # Build on 8.6.3 with the required overrides: one for packages defined in
