@@ -22,7 +22,7 @@ pingPongCodec = Codec encodeMsg decodeMsg
    decodeMsg tok = return $ Partial $ \bytes -> case bytes of
      Nothing  -> return $ Fail "not enough input"
      Just bts -> case decodePingPongMessage tok bts of
-       Just msg -> return $ Done msg ""
+       Just msg -> return $ Done msg Nothing
        Nothing  -> return $ Fail "wrong input"
 
 decodePingPongMessage :: forall (st :: PingPongState).
