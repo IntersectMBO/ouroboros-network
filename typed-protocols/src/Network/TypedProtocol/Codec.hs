@@ -18,7 +18,7 @@ import qualified Codec.CBOR.Decoding as CBOR (Decoder)
 import qualified Codec.CBOR.Write    as CBOR
 
 import           Data.ByteString (ByteString)
---import qualified Data.ByteString as BS
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Builder as BS
 import qualified Data.ByteString.Builder.Extra as BS
 import qualified Data.ByteString.Lazy.Internal as LBS (smallChunkSize)
@@ -62,16 +62,12 @@ data DecodeStep bytes failure m a =
     -- @'Nothing'@ otherwise, and you will get a new @'DecodeStep'@.
     Partial (Maybe bytes -> m (DecodeStep bytes failure m a))
 
-    -- | The decoder has successfully finished. Except for the output
-    -- value you also get any unused input as well as the number of
-    -- bytes consumed.
-  | Done a !bytes
+    -- | The decoder has successfully finished. This provides the decoded
+    -- result value plus any unused input.
+  | Done a (Maybe bytes)
 
     -- | The decoder ran into an error. The decoder either used
-    -- @'fail'@ or was not provided enough input. Contains any
-    -- unconsumed input, the number of bytes consumed, and a
-    -- @'DeserialiseFailure'@ exception describing the reason why the
-    -- failure occurred.
+    -- @'fail'@ or was not provided enough input.
   | Fail failure
 
 transformDecodeStep
@@ -81,7 +77,7 @@ transformDecodeStep
   -> DecodeStep bytes  failure m a
   -> DecodeStep bytes' failure m a
 transformDecodeStep to from (Partial fn) = Partial $ fmap (transformDecodeStep to from) . fn . fmap from
-transformDecodeStep to _ (Done a bs) = Done a (to bs)
+transformDecodeStep to _ (Done a bs) = Done a (fmap to bs)
 transformDecodeStep _ _ (Fail failure) = Fail failure
 
 data SomeMessage (st :: ps) where
@@ -128,6 +124,8 @@ convertCborDecoder :: forall s m a. Functor m
 convertCborDecoder cborDecode liftST =
     go <$> liftST (CBOR.deserialiseIncremental cborDecode)
   where
-    go (CBOR.Done  trailing _ x)          = Done x trailing
+    go (CBOR.Done  trailing _ x)
+      | BS.null trailing                  = Done x Nothing
+      | otherwise                         = Done x (Just trailing)
     go (CBOR.Fail _trailing _off failure) = Fail failure
     go (CBOR.Partial k)                   = Partial (fmap go . liftST . k)
