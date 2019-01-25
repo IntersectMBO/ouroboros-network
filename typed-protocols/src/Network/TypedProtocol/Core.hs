@@ -4,8 +4,6 @@
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE DataKinds #-}
 
-{-# OPTIONS_GHC -Wall -Wno-unticked-promoted-constructors #-}
-
 -- | This module defines the core of the typed protocol framework.
 --
 -- The typed protocol framework is used to define, test and execute protocols.
@@ -44,16 +42,7 @@
 module Network.TypedProtocol.Core (
   Protocol(..),
   PeerKind(..),
-  WhoHasAgency(..),
   Peer(..),
-  effect,
-  done,
-  yield,
-  await,
-
-  -- * Internals
-  Agency(..),
-  CurrentAgency,
   ) where
 
 import Data.Kind (Type)
@@ -131,11 +120,6 @@ import Data.Kind (Type)
 --
 class Protocol ps where
 
-  -- | The peer that has the agency in each protocol state, which is either
-  -- the client, or the server (or neither for terminal states).
-  --
-  type AgencyInState (st :: ps) :: WhoHasAgency
-
   -- | The protocol message type for this protocol. It is expected to be a
   -- GADT that is indexed by the @from@ and @to@ protocol states. That is the
   -- protocol state the message transitions from, and the protocol state it
@@ -151,7 +135,25 @@ class Protocol ps where
   -- interpreters as part of dynamically keeping track of the expected
   -- outstanding responses and their protocol states.
   --
-  data StateToken :: ps -> Type
+
+  -- | The peer that has the agency in each protocol state, which is either
+  -- the client, or the server (or neither for terminal states).
+  --
+
+  data ClientHasAgency :: ps -> Type
+  data ServerHasAgency :: ps -> Type
+  data NobodyHasAgency :: ps -> Type
+
+
+data PeerKind = AsClient | AsServer        -- Only used as promoted types
+
+type family WeHaveAgency (pk :: PeerKind) st :: Type where
+  WeHaveAgency AsClient st = ClientHasAgency st
+  WeHaveAgency AsServer st = ServerHasAgency st
+
+type family TheyHaveAgency (pk :: PeerKind) st :: Type where
+  TheyHaveAgency AsClient st = ServerHasAgency st
+  TheyHaveAgency AsServer st = ClientHasAgency st
 
 
 -- | Having defined the types needed for a protocol it is then possible to
@@ -162,51 +164,16 @@ data Peer (pk :: PeerKind) (st :: ps) m a where
   Effect :: m (Peer pk st m a)
          ->    Peer pk st m a
 
-  Done   :: (CurrentAgency pk (AgencyInState st) ~ Finished)
-         => a
+  Done   :: NobodyHasAgency st
+         -> a
          -> Peer pk st m a
 
-  Yield  :: (CurrentAgency pk (AgencyInState st) ~ Yielding)
-         => Message st st'
+  Yield  :: WeHaveAgency pk st
+         -> Message st st'
          -> Peer pk st' m a
          -> Peer pk st  m a
 
-  Await  :: (CurrentAgency pk (AgencyInState st) ~ Awaiting)
-         => StateToken st
+  Await  :: TheyHaveAgency pk st
          -> (forall st'. Message st st' -> Peer pk st' m a)
          -> Peer pk st m a
 
-data Agency   = Yielding | Awaiting | Finished -- Only used as promoted types
-data PeerKind = AsClient | AsServer        -- Only used as promoted types
-
-data WhoHasAgency = ClientHasAgency | ServerHasAgency | NobodyHasAgency
-
-type family CurrentAgency (peer   :: PeerKind)
-                          (agency :: WhoHasAgency) :: Agency where
-  CurrentAgency AsClient ClientHasAgency = Yielding
-  CurrentAgency AsClient ServerHasAgency = Awaiting
-  CurrentAgency AsClient NobodyHasAgency = Finished
-
-  CurrentAgency AsServer ClientHasAgency = Awaiting
-  CurrentAgency AsServer ServerHasAgency = Yielding
-  CurrentAgency AsServer NobodyHasAgency = Finished
-
-effect :: m (Peer pk st m a)
-       ->    Peer pk st m a
-effect = Effect
-
-done :: (CurrentAgency pk (AgencyInState st) ~ Finished)
-     => a -> Peer pk st m a
-done = Done
-
-yield :: (CurrentAgency pk (AgencyInState st) ~ Yielding)
-      => Message st st'
-      -> Peer pk st' m a
-      -> Peer pk st  m a
-yield = Yield
-
-await :: (CurrentAgency pk (AgencyInState st) ~ Awaiting)
-      => StateToken st
-      -> (forall st'. Message st st' -> Peer pk st' m a)
-      -> Peer pk st m a
-await = Await
