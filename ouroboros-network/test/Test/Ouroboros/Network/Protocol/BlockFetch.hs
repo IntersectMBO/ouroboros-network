@@ -32,6 +32,8 @@ import           Test.Tasty.QuickCheck (testProperty)
 tests :: TestTree
 tests =
   testGroup "Ouroboros.Network.Protocol.BlockFetch"
+    []
+{-
   [ testGroup "BlockRequestProtocol"
     [ testProperty "Test directBlockRequest using testing server"
         prop_directBlockRequestProtocol_acc
@@ -62,11 +64,12 @@ tests =
     , testProperty "connect: round trip in IO" prop_connectRoundTripIO
     ]
   ]
+-}
 
 {-------------------------------------------------------------------------------
 -- @'BlockRequestProtocol' tests
 -------------------------------------------------------------------------------}
-
+{-
 -- | Testing server which accumulates received value in its return value.
 --
 accumulatingBlockRequestReceiver
@@ -333,3 +336,4 @@ prop_connectRoundTripIO ranges queueSize = ioProperty $
       (blockFetchReceiverStream cli))
     ranges
     queueSize
+-}
