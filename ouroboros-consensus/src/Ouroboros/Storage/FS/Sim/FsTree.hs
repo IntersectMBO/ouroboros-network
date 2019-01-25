@@ -25,6 +25,7 @@ module Ouroboros.Storage.FS.Sim.FsTree (
   , replace
   , createDirIfMissing
   , createDirWithParents
+  , removeFile
     -- * Pretty-printing
   , pretty
   ) where
@@ -34,6 +35,7 @@ import           Data.List (inits)
 import           Data.List.NonEmpty (NonEmpty (..))
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as M
+import           Data.Maybe (fromMaybe)
 import           Data.Tree
 import           GHC.Generics (Generic)
 
@@ -98,18 +100,18 @@ setFsTreeErrorPath fp (FsMissing      _ suffix) = FsMissing      fp suffix
 
 -- | Most general indexing function
 alterF :: forall f a. Functor f
-       => FsPath                        -- ^ Path to look for
-       -> (FsTreeError -> f (FsTree a)) -- ^ Action on error
-       -> (FsTree a -> f (FsTree a))    -- ^ Alter the tree when found
-       -> (FsTree a -> f (FsTree a))
-alterF path onErr f = go path
+       => FsPath                                -- ^ Path to look for
+       -> (FsTreeError -> f (Maybe (FsTree a))) -- ^ Action on error
+       -> (FsTree a    -> f (Maybe (FsTree a))) -- ^ Alter the tree when found
+       -> (FsTree a    -> f (FsTree a))
+alterF path onErr f = fmap (fromMaybe empty) . go path
   where
-    go :: FsPath -> FsTree a -> f (FsTree a)
+    go :: FsPath -> FsTree a -> f (Maybe (FsTree a))
     go []     t          = f t
     go (p:ps) (File   _) = onErr (FsExpectedDir path (p :| ps))
-    go (p:ps) (Folder m) = Folder <$> M.alterF (fmap Just . f') p m
+    go (p:ps) (Folder m) = Just . Folder <$> M.alterF f' p m
       where
-        f' :: Maybe (FsTree a) -> f (FsTree a)
+        f' :: Maybe (FsTree a) -> f (Maybe (FsTree a))
         f' Nothing  = onErr (FsMissing path (p :| ps))
         f' (Just t) = go ps t
 
@@ -119,7 +121,8 @@ alterDir :: forall f a. Functor f
          -> f (Folder a)                  -- ^ If directory does not exist
          -> (Folder a -> f (Folder a))    -- ^ If directory exists
          -> (FsTree a -> f (FsTree a))
-alterDir p onErr onNotExists onExists = alterF p onErr' f
+alterDir p onErr onNotExists onExists =
+    alterF p (fmap Just . onErr') (fmap Just . f)
   where
     onErr' :: FsTreeError -> f (FsTree a)
     onErr' (FsMissing _ (_ :| [])) = Folder <$> onNotExists
@@ -135,7 +138,8 @@ alterFile :: forall f a. Functor f
           -> f a                           -- ^ If file does not exist
           -> (a -> f a)                    -- ^ If file exists
           -> (FsTree a -> f (FsTree a))
-alterFile p onErr onNotExists onExists = alterF p onErr' f
+alterFile p onErr onNotExists onExists =
+    alterF p (fmap Just . onErr') (fmap Just . f)
   where
     onErr' :: FsTreeError -> f (FsTree a)
     onErr' (FsMissing _ (_ :| [])) = File <$> onNotExists
@@ -143,6 +147,22 @@ alterFile p onErr onNotExists onExists = alterF p onErr' f
 
     f :: FsTree a -> f (FsTree a)
     f (File   a) = File <$> onExists a
+    f (Folder _) = onErr $ FsExpectedFile p
+
+alterFileMaybe :: forall f a. Functor f
+               => FsPath
+               -> (FsTreeError -> f (Maybe (FsTree a))) -- ^ Action on error
+               -> f (Maybe a)                           -- ^ If file does not exist
+               -> (a -> f (Maybe a))                    -- ^ If file exists
+               -> (FsTree a -> f (FsTree a))
+alterFileMaybe p onErr onNotExists onExists = alterF p onErr' f
+  where
+    onErr' :: FsTreeError -> f (Maybe (FsTree a))
+    onErr' (FsMissing _ (_ :| [])) = fmap File <$> onNotExists
+    onErr' err                     = onErr err
+
+    f :: FsTree a -> f (Maybe (FsTree a))
+    f (File   a) = fmap File <$> onExists a
     f (Folder _) = onErr $ FsExpectedFile p
 
 {-------------------------------------------------------------------------------
@@ -194,6 +214,12 @@ createDirWithParents fp =
       -- Report full path in the error, not the prefix at the point of failure
       either (Left . setFsTreeErrorPath fp) Right
     . repeatedlyM createDirIfMissing (inits fp)
+
+-- | Remove a file (which must exist)
+removeFile :: FsPath -> FsTree a -> Either FsTreeError (FsTree a)
+removeFile fp = alterFileMaybe fp Left errNotExist (const (Right Nothing))
+  where
+    errNotExist = Left (FsMissing fp (last fp :| []))
 
 {-------------------------------------------------------------------------------
   Pretty-printing

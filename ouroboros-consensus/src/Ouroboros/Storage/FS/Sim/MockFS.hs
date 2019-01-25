@@ -40,6 +40,7 @@ module Ouroboros.Storage.FS.Sim.MockFS (
   , listDirectory
   , doesDirectoryExist
   , doesFileExist
+  , removeFile
     -- * Exported for the benefit of tests only
   , HandleState       -- opaque
   , OpenHandleState   -- opaque
@@ -61,6 +62,7 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as M
 import           Data.Maybe (mapMaybe)
 import           Data.Set (Set)
+import qualified Data.Set as S
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           GHC.Stack
@@ -176,6 +178,14 @@ openHandles MockFS{..} = mapMaybe isOpen $ M.elems mockHandles
     isOpen (HandleOpen   hs) = Just hs
     isOpen (HandleClosed _ ) = Nothing
 
+-- | A set containing each file path that some open handle refers to.
+openFilePaths :: MockFS -> Set FsPath
+openFilePaths MockFS{..} = foldMap handleOpenFilePath $ M.elems mockHandles
+  where
+    handleOpenFilePath :: HandleState -> Set FsPath
+    handleOpenFilePath (HandleOpen hs)  = S.singleton $ openFilePath hs
+    handleOpenFilePath (HandleClosed _) = S.empty
+
 -- | Number of open handles
 numOpenHandles :: MockFS -> Int
 numOpenHandles = length . openHandles
@@ -268,7 +278,7 @@ readMockFS :: CanSimFS m
            -> (Files -> m a) -> m a
 readMockFS err f = modifyMockFS err (\fs -> (, fs) <$> f (mockFiles fs))
 
--- | Require a file andle and may modify the mock file system
+-- | Require a file handle and may modify the mock file system
 withHandleModify :: CanSimFS m
                  => ErrorHandling FsError m
                  -> Handle
@@ -677,6 +687,30 @@ doesFileExist err fp = readMockFS err $ \fs ->
     return $ case FS.getFile fp fs of
                Left  _ -> False
                Right _ -> True
+
+-- | Remove a file
+--
+-- The behaviour of @unlink@ is to remove the file after all open file handles
+-- that refer to it are closed. The open file handles referring to the file
+-- can still be used to write\/read to\/from, while at the same time, the file
+-- is invisible for all other operations.
+--
+-- We do not implement this behaviour and consider this a limitation of the
+-- mock file system, and throw an error when removing a file that still has
+-- open file handles to it.
+removeFile :: CanSimFS m => ErrorHandling FsError m -> FsPath -> m ()
+removeFile err@ErrorHandling{..} fp = modifyMockFS err $ \fs ->
+    if fp `S.member` openFilePaths fs
+      then throwError FsError {
+               fsErrorType   = FsIllegalOperation
+             , fsErrorPath   = fp
+             , fsErrorString = "cannot remove an open file"
+             , fsErrorStack  = callStack
+             , fsLimitation  = True
+             }
+      else do
+        files' <- checkFsTree err $ FS.removeFile fp (mockFiles fs)
+        return ((), fs { mockFiles = files' })
 
 {-------------------------------------------------------------------------------
   Pretty-printing

@@ -77,6 +77,8 @@ tests tmpDir = testGroup "HasFS"
       -- doesDirectoryExist
     , testCase     "doesDirectoryExist yields True  for an existing directory"    test_doesDirectoryExistOK
     , testCase     "doesDirectoryExist yields False for a non-existing directory" test_doesDirectoryExistKO
+
+    , testCase     "removeFile equivalence" test_removeFile
       -- example
     , testCase     "example equivalence" test_example
     ]
@@ -307,3 +309,11 @@ test_doesDirectoryExistOK = withMockFS tryFS (expectFsResult ((@?= True) . fst))
 test_doesDirectoryExistKO :: Assertion
 test_doesDirectoryExistKO = withMockFS tryFS (expectFsResult ((@?= False) . fst )) $ \HasFS{..} _err ->
     doesDirectoryExist ["test-dir"]
+
+test_removeFile :: Assertion
+test_removeFile = apiEquivalenceFs (expectFsResult (@?= False)) $ \HasFS{..} _err -> do
+    let file = ["foo.txt"]
+    h1 <- hOpen file IO.WriteMode
+    hClose h1
+    removeFile file
+    doesFileExist file
