@@ -38,23 +38,38 @@ data AgencyProofs ps = AgencyProofs {
          -> Void
      }
 
-connect :: forall ps st m a b.
+
+-- | The 'connect' function takes two peers that agree on a protocol and runs
+-- them in lock step, until (and if) they complete.
+--
+-- The 'connect' function serves a few purposes.
+--
+-- * The fact we can define this function at at all proves some minimal
+-- sanity property of the typed protocol framework.
+--
+-- * It demonstrates that all protocols defined in the framework can be run
+-- with synchronous communication rather than requiring buffered communication.
+--
+-- * It is useful for testing peer implementations against each other in a
+-- minimalistic setting. The typed framework guarantees
+--
+connect :: forall ps (st :: ps) m a b.
            Monad m
         => AgencyProofs ps
-        -> Peer AsClient (st :: ps) m a
-        -> Peer AsServer (st :: ps) m b
+        -> Peer AsClient st m a
+        -> Peer AsServer st m b
         -> m (a, b)
 connect AgencyProofs{..} = go
   where
-    go :: forall st'.
-          Peer AsClient (st' :: ps) m a
-       -> Peer AsServer (st' :: ps) m b
+    go :: forall (st' :: ps).
+          Peer AsClient st' m a
+       -> Peer AsServer st' m b
        -> m (a, b)
-    go  (Done !_st a)      (Done !_st' b)      = return (a, b)
-    go  (Effect a)          b                  = a >>= \a' -> go a' b
-    go  a                  (Effect b)          = b >>= \b' -> go a  b'
-    go  (Yield !_st msg a) (Await !_st' b)     = go  a     (b msg)
-    go  (Await !_st a)     (Yield !_st' msg b) = go (a msg) b
+    go  (Done !_stA a)      (Done !_stB b)      = return (a, b)
+    go  (Effect a )          b                  = a >>= \a' -> go a' b
+    go   a                  (Effect b)          = b >>= \b' -> go a  b'
+    go  (Yield !_stA msg a) (Await !_stB b)     = go  a     (b msg)
+    go  (Await !_stA a)     (Yield !_stB msg b) = go (a msg) b
 
     -- By appealing to the proofs about agency for this protocol we can
     -- show that these other cases are impossible
