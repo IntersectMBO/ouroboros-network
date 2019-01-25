@@ -41,8 +41,10 @@
 --
 module Network.TypedProtocol.Core (
   Protocol(..),
-  PeerKind(..),
   Peer(..),
+  PeerKind(..),
+  WeHaveAgency,
+  TheyHaveAgency,
   ) where
 
 import Data.Kind (Type)
