@@ -21,24 +21,24 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-chain
-  tag: 4124f07ea977c915bfabe97c28c38e75876a1468
+  tag: 788ca6397492c40b8e9de6e63ae10bec31755dc7
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-chain
-  tag: 4124f07ea977c915bfabe97c28c38e75876a1468
+  tag: 788ca6397492c40b8e9de6e63ae10bec31755dc7
   subdir: crypto
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-chain
-  tag: 4124f07ea977c915bfabe97c28c38e75876a1468
+  tag: 788ca6397492c40b8e9de6e63ae10bec31755dc7
   subdir: binary
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-chain
-  tag: 4124f07ea977c915bfabe97c28c38e75876a1468
+  tag: 788ca6397492c40b8e9de6e63ae10bec31755dc7
   subdir: specs/semantics/hs
 
 source-repository-package
@@ -49,10 +49,15 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-prelude
-  tag: e2d1dfb1ebfd9a8b1a2357bad1bdbdf9d5a7a17b
-  -- f2802079ba2c07c4d408e3c0aa000fc363792398
+  tag: 3c5b1f78bb07d361ff8a1d20bf0350d0c5b115b9
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-crypto
   tag: f5cecb6e424cc84f85b6a3e1f803517bb7b4cfb1
+
+source-repository-package
+  type: git
+  location: https://github.com/well-typed/cborg
+  tag: 80fbe0ee5e67a5622e2cb9eaa9d8594a2214322d
+  subdir: cborg
