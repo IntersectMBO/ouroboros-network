@@ -13,6 +13,7 @@
 module Network.TypedProtocol.Proofs where
 
 import Network.TypedProtocol.Core
+import Network.TypedProtocol.Pipelined
 import Data.Void (Void, absurd)
 
 
@@ -74,4 +75,65 @@ connect AgencyProofs{..} = go
 
     go (Await stA _)   (Done stB _)    =
       absurd (proofByContradiction_NobodyAndServerHaveAgency stB stA)
+
+
+connectPipelined :: forall ps (st :: ps) m a b.
+                    Monad m
+                 => AgencyProofs ps
+                 -> PeerSender AsClient st m a
+                 -> Peer       AsServer st m b
+                 -> m (a, b)
+
+connectPipelined AgencyProofs{..} = goSender
+  where
+    goSender :: forall (st' :: ps).
+                PeerSender AsClient st' m a
+             -> Peer       AsServer st' m b
+             -> m (a, b)
+
+    goSender  (SenderDone !_stA a) (Done !_stB b) = return (a, b)
+    goSender  (SenderEffect a)      b             = a >>= \a' -> goSender a' b
+    goSender  a                    (Effect b)     = b >>= \b' -> goSender a  b'
+
+    goSender  (SenderYield !_stA msg r a) (Await !_stB b) =
+      goReceiver r (b msg) >>= \b' -> goSender a b'
+
+
+    -- Proofs that the remaining cases are impossible
+    goSender (SenderDone stA _)      (Yield stB _ _) =
+      absurd (proofByContradiction_NobodyAndServerHaveAgency stA stB)
+
+    goSender (SenderDone stA _)      (Await stB _) =
+      absurd (proofByContradiction_NobodyAndClientHaveAgency stA stB)
+
+    goSender (SenderYield stA _ _ _) (Done stB _) =
+      absurd (proofByContradiction_NobodyAndClientHaveAgency stB stA)
+
+    goSender (SenderYield stA _ _ _) (Yield stB _ _) =
+      absurd (proofByContradiction_ClientAndServerHaveAgency stA stB)
+
+    -- note that this is where there is actually non-determinism
+    -- in the order of effects. Here we're picking one order that is
+    -- equivalent to no pipelining at all. So this at least demonstrates
+    -- that the pipelining admits the canonical non-pipelined order.
+
+
+    goReceiver :: forall (st' :: ps) (stdone :: ps).
+                  PeerReceiver AsClient st' stdone m
+               -> Peer         AsServer st'        m b
+               -> m (Peer      AsServer     stdone m b)
+
+    goReceiver  ReceiverDone       b         = return b
+    goReceiver (ReceiverEffect a)  b         = a >>= \a' -> goReceiver a' b
+    goReceiver  a                 (Effect b) = b >>= \b' -> goReceiver a  b'
+
+    goReceiver (ReceiverAwait !_ a) (Yield !_ msg b) = goReceiver (a msg) b
+
+
+    -- Proofs that the remaining cases are impossible
+    goReceiver (ReceiverAwait stA _) (Done  stB _) =
+      absurd (proofByContradiction_NobodyAndServerHaveAgency stB stA)
+
+    goReceiver (ReceiverAwait stA _) (Await stB _) =
+      absurd (proofByContradiction_ClientAndServerHaveAgency stB stA)
 
