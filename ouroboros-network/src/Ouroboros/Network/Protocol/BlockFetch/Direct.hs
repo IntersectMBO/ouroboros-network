@@ -1,63 +1,50 @@
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections #-}
+module Ouroboros.Network.Protocol.BlockFetch.Direct
+  ( direct
+  ) where
 
-module Ouroboros.Network.Protocol.BlockFetch.Direct where
+import Control.Monad (join)
 
 import Ouroboros.Network.Protocol.BlockFetch.Client
 import Ouroboros.Network.Protocol.BlockFetch.Server
 
--- | Directly connect server and client adts of @'BlockRequestProtocol'@.
+-- | Run @'BlockFetchClient'@ and @'BlockFetchServer'@ directly against each
+-- other.  This includes running it in any pure monad (e.g. @'Identity'@), and
+-- return the result of client and the server.
 --
-directBlockRequest
-  :: Monad m
-  => BlockRequestReceiver range m a
-  -- ^ server of the @'BlockRequestProtocol'@ protocol
-  -> BlockRequestSender range m b
-  -- ^ client of the @'BlockRequestProtocol'@ protocol
-  -> m (a, b)
-directBlockRequest BlockRequestReceiver {recvMessageRequestRange,recvMessageDone} (BlockRequestSender sender) =
-  sender >>= request
- where
-  request (BlockFetchClientRange range sender') = do
-    server <- recvMessageRequestRange range
-    directBlockRequest server sender'
-  request (BlockFetchClientDone b) = (,b) <$> recvMessageDone
-
--- | Direclty connect server and client adts of @'BlockFetchProtocol'@.
---
-directBlockFetch
-  :: forall block m a b.
+direct
+  :: forall header body m a b.
      Monad m
-  => BlockFetchServerSender block m a
-  -- ^ server of the @'BlockFetchProtocol'@ protocol
-  -> BlockFetchReceiver block m b
-  -- ^ client of the @'BlockFetchProtocol'@ protocol
+  => BlockFetchClient header body m a
+  -> BlockFetchServer header body m b
   -> m (a, b)
-directBlockFetch server client = do
-  sender <- runBlockFetchServerSender server
-  directSender sender client
- where
-  directSender
-    :: BlockFetchSender block m a
-    -> BlockFetchReceiver block m b
-    -> m (a, b)
-  directSender (SendMessageStartBatch mBlockStream) BlockFetchReceiver {recvMsgStartBatch} = do
-    blockStream <- mBlockStream
-    receiveBlocks <- recvMsgStartBatch
-    directBlocks blockStream receiveBlocks
-  directSender (SendMessageNoBlocks server') BlockFetchReceiver {recvMsgNoBlocks} = do
-    client' <- recvMsgNoBlocks
-    directBlockFetch server' client'
-  directSender (SendMessageServerDone a) BlockFetchReceiver {recvMsgDoneClient} = return (a, recvMsgDoneClient)
+direct (BlockFetchClient mclient) server = mclient >>= \client -> direct' client server
 
-  directBlocks
-    :: BlockFetchSendBlocks block m a
-    -> BlockFetchReceiveBlocks block m b
+direct'
+  :: forall header body m a b.
+     Monad m
+  => BlockFetchRequest header body m a
+  -> BlockFetchServer header body m b
+  -> m (a, b)
+direct' (SendMsgClientDone a) (BlockFetchServer _requestHandler b) = return (a, b)
+direct' (SendMsgRequestRange range resp client) (BlockFetchServer requestHandler _b) =
+  requestHandler range >>= sendBatch resp
+ where
+  sendBatch
+    :: BlockFetchResponse header body m a
+    -> BlockFetchSender header body m b
     -> m (a, b)
-  directBlocks (SendMessageBlock block mBlockStream) BlockFetchReceiveBlocks {recvMsgBlock} = do
-    blockStream   <- mBlockStream
-    receiveBlocks <- recvMsgBlock block
-    directBlocks blockStream receiveBlocks
-  directBlocks (SendMessageBatchDone server') BlockFetchReceiveBlocks {recvMsgBatchDone} =
-    recvMsgBatchDone >>= directBlockFetch server'
+  sendBatch BlockFetchResponse {handleStartBatch} (SendMsgStartBatch mblock ) =
+    join $ sendBlocks <$> handleStartBatch <*> mblock
+  sendBatch BlockFetchResponse {handleNoBlocks} (SendMsgNoBlocks mserver) =
+    handleNoBlocks >> mserver >>= direct client
+
+  sendBlocks
+    :: BlockFetchReceiver header body m
+    -> BlockFetchSendBlocks header body m b
+    -> m (a, b)
+  sendBlocks BlockFetchReceiver {handleBlock} (SendMsgBlock body mblock) =
+    join $ sendBlocks <$> handleBlock body <*> mblock
+  sendBlocks BlockFetchReceiver {handleBatchDone} (SendMsgBatchDone mserver) =
+    handleBatchDone >> mserver >>= direct client

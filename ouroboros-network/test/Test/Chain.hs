@@ -8,6 +8,7 @@ module Test.Chain
   , TestBlockChainAndUpdates(..)
   , TestBlockChain(..)
   , TestChainFork(..)
+  , TestChainAndPoints(..)
   , mkRollbackPoint
   , genBlockChain
   , genHeaderChain

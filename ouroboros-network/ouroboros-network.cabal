@@ -67,6 +67,7 @@ library
                        Ouroboros.Network.Protocol.BlockFetch.Client
                        Ouroboros.Network.Protocol.BlockFetch.Server
                        Ouroboros.Network.Protocol.BlockFetch.Direct
+                       Ouroboros.Network.Protocol.BlockFetch.Examples
   default-language:    Haskell2010
   other-extensions:    BangPatterns,
                        DataKinds,
@@ -91,6 +92,7 @@ library
                        TypeFamilies,
                        TypeInType
   build-depends:       base              >=4.9 && <4.13,
+                       typed-protocols   >=0.1 && < 1.0,
                        typed-transitions >=0.1 && < 1.0,
                        typed-protocols   >=0.1 && < 1.0,
                        io-sim-classes    >=0.1 && < 0.2,
@@ -140,6 +142,7 @@ test-suite tests
   default-extensions:  NamedFieldPuns
   build-depends:       base,
                        ouroboros-network,
+                       typed-protocols,
                        typed-transitions,
                        typed-protocols,
                        io-sim-classes,

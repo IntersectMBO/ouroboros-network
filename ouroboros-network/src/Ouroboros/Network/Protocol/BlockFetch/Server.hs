@@ -1,237 +1,75 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE RankNTypes #-}
+module Ouroboros.Network.Protocol.BlockFetch.Server where
 
-module Ouroboros.Network.Protocol.BlockFetch.Server
-  ( BlockRequestReceiver (..)
-  , constantReceiver
-  , blockRequestReceiverStream
-  , BlockFetchServerSender (..)
-  , BlockFetchSender (..)
-  , BlockFetchSendBlocks (..)
-  , StreamElement (..)
-  , blockFetchServerStream
-  , blockFetchServerSender
-  , connectThroughQueue
-  )
-  where
-
-import Data.Functor (($>))
-import Numeric.Natural (Natural)
-import qualified Pipes
-
-import Control.Monad.Class.MonadSTM (MonadSTM (..))
-
-import Protocol.Core
+import Network.TypedProtocol.Core
+        ( Peer (..)
+        , PeerRole (..)
+        , PeerHasAgency (..)
+        )
 
 import Ouroboros.Network.Protocol.BlockFetch.Type
 
-{-------------------------------------------------------------------------------
-  Server stream of @'BlockRequestProtocol'@ protocol
--------------------------------------------------------------------------------}
 
-data BlockRequestReceiver range m a =
-  BlockRequestReceiver {
-    -- | handler for @'MessageRequestRange'@ of the @'BlockRequestProtocol'@
-    --
-    recvMessageRequestRange :: range -> m (BlockRequestReceiver range m a),
-    -- | handler for @'MessageRequestDone'@ of the @'BlockRequestProtocol'@
-    --
-    recvMessageDone :: m a
-  }
-
--- | A receiver which applies an action to the received input, e.g. writting the
--- received @range@ to an internal queue.
---
-constantReceiver
-  :: Functor m
-  => (range -> m ())
-  -> m a
-  -> BlockRequestReceiver range m a
-constantReceiver handleRequest recvMessageDone = BlockRequestReceiver {
-    recvMessageRequestRange = \range -> handleRequest range $> constantReceiver handleRequest recvMessageDone,
-    recvMessageDone
-  }
-
-blockRequestReceiverStream
-  :: forall range m a.
-     Functor m
-  => BlockRequestReceiver range m a
-  -> Peer BlockRequestProtocol
-        (BlockRequestMessage range)
-        (Awaiting StClientIdle)
-        (Finished StClientDone)
-        m a
-blockRequestReceiverStream BlockRequestReceiver{recvMessageRequestRange,recvMessageDone} =
-  await $ \msg -> case msg of
-    MessageRequestRange range -> lift (blockRequestReceiverStream <$> recvMessageRequestRange range)
-    MessageRequestDone -> lift (done <$> recvMessageDone)
-
-{-------------------------------------------------------------------------------
-  Server stream of @'BlockFetchProtocol'@ protocol
--------------------------------------------------------------------------------}
-
--- | @'BlockFetchServer'@ serves blocks to the corresponding client.
-newtype BlockFetchServerSender block m a = BlockFetchServerSender {
-    runBlockFetchServerSender :: m (BlockFetchSender block m a)
-  }
+data BlockFetchServer header body m a where
+  BlockFetchServer
+    :: (ChainRange header -> m (BlockFetchSender header body m a))
+    -> a
+    -> BlockFetchServer header body m a
 
 -- | Send batches of blocks, when a batch is sent loop using
 -- @'BlockFetchServer'@.
 --
-data BlockFetchSender block m a where
+data BlockFetchSender header body m a where
 
   -- | Initiate a batch of blocks.
-  SendMessageStartBatch
-    :: m (BlockFetchSendBlocks block m a)
-    -> BlockFetchSender block m a
+  SendMsgStartBatch
+    :: m (BlockFetchSendBlocks header body m a)
+    -> BlockFetchSender header body m a
 
-  -- | We served a batch, now loop using @'BlockFetchServerSender'@
-  SendMessageNoBlocks
-    :: BlockFetchServerSender block m a
-    -> BlockFetchSender block m a
+  SendMsgNoBlocks
+    :: m (BlockFetchServer header body m a)
+    -> BlockFetchSender header body m a
 
-  -- | Server decided to end the protocol.
-  SendMessageServerDone
-    :: a
-    -> BlockFetchSender block m a
-
--- | Stream batch of blocks until
+-- | Stream batch of blocks
 --
-data BlockFetchSendBlocks block m a where
+data BlockFetchSendBlocks header body m a where
 
-  -- | Send a single block and recurse.
+  -- | Send a single block body and recurse.
   --
-  SendMessageBlock
-    :: block
-    -> m (BlockFetchSendBlocks block m a)
-    -> BlockFetchSendBlocks block m a
+  SendMsgBlock
+    :: body
+    -> m (BlockFetchSendBlocks header body m a)
+    -> BlockFetchSendBlocks header body m a
 
-  -- | End of the stream of blocks.
+  -- | End of the stream of block bodies.
   --
-  SendMessageBatchDone
-    :: BlockFetchServerSender block m a
-    -> BlockFetchSendBlocks block m a
+  SendMsgBatchDone
+    :: m (BlockFetchServer header body m a)
+    -> BlockFetchSendBlocks header body m a
 
--- | Interpratation of @'BlockFetchServerSender'@ as a @'Peer'@ of the
--- @'BlockFetchProtocol'@ protocol.
---
-blockFetchServerStream
-  :: forall block m a.
+blockFetchServerPeer
+  :: forall header body m a.
      Functor m
-  => BlockFetchServerSender block m a
-  -> Peer BlockFetchProtocol
-      (BlockFetchMessage block)
-      (Yielding StServerAwaiting)
-      (Finished StServerDone)
-      m a
-blockFetchServerStream server = lift $ handleStAwait <$> runBlockFetchServerSender server
+  => BlockFetchServer header body m a
+  -> Peer (BlockFetch header body) AsServer BFIdle m a
+blockFetchServerPeer (BlockFetchServer requestHandler result) = Await (ClientAgency TokIdle) $ \msg -> case msg of
+  MsgRequestRange range -> Effect $ sendBatch <$> requestHandler range
+  MsgClientDone         -> Done TokDone result
  where
-  handleStAwait
-    :: BlockFetchSender block m a
-    -> Peer BlockFetchProtocol
-        (BlockFetchMessage block)
-        (Yielding StServerAwaiting)
-        (Finished StServerDone)
-        m a
-  handleStAwait (SendMessageStartBatch msender)
-    = part MessageStartBatch (lift $ sendBlocks <$> msender)
-  handleStAwait (SendMessageNoBlocks server') = blockFetchServerStream server'
-  handleStAwait (SendMessageServerDone a)     = out MessageServerDone (done a)
+  sendBatch
+    :: BlockFetchSender header body m a
+    -> Peer (BlockFetch header body) AsServer BFBusy m a
+  sendBatch (SendMsgStartBatch mblocks) =
+    Yield (ServerAgency TokBusy) MsgStartBatch (Effect $ sendBlocks <$> mblocks)
+  sendBatch (SendMsgNoBlocks next) =
+    Yield (ServerAgency TokBusy) MsgNoBlocks (Effect $ blockFetchServerPeer <$> next)
 
   sendBlocks
-    :: BlockFetchSendBlocks block m a
-    -> Peer BlockFetchProtocol
-        (BlockFetchMessage block)
-        (Yielding StServerSending)
-        (Finished StServerDone)
-        m a
-  sendBlocks (SendMessageBlock block msender) =
-    part (MessageBlock block) (lift $ sendBlocks <$> msender)
-  sendBlocks (SendMessageBatchDone server') =
-    part MessageBatchDone (blockFetchServerStream server')
-
--- | Sender of the @'BlockFetchProtocol'@.  It may send
--- @'MessageServerDone'@ under two conditions:
---
---  * @'StreamElement' range@ returned @'End'@, which means that the
---    corresponding @'BlockRequestProtocol'@ has terminated
---  * the @'blockStream'@ handler returned @'Nothing'@
---
-blockFetchServerSender
-  :: forall m range block a.
-     Monad m
-  => a
-  -- ^ return value
-  -> m (StreamElement range)
-  -- ^ stream of ranges; when @'End'@ is read the protocol will terminate.
-  -> (range -> m (Maybe (Pipes.Producer block m a)))
-  -- ^ range handler returning a stream of blocks, when it return @'Nothing'@
-  -- the @'MessageServerDone'@ will terminate the protocol.
-  -> BlockFetchServerSender block m a
-blockFetchServerSender serverDone mrange blockStream = BlockFetchServerSender $ do
-  element <- mrange
-  case element of
-    End           -> return $ SendMessageServerDone serverDone
-    Element range -> do
-      mstream <- blockStream range
-      case mstream of
-        Nothing     -> return $ SendMessageServerDone serverDone
-        Just stream -> do
-          stream' <- Pipes.next stream
-          case stream' of
-            Left _          -> return $ SendMessageNoBlocks (blockFetchServerSender serverDone mrange blockStream)
-            Right (b, next) -> return $ SendMessageStartBatch (sendStream b next)
- where
-  sendStream
-    :: block
-    -> Pipes.Producer block m a
-    -> m (BlockFetchSendBlocks block m a)
-  sendStream b stream =
-    return $ SendMessageBlock b $ do
-    nxt <- Pipes.next stream
-    case nxt of
-      Left _              -> return $ SendMessageBatchDone (blockFetchServerSender serverDone mrange blockStream)
-      Right (b', stream') -> sendStream b' stream'
-
-data StreamElement a
-    = Element a
-    | End
-  deriving (Show, Eq)
-
--- | Connection between the server side of @'BlockRequestProtocol'@ and the
--- server side of @'BlockFetchProtocol'@>
---
-connectThroughQueue'
-  :: forall range block m.
-     MonadSTM m
-  => TBQueue m (StreamElement range)
-  -> (range -> m (Maybe (Pipes.Producer block m ())))
-  -> ( BlockRequestReceiver range m ()
-     , BlockFetchServerSender block m ()
-     )
-connectThroughQueue' queue blockStream = (receiver, server)
- where
-  receiver :: BlockRequestReceiver range m ()
-  receiver = constantReceiver (atomically . writeTBQueue queue . Element) (atomically (writeTBQueue queue End))
-
-  server :: BlockFetchServerSender block m ()
-  server = blockFetchServerSender () (atomically $ readTBQueue queue) blockStream
-
--- | Connect server side of @'BlockRequestProtocol'@ and
--- @'BlockFetchSErverProtocol'@ thought a freshly constructed @'TBQueue'@.
---
-connectThroughQueue
-  :: forall range block m.
-     MonadSTM m
-  => Natural
-  -- ^ queue size
-  -> (range -> m (Maybe (Pipes.Producer block m ())))
-  -> m ( BlockRequestReceiver range m ()
-       , BlockFetchServerSender block m ()
-       )
-connectThroughQueue queueSize blockStream = do
-  queue <- atomically $ newTBQueue queueSize
-  return $ connectThroughQueue' queue blockStream
+    :: BlockFetchSendBlocks header body m a
+    -> Peer (BlockFetch header body) AsServer BFStreaming m a
+  sendBlocks (SendMsgBlock body next') =
+    Yield (ServerAgency TokStreaming) (MsgBlock body) (Effect $ sendBlocks <$> next')
+  sendBlocks (SendMsgBatchDone next) =
+    Yield (ServerAgency TokStreaming) MsgBatchDone (Effect $ blockFetchServerPeer <$> next)
