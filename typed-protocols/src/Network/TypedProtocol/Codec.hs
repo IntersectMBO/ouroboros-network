@@ -1,13 +1,15 @@
-{-# LANGUAGE PolyKinds                  #-}
+{-# LANGUAGE GADTs                      #-}
+{-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE PolyKinds                  #-}
+{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE GADTSyntax                 #-}
-{-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 
 module Network.TypedProtocol.Codec where
 
-import           Network.TypedProtocol.Core (StateToken, Message)
+import           Network.TypedProtocol.Core
+                   ( Protocol(..), PeerKind, WeHaveAgency, TheyHaveAgency )
 
 import           Control.Monad.ST (ST)
 import           Control.Monad.Class.MonadST
@@ -24,13 +26,14 @@ import qualified Data.ByteString.Builder.Extra as BS
 import qualified Data.ByteString.Lazy.Internal as LBS (smallChunkSize)
 import qualified Data.ByteString.Lazy          as LBS
 
-data Codec ps failure m bytes = Codec {
+data Codec (pk :: PeerKind) ps failure m bytes = Codec {
        encode :: forall (st :: ps) (st' :: ps).
-                 Message st st'
+                 WeHaveAgency pk st
+              -> Message st st'
               -> bytes,
 
        decode :: forall (st :: ps).
-                 StateToken st
+                 TheyHaveAgency pk st
               -> m (DecodeStep bytes failure m (SomeMessage st))
      }
 
@@ -38,10 +41,10 @@ transformCodec
   :: Functor m
   => (bytes  -> bytes')
   -> (bytes' -> bytes)
-  -> Codec ps failure m bytes
-  -> Codec ps failure m bytes'
+  -> Codec pk ps failure m bytes
+  -> Codec pk ps failure m bytes'
 transformCodec to from Codec {encode, decode} = Codec {
-    encode = to . encode,
+    encode = \stok msg -> to (encode stok msg),
     decode = fmap (transformDecodeStep to from) . decode
   }
 
@@ -90,14 +93,15 @@ serialiseCodec :: (MonadST m, Serialise.Serialise a)
 serialiseCodec = cborCodec Serialise.encode Serialise.decode 
 -}
 
-cborCodec :: forall m ps. MonadST m
-          => (forall (st :: ps) (st' :: ps). Message st st' -> CBOR.Encoding)
-          -> (forall (st :: ps) s. StateToken st -> CBOR.Decoder s (SomeMessage st))
-          -> Codec ps CBOR.DeserialiseFailure m ByteString
+
+cborCodec :: forall pk ps m. MonadST m
+          => (forall (st :: ps) (st' :: ps). WeHaveAgency   pk st -> Message st st' -> CBOR.Encoding)
+          -> (forall (st :: ps) s.           TheyHaveAgency pk st -> CBOR.Decoder s (SomeMessage st))
+          -> Codec pk ps CBOR.DeserialiseFailure m ByteString
 cborCodec cborEncode cborDecode =
     Codec {
-      encode = convertCborEncoder cborEncode,
-      decode = \tok -> convertCborDecoder' (cborDecode tok)
+      encode = \stok msg -> convertCborEncoder  (cborEncode stok) msg,
+      decode = \stok     -> convertCborDecoder' (cborDecode stok)
     }
 
 convertCborEncoder :: (a -> CBOR.Encoding) -> a -> ByteString
