@@ -30,38 +30,14 @@
 
 module Network.TypedProtocol.Driver where
 
-import Network.TypedProtocol.Core      as Core
-import Network.TypedProtocol.Pipelined as Pipelined hiding (connect)
+import Network.TypedProtocol.Core
+import Network.TypedProtocol.Pipelined
 import Network.TypedProtocol.Channel
 import Network.TypedProtocol.Codec     as Codec
 
 import           Control.Monad.Class.MonadSTM
 
 
--- | The 'connect' function takes two peers that agree on a protocol and runs
--- them in lock step, until (and if) they complete.
---
--- The 'connect' function serves a few purposes.
---
--- * The fact we can define this function at at all proves some minimal
--- sanity property of the typed protocol framework.
---
--- * It demonstrates that all protocols defined in the framework can be run
--- with synchronous communication rather than requiring buffered communication.
---
--- * It is useful for testing peer implementations against each other in a
--- minimalistic setting. The typed framework guarantees
---
-connect :: Monad m
-        => Peer AsClient st m a
-        -> Peer AsServer st m b
-        -> m (a, b)
-connect (Core.Effect a) b  = a >>= \a' -> connect a' b
-connect a  (Core.Effect b) = b >>= \b' -> connect a  b'
-connect (Core.Done a) (Core.Done b) = return (a, b)
-connect (Core.Yield msg a) (Core.Await _ b) = connect a (b msg)
-connect (Core.Await _ a) (Core.Yield msg b) = connect (a msg) b
-connect _ _ = error "Network.TypedProtocol.Driver.connect: impossible happend"
 
 runPeer
   :: forall ps (st :: ps) pk failure bytes m a .
