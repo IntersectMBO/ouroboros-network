@@ -55,7 +55,7 @@ pingPongServerPeer
 pingPongServerPeer PingPongServer{..} =
 
     -- In the 'StIdle' the server is awaiting a request message
-    await TokIdle $ \req ->
+    Await TokIdle $ \req ->
 
     -- The client got to choose between two messages and we have to handle
     -- either of them
@@ -63,10 +63,10 @@ pingPongServerPeer PingPongServer{..} =
 
       -- The client sent the done transition, so we're in the 'StDone' state
       -- so all we can do is stop using 'done', with a return value.
-      MsgDone -> done recvMsgDone
+      MsgDone -> Done TokDone recvMsgDone
 
       -- The client sent us a ping request, so now we're in the 'StBusy' state
       -- which means it's the server's turn to send.
-      MsgPing -> effect $ do
+      MsgPing -> Effect $ do
         next <- recvMsgPing
-        pure $ yield MsgPong (pingPongServerPeer next)
+        pure $ Yield TokBusy MsgPong (pingPongServerPeer next)
