@@ -50,6 +50,7 @@ library
                        Ouroboros.Consensus.Protocol.BFT
                        Ouroboros.Consensus.Protocol.Genesis
                        Ouroboros.Consensus.Protocol.LeaderSchedule
+                       Ouroboros.Consensus.Protocol.PermBFT
                        Ouroboros.Consensus.Protocol.Praos
                        Ouroboros.Consensus.Protocol.Test
                        Ouroboros.Consensus.Protocol.ExtNodeConfig
