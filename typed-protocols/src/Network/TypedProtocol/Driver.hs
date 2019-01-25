@@ -33,7 +33,9 @@ module Network.TypedProtocol.Driver where
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Pipelined
 import Network.TypedProtocol.Channel
-import Network.TypedProtocol.Codec     as Codec
+
+import qualified Network.TypedProtocol.Codec as Codec
+import           Network.TypedProtocol.Codec hiding (Done)
 
 import           Control.Monad.Class.MonadSTM
 
@@ -42,27 +44,27 @@ import           Control.Monad.Class.MonadSTM
 runPeer
   :: forall ps (st :: ps) pk failure bytes m a .
      Monad m
-  => Codec ps failure m bytes
+  => Codec pk ps failure m bytes
   -> Channel m bytes
   -> Peer pk st m a
   -> m a
 
-runPeer codec channel (Core.Effect k) =
+runPeer codec channel (Effect k) =
     k >>= runPeer codec channel
 
-runPeer _codec _channel (Core.Done x) =
+runPeer _codec _channel (Done _ x) =
     return x
 
-runPeer codec@Codec{encode} Channel{send} (Core.Yield msg k) = do
-    channel' <- send (encode msg)
+runPeer codec@Codec{encode} Channel{send} (Yield stok msg k) = do
+    channel' <- send (encode stok msg)
     runPeer codec channel' k
 
-runPeer codec@Codec{decode} channel (Core.Await stok k) = do
+runPeer codec@Codec{decode} channel (Await stok k) = do
     decoder <- decode stok
     res <- runDecoder channel decoder
     case res of
       Right (SomeMessage msg, channel') -> runPeer codec channel' (k msg)
-      Left failure                      -> undefined
+      Left failure                      -> error "TODO: proper exceptions for runPeer"
 
 
 runDecoder :: Monad m
@@ -87,9 +89,9 @@ runDecoder Channel{recv} (Codec.Partial k) = do
 runPipelinedPeer
   :: forall ps (st :: ps) pk failure bytes m a.
      MonadSTM m
-  => Codec ps failure m bytes
+  => Codec pk ps failure m bytes
   -> Channel m bytes
-  -> Pipelined.PeerSender pk st m a
+  -> PeerSender pk st m a
   -> m a
 runPipelinedPeer codec channel peer = do
     queue <- atomically $ newTBQueue 10  --TODO: size?
@@ -112,7 +114,7 @@ runPipelinedPeerSender
   :: forall ps (st :: ps) pk failure bytes m a.
      MonadSTM m
   => TBQueue m (ReceiveHandler pk ps m)
-  -> Codec ps failure m bytes
+  -> Codec pk ps failure m bytes
   -> Channel m bytes
   -> PeerSender pk st m a
   -> m a
@@ -122,20 +124,20 @@ runPipelinedPeerSender queue Codec{encode} = go
           Channel m bytes
        -> PeerSender pk st' m a
        -> m a
-    go  channel (Pipelined.Effect k) = k >>= go channel
+    go  channel (SenderEffect k) = k >>= go channel
 
-    go _channel (Pipelined.Done   x) = return x
+    go _channel (SenderDone _ x) = return x
 
-    go Channel{send} (Pipelined.Yield msg receiver k) = do
+    go Channel{send} (SenderYield stok msg receiver k) = do
       atomically (writeTBQueue queue (ReceiveHandler receiver))
-      channel' <- send (encode msg)
+      channel' <- send (encode stok msg)
       go channel' k
 
 
 runPipelinedPeerReceiver
   :: forall ps (st :: ps) (st' :: ps) pk failure bytes m.
      Monad m
-  => Codec ps failure m bytes
+  => Codec pk ps failure m bytes
   -> Channel m bytes
   -> PeerReceiver pk (st :: ps) (st' :: ps) m
   -> m (Channel m bytes)
@@ -145,14 +147,14 @@ runPipelinedPeerReceiver Codec{decode} = go
           Channel m bytes
        -> PeerReceiver pk st st' m
        -> m (Channel m bytes)
-    go channel (Pipelined.Effect' k) = k >>= go channel
+    go channel (ReceiverEffect k) = k >>= go channel
 
-    go channel Pipelined.Completed = return channel
+    go channel ReceiverDone = return channel
 
-    go channel (Pipelined.Await stok k) = do
+    go channel (ReceiverAwait stok k) = do
       decoder <- decode stok
       res <- runDecoder channel decoder
       case res of
         Right (SomeMessage msg, channel') -> go channel' (k msg)
-        Left failure                      -> undefined
+        Left failure                      -> error "TODO: proper exceptions for runPipelinedPeer"
 
