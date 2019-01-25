@@ -4,13 +4,13 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Network.TypedProtocol.PingPong.Client where
 
-import           Data.Functor (($>))
+--import           Data.Functor (($>))
 import           Numeric.Natural (Natural)
 
-import           Control.Monad.Class.MonadSTM (MonadSTM (..))
+--import           Control.Monad.Class.MonadSTM (MonadSTM (..))
 
 import           Network.TypedProtocol.Core
-import qualified Network.TypedProtocol.Pipelined as Pipelined
+--import qualified Network.TypedProtocol.Pipelined as Pipelined
 import           Network.TypedProtocol.PingPong.Type
 
 -- | A ping-pong client, on top of some effect 'm'.
@@ -72,26 +72,27 @@ pingPongClientPeer (SendMsgDone result) =
     -- We do an actual transition using 'yield', to go from the 'StIdle' to
     -- 'StDone' state. Once in the 'StDone' state we can actually stop using
     -- 'done', with a return value.
-    yield MsgDone (done result)
+    Yield TokIdle MsgDone (Done TokDone result)
 
 pingPongClientPeer (SendMsgPing next) =
 
     -- Send our message.
-    yield MsgPing $
+    Yield TokIdle MsgPing $
 
     -- The type of our protocol means that we're now into the 'StBusy' state
     -- and the only thing we can do next is local effects or wait for a reply.
     -- We'll wait for a reply.
-    await TokBusy $ \MsgPong ->
+    Await TokBusy $ \MsgPong ->
 
     -- Now in this case there is only one possible response, and we have
     -- one corresponding continuation 'kPong' to handle that response.
     -- The pong reply has no content so there's nothing to pass to our
     -- continuation, but if there were we would.
-      effect $ do
+      Effect $ do
         client <- next
         pure $ pingPongClientPeer client
 
+{-
 -- |
 -- A ping-pong client designed for running piplined ping-pong protocol.
 --
@@ -139,3 +140,5 @@ pingPongClientPeerSender (SendMsgPingPipelined receive next) =
     (Pipelined.await TokBusy $ \MsgPong -> Pipelined.effect' $ receive $> Pipelined.Completed)
     -- run the next step of the ping-pong protocol.
     (Pipelined.effect $ return $ pingPongClientPeerSender next)
+
+-}
