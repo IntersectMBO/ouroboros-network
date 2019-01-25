@@ -104,6 +104,13 @@ data OpenHandleState = OpenHandle {
     }
   deriving (Show, Generic)
 
+-- | Check whether the file handle is in write/append mode.
+isWriteHandle :: OpenHandleState -> Bool
+isWriteHandle OpenHandle{..} = case openPtr of
+    RW _ True  _ -> True
+    Append       -> True
+    _            -> False
+
 -- | File pointer
 --
 -- This is purely an internal abstraction.
@@ -448,7 +455,9 @@ hOpen err@ErrorHandling{..} fp ioMode = do
       , fsLimitation  = True
       }
     modifyMockFS err $ \fs -> do
-      let alreadyHasWriter = any (\hs -> openFilePath hs == fp) $ openHandles fs
+      let alreadyHasWriter =
+            any (\hs -> openFilePath hs == fp && isWriteHandle hs) $
+            openHandles fs
       when (ioMode /= IO.ReadMode && alreadyHasWriter) $
         throwError FsError {
             fsErrorType   = FsInvalidArgument

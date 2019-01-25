@@ -191,8 +191,10 @@ test_hOpenReadContention = apiEquivalenceFs (expectFsResult (@?= ())) $ \HasFS{.
 
 test_hOpenReadWriteContention :: Assertion
 test_hOpenReadWriteContention = apiEquivalenceFs (expectFsResult (@?= ())) $ \HasFS{..} _err -> do
-    h2 <- hOpen ["foo.txt"] IO.WriteMode
+    h0 <- hOpen ["foo.txt"] IO.WriteMode
+    hClose h0
     h1 <- hOpen ["foo.txt"] IO.ReadMode
+    h2 <- hOpen ["foo.txt"] IO.WriteMode
     hClose h1
     hClose h2
 
