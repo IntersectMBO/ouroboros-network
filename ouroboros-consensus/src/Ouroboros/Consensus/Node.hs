@@ -54,10 +54,10 @@ import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (Chain (..), ChainUpdate (..), Point)
 import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.ChainProducerState
-import           Ouroboros.Network.ChainSyncExamples
 import           Ouroboros.Network.Protocol.ChainSync.Client
 import           Ouroboros.Network.Protocol.ChainSync.Server
 import           Ouroboros.Network.Protocol.ChainSync.Type
+import           Ouroboros.Network.Protocol.ChainSync.Examples
 import           Ouroboros.Network.Serialise (Serialise)
 
 import           Ouroboros.Consensus.Ledger.Abstract

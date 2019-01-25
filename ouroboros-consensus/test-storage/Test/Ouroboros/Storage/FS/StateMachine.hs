@@ -22,7 +22,9 @@ module Test.Ouroboros.Storage.FS.StateMachine (
   , showLabelledExamples
   ) where
 
+import qualified Control.Exception as E
 import           Control.Monad
+import           Control.Monad.Except (runExcept)
 import           Control.Monad.IO.Class (liftIO)
 import           Data.Bifoldable
 import           Data.Bifunctor
@@ -64,14 +66,15 @@ import qualified Test.StateMachine.Types.Rank2 as Rank2
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck
 
-import           Ouroboros.Storage.FS.Class
-import           Ouroboros.Storage.FS.Class.Types
+import           Ouroboros.Storage.FS.API
+import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.FS.IO
 import           Ouroboros.Storage.FS.Sim.FsTree (FsTree (..))
 import           Ouroboros.Storage.FS.Sim.MockFS (MockFS)
 import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
 import           Ouroboros.Storage.FS.Sim.Pure
 import qualified Ouroboros.Storage.IO as F
+import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
 import           Ouroboros.Consensus.Util
 import qualified Ouroboros.Consensus.Util.Classify as C
@@ -145,9 +148,11 @@ data Success fp h =
   deriving (Eq, Show, Functor, Foldable)
 
 -- | Successful semantics
-run :: forall m. HasFS m
-    => Cmd FsPath (FsHandle m) -> m (Success FsPath (FsHandle m))
-run = go
+run :: forall m. Monad m
+    => HasFS m
+    -> Cmd FsPath (FsHandle m)
+    -> m (Success FsPath (FsHandle m))
+run HasFS{..} = go
   where
     go :: Cmd FsPath (FsHandle m) -> m (Success FsPath (FsHandle m))
     go (Open pe mode) =
@@ -188,10 +193,16 @@ instance (Eq fp, Eq h) => Eq (Resp fp h) where
   _              == _               = False
 
 runPure :: Cmd FsPath Mock.Handle -> MockFS -> (Resp FsPath Mock.Handle, MockFS)
-runPure cmd = first Resp . runPureSimFSE (run cmd)
+runPure cmd mockFS =
+    aux $ runExcept $ runPureSimFS (run (pureHasFS EH.exceptT) cmd) mockFS
+  where
+    aux :: Either FsError (Success FsPath Mock.Handle, MockFS)
+        -> (Resp FsPath Mock.Handle, MockFS)
+    aux (Left e)             = (Resp (Left e), mockFS)
+    aux (Right (r, mockFS')) = (Resp (Right r), mockFS')
 
-runIO :: MountPoint -> Cmd FsPath (FsHandle IOFSE) -> IO (Resp FsPath (FsHandle IOFSE))
-runIO mount cmd = Resp <$> runIOFSE mount (run cmd)
+runIO :: MountPoint -> Cmd FsPath (FsHandle IO) -> IO (Resp FsPath (FsHandle IO))
+runIO mount cmd = Resp <$> E.try (run (ioHasFS mount) cmd)
 
 {-------------------------------------------------------------------------------
   Bitraversable instances
@@ -227,10 +238,10 @@ handles = bifoldMap (const []) (:[])
 type PathRef = QSM.Reference FsPath
 
 -- | Concrete or symbolic reference to an IO file handle
-type HandleRef = QSM.Reference (QSM.Opaque (FsHandle IOFSE))
+type HandleRef = QSM.Reference (QSM.Opaque (FsHandle IO))
 
 -- | Mapping between real IO file handles and mock file handles
-type KnownHandles = RefEnv (QSM.Opaque (FsHandle IOFSE)) Mock.Handle
+type KnownHandles = RefEnv (QSM.Opaque (FsHandle IO)) Mock.Handle
 
 -- | Mapping between path references and paths
 type KnownPaths = RefEnv FsPath FsPath

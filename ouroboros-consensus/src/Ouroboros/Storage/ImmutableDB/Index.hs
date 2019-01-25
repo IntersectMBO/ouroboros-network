@@ -1,9 +1,10 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE RecordWildCards  #-}
+
 module Ouroboros.Storage.ImmutableDB.Index where
 
 import           Control.Monad (void)
 import           Control.Monad.Catch (MonadMask)
-import           Control.Monad.Except (ExceptT)
 
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Builder as BS
@@ -13,13 +14,13 @@ import qualified Data.List.NonEmpty as NE
 import qualified Data.Vector.Unboxed as V
 import           Data.Word (Word64)
 
-import           System.IO (IOMode(..))
+import           System.IO (IOMode (..))
 
-import           Ouroboros.Storage.FS.Class
-import           Ouroboros.Storage.FS.Class.Types (FsPath, FsError)
-import           Ouroboros.Storage.Util
+import           Ouroboros.Storage.FS.API
+import           Ouroboros.Storage.FS.API.Types (FsPath)
 import           Ouroboros.Storage.ImmutableDB.Types
 import           Ouroboros.Storage.ImmutableDB.Util
+import           Ouroboros.Storage.Util
 
 
 {------------------------------------------------------------------------------
@@ -41,14 +42,15 @@ indexEntrySizeBytes = 8
 {-# INLINE indexEntrySizeBytes #-}
 
 -- | Loads an index file in memory.
-loadIndex :: (HasFSE m, MonadMask m)
-          => FsPath
+loadIndex :: MonadMask m
+          => HasFS m
+          -> FsPath
           -> Epoch
-          -> ExceptT FsError m Index
-loadIndex dbFolder epoch = do
+          -> m Index
+loadIndex hasFS dbFolder epoch = do
     let indexFile = dbFolder <> renderFile "index" epoch
-    indexContents <- withFile indexFile ReadMode $ \hnd ->
-      BL.toStrict . BS.toLazyByteString <$> readAll hnd
+    indexContents <- withFile hasFS indexFile ReadMode $ \hnd ->
+      BL.toStrict . BS.toLazyByteString <$> readAll hasFS hnd
     return $ indexFromByteString indexContents
 
 -- | Write a non-empty list of 'SlotOffset's to a file.
@@ -61,14 +63,15 @@ loadIndex dbFolder epoch = do
 -- Then it must be that:
 --
 -- > indexToSlotOffsets index === offsets
-writeSlotOffsets :: (HasFSE m, MonadMask m)
-                 => FsPath
+writeSlotOffsets :: MonadMask m
+                 => HasFS m
+                 -> FsPath
                  -> Epoch
                  -> NonEmpty SlotOffset
-                 -> ExceptT FsError m ()
-writeSlotOffsets dbFolder epoch sos = do
+                 -> m ()
+writeSlotOffsets hasFS@HasFS{..} dbFolder epoch sos = do
     let indexFile = dbFolder <> renderFile "index" epoch
-    withFile indexFile WriteMode $ \iHnd ->
+    withFile hasFS indexFile WriteMode $ \iHnd ->
       void $ hPut iHnd (foldMap encodeIndexEntry (NE.reverse sos))
   -- TODO efficient enough?
 
@@ -201,5 +204,5 @@ firstFilledSlot (MkIndex offsets) = go 1
 filledSlots :: Index -> [RelativeSlot]
 filledSlots index = go (firstFilledSlot index)
   where
-    go Nothing = []
+    go Nothing     = []
     go (Just slot) = slot : go (nextFilledSlot index slot)

@@ -1,54 +1,65 @@
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 
 module Ouroboros.Storage.FS.Sim.Pure (
     PureSimFS -- opaque
-  , PureSimFSE
   , runPureSimFS
-  , runPureSimFSE
+  , pureHasFS
+  , liftErrPureSimFS
   ) where
 
-import           Control.Monad.Except
 import           Control.Monad.State
+import           Data.Proxy
+import           Data.Type.Coercion
 
-import           Ouroboros.Storage.FS.Class
-import           Ouroboros.Storage.FS.Class.Types
+import           Ouroboros.Storage.FS.API
+import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.FS.Sim.MockFS (MockFS)
 import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
+import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
+import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
 -- | Monad useful for running 'HasFS' in pure code
-newtype PureSimFS a = PureSimFS { unPureSimFS :: State MockFS a }
+newtype PureSimFS m a = PureSimFS { unPureSimFS :: StateT MockFS m a }
   deriving ( Functor
            , Applicative
            , Monad
            , MonadState MockFS
            )
 
-type PureSimFSE = ExceptT FsError PureSimFS
+type instance FsHandle (PureSimFS m) = Mock.Handle
+data instance Buffer   (PureSimFS m) = MockBufferUnused
 
-runPureSimFS :: PureSimFS a -> MockFS -> (a, MockFS)
-runPureSimFS = runState . unPureSimFS
+runPureSimFS :: PureSimFS m a -> MockFS -> m (a, MockFS)
+runPureSimFS = runStateT . unPureSimFS
 
-runPureSimFSE :: PureSimFSE a -> MockFS -> (Either FsError a, MockFS)
-runPureSimFSE = runPureSimFS . runExceptT
+pureHasFS :: forall m. Monad m
+          => ErrorHandling FsError m -> HasFS (PureSimFS m)
+pureHasFS err = HasFS {
+      dumpState = Mock.dumpState
+    , newBuffer                = \_ -> return MockBufferUnused
+    , hOpen                    = Mock.hOpen                    err'
+    , hClose                   = Mock.hClose                   err'
+    , hSeek                    = Mock.hSeek                    err'
+    , hGet                     = Mock.hGet                     err'
+    , hPut                     = Mock.hPut                     err'
+    , hPutBuffer               = Mock.hPutBuffer               err'
+    , hTruncate                = Mock.hTruncate                err'
+    , hGetSize                 = Mock.hGetSize                 err'
+    , createDirectory          = Mock.createDirectory          err'
+    , createDirectoryIfMissing = Mock.createDirectoryIfMissing err'
+    , listDirectory            = Mock.listDirectory            err'
+    , doesDirectoryExist       = Mock.doesDirectoryExist       err'
+    , doesFileExist            = Mock.doesFileExist            err'
+    , hasFsErr                 = err'
+    }
+  where
+    err' :: ErrorHandling FsError (PureSimFS m)
+    err' = liftErrPureSimFS err
 
-instance HasFS PureSimFSE where
-  type FsHandle PureSimFSE = Mock.Handle
-  data Buffer   PureSimFSE = MockBufferUnused
-
-  dumpState                = Mock.dumpState
-  newBuffer                = \_ -> return MockBufferUnused
-  hOpen                    = Mock.hOpen
-  hClose                   = Mock.hClose
-  hSeek                    = Mock.hSeek
-  hGet                     = Mock.hGet
-  hPut                     = Mock.hPut
-  hPutBuffer               = Mock.hPutBuffer
-  hTruncate                = Mock.hTruncate
-  hGetSize                 = Mock.hGetSize
-  createDirectory          = Mock.createDirectory
-  createDirectoryIfMissing = Mock.createDirectoryIfMissing
-  listDirectory            = Mock.listDirectory
-  doesDirectoryExist       = Mock.doesDirectoryExist
-  doesFileExist            = Mock.doesFileExist
+liftErrPureSimFS :: ErrorHandling e m -> ErrorHandling e (PureSimFS m)
+liftErrPureSimFS = EH.liftErrNewtype Coercion
+                 . EH.liftErrState (Proxy @MockFS)

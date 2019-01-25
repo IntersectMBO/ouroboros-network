@@ -13,32 +13,29 @@ module Ouroboros.Storage.ImmutableDB.API
   , module Ouroboros.Storage.ImmutableDB.Types
   ) where
 
-import Control.Monad.Catch (MonadMask, bracket)
-import Control.Monad.Except (MonadError, ExceptT(ExceptT), runExceptT,
-                             throwError)
+import           Control.Monad.Catch (MonadMask, bracket)
 
-import Data.Function (on)
-import Data.ByteString (ByteString)
-import Data.ByteString.Builder (Builder)
+import           Data.ByteString (ByteString)
+import           Data.ByteString.Builder (Builder)
+import           Data.Function (on)
 
-import GHC.Stack (HasCallStack)
+import           GHC.Stack (HasCallStack)
 
-import Pipes (Producer, yield, lift)
+import           Pipes (Producer, lift, yield)
 
-import Ouroboros.Storage.ImmutableDB.Types
-
+import           Ouroboros.Storage.ImmutableDB.Types
+import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
 
 -- | Open the database using the given function, perform the given action
 -- using the database, and closes the database using its 'closeDB' function,
 -- in case of success or when an exception was raised.
 withDB :: (HasCallStack, MonadMask m)
-       => m (Either ImmutableDBError (ImmutableDB m))
+       => m (ImmutableDB m)
           -- ^ How to open the database
-       -> (ImmutableDB m -> m (Either ImmutableDBError a))
+       -> (ImmutableDB m -> m a)
           -- ^ Action to perform using the database
-       -> m (Either ImmutableDBError a)
-withDB openDB action = runExceptT $
-    bracket (ExceptT openDB) (ExceptT . closeDB) (ExceptT . action)
+       -> m a
+withDB openDB = bracket openDB closeDB
 
 -- | API for the 'ImmutableDB'.
 --
@@ -51,7 +48,7 @@ data ImmutableDB m = ImmutableDB
     --
     -- __Note__: Use 'withDB' instead of this function.
     closeDB
-      :: HasCallStack => m (Either ImmutableDBError ())
+      :: HasCallStack => m ()
       -- TODO remove this operation from the public API, replace it with a
       -- reopen + validate function that can be used in case of an error.
       --
@@ -72,7 +69,7 @@ data ImmutableDB m = ImmutableDB
     --
     -- Throws a 'ClosedDBError' if the database is closed.
   , getNextEpochSlot
-      :: HasCallStack => m (Either ImmutableDBError EpochSlot)
+      :: HasCallStack => m EpochSlot
 
     -- | Get the binary blob stored at the given 'EpochSlot'.
     --
@@ -90,7 +87,7 @@ data ImmutableDB m = ImmutableDB
     -- Throws a 'ClosedDBError' if the database is closed.
   , getBinaryBlob
       :: HasCallStack
-      => EpochSlot -> m (Either ImmutableDBError (Maybe ByteString))
+      => EpochSlot -> m (Maybe ByteString)
 
     -- | Appends a binary blob at the given relative slot in the current epoch
     -- file.
@@ -113,7 +110,7 @@ data ImmutableDB m = ImmutableDB
     -- TODO the given binary blob may not be empty.
   , appendBinaryBlob
       :: HasCallStack
-      => RelativeSlot -> Builder -> m (Either ImmutableDBError ())
+      => RelativeSlot -> Builder -> m ()
 
     -- | Close the current epoch and start a new epoch (the epoch number is
     -- incremented by 1). The new epoch number is returned.
@@ -122,7 +119,7 @@ data ImmutableDB m = ImmutableDB
     --
     -- Throws a 'ClosedDBError' if the database is closed.
   , startNewEpoch
-      :: HasCallStack => EpochSize -> m (Either ImmutableDBError Epoch)
+      :: HasCallStack => EpochSize -> m Epoch
       -- TODO For additional safety in concurrent usage: let the user pass the
       -- new 'Epoch' to start, which must be 'getCurrentEpoch' + 1, so no
       -- skipping allowed.
@@ -151,7 +148,10 @@ data ImmutableDB m = ImmutableDB
       :: HasCallStack
       => EpochSlot
       -> EpochSlot
-      -> m (Either ImmutableDBError (Iterator m))
+      -> m (Iterator m)
+
+    -- | Throw 'ImmutableDB' errors
+  , immutableDBErr :: ErrorHandling ImmutableDBError m
   }
 
 -- | An 'Iterator' is a handle which can be used to efficiently stream binary
@@ -167,19 +167,19 @@ data Iterator m = Iterator
     --
     -- When the iterator is exhausted ('IteratorExhausted'), the iterator is
     -- automatically closed with 'iteratorClose'.
-    iteratorNext :: HasCallStack => m (Either ImmutableDBError IteratorResult)
+    iteratorNext  :: HasCallStack => m IteratorResult
 
     -- | Dispose of the 'Iterator' by closing any open handles.
     --
     -- Idempotent operation.
-  , iteratorClose :: HasCallStack => m (Either ImmutableDBError ())
+  , iteratorClose :: HasCallStack => m ()
 
     -- | A identifier for the 'Iterator' that is unique for @m@.
     --
     -- This used for the 'Eq' instance, which is needed for testing.
     --
     -- TODO how can we avoid this abstraction leak?
-  , iteratorID  :: IteratorID
+  , iteratorID    :: IteratorID
   }
 
 -- | Create an iterator from the given 'ImmutableDB' using 'streamBinaryBlob'
@@ -191,12 +191,11 @@ withIterator :: (HasCallStack, MonadMask m)
                 -- ^ The database
              -> EpochSlot -- ^ Start streaming from here (inclusive)
              -> EpochSlot -- ^ End streaming here (inclusive)
-             -> (Iterator m -> m (Either ImmutableDBError a))
+             -> (Iterator m -> m a)
                 -- ^ Action to perform using the iterator
-             -> m (Either ImmutableDBError a)
-withIterator db start end action = runExceptT $
-    bracket (ExceptT (streamBinaryBlobs db start end)) (ExceptT . iteratorClose)
-            (ExceptT . action)
+             -> m a
+withIterator db start end =
+    bracket (streamBinaryBlobs db start end) iteratorClose
 
 
 -- | Equality based on 'iteratorID'
@@ -207,10 +206,8 @@ instance Eq (Iterator m) where
 -- | Return the currently opened epoch that can be appended to.
 --
 -- Throws a 'ClosedDBError' if the database is closed.
-getCurrentEpoch :: (HasCallStack, Functor m)
-                => ImmutableDB m
-                -> m (Either ImmutableDBError Epoch)
-getCurrentEpoch db = fmap _epoch <$> getNextEpochSlot db
+getCurrentEpoch :: (HasCallStack, Functor m) => ImmutableDB m -> m Epoch
+getCurrentEpoch db = _epoch <$> getNextEpochSlot db
 
 -- | The result of stepping an 'Iterator'.
 data IteratorResult
@@ -220,36 +217,27 @@ data IteratorResult
 
 -- | Consume an 'Iterator' by stepping until it is exhausted. A list of all
 -- the blobs produced by the 'Iterator' is returned.
-iteratorToList :: (HasCallStack, Monad m)
-               => Iterator m
-               -> m (Either ImmutableDBError [ByteString])
-iteratorToList it = runExceptT $ go mempty
+iteratorToList :: (HasCallStack, Monad m) => Iterator m -> m [ByteString]
+iteratorToList it = go mempty
   where
     go acc = do
-      next <- ExceptT $ iteratorNext it
+      next <- iteratorNext it
       case next of
         IteratorResult _ x -> go (x : acc)
         IteratorExhausted  -> return $ reverse acc
 
 -- | A 'Producer' that streams binary blobs from the database in the
 -- given range.
-blobProducer :: (HasCallStack, MonadError ImmutableDBError m)
+blobProducer :: (Monad m, HasCallStack)
              => ImmutableDB m
              -> EpochSlot   -- ^ When to start streaming (inclusive).
              -> EpochSlot   -- ^ When to stop streaming (inclusive).
              -> Producer (EpochSlot, ByteString) m ()
 blobProducer db start end = do
-    it <- liftErr $ streamBinaryBlobs db start end
+    it <- lift $ streamBinaryBlobs db start end
     let loop = do
-          res <- liftErr $ iteratorNext it
+          res <- lift $ iteratorNext it
           case res of
-              IteratorExhausted -> liftErr $ iteratorClose it
+              IteratorExhausted -> lift $ iteratorClose it
               IteratorResult epochSlot blob -> yield (epochSlot, blob) *> loop
     loop
-  where
-    liftErr action = do
-      res <- lift action
-      case res of
-        Left  e -> throwError e
-        Right r -> return r
-

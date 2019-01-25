@@ -38,7 +38,7 @@ import           Data.Tree
 import           GHC.Generics (Generic)
 
 import           Ouroboros.Consensus.Util (repeatedlyM)
-import           Ouroboros.Storage.FS.Class.Types
+import           Ouroboros.Storage.FS.API.Types
 
 {-------------------------------------------------------------------------------
   FsTree type and general indexing functions

@@ -66,9 +66,9 @@ library
                        Ouroboros.Consensus.Util.STM
 
                        -- Storing things on disk
-                       Ouroboros.Storage.FS.Class
-                       Ouroboros.Storage.FS.Class.Example
-                       Ouroboros.Storage.FS.Class.Types
+                       Ouroboros.Storage.FS.API
+                       Ouroboros.Storage.FS.API.Example
+                       Ouroboros.Storage.FS.API.Types
                        Ouroboros.Storage.FS.IO
                        Ouroboros.Storage.FS.Sim.FsTree
                        Ouroboros.Storage.FS.Sim.MockFS
@@ -81,6 +81,7 @@ library
                        Ouroboros.Storage.ImmutableDB.Types
                        Ouroboros.Storage.ImmutableDB.Util
                        Ouroboros.Storage.Util
+                       Ouroboros.Storage.Util.ErrorHandling
                        Ouroboros.Storage.IO
 
   default-language:    Haskell2010
