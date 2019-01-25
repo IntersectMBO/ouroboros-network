@@ -4,35 +4,43 @@
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE StandaloneDeriving #-}
 
-{-# OPTIONS_GHC -Wall -Wno-unticked-promoted-constructors #-}
 
 module Network.TypedProtocol.PingPong.Type where
 
 import           Network.TypedProtocol.Core
 
 
--- | States in the ping pong system.
-data PingPongState where
-  StIdle :: PingPongState
-  StBusy :: PingPongState
-  StDone :: PingPongState
+-- | The ping\/pong protocol and the states in its protocol state machine.
+--
+-- This protocol serves as a simple example of the typed protocols framework
+-- to help understand the framework and as a template for writing other
+-- protocols.
+--
+-- For a slightly more realistic example, see the request\/response protocol
+-- "Network.TypedProtocol.ResResp.Type".
+--
+-- This declares the protocol itself. It is used both as a type level tag for
+-- the protocol and as the kind of the types of the states in the protocol
+-- state machine. That is @PingPong@ is a kind, and @StIdle@ is a type of
+-- that kind.
+--
+-- If the protocol needs any type parameters (e.g. for thing that end up in
+-- the messages) then those type parameters go here. See the request\/response
+-- protocol for an example. It is parametrised over the types of the request
+-- and response.
+--
+data PingPong where
+  StIdle :: PingPong
+  StBusy :: PingPong
+  StDone :: PingPong
 
-instance Protocol PingPongState where
-
-  -- | We have to explain to the framework what our states mean, in terms of
-  -- who is expected to send and receive in the different states.
-  --
-  -- Idle states are where it is for the client to send a message,
-  -- busy states are where the server is expected to send a reply.
-  --
-  type AgencyInState StIdle = ClientHasAgency
-  type AgencyInState StBusy = ServerHasAgency
-  type AgencyInState StDone = NobodyHasAgency
+instance Protocol PingPong where
 
   -- | The actual messages in our protocol.
   --
-  -- These involve transitions between different states within the 'StPingPong'
+  -- These involve transitions between different states within the 'PingPong'
   -- states. A ping request goes from idle to busy, and a pong response go from
   -- busy to idle.
   --
@@ -47,13 +55,24 @@ instance Protocol PingPongState where
     MsgPong :: Message StBusy StIdle
     MsgDone :: Message StIdle StDone
 
-  data StateToken st where
-    TokIdle :: StateToken StIdle
-    TokBusy :: StateToken StBusy
-    TokDone :: StateToken StDone
+  -- | We have to explain to the framework what our states mean, in terms of
+  -- who is expected to send and receive in the different states.
+  --
+  -- Idle states are where it is for the client to send a message.
+  --
+  data ClientHasAgency st where
+    TokIdle :: ClientHasAgency StIdle
+
+  -- | Busy states are where the server is expected to send a reply (a pong).
+  --
+  data ServerHasAgency st where
+    TokBusy :: ServerHasAgency StBusy
+
+  -- | In the done state neither client nor server can send messages.
+  --
+  data NobodyHasAgency st where
+    TokDone :: NobodyHasAgency StDone
 
 
-instance Show (Message (from :: PingPongState) (to :: PingPongState)) where
-  show MsgPing = "MsgPing"
-  show MsgPong = "MsgPong"
-  show MsgDone = "MsgDone"
+deriving instance Show (Message (from :: PingPong) (to :: PingPong))
+
