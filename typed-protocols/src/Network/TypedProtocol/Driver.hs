@@ -44,7 +44,7 @@ import           Control.Monad.Class.MonadSTM
 runPeer
   :: forall ps (st :: ps) pk failure bytes m a .
      Monad m
-  => Codec pk ps failure m bytes
+  => Codec ps pk failure m bytes
   -> Channel m bytes
   -> Peer pk st m a
   -> m a
@@ -84,7 +84,7 @@ runDecoder Channel{recv} = go
 runPipelinedPeer
   :: forall ps (st :: ps) pk failure bytes m a.
      MonadSTM m
-  => Codec pk ps failure m bytes
+  => Codec ps pk failure m bytes
   -> Channel m bytes
   -> PeerSender pk st m a
   -> m a
@@ -104,7 +104,7 @@ runPipelinedPeerSender
   :: forall ps (st :: ps) pk failure bytes m a.
      MonadSTM m
   => TBQueue m (ReceiveHandler pk ps m)
-  -> Codec pk ps failure m bytes
+  -> Codec ps pk failure m bytes
   -> Channel m bytes
   -> PeerSender pk st m a
   -> m a
@@ -124,7 +124,7 @@ runPipelinedPeerReceiverQueue
   :: forall ps pk failure bytes m.
      MonadSTM m
   => TBQueue m (ReceiveHandler pk ps m)
-  -> Codec pk ps failure m bytes
+  -> Codec ps pk failure m bytes
   -> Channel m bytes
   -> m ()
 runPipelinedPeerReceiverQueue queue codec channel = go Nothing
@@ -139,7 +139,7 @@ runPipelinedPeerReceiverQueue queue codec channel = go Nothing
 runPipelinedPeerReceiver
   :: forall ps (st :: ps) (stdone :: ps) pk failure bytes m.
      Monad m
-  => Codec pk ps failure m bytes
+  => Codec ps pk failure m bytes
   -> Channel m bytes
   -> Maybe bytes
   -> PeerReceiver pk (st :: ps) (stdone :: ps) m
