@@ -5,11 +5,13 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE EmptyCase #-}
 
 
 module Network.TypedProtocol.PingPong.Type where
 
 import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Proofs
 
 
 -- | The ping\/pong protocol and the states in its protocol state machine.
@@ -73,6 +75,15 @@ instance Protocol PingPong where
   data NobodyHasAgency st where
     TokDone :: NobodyHasAgency StDone
 
+
+-- | `AgencyProofs` for the PingPong protocol
+--
+pingPongAgencyProofs :: AgencyProofs PingPong
+pingPongAgencyProofs = AgencyProofs {
+    proofByContradiction_ClientAndServerHaveAgency = \TokIdle tok -> case tok of {},
+    proofByContradiction_NobodyAndClientHaveAgency = \TokDone tok -> case tok of {},
+    proofByContradiction_NobodyAndServerHaveAgency = \TokDone tok -> case tok of {}
+  }
 
 deriving instance Show (Message (from :: PingPong) (to :: PingPong))
 
