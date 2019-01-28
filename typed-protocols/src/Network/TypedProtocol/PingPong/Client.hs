@@ -4,10 +4,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Network.TypedProtocol.PingPong.Client where
 
-import           Numeric.Natural (Natural)
-
-import           Control.Monad.Class.MonadSTM (MonadSTM (..))
-
 import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Pipelined
 import           Network.TypedProtocol.PingPong.Type
@@ -91,17 +87,6 @@ data PingPongSender m a where
   SendMsgDonePipelined
     :: a -> PingPongSender m a
 
-pingPongSenderCount
-  :: MonadSTM m
-  => TVar m Natural
-  -> Natural
-  -> PingPongSender m ()
-pingPongSenderCount var = go
- where
-  go 0 = SendMsgDonePipelined ()
-  go n = SendMsgPingPipelined
-    (atomically $ modifyTVar var succ)
-    (go (pred n))
 
 pingPongClientPeerSender
   :: Monad m
