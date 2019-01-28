@@ -38,6 +38,10 @@ let
     cleanSource (callCabal2nix "io-sim" ./io-sim { inherit  io-sim-classes; })
   ))));
 
+  typed-protocols = docNoSeprateOutput(doHaddock(doTest(doBench(
+    cleanSource (callCabal2nix "typed-protocols" ./typed-protocols { inherit io-sim-classes io-sim; })
+  ))));
+
   typed-transitions = docNoSeprateOutput(doHaddock(doTest(doBench(
     cleanSource (callCabal2nix "typed-transitions" ./typed-transitions {})
   ))));
@@ -50,4 +54,4 @@ let
     cleanSource (callCabal2nix "ouroboros-consensus" ./ouroboros-consensus { inherit io-sim-classes io-sim typed-transitions ouroboros-network; })
   ))));
 
-in { inherit io-sim-classes io-sim typed-transitions ouroboros-network ouroboros-consensus; }
+in { inherit io-sim-classes io-sim typed-protocols typed-transitions ouroboros-network ouroboros-consensus; }

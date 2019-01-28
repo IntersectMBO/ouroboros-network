@@ -5,6 +5,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE TypeInType #-}
 
 --TODO: just temporary while hacking:
 
