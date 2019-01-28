@@ -111,8 +111,10 @@ connectPipelined AgencyProofs{..} = goSender
     goSender  (SenderEffect a)      b             = a >>= \a' -> goSender a' b
     goSender  a                    (Effect b)     = b >>= \b' -> goSender a  b'
 
-    goSender  (SenderYield !_stA msg r a) (Await !_stB b) =
+    goSender  (PipelinedYield !_stA msg r a) (Await !_stB b) =
       goReceiver r (b msg) >>= \b' -> goSender a b'
+
+    goSender (SenderYield !_stA msg a) (Await !_stB b) = goSender a (b msg)
 
 
     -- Proofs that the remaining cases are impossible
@@ -122,10 +124,16 @@ connectPipelined AgencyProofs{..} = goSender
     goSender (SenderDone stA _)      (Await stB _) =
       absurd (proofByContradiction_NobodyAndClientHaveAgency stA stB)
 
-    goSender (SenderYield stA _ _ _) (Done stB _) =
+    goSender (PipelinedYield stA _ _ _) (Done stB _) =
       absurd (proofByContradiction_NobodyAndClientHaveAgency stB stA)
 
-    goSender (SenderYield stA _ _ _) (Yield stB _ _) =
+    goSender (SenderYield stA _ _) (Done stB _) =
+      absurd (proofByContradiction_NobodyAndClientHaveAgency stB stA)
+
+    goSender (PipelinedYield stA _ _ _) (Yield stB _ _) =
+      absurd (proofByContradiction_ClientAndServerHaveAgency stA stB)
+
+    goSender (SenderYield stA _ _) (Yield stB _ _) =
       absurd (proofByContradiction_ClientAndServerHaveAgency stA stB)
 
     -- note that this is where there is actually non-determinism

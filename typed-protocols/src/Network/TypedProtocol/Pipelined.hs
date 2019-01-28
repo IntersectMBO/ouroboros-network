@@ -20,16 +20,17 @@ data PeerSender (pk :: PeerKind) (st :: ps) m a where
                -> a
                -> PeerSender pk st m a
 
+  PipelinedYield
+               :: WeHaveAgency pk st
+               -> Message st st'
+               -> PeerReceiver pk (st' :: ps) (st :: ps) m
+               -> PeerSender   pk (st  :: ps) m a
+               -> PeerSender   pk (st  :: ps) m a
+
   SenderYield  :: WeHaveAgency pk st
                -> Message st st'
-               -> PeerReceiver pk msg (st' :: ps) (st :: ps) m
-               -> PeerSender   pk msg (st  :: ps) m a
-               -> PeerSender   pk msg (st  :: ps) m a
-
-  RebaseYield  :: WeHaveAgency pk st
-               -> Message st st'
-               -> PeerSender pk msg (st' :: ps) m a
-               -> PeerSender pk msg (st :: ps) m a
+               -> PeerSender pk (st' :: ps) m a
+               -> PeerSender pk (st :: ps) m a
 
 data PeerReceiver (pk :: PeerKind) (st :: ps) (stdone :: ps) m where
 

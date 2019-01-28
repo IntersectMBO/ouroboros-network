@@ -115,8 +115,12 @@ runPipelinedPeerSender queue Codec{encode} Channel{send} = go
     go (SenderEffect k) = k >>= go
     go (SenderDone _ x) = return x
 
-    go (SenderYield stok msg receiver k) = do
+    go (PipelinedYield stok msg receiver k) = do
       atomically (writeTBQueue queue (ReceiveHandler receiver))
+      send (encode stok msg)
+      go k
+
+    go (SenderYield stok msg k) = do
       send (encode stok msg)
       go k
 

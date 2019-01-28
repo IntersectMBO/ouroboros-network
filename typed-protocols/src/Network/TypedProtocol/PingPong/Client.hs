@@ -95,12 +95,12 @@ pingPongClientPeerSender
 
 pingPongClientPeerSender (SendMsgDonePipelined result) =
   -- Send `MsgDone` and complete the protocol
-  SenderYield TokIdle MsgDone ReceiverDone (SenderDone TokDone result)
+  SenderYield TokIdle MsgDone (SenderDone TokDone result)
 
 pingPongClientPeerSender (SendMsgPingPipelined receive next) =
   -- Piplined yield: send `MsgPing`, imediatelly follow with the next step.
   -- Await for a response in a continuation.
-  SenderYield
+  PipelinedYield
     TokIdle
     MsgPing
     -- response handler
