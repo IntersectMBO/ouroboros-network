@@ -21,7 +21,7 @@ data PeerSender (pk :: PeerKind) (st :: ps) m a where
                -> PeerSender pk st m a
 
   SenderYield  :: WeHaveAgency pk st
-               -> Message st st'
+               -> Message ps st st'
                -> PeerReceiver pk (st'  :: ps) (st'' :: ps) m
                -> PeerSender   pk (st'' :: ps) m a
                -> PeerSender   pk (st   :: ps) m a
@@ -35,6 +35,6 @@ data PeerReceiver (pk :: PeerKind) (st :: ps) (stdone :: ps) m where
   ReceiverDone   :: PeerReceiver pk stdone stdone m
 
   ReceiverAwait  :: TheyHaveAgency pk st
-                 -> (forall st'. Message st st' -> PeerReceiver pk st' stdone m)
+                 -> (forall st'. Message ps st st' -> PeerReceiver pk st' stdone m)
                  -> PeerReceiver pk st stdone m
 
