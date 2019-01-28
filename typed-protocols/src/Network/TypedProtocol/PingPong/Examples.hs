@@ -5,6 +5,8 @@ module Protocol.PingPong.Examples where
 import           Network.TypedProtocol.PingPong.Server
 import           Network.TypedProtocol.PingPong.Client
 
+import           Control.Monad.Class.MonadSTM
+
 
 -- | The standard stateless ping-pong server instance.
 --
@@ -46,4 +48,16 @@ pingPongClientFlood = SendMsgPing (pure pingPongClientFlood)
 pingPongClientCount :: Applicative m => Int -> PingPongClient m ()
 pingPongClientCount 0 = SendMsgDone ()
 pingPongClientCount n = SendMsgPing (pure (pingPongClientCount (n-1)))
+
+
+pingPongSenderCount
+  :: MonadSTM m
+  => TVar m Int
+  -> Int
+  -> PingPongSender m ()
+pingPongSenderCount var = go
+ where
+  go 0 = SendMsgDonePipelined ()
+  go n = SendMsgPingPipelined (atomically $ modifyTVar var succ)
+                              (go (pred n))
 
