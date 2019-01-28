@@ -19,6 +19,7 @@ library
                    , Network.TypedProtocol.Channel
                    , Network.TypedProtocol.Codec
                    , Network.TypedProtocol.Driver
+                   , Network.TypedProtocol.Proofs
                    , Network.TypedProtocol.PingPong.Client
                    , Network.TypedProtocol.PingPong.Server
                    , Network.TypedProtocol.PingPong.Direct
