@@ -27,19 +27,25 @@ import           Network.TypedProtocol.Channel
   , createConnectedChannels
   , createPipeConnectedChannels
   )
-import           Network.TypedProtocol.Driver (connect, runPeer)
-import qualified Network.TypedProtocol.Pipelined as Pipelined
+import           Network.TypedProtocol.Driver (runPeer)
+import           Network.TypedProtocol.Proofs (connect, connectPipelined)
 
+import           Network.TypedProtocol.PingPong.Type (pingPongAgencyProofs)
 import           Network.TypedProtocol.PingPong.Client
-  ( pingPongClientCount
-  , pingPongClientPeer
-  , pingPongSenderCount
+  ( pingPongClientPeer
   , pingPongClientPeerSender
   )
-import           Network.TypedProtocol.PingPong.Codec (pingPongCodec)
+import           Network.TypedProtocol.PingPong.Codec
+  ( codecPingPongAsClient
+  , codecPingPongAsServer
+  )
 import           Network.TypedProtocol.PingPong.Server
-  ( pingPongServerCount
-  , pingPongServerPeer
+  ( pingPongServerPeer
+  )
+import           Network.TypedProtocol.PingPong.Examples
+  ( pingPongClientCount
+  , pingPongSenderCount
+  , pingPongServerCount
   )
 import           Network.TypedProtocol.PingPong.Direct (direct)
 
@@ -84,7 +90,7 @@ prop_connect
   -> Property
 prop_connect (Positive x) =
   let c = fromIntegral x
-  in case runIdentity $ connect (pingPongClientPeer $ pingPongClientCount c) (pingPongServerPeer pingPongServerCount) of
+  in case runIdentity $ connect pingPongAgencyProofs (pingPongClientPeer $ pingPongClientCount c) (pingPongServerPeer pingPongServerCount) of
     (_, c') -> c === c'
 
 connect_pipelined_experiment
@@ -98,7 +104,7 @@ connect_pipelined_experiment (Positive x) probe = do
   var <- atomically $ newTVar 0
   let c = fromIntegral x
       client = pingPongSenderCount var c
-  (_, b) <- Pipelined.connect (pingPongClientPeerSender client) (pingPongServerPeer pingPongServerCount)
+  (_, b) <- connectPipelined pingPongAgencyProofs (pingPongClientPeerSender client) (pingPongServerPeer pingPongServerCount)
   res <- atomically $ readTVar var
   probeOutput probe (c === b)
   probeOutput probe (c === res)
@@ -131,12 +137,13 @@ channel_experiment clientChannel serverChannel (Positive x) probe = do
   let c = fromIntegral x
       clientPeer = pingPongClientPeer $ pingPongClientCount c
       serverPeer = pingPongServerPeer pingPongServerCount
-      codec = transformCodec BSC.pack BSC.unpack pingPongCodec
+      clientCodec = transformCodec BSC.pack BSC.unpack codecPingPongAsClient
+      serverCodec = transformCodec BSC.pack BSC.unpack codecPingPongAsServer
 
   fork $ do
-    res <- runPeer codec serverChannel serverPeer
+    res <- runPeer serverCodec serverChannel serverPeer
     atomically $ putTMVar serverVar res
-  fork $ runPeer codec clientChannel clientPeer
+  fork $ runPeer clientCodec clientChannel clientPeer
 
   res <- atomically $ takeTMVar serverVar
   probeOutput probe (res === c)

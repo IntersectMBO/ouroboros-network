@@ -24,6 +24,7 @@ library
                    , Network.TypedProtocol.PingPong.Server
                    , Network.TypedProtocol.PingPong.Direct
                    , Network.TypedProtocol.PingPong.Codec
+                   , Network.TypedProtocol.PingPong.Examples
   other-extensions:  GADTs
                    , RankNTypes
                    , PolyKinds
