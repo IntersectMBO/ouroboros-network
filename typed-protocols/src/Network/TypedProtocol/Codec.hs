@@ -6,10 +6,17 @@
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 
-module Network.TypedProtocol.Codec where
+module Network.TypedProtocol.Codec (
+    Codec(..)
+  , PeerKind(..)
+  , SomeMessage(..)
+  , DecodeStep(..)
+  , transformCodec
+  , cborCodec
+  ) where
 
 import           Network.TypedProtocol.Core
-                   ( Protocol(..), PeerKind, WeHaveAgency, TheyHaveAgency )
+                   ( Protocol(..), PeerKind(..), WeHaveAgency, TheyHaveAgency )
 
 import           Control.Monad.ST (ST)
 import           Control.Monad.Class.MonadST
@@ -26,7 +33,7 @@ import qualified Data.ByteString.Builder.Extra as BS
 import qualified Data.ByteString.Lazy.Internal as LBS (smallChunkSize)
 import qualified Data.ByteString.Lazy          as LBS
 
-data Codec (pk :: PeerKind) ps failure m bytes = Codec {
+data Codec ps (pk :: PeerKind) failure m bytes = Codec {
        encode :: forall (st :: ps) (st' :: ps).
                  WeHaveAgency pk st
               -> Message st st'
@@ -41,8 +48,8 @@ transformCodec
   :: Functor m
   => (bytes  -> bytes')
   -> (bytes' -> bytes)
-  -> Codec pk ps failure m bytes
-  -> Codec pk ps failure m bytes'
+  -> Codec ps pk failure m bytes
+  -> Codec ps pk failure m bytes'
 transformCodec to from Codec {encode, decode} = Codec {
     encode = \stok msg -> to (encode stok msg),
     decode = fmap (transformDecodeStep to from) . decode
@@ -97,7 +104,7 @@ serialiseCodec = cborCodec Serialise.encode Serialise.decode
 cborCodec :: forall pk ps m. MonadST m
           => (forall (st :: ps) (st' :: ps). WeHaveAgency   pk st -> Message st st' -> CBOR.Encoding)
           -> (forall (st :: ps) s.           TheyHaveAgency pk st -> CBOR.Decoder s (SomeMessage st))
-          -> Codec pk ps CBOR.DeserialiseFailure m ByteString
+          -> Codec ps pk CBOR.DeserialiseFailure m ByteString
 cborCodec cborEncode cborDecode =
     Codec {
       encode = \stok msg -> convertCborEncoder  (cborEncode stok) msg,
