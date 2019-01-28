@@ -5,6 +5,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE TypeInType #-}
 
 -- | Drivers for running 'Peer's with a 'Codec' and a 'Channel'.
 --

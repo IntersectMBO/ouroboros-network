@@ -5,6 +5,7 @@
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE TypeInType                 #-}
 
 module Network.TypedProtocol.Codec (
     -- * Defining and using Codecs

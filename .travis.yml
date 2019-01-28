@@ -13,6 +13,7 @@ script:
 after_success:
 - cachix push ouroboros-network ./result-typed-io-sim-classes
 - cachix push ouroboros-network ./result-typed-io-sim
+- cachix push ouroboros-network ./result-typed-protocols
 - cachix push ouroboros-network ./result-typed-transitions
 - cachix push ouroboros-network ./result-ouroboros-network
 - cachix push ouroboros-network ./result-ouroboros-consensus
