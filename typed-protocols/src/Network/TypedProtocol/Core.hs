@@ -4,6 +4,7 @@
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE DataKinds #-}
 
+
 -- | This module defines the core of the typed protocol framework.
 --
 -- The typed protocol framework is used to define, test and execute protocols.
