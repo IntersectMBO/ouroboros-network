@@ -5,8 +5,6 @@
 
 module Network.TypedProtocol.PingPong.Server where
 
-import           Numeric.Natural (Natural)
-
 import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.PingPong.Type
 
