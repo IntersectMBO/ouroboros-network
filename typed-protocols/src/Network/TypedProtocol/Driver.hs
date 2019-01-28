@@ -49,41 +49,36 @@ runPeer
   -> Peer pk st m a
   -> m a
 
-runPeer codec channel (Effect k) =
-    k >>= runPeer codec channel
+runPeer Codec{encode, decode} channel@Channel{send} = go Nothing
+  where
+    go :: forall st'. Maybe bytes -> Peer pk st' m a -> m a
+    go trailing (Effect k) = k >>= go trailing
+    go _        (Done _ x) = return x
 
-runPeer _codec _channel (Done _ x) =
-    return x
+    go trailing (Yield stok msg k) = do
+      send (encode stok msg)
+      go trailing k
 
-runPeer codec@Codec{encode} Channel{send} (Yield stok msg k) = do
-    channel' <- send (encode stok msg)
-    runPeer codec channel' k
-
-runPeer codec@Codec{decode} channel (Await stok k) = do
-    decoder <- decode stok
-    res <- runDecoder channel decoder
-    case res of
-      Right (SomeMessage msg, channel') -> runPeer codec channel' (k msg)
-      Left failure                      -> error "TODO: proper exceptions for runPeer"
+    go trailing (Await stok k) = do
+      decoder <- decode stok
+      res <- runDecoder channel trailing decoder
+      case res of
+        Right (SomeMessage msg, trailing') -> go trailing' (k msg)
+        Left failure            -> error "TODO: proper exceptions for runPeer"
 
 
 runDecoder :: Monad m
            => Channel m bytes
+           -> Maybe bytes
            -> Codec.DecodeStep bytes failure m a
-           -> m (Either failure (a, Channel m bytes))
+           -> m (Either failure (a, Maybe bytes))
 
-runDecoder channel (Codec.Done x Nothing) =
-    return (Right (x, channel))
-
-runDecoder channel (Codec.Done x (Just trailing)) =
-    return (Right (x, prependChannelRecv trailing channel))
-
-runDecoder _channel (Codec.Fail failure) =
-    return (Left failure)
-
-runDecoder Channel{recv} (Codec.Partial k) = do
-    (minput, channel') <- recv
-    runDecoder channel' =<< k minput
+runDecoder Channel{recv} = go
+  where
+    go _ (Codec.Done x trailing) = return (Right (x, trailing))
+    go _ (Codec.Fail failure)    = return (Left failure)
+    go Nothing         (Codec.Partial k) = recv >>= k        >>= go Nothing
+    go (Just trailing) (Codec.Partial k) = k (Just trailing) >>= go Nothing
 
 
 runPipelinedPeer
@@ -95,14 +90,9 @@ runPipelinedPeer
   -> m a
 runPipelinedPeer codec channel peer = do
     queue <- atomically $ newTBQueue 10  --TODO: size?
-    fork $ manageReceiverQueue queue channel
+    fork $ runPipelinedPeerReceiverQueue queue codec channel
     runPipelinedPeerSender queue codec channel peer
-  where
-    --TODO: here we're forking the channel, which breaks it's invariants
-    manageReceiverQueue queue channel = do
-      ReceiveHandler receiver <- atomically (readTBQueue queue)
-      channel' <- runPipelinedPeerReceiver codec channel receiver
-      manageReceiverQueue queue channel'
+    --TODO: manage the fork + exceptions here
 
 
 data ReceiveHandler pk ps m where
@@ -118,43 +108,56 @@ runPipelinedPeerSender
   -> Channel m bytes
   -> PeerSender pk st m a
   -> m a
-runPipelinedPeerSender queue Codec{encode} = go
+runPipelinedPeerSender queue Codec{encode} Channel{send} = go
   where
-    go :: forall st'.
-          Channel m bytes
-       -> PeerSender pk st' m a
-       -> m a
-    go  channel (SenderEffect k) = k >>= go channel
+    go :: forall st'. PeerSender pk st' m a -> m a
+    go (SenderEffect k) = k >>= go
+    go (SenderDone _ x) = return x
 
-    go _channel (SenderDone _ x) = return x
-
-    go Channel{send} (SenderYield stok msg receiver k) = do
+    go (SenderYield stok msg receiver k) = do
       atomically (writeTBQueue queue (ReceiveHandler receiver))
-      channel' <- send (encode stok msg)
-      go channel' k
+      send (encode stok msg)
+      go k
+
+
+runPipelinedPeerReceiverQueue
+  :: forall ps pk failure bytes m.
+     MonadSTM m
+  => TBQueue m (ReceiveHandler pk ps m)
+  -> Codec pk ps failure m bytes
+  -> Channel m bytes
+  -> m ()
+runPipelinedPeerReceiverQueue queue codec channel = go Nothing
+  where
+    go :: Maybe bytes -> m ()
+    go trailing = do
+      ReceiveHandler receiver <- atomically (readTBQueue queue)
+      trailing' <- runPipelinedPeerReceiver codec channel trailing receiver
+      go trailing'
 
 
 runPipelinedPeerReceiver
-  :: forall ps (st :: ps) (st' :: ps) pk failure bytes m.
+  :: forall ps (st :: ps) (stdone :: ps) pk failure bytes m.
      Monad m
   => Codec pk ps failure m bytes
   -> Channel m bytes
-  -> PeerReceiver pk (st :: ps) (st' :: ps) m
-  -> m (Channel m bytes)
-runPipelinedPeerReceiver Codec{decode} = go
+  -> Maybe bytes
+  -> PeerReceiver pk (st :: ps) (stdone :: ps) m
+  -> m (Maybe bytes)
+runPipelinedPeerReceiver Codec{decode} channel = go
   where
-    go :: forall st st'.
-          Channel m bytes
-       -> PeerReceiver pk st st' m
-       -> m (Channel m bytes)
-    go channel (ReceiverEffect k) = k >>= go channel
+    go :: forall st' st''.
+          Maybe bytes
+       -> PeerReceiver pk st' st'' m
+       -> m (Maybe bytes)
+    go trailing (ReceiverEffect k) = k >>= go trailing
 
-    go channel ReceiverDone = return channel
+    go trailing ReceiverDone = return trailing
 
-    go channel (ReceiverAwait stok k) = do
+    go trailing (ReceiverAwait stok k) = do
       decoder <- decode stok
-      res <- runDecoder channel decoder
+      res <- runDecoder channel trailing decoder
       case res of
-        Right (SomeMessage msg, channel') -> go channel' (k msg)
-        Left failure                      -> error "TODO: proper exceptions for runPipelinedPeer"
+        Right (SomeMessage msg, trailing') -> go trailing' (k msg)
+        Left failure                       -> error "TODO: proper exceptions for runPipelinedPeer"
 
