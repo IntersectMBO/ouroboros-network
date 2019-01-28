@@ -4,6 +4,8 @@
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE DataKinds #-}
 
+{-# OPTIONS_GHC -Wall -Wno-unticked-promoted-constructors #-}
+
 -- | This module defines the core of the typed protocol framework.
 --
 -- The typed protocol framework is used to define, test and execute protocols.
