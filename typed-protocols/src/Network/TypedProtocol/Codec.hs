@@ -36,7 +36,7 @@ import qualified Data.ByteString.Lazy          as LBS
 data Codec ps (pk :: PeerKind) failure m bytes = Codec {
        encode :: forall (st :: ps) (st' :: ps).
                  WeHaveAgency pk st
-              -> Message st st'
+              -> Message ps st st'
               -> bytes,
 
        decode :: forall (st :: ps).
@@ -91,7 +91,7 @@ transformDecodeStep to _ (Done a bs) = Done a (fmap to bs)
 transformDecodeStep _ _ (Fail failure) = Fail failure
 
 data SomeMessage (st :: ps) where
-     SomeMessage :: Message st st' -> SomeMessage st
+     SomeMessage :: Message ps st st' -> SomeMessage st
 
 
 {-
@@ -102,7 +102,7 @@ serialiseCodec = cborCodec Serialise.encode Serialise.decode
 
 
 cborCodec :: forall pk ps m. MonadST m
-          => (forall (st :: ps) (st' :: ps). WeHaveAgency   pk st -> Message st st' -> CBOR.Encoding)
+          => (forall (st :: ps) (st' :: ps). WeHaveAgency   pk st -> Message ps st st' -> CBOR.Encoding)
           -> (forall (st :: ps) s.           TheyHaveAgency pk st -> CBOR.Decoder s (SomeMessage st))
           -> Codec ps pk CBOR.DeserialiseFailure m ByteString
 cborCodec cborEncode cborDecode =

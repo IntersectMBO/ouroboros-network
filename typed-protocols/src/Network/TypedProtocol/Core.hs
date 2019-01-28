@@ -128,7 +128,7 @@ class Protocol ps where
   -- transitions into. These are the edges of the protocol state transition
   -- system.
   --
-  data Message :: ps -> ps -> Type
+  data Message ps (st :: ps) (st' :: ps)
 
   -- | A type for the value level representation of a protocol state. This is
   -- a GADT singleton that reflects each protocol state as a value. This is
@@ -142,9 +142,9 @@ class Protocol ps where
   -- the client, or the server (or neither for terminal states).
   --
 
-  data ClientHasAgency :: ps -> Type
-  data ServerHasAgency :: ps -> Type
-  data NobodyHasAgency :: ps -> Type
+  data ClientHasAgency (st :: ps)
+  data ServerHasAgency (st :: ps)
+  data NobodyHasAgency (st :: ps)
 
 
 data PeerKind = AsClient | AsServer        -- Only used as promoted types
@@ -171,11 +171,11 @@ data Peer (pk :: PeerKind) (st :: ps) m a where
          -> Peer pk st m a
 
   Yield  :: WeHaveAgency pk st
-         -> Message st st'
+         -> Message ps st st'
          -> Peer pk st' m a
          -> Peer pk st  m a
 
   Await  :: TheyHaveAgency pk st
-         -> (forall st'. Message st st' -> Peer pk st' m a)
+         -> (forall st'. Message ps st st' -> Peer pk st' m a)
          -> Peer pk st m a
 
