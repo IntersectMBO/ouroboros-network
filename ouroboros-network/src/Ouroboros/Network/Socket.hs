@@ -10,10 +10,11 @@
 
 module Ouroboros.Network.Socket (
       SocketBearer (..)
-    , demo
+    --, demo
     , demo2
     ) where
 
+import           Control.Concurrent.Async
 import           Control.Monad
 import           Control.Monad.IO.Class
 import           Control.Monad.Class.MonadTimer
@@ -37,6 +38,7 @@ import           Network.Socket hiding (recv, recvFrom, send, sendTo)
 import           Network.Socket.ByteString.Lazy (sendAll, recv)
 import qualified Say as S
 
+import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (Chain, ChainUpdate, Point)
 import qualified Ouroboros.Network.Chain as Chain
 import qualified Ouroboros.Network.ChainProducerState as CPS
@@ -47,6 +49,8 @@ import           Ouroboros.Network.Protocol.ChainSync.Type
 import           Ouroboros.Network.Protocol.ChainSync.Client
 import           Ouroboros.Network.Protocol.ChainSync.Server
 import           Ouroboros.Network.Serialise
+import           Ouroboros.Network.Testing.ConcreteBlock as ConcreteBlock
+
 
 import           Protocol.Channel (Duplex)
 import           Protocol.Codec
@@ -54,6 +58,15 @@ import           Protocol.Driver
 import qualified Codec.CBOR.Encoding as CBOR (Encoding)
 
 import           Text.Printf
+
+import           Ouroboros.Network.Block
+import           Ouroboros.Network.Chain (Chain (..), chainToList)
+import qualified Ouroboros.Network.Chain as Chain
+import           Ouroboros.Network.Node
+import           Ouroboros.Network.Testing.ConcreteBlock as ConcreteBlock
+
+import           Ouroboros.Network.Protocol.Chain.Node
+
 
 newtype SocketBearer m = SocketBearer {
     runSocketBearer :: IO m
@@ -75,7 +88,8 @@ stToSocketBearer ::  ST RealWorld a -> SocketBearer a
 stToSocketBearer x = SocketBearer $ stToIO x
 
 data SocketCtx = SocketCtx {
-      scSocket :: Socket
+      scSocket :: !Socket
+    , scName   :: !String
     }
 
 newtype SocketBearerSTM a = SocketBearerSTM {
@@ -130,20 +144,40 @@ instance MonadSTM SocketBearer where
     writeTBQueue   = fmap SocketBearerSTM . STM.writeTBQueue
 
 
+setupMux :: Mx.MiniProtocolDescriptions SocketBearer -> SocketCtx -> SocketBearer ()
+setupMux mpds bearer = do
+    jobs <- Mx.muxJobs mpds bearer
+    aids <- liftIO $ mapM spawn $ jobs
+    fork (watcher aids)
+
+    return ()
+  where
+    watcher as = do
+        (_,r) <- liftIO $ waitAnyCatchCancel as
+        case r of
+             Left  e -> say $ "died due to " ++ (show e)
+             Right _ -> do
+                 liftIO $ close (scSocket bearer)
+                 say $ "XXX ok"
+
+    spawn job = async $ runSocketBearer $ job
+
 instance Mx.MuxBearer SocketBearer where
     type AssociationDetails SocketBearer = AddrInfo
     type MuxBearerHandle SocketBearer = SocketCtx
     type LocalClockModel SocketBearer = Int -- microseconds
 
-    initiator local remote = liftIO $ do
-        sd <- socket (addrFamily local) Stream defaultProtocol
-        setSocketOption sd ReuseAddr 1
-        setSocketOption sd ReusePort 1
-        bind sd (addrAddress local)
-        connect sd (addrAddress remote)
-        return $ SocketCtx sd
+    initiator mpds local remote = do
+        ctx <- liftIO $ do
+            sd <- socket (addrFamily local) Stream defaultProtocol
+            setSocketOption sd ReuseAddr 1
+            setSocketOption sd ReusePort 1
+            bind sd (addrAddress local)
+            connect sd (addrAddress remote)
+            return $ SocketCtx sd (show local)
+        setupMux mpds ctx
 
-    responder addr fn = do
+    responder mpds addr = fork $ do
         sd <- liftIO $ socket (addrFamily addr) Stream defaultProtocol
         liftIO $ do
             setSocketOption sd ReuseAddr 1
@@ -152,32 +186,36 @@ instance Mx.MuxBearer SocketBearer where
             listen sd 2
         forever $ do
             (client, _) <- liftIO $ accept sd
-            fn $ SocketCtx client
+            --say "accepted connection"
+            setupMux mpds $ SocketCtx client (show addr)
 
-    sduSize _ = return 1480 -- XXX query socket for PMTU/MSS
+    sduSize ctx = do
+        mss <- liftIO $ getSocketOption (scSocket ctx) MaxSegment
+        return $ fromIntegral $ max 0xffff (15 * mss)
 
     write ctx fn = do
-        say "write"
+        --say "write"
         ts <- liftIO $ getMonotonicTime
         let sdu = fn $ Mx.RemoteClockModel $ fromIntegral $ ts .&. 0xffffffff
             buf = Mx.encodeMuxSDU sdu
-        hexDump buf ""
+        --hexDump buf ""
         liftIO $ sendAll (scSocket ctx) buf
         return ts
 
     read ctx = do
         hbuf <- liftIO $ recvLen' (scSocket ctx) 8 []
-        say "read"
-        hexDump hbuf ""
+        --say "read"
+        --hexDump hbuf ""
         case Mx.decodeMuxSDUHeader hbuf of
              Nothing     -> error "failed to decode header" -- XXX
              Just header -> do
-                 say $ printf "decoded mux header, goint to read %d bytes" (Mx.msLength header)
+                 --say $ printf "decoded mux header, goint to read %d bytes" (Mx.msLength header)
+                 --when ((Mx.msLength header) == 2) $ liftIO $ close (scSocket ctx)
                  blob <- liftIO $ recvLen' (scSocket ctx)
                                            (fromIntegral $ Mx.msLength header) []
                  ts <- liftIO $ getMonotonicTime
-                 say "read blob"
-                 hexDump blob ""
+                 --say $ (scName ctx) ++ " read blob"
+                 --hexDump blob ""
                  return (header {Mx.msBlob = blob}, ts)
 
     close ctx = liftIO $ close (scSocket ctx)
@@ -197,11 +235,17 @@ hexDump buf out = do
     hexDump (BL.tail buf) (out ++ (printf "0x%02x " (BL.head buf)))
 
 demo2 :: forall block .
-        (Chain.HasHeader block, Serialise block, Eq block )
+        (Chain.HasHeader block, Serialise block, Eq block, Show block )
      => Chain block -> [ChainUpdate block] -> IO Bool
 demo2 chain0 updates = do
+        return True
+{-
     a:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "6060")
     b:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
+
+    printf $ "\nStart Chain:\n"
+    printf $ (Chain.prettyPrintChain "\n" show chain0)
+
 
     producerVar <- newTVarIO (CPS.initChainProducerState chain0)
     consumerVar <- newTVarIO chain0
@@ -220,41 +264,61 @@ demo2 chain0 updates = do
                         (producerRsp producerVar))
                     ]
 
-    runSocketBearer $ Mx.startResponder b_mps b
+    runSocketBearer $ Mx.responder b_mps b
     say "started producer"
     threadDelay 1000000 -- give the producer time to start
-    runSocketBearer $ Mx.startResponder a_mps a
-    runSocketBearer $ Mx.startInitiator a_mps a b
+    runSocketBearer $ Mx.responder a_mps a
+    runSocketBearer $ Mx.initiator a_mps a b
     say "started consumer"
 
-    sequence_
+    wd <- async $ clientWatchDog consumerVar
+
+    fork $ sequence_
         [ do threadDelay 1000000 -- just to provide interest
-             atomically $ do
+             x <- atomically $ do
                       p <- readTVar producerVar
                       let Just p' = CPS.applyChainUpdate update p
                       writeTVar producerVar p'
-               | update <- updates ]
+                      return $ CPS.chainState p'
+             liftIO $ printf $ "\nChain Update;\n"
+             liftIO $ printf $ (Chain.prettyPrintChain "\n" show x)
+             | update <- updates
+        ]
 
     r <- atomically $ takeTMVar consumerDone
+    cancel wd
+
+    threadDelay 3000000
+
+    printf $ "\nResult Chain:\n"
+    chain1 <- atomically $ readTVar consumerVar
+    printf $ (Chain.prettyPrintChain "\n" show chain1)
 
     return r
   where
+
+    clientWatchDog consumerVar = forever $ do
+        threadDelay 10000000
+        say "\nClient WatchDog:\n"
+        x <- atomically $ readTVar consumerVar
+        printf $ (Chain.prettyPrintChain "\n" show x) :: IO ()
 
     checkTip target consumerVar = atomically $ do
           chain <- readTVar consumerVar
           return (Chain.headPoint chain == target)
 
-    consumerClient :: TMVar SocketBearer Bool -> Point block -> (TVar SocketBearer (Chain block)) -> Client block SocketBearer ()
-    consumerClient done target consChain = Client
+    consumerClient :: Point block -> (TVar SocketBearer (Chain block)) -> Client block SocketBearer ()
+    consumerClient target consChain = do
+      Client
         { rollforward = \_ -> checkTip target consChain >>= \b -> case b of
             True -> do
                 pure $ Left ()
-            False -> pure $ Right $ consumerClient done target consChain
+            False -> pure $ Right $ consumerClient target consChain
         , rollbackward = \_ _ -> checkTip target consChain >>= \b -> case b of
             True -> do
                 pure $ Left ()
-            False -> pure $ Right $ consumerClient done target consChain
-        , points = \_ -> pure $ consumerClient done target consChain
+            False -> pure $ Right $ consumerClient target consChain
+        , points = \_ -> pure $ consumerClient target consChain
         }
 
     throwOnUnexpected :: String -> Result Text t -> IO t
@@ -267,7 +331,7 @@ demo2 chain0 updates = do
     consumerInit :: TMVar SocketBearer Bool -> Point block -> (TVar IO (Chain block)) -> Duplex SocketBearer SocketBearer CBOR.Encoding BS.ByteString -> SocketBearer ()
     consumerInit done target consChain channel = do
        let consumerPeer = chainSyncClientPeer (chainSyncClientExample consChain
-                                               (consumerClient done target consChain))
+                                               (consumerClient target consChain))
 
        r <- useCodecWithDuplex channel codec consumerPeer
        liftIO $ throwOnUnexpected "consumer" r
@@ -275,10 +339,11 @@ demo2 chain0 updates = do
        atomically $ putTMVar done True
 
        return ()
-    consumerRsp _ = return ()
+    consumerRsp _ = forever $ do
+         liftIO $ threadDelay 1000000
 
     producerRsp ::  TVar SocketBearer (CPS.ChainProducerState block) -> Duplex SocketBearer SocketBearer CBOR.Encoding BS.ByteString -> SocketBearer ()
-    producerRsp prodChain channel = forever $ do
+    producerRsp prodChain channel = do
         let producerPeer = chainSyncServerPeer (chainSyncServerExample () prodChain)
 
         r <- useCodecWithDuplex channel codec producerPeer
@@ -286,9 +351,12 @@ demo2 chain0 updates = do
         say "producer done"
 
 
-    producerInit _ = return ()
+    producerInit _ = forever $ do
+        liftIO $ threadDelay 1000000
 
+-}
 
+{-
 demo :: IO ()
 demo = do
     serverAddr:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "6060")
@@ -325,4 +393,4 @@ demo = do
         return ()
 
     cb sdu ts = sdu {Mx.msTimestamp = ts}
-
+-}
