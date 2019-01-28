@@ -1,6 +1,6 @@
 {-# LANGUAGE BangPatterns        #-}
 
-module Protocol.PingPong.Examples where
+module Network.TypedProtocol.PingPong.Examples where
 
 import           Network.TypedProtocol.PingPong.Server
 import           Network.TypedProtocol.PingPong.Client
