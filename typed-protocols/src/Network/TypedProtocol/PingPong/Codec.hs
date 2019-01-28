@@ -19,7 +19,7 @@ codecPingPongAsClient =
    encode :: forall (st  :: PingPong)
                     (st' :: PingPong).
              ClientHasAgency st
-          -> Message st st'
+          -> Message PingPong st st'
           -> String
    encode TokIdle MsgPing = "ping\n"
    encode TokIdle MsgDone = "done\n"
@@ -43,7 +43,7 @@ codecPingPongAsServer =
    encode :: forall (st  :: PingPong)
                     (st' :: PingPong).
              ServerHasAgency st
-          -> Message st st'
+          -> Message PingPong st st'
           -> String
    encode TokBusy MsgPong = "pong\n"
 
