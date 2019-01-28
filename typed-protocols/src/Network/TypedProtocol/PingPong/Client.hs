@@ -4,7 +4,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Network.TypedProtocol.PingPong.Client where
 
-import           Data.Functor (($>))
 import           Numeric.Natural (Natural)
 
 import           Control.Monad.Class.MonadSTM (MonadSTM (..))
@@ -120,6 +119,9 @@ pingPongClientPeerSender (SendMsgPingPipelined receive next) =
     TokIdle
     MsgPing
     -- response handler
-    (ReceiverAwait TokBusy $ \MsgPong -> ReceiverEffect $ receive $> ReceiverDone)
+    (ReceiverAwait TokBusy $ \MsgPong ->
+        ReceiverEffect $ do
+          receive
+          return ReceiverDone)
     -- run the next step of the ping-pong protocol.
-    (SenderEffect $ return $ pingPongClientPeerSender next)
+    (pingPongClientPeerSender next)
