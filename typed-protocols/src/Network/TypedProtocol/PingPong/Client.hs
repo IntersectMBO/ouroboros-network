@@ -4,13 +4,13 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Network.TypedProtocol.PingPong.Client where
 
---import           Data.Functor (($>))
+import           Data.Functor (($>))
 import           Numeric.Natural (Natural)
 
---import           Control.Monad.Class.MonadSTM (MonadSTM (..))
+import           Control.Monad.Class.MonadSTM (MonadSTM (..))
 
 import           Network.TypedProtocol.Core
---import qualified Network.TypedProtocol.Pipelined as Pipelined
+import           Network.TypedProtocol.Pipelined
 import           Network.TypedProtocol.PingPong.Type
 
 -- | A ping-pong client, on top of some effect 'm'.
@@ -92,7 +92,6 @@ pingPongClientPeer (SendMsgPing next) =
         client <- next
         pure $ pingPongClientPeer client
 
-{-
 -- |
 -- A ping-pong client designed for running piplined ping-pong protocol.
 --
@@ -125,20 +124,19 @@ pingPongSenderCount var = go
 pingPongClientPeerSender
   :: Monad m
   => PingPongSender m a
-  -> Pipelined.PeerSender AsClient StIdle m a
+  -> PeerSender AsClient StIdle m a
 
 pingPongClientPeerSender (SendMsgDonePipelined result) =
   -- Send `MsgDone` and complete the protocol
-  Pipelined.complete MsgDone result
+  SenderYield TokIdle MsgDone ReceiverDone (SenderDone TokDone result)
 
 pingPongClientPeerSender (SendMsgPingPipelined receive next) =
   -- Piplined yield: send `MsgPing`, imediatelly follow with the next step.
   -- Await for a response in a continuation.
-  Pipelined.yield
+  SenderYield
+    TokIdle
     MsgPing
     -- response handler
-    (Pipelined.await TokBusy $ \MsgPong -> Pipelined.effect' $ receive $> Pipelined.Completed)
+    (ReceiverAwait TokBusy $ \MsgPong -> ReceiverEffect $ receive $> ReceiverDone)
     -- run the next step of the ping-pong protocol.
-    (Pipelined.effect $ return $ pingPongClientPeerSender next)
-
--}
+    (SenderEffect $ return $ pingPongClientPeerSender next)
