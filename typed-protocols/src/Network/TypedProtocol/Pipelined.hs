@@ -11,30 +11,31 @@ import Network.TypedProtocol.Core hiding (Peer(..))
 
 
 
-data PeerSender (pk :: PeerKind) (st :: ps) m a where
+data PeerSender ps (pk :: PeerKind) (st :: ps) m a where
 
-  SenderEffect :: m (PeerSender pk st m a)
-               ->    PeerSender pk st m a
+  SenderEffect :: m (PeerSender ps pk st m a)
+               ->    PeerSender ps pk st m a
 
   SenderDone   :: NobodyHasAgency st
                -> a
-               -> PeerSender pk st m a
+               -> PeerSender ps pk st m a
 
   SenderYield  :: WeHaveAgency pk st
                -> Message ps st st'
-               -> PeerReceiver pk (st'  :: ps) (st'' :: ps) m
-               -> PeerSender   pk (st'' :: ps) m a
-               -> PeerSender   pk (st   :: ps) m a
+               -> PeerReceiver ps pk (st'  :: ps) (st'' :: ps) m
+               -> PeerSender   ps pk (st'' :: ps) m a
+               -> PeerSender   ps pk (st   :: ps) m a
 
 
-data PeerReceiver (pk :: PeerKind) (st :: ps) (stdone :: ps) m where
+data PeerReceiver ps (pk :: PeerKind) (st :: ps) (stdone :: ps) m where
 
-  ReceiverEffect :: m (PeerReceiver pk st stdone m)
-                 ->    PeerReceiver pk st stdone m
+  ReceiverEffect :: m (PeerReceiver ps pk st stdone m)
+                 ->    PeerReceiver ps pk st stdone m
 
-  ReceiverDone   :: PeerReceiver pk stdone stdone m
+  ReceiverDone   :: PeerReceiver ps pk stdone stdone m
 
   ReceiverAwait  :: TheyHaveAgency pk st
-                 -> (forall st'. Message ps st st' -> PeerReceiver pk st' stdone m)
-                 -> PeerReceiver pk st stdone m
+                 -> (forall st'. Message ps st st'
+                              -> PeerReceiver ps pk st' stdone m)
+                 -> PeerReceiver ps pk st stdone m
 

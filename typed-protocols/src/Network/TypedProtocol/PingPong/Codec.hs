@@ -16,16 +16,13 @@ codecPingPongAsClient
 codecPingPongAsClient =
     Codec{encode, decode}
   where
-   encode :: forall (st  :: PingPong)
-                    (st' :: PingPong).
-             ClientHasAgency st
+   encode :: ClientHasAgency st
           -> Message PingPong st st'
           -> String
    encode TokIdle MsgPing = "ping\n"
    encode TokIdle MsgDone = "done\n"
 
-   decode :: forall (st :: PingPong).
-             ServerHasAgency st
+   decode :: ServerHasAgency st
           -> m (DecodeStep String String m (SomeMessage st))
    decode TokBusy =
      decodeStepConsumeN 5 $ \str trailing ->
@@ -40,15 +37,12 @@ codecPingPongAsServer
 codecPingPongAsServer =
     Codec{encode, decode}
   where
-   encode :: forall (st  :: PingPong)
-                    (st' :: PingPong).
-             ServerHasAgency st
+   encode :: ServerHasAgency st
           -> Message PingPong st st'
           -> String
    encode TokBusy MsgPong = "pong\n"
 
-   decode :: forall (st :: PingPong).
-             ClientHasAgency st
+   decode :: ClientHasAgency st
           -> m (DecodeStep String String m (SomeMessage st))
    decode TokIdle =
      decodeStepConsumeN 5 $ \str trailing ->
