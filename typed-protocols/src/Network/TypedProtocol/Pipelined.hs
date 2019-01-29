@@ -39,18 +39,3 @@ data PeerReceiver ps (pk :: PeerKind) (st :: ps) (stdone :: ps) m where
                               -> PeerReceiver ps pk st' stdone m)
                  -> PeerReceiver ps pk st stdone m
 
-forgetPipelinining
-  :: forall (pk :: PeerKind) (st :: ps) m a. Functor m
-  => PeerSender pk st m a
-  -> Peer pk st m a
-forgetPipelinining (SenderEffect mp)   = Effect (forgetPipelinining <$> mp)
-forgetPipelinining (SenderDone stok a) = Done stok a
-forgetPipelinining (PipelinedYield stok msg recv next) = Yield stok msg (go recv next)
- where
-  go :: PeerReceiver pk stCurrent stNext m
-     -> PeerSender pk stNext m a
-     -> Peer pk stCurrent m a
-  go (ReceiverEffect mr) next' = Effect (flip go next' <$> mr)
-  go ReceiverDone        next' = forgetPipelinining next'
-  go (ReceiverAwait stok'' f) next' = Await stok'' (flip go next' . f)
-forgetPipelinining (SenderYield stok msg next) = Yield stok msg (forgetPipelinining next)
