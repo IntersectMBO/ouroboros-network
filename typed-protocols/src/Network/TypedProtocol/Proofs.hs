@@ -57,14 +57,14 @@ data AgencyProofs ps = AgencyProofs {
 connect :: forall ps (st :: ps) m a b.
            Monad m
         => AgencyProofs ps
-        -> Peer AsClient st m a
-        -> Peer AsServer st m b
+        -> Peer ps AsClient st m a
+        -> Peer ps AsServer st m b
         -> m (a, b)
 connect AgencyProofs{..} = go
   where
     go :: forall (st' :: ps).
-          Peer AsClient st' m a
-       -> Peer AsServer st' m b
+          Peer ps AsClient st' m a
+       -> Peer ps AsServer st' m b
        -> m (a, b)
     go  (Done !_stA a)      (Done !_stB b)      = return (a, b)
     go  (Effect a )          b                  = a >>= \a' -> go a' b
@@ -96,15 +96,15 @@ connect AgencyProofs{..} = go
 connectPipelined :: forall ps (st :: ps) m a b.
                     Monad m
                  => AgencyProofs ps
-                 -> PeerSender AsClient st m a
-                 -> Peer       AsServer st m b
+                 -> PeerSender ps AsClient st m a
+                 -> Peer       ps AsServer st m b
                  -> m (a, b)
 
 connectPipelined AgencyProofs{..} = goSender
   where
     goSender :: forall (st' :: ps).
-                PeerSender AsClient st' m a
-             -> Peer       AsServer st' m b
+                PeerSender ps AsClient st' m a
+             -> Peer       ps AsServer st' m b
              -> m (a, b)
 
     goSender  (SenderDone !_stA a) (Done !_stB b) = return (a, b)
@@ -135,9 +135,9 @@ connectPipelined AgencyProofs{..} = goSender
 
 
     goReceiver :: forall (st' :: ps) (stdone :: ps).
-                  PeerReceiver AsClient st' stdone m
-               -> Peer         AsServer st'        m b
-               -> m (Peer      AsServer     stdone m b)
+                  PeerReceiver ps AsClient st' stdone m
+               -> Peer         ps AsServer st'        m b
+               -> m (Peer      ps AsServer     stdone m b)
 
     goReceiver  ReceiverDone       b         = return b
     goReceiver (ReceiverEffect a)  b         = a >>= \a' -> goReceiver a' b

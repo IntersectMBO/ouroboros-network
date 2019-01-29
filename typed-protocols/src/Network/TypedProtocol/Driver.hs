@@ -47,12 +47,12 @@ runPeer
      Monad m
   => Codec ps pk failure m bytes
   -> Channel m bytes
-  -> Peer pk st m a
+  -> Peer ps pk st m a
   -> m a
 
 runPeer Codec{encode, decode} channel@Channel{send} = go Nothing
   where
-    go :: forall st'. Maybe bytes -> Peer pk st' m a -> m a
+    go :: forall st'. Maybe bytes -> Peer ps pk st' m a -> m a
     go trailing (Effect k) = k >>= go trailing
     go _        (Done _ x) = return x
 
@@ -87,7 +87,7 @@ runPipelinedPeer
      MonadSTM m
   => Codec ps pk failure m bytes
   -> Channel m bytes
-  -> PeerSender pk st m a
+  -> PeerSender ps pk st m a
   -> m a
 runPipelinedPeer codec channel peer = do
     queue <- atomically $ newTBQueue 10  --TODO: size?
@@ -96,22 +96,22 @@ runPipelinedPeer codec channel peer = do
     --TODO: manage the fork + exceptions here
 
 
-data ReceiveHandler pk ps m where
-     ReceiveHandler :: PeerReceiver pk (st :: ps) (st' :: ps) m
-                    -> ReceiveHandler pk ps m
+data ReceiveHandler ps pk m where
+     ReceiveHandler :: PeerReceiver ps pk (st :: ps) (st' :: ps) m
+                    -> ReceiveHandler ps pk m
 
 
 runPipelinedPeerSender
   :: forall ps (st :: ps) pk failure bytes m a.
      MonadSTM m
-  => TBQueue m (ReceiveHandler pk ps m)
+  => TBQueue m (ReceiveHandler ps pk m)
   -> Codec ps pk failure m bytes
   -> Channel m bytes
-  -> PeerSender pk st m a
+  -> PeerSender ps pk st m a
   -> m a
 runPipelinedPeerSender queue Codec{encode} Channel{send} = go
   where
-    go :: forall st'. PeerSender pk st' m a -> m a
+    go :: forall st'. PeerSender ps pk st' m a -> m a
     go (SenderEffect k) = k >>= go
     go (SenderDone _ x) = return x
 
@@ -124,7 +124,7 @@ runPipelinedPeerSender queue Codec{encode} Channel{send} = go
 runPipelinedPeerReceiverQueue
   :: forall ps pk failure bytes m.
      MonadSTM m
-  => TBQueue m (ReceiveHandler pk ps m)
+  => TBQueue m (ReceiveHandler ps pk m)
   -> Codec ps pk failure m bytes
   -> Channel m bytes
   -> m ()
@@ -143,13 +143,13 @@ runPipelinedPeerReceiver
   => Codec ps pk failure m bytes
   -> Channel m bytes
   -> Maybe bytes
-  -> PeerReceiver pk (st :: ps) (stdone :: ps) m
+  -> PeerReceiver ps pk (st :: ps) (stdone :: ps) m
   -> m (Maybe bytes)
 runPipelinedPeerReceiver Codec{decode} channel = go
   where
     go :: forall st' st''.
           Maybe bytes
-       -> PeerReceiver pk st' st'' m
+       -> PeerReceiver ps pk st' st'' m
        -> m (Maybe bytes)
     go trailing (ReceiverEffect k) = k >>= go trailing
 
