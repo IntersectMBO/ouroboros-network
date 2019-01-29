@@ -161,21 +161,21 @@ type family TheyHaveAgency (pk :: PeerKind) st :: Type where
 -- | Having defined the types needed for a protocol it is then possible to
 -- define programs that are peers that engage in that protocol.
 --
-data Peer (pk :: PeerKind) (st :: ps) m a where
+data Peer ps (pk :: PeerKind) (st :: ps) m a where
 
-  Effect :: m (Peer pk st m a)
-         ->    Peer pk st m a
+  Effect :: m (Peer ps pk st m a)
+         ->    Peer ps pk st m a
 
   Done   :: NobodyHasAgency st
          -> a
-         -> Peer pk st m a
+         -> Peer ps pk st m a
 
   Yield  :: WeHaveAgency pk st
          -> Message ps st st'
-         -> Peer pk st' m a
-         -> Peer pk st  m a
+         -> Peer ps pk st' m a
+         -> Peer ps pk st  m a
 
   Await  :: TheyHaveAgency pk st
-         -> (forall st'. Message ps st st' -> Peer pk st' m a)
-         -> Peer pk st m a
+         -> (forall st'. Message ps st st' -> Peer ps pk st' m a)
+         -> Peer ps pk st m a
 
