@@ -118,8 +118,10 @@ class MuxBearer m where
   type LocalClockModel m :: *
   type AssociationDetails m :: *
   type MuxBearerHandle m :: *
+  type ResponderHandle m :: *
   initiator :: MiniProtocolDescriptions m -> AssociationDetails m -> AssociationDetails m -> m ()
-  responder :: MiniProtocolDescriptions m -> AssociationDetails m -> m ()
+  responder :: MiniProtocolDescriptions m -> AssociationDetails m -> m (ResponderHandle m)
+  killResponder :: ResponderHandle m -> m ()
   sduSize :: MuxBearerHandle m-> m Word16
   write :: MuxBearerHandle m -> (RemoteClockModel -> MuxSDU) -> m (LocalClockModel m)
   read :: MuxBearerHandle m -> m (MuxSDU, LocalClockModel m)

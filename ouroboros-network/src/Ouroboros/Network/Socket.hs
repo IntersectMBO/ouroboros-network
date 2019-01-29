@@ -14,6 +14,7 @@ module Ouroboros.Network.Socket (
     , demo2
     ) where
 
+import           Control.Concurrent (myThreadId)
 import           Control.Concurrent.Async
 import           Control.Monad
 import           Control.Monad.IO.Class
@@ -34,6 +35,9 @@ import qualified Data.ByteString as BS
 import           Data.ByteString.Lazy.Char8 (pack)
 import qualified Data.Map.Strict as M
 import           Data.Text (Text, unpack)
+import           Data.Word
+import qualified GHC.Event as GHC (TimeoutKey, getSystemTimerManager,
+                     registerTimeout, unregisterTimeout, updateTimeout)
 import           Network.Socket hiding (recv, recvFrom, send, sendTo)
 import           Network.Socket.ByteString.Lazy (sendAll, recv)
 import qualified Say as S
@@ -49,8 +53,6 @@ import           Ouroboros.Network.Protocol.ChainSync.Type
 import           Ouroboros.Network.Protocol.ChainSync.Client
 import           Ouroboros.Network.Protocol.ChainSync.Server
 import           Ouroboros.Network.Serialise
-import           Ouroboros.Network.Testing.ConcreteBlock as ConcreteBlock
-
 
 import           Protocol.Channel (Duplex)
 import           Protocol.Codec
@@ -58,15 +60,6 @@ import           Protocol.Driver
 import qualified Codec.CBOR.Encoding as CBOR (Encoding)
 
 import           Text.Printf
-
-import           Ouroboros.Network.Block
-import           Ouroboros.Network.Chain (Chain (..), chainToList)
-import qualified Ouroboros.Network.Chain as Chain
-import           Ouroboros.Network.Node
-import           Ouroboros.Network.Testing.ConcreteBlock as ConcreteBlock
-
-import           Ouroboros.Network.Protocol.Chain.Node
-
 
 newtype SocketBearer m = SocketBearer {
     runSocketBearer :: IO m
@@ -101,6 +94,50 @@ instance MonadFork SocketBearer where
 
 instance MonadSay SocketBearer where
   say x = S.sayString x
+
+instance MonadTime SocketBearer where
+  type Time SocketBearer = Int -- microseconds
+  getMonotonicTime = liftIO $ fmap (fromIntegral . (`div` 1000)) getMonotonicNSec
+
+foreign import ccall unsafe "getMonotonicNSec"
+    getMonotonicNSec :: IO Word64
+
+instance MonadTimer SocketBearer where
+    data Timeout SocketBearer = TimeoutSocketbearer !(TVar SocketBearer TimeoutState) !GHC.TimeoutKey
+
+    readTimeout (TimeoutSocketbearer var _key) = readTVar var
+
+    newTimeout = \usec -> do
+        var <- newTVarIO TimeoutPending
+        mgr <- liftIO $ GHC.getSystemTimerManager
+        key <- liftIO $ GHC.registerTimeout mgr usec (STM.atomically (timeoutAction var))
+        return (TimeoutSocketbearer var key)
+      where
+        timeoutAction var = do
+            x <- readTVar var
+            case x of
+                 TimeoutPending   -> writeTVar var TimeoutFired
+                 TimeoutFired     -> error "MonadTimer(Socketbearer): invariant violation"
+                 TimeoutCancelled -> return ()
+
+    updateTimeout (TimeoutSocketbearer _var key) usec = do
+      mgr <- liftIO $ GHC.getSystemTimerManager
+      liftIO $ GHC.updateTimeout mgr key usec
+
+    cancelTimeout (TimeoutSocketbearer var key) = do
+        atomically $ do
+            x <- readTVar var
+            case x of
+                 TimeoutPending   -> writeTVar var TimeoutCancelled
+                 TimeoutFired     -> return ()
+                 TimeoutCancelled -> return ()
+        mgr <- liftIO $ GHC.getSystemTimerManager
+        liftIO $ GHC.unregisterTimeout mgr key
+
+    threadDelay d = liftIO $ threadDelay d
+
+    registerDelay = undefined -- XXX
+
 
 instance MonadSTM SocketBearer where
     type Tr   SocketBearer = SocketBearerSTM
@@ -155,10 +192,9 @@ setupMux mpds bearer = do
     watcher as = do
         (_,r) <- liftIO $ waitAnyCatchCancel as
         case r of
-             Left  e -> say $ "died due to " ++ (show e)
+             Left  e -> say $ "SocketBearer died due to " ++ (show e)
              Right _ -> do
                  liftIO $ close (scSocket bearer)
-                 say $ "XXX ok"
 
     spawn job = async $ runSocketBearer $ job
 
@@ -166,6 +202,7 @@ instance Mx.MuxBearer SocketBearer where
     type AssociationDetails SocketBearer = AddrInfo
     type MuxBearerHandle SocketBearer = SocketCtx
     type LocalClockModel SocketBearer = Int -- microseconds
+    type ResponderHandle SocketBearer = (Socket, Async ())
 
     initiator mpds local remote = do
         ctx <- liftIO $ do
@@ -177,17 +214,25 @@ instance Mx.MuxBearer SocketBearer where
             return $ SocketCtx sd (show local)
         setupMux mpds ctx
 
-    responder mpds addr = fork $ do
-        sd <- liftIO $ socket (addrFamily addr) Stream defaultProtocol
-        liftIO $ do
-            setSocketOption sd ReuseAddr 1
-            setSocketOption sd ReusePort 1
-            bind sd (addrAddress addr)
-            listen sd 2
-        forever $ do
-            (client, _) <- liftIO $ accept sd
-            --say "accepted connection"
-            setupMux mpds $ SocketCtx client (show addr)
+    responder mpds addr = liftIO $ do
+        sd <- socket (addrFamily addr) Stream defaultProtocol
+        setSocketOption sd ReuseAddr 1
+        setSocketOption sd ReusePort 1
+        bind sd (addrAddress addr)
+        listen sd 2
+        rh <- async (runSocketBearer $ server sd)
+        return $! (sd, rh)
+      where
+        server sd = do
+            --mtid <- liftIO myThreadId
+            forever $ do
+                (client, _) <- liftIO $ accept sd
+                --say $ printf "%s accepted connection" $ show mtid
+                setupMux mpds $ SocketCtx client (show addr)
+
+    killResponder (sd, hdl) = liftIO $ do
+        cancel hdl
+        close sd
 
     sduSize ctx = do
         mss <- liftIO $ getSocketOption (scSocket ctx) MaxSegment
@@ -238,14 +283,12 @@ demo2 :: forall block .
         (Chain.HasHeader block, Serialise block, Eq block, Show block )
      => Chain block -> [ChainUpdate block] -> IO Bool
 demo2 chain0 updates = do
-        return True
-{-
-    a:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "6060")
+    a:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
     b:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
 
-    printf $ "\nStart Chain:\n"
+    {-printf $ "\nStart Chain:\n"
     printf $ (Chain.prettyPrintChain "\n" show chain0)
-
+    printf "\n"-}
 
     producerVar <- newTVarIO (CPS.initChainProducerState chain0)
     consumerVar <- newTVarIO chain0
@@ -256,43 +299,49 @@ demo2 chain0 updates = do
         a_mps = Mx.MiniProtocolDescriptions $ M.fromList
                     [(Mx.ChainSync, Mx.MiniProtocolDescription Mx.ChainSync
                         (consumerInit consumerDone target consumerVar)
-                         consumerRsp)
+                        dummyCallback)
                     ]
         b_mps = Mx.MiniProtocolDescriptions $ M.fromList
                     [(Mx.ChainSync, Mx.MiniProtocolDescription Mx.ChainSync
-                        producerInit
+                        dummyCallback
                         (producerRsp producerVar))
                     ]
 
-    runSocketBearer $ Mx.responder b_mps b
-    say "started producer"
-    threadDelay 1000000 -- give the producer time to start
-    runSocketBearer $ Mx.responder a_mps a
+    {-printf $ "Expected Chain:\n"
+    printf $ Chain.prettyPrintChain "\n" show expectedChain
+    printf "\n"-}
+
+    b_h <- runSocketBearer $ Mx.responder b_mps b
+    --say "started producer"
+    --threadDelay 1000000 -- give the producer time to start
+    a_h <- runSocketBearer $ Mx.responder a_mps a
     runSocketBearer $ Mx.initiator a_mps a b
-    say "started consumer"
+    --say "started consumer"
 
     wd <- async $ clientWatchDog consumerVar
 
     fork $ sequence_
-        [ do threadDelay 1000000 -- just to provide interest
-             x <- atomically $ do
+        [ do threadDelay 10000 -- just to provide interest
+             (u, x) <- atomically $ do
                       p <- readTVar producerVar
                       let Just p' = CPS.applyChainUpdate update p
                       writeTVar producerVar p'
-                      return $ CPS.chainState p'
-             liftIO $ printf $ "\nChain Update;\n"
-             liftIO $ printf $ (Chain.prettyPrintChain "\n" show x)
+                      return $ (update, CPS.chainState p')
+             --liftIO $ printf "\nChain Update :\n%s\n" (show u)
+             --liftIO $ printf $ (Chain.prettyPrintChain "\n" show x)
+             return ()
              | update <- updates
         ]
 
     r <- atomically $ takeTMVar consumerDone
     cancel wd
+    runSocketBearer $ Mx.killResponder b_h
+    runSocketBearer $ Mx.killResponder a_h
 
-    threadDelay 3000000
-
-    printf $ "\nResult Chain:\n"
+    {-printf $ "\nResult Chain:\n"
     chain1 <- atomically $ readTVar consumerVar
     printf $ (Chain.prettyPrintChain "\n" show chain1)
+    printf "\n"-}
 
     return r
   where
@@ -302,6 +351,7 @@ demo2 chain0 updates = do
         say "\nClient WatchDog:\n"
         x <- atomically $ readTVar consumerVar
         printf $ (Chain.prettyPrintChain "\n" show x) :: IO ()
+        printf "\n"
 
     checkTip target consumerVar = atomically $ do
           chain <- readTVar consumerVar
@@ -335,11 +385,12 @@ demo2 chain0 updates = do
 
        r <- useCodecWithDuplex channel codec consumerPeer
        liftIO $ throwOnUnexpected "consumer" r
-       say "consumer done"
+       --say "consumer done"
        atomically $ putTMVar done True
 
        return ()
-    consumerRsp _ = forever $ do
+
+    dummyCallback _ = forever $ do
          liftIO $ threadDelay 1000000
 
     producerRsp ::  TVar SocketBearer (CPS.ChainProducerState block) -> Duplex SocketBearer SocketBearer CBOR.Encoding BS.ByteString -> SocketBearer ()
@@ -348,13 +399,8 @@ demo2 chain0 updates = do
 
         r <- useCodecWithDuplex channel codec producerPeer
         liftIO $ throwOnUnexpected "producer" r
-        say "producer done"
+        --say "producer done"
 
-
-    producerInit _ = forever $ do
-        liftIO $ threadDelay 1000000
-
--}
 
 {-
 demo :: IO ()

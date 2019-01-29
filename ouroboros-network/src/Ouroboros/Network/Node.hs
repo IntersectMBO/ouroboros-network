@@ -354,6 +354,7 @@ relayNode :: forall m block.
              , MonadSay m
              , HasHeader block
              , Show block
+             , MonadTimer m
              )
           => NodeId
           -> Chain block
