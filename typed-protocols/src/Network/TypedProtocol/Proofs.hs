@@ -153,3 +153,32 @@ connectPipelined AgencyProofs{..} = goSender
     goReceiver (ReceiverAwait stA _) (Await stB _) =
       absurd (proofByContradiction_ClientAndServerHaveAgency stB stA)
 
+
+-- | Prove that we have a total conversion from pipelined peers to regular
+-- peers. This is a sanity property that shows that pipelining did not give
+-- us extra expressiveness or to break the protocol state machine.
+--
+forgetPipelined
+  :: forall ps (pk :: PeerKind) (st :: ps) m a.
+     Functor m
+  => PeerSender ps pk st m a
+  -> Peer       ps pk st m a
+forgetPipelined = goSender
+  where
+    goSender :: forall st'.
+                PeerSender ps pk st' m a
+             -> Peer       ps pk st' m a
+
+    goSender (SenderDone  stok       k) = Done stok k
+    goSender (SenderEffect           k) = Effect (goSender <$> k)
+    goSender (SenderYield stok msg r k) = Yield stok msg (goReceiver k r)
+
+    goReceiver :: forall stCurrent stNext.
+                  PeerSender   ps pk stNext m a
+               -> PeerReceiver ps pk stCurrent stNext m
+               -> Peer         ps pk stCurrent m a
+
+    goReceiver s  ReceiverDone          = goSender s
+    goReceiver s (ReceiverEffect     k) = Effect (goReceiver s <$> k)
+    goReceiver s (ReceiverAwait stok k) = Await stok (goReceiver s . k)
+
