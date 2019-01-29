@@ -7,7 +7,7 @@
 
 module Network.TypedProtocol.Pipelined where
 
-import Network.TypedProtocol.Core hiding (Peer(..))
+import Network.TypedProtocol.Core
 
 
 
@@ -38,3 +38,20 @@ data PeerReceiver (pk :: PeerKind) (st :: ps) (stdone :: ps) m where
                  -> (forall st'. Message st st' -> PeerReceiver pk st' stdone m)
                  -> PeerReceiver pk st stdone m
 
+-- | Transform a @'PeerSender'@ to a @'Peer'@, run @'PeerReceiver'@
+-- synchronously.
+--
+forgetPipelinining
+  :: forall (pk :: PeerKind) (st :: ps) m a. Functor m
+  => PeerSender pk st m a
+  -> Peer pk st m a
+forgetPipelinining (SenderEffect mp)   = Effect (forgetPipelinining <$> mp)
+forgetPipelinining (SenderDone stok a) = Done stok a
+forgetPipelinining (SenderYield stok msg receiver next) = Yield stok msg (go receiver next)
+ where
+  go :: PeerReceiver pk stCurrent stNext m
+     -> PeerSender pk stNext m a
+     -> Peer pk stCurrent m a
+  go (ReceiverEffect mr) next'      = Effect (flip go next' <$> mr)
+  go ReceiverDone next'             = forgetPipelinining next'
+  go (ReceiverAwait stok'' f) next' = Await stok'' (flip go next' . f)
