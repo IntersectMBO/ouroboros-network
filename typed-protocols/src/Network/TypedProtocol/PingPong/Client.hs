@@ -44,7 +44,7 @@ data PingPongClient m a where
 pingPongClientPeer
   :: Monad m
   => PingPongClient m a
-  -> Peer AsClient StIdle m a
+  -> Peer PingPong AsClient StIdle m a
 
 pingPongClientPeer (SendMsgDone result) =
     -- We do an actual transition using 'yield', to go from the 'StIdle' to
@@ -91,7 +91,7 @@ data PingPongSender m a where
 pingPongClientPeerSender
   :: Monad m
   => PingPongSender m a
-  -> PeerSender AsClient StIdle m a
+  -> PeerSender PingPong AsClient StIdle m a
 
 pingPongClientPeerSender (SendMsgDonePipelined result) =
   -- Send `MsgDone` and complete the protocol

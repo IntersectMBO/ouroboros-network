@@ -26,7 +26,7 @@ data PingPongServer m a = PingPongServer {
 pingPongServerPeer
   :: Monad m
   => PingPongServer m a
-  -> Peer AsServer StIdle m a
+  -> Peer PingPong AsServer StIdle m a
 pingPongServerPeer PingPongServer{..} =
 
     -- In the 'StIdle' the server is awaiting a request message
