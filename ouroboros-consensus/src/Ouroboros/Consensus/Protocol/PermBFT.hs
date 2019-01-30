@@ -45,7 +45,7 @@ instance PermBftCrypto c => OuroborosTag (PermBft c) where
     }
 
   type ValidationErr  (PermBft c) = [PredicateFailure BC]
-  type SupportedBlock (PermBft c) = HasPayload (PermBft c)
+  type SupportedBlock (PermBft c) = ((~) Block)
   type NodeState      (PermBft c) = ()
   type LedgerView     (PermBft c) = DIEnv
   type IsLeader       (PermBft c) = ()
