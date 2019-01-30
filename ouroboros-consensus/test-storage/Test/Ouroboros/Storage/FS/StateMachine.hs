@@ -130,6 +130,7 @@ data Cmd fp h =
   | ListDirectory      (PathExpr fp)
   | DoesDirectoryExist (PathExpr fp)
   | DoesFileExist      (PathExpr fp)
+  | RemoveFile         (PathExpr fp)
   deriving (Generic, Show, Functor, Foldable, Traversable)
 
 deriving instance SOP.Generic         (Cmd fp h)
@@ -171,6 +172,7 @@ run HasFS{..} = go
     go (ListDirectory      pe  ) = withPE pe (const Strings) $ listDirectory
     go (DoesDirectoryExist pe  ) = withPE pe (const Bool)    $ doesDirectoryExist
     go (DoesFileExist      pe  ) = withPE pe (const Bool)    $ doesFileExist
+    go (RemoveFile         pe  ) = withPE pe (const Unit)    $ removeFile
 
     withPE :: PathExpr FsPath
            -> (FsPath -> a -> Success FsPath (FsHandle m))
@@ -382,6 +384,7 @@ generator Model{..} = oneof $ concat [
         , fmap At $ ListDirectory      <$> genPathExpr
         , fmap At $ DoesDirectoryExist <$> genPathExpr
         , fmap At $ DoesFileExist      <$> genPathExpr
+        , fmap At $ RemoveFile         <$> genPathExpr
         ]
 
     withHandle :: [Gen (Cmd :@ Symbolic)]
@@ -940,6 +943,7 @@ instance (Condense fp, Condense h) => Condense (Cmd fp h) where
       go (ListDirectory fp)        = ["listDirectory", condense fp]
       go (DoesDirectoryExist fp)   = ["doesDirectoryExist", condense fp]
       go (DoesFileExist fp)        = ["doesFileExist", condense fp]
+      go (RemoveFile fp)           = ["removeFile", condense fp]
 
 instance Condense1 r => Condense (Cmd :@ r) where
   condense (At cmd) = condense cmd
