@@ -132,23 +132,6 @@ alterDir p onErr onNotExists onExists =
     f (Folder m) = Folder <$> onExists m
     f (File   _) = onErr $ FsExpectedDir p (last p :| [])
 
-alterFile :: forall f a. Functor f
-          => FsPath
-          -> (FsTreeError -> f (FsTree a)) -- ^ Action on error
-          -> f a                           -- ^ If file does not exist
-          -> (a -> f a)                    -- ^ If file exists
-          -> (FsTree a -> f (FsTree a))
-alterFile p onErr onNotExists onExists =
-    alterF p (fmap Just . onErr') (fmap Just . f)
-  where
-    onErr' :: FsTreeError -> f (FsTree a)
-    onErr' (FsMissing _ (_ :| [])) = File <$> onNotExists
-    onErr' err                     = onErr err
-
-    f :: FsTree a -> f (FsTree a)
-    f (File   a) = File <$> onExists a
-    f (Folder _) = onErr $ FsExpectedFile p
-
 alterFileMaybe :: forall f a. Functor f
                => FsPath
                -> (FsTreeError -> f (Maybe (FsTree a))) -- ^ Action on error
@@ -164,6 +147,17 @@ alterFileMaybe p onErr onNotExists onExists = alterF p onErr' f
     f :: FsTree a -> f (Maybe (FsTree a))
     f (File   a) = fmap File <$> onExists a
     f (Folder _) = onErr $ FsExpectedFile p
+
+alterFile :: forall f a. Functor f
+          => FsPath
+          -> (FsTreeError -> f (FsTree a)) -- ^ Action on error
+          -> f a                           -- ^ If file does not exist
+          -> (a -> f a)                    -- ^ If file exists
+          -> (FsTree a -> f (FsTree a))
+alterFile p onErr onNotExists onExists =
+    alterFileMaybe p (fmap Just . onErr) (fmap Just onNotExists)
+      (fmap Just . onExists)
+
 
 {-------------------------------------------------------------------------------
   Construction
