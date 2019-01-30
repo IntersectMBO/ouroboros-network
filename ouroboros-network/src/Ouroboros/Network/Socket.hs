@@ -12,9 +12,12 @@ module Ouroboros.Network.Socket (
       SocketBearer (..)
     --, demo
     , demo2
+    , runInitiator
+    , runResponder
+    , killResponder
+    , hexDump
     ) where
 
-import           Control.Concurrent (myThreadId)
 import           Control.Concurrent.Async
 import           Control.Monad
 import           Control.Monad.IO.Class
@@ -32,7 +35,7 @@ import           Data.Bits
 import           Data.Int
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString as BS
-import           Data.ByteString.Lazy.Char8 (pack)
+--import           Data.ByteString.Lazy.Char8 (pack)
 import qualified Data.Map.Strict as M
 import           Data.Text (Text, unpack)
 import           Data.Word
@@ -42,7 +45,6 @@ import           Network.Socket hiding (recv, recvFrom, send, sendTo)
 import           Network.Socket.ByteString.Lazy (sendAll, recv)
 import qualified Say as S
 
-import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (Chain, ChainUpdate, Point)
 import qualified Ouroboros.Network.Chain as Chain
 import qualified Ouroboros.Network.ChainProducerState as CPS
@@ -82,7 +84,6 @@ stToSocketBearer x = SocketBearer $ stToIO x
 
 data SocketCtx = SocketCtx {
       scSocket :: !Socket
-    , scName   :: !String
     }
 
 newtype SocketBearerSTM a = SocketBearerSTM {
@@ -211,7 +212,7 @@ instance Mx.MuxBearer SocketBearer where
             setSocketOption sd ReusePort 1
             bind sd (addrAddress local)
             connect sd (addrAddress remote)
-            return $ SocketCtx sd (show local)
+            return $ SocketCtx sd
         setupMux mpds ctx
 
     responder mpds addr = liftIO $ do
@@ -224,11 +225,9 @@ instance Mx.MuxBearer SocketBearer where
         return $! (sd, rh)
       where
         server sd = do
-            --mtid <- liftIO myThreadId
             forever $ do
                 (client, _) <- liftIO $ accept sd
-                --say $ printf "%s accepted connection" $ show mtid
-                setupMux mpds $ SocketCtx client (show addr)
+                setupMux mpds $ SocketCtx client
 
     killResponder (sd, hdl) = liftIO $ do
         cancel hdl
@@ -273,6 +272,20 @@ recvLen' sd l bufs = do
     if BL.null buf
           then error "socket closed" -- XXX throw exception
           else recvLen' sd (l - fromIntegral (BL.length buf)) (buf : bufs)
+
+runResponder :: Mx.MiniProtocolDescriptions SocketBearer
+             -> AddrInfo
+             -> IO (Mx.ResponderHandle SocketBearer)
+runResponder mps addr = runSocketBearer $ Mx.responder mps addr
+
+killResponder :: Mx.ResponderHandle SocketBearer -> IO ()
+killResponder h = runSocketBearer $ Mx.killResponder h
+
+runInitiator :: Mx.MiniProtocolDescriptions SocketBearer
+             -> AddrInfo
+             -> AddrInfo
+             -> IO ()
+runInitiator mps local remote = runSocketBearer $ Mx.initiator mps local remote
 
 hexDump :: BL.ByteString -> String -> SocketBearer ()
 hexDump buf out | BL.empty == buf = say out
@@ -322,14 +335,10 @@ demo2 chain0 updates = do
 
     fork $ sequence_
         [ do threadDelay 10000 -- just to provide interest
-             (u, x) <- atomically $ do
-                      p <- readTVar producerVar
-                      let Just p' = CPS.applyChainUpdate update p
-                      writeTVar producerVar p'
-                      return $ (update, CPS.chainState p')
-             --liftIO $ printf "\nChain Update :\n%s\n" (show u)
-             --liftIO $ printf $ (Chain.prettyPrintChain "\n" show x)
-             return ()
+             atomically $ do
+                 p <- readTVar producerVar
+                 let Just p' = CPS.applyChainUpdate update p
+                 writeTVar producerVar p'
              | update <- updates
         ]
 
