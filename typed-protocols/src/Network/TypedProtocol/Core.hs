@@ -149,8 +149,8 @@ class Protocol ps where
 data PeerKind = AsClient | AsServer        -- Only used as promoted types
 
 data PeerHasAgency (pk :: PeerKind) (st :: ps) where
-  ClientAgency :: ClientHasAgency st -> PeerHasAgency AsClient st
-  ServerAgency :: ServerHasAgency st -> PeerHasAgency AsServer st
+  ClientAgency :: !(ClientHasAgency st) -> PeerHasAgency AsClient st
+  ServerAgency :: !(ServerHasAgency st) -> PeerHasAgency AsServer st
 
 type WeHaveAgency   (pk :: PeerKind) st = PeerHasAgency             pk  st
 type TheyHaveAgency (pk :: PeerKind) st = PeerHasAgency (FlipAgency pk) st
@@ -168,16 +168,16 @@ data Peer ps (pk :: PeerKind) (st :: ps) m a where
   Effect :: m (Peer ps pk st m a)
          ->    Peer ps pk st m a
 
-  Done   :: NobodyHasAgency st
+  Done   :: !(NobodyHasAgency st)
          -> a
          -> Peer ps pk st m a
 
-  Yield  :: WeHaveAgency pk st
+  Yield  :: !(WeHaveAgency pk st)
          -> Message ps st st'
          -> Peer ps pk st' m a
          -> Peer ps pk st  m a
 
-  Await  :: TheyHaveAgency pk st
+  Await  :: !(TheyHaveAgency pk st)
          -> (forall st'. Message ps st st' -> Peer ps pk st' m a)
          -> Peer ps pk st m a
 
