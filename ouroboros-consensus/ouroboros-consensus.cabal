@@ -144,6 +144,8 @@ library
                        cardano-crypto-wrapper,
                        cardano-prelude,
                        cborg,
+                       cs-blockchain,
+                       cs-ledger,
                        plutus-prototype,
                        small-steps,
                        stm,

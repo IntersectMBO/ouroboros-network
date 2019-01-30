@@ -43,6 +43,18 @@ source-repository-package
 
 source-repository-package
   type: git
+  location: https://github.com/input-output-hk/cardano-chain
+  tag: 788ca6397492c40b8e9de6e63ae10bec31755dc7
+  subdir: specs/chain/hs
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/cardano-chain
+  tag: 788ca6397492c40b8e9de6e63ae10bec31755dc7
+  subdir: specs/ledger/hs
+
+source-repository-package
+  type: git
   location: https://github.com/avieth/plutus-prototype
   tag: d094be301195fcd8ab864d793f114970426a4478
 
