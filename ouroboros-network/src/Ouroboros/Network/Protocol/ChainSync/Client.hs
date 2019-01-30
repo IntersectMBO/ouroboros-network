@@ -3,7 +3,6 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-{-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
 
 -- | A view of the chain synchronisation protocol from the point of view of the
 -- client.
@@ -25,7 +24,7 @@ module Ouroboros.Network.Protocol.ChainSync.Client (
     , chainSyncClientPeer
     ) where
 
-import Protocol.Core
+import Network.TypedProtocol.Core
 import Ouroboros.Network.Protocol.ChainSync.Type
 
 
@@ -104,21 +103,18 @@ data ClientStIntersect header point m a =
 --
 chainSyncClientPeer
   :: forall header point m a .
-     ( Monad m )
+     Monad m
   => ChainSyncClient header point m a
-  -> Peer ChainSyncProtocol (ChainSyncMessage header point)
-          (Yielding StIdle) (Finished StDone)
-          m a
-chainSyncClientPeer (ChainSyncClient mclient) = lift $ fmap chainSyncClientPeer_ mclient
+  -> Peer (ChainSync header point) AsClient StIdle m a
+chainSyncClientPeer (ChainSyncClient mclient) =
+    Effect $ fmap chainSyncClientPeer_ mclient
   where
     chainSyncClientPeer_
       :: ClientStIdle header point m a
-      -> Peer ChainSyncProtocol (ChainSyncMessage header point)
-              (Yielding StIdle) (Finished StDone)
-              m a
+      -> Peer (ChainSync header point) AsClient StIdle m a
     chainSyncClientPeer_ (SendMsgRequestNext stNext stAwait) =
-        over MsgRequestNext $
-        await $ \resp ->
+        Yield (ClientAgency TokIdle) MsgRequestNext $
+        Await (ServerAgency (TokNext TokCanAwait)) $ \resp ->
         case resp of
           MsgRollForward header pHead ->
               chainSyncClientPeer (recvMsgRollForward header pHead)
@@ -133,9 +129,9 @@ chainSyncClientPeer (ChainSyncClient mclient) = lift $ fmap chainSyncClientPeer_
           -- This code could be factored more easily by changing the protocol type
           -- to put both roll forward and back under a single constructor.
           MsgAwaitReply ->
-            lift $ do
+            Effect $ do
               ClientStNext{recvMsgRollForward, recvMsgRollBackward} <- stAwait
-              pure $ await $ \resp' ->
+              pure $ Await (ServerAgency (TokNext TokMustReply)) $ \resp' ->
                 case resp' of
                   MsgRollForward header pHead ->
                     chainSyncClientPeer (recvMsgRollForward header pHead)
@@ -143,8 +139,8 @@ chainSyncClientPeer (ChainSyncClient mclient) = lift $ fmap chainSyncClientPeer_
                     chainSyncClientPeer (recvMsgRollBackward pRollback pHead)
 
     chainSyncClientPeer_ (SendMsgFindIntersect points stIntersect) =
-        over (MsgFindIntersect points) $
-        await $ \resp ->
+        Yield (ClientAgency TokIdle) (MsgFindIntersect points) $
+        Await (ServerAgency TokIntersect) $ \resp ->
         case resp of
           MsgIntersectImproved pIntersect pHead ->
             chainSyncClientPeer (recvMsgIntersectImproved pIntersect pHead)
@@ -157,5 +153,5 @@ chainSyncClientPeer (ChainSyncClient mclient) = lift $ fmap chainSyncClientPeer_
           recvMsgIntersectUnchanged
         } = stIntersect
 
-    chainSyncClientPeer_ (SendMsgDone a) = 
-      out MsgDone (done a)
+    chainSyncClientPeer_ (SendMsgDone a) =
+      Yield (ClientAgency TokIdle) MsgDone (Done TokDone a)
