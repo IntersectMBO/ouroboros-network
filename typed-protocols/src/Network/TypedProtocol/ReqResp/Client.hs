@@ -27,17 +27,17 @@ reqRespClientPeer (SendMsgDone result) =
     -- We do an actual transition using 'yield', to go from the 'StIdle' to
     -- 'StDone' state. Once in the 'StDone' state we can actually stop using
     -- 'done', with a return value.
-    Yield TokIdle MsgDone (Done TokDone result)
+    Yield (ClientAgency TokIdle) MsgDone (Done TokDone result)
 
 reqRespClientPeer (SendMsgReq req next) =
 
     -- Send our message.
-    Yield TokIdle (MsgReq req) $
+    Yield (ClientAgency TokIdle) (MsgReq req) $
 
     -- The type of our protocol means that we're now into the 'StBusy' state
     -- and the only thing we can do next is local effects or wait for a reply.
     -- We'll wait for a reply.
-    Await TokBusy $ \(MsgResp resp) ->
+    Await (ServerAgency TokBusy) $ \(MsgResp resp) ->
 
     -- Now in this case there is only one possible response, and we have
     -- one corresponding continuation 'kPong' to handle that response.
@@ -74,16 +74,20 @@ reqRespClientPeerSender
 
 reqRespClientPeerSender (SendMsgDonePipelined result) =
   -- Send `MsgDone` and complete the protocol
-  SenderYield TokIdle MsgDone ReceiverDone (SenderDone TokDone result)
+  SenderYield
+    (ClientAgency TokIdle)
+    MsgDone
+    ReceiverDone
+    (SenderDone TokDone result)
 
 reqRespClientPeerSender (SendMsgReqPipelined req receive next) =
   -- Piplined yield: send `MsgReq`, imediatelly follow with the next step.
   -- Await for a response in a continuation.
   SenderYield
-    TokIdle
+    (ClientAgency TokIdle)
     (MsgReq req)
     -- response handler
-    (ReceiverAwait TokBusy $ \(MsgResp resp) ->
+    (ReceiverAwait (ServerAgency TokBusy) $ \(MsgResp resp) ->
         ReceiverEffect $ do
           receive resp
           return ReceiverDone)

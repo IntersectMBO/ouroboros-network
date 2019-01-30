@@ -1,6 +1,4 @@
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE NamedFieldPuns #-}
@@ -10,74 +8,30 @@ module Network.TypedProtocol.PingPong.Codec where
 import           Network.TypedProtocol.Codec
 import           Network.TypedProtocol.PingPong.Type
 
-codecPingPongAsClient
-  :: forall m. Monad m
-  => Codec PingPong AsClient String m String
-codecPingPongAsClient =
-    Codec{encode, decode}
-  where
-   encode :: ClientHasAgency st
-          -> Message PingPong st st'
-          -> String
-   encode TokIdle MsgPing = "ping\n"
-   encode TokIdle MsgDone = "done\n"
 
-   decode :: ServerHasAgency st
-          -> m (DecodeStep String String m (SomeMessage st))
-   decode TokBusy =
-     decodeTerminatedFrame '\n' $ \str trailing ->
-       case str of
-         "pong" -> Done (SomeMessage MsgPong) trailing
-         _      -> Fail ("unexpected message: " ++ str)
-
-
-codecPingPongAsServer
-  :: forall m. Monad m
-  => Codec PingPong AsServer String m String
-codecPingPongAsServer =
-    Codec{encode, decode}
-  where
-   encode :: ServerHasAgency st
-          -> Message PingPong st st'
-          -> String
-   encode TokBusy MsgPong = "pong\n"
-
-   decode :: ClientHasAgency st
-          -> m (DecodeStep String String m (SomeMessage st))
-   decode TokIdle =
-     decodeTerminatedFrame '\n' $ \str trailing ->
-       case str of
-         "ping" -> Done (SomeMessage MsgPing) trailing
-         "done" -> Done (SomeMessage MsgDone) trailing
-         _      -> Fail ("unexpected message: " ++ str)
-
-{-
 codecPingPong
   :: forall pk m. Monad m
-  => Codec PingPong (pk :: PeerKind) String m String
+  => Codec PingPong pk String m String
 codecPingPong =
     Codec{encode, decode}
   where
-   encode :: forall (st  :: PingPong)
-                    (st' :: PingPong).
-             WeHaveAgency pk st
-          -> Message st st'
+   encode :: WeHaveAgency pk st
+          -> Message PingPong st st'
           -> String
-   encode TokIdle MsgPing = "ping\n"
-   encode TokIdle MsgDone = "done\n"
-   encode TokBusy MsgPong = "pong\n"
+   encode (ClientAgency TokIdle) MsgPing = "ping\n"
+   encode (ClientAgency TokIdle) MsgDone = "done\n"
+   encode (ServerAgency TokBusy) MsgPong = "pong\n"
 
-   decode :: forall (st :: PingPong).
-             TheyHaveAgency pk st
+   decode :: TheyHaveAgency pk st
           -> m (DecodeStep String String m (SomeMessage st))
    decode stok =
-     decodeStepConsumeN 5 $ \str trailing ->
+     decodeTerminatedFrame '\n' $ \str trailing ->
        case (stok, str) of
-         (TokBusy, "pong\n") -> Done (SomeMessage MsgPong) trailing
-         (TokIdle, "ping\n") -> Done (SomeMessage MsgPing) trailing
-         (TokIdle, "done\n") -> Done (SomeMessage MsgDone) trailing
-         _                   -> Fail ("unexpected message: " ++ str)
--}
+         (ServerAgency TokBusy, "pong\n") -> Done (SomeMessage MsgPong) trailing
+         (ClientAgency TokIdle, "ping\n") -> Done (SomeMessage MsgPing) trailing
+         (ClientAgency TokIdle, "done\n") -> Done (SomeMessage MsgDone) trailing
+         _                                -> Fail ("unexpected message: " ++ str)
+
 
 decodeFrameOfLength :: forall m a.
                        Monad m
