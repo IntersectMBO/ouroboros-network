@@ -48,6 +48,7 @@ library
                        Ouroboros.Network.Protocol.Channel.Sim
                        Ouroboros.Network.Protocol.Channel.Trace
                        Ouroboros.Network.Protocol.ChainSync.Client
+                       Ouroboros.Network.Protocol.ChainSync.Codec
                        Ouroboros.Network.Protocol.ChainSync.Codec.Cbor
                        Ouroboros.Network.Protocol.ChainSync.Codec.Id
                        Ouroboros.Network.Protocol.ChainSync.Direct
