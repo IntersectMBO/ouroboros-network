@@ -303,7 +303,9 @@ mux pmss = do
     case w of
          TLSRDemand mid md d
              -> processSingleWanton pmss mid md d >> mux pmss
-         TLSRControl _ _
+         TLSRControl _ Abort
+             -> undefined
+         TLSRControl _ Done
              -> undefined
 
 -- Pull a `maxSDU`s worth of data out out the `Wanton` - if there is
@@ -329,7 +331,7 @@ processSingleWanton pmss mpi md wanton = do
       -- return data to send
       pure frag
     let sdu = MuxSDU (RemoteClockModel 0) mpi md (fromIntegral $ BL.length blob) blob
-    tNow <- write (bearerHandle pmss) (cb sdu)
+    _ <- write (bearerHandle pmss) (cb sdu)
     --paceTransmission tNow
     return ()
 
