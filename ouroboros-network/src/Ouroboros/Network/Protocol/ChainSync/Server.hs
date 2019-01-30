@@ -25,7 +25,7 @@ module Ouroboros.Network.Protocol.ChainSync.Server  (
     , chainSyncServerPeer
     ) where
 
-import Protocol.Core
+import Network.TypedProtocol.Core
 import Ouroboros.Network.Protocol.ChainSync.Type
 
 
@@ -94,41 +94,44 @@ data ServerStIntersect header point m a where
 chainSyncServerPeer
   :: Monad m
   => ChainSyncServer header point m a
-  -> Peer ChainSyncProtocol (ChainSyncMessage header point)
-          (Awaiting StIdle) (Finished StDone)
-          m a
-chainSyncServerPeer (ChainSyncServer mterm) = lift $ mterm >>=
+  -> Peer (ChainSync header point) AsServer StIdle m a
+chainSyncServerPeer (ChainSyncServer mterm) = Effect $ mterm >>=
     \(ServerStIdle{recvMsgRequestNext, recvMsgFindIntersect, recvMsgDoneClient}) ->
 
-    pure $ await $ \req ->
+    pure $ Await (ClientAgency TokIdle) $ \req ->
     case req of
-      MsgRequestNext -> lift $ do
+      MsgRequestNext -> Effect $ do
         mresp <- recvMsgRequestNext
         pure $ case mresp of
-          Left  resp    -> handleStNext resp
-          Right waiting -> part MsgAwaitReply $ lift $ do
+          Left  resp    -> handleStNext TokCanAwait resp
+          Right waiting -> Yield (ServerAgency (TokNext TokCanAwait))
+                                 MsgAwaitReply $ Effect $ do
                              resp <- waiting
-                             pure $ handleStNext resp
+                             pure $ handleStNext TokMustReply resp
 
-      MsgFindIntersect points -> lift $ do
+      MsgFindIntersect points -> Effect $ do
         resp <- recvMsgFindIntersect points
         pure $ handleStIntersect resp 
 
-      MsgDone -> done recvMsgDoneClient
+      MsgDone -> Done TokDone recvMsgDoneClient
 
   where
-    handleStNext (SendMsgRollForward  header pHead next) =
-      over (MsgRollForward header pHead)
-           (chainSyncServerPeer next)
+    handleStNext toknextkind (SendMsgRollForward  header pHead next) =
+      Yield (ServerAgency (TokNext toknextkind))
+            (MsgRollForward header pHead)
+            (chainSyncServerPeer next)
 
-    handleStNext (SendMsgRollBackward pIntersect pHead next) =
-      over (MsgRollBackward pIntersect pHead)
-           (chainSyncServerPeer next)
+    handleStNext toknextkind (SendMsgRollBackward pIntersect pHead next) =
+      Yield (ServerAgency (TokNext toknextkind))
+            (MsgRollBackward pIntersect pHead)
+            (chainSyncServerPeer next)
 
     handleStIntersect (SendMsgIntersectImproved pIntersect pHead next) =
-      over (MsgIntersectImproved pIntersect pHead)
-           (chainSyncServerPeer next)
+      Yield (ServerAgency TokIntersect)
+            (MsgIntersectImproved pIntersect pHead)
+            (chainSyncServerPeer next)
 
     handleStIntersect (SendMsgIntersectUnchanged pHead next) =
-      over (MsgIntersectUnchanged pHead)
-           (chainSyncServerPeer next)
+      Yield (ServerAgency TokIntersect)
+            (MsgIntersectUnchanged pHead)
+            (chainSyncServerPeer next)
