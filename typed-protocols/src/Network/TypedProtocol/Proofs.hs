@@ -66,11 +66,11 @@ connect AgencyProofs{..} = go
           Peer ps AsClient st' m a
        -> Peer ps AsServer st' m b
        -> m (a, b)
-    go  (Done !_stA a)      (Done !_stB b)      = return (a, b)
+    go  (Done _stA a)      (Done _stB b)      = return (a, b)
     go  (Effect a )          b                  = a >>= \a' -> go a' b
     go   a                  (Effect b)          = b >>= \b' -> go a  b'
-    go  (Yield !_stA msg a) (Await !_stB b)     = go  a     (b msg)
-    go  (Await !_stA a)     (Yield !_stB msg b) = go (a msg) b
+    go  (Yield _stA msg a) (Await _stB b)     = go  a     (b msg)
+    go  (Await _stA a)     (Yield _stB msg b) = go (a msg) b
 
     -- By appealing to the proofs about agency for this protocol we can
     -- show that these other cases are impossible
@@ -107,11 +107,11 @@ connectPipelined AgencyProofs{..} = goSender
              -> Peer       ps AsServer st' m b
              -> m (a, b)
 
-    goSender  (SenderDone !_stA a) (Done !_stB b) = return (a, b)
+    goSender  (SenderDone _stA a) (Done _stB b) = return (a, b)
     goSender  (SenderEffect a)      b             = a >>= \a' -> goSender a' b
     goSender  a                    (Effect b)     = b >>= \b' -> goSender a  b'
 
-    goSender  (SenderYield !_stA msg r a) (Await !_stB b) =
+    goSender  (SenderYield _stA msg r a) (Await _stB b) =
       goReceiver r (b msg) >>= \b' -> goSender a b'
 
 
@@ -143,7 +143,7 @@ connectPipelined AgencyProofs{..} = goSender
     goReceiver (ReceiverEffect a)  b         = a >>= \a' -> goReceiver a' b
     goReceiver  a                 (Effect b) = b >>= \b' -> goReceiver a  b'
 
-    goReceiver (ReceiverAwait !_ a) (Yield !_ msg b) = goReceiver (a msg) b
+    goReceiver (ReceiverAwait _ a) (Yield _ msg b) = goReceiver (a msg) b
 
 
     -- Proofs that the remaining cases are impossible
