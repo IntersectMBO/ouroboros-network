@@ -1,10 +1,8 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE EmptyCase #-}
 
 
@@ -52,10 +50,10 @@ instance Protocol PingPong where
   -- which case the state transitions may depend on the particular message via
   -- the usual GADT tricks).
   --
-  data Message from to where
-    MsgPing :: Message StIdle StBusy
-    MsgPong :: Message StBusy StIdle
-    MsgDone :: Message StIdle StDone
+  data Message PingPong from to where
+    MsgPing :: Message PingPong StIdle StBusy
+    MsgPong :: Message PingPong StBusy StIdle
+    MsgDone :: Message PingPong StIdle StDone
 
   -- | We have to explain to the framework what our states mean, in terms of
   -- who is expected to send and receive in the different states.
@@ -76,7 +74,10 @@ instance Protocol PingPong where
     TokDone :: NobodyHasAgency StDone
 
 
--- | `AgencyProofs` for the PingPong protocol
+deriving instance Show (Message PingPong from to)
+
+
+-- | 'AgencyProofs' for the 'PingPong' protocol
 --
 pingPongAgencyProofs :: AgencyProofs PingPong
 pingPongAgencyProofs = AgencyProofs {

@@ -4,7 +4,7 @@
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE DataKinds #-}
 
-{-# OPTIONS_GHC -Wall -Wno-unticked-promoted-constructors #-}
+
 
 -- | This module defines the core of the typed protocol framework.
 --
@@ -130,7 +130,7 @@ class Protocol ps where
   -- transitions into. These are the edges of the protocol state transition
   -- system.
   --
-  data Message :: ps -> ps -> Type
+  data Message ps (st :: ps) (st' :: ps)
 
   -- | A type for the value level representation of a protocol state. This is
   -- a GADT singleton that reflects each protocol state as a value. This is
@@ -144,9 +144,9 @@ class Protocol ps where
   -- the client, or the server (or neither for terminal states).
   --
 
-  data ClientHasAgency :: ps -> Type
-  data ServerHasAgency :: ps -> Type
-  data NobodyHasAgency :: ps -> Type
+  data ClientHasAgency (st :: ps)
+  data ServerHasAgency (st :: ps)
+  data NobodyHasAgency (st :: ps)
 
 
 data PeerKind = AsClient | AsServer        -- Only used as promoted types
@@ -163,21 +163,21 @@ type family TheyHaveAgency (pk :: PeerKind) st :: Type where
 -- | Having defined the types needed for a protocol it is then possible to
 -- define programs that are peers that engage in that protocol.
 --
-data Peer (pk :: PeerKind) (st :: ps) m a where
+data Peer ps (pk :: PeerKind) (st :: ps) m a where
 
-  Effect :: m (Peer pk st m a)
-         ->    Peer pk st m a
+  Effect :: m (Peer ps pk st m a)
+         ->    Peer ps pk st m a
 
   Done   :: NobodyHasAgency st
          -> a
-         -> Peer pk st m a
+         -> Peer ps pk st m a
 
   Yield  :: WeHaveAgency pk st
-         -> Message st st'
-         -> Peer pk st' m a
-         -> Peer pk st  m a
+         -> Message ps st st'
+         -> Peer ps pk st' m a
+         -> Peer ps pk st  m a
 
   Await  :: TheyHaveAgency pk st
-         -> (forall st'. Message st st' -> Peer pk st' m a)
-         -> Peer pk st m a
+         -> (forall st'. Message ps st st' -> Peer ps pk st' m a)
+         -> Peer ps pk st m a
 

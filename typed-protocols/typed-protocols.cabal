@@ -15,15 +15,25 @@ cabal-version:       >=1.10
 library
   exposed-modules:   Network.TypedProtocol.Core
                    , Network.TypedProtocol.Pipelined
-                   , Network.TypedProtocol.PingPong.Type
                    , Network.TypedProtocol.Channel
                    , Network.TypedProtocol.Codec
                    , Network.TypedProtocol.Driver
                    , Network.TypedProtocol.Proofs
+
+                   , Network.TypedProtocol.PingPong.Type
                    , Network.TypedProtocol.PingPong.Client
                    , Network.TypedProtocol.PingPong.Server
                    , Network.TypedProtocol.PingPong.Direct
                    , Network.TypedProtocol.PingPong.Codec
+                   , Network.TypedProtocol.PingPong.Examples
+
+                   , Network.TypedProtocol.ReqResp.Type
+                   , Network.TypedProtocol.ReqResp.Client
+                   , Network.TypedProtocol.ReqResp.Server
+                   , Network.TypedProtocol.ReqResp.Direct
+                   , Network.TypedProtocol.ReqResp.Codec
+                   , Network.TypedProtocol.ReqResp.Examples
+
   other-extensions:  GADTs
                    , RankNTypes
                    , PolyKinds

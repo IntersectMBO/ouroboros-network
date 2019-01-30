@@ -32,9 +32,7 @@ import           Network.TypedProtocol.Proofs (connect, connectPipelined)
 
 import           Network.TypedProtocol.PingPong.Type (pingPongAgencyProofs)
 import           Network.TypedProtocol.PingPong.Client
-  ( pingPongClientCount
-  , pingPongClientPeer
-  , pingPongSenderCount
+  ( pingPongClientPeer
   , pingPongClientPeerSender
   )
 import           Network.TypedProtocol.PingPong.Codec
@@ -42,8 +40,12 @@ import           Network.TypedProtocol.PingPong.Codec
   , codecPingPongAsServer
   )
 import           Network.TypedProtocol.PingPong.Server
-  ( pingPongServerCount
-  , pingPongServerPeer
+  ( pingPongServerPeer
+  )
+import           Network.TypedProtocol.PingPong.Examples
+  ( pingPongClientCount
+  , pingPongSenderCount
+  , pingPongServerCount
   )
 import           Network.TypedProtocol.PingPong.Direct (direct)
 

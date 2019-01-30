@@ -16,22 +16,19 @@ codecPingPongAsClient
 codecPingPongAsClient =
     Codec{encode, decode}
   where
-   encode :: forall (st  :: PingPong)
-                    (st' :: PingPong).
-             ClientHasAgency st
-          -> Message st st'
+   encode :: ClientHasAgency st
+          -> Message PingPong st st'
           -> String
    encode TokIdle MsgPing = "ping\n"
    encode TokIdle MsgDone = "done\n"
 
-   decode :: forall (st :: PingPong).
-             ServerHasAgency st
+   decode :: ServerHasAgency st
           -> m (DecodeStep String String m (SomeMessage st))
    decode TokBusy =
-     decodeStepConsumeN 5 $ \str trailing ->
+     decodeTerminatedFrame '\n' $ \str trailing ->
        case str of
-         "pong\n" -> Done (SomeMessage MsgPong) trailing
-         _        -> Fail ("unexpected message: " ++ str)
+         "pong" -> Done (SomeMessage MsgPong) trailing
+         _      -> Fail ("unexpected message: " ++ str)
 
 
 codecPingPongAsServer
@@ -40,22 +37,19 @@ codecPingPongAsServer
 codecPingPongAsServer =
     Codec{encode, decode}
   where
-   encode :: forall (st  :: PingPong)
-                    (st' :: PingPong).
-             ServerHasAgency st
-          -> Message st st'
+   encode :: ServerHasAgency st
+          -> Message PingPong st st'
           -> String
    encode TokBusy MsgPong = "pong\n"
 
-   decode :: forall (st :: PingPong).
-             ClientHasAgency st
+   decode :: ClientHasAgency st
           -> m (DecodeStep String String m (SomeMessage st))
    decode TokIdle =
-     decodeStepConsumeN 5 $ \str trailing ->
+     decodeTerminatedFrame '\n' $ \str trailing ->
        case str of
-         "ping\n" -> Done (SomeMessage MsgPing) trailing
-         "done\n" -> Done (SomeMessage MsgDone) trailing
-         _        -> Fail ("unexpected message: " ++ str)
+         "ping" -> Done (SomeMessage MsgPing) trailing
+         "done" -> Done (SomeMessage MsgDone) trailing
+         _      -> Fail ("unexpected message: " ++ str)
 
 {-
 codecPingPong
@@ -85,12 +79,12 @@ codecPingPong =
          _                   -> Fail ("unexpected message: " ++ str)
 -}
 
-decodeStepConsumeN :: forall m a.
+decodeFrameOfLength :: forall m a.
                        Monad m
                     => Int
                     -> (String -> Maybe String -> DecodeStep String String m a)
                     -> m (DecodeStep String String m a)
-decodeStepConsumeN n k = go [] n
+decodeFrameOfLength n k = go [] n
   where
     go :: [String] -> Int -> m (DecodeStep String String m a)
     go chunks required =
@@ -113,3 +107,22 @@ prop_decodeStepSplitAt n = do
   where
     decoder = decodeStepSplitAt n Done)
 -}
+
+decodeTerminatedFrame :: forall m a.
+                         Monad m
+                      => Char
+                      -> (String -> Maybe String -> DecodeStep String String m a)
+                      -> m (DecodeStep String String m a)
+decodeTerminatedFrame terminator k = go []
+  where
+    go :: [String] -> m (DecodeStep String String m a)
+    go chunks =
+      return $ Partial $ \mchunk ->
+        case mchunk of
+          Nothing    -> return $ Fail "not enough input"
+          Just chunk ->
+            case break (==terminator) chunk of
+              (c, _:c') -> return $ k (concat (reverse (c:chunks)))
+                                      (if null c' then Nothing else Just c)
+              _         -> go (chunk : chunks)
+

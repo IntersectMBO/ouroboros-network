@@ -1,13 +1,9 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+
+
 module Network.TypedProtocol.PingPong.Client where
 
-import           Data.Functor (($>))
-import           Numeric.Natural (Natural)
-
-import           Control.Monad.Class.MonadSTM (MonadSTM (..))
 
 import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Pipelined
@@ -43,30 +39,13 @@ data PingPongClient m a where
   SendMsgDone    :: a -> PingPongClient m a
 
 
--- | An example ping-pong client that sends pings as fast as possible forever‽
---
--- This may not be a good idea‼
---
-pingPongClientFlood :: Applicative m => PingPongClient m a
-pingPongClientFlood = SendMsgPing (pure pingPongClientFlood)
-
--- | An example ping-pong client that sends a fixed number of ping messages
--- and then stops.
---
-pingPongClientCount
-  :: Applicative m
-  => Natural
-  -> PingPongClient m ()
-pingPongClientCount 0 = SendMsgDone ()
-pingPongClientCount m = SendMsgPing $ pure (pingPongClientCount (pred m))
-
 -- | Interpret a particular client action sequence into the client side of the
 -- 'PingPong' protocol.
 --
 pingPongClientPeer
   :: Monad m
   => PingPongClient m a
-  -> Peer AsClient StIdle m a
+  -> Peer PingPong AsClient StIdle m a
 
 pingPongClientPeer (SendMsgDone result) =
     -- We do an actual transition using 'yield', to go from the 'StIdle' to
@@ -109,22 +88,12 @@ data PingPongSender m a where
   SendMsgDonePipelined
     :: a -> PingPongSender m a
 
-pingPongSenderCount
-  :: MonadSTM m
-  => TVar m Natural
-  -> Natural
-  -> PingPongSender m ()
-pingPongSenderCount var = go
- where
-  go 0 = SendMsgDonePipelined ()
-  go n = SendMsgPingPipelined
-    (atomically $ modifyTVar var succ)
-    (go (pred n))
 
 pingPongClientPeerSender
   :: Monad m
   => PingPongSender m a
-  -> PeerSender AsClient StIdle m a
+  -> PeerSender PingPong AsClient StIdle m a
+
 
 pingPongClientPeerSender (SendMsgDonePipelined result) =
   -- Send `MsgDone` and complete the protocol
@@ -137,6 +106,11 @@ pingPongClientPeerSender (SendMsgPingPipelined receive next) =
     TokIdle
     MsgPing
     -- response handler
-    (ReceiverAwait TokBusy $ \MsgPong -> ReceiverEffect $ receive $> ReceiverDone)
+
+    (ReceiverAwait TokBusy $ \MsgPong ->
+        ReceiverEffect $ do
+          receive
+          return ReceiverDone)
     -- run the next step of the ping-pong protocol.
-    (SenderEffect $ return $ pingPongClientPeerSender next)
+    (pingPongClientPeerSender next)
+

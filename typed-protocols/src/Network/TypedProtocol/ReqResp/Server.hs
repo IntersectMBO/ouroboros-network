@@ -2,16 +2,16 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE RecordWildCards #-}
 
-module Network.TypedProtocol.PingPong.Server where
+module Network.TypedProtocol.ReqResp.Server where
 
 import           Network.TypedProtocol.Core
-import           Network.TypedProtocol.PingPong.Type
+import           Network.TypedProtocol.ReqResp.Type
 
 
-data PingPongServer m a = PingPongServer {
+data ReqRespServer req resp m a = ReqRespServer {
     -- | The client sent us a ping message. We have no choices here, and
     -- the response is nullary, all we have are local effects.
-    recvMsgPing  :: m (PingPongServer m a)
+    recvMsgReq   :: req -> m (resp, ReqRespServer req resp m a)
 
     -- | The client terminated. Here we have a pure return value, but we
     -- could have done another action in 'm' if we wanted to.
@@ -20,20 +20,20 @@ data PingPongServer m a = PingPongServer {
 
 
 -- | Interpret a particular server action sequence into the server side of the
--- 'PingPong' protocol.
+-- 'ReqResp' protocol.
 --
-pingPongServerPeer
+reqRespServerPeer
   :: Monad m
-  => PingPongServer m a
-  -> Peer PingPong AsServer StIdle m a
-pingPongServerPeer PingPongServer{..} =
+  => ReqRespServer req resp m a
+  -> Peer (ReqResp req resp) AsServer StIdle m a
+reqRespServerPeer ReqRespServer{..} =
 
     -- In the 'StIdle' the server is awaiting a request message
-    Await TokIdle $ \req ->
+    Await TokIdle $ \msg ->
 
     -- The client got to choose between two messages and we have to handle
     -- either of them
-    case req of
+    case msg of
 
       -- The client sent the done transition, so we're in the 'StDone' state
       -- so all we can do is stop using 'done', with a return value.
@@ -41,6 +41,6 @@ pingPongServerPeer PingPongServer{..} =
 
       -- The client sent us a ping request, so now we're in the 'StBusy' state
       -- which means it's the server's turn to send.
-      MsgPing -> Effect $ do
-        next <- recvMsgPing
-        pure $ Yield TokBusy MsgPong (pingPongServerPeer next)
+      MsgReq req -> Effect $ do
+        (resp, next) <- recvMsgReq req
+        pure $ Yield TokBusy (MsgResp resp) (reqRespServerPeer next)
