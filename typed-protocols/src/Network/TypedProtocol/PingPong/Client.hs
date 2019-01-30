@@ -49,17 +49,17 @@ pingPongClientPeer (SendMsgDone result) =
     -- We do an actual transition using 'yield', to go from the 'StIdle' to
     -- 'StDone' state. Once in the 'StDone' state we can actually stop using
     -- 'done', with a return value.
-    Yield TokIdle MsgDone (Done TokDone result)
+    Yield (ClientAgency TokIdle) MsgDone (Done TokDone result)
 
 pingPongClientPeer (SendMsgPing next) =
 
     -- Send our message.
-    Yield TokIdle MsgPing $
+    Yield (ClientAgency TokIdle) MsgPing $
 
     -- The type of our protocol means that we're now into the 'StBusy' state
     -- and the only thing we can do next is local effects or wait for a reply.
     -- We'll wait for a reply.
-    Await TokBusy $ \MsgPong ->
+    Await (ServerAgency TokBusy) $ \MsgPong ->
 
     -- Now in this case there is only one possible response, and we have
     -- one corresponding continuation 'kPong' to handle that response.
@@ -94,16 +94,20 @@ pingPongClientPeerSender
 
 pingPongClientPeerSender (SendMsgDonePipelined result) =
   -- Send `MsgDone` and complete the protocol
-  SenderYield TokIdle MsgDone ReceiverDone (SenderDone TokDone result)
+  SenderYield
+    (ClientAgency TokIdle)
+    MsgDone
+    ReceiverDone
+    (SenderDone TokDone result)
 
 pingPongClientPeerSender (SendMsgPingPipelined receive next) =
   -- Piplined yield: send `MsgPing`, imediatelly follow with the next step.
   -- Await for a response in a continuation.
   SenderYield
-    TokIdle
+    (ClientAgency TokIdle)
     MsgPing
     -- response handler
-    (ReceiverAwait TokBusy $ \MsgPong ->
+    (ReceiverAwait (ServerAgency TokBusy) $ \MsgPong ->
         ReceiverEffect $ do
           receive
           return ReceiverDone)

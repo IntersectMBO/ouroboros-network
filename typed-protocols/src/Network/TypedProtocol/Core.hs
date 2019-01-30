@@ -44,11 +44,10 @@ module Network.TypedProtocol.Core (
   Protocol(..),
   Peer(..),
   PeerKind(..),
+  PeerHasAgency(..),
   WeHaveAgency,
   TheyHaveAgency,
   ) where
-
-import Data.Kind (Type)
 
 
 -- | A typed protocol between two peers is defined via a state machine: a
@@ -150,13 +149,16 @@ class Protocol ps where
 
 data PeerKind = AsClient | AsServer        -- Only used as promoted types
 
-type family WeHaveAgency (pk :: PeerKind) st :: Type where
-  WeHaveAgency AsClient st = ClientHasAgency st
-  WeHaveAgency AsServer st = ServerHasAgency st
+data PeerHasAgency (pk :: PeerKind) (st :: ps) where
+  ClientAgency :: ClientHasAgency st -> PeerHasAgency AsClient st
+  ServerAgency :: ServerHasAgency st -> PeerHasAgency AsServer st
 
-type family TheyHaveAgency (pk :: PeerKind) st :: Type where
-  TheyHaveAgency AsClient st = ServerHasAgency st
-  TheyHaveAgency AsServer st = ClientHasAgency st
+type WeHaveAgency   (pk :: PeerKind) st = PeerHasAgency             pk  st
+type TheyHaveAgency (pk :: PeerKind) st = PeerHasAgency (FlipAgency pk) st
+
+type family FlipAgency (pk :: PeerKind) where
+  FlipAgency AsClient = AsServer
+  FlipAgency AsServer = AsClient
 
 
 -- | Having defined the types needed for a protocol it is then possible to

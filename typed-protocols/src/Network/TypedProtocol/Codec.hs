@@ -10,6 +10,9 @@
 module Network.TypedProtocol.Codec (
     Codec(..)
   , PeerKind(..)
+  , PeerHasAgency(..)
+  , WeHaveAgency
+  , TheyHaveAgency
   , SomeMessage(..)
   , DecodeStep(..)
   , transformCodec
@@ -17,7 +20,8 @@ module Network.TypedProtocol.Codec (
   ) where
 
 import           Network.TypedProtocol.Core
-                   ( Protocol(..), PeerKind(..), WeHaveAgency, TheyHaveAgency )
+                   ( Protocol(..), PeerKind(..)
+                   , PeerHasAgency(..), WeHaveAgency, TheyHaveAgency )
 
 import           Control.Monad.ST (ST)
 import           Control.Monad.Class.MonadST

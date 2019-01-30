@@ -29,7 +29,7 @@ reqRespServerPeer
 reqRespServerPeer ReqRespServer{..} =
 
     -- In the 'StIdle' the server is awaiting a request message
-    Await TokIdle $ \msg ->
+    Await (ClientAgency TokIdle) $ \msg ->
 
     -- The client got to choose between two messages and we have to handle
     -- either of them
@@ -43,4 +43,4 @@ reqRespServerPeer ReqRespServer{..} =
       -- which means it's the server's turn to send.
       MsgReq req -> Effect $ do
         (resp, next) <- recvMsgReq req
-        pure $ Yield TokBusy (MsgResp resp) (reqRespServerPeer next)
+        pure $ Yield (ServerAgency TokBusy) (MsgResp resp) (reqRespServerPeer next)

@@ -36,8 +36,8 @@ import           Network.TypedProtocol.PingPong.Client
   , pingPongClientPeerSender
   )
 import           Network.TypedProtocol.PingPong.Codec
-  ( codecPingPongAsClient
-  , codecPingPongAsServer
+  ( codecPingPong
+  , codecPingPong
   )
 import           Network.TypedProtocol.PingPong.Server
   ( pingPongServerPeer
@@ -137,13 +137,12 @@ channel_experiment clientChannel serverChannel (Positive x) probe = do
   let c = fromIntegral x
       clientPeer = pingPongClientPeer $ pingPongClientCount c
       serverPeer = pingPongServerPeer pingPongServerCount
-      clientCodec = transformCodec BSC.pack BSC.unpack codecPingPongAsClient
-      serverCodec = transformCodec BSC.pack BSC.unpack codecPingPongAsServer
+      codec      = transformCodec BSC.pack BSC.unpack codecPingPong
 
   fork $ do
-    res <- runPeer serverCodec serverChannel serverPeer
+    res <- runPeer codec serverChannel serverPeer
     atomically $ putTMVar serverVar res
-  fork $ runPeer clientCodec clientChannel clientPeer
+  fork $ runPeer codec clientChannel clientPeer
 
   res <- atomically $ takeTMVar serverVar
   probeOutput probe (res === c)

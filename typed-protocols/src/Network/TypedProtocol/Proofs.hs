@@ -74,22 +74,22 @@ connect AgencyProofs{..} = go
 
     -- By appealing to the proofs about agency for this protocol we can
     -- show that these other cases are impossible
-    go (Yield stA _ _) (Yield stB _ _) =
+    go (Yield (ClientAgency stA) _ _) (Yield (ServerAgency stB) _ _) =
       absurd (proofByContradiction_ClientAndServerHaveAgency stA stB)
 
-    go (Await stA _)   (Await stB _)   =
+    go (Await (ServerAgency stA) _)   (Await (ClientAgency stB) _)   =
       absurd (proofByContradiction_ClientAndServerHaveAgency stB stA)
 
-    go (Done  stA _)   (Yield stB _ _) =
+    go (Done  stA _)            (Yield (ServerAgency stB) _ _) =
       absurd (proofByContradiction_NobodyAndServerHaveAgency stA stB)
 
-    go (Done  stA _)   (Await stB _)   =
+    go (Done  stA _)            (Await (ClientAgency stB) _)   =
       absurd (proofByContradiction_NobodyAndClientHaveAgency stA stB)
 
-    go (Yield stA _ _) (Done stB _)    =
+    go (Yield (ClientAgency stA) _ _) (Done stB _)    =
       absurd (proofByContradiction_NobodyAndClientHaveAgency stB stA)
 
-    go (Await stA _)   (Done stB _)    =
+    go (Await (ServerAgency stA) _)   (Done stB _)    =
       absurd (proofByContradiction_NobodyAndServerHaveAgency stB stA)
 
 
@@ -116,16 +116,16 @@ connectPipelined AgencyProofs{..} = goSender
 
 
     -- Proofs that the remaining cases are impossible
-    goSender (SenderDone stA _)      (Yield stB _ _) =
+    goSender (SenderDone stA _)               (Yield (ServerAgency stB) _ _) =
       absurd (proofByContradiction_NobodyAndServerHaveAgency stA stB)
 
-    goSender (SenderDone stA _)      (Await stB _) =
+    goSender (SenderDone stA _)               (Await (ClientAgency stB) _) =
       absurd (proofByContradiction_NobodyAndClientHaveAgency stA stB)
 
-    goSender (SenderYield stA _ _ _) (Done stB _) =
+    goSender (SenderYield (ClientAgency stA) _ _ _) (Done stB _) =
       absurd (proofByContradiction_NobodyAndClientHaveAgency stB stA)
 
-    goSender (SenderYield stA _ _ _) (Yield stB _ _) =
+    goSender (SenderYield (ClientAgency stA) _ _ _) (Yield (ServerAgency stB) _ _) =
       absurd (proofByContradiction_ClientAndServerHaveAgency stA stB)
 
     -- note that this is where there is actually non-determinism
@@ -147,10 +147,10 @@ connectPipelined AgencyProofs{..} = goSender
 
 
     -- Proofs that the remaining cases are impossible
-    goReceiver (ReceiverAwait stA _) (Done  stB _) =
+    goReceiver (ReceiverAwait (ServerAgency stA) _) (Done  stB _) =
       absurd (proofByContradiction_NobodyAndServerHaveAgency stB stA)
 
-    goReceiver (ReceiverAwait stA _) (Await stB _) =
+    goReceiver (ReceiverAwait (ServerAgency stA) _) (Await (ClientAgency stB) _) =
       absurd (proofByContradiction_ClientAndServerHaveAgency stB stA)
 
 

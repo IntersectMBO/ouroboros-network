@@ -29,7 +29,7 @@ pingPongServerPeer
 pingPongServerPeer PingPongServer{..} =
 
     -- In the 'StIdle' the server is awaiting a request message
-    Await TokIdle $ \req ->
+    Await (ClientAgency TokIdle) $ \req ->
 
     -- The client got to choose between two messages and we have to handle
     -- either of them
@@ -43,4 +43,4 @@ pingPongServerPeer PingPongServer{..} =
       -- which means it's the server's turn to send.
       MsgPing -> Effect $ do
         next <- recvMsgPing
-        pure $ Yield TokBusy MsgPong (pingPongServerPeer next)
+        pure $ Yield (ServerAgency TokBusy) MsgPong (pingPongServerPeer next)
