@@ -1,8 +1,5 @@
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE NamedFieldPuns #-}
 
@@ -14,57 +11,32 @@ import           Network.TypedProtocol.ReqResp.Type
 import           Text.Read (readMaybe)
 
 
-codecReqRespAsClient
-  :: forall req resp m.
+codecReqResp
+  :: forall req resp pk m.
      (Monad m, Show req, Show resp, Read req, Read resp)
-  => Codec (ReqResp req resp) AsClient String m String
-codecReqRespAsClient =
+  => Codec (ReqResp req resp) pk String m String
+codecReqResp =
     Codec{encode, decode}
   where
-   encode :: forall (st  :: ReqResp req resp)
-                    (st' :: ReqResp req resp).
-             ClientHasAgency st
+   encode :: WeHaveAgency pk st
           -> Message (ReqResp req resp) st st'
           -> String
-   encode TokIdle msg = show msg
+   encode (ClientAgency TokIdle) msg = show msg
+   encode (ServerAgency TokBusy) msg = show msg
 
-   decode :: forall (st :: ReqResp req resp).
-             ServerHasAgency st
+   decode :: TheyHaveAgency pk st
           -> m (DecodeStep String String m (SomeMessage st))
-   decode TokBusy =
+   decode stok =
      decodeTerminatedFrame '\n' $ \str trailing ->
-       case break (==' ') str of
-         ("Resp", str')
-            | Just resp <- readMaybe str'
-           -> Done (SomeMessage (MsgResp resp)) trailing
-         _ -> Fail ("unexpected message: " ++ str)
-
-
-codecReqRespAsServer
-  :: forall req resp m.
-     (Monad m, Show req, Show resp, Read req, Read resp)
-  => Codec (ReqResp req resp) AsServer String m String
-codecReqRespAsServer =
-    Codec{encode, decode}
-  where
-   encode :: forall (st  :: ReqResp req resp)
-                    (st' :: ReqResp req resp).
-             ServerHasAgency st
-          -> Message (ReqResp req resp) st st'
-          -> String
-   encode TokBusy msg = show msg
-
-   decode :: forall (st :: ReqResp req resp).
-             ClientHasAgency st
-          -> m (DecodeStep String String m (SomeMessage st))
-   decode TokIdle =
-     decodeTerminatedFrame '\n' $ \str trailing ->
-       case break (==' ') str of
-         ("Req", str')
+       case (stok, break (==' ') str) of
+         (ClientAgency TokIdle, ("Req", str'))
             | Just resp <- readMaybe str'
            -> Done (SomeMessage (MsgReq resp)) trailing
-         ("Done", "")
+         (ClientAgency TokIdle, ("Done", ""))
            -> Done (SomeMessage MsgDone) trailing
+         (ServerAgency TokBusy, ("Resp", str'))
+            | Just resp <- readMaybe str'
+           -> Done (SomeMessage (MsgResp resp)) trailing
          _ -> Fail ("unexpected message: " ++ str)
 
 
