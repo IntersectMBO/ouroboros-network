@@ -46,12 +46,12 @@ import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (Chain, ChainUpdate, Point)
 import qualified Ouroboros.Network.Chain as Chain
 import qualified Ouroboros.Network.ChainProducerState as CPS
-import           Ouroboros.Network.ChainSyncExamples
 import qualified Ouroboros.Network.Mux as Mx
 import           Ouroboros.Network.Protocol.ChainSync.Codec.Cbor
 import           Ouroboros.Network.Protocol.ChainSync.Type
 import           Ouroboros.Network.Protocol.ChainSync.Client
 import           Ouroboros.Network.Protocol.ChainSync.Server
+import           Ouroboros.Network.Protocol.ChainSync.Examples
 import           Ouroboros.Network.Serialise
 
 import           Protocol.Channel (Duplex)
