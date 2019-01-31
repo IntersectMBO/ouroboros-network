@@ -44,7 +44,7 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-chain
-  tag: 788ca6397492c40b8e9de6e63ae10bec31755dc7
+  tag: 0a79e467978d104b109fc04b95dbbc235d68f61d
   subdir: specs/chain/hs
 
 source-repository-package

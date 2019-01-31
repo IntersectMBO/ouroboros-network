@@ -20,12 +20,12 @@ import           Ouroboros.Consensus.Crypto.DSIGN.Ed448 (Ed448DSIGN)
 import           Ouroboros.Consensus.Crypto.DSIGN.Mock (MockDSIGN)
 import           Ouroboros.Consensus.Util.Condense
 
-import           Chain.Blockchain (BlockchainEnv(..), KeyToQMap, T)
+import           Chain.Blockchain (BlockchainEnv(..), T)
 import           Chain.GenesisBlock (genesisBlock)
-import           Control.State.Transition (applySTS, PredicateFailure, Signal, State, IRC(IRC), TRC(TRC))
-import           Ledger.Core (SlotCount(SlotCount))
+import           Control.State.Transition (applySTS, PredicateFailure, State, IRC(IRC), TRC(TRC))
+import           Ledger.Core (SlotCount)
 import           Ledger.Delegation (DIEnv)
-import           Types (BC, Block(GBlock, RBlock), ProtParams(..))
+import           Types (BC, Block, ProtParams(..))
 
 
 data PermBft c
@@ -55,7 +55,7 @@ instance PermBftCrypto c => OuroborosTag (PermBft c) where
     signature <- signedDSIGN preheader permBftSignKey
     return $ PermBftPayload { permBftSignature = signature }
 
-  checkIsLeader _ _ _ _ = return Nothing
+  checkIsLeader _ _ _ _ = return $ Just ()
 
   applyChainState PermBftNodeConfig{..} lv b chainSt@(_, prevBlock, _) =
     except $
