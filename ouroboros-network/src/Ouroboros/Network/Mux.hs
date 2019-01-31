@@ -1,5 +1,5 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE TypeFamilies          #-}
 
 module Ouroboros.Network.Mux (
@@ -16,10 +16,10 @@ module Ouroboros.Network.Mux (
     ) where
 
 import           Control.Monad
-import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadSay
-import qualified Data.Binary.Put as Bin
+import           Control.Monad.Class.MonadSTM
 import qualified Data.Binary.Get as Bin
+import qualified Data.Binary.Put as Bin
 import           Data.Bits
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
@@ -33,9 +33,7 @@ import qualified Codec.CBOR.Write as CBOR (toLazyByteString)
 import           Text.Printf
 
 
-data RemoteClockModel = RemoteClockModel {
-    unRemoteClockModel :: !Word32
-  }
+newtype RemoteClockModel = RemoteClockModel { unRemoteClockModel :: Word32 }
 
 data MiniProtocolId = Muxcontrol
                     | DeltaQ
@@ -45,15 +43,15 @@ data MiniProtocolId = Muxcontrol
                     deriving (Eq, Ord, Show)
 
 data MiniProtocolDescription m = MiniProtocolDescription {
-      mpdId :: MiniProtocolId
+      mpdId        :: MiniProtocolId
     , mpdInitiator :: Duplex m m CBOR.Encoding BS.ByteString -> m ()
     , mpdResponder :: Duplex m m CBOR.Encoding BS.ByteString -> m ()
     }
 
-data MiniProtocolDescriptions m = MiniProtocolDescriptions (M.Map MiniProtocolId (MiniProtocolDescription m))
+newtype MiniProtocolDescriptions m = MiniProtocolDescriptions (M.Map MiniProtocolId (MiniProtocolDescription m))
 
-data MiniProtocolDispatch m = MiniProtocolDispatch (M.Map (MiniProtocolId, MiniProtocolMode)
-                                                   (TBQueue m BL.ByteString))
+newtype MiniProtocolDispatch m = MiniProtocolDispatch (M.Map (MiniProtocolId, MiniProtocolMode)
+                                                             (TBQueue m BL.ByteString))
 
 data MiniProtocolMode = ModeInitiator | ModeResponder deriving (Eq, Ord, Show)
 
@@ -79,11 +77,11 @@ encodeMuxSDU sdu =
         putId (msId sdu) (putMode $ msMode sdu)
         Bin.putWord16be $ fromIntegral $ BL.length $ msBlob sdu
 
-    putId Muxcontrol mode        = Bin.putWord16be $ 0 .|. mode
-    putId DeltaQ mode            = Bin.putWord16be $ 1 .|. mode
-    putId ChainSync mode         = Bin.putWord16be $ 2 .|. mode
-    putId Blockdownload mode     = Bin.putWord16be $ 3 .|. mode
-    putId TxSubmission mode      = Bin.putWord16be $ 4 .|. mode
+    putId Muxcontrol mode    = Bin.putWord16be $ 0 .|. mode
+    putId DeltaQ mode        = Bin.putWord16be $ 1 .|. mode
+    putId ChainSync mode     = Bin.putWord16be $ 2 .|. mode
+    putId Blockdownload mode = Bin.putWord16be $ 3 .|. mode
+    putId TxSubmission mode  = Bin.putWord16be $ 4 .|. mode
 
     putMode :: MiniProtocolMode -> Word16
     putMode ModeInitiator = 0
@@ -105,7 +103,7 @@ decodeMuxSDUHeader buf =
 
     getMode 0      = ModeInitiator
     getMode 0x8000 = ModeResponder
-    getMode _      = error $ "impossible use of bitmask" -- XXX
+    getMode _      = error "impossible use of bitmask" -- XXX
 
     getId 0 = Muxcontrol
     getId 1 = DeltaQ
@@ -158,11 +156,11 @@ muxJobs (MiniProtocolDescriptions udesc) bearer = do
                , muxControl pmss ModeInitiator
                ]
     mjobs <- mapM (mpsJob pmss) $ M.elems udesc
-    return $ jobs ++ (concat mjobs)
+    return $ jobs ++ concat mjobs
 
   where
     setupTbl = do
-        let ps = [Muxcontrol, DeltaQ] ++ (M.keys udesc)
+        let ps = [Muxcontrol, DeltaQ] ++ M.keys udesc
         tbl <- foldM addMp M.empty ps
         return $ MiniProtocolDispatch tbl
 
@@ -183,7 +181,7 @@ muxControl :: (MuxBearer m, MonadSTM m, MonadSay m) =>
     MiniProtocolMode ->
     m ()
 muxControl pmss md = do
-    w <- atomically $ newEmptyTMVar
+    w <- atomically newEmptyTMVar
     forever $ do
         -- XXX actual protocol is missing
         blob <- atomically $ readTBQueue (ingressQueue (dispatchTable pmss) Muxcontrol md)
@@ -197,10 +195,9 @@ muxDuplex :: (MuxBearer m, MonadSTM m, MonadSay m) =>
     MiniProtocolMode ->
     TMVar m BL.ByteString ->
     Duplex m m CBOR.Encoding BS.ByteString
-muxDuplex pmss mid md w = do
-  uniformDuplex snd_ rcv
+muxDuplex pmss mid md w = uniformDuplex snd_ rcv
   where
-    snd_ = \encoding -> do
+    snd_ encoding = do
         --say $ printf "send mid %s mode %s" (show mid) (show md)
         atomically $ putTMVar w (CBOR.toLazyByteString encoding)
         atomically $ writeTBQueue (tsrQueue pmss) (TLSRDemand mid md (Wanton w))
@@ -277,14 +274,14 @@ data TLSRAction = Abort | Done
 -- The concrete data to be translocated, note that the TMVar becoming empty indicates
 -- that the last fragment of the data has been enqueued on the
 -- underlying bearer.
-data Wanton m = Wanton { want :: TMVar m BL.ByteString }
+newtype Wanton m = Wanton { want :: TMVar m BL.ByteString }
 
 -- Each peer's multiplexer has some state that provides both
 -- de-multiplexing details (for despatch of incoming mesages to mini
 -- protocols) and for dispatching incoming SDUs.  This is shared
 -- between the muxIngress and the bearerIngress processes.
 data PerMuxSharedState m = PerMuxSS {
-      dispatchTable  :: MiniProtocolDispatch m -- fixed, known at instantiation
+      dispatchTable :: MiniProtocolDispatch m -- fixed, known at instantiation
   ,   bearerHandle  :: MuxBearerHandle m
   ,   tsrQueue      :: TBQueue m (TranslocationServiceRequest m)
    -- handles to senders or pipes or whatever

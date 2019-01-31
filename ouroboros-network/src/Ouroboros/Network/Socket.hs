@@ -1,12 +1,11 @@
 
-{-# LANGUAGE GeneralizedNewtypeDeriving     #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE RecordWildCards     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeFamilies          #-}
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE CPP                        #-}
 {-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TypeFamilies               #-}
 
 module Ouroboros.Network.Socket (
       SocketBearer (..)
@@ -19,22 +18,22 @@ module Ouroboros.Network.Socket (
     ) where
 
 import           Control.Concurrent.Async
-import           Control.Monad
-import           Control.Monad.IO.Class
-import           Control.Monad.Class.MonadTimer
-import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSay
-import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadST
-import           Control.Monad.ST
-import qualified Control.Monad.STM as STM
 import qualified Control.Concurrent.STM.TBQueue as STM
 import qualified Control.Concurrent.STM.TMVar as STM
 import qualified Control.Concurrent.STM.TVar as STM
+import           Control.Monad
+import           Control.Monad.Class.MonadFork
+import           Control.Monad.Class.MonadSay
+import           Control.Monad.Class.MonadST
+import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadTimer
+import           Control.Monad.IO.Class
+import           Control.Monad.ST
+import qualified Control.Monad.STM as STM
 import           Data.Bits
-import           Data.Int
-import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BL
+import           Data.Int
 --import           Data.ByteString.Lazy.Char8 (pack)
 import qualified Data.Map.Strict as M
 import           Data.Text (Text, unpack)
@@ -42,24 +41,24 @@ import           Data.Word
 import qualified GHC.Event as GHC (TimeoutKey, getSystemTimerManager,
                      registerTimeout, unregisterTimeout, updateTimeout)
 import           Network.Socket hiding (recv, recvFrom, send, sendTo)
-import           Network.Socket.ByteString.Lazy (sendAll, recv)
+import           Network.Socket.ByteString.Lazy (recv, sendAll)
 import qualified Say as S
 
 import           Ouroboros.Network.Chain (Chain, ChainUpdate, Point)
 import qualified Ouroboros.Network.Chain as Chain
 import qualified Ouroboros.Network.ChainProducerState as CPS
 import qualified Ouroboros.Network.Mux as Mx
-import           Ouroboros.Network.Protocol.ChainSync.Codec.Cbor
-import           Ouroboros.Network.Protocol.ChainSync.Type
 import           Ouroboros.Network.Protocol.ChainSync.Client
-import           Ouroboros.Network.Protocol.ChainSync.Server
+import           Ouroboros.Network.Protocol.ChainSync.Codec.Cbor
 import           Ouroboros.Network.Protocol.ChainSync.Examples
+import           Ouroboros.Network.Protocol.ChainSync.Server
+import           Ouroboros.Network.Protocol.ChainSync.Type
 import           Ouroboros.Network.Serialise
 
+import qualified Codec.CBOR.Encoding as CBOR (Encoding)
 import           Protocol.Channel (Duplex)
 import           Protocol.Codec
 import           Protocol.Driver
-import qualified Codec.CBOR.Encoding as CBOR (Encoding)
 
 import           Text.Printf
 
@@ -77,14 +76,12 @@ instance MonadIO SocketBearer where
     liftIO action =  SocketBearer $ liftIO action
 
 instance MonadST SocketBearer where
-    withLiftST = \f -> f stToSocketBearer
+    withLiftST f = f stToSocketBearer
 
 stToSocketBearer ::  ST RealWorld a -> SocketBearer a
 stToSocketBearer x = SocketBearer $ stToIO x
 
-data SocketCtx = SocketCtx {
-      scSocket :: !Socket
-    }
+newtype SocketCtx = SocketCtx { scSocket :: Socket }
 
 newtype SocketBearerSTM a = SocketBearerSTM {
     runSocketBearerSTM :: STM.STM a
@@ -94,7 +91,7 @@ instance MonadFork SocketBearer where
   fork (SocketBearer io) = SocketBearer (fork io)
 
 instance MonadSay SocketBearer where
-  say x = S.sayString x
+  say = S.sayString
 
 instance MonadTime SocketBearer where
   type Time SocketBearer = Int -- microseconds
@@ -110,7 +107,7 @@ instance MonadTimer SocketBearer where
 
     newTimeout = \usec -> do
         var <- newTVarIO TimeoutPending
-        mgr <- liftIO $ GHC.getSystemTimerManager
+        mgr <- liftIO GHC.getSystemTimerManager
         key <- liftIO $ GHC.registerTimeout mgr usec (STM.atomically (timeoutAction var))
         return (TimeoutSocketbearer var key)
       where
@@ -122,7 +119,7 @@ instance MonadTimer SocketBearer where
                  TimeoutCancelled -> return ()
 
     updateTimeout (TimeoutSocketbearer _var key) usec = do
-      mgr <- liftIO $ GHC.getSystemTimerManager
+      mgr <- liftIO GHC.getSystemTimerManager
       liftIO $ GHC.updateTimeout mgr key usec
 
     cancelTimeout (TimeoutSocketbearer var key) = do
@@ -132,7 +129,7 @@ instance MonadTimer SocketBearer where
                  TimeoutPending   -> writeTVar var TimeoutCancelled
                  TimeoutFired     -> return ()
                  TimeoutCancelled -> return ()
-        mgr <- liftIO $ GHC.getSystemTimerManager
+        mgr <- liftIO GHC.getSystemTimerManager
         liftIO $ GHC.unregisterTimeout mgr key
 
     threadDelay d = liftIO $ threadDelay d
@@ -185,7 +182,7 @@ instance MonadSTM SocketBearer where
 setupMux :: Mx.MiniProtocolDescriptions SocketBearer -> SocketCtx -> SocketBearer ()
 setupMux mpds bearer = do
     jobs <- Mx.muxJobs mpds bearer
-    aids <- liftIO $ mapM spawn $ jobs
+    aids <- liftIO $ mapM spawn jobs
     fork (watcher aids)
 
     return ()
@@ -193,11 +190,10 @@ setupMux mpds bearer = do
     watcher as = do
         (_,r) <- liftIO $ waitAnyCatchCancel as
         case r of
-             Left  e -> say $ "SocketBearer died due to " ++ (show e)
-             Right _ -> do
-                 liftIO $ close (scSocket bearer)
+             Left  e -> say $ "SocketBearer died due to " ++ show e
+             Right _ -> liftIO $ close (scSocket bearer)
 
-    spawn job = async $ runSocketBearer $ job
+    spawn job = async $ runSocketBearer job
 
 instance Mx.MuxBearer SocketBearer where
     type AssociationDetails SocketBearer = AddrInfo
@@ -222,10 +218,9 @@ instance Mx.MuxBearer SocketBearer where
         bind sd (addrAddress addr)
         listen sd 2
         rh <- async (runSocketBearer $ server sd)
-        return $! (sd, rh)
+        return (sd, rh)
       where
-        server sd = do
-            forever $ do
+        server sd = forever $ do
                 (client, _) <- liftIO $ accept sd
                 setupMux mpds $ SocketCtx client
 
@@ -239,7 +234,7 @@ instance Mx.MuxBearer SocketBearer where
 
     write ctx fn = do
         --say "write"
-        ts <- liftIO $ getMonotonicTime
+        ts <- liftIO getMonotonicTime
         let sdu = fn $ Mx.RemoteClockModel $ fromIntegral $ ts .&. 0xffffffff
             buf = Mx.encodeMuxSDU sdu
         --hexDump buf ""
@@ -257,7 +252,7 @@ instance Mx.MuxBearer SocketBearer where
                  --when ((Mx.msLength header) == 2) $ liftIO $ close (scSocket ctx)
                  blob <- liftIO $ recvLen' (scSocket ctx)
                                            (fromIntegral $ Mx.msLength header) []
-                 ts <- liftIO $ getMonotonicTime
+                 ts <- liftIO getMonotonicTime
                  --say $ (scName ctx) ++ " read blob"
                  --hexDump blob ""
                  return (header {Mx.msBlob = blob}, ts)
@@ -289,8 +284,7 @@ runInitiator mps local remote = runSocketBearer $ Mx.initiator mps local remote
 
 hexDump :: BL.ByteString -> String -> SocketBearer ()
 hexDump buf out | BL.empty == buf = say out
-hexDump buf out = do
-    hexDump (BL.tail buf) (out ++ (printf "0x%02x " (BL.head buf)))
+hexDump buf out = hexDump (BL.tail buf) (out ++ printf "0x%02x " (BL.head buf))
 
 demo2 :: forall block .
         (Chain.HasHeader block, Serialise block, Eq block, Show block )
@@ -359,35 +353,33 @@ demo2 chain0 updates = do
         threadDelay 10000000
         say "\nClient WatchDog:\n"
         x <- atomically $ readTVar consumerVar
-        printf $ (Chain.prettyPrintChain "\n" show x) :: IO ()
+        printf (Chain.prettyPrintChain "\n" show x) :: IO ()
         printf "\n"
 
     checkTip target consumerVar = atomically $ do
           chain <- readTVar consumerVar
           return (Chain.headPoint chain == target)
 
-    consumerClient :: Point block -> (TVar SocketBearer (Chain block)) -> Client block SocketBearer ()
-    consumerClient target consChain = do
+    consumerClient :: Point block -> TVar SocketBearer (Chain block) -> Client block SocketBearer ()
+    consumerClient target consChain =
       Client
-        { rollforward = \_ -> checkTip target consChain >>= \b -> case b of
-            True -> do
-                pure $ Left ()
-            False -> pure $ Right $ consumerClient target consChain
-        , rollbackward = \_ _ -> checkTip target consChain >>= \b -> case b of
-            True -> do
-                pure $ Left ()
-            False -> pure $ Right $ consumerClient target consChain
+        { rollforward = \_ -> checkTip target consChain >>= \b ->
+            if b then pure $ Left ()
+                 else pure $ Right $ consumerClient target consChain
+        , rollbackward = \_ _ -> checkTip target consChain >>= \b ->
+            if b then pure $ Left ()
+                 else pure $ Right $ consumerClient target consChain
         , points = \_ -> pure $ consumerClient target consChain
         }
 
     throwOnUnexpected :: String -> Result Text t -> IO t
     throwOnUnexpected str (Unexpected txt) = error $ str ++ " " ++ unpack txt
-    throwOnUnexpected _   (Normal t) = pure t
+    throwOnUnexpected _   (Normal t)       = pure t
 
     codec :: Codec SocketBearer Text CBOR.Encoding BS.ByteString (ChainSyncMessage block (Point block)) 'StIdle
     codec = hoistCodec stToSocketBearer codecChainSync
 
-    consumerInit :: TMVar SocketBearer Bool -> Point block -> (TVar IO (Chain block)) -> Duplex SocketBearer SocketBearer CBOR.Encoding BS.ByteString -> SocketBearer ()
+    consumerInit :: TMVar SocketBearer Bool -> Point block -> TVar IO (Chain block) -> Duplex SocketBearer SocketBearer CBOR.Encoding BS.ByteString -> SocketBearer ()
     consumerInit done target consChain channel = do
        let consumerPeer = chainSyncClientPeer (chainSyncClientExample consChain
                                                (consumerClient target consChain))
@@ -399,8 +391,8 @@ demo2 chain0 updates = do
 
        return ()
 
-    dummyCallback _ = forever $ do
-         liftIO $ threadDelay 1000000
+    dummyCallback _ = forever $
+        liftIO $ threadDelay 1000000
 
     producerRsp ::  TVar SocketBearer (CPS.ChainProducerState block) -> Duplex SocketBearer SocketBearer CBOR.Encoding BS.ByteString -> SocketBearer ()
     producerRsp prodChain channel = do
