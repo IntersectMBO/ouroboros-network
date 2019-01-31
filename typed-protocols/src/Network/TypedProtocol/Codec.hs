@@ -75,15 +75,15 @@ data DecodeStep bytes failure m a =
     -- | The decoder has consumed the available input and needs more
     -- to continue. Provide @'Just'@ if more input is available and
     -- @'Nothing'@ otherwise, and you will get a new @'DecodeStep'@.
-    Partial (Maybe bytes -> m (DecodeStep bytes failure m a))
+    DecodePartial (Maybe bytes -> m (DecodeStep bytes failure m a))
 
     -- | The decoder has successfully finished. This provides the decoded
     -- result value plus any unused input.
-  | Done a (Maybe bytes)
+  | DecodeDone a (Maybe bytes)
 
     -- | The decoder ran into an error. The decoder either used
     -- @'fail'@ or was not provided enough input.
-  | Fail failure
+  | DecodeFail failure
 
 transformDecodeStep
   :: Functor m
@@ -91,9 +91,10 @@ transformDecodeStep
   -> (bytes' -> bytes)
   -> DecodeStep bytes  failure m a
   -> DecodeStep bytes' failure m a
-transformDecodeStep to from (Partial fn) = Partial $ fmap (transformDecodeStep to from) . fn . fmap from
-transformDecodeStep to _ (Done a bs) = Done a (fmap to bs)
-transformDecodeStep _ _ (Fail failure) = Fail failure
+transformDecodeStep to from (DecodePartial fn)   =
+  DecodePartial $ fmap (transformDecodeStep to from) . fn . fmap from
+transformDecodeStep to _    (DecodeDone a bs)    = DecodeDone a (fmap to bs)
+transformDecodeStep _  _    (DecodeFail failure) = DecodeFail failure
 
 data SomeMessage (st :: ps) where
      SomeMessage :: Message ps st st' -> SomeMessage st
@@ -141,7 +142,7 @@ convertCborDecoder cborDecode liftST =
     go <$> liftST (CBOR.deserialiseIncremental cborDecode)
   where
     go (CBOR.Done  trailing _ x)
-      | BS.null trailing                  = Done x Nothing
-      | otherwise                         = Done x (Just trailing)
-    go (CBOR.Fail _trailing _off failure) = Fail failure
-    go (CBOR.Partial k)                   = Partial (fmap go . liftST . k)
+      | BS.null trailing       = DecodeDone x Nothing
+      | otherwise              = DecodeDone x (Just trailing)
+    go (CBOR.Fail _ _ failure) = DecodeFail failure
+    go (CBOR.Partial k)        = DecodePartial (fmap go . liftST . k)

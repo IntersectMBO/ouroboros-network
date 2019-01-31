@@ -34,11 +34,9 @@ module Network.TypedProtocol.Driver where
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Pipelined
 import Network.TypedProtocol.Channel
+import Network.TypedProtocol.Codec
 
-import qualified Network.TypedProtocol.Codec as Codec
-import           Network.TypedProtocol.Codec hiding (Done)
-
-import           Control.Monad.Class.MonadSTM
+import Control.Monad.Class.MonadSTM
 
 
 
@@ -71,15 +69,15 @@ runPeer Codec{encode, decode} channel@Channel{send} = go Nothing
 runDecoder :: Monad m
            => Channel m bytes
            -> Maybe bytes
-           -> Codec.DecodeStep bytes failure m a
+           -> DecodeStep bytes failure m a
            -> m (Either failure (a, Maybe bytes))
 
 runDecoder Channel{recv} = go
   where
-    go _ (Codec.Done x trailing) = return (Right (x, trailing))
-    go _ (Codec.Fail failure)    = return (Left failure)
-    go Nothing         (Codec.Partial k) = recv >>= k        >>= go Nothing
-    go (Just trailing) (Codec.Partial k) = k (Just trailing) >>= go Nothing
+    go _ (DecodeDone x trailing) = return (Right (x, trailing))
+    go _ (DecodeFail failure)    = return (Left failure)
+    go Nothing         (DecodePartial k) = recv >>= k        >>= go Nothing
+    go (Just trailing) (DecodePartial k) = k (Just trailing) >>= go Nothing
 
 
 runPipelinedPeer
