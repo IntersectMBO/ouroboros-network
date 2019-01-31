@@ -12,10 +12,10 @@ module Ouroboros.Consensus.Demo (
     -- * Abstract over protocols
     DemoProtocol(..)
   , DemoBFT
+  , DemoPermBFT
   , DemoPraos
   , DemoLeaderSchedule
   , Block
-  , NumCoreNodes(..)
   , ProtocolInfo(..)
   , protocolInfo
   , DemoProtocolConstraints
@@ -43,26 +43,31 @@ import           Ouroboros.Consensus.Crypto.KES
 import           Ouroboros.Consensus.Crypto.VRF
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Mock
-import           Ouroboros.Consensus.Node (CoreNodeId (..), NodeId (..))
+import           Ouroboros.Consensus.Node (CoreNodeId (..), NodeId (..), NumCoreNodes(..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.LeaderSchedule
+import           Ouroboros.Consensus.Protocol.PermBFT
 import           Ouroboros.Consensus.Protocol.Praos
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.Condense
+
+import           Chain.Blockchain (T(..))
 
 {-------------------------------------------------------------------------------
   Abstract over the various protocols
 -------------------------------------------------------------------------------}
 
 type DemoBFT            = Bft BftMockCrypto
+type DemoPermBFT        = PermBft PermBftMockCrypto
 type DemoPraos          = ExtNodeConfig AddrDist (Praos PraosMockCrypto)
 type DemoLeaderSchedule = WithLeaderSchedule (Praos PraosMockCrypto)
 
 -- | Consensus protocol to use
 data DemoProtocol p where
   DemoBFT            :: DemoProtocol DemoBFT
+  DemoPermBFT        :: DemoProtocol DemoPermBFT
   DemoPraos          :: PraosParams -> DemoProtocol DemoPraos
   DemoLeaderSchedule :: LeaderSchedule -> PraosParams -> DemoProtocol DemoLeaderSchedule
 
@@ -88,10 +93,9 @@ type DemoProtocolConstraints p = (
 
 demoProtocolConstraints :: DemoProtocol p -> Dict (DemoProtocolConstraints p)
 demoProtocolConstraints DemoBFT                  = Dict
+demoProtocolConstraints DemoPermBFT              = Dict
 demoProtocolConstraints (DemoPraos _)            = Dict
 demoProtocolConstraints (DemoLeaderSchedule _ _) = Dict
-
-newtype NumCoreNodes = NumCoreNodes Int
 
 -- | Info needed to run the selected protocol
 protocolInfo :: DemoProtocol p -> NumCoreNodes -> CoreNodeId -> ProtocolInfo p
@@ -103,7 +107,7 @@ protocolInfo DemoBFT (NumCoreNodes numCoreNodes) (CoreNodeId nid) =
           , bftNumNodes = fromIntegral numCoreNodes
           , bftVerKeys  = Map.fromList [
                 (CoreId n, VerKeyMockDSIGN n)
-              | n <- [0 .. numCoreNodes - 1]
+              | n <- fromIntegral <$> [0 .. numCoreNodes - 1]
               ]
           }
       , pInfoInitChain  = Genesis
@@ -112,7 +116,28 @@ protocolInfo DemoBFT (NumCoreNodes numCoreNodes) (CoreNodeId nid) =
       }
   where
     addrDist :: AddrDist
-    addrDist = mkAddrDist numCoreNodes
+    addrDist = mkAddrDist $ fromIntegral numCoreNodes
+protocolInfo DemoPermBFT numCoreNodes (CoreNodeId nid) =
+    ProtocolInfo {
+        pInfoConfig = PermBftNodeConfig {
+            permBftNodeId       = CoreId nid
+          , permBftSignKey      = SignKeyMockDSIGN nid
+          , permBftNumCoreNodes = numCoreNodes
+          , permBftVerKeys      = Map.fromList [
+                (CoreId n, VerKeyMockDSIGN n)
+              | n <- [0 .. (getNumCoreNodes numCoreNodes) - 1]
+              ]
+          , permBftProtParams   = undefined
+          , permBftKSize        = undefined
+          , permBftTRatio       = MkT 0.22
+          }
+      , pInfoInitChain  = Genesis
+      , pInfoInitLedger = ExtLedgerState (genesisLedgerState addrDist) ()
+      , pInfoInitState  = ()
+      }
+  where
+    addrDist :: AddrDist
+    addrDist = mkAddrDist $ getNumCoreNodes numCoreNodes
 protocolInfo (DemoPraos params) (NumCoreNodes numCoreNodes) (CoreNodeId nid) =
     ProtocolInfo {
         pInfoConfig = EncNodeConfig {
@@ -139,11 +164,11 @@ protocolInfo (DemoPraos params) (NumCoreNodes numCoreNodes) (CoreNodeId nid) =
       }
   where
     addrDist :: AddrDist
-    addrDist = mkAddrDist numCoreNodes
+    addrDist = mkAddrDist $ fromIntegral numCoreNodes
 
     verKeys :: IntMap (VerKeyKES MockKES, VerKeyVRF MockVRF)
     verKeys = IntMap.fromList [ (nd, (VerKeyMockKES nd, VerKeyMockVRF nd))
-                              | nd <- [0 .. numCoreNodes - 1]
+                              | nd <- fromIntegral <$> [0 .. numCoreNodes - 1]
                               ]
 protocolInfo (DemoLeaderSchedule schedule params)
              (NumCoreNodes numCoreNodes)

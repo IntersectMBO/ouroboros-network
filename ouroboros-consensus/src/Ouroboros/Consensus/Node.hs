@@ -12,6 +12,8 @@ module Ouroboros.Consensus.Node (
     NodeId(..)
   , CoreNodeId(..)
   , fromCoreNodeId
+    -- * Core node count
+  , NumCoreNodes(..)
     -- * Blockchain time
   , BlockchainTime(..)
   , onSlot
@@ -82,6 +84,9 @@ newtype CoreNodeId = CoreNodeId Int
 
 fromCoreNodeId :: CoreNodeId -> NodeId
 fromCoreNodeId (CoreNodeId n) = CoreId n
+
+-- | The number of core nodes
+newtype NumCoreNodes = NumCoreNodes { getNumCoreNodes :: Word }
 
 {-------------------------------------------------------------------------------
   "Blockchain time"

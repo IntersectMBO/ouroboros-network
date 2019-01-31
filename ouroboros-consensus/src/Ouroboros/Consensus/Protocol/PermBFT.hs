@@ -7,9 +7,18 @@
 {-# LANGUAGE TypeFamilies               #-}
 
 module Ouroboros.Consensus.Protocol.PermBFT (
+    PermBft
+    -- * Classes
+  , PermBftCrypto(..)
+  , PermBftStandardCrypto
+  , PermBftMockCrypto
+    -- * Type instances
+  , NodeConfig(..)
+  , Payload(..)
   ) where
 
 import           Control.Monad.Trans.Except (except)
+import           Data.Map.Strict (Map)
 import           GHC.Generics (Generic)
 import           Ouroboros.Consensus.Protocol.Abstract
 
@@ -18,6 +27,7 @@ import           Ouroboros.Network.Serialise
 import           Ouroboros.Consensus.Crypto.DSIGN.Class
 import           Ouroboros.Consensus.Crypto.DSIGN.Ed448 (Ed448DSIGN)
 import           Ouroboros.Consensus.Crypto.DSIGN.Mock (MockDSIGN)
+import           Ouroboros.Consensus.Node (NodeId, NumCoreNodes(..))
 import           Ouroboros.Consensus.Util.Condense
 
 import           Chain.Blockchain (BlockchainEnv(..), T)
@@ -38,10 +48,13 @@ instance PermBftCrypto c => OuroborosTag (PermBft c) where
     deriving (Generic)
 
   data NodeConfig (PermBft c) = PermBftNodeConfig
-    { permBftSignKey :: SignKeyDSIGN (PermBftDSIGN c)
-    , protParams     :: ProtParams
-    , kSize          :: SlotCount
-    , tRatio         :: T
+    { permBftNodeId       :: NodeId
+    , permBftSignKey      :: SignKeyDSIGN (PermBftDSIGN c)
+    , permBftNumCoreNodes :: NumCoreNodes
+    , permBftVerKeys      :: Map NodeId (VerKeyDSIGN (PermBftDSIGN c))
+    , permBftProtParams   :: ProtParams
+    , permBftKSize        :: SlotCount
+    , permBftTRatio       :: T
     }
 
   type ValidationErr  (PermBft c) = [PredicateFailure BC]
@@ -65,10 +78,10 @@ instance PermBftCrypto c => OuroborosTag (PermBft c) where
    where
     bcEnv :: BlockchainEnv
     bcEnv = MkBlockChainEnv
-      { bcEnvPp    = protParams
+      { bcEnvPp    = permBftProtParams
       , bcEnvDIEnv = lv
-      , bcEnvK     = kSize
-      , bcEnvT     = tRatio
+      , bcEnvK     = permBftKSize
+      , bcEnvT     = permBftTRatio
       }
 
 
