@@ -15,22 +15,22 @@ codecPingPong
 codecPingPong =
     Codec{encode, decode}
   where
-   encode :: WeHaveAgency pk st
-          -> Message PingPong st st'
-          -> String
-   encode (ClientAgency TokIdle) MsgPing = "ping\n"
-   encode (ClientAgency TokIdle) MsgDone = "done\n"
-   encode (ServerAgency TokBusy) MsgPong = "pong\n"
+    encode :: WeHaveAgency pk st
+           -> Message PingPong st st'
+           -> String
+    encode (ClientAgency TokIdle) MsgPing = "ping\n"
+    encode (ClientAgency TokIdle) MsgDone = "done\n"
+    encode (ServerAgency TokBusy) MsgPong = "pong\n"
 
-   decode :: TheyHaveAgency pk st
-          -> m (DecodeStep String String m (SomeMessage st))
-   decode stok =
-     decodeTerminatedFrame '\n' $ \str trailing ->
-       case (stok, str) of
-         (ServerAgency TokBusy, "pong\n") -> Done (SomeMessage MsgPong) trailing
-         (ClientAgency TokIdle, "ping\n") -> Done (SomeMessage MsgPing) trailing
-         (ClientAgency TokIdle, "done\n") -> Done (SomeMessage MsgDone) trailing
-         _                                -> Fail ("unexpected message: " ++ str)
+    decode :: TheyHaveAgency pk st
+           -> m (DecodeStep String String m (SomeMessage st))
+    decode stok =
+      decodeTerminatedFrame '\n' $ \str trailing ->
+        case (stok, str) of
+          (ServerAgency TokBusy, "pong\n") -> DecodeDone (SomeMessage MsgPong) trailing
+          (ClientAgency TokIdle, "ping\n") -> DecodeDone (SomeMessage MsgPing) trailing
+          (ClientAgency TokIdle, "done\n") -> DecodeDone (SomeMessage MsgDone) trailing
+          _                                -> DecodeFail ("unexpected message: " ++ str)
 
 
 decodeFrameOfLength :: forall m a.
@@ -42,9 +42,9 @@ decodeFrameOfLength n k = go [] n
   where
     go :: [String] -> Int -> m (DecodeStep String String m a)
     go chunks required =
-      return $ Partial $ \mchunk ->
+      return $ DecodePartial $ \mchunk ->
         case mchunk of
-          Nothing -> return $ Fail "not enough input"
+          Nothing -> return $ DecodeFail "not enough input"
           Just chunk
             | length chunk >= required
            -> let (c,c') = splitAt required chunk in
@@ -71,9 +71,9 @@ decodeTerminatedFrame terminator k = go []
   where
     go :: [String] -> m (DecodeStep String String m a)
     go chunks =
-      return $ Partial $ \mchunk ->
+      return $ DecodePartial $ \mchunk ->
         case mchunk of
-          Nothing    -> return $ Fail "not enough input"
+          Nothing    -> return $ DecodeFail "not enough input"
           Just chunk ->
             case break (==terminator) chunk of
               (c, _:c') -> return $ k (concat (reverse (c:chunks)))

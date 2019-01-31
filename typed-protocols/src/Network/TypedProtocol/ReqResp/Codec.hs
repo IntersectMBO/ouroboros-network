@@ -18,26 +18,26 @@ codecReqResp
 codecReqResp =
     Codec{encode, decode}
   where
-   encode :: WeHaveAgency pk st
-          -> Message (ReqResp req resp) st st'
-          -> String
-   encode (ClientAgency TokIdle) msg = show msg
-   encode (ServerAgency TokBusy) msg = show msg
+    encode :: WeHaveAgency pk st
+           -> Message (ReqResp req resp) st st'
+           -> String
+    encode (ClientAgency TokIdle) msg = show msg
+    encode (ServerAgency TokBusy) msg = show msg
 
-   decode :: TheyHaveAgency pk st
-          -> m (DecodeStep String String m (SomeMessage st))
-   decode stok =
-     decodeTerminatedFrame '\n' $ \str trailing ->
-       case (stok, break (==' ') str) of
-         (ClientAgency TokIdle, ("Req", str'))
-            | Just resp <- readMaybe str'
-           -> Done (SomeMessage (MsgReq resp)) trailing
-         (ClientAgency TokIdle, ("Done", ""))
-           -> Done (SomeMessage MsgDone) trailing
-         (ServerAgency TokBusy, ("Resp", str'))
-            | Just resp <- readMaybe str'
-           -> Done (SomeMessage (MsgResp resp)) trailing
-         _ -> Fail ("unexpected message: " ++ str)
+    decode :: TheyHaveAgency pk st
+           -> m (DecodeStep String String m (SomeMessage st))
+    decode stok =
+      decodeTerminatedFrame '\n' $ \str trailing ->
+        case (stok, break (==' ') str) of
+          (ClientAgency TokIdle, ("Req", str'))
+             | Just resp <- readMaybe str'
+            -> DecodeDone (SomeMessage (MsgReq resp)) trailing
+          (ClientAgency TokIdle, ("Done", ""))
+            -> DecodeDone (SomeMessage MsgDone) trailing
+          (ServerAgency TokBusy, ("Resp", str'))
+             | Just resp <- readMaybe str'
+            -> DecodeDone (SomeMessage (MsgResp resp)) trailing
+          _ -> DecodeFail ("unexpected message: " ++ str)
 
 
 decodeTerminatedFrame :: forall m a.
@@ -49,9 +49,9 @@ decodeTerminatedFrame terminator k = go []
   where
     go :: [String] -> m (DecodeStep String String m a)
     go chunks =
-      return $ Partial $ \mchunk ->
+      return $ DecodePartial $ \mchunk ->
         case mchunk of
-          Nothing    -> return $ Fail "not enough input"
+          Nothing    -> return $ DecodeFail "not enough input"
           Just chunk ->
             case break (==terminator) chunk of
               (c, _:c') -> return $ k (concat (reverse (c:chunks)))
