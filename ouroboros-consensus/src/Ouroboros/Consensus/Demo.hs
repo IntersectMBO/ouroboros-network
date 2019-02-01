@@ -43,6 +43,7 @@ import           Ouroboros.Consensus.Crypto.KES
 import           Ouroboros.Consensus.Crypto.VRF
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Mock
+import           Ouroboros.Consensus.Ledger.PermBFT
 import           Ouroboros.Consensus.Node (CoreNodeId (..), NodeId (..), NumCoreNodes(..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
