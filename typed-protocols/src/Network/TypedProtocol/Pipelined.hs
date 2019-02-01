@@ -3,7 +3,8 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeInType #-}
+
 
 module Network.TypedProtocol.Pipelined where
 
