@@ -136,7 +136,7 @@ import Network.TypedProtocol.Driver
 --
 -- In the example in the diagram it stops after three requests, but such a
 -- pattern can go on indefinately with messages going in both directions,
--- which can saturate the saturate the available bandwidth.
+-- which can saturate the available bandwidth.
 --
 -- For many (but not all) protocols that can be defined in the @typed-protocol@
 -- framework it is possible to take the protocol, without changing the
