@@ -29,25 +29,19 @@ import           Control.Monad.Class.MonadSTM
 -- | One end of a duplex channel. It is a reliable, ordered channel of some
 -- medium. The medium does not imply message boundaries, it can be just bytes.
 --
--- Note that 'send' and 'recv' produce a new 'Channel m a' so that it's
--- possible to have pure channels without using a state monad. Correspondingly,
--- you cannot use /both/ 'send' and 'recv' on a single channel value: if you
--- 'send', you can 'recv' from the 'Channel' that it returns, /not/ the
--- original 'Channel'.
---
 data Channel m a = Channel {
 
        -- | Write output to the channel.
        --
-       -- It may raise exceptions (as appropriate for the monad and kind of channel).
+       -- It may raise exceptions (as appropriate for the monad and kind of
+       -- channel).
        --
        send :: a -> m (),
 
        -- | Read some input from the channel, or @Nothing@ to indicate EOF.
        --
-       -- Note that having received EOF it is still possible to send, which
-       -- is why the @Maybe@ only covers the input and not the tail of the
-       -- channel. The EOF condition is however monotonic.
+       -- Note that having received EOF it is still possible to send.
+       -- The EOF condition is however monotonic.
        --
        -- It may raise exceptions (as appropriate for the monad and kind of
        -- channel).
