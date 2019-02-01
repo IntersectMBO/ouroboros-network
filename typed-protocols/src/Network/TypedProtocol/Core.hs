@@ -312,7 +312,9 @@ data Peer ps (pk :: PeerKind) (st :: ps) m a where
   --
   -- Example:
   --
-  -- > Done TokDone result
+  -- > Yield (ClientAgency TokIdle)
+  -- >        MsgDone
+  -- >       (Done TokDone result)
   --
   Done   :: !(NobodyHasAgency st)
          -> a
