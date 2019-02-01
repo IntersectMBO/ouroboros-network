@@ -54,6 +54,10 @@ import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.Condense
 
 import           Chain.Blockchain (T(..))
+import           Chain.GenesisBlock (genesisBlock)
+import           Data.Queue (Queue, newQueue)
+import           Ledger.Core (VKey(VKey), Owner(Owner), VKeyGenesis(VKeyGenesis))
+import           Types (BlockIx)
 
 {-------------------------------------------------------------------------------
   Abstract over the various protocols
@@ -125,19 +129,31 @@ protocolInfo DemoPermBFT numCoreNodes (CoreNodeId nid) =
           , permBftNumCoreNodes = numCoreNodes
           , permBftVerKeys      = Map.fromList [
                 (CoreId n, VerKeyMockDSIGN n)
-              | n <- [0 .. (getNumCoreNodes numCoreNodes) - 1]
+              | n <- fromIntegral <$> [0 .. (getNumCoreNodes numCoreNodes) - 1]
               ]
           , permBftProtParams   = undefined
           , permBftKSize        = undefined
           , permBftTRatio       = MkT 0.22
           }
       , pInfoInitChain  = Genesis
-      , pInfoInitLedger = ExtLedgerState (genesisLedgerState addrDist) ()
+      , pInfoInitLedger =
+          ExtLedgerState
+            (genesisLedgerState addrDist)
+            ( initKeyToQMap
+            , genesisBlock
+            , undefined
+            )
       , pInfoInitState  = ()
       }
   where
     addrDist :: AddrDist
-    addrDist = mkAddrDist $ getNumCoreNodes numCoreNodes
+    addrDist = mkAddrDist $ fromIntegral $ getNumCoreNodes numCoreNodes
+    initKeyToQMap :: Map.Map VKeyGenesis (Queue BlockIx)
+    initKeyToQMap = Map.fromList [
+        (key, (newQueue :: Queue BlockIx))
+      | key <- (VKeyGenesis . VKey . Owner . fromIntegral) <$>
+                [1 .. (getNumCoreNodes numCoreNodes)]
+      ]
 protocolInfo (DemoPraos params) (NumCoreNodes numCoreNodes) (CoreNodeId nid) =
     ProtocolInfo {
         pInfoConfig = EncNodeConfig {
@@ -194,11 +210,11 @@ protocolInfo (DemoLeaderSchedule schedule params)
     , pInfoInitState  = ()
     }
   where
-    addrDist = mkAddrDist numCoreNodes
+    addrDist = mkAddrDist $ fromIntegral numCoreNodes
 
     verKeys :: IntMap (VerKeyKES MockKES, VerKeyVRF MockVRF)
     verKeys = IntMap.fromList [ (nd, (VerKeyMockKES nd, VerKeyMockVRF nd))
-                              | nd <- [0 .. numCoreNodes - 1]
+                              | nd <- fromIntegral <$> [0 .. numCoreNodes - 1]
                               ]
 
 {-
@@ -223,7 +239,8 @@ defaultDemoPraosParams = PraosParams {
 
 enumCoreNodes :: NumCoreNodes -> [CoreNodeId]
 enumCoreNodes (NumCoreNodes numNodes) = [ CoreNodeId n
-                                        | n <- [0 .. numNodes - 1]
+                                        | n <- fromIntegral <$>
+                                            [0 .. numNodes - 1]
                                         ]
 
 {-------------------------------------------------------------------------------
