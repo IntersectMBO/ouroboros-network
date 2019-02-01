@@ -64,6 +64,7 @@ library
                        Ouroboros.Network.Protocol.BlockFetch.Client
                        Ouroboros.Network.Protocol.BlockFetch.Server
                        Ouroboros.Network.Protocol.BlockFetch.Direct
+                       Ouroboros.Network.Protocol.BlockFetch.Codec
   default-language:    Haskell2010
   other-extensions:    BangPatterns,
                        DataKinds,
