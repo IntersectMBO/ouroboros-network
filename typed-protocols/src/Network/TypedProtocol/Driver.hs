@@ -6,29 +6,26 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE NamedFieldPuns #-}
 
---TODO: just temporary while hacking:
+-- | Drivers for running 'Peer's with a 'Codec' and a 'Channel'.
+--
+module Network.TypedProtocol.Driver (
 
--- |
--- = Driving a Peer by was of a Duplex and Channel
---
--- A 'Duplex' allows for sending and receiving pieces of some concrete type.
--- In applications, this will probably be some sort of socket. In order to
--- use it to drive a typed protocol application (represented by a 'Peer'),
--- there must be a way to encode typed transitions of that protocol to the
--- concrete type, and to parse pieces of that concrete type incrementally into
--- a typed transition. This is defined by a 'Codec'.
---
--- A 'Codec' and a 'Duplex' alone is not enough to do encoding and decoding,
--- because the 'Codec' does not make any /decisions/ about the way in which
--- the protocol application progresses. It defines encodings for /all/ possible
--- transitions from a state, and an inverse for that encoder. It's the 'Peer'
--- term which decides which transitions to encode, thereby leading the 'Codec'
--- through a path in the protocol type.
---
--- Driving a 'Peer' in this way may give rise to an exception, given by
--- @'Unexpected' :: 'Result' t@.
+  -- * Introduction
+  -- $intro
 
-module Network.TypedProtocol.Driver where
+  -- ** Exception handling
+  -- | TODO: This remains to be clarified.
+
+  -- * Normal peers
+  runPeer,
+
+  -- * Pipelined peers
+  runPipelinedPeer,
+
+  -- * Driver utilities
+  -- | This may be useful if you want to write your own driver.
+  runDecoder,
+  ) where
 
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Pipelined
@@ -38,7 +35,36 @@ import Network.TypedProtocol.Codec
 import Control.Monad.Class.MonadSTM
 
 
+-- $intro
+--
+-- A 'Peer' is a particular implementation of an agent that engages in a
+-- typed protocol. To actualy run one we need a source and sink for the typed
+-- protocol messages. These are provided by a 'Channel' and a 'Codec'. The
+-- 'Channel' represents one end of an untyped duplex message transport, and
+-- the 'Codec' handles conversion between the typed protocol messages and
+-- the untyped channel.
+--
+-- So given the 'Peer' and a compatible 'Codec' and 'Channel' we can run the
+-- peer in some appropriate monad. The peer and codec have to agree on
+-- the same protocol and role in that protocol. The codec and channel have to
+-- agree on the same untyped medium, e.g. text or bytes. All three have to
+-- agree on the same monad in which they will run.
+--
+-- This module provides drivers for normal and pipelined peers. There is
+-- very little policy involved here so typically it should be possible to
+-- use these drivers, and customise things by adjusting the peer, or codec
+-- or channel.
+--
+-- It is of course possible to write custom drivers and the code for these ones
+-- may provide a useful starting point. The 'runDecoder' function may be a
+-- helpful utility for use in custom drives.
+--
 
+
+-- | Run a peer with the given channel via the given codec.
+--
+-- This runs the peer to completion (if the protocol allows for termination).
+--
 runPeer
   :: forall ps (st :: ps) pk failure bytes m a .
      Monad m
@@ -65,6 +91,9 @@ runPeer Codec{encode, decode} channel@Channel{send} = go Nothing
         Left failure            -> error "TODO: proper exceptions for runPeer"
 
 
+-- | Run a codec incremental decoder 'DecodeStep' against a channel. It also
+-- takes any extra input data and returns any unused trailing data.
+--
 runDecoder :: Monad m
            => Channel m bytes
            -> Maybe bytes
@@ -79,6 +108,13 @@ runDecoder Channel{recv} = go
     go (Just trailing) (DecodePartial k) = k (Just trailing) >>= go Nothing
 
 
+-- | Run a pipelined peer with the given channel via the given codec.
+--
+-- This runs the peer to completion (if the protocol allows for termination).
+--
+-- Unlike normal peers, running pipelined peers rely on concurrency, hence the
+-- 'MonadSTM' constraint.
+--
 runPipelinedPeer
   :: forall ps (st :: ps) pk failure bytes m a.
      MonadSTM m
