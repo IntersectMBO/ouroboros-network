@@ -8,29 +8,139 @@
 {-# LANGUAGE BangPatterns #-}
 
 
--- | 
+-- This is already implied by the -Wall in the .cabal file, but lets just be
+-- completely explicit about it too, since we rely on the completeness
+-- checking in the cases below for the completeness of our proofs.
+{-# OPTIONS_GHC -Wincomplete-patterns #-}
+
+-- | Proofs about the typed protocol framework.
 --
-module Network.TypedProtocol.Proofs where
+-- It also provides helpful testing utilities.
+--
+module Network.TypedProtocol.Proofs (
+  -- * About these proofs
+  -- $about
+  AgencyProofs(..),
+
+  -- * Connect proof
+  connect,
+  TerminalStates(..),
+
+  -- * Pipelining proofs
+  -- | Additional proofs specific to the pipelining features
+  connectPipelined,
+  forgetPipelined,
+  ) where
 
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Pipelined
 import Data.Void (Void, absurd)
 
+-- $about
+--
+-- Typed languages such as Haskell can embed proofs. In total languages this
+-- is straightforward: a value inhabiting a type is a proof of the property
+-- corresponding to the type.
+--
+-- In languages like Haskell that have ⊥ as a value of every type, things
+-- are slightly more complicated. We have to demonstrate that the value that
+-- inhabits the type of interest is not ⊥ which we can do by evaluation.
+--
+-- This idea crops up frequently in advanced type level programming in Haskell.
+-- For example @Refl@ proofs that two types are equal have to have a runtime
+-- representation that is evaluated to demonstrate it is not ⊥ before it
+-- can be relied upon.
+--
+-- The proofs here are about the nature of typed protocols in this framework.
+-- The 'connect' and 'connectPipelined' proofs rely on a few lemmas about
+-- the individual protocol. See 'AgencyProofs'.
 
+
+-- | The 'connect' and 'connectPipelined' proofs rely on lemmas about the
+-- protocol. Specifically they rely on the property that each protocol state
+-- is labelled with the agency of one peer or the other, or neither, but never
+-- both. Or to put it another way, the protocol states should be partitioned
+-- into those with agency for one peer, or the other or neither.
+--
+-- The way the labelling is encoded does not automatically enforce this
+-- property. It is technically possible to set up the labelling for a protocol
+-- so that one state is labelled as having both peers with agency, or declaring
+-- simultaneously that one peer has agency and that neither peer has agency
+-- in a particular state.
+--
+-- So the overall proofs rely on lemmas that say that the labelling has been
+-- done correctly. This type bundles up those three lemmas.
+--
+-- Specifically proofs that it is impossible for a protocol state to have:
+--
+-- * client having agency and server having agency
+-- * client having agency and nobody having agency
+-- * server having agency and nobody having agency
+--
+-- These lemmas are structured as proofs by contradiction, e.g. stating
+-- \"if the client and the server have agency for this state then it leads to
+-- contradiction\". Contradiction is represented as the 'Void' type that has
+-- no values except ⊥.
+--
+-- For example for the ping\/pong protocol, it has three states, and if we set
+-- up the labelling correctly we have:
+--
+-- > data PingPong where
+-- >   StIdle :: PingPong
+-- >   StBusy :: PingPong
+-- >   StDone :: PingPong
+-- >
+-- > data ClientHasAgency st where
+-- >   TokIdle :: ClientHasAgency StIdle
+-- >
+-- > data ServerHasAgency st where
+-- >   TokBusy :: ServerHasAgency StBusy
+-- >
+-- > data NobodyHasAgency st where
+-- >   TokDone :: NobodyHasAgency StDone
+--
+-- So now we can prove that if the client has agency for a state then there
+-- are no cases in which the server has agency.
+--
+-- > proofByContradiction_ClientAndServerHaveAgency TokIdle tok =
+-- >   case tok of {}
+--
+-- For this protocol there is only one state in which the client has agency,
+-- the idle state. By pattern matching on the state token for the server
+-- agency we can list all the cases in which the server also has agency for
+-- the idle state. There are of course none of these so we give the empty
+-- set of patterns. GHC can check that we are indeed correct about this.
+-- This also requires the @EmptyCase@ language extension.
+--
+-- To get this completeness checking it is important to compile modules
+-- containing these lemmas with @-Wincomplete-patterns@, which is implied by
+-- @-Wall@.
+--
+-- All three lemmas follow the same pattern.
+--
 data AgencyProofs ps = AgencyProofs {
 
+       -- | Lemma that if the client has agency for a state, there are no
+       -- cases in which the server has agency for the same state.
+       --
        proofByContradiction_ClientAndServerHaveAgency
          :: forall (st :: ps).
             ClientHasAgency st
          -> ServerHasAgency st
          -> Void,
 
+       -- | Lemma that if the nobody has agency for a state, there are no
+       -- cases in which the client has agency for the same state.
+       --
        proofByContradiction_NobodyAndClientHaveAgency
          :: forall (st :: ps).
             NobodyHasAgency st
          -> ClientHasAgency st
          -> Void,
 
+       -- | Lemma that if the nobody has agency for a state, there are no
+       -- cases in which the server has agency for the same state.
+       --
        proofByContradiction_NobodyAndServerHaveAgency
          :: forall (st :: ps).
             NobodyHasAgency st
@@ -51,7 +161,7 @@ data AgencyProofs ps = AgencyProofs {
 -- with synchronous communication rather than requiring buffered communication.
 --
 -- * It is useful for testing peer implementations against each other in a
--- minimalistic setting. The typed framework guarantees
+-- minimalistic setting.
 --
 connect :: forall ps (st :: ps) m a b.
            Monad m
