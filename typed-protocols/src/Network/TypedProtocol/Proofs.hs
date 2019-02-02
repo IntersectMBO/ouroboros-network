@@ -169,18 +169,18 @@ connect :: forall ps (st :: ps) m a b.
         => AgencyProofs ps
         -> Peer ps AsClient st m a
         -> Peer ps AsServer st m b
-        -> m (a, b)
+        -> m (a, b, TerminalStates ps)
 connect AgencyProofs{..} = go
   where
     go :: forall (st' :: ps).
           Peer ps AsClient st' m a
        -> Peer ps AsServer st' m b
-       -> m (a, b)
-    go  (Done _stA a)      (Done _stB b)      = return (a, b)
-    go  (Effect a )          b                  = a >>= \a' -> go a' b
-    go   a                  (Effect b)          = b >>= \b' -> go a  b'
-    go  (Yield _stA msg a) (Await _stB b)     = go  a     (b msg)
-    go  (Await _stA a)     (Yield _stB msg b) = go (a msg) b
+       -> m (a, b, TerminalStates ps)
+    go (Done stA a)    (Done stB b)    = return (a, b, TerminalStates stA stB)
+    go (Effect a )      b              = a >>= \a' -> go a' b
+    go  a              (Effect b)      = b >>= \b' -> go a  b'
+    go (Yield _ msg a) (Await _ b)     = go  a     (b msg)
+    go (Await _ a)     (Yield _ msg b) = go (a msg) b
 
     -- By appealing to the proofs about agency for this protocol we can
     -- show that these other cases are impossible
@@ -203,25 +203,37 @@ connect AgencyProofs{..} = go
       absurd (proofByContradiction_NobodyAndServerHaveAgency stB stA)
 
 
+-- | The terminal states for the protocol. Used in 'connect' and
+-- 'connectPipelined' to return the states in which the peers terminated.
+--
+data TerminalStates ps where
+     TerminalStates :: forall (st :: ps).
+                       NobodyHasAgency st
+                    -> NobodyHasAgency st
+                    -> TerminalStates ps
+
+-- | Analogous to 'connect' but for pipelined peers.
+--
 connectPipelined :: forall ps (st :: ps) m a b.
                     Monad m
                  => AgencyProofs ps
                  -> PeerSender ps AsClient st m a
                  -> Peer       ps AsServer st m b
-                 -> m (a, b)
+                 -> m (a, b, TerminalStates ps)
 
 connectPipelined AgencyProofs{..} = goSender
   where
     goSender :: forall (st' :: ps).
                 PeerSender ps AsClient st' m a
              -> Peer       ps AsServer st' m b
-             -> m (a, b)
+             -> m (a, b, TerminalStates ps)
 
-    goSender  (SenderDone _stA a) (Done _stB b) = return (a, b)
+    goSender  (SenderDone stA a)   (Done stB b)   = return (a, b, terminals)
+      where terminals = TerminalStates stA stB
     goSender  (SenderEffect a)      b             = a >>= \a' -> goSender a' b
     goSender  a                    (Effect b)     = b >>= \b' -> goSender a  b'
 
-    goSender  (SenderYield _stA msg r a) (Await _stB b) =
+    goSender  (SenderYield _ msg r a) (Await _ b) =
       goReceiver r (b msg) >>= \b' -> goSender a b'
 
 
