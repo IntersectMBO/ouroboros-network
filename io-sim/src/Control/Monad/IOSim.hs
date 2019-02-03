@@ -13,12 +13,12 @@
 module Control.Monad.IOSim (
   SimF,
   SimM,
-  runSimM,
-  runSimMST,
+  runSimTrace,
+  runSimTraceST,
   VTime(..),
   VTimeDuration(..),
   ThreadId,
-  Trace,
+  Trace(..),
   TraceEvent(..),
   ) where
 
@@ -185,19 +185,27 @@ instance MonadProbe (Free (SimF s)) where
 instance MonadRunProbe (Free (SimF s)) (ST s) where
   newProbe = Probe <$> newSTRef []
   readProbe (Probe p) = reverse <$> readSTRef p
-  runM = void . runSimMST
+  runM = void . runSimTraceST
 
 --
 -- Simulation interpreter
 --
 
-data Thread s = Thread ThreadId (SimM s ())
+data Thread s a = Thread {
+       threadId     :: ThreadId,
+       threadAction :: SimM s (ThreadResult a)
+     }
+
+data ThreadResult a = MainThreadResult a
+                    | ForkThreadResult
 
 newtype ThreadId  = ThreadId  Int deriving (Eq, Ord, Enum, Show)
 newtype TVarId    = TVarId    Int deriving (Eq, Ord, Enum, Show)
 newtype TimeoutId = TimeoutId Int deriving (Eq, Ord, Enum, Show)
 
-type Trace = [(VTime, ThreadId, TraceEvent)]
+data Trace a = Trace !VTime !ThreadId !TraceEvent (Trace a)
+             | TraceMainReturn    !VTime a             ![ThreadId]
+             | TraceDeadlock      !VTime               ![ThreadId]
 
 data TraceEvent
   = EventFail String
@@ -214,15 +222,16 @@ data TraceEvent
   | EventTimerExpired   TimeoutId
   deriving Show
 
-runSimM :: (forall s. SimM s ()) -> Trace
-runSimM initialThread = runST (runSimMST initialThread)
 
-runSimMST :: forall s. SimM s () -> ST s Trace
-runSimMST initialThread = schedule (initialState initialThread)
+runSimTrace :: forall a. (forall s. SimM s a) -> Trace a
+runSimTrace initialThread = runST (runSimTraceST initialThread)
 
-data SimState s = SimState {
-       runqueue :: ![Thread s],
-       blocked  :: !(Map ThreadId (Thread s)),
+runSimTraceST :: forall s a. SimM s a -> ST s (Trace a)
+runSimTraceST initialThread = schedule (initialState initialThread)
+
+data SimState s a = SimState {
+       runqueue :: ![Thread s a],
+       blocked  :: !(Map ThreadId (Thread s a)),
        curTime  :: !VTime,
        timers   :: !(OrdPSQ TimeoutId VTime (TVar s TimeoutState)),
        nextTid  :: !ThreadId,   -- ^ next unused 'ThreadId'
@@ -230,10 +239,10 @@ data SimState s = SimState {
        nextTmid :: !TimeoutId   -- ^ next unused 'TimeoutId'
      }
 
-initialState :: SimM s () -> SimState s
+initialState :: SimM s a -> SimState s a
 initialState initialThread =
   SimState {
-    runqueue = [Thread (ThreadId 0) initialThread],
+    runqueue = [Thread (ThreadId 0) (MainThreadResult <$> initialThread)],
     blocked  = Map.empty,
     curTime  = VTime 0,
     timers   = PSQ.empty,
@@ -242,7 +251,7 @@ initialState initialThread =
     nextTmid = TimeoutId 0
   }
 
-schedule :: SimState s -> ST s Trace
+schedule :: SimState s a -> ST s (Trace a)
 schedule simstate@SimState {
            runqueue = thread@(Thread tid action):remaining,
            blocked, timers, nextTid, nextVid, nextTmid,
@@ -250,19 +259,27 @@ schedule simstate@SimState {
          } =
   case action of
 
-    Pure () -> do
+    Pure (MainThreadResult a) -> do
+      -- the main thread is done, so we're done
+      -- even if other threads are still running
+      return (TraceMainReturn time a remainingThreadIds)
+      where
+        remainingThreadIds = (map threadId remaining) ++ Map.keys blocked
+
+    Pure ForkThreadResult -> do
       -- this thread is done
       trace <- schedule simstate { runqueue = remaining }
-      return ((time,tid,EventThreadStopped):trace)
+      return (Trace time tid EventThreadStopped trace)
 
     Free (Fail msg) -> do
-      -- stop the whole sim on failure
-      return [(time,tid,EventFail msg)]
+      -- stop just this thread on failure
+      trace <- schedule simstate { runqueue = remaining }
+      return (Trace time tid (EventFail msg) trace)
 
     Free (Say msg k) -> do
       let thread' = Thread tid k
       trace <- schedule simstate { runqueue = thread':remaining }
-      return ((time,tid,EventSay msg):trace)
+      return (Trace time tid (EventSay msg) trace)
 
     Free (Output (Probe p) o k) -> do
       modifySTRef p ((time, o):)
@@ -288,7 +305,7 @@ schedule simstate@SimState {
                                  , timers   = timers'
                                  , nextVid  = succ nextVid
                                  , nextTmid = succ nextTmid }
-      return ((time, tid, EventTimerCreated nextTmid nextVid expiry):trace)
+      return (Trace time tid (EventTimerCreated nextTmid nextVid expiry) trace)
 
     Free (UpdateTimeout (Timeout _tvar tmid) d k) -> do
           -- updating an expired timeout is a noop, so it is safe
@@ -300,24 +317,24 @@ schedule simstate@SimState {
           thread' = Thread tid k
       trace <- schedule simstate { runqueue = thread':remaining
                                  , timers   = timers' }
-      return ((time,tid,EventTimerUpdated tmid expiry):trace)
+      return (Trace time tid (EventTimerUpdated tmid expiry) trace)
 
     Free (CancelTimeout (Timeout _tvar tmid) k) -> do
       let timers' = PSQ.delete tmid timers
           thread' = Thread tid k
       trace <- schedule simstate { runqueue = thread':remaining
                                  , timers   = timers' }
-      return ((time,tid,EventTimerCancelled tmid):trace)
+      return (Trace time tid (EventTimerCancelled tmid) trace)
 
     Free (Fork a k) -> do
       let thread'  = Thread tid k
-          thread'' = Thread tid' a
+          thread'' = Thread tid' (a >> return ForkThreadResult)
           tid'     = nextTid
       trace <- schedule simstate
         { runqueue = thread':remaining ++ [thread'']
         , nextTid  = succ nextTid
         }
-      return ((time,tid,EventThreadForked tid'):trace)
+      return (Trace time tid (EventThreadForked tid') trace)
 
     Free (Atomically a k) -> do
       (res, nextVid') <- execAtomically tid nextVid a
@@ -339,9 +356,11 @@ schedule simstate@SimState {
                                 Map.fromList [ (tid', ()) | (tid', _) <- wakeup ],
                      nextVid  = nextVid'
                    }
-          return $ (time, tid, EventTxComitted written [nextVid..pred nextVid'])
-                 : [ (time, tid', EventTxWakeup vids) | (tid', vids) <- wakeup ]
-                ++ trace
+          return $
+            Trace time tid (EventTxComitted written [nextVid..pred nextVid']) $
+            traceMany
+              [ (time, tid', EventTxWakeup vids) | (tid', vids) <- wakeup ]
+              trace
 
         StmTxBlocked vids -> do
           let blocked' = Map.insert tid thread blocked
@@ -350,7 +369,7 @@ schedule simstate@SimState {
                      blocked  = blocked',
                      nextVid  = nextVid'
                    }
-          return ((time,tid,EventTxBlocked vids):trace)
+          return (Trace time tid (EventTxBlocked vids) trace)
 
 -- no runnable threads, advance the time to the next timer event, or stop.
 schedule simstate@SimState {
@@ -361,7 +380,7 @@ schedule simstate@SimState {
 
     -- important to get all events that expire at this time
     case removeMinimums timers of
-      Nothing -> return []
+      Nothing -> return (TraceDeadlock time (Map.keys blocked))
 
       Just (tmids, time', fired, timers') -> assert (time' >= time) $ do
 
@@ -379,11 +398,12 @@ schedule simstate@SimState {
                    curTime  = time',
                    timers   = timers'
                  }
-        return $ [ (time', ThreadId (-1), EventTimerExpired tmid)
-                 | tmid <- tmids ]
-              ++ [ (time', tid', EventTxWakeup vids)
-                 | (tid', vids) <- wakeup ]
-              ++ trace
+        return $
+          traceMany ([ (time', ThreadId (-1), EventTimerExpired tmid)
+                     | tmid <- tmids ]
+                  ++ [ (time', tid', EventTxWakeup vids)
+                     | (tid', vids) <- wakeup ])
+                    trace
   where
     timeoutAction var = do
       x <- readTVar var
@@ -405,6 +425,12 @@ removeMinimums = \psq ->
         Just (k, p', x, psq')
           | p == p' -> collectAll (k:ks) p (x:xs) psq'
         _           -> (reverse ks, p, reverse xs, psq)
+
+traceMany :: [(VTime, ThreadId, TraceEvent)] -> Trace a -> Trace a
+traceMany []                      trace = trace
+traceMany ((time, tid, event):ts) trace =
+    Trace time tid event (traceMany ts trace)
+
 
 --
 -- Executing STM Transactions
