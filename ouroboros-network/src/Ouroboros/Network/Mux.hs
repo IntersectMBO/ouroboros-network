@@ -170,6 +170,7 @@ ingressQueue (MiniProtocolDispatch tbl) dis mode =
 
 -- | muxJobs constructs a list of jobs which needs to be started in separate threads by
 -- the specific 'MuxBearer' instance.
+-- TODO: replace MonadSay with iohk-monitoring-framework.
 muxJobs :: (MuxBearer m, MonadSTM m, MonadSay m) =>
     MiniProtocolDescriptions m ->
     MuxBearerHandle m ->
