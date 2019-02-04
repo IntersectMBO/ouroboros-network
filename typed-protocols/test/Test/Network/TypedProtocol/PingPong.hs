@@ -91,7 +91,7 @@ prop_connect
 prop_connect (Positive x) =
   let c = fromIntegral x
   in case runIdentity $ connect pingPongAgencyProofs (pingPongClientPeer $ pingPongClientCount c) (pingPongServerPeer pingPongServerCount) of
-    (_, c') -> c === c'
+    (_, c', _) -> c === c'
 
 connect_pipelined_experiment
   :: ( MonadSTM m
@@ -104,7 +104,7 @@ connect_pipelined_experiment (Positive x) probe = do
   var <- atomically $ newTVar 0
   let c = fromIntegral x
       client = pingPongSenderCount var c
-  (_, b) <- connectPipelined pingPongAgencyProofs (pingPongClientPeerSender client) (pingPongServerPeer pingPongServerCount)
+  (_, b, _) <- connectPipelined pingPongAgencyProofs (pingPongClientPeerSender client) (pingPongServerPeer pingPongServerCount)
   res <- atomically $ readTVar var
   probeOutput probe (c === b)
   probeOutput probe (c === res)
