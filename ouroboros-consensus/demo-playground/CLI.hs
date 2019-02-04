@@ -28,19 +28,17 @@ import           Topology (TopologyInfo (..))
 data CLI = CLI {
     systemStart  :: UTCTime
   , slotDuration :: Double
-  , protocol     :: Some DemoProtocol
   , command      :: Command
   }
 
 data Command =
-    SimpleNode  TopologyInfo
+    SimpleNode  TopologyInfo (Some DemoProtocol)
   | TxSubmitter TopologyInfo Mock.Tx
 
 parseCLI :: Parser CLI
 parseCLI = CLI
     <$> parseSystemStart
     <*> parseSlotDuration
-    <*> parseProtocol
     <*> parseCommand
 
 parseSystemStart :: Parser UTCTime
@@ -69,7 +67,7 @@ parseProtocol = asum [
 parseCommand :: Parser Command
 parseCommand = subparser $ mconcat [
     command' "node" "Run a node." $
-      SimpleNode <$> parseTopologyInfo
+      SimpleNode <$> parseTopologyInfo <*> parseProtocol
   , command' "submit" "Submit a transaction." $
       TxSubmitter <$> parseTopologyInfo <*> parseMockTx
   ]
