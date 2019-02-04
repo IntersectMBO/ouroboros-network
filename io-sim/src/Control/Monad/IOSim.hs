@@ -14,6 +14,7 @@ module Control.Monad.IOSim (
   SimM,
   runSimTrace,
   runSimTraceST,
+  liftST,
   VTime(..),
   VTimeDuration(..),
   ThreadId,
