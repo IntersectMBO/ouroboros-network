@@ -707,19 +707,34 @@ doesFileExist err fp = readMockFS err $ \fs ->
 -- We do not implement this behaviour and consider this a limitation of the
 -- mock file system, and throw an error when removing a file that still has
 -- open file handles to it.
+--
+-- In the state machine tests, removing the root directory may cause the IO
+-- implementation to throw an 'FsInsufficientPermissions' error, depending on
+-- the permissions of the temporary directory used to run the tests in. In
+-- theory it should throw a 'FsResourceInappropriateType' error. To avoid this
+-- mismatch during testing, we also consider removing the root folder a
+-- limitation of the mock file system.
 removeFile :: CanSimFS m => ErrorHandling FsError m -> FsPath -> m ()
-removeFile err@ErrorHandling{..} fp = modifyMockFS err $ \fs ->
-    if fp `S.member` openFilePaths fs
-      then throwError FsError {
-               fsErrorType   = FsIllegalOperation
-             , fsErrorPath   = fp
-             , fsErrorString = "cannot remove an open file"
-             , fsErrorStack  = callStack
-             , fsLimitation  = True
-             }
-      else do
-        files' <- checkFsTree err $ FS.removeFile fp (mockFiles fs)
-        return ((), fs { mockFiles = files' })
+removeFile err@ErrorHandling{..} fp = modifyMockFS err $ \fs -> case fp of
+    []
+      -> throwError FsError {
+             fsErrorType   = FsIllegalOperation
+           , fsErrorPath   = fp
+           , fsErrorString = "cannot remove the root directory"
+           , fsErrorStack  = callStack
+           , fsLimitation  = True
+           }
+    _ | fp `S.member` openFilePaths fs
+      -> throwError FsError {
+             fsErrorType   = FsIllegalOperation
+           , fsErrorPath   = fp
+           , fsErrorString = "cannot remove an open file"
+           , fsErrorStack  = callStack
+           , fsLimitation  = True
+           }
+    _ -> do
+      files' <- checkFsTree err $ FS.removeFile fp (mockFiles fs)
+      return ((), fs { mockFiles = files' })
 
 {-------------------------------------------------------------------------------
   Pretty-printing
