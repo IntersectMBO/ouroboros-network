@@ -12,6 +12,9 @@
 
 module Control.Monad.IOSim (
   SimM,
+  runSim,
+  runSimStrictShutdown,
+  Failure(..),
   runSimTrace,
   runSimTraceST,
   liftST,
@@ -269,6 +272,30 @@ data TraceEvent
   | EventTimerCancelled TimeoutId
   | EventTimerExpired   TimeoutId
   deriving Show
+
+data Failure = FailureDeadlock
+             | FailureSloppyShutdown
+  deriving (Eq, Show)
+
+runSim :: forall a. (forall s. SimM s a) -> Either Failure a
+runSim initialThread =
+    collectSimResult False (runSimTrace initialThread)
+
+-- | Like 'runSim' but also fail if when the main thread terminates, there
+-- are other threads still running or blocked. If one is trying to follow
+-- a strict thread cleanup policy then this helps testing for that.
+--
+runSimStrictShutdown :: forall a. (forall s. SimM s a) -> Either Failure a
+runSimStrictShutdown initialThread =
+    collectSimResult True (runSimTrace initialThread)
+
+collectSimResult :: Bool -> Trace a -> Either Failure a
+collectSimResult strict = go
+  where
+    go (Trace _ _ _ t)                      = go t
+    go (TraceMainReturn _ _ (_:_)) | strict = Left FailureSloppyShutdown
+    go (TraceMainReturn _ x _)              = Right x
+    go (TraceDeadlock   _   _)              = Left FailureDeadlock
 
 
 runSimTrace :: forall a. (forall s. SimM s a) -> Trace a
