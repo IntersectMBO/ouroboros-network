@@ -76,7 +76,7 @@ decodeTerminatedFrame terminator k = go []
           Nothing    -> return $ DecodeFail "not enough input"
           Just chunk ->
             case break (==terminator) chunk of
-              (c, _:c') -> return $ k (concat (reverse (c:chunks)))
+              (c, t:c') -> return $ k (concat (reverse ([t]:c:chunks)))
                                       (if null c' then Nothing else Just c)
               _         -> go (chunk : chunks)
 
