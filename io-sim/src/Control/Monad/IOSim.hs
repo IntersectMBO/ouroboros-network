@@ -11,7 +11,6 @@
 {-# OPTIONS_GHC -Wno-orphans            #-}
 
 module Control.Monad.IOSim (
-  SimF,
   SimM,
   runSimTrace,
   runSimTraceST,
@@ -36,12 +35,11 @@ import qualified Data.Set as Set
 
 import           Control.Exception (assert)
 import           Control.Monad
-import           Control.Monad.Free (Free)
-import           Control.Monad.Free as Free
 import           Control.Monad.ST.Lazy
 import qualified Control.Monad.ST.Strict as StrictST
 import           Data.STRef.Lazy
 
+import           Control.Monad.Fail as MonadFail
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadST
@@ -58,35 +56,98 @@ import qualified Control.Monad.Class.MonadProbe as MonadProbe
 -- Simulation monad for protocol testing
 --
 
-data SimF (s :: *) a where
-  Fail         :: String -> SimF s a
+newtype SimM s a = SimM { unSimM :: forall r. (a -> SimA s r) -> SimA s r }
 
-  Say          :: String -> b -> SimF s b
-  Output       :: Probe s o -> o -> b -> SimF s b
+runSimM :: SimM s a -> SimA s a
+runSimM (SimM k) = k Return
 
-  LiftST       :: StrictST.ST s a -> (a -> b) -> SimF s b
+data SimA s a where
+  Return       :: a -> SimA s a
+  Fail         :: String -> SimA s a
 
-  GetTime      :: (VTime -> b) -> SimF s b
-  NewTimeout   :: VTimeDuration -> (Timeout (Free (SimF s)) -> b) -> SimF s b
-  UpdateTimeout:: Timeout (Free (SimF s)) -> VTimeDuration -> b -> SimF s b
-  CancelTimeout:: Timeout (Free (SimF s)) -> b -> SimF s b
+  Say          :: String -> SimA s b -> SimA s b
+  Output       :: Probe s o -> o -> SimA s b -> SimA s b
 
-  Fork         :: Free (SimF s) () -> b -> SimF s b
-  Atomically   :: Free (StmF s) a -> (a -> b) -> SimF s b
+  LiftST       :: StrictST.ST s a -> (a -> SimA s b) -> SimA s b
 
-data StmF (s :: *) a where
+  GetTime      :: (VTime -> SimA s b) -> SimA s b
+  NewTimeout   :: VTimeDuration -> (Timeout (SimM s) -> SimA s b) -> SimA s b
+  UpdateTimeout:: Timeout (SimM s) -> VTimeDuration -> SimA s b -> SimA s b
+  CancelTimeout:: Timeout (SimM s) -> SimA s b -> SimA s b
 
-  NewTVar      :: x -> (TVar s x -> b) -> StmF s b
-  ReadTVar     :: TVar s a -> (a -> b) -> StmF s b
-  WriteTVar    :: TVar s a ->  a -> b  -> StmF s b
-  Retry        :: StmF s b
+  Fork         :: SimM s () -> SimA s b -> SimA s b
+  Atomically   :: STM  s a -> (a -> SimA s b) -> SimA s b
 
-type SimM s a = Free (SimF s) a
-type STM  s   = Free (StmF s)
+newtype STM s a = STM { unSTM :: forall r. (a -> StmA s r) -> StmA s r }
+
+runSTM :: STM s a -> StmA s a
+runSTM (STM k) = k ReturnStm
+
+data StmA s a where
+  ReturnStm    :: a -> StmA s a
+--FailStm      :: ...
+
+  NewTVar      :: x -> (TVar s x -> StmA s b) -> StmA s b
+  ReadTVar     :: TVar s a -> (a -> StmA s b) -> StmA s b
+  WriteTVar    :: TVar s a ->  a -> StmA s b  -> StmA s b
+  Retry        :: StmA s b
+
 
 type ProbeTrace a = [(VTime, a)]
 
 newtype Probe s a = Probe (STRef s (ProbeTrace a))
+
+
+instance Functor (SimM s) where
+    {-# INLINE fmap #-}
+    fmap f = \d -> SimM $ \k -> unSimM d (k . f)
+
+instance Applicative (SimM s) where
+    {-# INLINE pure #-}
+    pure = \x -> SimM $ \k -> k x
+
+    {-# INLINE (<*>) #-}
+    (<*>) = \df dx -> SimM $ \k ->
+                        unSimM df (\f -> unSimM dx (\x -> k (f x)))
+
+    {-# INLINE (*>) #-}
+    (*>) = \dm dn -> SimM $ \k -> unSimM dm (\_ -> unSimM dn k)
+
+instance Monad (SimM s) where
+    return = pure
+
+    {-# INLINE (>>=) #-}
+    (>>=) = \dm f -> SimM $ \k -> unSimM dm (\m -> unSimM (f m) k)
+
+    {-# INLINE (>>) #-}
+    (>>) = (*>)
+
+    fail = MonadFail.fail
+
+
+instance Functor (STM s) where
+    {-# INLINE fmap #-}
+    fmap f = \d -> STM $ \k -> unSTM d (k . f)
+
+instance Applicative (STM s) where
+    {-# INLINE pure #-}
+    pure = \x -> STM $ \k -> k x
+
+    {-# INLINE (<*>) #-}
+    (<*>) = \df dx -> STM $ \k ->
+                        unSTM df (\f -> unSTM dx (\x -> k (f x)))
+
+    {-# INLINE (*>) #-}
+    (*>) = \dm dn -> STM $ \k -> unSTM dm (\_ -> unSTM dn k)
+
+instance Monad (STM s) where
+    return = pure
+
+    {-# INLINE (>>=) #-}
+    (>>=) = \dm f -> STM $ \k -> unSTM dm (\m -> unSTM (f m) k)
+
+    {-# INLINE (>>) #-}
+    (>>) = (*>)
 
 
 --
@@ -105,41 +166,27 @@ instance TimeMeasure VTime where
   addTime  (VTimeDuration d) (VTime t) = VTime (t+d)
   zero = VTime 0
 
-instance Functor (SimF s) where
-  fmap _ (Fail f)         = Fail f
-  fmap f (Say s b)        = Say s $ f b
-  fmap f (Output p o b)   = Output p o $ f b
-  fmap f (LiftST a b)     = LiftST a (f . b)
-  fmap f (Fork s b)       = Fork s $ f b
-  fmap f (Atomically a k) = Atomically a (f . k)
-  fmap f (GetTime           b) = GetTime           (f . b)
-  fmap f (NewTimeout      d b) = NewTimeout      d (f . b)
-  fmap f (UpdateTimeout t d b) = UpdateTimeout t d (f b)
-  fmap f (CancelTimeout t   b) = CancelTimeout t   (f b)
+instance MonadFail (SimM s) where
+  fail msg = SimM $ \_ -> Fail msg
 
-instance Functor (StmF s) where
-  fmap f (NewTVar   x k)   = NewTVar   x (f . k)
-  fmap f (ReadTVar  v k)   = ReadTVar  v (f . k)
-  fmap f (WriteTVar v a b) = WriteTVar v a (f b)
-  fmap _  Retry            = Retry
+instance MonadSay (SimM s) where
+  say msg = SimM $ \k -> Say msg (k ())
 
-instance MonadSay (Free (SimF s)) where
-  say msg = Free.liftF $ Say msg ()
+instance MonadFork (SimM s) where
+  fork task = SimM $ \k -> Fork task (k ())
 
-instance MonadFork (Free (SimF s)) where
-  fork          task = Free.liftF $ Fork task ()
+instance MonadSTM (SimM s) where
+  type Tr    (SimM s)   = STM s
+  type TVar  (SimM s)   = TVar s
+  type TMVar (SimM s)   = TMVarDefault (SimM s)
+  type TBQueue (SimM s) = TBQueueDefault (SimM s)
 
-instance MonadSTM (Free (SimF s)) where
-  type Tr    (Free (SimF s))   = Free (StmF s)
-  type TVar  (Free (SimF s))   = TVar s
-  type TMVar (Free (SimF s))   = TMVarDefault (Free (SimF s))
-  type TBQueue (Free (SimF s)) = TBQueueDefault (Free (SimF s))
+  atomically action = SimM $ \k -> Atomically action k
 
-  atomically action = Free.liftF $ Atomically action id
-  newTVar         x = Free.liftF $ NewTVar x id
-  readTVar   tvar   = Free.liftF $ ReadTVar tvar id
-  writeTVar  tvar x = Free.liftF $ WriteTVar tvar x ()
-  retry             = Free.liftF $ Retry
+  newTVar         x = STM $ \k -> NewTVar x k
+  readTVar   tvar   = STM $ \k -> ReadTVar tvar k
+  writeTVar  tvar x = STM $ \k -> WriteTVar tvar x (k ())
+  retry             = STM $ \_ -> Retry
 
   newTMVar          = newTMVarDefault
   newTMVarIO        = newTMVarIODefault
@@ -158,31 +205,31 @@ instance MonadSTM (Free (SimF s)) where
   readTBQueue       = readTBQueueDefault
   writeTBQueue      = writeTBQueueDefault
 
-instance MonadST (Free (SimF s)) where
+instance MonadST (SimM s) where
   withLiftST f = f liftST
-    where
-      liftST :: StrictST.ST s a -> Free (SimF s) a
-      liftST action = Free.liftF (LiftST action id)
 
-instance MonadTime (Free (SimF s)) where
-  type Time (Free (SimF s)) = VTime
+liftST :: StrictST.ST s a -> SimM s a
+liftST action = SimM $ \k -> LiftST action k
 
-  getMonotonicTime = Free.liftF $ GetTime id
+instance MonadTime (SimM s) where
+  type Time (SimM s) = VTime
 
-instance MonadTimer (Free (SimF s)) where
-  data Timeout (Free (SimF s)) = Timeout !(TVar s TimeoutState) !TimeoutId
+  getMonotonicTime = SimM $ \k -> GetTime k
+
+instance MonadTimer (SimM s) where
+  data Timeout (SimM s) = Timeout !(TVar s TimeoutState) !TimeoutId
 
   readTimeout (Timeout var _key) = readTVar var
 
-  newTimeout      d = Free.liftF $ NewTimeout      d id
-  updateTimeout t d = Free.liftF $ UpdateTimeout t d ()
-  cancelTimeout t   = Free.liftF $ CancelTimeout t   ()
+  newTimeout      d = SimM $ \k -> NewTimeout      d k
+  updateTimeout t d = SimM $ \k -> UpdateTimeout t d (k ())
+  cancelTimeout t   = SimM $ \k -> CancelTimeout t   (k ())
 
-instance MonadProbe (Free (SimF s)) where
-  type Probe (Free (SimF s)) = Probe s
-  probeOutput p o = Free.liftF $ Output p o ()
+instance MonadProbe (SimM s) where
+  type Probe (SimM s) = Probe s
+  probeOutput p o = SimM $ \k -> Output p o (k ())
 
-instance MonadRunProbe (Free (SimF s)) (ST s) where
+instance MonadRunProbe (SimM s) (ST s) where
   newProbe = Probe <$> newSTRef []
   readProbe (Probe p) = reverse <$> readSTRef p
   runM = void . runSimTraceST
@@ -193,7 +240,7 @@ instance MonadRunProbe (Free (SimF s)) (ST s) where
 
 data Thread s a = Thread {
        threadId     :: ThreadId,
-       threadAction :: SimM s (ThreadResult a)
+       threadAction :: SimA s (ThreadResult a)
      }
 
 data ThreadResult a = MainThreadResult a
@@ -239,10 +286,10 @@ data SimState s a = SimState {
        nextTmid :: !TimeoutId   -- ^ next unused 'TimeoutId'
      }
 
-initialState :: SimM s a -> SimState s a
+initialState :: forall s a. SimM s a -> SimState s a
 initialState initialThread =
   SimState {
-    runqueue = [Thread (ThreadId 0) (MainThreadResult <$> initialThread)],
+    runqueue = [Thread (ThreadId 0) initialThread'],
     blocked  = Map.empty,
     curTime  = VTime 0,
     timers   = PSQ.empty,
@@ -250,6 +297,9 @@ initialState initialThread =
     nextVid  = TVarId 0,
     nextTmid = TimeoutId 0
   }
+  where
+    initialThread' :: SimA s (ThreadResult a)
+    initialThread' = runSimM (fmap MainThreadResult initialThread)
 
 schedule :: SimState s a -> ST s (Trace a)
 schedule simstate@SimState {
@@ -259,43 +309,43 @@ schedule simstate@SimState {
          } =
   case action of
 
-    Pure (MainThreadResult a) -> do
+    Return (MainThreadResult a) -> do
       -- the main thread is done, so we're done
       -- even if other threads are still running
       return (TraceMainReturn time a remainingThreadIds)
       where
         remainingThreadIds = (map threadId remaining) ++ Map.keys blocked
 
-    Pure ForkThreadResult -> do
+    Return ForkThreadResult -> do
       -- this thread is done
       trace <- schedule simstate { runqueue = remaining }
       return (Trace time tid EventThreadStopped trace)
 
-    Free (Fail msg) -> do
+    Fail msg -> do
       -- stop just this thread on failure
       trace <- schedule simstate { runqueue = remaining }
       return (Trace time tid (EventFail msg) trace)
 
-    Free (Say msg k) -> do
+    Say msg k -> do
       let thread' = Thread tid k
       trace <- schedule simstate { runqueue = thread':remaining }
       return (Trace time tid (EventSay msg) trace)
 
-    Free (Output (Probe p) o k) -> do
+    Output (Probe p) o k -> do
       modifySTRef p ((time, o):)
       let thread' = Thread tid k
       schedule simstate { runqueue = thread':remaining }
 
-    Free (LiftST st k) -> do
+    LiftST st k -> do
       x <- strictToLazyST st
       let thread' = Thread tid (k x)
       schedule simstate { runqueue = thread':remaining }
 
-    Free (GetTime k) -> do
+    GetTime k -> do
       let thread' = Thread tid (k time)
       schedule simstate { runqueue = thread':remaining }
 
-    Free (NewTimeout d k) -> do
+    NewTimeout d k -> do
       tvar <- execNewTVar nextVid TimeoutPending
       let expiry  = d `addTime` time
           timeout = Timeout tvar nextTmid
@@ -307,7 +357,7 @@ schedule simstate@SimState {
                                  , nextTmid = succ nextTmid }
       return (Trace time tid (EventTimerCreated nextTmid nextVid expiry) trace)
 
-    Free (UpdateTimeout (Timeout _tvar tmid) d k) -> do
+    UpdateTimeout (Timeout _tvar tmid) d k -> do
           -- updating an expired timeout is a noop, so it is safe
           -- to race using a timeout with updating or cancelling it
       let updateTimout  Nothing       = ((), Nothing)
@@ -319,16 +369,16 @@ schedule simstate@SimState {
                                  , timers   = timers' }
       return (Trace time tid (EventTimerUpdated tmid expiry) trace)
 
-    Free (CancelTimeout (Timeout _tvar tmid) k) -> do
+    CancelTimeout (Timeout _tvar tmid) k -> do
       let timers' = PSQ.delete tmid timers
           thread' = Thread tid k
       trace <- schedule simstate { runqueue = thread':remaining
                                  , timers   = timers' }
       return (Trace time tid (EventTimerCancelled tmid) trace)
 
-    Free (Fork a k) -> do
+    Fork a k -> do
       let thread'  = Thread tid k
-          thread'' = Thread tid' (a >> return ForkThreadResult)
+          thread'' = Thread tid' (runSimM (a >> return ForkThreadResult))
           tid'     = nextTid
       trace <- schedule simstate
         { runqueue = thread':remaining ++ [thread'']
@@ -336,8 +386,8 @@ schedule simstate@SimState {
         }
       return (Trace time tid (EventThreadForked tid') trace)
 
-    Free (Atomically a k) -> do
-      (res, nextVid') <- execAtomically tid nextVid a
+    Atomically a k -> do
+      (res, nextVid') <- execAtomically tid nextVid (runSTM a)
       case res of
         StmTxComitted x written wakeup -> do
           let thread'   = Thread tid (k x)
@@ -386,7 +436,7 @@ schedule simstate@SimState {
 
         -- Reuse the STM functionality here to write all the timer TVars.
         -- Simplify to a special case that only reads and writes TVars.
-        wakeup <- execAtomically' (mapM_ timeoutAction fired)
+        wakeup <- execAtomically' (runSTM $ mapM_ timeoutAction fired)
 
         let runnable  = catMaybes    [ Map.lookup tid' blocked
                                      | (tid', _) <- wakeup ]
@@ -449,23 +499,23 @@ data SomeTVar s where
 
 execAtomically :: ThreadId
                -> TVarId
-               -> STM s a
+               -> StmA s a
                -> ST s (StmTxResult s a, TVarId)
 execAtomically mytid = go [] []
   where
     go :: [SomeTVar s] -> [SomeTVar s] -> TVarId
-       -> STM s a -> ST s (StmTxResult s a, TVarId)
+       -> StmA s a -> ST s (StmTxResult s a, TVarId)
     go read written nextVid action = case action of
-      Pure x                 -> do (vids, tids) <- finaliseCommit written
-                                   return (StmTxComitted x vids tids, nextVid)
-      Free Retry             -> do vids <- finaliseRetry read written
-                                   return (StmTxBlocked vids, nextVid)
-      Free (NewTVar x k)     -> do v <- execNewTVar nextVid x
-                                   go read written (succ nextVid) (k v)
-      Free (ReadTVar v k)    -> do x <- execReadTVar v
-                                   go (SomeTVar v : read) written nextVid (k x)
-      Free (WriteTVar v x k) -> do execWriteTVar v x
-                                   go read (SomeTVar v : written) nextVid k
+      ReturnStm x     -> do (vids, tids) <- finaliseCommit written
+                            return (StmTxComitted x vids tids, nextVid)
+      Retry           -> do vids <- finaliseRetry read written
+                            return (StmTxBlocked vids, nextVid)
+      NewTVar x k     -> do v <- execNewTVar nextVid x
+                            go read written (succ nextVid) (k v)
+      ReadTVar v k    -> do x <- execReadTVar v
+                            go (SomeTVar v : read) written nextVid (k x)
+      WriteTVar v x k -> do execWriteTVar v x
+                            go read (SomeTVar v : written) nextVid k
 
     -- Revert all the TVar writes and put this thread on the blocked queue for
     -- all the TVars read in this transaction
@@ -481,17 +531,17 @@ execAtomically mytid = go [] []
       modifySTRef blocked (mytid:)
 
 
-execAtomically' :: STM s () -> ST s [(ThreadId, [TVarId])]
+execAtomically' :: StmA s () -> ST s [(ThreadId, [TVarId])]
 execAtomically' = go []
   where
-    go :: [SomeTVar s] -> STM s () -> ST s [(ThreadId, [TVarId])]
+    go :: [SomeTVar s] -> StmA s () -> ST s [(ThreadId, [TVarId])]
     go written action = case action of
-      Pure ()                -> do (_vids, tids) <- finaliseCommit written
-                                   return tids
-      Free (ReadTVar v k)    -> do x <- execReadTVar v
-                                   go written (k x)
-      Free (WriteTVar v x k) -> do execWriteTVar v x
-                                   go (SomeTVar v : written) k
+      ReturnStm ()    -> do (_vids, tids) <- finaliseCommit written
+                            return tids
+      ReadTVar v k    -> do x <- execReadTVar v
+                            go written (k x)
+      WriteTVar v x k -> do execWriteTVar v x
+                            go (SomeTVar v : written) k
       _ -> error "execAtomically': only for special case of reads and writes"
 
 
@@ -576,7 +626,7 @@ example0 = do
     unless (x == 1) retry
   say "main done"
 
-example1 :: Free (SimF s) ()
+example1 :: SimM s ()
 example1 = do
   say "starting"
   chan <- atomically (newTVar ([] :: [Int]))
