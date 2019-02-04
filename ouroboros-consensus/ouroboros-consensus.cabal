@@ -55,6 +55,7 @@ library
                        Ouroboros.Consensus.Protocol.ExtNodeConfig
                        Ouroboros.Consensus.Protocol.ModChainSel
                        Ouroboros.Consensus.Util
+                       Ouroboros.Consensus.Util.CBOR
                        Ouroboros.Consensus.Util.Chain
                        Ouroboros.Consensus.Util.Classify
                        Ouroboros.Consensus.Util.Condense
@@ -165,7 +166,6 @@ executable demo-playground
   other-modules:       CLI
                        Logging
                        Mock.Mempool
-                       Mock.Protocol
                        Mock.TxSubmission
                        NamedPipe
                        Run
