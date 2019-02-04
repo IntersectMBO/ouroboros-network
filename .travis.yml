@@ -1,6 +1,6 @@
 language: nix
 script:
-- nix-env -f <nixpkgs> -iA cachix
+- nix-env -f ./nix/nixpkgs.nix -iA cachix
 - echo "trusted-users = root ${USER}" | sudo tee -a /etc/nix/nix.conf || true
 - sudo pkill nix-daemon || true
 - cachix use ouroboros-network
