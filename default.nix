@@ -1,10 +1,7 @@
 # Builds using system <nixpkgs> and ghc863 with the required package curation.
 let
   # Pin nixpkgs to this one.
-  rev = "475d653afdbd8fe3e00ccfd22a30014b0df7aeaa";
-  url = "https://github.com/NixOS/nixpkgs/archive/${rev}.tar.gz";
-  nixpkgs = import (builtins.fetchTarball { inherit url; }) {};
-
+  nixpkgs = import ./nix/nixpkgs.nix {};
   overrides = import ./nix/overrides.nix { inherit nixpkgs; };
 
   cardanoroot = nixpkgs.fetchgit {
