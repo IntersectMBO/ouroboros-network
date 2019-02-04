@@ -1,0 +1,37 @@
+; Chain Sync Protocol
+; reference implementation of the codec in
+; ouroboros-network/src/Ouroboros/Network/Protocol/ChainSync/Codec/Cbor.hs
+
+chainSyncMessage =
+    ( msgRequestNext
+    / msgAwaitReply
+    / msgRollForward
+    / msgRollBackward
+    / msgFindIntersect
+    / msgIntersectImproved
+    / msgIntersectUnchanged
+    / msgDone
+    )
+
+; these records use fixed length list encodings TODO: lookup CDDL syntax for that
+msgRequestNext         = [0]
+msgAwaitReply          = [1]
+msgRollForward         = [2, header, point]
+msgRollBackward        = [3, header, point]
+msgFindIntersect       = [4, points]
+msgIntersectImproved   = [5, point, point]
+msgIntersectUnchanged  = [6, point]
+msgDone                = [7]
+
+points = [point]
+
+header = bytes .cbor any ; todo include definitions for header and point
+point = bytes .cbor any
+
+; Request Response Protocol
+; reference implementation of the codec in
+; ouroboros-network/src/Ouroboros/Network/Protocol/ReqResp/Codec/Cbor.hs
+
+reqRespMessage = (msgRequest / msgResponse)
+msgRequest  = bytes .cbor any
+msgResponse = bytes .cbor any
