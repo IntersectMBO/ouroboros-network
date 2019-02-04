@@ -43,10 +43,13 @@ prop_stm_graph_io g =
 
 prop_stm_graph_sim :: TestThreadGraph -> Bool
 prop_stm_graph_sim g =
-    not $ null [ () | (_t, tid, Sim.EventThreadStopped) <- trace
-                    , tid == toEnum 0 ]
+    checkTermination (Sim.runSimTrace (prop_stm_graph g))
   where
-    trace = Sim.runSimM (prop_stm_graph g)
+    checkTermination (Sim.Trace _ _ _ trace)      = checkTermination trace
+    checkTermination (Sim.TraceMainReturn _ () _) = True
+    -- Note that we do not check here that all other threads finished
+    -- but perhaps we should structure the grap tests so that's the case
+    checkTermination _                            = False
 
 prop_stm_graph :: MonadSTM m => TestThreadGraph -> m ()
 prop_stm_graph (TestThreadGraph g) = do
