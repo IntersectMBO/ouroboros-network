@@ -89,7 +89,7 @@ runPeer Codec{encode, decode} channel@Channel{send} = go Nothing
       res <- runDecoder channel trailing decoder
       case res of
         Right (SomeMessage msg, trailing') -> go trailing' (k msg)
-        Left failure            -> error "TODO: proper exceptions for runPeer"
+        Left _failure                      -> error "TODO: proper exceptions for runPeer"
 
 
 -- | Run a codec incremental decoder 'DecodeStep' against a channel. It also
@@ -194,5 +194,5 @@ runPipelinedPeerReceiver Codec{decode} channel = go
       res <- runDecoder channel trailing decoder
       case res of
         Right (SomeMessage msg, trailing') -> go trailing' (k msg)
-        Left failure                       -> error "TODO: proper exceptions for runPipelinedPeer"
+        Left _failure                      -> error "TODO: proper exceptions for runPipelinedPeer"
 

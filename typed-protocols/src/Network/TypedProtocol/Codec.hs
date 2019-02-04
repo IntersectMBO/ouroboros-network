@@ -21,6 +21,7 @@ module Network.TypedProtocol.Codec (
     -- * Utilities
   , transformCodec
   , cborCodec
+  , toLazyByteString
   ) where
 
 import           Network.TypedProtocol.Core
