@@ -38,13 +38,24 @@ newtype RemoteClockModel = RemoteClockModel { unRemoteClockModel :: Word32 }
 data MiniProtocolId = Muxcontrol
                     | DeltaQ
                     | ChainSync
-                    | Blockdownload
+                    | BlockFetch
                     | TxSubmission
                     deriving (Eq, Ord, Show)
 
+{- | The 'MiniProtocolDescription' is used to provide
+ two functions which will consume and produce messages
+ for either the initiator (client) or responder (server)
+ side of the given miniprotocol.
+ The functions will execute in their own threads and should
+ any of them exit the underlying 'MuxBearer' will be torn down
+ along with all other miniprotocols.
+ -}
 data MiniProtocolDescription m = MiniProtocolDescription {
+    -- | The 'MiniProtocolId' described.
       mpdId        :: MiniProtocolId
+    -- | Initiator function, consumes and produces messages related to the initiator side.
     , mpdInitiator :: Duplex m m CBOR.Encoding BS.ByteString -> m ()
+    -- | Responder function, consumes and produces messages related to the responder side.
     , mpdResponder :: Duplex m m CBOR.Encoding BS.ByteString -> m ()
     }
 
@@ -67,6 +78,19 @@ data MuxSDU = MuxSDU {
     , msBlob      :: !BL.ByteString
     }
 
+
+-- Binary format used by 'encodeMuxSDU' and 'decodeMuxSDUHeader'
+-- 0                   1                   2                   3
+-- 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+-- +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+-- l              transmission time                                |
+-- +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+-- lM|    conversation id          |              length           |
+-- +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+--
+-- All fields are in big endian byteorder.
+
+-- | Encode a 'MuxSDU' as a 'ByteString'.
 encodeMuxSDU :: MuxSDU -> BL.ByteString
 encodeMuxSDU sdu =
   let hdr = Bin.runPut enc in
@@ -80,13 +104,14 @@ encodeMuxSDU sdu =
     putId Muxcontrol mode    = Bin.putWord16be $ 0 .|. mode
     putId DeltaQ mode        = Bin.putWord16be $ 1 .|. mode
     putId ChainSync mode     = Bin.putWord16be $ 2 .|. mode
-    putId Blockdownload mode = Bin.putWord16be $ 3 .|. mode
+    putId BlockFetch mode    = Bin.putWord16be $ 3 .|. mode
     putId TxSubmission mode  = Bin.putWord16be $ 4 .|. mode
 
     putMode :: MiniProtocolMode -> Word16
     putMode ModeInitiator = 0
     putMode ModeResponder = 0x8000
 
+{- | Decode a MuSDU header -}
 decodeMuxSDUHeader :: BL.ByteString -> Maybe MuxSDU
 decodeMuxSDUHeader buf =
     case Bin.runGetOrFail dec buf of
@@ -108,7 +133,7 @@ decodeMuxSDUHeader buf =
     getId 0 = Muxcontrol
     getId 1 = DeltaQ
     getId 2 = ChainSync
-    getId 3 = Blockdownload
+    getId 3 = BlockFetch
     getId 4 = TxSubmission
     getId a = error $ "unknow miniprotocol " ++ show a -- XXX
 
@@ -126,8 +151,8 @@ class MuxBearer m where
   close :: MuxBearerHandle m -> m ()
   abandon :: MuxBearerHandle m -> m ()
 
-
-
+-- | demux runs as a single separate thread and reads complete 'MuxSDU's from the underlying
+-- 'MuxBearer' and forwards it to the matching ingress queueu.
 demux :: forall m. (MuxBearer m, MonadSTM m, MonadSay m) => PerMuxSharedState m -> m ()
 demux pmss = forever $ do
     (sdu, _) <- Ouroboros.Network.Mux.read (bearerHandle pmss)
@@ -135,6 +160,7 @@ demux pmss = forever $ do
     -- Notice the mode reversal, ModeResponder is delivered to ModeInitiator and vice versa.
     atomically $ writeTBQueue (ingressQueue (dispatchTable pmss) (msId sdu) (negMiniProtocolMode $ msMode sdu)) (msBlob sdu)
 
+-- | Return the ingress queueu for a given 'MiniProtocolId' and 'MiniProtocolMode'.
 ingressQueue :: (MuxBearer m) => MiniProtocolDispatch m -> MiniProtocolId -> MiniProtocolMode -> TBQueue m BL.ByteString
 ingressQueue (MiniProtocolDispatch tbl) dis mode =
     case M.lookup (dis, mode) tbl of
@@ -142,7 +168,9 @@ ingressQueue (MiniProtocolDispatch tbl) dis mode =
                                    (show dis) (show mode) -- XXX
          Just q  -> q
 
-muxJobs :: (MuxBearer m, MonadSTM m, MonadFork m, MonadSay m) =>
+-- | muxJobs constructs a list of jobs which needs to be started in separate threads by
+-- the specific 'MuxBearer' instance.
+muxJobs :: (MuxBearer m, MonadSTM m, MonadSay m) =>
     MiniProtocolDescriptions m ->
     MuxBearerHandle m ->
     m [m ()]
@@ -189,6 +217,7 @@ muxControl pmss md = do
         atomically $ putTMVar w blob
         atomically $ writeTBQueue (tsrQueue pmss) (TLSRDemand Muxcontrol md (Wanton w))
 
+-- | muxDuplex creates a duplex channel for a specific 'MiniProtocolId' and 'MiniProtocolMode'.
 muxDuplex :: (MuxBearer m, MonadSTM m, MonadSay m) =>
     PerMuxSharedState m ->
     MiniProtocolId ->
@@ -198,10 +227,14 @@ muxDuplex :: (MuxBearer m, MonadSTM m, MonadSay m) =>
 muxDuplex pmss mid md w = uniformDuplex snd_ rcv
   where
     snd_ encoding = do
+        -- We send CBOR encoded messages by encoding them into by ByteString
+        -- forwarding them to the 'mux' thread, see 'Desired servicing semantics'.
         --say $ printf "send mid %s mode %s" (show mid) (show md)
         atomically $ putTMVar w (CBOR.toLazyByteString encoding)
         atomically $ writeTBQueue (tsrQueue pmss) (TLSRDemand mid md (Wanton w))
     rcv = do
+        -- We receive CBOR encoded messages as ByteStrings (possibly partial) from the
+        -- matching ingress queueu. This is same queue the 'demux' thread writes to.
         blob <- atomically $ readTBQueue (ingressQueue (dispatchTable pmss) mid md)
         --say $ printf "recv mid %s mode %s blob len %d" (show mid) (show md) (BL.length blob)
         if BL.null blob
@@ -255,23 +288,19 @@ muxDuplex pmss mid md w = uniformDuplex snd_ rcv
 --  --------------------------------------------------------
 --
 --  The request for service (the demand) from a mini protocol is
---  encapsulatedin a `Wanton`, such `Wanton`s are placed in a (finite)
+--  encapsulated in a `Wanton`, such `Wanton`s are placed in a (finite)
 --  queue (e.g TBMQ) of `TranslocationServiceRequest`s.
 --
---
---  A `TranslocationServiceRequest` is a demand for the translocation
+
+-- | A TranslocationServiceRequest is a demand for the translocation
 --  of a single mini-protocol message. This message can be of
 --  arbitrary (yet bounded) size. This multiplexing layer is
 --  responsible for the segmentation of concrete representation into
 --  appropriate SDU's for onward transmission.
-
 data TranslocationServiceRequest m
   = TLSRDemand MiniProtocolId MiniProtocolMode (Wanton m)
-  | TLSRControl MiniProtocolId TLSRAction
 
-data TLSRAction = Abort | Done
-
--- The concrete data to be translocated, note that the TMVar becoming empty indicates
+-- | The concrete data to be translocated, note that the TMVar becoming empty indicates
 -- that the last fragment of the data has been enqueued on the
 -- underlying bearer.
 newtype Wanton m = Wanton { want :: TMVar m BL.ByteString }
@@ -288,7 +317,7 @@ data PerMuxSharedState m = PerMuxSS {
    -- additional performance info (perhaps)
   }
 
--- Process the messages from the mini protocols - there is a single
+-- | Process the messages from the mini protocols - there is a single
 -- shared FIFO that contains the items of work. This is processed so
 -- that each active demand gets a `maxSDU`s work of data processed
 -- each time it gets to the front of the queue
@@ -300,12 +329,8 @@ mux pmss = do
     case w of
          TLSRDemand mid md d
              -> processSingleWanton pmss mid md d >> mux pmss
-         TLSRControl _ Abort
-             -> undefined
-         TLSRControl _ Done
-             -> undefined
 
--- Pull a `maxSDU`s worth of data out out the `Wanton` - if there is
+-- | Pull a `maxSDU`s worth of data out out the `Wanton` - if there is
 -- data remaining requeue the `TranslocationServiceRequest` (this
 -- ensures that any other items on the queue will get some service
 -- first.
@@ -328,7 +353,7 @@ processSingleWanton pmss mpi md wanton = do
       -- return data to send
       pure frag
     let sdu = MuxSDU (RemoteClockModel 0) mpi md (fromIntegral $ BL.length blob) blob
-    _ <- write (bearerHandle pmss) (cb sdu)
+    void $ write (bearerHandle pmss) (cb sdu)
     --paceTransmission tNow
     return ()
 
@@ -337,5 +362,3 @@ processSingleWanton pmss mpi md wanton = do
 
 {-paceTransmission :: (MuxBearer m) => LocalClockModel m -> m ()
 paceTransmission = return () -- -}
-
-
