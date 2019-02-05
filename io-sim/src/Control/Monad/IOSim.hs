@@ -38,6 +38,8 @@ import           Data.Maybe (catMaybes)
 import qualified Data.Set as Set
 
 import           Control.Exception (Exception(..), SomeException, assert)
+import qualified System.IO.Error as IO.Error (userError)
+
 import           Control.Monad
 import           Control.Monad.ST.Lazy
 import qualified Control.Monad.ST.Strict as StrictST
@@ -67,7 +69,6 @@ runSimM (SimM k) = k Return
 
 data SimA s a where
   Return       :: a -> SimA s a
-  Fail         :: String -> SimA s a
 
   Say          :: String -> SimA s b -> SimA s b
   Output       :: Probe s o -> o -> SimA s b -> SimA s b
@@ -173,7 +174,7 @@ instance TimeMeasure VTime where
   zero = VTime 0
 
 instance MonadFail (SimM s) where
-  fail msg = SimM $ \_ -> Fail msg
+  fail msg = SimM $ \_ -> Throw (IO.Error.userError msg)
 
 instance MonadSay (SimM s) where
   say msg = SimM $ \k -> Say msg (k ())
@@ -365,11 +366,6 @@ schedule simstate@SimState {
       -- this thread is done
       trace <- schedule simstate { runqueue = remaining }
       return (Trace time tid EventThreadStopped trace)
-
-    Fail msg -> do
-      -- stop just this thread on failure
-      trace <- schedule simstate { runqueue = remaining }
-      return (Trace time tid (EventFail msg) trace)
 
     Throw e | tid == ThreadId 0 -> do
       -- Exception in main thread stops whole sim (no catch yet)
