@@ -303,16 +303,16 @@ data Failure =
   deriving Show
 
 runSim :: forall a. (forall s. SimM s a) -> Either Failure a
-runSim initialThread =
-    collectSimResult False (runSimTrace initialThread)
+runSim mainAction =
+    collectSimResult False (runSimTrace mainAction)
 
 -- | Like 'runSim' but also fail if when the main thread terminates, there
 -- are other threads still running or blocked. If one is trying to follow
 -- a strict thread cleanup policy then this helps testing for that.
 --
 runSimStrictShutdown :: forall a. (forall s. SimM s a) -> Either Failure a
-runSimStrictShutdown initialThread =
-    collectSimResult True (runSimTrace initialThread)
+runSimStrictShutdown mainAction =
+    collectSimResult True (runSimTrace mainAction)
 
 collectSimResult :: Bool -> Trace a -> Either Failure a
 collectSimResult strict = go
@@ -325,10 +325,10 @@ collectSimResult strict = go
 
 
 runSimTrace :: forall a. (forall s. SimM s a) -> Trace a
-runSimTrace initialThread = runST (runSimTraceST initialThread)
+runSimTrace mainAction = runST (runSimTraceST mainAction)
 
 runSimTraceST :: forall s a. SimM s a -> ST s (Trace a)
-runSimTraceST initialThread = schedule (initialState initialThread)
+runSimTraceST mainAction = schedule (initialState mainAction)
 
 data SimState s a = SimState {
        runqueue :: ![Thread s a],
@@ -340,24 +340,30 @@ data SimState s a = SimState {
        nextTmid :: !TimeoutId   -- ^ next unused 'TimeoutId'
      }
 
-initialState :: forall s a. SimM s a -> SimState s a
-initialState initialThread =
-  SimState {
-    runqueue = [Thread (ThreadId 0) initialThread'],
-    blocked  = Map.empty,
-    curTime  = VTime 0,
-    timers   = PSQ.empty,
-    nextTid  = ThreadId 1,
-    nextVid  = TVarId 0,
-    nextTmid = TimeoutId 0
-  }
+initialState :: SimM s a -> SimState s a
+initialState mainAction =
+    SimState {
+      runqueue = [mainThread],
+      blocked  = Map.empty,
+      curTime  = VTime 0,
+      timers   = PSQ.empty,
+      nextTid  = ThreadId 1,
+      nextVid  = TVarId 0,
+      nextTmid = TimeoutId 0
+    }
   where
-    initialThread' :: SimA s (ThreadResult a)
-    initialThread' = runSimM (fmap MainThreadResult initialThread)
+    mainThread =
+      Thread {
+        threadId      = ThreadId 0,
+        threadAction  = runSimM (fmap MainThreadResult mainAction)
+      }
 
 schedule :: SimState s a -> ST s (Trace a)
 schedule simstate@SimState {
-           runqueue = thread@(Thread tid action):remaining,
+           runqueue = thread@Thread{
+                        threadId      = tid,
+                        threadAction  = action,
+                      } : remaining,
            blocked, timers, nextTid, nextVid, nextTmid,
            curTime  = time
          } =
@@ -479,17 +485,14 @@ schedule simstate@SimState {
 
         StmTxAborted e -> do
           -- schedule this thread to immediately raise the exception
-          trace <- schedule simstate {
-                     runqueue = Thread tid (Throw e) : remaining
-                   }
+          let thread' = Thread tid (Throw e)
+          trace <- schedule simstate { runqueue = thread':remaining }
           return (Trace time tid EventTxAborted trace)
 
         StmTxBlocked vids -> do
           let blocked' = Map.insert tid thread blocked
-          trace <- schedule simstate {
-                     runqueue = remaining,
-                     blocked  = blocked'
-                   }
+          trace <- schedule simstate { runqueue = remaining
+                                     , blocked  = blocked' }
           return (Trace time tid (EventTxBlocked vids) trace)
 
 -- no runnable threads, advance the time to the next timer event, or stop.
