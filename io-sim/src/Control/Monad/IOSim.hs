@@ -37,7 +37,8 @@ import qualified Data.Map.Strict as Map
 import           Data.Maybe (catMaybes)
 import qualified Data.Set as Set
 
-import           Control.Exception (Exception(..), SomeException, assert)
+import           Control.Exception
+                   ( Exception(..), SomeException, ErrorCall(..), assert )
 import qualified System.IO.Error as IO.Error (userError)
 
 import           Control.Monad
@@ -92,7 +93,7 @@ runSTM (STM k) = k ReturnStm
 
 data StmA s a where
   ReturnStm    :: a -> StmA s a
---FailStm      :: ...
+  ThrowStm     :: Exception e => e -> StmA s a
 
   NewTVar      :: x -> (TVar s x -> StmA s b) -> StmA s b
   ReadTVar     :: TVar s a -> (a -> StmA s b) -> StmA s b
@@ -156,6 +157,8 @@ instance Monad (STM s) where
     {-# INLINE (>>) #-}
     (>>) = (*>)
 
+    fail = MonadFail.fail
+
 
 --
 -- Monad class instances
@@ -175,6 +178,9 @@ instance TimeMeasure VTime where
 
 instance MonadFail (SimM s) where
   fail msg = SimM $ \_ -> Throw (IO.Error.userError msg)
+
+instance MonadFail (STM s) where
+  fail msg = STM $ \_ -> ThrowStm (ErrorCall msg)
 
 instance MonadSay (SimM s) where
   say msg = SimM $ \k -> Say msg (k ())
@@ -261,6 +267,7 @@ data Trace a = Trace !VTime !ThreadId !TraceEvent (Trace a)
              | TraceMainReturn    !VTime a             ![ThreadId]
              | TraceMainException !VTime SomeException ![ThreadId]
              | TraceDeadlock      !VTime               ![ThreadId]
+  deriving Show
 
 data TraceEvent
   = EventFail String
@@ -271,6 +278,7 @@ data TraceEvent
   | EventThreadException SomeException -- terminated due to unhandled exception
   | EventTxComitted    [TVarId] -- tx wrote to these
                        [TVarId] -- and created these
+  | EventTxAborted
   | EventTxBlocked     [TVarId] -- tx blocked reading these
   | EventTxWakeup      [TVarId] -- changed vars causing retry
   | EventTimerCreated   TimeoutId TVarId VTime
@@ -444,9 +452,9 @@ schedule simstate@SimState {
       return (Trace time tid (EventThreadForked tid') trace)
 
     Atomically a k -> do
-      (res, nextVid') <- execAtomically tid nextVid (runSTM a)
+      res <- execAtomically tid nextVid (runSTM a)
       case res of
-        StmTxComitted x written wakeup -> do
+        StmTxComitted x written wakeup nextVid' -> do
           let thread'   = Thread tid (k x)
               unblocked = catMaybes [ Map.lookup tid' blocked | (tid', _) <- wakeup ]
               -- We don't interrupt runnable threads to provide fairness
@@ -469,12 +477,18 @@ schedule simstate@SimState {
               [ (time, tid', EventTxWakeup vids) | (tid', vids) <- wakeup ]
               trace
 
+        StmTxAborted e -> do
+          -- schedule this thread to immediately raise the exception
+          trace <- schedule simstate {
+                     runqueue = Thread tid (Throw e) : remaining
+                   }
+          return (Trace time tid EventTxAborted trace)
+
         StmTxBlocked vids -> do
           let blocked' = Map.insert tid thread blocked
           trace <- schedule simstate {
                      runqueue = remaining,
-                     blocked  = blocked',
-                     nextVid  = nextVid'
+                     blocked  = blocked'
                    }
           return (Trace time tid (EventTxBlocked vids) trace)
 
@@ -548,8 +562,13 @@ data TVar s a = TVar !TVarId
                      !(STRef s (Maybe a))  -- saved revert value
                      !(STRef s [ThreadId]) -- threads blocked on read
 
-data StmTxResult s a = StmTxComitted a [TVarId] [(ThreadId, [TVarId])] -- wake up
-                     | StmTxBlocked    [TVarId]               -- blocked on
+data StmTxResult s a =
+       StmTxComitted a
+                     [TVarId]
+                     [(ThreadId, [TVarId])] -- wake up
+                     TVarId                 -- updated TVarId name supply
+     | StmTxAborted  SomeException
+     | StmTxBlocked  [TVarId]               -- blocked on
 
 data SomeTVar s where
   SomeTVar :: !(TVar s a) -> SomeTVar s
@@ -557,22 +576,28 @@ data SomeTVar s where
 execAtomically :: ThreadId
                -> TVarId
                -> StmA s a
-               -> ST s (StmTxResult s a, TVarId)
+               -> ST s (StmTxResult s a)
 execAtomically mytid = go [] []
   where
     go :: [SomeTVar s] -> [SomeTVar s] -> TVarId
-       -> StmA s a -> ST s (StmTxResult s a, TVarId)
+       -> StmA s a -> ST s (StmTxResult s a)
     go read written nextVid action = case action of
       ReturnStm x     -> do (vids, tids) <- finaliseCommit written
-                            return (StmTxComitted x vids tids, nextVid)
+                            return (StmTxComitted x vids tids nextVid)
+      ThrowStm e      -> do finaliseAbort written
+                            return (StmTxAborted (toException e))
       Retry           -> do vids <- finaliseRetry read written
-                            return (StmTxBlocked vids, nextVid)
+                            return (StmTxBlocked vids)
       NewTVar x k     -> do v <- execNewTVar nextVid x
                             go read written (succ nextVid) (k v)
       ReadTVar v k    -> do x <- execReadTVar v
                             go (SomeTVar v : read) written nextVid (k x)
       WriteTVar v x k -> do execWriteTVar v x
                             go read (SomeTVar v : written) nextVid k
+
+    -- Revert all the TVar writes
+    finaliseAbort written =
+      sequence_ [ revertTVar  tvar | SomeTVar tvar <- reverse written ]
 
     -- Revert all the TVar writes and put this thread on the blocked queue for
     -- all the TVars read in this transaction
