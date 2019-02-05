@@ -126,7 +126,7 @@ lastSlotOffset (MkIndex offsets)
 -- | Check whether the given slot is within the index.
 containsSlot :: Index -> RelativeSlot -> Bool
 containsSlot (MkIndex offsets) (RelativeSlot slot) =
-  fromIntegral slot < V.length offsets - 1
+  slot < fromIntegral (V.length offsets) - 1
 
 -- | Return the offset for the given slot is filled.
 --

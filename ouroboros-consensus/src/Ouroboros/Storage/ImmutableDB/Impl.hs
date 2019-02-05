@@ -443,14 +443,15 @@ getBinaryBlobImpl hasFS@HasFS{..} err db@ImmutableDBHandle {..} readEpochSlot = 
             (offsetAfter:offset:_) -> return (offset, offsetAfter - offset)
             _ -> error "impossible: _currentEpochOffsets out of sync"
           where
-            toDrop = fromEnum lastSlot - fromEnum relativeSlot
+            toDrop = fromEnum (lastSlot - relativeSlot)
             lastSlot = _nextExpectedRelativeSlot - 1
 
       -- Otherwise, the offsets will have to be read from an index file
       False -> withFile hasFS indexFile ReadMode $ \iHnd -> do
         -- Grab the offset in bytes of the requested slot.
-        let indexSeekPosition = fromEnum relativeSlot * indexEntrySizeBytes
-        hSeek iHnd AbsoluteSeek (toEnum indexSeekPosition)
+        let indexSeekPosition = fromIntegral (getRelativeSlot relativeSlot)
+                              * fromIntegral indexEntrySizeBytes
+        hSeek iHnd AbsoluteSeek indexSeekPosition
         -- Compute the offset on disk and the blob size.
         let nbBytesToGet = indexEntrySizeBytes * 2
         -- Note the use of hGetRightSize: we must get enough bytes from the
