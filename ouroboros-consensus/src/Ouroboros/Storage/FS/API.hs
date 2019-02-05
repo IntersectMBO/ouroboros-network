@@ -88,6 +88,9 @@ data HasFS m = HasFS {
     -- | Check if the path exists and is a file
   , doesFileExist            :: HasCallStack => FsPath -> m Bool
 
+    -- | Remove the file (which must exist)
+  , removeFile               :: HasCallStack => FsPath -> m ()
+
     -- | Error handling
   , hasFsErr :: ErrorHandling FsError m
   }

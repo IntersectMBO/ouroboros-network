@@ -9,8 +9,8 @@ mkDerivation {
   version = "1.8.10.1";
   src = fetchgit {
     url = "https://github.com/input-output-hk/log-warper";
-    sha256 = "06fim002611p97f8dgd3ifzpaw3qqv0n25qqm79n2m8x9hb1cdxz";
-    rev = "717c48f7ba541981f05ef9d5f930912e45a2ca38";
+    sha256 = "11vw6h3lshhwrjbxni6z0jr6w9x2x338rv6p2b4b0rgr650pv2a9";
+    rev = "16246d4fbf16da7984f2a4b6c42f2ed5098182e4";
     fetchSubmodules = true;
   };
   libraryHaskellDepends = [

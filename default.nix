@@ -1,13 +1,13 @@
 # Builds using system <nixpkgs> and ghc863 with the required package curation.
 let
-  nixpkgs = import <nixpkgs> {};
-
+  # Pin nixpkgs to this one.
+  nixpkgs = import ./nix/nixpkgs.nix {};
   overrides = import ./nix/overrides.nix { inherit nixpkgs; };
 
   cardanoroot = nixpkgs.fetchgit {
     url = "https://github.com/input-output-hk/cardano-sl";
-    rev = "808bcfba81753e4996b3eeead797dee27da59fc9";
-    sha256 = "1qh2338w39pdgnwkzjydy93qxr2m5cg2ij70c4048fz379kdcyrl";
+    rev = "5a4eee1ebded257d785d39a090a216c4a261eb22";
+    sha256 = "0wr3vn7vdc455dfh57aslqr59fx1vgmi6xwdrrfjh8gg00q1dkng";
   };
   cardanopkgs = import ./nix/cardanopkgs.nix { inherit nixpkgs; inherit cardanoroot; };
 

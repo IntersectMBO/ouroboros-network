@@ -122,6 +122,7 @@ simHasFS err = HasFS {
     , listDirectory            = Mock.listDirectory            err'
     , doesDirectoryExist       = Mock.doesDirectoryExist       err'
     , doesFileExist            = Mock.doesFileExist            err'
+    , removeFile               = Mock.removeFile               err'
     , hasFsErr                 = err'
     }
   where
