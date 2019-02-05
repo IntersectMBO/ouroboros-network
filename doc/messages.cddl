@@ -30,8 +30,18 @@ point = bytes .cbor any
 
 ; Request Response Protocol
 ; reference implementation of the codec in
-; ouroboros-network/src/Ouroboros/Network/Protocol/ReqResp/Codec/Cbor.hs
+; ouroboros-network/src/Ouroboros/Network/Protocol/ReqResp/Codec.hs
 
 reqRespMessage = (msgRequest / msgResponse)
-msgRequest  = bytes .cbor any
-msgResponse = bytes .cbor any
+msgRequest  = [0,  requestData]
+msgResponse = [1, responseData]
+
+requestData  = bytes .cbor any
+responseData = bytes .cbor any
+
+; Ping-Pong Protocol
+; reference implementation of the codec in
+; ouroboros-network/src/Ouroboros/Network/Protocol/PingPong/Codec.hs
+pingPongMessage = (msgPing / msgPong)
+msgPing = 0
+msgPong = 1
