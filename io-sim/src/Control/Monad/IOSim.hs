@@ -40,6 +40,7 @@ import qualified Data.Set as Set
 import           Control.Exception
                    ( Exception(..), SomeException, ErrorCall(..), assert )
 import qualified System.IO.Error as IO.Error (userError)
+import qualified Data.Typeable as Typeable
 
 import           Control.Monad
 import           Control.Monad.ST.Lazy
@@ -82,6 +83,8 @@ data SimA s a where
   CancelTimeout:: Timeout (SimM s) -> SimA s b -> SimA s b
 
   Throw        :: Exception e => e -> SimA s a
+  Catch        :: Exception e =>
+                  SimA s a -> (e -> SimA s a) -> (a -> SimA s b) -> SimA s b
 
   Fork         :: SimM s () -> SimA s b -> SimA s b
   Atomically   :: STM  s a -> (a -> SimA s b) -> SimA s b
@@ -251,13 +254,24 @@ instance MonadRunProbe (SimM s) (ST s) where
 -- Simulation interpreter
 --
 
-data Thread s a = Thread {
-       threadId     :: ThreadId,
-       threadAction :: SimA s (ThreadResult a)
-     }
+data Thread s a where
+  Thread :: {
+    threadId      :: ThreadId,
+    threadAction  :: SimA s b,
+    threadControl :: ControlStack s b a
+  } -> Thread s a
 
-data ThreadResult a = MainThreadResult a
-                    | ForkThreadResult
+data ControlStack s b a where
+  MainFrame  :: ControlStack s a  a
+  ForkFrame  :: ControlStack s () a
+  ContFrame  :: (b -> SimA s c)         -- subsequent continuation
+             -> ControlStack s c a
+             -> ControlStack s b a
+  CatchFrame :: Exception e
+             => (e -> SimA s b)         -- exception continuation
+             -> (b -> SimA s c)         -- subsequent continuation
+             -> ControlStack s c a
+             -> ControlStack s b a
 
 newtype ThreadId  = ThreadId  Int deriving (Eq, Ord, Enum, Show)
 newtype TVarId    = TVarId    Int deriving (Eq, Ord, Enum, Show)
@@ -355,7 +369,8 @@ initialState mainAction =
     mainThread =
       Thread {
         threadId      = ThreadId 0,
-        threadAction  = runSimM (fmap MainThreadResult mainAction)
+        threadAction  = runSimM mainAction,
+        threadControl = MainFrame
       }
 
 schedule :: SimState s a -> ST s (Trace a)
@@ -363,57 +378,80 @@ schedule simstate@SimState {
            runqueue = thread@Thread{
                         threadId      = tid,
                         threadAction  = action,
+                        threadControl = ctl
                       } : remaining,
            blocked, timers, nextTid, nextVid, nextTmid,
            curTime  = time
          } =
   case action of
 
-    Return (MainThreadResult a) -> do
-      -- the main thread is done, so we're done
-      -- even if other threads are still running
-      return (TraceMainReturn time a remainingThreadIds)
-      where
-        remainingThreadIds = (map threadId remaining) ++ Map.keys blocked
+    Return x -> case ctl of
+      MainFrame -> do
+        -- the main thread is done, so we're done
+        -- even if other threads are still running
+        let remainingThreadIds = (map threadId remaining) ++ Map.keys blocked
+        return (TraceMainReturn time x remainingThreadIds)
 
-    Return ForkThreadResult -> do
-      -- this thread is done
-      trace <- schedule simstate { runqueue = remaining }
-      return (Trace time tid EventThreadStopped trace)
+      ForkFrame -> do
+        -- this thread is done
+        trace <- schedule simstate { runqueue = remaining }
+        return (Trace time tid EventThreadStopped trace)
 
-    Throw e | tid == ThreadId 0 -> do
-      -- Exception in main thread stops whole sim (no catch yet)
-      let e' = toException e
-      return (Trace time tid (EventThrow e') $
-              Trace time tid (EventThreadException e') $
-              TraceMainException time e' remainingThreadIds)
-      where
-        remainingThreadIds = (map threadId remaining) ++ Map.keys blocked
+      ContFrame k ctl' -> do
+        -- pop the control stack and continue
+        let thread' = Thread tid (k x) ctl'
+        schedule simstate { runqueue = thread':remaining }
 
-    Throw e -> do
-      -- stop this thread on failure (no catch yet)
-      trace <- schedule simstate { runqueue = remaining }
-      let e' = toException e
-      return (Trace time tid (EventThrow e') $
-              Trace time tid (EventThreadException e') trace)
+      CatchFrame _handler k ctl' -> do
+        -- pop the control stack and continue
+        let thread' = Thread tid (k x) ctl'
+        schedule simstate { runqueue = thread':remaining }
+
+    Throw e -> case unwindControlStack tid e ctl of
+      Right thread' ->
+        -- We found a suitable exception handler, continue with that
+        schedule simstate { runqueue = thread':remaining }
+
+      Left isMain
+        -- We unwound and did not find any suitable exception handler, so we
+        -- have an unhandled exception at the top level of the thread.
+        | isMain -> do
+          -- An unhandled exception in the main thread terminates the program
+          let e' = toException e
+              remainingThreadIds = (map threadId remaining) ++ Map.keys blocked
+          return (Trace time tid (EventThrow e') $
+                  Trace time tid (EventThreadException e') $
+                  TraceMainException time e' remainingThreadIds)
+
+        | otherwise -> do
+          -- An unhandled exception in any other thread terminates the thread
+          trace <- schedule simstate { runqueue = remaining }
+          let e' = toException e
+          return (Trace time tid (EventThrow e') $
+                  Trace time tid (EventThreadException e') trace)
+
+    Catch action' handler k -> do
+      -- push the failure and success continuations onto the control stack
+      let thread' = Thread tid action' (CatchFrame handler k ctl)
+      schedule simstate { runqueue = thread':remaining }
 
     Say msg k -> do
-      let thread' = Thread tid k
+      let thread' = Thread tid k ctl
       trace <- schedule simstate { runqueue = thread':remaining }
       return (Trace time tid (EventSay msg) trace)
 
     Output (Probe p) o k -> do
       modifySTRef p ((time, o):)
-      let thread' = Thread tid k
+      let thread' = Thread tid k ctl
       schedule simstate { runqueue = thread':remaining }
 
     LiftST st k -> do
       x <- strictToLazyST st
-      let thread' = Thread tid (k x)
+      let thread' = Thread tid (k x) ctl
       schedule simstate { runqueue = thread':remaining }
 
     GetTime k -> do
-      let thread' = Thread tid (k time)
+      let thread' = Thread tid (k time) ctl
       schedule simstate { runqueue = thread':remaining }
 
     NewTimeout d k -> do
@@ -421,7 +459,7 @@ schedule simstate@SimState {
       let expiry  = d `addTime` time
           timeout = Timeout tvar nextTmid
           timers' = PSQ.insert nextTmid expiry tvar timers
-          thread' = Thread tid (k timeout)
+          thread' = Thread tid (k timeout) ctl
       trace <- schedule simstate { runqueue = thread':remaining
                                  , timers   = timers'
                                  , nextVid  = succ nextVid
@@ -435,21 +473,21 @@ schedule simstate@SimState {
           updateTimout (Just (_p, v)) = ((), Just (expiry, v))
           expiry  = d `addTime` time
           timers' = snd (PSQ.alter updateTimout tmid timers)
-          thread' = Thread tid k
+          thread' = Thread tid k ctl
       trace <- schedule simstate { runqueue = thread':remaining
                                  , timers   = timers' }
       return (Trace time tid (EventTimerUpdated tmid expiry) trace)
 
     CancelTimeout (Timeout _tvar tmid) k -> do
       let timers' = PSQ.delete tmid timers
-          thread' = Thread tid k
+          thread' = Thread tid k ctl
       trace <- schedule simstate { runqueue = thread':remaining
                                  , timers   = timers' }
       return (Trace time tid (EventTimerCancelled tmid) trace)
 
     Fork a k -> do
-      let thread'  = Thread tid k
-          thread'' = Thread tid' (runSimM (a >> return ForkThreadResult))
+      let thread'  = Thread tid   k          ctl
+          thread'' = Thread tid' (runSimM a) ForkFrame
           tid'     = nextTid
       trace <- schedule simstate
         { runqueue = thread':remaining ++ [thread'']
@@ -461,7 +499,7 @@ schedule simstate@SimState {
       res <- execAtomically tid nextVid (runSTM a)
       case res of
         StmTxComitted x written wakeup nextVid' -> do
-          let thread'   = Thread tid (k x)
+          let thread'   = Thread tid (k x) ctl
               unblocked = catMaybes [ Map.lookup tid' blocked | (tid', _) <- wakeup ]
               -- We don't interrupt runnable threads to provide fairness
               -- anywhere else. We do it here by putting the tx that comitted
@@ -485,7 +523,7 @@ schedule simstate@SimState {
 
         StmTxAborted e -> do
           -- schedule this thread to immediately raise the exception
-          let thread' = Thread tid (Throw e)
+          let thread' = Thread tid (Throw e) ctl
           trace <- schedule simstate { runqueue = thread':remaining }
           return (Trace time tid EventTxAborted trace)
 
@@ -535,6 +573,36 @@ schedule simstate@SimState {
         TimeoutPending   -> writeTVar var TimeoutFired
         TimeoutFired     -> error "MonadTimer(Sim): invariant violation"
         TimeoutCancelled -> return ()
+
+-- | Iterate through the control stack to find an enclosing exception handler
+-- of the right type, or unwind all the way to the top level for the thread.
+--
+-- Also return if it's the main thread or a forked thread since we handle the
+-- cases differently.
+--
+unwindControlStack :: Exception e
+                   => ThreadId
+                   -> e
+                   -> ControlStack s b a
+                   -> Either Bool (Thread s a)
+unwindControlStack _ _ MainFrame = Left True
+unwindControlStack _ _ ForkFrame = Left False
+unwindControlStack tid e (ContFrame _k ctl) =
+    unwindControlStack tid e ctl
+
+unwindControlStack tid e (CatchFrame handler k ctl) =
+    case Typeable.cast e of
+      -- not the right type, unwind to the next containing handler
+      Nothing -> unwindControlStack tid e ctl
+
+      -- Ok! We will be able to continue the thread with the handler
+      -- followed by the continuation after the catch
+      Just e' -> Right Thread {
+                   threadId      = tid,
+                   threadAction  = handler e',
+                   threadControl = ContFrame k ctl
+                 }
+
 
 removeMinimums :: (Ord k, Ord p)
                => OrdPSQ k p a
