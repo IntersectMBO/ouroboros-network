@@ -963,9 +963,11 @@ modifyInternalState err@ErrorHandling{..} ImmutableDBHandle {..} action = do
           -> ExitCase (Either ImmutableDBError (InternalState m, r))
           -> m ()
     close mbSt ec = atomically $ case ec of
-      -- Restore the original state in case of an abort or an exception
+      -- Restore the original state in case of an abort
       ExitCaseAbort         -> putTMVar _dbInternalState mbSt
-      ExitCaseException _ex -> putTMVar _dbInternalState mbSt
+      -- In case of an exception, most likely at the HasFS layer, close the DB
+      -- for safety.
+      ExitCaseException _ex -> putTMVar _dbInternalState Nothing
       -- In case of success, update to the newest state
       ExitCaseSuccess (Right (st', _)) -> putTMVar _dbInternalState (Just st')
       -- In case of an error (not an exception)
