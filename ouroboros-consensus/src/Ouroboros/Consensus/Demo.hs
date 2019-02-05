@@ -1,11 +1,14 @@
-{-# LANGUAGE ConstraintKinds       #-}
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE FlexibleInstances     #-}
-{-# LANGUAGE GADTs                 #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE RecordWildCards       #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE UndecidableInstances  #-}
+{-# LANGUAGE ConstraintKinds        #-}
+{-# LANGUAGE FlexibleContexts       #-}
+{-# LANGUAGE FlexibleInstances      #-}
+{-# LANGUAGE GADTs                  #-}
+{-# LANGUAGE KindSignatures         #-}
+{-# LANGUAGE MultiParamTypeClasses  #-}
+{-# LANGUAGE RecordWildCards        #-}
+{-# LANGUAGE ScopedTypeVariables    #-}
+{-# LANGUAGE TypeFamilies           #-}
+{-# LANGUAGE TypeFamilyDependencies #-}
+{-# LANGUAGE UndecidableInstances   #-}
 
 -- | Instantiations of the protocol stack used in tests and demos
 module Ouroboros.Consensus.Demo (
@@ -44,7 +47,8 @@ import           Ouroboros.Consensus.Crypto.VRF
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Ledger.PermBFT
-import           Ouroboros.Consensus.Node (CoreNodeId (..), NodeId (..), NumCoreNodes(..))
+import           Ouroboros.Consensus.Node (CoreNodeId (..), NodeId (..),
+                     NumCoreNodes (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
@@ -54,10 +58,11 @@ import           Ouroboros.Consensus.Protocol.Praos
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.Condense
 
-import           Chain.Blockchain (T(..))
+import           Chain.Blockchain (T (..))
 import           Chain.GenesisBlock (genesisBlock)
 import           Data.Queue (Queue, newQueue)
-import           Ledger.Core (VKey(VKey), Owner(Owner), VKeyGenesis(VKeyGenesis))
+import           Ledger.Core (Owner (Owner), VKey (VKey),
+                     VKeyGenesis (VKeyGenesis))
 import           Types (BlockIx)
 
 {-------------------------------------------------------------------------------
@@ -76,8 +81,11 @@ data DemoProtocol p where
   DemoPraos          :: PraosParams -> DemoProtocol DemoPraos
   DemoLeaderSchedule :: LeaderSchedule -> PraosParams -> DemoProtocol DemoLeaderSchedule
 
--- | Our 'Block' type stays the same.
-type Block p = SimpleBlock p SimpleBlockMockCrypto
+type family Block (p :: *) = b | b -> p
+
+type instance Block DemoBFT            = SimpleBlock DemoBFT            SimpleBlockMockCrypto
+type instance Block DemoPraos          = SimpleBlock DemoPraos          SimpleBlockMockCrypto
+type instance Block DemoLeaderSchedule = SimpleBlock DemoLeaderSchedule SimpleBlockMockCrypto
 
 -- | Data required to run the specified protocol
 data ProtocolInfo p = ProtocolInfo {
@@ -89,8 +97,8 @@ data ProtocolInfo p = ProtocolInfo {
 
 type DemoProtocolConstraints p = (
     OuroborosTag p
+  , HasCreator p
   , ProtocolLedgerView (Block p)
-  , HasCreator (Block p)
   , Condense  (Payload p (SimplePreHeader p SimpleBlockMockCrypto))
   , Eq        (Payload p (SimplePreHeader p SimpleBlockMockCrypto))
   , Serialise (Payload p (SimplePreHeader p SimpleBlockMockCrypto))
@@ -98,7 +106,7 @@ type DemoProtocolConstraints p = (
 
 demoProtocolConstraints :: DemoProtocol p -> Dict (DemoProtocolConstraints p)
 demoProtocolConstraints DemoBFT                  = Dict
-demoProtocolConstraints DemoPermBFT              = Dict
+-- demoProtocolConstraints DemoPermBFT              = Dict
 demoProtocolConstraints (DemoPraos _)            = Dict
 demoProtocolConstraints (DemoLeaderSchedule _ _) = Dict
 
@@ -122,6 +130,7 @@ protocolInfo DemoBFT (NumCoreNodes numCoreNodes) (CoreNodeId nid) =
   where
     addrDist :: AddrDist
     addrDist = mkAddrDist $ fromIntegral numCoreNodes
+{-
 protocolInfo DemoPermBFT numCoreNodes (CoreNodeId nid) =
     ProtocolInfo {
         pInfoConfig = PermBftNodeConfig {
@@ -155,6 +164,7 @@ protocolInfo DemoPermBFT numCoreNodes (CoreNodeId nid) =
       | key <- (VKeyGenesis . VKey . Owner . fromIntegral) <$>
                 [1 .. (getNumCoreNodes numCoreNodes)]
       ]
+-}
 protocolInfo (DemoPraos params) (NumCoreNodes numCoreNodes) (CoreNodeId nid) =
     ProtocolInfo {
         pInfoConfig = EncNodeConfig {
@@ -279,24 +289,24 @@ genesisStakeDist addrDist =
   Who created a block?
 -------------------------------------------------------------------------------}
 
-class HasCreator b where
-    getCreator :: b -> CoreNodeId
+class HasCreator p where
+    getCreator :: Block p -> CoreNodeId
 
-instance HasCreator (Block DemoBFT) where
+instance HasCreator DemoBFT where
     getCreator = CoreNodeId
                . verKeyIdFromSigned
                . bftSignature
                . headerOuroboros
                . simpleHeader
 
-instance HasCreator (Block DemoPraos) where
+instance HasCreator DemoPraos where
     getCreator = praosCreator
                . praosExtraFields
                . encPayloadP
                . headerOuroboros
                . simpleHeader
 
-instance HasCreator (Block DemoLeaderSchedule) where
+instance HasCreator DemoLeaderSchedule where
     getCreator = getWLSPayload
                . headerOuroboros
                . simpleHeader
