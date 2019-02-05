@@ -2,6 +2,7 @@
 {-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
+{-# OPTIONS_GHC -Wno-orphans   #-}
 module Test.Ouroboros.Storage.ImmutableDB (tests) where
 
 import           Control.Monad (void)
@@ -26,6 +27,9 @@ import           Data.Word (Word64)
 import qualified System.IO as IO
 
 import           Test.Ouroboros.Storage.ImmutableDB.Sim (demoScript)
+import qualified Test.Ouroboros.Storage.ImmutableDB.TestBlock as TestBlock
+import qualified Test.Ouroboros.Storage.ImmutableDB.StateMachine as StateMachine
+import qualified Test.Ouroboros.Storage.ImmutableDB.CumulEpochSizes as CumulEpochSizes
 import           Test.Ouroboros.Storage.Util
 import           Test.QuickCheck
 import           Test.QuickCheck.Monadic (monadicIO, pick, run)
@@ -73,8 +77,12 @@ tests = testGroup "ImmutableDB"
       , testProperty "Random iterators" prop_iterator
       , testProperty "Slotoffsets/Index roundtrip " prop_indexToSlotOffsets_indexFromSlotOffsets
       , testProperty "isFilledSlot iff in filledSlots" prop_filledSlots_isFilledSlot
+      , testProperty "writeIndex/loadIndex roundtrip" prop_writeIndex_loadIndex
       , testProperty "writeSlotOffsets/loadIndex/indexToSlotOffsets roundtrip" prop_writeSlotOffsets_loadIndex_indexToSlotOffsets
       ]
+    , TestBlock.tests
+    , StateMachine.tests
+    , CumulEpochSizes.tests
     ]
 
 -- Shorthand
@@ -519,7 +527,7 @@ prop_iterator IteratorContentsAndRange {..} = monadicIO $ do
                  show actualBlobs)
       Right _ -> return ()
 
-newtype SlotOffsets = SlotOffsets (NonEmpty SlotOffset)
+newtype SlotOffsets = SlotOffsets { getSlotOffsets :: NonEmpty SlotOffset }
   deriving (Show)
 
 instance Arbitrary SlotOffsets where
@@ -529,6 +537,11 @@ instance Arbitrary SlotOffsets where
     | offsetList <- shrink $ NE.toList offsets
     , offsets' <- maybeToList $ NE.nonEmpty offsetList ]
 
+instance Arbitrary Index where
+  arbitrary = indexFromSlotOffsets . getSlotOffsets <$> arbitrary
+  shrink index =
+    [ indexFromSlotOffsets $ getSlotOffsets offsets'
+    | offsets' <- shrink (SlotOffsets (indexToSlotOffsets index)) ]
 
 prop_indexToSlotOffsets_indexFromSlotOffsets :: SlotOffsets -> Property
 prop_indexToSlotOffsets_indexFromSlotOffsets (SlotOffsets offsets) =
@@ -543,6 +556,29 @@ prop_filledSlots_isFilledSlot (SlotOffsets offsets) = conjoin
           | otherwise       = map RelativeSlot [0..indexSlots idx-1]
     totalSlots = indexSlots idx
     idx = indexFromSlotOffsets offsets
+
+prop_writeIndex_loadIndex :: Index -> Property
+prop_writeIndex_loadIndex index =
+    monadicIO $ run $ runS prop
+  where
+    dbFolder = []
+    epoch = 0
+
+    prop :: SimFS IO Property
+    prop = do
+      writeIndex hasFS dbFolder epoch index
+      index' <- loadIndex hasFS dbFolder epoch
+      return $ index === index'
+
+    hasFS :: HasFS (SimFS IO)
+    hasFS = Sim.simHasFS EH.exceptions
+
+    runS :: SimFS IO Property -> IO Property
+    runS m = do
+        r <- tryFS (Sim.runSimFS m Mock.empty)
+        case r of
+          Left  e      -> fail (prettyFsError e)
+          Right (p, _) -> return p
 
 prop_writeSlotOffsets_loadIndex_indexToSlotOffsets :: SlotOffsets -> Property
 prop_writeSlotOffsets_loadIndex_indexToSlotOffsets (SlotOffsets offsets) =

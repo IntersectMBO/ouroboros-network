@@ -14,9 +14,11 @@ module Ouroboros.Storage.FS.Sim.STM (
     , runSimFS
     , simHasFS
     , liftErrSimFS
+    , Buffer(MockBufferUnused)
     ) where
 
 import           Control.Monad.Catch
+import           Control.Monad.IO.Unlift
 import           Control.Monad.Reader
 import           Control.Monad.State
 import           Data.Proxy
@@ -66,6 +68,12 @@ instance MonadSTM m => MonadState MockFS (SimFS m) where
 
 instance MonadTrans SimFS where
   lift = SimFS . lift
+
+instance MonadIO m => MonadIO (SimFS m) where
+  liftIO = lift . liftIO
+
+instance MonadUnliftIO m => MonadUnliftIO (SimFS m) where
+  withRunInIO = wrappedWithRunInIO SimFS unSimFS
 
 newtype TrSimFS m a = TrSimFS { trSimFS :: m a }
   deriving (Functor, Applicative, Monad)

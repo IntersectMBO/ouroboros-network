@@ -76,9 +76,10 @@ import           Ouroboros.Storage.FS.Sim.Pure
 import qualified Ouroboros.Storage.IO as F
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
-import           Ouroboros.Consensus.Util
 import qualified Ouroboros.Consensus.Util.Classify as C
 import           Ouroboros.Consensus.Util.Condense
+
+import           Test.Ouroboros.Storage.Util (collects)
 
 import           Test.Util.RefEnv (RefEnv)
 import qualified Test.Util.RefEnv as RE
@@ -886,13 +887,6 @@ tests tmpDir = testGroup "HasFS" [
 -- for execution.
 mountUnused :: MountPoint
 mountUnused = error "mount point not used during command generation"
-
-{-------------------------------------------------------------------------------
-  QuickCheck auxiliary
--------------------------------------------------------------------------------}
-
-collects :: Show a => [a] -> Property -> Property
-collects = repeatedly collect
 
 {-------------------------------------------------------------------------------
   Debugging

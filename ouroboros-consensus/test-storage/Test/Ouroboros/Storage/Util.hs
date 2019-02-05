@@ -6,14 +6,25 @@ module Test.Ouroboros.Storage.Util where
 
 import           Control.Exception (Exception, SomeException)
 import qualified Control.Exception as E
-import           Control.Monad.Catch (MonadMask)
+import           Control.Monad.Catch (MonadMask, MonadCatch)
+import qualified Control.Monad.Catch as C
+import           Control.Monad.Class.MonadSTM (MonadSTM)
+
+import           Data.ByteString (ByteString)
+import qualified Data.ByteString.Builder as BS
+import qualified Data.ByteString.Char8 as C8
+import qualified Data.ByteString.Lazy as BL
+import qualified Data.ByteString.Lazy.Char8 as LC8
+import           Data.String (IsString(..))
 
 import           System.Directory (getTemporaryDirectory)
 import           System.IO.Temp (withTempDirectory)
 
+import           Test.QuickCheck (Property, Arbitrary(..), ASCIIString(..),
+                                  collect, suchThat)
 import           Test.Tasty.HUnit
 
-import           Control.Monad.Class.MonadSTM (MonadSTM)
+import           Ouroboros.Consensus.Util (repeatedly)
 
 import           Ouroboros.Storage.FS.API (HasFS)
 import           Ouroboros.Storage.FS.API.Types
@@ -84,8 +95,8 @@ expectUnexpectedError :: (HasCallStack, Show a)
                       => (UnexpectedError -> Bool)
                       -> Either ImmutableDBError a
                       -> Assertion
-expectUnexpectedError unexpectetdErrPred = expectDBError $ \case
-    UnexpectedError ue | unexpectetdErrPred ue -> True
+expectUnexpectedError unexpectedErrPred = expectDBError $ \case
+    UnexpectedError ue | unexpectedErrPred ue -> True
     _ -> False
 
 expectResult :: (e -> String)
@@ -178,8 +189,8 @@ tryAny = E.try
 tryFS :: IO a -> IO (Either FsError a)
 tryFS = E.try
 
-tryImmDB :: IO a -> IO (Either ImmutableDBError a)
-tryImmDB = fmap squash . E.try . E.try
+tryImmDB :: MonadCatch m => m a -> m (Either ImmutableDBError a)
+tryImmDB = fmap squash . C.try . C.try
   where
     -- TODO: With the redesigned error handling I'm not sure whether it's
     -- still necessary that ImmutableDBError can wrap FsError; I think we can
@@ -191,3 +202,44 @@ tryImmDB = fmap squash . E.try . E.try
     -- and the rest adjusted accordingly.
     squash :: Either FsError (Either ImmutableDBError x) -> Either ImmutableDBError x
     squash = either (Left . UnexpectedError . FileSystemError) id
+
+
+{-------------------------------------------------------------------------------
+  QuickCheck auxiliary
+-------------------------------------------------------------------------------}
+
+collects :: Show a => [a] -> Property -> Property
+collects = repeatedly collect
+
+
+
+{------------------------------------------------------------------------------
+  Blob
+------------------------------------------------------------------------------}
+
+-- For the custom 'Show' and 'Arbitrary' instances
+--
+-- A builder of a non-empty bytestring.
+newtype Blob = MkBlob { getBlob :: BS.Builder }
+
+instance Show Blob where
+    show = show . BS.toLazyByteString . getBlob
+
+instance Arbitrary Blob where
+    arbitrary = do
+      str <- (getASCIIString <$> arbitrary) `suchThat` (not . null)
+      return $ fromString str
+    shrink (MkBlob b) =
+      [ fromString s'
+      | let s = ASCIIString $ LC8.unpack $ BS.toLazyByteString b
+      , s' <- getASCIIString <$> shrink s
+      , not (null s') ]
+
+blobToBS :: Blob -> ByteString
+blobToBS = BL.toStrict . BS.toLazyByteString . getBlob
+
+blobFromBS :: ByteString -> Blob
+blobFromBS = MkBlob . BS.byteString
+
+instance IsString Blob where
+    fromString = blobFromBS . C8.pack

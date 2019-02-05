@@ -15,6 +15,7 @@ module Ouroboros.Storage.Util.ErrorHandling (
   , monadError
   , exceptions
   , exceptT
+  , monadCatch
   , embed
   , liftErrNewtype
   , liftErrReader
@@ -23,6 +24,8 @@ module Ouroboros.Storage.Util.ErrorHandling (
 
 import           Control.Exception (Exception)
 import qualified Control.Exception as E
+import           Control.Monad.Catch (MonadCatch)
+import qualified Control.Monad.Catch as C
 import           Control.Monad.Except (ExceptT, MonadError)
 import qualified Control.Monad.Except as M
 import           Control.Monad.Reader (ReaderT (..), runReaderT)
@@ -58,6 +61,12 @@ monadError = ErrorHandling {
 
 exceptT :: Monad m => ErrorHandling e (ExceptT e m)
 exceptT = monadError
+
+monadCatch :: (MonadCatch m, Exception e) => ErrorHandling e m
+monadCatch = ErrorHandling {
+      throwError = C.throwM
+    , catchError = C.catch
+    }
 
 exceptions :: Exception e => ErrorHandling e IO
 exceptions = ErrorHandling {
