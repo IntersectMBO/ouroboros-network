@@ -34,7 +34,6 @@ library
   build-depends:       base              >=4.9 && <4.13,
                        io-sim-classes    >=0.1 && <0.2,
                        containers,
-                       free,
                        psqueues          >=0.2 && <0.3
 
   ghc-options:         -Wall
