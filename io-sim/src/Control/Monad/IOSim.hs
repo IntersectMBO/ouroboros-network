@@ -37,7 +37,7 @@ import qualified Data.Map.Strict as Map
 import           Data.Maybe (catMaybes)
 import qualified Data.Set as Set
 
-import           Control.Exception (assert)
+import           Control.Exception (Exception(..), SomeException, assert)
 import           Control.Monad
 import           Control.Monad.ST.Lazy
 import qualified Control.Monad.ST.Strict as StrictST
@@ -78,6 +78,8 @@ data SimA s a where
   NewTimeout   :: VTimeDuration -> (Timeout (SimM s) -> SimA s b) -> SimA s b
   UpdateTimeout:: Timeout (SimM s) -> VTimeDuration -> SimA s b -> SimA s b
   CancelTimeout:: Timeout (SimM s) -> SimA s b -> SimA s b
+
+  Throw        :: Exception e => e -> SimA s a
 
   Fork         :: SimM s () -> SimA s b -> SimA s b
   Atomically   :: STM  s a -> (a -> SimA s b) -> SimA s b
@@ -256,13 +258,16 @@ newtype TimeoutId = TimeoutId Int deriving (Eq, Ord, Enum, Show)
 
 data Trace a = Trace !VTime !ThreadId !TraceEvent (Trace a)
              | TraceMainReturn    !VTime a             ![ThreadId]
+             | TraceMainException !VTime SomeException ![ThreadId]
              | TraceDeadlock      !VTime               ![ThreadId]
 
 data TraceEvent
   = EventFail String
   | EventSay  String
+  | EventThrow SomeException
   | EventThreadForked ThreadId
-  | EventThreadStopped
+  | EventThreadStopped                 -- terminated normally
+  | EventThreadException SomeException -- terminated due to unhandled exception
   | EventTxComitted    [TVarId] -- tx wrote to these
                        [TVarId] -- and created these
   | EventTxBlocked     [TVarId] -- tx blocked reading these
@@ -273,9 +278,20 @@ data TraceEvent
   | EventTimerExpired   TimeoutId
   deriving Show
 
-data Failure = FailureDeadlock
-             | FailureSloppyShutdown
-  deriving (Eq, Show)
+-- | Simulation termination with failure
+--
+data Failure =
+       -- | The main thread terminated with an exception
+       FailureException SomeException
+
+       -- | The threads all deadlocked
+     | FailureDeadlock
+
+       -- | The main thread terminated normally but other threads were still
+       -- alive, and strict shutdown checking was requested.
+       -- See 'runSimStrictShutdown'
+     | FailureSloppyShutdown
+  deriving Show
 
 runSim :: forall a. (forall s. SimM s a) -> Either Failure a
 runSim initialThread =
@@ -295,6 +311,7 @@ collectSimResult strict = go
     go (Trace _ _ _ t)                      = go t
     go (TraceMainReturn _ _ (_:_)) | strict = Left FailureSloppyShutdown
     go (TraceMainReturn _ x _)              = Right x
+    go (TraceMainException _ e _)           = Left (FailureException e)
     go (TraceDeadlock   _   _)              = Left FailureDeadlock
 
 
@@ -353,6 +370,22 @@ schedule simstate@SimState {
       -- stop just this thread on failure
       trace <- schedule simstate { runqueue = remaining }
       return (Trace time tid (EventFail msg) trace)
+
+    Throw e | tid == ThreadId 0 -> do
+      -- Exception in main thread stops whole sim (no catch yet)
+      let e' = toException e
+      return (Trace time tid (EventThrow e') $
+              Trace time tid (EventThreadException e') $
+              TraceMainException time e' remainingThreadIds)
+      where
+        remainingThreadIds = (map threadId remaining) ++ Map.keys blocked
+
+    Throw e -> do
+      -- stop this thread on failure (no catch yet)
+      trace <- schedule simstate { runqueue = remaining }
+      let e' = toException e
+      return (Trace time tid (EventThrow e') $
+              Trace time tid (EventThreadException e') trace)
 
     Say msg k -> do
       let thread' = Thread tid k
