@@ -43,7 +43,9 @@ prop_stm_graph_io g =
 
 prop_stm_graph_sim :: TestThreadGraph -> Bool
 prop_stm_graph_sim g =
-    Sim.runSim (prop_stm_graph g) == Right ()
+    case Sim.runSim (prop_stm_graph g) of
+       Right () -> True
+       _        -> False
     -- TODO: Note that we do not use Sim.runSimStrictShutdown here to check
     -- that all other threads finished, but perhaps we should and structure
     -- the graph tests so that's the case.
