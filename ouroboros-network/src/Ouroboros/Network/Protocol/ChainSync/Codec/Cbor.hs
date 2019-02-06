@@ -1,177 +1,100 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE EmptyCase #-}
-
-{-# OPTIONS_GHC "-fwarn-incomplete-patterns" #-}
+{-# LANGUAGE NamedFieldPuns #-}
 
 module Ouroboros.Network.Protocol.ChainSync.Codec.Cbor where
 
-import Prelude hiding (fail)
-import Control.Monad.Fail (fail)
-import Control.Monad.ST
+import           Control.Monad.Class.MonadST
+
+import           Network.TypedProtocol.Codec
+--import         Ouroboros.Network.Protocol.Codec
+import           Ouroboros.Network.Protocol.ChainSync.Type
+
+
+import qualified Codec.CBOR.Encoding as CBOR (Encoding)
+import qualified Codec.CBOR.Read     as CBOR
+import qualified Codec.CBOR.Decoding as CBOR (Decoder)
 
 import Data.ByteString (ByteString)
-import Data.Monoid ((<>))
-import Data.Text (Text)
-import qualified Data.Text as T
-import Codec.CBOR.Encoding (Encoding, encodeListLen, encodeWord)
+import Codec.CBOR.Encoding (encodeListLen, encodeWord)
 import Codec.CBOR.Decoding (decodeListLen, decodeWord)
-import qualified Codec.CBOR.Decoding as CBOR (Decoder)
 import Codec.Serialise.Class (Serialise)
 import qualified Codec.Serialise.Class as CBOR
 
-import Protocol.Codec
 
-import Ouroboros.Network.Protocol.ChainSync.Type
-import Ouroboros.Network.Protocol.Codec.Cbor (cborDecoder)
-
-codecChainSync
-  :: forall s header point .
-     ( Serialise header, Serialise point )
-  => Codec (ST s) Text Encoding ByteString (ChainSyncMessage header point) StIdle
-codecChainSync = codecIdle
-
-codecIdle
-  :: forall s header point .
-     ( Serialise header, Serialise point )
-  => Codec (ST s) Text Encoding ByteString (ChainSyncMessage header point) StIdle
-codecIdle = Codec
-  { encode = cborEncodeIdle
-  , decode = cborDecoder T.pack cborDecodeIdle
-  }
+codecChainSync :: forall header point pk m.
+                  (MonadST m, Serialise header, Serialise point)
+               => Codec (ChainSync header point) pk
+                        CBOR.DeserialiseFailure m ByteString
+codecChainSync =
+    cborCodec encode decode
   where
+    encode :: WeHaveAgency pk st
+           -> Message (ChainSync header point) st st'
+           -> CBOR.Encoding
 
-  cborEncodeIdle
-    :: Encoder (ChainSyncMessage header point) StIdle (Encoded Encoding (Codec (ST s) Text Encoding ByteString (ChainSyncMessage header point)))
-  cborEncodeIdle = Encoder $ \tr -> case tr of
-    MsgRequestNext -> Encoded (encodeListLen 1 <> encodeWord 0) codecNext_CanAwait
-    MsgFindIntersect pts -> Encoded (encodeListLen 2 <> encodeWord 4 <> CBOR.encode pts) codecIntersect
-    MsgDone -> Encoded (encodeListLen 1 <> encodeWord 7) codecDone
+    encode (ClientAgency TokIdle) MsgRequestNext =
+      encodeListLen 1 <> encodeWord 0
 
-  cborDecodeIdle
-    :: CBOR.Decoder s (Decoded (ChainSyncMessage header point) StIdle (Codec (ST s) Text Encoding ByteString (ChainSyncMessage header point)))
-  cborDecodeIdle = do
-    _ <- decodeListLen
-    key <- decodeWord
-    case key of
-      0 -> pure $ Decoded MsgRequestNext codecNext_CanAwait
-      4 -> do
-        pts <- CBOR.decode
-        pure $ Decoded (MsgFindIntersect pts) codecIntersect
-      7 -> pure $ Decoded MsgDone codecDone
-      _ -> fail "ChainSyncMessage.idle: unexpected key"
+    encode (ServerAgency TokNext{}) MsgAwaitReply =
+      encodeListLen 1 <> encodeWord 1
 
--- | We need to specify 'StCanAwait and do this independently of
--- 'codecNext_MustReply'. If we tried to leave it free, the decoder
--- would not work for 'MsgAwaitReply', since it picks 'StCanAwait.
---
--- Sadly, it means the encoding of the other 2 next message (roll forwards or
--- backwards) is duplicated. With some refactoring the duplication could be
--- minimized. NB: their encodings do not need to agree. They could be
--- completely different, and the protocol would still work over it, as long
--- as they are locally consistent.
-codecNext_CanAwait
-  :: forall s header point .
-     ( Serialise header, Serialise point )
-  => Codec (ST s) Text Encoding ByteString (ChainSyncMessage header point) (StNext StCanAwait)
-codecNext_CanAwait = Codec
-  { encode = cborEncodeNext
-  , decode = cborDecoder T.pack cborDecodeNext
-  }
-  where
+    encode (ServerAgency TokNext{}) (MsgRollForward h p) =
+      encodeListLen 3 <> encodeWord 2 <> CBOR.encode h <> CBOR.encode p
 
-  cborEncodeNext
-    :: Encoder (ChainSyncMessage header point) (StNext StCanAwait) (Encoded Encoding (Codec (ST s) Text Encoding ByteString (ChainSyncMessage header point)))
-  cborEncodeNext = Encoder $ \tr -> case tr of
-    MsgAwaitReply -> Encoded (encodeListLen 1 <> encodeWord 1) codecNext_MustReply
-    MsgRollForward h p -> Encoded (encodeListLen 3 <> encodeWord 2 <> CBOR.encode h <> CBOR.encode p) codecIdle
-    MsgRollBackward p p' -> Encoded (encodeListLen 3 <> encodeWord 3 <> CBOR.encode p <> CBOR.encode p') codecIdle
+    encode (ServerAgency TokNext{}) (MsgRollBackward p1 p2) =
+      encodeListLen 3 <> encodeWord 3 <> CBOR.encode p1 <> CBOR.encode p2
 
-  cborDecodeNext
-    :: CBOR.Decoder s (Decoded (ChainSyncMessage header point) (StNext StCanAwait) (Codec (ST s) Text Encoding ByteString (ChainSyncMessage header point)))
-  cborDecodeNext = do
-    _ <- decodeListLen
-    key <- decodeWord
-    case key of
-      1 -> pure $ Decoded MsgAwaitReply codecNext_MustReply
-      2 -> do
-        h <- CBOR.decode
-        p <- CBOR.decode
-        pure $ Decoded (MsgRollForward h p) codecIdle
-      3 -> do
-        p <- CBOR.decode
-        p' <- CBOR.decode
-        pure $ Decoded (MsgRollBackward p p') codecIdle
-      _ -> fail "ChainSyncMessage.next: unexpected key"
+    encode (ClientAgency TokIdle) (MsgFindIntersect ps) =
+      encodeListLen 2 <> encodeWord 4 <> CBOR.encode ps
 
-codecNext_MustReply
-  :: forall s header point .
-     ( Serialise header, Serialise point )
-  => Codec (ST s) Text Encoding ByteString (ChainSyncMessage header point) (StNext StMustReply)
-codecNext_MustReply = Codec
-  { encode = cborEncodeNext
-  , decode = cborDecoder T.pack cborDecodeNext
-  }
-  where
+    encode (ServerAgency TokIntersect) (MsgIntersectImproved p1 p2) =
+      encodeListLen 3 <> encodeWord 5 <> CBOR.encode p1 <> CBOR.encode p2
 
-  cborEncodeNext
-    :: Encoder (ChainSyncMessage header point) (StNext StMustReply) (Encoded Encoding (Codec (ST s) Text Encoding ByteString (ChainSyncMessage header point)))
-  cborEncodeNext = Encoder $ \tr -> case tr of
-    MsgRollForward h p -> Encoded (encodeListLen 3 <> encodeWord 2 <> CBOR.encode h <> CBOR.encode p) codecIdle
-    MsgRollBackward p p' -> Encoded (encodeListLen 3 <> encodeWord 3 <> CBOR.encode p <> CBOR.encode p') codecIdle
+    encode (ServerAgency TokIntersect) (MsgIntersectUnchanged p) =
+      encodeListLen 2 <> encodeWord 6 <> CBOR.encode p
 
-  cborDecodeNext
-    :: CBOR.Decoder s (Decoded (ChainSyncMessage header point) (StNext StMustReply) (Codec (ST s) Text Encoding ByteString (ChainSyncMessage header point)))
-  cborDecodeNext = do
-    _ <- decodeListLen
-    key <- decodeWord
-    case key of
-      2 -> do
-        h <- CBOR.decode
-        p <- CBOR.decode
-        pure $ Decoded (MsgRollForward h p) codecIdle
-      3 -> do
-        p <- CBOR.decode
-        p' <- CBOR.decode
-        pure $ Decoded (MsgRollBackward p p') codecIdle
-      _ -> fail "ChainSyncMessage.next: unexpected key"
+    encode (ClientAgency TokIdle) MsgDone =
+      encodeListLen 1 <> encodeWord 7
 
-codecIntersect
-  :: forall s header point .
-     ( Serialise header, Serialise point )
-  => Codec (ST s) Text Encoding ByteString (ChainSyncMessage header point) StIntersect
-codecIntersect = Codec
-  { encode = cborEncodeIntersect
-  , decode = cborDecoder T.pack cborDecodeIntersect
-  }
-  where
+    decode :: TheyHaveAgency pk st
+           -> CBOR.Decoder s (SomeMessage st)
+    decode stok = do
+      len <- decodeListLen
+      key <- decodeWord
+      case (key, len, stok) of
+        (0, 1, ClientAgency TokIdle) ->
+          return (SomeMessage MsgRequestNext)
 
-  cborEncodeIntersect
-    :: Encoder (ChainSyncMessage header point) StIntersect (Encoded Encoding (Codec (ST s) Text Encoding ByteString (ChainSyncMessage header point)))
-  cborEncodeIntersect = Encoder $ \tr -> case tr of
-    MsgIntersectImproved p p' -> Encoded (encodeListLen 3 <> encodeWord 5 <> CBOR.encode p <> CBOR.encode p') codecIdle
-    MsgIntersectUnchanged p -> Encoded (encodeListLen 2 <> encodeWord 6 <> CBOR.encode p) codecIdle
+        (1, 1, ServerAgency (TokNext TokCanAwait)) ->
+          return (SomeMessage MsgAwaitReply)
 
-  cborDecodeIntersect
-    :: CBOR.Decoder s (Decoded (ChainSyncMessage header point) StIntersect (Codec (ST s) Text Encoding ByteString (ChainSyncMessage header point)))
-  cborDecodeIntersect = do
-    _ <- decodeListLen
-    key <- decodeWord
-    case key of
-      5 -> do
-        p <- CBOR.decode
-        p' <- CBOR.decode
-        pure $ Decoded (MsgIntersectImproved p p') codecIdle
-      6 -> do
-        p <- CBOR.decode
-        pure $ Decoded (MsgIntersectUnchanged p) codecIdle
-      _ -> fail "ChainSyncMessage.intersect: unexpected key"
+        (2, 3, ServerAgency (TokNext _)) -> do
+          h <- CBOR.decode
+          p <- CBOR.decode
+          return (SomeMessage (MsgRollForward h p))
 
+        (3, 3, ServerAgency (TokNext _)) -> do
+          p1 <- CBOR.decode
+          p2 <- CBOR.decode
+          return (SomeMessage (MsgRollBackward p1 p2))
 
-codecDone :: Codec (ST s) Text Encoding ByteString (ChainSyncMessage header point) StDone
-codecDone = Codec
-  { encode = Encoder $ \tr -> case tr of { }
-  , decode = Fold $ pure $ Complete [] $ pure $ Left $ T.pack "no transitions from done"
-  }
+        (4, 2, ClientAgency TokIdle) -> do
+          ps <- CBOR.decode
+          return (SomeMessage (MsgFindIntersect ps))
+
+        (5, 3, ServerAgency TokIntersect) -> do
+          p1 <- CBOR.decode
+          p2 <- CBOR.decode
+          return (SomeMessage (MsgIntersectImproved p1 p2))
+
+        (6, 2, ServerAgency TokIntersect) -> do
+          p <- CBOR.decode
+          return (SomeMessage (MsgIntersectUnchanged p))
+
+        (7, 1, ClientAgency TokIdle) ->
+          return (SomeMessage MsgDone)
+
+        _ -> fail ("codecChainSync: unexpected key " ++ show (key, len))
+
