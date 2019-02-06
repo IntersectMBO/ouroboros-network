@@ -16,6 +16,8 @@ module Network.TypedProtocol.Codec (
   , WeHaveAgency
   , TheyHaveAgency
   , SomeMessage(..)
+  , AnyMessage(..)
+  , withAnyMessage
     -- ** Incremental decoding
   , DecodeStep(..)
     -- * Utilities
@@ -145,6 +147,23 @@ data Codec ps (pk :: PeerKind) failure m bytes = Codec {
 data SomeMessage (st :: ps) where
      SomeMessage :: Message ps st st' -> SomeMessage st
 
+
+-- | Existential type which hides both from and to states of a 'Message'. It is
+-- useful for implementing 'Id' codec which encodes a message by wrapping it in
+-- 'AnyMessage' and which decodes from it.
+--
+data AnyMessage ps where
+  AnyMessage :: Message ps (st :: ps) (st' :: ps) -> AnyMessage ps
+
+-- | Run any computation which is indpenendent of both from and to states of
+-- a 'Message'.
+--
+withAnyMessage
+  :: forall ps t.
+     (forall (st :: ps) (st' :: ps). Message ps st st' -> t)
+  -> AnyMessage ps
+  -> t
+withAnyMessage f (AnyMessage msg) = f msg
 
 -- | An incremental decoder with return a value of type @a@.
 --
