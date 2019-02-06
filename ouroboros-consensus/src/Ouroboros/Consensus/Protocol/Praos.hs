@@ -115,7 +115,7 @@ data Praos c
 -- | Praos parameters that are node independent
 data PraosParams = PraosParams {
       praosLeaderF       :: Double
-    , praosK             :: Word
+    , praosSecurityParam :: SecurityParam
     , praosSlotsPerEpoch :: Word
     , praosLifetimeKES   :: Natural
     }
@@ -136,6 +136,8 @@ instance PraosCrypto c => OuroborosTag (Praos c) where
     , praosSignKeyVRF    :: SignKeyVRF (PraosVRF c)
     , praosVerKeys       :: IntMap (VerKeyKES (PraosKES c), VerKeyVRF (PraosVRF c))
     }
+
+  protocolSecurityParam = praosSecurityParam . praosParams
 
   type NodeState      (Praos c) = SignKeyKES (PraosKES c)
   type LedgerView     (Praos c) = StakeDist
@@ -238,20 +240,24 @@ instance PraosCrypto c => OuroborosTag (Praos c) where
 
     return $ bi : cs
 
-  compareChain PraosNodeConfig{..} slot ours theirs
-    |    forksAtMostKBlocks k ours' theirs'
-      && Chain.length theirs' > Chain.length ours' = Theirs
-    | otherwise                                    = Ours
+  -- NOTE: We redefine `preferCandidate` but NOT `compareCandidates`
+  preferCandidate PraosNodeConfig{..} slot ours cand
+    | forksAtMostKBlocks k ours' cand' &&
+      Chain.length cand' > Chain.length ours'
+    = Just cand'
+    | otherwise
+    = Nothing
     where
       clip = upToSlot slot
 
-      ours'   = clip ours
-      theirs' = clip theirs
+      ours' = clip ours
+      cand' = clip cand
 
       PraosParams{..} = praosParams
 
-      k :: Int
-      k = fromIntegral praosK
+      k :: Word
+      k = maxRollbacks praosSecurityParam
+
 
 deriving instance PraosCrypto c => Show (Payload (Praos c) ph)
 deriving instance PraosCrypto c => Eq   (Payload (Praos c) ph)

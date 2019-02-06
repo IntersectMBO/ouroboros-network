@@ -60,9 +60,11 @@ instance OuroborosTag p => OuroborosTag (ExtNodeConfig cfg p) where
   mkPayload (EncNodeConfig cfg _) proof ph =
       EncPayload <$> mkPayload cfg proof ph
 
-  compareChain    (EncNodeConfig cfg _) = compareChain    cfg
-  checkIsLeader   (EncNodeConfig cfg _) = checkIsLeader   cfg
-  applyChainState (EncNodeConfig cfg _) = applyChainState cfg
+  preferCandidate       (EncNodeConfig cfg _) = preferCandidate       cfg
+  compareCandidates     (EncNodeConfig cfg _) = compareCandidates     cfg
+  checkIsLeader         (EncNodeConfig cfg _) = checkIsLeader         cfg
+  applyChainState       (EncNodeConfig cfg _) = applyChainState       cfg
+  protocolSecurityParam (EncNodeConfig cfg _) = protocolSecurityParam cfg
 
 deriving instance Eq       (Payload p ph) => Eq       (Payload (ExtNodeConfig cfg p) ph)
 deriving instance Ord      (Payload p ph) => Ord      (Payload (ExtNodeConfig cfg p) ph)

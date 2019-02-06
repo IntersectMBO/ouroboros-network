@@ -29,30 +29,36 @@ import           Test.Tasty.QuickCheck
 
 import           Ouroboros.Consensus.Demo
 import           Ouroboros.Consensus.Node
+import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Network.Chain (Chain)
 
 import           Test.Dynamic.General
 import           Test.Dynamic.Util
+import           Test.Orphans.Arbitrary ()
 
 tests :: TestTree
 tests = testGroup "Dynamic chain generation" [
       testProperty "simple BFT convergence" $
-        prop_simple_bft_convergence
-          (NumSlots 50)
-          (NumCoreNodes 3)
+        prop_simple_bft_convergence params
     ]
+  where
+    params = defaultSecurityParam
 
-prop_simple_bft_convergence :: NumSlots -> NumCoreNodes -> Seed -> Property
-prop_simple_bft_convergence numSlots numCoreNodes =
+prop_simple_bft_convergence :: SecurityParam
+                            -> NumCoreNodes
+                            -> NumSlots
+                            -> Seed
+                            -> Property
+prop_simple_bft_convergence params numCoreNodes =
     prop_simple_protocol_convergence
-      (protocolInfo DemoBFT numCoreNodes)
+      (protocolInfo (DemoBFT params) numCoreNodes)
       isValid
-      numSlots
       numCoreNodes
   where
-    isValid :: [NodeId]
-            -> [(VTime, Map NodeId (Chain (Block DemoBFT)))]
+    isValid :: Show time
+            => [NodeId]
+            -> [(time, Map NodeId (Chain (Block DemoBFT)))]
             -> Property
     isValid nodeIds trace = counterexample (show trace) $
       case trace of
