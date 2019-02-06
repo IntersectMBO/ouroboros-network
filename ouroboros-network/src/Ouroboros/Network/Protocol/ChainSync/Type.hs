@@ -1,7 +1,8 @@
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE GADTs             #-}
+{-# LANGUAGE TypeFamilies      #-}
+{-# LANGUAGE DataKinds         #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE EmptyCase         #-}
 
 -- | The type of the chain synchronisation protocol.
 --
@@ -11,6 +12,7 @@
 module Ouroboros.Network.Protocol.ChainSync.Type where
 
 import Network.TypedProtocol.Core
+import Network.TypedProtocol.Proofs
 
 
 -- | A kind to identify our protocol, and the types of the states in the state
@@ -149,3 +151,10 @@ instance Show (Message (ChainSync header point) from to) where
   show MsgIntersectUnchanged{} = "MsgIntersectUnchanged"
   show MsgDone{}               = "MsgDone"
 
+
+chainSyncAgencyProofs :: AgencyProofs (ChainSync header point)
+chainSyncAgencyProofs = AgencyProofs {
+    proofByContradiction_ClientAndServerHaveAgency = \TokIdle tok -> case tok of {},
+    proofByContradiction_NobodyAndClientHaveAgency = \TokDone tok -> case tok of {},
+    proofByContradiction_NobodyAndServerHaveAgency = \TokDone tok -> case tok of {}
+  }
