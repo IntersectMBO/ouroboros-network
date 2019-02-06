@@ -17,10 +17,7 @@ module Ouroboros.Network.Pipe (
 import           Control.Concurrent (forkIO, threadDelay)
 import           Control.Concurrent.Async
 import           Control.Concurrent.STM
-import           Control.Monad.ST (stToIO)
-import           Data.Text (Text, unpack)
 import           System.IO (Handle, hIsEOF, hFlush)
-import           System.Process (createPipe)
 
 import           Ouroboros.Network.Chain (Chain, ChainUpdate, Point)
 import qualified Ouroboros.Network.Chain as Chain
@@ -32,13 +29,16 @@ import           Ouroboros.Network.Protocol.ChainSync.Server
 import           Ouroboros.Network.Protocol.ChainSync.Examples
 import           Ouroboros.Network.Serialise
 
-import           Protocol.Channel
-import           Protocol.Codec
-import           Protocol.Core
-import           Protocol.Driver
+import           Network.TypedProtocol.Channel
+import           Network.TypedProtocol.Codec
+import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Driver
+
+import qualified Protocol.Channel
 
 import qualified Codec.CBOR.Encoding as CBOR (Encoding)
-import qualified Codec.CBOR.Write as CBOR (toBuilder)
+import qualified Codec.CBOR.Read     as CBOR
+import qualified Codec.CBOR.Write    as CBOR (toBuilder)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Builder as BS
 import qualified Data.ByteString.Lazy.Internal as LBS (smallChunkSize)
@@ -53,14 +53,14 @@ demo :: forall block .
      => Chain block -> [ChainUpdate block] -> IO Bool
 demo chain0 updates = do
 
-    -- Create two pipes (each one is unidirectional) to connect up the
-    -- producer and consumer ends of the protocol
-    (hndRead1, hndWrite1) <- createPipe
-    (hndRead2, hndWrite2) <- createPipe
+    -- Create channels connected through a pipe to connect client and producer
+    -- sides of the protocol
+    (producerChannel, consumerChannel) <- createPipeConnectedChannels
 
     -- Initialise the producer and consumer state to be the same
     producerVar <- newTVarIO (CPS.initChainProducerState chain0)
     consumerVar <- newTVarIO chain0
+    
 
     let Just expectedChain = Chain.applyChainUpdates updates chain0
         target = Chain.headPoint expectedChain
@@ -81,30 +81,19 @@ demo chain0 updates = do
               False -> pure $ Right consumerClient
           , points = \_ -> pure consumerClient
           }
-    
-        producerChannel = pipeDuplex hndRead2 hndWrite1
-        consumerChannel = pipeDuplex hndRead1 hndWrite2
 
-        producerPeer :: Peer ChainSyncProtocol (ChainSyncMessage block (Point block))
-                             (Awaiting StIdle) (Finished StDone)
-                             IO ()
+        producerPeer :: Peer (ChainSync block (Point block)) AsServer StIdle IO ()
         producerPeer = chainSyncServerPeer (chainSyncServerExample () producerVar)
 
-        consumerPeer :: Peer ChainSyncProtocol (ChainSyncMessage block (Point block))
-                             (Yielding StIdle) (Finished StDone)
-                             IO ()
+        consumerPeer :: Peer (ChainSync block (Point block)) AsClient StIdle IO ()
         consumerPeer = chainSyncClientPeer (chainSyncClientExample consumerVar consumerClient)
 
-        codec :: Codec IO Text CBOR.Encoding BS.ByteString (ChainSyncMessage block (Point block)) 'StIdle
-        codec = hoistCodec stToIO codecChainSync
-
-        throwOnUnexpected :: String -> Result Text t -> IO t
-        throwOnUnexpected str (Unexpected txt) = error $ str ++ " " ++ unpack txt
-        throwOnUnexpected _   (Normal t) = pure t
+        codec :: Codec (ChainSync block (Point block)) pk CBOR.DeserialiseFailure IO BS.ByteString
+        codec = codecChainSync
 
     -- Fork the producer and consumer
-    withAsync (throwOnUnexpected "producer" =<< useCodecWithDuplex producerChannel codec producerPeer) $ \producer ->
-      withAsync (throwOnUnexpected "consumer" =<< useCodecWithDuplex consumerChannel codec consumerPeer) $ \consumer -> do
+    withAsync (runPeer codec producerChannel producerPeer) $ \producer ->
+      withAsync (runPeer codec consumerChannel consumerPeer) $ \consumer -> do
         _ <- link producer
         _ <- link consumer
         -- Apply updates to the producer's chain and let them sync
@@ -127,8 +116,8 @@ demo chain0 updates = do
 pipeDuplex
   :: Handle -- ^ Read
   -> Handle -- ^ Write
-  -> Duplex IO IO CBOR.Encoding BS.ByteString
-pipeDuplex hndRead hndWrite = uniformDuplex send recv
+  -> Protocol.Channel.Duplex IO IO CBOR.Encoding BS.ByteString
+pipeDuplex hndRead hndWrite = Protocol.Channel.uniformDuplex send recv
   where
     send = \encoding -> do
       BS.hPutBuilder hndWrite (CBOR.toBuilder encoding)
