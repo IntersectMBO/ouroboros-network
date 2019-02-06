@@ -131,6 +131,7 @@ test-suite tests
   default-extensions:  NamedFieldPuns
   build-depends:       base,
                        ouroboros-network,
+                       typed-protocols,
                        typed-transitions,
                        io-sim-classes,
                        io-sim            >=0.1 && < 0.2,
@@ -139,9 +140,7 @@ test-suite tests
                        bytestring,
                        cborg,
                        containers,
-                       free,
                        fingertree,
-                       free,
                        mtl,
                        pipes,
                        process,
