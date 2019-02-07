@@ -1,7 +1,6 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE EmptyCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE RecordWildCards #-}
 
@@ -89,30 +88,13 @@ prop_direct (NonNegative n) =
       of ((), n') -> n' == n
 
 
--- | 'AgencyProofs' for the 'PingPong' protocol
---
-pingPongAgencyProofs :: AgencyProofs PingPong
-pingPongAgencyProofs =
-    AgencyProofs {
-      proofByContradiction_ClientAndServerHaveAgency = \TokIdle tok ->
-        case tok of {},
-
-      proofByContradiction_NobodyAndClientHaveAgency = \TokDone tok ->
-        case tok of {},
-
-      proofByContradiction_NobodyAndServerHaveAgency = \TokDone tok ->
-        case tok of {}
-   }
-
-
 -- | Run a simple ping\/pong client and server, going via the 'Peer'
 -- representation, but without going via a channel.
 --
 prop_connect :: NonNegative Int -> Bool
 prop_connect (NonNegative n) =
   case runIdentity
-         (connect  pingPongAgencyProofs
-                  (pingPongClientPeer (pingPongClientCount n))
+         (connect (pingPongClientPeer (pingPongClientCount n))
                   (pingPongServerPeer  pingPongServerCount))
 
     of ((), n', TerminalStates TokDone TokDone) -> n == n'
@@ -153,7 +135,7 @@ connect_pipelined_experiment (Positive x) probe = do
   var <- atomically $ newTVar 0
   let c = fromIntegral x
       client = pingPongSenderCount var c
-  (_, b, _) <- connectPipelined pingPongAgencyProofs (pingPongClientPeerSender client) (pingPongServerPeer pingPongServerCount)
+  (_, b, _) <- connectPipelined (pingPongClientPeerSender client) (pingPongServerPeer pingPongServerCount)
   res <- atomically $ readTVar var
   probeOutput probe (c === b)
   probeOutput probe (c === res)

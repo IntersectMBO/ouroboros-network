@@ -34,15 +34,10 @@ instance Protocol (ReqResp req resp) where
   data NobodyHasAgency st where
     TokDone :: NobodyHasAgency StDone
 
+  proofByContradiction_ClientAndServerHaveAgency = \TokIdle tok -> case tok of {}
+  proofByContradiction_NobodyAndClientHaveAgency = \TokDone tok -> case tok of {}
+  proofByContradiction_NobodyAndServerHaveAgency = \TokDone tok -> case tok of {}
+
 
 deriving instance (Show req, Show resp)
                => Show (Message (ReqResp req resp) from to)
-
-
-reqRespAgencyProofs :: AgencyProofs (ReqResp req resp)
-reqRespAgencyProofs = AgencyProofs {
-    proofByContradiction_ClientAndServerHaveAgency = \TokIdle tok -> case tok of {},
-    proofByContradiction_NobodyAndClientHaveAgency = \TokDone tok -> case tok of {},
-    proofByContradiction_NobodyAndServerHaveAgency = \TokDone tok -> case tok of {}
-  }
-
