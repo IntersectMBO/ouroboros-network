@@ -1,6 +1,7 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE EmptyCase #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE FlexibleInstances #-}
 
@@ -70,6 +71,15 @@ instance Protocol PingPong where
   --
   data NobodyHasAgency st where
     TokDone :: NobodyHasAgency StDone
+
+  proofByContradiction_ClientAndServerHaveAgency = \TokIdle tok ->
+    case tok of {}
+
+  proofByContradiction_NobodyAndClientHaveAgency = \TokDone tok ->
+    case tok of {}
+
+  proofByContradiction_NobodyAndServerHaveAgency = \TokDone tok ->
+    case tok of {}
 
 
 deriving instance Show (Message PingPong from to)
