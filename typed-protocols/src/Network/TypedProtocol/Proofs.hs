@@ -20,7 +20,6 @@
 module Network.TypedProtocol.Proofs (
   -- * About these proofs
   -- $about
-  AgencyProofs(..),
 
   -- * Connect proof
   connect,
@@ -34,7 +33,7 @@ module Network.TypedProtocol.Proofs (
 
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Pipelined
-import Data.Void (Void, absurd)
+import Data.Void (absurd)
 
 -- $about
 --
@@ -56,97 +55,6 @@ import Data.Void (Void, absurd)
 -- the individual protocol. See 'AgencyProofs'.
 
 
--- | The 'connect' and 'connectPipelined' proofs rely on lemmas about the
--- protocol. Specifically they rely on the property that each protocol state
--- is labelled with the agency of one peer or the other, or neither, but never
--- both. Or to put it another way, the protocol states should be partitioned
--- into those with agency for one peer, or the other or neither.
---
--- The way the labelling is encoded does not automatically enforce this
--- property. It is technically possible to set up the labelling for a protocol
--- so that one state is labelled as having both peers with agency, or declaring
--- simultaneously that one peer has agency and that neither peer has agency
--- in a particular state.
---
--- So the overall proofs rely on lemmas that say that the labelling has been
--- done correctly. This type bundles up those three lemmas.
---
--- Specifically proofs that it is impossible for a protocol state to have:
---
--- * client having agency and server having agency
--- * client having agency and nobody having agency
--- * server having agency and nobody having agency
---
--- These lemmas are structured as proofs by contradiction, e.g. stating
--- \"if the client and the server have agency for this state then it leads to
--- contradiction\". Contradiction is represented as the 'Void' type that has
--- no values except ⊥.
---
--- For example for the ping\/pong protocol, it has three states, and if we set
--- up the labelling correctly we have:
---
--- > data PingPong where
--- >   StIdle :: PingPong
--- >   StBusy :: PingPong
--- >   StDone :: PingPong
--- >
--- > data ClientHasAgency st where
--- >   TokIdle :: ClientHasAgency StIdle
--- >
--- > data ServerHasAgency st where
--- >   TokBusy :: ServerHasAgency StBusy
--- >
--- > data NobodyHasAgency st where
--- >   TokDone :: NobodyHasAgency StDone
---
--- So now we can prove that if the client has agency for a state then there
--- are no cases in which the server has agency.
---
--- > proofByContradiction_ClientAndServerHaveAgency TokIdle tok =
--- >   case tok of {}
---
--- For this protocol there is only one state in which the client has agency,
--- the idle state. By pattern matching on the state token for the server
--- agency we can list all the cases in which the server also has agency for
--- the idle state. There are of course none of these so we give the empty
--- set of patterns. GHC can check that we are indeed correct about this.
--- This also requires the @EmptyCase@ language extension.
---
--- To get this completeness checking it is important to compile modules
--- containing these lemmas with @-Wincomplete-patterns@, which is implied by
--- @-Wall@.
---
--- All three lemmas follow the same pattern.
---
-data AgencyProofs ps = AgencyProofs {
-
-       -- | Lemma that if the client has agency for a state, there are no
-       -- cases in which the server has agency for the same state.
-       --
-       proofByContradiction_ClientAndServerHaveAgency
-         :: forall (st :: ps).
-            ClientHasAgency st
-         -> ServerHasAgency st
-         -> Void,
-
-       -- | Lemma that if the nobody has agency for a state, there are no
-       -- cases in which the client has agency for the same state.
-       --
-       proofByContradiction_NobodyAndClientHaveAgency
-         :: forall (st :: ps).
-            NobodyHasAgency st
-         -> ClientHasAgency st
-         -> Void,
-
-       -- | Lemma that if the nobody has agency for a state, there are no
-       -- cases in which the server has agency for the same state.
-       --
-       proofByContradiction_NobodyAndServerHaveAgency
-         :: forall (st :: ps).
-            NobodyHasAgency st
-         -> ServerHasAgency st
-         -> Void
-     }
 
 
 -- | The 'connect' function takes two peers that agree on a protocol and runs
@@ -164,12 +72,13 @@ data AgencyProofs ps = AgencyProofs {
 -- minimalistic setting.
 --
 connect :: forall ps (st :: ps) m a b.
-           Monad m
-        => AgencyProofs ps
-        -> Peer ps AsClient st m a
+           ( Protocol ps
+           , Monad m
+           )
+        => Peer ps AsClient st m a
         -> Peer ps AsServer st m b
         -> m (a, b, TerminalStates ps)
-connect AgencyProofs{..} = go
+connect = go
   where
     go :: forall (st' :: ps).
           Peer ps AsClient st' m a
@@ -214,13 +123,14 @@ data TerminalStates ps where
 -- | Analogous to 'connect' but for pipelined peers.
 --
 connectPipelined :: forall ps (st :: ps) m a b.
-                    Monad m
-                 => AgencyProofs ps
-                 -> PeerSender ps AsClient st m a
+                    ( Monad m
+                    , Protocol ps
+                    )
+                 => PeerSender ps AsClient st m a
                  -> Peer       ps AsServer st m b
                  -> m (a, b, TerminalStates ps)
 
-connectPipelined AgencyProofs{..} = goSender
+connectPipelined = goSender
   where
     goSender :: forall (st' :: ps).
                 PeerSender ps AsClient st' m a
