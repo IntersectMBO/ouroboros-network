@@ -48,12 +48,11 @@ reqRespClientPeer (SendMsgReq req next) =
         pure $ reqRespClientPeer client
 
 
--- |
--- A request-response client designed for running piplined req-resp protocol.
+-- | A request-response client designed for running the 'ReqResp' protocol in
+-- a pipelined way.
 --
 data ReqRespSender req resp m a where
-  -- | 
-  -- Send a `Req` message but alike in `ReqRespClient` do not await for the
+  -- | Send a `Req` message but alike in `ReqRespClient` do not await for the
   -- resopnse, instead supply a monadic action which will run on a received
   -- `Pong` message.
   SendMsgReqPipelined
