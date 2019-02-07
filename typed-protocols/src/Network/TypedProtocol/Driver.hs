@@ -71,13 +71,16 @@ runPeer
   => Codec ps pk failure m bytes
   -> Channel m bytes
   -> Peer ps pk st m a
-  -> m a
+  -> m (Either failure a)
 
 runPeer Codec{encode, decode} channel@Channel{send} = go Nothing
   where
-    go :: forall st'. Maybe bytes -> Peer ps pk st' m a -> m a
+    go :: forall st'.
+          Maybe bytes
+       -> Peer ps pk st' m a
+       -> m (Either failure a)
     go trailing (Effect k) = k >>= go trailing
-    go _        (Done _ x) = return x
+    go _        (Done _ x) = return (Right x)
 
     go trailing (Yield stok msg k) = do
       send (encode stok msg)
@@ -88,7 +91,7 @@ runPeer Codec{encode, decode} channel@Channel{send} = go Nothing
       res <- runDecoder channel trailing decoder
       case res of
         Right (SomeMessage msg, trailing') -> go trailing' (k msg)
-        Left failure            -> error "TODO: proper exceptions for runPeer"
+        Left failure                       -> return (Left failure)
 
 
 -- | Run a codec incremental decoder 'DecodeStep' against a channel. It also
