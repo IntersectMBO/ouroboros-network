@@ -9,6 +9,7 @@
 module Network.TypedProtocol.PingPong.Type where
 
 import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Codec (AnyMessage (..))
 
 
 -- | The ping\/pong protocol and the states in its protocol state machine.
@@ -84,3 +85,8 @@ instance Protocol PingPong where
 
 deriving instance Show (Message PingPong from to)
 
+instance Eq (AnyMessage PingPong) where
+  AnyMessage _ MsgPing == AnyMessage _ MsgPing = True
+  AnyMessage _ MsgPong == AnyMessage _ MsgPong = True
+  AnyMessage _ MsgDone == AnyMessage _ MsgDone = True
+  _                    ==                    _ = False

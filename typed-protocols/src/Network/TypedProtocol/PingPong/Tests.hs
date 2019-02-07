@@ -1,12 +1,20 @@
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE EmptyCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE RecordWildCards #-}
-
 
 
 module Network.TypedProtocol.PingPong.Tests (tests) where
 
 
+import Network.TypedProtocol.Core
+import Network.TypedProtocol.Codec
 import Network.TypedProtocol.Proofs
 import Network.TypedProtocol.Channel
 import Network.TypedProtocol.Driver
@@ -18,6 +26,7 @@ import Network.TypedProtocol.PingPong.Examples
 import Network.TypedProtocol.PingPong.Codec
 
 import Data.Functor.Identity (Identity (..))
+import Data.Proxy (Proxy (..))
 import Control.Monad.Class.MonadSTM
 import Control.Monad.IOSim
 
@@ -303,6 +312,31 @@ tests = testGroup "Network.TypedProtocol.PingPong"
   , testProperty "connect_pipelined 5" prop_connect_pipelined5
   , testProperty "channel ST" prop_channel_ST
   , testProperty "channel IO" prop_channel_IO
---  , testProperty "pipe" prop_pipe
+  , testProperty "codec" prop_codecPingPong
   ]
 
+-- | An existential type which contains @PeerHasAgency pk st@ singleton and
+-- a message from the @st@ state.
+--
+data AnyPingPongMessage
+  = forall (pk :: PeerKind) st st'. AnyPingPongMessage (PeerHasAgency pk st) (Message PingPong st st')
+
+instance Arbitrary AnyPingPongMessage where
+  arbitrary = oneof
+    [ return (AnyPingPongMessage (ClientAgency TokIdle) MsgPing)
+    , return (AnyPingPongMessage (ServerAgency TokBusy) MsgPong)
+    , return (AnyPingPongMessage (ClientAgency TokIdle) MsgDone)
+    ]
+
+instance Show AnyPingPongMessage where
+  show (AnyPingPongMessage _ msg) = show $ "PingPongClientMessage " ++ show msg
+
+prop_codecPingPong
+  :: AnyPingPongMessage
+  -> Property
+prop_codecPingPong (AnyPingPongMessage tok msg) =
+  prop_codec otherPeer (map (\b -> [b])) runIdentity codecPingPong (AnyMessage tok msg)
+ where
+  otherPeer :: PeerHasAgency (pk :: PeerKind) (st :: PingPong) -> Proxy (FlipAgency pk)
+  otherPeer (ClientAgency TokIdle) = Proxy :: Proxy AsServer
+  otherPeer (ServerAgency TokBusy) = Proxy :: Proxy AsClient

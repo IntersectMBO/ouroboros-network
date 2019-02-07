@@ -1,10 +1,12 @@
 {-# LANGUAGE GADTs                      #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE PolyKinds                  #-}
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE TypeApplications           #-}
 
 module Network.TypedProtocol.Codec (
     -- * Defining and using Codecs
@@ -15,16 +17,20 @@ module Network.TypedProtocol.Codec (
   , WeHaveAgency
   , TheyHaveAgency
   , SomeMessage(..)
+  , AnyMessage(..)
     -- ** Incremental decoding
   , DecodeStep(..)
     -- * Utilities
   , transformCodec
   , cborCodec
+  , prop_codec
   ) where
 
 import           Network.TypedProtocol.Core
-                   ( Protocol(..), PeerKind(..)
-                   , PeerHasAgency(..), WeHaveAgency, TheyHaveAgency )
+                   ( FlipAgency, Protocol(..), PeerKind(..)
+                   , PeerHasAgency(..), WeHaveAgency, TheyHaveAgency
+                   , double
+                   )
 
 import           Control.Monad.ST (ST)
 import           Control.Monad.Class.MonadST
@@ -40,6 +46,10 @@ import qualified Data.ByteString.Builder as BS
 import qualified Data.ByteString.Builder.Extra as BS
 import qualified Data.ByteString.Lazy.Internal as LBS (smallChunkSize)
 import qualified Data.ByteString.Lazy          as LBS
+
+import           Data.Proxy (Proxy)
+
+import           Test.QuickCheck (Property, property)
 
 
 -- | A codec for a 'Protocol' handles the encoding and decoding of typed
@@ -125,6 +135,24 @@ data Codec ps (pk :: PeerKind) failure m bytes = Codec {
               -> m (DecodeStep bytes failure m (SomeMessage st))
      }
 
+-- | Feed a decoder with bytes from a fixed list.  This is only useful for codec
+-- tests.
+--
+runDecode
+  :: forall ps (pk :: PeerKind) (st :: ps) bytes failure m.
+     Monad m
+  => Proxy pk
+  -> TheyHaveAgency pk st
+  -> [bytes]
+  -> Codec ps pk failure m bytes
+  -> m (Either failure (SomeMessage st))
+runDecode _ tok bytes Codec {decode} = decode tok >>= go bytes
+ where
+  go (b : bs) (DecodePartial f) = f (Just b) >>= go bs
+  go []       (DecodePartial f) = f Nothing  >>= go []
+  go _        (DecodeDone a _)  = return (Right a)
+  go _        (DecodeFail err)  = return (Left err)
+
 -- The types here are pretty fancy. The decode is polymorphic in the protocol
 -- state, but only for kinds that are the same kind as the protocol state.
 -- The TheyHaveAgency is a type family that resolves to a singleton, and the
@@ -144,6 +172,8 @@ data Codec ps (pk :: PeerKind) failure m bytes = Codec {
 data SomeMessage (st :: ps) where
      SomeMessage :: Message ps st st' -> SomeMessage st
 
+data AnyMessage ps where
+     AnyMessage :: forall (pk :: PeerKind) (st :: ps) (st' :: ps). PeerHasAgency pk st -> Message ps st st' -> AnyMessage ps
 
 -- | An incremental decoder with return a value of type @a@.
 --
@@ -242,3 +272,28 @@ convertCborDecoder cborDecode liftST =
       | otherwise              = DecodeDone x (Just trailing)
     go (CBOR.Fail _ _ failure) = DecodeFail failure
     go (CBOR.Partial k)        = DecodePartial (fmap go . liftST . k)
+
+-- | A generic codec tests that checks that @'encode'@ is right inverse of
+-- @'decode'@.
+--
+prop_codec
+  :: forall ps failure m bytes.
+     ( Monad m
+     , Eq (AnyMessage ps)
+     )
+  => (forall (pk :: PeerKind) (st :: ps). PeerHasAgency pk (st :: ps) -> Proxy (FlipAgency pk))
+  -- ^ compute PeerKind of the remote side
+  -> (bytes -> [bytes])
+  -- ^ chunk bytes
+  -> (forall a. m a -> a)
+  -- ^ run the monad @m@
+  -> (forall (pk :: PeerKind). Codec ps pk failure m bytes)
+  -- ^ codec
+  -> AnyMessage ps
+  -> Property
+prop_codec otherPeer chunks runM codec (AnyMessage tok msg) =
+  let bytes :: [bytes]
+      bytes = chunks $ encode codec tok msg
+  in case runM $ runDecode (otherPeer tok) (double tok) bytes codec of
+    Right (SomeMessage msg') -> property $ (AnyMessage tok msg') == (AnyMessage tok msg)
+    Left _                   -> property False

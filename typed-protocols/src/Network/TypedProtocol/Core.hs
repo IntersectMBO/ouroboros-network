@@ -26,10 +26,14 @@ module Network.TypedProtocol.Core (
   WeHaveAgency,
   TheyHaveAgency,
   Peer(..),
+  FlipAgency,
 
   -- * Protocol proofs and tests
   -- $tests
   -- $lemmas
+
+  -- * Auxiliary functions
+  double,
   ) where
 
 import Data.Void (Void)
@@ -346,6 +350,15 @@ type family FlipAgency (pk :: PeerKind) where
   FlipAgency AsClient = AsServer
   FlipAgency AsServer = AsClient
 
+
+-- | Identity function in disguise, only needed because GHC has trouble proving
+-- that @FlipAgency (FlipAgency pk)@ is equal to @pk@.  It turns out to be
+-- useful in codec tests.
+--
+double :: PeerHasAgency pk (st :: k)
+       -> PeerHasAgency (FlipAgency (FlipAgency pk)) st
+double (ClientAgency tok) = ClientAgency tok
+double (ServerAgency tok) = ServerAgency tok
 
 -- | A description of a peer that engages in a protocol.
 --
