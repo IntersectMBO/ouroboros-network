@@ -1,13 +1,12 @@
 {-# LANGUAGE NamedFieldPuns #-}
-module Network.TypedProtocol.ReqResp.Direct where
+module Network.TypedProtocol.ReqResp.Tests where
 
 import           Network.TypedProtocol.ReqResp.Client as Client
 import           Network.TypedProtocol.ReqResp.Server as Server
 
--- | The 'ClientStream m' and 'ServerStream m' types are complementary. The
--- former can be used to feed the latter directly, in the same thread.
--- That's demonstrated here by constructing 'direct'.
---
+
+-- TODO: this module needs to be fleshed out once the PingPong template is done
+
 direct :: Monad m
        => ReqRespClient req resp m a
        -> ReqRespServer req resp m b
