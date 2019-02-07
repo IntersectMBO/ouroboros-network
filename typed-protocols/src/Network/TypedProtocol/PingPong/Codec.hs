@@ -27,10 +27,10 @@ codecPingPong =
     decode stok =
       decodeTerminatedFrame '\n' $ \str trailing ->
         case (stok, str) of
-          (ServerAgency TokBusy, "pong\n") -> DecodeDone (SomeMessage MsgPong) trailing
-          (ClientAgency TokIdle, "ping\n") -> DecodeDone (SomeMessage MsgPing) trailing
-          (ClientAgency TokIdle, "done\n") -> DecodeDone (SomeMessage MsgDone) trailing
-          _                                -> DecodeFail ("unexpected message: " ++ str)
+          (ServerAgency TokBusy, "pong") -> DecodeDone (SomeMessage MsgPong) trailing
+          (ClientAgency TokIdle, "ping") -> DecodeDone (SomeMessage MsgPing) trailing
+          (ClientAgency TokIdle, "done") -> DecodeDone (SomeMessage MsgDone) trailing
+          _                              -> DecodeFail ("unexpected message: " ++ str)
 
 
 decodeFrameOfLength :: forall m a.
