@@ -69,8 +69,8 @@ pingPongClientPeer (SendMsgPing next) =
         client <- next
         pure $ pingPongClientPeer client
 
--- |
--- A ping-pong client designed for running piplined ping-pong protocol.
+-- | A ping-pong client designed for running the 'PingPong' protocol in
+-- a pipelined way.
 --
 data PingPongSender m a where
   -- | 
