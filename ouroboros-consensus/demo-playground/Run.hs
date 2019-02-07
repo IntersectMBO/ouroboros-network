@@ -45,7 +45,7 @@ runNode cli@CLI{..} = do
     case command of
       TxSubmitter topology tx ->
         handleTxSubmission topology tx
-      SimpleNode  topology ->
+      SimpleNode topology protocol ->
         case protocol of
           Some p -> case demoProtocolConstraints p of
                       Dict -> handleSimpleNode p cli topology

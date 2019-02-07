@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE RecordWildCards  #-}
 {-# LANGUAGE TypeApplications #-}
-{-# OPTIONS_GHC -fno-warn-orphans #-}
+
 module Mock.TxSubmission (
       command'
     , parseMockTx
@@ -8,29 +9,29 @@ module Mock.TxSubmission (
     , spawnMempoolListener
     ) where
 
+import           Codec.Serialise (hPutSerialise)
 import           Control.Concurrent (threadDelay)
 import qualified Control.Concurrent.Async as Async
-import           Control.Exception (catch)
-import           Control.Monad.Except
 import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Except
+import qualified Data.ByteString as BS
 import qualified Data.Map.Strict as M
 import qualified Data.Set as Set
-import           Data.Void
 import           Options.Applicative
 import           System.IO (IOMode (..))
 
 import           Ouroboros.Network.Node (NodeId (..))
-import           Ouroboros.Network.Serialise
+import           Ouroboros.Network.Serialise ()
 
 import           Ouroboros.Consensus.Crypto.Hash (ShortHash)
 import qualified Ouroboros.Consensus.Crypto.Hash as H
 import           Ouroboros.Consensus.Ledger.Abstract
 import qualified Ouroboros.Consensus.Ledger.Mock as Mock
 import           Ouroboros.Consensus.Node (NodeKernel (getExtLedgerState))
+import           Ouroboros.Consensus.Util.CBOR (Decoder (..), initDecoderIO)
 import           Ouroboros.Consensus.Util.Condense
 
 import           Mock.Mempool (Mempool (..), consistent, mempoolInsert)
-import           Mock.Protocol
 import           NamedPipe
 import           Topology
 
@@ -96,19 +97,15 @@ handleTxSubmission tinfo tx = do
 
 submitTx :: NodeId -> Mock.Tx -> IO ()
 submitTx n tx = do
-    withTxPipe n WriteMode False $ \hdl -> do
-        let x = error "submitTx: this handle wasn't supposed to be used"
-        runProtocolWithPipe x hdl proto `catch` (\ProtocolStopped -> return ())
+    withTxPipe n WriteMode False $ \h -> hPutSerialise h tx
     putStrLn $ "The Id for this transaction is: " <> condense (H.hash @ShortHash tx)
-  where
-      proto :: Protocol Mock.Tx Void ()
-      proto = sendMsg tx
 
 readIncomingTx :: TVar IO (Mempool Mock.Tx)
                -> NodeKernel IO NodeId (Mock.SimpleBlock p c)
-               -> Protocol Void Mock.Tx ()
-readIncomingTx poolVar kernel = do
-    newTx <- recvMsg
+               -> Decoder IO
+               -> IO ()
+readIncomingTx poolVar kernel Decoder{..} = forever $ do
+    newTx <- decodeNext
     liftIO $ atomically $ do
         l <- getExtLedgerState kernel
         mempool <- readTVar poolVar
@@ -117,13 +114,6 @@ readIncomingTx poolVar kernel = do
             Left _err -> return ()
             Right ()  -> writeTVar poolVar (mempoolInsert newTx mempool)
     liftIO $ threadDelay 1000
-    -- Loop over
-    readIncomingTx poolVar kernel
-
-
-instance Serialise Void where
-    encode = error "You cannot encode Void."
-    decode = error "You cannot decode Void."
 
 spawnMempoolListener :: NodeId
                      -> TVar IO (Mempool Mock.Tx)
@@ -134,6 +124,6 @@ spawnMempoolListener myNodeId poolVar kernel = do
         -- Apparently I have to pass 'ReadWriteMode' here, otherwise the
         -- node will die prematurely with a (DeserialiseFailure 0 "end of input")
         -- error.
-        withTxPipe myNodeId ReadWriteMode True $ \hdl -> do
-            let x = error "spawnMempoolListener: this handle shouldn't have been used"
-            runProtocolWithPipe hdl x (readIncomingTx poolVar kernel)
+        withTxPipe myNodeId ReadWriteMode True $ \h -> do
+            let getChunk = BS.hGetSome h 1024
+            readIncomingTx poolVar kernel =<< initDecoderIO getChunk

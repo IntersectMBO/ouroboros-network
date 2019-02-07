@@ -140,6 +140,10 @@ testBlockchainTime (NumSlots numSlots) slotDuration = do
     firstSlot = 0
 
 -- | Real blockchain time
+--
+-- TODO: Right now this requires a single specific slot duration. This is
+-- not going to be the case when we move to Praos. We need to think this
+-- through carefully.
 realBlockchainTime :: UTCTime -- ^ Chain start time
                    -> Double  -- ^ Slot duration (seconds)
                    -> IO (BlockchainTime IO)
