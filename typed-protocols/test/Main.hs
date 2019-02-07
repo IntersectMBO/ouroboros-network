@@ -2,14 +2,14 @@ module Main (main) where
 
 import           Test.Tasty
 
-import qualified Test.Network.TypedProtocol.PingPong as PingPong (tests)
+import qualified Network.TypedProtocol.PingPong.Tests as PingPong
 
 main :: IO ()
 main = defaultMain tests
 
 tests :: TestTree
 tests =
-  testGroup "typed-transitions"
+  testGroup "typed-protocols"
   [ PingPong.tests
   ]
 

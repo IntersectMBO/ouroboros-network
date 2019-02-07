@@ -1,19 +1,24 @@
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
-module Test.Network.TypedProtocol.PingPong where
+{-# LANGUAGE EmptyCase #-}
+{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE RecordWildCards #-}
+
+module Network.TypedProtocol.PingPong.Tests where
 
 import           Control.Monad.Class.MonadFork (MonadFork (..))
 import           Control.Monad.Class.MonadST (MonadST (..))
 import           Control.Monad.Class.MonadSTM (MonadSTM (..))
 import           Control.Monad.Class.MonadProbe
-  ( MonadProbe (..)
-  , MonadRunProbe (..)
-  , withProbe
-  )
+                   ( MonadProbe (..)
+                   , MonadRunProbe (..)
+                   , withProbe
+                   )
+import           Control.Monad.Fail (MonadFail)
 import           Control.Monad.Class.MonadTimer (MonadTimer (..))
 import           Control.Monad.ST.Lazy (runST)
-import           Control.Monad.Free (Free)
-import           Control.Monad.IOSim (SimF)
+import           Control.Monad.IOSim (SimM)
 
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC
@@ -23,35 +28,95 @@ import           Data.List (foldl')
 
 import           Network.TypedProtocol.Codec (transformCodec)
 import           Network.TypedProtocol.Channel
-  ( Channel
-  , createConnectedChannels
-  , createPipeConnectedChannels
-  )
+                   ( Channel
+                   , createConnectedChannels
+                   , createPipeConnectedChannels
+                   )
 import           Network.TypedProtocol.Driver (runPeer)
-import           Network.TypedProtocol.Proofs (connect, connectPipelined)
+import           Network.TypedProtocol.Proofs
 
-import           Network.TypedProtocol.PingPong.Type (pingPongAgencyProofs)
+import           Network.TypedProtocol.PingPong.Type
 import           Network.TypedProtocol.PingPong.Client
-  ( pingPongClientPeer
-  , pingPongClientPeerSender
-  )
+                   ( PingPongClient(..)
+                   , pingPongClientPeer
+                   , pingPongClientPeerSender
+                   )
 import           Network.TypedProtocol.PingPong.Codec
-  ( codecPingPong
-  , codecPingPong
-  )
+                   ( codecPingPong
+                   )
 import           Network.TypedProtocol.PingPong.Server
-  ( pingPongServerPeer
-  )
+                   ( PingPongServer(..)
+                   , pingPongServerPeer
+                   )
 import           Network.TypedProtocol.PingPong.Examples
-  ( pingPongClientCount
-  , pingPongSenderCount
-  , pingPongServerCount
-  )
-import           Network.TypedProtocol.PingPong.Direct (direct)
+                   ( pingPongClientCount
+                   , pingPongSenderCount
+                   , pingPongServerCount
+                   )
 
 import           Test.Tasty
 import           Test.QuickCheck
 import           Test.Tasty.QuickCheck (testProperty)
+
+
+-- | The 'PingPongClient m' and 'PingPongServer m' types are complementary.
+-- The former can be used to feed the latter directly, in the same thread.
+-- That's demonstrated here by constructing 'direct'.
+--
+direct :: Monad m
+       => PingPongClient m a
+       -> PingPongServer m b
+       -> m (a, b)
+
+direct (SendMsgDone clientResult) PingPongServer{recvMsgDone} =
+    pure (clientResult, recvMsgDone)
+
+direct (SendMsgPing kPong) PingPongServer{recvMsgPing} = do
+    server' <- recvMsgPing
+    client' <- kPong
+    direct client' server'
+
+
+-- | Run a simple ping\/pong client and server, without going via the 'Peer'
+-- representation at all.
+--
+prop_direct :: NonNegative Int -> Bool
+prop_direct (NonNegative n) =
+    case runIdentity
+           (direct (pingPongClientCount n)
+                    pingPongServerCount)
+
+      of ((), n') -> n' == n
+
+
+-- | 'AgencyProofs' for the 'PingPong' protocol
+--
+pingPongAgencyProofs :: AgencyProofs PingPong
+pingPongAgencyProofs =
+    AgencyProofs {
+      proofByContradiction_ClientAndServerHaveAgency = \TokIdle tok ->
+        case tok of {},
+
+      proofByContradiction_NobodyAndClientHaveAgency = \TokDone tok ->
+        case tok of {},
+
+      proofByContradiction_NobodyAndServerHaveAgency = \TokDone tok ->
+        case tok of {}
+   }
+
+
+-- | Run a simple ping\/pong client and server, going via the 'Peer'
+-- representation, but without going via a channel.
+--
+prop_connect :: NonNegative Int -> Bool
+prop_connect (NonNegative n) =
+  case runIdentity
+         (connect  pingPongAgencyProofs
+                  (pingPongClientPeer (pingPongClientCount n))
+                  (pingPongServerPeer  pingPongServerCount))
+
+    of ((), n', TerminalStates TokDone TokDone) -> n == n'
+
 
 tests :: TestTree
 tests = testGroup "Network.TypedProtocol.PingPong"
@@ -77,22 +142,6 @@ runExperiment exp_ = isValid <$> withProbe exp_
  where
   isValid = foldl' (\acu (_,p) -> acu .&&. p) (property True)
 
-prop_direct
-  :: Positive Int
-  -> Property
-prop_direct (Positive x) =
-  let c = fromIntegral x
-  in case runIdentity $ direct (pingPongClientCount c) pingPongServerCount of
-    (_, c') -> c === c'
-
-prop_connect
-  :: Positive Int
-  -> Property
-prop_connect (Positive x) =
-  let c = fromIntegral x
-  in case runIdentity $ connect pingPongAgencyProofs (pingPongClientPeer $ pingPongClientCount c) (pingPongServerPeer pingPongServerCount) of
-    (_, c') -> c === c'
-
 connect_pipelined_experiment
   :: ( MonadSTM m
      , MonadProbe m
@@ -104,7 +153,7 @@ connect_pipelined_experiment (Positive x) probe = do
   var <- atomically $ newTVar 0
   let c = fromIntegral x
       client = pingPongSenderCount var c
-  (_, b) <- connectPipelined pingPongAgencyProofs (pingPongClientPeerSender client) (pingPongServerPeer pingPongServerCount)
+  (_, b, _) <- connectPipelined pingPongAgencyProofs (pingPongClientPeerSender client) (pingPongServerPeer pingPongServerCount)
   res <- atomically $ readTVar var
   probeOutput probe (c === b)
   probeOutput probe (c === res)
@@ -112,7 +161,7 @@ connect_pipelined_experiment (Positive x) probe = do
 prop_connect_pipelined_ST
   :: Positive Int
   -> Property
-prop_connect_pipelined_ST p = runST $ runExperiment @(Free (SimF _))
+prop_connect_pipelined_ST p = runST $ runExperiment @(SimM _)
   (connect_pipelined_experiment p)
 
 prop_connect_pipelined_IO
@@ -126,6 +175,7 @@ channel_experiment
      ( MonadST m
      , MonadSTM m
      , MonadProbe m
+     , MonadFail m
      )
   => Channel m ByteString
   -> Channel m ByteString
@@ -140,9 +190,9 @@ channel_experiment clientChannel serverChannel (Positive x) probe = do
       codec      = transformCodec BSC.pack BSC.unpack codecPingPong
 
   fork $ do
-    res <- runPeer codec serverChannel serverPeer
+    Right res <- runPeer codec serverChannel serverPeer
     atomically $ putTMVar serverVar res
-  fork $ runPeer codec clientChannel clientPeer
+  fork $ runPeer codec clientChannel clientPeer >> return ()
 
   res <- atomically $ takeTMVar serverVar
   probeOutput probe (res === c)
