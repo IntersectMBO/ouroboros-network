@@ -98,11 +98,11 @@ import qualified Data.ByteString.Lazy          as LBS
 -- > decode stok =
 -- >   decodeTerminatedFrame '\n' $ \str trailing ->
 -- >     case (stok, str) of
--- >       (ServerAgency TokBusy, "pong\n") ->
+-- >       (ServerAgency TokBusy, "pong") ->
 -- >            DecodeDone (SomeMessage MsgPong) trailing
--- >       (ClientAgency TokIdle, "ping\n") ->
+-- >       (ClientAgency TokIdle, "ping") ->
 -- >            DecodeDone (SomeMessage MsgPing) trailing
--- >       (ClientAgency TokIdle, "done\n") ->
+-- >       (ClientAgency TokIdle, "done") ->
 -- >            DecodeDone (SomeMessage MsgDone) trailing
 -- >       _ -> DecodeFail ("unexpected message: " ++ str)
 --
