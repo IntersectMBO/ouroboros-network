@@ -32,6 +32,10 @@ let
       cleanSource (callCabal2nix "io-sim" ./io-sim { inherit io-sim-classes; })
     ))));
 
+    typed-protocols = docNoSeprateOutput(doHaddock(doTest(doBench(
+      cleanSource (callCabal2nix "typed-protocols" ./typed-protocols { inherit io-sim io-sim-classes; })
+    ))));
+
     typed-transitions = docNoSeprateOutput(doHaddock(doTest(doBench(
       cleanSource (callCabal2nix "typed-transitions" ./typed-transitions {})
     ))));
