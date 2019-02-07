@@ -55,10 +55,23 @@ test-suite tests
   type:              exitcode-stdio-1.0
   main-is:           Main.hs
   hs-source-dirs:    test src
-  other-modules:     Network.TypedProtocol.PingPong.Examples
+  other-modules:     Network.TypedProtocol.Channel
+                   , Network.TypedProtocol.Codec
+                   , Network.TypedProtocol.Core
+                   , Network.TypedProtocol.Driver
+                   , Network.TypedProtocol.PingPong.Client
+                   , Network.TypedProtocol.PingPong.Codec
+                   , Network.TypedProtocol.PingPong.Examples
+                   , Network.TypedProtocol.PingPong.Server
                    , Network.TypedProtocol.PingPong.Tests
+                   , Network.TypedProtocol.PingPong.Type
+                   , Network.TypedProtocol.Pipelined
+                   , Network.TypedProtocol.Proofs
+                   , Network.TypedProtocol.ReqResp.Client
                    , Network.TypedProtocol.ReqResp.Examples
+                   , Network.TypedProtocol.ReqResp.Server
                    , Network.TypedProtocol.ReqResp.Tests
+                   , Network.TypedProtocol.ReqResp.Type
   build-depends:     base
                    , async
                    , bytestring
