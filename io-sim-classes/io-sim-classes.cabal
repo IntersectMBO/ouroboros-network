@@ -9,7 +9,6 @@ maintainer:
 copyright:           2018 IOHK
 category:            Control
 build-type:          Simple
-extra-source-files:  ChangeLog.md
 cabal-version:       >=1.10
 
 source-repository head
