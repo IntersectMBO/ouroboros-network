@@ -6,7 +6,7 @@ module Test.Socket (tests) where
 
 import           Ouroboros.Network.Socket
 
-import           Test.Chain (TestBlockChainAndUpdates (..))
+import           Test.Ouroboros.Network.Testing.Arbitrary (TestBlockChainAndUpdates (..))
 
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)

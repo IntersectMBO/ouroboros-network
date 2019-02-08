@@ -27,7 +27,7 @@ import           Ouroboros.Network.Protocol.BlockFetch.Direct
 import           Ouroboros.Network.Protocol.BlockFetch.Examples
 import           Ouroboros.Network.Protocol.BlockFetch.Codec
 
-import           Test.Chain (TestChainAndPoints (..))
+import           Test.Ouroboros.Network.Testing.Arbitrary (TestChainAndPoints (..))
 
 import           Test.QuickCheck hiding (Result)
 import           Test.Tasty (TestTree, testGroup)

@@ -21,8 +21,12 @@ import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.ChainProducerState
 import           Ouroboros.Network.Testing.ConcreteBlock (Block (..))
 
-import           Test.Chain (TestBlockChain (..), TestBlockChainAndUpdates (..),
-                     TestChainFork (..), mkRollbackPoint)
+import           Test.Ouroboros.Network.Testing.Arbitrary
+                  ( TestBlockChain (..)
+                  , TestBlockChainAndUpdates (..)
+                  , TestChainFork (..)
+                  , mkRollbackPoint
+                  )
 
 tests :: TestTree
 tests =

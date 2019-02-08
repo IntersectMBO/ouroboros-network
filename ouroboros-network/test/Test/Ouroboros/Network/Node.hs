@@ -43,8 +43,12 @@ import           Ouroboros.Network.ChainProducerState (ChainProducerState (..))
 import           Ouroboros.Network.Node
 import           Ouroboros.Network.Testing.ConcreteBlock as ConcreteBlock
 
-import           Test.Chain (TestBlockChain (..), TestChainFork (..),
-                             genNonNegative, genHeaderChain)
+import           Test.Ouroboros.Network.Testing.Arbitrary
+                  ( TestBlockChain (..)
+                  , TestChainFork (..)
+                  , genNonNegative
+                  , genHeaderChain
+                  )
 import           Ouroboros.Network.Protocol.Chain.Node
 
 tests :: TestTree
