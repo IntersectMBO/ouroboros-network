@@ -1,7 +1,7 @@
 { nixpkgs
 , compiler
 , haddock    ? false
-, test       ? false
+, test       ? true
 , benchmarks ? false
 }:
 with builtins;
