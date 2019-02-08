@@ -6,7 +6,7 @@ module Test.Pipe (tests) where
 
 import           Ouroboros.Network.Pipe (demo)
 
-import           Test.Chain (TestBlockChainAndUpdates (..))
+import           Test.ChainGenerators (TestBlockChainAndUpdates (..))
 
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
