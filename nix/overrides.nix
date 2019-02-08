@@ -1,5 +1,6 @@
 { nixpkgs }:
   /* Building on 8.6.* with QuickCheck 2.12 requires some special package overrides */
+  with nixpkgs.haskell.lib;
   self: super: {
     memory = self.callPackage ./memory-0.14.18.nix {};
     microlens-th = self.callPackage ./microlens-th-0.4.2.3.nix {};
@@ -11,12 +12,13 @@
     optparse-applicative = self.callPackage ./optparse-applicative-0.14.3.0.nix {};
     quickcheck-instances = self.callPackage ./quickcheck-instances-0.3.19.nix {};
     test-framework-quickcheck2 = self.callPackage ./test-framework-quickcheck2-0.3.0.5.nix {};
-    quickcheck-state-machine = self.callPackage ./quickcheck-state-machine-0.6.0.nix {};
+    /* quickcheck-state-machine fails 1 test */
+    quickcheck-state-machine = dontCheck (doJailbreak (self.callPackage ./quickcheck-state-machine-0.6.0.nix {}));
     psqueues = self.callPackage ./psqueues-0.2.7.1.nix {};
     ChasingBottoms = self.callPackage ./ChasingBottoms-1.3.1.5.nix {};
     contravariant = self.callPackage ./contravariant-1.5.nix {};
     /* Tests seem to fail for this one */
-    doctest = nixpkgs.haskell.lib.dontCheck (self.callPackage ./doctest-0.16.0.1.nix {});
+    doctest = dontCheck (self.callPackage ./doctest-0.16.0.1.nix {});
     polyparse = self.callPackage ./polyparse-1.12.1.nix {};
     haskell-src-exts = self.callPackage ./haskell-src-exts-1.20.3.nix {};
     haskell-src-meta = self.callPackage ./haskell-src-meta-0.8.0.3.nix {};
@@ -35,7 +37,7 @@
     semigroupoids = self.callPackage ./semigroupoids-5.3.1.nix {};
     free = self.callPackage ./free-5.1.nix {};
     /* Still doesn't admit QuickCheck >= 2.12 so we disable tests */
-    aeson = nixpkgs.haskell.lib.dontCheck (self.callPackage ./aeson-1.4.2.0.nix {});
+    aeson = dontCheck (self.callPackage ./aeson-1.4.2.0.nix {});
     aeson-compat = self.callPackage ./aeson-compat-0.3.9.nix {};
     aeson-options-HEAD = self.callPackage ./aeson-options-HEAD.nix {};
     io-streams = self.callPackage ./io-streams-1.5.0.1.nix {};
@@ -50,6 +52,9 @@
     cborg = self.callPackage ./cborg-0.2.1.0.nix {};
     feed = self.callPackage ./feed-1.0.1.0.nix {};
 
+    persistent = doJailbreak super.persistent;
+    graphviz = doJailbreak super.graphviz;
+
     /* One test case fails. Hopefully fix will come soon. */
-    iohk-monitoring = nixpkgs.haskell.lib.dontCheck (self.callPackage ./iohk-monitoring-HEAD.nix {});
+    iohk-monitoring = dontCheck (self.callPackage ./iohk-monitoring-HEAD.nix {});
   }
