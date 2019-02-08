@@ -19,4 +19,6 @@ let
       (overrides self super) // (cardanopkgs self super);
   };
 in
-  import ./pkgs.nix { inherit nixpkgs; inherit compiler; }
+  (import ./pkgs.nix { inherit nixpkgs; inherit compiler; }) // {
+    inherit nixpkgs compiler;
+  }
