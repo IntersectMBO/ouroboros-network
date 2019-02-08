@@ -124,9 +124,9 @@ test-suite tests
   hs-source-dirs:      test
   main-is:             Main.hs
   other-modules:       Test.Chain
+                       Test.ChainGenerators
                        Test.ChainFragment
                        Test.ChainProducerState
-                       Test.Ouroboros.Network.Testing.Arbitrary
                        Test.Ouroboros.Network.Testing.Utils
                        Test.Ouroboros.Network.Protocol.ChainSync
                        Test.Ouroboros.Network.Protocol.Stream

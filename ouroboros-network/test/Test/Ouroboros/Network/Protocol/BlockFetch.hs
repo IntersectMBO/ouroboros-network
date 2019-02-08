@@ -23,7 +23,7 @@ import Ouroboros.Network.Protocol.BlockFetch.Server
 import Ouroboros.Network.Protocol.BlockFetch.Direct
 
 import Ouroboros.Network.Testing.ConcreteBlock (BlockHeader)
-import Test.Ouroboros.Network.Testing.Arbitrary
+import Test.ChainGenerators
 
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
