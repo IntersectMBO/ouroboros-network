@@ -72,9 +72,7 @@ import Data.Void (absurd)
 -- minimalistic setting.
 --
 connect :: forall ps (st :: ps) m a b.
-           ( Protocol ps
-           , Monad m
-           )
+           (Monad m, Protocol ps)
         => Peer ps AsClient st m a
         -> Peer ps AsServer st m b
         -> m (a, b, TerminalStates ps)
@@ -120,57 +118,83 @@ data TerminalStates ps where
                     -> NobodyHasAgency st
                     -> TerminalStates ps
 
+
 -- | Analogous to 'connect' but for pipelined peers.
 --
+-- Since pipelining allows multiple possible interleavings, we provide a
+-- @[Bool]@ parameter to control the choices. Each @True@ will trigger picking
+-- the second choice in the @SenderCollect@ construct (if possible), leading
+-- to more results outstanding. This can also be interpreted as a greater
+-- pipeline depth, or more messages in-flight.
+--
+-- This can be exercised using a QuickCheck style generator.
+--
 connectPipelined :: forall ps (st :: ps) m a b.
-                    ( Monad m
-                    , Protocol ps
-                    )
-                 => PeerSender ps AsClient st m a
-                 -> Peer       ps AsServer st m b
+                    (Monad m, Protocol ps)
+                 => [Bool] -- ^ Interleaving choices. [] gives no pipelining.
+                 -> PeerPipelined ps AsClient st m a
+                 -> Peer          ps AsServer st m b
                  -> m (a, b, TerminalStates ps)
 
-connectPipelined = goSender
+connectPipelined cs0 (PeerPipelined peerA) peerB =
+    goSender cs0 EmptyQ peerA peerB
   where
-    goSender :: forall (st' :: ps).
-                PeerSender ps AsClient st' m a
-             -> Peer       ps AsServer st' m b
+    goSender :: forall (st' :: ps) n c.
+                [Bool]
+             -> Queue                      n c
+             -> PeerSender ps AsClient st' n c m a
+             -> Peer       ps AsServer st'     m b
              -> m (a, b, TerminalStates ps)
 
-    goSender  (SenderDone stA a)   (Done stB b)   = return (a, b, terminals)
+    goSender _ EmptyQ (SenderDone stA a) (Done stB b) = return (a, b, terminals)
       where terminals = TerminalStates stA stB
-    goSender  (SenderEffect a)      b             = a >>= \a' -> goSender a' b
-    goSender  a                    (Effect b)     = b >>= \b' -> goSender a  b'
 
-    goSender  (SenderYield _ msg r a) (Await _ b) =
-      goReceiver r (b msg) >>= \b' -> goSender a b'
+    goSender cs q (SenderEffect a) b  = a >>= \a' -> goSender cs q a' b
+    goSender cs q a        (Effect b) = b >>= \b' -> goSender cs q a  b'
 
+    goSender cs q (SenderYield _ msg a) (Await _ b) = goSender cs q a (b msg)
+
+    -- This does the receiver effects immediately, as if there were no
+    -- pipelining.
+    goSender cs q (SenderPipeline _ msg r a) (Await _ b) =
+      goReceiver r (b msg) >>= \(b', x) -> goSender cs (enqueue x q) a b'
+
+    -- However we make it possible to exercise the choice the environment has
+    -- in the non-determinism of the pipeline interleaving of collecting
+    -- results. Always picking the first continuation gives the fully serial
+    -- order. Always picking the second leads to a maximal (and possibly
+    -- unbounded) number of pending replies. By using a list of bools to
+    -- control the choices here, we can test any other order:
+    goSender (True:cs) q (SenderCollect (Just a) _) b = goSender cs q  a    b
+    goSender (_:cs) (ConsQ x q) (SenderCollect _ a) b = goSender cs q (a x) b
+    goSender    []  (ConsQ x q) (SenderCollect _ a) b = goSender [] q (a x) b
 
     -- Proofs that the remaining cases are impossible
-    goSender (SenderDone stA _)               (Yield (ServerAgency stB) _ _) =
+    goSender _ _ (SenderDone stA _) (Yield (ServerAgency stB) _ _) =
       absurd (proofByContradiction_NobodyAndServerHaveAgency stA stB)
 
-    goSender (SenderDone stA _)               (Await (ClientAgency stB) _) =
+    goSender _ _ (SenderDone stA _) (Await (ClientAgency stB) _) =
       absurd (proofByContradiction_NobodyAndClientHaveAgency stA stB)
 
-    goSender (SenderYield (ClientAgency stA) _ _ _) (Done stB _) =
+    goSender _ _ (SenderYield (ClientAgency stA) _ _) (Done stB _) =
       absurd (proofByContradiction_NobodyAndClientHaveAgency stB stA)
 
-    goSender (SenderYield (ClientAgency stA) _ _ _) (Yield (ServerAgency stB) _ _) =
+    goSender _ _ (SenderYield (ClientAgency stA) _ _) (Yield (ServerAgency stB) _ _) =
       absurd (proofByContradiction_ClientAndServerHaveAgency stA stB)
 
-    -- note that this is where there is actually non-determinism
-    -- in the order of effects. Here we're picking one order that is
-    -- equivalent to no pipelining at all. So this at least demonstrates
-    -- that the pipelining admits the canonical non-pipelined order.
+    goSender _ _ (SenderPipeline (ClientAgency stA) _ _ _) (Done stB _) =
+      absurd (proofByContradiction_NobodyAndClientHaveAgency stB stA)
+
+    goSender _ _ (SenderPipeline (ClientAgency stA) _ _ _) (Yield (ServerAgency stB) _ _) =
+      absurd (proofByContradiction_ClientAndServerHaveAgency stA stB)
 
 
-    goReceiver :: forall (st' :: ps) (stdone :: ps).
-                  PeerReceiver ps AsClient st' stdone m
+    goReceiver :: forall (st' :: ps) (stdone :: ps) c.
+                  PeerReceiver ps AsClient st' stdone m c
                -> Peer         ps AsServer st'        m b
-               -> m (Peer      ps AsServer     stdone m b)
+               -> m (Peer      ps AsServer     stdone m b, c)
 
-    goReceiver  ReceiverDone       b         = return b
+    goReceiver (ReceiverDone x)    b         = return (b, x)
     goReceiver (ReceiverEffect a)  b         = a >>= \a' -> goReceiver a' b
     goReceiver  a                 (Effect b) = b >>= \b' -> goReceiver a  b'
 
@@ -192,24 +216,39 @@ connectPipelined = goSender
 forgetPipelined
   :: forall ps (pk :: PeerKind) (st :: ps) m a.
      Functor m
-  => PeerSender ps pk st m a
-  -> Peer       ps pk st m a
-forgetPipelined = goSender
+  => PeerPipelined ps pk st m a
+  -> Peer          ps pk st m a
+forgetPipelined (PeerPipelined peer) = goSender EmptyQ peer
   where
-    goSender :: forall st'.
-                PeerSender ps pk st' m a
-             -> Peer       ps pk st' m a
+    goSender :: forall st' n c.
+                Queue                n c
+             -> PeerSender ps pk st' n c m a
+             -> Peer       ps pk st'     m a
 
-    goSender (SenderDone  stok       k) = Done stok k
-    goSender (SenderEffect           k) = Effect (goSender <$> k)
-    goSender (SenderYield stok msg r k) = Yield stok msg (goReceiver k r)
+    goSender EmptyQ (SenderDone     st     k) = Done st k
+    goSender q      (SenderEffect          k) = Effect (goSender q <$> k)
+    goSender q      (SenderYield    st m   k) = Yield st m (goSender q k)
+    goSender q      (SenderPipeline st m r k) = Yield st m (goReceiver q k r)
+    goSender (ConsQ x q) (SenderCollect  _ k) = goSender q (k x)
+    -- Here by picking the second continuation in Collect we resolve the
+    -- non-determinism by always picking the fully in-order non-pipelined
+    -- data flow path.
 
-    goReceiver :: forall stCurrent stNext.
-                  PeerSender   ps pk stNext m a
-               -> PeerReceiver ps pk stCurrent stNext m
-               -> Peer         ps pk stCurrent m a
+    goReceiver :: forall stCurrent stNext n c.
+                  Queue                        n  c
+               -> PeerSender   ps pk stNext (S n) c   m a
+               -> PeerReceiver ps pk stCurrent stNext m c
+               -> Peer         ps pk stCurrent        m a
 
-    goReceiver s  ReceiverDone          = goSender s
-    goReceiver s (ReceiverEffect     k) = Effect (goReceiver s <$> k)
-    goReceiver s (ReceiverAwait stok k) = Await stok (goReceiver s . k)
+    goReceiver q s (ReceiverDone     x) = goSender (enqueue x q) s
+    goReceiver q s (ReceiverEffect   k) = Effect (goReceiver q s <$> k)
+    goReceiver q s (ReceiverAwait st k) = Await st (goReceiver q s . k)
+
+data Queue (n :: N) a where
+  EmptyQ ::                   Queue  Z    a
+  ConsQ  :: a -> Queue n a -> Queue (S n) a
+
+enqueue :: a -> Queue n a -> Queue (S n) a
+enqueue a  EmptyQ     = ConsQ a EmptyQ
+enqueue a (ConsQ b q) = ConsQ b (enqueue a q)
 
