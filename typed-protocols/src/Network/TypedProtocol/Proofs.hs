@@ -123,7 +123,7 @@ data TerminalStates ps where
 --
 -- Since pipelining allows multiple possible interleavings, we provide a
 -- @[Bool]@ parameter to control the choices. Each @True@ will trigger picking
--- the second choice in the @SenderCollect@ construct (if possible), leading
+-- the first choice in the @SenderCollect@ construct (if possible), leading
 -- to more results outstanding. This can also be interpreted as a greater
 -- pipeline depth, or more messages in-flight.
 --
@@ -161,8 +161,8 @@ connectPipelined cs0 (PeerPipelined peerA) peerB =
 
     -- However we make it possible to exercise the choice the environment has
     -- in the non-determinism of the pipeline interleaving of collecting
-    -- results. Always picking the first continuation gives the fully serial
-    -- order. Always picking the second leads to a maximal (and possibly
+    -- results. Always picking the second continuation gives the fully serial
+    -- order. Always picking the first leads to a maximal (and possibly
     -- unbounded) number of pending replies. By using a list of bools to
     -- control the choices here, we can test any other order:
     goSender (True:cs) q (SenderCollect (Just a) _) b = goSender cs q  a    b
