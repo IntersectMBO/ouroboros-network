@@ -1,8 +1,8 @@
+{-# LANGUAGE CPP                    #-}
 {-# LANGUAGE FlexibleContexts       #-}
 {-# LANGUAGE MultiParamTypeClasses  #-}
 {-# LANGUAGE TypeFamilies           #-}
 {-# LANGUAGE TypeFamilyDependencies #-}
-{-# LANGUAGE CPP                    #-}
 module Control.Monad.Class.MonadSTM
   ( MonadSTM (..)
   , MonadFork (..)
@@ -30,9 +30,11 @@ import           Prelude hiding (read)
 import qualified Control.Concurrent.STM.TBQueue as STM
 import qualified Control.Concurrent.STM.TMVar as STM
 import qualified Control.Concurrent.STM.TVar as STM
+import           Control.Exception
 import           Control.Monad.Except
 import           Control.Monad.Reader
 import qualified Control.Monad.STM as STM
+import           GHC.Stack
 import           Numeric.Natural (Natural)
 
 import           Control.Monad.Class.MonadFork
@@ -44,7 +46,7 @@ class (MonadFork m, Monad (Tr m)) => MonadSTM m where
   -- The STM primitives
   type TVar m :: * -> *
 
-  atomically   :: Tr m a -> m a
+  atomically   :: HasCallStack => Tr m a -> m a
   newTVar      :: a -> Tr m (TVar m a)
   readTVar     :: TVar m a -> Tr m a
   writeTVar    :: TVar m a -> a -> Tr m ()
@@ -145,6 +147,22 @@ instance (Show e, MonadSTM m) => MonadSTM (ExceptT e m) where
   readTBQueue      = lift . readTBQueue
   writeTBQueue q a = lift $ writeTBQueue q a
 
+-- | Wrapper around 'BlockedIndefinitelyOnSTM' that stores a call stack
+data BlockedIndefinitely = BlockedIndefinitely {
+      blockedIndefinitelyCallStack :: CallStack
+    , blockedIndefinitelyException :: BlockedIndefinitelyOnSTM
+    }
+  deriving (Show)
+
+instance Exception BlockedIndefinitely where
+  displayException (BlockedIndefinitely cs e) = unlines [
+        displayException e
+      , prettyCallStack cs
+      ]
+
+wrapBlockedIndefinitely :: HasCallStack => IO a -> IO a
+wrapBlockedIndefinitely = handle (throwIO . BlockedIndefinitely callStack)
+
 --
 -- Instance for IO uses the existing STM library implementations
 --
@@ -153,7 +171,7 @@ instance MonadSTM IO where
   type Tr   IO = STM.STM
   type TVar IO = STM.TVar
 
-  atomically  = STM.atomically
+  atomically  = wrapBlockedIndefinitely . STM.atomically
   newTVar     = STM.newTVar
   readTVar    = STM.readTVar
   writeTVar   = STM.writeTVar
@@ -316,4 +334,3 @@ writeTBQueueDefault (TBQueue rsize _read wsize write _size) a = do
             else retry
   listend <- readTVar write
   writeTVar write (a:listend)
-

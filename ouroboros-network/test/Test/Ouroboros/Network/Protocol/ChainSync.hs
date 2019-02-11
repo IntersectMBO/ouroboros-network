@@ -6,7 +6,6 @@ module Test.Ouroboros.Network.Protocol.ChainSync where
 
 import Control.Monad (unless, void)
 import Control.Monad.ST.Lazy (runST)
-import Control.Monad.Free (Free)
 import Data.ByteString (ByteString)
 import System.Process (createPipe)
 
@@ -17,7 +16,7 @@ import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadProbe
 
-import Control.Monad.IOSim (SimF)
+import Control.Monad.IOSim (SimM)
 
 import Protocol.Core (connect)
 import Protocol.Codec
@@ -166,7 +165,7 @@ propChainSyncDemoST
 propChainSyncDemoST cps =
   runST $ runExperiment $ \probe -> do
     (clientChan, serverChan) <- tmvarChannels
-    chainSyncDemo @(Free (SimF _)) clientChan serverChan cps probe
+    chainSyncDemo @(SimM _) clientChan serverChan cps probe
 
 propChainSyncDemoIO
   :: ChainProducerStateForkTest

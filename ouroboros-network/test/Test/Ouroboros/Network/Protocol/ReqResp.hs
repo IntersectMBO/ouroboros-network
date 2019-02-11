@@ -6,7 +6,6 @@ module Test.Ouroboros.Network.Protocol.ReqResp where
 
 import Control.Monad (unless)
 import Control.Monad.ST.Lazy (runST)
-import Control.Monad.Free (Free)
 import Data.Functor.Identity (Identity (..))
 import Data.ByteString (ByteString)
 import System.Process (createPipe)
@@ -19,7 +18,7 @@ import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadProbe
 
-import Control.Monad.IOSim (SimF)
+import Control.Monad.IOSim (SimM)
 
 import Protocol.Core (Those (..), connect)
 import Protocol.Codec
@@ -140,7 +139,7 @@ prop_reqRespDemoExperimentST
 prop_reqRespDemoExperimentST request response =
   runST $ runExperiment $ \probe -> do
     (clientChan, serverChan) <- tmvarChannels
-    reqRespDemoExperiment @(Free (SimF _)) clientChan serverChan request response probe
+    reqRespDemoExperiment @(SimM _) clientChan serverChan request response probe
 
 prop_reqRespDemoExperimentIO
   :: forall request response.

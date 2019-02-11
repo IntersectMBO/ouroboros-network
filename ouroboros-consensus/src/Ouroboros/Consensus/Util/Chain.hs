@@ -54,7 +54,7 @@ dropLastBlocks i bs@(cs :> _)
     | otherwise = dropLastBlocks (i - 1) cs
 
 forksAtMostKBlocks :: forall b. HasHeader b
-                   => Int      -- ^ How many blocks can it fork?
+                   => Word     -- ^ How many blocks can it fork?
                    -> Chain b  -- ^ Our chain.
                    -> Chain b  -- ^ Their chain.
                    -> Bool     -- ^ Indicates whether their chain forks at most the specified number of blocks.
@@ -65,8 +65,9 @@ forksAtMostKBlocks k ours = go
         then True
         else go bs
 
+    -- we can roll back at most k blocks
     forkingPoints :: Set (Hash b)
-    forkingPoints = takeR (chainToSeq' ours) $ k + 1 -- we can roll back at most k blocks
+    forkingPoints = takeR (chainToSeq' ours) $ fromIntegral (k + 1)
 
     chainToSeq' :: Chain b -> Seq (Hash b)
     chainToSeq' c = GenesisHash :<| (BlockHash . blockHash <$> chainToSeq c)

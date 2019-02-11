@@ -8,7 +8,12 @@ import           Control.Exception
 import           Control.Monad (void)
 import           Control.Monad.Except
 import           Control.Monad.Reader
-import           System.IO (hPutStrLn, stderr)
+import           System.IO (hFlush, hPutStrLn, stderr)
+import           System.IO.Unsafe (unsafePerformIO)
+
+forkPrintExceptionLock :: IO.MVar ()
+{-# NOINLINE forkPrintExceptionLock #-}
+forkPrintExceptionLock = unsafePerformIO $ IO.newMVar ()
 
 class Monad m => MonadFork m where
   fork    :: m () -> m ()
@@ -16,8 +21,12 @@ class Monad m => MonadFork m where
 instance MonadFork IO where
   fork a =
     let handleException :: Either SomeException () -> IO ()
-        handleException (Left e) =
-            hPutStrLn stderr $ "Uncaught exception in thread:" ++ displayException e
+        handleException (Left e) = do
+            tid <- IO.myThreadId
+            IO.withMVar forkPrintExceptionLock $ \() -> do
+              hPutStrLn stderr $ "Uncaught exception in thread " ++ show tid
+                              ++ ": " ++ displayException e
+              hFlush stderr
         handleException (Right x) = return x
     in void (IO.forkFinally a handleException)
 
@@ -27,4 +36,3 @@ instance MonadFork m => MonadFork (ReaderT e m) where
 -- NOTE(adn): Is this a sensible instance?
 instance (Show e, MonadFork m) => MonadFork (ExceptT e m) where
   fork (ExceptT m) = ExceptT $ Right <$> fork (either (error . show) id <$> m)
-

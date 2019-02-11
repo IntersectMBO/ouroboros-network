@@ -10,6 +10,7 @@
 
 module Ouroboros.Consensus.Protocol.BFT (
     Bft
+  , BftParams(..)
     -- * Classes
   , BftCrypto(..)
   , BftStandardCrypto
@@ -50,6 +51,18 @@ import           Ouroboros.Consensus.Util.Condense
 -- * Does not use any stateful crypto (and so has no need for node state)
 data Bft c
 
+-- | Protocol parameters
+data BftParams = BftParams {
+      -- | Security parameter
+      --
+      -- Although the protocol proper does not have such a security parameter,
+      -- we insist on it.
+      bftSecurityParam :: SecurityParam
+
+      -- | Number of core nodes
+    , bftNumNodes      :: Word
+    }
+
 instance BftCrypto c => OuroborosTag (Bft c) where
   -- | The BFT payload is just the signature
   newtype Payload (Bft c) ph = BftPayload {
@@ -59,9 +72,9 @@ instance BftCrypto c => OuroborosTag (Bft c) where
 
   -- | (Static) node configuration
   data NodeConfig (Bft c) = BftNodeConfig {
-        bftNodeId   :: NodeId
+        bftParams   :: BftParams
+      , bftNodeId   :: NodeId
       , bftSignKey  :: SignKeyDSIGN (BftDSIGN c)
-      , bftNumNodes :: Word
       , bftVerKeys  :: Map NodeId (VerKeyDSIGN (BftDSIGN c))
       }
 
@@ -71,6 +84,8 @@ instance BftCrypto c => OuroborosTag (Bft c) where
   type LedgerView     (Bft c) = ()
   type IsLeader       (Bft c) = ()
   type ChainState     (Bft c) = ()
+
+  protocolSecurityParam = bftSecurityParam . bftParams
 
   mkPayload BftNodeConfig{..} _proof preheader = do
       signature <- signedDSIGN preheader bftSignKey
@@ -84,6 +99,8 @@ instance BftCrypto c => OuroborosTag (Bft c) where
                  CoreId  i -> if n `mod` bftNumNodes == fromIntegral i
                                 then Just ()
                                 else Nothing
+    where
+      BftParams{..}  = bftParams
 
   applyChainState BftNodeConfig{..} _l b _cs = do
       -- TODO: Should deal with unknown node IDs
@@ -93,8 +110,10 @@ instance BftCrypto c => OuroborosTag (Bft c) where
         then return ()
         else throwError BftInvalidSignature
     where
+      BftParams{..}  = bftParams
       Slot n         = blockSlot b
       expectedLeader = CoreId $ fromIntegral (n `mod` bftNumNodes)
+
 
 deriving instance BftCrypto c => Show     (Payload (Bft c) ph)
 deriving instance BftCrypto c => Eq       (Payload (Bft c) ph)

@@ -24,6 +24,7 @@ module Ouroboros.Consensus.Demo (
   , DemoProtocolConstraints
   , demoProtocolConstraints
     -- * Support for runnig the demos
+  , defaultSecurityParam
   , defaultDemoPraosParams
   , enumCoreNodes
   , HasCreator(..)
@@ -76,8 +77,8 @@ type DemoLeaderSchedule = WithLeaderSchedule (Praos PraosMockCrypto)
 
 -- | Consensus protocol to use
 data DemoProtocol p where
-  DemoBFT            :: DemoProtocol DemoBFT
-  DemoPermBFT        :: DemoProtocol DemoPermBFT
+  DemoBFT            :: SecurityParam -> DemoProtocol DemoBFT
+  -- DemoPermBFT        :: SecurityParam -> DemoProtocol DemoPermBFT
   DemoPraos          :: PraosParams -> DemoProtocol DemoPraos
   DemoLeaderSchedule :: LeaderSchedule -> PraosParams -> DemoProtocol DemoLeaderSchedule
 
@@ -105,19 +106,22 @@ type DemoProtocolConstraints p = (
   )
 
 demoProtocolConstraints :: DemoProtocol p -> Dict (DemoProtocolConstraints p)
-demoProtocolConstraints DemoBFT                  = Dict
--- demoProtocolConstraints DemoPermBFT              = Dict
-demoProtocolConstraints (DemoPraos _)            = Dict
-demoProtocolConstraints (DemoLeaderSchedule _ _) = Dict
+demoProtocolConstraints DemoBFT{}            = Dict
+-- demoProtocolConstraints DemoPermBFT{}        = Dict
+demoProtocolConstraints DemoPraos{}          = Dict
+demoProtocolConstraints DemoLeaderSchedule{} = Dict
 
 -- | Info needed to run the selected protocol
 protocolInfo :: DemoProtocol p -> NumCoreNodes -> CoreNodeId -> ProtocolInfo p
-protocolInfo DemoBFT (NumCoreNodes numCoreNodes) (CoreNodeId nid) =
+protocolInfo (DemoBFT securityParam) (NumCoreNodes numCoreNodes) (CoreNodeId nid) =
     ProtocolInfo {
         pInfoConfig = BftNodeConfig {
-            bftNodeId   = CoreId nid
+            bftParams   = BftParams {
+                              bftNumNodes      = fromIntegral numCoreNodes
+                            , bftSecurityParam = securityParam
+                            }
+          , bftNodeId   = CoreId nid
           , bftSignKey  = SignKeyMockDSIGN nid
-          , bftNumNodes = fromIntegral numCoreNodes
           , bftVerKeys  = Map.fromList [
                 (CoreId n, VerKeyMockDSIGN n)
               | n <- fromIntegral <$> [0 .. numCoreNodes - 1]
@@ -130,41 +134,39 @@ protocolInfo DemoBFT (NumCoreNodes numCoreNodes) (CoreNodeId nid) =
   where
     addrDist :: AddrDist
     addrDist = mkAddrDist $ fromIntegral numCoreNodes
-{-
-protocolInfo DemoPermBFT numCoreNodes (CoreNodeId nid) =
-    ProtocolInfo {
-        pInfoConfig = PermBftNodeConfig {
-            permBftNodeId       = CoreId nid
-          , permBftSignKey      = SignKeyMockDSIGN nid
-          , permBftNumCoreNodes = numCoreNodes
-          , permBftVerKeys      = Map.fromList [
-                (CoreId n, VerKeyMockDSIGN n)
-              | n <- fromIntegral <$> [0 .. (getNumCoreNodes numCoreNodes) - 1]
-              ]
-          , permBftProtParams   = undefined
-          , permBftKSize        = undefined
-          , permBftTRatio       = MkT 0.22
-          }
-      , pInfoInitChain  = Genesis
-      , pInfoInitLedger =
-          ExtLedgerState
-            (genesisLedgerState addrDist)
-            ( initKeyToQMap
-            , genesisBlock
-            , undefined
-            )
-      , pInfoInitState  = ()
-      }
-  where
-    addrDist :: AddrDist
-    addrDist = mkAddrDist $ fromIntegral $ getNumCoreNodes numCoreNodes
-    initKeyToQMap :: Map.Map VKeyGenesis (Queue BlockIx)
-    initKeyToQMap = Map.fromList [
-        (key, (newQueue :: Queue BlockIx))
-      | key <- (VKeyGenesis . VKey . Owner . fromIntegral) <$>
-                [1 .. (getNumCoreNodes numCoreNodes)]
-      ]
--}
+-- protocolInfo (DemoPermBFT securityParam) numCoreNodes (CoreNodeId nid) =
+--     ProtocolInfo {
+--         pInfoConfig = PermBftNodeConfig {
+--             permBftNodeId       = CoreId nid
+--           , permBftSignKey      = SignKeyMockDSIGN nid
+--           , permBftNumCoreNodes = numCoreNodes
+--           , permBftVerKeys      = Map.fromList [
+--                 (CoreId n, VerKeyMockDSIGN n)
+--               | n <- fromIntegral <$> [0 .. (getNumCoreNodes numCoreNodes) - 1]
+--               ]
+--           , permBftProtParams   = undefined
+--           , permBftKSize        = undefined
+--           , permBftTRatio       = MkT 0.22
+--           }
+--       , pInfoInitChain  = Genesis
+--       , pInfoInitLedger =
+--           ExtLedgerState
+--             (genesisLedgerState addrDist)
+--             ( initKeyToQMap
+--             , genesisBlock
+--             , undefined
+--             )
+--       , pInfoInitState  = ()
+--       }
+--   where
+--     addrDist :: AddrDist
+--     addrDist = mkAddrDist $ fromIntegral $ getNumCoreNodes numCoreNodes
+--     initKeyToQMap :: Map.Map VKeyGenesis (Queue BlockIx)
+--     initKeyToQMap = Map.fromList [
+--         (key, (newQueue :: Queue BlockIx))
+--       | key <- (VKeyGenesis . VKey . Owner . fromIntegral) <$>
+--                 [1 .. (getNumCoreNodes numCoreNodes)]
+--       ]
 protocolInfo (DemoPraos params) (NumCoreNodes numCoreNodes) (CoreNodeId nid) =
     ProtocolInfo {
         pInfoConfig = EncNodeConfig {
@@ -240,9 +242,12 @@ protocolInfo (DemoLeaderSchedule schedule params)
   Support for running the demos
 -------------------------------------------------------------------------------}
 
+defaultSecurityParam :: SecurityParam
+defaultSecurityParam = SecurityParam 5
+
 defaultDemoPraosParams :: PraosParams
 defaultDemoPraosParams = PraosParams {
-      praosK             = 5
+      praosSecurityParam = defaultSecurityParam
     , praosSlotsPerEpoch = 3
     , praosLeaderF       = 0.5
     , praosLifetimeKES   = 1000000
@@ -298,6 +303,13 @@ instance HasCreator DemoBFT where
                . bftSignature
                . headerOuroboros
                . simpleHeader
+
+-- instance HasCreator DemoPermBFT where
+--     getCreator = CoreNodeId
+--                . verKeyIdFromSigned
+--                . bftSignature
+--                . headerOuroboros
+--                . simpleHeader
 
 instance HasCreator DemoPraos where
     getCreator = praosCreator

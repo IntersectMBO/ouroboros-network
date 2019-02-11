@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE FunctionalDependencies     #-}
+{-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE RankNTypes                 #-}
@@ -10,12 +11,12 @@
 {-# LANGUAGE UndecidableInstances       #-}
 
 module Ouroboros.Consensus.Protocol.Abstract (
-    PreferredChain(..)
     -- * Abstract definition of the Ouroboros protocl
-  , OuroborosTag(..)
-  , selectChain
+    OuroborosTag(..)
   , HasPreHeader(..)
   , HasPayload(..)
+  , SecurityParam(..)
+  , selectChain
     -- * State monad for Ouroboros state
   , HasNodeState
   , HasNodeState_(..)
@@ -31,9 +32,11 @@ module Ouroboros.Consensus.Protocol.Abstract (
 import           Control.Monad.Except
 import           Control.Monad.State
 import           Crypto.Random (MonadRandom (..))
+import           Data.Function (on)
 import           Data.Functor.Identity
 import           Data.Kind (Constraint)
-import           Data.List (foldl')
+import           Data.List (sortBy)
+import           Data.Maybe (listToMaybe, mapMaybe)
 
 import           Ouroboros.Network.Block (HasHeader (..), Slot)
 import           Ouroboros.Network.Chain (Chain (..))
@@ -42,9 +45,6 @@ import           Ouroboros.Network.Serialise (Serialise)
 
 import           Ouroboros.Consensus.Util.Chain (upToSlot)
 import           Ouroboros.Consensus.Util.Random
-
-data PreferredChain = Ours | Theirs
-    deriving (Show, Read, Eq, Ord)
 
 -- | The (open) universe of Ouroboros protocols
 --
@@ -99,18 +99,29 @@ class ( Show (ChainState    p)
             -> ph
             -> m (Payload p ph)
 
-  -- | Chain selection
-  compareChain :: (Eq b, HasHeader b)
-               => NodeConfig p
-               -> Slot         -- ^ Present slot
-               -> Chain b      -- ^ Our chain
-               -> Chain b      -- ^ Upstream chain
-               -> PreferredChain
-  compareChain _ slot ourChain theirChain
-    | len ourChain >= len theirChain = Ours
-    | otherwise                      = Theirs
+  -- | Do we prefer the candidate chain over ours?
+  --
+  -- Returns a (prefix of) the candidate if we do prefer the candidate.
+  --
+  -- NOTE: Assumes that our chain does not extend into the future.
+  preferCandidate :: (Eq b, HasHeader b)
+                  => NodeConfig p
+                  -> Slot         -- ^ Present slot
+                  -> Chain b      -- ^ Our chain
+                  -> Chain b      -- ^ Candidate
+                  -> Maybe (Chain b)
+  preferCandidate _ now ours cand
+    | Chain.length cand' > Chain.length ours = Just cand'
+    | otherwise                              = Nothing
     where
-      len = Chain.length . upToSlot slot
+      cand' = upToSlot now cand
+
+  -- | Compare two candidates, both of which we prefer to our own chain
+  compareCandidates :: (Eq b, HasHeader b)
+                    => NodeConfig p
+                    -> Slot         -- ^ Present slot
+                    -> Chain b -> Chain b -> Ordering
+  compareCandidates _ _ = compare `on` Chain.length
 
   -- | Check if a node is the leader
   checkIsLeader :: (HasNodeState p m, MonadRandom m)
@@ -128,18 +139,19 @@ class ( Show (ChainState    p)
                   -> ChainState p -- /Previous/ Ouroboros state
                   -> Except (ValidationErr p) (ChainState p)
 
-selectChain :: forall p b. (OuroborosTag p, Eq b, HasHeader b)
-            => NodeConfig p
-            -> Slot         -- ^ Present slot
-            -> Chain b      -- ^ Our chain
-            -> [Chain b]    -- ^ Upstream chains
-            -> Chain b
-selectChain cfg slot ourChain = foldl' f ourChain
-  where
-    f :: Chain b -> Chain b -> Chain b
-    f ours theirs = case compareChain cfg slot ours theirs of
-        Ours   -> ours
-        Theirs -> theirs
+  -- | We require that protocols support a @k@ security parameter
+  protocolSecurityParam :: NodeConfig p -> SecurityParam
+
+-- | Protocol security parameter
+--
+-- We interpret this as the number of rollbacks we support.
+--
+-- i.e., k == 0: we can't roll back at all
+--       k == 1: we can roll back at most one block, etc
+--
+-- NOTE: This talks about the number of /blocks/ we can roll back, not
+-- the number of /slots/.
+newtype SecurityParam = SecurityParam { maxRollbacks :: Word }
 
 -- | Extract the pre-header from a block
 class (HasHeader b, Serialise (PreHeader b)) => HasPreHeader b where
@@ -155,6 +167,25 @@ class HasPreHeader b => HasPayload p b where
   blockPayload :: proxy p -> b -> Payload p (PreHeader b)
 
 {-------------------------------------------------------------------------------
+  Chain selection
+-------------------------------------------------------------------------------}
+
+-- | Chain selection between our chain and list of candidates
+--
+-- Returns 'Nothing' if we stick with our current chain.
+selectChain :: forall p b. (OuroborosTag p, Eq b, HasHeader b)
+            => NodeConfig p
+            -> Slot         -- ^ Present slot
+            -> Chain b      -- ^ Our chain
+            -> [Chain b]    -- ^ Upstream chains
+            -> Maybe (Chain b)
+selectChain cfg now ours candidates =
+    listToMaybe $ sortBy (flip (compareCandidates cfg now)) preferred
+  where
+    preferred :: [Chain b]
+    preferred = mapMaybe (preferCandidate cfg now ours) candidates
+
+{-------------------------------------------------------------------------------
   State monad
 -------------------------------------------------------------------------------}
 
@@ -168,7 +199,7 @@ class Monad m => HasNodeState_ s m | m -> s where
   getNodeState :: m s
   putNodeState :: s -> m ()
 
-instance HasNodeState_ s m => HasNodeState_ s (MonadPseudoRandomT gen m) where
+instance HasNodeState_ s m => HasNodeState_ s (ChaChaT m) where
   getNodeState = lift $ getNodeState
   putNodeState = lift . putNodeState
 

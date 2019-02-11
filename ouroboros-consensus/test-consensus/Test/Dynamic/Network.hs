@@ -10,7 +10,7 @@ module Test.Dynamic.Network (
 
 import           Control.Monad
 import           Crypto.Number.Generate (generateBetween)
-import           Crypto.Random (DRG)
+import           Crypto.Random (ChaChaDRG, drgNew)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
@@ -43,17 +43,16 @@ import           Ouroboros.Consensus.Util.STM
 --
 -- We run for the specified number of blocks, then return the final state of
 -- each node.
-broadcastNetwork :: forall m p gen.
+broadcastNetwork :: forall m p.
                     ( MonadSTM   m
                     , MonadTimer m
                     , MonadSay   m
                     , DemoProtocolConstraints p
-                    , DRG gen
                     )
                  => BlockchainTime m
                  -> NumCoreNodes
                  -> (CoreNodeId -> ProtocolInfo p)
-                 -> gen
+                 -> ChaChaDRG
                  -> NumSlots
                  -> m (Map NodeId (Chain (Block p)))
 broadcastNetwork btime numCoreNodes pInfo initRNG numSlots = do
@@ -85,7 +84,7 @@ broadcastNetwork btime numCoreNodes pInfo initRNG numSlots = do
       -- STM variable to record the final chain of the node
       varRes <- atomically $ newTVar Nothing
 
-      let callbacks :: NodeCallbacks m (MonadPseudoRandomT gen) (Block p)
+      let callbacks :: NodeCallbacks m (Block p)
           callbacks = NodeCallbacks {
               produceBlock = \proof l slot prevPoint prevNo -> do
                 let prevHash  = castHash (Chain.pointHash prevPoint)
@@ -100,13 +99,13 @@ broadcastNetwork btime numCoreNodes pInfo initRNG numSlots = do
                            (Map.fromList $ [(hash t, t) | t <- txs])
                            proof
 
+            , produceDRG      = atomically $ simChaChaT varRNG id $ drgNew
             , adoptedNewChain = \_newChain -> return ()
             }
 
       node <- nodeKernel
                 pInfoConfig
                 pInfoInitState
-                (simMonadPseudoRandomT varRNG)
                 btime
                 pInfoInitLedger
                 pInfoInitChain
@@ -121,12 +120,20 @@ broadcastNetwork btime numCoreNodes pInfo initRNG numSlots = do
                                             (withSomeTransition show)
 
       forM_ (filter (/= us) nodeIds) $ \them -> do
-        registerDownstream (nodeNetworkLayer node) codecChainSync $ \cc ->
-          cc $ withLogging (TalkingToConsumer us them) $
-                 fst (chans Map.! us Map.! them)
-        registerUpstream (nodeNetworkLayer node) them codecChainSync $ \cc ->
-          cc $ withLogging (TalkingToProducer us them) $
-                 snd (chans Map.! them Map.! us)
+        let commsDown = NodeComms {
+                ncCodec    = codecChainSync
+              , ncWithChan = \cc -> cc $
+                  withLogging (TalkingToConsumer us them) $
+                    fst (chans Map.! us Map.! them)
+              }
+            commsUp = NodeComms {
+                ncCodec    = codecChainSync
+              , ncWithChan = \cc -> cc $
+                  withLogging (TalkingToProducer us them) $
+                    snd (chans Map.! them Map.! us)
+              }
+        addDownstream node      commsDown
+        addUpstream   node them commsUp
 
       onSlot btime (finalSlot numSlots) $ atomically $ do
         chain <- getCurrentChain node

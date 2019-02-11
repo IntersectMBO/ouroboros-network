@@ -75,8 +75,10 @@ instance OuroborosTag p => OuroborosTag (TestProtocol p) where
         Nothing    -> return $ Nothing
         Just proof -> return $ Just (proof, stakeOf nodeId)
 
-  compareChain    (TestNodeConfig cfg _) = compareChain    cfg
-  applyChainState (TestNodeConfig cfg _) = applyChainState cfg . fst
+  preferCandidate       (TestNodeConfig cfg _) = preferCandidate       cfg
+  compareCandidates     (TestNodeConfig cfg _) = compareCandidates     cfg
+  applyChainState       (TestNodeConfig cfg _) = applyChainState       cfg . fst
+  protocolSecurityParam (TestNodeConfig cfg _) = protocolSecurityParam cfg
 
 deriving instance (OuroborosTag p, Show (Payload p ph)) => Show (Payload (TestProtocol p) ph)
 deriving instance (OuroborosTag p, Eq   (Payload p ph)) => Eq   (Payload (TestProtocol p) ph)

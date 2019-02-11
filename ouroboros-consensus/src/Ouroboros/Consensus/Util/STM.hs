@@ -14,7 +14,7 @@ module Ouroboros.Consensus.Util.STM (
   , simWriterT
   , simStateT
   , simOuroborosStateT
-  , simMonadPseudoRandomT
+  , simChaChaT
   ) where
 
 import           Control.Monad.Reader
@@ -98,13 +98,13 @@ simOuroborosStateT tvar k n = do
     writeTVar tvar st'
     return a
 
-simMonadPseudoRandomT :: MonadSTM m
-                      => TVar m gen
-                      -> Sim n m
-                      -> Sim (MonadPseudoRandomT gen n) m
-simMonadPseudoRandomT tvar k n = do
+simChaChaT :: MonadSTM m
+           => TVar m ChaChaDRG
+           -> Sim n m
+           -> Sim (ChaChaT n) m
+simChaChaT tvar k n = do
     st       <- readTVar tvar
-    (a, st') <- k (withDRGT n st)
+    (a, st') <- k (runChaChaT n st)
     writeTVar tvar st'
     return a
 

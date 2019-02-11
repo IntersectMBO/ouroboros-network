@@ -8,7 +8,6 @@ import qualified Pipes
 
 import           Control.Monad.ST.Lazy (runST)
 import           Control.Monad (void)
-import           Control.Monad.Free (Free)
 import           Data.Functor (($>))
 import           Data.Functor.Identity (Identity (..))
 
@@ -18,7 +17,7 @@ import Control.Monad.Class.MonadFork (MonadFork (..))
 import Control.Monad.Class.MonadProbe (MonadProbe (..))
 import Control.Monad.Class.MonadSTM (MonadSTM (..))
 import Control.Monad.Class.MonadTimer (MonadTimer (..))
-import Control.Monad.IOSim (SimF)
+import Control.Monad.IOSim (SimM)
 
 import Ouroboros.Network.Protocol.BlockFetch.Type
 import Ouroboros.Network.Protocol.BlockFetch.Client
@@ -143,7 +142,7 @@ prop_directBlockRequestProtocol_ST
   :: [(ArbitraryPoint, ArbitraryPoint)]
   -> Property
 prop_directBlockRequestProtocol_ST as = runST $ runExperiment $
-  blockRequestProtocol_experiment @(Free (SimF _))
+  blockRequestProtocol_experiment @(SimM _)
     (\ser cli -> void $ directBlockRequest ser cli) as
 
 prop_directBlockRequestProtocol_IO
@@ -157,7 +156,7 @@ prop_connectBlockRequestProtocol_ST
   :: [(ArbitraryPoint, ArbitraryPoint)]
   -> Property
 prop_connectBlockRequestProtocol_ST as = runST $ runExperiment $
-  blockRequestProtocol_experiment @(Free (SimF _))
+  blockRequestProtocol_experiment @(SimM _)
     (\ser cli -> void $ connect
       (blockRequestReceiverStream ser)
       (blockRequestSenderStream cli)) as
@@ -251,7 +250,7 @@ prop_blockFetchProtocol_IO (NonEmpty as) = ioProperty $ runExperiment $
 -- Round trip tests
 -------------------------------------------------------------------------------}
 
--- | Round trip test in either @'IO'@ or in @Free ('SimF' s)@ monad.  It
+-- | Round trip test in either @'IO'@ or in @'SimM' s@ monad.  It
 -- assures that there can be multiple outstanding range requests, and that the
 -- server returns the exepcted ranges.
 --
@@ -292,7 +291,7 @@ prop_directRoundTripST
   -> Positive Int
   -> Property
 prop_directRoundTripST ranges queueSize = runST $ runExperiment $
-  roundTrip_experiment @(Free (SimF _))
+  roundTrip_experiment @(SimM _)
     (\ser cli -> void $ directBlockRequest ser cli)
     (\ser cli -> Just . snd <$> directBlockFetch ser cli)
     ranges

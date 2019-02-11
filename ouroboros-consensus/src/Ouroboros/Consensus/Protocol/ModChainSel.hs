@@ -35,13 +35,19 @@ import           Ouroboros.Consensus.Util.Condense
 
 class OuroborosTag p => ChainSelection p s where
 
-    compareChain' :: (Eq b, HasHeader b)
-                  => proxy s
-                  -> NodeConfig p
-                  -> Slot
-                  -> Chain b
-                  -> Chain b
-                  -> PreferredChain
+  preferCandidate' :: (Eq b, HasHeader b)
+                   => proxy s
+                   -> NodeConfig p
+                   -> Slot         -- ^ Present slot
+                   -> Chain b      -- ^ Our chain
+                   -> Chain b      -- ^ Candidate
+                   -> Maybe (Chain b)
+
+  compareCandidates' :: (Eq b, HasHeader b)
+                     => proxy s
+                     -> NodeConfig p
+                     -> Slot         -- ^ Present slot
+                     -> Chain b -> Chain b -> Ordering
 
 data ModChainSel p s
 
@@ -57,12 +63,14 @@ instance ChainSelection p s => OuroborosTag (ModChainSel p s) where
     type    ValidationErr  (ModChainSel p s)    = ValidationErr p
     type    SupportedBlock (ModChainSel p s)    = SupportedBlock p
 
-    mkPayload       (McsNodeConfig cfg) proof ph = McsPayload <$> mkPayload cfg proof ph
+    mkPayload         (McsNodeConfig cfg) proof ph = McsPayload <$> mkPayload cfg proof ph
 
-    checkIsLeader   (McsNodeConfig cfg) = checkIsLeader   cfg
-    applyChainState (McsNodeConfig cfg) = applyChainState cfg
+    checkIsLeader         (McsNodeConfig cfg) = checkIsLeader         cfg
+    applyChainState       (McsNodeConfig cfg) = applyChainState       cfg
+    protocolSecurityParam (McsNodeConfig cfg) = protocolSecurityParam cfg
 
-    compareChain    (McsNodeConfig cfg) = compareChain' (Proxy :: Proxy s) cfg
+    preferCandidate   (McsNodeConfig cfg) = preferCandidate'   (Proxy :: Proxy s) cfg
+    compareCandidates (McsNodeConfig cfg) = compareCandidates' (Proxy :: Proxy s) cfg
 
 deriving instance Show      (Payload p ph) => Show      (Payload (ModChainSel p s) ph)
 deriving instance Eq        (Payload p ph) => Eq        (Payload (ModChainSel p s) ph)
