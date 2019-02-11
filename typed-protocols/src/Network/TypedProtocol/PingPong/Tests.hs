@@ -1,62 +1,34 @@
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE RecordWildCards #-}
 
-module Network.TypedProtocol.PingPong.Tests where
-
-import           Control.Monad.Class.MonadFork (MonadFork (..))
-import           Control.Monad.Class.MonadST (MonadST (..))
-import           Control.Monad.Class.MonadSTM (MonadSTM (..))
-import           Control.Monad.Class.MonadProbe
-                   ( MonadProbe (..)
-                   , MonadRunProbe (..)
-                   , withProbe
-                   )
-import           Control.Monad.Fail (MonadFail)
-import           Control.Monad.Class.MonadTimer (MonadTimer (..))
-import           Control.Monad.ST.Lazy (runST)
-import           Control.Monad.IOSim (SimM)
-
-import           Data.ByteString (ByteString)
-import qualified Data.ByteString.Char8 as BSC
-import           Data.Functor.Identity (Identity (..))
-import           Data.List (foldl')
 
 
-import           Network.TypedProtocol.Codec (transformCodec)
-import           Network.TypedProtocol.Channel
-                   ( Channel
-                   , createConnectedChannels
-                   , createPipeConnectedChannels
-                   )
-import           Network.TypedProtocol.Driver (runPeer)
-import           Network.TypedProtocol.Proofs
+module Network.TypedProtocol.PingPong.Tests (tests) where
 
-import           Network.TypedProtocol.PingPong.Type
-import           Network.TypedProtocol.PingPong.Client
-                   ( PingPongClient(..)
-                   , pingPongClientPeer
-                   , pingPongClientPeerSender
-                   )
-import           Network.TypedProtocol.PingPong.Codec
-                   ( codecPingPong
-                   )
-import           Network.TypedProtocol.PingPong.Server
-                   ( PingPongServer(..)
-                   , pingPongServerPeer
-                   )
-import           Network.TypedProtocol.PingPong.Examples
-                   ( pingPongClientCount
-                   , pingPongSenderCount
-                   , pingPongServerCount
-                   )
 
-import           Test.Tasty
-import           Test.QuickCheck
-import           Test.Tasty.QuickCheck (testProperty)
+import Network.TypedProtocol.Proofs
+import Network.TypedProtocol.Channel
+import Network.TypedProtocol.Driver
 
+import Network.TypedProtocol.PingPong.Type
+import Network.TypedProtocol.PingPong.Client
+import Network.TypedProtocol.PingPong.Server
+import Network.TypedProtocol.PingPong.Examples
+import Network.TypedProtocol.PingPong.Codec
+
+import Data.Functor.Identity (Identity (..))
+import Control.Monad.Class.MonadSTM
+import Control.Monad.IOSim
+
+import Test.QuickCheck
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.QuickCheck (testProperty)
+
+
+--
+-- Properties going directly, not via Peer.
+--
 
 -- | The 'PingPongClient m' and 'PingPongServer m' types are complementary.
 -- The former can be used to feed the latter directly, in the same thread.
@@ -88,117 +60,185 @@ prop_direct (NonNegative n) =
       of ((), n') -> n' == n
 
 
+--
+-- Properties using connect, without pipelining.
+--
+
 -- | Run a simple ping\/pong client and server, going via the 'Peer'
 -- representation, but without going via a channel.
 --
 prop_connect :: NonNegative Int -> Bool
 prop_connect (NonNegative n) =
   case runIdentity
-         (connect (pingPongClientPeer (pingPongClientCount n))
-                  (pingPongServerPeer  pingPongServerCount))
+         (connect
+           (pingPongClientPeer (pingPongClientCount n))
+           (pingPongServerPeer  pingPongServerCount))
 
     of ((), n', TerminalStates TokDone TokDone) -> n == n'
 
 
+--
+-- Properties using connect, with pipelining.
+--
+
+-- | Run a pipelined ping\/pong client with a normal server. The client
+-- should return the interleaving of messages it sent and received. This
+-- will be used to exercise various interleavings in properties below.
+--
+connect_pipelined :: PingPongClientPipelined Identity [Either Int Int]
+                  -> [Bool]
+                  -> (Int, [Either Int Int])
+connect_pipelined client cs =
+  case runIdentity
+         (connectPipelined cs
+            (pingPongClientPeerPipelined client)
+            (pingPongServerPeer pingPongServerCount))
+
+    of (reqResps, n, TerminalStates TokDone TokDone) -> (n, reqResps)
+
+
+-- | Using a client that forces maximum pipeling, show that irrespective of
+-- the envronment's choices, the interleaving we get is all requests followed
+-- by all responses.
+--
+prop_connect_pipelined1 :: [Bool] -> NonNegative Int -> Bool
+prop_connect_pipelined1 choices (NonNegative n) =
+    connect_pipelined (pingPongClientPipelinedMax n) choices
+ ==
+    (n, reqResps)
+  where
+    reqResps = map Left [0..n-1] ++ map Right [0..n-1]
+
+
+-- | Using a client that collects eagerly, show that when the environment
+-- chooses maximum pipelining, then the interleaving we get is all requests
+-- followed by all responses.
+--
+prop_connect_pipelined2 :: NonNegative Int -> Bool
+prop_connect_pipelined2 (NonNegative n) =
+    connect_pipelined (pingPongClientPipelinedMin n) choices
+ ==
+    (n, reqResps)
+  where
+    choices  = repeat True
+    reqResps = map Left [0..n-1] ++ map Right [0..n-1]
+
+
+-- | Using a client that collects eagerly, show that when the environment
+-- chooses minimum pipelining, then the interleaving we get is the in-order
+-- non-pipelined interleaving of each request followed by its response.
+--
+prop_connect_pipelined3 :: NonNegative Int -> Bool
+prop_connect_pipelined3 (NonNegative n) =
+    connect_pipelined (pingPongClientPipelinedMin n) choices
+ ==
+    (n, reqResps)
+  where
+    choices  = repeat False
+    reqResps = concat [ [Left n', Right n'] | n' <- [0..n-1] ]
+
+
+-- | Using a client that collects eagerly, but otherwise is always willing
+-- to send new messages, show that when the environment chooses arbitrary
+-- pipelining, then we get complex interleavings given by the reference
+-- specification 'pipelineInterleaving'.
+--
+prop_connect_pipelined4 :: [Bool] -> NonNegative Int -> Bool
+prop_connect_pipelined4 choices (NonNegative n) =
+    connect_pipelined (pingPongClientPipelinedMin n) choices
+ ==
+    (n, reqResps)
+  where
+    reqResps = pipelineInterleaving maxBound choices [0..n-1] [0..n-1]
+
+
+-- | Using a client that collects eagerly, and is willing to send new messages
+-- up to a fixed limit of outstanding messages, show that when the environment
+-- chooses arbitrary pipelining, then we get complex interleavings given by
+-- the reference specification 'pipelineInterleaving', for that limit of
+-- outstanding messages.
+--
+prop_connect_pipelined5 :: [Bool] -> Positive Int -> NonNegative Int -> Bool
+prop_connect_pipelined5 choices (Positive omax) (NonNegative n) =
+    connect_pipelined (pingPongClientPipelinedLimited omax n) choices
+ ==
+    (n, reqResps)
+  where
+    reqResps = pipelineInterleaving omax choices [0..n-1] [0..n-1]
+
+
+-- | A reference specification for interleaving of requests and responses
+-- with pipelining, where the environment can choose whether a response is
+-- available yet.
+--
+-- This also supports bounded choice where the maximum number of outstanding
+-- in-flight responses is limted.
+--
+pipelineInterleaving :: Int    -- ^ Bound on outstanding responses
+                     -> [Bool] -- ^ Pipelining choices
+                     -> [req] -> [resp] -> [Either req resp]
+pipelineInterleaving omax cs0 reqs0 resps0 =
+    go 0 cs0 (zip [0 :: Int ..] reqs0)
+             (zip [0 :: Int ..] resps0)
+  where
+    go o (c:cs) reqs@((reqNo, req) :reqs')
+               resps@((respNo,resp):resps')
+      | respNo == reqNo = Left  req   : go (o+1) (c:cs) reqs' resps
+      | c && o < omax   = Left  req   : go (o+1)    cs  reqs' resps
+      | otherwise       = Right resp  : go (o-1)    cs  reqs  resps'
+
+    go o []     reqs@((reqNo, req) :reqs')
+               resps@((respNo,resp):resps')
+      | respNo == reqNo = Left  req   : go (o+1) [] reqs' resps
+      | otherwise       = Right resp  : go (o-1) [] reqs  resps'
+
+    go _ _ [] resps     = map (Right . snd) resps
+    go _ _ (_:_) []     = error "pipelineInterleaving: not enough responses"
+
+
+--
+-- Properties using channels, codecs and drivers.
+--
+
+-- | Run a non-pipelined client and server over a channel using a codec.
+--
+prop_channel :: MonadSTM m => NonNegative Int -> m Bool
+prop_channel (NonNegative n) = do
+    (clientChannel, serverChannel) <- createConnectedChannels
+    fork $ runPeer codec clientChannel client >> return ()
+    mn' <- runPeer codec serverChannel server
+    case mn' of
+      Left failure -> fail failure
+      Right  n'    -> return (n == n')
+  where
+    client = pingPongClientPeer (pingPongClientCount n)
+    server = pingPongServerPeer  pingPongServerCount
+    codec  = codecPingPong
+
+prop_channel_IO :: NonNegative Int -> Property
+prop_channel_IO n =
+    ioProperty (prop_channel n)
+
+prop_channel_ST :: NonNegative Int -> Bool
+prop_channel_ST n = 
+    runSim (prop_channel n) == Right True
+
+
+--
+-- The list of all properties
+--
+
 tests :: TestTree
 tests = testGroup "Network.TypedProtocol.PingPong"
-  [ testProperty "direct" prop_direct
+  [ testProperty "direct"  prop_direct
   , testProperty "connect" prop_connect
-  , testProperty "connect_piplined ST" prop_connect_pipelined_ST
-  , testProperty "connect_piplined IO" prop_connect_pipelined_IO
+  , testProperty "connect_pipelined 1" prop_connect_pipelined1
+  , testProperty "connect_pipelined 2" prop_connect_pipelined2
+  , testProperty "connect_pipelined 3" prop_connect_pipelined3
+  , testProperty "connect_pipelined 4" prop_connect_pipelined4
+  , testProperty "connect_pipelined 5" prop_connect_pipelined5
   , testProperty "channel ST" prop_channel_ST
   , testProperty "channel IO" prop_channel_IO
-  , testProperty "pipe" prop_pipe
+--  , testProperty "pipe" prop_pipe
   ]
 
-runExperiment
-  :: forall m n.
-     ( MonadSTM m
-     , MonadTimer m
-     , MonadProbe m
-     , MonadRunProbe m n
-     )
-  => (Probe m Property -> m ())
-  -> n Property
-runExperiment exp_ = isValid <$> withProbe exp_
- where
-  isValid = foldl' (\acu (_,p) -> acu .&&. p) (property True)
-
-connect_pipelined_experiment
-  :: ( MonadSTM m
-     , MonadProbe m
-     )
-  => Positive Int
-  -> Probe m Property
-  -> m ()
-connect_pipelined_experiment (Positive x) probe = do
-  var <- atomically $ newTVar 0
-  let c = fromIntegral x
-      client = pingPongSenderCount var c
-  (_, b, _) <- connectPipelined (pingPongClientPeerSender client) (pingPongServerPeer pingPongServerCount)
-  res <- atomically $ readTVar var
-  probeOutput probe (c === b)
-  probeOutput probe (c === res)
-
-prop_connect_pipelined_ST
-  :: Positive Int
-  -> Property
-prop_connect_pipelined_ST p = runST $ runExperiment @(SimM _)
-  (connect_pipelined_experiment p)
-
-prop_connect_pipelined_IO
-  :: Positive Int
-  -> Property
-prop_connect_pipelined_IO p = ioProperty $ runExperiment
-  (connect_pipelined_experiment p)
-
-channel_experiment
-  :: forall m.
-     ( MonadST m
-     , MonadSTM m
-     , MonadProbe m
-     , MonadFail m
-     )
-  => Channel m ByteString
-  -> Channel m ByteString
-  -> Positive Int
-  -> Probe m Property
-  -> m ()
-channel_experiment clientChannel serverChannel (Positive x) probe = do
-  serverVar <- newEmptyTMVarIO
-  let c = fromIntegral x
-      clientPeer = pingPongClientPeer $ pingPongClientCount c
-      serverPeer = pingPongServerPeer pingPongServerCount
-      codec      = transformCodec BSC.pack BSC.unpack codecPingPong
-
-  fork $ do
-    Right res <- runPeer codec serverChannel serverPeer
-    atomically $ putTMVar serverVar res
-  fork $ runPeer codec clientChannel clientPeer >> return ()
-
-  res <- atomically $ takeTMVar serverVar
-  probeOutput probe (res === c)
-
-prop_channel_ST
-  :: Positive Int
-  -> Property
-prop_channel_ST p =
-  runST $ runExperiment $ \probe -> do
-    (clientChannel, serverChannel) <- createConnectedChannels
-    channel_experiment clientChannel serverChannel p probe
-
-prop_channel_IO
-  :: Positive Int
-  -> Property
-prop_channel_IO p =
-  ioProperty $ runExperiment $ \probe -> do
-    (clientChannel, serverChannel) <- createConnectedChannels
-    channel_experiment clientChannel serverChannel p probe
-
-prop_pipe
-  :: Positive Int
-  -> Property
-prop_pipe p =
-  ioProperty $ runExperiment $ \probe -> do
-    (clientChannel, serverChannel) <- createPipeConnectedChannels
-    channel_experiment clientChannel serverChannel p probe
