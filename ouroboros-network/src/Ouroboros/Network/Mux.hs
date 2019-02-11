@@ -10,11 +10,13 @@ module Ouroboros.Network.Mux (
     , MuxBearer (..)
     , MuxSDU (..)
     , RemoteClockModel (..)
-    -- $ingress
-    -- $egress
     , encodeMuxSDU
     , decodeMuxSDUHeader
     , muxJobs
+
+    -- $ingress
+    -- $egress
+    -- $servicingsSemantics
     ) where
 
 import           Control.Monad
@@ -81,16 +83,15 @@ data MuxSDU = MuxSDU {
     }
 
 
-
 -- | Encode a 'MuxSDU' as a 'ByteString'.
 --
 -- > Binary format used by 'encodeMuxSDU' and 'decodeMuxSDUHeader'
--- > 0                   1                   2                   3
--- > 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+-- >  0                   1                   2                   3
+-- >  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 -- > +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
--- > l              transmission time                                |
+-- > |              transmission time                                |
 -- > +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
--- > lM|    conversation id          |              length           |
+-- > |M|    conversation id          |              length           |
 -- > +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 --
 -- All fields are in big endian byteorder.
@@ -155,7 +156,7 @@ class MuxBearer m where
   abandon :: MuxBearerHandle m -> m ()
 
 -- $ingress
--- Ingress Path
+-- = Ingress Path
 --
 -- >                  o
 -- >                  |
@@ -183,7 +184,7 @@ class MuxBearer m where
 -- >          |              |
 -- >          | CBOR data    |
 -- >          V              |
--- >      +---+-------+ Every ingress queueu has a dedicated thread which will read
+-- >      +---+-------+ Every ingress queue has a dedicated thread which will read
 -- >      | muxDuplex | CBOR encoded data from its queue.
 -- >      | Initiator |      |
 -- >      | ChainSync |      |
@@ -287,11 +288,11 @@ muxDuplex pmss mid md w = uniformDuplex snd_ rcv
            else return $ Just $ BL.toStrict blob
 
 
--- | Desired servicing semantics
---   ===========================
+-- $servicingsSemantics
+-- = Desired Servicing Semantics
 --
---   Constructing fairness
---   ---------------------
+--  == /Constructing Fairness/
+--
 --   In this context we are defining fairness as:
 --    - no starvation
 --    - when presented with equal demand (from a selection of mini
@@ -316,7 +317,7 @@ muxDuplex pmss mid md w = uniformDuplex snd_ rcv
 --      amounts of data accruing in the O/S kernel); b) ensuring that
 --      any host egress data rate limits can be respected / enforced.
 --
---  Current Caveats
+--  == /Current Caveats/
 --
 --  1) Not considering how mini-protocol associations are constructed
 --     (depending on deployment model this might be resolved within
@@ -326,11 +327,10 @@ muxDuplex pmss mid md w = uniformDuplex snd_ rcv
 --     likely to be used in an operational context, but may be needed
 --     for test harness use.
 --
---  Principle of operation
---  ======================
+--  == /Principle of Operation/
+--
 --
 --  Egress direction (mini protocol instance to remote peer)
---  --------------------------------------------------------
 --
 --  The request for service (the demand) from a mini protocol is
 --  encapsulated in a `Wanton`, such `Wanton`s are placed in a (finite)
@@ -345,25 +345,27 @@ muxDuplex pmss mid md w = uniformDuplex snd_ rcv
 data TranslocationServiceRequest m
   = TLSRDemand MiniProtocolId MiniProtocolMode (Wanton m)
 
--- | The concrete data to be translocated, note that the TMVar becoming empty indicates
--- that the last fragment of the data has been enqueued on the
--- underlying bearer.
+-- | A Wanton represent the concrete data to be translocated, note that the
+--  TMVar becoming empty indicates -- that the last fragment of the data has
+--  been enqueued on the -- underlying bearer.
 newtype Wanton m = Wanton { want :: TMVar m BL.ByteString }
 
--- Each peer's multiplexer has some state that provides both
+-- | Each peer's multiplexer has some state that provides both
 -- de-multiplexing details (for despatch of incoming mesages to mini
 -- protocols) and for dispatching incoming SDUs.  This is shared
 -- between the muxIngress and the bearerIngress processes.
 data PerMuxSharedState m = PerMuxSS {
-      dispatchTable :: MiniProtocolDispatch m -- fixed, known at instantiation
+  -- | Ingress dispatch table, fixed and known at instantiation.
+      dispatchTable :: MiniProtocolDispatch m
+  -- | Handle for underlying bearer
   ,   bearerHandle  :: MuxBearerHandle m
+  -- | Egress queue, shared by all miniprotocols
   ,   tsrQueue      :: TBQueue m (TranslocationServiceRequest m)
-   -- handles to senders or pipes or whatever
    -- additional performance info (perhaps)
   }
 
 -- $egress
--- Egress Path
+-- = Egress Path
 --
 -- > +-----+-----+ +-----+-----+ +-----+-----+ +-----+-----+ Every mode per miniprotocol has a
 -- > | muxDuplex | | muxDuplex | | muxDuplex | | muxDuplex | dedicated thread which will
@@ -378,7 +380,7 @@ data PerMuxSharedState m = PerMuxSS {
 -- >                          |  | For a given MuxBearer there is a single egress queue shared
 -- >                          |ci| among all miniprotocols. To ensure fairness each miniprotocol
 -- >                          |cr| can at most have one message in the queue, see
--- >                          +--+ Desired servicing semantics.
+-- >                          +--+ Desired Servicing Semantics.
 -- >                           |
 -- >                           V
 -- >                        +--+--+ The egress queue is served by a dedicated thread which
