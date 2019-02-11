@@ -11,7 +11,7 @@ module Network.TypedProtocol.Pipelined where
 import Network.TypedProtocol.Core
 
 
-data PeerPipelined ps pk st m a where
+data PeerPipelined ps (pk :: PeerKind) (st :: ps) m a where
   PeerPipelined :: PeerSender    ps pk st Z c m a
                 -> PeerPipelined ps pk st     m a
 
