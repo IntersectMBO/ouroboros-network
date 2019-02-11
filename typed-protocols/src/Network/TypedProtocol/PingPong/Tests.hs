@@ -333,7 +333,7 @@ instance Show AnyPingPongMessage where
 
 prop_codecPingPong
   :: AnyPingPongMessage
-  -> Property
+  -> Bool
 prop_codecPingPong (AnyPingPongMessage tok msg) =
   prop_codec otherPeer (map (\b -> [b])) runIdentity codecPingPong (AnyMessage tok msg)
  where

@@ -49,8 +49,6 @@ import qualified Data.ByteString.Lazy          as LBS
 
 import           Data.Proxy (Proxy)
 
-import           Test.QuickCheck (Property, property)
-
 
 -- | A codec for a 'Protocol' handles the encoding and decoding of typed
 -- protocol messages. This is typically used when sending protocol messages
@@ -290,10 +288,10 @@ prop_codec
   -> (forall (pk :: PeerKind). Codec ps pk failure m bytes)
   -- ^ codec
   -> AnyMessage ps
-  -> Property
+  -> Bool
 prop_codec otherPeer chunks runM codec (AnyMessage tok msg) =
   let bytes :: [bytes]
       bytes = chunks $ encode codec tok msg
   in case runM $ runDecode (otherPeer tok) (double tok) bytes codec of
-    Right (SomeMessage msg') -> property $ (AnyMessage tok msg') == (AnyMessage tok msg)
-    Left _                   -> property False
+    Right (SomeMessage msg') -> (AnyMessage tok msg') == (AnyMessage tok msg)
+    Left _                   -> False
