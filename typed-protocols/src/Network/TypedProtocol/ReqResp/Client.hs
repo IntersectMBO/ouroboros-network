@@ -82,7 +82,6 @@ data ReqRespSender req resp n c m a where
   SendMsgDonePipelined
     :: a -> ReqRespSender req resp Z c m a
 
--- This is the inferred type, but using it results in a weird type error!
 reqRespClientPeerPipelined
   :: Monad m
   => ReqRespClientPipelined req resp                  m a
