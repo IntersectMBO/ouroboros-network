@@ -69,47 +69,96 @@ pingPongClientPeer (SendMsgPing next) =
         client <- next
         pure $ pingPongClientPeer client
 
+
+--
+-- Pipelined client
+--
+
 -- | A ping-pong client designed for running the 'PingPong' protocol in
 -- a pipelined way.
 --
-data PingPongSender m a where
+data PingPongClientPipelined m a where
+  -- | A 'PingPongSender', but starting with zero outstanding pipelined
+  -- responses, and for any internal collect type @c@.
+  PingPongClientPipelined ::
+      PingPongSender      Z c m a
+   -> PingPongClientPipelined m a
+
+
+data PingPongSender n c m a where
   -- | 
   -- Send a `Ping` message but alike in `PingPongClient` do not await for the
   -- resopnse, instead supply a monadic action which will run on a received
   -- `Pong` message.
   SendMsgPingPipelined
-    :: m ()               -- receive action
-    -> PingPongSender m a -- continuation
-    -> PingPongSender m a
+    :: m c                        -- pong receive action
+    -> PingPongSender (S n) c m a -- continuation
+    -> PingPongSender    n  c m a
+
+  -- | Collect the result of a previous pipelined receive action.
+  --
+  -- This (optionally) provides two choices:
+  --
+  -- * Continue without a pipelined result
+  -- * Continue with a pipelined result
+  --
+  -- Since presenting the first choice is optional, this allows expressing
+  -- both a blocking collect and a non-blocking collect. This allows
+  -- implementations to express policies such as sending a short sequence
+  -- of messages and then waiting for all replies, but also a maximum pipelining
+  -- policy that keeps a large number of messages in flight but collects results
+  -- eagerly.
+  -- 
+  CollectPipelined
+    :: Maybe (PingPongSender (S n) c m a)
+    -> (c ->  PingPongSender    n  c m a)
+    ->        PingPongSender (S n) c m a
 
   -- | Termination of the ping-pong protocol.
+  --
+  -- Note that all pipelined results must be collected before terminating.
+  --
   SendMsgDonePipelined
-    :: a -> PingPongSender m a
+    :: a -> PingPongSender Z c m a
+
+
+
+pingPongClientPeerPipelined
+  :: Monad m
+  => PingPongClientPipelined                m a
+  -> PeerPipelined PingPong AsClient StIdle m a
+pingPongClientPeerPipelined (PingPongClientPipelined peer) =
+    PeerPipelined (pingPongClientPeerSender peer)
 
 
 pingPongClientPeerSender
   :: Monad m
-  => PingPongSender m a
-  -> PeerSender PingPong AsClient StIdle m a
+  => PingPongSender n c m a
+  -> PeerSender PingPong AsClient StIdle n c m a
 
 pingPongClientPeerSender (SendMsgDonePipelined result) =
   -- Send `MsgDone` and complete the protocol
   SenderYield
     (ClientAgency TokIdle)
     MsgDone
-    ReceiverDone
     (SenderDone TokDone result)
 
 pingPongClientPeerSender (SendMsgPingPipelined receive next) =
   -- Piplined yield: send `MsgPing`, imediatelly follow with the next step.
   -- Await for a response in a continuation.
-  SenderYield
+  SenderPipeline
     (ClientAgency TokIdle)
     MsgPing
     -- response handler
     (ReceiverAwait (ServerAgency TokBusy) $ \MsgPong ->
         ReceiverEffect $ do
-          receive
-          return ReceiverDone)
+          x <- receive
+          return (ReceiverDone x))
     -- run the next step of the ping-pong protocol.
     (pingPongClientPeerSender next)
+
+pingPongClientPeerSender (CollectPipelined mNone collect) =
+  SenderCollect
+    (fmap pingPongClientPeerSender mNone)
+    (pingPongClientPeerSender . collect)
+
