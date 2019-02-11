@@ -429,6 +429,9 @@ processSingleWanton pmss mpi md wanton = do
       let (frag, rest) = BL.splitAt (fromIntegral maxSDU) d
       -- if more to process then enqueue remaining work
       unless (BL.null rest) $
+        -- Note that to preserve bytestream ordering withing a given
+        -- miniprotocol the takeTMVar and putTMVar operations
+        -- must be inside the same STM transaction.
         do putTMVar (want wanton) rest
            writeTBQueue (tsrQueue pmss) (TLSRDemand mpi md wanton)
       -- return data to send
