@@ -29,6 +29,10 @@ module Network.TypedProtocol.Proofs (
   -- | Additional proofs specific to the pipelining features
   connectPipelined,
   forgetPipelined,
+
+  -- ** Pipeline proof helpers
+  Queue(..),
+  enqueue,
   ) where
 
 import Network.TypedProtocol.Core
@@ -244,10 +248,18 @@ forgetPipelined (PeerPipelined peer) = goSender EmptyQ peer
     goReceiver q s (ReceiverEffect   k) = Effect (goReceiver q s <$> k)
     goReceiver q s (ReceiverAwait st k) = Await st (goReceiver q s . k)
 
+
+-- | A size indexed queue. This is useful for proofs, including
+-- 'connectPipelined' but also as so-called @direct@ functions for running a
+-- client and server wrapper directly against each other.
+--
 data Queue (n :: N) a where
   EmptyQ ::                   Queue  Z    a
   ConsQ  :: a -> Queue n a -> Queue (S n) a
 
+-- | At an element to the end of a 'Queue'. This is not intended to be
+-- efficient. It is only for proofs and tests.
+--
 enqueue :: a -> Queue n a -> Queue (S n) a
 enqueue a  EmptyQ     = ConsQ a EmptyQ
 enqueue a (ConsQ b q) = ConsQ b (enqueue a q)
