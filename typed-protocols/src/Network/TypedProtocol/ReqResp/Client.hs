@@ -1,5 +1,5 @@
-{-# LANGUAGE GADTs #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE GADTs #-}
 
 module Network.TypedProtocol.ReqResp.Client where
 
@@ -48,48 +48,76 @@ reqRespClientPeer (SendMsgReq req next) =
         pure $ reqRespClientPeer client
 
 
+--
+-- Pipelined client
+--
+
 -- | A request-response client designed for running the 'ReqResp' protocol in
 -- a pipelined way.
 --
-data ReqRespSender req resp m a where
+data ReqRespClientPipelined req resp m a where
+  -- | A 'PingPongSender', but starting with zero outstanding pipelined
+  -- responses, and for any internal collect type @c@.
+  ReqRespClientPipelined ::
+      ReqRespSender          req resp Z c m a
+   -> ReqRespClientPipelined req resp     m a
+
+
+data ReqRespSender req resp n c m a where
   -- | Send a `Req` message but alike in `ReqRespClient` do not await for the
   -- resopnse, instead supply a monadic action which will run on a received
   -- `Pong` message.
   SendMsgReqPipelined
     :: req
-    -> (resp -> m ())    -- receive action
-    -> ReqRespSender req resp m a -- continuation
-    -> ReqRespSender req resp m a
+    -> (resp -> m c)                       -- receive action
+    -> ReqRespSender req resp (S n) c m a  -- continuation
+    -> ReqRespSender req resp    n  c m a
+
+  CollectPipelined
+    :: Maybe (ReqRespSender req resp (S n) c m a)
+    -> (c ->  ReqRespSender req resp    n  c m a)
+    ->        ReqRespSender req resp (S n) c m a
 
   -- | Termination of the req-resp protocol.
   SendMsgDonePipelined
-    :: a -> ReqRespSender req resp m a
+    :: a -> ReqRespSender req resp Z c m a
+
+reqRespClientPeerPipelined
+  :: Monad m
+  => ReqRespClientPipelined req resp                  m a
+  -> PeerPipelined (ReqResp req resp) AsClient StIdle m a
+reqRespClientPeerPipelined (ReqRespClientPipelined peer) =
+    PeerPipelined (reqRespClientPeerSender peer)
 
 
 reqRespClientPeerSender
   :: Monad m
-  => ReqRespSender req resp m a
-  -> PeerSender (ReqResp req resp) AsClient StIdle m a
+  => ReqRespSender       req resp                  n c m a
+  -> PeerSender (ReqResp req resp) AsClient StIdle n c m a
 
 reqRespClientPeerSender (SendMsgDonePipelined result) =
   -- Send `MsgDone` and complete the protocol
   SenderYield
     (ClientAgency TokIdle)
     MsgDone
-    ReceiverDone
     (SenderDone TokDone result)
 
 reqRespClientPeerSender (SendMsgReqPipelined req receive next) =
-  -- Piplined yield: send `MsgReq`, imediatelly follow with the next step.
+  -- Pipelined yield: send `MsgReq`, immediately follow with the next step.
   -- Await for a response in a continuation.
-  SenderYield
+  SenderPipeline
     (ClientAgency TokIdle)
     (MsgReq req)
     -- response handler
     (ReceiverAwait (ServerAgency TokBusy) $ \(MsgResp resp) ->
         ReceiverEffect $ do
-          receive resp
-          return ReceiverDone)
+          x <- receive resp
+          return (ReceiverDone x))
     -- run the next step of the req-resp protocol.
     (reqRespClientPeerSender next)
+
+reqRespClientPeerSender (CollectPipelined mNone collect) =
+  SenderCollect
+    (fmap reqRespClientPeerSender mNone)
+    (reqRespClientPeerSender . collect)
 

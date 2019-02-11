@@ -144,7 +144,7 @@ pingPongClientPeerSender (SendMsgDonePipelined result) =
     (SenderDone TokDone result)
 
 pingPongClientPeerSender (SendMsgPingPipelined receive next) =
-  -- Piplined yield: send `MsgPing`, imediatelly follow with the next step.
+  -- Pipelined yield: send `MsgPing`, immediately follow with the next step.
   -- Await for a response in a continuation.
   SenderPipeline
     (ClientAgency TokIdle)
