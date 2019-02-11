@@ -10,6 +10,8 @@ module Ouroboros.Network.Mux (
     , MuxBearer (..)
     , MuxSDU (..)
     , RemoteClockModel (..)
+    -- $ingress
+    -- $egress
     , encodeMuxSDU
     , decodeMuxSDUHeader
     , muxJobs
@@ -79,18 +81,19 @@ data MuxSDU = MuxSDU {
     }
 
 
--- Binary format used by 'encodeMuxSDU' and 'decodeMuxSDUHeader'
--- 0                   1                   2                   3
--- 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
--- +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
--- l              transmission time                                |
--- +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
--- lM|    conversation id          |              length           |
--- +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
---
--- All fields are in big endian byteorder.
 
 -- | Encode a 'MuxSDU' as a 'ByteString'.
+--
+-- > Binary format used by 'encodeMuxSDU' and 'decodeMuxSDUHeader'
+-- > 0                   1                   2                   3
+-- > 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+-- > +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+-- > l              transmission time                                |
+-- > +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+-- > lM|    conversation id          |              length           |
+-- > +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+--
+-- All fields are in big endian byteorder.
 encodeMuxSDU :: MuxSDU -> BL.ByteString
 encodeMuxSDU sdu =
   let hdr = Bin.runPut enc in
@@ -151,47 +154,46 @@ class MuxBearer m where
   close :: MuxBearerHandle m -> m ()
   abandon :: MuxBearerHandle m -> m ()
 
-{- Ingress Path
- -
- -                   o
- -                   |
- -                   | ByteStrings
- -                   |
- -                   V
- -           +-------+-------+
- -           | Bearer.read() | MuxBearer implementation (Socket, Pipes, etc.)
- -           +---------------+
- -                   |
- -                   | MuxSDUs
- -                   |
- -                   V
- -           +-------+-------+
- -           |     demux     | For a given MuxBearer there is a single demux thread reading from
- -           +-------+-------+ the underlying berarer.
- -                   |
- -             +---+-+--+--+
- -            /    |    |   \
- -            v    v    v    v
- -          |  | |  | |  | |  | There is a bounded queue for each mode (responder/initiator) per
- -          |ci| |  | |bi| |br| miniprotocol.
- -          |ci| |cr| |bi| |br|
- -          +--+ +--+ +--+ +--+
- -           |              |
- -           | CBOR data    |
- -           V              |
- -       +---+-------+ Every ingress queueu has a dedicated thread which will read
--        | muxDuplex | CBOR encoded data from its queue.
--        | Initiator |      |
--        | ChainSync |      |
- -       +-----------+      |
- -                          V
- -                     +----+------+
- -                     | muxDuplex |
- -                     | Responder |
- -                     | BlockFetch|
- -                     +-----------+
- -
- -}
+-- $ingress
+-- Ingress Path
+--
+-- >                  o
+-- >                  |
+-- >                  | ByteStrings
+-- >                  |
+-- >                  V
+-- >          +-------+-------+
+-- >          | Bearer.read() | MuxBearer implementation (Socket, Pipes, etc.)
+-- >          +---------------+
+-- >                  |
+-- >                  | MuxSDUs
+-- >                  |
+-- >                  V
+-- >          +-------+-------+
+-- >          |     demux     | For a given MuxBearer there is a single demux thread reading from
+-- >          +-------+-------+ the underlying berarer.
+-- >                  |
+-- >            +---+-+--+--+
+-- >           /    |    |   \
+-- >           v    v    v    v
+-- >         |  | |  | |  | |  | There is a bounded queue for each mode (responder/initiator) per
+-- >         |ci| |  | |bi| |br| miniprotocol.
+-- >         |ci| |cr| |bi| |br|
+-- >         +--+ +--+ +--+ +--+
+-- >          |              |
+-- >          | CBOR data    |
+-- >          V              |
+-- >      +---+-------+ Every ingress queueu has a dedicated thread which will read
+-- >      | muxDuplex | CBOR encoded data from its queue.
+-- >      | Initiator |      |
+-- >      | ChainSync |      |
+-- >      +-----------+      |
+-- >                         V
+-- >                    +----+------+
+-- >                    | muxDuplex |
+-- >                    | Responder |
+-- >                    | BlockFetch|
+-- >                    +-----------+
 
 -- | demux runs as a single separate thread and reads complete 'MuxSDU's from the underlying
 -- 'MuxBearer' and forwards it to the matching ingress queueu.
@@ -360,39 +362,39 @@ data PerMuxSharedState m = PerMuxSS {
    -- additional performance info (perhaps)
   }
 
-{- Egress Path
- -
- -  +-----+-----+ +-----+-----+ +-----+-----+ +-----+-----+ Every mode per miniprotocol has a
- -  | muxDuplex | | muxDuplex | | muxDuplex | | muxDuplex | dedicated thread which will
- -  | Initiator | | Responder | | Initiator | | Responder | send ByteStrings of CBOR encoded
- -  | ChainSync | | ChainSync | | BlockFetch| | BlockFetch| data.
- -  +-----+-----+ +-----+-----+ +-----+-----+ +-----+-----+
- -        |             |             |             |
- -         \            \            /             /
- -          -------------------+-------------------
- -                             | CBOR data
- -                             V
- -                           |  | For a given MuxBearer there is a single egress queue shared
- -                           |ci| among all miniprotocols. To ensure fairness each miniprotocol
- -                           |cr| can at most have one message in the queue, see
- -                           +--+ Desired servicing semantics.
- -                            |
- -                            V
- -                         +--+--+ The egress queue is served by a dedicated thread which
- -                         | mux | chops up the CBOR data into MuxSDUs with at most sduSize
- -                         +-----+ bytes of data in them.
- -                            |
- -                            | MuxSDUs
- -                            |
- -                            V
- -                    +-------+--------+
- -                    | Bearer.write() | MuxBearer implementation specific write
- -                    +----------------+
- -                            |
- -                            | ByteStrings
- -                            V
- -                            o
- -}
+-- $egress
+-- Egress Path
+--
+-- > +-----+-----+ +-----+-----+ +-----+-----+ +-----+-----+ Every mode per miniprotocol has a
+-- > | muxDuplex | | muxDuplex | | muxDuplex | | muxDuplex | dedicated thread which will
+-- > | Initiator | | Responder | | Initiator | | Responder | send ByteStrings of CBOR encoded
+-- > | ChainSync | | ChainSync | | BlockFetch| | BlockFetch| data.
+-- > +-----+-----+ +-----+-----+ +-----+-----+ +-----+-----+
+-- >       |             |             |             |
+-- >        \            \            /             /
+-- >         -------------------+-------------------
+-- >                            | CBOR data
+-- >                            V
+-- >                          |  | For a given MuxBearer there is a single egress queue shared
+-- >                          |ci| among all miniprotocols. To ensure fairness each miniprotocol
+-- >                          |cr| can at most have one message in the queue, see
+-- >                          +--+ Desired servicing semantics.
+-- >                           |
+-- >                           V
+-- >                        +--+--+ The egress queue is served by a dedicated thread which
+-- >                        | mux | chops up the CBOR data into MuxSDUs with at most sduSize
+-- >                        +-----+ bytes of data in them.
+-- >                           |
+-- >                           | MuxSDUs
+-- >                           |
+-- >                           V
+-- >                   +-------+--------+
+-- >                   | Bearer.write() | MuxBearer implementation specific write
+-- >                   +----------------+
+-- >                           |
+-- >                           | ByteStrings
+-- >                           V
+-- >                           o
 
 -- | Process the messages from the mini protocols - there is a single
 -- shared FIFO that contains the items of work. This is processed so
