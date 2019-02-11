@@ -173,11 +173,10 @@ runPipelinedPeerSender receiveQueue collectQueue Codec{encode} Channel{send} =
       go n (k c)
 
     go (Succ n) (SenderCollect (Just k') k) = do
-      fail "TODO: need tryReadTBQueue"
---      mc <- atomically (tryReadTBQueue collectQueue)
---      case mc of
---        Nothing -> go (Succ n) k'
---        Just c  -> go n (k c)
+      mc <- atomically (tryReadTBQueue collectQueue)
+      case mc of
+        Nothing -> go (Succ n) k'
+        Just c  -> go n (k c)
 
 
 runPipelinedPeerReceiverQueue
