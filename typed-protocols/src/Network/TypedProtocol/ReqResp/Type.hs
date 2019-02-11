@@ -9,8 +9,6 @@
 module Network.TypedProtocol.ReqResp.Type where
 
 import           Network.TypedProtocol.Core
-import           Network.TypedProtocol.Proofs
-
 
 
 data ReqResp req resp where
