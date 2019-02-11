@@ -28,6 +28,7 @@ import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.Protocol.ChainSync.Codec.Id
 import           Ouroboros.Network.Protocol.ChainSync.Type
 
+import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Crypto.Hash
 import           Ouroboros.Consensus.Demo
 import           Ouroboros.Consensus.Ledger.Abstract

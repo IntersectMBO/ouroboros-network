@@ -23,6 +23,7 @@ import           Ouroboros.Network.Chain (pointHash)
 import qualified Ouroboros.Network.Pipe as P
 import           Ouroboros.Network.Protocol.ChainSync.Codec.Cbor
 
+import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Demo
 import           Ouroboros.Consensus.Ledger.Abstract
 import qualified Ouroboros.Consensus.Ledger.Mock as Mock
@@ -113,7 +114,7 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
                  , adoptedNewChain = logChain loggingQueue
                  }
 
-             btime  <- realBlockchainTime systemStart slotDuration
+             btime  <- realBlockchainTime slotDuration systemStart
              kernel <- nodeKernel
                          pInfoConfig
                          pInfoInitState

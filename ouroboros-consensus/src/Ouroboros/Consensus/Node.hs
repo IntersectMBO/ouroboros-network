@@ -14,13 +14,6 @@ module Ouroboros.Consensus.Node (
     NodeId(..)
   , CoreNodeId(..)
   , fromCoreNodeId
-    -- * Blockchain time
-  , BlockchainTime(..)
-  , onSlot
-  , NumSlots(..)
-  , finalSlot
-  , testBlockchainTime
-  , realBlockchainTime
     -- * Node
   , NodeKernel(..)
   , NodeCallbacks(..)
@@ -39,11 +32,9 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe, mapMaybe)
 import           Data.Text (Text)
-import           Data.Time
 
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadTimer
 
 import           Protocol.Channel
 import           Protocol.Codec
@@ -59,6 +50,7 @@ import           Ouroboros.Network.Protocol.ChainSync.Server
 import           Ouroboros.Network.Protocol.ChainSync.Type
 import           Ouroboros.Network.Serialise (Serialise)
 
+import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util
@@ -84,86 +76,6 @@ newtype CoreNodeId = CoreNodeId Int
 
 fromCoreNodeId :: CoreNodeId -> NodeId
 fromCoreNodeId (CoreNodeId n) = CoreId n
-
-{-------------------------------------------------------------------------------
-  "Blockchain time"
--------------------------------------------------------------------------------}
-
--- | Blockchain time
---
--- When we run the blockchain, there is a single, global time. We abstract over
--- this here to allow to query this time (in terms of the current slot), and
--- execute an action each time we advance a slot.
-data BlockchainTime m = BlockchainTime {
-      -- | Get current slot
-      getCurrentSlot :: Tr m Slot
-
-      -- | Spawn a thread to run an action each time the slot changes
-    , onSlotChange   :: (Slot -> m ()) -> m ()
-    }
-
--- | Execute action on specific slot
-onSlot :: MonadSTM m => BlockchainTime m -> Slot -> m () -> m ()
-onSlot BlockchainTime{..} slot act = onSlotChange $ \slot' -> do
-    when (slot == slot') act
-
--- | Number of slots
-newtype NumSlots = NumSlots Int
-  deriving (Show)
-
-finalSlot :: NumSlots -> Slot
-finalSlot (NumSlots n) = Slot (fromIntegral n)
-
--- | Construct new blockchain time that ticks at the specified slot duration
---
--- NOTE: This is just one way to construct time. We can of course also connect
--- this to the real time (if we are in IO), or indeed to a manual tick
--- (in a demo).
---
--- NOTE: The number of slots is only there to make sure we terminate the
--- thread (otherwise the system will keep waiting).
-testBlockchainTime :: forall m. (MonadSTM m, MonadTimer m)
-                   => NumSlots           -- ^ Number of slots
-                   -> Duration (Time m)  -- ^ Slot duration
-                   -> m (BlockchainTime m)
-testBlockchainTime (NumSlots numSlots) slotDuration = do
-    slotVar <- atomically $ newTVar firstSlot
-    fork $ replicateM_ numSlots $ do
-        threadDelay slotDuration
-        atomically $ modifyTVar slotVar succ
-    return BlockchainTime {
-        getCurrentSlot = readTVar slotVar
-      , onSlotChange   = onEachChange id firstSlot (readTVar slotVar)
-      }
-  where
-    firstSlot :: Slot
-    firstSlot = 0
-
--- | Real blockchain time
---
--- TODO: Right now this requires a single specific slot duration. This is
--- not going to be the case when we move to Praos. We need to think this
--- through carefully.
-realBlockchainTime :: UTCTime -- ^ Chain start time
-                   -> Double  -- ^ Slot duration (seconds)
-                   -> IO (BlockchainTime IO)
-realBlockchainTime systemStart slotDuration = do
-    first   <- currentSlot
-    slotVar <- atomically $ newTVar first
-    fork $ forever $ do
-      threadDelay $ round (slotDuration * 1000000)
-      atomically . writeTVar slotVar =<< currentSlot
-    return BlockchainTime {
-        getCurrentSlot = readTVar slotVar
-      , onSlotChange   = onEachChange id first (readTVar slotVar)
-      }
-  where
-    currentSlot :: IO Slot
-    currentSlot = do
-      now <- getCurrentTime
-      let diff :: Double -- system duration in seconds
-          diff = realToFrac $ now `diffUTCTime` systemStart
-      return $ Slot $ floor (diff / slotDuration) + 1
 
 {-------------------------------------------------------------------------------
   Relay node
@@ -268,7 +180,11 @@ data InternalState m up blk = IS {
     }
 
 initInternalState :: forall m up blk.
-                     (MonadSTM m, ProtocolLedgerView blk, Ord up, Eq blk)
+                     ( MonadSTM m
+                     , ProtocolLedgerView blk
+                     , Eq                 blk
+                     , Ord up
+                     )
                   => NodeConfig (BlockProtocol blk) -- ^ Node configuration
                   -> BlockchainTime m               -- ^ Time
                   -> Chain blk                      -- ^ Initial chain
@@ -331,7 +247,10 @@ forkMonitorDownloads st@IS{..} =
     NetworkProvides{..} = networkLayer
     NodeCallbacks{..}   = callbacks
 
-forkBlockProduction :: forall m up blk. (MonadSTM m, ProtocolLedgerView blk)
+forkBlockProduction :: forall m up blk. (
+                         MonadSTM m
+                       , ProtocolLedgerView blk
+                       )
                     => InternalState m up blk -> m ()
 forkBlockProduction st@IS{..} =
     onSlotChange btime $ \slot -> do
@@ -516,8 +435,8 @@ consensusSyncClient :: forall m up blk hdr.
                        ( MonadSTM m
                        , blk ~ hdr -- for now
                        , ProtocolLedgerView hdr
+                       , Eq                 hdr
                        , Ord up
-                       , Eq hdr
                        )
                     => NodeConfig (BlockProtocol hdr)
                     -> BlockchainTime m
@@ -561,7 +480,7 @@ consensusSyncClient cfg btime initLedger varChain candidatesVar up =
 
     handleNext :: TVar m (Chain hdr) -> Consensus ClientStNext hdr m
     handleNext theirChainVar = ClientStNext {
-          recvMsgRollForward = \hdr _theirHead -> ChainSyncClient $
+          recvMsgRollForward = \hdr _theirHead -> ChainSyncClient $ do
             atomically $ do
               -- Right now we validate the entire chain here. We should only
               -- validate the new block.
@@ -645,6 +564,9 @@ newtype Candidates up hdr = Candidates {
       candidates :: [Map up (Chain hdr)]
     }
 
+instance (Condense up, Condense hdr) => Condense (Candidates up hdr) where
+  condense (Candidates cs) = condense cs
+
 noCandidates :: Candidates up hdr
 noCandidates = Candidates []
 
@@ -690,8 +612,8 @@ insertCandidate cfg now (up, cand) (Candidates cands) =
 -- | Update candidates
 updateCandidates :: ( OuroborosTag (BlockProtocol hdr)
                     , HasHeader hdr
+                    , Eq        hdr
                     , Ord up
-                    , Eq hdr
                     , hdr ~ blk
                     )
                  => NodeConfig (BlockProtocol hdr)

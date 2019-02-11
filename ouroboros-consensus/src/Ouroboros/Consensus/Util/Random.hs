@@ -33,6 +33,8 @@ import           Data.Word (Word64)
 import           Numeric.Natural (Natural)
 import           Test.QuickCheck
 
+import           Control.Monad.Class.MonadSay
+
 import           Ouroboros.Network.Serialise (Serialise)
 
 {-------------------------------------------------------------------------------
@@ -101,7 +103,7 @@ nullSeed = Seed (0,0,0,0,0)
 
 -- | Add DRNG to a monad stack
 newtype ChaChaT m a = ChaChaT { unChaChaT :: StateT ChaChaDRG m a }
-  deriving (Functor, Applicative, Monad, MonadTrans)
+  deriving (Functor, Applicative, Monad, MonadTrans, MonadSay)
 
 instance Monad m => MonadRandom (ChaChaT m) where
   getRandomBytes = ChaChaT . state . randomBytesGenerate

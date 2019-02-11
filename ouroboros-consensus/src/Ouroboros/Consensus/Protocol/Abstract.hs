@@ -38,6 +38,8 @@ import           Data.Kind (Constraint)
 import           Data.List (sortBy)
 import           Data.Maybe (listToMaybe, mapMaybe)
 
+import           Control.Monad.Class.MonadSay
+
 import           Ouroboros.Network.Block (HasHeader (..), Slot)
 import           Ouroboros.Network.Chain (Chain (..))
 import qualified Ouroboros.Network.Chain as Chain
@@ -114,7 +116,15 @@ class ( Show (ChainState    p)
     | Chain.length cand' > Chain.length ours = Just cand'
     | otherwise                              = Nothing
     where
-      cand' = upToSlot now cand
+      -- NOTE: In deviation from the paper, we allow for blocks one slot ahead
+      -- in the future. We do this to avoid rejecting chains that are
+      -- perfectly fine but appear to contain "blocks in the future" due to
+      -- clock skew.
+      --
+      -- TODO: Review the above.
+      -- TODO: The Genesis paper says to /reject/ chains containing blocks
+      -- in the future rather than prune.
+      cand' = upToSlot (now + 1) cand
 
   -- | Compare two candidates, both of which we prefer to our own chain
   compareCandidates :: (Eq b, HasHeader b)
@@ -208,7 +218,7 @@ instance HasNodeState_ s m => HasNodeState_ s (ChaChaT m) where
 -------------------------------------------------------------------------------}
 
 newtype NodeStateT_ s m a = NodeStateT { unNodeStateT :: StateT s m a }
-  deriving (Functor, Applicative, Monad, MonadTrans)
+  deriving (Functor, Applicative, Monad, MonadTrans, MonadSay)
 
 type NodeStateT p = NodeStateT_ (NodeState p)
 

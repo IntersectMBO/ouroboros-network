@@ -30,6 +30,7 @@ import           Control.Monad.IOSim (VTime)
 
 import           Ouroboros.Network.Chain
 
+import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Demo
 import           Ouroboros.Consensus.Node
 import           Ouroboros.Consensus.Util.Orphans ()

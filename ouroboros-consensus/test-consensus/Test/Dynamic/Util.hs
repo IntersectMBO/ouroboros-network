@@ -31,6 +31,7 @@ import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (Chain (..))
 import qualified Ouroboros.Network.Chain as Chain
 
+import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Demo (HasCreator (..))
 import           Ouroboros.Consensus.Node
 import           Ouroboros.Consensus.Protocol.LeaderSchedule

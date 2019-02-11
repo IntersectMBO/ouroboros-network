@@ -14,4 +14,4 @@ set -x
 cabal new-run demo-playground -- \
     --system-start "$now" --slot-duration 2 \
     node -t demo-playground/simple-topology.json \
-         $@ 
+         $@

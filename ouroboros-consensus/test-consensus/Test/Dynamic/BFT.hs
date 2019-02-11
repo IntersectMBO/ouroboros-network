@@ -27,6 +27,7 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
+import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Demo
 import           Ouroboros.Consensus.Node
 import           Ouroboros.Consensus.Protocol.Abstract

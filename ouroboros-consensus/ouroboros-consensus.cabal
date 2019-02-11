@@ -24,6 +24,7 @@ library
      hs-source-dirs:   src-unix/
 
   exposed-modules:
+                       Ouroboros.Consensus.BlockchainTime
                        Ouroboros.Consensus.Crypto.DSIGN
                        Ouroboros.Consensus.Crypto.DSIGN.Class
                        Ouroboros.Consensus.Crypto.DSIGN.Ed448
@@ -199,6 +200,7 @@ test-suite test-consensus
   default-language: Haskell2010
   main-is:          Main.hs
   other-modules:
+                    Test.Consensus.BlockchainTime
                     Test.Dynamic.BFT
                     Test.Dynamic.General
                     Test.Dynamic.LeaderSchedule
@@ -222,8 +224,10 @@ test-suite test-consensus
                     QuickCheck,
                     serialise,
                     tasty,
+                    tasty-hunit,
                     tasty-quickcheck,
-                    text
+                    text,
+                    time
 
   ghc-options:      -Wall
                     -fno-ignore-asserts

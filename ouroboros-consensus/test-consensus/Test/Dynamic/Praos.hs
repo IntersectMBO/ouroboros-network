@@ -33,8 +33,8 @@ import           Ouroboros.Network.Chain
 import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.Node
 
+import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Demo
-import           Ouroboros.Consensus.Node (NumSlots (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Praos
 import           Ouroboros.Consensus.Util.Chain (dropLastBlocks, lastSlot)
