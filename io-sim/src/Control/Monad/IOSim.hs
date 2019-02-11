@@ -207,6 +207,7 @@ instance MonadSTM (SimM s) where
 
   newTBQueue        = newTBQueueDefault
   readTBQueue       = readTBQueueDefault
+  tryReadTBQueue    = tryReadTBQueueDefault
   writeTBQueue      = writeTBQueueDefault
 
 instance MonadST (SimM s) where
