@@ -22,6 +22,7 @@ module Control.Monad.Class.MonadSTM
   , TBQueueDefault (..)
   , newTBQueueDefault
   , readTBQueueDefault
+  , tryReadTBQueueDefault
   , writeTBQueueDefault
   ) where
 
@@ -87,6 +88,7 @@ class (MonadFork m, Monad (Tr m)) => MonadSTM m where
   type TBQueue m :: * -> *
   newTBQueue     :: Natural -> Tr m (TBQueue m a)
   readTBQueue    :: TBQueue m a -> Tr m a
+  tryReadTBQueue :: TBQueue m a -> Tr m (Maybe a)
   writeTBQueue   :: TBQueue m a -> a -> Tr m ()
 
 instance MonadSTM m => MonadSTM (ReaderT e m) where
@@ -116,6 +118,7 @@ instance MonadSTM m => MonadSTM (ReaderT e m) where
 
   newTBQueue       = lift . newTBQueue
   readTBQueue      = lift . readTBQueue
+  tryReadTBQueue   = lift . tryReadTBQueue
   writeTBQueue q a = lift $ writeTBQueue q a
 
 instance (Show e, MonadSTM m) => MonadSTM (ExceptT e m) where
@@ -145,6 +148,7 @@ instance (Show e, MonadSTM m) => MonadSTM (ExceptT e m) where
 
   newTBQueue       = lift . newTBQueue
   readTBQueue      = lift . readTBQueue
+  tryReadTBQueue   = lift . tryReadTBQueue
   writeTBQueue q a = lift $ writeTBQueue q a
 
 -- | Wrapper around 'BlockedIndefinitelyOnSTM' that stores a call stack
@@ -206,6 +210,7 @@ instance MonadSTM IO where
   newTBQueue     = STM.newTBQueue . fromEnum
 #endif
   readTBQueue    = STM.readTBQueue
+  tryReadTBQueue = STM.tryReadTBQueue
   writeTBQueue   = STM.writeTBQueue
 
 --
@@ -302,24 +307,27 @@ newTBQueueDefault size = do
   return (TBQueue rsize read wsize write size)
 
 readTBQueueDefault :: MonadSTM m => TBQueueDefault m a -> Tr m a
-readTBQueueDefault (TBQueue rsize read _wsize write _size) = do
+readTBQueueDefault queue = maybe retry return =<< tryReadTBQueueDefault queue
+
+tryReadTBQueueDefault :: MonadSTM m => TBQueueDefault m a -> Tr m (Maybe a)
+tryReadTBQueueDefault (TBQueue rsize read _wsize write _size) = do
   xs <- readTVar read
   r <- readTVar rsize
   writeTVar rsize $! r + 1
   case xs of
     (x:xs') -> do
       writeTVar read xs'
-      return x
+      return (Just x)
     [] -> do
       ys <- readTVar write
       case ys of
-        [] -> retry
+        [] -> return Nothing
         _  -> do
           let (z:zs) = reverse ys -- NB. lazy: we want the transaction to be
                                   -- short, otherwise it will conflict
           writeTVar write []
           writeTVar read zs
-          return z
+          return (Just z)
 
 writeTBQueueDefault :: MonadSTM m => TBQueueDefault m a -> a -> Tr m ()
 writeTBQueueDefault (TBQueue rsize _read wsize write _size) a = do
