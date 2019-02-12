@@ -5,7 +5,11 @@
 
 
 
-module Network.TypedProtocol.PingPong.Tests (tests) where
+module Network.TypedProtocol.PingPong.Tests
+  ( tests
+  , splits2
+  , splits3
+  ) where
 
 
 import Network.TypedProtocol.Codec

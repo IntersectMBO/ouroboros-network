@@ -66,6 +66,7 @@ test-suite tests
                    , Network.TypedProtocol.Pipelined
                    , Network.TypedProtocol.Proofs
                    , Network.TypedProtocol.ReqResp.Client
+                   , Network.TypedProtocol.ReqResp.Codec
                    , Network.TypedProtocol.ReqResp.Examples
                    , Network.TypedProtocol.ReqResp.Server
                    , Network.TypedProtocol.ReqResp.Tests
