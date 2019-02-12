@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE RankNTypes          #-}
+
 module Test.IOSim
     ( tests
     , TestThreadGraph (..)
@@ -9,6 +10,8 @@ module Test.IOSim
 
 import           Control.Monad
 import           Control.Monad.ST.Lazy (runST)
+import           Control.Exception
+                   ( ArithException(..) )
 import           Data.Array
 import           Data.Fixed (Fixed (..), Micro)
 import           Data.Graph
@@ -20,9 +23,11 @@ import           Test.Tasty.QuickCheck
 
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadProbe
-import qualified Control.Monad.IOSim as Sim
+import           Control.Monad.IOSim
 
 tests :: TestTree
 tests =
@@ -34,7 +39,20 @@ tests =
   , testProperty "timers (IO)"             (expectFailure prop_timers_IO)
   , testProperty "fork order (SimM)"       (withMaxSuccess 1000 (prop_fork_order_ST))
   , testProperty "fork order (IO)"         (expectFailure prop_fork_order_IO)
+  , testGroup "throw/catch unit tests"
+    [ testProperty "1" unit_catch_1
+    , testProperty "2" unit_catch_2
+    , testProperty "3" unit_catch_3
+    , testProperty "4" unit_catch_4
+    , testProperty "5" unit_catch_5
+    , testProperty "6" unit_catch_6
+    ]
   ]
+
+
+--
+-- Read/Write graph
+--
 
 prop_stm_graph_io :: TestThreadGraph -> Property
 prop_stm_graph_io g =
@@ -43,10 +61,10 @@ prop_stm_graph_io g =
 
 prop_stm_graph_sim :: TestThreadGraph -> Bool
 prop_stm_graph_sim g =
-    case Sim.runSim (prop_stm_graph g) of
+    case runSim (prop_stm_graph g) of
        Right () -> True
        _        -> False
-    -- TODO: Note that we do not use Sim.runSimStrictShutdown here to check
+    -- TODO: Note that we do not use runSimStrictShutdown here to check
     -- that all other threads finished, but perhaps we should and structure
     -- the graph tests so that's the case.
 
@@ -112,6 +130,11 @@ arbitraryAcyclicGraph genNRanks genNPerRank edgeChance = do
 
     pick :: Float -> Gen Bool
     pick chance = (< chance) <$> choose (0,1)
+
+
+--
+-- Timers
+--
 
 newtype TestMicro = TestMicro [Micro]
   deriving Show
@@ -185,11 +208,16 @@ test_timers xs =
 
 prop_timers_ST :: TestMicro -> Property
 prop_timers_ST (TestMicro xs) =
-  let ds = map Sim.VTimeDuration xs
+  let ds = map VTimeDuration xs
   in runST $ test_timers ds
 
 prop_timers_IO :: [Positive Int] -> Property
 prop_timers_IO = ioProperty . test_timers . map ((*100) . getPositive)
+
+
+--
+-- Forking
+--
 
 test_fork_order :: forall m n.
                    ( MonadFork m
@@ -223,3 +251,96 @@ prop_fork_order_ST n = runST $ test_fork_order n
 
 prop_fork_order_IO :: Positive Int -> Property
 prop_fork_order_IO = ioProperty . test_fork_order
+
+
+--
+-- Syncronous exceptions
+--
+
+unit_catch_1, unit_catch_2, unit_catch_3, unit_catch_4,
+  unit_catch_5, unit_catch_6
+  :: Bool
+
+-- normal execution of a catch frame
+unit_catch_1 =
+    runSimTraceSay
+      (do catch (say "inner") (\(_e :: IOError) -> say "handler")
+          say "after"
+      )
+ ==
+    ["inner", "after"]
+
+
+-- catching an exception thrown in a catch frame
+unit_catch_2 =
+    runSimTraceSay
+      (do catch (do say "inner1"
+                    _ <- throwM DivideByZero
+                    say "inner2")
+                (\(_e :: ArithException) -> say "handler")
+          say "after"
+      )
+ ==
+    ["inner1", "handler", "after"]
+
+
+-- not catching an exception of the wrong type
+unit_catch_3 =
+    runSimTraceSay
+      (do catch (do say "inner"
+                    throwM DivideByZero)
+                (\(_e :: IOError) -> say "handler")
+          say "after"
+      )
+ ==
+    ["inner"]
+
+
+-- catching an exception in an outer handler
+unit_catch_4 =
+    runSimTraceSay
+      (do catch (catch (do say "inner"
+                           throwM DivideByZero)
+                       (\(_e :: IOError) -> say "handler1"))
+                (\(_e :: ArithException) -> say "handler2")
+          say "after"
+      )
+ ==
+    ["inner", "handler2", "after"]
+
+
+-- catching an exception in the inner handler
+unit_catch_5 =
+    runSimTraceSay
+      (do catch (catch (do say "inner"
+                           throwM DivideByZero)
+                       (\(_e :: ArithException) -> say "handler1"))
+                (\(_e :: ArithException) -> say "handler2")
+          say "after"
+      )
+ ==
+    ["inner", "handler1", "after"]
+
+
+-- catching an exception in the inner handler, rethrowing and catching in outer
+unit_catch_6 =
+    runSimTraceSay
+      (do catch (catch (do say "inner"
+                           throwM DivideByZero)
+                       (\(e :: ArithException) -> do
+                           say "handler1"
+                           throwM e))
+                (\(_e :: ArithException) -> say "handler2")
+          say "after"
+      )
+ ==
+    ["inner", "handler1", "handler2", "after"]
+
+
+runSimTraceSay :: (forall s. SimM s a) -> [String]
+runSimTraceSay action = selectTraceSay (runSimTrace action)
+
+selectTraceSay :: Trace a -> [String]
+selectTraceSay (Trace _ _ (EventSay msg) trace) = msg : selectTraceSay trace
+selectTraceSay (Trace _ _ _              trace) = selectTraceSay trace
+selectTraceSay  _                               = []

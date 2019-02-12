@@ -40,7 +40,6 @@ import qualified Data.Set as Set
 import           Control.Exception
                    ( Exception(..), SomeException, ErrorCall(..), assert )
 import qualified System.IO.Error as IO.Error (userError)
-import qualified Data.Typeable as Typeable
 
 import           Control.Monad
 import           Control.Monad.ST.Lazy
@@ -674,7 +673,7 @@ unwindControlStack tid e (ContFrame _k ctl) =
     unwindControlStack tid e ctl
 
 unwindControlStack tid e (CatchFrame handler k ctl) =
-    case Typeable.cast e of
+    case fromException e of
       -- not the right type, unwind to the next containing handler
       Nothing -> unwindControlStack tid e ctl
 
