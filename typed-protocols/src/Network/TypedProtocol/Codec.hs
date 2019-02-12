@@ -1,4 +1,5 @@
 {-# LANGUAGE GADTs                      #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE PolyKinds                  #-}
@@ -19,6 +20,11 @@ module Network.TypedProtocol.Codec (
   , DecodeStep(..)
   , runDecoder
   , runDecoderPure
+    -- ** Codec properties
+  , AnyMessage(..)
+  , AnyMessageAndAgency(..)
+  , prop_codec
+  , prop_codec_splits
   ) where
 
 import           Network.TypedProtocol.Core
@@ -156,6 +162,10 @@ data SomeMessage (st :: ps) where
      SomeMessage :: Message ps st st' -> SomeMessage st
 
 
+--
+-- Running decoders
+--
+
 -- | Run a codec incremental decoder 'DecodeStep' against a list of input.
 --
 -- It ignores any unused trailing data. This is useful for demos, quick
@@ -182,4 +192,71 @@ runDecoderPure :: Monad m
                -> [bytes]
                -> Either failure a
 runDecoderPure runM decoder bs = runM (runDecoder bs =<< decoder)
+
+
+--
+-- Codec properties
+--
+
+-- | Any message for a protocol, without knowing the protocol state.
+--
+-- Used at least for 'Eq' instances for messages.
+--
+data AnyMessage ps where
+     AnyMessage :: Message ps st st' -> AnyMessage ps
+
+-- | Used to hold the 'PeerHasAgency' state token and a corresponding 'Message'.
+--
+-- Used where we don't know statically what the state type is, but need the
+-- agency and message to match each other.
+--
+data AnyMessageAndAgency ps where
+  AnyMessageAndAgency :: PeerHasAgency pk (st :: ps)
+                      -> Message ps (st :: ps) (st' :: ps)
+                      -> AnyMessageAndAgency ps
+
+
+-- | The 'Codec' round-trip property: decode after encode gives the same
+-- message. Every codec must satisfy this property.
+--
+prop_codec
+  :: forall ps failure m bytes.
+     (Monad m, Eq (AnyMessage ps))
+  => (forall a. m a -> a)
+  -> Codec ps failure m bytes
+  -> AnyMessageAndAgency ps
+  -> Bool
+prop_codec runM Codec {encode, decode} (AnyMessageAndAgency stok msg) =
+    case runDecoderPure runM (decode stok) [encode stok msg] of
+      Right (SomeMessage msg') -> AnyMessage msg' == AnyMessage msg
+      Left _                   -> False
+
+
+-- | A variant on the codec round-trip property: given the encoding of a
+-- message, check that decode always gives the same result irrespective
+-- of how the chunks of input are fed to the incremental decoder.
+--
+-- This property guards against boundary errors in incremental decoders.
+-- It is not necessary to check this for every message type, just for each
+-- generic codec construction. For example given some binary serialisation
+-- library one would write a generic adaptor to the codec interface. This
+-- adaptor has to deal with the incremental decoding and this is what needs
+-- to be checked.
+--
+prop_codec_splits
+  :: forall ps failure m bytes.
+     (Monad m, Eq (AnyMessage ps))
+  => (bytes -> [[bytes]])   -- ^ alternative re-chunkings of serialised form
+  -> (forall a. m a -> a)
+  -> Codec ps failure m bytes
+  -> AnyMessageAndAgency ps
+  -> Bool
+prop_codec_splits splits runM
+                  Codec {encode, decode} (AnyMessageAndAgency stok msg) =
+    and [ case runDecoderPure runM (decode stok) bytes' of
+            Right (SomeMessage msg') -> AnyMessage msg' == AnyMessage msg
+            Left _                   -> False
+
+        | let bytes = encode stok msg
+        , bytes' <- splits bytes ]
 
