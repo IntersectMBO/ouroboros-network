@@ -283,7 +283,9 @@ prop_channel_IO n =
 
 prop_channel_ST :: NonNegative Int -> Bool
 prop_channel_ST n = 
-    runSim (prop_channel n) == Right True
+    case runSim (prop_channel n) of
+      Right True -> True
+      _          -> False
 
 
 --
