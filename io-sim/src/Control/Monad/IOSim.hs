@@ -84,7 +84,7 @@ data SimA s a where
   Catch        :: Exception e =>
                   SimA s a -> (e -> SimA s a) -> (a -> SimA s b) -> SimA s b
 
-  Fork         :: SimM s () -> SimA s b -> SimA s b
+  Fork         :: SimM s () -> (ThreadId -> SimA s b) -> SimA s b
   Atomically   :: STM  s a -> (a -> SimA s b) -> SimA s b
 
 newtype STM s a = STM { unSTM :: forall r. (a -> StmA s r) -> StmA s r }
@@ -187,7 +187,7 @@ instance MonadSay (SimM s) where
   say msg = SimM $ \k -> Say msg (k ())
 
 instance MonadFork (SimM s) where
-  fork task = SimM $ \k -> Fork task (k ())
+  fork task = SimM $ \k -> Fork task (\_tid -> k ())
 
 instance MonadSTM (SimM s) where
   type Tr    (SimM s)   = STM s
@@ -501,7 +501,7 @@ schedule thread@Thread{
 
     Fork a k -> do
       let tid'     = nextTid
-          thread'  = thread { threadControl = ThreadControl k ctl }
+          thread'  = thread { threadControl = ThreadControl (k tid') ctl }
           thread'' = Thread { threadId      = tid'
                             , threadControl = ThreadControl (runSimM a)
                                                             ForkFrame }
