@@ -27,6 +27,7 @@ library
                        Control.Monad.Class.MonadSay
                        Control.Monad.Class.MonadST
                        Control.Monad.Class.MonadSTM
+                       Control.Monad.Class.MonadThrow
                        Control.Monad.Class.MonadTimer
   default-language:    Haskell2010
   other-extensions:    CPP
