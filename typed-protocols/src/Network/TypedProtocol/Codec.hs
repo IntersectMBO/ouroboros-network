@@ -17,6 +17,8 @@ module Network.TypedProtocol.Codec (
   , SomeMessage(..)
     -- ** Incremental decoding
   , DecodeStep(..)
+  , runDecoder
+  , runDecoderPure
   ) where
 
 import           Network.TypedProtocol.Core
@@ -118,15 +120,6 @@ data Codec ps failure m bytes = Codec {
 -- are unusable.
 
 
--- | When decoding a 'Message' we only know the expected \"from\" state. We
--- cannot know the \"to\" state as this depends on the message we decode. To
--- resolve this we use the 'SomeMessage' wrapper which uses an existential
--- type to hide the \"to"\ state.
---
-data SomeMessage (st :: ps) where
-     SomeMessage :: Message ps st st' -> SomeMessage st
-
-
 -- | An incremental decoder with return a value of type @a@.
 --
 -- This interface is not designed to be used directly for implementing
@@ -153,4 +146,40 @@ data DecodeStep bytes failure m a =
     -- @'fail'@ or was not provided enough input.
   | DecodeFail failure
 
+
+-- | When decoding a 'Message' we only know the expected \"from\" state. We
+-- cannot know the \"to\" state as this depends on the message we decode. To
+-- resolve this we use the 'SomeMessage' wrapper which uses an existential
+-- type to hide the \"to"\ state.
+--
+data SomeMessage (st :: ps) where
+     SomeMessage :: Message ps st st' -> SomeMessage st
+
+
+-- | Run a codec incremental decoder 'DecodeStep' against a list of input.
+--
+-- It ignores any unused trailing data. This is useful for demos, quick
+-- experiments and tests.
+--
+-- See also 'Network.TypedProtocol.Driver.runDecoderWithChannel'
+--
+runDecoder :: Monad m
+           => [bytes]
+           -> DecodeStep bytes failure m a
+           -> m (Either failure a)
+runDecoder _      (DecodeDone x _trailing) = return (Right x)
+runDecoder _      (DecodeFail failure)     = return (Left failure)
+runDecoder []     (DecodePartial k)        = k Nothing  >>= runDecoder []
+runDecoder (b:bs) (DecodePartial k)        = k (Just b) >>= runDecoder bs
+
+
+-- | A variant of 'runDecoder' that is suitable for \"pure\" monads that have
+-- a run function. This includes 'ST', using 'Control.Monad.ST.runST'.
+--
+runDecoderPure :: Monad m
+               => (forall b. m b -> b)
+               -> m (DecodeStep bytes failure m a)
+               -> [bytes]
+               -> Either failure a
+runDecoderPure runM decoder bs = runM (runDecoder bs =<< decoder)
 

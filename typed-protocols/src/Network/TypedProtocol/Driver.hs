@@ -24,7 +24,7 @@ module Network.TypedProtocol.Driver (
 
   -- * Driver utilities
   -- | This may be useful if you want to write your own driver.
-  runDecoder,
+  runDecoderWithChannel,
   ) where
 
 import Network.TypedProtocol.Core
@@ -90,7 +90,7 @@ runPeer Codec{encode, decode} channel@Channel{send} = go Nothing
 
     go trailing (Await stok k) = do
       decoder <- decode stok
-      res <- runDecoder channel trailing decoder
+      res <- runDecoderWithChannel channel trailing decoder
       case res of
         Right (SomeMessage msg, trailing') -> go trailing' (k msg)
         Left failure                       -> return (Left failure)
@@ -99,13 +99,13 @@ runPeer Codec{encode, decode} channel@Channel{send} = go Nothing
 -- | Run a codec incremental decoder 'DecodeStep' against a channel. It also
 -- takes any extra input data and returns any unused trailing data.
 --
-runDecoder :: Monad m
-           => Channel m bytes
-           -> Maybe bytes
-           -> DecodeStep bytes failure m a
-           -> m (Either failure (a, Maybe bytes))
+runDecoderWithChannel :: Monad m
+                      => Channel m bytes
+                      -> Maybe bytes
+                      -> DecodeStep bytes failure m a
+                      -> m (Either failure (a, Maybe bytes))
 
-runDecoder Channel{recv} = go
+runDecoderWithChannel Channel{recv} = go
   where
     go _ (DecodeDone x trailing) = return (Right (x, trailing))
     go _ (DecodeFail failure)    = return (Left failure)
@@ -218,7 +218,7 @@ runPipelinedPeerReceiver Codec{decode} channel = go
 
     go trailing (ReceiverAwait stok k) = do
       decoder <- decode stok
-      res <- runDecoder channel trailing decoder
+      res <- runDecoderWithChannel channel trailing decoder
       case res of
         Right (SomeMessage msg, trailing') -> go trailing' (k msg)
         Left failure                       -> error "TODO: proper exceptions for runPipelinedPeer"
