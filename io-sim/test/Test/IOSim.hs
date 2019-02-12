@@ -12,6 +12,7 @@ import           Control.Monad
 import           Control.Monad.ST.Lazy (runST)
 import           Control.Exception
                    ( ArithException(..) )
+import           System.IO.Error
 import           Data.Array
 import           Data.Fixed (Fixed (..), Micro)
 import           Data.Graph
@@ -46,6 +47,10 @@ tests =
     , testProperty "4" unit_catch_4
     , testProperty "5" unit_catch_5
     , testProperty "6" unit_catch_6
+    ]
+  , testGroup "fork unit tests"
+    [ testProperty "1" unit_fork_1
+    , testProperty "2" unit_fork_2
     ]
   ]
 
@@ -258,7 +263,8 @@ prop_fork_order_IO = ioProperty . test_fork_order
 --
 
 unit_catch_1, unit_catch_2, unit_catch_3, unit_catch_4,
-  unit_catch_5, unit_catch_6
+  unit_catch_5, unit_catch_6,
+  unit_fork_1, unit_fork_2
   :: Bool
 
 -- normal execution of a catch frame
@@ -336,6 +342,39 @@ unit_catch_6 =
  ==
     ["inner", "handler1", "handler2", "after"]
 
+
+-- The sim terminates when the main thread terminates
+unit_fork_1 =
+    runSimTraceSay example == ["parent"]
+ && case traceResult True (runSimTrace example) of
+      Left FailureSloppyShutdown -> True
+      _                          -> False
+  where
+    example :: SimM s ()
+    example = do
+      fork $ say "child"
+      say "parent"
+
+-- Try works and we can pass exceptions back from threads.
+-- And terminating with an exception is reported properly.
+unit_fork_2 =
+    runSimTraceSay example == ["parent", "user error (oh noes!)"]
+ && case traceResult True (runSimTrace example) of
+      Left (FailureException e)
+        | Just ioe <- fromException e
+        , isUserError ioe
+        , ioeGetErrorString ioe == "oh noes!" -> True
+      _                                       -> False
+  where
+    example :: SimM s ()
+    example = do
+      resVar <- newEmptyTMVarIO
+      fork $ do res <- try (fail "oh noes!")
+                atomically (putTMVar resVar (res :: Either SomeException ()))
+      say "parent"
+      Left e <- atomically (takeTMVar resVar)
+      say (show e)
+      throwM e
 
 runSimTraceSay :: (forall s. SimM s a) -> [String]
 runSimTraceSay action = selectTraceSay (runSimTrace action)
