@@ -12,6 +12,7 @@ import qualified Test.Ouroboros.Network.Protocol.BlockFetch (tests)
 import qualified Test.Ouroboros.Network.Protocol.ReqResp (tests)
 import qualified Test.Ouroboros.Network.Protocol.ReqResp.Codec.Coherence (tests)
 import qualified Test.Ouroboros.Network.Protocol.Stream (tests)
+import qualified Test.Socket (tests)
 
 main :: IO ()
 main = defaultMain tests
@@ -23,6 +24,7 @@ tests =
   , Test.ChainFragment.tests
   , Test.ChainProducerState.tests
   , Test.Pipe.tests
+  , Test.Socket.tests
   , Test.Ouroboros.Network.Node.tests
   , Test.Ouroboros.Network.Protocol.ChainSync.tests
   , Test.Ouroboros.Network.Protocol.BlockFetch.tests

@@ -1,0 +1,106 @@
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE TypeFamilies          #-}
+
+module Ouroboros.Network.Mux (
+      MiniProtocolDescription (..)
+    , MiniProtocolDescriptions (..)
+    , MiniProtocolId (..)
+    , MiniProtocolMode (..)
+    , MuxBearer (..)
+    , MuxSDU (..)
+    , RemoteClockModel (..)
+    , encodeMuxSDU
+    , decodeMuxSDUHeader
+    , muxJobs
+    ) where
+
+import qualified Codec.CBOR.Encoding as CBOR (Encoding)
+import qualified Codec.CBOR.Write as CBOR (toLazyByteString)
+import           Control.Monad
+import           Control.Monad.Class.MonadSay
+import           Control.Monad.Class.MonadSTM
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BL
+import qualified Data.Map.Strict as M
+
+import           Protocol.Channel
+
+import           Ouroboros.Network.Mux.Egress
+import           Ouroboros.Network.Mux.Ingress
+import           Ouroboros.Network.Mux.Types
+
+-- | muxJobs constructs a list of jobs which needs to be started in separate threads by
+-- the specific 'MuxBearer' instance.
+-- TODO: replace MonadSay with iohk-monitoring-framework.
+muxJobs :: (MuxBearer m, MonadSTM m, MonadSay m) =>
+    MiniProtocolDescriptions m ->
+    MuxBearerHandle m ->
+    m [m ()]
+muxJobs (MiniProtocolDescriptions udesc) bearer = do
+    tbl <- setupTbl
+    tq <- atomically $ newTBQueue 100
+    let pmss = PerMuxSS tbl bearer tq
+        jobs = [ demux pmss
+               , mux pmss
+               , muxControl pmss ModeResponder
+               , muxControl pmss ModeInitiator
+               ]
+    mjobs <- mapM (mpsJob pmss) $ M.elems udesc
+    return $ jobs ++ concat mjobs
+
+  where
+    setupTbl = do
+        let ps = [Muxcontrol, DeltaQ] ++ M.keys udesc
+        tbl <- foldM addMp M.empty ps
+        return $ MiniProtocolDispatch tbl
+
+    addMp t p = do
+        a <- atomically $ newTBQueue 2
+        b <- atomically $ newTBQueue 2
+        return $ M.insert (p, ModeInitiator) a $ M.insert (p, ModeResponder) b t
+
+    mpsJob pmss mpd = do
+        w_i <- atomically newEmptyTMVar
+        w_r <- atomically newEmptyTMVar
+
+        return [ mpdInitiator mpd $ muxDuplex pmss (mpdId mpd) ModeInitiator w_i
+               , mpdResponder mpd $ muxDuplex pmss (mpdId mpd) ModeResponder w_r]
+
+muxControl :: (MuxBearer m, MonadSTM m, MonadSay m) =>
+    PerMuxSharedState m ->
+    MiniProtocolMode ->
+    m ()
+muxControl pmss md = do
+    w <- atomically newEmptyTMVar
+    forever $ do
+        -- XXX actual protocol is missing
+        blob <- atomically $ readTBQueue (ingressQueue (dispatchTable pmss) Muxcontrol md)
+        --say $ printf "muxcontrol mode %s blob len %d" (show md) (BL.length blob)
+        atomically $ putTMVar w blob
+        atomically $ writeTBQueue (tsrQueue pmss) (TLSRDemand Muxcontrol md (Wanton w))
+
+-- | muxDuplex creates a duplex channel for a specific 'MiniProtocolId' and 'MiniProtocolMode'.
+muxDuplex :: (MuxBearer m, MonadSTM m, MonadSay m) =>
+    PerMuxSharedState m ->
+    MiniProtocolId ->
+    MiniProtocolMode ->
+    TMVar m BL.ByteString ->
+    Duplex m m CBOR.Encoding BS.ByteString
+muxDuplex pmss mid md w = uniformDuplex snd_ rcv
+  where
+    snd_ encoding = do
+        -- We send CBOR encoded messages by encoding them into by ByteString
+        -- forwarding them to the 'mux' thread, see 'Desired servicing semantics'.
+        --say $ printf "send mid %s mode %s" (show mid) (show md)
+        atomically $ putTMVar w (CBOR.toLazyByteString encoding)
+        atomically $ writeTBQueue (tsrQueue pmss) (TLSRDemand mid md (Wanton w))
+    rcv = do
+        -- We receive CBOR encoded messages as ByteStrings (possibly partial) from the
+        -- matching ingress queueu. This is same queue the 'demux' thread writes to.
+        blob <- atomically $ readTBQueue (ingressQueue (dispatchTable pmss) mid md)
+        --say $ printf "recv mid %s mode %s blob len %d" (show mid) (show md) (BL.length blob)
+        if BL.null blob
+           then pure Nothing
+           else return $ Just $ BL.toStrict blob
+
