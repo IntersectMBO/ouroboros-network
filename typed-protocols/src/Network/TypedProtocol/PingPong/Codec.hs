@@ -15,14 +15,14 @@ codecPingPong
 codecPingPong =
     Codec{encode, decode}
   where
-    encode :: PeerHasAgency pk st
+    encode :: PeerHasAgency pr st
            -> Message PingPong st st'
            -> String
     encode (ClientAgency TokIdle) MsgPing = "ping\n"
     encode (ClientAgency TokIdle) MsgDone = "done\n"
     encode (ServerAgency TokBusy) MsgPong = "pong\n"
 
-    decode :: PeerHasAgency pk st
+    decode :: PeerHasAgency pr st
            -> m (DecodeStep String String m (SomeMessage st))
     decode stok =
       decodeTerminatedFrame '\n' $ \str trailing ->

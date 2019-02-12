@@ -21,7 +21,7 @@ module Network.TypedProtocol.Core (
 
   -- * Engaging in protocols
   -- $using
-  PeerKind(..),
+  PeerRole(..),
   PeerHasAgency(..),
   WeHaveAgency,
   TheyHaveAgency,
@@ -313,13 +313,13 @@ class Protocol ps where
 --
 -- This definition is only used as promoted types and kinds, never as values.
 --
-data PeerKind = AsClient | AsServer
+data PeerRole = AsClient | AsServer
 
 -- | This data type is used to hold state tokens for states with either client
 -- or server agency. This GADT shows up when writing protocol peers, when
 -- 'Yield'ing or 'Await'ing, and when writing message encoders\/decoders.
 --
-data PeerHasAgency (pk :: PeerKind) (st :: ps) where
+data PeerHasAgency (pr :: PeerRole) (st :: ps) where
   ClientAgency :: !(ClientHasAgency st) -> PeerHasAgency AsClient st
   ServerAgency :: !(ServerHasAgency st) -> PeerHasAgency AsServer st
 
@@ -330,7 +330,7 @@ data PeerHasAgency (pk :: PeerKind) (st :: ps) where
 -- This shows up when we are sending messages, or dealing with encoding
 -- outgoing messages.
 --
-type WeHaveAgency   (pk :: PeerKind) st = PeerHasAgency             pk  st
+type WeHaveAgency   (pr :: PeerRole) st = PeerHasAgency             pr  st
 
 -- | A synonym for an state token in which the other peer has agency. This is
 -- parametrised over the client or server roles. In either case the other peer
@@ -339,11 +339,11 @@ type WeHaveAgency   (pk :: PeerKind) st = PeerHasAgency             pk  st
 -- This shows up when we are receiving messages, or dealing with decoding
 -- incoming messages.
 --
-type TheyHaveAgency (pk :: PeerKind) st = PeerHasAgency (FlipAgency pk) st
+type TheyHaveAgency (pr :: PeerRole) st = PeerHasAgency (FlipAgency pr) st
 
 -- | A type function to flip the client and server roles.
 --
-type family FlipAgency (pk :: PeerKind) where
+type family FlipAgency (pr :: PeerRole) where
   FlipAgency AsClient = AsServer
   FlipAgency AsServer = AsClient
 
@@ -389,7 +389,7 @@ type family FlipAgency (pk :: PeerKind) where
 -- While this evidence must be provided, the types guarantee that it is not
 -- possible to supply incorrect evidence.
 --
-data Peer ps (pk :: PeerKind) (st :: ps) m a where
+data Peer ps (pr :: PeerRole) (st :: ps) m a where
 
   -- | Perform a local monadic effect and then continue.
   --
@@ -399,8 +399,8 @@ data Peer ps (pk :: PeerKind) (st :: ps) m a where
   -- >   ...          -- actions in the monad
   -- >   return $ ... -- another Peer value
   --
-  Effect :: m (Peer ps pk st m a)
-         ->    Peer ps pk st m a
+  Effect :: m (Peer ps pr st m a)
+         ->    Peer ps pr st m a
 
   -- | Terminate with a result. A state token must be provided from the
   -- 'NobodyHasAgency' states, so show that this is a state in which we can
@@ -414,7 +414,7 @@ data Peer ps (pk :: PeerKind) (st :: ps) m a where
   --
   Done   :: !(NobodyHasAgency st)
          -> a
-         -> Peer ps pk st m a
+         -> Peer ps pr st m a
 
   -- | Send a message to the other peer and then continue. This takes the
   -- message and the continuation. It also requires evidence that we have
@@ -424,10 +424,10 @@ data Peer ps (pk :: PeerKind) (st :: ps) m a where
   --
   -- > Yield (ClientAgency TokIdle) MsgPing $ ...
   --
-  Yield  :: !(WeHaveAgency pk st)
+  Yield  :: !(WeHaveAgency pr st)
          -> Message ps st st'
-         -> Peer ps pk st' m a
-         -> Peer ps pk st  m a
+         -> Peer ps pr st' m a
+         -> Peer ps pr st  m a
 
   -- | Waits to receive a message from the other peer and then continues.
   -- This takes the the continuation that is supplied with the received
@@ -446,7 +446,7 @@ data Peer ps (pk :: PeerKind) (st :: ps) m a where
   -- >   MsgDone -> ...
   -- >   MsgPing -> ...
   --
-  Await  :: !(TheyHaveAgency pk st)
-         -> (forall st'. Message ps st st' -> Peer ps pk st' m a)
-         -> Peer ps pk st m a
+  Await  :: !(TheyHaveAgency pr st)
+         -> (forall st'. Message ps st st' -> Peer ps pr st' m a)
+         -> Peer ps pr st m a
 

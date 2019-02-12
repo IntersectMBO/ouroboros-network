@@ -218,16 +218,16 @@ connectPipelined cs0 (PeerPipelined peerA) peerB =
 -- us extra expressiveness or to break the protocol state machine.
 --
 forgetPipelined
-  :: forall ps (pk :: PeerKind) (st :: ps) m a.
+  :: forall ps (pr :: PeerRole) (st :: ps) m a.
      Functor m
-  => PeerPipelined ps pk st m a
-  -> Peer          ps pk st m a
+  => PeerPipelined ps pr st m a
+  -> Peer          ps pr st m a
 forgetPipelined (PeerPipelined peer) = goSender EmptyQ peer
   where
     goSender :: forall st' n c.
                 Queue                n c
-             -> PeerSender ps pk st' n c m a
-             -> Peer       ps pk st'     m a
+             -> PeerSender ps pr st' n c m a
+             -> Peer       ps pr st'     m a
 
     goSender EmptyQ (SenderDone     st     k) = Done st k
     goSender q      (SenderEffect          k) = Effect (goSender q <$> k)
@@ -240,9 +240,9 @@ forgetPipelined (PeerPipelined peer) = goSender EmptyQ peer
 
     goReceiver :: forall stCurrent stNext n c.
                   Queue                        n  c
-               -> PeerSender   ps pk stNext (S n) c   m a
-               -> PeerReceiver ps pk stCurrent stNext m c
-               -> Peer         ps pk stCurrent        m a
+               -> PeerSender   ps pr stNext (S n) c   m a
+               -> PeerReceiver ps pr stCurrent stNext m c
+               -> Peer         ps pr stCurrent        m a
 
     goReceiver q s (ReceiverDone     x) = goSender (enqueue x q) s
     goReceiver q s (ReceiverEffect   k) = Effect (goReceiver q s <$> k)
