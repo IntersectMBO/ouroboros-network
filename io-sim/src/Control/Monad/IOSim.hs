@@ -29,8 +29,7 @@ import           Prelude hiding (read)
 
 import           Data.OrdPSQ (OrdPSQ)
 import qualified Data.OrdPSQ as PSQ
-
-import qualified Data.List as L
+import qualified Data.List as List
 import           Data.Fixed (Micro)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -379,6 +378,18 @@ initialState =
       nextTmid = TimeoutId 0
     }
 
+invariant :: Maybe (Thread s a) -> SimState s a -> Bool
+
+invariant (Just running) simstate@SimState{runqueue,threads} =
+    threadId running `Map.notMember` threads
+ && threadId running `List.notElem` runqueue
+ && invariant Nothing simstate
+
+invariant Nothing SimState{runqueue,threads} =
+    all (`Map.member` threads) runqueue
+ && runqueue == List.nub runqueue
+
+
 schedule :: Thread s a -> SimState s a -> ST s (Trace a)
 schedule thread@Thread{
            threadId      = tid,
@@ -391,6 +402,7 @@ schedule thread@Thread{
            nextTid, nextVid, nextTmid,
            curTime  = time
          } =
+  assert (invariant (Just thread) simstate) $
   case action of
 
     Return x -> case ctl of
@@ -515,7 +527,7 @@ schedule thread@Thread{
               -- For testing, we should have a more sophiscated policy to show
               -- that algorithms are not sensitive to the exact policy, so long
               -- as it is a fair policy (all runnable threads eventually run).
-              runqueue' = L.nub (runqueue ++ unblocked) ++ [tid]
+              runqueue' = List.nub (runqueue ++ unblocked) ++ [tid]
               threads'  = Map.insert tid thread' threads
           trace <- reschedule simstate { runqueue = runqueue'
                                        , threads  = threads'
@@ -542,6 +554,7 @@ schedule thread@Thread{
 -- schedule the next one to run.
 reschedule :: SimState s a -> ST s (Trace a)
 reschedule simstate@SimState{ runqueue = tid:runqueue', threads } =
+    assert (invariant Nothing simstate) $
 
     let thread = threads Map.! tid in
     schedule thread simstate { runqueue = runqueue'
@@ -550,6 +563,7 @@ reschedule simstate@SimState{ runqueue = tid:runqueue', threads } =
 -- But when there are no runnable threads, we advance the time to the next
 -- timer event, or stop.
 reschedule simstate@SimState{ runqueue = [], threads, timers, curTime = time } =
+    assert (invariant Nothing simstate) $
 
     -- important to get all events that expire at this time
     case removeMinimums timers of
@@ -714,7 +728,7 @@ finaliseCommit written = do
   tidss <- sequence [ (,) vid <$> commitTVar tvar
                     | SomeTVar tvar@(TVar vid _ _ _) <- written ]
   let -- for each thread, what var writes woke it up
-      wokeVars    = Map.fromListWith (\l r -> L.nub $ l ++ r)
+      wokeVars    = Map.fromListWith (\l r -> List.nub $ l ++ r)
                       [ (tid, [vid]) | (vid, tids) <- tidss, tid <- tids ]
       -- threads to wake up, in wake up order, with assoicated vars
       wokeThreads = [ (tid, wokeVars Map.! tid)
