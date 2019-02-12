@@ -39,3 +39,6 @@ instance Protocol (ReqResp req resp) where
 
 deriving instance (Show req, Show resp)
                => Show (Message (ReqResp req resp) from to)
+
+deriving instance (Eq req, Eq resp)
+               => Eq (Message (ReqResp req resp) from to)
