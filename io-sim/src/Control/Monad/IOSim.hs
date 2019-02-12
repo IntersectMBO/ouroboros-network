@@ -80,7 +80,7 @@ data SimA s a where
   UpdateTimeout:: Timeout (SimM s) -> VTimeDuration -> SimA s b -> SimA s b
   CancelTimeout:: Timeout (SimM s) -> SimA s b -> SimA s b
 
-  Throw        :: Exception e => e -> SimA s a
+  Throw        :: SomeException -> SimA s a
   Catch        :: Exception e =>
                   SimA s a -> (e -> SimA s a) -> (a -> SimA s b) -> SimA s b
 
@@ -94,7 +94,7 @@ runSTM (STM k) = k ReturnStm
 
 data StmA s a where
   ReturnStm    :: a -> StmA s a
-  ThrowStm     :: Exception e => e -> StmA s a
+  ThrowStm     :: SomeException -> StmA s a
 
   NewTVar      :: x -> (TVar s x -> StmA s b) -> StmA s b
   ReadTVar     :: TVar s a -> (a -> StmA s b) -> StmA s b
@@ -178,10 +178,10 @@ instance TimeMeasure VTime where
   zero = VTime 0
 
 instance MonadFail (SimM s) where
-  fail msg = SimM $ \_ -> Throw (IO.Error.userError msg)
+  fail msg = SimM $ \_ -> Throw (toException (IO.Error.userError msg))
 
 instance MonadFail (STM s) where
-  fail msg = STM $ \_ -> ThrowStm (ErrorCall msg)
+  fail msg = STM $ \_ -> ThrowStm (toException (ErrorCall msg))
 
 instance MonadSay (SimM s) where
   say msg = SimM $ \k -> Say msg (k ())
@@ -434,19 +434,17 @@ schedule thread@Thread{
       Left isMain
         -- We unwound and did not find any suitable exception handler, so we
         -- have an unhandled exception at the top level of the thread.
-        | isMain -> do
+        | isMain ->
           -- An unhandled exception in the main thread terminates the program
-          let e' = toException e
-          return (Trace time tid (EventThrow e') $
-                  Trace time tid (EventThreadException e') $
-                  TraceMainException time e' (Map.keys threads))
+          return (Trace time tid (EventThrow e) $
+                  Trace time tid (EventThreadException e) $
+                  TraceMainException time e (Map.keys threads))
 
         | otherwise -> do
           -- An unhandled exception in any other thread terminates the thread
           trace <- reschedule simstate { threads = Map.delete tid threads }
-          let e' = toException e
-          return (Trace time tid (EventThrow e') $
-                  Trace time tid (EventThreadException e') trace)
+          return (Trace time tid (EventThrow e) $
+                  Trace time tid (EventThreadException e) trace)
 
     Catch action' handler k -> do
       -- push the failure and success continuations onto the control stack
@@ -603,9 +601,8 @@ reschedule simstate@SimState{ runqueue = [], threads, timers, curTime = time } =
 -- Also return if it's the main thread or a forked thread since we handle the
 -- cases differently.
 --
-unwindControlStack :: Exception e
-                   => ThreadId
-                   -> e
+unwindControlStack :: ThreadId
+                   -> SomeException
                    -> ControlStack s b a
                    -> Either Bool (Thread s a)
 unwindControlStack _ _ MainFrame = Left True
