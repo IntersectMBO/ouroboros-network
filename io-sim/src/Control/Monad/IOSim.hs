@@ -48,8 +48,10 @@ import qualified Control.Monad.ST.Strict as StrictST
 import           Data.STRef.Lazy
 
 import           Control.Monad.Fail as MonadFail
+import qualified Control.Monad.Catch as Exceptions
+
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadThrow
+import           Control.Monad.Class.MonadThrow as MonadThrow
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM hiding (TVar)
@@ -208,6 +210,9 @@ instance MonadThrow (SimM s) where
     _ <- after
     return r
 
+instance Exceptions.MonadThrow (SimM s) where
+  throwM = MonadThrow.throwM
+
 instance MonadThrow (STM s) where
   throwM e = STM $ \_ -> ThrowStm (toException e)
 
@@ -224,6 +229,9 @@ instance MonadThrow (STM s) where
     _ <- after
     return r
 
+instance Exceptions.MonadThrow (STM s) where
+  throwM = MonadThrow.throwM
+
 instance MonadCatch (SimM s) where
   catch action handler =
     SimM $ \k -> Catch (runSimM action) (runSimM . handler) k
@@ -232,6 +240,9 @@ instance MonadCatch (SimM s) where
   bracketOnError before after thing = do
     a <- before
     thing a `onException` after a
+
+instance Exceptions.MonadCatch (SimM s) where
+  catch = MonadThrow.catch
 
 
 instance MonadSTM (SimM s) where
