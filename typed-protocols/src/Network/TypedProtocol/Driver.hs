@@ -70,7 +70,7 @@ import Numeric.Natural (Natural)
 runPeer
   :: forall ps (st :: ps) pk failure bytes m a .
      Monad m
-  => Codec ps pk failure m bytes
+  => Codec ps failure m bytes
   -> Channel m bytes
   -> Peer ps pk st m a
   -> m (Either failure a)
@@ -124,7 +124,7 @@ runPipelinedPeer
   :: forall ps (st :: ps) pk failure bytes m a.
      MonadSTM m
   => Natural
-  -> Codec ps pk failure m bytes
+  -> Codec ps failure m bytes
   -> Channel m bytes
   -> PeerPipelined ps pk st m a
   -> m a
@@ -148,7 +148,7 @@ runPipelinedPeerSender
      MonadSTM m
   => TBQueue m (ReceiveHandler ps pk m c)
   -> TBQueue m c
-  -> Codec ps pk failure m bytes
+  -> Codec ps failure m bytes
   -> Channel m bytes
   -> PeerSender ps pk st Z c m a
   -> m a
@@ -184,7 +184,7 @@ runPipelinedPeerReceiverQueue
      MonadSTM m
   => TBQueue m (ReceiveHandler ps pk m c)
   -> TBQueue m c
-  -> Codec ps pk failure m bytes
+  -> Codec ps failure m bytes
   -> Channel m bytes
   -> m ()
 runPipelinedPeerReceiverQueue receiveQueue collectQueue codec channel = go Nothing
@@ -201,7 +201,7 @@ runPipelinedPeerReceiverQueue receiveQueue collectQueue codec channel = go Nothi
 runPipelinedPeerReceiver
   :: forall ps (st :: ps) (stdone :: ps) pk failure bytes m c.
      Monad m
-  => Codec ps pk failure m bytes
+  => Codec ps failure m bytes
   -> Channel m bytes
   -> Maybe bytes
   -> PeerReceiver ps pk (st :: ps) (stdone :: ps) m c

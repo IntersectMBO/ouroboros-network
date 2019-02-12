@@ -96,14 +96,14 @@ import           Network.TypedProtocol.Core
 -- This toy example format uses newlines @\n@ as a framing format. See
 -- 'DecodeStep' for suggestions on how to use it for more realistic formats.
 --
-data Codec ps (pk :: PeerKind) failure m bytes = Codec {
-       encode :: forall (st :: ps) (st' :: ps).
-                 WeHaveAgency pk st
+data Codec ps failure m bytes = Codec {
+       encode :: forall (pk :: PeerKind) (st :: ps) (st' :: ps).
+                 PeerHasAgency pk st
               -> Message ps st st'
               -> bytes,
 
-       decode :: forall (st :: ps).
-                 TheyHaveAgency pk st
+       decode :: forall (pk :: PeerKind) (st :: ps).
+                 PeerHasAgency pk st
               -> m (DecodeStep bytes failure m (SomeMessage st))
      }
 

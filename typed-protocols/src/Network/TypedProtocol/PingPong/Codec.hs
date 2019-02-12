@@ -10,19 +10,19 @@ import           Network.TypedProtocol.PingPong.Type
 
 
 codecPingPong
-  :: forall pk m. Monad m
-  => Codec PingPong pk String m String
+  :: forall m. Monad m
+  => Codec PingPong String m String
 codecPingPong =
     Codec{encode, decode}
   where
-    encode :: WeHaveAgency pk st
+    encode :: PeerHasAgency pk st
            -> Message PingPong st st'
            -> String
     encode (ClientAgency TokIdle) MsgPing = "ping\n"
     encode (ClientAgency TokIdle) MsgDone = "done\n"
     encode (ServerAgency TokBusy) MsgPong = "pong\n"
 
-    decode :: TheyHaveAgency pk st
+    decode :: PeerHasAgency pk st
            -> m (DecodeStep String String m (SomeMessage st))
     decode stok =
       decodeTerminatedFrame '\n' $ \str trailing ->
