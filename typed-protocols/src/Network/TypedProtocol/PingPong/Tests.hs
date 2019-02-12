@@ -1,4 +1,5 @@
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE RecordWildCards #-}
 
@@ -7,6 +8,7 @@
 module Network.TypedProtocol.PingPong.Tests (tests) where
 
 
+import Network.TypedProtocol.Codec
 import Network.TypedProtocol.Proofs
 import Network.TypedProtocol.Channel
 import Network.TypedProtocol.Driver
@@ -21,9 +23,34 @@ import Data.Functor.Identity (Identity (..))
 import Control.Monad.Class.MonadSTM
 import Control.Monad.IOSim
 
+import Data.List (inits, tails)
+
 import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
+
+
+--
+-- The list of all properties
+--
+
+tests :: TestTree
+tests = testGroup "Network.TypedProtocol.PingPong"
+  [ testProperty "direct"              prop_direct
+  , testProperty "directPipelined 1"   prop_directPipelined1
+  , testProperty "directPipelined 2"   prop_directPipelined2
+  , testProperty "connect"             prop_connect
+  , testProperty "connect_pipelined 1" prop_connect_pipelined1
+  , testProperty "connect_pipelined 2" prop_connect_pipelined2
+  , testProperty "connect_pipelined 3" prop_connect_pipelined3
+  , testProperty "connect_pipelined 4" prop_connect_pipelined4
+  , testProperty "connect_pipelined 5" prop_connect_pipelined5
+  , testProperty "channel ST"          prop_channel_ST
+  , testProperty "channel IO"          prop_channel_IO
+  , testProperty "codec"               prop_codec_PingPong
+  , testProperty "codec 2-splits"      prop_codec_splits2_PingPong
+  , testProperty "codec 3-splits"      prop_codec_splits3_PingPong
+  ]
 
 
 --
@@ -289,22 +316,52 @@ prop_channel_ST n =
 
 
 --
--- The list of all properties
+-- Codec properties
 --
 
-tests :: TestTree
-tests = testGroup "Network.TypedProtocol.PingPong"
-  [ testProperty "direct"  prop_direct
-  , testProperty "directPipelined 1"  prop_directPipelined1
-  , testProperty "directPipelined 2"  prop_directPipelined2
-  , testProperty "connect" prop_connect
-  , testProperty "connect_pipelined 1" prop_connect_pipelined1
-  , testProperty "connect_pipelined 2" prop_connect_pipelined2
-  , testProperty "connect_pipelined 3" prop_connect_pipelined3
-  , testProperty "connect_pipelined 4" prop_connect_pipelined4
-  , testProperty "connect_pipelined 5" prop_connect_pipelined5
-  , testProperty "channel ST" prop_channel_ST
-  , testProperty "channel IO" prop_channel_IO
---  , testProperty "pipe" prop_pipe
-  ]
+instance Arbitrary (AnyMessageAndAgency PingPong) where
+  arbitrary = elements
+    [ AnyMessageAndAgency (ClientAgency TokIdle) MsgPing
+    , AnyMessageAndAgency (ServerAgency TokBusy) MsgPong
+    , AnyMessageAndAgency (ClientAgency TokIdle) MsgDone
+    ]
 
+instance Eq (AnyMessage PingPong) where
+  AnyMessage MsgPing == AnyMessage MsgPing = True
+  AnyMessage MsgPong == AnyMessage MsgPong = True
+  AnyMessage MsgDone == AnyMessage MsgDone = True
+  _                  ==                  _ = False
+
+instance Show (AnyMessageAndAgency PingPong) where
+  show (AnyMessageAndAgency _ msg) = show msg
+
+prop_codec_PingPong :: AnyMessageAndAgency PingPong -> Bool
+prop_codec_PingPong =
+    prop_codec
+      runIdentity
+      codecPingPong
+
+prop_codec_splits2_PingPong :: AnyMessageAndAgency PingPong -> Bool
+prop_codec_splits2_PingPong =
+    prop_codec_splits
+      splits2
+      runIdentity
+      codecPingPong
+
+prop_codec_splits3_PingPong :: AnyMessageAndAgency PingPong -> Bool
+prop_codec_splits3_PingPong =
+    prop_codec_splits
+      splits3
+      runIdentity
+      codecPingPong
+
+-- | Generate all 2-splits of a string.
+splits2 :: String -> [[String]]
+splits2 str = zipWith (\a b -> [a,b]) (inits str) (tails str)
+
+-- | Generate all 3-splits of a string.
+splits3 :: String -> [[String]]
+splits3 str =
+    [ [a,b,c]
+    | (a,str') <- zip (inits str)  (tails str)
+    , (b,c)    <- zip (inits str') (tails str') ]
