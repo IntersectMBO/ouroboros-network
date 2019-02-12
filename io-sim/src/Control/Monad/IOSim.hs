@@ -49,6 +49,7 @@ import           Data.STRef.Lazy
 
 import           Control.Monad.Fail as MonadFail
 import           Control.Monad.Class.MonadFork
+import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM hiding (TVar)
@@ -190,6 +191,48 @@ instance MonadSay (SimM s) where
 
 instance MonadFork (SimM s) where
   fork task = SimM $ \k -> Fork task (\_tid -> k ())
+
+instance MonadThrow (SimM s) where
+  throwM e = SimM $ \_ -> Throw (toException e)
+
+  --TODO: remove this definition once we add the instance MonadMask
+  bracket before after thing = do
+    a <- before
+    r <- thing a `onException` after a
+    _ <- after a
+    return r
+
+  --TODO: remove this definition once we add the instance MonadMask
+  finally thing after = do
+    r <- thing `onException` after
+    _ <- after
+    return r
+
+instance MonadThrow (STM s) where
+  throwM e = STM $ \_ -> ThrowStm (toException e)
+
+  -- Since these involve re-throwing the exception and we don't provide
+  -- CatchSTM at all, then we can get away with trivial versions:
+  bracket before after thing = do
+    a <- before
+    r <- thing a
+    _ <- after a
+    return r
+
+  finally thing after = do
+    r <- thing
+    _ <- after
+    return r
+
+instance MonadCatch (SimM s) where
+  catch action handler =
+    SimM $ \k -> Catch (runSimM action) (runSimM . handler) k
+
+  --TODO: remove this definition once we add the instance MonadMask
+  bracketOnError before after thing = do
+    a <- before
+    thing a `onException` after a
+
 
 instance MonadSTM (SimM s) where
   type Tr    (SimM s)   = STM s
