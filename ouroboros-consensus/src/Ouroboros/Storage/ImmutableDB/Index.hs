@@ -14,7 +14,11 @@ import qualified Data.List.NonEmpty as NE
 import qualified Data.Vector.Unboxed as V
 import           Data.Word (Word64)
 
+import           GHC.Stack (HasCallStack)
+
 import           System.IO (IOMode (..))
+
+import           Ouroboros.Consensus.Util (lastMaybe)
 
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types (FsPath)
@@ -29,7 +33,7 @@ import           Ouroboros.Storage.Util
 
 -- | In-memory representation of the index file.
 newtype Index = MkIndex { getIndex :: V.Vector SlotOffset }
-  deriving (Show)
+  deriving (Show, Eq)
 
 -- | Return the number of slots in the index (the number of offsets - 1).
 indexSlots :: Index -> EpochSize
@@ -41,8 +45,13 @@ indexEntrySizeBytes :: Int
 indexEntrySizeBytes = 8
 {-# INLINE indexEntrySizeBytes #-}
 
+-- | Return the expected size (number of bytes) the given 'Index' requires
+-- when writing it to a file.
+indexExpectedFileSize :: Index -> Int
+indexExpectedFileSize (MkIndex offsets) = V.length offsets * indexEntrySizeBytes
+
 -- | Loads an index file in memory.
-loadIndex :: MonadMask m
+loadIndex :: (HasCallStack, MonadMask m)
           => HasFS m
           -> FsPath
           -> Epoch
@@ -53,12 +62,38 @@ loadIndex hasFS dbFolder epoch = do
       BL.toStrict . BS.toLazyByteString <$> readAll hasFS hnd
     return $ indexFromByteString indexContents
 
--- | Write a non-empty list of 'SlotOffset's to a file.
+-- | Write an index to an index file.
 --
--- Property: for @dbFolder@, @epoch@, and @offsets@:
+-- Property: for @hasFS@, @dbFolder@, @epoch@, and @offsets@:
 --
--- > 'writeSlotOffsets' dbFolder epoch offsets
--- > index <- loadIndex dbFolder epoch
+-- > 'writeIndex' hasFS dbFolder epoch index
+-- > index' <- loadIndex hasFS dbFolder epoch
+--
+-- Then it must be that:
+--
+-- > index === index'
+writeIndex :: MonadMask m
+           => HasFS m
+           -> FsPath
+           -> Epoch
+           -> Index
+           -> m ()
+writeIndex hasFS@HasFS{..} dbFolder epoch (MkIndex offsets) = do
+    let indexFile = dbFolder <> renderFile "index" epoch
+    withFile hasFS indexFile AppendMode $ \iHnd -> do
+      -- NOTE: open it in AppendMode and truncate it first, otherwise we might
+      -- just overwrite part of the data stored in the index file.
+      void $ hTruncate iHnd 0
+      void $ hPut iHnd $ V.foldl'
+        (\acc offset -> acc <> encodeIndexEntry offset) mempty offsets
+  -- TODO efficient enough?
+
+-- | Write a non-empty list of 'SlotOffset's to an index file.
+--
+-- Property: for @hasFS@, @dbFolder@, @epoch@, and @offsets@:
+--
+-- > 'writeSlotOffsets' hasFS dbFolder epoch offsets
+-- > index <- loadIndex hasFS dbFolder epoch
 --
 -- Then it must be that:
 --
@@ -117,7 +152,7 @@ indexToSlotOffsets (MkIndex offsets)
   | otherwise
   = 0 NE.:| []
 
--- | Return the 'SlotOffset' of the last slot in the index file.
+-- | Return the last 'SlotOffset' in the index file.
 lastSlotOffset :: Index -> SlotOffset
 lastSlotOffset (MkIndex offsets)
   | V.null offsets = 0
@@ -126,7 +161,7 @@ lastSlotOffset (MkIndex offsets)
 -- | Check whether the given slot is within the index.
 containsSlot :: Index -> RelativeSlot -> Bool
 containsSlot (MkIndex offsets) (RelativeSlot slot) =
-  fromIntegral slot < V.length offsets - 1
+  slot < fromIntegral (V.length offsets) - 1
 
 -- | Return the offset for the given slot is filled.
 --
@@ -206,3 +241,16 @@ filledSlots index = go (firstFilledSlot index)
   where
     go Nothing     = []
     go (Just slot) = slot : go (nextFilledSlot index slot)
+
+-- | Return the last filled slot in the index.
+lastFilledSlot :: Index -> Maybe RelativeSlot
+lastFilledSlot = lastMaybe . filledSlots
+-- TODO optimise
+
+-- | Check if the first 'Index' is a prefix of the second 'Index'.
+isPrefixOf :: Index -> Index -> Bool
+isPrefixOf (MkIndex pre) (MkIndex offsets)
+    | V.length pre > V.length offsets
+    = False
+    | otherwise
+    = V.and $ V.zipWith (==) pre offsets

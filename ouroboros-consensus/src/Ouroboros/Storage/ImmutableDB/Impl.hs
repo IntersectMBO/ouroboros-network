@@ -1,7 +1,8 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE TupleSections       #-}
 -- | Immutable on-disk database of binary blobs
 --
 -- = Logical format
@@ -94,26 +95,19 @@
 --
 -- You can use 'isOpen' to check whether a database is open or closed.
 --
--- = (Re)opening the database
---
--- The database can be closed and reopened. However, you cannot reopen the
--- database on a finalised epoch. It is possible to reopen the same epoch the
--- database was appending to the last time it was open. It is not allowed to
--- skip epochs when reopening the database. When opening a database, an error
--- will be thrown if any of the files corresponding to past epochs are
--- missing.
---
--- TODO replace the current 'openDB' with a function to reopen the database at
--- the right place, i.e. the last epoch, looking at the files on disk.
---
---
 -- = Errors
 --
--- Whenever a 'FileSystemError' is thrown during a write operation
+-- Whenever an 'UnexpectedError' is thrown during a write operation
 -- ('appendBinaryBlob', 'startNewEpoch'), the database will be automatically
 -- closed because we can not guarantee a consistent state in the face of file
--- system errors. TODO which guarantees TODO validation + reopen.
+-- system errors. See the 'reopen' operation and the paragraph below about
+-- reopening the database for more information.
 --
+-- = (Re)opening the database
+--
+-- The database can be closed and reopened. In case the database was closed
+-- because of an unexpected error, the same database can be reopened again
+-- with 'reopen' using a 'RecoveryPolicy'.
 --
 -- = Concurrency
 --
@@ -196,24 +190,26 @@
 -- may be reopened on the same epoch to continue appending to it.
 --
 module Ouroboros.Storage.ImmutableDB.Impl
-  ( -- * Opening a database
-    openDB
+  ( openDB, lastEpochOnDisk, openLastEpoch
   ) where
 
-import           Control.Monad (forM_, unless, when, zipWithM_)
-import           Control.Monad.Catch (ExitCase (..), MonadMask, generalBracket)
-import           Control.Monad.Class.MonadSTM (MonadSTM (..))
+import           Control.Exception (assert)
+import           Control.Monad (when, unless, mplus, foldM, forM_, zipWithM_)
+import           Control.Monad.Catch (MonadMask, ExitCase(..), generalBracket)
+import           Control.Monad.Class.MonadSTM (MonadSTM(..))
 
+import           Data.Bifunctor (first)
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString.Builder as BS
 import qualified Data.ByteString.Lazy as BL
+import           Data.Either (isRight)
 import           Data.Function (on)
-import           Data.List (isSuffixOf)
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import           Data.Map (Map)
 import qualified Data.Map as Map
-import           Data.Maybe (isJust)
+import           Data.Maybe (fromMaybe, isJust, mapMaybe)
+import           Data.Set (Set)
 import qualified Data.Set as Set
 
 import           GHC.Stack (HasCallStack, callStack)
@@ -237,7 +233,7 @@ import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
 -- | An opaque handle to an immutable database of binary blobs.
 data ImmutableDBHandle m = ImmutableDBHandle
-    { _dbInternalState :: !(TMVar m (Maybe (InternalState m)))
+    { _dbInternalState :: !(TMVar m (Either ClosedState (OpenState m)))
     , _dbFolder        :: !FsPath
     }
 
@@ -245,7 +241,8 @@ data ImmutableDBHandle m = ImmutableDBHandle
 instance Eq (ImmutableDBHandle m) where
   (==) = (==) `on` _dbFolder
 
-data InternalState m = InternalState
+-- | Internal state when the database is open.
+data OpenState m = OpenState
     { _currentEpoch             :: !Epoch
     -- ^ The current 'Epoch' the immutable store is writing into.
     , _currentEpochWriteHandle  :: !(FsHandle m)
@@ -268,35 +265,54 @@ data InternalState m = InternalState
     -- ^ The ID of the next iterator that will be created.
     }
 
+
+-- | Internal state when the database is closed. This contains data that
+-- should be restored when the database is reopened. Data not present here
+-- will be recovered when reopening.
+data ClosedState = ClosedState
+    { _closedEpochSizes     :: !(Map Epoch EpochSize)
+    -- ^ See '_epochSizes'.
+    , _closedNextIteratorID :: !IteratorID
+    -- ^ See '_nextIteratorID'.
+    , _closedLastEpoch      :: !Epoch
+    -- ^ See '_currentEpoch'.
+    }
+
 {------------------------------------------------------------------------------
   ImmutableDB API
 ------------------------------------------------------------------------------}
 
 -- | Open the database, creating it from scratch if the 'FsPath' points to a
--- non-existing directory.
+-- non-existing directory or reopening an existing one using the given
+-- 'RecoveryPolicy'.
+--
+-- In addition to the database, the 'EpochSlot' of the last blob stored in it
+-- is returned, or 'Nothing' in case the database is empty.
 --
 -- A 'Map' with the size for each epoch (the past epochs and the most recent
--- one) must be passed. When a size is missing for an epoch, a
+-- one) must be passed. When a size is missing for an epoch present on disk, a
 -- 'MissingEpochSizeError' error will be thrown.
 --
 -- The given 'Epoch' is opened for appending. If the given epoch was
--- previously finalised, an 'OpenFinalisedEpochError' error will be thrown. If
--- the epoch is not the first epoch (0), all previous epoch files must be
--- present on disk and have complete indices (excluding the opened epoch). If
--- an epoch or index file is missing, a 'MissingFileError' is thrown. The
--- actual contents of the epoch and index files are not checked.
+-- previously finalised, i.e. there are files corresponding to later epochs,
+-- an 'OpenFinalisedEpochError' error will be thrown, unless the
+-- 'RestoreLastValidEpoch' recovery policy is used.
+--
+-- See 'RecoveryPolicy' for more details on the different policies.
 --
 -- __Note__: To be used in conjunction with 'withDB'.
 openDB :: (HasCallStack, MonadSTM m, MonadMask m)
        => HasFS m
        -> ErrorHandling ImmutableDBError m
-       -> FsPath -> Epoch -> Map Epoch EpochSize
-       -> m (ImmutableDB m)
-openDB hasFS err dbFolder epoch epochSizes = do
-    dbh <- openDBImpl hasFS err dbFolder epoch epochSizes
-    return ImmutableDB
+       -> FsPath -> Epoch -> Map Epoch EpochSize -> RecoveryPolicy e m
+       -> m (ImmutableDB m, Maybe EpochSlot)
+openDB hasFS err dbFolder epoch epochSizes recPol = do
+    (dbh, lastBlobLocation) <-
+      openDBImpl hasFS err dbFolder epoch epochSizes recPol
+    return $ (, lastBlobLocation) $ ImmutableDB
       { closeDB           = closeDBImpl           hasFS     dbh
       , isOpen            = isOpenImpl                      dbh
+      , reopen            = reopenImpl            hasFS err dbh
       , getNextEpochSlot  = getNextEpochSlotImpl        err dbh
       , getBinaryBlob     = getBinaryBlobImpl     hasFS err dbh
       , appendBinaryBlob  = appendBinaryBlobImpl  hasFS err dbh
@@ -305,103 +321,132 @@ openDB hasFS err dbFolder epoch epochSizes = do
       , immutableDBErr    = err
       }
 
+-- | Return the last epoch for which a file is stored on disk.
+--
+-- The file(s) in question are not checked, they might be empty or invalid.
+lastEpochOnDisk :: (HasCallStack, Monad m)
+                => HasFS m
+                -> FsPath
+                -> m (Maybe Epoch)
+lastEpochOnDisk HasFS{..} dbFolder = do
+    filesInDBFolder <- listDirectory dbFolder
+    return $ case mapMaybe extractEpochNumber $ Set.toList filesInDBFolder of
+      [] -> Nothing
+      epochs  -> Just $ maximum epochs
+  where
+    extractEpochNumber :: String -> Maybe Epoch
+    extractEpochNumber s = do
+      ("epoch", epoch) <- parseDBFile s
+      return epoch
+
+-- | Open the database at the last epoch on disk.
+--
+-- Combination of 'openDB' and 'lastEpochOnDisk'.
+openLastEpoch :: (HasCallStack, MonadSTM m, MonadMask m)
+              => HasFS m
+              -> ErrorHandling ImmutableDBError m
+              -> FsPath -> Map Epoch EpochSize -> RecoveryPolicy e m
+              -> m (ImmutableDB m, Maybe EpochSlot)
+openLastEpoch hasFS err dbFolder epochSizes recPol = do
+    epochToOpen <- fromMaybe 0 <$> lastEpochOnDisk hasFS dbFolder
+    openDB hasFS err dbFolder epochToOpen epochSizes recPol
+
 {------------------------------------------------------------------------------
   ImmutableDB Implementation
 ------------------------------------------------------------------------------}
 
-openDBImpl :: forall m. (HasCallStack, MonadSTM m, MonadMask m)
+openDBImpl :: forall m e. (HasCallStack, MonadSTM m, MonadMask m)
            => HasFS m
            -> ErrorHandling ImmutableDBError m
            -> FsPath
            -> Epoch
            -> Map Epoch EpochSize
-           -> m (ImmutableDBHandle m)
-openDBImpl hasFS@HasFS{..} err dbFolder currentEpoch epochSizes = do
-    checkEpochSizes
-    filesInDBFolder <- do
-      createDirectoryIfMissing True dbFolder
-      Set.toList <$> listDirectory dbFolder
-    let datFiles = filter (".dat" `isSuffixOf`) filesInDBFolder
-    checkEpochConsistency datFiles
-    checkPreviousEpochs datFiles
-    case currentEpoch of
-      -- If it is the first epoch, just open it
-      0 -> do
-        st <- mkInternalState hasFS err dbFolder 0 epochSizes initialIteratorId
-        stVar <- atomically $ newTMVar (Just st)
-        return $ ImmutableDBHandle stVar dbFolder
+           -> RecoveryPolicy e m
+           -> m (ImmutableDBHandle m, LastBlobLocation)
+openDBImpl hasFS@HasFS{..} err dbFolder epoch epochSizes recPol = do
+    createDirectoryIfMissing True dbFolder
+    checkEpochSizes epoch
+    (epochToOpen, mbLastBlobLocation) <-
+      recovery hasFS err dbFolder epoch epochSizes recPol
 
-      -- If it is not the first epoch, first open the previous epoch and
-      -- finalise it using 'startNewEpochImpl'.
-      _ -> do
-        st <- mkInternalState hasFS err dbFolder (currentEpoch - 1) epochSizes
-                initialIteratorId
-        stVar <- atomically $ newTMVar (Just st)
-        let db = ImmutableDBHandle stVar dbFolder
-        epochSize <- lookupEpochSize err currentEpoch epochSizes
-        _newEpoch <- startNewEpochImpl hasFS err db epochSize
-        return db
+    st <- mkOpenState hasFS err dbFolder epochToOpen epochSizes initialIteratorId
+
+    stVar <- atomically $ newTMVar (Right st)
+    let db = ImmutableDBHandle stVar dbFolder
+    case mbLastBlobLocation of
+      Just lastBlobLocation -> return (db, lastBlobLocation)
+      Nothing               -> (db,) <$> lastBlobInDB hasFS st dbFolder
   where
-    -- | Check that each @epoch, epoch <= 'currentEpoch'@ is present in
+    -- | Check that each @epoch, epoch <= epochToOpen@ is present in
     -- 'epochSizes'. Report the first missing one starting from epoch 0.
-    checkEpochSizes :: HasCallStack => m ()
-    checkEpochSizes = zipWithM_
+    checkEpochSizes :: HasCallStack => Epoch -> m ()
+    checkEpochSizes epochToOpen = zipWithM_
       (\expected mbActual ->
         case mbActual of
           Just actual | actual == expected -> return ()
           _ -> throwUserError err $ MissingEpochSizeError expected)
-      [0..currentEpoch]
+      [0..epochToOpen]
       -- Pad with 'Nothing's to stop early termination of 'zipWithM_'
       (map (Just . fst) (Map.toAscList epochSizes) ++ repeat Nothing)
-
-    -- | Check that there is no newer epoch than the one we're opening
-    checkEpochConsistency :: HasCallStack => [String] -> m ()
-    checkEpochConsistency = mapM_ $ \name -> case parseEpochNumber name of
-      Just n | n > currentEpoch ->
-        throwUserError err $ OpenFinalisedEpochError currentEpoch n
-      _ -> return ()
-
-    -- | Check if all previous epochs have index and epoch files.
-    checkPreviousEpochs :: HasCallStack
-                        => [String] -> m ()
-    checkPreviousEpochs datFiles = do
-      let fileSet = Set.fromList datFiles
-      forM_ (Map.toAscList epochSizes) $ \(epoch, _epochSize) ->
-        -- checkEpochConsistency has already checked that there are no files
-        -- for a later epoch. This check just excludes the current epoch file,
-        -- which can be new and may not exist on disk.
-        when (epoch < currentEpoch) $ do
-          let epochFile = renderFile "epoch" epoch
-              indexFile = renderFile "index" epoch
-          when (head epochFile `Set.notMember` fileSet) $
-            throwUnexpectedError err $ MissingFileError epochFile callStack
-          when (head indexFile `Set.notMember` fileSet) $
-            throwUnexpectedError err $ MissingFileError indexFile callStack
 
 closeDBImpl :: (HasCallStack, MonadSTM m, MonadMask m)
             => HasFS m
             -> ImmutableDBHandle m
             -> m ()
 closeDBImpl hasFS@HasFS{..} ImmutableDBHandle {..} = do
-    mbInternalState <- atomically $ swapTMVar _dbInternalState Nothing
-    case mbInternalState of
+    internalState <- atomically $ takeTMVar _dbInternalState
+    case internalState of
       -- Already closed
-      Nothing -> return ()
-      Just InternalState {..} -> do
+      Left  _ -> atomically $ putTMVar _dbInternalState internalState
+      Right OpenState {..} -> do
+        let closedState = closedStateFromInternalState internalState
+        -- Close the database before doing the file-system operations so that
+        -- in case these fail, we don't leave the database open.
+        atomically $ putTMVar _dbInternalState (Left closedState)
         hClose _currentEpochWriteHandle
         -- Also write an index file of the current (possible incomplete) epoch
         writeSlotOffsets hasFS _dbFolder _currentEpoch _currentEpochOffsets
 
 isOpenImpl :: MonadSTM m => ImmutableDBHandle m -> m Bool
 isOpenImpl ImmutableDBHandle {..} =
-    isJust <$> atomically (readTMVar _dbInternalState)
+    isRight <$> atomically (readTMVar _dbInternalState)
+
+
+-- Note that recovery will stop when an 'FsError' is thrown, as usual.
+reopenImpl :: forall m e. (HasCallStack, MonadSTM m, MonadMask m)
+           => HasFS m
+           -> ErrorHandling ImmutableDBError m
+           -> ImmutableDBHandle m
+           -> RecoveryPolicy e m
+           -> m LastBlobLocation
+reopenImpl hasFS@HasFS{..} err@ErrorHandling{..} ImmutableDBHandle{..} recPol = do
+    internalState <- atomically $ takeTMVar _dbInternalState
+    (openState, mbLastBlobLocation) <- case internalState of
+      -- When still open,
+      Right ost -> do
+        -- Put the state back and do nothing
+        atomically $ putTMVar _dbInternalState internalState
+        return (ost, Nothing)
+      Left ClosedState {..} -> do
+        (epochToReopen, mbLastBlobLocation) <-
+          recovery hasFS err _dbFolder _closedLastEpoch _closedEpochSizes recPol
+        -- TODO the index file is opened again by 'mkOpenState' after we have
+        -- already opened it in 'recovery'. Should we avoid try to avoid this?
+        newOpenState <- mkOpenState hasFS err _dbFolder epochToReopen
+                          _closedEpochSizes _closedNextIteratorID
+        atomically $ putTMVar _dbInternalState (Right newOpenState)
+        return (newOpenState, mbLastBlobLocation)
+    case mbLastBlobLocation of
+      Just lastBlobLocation -> return lastBlobLocation
+      Nothing               -> lastBlobInDB hasFS openState _dbFolder
+
 
 getNextEpochSlotImpl :: (HasCallStack, MonadSTM m)
                      => ErrorHandling ImmutableDBError m
                      -> ImmutableDBHandle m
                      -> m EpochSlot
 getNextEpochSlotImpl err db@ImmutableDBHandle {..} = do
-    InternalState {..} <- getInternalState err db
+    OpenState {..} <- getOpenState err db
     return $ EpochSlot _currentEpoch _nextExpectedRelativeSlot
 
 getBinaryBlobImpl
@@ -413,7 +458,7 @@ getBinaryBlobImpl
   -> m (Maybe ByteString)
 getBinaryBlobImpl hasFS@HasFS{..} err db@ImmutableDBHandle {..} readEpochSlot = do
     let EpochSlot epoch relativeSlot = readEpochSlot
-    InternalState {..} <- getInternalState err db
+    OpenState {..} <- getOpenState err db
 
     -- Check if the requested slot is not in the future.
     let nextExpectedEpochSlot =
@@ -443,14 +488,15 @@ getBinaryBlobImpl hasFS@HasFS{..} err db@ImmutableDBHandle {..} readEpochSlot = 
             (offsetAfter:offset:_) -> return (offset, offsetAfter - offset)
             _ -> error "impossible: _currentEpochOffsets out of sync"
           where
-            toDrop = fromEnum lastSlot - fromEnum relativeSlot
+            toDrop = fromEnum (lastSlot - relativeSlot)
             lastSlot = _nextExpectedRelativeSlot - 1
 
       -- Otherwise, the offsets will have to be read from an index file
       False -> withFile hasFS indexFile ReadMode $ \iHnd -> do
         -- Grab the offset in bytes of the requested slot.
-        let indexSeekPosition = fromEnum relativeSlot * indexEntrySizeBytes
-        hSeek iHnd AbsoluteSeek (toEnum indexSeekPosition)
+        let indexSeekPosition = fromIntegral (getRelativeSlot relativeSlot)
+                              * fromIntegral indexEntrySizeBytes
+        hSeek iHnd AbsoluteSeek indexSeekPosition
         -- Compute the offset on disk and the blob size.
         let nbBytesToGet = indexEntrySizeBytes * 2
         -- Note the use of hGetRightSize: we must get enough bytes from the
@@ -482,8 +528,8 @@ appendBinaryBlobImpl :: (HasCallStack, MonadSTM m, MonadMask m)
                      -> RelativeSlot
                      -> BS.Builder
                      -> m ()
-appendBinaryBlobImpl HasFS{..} err db relativeSlot builder =
-    modifyInternalState err db $ \st@InternalState {..} -> do
+appendBinaryBlobImpl hasFS@HasFS{..} err db relativeSlot builder =
+    modifyOpenState hasFS err db $ \st@OpenState {..} -> do
       let eHnd = _currentEpochWriteHandle
 
       -- Check that the slot is >= the expected next slot and thus not in the
@@ -528,8 +574,8 @@ startNewEpochImpl :: (HasCallStack, MonadSTM m, MonadMask m)
                   -> ImmutableDBHandle m
                   -> EpochSize
                   -> m Epoch
-startNewEpochImpl hasFS@HasFS{..} err db newEpochSize = modifyInternalState err db $ \st -> do
-    let InternalState {..} = st
+startNewEpochImpl hasFS@HasFS{..} err db newEpochSize = modifyOpenState hasFS err db $ \st -> do
+    let OpenState {..} = st
 
     -- We can close the epoch file
     hClose _currentEpochWriteHandle
@@ -556,7 +602,7 @@ startNewEpochImpl hasFS@HasFS{..} err db newEpochSize = modifyInternalState err 
 
     let newEpoch      = succ _currentEpoch
         newEpochSizes = Map.insert newEpoch newEpochSize _epochSizes
-    newState <- mkInternalState
+    newState <- mkOpenState
                   hasFS
                   err
                   (_dbFolder db)
@@ -609,100 +655,129 @@ streamBinaryBlobsImpl :: forall m
                       => HasFS m
                       -> ErrorHandling ImmutableDBError m
                       -> ImmutableDBHandle m
-                      -> EpochSlot  -- ^ When to start streaming (inclusive).
-                      -> EpochSlot  -- ^ When to stop streaming (inclusive).
+                      -> Maybe EpochSlot  -- ^ When to start streaming (inclusive).
+                      -> Maybe EpochSlot  -- ^ When to stop streaming (inclusive).
                       -> m (Iterator m)
-streamBinaryBlobsImpl hasFS@HasFS{..} err db@ImmutableDBHandle {..} start end = do
-    InternalState {..} <- getInternalState err db
-    let EpochSlot startEpoch startSlot = start
-        nextExpectedEpochSlot =
+streamBinaryBlobsImpl hasFS@HasFS{..} err db@ImmutableDBHandle {..} mbStart mbEnd = do
+    OpenState {..} <- getOpenState err db
+    let nextExpectedEpochSlot =
           EpochSlot _currentEpoch _nextExpectedRelativeSlot
 
-    validateIteratorRange err nextExpectedEpochSlot _epochSizes start end
+    validateIteratorRange err nextExpectedEpochSlot
+      (\epoch -> lookupEpochSize err epoch _epochSizes) mbStart mbEnd
 
-    -- Helper function to open the index file of an epoch.
-    let openIndex epoch
-          | epoch == _currentEpoch
-          = return $ indexFromSlotOffsets _currentEpochOffsets
-          | otherwise
-          = do
-            index <- loadIndex hasFS _dbFolder epoch
-            unless (isValidIndex index) $
-              throwUnexpectedError err $
-                InvalidFileError
-                  (_dbFolder <> renderFile "index" epoch)
-                  callStack
-            return index
+    -- If the database is empty, just return an empty iterator (directly
+    -- exhausted)
+    if nextExpectedEpochSlot == EpochSlot 0 0
+    then mkEmptyIterator
+    else do
 
-    startIndex <- openIndex startEpoch
+      -- Fill in missing bounds
+      lastAppendedSlot <- case nextExpectedEpochSlot of
+        -- EpochSlot 0 0 is already handled before, so we can ignore it.
+        EpochSlot epoch 0 -> do
+          epochSize <- lookupEpochSize err (epoch - 1) _epochSizes
+          return $ EpochSlot (epoch - 1) (fromIntegral epochSize - 1)
+        EpochSlot epoch relSlot ->
+          return $ EpochSlot epoch (pred relSlot)
+      let start = fromMaybe (EpochSlot 0 0) mbStart
+          EpochSlot startEpoch startSlot = start
+          end = fromMaybe lastAppendedSlot mbEnd
 
-    -- Check if the index slot is filled, otherwise find the next filled
-    -- one. If there is none in this epoch, open the next epoch until you
-    -- find one. If we didn't find a filled slot before reaching 'end',
-    -- return Nothing.
-    mbIndexAndNext <- case containsSlot startIndex startSlot &&
-                           isFilledSlot startIndex startSlot of
-      -- The above 'containsSlot' condition is needed because we do not know
-      -- whether the index has the right size.
-      True  -> return $ Just (startIndex, start)
-      False -> case nextFilledSlot startIndex startSlot of
-        Just slot
-          -- There is a filled slot, but we've gone too far
-          | EpochSlot startEpoch slot > end -> return Nothing
-          -- There is a filled slot after startSlot in this epoch
-          | otherwise -> return $ Just (startIndex, EpochSlot startEpoch slot)
-        -- No filled slot in the start epoch, open the next
-        Nothing -> lookInLaterEpochs (startEpoch + 1)
-          where
-            lookInLaterEpochs epoch
-              -- Because we have checked that end is valid, this check is
-              -- enough to guarantee that we will never open an epoch in the
-              -- future
-              | epoch > _epoch end = return Nothing
-              | otherwise = do
-                index <- openIndex epoch
-                case firstFilledSlot index of
-                  Just slot
-                    -- We've gone too far
-                    | EpochSlot epoch slot > end -> return Nothing
-                    | otherwise -> return $ Just (index, EpochSlot epoch slot)
-                  Nothing -> lookInLaterEpochs (epoch + 1)
+      -- Helper function to open the index file of an epoch.
+      let openIndex epoch
+            | epoch == _currentEpoch
+            = return $ indexFromSlotOffsets _currentEpochOffsets
+            | otherwise
+            = do
+              index <- loadIndex hasFS _dbFolder epoch
+              unless (isValidIndex index) $
+                throwUnexpectedError err $
+                  InvalidFileError
+                    (_dbFolder <> renderFile "index" epoch)
+                    callStack
+              return index
 
-    mbIteratorState <- case mbIndexAndNext of
-      -- No filled slot found, so just create a closed iterator
-      Nothing -> return Nothing
-      Just (index, next@(EpochSlot nextEpoch nextSlot)) -> do
-        -- Invariant 1 = OK by the search above for a filled slot
+      startIndex <- openIndex startEpoch
 
-        eHnd <- hOpen (_dbFolder <> renderFile "epoch" nextEpoch) ReadMode
-        -- Invariant 2 = OK
+      -- Check if the index slot is filled, otherwise find the next filled
+      -- one. If there is none in this epoch, open the next epoch until you
+      -- find one. If we didn't find a filled slot before reaching 'end',
+      -- return Nothing.
+      mbIndexAndNext <- case containsSlot startIndex startSlot &&
+                             isFilledSlot startIndex startSlot of
+        -- The above 'containsSlot' condition is needed because we do not know
+        -- whether the index has the right size.
+        True  -> return $ Just (startIndex, start)
+        False -> case nextFilledSlot startIndex startSlot of
+          Just slot
+            -- There is a filled slot, but we've gone too far
+            | EpochSlot startEpoch slot > end -> return Nothing
+            -- There is a filled slot after startSlot in this epoch
+            | otherwise -> return $ Just (startIndex, EpochSlot startEpoch slot)
+          -- No filled slot in the start epoch, open the next
+          Nothing -> lookInLaterEpochs (startEpoch + 1)
+            where
+              lookInLaterEpochs epoch
+                -- Because we have checked that end is valid, this check is
+                -- enough to guarantee that we will never open an epoch in the
+                -- future
+                | epoch > _epoch end = return Nothing
+                | otherwise = do
+                  index <- openIndex epoch
+                  case firstFilledSlot index of
+                    Just slot
+                      -- We've gone too far
+                      | EpochSlot epoch slot > end -> return Nothing
+                      | otherwise -> return $ Just (index, EpochSlot epoch slot)
+                    Nothing -> lookInLaterEpochs (epoch + 1)
 
-        -- Invariant 3 = OK by the search above for a filled slot
+      mbIteratorState <- case mbIndexAndNext of
+        -- No filled slot found, so just create a closed iterator
+        Nothing -> return Nothing
+        Just (index, next@(EpochSlot nextEpoch nextSlot)) -> do
+          -- Invariant 1 = OK by the search above for a filled slot
 
-        -- Position the epoch handle at the right place. Invariant 4 = OK
-        hSeek eHnd AbsoluteSeek (fromIntegral (offsetOfSlot index nextSlot))
+          eHnd <- hOpen (_dbFolder <> renderFile "epoch" nextEpoch) ReadMode
+          -- Invariant 2 = OK
 
-        return $ Just IteratorState
-          { _it_next = next
-          , _it_epoch_handle = eHnd
-          , _it_epoch_index = index
-          }
+          -- Invariant 3 = OK by the search above for a filled slot
 
-    itState <- atomically $ newTVar mbIteratorState
+          -- Position the epoch handle at the right place. Invariant 4 = OK
+          hSeek eHnd AbsoluteSeek (fromIntegral (offsetOfSlot index nextSlot))
 
-    let ith = IteratorHandle
-          { _it_state = itState
-          , _it_end   = end
-          }
-    -- Safely increment '_nextIteratorID' in the 'InternalState'.
-    modifyInternalState err db $ \st@InternalState {..} ->
-      let it = Iterator
-            { iteratorNext  = iteratorNextImpl  hasFS err db ith
-            , iteratorClose = iteratorCloseImpl hasFS        ith
-            , iteratorID    = _nextIteratorID
+          return $ Just IteratorState
+            { _it_next = next
+            , _it_epoch_handle = eHnd
+            , _it_epoch_index = index
             }
-          st' = st { _nextIteratorID = succ _nextIteratorID }
-      in return (st', it)
+
+      itState <- atomically $ newTVar mbIteratorState
+
+      let ith = IteratorHandle
+            { _it_state = itState
+            , _it_end   = end
+            }
+      -- Safely increment '_nextIteratorID' in the 'OpenState'.
+      modifyOpenState hasFS err db $ \st@OpenState {..} ->
+        let it = Iterator
+              { iteratorNext  = iteratorNextImpl  hasFS err db ith
+              , iteratorClose = iteratorCloseImpl hasFS        ith
+              , iteratorID    = _nextIteratorID
+              }
+            st' = st { _nextIteratorID = succ _nextIteratorID }
+        in return (st', it)
+  where
+    mkEmptyIterator :: m (Iterator m)
+    mkEmptyIterator =
+      modifyOpenState hasFS err db $ \st@OpenState {..} ->
+        let it = Iterator
+              { iteratorNext  = return IteratorExhausted
+              , iteratorClose = return ()
+              , iteratorID    = _nextIteratorID
+              }
+            st' = st { _nextIteratorID = succ _nextIteratorID }
+        in return (st', it)
 
 iteratorNextImpl :: forall m. (HasCallStack, MonadSTM m, MonadMask m)
                  => HasFS m
@@ -761,14 +836,14 @@ iteratorNextImpl hasFS@HasFS{..} err db it@IteratorHandle {..} = do
         -- Epoch exhausted, open the next epoch
         Nothing -> do
           hClose eHnd
-          st <- getInternalState err db
+          st <- getOpenState err db
           openNextNonEmptyEpoch (epoch + 1) st
 
     -- Start opening epochs (starting from the given epoch number) until we
     -- encounter a non-empty one, then update the iterator state accordingly.
     -- If no non-empty epoch can be found, the iterator is closed.
-    openNextNonEmptyEpoch :: Epoch -> InternalState m -> m ()
-    openNextNonEmptyEpoch epoch st@InternalState {..}
+    openNextNonEmptyEpoch :: Epoch -> OpenState m -> m ()
+    openNextNonEmptyEpoch epoch st@OpenState {..}
       | epoch > _epoch _it_end
       = iteratorCloseImpl hasFS it
       | otherwise = do
@@ -820,22 +895,24 @@ iteratorCloseImpl HasFS{..} IteratorHandle {..} = do
   Internal functions
 ------------------------------------------------------------------------------}
 
--- | Create the internal state based on a potentially empty epoch.
+
+-- | Create the internal open state based on a potentially empty epoch.
 --
 -- Open the epoch file for appending. If it already existed, the state is
 -- reconstructed from the index file on disk.
 --
 -- If the existing index file is invalid ('isValidIndex'), an
--- 'InvalidFileError' is thrown.
-mkInternalState :: (HasCallStack, MonadMask m)
-                => HasFS m
-                -> ErrorHandling ImmutableDBError m
-                -> FsPath
-                -> Epoch
-                -> Map Epoch EpochSize
-                -> IteratorID
-                -> m (InternalState m)
-mkInternalState hasFS@HasFS{..} err dbFolder epoch epochSizes nextIteratorID = do
+-- 'InvalidFileError' is thrown. If the size of the epoch file does not match
+-- the last offset in the index file, an 'InvalidFileError' is thrown.
+mkOpenState :: (HasCallStack, MonadMask m)
+            => HasFS m
+            -> ErrorHandling ImmutableDBError m
+            -> FsPath
+            -> Epoch
+            -> Map Epoch EpochSize
+            -> IteratorID
+            -> m (OpenState m)
+mkOpenState hasFS@HasFS{..} err dbFolder epoch epochSizes nextIteratorID = do
     let epochFile = dbFolder <> renderFile "epoch" epoch
         indexFile = dbFolder <> renderFile "index" epoch
     indexExists  <- doesFileExist indexFile
@@ -863,21 +940,27 @@ mkInternalState hasFS@HasFS{..} err dbFolder epoch epochSizes nextIteratorID = d
     let nextExpectedRelativeSlot :: RelativeSlot
         nextExpectedRelativeSlot = fromIntegral (length epochOffsets - 1)
     epochSize <- lookupEpochSize err epoch epochSizes
-    when (nextExpectedRelativeSlot >= fromIntegral epochSize) $
+    -- Note that when the file is finalised, 'nextExpectedRelativeSlot' will
+    -- be equal to 'epochSize'. This is valid, the user should call
+    -- 'startNewEpoch' with an epoch size.
+    when (nextExpectedRelativeSlot > fromIntegral epochSize) $
       throwUserError err $ SlotGreaterThanEpochSizeError
                              nextExpectedRelativeSlot
                              epoch
                              epochSize
 
     eHnd          <- hOpen epochFile AppendMode
-    epochFileSize <- hGetSize eHnd
+    -- If 'hGetSize' fails, 'hClose' the handle, otherwise we leave an open
+    -- handle lying around. This is particularly important for the state
+    -- machine tests.
+    epochFileSize <- EH.onException hasFsErr (hGetSize eHnd) (hClose eHnd)
 
     -- The last offset of the index file must match the epoch file size
     when (epochFileSize /= NE.head epochOffsets) $ do
       hClose eHnd
       throwUnexpectedError err $ InvalidFileError epochFile callStack
 
-    return InternalState
+    return OpenState
       { _currentEpoch             = epoch
       , _currentEpochWriteHandle  = eHnd
       , _currentEpochOffsets      = epochOffsets
@@ -886,19 +969,19 @@ mkInternalState hasFS@HasFS{..} err dbFolder epoch epochSizes nextIteratorID = d
       , _nextIteratorID           = nextIteratorID
       }
 
--- | Get the 'InternalState' of the given database, throw a 'ClosedDBError' in
+-- | Get the 'OpenState' of the given database, throw a 'ClosedDBError' in
 -- case it is closed.
-getInternalState :: (HasCallStack, MonadSTM m)
-                 => ErrorHandling ImmutableDBError m
-                 -> ImmutableDBHandle m
-                 -> m (InternalState m)
-getInternalState err ImmutableDBHandle {..} = do
-    mbInternalState <- atomically (readTMVar _dbInternalState)
-    case mbInternalState of
-       Nothing            -> throwUserError err ClosedDBError
-       Just internalState -> return internalState
+getOpenState :: (HasCallStack, MonadSTM m)
+             => ErrorHandling ImmutableDBError m
+             -> ImmutableDBHandle m
+             -> m (OpenState m)
+getOpenState err ImmutableDBHandle {..} = do
+    internalState <- atomically (readTMVar _dbInternalState)
+    case internalState of
+       Left  _         -> throwUserError err ClosedDBError
+       Right openState -> return openState
 
--- | Modify the internal state of the database.
+-- | Modify the internal state of an open database.
 --
 -- In case the database is closed, a 'ClosedDBError' is thrown.
 --
@@ -912,12 +995,13 @@ getInternalState err ImmutableDBHandle {..} = do
 --
 -- TODO(adn): we should really just use 'MVar' rather than 'TMVar', but we
 -- currently don't have a simulator for code using 'MVar'.
-modifyInternalState :: forall m r. (HasCallStack, MonadSTM m, MonadMask m)
-                    => ErrorHandling ImmutableDBError m
-                    -> ImmutableDBHandle m
-                    -> (InternalState m -> m (InternalState m, r))
-                    -> m r
-modifyInternalState err@ErrorHandling{..} ImmutableDBHandle {..} action = do
+modifyOpenState :: forall m r. (HasCallStack, MonadSTM m, MonadMask m)
+                => HasFS m
+                -> ErrorHandling ImmutableDBError m
+                -> ImmutableDBHandle m
+                -> (OpenState m -> m (OpenState m, r))
+                -> m r
+modifyOpenState HasFS{..} err@ErrorHandling{..} ImmutableDBHandle {..} action = do
     (mr, ()) <- generalBracket open close (EH.try err . mutation)
     case mr of
       Left  e      -> throwError e
@@ -927,31 +1011,361 @@ modifyInternalState err@ErrorHandling{..} ImmutableDBHandle {..} action = do
     -- so that 'close' knows which error is thrown (@Either e (s, r)@ vs. @(s,
     -- r)@).
 
-    open :: m (Maybe (InternalState m))
+    open :: m (Either ClosedState (OpenState m))
     open = atomically $ takeTMVar _dbInternalState
 
-    close :: Maybe (InternalState m)
-          -> ExitCase (Either ImmutableDBError (InternalState m, r))
+    close :: Either ClosedState (OpenState m)
+          -> ExitCase (Either ImmutableDBError (OpenState m, r))
           -> m ()
-    close mbSt ec = atomically $ case ec of
-      -- Restore the original state in case of an abort or an exception
-      ExitCaseAbort         -> putTMVar _dbInternalState mbSt
-      ExitCaseException _ex -> putTMVar _dbInternalState mbSt
+    close st ec = case ec of
+      -- Restore the original state in case of an abort
+      ExitCaseAbort         -> atomically $ putTMVar _dbInternalState st
+      -- In case of an exception, most likely at the HasFS layer, close the DB
+      -- for safety.
+      ExitCaseException _ex -> do
+        atomically $ putTMVar _dbInternalState $
+          Left $ closedStateFromInternalState st
+        closeOpenHandles st
       -- In case of success, update to the newest state
-      ExitCaseSuccess (Right (st', _)) -> putTMVar _dbInternalState (Just st')
+      ExitCaseSuccess (Right (ost, _)) ->
+        atomically $ putTMVar _dbInternalState (Right ost)
       -- In case of an error (not an exception)
-      ExitCaseSuccess (Left (UnexpectedError {})) ->
+      ExitCaseSuccess (Left (UnexpectedError {})) -> do
         -- When unexpected, close the DB for safety
-        putTMVar _dbInternalState Nothing
+        atomically $ putTMVar _dbInternalState $
+          Left $ closedStateFromInternalState st
+        closeOpenHandles st
       ExitCaseSuccess (Left (UserError {})) ->
         -- When a user error, just restore the previous state
-        putTMVar _dbInternalState mbSt
+        atomically $ putTMVar _dbInternalState st
 
     mutation :: HasCallStack
-             => Maybe (InternalState m)
-             -> m (InternalState m, r)
-    mutation Nothing   = throwUserError err ClosedDBError
-    mutation (Just st) = action st
+             => Either ClosedState (OpenState m)
+             -> m (OpenState m, r)
+    mutation (Left _)    = throwUserError err ClosedDBError
+    mutation (Right ost) = action ost
+
+    -- TODO what if this fails?
+    closeOpenHandles :: Either ClosedState (OpenState m) -> m ()
+    closeOpenHandles (Left _) = return ()
+    closeOpenHandles (Right OpenState {..}) = hClose _currentEpochWriteHandle
+
+-- | Create a 'ClosedState' from an internal state, open or closed.
+closedStateFromInternalState :: Either ClosedState (OpenState m)
+                             -> ClosedState
+closedStateFromInternalState (Left cst) = cst
+closedStateFromInternalState (Right OpenState {..}) = ClosedState
+  { _closedEpochSizes     = _epochSizes
+  , _closedNextIteratorID = _nextIteratorID
+  , _closedLastEpoch      = _currentEpoch
+  }
+
+
+-- | The location of the last blob stored in the database. 'Nothing' in case
+-- the database stores no blobs, i.e. is empty.
+--
+-- This type synonyms is meant for internal used, mainly to avoid @'Maybe'
+-- ('Maybe' 'EpochSlot')@.
+type LastBlobLocation = Maybe EpochSlot
+
+-- | Return the 'EpochSlot' corresponding to the last blob stored in the
+-- database. When the database is empty, 'Nothing' is returned.
+--
+-- When the current epoch is still empty, opens the index of the previous
+-- epoch until a filled slot is found.
+lastBlobInDB :: forall m. (HasCallStack, MonadMask m)
+             => HasFS m
+             -> OpenState m
+             -> FsPath
+             -> m LastBlobLocation
+lastBlobInDB hasFS@HasFS{..} OpenState{..} dbFolder
+    | _nextExpectedRelativeSlot > 0
+    = return $ Just $ EpochSlot _currentEpoch (_nextExpectedRelativeSlot - 1)
+    | otherwise
+    = go _currentEpoch
+  where
+    -- | Open previous index files looking for the last filled slot.
+    -- Look at the epoch file /before/ the given epoch.
+    go :: Epoch -> m LastBlobLocation
+    go 0          = return Nothing
+    go epochAfter = do
+      let epoch = epochAfter - 1
+      index <- loadIndex hasFS dbFolder epoch
+      case lastFilledSlot index of
+        Just relSlot -> return $ Just $ EpochSlot epoch relSlot
+        Nothing      -> go epoch
+
+
+-- | Go through all files, making two sets: the set of epoch-xxx.dat
+-- files, and the set of index-xxx.dat files, discarding all others.
+dbFilesOnDisk :: Set String -> (Set Epoch, Set Epoch)
+dbFilesOnDisk = foldr categorise mempty
+  where
+    categorise file fs@(epochFiles, indexFiles) = case parseDBFile file of
+      Just ("epoch", n) -> (Set.insert n epochFiles, indexFiles)
+      Just ("index", n) -> (epochFiles, Set.insert n indexFiles)
+      _                 -> fs
+
+-- | Execute the 'RecoveryPolicy'.
+--
+-- Precondition: the size for each epoch <= the epoch to reopen must be
+-- present in the map of epoch sizes.
+recovery :: forall m e. (HasCallStack, MonadMask m)
+         => HasFS m
+         -> ErrorHandling ImmutableDBError m
+         -> FsPath -> Epoch -> Map Epoch EpochSize
+         -> RecoveryPolicy e m
+         -> m (Epoch, Maybe LastBlobLocation)
+            -- ^ The epoch to (re)open and the last block location if we know
+            -- it.
+recovery hasFS@HasFS{..} err dbFolder epochToReopen epochSizes recPol = do
+    filesInDBFolder <- listDirectory dbFolder
+    let (epochFiles, indexFiles) = dbFilesOnDisk filesInDBFolder
+    case recPol of
+      NoValidation -> do
+        errorOnFilesStartingFrom (succ epochToReopen) epochFiles indexFiles
+        return (epochToReopen, Nothing)
+
+      ValidateMostRecentEpoch epochFileParser
+        | epochToReopen `Set.member`epochFiles -> do
+          -- Epoch file is on disk, so validate it
+          lastBlobLocation <- validateEpochs [epochToReopen] epochFileParser
+          errorOnFilesStartingFrom (succ epochToReopen) epochFiles indexFiles
+          -- When we found the lastBlobLocation, return it. If we didn't find
+          -- it, don't say the 'LastBlobLocation' is Nothing (= empty
+          -- database), because we didn't look at previous epochs. Just say we
+          -- don't know the 'LastBlobLocation'
+          return (epochToReopen, maybe Nothing (Just . Just) lastBlobLocation)
+
+        | otherwise -> do
+          -- No epoch file on disk to validate -> a fresh epoch.
+
+          -- When the index file exists, but the epoch file not, report that
+          -- the latter is missing.
+          let indexFile = dbFolder <> renderFile "index" epochToReopen
+              epochFile = dbFolder <> renderFile "epoch" epochToReopen
+          indexFileExists <- doesFileExist indexFile
+          when indexFileExists $
+            throwUnexpectedError err $ MissingFileError epochFile callStack
+
+          errorOnFilesStartingFrom (succ epochToReopen) epochFiles indexFiles
+          return (epochToReopen, Nothing)
+
+      ValidateAllEpochs epochFileParser -> do
+        lastBlobLocation <- validateEpochs [0..epochToReopen] epochFileParser
+        errorOnFilesStartingFrom (succ epochToReopen) epochFiles indexFiles
+        return (epochToReopen, Just lastBlobLocation)
+
+      RestoreToLastValidEpoch epochFileParser -> do
+        (freshEpochOrEpochToReopen, lastBlobLocation) <-
+           restoreToLastValidEpoch [0..epochToReopen] epochFileParser
+        -- When it's a fresh epoch, remove all files starting from that epoch
+        -- (inclusive), as a left-over index file may be lying around. When
+        -- reopening an epoch, remove all files starting from the next epoch.
+        removeFilesStartingFrom (either id succ freshEpochOrEpochToReopen)
+          epochFiles indexFiles
+        return (either id id freshEpochOrEpochToReopen, Just lastBlobLocation)
+
+  where
+    -- | Returns True when the epoch is finalised. If so, the epoch should not
+    -- be reopened, but the next \"fresh\" epoch (@epoch + 1@) should be
+    -- opened. Also returns the last slot stored in the epoch.
+    --
+    -- Precondition: the epoch file corresponding to the given epoch must
+    -- exist on disk.
+    --
+    -- The index file doesn't have to exist.
+    --
+    -- See inline comments for the exact validation/reparation that is
+    -- performed.
+    validateEpoch :: HasCallStack
+                  => Bool  -- ^ True = repair invalid/missing files, False =
+                           -- throw an error for invalid/missing files
+                  -> Epoch -> EpochFileParser e m (Int, RelativeSlot)
+                  -> m (Bool, Maybe RelativeSlot)
+    validateEpoch repair epoch epochFileParser = do
+      -- According to the precondition, this should never throw a
+      -- 'MissingEpochSizeError'.
+      epochSize <- lookupEpochSize err epoch epochSizes
+
+      let epochFile = dbFolder <> renderFile "epoch" epoch
+      (slotOffsets, mbErr) <- first reconstructSlotOffsets <$>
+        runEpochFileParser epochFileParser epochFile
+      let reconstructedIndex = indexFromSlotOffsets slotOffsets
+
+      -- When an error was reported, it means that the epoch file contained
+      -- some more data that could not be parsed.
+      when (isJust mbErr) $
+        if repair
+          -- Truncate the epoch to get rid of this extra data
+          then withFile hasFS epochFile AppendMode $ \eHnd ->
+                 hTruncate eHnd (NE.head slotOffsets)
+          else throwUnexpectedError err $ InvalidFileError epochFile callStack
+
+      -- Load a valid index file from disk
+      let indexFile = dbFolder <> renderFile "index" epoch
+      mbIndex <- do
+        indexFileExists <- doesFileExist indexFile
+        if indexFileExists
+          then do
+            index <- loadIndex hasFS dbFolder epoch
+            if isValidIndex index
+               && indexSlots index <= epochSize
+               -- Also check that the last offset in the index matches
+               -- that of the reconstructed index.
+               && lastSlotOffset index == NE.head slotOffsets
+              then return $ Just index
+              else if repair
+                then return Nothing
+                else throwUnexpectedError err $
+                     InvalidFileError indexFile callStack
+          else if repair
+            then return Nothing
+            else throwUnexpectedError err $ MissingFileError indexFile callStack
+
+      case mbIndex of
+        -- When the index file on disk matches the reconstructed index, we
+        -- don't have to do anything.
+        Just index | index == reconstructedIndex ->
+          -- We assume the correctness of 'runEpochFileParser', which means
+          -- that @indexSlots reconstructedIndex@ can not be >
+          -- @lastEpochSize@. If this is violated, this will be caught by
+          -- 'mkOpenState' (called after this function) anyway, which will
+          -- throw a 'SlotGreaterThanEpochSizeError'.
+          return ( epochSize == indexSlots reconstructedIndex
+                 , lastFilledSlot reconstructedIndex)
+
+        -- A finalised epoch file might contain unfilled slots at the end,
+        -- which won't be present in the reconstructed index. The index file
+        -- on disk will know about these and will not match the reconstructed
+        -- index. In this case, we will believe the index file as long as the
+        -- reconstructed index is a prefix of the index file.
+        --
+        -- This case also covers a finalised empty epoch, which results in an
+        -- empty epoch file with a non-empty index file.
+        Just index
+          | reconstructedIndex `isPrefixOf` index
+          -> return (epochSize == indexSlots index, lastFilledSlot index)
+
+
+        -- The other cases are: no valid index file on disk or it doesn't
+        -- match the reconstructed index.
+        _ -> do
+          if repair
+            then writeIndex hasFS dbFolder epoch reconstructedIndex
+
+            -- We can get in this case if the index file on disk seems valid,
+            -- but the reconstructed index is not a prefix of it.
+            else throwUnexpectedError err $ InvalidFileError indexFile callStack
+          return ( epochSize == indexSlots reconstructedIndex
+                 , lastFilledSlot reconstructedIndex)
+
+    -- | Validate all the given epochs using 'validateEpoch'. Return the
+    -- location of the last blob stored in the epochs.
+    validateEpochs :: HasCallStack
+                   => [Epoch]
+                   -> EpochFileParser e m (Int, RelativeSlot)
+                   -> m LastBlobLocation
+    validateEpochs epochs epochFileParser = foldM go Nothing epochs
+      where
+        go :: LastBlobLocation -> Epoch -> m LastBlobLocation
+        go lastBlobLocation epoch = do
+          let epochFile = dbFolder <> renderFile "epoch" epoch
+          epochFileExists <- doesFileExist epochFile
+          if epochFileExists
+            then do
+              (_, mbLastFilledSlot) <- validateEpoch False epoch epochFileParser
+              return $ mplus (EpochSlot epoch <$> mbLastFilledSlot)
+                             lastBlobLocation
+            else throwUnexpectedError err $ MissingFileError epochFile callStack
+
+    -- | Validate and try to repair all files in the list of epochs. When an
+    -- epoch is encountered that is not yet finalised, reopen it.
+    --
+    --'Left': fresh epoch that has no corresponding files on disk, or
+    -- rather, it __may__ not have any.
+    --
+    -- 'Right': reopen an epoch that has an epoch file and a (possibly
+    -- reconstructed) index file on disk.
+    restoreToLastValidEpoch :: HasCallStack
+                            => [Epoch]
+                            -> EpochFileParser e m (Int, RelativeSlot)
+                            -> m (Either Epoch Epoch, LastBlobLocation)
+    restoreToLastValidEpoch epochs epochFileParser = go 0 Nothing epochs
+      where
+        go :: Epoch -> LastBlobLocation -> [Epoch]
+           -> m (Either Epoch Epoch, LastBlobLocation)
+        go prevEpoch lastBlobLocation [] =
+          return (Right prevEpoch, lastBlobLocation)
+        go _ lastBlobLocation (epoch:epochs') = do
+          let epochFile = dbFolder <> renderFile "epoch" epoch
+          epochFileExists <- doesFileExist epochFile
+          if not epochFileExists
+            -- If an epoch file is missing (and all the ones before it were
+            -- finalised), open this epoch file as a fresh one.
+            then return (Left epoch, lastBlobLocation)
+            else do
+              (isFinalised, mbLastFilledSlot) <-
+                validateEpoch True epoch epochFileParser
+              let lastBlobLocation' = mplus
+                    (EpochSlot epoch <$> mbLastFilledSlot) lastBlobLocation
+              if isFinalised
+                then go epoch lastBlobLocation' epochs'
+                else return (Right epoch, lastBlobLocation')
+
+    -- | Throw an 'InvalidFileError' for any epoch or index files on disk that
+    -- are from an epoch later than the given one. The two sets indicates
+    -- which epoch/index files are present on disk.
+    errorOnFilesStartingFrom :: HasCallStack
+                             => Epoch -> Set Epoch -> Set Epoch -> m ()
+    errorOnFilesStartingFrom epoch epochFiles indexFiles
+      | Just lastEpoch <- Set.lookupMax epochFiles
+      , lastEpoch > epoch
+      = throwUserError err $ OpenFinalisedEpochError epoch lastEpoch
+      | Just lastIndex <- Set.lookupMax indexFiles
+      , lastIndex > epoch
+      = throwUserError err $ OpenFinalisedEpochError epoch lastIndex
+      | otherwise
+      = return ()
+
+    -- | Remove all epoch and index starting from the given epoch (included).
+    -- The two sets indicates which epoch/index files are present on disk.
+    removeFilesStartingFrom :: Epoch -> Set Epoch -> Set Epoch -> m ()
+    removeFilesStartingFrom epoch epochFiles indexFiles = do
+        forM_ (takeWhile (>= epoch) (Set.toDescList epochFiles)) $ \e ->
+          removeFile (dbFolder <> renderFile "epoch" e)
+        forM_ (takeWhile (>= epoch) (Set.toDescList indexFiles)) $ \i ->
+          removeFile (dbFolder <> renderFile "index" i)
+
+-- | Given a list of increasing 'SlotOffset's together with the 'Int' (blob
+-- size) and 'RelativeSlot' corresponding to the offset, reconstruct a
+-- non-empty list of (decreasing) slot offsets.
+--
+-- The input list (typically returned by 'EpochFileParser') is assumed to be
+-- valid: __strictly__ monotonically increasing offsets as well as
+-- __strictly__ monotonically increasing relative slots.
+--
+-- The 'RelativeSlot's are used to detect empty/unfilled slots that will
+-- result in repeated offsets in the output, indicating that the size of the
+-- slot is 0.
+--
+-- The output list will always have 0 as last element.
+reconstructSlotOffsets :: [(SlotOffset, (Int, RelativeSlot))]
+                       -> NonEmpty SlotOffset
+reconstructSlotOffsets = go 0 [] 0
+  where
+    go :: SlotOffset
+       -> [SlotOffset]
+       -> RelativeSlot
+       -> [(SlotOffset, (Int, RelativeSlot))]
+       -> NonEmpty SlotOffset
+    go offsetAfterLast offsets expectedRelSlot ((offset, (len, relSlot)):olrs') =
+      assert (offsetAfterLast == offset) $
+      assert (relSlot >= expectedRelSlot) $
+      let backfill = indexBackfill relSlot expectedRelSlot offset
+      in go (offset + fromIntegral len) (offset : backfill <> offsets)
+            (succ relSlot) olrs'
+    go offsetAfterLast offsets _lastRelSlot [] = offsetAfterLast NE.:| offsets
 
 -- | Return the slots to backfill the index file with.
 --

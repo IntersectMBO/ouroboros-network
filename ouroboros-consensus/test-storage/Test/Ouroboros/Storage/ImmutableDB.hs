@@ -2,6 +2,7 @@
 {-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
+{-# OPTIONS_GHC -Wno-orphans   #-}
 module Test.Ouroboros.Storage.ImmutableDB (tests) where
 
 import           Control.Monad (void)
@@ -26,6 +27,9 @@ import           Data.Word (Word64)
 import qualified System.IO as IO
 
 import           Test.Ouroboros.Storage.ImmutableDB.Sim (demoScript)
+import qualified Test.Ouroboros.Storage.ImmutableDB.TestBlock as TestBlock
+import qualified Test.Ouroboros.Storage.ImmutableDB.StateMachine as StateMachine
+import qualified Test.Ouroboros.Storage.ImmutableDB.CumulEpochSizes as CumulEpochSizes
 import           Test.Ouroboros.Storage.Util
 import           Test.QuickCheck
 import           Test.QuickCheck.Monadic (monadicIO, pick, run)
@@ -57,18 +61,15 @@ tests = testGroup "ImmutableDB"
     , testProperty "append/get roundtrip" prop_appendAndGetRoundtrip
     , testProperty "Appending and getting to/from different slots" prop_appendAndGet
     , testCase     "AppendToSlotInThePastError equivalence" test_AppendToSlotInThePastErrorEquivalence
-    , testCase     "OpenFinalisedEpochError equivalence" test_OpenFinalisedEpochErrorEquivalence
     , testCase     "ReadFutureSlotError equivalence" test_ReadFutureSlotErrorEquivalence
     , testCase     "SlotGreaterThanEpochSizeError equivalence" test_SlotGreaterThanEpochSizeErrorEquivalence
       -- demoScript
     , testCase     "demoScript equivalence" test_demoSimEquivalence
     , testCase     "Check index file layout" test_index_layout
     , testCase     "Starting a new epoch pads the previous epoch's index" test_startNewEpochPadsTheIndexFile
-    , testCase     "Opening a DB with a missing epoch size gives an error" test_OpenDBMissingEpochSizeErrorEquivalence
+    , testCase     "Opening a DB with a missing epoch size gives an error" test_openDBMissingEpochSizeErrorEquivalence
     , testCase     "openDB with an empty index file" test_openDBEmptyIndexFileEquivalence
-    , testCase     "Skipping epochs when opening a DB gives an error" test_openDBSkipEpochsMissingFileErrorEquivalence
-    , testCase     "Reopening a DB on the next epoch pads the previous epoch" test_reopenDBNextEpochsNothingEquivalence
-    , testCase     "Reopen the database" test_reopenDatabaseEquivalence
+    , testCase     "Reopen the database" test_reopenDBEquivalence
     , testCase     "closeDB is idempotent" test_closeDBIdempotentEquivalence
     , testCase     "appendBinaryBlob after closeDB throws a ClosedDBError" test_closeDBAppendBinaryBlobEquivalence
     , testGroup "Iterators"
@@ -76,21 +77,25 @@ tests = testGroup "ImmutableDB"
       , testProperty "Random iterators" prop_iterator
       , testProperty "Slotoffsets/Index roundtrip " prop_indexToSlotOffsets_indexFromSlotOffsets
       , testProperty "isFilledSlot iff in filledSlots" prop_filledSlots_isFilledSlot
+      , testProperty "writeIndex/loadIndex roundtrip" prop_writeIndex_loadIndex
       , testProperty "writeSlotOffsets/loadIndex/indexToSlotOffsets roundtrip" prop_writeSlotOffsets_loadIndex_indexToSlotOffsets
       ]
+    , TestBlock.tests
+    , StateMachine.tests
+    , CumulEpochSizes.tests
     ]
 
 -- Shorthand
 withTestDB :: (HasCallStack, MonadSTM m, MonadMask m)
            => HasFS m
            -> ErrorHandling ImmutableDBError m
-           -> Epoch -> Map Epoch EpochSize
+           -> Map Epoch EpochSize
            -> (ImmutableDB m -> m a)
            -> m a
-withTestDB hasFS err epoch epochSizes =
-    withDB (openDB hasFS err ["test"] epoch epochSizes)
+withTestDB hasFS err epochSizes f =
+    withDB (openDB hasFS err ["test"] 0 epochSizes NoValidation) (\db _ -> f db)
 
-withSimTestDB :: Epoch -> Map Epoch EpochSize
+withSimTestDB :: Map Epoch EpochSize
               -> (ImmutableDB (SimFS IO) -> SimFS IO a)
               -> SimFS IO a
 withSimTestDB = withTestDB
@@ -153,7 +158,7 @@ prop_appendAndGet (AppendAndGet append get) = label labelToApply $
       r <- run $ tryImmDB $ Sim.runSimFS script Mock.empty
       assertion r
   where
-    script = withSimTestDB 0 (M.singleton 0 epochSize) $ \db -> do
+    script = withSimTestDB (M.singleton 0 epochSize) $ \db -> do
         appendBinaryBlob db 5 "first"
         _ <- startNewEpoch db epochSize
         appendBinaryBlob db 3 "second"
@@ -213,7 +218,7 @@ prop_appendAndGet (AppendAndGet append get) = label labelToApply $
 
 test_appendAndGet :: Assertion
 test_appendAndGet = withMockFS tryImmDB (expectDBResult ((@?= Just "haskell") . fst)) $ \hasFS err ->
-    withTestDB hasFS err 0 (M.singleton 0 10) $ \db -> do
+    withTestDB hasFS err (M.singleton 0 10) $ \db -> do
       appendBinaryBlob db 0 "haskell"
       getBinaryBlob db (EpochSlot 0 0)
 
@@ -221,7 +226,7 @@ prop_appendAndGetRoundtrip :: Property
 prop_appendAndGetRoundtrip = monadicIO $ do
     input <- pick arbitrary
     run $ apiEquivalenceDB (expectDBResult (@?= Just (builderToBS input))) $ \hasFS err ->
-      withTestDB hasFS err 0 (M.singleton 0 10) $ \db -> do
+      withTestDB hasFS err (M.singleton 0 10) $ \db -> do
         appendBinaryBlob db 0 (getBuilder input)
         getBinaryBlob db (EpochSlot 0 0)
 
@@ -240,7 +245,7 @@ test_demoSimEquivalence = apiEquivalenceDB (expectDBResult (@?= blobs)) $ \hasFS
 test_AppendToSlotInThePastErrorEquivalence :: HasCallStack => Assertion
 test_AppendToSlotInThePastErrorEquivalence =
     apiEquivalenceDB (expectUserError isAppendToSlotInThePastError) $ \hasFS err ->
-      withTestDB hasFS err 0 (M.singleton 0 10) $ \db -> do
+      withTestDB hasFS err (M.singleton 0 10) $ \db -> do
         appendBinaryBlob db 3 "test"
         appendBinaryBlob db 2 "haskell"
   where
@@ -250,43 +255,31 @@ test_AppendToSlotInThePastErrorEquivalence =
 test_ReadFutureSlotErrorEquivalence :: HasCallStack => Assertion
 test_ReadFutureSlotErrorEquivalence =
     apiEquivalenceDB (expectUserError isReadFutureSlotError) $ \hasFS err ->
-      withTestDB hasFS err 0 (M.singleton 0 10) $ \db -> do
+      withTestDB hasFS err (M.singleton 0 10) $ \db -> do
         _ <- getBinaryBlob db (EpochSlot 0 0)
         return ()
   where
     isReadFutureSlotError ReadFutureSlotError {} = True
     isReadFutureSlotError _                      = False
 
--- Trying to re-open the DB not on the most-recent-epoch should trigger an
--- error, both in Sim and IO.
-test_OpenFinalisedEpochErrorEquivalence :: HasCallStack => Assertion
-test_OpenFinalisedEpochErrorEquivalence =
-    apiEquivalenceDB (expectUserError isOpenFinalisedEpochError) $ \hasFS err -> do
-      withTestDB hasFS err 0 (M.singleton 0 10) $ \db -> do
-        appendBinaryBlob db 0 "test"
-        _ <- startNewEpoch db 10
-        appendBinaryBlob db 0 "haskell"
-      -- The second withDB should fail.
-      withTestDB hasFS err 0 (M.fromList [(0, 10), (1, 10)]) $ \_ ->
-        return ()
-  where
-    isOpenFinalisedEpochError OpenFinalisedEpochError {} = True
-    isOpenFinalisedEpochError _                          = False
-
 test_SlotGreaterThanEpochSizeErrorEquivalence :: HasCallStack => Assertion
 test_SlotGreaterThanEpochSizeErrorEquivalence =
     apiEquivalenceDB (expectUserError isSlotGreaterThanEpochSizeError) $ \hasFS err ->
-      withTestDB hasFS err 0 (M.singleton 0 10) $ \db ->
+      withTestDB hasFS err (M.singleton 0 10) $ \db ->
         appendBinaryBlob db 11 "test"
   where
     isSlotGreaterThanEpochSizeError SlotGreaterThanEpochSizeError {} = True
     isSlotGreaterThanEpochSizeError _                                = False
 
-test_OpenDBMissingEpochSizeErrorEquivalence :: Assertion
-test_OpenDBMissingEpochSizeErrorEquivalence =
-    apiEquivalenceDB (expectUserError isMissingEpochSizeError) $ \hasFS err ->
-      withTestDB hasFS err 3 (M.fromList [(0, 10), (2, 10)]) $ \_db ->
-        return ()
+test_openDBMissingEpochSizeErrorEquivalence :: Assertion
+test_openDBMissingEpochSizeErrorEquivalence =
+    apiEquivalenceDB (expectUserError isMissingEpochSizeError) $ \hasFS err -> do
+      withTestDB hasFS err (M.singleton 0 10) $ \db -> do
+          appendBinaryBlob db 0 "test"
+          _ <- startNewEpoch db 10
+          appendBinaryBlob db 0 "haskell"
+        -- The second withDB should fail.
+      withTestDB hasFS err (M.singleton 1 10) $ \_ -> return ()
   where
     isMissingEpochSizeError MissingEpochSizeError {} = True
     isMissingEpochSizeError _                        = False
@@ -301,55 +294,31 @@ test_openDBEmptyIndexFileEquivalence =
       hClose h1
       hClose h2
 
-      withTestDB hasFS err 0 (M.singleton 0 5) $ \db -> do
-        appendBinaryBlob db 0 "a"
-        appendBinaryBlob db 3 "b"
-        _ <- startNewEpoch db 5
-        appendBinaryBlob db 2 "c"
-        b1 <- getBinaryBlob db (EpochSlot 0 0)
-        b2 <- getBinaryBlob db (EpochSlot 0 3)
-        b3 <- getBinaryBlob db (EpochSlot 1 2)
-        return [b1, b2, b3]
+      withTestDB hasFS err (M.singleton 0 5) $ \_db ->
+          return ()
   where
     isInvalidFileError InvalidFileError {} = True
     isInvalidFileError _                   = False
 
-test_openDBSkipEpochsMissingFileErrorEquivalence :: Assertion
-test_openDBSkipEpochsMissingFileErrorEquivalence =
-    apiEquivalenceDB (expectUnexpectedError isMissingFileError) $ \hasFS err ->
-      withTestDB hasFS err 3 (M.fromList (zip [0..3] (repeat 5))) $ \_db ->
-        return ()
-  where
-    isMissingFileError MissingFileError {} = True
-    isMissingFileError _                   = False
-
-test_reopenDBNextEpochsNothingEquivalence :: Assertion
-test_reopenDBNextEpochsNothingEquivalence =
-    apiEquivalenceDB (expectDBResult (@?= Nothing)) $ \hasFS err -> do
-      withTestDB hasFS err 0 (M.singleton 0 10) $ \db ->
-        appendBinaryBlob db 0 "c"
-      withTestDB hasFS err 1 (M.fromList [(0, 10), (1, 10)]) $ \db ->
-        getBinaryBlob db (EpochSlot 0 3)
-
-test_reopenDatabaseEquivalence :: Assertion
-test_reopenDatabaseEquivalence =
+test_reopenDBEquivalence :: Assertion
+test_reopenDBEquivalence =
     apiEquivalenceDB (expectDBResult (@?= EpochSlot 0 6)) $ \hasFS err -> do
-      withTestDB hasFS err 0 (M.singleton 0 10) $ \db ->
+      withTestDB hasFS err (M.singleton 0 10) $ \db ->
         appendBinaryBlob db 5 "a"
-      withTestDB hasFS err 0 (M.singleton 0 10) $ \db ->
+      withTestDB hasFS err (M.singleton 0 10) $ \db ->
         getNextEpochSlot db
 
 test_closeDBIdempotentEquivalence :: Assertion
 test_closeDBIdempotentEquivalence =
     apiEquivalenceDB (expectDBResult (@?= ())) $ \hasFS err -> do
-      db <- openDB hasFS err ["test"] 0 (M.singleton 0 10)
+      db <- fst <$> openDB hasFS err ["test"] 0 (M.singleton 0 10) NoValidation
       closeDB db
       closeDB db
 
 test_closeDBAppendBinaryBlobEquivalence :: Assertion
 test_closeDBAppendBinaryBlobEquivalence =
     apiEquivalenceDB (expectUserError isClosedDBError) $ \hasFS err -> do
-      db <- openDB hasFS err ["test"] 0 (M.singleton 0 10)
+      db <- fst <$> openDB hasFS err ["test"] 0 (M.singleton 0 10) NoValidation
       closeDB db
       appendBinaryBlob db 0 "foo"
   where
@@ -385,7 +354,7 @@ byteStringToWord64s bs = go 0
 -- > | 0| 1| 6| 6| 6|13|
 test_index_layout :: Assertion
 test_index_layout = withMockFS tryImmDB assrt $ \hasFS err ->
-    withTestDB hasFS err 0 (M.singleton 0 10) $ \db -> do
+    withTestDB hasFS err (M.singleton 0 10) $ \db -> do
        appendBinaryBlob db 0 "a"
        appendBinaryBlob db 1 "bravo"
        appendBinaryBlob db 4 "haskell"
@@ -396,7 +365,7 @@ test_index_layout = withMockFS tryImmDB assrt $ \hasFS err ->
 
 test_startNewEpochPadsTheIndexFile :: Assertion
 test_startNewEpochPadsTheIndexFile = withMockFS tryImmDB assrt $ \hasFS err ->
-    withTestDB hasFS err 0 (M.singleton 0 10) $ \db -> do
+    withTestDB hasFS err (M.singleton 0 10) $ \db -> do
       appendBinaryBlob db 0 "a"
       appendBinaryBlob db 1 "bravo"
       appendBinaryBlob db 4 "haskell"
@@ -419,7 +388,7 @@ test_startNewEpochPadsTheIndexFile = withMockFS tryImmDB assrt $ \hasFS err ->
 test_iterator_basics :: Assertion
 test_iterator_basics = apiEquivalenceDB
       (expectDBResult (@?= ["a", "b", "c", "d", "e", "f", "g"])) $ \hasFS err ->
-    withTestDB hasFS err 0 (M.singleton 0 10) $ \db -> do
+    withTestDB hasFS err (M.singleton 0 10) $ \db -> do
       appendBinaryBlob db 0 "a"
       appendBinaryBlob db 1 "b"
       appendBinaryBlob db 2 "c"
@@ -432,7 +401,7 @@ test_iterator_basics = apiEquivalenceDB
       _ <- startNewEpoch db 5 -- Now in epoch 3
       _ <- startNewEpoch db 5 -- Now in epoch 4
       appendBinaryBlob db 4 "not included"
-      withIterator db (EpochSlot 0 0) (EpochSlot 4 2) iteratorToList
+      withIterator db (Just (EpochSlot 0 0)) (Just (EpochSlot 4 2)) iteratorToList
 
 data DBAction
   = StartNewEpoch
@@ -537,9 +506,9 @@ prop_iterator IteratorContentsAndRange {..} = monadicIO $ do
         expectedBlobs = map (builderToBS . snd) contents
         -- Default to 0, 0 when there are no blobs
         lastAppended  = fromMaybe (EpochSlot 0 0) $ contentsLastAppended contents
-        script        = withSimTestDB 0 (M.singleton 0 fixedEpochSize) $ \db -> do
+        script        = withSimTestDB (M.singleton 0 fixedEpochSize) $ \db -> do
                           executeDBActions db _dbActions
-                          withIterator db _start _end iteratorToList
+                          withIterator db (Just _start) (Just _end) iteratorToList
     r <- run $ tryImmDB $ Sim.runSimFS script Mock.empty
     case r of
       Left (UserError (SlotGreaterThanEpochSizeError {}) _)
@@ -558,7 +527,7 @@ prop_iterator IteratorContentsAndRange {..} = monadicIO $ do
                  show actualBlobs)
       Right _ -> return ()
 
-newtype SlotOffsets = SlotOffsets (NonEmpty SlotOffset)
+newtype SlotOffsets = SlotOffsets { getSlotOffsets :: NonEmpty SlotOffset }
   deriving (Show)
 
 instance Arbitrary SlotOffsets where
@@ -568,6 +537,11 @@ instance Arbitrary SlotOffsets where
     | offsetList <- shrink $ NE.toList offsets
     , offsets' <- maybeToList $ NE.nonEmpty offsetList ]
 
+instance Arbitrary Index where
+  arbitrary = indexFromSlotOffsets . getSlotOffsets <$> arbitrary
+  shrink index =
+    [ indexFromSlotOffsets $ getSlotOffsets offsets'
+    | offsets' <- shrink (SlotOffsets (indexToSlotOffsets index)) ]
 
 prop_indexToSlotOffsets_indexFromSlotOffsets :: SlotOffsets -> Property
 prop_indexToSlotOffsets_indexFromSlotOffsets (SlotOffsets offsets) =
@@ -582,6 +556,29 @@ prop_filledSlots_isFilledSlot (SlotOffsets offsets) = conjoin
           | otherwise       = map RelativeSlot [0..indexSlots idx-1]
     totalSlots = indexSlots idx
     idx = indexFromSlotOffsets offsets
+
+prop_writeIndex_loadIndex :: Index -> Property
+prop_writeIndex_loadIndex index =
+    monadicIO $ run $ runS prop
+  where
+    dbFolder = []
+    epoch = 0
+
+    prop :: SimFS IO Property
+    prop = do
+      writeIndex hasFS dbFolder epoch index
+      index' <- loadIndex hasFS dbFolder epoch
+      return $ index === index'
+
+    hasFS :: HasFS (SimFS IO)
+    hasFS = Sim.simHasFS EH.exceptions
+
+    runS :: SimFS IO Property -> IO Property
+    runS m = do
+        r <- tryFS (Sim.runSimFS m Mock.empty)
+        case r of
+          Left  e      -> fail (prettyFsError e)
+          Right (p, _) -> return p
 
 prop_writeSlotOffsets_loadIndex_indexToSlotOffsets :: SlotOffsets -> Property
 prop_writeSlotOffsets_loadIndex_indexToSlotOffsets (SlotOffsets offsets) =

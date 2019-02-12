@@ -2,6 +2,7 @@
 {-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
+{-# LANGUAGE TupleSections     #-}
 
 module Ouroboros.Storage.ImmutableDB.Util where
 
@@ -18,6 +19,8 @@ import           GHC.Stack (HasCallStack, callStack, popCallStack)
 
 import           Text.Printf (printf)
 import           Text.Read (readMaybe)
+
+import           Ouroboros.Consensus.Util (whenJust)
 
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types
@@ -55,18 +58,17 @@ throwUnexpectedError :: ErrorHandling ImmutableDBError m
                      -> UnexpectedError -> m a
 throwUnexpectedError = throwError . handleUnexpected
 
--- | Parse the epoch number from the filename of an index or epoch file.
+-- | Parse the prefix and epoch number from the filename of an index or epoch
+-- file.
 --
--- > parseEpochNumber "epoch-001.dat"
--- Just 1
-parseEpochNumber :: String -> Maybe Epoch
-parseEpochNumber = readMaybe
-                 . T.unpack
-                 . snd
-                 . T.breakOnEnd "-"
-                 . fst
-                 . T.breakOn "."
-                 . T.pack
+-- > parseDBFile "epoch-001.dat"
+-- Just ("epoch", 1)
+-- > parseDBFile "index-012.dat"
+-- Just ("index", 12)
+parseDBFile :: String -> Maybe (String, Epoch)
+parseDBFile s = case T.splitOn "-" . fst . T.breakOn "." . T.pack $ s of
+    [prefix, n] -> (T.unpack prefix,) <$> readMaybe (T.unpack n)
+    _           -> Nothing
 
 -- | Read all the data from the given file handle 64kB at a time.
 --
@@ -132,37 +134,40 @@ validateIteratorRange
   :: Monad m
   => ErrorHandling ImmutableDBError m
   -> EpochSlot            -- ^ Next expected write
-  -> Map Epoch EpochSize  -- ^ Epoch sizes
-  -> EpochSlot            -- ^ range start (inclusive)
-  -> EpochSlot            -- ^ range end (inclusive)
+  -> (Epoch -> m EpochSize)
+     -- ^ How to look up the size of an epoch
+  -> Maybe EpochSlot  -- ^ range start (inclusive)
+  -> Maybe EpochSlot  -- ^ range end (inclusive)
   -> m ()
-validateIteratorRange err next epochSizes start end = do
-    let EpochSlot startEpoch   startSlot = start
-        EpochSlot endEpoch     endSlot   = end
+validateIteratorRange err next getEpochSize mbStart mbEnd = do
+    case (mbStart, mbEnd) of
+      (Just start, Just end) ->
+        when (start > end) $
+          throwUserError err $ InvalidIteratorRangeError start end
+      _ -> return ()
 
-    when (start > end) $
-      throwUserError err $ InvalidIteratorRangeError start end
+    whenJust mbStart $ \start@(EpochSlot startEpoch startSlot) -> do
+      -- Check that the start is not >= the next expected slot
+      when (start >= next) $
+        throwUserError err $ ReadFutureSlotError start next
 
-    -- Check that the start is not >= the next expected slot
-    when (start >= next) $
-      throwUserError err $ ReadFutureSlotError start next
+      -- Check that the start slot does not exceed its epoch size
+      startEpochSize <- getEpochSize startEpoch
+      when (getRelativeSlot startSlot >= startEpochSize) $
+        throwUserError err $ SlotGreaterThanEpochSizeError
+                               startSlot
+                               startEpoch
+                               startEpochSize
 
-    -- Check that the end is not >= the next expected slot
-    when (end >= next) $
-      throwUserError err $ ReadFutureSlotError end next
+    whenJust mbEnd $ \end@(EpochSlot endEpoch endSlot) -> do
+      -- Check that the end is not >= the next expected slot
+      when (end >= next) $
+        throwUserError err $ ReadFutureSlotError end next
 
-    -- Check that the start slot does not exceed its epoch size
-    startEpochSize <- lookupEpochSize err startEpoch epochSizes
-    when (getRelativeSlot startSlot >= startEpochSize) $
-      throwUserError err $ SlotGreaterThanEpochSizeError
-                              startSlot
-                              startEpoch
-                              startEpochSize
-
-    -- Check that the end slot does not exceed its epoch size
-    endEpochSize <- lookupEpochSize err endEpoch epochSizes
-    when (getRelativeSlot endSlot >= endEpochSize) $
-      throwUserError err $ SlotGreaterThanEpochSizeError
-                             endSlot
-                             endEpoch
-                             endEpochSize
+      -- Check that the end slot does not exceed its epoch size
+      endEpochSize <- getEpochSize endEpoch
+      when (getRelativeSlot endSlot >= endEpochSize) $
+        throwUserError err $ SlotGreaterThanEpochSizeError
+                               endSlot
+                               endEpoch
+                               endEpochSize

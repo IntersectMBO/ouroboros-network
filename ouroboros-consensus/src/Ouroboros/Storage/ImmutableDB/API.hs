@@ -30,12 +30,12 @@ import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
 -- using the database, and closes the database using its 'closeDB' function,
 -- in case of success or when an exception was raised.
 withDB :: (HasCallStack, MonadMask m)
-       => m (ImmutableDB m)
+       => m (ImmutableDB m, Maybe EpochSlot)
           -- ^ How to open the database
-       -> (ImmutableDB m -> m a)
+       -> (ImmutableDB m -> Maybe EpochSlot -> m a)
           -- ^ Action to perform using the database
        -> m a
-withDB openDB = bracket openDB closeDB
+withDB openDB action = bracket openDB (\(db, _) -> closeDB db) (uncurry action)
 
 -- | API for the 'ImmutableDB'.
 --
@@ -49,20 +49,24 @@ data ImmutableDB m = ImmutableDB
     -- __Note__: Use 'withDB' instead of this function.
     closeDB
       :: HasCallStack => m ()
-      -- TODO remove this operation from the public API, replace it with a
-      -- reopen + validate function that can be used in case of an error.
-      --
-      -- The idea is that the 'ImmutableDB' handle/record can be stored in a
-      -- Reader (instead of State), so in case of an error, we can reopen the
-      -- same database (after validation) instead of having to create a new
-      -- 'ImmutableDB' record for the same on-disk database.
-      --
-      -- We should still expose this field in an internal record so it can be
-      -- used by 'withDB'.
+      -- TODO remove this operation from the public API and expose it using an
+      -- internal record so it can be used by 'withDB'.
 
     -- | Return 'True' when the database is open.
   , isOpen
       :: HasCallStack => m Bool
+
+    -- | When the database was closed, manually or because of an
+    -- 'UnexpectedError' during a write operation, recover using the given
+    -- 'RecoveryPolicy' and reopen it at the most recent epoch.
+    --
+    -- Returns the 'EpochSlot' corresponding to reopened epoch and the last
+    -- relative slot that stores a blob, or 'Nothing' in case of an empty
+    -- database.
+    --
+    -- When the database is still open, this is a no-op.
+  , reopen
+      :: forall e. HasCallStack => RecoveryPolicy e m -> m (Maybe EpochSlot)
 
     -- | Return the next free 'RelativeSlot' in the current epoch as an
     -- 'EpochSlot'.
@@ -124,9 +128,19 @@ data ImmutableDB m = ImmutableDB
       -- new 'Epoch' to start, which must be 'getCurrentEpoch' + 1, so no
       -- skipping allowed.
 
-    -- | When given a start (first argument) and a stop (second argument)
-    -- position (both inclusive bounds), return an 'Iterator' to efficiently
-    -- stream binary blocks out of the database.
+    -- | Return an 'Iterator' to efficiently stream binary blocks out of the
+    -- database.
+    --
+    -- Optionally, a start position (first argument) and/or a stop position
+    -- (second argument) can be given that will be used to determine from
+    -- which 'EpochSlot' streaming will start and/or stop (both inclusive
+    -- bounds).
+    --
+    -- When no start position is given, streaming wil start from the first
+    -- blob in the database. When no stop position is given, streaming will
+    -- stop at the last blob currently in the database. This means that
+    -- appends happening while streaming will not be visible to the iterator.
+    -- (TODO ok?)
     --
     -- Use 'iteratorNext' to stream from the iterator.
     --
@@ -146,8 +160,8 @@ data ImmutableDB m = ImmutableDB
     -- prematurely closed with 'iteratorClose'.
   , streamBinaryBlobs
       :: HasCallStack
-      => EpochSlot
-      -> EpochSlot
+      => Maybe EpochSlot
+      -> Maybe EpochSlot
       -> m (Iterator m)
 
     -- | Throw 'ImmutableDB' errors
@@ -189,8 +203,8 @@ data Iterator m = Iterator
 withIterator :: (HasCallStack, MonadMask m)
              => ImmutableDB m
                 -- ^ The database
-             -> EpochSlot -- ^ Start streaming from here (inclusive)
-             -> EpochSlot -- ^ End streaming here (inclusive)
+             -> Maybe EpochSlot -- ^ Start streaming from here (inclusive)
+             -> Maybe EpochSlot -- ^ End streaming here (inclusive)
              -> (Iterator m -> m a)
                 -- ^ Action to perform using the iterator
              -> m a
@@ -230,8 +244,8 @@ iteratorToList it = go mempty
 -- given range.
 blobProducer :: (Monad m, HasCallStack)
              => ImmutableDB m
-             -> EpochSlot   -- ^ When to start streaming (inclusive).
-             -> EpochSlot   -- ^ When to stop streaming (inclusive).
+             -> Maybe EpochSlot   -- ^ When to start streaming (inclusive).
+             -> Maybe EpochSlot   -- ^ When to stop streaming (inclusive).
              -> Producer (EpochSlot, ByteString) m ()
 blobProducer db start end = do
     it <- lift $ streamBinaryBlobs db start end

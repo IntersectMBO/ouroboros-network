@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
@@ -7,6 +8,8 @@ module Ouroboros.Storage.ImmutableDB.Types
   , RelativeSlot(..)
   , EpochSlot(..)
   , SlotOffset
+  , EpochFileParser(..)
+  , RecoveryPolicy(..)
   , IteratorID
   , initialIteratorId
   , ImmutableDBError(..)
@@ -20,6 +23,7 @@ module Ouroboros.Storage.ImmutableDB.Types
   ) where
 
 import           Control.Exception (Exception (..))
+
 import           Data.Word (Word, Word64)
 
 import           GHC.Generics (Generic)
@@ -50,6 +54,153 @@ instance Show EpochSlot where
 
 -- | The offset of a slot in an 'Index' file.
 type SlotOffset = Word64
+
+-- | Parse the contents of an epoch file.
+--
+-- The parsing may include validation of the contents of the epoch file.
+--
+-- The returned 'SlotOffset's are from __first to last__ and __strictly__
+-- monotonically increasing. The first 'SlotOffset' must be 0.
+--
+-- We assume the output of 'EpochFileParser' to be correct, we will not
+-- validate it.
+--
+-- An error may be returned in the form of @'Maybe' e@. The 'SlotOffset's may
+-- be accompanied with other data of type @t@.
+newtype EpochFileParser e m t = EpochFileParser
+  { runEpochFileParser :: FsPath -> m ([(SlotOffset, t)], Maybe e) }
+  deriving (Functor)
+
+
+-- | The recovery policy used when (re)opening an 'ImmutableDB'.
+--
+-- The recovery policy is used by:
+--
+-- * 'openDB' (and 'openLastEpoch'): the initial opening of the database,
+--   either an empty database or a database that was previously closed.
+--
+-- * 'reopen': when the database was closed in case of an unexpected error,
+--   the user can reopen the database and keep on using the same handle to it.
+--
+-- We will refer to both these operations using \"/open/\".
+--
+-- The recovery policy dictates what /open/ should do in terms of:
+--
+-- * __Validation__: which on-disk files /open/ will validate.
+--
+-- * __Error handling__: what /open/ will do in case of an invalid or missing
+--   file: throw an error or try to fix it.
+--
+-- * __(Re)opening__: which epoch /open/ will (re)open. When opening a
+--   database ('openDB'), the epoch to open is explicitly passed. This should
+--   be the most recent epoch that was started by the database the last time
+--   it was open or 0 in case of an empty database. When reopening a database
+--   ('reopen'), the most recent epoch that was started will be used to reopen
+--   it.
+--
+-- Only in case of 'RestoreToLastValidEpoch' will /open/ try to repair the
+-- invalid state and modify the file-system. When used with the other
+-- policies, /open/ will throw an error in case of an invalid state and it
+-- will not modify the file-system. If /open/ throws an error, the database it
+-- will not have (re)opened the database.
+--
+-- Note: the 'Int' in @('EpochFileParser' e m ('Int', 'RelativeSlot'))@ is the
+-- length of the blob.
+data RecoveryPolicy e m
+  = NoValidation
+    -- ^ __Validation__: /open/ doesn't validate any files.
+    --
+    -- __Error handling__: /open/ throws an 'OpenFinalisedEpochError' when the
+    -- epoch to reopen was already finalised and there are more recent epochs
+    -- on disk.
+    --
+    -- Because no validation occurs, subsequent operations on the database
+    -- after /open/ may result in unexpected errors.
+    --
+    -- __(Re)opening__: /open/ (re)opens the database at the explicitly passed
+    -- epoch. This epoch can have been started in the past, in which case it
+    -- is reopened. If not, it is opened as a \"fresh\" epoch.
+  | ValidateMostRecentEpoch (EpochFileParser e m (Int, RelativeSlot))
+    -- ^ __Validation__: /open/ validates the epoch and index files of the
+    -- given epoch to open, which should correspond to the most recent epoch
+    -- stored on disk. The 'EpochFileParser' will be used to verify the
+    -- validity of the contents of the epoch and index files.
+    --
+    -- If the given epoch is a \"fresh\" epoch and has thus no files
+    -- corresponding to it on disk, /open/ will not throw an error, but will
+    -- not validate any files either.
+    --
+    -- Prior epoch and index files are ignored, even their presence will not
+    -- be checked.
+    --
+    -- __Error handling__: /open/ throws an 'OpenFinalisedEpochError' when the
+    -- epoch to reopen was already finalised and there are more recent epochs
+    -- on disk.
+    --
+    -- /Open/ will throw a 'MissingFileError' or an 'InvalidFileError' in case
+    -- of a missing or invalid epoch or index file.
+    --
+    -- Because not all files are validated, subsequent operations on the
+    -- database after /open/ may result in unexpected errors.
+    --
+    -- __(Re)opening__: /open/ (re)opens the database at the explicitly passed
+    -- epoch. This epoch can have been started in the past, in which case it
+    -- is reopened. If not, it is opened as a \"fresh\" epoch.
+  | ValidateAllEpochs (EpochFileParser e m (Int, RelativeSlot))
+    -- ^ __Validation__: /open/ validates the epoch and index files of all
+    -- epochs starting from the first one up to the given epoch to open, which
+    -- should correspond to the most recent epoch stored on disk. The
+    -- 'EpochFileParser' will be used to verify the validity of the contents
+    -- of the epoch and index files.
+    --
+    -- __Error handling__: /open/ throws an 'OpenFinalisedEpochError' when the
+    -- epoch to reopen was already finalised and there are more recent epochs
+    -- on disk.
+    --
+    -- /Open/ will throw a 'MissingFileError' or an 'InvalidFileError' in case
+    -- of a missing or invalid epoch or index file.
+    --
+    -- __(Re)opening__: /open/ (re)opens the database at the explicitly passed
+    -- epoch. This epoch can have been started in the past, in which case it
+    -- is reopened. If not, it is opened as a \"fresh\" epoch.
+  | RestoreToLastValidEpoch (EpochFileParser e m (Int, RelativeSlot))
+    -- ^ __Validation__: /open/ validates the epoch and index files of all
+    -- epochs starting form the first one up to the given epoch to open, which
+    -- should correspond to the most recent epoch stored on disk. The
+    -- 'EpochFileParser' will be used to verify the validity of the contents
+    -- of the epoch and index files.
+    --
+    -- __Error handling__: the goal is that /open/ does not throw any errors
+    -- in case of invalid on-disk files, but that it restores the database to
+    -- the last valid prefix and reopens it.
+    --
+    -- /Open/ will reconstructed missing or invalid index files from the
+    -- corresponding epoch files using the 'EpochFileParser' and write them to
+    -- disk.
+    --
+    -- /Open/ will stop the validation when it encounters an unrecoverable
+    -- problem:
+    --
+    -- * An epoch file before the epoch to reopen is missing.
+    --
+    -- * An epoch file contains some invalid data. First, /open/ will truncate
+    --   the epoch file to its last valid offset.
+    --
+    -- * An epoch file before the epoch to reopen is unfinalised (the former
+    --   two cases will also result in an unfinalised epoch).
+    --
+    -- /Open/ will remove all epoch and index files corresponding to epochs
+    -- newer than the reopened epoch.
+    --
+    -- __(Re)opening__: When possible, /open/ (re)opens the database at the
+    -- explicitly passed epoch. This epoch can have been started in the past,
+    -- in which case it is reopened. If not, it is opened as a \"fresh\"
+    -- epoch.
+    --
+    -- In case of an unrecoverable problem, as described above, /open/ will
+    -- open the database at the last valid epoch on disk instead of the
+    -- explicitly passed epoch to open.
+
 
 -- | A unique identifier for an iterator.
 newtype IteratorID = IteratorID { getIteratorID :: Int }
@@ -90,10 +241,17 @@ prettyImmutableDBError = \case
 data UserError
   = OpenFinalisedEpochError Epoch Epoch
     -- ^ When opening the DB, the user requested access to an epoch which was
-    -- already finalised, i.e. not writable anymore.
+    -- already finalised, i.e. there are files corresponding to later epochs
+    -- on disk.
+    --
+    -- Note that it is still possible to (re)open an epoch that can no longer
+    -- be appended to if that is the most recent one on disk. This can be
+    -- necessary when the epoch size of the next epoch is not yet known. The
+    -- user must then call 'startNewEpoch' explicitly, passing the size of the
+    -- new epoch.
     --
     -- The first parameter is the requested epoch and the second parameter is
-    -- the last epoch that can be opened.
+    -- the last epoch that is on disk.
   | AppendToSlotInThePastError RelativeSlot RelativeSlot
     -- ^ When trying to append a new binary blob at the end of an epoch file,
     -- the input slot was not monotonically increasing w.r.t. the last slot

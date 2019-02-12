@@ -46,6 +46,7 @@ module Ouroboros.Storage.FS.Sim.MockFS (
   , OpenHandleState   -- opaque
   , ClosedHandleState -- opaque
   , FilePtr           -- opaque
+  , Files
   , mockFiles
   ) where
 
