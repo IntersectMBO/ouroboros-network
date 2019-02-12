@@ -41,7 +41,8 @@ tests =
   , testProperty "fork order (SimM)"       (withMaxSuccess 1000 (prop_fork_order_ST))
   , testProperty "fork order (IO)"         (expectFailure prop_fork_order_IO)
   , testGroup "throw/catch unit tests"
-    [ testProperty "1" unit_catch_1
+    [ testProperty "0" unit_catch_0
+    , testProperty "1" unit_catch_1
     , testProperty "2" unit_catch_2
     , testProperty "3" unit_catch_3
     , testProperty "4" unit_catch_4
@@ -262,10 +263,24 @@ prop_fork_order_IO = ioProperty . test_fork_order
 -- Syncronous exceptions
 --
 
-unit_catch_1, unit_catch_2, unit_catch_3, unit_catch_4,
+unit_catch_0, unit_catch_1, unit_catch_2, unit_catch_3, unit_catch_4,
   unit_catch_5, unit_catch_6,
   unit_fork_1, unit_fork_2
   :: Bool
+
+-- unhandled top level exception
+unit_catch_0 =
+    runSimTraceSay example == ["before"]
+ && case traceResult True (runSimTrace example) of
+      Left (FailureException e) -> maybe False (==DivideByZero) $ fromException e
+      _                         -> False
+
+ where
+  example :: SimM s ()
+  example = do
+    say "before"
+    _ <- throwM DivideByZero
+    say "after"
 
 -- normal execution of a catch frame
 unit_catch_1 =
