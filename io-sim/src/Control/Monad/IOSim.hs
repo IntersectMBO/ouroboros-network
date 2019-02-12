@@ -519,10 +519,10 @@ schedule thread@Thread{
               unblocked = [ tid' | (tid', _) <- reverse wakeup
                                  , Map.member tid' threads ]
               -- We don't interrupt runnable threads to provide fairness
-              -- anywhere else. We do it here by putting the tx that comitted
+              -- anywhere else. We do it here by putting the tx that committed
               -- a transaction to the back of the runqueue, behind all other
               -- runnable threads, and behind the unblocked threads.
-              -- For testing, we should have a more sophiscated policy to show
+              -- For testing, we should have a more sophisticated policy to show
               -- that algorithms are not sensitive to the exact policy, so long
               -- as it is a fair policy (all runnable threads eventually run).
               runqueue' = List.nub (runqueue ++ unblocked) ++ [tid]
@@ -727,7 +727,7 @@ finaliseCommit written = do
   let -- for each thread, what var writes woke it up
       wokeVars    = Map.fromListWith (\l r -> List.nub $ l ++ r)
                       [ (tid, [vid]) | (vid, tids) <- tidss, tid <- tids ]
-      -- threads to wake up, in wake up order, with assoicated vars
+      -- threads to wake up, in wake up order, with associated vars
       wokeThreads = [ (tid, wokeVars Map.! tid)
                     | tid <- ordNub [ tid | (_, tids) <- tidss, tid <- reverse tids ]
                     ]
