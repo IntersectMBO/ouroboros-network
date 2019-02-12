@@ -23,6 +23,8 @@ module Control.Monad.IOSim (
   ThreadId,
   Trace(..),
   TraceEvent(..),
+  traceEvents,
+  traceResult,
   ) where
 
 import           Prelude hiding (read)
@@ -324,25 +326,28 @@ data Failure =
   deriving Show
 
 runSim :: forall a. (forall s. SimM s a) -> Either Failure a
-runSim mainAction =
-    collectSimResult False (runSimTrace mainAction)
+runSim mainAction = traceResult False (runSimTrace mainAction)
 
 -- | Like 'runSim' but also fail if when the main thread terminates, there
 -- are other threads still running or blocked. If one is trying to follow
 -- a strict thread cleanup policy then this helps testing for that.
 --
 runSimStrictShutdown :: forall a. (forall s. SimM s a) -> Either Failure a
-runSimStrictShutdown mainAction =
-    collectSimResult True (runSimTrace mainAction)
+runSimStrictShutdown mainAction = traceResult True (runSimTrace mainAction)
 
-collectSimResult :: Bool -> Trace a -> Either Failure a
-collectSimResult strict = go
+traceResult :: Bool -> Trace a -> Either Failure a
+traceResult strict = go
   where
     go (Trace _ _ _ t)                      = go t
     go (TraceMainReturn _ _ (_:_)) | strict = Left FailureSloppyShutdown
     go (TraceMainReturn _ x _)              = Right x
     go (TraceMainException _ e _)           = Left (FailureException e)
     go (TraceDeadlock   _   _)              = Left FailureDeadlock
+
+traceEvents :: Trace a -> [(VTime, ThreadId, TraceEvent)]
+traceEvents (Trace time tid event t) = (time, tid, event) : traceEvents t
+traceEvents _                        = []
+
 
 
 runSimTrace :: forall a. (forall s. SimM s a) -> Trace a
