@@ -288,17 +288,20 @@ data Trace a = Trace !VTime !ThreadId !TraceEvent (Trace a)
   deriving Show
 
 data TraceEvent
-  = EventFail String
-  | EventSay  String
+  = EventSay  String
+
   | EventThrow SomeException
-  | EventThreadForked ThreadId
-  | EventThreadStopped                 -- terminated normally
-  | EventThreadException SomeException -- terminated due to unhandled exception
+
+  | EventThreadForked    ThreadId
+  | EventThreadFinished                  -- terminated normally
+  | EventThreadUnhandled SomeException   -- terminated due to unhandled exception
+
   | EventTxComitted    [TVarId] -- tx wrote to these
                        [TVarId] -- and created these
   | EventTxAborted
   | EventTxBlocked     [TVarId] -- tx blocked reading these
   | EventTxWakeup      [TVarId] -- changed vars causing retry
+
   | EventTimerCreated   TimeoutId TVarId VTime
   | EventTimerUpdated   TimeoutId        VTime
   | EventTimerCancelled TimeoutId
@@ -409,12 +412,13 @@ schedule thread@Thread{
       MainFrame ->
         -- the main thread is done, so we're done
         -- even if other threads are still running
-        return (TraceMainReturn time x (Map.keys threads))
+        return $ Trace time tid EventThreadFinished
+               $ TraceMainReturn time x (Map.keys threads)
 
       ForkFrame -> do
         -- this thread is done
         trace <- reschedule simstate { threads = Map.delete tid threads }
-        return (Trace time tid EventThreadStopped trace)
+        return $ Trace time tid EventThreadFinished trace
 
       ContFrame k ctl' -> do
         -- pop the control stack and continue
@@ -437,14 +441,14 @@ schedule thread@Thread{
         | isMain ->
           -- An unhandled exception in the main thread terminates the program
           return (Trace time tid (EventThrow e) $
-                  Trace time tid (EventThreadException e) $
+                  Trace time tid (EventThreadUnhandled e) $
                   TraceMainException time e (Map.keys threads))
 
         | otherwise -> do
           -- An unhandled exception in any other thread terminates the thread
           trace <- reschedule simstate { threads = Map.delete tid threads }
           return (Trace time tid (EventThrow e) $
-                  Trace time tid (EventThreadException e) trace)
+                  Trace time tid (EventThreadUnhandled e) trace)
 
     Catch action' handler k -> do
       -- push the failure and success continuations onto the control stack
