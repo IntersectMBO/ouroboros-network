@@ -42,9 +42,7 @@ library
   build-depends:     base,
                      io-sim-classes,
                      -- TODO: do we want these here or move elsewhere?
-                     bytestring,
-                     process,
-                     cborg
+                     bytestring
 
   hs-source-dirs:    src
   default-language:  Haskell2010
@@ -75,8 +73,6 @@ test-suite tests
   build-depends:     base
                    , async
                    , bytestring
-                   , process
-                   , cborg
                    , io-sim-classes
                    , io-sim
                    , QuickCheck

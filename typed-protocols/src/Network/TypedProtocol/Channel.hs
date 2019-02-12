@@ -7,7 +7,6 @@ module Network.TypedProtocol.Channel
   , mvarsAsChannel
   , handlesAsChannel
   , createConnectedChannels
-  , createPipeConnectedChannels
   , withFifosAsChannel
   , channelEffect
   ) where
@@ -18,7 +17,6 @@ import           Data.ByteString.Lazy.Internal (smallChunkSize)
 
 import qualified System.IO      as IO
                    ( Handle, withFile, IOMode(..), hFlush, hIsEOF )
-import qualified System.Process as IO (createPipe)
 
 import           Control.Monad.Class.MonadSTM
                    ( MonadSTM, atomically
@@ -129,23 +127,6 @@ handlesAsChannel hndRead hndWrite =
       if eof
         then return Nothing
         else Just <$> BS.hGetSome hndRead smallChunkSize
-
-
--- | Create a local pipe, with both ends in this process, and expose that as
--- a pair of 'ByteChannel's, one for each end.
---
--- This is primarily for testing purposes since it does not allow actual IPC.
---
-createPipeConnectedChannels :: IO (Channel IO ByteString,
-                                   Channel IO ByteString)
-createPipeConnectedChannels = do
-    -- Create two pipes (each one is unidirectional) to make both ends of
-    -- a bidirectional channel
-    (hndReadA, hndWriteB) <- IO.createPipe
-    (hndReadB, hndWriteA) <- IO.createPipe
-
-    return (handlesAsChannel hndReadA hndWriteA,
-            handlesAsChannel hndReadB hndWriteB)
 
 
 -- | Open a pair of Unix FIFOs, and expose that as a 'Channel'.
