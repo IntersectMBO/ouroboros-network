@@ -72,14 +72,9 @@ instance Protocol PingPong where
   data NobodyHasAgency st where
     TokDone :: NobodyHasAgency StDone
 
-  proofByContradiction_ClientAndServerHaveAgency = \TokIdle tok ->
-    case tok of {}
-
-  proofByContradiction_NobodyAndClientHaveAgency = \TokDone tok ->
-    case tok of {}
-
-  proofByContradiction_NobodyAndServerHaveAgency = \TokDone tok ->
-    case tok of {}
+  exclusionLemma_ClientAndServerHaveAgency TokIdle tok = case tok of {}
+  exclusionLemma_NobodyAndClientHaveAgency TokDone tok = case tok of {}
+  exclusionLemma_NobodyAndServerHaveAgency TokDone tok = case tok of {}
 
 
 deriving instance Show (Message PingPong from to)
