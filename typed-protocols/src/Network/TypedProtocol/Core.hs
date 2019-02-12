@@ -206,20 +206,21 @@ import Data.Void (Void)
 -- >   StBusy :: PingPong
 -- >   StDone :: PingPong
 -- >
--- > data ClientHasAgency st where
--- >   TokIdle :: ClientHasAgency StIdle
+-- > instance Protocol PingPong where
 -- >
--- > data ServerHasAgency st where
--- >   TokBusy :: ServerHasAgency StBusy
+-- >   data ClientHasAgency st where
+-- >     TokIdle :: ClientHasAgency StIdle
 -- >
--- > data NobodyHasAgency st where
--- >   TokDone :: NobodyHasAgency StDone
+-- >   data ServerHasAgency st where
+-- >     TokBusy :: ServerHasAgency StBusy
+-- >
+-- >   data NobodyHasAgency st where
+-- >     TokDone :: NobodyHasAgency StDone
 --
 -- So now we can prove that if the client has agency for a state then there
 -- are no cases in which the server has agency.
 --
--- > proofByContradiction_ClientAndServerHaveAgency TokIdle tok =
--- >   case tok of {}
+-- >   exclusionLemma_ClientAndServerHaveAgency TokIdle tok = case tok of {}
 --
 -- For this protocol there is only one state in which the client has agency,
 -- the idle state. By pattern matching on the state token for the server
@@ -280,27 +281,27 @@ class Protocol ps where
   -- | Lemma that if the client has agency for a state, there are no
   -- cases in which the server has agency for the same state.
   --
-  proofByContradiction_ClientAndServerHaveAgency
+  exclusionLemma_ClientAndServerHaveAgency
     :: forall (st :: ps).
-      ClientHasAgency st
+       ClientHasAgency st
     -> ServerHasAgency st
     -> Void
 
   -- | Lemma that if the nobody has agency for a state, there are no
   -- cases in which the client has agency for the same state.
   --
-  proofByContradiction_NobodyAndClientHaveAgency
+  exclusionLemma_NobodyAndClientHaveAgency
     :: forall (st :: ps).
-      NobodyHasAgency st
+       NobodyHasAgency st
     -> ClientHasAgency st
     -> Void
 
   -- | Lemma that if the nobody has agency for a state, there are no
   -- cases in which the server has agency for the same state.
   --
-  proofByContradiction_NobodyAndServerHaveAgency
+  exclusionLemma_NobodyAndServerHaveAgency
     :: forall (st :: ps).
-      NobodyHasAgency st
+       NobodyHasAgency st
     -> ServerHasAgency st
     -> Void
 

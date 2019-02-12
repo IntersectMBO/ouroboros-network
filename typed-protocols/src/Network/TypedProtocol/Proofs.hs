@@ -95,22 +95,22 @@ connect = go
     -- By appealing to the proofs about agency for this protocol we can
     -- show that these other cases are impossible
     go (Yield (ClientAgency stA) _ _) (Yield (ServerAgency stB) _ _) =
-      absurd (proofByContradiction_ClientAndServerHaveAgency stA stB)
+      absurd (exclusionLemma_ClientAndServerHaveAgency stA stB)
 
     go (Await (ServerAgency stA) _)   (Await (ClientAgency stB) _)   =
-      absurd (proofByContradiction_ClientAndServerHaveAgency stB stA)
+      absurd (exclusionLemma_ClientAndServerHaveAgency stB stA)
 
     go (Done  stA _)            (Yield (ServerAgency stB) _ _) =
-      absurd (proofByContradiction_NobodyAndServerHaveAgency stA stB)
+      absurd (exclusionLemma_NobodyAndServerHaveAgency stA stB)
 
     go (Done  stA _)            (Await (ClientAgency stB) _)   =
-      absurd (proofByContradiction_NobodyAndClientHaveAgency stA stB)
+      absurd (exclusionLemma_NobodyAndClientHaveAgency stA stB)
 
     go (Yield (ClientAgency stA) _ _) (Done stB _)    =
-      absurd (proofByContradiction_NobodyAndClientHaveAgency stB stA)
+      absurd (exclusionLemma_NobodyAndClientHaveAgency stB stA)
 
     go (Await (ServerAgency stA) _)   (Done stB _)    =
-      absurd (proofByContradiction_NobodyAndServerHaveAgency stB stA)
+      absurd (exclusionLemma_NobodyAndServerHaveAgency stB stA)
 
 
 -- | The terminal states for the protocol. Used in 'connect' and
@@ -175,22 +175,22 @@ connectPipelined cs0 (PeerPipelined peerA) peerB =
 
     -- Proofs that the remaining cases are impossible
     goSender _ _ (SenderDone stA _) (Yield (ServerAgency stB) _ _) =
-      absurd (proofByContradiction_NobodyAndServerHaveAgency stA stB)
+      absurd (exclusionLemma_NobodyAndServerHaveAgency stA stB)
 
     goSender _ _ (SenderDone stA _) (Await (ClientAgency stB) _) =
-      absurd (proofByContradiction_NobodyAndClientHaveAgency stA stB)
+      absurd (exclusionLemma_NobodyAndClientHaveAgency stA stB)
 
     goSender _ _ (SenderYield (ClientAgency stA) _ _) (Done stB _) =
-      absurd (proofByContradiction_NobodyAndClientHaveAgency stB stA)
+      absurd (exclusionLemma_NobodyAndClientHaveAgency stB stA)
 
     goSender _ _ (SenderYield (ClientAgency stA) _ _) (Yield (ServerAgency stB) _ _) =
-      absurd (proofByContradiction_ClientAndServerHaveAgency stA stB)
+      absurd (exclusionLemma_ClientAndServerHaveAgency stA stB)
 
     goSender _ _ (SenderPipeline (ClientAgency stA) _ _ _) (Done stB _) =
-      absurd (proofByContradiction_NobodyAndClientHaveAgency stB stA)
+      absurd (exclusionLemma_NobodyAndClientHaveAgency stB stA)
 
     goSender _ _ (SenderPipeline (ClientAgency stA) _ _ _) (Yield (ServerAgency stB) _ _) =
-      absurd (proofByContradiction_ClientAndServerHaveAgency stA stB)
+      absurd (exclusionLemma_ClientAndServerHaveAgency stA stB)
 
 
     goReceiver :: forall (st' :: ps) (stdone :: ps) c.
@@ -207,10 +207,10 @@ connectPipelined cs0 (PeerPipelined peerA) peerB =
 
     -- Proofs that the remaining cases are impossible
     goReceiver (ReceiverAwait (ServerAgency stA) _) (Done  stB _) =
-      absurd (proofByContradiction_NobodyAndServerHaveAgency stB stA)
+      absurd (exclusionLemma_NobodyAndServerHaveAgency stB stA)
 
     goReceiver (ReceiverAwait (ServerAgency stA) _) (Await (ClientAgency stB) _) =
-      absurd (proofByContradiction_ClientAndServerHaveAgency stB stA)
+      absurd (exclusionLemma_ClientAndServerHaveAgency stB stA)
 
 
 -- | Prove that we have a total conversion from pipelined peers to regular
