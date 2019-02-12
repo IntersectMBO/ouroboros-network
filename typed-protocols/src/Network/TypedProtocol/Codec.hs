@@ -11,7 +11,7 @@ module Network.TypedProtocol.Codec (
     -- * Defining and using Codecs
     Codec(..)
     -- ** Related types
-  , PeerKind(..)
+  , PeerRole(..)
   , PeerHasAgency(..)
   , WeHaveAgency
   , TheyHaveAgency
@@ -28,7 +28,7 @@ module Network.TypedProtocol.Codec (
   ) where
 
 import           Network.TypedProtocol.Core
-                   ( Protocol(..), PeerKind(..)
+                   ( Protocol(..), PeerRole(..)
                    , PeerHasAgency(..), WeHaveAgency, TheyHaveAgency )
 
 
@@ -49,7 +49,7 @@ import           Network.TypedProtocol.Core
 -- the peer role. For example a codec for the ping\/pong protocol might have
 -- type:
 --
--- > codecPingPong :: forall pk m. Monad m => Codec PingPong pk String m String
+-- > codecPingPong :: forall m. Monad m => Codec PingPong String m String
 --
 -- A codec consists of a message encoder and a decoder.
 --
@@ -61,7 +61,7 @@ import           Network.TypedProtocol.Core
 --
 -- For example a simple text encoder for the ping\/pong protocol could be:
 --
--- > encode :: WeHaveAgency pk st
+-- > encode :: WeHaveAgency pr st
 -- >        -> Message PingPong st st'
 -- >        -> String
 -- >  encode (ClientAgency TokIdle) MsgPing = "ping\n"
@@ -83,7 +83,7 @@ import           Network.TypedProtocol.Core
 -- decoder allows but does not require a format with message framing where the
 -- decoder input matches exactly with the message boundaries.
 --
--- > decode :: TheyHaveAgency pk st
+-- > decode :: TheyHaveAgency pr st
 -- >        -> m (DecodeStep String String m (SomeMessage st))
 -- > decode stok =
 -- >   decodeTerminatedFrame '\n' $ \str trailing ->
@@ -105,13 +105,13 @@ import           Network.TypedProtocol.Core
 -- 'DecodeStep' for suggestions on how to use it for more realistic formats.
 --
 data Codec ps failure m bytes = Codec {
-       encode :: forall (pk :: PeerKind) (st :: ps) (st' :: ps).
-                 PeerHasAgency pk st
+       encode :: forall (pr :: PeerRole) (st :: ps) (st' :: ps).
+                 PeerHasAgency pr st
               -> Message ps st st'
               -> bytes,
 
-       decode :: forall (pk :: PeerKind) (st :: ps).
-                 PeerHasAgency pk st
+       decode :: forall (pr :: PeerRole) (st :: ps).
+                 PeerHasAgency pr st
               -> m (DecodeStep bytes failure m (SomeMessage st))
      }
 
@@ -211,7 +211,7 @@ data AnyMessage ps where
 -- agency and message to match each other.
 --
 data AnyMessageAndAgency ps where
-  AnyMessageAndAgency :: PeerHasAgency pk (st :: ps)
+  AnyMessageAndAgency :: PeerHasAgency pr (st :: ps)
                       -> Message ps (st :: ps) (st' :: ps)
                       -> AnyMessageAndAgency ps
 

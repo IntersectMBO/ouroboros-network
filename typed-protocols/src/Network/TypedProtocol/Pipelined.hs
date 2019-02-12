@@ -20,9 +20,9 @@ import Network.TypedProtocol.Core
 -- This wraps a 'PeerSender', but works for any internal collect type @c@, and
 -- with the starting condition of zero outstanding pipelined responses.
 --
-data PeerPipelined ps (pk :: PeerKind) (st :: ps) m a where
-  PeerPipelined :: PeerSender    ps pk st Z c m a
-                -> PeerPipelined ps pk st     m a
+data PeerPipelined ps (pr :: PeerRole) (st :: ps) m a where
+  PeerPipelined :: PeerSender    ps pr st Z c m a
+                -> PeerPipelined ps pr st     m a
 
 -- | This is the pipelined variant of 'Peer'.
 --
@@ -33,26 +33,26 @@ data PeerPipelined ps (pk :: PeerKind) (st :: ps) m a where
 --
 --  * @c@ records the internal type of the pipelined responses.
 --
-data PeerSender ps (pk :: PeerKind) (st :: ps) (n :: Outstanding) c m a where
+data PeerSender ps (pr :: PeerRole) (st :: ps) (n :: Outstanding) c m a where
 
   -- | Same idea as normal 'Peer' 'Effect'.
-  SenderEffect   :: m (PeerSender ps pk st n c m a)
-                 ->    PeerSender ps pk st n c m a
+  SenderEffect   :: m (PeerSender ps pr st n c m a)
+                 ->    PeerSender ps pr st n c m a
 
   -- | Same idea as normal 'Peer' 'Done'.
   SenderDone     :: !(NobodyHasAgency st)
                  -> a
-                 -> PeerSender ps pk st Z c m a
+                 -> PeerSender ps pr st Z c m a
 
   -- | A normal non-pipelined 'Yield'. Note that this can only be used for
   -- messages that keep agency (or terminal messages), not for ones that
   -- give away agency, since the 'PeerSender' has no equivalent of 'Await'.
   -- The only way to await is via a pipelined yield: 'SenderPipeline'.
   --
-  SenderYield    :: !(WeHaveAgency pk st)
+  SenderYield    :: !(WeHaveAgency pr st)
                  -> Message ps st st'
-                 -> PeerSender   ps pk (st' :: ps) n c m a
-                 -> PeerSender   ps pk (st  :: ps) n c m a
+                 -> PeerSender   ps pr (st' :: ps) n c m a
+                 -> PeerSender   ps pr (st  :: ps) n c m a
 
   -- | A pipelined equivalent of 'Yield'. The key difference is that instead
   -- of moving into the immediate next state @st'@, the sender jumps directly
@@ -64,11 +64,11 @@ data PeerSender ps (pk :: PeerKind) (st :: ps) (n :: Outstanding) c m a where
   -- The type records the fact that the number of outstanding pipelined
   -- responses increases by one.
   --
-  SenderPipeline :: !(WeHaveAgency   pk st)
+  SenderPipeline :: !(WeHaveAgency   pr st)
                  -> Message ps st st'
-                 -> PeerReceiver ps pk (st'  :: ps) (st'' :: ps) m c
-                 -> PeerSender   ps pk (st'' :: ps) (S n) c m a
-                 -> PeerSender   ps pk (st   :: ps)    n  c m a
+                 -> PeerReceiver ps pr (st'  :: ps) (st'' :: ps) m c
+                 -> PeerSender   ps pr (st'' :: ps) (S n) c m a
+                 -> PeerSender   ps pr (st   :: ps)    n  c m a
 
   -- | Collect the result of a previous pipelined receive action.
   --
@@ -88,9 +88,9 @@ data PeerSender ps (pk :: PeerKind) (st :: ps) (n :: Outstanding) c m a where
   -- outstanding pipelined responses decreases by one. The type also guarantees
   -- that it can only be used when there is at least one outstanding response.
   --
-  SenderCollect  :: Maybe (PeerSender ps pk (st :: ps) (S n) c m a)
-                 -> (c ->  PeerSender ps pk (st :: ps)    n  c m a)
-                 ->        PeerSender ps pk (st :: ps) (S n) c m a
+  SenderCollect  :: Maybe (PeerSender ps pr (st :: ps) (S n) c m a)
+                 -> (c ->  PeerSender ps pr (st :: ps)    n  c m a)
+                 ->        PeerSender ps pr (st :: ps) (S n) c m a
 
 
 -- | Type level count of the number of outstanding pipelined yields for which
@@ -115,15 +115,15 @@ data Nat (n :: N) where
   Succ :: Nat n -> Nat (S n)
 
 
-data PeerReceiver ps (pk :: PeerKind) (st :: ps) (stdone :: ps) m c where
+data PeerReceiver ps (pr :: PeerRole) (st :: ps) (stdone :: ps) m c where
 
-  ReceiverEffect :: m (PeerReceiver ps pk st stdone m c)
-                 ->    PeerReceiver ps pk st stdone m c
+  ReceiverEffect :: m (PeerReceiver ps pr st stdone m c)
+                 ->    PeerReceiver ps pr st stdone m c
 
-  ReceiverDone   :: c -> PeerReceiver ps pk stdone stdone m c
+  ReceiverDone   :: c -> PeerReceiver ps pr stdone stdone m c
 
-  ReceiverAwait  :: !(TheyHaveAgency pk st)
+  ReceiverAwait  :: !(TheyHaveAgency pr st)
                  -> (forall st'. Message ps st st'
-                              -> PeerReceiver ps pk st' stdone m c)
-                 -> PeerReceiver ps pk st stdone m c
+                              -> PeerReceiver ps pr st' stdone m c)
+                 -> PeerReceiver ps pr st stdone m c
 

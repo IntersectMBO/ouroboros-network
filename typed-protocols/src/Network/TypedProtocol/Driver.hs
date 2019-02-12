@@ -68,18 +68,18 @@ import Numeric.Natural (Natural)
 -- This runs the peer to completion (if the protocol allows for termination).
 --
 runPeer
-  :: forall ps (st :: ps) pk failure bytes m a .
+  :: forall ps (st :: ps) pr failure bytes m a .
      Monad m
   => Codec ps failure m bytes
   -> Channel m bytes
-  -> Peer ps pk st m a
+  -> Peer ps pr st m a
   -> m (Either failure a)
 
 runPeer Codec{encode, decode} channel@Channel{send} = go Nothing
   where
     go :: forall st'.
           Maybe bytes
-       -> Peer ps pk st' m a
+       -> Peer ps pr st' m a
        -> m (Either failure a)
     go trailing (Effect k) = k >>= go trailing
     go _        (Done _ x) = return (Right x)
@@ -121,12 +121,12 @@ runDecoderWithChannel Channel{recv} = go
 -- 'MonadSTM' constraint.
 --
 runPipelinedPeer
-  :: forall ps (st :: ps) pk failure bytes m a.
+  :: forall ps (st :: ps) pr failure bytes m a.
      MonadSTM m
   => Natural
   -> Codec ps failure m bytes
   -> Channel m bytes
-  -> PeerPipelined ps pk st m a
+  -> PeerPipelined ps pr st m a
   -> m a
 runPipelinedPeer maxOutstanding codec channel (PeerPipelined peer) = do
     receiveQueue <- atomically $ newTBQueue maxOutstanding
@@ -138,24 +138,24 @@ runPipelinedPeer maxOutstanding codec channel (PeerPipelined peer) = do
     --TODO: manage the fork + exceptions here
 
 
-data ReceiveHandler ps pk m c where
-     ReceiveHandler :: PeerReceiver ps pk (st :: ps) (st' :: ps) m c
-                    -> ReceiveHandler ps pk m c
+data ReceiveHandler ps pr m c where
+     ReceiveHandler :: PeerReceiver ps pr (st :: ps) (st' :: ps) m c
+                    -> ReceiveHandler ps pr m c
 
 
 runPipelinedPeerSender
-  :: forall ps (st :: ps) pk failure bytes c m a.
+  :: forall ps (st :: ps) pr failure bytes c m a.
      MonadSTM m
-  => TBQueue m (ReceiveHandler ps pk m c)
+  => TBQueue m (ReceiveHandler ps pr m c)
   -> TBQueue m c
   -> Codec ps failure m bytes
   -> Channel m bytes
-  -> PeerSender ps pk st Z c m a
+  -> PeerSender ps pr st Z c m a
   -> m a
 runPipelinedPeerSender receiveQueue collectQueue Codec{encode} Channel{send} =
     go Zero
   where
-    go :: forall st' n. Nat n -> PeerSender ps pk st' n c m a -> m a
+    go :: forall st' n. Nat n -> PeerSender ps pr st' n c m a -> m a
     go n    (SenderEffect k) = k >>= go n
     go Zero (SenderDone _ x) = return x
 
@@ -180,9 +180,9 @@ runPipelinedPeerSender receiveQueue collectQueue Codec{encode} Channel{send} =
 
 
 runPipelinedPeerReceiverQueue
-  :: forall ps pk failure bytes m c.
+  :: forall ps pr failure bytes m c.
      MonadSTM m
-  => TBQueue m (ReceiveHandler ps pk m c)
+  => TBQueue m (ReceiveHandler ps pr m c)
   -> TBQueue m c
   -> Codec ps failure m bytes
   -> Channel m bytes
@@ -199,18 +199,18 @@ runPipelinedPeerReceiverQueue receiveQueue collectQueue codec channel = go Nothi
 
 
 runPipelinedPeerReceiver
-  :: forall ps (st :: ps) (stdone :: ps) pk failure bytes m c.
+  :: forall ps (st :: ps) (stdone :: ps) pr failure bytes m c.
      Monad m
   => Codec ps failure m bytes
   -> Channel m bytes
   -> Maybe bytes
-  -> PeerReceiver ps pk (st :: ps) (stdone :: ps) m c
+  -> PeerReceiver ps pr (st :: ps) (stdone :: ps) m c
   -> m (c, Maybe bytes)
 runPipelinedPeerReceiver Codec{decode} channel = go
   where
     go :: forall st' st''.
           Maybe bytes
-       -> PeerReceiver ps pk st' st'' m c
+       -> PeerReceiver ps pr st' st'' m c
        -> m (c, Maybe bytes)
     go trailing (ReceiverEffect k) = k >>= go trailing
 

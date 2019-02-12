@@ -12,19 +12,19 @@ import           Text.Read (readMaybe)
 
 
 codecReqResp
-  :: forall req resp pk m.
+  :: forall req resp pr m.
      (Monad m, Show req, Show resp, Read req, Read resp)
-  => Codec (ReqResp req resp) pk String m String
+  => Codec (ReqResp req resp) pr String m String
 codecReqResp =
     Codec{encode, decode}
   where
-    encode :: WeHaveAgency pk st
+    encode :: WeHaveAgency pr st
            -> Message (ReqResp req resp) st st'
            -> String
     encode (ClientAgency TokIdle) msg = show msg
     encode (ServerAgency TokBusy) msg = show msg
 
-    decode :: TheyHaveAgency pk st
+    decode :: TheyHaveAgency pr st
            -> m (DecodeStep String String m (SomeMessage st))
     decode stok =
       decodeTerminatedFrame '\n' $ \str trailing ->
