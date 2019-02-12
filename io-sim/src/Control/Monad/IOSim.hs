@@ -34,7 +34,6 @@ import qualified Data.List as L
 import           Data.Fixed (Micro)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (catMaybes)
 import qualified Data.Set as Set
 
 import           Control.Exception
@@ -348,29 +347,7 @@ runSimTrace :: forall a. (forall s. SimM s a) -> Trace a
 runSimTrace mainAction = runST (runSimTraceST mainAction)
 
 runSimTraceST :: forall s a. SimM s a -> ST s (Trace a)
-runSimTraceST mainAction = schedule (initialState mainAction)
-
-data SimState s a = SimState {
-       runqueue :: ![Thread s a],
-       blocked  :: !(Map ThreadId (Thread s a)),
-       curTime  :: !VTime,
-       timers   :: !(OrdPSQ TimeoutId VTime (TVar s TimeoutState)),
-       nextTid  :: !ThreadId,   -- ^ next unused 'ThreadId'
-       nextVid  :: !TVarId,     -- ^ next unused 'TVarId'
-       nextTmid :: !TimeoutId   -- ^ next unused 'TimeoutId'
-     }
-
-initialState :: SimM s a -> SimState s a
-initialState mainAction =
-    SimState {
-      runqueue = [mainThread],
-      blocked  = Map.empty,
-      curTime  = VTime 0,
-      timers   = PSQ.empty,
-      nextTid  = ThreadId 1,
-      nextVid  = TVarId 0,
-      nextTmid = TimeoutId 0
-    }
+runSimTraceST mainAction = schedule mainThread initialState
   where
     mainThread =
       Thread {
@@ -378,43 +355,69 @@ initialState mainAction =
         threadControl = ThreadControl (runSimM mainAction) MainFrame
       }
 
-schedule :: SimState s a -> ST s (Trace a)
-schedule simstate@SimState {
-           runqueue = thread@Thread{
-                        threadId      = tid,
-                        threadControl = ThreadControl action ctl
-                      } : remaining,
-           blocked, timers, nextTid, nextVid, nextTmid,
+data SimState s a = SimState {
+       runqueue :: ![ThreadId],
+       -- | All threads other than the currently running thread: both running
+       -- and blocked threads.
+       threads  :: !(Map ThreadId (Thread s a)),
+       curTime  :: !VTime,
+       timers   :: !(OrdPSQ TimeoutId VTime (TVar s TimeoutState)),
+       nextTid  :: !ThreadId,   -- ^ next unused 'ThreadId'
+       nextVid  :: !TVarId,     -- ^ next unused 'TVarId'
+       nextTmid :: !TimeoutId   -- ^ next unused 'TimeoutId'
+     }
+
+initialState :: SimState s a
+initialState =
+    SimState {
+      runqueue = [],
+      threads  = Map.empty,
+      curTime  = VTime 0,
+      timers   = PSQ.empty,
+      nextTid  = ThreadId 1,
+      nextVid  = TVarId 0,
+      nextTmid = TimeoutId 0
+    }
+
+schedule :: Thread s a -> SimState s a -> ST s (Trace a)
+schedule thread@Thread{
+           threadId      = tid,
+           threadControl = ThreadControl action ctl
+         }
+         simstate@SimState {
+           runqueue,
+           threads,
+           timers,
+           nextTid, nextVid, nextTmid,
            curTime  = time
          } =
   case action of
 
     Return x -> case ctl of
-      MainFrame -> do
+      MainFrame ->
         -- the main thread is done, so we're done
         -- even if other threads are still running
-        let remainingThreadIds = (map threadId remaining) ++ Map.keys blocked
-        return (TraceMainReturn time x remainingThreadIds)
+        return (TraceMainReturn time x (Map.keys threads))
 
       ForkFrame -> do
         -- this thread is done
-        trace <- schedule simstate { runqueue = remaining }
+        trace <- reschedule simstate { threads = Map.delete tid threads }
         return (Trace time tid EventThreadStopped trace)
 
       ContFrame k ctl' -> do
         -- pop the control stack and continue
         let thread' = thread { threadControl = ThreadControl (k x) ctl' }
-        schedule simstate { runqueue = thread':remaining }
+        schedule thread' simstate
 
       CatchFrame _handler k ctl' -> do
         -- pop the control stack and continue
         let thread' = thread { threadControl = ThreadControl (k x) ctl' }
-        schedule simstate { runqueue = thread':remaining }
+        schedule thread' simstate
 
     Throw e -> case unwindControlStack tid e ctl of
       Right thread' ->
         -- We found a suitable exception handler, continue with that
-        schedule simstate { runqueue = thread':remaining }
+        schedule thread' simstate
 
       Left isMain
         -- We unwound and did not find any suitable exception handler, so we
@@ -422,14 +425,13 @@ schedule simstate@SimState {
         | isMain -> do
           -- An unhandled exception in the main thread terminates the program
           let e' = toException e
-              remainingThreadIds = (map threadId remaining) ++ Map.keys blocked
           return (Trace time tid (EventThrow e') $
                   Trace time tid (EventThreadException e') $
-                  TraceMainException time e' remainingThreadIds)
+                  TraceMainException time e' (Map.keys threads))
 
         | otherwise -> do
           -- An unhandled exception in any other thread terminates the thread
-          trace <- schedule simstate { runqueue = remaining }
+          trace <- reschedule simstate { threads = Map.delete tid threads }
           let e' = toException e
           return (Trace time tid (EventThrow e') $
                   Trace time tid (EventThreadException e') trace)
@@ -438,26 +440,26 @@ schedule simstate@SimState {
       -- push the failure and success continuations onto the control stack
       let thread' = thread { threadControl = ThreadControl action' 
                                                (CatchFrame handler k ctl) }
-      schedule simstate { runqueue = thread':remaining }
+      schedule thread' simstate
 
     Say msg k -> do
       let thread' = thread { threadControl = ThreadControl k ctl }
-      trace <- schedule simstate { runqueue = thread':remaining }
+      trace <- schedule thread' simstate
       return (Trace time tid (EventSay msg) trace)
 
     Output (Probe p) o k -> do
       modifySTRef p ((time, o):)
       let thread' = thread { threadControl = ThreadControl k ctl }
-      schedule simstate { runqueue = thread':remaining }
+      schedule thread' simstate
 
     LiftST st k -> do
       x <- strictToLazyST st
       let thread' = thread { threadControl = ThreadControl (k x) ctl }
-      schedule simstate { runqueue = thread':remaining }
+      schedule thread' simstate
 
     GetTime k -> do
       let thread' = thread { threadControl = ThreadControl (k time) ctl }
-      schedule simstate { runqueue = thread':remaining }
+      schedule thread' simstate
 
     NewTimeout d k -> do
       tvar <- execNewTVar nextVid TimeoutPending
@@ -465,10 +467,9 @@ schedule simstate@SimState {
           timeout = Timeout tvar nextTmid
           timers' = PSQ.insert nextTmid expiry tvar timers
           thread' = thread { threadControl = ThreadControl (k timeout) ctl }
-      trace <- schedule simstate { runqueue = thread':remaining
-                                 , timers   = timers'
-                                 , nextVid  = succ nextVid
-                                 , nextTmid = succ nextTmid }
+      trace <- schedule thread' simstate { timers   = timers'
+                                         , nextVid  = succ nextVid
+                                         , nextTmid = succ nextTmid }
       return (Trace time tid (EventTimerCreated nextTmid nextVid expiry) trace)
 
     UpdateTimeout (Timeout _tvar tmid) d k -> do
@@ -479,15 +480,13 @@ schedule simstate@SimState {
           expiry  = d `addTime` time
           timers' = snd (PSQ.alter updateTimout tmid timers)
           thread' = thread { threadControl = ThreadControl k ctl }
-      trace <- schedule simstate { runqueue = thread':remaining
-                                 , timers   = timers' }
+      trace <- schedule thread' simstate { timers = timers' }
       return (Trace time tid (EventTimerUpdated tmid expiry) trace)
 
     CancelTimeout (Timeout _tvar tmid) k -> do
       let timers' = PSQ.delete tmid timers
           thread' = thread { threadControl = ThreadControl k ctl }
-      trace <- schedule simstate { runqueue = thread':remaining
-                                 , timers   = timers' }
+      trace <- schedule thread' simstate { timers = timers' }
       return (Trace time tid (EventTimerCancelled tmid) trace)
 
     Fork a k -> do
@@ -496,10 +495,10 @@ schedule simstate@SimState {
           thread'' = Thread { threadId      = tid'
                             , threadControl = ThreadControl (runSimM a)
                                                             ForkFrame }
-      trace <- schedule simstate
-        { runqueue = thread':remaining ++ [thread'']
-        , nextTid  = succ nextTid
-        }
+          threads' = Map.insert tid' thread'' threads
+      trace <- schedule thread' simstate { runqueue = runqueue ++ [tid']
+                                         , threads  = threads'
+                                         , nextTid  = succ nextTid }
       return (Trace time tid (EventThreadForked tid') trace)
 
     Atomically a k -> do
@@ -507,7 +506,8 @@ schedule simstate@SimState {
       case res of
         StmTxComitted x written wakeup nextVid' -> do
           let thread'   = thread { threadControl = ThreadControl (k x) ctl }
-              unblocked = catMaybes [ Map.lookup tid' blocked | (tid', _) <- wakeup ]
+              unblocked = [ tid' | (tid', _) <- reverse wakeup
+                                 , Map.member tid' threads ]
               -- We don't interrupt runnable threads to provide fairness
               -- anywhere else. We do it here by putting the tx that comitted
               -- a transaction to the back of the runqueue, behind all other
@@ -515,13 +515,11 @@ schedule simstate@SimState {
               -- For testing, we should have a more sophiscated policy to show
               -- that algorithms are not sensitive to the exact policy, so long
               -- as it is a fair policy (all runnable threads eventually run).
-              runqueue  = remaining ++ reverse (thread' : unblocked)
-          trace <- schedule simstate {
-                     runqueue,
-                     blocked  = blocked `Map.difference`
-                                Map.fromList [ (tid', ()) | (tid', _) <- wakeup ],
-                     nextVid  = nextVid'
-                   }
+              runqueue' = L.nub (runqueue ++ unblocked) ++ [tid]
+              threads'  = Map.insert tid thread' threads
+          trace <- reschedule simstate { runqueue = runqueue'
+                                       , threads  = threads'
+                                       , nextVid  = nextVid' }
           return $
             Trace time tid (EventTxComitted written [nextVid..pred nextVid']) $
             traceMany
@@ -531,25 +529,31 @@ schedule simstate@SimState {
         StmTxAborted e -> do
           -- schedule this thread to immediately raise the exception
           let thread' = thread { threadControl = ThreadControl (Throw e) ctl }
-          trace <- schedule simstate { runqueue = thread':remaining }
+          trace <- schedule thread' simstate
           return (Trace time tid EventTxAborted trace)
 
         StmTxBlocked vids -> do
-          let blocked' = Map.insert tid thread blocked
-          trace <- schedule simstate { runqueue = remaining
-                                     , blocked  = blocked' }
+          let threads' = Map.insert tid thread threads
+          trace <- reschedule simstate { threads = threads' }
           return (Trace time tid (EventTxBlocked vids) trace)
 
--- no runnable threads, advance the time to the next timer event, or stop.
-schedule simstate@SimState {
-           runqueue = [],
-           blocked, timers,
-           curTime = time
-         } =
+
+-- When there is no current running thread but the runqueue is non-empty then
+-- schedule the next one to run.
+reschedule :: SimState s a -> ST s (Trace a)
+reschedule simstate@SimState{ runqueue = tid:runqueue', threads } =
+
+    let thread = threads Map.! tid in
+    schedule thread simstate { runqueue = runqueue'
+                             , threads  = Map.delete tid threads }
+
+-- But when there are no runnable threads, we advance the time to the next
+-- timer event, or stop.
+reschedule simstate@SimState{ runqueue = [], threads, timers, curTime = time } =
 
     -- important to get all events that expire at this time
     case removeMinimums timers of
-      Nothing -> return (TraceDeadlock time (Map.keys blocked))
+      Nothing -> return (TraceDeadlock time (Map.keys threads))
 
       Just (tmids, time', fired, timers') -> assert (time' >= time) $ do
 
@@ -557,13 +561,10 @@ schedule simstate@SimState {
         -- Simplify to a special case that only reads and writes TVars.
         wakeup <- execAtomically' (runSTM $ mapM_ timeoutAction fired)
 
-        let runnable  = catMaybes    [ Map.lookup tid' blocked
-                                     | (tid', _) <- wakeup ]
-            unblocked = Map.fromList [ (tid', ())
-                                     | (tid', _) <- wakeup ]
-        trace <- schedule simstate {
-                   runqueue = reverse runnable,
-                   blocked  = blocked `Map.difference` unblocked,
+        let runqueue' = [ tid' | (tid', _) <- reverse wakeup
+                               , Map.member tid' threads ]
+        trace <- reschedule simstate {
+                   runqueue = runqueue',
                    curTime  = time',
                    timers   = timers'
                  }
@@ -580,6 +581,7 @@ schedule simstate@SimState {
         TimeoutPending   -> writeTVar var TimeoutFired
         TimeoutFired     -> error "MonadTimer(Sim): invariant violation"
         TimeoutCancelled -> return ()
+
 
 -- | Iterate through the control stack to find an enclosing exception handler
 -- of the right type, or unwind all the way to the top level for the thread.
