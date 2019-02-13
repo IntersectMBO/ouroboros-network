@@ -33,35 +33,6 @@ codecPingPong =
           _                              -> DecodeFail ("unexpected message: " ++ str)
 
 
-decodeFrameOfLength :: forall m a.
-                       Monad m
-                    => Int
-                    -> (String -> Maybe String -> DecodeStep String String m a)
-                    -> m (DecodeStep String String m a)
-decodeFrameOfLength n k = go [] n
-  where
-    go :: [String] -> Int -> m (DecodeStep String String m a)
-    go chunks required =
-      return $ DecodePartial $ \mchunk ->
-        case mchunk of
-          Nothing -> return $ DecodeFail "not enough input"
-          Just chunk
-            | length chunk >= required
-           -> let (c,c') = splitAt required chunk in
-              return $ k (concat (reverse (c:chunks)))
-                         (if null c' then Nothing else Just c)
-
-            | otherwise
-           -> go (chunk : chunks) (required - length chunk)
-
-{-
-prop_decodeStepSplitAt n = do
-    chan <- fixedInputChannel ["ping", "pong"]
-    runDecoder chan Nothing decoder
-  where
-    decoder = decodeStepSplitAt n Done)
--}
-
 decodeTerminatedFrame :: forall m a.
                          Monad m
                       => Char
