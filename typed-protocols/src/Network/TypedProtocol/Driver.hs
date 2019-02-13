@@ -221,5 +221,5 @@ runPipelinedPeerReceiver Codec{decode} channel = go
       res <- runDecoderWithChannel channel trailing decoder
       case res of
         Right (SomeMessage msg, trailing') -> go trailing' (k msg)
-        Left failure                       -> error "TODO: proper exceptions for runPipelinedPeer"
+        Left _failure                      -> error "TODO: proper exceptions for runPipelinedPeer"
 
