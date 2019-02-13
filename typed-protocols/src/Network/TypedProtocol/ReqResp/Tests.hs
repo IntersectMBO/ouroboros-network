@@ -34,9 +34,9 @@ tests :: TestTree
 tests = testGroup "Network.TypedProtocol.ReqResp"
   [ testProperty "direct"              prop_direct
   , testProperty "directPipelined"     prop_directPipelined
-{-
   , testProperty "connect"             prop_connect
   , testProperty "connectPipelined"    prop_connectPipelined
+{-
   , testProperty "channel ST"          prop_channel_ST
   , testProperty "channel IO"          prop_channel_IO
 -}
@@ -111,6 +111,28 @@ prop_directPipelined f xs =
 --
 -- Properties using connect
 --
+
+prop_connect :: (Int -> Int -> (Int, Int)) -> [Int] -> Bool
+prop_connect f xs =
+    case runIdentity
+           (connect
+             (reqRespClientPeer (reqRespClientMap xs))
+             (reqRespServerPeer (reqRespServerMapAccumL (\a -> pure . f a) 0)))
+
+      of (c, s, TerminalStates TokDone TokDone) ->
+           (s, c) == mapAccumL f 0 xs
+
+
+prop_connectPipelined :: [Bool] -> (Int -> Int -> (Int, Int)) -> [Int] -> Bool
+prop_connectPipelined cs f xs =
+    case runIdentity
+           (connectPipelined cs
+             (reqRespClientPeerPipelined (reqRespClientMapPipelined xs))
+             (reqRespServerPeer          (reqRespServerMapAccumL
+                                            (\a -> pure . f a) 0)))
+
+      of (c, s, TerminalStates TokDone TokDone) ->
+           (s, c) == mapAccumL f 0 xs
 
 
 --
