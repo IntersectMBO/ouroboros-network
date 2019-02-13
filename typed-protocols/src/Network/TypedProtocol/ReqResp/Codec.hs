@@ -1,5 +1,6 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE NamedFieldPuns #-}
 
@@ -12,19 +13,21 @@ import           Text.Read (readMaybe)
 
 
 codecReqResp
-  :: forall req resp pr m.
+  :: forall req resp m.
      (Monad m, Show req, Show resp, Read req, Read resp)
-  => Codec (ReqResp req resp) pr String m String
+  => Codec (ReqResp req resp) String m String
 codecReqResp =
     Codec{encode, decode}
   where
-    encode :: WeHaveAgency pr st
+    encode :: forall (pr :: PeerRole) st st'.
+              PeerHasAgency pr st
            -> Message (ReqResp req resp) st st'
            -> String
     encode (ClientAgency TokIdle) msg = show msg
     encode (ServerAgency TokBusy) msg = show msg
 
-    decode :: TheyHaveAgency pr st
+    decode :: forall (pr :: PeerRole) st.
+              PeerHasAgency pr st
            -> m (DecodeStep String String m (SomeMessage st))
     decode stok =
       decodeTerminatedFrame '\n' $ \str trailing ->
