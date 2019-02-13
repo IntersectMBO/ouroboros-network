@@ -136,7 +136,6 @@ instance MonadTimer SocketBearer where
 
     registerDelay = undefined -- XXX
 
-
 instance MonadSTM SocketBearer where
     type Tr   SocketBearer = SocketBearerSTM
     type TVar SocketBearer = STM.TVar
@@ -176,6 +175,7 @@ instance MonadSTM SocketBearer where
     newTBQueue     = SocketBearerSTM . STM.newTBQueue . fromEnum
 #endif
     readTBQueue    = SocketBearerSTM . STM.readTBQueue
+    tryReadTBQueue = SocketBearerSTM . STM.tryReadTBQueue
     writeTBQueue   = fmap SocketBearerSTM . STM.writeTBQueue
 
 
