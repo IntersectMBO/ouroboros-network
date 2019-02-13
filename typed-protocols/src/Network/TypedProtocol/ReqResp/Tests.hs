@@ -2,25 +2,28 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE NamedFieldPuns #-}
 
--- TODO: remove this flag, now because `direct` is not used.
-{-# OPTIONS_GHC -Wno-unused-top-binds #-}
 
 module Network.TypedProtocol.ReqResp.Tests (tests) where
 
-import           Data.Functor.Identity (Identity (..))
+import Network.TypedProtocol.Codec
+import Network.TypedProtocol.Proofs
 
-import           Network.TypedProtocol.Core
-import           Network.TypedProtocol.Codec
+import Network.TypedProtocol.ReqResp.Type
+import Network.TypedProtocol.ReqResp.Client
+import Network.TypedProtocol.ReqResp.Server
+import Network.TypedProtocol.ReqResp.Codec
+import Network.TypedProtocol.ReqResp.Examples
 
-import           Network.TypedProtocol.PingPong.Tests (splits2, splits3)
-import           Network.TypedProtocol.ReqResp.Type
-import           Network.TypedProtocol.ReqResp.Codec
-import           Network.TypedProtocol.ReqResp.Client as Client
-import           Network.TypedProtocol.ReqResp.Server as Server
+import Data.Functor.Identity (Identity (..))
+import Data.Tuple (swap)
+import Data.List (mapAccumL)
 
-import           Test.QuickCheck
-import           Test.Tasty (TestTree, testGroup)
-import           Test.Tasty.QuickCheck (testProperty)
+import Network.TypedProtocol.PingPong.Tests (splits2, splits3)
+
+import Test.QuickCheck
+import Text.Show.Functions ()
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.QuickCheck (testProperty)
 
 
 --
@@ -29,55 +32,124 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 tests :: TestTree
 tests = testGroup "Network.TypedProtocol.ReqResp"
-  [ testProperty "codec"          prop_codec_ReqResp
-  , testProperty "codec 2-splits" prop_codec_splits2_ReqResp
-  , testProperty "codec 3-splits" prop_codec_splits3_ReqResp
+  [ testProperty "direct"              prop_direct
+  , testProperty "directPipelined"     prop_directPipelined
+{-
+  , testProperty "connect"             prop_connect
+  , testProperty "connectPipelined"    prop_connectPipelined
+  , testProperty "channel ST"          prop_channel_ST
+  , testProperty "channel IO"          prop_channel_IO
+-}
+  , testProperty "codec"               prop_codec_ReqResp
+  , testProperty "codec 2-splits"      prop_codec_splits2_ReqResp
+  , testProperty "codec 3-splits"      (withMaxSuccess 33
+                                       prop_codec_splits3_ReqResp)
   ]
 
 
--- TODO: this module needs to be fleshed out once the PingPong template is done
+--
+-- Properties going directly, not via Peer.
+--
 
 direct :: Monad m
        => ReqRespClient req resp m a
        -> ReqRespServer req resp m b
        -> m (a, b)
 
-direct (Client.SendMsgDone clientResult) ReqRespServer{recvMsgDone} =
+direct (SendMsgDone clientResult) ReqRespServer{recvMsgDone} =
     pure (clientResult, recvMsgDone)
 
-direct (Client.SendMsgReq req kPong) ReqRespServer{recvMsgReq} = do
+direct (SendMsgReq req kResp) ReqRespServer{recvMsgReq} = do
     (resp, server') <- recvMsgReq req
-    client' <- kPong resp
+    client' <- kResp resp
     direct client' server'
+
+
+directPipelined :: Monad m
+                => ReqRespClientPipelined req resp m a
+                -> ReqRespServer          req resp m b
+                -> m (a, b)
+directPipelined (ReqRespClientPipelined client0) server0 =
+    go EmptyQ client0 server0
+  where
+    go :: Monad m
+       => Queue n c
+       -> ReqRespSender req resp n c m a
+       -> ReqRespServer req resp     m b
+       -> m (a, b)
+    go EmptyQ (SendMsgDonePipelined clientResult) ReqRespServer{recvMsgDone} =
+      pure (clientResult, recvMsgDone)
+
+    go q (SendMsgReqPipelined req kResp client') ReqRespServer{recvMsgReq} = do
+      (resp, server') <- recvMsgReq req
+      x               <- kResp resp
+      go (enqueue x q) client' server'
+
+    go (ConsQ x q) (CollectPipelined _ k) server =
+      go q (k x) server
+
+
+prop_direct :: (Int -> Int -> (Int, Int)) -> [Int] -> Bool
+prop_direct f xs =
+    runIdentity
+      (direct
+        (reqRespClientMap xs)
+        (reqRespServerMapAccumL (\a -> pure . f a) 0))
+ ==
+    swap (mapAccumL f 0 xs)
+
+prop_directPipelined :: (Int -> Int -> (Int, Int)) -> [Int] -> Bool
+prop_directPipelined f xs =
+    runIdentity
+      (directPipelined
+        (reqRespClientMapPipelined xs)
+        (reqRespServerMapAccumL (\a -> pure . f a) 0))
+ ==
+    swap (mapAccumL f 0 xs)
+
+
+--
+-- Properties using connect
+--
+
+
+--
+-- Properties using channels, codecs and drivers.
+--
+
+
 
 --
 -- Codec properties
 --
 
-instance (Arbitrary req, Arbitrary resp) => Arbitrary (AnyMessageAndAgency (ReqResp req resp)) where
+instance (Arbitrary req, Arbitrary resp) =>
+         Arbitrary (AnyMessageAndAgency (ReqResp req resp)) where
   arbitrary = oneof
     [ AnyMessageAndAgency (ClientAgency TokIdle) . MsgReq <$> arbitrary
     , AnyMessageAndAgency (ServerAgency TokBusy) . MsgResp <$> arbitrary
     , return (AnyMessageAndAgency (ClientAgency TokIdle) MsgDone)
     ]
+
   shrink (AnyMessageAndAgency a (MsgReq r))  =
     [ AnyMessageAndAgency a (MsgReq r')
-    | r' <- shrink r
-    ]
+    | r' <- shrink r ]
+
   shrink (AnyMessageAndAgency a (MsgResp r)) =
     [ AnyMessageAndAgency a (MsgResp r')
-    | r' <- shrink r
-    ]
+    | r' <- shrink r ]
+
   shrink (AnyMessageAndAgency _ MsgDone)     = []
 
-instance (Show req, Show resp) => Show (AnyMessageAndAgency (ReqResp req resp)) where
-  show (AnyMessageAndAgency _ msg) = show msg
-
 instance (Eq req, Eq resp) => Eq (AnyMessage (ReqResp req resp)) where
-  (AnyMessage (MsgReq r1))  == (AnyMessage (MsgReq r2))  = r1 == r2
+  (AnyMessage (MsgReq  r1)) == (AnyMessage (MsgReq  r2)) = r1 == r2
   (AnyMessage (MsgResp r1)) == (AnyMessage (MsgResp r2)) = r1 == r2
   (AnyMessage MsgDone)      == (AnyMessage MsgDone)      = True
   _                         == _                         = False
+
+instance (Show req, Show resp) =>
+         Show (AnyMessageAndAgency (ReqResp req resp)) where
+  show (AnyMessageAndAgency _ msg) = show msg
 
 prop_codec_ReqResp :: AnyMessageAndAgency (ReqResp String String) -> Bool
 prop_codec_ReqResp =
@@ -85,17 +157,18 @@ prop_codec_ReqResp =
       runIdentity
       codecReqResp
 
-prop_codec_splits2_ReqResp :: AnyMessageAndAgency (ReqResp String String) -> Bool
+prop_codec_splits2_ReqResp :: AnyMessageAndAgency (ReqResp String String)
+                           -> Bool
 prop_codec_splits2_ReqResp =
     prop_codec_splits
       splits2
       runIdentity
       codecReqResp
 
-prop_codec_splits3_ReqResp :: AnyMessageAndAgency (ReqResp String String) -> Property
+prop_codec_splits3_ReqResp :: AnyMessageAndAgency (ReqResp String String)
+                           -> Bool
 prop_codec_splits3_ReqResp =
-    withMaxSuccess 33 .
-      prop_codec_splits
-        splits3
-        runIdentity
-        codecReqResp
+    prop_codec_splits
+      splits3
+      runIdentity
+      codecReqResp
