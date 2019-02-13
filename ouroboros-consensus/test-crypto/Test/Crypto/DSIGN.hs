@@ -10,11 +10,14 @@ import           Test.QuickCheck (Property, (==>))
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
+import           Ouroboros.Network.Serialise (prop_serialise)
+import           Ouroboros.Network.Serialise (Serialise)
+
 import           Ouroboros.Consensus.Crypto.DSIGN
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random (Seed, withSeed)
-import           Ouroboros.Network.Serialise (prop_serialise)
-import           Ouroboros.Network.Serialise (Serialise)
+
+import           Test.Util.Orphans.Arbitrary ()
 
 --
 -- The list of all tests

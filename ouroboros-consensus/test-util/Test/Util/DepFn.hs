@@ -10,7 +10,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 
 -- | Testing dependent functions
-module Ouroboros.Consensus.Util.DepFn (
+module Test.Util.DepFn (
     -- * Infrastructure: generic
     All
     -- * Testing dependent functions

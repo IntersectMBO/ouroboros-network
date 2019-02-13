@@ -1,10 +1,9 @@
 {-# LANGUAGE NumericUnderscores #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
-module Test.Orphans.Arbitrary () where
+module Test.Util.Orphans.Arbitrary () where
 
 import           Data.Time
-import           Numeric.Natural (Natural)
 import           Test.QuickCheck hiding (Fixed (..))
 
 import           Ouroboros.Network.Serialise (Serialise)
@@ -15,8 +14,7 @@ import           Ouroboros.Consensus.Crypto.Hash.Class (Hash,
                      HashAlgorithm (..), hash)
 import           Ouroboros.Consensus.Crypto.VRF.Class (VRFAlgorithm (..))
 import           Ouroboros.Consensus.Demo
-import           Ouroboros.Consensus.Util.Condense
-import           Ouroboros.Consensus.Util.Random (withSeed)
+import           Ouroboros.Consensus.Util.Random (Seed (..), withSeed)
 
 minNumCoreNodes, minNumSlots :: Int
 minNumCoreNodes = 2
@@ -144,20 +142,3 @@ secondsPerDay = 24 * 60 * 60
 -- Everybody knows nothing happened before 2000-01-01 00:00:00
 dawnOfTime :: UTCTime
 dawnOfTime = read "2000-01-01 00:00:00"
-
-{-------------------------------------------------------------------------------
-  Auxiliary: crypto
--------------------------------------------------------------------------------}
-
-genNatBetween :: Natural -> Natural -> Gen Natural
-genNatBetween from to = do
-    i <- choose (toInteger from, toInteger to)
-    return $ fromIntegral i
-
-genNat :: Gen Natural
-genNat = do
-    NonNegative i <- arbitrary :: Gen (NonNegative Integer)
-    return $ fromIntegral i
-
-shrinkNat :: Natural -> [Natural]
-shrinkNat = map fromIntegral . shrink . toInteger
