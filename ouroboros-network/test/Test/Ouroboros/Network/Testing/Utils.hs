@@ -9,7 +9,6 @@ import           Protocol.Channel
 
 import           Control.Monad.Class.MonadSTM
 
-
 tmvarChannels
   :: forall m. MonadSTM m
   => m (Duplex m m Encoding ByteString, Duplex m m Encoding ByteString)

@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -7,19 +8,60 @@
 module Ouroboros.Network.Protocol.Codec.Cbor where
 
 import           Control.Monad.ST
-
-import           Data.ByteString (ByteString)
+import           Control.Monad.Class.MonadST (MonadST (..))
 
 import qualified Codec.CBOR.Decoding as CBOR hiding (DecodeAction(Fail, Done))
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Write as CBOR
+import           Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Builder as BS
 import qualified Data.ByteString.Builder.Extra as BS
 import qualified Data.ByteString.Lazy.Internal as LBS (smallChunkSize)
 import qualified Data.ByteString.Lazy          as LBS
 
+-- TODO remove `Protocol.Codec` and qualilfication
+import qualified Network.TypedProtocol.Core  as TP
+import qualified Network.TypedProtocol.Codec as TP
 import           Protocol.Codec
+
+cborCodec
+  :: forall ps m. MonadST m
+  => (forall (pk :: TP.PeerRole) (st :: ps) (st' :: ps). TP.PeerHasAgency pk st -> TP.Message ps st st' -> CBOR.Encoding)
+  -> (forall (pk :: TP.PeerRole) (st :: ps) s.           TP.PeerHasAgency pk st -> CBOR.Decoder s (TP.SomeMessage st))
+  -> TP.Codec ps CBOR.DeserialiseFailure m ByteString
+cborCodec cborEncode cborDecode =
+    TP.Codec {
+      TP.encode = \stok msg -> convertCborEncoder  (cborEncode stok) msg,
+      TP.decode = \stok     -> convertCborDecoder' (cborDecode stok)
+    }
+
+convertCborEncoder :: (a -> CBOR.Encoding) -> a -> ByteString
+convertCborEncoder cborEncode =
+    CBOR.toStrictByteString
+  . cborEncode
+
+convertCborDecoder'
+  :: MonadST m
+  => (forall s. CBOR.Decoder s a)
+  -> m (TP.DecodeStep ByteString CBOR.DeserialiseFailure m a)
+convertCborDecoder' cborDecode =
+    withLiftST (convertCborDecoder cborDecode)
+
+convertCborDecoder
+  :: forall s m a. Functor m
+  => (CBOR.Decoder s a)
+  -> (forall b. ST s b -> m b)
+  -> m (TP.DecodeStep ByteString CBOR.DeserialiseFailure m a)
+convertCborDecoder cborDecode liftST =
+    go <$> liftST (CBOR.deserialiseIncremental cborDecode)
+  where
+    go (CBOR.Done  trailing _ x)
+      | BS.null trailing       = TP.DecodeDone x Nothing
+      | otherwise              = TP.DecodeDone x (Just trailing)
+    go (CBOR.Fail _ _ failure) = TP.DecodeFail failure
+    go (CBOR.Partial k)        = TP.DecodePartial (fmap go . liftST . k)
 
 -- | Convert a CBOR decoder type into a Protocol.Codec.Decoder.
 cborDecoder
@@ -69,8 +111,8 @@ cborDecoder packError decoder = Fold (idecode [] =<< CBOR.deserialiseIncremental
               }
       in  feedInputs inputs k
 
-convertCborEncoder :: (a -> CBOR.Encoding) -> a -> [ByteString]
-convertCborEncoder cborEncode =
+convertCborEncoder_ :: (a -> CBOR.Encoding) -> a -> [ByteString]
+convertCborEncoder_ cborEncode =
     LBS.toChunks
   . toLazyByteString
   . CBOR.toBuilder
@@ -90,7 +132,7 @@ convertCborCodec
   :: Functor m
   => Codec m fail CBOR.Encoding ByteString tr from
   -> Codec m fail [ByteString]  ByteString tr from
-convertCborCodec = mapCodec (convertCborEncoder id)
+convertCborCodec = mapCodec (convertCborEncoder_ id)
 
 -- | Convert @'Codec'@ with @'CBOR.Encoding'@ as its concrete representation to
 -- a codec with strict @'ByteString'@ as its concrete representation.
