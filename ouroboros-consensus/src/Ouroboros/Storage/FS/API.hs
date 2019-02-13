@@ -53,6 +53,8 @@ data HasFS m h = HasFS {
   , hPut                     :: HasCallStack => h -> Builder -> m Word64
 
     -- | Truncate the file to the specified size
+    --
+    -- NOTE: Only supported in append mode.
   , hTruncate                :: HasCallStack => h -> Word64 -> m ()
 
     -- | Return current file size
