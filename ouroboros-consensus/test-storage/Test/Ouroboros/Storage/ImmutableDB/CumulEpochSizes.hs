@@ -19,7 +19,7 @@ module Test.Ouroboros.Storage.ImmutableDB.CumulEpochSizes
 import qualified Data.Foldable as Foldable
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
-import           Data.Sequence (Seq(..))
+import           Data.Sequence (Seq (..))
 import qualified Data.Sequence as Seq
 
 import           GHC.Generics (Generic)
@@ -28,7 +28,7 @@ import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
-import           Ouroboros.Network.Block (Slot(..))
+import           Ouroboros.Network.Block (Slot (..))
 
 import           Ouroboros.Storage.ImmutableDB.Types
 
@@ -62,7 +62,7 @@ singleton = CES . Seq.singleton
 snoc :: CumulEpochSizes -> EpochSize -> CumulEpochSizes
 snoc _         0  = error "Epoch size must be > 0"
 snoc (CES ces) es = case ces of
-    Empty -> error "Impossible: empty CumulEpochSizes"
+    Empty        -> error "Impossible: empty CumulEpochSizes"
     _ :|> lastEs -> CES (ces :|> lastEs + es)
 
 -- | Helper to build a 'CumulEpochSizes' from a non-empty list of epoc sizes.
@@ -93,7 +93,7 @@ lastEpochSize (CES (_ :|> prevEs :|> lastEs)) = lastEs - prevEs
 -- | Return the last slot that a blob could be stored at, i.e. the slot
 -- corresponding to the last relative slot of the last epoch.
 maxSlot :: CumulEpochSizes -> Slot
-maxSlot (CES Empty) = error "Impossible: empty CumulEpochSizes"
+maxSlot (CES Empty)          = error "Impossible: empty CumulEpochSizes"
 maxSlot (CES (_ :|> lastEs)) = fromIntegral lastEs - 1
 
 -- | Return the size of the given epoch if known.
@@ -106,8 +106,8 @@ epochSize (CES ces) epoch =
 
 -- | Make sure the the given epoch is the last epoch for which the size is
 -- stored. No-op if the current last epoch is <= the given epoch.
-rollBackToEpoch :: CumulEpochSizes -> Epoch -> CumulEpochSizes
-rollBackToEpoch (CES ces) epoch = CES $ Seq.take (succ (fromIntegral epoch)) ces
+_rollBackToEpoch :: CumulEpochSizes -> Epoch -> CumulEpochSizes
+_rollBackToEpoch (CES ces) epoch = CES $ Seq.take (succ (fromIntegral epoch)) ces
 
 -- | Convert a 'Slot' to an 'EpochSlot'
 --

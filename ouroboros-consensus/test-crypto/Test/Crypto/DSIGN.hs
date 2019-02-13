@@ -17,7 +17,7 @@ import           Ouroboros.Consensus.Crypto.DSIGN
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random (Seed, withSeed)
 
-import           Test.Util.Orphans.Arbitrary
+import           Test.Util.Orphans.Arbitrary ()
 
 --
 -- The list of all tests
