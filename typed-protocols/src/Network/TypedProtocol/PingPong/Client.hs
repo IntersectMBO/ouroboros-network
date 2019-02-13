@@ -1,7 +1,15 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
 
-module Network.TypedProtocol.PingPong.Client where
+module Network.TypedProtocol.PingPong.Client (
+    -- * Normal client
+    PingPongClient(..),
+    pingPongClientPeer,
+    -- * Pipelined client
+    PingPongClientPipelined(..),
+    PingPongSender(..),
+    pingPongClientPeerPipelined,
+  ) where
 
 import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Pipelined
@@ -123,6 +131,9 @@ data PingPongSender n c m a where
 
 
 
+-- | Interpret a pipelined client as a 'PeerPipelined' on the client side of
+-- the 'PingPong' protocol.
+--
 pingPongClientPeerPipelined
   :: Monad m
   => PingPongClientPipelined                m a

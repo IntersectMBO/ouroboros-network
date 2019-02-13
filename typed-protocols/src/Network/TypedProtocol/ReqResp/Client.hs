@@ -1,7 +1,15 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
 
-module Network.TypedProtocol.ReqResp.Client where
+module Network.TypedProtocol.ReqResp.Client (
+    -- * Normal client
+    ReqRespClient(..),
+    reqRespClientPeer,
+    -- * Pipelined client
+    ReqRespClientPipelined(..),
+    ReqRespSender(..),
+    reqRespClientPeerPipelined,
+  ) where
 
 import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Pipelined
@@ -82,6 +90,10 @@ data ReqRespSender req resp n c m a where
   SendMsgDonePipelined
     :: a -> ReqRespSender req resp Z c m a
 
+
+-- | Interpret a pipelined client as a 'PeerPipelined' on the client side of
+-- the 'ReqResp' protocol.
+--
 reqRespClientPeerPipelined
   :: Monad m
   => ReqRespClientPipelined req resp                  m a

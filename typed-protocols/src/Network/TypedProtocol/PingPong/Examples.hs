@@ -57,7 +57,6 @@ pingPongClientCount n = SendMsgPing (pure (pingPongClientCount (n-1)))
 -- Pipelined examples
 --
 
-
 -- | A pipelined ping-pong client that sends eagerly rather than waiting to
 -- collect any replies. This is maximum pipelining in some sense, and
 -- correspondingly it gives minimum choice to the environment (drivers).
