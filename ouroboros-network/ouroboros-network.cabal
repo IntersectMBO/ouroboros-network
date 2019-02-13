@@ -26,6 +26,7 @@ library
                        Ouroboros.Network.Chain
                        Ouroboros.Network.ChainFragment
                        Ouroboros.Network.ChainProducerState
+                       Ouroboros.Network.Channel
                        Ouroboros.Network.Codec
                        Ouroboros.Network.Mux
                        Ouroboros.Network.Mux.Egress
