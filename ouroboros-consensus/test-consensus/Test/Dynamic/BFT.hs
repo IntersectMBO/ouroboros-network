@@ -36,7 +36,7 @@ import           Ouroboros.Network.Chain (Chain)
 
 import           Test.Dynamic.General
 import           Test.Dynamic.Util
-import           Test.Orphans.Arbitrary ()
+import           Test.Util.Orphans.Arbitrary ()
 
 tests :: TestTree
 tests = testGroup "Dynamic chain generation" [

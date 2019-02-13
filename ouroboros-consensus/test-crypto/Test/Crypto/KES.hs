@@ -15,10 +15,14 @@ import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
+import           Ouroboros.Network.Serialise (Serialise, prop_serialise)
+
 import           Ouroboros.Consensus.Crypto.DSIGN
 import           Ouroboros.Consensus.Crypto.KES
 import           Ouroboros.Consensus.Util.Random
-import           Ouroboros.Network.Serialise (Serialise, prop_serialise)
+
+import           Test.Util.Orphans.Arbitrary ()
+import           Test.Util.QuickCheck
 
 --
 -- The list of all tests

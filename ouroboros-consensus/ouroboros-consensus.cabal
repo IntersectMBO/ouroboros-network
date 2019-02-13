@@ -60,7 +60,6 @@ library
                        Ouroboros.Consensus.Util.Chain
                        Ouroboros.Consensus.Util.Classify
                        Ouroboros.Consensus.Util.Condense
-                       Ouroboros.Consensus.Util.DepFn
                        Ouroboros.Consensus.Util.HList
                        Ouroboros.Consensus.Util.Orphans
                        Ouroboros.Consensus.Util.Random
@@ -147,9 +146,7 @@ library
                        time,
                        transformers,
                        vector            >=0.12  && <0.13,
-                       unliftio-core     >=0.1.1 && <0.2,
-
-                       QuickCheck        >=2.12 && <2.13
+                       unliftio-core     >=0.1.1 && <0.2
 
   if os(windows)
      build-depends:       Win32
@@ -208,7 +205,8 @@ test-suite test-consensus
                     Test.Dynamic.Praos
                     Test.Dynamic.Util
                     Test.Ouroboros
-                    Test.Orphans.Arbitrary
+                    Test.Util.Orphans.Arbitrary
+                    Test.Util.DepFn
   build-depends:    base,
                     typed-transitions,
                     ouroboros-network,
@@ -234,7 +232,7 @@ test-suite test-consensus
 
 test-suite test-crypto
   type:             exitcode-stdio-1.0
-  hs-source-dirs:   test-crypto
+  hs-source-dirs:   test-crypto, test-util
   default-language: Haskell2010
   main-is:          Main.hs
   other-modules:
@@ -242,6 +240,8 @@ test-suite test-crypto
                     Test.Crypto.Hash
                     Test.Crypto.KES
                     Test.Crypto.VRF
+                    Test.Util.Orphans.Arbitrary
+                    Test.Util.QuickCheck
   build-depends:    base,
                     ouroboros-network,
                     ouroboros-consensus,
@@ -249,7 +249,8 @@ test-suite test-crypto
                     bytestring,
                     QuickCheck,
                     tasty,
-                    tasty-quickcheck
+                    tasty-quickcheck,
+                    time
 
   ghc-options:      -Wall
                     -fno-ignore-asserts

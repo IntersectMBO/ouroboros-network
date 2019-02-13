@@ -146,7 +146,10 @@ realBlockchainTime slotLen start = do
 -- > fixedToUTC (fixedFromUTC t) ~= t
 -- > fixedFromUTC (fixedToUTC t) == t
 newtype FixedUTC = FixedUTC { fixedSecondsSinceEpoch :: Fixed E3 }
-  deriving (Show, Eq, Ord)
+  deriving (Eq, Ord)
+
+instance Show FixedUTC where
+  show = show . fixedToUTC
 
 fixedFromUTC :: UTCTime -> FixedUTC
 fixedFromUTC = FixedUTC . conv . utcToSystemTime
@@ -173,7 +176,10 @@ getCurrentFixedUTC = fixedFromUTC <$> getCurrentTime
 -- > fixedToNominal (fixedFromNominal d) ~= d
 -- > fixedFromNominal (fixedToNominal t) == t
 newtype FixedDiffTime = FixedDiffTime { fixedDiffTime :: Fixed E3 }
-  deriving (Show, Eq, Ord, Num)
+  deriving (Eq, Ord, Num)
+
+instance Show FixedDiffTime where
+  show = show . fixedDiffToNominal
 
 fixedDiffFromNominal :: NominalDiffTime -> FixedDiffTime
 fixedDiffFromNominal = FixedDiffTime . doubleToFixed round . realToFrac

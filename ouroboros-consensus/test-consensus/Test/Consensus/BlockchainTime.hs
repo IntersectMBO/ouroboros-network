@@ -12,7 +12,7 @@ import           Test.Tasty.QuickCheck
 
 import           Ouroboros.Consensus.BlockchainTime
 
-import           Test.Orphans.Arbitrary ()
+import           Test.Util.Orphans.Arbitrary ()
 
 tests :: TestTree
 tests = testGroup "BlockchainTime" [
