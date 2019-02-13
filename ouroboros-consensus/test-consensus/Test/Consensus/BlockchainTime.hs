@@ -101,11 +101,17 @@ prop_timeUntilNextSlot :: SlotLength -> SystemStart -> FixedDiffTime -> Property
 prop_timeUntilNextSlot slotLen start execTime =
       counterexample ("now:      " ++ show now)
     . counterexample ("timeLeft: " ++ show timeLeft)
+    . tabulate "Edge case:" [edgeCase]
     $    0 < timeLeft
     .&&. timeLeft <= getSlotLength slotLen
   where
     now               = addFixedUTC execTime (getSystemStart start)
     (timeLeft, _next) = timeUntilNextSlot slotLen start now
+
+    edgeCase :: String
+    edgeCase | timeLeft <= 1                     = "<= 1"
+             | timeLeft >= getSlotLength slotLen = ">= slotLen"
+             | otherwise                         = "in the middle"
 
 -- > timeUntilNextSlot (startOfSlot slot) == (slotLen, slot + 1)
 prop_timeFromStartOfSlot :: SlotLength -> SystemStart -> Slot -> Property

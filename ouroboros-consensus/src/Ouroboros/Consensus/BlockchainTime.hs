@@ -213,12 +213,16 @@ newtype SlotLength = SlotLength { getSlotLength :: FixedDiffTime }
 slotLengthFromMillisec :: Integer -> SlotLength
 slotLengthFromMillisec = SlotLength . FixedDiffTime . conv
   where
+    -- Explicit type annotation here means that /if/ we change the precision,
+    -- we are forced to reconsider this code.
     conv :: Integer -> Fixed E3
     conv = MkFixed
 
 slotLengthToMillisec :: SlotLength -> Integer
 slotLengthToMillisec = conv . fixedDiffTime . getSlotLength
   where
+    -- Explicit type annotation here means that /if/ we change the precision,
+    -- we are forced to reconsider this code.
     conv :: Fixed E3 -> Integer
     conv (MkFixed n) = n
 
