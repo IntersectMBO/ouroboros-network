@@ -9,6 +9,7 @@ module Test.Ouroboros.Storage.ImmutableDB.CumulEpochSizes
   , lastEpochSize
   , maxSlot
   , epochSize
+  , rollBackToEpoch
   , slotToEpochSlot
   , epochSlotToSlot
 
@@ -106,8 +107,8 @@ epochSize (CES ces) epoch =
 
 -- | Make sure the the given epoch is the last epoch for which the size is
 -- stored. No-op if the current last epoch is <= the given epoch.
-_rollBackToEpoch :: CumulEpochSizes -> Epoch -> CumulEpochSizes
-_rollBackToEpoch (CES ces) epoch = CES $ Seq.take (succ (fromIntegral epoch)) ces
+rollBackToEpoch :: CumulEpochSizes -> Epoch -> CumulEpochSizes
+rollBackToEpoch (CES ces) epoch = CES $ Seq.take (succ (fromIntegral epoch)) ces
 
 -- | Convert a 'Slot' to an 'EpochSlot'
 --

@@ -14,6 +14,7 @@ module Test.Ouroboros.Storage.ImmutableDB.Model
   , openDBModel
   , lookupNextEpochSlot
   , getLastBlobLocation
+  , simulateCorruptions
   ) where
 
 import           Control.Monad (when)
@@ -27,6 +28,7 @@ import           Data.List (genericReplicate, dropWhileEnd)
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe (listToMaybe, fromMaybe, mapMaybe, isNothing)
+import           Data.Word (Word64)
 
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack, withFrozenCallStack)
@@ -35,10 +37,12 @@ import           Ouroboros.Consensus.Util (lastMaybe)
 
 import           Ouroboros.Network.Block (Slot(..))
 
+import           Ouroboros.Storage.FS.API.Types (FsPath)
 import           Ouroboros.Storage.ImmutableDB.API
 import           Ouroboros.Storage.ImmutableDB.Util hiding (lookupEpochSize)
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
 
+import           Test.Ouroboros.Storage.ImmutableDB.TestBlock
 import           Test.Ouroboros.Storage.ImmutableDB.CumulEpochSizes (CumulEpochSizes)
 import qualified Test.Ouroboros.Storage.ImmutableDB.CumulEpochSizes as CES
 
@@ -158,6 +162,167 @@ getLastBlobLocation :: DBModel -> Maybe EpochSlot
 getLastBlobLocation dbm@DBModel {..} =
     fmap (slotToEpochSlot dbm) $
     lastMaybe $ zipWith const [0..] $ dropWhileEnd isNothing dbmChain
+
+-- | Rolls back the chain to the given 'Slot'.
+rollBackToSlot :: HasCallStack => Slot -> DBModel -> DBModel
+rollBackToSlot slot dbm@DBModel {..} =
+    dbm { dbmChain           = rolledBackChain
+        , dbmNextSlot        = newNextSlot
+        , dbmCumulEpochSizes = dbmCumulEpochSizes'
+        }
+  where
+    dbmCumulEpochSizes' = CES.rollBackToEpoch dbmCumulEpochSizes epoch
+    EpochSlot epoch _ = slotToEpochSlot dbm slot
+    rolledBackChain = map snd $ takeWhile ((<= slot) . fst) $ zip [0..] dbmChain
+    newNextSlot = fromIntegral $ length rolledBackChain
+
+-- | Rolls back the chain to the start of the given 'Epoch'. The next epoch
+-- slot will be the first of the given 'Epoch'.
+rollBackToEpochStart :: HasCallStack => Epoch -> DBModel -> DBModel
+rollBackToEpochStart epoch dbm@DBModel {..} =
+    dbm { dbmChain           = rolledBackChain
+        , dbmNextSlot        = newNextSlot
+        , dbmCumulEpochSizes = CES.rollBackToEpoch dbmCumulEpochSizes epoch
+        }
+  where
+    -- All slots >= @slot@ should be removed from the end of the chain
+    slot = epochSlotToSlot dbm (EpochSlot epoch 0)
+    rolledBackChain =
+      map snd $
+      takeWhile ((< slot) . fst) $
+      zip [0..] dbmChain
+    newNextSlot = fromIntegral $ length rolledBackChain
+
+-- | Rolls back the chain to the slot that corresponds to the given
+-- 'EpochSlot'.
+rollBackToEpochSlot :: HasCallStack => EpochSlot -> DBModel -> DBModel
+rollBackToEpochSlot epochSlot dbm =
+    rollBackToSlot (epochSlotToSlot dbm epochSlot) dbm
+
+-- | Return the filled 'EpochSlot' of the given 'Epoch' stored in the model.
+epochSlotsInEpoch :: DBModel -> Epoch -> [EpochSlot]
+epochSlotsInEpoch dbm epoch =
+    filter ((== epoch) . _epoch) $
+    map fst $
+    Map.toAscList $ dbmBlobs dbm
+
+-- | Return the last filled 'EpochSlot' of the given 'Epoch' stored in the
+-- model.
+lastFilledEpochSlotOf :: DBModel -> Epoch -> Maybe EpochSlot
+lastFilledEpochSlotOf dbm epoch = lastMaybe $ epochSlotsInEpoch dbm epoch
+
+
+{------------------------------------------------------------------------------
+  Simulation corruptions and restoring afterwards
+------------------------------------------------------------------------------}
+
+
+-- | Simulate the following: close the database, apply the corruptions to the
+-- respective files, and restore to the last valid epoch.
+--
+-- The returned chain will be a prefix of the given chain.
+--
+-- The 'FsPath's must correspond to index or epoch files that a real database,
+-- which is in sync with the given model, would have created on disk.
+simulateCorruptions :: Corruptions -> DBModel -> DBModel
+simulateCorruptions corrs dbm = rollBack rbp dbm
+  where
+    -- Take the minimal 'RollBackPoint', which is the earliest.
+    rbp = foldr1 min $
+      fmap (\(c, f) -> findCorruptionRollBackPoint c f dbm) corrs
+
+data RollBackPoint
+  = DontRollBack
+    -- ^ No roll back needed.
+  | RollBackToEpochStart Epoch
+    -- ^ Roll back to the start of the 'Epoch', removing all relative slots
+    -- of the epoch.
+  | RollBackToEpochSlot  EpochSlot
+    -- ^ Roll back to the 'EpochSlot', keeping it as the last relative slot.
+  deriving (Eq, Show, Generic)
+
+-- | The earlier 'RollBackPoint' < the later 'RollBackPoint'.
+instance Ord RollBackPoint where
+  compare r1 r2 = case (r1, r2) of
+    (DontRollBack, DontRollBack) -> EQ
+    (_,            DontRollBack) -> LT
+    (DontRollBack, _)            -> GT
+    (RollBackToEpochStart e1, RollBackToEpochStart e2) -> compare e1 e2
+    (RollBackToEpochStart e1, RollBackToEpochSlot (EpochSlot e2 _))
+      | e1 <= e2  -> LT
+      | otherwise -> GT
+    (RollBackToEpochSlot (EpochSlot e1 _), RollBackToEpochStart e2)
+      | e1 < e2   -> LT
+      | otherwise -> GT
+    (RollBackToEpochSlot es1, RollBackToEpochSlot es2) -> compare es1 es2
+
+rollBack :: RollBackPoint -> DBModel -> DBModel
+rollBack rbp = case rbp of
+    DontRollBack                   -> id
+    RollBackToEpochStart epoch     -> rollBackToEpochStart epoch
+    RollBackToEpochSlot  epochSlot -> rollBackToEpochSlot  epochSlot
+
+findCorruptionRollBackPoint :: FileCorruption -> FsPath -> DBModel
+                            -> RollBackPoint
+findCorruptionRollBackPoint corr file dbm =
+    case lastMaybe file >>= parseDBFile of
+      Just ("epoch", epoch) -> findEpochCorruptionRollBackPoint corr epoch dbm
+      Just ("index", epoch) -> findIndexCorruptionRollBackPoint corr epoch dbm
+      _                     -> error "Invalid file to corrupt"
+
+findEpochDropLastBytesRollBackPoint :: Word64 -> Epoch -> DBModel
+                                    -> RollBackPoint
+findEpochDropLastBytesRollBackPoint n epoch dbm
+    | null epochSlots
+      -- If the file is empty, we don't have to roll back.
+    = DontRollBack
+    | lastValidFilledSlotIndex validBytes < 0
+      -- When we corrupted all blocks, we should roll back to the start of
+      -- the epoch, but if the first block did not start at slot 0, the
+      -- index will let us restore to the unfilled slot before the first
+      -- block.
+    = RollBackToEpochStart epoch
+    | otherwise
+    = RollBackToEpochSlot (epochSlots !! lastValidFilledSlotIndex validBytes)
+  where
+    totalBytes = fromIntegral $ testBlockSize * length epochSlots
+    validBytes :: Word64
+    validBytes
+      | n >= totalBytes
+      = 0
+      | otherwise
+      = totalBytes - n
+    epochSlots = epochSlotsInEpoch dbm epoch
+    lastValidFilledSlotIndex offset =
+      (fromIntegral offset `quot` testBlockSize) - 1
+
+findEpochCorruptionRollBackPoint :: FileCorruption -> Epoch -> DBModel
+                                 -> RollBackPoint
+findEpochCorruptionRollBackPoint corr epoch dbm = case corr of
+    DeleteFile      -> RollBackToEpochStart epoch
+
+    DropLastBytes n -> findEpochDropLastBytesRollBackPoint n epoch dbm
+
+findIndexCorruptionRollBackPoint :: FileCorruption -> Epoch -> DBModel
+                                 -> RollBackPoint
+findIndexCorruptionRollBackPoint _corr epoch dbm =
+    case lastFilledEpochSlotOf dbm epoch of
+      Just lastFilledEpochSlotOfEpoch
+        | isLastSlotOfEpoch lastFilledEpochSlotOfEpoch
+          -- If the last slot is filled, the complete index file can be
+          -- recovered from the epoch file
+        -> DontRollBack
+        | otherwise
+          -- Otherwise roll back to the last filled slot, unless we can roll
+          -- back to a later slot based on the padded slots of the index file.
+        -> RollBackToEpochSlot lastFilledEpochSlotOfEpoch
+
+      -- If there are no slots in the epoch, Find out the last valid slot in
+      -- the index file and roll back to that.
+      Nothing -> RollBackToEpochStart epoch
+  where
+    isLastSlotOfEpoch (EpochSlot epoch' relSlot) =
+      getRelativeSlot relSlot + 1 == lookupEpochSize dbm epoch'
 
 
 {------------------------------------------------------------------------------
