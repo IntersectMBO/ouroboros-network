@@ -11,15 +11,25 @@ module Test.Ouroboros.Storage.ImmutableDB.TestBlock
   , testBlockEpochFileParser
   , testBlockEpochFileParser'
 
+  , FileCorruption(..)
+  , corruptFile
+  , Corruptions
+  , generateCorruptions
+  , shrinkCorruptions
+
   , tests
   ) where
 
-import           Control.Monad (void, when, replicateM)
+import           Control.Monad (void, when, replicateM, forM)
 import           Control.Monad.Catch (MonadMask)
 
 import qualified Data.Binary as Bin
 import qualified Data.ByteString.Builder as BS
 import qualified Data.ByteString.Lazy as BL
+import           Data.Functor (($>))
+import           Data.List.NonEmpty (NonEmpty)
+import qualified Data.List.NonEmpty as NE
+import           Data.Word (Word64)
 
 import           GHC.Generics (Generic)
 
@@ -32,6 +42,7 @@ import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
 import           Ouroboros.Storage.FS.API (HasFS(..), withFile)
+import           Ouroboros.Storage.FS.API.Types (FsPath)
 import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
 import           Ouroboros.Storage.FS.Sim.STM (SimFS, runSimFS, simHasFS)
 import           Ouroboros.Storage.ImmutableDB.Types
@@ -68,6 +79,9 @@ testBlockSize = testBlockRepeat * 8
 -- * We know the size of each block (no delimiters needed)
 -- * We know the relative slot of the block
 -- * We know when the block is corrupted
+--
+-- __NOTE__: 'Test.Ouroboros.Storage.ImmutableDB.Model.simulateCorruptions'
+-- depends on this encoding of 'TestBlock'.
 instance Bin.Binary TestBlock where
     put (TestBlock (RelativeSlot relSlot)) =
       mconcat $ replicate testBlockRepeat (Bin.put relSlot)
@@ -147,6 +161,53 @@ prop_testBlockEpochFileParser (TestBlocks blocks) = QCM.monadicIO $ do
 
     runSimIO :: SimFS IO a -> IO a
     runSimIO m = fst <$> runSimFS m Mock.empty
+
+
+{-------------------------------------------------------------------------------
+  Corruption
+-------------------------------------------------------------------------------}
+
+
+data FileCorruption
+  = DeleteFile
+  | DropLastBytes Word64
+    -- ^ Drop the last @n@ bytes of a file.
+  deriving (Show, Eq)
+
+-- | Returns 'True' when something was actually corrupted. For example, when
+-- drop the last bytes of an empty file, we don't actually corrupt it.
+corruptFile :: MonadMask m => HasFS m -> FileCorruption -> FsPath -> m Bool
+corruptFile hasFS@HasFS{..} fc file = case fc of
+    DeleteFile              -> removeFile file $> True
+    DropLastBytes n         -> withFile hasFS file AppendMode $ \hnd -> do
+      fileSize <- hGetSize hnd
+      let newFileSize = if n >= fileSize then 0 else fileSize - n
+      hTruncate hnd newFileSize
+      return $ fileSize /= newFileSize
+
+instance Arbitrary FileCorruption where
+  arbitrary = frequency
+    [ (1, return DeleteFile)
+    , (1, DropLastBytes . getSmall . getPositive <$> arbitrary)
+    ]
+  shrink DeleteFile         = []
+  shrink (DropLastBytes n)  =
+    DropLastBytes . getSmall . getPositive <$> shrink (Positive (Small n))
+
+-- | Multiple corruptions
+type Corruptions = NonEmpty (FileCorruption, FsPath)
+
+-- | The same file will not occur twice.
+generateCorruptions :: NonEmpty FsPath -> Gen Corruptions
+generateCorruptions allFiles = sized $ \n -> do
+    subl  <- sublistOf (NE.toList allFiles) `suchThat` (not . null)
+    k     <- choose (1, 1 `max` n)
+    let files = NE.fromList $ take k subl
+    forM files $ \file -> (, file) <$> arbitrary
+
+shrinkCorruptions :: Corruptions -> [Corruptions]
+shrinkCorruptions =
+  fmap (NE.fromList . getNonEmpty) . shrink . NonEmpty . NE.toList
 
 
 {-------------------------------------------------------------------------------

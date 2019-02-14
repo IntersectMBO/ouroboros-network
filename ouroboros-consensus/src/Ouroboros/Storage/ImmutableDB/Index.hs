@@ -1,11 +1,36 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE RecordWildCards  #-}
 
-module Ouroboros.Storage.ImmutableDB.Index where
+module Ouroboros.Storage.ImmutableDB.Index
+  ( Index
+  , indexSlots
+  , indexEntrySizeBytes
+  , indexExpectedFileSize
+  , loadIndex
+  , writeIndex
+  , writeSlotOffsets
+  , isValidIndex
+  , indexFromByteString
+  , indexFromSlotOffsets
+  , indexToSlotOffsets
+  , lastSlotOffset
+  , containsSlot
+  , offsetOfSlot
+  , sizeOfSlot
+  , isFilledSlot
+  , nextFilledSlot
+  , firstFilledSlot
+  , filledSlots
+  , lastFilledSlot
+  , isPrefixOf
+  , extendWithTrailingUnfilledSlotsFrom
+  ) where
 
+import           Control.Exception (assert)
 import           Control.Monad (void)
 import           Control.Monad.Catch (MonadMask)
 
+import           Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Builder as BS
 import qualified Data.ByteString.Lazy as BL
@@ -51,27 +76,33 @@ indexExpectedFileSize :: Index -> Int
 indexExpectedFileSize (MkIndex offsets) = V.length offsets * indexEntrySizeBytes
 
 -- | Loads an index file in memory.
+--
+-- Returns trailing invalid data that could not be read as @'Maybe'
+-- 'ByteString'@.
 loadIndex :: (HasCallStack, MonadMask m)
           => HasFS m
           -> FsPath
           -> Epoch
-          -> m Index
+          -> m (Index, Maybe ByteString)
 loadIndex hasFS dbFolder epoch = do
     let indexFile = dbFolder <> renderFile "index" epoch
-    indexContents <- withFile hasFS indexFile ReadMode $ \hnd ->
-      BL.toStrict . BS.toLazyByteString <$> readAll hasFS hnd
-    return $ indexFromByteString indexContents
+    (indexContents, junk) <- withFile hasFS indexFile ReadMode $ \hnd -> do
+      bs <- BL.toStrict . BS.toLazyByteString <$> readAll hasFS hnd
+      let trailingJunkBytes = BS.length bs `rem` indexEntrySizeBytes
+      return $ BS.splitAt (BS.length bs - trailingJunkBytes) bs
+    return ( indexFromByteString indexContents
+           , if BS.null junk then Nothing else Just junk)
 
 -- | Write an index to an index file.
 --
 -- Property: for @hasFS@, @dbFolder@, @epoch@, and @offsets@:
 --
 -- > 'writeIndex' hasFS dbFolder epoch index
--- > index' <- loadIndex hasFS dbFolder epoch
+-- > (index', mbJunk) <- loadIndex hasFS dbFolder epoch
 --
 -- Then it must be that:
 --
--- > index === index'
+-- > index === index' .&&. isNothing mbJunk
 writeIndex :: MonadMask m
            => HasFS m
            -> FsPath
@@ -254,3 +285,48 @@ isPrefixOf (MkIndex pre) (MkIndex offsets)
     = False
     | otherwise
     = V.and $ V.zipWith (==) pre offsets
+
+-- | Add trailing unfilled slots from the second index to the end of the
+-- first. The boolean return value indicates whether the second index
+-- contained trailing filled slots after the (possibly 0) trailing unfilled
+-- slots.
+--
+-- Precondition: the first index is non-empty and a prefix of the second
+-- index.
+--
+-- Example: given the indices below:
+--
+-- > ┌───┬───┐
+-- > │ 0 │ 1 │
+-- > └───┴───┘
+--
+-- > ┌───┬───┬───┬───┐
+-- > │ 0 │ 1 │ 1 │ 2 │
+-- > └───┴───┴───┴───┘
+--
+-- Return the following index:
+--
+-- > ┌───┬───┬───┐
+-- > │ 0 │ 1 │ 1 │
+-- > └───┴───┴───┘
+--
+-- and 'True'.
+extendWithTrailingUnfilledSlotsFrom
+  :: Index
+  -> Index
+  -> (Index, Bool)
+extendWithTrailingUnfilledSlotsFrom (MkIndex validOffsets) (MkIndex withTrailingUnfilledSlots) =
+    assert (not (V.null validOffsets)) $
+    assert (validOffsets == prefix)    $
+    ( MkIndex (validOffsets <> trailingUnfilledSlots)
+    , containedTrailingFilledSlots )
+  where
+    (prefix, trailingSlots) =
+      V.splitAt (V.length validOffsets) withTrailingUnfilledSlots
+    trailingUnfilledSlots
+      | V.null trailingSlots
+      = V.empty
+      | otherwise
+      = V.takeWhile (== V.last validOffsets) trailingSlots
+    containedTrailingFilledSlots =
+      V.length trailingUnfilledSlots /= V.length trailingSlots

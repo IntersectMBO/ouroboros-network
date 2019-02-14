@@ -21,7 +21,7 @@ import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import           Data.Map (Map)
 import qualified Data.Map.Strict as M
-import           Data.Maybe (fromMaybe, maybeToList)
+import           Data.Maybe (fromMaybe, maybeToList, isNothing)
 import           Data.Word (Word64)
 
 import qualified System.IO as IO
@@ -567,8 +567,8 @@ prop_writeIndex_loadIndex index =
     prop :: SimFS IO Property
     prop = do
       writeIndex hasFS dbFolder epoch index
-      index' <- loadIndex hasFS dbFolder epoch
-      return $ index === index'
+      (index', mbJunk) <- loadIndex hasFS dbFolder epoch
+      return $ index === index' .&&. isNothing mbJunk
 
     hasFS :: HasFS (SimFS IO)
     hasFS = Sim.simHasFS EH.exceptions
@@ -590,8 +590,8 @@ prop_writeSlotOffsets_loadIndex_indexToSlotOffsets (SlotOffsets offsets) =
     prop :: SimFS IO Property
     prop = do
       writeSlotOffsets hasFS dbFolder epoch offsets
-      index <- loadIndex hasFS dbFolder epoch
-      return $ indexToSlotOffsets index === offsets
+      (index, mbJunk) <- loadIndex hasFS dbFolder epoch
+      return $ indexToSlotOffsets index === offsets .&&. isNothing mbJunk
 
     hasFS :: HasFS (SimFS IO)
     hasFS = Sim.simHasFS EH.exceptions
