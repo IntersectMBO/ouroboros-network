@@ -202,7 +202,6 @@ import           Data.Bifunctor (first)
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString.Builder as BS
 import           Data.Either (isRight)
-import           Data.Function (on)
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import           Data.Map (Map)
@@ -235,10 +234,6 @@ data ImmutableDBHandle m = ImmutableDBHandle
     { _dbInternalState :: !(TMVar m (Either ClosedState (OpenState m)))
     , _dbFolder        :: !FsPath
     }
-
--- TODO needed for StateMachine, but otherwise it doesn't make much sense
-instance Eq (ImmutableDBHandle m) where
-  (==) = (==) `on` _dbFolder
 
 -- | Internal state when the database is open.
 data OpenState m = OpenState
