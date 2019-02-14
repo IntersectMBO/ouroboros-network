@@ -278,12 +278,6 @@ data UserError
   | InvalidIteratorRangeError EpochSlot EpochSlot
     -- ^ When the chosen iterator range was invalid, i.e. the @start@ (first
     -- parameter) came after the @end@ (second parameter).
-  | IncorrectIndexSizeError Epoch EpochSize EpochSize
-    -- ^ When opening a DB, the size given for each past epoch (the first
-    -- parameter) is checked against the size according to the corresponding
-    -- index file on disk. When the expected size, passed to 'openDB' or
-    -- 'withDB' (the second parameter) doesn't match the size according to the
-    -- index (the third parameter). TODO user or unexpected?
   | ClosedDBError
     -- ^ When performing an operation on a closed DB.
   deriving (Eq, Show, Generic)
@@ -310,9 +304,6 @@ prettyUserError = \case
     InvalidIteratorRangeError start end ->
       "InvalidIteratorRangeError (start was " <> show start <> " end was " <>
       show end <> ")"
-    IncorrectIndexSizeError epoch expected actual ->
-      "IncorrectIndexSizeError (expected size for epoch " <> show epoch <>
-      " was " <> show expected <> " actual size was " <> show actual <> ")"
     ClosedDBError -> "ClosedDBError"
 
 
