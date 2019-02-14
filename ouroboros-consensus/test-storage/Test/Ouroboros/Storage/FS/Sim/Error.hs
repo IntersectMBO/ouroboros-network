@@ -442,6 +442,7 @@ instance (MonadFork (SimErrorFS m) , MonadSTM m) => MonadSTM (SimErrorFS m) wher
 
   newTBQueue        = lift . newTBQueue
   readTBQueue       = lift . readTBQueue
+  tryReadTBQueue    = lift . tryReadTBQueue
   writeTBQueue    q = lift . writeTBQueue q
 
 
