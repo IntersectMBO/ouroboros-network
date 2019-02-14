@@ -14,23 +14,23 @@ import Ouroboros.Network.Protocol.BlockFetch.Type
 
 data BlockFetchServer header body m a where
   BlockFetchServer
-    :: (ChainRange header -> m (BlockFetchSender header body m a))
+    :: (ChainRange header -> m (BlockFetchBlockSender header body m a))
     -> a
     -> BlockFetchServer header body m a
 
 -- | Send batches of blocks, when a batch is sent loop using
 -- @'BlockFetchServer'@.
 --
-data BlockFetchSender header body m a where
+data BlockFetchBlockSender header body m a where
 
   -- | Initiate a batch of blocks.
   SendMsgStartBatch
     :: m (BlockFetchSendBlocks header body m a)
-    -> BlockFetchSender header body m a
+    -> BlockFetchBlockSender header body m a
 
   SendMsgNoBlocks
     :: m (BlockFetchServer header body m a)
-    -> BlockFetchSender header body m a
+    -> BlockFetchBlockSender header body m a
 
 -- | Stream batch of blocks
 --
@@ -59,7 +59,7 @@ blockFetchServerPeer (BlockFetchServer requestHandler result) = Await (ClientAge
   MsgClientDone         -> Done TokDone result
  where
   sendBatch
-    :: BlockFetchSender header body m a
+    :: BlockFetchBlockSender header body m a
     -> Peer (BlockFetch header body) AsServer BFBusy m a
   sendBatch (SendMsgStartBatch mblocks) =
     Yield (ServerAgency TokBusy) MsgStartBatch (Effect $ sendBlocks <$> mblocks)

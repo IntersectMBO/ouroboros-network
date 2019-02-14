@@ -33,7 +33,7 @@ direct' (SendMsgRequestRange range resp client) (BlockFetchServer requestHandler
  where
   sendBatch
     :: BlockFetchResponse header body m a
-    -> BlockFetchSender header body m b
+    -> BlockFetchBlockSender header body m b
     -> m (a, b)
   sendBatch BlockFetchResponse {handleStartBatch} (SendMsgStartBatch mblock ) =
     join $ sendBlocks <$> handleStartBatch <*> mblock

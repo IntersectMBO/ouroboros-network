@@ -111,7 +111,7 @@ blockFetchServer (RangeRequests rangeRequest) = BlockFetchServer handleRequest (
  where
   handleRequest
     :: ChainRange header
-    -> m (BlockFetchSender header body m ())
+    -> m (BlockFetchBlockSender header body m ())
   handleRequest range = do
     stream <- Pipes.next $ rangeRequest range
     case stream of
