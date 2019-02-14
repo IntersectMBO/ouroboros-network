@@ -774,11 +774,17 @@ data Tag
 
   | TagGetBinaryBlobNothing
 
+  | TagOpenFinalisedEpochError
+
+  | TagAppendToSlotInThePastError
+
   | TagReadFutureSlotError
 
   | TagSlotGreaterThanEpochSizeError
 
-  | TagAppendToSlotInThePastError
+  | TagMissingEpochSizeError
+
+  | TagInvalidIteratorRangeError
 
   | TagGetFromEmptyEpoch
 
@@ -862,9 +868,12 @@ tag :: forall m. [Event m Symbolic] -> [Tag]
 tag = C.classify
     [ tagGetBinaryBlobJust
     , tagGetBinaryBlobNothing
+    , tagOpenFinalisedEpochError
+    , tagAppendToSlotInThePastError
     , tagReadFutureSlotError
     , tagSlotGreaterThanEpochSizeError
-    , tagAppendToSlotInThePastError
+    , tagMissingEpochSizeError
+    , tagInvalidIteratorRangeError
     , tagGetFromEmptyEpoch
     , tagEmptyEpochsInARow 0
     , tagIteratorStartsOnEmptySlot
@@ -892,6 +901,16 @@ tag = C.classify
         Left TagGetBinaryBlobNothing
       _ -> Right tagGetBinaryBlobNothing
 
+    tagOpenFinalisedEpochError :: EventPred m
+    tagOpenFinalisedEpochError = failedUserError $ \_ e -> case e of
+      OpenFinalisedEpochError {} -> Left TagOpenFinalisedEpochError
+      _ -> Right tagOpenFinalisedEpochError
+
+    tagAppendToSlotInThePastError :: EventPred m
+    tagAppendToSlotInThePastError = failedUserError $ \_ e -> case e of
+      AppendToSlotInThePastError {} -> Left TagAppendToSlotInThePastError
+      _ -> Right tagAppendToSlotInThePastError
+
     tagReadFutureSlotError :: EventPred m
     tagReadFutureSlotError = failedUserError $ \_ e -> case e of
       ReadFutureSlotError {} -> Left TagReadFutureSlotError
@@ -902,10 +921,15 @@ tag = C.classify
       SlotGreaterThanEpochSizeError {} -> Left TagSlotGreaterThanEpochSizeError
       _ -> Right tagSlotGreaterThanEpochSizeError
 
-    tagAppendToSlotInThePastError :: EventPred m
-    tagAppendToSlotInThePastError = failedUserError $ \_ e -> case e of
-      AppendToSlotInThePastError {} -> Left TagAppendToSlotInThePastError
-      _ -> Right tagAppendToSlotInThePastError
+    tagMissingEpochSizeError :: EventPred m
+    tagMissingEpochSizeError = failedUserError $ \_ e -> case e of
+      MissingEpochSizeError {} -> Left TagMissingEpochSizeError
+      _ -> Right tagMissingEpochSizeError
+
+    tagInvalidIteratorRangeError :: EventPred m
+    tagInvalidIteratorRangeError = failedUserError $ \_ e -> case e of
+      InvalidIteratorRangeError {} -> Left TagInvalidIteratorRangeError
+      _ -> Right tagInvalidIteratorRangeError
 
     tagGetFromEmptyEpoch :: EventPred m
     tagGetFromEmptyEpoch = successful $ \ev r -> case r of
