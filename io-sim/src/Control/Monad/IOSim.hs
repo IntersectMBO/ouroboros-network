@@ -13,6 +13,7 @@
 module Control.Monad.IOSim (
   SimM,
   runSim,
+  runSimOrThrow,
   runSimStrictShutdown,
   Failure(..),
   runSimTrace,
@@ -38,7 +39,8 @@ import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 
 import           Control.Exception
-                   ( Exception(..), SomeException, ErrorCall(..), assert )
+                   ( Exception(..), SomeException
+                   , ErrorCall(..), throw, assert )
 import qualified System.IO.Error as IO.Error (userError)
 
 import           Control.Monad
@@ -379,8 +381,19 @@ data Failure =
      | FailureSloppyShutdown
   deriving Show
 
+instance Exception Failure
+
 runSim :: forall a. (forall s. SimM s a) -> Either Failure a
 runSim mainAction = traceResult False (runSimTrace mainAction)
+
+-- | For quick experiments and tests it is often appropriate and convenient to
+-- simply throw failures as exceptions.
+--
+runSimOrThrow :: forall a. (forall s. SimM s a) -> a
+runSimOrThrow mainAction =
+    case runSim mainAction of
+      Left  e -> throw e
+      Right x -> x
 
 -- | Like 'runSim' but also fail if when the main thread terminates, there
 -- are other threads still running or blocked. If one is trying to follow
