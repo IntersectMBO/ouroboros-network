@@ -4,25 +4,26 @@
 {-# LANGUAGE RankNTypes #-}
 
 import Control.Concurrent (myThreadId)
-import Control.Concurrent.Async (concurrently, race)
 import Control.Concurrent.STM (atomically, retry)
 import Control.Exception (catch, throwIO)
 import Control.Lens ((^.))
 import qualified Control.Lens as Lens (to)
 import Control.Monad (forM_, void, when)
 import Data.Functor.Contravariant (Op (..))
+import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
 import Data.Time.Clock.POSIX (getCurrentTime)
+import System.Random (StdGen, getStdGen, randomR)
 
 import Cardano.BM.Data.LogItem
 import Cardano.BM.BaseTrace
 import Cardano.BM.Setup (shutdownTrace)
 import Pos.Util.Klog.Compatibility (getTrace, setupLogging', parseLoggerConfig)
 
-import Pos.Chain.Block (Block, BlockHeader (..), gbhConsensus, gcdEpoch,
+import Pos.Chain.Block (Block, BlockHeader (..), GenesisBlock, gbhConsensus, gcdEpoch,
                         genesisBlock0, getBlockHeader, headerHash, mcdSlot)
 import Pos.Chain.Lrc (genesisLeaders)
 import Pos.Core (SlotCount (..), getEpochIndex, getSlotIndex, siEpoch, siSlot)
@@ -45,13 +46,84 @@ import qualified Pos.Util.Trace
 
 import qualified Ouroboros.Byron.Proxy.Index as Index
 import Ouroboros.Byron.Proxy.Types
-
 import Ouroboros.Storage.ImmutableDB.API
 import qualified Ouroboros.Storage.ImmutableDB.Impl as DB
 import Ouroboros.Storage.FS.API.Types
 import Ouroboros.Storage.FS.API
 import Ouroboros.Storage.FS.IO
 import Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
+
+-- | The main action using the proxy, index, and immutable database: download
+-- the best known chain from the proxy and put it into the database, over and
+-- over again.
+--
+-- No exception handling is done.
+byronProxyMain
+  :: GenesisBlock -- ^ Needed as checkpoint when DB is empty.
+  -> SlotCount    -- ^ Needed in order to know when to start new epoch in DB.
+  -> Index.Index IO
+  -> ImmutableDB IO
+  -> ByronProxy
+  -> IO x
+byronProxyMain genesisBlock epochSlots indexDB db bp = getStdGen >>= mainLoop Nothing
+  where
+  mainLoop :: Maybe (BestTip BlockHeader) -> StdGen -> IO x
+  mainLoop mBt rndGen = do
+    -- Wait until the best tip has changed from the last one we saw. That can
+    -- mean the header changed and/or the list of peers who announced it
+    -- changed.
+    bt <- atomically $ do
+      mBt' <- bestTip bp
+      if mBt == mBt'
+      then retry
+      else case mBt' of
+        Nothing -> retry
+        Just bt -> pure bt
+    -- Find our tip of chain from the index.
+    mTip <- Index.indexAt indexDB Index.Tip
+    let tipHash = case mTip of
+          Nothing      -> headerHash genesisBlock
+          Just (hh, _) -> Index.getOwnHash hh
+    -- Pick a peer from the list of announcers at random and download
+    -- the chain.
+        (peer, rndGen') = pickRandom rndGen (btPeers bt)
+    putStrLn $ mconcat
+      [ "Downloading chain with tip hash "
+      , show tipHash
+      , " from "
+      , show peer
+      ]
+    _ <- downloadChain
+      bp
+      peer
+      (headerHash (btTip bt))
+      [tipHash]
+      streamer
+    mainLoop (Just bt) rndGen'
+
+  -- This is what we do with the blocks that come in from streaming.
+  streamer :: StreamBlocks Block IO ()
+  streamer = StreamBlocks
+    { streamBlocksMore = \blocks -> do
+        -- List comes in newest-to-oldest order.
+        forM_ (NE.toList (NE.reverse blocks)) $ \blk -> do
+          let hh = headerHash blk
+              epochSlot = blockHeaderIndex epochSlots (Pos.Chain.Block.getBlockHeader blk)
+              rslot = _relativeSlot epochSlot
+          Index.updateTip indexDB hh epochSlot
+          appendBinaryBlob db rslot (serializeBuilder blk)
+          -- Sometimes we need to start a new epoch...
+          when (fromIntegral (getRelativeSlot rslot) == getSlotCount epochSlots)
+               -- Add 1 because of EBBs
+               (void (startNewEpoch db (fromIntegral (getSlotCount epochSlots) + 1)))
+        pure streamer
+    , streamBlocksDone = pure ()
+    }
+
+  pickRandom :: StdGen -> NonEmpty t -> (t, StdGen)
+  pickRandom rndGen ne =
+    let (idx, rndGen') = randomR (0, NE.length ne - 1) rndGen
+    in  (ne NE.!! idx, rndGen')
 
 -- | Extract the DB-relevant indices from a block.
 -- For epoch boundary blocks (EBBs, also sometimes called genesis blocks) the
@@ -100,7 +172,6 @@ main = withCompileInfo $ do
   SimpleNodeArgs cArgs nArgs <- getSimpleNodeOptions
   let confOpts = configurationOptions (commonArgs cArgs)
       -- Take the log config file from the common args, and default it.
-      -- FIXME this is sloppy and just awful.
       loggerConfigFile = fromMaybe "logging.yaml" (logConfig (commonArgs cArgs))
   loggerConfig <- parseLoggerConfig loggerConfigFile
   lh <- setupLogging' "byron-adapter" loggerConfig
@@ -200,72 +271,12 @@ main = withCompileInfo $ do
             Nothing -> 0
             Just (_, EpochSlot tipEpoch _) -> tipEpoch
       withDB (openDB dbEpoch) $ \db -> do
-        -- TODO Thursday: derive this from the ImmutableDB and Index taken
-        -- together. We assume also that the Index is append-only, so should
-        -- be OK for an oldest-to-newest iterator.
+        -- TODO derive this from the ImmutableDB and Index taken together.
+        -- We assume also that the Index is append-only, so should be OK for an
+        -- oldest-to-newest iterator.
         let bbs = ByronBlockSource
               { bbsStream = const (pure ())
               , bbsTip    = error "bbsTip: not implemented"
               }
-        withByronProxy bpc bbs $ \bp -> do
-          putStrLn "Ready"
-          let echoQueue = do
-                next <- atomically (recvAtom bp)
-                print next
-                echoQueue
-              -- Every time the header changes, echo it ...
-              echoHeaders mBt = do
-                mBt' <- atomically $ do
-                  mBt' <- bestTip bp
-                  if mBt == mBt'
-                  then retry
-                  else pure mBt'
-                print ((fmap . fmap) headerHash mBt')
-                echoHeaders mBt'
-              -- ... and download the chain.
-              download mBt = do
-                mBt' <- atomically $ do
-                  mBt' <- bestTip bp
-                  if mBt == mBt'
-                  then retry
-                  else pure mBt'
-                case mBt' of
-                  Nothing -> download mBt'
-                  Just bt -> do
-                    -- Get our tip from the database, using genesis if
-                    -- Nothing.
-                    -- Use that as sole checkpoint in download.
-                    -- For each step in the stream, write the tip to the index.
-                    mTip <- Index.indexAt indexDB Index.Tip
-                    let tipHash = case mTip of
-                          Nothing      -> headerHash genesisBlock
-                          Just (hh, _) -> Index.getOwnHash hh
-                        peer = NE.head (btPeers bt)
-                        streamer :: StreamBlocks Block IO ()
-                        streamer = StreamBlocks
-                          { streamBlocksMore = \blocks -> do
-                              -- List comes in newest-to-oldest order.
-                              forM_ (NE.toList (NE.reverse blocks)) $ \blk -> do
-                                let hh = headerHash blk
-                                    epochSlot = blockHeaderIndex epochSlots (Pos.Chain.Block.getBlockHeader blk)
-                                    rslot = _relativeSlot epochSlot
-                                Index.updateTip indexDB hh epochSlot
-                                appendBinaryBlob db rslot (serializeBuilder blk)
-                                -- Sometimes we need to start a new epoch...
-                                when (fromIntegral (getRelativeSlot rslot) == getSlotCount epochSlots)
-                                     -- Add 1 because of EBBs
-                                     (void (startNewEpoch db (fromIntegral (getSlotCount epochSlots) + 1)))
-                              pure streamer
-                          , streamBlocksDone = pure ()
-                          }
-                    _ <- downloadChain
-                      bp
-                      peer
-                      (headerHash (btTip bt))
-                      [tipHash]
-                      streamer
-                    download (Just bt)
-          race getChar (concurrently (echoHeaders Nothing) (download Nothing))
-          putStrLn "Shutting down"
+        withByronProxy bpc bbs $ \bp -> byronProxyMain genesisBlock epochSlots indexDB db bp
         shutdownTrace trace
-        putStrLn "Goodbye"

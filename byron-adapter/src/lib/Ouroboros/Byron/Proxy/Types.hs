@@ -76,16 +76,7 @@ data ByronProxyConfig = ByronProxyConfig
   , bpcRecvQueueSize     :: !Natural
   }
 
--- | TODO discover this as we work.
---
--- How will downloading work? This interface should simply make it possible,
--- rather than do it automatically.
--- The idea is to have one Byron consumer and one Byron producer, which will
--- be supported by this.
--- The producer actually comes out in a very roundabout way, through the
--- Logic's view of the database.
--- The consumer will also be weird I suppose. Will ultimately use existing
--- Diffusion streamBlocks.
+-- | Interface presented by the Byron proxy.
 data ByronProxy = ByronProxy
   { -- | A transaction which gives the current 'BestTip'.
     -- These are header announcements from the Byron cluster. They don't
@@ -117,10 +108,14 @@ data ByronProxy = ByronProxy
   }
 
 -- | Mutable STM interface to a 'PoolRounds k v'.
+-- Use `withPool` to get a `Pool` which will be automatically cleared on a
+-- given interval. Entries will stay in the `Pool` at least n microseconds and
+-- at most 2*n microseconds.
 newtype Pool k v = Pool
   { getPool :: TVar (PoolRounds k v)
   }
 
+-- | A current pool and the previous current pool.
 data PoolRounds k v = PoolRounds
   { poolCurrent :: !(Map k v)
   , poolRecent  :: !(Map k v)
@@ -145,7 +140,8 @@ poolLookup k pool = do
   pure $ poolRoundsLookup k rounds
 
 -- | Create and use a 'Pool' with rounds of a given length in microseconds.
--- Data will remain in the pool for at least this interval.
+-- Data will remain in the pool for at least this interval and at most twice
+-- this interval.
 -- We use 'Pool's to back the inv/req/data relay. The length must be
 -- sufficiently long that we can expect all relaying to be done before this
 -- interval has passed.
@@ -285,7 +281,6 @@ updateBestTipMaybe peer header = maybe bt (updateBestTip peer header)
 
 -- | Serving blocks to a Byron cluster requires a database of blocks keyed
 -- on hashes.
---
 data ByronBlockSource m = ByronBlockSource
   { -- | Streams blocks from and including the one at this hash, in
     -- older-to-newer order, or stops without producing anything if this hash is not known.
@@ -405,7 +400,7 @@ bbsGetBlockHeaders bbs onErr mLimit checkpoints tip = do
   let newestCheckpoint = maximumBy (comparing getEpochOrSlot) knownCheckpoints
   case knownCheckpoints of
     []    -> pure Nothing
-    -- Now we know `newestCheckpoints` is not _|_
+    -- Now we know `newestCheckpoints` is not _|_ (maximumBy is partial).
     _ : _ -> runConduit $
          producer (headerHash newestCheckpoint)
       .| consumer (fromMaybe maxBound mLimit) []
@@ -461,6 +456,7 @@ data BlockDecodeError = BlockDecodeError !Text
 
 instance Exception BlockDecodeError
 
+-- | Bring up a Byron proxy.
 withByronProxy
   :: ByronProxyConfig
   -> ByronBlockSource IO
@@ -488,9 +484,6 @@ withByronProxy bpc bbs k =
     -- the diffusion layer to send (ultimately by way of the outbound queue).
     atomRecvQueue :: TBQueue Atom <- newTBQueueIO (bpcRecvQueueSize bpc)
     atomSendQueue :: TBQueue Atom <- newTBQueueIO (bpcSendQueueSize bpc)
-
-    -- How about block downloads?
-    -- Is it worth it to do batching for immediate continuations?
 
     let byronProxy :: Diffusion IO -> ByronProxy
         byronProxy diffusion = ByronProxy
