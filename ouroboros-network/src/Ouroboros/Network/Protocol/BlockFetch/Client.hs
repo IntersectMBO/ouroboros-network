@@ -98,12 +98,12 @@ blockFetchClientPeer (BlockFetchClient mclient) =
 
 -- | A BlockFetch client designed for running the protcol in a pipelined way.
 --
-data BlockFetchClientPipelined header block c m a where
+data BlockFetchClientPipelined header body c m a where
   -- | A 'BlockFetchSender' which starts with not outstanding pipelined responses.
   --
   BlockFetchClientPipelined
-    :: BlockFetchSender          Z header block c m a
-    -> BlockFetchClientPipelined   header block c m a
+    :: BlockFetchSender          Z header body c m a
+    -> BlockFetchClientPipelined   header body c m a
 
 -- | A 'BlockFetchSender' with @n@ outstanding stream of block bodies.
 --
@@ -114,7 +114,7 @@ data BlockFetchSender n header body c m a where
   -- received value @c@.  @c@ could be a Monoid, though it's more genral this
   -- way.
   --
-  SendMsgRequestRangePipeliend
+  SendMsgRequestRangePipelined
     :: ChainRange header
     -> c
     -> (Maybe body -> c -> m c)
@@ -146,8 +146,8 @@ blockFetchClientPeerSender (SendMsgDonePipelined result) =
     MsgClientDone
       (SenderDone TokDone result)
 
-blockFetchClientPeerSender (SendMsgRequestRangePipeliend range c0 receive next) =
-  -- Pipeliend yield: send `MsgRequestRange`, return receicer which will
+blockFetchClientPeerSender (SendMsgRequestRangePipelined range c0 receive next) =
+  -- Pipelined yield: send `MsgRequestRange`, return receicer which will
   -- consume a stream of blocks.
   SenderPipeline
     (ClientAgency TokIdle)
