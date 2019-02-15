@@ -3,80 +3,48 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 
+import Control.Concurrent (myThreadId)
 import Control.Concurrent.Async (concurrently, race)
 import Control.Concurrent.STM (atomically, retry)
-import Control.Concurrent.STM.TVar (TVar, modifyTVar', newTVarIO, readTVar)
-import Control.Exception (bracket, catch, throwIO)
+import Control.Exception (catch, throwIO)
 import Control.Lens ((^.))
 import qualified Control.Lens as Lens (to)
-import Control.Monad.Trans.Class (lift)
-import Control.Monad.Trans.Reader (ReaderT (runReaderT))
-import Control.Monad.Trans.Except (runExceptT)
 import Control.Monad (forM_, void, when)
-import qualified Data.ByteString as BS
 import Data.Functor.Contravariant (Op (..))
-import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
-import Data.Proxy (Proxy (..))
-import Data.Tagged (Tagged (..), tagWith)
-
--- Logging stuff...
-import Control.Concurrent (myThreadId)
 import Data.Time.Clock.POSIX (getCurrentTime)
+
 import Cardano.BM.Data.LogItem
-import Cardano.BM.Data.Trace
 import Cardano.BM.BaseTrace
 import Cardano.BM.Setup (shutdownTrace)
 import Pos.Util.Klog.Compatibility (getTrace, setupLogging', parseLoggerConfig)
-import Pos.Util.Wlog.Compatibility (Severity (..))
 
-import Pos.Chain.Block (Block, BlockHeader (..), GenesisBlock, HasHeaderHash,
-                        HeaderHash, blockHeader, gbhConsensus, gcdEpoch,
+import Pos.Chain.Block (Block, BlockHeader (..), gbhConsensus, gcdEpoch,
                         genesisBlock0, getBlockHeader, headerHash, mcdSlot)
 import Pos.Chain.Lrc (genesisLeaders)
-import Pos.Chain.Security (SecurityParams)
-import Pos.Chain.Ssc (MCCommitment (..), MCOpening (..), MCShares (..),
-                      MCVssCertificate (..), getCertId)
-import Pos.Chain.Txp (TxAux (..), TxMsgContents (..))
-import Pos.Chain.Update (BlockVersionData, UpdateProposal (..), UpdateVote (..))
-import Pos.Communication (NodeId)
-import Pos.Core (StakeholderId, SlotCount (..), addressHash, getEpochIndex,
-                 getSlotIndex, siEpoch, siSlot)
-import Pos.Core.Chrono (NewestFirst (..))
-import Pos.Crypto (hash, toPublic)
-import Pos.DB.Block (GetHeadersFromManyToError (..), GetHashesRangeError (..))
-import Pos.Diffusion.Full (FullDiffusionConfiguration (..), diffusionLayerFull)
-import Pos.Infra.Diffusion.Types
--- An ancient relic. Needed for the network configuration type.
-import Pos.Infra.DHT.Real.Param (KademliaParams)
-import Pos.Infra.Network.Types (NetworkConfig (..))
-import Pos.Logic.Types hiding (streamBlocks)
-import qualified Pos.Logic.Types as Logic
-import qualified Pos.Util.Trace
-
--- Stuff for bringing up a node (arguments etc.)
-import Pos.Behavior (bcSecurityParams)
+import Pos.Core (SlotCount (..), getEpochIndex, getSlotIndex, siEpoch, siSlot)
 import Pos.Binary.Class (serializeBuilder)
-import Pos.Chain.Block (Block, BlockHeader, HeaderHash, recoveryHeadersMessage, streamWindow)
+import Pos.Chain.Block (recoveryHeadersMessage, streamWindow)
 import Pos.Chain.Update (lastKnownBlockVersion, updateConfiguration)
 import Pos.Configuration (networkConnectionTimeout)
 import Pos.Client.CLI (SimpleNodeArgs (..), CommonNodeArgs (..), CommonArgs (logConfig),
                        configurationOptions, getSimpleNodeOptions)
 import Pos.Client.CLI.Params (getNodeParams)
-import Pos.Chain.Genesis (Config (configGeneratedSecrets), GenesisHash (..),
+import Pos.Chain.Genesis (Config (configGeneratedSecrets),
                           configEpochSlots, configGenesisHash,
                           configProtocolConstants, configProtocolMagic,
                           configBlockVersionData)
-import Pos.Communication (NodeId)
-import Pos.Launcher (LoggingParams (lpDefaultName), NodeParams (..), cfoKey, withConfigurations)
+import Pos.Diffusion.Full (FullDiffusionConfiguration (..))
+import Pos.Infra.Diffusion.Types
+import Pos.Launcher (NodeParams (..), withConfigurations)
 import Pos.Util.CompileInfo (withCompileInfo)
+import qualified Pos.Util.Trace
 
 import qualified Ouroboros.Byron.Proxy.Index as Index
 import Ouroboros.Byron.Proxy.Types
-
 
 import Ouroboros.Storage.ImmutableDB.API
 import qualified Ouroboros.Storage.ImmutableDB.Impl as DB
