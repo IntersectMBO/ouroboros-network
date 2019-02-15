@@ -23,7 +23,6 @@ library
   -- This has to be tidied up once the design becomes clear.
   exposed-modules:
                        Control.Monad.Class.MonadFork
-                       Control.Monad.Class.MonadProbe
                        Control.Monad.Class.MonadSay
                        Control.Monad.Class.MonadST
                        Control.Monad.Class.MonadSTM

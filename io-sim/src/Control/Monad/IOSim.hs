@@ -19,6 +19,7 @@ module Control.Monad.IOSim (
   runSimTrace,
   runSimTraceST,
   liftST,
+  traceM,
   VTime(..),
   VTimeDuration(..),
   ThreadId,
@@ -37,13 +38,14 @@ import           Data.Fixed (Micro)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
+import           Data.Typeable (Typeable)
+import           Data.Dynamic (Dynamic, toDyn)
 
 import           Control.Exception
                    ( Exception(..), SomeException
                    , ErrorCall(..), throw, assert )
 import qualified System.IO.Error as IO.Error (userError)
 
-import           Control.Monad
 import           Control.Monad.ST.Lazy
 import qualified Control.Monad.ST.Strict as StrictST
 import           Data.STRef.Lazy
@@ -58,8 +60,6 @@ import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM hiding (TVar)
 import qualified Control.Monad.Class.MonadSTM as MonadSTM
 import           Control.Monad.Class.MonadTimer
-import           Control.Monad.Class.MonadProbe hiding (Probe)
-import qualified Control.Monad.Class.MonadProbe as MonadProbe
 
 {-# ANN module "HLint: ignore Use readTVarIO" #-}
 
@@ -77,7 +77,7 @@ data SimA s a where
   Return       :: a -> SimA s a
 
   Say          :: String -> SimA s b -> SimA s b
-  Output       :: Probe s o -> o -> SimA s b -> SimA s b
+  Output       :: Dynamic -> SimA s b -> SimA s b
 
   LiftST       :: StrictST.ST s a -> (a -> SimA s b) -> SimA s b
 
@@ -108,10 +108,9 @@ data StmA s a where
   Retry        :: StmA s b
 
 
-type ProbeTrace a = [(VTime, a)]
-
-newtype Probe s a = Probe (STRef s (ProbeTrace a))
-
+--
+-- Monad class instances
+--
 
 instance Functor (SimM s) where
     {-# INLINE fmap #-}
@@ -165,11 +164,6 @@ instance Monad (STM s) where
     (>>) = (*>)
 
     fail = MonadFail.fail
-
-
---
--- Monad class instances
---
 
 newtype VTime         = VTime Micro
   deriving (Eq, Ord, Show)
@@ -297,14 +291,9 @@ instance MonadTimer (SimM s) where
   updateTimeout t d = SimM $ \k -> UpdateTimeout t d (k ())
   cancelTimeout t   = SimM $ \k -> CancelTimeout t   (k ())
 
-instance MonadProbe (SimM s) where
-  type Probe (SimM s) = Probe s
-  probeOutput p o = SimM $ \k -> Output p o (k ())
+traceM :: Typeable a => a -> SimM s ()
+traceM x = SimM $ \k -> Output (toDyn x) (k ())
 
-instance MonadRunProbe (SimM s) (ST s) where
-  newProbe = Probe <$> newSTRef []
-  readProbe (Probe p) = reverse <$> readSTRef p
-  runM = void . runSimTraceST
 
 --
 -- Simulation interpreter
@@ -347,6 +336,7 @@ data Trace a = Trace !VTime !ThreadId !TraceEvent (Trace a)
 
 data TraceEvent
   = EventSay  String
+  | EventLog  Dynamic
 
   | EventThrow SomeException
 
@@ -533,10 +523,10 @@ schedule thread@Thread{
       trace <- schedule thread' simstate
       return (Trace time tid (EventSay msg) trace)
 
-    Output (Probe p) o k -> do
-      modifySTRef p ((time, o):)
+    Output x k -> do
       let thread' = thread { threadControl = ThreadControl k ctl }
-      schedule thread' simstate
+      trace <- schedule thread' simstate
+      return (Trace time tid (EventLog x) trace)
 
     LiftST st k -> do
       x <- strictToLazyST st
