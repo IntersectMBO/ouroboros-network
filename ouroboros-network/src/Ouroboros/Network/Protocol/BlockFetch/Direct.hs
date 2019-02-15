@@ -4,10 +4,14 @@ module Ouroboros.Network.Protocol.BlockFetch.Direct
   ( direct
   ) where
 
-import Control.Monad (join)
+import           Control.Monad (join)
 
-import Ouroboros.Network.Protocol.BlockFetch.Client
-import Ouroboros.Network.Protocol.BlockFetch.Server
+import           Network.TypedProtocol.Pipelined
+import           Network.TypedProtocol.Proofs
+
+import           Ouroboros.Network.Protocol.BlockFetch.Client
+import           Ouroboros.Network.Protocol.BlockFetch.Server
+
 
 -- | Run @'BlockFetchClient'@ and @'BlockFetchServer'@ directly against each
 -- other.  This includes running it in any pure monad (e.g. @'Identity'@), and
@@ -19,32 +23,38 @@ direct
   => BlockFetchClient header body m a
   -> BlockFetchServer header body m b
   -> m (a, b)
-direct (BlockFetchClient mclient) server = mclient >>= \client -> direct' client server
-
-direct'
-  :: forall header body m a b.
-     Monad m
-  => BlockFetchRequest header body m a
-  -> BlockFetchServer header body m b
-  -> m (a, b)
-direct' (SendMsgClientDone a) (BlockFetchServer _requestHandler b) = return (a, b)
-direct' (SendMsgRequestRange range resp client) (BlockFetchServer requestHandler _b) =
-  requestHandler range >>= sendBatch resp
+direct (BlockFetchClient mclient) server = mclient >>= flip go server
  where
+  go :: BlockFetchRequest header body m a
+     -> BlockFetchServer header body m b
+     -> m (a, b)
+
+  go (SendMsgRequestRange range resp client) (BlockFetchServer requestHandler _b) =
+    requestHandler range >>= sendBatch client resp
+
+  go (SendMsgClientDone a) (BlockFetchServer _requestHandler b) = return (a, b)
+
+
   sendBatch
-    :: BlockFetchResponse header body m a
+    :: BlockFetchClient header body m a
+    -> BlockFetchResponse header body m a
     -> BlockFetchBlockSender header body m b
     -> m (a, b)
-  sendBatch BlockFetchResponse {handleStartBatch} (SendMsgStartBatch mblock ) =
-    join $ sendBlocks <$> handleStartBatch <*> mblock
-  sendBatch BlockFetchResponse {handleNoBlocks} (SendMsgNoBlocks mserver) =
+  sendBatch client BlockFetchResponse {handleStartBatch} (SendMsgStartBatch mblock ) =
+    join $ sendBlocks client <$> handleStartBatch <*> mblock
+
+  sendBatch client BlockFetchResponse {handleNoBlocks} (SendMsgNoBlocks mserver) =
     handleNoBlocks >> mserver >>= direct client
 
+
   sendBlocks
-    :: BlockFetchReceiver header body m
+    :: BlockFetchClient header body m a
+    -> BlockFetchReceiver header body m
     -> BlockFetchSendBlocks header body m b
     -> m (a, b)
-  sendBlocks BlockFetchReceiver {handleBlock} (SendMsgBlock body mblock) =
-    join $ sendBlocks <$> handleBlock body <*> mblock
-  sendBlocks BlockFetchReceiver {handleBatchDone} (SendMsgBatchDone mserver) =
+
+  sendBlocks client BlockFetchReceiver {handleBlock} (SendMsgBlock body mblock) =
+    join $ sendBlocks client <$> handleBlock body <*> mblock
+
+  sendBlocks client BlockFetchReceiver {handleBatchDone} (SendMsgBatchDone mserver) =
     handleBatchDone >> mserver >>= direct client

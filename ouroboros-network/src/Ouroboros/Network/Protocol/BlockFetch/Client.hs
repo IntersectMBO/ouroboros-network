@@ -98,12 +98,9 @@ blockFetchClientPeer (BlockFetchClient mclient) =
 
 -- | A BlockFetch client designed for running the protcol in a pipelined way.
 --
-data BlockFetchClientPipelined header body c m a where
-  -- | A 'BlockFetchSender' which starts with not outstanding pipelined responses.
-  --
-  BlockFetchClientPipelined
-    :: BlockFetchSender          Z header body c m a
-    -> BlockFetchClientPipelined   header body c m a
+newtype BlockFetchClientPipelined header body c m a = BlockFetchClientPipelined {
+    runBlockFetchClientPipelined :: m (BlockFetchSender Z header body c m a)
+  }
 
 -- | A 'BlockFetchSender' with @n@ outstanding stream of block bodies.
 --
@@ -132,6 +129,13 @@ data BlockFetchSender n header body c m a where
   SendMsgDonePipelined
     :: a -> BlockFetchSender Z c header body m a
 
+blockFetchClientPeerPipelined
+  :: forall header body c m a.
+     Monad m
+  => BlockFetchClientPipelined header body c m a
+  -> PeerPipelined (BlockFetch header body) AsClient BFIdle m a
+blockFetchClientPeerPipelined (BlockFetchClientPipelined msender) = 
+  PeerPipelined $ SenderEffect $ blockFetchClientPeerSender <$> msender
 
 blockFetchClientPeerSender
   :: forall n header body c m a.

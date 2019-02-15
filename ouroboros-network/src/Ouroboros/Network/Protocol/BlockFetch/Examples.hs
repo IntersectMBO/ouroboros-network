@@ -88,7 +88,7 @@ blockFetchClientPipelinedMax
   => [ChainRange header]
   -> BlockFetchClientPipelined header body [body] m [Either (ChainRange header) [body]]
 blockFetchClientPipelinedMax ranges0 =
-  BlockFetchClientPipelined (go [] ranges0 Zero)
+  BlockFetchClientPipelined (return $ go [] ranges0 Zero)
  where
   go :: [Either (ChainRange header) [body]] -> [ChainRange header] -> Nat o
      -> BlockFetchSender o header body [body] m [Either (ChainRange header) [body]]
@@ -118,7 +118,7 @@ blockFetchClientPipelinedMin
   => [ChainRange header]
   -> BlockFetchClientPipelined header body [body] m [Either (ChainRange header) [body]]
 blockFetchClientPipelinedMin ranges0 =
-  BlockFetchClientPipelined (go [] ranges0 Zero)
+  BlockFetchClientPipelined (return $ go [] ranges0 Zero)
  where
   go :: [Either (ChainRange header) [body]]
      -> [ChainRange header]
@@ -160,7 +160,7 @@ blockFetchClientPipelinedLimited
   -> [ChainRange header]
   -> BlockFetchClientPipelined header body [body] m [Either (ChainRange header) [body]]
 blockFetchClientPipelinedLimited omax ranges0 =
-  BlockFetchClientPipelined (go [] ranges0 Zero)
+  BlockFetchClientPipelined (return $ go [] ranges0 Zero)
  where
   go :: [Either (ChainRange header) [body]]
      -> [ChainRange header]
