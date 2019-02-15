@@ -2,19 +2,27 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE StandaloneDeriving #-}
 
 module Ouroboros.Byron.Proxy.Index where
 
+import Control.Exception (Exception)
+import Control.Monad.Trans.Class (lift)
 import Crypto.Hash (Digest, HashAlgorithm, digestFromByteString)
 import Data.ByteString (ByteString)
 import Data.ByteArray (convert)
+import Data.Conduit (ConduitT, yield)
 import Database.SQLite.Simple as Sql
 import System.Directory (doesFileExist)
 
 import Pos.Chain.Block (HeaderHash)
 import Pos.Crypto.Hashing (AbstractHash (..))
+import Pos.DB.Class (Serialized (..), SerializedBlock)
 
+import Ouroboros.Storage.ImmutableDB.API (ImmutableDB)
+import qualified Ouroboros.Storage.ImmutableDB.API as ImmutableDB
 import Ouroboros.Storage.ImmutableDB.Types
+import Ouroboros.Byron.Proxy.Types
 
 -- cardano-sl crypto apparently gives no way to get an AbstractHash from
 -- a ByteString without re-hashing it. We'll use `digestFromByteString` from
@@ -75,6 +83,50 @@ withDB_ :: FilePath -> (Index IO -> IO t) -> IO t
 withDB_ fp k = doesFileExist fp >>= \b -> case b of
   True  -> withDB Existing fp k
   False -> withDB New      fp k
+
+-- | An index on an ImmutableDB is enough to get a ByronBlockSource, but we
+-- assume that the index and DB are kept in-sync.
+-- Also assumes of course that the DB blobs are valid encoded blocks.
+-- Must give a `SerializedBlock` for the genesis, which is used when the
+-- index (and therefore immutable DB) are empty.
+byronBlockSource
+  :: forall m .
+     ( Monad m )
+    -- TODO proper error type.
+  => (forall x . IndexInconsistent -> m x)
+  -> SerializedBlock
+  -> Index m
+  -> ImmutableDB m
+  -> ByronBlockSource m
+byronBlockSource err genesis idx db = ByronBlockSource
+  { bbsStream = streamFrom
+  , bbsTip    = indexAt idx Tip >>= \mTip -> case mTip of
+      Nothing -> pure genesis
+      Just (_, es) -> ImmutableDB.getBinaryBlob db es >>= \mBs -> case mBs of
+        Nothing -> err TipNotInDatabase
+        Just bs -> pure $ Serialized bs
+  }
+  where
+  streamFrom :: HeaderHash -> ConduitT () SerializedBlock m ()
+  streamFrom hh = lift (indexAt idx (ByHash hh)) >>= \mPoint -> case mPoint of
+    -- No problem. The stream is over.
+    Nothing -> pure ()
+    -- Got an entry. Use the EpochSlot to look up in the database, and the
+    -- child hash to continue the stream (if Just).
+    Just (ChildHash mChild, es) -> lift (ImmutableDB.getBinaryBlob db es) >>= \mBs -> case mBs of
+      Nothing -> lift $ err $ PointNotInDatabase hh es
+      Just bs -> do
+        yield (Serialized bs)
+        case mChild of
+          Nothing -> pure ()
+          Just hh' -> streamFrom hh'
+
+data IndexInconsistent where
+  TipNotInDatabase   :: IndexInconsistent
+  PointNotInDatabase :: HeaderHash -> EpochSlot -> IndexInconsistent
+
+deriving instance Show IndexInconsistent
+instance Exception IndexInconsistent
 
 -- | The index is a relation:
 --

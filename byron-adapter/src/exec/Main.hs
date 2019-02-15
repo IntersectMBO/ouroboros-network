@@ -27,7 +27,7 @@ import Pos.Chain.Block (Block, BlockHeader (..), GenesisBlock, gbhConsensus, gcd
                         genesisBlock0, getBlockHeader, headerHash, mcdSlot)
 import Pos.Chain.Lrc (genesisLeaders)
 import Pos.Core (SlotCount (..), getEpochIndex, getSlotIndex, siEpoch, siSlot)
-import Pos.Binary.Class (serializeBuilder)
+import Pos.Binary.Class (serialize', serializeBuilder)
 import Pos.Chain.Block (recoveryHeadersMessage, streamWindow)
 import Pos.Chain.Update (lastKnownBlockVersion, updateConfiguration)
 import Pos.Configuration (networkConnectionTimeout)
@@ -38,6 +38,7 @@ import Pos.Chain.Genesis (Config (configGeneratedSecrets),
                           configEpochSlots, configGenesisHash,
                           configProtocolConstants, configProtocolMagic,
                           configBlockVersionData)
+import Pos.DB.Class (Serialized (..), SerializedBlock)
 import Pos.Diffusion.Full (FullDiffusionConfiguration (..))
 import Pos.Infra.Diffusion.Types
 import Pos.Launcher (NodeParams (..), withConfigurations)
@@ -277,12 +278,17 @@ main = withCompileInfo $ do
             Nothing -> 0
             Just (_, EpochSlot tipEpoch _) -> tipEpoch
       withDB (openDB dbEpoch) $ \db _ -> do
-        -- TODO derive this from the ImmutableDB and Index taken together.
-        -- We assume also that the Index is append-only, so should be OK for an
-        -- oldest-to-newest iterator.
-        let bbs = ByronBlockSource
-              { bbsStream = const (pure ())
-              , bbsTip    = error "bbsTip: not implemented"
-              }
-        withByronProxy bpc bbs $ \bp -> byronProxyMain genesisBlock epochSlots indexDB db bp
+        -- Create the block source to support the logic layer.
+        let bbs :: ByronBlockSource IO
+            bbs = Index.byronBlockSource
+                    errInconsistent
+                    genesisSerialized
+                    indexDB
+                    db
+            errInconsistent :: forall x . Index.IndexInconsistent -> IO x
+            errInconsistent = throwIO
+            genesisSerialized :: SerializedBlock
+            genesisSerialized = Serialized (serialize' genesisBlock)
+        withByronProxy bpc bbs $ \bp ->
+          byronProxyMain genesisBlock epochSlots indexDB db bp
         shutdownTrace trace
