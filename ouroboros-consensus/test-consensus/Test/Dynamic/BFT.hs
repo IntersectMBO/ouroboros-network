@@ -57,16 +57,13 @@ prop_simple_bft_convergence params numCoreNodes =
       isValid
       numCoreNodes
   where
-    isValid :: Show time
-            => [NodeId]
-            -> [(time, Map NodeId (Chain (Block DemoBFT)))]
+    isValid :: [NodeId]
+            -> Map NodeId (Chain (Block DemoBFT))
             -> Property
-    isValid nodeIds trace = counterexample (show trace) $
-      case trace of
-        [(_, final)] -> collect (shortestLength final)
-                     $    Map.keys final === nodeIds
-                     .&&. allEqual (takeChainPrefix <$> Map.elems final)
-        _otherwise   -> property False
+    isValid nodeIds final = counterexample (show final) $
+          collect (shortestLength final)
+     $    Map.keys final === nodeIds
+     .&&. allEqual (takeChainPrefix <$> Map.elems final)
       where
         takeChainPrefix :: Chain (Block DemoBFT) -> Chain (Block DemoBFT)
         takeChainPrefix = id -- in BFT, chains should indeed all be equal.

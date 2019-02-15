@@ -80,17 +80,15 @@ prop_simple_leader_schedule_convergence numSlots numCoreNodes params seed =
                     seed
   where
     isValid :: [NodeId]
-            -> [(time, Map NodeId (Chain (Block DemoLeaderSchedule)))]
+            -> Map NodeId (Chain (Block DemoLeaderSchedule))
             -> Property
-    isValid nodeIds trace =
-      case trace of
-        [(_, final)] ->   counterexample (tracesToDot final)
-                     $    collect (shortestLength final)
-                     $    Map.keys final === nodeIds
-                     .&&. prop_all_common_prefix
-                            (fromIntegral (maxRollbacks $ praosSecurityParam params))
-                            (Map.elems final)
-        _otherwise   -> property False
+    isValid nodeIds final =
+          counterexample (tracesToDot final)
+     $    collect (shortestLength final)
+     $    Map.keys final === nodeIds
+     .&&. prop_all_common_prefix
+            (fromIntegral (maxRollbacks $ praosSecurityParam params))
+            (Map.elems final)
 
 {-------------------------------------------------------------------------------
   Dependent generation and shrinking of leader schedules
