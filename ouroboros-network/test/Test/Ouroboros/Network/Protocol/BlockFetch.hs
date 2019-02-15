@@ -35,11 +35,12 @@ import           Test.Tasty.QuickCheck (testProperty)
 tests :: TestTree
 tests =
   testGroup "Ouroboros.Network.Protocol.BlockFetch"
-  [ testProperty "direct"  prop_direct
-  , testProperty "connect" prop_connect
-  , testProperty "channel ST"          prop_channel_ST
-  , testProperty "channel IO"          prop_channel_IO
-  , testProperty "pipe IO"             prop_pipe_IO
+  [ testProperty "direct"            prop_direct
+  , testProperty "direct_pipelined"  prop_direct_pipelined
+  , testProperty "connect"           prop_connect
+  , testProperty "channel ST"        prop_channel_ST
+  , testProperty "channel IO"        prop_channel_IO
+  , testProperty "pipe IO"           prop_pipe_IO
   ]
 
 --
@@ -109,6 +110,29 @@ prop_direct
 prop_direct (TestChainAndPoints chain points) = case runSim (direct_experiment chain points) of
   Right True -> True
   _          -> False
+
+
+direct_pipelined_experiment
+  :: MonadSTM m
+  => Chain Block
+  -> [Point Block]
+  -> m Property
+direct_pipelined_experiment chain points = do
+  let ranges = pointsToRanges chain points
+      client = blockFetchClientPipelinedMax ranges
+      server = blockFetchServer (ConcreteBlock.blockBody <$> rangeRequestsFromChain chain)
+
+  (res, _) <- directPipelined client server
+  return $ reverse (map (either Left (Right . reverse)) res) === (map Left ranges ++ map Right (receivedBlockBodies chain points))
+
+-- | Run piplined @'direct_pipelined_experiment'@ in the simulation monad.
+--
+prop_direct_pipelined
+  :: TestChainAndPoints
+  -> Property
+prop_direct_pipelined (TestChainAndPoints chain points) = case runSim (direct_pipelined_experiment chain points) of
+  Right p -> p
+  _       -> property False
 
 --
 -- Properties goind via Peer, but without using a channel, without pipelining.
