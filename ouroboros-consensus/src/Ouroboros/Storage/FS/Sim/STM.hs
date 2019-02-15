@@ -111,6 +111,7 @@ instance (MonadFork (SimFS m) , MonadSTM m) => MonadSTM (SimFS m) where
 
   newTBQueue        = lift . newTBQueue
   readTBQueue       = lift . readTBQueue
+  tryReadTBQueue    = lift . tryReadTBQueue
   writeTBQueue    q = lift . writeTBQueue q
 
 simHasFS :: forall m. MonadSTM m => ErrorHandling FsError m -> HasFS (SimFS m)
