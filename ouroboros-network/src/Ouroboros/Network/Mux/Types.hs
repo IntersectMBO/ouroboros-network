@@ -8,7 +8,6 @@ module Ouroboros.Network.Mux.Types (
     , MiniProtocolDispatch (..)
     , MiniProtocolId (..)
     , MiniProtocolMode (..)
-    , MuxBearer (..)
     , MuxSDU (..)
     , PerMuxSharedState (..)
     , RemoteClockModel (..)
@@ -23,6 +22,7 @@ import qualified Data.Map.Strict as M
 import           Data.Word
 
 import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadTimer
 import           Protocol.Channel
 
 newtype RemoteClockModel = RemoteClockModel { unRemoteClockModel :: Word32 }
@@ -39,7 +39,7 @@ data MiniProtocolId = Muxcontrol
  for either the initiator (client) or responder (server)
  side of the given miniprotocol.
  The functions will execute in their own threads and should
- any of them exit the underlying 'MuxBearer' will be torn down
+ any of them exit the underlying Mux Bearer will be torn down
  along with all other miniprotocols.
  -}
 data MiniProtocolDescription m = MiniProtocolDescription {
@@ -66,20 +66,6 @@ data MuxSDU = MuxSDU {
     , msBlob      :: !BL.ByteString
     }
 
-class MuxBearer m where
-  type LocalClockModel m :: *
-  type AssociationDetails m :: *
-  type MuxBearerHandle m :: *
-  type ResponderHandle m :: *
-  initiator :: MiniProtocolDescriptions m -> AssociationDetails m -> AssociationDetails m -> m ()
-  responder :: MiniProtocolDescriptions m -> AssociationDetails m -> m (ResponderHandle m)
-  killResponder :: ResponderHandle m -> m ()
-  sduSize :: MuxBearerHandle m-> m Word16
-  write :: MuxBearerHandle m -> (RemoteClockModel -> MuxSDU) -> m (LocalClockModel m)
-  read :: MuxBearerHandle m -> m (MuxSDU, LocalClockModel m)
-  close :: MuxBearerHandle m -> m ()
-  abandon :: MuxBearerHandle m -> m ()
-
 -- | A TranslocationServiceRequest is a demand for the translocation
 --  of a single mini-protocol message. This message can be of
 --  arbitrary (yet bounded) size. This multiplexing layer is
@@ -99,12 +85,14 @@ newtype Wanton m = Wanton { want :: TMVar m BL.ByteString }
 -- between the muxIngress and the bearerIngress processes.
 data PerMuxSharedState m = PerMuxSS {
   -- | Ingress dispatch table, fixed and known at instantiation.
-      dispatchTable :: MiniProtocolDispatch m
-  -- | Handle for underlying bearer
-  ,   bearerHandle  :: MuxBearerHandle m
+    dispatchTable :: MiniProtocolDispatch m
   -- | Egress queue, shared by all miniprotocols
-  ,   tsrQueue      :: TBQueue m (TranslocationServiceRequest m)
-   -- additional performance info (perhaps)
+  , tsrQueue      :: TBQueue m (TranslocationServiceRequest m)
+  -- | Timestamp and send MuxSDU
+  , write         :: MuxSDU -> m (Time m)
+  -- | Read a MuxSDU
+  , read          :: m (MuxSDU, Time m)
+  -- | Return a suitable MuxSDU payload size
+  , sduSize       :: m Word16
   }
-
 

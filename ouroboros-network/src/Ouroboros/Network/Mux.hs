@@ -7,7 +7,6 @@ module Ouroboros.Network.Mux (
     , MiniProtocolDescriptions (..)
     , MiniProtocolId (..)
     , MiniProtocolMode (..)
-    , MuxBearer (..)
     , MuxSDU (..)
     , RemoteClockModel (..)
     , encodeMuxSDU
@@ -20,9 +19,11 @@ import qualified Codec.CBOR.Write as CBOR (toLazyByteString)
 import           Control.Monad
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadTimer
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Map.Strict as M
+import           Data.Word
 
 import           Protocol.Channel
 
@@ -31,16 +32,18 @@ import           Ouroboros.Network.Mux.Ingress
 import           Ouroboros.Network.Mux.Types
 
 -- | muxJobs constructs a list of jobs which needs to be started in separate threads by
--- the specific 'MuxBearer' instance.
+-- the specific Mux Bearer instance.
 -- TODO: replace MonadSay with iohk-monitoring-framework.
-muxJobs :: (MuxBearer m, MonadSTM m, MonadSay m) =>
+muxJobs :: (MonadSTM m, MonadSay m) =>
     MiniProtocolDescriptions m ->
-    MuxBearerHandle m ->
+    (MuxSDU -> m (Time m)) ->
+    m (MuxSDU, Time m) ->
+    m Word16 ->
     m [m ()]
-muxJobs (MiniProtocolDescriptions udesc) bearer = do
+muxJobs (MiniProtocolDescriptions udesc) wfn rfn sdufn = do
     tbl <- setupTbl
     tq <- atomically $ newTBQueue 100
-    let pmss = PerMuxSS tbl bearer tq
+    let pmss = PerMuxSS tbl tq wfn rfn sdufn
         jobs = [ demux pmss
                , mux pmss
                , muxControl pmss ModeResponder
@@ -67,7 +70,7 @@ muxJobs (MiniProtocolDescriptions udesc) bearer = do
         return [ mpdInitiator mpd $ muxDuplex pmss (mpdId mpd) ModeInitiator w_i
                , mpdResponder mpd $ muxDuplex pmss (mpdId mpd) ModeResponder w_r]
 
-muxControl :: (MuxBearer m, MonadSTM m, MonadSay m) =>
+muxControl :: (MonadSTM m, MonadSay m) =>
     PerMuxSharedState m ->
     MiniProtocolMode ->
     m ()
@@ -81,7 +84,7 @@ muxControl pmss md = do
         atomically $ writeTBQueue (tsrQueue pmss) (TLSRDemand Muxcontrol md (Wanton w))
 
 -- | muxDuplex creates a duplex channel for a specific 'MiniProtocolId' and 'MiniProtocolMode'.
-muxDuplex :: (MuxBearer m, MonadSTM m, MonadSay m) =>
+muxDuplex :: (MonadSTM m, MonadSay m) =>
     PerMuxSharedState m ->
     MiniProtocolId ->
     MiniProtocolMode ->
@@ -97,7 +100,7 @@ muxDuplex pmss mid md w = uniformDuplex snd_ rcv
         atomically $ writeTBQueue (tsrQueue pmss) (TLSRDemand mid md (Wanton w))
     rcv = do
         -- We receive CBOR encoded messages as ByteStrings (possibly partial) from the
-        -- matching ingress queueu. This is same queue the 'demux' thread writes to.
+        -- matching ingress queueu. This is the same queue the 'demux' thread writes to.
         blob <- atomically $ readTBQueue (ingressQueue (dispatchTable pmss) mid md)
         --say $ printf "recv mid %s mode %s blob len %d" (show mid) (show md) (BL.length blob)
         if BL.null blob
