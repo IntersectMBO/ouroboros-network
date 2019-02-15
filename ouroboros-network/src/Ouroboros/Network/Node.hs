@@ -23,7 +23,6 @@ import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTimer
-import           Control.Monad.Class.MonadProbe
 
 import           Protocol.Codec
 import           Protocol.Core
@@ -258,25 +257,22 @@ observeChainProducerState
   :: forall m block.
      ( HasHeader block
      , MonadSTM m
-     , MonadProbe m
      )
   => NodeId
-  -> Probe m (NodeId, Chain block)
+  -> TVar m [(NodeId, Chain block)]
   -> TVar m (ChainProducerState block)
   -> m ()
-observeChainProducerState nid p cpsVar = do
+observeChainProducerState nid probe cpsVar = do
     st <- atomically (newTVar Chain.genesisPoint)
     forever (update st)
   where
     update :: TVar m (Point block) -> m ()
-    update stateVar = do
-      chain <- atomically $ do
-                chain  <- producerChain <$> readTVar cpsVar
-                curPoint <- readTVar stateVar
-                check (Chain.headPoint chain /= curPoint)
-                writeTVar stateVar (Chain.headPoint chain)
-                return chain
-      probeOutput p (nid, chain)
+    update stateVar = atomically $ do
+      chain  <- producerChain <$> readTVar cpsVar
+      curPoint <- readTVar stateVar
+      check (Chain.headPoint chain /= curPoint)
+      writeTVar stateVar (Chain.headPoint chain)
+      modifyTVar probe ((nid, chain):)
 
 data ConsumerId = ConsumerId NodeId Int
   deriving (Eq, Ord, Show)

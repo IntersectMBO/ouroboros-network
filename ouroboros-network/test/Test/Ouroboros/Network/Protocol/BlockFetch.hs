@@ -6,7 +6,6 @@ module Test.Ouroboros.Network.Protocol.BlockFetch where
 
 import qualified Pipes
 
-import           Control.Monad.ST.Lazy (runST)
 import           Control.Monad (void)
 import           Data.Functor (($>))
 import           Data.Functor.Identity (Identity (..))
@@ -14,10 +13,9 @@ import           Data.Functor.Identity (Identity (..))
 import           Protocol.Core (Those (..), connect)
 
 import Control.Monad.Class.MonadFork (MonadFork (..))
-import Control.Monad.Class.MonadProbe (MonadProbe (..))
 import Control.Monad.Class.MonadSTM (MonadSTM (..))
 import Control.Monad.Class.MonadTimer (MonadTimer (..))
-import Control.Monad.IOSim (SimM)
+import Control.Monad.IOSim (SimM, runSimOrThrow)
 
 import Ouroboros.Network.Protocol.BlockFetch.Type
 import Ouroboros.Network.Protocol.BlockFetch.Client
@@ -26,7 +24,6 @@ import Ouroboros.Network.Protocol.BlockFetch.Direct
 
 import Ouroboros.Network.Testing.ConcreteBlock (BlockHeader)
 import Test.Ouroboros.Network.Testing.Arbitrary
-import Test.Ouroboros.Network.Testing.Utils (runExperiment)
 
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
@@ -120,14 +117,12 @@ blockRequestProtocol_experiment
   :: forall m.
      ( MonadSTM m
      , MonadTimer m
-     , MonadProbe m
      )
   => (forall a b. BlockRequestReceiver (ChainRange BlockHeader) m a -> BlockRequestSender (ChainRange BlockHeader) m b -> m ())
   -- ^ either 'directBlockRequest' or @'connect'@
   -> [(ArbitraryPoint, ArbitraryPoint)]
-  -> Probe m Property
-  -> m ()
-blockRequestProtocol_experiment run as probe = do
+  -> m Property
+blockRequestProtocol_experiment run as = do
   let ranges = map (\(ArbitraryPoint p, ArbitraryPoint p') -> ChainRange p p') as
   var <- atomically $ newTVar []
   let server = constantReceiver (\a -> atomically $ modifyTVar var (a:)) (return ())
@@ -136,27 +131,27 @@ blockRequestProtocol_experiment run as probe = do
   _ <- run server client
 
   res <- atomically $ readTVar var
-  probeOutput probe $ reverse res === ranges
+  return $ reverse res === ranges
 
 prop_directBlockRequestProtocol_ST
   :: [(ArbitraryPoint, ArbitraryPoint)]
   -> Property
-prop_directBlockRequestProtocol_ST as = runST $ runExperiment $
-  blockRequestProtocol_experiment @(SimM _)
+prop_directBlockRequestProtocol_ST as = runSimOrThrow $
+  blockRequestProtocol_experiment
     (\ser cli -> void $ directBlockRequest ser cli) as
 
 prop_directBlockRequestProtocol_IO
   :: [(ArbitraryPoint, ArbitraryPoint)]
   -> Property
-prop_directBlockRequestProtocol_IO as = ioProperty $ runExperiment $
+prop_directBlockRequestProtocol_IO as = ioProperty $
   blockRequestProtocol_experiment
     (\ser cli -> void $ directBlockRequest ser cli)  as
 
 prop_connectBlockRequestProtocol_ST
   :: [(ArbitraryPoint, ArbitraryPoint)]
   -> Property
-prop_connectBlockRequestProtocol_ST as = runST $ runExperiment $
-  blockRequestProtocol_experiment @(SimM _)
+prop_connectBlockRequestProtocol_ST as = runSimOrThrow $
+  blockRequestProtocol_experiment
     (\ser cli -> void $ connect
       (blockRequestReceiverStream ser)
       (blockRequestSenderStream cli)) as
@@ -164,7 +159,7 @@ prop_connectBlockRequestProtocol_ST as = runST $ runExperiment $
 prop_connectBlockRequestProtocol_IO
   :: [(ArbitraryPoint, ArbitraryPoint)]
   -> Property
-prop_connectBlockRequestProtocol_IO as = ioProperty $ runExperiment $
+prop_connectBlockRequestProtocol_IO as = ioProperty $
   blockRequestProtocol_experiment
     (\ser cli -> void $ connect
       (blockRequestReceiverStream ser)
@@ -202,12 +197,10 @@ blockFetchProtocol_experiment
   :: forall m.
      ( MonadSTM m
      , MonadTimer m
-     , MonadProbe m
      )
   => [(Int, Int)]
-  -> Probe m Property
-  -> m ()
-blockFetchProtocol_experiment ranges probe = do
+  -> m Property
+blockFetchProtocol_experiment ranges = do
   var  <- atomically $ newTVar (map Element ranges ++ [End])
   var' <- atomically $ newTVar (map Element ranges ++ [End])
 
@@ -220,10 +213,10 @@ blockFetchProtocol_experiment ranges probe = do
     (blockFetchReceiverStream blockFetchClientReceiver)
 
   let res = reverse $ concatMap (\(x, y) -> [x..y]) ranges
-  case resConn of
-    This _       -> probeOutput probe $ property False
-    That res'    -> probeOutput probe $ res' === res .&&. resDirect === res
-    These _ res' -> probeOutput probe $ res' === res .&&. resDirect === res
+  return $ case resConn of
+    This _       -> property False
+    That res'    -> res' === res .&&. resDirect === res
+    These _ res' -> res' === res .&&. resDirect === res
 
  where
   blockStream (x, y) = return (Just (Pipes.each [x..y] >> return ()))
@@ -237,13 +230,13 @@ blockFetchProtocol_experiment ranges probe = do
 prop_blockFetchProtocol_ST
   :: NonEmptyList (Int, Int)
   -> Property
-prop_blockFetchProtocol_ST (NonEmpty as) = runST $ runExperiment $
+prop_blockFetchProtocol_ST (NonEmpty as) = runSimOrThrow $
   blockFetchProtocol_experiment as
 
 prop_blockFetchProtocol_IO
   :: NonEmptyList (Int, Int)
   -> Property
-prop_blockFetchProtocol_IO (NonEmpty as) = ioProperty $ runExperiment $
+prop_blockFetchProtocol_IO (NonEmpty as) = ioProperty $
   blockFetchProtocol_experiment as
 
 {-------------------------------------------------------------------------------
@@ -258,7 +251,6 @@ roundTrip_experiment
   :: forall m.
      ( MonadSTM m
      , MonadTimer m
-     , MonadProbe m
      )
   => (forall a b. BlockRequestReceiver (Maybe (Int, Int)) m a
         -> BlockRequestSender (Maybe (Int, Int)) m b
@@ -270,17 +262,15 @@ roundTrip_experiment
         -- ^ run @'BlockFetchProtocol'@
   -> [(Int, Int)] -- ^ ranges to send
   -> Positive Int -- ^ size of queue connecting both servers
-  -> Probe m Property
-  -> m ()
-roundTrip_experiment runClient runServer ranges (Positive queueSize) probe = do
+  -> m Property
+roundTrip_experiment runClient runServer ranges (Positive queueSize) = do
   (serverReceiver, serverSender) <- connectThroughQueue (fromIntegral queueSize) blockStream
   let clientSender = blockRequestSenderFromProducer
         (Pipes.each (map Just ranges ++ [Nothing]) >> return ())
   fork $ runClient serverReceiver clientSender
-  fork $ do
-    res <- runServer serverSender blockFetchClientReceiver
-    let expected = concatMap (\(x, y) -> [x..y]) ranges
-    probeOutput probe ((reverse <$> res) === Just expected)
+  res <- runServer serverSender blockFetchClientReceiver
+  let expected = concatMap (\(x, y) -> [x..y]) ranges
+  return ((reverse <$> res) === Just expected)
  where
   blockStream :: Maybe (Int, Int) -> m (Maybe (Pipes.Producer Int m ()))
   blockStream (Just (x, y)) = return (Just (Pipes.each [x..y] >> return ()))
@@ -290,7 +280,7 @@ prop_directRoundTripST
   :: [(Int, Int)]
   -> Positive Int
   -> Property
-prop_directRoundTripST ranges queueSize = runST $ runExperiment $
+prop_directRoundTripST ranges queueSize = runSimOrThrow $
   roundTrip_experiment @(SimM _)
     (\ser cli -> void $ directBlockRequest ser cli)
     (\ser cli -> Just . snd <$> directBlockFetch ser cli)
@@ -301,7 +291,7 @@ prop_directRoundTripIO
   :: [(Int, Int)]
   -> Positive Int
   -> Property
-prop_directRoundTripIO ranges queueSize = ioProperty $ runExperiment $
+prop_directRoundTripIO ranges queueSize = ioProperty $
   roundTrip_experiment
     (\ser cli -> void $ directBlockRequest ser cli)
     (\ser cli -> Just . snd <$> directBlockFetch ser cli)
@@ -317,7 +307,7 @@ prop_connectRoundTripST
   :: [(Int, Int)]
   -> Positive Int
   -> Property
-prop_connectRoundTripST ranges queueSize = runST $ runExperiment $
+prop_connectRoundTripST ranges queueSize = runSimOrThrow $
   roundTrip_experiment
     (\ser cli -> void $ connect
       (blockRequestReceiverStream ser)
@@ -332,7 +322,7 @@ prop_connectRoundTripIO
   :: [(Int, Int)]
   -> Positive Int
   -> Property
-prop_connectRoundTripIO ranges queueSize = ioProperty $ runExperiment $
+prop_connectRoundTripIO ranges queueSize = ioProperty $
   roundTrip_experiment
     (\ser cli -> void $ connect
       (blockRequestReceiverStream ser)

@@ -4,7 +4,6 @@ module Test.Ouroboros.Network.Protocol.Stream where
 
 -- TODO: add test which uses `Protocol.Core.connect`
 
-import           Control.Monad.ST.Lazy (runST)
 import           Numeric.Natural (Natural)
 import           Pipes (yield)
 
@@ -13,8 +12,7 @@ import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
 import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadProbe
-import           Control.Monad.IOSim ()
+import           Control.Monad.IOSim (runSimOrThrow)
 
 import Ouroboros.Network.Protocol.Stream.Client
 import Ouroboros.Network.Protocol.Stream.Server
@@ -57,18 +55,12 @@ readQueue queue = go []
 -- server.
 --
 test_direct
-  :: forall m n.
-     ( MonadSTM m
-     , MonadProbe m
-     , MonadRunProbe m n
-     )
+  :: forall m.
+     MonadSTM m
   => Window
   -> (Int, Int)
-  -> n Property
-test_direct (Window window) range = snd . head <$> withProbe experiment
- where
-  experiment :: Probe m Property -> m ()
-  experiment probe = do
+  -> m Property
+test_direct (Window window) range = do
     queue <- atomically $ newTBQueue window
     let client = streamClient queue range
     var <- atomically $ newTVar Nothing
@@ -77,10 +69,10 @@ test_direct (Window window) range = snd . head <$> withProbe experiment
       atomically $ writeTVar var (Just res)
     cliRes <- readQueue queue
     serRes <- atomically $ readTVar var
-    probeOutput probe (Just cliRes === serRes)
+    return (Just cliRes === serRes)
 
 prop_direct_IO :: Window -> (Int, Int) -> Property
 prop_direct_IO window range = ioProperty (test_direct window range)
 
 prop_direct_Sim :: Window -> (Int, Int) -> Property
-prop_direct_Sim window range = runST $ test_direct window range
+prop_direct_Sim window range = runSimOrThrow $ test_direct window range

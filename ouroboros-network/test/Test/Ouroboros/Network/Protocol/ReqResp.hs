@@ -4,8 +4,6 @@
 {-# LANGUAGE TypeApplications #-}
 module Test.Ouroboros.Network.Protocol.ReqResp where
 
-import Control.Monad (unless)
-import Control.Monad.ST.Lazy (runST)
 import Data.Functor.Identity (Identity (..))
 import Data.ByteString (ByteString)
 import System.Process (createPipe)
@@ -16,9 +14,8 @@ import Codec.CBOR.Encoding (Encoding)
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadSTM
-import Control.Monad.Class.MonadProbe
 
-import Control.Monad.IOSim (SimM)
+import Control.Monad.IOSim (runSimOrThrow)
 
 import Protocol.Core (Those (..), connect)
 import Protocol.Codec
@@ -32,7 +29,7 @@ import Ouroboros.Network.Protocol.ReqResp.Server
 import Ouroboros.Network.Protocol.ReqResp.Direct
 import Ouroboros.Network.Protocol.ReqResp.Codec.Cbor
 
-import Test.Ouroboros.Network.Testing.Utils (runExperiment, tmvarChannels)
+import Test.Ouroboros.Network.Testing.Utils (tmvarChannels)
 
 import Test.QuickCheck hiding (Result)
 import Test.Tasty (TestTree, testGroup)
@@ -84,7 +81,6 @@ reqRespDemoExperiment
   :: forall m request response.
      ( MonadST m
      , MonadSTM m
-     , MonadProbe m
      , Serialise request
      , Serialise response
      , Eq request
@@ -96,33 +92,33 @@ reqRespDemoExperiment
   -> Duplex m m Encoding ByteString
   -> request
   -> response
-  -> Probe m Property
-  -> m ()
-reqRespDemoExperiment clientChan serverChan request response probe = withLiftST @m $ \liftST -> do
+  -> m Property
+reqRespDemoExperiment clientChan serverChan request response =
+  withLiftST @m $ \liftST -> do
 
-  doneVar <- atomically $ newTVar False
-  
   let serverPeer = reqRespServerPeer (ReqRespServer $ \req -> return (response, req))
       clientPeer = reqRespClientPeer (Request request return)
 
       codec = hoistCodec liftST codecReqResp
 
+  serverResultVar <- newEmptyTMVarIO
   fork $ do
     result <- useCodecWithDuplex serverChan codec serverPeer
-    case result of
-      Normal request' -> probeOutput probe (request' === request)
-      Unexpected _    -> probeOutput probe (property False)
+    atomically (putTMVar serverResultVar result)
 
+  clientResultVar <- newEmptyTMVarIO
   fork $ do
     result <- useCodecWithDuplex clientChan codec clientPeer
-    case result of
-      Normal response' -> probeOutput probe (response' === response)
-      Unexpected _     -> probeOutput probe (property False)
-    atomically $ writeTVar doneVar True
+    atomically (putTMVar clientResultVar result)
 
-  atomically $ do
-    done <- readTVar doneVar
-    unless done retry
+  (serverResult, clientResult) <- atomically $
+    (,) <$> takeTMVar serverResultVar <*> takeTMVar clientResultVar
+
+  case (serverResult, clientResult) of
+    (Normal request', Normal response') ->
+      return $ request' === request .&. response' === response
+    
+    _ -> return $ property False
 
 prop_reqRespDemoExperimentST
   :: forall request response.
@@ -137,9 +133,9 @@ prop_reqRespDemoExperimentST
   -> response
   -> Property
 prop_reqRespDemoExperimentST request response =
-  runST $ runExperiment $ \probe -> do
+  runSimOrThrow $ do
     (clientChan, serverChan) <- tmvarChannels
-    reqRespDemoExperiment @(SimM _) clientChan serverChan request response probe
+    reqRespDemoExperiment clientChan serverChan request response
 
 prop_reqRespDemoExperimentIO
   :: forall request response.
@@ -154,9 +150,9 @@ prop_reqRespDemoExperimentIO
   -> response
   -> Property
 prop_reqRespDemoExperimentIO request response =
-  ioProperty $ runExperiment $ \probe -> do
+  ioProperty $ do
     (clientChan, serverChan) <- tmvarChannels
-    reqRespDemoExperiment clientChan serverChan request response probe
+    reqRespDemoExperiment clientChan serverChan request response
 
 prop_reqRespPipeExperiment
   :: forall request response.
@@ -171,9 +167,9 @@ prop_reqRespPipeExperiment
   -> response
   -> Property
 prop_reqRespPipeExperiment request response =
-  ioProperty $ runExperiment $ \probe -> do
+  ioProperty $ do
     (serRead, cliWrite) <- createPipe
     (cliRead, serWrite) <- createPipe
     let clientChan = pipeDuplex cliRead cliWrite
         serverChan = pipeDuplex serRead serWrite
-    reqRespDemoExperiment clientChan serverChan request response probe
+    reqRespDemoExperiment clientChan serverChan request response
