@@ -1,8 +1,9 @@
 { nixpkgs
 , compiler
-, haddock    ? false
+, haddock    ? true
 , test       ? true
 , benchmarks ? false
+, error      ? false
 }:
 with builtins;
 let
@@ -21,32 +22,35 @@ let
     else nixpkgs.lib.id;
   docNoSeprateOutput = drv: lib.overrideCabal drv (drv: { enableSeparateDocOutput = false; });
   cleanSource = drv: lib.overrideCabal drv (drv: {src = nixpkgs.lib.sourceFilesBySuffices drv.src [".hs" "LICENSE" "ChangeLog.md" ".cabal"];});
+  doWerror = if error
+    then drv: lib.appendConfigureFlag drv "--ghc-option=-Werror"
+    else nixpkgs.lib.id;
 
   pkgs = rec {
 
-    io-sim-classes = docNoSeprateOutput(doHaddock(doTest(doBench(
+    io-sim-classes = doWerror(docNoSeprateOutput(doHaddock(doTest(doBench(
       cleanSource (callCabal2nix "io-sim-classes"./io-sim-classes {})
-    ))));
+    )))));
 
-    io-sim = docNoSeprateOutput(doHaddock(doTest(doBench(
+    io-sim = doWerror(docNoSeprateOutput(doHaddock(doTest(doBench(
       cleanSource (callCabal2nix "io-sim" ./io-sim { inherit io-sim-classes; })
-    ))));
+    )))));
 
-    typed-protocols = docNoSeprateOutput(doHaddock(doTest(doBench(
+    typed-protocols = doWerror(docNoSeprateOutput(doHaddock(doTest(doBench(
       cleanSource (callCabal2nix "typed-protocols" ./typed-protocols { inherit io-sim io-sim-classes; })
-    ))));
+    )))));
 
-    typed-transitions = docNoSeprateOutput(doHaddock(doTest(doBench(
+    typed-transitions = doWerror(docNoSeprateOutput(doHaddock(doTest(doBench(
       cleanSource (callCabal2nix "typed-transitions" ./typed-transitions {})
-    ))));
+    )))));
 
-    ouroboros-network = docNoSeprateOutput(doHaddock(doTest(doBench(
+    ouroboros-network = doWerror(docNoSeprateOutput(doHaddock(doTest(doBench(
       cleanSource (callCabal2nix "ouroboros-network" ./ouroboros-network { inherit io-sim io-sim-classes typed-transitions; })
-    ))));
+    )))));
 
-    ouroboros-consensus = docNoSeprateOutput(doHaddock(doTest(doBench(
+    ouroboros-consensus = doWerror(docNoSeprateOutput(doHaddock(doTest(doBench(
       cleanSource (callCabal2nix "ouroboros-consensus" ./ouroboros-consensus { inherit io-sim-classes io-sim typed-transitions ouroboros-network; })
-    ))));
+    )))));
 
   };
 

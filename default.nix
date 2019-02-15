@@ -1,3 +1,8 @@
+{ haddock    ? true
+, test       ? true
+, benchmarks ? false
+, error      ? false
+}:
 # Builds using system <nixpkgs> and ghc863 with the required package curation.
 let
   # Pin nixpkgs to this one.
@@ -9,7 +14,7 @@ let
     rev = "5a4eee1ebded257d785d39a090a216c4a261eb22";
     sha256 = "0wr3vn7vdc455dfh57aslqr59fx1vgmi6xwdrrfjh8gg00q1dkng";
   };
-  cardanopkgs = import ./nix/cardanopkgs.nix { inherit nixpkgs; inherit cardanoroot; };
+  cardanopkgs = import ./nix/cardanopkgs.nix { inherit nixpkgs cardanoroot; };
 
   # Build on 8.6.3 with the required overrides: one for packages defined in
   # this repo, and one to bring in cardano-sl as a library, which is a real
@@ -19,6 +24,6 @@ let
       (overrides self super) // (cardanopkgs self super);
   };
 in
-  (import ./pkgs.nix { inherit nixpkgs; inherit compiler; }) // {
+  (import ./pkgs.nix { inherit nixpkgs compiler haddock test benchmarks error; }) // {
     inherit nixpkgs compiler;
   }
