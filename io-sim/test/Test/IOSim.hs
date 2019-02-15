@@ -9,14 +9,13 @@ module Test.IOSim
     ) where
 
 import           Control.Monad
-import           Control.Monad.ST.Lazy (runST)
 import           Control.Exception
                    ( ArithException(..) )
 import           System.IO.Error
 import           Data.Array
 import           Data.Fixed (Fixed (..), Micro)
 import           Data.Graph
-import           Data.List (sortBy)
+import           Data.List (sort)
 
 import           Test.QuickCheck
 import           Test.Tasty
@@ -27,7 +26,6 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
 import           Control.Monad.Class.MonadSay
-import           Control.Monad.Class.MonadProbe
 import           Control.Monad.IOSim
 
 tests :: TestTree
@@ -168,17 +166,15 @@ instance Arbitrary TestMicro where
 
   shrink (TestMicro rs) = [ TestMicro rs' | rs' <- shrinkList (const []) rs ]
 
-test_timers :: forall m n.
+test_timers :: forall m.
                ( MonadFork m
                , MonadSTM m
                , MonadTimer m
-               , MonadProbe m
-               , MonadRunProbe m n
                , Show (Time m)
                , Show (Duration (Time m))
                )
             => [Duration (Time m)]
-            -> n Property
+            -> m Property
 test_timers xs =
     label (lbl xs) . isValid <$> withProbe experiment
   where
@@ -205,17 +201,17 @@ test_timers xs =
       -- wait for all tvars
       forM_ tvars $ \v -> atomically (readTVar v >>= check)
 
-    isValid :: [(Time m, (Duration (Time m), Int))] -> Property
+    isValid :: [(Duration (Time m), Int)] -> Property
     isValid tr =
          -- all timers should fire
          (length tr === length xs)
          -- timers should fire in the right order
-      .&&. (sortBy (\(_, a) (_, a') -> compare a a') tr === tr)
+      .&&. (sort tr === tr)
 
 prop_timers_ST :: TestMicro -> Property
 prop_timers_ST (TestMicro xs) =
   let ds = map VTimeDuration xs
-  in runST $ test_timers ds
+  in runSimOrThrow $ test_timers ds
 
 prop_timers_IO :: [Positive Int] -> Property
 prop_timers_IO = ioProperty . test_timers . map ((*100) . getPositive)
@@ -225,15 +221,13 @@ prop_timers_IO = ioProperty . test_timers . map ((*100) . getPositive)
 -- Forking
 --
 
-test_fork_order :: forall m n.
+test_fork_order :: forall m.
                    ( MonadFork m
                    , MonadSTM m
                    , MonadTimer m
-                   , MonadProbe m
-                   , MonadRunProbe m n
                    )
                 => Positive Int
-                -> n Property
+                -> m Property
 test_fork_order = \(Positive n) -> isValid n <$> withProbe (experiment n)
   where
     experiment :: Int -> Probe m Int -> m ()
@@ -249,14 +243,34 @@ test_fork_order = \(Positive n) -> isValid n <$> withProbe (experiment n)
       -- wait for the spanned thread to finish
       atomically $ readTVar v >>= check
 
-    isValid :: Int -> [(Time m, Int)] -> Property
-    isValid n tr = (map snd tr) === [n,n-1..1]
+    isValid :: Int -> [Int] -> Property
+    isValid n tr = tr === [n,n-1..1]
 
 prop_fork_order_ST :: Positive Int -> Property
-prop_fork_order_ST n = runST $ test_fork_order n
+prop_fork_order_ST n = runSimOrThrow $ test_fork_order n
 
 prop_fork_order_IO :: Positive Int -> Property
 prop_fork_order_IO = ioProperty . test_fork_order
+
+
+--
+-- Probe mini-abstraction
+--
+
+-- | Where returning results directly is not convenient, we can build up
+-- a trace of events we want to observe, and can do probe output from
+-- multiple threads.
+--
+type Probe m x = TVar m [x]
+
+withProbe :: MonadSTM m => (Probe m x -> m ()) -> m [x]
+withProbe action = do
+    probe <- newTVarIO []
+    action probe
+    reverse <$> atomically (readTVar probe)
+
+probeOutput :: MonadSTM m => Probe m x -> x -> m ()
+probeOutput probe x = atomically (modifyTVar probe (x:))
 
 
 --
