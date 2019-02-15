@@ -258,7 +258,13 @@ main = withCompileInfo $ do
         -- Add 1 to the slot count because we put EBBs at the end of every
         -- epoch.
         epochSizes = Map.fromList (fmap (\i -> (i, fromIntegral (getSlotCount epochSlots) + 1)) [0..200])
-        openDB dbEpoch = DB.openDB fs errorHandling dbFilePath dbEpoch epochSizes
+        openDB dbEpoch = DB.openDB
+          fs
+          errorHandling
+          dbFilePath
+          dbEpoch
+          epochSizes
+          NoValidation
         -- The supporting header hash and tip index.
         indexFilePath :: FilePath
         indexFilePath = "index-byron-adapter"
@@ -270,7 +276,7 @@ main = withCompileInfo $ do
       let dbEpoch = case mTip of
             Nothing -> 0
             Just (_, EpochSlot tipEpoch _) -> tipEpoch
-      withDB (openDB dbEpoch) $ \db -> do
+      withDB (openDB dbEpoch) $ \db _ -> do
         -- TODO derive this from the ImmutableDB and Index taken together.
         -- We assume also that the Index is append-only, so should be OK for an
         -- oldest-to-newest iterator.
