@@ -38,11 +38,12 @@ import           Test.Tasty.QuickCheck (testProperty)
 tests :: TestTree
 tests =
   testGroup "Ouroboros.Network.Protocol.BlockFetch"
-  [ testProperty "direct"  prop_direct
-  , testProperty "connect" prop_connect
-  , testProperty "channel ST"          prop_channel_ST
-  , testProperty "channel IO"          prop_channel_IO
-  , testProperty "pipe IO"             prop_pipe_IO
+  [ testProperty "direct"            prop_direct
+  , testProperty "direct_pipelined"  prop_directPipelined
+  , testProperty "connect"           prop_connect
+  , testProperty "channel ST"        prop_channel_ST
+  , testProperty "channel IO"        prop_channel_IO
+  , testProperty "pipe IO"           prop_pipe_IO
   ]
 
 
@@ -56,11 +57,20 @@ testClient :: MonadSTM m
            -> BlockFetchClient Block BlockBody m [BlockBody]
 testClient chain points = blockFetchClientMap (pointsToRanges chain points)
 
+testClientPipelined :: MonadSTM m
+                    => Chain Block
+                    -> [Point Block]
+                    -> BlockFetchClientPipelined Block BlockBody m
+                         [Either (ChainRange Block) [BlockBody]]
+testClientPipelined chain points =
+    blockFetchClientPipelinedMax (pointsToRanges chain points)
+
 testServer :: MonadSTM m
            => Chain Block
            -> BlockFetchServer Block BlockBody m ()
 testServer chain = blockFetchServer (ConcreteBlock.blockBody <$>
                                        rangeRequestsFromChain chain)
+
 
 --
 -- Properties going directly, not via Peer.
@@ -75,6 +85,18 @@ prop_direct (TestChainAndPoints chain points) =
  ==
     (reverse . concat $ receivedBlockBodies chain points, ())
 
+
+-- | Run a pipelined block-fetch client with a server, without goind via 'Peer'.
+--
+prop_directPipelined :: TestChainAndPoints -> Bool
+prop_directPipelined (TestChainAndPoints chain points) =
+   case runSimOrThrow (directPipelined (testClientPipelined chain points)
+                                       (testServer chain)) of
+     (res, ()) ->
+         reverse (map (either Left (Right . reverse)) res)
+      ==
+         map Left  (pointsToRanges      chain points)
+      ++ map Right (receivedBlockBodies chain points)
 
 
 --
