@@ -25,6 +25,7 @@ module Network.TypedProtocol.Driver (
 
   -- * Connected peers
   runConnectedPeers,
+  runConnectedPeersPipelined,
 
   -- * Driver utilities
   -- | This may be useful if you want to write your own driver.
@@ -268,3 +269,19 @@ runConnectedPeers createChannels codec client server = do
       (_, Left err)      -> return (Left err)
       (Right x, Right y) -> return (Right (x,y))
 
+
+runConnectedPeersPipelined :: (MonadSTM m, MonadAsync m, MonadCatch m)
+                           => m (Channel m bytes, Channel m bytes)
+                           -> Codec ps failure m bytes
+                           -> Natural
+                           -> PeerPipelined ps AsClient st m a
+                           -> Peer          ps AsServer st m b
+                           -> m (Either failure (a, b))
+runConnectedPeersPipelined createChannels codec maxOutstanding client server = do
+    (clientChannel, serverChannel) <- createChannels
+    results <- runPipelinedPeer maxOutstanding codec clientChannel client
+                 `concurrently`
+               runPeer                         codec serverChannel server
+    case results of
+      (_, Left err) -> return (Left err)
+      (x, Right y)  -> return (Right (x,y))
