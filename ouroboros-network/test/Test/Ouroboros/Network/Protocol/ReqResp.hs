@@ -101,12 +101,12 @@ reqRespDemoExperiment clientChan serverChan request response =
 
       codec = hoistCodec liftST codecReqResp
 
-  serverResultVar <- newEmptyTMVarIO
+  serverResultVar <- newEmptyTMVarM
   fork $ do
     result <- useCodecWithDuplex serverChan codec serverPeer
     atomically (putTMVar serverResultVar result)
 
-  clientResultVar <- newEmptyTMVarIO
+  clientResultVar <- newEmptyTMVarM
   fork $ do
     result <- useCodecWithDuplex clientChan codec clientPeer
     atomically (putTMVar clientResultVar result)

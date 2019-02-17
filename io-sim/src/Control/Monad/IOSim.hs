@@ -255,9 +255,9 @@ instance MonadSTM (SimM s) where
   retry             = STM $ \_ -> Retry
 
   newTMVar          = newTMVarDefault
-  newTMVarIO        = newTMVarIODefault
+  newTMVarM         = newTMVarMDefault
   newEmptyTMVar     = newEmptyTMVarDefault
-  newEmptyTMVarIO   = newEmptyTMVarIODefault
+  newEmptyTMVarM    = newEmptyTMVarMDefault
   takeTMVar         = takeTMVarDefault
   tryTakeTMVar      = tryTakeTMVarDefault
   putTMVar          = putTMVarDefault

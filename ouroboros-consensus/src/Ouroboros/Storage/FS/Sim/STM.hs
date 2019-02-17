@@ -98,9 +98,9 @@ instance (MonadFork (SimFS m) , MonadSTM m) => MonadSTM (SimFS m) where
   retry             = lift   retry
 
   newTMVar          = lift . newTMVar
-  newTMVarIO        = lift . newTMVarIO
+  newTMVarM         = lift . newTMVarM
   newEmptyTMVar     = lift   newEmptyTMVar
-  newEmptyTMVarIO   = lift   newEmptyTMVarIO
+  newEmptyTMVarM    = lift   newEmptyTMVarM
   takeTMVar         = lift . takeTMVar
   tryTakeTMVar      = lift . tryTakeTMVar
   putTMVar        t = lift . putTMVar    t

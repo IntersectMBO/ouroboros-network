@@ -10,9 +10,9 @@ module Control.Monad.Class.MonadSTM
   -- * Default 'TMVar' implementation
   , TMVarDefault (..)
   , newTMVarDefault
-  , newTMVarIODefault
+  , newTMVarMDefault
   , newEmptyTMVarDefault
-  , newEmptyTMVarIODefault
+  , newEmptyTMVarMDefault
   , takeTMVarDefault
   , tryTakeTMVarDefault
   , putTMVarDefault
@@ -71,8 +71,8 @@ class (MonadFork m, Monad (Tr m)) => MonadSTM m where
 --orElse       :: Tr m a -> Tr m a -> Tr m a --TODO
 
   -- Helpful derived functions with default implementations
-  newTVarIO     :: a -> m (TVar m a)
-  newTVarIO     = atomically . newTVar
+  newTVarM     :: a -> m (TVar m a)
+  newTVarM     = atomically . newTVar
 
   modifyTVar   :: TVar m a -> (a -> a) -> Tr m ()
   modifyTVar  v f = readTVar v >>= writeTVar v . f
@@ -89,9 +89,9 @@ class (MonadFork m, Monad (Tr m)) => MonadSTM m where
   -- Additional derived STM APIs
   type TMVar m :: * -> *
   newTMVar        :: a -> Tr m (TMVar m a)
-  newTMVarIO      :: a -> m   (TMVar m a)
+  newTMVarM       :: a -> m   (TMVar m a)
   newEmptyTMVar   ::      Tr m (TMVar m a)
-  newEmptyTMVarIO ::      m   (TMVar m a)
+  newEmptyTMVarM  ::      m   (TMVar m a)
   takeTMVar       :: TMVar m a      -> Tr m a
   tryTakeTMVar    :: TMVar m a      -> Tr m (Maybe a)
   putTMVar        :: TMVar m a -> a -> Tr m ()
@@ -130,9 +130,9 @@ instance MonadSTM m => MonadSTM (ReaderT e m) where
   retry            = lift retry
 
   newTMVar         = lift . newTMVar
-  newTMVarIO       = lift . newTMVarIO
+  newTMVarM        = lift . newTMVarM
   newEmptyTMVar    = lift newEmptyTMVar
-  newEmptyTMVarIO  = lift newEmptyTMVarIO
+  newEmptyTMVarM   = lift newEmptyTMVarM
   takeTMVar        = lift . takeTMVar
   tryTakeTMVar     = lift . tryTakeTMVar
   putTMVar   t a   = lift $ putTMVar t a
@@ -169,9 +169,9 @@ instance (Show e, MonadSTM m) => MonadSTM (ExceptT e m) where
   retry                  = lift retry
 
   newTMVar               = lift . newTMVar
-  newTMVarIO             = lift . newTMVarIO
+  newTMVarM              = lift . newTMVarM
   newEmptyTMVar          = lift newEmptyTMVar
-  newEmptyTMVarIO        = lift newEmptyTMVarIO
+  newEmptyTMVarM         = lift newEmptyTMVarM
   takeTMVar              = lift . takeTMVar
   tryTakeTMVar           = lift . tryTakeTMVar
   putTMVar   t a         = lift $ putTMVar t a
@@ -224,7 +224,7 @@ instance MonadSTM IO where
   writeTVar   = STM.writeTVar
   retry       = STM.retry
 
-  newTVarIO   = STM.newTVarIO
+  newTVarM    = STM.newTVarIO
   modifyTVar  = STM.modifyTVar
   modifyTVar' = STM.modifyTVar'
   check       = STM.check
@@ -232,9 +232,9 @@ instance MonadSTM IO where
   type TMVar IO = STM.TMVar
 
   newTMVar        = STM.newTMVar
-  newTMVarIO      = STM.newTMVarIO
+  newTMVarM       = STM.newTMVarIO
   newEmptyTMVar   = STM.newEmptyTMVar
-  newEmptyTMVarIO = STM.newEmptyTMVarIO
+  newEmptyTMVarM  = STM.newEmptyTMVarIO
   takeTMVar       = STM.takeTMVar
   tryTakeTMVar    = STM.tryTakeTMVar
   putTMVar        = STM.putTMVar
@@ -277,9 +277,9 @@ newTMVarDefault a = do
   t <- newTVar (Just a)
   return (TMVar t)
 
-newTMVarIODefault :: MonadSTM m => a -> m (TMVarDefault m a)
-newTMVarIODefault a = do
-  t <- newTVarIO (Just a)
+newTMVarMDefault :: MonadSTM m => a -> m (TMVarDefault m a)
+newTMVarMDefault a = do
+  t <- newTVarM (Just a)
   return (TMVar t)
 
 newEmptyTMVarDefault :: MonadSTM m => Tr m (TMVarDefault m a)
@@ -287,9 +287,9 @@ newEmptyTMVarDefault = do
   t <- newTVar Nothing
   return (TMVar t)
 
-newEmptyTMVarIODefault :: MonadSTM m => m (TMVarDefault m a)
-newEmptyTMVarIODefault = do
-  t <- newTVarIO Nothing
+newEmptyTMVarMDefault :: MonadSTM m => m (TMVarDefault m a)
+newEmptyTMVarMDefault = do
+  t <- newTVarM Nothing
   return (TMVar t)
 
 takeTMVarDefault :: MonadSTM m => TMVarDefault m a -> Tr m a
