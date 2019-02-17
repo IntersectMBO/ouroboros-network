@@ -7,20 +7,20 @@ module Network.TypedProtocol.Channel
   , mvarsAsChannel
   , handlesAsChannel
   , createConnectedChannels
+  , createConnectedBufferedChannels
+  , createPipelineTestChannels
   , channelEffect
   ) where
 
 import qualified Data.ByteString      as BS
 import qualified Data.ByteString.Lazy as LBS
 import           Data.ByteString.Lazy.Internal (smallChunkSize)
+import           Numeric.Natural
 
 import qualified System.IO as IO
                    ( Handle, hFlush, hIsEOF )
 
 import           Control.Monad.Class.MonadSTM
-                   ( MonadSTM, atomically
-                   , newTVar, readTVar, writeTVar
-                   , TMVar, newEmptyTMVar, putTMVar, takeTMVar )
 
 
 -- | One end of a duplex channel. It is a reliable, ordered channel of some
@@ -87,7 +87,7 @@ mvarsAsChannel bufferRead bufferWrite =
 
 -- | Create a pair of channels that are connected via one-place buffers.
 --
--- This is primarily useful for testing protocols in a simple environment.
+-- This is primarily useful for testing protocols.
 --
 createConnectedChannels :: MonadSTM m => m (Channel m a, Channel m a)
 createConnectedChannels = do
@@ -98,6 +98,65 @@ createConnectedChannels = do
 
     return (mvarsAsChannel bufferB bufferA,
             mvarsAsChannel bufferA bufferB)
+
+
+-- | Create a pair of channels that are connected via N-place buffers.
+--
+-- This variant /blocks/ when 'send' would exceed the maximum buffer size.
+-- Use this variant when you want the environment rather than the 'Peer' to
+-- limit the pipelining.
+--
+-- This is primarily useful for testing protocols.
+--
+createConnectedBufferedChannels :: MonadSTM m
+                                => Natural -> m (Channel m a, Channel m a)
+createConnectedBufferedChannels sz = do
+    -- Create two TBQueues to act as the channel buffers (one for each
+    -- direction) and use them to make both ends of a bidirectional channel
+    bufferA <- atomically $ newTBQueue sz
+    bufferB <- atomically $ newTBQueue sz
+
+    return (queuesAsChannel bufferB bufferA,
+            queuesAsChannel bufferA bufferB)
+  where
+    queuesAsChannel bufferRead bufferWrite =
+        Channel{send, recv}
+      where
+        send x = atomically (writeTBQueue bufferWrite x)
+        recv   = atomically (Just <$> readTBQueue bufferRead)
+
+
+-- | Create a pair of channels that are connected via N-place buffers.
+--
+-- This variant /fails/ when  'send' would exceed the maximum buffer size.
+-- Use this variant when you want the 'PeerPipelined' to limit the pipelining
+-- itself, and you want to check that it does not exceed the expected level of
+-- pipelining.
+--
+-- This is primarily useful for testing protocols.
+--
+createPipelineTestChannels :: MonadSTM m
+                           => Natural -> m (Channel m a, Channel m a)
+createPipelineTestChannels sz = do
+    -- Create two TBQueues to act as the channel buffers (one for each
+    -- direction) and use them to make both ends of a bidirectional channel
+    bufferA <- atomically $ newTBQueue sz
+    bufferB <- atomically $ newTBQueue sz
+
+    return (queuesAsChannel bufferB bufferA,
+            queuesAsChannel bufferA bufferB)
+  where
+    queuesAsChannel bufferRead bufferWrite =
+        Channel{send, recv}
+      where
+        send x = atomically $ do
+                   full <- isFullTBQueue bufferWrite
+                   if full then fail failureMsg
+                           else writeTBQueue bufferWrite x
+        recv   = atomically (Just <$> readTBQueue bufferRead)
+
+    failureMsg = "createPipelineTestChannels: "
+              ++ "maximum pipeline depth exceeded: " ++ show sz
 
 
 -- | Make a 'Channel' from a pair of IO 'Handle's, one for reading and one
