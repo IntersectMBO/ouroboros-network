@@ -23,6 +23,9 @@ module Network.TypedProtocol.Driver (
   -- * Pipelined peers
   runPipelinedPeer,
 
+  -- * Connected peers
+  runConnectedPeers,
+
   -- * Driver utilities
   -- | This may be useful if you want to write your own driver.
   runDecoderWithChannel,
@@ -33,9 +36,9 @@ import Network.TypedProtocol.Pipelined
 import Network.TypedProtocol.Channel
 import Network.TypedProtocol.Codec
 
-import Control.Monad (void)
 import Control.Monad.Class.MonadSTM
-import Control.Monad.Class.MonadFork
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadThrow
 
 import Numeric.Natural (Natural)
 
@@ -65,6 +68,10 @@ import Numeric.Natural (Natural)
 -- helpful utility for use in custom drives.
 --
 
+
+--
+-- Driver for normal peers
+--
 
 -- | Run a peer with the given channel via the given codec.
 --
@@ -99,22 +106,9 @@ runPeer Codec{encode, decode} channel@Channel{send} = go Nothing
         Left failure                       -> return (Left failure)
 
 
--- | Run a codec incremental decoder 'DecodeStep' against a channel. It also
--- takes any extra input data and returns any unused trailing data.
 --
-runDecoderWithChannel :: Monad m
-                      => Channel m bytes
-                      -> Maybe bytes
-                      -> DecodeStep bytes failure m a
-                      -> m (Either failure (a, Maybe bytes))
-
-runDecoderWithChannel Channel{recv} = go
-  where
-    go _ (DecodeDone x trailing) = return (Right (x, trailing))
-    go _ (DecodeFail failure)    = return (Left failure)
-    go Nothing         (DecodePartial k) = recv >>= k        >>= go Nothing
-    go (Just trailing) (DecodePartial k) = k (Just trailing) >>= go Nothing
-
+-- Driver for pipelined peers
+--
 
 -- | Run a pipelined peer with the given channel via the given codec.
 --
@@ -125,7 +119,7 @@ runDecoderWithChannel Channel{recv} = go
 --
 runPipelinedPeer
   :: forall ps (st :: ps) pr failure bytes m a.
-     (MonadSTM m, MonadFork m)
+     (MonadSTM m, MonadAsync m, MonadCatch m)
   => Natural
   -> Codec ps failure m bytes
   -> Channel m bytes
@@ -134,10 +128,12 @@ runPipelinedPeer
 runPipelinedPeer maxOutstanding codec channel (PeerPipelined peer) = do
     receiveQueue <- atomically $ newTBQueue maxOutstanding
     collectQueue <- atomically $ newTBQueue maxOutstanding
-    void $ fork $ runPipelinedPeerReceiverQueue receiveQueue collectQueue
-                                         codec channel
-    runPipelinedPeerSender receiveQueue collectQueue
-                           codec channel peer
+    ((), x) <- runPipelinedPeerReceiverQueue receiveQueue collectQueue
+                                             codec channel
+                 `concurrently`
+               runPipelinedPeerSender        receiveQueue collectQueue
+                                             codec channel peer
+    return x
     --TODO: manage the fork + exceptions here
 
 
@@ -225,4 +221,50 @@ runPipelinedPeerReceiver Codec{decode} channel = go
       case res of
         Right (SomeMessage msg, trailing') -> go trailing' (k msg)
         Left _failure                      -> error "TODO: proper exceptions for runPipelinedPeer"
+
+
+--
+-- Utils
+--
+
+-- | Run a codec incremental decoder 'DecodeStep' against a channel. It also
+-- takes any extra input data and returns any unused trailing data.
+--
+runDecoderWithChannel :: Monad m
+                      => Channel m bytes
+                      -> Maybe bytes
+                      -> DecodeStep bytes failure m a
+                      -> m (Either failure (a, Maybe bytes))
+
+runDecoderWithChannel Channel{recv} = go
+  where
+    go _ (DecodeDone x trailing) = return (Right (x, trailing))
+    go _ (DecodeFail failure)    = return (Left failure)
+    go Nothing         (DecodePartial k) = recv >>= k        >>= go Nothing
+    go (Just trailing) (DecodePartial k) = k (Just trailing) >>= go Nothing
+
+
+-- | Run two 'Peer's via a pair of connected 'Channel's and a common 'Codec'.
+--
+-- This is useful for tests and quick experiments.
+--
+-- The first argument is expected to create two channels that are connected,
+-- for example 'createConnectedChannels'.
+--
+runConnectedPeers :: (MonadSTM m, MonadAsync m, MonadCatch m)
+                  => m (Channel m bytes, Channel m bytes)
+                  -> Codec ps failure m bytes
+                  -> Peer ps AsClient st m a
+                  -> Peer ps AsServer st m b
+                  -> m (Either failure (a, b))
+runConnectedPeers createChannels codec client server = do
+    (clientChannel, serverChannel) <- createChannels
+    results <- runPeer codec clientChannel client
+                 `concurrently`
+               runPeer codec serverChannel server
+
+    case results of
+      (Left err, _)      -> return (Left err)
+      (_, Left err)      -> return (Left err)
+      (Right x, Right y) -> return (Right (x,y))
 
