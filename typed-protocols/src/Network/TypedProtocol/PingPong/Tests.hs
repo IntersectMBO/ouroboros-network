@@ -24,10 +24,11 @@ import Network.TypedProtocol.PingPong.Examples
 import Network.TypedProtocol.PingPong.Codec
 
 import Data.Functor.Identity (Identity (..))
-import Control.Monad (void)
+import Control.Monad.Fail
 import Control.Monad.Class.MonadSTM
-import Control.Monad.Class.MonadFork
-import Control.Monad.IOSim
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadThrow
+import Control.Monad.IOSim (runSimOrThrow)
 
 import Data.List (inits, tails)
 
@@ -297,18 +298,16 @@ pipelineInterleaving omax cs0 reqs0 resps0 =
 
 -- | Run a non-pipelined client and server over a channel using a codec.
 --
-prop_channel :: (MonadSTM m, MonadFork m) => NonNegative Int -> m Bool
+prop_channel :: (MonadSTM m, MonadAsync m, MonadCatch m, MonadFail m)
+             => NonNegative Int -> m Bool
 prop_channel (NonNegative n) = do
-    (clientChannel, serverChannel) <- createConnectedChannels
-    void $ fork $ runPeer codec clientChannel client >> return ()
-    mn' <- runPeer codec serverChannel server
-    case mn' of
-      Left failure -> fail failure
-      Right  n'    -> return (n == n')
+    Right ((), n') <- runConnectedPeers createConnectedChannels
+                                        codecPingPong client server
+    return (n' == n)
   where
     client = pingPongClientPeer (pingPongClientCount n)
     server = pingPongServerPeer  pingPongServerCount
-    codec  = codecPingPong
+
 
 prop_channel_IO :: NonNegative Int -> Property
 prop_channel_IO n =
@@ -316,9 +315,7 @@ prop_channel_IO n =
 
 prop_channel_ST :: NonNegative Int -> Bool
 prop_channel_ST n = 
-    case runSim (prop_channel n) of
-      Right True -> True
-      _          -> False
+    runSimOrThrow (prop_channel n)
 
 
 --
