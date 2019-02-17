@@ -7,12 +7,20 @@ module Network.TypedProtocol.ReqResp.Tests (tests) where
 
 import Network.TypedProtocol.Codec
 import Network.TypedProtocol.Proofs
+import Network.TypedProtocol.Channel
+import Network.TypedProtocol.Driver
 
 import Network.TypedProtocol.ReqResp.Type
 import Network.TypedProtocol.ReqResp.Client
 import Network.TypedProtocol.ReqResp.Server
 import Network.TypedProtocol.ReqResp.Codec
 import Network.TypedProtocol.ReqResp.Examples
+
+import Control.Monad.Fail
+import Control.Monad.Class.MonadSTM
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadThrow
+import Control.Monad.IOSim (runSimOrThrow)
 
 import Data.Functor.Identity (Identity (..))
 import Data.Tuple (swap)
@@ -36,10 +44,8 @@ tests = testGroup "Network.TypedProtocol.ReqResp"
   , testProperty "directPipelined"     prop_directPipelined
   , testProperty "connect"             prop_connect
   , testProperty "connectPipelined"    prop_connectPipelined
-{-
   , testProperty "channel ST"          prop_channel_ST
   , testProperty "channel IO"          prop_channel_IO
--}
   , testProperty "codec"               prop_codec_ReqResp
   , testProperty "codec 2-splits"      prop_codec_splits2_ReqResp
   , testProperty "codec 3-splits"      (withMaxSuccess 33
@@ -139,6 +145,25 @@ prop_connectPipelined cs f xs =
 -- Properties using channels, codecs and drivers.
 --
 
+prop_channel :: (MonadSTM m, MonadAsync m, MonadCatch m, MonadFail m)
+             => (Int -> Int -> (Int, Int)) -> [Int]
+             -> m Bool
+prop_channel f xs = do
+    Right (c, s) <- runConnectedPeers createConnectedChannels
+                                      codecReqResp client server
+    return ((s, c) == mapAccumL f 0 xs)
+  where
+    client = reqRespClientPeer (reqRespClientMap xs)
+    server = reqRespServerPeer (reqRespServerMapAccumL
+                                 (\a -> pure . f a) 0)
+
+prop_channel_IO :: (Int -> Int -> (Int, Int)) -> [Int] -> Property
+prop_channel_IO f xs =
+    ioProperty (prop_channel f xs)
+
+prop_channel_ST :: (Int -> Int -> (Int, Int)) -> [Int] -> Bool
+prop_channel_ST f xs =
+    runSimOrThrow (prop_channel f xs)
 
 
 --
