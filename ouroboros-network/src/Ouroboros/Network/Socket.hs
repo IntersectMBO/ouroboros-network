@@ -37,12 +37,8 @@ import           Data.Int
 --import           Data.ByteString.Lazy.Char8 (pack)
 import qualified Data.Map.Strict as M
 import           Data.Text (Text, unpack)
-import           Data.Word
-import qualified GHC.Event as GHC (TimeoutKey, getSystemTimerManager,
-                     registerTimeout, unregisterTimeout, updateTimeout)
 import           Network.Socket hiding (recv, recvFrom, send, sendTo)
 import           Network.Socket.ByteString.Lazy (recv, sendAll)
-import qualified Say as S
 
 import           Ouroboros.Network.Chain (Chain, ChainUpdate, Point)
 import qualified Ouroboros.Network.Chain as Chain
@@ -64,19 +60,7 @@ import           Text.Printf
 
 newtype SocketBearer m = SocketBearer {
     runSocketBearer :: IO m
-    } deriving (Functor, Applicative)
-
-instance Monad SocketBearer where
-    return = pure
-
-    {-# INLINE (>>=) #-}
-    SocketBearer m >>= f = SocketBearer (m >>= runSocketBearer . f)
-
-instance MonadIO SocketBearer where
-    liftIO action =  SocketBearer $ liftIO action
-
-instance MonadST SocketBearer where
-    withLiftST f = f stToSocketBearer
+    } deriving (Functor, Applicative, Monad, MonadIO, MonadSay, MonadST, MonadFork)
 
 stToSocketBearer ::  ST RealWorld a -> SocketBearer a
 stToSocketBearer x = SocketBearer $ stToIO x
@@ -87,54 +71,6 @@ newtype SocketBearerSTM a = SocketBearerSTM {
     runSocketBearerSTM :: STM.STM a
   } deriving (Functor, Applicative, Monad)
 
-instance MonadFork SocketBearer where
-  fork (SocketBearer io) = SocketBearer (fork io)
-
-instance MonadSay SocketBearer where
-  say = S.sayString
-
-instance MonadTime SocketBearer where
-  type Time SocketBearer = Int -- microseconds
-  getMonotonicTime = liftIO $ fmap (fromIntegral . (`div` 1000)) getMonotonicNSec
-
-foreign import ccall unsafe "getMonotonicNSec"
-    getMonotonicNSec :: IO Word64
-
-instance MonadTimer SocketBearer where
-    data Timeout SocketBearer = TimeoutSocketbearer !(TVar SocketBearer TimeoutState) !GHC.TimeoutKey
-
-    readTimeout (TimeoutSocketbearer var _key) = readTVar var
-
-    newTimeout = \usec -> do
-        var <- newTVarIO TimeoutPending
-        mgr <- liftIO GHC.getSystemTimerManager
-        key <- liftIO $ GHC.registerTimeout mgr usec (STM.atomically (timeoutAction var))
-        return (TimeoutSocketbearer var key)
-      where
-        timeoutAction var = do
-            x <- readTVar var
-            case x of
-                 TimeoutPending   -> writeTVar var TimeoutFired
-                 TimeoutFired     -> error "MonadTimer(Socketbearer): invariant violation"
-                 TimeoutCancelled -> return ()
-
-    updateTimeout (TimeoutSocketbearer _var key) usec = do
-      mgr <- liftIO GHC.getSystemTimerManager
-      liftIO $ GHC.updateTimeout mgr key usec
-
-    cancelTimeout (TimeoutSocketbearer var key) = do
-        atomically $ do
-            x <- readTVar var
-            case x of
-                 TimeoutPending   -> writeTVar var TimeoutCancelled
-                 TimeoutFired     -> return ()
-                 TimeoutCancelled -> return ()
-        mgr <- liftIO GHC.getSystemTimerManager
-        liftIO $ GHC.unregisterTimeout mgr key
-
-    threadDelay d = liftIO $ threadDelay d
-
-    registerDelay = undefined -- XXX
 
 instance MonadSTM SocketBearer where
     type Tr   SocketBearer = SocketBearerSTM
