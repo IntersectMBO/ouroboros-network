@@ -75,14 +75,14 @@ fixedInputChannel xs0 = do
 -- writing.
 --
 mvarsAsChannel :: MonadSTM m
-               => TMVar m (Maybe a)
-               -> TMVar m (Maybe a)
+               => TMVar m a
+               -> TMVar m a
                -> Channel m a 
 mvarsAsChannel bufferRead bufferWrite =
     Channel{send, recv}
   where
-    send x = atomically (putTMVar bufferWrite (Just x))
-    recv   = atomically (takeTMVar bufferRead)
+    send x = atomically (putTMVar bufferWrite x)
+    recv   = atomically (Just <$> takeTMVar bufferRead)
 
 
 -- | Create a pair of channels that are connected via one-place buffers.
