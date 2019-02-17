@@ -6,6 +6,8 @@
 module Control.Monad.Class.MonadSTM
   ( MonadSTM (..)
   , MonadFork (..)
+
+  -- * Default 'TMVar' implementation
   , TMVarDefault (..)
   , newTMVarDefault
   , newTMVarIODefault
@@ -19,22 +21,36 @@ module Control.Monad.Class.MonadSTM
   , tryReadTMVarDefault
   , swapTMVarDefault
   , isEmptyTMVarDefault
+
+  -- * Default 'TBQueue' implementation
+  , TQueueDefault (..)
+  , newTQueueDefault
+  , readTQueueDefault
+  , tryReadTQueueDefault
+  , writeTQueueDefault
+  , isEmptyTQueueDefault
+
+  -- * Default 'TBQueue' implementation
   , TBQueueDefault (..)
   , newTBQueueDefault
   , readTBQueueDefault
   , tryReadTBQueueDefault
   , writeTBQueueDefault
+  , isEmptyTBQueueDefault
+  , isFullTBQueueDefault
   ) where
 
 import           Prelude hiding (read)
 
-import qualified Control.Concurrent.STM.TBQueue as STM
-import qualified Control.Concurrent.STM.TMVar as STM
+import qualified Control.Monad.STM as STM
 import qualified Control.Concurrent.STM.TVar as STM
+import qualified Control.Concurrent.STM.TMVar as STM
+import qualified Control.Concurrent.STM.TQueue as STM
+import qualified Control.Concurrent.STM.TBQueue as STM
+
 import           Control.Exception
 import           Control.Monad.Except
 import           Control.Monad.Reader
-import qualified Control.Monad.STM as STM
 import           GHC.Stack
 import           Numeric.Natural (Natural)
 
@@ -85,16 +101,26 @@ class (MonadFork m, Monad (Tr m)) => MonadSTM m where
   swapTMVar       :: TMVar m a -> a -> Tr m a
   isEmptyTMVar    :: TMVar m a      -> Tr m Bool
 
+  type TQueue m  :: * -> *
+  newTQueue      :: Tr m (TQueue m a)
+  readTQueue     :: TQueue m a -> Tr m a
+  tryReadTQueue  :: TQueue m a -> Tr m (Maybe a)
+  writeTQueue    :: TQueue m a -> a -> Tr m ()
+  isEmptyTQueue  :: TQueue m a -> Tr m Bool
+
   type TBQueue m :: * -> *
   newTBQueue     :: Natural -> Tr m (TBQueue m a)
   readTBQueue    :: TBQueue m a -> Tr m a
   tryReadTBQueue :: TBQueue m a -> Tr m (Maybe a)
   writeTBQueue   :: TBQueue m a -> a -> Tr m ()
+  isEmptyTBQueue :: TBQueue m a -> Tr m Bool
+  isFullTBQueue  :: TBQueue m a -> Tr m Bool
 
 instance MonadSTM m => MonadSTM (ReaderT e m) where
   type Tr (ReaderT e m)    = ReaderT e (Tr m)
   type TVar (ReaderT e m)  = TVar m
   type TMVar (ReaderT e m) = TMVar m
+  type TQueue (ReaderT e m)  = TQueue m
   type TBQueue (ReaderT e m) = TBQueue m
 
   atomically (ReaderT t) = ReaderT $ \e -> atomically (t e)
@@ -116,15 +142,24 @@ instance MonadSTM m => MonadSTM (ReaderT e m) where
   swapTMVar t a    = lift $ swapTMVar t a
   isEmptyTMVar     = lift . isEmptyTMVar
 
+  newTQueue        = lift $ newTQueue
+  readTQueue       = lift . readTQueue
+  tryReadTQueue    = lift . tryReadTQueue
+  writeTQueue q a  = lift $ writeTQueue q a
+  isEmptyTQueue    = lift . isEmptyTQueue
+
   newTBQueue       = lift . newTBQueue
   readTBQueue      = lift . readTBQueue
   tryReadTBQueue   = lift . tryReadTBQueue
   writeTBQueue q a = lift $ writeTBQueue q a
+  isEmptyTBQueue   = lift . isEmptyTBQueue
+  isFullTBQueue    = lift . isFullTBQueue
 
 instance (Show e, MonadSTM m) => MonadSTM (ExceptT e m) where
   type Tr (ExceptT e m)      = ExceptT e (Tr m)
   type TVar (ExceptT e m)    = TVar m
   type TMVar (ExceptT e m)   = TMVar m
+  type TQueue (ExceptT e m)  = TQueue m
   type TBQueue (ExceptT e m) = TBQueue m
 
   atomically (ExceptT t) = ExceptT $ atomically t
@@ -146,10 +181,18 @@ instance (Show e, MonadSTM m) => MonadSTM (ExceptT e m) where
   swapTMVar t a          = lift $ swapTMVar t a
   isEmptyTMVar           = lift . isEmptyTMVar
 
+  newTQueue        = lift $ newTQueue
+  readTQueue       = lift . readTQueue
+  tryReadTQueue    = lift . tryReadTQueue
+  writeTQueue q a  = lift $ writeTQueue q a
+  isEmptyTQueue    = lift . isEmptyTQueue
+
   newTBQueue       = lift . newTBQueue
   readTBQueue      = lift . readTBQueue
   tryReadTBQueue   = lift . tryReadTBQueue
   writeTBQueue q a = lift $ writeTBQueue q a
+  isEmptyTBQueue   = lift . isEmptyTBQueue
+  isFullTBQueue    = lift . isFullTBQueue
 
 -- | Wrapper around 'BlockedIndefinitelyOnSTM' that stores a call stack
 data BlockedIndefinitely = BlockedIndefinitely {
@@ -201,6 +244,14 @@ instance MonadSTM IO where
   swapTMVar       = STM.swapTMVar
   isEmptyTMVar    = STM.isEmptyTMVar
 
+  type TQueue IO  = STM.TQueue
+
+  newTQueue       = STM.newTQueue
+  readTQueue      = STM.readTQueue
+  tryReadTQueue   = STM.tryReadTQueue
+  writeTQueue     = STM.writeTQueue
+  isEmptyTQueue   = STM.isEmptyTQueue
+
   type TBQueue IO = STM.TBQueue
 
 #if MIN_VERSION_stm(2,5,0)
@@ -212,6 +263,8 @@ instance MonadSTM IO where
   readTBQueue    = STM.readTBQueue
   tryReadTBQueue = STM.tryReadTBQueue
   writeTBQueue   = STM.writeTBQueue
+  isEmptyTBQueue = STM.isEmptyTBQueue
+  isFullTBQueue  = STM.isFullTBQueue
 
 --
 -- Default TMVar implementation in terms of TVars (used by sim)
@@ -291,6 +344,59 @@ isEmptyTMVarDefault (TMVar t) = do
     Nothing -> return True
     Just _  -> return False
 
+
+--
+-- Default TQueue implementation in terms of TVars (used by sim)
+--
+
+data TQueueDefault m a = TQueue !(TVar m [a])
+                                !(TVar m [a])
+
+newTQueueDefault :: MonadSTM m => Tr m (TQueueDefault m a)
+newTQueueDefault = do
+  read  <- newTVar []
+  write <- newTVar []
+  return (TQueue read write)
+
+writeTQueueDefault :: MonadSTM m => TQueueDefault m a -> a -> Tr m ()
+writeTQueueDefault (TQueue _read write) a = do
+  listend <- readTVar write
+  writeTVar write (a:listend)
+
+readTQueueDefault :: MonadSTM m => TQueueDefault m a -> Tr m a
+readTQueueDefault queue = maybe retry return =<< tryReadTQueueDefault queue
+
+tryReadTQueueDefault :: MonadSTM m => TQueueDefault m a -> Tr m (Maybe a)
+tryReadTQueueDefault (TQueue read write) = do
+  xs <- readTVar read
+  case xs of
+    (x:xs') -> do
+      writeTVar read xs'
+      return (Just x)
+    [] -> do
+      ys <- readTVar write
+      case ys of
+        [] -> return Nothing
+        _  -> do
+          let (z:zs) = reverse ys
+          writeTVar write []
+          writeTVar read zs
+          return (Just z)
+
+isEmptyTQueueDefault :: MonadSTM m => TQueueDefault m a -> Tr m Bool
+isEmptyTQueueDefault (TQueue read write) = do
+  xs <- readTVar read
+  case xs of
+    (_:_) -> return False
+    [] -> do ys <- readTVar write
+             case ys of
+               [] -> return True
+               _  -> return False
+
+--
+-- Default TBQueue implementation in terms of TVars (used by sim)
+--
+
 data TBQueueDefault m a = TBQueue
   !(TVar m Natural) -- read capacity
   !(TVar m [a])     -- elements waiting for read
@@ -342,3 +448,24 @@ writeTBQueueDefault (TBQueue rsize _read wsize write _size) a = do
             else retry
   listend <- readTVar write
   writeTVar write (a:listend)
+
+isEmptyTBQueueDefault :: MonadSTM m => TBQueueDefault m a -> Tr m Bool
+isEmptyTBQueueDefault (TBQueue _rsize read _wsize write _size) = do
+  xs <- readTVar read
+  case xs of
+    (_:_) -> return False
+    [] -> do ys <- readTVar write
+             case ys of
+               [] -> return True
+               _  -> return False
+
+isFullTBQueueDefault :: MonadSTM m => TBQueueDefault m a -> Tr m Bool
+isFullTBQueueDefault (TBQueue rsize _read wsize _write _size) = do
+  w <- readTVar wsize
+  if (w > 0)
+     then return False
+     else do
+         r <- readTVar rsize
+         if (r > 0)
+            then return False
+            else return True

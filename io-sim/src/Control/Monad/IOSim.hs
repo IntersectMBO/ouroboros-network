@@ -244,6 +244,7 @@ instance MonadSTM (SimM s) where
   type Tr    (SimM s)   = STM s
   type TVar  (SimM s)   = TVar s
   type TMVar (SimM s)   = TMVarDefault (SimM s)
+  type TQueue (SimM s)  = TQueueDefault (SimM s)
   type TBQueue (SimM s) = TBQueueDefault (SimM s)
 
   atomically action = SimM $ \k -> Atomically action k
@@ -266,10 +267,18 @@ instance MonadSTM (SimM s) where
   swapTMVar         = swapTMVarDefault
   isEmptyTMVar      = isEmptyTMVarDefault
 
+  newTQueue         = newTQueueDefault
+  readTQueue        = readTQueueDefault
+  tryReadTQueue     = tryReadTQueueDefault
+  writeTQueue       = writeTQueueDefault
+  isEmptyTQueue     = isEmptyTQueueDefault
+
   newTBQueue        = newTBQueueDefault
   readTBQueue       = readTBQueueDefault
   tryReadTBQueue    = tryReadTBQueueDefault
   writeTBQueue      = writeTBQueueDefault
+  isEmptyTBQueue    = isEmptyTBQueueDefault
+  isFullTBQueue     = isFullTBQueueDefault
 
 instance MonadST (SimM s) where
   withLiftST f = f liftST

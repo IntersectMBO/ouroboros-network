@@ -419,6 +419,7 @@ instance (MonadFork (SimErrorFS m) , MonadSTM m) => MonadSTM (SimErrorFS m) wher
   type Tr (SimErrorFS m)      = TrSimErrorFS (Tr m)
   type TVar (SimErrorFS m)    = TVar m
   type TMVar (SimErrorFS m)   = TMVar m
+  type TQueue (SimErrorFS m)  = TQueue m
   type TBQueue (SimErrorFS m) = TBQueue m
 
   atomically        = lift . atomically . trSimErrorFS
@@ -440,10 +441,18 @@ instance (MonadFork (SimErrorFS m) , MonadSTM m) => MonadSTM (SimErrorFS m) wher
   tryReadTMVar      = lift . tryReadTMVar
   isEmptyTMVar      = lift . isEmptyTMVar
 
+  newTQueue         = lift   newTQueue
+  readTQueue        = lift . readTQueue
+  tryReadTQueue     = lift . tryReadTQueue
+  writeTQueue     q = lift . writeTQueue q
+  isEmptyTQueue     = lift . isEmptyTQueue
+
   newTBQueue        = lift . newTBQueue
   readTBQueue       = lift . readTBQueue
   tryReadTBQueue    = lift . tryReadTBQueue
   writeTBQueue    q = lift . writeTBQueue q
+  isEmptyTBQueue    = lift . isEmptyTBQueue
+  isFullTBQueue     = lift . isFullTBQueue
 
 
 instance (Monad m, MonadState MockFS (SimFS m))
