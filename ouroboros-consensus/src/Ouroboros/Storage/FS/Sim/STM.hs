@@ -88,6 +88,7 @@ instance (MonadFork (SimFS m) , MonadSTM m) => MonadSTM (SimFS m) where
   type Tr (SimFS m)      = TrSimFS (Tr m)
   type TVar (SimFS m)    = TVar m
   type TMVar (SimFS m)   = TMVar m
+  type TQueue (SimFS m)  = TQueue m
   type TBQueue (SimFS m) = TBQueue m
 
   atomically        = lift . atomically . trSimFS
@@ -109,10 +110,18 @@ instance (MonadFork (SimFS m) , MonadSTM m) => MonadSTM (SimFS m) where
   tryReadTMVar      = lift . tryReadTMVar
   isEmptyTMVar      = lift . isEmptyTMVar
 
+  newTQueue         = lift   newTQueue
+  readTQueue        = lift . readTQueue
+  tryReadTQueue     = lift . tryReadTQueue
+  writeTQueue     q = lift . writeTQueue q
+  isEmptyTQueue     = lift . isEmptyTQueue
+
   newTBQueue        = lift . newTBQueue
   readTBQueue       = lift . readTBQueue
   tryReadTBQueue    = lift . tryReadTBQueue
   writeTBQueue    q = lift . writeTBQueue q
+  isEmptyTBQueue    = lift . isEmptyTBQueue
+  isFullTBQueue     = lift . isFullTBQueue
 
 simHasFS :: forall m. MonadSTM m => ErrorHandling FsError m -> HasFS (SimFS m)
 simHasFS err = HasFS {

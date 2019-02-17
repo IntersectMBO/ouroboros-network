@@ -18,9 +18,10 @@ module Ouroboros.Network.Socket (
     ) where
 
 import           Control.Concurrent.Async
-import qualified Control.Concurrent.STM.TBQueue as STM
-import qualified Control.Concurrent.STM.TMVar as STM
 import qualified Control.Concurrent.STM.TVar as STM
+import qualified Control.Concurrent.STM.TMVar as STM
+import qualified Control.Concurrent.STM.TQueue as STM
+import qualified Control.Concurrent.STM.TBQueue as STM
 import           Control.Monad
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSay
@@ -166,6 +167,13 @@ instance MonadSTM SocketBearer where
     swapTMVar       = fmap SocketBearerSTM . STM.swapTMVar
     isEmptyTMVar    = SocketBearerSTM . STM.isEmptyTMVar
 
+    type TQueue SocketBearer = STM.TQueue
+    newTQueue      = SocketBearerSTM   STM.newTQueue
+    readTQueue     = SocketBearerSTM . STM.readTQueue
+    tryReadTQueue  = SocketBearerSTM . STM.tryReadTQueue
+    writeTQueue    = fmap SocketBearerSTM . STM.writeTQueue
+    isEmptyTQueue  = SocketBearerSTM . STM.isEmptyTQueue
+
     type TBQueue SocketBearer = STM.TBQueue
 
 #if MIN_VERSION_stm(2,5,0)
@@ -177,6 +185,8 @@ instance MonadSTM SocketBearer where
     readTBQueue    = SocketBearerSTM . STM.readTBQueue
     tryReadTBQueue = SocketBearerSTM . STM.tryReadTBQueue
     writeTBQueue   = fmap SocketBearerSTM . STM.writeTBQueue
+    isEmptyTBQueue = SocketBearerSTM . STM.isEmptyTBQueue
+    isFullTBQueue  = SocketBearerSTM . STM.isFullTBQueue
 
 
 setupMux :: Mx.MiniProtocolDescriptions SocketBearer -> SocketCtx -> SocketBearer ()
