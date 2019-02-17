@@ -107,7 +107,7 @@ instance MonadTimer SocketBearer where
     readTimeout (TimeoutSocketbearer var _key) = readTVar var
 
     newTimeout = \usec -> do
-        var <- newTVarIO TimeoutPending
+        var <- newTVarM TimeoutPending
         mgr <- liftIO GHC.getSystemTimerManager
         key <- liftIO $ GHC.registerTimeout mgr usec (STM.atomically (timeoutAction var))
         return (TimeoutSocketbearer var key)
@@ -147,7 +147,7 @@ instance MonadSTM SocketBearer where
     writeTVar   = fmap SocketBearerSTM . STM.writeTVar
     retry       = SocketBearerSTM STM.retry
 
-    newTVarIO   = SocketBearer . STM.newTVarIO
+    newTVarM    = SocketBearer . STM.newTVarIO
     modifyTVar  = fmap SocketBearerSTM . STM.modifyTVar
     modifyTVar' = fmap SocketBearerSTM . STM.modifyTVar'
     check       = SocketBearerSTM . STM.check
@@ -155,9 +155,9 @@ instance MonadSTM SocketBearer where
     type TMVar SocketBearer = STM.TMVar
 
     newTMVar        = SocketBearerSTM . STM.newTMVar
-    newTMVarIO      = SocketBearer . STM.newTMVarIO
+    newTMVarM       = SocketBearer . STM.newTMVarIO
     newEmptyTMVar   = SocketBearerSTM STM.newEmptyTMVar
-    newEmptyTMVarIO = SocketBearer STM.newEmptyTMVarIO
+    newEmptyTMVarM  = SocketBearer STM.newEmptyTMVarIO
     takeTMVar       = SocketBearerSTM . STM.takeTMVar
     tryTakeTMVar    = SocketBearerSTM . STM.tryTakeTMVar
     putTMVar        = fmap SocketBearerSTM . STM.putTMVar
@@ -307,8 +307,8 @@ demo2 chain0 updates = do
     printf $ (Chain.prettyPrintChain "\n" show chain0)
     printf "\n"-}
 
-    producerVar <- newTVarIO (CPS.initChainProducerState chain0)
-    consumerVar <- newTVarIO chain0
+    producerVar <- newTVarM (CPS.initChainProducerState chain0)
+    consumerVar <- newTVarM chain0
     consumerDone <- atomically newEmptyTMVar
 
     let Just expectedChain = Chain.applyChainUpdates updates chain0

@@ -265,7 +265,7 @@ type Probe m x = TVar m [x]
 
 withProbe :: MonadSTM m => (Probe m x -> m ()) -> m [x]
 withProbe action = do
-    probe <- newTVarIO []
+    probe <- newTVarM []
     action probe
     reverse <$> atomically (readTVar probe)
 
@@ -397,7 +397,7 @@ unit_fork_2 =
   where
     example :: SimM s ()
     example = do
-      resVar <- newEmptyTMVarIO
+      resVar <- newEmptyTMVarM
       fork $ do res <- try (fail "oh noes!")
                 atomically (putTMVar resVar (res :: Either SomeException ()))
       say "parent"
