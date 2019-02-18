@@ -51,6 +51,19 @@ tests =
     [ testProperty "1" unit_fork_1
     , testProperty "2" unit_fork_2
     ]
+  , testGroup "async exception unit tests"
+    [ testProperty "1"  unit_async_1
+    , testProperty "2"  unit_async_2
+    , testProperty "3"  unit_async_3
+    , testProperty "4"  unit_async_4
+    , testProperty "5"  unit_async_5
+    , testProperty "6"  unit_async_6
+    , testProperty "7"  unit_async_7
+    , testProperty "8"  unit_async_8
+    , testProperty "9"  unit_async_9
+    , testProperty "10" unit_async_10
+    , testProperty "11" unit_async_11
+    ]
   ]
 
 
@@ -77,7 +90,7 @@ prop_stm_graph (TestThreadGraph g) = do
     vars <- listArray (bounds g) <$>
             sequence [ atomically (newTVar False) | _ <- vertices g ]
     forM_ (vertices g) $ \v ->
-      fork $ do
+      void $ fork $ do
         -- read all the inputs and wait for them to become true
         -- then write to all the outputs
         let incomming = g' ! v
@@ -98,7 +111,7 @@ prop_stm_graph (TestThreadGraph g) = do
                   ,      null (g  ! v) ]
 
     -- write to the inputs and wait for the outputs
-    fork $ atomically $ sequence_ [ writeTVar (vars ! var) True | var <- inputs  ]
+    void $ fork $ atomically $ sequence_ [ writeTVar (vars ! var) True | var <- inputs  ]
     atomically $ sequence_ [ readTVar (vars ! var) >>= check | var <- outputs ]
   where
     g' = transposeG g -- for incoming edges
@@ -193,7 +206,7 @@ test_timers xs =
     experiment p = do
       tvars <- forM (zip xs [0..]) $ \(t, idx) -> do
         v <- atomically $ newTVar False
-        fork $ threadDelay t >> do
+        void $ fork $ threadDelay t >> do
           probeOutput p (t, idx)
           atomically $ writeTVar v True
         return v
@@ -235,7 +248,7 @@ test_fork_order = \(Positive n) -> isValid n <$> withProbe (experiment n)
     experiment n p = do
       v <- atomically $ newTVar False
 
-      fork $ do
+      void $ fork $ do
         probeOutput p n
         atomically $ writeTVar v True
       experiment (n - 1) p
@@ -381,7 +394,7 @@ unit_fork_1 =
   where
     example :: SimM s ()
     example = do
-      fork $ say "child"
+      void $ fork $ say "child"
       say "parent"
 
 -- Try works and we can pass exceptions back from threads.
@@ -398,12 +411,229 @@ unit_fork_2 =
     example :: SimM s ()
     example = do
       resVar <- newEmptyTMVarM
-      fork $ do res <- try (fail "oh noes!")
-                atomically (putTMVar resVar (res :: Either SomeException ()))
+      void $ fork $ do
+        res <- try (fail "oh noes!")
+        atomically (putTMVar resVar (res :: Either SomeException ()))
       say "parent"
       Left e <- atomically (takeTMVar resVar)
       say (show e)
       throwM e
+
+
+--
+-- Asyncronous exceptions
+--
+
+unit_async_1, unit_async_2, unit_async_3, unit_async_4, unit_async_5,
+  unit_async_6, unit_async_7, unit_async_8, unit_async_9, unit_async_10,
+  unit_async_11
+  :: Bool
+
+
+unit_async_1 =
+    runSimTraceSay
+      (do mtid <- myThreadId
+          say ("main " ++ show mtid)
+          ctid <- fork $ do tid <- myThreadId
+                            say ("child " ++ show tid)
+          say ("parent " ++ show ctid)
+          threadDelay 1
+      )
+ ==
+   ["main ThreadId 0", "parent ThreadId 1", "child ThreadId 1"]
+
+
+unit_async_2 =
+    runSimTraceSay
+      (do tid <- myThreadId
+          say "before"
+          throwTo tid DivideByZero
+          say "after"
+      )
+ ==
+   ["before"]
+
+
+unit_async_3 =
+    runSimTraceSay
+      (do tid <- myThreadId
+          catch (do say "before"
+                    throwTo tid DivideByZero
+                    say "never")
+                (\(_e :: ArithException) -> say "handler"))
+ ==
+   ["before", "handler"]
+
+
+unit_async_4 =
+    runSimTraceSay
+      (do tid <- fork $ say "child"
+          threadDelay 1
+          -- child has already terminated when we throw the async exception
+          throwTo tid DivideByZero
+          say "parent done")
+ ==
+   ["child", "parent done"]
+
+
+unit_async_5 =
+    runSimTraceSay
+      (do tid <- fork $ do
+                   say "child"
+                   catch (atomically retry)
+                         (\(_e :: ArithException) -> say "handler")
+                   say "child done"
+          threadDelay 1
+          throwTo tid DivideByZero
+          threadDelay 1
+          say "parent done")
+ ==
+   ["child", "handler", "child done", "parent done"]
+
+
+unit_async_6 =
+    runSimTraceSay
+      (do tid <- fork $
+                   mask_ $ do
+                     say "child"
+                     threadDelay 1
+                     say "child masked"
+                     -- while masked, do a blocking (interruptible) operation
+                     catch (atomically retry)
+                         (\(_e :: ArithException) -> say "handler")
+                     say "child done"
+          -- parent and child wake up on the runqueue at the same time
+          threadDelay 1
+          throwTo tid DivideByZero
+          threadDelay 1
+          say "parent done")
+ ==
+   ["child", "child masked", "handler", "child done", "parent done"]
+
+
+unit_async_7 =
+    runSimTraceSay
+      (do tid <- fork $
+                   mask $ \restore -> do
+                     say "child"
+                     threadDelay 1
+                     say "child masked"
+                     -- restore mask state, allowing interrupt
+                     catch (restore (say "never"))
+                         (\(_e :: ArithException) -> say "handler")
+                     say "child done"
+          -- parent and child wake up on the runqueue at the same time
+          threadDelay 1
+          throwTo tid DivideByZero
+          threadDelay 1
+          say "parent done")
+ ==
+   ["child", "child masked", "handler", "child done", "parent done"]
+
+
+unit_async_8 =
+    runSimTraceSay
+      (do tid <- fork $ do
+                   catch (do mask_ $ do
+                               say "child"
+                               threadDelay 1
+                               say "child masked"
+                               -- exception raised when we leave mask frame
+                             say "child unmasked")
+                         (\(_e :: ArithException) -> say "handler")
+                   say "child done"
+          -- parent and child wake up on the runqueue at the same time
+          threadDelay 1
+          throwTo tid DivideByZero
+          threadDelay 1
+          say "parent done")
+ ==
+   ["child", "child masked", "handler", "child done", "parent done"]
+
+
+unit_async_9 =
+    runSimTraceSay
+      (do tid <- fork $
+                   mask_ $ do
+                     say "child"
+                     threadDelay 1
+                     fail "oh noes!"
+          -- parent and child wake up on the runqueue at the same time
+          threadDelay 1
+          throwTo tid DivideByZero
+          -- throwTo blocks but then unblocks because the child dies
+          say "parent done")
+ ==
+   ["child", "parent done"]
+
+
+unit_async_10 =
+    runSimTraceSay
+      (do tid1 <- fork $ do
+                    mask_ $ do
+                      threadDelay 1
+                      say "child 1"
+                      yield
+                      say "child 1 running"
+                    say "never 1"
+          tid2 <- fork $ do
+                      threadDelay 1
+                      say "child 2"
+                      -- this one blocks, since child 1 is running with
+                      -- async exceptions masked
+                      throwTo tid1 DivideByZero
+                      say "never 2"
+          threadDelay 1
+          yield
+          -- this one does not block, even though child 2 has exceptions
+          -- masked, since it is blocked in an interruptible throwTo
+          throwTo tid2 DivideByZero
+          threadDelay 1
+          say "parent done"
+          )
+ ==
+   ["child 1", "child 2", "child 1 running", "parent done"]
+  where
+    yield :: SimM s ()
+    yield = atomically (return ())  -- yield, go to end of runqueue
+
+
+unit_async_11 =
+    runSimTraceSay
+      (do tid1 <- fork $ do
+                    mask_ $ do
+                      threadDelay 1
+                      say "child 1"
+                      yield
+                      say "child 1 running"
+                    say "never 1"
+          tid2 <- fork $
+                    -- Same as unit_async_10 but we run masked here
+                    -- this is subtle: when the main thread throws the
+                    -- exception it raises the exception here even though
+                    -- it is masked because this thread is blocked in the
+                    -- throwTo and so is interruptible.
+                    mask_ $ do
+                      threadDelay 1
+                      say "child 2"
+                      throwTo tid1 DivideByZero
+                      say "never 2"
+          threadDelay 1
+          yield
+          throwTo tid2 DivideByZero
+          threadDelay 1
+          say "parent done"
+          )
+ ==
+   ["child 1", "child 2", "child 1 running", "parent done"]
+  where
+    yield :: SimM s ()
+    yield = atomically (return ())  -- yield, go to end of runqueue
+
+
+--
+-- Utils
+--
 
 runSimTraceSay :: (forall s. SimM s a) -> [String]
 runSimTraceSay action = selectTraceSay (runSimTrace action)

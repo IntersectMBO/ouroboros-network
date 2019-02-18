@@ -521,9 +521,10 @@ schedule thread@Thread{
         schedule thread' simstate
 
     Throw e -> case unwindControlStack e thread of
-      Right thread' ->
+      Right thread' -> do
         -- We found a suitable exception handler, continue with that
-        schedule thread' simstate
+        trace <- schedule thread' simstate
+        return (Trace time tid (EventThrow e) trace)
 
       Left isMain
         -- We unwound and did not find any suitable exception handler, so we
@@ -623,7 +624,7 @@ schedule thread@Thread{
               -- as it is a fair policy (all runnable threads eventually run).
               runqueue' = List.nub (runqueue ++ unblocked)
           trace <- deschedule Yield thread' simstate { runqueue = runqueue'
-                                                       , nextVid  = nextVid' }
+                                                     , nextVid  = nextVid' }
           return $
             Trace time tid (EventTxComitted written [nextVid..pred nextVid']) $
             traceMany
@@ -673,40 +674,46 @@ schedule thread@Thread{
 
     ThrowTo e tid' k -> do
       let willBlock = case Map.lookup tid' threads of
-                      Just Thread { threadMasking = Masked } -> True
-                      _                                      -> False
+                        Just Thread { threadMasking = Masked }
+                          -- If the target is blocked then it's interruptible
+                          | tid' `elem` runqueue -> True
+                        _                        -> False
           thread'   = thread { threadControl = ThreadControl k ctl }
           threads'  = Map.adjust adjustTarget tid' threads
-          simstate' = simstate { threads = threads' }
 
       if willBlock
         then do
-          trace <- deschedule Interruptable thread' simstate'
+          trace <- deschedule Blocked thread' simstate { threads = threads' }
           return $ Trace time tid (EventThrowTo e tid')
                  $ Trace time tid EventThrowToBlocked
                  $ trace
         else do
-          trace <- schedule thread' simstate'
+          let runqueue' | tid' `Map.member` threads
+                        , tid' `notElem` runqueue = runqueue ++ [tid']
+                        | otherwise               = runqueue
+          trace <- schedule thread' simstate { threads  = threads'
+                                             , runqueue = runqueue' }
           return $ Trace time tid (EventThrowTo e tid')
                  $ trace
       where
-        -- If the target thread has async exceptions unmasked then we can
+        -- If the target thread has async exceptions masked then we add
+        -- the exception and the source thread id to the list of pending
+        -- async exceptions.
+        adjustTarget t@Thread{ threadMasking = Masked }
+          | threadId t `elem` runqueue =
+          t { threadThrowTo = (e, tid) : threadThrowTo t }
+
+        -- If the target thread has async exceptions unmasked, or is masked
+        -- but blocked in an interruptible operation then we can
         -- raise the exception in that thread immediately. This will either
         -- cause it to terminate or enter an exception handler. In the meantime
         -- the thread masks new async exceptions. This will be resolved if the
         -- thread terminates or if it leaves the exception handler (when
         -- restoring the masking state would trigger the any new pending async
         -- exception).
-        adjustTarget t@Thread{ threadControl = ThreadControl _ ctl'
-                             , threadMasking = Unmasked } =
+        adjustTarget t@Thread{ threadControl = ThreadControl _ ctl' } =
           t { threadControl = ThreadControl (Throw e) ctl'
             , threadMasking = Masked }
-
-        -- If the target thread has async exceptions masked then we add
-        -- the exception and the source thread id to the list of pending
-        -- async exceptions.
-        adjustTarget t@Thread{ threadMasking = Masked } =
-          t { threadThrowTo = (e, tid) : threadThrowTo t }
 
 
 data Deschedule = Yield | Interruptable | Blocked | Terminated
@@ -748,20 +755,28 @@ deschedule Interruptable thread@Thread {
     -- We're unmasking, but there are pending blocked async exceptions.
     -- So immediately raise the exception and unblock the blocked thread
     -- if possible.
-    let thread'   = thread { threadControl = ThreadControl (Throw e) ctl
-                           , threadMasking = Masked
-                           , threadThrowTo = etids }
-        tid'live = Map.member tid' threads
-        runqueue' = runqueue ++ [ tid' | tid'live ]
+    let thread'    = thread { threadControl = ThreadControl (Throw e) ctl
+                            , threadMasking = Masked
+                            , threadThrowTo = etids }
+        canunblock = Map.member tid' threads && tid' `notElem` runqueue
+        runqueue'  = runqueue ++ [ tid' | canunblock ]
     trace <- schedule thread' simstate { runqueue = runqueue' }
     return $ Trace time tid (EventThrowToUnmasked tid')
-           $ (if tid'live then Trace time tid' EventThrowToWakeup
-                          else id)
+           $ (if canunblock then Trace time tid' EventThrowToWakeup
+                            else id)
            $ trace
 
-deschedule Blocked thread simstate@SimState{threads} =
+deschedule Blocked thread@Thread { threadThrowTo = [] }
+                   simstate@SimState{threads} =
     let threads' = Map.insert (threadId thread) thread threads in
     reschedule simstate { threads = threads' }
+
+deschedule Blocked thread@Thread { threadThrowTo = _ : _ } simstate =
+    -- We're doing a blocking operation, which is an interrupt point even if
+    -- we have async exceptions masked, and there are pending blocked async
+    -- exceptions. So immediately raise the exception and unblock the blocked
+    -- thread if possible.
+    deschedule Interruptable thread { threadMasking = Unmasked } simstate
 
 deschedule Terminated thread simstate@SimState{
                                runqueue, threads,
