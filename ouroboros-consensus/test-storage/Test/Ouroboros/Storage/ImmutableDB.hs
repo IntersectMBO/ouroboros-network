@@ -217,7 +217,7 @@ prop_appendAndGet (AppendAndGet append get) = label labelToApply $
             r -> fail ("Expected Nothing, got: " ++ show r))
 
 test_appendAndGet :: Assertion
-test_appendAndGet = withMockFS tryImmDB (expectDBResult ((@?= Just "haskell") . fst)) $ \hasFS err ->
+test_appendAndGet = withMockFS tryImmDB (expectImmDBResult ((@?= Just "haskell") . fst)) $ \hasFS err ->
     withTestDB hasFS err (M.singleton 0 10) $ \db -> do
       appendBinaryBlob db 0 "haskell"
       getBinaryBlob db (EpochSlot 0 0)
@@ -225,7 +225,7 @@ test_appendAndGet = withMockFS tryImmDB (expectDBResult ((@?= Just "haskell") . 
 prop_appendAndGetRoundtrip :: Property
 prop_appendAndGetRoundtrip = monadicIO $ do
     input <- pick arbitrary
-    run $ apiEquivalenceDB (expectDBResult (@?= Just (builderToBS input))) $ \hasFS err ->
+    run $ apiEquivalenceImmDB (expectImmDBResult (@?= Just (builderToBS input))) $ \hasFS err ->
       withTestDB hasFS err (M.singleton 0 10) $ \db -> do
         appendBinaryBlob db 0 (getBuilder input)
         getBinaryBlob db (EpochSlot 0 0)
@@ -235,7 +235,7 @@ prop_appendAndGetRoundtrip = monadicIO $ do
 ------------------------------------------------------------------------------}
 
 test_demoSimEquivalence :: HasCallStack => Assertion
-test_demoSimEquivalence = apiEquivalenceDB (expectDBResult (@?= blobs)) $ \hasFS err ->
+test_demoSimEquivalence = apiEquivalenceImmDB (expectImmDBResult (@?= blobs)) $ \hasFS err ->
     demoScript (openDB hasFS err ["test"])
   where
     blobs = map Just ["haskell", "nice", "cardano", "test"]
@@ -244,7 +244,7 @@ test_demoSimEquivalence = apiEquivalenceDB (expectDBResult (@?= blobs)) $ \hasFS
 -- and IO.
 test_AppendToSlotInThePastErrorEquivalence :: HasCallStack => Assertion
 test_AppendToSlotInThePastErrorEquivalence =
-    apiEquivalenceDB (expectUserError isAppendToSlotInThePastError) $ \hasFS err ->
+    apiEquivalenceImmDB (expectUserError isAppendToSlotInThePastError) $ \hasFS err ->
       withTestDB hasFS err (M.singleton 0 10) $ \db -> do
         appendBinaryBlob db 3 "test"
         appendBinaryBlob db 2 "haskell"
@@ -254,7 +254,7 @@ test_AppendToSlotInThePastErrorEquivalence =
 
 test_ReadFutureSlotErrorEquivalence :: HasCallStack => Assertion
 test_ReadFutureSlotErrorEquivalence =
-    apiEquivalenceDB (expectUserError isReadFutureSlotError) $ \hasFS err ->
+    apiEquivalenceImmDB (expectUserError isReadFutureSlotError) $ \hasFS err ->
       withTestDB hasFS err (M.singleton 0 10) $ \db -> do
         _ <- getBinaryBlob db (EpochSlot 0 0)
         return ()
@@ -264,7 +264,7 @@ test_ReadFutureSlotErrorEquivalence =
 
 test_SlotGreaterThanEpochSizeErrorEquivalence :: HasCallStack => Assertion
 test_SlotGreaterThanEpochSizeErrorEquivalence =
-    apiEquivalenceDB (expectUserError isSlotGreaterThanEpochSizeError) $ \hasFS err ->
+    apiEquivalenceImmDB (expectUserError isSlotGreaterThanEpochSizeError) $ \hasFS err ->
       withTestDB hasFS err (M.singleton 0 10) $ \db ->
         appendBinaryBlob db 11 "test"
   where
@@ -273,7 +273,7 @@ test_SlotGreaterThanEpochSizeErrorEquivalence =
 
 test_openDBMissingEpochSizeErrorEquivalence :: Assertion
 test_openDBMissingEpochSizeErrorEquivalence =
-    apiEquivalenceDB (expectUserError isMissingEpochSizeError) $ \hasFS err -> do
+  apiEquivalenceImmDB (expectUserError isMissingEpochSizeError) $ \hasFS err -> do
       withTestDB hasFS err (M.singleton 0 10) $ \db -> do
           appendBinaryBlob db 0 "test"
           _ <- startNewEpoch db 10
@@ -286,7 +286,7 @@ test_openDBMissingEpochSizeErrorEquivalence =
 
 test_openDBEmptyIndexFileEquivalence :: Assertion
 test_openDBEmptyIndexFileEquivalence =
-    apiEquivalenceDB (expectUnexpectedError isInvalidFileError) $ \hasFS@HasFS{..} err -> do
+    apiEquivalenceImmDB (expectUnexpectedError isInvalidFileError) $ \hasFS@HasFS{..} err -> do
       createDirectoryIfMissing True ["test"]
       -- Create an empty index file
       h1 <- hOpen ["test", "epoch-000.dat"] IO.WriteMode
@@ -302,7 +302,7 @@ test_openDBEmptyIndexFileEquivalence =
 
 test_reopenDBEquivalence :: Assertion
 test_reopenDBEquivalence =
-    apiEquivalenceDB (expectDBResult (@?= EpochSlot 0 6)) $ \hasFS err -> do
+    apiEquivalenceImmDB (expectImmDBResult (@?= EpochSlot 0 6)) $ \hasFS err -> do
       withTestDB hasFS err (M.singleton 0 10) $ \db ->
         appendBinaryBlob db 5 "a"
       withTestDB hasFS err (M.singleton 0 10) $ \db ->
@@ -310,14 +310,14 @@ test_reopenDBEquivalence =
 
 test_closeDBIdempotentEquivalence :: Assertion
 test_closeDBIdempotentEquivalence =
-    apiEquivalenceDB (expectDBResult (@?= ())) $ \hasFS err -> do
+    apiEquivalenceImmDB (expectImmDBResult (@?= ())) $ \hasFS err -> do
       db <- fst <$> openDB hasFS err ["test"] 0 (M.singleton 0 10) NoValidation
       closeDB db
       closeDB db
 
 test_closeDBAppendBinaryBlobEquivalence :: Assertion
 test_closeDBAppendBinaryBlobEquivalence =
-    apiEquivalenceDB (expectUserError isClosedDBError) $ \hasFS err -> do
+    apiEquivalenceImmDB (expectUserError isClosedDBError) $ \hasFS err -> do
       db <- fst <$> openDB hasFS err ["test"] 0 (M.singleton 0 10) NoValidation
       closeDB db
       appendBinaryBlob db 0 "foo"
@@ -386,8 +386,8 @@ test_startNewEpochPadsTheIndexFile = withMockFS tryImmDB assrt $ \hasFS err ->
 -- TODO the StateMachine tests will supersede these tests
 
 test_iterator_basics :: Assertion
-test_iterator_basics = apiEquivalenceDB
-      (expectDBResult (@?= ["a", "b", "c", "d", "e", "f", "g"])) $ \hasFS err ->
+test_iterator_basics = apiEquivalenceImmDB
+      (expectImmDBResult (@?= ["a", "b", "c", "d", "e", "f", "g"])) $ \hasFS err ->
     withTestDB hasFS err (M.singleton 0 10) $ \db -> do
       appendBinaryBlob db 0 "a"
       appendBinaryBlob db 1 "b"
