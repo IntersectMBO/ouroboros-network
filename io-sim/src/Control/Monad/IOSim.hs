@@ -93,6 +93,7 @@ data SimA s a where
   Fork         :: SimM s () -> (ThreadId -> SimA s b) -> SimA s b
   Atomically   :: STM  s a -> (a -> SimA s b) -> SimA s b
 
+  ThrowTo      :: SomeException -> ThreadId -> SimA s a -> SimA s a
   BlockAsync   :: SimM s a -> (a -> SimA s b) -> SimA s b
   UnblockAsync :: SimM s a -> (a -> SimA s b) -> SimA s b
   GetMaskState :: (MaskingState -> SimA s b) -> SimA s b
@@ -310,7 +311,9 @@ traceM x = SimM $ \k -> Output (toDyn x) (k ())
 data Thread s a = Thread {
     threadId      :: !ThreadId,
     threadControl :: !(ThreadControl s a),
-    threadMasking :: !MaskingState
+    threadMasking :: !MaskingState,
+    -- other threads blocked in a ThrowTo to us because we are or were masked
+    threadThrowTo :: ![(SomeException, ThreadId)]
   }
 
 -- We hide the type @b@ here, so it's useful to bundle these two parts
@@ -348,7 +351,11 @@ data TraceEvent
   = EventSay  String
   | EventLog  Dynamic
 
-  | EventThrow SomeException
+  | EventThrow          SomeException
+  | EventThrowTo        SomeException ThreadId -- This thread used ThrowTo
+  | EventThrowToBlocked                        -- The ThrowTo blocked
+  | EventThrowToWakeup                         -- The ThrowTo resumed
+  | EventThrowToUnmasked ThreadId              -- A pending ThrowTo was activated
 
   | EventThreadForked    ThreadId
   | EventThreadFinished                  -- terminated normally
@@ -427,7 +434,8 @@ runSimTraceST mainAction = schedule mainThread initialState
       Thread {
         threadId      = ThreadId 0,
         threadControl = ThreadControl (runSimM mainAction) MainFrame,
-        threadMasking = Unmasked
+        threadMasking = Unmasked,
+        threadThrowTo = []
       }
 
 data SimState s a = SimState {
@@ -491,14 +499,15 @@ schedule thread@Thread{
 
       ForkFrame -> do
         -- this thread is done
-        trace <- deschedule Terminated simstate
+        trace <- deschedule Terminated thread simstate
         return $ Trace time tid EventThreadFinished trace
 
       MaskFrame k maskst' ctl' -> do
-        -- pop the control stack, restore thread-local state, and continue
+        -- pop the control stack, restore thread-local state
         let thread' = thread { threadControl = ThreadControl (k x) ctl'
                              , threadMasking = maskst' }
-        schedule thread' simstate
+        -- but if we're now unmasked, check for any pending async exceptions
+        deschedule Interruptable thread' simstate
 
       CatchFrame _handler k ctl' -> do
         -- pop the control stack and continue
@@ -521,7 +530,7 @@ schedule thread@Thread{
 
         | otherwise -> do
           -- An unhandled exception in any other thread terminates the thread
-          trace <- deschedule Terminated simstate
+          trace <- deschedule Terminated thread simstate
           return (Trace time tid (EventThrow e) $
                   Trace time tid (EventThreadUnhandled e) trace)
 
@@ -584,7 +593,8 @@ schedule thread@Thread{
           thread'' = Thread { threadId      = tid'
                             , threadControl = ThreadControl (runSimM a)
                                                             ForkFrame
-                            , threadMasking = threadMasking thread }
+                            , threadMasking = threadMasking thread
+                            , threadThrowTo = [] }
           threads' = Map.insert tid' thread'' threads
       trace <- schedule thread' simstate { runqueue = runqueue ++ [tid']
                                          , threads  = threads'
@@ -606,7 +616,7 @@ schedule thread@Thread{
               -- that algorithms are not sensitive to the exact policy, so long
               -- as it is a fair policy (all runnable threads eventually run).
               runqueue' = List.nub (runqueue ++ unblocked)
-          trace <- deschedule (Yield thread') simstate { runqueue = runqueue'
+          trace <- deschedule Yield thread' simstate { runqueue = runqueue'
                                                        , nextVid  = nextVid' }
           return $
             Trace time tid (EventTxComitted written [nextVid..pred nextVid']) $
@@ -621,7 +631,7 @@ schedule thread@Thread{
           return (Trace time tid EventTxAborted trace)
 
         StmTxBlocked vids -> do
-          trace <- deschedule (Blocked thread) simstate
+          trace <- deschedule Blocked thread simstate
           return (Trace time tid (EventTxBlocked vids) trace)
 
     GetMaskState k -> do
@@ -640,12 +650,59 @@ schedule thread@Thread{
                                                (runSimM action')
                                                (MaskFrame k maskst ctl)
                            , threadMasking = Unmasked }
-      schedule thread' simstate
+      -- we're now unmasked, so check for any pending async exceptions
+      deschedule Interruptable thread' simstate
 
-data Deschedule s a = Yield (Thread s a) | Blocked (Thread s a) | Terminated
+    ThrowTo e tid' _ | tid' == tid -> do
+      -- Throw to ourself is equivalent to a synchronous throw,
+      -- and works irrespective of masking state since it does not block.
+      let thread' = thread { threadControl = ThreadControl (Throw e) ctl
+                           , threadMasking = Masked }
+      trace <- schedule thread' simstate
+      return (Trace time tid (EventThrowTo e tid) trace)
 
-deschedule :: Deschedule s a -> SimState s a -> ST s (Trace a)
-deschedule (Yield thread) simstate@SimState{runqueue, threads} =
+    ThrowTo e tid' k -> do
+      let willBlock = case Map.lookup tid' threads of
+                      Just Thread { threadMasking = Masked } -> True
+                      _                                      -> False
+          thread'   = thread { threadControl = ThreadControl k ctl }
+          threads'  = Map.adjust adjustTarget tid' threads
+          simstate' = simstate { threads = threads' }
+
+      if willBlock
+        then do
+          trace <- deschedule Interruptable thread' simstate'
+          return $ Trace time tid (EventThrowTo e tid')
+                 $ Trace time tid EventThrowToBlocked
+                 $ trace
+        else do
+          trace <- schedule thread' simstate'
+          return $ Trace time tid (EventThrowTo e tid')
+                 $ trace
+      where
+        -- If the target thread has async exceptions unmasked then we can
+        -- raise the exception in that thread immediately. This will either
+        -- cause it to terminate or enter an exception handler. In the meantime
+        -- the thread masks new async exceptions. This will be resolved if the
+        -- thread terminates or if it leaves the exception handler (when
+        -- restoring the masking state would trigger the any new pending async
+        -- exception).
+        adjustTarget t@Thread{ threadControl = ThreadControl _ ctl'
+                             , threadMasking = Unmasked } =
+          t { threadControl = ThreadControl (Throw e) ctl'
+            , threadMasking = Masked }
+
+        -- If the target thread has async exceptions masked then we add
+        -- the exception and the source thread id to the list of pending
+        -- async exceptions.
+        adjustTarget t@Thread{ threadMasking = Masked } =
+          t { threadThrowTo = (e, tid) : threadThrowTo t }
+
+
+data Deschedule = Yield | Interruptable | Blocked | Terminated
+
+deschedule :: Deschedule -> Thread s a -> SimState s a -> ST s (Trace a)
+deschedule Yield thread simstate@SimState{runqueue, threads} =
 
     -- We don't interrupt runnable threads to provide fairness anywhere else.
     -- We do it here by putting the thread to the back of the runqueue, behind
@@ -659,14 +716,55 @@ deschedule (Yield thread) simstate@SimState{runqueue, threads} =
         threads'  = Map.insert (threadId thread) thread threads in
     reschedule simstate { runqueue = runqueue', threads  = threads' }
 
-deschedule (Blocked thread) simstate@SimState{threads} =
+deschedule Interruptable thread@Thread { threadMasking = Masked } simstate =
+    -- Still masked, can't raise any async exceptions, so just carry on
+    schedule thread simstate
+
+deschedule Interruptable thread@Thread { threadThrowTo = [] } simstate =
+    -- Unmasked but no pending async exceptions, so just carry on
+    schedule thread simstate
+
+deschedule Interruptable thread@Thread {
+                           threadId      = tid,
+                           threadControl = ThreadControl _ ctl,
+                           threadMasking = Unmasked,
+                           threadThrowTo = (e, tid') : etids
+                         }
+                         simstate@SimState{
+                           runqueue, threads,
+                           curTime = time
+                         } = do
+
+    -- We're unmasking, but there are pending blocked async exceptions.
+    -- So immediately raise the exception and unblock the blocked thread
+    -- if possible.
+    let thread'   = thread { threadControl = ThreadControl (Throw e) ctl
+                           , threadMasking = Masked
+                           , threadThrowTo = etids }
+        tid'live = Map.member tid' threads
+        runqueue' = runqueue ++ [ tid' | tid'live ]
+    trace <- schedule thread' simstate { runqueue = runqueue' }
+    return $ Trace time tid (EventThrowToUnmasked tid')
+           $ (if tid'live then Trace time tid' EventThrowToWakeup
+                          else id)
+           $ trace
+
+deschedule Blocked thread simstate@SimState{threads} =
     let threads' = Map.insert (threadId thread) thread threads in
     reschedule simstate { threads = threads' }
 
-deschedule Terminated simstate =
-    -- The running thread was not in the threads map, so nothing to do
-    reschedule simstate
-
+deschedule Terminated thread simstate@SimState{
+                               runqueue, threads,
+                               curTime = time
+                             } = do
+    -- This thread is done. If there are other threads blocked in a
+    -- ThrowTo targeted at this thread then we can wake them up now.
+    let unblocked = [ tid' | (_e, tid') <- reverse (threadThrowTo thread)
+                           , Map.member tid' threads ]
+    trace <- reschedule simstate { runqueue = runqueue ++ unblocked }
+    return $ traceMany
+               [ (time, tid', EventThrowToWakeup) | tid' <- unblocked ]
+               trace
 
 -- When there is no current running thread but the runqueue is non-empty then
 -- schedule the next one to run.
