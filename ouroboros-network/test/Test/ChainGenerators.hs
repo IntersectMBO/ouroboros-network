@@ -5,6 +5,7 @@ module Test.ChainGenerators
   ( -- * Arbitrary Point BlockBody and BlockHeader
     -- These instances are useful for testing codec.
     ArbitraryPoint (..)
+  , ArbitraryChainRange (..)
   , ArbitraryBlockBody (..)
   , ArbitraryBlockHeader (..)
 
@@ -42,6 +43,7 @@ import           Ouroboros.Network.Testing.ConcreteBlock
 import           Ouroboros.Network.Block (Slot (..), Hash (..) , HasHeader (..))
 import           Ouroboros.Network.Chain (Chain (..), ChainUpdate (..), Point (..))
 import qualified Ouroboros.Network.Chain as Chain
+import           Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange (..))
 
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
@@ -98,6 +100,13 @@ instance Arbitrary ArbitraryPoint where
     slot <- Slot <$> arbitrary
     hash <- HeaderHash <$> arbitrary
     return $ ArbitraryPoint $ Point slot (BlockHash hash)
+
+newtype ArbitraryChainRange = ArbitraryChainRange {
+    getArbitraryChainRange :: ChainRange BlockHeader
+  }
+
+instance Arbitrary ArbitraryChainRange where
+  arbitrary = fmap ArbitraryChainRange . ChainRange  <$> (getArbitraryPoint <$> arbitrary) <*> (getArbitraryPoint <$> arbitrary)
 
 newtype ArbitraryBlockBody = ArbitraryBlockBody {
     getArbitraryBlockBody :: BlockBody
