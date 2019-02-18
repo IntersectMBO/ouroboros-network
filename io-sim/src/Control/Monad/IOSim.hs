@@ -93,6 +93,11 @@ data SimA s a where
   Fork         :: SimM s () -> (ThreadId -> SimA s b) -> SimA s b
   Atomically   :: STM  s a -> (a -> SimA s b) -> SimA s b
 
+  BlockAsync   :: SimM s a -> (a -> SimA s b) -> SimA s b
+  UnblockAsync :: SimM s a -> (a -> SimA s b) -> SimA s b
+  GetMaskState :: (MaskingState -> SimA s b) -> SimA s b
+
+
 newtype STM s a = STM { unSTM :: forall r. (a -> StmA s r) -> StmA s r }
 
 runSTM :: STM s a -> StmA s a
@@ -107,6 +112,8 @@ data StmA s a where
   WriteTVar    :: TVar s a ->  a -> StmA s b  -> StmA s b
   Retry        :: StmA s b
 
+
+data MaskingState = Unmasked | Masked
 
 --
 -- Monad class instances
@@ -192,19 +199,6 @@ instance MonadFork (SimM s) where
 instance MonadThrow (SimM s) where
   throwM e = SimM $ \_ -> Throw (toException e)
 
-  --TODO: remove this definition once we add the instance MonadMask
-  bracket before after thing = do
-    a <- before
-    r <- thing a `onException` after a
-    _ <- after a
-    return r
-
-  --TODO: remove this definition once we add the instance MonadMask
-  finally thing after = do
-    r <- thing `onException` after
-    _ <- after
-    return r
-
 instance Exceptions.MonadThrow (SimM s) where
   throwM = MonadThrow.throwM
 
@@ -231,14 +225,19 @@ instance MonadCatch (SimM s) where
   catch action handler =
     SimM $ \k -> Catch (runSimM action) (runSimM . handler) k
 
-  --TODO: remove this definition once we add the instance MonadMask
-  bracketOnError before after thing = do
-    a <- before
-    thing a `onException` after a
-
 instance Exceptions.MonadCatch (SimM s) where
   catch = MonadThrow.catch
 
+instance MonadMask (SimM s) where
+  mask action = do
+      b <- getMaskingState
+      case b of
+        Unmasked -> block $ action unblock
+        Masked   -> action block
+    where
+      getMaskingState = SimM  GetMaskState
+      block   a       = SimM (BlockAsync a)
+      unblock a       = SimM (UnblockAsync a)
 
 instance MonadSTM (SimM s) where
   type Tr    (SimM s)   = STM s
@@ -310,7 +309,8 @@ traceM x = SimM $ \k -> Output (toDyn x) (k ())
 
 data Thread s a = Thread {
     threadId      :: !ThreadId,
-    threadControl :: !(ThreadControl s a)
+    threadControl :: !(ThreadControl s a),
+    threadMasking :: !MaskingState
   }
 
 -- We hide the type @b@ here, so it's useful to bundle these two parts
@@ -324,7 +324,8 @@ data ThreadControl s a where
 data ControlStack s b a where
   MainFrame  :: ControlStack s a  a
   ForkFrame  :: ControlStack s () a
-  ContFrame  :: (b -> SimA s c)         -- subsequent continuation
+  MaskFrame  :: (b -> SimA s c)         -- subsequent continuation
+             -> MaskingState            -- thread local state to restore
              -> ControlStack s c a
              -> ControlStack s b a
   CatchFrame :: Exception e
@@ -425,7 +426,8 @@ runSimTraceST mainAction = schedule mainThread initialState
     mainThread =
       Thread {
         threadId      = ThreadId 0,
-        threadControl = ThreadControl (runSimM mainAction) MainFrame
+        threadControl = ThreadControl (runSimM mainAction) MainFrame,
+        threadMasking = Unmasked
       }
 
 data SimState s a = SimState {
@@ -467,7 +469,8 @@ invariant Nothing SimState{runqueue,threads} =
 schedule :: Thread s a -> SimState s a -> ST s (Trace a)
 schedule thread@Thread{
            threadId      = tid,
-           threadControl = ThreadControl action ctl
+           threadControl = ThreadControl action ctl,
+           threadMasking = maskst
          }
          simstate@SimState {
            runqueue,
@@ -491,9 +494,10 @@ schedule thread@Thread{
         trace <- reschedule simstate { threads = Map.delete tid threads }
         return $ Trace time tid EventThreadFinished trace
 
-      ContFrame k ctl' -> do
-        -- pop the control stack and continue
-        let thread' = thread { threadControl = ThreadControl (k x) ctl' }
+      MaskFrame k maskst' ctl' -> do
+        -- pop the control stack, restore thread-local state, and continue
+        let thread' = thread { threadControl = ThreadControl (k x) ctl'
+                             , threadMasking = maskst' }
         schedule thread' simstate
 
       CatchFrame _handler k ctl' -> do
@@ -501,7 +505,7 @@ schedule thread@Thread{
         let thread' = thread { threadControl = ThreadControl (k x) ctl' }
         schedule thread' simstate
 
-    Throw e -> case unwindControlStack tid e ctl of
+    Throw e -> case unwindControlStack e thread of
       Right thread' ->
         -- We found a suitable exception handler, continue with that
         schedule thread' simstate
@@ -579,7 +583,8 @@ schedule thread@Thread{
           thread'  = thread { threadControl = ThreadControl (k tid') ctl }
           thread'' = Thread { threadId      = tid'
                             , threadControl = ThreadControl (runSimM a)
-                                                            ForkFrame }
+                                                            ForkFrame
+                            , threadMasking = threadMasking thread }
           threads' = Map.insert tid' thread'' threads
       trace <- schedule thread' simstate { runqueue = runqueue ++ [tid']
                                          , threads  = threads'
@@ -622,6 +627,23 @@ schedule thread@Thread{
           trace <- reschedule simstate { threads = threads' }
           return (Trace time tid (EventTxBlocked vids) trace)
 
+    GetMaskState k -> do
+      let thread' = thread { threadControl = ThreadControl (k maskst) ctl }
+      schedule thread' simstate
+
+    BlockAsync action' k -> do
+      let thread' = thread { threadControl = ThreadControl
+                                               (runSimM action')
+                                               (MaskFrame k maskst ctl)
+                           , threadMasking = Masked }
+      schedule thread' simstate
+
+    UnblockAsync action' k -> do
+      let thread' = thread { threadControl = ThreadControl
+                                               (runSimM action')
+                                               (MaskFrame k maskst ctl)
+                           , threadMasking = Unmasked }
+      schedule thread' simstate
 
 -- When there is no current running thread but the runqueue is non-empty then
 -- schedule the next one to run.
@@ -676,27 +698,33 @@ reschedule simstate@SimState{ runqueue = [], threads, timers, curTime = time } =
 -- Also return if it's the main thread or a forked thread since we handle the
 -- cases differently.
 --
-unwindControlStack :: ThreadId
-                   -> SomeException
-                   -> ControlStack s b a
+unwindControlStack :: forall s a.
+                      SomeException
+                   -> Thread s a
                    -> Either Bool (Thread s a)
-unwindControlStack _ _ MainFrame = Left True
-unwindControlStack _ _ ForkFrame = Left False
-unwindControlStack tid e (ContFrame _k ctl) =
-    unwindControlStack tid e ctl
+unwindControlStack e thread =
+    case threadControl thread of
+      ThreadControl _ ctl -> unwind (threadMasking thread) ctl
+  where
+    unwind :: forall s' c. MaskingState
+           -> ControlStack s' c a -> Either Bool (Thread s' a)
+    unwind _  MainFrame                 = Left True
+    unwind _  ForkFrame                 = Left False
+    unwind _ (MaskFrame _k maskst' ctl) = unwind maskst' ctl
 
-unwindControlStack tid e (CatchFrame handler k ctl) =
-    case fromException e of
-      -- not the right type, unwind to the next containing handler
-      Nothing -> unwindControlStack tid e ctl
+    unwind maskst (CatchFrame handler k ctl) =
+      case fromException e of
+        -- not the right type, unwind to the next containing handler
+        Nothing -> unwind maskst ctl
 
-      -- Ok! We will be able to continue the thread with the handler
-      -- followed by the continuation after the catch
-      Just e' -> Right Thread {
-                   threadId      = tid,
-                   threadControl = ThreadControl (handler e')
-                                                 (ContFrame k ctl)
-                 }
+        -- Ok! We will be able to continue the thread with the handler
+        -- followed by the continuation after the catch
+        Just e' -> Right thread {
+                      -- As per async exception rules, the handler is run masked
+                     threadControl = ThreadControl (handler e')
+                                                   (MaskFrame k maskst ctl),
+                     threadMasking = Masked
+                   }
 
 
 removeMinimums :: (Ord k, Ord p)
