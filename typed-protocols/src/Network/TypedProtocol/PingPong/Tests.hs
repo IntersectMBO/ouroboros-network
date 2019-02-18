@@ -291,7 +291,6 @@ prop_channel_ST n =
       Right True -> True
       _          -> False
 
-
 --
 -- Codec properties
 --

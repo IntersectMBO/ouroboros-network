@@ -1,8 +1,13 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE FlexibleInstances   #-}
+
+{-# OPTIONS_GHC -Wno-orphans #-}
+
 module Test.Ouroboros.Network.Protocol.BlockFetch where
 
+import           Control.Monad.ST (runST)
 import           Data.ByteString.Lazy (ByteString)
 
 import           Control.Monad.IOSim (runSim)
@@ -11,13 +16,15 @@ import           Control.Monad.Class.MonadSTM (MonadSTM)
 import           Control.Monad.Class.MonadAsync (MonadAsync (..))
 
 import           Network.TypedProtocol.Driver
+import           Network.TypedProtocol.Codec
 import           Network.TypedProtocol.Proofs
 import           Network.TypedProtocol.Channel
 
+import           Ouroboros.Network.Block (StandardHash)
 import           Ouroboros.Network.Chain (Chain, Point)
 import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.Channel (createPipeConnectedChannels)
-import           Ouroboros.Network.Testing.ConcreteBlock (Block, BlockBody)
+import           Ouroboros.Network.Testing.ConcreteBlock (Block, BlockHeader, BlockBody)
 import qualified Ouroboros.Network.Testing.ConcreteBlock as ConcreteBlock
 
 import           Ouroboros.Network.Protocol.BlockFetch.Type
@@ -27,7 +34,11 @@ import           Ouroboros.Network.Protocol.BlockFetch.Direct
 import           Ouroboros.Network.Protocol.BlockFetch.Examples
 import           Ouroboros.Network.Protocol.BlockFetch.Codec
 
-import           Test.Ouroboros.Network.Testing.Arbitrary (TestChainAndPoints (..))
+import           Test.Ouroboros.Network.Testing.Arbitrary ( TestChainAndPoints (..)
+                                                          , ArbitraryChainRange (..)
+                                                          , ArbitraryBlockBody (..)
+                                                          )
+import           Test.Ouroboros.Network.Testing.Utils (splits2, splits3)
 
 import           Test.QuickCheck hiding (Result)
 import           Test.Tasty (TestTree, testGroup)
@@ -48,6 +59,9 @@ tests =
   , testProperty "channel ST"          prop_channel_ST
   , testProperty "channel IO"          prop_channel_IO
   , testProperty "pipe IO"             prop_pipe_IO
+  , testProperty "codec"               prop_codec_BlockFetch
+  , testProperty "codec 2-splits"      prop_codec_splits2_BlockFetch
+  , testProperty "codec 3-splits"      $ withMaxSuccess 30 prop_codec_splits3_BlockFetch
   ]
 
 --
@@ -331,3 +345,53 @@ prop_pipe_IO
 prop_pipe_IO (TestChainAndPoints chain points) = ioProperty $ do
   (ca, cb) <- createPipeConnectedChannels
   channel_experiment ca cb chain points
+
+--
+-- Codec properties
+--
+
+instance Arbitrary (AnyMessageAndAgency (BlockFetch BlockHeader BlockBody)) where
+  arbitrary = oneof
+    [ AnyMessageAndAgency (ClientAgency TokIdle) . MsgRequestRange <$> (getArbitraryChainRange <$> arbitrary)
+    , return $ AnyMessageAndAgency (ServerAgency TokBusy) MsgStartBatch
+    , return $ AnyMessageAndAgency (ServerAgency TokBusy) MsgNoBlocks
+    , AnyMessageAndAgency (ServerAgency TokStreaming) . MsgBlock . getArbitraryBlockBody <$> arbitrary
+    , return $ AnyMessageAndAgency (ServerAgency TokStreaming) MsgBatchDone
+    , return $ AnyMessageAndAgency (ClientAgency TokIdle) MsgClientDone
+    ]
+
+instance Show (AnyMessageAndAgency (BlockFetch BlockHeader BlockBody)) where
+  show (AnyMessageAndAgency _ msg) = show msg
+
+instance (StandardHash header, Eq body) => Eq (AnyMessage (BlockFetch header body)) where
+  AnyMessage (MsgRequestRange r1) == AnyMessage (MsgRequestRange r2) = r1   == r2
+  AnyMessage MsgStartBatch        == AnyMessage MsgStartBatch        = True
+  AnyMessage MsgNoBlocks          == AnyMessage MsgNoBlocks          = True
+  AnyMessage (MsgBlock b1)        == AnyMessage (MsgBlock b2)        = b1 == b2
+  AnyMessage MsgBatchDone         == AnyMessage MsgBatchDone         = True
+  AnyMessage MsgClientDone        == AnyMessage MsgClientDone        = True
+  _                               ==                  _              = False
+
+prop_codec_BlockFetch
+  :: AnyMessageAndAgency (BlockFetch BlockHeader BlockBody)
+  -> Bool
+prop_codec_BlockFetch msg =
+  runST $ prop_codecM codecBlockFetch msg
+
+prop_codec_splits2_BlockFetch
+  :: AnyMessageAndAgency (BlockFetch BlockHeader BlockBody)
+  -> Bool
+prop_codec_splits2_BlockFetch msg =
+  runST $ prop_codec_splitsM
+      splits2
+      codecBlockFetch
+      msg
+
+prop_codec_splits3_BlockFetch
+  :: AnyMessageAndAgency (BlockFetch BlockHeader BlockBody)
+  -> Bool
+prop_codec_splits3_BlockFetch msg =
+  runST $ prop_codec_splitsM
+      splits3
+      codecBlockFetch
+      msg
