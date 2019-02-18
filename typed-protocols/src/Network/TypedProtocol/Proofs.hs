@@ -34,6 +34,9 @@ module Network.TypedProtocol.Proofs (
   -- ** Pipeline proof helpers
   Queue(..),
   enqueue,
+
+  -- ** Auxilary functions
+  pipelineInterleaving,
   ) where
 
 import Network.TypedProtocol.Core
@@ -265,3 +268,31 @@ enqueue :: a -> Queue n a -> Queue (S n) a
 enqueue a  EmptyQ     = ConsQ a EmptyQ
 enqueue a (ConsQ b q) = ConsQ b (enqueue a q)
 
+
+-- | A reference specification for interleaving of requests and responses
+-- with pipelining, where the environment can choose whether a response is
+-- available yet.
+--
+-- This also supports bounded choice where the maximum number of outstanding
+-- in-flight responses is limted.
+--
+pipelineInterleaving :: Int    -- ^ Bound on outstanding responses
+                     -> [Bool] -- ^ Pipelining choices
+                     -> [req] -> [resp] -> [Either req resp]
+pipelineInterleaving omax cs0 reqs0 resps0 =
+    go 0 cs0 (zip [0 :: Int ..] reqs0)
+             (zip [0 :: Int ..] resps0)
+  where
+    go o (c:cs) reqs@((reqNo, req) :reqs')
+               resps@((respNo,resp):resps')
+      | respNo == reqNo = Left  req   : go (o+1) (c:cs) reqs' resps
+      | c && o < omax   = Left  req   : go (o+1)    cs  reqs' resps
+      | otherwise       = Right resp  : go (o-1)    cs  reqs  resps'
+
+    go o []     reqs@((reqNo, req) :reqs')
+               resps@((respNo,resp):resps')
+      | respNo == reqNo = Left  req   : go (o+1) [] reqs' resps
+      | otherwise       = Right resp  : go (o-1) [] reqs  resps'
+
+    go _ _ [] resps     = map (Right . snd) resps
+    go _ _ (_:_) []     = error "pipelineInterleaving: not enough responses"
