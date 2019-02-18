@@ -108,7 +108,7 @@ class (MonadSTM m, MonadTime m) => MonadTimer m where
   registerDelay d = do
     v <- atomically $ newTVar False
     t <- newTimeout d
-    fork $ atomically (awaitTimeout t >>= writeTVar v)
+    _ <- fork $ atomically (awaitTimeout t >>= writeTVar v)
     return v
 
 --
