@@ -22,7 +22,6 @@ module Control.Monad.IOSim (
   traceM,
   VTime(..),
   VTimeDuration(..),
-  ThreadId,
   Trace(..),
   TraceEvent(..),
   traceEvents,
@@ -53,11 +52,12 @@ import           Data.STRef.Lazy
 import           Control.Monad.Fail as MonadFail
 import qualified Control.Monad.Catch as Exceptions
 
-import           Control.Monad.Class.MonadFork
+import           Control.Monad.Class.MonadFork hiding (ThreadId)
+import qualified Control.Monad.Class.MonadFork as MonadFork
 import           Control.Monad.Class.MonadThrow as MonadThrow
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadSTM hiding (TVar)
+import           Control.Monad.Class.MonadSTM hiding (TVar, ThreadId)
 import qualified Control.Monad.Class.MonadSTM as MonadSTM
 import           Control.Monad.Class.MonadTimer
 
@@ -91,6 +91,8 @@ data SimA s a where
                   SimA s a -> (e -> SimA s a) -> (a -> SimA s b) -> SimA s b
 
   Fork         :: SimM s () -> (ThreadId -> SimA s b) -> SimA s b
+  GetThreadId  :: (ThreadId -> SimA s b) -> SimA s b
+
   Atomically   :: STM  s a -> (a -> SimA s b) -> SimA s b
 
   ThrowTo      :: SomeException -> ThreadId -> SimA s a -> SimA s a
@@ -194,9 +196,6 @@ instance MonadFail (STM s) where
 instance MonadSay (SimM s) where
   say msg = SimM $ \k -> Say msg (k ())
 
-instance MonadFork (SimM s) where
-  fork task = SimM $ \k -> Fork task (\_tid -> k ())
-
 instance MonadThrow (SimM s) where
   throwM e = SimM $ \_ -> Throw (toException e)
 
@@ -239,6 +238,13 @@ instance MonadMask (SimM s) where
       getMaskingState = SimM  GetMaskState
       block   a       = SimM (BlockAsync a)
       unblock a       = SimM (UnblockAsync a)
+
+instance MonadFork (SimM s) where
+  type ThreadId (SimM s) = ThreadId
+
+  fork task     = SimM $ \k -> Fork task k
+  myThreadId    = SimM $ \k -> GetThreadId k
+  throwTo tid e = SimM $ \k -> ThrowTo (toException e) tid (k ())
 
 instance MonadSTM (SimM s) where
   type Tr    (SimM s)   = STM s
@@ -633,6 +639,10 @@ schedule thread@Thread{
         StmTxBlocked vids -> do
           trace <- deschedule Blocked thread simstate
           return (Trace time tid (EventTxBlocked vids) trace)
+
+    GetThreadId k -> do
+      let thread' = thread { threadControl = ThreadControl (k tid) ctl }
+      schedule thread' simstate
 
     GetMaskState k -> do
       let thread' = thread { threadControl = ThreadControl (k maskst) ctl }
