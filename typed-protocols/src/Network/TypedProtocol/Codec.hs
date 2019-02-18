@@ -24,7 +24,9 @@ module Network.TypedProtocol.Codec (
     -- ** Codec properties
   , AnyMessage(..)
   , AnyMessageAndAgency(..)
+  , prop_codecM
   , prop_codec
+  , prop_codec_splitsM
   , prop_codec_splits
   ) where
 
@@ -220,6 +222,22 @@ data AnyMessageAndAgency ps where
 -- | The 'Codec' round-trip property: decode after encode gives the same
 -- message. Every codec must satisfy this property.
 --
+prop_codecM
+  :: forall ps failure m bytes.
+     ( Monad m
+     , Eq (AnyMessage ps)
+     )
+  => Codec ps failure m bytes
+  -> AnyMessageAndAgency ps
+  -> m Bool
+prop_codecM Codec {encode, decode} (AnyMessageAndAgency stok msg) = do
+  r <- decode stok >>= runDecoder [encode stok msg]
+  case r of
+    Right (SomeMessage msg') -> return $ AnyMessage msg' == AnyMessage msg
+    Left _                   -> return False
+
+-- | The 'Codec' round-trip property in a pure monad.
+--
 prop_codec
   :: forall ps failure m bytes.
      (Monad m, Eq (AnyMessage ps))
@@ -227,10 +245,8 @@ prop_codec
   -> Codec ps failure m bytes
   -> AnyMessageAndAgency ps
   -> Bool
-prop_codec runM Codec {encode, decode} (AnyMessageAndAgency stok msg) =
-    case runDecoderPure runM (decode stok) [encode stok msg] of
-      Right (SomeMessage msg') -> AnyMessage msg' == AnyMessage msg
-      Left _                   -> False
+prop_codec runM codec msg =
+  runM (prop_codecM codec msg)
 
 
 -- | A variant on the codec round-trip property: given the encoding of a
@@ -244,20 +260,34 @@ prop_codec runM Codec {encode, decode} (AnyMessageAndAgency stok msg) =
 -- adaptor has to deal with the incremental decoding and this is what needs
 -- to be checked.
 --
-prop_codec_splits
+prop_codec_splitsM
   :: forall ps failure m bytes.
      (Monad m, Eq (AnyMessage ps))
   => (bytes -> [[bytes]])   -- ^ alternative re-chunkings of serialised form
+  -> Codec ps failure m bytes
+  -> AnyMessageAndAgency ps
+  -> m Bool
+prop_codec_splitsM splits
+                  Codec {encode, decode} (AnyMessageAndAgency stok msg) = do
+  rs <- sequence
+        [ do
+          r <- decode stok >>= runDecoder bytes'
+          case r of
+            Right (SomeMessage msg') -> return $ AnyMessage msg' == AnyMessage msg
+            Left _                   -> return False
+
+        | let bytes = encode stok msg
+        , bytes' <- splits bytes ]
+  return $ and rs
+
+-- | Like @'prop_codec_splitsM'@ but run in a pure monad @m@, e.g. @Identity@.
+--
+prop_codec_splits
+  :: forall ps failure m bytes.
+     (Monad m, Eq (AnyMessage ps))
+  => (bytes -> [[bytes]])
   -> (forall a. m a -> a)
   -> Codec ps failure m bytes
   -> AnyMessageAndAgency ps
   -> Bool
-prop_codec_splits splits runM
-                  Codec {encode, decode} (AnyMessageAndAgency stok msg) =
-    and [ case runDecoderPure runM (decode stok) bytes' of
-            Right (SomeMessage msg') -> AnyMessage msg' == AnyMessage msg
-            Left _                   -> False
-
-        | let bytes = encode stok msg
-        , bytes' <- splits bytes ]
-
+prop_codec_splits splits runM codec msg = runM $ prop_codec_splitsM splits codec msg
