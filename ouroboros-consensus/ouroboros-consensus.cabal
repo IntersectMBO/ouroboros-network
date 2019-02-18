@@ -277,6 +277,9 @@ test-suite test-storage
                     Test.Ouroboros.Storage.ImmutableDB.Sim
                     Test.Ouroboros.Storage.ImmutableDB.StateMachine
                     Test.Ouroboros.Storage.ImmutableDB.TestBlock
+                    Test.Ouroboros.Storage.VolatileDB
+                    Test.Ouroboros.Storage.VolatileDB.Model
+                    Test.Ouroboros.Storage.VolatileDB.StateMachine
                     Test.Util.RefEnv
   build-depends:    base,
                     ouroboros-network,
@@ -286,6 +289,7 @@ test-suite test-storage
                     bifunctors,
                     binary,
                     bytestring,
+                    cereal,
                     containers,
                     directory,
                     exceptions,
