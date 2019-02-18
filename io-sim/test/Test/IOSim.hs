@@ -36,7 +36,8 @@ tests =
   , testProperty "timers (SimM)"           (withMaxSuccess 1000 prop_timers_ST)
   -- fails since we just use `threadDelay` to schedule timers in `IO`.
   , testProperty "timers (IO)"             (expectFailure prop_timers_IO)
-  , testProperty "fork order (SimM)"       (withMaxSuccess 1000 (prop_fork_order_ST))
+  , testProperty "threadId order (SimM)"   (withMaxSuccess 1000 prop_threadId_order_order_Sim)
+  , testProperty "fork order (SimM)"       (withMaxSuccess 1000 prop_fork_order_ST)
   , testProperty "fork order (IO)"         (expectFailure prop_fork_order_IO)
   , testGroup "throw/catch unit tests"
     [ testProperty "0" unit_catch_0
@@ -258,7 +259,7 @@ test_fork_order = \(Positive n) -> isValid n <$> withProbe (experiment n)
         atomically $ writeTVar v True
       experiment (n - 1) p
 
-      -- wait for the spanned thread to finish
+      -- wait for the spawned thread to finish
       atomically $ readTVar v >>= check
 
     isValid :: Int -> [Int] -> Property
@@ -269,6 +270,33 @@ prop_fork_order_ST n = runSimOrThrow $ test_fork_order n
 
 prop_fork_order_IO :: Positive Int -> Property
 prop_fork_order_IO = ioProperty . test_fork_order
+
+
+test_threadId_order :: forall m.
+                   ( MonadFork m
+                   , MonadSTM m
+                   , MonadTimer m
+                   )
+                => Positive Int
+                -> m Property
+test_threadId_order = \(Positive n) -> do
+    isValid n <$> (forM [1..n] (const experiment))
+  where
+    experiment :: m (ThreadId m)
+    experiment = do
+      v <- atomically $ newTVar False
+
+      tid <- fork $ atomically $ writeTVar v True
+
+      -- wait for the spawned thread to finish
+      atomically $ readTVar v >>= check
+      return tid
+
+    isValid :: Int -> [ThreadId m] -> Property
+    isValid n tr = map show tr === map (("ThreadId " ++ ) . show) [1..n]
+
+prop_threadId_order_order_Sim :: Positive Int -> Property
+prop_threadId_order_order_Sim n = runSimOrThrow $ test_threadId_order n
 
 
 --
