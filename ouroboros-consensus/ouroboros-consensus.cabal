@@ -84,6 +84,11 @@ library
                        Ouroboros.Storage.ImmutableDB.Util
                        Ouroboros.Storage.Util
                        Ouroboros.Storage.Util.ErrorHandling
+                       Ouroboros.Storage.VolatileDB
+                       Ouroboros.Storage.VolatileDB.API
+                       Ouroboros.Storage.VolatileDB.Impl
+                       Ouroboros.Storage.VolatileDB.Types
+                       Ouroboros.Storage.VolatileDB.Util
                        Ouroboros.Storage.IO
 
   default-language:    Haskell2010
