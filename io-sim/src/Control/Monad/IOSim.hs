@@ -491,7 +491,7 @@ schedule thread@Thread{
 
       ForkFrame -> do
         -- this thread is done
-        trace <- reschedule simstate { threads = Map.delete tid threads }
+        trace <- deschedule Terminated simstate
         return $ Trace time tid EventThreadFinished trace
 
       MaskFrame k maskst' ctl' -> do
@@ -521,7 +521,7 @@ schedule thread@Thread{
 
         | otherwise -> do
           -- An unhandled exception in any other thread terminates the thread
-          trace <- reschedule simstate { threads = Map.delete tid threads }
+          trace <- deschedule Terminated simstate
           return (Trace time tid (EventThrow e) $
                   Trace time tid (EventThreadUnhandled e) trace)
 
@@ -605,11 +605,9 @@ schedule thread@Thread{
               -- For testing, we should have a more sophisticated policy to show
               -- that algorithms are not sensitive to the exact policy, so long
               -- as it is a fair policy (all runnable threads eventually run).
-              runqueue' = List.nub (runqueue ++ unblocked) ++ [tid]
-              threads'  = Map.insert tid thread' threads
-          trace <- reschedule simstate { runqueue = runqueue'
-                                       , threads  = threads'
-                                       , nextVid  = nextVid' }
+              runqueue' = List.nub (runqueue ++ unblocked)
+          trace <- deschedule (Yield thread') simstate { runqueue = runqueue'
+                                                       , nextVid  = nextVid' }
           return $
             Trace time tid (EventTxComitted written [nextVid..pred nextVid']) $
             traceMany
@@ -623,8 +621,7 @@ schedule thread@Thread{
           return (Trace time tid EventTxAborted trace)
 
         StmTxBlocked vids -> do
-          let threads' = Map.insert tid thread threads
-          trace <- reschedule simstate { threads = threads' }
+          trace <- deschedule (Blocked thread) simstate
           return (Trace time tid (EventTxBlocked vids) trace)
 
     GetMaskState k -> do
@@ -644,6 +641,32 @@ schedule thread@Thread{
                                                (MaskFrame k maskst ctl)
                            , threadMasking = Unmasked }
       schedule thread' simstate
+
+data Deschedule s a = Yield (Thread s a) | Blocked (Thread s a) | Terminated
+
+deschedule :: Deschedule s a -> SimState s a -> ST s (Trace a)
+deschedule (Yield thread) simstate@SimState{runqueue, threads} =
+
+    -- We don't interrupt runnable threads to provide fairness anywhere else.
+    -- We do it here by putting the thread to the back of the runqueue, behind
+    -- all other runnable threads.
+    --
+    -- For testing, we should have a more sophisticated policy to show that
+    -- algorithms are not sensitive to the exact policy, so long as it is a
+    -- fair policy (all runnable threads eventually run).
+
+    let runqueue' = runqueue ++ [threadId thread]
+        threads'  = Map.insert (threadId thread) thread threads in
+    reschedule simstate { runqueue = runqueue', threads  = threads' }
+
+deschedule (Blocked thread) simstate@SimState{threads} =
+    let threads' = Map.insert (threadId thread) thread threads in
+    reschedule simstate { threads = threads' }
+
+deschedule Terminated simstate =
+    -- The running thread was not in the threads map, so nothing to do
+    reschedule simstate
+
 
 -- When there is no current running thread but the runqueue is non-empty then
 -- schedule the next one to run.
