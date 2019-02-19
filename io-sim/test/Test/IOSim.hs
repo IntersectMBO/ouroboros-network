@@ -63,6 +63,11 @@ tests =
     , testProperty "9"  unit_async_9
     , testProperty "10" unit_async_10
     , testProperty "11" unit_async_11
+    , testProperty "12" unit_async_12
+    , testProperty "13" unit_async_13
+    , testProperty "14" unit_async_14
+    , testProperty "15" unit_async_15
+    , testProperty "16" unit_async_16
     ]
   ]
 
@@ -426,7 +431,8 @@ unit_fork_2 =
 
 unit_async_1, unit_async_2, unit_async_3, unit_async_4, unit_async_5,
   unit_async_6, unit_async_7, unit_async_8, unit_async_9, unit_async_10,
-  unit_async_11
+  unit_async_11, unit_async_12, unit_async_13, unit_async_14, unit_async_15,
+  unit_async_16
   :: Bool
 
 
@@ -629,6 +635,97 @@ unit_async_11 =
   where
     yield :: SimM s ()
     yield = atomically (return ())  -- yield, go to end of runqueue
+
+
+unit_async_12 =
+    runSimTraceSay
+      (do tid <- fork $ do
+                   uninterruptibleMask_ $ do
+                     say "child"
+                     threadDelay 1
+                     say "child masked"
+                     -- while masked, do a blocking (interruptible) operation
+                     catch (threadDelay 1)
+                         (\(_e :: ArithException) -> say "handler")
+                     say "child done"
+                   say "never"
+          -- parent and child wake up on the runqueue at the same time
+          threadDelay 1
+          throwTo tid DivideByZero
+          threadDelay 1
+          say "parent done")
+ ==
+   ["child", "child masked", "child done", "parent done"]
+
+
+unit_async_13 =
+    case runSim
+           (uninterruptibleMask_ $ do
+              tid <- fork $ atomically retry
+              throwTo tid DivideByZero)
+       of Left FailureDeadlock -> True
+          _                    -> False
+
+
+unit_async_14 =
+    runSimTraceSay
+      (do tid <- fork $ do
+                   uninterruptibleMask_ $ do
+                     say "child"
+                     threadDelay 1
+                     say "child masked"
+                     -- while masked do a blocking operation, but this is
+                     -- an uninterruptible mask so nothing happens
+                     catch (threadDelay 1)
+                         (\(_e :: ArithException) -> say "handler")
+                     say "child done"
+                   say "never"
+          threadDelay 1
+          throwTo tid DivideByZero
+          threadDelay 1
+          say "parent done")
+ ==
+   ["child", "child masked", "child done", "parent done"]
+
+
+unit_async_15 =
+    runSimTraceSay
+      (do tid <- fork $
+                   uninterruptibleMask $ \restore -> do
+                     say "child"
+                     threadDelay 1
+                     say "child masked"
+                     -- restore mask state, allowing interrupt
+                     catch (restore (say "never"))
+                         (\(_e :: ArithException) -> say "handler")
+                     say "child done"
+          -- parent and child wake up on the runqueue at the same time
+          threadDelay 1
+          throwTo tid DivideByZero
+          threadDelay 1
+          say "parent done")
+ ==
+   ["child", "child masked", "handler", "child done", "parent done"]
+
+
+unit_async_16 =
+    runSimTraceSay
+      (do tid <- fork $ do
+                   catch (do uninterruptibleMask_ $ do
+                               say "child"
+                               threadDelay 1
+                               say "child masked"
+                               -- exception raised when we leave mask frame
+                             say "child unmasked")
+                         (\(_e :: ArithException) -> say "handler")
+                   say "child done"
+          -- parent and child wake up on the runqueue at the same time
+          threadDelay 1
+          throwTo tid DivideByZero
+          threadDelay 1
+          say "parent done")
+ ==
+   ["child", "child masked", "handler", "child done", "parent done"]
 
 
 --
