@@ -22,6 +22,7 @@ library
   -- At this experiment/prototype stage everything is exposed.
   -- This has to be tidied up once the design becomes clear.
   exposed-modules:
+                       Control.Monad.Class.MonadAsync
                        Control.Monad.Class.MonadFork
                        Control.Monad.Class.MonadSay
                        Control.Monad.Class.MonadST
@@ -40,7 +41,8 @@ library
                        RankNTypes
   build-depends:       base  >=4.9 && <4.13,
                        mtl   >=2.2 && <2.3,
-                       stm   >=2.4 && <2.6
+                       stm   >=2.4 && <2.6,
+                       async >=2.1
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
                        -fno-ignore-asserts
