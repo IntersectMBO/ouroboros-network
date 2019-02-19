@@ -5,6 +5,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeInType #-}
 
+
 -- | This module defines the core of the typed protocol framework.
 --
 
