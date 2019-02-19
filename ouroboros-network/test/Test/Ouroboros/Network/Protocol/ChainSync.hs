@@ -1,10 +1,16 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeFamilies #-}
+
+{-# OPTIONS_GHC -Wno-orphans #-}
+
 module Test.Ouroboros.Network.Protocol.ChainSync where
 
 import Control.Monad (unless, void)
+import qualified Control.Monad.ST as ST
 import Data.ByteString.Lazy (ByteString)
 
 import Control.Monad.Class.MonadFork
@@ -15,19 +21,23 @@ import Control.Monad.IOSim (runSimOrThrow)
 
 import           Network.TypedProtocol.Driver
 import           Network.TypedProtocol.Proofs (connect)
+import           Network.TypedProtocol.Codec
 import           Ouroboros.Network.Channel
 
 import           Ouroboros.Network.Chain (Point)
 import qualified Ouroboros.Network.Chain as Chain
 import qualified Ouroboros.Network.ChainProducerState as ChainProducerState
 
+import Ouroboros.Network.Protocol.ChainSync.Type
 import Ouroboros.Network.Protocol.ChainSync.Client
 import Ouroboros.Network.Protocol.ChainSync.Server
 import Ouroboros.Network.Protocol.ChainSync.Direct
 import Ouroboros.Network.Protocol.ChainSync.Codec
 import qualified Ouroboros.Network.Protocol.ChainSync.Examples as ChainSyncExamples
 
-import Ouroboros.Network.Testing.ConcreteBlock (Block (..))
+import Ouroboros.Network.Testing.ConcreteBlock (Block (..), BlockHeader (..))
+import Test.ChainGenerators ( ArbitraryPoint (..), ArbitraryBlockHeader (..))
+import Test.Ouroboros.Network.Testing.Utils (splits2, splits3)
 import Test.ChainProducerState (ChainProducerStateForkTest (..))
 
 import Test.QuickCheck hiding (Result)
@@ -40,6 +50,9 @@ tests = testGroup "Ouroboros.Network.Protocol.ChainSyncProtocol"
   , testProperty "direct IO" propChainSyncDirectIO
   , testProperty "connect ST" propChainSyncConnectST
   , testProperty "connect IO" propChainSyncConnectIO
+  , testProperty "codec"          prop_codec_ChainSync
+  , testProperty "codec 2-splits" prop_codec_splits2_ChainSync
+  , testProperty "codec 3-splits" $ withMaxSuccess 30 prop_codec_splits3_ChainSync
   , testProperty "demo ST" propChainSyncDemoST
   , testProperty "demo IO" propChainSyncDemoIO
   , testProperty "pipe demo" propChainSyncPipe
@@ -121,6 +134,78 @@ propChainSyncConnectIO cps =
         (\ser cli ->
             void $  connect (chainSyncClientPeer cli) (chainSyncServerPeer ser)
         ) cps 
+
+instance Arbitrary (AnyMessageAndAgency (ChainSync BlockHeader (Point BlockHeader))) where
+  arbitrary = oneof
+    [ return $ AnyMessageAndAgency (ClientAgency TokIdle) MsgRequestNext
+    , return $ AnyMessageAndAgency (ServerAgency (TokNext TokCanAwait)) MsgAwaitReply
+
+    , AnyMessageAndAgency (ServerAgency (TokNext TokCanAwait))
+        <$> (MsgRollForward <$> (getArbitraryBlockHeader <$> arbitrary)
+        <*> (getArbitraryPoint <$> arbitrary))
+
+    , AnyMessageAndAgency (ServerAgency (TokNext TokMustReply))
+        <$> (MsgRollForward <$> (getArbitraryBlockHeader <$> arbitrary)
+        <*> (getArbitraryPoint <$> arbitrary))
+
+    , AnyMessageAndAgency (ServerAgency (TokNext TokCanAwait))
+        <$> (MsgRollBackward <$> (getArbitraryPoint <$> arbitrary)
+        <*> (getArbitraryPoint <$> arbitrary))
+
+    , AnyMessageAndAgency (ServerAgency (TokNext TokMustReply))
+        <$> (MsgRollBackward <$> (getArbitraryPoint <$> arbitrary)
+        <*> (getArbitraryPoint <$> arbitrary))
+
+    , AnyMessageAndAgency (ClientAgency TokIdle) . MsgFindIntersect
+        <$> (map getArbitraryPoint <$> arbitrary)
+
+    , AnyMessageAndAgency (ServerAgency TokIntersect)
+        <$> (MsgIntersectImproved <$> (getArbitraryPoint <$> arbitrary)
+        <*> (getArbitraryPoint <$> arbitrary))
+
+    , AnyMessageAndAgency (ServerAgency TokIntersect) . MsgIntersectUnchanged
+        <$> (getArbitraryPoint <$> arbitrary)
+
+    , return $ AnyMessageAndAgency (ClientAgency TokIdle) MsgDone
+    ]
+
+instance (Show header, Show point) => Show (AnyMessageAndAgency (ChainSync header point)) where
+  show (AnyMessageAndAgency _ msg) = show msg
+
+instance (Eq header, Eq point) => Eq (AnyMessage (ChainSync header point)) where
+  AnyMessage MsgRequestNext               == AnyMessage MsgRequestNext               = True
+  AnyMessage MsgAwaitReply                == AnyMessage MsgAwaitReply                = True
+  AnyMessage (MsgRollForward h1 p1)       == AnyMessage (MsgRollForward h2 p2)       = h1 == h2 && p1 == p2
+  AnyMessage (MsgRollBackward p1 h1)      == AnyMessage (MsgRollBackward p2 h2)      = p1 == p2 && h1 == h2
+  AnyMessage (MsgFindIntersect ps1)       == AnyMessage (MsgFindIntersect ps2)       = ps1 == ps2
+  AnyMessage (MsgIntersectImproved p1 h1) == AnyMessage (MsgIntersectImproved p2 h2) = p1 == p2 && h1 == h2
+  AnyMessage (MsgIntersectUnchanged h1)   == AnyMessage (MsgIntersectUnchanged h2)   = h1 == h2
+  AnyMessage MsgDone                      == AnyMessage MsgDone                      = True
+  _                                       == _                                       = False
+
+prop_codec_ChainSync
+  :: AnyMessageAndAgency (ChainSync BlockHeader (Point BlockHeader))
+  -> Bool
+prop_codec_ChainSync msg =
+    ST.runST $ prop_codecM codecChainSync msg
+
+prop_codec_splits2_ChainSync
+  :: AnyMessageAndAgency (ChainSync BlockHeader (Point BlockHeader))
+  -> Bool
+prop_codec_splits2_ChainSync msg =
+    ST.runST $ prop_codec_splitsM
+      splits2
+      codecChainSync
+      msg
+
+prop_codec_splits3_ChainSync
+  :: AnyMessageAndAgency (ChainSync BlockHeader (Point BlockHeader))
+  -> Bool
+prop_codec_splits3_ChainSync msg =
+    ST.runST $ prop_codec_splitsM
+      splits3
+      codecChainSync
+      msg
 
 chainSyncDemo
   :: forall m.
