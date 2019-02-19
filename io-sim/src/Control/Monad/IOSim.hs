@@ -237,6 +237,27 @@ instance MonadMask (SimM s) where
         MaskedInterruptible   -> action block
         MaskedUninterruptible -> action blockUninterruptible
 
+  uninterruptibleMask action = do
+      b <- getMaskingState
+      case b of
+        Unmasked              -> blockUninterruptible $ action unblock
+        MaskedInterruptible   -> blockUninterruptible $ action block
+        MaskedUninterruptible -> action blockUninterruptible
+
+instance Exceptions.MonadMask (SimM s) where
+  mask                = MonadThrow.mask
+  uninterruptibleMask = MonadThrow.uninterruptibleMask
+
+  generalBracket acquire release use =
+    mask $ \unmasked -> do
+      resource <- acquire
+      b <- unmasked (use resource) `catch` \e -> do
+        _ <- release resource (Exceptions.ExitCaseException e)
+        throwM e
+      c <- release resource (Exceptions.ExitCaseSuccess b)
+      return (b, c)
+
+
 getMaskingState :: SimM s MaskingState
 unblock, block, blockUninterruptible :: SimM s a -> SimM s a
 
