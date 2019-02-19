@@ -46,7 +46,7 @@ tests :: HasCallStack => TestTree
 tests = testGroup "VolatileDB"
   [
     testProperty "list parsing round trips" prop_roundTrips
-  , testProperty "put/get rounftrips" prop_VolatileRoundTrips
+  , testProperty "put/get roundtrips" prop_VolatileRoundTrips
   , testProperty "reOpen" prop_VolatileReOpenState
   , testProperty "reOpen and Write" prop_VolatileReOpenWrite
   , testProperty "garbage collect" prop_VolatileGarbageCollect
@@ -59,7 +59,9 @@ tests = testGroup "VolatileDB"
   , testProperty "undisputable lookup with closed handle" prop_VolatileUndisputableLookupClose
   , testProperty "Invalid argument" prop_VolatileInvalidArg
   , testProperty "Invalid filename" prop_VolatileParseFileNameError
-  , testProperty "Invalid number of blocks" prop_VolatileSlotsPerFileError
+  , testProperty "lenient on number of blocks" prop_VolatileLessThanN
+  , testProperty "first tries to fill files" prop_VolatileFillFilesFirst
+  , testProperty "can open with different number of blocks per file" prop_VolatileDifferentNumBlocks
   , StateMachine.tests
   ]
 
@@ -87,11 +89,10 @@ prop_roundTrips ls = property $ (binarySize * (length ls), ls) === (fromIntegral
 -- Write some blocks and then try to get them back.
 prop_VolatileRoundTrips :: HasCallStack => [MyBlockId] -> Property
 prop_VolatileRoundTrips ls = monadicIO $ do
-    let ls' = (\sl -> (sl, Binary.encode $ toBlock sl)) <$> ls
     let expected :: [Either String MyBlockId] = (Right <$> ls)
     run $ apiEquivalenceVolDB (expectVolDBResult (@?= expected)) (\hasFS err ->
         withTestDB hasFS err myParser 5 $ \db -> do
-            forM_ ls' $ \(slot, enc) -> putBlock db slot (BL.lazyByteString enc)
+            putList db ls
             bss <- forM ls $ \slot -> getBlock db slot
             return $ (fmap fromBlock) <$> decode <$> catMaybes bss
         )
@@ -99,15 +100,13 @@ prop_VolatileRoundTrips ls = monadicIO $ do
 -- Check if the db works normaly after reopening.
 prop_VolatileReOpenWrite :: HasCallStack => [MyBlockId] -> [MyBlockId] -> Property
 prop_VolatileReOpenWrite ls1 ls2 = monadicIO $ do
-    let ls1' = (\sl -> (sl, Binary.encode $ toBlock sl)) <$> ls1
-    let ls2' = (\sl -> (sl, Binary.encode $ toBlock sl)) <$> ls2
     let expected :: [Either String MyBlockId] = Right <$> (ls1 <> ls2)
     run $ apiEquivalenceVolDB (expectVolDBResult (@?= expected)) (\hasFS err -> do
                 db <- openDB hasFS err myParser 5 toSlot
-                forM_ ls1' $ \(slot, enc) -> putBlock db slot (BL.lazyByteString enc)
+                putList db ls1
                 closeDB db
                 reOpenDB db
-                forM_ ls2' $ \(slot, enc) -> putBlock db slot (BL.lazyByteString enc)
+                putList db ls2
                 ret <- forM (ls1 <> ls2) $ \slot -> getBlock db slot
                 closeDB db
                 return $ (fmap fromBlock) <$> decode <$> catMaybes ret
@@ -116,10 +115,9 @@ prop_VolatileReOpenWrite ls1 ls2 = monadicIO $ do
 -- Check state equality after reopening.
 prop_VolatileReOpenState :: HasCallStack => [MyBlockId] -> Property
 prop_VolatileReOpenState ls = monadicIO $ do
-        let ls' = (\sl -> (sl, Binary.encode $ toBlock sl)) <$> ls
         run $ apiEquivalenceVolDB (expectVolDBResult (@?= True)) (\hasFS err -> do
             (db, env) <- Internal.openDBFull hasFS err myParser 5 toSlot
-            forM_ ls' $ \(slot, enc) -> putBlock db slot (BL.lazyByteString enc)
+            putList db ls
             SomePair _stHasFS1 st1 <- Internal.getInternalState env
             let mp1 :: (Index MyBlockId) = Internal._currentMap st1
             closeDB db
@@ -190,18 +188,17 @@ prop_VolatileGarbageState special ls1 ls2 = withMaxSuccess 20 $ monadicIO $ do
 prop_VolatileReopenRemoveEmptyFile :: HasCallStack => [MyBlockId] -> Property
 prop_VolatileReopenRemoveEmptyFile ls = monadicIO $ do
     let blocksPerFile = 5
-    let nubLs = nub ls
-    let len = length nubLs
-    let lsRemaining = take (len - mod len blocksPerFile) nubLs
-    let ls' = (\sl -> (sl, Binary.encode $ toBlock sl)) <$> lsRemaining
+    let ls' = nub ls
+    let len = length ls'
+    let ls'' = take (len - mod len blocksPerFile) ls'
     run $ apiEquivalenceVolDB (expectVolDBResult (@?= (Just(Nothing, 0, M.empty), True))) (\hasFS err -> do
             (db, env) <- Internal.openDBFull hasFS err myParser 5 toSlot
-            forM_ ls' $ \(slot, enc) -> putBlock db slot (BL.lazyByteString enc)
+            putList db ls''
             SomePair _stHasFS1 st1 <- Internal.getInternalState env
             closeDB db
             let path = Internal._currentWritePath st1
             let fileStats = M.lookup path (Internal._currentMap st1)
-            removeFile hasFS ["no-file", path]
+            removeFile hasFS [path]
             reOpenDB db
             SomePair _stHasFS2 st2 <- Internal.getInternalState env
             return (fileStats, Internal.sameInternalState st1 st2)
@@ -222,14 +219,13 @@ prop_VolatileNoSlot ls special = monadicIO $ do
 prop_VolatileDuplicatedSlot :: HasCallStack => [MyBlockId] -> MyBlockId -> Property
 prop_VolatileDuplicatedSlot ls special = mod (1 + length (nub ls)) 5 /= 0 ==> monadicIO $ do
     let specialEnc = Binary.encode $ toBlock special
-    let ls' = (\sl -> (sl, Binary.encode $ toBlock sl)) <$> ls
     let fExpected = \case
             Right (False, Left (VParserError (DuplicatedSlot _))) -> return ()
-            somethingElse -> fail $ "IO failed with " <> show somethingElse <> " instead of DuplicatedSlot"
+            somethingElse -> fail $ "IO return " <> show somethingElse <> " instead of DuplicatedSlot"
     run $ apiEquivalenceVolDB fExpected (\hasFS err -> do
             (db, env) <- Internal.openDBFull hasFS err myParser 5 toSlot
             putBlock db special (BL.lazyByteString specialEnc)
-            forM_ ls' $ \(slot, enc) -> putBlock db slot (BL.lazyByteString enc)
+            putList db ls
             -- here we intentionally corrupt the fs, so that we can get the wanted error.
             SomePair stHasFS st <- Internal.getInternalState env
             let hndl = Internal._currentWriteHandle st
@@ -247,13 +243,12 @@ prop_VolatileDuplicatedSlot ls special = mod (1 + length (nub ls)) 5 /= 0 ==> mo
 -- Intentionally corrupt a file of the db, to check if we get DecodeFail.
 prop_VolatileDecodeFail :: HasCallStack => [MyBlockId] -> Property
 prop_VolatileDecodeFail ls = monadicIO $ do
-    let ls' = (\sl -> (sl, Binary.encode $ toBlock sl)) <$> ls
     let fExpected = \case
             Right (False, Left (VParserError (DecodeFailed _str n))) -> n @?= 3
             somethingElse -> fail $ "IO failed with " <> show somethingElse <> " instead of DecodeFailed"
     run $ apiEquivalenceVolDB fExpected (\hasFS err -> do
             (db, env) <- Internal.openDBFull hasFS err myParser 5 toSlot
-            forM_ ls' $ \(slot, enc) -> putBlock db slot (BL.lazyByteString enc)
+            putList db ls
             -- here we intentionally corrupt the fs, so that we can get the wanted error.
             SomePair stHasFS st <- Internal.getInternalState env
             let hndl = Internal._currentWriteHandle st
@@ -269,15 +264,14 @@ prop_VolatileDecodeFail ls = monadicIO $ do
 -- Intentially corrupt the Internal State of the db, to check if we get UndisputableLookupError.
 prop_VolatileUndisputableLookup :: HasCallStack => [MyBlockId] -> Property
 prop_VolatileUndisputableLookup ls = mod (length (nub ls)) 5 /= 0 ==> monadicIO $ do
-    let nubLs = nub ls
-    let tl = last nubLs
-    let ls' = (\sl -> (sl, Binary.encode $ toBlock sl)) <$> nubLs
+    let ls' = nub ls
+    let tl = last ls'
     let fExpected = \case
             Right (False, Left (UndisputableLookupError _path _mp)) -> return ()
             somethingElse -> fail $ "IO failed with " <> show somethingElse <> " instead of UndisputableLookupError"
     run $ apiEquivalenceVolDB fExpected (\hasFS err -> do
             (db, env) <- Internal.openDBFull hasFS err myParser 5 toSlot
-            forM_ ls' $ \(slot, enc) -> putBlock db slot (BL.lazyByteString enc)
+            putList db ls'
             -- here we intentionally corrupt the state, so that we can get the wanted error
             case env of
               Internal.VolatileDBEnv{..} ->
@@ -297,15 +291,14 @@ prop_VolatileUndisputableLookup ls = mod (length (nub ls)) 5 /= 0 ==> monadicIO 
 -- write handles, so it is interesting to check what happens if the handle is already closed.
 prop_VolatileUndisputableLookupClose :: HasCallStack => [MyBlockId] -> Property
 prop_VolatileUndisputableLookupClose ls = mod (length (nub ls)) 5 /= 0 ==> monadicIO $ do
-    let nubLs = nub ls
-    let tl = last nubLs
-    let ls' = (\sl -> (sl, Binary.encode $ toBlock sl)) <$> nubLs
+    let ls' = nub ls
+    let tl = last ls'
     let fExpected = \case
             Right (False, Left (UndisputableLookupError _path _mp)) -> return ()
-            somethingElse -> fail $ "IO failed with " <> show somethingElse <> " instead of UndisputableLookupError"
+            somethingElse -> fail $ "IO returned " <> show somethingElse <> " instead of UndisputableLookupError"
     run $ apiEquivalenceVolDB fExpected (\hasFS err -> do
             (db, env) <- Internal.openDBFull hasFS err myParser 5 toSlot
-            forM_ ls' $ \(slot, enc) -> putBlock db slot (BL.lazyByteString enc)
+            putList db ls'
             -- here we intentionally corrupt the state, so that we can get the wanted error
             case env of
               Internal.VolatileDBEnv{..} ->
@@ -327,7 +320,7 @@ prop_VolatileInvalidArg :: HasCallStack => Property
 prop_VolatileInvalidArg = monadicIO $ do
     let fExpected = \case
             Left (InvalidArgumentsError _str) -> return ()
-            somethingElse -> fail $ "IO failed with " <> show somethingElse <> " instead of InvalidArgumentsError"
+            somethingElse -> fail $ "IO returned " <> show somethingElse <> " instead of InvalidArgumentsError"
     run $ apiEquivalenceVolDB fExpected (\hasFS err -> do
             _ <- Internal.openDBFull hasFS err myParser 0 toSlot
             return ()
@@ -351,19 +344,16 @@ prop_VolatileParseFileNameError = monadicIO $ do
             return (isOpen, expectedErr)
         )
 
--- Intentiolly create a file with less blocks than needed and check if we get SlotsPerFileError
-prop_VolatileSlotsPerFileError :: HasCallStack => [MyBlockId] -> Property
-prop_VolatileSlotsPerFileError ls = monadicIO $ do
-    let blocksPerFile = 5
+-- Intentiolly create a file with less blocks than needed and check if we can
+-- succesfully reOpen db.
+prop_VolatileLessThanN :: HasCallStack => [MyBlockId] -> Property
+prop_VolatileLessThanN ls = monadicIO $ do
     let ls' = (\sl -> (sl, Binary.encode $ toBlock sl)) <$> nub ls
-    let fExpected = \case
-            Right (False, Left (VParserError (SlotsPerFileError n _file _file'))) -> n @?= (blocksPerFile)
-            somethingElse -> fail $ "IO failed with " <> show somethingElse <> " instead of SlotsPerFileError"
-    run $ apiEquivalenceVolDB fExpected (\hasFS err -> do
+    run $ apiEquivalenceVolDB (expectVolDBResult (@?=(True,Right ()))) (\hasFS err -> do
             (db, env) <- Internal.openDBFull hasFS err myParser 5 toSlot
             forM_ ls' $ \(slot, enc) -> putBlock db slot (BL.lazyByteString enc)
             SomePair _stHasFS st <- Internal.getInternalState env
-            let nextFd = Internal._currentNextId st
+            let nextFd = Internal._nextNewFileId st
             let path = Internal.filePath nextFd
             closeDB db
             withFile hasFS [path] IO.AppendMode $ \_hndl -> do
@@ -373,3 +363,54 @@ prop_VolatileSlotsPerFileError ls = monadicIO $ do
             closeDB db
             return (isOpen, expectedErr)
         )
+
+prop_VolatileFillFilesFirst :: HasCallStack => [MyBlockId] -> Property
+prop_VolatileFillFilesFirst ls = (length (nub ls)) > 3 ==> monadicIO $ do
+    let nubLs = nub ls
+    let (ls1, ls2) = splitAt (length nubLs - 3) $ nubLs
+    let fExpected = \case
+            Right (Just (Nothing, 0, mp), [], True, path, [(p,s)]) -> (p,s, mp) @?= (path,0, M.empty)
+            somethingelse -> fail $ "failed with " <> show somethingelse
+    run $ apiEquivalenceVolDB fExpected (\hasFS err -> do
+            (db, env) <- Internal.openDBFull hasFS err myParser 3 toSlot
+            putList db ls1
+            st1 <- Internal.getInternalState err env
+            let nextFd = Internal._nextNewFileId st1
+            let path = Internal.filePath nextFd
+            closeDB db
+            withFile hasFS [path] IO.AppendMode $ \_hndl -> do
+                return ()
+            reOpenDB db
+            st2 <- Internal.getInternalState err env
+            putList db ls2
+            st3 <- Internal.getInternalState err env
+            let fileEntry = M.lookup path (Internal._currentMap st2)
+            let bl = Internal._nextNewFileId st2 == Internal._nextNewFileId st1 + 1
+            return (fileEntry, Internal._nextWriteFiles st3, bl, path, Internal._nextWriteFiles st2)
+        )
+
+prop_VolatileDifferentNumBlocks :: HasCallStack
+                                => [MyBlockId] -> [MyBlockId] -> [MyBlockId]
+                                -> Int -> Int -> Int
+                                -> Property
+prop_VolatileDifferentNumBlocks ls1 ls2 ls3 a b c =
+    a < 500 && b < 500 && c < 500 && a > 0 && b > 0 && c > 0
+    ==> monadicIO $ do
+    run $ apiEquivalenceVolDB (expectVolDBResult (@?=())) (\hasFS err -> do
+            (db1, _env) <- Internal.openDBFull hasFS err myParser a toSlot
+            putList db1 ls1
+            closeDB db1
+            (db2, _env) <- Internal.openDBFull hasFS err myParser a toSlot
+            putList db2 ls2
+            closeDB db2
+            (db3, _env) <- Internal.openDBFull hasFS err myParser a toSlot
+            putList db3 ls3
+            closeDB db3
+        )
+
+putList :: Monad m
+        => VolatileDB MyBlockId m
+        -> [MyBlockId]
+        -> m ()
+putList db ls =
+    forM_ ls $ \bid -> putBlock db bid (BL.lazyByteString . Binary.encode . toBlock $ bid)

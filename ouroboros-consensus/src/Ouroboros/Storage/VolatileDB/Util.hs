@@ -18,7 +18,7 @@ import           Ouroboros.Storage.VolatileDB.Types
 ------------------------------------------------------------------------------}
 
 
-parseFd :: String -> Maybe Fd
+parseFd :: String -> Maybe FileId
 parseFd = readMaybe
             . T.unpack
             . snd

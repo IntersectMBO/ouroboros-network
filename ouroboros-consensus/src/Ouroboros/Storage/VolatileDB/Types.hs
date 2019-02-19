@@ -21,7 +21,7 @@ import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
 
-type Fd = Int
+type FileId = Int
 
 -- For each file, we store the latest blockId, the number of blocks
 -- and a Map for its contents.
