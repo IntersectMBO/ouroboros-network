@@ -97,8 +97,7 @@ data SimA s a where
   Atomically   :: STM  s a -> (a -> SimA s b) -> SimA s b
 
   ThrowTo      :: SomeException -> ThreadId -> SimA s a -> SimA s a
-  BlockAsync   :: SimM s a -> (a -> SimA s b) -> SimA s b
-  UnblockAsync :: SimM s a -> (a -> SimA s b) -> SimA s b
+  SetMaskState :: MaskingState  -> SimM s a -> (a -> SimA s b) -> SimA s b
   GetMaskState :: (MaskingState -> SimA s b) -> SimA s b
 
 
@@ -117,7 +116,8 @@ data StmA s a where
   Retry        :: StmA s b
 
 
-data MaskingState = Unmasked | Masked
+data MaskingState = Unmasked | MaskedInterruptible | MaskedUninterruptible
+  deriving (Eq, Ord, Show)
 
 --
 -- Monad class instances
@@ -233,12 +233,17 @@ instance MonadMask (SimM s) where
   mask action = do
       b <- getMaskingState
       case b of
-        Unmasked -> block $ action unblock
-        Masked   -> action block
-    where
-      getMaskingState = SimM  GetMaskState
-      block   a       = SimM (BlockAsync a)
-      unblock a       = SimM (UnblockAsync a)
+        Unmasked              -> block $ action unblock
+        MaskedInterruptible   -> action block
+        MaskedUninterruptible -> action blockUninterruptible
+
+getMaskingState :: SimM s MaskingState
+unblock, block, blockUninterruptible :: SimM s a -> SimM s a
+
+getMaskingState        = SimM  GetMaskState
+unblock              a = SimM (SetMaskState Unmasked a)
+block                a = SimM (SetMaskState MaskedInterruptible a)
+blockUninterruptible a = SimM (SetMaskState MaskedUninterruptible a)
 
 instance MonadFork (SimM s) where
   type ThreadId (SimM s) = ThreadId
@@ -656,36 +661,29 @@ schedule thread@Thread{
       let thread' = thread { threadControl = ThreadControl (k maskst) ctl }
       schedule thread' simstate
 
-    BlockAsync action' k -> do
+    SetMaskState maskst' action' k -> do
       let thread' = thread { threadControl = ThreadControl
                                                (runSimM action')
                                                (MaskFrame k maskst ctl)
-                           , threadMasking = Masked }
-      schedule thread' simstate
-
-    UnblockAsync action' k -> do
-      let thread' = thread { threadControl = ThreadControl
-                                               (runSimM action')
-                                               (MaskFrame k maskst ctl)
-                           , threadMasking = Unmasked }
-      -- we're now unmasked, so check for any pending async exceptions
-      deschedule Interruptable thread' simstate
+                           , threadMasking = maskst' }
+      case maskst' of
+        -- If we're now unmasked then check for any pending async exceptions
+        Unmasked -> deschedule Interruptable thread' simstate
+        _        -> schedule                 thread' simstate
 
     ThrowTo e tid' _ | tid' == tid -> do
       -- Throw to ourself is equivalent to a synchronous throw,
       -- and works irrespective of masking state since it does not block.
       let thread' = thread { threadControl = ThreadControl (Throw e) ctl
-                           , threadMasking = Masked }
+                           , threadMasking = MaskedInterruptible }
       trace <- schedule thread' simstate
       return (Trace time tid (EventThrowTo e tid) trace)
 
     ThrowTo e tid' k -> do
       let thread'   = thread { threadControl = ThreadControl k ctl }
           willBlock = case Map.lookup tid' threads of
-                        -- If the target is blocked then it's interruptible
-                        Just Thread { threadMasking = Masked
-                                    , threadBlocked = False } -> True
-                        _                                     -> False
+                        Just t -> not (threadInterruptible t)
+                        _      -> False
       if willBlock
         then do
           -- The target thread has async exceptions masked so we add the
@@ -698,7 +696,7 @@ schedule thread@Thread{
                  $ trace
         else do
           -- The target thread has async exceptions unmasked, or is masked but
-          -- not running (i.e. blocked in an interruptible operation) then we
+          -- is blocked (and all blocking operations are interruptible) then we
           -- raise the exception in that thread immediately. This will either
           -- cause it to terminate or enter an exception handler.
           -- In the meantime the thread masks new async exceptions. This will
@@ -708,7 +706,7 @@ schedule thread@Thread{
           let adjustTarget t@Thread{ threadControl = ThreadControl _ ctl' } =
                 t { threadControl = ThreadControl (Throw e) ctl'
                   , threadBlocked = False
-                  , threadMasking = Masked }
+                  , threadMasking = MaskedInterruptible }
               simstate'@SimState { threads = threads' }
                          = snd (unblockThreads [tid'] simstate)
               threads''  = Map.adjust adjustTarget tid' threads'
@@ -718,6 +716,14 @@ schedule thread@Thread{
           return $ Trace time tid (EventThrowTo e tid')
                  $ trace
 
+threadInterruptible :: Thread s a -> Bool
+threadInterruptible thread =
+    case threadMasking thread of
+      Unmasked                 -> True
+      MaskedInterruptible
+        | threadBlocked thread -> True  -- blocking operations are interruptible
+        | otherwise            -> False
+      MaskedUninterruptible    -> False
 
 data Deschedule = Yield | Interruptable | Blocked | Terminated
 
@@ -736,14 +742,6 @@ deschedule Yield thread simstate@SimState{runqueue, threads} =
         threads'  = Map.insert (threadId thread) thread threads in
     reschedule simstate { runqueue = runqueue', threads  = threads' }
 
-deschedule Interruptable thread@Thread { threadMasking = Masked } simstate =
-    -- Still masked, can't raise any async exceptions, so just carry on
-    schedule thread simstate
-
-deschedule Interruptable thread@Thread { threadThrowTo = [] } simstate =
-    -- Unmasked but no pending async exceptions, so just carry on
-    schedule thread simstate
-
 deschedule Interruptable thread@Thread {
                            threadId      = tid,
                            threadControl = ThreadControl _ ctl,
@@ -755,9 +753,9 @@ deschedule Interruptable thread@Thread {
     -- We're unmasking, but there are pending blocked async exceptions.
     -- So immediately raise the exception and unblock the blocked thread
     -- if possible.
-    let thread'    = thread { threadControl = ThreadControl (Throw e) ctl
-                            , threadMasking = Masked
-                            , threadThrowTo = etids }
+    let thread' = thread { threadControl = ThreadControl (Throw e) ctl
+                         , threadMasking = MaskedInterruptible
+                         , threadThrowTo = etids }
         (unblocked,
          simstate') = unblockThreads [tid'] simstate
     trace <- schedule thread' simstate'
@@ -766,18 +764,24 @@ deschedule Interruptable thread@Thread {
                        | tid'' <- unblocked ]
              trace
 
-deschedule Blocked thread@Thread { threadThrowTo = [] }
-                   simstate@SimState{threads} =
-    let thread'  = thread { threadBlocked = True }
-        threads' = Map.insert (threadId thread') thread' threads in
-    reschedule simstate { threads = threads' }
+deschedule Interruptable thread simstate =
+    -- Either masked or unmasked but no pending async exceptions.
+    -- Either way, just carry on.
+    schedule thread simstate
 
-deschedule Blocked thread@Thread { threadThrowTo = _ : _ } simstate =
+deschedule Blocked thread@Thread { threadThrowTo = _ : _
+                                 , threadMasking = maskst } simstate
+    | maskst /= MaskedUninterruptible =
     -- We're doing a blocking operation, which is an interrupt point even if
     -- we have async exceptions masked, and there are pending blocked async
     -- exceptions. So immediately raise the exception and unblock the blocked
     -- thread if possible.
     deschedule Interruptable thread { threadMasking = Unmasked } simstate
+
+deschedule Blocked thread simstate@SimState{threads} =
+    let thread'  = thread { threadBlocked = True }
+        threads' = Map.insert (threadId thread') thread' threads in
+    reschedule simstate { threads = threads' }
 
 deschedule Terminated thread simstate@SimState{ curTime = time } = do
     -- This thread is done. If there are other threads blocked in a
@@ -887,7 +891,7 @@ unwindControlStack e thread =
                       -- As per async exception rules, the handler is run masked
                      threadControl = ThreadControl (handler e')
                                                    (MaskFrame k maskst ctl),
-                     threadMasking = Masked
+                     threadMasking = max maskst MaskedInterruptible
                    }
 
 
