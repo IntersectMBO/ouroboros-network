@@ -105,12 +105,12 @@ class MonadThrow m => MonadCatch m where
 --
 class MonadCatch m => MonadMask m where
 
-  {-# MINIMAL mask #-}
-  mask :: ((forall a. m a -> m a) -> m b) -> m b
+  {-# MINIMAL mask, uninterruptibleMask #-}
+  mask, uninterruptibleMask :: ((forall a. m a -> m a) -> m b) -> m b
 
-  mask_ :: m a -> m a
-  mask_ action = mask $ \_ -> action
-
+  mask_, uninterruptibleMask_ :: m a -> m a
+  mask_                action = mask                $ \_ -> action
+  uninterruptibleMask_ action = uninterruptibleMask $ \_ -> action
 
 --
 -- Instance for IO uses the existing base library implementations
@@ -142,4 +142,7 @@ instance MonadMask IO where
 
   mask  = IO.mask
   mask_ = IO.mask_
+
+  uninterruptibleMask  = IO.uninterruptibleMask
+  uninterruptibleMask_ = IO.uninterruptibleMask_
 
