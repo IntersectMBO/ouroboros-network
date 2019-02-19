@@ -322,7 +322,7 @@ prop_sequential =
     forAllCommands smUnused Nothing $ \cmds -> monadicIO $ do
         let test :: HasFS IO h -> PropertyM IO (History (At Cmd) (At Resp), Reason)
             test hasFS = do
-              db <- run $ openDB hasFS EH.monadCatch ["test-volatile"] myParser 7 toSlot
+              db <- run $ openDB hasFS EH.monadCatch myParser 7 toSlot
               let sm' = sm db dbm vdb
               (hist, _model, res) <- runCommands sm' cmds
               run $ closeDB db

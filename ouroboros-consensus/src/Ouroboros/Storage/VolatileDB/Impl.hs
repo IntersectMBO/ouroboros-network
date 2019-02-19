@@ -41,7 +41,7 @@
 -- + there is no modify block operation. Thanks to that we need not keep any rollback journals
 --   to make sure we are safe in case of unexpected shutdowns.
 --
--- Concurency
+-- Concurrency
 --
 -- The same db should only be opened once
 -- Multiple threads can share the same db as concurency if fully supported.
@@ -102,8 +102,6 @@ data VolatileDBEnv m blockId = forall h. VolatileDBEnv {
       _dbHasFS          :: !(HasFS m h)
     , _dbErr            :: !(ErrorHandling (VolatileDBError blockId) m)
     , _dbInternalState  :: !(TMVar m (Maybe (InternalState blockId h)))
-      -- TODO(kde) remove this
-    , _dbFolder         :: !FsPath
     , _maxBlocksPerFile :: !Int
     , _parser           :: !(Parser m blockId)
     , _toSlot           :: (blockId -> SlotNo)
@@ -143,23 +141,21 @@ instance Show blockId => Show (InternalState blockId h) where
 openDB :: (HasCallStack, MonadCatch m, MonadSTM m, Ord blockId)
        => HasFS m h
        -> ErrorHandling (VolatileDBError blockId) m
-       -> FsPath
        -> Parser m blockId
        -> Int
        -> (blockId -> SlotNo)
        -> m (VolatileDB blockId m)
-openDB h e path p m t = fst <$> openDBFull h e path p m t
+openDB h e p m t = fst <$> openDBFull h e p m t
 
 openDBFull :: (HasCallStack, MonadCatch m, MonadSTM m, Ord blockId)
            => HasFS m h
            -> ErrorHandling (VolatileDBError blockId) m
-           -> FsPath
            -> Parser m blockId
            -> Int
            -> (blockId -> SlotNo)
            -> m (VolatileDB blockId m, VolatileDBEnv m blockId)
-openDBFull hasFS err path parser maxBlocksPerFile toSlot = do
-    env <- openDBImpl hasFS err path parser maxBlocksPerFile toSlot
+openDBFull hasFS err parser maxBlocksPerFile toSlot = do
+    env <- openDBImpl hasFS err parser maxBlocksPerFile toSlot
     let db = VolatileDB {
           closeDB        = closeDBImpl  env
         , isOpenDB       = isOpenDBImpl env
@@ -176,18 +172,17 @@ openDBFull hasFS err path parser maxBlocksPerFile toSlot = do
 openDBImpl :: (HasCallStack, MonadThrow m, MonadSTM m, Ord blockId)
            => HasFS m h
            -> ErrorHandling (VolatileDBError blockId) m
-           -> FsPath
            -> Parser m blockId
            -> Int
            -> (blockId -> SlotNo)
            -> m (VolatileDBEnv m blockId)
-openDBImpl hasFS@HasFS{..} err path parser maxBlocksPerFile toSlot =
+openDBImpl hasFS@HasFS{..} err parser maxBlocksPerFile toSlot =
     if maxBlocksPerFile <= 0
     then EH.throwError err $ InvalidArgumentsError "maxBlocksPerFile can't be 0"
     else do
-        st <- mkInternalStateDB hasFS err path parser maxBlocksPerFile toSlot
+        st <- mkInternalStateDB hasFS err parser maxBlocksPerFile toSlot
         stVar <- atomically $ newTMVar $ Just st
-        return $ VolatileDBEnv hasFS err stVar path maxBlocksPerFile parser toSlot
+        return $ VolatileDBEnv hasFS err stVar maxBlocksPerFile parser toSlot
 
 closeDBImpl :: (MonadSTM m)
             => VolatileDBEnv m blockId
@@ -215,7 +210,7 @@ reOpenDBImpl VolatileDBEnv{..} = do
     modifyTMVar _dbInternalState $ \mbSt -> case mbSt of
         Just (st@InternalState{..}) -> return (Just st, ())
         Nothing -> do
-            st <- mkInternalStateDB _dbHasFS _dbErr _dbFolder _parser _maxBlocksPerFile _toSlot
+            st <- mkInternalStateDB _dbHasFS _dbErr _parser _maxBlocksPerFile _toSlot
             return (Just st, ())
 
 getBlockImpl :: (MonadSTM m, MonadCatch m, Ord blockId)
@@ -227,7 +222,7 @@ getBlockImpl env@VolatileDBEnv{..} slot = do
         case Map.lookup slot _currentRevMap of
             Nothing -> return (st, Nothing)
             Just (file, w, n) ->  do
-                bs <- withFile hasFS (_dbFolder ++ [file]) IO.ReadMode $ \hndl -> do
+                bs <- withFile hasFS ([file]) IO.ReadMode $ \hndl -> do
                         _ <- hSeek hndl IO.AbsoluteSeek w
                         hGet hndl n
                 return (st, Just bs)
@@ -315,7 +310,7 @@ tryCollectFile hasFS@HasFS{..} env@VolatileDBEnv{..} slot st@InternalState{..} (
             | not isCurrent -> do
                 let bids = snd <$> Map.elems fileMp
                     rv' = Map.withoutKeys _currentRevMap (Set.fromList bids)
-                removeFile $ _dbFolder ++ [file]
+                removeFile [file]
                 return st{_currentMap = Map.delete file _currentMap, _currentRevMap = rv'}
             | isCurrentNew  -> return st
             | True          -> do
@@ -356,7 +351,7 @@ nextFile HasFS{..} _err VolatileDBEnv{..} st@InternalState{..} = do
     let path = filePath _currentNextId
     hClose _currentWriteHandle
     -- TODO(kde) check if file exists already. Issue #292
-    hndl <- hOpen (_dbFolder ++ [path]) IO.AppendMode
+    hndl <- hOpen [path] IO.AppendMode
     return $ st {
           _currentWriteHandle = hndl
         , _currentWritePath = path
@@ -381,27 +376,31 @@ reOpenFile HasFS{..} _err VolatileDBEnv{..} st@InternalState{..} = do
 mkInternalStateDB :: (HasCallStack, MonadThrow m, Ord blockId)
                   => HasFS m h
                   -> ErrorHandling (VolatileDBError blockId) m
-                  -> FsPath
                   -> Parser m blockId
                   -> Int
                   -> (blockId -> SlotNo)
                   -> m (InternalState blockId h)
-mkInternalStateDB hasFS@HasFS{..} err path parser maxBlocksPerFile toSlot = do
+mkInternalStateDB hasFS@HasFS{..} err parser maxBlocksPerFile toSlot = do
     allFiles <- do
-        createDirectoryIfMissing True path
-        listDirectory path
-    mkInternalState hasFS err path parser maxBlocksPerFile allFiles toSlot
+        createDirectoryIfMissing True []
+        listDirectory []
+    mkInternalState hasFS err parser maxBlocksPerFile allFiles toSlot
 
 mkInternalState :: forall blockId m h. (MonadThrow m, HasCallStack, Ord blockId)
                 => HasFS m h
                 -> ErrorHandling (VolatileDBError blockId) m
-                -> FsPath
                 -> Parser m blockId
                 -> Int
                 -> Set String
+<<<<<<< 9ae6b539c97555cdd4d6d9c01873b89c64d4f71b
                 -> (blockId -> SlotNo)
                 -> m (InternalState blockId h)
 mkInternalState hasFS@HasFS{..} err basePath parser n files toSlot = do
+=======
+                -> (blockId -> SlotNo)
+                -> m (InternalState blockId h)
+mkInternalState hasFS@HasFS{..} err parser n files toSlot = do
+>>>>>>> remove dbFolder from volatile db
     lastFd <- findNextFd err files
     let
         go :: Index blockId
@@ -416,12 +415,12 @@ mkInternalState hasFS@HasFS{..} err basePath parser n files toSlot = do
                         (Nothing, Nothing) -> (filePath 0, 1, Map.insert (filePath 0) (Nothing, 0, Map.empty) mp, 0)
                         (Just _, Nothing) ->
                             error $ "A file was found with less than " <> show n <> " blocks, but there are no files parsed.\
-                                   \ This is a strong indication that some other process modified internal files of the db"
+                                   \ This is a strong indication that some other process modified internal files of the db."
                         (Nothing, Just lst) -> let fd' = lst + 1 in
                             -- If all files are full, we just open a new file.
                             (filePath fd', lst + 2, Map.insert (filePath fd') (Nothing, 0, Map.empty) mp, 0)
                         (Just (wrfile, size), Just lst) -> (wrfile, lst + 1, mp, size)
-                hndl <- hOpen (basePath ++ [fileToWrite]) IO.AppendMode
+                hndl <- hOpen [fileToWrite] IO.AppendMode
                 return $ InternalState {
                       _currentWriteHandle = hndl
                     , _currentWritePath = fileToWrite
@@ -432,7 +431,7 @@ mkInternalState hasFS@HasFS{..} err basePath parser n files toSlot = do
                     , _currentRevMap = revMp
                 }
             file : restFiles -> do
-                let path = basePath ++ [file]
+                let path = [file]
                 (offset, fileMp) <- parse parser hasFS err path
                 let mMaxBlockId = fst <$> maxSlotMap fileMp toSlot
                 let nBlocks = Map.size fileMp
