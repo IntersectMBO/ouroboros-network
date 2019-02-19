@@ -39,13 +39,14 @@ muxJobs :: (MonadSTM m, MonadSay m) =>
 muxJobs (MiniProtocolDescriptions udesc) wfn rfn sdufn = do
     tbl <- setupTbl
     tq <- atomically $ newTBQueue 100
+    cnt <- newTVarM 0
     let pmss = PerMuxSS tbl tq wfn rfn sdufn
         jobs = [ demux pmss
-               , mux pmss
+               , mux cnt pmss
                , muxControl pmss ModeResponder
                , muxControl pmss ModeInitiator
                ]
-    mjobs <- mapM (mpsJob pmss) $ M.elems udesc
+    mjobs <- mapM (mpsJob cnt pmss) $ M.elems udesc
     return $ jobs ++ concat mjobs
 
   where
@@ -59,12 +60,21 @@ muxJobs (MiniProtocolDescriptions udesc) wfn rfn sdufn = do
         b <- atomically $ newTBQueue 2
         return $ M.insert (p, ModeInitiator) a $ M.insert (p, ModeResponder) b t
 
-    mpsJob pmss mpd = do
+    mpsJob cnt pmss mpd = do
         w_i <- atomically newEmptyTMVar
         w_r <- atomically newEmptyTMVar
 
-        return [ mpdInitiator mpd $ muxChannel pmss (mpdId mpd) ModeInitiator w_i
-               , mpdResponder mpd $ muxChannel pmss (mpdId mpd) ModeResponder w_r]
+        return [ mpdInitiator mpd (muxChannel pmss (mpdId mpd) ModeInitiator w_i cnt)
+                     >> mpsJobExit cnt
+               , mpdResponder mpd (muxChannel pmss (mpdId mpd) ModeResponder w_r cnt)
+                     >> mpsJobExit cnt
+               ]
+
+    -- cnt represent the number of SDUs that are queued but not yet sent.
+    -- job threads will be prevented from exiting until all SDUs have been transmitted.
+    mpsJobExit cnt = atomically $ do
+        c <- readTVar cnt
+        unless (c == 0) retry
 
 muxControl :: (MonadSTM m, MonadSay m) =>
     PerMuxSharedState m ->
@@ -85,14 +95,16 @@ muxChannel :: (MonadSTM m, MonadSay m) =>
     MiniProtocolId ->
     MiniProtocolMode ->
     TMVar m BL.ByteString ->
+    TVar m Int ->
     Channel m BL.ByteString
-muxChannel pmss mid md w =
+muxChannel pmss mid md w cnt =
     Channel {send, recv}
   where
     send encoding = do
         -- We send CBOR encoded messages by encoding them into by ByteString
         -- forwarding them to the 'mux' thread, see 'Desired servicing semantics'.
         --say $ printf "send mid %s mode %s" (show mid) (show md)
+        atomically $ modifyTVar' cnt (+ 1)
         atomically $ putTMVar w encoding
         atomically $ writeTBQueue (tsrQueue pmss) (TLSRDemand mid md (Wanton w))
     recv = do

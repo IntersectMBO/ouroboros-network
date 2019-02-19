@@ -117,6 +117,7 @@ test-suite tests
                        Test.Ouroboros.Network.Protocol.ReqResp
                        Test.Ouroboros.Network.Protocol.BlockFetch
                        Test.Ouroboros.Network.Node
+                       Test.Mux
                        Test.Pipe
                        Test.Socket
   default-language:    Haskell2010
@@ -128,6 +129,7 @@ test-suite tests
                        io-sim            >=0.1 && < 0.2,
 
                        array,
+                       async,
                        bytestring,
                        cborg,
                        containers,

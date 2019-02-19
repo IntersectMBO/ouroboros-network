@@ -139,13 +139,13 @@ encodeMuxSDU sdu =
 -- that each active demand gets a `maxSDU`s work of data processed
 -- each time it gets to the front of the queue
 mux :: (MonadSTM m)
-     => PerMuxSharedState m
+     => TVar m Int
+     -> PerMuxSharedState m
      -> m ()
-mux pmss = do
+mux cnt pmss = do
     w <- atomically $ readTBQueue $ tsrQueue pmss
     case w of
-         TLSRDemand mid md d
-             -> processSingleWanton pmss mid md d >> mux pmss
+         TLSRDemand mid md d -> processSingleWanton pmss mid md d cnt >> mux cnt pmss
 
 -- | Pull a `maxSDU`s worth of data out out the `Wanton` - if there is
 -- data remaining requeue the `TranslocationServiceRequest` (this
@@ -156,8 +156,9 @@ processSingleWanton :: MonadSTM m
                     -> MiniProtocolId
                     -> MiniProtocolMode
                     -> Wanton m
+                    -> TVar m Int
                     -> m ()
-processSingleWanton pmss mpi md wanton = do
+processSingleWanton pmss mpi md wanton cnt = do
     maxSDU <- sduSize pmss
     blob <- atomically $ do
       -- extract next SDU
@@ -170,10 +171,12 @@ processSingleWanton pmss mpi md wanton = do
         -- must be inside the same STM transaction.
         do putTMVar (want wanton) rest
            writeTBQueue (tsrQueue pmss) (TLSRDemand mpi md wanton)
+           modifyTVar' cnt (+ 1)
       -- return data to send
       pure frag
     let sdu = MuxSDU (RemoteClockModel 0) mpi md (fromIntegral $ BL.length blob) blob
     void $ write pmss sdu
+    atomically $ modifyTVar' cnt (\a -> a - 1)
     --paceTransmission tNow
 
 
