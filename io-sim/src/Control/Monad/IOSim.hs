@@ -43,7 +43,9 @@ import           Data.Dynamic (Dynamic, toDyn)
 
 import           Control.Exception
                    ( Exception(..), SomeException
-                   , ErrorCall(..), throw, assert )
+                   , ErrorCall(..), throw, assert
+                   , asyncExceptionToException
+                   , asyncExceptionFromException )
 import qualified System.IO.Error as IO.Error (userError)
 
 import           Control.Monad.ST.Lazy
@@ -60,6 +62,8 @@ import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM hiding (TVar, ThreadId)
 import qualified Control.Monad.Class.MonadSTM as MonadSTM
+import           Control.Monad.Class.MonadAsync hiding (Async)
+import qualified Control.Monad.Class.MonadAsync as MonadAsync
 import           Control.Monad.Class.MonadTimer
 
 {-# ANN module "HLint: ignore Use readTVarIO" #-}
@@ -312,6 +316,29 @@ instance MonadSTM (SimM s) where
   writeTBQueue      = writeTBQueueDefault
   isEmptyTBQueue    = isEmptyTBQueueDefault
   isFullTBQueue     = isFullTBQueueDefault
+
+data Async s a = Async !ThreadId (TMVar (SimM s) (Either SomeException a))
+
+data AsyncCancelled = AsyncCancelled
+  deriving Show
+
+instance Exception AsyncCancelled where
+  fromException = asyncExceptionFromException
+  toException   = asyncExceptionToException
+
+instance MonadAsync (SimM s) where
+  type Async (SimM s) = Async s
+
+  async action = do
+    var <- newEmptyTMVarM
+    tid <- mask $ \restore ->
+             fork $ try (restore action) >>= atomically . putTMVar var
+    return (Async tid var)
+
+  cancel (Async tid _) = throwTo tid AsyncCancelled
+
+  waitCatchSTM (Async _ var) = readTMVar var
+  pollSTM      (Async _ var) = tryReadTMVar var
 
 instance MonadST (SimM s) where
   withLiftST f = f liftST
