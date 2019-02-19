@@ -24,7 +24,9 @@ import Network.TypedProtocol.PingPong.Examples
 import Network.TypedProtocol.PingPong.Codec
 
 import Data.Functor.Identity (Identity (..))
+import Control.Monad (void)
 import Control.Monad.Class.MonadSTM
+import Control.Monad.Class.MonadFork
 import Control.Monad.IOSim
 
 import Data.List (inits, tails)
@@ -295,10 +297,10 @@ pipelineInterleaving omax cs0 reqs0 resps0 =
 
 -- | Run a non-pipelined client and server over a channel using a codec.
 --
-prop_channel :: MonadSTM m => NonNegative Int -> m Bool
+prop_channel :: (MonadSTM m, MonadFork m) => NonNegative Int -> m Bool
 prop_channel (NonNegative n) = do
     (clientChannel, serverChannel) <- createConnectedChannels
-    fork $ runPeer codec clientChannel client >> return ()
+    void $ fork $ runPeer codec clientChannel client >> return ()
     mn' <- runPeer codec serverChannel server
     case mn' of
       Left failure -> fail failure

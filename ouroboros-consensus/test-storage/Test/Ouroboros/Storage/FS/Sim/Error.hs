@@ -415,7 +415,7 @@ instance MonadTrans TrSimErrorFS where
 instance MonadUnliftIO m => MonadUnliftIO (SimErrorFS m) where
   withRunInIO = wrappedWithRunInIO SimErrorFS unSimErrorFS
 
-instance (MonadFork (SimErrorFS m) , MonadSTM m) => MonadSTM (SimErrorFS m) where
+instance (MonadSTM (SimErrorFS m) , MonadSTM m) => MonadSTM (SimErrorFS m) where
   type Tr (SimErrorFS m)      = TrSimErrorFS (Tr m)
   type TVar (SimErrorFS m)    = TVar m
   type TMVar (SimErrorFS m)   = TMVar m

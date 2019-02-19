@@ -32,6 +32,7 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadTimer
 import qualified Control.Monad.IOSim as Sim
 
@@ -81,6 +82,7 @@ partitionProbe
 test_blockGenerator
   :: forall m.
      ( MonadSTM m
+     , MonadFork m
      , MonadTimer m
      , Show (Time m)
      )
@@ -96,6 +98,7 @@ test_blockGenerator chain slotDuration = isValid <$> withProbe (experiment slotD
 
     experiment
       :: ( MonadSTM m
+         , MonadFork m
          , MonadTimer m
          )
       => Duration (Time m)
@@ -103,7 +106,7 @@ test_blockGenerator chain slotDuration = isValid <$> withProbe (experiment slotD
       -> m ()
     experiment slotDur p = do
       getBlock <- blockGenerator slotDur (Chain.toOldestFirst chain)
-      fork $ go getBlock
+      void $ fork $ go getBlock
      where
       go getBlock = do
         mb <- atomically $ getBlock
@@ -123,6 +126,7 @@ prop_blockGenerator_IO (TestBlockChain chain) (Positive slotDuration) =
     ioProperty $ test_blockGenerator chain (slotDuration * 100)
 
 coreToRelaySim :: ( MonadSTM m
+                  , MonadFork m
                   , MonadTimer m
                   , MonadSay m
                   , MonadTimer m
@@ -140,12 +144,12 @@ coreToRelaySim duplex chain slotDuration coreTrDelay relayTrDelay probe = do
     then createTwoWaySubscriptionChannels relayTrDelay coreTrDelay
     else createOneWaySubscriptionChannels coreTrDelay relayTrDelay
 
-  fork $ do
+  void $ fork $ do
     cps <- coreNode (CoreId 0) slotDuration (Chain.toOldestFirst chain) coreChans
-    fork $ observeChainProducerState (CoreId 0) probe cps
-  fork $ void $ do
+    void $ fork $ observeChainProducerState (CoreId 0) probe cps
+  void $ fork $ void $ do
     cps <- relayNode (RelayId 0) Genesis relayChans
-    fork $ observeChainProducerState (RelayId 0) probe cps
+    void $ fork $ observeChainProducerState (RelayId 0) probe cps
     atomically $ do
       chain' <- chainState <$> readTVar cps
       unless (chain == chain') retry
@@ -197,6 +201,7 @@ prop_coreToRelay (TestNodeSim chain slotDuration coreTrDelay relayTrDelay) =
 
 -- Node graph: c → r → r
 coreToRelaySim2 :: ( MonadSTM m
+                   , MonadFork m
                    , MonadTimer m
                    , MonadSay m
                    , MonadTimer m
@@ -215,15 +220,15 @@ coreToRelaySim2 chain slotDuration coreTrDelay relayTrDelay probe = do
   (cr1, r1c) <- createOneWaySubscriptionChannels coreTrDelay relayTrDelay
   (r1r2, r2r1) <- createOneWaySubscriptionChannels relayTrDelay relayTrDelay
 
-  fork $ void $ do
+  void $ fork $ void $ do
     cps <- coreNode (CoreId 0) slotDuration (Chain.toOldestFirst chain) cr1
-    fork $ observeChainProducerState (CoreId 0) probe cps
-  fork $ void $ do
+    void $ fork $ observeChainProducerState (CoreId 0) probe cps
+  void $ fork $ void $ do
     cps <- relayNode (RelayId 1) Genesis(r1c <> r1r2)
-    fork $ observeChainProducerState (RelayId 1) probe cps
-  fork $ void $ do
+    void $ fork $ observeChainProducerState (RelayId 1) probe cps
+  void $ fork $ void $ do
     cps <- relayNode (RelayId 2) Genesis r2r1
-    fork $ observeChainProducerState (RelayId 2) probe cps
+    void $ fork $ observeChainProducerState (RelayId 2) probe cps
 
     atomically $ do
       chain' <- chainState <$> readTVar cps
@@ -261,6 +266,7 @@ prop_coreToRelay2 (TestNodeSim chain slotDuration coreTrDelay relayTrDelay) =
 coreToCoreViaRelaySim
   :: forall m.
      ( MonadSTM m
+     , MonadFork m
      , MonadTimer m
      , MonadSay m
      , MonadTimer m
@@ -285,19 +291,19 @@ coreToCoreViaRelaySim chain1 chain2 slotDuration coreTrDelay relayTrDelay probe 
   (c1r1, r1c1) <- createTwoWaySubscriptionChannels coreTrDelay relayTrDelay
   (r1c2, c2r1) <- createTwoWaySubscriptionChannels relayTrDelay coreTrDelay
 
-  fork $ void $ do
+  void $ fork $ void $ do
     cps <- coreNode (CoreId 1) slotDuration (Chain.toOldestFirst chain1) c1r1
-    fork $ observeChainProducerState (CoreId 1) probe cps
+    void $ fork $ observeChainProducerState (CoreId 1) probe cps
     checkTermination donevar cps lastSlot lastBlockBody
 
-  fork $ void $ do
+  void $ fork $ void $ do
     cps <- relayNode (RelayId 1) Genesis (r1c1 <> r1c2)
-    fork $ observeChainProducerState (RelayId 1) probe cps
+    void $ fork $ observeChainProducerState (RelayId 1) probe cps
     checkTermination donevar cps lastSlot lastBlockBody
 
-  fork $ void $ do
+  void $ fork $ void $ do
     cps <- coreNode (CoreId 2) slotDuration (Chain.toOldestFirst chain2) c2r1
-    fork $ observeChainProducerState (CoreId 2) probe cps
+    void $ fork $ observeChainProducerState (CoreId 2) probe cps
     checkTermination donevar cps lastSlot lastBlockBody
     
   -- wait until all the nodes are ready
@@ -402,6 +408,7 @@ instance Arbitrary TestNetworkGraph where
 
 networkGraphSim :: forall m.
                   ( MonadSTM m
+                  , MonadFork m
                   , MonadTimer m
                   , MonadSay m
                   , MonadTimer m
