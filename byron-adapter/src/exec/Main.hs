@@ -4,7 +4,7 @@
 {-# LANGUAGE RankNTypes #-}
 
 import Control.Concurrent (myThreadId)
-import Control.Concurrent.STM (atomically, retry)
+import Control.Concurrent.STM (STM, atomically, retry)
 import Control.Exception (catch, throwIO)
 import Control.Lens ((^.))
 import qualified Control.Lens as Lens (to)
@@ -67,40 +67,59 @@ byronProxyMain
   -> ByronProxy
   -> IO x
 byronProxyMain genesisBlock epochSlots indexDB db bp = getStdGen >>= mainLoop Nothing
+
   where
+
+  waitForNext
+    :: Maybe (BestTip BlockHeader)
+    -> STM (Either (BestTip BlockHeader) Atom)
+  waitForNext mBt = do
+    mBt' <- bestTip bp
+    if mBt == mBt'
+    -- If recvAtom retires then the whole STM will retry and we'll check again
+    -- for the best tip to have changed.
+    then fmap Right (recvAtom bp)
+    else case mBt' of
+        Nothing -> retry
+        Just bt -> pure (Left bt)
+
   mainLoop :: Maybe (BestTip BlockHeader) -> StdGen -> IO x
   mainLoop mBt rndGen = do
     -- Wait until the best tip has changed from the last one we saw. That can
     -- mean the header changed and/or the list of peers who announced it
     -- changed.
-    bt <- atomically $ do
-      mBt' <- bestTip bp
-      if mBt == mBt'
-      then retry
-      else case mBt' of
-        Nothing -> retry
-        Just bt -> pure bt
-    -- Find our tip of chain from the index.
-    mTip <- Index.indexAt indexDB Index.Tip
-    let tipHash = case mTip of
-          Nothing      -> headerHash genesisBlock
-          Just (hh, _) -> Index.getOwnHash hh
-    -- Pick a peer from the list of announcers at random and download
-    -- the chain.
-        (peer, rndGen') = pickRandom rndGen (btPeers bt)
-    putStrLn $ mconcat
-      [ "Downloading chain with tip hash "
-      , show tipHash
-      , " from "
-      , show peer
-      ]
-    _ <- downloadChain
-      bp
-      peer
-      (headerHash (btTip bt))
-      [tipHash]
-      streamer
-    mainLoop (Just bt) rndGen'
+    next <- atomically $ waitForNext mBt
+    case next of
+      -- TODO we don't get to know from where it was received. Problem? Maybe
+      -- not.
+      Right atom -> do
+        putStrLn $ mconcat
+          [ "Got atom: "
+          , show atom
+          ]
+        mainLoop mBt rndGen
+      Left bt -> do
+        -- Find our tip of chain from the index.
+        mTip <- Index.indexAt indexDB Index.Tip
+        let tipHash = case mTip of
+              Nothing      -> headerHash genesisBlock
+              Just (hh, _) -> Index.getOwnHash hh
+        -- Pick a peer from the list of announcers at random and download
+        -- the chain.
+            (peer, rndGen') = pickRandom rndGen (btPeers bt)
+        putStrLn $ mconcat
+          [ "Downloading chain with tip hash "
+          , show tipHash
+          , " from "
+          , show peer
+          ]
+        _ <- downloadChain
+          bp
+          peer
+          (headerHash (btTip bt))
+          [tipHash]
+          streamer
+        mainLoop (Just bt) rndGen'
 
   -- This is what we do with the blocks that come in from streaming.
   streamer :: StreamBlocks Block IO ()
