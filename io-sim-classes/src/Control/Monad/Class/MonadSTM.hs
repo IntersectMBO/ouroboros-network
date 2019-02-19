@@ -5,7 +5,6 @@
 {-# LANGUAGE TypeFamilyDependencies #-}
 module Control.Monad.Class.MonadSTM
   ( MonadSTM (..)
-  , MonadFork (..)
 
   -- * Default 'TMVar' implementation
   , TMVarDefault (..)
@@ -54,9 +53,8 @@ import           Control.Monad.Reader
 import           GHC.Stack
 import           Numeric.Natural (Natural)
 
-import           Control.Monad.Class.MonadFork
 
-class (MonadFork m, Monad (Tr m)) => MonadSTM m where
+class (Monad m, Monad (Tr m)) => MonadSTM m where
 
   -- STM transactions
   type Tr   m = (n :: * -> *) | n -> m

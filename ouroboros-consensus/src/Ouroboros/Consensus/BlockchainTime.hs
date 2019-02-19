@@ -48,7 +48,9 @@ import           Data.Proxy
 import           Data.Time
 import           Data.Time.Clock.System
 
+import           Control.Monad (void)
 import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadTimer
 
 import           Ouroboros.Consensus.Util.STM
@@ -95,13 +97,13 @@ finalSlot (NumSlots n) = Slot (fromIntegral n)
 --
 -- NOTE: The number of slots is only there to make sure we terminate the
 -- thread (otherwise the system will keep waiting).
-testBlockchainTime :: forall m. (MonadSTM m, MonadTimer m)
+testBlockchainTime :: forall m. (MonadSTM m, MonadFork m, MonadTimer m)
                    => NumSlots           -- ^ Number of slots
                    -> Duration (Time m)  -- ^ Slot duration
                    -> m (BlockchainTime m)
 testBlockchainTime (NumSlots numSlots) slotLen = do
     slotVar <- atomically $ newTVar firstSlot
-    fork $ replicateM_ numSlots $ do
+    void $ fork $ replicateM_ numSlots $ do
         threadDelay slotLen
         atomically $ modifyTVar slotVar succ
     return BlockchainTime {
@@ -125,7 +127,7 @@ realBlockchainTime :: SlotLength -> SystemStart -> IO (BlockchainTime IO)
 realBlockchainTime slotLen start = do
     first   <- getCurrentSlotIO slotLen start
     slotVar <- atomically $ newTVar first
-    fork $ forever $ do
+    void $ fork $ forever $ do
       -- In each iteration of the loop, we recompute how long to wait until
       -- the next slot. This minimizes clock skew.
       next <- waitUntilNextSlotIO slotLen start

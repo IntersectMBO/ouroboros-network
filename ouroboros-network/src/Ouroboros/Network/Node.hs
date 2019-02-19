@@ -99,6 +99,7 @@ chainValidation peerChainVar candidateChainVar = do
 chainTransferProtocol :: forall block m.
                          ( HasHeader block
                          , MonadSTM m
+                         , MonadFork m
                          , MonadTimer m
                          )
                       => Duration (Time m)
@@ -117,7 +118,7 @@ chainTransferProtocol delay inputVar outputVar = do
                 check (Chain.headPoint input /= curPoint)
                 writeTVar stateVar (Chain.headPoint input)
                 return input
-      fork $ threadDelay delay >> atomically (writeTVar outputVar input)
+      void $ fork $ threadDelay delay >> atomically (writeTVar outputVar input)
 
 -- | Simulated transfer protocol.
 --
@@ -219,6 +220,7 @@ createTwoWaySubscriptionChannels trDelay1 trDelay2 = do
 blockGenerator :: forall block m.
                   ( HasHeader block
                   , MonadSTM m
+                  , MonadFork m
                   , MonadTimer m
                   )
                => Duration (Time m)
@@ -237,7 +239,7 @@ blockGenerator slotDuration chain = do
   -- communicate through a @TBQueue@, it is enough to make it very shallow,
   -- since it is supposed to be written and read once a slot time.
   var <- atomically (newTBQueue 1)
-  fork $ go var Nothing chain
+  void $ fork $ go var Nothing chain
   return (readTBQueue var)
  where
   go :: TBQueue m (Maybe block) -> Maybe Slot -> [block] -> m ()
@@ -318,6 +320,7 @@ loggingChannel ident showSend showRecv Duplex{send,recv} = Duplex {
 forkRelayKernel :: forall block m.
                 ( HasHeader block
                 , MonadSTM m
+                , MonadFork m
                 )
                 => [TVar m (Chain block)]
                 -- ^ These will track the upstream producers.
@@ -334,7 +337,7 @@ forkRelayKernel upstream cpsVar = do
     upstream
     candidateChainVars
   -- chain selection thread
-  fork $ longestChainSelection candidateChainVars cpsVar
+  void $ fork $ longestChainSelection candidateChainVars cpsVar
 
 -- | Relay node, which takes @'NodeChannels'@ to communicate with its peers
 -- (upstream and downstream).  If it is subscribed to n nodes and has
@@ -347,6 +350,7 @@ forkRelayKernel upstream cpsVar = do
 -- a core node.
 relayNode :: forall m block.
              ( MonadSTM m
+             , MonadFork m
              , MonadSay m
              , HasHeader block
              , Show block
@@ -391,7 +395,7 @@ relayNode nid initChain chans = do
     startConsumer cid channel = do
       chainVar <- atomically $ newTVar Genesis
       let consumer = chainSyncClientPeer (chainSyncClientExample chainVar pureClient)
-      fork $ void $ useCodecWithDuplex (loggingChannel (ConsumerId nid cid) (withSomeTransition show) (withSomeTransition show) channel) codec consumer
+      void $ fork $ void $ useCodecWithDuplex (loggingChannel (ConsumerId nid cid) (withSomeTransition show) (withSomeTransition show) channel) codec consumer
       return chainVar
 
     startProducer :: Peer ChainSyncProtocol (ChainSyncMessage block (Point block))
@@ -404,7 +408,7 @@ relayNode nid initChain chans = do
       -- use 'void' because 'fork' only works with 'm ()'
       -- No sense throwing on Unexpected right? since fork will just squelch
       -- it. FIXME: use async...
-      fork $ void $ useCodecWithDuplex (loggingChannel (ProducerId nid pid) (withSomeTransition show) (withSomeTransition show) channel) codec producer
+      void $ fork $ void $ useCodecWithDuplex (loggingChannel (ProducerId nid pid) (withSomeTransition show) (withSomeTransition show) channel) codec producer
 
 -- | Core node simulation.  Given a chain it will generate a @block@ at its
 -- slot time (i.e. @slotDuration * blockSlot block@).  When the node finds out
@@ -419,6 +423,7 @@ relayNode nid initChain chans = do
 forkCoreKernel :: forall block m.
                   ( HasHeader block
                   , MonadSTM m
+                  , MonadFork m
                   , MonadTimer m
                   )
                => Duration (Time m)
@@ -430,7 +435,7 @@ forkCoreKernel :: forall block m.
                -> m ()
 forkCoreKernel slotDuration gchain fixupBlock cpsVar = do
   getBlock <- blockGenerator slotDuration gchain
-  fork $ applyGeneratedBlock getBlock
+  void $ fork $ applyGeneratedBlock getBlock
 
   where
     applyGeneratedBlock
@@ -469,6 +474,7 @@ forkCoreKernel slotDuration gchain fixupBlock cpsVar = do
 --
 coreNode :: forall m.
         ( MonadSTM m
+        , MonadFork m
         , MonadTimer m
         , MonadSay m
         )

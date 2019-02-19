@@ -132,6 +132,7 @@ chainSyncDemo
   :: forall m.
      ( MonadST m
      , MonadSTM m
+     , MonadFork m
      )
   => Duplex m m Encoding ByteString
   -> Duplex m m Encoding ByteString
@@ -152,8 +153,8 @@ chainSyncDemo clientChan serverChan (ChainProducerStateForkTest cps chain) =
 
       codec = hoistCodec liftST codecChainSync
 
-  fork (void $ useCodecWithDuplex serverChan codec (chainSyncServerPeer server))
-  fork (void $ useCodecWithDuplex clientChan codec (chainSyncClientPeer client))
+  void $ fork (void $ useCodecWithDuplex serverChan codec (chainSyncServerPeer server))
+  void $ fork (void $ useCodecWithDuplex clientChan codec (chainSyncClientPeer client))
 
   atomically $ do
     done <- readTVar doneVar

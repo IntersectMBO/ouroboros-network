@@ -90,7 +90,7 @@ prop_stm_graph_sim g =
     -- that all other threads finished, but perhaps we should and structure
     -- the graph tests so that's the case.
 
-prop_stm_graph :: MonadSTM m => TestThreadGraph -> m ()
+prop_stm_graph :: (MonadFork m, MonadSTM m) => TestThreadGraph -> m ()
 prop_stm_graph (TestThreadGraph g) = do
     vars <- listArray (bounds g) <$>
             sequence [ atomically (newTVar False) | _ <- vertices g ]

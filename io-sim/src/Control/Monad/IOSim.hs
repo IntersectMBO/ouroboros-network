@@ -60,7 +60,7 @@ import qualified Control.Monad.Class.MonadFork as MonadFork
 import           Control.Monad.Class.MonadThrow as MonadThrow
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadSTM hiding (TVar, ThreadId)
+import           Control.Monad.Class.MonadSTM hiding (TVar)
 import qualified Control.Monad.Class.MonadSTM as MonadSTM
 import           Control.Monad.Class.MonadAsync hiding (Async)
 import qualified Control.Monad.Class.MonadAsync as MonadAsync

@@ -12,6 +12,7 @@ module Ouroboros.Network.Pipe (
 import           Control.Concurrent.Async
 import           Control.Monad
 import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadTimer
 import           Control.Monad.ST (stToIO)
 import           Data.Bits
@@ -52,7 +53,7 @@ setupMux :: Mx.MiniProtocolDescriptions IO -> PipeCtx -> IO ()
 setupMux mpds ctx = do
     jobs <- Mx.muxJobs mpds (writePipe ctx) (readPipe ctx) (sduSize ctx)
     aids <- mapM async jobs
-    fork (watcher aids)
+    void $ fork (watcher aids)
 
   where
     watcher as = do
@@ -147,7 +148,7 @@ demo chain0 updates = do
     startPipe b_mps (hndRead1, hndWrite2)
     startPipe a_mps (hndRead2, hndWrite1)
 
-    fork $ sequence_
+    void $ fork $ sequence_
         [ do threadDelay 10000 -- just to provide interest
              atomically $ do
                  p <- readTVar producerVar

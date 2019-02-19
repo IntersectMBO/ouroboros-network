@@ -25,6 +25,7 @@ import           Data.Proxy
 import           Data.Type.Coercion
 
 import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadFork
 
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types
@@ -82,7 +83,10 @@ instance MonadTrans TrSimFS where
   lift = TrSimFS
 
 instance MonadFork m => MonadFork (SimFS m) where
+  type ThreadId (SimFS m) = ThreadId m
   fork (SimFS f) = SimFS $ ReaderT $ \e -> fork (runReaderT f e)
+  myThreadId     = lift myThreadId
+  throwTo tid e  = lift (throwTo tid e)
 
 instance (MonadFork (SimFS m) , MonadSTM m) => MonadSTM (SimFS m) where
   type Tr (SimFS m)      = TrSimFS (Tr m)
