@@ -17,6 +17,7 @@ import qualified Data.Set as Set
 
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadTimer
 
 import           Protocol.Channel
@@ -46,6 +47,7 @@ import           Ouroboros.Consensus.Util.STM
 -- each node.
 broadcastNetwork :: forall m p.
                     ( MonadSTM   m
+                    , MonadFork  m
                     , MonadTimer m
                     , MonadSay   m
                     , DemoProtocolConstraints p

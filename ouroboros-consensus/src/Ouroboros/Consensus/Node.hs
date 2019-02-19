@@ -35,6 +35,7 @@ import           Data.Text (Text)
 
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadFork
 
 import           Protocol.Channel
 import           Protocol.Codec
@@ -135,6 +136,7 @@ data NodeCallbacks m blk = NodeCallbacks {
 
 nodeKernel :: forall m blk up.
               ( MonadSTM m
+              , MonadFork m
               , MonadSay m
               , ProtocolLedgerView blk
               , Eq                 blk
@@ -181,6 +183,7 @@ data InternalState m up blk = IS {
 
 initInternalState :: forall m up blk.
                      ( MonadSTM m
+                     , MonadFork m
                      , ProtocolLedgerView blk
                      , Eq                 blk
                      , Ord up
@@ -216,6 +219,7 @@ initInternalState cfg btime initChain initLedger initState callbacks = do
 
 forkMonitorDownloads :: forall m up blk.
                         ( MonadSTM m
+                        , MonadFork m
                         , MonadSay m
                         , ProtocolLedgerView blk
                         , Eq                 blk
@@ -697,6 +701,7 @@ data NetworkProvides m up blk hdr = NetworkProvides {
 
 initNetworkLayer :: forall m up hdr blk.
                     ( MonadSTM m
+                    , MonadFork m
                     , HasHeader hdr
                     , hdr ~ blk     -- TODO: for now
                     , Eq blk        -- TODO: for now
@@ -716,7 +721,7 @@ initNetworkLayer NetworkRequires{..} = do
     -- We continuously monitor the chain candidates, and download one as soon
     -- as one becomes available. This is merely a mock implementation, we make
     -- all chains available as soon as they are candidates.
-    fork $ forever $ atomically $ do
+    void $ fork $ forever $ atomically $ do
       downloaded <- readTVar downloadedVar
       candidates <- (concatMap Map.elems . candidates) <$> nrCandidates
       if candidates == downloaded
@@ -725,7 +730,7 @@ initNetworkLayer NetworkRequires{..} = do
 
     -- We also continously monitor the our own chain, so that we can update our
     -- downstream peers when our chain changes
-    fork $ forever $ atomically $ do
+    void $ fork $ forever $ atomically $ do
       chain <- nrCurrentChain
       cps   <- readTVar cpsVar
       -- TODO: We should probably not just compare the slot
@@ -737,11 +742,11 @@ initNetworkLayer NetworkRequires{..} = do
           npDownloaded = readTVar downloadedVar
         , npAddDownstream = \NodeComms{..} -> do
             let producer = chainSyncServerPeer (chainSyncServerExample () cpsVar)
-            fork $ void $ ncWithChan $ \chan ->
+            void $ fork $ void $ ncWithChan $ \chan ->
               useCodecWithDuplex chan ncCodec producer
         , npAddUpstream = \up NodeComms{..} -> do
             let consumer = nrSyncClient up
-            fork $ void $ ncWithChan $ \chan ->
+            void $ fork $ void $ ncWithChan $ \chan ->
               useCodecWithDuplex chan ncCodec (chainSyncClientPeer consumer)
         }
 

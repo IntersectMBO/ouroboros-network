@@ -32,7 +32,9 @@ import Network.TypedProtocol.Pipelined
 import Network.TypedProtocol.Channel
 import Network.TypedProtocol.Codec
 
+import Control.Monad (void)
 import Control.Monad.Class.MonadSTM
+import Control.Monad.Class.MonadFork
 
 import Numeric.Natural (Natural)
 
@@ -122,7 +124,7 @@ runDecoderWithChannel Channel{recv} = go
 --
 runPipelinedPeer
   :: forall ps (st :: ps) pr failure bytes m a.
-     MonadSTM m
+     (MonadSTM m, MonadFork m)
   => Natural
   -> Codec ps failure m bytes
   -> Channel m bytes
@@ -131,7 +133,7 @@ runPipelinedPeer
 runPipelinedPeer maxOutstanding codec channel (PeerPipelined peer) = do
     receiveQueue <- atomically $ newTBQueue maxOutstanding
     collectQueue <- atomically $ newTBQueue maxOutstanding
-    fork $ runPipelinedPeerReceiverQueue receiveQueue collectQueue
+    void $ fork $ runPipelinedPeerReceiverQueue receiveQueue collectQueue
                                          codec channel
     runPipelinedPeerSender receiveQueue collectQueue
                            codec channel peer

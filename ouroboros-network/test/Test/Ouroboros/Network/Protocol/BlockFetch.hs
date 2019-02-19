@@ -250,6 +250,7 @@ prop_blockFetchProtocol_IO (NonEmpty as) = ioProperty $
 roundTrip_experiment
   :: forall m.
      ( MonadSTM m
+     , MonadFork m
      , MonadTimer m
      )
   => (forall a b. BlockRequestReceiver (Maybe (Int, Int)) m a
@@ -267,7 +268,7 @@ roundTrip_experiment runClient runServer ranges (Positive queueSize) = do
   (serverReceiver, serverSender) <- connectThroughQueue (fromIntegral queueSize) blockStream
   let clientSender = blockRequestSenderFromProducer
         (Pipes.each (map Just ranges ++ [Nothing]) >> return ())
-  fork $ runClient serverReceiver clientSender
+  void $ fork $ runClient serverReceiver clientSender
   res <- runServer serverSender blockFetchClientReceiver
   let expected = concatMap (\(x, y) -> [x..y]) ranges
   return ((reverse <$> res) === Just expected)

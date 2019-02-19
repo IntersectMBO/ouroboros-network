@@ -53,7 +53,7 @@ setupMux :: Mx.MiniProtocolDescriptions IO -> SocketCtx -> IO ()
 setupMux mpds ctx = do
     jobs <- Mx.muxJobs mpds (writeSocket ctx) (readSocket ctx) (sduSize ctx)
     aids <- mapM async jobs
-    fork (watcher aids)
+    void $ fork (watcher aids)
 
     return ()
   where
@@ -177,7 +177,7 @@ demo2 chain0 updates = do
 
     wd <- async $ clientWatchDog consumerVar
 
-    fork $ sequence_
+    void $ fork $ sequence_
         [ do threadDelay 10000 -- just to provide interest
              atomically $ do
                  p <- readTVar producerVar

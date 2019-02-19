@@ -11,7 +11,9 @@ import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
+import           Control.Monad (void)
 import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadFork
 import           Control.Monad.IOSim (runSimOrThrow)
 
 import Ouroboros.Network.Protocol.Stream.Client
@@ -56,7 +58,7 @@ readQueue queue = go []
 --
 test_direct
   :: forall m.
-     MonadSTM m
+     (MonadSTM m, MonadFork m)
   => Window
   -> (Int, Int)
   -> m Property
@@ -64,7 +66,7 @@ test_direct (Window window) range = do
     queue <- atomically $ newTBQueue window
     let client = streamClient queue range
     var <- atomically $ newTVar Nothing
-    fork $ do
+    void $ fork $ do
       res <- fst <$> direct listStreamServer client
       atomically $ writeTVar var (Just res)
     cliRes <- readQueue queue

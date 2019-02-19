@@ -1,6 +1,7 @@
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE DefaultSignatures     #-}
+{-# LANGUAGE FlexibleContexts      #-}
+
 module Control.Monad.Class.MonadTimer (
     MonadTime(..)
   , MonadTimer(..)
@@ -19,7 +20,7 @@ import           Data.Word (Word64)
 import qualified GHC.Event as GHC (TimeoutKey, getSystemTimerManager,
                      registerTimeout, unregisterTimeout, updateTimeout)
 
-import           Control.Monad.Class.MonadFork (fork)
+import           Control.Monad.Class.MonadFork (MonadFork(..))
 import           Control.Monad.Class.MonadSTM
 
 
@@ -105,6 +106,8 @@ class (MonadSTM m, MonadTime m) => MonadTimer m where
   threadDelay d   = void . atomically . awaitTimeout =<< newTimeout d
 
   registerDelay :: Duration (Time m) -> m (TVar m Bool)
+
+  default registerDelay :: MonadFork m => Duration (Time m) -> m (TVar m Bool)
   registerDelay d = do
     v <- atomically $ newTVar False
     t <- newTimeout d

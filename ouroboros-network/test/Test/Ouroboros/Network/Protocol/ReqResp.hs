@@ -11,6 +11,7 @@ import System.Process (createPipe)
 import Codec.Serialise.Class (Serialise)
 import Codec.CBOR.Encoding (Encoding)
 
+import Control.Monad (void)
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadSTM
@@ -81,6 +82,7 @@ reqRespDemoExperiment
   :: forall m request response.
      ( MonadST m
      , MonadSTM m
+     , MonadFork m
      , Serialise request
      , Serialise response
      , Eq request
@@ -102,12 +104,12 @@ reqRespDemoExperiment clientChan serverChan request response =
       codec = hoistCodec liftST codecReqResp
 
   serverResultVar <- newEmptyTMVarM
-  fork $ do
+  void $ fork $ do
     result <- useCodecWithDuplex serverChan codec serverPeer
     atomically (putTMVar serverResultVar result)
 
   clientResultVar <- newEmptyTMVarM
-  fork $ do
+  void $ fork $ do
     result <- useCodecWithDuplex clientChan codec clientPeer
     atomically (putTMVar clientResultVar result)
 

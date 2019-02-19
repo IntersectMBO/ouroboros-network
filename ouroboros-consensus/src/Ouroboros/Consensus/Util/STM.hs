@@ -22,6 +22,7 @@ import           Control.Monad.State
 import           Control.Monad.Writer
 
 import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadFork
 
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.Random
@@ -41,9 +42,9 @@ blockUntilChanged f b getA = do
       else return (a, b')
 
 -- | Spawn a new thread that executes an action each time a TVar changes
-onEachChange :: forall m a b. (MonadSTM m, Eq b)
+onEachChange :: forall m a b. (MonadSTM m, MonadFork m, Eq b)
              => (a -> b) -> b -> Tr m a -> (a -> m ()) -> m ()
-onEachChange f initB getA notify = fork $ go initB
+onEachChange f initB getA notify = void $ fork $ go initB
   where
     go :: b -> m ()
     go b = do
