@@ -32,14 +32,14 @@ negMiniProtocolMode ModeResponder = ModeInitiator
 -- >                  |
 -- >                  V
 -- >          +-------+-------+
--- >          | Bearer.read() | MuxBearer implementation (Socket, Pipes, etc.)
+-- >          | Bearer.read() | Mux Bearer implementation (Socket, Pipes, etc.)
 -- >          +---------------+
 -- >                  |
 -- >                  | MuxSDUs
 -- >                  |
 -- >                  V
 -- >          +-------+-------+
--- >          |     demux     | For a given MuxBearer there is a single demux thread reading from
+-- >          |     demux     | For a given Mux Bearer there is a single demux thread reading from
 -- >          +-------+-------+ the underlying berarer.
 -- >                  |
 -- >            +---+-+--+--+
@@ -91,16 +91,16 @@ decodeMuxSDUHeader buf =
     getId a = error $ "unknow miniprotocol " ++ show a -- XXX
 
 -- | demux runs as a single separate thread and reads complete 'MuxSDU's from the underlying
--- 'MuxBearer' and forwards it to the matching ingress queueu.
-demux :: forall m. (MuxBearer m, MonadSTM m, MonadSay m) => PerMuxSharedState m -> m ()
+-- Mux Bearer and forwards it to the matching ingress queueu.
+demux :: forall m. (MonadSTM m, MonadSay m) => PerMuxSharedState m -> m ()
 demux pmss = forever $ do
-    (sdu, _) <- Ouroboros.Network.Mux.Types.read (bearerHandle pmss)
+    (sdu, _) <- Ouroboros.Network.Mux.Types.read pmss
     --say $ printf "demuxing sdu on mid %s mode %s" (show $ msId sdu) (show $ msMode sdu)
     -- Notice the mode reversal, ModeResponder is delivered to ModeInitiator and vice versa.
     atomically $ writeTBQueue (ingressQueue (dispatchTable pmss) (msId sdu) (negMiniProtocolMode $ msMode sdu)) (msBlob sdu)
 
 -- | Return the ingress queueu for a given 'MiniProtocolId' and 'MiniProtocolMode'.
-ingressQueue :: (MuxBearer m) => MiniProtocolDispatch m -> MiniProtocolId -> MiniProtocolMode -> TBQueue m BL.ByteString
+ingressQueue :: forall m. (MonadSTM m) => MiniProtocolDispatch m -> MiniProtocolId -> MiniProtocolMode -> TBQueue m BL.ByteString
 ingressQueue (MiniProtocolDispatch tbl) dis mode =
     case M.lookup (dis, mode) tbl of
          Nothing -> error $ printf "Missing MiniProtocol %s mode %s in dispatch table"

@@ -113,7 +113,7 @@ encodeMuxSDU sdu =
 -- >         -------------------+-------------------
 -- >                            | CBOR data
 -- >                            V
--- >                          |  | For a given MuxBearer there is a single egress queue shared
+-- >                          |  | For a given Mux Bearer there is a single egress queue shared
 -- >                          |ci| among all miniprotocols. To ensure fairness each miniprotocol
 -- >                          |cr| can at most have one message in the queue, see
 -- >                          +--+ Desired Servicing Semantics.
@@ -127,7 +127,7 @@ encodeMuxSDU sdu =
 -- >                           |
 -- >                           V
 -- >                   +-------+--------+
--- >                   | Bearer.write() | MuxBearer implementation specific write
+-- >                   | Bearer.write() | Mux Bearer implementation specific write
 -- >                   +----------------+
 -- >                           |
 -- >                           | ByteStrings
@@ -138,7 +138,7 @@ encodeMuxSDU sdu =
 -- shared FIFO that contains the items of work. This is processed so
 -- that each active demand gets a `maxSDU`s work of data processed
 -- each time it gets to the front of the queue
-mux :: (MonadSTM m, MuxBearer m)
+mux :: (MonadSTM m)
      => PerMuxSharedState m
      -> m ()
 mux pmss = do
@@ -151,14 +151,14 @@ mux pmss = do
 -- data remaining requeue the `TranslocationServiceRequest` (this
 -- ensures that any other items on the queue will get some service
 -- first.
-processSingleWanton :: (MonadSTM m, MuxBearer m)
+processSingleWanton :: MonadSTM m
                     => PerMuxSharedState m
                     -> MiniProtocolId
                     -> MiniProtocolMode
                     -> Wanton m
                     -> m ()
 processSingleWanton pmss mpi md wanton = do
-    maxSDU <- sduSize (bearerHandle pmss)
+    maxSDU <- sduSize pmss
     blob <- atomically $ do
       -- extract next SDU
       d <- takeTMVar (want wanton)
@@ -173,10 +173,8 @@ processSingleWanton pmss mpi md wanton = do
       -- return data to send
       pure frag
     let sdu = MuxSDU (RemoteClockModel 0) mpi md (fromIntegral $ BL.length blob) blob
-    void $ write (bearerHandle pmss) (cb sdu)
+    void $ write pmss sdu
     --paceTransmission tNow
 
-  where
-    cb sdu ts = sdu {msTimestamp = ts}
 
 
