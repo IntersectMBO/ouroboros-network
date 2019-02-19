@@ -12,8 +12,8 @@ let
   # Special cardano branch for iohk montiroing framework compat
   cardanoroot = nixpkgs.fetchgit {
     url = "https://github.com/input-output-hk/cardano-sl";
-    rev = "69d3e02dd75375270aac2e255bb0a90a1fca4260";
-    sha256 = "0r44rzd7n001bxpjis8s75n5rzi90spm1ianqnl202gh5pawqdv4";
+    rev = "869f83e939077e492085a2a2b8aeebb558255b00";
+    sha256 = "1yf2qz394ax223mqnhy4aqk165c2j76jn4bnmpdps22sq9ckcap5";
   };
   cardanopkgs = import ./nix/cardanopkgs.nix { inherit nixpkgs cardanoroot; };
 
