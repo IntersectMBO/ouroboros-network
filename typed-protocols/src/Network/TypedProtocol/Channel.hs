@@ -7,16 +7,15 @@ module Network.TypedProtocol.Channel
   , mvarsAsChannel
   , handlesAsChannel
   , createConnectedChannels
-  , withFifosAsChannel
   , channelEffect
   ) where
 
-import           Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
+import qualified Data.ByteString      as BS
+import qualified Data.ByteString.Lazy as LBS
 import           Data.ByteString.Lazy.Internal (smallChunkSize)
 
-import qualified System.IO      as IO
-                   ( Handle, withFile, IOMode(..), hFlush, hIsEOF )
+import qualified System.IO as IO
+                   ( Handle, hFlush, hIsEOF )
 
 import           Control.Monad.Class.MonadSTM
                    ( MonadSTM, atomically
@@ -112,39 +111,21 @@ createConnectedChannels = do
 --
 handlesAsChannel :: IO.Handle -- ^ Read handle
                  -> IO.Handle -- ^ Write handle
-                 -> Channel IO ByteString
+                 -> Channel IO LBS.ByteString
 handlesAsChannel hndRead hndWrite =
     Channel{send, recv}
   where
-    send :: ByteString -> IO ()
+    send :: LBS.ByteString -> IO ()
     send chunk = do
-      BS.hPut hndWrite chunk
+      LBS.hPut hndWrite chunk
       IO.hFlush hndWrite
 
-    recv :: IO (Maybe ByteString)
+    recv :: IO (Maybe LBS.ByteString)
     recv = do
       eof <- IO.hIsEOF hndRead
       if eof
         then return Nothing
-        else Just <$> BS.hGetSome hndRead smallChunkSize
-
-
--- | Open a pair of Unix FIFOs, and expose that as a 'Channel'.
---
--- The peer process needs to open the same files but the other way around,
--- for writing and reading.
---
--- This is primarily for the purpose of demonstrations that use communication
--- between multiple local processes. It is Unix specific.
---
-withFifosAsChannel :: FilePath -- ^ FIFO for reading
-                   -> FilePath -- ^ FIFO for writing
-                   -> (Channel IO ByteString -> IO a) -> IO a
-withFifosAsChannel fifoPathRead fifoPathWrite action =
-    IO.withFile fifoPathRead  IO.ReadMode  $ \hndRead  ->
-    IO.withFile fifoPathWrite IO.WriteMode $ \hndWrite ->
-      let channel = handlesAsChannel hndRead hndWrite
-       in action channel
+        else Just . LBS.fromStrict <$> BS.hGetSome hndRead smallChunkSize
 
 
 -- | Transform a channel to add an extra action before /every/ send and after
