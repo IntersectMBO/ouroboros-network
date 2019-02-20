@@ -14,10 +14,9 @@ import           Control.Monad
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadTimer
-import           Control.Monad.ST (stToIO)
+import           Control.Exception (Exception(..))
 import           Data.Bits
 import qualified Data.Map.Strict as M
-import           Data.Text (Text, unpack)
 import           Data.Word
 import           System.IO (Handle, hClose, hFlush, hIsEOF)
 import           System.Process (createPipe)
@@ -27,15 +26,16 @@ import qualified Ouroboros.Network.Chain as Chain
 import qualified Ouroboros.Network.ChainProducerState as CPS
 import qualified Ouroboros.Network.Mux as Mx
 import           Ouroboros.Network.Protocol.ChainSync.Client
-import           Ouroboros.Network.Protocol.ChainSync.Codec.Cbor
+import           Ouroboros.Network.Protocol.ChainSync.Codec
 import           Ouroboros.Network.Protocol.ChainSync.Examples
 import           Ouroboros.Network.Protocol.ChainSync.Server
-import           Ouroboros.Network.Protocol.ChainSync.Type
 import           Ouroboros.Network.Serialise
 
-import           Protocol.Channel
-import           Protocol.Codec
-import           Protocol.Driver
+import           Protocol.Channel hiding (Channel)
+
+import           Ouroboros.Network.Channel
+import           Ouroboros.Network.Codec
+import           Network.TypedProtocol.Driver
 
 import qualified Codec.CBOR.Encoding as CBOR (Encoding)
 import qualified Codec.CBOR.Write as CBOR (toBuilder)
@@ -176,19 +176,17 @@ demo chain0 updates = do
         , points = \_ -> pure $ consumerClient target consChain
         }
 
-    throwOnUnexpected :: String -> Result Text t -> IO t
-    throwOnUnexpected str (Unexpected txt) = error $ str ++ " " ++ unpack txt
-    throwOnUnexpected _   (Normal t)       = pure t
+    throwOnUnexpected :: String -> Either DeserialiseFailure t -> IO t
+    throwOnUnexpected str (Left err) = fail $ str ++ " " ++ displayException err
+    throwOnUnexpected _   (Right t)  = pure t
 
-    codec :: Codec IO Text CBOR.Encoding BS.ByteString (ChainSyncMessage block (Point block)) 'StIdle
-    codec = hoistCodec stToIO codecChainSync
-
-    consumerInit :: TMVar IO Bool -> Point block -> TVar IO (Chain block) -> Duplex IO IO CBOR.Encoding BS.ByteString -> IO ()
+    consumerInit :: TMVar IO Bool -> Point block -> TVar IO (Chain block)
+                 -> Channel IO BL.ByteString -> IO ()
     consumerInit done_ target consChain channel = do
        let consumerPeer = chainSyncClientPeer (chainSyncClientExample consChain
                                                (consumerClient target consChain))
 
-       r <- useCodecWithDuplex channel codec consumerPeer
+       r <- runPeer codecChainSync channel consumerPeer
        throwOnUnexpected "consumer" r
        atomically $ putTMVar done_ True
 
@@ -197,10 +195,11 @@ demo chain0 updates = do
     dummyCallback _ = forever $
         threadDelay 1000000
 
-    producerRsp ::  TVar IO (CPS.ChainProducerState block) -> Duplex IO IO CBOR.Encoding BS.ByteString -> IO ()
+    producerRsp ::  TVar IO (CPS.ChainProducerState block)
+                -> Channel IO BL.ByteString -> IO ()
     producerRsp prodChain channel = do
         let producerPeer = chainSyncServerPeer (chainSyncServerExample () prodChain)
 
-        r <- useCodecWithDuplex channel codec producerPeer
+        r <- runPeer codecChainSync channel producerPeer
         throwOnUnexpected "producer" r
 
