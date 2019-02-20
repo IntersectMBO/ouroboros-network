@@ -300,7 +300,9 @@ parseImpl hasFS@HasFS{..} err path =
                 bs <- hGet hndl binarySize
                 if BS.length bs == 0 then return (n, mp)
                 else case decode bs of
-                    Left str -> EH.throwError err $ VParserError $ Volatile.DecodeFailed str (BS.length bs)
+                    Left str ->
+                        EH.throwError err $ VParserError $
+                            Volatile.DecodeFailed (n,mp) str (BS.length bs)
                     Right bl -> do
                         let bid = fromBlock bl
                         if elem bid bids

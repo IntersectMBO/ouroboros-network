@@ -35,7 +35,6 @@ type ReverseIndex blockId = Map blockId (String, Int64, Int)
 data VolatileDBError blockId =
       FileSystemError FsError
     | VParserError (ParserError blockId)
-    | UndisputableLookupError String (Index blockId)
     | InvalidArgumentsError String
     | ClosedDBError
     deriving (Show)
@@ -50,7 +49,7 @@ data ParserError blockId =
       DuplicatedSlot (Map blockId ([String], [String]))
     | SlotsPerFileError Int String String
     | InvalidFilename String
-    | DecodeFailed String Int
+    | DecodeFailed (Int64, Map Int64 (Int, blockId)) String Int
     deriving (Show)
 
 instance Eq blockId => Eq (ParserError blockId) where
@@ -60,8 +59,6 @@ sameVolatileDBError :: Eq blockId => VolatileDBError blockId -> VolatileDBError 
 sameVolatileDBError e1 e2 = case (e1, e2) of
     (FileSystemError fs1, FileSystemError fs2) -> sameFsError fs1 fs2
     (VParserError p1, VParserError p2) -> p1 == p2
-    (UndisputableLookupError file1 mp1, UndisputableLookupError file2 mp2) ->
-        (file1,mp1) == (file2, mp2)
     (ClosedDBError, ClosedDBError) -> True
     (InvalidArgumentsError _, InvalidArgumentsError _) -> True
     _ -> False

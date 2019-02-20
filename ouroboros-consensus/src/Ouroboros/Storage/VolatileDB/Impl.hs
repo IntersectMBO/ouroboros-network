@@ -112,6 +112,7 @@ data VolatileDBEnv m blockId = forall h. VolatileDBEnv {
     , _maxBlocksPerFile :: !Int
     , _parser           :: !(Parser m blockId)
     , _toSlot           :: (blockId -> SlotNo)
+    , _lenientParsing   :: !Bool
     }
 
 data InternalState m blockId = InternalState {
@@ -152,19 +153,29 @@ openDB :: (HasCallStack, MonadCatch m, MonadSTM m, Ord blockId)
        -> ErrorHandling (VolatileDBError blockId) m
        -> Parser m blockId
        -> Int
+<<<<<<< 3268844a53c482be6ec1ca73adf4cefccea162f7
        -> (blockId -> SlotNo)
+=======
+       -> (blockId -> Slot)
+       -> Bool
+>>>>>>> volatile db: recover from parsing failures and add invariants
        -> m (VolatileDB blockId m)
-openDB h e p m t = fst <$> openDBFull h e p m t
+openDB h e p m t lp = fst <$> openDBFull h e p m t lp
 
 openDBFull :: (HasCallStack, MonadCatch m, MonadSTM m, Ord blockId)
            => HasFS m h
            -> ErrorHandling (VolatileDBError blockId) m
            -> Parser m blockId
            -> Int
+<<<<<<< 3268844a53c482be6ec1ca73adf4cefccea162f7
            -> (blockId -> SlotNo)
+=======
+           -> (blockId -> Slot)
+           -> Bool
+>>>>>>> volatile db: recover from parsing failures and add invariants
            -> m (VolatileDB blockId m, VolatileDBEnv m blockId)
-openDBFull hasFS err parser maxBlocksPerFile toSlot = do
-    env <- openDBImpl hasFS err parser maxBlocksPerFile toSlot
+openDBFull hasFS err parser maxBlocksPerFile toSlot lenientParsing = do
+    env <- openDBImpl hasFS err parser maxBlocksPerFile toSlot lenientParsing
     let db = VolatileDB {
           closeDB        = closeDBImpl  env
         , isOpenDB       = isOpenDBImpl env
@@ -183,15 +194,20 @@ openDBImpl :: (HasCallStack, MonadThrow m, MonadSTM m, Ord blockId)
            -> ErrorHandling (VolatileDBError blockId) m
            -> Parser m blockId
            -> Int
+<<<<<<< 3268844a53c482be6ec1ca73adf4cefccea162f7
            -> (blockId -> SlotNo)
+=======
+           -> (blockId -> Slot)
+           -> Bool
+>>>>>>> volatile db: recover from parsing failures and add invariants
            -> m (VolatileDBEnv m blockId)
-openDBImpl hasFS@HasFS{..} err parser maxBlocksPerFile toSlot =
+openDBImpl hasFS@HasFS{..} err parser maxBlocksPerFile toSlot lenientParsing =
     if maxBlocksPerFile <= 0
     then EH.throwError err $ InvalidArgumentsError "maxBlocksPerFile can't be 0"
     else do
-        st <- mkInternalStateDB hasFS err parser maxBlocksPerFile toSlot
+        st <- mkInternalStateDB hasFS err parser maxBlocksPerFile toSlot lenientParsing
         stVar <- atomically $ newTMVar $ Just st
-        return $ VolatileDBEnv hasFS err stVar maxBlocksPerFile parser toSlot
+        return $ VolatileDBEnv hasFS err stVar maxBlocksPerFile parser toSlot lenientParsing
 
 closeDBImpl :: (MonadSTM m)
             => VolatileDBEnv m blockId
@@ -219,7 +235,7 @@ reOpenDBImpl VolatileDBEnv{..} = do
     modifyTMVar _dbInternalState $ \mbSt -> case mbSt of
         Just (st@InternalState{..}) -> return (Just st, ())
         Nothing -> do
-            st <- mkInternalStateDB _dbHasFS _dbErr _parser _maxBlocksPerFile _toSlot
+            st <- mkInternalStateDB _dbHasFS _dbErr _parser _maxBlocksPerFile _toSlot _lenientParsing
             return (Just st, ())
 
 getBlockImpl :: (MonadSTM m, MonadCatch m, Ord blockId)
@@ -259,10 +275,9 @@ putBlockImpl toSlot env@VolatileDBEnv{..} blockId builder = do
         case Map.lookup blockId _currentRevMap of
             Just _ -> return (st, ()) -- trying to put an existing blockId is a no-op.
             Nothing -> do
-                (mmaxSlot, nBlocks, fileMp) <-
-                    case Map.lookup _currentWritePath _currentMap of
-                        Nothing -> EH.throwError _dbErr $ UndisputableLookupError _currentWritePath _currentMap
-                        Just fileInfo -> return fileInfo
+                let (mmaxSlot, nBlocks, fileMp) = fromMaybe
+                        (error "Volatile db invariant violation: Current write file not found in Index.")
+                        (Map.lookup _currentWritePath _currentMap)
                 bytesWritten <- hPut _currentWriteHandle builder
                 let fileMp' = Map.insert _currentWriteOffset (fromIntegral bytesWritten, blockId) fileMp
                     nBlocks' = nBlocks + 1
@@ -405,13 +420,20 @@ mkInternalStateDB :: (HasCallStack, MonadThrow m, Ord blockId)
                   -> ErrorHandling (VolatileDBError blockId) m
                   -> Parser m blockId
                   -> Int
+<<<<<<< 3268844a53c482be6ec1ca73adf4cefccea162f7
                   -> (blockId -> SlotNo)
                   -> m (InternalState blockId h)
 mkInternalStateDB hasFS@HasFS{..} err parser maxBlocksPerFile toSlot = do
+=======
+                  -> (blockId -> Slot)
+                  -> Bool
+                  -> m (InternalState m blockId h)
+mkInternalStateDB hasFS@HasFS{..} err parser maxBlocksPerFile toSlot lenientParsing = do
+>>>>>>> volatile db: recover from parsing failures and add invariants
     allFiles <- do
         createDirectoryIfMissing True []
         listDirectory []
-    mkInternalState hasFS err parser maxBlocksPerFile allFiles toSlot
+    mkInternalState hasFS err parser maxBlocksPerFile allFiles toSlot lenientParsing
 
 mkInternalState :: forall blockId m h. (MonadThrow m, HasCallStack, Ord blockId)
                 => HasFS m h
@@ -419,6 +441,7 @@ mkInternalState :: forall blockId m h. (MonadThrow m, HasCallStack, Ord blockId)
                 -> Parser m blockId
                 -> Int
                 -> Set String
+<<<<<<< 3268844a53c482be6ec1ca73adf4cefccea162f7
 <<<<<<< 9ae6b539c97555cdd4d6d9c01873b89c64d4f71b
                 -> (blockId -> SlotNo)
                 -> m (InternalState blockId h)
@@ -428,6 +451,12 @@ mkInternalState hasFS@HasFS{..} err basePath parser n files toSlot = do
                 -> m (InternalState blockId h)
 mkInternalState hasFS@HasFS{..} err parser n files toSlot = do
 >>>>>>> remove dbFolder from volatile db
+=======
+                -> (blockId -> Slot)
+                -> Bool
+                -> m (InternalState m blockId h)
+mkInternalState hasFS@HasFS{..} err parser n files toSlot lenientParsing = do
+>>>>>>> volatile db: recover from parsing failures and add invariants
     lastFd <- findNextFd err files
     let
         go :: Index blockId
@@ -441,8 +470,8 @@ mkInternalState hasFS@HasFS{..} err parser n files toSlot = do
                 let (fileToWrite, nextWriteFiles', nextNewFileId', mp', offset') = case (sortOn (\(a,_,_) -> a) haveLessThanN, lastFd) of
                         ([], Nothing) -> (filePath 0, [], 1, Map.insert (filePath 0) (Nothing, 0, Map.empty) mp, 0)
                         (_, Nothing) ->
-                            error $ "A file was found with less than " <> show n <> " blocks, but there are no files parsed.\
-                                   \ This is a strong indication that some other process modified internal files of the db."
+                            error $ "Volatile db invariant violation: A file was found with less than " <> show n <>
+                                    " blocks, but there are no files parsed."
                         ([], Just lst) -> let fd' = lst + 1 in
                             -- If all files are full, we just open a new file.
                             (filePath fd', [], lst + 2, Map.insert (filePath fd') (Nothing, 0, Map.empty) mp, 0)
@@ -461,7 +490,21 @@ mkInternalState hasFS@HasFS{..} err parser n files toSlot = do
                 }
             file : restFiles -> do
                 let path = [file]
-                (offset, fileMp) <- parse parser hasFS err path
+                parsed <- EH.try err (parse parser hasFS err path)
+                (offset, fileMp) <- case parsed of
+                    Right x -> return x
+                    Left e@(VParserError (DecodeFailed (offset, filemp) _str _n)) ->
+                        if lenientParsing then do
+                            -- the handle of the parser is closed at this point. We need to
+                            -- reOpen the file in AppendMode now (parser opens with ReadMode).
+                            -- Note that no file is open at this point, so we can safely open
+                            -- with AppendMode any file, without the fear of opening multiple
+                            -- concurrent writers, which is not allowed.
+                            withFile hasFS path IO.AppendMode $ \hndl ->
+                                hTruncate hndl (fromIntegral offset)
+                            return (offset, filemp)
+                        else EH.throwError err e
+                    Left e -> EH.throwError err e
                 let mMaxBlockId = fst <$> maxSlotMap fileMp toSlot
                 let nBlocks = Map.size fileMp
                 newRevMp <- fromEither err $ reverseMap file revMp fileMp
