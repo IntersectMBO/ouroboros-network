@@ -192,21 +192,6 @@ instance (Show e, MonadSTM m) => MonadSTM (ExceptT e m) where
   isEmptyTBQueue   = lift . isEmptyTBQueue
   isFullTBQueue    = lift . isFullTBQueue
 
--- | Wrapper around 'BlockedIndefinitelyOnSTM' that stores a call stack
-data BlockedIndefinitely = BlockedIndefinitely {
-      blockedIndefinitelyCallStack :: CallStack
-    , blockedIndefinitelyException :: BlockedIndefinitelyOnSTM
-    }
-  deriving (Show)
-
-instance Exception BlockedIndefinitely where
-  displayException (BlockedIndefinitely cs e) = unlines [
-        displayException e
-      , prettyCallStack cs
-      ]
-
-wrapBlockedIndefinitely :: HasCallStack => IO a -> IO a
-wrapBlockedIndefinitely = handle (throwIO . BlockedIndefinitely callStack)
 
 --
 -- Instance for IO uses the existing STM library implementations
@@ -263,6 +248,24 @@ instance MonadSTM IO where
   writeTBQueue   = STM.writeTBQueue
   isEmptyTBQueue = STM.isEmptyTBQueue
   isFullTBQueue  = STM.isFullTBQueue
+
+
+-- | Wrapper around 'BlockedIndefinitelyOnSTM' that stores a call stack
+data BlockedIndefinitely = BlockedIndefinitely {
+      blockedIndefinitelyCallStack :: CallStack
+    , blockedIndefinitelyException :: BlockedIndefinitelyOnSTM
+    }
+  deriving (Show)
+
+instance Exception BlockedIndefinitely where
+  displayException (BlockedIndefinitely cs e) = unlines [
+        displayException e
+      , prettyCallStack cs
+      ]
+
+wrapBlockedIndefinitely :: HasCallStack => IO a -> IO a
+wrapBlockedIndefinitely = handle (throwIO . BlockedIndefinitely callStack)
+
 
 --
 -- Default TMVar implementation in terms of TVars (used by sim)
