@@ -298,14 +298,14 @@ probeOutput probe x = atomically (modifyTVar probe (x:))
 unit_catch_0, unit_catch_1, unit_catch_2, unit_catch_3, unit_catch_4,
   unit_catch_5, unit_catch_6,
   unit_fork_1, unit_fork_2
-  :: Bool
+  :: Property
 
 -- unhandled top level exception
 unit_catch_0 =
-    runSimTraceSay example == ["before"]
- && case traceResult True (runSimTrace example) of
-      Left (FailureException e) -> maybe False (==DivideByZero) $ fromException e
-      _                         -> False
+      runSimTraceSay example === ["before"]
+ .&&. case traceResult True (runSimTrace example) of
+        Left (FailureException e) -> property (maybe False (==DivideByZero) $ fromException e)
+        _                         -> property False
 
  where
   example :: SimM s ()
@@ -320,7 +320,7 @@ unit_catch_1 =
       (do catch (say "inner") (\(_e :: IOError) -> say "handler")
           say "after"
       )
- ==
+ ===
     ["inner", "after"]
 
 
@@ -333,7 +333,7 @@ unit_catch_2 =
                 (\(_e :: ArithException) -> say "handler")
           say "after"
       )
- ==
+ ===
     ["inner1", "handler", "after"]
 
 
@@ -345,7 +345,7 @@ unit_catch_3 =
                 (\(_e :: IOError) -> say "handler")
           say "after"
       )
- ==
+ ===
     ["inner"]
 
 
@@ -358,7 +358,7 @@ unit_catch_4 =
                 (\(_e :: ArithException) -> say "handler2")
           say "after"
       )
- ==
+ ===
     ["inner", "handler2", "after"]
 
 
@@ -371,7 +371,7 @@ unit_catch_5 =
                 (\(_e :: ArithException) -> say "handler2")
           say "after"
       )
- ==
+ ===
     ["inner", "handler1", "after"]
 
 
@@ -386,16 +386,16 @@ unit_catch_6 =
                 (\(_e :: ArithException) -> say "handler2")
           say "after"
       )
- ==
+ ===
     ["inner", "handler1", "handler2", "after"]
 
 
 -- The sim terminates when the main thread terminates
 unit_fork_1 =
-    runSimTraceSay example == ["parent"]
- && case traceResult True (runSimTrace example) of
-      Left FailureSloppyShutdown -> True
-      _                          -> False
+      runSimTraceSay example === ["parent"]
+ .&&. case traceResult True (runSimTrace example) of
+        Left FailureSloppyShutdown -> property True
+        _                          -> property False
   where
     example :: SimM s ()
     example = do
@@ -405,13 +405,13 @@ unit_fork_1 =
 -- Try works and we can pass exceptions back from threads.
 -- And terminating with an exception is reported properly.
 unit_fork_2 =
-    runSimTraceSay example == ["parent", "user error (oh noes!)"]
- && case traceResult True (runSimTrace example) of
-      Left (FailureException e)
-        | Just ioe <- fromException e
-        , isUserError ioe
-        , ioeGetErrorString ioe == "oh noes!" -> True
-      _                                       -> False
+      runSimTraceSay example === ["parent", "user error (oh noes!)"]
+ .&&. case traceResult True (runSimTrace example) of
+        Left (FailureException e)
+          | Just ioe <- fromException e
+          , isUserError ioe
+          , ioeGetErrorString ioe == "oh noes!" -> property True
+        _                                       -> property False
   where
     example :: SimM s ()
     example = do
@@ -433,7 +433,7 @@ unit_async_1, unit_async_2, unit_async_3, unit_async_4, unit_async_5,
   unit_async_6, unit_async_7, unit_async_8, unit_async_9, unit_async_10,
   unit_async_11, unit_async_12, unit_async_13, unit_async_14, unit_async_15,
   unit_async_16
-  :: Bool
+  :: Property
 
 
 unit_async_1 =
@@ -445,7 +445,7 @@ unit_async_1 =
           say ("parent " ++ show ctid)
           threadDelay 1
       )
- ==
+ ===
    ["main ThreadId 0", "parent ThreadId 1", "child ThreadId 1"]
 
 
@@ -456,7 +456,7 @@ unit_async_2 =
           throwTo tid DivideByZero
           say "after"
       )
- ==
+ ===
    ["before"]
 
 
@@ -467,7 +467,7 @@ unit_async_3 =
                     throwTo tid DivideByZero
                     say "never")
                 (\(_e :: ArithException) -> say "handler"))
- ==
+ ===
    ["before", "handler"]
 
 
@@ -478,7 +478,7 @@ unit_async_4 =
           -- child has already terminated when we throw the async exception
           throwTo tid DivideByZero
           say "parent done")
- ==
+ ===
    ["child", "parent done"]
 
 
@@ -493,14 +493,14 @@ unit_async_5 =
           throwTo tid DivideByZero
           threadDelay 1
           say "parent done")
- ==
+ ===
    ["child", "handler", "child done", "parent done"]
 
 
 unit_async_6 =
     runSimTraceSay
-      (do tid <- fork $
-                   mask_ $ do
+      (do tid <- fork $ mask_ $
+                   do
                      say "child"
                      threadDelay 1
                      say "child masked"
@@ -513,7 +513,7 @@ unit_async_6 =
           throwTo tid DivideByZero
           threadDelay 1
           say "parent done")
- ==
+ ===
    ["child", "child masked", "handler", "child done", "parent done"]
 
 
@@ -533,7 +533,7 @@ unit_async_7 =
           throwTo tid DivideByZero
           threadDelay 1
           say "parent done")
- ==
+ ===
    ["child", "child masked", "handler", "child done", "parent done"]
 
 
@@ -553,7 +553,7 @@ unit_async_8 =
           throwTo tid DivideByZero
           threadDelay 1
           say "parent done")
- ==
+ ===
    ["child", "child masked", "handler", "child done", "parent done"]
 
 
@@ -569,7 +569,7 @@ unit_async_9 =
           throwTo tid DivideByZero
           -- throwTo blocks but then unblocks because the child dies
           say "parent done")
- ==
+ ===
    ["child", "parent done"]
 
 
@@ -597,7 +597,7 @@ unit_async_10 =
           threadDelay 1
           say "parent done"
           )
- ==
+ ===
    ["child 1", "child 2", "child 1 running", "parent done"]
   where
     yield :: SimM s ()
@@ -630,7 +630,7 @@ unit_async_11 =
           threadDelay 1
           say "parent done"
           )
- ==
+ ===
    ["child 1", "child 2", "child 1 running", "parent done"]
   where
     yield :: SimM s ()
@@ -654,7 +654,7 @@ unit_async_12 =
           throwTo tid DivideByZero
           threadDelay 1
           say "parent done")
- ==
+ ===
    ["child", "child masked", "child done", "parent done"]
 
 
@@ -663,8 +663,8 @@ unit_async_13 =
            (uninterruptibleMask_ $ do
               tid <- fork $ atomically retry
               throwTo tid DivideByZero)
-       of Left FailureDeadlock -> True
-          _                    -> False
+       of Left FailureDeadlock -> property True
+          _                    -> property False
 
 
 unit_async_14 =
@@ -684,7 +684,7 @@ unit_async_14 =
           throwTo tid DivideByZero
           threadDelay 1
           say "parent done")
- ==
+ ===
    ["child", "child masked", "child done", "parent done"]
 
 
@@ -704,7 +704,7 @@ unit_async_15 =
           throwTo tid DivideByZero
           threadDelay 1
           say "parent done")
- ==
+ ===
    ["child", "child masked", "handler", "child done", "parent done"]
 
 
@@ -724,7 +724,7 @@ unit_async_16 =
           throwTo tid DivideByZero
           threadDelay 1
           say "parent done")
- ==
+ ===
    ["child", "child masked", "handler", "child done", "parent done"]
 
 
