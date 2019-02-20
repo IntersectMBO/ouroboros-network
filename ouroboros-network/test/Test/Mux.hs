@@ -1,16 +1,16 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE TypeOperators       #-}
-{-# OPTIONS_GHC -Wno-orphans #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE TypeOperators       #-}
 
 module Test.Mux (tests) where
 
+import qualified Codec.CBOR.Encoding as CBOR (Encoding)
 import           Control.Concurrent.Async
 import           Control.Monad
 import           Control.Monad.ST (stToIO)
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Map.Strict as M
 import           Data.Word
@@ -20,6 +20,7 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTimer
+import           Protocol.Channel
 import           Protocol.Codec
 import           Protocol.Driver (Result (..), useCodecWithDuplex)
 
@@ -33,6 +34,7 @@ tests :: TestTree
 tests =
   testGroup "Mux"
   [ testProperty "mux send receive"        prop_mux_snd_recv
+  , testProperty "2 miniprotols"           prop_mux_2_minis
   ]
 
 newtype DummyPayload = DummyPayload {
@@ -104,40 +106,64 @@ prop_mux_snd_recv :: DummyPayload
                   -> DummyPayload
                   -> Property
 prop_mux_snd_recv request response = ioProperty $ do
-    let sduLen = 14000
+    let sduLen = 1260
 
     client_w <- atomically $ newTBQueue 10
     client_r <- atomically $ newTBQueue 10
-    serverResultVar <- newEmptyTMVarM
-    clientResultVar <- newEmptyTMVarM
+    activeMpsVar <- atomically $ newTVar 2
 
     let server_w = client_r
         server_r = client_w
 
+    (verify, client_mp, server_mp) <- setupMiniReqRsp Mx.ChainSync  activeMpsVar request response
+
     let client_mps = Mx.MiniProtocolDescriptions $ M.fromList
-                    [(Mx.ChainSync, Mx.MiniProtocolDescription Mx.ChainSync
-                        (clientInit clientResultVar)
-                        dummyCallback)
+                    [ ( Mx.ChainSync, client_mp )
                     ]
         server_mps = Mx.MiniProtocolDescriptions $ M.fromList
-                    [(Mx.ChainSync, Mx.MiniProtocolDescription Mx.ChainSync
-                        dummyCallback
-                        (serverRsp serverResultVar))
+                    [ ( Mx.ChainSync, server_mp )
                     ]
 
     startMuxSTM client_mps client_w client_r sduLen
     startMuxSTM server_mps server_w server_r sduLen
 
-    (serverResult, clientResult) <- atomically $
-        (,) <$> takeTMVar serverResultVar <*> takeTMVar clientResultVar
+    res <- verify
 
-    case (serverResult, clientResult) of
-         (Normal request', Normal response') ->
-             return $ request' === request .&. response' === response
+    return $ property res
 
-         _ -> return $ property False
+-- Stub for a mpdInitiator or mpdResponder that doesn't send or receive any data.
+dummyCallback :: (MonadTimer m) => Duplex m m CBOR.Encoding BS.ByteString -> m ()
+dummyCallback _ = forever $
+    threadDelay 1000000
 
+-- | Create a verification function, a MiniProtocolDescription for the client side and a
+-- MiniProtocolDescription for the server side for a RequestResponce protocol.
+setupMiniReqRsp :: Mx.MiniProtocolId
+                -> TVar IO Int
+                -> DummyPayload
+                -> DummyPayload
+                -> IO (IO Bool
+                      , Mx.MiniProtocolDescription IO
+                      , Mx.MiniProtocolDescription IO)
+setupMiniReqRsp mid mpsVar request response = do
+    serverResultVar <- newEmptyTMVarM
+    clientResultVar <- newEmptyTMVarM
+
+    let client_mp = Mx.MiniProtocolDescription mid (clientInit clientResultVar) dummyCallback
+        server_mp = Mx.MiniProtocolDescription mid dummyCallback (serverRsp serverResultVar)
+
+    return (verifyCallback serverResultVar clientResultVar, client_mp, server_mp)
   where
+    verifyCallback serverResultVar clientResultVar = do
+        (serverResult, clientResult) <- atomically $
+            (,) <$> takeTMVar serverResultVar <*> takeTMVar clientResultVar
+
+        case (serverResult, clientResult) of
+             (Normal request', Normal response') ->
+                 return $ request' == request && response' == response
+
+             _ -> return False
+
     serverPeer = reqRespServerPeer (ReqRespServer $ \req -> return (response, req))
 
     clientPeer = reqRespClientPeer (Request request return)
@@ -147,11 +173,51 @@ prop_mux_snd_recv request response = ioProperty $ do
     clientInit clientResultVar clientChan = do
         result <- useCodecWithDuplex clientChan codec clientPeer
         atomically (putTMVar clientResultVar result)
+        end
 
     serverRsp serverResultVar serverChan = do
         result <- useCodecWithDuplex serverChan codec serverPeer
         atomically (putTMVar serverResultVar result)
+        end
 
-    dummyCallback _ = forever $
-        threadDelay 1000000
+    end = do
+        atomically $ modifyTVar' mpsVar (\a -> a - 1)
+        atomically $ do
+            c <- readTVar mpsVar
+            unless (c == 0) retry
+
+prop_mux_2_minis :: DummyPayload
+                 -> DummyPayload
+                 -> DummyPayload
+                 -> DummyPayload
+                 -> Property
+prop_mux_2_minis request0 response0 response1 request1 = ioProperty $ do
+    let sduLen = 14000
+
+    client_w <- atomically $ newTBQueue 10
+    client_r <- atomically $ newTBQueue 10
+    activeMpsVar <- atomically $ newTVar 4
+
+    let server_w = client_r
+        server_r = client_w
+
+    (verify_0, client_mp0, server_mp0) <- setupMiniReqRsp Mx.ChainSync  activeMpsVar request0 response0
+    (verify_1, client_mp1, server_mp1) <- setupMiniReqRsp Mx.BlockFetch activeMpsVar request1 response1
+
+    let client_mps = Mx.MiniProtocolDescriptions $ M.fromList
+                    [ ( Mx.ChainSync, client_mp0 )
+                    , ( Mx.BlockFetch, client_mp1 )
+                    ]
+        server_mps = Mx.MiniProtocolDescriptions $ M.fromList
+                    [ ( Mx.ChainSync, server_mp0 )
+                    , ( Mx.BlockFetch, server_mp1 )
+                    ]
+
+    startMuxSTM client_mps client_w client_r sduLen
+    startMuxSTM server_mps server_w server_r sduLen
+
+    res0 <- verify_0
+    res1 <- verify_1
+
+    return $ property $ res0 && res1
 
