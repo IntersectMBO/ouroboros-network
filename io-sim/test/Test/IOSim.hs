@@ -591,8 +591,8 @@ unit_async_10 =
                       say "never 2"
           threadDelay 1
           yield
-          -- this one does not block, even though child 2 has exceptions
-          -- masked, since it is blocked in an interruptible throwTo
+          -- this one does not block, child 2 does not have exceptions
+          -- masked (and it is blocked in an interruptible throwTo)
           throwTo tid2 DivideByZero
           threadDelay 1
           say "parent done"
@@ -626,6 +626,8 @@ unit_async_11 =
                       say "never 2"
           threadDelay 1
           yield
+          -- this one does not block, even though child 2 has exceptions
+          -- masked, since it is blocked in an interruptible throwTo
           throwTo tid2 DivideByZero
           threadDelay 1
           say "parent done"

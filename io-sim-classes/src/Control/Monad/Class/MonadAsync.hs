@@ -38,6 +38,10 @@ class MonadSTM m => MonadAsync m where
   waitAnyCancel         :: [Async m a] -> m (Async m a, a) 
   waitAnyCatchCancel    :: [Async m a] -> m (Async m a, Either SomeException a)
   waitEither            :: Async m a -> Async m b -> m (Either a b)
+
+  -- | Note, IO-based implementations should override the default
+  -- implementation. See the @async@ package implementation and comments.
+  -- <http://hackage.haskell.org/package/async-2.2.1/docs/src/Control.Concurrent.Async.html#waitEitherCatch>
   waitEitherCatch       :: Async m a -> Async m b -> m (Either (Either SomeException a)
                                                                (Either SomeException b))
   waitEitherCancel      :: Async m a -> Async m b -> m (Either a b)
