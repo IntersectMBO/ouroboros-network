@@ -4,7 +4,9 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Network.Codec
-  ( mkCodecCborLazyBS
+  ( module Network.TypedProtocol.Codec
+  , DeserialiseFailure
+  , mkCodecCborLazyBS
   , mkCodecCborStrictBS
   ) where
 
@@ -24,6 +26,8 @@ import qualified Data.ByteString.Lazy.Internal as LBS (smallChunkSize)
 import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Codec
 
+
+type DeserialiseFailure = CBOR.DeserialiseFailure
 
 -- | Construct a 'Codec' for a CBOR based serialisation format, using strict
 -- 'BS.ByteString's.
@@ -48,7 +52,7 @@ mkCodecCborStrictBS
              PeerHasAgency pr st
           -> CBOR.Decoder s (SomeMessage st))
 
-  -> Codec ps CBOR.DeserialiseFailure m BS.ByteString
+  -> Codec ps DeserialiseFailure m BS.ByteString
 mkCodecCborStrictBS cborMsgEncode cborMsgDecode =
     Codec {
       encode = \stok msg -> convertCborEncoder (cborMsgEncode stok) msg,
@@ -62,7 +66,7 @@ mkCodecCborStrictBS cborMsgEncode cborMsgDecode =
 
     convertCborDecoder
       :: (forall s. CBOR.Decoder s a)
-      -> m (DecodeStep BS.ByteString CBOR.DeserialiseFailure m a)
+      -> m (DecodeStep BS.ByteString DeserialiseFailure m a)
     convertCborDecoder cborDecode =
         withLiftST (convertCborDecoderBS cborDecode)
 
@@ -70,12 +74,12 @@ convertCborDecoderBS
   :: forall s m a. Functor m
   => (CBOR.Decoder s a)
   -> (forall b. ST s b -> m b)
-  -> m (DecodeStep BS.ByteString CBOR.DeserialiseFailure m a)
+  -> m (DecodeStep BS.ByteString DeserialiseFailure m a)
 convertCborDecoderBS cborDecode liftST =
     go <$> liftST (CBOR.deserialiseIncremental cborDecode)
   where
     go :: CBOR.IDecode s a
-       -> DecodeStep BS.ByteString CBOR.DeserialiseFailure m a
+       -> DecodeStep BS.ByteString DeserialiseFailure m a
     go (CBOR.Done  trailing _ x)
       | BS.null trailing       = DecodeDone x Nothing
       | otherwise              = DecodeDone x (Just trailing)
