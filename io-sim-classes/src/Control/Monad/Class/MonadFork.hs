@@ -7,7 +7,6 @@ module Control.Monad.Class.MonadFork
 
 import qualified Control.Concurrent as IO
 import           Control.Exception (Exception(..), SomeException)
-import           Control.Monad.Except
 import           Control.Monad.Reader
 import           System.IO (hFlush, hPutStrLn, stderr)
 import           System.IO.Unsafe (unsafePerformIO)
@@ -46,13 +45,6 @@ instance MonadFork IO where
 instance MonadFork m => MonadFork (ReaderT e m) where
   type ThreadId (ReaderT e m) = ThreadId m
   fork (ReaderT f) = ReaderT $ \e -> fork (f e)
-  myThreadId  = lift myThreadId
-  throwTo e t = lift (throwTo e t)
-
--- NOTE(adn): Is this a sensible instance?
-instance (Show e, MonadFork m) => MonadFork (ExceptT e m) where
-  type ThreadId (ExceptT e m) = ThreadId m
-  fork (ExceptT m) = ExceptT $ Right <$> fork (either (error . show) id <$> m)
   myThreadId  = lift myThreadId
   throwTo e t = lift (throwTo e t)
 

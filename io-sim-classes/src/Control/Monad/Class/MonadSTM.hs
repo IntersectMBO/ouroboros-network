@@ -48,7 +48,6 @@ import qualified Control.Concurrent.STM.TQueue as STM
 import qualified Control.Concurrent.STM.TBQueue as STM
 
 import           Control.Exception
-import           Control.Monad.Except
 import           Control.Monad.Reader
 import           GHC.Stack
 import           Numeric.Natural (Natural)
@@ -153,60 +152,6 @@ instance MonadSTM m => MonadSTM (ReaderT e m) where
   isEmptyTBQueue   = lift . isEmptyTBQueue
   isFullTBQueue    = lift . isFullTBQueue
 
-instance (Show e, MonadSTM m) => MonadSTM (ExceptT e m) where
-  type Tr (ExceptT e m)      = ExceptT e (Tr m)
-  type TVar (ExceptT e m)    = TVar m
-  type TMVar (ExceptT e m)   = TMVar m
-  type TQueue (ExceptT e m)  = TQueue m
-  type TBQueue (ExceptT e m) = TBQueue m
-
-  atomically (ExceptT t) = ExceptT $ atomically t
-  newTVar                = lift . newTVar
-  readTVar               = lift . readTVar
-  writeTVar t a          = lift $ writeTVar t a
-  retry                  = lift retry
-
-  newTMVar               = lift . newTMVar
-  newTMVarM              = lift . newTMVarM
-  newEmptyTMVar          = lift newEmptyTMVar
-  newEmptyTMVarM         = lift newEmptyTMVarM
-  takeTMVar              = lift . takeTMVar
-  tryTakeTMVar           = lift . tryTakeTMVar
-  putTMVar   t a         = lift $ putTMVar t a
-  tryPutTMVar t a        = lift $ tryPutTMVar t a
-  readTMVar              = lift . readTMVar
-  tryReadTMVar           = lift . tryReadTMVar
-  swapTMVar t a          = lift $ swapTMVar t a
-  isEmptyTMVar           = lift . isEmptyTMVar
-
-  newTQueue        = lift $ newTQueue
-  readTQueue       = lift . readTQueue
-  tryReadTQueue    = lift . tryReadTQueue
-  writeTQueue q a  = lift $ writeTQueue q a
-  isEmptyTQueue    = lift . isEmptyTQueue
-
-  newTBQueue       = lift . newTBQueue
-  readTBQueue      = lift . readTBQueue
-  tryReadTBQueue   = lift . tryReadTBQueue
-  writeTBQueue q a = lift $ writeTBQueue q a
-  isEmptyTBQueue   = lift . isEmptyTBQueue
-  isFullTBQueue    = lift . isFullTBQueue
-
--- | Wrapper around 'BlockedIndefinitelyOnSTM' that stores a call stack
-data BlockedIndefinitely = BlockedIndefinitely {
-      blockedIndefinitelyCallStack :: CallStack
-    , blockedIndefinitelyException :: BlockedIndefinitelyOnSTM
-    }
-  deriving (Show)
-
-instance Exception BlockedIndefinitely where
-  displayException (BlockedIndefinitely cs e) = unlines [
-        displayException e
-      , prettyCallStack cs
-      ]
-
-wrapBlockedIndefinitely :: HasCallStack => IO a -> IO a
-wrapBlockedIndefinitely = handle (throwIO . BlockedIndefinitely callStack)
 
 --
 -- Instance for IO uses the existing STM library implementations
@@ -263,6 +208,24 @@ instance MonadSTM IO where
   writeTBQueue   = STM.writeTBQueue
   isEmptyTBQueue = STM.isEmptyTBQueue
   isFullTBQueue  = STM.isFullTBQueue
+
+
+-- | Wrapper around 'BlockedIndefinitelyOnSTM' that stores a call stack
+data BlockedIndefinitely = BlockedIndefinitely {
+      blockedIndefinitelyCallStack :: CallStack
+    , blockedIndefinitelyException :: BlockedIndefinitelyOnSTM
+    }
+  deriving (Show)
+
+instance Exception BlockedIndefinitely where
+  displayException (BlockedIndefinitely cs e) = unlines [
+        displayException e
+      , prettyCallStack cs
+      ]
+
+wrapBlockedIndefinitely :: HasCallStack => IO a -> IO a
+wrapBlockedIndefinitely = handle (throwIO . BlockedIndefinitely callStack)
+
 
 --
 -- Default TMVar implementation in terms of TVars (used by sim)
