@@ -2,6 +2,9 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE NamedFieldPuns #-}
 
+-- TODO: remove this flag, now because `direct` is not used.
+{-# OPTIONS_GHC -Wno-unused-top-binds #-}
+
 module Network.TypedProtocol.ReqResp.Tests (tests) where
 
 import           Data.Functor.Identity (Identity (..))
