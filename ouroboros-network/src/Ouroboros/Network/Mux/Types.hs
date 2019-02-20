@@ -15,15 +15,13 @@ module Ouroboros.Network.Mux.Types (
     , Wanton (..)
     ) where
 
-import qualified Codec.CBOR.Encoding as CBOR (Encoding)
-import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Map.Strict as M
 import           Data.Word
 
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTimer
-import           Protocol.Channel
+import           Ouroboros.Network.Channel
 
 newtype RemoteClockModel = RemoteClockModel { unRemoteClockModel :: Word32 }
 
@@ -46,9 +44,9 @@ data MiniProtocolDescription m = MiniProtocolDescription {
     -- | The 'MiniProtocolId' described.
       mpdId        :: MiniProtocolId
     -- | Initiator function, consumes and produces messages related to the initiator side.
-    , mpdInitiator :: Duplex m m CBOR.Encoding BS.ByteString -> m ()
+    , mpdInitiator :: Channel m BL.ByteString -> m ()
     -- | Responder function, consumes and produces messages related to the responder side.
-    , mpdResponder :: Duplex m m CBOR.Encoding BS.ByteString -> m ()
+    , mpdResponder :: Channel m BL.ByteString -> m ()
     }
 
 newtype MiniProtocolDescriptions m = MiniProtocolDescriptions (M.Map MiniProtocolId (MiniProtocolDescription m))
