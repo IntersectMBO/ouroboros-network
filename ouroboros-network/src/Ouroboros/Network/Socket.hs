@@ -59,7 +59,8 @@ sduSize :: SocketCtx -> IO Word16
 sduSize ctx = do
     -- XXX it is really not acceptable to call getSocketOption for every SDU we want to send
     mss <- getSocketOption (scSocket ctx) MaxSegment
-    return $ fromIntegral $ max 0xffff (15 * mss)
+    -- 1260 = IPv6 min MTU minus TCP header, 8 = mux header size
+    return $ fromIntegral $ max (1260 - 8) (min 0xffff (15 * mss - 8))
 
 writeSocket :: SocketCtx -> Mx.MuxSDU -> IO (Time IO)
 writeSocket ctx sdu = do
