@@ -1,6 +1,5 @@
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE NamedFieldPuns        #-}
 
 module Ouroboros.Network.Mux (
       MiniProtocolDescription (..)
@@ -14,18 +13,15 @@ module Ouroboros.Network.Mux (
     , muxJobs
     ) where
 
-import qualified Codec.CBOR.Encoding as CBOR (Encoding)
-import qualified Codec.CBOR.Write as CBOR (toLazyByteString)
 import           Control.Monad
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTimer
-import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Map.Strict as M
 import           Data.Word
 
-import           Protocol.Channel
+import           Ouroboros.Network.Channel
 
 import           Ouroboros.Network.Mux.Egress
 import           Ouroboros.Network.Mux.Ingress
@@ -67,8 +63,8 @@ muxJobs (MiniProtocolDescriptions udesc) wfn rfn sdufn = do
         w_i <- atomically newEmptyTMVar
         w_r <- atomically newEmptyTMVar
 
-        return [ mpdInitiator mpd $ muxDuplex pmss (mpdId mpd) ModeInitiator w_i
-               , mpdResponder mpd $ muxDuplex pmss (mpdId mpd) ModeResponder w_r]
+        return [ mpdInitiator mpd $ muxChannel pmss (mpdId mpd) ModeInitiator w_i
+               , mpdResponder mpd $ muxChannel pmss (mpdId mpd) ModeResponder w_r]
 
 muxControl :: (MonadSTM m, MonadSay m) =>
     PerMuxSharedState m ->
@@ -83,27 +79,28 @@ muxControl pmss md = do
         atomically $ putTMVar w blob
         atomically $ writeTBQueue (tsrQueue pmss) (TLSRDemand Muxcontrol md (Wanton w))
 
--- | muxDuplex creates a duplex channel for a specific 'MiniProtocolId' and 'MiniProtocolMode'.
-muxDuplex :: (MonadSTM m, MonadSay m) =>
+-- | muxChannel creates a duplex channel for a specific 'MiniProtocolId' and 'MiniProtocolMode'.
+muxChannel :: (MonadSTM m, MonadSay m) =>
     PerMuxSharedState m ->
     MiniProtocolId ->
     MiniProtocolMode ->
     TMVar m BL.ByteString ->
-    Duplex m m CBOR.Encoding BS.ByteString
-muxDuplex pmss mid md w = uniformDuplex snd_ rcv
+    Channel m BL.ByteString
+muxChannel pmss mid md w =
+    Channel {send, recv}
   where
-    snd_ encoding = do
+    send encoding = do
         -- We send CBOR encoded messages by encoding them into by ByteString
         -- forwarding them to the 'mux' thread, see 'Desired servicing semantics'.
         --say $ printf "send mid %s mode %s" (show mid) (show md)
-        atomically $ putTMVar w (CBOR.toLazyByteString encoding)
+        atomically $ putTMVar w encoding
         atomically $ writeTBQueue (tsrQueue pmss) (TLSRDemand mid md (Wanton w))
-    rcv = do
+    recv = do
         -- We receive CBOR encoded messages as ByteStrings (possibly partial) from the
         -- matching ingress queueu. This is the same queue the 'demux' thread writes to.
         blob <- atomically $ readTBQueue (ingressQueue (dispatchTable pmss) mid md)
         --say $ printf "recv mid %s mode %s blob len %d" (show mid) (show md) (BL.length blob)
         if BL.null blob
            then pure Nothing
-           else return $ Just $ BL.toStrict blob
+           else return $ Just blob
 
