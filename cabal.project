@@ -17,5 +17,5 @@ package ouroboros-consensus
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/iohk-monitoring-framework
-  tag: 09b269cd1926303902e8dea3c8703b6e588004f5
+  tag: 8456e488fd26e34f0d15c957965d6cc5c51427af
 
