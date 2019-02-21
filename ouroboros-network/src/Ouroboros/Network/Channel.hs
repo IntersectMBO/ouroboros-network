@@ -12,6 +12,7 @@ module Ouroboros.Network.Channel
   , createSocketConnectedChannels
   , withFifosAsChannel
   , socketAsChannel
+  , delayChannel
   ) where
 
 import qualified Data.ByteString               as BS
@@ -24,6 +25,7 @@ import qualified Network.Socket            as Socket hiding (send, recv)
 import qualified Network.Socket.ByteString as Socket
 
 import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadTimer
 
 import           Network.TypedProtocol.Channel
 
@@ -133,3 +135,17 @@ createSocketConnectedChannels family = do
    return (socketAsChannel socketA,
            socketAsChannel socketB)
 
+
+-- | Delay a channel on the receiver end.
+--
+-- This is intended for testing, as a crude approximation of network delays.
+-- More accurate models along these lines are of course possible.
+--
+delayChannel :: ( MonadSTM m
+                , MonadTimer m
+                )
+             => Duration (Time m)
+             -> Channel m a
+             -> Channel m a
+delayChannel delay = channelEffect (\_ -> return ())
+                                   (\_ -> threadDelay delay)
