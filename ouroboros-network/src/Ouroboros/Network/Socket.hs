@@ -17,33 +17,27 @@ import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTimer
-import           Control.Monad.ST
+import           Control.Exception (Exception(..))
 import           Data.Bits
-import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
 import           Data.Int
---import           Data.ByteString.Lazy.Char8 (pack)
 import qualified Data.Map.Strict as M
-import           Data.Text (Text, unpack)
 import           Data.Word
 import           Network.Socket hiding (recv, recvFrom, send, sendTo)
-import           Network.Socket.ByteString.Lazy (recv, sendAll)
+import qualified Network.Socket.ByteString.Lazy as Socket (recv, sendAll)
 
 import           Ouroboros.Network.Chain (Chain, ChainUpdate, Point)
 import qualified Ouroboros.Network.Chain as Chain
 import qualified Ouroboros.Network.ChainProducerState as CPS
 import qualified Ouroboros.Network.Mux as Mx
 import           Ouroboros.Network.Protocol.ChainSync.Client
-import           Ouroboros.Network.Protocol.ChainSync.Codec.Cbor
+import           Ouroboros.Network.Protocol.ChainSync.Codec
 import           Ouroboros.Network.Protocol.ChainSync.Examples
 import           Ouroboros.Network.Protocol.ChainSync.Server
-import           Ouroboros.Network.Protocol.ChainSync.Type
 import           Ouroboros.Network.Serialise
-
-import qualified Codec.CBOR.Encoding as CBOR (Encoding)
-import           Protocol.Channel (Duplex)
-import           Protocol.Codec
-import           Protocol.Driver
+import           Ouroboros.Network.Channel
+import           Ouroboros.Network.Codec
+import           Network.TypedProtocol.Driver
 
 import           Text.Printf
 
@@ -76,7 +70,7 @@ writeSocket ctx sdu = do
     let sdu' = sdu { Mx.msTimestamp = Mx.RemoteClockModel $ fromIntegral $ ts .&. 0xffffffff }
         buf = Mx.encodeMuxSDU sdu'
     --hexDump buf ""
-    sendAll (scSocket ctx) buf
+    Socket.sendAll (scSocket ctx) buf
     return ts
 
 readSocket :: SocketCtx -> IO (Mx.MuxSDU, Time IO)
@@ -98,7 +92,7 @@ readSocket ctx = do
     recvLen' :: Socket -> Int64 -> [BL.ByteString] -> IO BL.ByteString
     recvLen' _ 0 bufs = return $ BL.concat $ reverse bufs
     recvLen' sd l bufs = do
-        buf <- recv sd l
+        buf <- Socket.recv sd l
         if BL.null buf
             then error "socket closed" -- XXX throw exception
             else recvLen' sd (l - fromIntegral (BL.length buf)) (buf : bufs)
@@ -222,19 +216,17 @@ demo2 chain0 updates = do
         , points = \_ -> pure $ consumerClient target consChain
         }
 
-    throwOnUnexpected :: String -> Result Text t -> IO t
-    throwOnUnexpected str (Unexpected txt) = error $ str ++ " " ++ unpack txt
-    throwOnUnexpected _   (Normal t)       = pure t
+    throwOnUnexpected :: String -> Either DeserialiseFailure t -> IO t
+    throwOnUnexpected str (Left err) = fail $ str ++ " " ++ displayException err
+    throwOnUnexpected _   (Right t)  = pure t
 
-    codec :: Codec IO Text CBOR.Encoding BS.ByteString (ChainSyncMessage block (Point block)) 'StIdle
-    codec = hoistCodec stToIO codecChainSync
-
-    consumerInit :: TMVar IO Bool -> Point block -> TVar IO (Chain block) -> Duplex IO IO CBOR.Encoding BS.ByteString -> IO ()
+    consumerInit :: TMVar IO Bool -> Point block -> TVar IO (Chain block)
+                 -> Channel IO BL.ByteString -> IO ()
     consumerInit done target consChain channel = do
        let consumerPeer = chainSyncClientPeer (chainSyncClientExample consChain
                                                (consumerClient target consChain))
 
-       r <- useCodecWithDuplex channel codec consumerPeer
+       r <- runPeer codecChainSync channel consumerPeer
        throwOnUnexpected "consumer" r
        --say "consumer done"
        atomically $ putTMVar done True
@@ -244,11 +236,12 @@ demo2 chain0 updates = do
     dummyCallback _ = forever $
         threadDelay 1000000
 
-    producerRsp ::  TVar IO (CPS.ChainProducerState block) -> Duplex IO IO CBOR.Encoding BS.ByteString -> IO ()
+    producerRsp ::  TVar IO (CPS.ChainProducerState block)
+                -> Channel IO BL.ByteString -> IO ()
     producerRsp prodChain channel = do
         let producerPeer = chainSyncServerPeer (chainSyncServerExample () prodChain)
 
-        r <- useCodecWithDuplex channel codec producerPeer
+        r <- runPeer codecChainSync channel producerPeer
         throwOnUnexpected "producer" r
         --say "producer done"
 
