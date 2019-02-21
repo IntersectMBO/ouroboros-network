@@ -43,7 +43,7 @@ import           Ouroboros.Network.ChainProducerState (ChainProducerState (..))
 import           Ouroboros.Network.Node
 import           Ouroboros.Network.Testing.ConcreteBlock as ConcreteBlock
 
-import           Test.Chain (TestBlockChain (..), TestChainFork (..),
+import           Test.Chain (TestBlockChain (..),
                              genNonNegative, genHeaderChain)
 import           Ouroboros.Network.Protocol.Chain.Node
 
@@ -53,10 +53,6 @@ tests =
   [ testGroup "fixed graph topology"
     [ testProperty "core -> relay" prop_coreToRelay
     , testProperty "core -> relay -> relay" prop_coreToRelay2
-    , -- This fails with cases where the two core nodes end up with different
-      -- chains. The termination condition also does not work. Often deadlocks.
-      testProperty "core <-> relay <-> core" $
-        expectFailure prop_coreToCoreViaRelay
     ]
   , testProperty "arbtirary node graph" (withMaxSuccess 50 prop_networkGraph)
   , testProperty "blockGenerator invariant SimM" prop_blockGenerator_ST
@@ -257,117 +253,6 @@ prop_coreToRelay2 (TestNodeSim chain slotDuration coreTrDelay relayTrDelay) =
         .&&.
             mchain2 === Just chain
 
-
--- | Node graph: c ↔ r ↔ c
---
--- This test assumes that @chain1@ and @chain2@ ends on a different slot.  Under
--- this assumption, we can detect all the three nodes can be terminated when
--- each nodes' chain reaches max slot length of @chain1@ and @chain2@.
-coreToCoreViaRelaySim
-  :: forall m.
-     ( MonadSTM m
-     , MonadFork m
-     , MonadTimer m
-     , MonadSay m
-     , MonadTimer m
-     )
-  => Chain Block
-  -> Chain Block
-  -> Duration (Time m)
-  -> Duration (Time m)
-  -> Duration (Time m)
-  -> Probe m (NodeId, Chain Block)
-  -> m ()
-coreToCoreViaRelaySim chain1 chain2 slotDuration coreTrDelay relayTrDelay probe = do
-  let -- we compute last block body, under the assumption that one of the chain has
-      -- more blocks than the other one, we can determine from which chain the last
-      -- block will come in all the nodes.
-      lastBlockBody = if Chain.headBlockNo chain1 > Chain.headBlockNo chain2
-                        then blockBody <$> Chain.head chain1
-                        else blockBody <$> Chain.head chain2
-      -- the slot at whcih the simulation will end
-      lastSlot = max (Chain.headSlot chain1) (Chain.headSlot chain2)
-  donevar <- newTVarM (0 :: Int)
-  (c1r1, r1c1) <- createTwoWaySubscriptionChannels coreTrDelay relayTrDelay
-  (r1c2, c2r1) <- createTwoWaySubscriptionChannels relayTrDelay coreTrDelay
-
-  void $ fork $ void $ do
-    cps <- coreNode (CoreId 1) slotDuration (Chain.toOldestFirst chain1) c1r1
-    void $ fork $ observeChainProducerState (CoreId 1) probe cps
-    checkTermination donevar cps lastSlot lastBlockBody
-
-  void $ fork $ void $ do
-    cps <- relayNode (RelayId 1) Genesis (r1c1 <> r1c2)
-    void $ fork $ observeChainProducerState (RelayId 1) probe cps
-    checkTermination donevar cps lastSlot lastBlockBody
-
-  void $ fork $ void $ do
-    cps <- coreNode (CoreId 2) slotDuration (Chain.toOldestFirst chain2) c2r1
-    void $ fork $ observeChainProducerState (CoreId 2) probe cps
-    checkTermination donevar cps lastSlot lastBlockBody
-    
-  -- wait until all the nodes are ready
-  atomically $ readTVar donevar >>= check . (>=3)
- where
-  -- check if a node can terminate, if so bump the `donevar` value
-  checkTermination
-    :: TVar m Int
-    -> TVar m (ChainProducerState Block)
-    -> Slot
-    -> Maybe BlockBody
-    -> m ()
-  checkTermination donevar cps lastSlot lastBlockBody = atomically $ do
-    c <- chainState <$> readTVar cps
-    let slot = Chain.headSlot c
-        bb   = blockBody <$> Chain.head c
-    check (slot >= lastSlot && bb == lastBlockBody)
-    modifyTVar donevar succ
-
-
--- | This properties guarantees that all the nodes picked up the best chain from
--- all the possible chains.  In this setup there are two producers, hence there
--- are only two possible chains that each node can finish with.  Note that this
--- chain might not be the original chain that was passed from the quickcheck
--- generator: it may happen that a core node will start to build up a chain on
--- some block supplied by the other node, which will force the generated blocks
--- to get modified.
---
--- We use a precondition to only test against forks with a different number of
--- blocks.  This way we can determine upfront the last block in the resulting
--- chain on each of the nodes (thanks to simplicity of `Chain.selectChain`
--- function).
---
--- TODO: add a generator which generates chains with a diffrent number of
--- blocks.
-prop_coreToCoreViaRelay :: TestChainFork -> Property
-prop_coreToCoreViaRelay (TestChainFork _ chain1 chain2) =
-  Chain.headBlockNo chain1 /= Chain.headBlockNo chain2 ==>
-  let probes  = Sim.runSimOrThrow $ withProbe $
-                  coreToCoreViaRelaySim chain1 chain2
-                                        (Sim.VTimeDuration 3)
-                                        (Sim.VTimeDuration 1)
-                                        (Sim.VTimeDuration 1)
-
-      isValid :: Maybe (Chain Block)
-              -> Maybe (Chain Block)
-              -> Property
-      isValid Nothing   Nothing   = chain1 === Genesis .&&. chain2 === Genesis  -- under the slot length assumption, this is impossible
-      isValid (Just _)  Nothing   = property False
-      isValid Nothing   (Just _)  = property False
-      isValid (Just c1) (Just c2) = compareChains c1 c2
-  in
-        let dict    = partitionProbe probes
-            chainC1 = CoreId 1  `Map.lookup` dict >>= listToMaybe
-            chainR1 = RelayId 1 `Map.lookup` dict >>= listToMaybe
-            chainC2 = CoreId 2  `Map.lookup` dict >>= listToMaybe
-        in
-            isValid chainC1 chainR1 .&&. isValid chainC2 chainR1
-  where
-    compareChains :: Chain Block
-                  -> Chain Block
-                  -> Property
-    compareChains c1 c2 =
-       (Chain.selectChain c1 c2 === c1) .&&. (Chain.selectChain c2 c1 === c2)
 
 data TestNetworkGraph = TestNetworkGraph Graph [(Int, Chain Block)]
     deriving Show
