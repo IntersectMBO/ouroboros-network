@@ -49,7 +49,7 @@ let
     )))));
 
     ouroboros-consensus = doWerror(docNoSeprateOutput(doHaddock(doTest(doBench(
-      cleanSource (callCabal2nix "ouroboros-consensus" ./ouroboros-consensus { inherit io-sim-classes io-sim typed-transitions ouroboros-network; })
+      cleanSource (callCabal2nix "ouroboros-consensus" ./ouroboros-consensus { inherit io-sim-classes io-sim typed-protocols typed-transitions ouroboros-network; })
     )))));
 
   };
