@@ -2,13 +2,11 @@
 
 module Ouroboros.Network.Protocol.Channel.Sim
   ( simStmChannels
-  , delayChannel
   ) where
 
 import qualified Data.Sequence as Seq
 
 import Control.Monad.Class.MonadSTM
-import Control.Monad.Class.MonadTimer
 import Protocol.Channel
 
 
@@ -33,13 +31,3 @@ simStmChannels = do
       channelB = uniformChannel (send varB) (recv varA)
   pure (channelA, channelB)
 
--- | Delay a channel on the receiver end.
---
-delayChannel :: ( Applicative sm
-                , MonadSTM rm
-                , MonadTimer rm
-                )
-             => Duration (Time rm)
-             -> Duplex sm rm send recv
-             -> Duplex sm rm send recv
-delayChannel delay = channelRecvEffect (\_ -> threadDelay delay)
