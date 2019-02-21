@@ -131,6 +131,7 @@ library
   build-depends:       base              >=4.9 && <4.13,
                        ouroboros-network,
                        typed-transitions,
+                       typed-protocols,
                        io-sim-classes,
 
                        base16-bytestring >=0.1   && <0.2,
@@ -214,6 +215,7 @@ test-suite test-consensus
                     Test.Util.DepFn
   build-depends:    base,
                     typed-transitions,
+                    typed-protocols,
                     ouroboros-network,
                     ouroboros-consensus,
                     io-sim-classes,

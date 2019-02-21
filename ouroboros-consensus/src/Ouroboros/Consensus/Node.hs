@@ -21,7 +21,7 @@ module Ouroboros.Consensus.Node (
   , nodeKernel
     -- * Channels (re-exports from the network layer)
   , Channel
-  , Network.createCoupledChannels
+  , Network.createConnectedChannels
   , Network.loggingChannel
   ) where
 
@@ -31,15 +31,14 @@ import           Crypto.Random (ChaChaDRG)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe, mapMaybe)
-import           Data.Text (Text)
 
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadFork
 
-import           Protocol.Channel
-import           Protocol.Codec
-import           Protocol.Driver
+import           Ouroboros.Network.Channel as Network
+import           Ouroboros.Network.Codec
+import           Network.TypedProtocol.Driver
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (Chain (..), ChainUpdate (..), Point)
@@ -94,13 +93,13 @@ data NodeKernel m up blk = NodeKernel {
       --
       -- NOTE: Eventually it will be the responsibility of the network layer
       -- itself to register and deregister peers.
-    , addUpstream       :: forall s r. up -> NodeComms m blk s r -> m ()
+    , addUpstream       :: forall e bytes. up -> NodeComms e m blk bytes -> m ()
 
       -- | Notify network layer of a new downstream node
       --
       -- NOTE: Eventually it will be the responsibility of the network layer
       -- itself to register and deregister peers.
-    , addDownstream     :: forall s r. NodeComms m blk s r -> m ()
+    , addDownstream     :: forall e bytes. NodeComms e m blk bytes -> m ()
     }
 
 -- | Monad that we run protocol specific functions in
@@ -666,9 +665,10 @@ data NetworkRequires m up blk hdr = NetworkRequires {
     }
 
 -- | Required by the network layer to initiate comms to a new node
-data NodeComms m hdr s r = NodeComms {
+data NodeComms e m hdr bytes = NodeComms {
       -- | Codec for concrete send type @s@ and receive type @r@
-      ncCodec    :: Codec m Text s r (ChainSyncMessage hdr (Point hdr)) 'StIdle
+      ncCodec    :: Codec (ChainSync hdr (Point hdr)) e m bytes
+      -- TODO: will need to handle these 'e' exceptions properly
 
       -- | Construct a channel to the node
       --
@@ -676,7 +676,7 @@ data NodeComms m hdr s r = NodeComms {
       -- is important to note that this resource allocation will run in a thread
       -- which itself is untracked, so if resource deallocation absolutely
       -- /must/ happen additional measures must be taken
-    , ncWithChan :: forall a. (Duplex m m s r -> m a) -> m a
+    , ncWithChan :: forall a. (Channel m bytes -> m a) -> m a
     }
 
 data NetworkProvides m up blk hdr = NetworkProvides {
@@ -690,13 +690,13 @@ data NetworkProvides m up blk hdr = NetworkProvides {
       --
       -- NOTE: Eventually it will be the responsibility of the network layer
       -- itself to register and deregister peers.
-    , npAddUpstream   :: forall s r. up -> NodeComms m hdr s r -> m ()
+    , npAddUpstream   :: forall e bytes. up -> NodeComms e m hdr bytes -> m ()
 
       -- | Notify network layer of a new downstream node
       --
       -- NOTE: Eventually it will be the responsibility of the network layer
       -- itself to register and deregister peers.
-    , npAddDownstream :: forall s r. NodeComms m hdr s r -> m ()
+    , npAddDownstream :: forall e bytes. NodeComms e m hdr bytes -> m ()
     }
 
 initNetworkLayer :: forall m up hdr blk.
@@ -743,11 +743,15 @@ initNetworkLayer NetworkRequires{..} = do
         , npAddDownstream = \NodeComms{..} -> do
             let producer = chainSyncServerPeer (chainSyncServerExample () cpsVar)
             void $ fork $ void $ ncWithChan $ \chan ->
-              useCodecWithDuplex chan ncCodec producer
+              runPeer ncCodec chan producer
+              --TODO: deal with the failures that this returns
+                >>= either (\_ -> fail "codec exception") return
         , npAddUpstream = \up NodeComms{..} -> do
             let consumer = nrSyncClient up
             void $ fork $ void $ ncWithChan $ \chan ->
-              useCodecWithDuplex chan ncCodec (chainSyncClientPeer consumer)
+              runPeer ncCodec chan (chainSyncClientPeer consumer)
+              --TODO: deal with the failures that this can throw
+                >>= either (\_ -> fail "codec exception") return
         }
 
 {-------------------------------------------------------------------------------
