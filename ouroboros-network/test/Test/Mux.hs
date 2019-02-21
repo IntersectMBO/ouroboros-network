@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators       #-}
@@ -12,6 +13,7 @@ import           Control.Monad
 import           Control.Monad.ST (stToIO)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
+import           Data.List (nub)
 import qualified Data.Map.Strict as M
 import           Data.Word
 import           Test.QuickCheck
@@ -36,6 +38,7 @@ tests =
   testGroup "Mux"
   [ testProperty "mux send receive"        prop_mux_snd_recv
   , testProperty "2 miniprotols"           prop_mux_2_minis
+  , testProperty "starvation"              prop_mux_starvation
   ]
 
 newtype DummyPayload = DummyPayload {
@@ -57,15 +60,17 @@ data MuxSTMCtx m = MuxSTMCtx {
       writeQueue :: TBQueue m BL.ByteString
     , readQueue  :: TBQueue m BL.ByteString
     , sduSize    :: Word16
+    , traceQueue :: Maybe (TBQueue m (Mx.MiniProtocolId, Mx.MiniProtocolMode, Time m))
 }
 
 startMuxSTM :: Mx.MiniProtocolDescriptions IO
             -> TBQueue IO BL.ByteString
             -> TBQueue IO BL.ByteString
             -> Word16
+            -> Maybe (TBQueue IO (Mx.MiniProtocolId, Mx.MiniProtocolMode, Time IO))
             -> IO ()
-startMuxSTM mpds wq rq mtu = do
-    let ctx = MuxSTMCtx wq rq mtu
+startMuxSTM mpds wq rq mtu trace = do
+    let ctx = MuxSTMCtx wq rq mtu trace
     jobs <- Mx.muxJobs mpds (writeMux ctx) (readMux ctx) (sduSizeMux ctx)
     aids <- mapM async jobs
     void $ fork (watcher aids)
@@ -101,6 +106,12 @@ readMux ctx = do
          Nothing     -> error "failed to decode header" -- XXX
          Just header -> do
              ts <- getMonotonicTime
+             case traceQueue ctx of
+                  Just q  -> atomically $ do
+                      full <- isFullTBQueue q
+                      if full then return ()
+                              else writeTBQueue q (Mx.msId header, Mx.msMode header, ts)
+                  Nothing -> return ()
              return (header {Mx.msBlob = payload}, ts)
 
 prop_mux_snd_recv :: DummyPayload
@@ -111,12 +122,12 @@ prop_mux_snd_recv request response = ioProperty $ do
 
     client_w <- atomically $ newTBQueue 10
     client_r <- atomically $ newTBQueue 10
-    activeMpsVar <- atomically $ newTVar 2
+    endMpsVar <- atomically $ newTVar 2
 
     let server_w = client_r
         server_r = client_w
 
-    (verify, client_mp, server_mp) <- setupMiniReqRsp Mx.ChainSync  activeMpsVar request response
+    (verify, client_mp, server_mp) <- setupMiniReqRsp Mx.ChainSync (return ()) endMpsVar request response
 
     let client_mps = Mx.MiniProtocolDescriptions $ M.fromList
                     [ ( Mx.ChainSync, client_mp )
@@ -125,12 +136,10 @@ prop_mux_snd_recv request response = ioProperty $ do
                     [ ( Mx.ChainSync, server_mp )
                     ]
 
-    startMuxSTM client_mps client_w client_r sduLen
-    startMuxSTM server_mps server_w server_r sduLen
+    startMuxSTM client_mps client_w client_r sduLen Nothing
+    startMuxSTM server_mps server_w server_r sduLen Nothing
 
-    res <- verify
-
-    return $ property res
+    property <$> verify
 
 -- Stub for a mpdInitiator or mpdResponder that doesn't send or receive any data.
 dummyCallback :: (MonadTimer m) => Duplex m m CBOR.Encoding BS.ByteString -> m ()
@@ -140,13 +149,14 @@ dummyCallback _ = forever $
 -- | Create a verification function, a MiniProtocolDescription for the client side and a
 -- MiniProtocolDescription for the server side for a RequestResponce protocol.
 setupMiniReqRsp :: Mx.MiniProtocolId
+                -> IO ()
                 -> TVar IO Int
                 -> DummyPayload
                 -> DummyPayload
                 -> IO (IO Bool
                       , Mx.MiniProtocolDescription IO
                       , Mx.MiniProtocolDescription IO)
-setupMiniReqRsp mid mpsVar request response = do
+setupMiniReqRsp mid serverAction mpsEndVar request response = do
     serverResultVar <- newEmptyTMVarM
     clientResultVar <- newEmptyTMVarM
 
@@ -165,7 +175,7 @@ setupMiniReqRsp mid mpsVar request response = do
 
              _ -> return False
 
-    serverPeer = reqRespServerPeer (ReqRespServer $ \req -> return (response, req))
+    serverPeer = reqRespServerPeer (ReqRespServer $ \req -> serverAction >> return (response, req))
 
     clientPeer = reqRespClientPeer (Request request return)
 
@@ -182,10 +192,19 @@ setupMiniReqRsp mid mpsVar request response = do
         end
 
     end = do
-        atomically $ modifyTVar' mpsVar (\a -> a - 1)
+        atomically $ modifyTVar' mpsEndVar (\a -> a - 1)
         atomically $ do
-            c <- readTVar mpsVar
+            c <- readTVar mpsEndVar
             unless (c == 0) retry
+
+waitOnAllClients :: TVar IO Int
+                 -> Int
+                 -> IO ()
+waitOnAllClients clientVar clientTot = do
+        atomically $ modifyTVar' clientVar (+ 1)
+        atomically $ do
+            c <- readTVar clientVar
+            unless (c == clientTot) retry
 
 prop_mux_2_minis :: DummyPayload
                  -> DummyPayload
@@ -197,13 +216,13 @@ prop_mux_2_minis request0 response0 response1 request1 = ioProperty $ do
 
     client_w <- atomically $ newTBQueue 10
     client_r <- atomically $ newTBQueue 10
-    activeMpsVar <- atomically $ newTVar 4
+    endMpsVar <- atomically $ newTVar 4
 
     let server_w = client_r
         server_r = client_w
 
-    (verify_0, client_mp0, server_mp0) <- setupMiniReqRsp Mx.ChainSync  activeMpsVar request0 response0
-    (verify_1, client_mp1, server_mp1) <- setupMiniReqRsp Mx.BlockFetch activeMpsVar request1 response1
+    (verify_0, client_mp0, server_mp0) <- setupMiniReqRsp Mx.ChainSync  (return ()) endMpsVar request0 response0
+    (verify_1, client_mp1, server_mp1) <- setupMiniReqRsp Mx.BlockFetch (return ()) endMpsVar request1 response1
 
     let client_mps = Mx.MiniProtocolDescriptions $ M.fromList
                     [ ( Mx.ChainSync, client_mp0 )
@@ -214,11 +233,66 @@ prop_mux_2_minis request0 response0 response1 request1 = ioProperty $ do
                     , ( Mx.BlockFetch, server_mp1 )
                     ]
 
-    startMuxSTM client_mps client_w client_r sduLen
-    startMuxSTM server_mps server_w server_r sduLen
+    startMuxSTM client_mps client_w client_r sduLen Nothing
+    startMuxSTM server_mps server_w server_r sduLen Nothing
 
     res0 <- verify_0
     res1 <- verify_1
 
     return $ property $ res0 && res1
 
+prop_mux_starvation :: DummyPayload
+                    -> DummyPayload
+                    -> Property
+prop_mux_starvation response0 response1 =
+    let sduLen        = 1260 in
+    (BL.length (unDummyPayload response0) > 2* (fromIntegral sduLen)) &&
+    (BL.length (unDummyPayload response1) > 2* (fromIntegral sduLen)) ==>
+    ioProperty $ do
+    let request       = DummyPayload $ BL.replicate 4 0xa
+
+    client_w <- atomically $ newTBQueue 10
+    client_r <- atomically $ newTBQueue 10
+    activeMpsVar <- atomically $ newTVar 0
+    endMpsVar <- atomically $ newTVar 4
+    traceQueueVar <- atomically $ newTBQueue 100
+    let server_w = client_r
+        server_r = client_w
+
+    (verify_short, client_short, server_short) <-
+        setupMiniReqRsp Mx.ChainSync (waitOnAllClients activeMpsVar 2) endMpsVar request response0
+    (verify_long, client_long, server_long) <-
+        setupMiniReqRsp Mx.BlockFetch (waitOnAllClients activeMpsVar 2) endMpsVar request response1
+
+    let client_mps = Mx.MiniProtocolDescriptions $ M.fromList
+                    [ ( Mx.BlockFetch, client_short )
+                    , ( Mx.ChainSync,  client_long )
+                    ]
+        server_mps = Mx.MiniProtocolDescriptions $ M.fromList
+                    [ ( Mx.BlockFetch, server_short )
+                    , ( Mx.ChainSync,  server_long )
+                    ]
+
+    startMuxSTM client_mps client_w client_r sduLen $ Just traceQueueVar
+    startMuxSTM server_mps server_w server_r sduLen Nothing
+
+    res_short <- verify_short
+    res_long <- verify_long
+
+    trace <- atomically $ flushTBQueue traceQueueVar []
+    let es = map (\(e, _, _) -> e) trace
+        ls = dropWhile (\e -> e == head es) es
+
+   -- We can't make 100% sure that both servers start responding at the same time
+   -- but once they are both up and running messages should alternate between
+   -- Mx.BlockFetch and Mx.ChainSync hence length (nub $ take 2 ls) == 2.
+    return $ property $ res_short && res_long && length (nub $ take 2 ls) == 2
+
+
+  where
+    flushTBQueue q acc = do
+        e <- isEmptyTBQueue q
+        if e then return $ reverse acc
+             else do
+                 a <- readTBQueue q
+                 flushTBQueue q (a : acc)
