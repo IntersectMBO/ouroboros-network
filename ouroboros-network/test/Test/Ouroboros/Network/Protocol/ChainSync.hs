@@ -5,10 +5,7 @@
 module Test.Ouroboros.Network.Protocol.ChainSync where
 
 import Control.Monad (unless, void)
-import Data.ByteString (ByteString)
-import System.Process (createPipe)
-
-import Codec.CBOR.Encoding (Encoding)
+import Data.ByteString.Lazy (ByteString)
 
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadST
@@ -16,25 +13,22 @@ import Control.Monad.Class.MonadSTM
 
 import Control.Monad.IOSim (runSimOrThrow)
 
-import Protocol.Core (connect)
-import Protocol.Codec
-import Protocol.Channel
-import Protocol.Driver (useCodecWithDuplex)
+import           Network.TypedProtocol.Driver
+import           Network.TypedProtocol.Proofs (connect)
+import           Ouroboros.Network.Channel
 
 import           Ouroboros.Network.Chain (Point)
 import qualified Ouroboros.Network.Chain as Chain
-import Ouroboros.Network.Pipe (pipeDuplex)
 import qualified Ouroboros.Network.ChainProducerState as ChainProducerState
 
 import Ouroboros.Network.Protocol.ChainSync.Client
 import Ouroboros.Network.Protocol.ChainSync.Server
 import Ouroboros.Network.Protocol.ChainSync.Direct
-import Ouroboros.Network.Protocol.ChainSync.Codec.Cbor
+import Ouroboros.Network.Protocol.ChainSync.Codec
 import qualified Ouroboros.Network.Protocol.ChainSync.Examples as ChainSyncExamples
 
 import Ouroboros.Network.Testing.ConcreteBlock (Block (..))
 import Test.ChainProducerState (ChainProducerStateForkTest (..))
-import Test.Ouroboros.Network.Testing.Utils (tmvarChannels)
 
 import Test.QuickCheck hiding (Result)
 import Test.Tasty (TestTree, testGroup)
@@ -117,7 +111,7 @@ propChainSyncConnectST cps =
     runSimOrThrow $
       chainSyncForkExperiment
         (\ser cli ->
-            void $ connect (chainSyncServerPeer ser) (chainSyncClientPeer cli)
+            void $ connect (chainSyncClientPeer cli) (chainSyncServerPeer ser)
         ) cps 
 
 propChainSyncConnectIO :: ChainProducerStateForkTest -> Property
@@ -125,7 +119,7 @@ propChainSyncConnectIO cps =
     ioProperty $
       chainSyncForkExperiment
         (\ser cli ->
-            void $  connect (chainSyncServerPeer ser) (chainSyncClientPeer cli)
+            void $  connect (chainSyncClientPeer cli) (chainSyncServerPeer ser)
         ) cps 
 
 chainSyncDemo
@@ -134,12 +128,11 @@ chainSyncDemo
      , MonadSTM m
      , MonadFork m
      )
-  => Duplex m m Encoding ByteString
-  -> Duplex m m Encoding ByteString
+  => Channel m ByteString
+  -> Channel m ByteString
   -> ChainProducerStateForkTest
   -> m Property
-chainSyncDemo clientChan serverChan (ChainProducerStateForkTest cps chain) =
-  withLiftST @m $ \liftST -> do
+chainSyncDemo clientChan serverChan (ChainProducerStateForkTest cps chain) = do
   let pchain = ChainProducerState.producerChain cps
   cpsVar   <- atomically $ newTVar cps
   chainVar <- atomically $ newTVar chain
@@ -151,10 +144,8 @@ chainSyncDemo clientChan serverChan (ChainProducerStateForkTest cps chain) =
 
       client = ChainSyncExamples.chainSyncClientExample chainVar (testClient doneVar (Chain.headPoint pchain))
 
-      codec = hoistCodec liftST codecChainSync
-
-  void $ fork (void $ useCodecWithDuplex serverChan codec (chainSyncServerPeer server))
-  void $ fork (void $ useCodecWithDuplex clientChan codec (chainSyncClientPeer client))
+  void $ fork (void $ runPeer codecChainSync serverChan (chainSyncServerPeer server))
+  void $ fork (void $ runPeer codecChainSync clientChan (chainSyncClientPeer client))
 
   atomically $ do
     done <- readTVar doneVar
@@ -168,7 +159,7 @@ propChainSyncDemoST
   -> Property
 propChainSyncDemoST cps =
   runSimOrThrow $ do
-    (clientChan, serverChan) <- tmvarChannels
+    (clientChan, serverChan) <- createConnectedChannels
     chainSyncDemo clientChan serverChan cps
 
 propChainSyncDemoIO
@@ -176,7 +167,7 @@ propChainSyncDemoIO
   -> Property
 propChainSyncDemoIO cps =
   ioProperty $ do
-    (clientChan, serverChan) <- tmvarChannels
+    (clientChan, serverChan) <- createConnectedChannels
     chainSyncDemo clientChan serverChan cps
 
 propChainSyncPipe
@@ -184,8 +175,5 @@ propChainSyncPipe
   -> Property
 propChainSyncPipe cps =
   ioProperty $ do
-    (serRead, cliWrite) <- createPipe
-    (cliRead, serWrite) <- createPipe
-    let clientChan = pipeDuplex cliRead cliWrite
-        serverChan = pipeDuplex serRead serWrite
+    (clientChan, serverChan) <- createPipeConnectedChannels
     chainSyncDemo clientChan serverChan cps

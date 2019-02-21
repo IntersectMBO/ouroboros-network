@@ -141,6 +141,7 @@ test-suite tests
   build-depends:       base,
                        ouroboros-network,
                        typed-transitions,
+                       typed-protocols,
                        io-sim-classes,
                        io-sim            >=0.1 && < 0.2,
 
