@@ -18,6 +18,7 @@ import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
+import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTimer
 import           Protocol.Channel
@@ -67,7 +68,7 @@ startMuxSTM mpds wq rq mtu = do
     let ctx = MuxSTMCtx wq rq mtu
     jobs <- Mx.muxJobs mpds (writeMux ctx) (readMux ctx) (sduSizeMux ctx)
     aids <- mapM async jobs
-    fork (watcher aids)
+    void $ fork (watcher aids)
   where
     watcher as = do
         (_,r) <- waitAnyCatchCancel as
