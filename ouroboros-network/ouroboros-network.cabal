@@ -65,6 +65,9 @@ library
                        Ouroboros.Network.Protocol.BlockFetch.Client
                        Ouroboros.Network.Protocol.BlockFetch.Server
                        Ouroboros.Network.Protocol.BlockFetch.Codec
+                       Ouroboros.Network.Protocol.TxSubmission.Type
+                       Ouroboros.Network.Protocol.TxSubmission.Client
+                       Ouroboros.Network.Protocol.TxSubmission.Server
   default-language:    Haskell2010
   other-extensions:    BangPatterns,
                        DataKinds,
