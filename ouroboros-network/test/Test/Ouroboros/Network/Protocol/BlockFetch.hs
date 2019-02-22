@@ -1,3 +1,4 @@
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 module Test.Ouroboros.Network.Protocol.BlockFetch where
@@ -35,12 +36,18 @@ import           Test.Tasty.QuickCheck (testProperty)
 tests :: TestTree
 tests =
   testGroup "Ouroboros.Network.Protocol.BlockFetch"
-  [ testProperty "direct"            prop_direct
-  , testProperty "direct_pipelined"  prop_direct_pipelined
-  , testProperty "connect"           prop_connect
-  , testProperty "channel ST"        prop_channel_ST
-  , testProperty "channel IO"        prop_channel_IO
-  , testProperty "pipe IO"           prop_pipe_IO
+  [ testProperty "direct"              prop_direct
+  , testProperty "directPipelined 1"   prop_directPipelined1
+  , testProperty "directPipelined 2"   prop_directPipelined2
+  , testProperty "connect"             prop_connect
+  , testProperty "connect_pipelined 1" prop_connect_pipelined1
+  , testProperty "connect_pipelined 2" prop_connect_pipelined2
+  , testProperty "connect_pipelined 3" prop_connect_pipelined3
+  , testProperty "connect_pipelined 4" prop_connect_pipelined4
+  , testProperty "connect_pipelined 5" prop_connect_pipelined5
+  , testProperty "channel ST"          prop_channel_ST
+  , testProperty "channel IO"          prop_channel_IO
+  , testProperty "pipe IO"             prop_pipe_IO
   ]
 
 --
@@ -112,12 +119,12 @@ prop_direct (TestChainAndPoints chain points) = case runSim (direct_experiment c
   _          -> False
 
 
-direct_pipelined_experiment
+direct_pipelined_experiment1
   :: MonadSTM m
   => Chain Block
   -> [Point Block]
   -> m Property
-direct_pipelined_experiment chain points = do
+direct_pipelined_experiment1 chain points = do
   let ranges = pointsToRanges chain points
       client = blockFetchClientPipelinedMax ranges
       server = blockFetchServer (ConcreteBlock.blockBody <$> rangeRequestsFromChain chain)
@@ -125,14 +132,38 @@ direct_pipelined_experiment chain points = do
   (res, _) <- directPipelined client server
   return $ reverse (map (either Left (Right . reverse)) res) === (map Left ranges ++ map Right (receivedBlockBodies chain points))
 
--- | Run piplined @'direct_pipelined_experiment'@ in the simulation monad.
+-- | Run piplined @'direct_pipelined_experiment1'@ in the simulation monad.
 --
-prop_direct_pipelined
+prop_directPipelined1
   :: TestChainAndPoints
   -> Property
-prop_direct_pipelined (TestChainAndPoints chain points) = case runSim (direct_pipelined_experiment chain points) of
+prop_directPipelined1 (TestChainAndPoints chain points) = case runSim (direct_pipelined_experiment1 chain points) of
   Right p -> p
   _       -> property False
+
+
+direct_pipelined_experiment2
+  :: MonadSTM m
+  => Chain Block
+  -> [Point Block]
+  -> m Property
+direct_pipelined_experiment2 chain points = do
+  let ranges = pointsToRanges chain points
+      client = blockFetchClientPipelinedMin ranges
+      server = blockFetchServer (ConcreteBlock.blockBody <$> rangeRequestsFromChain chain)
+
+  (res, _) <- directPipelined client server
+  return $ reverse (map (either Left (Right . reverse)) res) === concat (zipWith (\l r -> [Left l, Right r]) ranges (receivedBlockBodies chain points))
+
+-- | Run piplined @'direct_pipelined_experiment2'@ in the simulation monad.
+--
+prop_directPipelined2
+  :: TestChainAndPoints
+  -> Property
+prop_directPipelined2 (TestChainAndPoints chain points) = case runSim (direct_pipelined_experiment2 chain points) of
+  Right p -> p
+  _       -> property False
+
 
 --
 -- Properties goind via Peer, but without using a channel, without pipelining.
@@ -164,6 +195,79 @@ prop_connect (TestChainAndPoints chain points) = case runSim (connect_experiment
   Right True -> True
   _          -> False
 
+connect_pipelined
+  :: MonadSTM m
+  => BlockFetchClientPipelined Block BlockBody [BlockBody] m [Either (ChainRange Block) [BlockBody]]
+  -> Chain Block
+  -> [Bool]
+  -> m [Either (ChainRange Block) [BlockBody]]
+connect_pipelined client chain cs = do
+  let server = blockFetchServer (ConcreteBlock.blockBody <$> rangeRequestsFromChain chain)
+
+  (res, _, TerminalStates TokDone TokDone) <- connectPipelined cs
+    (blockFetchClientPeerPipelined client)
+    (blockFetchServerPeer server)
+  return $ reverse $ map (fmap reverse) res
+
+prop_connect_pipelined1
+  :: TestChainAndPoints
+  -> [Bool]
+  -> Property
+prop_connect_pipelined1 (TestChainAndPoints chain points) choices =
+  let ranges = pointsToRanges chain points
+  in case runSim $ connect_pipelined (blockFetchClientPipelinedMax ranges) chain choices of
+      Right res ->
+        res === map Left ranges ++ map Right (receivedBlockBodies chain points)
+      Left _    -> property False
+
+
+prop_connect_pipelined2
+  :: TestChainAndPoints
+  -> Property
+prop_connect_pipelined2 (TestChainAndPoints chain points) =
+  let ranges  = pointsToRanges chain points
+      choices = repeat True
+  in case runSim $ connect_pipelined (blockFetchClientPipelinedMin ranges) chain choices of
+    Right res ->
+      res === map Left ranges ++ map Right (receivedBlockBodies chain points)
+    Left _    -> property False
+
+prop_connect_pipelined3
+  :: TestChainAndPoints
+  -> Property
+prop_connect_pipelined3 (TestChainAndPoints chain points) =
+  let ranges  = pointsToRanges chain points
+      choices = repeat False
+  in case runSim $ connect_pipelined (blockFetchClientPipelinedMin ranges) chain choices of
+    Right res ->
+      res === concat (zipWith (\l r -> [Left l, Right r]) ranges (receivedBlockBodies chain points))
+    Left _    -> property False
+
+prop_connect_pipelined4
+  :: TestChainAndPoints
+  -> [Bool]
+  -> Property
+prop_connect_pipelined4 (TestChainAndPoints chain points) choices =
+  let ranges  = pointsToRanges chain points
+  in case runSim $ connect_pipelined (blockFetchClientPipelinedMin ranges) chain choices of
+    Right res ->
+      res === pipelineInterleaving maxBound choices ranges (receivedBlockBodies chain points)
+    Left _    -> property False
+
+prop_connect_pipelined5
+  :: TestChainAndPoints
+  -> NonNegative Int
+  -> [Bool]
+  -> Property
+prop_connect_pipelined5 (TestChainAndPoints chain points) (NonNegative omax) choices =
+  let ranges  = pointsToRanges chain points
+  in case runSim $ connect_pipelined (blockFetchClientPipelinedLimited omax ranges) chain choices of
+    Right res ->
+      counterexample (show ranges) $ res === pipelineInterleaving omax choices ranges (receivedBlockBodies chain points)
+    Left _    -> property False
+
+
+--
 -- Experiments using a channel
 --
 
