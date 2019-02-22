@@ -7,11 +7,8 @@
 
 module Test.Mux (tests) where
 
-import qualified Codec.CBOR.Encoding as CBOR (Encoding)
 import           Control.Concurrent.Async
 import           Control.Monad
-import           Control.Monad.ST (stToIO)
-import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
 import           Data.List (nub)
 import qualified Data.Map.Strict as M
@@ -23,14 +20,13 @@ import           Test.Tasty.QuickCheck (testProperty)
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTimer
-import           Protocol.Channel
-import           Protocol.Codec
-import           Protocol.Driver (Result (..), useCodecWithDuplex)
+import           Network.TypedProtocol.Driver
+import           Network.TypedProtocol.ReqResp.Client
+import           Network.TypedProtocol.ReqResp.Server
 
+import           Ouroboros.Network.Channel
 import qualified Ouroboros.Network.Mux as Mx
-import           Ouroboros.Network.Protocol.ReqResp.Client
-import           Ouroboros.Network.Protocol.ReqResp.Codec.Cbor
-import           Ouroboros.Network.Protocol.ReqResp.Server
+import           Ouroboros.Network.Protocol.ReqResp.Codec
 import           Ouroboros.Network.Serialise
 
 tests :: TestTree
@@ -142,7 +138,7 @@ prop_mux_snd_recv request response = ioProperty $ do
     property <$> verify
 
 -- Stub for a mpdInitiator or mpdResponder that doesn't send or receive any data.
-dummyCallback :: (MonadTimer m) => Duplex m m CBOR.Encoding BS.ByteString -> m ()
+dummyCallback :: (MonadTimer m) => Channel m BL.ByteString  -> m ()
 dummyCallback _ = forever $
     threadDelay 1000000
 
@@ -166,28 +162,34 @@ setupMiniReqRsp mid serverAction mpsEndVar request response = do
     return (verifyCallback serverResultVar clientResultVar, client_mp, server_mp)
   where
     verifyCallback serverResultVar clientResultVar = do
-        (serverResult, clientResult) <- atomically $
+        (request', response') <- atomically $
             (,) <$> takeTMVar serverResultVar <*> takeTMVar clientResultVar
+        return $ head request' == request && head response' == response
 
-        case (serverResult, clientResult) of
-             (Normal request', Normal response') ->
-                 return $ request' == request && response' == response
+    plainServer :: [DummyPayload] -> ReqRespServer DummyPayload DummyPayload IO [DummyPayload]
+    plainServer reqs = ReqRespServer {
+        recvMsgReq  = \req -> serverAction >> return (response, plainServer (req:reqs)),
+        recvMsgDone = reverse reqs
+    }
 
-             _ -> return False
+    plainClient :: [DummyPayload] -> ReqRespClient DummyPayload DummyPayload IO [DummyPayload]
+    plainClient = clientGo []
 
-    serverPeer = reqRespServerPeer (ReqRespServer $ \req -> serverAction >> return (response, req))
+    clientGo resps []         = SendMsgDone (reverse resps)
+    clientGo resps (req:reqs) =
+      SendMsgReq req $ \resp ->
+      return (clientGo (resp:resps) reqs)
 
-    clientPeer = reqRespClientPeer (Request request return)
-
-    codec = hoistCodec stToIO codecReqResp
+    serverPeer = reqRespServerPeer (plainServer [])
+    clientPeer = reqRespClientPeer (plainClient [request])
 
     clientInit clientResultVar clientChan = do
-        result <- useCodecWithDuplex clientChan codec clientPeer
+        result <- runPeer codecReqResp clientChan clientPeer
         atomically (putTMVar clientResultVar result)
         end
 
     serverRsp serverResultVar serverChan = do
-        result <- useCodecWithDuplex serverChan codec serverPeer
+        result <- runPeer codecReqResp serverChan serverPeer
         atomically (putTMVar serverResultVar result)
         end
 
@@ -246,8 +248,8 @@ prop_mux_starvation :: DummyPayload
                     -> Property
 prop_mux_starvation response0 response1 =
     let sduLen        = 1260 in
-    (BL.length (unDummyPayload response0) > 2* (fromIntegral sduLen)) &&
-    (BL.length (unDummyPayload response1) > 2* (fromIntegral sduLen)) ==>
+    (BL.length (unDummyPayload response0) > 2 * fromIntegral sduLen) &&
+    (BL.length (unDummyPayload response1) > 2 * fromIntegral sduLen) ==>
     ioProperty $ do
     let request       = DummyPayload $ BL.replicate 4 0xa
 
