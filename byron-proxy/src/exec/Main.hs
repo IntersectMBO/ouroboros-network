@@ -206,7 +206,7 @@ convertSeverity sev = case sev of
 --
 -- The challenge: how to make the original `Trace` from this
 -- thing, to give to the diffusion layer, in such a way that it
--- ehaves as expected? What is the `TraceContext` for? Is it
+-- behaves as expected? What is the `TraceContext` for? Is it
 -- needed? It seems all wrong: configuration for the `Trace`
 -- should be kept _in its closure_ if need be rather than shown
 -- up-front, and with a mention of `IO` to boot. Very poor

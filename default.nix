@@ -9,7 +9,8 @@ let
   nixpkgs = import ./nix/nixpkgs.nix {};
   overrides = import ./nix/overrides.nix { inherit nixpkgs; };
 
-  # Special cardano branch for iohk montiroing framework compat
+  # This is in the develop branch. The oldest commit against which the Byron
+  # proxy will build.
   cardanoroot = nixpkgs.fetchgit {
     url = "https://github.com/input-output-hk/cardano-sl";
     rev = "1c8b414f59016c360c0f0eb2ec9cef07c99063ef";
