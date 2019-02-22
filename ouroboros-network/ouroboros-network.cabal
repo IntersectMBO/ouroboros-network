@@ -58,6 +58,7 @@ library
                        Ouroboros.Network.Protocol.Stream.Client
                        Ouroboros.Network.Protocol.Stream.Server
                        Ouroboros.Network.Protocol.Stream.Direct
+                       Ouroboros.Network.Protocol.ReqResp.Codec
                        Ouroboros.Network.Protocol.BlockFetch.Type
                        Ouroboros.Network.Protocol.BlockFetch.Client
                        Ouroboros.Network.Protocol.BlockFetch.Server
