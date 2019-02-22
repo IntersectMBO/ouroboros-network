@@ -203,7 +203,8 @@ runDecoderPure runM decoder bs = runM (runDecoder bs =<< decoder)
 
 -- | Any message for a protocol, without knowing the protocol state.
 --
--- Used at least for 'Eq' instances for messages.
+-- Used at least for 'Eq' instances for messages, but also as a target for an
+-- identity codec `Codec ps failure m (AnyMessage ps)` .
 --
 data AnyMessage ps where
      AnyMessage :: Message ps st st' -> AnyMessage ps
