@@ -12,8 +12,6 @@ import Control.Monad (forM_, void, when)
 import Data.Functor.Contravariant (Op (..), contramap)
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
-import Data.Map (Map)
-import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import qualified Data.Text as Text
@@ -305,16 +303,13 @@ main = withCompileInfo $ do
             { throwError = throwIO
             , catchError = catch
             }
-          epochSizes :: Map Epoch EpochSize
           -- FIXME the 'fromIntegral' casts from 'Word64' to 'Word'.
           -- For sufficiently high k, on certain machines, there could be an
           -- overflow.
-          -- FIXME need to be able to give a function `const epochSlots`.
-          -- 0 to 200 should be fine for now... I think.
-          --
           -- Add 1 to the slot count because we put EBBs at the end of every
           -- epoch.
-          epochSizes = Map.fromList (fmap (\i -> (i, fromIntegral (getSlotCount epochSlots) + 1)) [0..200])
+          epochSizes :: Epoch -> Maybe EpochSize
+          epochSizes = const $ Just (fromIntegral (getSlotCount epochSlots) + 1)
           openDB dbEpoch = DB.openDB
             fs
             errorHandling

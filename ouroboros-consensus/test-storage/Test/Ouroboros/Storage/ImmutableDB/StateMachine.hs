@@ -1150,7 +1150,7 @@ prop_sequential :: Property
 prop_sequential = forAllCommands smUnused Nothing $ \cmds ->
     QCM.monadic (ioProperty . runSimIO) $ do
       (db, Nothing) <- QCM.run $
-        openDB hasFS EH.monadCatch dbFolder 0 (Map.singleton 0 firstEpochSize)
+        openDB_ hasFS EH.monadCatch dbFolder 0 (Map.singleton 0 firstEpochSize)
           NoValidation
       let sm' = sm hasFS db dbm mdb
       (hist, model, res) <- runCommands sm' cmds
@@ -1179,7 +1179,7 @@ prop_sequential_errors :: Property
 prop_sequential_errors = forAllCommands smUnused Nothing $ \cmds ->
     QCM.monadic (ioProperty . runSimErrorIO) $ do
       (db, Nothing) <- QCM.run $
-        openDB hasFS EH.monadCatch dbFolder 0 (Map.singleton 0 firstEpochSize)
+        openDB_ hasFS EH.monadCatch dbFolder 0 (Map.singleton 0 firstEpochSize)
           NoValidation
       let sm' = smErr hasFS db dbm mdb
       (hist, model, res) <- runCommands sm' cmds

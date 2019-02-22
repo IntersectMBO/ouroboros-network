@@ -93,7 +93,7 @@ withTestDB :: (HasCallStack, MonadSTM m, MonadMask m)
            -> (ImmutableDB m -> m a)
            -> m a
 withTestDB hasFS err epochSizes f =
-    withDB (openDB hasFS err ["test"] 0 epochSizes NoValidation) (\db _ -> f db)
+    withDB (openDB_ hasFS err ["test"] 0 epochSizes NoValidation) (\db _ -> f db)
 
 withSimTestDB :: Map Epoch EpochSize
               -> (ImmutableDB (SimFS IO) -> SimFS IO a)
@@ -236,7 +236,7 @@ prop_appendAndGetRoundtrip = monadicIO $ do
 
 test_demoSimEquivalence :: HasCallStack => Assertion
 test_demoSimEquivalence = apiEquivalenceImmDB (expectImmDBResult (@?= blobs)) $ \hasFS err ->
-    demoScript (openDB hasFS err ["test"])
+    demoScript (openDB_ hasFS err ["test"])
   where
     blobs = map Just ["haskell", "nice", "cardano", "test"]
 
@@ -311,14 +311,14 @@ test_reopenDBEquivalence =
 test_closeDBIdempotentEquivalence :: Assertion
 test_closeDBIdempotentEquivalence =
     apiEquivalenceImmDB (expectImmDBResult (@?= ())) $ \hasFS err -> do
-      db <- fst <$> openDB hasFS err ["test"] 0 (M.singleton 0 10) NoValidation
+      db <- fst <$> openDB_ hasFS err ["test"] 0 (M.singleton 0 10) NoValidation
       closeDB db
       closeDB db
 
 test_closeDBAppendBinaryBlobEquivalence :: Assertion
 test_closeDBAppendBinaryBlobEquivalence =
     apiEquivalenceImmDB (expectUserError isClosedDBError) $ \hasFS err -> do
-      db <- fst <$> openDB hasFS err ["test"] 0 (M.singleton 0 10) NoValidation
+      db <- fst <$> openDB_ hasFS err ["test"] 0 (M.singleton 0 10) NoValidation
       closeDB db
       appendBinaryBlob db 0 "foo"
   where

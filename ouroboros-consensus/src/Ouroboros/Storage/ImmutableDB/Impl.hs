@@ -190,7 +190,7 @@
 -- may be reopened on the same epoch to continue appending to it.
 --
 module Ouroboros.Storage.ImmutableDB.Impl
-  ( openDB, lastEpochOnDisk, openLastEpoch
+  ( openDB, openDB_, lastEpochOnDisk, openLastEpoch
   ) where
 
 import           Control.Exception (assert)
@@ -298,9 +298,23 @@ data ClosedState = ClosedState
 openDB :: (HasCallStack, MonadSTM m, MonadMask m)
        => HasFS m
        -> ErrorHandling ImmutableDBError m
-       -> FsPath -> Epoch -> Map Epoch EpochSize -> RecoveryPolicy e m
+       -> FsPath -> Epoch -> (Epoch -> Maybe EpochSize) -> RecoveryPolicy e m
        -> m (ImmutableDB m, Maybe EpochSlot)
-openDB hasFS err dbFolder epoch epochSizes recPol = do
+openDB hasFS err dbFolder epoch epochSizes recPol =
+    openDB_ hasFS err dbFolder epoch epochSizesMap recPol
+  where
+    epochSizesMap = Map.fromList $ mapMaybe
+      (\e -> fmap ((,) e) (epochSizes e))
+      [0..epoch]
+
+-- | Called by 'openDB'. Takes a `Map Epoch EpochSize`, whereas 'openDB'
+-- takes a function `Epoch -> EpochSize`
+openDB_ :: (HasCallStack, MonadSTM m, MonadMask m)
+        => HasFS m
+        -> ErrorHandling ImmutableDBError m
+        -> FsPath -> Epoch -> Map Epoch EpochSize -> RecoveryPolicy e m
+        -> m (ImmutableDB m, Maybe EpochSlot)
+openDB_ hasFS err dbFolder epoch epochSizes recPol = do
     (dbEnv, lastBlobLocation) <-
       openDBImpl hasFS err dbFolder epoch epochSizes recPol
     return $ (, lastBlobLocation) $ ImmutableDB
@@ -343,7 +357,7 @@ openLastEpoch :: (HasCallStack, MonadSTM m, MonadMask m)
               -> m (ImmutableDB m, Maybe EpochSlot)
 openLastEpoch hasFS err dbFolder epochSizes recPol = do
     epochToOpen <- fromMaybe 0 <$> lastEpochOnDisk hasFS dbFolder
-    openDB hasFS err dbFolder epochToOpen epochSizes recPol
+    openDB_ hasFS err dbFolder epochToOpen epochSizes recPol
 
 {------------------------------------------------------------------------------
   ImmutableDB Implementation
