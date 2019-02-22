@@ -10,6 +10,7 @@ script:
 - nix-build --arg error true -A typed-transitions   -o result-typed-transitions   --argstr compiler $COMPILER
 - nix-build --arg error true -A ouroboros-network   -o result-ouroboros-network   --argstr compiler $COMPILER
 - nix-build --arg error true -A ouroboros-consensus -o result-ouroboros-consensus --argstr compiler $COMPILER
+- nix-build --arg error true -A byron-proxy         -o result-byron-proxy         --argstr compiler $COMPILER
 - nix-shell --run exit
 after_success:
 - cachix push ouroboros-network ./result-typed-io-sim-classes
@@ -18,6 +19,7 @@ after_success:
 - cachix push ouroboros-network ./result-typed-transitions
 - cachix push ouroboros-network ./result-ouroboros-network
 - cachix push ouroboros-network ./result-ouroboros-consensus
+- cachix push ouroboros-network ./result-byron-proxy
 matrix:
   include:
   - name: GHC 863

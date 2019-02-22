@@ -52,9 +52,9 @@ let
       cleanSource (callCabal2nix "ouroboros-consensus" ./ouroboros-consensus { inherit io-sim-classes io-sim typed-protocols typed-transitions ouroboros-network; })
     )))));
 
-    byron-proxy = docNoSeprateOutput(doHaddock(doTest(doBench(
+    byron-proxy = doWerror(docNoSeprateOutput(doHaddock(doTest(doBench(
       cleanSource (callCabal2nix "byron-proxy" ./byron-proxy { inherit ouroboros-network; inherit ouroboros-consensus; inherit io-sim; inherit io-sim-classes; })
-    ))));
+    )))));
 
   };
 
