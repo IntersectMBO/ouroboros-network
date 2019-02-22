@@ -9,19 +9,24 @@ import Control.Exception (catch, throwIO)
 import Control.Lens ((^.))
 import qualified Control.Lens as Lens (to)
 import Control.Monad (forM_, void, when)
-import Data.Functor.Contravariant (Op (..))
+import Data.Functor.Contravariant (Op (..), contramap)
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
+import Data.Text (Text)
+import qualified Data.Text as Text
 import Data.Time.Clock.POSIX (getCurrentTime)
 import System.Random (StdGen, getStdGen, randomR)
 
-import Cardano.BM.Data.LogItem
-import Cardano.BM.BaseTrace
-import Cardano.BM.Setup (shutdownTrace)
-import Pos.Util.Klog.Compatibility (getTrace, setupLogging', parseLoggerConfig)
+import Cardano.BM.BaseTrace hiding (noTrace)
+import Cardano.BM.Configuration as BM (setup)
+import Cardano.BM.Data.LogItem hiding (LogNamed)
+import qualified Cardano.BM.Data.LogItem as BM
+import qualified Cardano.BM.Data.Severity as BM
+import Cardano.BM.Setup (withTrace)
+import qualified Cardano.BM.Trace as BM (Trace)
 
 import Pos.Chain.Block (Block, BlockHeader (..), GenesisBlock, gbhConsensus, gcdEpoch,
                         genesisBlock0, getBlockHeader, headerHash, mcdSlot)
@@ -43,7 +48,10 @@ import Pos.Diffusion.Full (FullDiffusionConfiguration (..))
 import Pos.Infra.Diffusion.Types
 import Pos.Launcher (NodeParams (..), withConfigurations)
 import Pos.Util.CompileInfo (withCompileInfo)
+import Pos.Util.Trace (Trace)
+import Pos.Util.Trace.Named as Trace (LogNamed (..), appendName, named)
 import qualified Pos.Util.Trace
+import qualified Pos.Util.Wlog as Wlog
 
 import qualified Ouroboros.Byron.Proxy.Index as Index
 import Ouroboros.Byron.Proxy.Types
@@ -180,6 +188,45 @@ blockHeaderIndex epochSlots blkHeader = EpochSlot epoch relativeSlot
       . Lens.to getSlotIndex
       . Lens.to fromIntegral
 
+-- | Diffusion layer uses log-waper severity, iohk-monitoring uses its own.
+convertSeverity :: Wlog.Severity -> BM.Severity
+convertSeverity sev = case sev of
+  Wlog.Debug   -> BM.Debug
+  Wlog.Info    -> BM.Info
+  Wlog.Notice  -> BM.Notice
+  Wlog.Warning -> BM.Warning
+  Wlog.Error   -> BM.Error
+
+-- |
+-- The iohk-monitoring-framework took the `Trace` type and renamed
+-- it `Cardano.BM.BaseTrace.BaseTrace`. Then `Trace` is defined
+-- to be `(TraceContext, BaseTrace m NamedLogItem)` where
+-- `TraceContext` contains configuration stuff and a mysterious
+-- `IO ()`.
+--
+-- The challenge: how to make the original `Trace` from this
+-- thing, to give to the diffusion layer, in such a way that it
+-- ehaves as expected? What is the `TraceContext` for? Is it
+-- needed? It seems all wrong: configuration for the `Trace`
+-- should be kept _in its closure_ if need be rather than shown
+-- up-front, and with a mention of `IO` to boot. Very poor
+-- abstraction.
+convertTrace :: BM.Trace IO -> Trace IO (LogNamed (Wlog.Severity, Text))
+convertTrace trace = case trace of
+  (traceContext, BaseTrace (Op f)) -> Pos.Util.Trace.Trace $ Op $ \namedI -> do
+    tid <- myThreadId
+    now <- getCurrentTime
+    let name       = Text.intercalate (Text.pack ".") (Trace.lnName namedI)
+        (sev, txt) = Trace.lnItem namedI
+        logMeta    = LOMeta { tstamp = now, tid = tid }
+        logContent = LogMessage logItem
+        logItem    = LogItem { liSelection = Both
+                             , liSeverity = convertSeverity sev
+                             , liPayload = txt
+                             }
+        logObject  = LogObject logMeta logContent
+        logNamed   = BM.LogNamed { BM.lnName = name, BM.lnItem = logObject }
+    f logNamed
 
 -- | Use cardano-sl library stuff to get all of the necessary configuration
 -- options. There's a bunch of stuff that we don't actually need but that's OK.
@@ -193,121 +240,113 @@ main = withCompileInfo $ do
   let confOpts = configurationOptions (commonArgs cArgs)
       -- Take the log config file from the common args, and default it.
       loggerConfigFile = fromMaybe "logging.yaml" (logConfig (commonArgs cArgs))
-  loggerConfig <- parseLoggerConfig loggerConfigFile
-  lh <- setupLogging' "byron-adapter" loggerConfig
-  -- Should be able to get a trace that we can give to the diffusion layer.
-  trace <- getTrace lh
-  withConfigurations Nothing Nothing False confOpts $ \genesisConfig _ _ _ -> do
-    (nodeParams, Just sscParams) <- getNodeParams
-      "byron-adapter"
-      cArgs
-      nArgs
-      (configGeneratedSecrets genesisConfig)
-    let genesisBlock = genesisBlock0 (configProtocolMagic genesisConfig)
-                                     (configGenesisHash genesisConfig)
-                                     (genesisLeaders genesisConfig)
-        -- Here's all of the config needed for the Byron proxy server itself.
-        bpc :: ByronProxyConfig
-        bpc = ByronProxyConfig
-          { bpcAdoptedBVData = configBlockVersionData genesisConfig
-            -- ^ Hopefully that never needs to change.
-          , bpcNetworkConfig = npNetworkConfig nodeParams
-          , bpcDiffusionConfig = FullDiffusionConfiguration
-              { fdcProtocolMagic = configProtocolMagic genesisConfig
-              , fdcProtocolConstants = configProtocolConstants genesisConfig
-              , fdcRecoveryHeadersMessage = recoveryHeadersMessage
-              , fdcLastKnownBlockVersion = lastKnownBlockVersion updateConfiguration
-              , fdcConvEstablishTimeout = networkConnectionTimeout
-              -- The iohk-monitoring-framework took the `Trace` type and renamed
-              -- it `Cardano.BM.BaseTrace.BaseTrace`. Then `Trace` is defined
-              -- to be `(TraceContext, BaseTrace m NamedLogItem)` where
-              -- `TraceContext` contains configuration stuff and a mysterious
-              -- `IO ()`.
-              --
-              -- The challenge: how to make the original `Trace` from this
-              -- thing, to give to the diffusion layer, in such a way that it
-              -- ehaves as expected? What is the `TraceContext` for? Is it
-              -- needed? It seems all wrong: configuration for the `Trace`
-              -- should be kept _in its closure_ if need be rather than shown
-              -- up-front, and with a mention of `IO` to boot. Very poor
-              -- abstraction.
-              , fdcTrace = case trace of
-                  (traceContext, BaseTrace (Op f)) -> Pos.Util.Trace.Trace $ Op $ \(severity, text) -> do
-                    tid <- myThreadId
-                    now <- getCurrentTime
-                    let logMeta    = LOMeta { tstamp = now, tid = tid }
-                        logContent = LogMessage logItem
-                        logItem    = LogItem { liSelection = Both, liSeverity = severity, liPayload = text }
-                        logObject  = LogObject logMeta logContent
-                        logNamed   = LogNamed { lnName = "diffusion", lnItem = logObject }
-                    f logNamed
-              , fdcStreamWindow = streamWindow
-              }
-            -- 40 seconds.
-          , bpcPoolRoundInterval = 40000000
-          , bpcSendQueueSize     = 1
-          , bpcRecvQueueSize     = 1
-          }
-        -- The database configuration follows.
-        -- We need to open it up before starting the Byron proxy server, since
-        -- it needs some block source that we derive from the database.
-        --
-        -- The number of slots in an epoch. We use the one in the genesis
-        -- configuration, and we assume it will never change.
-        epochSlots :: SlotCount
-        epochSlots = configEpochSlots genesisConfig
-        -- Default database path is ./db-byron-adapter
-        dbFilePath :: FsPath
-        dbFilePath = maybe ["db-byron-adapter"] pure (dbPath cArgs)
-        fsMountPoint :: MountPoint
-        fsMountPoint = MountPoint ""
-        fs :: HasFS IO
-        fs = ioHasFS fsMountPoint
-        errorHandling :: ErrorHandling ImmutableDBError IO
-        errorHandling = ErrorHandling
-          { throwError = throwIO
-          , catchError = catch
-          }
-        epochSizes :: Map Epoch EpochSize
-        -- FIXME the 'fromIntegral' casts from 'Word64' to 'Word'.
-        -- For sufficiently high k, on certain machines, there could be an
-        -- overflow.
-        -- FIXME need to be able to give a function `const epochSlots`.
-        -- 0 to 200 should be fine for now... I think.
-        --
-        -- Add 1 to the slot count because we put EBBs at the end of every
-        -- epoch.
-        epochSizes = Map.fromList (fmap (\i -> (i, fromIntegral (getSlotCount epochSlots) + 1)) [0..200])
-        openDB dbEpoch = DB.openDB
-          fs
-          errorHandling
-          dbFilePath
-          dbEpoch
-          epochSizes
-          NoValidation
-        -- The supporting header hash and tip index.
-        indexFilePath :: FilePath
-        indexFilePath = "index-byron-adapter"
-    Index.withDB_ indexFilePath $ \indexDB -> do
-      -- Now we can use the index to get the tip.
-      -- BUT if it's empty, so there is no tip, what do we do? Use epoch 0
-      -- I guess.
-      mTip <- Index.indexAt indexDB Index.Tip
-      let dbEpoch = case mTip of
-            Nothing -> 0
-            Just (_, EpochSlot tipEpoch _) -> tipEpoch
-      withDB (openDB dbEpoch) $ \db _ -> do
-        -- Create the block source to support the logic layer.
-        let bbs :: ByronBlockSource IO
-            bbs = Index.byronBlockSource
-                    errInconsistent
-                    genesisSerialized
-                    indexDB
-                    db
-            errInconsistent :: forall x . Index.IndexInconsistent -> IO x
-            errInconsistent = throwIO
-            genesisSerialized :: SerializedBlock
-            genesisSerialized = Serialized (serialize' genesisBlock)
-        withByronProxy bpc bbs $ \bp ->
-          byronProxyMain genesisBlock epochSlots indexDB db bp
-        shutdownTrace trace
+  -- No need to setup logging from cardano-sl-util! Because we don't need a
+  -- instance `WithLogger`! Wonderful. iohk-monitoring-framework is used
+  -- directly.
+  traceConfig <- BM.setup loggerConfigFile
+  withTrace traceConfig "byron-proxy" $ \trace -> do
+    let -- Convert from the BM trace to the cardano-sl-util trace.
+        logTrace = convertTrace trace
+        -- Give it no names, and log at info.
+        infoTrace = contramap ((,) Wlog.Info) (named logTrace)
+    -- `trace` is a `BaseTrace` from iohk-monitoring, but `withConfigurations`
+    -- needs `Trace IO Text`. Not so easy to get that since `BaseTrace` takes
+    -- a bunch of other stuff. See below when we use it to get diffusion-layer
+    -- trace. So we use `noTrace` for this part.
+    withConfigurations infoTrace Nothing Nothing False confOpts $ \genesisConfig _ _ _ -> do
+      (nodeParams, Just sscParams) <- getNodeParams
+        (named logTrace)
+        "byron-adapter"
+        cArgs
+        nArgs
+        (configGeneratedSecrets genesisConfig)
+      putStrLn "Got node params"
+      let genesisBlock = genesisBlock0 (configProtocolMagic genesisConfig)
+                                       (configGenesisHash genesisConfig)
+                                       (genesisLeaders genesisConfig)
+          -- Here's all of the config needed for the Byron proxy server itself.
+          bpc :: ByronProxyConfig
+          bpc = ByronProxyConfig
+            { bpcAdoptedBVData = configBlockVersionData genesisConfig
+              -- ^ Hopefully that never needs to change.
+            , bpcNetworkConfig = npNetworkConfig nodeParams
+            , bpcDiffusionConfig = FullDiffusionConfiguration
+                { fdcProtocolMagic = configProtocolMagic genesisConfig
+                , fdcProtocolConstants = configProtocolConstants genesisConfig
+                , fdcRecoveryHeadersMessage = recoveryHeadersMessage
+                , fdcLastKnownBlockVersion = lastKnownBlockVersion updateConfiguration
+                , fdcConvEstablishTimeout = networkConnectionTimeout
+                -- Diffusion layer logs will have "diffusion" in their names.
+                , fdcTrace = appendName "diffusion" logTrace
+                , fdcStreamWindow = streamWindow
+                }
+              -- 40 seconds.
+            , bpcPoolRoundInterval = 40000000
+            , bpcSendQueueSize     = 1
+            , bpcRecvQueueSize     = 1
+            }
+          -- The database configuration follows.
+          -- We need to open it up before starting the Byron proxy server, since
+          -- it needs some block source that we derive from the database.
+          --
+          -- The number of slots in an epoch. We use the one in the genesis
+          -- configuration, and we assume it will never change.
+          epochSlots :: SlotCount
+          epochSlots = configEpochSlots genesisConfig
+          -- Default database path is ./db-byron-adapter
+          dbFilePath :: FsPath
+          dbFilePath = maybe ["db-byron-adapter"] pure (dbPath cArgs)
+          fsMountPoint :: MountPoint
+          fsMountPoint = MountPoint ""
+          fs :: HasFS IO
+          fs = ioHasFS fsMountPoint
+          errorHandling :: ErrorHandling ImmutableDBError IO
+          errorHandling = ErrorHandling
+            { throwError = throwIO
+            , catchError = catch
+            }
+          epochSizes :: Map Epoch EpochSize
+          -- FIXME the 'fromIntegral' casts from 'Word64' to 'Word'.
+          -- For sufficiently high k, on certain machines, there could be an
+          -- overflow.
+          -- FIXME need to be able to give a function `const epochSlots`.
+          -- 0 to 200 should be fine for now... I think.
+          --
+          -- Add 1 to the slot count because we put EBBs at the end of every
+          -- epoch.
+          epochSizes = Map.fromList (fmap (\i -> (i, fromIntegral (getSlotCount epochSlots) + 1)) [0..200])
+          openDB dbEpoch = DB.openDB
+            fs
+            errorHandling
+            dbFilePath
+            dbEpoch
+            epochSizes
+            NoValidation
+          -- The supporting header hash and tip index.
+          indexFilePath :: FilePath
+          indexFilePath = "index-byron-adapter"
+      Index.withDB_ indexFilePath $ \indexDB -> do
+        putStrLn "Index is up"
+        -- Now we can use the index to get the tip.
+        -- BUT if it's empty, so there is no tip, what do we do? Use epoch 0
+        -- I guess.
+        mTip <- Index.indexAt indexDB Index.Tip
+        let dbEpoch = case mTip of
+              Nothing -> 0
+              Just (_, EpochSlot tipEpoch _) -> tipEpoch
+        withDB (openDB dbEpoch) $ \db _ -> do
+          putStrLn "DB is up"
+          -- Create the block source to support the logic layer.
+          let bbs :: ByronBlockSource IO
+              bbs = Index.byronBlockSource
+                      errInconsistent
+                      genesisSerialized
+                      indexDB
+                      db
+              errInconsistent :: forall x . Index.IndexInconsistent -> IO x
+              errInconsistent = throwIO
+              genesisSerialized :: SerializedBlock
+              genesisSerialized = Serialized (serialize' genesisBlock)
+          withByronProxy bpc bbs $ \bp -> do
+            putStrLn "Proxy is running"
+            byronProxyMain genesisBlock epochSlots indexDB db bp
