@@ -1,7 +1,11 @@
-{ withHoogle ? false
+{ withHoogle ? false 
+, haddock    ? false
+, test       ? false
+, benchmarks ? false
+, error      ? false
 }:
 let
-  pkgs  = import ./.;
+  pkgs  = import ./. { inherit haddock test benchmarks error; };
 in
 with builtins; with pkgs.compiler;
   shellFor {
