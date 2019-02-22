@@ -10,6 +10,8 @@ import qualified Test.Pipe (tests)
 import qualified Test.Ouroboros.Network.Node (tests)
 import qualified Test.Ouroboros.Network.Protocol.ChainSync (tests)
 import qualified Test.Ouroboros.Network.Protocol.BlockFetch (tests)
+import qualified Test.Ouroboros.Network.Protocol.PingPong (tests)
+import qualified Test.Ouroboros.Network.Protocol.ReqResp (tests)
 import qualified Test.Ouroboros.Network.Protocol.Stream (tests)
 import qualified Test.Socket (tests)
 
@@ -28,5 +30,7 @@ tests =
   , Test.Ouroboros.Network.Node.tests
   , Test.Ouroboros.Network.Protocol.ChainSync.tests
   , Test.Ouroboros.Network.Protocol.BlockFetch.tests
+  , Test.Ouroboros.Network.Protocol.PingPong.tests
+  , Test.Ouroboros.Network.Protocol.ReqResp.tests
   , Test.Ouroboros.Network.Protocol.Stream.tests
   ]
