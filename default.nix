@@ -9,10 +9,12 @@ let
   nixpkgs = import ./nix/nixpkgs.nix {};
   overrides = import ./nix/overrides.nix { inherit nixpkgs; };
 
+  # This is in the develop branch. The oldest commit against which the Byron
+  # proxy will build.
   cardanoroot = nixpkgs.fetchgit {
     url = "https://github.com/input-output-hk/cardano-sl";
-    rev = "5a4eee1ebded257d785d39a090a216c4a261eb22";
-    sha256 = "0wr3vn7vdc455dfh57aslqr59fx1vgmi6xwdrrfjh8gg00q1dkng";
+    rev = "1c8b414f59016c360c0f0eb2ec9cef07c99063ef";
+    sha256 = "0dzd9gj3hvcymqwz17widyhxq366yr669pijmvsvys6ghgxc13nk";
   };
   cardanopkgs = import ./nix/cardanopkgs.nix { inherit nixpkgs cardanoroot; };
 

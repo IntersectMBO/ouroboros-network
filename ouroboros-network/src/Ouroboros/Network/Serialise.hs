@@ -22,10 +22,11 @@ import           Codec.CBOR.Decoding hiding (DecodeAction (..), TokenType (..))
 import           Codec.CBOR.Encoding hiding (Encoding (..), Tokens (..))
 import           Codec.CBOR.Encoding (Encoding)
 import           Codec.CBOR.FlatTerm
+import           Codec.CBOR.Read (DeserialiseFailure (..))
 import           Codec.CBOR.Write (toLazyByteString)
 import           Codec.Serialise
 import           Codec.Serialise.Decoding (decodeBytes)
-import           Test.QuickCheck (Property, counterexample, (.&&.), (===))
+import           Test.QuickCheck (Property, counterexample, property, (.&&.), (===))
 
 -- Class properties
 --
@@ -41,5 +42,8 @@ prop_serialise_valid a =
         s = "invalid flat term " ++ show f ++ " from encoding " ++ show e
     in  counterexample s $ validFlatTerm f
 
+-- Written like this so that an Eq DeserialiseFailure is not required.
 prop_serialise_roundtrip :: (Serialise a, Eq a, Show a) => a -> Property
-prop_serialise_roundtrip x = deserialiseOrFail (serialise x) === Right x
+prop_serialise_roundtrip x = case deserialiseOrFail (serialise x) of
+  Right y -> y === x
+  Left (DeserialiseFailure _ string) -> counterexample string (property False)
