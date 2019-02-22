@@ -58,11 +58,6 @@ library
                        Ouroboros.Network.Protocol.Stream.Client
                        Ouroboros.Network.Protocol.Stream.Server
                        Ouroboros.Network.Protocol.Stream.Direct
-                       Ouroboros.Network.Protocol.ReqResp.Type
-                       Ouroboros.Network.Protocol.ReqResp.Client
-                       Ouroboros.Network.Protocol.ReqResp.Server
-                       Ouroboros.Network.Protocol.ReqResp.Direct
-                       Ouroboros.Network.Protocol.ReqResp.Codec.Cbor
                        Ouroboros.Network.Protocol.BlockFetch.Type
                        Ouroboros.Network.Protocol.BlockFetch.Client
                        Ouroboros.Network.Protocol.BlockFetch.Server
@@ -130,8 +125,6 @@ test-suite tests
                        Test.Ouroboros.Network.Testing.Utils
                        Test.Ouroboros.Network.Protocol.ChainSync
                        Test.Ouroboros.Network.Protocol.Stream
-                       Test.Ouroboros.Network.Protocol.ReqResp.Codec.Coherence
-                       Test.Ouroboros.Network.Protocol.ReqResp
                        Test.Ouroboros.Network.Protocol.BlockFetch
                        Test.Ouroboros.Network.Node
                        Test.Pipe
