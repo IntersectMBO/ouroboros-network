@@ -11,7 +11,6 @@ script:
 - nix-build --arg error true -A ouroboros-network   -o result-ouroboros-network   --argstr compiler $COMPILER
 - nix-build --arg error true -A ouroboros-consensus -o result-ouroboros-consensus --argstr compiler $COMPILER
 - nix-build --arg error true -A byron-proxy         -o result-byron-proxy         --argstr compiler $COMPILER
-- nix-shell --run exit
 after_success:
 - cachix push ouroboros-network ./result-typed-io-sim-classes
 - cachix push ouroboros-network ./result-typed-io-sim
