@@ -5,10 +5,12 @@ module Test.Ouroboros.Network.Protocol.BlockFetch where
 
 import           Data.ByteString.Lazy (ByteString)
 
-import           Control.Monad.IOSim (SimM, runSim)
-import           Control.Monad.Class.MonadST (MonadST (..))
+import           Control.Monad.IOSim (runSimOrThrow)
+import           Control.Monad.Fail
+import           Control.Monad.Class.MonadST (MonadST)
 import           Control.Monad.Class.MonadSTM (MonadSTM)
-import           Control.Monad.Class.MonadAsync (MonadAsync (..))
+import           Control.Monad.Class.MonadAsync (MonadAsync)
+import           Control.Monad.Class.MonadThrow (MonadCatch)
 
 import           Network.TypedProtocol.Driver
 import           Network.TypedProtocol.Proofs
@@ -45,6 +47,22 @@ tests =
 
 
 --
+-- Block fetch client and server used in many subsequent tests.
+--
+
+testClient :: MonadSTM m
+           => Chain Block
+           -> [Point Block]
+           -> BlockFetchClient Block BlockBody m [BlockBody]
+testClient chain points = blockFetchClientMap (pointsToRanges chain points)
+
+testServer :: MonadSTM m
+           => Chain Block
+           -> BlockFetchServer Block BlockBody m ()
+testServer chain = blockFetchServer (ConcreteBlock.blockBody <$>
+                                       rangeRequestsFromChain chain)
+
+--
 -- Properties going directly, not via Peer.
 --
 
@@ -52,17 +70,11 @@ tests =
 --
 prop_direct :: TestChainAndPoints -> Bool
 prop_direct (TestChainAndPoints chain points) =
-    case runSim (direct client server) of
-      Left _             -> False
-      Right (bodies, ()) ->
-        reverse bodies == concat (receivedBlockBodies chain points)
-  where
-    client :: BlockFetchClient Block BlockBody (SimM s) [BlockBody]
-    client = blockFetchClientMap (pointsToRanges chain points)
+    runSimOrThrow (direct (testClient chain points)
+                          (testServer chain))
+ ==
+    (reverse . concat $ receivedBlockBodies chain points, ())
 
-    server :: BlockFetchServer Block BlockBody (SimM s) ()
-    server = blockFetchServer (ConcreteBlock.blockBody <$>
-                                 rangeRequestsFromChain chain)
 
 
 --
@@ -74,84 +86,50 @@ prop_direct (TestChainAndPoints chain points) =
 --
 prop_connect :: TestChainAndPoints -> Bool
 prop_connect (TestChainAndPoints chain points) =
-    case runSim (connect (blockFetchClientPeer client)
-                         (blockFetchServerPeer server)) of
-      Left _                                             -> False
-      Right (bodies, (), TerminalStates TokDone TokDone) ->
+    case runSimOrThrow
+           (connect
+             (blockFetchClientPeer (testClient chain points))
+             (blockFetchServerPeer (testServer chain))) of
+      (bodies, (), TerminalStates TokDone TokDone) ->
         reverse bodies == concat (receivedBlockBodies chain points)
-  where
-    client :: BlockFetchClient Block BlockBody (SimM s) [BlockBody]
-    client = blockFetchClientMap (pointsToRanges chain points)
-
-    server :: BlockFetchServer Block BlockBody (SimM s) ()
-    server = blockFetchServer (ConcreteBlock.blockBody <$>
-                                 rangeRequestsFromChain chain)
 
 
 --
--- Experiments using a channel
+-- Properties using a channel
 --
 
--- | Run a simple block-fetch client and server using two complementary channels.
+-- | Run a simple block-fetch client and server using connected channels.
 --
-channel_experiment
-  :: forall m.
-     ( MonadST m
-     , MonadSTM m
-     , MonadAsync m
-     )
-  => Channel m ByteString
-  -> Channel m ByteString
-  -> Chain Block
-  -> [Point Block]
-  -> m Property
-channel_experiment clientChannel serverChannel chain points = do
-  let client = blockFetchClientMap (pointsToRanges chain points)
-      server = blockFetchServer (ConcreteBlock.blockBody <$> rangeRequestsFromChain chain)
+prop_channel :: (MonadAsync m, MonadCatch m, MonadST m, MonadFail m)
+             => m (Channel m ByteString, Channel m ByteString)
+             -> Chain Block -> [Point Block] -> m Property
+prop_channel createChannels chain points = do
+    Right (bodies, ()) <-
+      runConnectedPeers
+        createChannels codecBlockFetch
+        (blockFetchClientPeer (testClient chain points))
+        (blockFetchServerPeer (testServer chain))
+    return $ reverse bodies === concat (receivedBlockBodies chain points)
 
-  withAsync (runPeer codecBlockFetch serverChannel (blockFetchServerPeer server))
-    $ \serverAsync -> withAsync (runPeer codecBlockFetch clientChannel (blockFetchClientPeer client))
-      $ \clientAsync -> do
 
-      bodies' <- wait clientAsync
-      cancel serverAsync
-
-      return ((reverse <$> bodies') === Right (concat (receivedBlockBodies chain points)))
-
--- |
--- Run @'channel_experiment'@ in the simulation monad.
+-- | Run 'prop_channel' in the simulation monad.
 --
-prop_channel_ST
-  :: TestChainAndPoints
-  -> Property
+prop_channel_ST :: TestChainAndPoints -> Property
 prop_channel_ST (TestChainAndPoints chain points) =
-  let r = runSim $ do
-        (ca, cb) <- createConnectedChannels
-        channel_experiment ca cb chain points
-  in case r of
-    Right p -> p
-    _       -> property False
+    runSimOrThrow (prop_channel createConnectedChannels chain points)
 
 
--- |
--- Run @'channel_experiment'@ in the IO monad.
+-- | Run 'prop_channel' in the IO monad.
 --
-prop_channel_IO
-  :: TestChainAndPoints
-  -> Property
-prop_channel_IO (TestChainAndPoints chain points) = ioProperty $ do
-  (ca, cb) <- createConnectedChannels
-  channel_experiment ca cb chain points
+prop_channel_IO :: TestChainAndPoints -> Property
+prop_channel_IO (TestChainAndPoints chain points) =
+    ioProperty (prop_channel createConnectedChannels chain points)
 
--- |
--- Run @'channel_experiment'@ in the IO monad using local pipes.
+-- | Run 'prop_channel' in the IO monad using local pipes.
 --
-prop_pipe_IO
-  :: TestChainAndPoints
-  -> Property
-prop_pipe_IO (TestChainAndPoints chain points) = ioProperty $ do
-  (ca, cb) <- createPipeConnectedChannels
-  channel_experiment ca cb chain points
+prop_pipe_IO :: TestChainAndPoints -> Property
+prop_pipe_IO (TestChainAndPoints chain points) =
+    ioProperty (prop_channel createPipeConnectedChannels chain points)
 
 
 --
