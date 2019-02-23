@@ -25,8 +25,10 @@ constantBlockFetchReceiver
   => (body -> m ())    -- ^ handle body
   -> m ()              -- ^ handle `MsgBatchDone`
   -> BlockFetchReceiver header body m
-constantBlockFetchReceiver onBlock handleBatchDone = BlockFetchReceiver {
-    handleBlock = \block -> onBlock block $> constantBlockFetchReceiver onBlock handleBatchDone,
+constantBlockFetchReceiver onBlock handleBatchDone =
+  BlockFetchReceiver {
+    handleBlock = \block -> onBlock block $>
+                  constantBlockFetchReceiver onBlock handleBatchDone,
     handleBatchDone
   }
 
@@ -86,12 +88,12 @@ blockFetchClientMap ranges = BlockFetchClient $ do
 blockFetchClientPipelinedMax
   :: forall header body m.  Monad m
   => [ChainRange header]
-  -> BlockFetchClientPipelined header body [body] m [Either (ChainRange header) [body]]
+  -> BlockFetchClientPipelined header body m [Either (ChainRange header) [body]]
 blockFetchClientPipelinedMax ranges0 =
   BlockFetchClientPipelined (go [] ranges0 Zero)
  where
   go :: [Either (ChainRange header) [body]] -> [ChainRange header] -> Nat o
-     -> BlockFetchSender o header body [body] m [Either (ChainRange header) [body]]
+     -> BlockFetchSender o [body] header body m [Either (ChainRange header) [body]]
   go acc (req : reqs) o        = SendMsgRequestRangePipelined
                                     req
                                     []
@@ -116,14 +118,14 @@ blockFetchClientPipelinedMax ranges0 =
 blockFetchClientPipelinedMin
   :: forall header body m.  Monad m
   => [ChainRange header]
-  -> BlockFetchClientPipelined header body [body] m [Either (ChainRange header) [body]]
+  -> BlockFetchClientPipelined header body m [Either (ChainRange header) [body]]
 blockFetchClientPipelinedMin ranges0 =
   BlockFetchClientPipelined (go [] ranges0 Zero)
  where
   go :: [Either (ChainRange header) [body]]
      -> [ChainRange header]
      -> Nat n
-     -> BlockFetchSender n header body [body] m [Either (ChainRange header) [body]]
+     -> BlockFetchSender n [body] header body m [Either (ChainRange header) [body]]
   go acc []           (Succ n) = CollectBlocksPipelined
                                   Nothing
                                   (\bs -> go (Right bs : acc) [] n)
@@ -136,7 +138,7 @@ blockFetchClientPipelinedMin ranges0 =
   requestMore :: [Either (ChainRange header) [body]]
               -> ChainRange header -> [ChainRange header]
               -> Nat n
-              -> BlockFetchSender n header body [body] m [Either (ChainRange header) [body]]
+              -> BlockFetchSender n [body] header body m [Either (ChainRange header) [body]]
   requestMore acc req reqs n = SendMsgRequestRangePipelined
                                 req
                                 []
@@ -158,14 +160,14 @@ blockFetchClientPipelinedLimited
   :: forall header body m. Monad m
   => Int
   -> [ChainRange header]
-  -> BlockFetchClientPipelined header body [body] m [Either (ChainRange header) [body]]
+  -> BlockFetchClientPipelined header body m [Either (ChainRange header) [body]]
 blockFetchClientPipelinedLimited omax ranges0 =
   BlockFetchClientPipelined (go [] ranges0 Zero)
  where
   go :: [Either (ChainRange header) [body]]
      -> [ChainRange header]
      -> Nat n
-     -> BlockFetchSender n header body [body] m [Either (ChainRange header) [body]]
+     -> BlockFetchSender n [body] header body m [Either (ChainRange header) [body]]
   go acc []              (Succ n) = CollectBlocksPipelined
                                       Nothing
                                       (\bs -> go (Right bs : acc) [] n)
@@ -183,7 +185,7 @@ blockFetchClientPipelinedLimited omax ranges0 =
   requestMore :: [Either (ChainRange header) [body]]
               -> ChainRange header -> [ChainRange header]
               -> Nat n
-              -> BlockFetchSender n header body [body] m [Either (ChainRange header) [body]]
+              -> BlockFetchSender n [body] header body m [Either (ChainRange header) [body]]
   requestMore acc req reqs n = SendMsgRequestRangePipelined
                                 req
                                 []

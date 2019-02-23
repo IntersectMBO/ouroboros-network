@@ -27,8 +27,8 @@ data BlockFetchRequest header block m a where
   SendMsgRequestRange
     :: ChainRange header
     -> BlockFetchResponse header block m a
-    -> BlockFetchClient header block m a
-    -> BlockFetchRequest header block m a
+    -> BlockFetchClient   header block m a
+    -> BlockFetchRequest  header block m a
 
   -- | Client terminating the block-fetch protocol.
   SendMsgClientDone
@@ -98,16 +98,16 @@ blockFetchClientPeer (BlockFetchClient mclient) =
 
 -- | A BlockFetch client designed for running the protcol in a pipelined way.
 --
-data BlockFetchClientPipelined header body c m a where
-  -- | A 'BlockFetchSender' which starts with not outstanding pipelined responses.
-  --
-  BlockFetchClientPipelined
-    :: BlockFetchSender          Z header body c m a
-    -> BlockFetchClientPipelined   header body c m a
+data BlockFetchClientPipelined header body m a where
+   -- | A 'BlockFetchSender', but starting with zero outstanding pipelined
+   -- responses, and for any internal collect type @c@.
+   BlockFetchClientPipelined
+     :: BlockFetchSender      Z c header body m a
+     -> BlockFetchClientPipelined header body m a
 
 -- | A 'BlockFetchSender' with @n@ outstanding stream of block bodies.
 --
-data BlockFetchSender n header body c m a where
+data BlockFetchSender n c header body m a where
 
   -- | Send a `MsgRequestRange` but do not wait for response.  Supply a monadic
   -- action which runs on each received body and which updates the internal
@@ -118,25 +118,32 @@ data BlockFetchSender n header body c m a where
     :: ChainRange header
     -> c
     -> (Maybe body -> c -> m c)
-    -> BlockFetchSender (S n) header body c m a
-    -> BlockFetchSender    n  header body c m a
+    -> BlockFetchSender (S n) c header body m a
+    -> BlockFetchSender    n  c header body m a
 
   -- | Collect the result of a previous pipelined receive action
   --
   CollectBlocksPipelined
-    :: Maybe (BlockFetchSender (S n) header body c m a)
-    -> (c ->  BlockFetchSender    n  header body c m a)
-    ->        BlockFetchSender (S n) header body c m a
+    :: Maybe (BlockFetchSender (S n) c header body m a)
+    -> (c ->  BlockFetchSender    n  c header body m a)
+    ->        BlockFetchSender (S n) c header body m a
 
   -- | Termination of the block-fetch protocol.
   SendMsgDonePipelined
     :: a -> BlockFetchSender Z c header body m a
 
+blockFetchClientPeerPipelined
+  :: forall header body m a.
+     Monad m
+  => BlockFetchClientPipelined header body m a
+  -> PeerPipelined (BlockFetch header body) AsClient BFIdle m a
+blockFetchClientPeerPipelined (BlockFetchClientPipelined sender) =
+  PeerPipelined (blockFetchClientPeerSender sender)
 
 blockFetchClientPeerSender
   :: forall n header body c m a.
      Monad m
-  => BlockFetchSender n header body c m a
+  => BlockFetchSender n c header body m a
   -> PeerSender (BlockFetch header body) AsClient BFIdle n c m a
 
 blockFetchClientPeerSender (SendMsgDonePipelined result) =

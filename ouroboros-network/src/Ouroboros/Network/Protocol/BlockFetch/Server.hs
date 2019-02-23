@@ -61,15 +61,20 @@ blockFetchServerPeer (BlockFetchServer requestHandler result) = Await (ClientAge
   sendBatch
     :: BlockFetchBlockSender header body m a
     -> Peer (BlockFetch header body) AsServer BFBusy m a
+
   sendBatch (SendMsgStartBatch mblocks) =
     Yield (ServerAgency TokBusy) MsgStartBatch (Effect $ sendBlocks <$> mblocks)
+
   sendBatch (SendMsgNoBlocks next) =
     Yield (ServerAgency TokBusy) MsgNoBlocks (Effect $ blockFetchServerPeer <$> next)
+
 
   sendBlocks
     :: BlockFetchSendBlocks header body m a
     -> Peer (BlockFetch header body) AsServer BFStreaming m a
+
   sendBlocks (SendMsgBlock body next') =
     Yield (ServerAgency TokStreaming) (MsgBlock body) (Effect $ sendBlocks <$> next')
+
   sendBlocks (SendMsgBatchDone next) =
     Yield (ServerAgency TokStreaming) MsgBatchDone (Effect $ blockFetchServerPeer <$> next)
