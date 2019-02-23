@@ -1,5 +1,5 @@
 {-# LANGUAGE GADTs               #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE ParallelListComp    #-}
 
 module Test.Ouroboros.Network.Protocol.BlockFetch where
 
@@ -38,12 +38,18 @@ import           Test.Tasty.QuickCheck (testProperty)
 tests :: TestTree
 tests =
   testGroup "Ouroboros.Network.Protocol.BlockFetch"
-  [ testProperty "direct"            prop_direct
-  , testProperty "direct_pipelined"  prop_directPipelined
-  , testProperty "connect"           prop_connect
-  , testProperty "channel ST"        prop_channel_ST
-  , testProperty "channel IO"        prop_channel_IO
-  , testProperty "pipe IO"           prop_pipe_IO
+  [ testProperty "direct"              prop_direct
+  , testProperty "directPipelined 1"   prop_directPipelined1
+  , testProperty "directPipelined 2"   prop_directPipelined2
+  , testProperty "connect"             prop_connect
+  , testProperty "connect_pipelined 1" prop_connect_pipelined1
+  , testProperty "connect_pipelined 2" prop_connect_pipelined2
+  , testProperty "connect_pipelined 3" prop_connect_pipelined3
+  , testProperty "connect_pipelined 4" prop_connect_pipelined4
+  , testProperty "connect_pipelined 5" prop_connect_pipelined5
+  , testProperty "channel ST"          prop_channel_ST
+  , testProperty "channel IO"          prop_channel_IO
+  , testProperty "pipe IO"             prop_pipe_IO
   ]
 
 
@@ -51,32 +57,48 @@ tests =
 -- Block fetch client and server used in many subsequent tests.
 --
 
-testClient :: MonadSTM m
-           => Chain Block
-           -> [Point Block]
-           -> BlockFetchClient Block BlockBody m [BlockBody]
+type TestClient m = BlockFetchClient Block BlockBody m [BlockBody]
+type TestServer m = BlockFetchServer Block BlockBody m ()
+type TestClientPipelined m =
+       BlockFetchClientPipelined Block BlockBody m
+                                 [Either (ChainRange Block) [BlockBody]]
+
+testClient :: MonadSTM m => Chain Block -> [Point Block] -> TestClient m
 testClient chain points = blockFetchClientMap (pointsToRanges chain points)
 
-testClientPipelined :: MonadSTM m
-                    => Chain Block
-                    -> [Point Block]
-                    -> BlockFetchClientPipelined Block BlockBody m
-                         [Either (ChainRange Block) [BlockBody]]
-testClientPipelined chain points =
-    blockFetchClientPipelinedMax (pointsToRanges chain points)
-
-testServer :: MonadSTM m
-           => Chain Block
-           -> BlockFetchServer Block BlockBody m ()
+testServer :: MonadSTM m => Chain Block -> TestServer m
 testServer chain = blockFetchServer (ConcreteBlock.blockBody <$>
                                        rangeRequestsFromChain chain)
+
+testClientPipelinedMax,
+  testClientPipelinedMin
+  :: MonadSTM m
+  => Chain Block
+  -> [Point Block]
+  -> TestClientPipelined m
+
+testClientPipelinedLimited
+  :: MonadSTM m
+  => Int
+  -> Chain Block
+  -> [Point Block]
+  -> TestClientPipelined m
+
+testClientPipelinedMax chain points =
+    blockFetchClientPipelinedMax (pointsToRanges chain points)
+
+testClientPipelinedMin chain points =
+    blockFetchClientPipelinedMin (pointsToRanges chain points)
+
+testClientPipelinedLimited omax chain points =
+    blockFetchClientPipelinedLimited omax (pointsToRanges chain points)
 
 
 --
 -- Properties going directly, not via Peer.
 --
 
--- | Run a simple block-fetch client and server, without goind via the 'Peer'.
+-- | Run a simple block-fetch client and server, without going via the 'Peer'.
 --
 prop_direct :: TestChainAndPoints -> Bool
 prop_direct (TestChainAndPoints chain points) =
@@ -86,24 +108,37 @@ prop_direct (TestChainAndPoints chain points) =
     (reverse . concat $ receivedBlockBodies chain points, ())
 
 
--- | Run a pipelined block-fetch client with a server, without goind via 'Peer'.
+-- | Run a pipelined block-fetch client with a server, without going via 'Peer'.
 --
-prop_directPipelined :: TestChainAndPoints -> Bool
-prop_directPipelined (TestChainAndPoints chain points) =
-   case runSimOrThrow (directPipelined (testClientPipelined chain points)
+-- 
+--
+prop_directPipelined1 :: TestChainAndPoints -> Bool
+prop_directPipelined1 (TestChainAndPoints chain points) =
+   case runSimOrThrow (directPipelined (testClientPipelinedMax chain points)
                                        (testServer chain)) of
      (res, ()) ->
-         reverse (map (either Left (Right . reverse)) res)
+         reverse (map (fmap reverse) res)
       ==
          map Left  (pointsToRanges      chain points)
       ++ map Right (receivedBlockBodies chain points)
 
+prop_directPipelined2 :: TestChainAndPoints -> Bool
+prop_directPipelined2 (TestChainAndPoints chain points) =
+   case runSimOrThrow (directPipelined (testClientPipelinedMin chain points)
+                                       (testServer chain)) of
+     (res, ()) ->
+         reverse (map (fmap reverse) res)
+      ==
+         concat [ [Left l, Right r]
+                | l <- pointsToRanges      chain points
+                | r <- receivedBlockBodies chain points ]
+
 
 --
--- Properties goind via Peer, but without using a channel
+-- Properties going via Peer, but without using a channel
 --
 
--- | Run a simple block-fetch client and server, going via the @'Peer'@
+-- | Run a simple block-fetch client and server, going via the 'Peer'
 -- representation, but without going via a channel.
 --
 prop_connect :: TestChainAndPoints -> Bool
@@ -114,6 +149,96 @@ prop_connect (TestChainAndPoints chain points) =
              (blockFetchServerPeer (testServer chain))) of
       (bodies, (), TerminalStates TokDone TokDone) ->
         reverse bodies == concat (receivedBlockBodies chain points)
+
+
+-- | Run a pipelined block-fetch client against a server, going via the 'Peer'
+-- representation, but without going via a channel.
+--
+connect_pipelined :: MonadSTM m
+                  => TestClientPipelined m
+                  -> Chain Block
+                  -> [Bool]
+                  -> m [Either (ChainRange Block) [BlockBody]]
+connect_pipelined client chain cs = do
+    (res, _, TerminalStates TokDone TokDone)
+      <- connectPipelined cs
+           (blockFetchClientPeerPipelined client)
+           (blockFetchServerPeer (testServer chain))
+    return $ reverse $ map (fmap reverse) res
+
+
+-- | With a client with maximum pipelining we get all requests followed by
+-- all responses.
+--
+prop_connect_pipelined1 :: TestChainAndPoints -> [Bool] -> Bool
+prop_connect_pipelined1 (TestChainAndPoints chain points) choices =
+    runSimOrThrow
+      (connect_pipelined (testClientPipelinedMax chain points) chain choices)
+ ==
+    map Left  (pointsToRanges      chain points)
+ ++ map Right (receivedBlockBodies chain points)
+
+
+-- | With a client that collects eagerly and the driver chooses maximum
+-- pipelining then we get all requests followed by all responses.
+--
+prop_connect_pipelined2 :: TestChainAndPoints -> Bool
+prop_connect_pipelined2 (TestChainAndPoints chain points) =
+    runSimOrThrow
+      (connect_pipelined (testClientPipelinedMin chain points) chain choices)
+ ==
+    map Left  (pointsToRanges      chain points)
+ ++ map Right (receivedBlockBodies chain points)
+  where
+    choices = repeat True
+
+
+-- | With a client that collects eagerly and the driver chooses minimum
+-- pipelining then we get the interleaving of requests with responses.
+--
+prop_connect_pipelined3 :: TestChainAndPoints -> Bool
+prop_connect_pipelined3 (TestChainAndPoints chain points) =
+    runSimOrThrow
+      (connect_pipelined (testClientPipelinedMin chain points) chain choices)
+ ==
+    concat [ [Left l, Right r]
+           | l <- pointsToRanges      chain points
+           | r <- receivedBlockBodies chain points ]
+  where
+    choices = repeat False
+
+
+-- | With a client that collects eagerly and the driver chooses arbitrary
+-- pipelining then we get complex interleavings given by the reference
+-- specification 'pipelineInterleaving'.
+--
+prop_connect_pipelined4 :: TestChainAndPoints -> [Bool] -> Bool
+prop_connect_pipelined4 (TestChainAndPoints chain points) choices =
+    runSimOrThrow
+      (connect_pipelined (testClientPipelinedMin chain points) chain choices)
+ ==
+    pipelineInterleaving maxBound choices
+                         (pointsToRanges      chain points)
+                         (receivedBlockBodies chain points)
+
+
+-- | With a client that collects eagerly and is willing to send new messages
+-- up to a fixed limit of outstanding messages, and the driver chooses
+-- arbitrary pipelining then we get complex interleavings given by the
+-- reference specification 'pipelineInterleaving', for that limit of
+-- outstanding messages.
+--
+prop_connect_pipelined5 :: TestChainAndPoints -> NonNegative Int
+                        -> [Bool] -> Bool
+prop_connect_pipelined5 (TestChainAndPoints chain points)
+                        (NonNegative omax) choices =
+    runSimOrThrow
+      (connect_pipelined (testClientPipelinedLimited omax chain points)
+                         chain choices)
+ ==
+    pipelineInterleaving omax choices
+                         (pointsToRanges      chain points)
+                         (receivedBlockBodies chain points)
 
 
 --
@@ -147,6 +272,7 @@ prop_channel_IO :: TestChainAndPoints -> Property
 prop_channel_IO (TestChainAndPoints chain points) =
     ioProperty (prop_channel createConnectedChannels chain points)
 
+
 -- | Run 'prop_channel' in the IO monad using local pipes.
 --
 prop_pipe_IO :: TestChainAndPoints -> Property
@@ -162,8 +288,7 @@ prop_pipe_IO (TestChainAndPoints chain points) =
 -- the ranges which both ends are on the chain are disjoint.
 --
 pointsToRanges
-  :: forall block.
-     Chain.HasHeader block
+  :: Chain.HasHeader block
   => Chain block
   -> [Point block]
   -> [ChainRange block]
