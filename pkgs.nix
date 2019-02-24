@@ -40,16 +40,12 @@ let
       cleanSource (callCabal2nix "typed-protocols" ./typed-protocols { inherit io-sim io-sim-classes; })
     )))));
 
-    typed-transitions = doWerror(docNoSeprateOutput(doHaddock(doTest(doBench(
-      cleanSource (callCabal2nix "typed-transitions" ./typed-transitions {})
-    )))));
-
     ouroboros-network = doWerror(docNoSeprateOutput(doHaddock(doTest(doBench(
-      cleanSource (callCabal2nix "ouroboros-network" ./ouroboros-network { inherit io-sim io-sim-classes typed-protocols typed-transitions; })
+      cleanSource (callCabal2nix "ouroboros-network" ./ouroboros-network { inherit io-sim io-sim-classes typed-protocols; })
     )))));
 
     ouroboros-consensus = doWerror(docNoSeprateOutput(doHaddock(doTest(doBench(
-      cleanSource (callCabal2nix "ouroboros-consensus" ./ouroboros-consensus { inherit io-sim-classes io-sim typed-protocols typed-transitions ouroboros-network; })
+      cleanSource (callCabal2nix "ouroboros-consensus" ./ouroboros-consensus { inherit io-sim-classes io-sim typed-protocols ouroboros-network; })
     )))));
 
     byron-proxy = doWerror(docNoSeprateOutput(doHaddock(doTest(doBench(
