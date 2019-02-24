@@ -5,8 +5,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Network.Pipe (
-    pipeDuplex
-  , demo
+    demo
   ) where
 
 import           Control.Concurrent.Async
@@ -18,7 +17,7 @@ import           Control.Exception (Exception(..))
 import           Data.Bits
 import qualified Data.Map.Strict as M
 import           Data.Word
-import           System.IO (Handle, hClose, hFlush, hIsEOF)
+import           System.IO (Handle, hClose, hFlush)
 import           System.Process (createPipe)
 
 import           Ouroboros.Network.Chain (Chain, ChainUpdate, Point)
@@ -31,18 +30,11 @@ import           Ouroboros.Network.Protocol.ChainSync.Examples
 import           Ouroboros.Network.Protocol.ChainSync.Server
 import           Ouroboros.Network.Serialise
 
-import           Protocol.Channel hiding (Channel)
-
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Codec
 import           Network.TypedProtocol.Driver
 
-import qualified Codec.CBOR.Encoding as CBOR (Encoding)
-import qualified Codec.CBOR.Write as CBOR (toBuilder)
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Builder as BS
 import qualified Data.ByteString.Lazy as BL
-import qualified Data.ByteString.Lazy.Internal as LBS (smallChunkSize)
 
 data PipeCtx = PipeCtx {
       pcRead  :: Handle
@@ -102,20 +94,6 @@ startPipe :: Mx.MiniProtocolDescriptions IO -> (Handle, Handle) -> IO ()
 startPipe mpds (r, w) = do
     let ctx = PipeCtx r w
     setupMux mpds ctx
-
-pipeDuplex
-  :: Handle -- ^ Read
-  -> Handle -- ^ Write
-  -> Duplex IO IO CBOR.Encoding BS.ByteString
-pipeDuplex hndRead hndWrite = uniformDuplex snd_ rcv
-  where
-    snd_ encoding = do
-      BS.hPutBuilder hndWrite (CBOR.toBuilder encoding)
-      hFlush hndWrite
-    rcv = hIsEOF hndRead >>= \eof ->
-      if eof
-      then pure Nothing
-      else fmap Just (BS.hGetSome hndRead LBS.smallChunkSize)
 
 -- | A demonstration that we can run the simple chain consumer protocol
 -- over a pipe with full message serialisation, framing etc.

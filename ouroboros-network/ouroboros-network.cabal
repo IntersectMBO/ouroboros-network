@@ -37,27 +37,12 @@ library
                        Ouroboros.Network.Serialise
                        Ouroboros.Network.Socket
                        Ouroboros.Network.Testing.ConcreteBlock
-                       Ouroboros.Network.Protocol.Chain.Codec.Id
-                       Ouroboros.Network.Protocol.Chain.Consumer
-                       Ouroboros.Network.Protocol.Chain.ConsumerStream
-                       Ouroboros.Network.Protocol.Chain.Direct
-                       Ouroboros.Network.Protocol.Chain.Producer
-                       Ouroboros.Network.Protocol.Chain.ProducerStream
-                       Ouroboros.Network.Protocol.Chain.Node
-                       Ouroboros.Network.Protocol.Chain.Type
-                       Ouroboros.Network.Protocol.Codec.Cbor
-                       Ouroboros.Network.Protocol.Channel.Sim
-                       Ouroboros.Network.Protocol.Channel.Trace
                        Ouroboros.Network.Protocol.ChainSync.Client
                        Ouroboros.Network.Protocol.ChainSync.Codec
                        Ouroboros.Network.Protocol.ChainSync.Direct
                        Ouroboros.Network.Protocol.ChainSync.Server
                        Ouroboros.Network.Protocol.ChainSync.Type
                        Ouroboros.Network.Protocol.ChainSync.Examples
-                       Ouroboros.Network.Protocol.Stream.Type
-                       Ouroboros.Network.Protocol.Stream.Client
-                       Ouroboros.Network.Protocol.Stream.Server
-                       Ouroboros.Network.Protocol.Stream.Direct
                        Ouroboros.Network.Protocol.PingPong.Codec
                        Ouroboros.Network.Protocol.ReqResp.Codec
                        Ouroboros.Network.Protocol.BlockFetch.Type
@@ -90,7 +75,6 @@ library
                        TypeFamilies,
                        TypeInType
   build-depends:       base              >=4.9 && <4.13,
-                       typed-transitions >=0.1 && < 1.0,
                        typed-protocols   >=0.1 && < 1.0,
                        io-sim-classes    >=0.1 && < 0.2,
 
@@ -131,7 +115,6 @@ test-suite tests
                        Test.Ouroboros.Network.Protocol.ChainSync
                        Test.Ouroboros.Network.Protocol.PingPong
                        Test.Ouroboros.Network.Protocol.ReqResp
-                       Test.Ouroboros.Network.Protocol.Stream
                        Test.Ouroboros.Network.Protocol.BlockFetch
                        Test.Ouroboros.Network.Node
                        Test.Pipe
@@ -140,7 +123,6 @@ test-suite tests
   default-extensions:  NamedFieldPuns
   build-depends:       base,
                        ouroboros-network,
-                       typed-transitions,
                        typed-protocols,
                        io-sim-classes,
                        io-sim            >=0.1 && < 0.2,

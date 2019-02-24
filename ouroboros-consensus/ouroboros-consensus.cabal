@@ -130,7 +130,6 @@ library
 
   build-depends:       base              >=4.9 && <4.13,
                        ouroboros-network,
-                       typed-transitions,
                        typed-protocols,
                        io-sim-classes,
 
@@ -176,7 +175,6 @@ executable demo-playground
                        Run
                        Topology
   build-depends:       base,
-                       typed-transitions,
                        ouroboros-network,
                        ouroboros-consensus,
                        io-sim-classes,
@@ -214,7 +212,6 @@ test-suite test-consensus
                     Test.Util.Orphans.Arbitrary
                     Test.Util.DepFn
   build-depends:    base,
-                    typed-transitions,
                     typed-protocols,
                     ouroboros-network,
                     ouroboros-consensus,
