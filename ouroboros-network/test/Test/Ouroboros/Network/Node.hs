@@ -30,6 +30,7 @@ import           Test.Tasty.QuickCheck (testProperty)
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadFork
+import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
 import qualified Control.Monad.IOSim as Sim
 
@@ -115,6 +116,7 @@ prop_blockGenerator_IO (TestBlockChain chain) (Positive slotDuration) =
 
 coreToRelaySim :: ( MonadSTM m
                   , MonadFork m
+                  , MonadThrow m
                   , MonadTimer m
                   , MonadSay m
                   , MonadTimer m
@@ -190,6 +192,7 @@ prop_coreToRelay (TestNodeSim chain slotDuration coreTrDelay relayTrDelay) =
 -- Node graph: c → r → r
 coreToRelaySim2 :: ( MonadSTM m
                    , MonadFork m
+                   , MonadThrow m
                    , MonadTimer m
                    , MonadSay m
                    , MonadTimer m
@@ -286,6 +289,7 @@ instance Arbitrary TestNetworkGraph where
 networkGraphSim :: forall m.
                   ( MonadSTM m
                   , MonadFork m
+                  , MonadThrow m
                   , MonadTimer m
                   , MonadSay m
                   , MonadTimer m

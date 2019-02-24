@@ -113,7 +113,7 @@ codecChainSync =
 --
 codecChainSyncId :: forall header point m. Monad m
                  => Codec (ChainSync header point)
-                          String m (AnyMessage (ChainSync header point))
+                          CodecFailure m (AnyMessage (ChainSync header point))
 codecChainSyncId = Codec encode decode
  where
   encode :: forall (pr :: PeerRole) st st'.
@@ -124,10 +124,11 @@ codecChainSyncId = Codec encode decode
 
   decode :: forall (pr :: PeerRole) st.
             PeerHasAgency pr st
-         -> m (DecodeStep (AnyMessage (ChainSync header point)) String m (SomeMessage st))
+         -> m (DecodeStep (AnyMessage (ChainSync header point))
+                          CodecFailure m (SomeMessage st))
   decode stok = return $ DecodePartial $ \bytes -> case (stok, bytes) of
 
-    (_, Nothing) -> return $ DecodeFail "codecChainSync: not enough input"
+    (_, Nothing) -> return $ DecodeFail CodecFailureOutOfInput
 
     (ClientAgency TokIdle, Just (AnyMessage msg@MsgRequestNext)) -> return (DecodeDone (SomeMessage msg) Nothing)
 
@@ -145,4 +146,4 @@ codecChainSyncId = Codec encode decode
 
     (ClientAgency TokIdle, Just (AnyMessage MsgDone)) -> return (DecodeDone (SomeMessage MsgDone) Nothing)
 
-    (_, _) -> return $ DecodeFail "codecChainSync: no matching message"
+    (_, _) -> return $ DecodeFail (CodecFailure "codecChainSync: no matching message")

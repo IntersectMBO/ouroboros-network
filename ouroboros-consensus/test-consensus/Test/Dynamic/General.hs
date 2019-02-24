@@ -23,6 +23,7 @@ import           Test.QuickCheck
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadFork
+import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
 import           Control.Monad.IOSim (runSimOrThrow)
 
@@ -53,6 +54,7 @@ prop_simple_protocol_convergence pInfo isValid numCoreNodes numSlots seed =
 test_simple_protocol_convergence :: forall m p.
                                     ( MonadSTM m
                                     , MonadFork m
+                                    , MonadThrow m
                                     , MonadSay m
                                     , MonadTimer m
                                     , DemoProtocolConstraints p

@@ -15,7 +15,7 @@ import           Text.Read (readMaybe)
 codecReqResp
   :: forall req resp m.
      (Monad m, Show req, Show resp, Read req, Read resp)
-  => Codec (ReqResp req resp) String m String
+  => Codec (ReqResp req resp) CodecFailure m String
 codecReqResp =
     Codec{encode, decode}
   where
@@ -28,7 +28,7 @@ codecReqResp =
 
     decode :: forall (pr :: PeerRole) st.
               PeerHasAgency pr st
-           -> m (DecodeStep String String m (SomeMessage st))
+           -> m (DecodeStep String CodecFailure m (SomeMessage st))
     decode stok =
       decodeTerminatedFrame '\n' $ \str trailing ->
         case (stok, break (==' ') str) of
@@ -40,5 +40,5 @@ codecReqResp =
           (ServerAgency TokBusy, ("MsgResp", str'))
              | Just resp <- readMaybe str'
             -> DecodeDone (SomeMessage (MsgResp resp)) trailing
-          _ -> DecodeFail ("unexpected message: " ++ str)
+          _ -> DecodeFail (CodecFailure ("unexpected message: " ++ str))
 

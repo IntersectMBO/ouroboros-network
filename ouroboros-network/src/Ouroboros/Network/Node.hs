@@ -19,6 +19,7 @@ import           GHC.Generics (Generic)
 
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadFork
+import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTimer
 
@@ -285,6 +286,7 @@ forkRelayKernel upstream cpsVar = do
 relayNode :: forall m block.
              ( MonadSTM m
              , MonadFork m
+             , MonadThrow m
              , MonadSay m
              , HasHeader block
              , Show block
@@ -398,6 +400,7 @@ forkCoreKernel slotDuration gchain fixupBlock cpsVar = do
 coreNode :: forall m.
         ( MonadSTM m
         , MonadFork m
+        , MonadThrow m
         , MonadTimer m
         , MonadSay m
         )

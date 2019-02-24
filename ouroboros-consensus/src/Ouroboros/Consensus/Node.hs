@@ -35,6 +35,7 @@ import           Data.Maybe (fromMaybe, mapMaybe)
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadFork
+import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.Channel as Network
 import           Ouroboros.Network.Codec
@@ -93,13 +94,15 @@ data NodeKernel m up blk = NodeKernel {
       --
       -- NOTE: Eventually it will be the responsibility of the network layer
       -- itself to register and deregister peers.
-    , addUpstream       :: forall e bytes. up -> NodeComms e m blk bytes -> m ()
+    , addUpstream       :: forall e bytes. Exception e
+                        => up -> NodeComms e m blk bytes -> m ()
 
       -- | Notify network layer of a new downstream node
       --
       -- NOTE: Eventually it will be the responsibility of the network layer
       -- itself to register and deregister peers.
-    , addDownstream     :: forall e bytes. NodeComms e m blk bytes -> m ()
+    , addDownstream     :: forall e bytes. Exception e
+                        => NodeComms e m blk bytes -> m ()
     }
 
 -- | Monad that we run protocol specific functions in
@@ -136,6 +139,7 @@ data NodeCallbacks m blk = NodeCallbacks {
 nodeKernel :: forall m blk up.
               ( MonadSTM m
               , MonadFork m
+              , MonadThrow m
               , MonadSay m
               , ProtocolLedgerView blk
               , Eq                 blk
@@ -183,6 +187,7 @@ data InternalState m up blk = IS {
 initInternalState :: forall m up blk.
                      ( MonadSTM m
                      , MonadFork m
+                     , MonadThrow m
                      , ProtocolLedgerView blk
                      , Eq                 blk
                      , Ord up
@@ -690,18 +695,21 @@ data NetworkProvides m up blk hdr = NetworkProvides {
       --
       -- NOTE: Eventually it will be the responsibility of the network layer
       -- itself to register and deregister peers.
-    , npAddUpstream   :: forall e bytes. up -> NodeComms e m hdr bytes -> m ()
+    , npAddUpstream   :: forall e bytes. Exception e
+                      => up -> NodeComms e m hdr bytes -> m ()
 
       -- | Notify network layer of a new downstream node
       --
       -- NOTE: Eventually it will be the responsibility of the network layer
       -- itself to register and deregister peers.
-    , npAddDownstream :: forall e bytes. NodeComms e m hdr bytes -> m ()
+    , npAddDownstream :: forall e bytes. Exception e
+                      => NodeComms e m hdr bytes -> m ()
     }
 
 initNetworkLayer :: forall m up hdr blk.
                     ( MonadSTM m
                     , MonadFork m
+                    , MonadThrow m
                     , HasHeader hdr
                     , hdr ~ blk     -- TODO: for now
                     , Eq blk        -- TODO: for now
@@ -744,14 +752,12 @@ initNetworkLayer NetworkRequires{..} = do
             let producer = chainSyncServerPeer (chainSyncServerExample () cpsVar)
             void $ fork $ void $ ncWithChan $ \chan ->
               runPeer ncCodec chan producer
-              --TODO: deal with the failures that this returns
-                >>= either (\_ -> fail "codec exception") return
+              --TODO: deal with the exceptions this throws, use async
         , npAddUpstream = \up NodeComms{..} -> do
             let consumer = nrSyncClient up
             void $ fork $ void $ ncWithChan $ \chan ->
               runPeer ncCodec chan (chainSyncClientPeer consumer)
-              --TODO: deal with the failures that this can throw
-                >>= either (\_ -> fail "codec exception") return
+              --TODO: deal with the exceptions this throws, use async
         }
 
 {-------------------------------------------------------------------------------

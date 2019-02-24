@@ -24,7 +24,6 @@ import Network.TypedProtocol.PingPong.Examples
 import Network.TypedProtocol.PingPong.Codec
 
 import Data.Functor.Identity (Identity (..))
-import Control.Monad.Fail
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
@@ -269,11 +268,11 @@ prop_connect_pipelined5 choices (Positive omax) (NonNegative n) =
 
 -- | Run a non-pipelined client and server over a channel using a codec.
 --
-prop_channel :: (MonadSTM m, MonadAsync m, MonadCatch m, MonadFail m)
+prop_channel :: (MonadSTM m, MonadAsync m, MonadCatch m)
              => NonNegative Int -> m Bool
 prop_channel (NonNegative n) = do
-    Right ((), n') <- runConnectedPeers createConnectedChannels
-                                        codecPingPong client server
+    ((), n') <- runConnectedPeers createConnectedChannels
+                                  codecPingPong client server
     return (n' == n)
   where
     client = pingPongClientPeer (pingPongClientCount n)

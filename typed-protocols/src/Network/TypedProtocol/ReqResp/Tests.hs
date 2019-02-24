@@ -16,7 +16,6 @@ import Network.TypedProtocol.ReqResp.Server
 import Network.TypedProtocol.ReqResp.Codec
 import Network.TypedProtocol.ReqResp.Examples
 
-import Control.Monad.Fail
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
@@ -145,12 +144,12 @@ prop_connectPipelined cs f xs =
 -- Properties using channels, codecs and drivers.
 --
 
-prop_channel :: (MonadSTM m, MonadAsync m, MonadCatch m, MonadFail m)
+prop_channel :: (MonadSTM m, MonadAsync m, MonadCatch m)
              => (Int -> Int -> (Int, Int)) -> [Int]
              -> m Bool
 prop_channel f xs = do
-    Right (c, s) <- runConnectedPeers createConnectedChannels
-                                      codecReqResp client server
+    (c, s) <- runConnectedPeers createConnectedChannels
+                                codecReqResp client server
     return ((s, c) == mapAccumL f 0 xs)
   where
     client = reqRespClientPeer (reqRespClientMap xs)

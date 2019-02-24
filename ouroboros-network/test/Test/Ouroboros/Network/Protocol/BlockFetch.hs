@@ -10,7 +10,6 @@ import           Control.Monad.ST (runST)
 import           Data.ByteString.Lazy (ByteString)
 
 import           Control.Monad.IOSim (runSimOrThrow)
-import           Control.Monad.Fail
 import           Control.Monad.Class.MonadST (MonadST)
 import           Control.Monad.Class.MonadSTM (MonadSTM)
 import           Control.Monad.Class.MonadAsync (MonadAsync)
@@ -261,11 +260,11 @@ prop_connect_pipelined5 (TestChainAndPoints chain points)
 
 -- | Run a simple block-fetch client and server using connected channels.
 --
-prop_channel :: (MonadAsync m, MonadCatch m, MonadST m, MonadFail m)
+prop_channel :: (MonadAsync m, MonadCatch m, MonadST m)
              => m (Channel m ByteString, Channel m ByteString)
              -> Chain Block -> [Point Block] -> m Property
 prop_channel createChannels chain points = do
-    Right (bodies, ()) <-
+    (bodies, ()) <-
       runConnectedPeers
         createChannels codecBlockFetch
         (blockFetchClientPeer (testClient chain points))

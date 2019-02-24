@@ -18,6 +18,7 @@ import qualified Data.Set as Set
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadFork
+import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
 
 import           Ouroboros.Network.Channel
@@ -48,6 +49,7 @@ import           Ouroboros.Consensus.Util.STM
 broadcastNetwork :: forall m p.
                     ( MonadSTM   m
                     , MonadFork  m
+                    , MonadThrow m
                     , MonadTimer m
                     , MonadSay   m
                     , DemoProtocolConstraints p
