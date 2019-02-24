@@ -25,6 +25,7 @@ import           System.Random (Random(..), StdGen)
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain as Chain
+import           Ouroboros.Network.ChainFragment (ChainFragment)
 
 import           Ouroboros.Network.Protocol.BlockFetch.Server
 --import           Ouroboros.Network.Protocol.BlockFetch.Client
@@ -35,6 +36,95 @@ import           Ouroboros.Network.Testing.ConcreteBlock
 --import           Test.Chain
 
 
+{-
+Let's start with the big picture...
+
+┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+Key:  ┏━━━━━━━━━━━━┓  ╔═════════════╗  ┏━━━━━━━━━━━━━━┓   ╔════════════╗
+      ┃ STM-based  ┃  ║active thread║  ┃state instance┃┓  ║ one thread ║╗
+      ┃shared state┃  ║             ║  ┃   per peer   ┃┃  ║  per peer  ║║
+      ┗━━━━━━━━━━━━┛  ╚═════════════╝  ┗━━━━━━━━━━━━━━┛┃  ╚════════════╝║
+                                        ┗━━━━━━━━━━━━━━┛   ╚════════════╝
+┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+Notes:
+ • Thread communication is via STM based state.
+ • Outbound: threads update STM state.
+ • Inbound: threads wait on STM state changing (using retry).
+ • These are no queues: there is only the current state, not all change events.
+┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+╔══════════════╗     ┏━━━━━━━━━━━━━━┓
+║ Chain sync   ║╗    ┃              ┃
+║  protocol    ║║◀───┨ Ledger state ┃◀───────────╮
+║(client side) ║║    ┃              ┃            │
+╚══════╤═══════╝║    ┗━━━━━━━━━━━━━━┛            │
+ ╚═════╪════════╝                                │
+       ▼                                         │
+┏━━━━━━━━━━━━━━┓     ┏━━━━━━━━━━━━━━┓     ╔══════╧═══════╗
+┃  Candiate    ┃     ┃  Candidate   ┃     ║  Chain and   ║
+┃  chains      ┃     ┃   chains     ┠────▶║   ledger     ║
+┃  (headers)   ┃     ┃  (blocks)    ┃     ║  validation  ║
+┗━━━━━━┯━━━━━━━┛     ┗━━━━━━━━━━━━━━┛     ╚══════╤═══════╝
+       │                       ▲                 │
+       ╰──────────────────╮    │                 │
+                          ▼    │                 ▼
+┏━━━━━━━━━━━━━━┓     ╔═════════╧════╗     ┏━━━━━━━━━━━━━━┓     ╔══════════════╗
+┃    Block     ┃┓    ║    Block     ║     ┃   Current    ┃     ║ Block fetch  ║╗
+┃    fetch     ┃┃◀───╢   download   ║◀────┨    chain     ┠────▶║ protocol     ║║
+┃   requests   ┃┃    ║    logic     ║     ┃  (blocks)    ┃     ║(server side) ║║
+┗━━━━━━┯━━━━━━━┛┃    ╚══════════════╝     ┠──────────────┨     ╚══════════════╝║
+ ┗━━━━━┿━━━━━━━━┛           ▲             ┃  Tentative   ┃      ╚══════════════╝
+       ▼                    │             ┃    chain     ┠──╮
+╔══════════════╗     ┏━━━━━━┷━━━━━━━┓     ┃  (headers)   ┃  │  ╔══════════════╗
+║ block fetch  ║╗    ┃    Set of    ┃     ┗━━━━━━━━━━━━━━┛  │  ║ Chain sync   ║╗
+║  protocol    ╟╫───▶┃  downloaded  ┃                       ╰─▶║ protocol     ║║
+║(client side) ║║    ┃    blocks    ┃                          ║(server side) ║║
+╚══════════════╝║    ┗━━━━━━━━━━━━━━┛                          ╚══════════════╝║
+ ╚══════════════╝                                               ╚══════════════╝
+┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+
+We will consider the block download logic and the policy (but not mechanism)
+for the block fetch protocol together as one unit of functionality.
+
+Looking at the diagram we see that these two threads interact with each other
+and other threads via the following shared state
+
+ ═════════════════════════════╤════════════════╤═════════════════
+   State                      │  Interactions  │  {In,Ex}ternal
+ ─────────────────────────────┼────────────────┼─────────────────
+   Candiate chains (headers)  │  Read          │  External
+   Current chain (blocks)     │  Read          │  External
+   Set of downloaded blocks   │  Read & Write  │  External
+   Block fetch requests       │  Read & Write  │  Internal
+
+The block fetch requests state is private between the block download logic
+and the block fetch protocol client, so it is implemented here.
+
+The other state is managed by the consensus layer and is considered external
+here. So here we define interfaces for interacting with the external state.
+These have to be provided when instantiating the block fetch logic.
+-}
+
+data FetchLogicExternalState peer header block m =
+     FetchLogicExternalState {
+
+       -- | Read the K-suffixes of the candidate chains.
+       --
+       -- They must be already validated and contain the last @K@ headers
+       -- (unless we're near the chain genesis of course).
+       --
+       readCandidateChains    :: Tr m (Map peer (ChainFragment header)),
+
+       -- | Read the K-suffix of the current chain.
+       --
+       -- This must contain info on the last @K@ blocks (unless we're near
+       -- the chain genesis of course).
+       --
+       readCurrentChain       :: Tr m (ChainFragment block),
+
+       readDownloadedBlocks   :: Tr m (Point block -> Bool)
+
+       --TODO: adding and then registering blocks
+     }
 
 {-
 We have the node's /current/ or /adopted/ chain. This is the node's chain in
@@ -747,6 +837,9 @@ demo1 currentChain candidateChain1 candidateChain2 = do
 -- attack resistance properties
 --   unit tests to do the "right" thing in various cases
 
+--
+-- For testing: simple CandidateChains impl
+--
 
 -- | A collection of chains that supports concurrent modification and change
 -- detection via STM.
@@ -769,10 +862,10 @@ unregisterCandidateChain :: (MonadSTM m, Ord peer)
 unregisterCandidateChain (CandidateChains chainsVar) peerid =
     modifyTVar' chainsVar (Map.delete peerid)
 
-readCandidateChains :: MonadSTM m
+readCandidateChains' :: MonadSTM m
                     => CandidateChains m peer header
                     -> Tr m (Map peer (Chain header))
-readCandidateChains (CandidateChains chainsVar) =
+readCandidateChains' (CandidateChains chainsVar) =
     traverse readTVar =<< readTVar chainsVar
 
 {-- 
