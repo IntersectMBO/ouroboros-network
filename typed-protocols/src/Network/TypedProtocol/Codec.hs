@@ -17,6 +17,7 @@ module Network.TypedProtocol.Codec (
   , WeHaveAgency
   , TheyHaveAgency
   , SomeMessage(..)
+  , CodecFailure(..)
     -- ** Incremental decoding
   , DecodeStep(..)
   , runDecoder
@@ -29,6 +30,8 @@ module Network.TypedProtocol.Codec (
   , prop_codec_splitsM
   , prop_codec_splits
   ) where
+
+import           Control.Exception (Exception)
 
 import           Network.TypedProtocol.Core
                    ( Protocol(..), PeerRole(..)
@@ -163,6 +166,17 @@ data DecodeStep bytes failure m a =
 --
 data SomeMessage (st :: ps) where
      SomeMessage :: Message ps st st' -> SomeMessage st
+
+
+-- | Each 'Codec' can use whatever @failure@ type is appropriate. This simple
+-- exception type is provided for use by simple codecs (e.g. \"identity\") when
+-- nothing more than a 'String' is needed. It is an instance of 'Exception'.
+--
+data CodecFailure = CodecFailureOutOfInput
+                  | CodecFailure String
+  deriving (Eq, Show)
+
+instance Exception CodecFailure
 
 
 --

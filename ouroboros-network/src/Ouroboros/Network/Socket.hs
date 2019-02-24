@@ -17,7 +17,6 @@ import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTimer
-import           Control.Exception (Exception(..))
 import           Data.Bits
 import qualified Data.ByteString.Lazy as BL
 import           Data.Int
@@ -36,7 +35,6 @@ import           Ouroboros.Network.Protocol.ChainSync.Examples
 import           Ouroboros.Network.Protocol.ChainSync.Server
 import           Ouroboros.Network.Serialise
 import           Ouroboros.Network.Channel
-import           Ouroboros.Network.Codec
 import           Network.TypedProtocol.Driver
 
 import           Text.Printf
@@ -216,18 +214,13 @@ demo2 chain0 updates = do
         , points = \_ -> pure $ consumerClient target consChain
         }
 
-    throwOnUnexpected :: String -> Either DeserialiseFailure t -> IO t
-    throwOnUnexpected str (Left err) = fail $ str ++ " " ++ displayException err
-    throwOnUnexpected _   (Right t)  = pure t
-
     consumerInit :: TMVar IO Bool -> Point block -> TVar IO (Chain block)
                  -> Channel IO BL.ByteString -> IO ()
     consumerInit done target consChain channel = do
        let consumerPeer = chainSyncClientPeer (chainSyncClientExample consChain
                                                (consumerClient target consChain))
 
-       r <- runPeer codecChainSync channel consumerPeer
-       throwOnUnexpected "consumer" r
+       runPeer codecChainSync channel consumerPeer
        --say "consumer done"
        atomically $ putTMVar done True
 
@@ -241,7 +234,6 @@ demo2 chain0 updates = do
     producerRsp prodChain channel = do
         let producerPeer = chainSyncServerPeer (chainSyncServerExample () prodChain)
 
-        r <- runPeer codecChainSync channel producerPeer
-        throwOnUnexpected "producer" r
+        runPeer codecChainSync channel producerPeer
         --say "producer done"
 

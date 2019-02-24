@@ -80,20 +80,21 @@ import Numeric.Natural (Natural)
 --
 runPeer
   :: forall ps (st :: ps) pr failure bytes m a .
-     Monad m
+     (MonadThrow m, Exception failure)
   => Codec ps failure m bytes
   -> Channel m bytes
   -> Peer ps pr st m a
-  -> m (Either failure a)
+  -> m a
 
-runPeer Codec{encode, decode} channel@Channel{send} = go Nothing
+runPeer Codec{encode, decode} channel@Channel{send} =
+    go Nothing
   where
     go :: forall st'.
           Maybe bytes
        -> Peer ps pr st' m a
-       -> m (Either failure a)
+       -> m a
     go trailing (Effect k) = k >>= go trailing
-    go _        (Done _ x) = return (Right x)
+    go _        (Done _ x) = return x
 
     go trailing (Yield stok msg k) = do
       send (encode stok msg)
@@ -104,7 +105,7 @@ runPeer Codec{encode, decode} channel@Channel{send} = go Nothing
       res <- runDecoderWithChannel channel trailing decoder
       case res of
         Right (SomeMessage msg, trailing') -> go trailing' (k msg)
-        Left failure                       -> return (Left failure)
+        Left failure                       -> throwM failure
 
 
 --
@@ -120,7 +121,7 @@ runPeer Codec{encode, decode} channel@Channel{send} = go Nothing
 --
 runPipelinedPeer
   :: forall ps (st :: ps) pr failure bytes m a.
-     (MonadSTM m, MonadAsync m, MonadCatch m)
+     (MonadSTM m, MonadAsync m, MonadCatch m, Exception failure)
   => Natural
   -> Codec ps failure m bytes
   -> Channel m bytes
@@ -129,13 +130,11 @@ runPipelinedPeer
 runPipelinedPeer maxOutstanding codec channel (PeerPipelined peer) = do
     receiveQueue <- atomically $ newTBQueue maxOutstanding
     collectQueue <- atomically $ newTBQueue maxOutstanding
-    ((), x) <- runPipelinedPeerReceiverQueue receiveQueue collectQueue
-                                             codec channel
-                 `concurrently`
-               runPipelinedPeerSender        receiveQueue collectQueue
-                                             codec channel peer
-    return x
-    --TODO: manage the fork + exceptions here
+    snd <$> runPipelinedPeerReceiverQueue receiveQueue collectQueue
+                                          codec channel
+              `concurrently`
+            runPipelinedPeerSender        receiveQueue collectQueue
+                                          codec channel peer
 
 
 data ReceiveHandler ps pr m c where
@@ -181,18 +180,18 @@ runPipelinedPeerSender receiveQueue collectQueue Codec{encode} Channel{send} =
 
 runPipelinedPeerReceiverQueue
   :: forall ps pr failure bytes m c.
-     MonadSTM m
+     (MonadSTM m, MonadThrow m, Exception failure)
   => TBQueue m (ReceiveHandler ps pr m c)
   -> TBQueue m c
   -> Codec ps failure m bytes
   -> Channel m bytes
   -> m ()
-runPipelinedPeerReceiverQueue receiveQueue collectQueue codec channel = go Nothing
+runPipelinedPeerReceiverQueue receiveQueue collectQueue codec channel =
+    go Nothing
   where
     go :: Maybe bytes -> m ()
     go trailing = do
       ReceiveHandler receiver <- atomically (readTBQueue receiveQueue)
-      --TODO: use 'try' here once we have MonadCatch
       (c, trailing') <- runPipelinedPeerReceiver codec channel trailing receiver
       atomically (writeTBQueue collectQueue c)
       go trailing'
@@ -200,7 +199,7 @@ runPipelinedPeerReceiverQueue receiveQueue collectQueue codec channel = go Nothi
 
 runPipelinedPeerReceiver
   :: forall ps (st :: ps) (stdone :: ps) pr failure bytes m c.
-     Monad m
+     (MonadThrow m, Exception failure)
   => Codec ps failure m bytes
   -> Channel m bytes
   -> Maybe bytes
@@ -221,7 +220,7 @@ runPipelinedPeerReceiver Codec{decode} channel = go
       res <- runDecoderWithChannel channel trailing decoder
       case res of
         Right (SomeMessage msg, trailing') -> go trailing' (k msg)
-        Left _failure                      -> error "TODO: proper exceptions for runPipelinedPeer"
+        Left failure                       -> throwM failure
 
 
 --
@@ -252,36 +251,33 @@ runDecoderWithChannel Channel{recv} = go
 -- The first argument is expected to create two channels that are connected,
 -- for example 'createConnectedChannels'.
 --
-runConnectedPeers :: (MonadSTM m, MonadAsync m, MonadCatch m)
+runConnectedPeers :: (MonadSTM m, MonadAsync m, MonadCatch m,
+                      Exception failure)
                   => m (Channel m bytes, Channel m bytes)
                   -> Codec ps failure m bytes
                   -> Peer ps AsClient st m a
                   -> Peer ps AsServer st m b
-                  -> m (Either failure (a, b))
-runConnectedPeers createChannels codec client server = do
-    (clientChannel, serverChannel) <- createChannels
-    results <- runPeer codec clientChannel client
-                 `concurrently`
-               runPeer codec serverChannel server
+                  -> m (a, b)
+runConnectedPeers createChannels codec client server =
+    createChannels >>= \(clientChannel, serverChannel) ->
 
-    case results of
-      (Left err, _)      -> return (Left err)
-      (_, Left err)      -> return (Left err)
-      (Right x, Right y) -> return (Right (x,y))
+    runPeer codec clientChannel client
+      `concurrently`
+    runPeer codec serverChannel server
 
 
-runConnectedPeersPipelined :: (MonadSTM m, MonadAsync m, MonadCatch m)
+runConnectedPeersPipelined :: (MonadSTM m, MonadAsync m, MonadCatch m,
+                               Exception failure)
                            => m (Channel m bytes, Channel m bytes)
                            -> Codec ps failure m bytes
                            -> Natural
                            -> PeerPipelined ps AsClient st m a
                            -> Peer          ps AsServer st m b
-                           -> m (Either failure (a, b))
-runConnectedPeersPipelined createChannels codec maxOutstanding client server = do
-    (clientChannel, serverChannel) <- createChannels
-    results <- runPipelinedPeer maxOutstanding codec clientChannel client
-                 `concurrently`
-               runPeer                         codec serverChannel server
-    case results of
-      (_, Left err) -> return (Left err)
-      (x, Right y)  -> return (Right (x,y))
+                           -> m (a, b)
+runConnectedPeersPipelined createChannels codec maxOutstanding client server =
+    createChannels >>= \(clientChannel, serverChannel) ->
+
+    runPipelinedPeer maxOutstanding codec clientChannel client
+      `concurrently`
+    runPeer                         codec serverChannel server
+

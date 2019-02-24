@@ -11,7 +11,7 @@ import           Network.TypedProtocol.PingPong.Type
 
 codecPingPong
   :: forall m. Monad m
-  => Codec PingPong String m String
+  => Codec PingPong CodecFailure m String
 codecPingPong =
     Codec{encode, decode}
   where
@@ -23,28 +23,29 @@ codecPingPong =
     encode (ServerAgency TokBusy) MsgPong = "pong\n"
 
     decode :: PeerHasAgency pr st
-           -> m (DecodeStep String String m (SomeMessage st))
+           -> m (DecodeStep String CodecFailure m (SomeMessage st))
     decode stok =
       decodeTerminatedFrame '\n' $ \str trailing ->
         case (stok, str) of
           (ServerAgency TokBusy, "pong") -> DecodeDone (SomeMessage MsgPong) trailing
           (ClientAgency TokIdle, "ping") -> DecodeDone (SomeMessage MsgPing) trailing
           (ClientAgency TokIdle, "done") -> DecodeDone (SomeMessage MsgDone) trailing
-          _                              -> DecodeFail ("unexpected message: " ++ str)
+          _                              -> DecodeFail failure
+            where failure = CodecFailure ("unexpected message: " ++ str)
 
 
 decodeTerminatedFrame :: forall m a.
                          Monad m
                       => Char
-                      -> (String -> Maybe String -> DecodeStep String String m a)
-                      -> m (DecodeStep String String m a)
+                      -> (String -> Maybe String -> DecodeStep String CodecFailure m a)
+                      -> m (DecodeStep String CodecFailure m a)
 decodeTerminatedFrame terminator k = go []
   where
-    go :: [String] -> m (DecodeStep String String m a)
+    go :: [String] -> m (DecodeStep String CodecFailure m a)
     go chunks =
       return $ DecodePartial $ \mchunk ->
         case mchunk of
-          Nothing    -> return $ DecodeFail "not enough input"
+          Nothing    -> return $ DecodeFail CodecFailureOutOfInput
           Just chunk ->
             case break (==terminator) chunk of
               (c, _:c') -> return $ k (concat (reverse (c:chunks)))
