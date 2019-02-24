@@ -338,7 +338,7 @@ data FetchDecline header peer =
      FetchDeclineAllDownloaded  peer (Point header)
 --   | FetchDeclineSlowPeer       peer
    | FetchDeclineInFlightLimit  peer Word
-   | FetchDeclineConcLimitLimit peer Word
+   | FetchDeclineConcLimit      peer Word
   deriving Show
 
 data FetchPolicyParams = FetchPolicyParams {
@@ -425,7 +425,7 @@ fetchRequestDecision FetchPolicyParams {
                        maxConcurrentFetchPeers
                      }
                      nConcurrentFetchPeers
-                     PeerFetchState{peerFetchBytesInFlight, peerFetchStatus}
+                     PeerFetchState{peerFetchBytesInFlight}
                      (ChainSuffix chain point) peer
   | headPoint chain == point
   = Left (FetchDeclineAllDownloaded peer point)
@@ -444,7 +444,7 @@ fetchRequestDecision FetchPolicyParams {
 
   | peerFetchBytesInFlight == 0
   , nConcurrentFetchPeers >= maxConcurrentFetchPeers
-  = Left (FetchDeclineConcLimitLimit peer maxConcurrentFetchPeers)
+  = Left (FetchDeclineConcLimit peer maxConcurrentFetchPeers)
 
   | otherwise
   = Right (FetchRequest peer fetchReqRange)
