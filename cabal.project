@@ -1,11 +1,10 @@
-packages: ./typed-transitions
-          ./typed-protocols
+packages: ./typed-protocols
           ./ouroboros-network
           ./ouroboros-consensus
           ./io-sim
           ./io-sim-classes
 
-package typed-transitions
+package typed-protocols
   tests: True
 
 package ouroboros-network
