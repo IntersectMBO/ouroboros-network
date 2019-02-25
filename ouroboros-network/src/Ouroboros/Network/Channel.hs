@@ -7,7 +7,7 @@
 --
 module Ouroboros.Network.Channel
   ( module Network.TypedProtocol.Channel
-  , createBufferConnectedChannels
+  , newMuxBufferedConnectedChannels
   , createPipeConnectedChannels
   , createSocketConnectedChannels
   , withFifosAsChannel
@@ -24,27 +24,37 @@ import qualified System.IO      as IO
 import qualified Network.Socket            as Socket hiding (send, recv)
 import qualified Network.Socket.ByteString as Socket
 
+import           Control.Monad (when)
+import           Control.Exception (assert)
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTimer
 
 import           Network.TypedProtocol.Channel
 
 
--- | Create a pair of 'Channel's that are connected internally.
+-- | Create a pair of 'Channel's that are connected internally with a buffering
+-- strategy designed for inter-thread communication between a multiplexing
+-- thread and a thread running a peer.
 --
--- This is intended for inter-thread communication, such as between a
--- multiplexing thread and a thread running a peer.
+-- Multiple writes to the buffer are allowed up to a maximum buffer size. Once
+-- it reaches the maximum buffer size then the writer blocks and has to wait.
+--
+-- On the reader side, the entire buffer is returned, which can of course be up
+-- to the maximum buffer size. Only if the buffer is empty will the reader
+-- block.
 --
 -- It uses lazy 'ByteString's but it ensures that data written to the channel
 -- is /fully evaluated/ first. This ensures that any work to serialise the data
 -- takes place on the /writer side and not the reader side/.
 --
-createBufferConnectedChannels :: forall m. MonadSTM m
-                              => m (Channel m LBS.ByteString,
-                                    Channel m LBS.ByteString)
-createBufferConnectedChannels = do
-    bufferA <- newEmptyTMVarM
-    bufferB <- newEmptyTMVarM
+newMuxBufferedConnectedChannels :: forall m. MonadSTM m
+                                => Int -- ^ maximum size of @recv@ chunk
+                                -> m (Channel m LBS.ByteString,
+                                      Channel m LBS.ByteString)
+newMuxBufferedConnectedChannels maxBufferSize =
+    assert (0 < maxBufferSize) $ do
+    bufferA <- newTVarM []
+    bufferB <- newTVarM []
 
     return (buffersAsChannel bufferB bufferA,
             buffersAsChannel bufferA bufferB)
@@ -53,13 +63,35 @@ createBufferConnectedChannels = do
         Channel{send, recv}
       where
         send :: LBS.ByteString -> m ()
-        send x = sequence_ [ atomically (putTMVar bufferWrite c)
-                           | !c <- LBS.toChunks x ]
-                           -- Evaluate the chunk c /before/ doing the STM
-                           -- transaction to write it to the buffer.
+        send x = mapM_ (writeToBuffer bufferWrite) (LBS.toChunks x)
 
         recv :: m (Maybe LBS.ByteString)
-        recv   = Just . LBS.fromStrict <$> atomically (takeTMVar bufferRead)
+        recv   = Just <$> readFromBuffer bufferRead
+
+    -- Strategy is we keep the buffer within the max buffer size at all times.
+    -- When we write a new chunk, we take a slice of it that fits and return
+    -- the rest. We block if the buffer is now full.
+    writeToBuffer :: TVar m [BS.ByteString] -> BS.ByteString -> m BS.ByteString
+    writeToBuffer buffer !chunk =
+      atomically $ do
+        bufContent <- readTVar buffer
+        let bufferSize = sum (map BS.length bufContent)
+            freeSpace  = maxBufferSize - bufferSize
+            isFull     = freeSpace <= 0
+        when isFull retry
+        let (chunk', remaining) = BS.splitAt freeSpace chunk
+        writeTVar buffer (chunk' : bufContent)
+        return remaining -- if any
+
+    -- On the read side we can just grab the whole lot, since it's always within
+    -- the maximum buffer size.
+    readFromBuffer :: TVar m [BS.ByteString] -> m LBS.ByteString
+    readFromBuffer buffer =
+      atomically $ do
+        bufContent <- readTVar buffer
+        when (null bufContent) retry
+        writeTVar buffer []
+        return (LBS.fromChunks (reverse bufContent))
 
 
 -- | Create a local pipe, with both ends in this process, and expose that as
