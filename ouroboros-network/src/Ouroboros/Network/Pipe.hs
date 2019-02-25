@@ -13,6 +13,7 @@ import           Control.Monad
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadThrow
 import           Data.Bits
 import           Data.Word
 import           System.IO (Handle, hClose, hFlush)
@@ -69,8 +70,8 @@ readPipe :: PipeCtx -> IO (Mx.MuxSDU DemoProtocols, Time IO)
 readPipe ctx = do
         hbuf <- recvLen' (pcRead ctx) 8 []
         case Mx.decodeMuxSDUHeader hbuf of
-             Nothing     -> error "failed to decode header" -- XXX
-             Just header -> do
+             Left e     -> throwM e
+             Right header -> do
                  --say $ printf "decoded mux header, goint to read %d bytes" (Mx.msLength header)
                  blob <- recvLen' (pcRead ctx)
                                   (fromIntegral $ Mx.msLength header) []
