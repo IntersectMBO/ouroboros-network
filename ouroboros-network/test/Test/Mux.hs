@@ -10,7 +10,6 @@ module Test.Mux (tests) where
 import           Control.Concurrent.Async
 import           Control.Monad
 import qualified Data.ByteString.Lazy as BL
-import           Data.List (nub)
 import qualified Data.Map.Strict as M
 import           Data.Word
 import           Test.QuickCheck
@@ -110,6 +109,9 @@ readMux ctx = do
                   Nothing -> return ()
              return (header {Mx.msBlob = payload}, ts)
 
+-- | Verify that an initiator and a responder can send end receive messages from each other.
+-- Large DummyPayloads will be split into sduLen sized messages and the testcases will verify
+-- that they are correctly reassembled into the original message.
 prop_mux_snd_recv :: DummyPayload
                   -> DummyPayload
                   -> Property
@@ -145,10 +147,10 @@ dummyCallback _ = forever $
 -- | Create a verification function, a MiniProtocolDescription for the client side and a
 -- MiniProtocolDescription for the server side for a RequestResponce protocol.
 setupMiniReqRsp :: Mx.MiniProtocolId
-                -> IO ()
-                -> TVar IO Int
-                -> DummyPayload
-                -> DummyPayload
+                -> IO ()        -- | Action performed by responder before processing the response
+                -> TVar IO Int  -- | Total number of miniprotocols.
+                -> DummyPayload -- | Request, sent from initiator.
+                -> DummyPayload -- | Response, sent from responder after receive the request.
                 -> IO (IO Bool
                       , Mx.MiniProtocolDescription IO
                       , Mx.MiniProtocolDescription IO)
@@ -193,6 +195,7 @@ setupMiniReqRsp mid serverAction mpsEndVar request response = do
         atomically (putTMVar serverResultVar result)
         end
 
+    -- Wait on all miniprotocol jobs before letting a miniprotocol thread exit.
     end = do
         atomically $ modifyTVar' mpsEndVar (\a -> a - 1)
         atomically $ do
@@ -208,6 +211,8 @@ waitOnAllClients clientVar clientTot = do
             c <- readTVar clientVar
             unless (c == clientTot) retry
 
+-- | Verify that it is possible to run two miniprotocols over the same bearer.
+-- Makes sure that messages are delivered to the correct miniprotocol in order.
 prop_mux_2_minis :: DummyPayload
                  -> DummyPayload
                  -> DummyPayload
@@ -218,20 +223,22 @@ prop_mux_2_minis request0 response0 response1 request1 = ioProperty $ do
 
     client_w <- atomically $ newTBQueue 10
     client_r <- atomically $ newTBQueue 10
-    endMpsVar <- atomically $ newTVar 4
+    endMpsVar <- atomically $ newTVar 4 -- Two initiators and two responders.
 
     let server_w = client_r
         server_r = client_w
 
-    (verify_0, client_mp0, server_mp0) <- setupMiniReqRsp Mx.ChainSync  (return ()) endMpsVar request0 response0
-    (verify_1, client_mp1, server_mp1) <- setupMiniReqRsp Mx.BlockFetch (return ()) endMpsVar request1 response1
+    (verify_0, client_mp0, server_mp0) <-
+        setupMiniReqRsp Mx.ChainSync  (return ()) endMpsVar request0 response0
+    (verify_1, client_mp1, server_mp1) <-
+        setupMiniReqRsp Mx.BlockFetch (return ()) endMpsVar request1 response1
 
     let client_mps = Mx.MiniProtocolDescriptions $ M.fromList
-                    [ ( Mx.ChainSync, client_mp0 )
+                    [ ( Mx.ChainSync, client_mp0  )
                     , ( Mx.BlockFetch, client_mp1 )
                     ]
         server_mps = Mx.MiniProtocolDescriptions $ M.fromList
-                    [ ( Mx.ChainSync, server_mp0 )
+                    [ ( Mx.ChainSync, server_mp0  )
                     , ( Mx.BlockFetch, server_mp1 )
                     ]
 
@@ -243,6 +250,10 @@ prop_mux_2_minis request0 response0 response1 request1 = ioProperty $ do
 
     return $ property $ res0 && res1
 
+-- | Attempt to verify that capacity is diveded fairly between two active miniprotocols.
+-- Two initiators send a request over two different miniprotocols and the corresponding responders
+-- each send a large reply back. The Mux bearer should alternate between sending data for the two
+-- responders.
 prop_mux_starvation :: DummyPayload
                     -> DummyPayload
                     -> Property
@@ -256,8 +267,8 @@ prop_mux_starvation response0 response1 =
     client_w <- atomically $ newTBQueue 10
     client_r <- atomically $ newTBQueue 10
     activeMpsVar <- atomically $ newTVar 0
-    endMpsVar <- atomically $ newTVar 4
-    traceQueueVar <- atomically $ newTBQueue 100
+    endMpsVar <- atomically $ newTVar 4          -- 2 active initoators and 2 active responders
+    traceQueueVar <- atomically $ newTBQueue 100 -- At most track 100 packets per test run
     let server_w = client_r
         server_r = client_w
 
@@ -278,20 +289,32 @@ prop_mux_starvation response0 response1 =
     startMuxSTM client_mps client_w client_r sduLen $ Just traceQueueVar
     startMuxSTM server_mps server_w server_r sduLen Nothing
 
+    -- First verify that all messages where received correctly
     res_short <- verify_short
     res_long <- verify_long
 
+    -- Then look at the message trace to check for starvation.
     trace <- atomically $ flushTBQueue traceQueueVar []
     let es = map (\(e, _, _) -> e) trace
         ls = dropWhile (\e -> e == head es) es
+        fair = verifyStarvation ls
 
-   -- We can't make 100% sure that both servers start responding at the same time
-   -- but once they are both up and running messages should alternate between
-   -- Mx.BlockFetch and Mx.ChainSync hence length (nub $ take 2 ls) == 2.
-    return $ property $ res_short && res_long && length (nub $ take 2 ls) == 2
+    return $ property $ res_short && res_long && fair
 
 
   where
+   -- We can't make 100% sure that both servers start responding at the same time
+   -- but once they are both up and running messages should alternate between
+   -- Mx.BlockFetch and Mx.ChainSync
+    verifyStarvation :: [Mx.MiniProtocolId] -> Bool
+    verifyStarvation []     = True
+    verifyStarvation [_]    = True
+    verifyStarvation (m:ms) =
+        let longRun = takeWhile (\e -> e /= m) ms in
+        if length longRun > 1 && elem m ms
+           then False
+           else verifyStarvation ms
+
     flushTBQueue q acc = do
         e <- isEmptyTBQueue q
         if e then return $ reverse acc
