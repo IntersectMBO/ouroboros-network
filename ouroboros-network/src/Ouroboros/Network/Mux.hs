@@ -1,5 +1,5 @@
-{-# LANGUAGE TypeFamilies          #-}
-{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE TypeFamilies   #-}
 
 module Ouroboros.Network.Mux (
       MiniProtocolDescription (..)
@@ -7,6 +7,8 @@ module Ouroboros.Network.Mux (
     , ProtocolEnum (..)
     , MiniProtocolId (..)
     , MiniProtocolMode (..)
+    , MuxError (..)
+    , MuxErrorType (..)
     , MuxSDU (..)
     , RemoteClockModel (..)
     , encodeMuxSDU

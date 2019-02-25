@@ -9,14 +9,17 @@ module Test.Mux (tests) where
 
 import           Control.Concurrent.Async
 import           Control.Monad
+import qualified Data.Binary.Put as Bin
 import qualified Data.ByteString.Lazy as BL
 import           Data.Word
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
+import           Text.Printf
 
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
 import           Network.TypedProtocol.Driver
 import           Network.TypedProtocol.ReqResp.Client
@@ -33,6 +36,8 @@ tests =
   [ testProperty "mux send receive"        prop_mux_snd_recv
   , testProperty "2 miniprotols"           prop_mux_2_minis
   , testProperty "starvation"              prop_mux_starvation
+  , testProperty "unknown miniprot"        prop_mux_unknown_miniprot
+  , testProperty "too short header"        prop_mux_short_header
   ]
 
 data TestProtocols1 = ChainSync1
@@ -70,6 +75,26 @@ instance Arbitrary DummyPayload where
 instance Serialise DummyPayload where
     encode a = encodeBytes (BL.toStrict $ unDummyPayload a)
     decode = DummyPayload . BL.fromStrict <$> decodeBytes
+
+data InvalidSDU = InvalidSDU {
+      isTimestamp :: !Mx.RemoteClockModel
+    , isIdAndMode :: !Word16
+    , isLength    :: !Word16
+    }
+
+instance Show InvalidSDU where
+    show a = printf "InvalidSDU 0x%08x 0x%04x 0x%04x\n"
+                    (Mx.unRemoteClockModel $ isTimestamp a)
+                    (isIdAndMode a)
+                    (isLength a)
+
+instance Arbitrary InvalidSDU where
+    arbitrary = do
+        ts  <- arbitrary
+        mid <- choose (5, 0xffff) -- TxSubmission with 4 is the highest valid mid
+        len <- arbitrary
+
+        return $ InvalidSDU (Mx.RemoteClockModel ts) mid len
 
 data MuxSTMCtx ptcl m = MuxSTMCtx {
       writeQueue :: TBQueue m BL.ByteString
@@ -112,15 +137,15 @@ writeMux ctx sdu = do
     atomically $ writeTBQueue (writeQueue ctx) buf
     return ts
 
-readMux :: (MonadTimer m, MonadSTM m, Mx.ProtocolEnum ptcl)
+readMux :: (MonadTimer m, MonadSTM m, MonadThrow m, Mx.ProtocolEnum ptcl)
         => MuxSTMCtx ptcl m
         -> m (Mx.MuxSDU ptcl, Time m)
 readMux ctx = do
     buf <- atomically $ readTBQueue (readQueue ctx)
     let (hbuf, payload) = BL.splitAt 8 buf
     case Mx.decodeMuxSDUHeader hbuf of
-         Nothing     -> error "failed to decode header" -- XXX
-         Just header -> do
+         Left  e      -> throwM e
+         Right header -> do
              ts <- getMonotonicTime
              case traceQueue ctx of
                   Just q  -> atomically $ do
@@ -340,3 +365,49 @@ prop_mux_starvation response0 response1 =
              else do
                  a <- readTBQueue q
                  flushTBQueue q (a : acc)
+
+prop_mux_unknown_miniprot :: InvalidSDU
+                          -> Property
+prop_mux_unknown_miniprot badSdu = ioProperty $ do
+
+    client_w <- atomically $ newTBQueue 10
+
+    let server_r = client_w
+
+    atomically $ writeTBQueue client_w (encodeInvalidMuxSDU badSdu)
+    buf <- atomically $ readTBQueue server_r
+    let (hbuf, _) = BL.splitAt 8 buf
+        header_e  = Mx.decodeMuxSDUHeader hbuf :: Either Mx.MuxError (Mx.MuxSDU TestProtocols2)
+
+    case header_e of
+         Left  e  -> return $ Mx.errorType e == Mx.MuxUnknownMiniProtocol
+         Right _  -> return False
+
+encodeInvalidMuxSDU :: InvalidSDU -> BL.ByteString
+encodeInvalidMuxSDU sdu = Bin.runPut enc
+  where
+    enc = do
+        Bin.putWord32be $ Mx.unRemoteClockModel $ isTimestamp sdu
+        Bin.putWord16be $ isIdAndMode sdu
+        Bin.putWord16be $ isLength sdu
+
+prop_mux_short_header :: InvalidSDU
+                      -> Word8
+                      -> Property
+prop_mux_short_header badSdu shortCutOffArg = ioProperty $ do
+    client_w <- atomically $ newTBQueue 10
+
+    let server_r = client_w
+        shortCutOff = min shortCutOffArg 7 -- XXX Quickcheck 'Gave up' workaround
+
+    atomically $ writeTBQueue client_w (encodeInvalidMuxSDU badSdu)
+    buf <- atomically $ readTBQueue server_r
+    let (hbuf, _) = BL.splitAt (fromIntegral shortCutOff) buf
+        header_e  = Mx.decodeMuxSDUHeader hbuf :: Either Mx.MuxError (Mx.MuxSDU TestProtocols2)
+
+    case header_e of
+         Left  e  -> do
+             return $ Mx.errorType e == Mx.MuxDecodeError
+         Right _  -> do
+             return False
+

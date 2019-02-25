@@ -1,5 +1,6 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE TypeFamilies          #-}
 
 module Ouroboros.Network.Mux.Types (
@@ -9,24 +10,30 @@ module Ouroboros.Network.Mux.Types (
     , ProtocolEnum (..)
     , MiniProtocolId (..)
     , MiniProtocolMode (..)
+    , MuxError (..)
+    , MuxErrorType (..)
     , MuxSDU (..)
+    , MuxSDUHeader (..)
     , PerMuxSharedState (..)
     , RemoteClockModel (..)
     , TranslocationServiceRequest (..)
     , Wanton (..)
     ) where
 
+import           Control.Exception
 import qualified Data.ByteString.Lazy as BL
 import           Data.Word
 import           Data.Ix (Ix(..))
 import           Data.Array
+import           GHC.Stack
+import           Text.Printf
 
 import           Control.Exception (throw, ArrayException(IndexOutOfBounds))
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTimer
 import           Ouroboros.Network.Channel
 
-newtype RemoteClockModel = RemoteClockModel { unRemoteClockModel :: Word32 }
+newtype RemoteClockModel = RemoteClockModel { unRemoteClockModel :: Word32 } deriving Eq
 
 --
 -- Mini-protocol numbers
@@ -146,6 +153,12 @@ data MuxSDU ptcl = MuxSDU {
     , msBlob      :: !BL.ByteString
     }
 
+data MuxSDUHeader = MuxSDUHeader {
+      mshTimestamp :: !RemoteClockModel
+    , mshIdAndMode :: !Word16
+    , mshLength    :: !Word16
+    }
+
 -- | A TranslocationServiceRequest is a demand for the translocation
 --  of a single mini-protocol message. This message can be of
 --  arbitrary (yet bounded) size. This multiplexing layer is
@@ -175,4 +188,21 @@ data PerMuxSharedState ptcl m = PerMuxSS {
   -- | Return a suitable MuxSDU payload size
   , sduSize       :: m Word16
   }
+
+data MuxError = MuxError {
+      errorType  :: !MuxErrorType
+    , errorMsg   :: !String
+    , errorStack :: !CallStack
+    } deriving Show
+
+data MuxErrorType = MuxInvalidLength
+                  | MuxUnknownMiniProtocol
+                  | MuxDecodeError
+                  deriving (Show, Eq)
+
+instance Exception MuxError where
+    displayException MuxError{..} = printf "%s %s at %s"
+        (show errorType)
+        (show errorMsg)
+        (prettyCallStack errorStack)
 

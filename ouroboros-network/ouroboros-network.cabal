@@ -132,6 +132,7 @@ test-suite tests
 
                        array,
                        async,
+                       binary,
                        bytestring,
                        cborg,
                        containers,
