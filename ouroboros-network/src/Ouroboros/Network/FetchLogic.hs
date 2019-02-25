@@ -52,38 +52,39 @@ Notes:
  • Inbound: threads wait on STM state changing (using retry).
  • These are no queues: there is only the current state, not all change events.
 ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
-╔══════════════╗     ┏━━━━━━━━━━━━━━┓
-║ Chain sync   ║╗    ┃              ┃
-║  protocol    ║║◀───┨ Ledger state ┃◀───────────╮
-║(client side) ║║    ┃              ┃            │
-╚══════╤═══════╝║    ┗━━━━━━━━━━━━━━┛            │
- ╚═════╪════════╝                                │
-       ▼                                         │
-┏━━━━━━━━━━━━━━┓     ┏━━━━━━━━━━━━━━┓     ╔══════╧═══════╗
-┃  Candiate    ┃     ┃  Candidate   ┃     ║  Chain and   ║
-┃  chains      ┃     ┃   chains     ┠────▶║   ledger     ║
-┃  (headers)   ┃     ┃  (blocks)    ┃     ║  validation  ║
-┗━━━━━━┯━━━━━━━┛     ┗━━━━━━━━━━━━━━┛     ╚══════╤═══════╝
-       │                       ▲                 │
-       ╰──────────────────╮    │                 │
-                          ▼    │                 ▼
-┏━━━━━━━━━━━━━━┓     ╔═════════╧════╗     ┏━━━━━━━━━━━━━━┓     ╔══════════════╗
-┃    Block     ┃┓    ║    Block     ║     ┃   Current    ┃     ║ Block fetch  ║╗
-┃    fetch     ┃┃◀───╢   download   ║◀────┨    chain     ┠────▶║ protocol     ║║
-┃   requests   ┃┃    ║    logic     ║     ┃  (blocks)    ┃     ║(server side) ║║
-┗━━━━━━┯━━━━━━━┛┃    ╚══════════════╝     ┠──────────────┨     ╚══════════════╝║
- ┗━━━━━┿━━━━━━━━┛           ▲             ┃  Tentative   ┃      ╚══════════════╝
-       ▼                    │             ┃    chain     ┠──╮
-╔══════════════╗     ┏━━━━━━┷━━━━━━━┓     ┃  (headers)   ┃  │  ╔══════════════╗
-║ block fetch  ║╗    ┃    Set of    ┃     ┗━━━━━━━━━━━━━━┛  │  ║ Chain sync   ║╗
-║  protocol    ╟╫───▶┃  downloaded  ┃                       ╰─▶║ protocol     ║║
-║(client side) ║║    ┃    blocks    ┃                          ║(server side) ║║
-╚══════════════╝║    ┗━━━━━━━━━━━━━━┛                          ╚══════════════╝║
- ╚══════════════╝                                               ╚══════════════╝
+  ╔═════════════╗     ┏━━━━━━━━━━━━━┓
+  ║ Chain sync  ║╗    ┃   Ledger    ┃
+  ║  protocol   ║║◀───┨   state     ┃◀───────────╮
+  ║(client side)║║    ┃             ┃            │
+  ╚══════╤══════╝║    ┗━━━━━━━━━━━━━┛            │
+   ╚═════╪═══════╝                               │
+         ▼                                       │
+  ┏━━━━━━━━━━━━━┓     ┏━━━━━━━━━━━━━┓     ╔══════╧══════╗
+  ┃  Candiate   ┃     ┃  Candidate  ┃     ║  Chain and  ║
+  ┃  chains     ┃     ┃   chains    ┠────▶║   ledger    ║
+  ┃  (headers)  ┃     ┃  (blocks)   ┃     ║  validation ║
+  ┗━━━━━━┯━━━━━━┛     ┗━━━━━━━━━━━━━┛     ╚══════╤══════╝
+         │                      ▲                │
+         ╰─────────────────╮    │                │
+░░░░░░░░░░░░░░░░░░░░░░░░░░░▼░░░░│░░░░░░          ▼
+░░┏━━━━━━━━━━━━━┓░░░░░╔═════════╧═══╗░░   ┏━━━━━━━━━━━━━┓     ╔═════════════╗
+░░┃    Block    ┃┓░░░░║    Block    ║░░   ┃   Current   ┃     ║ Block fetch ║╗
+░░┃    fetch    ┃┃◀───╢    fetch    ║◀────┨    chain    ┠────▶║ protocol    ║║
+░░┃   requests  ┃┃░░░░║    logic    ║░░   ┃  (blocks)   ┃     ║(server side)║║
+░░┗━━━━━━┯━━━━━━┛┃░░░░╚═════════════╝░░   ┠─────────────┨     ╚═════════════╝║
+░░░┗━━━━━┿━━━━━━━┛░░░░░░░░░░░▲░░░░░░░░░   ┃  Tentative  ┃      ╚═════════════╝
+░░░░░░░░░▼░░░░░░░░░░         │            ┃    chain    ┠──╮
+░░╔═════════════╗░░░  ┏━━━━━━┷━━━━━━┓     ┃  (headers)  ┃  │  ╔═════════════╗
+░░║ block fetch ║╗░░  ┃    Set of   ┃     ┗━━━━━━━━━━━━━┛  │  ║ Chain sync  ║╗
+░░║  protocol   ╟╫───▶┃  downloaded ┃                      ╰─▶║ protocol    ║║
+░░║(client side)║║░░  ┃    blocks   ┃                         ║(server side)║║
+░░╚═════════════╝║░░  ┗━━━━━━━━━━━━━┛                         ╚═════════════╝║
+░░░╚═════════════╝░░                                           ╚═════════════╝
+░░░░░░░░░░░░░░░░░░░░
 ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
 
-We will consider the block download logic and the policy (but not mechanism)
-for the block fetch protocol together as one unit of functionality.
+We will consider the block fetch logic and the policy (but not mechanism)
+for the block fetch protocol client together as one unit of functionality.
 
 Looking at the diagram we see that these two threads interact with each other
 and other threads via the following shared state
@@ -96,7 +97,7 @@ and other threads via the following shared state
    Set of downloaded blocks   │  Read & Write  │  External
    Block fetch requests       │  Read & Write  │  Internal
 
-The block fetch requests state is private between the block download logic
+The block fetch requests state is private between the block fetch logic
 and the block fetch protocol client, so it is implemented here.
 
 The other state is managed by the consensus layer and is considered external
