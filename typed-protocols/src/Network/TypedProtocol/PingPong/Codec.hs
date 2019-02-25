@@ -30,8 +30,11 @@ codecPingPong =
           (ServerAgency TokBusy, "pong") -> DecodeDone (SomeMessage MsgPong) trailing
           (ClientAgency TokIdle, "ping") -> DecodeDone (SomeMessage MsgPing) trailing
           (ClientAgency TokIdle, "done") -> DecodeDone (SomeMessage MsgDone) trailing
-          _                              -> DecodeFail failure
-            where failure = CodecFailure ("unexpected message: " ++ str)
+
+          (ServerAgency _      , _     ) -> DecodeFail failure
+            where failure = CodecFailure ("unexpected server message: " ++ str)
+          (ClientAgency _      , _     ) -> DecodeFail failure
+            where failure = CodecFailure ("unexpected client message: " ++ str)
 
 
 decodeTerminatedFrame :: forall m a.
