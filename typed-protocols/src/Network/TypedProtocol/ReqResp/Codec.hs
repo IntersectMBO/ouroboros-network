@@ -40,5 +40,9 @@ codecReqResp =
           (ServerAgency TokBusy, ("MsgResp", str'))
              | Just resp <- readMaybe str'
             -> DecodeDone (SomeMessage (MsgResp resp)) trailing
-          _ -> DecodeFail (CodecFailure ("unexpected message: " ++ str))
+
+          (ServerAgency _      , _     ) -> DecodeFail failure
+            where failure = CodecFailure ("unexpected server message: " ++ str)
+          (ClientAgency _      , _     ) -> DecodeFail failure
+            where failure = CodecFailure ("unexpected client message: " ++ str)
 
