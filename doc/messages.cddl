@@ -1,17 +1,26 @@
+; The only purpose of allMessages is to have an entry point for testing all parts of the specification.
+; ! allMessages is NOT a valid wire format !
+
+allMessages
+    = chainSyncMessage
+    / reqRespMessage
+    / pingPongMessage
+    / blockFetchMessage
+    / txSubmissionMessage
+
 ; Chain Sync Protocol
 ; reference implementation of the codec in
 ; ouroboros-network/src/Ouroboros/Network/Protocol/ChainSync/Codec/Cbor.hs
 
-chainSyncMessage =
-    ( msgRequestNext
+chainSyncMessage
+    = msgRequestNext
     / msgAwaitReply
     / msgRollForward
     / msgRollBackward
     / msgFindIntersect
     / msgIntersectImproved
     / msgIntersectUnchanged
-    / msgDone
-    )
+    / chainSyncMsgDone
 
 ; these records use fixed length list encodings TODO: lookup CDDL syntax for that
 msgRequestNext         = [0]
@@ -21,7 +30,7 @@ msgRollBackward        = [3, header, point]
 msgFindIntersect       = [4, points]
 msgIntersectImproved   = [5, point, point]
 msgIntersectUnchanged  = [6, point]
-msgDone                = [7]
+chainSyncMsgDone   = [7]
 
 points = [point]
 
@@ -32,9 +41,14 @@ point = bytes .cbor any
 ; reference implementation of the codec in
 ; ouroboros-network/src/Ouroboros/Network/Protocol/ReqResp/Codec.hs
 
-reqRespMessage = (msgRequest / msgResponse)
+reqRespMessage
+    = msgRequest
+    / msgResponse
+    / reqRespMsgDone
+
 msgRequest  = [0,  requestData]
 msgResponse = [1, responseData]
+reqRespMsgDone = [2]
 
 requestData  = bytes .cbor any
 responseData = bytes .cbor any
@@ -42,6 +56,51 @@ responseData = bytes .cbor any
 ; Ping-Pong Protocol
 ; reference implementation of the codec in
 ; ouroboros-network/src/Ouroboros/Network/Protocol/PingPong/Codec.hs
-pingPongMessage = (msgPing / msgPong)
+pingPongMessage
+    = msgPing
+    / msgPong
+    / pingPongMsgDone
 msgPing = 0
 msgPong = 1
+pingPongMsgDone = 2
+
+; BlockFetch Protocol
+; reference implementation of the codec in
+; ouroboros-network/src/Ouroboros/Network/Protocol/BlockFetch/Codec.hs
+
+blockFetchMessage
+    = msgRequestRange
+    / msgStartBatch
+    / msgNoBlocks
+    / msgBlock
+    / msgBatchDone
+    / msgClientDone
+
+msgRequestRange = [0, point, point]
+msgClientDone   = [1]
+msgStartBatch   = [2]
+msgNoBlocks     = [3]
+msgBlock        = [4, body]
+msgBatchDone    = [5]
+
+body            = bytes .cbor any
+
+; Transaction Submission Protocol
+; reference implementation of the codec in
+; ouroboros-network/src/Ouroboros/Network/Protocol/TxSubmission/Codec.hs
+
+txSubmissionMessage
+    = msgGetHashes
+    / msgSendHashes
+    / msgGetTx
+    / msgTx
+    / txSubmissionMsgDone
+
+msgGetHashes  = [0,int]
+msgSendHashes = [1,[txHash]]
+msgGetTx      = [2,txHash]
+msgTx         = [3,transaction]
+txSubmissionMsgDone = [4]
+
+txHash        = bytes .cbor any
+transaction   = bytes .cbor any

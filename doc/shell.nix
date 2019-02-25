@@ -26,7 +26,7 @@ stdenv.mkDerivation {
         
         ;
     })
-      cddl
-      cbor-diag
+    cddl
+    cbor-diag
     ];
 }
