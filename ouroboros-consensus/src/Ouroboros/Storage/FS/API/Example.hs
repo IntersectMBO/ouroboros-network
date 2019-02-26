@@ -52,10 +52,10 @@ example HasFS{..} = do
 
 exampleSimFS :: IO ()
 exampleSimFS = do
-    mRes <- try $ runSimFS demo Mock.example
+    mRes <- try demo
     case mRes of
       Left  err      -> putStrLn (prettyFsError err)
       Right (bs, fs) -> putStrLn (Mock.pretty fs) >> print bs
   where
-    demo :: SimFS IO [ByteString]
-    demo = example (simHasFS EH.exceptions)
+    demo :: IO ([ByteString], Mock.MockFS)
+    demo = runSimFS EH.exceptions Mock.example example

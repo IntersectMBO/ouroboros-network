@@ -10,7 +10,6 @@ import           Control.Exception (Exception, SomeException)
 import qualified Control.Exception as E
 import           Control.Monad.Catch (MonadCatch, MonadMask)
 import qualified Control.Monad.Catch as C
-import           Control.Monad.Class.MonadSTM (MonadSTM)
 
 import qualified Data.Binary as Binary
 import           Data.ByteString (ByteString)
@@ -40,7 +39,6 @@ import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.FS.IO (ioHasFS)
 import           Ouroboros.Storage.FS.Sim.MockFS (MockFS)
 import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
-import           Ouroboros.Storage.FS.Sim.STM (SimFS)
 import qualified Ouroboros.Storage.FS.Sim.STM as Sim
 import           Ouroboros.Storage.ImmutableDB (ImmutableDBError (..),
                      prettyImmutableDBError, sameImmutableDBError)
@@ -58,15 +56,10 @@ import qualified Ouroboros.Storage.VolatileDB as Volatile
 withMockFS :: Exception e
            => (forall x. IO x -> IO (Either e x))
            -> (Either e (a, MockFS) -> Assertion)
-           -> (    HasFS (SimFS IO) Mock.Handle
-                -> ErrorHandling e (SimFS IO)
-                -> SimFS IO a
-              )
+           -> (HasFS IO Mock.Handle -> ErrorHandling e IO -> IO a)
            -> Assertion
 withMockFS tryE assertion sim = do
-    r <- tryE $ Sim.runSimFS (sim (Sim.simHasFS     EH.exceptions)
-                                  (Sim.liftErrSimFS EH.exceptions))
-                             Mock.empty
+    r <- tryE $ Sim.runSimFS EH.exceptions Mock.empty (flip sim EH.exceptions)
     assertion r
 
 expectError :: (HasCallStack, Show a)
@@ -145,18 +138,12 @@ apiEquivalence :: (HasCallStack, Eq a, Show a, Exception e)
                -> (e -> String)
                -> (e -> e -> Bool)
                -> (Either e a -> Assertion)
-               -> (forall m h. (MonadMask m, MonadSTM m)
-                            => HasFS m h
-                            -> ErrorHandling e m
-                            -> m a
-                  )
+               -> (forall h. HasFS IO h -> ErrorHandling e IO -> IO a)
                -> Assertion
 apiEquivalence tryE prettyError sameError resAssert m = do
     sysTmpDir <- getTemporaryDirectory
     withTempDirectory sysTmpDir "cardano." $ \tmpDir -> do
-        r1 <- tryE $ Sim.runSimFS (m (Sim.simHasFS     EH.exceptions)
-                                     (Sim.liftErrSimFS EH.exceptions))
-                                  Mock.empty
+        r1 <- tryE $ Sim.runSimFS EH.exceptions Mock.empty (flip m EH.exceptions)
         r2 <- tryE $ m (ioHasFS (MountPoint tmpDir)) EH.exceptions
         case (r1, r2) of
           (Left e1, Left e2) -> do
@@ -185,31 +172,19 @@ apiEquivalence tryE prettyError sameError resAssert m = do
 
 apiEquivalenceFs :: (HasCallStack, Eq a, Show a)
                  => (Either FsError a -> Assertion)
-                 -> (forall m h. (MonadMask m, MonadSTM m)
-                              => HasFS m h
-                              -> ErrorHandling FsError m
-                              -> m a
-                    )
+                 -> (forall h. HasFS IO h -> ErrorHandling FsError IO -> IO a)
                  -> Assertion
 apiEquivalenceFs = apiEquivalence tryFS prettyFsError sameFsError
 
 apiEquivalenceImmDB :: (HasCallStack, Eq a, Show a)
                     => (Either ImmutableDBError a -> Assertion)
-                    -> (forall m h. (MonadMask m, MonadSTM m)
-                                 => HasFS m h
-                                 -> ErrorHandling ImmutableDBError m
-                                 -> m a
-                       )
+                    -> (forall h. HasFS IO h -> ErrorHandling ImmutableDBError IO -> IO a)
                     -> Assertion
 apiEquivalenceImmDB = apiEquivalence tryImmDB prettyImmutableDBError sameImmutableDBError
 
 apiEquivalenceVolDB :: (HasCallStack, Eq a, Show a, Show blockId, Typeable blockId, Eq blockId)
                     => (Either (VolatileDBError blockId) a -> Assertion)
-                    -> (forall m h. (MonadMask m, MonadSTM m)
-                                 => HasFS m h
-                                 -> ErrorHandling (VolatileDBError blockId) m
-                                 -> m a
-                       )
+                    -> (forall h. HasFS IO h -> ErrorHandling (VolatileDBError blockId) IO -> IO a)
                     -> Assertion
 apiEquivalenceVolDB = apiEquivalence tryVolDB show sameVolatileDBError
 

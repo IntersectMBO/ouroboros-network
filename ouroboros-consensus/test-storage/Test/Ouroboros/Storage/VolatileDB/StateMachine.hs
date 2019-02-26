@@ -19,6 +19,7 @@ module Test.Ouroboros.Storage.VolatileDB.StateMachine (tests) where
 
 import           Prelude
 
+import           Control.Monad.Catch
 import           Control.Monad.Except
 import           Control.Monad.State
 import           Data.Bifunctor (first)
@@ -39,11 +40,15 @@ import qualified Test.StateMachine.Types.Rank2 as Rank2
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
+import           Control.Monad.Class.MonadSTM
+
+import           Ouroboros.Storage.FS.API
 import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
 import           Ouroboros.Storage.FS.Sim.STM
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 import           Ouroboros.Storage.VolatileDB.API
 import           Ouroboros.Storage.VolatileDB.Impl (openDB)
+
 import           Test.Ouroboros.Storage.Util
 import           Test.Ouroboros.Storage.VolatileDB.Model
 
@@ -177,7 +182,7 @@ runDB db cmd = case cmd of
     ReOpen -> Unit <$> reOpenDB db
 
 
-sm :: VolatileDB MyBlockId (SimFS IO) -> DBModel MyBlockId -> ModelDBPure -> StateMachine Model (At Cmd) (SimFS IO) (At Resp)
+sm :: MonadCatch m => VolatileDB MyBlockId m -> DBModel MyBlockId -> ModelDBPure -> StateMachine Model (At Cmd) m (At Resp)
 sm db dbm vdb = StateMachine {
         initModel     = initModelImpl dbm vdb
       , transition    = transitionImpl
@@ -225,7 +230,7 @@ generatorImpl Model {..} = Just $ At <$> do
 shrinkerImpl :: Model Symbolic -> At Cmd Symbolic -> [At Cmd Symbolic]
 shrinkerImpl _ _ = []
 
-semanticsImpl :: VolatileDB MyBlockId (SimFS IO) -> At Cmd Concrete -> SimFS IO (At Resp Concrete)
+semanticsImpl :: MonadCatch m => VolatileDB MyBlockId m -> At Cmd Concrete -> m (At Resp Concrete)
 semanticsImpl m (At cmd) = At . Resp <$> tryVolDB (runDB m cmd)
 
 mockImpl :: Model Symbolic -> At Cmd Symbolic -> GenSym (At Resp Symbolic)
@@ -251,15 +256,19 @@ mkDBModel = openDBModel EH.exceptT
 
 prop_sequential :: Property
 prop_sequential =
-    forAllCommands smUnused Nothing $ \cmds -> monadic (ioProperty . runSimIO) $ do
-        let hasFS = simHasFS EH.monadCatch
-        db <- run $ openDB hasFS EH.monadCatch ["test-volatile"] myParser 7 toSlot
-        let sm' = sm db dbm vdb
-        (hist, _model, res) <- runCommands sm' cmds
-        prettyCommands sm' hist $
+    forAllCommands smUnused Nothing $ \cmds -> monadicIO $ do
+        let test :: HasFS IO h -> PropertyM IO (History (At Cmd) (At Resp), Reason)
+            test hasFS = do
+              db <- run $ openDB hasFS EH.monadCatch ["test-volatile"] myParser 7 toSlot
+              let sm' = sm db dbm vdb
+              (hist, _model, res) <- runCommands sm' cmds
+              run $ closeDB db
+              return (hist, res)
+
+        fsVar <- run $ atomically (newTVar Mock.empty)
+        (hist, res) <- test (simHasFS EH.monadCatch fsVar)
+        prettyCommands smUnused hist $
             checkCommandNames cmds (res === Ok)
-        run $ closeDB db
-        return ()
     where
         (dbm, vdb) = mkDBModel
         smUnused = sm (error "semantics and DB used during command generation") dbm vdb
@@ -268,7 +277,3 @@ tests :: TestTree
 tests = testGroup "Volatile" [
         testProperty "q-s-m" $ prop_sequential
     ]
-
--- TODO(kde) unify/move/replace
-runSimIO :: SimFS IO a -> IO a
-runSimIO m = fst <$> runSimFS m Mock.empty

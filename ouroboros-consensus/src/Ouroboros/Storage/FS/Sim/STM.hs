@@ -9,22 +9,16 @@
 
 -- | 'HasFS' instance using 'MockFS' stored in an STM variable
 module Ouroboros.Storage.FS.Sim.STM (
-    -- * Mock FS implementation & monad
-      SimFS
-    , runSimFS
+      runSimFS
     , simHasFS
-    , liftErrSimFS
     ) where
 
-import           Control.Monad.Catch
-import           Control.Monad.IO.Unlift
-import           Control.Monad.Reader
 import           Control.Monad.State
 import           Data.Proxy
-import           Data.Type.Coercion
 
-import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM
+
+import           Ouroboros.Consensus.Util
 
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types
@@ -37,116 +31,49 @@ import qualified Ouroboros.Storage.Util.ErrorHandling as EH
   The simulation-related types
 ------------------------------------------------------------------------------}
 
-newtype SimFS m a = SimFS { unSimFS :: ReaderT (TVar m MockFS) m a }
-  deriving ( Functor
-           , Applicative
-           , Monad
-           , MonadThrow
-           , MonadCatch
-           , MonadMask
-           )
-
--- | Runs a 'SimFs' computation provided an initial 'MockFS', producing a
--- result, the final state of the filesystem and a sequence of actions occurred
--- in the filesystem.
-runSimFS :: MonadSTM m => SimFS m a -> MockFS -> m (a, MockFS)
-runSimFS m s = do
-    fs  <- atomically (newTVar s)
-    a   <- runReaderT (unSimFS m) fs
-    fs' <- atomically (readTVar fs)
+--- | Runs a 'SimFs' computation provided an initial 'MockFS', producing a
+--- result, the final state of the filesystem and a sequence of actions occurred
+--- in the filesystem.
+runSimFS :: MonadSTM m
+         => ErrorHandling FsError m
+         -> MockFS
+         -> (HasFS m Mock.Handle -> m a)
+         -> m (a, MockFS)
+runSimFS err fs act = do
+    var <- atomically (newTVar fs)
+    a   <- act (simHasFS err var)
+    fs' <- atomically (readTVar var)
     return (a, fs')
 
-instance MonadSTM m => MonadState MockFS (SimFS m) where
-  state f = SimFS $ ReaderT $ \stateVar -> atomically $ do
-      fs <- readTVar stateVar
-      let (a, fs') = f fs
-      writeTVar stateVar fs'
-      return a
-
-instance MonadTrans SimFS where
-  lift = SimFS . lift
-
-instance MonadIO m => MonadIO (SimFS m) where
-  liftIO = lift . liftIO
-
-instance MonadUnliftIO m => MonadUnliftIO (SimFS m) where
-  withRunInIO = wrappedWithRunInIO SimFS unSimFS
-
-newtype TrSimFS m a = TrSimFS { trSimFS :: m a }
-  deriving (Functor, Applicative, Monad)
-
-instance MonadTrans TrSimFS where
-  lift = TrSimFS
-
-instance MonadFork m => MonadFork (SimFS m) where
-  type ThreadId (SimFS m) = ThreadId m
-  fork (SimFS f) = SimFS $ ReaderT $ \e -> fork (runReaderT f e)
-  myThreadId     = lift myThreadId
-  throwTo tid e  = lift (throwTo tid e)
-
-instance (MonadFork (SimFS m) , MonadSTM m) => MonadSTM (SimFS m) where
-  type Tr (SimFS m)      = TrSimFS (Tr m)
-  type TVar (SimFS m)    = TVar m
-  type TMVar (SimFS m)   = TMVar m
-  type TQueue (SimFS m)  = TQueue m
-  type TBQueue (SimFS m) = TBQueue m
-
-  atomically        = lift . atomically . trSimFS
-  newTVar           = lift . newTVar
-  readTVar          = lift . readTVar
-  writeTVar       t = lift . writeTVar t
-  retry             = lift   retry
-
-  newTMVar          = lift . newTMVar
-  newTMVarM         = lift . newTMVarM
-  newEmptyTMVar     = lift   newEmptyTMVar
-  newEmptyTMVarM    = lift   newEmptyTMVarM
-  takeTMVar         = lift . takeTMVar
-  tryTakeTMVar      = lift . tryTakeTMVar
-  putTMVar        t = lift . putTMVar    t
-  tryPutTMVar     t = lift . tryPutTMVar t
-  swapTMVar       t = lift . swapTMVar   t
-  readTMVar         = lift . readTMVar
-  tryReadTMVar      = lift . tryReadTMVar
-  isEmptyTMVar      = lift . isEmptyTMVar
-
-  newTQueue         = lift   newTQueue
-  readTQueue        = lift . readTQueue
-  tryReadTQueue     = lift . tryReadTQueue
-  writeTQueue     q = lift . writeTQueue q
-  isEmptyTQueue     = lift . isEmptyTQueue
-
-  newTBQueue        = lift . newTBQueue
-  readTBQueue       = lift . readTBQueue
-  tryReadTBQueue    = lift . tryReadTBQueue
-  writeTBQueue    q = lift . writeTBQueue q
-  isEmptyTBQueue    = lift . isEmptyTBQueue
-  isFullTBQueue     = lift . isFullTBQueue
-
+-- | Equip @m@ with a @HasFs@ instance using the mock file system
 simHasFS :: forall m. MonadSTM m
          => ErrorHandling FsError m
-         -> HasFS (SimFS m) Mock.Handle
-simHasFS err = HasFS {
-      dumpState                = Mock.dumpState
-    , hOpen                    = Mock.hOpen                    err'
-    , hClose                   = Mock.hClose                   err'
-    , hSeek                    = Mock.hSeek                    err'
-    , hGet                     = Mock.hGet                     err'
-    , hPut                     = Mock.hPut                     err'
-    , hTruncate                = Mock.hTruncate                err'
-    , hGetSize                 = Mock.hGetSize                 err'
-    , createDirectory          = Mock.createDirectory          err'
-    , createDirectoryIfMissing = Mock.createDirectoryIfMissing err'
-    , listDirectory            = Mock.listDirectory            err'
-    , doesDirectoryExist       = Mock.doesDirectoryExist       err'
-    , doesFileExist            = Mock.doesFileExist            err'
-    , removeFile               = Mock.removeFile               err'
-    , hasFsErr                 = err'
+         -> TVar m MockFS
+         -> HasFS m Mock.Handle
+simHasFS err var = HasFS {
+      dumpState                = sim     Mock.dumpState
+    , hOpen                    = sim  .: Mock.hOpen                    err'
+    , hClose                   = sim  .  Mock.hClose                   err'
+    , hSeek                    = sim ..: Mock.hSeek                    err'
+    , hGet                     = sim  .: Mock.hGet                     err'
+    , hPut                     = sim  .: Mock.hPut                     err'
+    , hTruncate                = sim  .: Mock.hTruncate                err'
+    , hGetSize                 = sim  .  Mock.hGetSize                 err'
+    , createDirectory          = sim  .  Mock.createDirectory          err'
+    , createDirectoryIfMissing = sim  .: Mock.createDirectoryIfMissing err'
+    , listDirectory            = sim  .  Mock.listDirectory            err'
+    , doesDirectoryExist       = sim  .  Mock.doesDirectoryExist       err'
+    , doesFileExist            = sim  .  Mock.doesFileExist            err'
+    , removeFile               = sim  .  Mock.removeFile               err'
+    , hasFsErr                 = err
     }
   where
-    err' :: ErrorHandling FsError (SimFS m)
-    err' = liftErrSimFS err
+    sim :: StateT MockFS m a -> m a
+    sim (StateT f) = do
+        st       <- atomically $ readTVar var
+        (a, st') <- f st
+        atomically $ writeTVar var st'
+        return a
 
-liftErrSimFS :: forall e m. ErrorHandling e m -> ErrorHandling e (SimFS m)
-liftErrSimFS = EH.liftErrNewtype Coercion
-             . EH.liftErrReader (Proxy @(TVar m MockFS))
+    err' :: ErrorHandling FsError (StateT MockFS m)
+    err' = EH.liftErrState (Proxy @MockFS) err

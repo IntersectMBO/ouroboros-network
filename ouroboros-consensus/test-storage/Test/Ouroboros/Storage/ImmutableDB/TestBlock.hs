@@ -44,7 +44,7 @@ import           Test.Tasty.QuickCheck (testProperty)
 import           Ouroboros.Storage.FS.API (HasFS (..), withFile)
 import           Ouroboros.Storage.FS.API.Types (FsPath)
 import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
-import           Ouroboros.Storage.FS.Sim.STM (SimFS, runSimFS, simHasFS)
+import           Ouroboros.Storage.FS.Sim.STM (runSimFS)
 import           Ouroboros.Storage.ImmutableDB.Types
 import           Ouroboros.Storage.ImmutableDB.Util (readAll)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
@@ -141,9 +141,9 @@ testBlockEpochFileParser' hasFS = (\tb -> (testBlockSize, tbRelativeSlot tb)) <$
 
 prop_testBlockEpochFileParser :: TestBlocks -> Property
 prop_testBlockEpochFileParser (TestBlocks blocks) = QCM.monadicIO $ do
-    (offsetsAndBlocks, mbErr) <- QCM.run $ runSimIO $ do
-      writeBlocks
-      readBlocks
+    (offsetsAndBlocks, mbErr) <- QCM.run $ runSimIO $ \hasFS -> do
+      writeBlocks hasFS
+      readBlocks  hasFS
     QSM.liftProperty (mbErr === Nothing)
     let (offsets', blocks') = unzip offsetsAndBlocks
         offsets = dropLast $ scanl (+) 0 $
@@ -153,14 +153,18 @@ prop_testBlockEpochFileParser (TestBlocks blocks) = QCM.monadicIO $ do
   where
     dropLast xs = zipWith const xs (drop 1 xs)
     file = ["test"]
-    hasFS@HasFS{..} = simHasFS EH.exceptions
-    writeBlocks = do
+
+    writeBlocks :: HasFS IO Mock.Handle -> IO ()
+    writeBlocks hasFS@HasFS{..} = do
       let bld = foldMap testBlockToBuilder blocks
       withFile hasFS file AppendMode $ \eHnd -> void $ hPut eHnd bld
-    readBlocks = runEpochFileParser (testBlockEpochFileParser hasFS) file
 
-    runSimIO :: SimFS IO a -> IO a
-    runSimIO m = fst <$> runSimFS m Mock.empty
+    readBlocks :: HasFS IO Mock.Handle
+               -> IO ([(SlotOffset, TestBlock)], Maybe String)
+    readBlocks hasFS = runEpochFileParser (testBlockEpochFileParser hasFS) file
+
+    runSimIO :: (HasFS IO Mock.Handle -> IO a) -> IO a
+    runSimIO m = fst <$> runSimFS EH.exceptions Mock.empty m
 
 
 {-------------------------------------------------------------------------------

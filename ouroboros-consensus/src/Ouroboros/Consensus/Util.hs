@@ -22,6 +22,8 @@ module Ouroboros.Consensus.Util (
   , lastMaybe
   , fib
   , allDisjoint
+  , (.:)
+  , (..:)
   ) where
 
 import qualified Data.ByteString as Strict
@@ -123,3 +125,9 @@ allDisjoint = go Set.empty
     go :: Set a -> [Set a] -> Bool
     go _   []       = True
     go acc (xs:xss) = Set.disjoint acc xs && go (Set.union acc xs) xss
+
+(.:) :: (c -> d) -> (a -> b -> c) -> (a -> b -> d)
+(f .: g) a b = f (g a b)
+
+(..:) :: (d -> e) -> (a -> b -> c -> d) -> (a -> b -> c -> e)
+(f ..: g) a b c = f (g a b c)
