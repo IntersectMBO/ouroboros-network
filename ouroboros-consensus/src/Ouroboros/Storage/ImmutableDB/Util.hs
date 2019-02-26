@@ -3,16 +3,23 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
 {-# LANGUAGE TupleSections     #-}
-
-module Ouroboros.Storage.ImmutableDB.Util where
+module Ouroboros.Storage.ImmutableDB.Util
+  ( renderFile
+  , handleUser
+  , handleUnexpected
+  , throwUserError
+  , throwUnexpectedError
+  , parseDBFile
+  , readAll
+  , hGetRightSize
+  , validateIteratorRange
+  ) where
 
 import           Control.Monad (when)
 
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Builder as BS
-import           Data.Map (Map)
-import qualified Data.Map as Map
 import qualified Data.Text as T
 
 import           GHC.Stack (HasCallStack, callStack, popCallStack)
@@ -34,7 +41,7 @@ import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
 
 renderFile :: String -> Epoch -> FsPath
-renderFile fileType epoch = [printf "%s-%03d.dat" fileType epoch]
+renderFile fileType (Epoch epoch) = [printf "%s-%03d.dat" fileType epoch]
 
 handleUser :: HasCallStack
            => ErrorHandling ImmutableDBError m
@@ -67,7 +74,7 @@ throwUnexpectedError = throwError . handleUnexpected
 -- Just ("index", 12)
 parseDBFile :: String -> Maybe (String, Epoch)
 parseDBFile s = case T.splitOn "-" . fst . T.breakOn "." . T.pack $ s of
-    [prefix, n] -> (T.unpack prefix,) <$> readMaybe (T.unpack n)
+    [prefix, n] -> (T.unpack prefix,) . Epoch <$> readMaybe (T.unpack n)
     _           -> Nothing
 
 -- | Read all the data from the given file handle 64kB at a time.
@@ -97,6 +104,7 @@ hGetRightSize :: (HasCallStack, Monad m)
               -> m ByteString
 hGetRightSize HasFS{..} hnd size file = do
     bytes <- hGet hnd size
+    -- TODO loop until we get the number of bytes requested, see #277
     if BS.length bytes /= size
       then throwError hasFsErr $ FsError
              { fsErrorType   = FsReachedEOF
@@ -109,65 +117,29 @@ hGetRightSize HasFS{..} hnd size file = do
   where
     errMsg = "different number of bytes read by hGet than expected"
 
--- | Look up the size of the given 'Epoch'.
---
--- This should should not fail if the epoch <= the currently opened epoch and
--- the given mapping is retrieved from the DB, as 'openDB' and 'startNewEpoch'
--- make sure this mapping is complete.
---
--- Throws an 'MissingEpochSizeError' if the epoch is not in the map.
-lookupEpochSize :: (Monad m, HasCallStack)
-                => ErrorHandling ImmutableDBError m
-                -> Epoch
-                -> Map Epoch EpochSize
-                -> m EpochSize
-lookupEpochSize err epoch epochSizes
-    | Just epochSize <- Map.lookup epoch epochSizes
-    = return epochSize
-    | otherwise
-    = throwUserError err $ MissingEpochSizeError epoch
-
 -- | Check whether the given iterator range is valid.
 --
--- See 'streamBinaryBlobs'.
+-- See 'Ouroboros.Storage.ImmutableDB.API.streamBinaryBlobs'.
 validateIteratorRange
   :: Monad m
   => ErrorHandling ImmutableDBError m
-  -> EpochSlot            -- ^ Next expected write
-  -> (Epoch -> m EpochSize)
-     -- ^ How to look up the size of an epoch
-  -> Maybe EpochSlot  -- ^ range start (inclusive)
-  -> Maybe EpochSlot  -- ^ range end (inclusive)
+  -> Slot        -- ^ Next expected write
+  -> Maybe Slot  -- ^ range start (inclusive)
+  -> Maybe Slot  -- ^ range end (inclusive)
   -> m ()
-validateIteratorRange err next getEpochSize mbStart mbEnd = do
+validateIteratorRange err next mbStart mbEnd = do
     case (mbStart, mbEnd) of
       (Just start, Just end) ->
         when (start > end) $
           throwUserError err $ InvalidIteratorRangeError start end
       _ -> return ()
 
-    whenJust mbStart $ \start@(EpochSlot startEpoch startSlot) -> do
+    whenJust mbStart $ \start ->
       -- Check that the start is not >= the next expected slot
       when (start >= next) $
         throwUserError err $ ReadFutureSlotError start next
 
-      -- Check that the start slot does not exceed its epoch size
-      startEpochSize <- getEpochSize startEpoch
-      when (getRelativeSlot startSlot >= startEpochSize) $
-        throwUserError err $ SlotGreaterThanEpochSizeError
-                               startSlot
-                               startEpoch
-                               startEpochSize
-
-    whenJust mbEnd $ \end@(EpochSlot endEpoch endSlot) -> do
+    whenJust mbEnd $ \end ->
       -- Check that the end is not >= the next expected slot
       when (end >= next) $
         throwUserError err $ ReadFutureSlotError end next
-
-      -- Check that the end slot does not exceed its epoch size
-      endEpochSize <- getEpochSize endEpoch
-      when (getRelativeSlot endSlot >= endEpochSize) $
-        throwUserError err $ SlotGreaterThanEpochSizeError
-                               endSlot
-                               endEpoch
-                               endEpochSize

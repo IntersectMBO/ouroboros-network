@@ -13,12 +13,11 @@
 module Test.Ouroboros.Storage.ImmutableDB.StateMachine
     ( tests
     , showLabelledExamples
-    , showLabelledErrorExamples
     ) where
 
 import           Prelude hiding (elem, notElem)
 
-import           Control.Monad (forM_, unless, when)
+import           Control.Monad (forM_)
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Except (ExceptT (..), runExceptT)
@@ -27,6 +26,7 @@ import           Control.Monad.State (MonadState, State, StateT, evalStateT,
 
 import           Data.Bifunctor (first)
 import           Data.ByteString (ByteString)
+import           Data.Coerce (coerce)
 import           Data.Foldable (toList)
 import           Data.Function (on)
 import           Data.Functor (($>))
@@ -35,7 +35,7 @@ import           Data.List (sortBy)
 import qualified Data.List.NonEmpty as NE
 import           Data.Map (Map)
 import qualified Data.Map as Map
-import           Data.Maybe (isJust, isNothing, listToMaybe)
+import           Data.Maybe (listToMaybe)
 import           Data.Proxy (Proxy (..))
 import           Data.TreeDiff (Expr (App))
 import           Data.TreeDiff.Class (ToExpr (..))
@@ -43,8 +43,8 @@ import           Data.Typeable (Typeable)
 
 import qualified Generics.SOP as SOP
 
-import           GHC.Generics (Generic, Generic1, from)
-import           GHC.Stack (HasCallStack, callStack)
+import           GHC.Generics (Generic, Generic1)
+import           GHC.Stack (HasCallStack)
 
 import           System.Random (getStdRandom, randomR)
 
@@ -60,29 +60,28 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 import           Text.Show.Pretty (ppShow)
 
-import           Ouroboros.Consensus.Util (lastMaybe)
 import qualified Ouroboros.Consensus.Util.Classify as C
 
 import           Ouroboros.Network.Block (Slot (..))
 
 import           Ouroboros.Storage.FS.API (HasFS (..))
-import           Ouroboros.Storage.FS.API.Types (FsError (..), FsErrorType (..),
-                     FsPath, sameFsError)
+import           Ouroboros.Storage.FS.API.Types (FsError (..), FsPath)
 import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
-import           Ouroboros.Storage.FS.Sim.STM (simHasFS)
 import           Ouroboros.Storage.ImmutableDB
+import           Ouroboros.Storage.ImmutableDB.CumulEpochSizes (CumulEpochSizes,
+                     EpochSlot (..), RelativeSlot (..))
+import qualified Ouroboros.Storage.ImmutableDB.CumulEpochSizes as CES
 import           Ouroboros.Storage.ImmutableDB.Util (renderFile)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
+
 import           Test.Ouroboros.Storage.FS.Sim.Error (Errors, mkSimErrorHasFS,
                      withErrors)
-import           Test.Ouroboros.Storage.ImmutableDB.CumulEpochSizes
-                     (CumulEpochSizes)
-import qualified Test.Ouroboros.Storage.ImmutableDB.CumulEpochSizes as CES
 import           Test.Ouroboros.Storage.ImmutableDB.Model
 import           Test.Ouroboros.Storage.ImmutableDB.TestBlock hiding (tests)
 import           Test.Ouroboros.Storage.Util (collects, tryImmDB)
 
+import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.RefEnv (RefEnv)
 import qualified Test.Util.RefEnv as RE
 
@@ -101,25 +100,21 @@ import qualified Test.Util.RefEnv as RE
 -- Where @m@ can be 'PureM', 'RealM', or 'RealErrM', and @r@ can be 'Symbolic'
 -- or 'Concrete'.
 data Cmd it
-  = GetBinaryBlob     EpochSlot
-  | AppendBinaryBlob  RelativeSlot TestBlock
-  | StartNewEpoch     EpochSize
-  | StreamBinaryBlobs (Maybe EpochSlot) (Maybe EpochSlot)
+  = GetBinaryBlob     Slot
+  | AppendBinaryBlob  Slot TestBlock
+  | StreamBinaryBlobs (Maybe Slot) (Maybe Slot)
   | IteratorNext      it
   | IteratorClose     it
-  | Corruption        (Corruption it)
+  | Reopen            ValidationPolicy (Maybe TruncateFrom)
+  | Corruption        Corruption
   deriving (Generic, Show, Functor, Foldable, Traversable)
 
 deriving instance SOP.Generic         (Cmd it)
 deriving instance SOP.HasDatatypeInfo (Cmd it)
 
 -- | Simulate corruption of some files of the database.
---
--- Includes a list of all open iterators, which should be closed before
--- the corruption is \"executed\". Otherwise, we might delete a file that
--- is still opened by an iterator.
-data Corruption it = MkCorruption Corruptions [it]
-  deriving (Generic, Show, Functor, Foldable, Traversable)
+newtype Corruption = MkCorruption Corruptions
+  deriving (Generic, Show)
 
 -- | A 'Cmd' together with 'Errors'.
 --
@@ -127,13 +122,23 @@ data Corruption it = MkCorruption Corruptions [it]
 -- simulate file system errors thrown at the 'HasFS' level. When 'Nothing', no
 -- errors will be thrown.
 data CmdErr it = CmdErr
-  { _cmdErr :: Maybe Errors
-  , _cmd    :: Cmd it
+  { _cmdErr   :: Maybe Errors
+  , _cmd      :: Cmd it
+  , _cmdIters :: [it]
+    -- ^ A list of all open iterators. For some commands, e.g., corrupting the
+    -- database or simulating errors, we need to close and reopen the
+    -- database, which almost always requires truncation of the database.
+    -- During truncation we might need to delete a file that is still opened
+    -- by an iterator. As this is not allowed by the MockFS implementation, we
+    -- first close all open iterators in these cases.
+    --
+    -- See #328
   } deriving (Generic, Functor, Foldable, Traversable)
 
 instance Show it => Show (CmdErr it) where
-  showsPrec d (CmdErr mbErrors cmd) = showParen (d > 10) $
-      showString constr . showsPrec 11 cmd
+  showsPrec d (CmdErr mbErrors cmd its) = showParen (d > 10) $
+      showString constr . showsPrec 11 cmd . showString " " .
+      shows its
     where
       constr = case mbErrors of
         Nothing  -> "Cmd "
@@ -146,41 +151,30 @@ data Success it
   | Epoch        Epoch
   | Iter         it
   | IterResult   IteratorResult
-  | ReopenResult ReopenResult
+  | LastBlob     (Maybe Slot)
   deriving (Eq, Show, Functor, Foldable, Traversable)
 
 -- | Run the command against the given database.
 run :: (HasCallStack, Monad m)
-    => (ImmutableDB m -> Corruption (Iterator m) -> m (Success (Iterator m)))
+    => (ImmutableDB m -> Corruption -> m (Success (Iterator m)))
        -- ^ How to run a 'Corruption' command.
+    -> [Iterator m]
     -> ImmutableDB m
     -> Cmd (Iterator m)
     -> m (Success (Iterator m))
-run runCorruption db cmd = case cmd of
-  GetBinaryBlob eps     -> Blob       <$> getBinaryBlob db eps
-  AppendBinaryBlob s b  -> Unit       <$> appendBinaryBlob db s (testBlockToBuilder b)
-  StartNewEpoch epsz    -> Epoch      <$> startNewEpoch db epsz
+run runCorruption its db cmd = case cmd of
+  GetBinaryBlob     s   -> Blob       <$> getBinaryBlob db s
+  AppendBinaryBlob  s b -> Unit       <$> appendBinaryBlob db s (testBlockToBuilder b)
   StreamBinaryBlobs s e -> Iter       <$> streamBinaryBlobs db s e
-  IteratorNext it       -> IterResult <$> iteratorNext it
+  IteratorNext  it      -> IterResult <$> iteratorNext it
   IteratorClose it      -> Unit       <$> iteratorClose it
-  Corruption corr       -> runCorruption db corr
-
--- | The result of reopening the database after corruption, used to test
--- recovery code.
-data ReopenResult = MkReopenResult
-  { _lastValidBlobAfterRestore :: Maybe EpochSlot
-    -- ^ The location of the last valid blob that was returned after reopening
-    -- the database with the 'RestoreToLastValidEpoch' policy.
-  , _nextEpochSlotAfterRestore :: EpochSlot
-    -- ^ The result of 'getNextEpochSlot' after reopening the database with
-    -- the 'RestoreToLastValidEpoch' policy.
-  } deriving (Eq)
-
--- | A 'Show' instance that is readable in test output
-instance Show ReopenResult where
-  show (MkReopenResult lvbl nes) =
-    "(_lastValidBlobAfterRestore: "  <> show lvbl <>
-    ", _nextEpochSlotAfterRestore: " <> show nes  <> ")"
+  Reopen valPol mbTrunc -> do
+    mapM_ iteratorClose its
+    closeDB db
+    LastBlob <$> reopen db valPol mbTrunc
+  Corruption corr       -> do
+    mapM_ iteratorClose its
+    runCorruption db corr
 
 
 {-------------------------------------------------------------------------------
@@ -200,13 +194,14 @@ instance Eq it => Eq (Resp it) where
 -- | Don't print the callstack and parameters in the 'ImmutableDBError', just
 -- the 'FsErrorType' or the constructor name.
 instance Show it => Show (Resp it) where
-  show (Resp resp) = "(Resp " <> str <> ")"
+  show resp = "(Resp " <> str <> ")"
     where
-      str = case resp of
-        Left (UnexpectedError (FileSystemError fse)) -> show (fsErrorType fse)
-        Left (UnexpectedError ue)                    -> cmdName (from ue)
-        Left (UserError ue _)                        -> show ue
+      str = case getResp resp of
         Right success                                -> show success
+        Left (UserError ue _)                        -> show ue
+        Left (UnexpectedError (FileSystemError fse)) -> show (fsErrorType fse)
+        Left (UnexpectedError ue)                    ->
+          prettyImmutableDBError (UnexpectedError ue)
 
 -- | The monad used to run pure model/mock implementation of the database.
 type PureM = ExceptT ImmutableDBError (State DBModel)
@@ -217,19 +212,32 @@ type ModelDBPure = ImmutableDB PureM
 -- | Run a command against the pure model
 runPure :: DBModel
         -> ModelDBPure
-        -> Cmd (Iterator PureM)
+        -> CmdErr (Iterator PureM)
         -> (Resp (Iterator PureM), DBModel)
-runPure dbm mdb cmd =
-    first Resp $ runState (runExceptT (run runCorruption mdb cmd)) dbm
+runPure dbm mdb (CmdErr mbErrors cmd its) =
+    first Resp $ flip runState dbm $ do
+      resp <- runExceptT $ run runCorruption its mdb cmd
+      case (mbErrors, resp) of
+        -- No simulated errors, just step
+        (Nothing, _) -> return resp
+        -- Even though an error will be simulated, a user error will be thrown
+        -- before the simulated error can be thrown.
+        (Just _, Left (UserError {})) -> return resp
+        -- An error will be simulated and thrown (not here, but in the real
+        -- implementation). To mimic what the implementation will do, we only
+        -- have to close the iterators, as the truncation during the reopening
+        -- of the database will erase any changes.
+        (Just _, _) -> do
+          -- Note that we reset the state to the initial state (@dbm@), as we
+          -- don't want the result of executing the @cmd@ successfully.
+          modify $ const dbm { dbmIterators = mempty }
+          gets (Right . LastBlob . getLastBlobLocation)
   where
-    runCorruption :: ModelDBPure -> Corruption (Iterator PureM)
+    runCorruption :: ModelDBPure -> Corruption
                   -> PureM (Success (Iterator PureM))
-    runCorruption _ (MkCorruption corrs its) = do
-      mapM_ iteratorClose its
+    runCorruption _ (MkCorruption corrs) = do
       modify $ simulateCorruptions corrs
-      _lastValidBlobAfterRestore <- gets getLastBlobLocation
-      _nextEpochSlotAfterRestore <- gets lookupNextEpochSlot
-      return $ ReopenResult $ MkReopenResult {..}
+      gets (LastBlob . getLastBlobLocation)
 
 {-------------------------------------------------------------------------------
   Collect arguments
@@ -252,23 +260,19 @@ type KnownIters m = RefEnv (Opaque (Iterator m)) (Iterator PureM)
 
 -- | Execution model
 data Model m r = Model
-  { dbModel        :: DBModel
+  { dbModel    :: DBModel
     -- ^ A model of the database, used as state for the 'HasImmutableDB'
     -- instance of 'ModelDB'.
-  , mockDB         :: ModelDBPure
+  , mockDB     :: ModelDBPure
     -- ^ A handle to the mocked database.
-  , knownIters     :: KnownIters m r
+  , knownIters :: KnownIters m r
     -- ^ Store a mapping between iterator references and mocked iterators.
-  , simulatedError :: Maybe FsError
-    -- ^ Record the simulated error ('FsError') that was thrown. As soon as a
-    -- simulated 'FsError' was thrown, the test will stop.
   } deriving (Show, Generic)
 
 -- | Initial model
 initModel :: DBModel -> ModelDBPure -> Model m r
 initModel dbModel mockDB = Model
     { knownIters  = RE.empty
-    , simulatedError = Nothing
     , ..
     }
 
@@ -277,27 +281,9 @@ toMock :: (Functor t, Eq1 r) => Model m r -> At t m r -> t (Iterator PureM)
 toMock Model {..} (At t) = fmap (knownIters RE.!) t
 
 -- | Step the mock semantics
---
--- We cannot step the whole Model here (see 'lockstep', below)
-step :: Eq1 r => Model m r -> At Cmd m r -> (Resp (Iterator PureM), DBModel)
-step model@Model{..} cmd = runPure dbModel mockDB (toMock model cmd)
-
--- | Step the mock semantics with a 'CmdErr'
---
--- In the case of a simulated error, we need the actual response to know how
--- to update the model (see 'lockstep', below).
-stepErr :: Eq1 r => Model m r -> At CmdErr m r -> Resp (Iterator PureM)
-stepErr model (At (CmdErr mbErrors cmd)) = case (mbErrors, resp) of
-    -- No simulated errors, just step
-    (Nothing, _)                         -> resp
-    -- Even though an error was simulated, another error was thrown before it.
-    -- Note that the error is UnexpectedError iff it is simulated. In this
-    -- case, return the expected result without a simulated error
-    (Just _, Resp (Left (UserError {}))) -> resp
-    -- An error was simulated and will be thrown, so mock an error.
-    (Just _, _)                          -> Resp (Left mockedError)
-  where
-    (resp, _) = step model (At cmd)
+step :: Eq1 r
+     => Model m r -> At CmdErr m r -> (Resp (Iterator PureM), DBModel)
+step model@Model{..} cmdErr = runPure dbModel mockDB (toMock model cmdErr)
 
 
 {-------------------------------------------------------------------------------
@@ -356,67 +342,69 @@ lockstep :: (Show1 r, Eq1 r)
          -> At CmdErr m r
          -> At Resp   m r
          -> Event     m r
-lockstep model@Model {..} cmdErr@(At (CmdErr mbErrors cmd)) (At resp) = Event
+lockstep model@Model {..} cmdErr (At resp) = Event
     { eventBefore   = model
     , eventCmdErr   = cmdErr
     , eventAfter    = model'
     , eventMockResp = mockResp
     }
   where
-    (mockResp, dbModel') = step model (At cmd)
+    (mockResp, dbModel') = step model cmdErr
     newIters = RE.fromList $ zip (iters resp) (iters mockResp)
     model' = model
-      { dbModel        = dbModel'
-      , knownIters     = knownIters `RE.union` newIters
-      , simulatedError = simulatedErr
+      { dbModel    = dbModel'
+      , knownIters = knownIters `RE.union` newIters
       }
-    -- Record the simulated error if one was thrown.
-    simulatedErr = case (mbErrors, getResp resp) of
-        (Just _, Left (UnexpectedError (FileSystemError fse))) -> Just fse
-        _                                                      -> Nothing
-
--- | The error thrown when mocking a simulated 'FileSystemError'.
-mockedError :: HasCallStack => ImmutableDBError
-mockedError = UnexpectedError $ FileSystemError $ FsError
-  { fsErrorType   = FsIllegalOperation
-  , fsErrorPath   = ["<mockedError>"]
-  , fsErrorString = "mocked error"
-  , fsErrorStack  = callStack
-  , fsLimitation  = False
-  }
-
-isMockedError :: ImmutableDBError -> Bool
-isMockedError = sameImmutableDBError mockedError
 
 {-------------------------------------------------------------------------------
   Generator
 -------------------------------------------------------------------------------}
 
+-- | Generate a 'CmdErr'
+generator :: Model m Symbolic -> Gen (At CmdErr m Symbolic)
+generator m@Model {..} = do
+    _cmd    <- unAt <$> generateCmd m
+    _cmdErr <- if noErrorFor _cmd
+       then return Nothing
+       else frequency
+          -- We want to make some progress
+          [ (4, return Nothing)
+          , (1, Just <$> arbitrary)
+          ]
+    let _cmdIters = RE.keys knownIters
+    return $ At CmdErr {..}
+  where
+    -- Don't simulate an error during corruption, because we don't want an
+    -- error to happen while we corrupt a file.
+    noErrorFor Corruption {} = True
+    noErrorFor Reopen {}     = True
+    noErrorFor _             = False
+    -- TODO simulate errors during recovery?
+
 
 -- | Generate a 'Cmd'.
-generator :: Model m Symbolic -> Gen (At Cmd m Symbolic)
-generator Model {..} = At <$> frequency
-    [ (1, GetBinaryBlob <$> frequency [ (10, genEpochSlotInThePast)
-                                      , (1, genEpochSlotInTheFuture)
-                                      , (1, genEpochSlot) ])
-    , (2, StartNewEpoch <$> genEpochSize)
+generateCmd :: Model m Symbolic -> Gen (At Cmd m Symbolic)
+generateCmd Model {..} = At <$> frequency
+    [ (1, GetBinaryBlob <$> frequency
+            [ (if empty then 0 else 10, genSlotInThePast)
+            , (1,  genSlotInTheFuture)
+            , (1,  arbitrary) ])
     , (3, do
-            relSlot <- genRelSlot
-            return $ AppendBinaryBlob relSlot (TestBlock relSlot))
+            slot <- arbitrary -- TODO can create many empty epochs
+            return $ AppendBinaryBlob slot (TestBlock slot))
     , (1, frequency
             -- An iterator with a random and likely invalid range,
-            [ (1, StreamBinaryBlobs <$> (Just <$> genEpochSlot)
-                                    <*> (Just <$> genEpochSlot))
-            -- An iterator that is more likely to be valid. A
-            -- SlotGreaterThanEpochSizeError is still possible.
-            , (2, do
-                    start <- genEpochSlotInThePast
-                    end   <- genEpochSlotInThePast `suchThat` (>= start)
+            [ (1, StreamBinaryBlobs <$> (Just <$> arbitrary)
+                                    <*> (Just <$> arbitrary))
+            -- An iterator that is more likely to be valid.
+            , (if empty then 0 else 2, do
+                    start <- genSlotInThePast
+                    end   <- genSlotInThePast `suchThat` (>= start)
                     return $ StreamBinaryBlobs (Just start) (Just end))
             -- Same as above, but with possible empty bounds
-            , (2, do
-                    start <- genEpochSlotInThePast
-                    end   <- genEpochSlotInThePast `suchThat` (>= start)
+            , (if empty then 0 else 2, do
+                    start <- genSlotInThePast
+                    end   <- genSlotInThePast `suchThat` (>= start)
                     mbStart <- elements [Nothing, Just start]
                     mbEnd   <- elements [Nothing, Just end]
                     return $ StreamBinaryBlobs mbStart mbEnd)
@@ -430,78 +418,55 @@ generator Model {..} = At <$> frequency
                    , (1, return $ IteratorClose iter) ])
       -- Only if there are files on disk can we generate commands that corrupt
       -- them.
+    , (1, Reopen <$> genValPol <*> genMbTrunc)
+
     , (if null dbFiles then 0 else 2, Corruption <$> genCorruption)
     ]
   where
     DBModel {..} = dbModel
-    currentEpochSize = CES.lastEpochSize dbmCumulEpochSizes
 
-    EpochSlot maxEpoch nextSlot = lookupNextEpochSlot dbModel
+    empty = dbmNextSlot == 0
 
-    genEpochSize = choose (1, 20)
+    genSlotInThePast
+      | empty     = discard
+      | otherwise = coerce $ choose @Word (0, coerce dbmNextSlot - 1)
 
-    -- + x because we also want relative slots that are greater than the epoch
-    -- size
-    genRelSlot = RelativeSlot <$> choose (0, currentEpochSize + 2)
+    genSlotInTheFuture = coerce $ choose @Word (coerce dbmNextSlot, maxBound)
 
-    genEpochSlot = EpochSlot <$> arbitrary <*> genRelSlot
-
-    genEpochSlotInThePast = do
-      epoch <- choose (0, maxEpoch)
-      slot  <- if epoch == maxEpoch
-               then choose (0, getRelativeSlot nextSlot - 1)
-               else arbitrary
-      return (EpochSlot epoch (RelativeSlot slot))
-
-    genEpochSlotInTheFuture = do
-      epoch <- choose (maxEpoch, maxBound)
-      slot  <- if epoch == maxEpoch
-               then choose (getRelativeSlot nextSlot, maxBound)
-               else arbitrary
-      return (EpochSlot epoch (RelativeSlot slot))
-
-    genCorruption = MkCorruption <$>
-      generateCorruptions (NE.fromList dbFiles) <*> pure openIterators
-
-    openIterators = RE.keys knownIters
+    genCorruption = MkCorruption <$> generateCorruptions (NE.fromList dbFiles)
 
     dbFiles = getDBFiles dbModel
 
-getEpochsOnDisk :: DBModel -> [Epoch]
-getEpochsOnDisk DBModel {..} = [0..CES.lastEpoch dbmCumulEpochSizes]
+    genValPol = elements [ValidateMostRecentEpoch, ValidateAllEpochs]
 
-getDBFiles :: DBModel -> [FsPath]
-getDBFiles dbModel = getEpochsOnDisk dbModel >>= \epoch ->
-    [ dbFolder <> renderFile "index" epoch
-    , dbFolder <> renderFile "epoch" epoch
-    ]
-
--- | Generate a 'CmdErr' without 'Errors'
-generatorNoErr :: Model m Symbolic -> Maybe (Gen (At CmdErr m Symbolic))
-generatorNoErr m =
-    Just $ At . CmdErr Nothing . unAt <$> generator m
-
--- | Generate a 'CmdErr' that can have 'Errors'
-generatorErr :: Model m Symbolic -> Maybe (Gen (At CmdErr m Symbolic))
-generatorErr m@Model {..}
-    | isJust simulatedError  -- If an error was thrown, stop testing
-    = Nothing
-    | otherwise
-    = Just $ At <$> do
-      cmd <- genModel
-      frequency
-        -- We want to make some progress
-        [ (4, return $ CmdErr Nothing cmd)
-          -- TODO Don't simulate an error during corruption, because we don't
-          -- want an error to happen while we corrupt a file. We could test
-          -- what happens when an error is thrown during recovery.
-        , (if isCorruption cmd then 0 else 1
-          , CmdErr <$> (Just <$> arbitrary) <*> return cmd)
+    -- TODO generate slots in the future?
+    genMbTrunc
+      | empty
+      = return Nothing
+      | otherwise
+      = frequency
+        [ (1, return Nothing)
+        , (4, Just . TruncateFrom <$> genSlotInThePast)
         ]
+
+-- | Return the files that the database with the given model would have
+-- created. For each epoch an index and epoch file, except for the last epoch:
+-- only an epoch but no index file.
+getDBFiles :: DBModel -> [FsPath]
+getDBFiles DBModel {..}
+    | null dbmChain
+    = []
+    | 0 <- lastEpoch
+    = lastEpochFiles
+    | otherwise
+    = lastEpochFiles <> epochsBeforeLastFiles
   where
-    genModel = unAt <$> generator m
-    isCorruption Corruption {} = True
-    isCorruption _             = False
+    lastEpoch = CES.lastEpoch dbmCumulEpochSizes
+    lastEpochFiles = [renderFile "epoch" lastEpoch]
+    epochsBeforeLastFiles = [0..lastEpoch-1] >>= \epoch ->
+      [ renderFile "index" epoch
+      , renderFile "epoch" epoch
+      ]
 
 
 {-------------------------------------------------------------------------------
@@ -510,43 +475,45 @@ generatorErr m@Model {..}
 
 -- | Shrinker
 shrinker :: Model m Symbolic -> At CmdErr m Symbolic -> [At CmdErr m Symbolic]
-shrinker m (At (CmdErr mbErrors cmd)) = fmap At $
-    [ CmdErr mbErrors' cmd  | mbErrors' <- shrink mbErrors ] ++
-    [ CmdErr mbErrors  cmd' | At cmd'   <- shrinkCmd m (At cmd) ]
+shrinker m@Model {..} (At (CmdErr mbErrors cmd _)) = fmap At $
+    [ CmdErr mbErrors' cmd  its' | mbErrors' <- shrink mbErrors ] ++
+    [ CmdErr mbErrors  cmd' its' | At cmd'   <- shrinkCmd m (At cmd) ]
+  where
+    its' = RE.keys knownIters
 
 -- | Shrink a 'Cmd'.
 shrinkCmd :: Model m Symbolic -> At Cmd m Symbolic -> [At Cmd m Symbolic]
 shrinkCmd Model {..} (At cmd) = fmap At $ case cmd of
-    AppendBinaryBlob relSlot _ ->
-      [ AppendBinaryBlob relSlot' (TestBlock relSlot')
-      | relSlot' <- shrinkRelativeSlot relSlot]
-    StartNewEpoch epochSize ->
-      [StartNewEpoch epochSize' | epochSize' <- shrink epochSize
-                                , epochSize' > 0]
+    AppendBinaryBlob slot _ ->
+      [ AppendBinaryBlob slot' (TestBlock slot')
+      | slot' <- shrink slot ]
     StreamBinaryBlobs mbStart mbEnd ->
       [ StreamBinaryBlobs mbStart' mbEnd
-      | mbStart' <- shrinkMbEpochSlot mbStart] ++
+      | mbStart' <- shrinkMbSlot mbStart] ++
       [ StreamBinaryBlobs mbStart  mbEnd'
-      | mbEnd'   <- shrinkMbEpochSlot mbEnd]
-    GetBinaryBlob epochSlot ->
-      [GetBinaryBlob epochSlot' | epochSlot' <- shrinkEpochSlot epochSlot]
+      | mbEnd'   <- shrinkMbSlot mbEnd]
+    GetBinaryBlob slot ->
+      [GetBinaryBlob slot' | slot' <- shrink slot]
     IteratorNext  {} -> []
     IteratorClose {} -> []
+    Reopen valPol mbTruncateFrom ->
+      [ Reopen valPol' mbTruncateFrom
+      | valPol' <- shrinkValPol valPol ] ++
+      [ Reopen valPol  mbTruncateFrom'
+      | mbTruncateFrom' <- shrinkMbTruncateFrom mbTruncateFrom ]
     Corruption corr ->
       [Corruption corr' | corr' <- shrinkCorruption corr]
   where
-    shrinkRelativeSlot :: RelativeSlot -> [RelativeSlot]
-    shrinkRelativeSlot = genericShrink
-    shrinkMbEpochSlot :: Maybe EpochSlot -> [Maybe EpochSlot]
-    shrinkMbEpochSlot Nothing   = []
-    shrinkMbEpochSlot (Just es) = Nothing : map Just (shrinkEpochSlot es)
-    shrinkEpochSlot :: EpochSlot -> [EpochSlot]
-    shrinkEpochSlot (EpochSlot epoch relSlot) =
-      [EpochSlot epoch' relSlot  | epoch'   <- shrink epoch] ++
-      [EpochSlot epoch  relSlot' | relSlot' <- shrinkRelativeSlot relSlot]
-    shrinkCorruption (MkCorruption corrs _) =
-      [ MkCorruption corrs' (RE.keys knownIters)
+    shrinkMbSlot :: Maybe Slot -> [Maybe Slot]
+    shrinkMbSlot Nothing  = []
+    shrinkMbSlot (Just s) = Nothing : map Just (shrink s)
+    shrinkCorruption (MkCorruption corrs) =
+      [ MkCorruption corrs'
       | corrs' <- shrinkCorruptions corrs]
+    shrinkValPol ValidateAllEpochs = [ValidateMostRecentEpoch]
+    shrinkValPol _                 = []
+    shrinkMbTruncateFrom Nothing  = []
+    shrinkMbTruncateFrom (Just _) = [Nothing]
 
 {-------------------------------------------------------------------------------
   The final state machine
@@ -563,18 +530,19 @@ mock :: Typeable m
      -> GenSym (At Resp m Symbolic)
 mock model cmdErr = At <$> traverse (const genSym) resp
   where
-    resp = stepErr model cmdErr
+    (resp, _dbm) = step model cmdErr
 
 precondition :: Model m Symbolic -> At CmdErr m Symbolic -> Logic
-precondition Model {..} (At (CmdErr _ cmd)) =
-    Boolean (isNothing simulatedError) .&&
-    forall (iters cmd) (`elem` RE.keys knownIters) .&&
+precondition Model {..} (At (CmdErr { _cmd = cmd })) =
+   forall (iters cmd) (`elem` RE.keys knownIters) .&&
     case cmd of
       Corruption corr ->
         forall (corruptionFiles corr) (`elem` getDBFiles dbModel)
+      Reopen _ (Just (TruncateFrom slot)) ->
+        slot .< dbmNextSlot dbModel
       _ -> Top
   where
-    corruptionFiles (MkCorruption corrs _) = map snd $ NE.toList corrs
+    corruptionFiles (MkCorruption corrs) = map snd $ NE.toList corrs
 
 transition :: (Show1 r, Eq1 r)
            => Model m r -> At CmdErr m r -> At Resp m r -> Model m r
@@ -584,140 +552,96 @@ postcondition :: Model m Concrete
               -> At CmdErr m Concrete
               -> At Resp m Concrete
               -> Logic
-postcondition model cmdErr@(At (CmdErr mbErrors _)) resp = case unAt resp of
-    -- Check that the UnexpectedError that was simulated
-    Resp (Left (UnexpectedError {}))
-      | Just _ <- mbErrors -> Top
-
-    -- Report an unexpected success when a simulated error was supposed to be
-    -- thrown
-    Resp (Right _)
-      | Just _ <- mbErrors ->
-      Bot .// "postconditionErr expected failure"
-
-    -- Otherwise: expected success or expected error. Even when simulating an
-    -- error, it is possible that we expect another error to be thrown, which
-    -- can happen before the simulated is thrown.
-    _ -> toMock (eventAfter ev) resp .== eventMockResp ev
+postcondition model cmdErr resp =
+    toMock (eventAfter ev) resp .== eventMockResp ev
   where
     ev = lockstep model cmdErr resp
 
-toResp :: (Typeable m, MonadCatch n)
-       => n (Success (Iterator m)) -> n (At Resp m Concrete)
-toResp n = At . fmap (reference . Opaque) . Resp <$> tryImmDB n
+semantics :: TVar IO Errors
+          -> HasFS IO h
+          -> ImmutableDB IO
+          -> At CmdErr IO Concrete
+          -> IO (At Resp IO Concrete)
+semantics errorsVar hasFS db (At cmdErr) =
+    At . fmap (reference . Opaque) . Resp <$> case opaque <$> cmdErr of
 
--- | Ignores the 'Errors'
-semantics :: (MonadCatch m, Typeable m)
-          => HasFS m h -> ImmutableDB m -> At CmdErr m Concrete
-          -> m (At Resp m Concrete)
-semantics hasFS db (At (CmdErr _ cmd)) =
-    toResp $ run (semanticsCorruption hasFS) db (opaque <$> cmd)
+      CmdErr Nothing       cmd its -> tryImmDB $
+        run (semanticsCorruption hasFS) its db cmd
 
-semanticsErr :: TVar IO Errors
-             -> HasFS IO h
-             -> ImmutableDB IO
-             -> At CmdErr IO Concrete
-             -> IO (At Resp IO Concrete)
-semanticsErr errorsVar hasFS db (At cmdErr) = case opaque <$> cmdErr of
-    CmdErr Nothing _         -> semantics hasFS db (At cmdErr)
-    CmdErr (Just errors) cmd -> At . fmap (reference . Opaque) <$> do
-      res <- withErrors errorsVar errors $
-        tryImmDB $ run (semanticsCorruption hasFS) db cmd
-      case res of
-        Left _ -> return (Resp res)
-        -- When by coincidence no error was thrown, force an error to be
-        -- thrown, as we need the outcome to be deterministic. The mocked
-        -- response for this command must match the actual command. When
-        -- constructing the mocked response, we don't know yet whether the
-        -- simulated error will be thrown in practice or not. We assume it is
-        -- thrown, so we must make sure here it is actually thrown.
-        Right _ -> do
-          when (unexpectedErrorShouldCloseDB cmd) $ closeDB db
-          return $ Resp (Left forcedError)
+      CmdErr (Just errors) cmd its -> do
+        nextSlot <- getNextSlot db
+        res      <- withErrors errorsVar errors $ tryImmDB $
+          run (semanticsCorruption hasFS) its db cmd
+        case res of
+          -- If the command resulted in a 'UserError', we didn't even get the
+          -- chance to run into a simulated error. Just return this error.
+          Left (UserError {})       -> return res
+
+          -- We encountered a simulated error
+          Left (UnexpectedError {}) -> truncateAndReopen nextSlot its
+
+          -- TODO track somewhere which/how many errors were *actually* thrown
+
+          -- By coincidence no error was thrown, try to mimic what would have
+          -- happened if the error was thrown, so that we stay in sync with
+          -- the model.
+          Right suc                 ->
+            truncateAndReopen nextSlot (its <> iters suc)
+            -- Note that we might have created an iterator, make sure to close
+            -- it as well
+  where
+    truncateAndReopen fromSlot its = tryImmDB $ do
+      -- Close all open iterators as we will perform truncation
+      mapM_ iteratorClose its
+      -- Close the database in case no errors occurred and it wasn't
+      -- closed already. This is idempotent anyway.
+      closeDB db
+
+      -- TODO validate the database and check that if reopen succeeds, it
+      -- happened at some point in the right interval
+
+      -- Reopen the database, but truncate it to the point right before
+      -- the error
+      let trunc = Just (TruncateFrom fromSlot)
+      LastBlob <$> reopen db ValidateMostRecentEpoch trunc
 
 semanticsCorruption :: MonadCatch m
-                    => HasFS m h -> ImmutableDB m
-                    -> Corruption (Iterator m)
+                    => HasFS m h
+                    -> ImmutableDB m
+                    -> Corruption
                     -> m (Success (Iterator m))
-semanticsCorruption hasFS db (MkCorruption corrs its) = do
-    mapM_ iteratorClose its
+semanticsCorruption hasFS db (MkCorruption corrs) = do
     closeDB db
     forM_ corrs $ \(corr, file) -> corruptFile hasFS corr file
 
     -- Record the error thrown using the 'ValidateAllEpochs' policy
-    let validatePol = ValidateAllEpochs $ testBlockEpochFileParser' hasFS
-    validateRes      <- tryImmDB $ reopen db validatePol
-    _validationError <- case validateRes of
+    validateRes     <- tryImmDB $ reopen db ValidateAllEpochs Nothing
+    validationError <- case validateRes of
           Left e  -> return $ Just e
           -- Close the DB again, otherwise the next reopen is a no-op.
           Right _ -> closeDB db $> Nothing
 
-    -- Now try to restore to the last valid epoch slot.
-    let restorePol = RestoreToLastValidEpoch $ testBlockEpochFileParser' hasFS
-    _lastValidBlobAfterRestore <- reopen db restorePol
-    _nextEpochSlotAfterRestore <- getNextEpochSlot db
-    return $ ReopenResult $ MkReopenResult {..}
+    -- Now try to restore to the last valid epoch slot using the recovery
+    -- strategy suggested by the error.
+    let mbTruncateFrom = validationError >>= extractTruncateFrom
 
-
-forcedFsError :: HasCallStack => FsError
-forcedFsError = FsError
-  { fsErrorType   = FsIllegalOperation
-  , fsErrorPath   = ["<forcedError>"]
-  , fsErrorString = "forced error"
-  , fsErrorStack  = callStack
-  , fsLimitation  = False
-  }
-
-forcedError :: HasCallStack => ImmutableDBError
-forcedError = UnexpectedError $ FileSystemError forcedFsError
-
--- | Should an 'UnexpectedError' thrown during the 'Cmd' close the database?
---
--- Yes for write operations, no for read operations.
-unexpectedErrorShouldCloseDB :: Cmd it -> Bool
-unexpectedErrorShouldCloseDB cmd = case cmd of
-    AppendBinaryBlob  {} -> True
-    StartNewEpoch     {} -> True
-    GetBinaryBlob     {} -> False
-    StreamBinaryBlobs {} -> False
-    IteratorNext      {} -> False
-    IteratorClose     {} -> False
-    Corruption        {} -> True
+    LastBlob <$> reopen db ValidateAllEpochs mbTruncateFrom
 
 -- | The state machine proper
-sm :: HasFS IO h
+sm :: TVar IO Errors
+   -> HasFS IO h
    -> ImmutableDB IO
    -> DBModel
    -> ModelDBPure
    -> StateMachine (Model IO) (At CmdErr IO) IO (At Resp IO)
-sm hasFS db dbm mdb = StateMachine
+sm errorsVar hasFS db dbm mdb = StateMachine
   { initModel     = initModel dbm mdb
   , transition    = transition
   , precondition  = precondition
   , postcondition = postcondition
-  , generator     = generatorNoErr
+  , generator     = Just . generator
   , shrinker      = shrinker
-  , semantics     = semantics hasFS db
-  , mock          = mock
-  , invariant     = Nothing
-  , distribution  = Nothing
-  }
-
--- | The state machine with errors
-smErr :: TVar IO Errors
-      -> HasFS IO h
-      -> ImmutableDB IO
-      -> DBModel
-      -> ModelDBPure
-      -> StateMachine (Model IO) (At CmdErr IO) IO (At Resp IO)
-smErr errorsVar hasFS db dbm mdb = StateMachine
-  { initModel     = initModel dbm mdb
-  , transition    = transition
-  , precondition  = precondition
-  , postcondition = postcondition
-  , generator     = generatorErr
-  , shrinker      = shrinker
-  , semantics     = semanticsErr errorsVar hasFS db
+  , semantics     = semantics errorsVar hasFS db
   , mock          = mock
   , invariant     = Nothing
   , distribution  = Nothing
@@ -737,11 +661,11 @@ validate Model {..} db = flip evalStateT dbModel $ do
           dbRes    <- runDB    $ iteratorNext itDB
           modelRes <- runModel $ iteratorNext itModel
           case (dbRes, modelRes) of
-            -- The database should be a prefix of the model, so this is
-            -- fine
-            (IteratorExhausted, _) -> return ()
-            (IteratorResult {},  IteratorResult {})
-              | dbRes == modelRes -> loop
+            (IteratorExhausted, IteratorExhausted)
+              -> return ()
+            (IteratorResult {}, IteratorResult {})
+              | dbRes == modelRes
+              -> loop
             _ -> fail $ "Mismatch between database (" <> show dbRes <>
                         ") and model (" <> show modelRes <> ")"
     loop
@@ -756,7 +680,6 @@ validate Model {..} db = flip evalStateT dbModel $ do
         (Left e,  _)  -> fail $ prettyImmutableDBError e
         (Right a, s') -> put s' >> return a
 
-
 {-------------------------------------------------------------------------------
   Labelling
 -------------------------------------------------------------------------------}
@@ -766,25 +689,11 @@ data Tag
 
   | TagGetBinaryBlobNothing
 
-  | TagOpenFinalisedEpochError
-
   | TagAppendToSlotInThePastError
 
   | TagReadFutureSlotError
 
-  | TagSlotGreaterThanEpochSizeError
-
-  | TagMissingEpochSizeError
-
   | TagInvalidIteratorRangeError
-
-  | TagGetFromEmptyEpoch
-
-  | TagEmptyEpochsInARow Int
-
-  | TagIteratorStartsOnEmptySlot
-
-  | TagIteratorStartsInEmptyEpoch
 
   | TagIteratorStreamedNBlobs Int
 
@@ -841,16 +750,14 @@ failedUserError f = failed $ \ev e -> case e of
     UserError ue _ -> f ev ue
     _              -> Right $ failedUserError f
 
-
-
--- | Convenience combinator for creating classifiers for commands during which
--- a generated FsError was thrown
-errorExpected :: (Event m Symbolic -> Either Tag (EventPred m))
-              -> EventPred m
-errorExpected f = C.predicate $ \ev ->
-    case eventMockResp ev of
-      Resp (Left  e) | isMockedError e -> f ev
-      Resp _                           -> Right $ errorExpected f
+-- | Convenience combinator for creating classifiers for commands for which an
+-- error is simulated.
+simulatedError :: (Event m Symbolic -> Either Tag (EventPred m))
+               -> EventPred m
+simulatedError f = C.predicate $ \ev ->
+    case (_cmdErr (unAt (eventCmdErr ev)), getResp (eventMockResp ev)) of
+      (Just _, Right _) -> f ev
+      _                 -> Right $ simulatedError f
 
 
 -- | Tag commands
@@ -860,21 +767,13 @@ tag :: forall m. [Event m Symbolic] -> [Tag]
 tag = C.classify
     [ tagGetBinaryBlobJust
     , tagGetBinaryBlobNothing
-    , tagOpenFinalisedEpochError
     , tagAppendToSlotInThePastError
     , tagReadFutureSlotError
-    , tagSlotGreaterThanEpochSizeError
-    , tagMissingEpochSizeError
     , tagInvalidIteratorRangeError
-    , tagGetFromEmptyEpoch
-    , tagEmptyEpochsInARow 0
-    , tagIteratorStartsOnEmptySlot
-    , tagIteratorStartsInEmptyEpoch
     , tagIteratorStreamedNBlobs Map.empty
     , tagIteratorWithoutBounds
     , tagCorruption
     , tagErrorDuringAppendBinaryBlob
-    , tagErrorDuringStartNewEpoch
     , tagErrorDuringGetBinaryBlob
     , tagErrorDuringStreamBinaryBlobs
     , tagErrorDuringIteratorNext
@@ -893,11 +792,6 @@ tag = C.classify
         Left TagGetBinaryBlobNothing
       _ -> Right tagGetBinaryBlobNothing
 
-    tagOpenFinalisedEpochError :: EventPred m
-    tagOpenFinalisedEpochError = failedUserError $ \_ e -> case e of
-      OpenFinalisedEpochError {} -> Left TagOpenFinalisedEpochError
-      _                          -> Right tagOpenFinalisedEpochError
-
     tagAppendToSlotInThePastError :: EventPred m
     tagAppendToSlotInThePastError = failedUserError $ \_ e -> case e of
       AppendToSlotInThePastError {} -> Left TagAppendToSlotInThePastError
@@ -908,57 +802,10 @@ tag = C.classify
       ReadFutureSlotError {} -> Left TagReadFutureSlotError
       _                      -> Right tagReadFutureSlotError
 
-    tagSlotGreaterThanEpochSizeError :: EventPred m
-    tagSlotGreaterThanEpochSizeError = failedUserError $ \_ e -> case e of
-      SlotGreaterThanEpochSizeError {} -> Left TagSlotGreaterThanEpochSizeError
-      _ -> Right tagSlotGreaterThanEpochSizeError
-
-    tagMissingEpochSizeError :: EventPred m
-    tagMissingEpochSizeError = failedUserError $ \_ e -> case e of
-      MissingEpochSizeError {} -> Left TagMissingEpochSizeError
-      _                        -> Right tagMissingEpochSizeError
-
     tagInvalidIteratorRangeError :: EventPred m
     tagInvalidIteratorRangeError = failedUserError $ \_ e -> case e of
       InvalidIteratorRangeError {} -> Left TagInvalidIteratorRangeError
       _                            -> Right tagInvalidIteratorRangeError
-
-    tagGetFromEmptyEpoch :: EventPred m
-    tagGetFromEmptyEpoch = successful $ \ev r -> case r of
-      Blob Nothing
-        | At (GetBinaryBlob (EpochSlot epoch _)) <- eventCmd ev
-          -- No blobs start in the given epoch
-        , not $ any ((epoch ==) .  _epoch) $ Map.keys $ dbmBlobs
-        $ dbModel $ eventBefore ev
-        -> Left  TagGetFromEmptyEpoch
-      _ -> Right tagGetFromEmptyEpoch
-
-    tagEmptyEpochsInARow :: Int -> EventPred m
-    tagEmptyEpochsInARow before = C.Predicate
-      { C.predApply = \ev -> case eventMockResp ev of
-          Resp (Right _)
-            | At (StartNewEpoch {}) <- eventCmd ev
-            -> Right $ tagEmptyEpochsInARow (before + 1)
-          _ -> Right $ tagEmptyEpochsInARow 0
-      , C.predFinish = case before > 0 of
-          True  -> Just $ TagEmptyEpochsInARow before
-          False -> Nothing
-      }
-
-    tagIteratorStartsOnEmptySlot :: EventPred m
-    tagIteratorStartsOnEmptySlot = successful $ \ev _ -> case eventCmd ev of
-      At (StreamBinaryBlobs (Just start) _)
-        | Map.notMember start $ dbmBlobs $ dbModel $ eventBefore ev
-        -> Left  TagIteratorStartsOnEmptySlot
-      _ -> Right tagIteratorStartsOnEmptySlot
-
-    tagIteratorStartsInEmptyEpoch :: EventPred m
-    tagIteratorStartsInEmptyEpoch = successful $ \ev _ -> case eventCmd ev of
-      At (StreamBinaryBlobs (Just (EpochSlot epoch _)) _)
-        | not $ any ((epoch ==) .  _epoch) $ Map.keys $ dbmBlobs
-        $ dbModel $ eventBefore ev
-        -> Left  TagIteratorStartsInEmptyEpoch
-      _ -> Right tagIteratorStartsInEmptyEpoch
 
     tagIteratorStreamedNBlobs :: Map (Iterator PureM) Int
                               -> EventPred m
@@ -991,32 +838,27 @@ tag = C.classify
       }
 
     tagErrorDuringAppendBinaryBlob :: EventPred m
-    tagErrorDuringAppendBinaryBlob = errorExpected $ \ev -> case eventCmd ev of
+    tagErrorDuringAppendBinaryBlob = simulatedError $ \ev -> case eventCmd ev of
       At (AppendBinaryBlob {}) -> Left TagErrorDuringAppendBinaryBlob
       _                        -> Right tagErrorDuringAppendBinaryBlob
 
-    tagErrorDuringStartNewEpoch :: EventPred m
-    tagErrorDuringStartNewEpoch = errorExpected $ \ev -> case eventCmd ev of
-      At (StartNewEpoch {}) -> Left TagErrorDuringStartNewEpoch
-      _                     -> Right tagErrorDuringStartNewEpoch
-
     tagErrorDuringGetBinaryBlob :: EventPred m
-    tagErrorDuringGetBinaryBlob = errorExpected $ \ev -> case eventCmd ev of
+    tagErrorDuringGetBinaryBlob = simulatedError $ \ev -> case eventCmd ev of
       At (GetBinaryBlob {}) -> Left TagErrorDuringGetBinaryBlob
       _                     -> Right tagErrorDuringGetBinaryBlob
 
     tagErrorDuringStreamBinaryBlobs :: EventPred m
-    tagErrorDuringStreamBinaryBlobs = errorExpected $ \ev -> case eventCmd ev of
+    tagErrorDuringStreamBinaryBlobs = simulatedError $ \ev -> case eventCmd ev of
       At (StreamBinaryBlobs {}) -> Left TagErrorDuringStreamBinaryBlobs
       _                         -> Right tagErrorDuringStreamBinaryBlobs
 
     tagErrorDuringIteratorNext :: EventPred m
-    tagErrorDuringIteratorNext = errorExpected $ \ev -> case eventCmd ev of
+    tagErrorDuringIteratorNext = simulatedError $ \ev -> case eventCmd ev of
       At (IteratorNext {}) -> Left TagErrorDuringIteratorNext
       _                    -> Right tagErrorDuringIteratorNext
 
     tagErrorDuringIteratorClose :: EventPred m
-    tagErrorDuringIteratorClose = errorExpected $ \ev -> case eventCmd ev of
+    tagErrorDuringIteratorClose = simulatedError $ \ev -> case eventCmd ev of
       At (IteratorClose {}) -> Left TagErrorDuringIteratorClose
       _                     -> Right tagErrorDuringIteratorClose
 
@@ -1052,7 +894,7 @@ instance CommandNames (At Cmd m) where
     constrNames (Proxy @(Cmd (IterRef m r)))
 
 instance CommandNames (At CmdErr m) where
-  cmdName (At (CmdErr _ cmd)) = constrName cmd
+  cmdName (At (CmdErr { _cmd = cmd }) ) = constrName cmd
   cmdNames (_ :: Proxy (At CmdErr m r)) =
     constrNames (Proxy @(Cmd (IterRef m r)))
 
@@ -1065,6 +907,8 @@ instance Show ModelDBPure where
 instance ToExpr Slot where
   toExpr (Slot w) = App "Slot" [toExpr w]
 
+instance ToExpr Epoch
+instance ToExpr EpochSize
 instance ToExpr EpochSlot
 instance ToExpr RelativeSlot
 instance ToExpr IteratorID
@@ -1123,152 +967,65 @@ showLabelledExamples' mbReplay numTests focus stateMachine = do
     smUnused = stateMachine dbm mdb
 
 showLabelledExamples :: IO ()
-showLabelledExamples =
-    showLabelledExamples' Nothing 1000 nonError (sm hasFsUnused dbUnused)
-  where
-    nonError TagErrorDuringAppendBinaryBlob = False
-    nonError TagErrorDuringStartNewEpoch    = False
-    nonError TagErrorDuringGetBinaryBlob    = False
-    nonError _                              = True
-
-showLabelledErrorExamples :: IO ()
-showLabelledErrorExamples =
-    showLabelledExamples' Nothing 1000 (const True) (smErr (error "errorsVar unused") hasFsUnused dbUnused)
+showLabelledExamples = showLabelledExamples' Nothing 1000 (const True) $
+    sm (error "errorsVar unused") hasFsUnused dbUnused
 
 prop_sequential :: Property
 prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
-    let test :: HasFS IO h
-             -> QC.PropertyM IO (
+    let test :: TVar IO Errors -> HasFS IO h -> QC.PropertyM IO (
                     QSM.History (At CmdErr IO) (At Resp IO)
                   , Reason
-                  , Maybe EpochSlot
-                  , Maybe EpochSlot
+                  , Maybe Slot
+                  , Maybe Slot
                   )
-        test hasFS = do
+        test errorsVar hasFS = do
+          let parser = testBlockEpochFileParser' hasFS
           (db, Nothing) <- QC.run $
-            openDB hasFS EH.monadCatch dbFolder 0 (Map.singleton 0 firstEpochSize)
-              NoValidation
-          let sm' = sm hasFS db dbm mdb
+            openDB hasFS EH.monadCatch fixedGetEpochSize ValidateMostRecentEpoch
+              parser
+          let sm' = sm errorsVar hasFS db dbm mdb
           (hist, model, res) <- runCommands sm' cmds
           lastBlobLocation <- QC.run $ do
             closeDB db
-            lastBlobLocation <- reopen db NoValidation
+            lastBlobLocation <- reopen db ValidateAllEpochs Nothing
             validate model db
             closeDB db
             return lastBlobLocation
 
           let lastBlobLocationModel = getLastBlobLocation $ dbModel model
 
-          QC.monitor $ counterexample ("lastBlobLocation: " <> show lastBlobLocation)
+          QC.monitor $ counterexample ("lastBlobLocation: "      <> show lastBlobLocation)
           QC.monitor $ counterexample ("lastBlobLocationModel: " <> show lastBlobLocationModel)
 
           return (hist, res, lastBlobLocationModel, lastBlobLocation)
 
-    fsVar <- QC.run $ atomically (newTVar Mock.empty)
-    (hist, res, lastBlobLocationModel, lastBlobLocation) <- test $ simHasFS EH.monadCatch fsVar
+    fsVar     <- QC.run $ atomically (newTVar Mock.empty)
+    errorsVar <- QC.run $ atomically (newTVar mempty)
+    (hist, res, lastBlobLocationModel, lastBlobLocation) <-
+      test errorsVar (mkSimErrorHasFS EH.monadCatch fsVar errorsVar)
     prettyCommands smUnused hist
       $ tabulate "Tags" (map show $ tag (execCmds (QSM.initModel smUnused) cmds))
       $ res === Ok .&&. lastBlobLocationModel === lastBlobLocation
   where
     (dbm, mdb) = mkDBModel
-    smUnused = sm hasFsUnused dbUnused dbm mdb
+    smUnused   = sm (error "errorsVar unused") hasFsUnused dbUnused dbm mdb
 
-prop_sequential_errors :: Property
-prop_sequential_errors = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
-    let test :: TVar IO Errors -> HasFS IO h -> QC.PropertyM IO (
-                    QSM.History (At CmdErr IO) (At Resp IO)
-                  , Reason
-                  , [Event IO Symbolic]
-                  , (String, String, String, String)
-                  , Epoch
-                  , [Char]
-                  )
-        test errorsVar hasFS = do
-          (db, Nothing) <- QC.run $
-            openDB hasFS EH.monadCatch dbFolder 0 (Map.singleton 0 firstEpochSize)
-              NoValidation
-          let sm' = smErr errorsVar hasFS db dbm mdb
-          (hist, model, res) <- runCommands sm' cmds
-          let events = execCmds (QSM.initModel sm') cmds
-              mbLastEvent = lastMaybe events
-          reopenedEpoch <- QC.run $ do
-            checkIfDBClosedWhenNecessary db mbLastEvent
-            -- If we don't close all (open) iterators, we may still have open
-            -- handles to database files that have to be removed while
-            -- reopening/restoring the database.
-            closeIterators model
-            let recPol = RestoreToLastValidEpoch $ testBlockEpochFileParser' hasFS
-            _lastBlobLocation <- reopen db recPol -- TODO check
-            reopenedEpoch <- getCurrentEpoch db
-            validate model db
-            closeDB db
-            return reopenedEpoch
-
-          let errInfo = case mbLastEvent of
-                Nothing -> let none = "no commands" in (none, none, none, none)
-                Just ev -> case simulatedError model of
-                  Nothing  -> ("no", "no error", "no error", "no error")
-                  Just fsErr -> ("yes", cmdName (eventCmd ev),
-                                 if sameFsError fsErr forcedFsError
-                                 then "forced" else "unforced",
-                                 fsErrorString fsErr)
-              lastModelEpoch   = CES.lastEpoch $ dbmCumulEpochSizes $ dbModel model
-              epochsRolledBack = lastModelEpoch - reopenedEpoch
-              reopenedEpochStr
-                | reopenedEpoch > 3 = ">3"
-                | otherwise         = show reopenedEpoch
-
-          return (hist, res, events, errInfo, epochsRolledBack, reopenedEpochStr)
-
-    fsVar     <- QC.run $ atomically (newTVar Mock.empty)
-    errorsVar <- QC.run $ atomically (newTVar mempty)
-    (hist, res, events, (errSimulated, errDuring, errForced, errMsg), epochsRolledBack, reopenedEpochStr) <-
-      test errorsVar (mkSimErrorHasFS EH.monadCatch fsVar errorsVar)
-    prettyCommands smUnused hist
-      $ tabulate "Tags"                   (map show (tag events))
-      $ tabulate "Error simulated"        [errSimulated]
-      $ tabulate "Error simulated during" [errDuring]
-      $ tabulate "Error forced"           [errForced]
-      $ tabulate "Error msg"              [errMsg]
-      $ tabulate "Reopened epoch"         [reopenedEpochStr]
-      $ tabulate "Epochs rolled back"     [show epochsRolledBack]
-      $ res === Ok .&&. epochsRolledBack <= 1
-  where
-    (dbm, mdb) = mkDBModel
-    smUnused = smErr (error "errorsVar unused") hasFsUnused dbUnused dbm mdb
-
-    checkIfDBClosedWhenNecessary db mbLastEvent = do
-      open <- isOpen db
-      case mbLastEvent of
-        Nothing -> return ()
-        Just ev
-          | isJust $ simulatedError (eventAfter ev)
-          , unexpectedErrorShouldCloseDB (unAt (eventCmd ev))
-          -> when open $
-             fail "Database is still open while it should be closed"
-          | otherwise
-          -> unless open $
-             fail "Database is closed while it should be open"
-
-closeIterators :: Monad m => Model m Concrete -> m ()
-closeIterators Model {..} =
-  mapM_ (iteratorClose . opaque) (RE.keys knownIters)
 
 tests :: TestTree
 tests = testGroup "ImmutableDB q-s-m"
     [ testProperty "sequential" prop_sequential
-    , testProperty "sequential with errors" prop_sequential_errors
     ]
 
-firstEpochSize :: EpochSize
-firstEpochSize = 10
 
-dbFolder :: FsPath
-dbFolder = ["test"]
+fixedEpochSize :: EpochSize
+fixedEpochSize = 10
+
+fixedGetEpochSize :: Monad m => Epoch -> m EpochSize
+fixedGetEpochSize _ = return fixedEpochSize
 
 mkDBModel :: MonadState DBModel m
           => (DBModel, ImmutableDB (ExceptT ImmutableDBError m))
-mkDBModel = openDBModel EH.exceptT firstEpochSize
+mkDBModel = openDBModel EH.exceptT (const fixedEpochSize)
 
 dbUnused :: ImmutableDB m
 dbUnused = error "semantics and DB used during command generation"

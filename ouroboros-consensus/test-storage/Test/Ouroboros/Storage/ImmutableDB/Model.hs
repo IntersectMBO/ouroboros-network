@@ -12,22 +12,22 @@ module Test.Ouroboros.Storage.ImmutableDB.Model
   , initDBModel
   , IteratorModel
   , openDBModel
-  , lookupNextEpochSlot
   , getLastBlobLocation
   , simulateCorruptions
+  , slotToEpochSlot
   ) where
 
 import           Control.Monad (when)
-import           Control.Monad.State (MonadState, get, gets, put, modify)
+import           Control.Monad.State (MonadState, get, gets, modify, put)
 
 import           Data.ByteString (ByteString)
 import           Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as BS
 import qualified Data.ByteString.Lazy as BL
-import           Data.List (genericReplicate, dropWhileEnd)
+import           Data.List (dropWhileEnd)
 import           Data.Map (Map)
 import qualified Data.Map as Map
-import           Data.Maybe (listToMaybe, fromMaybe, mapMaybe, isNothing)
+import           Data.Maybe (fromMaybe, isNothing, listToMaybe, mapMaybe)
 import           Data.Word (Word64)
 
 import           GHC.Generics (Generic)
@@ -35,16 +35,17 @@ import           GHC.Stack (HasCallStack, withFrozenCallStack)
 
 import           Ouroboros.Consensus.Util (lastMaybe)
 
-import           Ouroboros.Network.Block (Slot(..))
+import           Ouroboros.Network.Block (Slot (..))
 
 import           Ouroboros.Storage.FS.API.Types (FsPath)
 import           Ouroboros.Storage.ImmutableDB.API
-import           Ouroboros.Storage.ImmutableDB.Util hiding (lookupEpochSize)
+import           Ouroboros.Storage.ImmutableDB.CumulEpochSizes (CumulEpochSizes,
+                     EpochSlot (..))
+import qualified Ouroboros.Storage.ImmutableDB.CumulEpochSizes as CES
+import           Ouroboros.Storage.ImmutableDB.Util
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
 
 import           Test.Ouroboros.Storage.ImmutableDB.TestBlock
-import           Test.Ouroboros.Storage.ImmutableDB.CumulEpochSizes (CumulEpochSizes)
-import qualified Test.Ouroboros.Storage.ImmutableDB.CumulEpochSizes as CES
 
 
 data DBModel = DBModel
@@ -67,7 +68,7 @@ initDBModel firstEpochSize = DBModel
   , dbmNextIterator    = initialIteratorId
   }
 
-dbmBlobs :: DBModel -> Map EpochSlot ByteString
+dbmBlobs :: HasCallStack => DBModel -> Map EpochSlot ByteString
 dbmBlobs dbm@DBModel {..} = foldr add Map.empty (zip (map Slot [0..]) dbmChain)
   where
     add (_,    Nothing)   = id
@@ -92,19 +93,18 @@ newtype IteratorModel = IteratorModel (Slot, Slot)
 
 openDBModel :: MonadState DBModel m
             => ErrorHandling ImmutableDBError m
-            -> EpochSize
+            -> (Epoch -> EpochSize)
             -> (DBModel, ImmutableDB m)
-openDBModel err firstEpochSize = (dbModel, db)
+openDBModel err getEpochSize = (dbModel, db)
   where
-    dbModel = initDBModel firstEpochSize
+    dbModel = initDBModel (getEpochSize 0)
     db = ImmutableDB
       { closeDB           = return ()
       , isOpen            = return True
       , reopen            = const reopenModel -- No recovery
-      , getNextEpochSlot  = getNextEpochSlotModel
+      , getNextSlot       = getNextSlotModel
       , getBinaryBlob     = getBinaryBlobModel     err
-      , appendBinaryBlob  = appendBinaryBlobModel  err
-      , startNewEpoch     = startNewEpochModel
+      , appendBinaryBlob  = appendBinaryBlobModel  err getEpochSize
       , streamBinaryBlobs = streamBinaryBlobsModel err
       , immutableDBErr    = err
       }
@@ -118,16 +118,6 @@ impossible msg = withFrozenCallStack (error ("Impossible: " ++ msg))
 
 mustBeJust :: HasCallStack => String -> Maybe a -> a
 mustBeJust msg = fromMaybe (impossible msg)
-
-lookupNextEpochSlot :: HasCallStack => DBModel -> EpochSlot
-lookupNextEpochSlot dbm@DBModel {..} = case slotToEpochSlot dbm dbmNextSlot of
-    -- TODO imitates the Impl
-    EpochSlot epoch 0 | epoch == currentEpoch + 1
-      -> EpochSlot currentEpoch (fromIntegral epochSize)
-    epochSlot -> epochSlot
-  where
-    currentEpoch = CES.lastEpoch dbmCumulEpochSizes
-    epochSize    = lookupEpochSize dbm currentEpoch
 
 lookupEpochSize :: HasCallStack => DBModel -> Epoch -> EpochSize
 lookupEpochSize DBModel {..} epoch =
@@ -158,12 +148,12 @@ lookupBySlot (Slot i) = go i
     go n (_:blobs) = go (n - 1) blobs
     go _ []        = error "lookupBySlot: index out of bounds"
 
-getLastBlobLocation :: DBModel -> Maybe EpochSlot
-getLastBlobLocation dbm@DBModel {..} =
-    fmap (slotToEpochSlot dbm) $
+getLastBlobLocation :: DBModel -> Maybe Slot
+getLastBlobLocation DBModel {..} =
     lastMaybe $ zipWith const [0..] $ dropWhileEnd isNothing dbmChain
 
--- | Rolls back the chain to the given 'Slot'.
+-- | Rolls back the chain to the given 'Slot', i.e. the given 'Slot' will be
+-- the new head of the chain.
 rollBackToSlot :: HasCallStack => Slot -> DBModel -> DBModel
 rollBackToSlot slot dbm@DBModel {..} =
     dbm { dbmChain           = rolledBackChain
@@ -199,17 +189,21 @@ rollBackToEpochSlot :: HasCallStack => EpochSlot -> DBModel -> DBModel
 rollBackToEpochSlot epochSlot dbm =
     rollBackToSlot (epochSlotToSlot dbm epochSlot) dbm
 
--- | Return the filled 'EpochSlot' of the given 'Epoch' stored in the model.
-epochSlotsInEpoch :: DBModel -> Epoch -> [EpochSlot]
+-- | Return the filled 'EpochSlot's of the given 'Epoch' stored in the model.
+epochSlotsInEpoch :: HasCallStack => DBModel -> Epoch -> [EpochSlot]
 epochSlotsInEpoch dbm epoch =
     filter ((== epoch) . _epoch) $
     map fst $
     Map.toAscList $ dbmBlobs dbm
 
--- | Return the last filled 'EpochSlot' of the given 'Epoch' stored in the
--- model.
-lastFilledEpochSlotOf :: DBModel -> Epoch -> Maybe EpochSlot
-lastFilledEpochSlotOf dbm epoch = lastMaybe $ epochSlotsInEpoch dbm epoch
+-- | Return the filled 'EpochSlot's before, in, and after the given 'Epoch'.
+filledEpochSlots :: HasCallStack
+                 => DBModel -> Epoch -> ([EpochSlot], [EpochSlot], [EpochSlot])
+filledEpochSlots dbm epoch = (lt, eq, gt)
+  where
+    increasingEpochSlots = map fst $ Map.toAscList $ dbmBlobs dbm
+    (lt, geq) = span ((< epoch)      . _epoch) increasingEpochSlots
+    (eq, gt)  = span ((< succ epoch) . _epoch) geq
 
 
 {------------------------------------------------------------------------------
@@ -228,7 +222,7 @@ simulateCorruptions :: Corruptions -> DBModel -> DBModel
 simulateCorruptions corrs dbm = rollBack rbp dbm
   where
     -- Take the minimal 'RollBackPoint', which is the earliest.
-    rbp = foldr1 min $
+    rbp = minimum $
       fmap (\(c, f) -> findCorruptionRollBackPoint c f dbm) corrs
 
 data RollBackPoint
@@ -274,14 +268,13 @@ findEpochDropLastBytesRollBackPoint :: Word64 -> Epoch -> DBModel
                                     -> RollBackPoint
 findEpochDropLastBytesRollBackPoint n epoch dbm
     | null epochSlots
-      -- If the file is empty, we don't have to roll back.
+      -- If the file is empty, no corruption happened, and we don't have to
+      -- roll back
     = DontRollBack
     | lastValidFilledSlotIndex validBytes < 0
-      -- When we corrupted all blocks, we should roll back to the start of
-      -- the epoch, but if the first block did not start at slot 0, the
-      -- index will let us restore to the unfilled slot before the first
-      -- block.
-    = RollBackToEpochStart epoch
+      -- When there are no more filled slots in the epoch file, roll back to
+      -- the last filled slot before the epoch.
+    = rollbackToLastFilledSlotBefore epoch dbm
     | otherwise
     = RollBackToEpochSlot (epochSlots !! lastValidFilledSlotIndex validBytes)
   where
@@ -299,123 +292,109 @@ findEpochDropLastBytesRollBackPoint n epoch dbm
 findEpochCorruptionRollBackPoint :: FileCorruption -> Epoch -> DBModel
                                  -> RollBackPoint
 findEpochCorruptionRollBackPoint corr epoch dbm = case corr of
-    DeleteFile      -> RollBackToEpochStart epoch
+    DeleteFile      -> rollbackToLastFilledSlotBefore epoch dbm
 
     DropLastBytes n -> findEpochDropLastBytesRollBackPoint n epoch dbm
 
+rollbackToLastFilledSlotBefore :: Epoch -> DBModel -> RollBackPoint
+rollbackToLastFilledSlotBefore epoch dbm = case lastMaybe beforeEpoch of
+    Just lastFilledSlotBefore -> RollBackToEpochSlot lastFilledSlotBefore
+    Nothing                   -> RollBackToEpochStart 0
+  where
+    (beforeEpoch, _, _) = filledEpochSlots dbm epoch
+
 findIndexCorruptionRollBackPoint :: FileCorruption -> Epoch -> DBModel
                                  -> RollBackPoint
-findIndexCorruptionRollBackPoint _corr epoch dbm =
-    case lastFilledEpochSlotOf dbm epoch of
-      Just lastFilledEpochSlotOfEpoch
-        | isLastSlotOfEpoch lastFilledEpochSlotOfEpoch
-          -- If the last slot is filled, the complete index file can be
-          -- recovered from the epoch file
-        -> DontRollBack
-        | otherwise
-          -- Otherwise roll back to the last filled slot, unless we can roll
-          -- back to a later slot based on the padded slots of the index file.
-        -> RollBackToEpochSlot lastFilledEpochSlotOfEpoch
-
-      -- If there are no slots in the epoch, Find out the last valid slot in
-      -- the index file and roll back to that.
-      Nothing -> RollBackToEpochStart epoch
+findIndexCorruptionRollBackPoint _corr epoch dbm
+    | Just lastFilledSlotOfEpoch     <- lastMaybe inEpoch
+    = if isLastSlotOfEpoch lastFilledSlotOfEpoch
+        -- If the last slot is filled, the complete index file can be
+        -- recovered from the epoch file
+      then DontRollBack
+        -- Otherwise roll back to the last filled slot.
+      else RollBackToEpochSlot lastFilledSlotOfEpoch
+    | Just lastFilledSlotBeforeEpoch <- lastMaybe beforeEpoch
+    = RollBackToEpochSlot lastFilledSlotBeforeEpoch
+    | otherwise  -- there are no filled slots, roll back to genesis
+    = RollBackToEpochStart 0
   where
+    (beforeEpoch, inEpoch, _afterEpoch) = filledEpochSlots dbm epoch
     isLastSlotOfEpoch (EpochSlot epoch' relSlot) =
-      getRelativeSlot relSlot + 1 == lookupEpochSize dbm epoch'
+      relSlot == CES.lastRelativeSlot (lookupEpochSize dbm epoch')
 
 
 {------------------------------------------------------------------------------
   ImmutableDB Implementation
 ------------------------------------------------------------------------------}
 
-reopenModel :: MonadState DBModel m => m (Maybe EpochSlot)
-reopenModel = gets getLastBlobLocation
+reopenModel :: MonadState DBModel m
+            => Maybe TruncateFrom -> m (Maybe Slot)
+reopenModel Nothing                    = gets getLastBlobLocation
+reopenModel (Just (TruncateFrom 0))    = do
+    modify $ rollBackToEpochStart 0
+    return Nothing
+reopenModel (Just (TruncateFrom slot)) = do
+    modify $ rollBackToSlot (slot - 1)
+    lastBlobLocation <- gets getLastBlobLocation
+    -- Truncate empty trailing slots
+    modify $ case lastBlobLocation of
+      Nothing             -> rollBackToEpochStart 0
+      Just lastFilledSlot -> rollBackToSlot lastFilledSlot
+    return lastBlobLocation
 
-
-getNextEpochSlotModel :: (HasCallStack, MonadState DBModel m)
-                      => m EpochSlot
-getNextEpochSlotModel = gets lookupNextEpochSlot
+getNextSlotModel :: (HasCallStack, MonadState DBModel m)
+                 => m Slot
+getNextSlotModel = gets dbmNextSlot
 
 getBinaryBlobModel :: (HasCallStack, MonadState DBModel m)
                    => ErrorHandling ImmutableDBError m
-                   -> EpochSlot
+                   -> Slot
                    -> m (Maybe ByteString)
-getBinaryBlobModel err readEpochSlot = do
-    dbm@DBModel {..} <- get
-    let nextEpochSlot = lookupNextEpochSlot dbm
-    when (readEpochSlot >= nextEpochSlot) $ throwUserError err $
-      ReadFutureSlotError readEpochSlot nextEpochSlot
-
-    let EpochSlot epoch relativeSlot = readEpochSlot
-        -- We already know that 'readEpochSlot' does not lie in the future, so
-        -- the size of the corresponding epoch must be known.
-        epochSize = lookupEpochSize dbm epoch
-    when (getRelativeSlot relativeSlot >= epochSize) $ throwUserError err $
-      SlotGreaterThanEpochSizeError relativeSlot epoch epochSize
-
-    let slot = epochSlotToSlot dbm readEpochSlot
+getBinaryBlobModel err slot = do
+    DBModel {..} <- get
+    when (slot >= dbmNextSlot) $ throwUserError err $
+      ReadFutureSlotError slot dbmNextSlot
 
     return $ lookupBySlot slot dbmChain
 
 
 appendBinaryBlobModel :: (HasCallStack, MonadState DBModel m)
                       => ErrorHandling ImmutableDBError m
-                      -> RelativeSlot
+                      -> (Epoch -> EpochSize)
+                      -> Slot
                       -> Builder
                       -> m ()
-appendBinaryBlobModel err relSlot bld = do
+appendBinaryBlobModel err getEpochSize slot bld = do
     dbm@DBModel {..} <- get
-    let EpochSlot currentEpoch nextRelSlot = lookupNextEpochSlot dbm
 
-    when (relSlot < nextRelSlot) $
-      throwUserError err $ AppendToSlotInThePastError relSlot nextRelSlot
+    when (slot < dbmNextSlot) $
+      throwUserError err $ AppendToSlotInThePastError slot dbmNextSlot
 
-    let epochSize = lookupEpochSize dbm currentEpoch
-    when (getRelativeSlot relSlot >= epochSize) $ throwUserError err $
-      SlotGreaterThanEpochSizeError relSlot currentEpoch epochSize
-
-    let appendEpochSlot = EpochSlot currentEpoch relSlot
-        appendSlot = epochSlotToSlot dbm appendEpochSlot
-        blob = BL.toStrict $ BS.toLazyByteString bld
-        toPad = fromIntegral (appendSlot - dbmNextSlot)
+    let blob = BL.toStrict $ BS.toLazyByteString bld
+        toPad = fromIntegral (slot - dbmNextSlot)
 
     -- TODO snoc list?
     put dbm
-      { dbmChain    = dbmChain ++ (replicate toPad Nothing ++ [Just blob])
-      , dbmNextSlot = appendSlot + 1
+      { dbmChain           = dbmChain ++ replicate toPad Nothing ++ [Just blob]
+      , dbmNextSlot        = slot + 1
+      , dbmCumulEpochSizes = addMissingEpochSizes dbmCumulEpochSizes
       }
-
-startNewEpochModel :: MonadState DBModel m
-                   => EpochSize
-                   -> m Epoch
-startNewEpochModel nextEpochSize = do
-    dbm@DBModel {..} <- get
-    let toPad = CES.maxSlot dbmCumulEpochSizes + 1 - dbmNextSlot
-        newEpoch = CES.lastEpoch dbmCumulEpochSizes + 1
-
-    put dbm
-      { dbmChain = dbmChain ++ genericReplicate toPad Nothing
-        -- We use 'genericReplicate' instead of the regular 'replicate', which
-        -- takes an 'Int', because when converting from a 'Slot' (~= 'Word')
-        -- to an 'Int', it could underflow. While this scenario is not very
-        -- realistic, it can turn up in the StateMachine tests, in which case
-        -- we want it to fail with a better error than the error thrown by
-        -- 'fromEnum'.
-      , dbmNextSlot = dbmNextSlot + fromIntegral toPad
-      , dbmCumulEpochSizes = CES.snoc dbmCumulEpochSizes nextEpochSize }
-    return newEpoch
+  where
+    addMissingEpochSizes ces
+      | slot <= CES.maxSlot ces
+      = ces
+      | otherwise
+      = addMissingEpochSizes
+      $ CES.snoc ces (getEpochSize (succ (CES.lastEpoch ces)))
 
 streamBinaryBlobsModel :: (HasCallStack, MonadState DBModel m)
                        => ErrorHandling ImmutableDBError m
-                       -> Maybe EpochSlot
-                       -> Maybe EpochSlot
+                       -> Maybe Slot
+                       -> Maybe Slot
                        -> m (Iterator m)
 streamBinaryBlobsModel err mbStart mbEnd = do
     dbm@DBModel {..} <- get
-    let nextEpochSlot = lookupNextEpochSlot dbm
-        getEpochSize epoch = return $ lookupEpochSize dbm epoch
-    validateIteratorRange err nextEpochSlot getEpochSize mbStart mbEnd
+    validateIteratorRange err dbmNextSlot mbStart mbEnd
 
     case length $ dropWhileEnd isNothing dbmChain of
       -- Empty database, return an empty iterator
@@ -428,8 +407,8 @@ streamBinaryBlobsModel err mbStart mbEnd = do
           }
       n -> do
         let currentSlot = fromIntegral n - 1
-            start = maybe 0 (epochSlotToSlot dbm) mbStart
-            end   = maybe currentSlot (epochSlotToSlot dbm) mbEnd
+            start = fromMaybe 0           mbStart
+            end   = fromMaybe currentSlot mbEnd
             itm   = IteratorModel (start, end)
             itID  = dbmNextIterator
         put dbm
@@ -467,7 +446,7 @@ iteratorNextModel itID = do
                 let next' = succ next
                     itm'  = IteratorModel (next', end)
                 in put dbm { dbmIterators = Map.insert itID itm' dbmIterators }
-            return $ IteratorResult (slotToEpochSlot dbm next) blob
+            return $ IteratorResult next blob
 
 iteratorCloseModel :: MonadState DBModel m
                    => IteratorID -> m ()

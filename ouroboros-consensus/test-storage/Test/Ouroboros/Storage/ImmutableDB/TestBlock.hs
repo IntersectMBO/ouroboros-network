@@ -55,17 +55,17 @@ import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 -------------------------------------------------------------------------------}
 
 
-newtype TestBlock = TestBlock { tbRelativeSlot :: RelativeSlot }
+newtype TestBlock = TestBlock { tbSlot :: Slot }
     deriving (Generic, Eq, Ord)
 
 instance Show TestBlock where
-    show = show . getRelativeSlot . tbRelativeSlot
+    show = show . getSlot . tbSlot
 
 instance Arbitrary TestBlock where
-    arbitrary = TestBlock . RelativeSlot <$> arbitrary
+    arbitrary = TestBlock . Slot <$> arbitrary
 
--- | The binary representation of 'TestBlock' consists of repeating its
--- 'RelativeSlot' @n@ times, where @n = 'testBlockSize'@.
+-- | The binary representation of 'TestBlock' consists of repeating its 'Slot'
+-- @n@ times, where @n = 'testBlockSize'@.
 testBlockRepeat :: Int
 testBlockRepeat = 10
 
@@ -77,19 +77,19 @@ testBlockSize = testBlockRepeat * 8
 -- repeated 10 times. This means that:
 --
 -- * We know the size of each block (no delimiters needed)
--- * We know the relative slot of the block
+-- * We know the slot of the block
 -- * We know when the block is corrupted
 --
 -- __NOTE__: 'Test.Ouroboros.Storage.ImmutableDB.Model.simulateCorruptions'
 -- depends on this encoding of 'TestBlock'.
 instance Bin.Binary TestBlock where
-    put (TestBlock (RelativeSlot relSlot)) =
-      mconcat $ replicate testBlockRepeat (Bin.put relSlot)
+    put (TestBlock (Slot slot)) =
+      mconcat $ replicate testBlockRepeat (Bin.put slot)
     get = do
       (w:ws) <- replicateM testBlockRepeat Bin.get
       when (any (/= w) ws) $
         fail "Corrupt TestBlock"
-      return $ TestBlock (RelativeSlot w)
+      return $ TestBlock (Slot w)
 
 newtype TestBlocks = TestBlocks [TestBlock]
     deriving (Show)
@@ -134,8 +134,8 @@ testBlockEpochFileParser hasFS@HasFS{..} = EpochFileParser $ \fsPath ->
 
 testBlockEpochFileParser' :: MonadThrow m
                           => HasFS m h
-                          -> EpochFileParser String m (Int, RelativeSlot)
-testBlockEpochFileParser' hasFS = (\tb -> (testBlockSize, tbRelativeSlot tb)) <$>
+                          -> EpochFileParser String m (Int, Slot)
+testBlockEpochFileParser' hasFS = (\tb -> (testBlockSize, tbSlot tb)) <$>
     testBlockEpochFileParser hasFS
 
 
