@@ -63,7 +63,10 @@ instance Mx.ProtocolEnum TestProtocols2 where
 
 newtype DummyPayload = DummyPayload {
       unDummyPayload :: BL.ByteString
-    } deriving (Eq, Show)
+    } deriving Eq
+
+instance Show DummyPayload where
+    show d = printf "DummyPayload %d\n" (BL.length $ unDummyPayload d)
 
 instance Arbitrary DummyPayload where
     arbitrary = do
@@ -109,8 +112,9 @@ startMuxSTM :: (Ord ptcl, Enum ptcl, Bounded ptcl, Mx.ProtocolEnum ptcl)
             -> TBQueue IO BL.ByteString
             -> Word16
             -> Maybe (TBQueue IO (Mx.MiniProtocolId ptcl, Mx.MiniProtocolMode, Time IO))
+            -> TMVar IO (Maybe SomeException)
             -> IO ()
-startMuxSTM mpds wq rq mtu trace = do
+startMuxSTM mpds wq rq mtu trace resVar = do
     let ctx = MuxSTMCtx wq rq mtu trace
     jobs <- Mx.muxJobs mpds (writeMux ctx) (readMux ctx) (sduSizeMux ctx)
     aids <- mapM async jobs
@@ -119,8 +123,18 @@ startMuxSTM mpds wq rq mtu trace = do
     watcher as = do
         (_,r) <- waitAnyCatchCancel as
         case r of
-             Left  e -> print $ "Mux Bearer died due to " ++ show e
-             Right _ -> return ()
+             Left  e -> atomically $ putTMVar resVar $ Just e
+             Right _ -> atomically $ putTMVar resVar Nothing
+
+-- | Helper function to check if jobs in 'startMuxSTM' exited successfully.
+normallExit :: MonadSTM m
+            => TMVar m (Maybe SomeException)
+            -> m Bool
+normallExit resVar = do
+    res <- atomically $ takeTMVar resVar
+    case res of
+         Just _  -> return False
+         Nothing -> return True
 
 sduSizeMux :: (Monad m)
            => MuxSTMCtx ptcl m
@@ -167,6 +181,8 @@ prop_mux_snd_recv request response = ioProperty $ do
     client_w <- atomically $ newTBQueue 10
     client_r <- atomically $ newTBQueue 10
     endMpsVar <- atomically $ newTVar 2
+    client_resVar <- atomically newEmptyTMVar
+    server_resVar <- atomically newEmptyTMVar
 
     let server_w = client_r
         server_r = client_w
@@ -178,10 +194,13 @@ prop_mux_snd_recv request response = ioProperty $ do
     let client_mps ChainSync1 = client_mp
         server_mps ChainSync1 = server_mp
 
-    startMuxSTM client_mps client_w client_r sduLen Nothing
-    startMuxSTM server_mps server_w server_r sduLen Nothing
+    startMuxSTM client_mps client_w client_r sduLen Nothing client_resVar
+    startMuxSTM server_mps server_w server_r sduLen Nothing server_resVar
 
-    property <$> verify
+    v <- verify
+    c_e <- normallExit client_resVar
+    s_e <- normallExit server_resVar
+    return $ property $ v .&&. c_e .&&. s_e
 
 -- Stub for a mpdInitiator or mpdResponder that doesn't send or receive any data.
 dummyCallback :: (MonadTimer m) => Channel m BL.ByteString  -> m ()
@@ -268,6 +287,8 @@ prop_mux_2_minis request0 response0 response1 request1 = ioProperty $ do
     client_w <- atomically $ newTBQueue 10
     client_r <- atomically $ newTBQueue 10
     endMpsVar <- atomically $ newTVar 4 -- Two initiators and two responders.
+    client_resVar <- atomically newEmptyTMVar
+    server_resVar <- atomically newEmptyTMVar
 
     let server_w = client_r
         server_r = client_w
@@ -285,13 +306,15 @@ prop_mux_2_minis request0 response0 response1 request1 = ioProperty $ do
         server_mps ChainSync2  = server_mp0
         server_mps BlockFetch2 = server_mp1
 
-    startMuxSTM client_mps client_w client_r sduLen Nothing
-    startMuxSTM server_mps server_w server_r sduLen Nothing
+    startMuxSTM client_mps client_w client_r sduLen Nothing client_resVar
+    startMuxSTM server_mps server_w server_r sduLen Nothing server_resVar
 
     res0 <- verify_0
     res1 <- verify_1
+    c_e <- normallExit client_resVar
+    s_e <- normallExit server_resVar
 
-    return $ property $ res0 && res1
+    return $ property $ res0 .&&. res1 .&&. c_e .&&. s_e
 
 -- | Attempt to verify that capacity is diveded fairly between two active miniprotocols.
 -- Two initiators send a request over two different miniprotocols and the corresponding responders
@@ -312,6 +335,9 @@ prop_mux_starvation response0 response1 =
     activeMpsVar <- atomically $ newTVar 0
     endMpsVar <- atomically $ newTVar 4          -- 2 active initoators and 2 active responders
     traceQueueVar <- atomically $ newTBQueue 100 -- At most track 100 packets per test run
+    client_resVar <- atomically newEmptyTMVar
+    server_resVar <- atomically newEmptyTMVar
+
     let server_w = client_r
         server_r = client_w
 
@@ -330,12 +356,14 @@ prop_mux_starvation response0 response1 =
         server_mps BlockFetch2 = server_short
         server_mps ChainSync2  = server_long
 
-    startMuxSTM client_mps client_w client_r sduLen $ Just traceQueueVar
-    startMuxSTM server_mps server_w server_r sduLen Nothing
+    startMuxSTM client_mps client_w client_r sduLen (Just traceQueueVar) client_resVar
+    startMuxSTM server_mps server_w server_r sduLen Nothing server_resVar
 
     -- First verify that all messages where received correctly
     res_short <- verify_short
     res_long <- verify_long
+    c_e <- normallExit client_resVar
+    s_e <- normallExit server_resVar
 
     -- Then look at the message trace to check for starvation.
     trace <- atomically $ flushTBQueue traceQueueVar []
@@ -343,8 +371,7 @@ prop_mux_starvation response0 response1 =
         ls = dropWhile (\e -> e == head es) es
         fair = verifyStarvation ls
 
-    return $ property $ res_short && res_long && fair
-
+    return $ property $ res_short .&&. res_long .&&. fair .&&. c_e .&&. s_e
 
   where
    -- We can't make 100% sure that both servers start responding at the same time
@@ -366,22 +393,22 @@ prop_mux_starvation response0 response1 =
                  a <- readTBQueue q
                  flushTBQueue q (a : acc)
 
+-- | Send message for an unknown miniprotocol and verify that the correct exception is thrown.
 prop_mux_unknown_miniprot :: InvalidSDU
                           -> Property
 prop_mux_unknown_miniprot badSdu = ioProperty $ do
-
-    client_w <- atomically $ newTBQueue 10
-
-    let server_r = client_w
+    resVar <- atomically newEmptyTMVar
+    client_w <- failingServer resVar
 
     atomically $ writeTBQueue client_w (encodeInvalidMuxSDU badSdu)
-    buf <- atomically $ readTBQueue server_r
-    let (hbuf, _) = BL.splitAt 8 buf
-        header_e  = Mx.decodeMuxSDUHeader hbuf :: Either Mx.MuxError (Mx.MuxSDU TestProtocols2)
 
-    case header_e of
-         Left  e  -> return $ Mx.errorType e == Mx.MuxUnknownMiniProtocol
-         Right _  -> return False
+    res <- atomically $ readTMVar resVar
+    case res of
+         Just e  ->
+             case fromException e of
+                  Just me -> return $ Mx.errorType me == Mx.MuxUnknownMiniProtocol
+                  Nothing -> return False
+         Nothing -> return False
 
 encodeInvalidMuxSDU :: InvalidSDU -> BL.ByteString
 encodeInvalidMuxSDU sdu = Bin.runPut enc
@@ -391,23 +418,41 @@ encodeInvalidMuxSDU sdu = Bin.runPut enc
         Bin.putWord16be $ isIdAndMode sdu
         Bin.putWord16be $ isLength sdu
 
+-- | Send a too short SDU header and verify that the correct exception is thrown.
 prop_mux_short_header :: InvalidSDU
                       -> Word8
                       -> Property
 prop_mux_short_header badSdu shortCutOffArg = ioProperty $ do
-    client_w <- atomically $ newTBQueue 10
+    let shortCutOff = fromIntegral $ min shortCutOffArg 7 -- XXX Quickcheck 'Giving up' hack
+    resVar <- atomically newEmptyTMVar
+    client_w <- failingServer resVar
 
-    let server_r = client_w
-        shortCutOff = min shortCutOffArg 7 -- XXX Quickcheck 'Gave up' workaround
+    atomically $ writeTBQueue client_w (BL.take shortCutOff $ encodeInvalidMuxSDU badSdu)
 
-    atomically $ writeTBQueue client_w (encodeInvalidMuxSDU badSdu)
-    buf <- atomically $ readTBQueue server_r
-    let (hbuf, _) = BL.splitAt (fromIntegral shortCutOff) buf
-        header_e  = Mx.decodeMuxSDUHeader hbuf :: Either Mx.MuxError (Mx.MuxSDU TestProtocols2)
+    res <- atomically $ readTMVar resVar
+    case res of
+         Just e  ->
+             case fromException e of
+                  Just me -> return $ Mx.errorType me == Mx.MuxDecodeError
+                  Nothing -> return False
+         Nothing -> return False
 
-    case header_e of
-         Left  e  -> do
-             return $ Mx.errorType e == Mx.MuxDecodeError
-         Right _  -> do
-             return False
+-- | Start a ReqResp server that is expected to fail, returns the server's read channel
+failingServer :: TMVar IO (Maybe SomeException)
+              -> IO (TBQueue IO BL.ByteString)
+failingServer resVar = do
+    server_r <- atomically $ newTBQueue 10
+    server_w <- atomically $ newTBQueue 10
+    endMpsVar <- atomically $ newTVar 2
+
+    let sduLen = 1260
+        request  = DummyPayload $ BL.replicate 4 0xa
+        response = request
+
+    (_, _, server_mp) <- setupMiniReqRsp (Mx.AppProtocolId ChainSync1)
+                                         (return ()) endMpsVar request response
+    let server_mps ChainSync1 = server_mp
+    startMuxSTM server_mps server_w server_r sduLen Nothing resVar
+
+    return server_r
 
