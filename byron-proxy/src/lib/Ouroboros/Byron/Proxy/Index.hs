@@ -12,7 +12,8 @@ import Crypto.Hash (Digest, HashAlgorithm, digestFromByteString)
 import Data.ByteString (ByteString)
 import Data.ByteArray (convert)
 import Data.Conduit (ConduitT, yield)
-import Database.SQLite.Simple as Sql
+import Database.SQLite.Simple (Connection, Only (..), Query)
+import qualified Database.SQLite.Simple as Sql
 import System.Directory (doesFileExist)
 
 import Pos.Chain.Block (HeaderHash)
@@ -46,20 +47,26 @@ newtype ChildHash = ChildHash
   { getChildHash :: Maybe HeaderHash
   }
 
--- | Interface for an index: lookup and update.
--- The only update is to set a new tip.
 data Index m = Index
-  { indexAt   :: forall datum . IndexPoint datum -> m (Maybe (datum, EpochSlot))
-  , updateTip :: HeaderHash -> EpochSlot -> m ()
+  { indexRead  :: forall d . IndexPoint d -> m (Maybe (d, EpochSlot))
+  , indexWrite :: forall t . (IndexWrite m -> m t) -> m t
   }
 
+data IndexWrite m = IndexWrite
+  { updateTip :: HeaderHash -> EpochSlot -> m ()
+  }
+
+-- TODO Move SQlite implemention into a separate module.
+
 -- | Make an index from an SQLite connection (sqlite-simple).
+-- Every `indexWrite` continuation runs in an SQLite transaction
+-- (BEGIN TRANSACTION).
 sqliteIndex :: Connection -> Index IO
 sqliteIndex conn = Index
-  { indexAt = \ip -> case ip of
+  { indexRead = \ip -> case ip of
       Tip -> (fmap . fmap) (\(a, b) -> (OwnHash a, b)) (getTip conn)
       ByHash hh -> (fmap . fmap) (\(a, b) -> (ChildHash a, b)) (getHash conn hh)
-  , updateTip = setTip conn
+  , indexWrite = \k -> Sql.withTransaction conn (k (IndexWrite (setTip conn)))
   }
 
 -- | Open a new or existing SQLite database. If new, it will set up the schema.
@@ -100,7 +107,7 @@ byronBlockSource
   -> ByronBlockSource m
 byronBlockSource err genesis idx db = ByronBlockSource
   { bbsStream = streamFrom
-  , bbsTip    = indexAt idx Tip >>= \mTip -> case mTip of
+  , bbsTip    = indexRead idx Tip >>= \mTip -> case mTip of
       Nothing -> pure genesis
       Just (_, es) -> ImmutableDB.getBinaryBlob db es >>= \mBs -> case mBs of
         Nothing -> err TipNotInDatabase
@@ -108,7 +115,7 @@ byronBlockSource err genesis idx db = ByronBlockSource
   }
   where
   streamFrom :: HeaderHash -> ConduitT () SerializedBlock m ()
-  streamFrom hh = lift (indexAt idx (ByHash hh)) >>= \mPoint -> case mPoint of
+  streamFrom hh = lift (indexRead idx (ByHash hh)) >>= \mPoint -> case mPoint of
     -- No problem. The stream is over.
     Nothing -> pure ()
     -- Got an entry. Use the EpochSlot to look up in the database, and the
@@ -209,20 +216,22 @@ sql_get_tip_hash =
   "SELECT header_hash FROM block_index\
   \ ORDER BY epoch DESC, slot DESC LIMIT 1;"
 
+setTipTx :: Sql.Connection -> HeaderHash -> EpochSlot -> IO ()
+setTipTx conn hh es = Sql.withTransaction conn $ setTip conn hh es
+
 setTip :: Sql.Connection -> HeaderHash -> EpochSlot -> IO ()
-setTip conn (AbstractHash digest) (EpochSlot epoch rslot) =
-  Sql.withTransaction conn $ do
-    -- Get the current tip.
-    mTip :: [Only ByteString] <- Sql.query_ conn sql_get_tip_hash
-    case mTip of
-      -- No tip in the database (it's empty). Just one statement to do.
-      [] -> do
-        Sql.execute conn sql_insert (hashBytes, epoch, slot)
-      (Only oldTipHashBytes : _) -> do
-        -- Insert the new tip.
-        Sql.execute conn sql_insert (hashBytes, epoch, slot)
-        -- Update the old tip child pointer.
-        Sql.execute conn sql_update (hashBytes, oldTipHashBytes)
+setTip conn (AbstractHash digest) (EpochSlot epoch rslot) = do
+  -- Get the current tip.
+  mTip :: [Only ByteString] <- Sql.query_ conn sql_get_tip_hash
+  case mTip of
+    -- No tip in the database (it's empty). Just one statement to do.
+    [] -> do
+      Sql.execute conn sql_insert (hashBytes, epoch, slot)
+    (Only oldTipHashBytes : _) -> do
+      -- Insert the new tip.
+      Sql.execute conn sql_insert (hashBytes, epoch, slot)
+      -- Update the old tip child pointer.
+      Sql.execute conn sql_update (hashBytes, oldTipHashBytes)
   where
   hashBytes :: ByteString
   hashBytes = convert digest
