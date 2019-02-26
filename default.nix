@@ -14,8 +14,8 @@ let
   # proxy will build.
   cardanoroot = nixpkgs.fetchgit {
     url = "https://github.com/input-output-hk/cardano-sl";
-    rev = "7b21cfd5f4e705b46ac30c504fefab6ca24298ba";
-    sha256 = "1xy7bqi3k32ps0cxbbxzhjw3vya0q65rl9h2rls05zg7mh7604nx";
+    rev = "0af82eb3de205c6a1a681e1c10b0b513d3e8eb2b";
+    sha256 = "13infd9j3g71pa40fw32300gadj4bnv0hyg5m83q716qscw5dr1j";
   };
   cardanopkgs = import ./nix/cardanopkgs.nix { inherit nixpkgs cardanoroot; };
 
