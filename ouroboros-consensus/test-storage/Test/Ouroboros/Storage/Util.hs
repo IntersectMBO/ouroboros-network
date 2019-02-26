@@ -8,48 +8,48 @@ module Test.Ouroboros.Storage.Util where
 
 import           Control.Exception (Exception, SomeException)
 import qualified Control.Exception as E
-import           Control.Monad.Catch (MonadMask, MonadCatch)
+import           Control.Monad.Catch (MonadCatch, MonadMask)
 import qualified Control.Monad.Catch as C
 import           Control.Monad.Class.MonadSTM (MonadSTM)
 
 import qualified Data.Binary as Binary
 import           Data.ByteString (ByteString)
-import qualified Data.ByteString.Builder as BS
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Builder as BS
 import qualified Data.ByteString.Char8 as C8
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Lazy.Char8 as LC8
 import           Data.Int (Int64)
 import qualified Data.Map.Strict as M
 import           Data.Serialize
+import           Data.String (IsString (..))
 import           Data.Typeable
-import           Data.String (IsString(..))
 
 import           System.Directory (getTemporaryDirectory)
-import           System.IO.Temp (withTempDirectory)
 import qualified System.IO as IO
+import           System.IO.Temp (withTempDirectory)
 
-import           Test.QuickCheck (Property, Arbitrary(..), ASCIIString(..),
-                                  collect, suchThat)
+import           Test.QuickCheck (ASCIIString (..), Arbitrary (..), Property,
+                     collect, suchThat)
 import           Test.Tasty.HUnit
 
 import           Ouroboros.Consensus.Util (repeatedly)
 
-import           Ouroboros.Storage.FS.API (HasFS(..), withFile)
+import           Ouroboros.Storage.FS.API (HasFS (..), withFile)
 import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.FS.IO (ioHasFS)
 import           Ouroboros.Storage.FS.Sim.MockFS (MockFS)
 import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
 import           Ouroboros.Storage.FS.Sim.STM (SimFS)
 import qualified Ouroboros.Storage.FS.Sim.STM as Sim
-import           Ouroboros.Storage.ImmutableDB (ImmutableDBError(..),
+import           Ouroboros.Storage.ImmutableDB (ImmutableDBError (..),
                      prettyImmutableDBError, sameImmutableDBError)
 import qualified Ouroboros.Storage.ImmutableDB as Immutable
-import           Ouroboros.Storage.VolatileDB (VolatileDBError(..),
-                     sameVolatileDBError, Parser(..), Slot(..))
-import qualified Ouroboros.Storage.VolatileDB as Volatile
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
+import           Ouroboros.Storage.VolatileDB (Parser (..), Slot (..),
+                     VolatileDBError (..), sameVolatileDBError)
+import qualified Ouroboros.Storage.VolatileDB as Volatile
 
 {------------------------------------------------------------------------------
  Handy combinators
@@ -58,7 +58,7 @@ import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 withMockFS :: Exception e
            => (forall x. IO x -> IO (Either e x))
            -> (Either e (a, MockFS) -> Assertion)
-           -> (    HasFS (SimFS IO)
+           -> (    HasFS (SimFS IO) Mock.Handle
                 -> ErrorHandling e (SimFS IO)
                 -> SimFS IO a
               )
@@ -145,10 +145,10 @@ apiEquivalence :: (HasCallStack, Eq a, Show a, Exception e)
                -> (e -> String)
                -> (e -> e -> Bool)
                -> (Either e a -> Assertion)
-               -> (forall m. (MonadMask m, MonadSTM m)
-                          => HasFS m
-                          -> ErrorHandling e m
-                          -> m a
+               -> (forall m h. (MonadMask m, MonadSTM m)
+                            => HasFS m h
+                            -> ErrorHandling e m
+                            -> m a
                   )
                -> Assertion
 apiEquivalence tryE prettyError sameError resAssert m = do
@@ -185,30 +185,30 @@ apiEquivalence tryE prettyError sameError resAssert m = do
 
 apiEquivalenceFs :: (HasCallStack, Eq a, Show a)
                  => (Either FsError a -> Assertion)
-                 -> (forall m. (MonadMask m, MonadSTM m)
-                            => HasFS m
-                            -> ErrorHandling FsError m
-                            -> m a
+                 -> (forall m h. (MonadMask m, MonadSTM m)
+                              => HasFS m h
+                              -> ErrorHandling FsError m
+                              -> m a
                     )
                  -> Assertion
 apiEquivalenceFs = apiEquivalence tryFS prettyFsError sameFsError
 
 apiEquivalenceImmDB :: (HasCallStack, Eq a, Show a)
                     => (Either ImmutableDBError a -> Assertion)
-                    -> (forall m. (MonadMask m, MonadSTM m)
-                               => HasFS m
-                               -> ErrorHandling ImmutableDBError m
-                               -> m a
+                    -> (forall m h. (MonadMask m, MonadSTM m)
+                                 => HasFS m h
+                                 -> ErrorHandling ImmutableDBError m
+                                 -> m a
                        )
                     -> Assertion
 apiEquivalenceImmDB = apiEquivalence tryImmDB prettyImmutableDBError sameImmutableDBError
 
 apiEquivalenceVolDB :: (HasCallStack, Eq a, Show a, Show blockId, Typeable blockId, Eq blockId)
                     => (Either (VolatileDBError blockId) a -> Assertion)
-                    -> (forall m. (MonadMask m, MonadSTM m)
-                               => HasFS m
-                               -> ErrorHandling (VolatileDBError blockId) m
-                               -> m a
+                    -> (forall m h. (MonadMask m, MonadSTM m)
+                                 => HasFS m h
+                                 -> ErrorHandling (VolatileDBError blockId) m
+                                 -> m a
                        )
                     -> Assertion
 apiEquivalenceVolDB = apiEquivalence tryVolDB show sameVolatileDBError
@@ -303,13 +303,13 @@ fromBlock _        = error "wrong payload"
 binarySize :: Int
 binarySize = 16
 
-myParser :: (Monad m, MonadMask m)=> Volatile.Parser m MyBlockId
+myParser :: (MonadMask m) => Volatile.Parser m MyBlockId
 myParser = Volatile.Parser {
     Volatile.parse = parseImpl
     }
 
-parseImpl :: forall m. (Monad m, MonadMask m)
-          => HasFS m
+parseImpl :: forall m h. (MonadMask m)
+          => HasFS m h
           -> ErrorHandling (VolatileDBError MyBlockId) m
           -> [String]
           -> m (Int64, M.Map Int64 (Int, MyBlockId))

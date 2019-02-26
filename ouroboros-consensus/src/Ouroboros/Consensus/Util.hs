@@ -8,6 +8,7 @@
 module Ouroboros.Consensus.Util (
     Dict(..)
   , Some(..)
+  , SomePair(..)
   , foldlM'
   , repeatedly
   , repeatedlyM
@@ -36,6 +37,10 @@ data Dict (a :: Constraint) where
 
 data Some (f :: k -> *) where
     Some :: f a -> Some f
+
+-- | Pair of functors instantiated to the /same/ existential
+data SomePair (f :: k -> *) (g :: k -> *) where
+    SomePair :: f a -> g a -> SomePair f g
 
 foldlM' :: forall m a b. Monad m => (b -> a -> m b) -> b -> [a] -> m b
 foldlM' f = go

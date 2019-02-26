@@ -23,7 +23,7 @@ import qualified Ouroboros.Storage.Util.ErrorHandling as EH
   Example program that can run in any monad with file system support
 -------------------------------------------------------------------------------}
 
-example :: (HasCallStack, Monad m) => HasFS m -> m [ByteString]
+example :: (HasCallStack, Monad m) => HasFS m h -> m [ByteString]
 example HasFS{..} = do
     h1 <- hOpen ["cardano.txt"] IO.ReadWriteMode
     _  <- hPut h1 "test"

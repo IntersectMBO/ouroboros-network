@@ -1,18 +1,18 @@
-{-# LANGUAGE DataKinds            #-}
-{-# LANGUAGE DeriveAnyClass       #-}
-{-# LANGUAGE DeriveGeneric        #-}
-{-# LANGUAGE DeriveTraversable    #-}
-{-# LANGUAGE FlexibleContexts     #-}
-{-# LANGUAGE FlexibleInstances    #-}
-{-# LANGUAGE GADTs                #-}
-{-# LANGUAGE KindSignatures       #-}
-{-# LANGUAGE OverloadedStrings    #-}
-{-# LANGUAGE RankNTypes           #-}
-{-# LANGUAGE RecordWildCards      #-}
-{-# LANGUAGE ScopedTypeVariables  #-}
-{-# LANGUAGE StandaloneDeriving   #-}
-{-# LANGUAGE TypeApplications     #-}
-{-# LANGUAGE TypeOperators        #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE DeriveAnyClass      #-}
+{-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE DeriveTraversable   #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving  #-}
+{-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE TypeOperators       #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Test.Ouroboros.Storage.VolatileDB.StateMachine (tests) where
@@ -29,8 +29,8 @@ import           Data.Functor.Classes
 import           Data.Kind (Type)
 import           Data.TreeDiff (ToExpr)
 import           Data.TreeDiff.Class
-import           GHC.Stack
 import           GHC.Generics
+import           GHC.Stack
 import           Test.QuickCheck
 import           Test.QuickCheck.Monadic
 import           Test.StateMachine
@@ -41,9 +41,9 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
 import           Ouroboros.Storage.FS.Sim.STM
+import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 import           Ouroboros.Storage.VolatileDB.API
 import           Ouroboros.Storage.VolatileDB.Impl (openDB)
-import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 import           Test.Ouroboros.Storage.Util
 import           Test.Ouroboros.Storage.VolatileDB.Model
 
@@ -99,19 +99,19 @@ instance ToExpr (Model r) where
 
 instance CommandNames (At Cmd) where
     cmdName (At cmd) = case cmd of
-        GetBlock _ -> "GetBlock"
-        PutBlock _ -> "PutBlock"
+        GetBlock _       -> "GetBlock"
+        PutBlock _       -> "PutBlock"
         GarbageCollect _ -> "GarbageCollect"
-        IsOpen -> "IsOpen"
-        Close -> "Close"
-        ReOpen -> "ReOpen"
+        IsOpen           -> "IsOpen"
+        Close            -> "Close"
+        ReOpen           -> "ReOpen"
     cmdNames _ = ["not", "suported", "yet"]
 
 data Model (r :: Type -> Type) = Model
-  { dbModel     :: DBModel MyBlockId
+  { dbModel :: DBModel MyBlockId
     -- ^ A model of the database, used as state for the 'HasImmutableDB'
     -- instance of 'ModelDB'.
-  , mockDB      :: ModelDBPure
+  , mockDB  :: ModelDBPure
     -- ^ A handle to the mocked database.
   } deriving (Generic)
 
@@ -135,8 +135,8 @@ data Event r = Event
   , eventMockResp :: Resp
   } deriving (Show)
 
-lockstep :: forall r. (Show1 r, Eq1 r)
-         => Model   r
+lockstep :: forall r.
+            Model   r
          -> At Cmd  r
          -> At Resp r
          -> Event   r
@@ -151,10 +151,10 @@ lockstep model@Model {..} (At cmd) (At _resp) = Event
     model' = model {dbModel = dbModel'}
 
 -- | Key property of the model is that we can go from real to mock responses
-toMock :: Eq1 r => Model r -> At t r -> t
+toMock :: Model r -> At t r -> t
 toMock _ (At t) = t
 
-step :: Eq1 r => Model r -> At Cmd r -> (Resp, DBModel MyBlockId)
+step :: Model r -> At Cmd r -> (Resp, DBModel MyBlockId)
 step model@Model{..} cmd = runPure dbModel mockDB (toMock model cmd)
 
 runPure :: DBModel MyBlockId
@@ -197,7 +197,7 @@ initModelImpl dbm vdm = Model {
     , mockDB = vdm
     }
 
-transitionImpl :: (Show1 r, Eq1 r) => Model r -> At Cmd r -> At Resp r -> Model r
+transitionImpl :: Model r -> At Cmd r -> At Resp r -> Model r
 transitionImpl model cmd = eventAfter . lockstep model cmd
 
 preconditionImpl :: Model Symbolic -> At Cmd Symbolic -> Logic
@@ -243,7 +243,7 @@ knownLimitation model (At cmd) = case cmd of
     ReOpen -> Bot
     where
         isLimitation :: (Show slot, Ord slot) => Maybe slot -> slot -> Logic
-        isLimitation Nothing _sl = Bot
+        isLimitation Nothing _sl       = Bot
         isLimitation (Just slot') slot = slot' .>  slot
 
 mkDBModel :: MonadState (DBModel MyBlockId) m => (DBModel MyBlockId, VolatileDB MyBlockId (ExceptT (VolatileDBError MyBlockId) m))

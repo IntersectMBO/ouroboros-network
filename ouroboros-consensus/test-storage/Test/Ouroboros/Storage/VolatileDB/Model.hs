@@ -18,9 +18,9 @@ import           Data.ByteString.Lazy (toStrict)
 import           Data.Map (Map)
 import qualified Data.Map as Map
 
-import           Ouroboros.Storage.VolatileDB.API
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
+import           Ouroboros.Storage.VolatileDB.API
 
 data DBModel blockId = DBModel {
       open           :: Bool
@@ -36,7 +36,7 @@ initDBModel = DBModel {
 }
 
 openDBModel :: MonadState (DBModel blockId) m
-            => (Ord blockId, Show blockId)
+            => (Ord blockId)
             => ErrorHandling (VolatileDBError blockId) m
             -> (DBModel blockId, VolatileDB blockId m)
 openDBModel err = (dbModel, db)
@@ -66,7 +66,7 @@ reOpenModel = do
     dbm <- get
     put $ dbm {open = True}
 
-getBlockModel :: forall m blockId. (MonadState (DBModel blockId) m, Ord blockId, Show blockId)
+getBlockModel :: forall m blockId. (MonadState (DBModel blockId) m, Ord blockId)
               => ErrorHandling (VolatileDBError blockId) m
               -> blockId
               -> m (Maybe ByteString)
@@ -89,7 +89,6 @@ putBlockModel err sl bs = do
         Just _bs -> return ()
 
 garbageCollectModel :: MonadState (DBModel blockId) m
-                    => Ord blockId
                     => ErrorHandling (VolatileDBError blockId) m
                     -> Slot
                     -> m ()
@@ -99,5 +98,5 @@ garbageCollectModel err sl = do
     else put dbm {latestGarbaged = Just $ maxMaybe latestGarbaged sl}
 
 maxMaybe :: Ord slot => Maybe slot -> slot -> slot
-maxMaybe Nothing sl = sl
+maxMaybe Nothing sl    = sl
 maxMaybe (Just sl') sl = max sl' sl

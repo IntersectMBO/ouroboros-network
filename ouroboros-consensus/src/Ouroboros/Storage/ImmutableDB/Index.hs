@@ -80,7 +80,7 @@ indexExpectedFileSize (MkIndex offsets) = V.length offsets * indexEntrySizeBytes
 -- Returns trailing invalid data that could not be read as @'Maybe'
 -- 'ByteString'@.
 loadIndex :: (HasCallStack, MonadMask m)
-          => HasFS m
+          => HasFS m h
           -> FsPath
           -> Epoch
           -> m (Index, Maybe ByteString)
@@ -104,7 +104,7 @@ loadIndex hasFS dbFolder epoch = do
 --
 -- > index === index' .&&. isNothing mbJunk
 writeIndex :: MonadMask m
-           => HasFS m
+           => HasFS m h
            -> FsPath
            -> Epoch
            -> Index
@@ -130,7 +130,7 @@ writeIndex hasFS@HasFS{..} dbFolder epoch (MkIndex offsets) = do
 --
 -- > indexToSlotOffsets index === offsets
 writeSlotOffsets :: MonadMask m
-                 => HasFS m
+                 => HasFS m h
                  -> FsPath
                  -> Epoch
                  -> NonEmpty SlotOffset

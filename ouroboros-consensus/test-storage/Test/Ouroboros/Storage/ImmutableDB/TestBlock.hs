@@ -20,7 +20,7 @@ module Test.Ouroboros.Storage.ImmutableDB.TestBlock
   , tests
   ) where
 
-import           Control.Monad (void, when, replicateM, forM)
+import           Control.Monad (forM, replicateM, void, when)
 import           Control.Monad.Catch (MonadMask)
 
 import qualified Data.Binary as Bin
@@ -33,7 +33,7 @@ import           Data.Word (Word64)
 
 import           GHC.Generics (Generic)
 
-import           System.IO (IOMode(..))
+import           System.IO (IOMode (..))
 
 import           Test.QuickCheck
 import qualified Test.QuickCheck.Monadic as QCM
@@ -41,7 +41,7 @@ import qualified Test.StateMachine.Utils as QSM
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
-import           Ouroboros.Storage.FS.API (HasFS(..), withFile)
+import           Ouroboros.Storage.FS.API (HasFS (..), withFile)
 import           Ouroboros.Storage.FS.API.Types (FsPath)
 import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
 import           Ouroboros.Storage.FS.Sim.STM (SimFS, runSimFS, simHasFS)
@@ -108,7 +108,7 @@ testBlockToBuilder = BS.lazyByteString . Bin.encode
 -------------------------------------------------------------------------------}
 
 testBlockEpochFileParser :: MonadMask m
-                         => HasFS m
+                         => HasFS m h
                          -> EpochFileParser String m TestBlock
 testBlockEpochFileParser hasFS@HasFS{..} = EpochFileParser $ \fsPath ->
     withFile hasFS fsPath ReadMode $ \eHnd -> do
@@ -133,7 +133,7 @@ testBlockEpochFileParser hasFS@HasFS{..} = EpochFileParser $ \fsPath ->
             in parse bytesInFile newOffset newParsed remaining
 
 testBlockEpochFileParser' :: MonadMask m
-                          => HasFS m
+                          => HasFS m h
                           -> EpochFileParser String m (Int, RelativeSlot)
 testBlockEpochFileParser' hasFS = (\tb -> (testBlockSize, tbRelativeSlot tb)) <$>
     testBlockEpochFileParser hasFS
@@ -176,7 +176,7 @@ data FileCorruption
 
 -- | Returns 'True' when something was actually corrupted. For example, when
 -- drop the last bytes of an empty file, we don't actually corrupt it.
-corruptFile :: MonadMask m => HasFS m -> FileCorruption -> FsPath -> m Bool
+corruptFile :: MonadMask m => HasFS m h -> FileCorruption -> FsPath -> m Bool
 corruptFile hasFS@HasFS{..} fc file = case fc of
     DeleteFile              -> removeFile file $> True
     DropLastBytes n         -> withFile hasFS file AppendMode $ \hnd -> do

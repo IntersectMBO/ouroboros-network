@@ -18,11 +18,11 @@ module Test.Ouroboros.Storage.ImmutableDB.StateMachine
 
 import           Prelude hiding (elem, notElem)
 
-import           Control.Monad (when, unless, forM_)
+import           Control.Monad (forM_, unless, when)
 import           Control.Monad.Catch (MonadMask)
-import           Control.Monad.Except (ExceptT(..), runExceptT)
-import           Control.Monad.State (MonadState, State, StateT, runState,
-                                      evalStateT, get, gets, modify, put, lift)
+import           Control.Monad.Except (ExceptT (..), runExceptT)
+import           Control.Monad.State (MonadState, State, StateT, evalStateT,
+                     get, gets, lift, modify, put, runState)
 
 import           Data.Bifunctor (first)
 import           Data.ByteString (ByteString)
@@ -34,10 +34,10 @@ import           Data.List (sortBy)
 import qualified Data.List.NonEmpty as NE
 import           Data.Map (Map)
 import qualified Data.Map as Map
-import           Data.Maybe (listToMaybe, isJust, isNothing)
-import           Data.Proxy (Proxy(..))
-import           Data.TreeDiff (Expr(App))
-import           Data.TreeDiff.Class (ToExpr(..))
+import           Data.Maybe (isJust, isNothing, listToMaybe)
+import           Data.Proxy (Proxy (..))
+import           Data.TreeDiff (Expr (App))
+import           Data.TreeDiff.Class (ToExpr (..))
 import           Data.Typeable (Typeable)
 
 import qualified Generics.SOP as SOP
@@ -62,23 +62,23 @@ import           Text.Show.Pretty (ppShow)
 import           Ouroboros.Consensus.Util (lastMaybe)
 import qualified Ouroboros.Consensus.Util.Classify as C
 
-import           Ouroboros.Network.Block (Slot(..))
+import           Ouroboros.Network.Block (Slot (..))
 
-import           Ouroboros.Storage.FS.API (HasFS(..))
-import           Ouroboros.Storage.FS.API.Types (FsPath, FsError(..),
-                                                 FsErrorType(..), sameFsError)
+import           Ouroboros.Storage.FS.API (HasFS (..))
+import           Ouroboros.Storage.FS.API.Types (FsError (..), FsErrorType (..),
+                     FsPath, sameFsError)
 import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
 import           Ouroboros.Storage.FS.Sim.STM (SimFS, runSimFS, simHasFS)
 import           Ouroboros.Storage.ImmutableDB
 import           Ouroboros.Storage.ImmutableDB.Util (renderFile)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
-import           Test.Ouroboros.Storage.FS.Sim.Error (SimErrorFS, runSimErrorFS,
-                                                      mkSimErrorHasFS, Errors,
-                                                      withErrors)
-import           Test.Ouroboros.Storage.ImmutableDB.Model
-import           Test.Ouroboros.Storage.ImmutableDB.CumulEpochSizes (CumulEpochSizes)
+import           Test.Ouroboros.Storage.FS.Sim.Error (Errors, SimErrorFS,
+                     mkSimErrorHasFS, runSimErrorFS, withErrors)
+import           Test.Ouroboros.Storage.ImmutableDB.CumulEpochSizes
+                     (CumulEpochSizes)
 import qualified Test.Ouroboros.Storage.ImmutableDB.CumulEpochSizes as CES
+import           Test.Ouroboros.Storage.ImmutableDB.Model
 import           Test.Ouroboros.Storage.ImmutableDB.TestBlock hiding (tests)
 import           Test.Ouroboros.Storage.Util (collects, tryImmDB)
 
@@ -264,12 +264,12 @@ type KnownIters m = RefEnv (Opaque (Iterator m)) (Iterator PureM)
 
 -- | Execution model
 data Model m r = Model
-  { dbModel     :: DBModel
+  { dbModel        :: DBModel
     -- ^ A model of the database, used as state for the 'HasImmutableDB'
     -- instance of 'ModelDB'.
-  , mockDB      :: ModelDBPure
+  , mockDB         :: ModelDBPure
     -- ^ A handle to the mocked database.
-  , knownIters  :: KnownIters m r
+  , knownIters     :: KnownIters m r
     -- ^ Store a mapping between iterator references and mocked iterators.
   , simulatedError :: Maybe FsError
     -- ^ Record the simulated error ('FsError') that was thrown. As soon as a
@@ -301,13 +301,13 @@ step model@Model{..} cmd = runPure dbModel mockDB (toMock model cmd)
 stepErr :: Eq1 r => Model m r -> At CmdErr m r -> Resp (Iterator PureM)
 stepErr model (At (CmdErr mbErrors cmd)) = case (mbErrors, resp) of
     -- No simulated errors, just step
-    (Nothing, _) -> resp
+    (Nothing, _)                         -> resp
     -- Even though an error was simulated, another error was thrown before it.
     -- Note that the error is UnexpectedError iff it is simulated. In this
     -- case, return the expected result without a simulated error
     (Just _, Resp (Left (UserError {}))) -> resp
     -- An error was simulated and will be thrown, so mock an error.
-    (Just _, _) -> Resp (Left mockedError)
+    (Just _, _)                          -> Resp (Left mockedError)
   where
     (resp, _) = step model (At cmd)
 
@@ -620,12 +620,12 @@ toResp n = At . fmap (reference . Opaque) . Resp <$> tryImmDB n
 
 -- | Ignores the 'Errors'
 semantics :: (MonadMask m, Typeable m)
-          => HasFS m -> ImmutableDB m -> At CmdErr m Concrete
+          => HasFS m h -> ImmutableDB m -> At CmdErr m Concrete
           -> m (At Resp m Concrete)
 semantics hasFS db (At (CmdErr _ cmd)) =
     toResp $ run (semanticsCorruption hasFS) db (opaque <$> cmd)
 
-semanticsErr :: HasFS RealErrM -> RealDBErr -> At CmdErr RealErrM Concrete
+semanticsErr :: HasFS RealErrM h -> RealDBErr -> At CmdErr RealErrM Concrete
              -> RealErrM (At Resp RealErrM Concrete)
 semanticsErr hasFS db (At cmdErr) = case opaque <$> cmdErr of
     CmdErr Nothing _         -> semantics hasFS db (At cmdErr)
@@ -645,7 +645,7 @@ semanticsErr hasFS db (At cmdErr) = case opaque <$> cmdErr of
           return $ Resp (Left forcedError)
 
 semanticsCorruption :: MonadMask m
-                    => HasFS m -> ImmutableDB m
+                    => HasFS m h -> ImmutableDB m
                     -> Corruption (Iterator m)
                     -> m (Success (Iterator m))
 semanticsCorruption hasFS db (MkCorruption corrs its) = do
@@ -694,7 +694,7 @@ unexpectedErrorShouldCloseDB cmd = case cmd of
     Corruption        {} -> True
 
 -- | The state machine proper
-sm :: HasFS RealM
+sm :: HasFS RealM h
    -> RealDB
    -> DBModel
    -> ModelDBPure
@@ -713,7 +713,7 @@ sm hasFS db dbm mdb = StateMachine
   }
 
 -- | The state machine with errors
-smErr :: HasFS RealErrM
+smErr :: HasFS RealErrM h
       -> RealDBErr
       -> DBModel
       -> ModelDBPure
@@ -858,7 +858,7 @@ errorExpected :: (Event m Symbolic -> Either Tag (EventPred m))
 errorExpected f = C.predicate $ \ev ->
     case eventMockResp ev of
       Resp (Left  e) | isMockedError e -> f ev
-      Resp _ -> Right $ errorExpected f
+      Resp _                           -> Right $ errorExpected f
 
 
 -- | Tag commands
@@ -904,17 +904,17 @@ tag = C.classify
     tagOpenFinalisedEpochError :: EventPred m
     tagOpenFinalisedEpochError = failedUserError $ \_ e -> case e of
       OpenFinalisedEpochError {} -> Left TagOpenFinalisedEpochError
-      _ -> Right tagOpenFinalisedEpochError
+      _                          -> Right tagOpenFinalisedEpochError
 
     tagAppendToSlotInThePastError :: EventPred m
     tagAppendToSlotInThePastError = failedUserError $ \_ e -> case e of
       AppendToSlotInThePastError {} -> Left TagAppendToSlotInThePastError
-      _ -> Right tagAppendToSlotInThePastError
+      _                             -> Right tagAppendToSlotInThePastError
 
     tagReadFutureSlotError :: EventPred m
     tagReadFutureSlotError = failedUserError $ \_ e -> case e of
       ReadFutureSlotError {} -> Left TagReadFutureSlotError
-      _ -> Right tagReadFutureSlotError
+      _                      -> Right tagReadFutureSlotError
 
     tagSlotGreaterThanEpochSizeError :: EventPred m
     tagSlotGreaterThanEpochSizeError = failedUserError $ \_ e -> case e of
@@ -924,12 +924,12 @@ tag = C.classify
     tagMissingEpochSizeError :: EventPred m
     tagMissingEpochSizeError = failedUserError $ \_ e -> case e of
       MissingEpochSizeError {} -> Left TagMissingEpochSizeError
-      _ -> Right tagMissingEpochSizeError
+      _                        -> Right tagMissingEpochSizeError
 
     tagInvalidIteratorRangeError :: EventPred m
     tagInvalidIteratorRangeError = failedUserError $ \_ e -> case e of
       InvalidIteratorRangeError {} -> Left TagInvalidIteratorRangeError
-      _ -> Right tagInvalidIteratorRangeError
+      _                            -> Right tagInvalidIteratorRangeError
 
     tagGetFromEmptyEpoch :: EventPred m
     tagGetFromEmptyEpoch = successful $ \ev r -> case r of
@@ -1001,32 +1001,32 @@ tag = C.classify
     tagErrorDuringAppendBinaryBlob :: EventPred m
     tagErrorDuringAppendBinaryBlob = errorExpected $ \ev -> case eventCmd ev of
       At (AppendBinaryBlob {}) -> Left TagErrorDuringAppendBinaryBlob
-      _ -> Right tagErrorDuringAppendBinaryBlob
+      _                        -> Right tagErrorDuringAppendBinaryBlob
 
     tagErrorDuringStartNewEpoch :: EventPred m
     tagErrorDuringStartNewEpoch = errorExpected $ \ev -> case eventCmd ev of
       At (StartNewEpoch {}) -> Left TagErrorDuringStartNewEpoch
-      _ -> Right tagErrorDuringStartNewEpoch
+      _                     -> Right tagErrorDuringStartNewEpoch
 
     tagErrorDuringGetBinaryBlob :: EventPred m
     tagErrorDuringGetBinaryBlob = errorExpected $ \ev -> case eventCmd ev of
       At (GetBinaryBlob {}) -> Left TagErrorDuringGetBinaryBlob
-      _ -> Right tagErrorDuringGetBinaryBlob
+      _                     -> Right tagErrorDuringGetBinaryBlob
 
     tagErrorDuringStreamBinaryBlobs :: EventPred m
     tagErrorDuringStreamBinaryBlobs = errorExpected $ \ev -> case eventCmd ev of
       At (StreamBinaryBlobs {}) -> Left TagErrorDuringStreamBinaryBlobs
-      _ -> Right tagErrorDuringStreamBinaryBlobs
+      _                         -> Right tagErrorDuringStreamBinaryBlobs
 
     tagErrorDuringIteratorNext :: EventPred m
     tagErrorDuringIteratorNext = errorExpected $ \ev -> case eventCmd ev of
       At (IteratorNext {}) -> Left TagErrorDuringIteratorNext
-      _ -> Right tagErrorDuringIteratorNext
+      _                    -> Right tagErrorDuringIteratorNext
 
     tagErrorDuringIteratorClose :: EventPred m
     tagErrorDuringIteratorClose = errorExpected $ \ev -> case eventCmd ev of
       At (IteratorClose {}) -> Left TagErrorDuringIteratorClose
-      _ -> Right tagErrorDuringIteratorClose
+      _                     -> Right tagErrorDuringIteratorClose
 
 
 -- | Step the model using a 'QSM.Command' (i.e., a command associated with
@@ -1044,7 +1044,7 @@ execCmds model = \(QSM.Commands cs) -> go model cs
   where
     go :: Model m Symbolic -> [QSM.Command (At CmdErr m) (At Resp m)]
        -> [Event m Symbolic]
-    go _ []        = []
+    go _ []       = []
     go m (c : cs) = let ev = execCmd m c in ev : go (eventAfter ev) cs
 
 
@@ -1268,10 +1268,10 @@ mkDBModel = openDBModel EH.exceptT firstEpochSize
 dbUnused :: ImmutableDB m
 dbUnused = error "semantics and DB used during command generation"
 
-hasFSRealM :: HasFS RealM
+hasFSRealM :: HasFS RealM Mock.Handle
 hasFSRealM = simHasFS EH.monadCatch
 
-hasFSRealErrM :: HasFS RealErrM
+hasFSRealErrM :: HasFS RealErrM Mock.Handle
 hasFSRealErrM = mkSimErrorHasFS hasFSRealM
 
 

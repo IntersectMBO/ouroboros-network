@@ -12,8 +12,6 @@ module Test.Ouroboros.Storage.FS
   ( tests
   ) where
 
-import qualified Data.ByteString.Builder.Extra as BL
-import qualified Data.ByteString.Lazy.Char8 as C8
 import           Data.Either (isRight)
 import qualified Data.Map.Strict as M
 import qualified Data.Set as Set
@@ -60,8 +58,6 @@ tests tmpDir = testGroup "HasFS"
     , testCase     "hClose twice no-op " test_hCloseTwice
       -- hPut
     , testCase     "hPut equivalence" test_hPut
-      -- hPutBuffer
-    , testProperty "hPutBuffer chunk boundaries" prop_hPutBufferBoundaries
       -- hGet
     , testCase     "hGet equivalence"  test_hGet
     , testCase     "hGet moves offset" test_hGetOffset
@@ -227,24 +223,6 @@ test_hPut :: Assertion
 test_hPut = apiEquivalenceFs (expectFsResult (@?= 15)) $ \hasFS@HasFS{..} _err -> do
     withFile hasFS ["test.txt"] IO.WriteMode $ \h1 ->
       hPut h1 "haskell-is-nice"
-
--- In this test purposefully create a very small buffer and we test that our
--- 'bytesWritten' count is consistent across chunks boundaries.
-prop_hPutBufferBoundaries :: Property
-prop_hPutBufferBoundaries = monadicIO $ do
-    bufferSize <- pick $ choose (1, 64)
-    input      <- pick $ C8.pack <$> listOf1 (elements ['a' .. 'z'])
-    threshold  <- pick $ choose (1, 512)
-    run $ apiEquivalenceFs (expectFsResult (@?= (True, True))) $ \HasFS{..} _err -> do
-      b  <- newBuffer bufferSize
-      h1 <- hOpen ["test.txt"] IO.WriteMode
-      bytesWritten  <-
-          hPutBuffer h1 b (BL.lazyByteStringThreshold threshold input)
-      _ <- hSeek h1 IO.AbsoluteSeek 0
-      r <- hGet h1 (fromIntegral $ C8.length input)
-      hClose h1
-      return ( fromIntegral bytesWritten == (C8.length input)
-             , C8.toStrict input == r )
 
 test_hGet :: Assertion
 test_hGet = apiEquivalenceFs (expectFsResult (@?= (15, ["hask", "ell", "-nic"]))) $ \hasFS@HasFS{..} _err ->

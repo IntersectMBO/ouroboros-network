@@ -21,15 +21,15 @@ import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import           Data.Map (Map)
 import qualified Data.Map.Strict as M
-import           Data.Maybe (fromMaybe, maybeToList, isNothing)
+import           Data.Maybe (fromMaybe, isNothing, maybeToList)
 import           Data.Word (Word64)
 
 import qualified System.IO as IO
 
-import           Test.Ouroboros.Storage.ImmutableDB.Sim (demoScript)
-import qualified Test.Ouroboros.Storage.ImmutableDB.TestBlock as TestBlock
-import qualified Test.Ouroboros.Storage.ImmutableDB.StateMachine as StateMachine
 import qualified Test.Ouroboros.Storage.ImmutableDB.CumulEpochSizes as CumulEpochSizes
+import           Test.Ouroboros.Storage.ImmutableDB.Sim (demoScript)
+import qualified Test.Ouroboros.Storage.ImmutableDB.StateMachine as StateMachine
+import qualified Test.Ouroboros.Storage.ImmutableDB.TestBlock as TestBlock
 import           Test.Ouroboros.Storage.Util
 import           Test.QuickCheck
 import           Test.QuickCheck.Monadic (monadicIO, pick, run)
@@ -87,7 +87,7 @@ tests = testGroup "ImmutableDB"
 
 -- Shorthand
 withTestDB :: (HasCallStack, MonadSTM m, MonadMask m)
-           => HasFS m
+           => HasFS m h
            -> ErrorHandling ImmutableDBError m
            -> Map Epoch EpochSize
            -> (ImmutableDB m -> m a)
@@ -570,7 +570,7 @@ prop_writeIndex_loadIndex index =
       (index', mbJunk) <- loadIndex hasFS dbFolder epoch
       return $ index === index' .&&. isNothing mbJunk
 
-    hasFS :: HasFS (SimFS IO)
+    hasFS :: HasFS (SimFS IO) Mock.Handle
     hasFS = Sim.simHasFS EH.exceptions
 
     runS :: SimFS IO Property -> IO Property
@@ -593,7 +593,7 @@ prop_writeSlotOffsets_loadIndex_indexToSlotOffsets (SlotOffsets offsets) =
       (index, mbJunk) <- loadIndex hasFS dbFolder epoch
       return $ indexToSlotOffsets index === offsets .&&. isNothing mbJunk
 
-    hasFS :: HasFS (SimFS IO)
+    hasFS :: HasFS (SimFS IO) Mock.Handle
     hasFS = Sim.simHasFS EH.exceptions
 
     runS :: SimFS IO Property -> IO Property

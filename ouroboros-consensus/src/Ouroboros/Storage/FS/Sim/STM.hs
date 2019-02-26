@@ -14,7 +14,6 @@ module Ouroboros.Storage.FS.Sim.STM (
     , runSimFS
     , simHasFS
     , liftErrSimFS
-    , Buffer(MockBufferUnused)
     ) where
 
 import           Control.Monad.Catch
@@ -24,8 +23,8 @@ import           Control.Monad.State
 import           Data.Proxy
 import           Data.Type.Coercion
 
-import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadFork
+import           Control.Monad.Class.MonadSTM
 
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types
@@ -46,9 +45,6 @@ newtype SimFS m a = SimFS { unSimFS :: ReaderT (TVar m MockFS) m a }
            , MonadCatch
            , MonadMask
            )
-
-type instance FsHandle (SimFS m) = Mock.Handle
-data instance Buffer   (SimFS m) = MockBufferUnused
 
 -- | Runs a 'SimFs' computation provided an initial 'MockFS', producing a
 -- result, the final state of the filesystem and a sequence of actions occurred
@@ -127,16 +123,16 @@ instance (MonadFork (SimFS m) , MonadSTM m) => MonadSTM (SimFS m) where
   isEmptyTBQueue    = lift . isEmptyTBQueue
   isFullTBQueue     = lift . isFullTBQueue
 
-simHasFS :: forall m. MonadSTM m => ErrorHandling FsError m -> HasFS (SimFS m)
+simHasFS :: forall m. MonadSTM m
+         => ErrorHandling FsError m
+         -> HasFS (SimFS m) Mock.Handle
 simHasFS err = HasFS {
       dumpState                = Mock.dumpState
-    , newBuffer                = \_ -> return MockBufferUnused
     , hOpen                    = Mock.hOpen                    err'
     , hClose                   = Mock.hClose                   err'
     , hSeek                    = Mock.hSeek                    err'
     , hGet                     = Mock.hGet                     err'
     , hPut                     = Mock.hPut                     err'
-    , hPutBuffer               = Mock.hPutBuffer               err'
     , hTruncate                = Mock.hTruncate                err'
     , hGetSize                 = Mock.hGetSize                 err'
     , createDirectory          = Mock.createDirectory          err'

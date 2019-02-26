@@ -17,7 +17,6 @@ module Test.Ouroboros.Storage.FS.Sim.Error
   , runSimErrorFS
   , mkSimErrorHasFS
   , withErrors
-  , Buffer(MockBufferUnused)
     -- * Streams
   , Stream(..)
   , streamShrink
@@ -37,30 +36,29 @@ module Test.Ouroboros.Storage.FS.Sim.Error
   ) where
 
 import           Control.Monad (replicateM, void)
-import           Control.Monad.Catch (MonadCatch(..), MonadMask(..),
-                                      MonadThrow(..))
+import           Control.Monad.Catch (MonadCatch (..), MonadMask (..),
+                     MonadThrow (..))
 import           Control.Monad.Class.MonadFork (MonadFork)
-import           Control.Monad.Class.MonadSTM (MonadSTM(..))
+import           Control.Monad.Class.MonadSTM (MonadSTM (..))
 import           Control.Monad.Except (runExceptT)
-import           Control.Monad.IO.Unlift (MonadIO(liftIO),
-                                          MonadUnliftIO(withRunInIO),
-                                          wrappedWithRunInIO)
-import           Control.Monad.Reader (ReaderT(ReaderT), ask, runReaderT)
-import           Control.Monad.State (MonadState(state, get))
-import           Control.Monad.Trans (MonadTrans(lift))
+import           Control.Monad.IO.Unlift (MonadIO (liftIO),
+                     MonadUnliftIO (withRunInIO), wrappedWithRunInIO)
+import           Control.Monad.Reader (ReaderT (ReaderT), ask, runReaderT)
+import           Control.Monad.State (MonadState (get, state))
+import           Control.Monad.Trans (MonadTrans (lift))
 
 import           Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as BS
 import qualified Data.ByteString.Lazy as BL
-import           Data.List (intercalate, dropWhileEnd)
-import           Data.Maybe (isNothing, catMaybes)
-import           Data.Proxy (Proxy(..))
-import           Data.Type.Coercion (Coercion(..))
+import           Data.List (dropWhileEnd, intercalate)
+import           Data.Maybe (catMaybes, isNothing)
+import           Data.Proxy (Proxy (..))
+import           Data.Type.Coercion (Coercion (..))
 import           Data.Word (Word64)
 
 import           GHC.Stack (HasCallStack, callStack)
 
-import           Test.QuickCheck (Gen, Arbitrary(..))
+import           Test.QuickCheck (Arbitrary (..), Gen)
 import qualified Test.QuickCheck as QC
 
 import           Ouroboros.Consensus.Util (whenJust)
@@ -68,14 +66,14 @@ import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Example (example)
 import           Ouroboros.Storage.FS.API.Types
-import           Ouroboros.Storage.FS.Sim.MockFS (MockFS, Handle, handleFsPath)
+import           Ouroboros.Storage.FS.Sim.MockFS (Handle, MockFS, handleFsPath)
 import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
 import           Ouroboros.Storage.FS.Sim.STM (SimFS)
 import qualified Ouroboros.Storage.FS.Sim.STM as Sim
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
-import           Test.Ouroboros.Storage.Util (Blob(..))
+import           Test.Ouroboros.Storage.Util (Blob (..))
 
 
 
@@ -220,18 +218,18 @@ type ErrorStreamWithCorruption = Stream (FsErrorType, Maybe PutCorruption)
 -- An 'ErrorStreams' is used in conjunction with 'SimErrorFS', which is a layer
 -- on top of 'SimFS' that simulates methods throwing 'FsError's.
 data Errors = Errors
-  { _newBuffer :: ErrorStream
-  , _dumpState :: ErrorStream
+  { _newBuffer                :: ErrorStream
+  , _dumpState                :: ErrorStream
 
     -- Operations on files
-  , _hOpen      :: ErrorStream
-  , _hClose     :: ErrorStream
-  , _hSeek      :: ErrorStream
-  , _hGet       :: ErrorStream
-  , _hPut       :: ErrorStreamWithCorruption
-  , _hPutBuffer :: ErrorStream
-  , _hTruncate  :: ErrorStream
-  , _hGetSize   :: ErrorStream
+  , _hOpen                    :: ErrorStream
+  , _hClose                   :: ErrorStream
+  , _hSeek                    :: ErrorStream
+  , _hGet                     :: ErrorStream
+  , _hPut                     :: ErrorStreamWithCorruption
+  , _hPutBuffer               :: ErrorStream
+  , _hTruncate                :: ErrorStream
+  , _hGetSize                 :: ErrorStream
 
     -- Operations on directories
   , _createDirectory          :: ErrorStream
@@ -397,9 +395,6 @@ newtype SimErrorFS m a =
            , MonadFork
            )
 
-type instance FsHandle (SimErrorFS m) = FsHandle (SimFS m)
-data instance Buffer   (SimErrorFS m) = MockBufferUnused
-
 instance MonadTrans SimErrorFS where
   lift m = liftSim (lift m)
 
@@ -461,11 +456,10 @@ instance (Monad m, MonadState MockFS (SimFS m))
 
 
 mkSimErrorHasFS :: forall m. MonadSTM m
-                => HasFS (SimFS m) -> HasFS (SimErrorFS m)
+                => HasFS (SimFS m) Handle -> HasFS (SimErrorFS m) Handle
 mkSimErrorHasFS HasFS {..} = HasFS
-    { newBuffer = \_ -> return MockBufferUnused
-      -- Lenses would be nice for the setters
-    , dumpState =
+    { -- Lenses would be nice for the setters
+      dumpState =
         withErr err ["<dumpState>"] dumpState "dumpState"
         _dumpState (\e es -> es { _dumpState = e })
     , hOpen      = \p m ->
@@ -481,9 +475,6 @@ mkSimErrorHasFS HasFS {..} = HasFS
         withErr' err h (hGet h n) "hGet"
         _hGet (\e es -> es { _hGet = e })
     , hPut       = hPut' err hPut
-    , hPutBuffer = \h _ d ->
-        withErr' err h (hPutBuffer h Sim.MockBufferUnused d) "hPutBuffer"
-        _hPutBuffer (\e es -> es { _hPutBuffer = e })
     , hTruncate  = \h w ->
         withErr' err h (hTruncate h w) "hTruncate"
         _hTruncate (\e es -> es { _hTruncate = e })

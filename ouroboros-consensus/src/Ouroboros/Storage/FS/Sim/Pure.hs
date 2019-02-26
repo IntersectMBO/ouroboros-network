@@ -30,23 +30,18 @@ newtype PureSimFS m a = PureSimFS { unPureSimFS :: StateT MockFS m a }
            , MonadState MockFS
            )
 
-type instance FsHandle (PureSimFS m) = Mock.Handle
-data instance Buffer   (PureSimFS m) = MockBufferUnused
-
 runPureSimFS :: PureSimFS m a -> MockFS -> m (a, MockFS)
 runPureSimFS = runStateT . unPureSimFS
 
 pureHasFS :: forall m. Monad m
-          => ErrorHandling FsError m -> HasFS (PureSimFS m)
+          => ErrorHandling FsError m -> HasFS (PureSimFS m) Mock.Handle
 pureHasFS err = HasFS {
-      dumpState = Mock.dumpState
-    , newBuffer                = \_ -> return MockBufferUnused
+      dumpState                = Mock.dumpState
     , hOpen                    = Mock.hOpen                    err'
     , hClose                   = Mock.hClose                   err'
     , hSeek                    = Mock.hSeek                    err'
     , hGet                     = Mock.hGet                     err'
     , hPut                     = Mock.hPut                     err'
-    , hPutBuffer               = Mock.hPutBuffer               err'
     , hTruncate                = Mock.hTruncate                err'
     , hGetSize                 = Mock.hGetSize                 err'
     , createDirectory          = Mock.createDirectory          err'
