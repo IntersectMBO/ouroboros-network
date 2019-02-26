@@ -5,7 +5,11 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators       #-}
 
-module Test.Mux (tests) where
+module Test.Mux (
+      TestProtocols1 (..)
+    , DummyPayload (..)
+    , setupMiniReqRsp
+    , tests) where
 
 import           Control.Concurrent.Async
 import           Control.Monad
@@ -169,7 +173,7 @@ readMux ctx = do
                   Nothing -> return ()
              return (header {Mx.msBlob = payload}, ts)
 
--- | Verify that an initiator and a responder can send end receive messages from each other.
+-- | Verify that an initiator and a responder can send and receive messages from each other.
 -- Large DummyPayloads will be split into sduLen sized messages and the testcases will verify
 -- that they are correctly reassembled into the original message.
 prop_mux_snd_recv :: DummyPayload
