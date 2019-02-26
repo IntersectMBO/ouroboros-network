@@ -4,6 +4,7 @@
 {-# LANGUAGE RankNTypes #-}
 
 import Control.Concurrent (myThreadId)
+import Control.Concurrent.Async (race)
 import Control.Concurrent.STM (STM, atomically, retry)
 import Control.Exception (catch, throwIO)
 import Control.Lens ((^.))
@@ -260,7 +261,6 @@ main = withCompileInfo $ do
         cArgs
         nArgs
         (configGeneratedSecrets genesisConfig)
-      putStrLn "Got node params"
       let genesisBlock = genesisBlock0 (configProtocolMagic genesisConfig)
                                        (configGenesisHash genesisConfig)
                                        (genesisLeaders genesisConfig)
@@ -326,7 +326,6 @@ main = withCompileInfo $ do
           indexFilePath :: FilePath
           indexFilePath = "index-byron-adapter"
       Index.withDB_ indexFilePath $ \indexDB -> do
-        putStrLn "Index is up"
         -- Now we can use the index to get the tip.
         -- BUT if it's empty, so there is no tip, what do we do? Use epoch 0
         -- I guess.
@@ -335,7 +334,6 @@ main = withCompileInfo $ do
               Nothing -> 0
               Just (_, EpochSlot tipEpoch _) -> tipEpoch
         withDB (openDB dbEpoch) $ \db _ -> do
-          putStrLn "DB is up"
           -- Create the block source to support the logic layer.
           let bbs :: ByronBlockSource IO
               bbs = Index.byronBlockSource
@@ -348,5 +346,8 @@ main = withCompileInfo $ do
               genesisSerialized :: SerializedBlock
               genesisSerialized = Serialized (serialize' genesisBlock)
           withByronProxy bpc bbs $ \bp -> do
-            putStrLn "Proxy is running"
-            byronProxyMain genesisBlock epochSlots indexDB db bp
+            let userInterrupt = getChar
+            outcome <- race userInterrupt (byronProxyMain genesisBlock epochSlots indexDB db bp)
+            case outcome of
+              Left _ -> pure ()
+              Right impossible -> impossible
