@@ -2,6 +2,7 @@
 , test       ? true
 , benchmarks ? false
 , error      ? false
+, profiling  ? false
 }:
 # Builds using system <nixpkgs> and ghc863 with the required package curation.
 let
@@ -18,12 +19,22 @@ let
   };
   cardanopkgs = import ./nix/cardanopkgs.nix { inherit nixpkgs cardanoroot; };
 
+  setProfiling = super: {
+    mkDerivation = args: super.mkDerivation (args // {
+      enableLibraryProfiling = true;
+      enableExecutableProfiling = true;
+      /* Profiling makes a bunch of template haskell stuff fail in tests */
+      doCheck = false;
+    });
+  };
+
   # Build on 8.6.3 with the required overrides: one for packages defined in
   # this repo, and one to bring in cardano-sl as a library, which is a real
   # difficult thing to do apparently.
   compiler = nixpkgs.haskell.packages.ghc863.override {
     overrides = self: super:
-      (overrides self super) // (cardanopkgs self super);
+      (overrides self super) // (cardanopkgs self super) //
+      (if profiling then setProfiling super else {});
   };
 in
   (import ./pkgs.nix { inherit nixpkgs compiler haddock test benchmarks error; }) // {
