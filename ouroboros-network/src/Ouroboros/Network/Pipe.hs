@@ -14,7 +14,6 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadTimer
 import           Data.Bits
-import qualified Data.Map.Strict as M
 import           Data.Word
 import           System.IO (Handle, hClose, hFlush)
 import           System.Process (createPipe)
@@ -39,7 +38,7 @@ data PipeCtx = PipeCtx {
     , pcWrite :: Handle
     }
 
-setupMux :: Mx.MiniProtocolDescriptions IO -> PipeCtx -> IO ()
+setupMux :: Mx.MiniProtocolDescriptions DemoProtocols IO -> PipeCtx -> IO ()
 setupMux mpds ctx = do
     jobs <- Mx.muxJobs mpds (writePipe ctx) (readPipe ctx) (sduSize ctx)
     aids <- mapM async jobs
@@ -57,7 +56,7 @@ setupMux mpds ctx = do
 sduSize :: PipeCtx -> IO Word16
 sduSize _ = return 32768
 
-writePipe :: PipeCtx -> Mx.MuxSDU -> IO (Time IO)
+writePipe :: PipeCtx -> Mx.MuxSDU DemoProtocols -> IO (Time IO)
 writePipe ctx sdu = do
     ts <- getMonotonicTime
     let sdu' = sdu { Mx.msTimestamp = Mx.RemoteClockModel $ fromIntegral $ ts .&. 0xffffffff }
@@ -66,7 +65,7 @@ writePipe ctx sdu = do
     hFlush (pcWrite ctx)
     return ts
 
-readPipe :: PipeCtx -> IO (Mx.MuxSDU, Time IO)
+readPipe :: PipeCtx -> IO (Mx.MuxSDU DemoProtocols, Time IO)
 readPipe ctx = do
         hbuf <- recvLen' (pcRead ctx) 8 []
         case Mx.decodeMuxSDUHeader hbuf of
@@ -88,10 +87,21 @@ readPipe ctx = do
             then error "pipe closed" -- XXX throw exception
             else recvLen' pd (l - fromIntegral (BL.length buf)) (buf : bufs)
 
-startPipe :: Mx.MiniProtocolDescriptions IO -> (Handle, Handle) -> IO ()
+startPipe :: Mx.MiniProtocolDescriptions DemoProtocols IO -> (Handle, Handle) -> IO ()
 startPipe mpds (r, w) = do
     let ctx = PipeCtx r w
     setupMux mpds ctx
+
+-- | The enumeration of all mini-protocols in our demo protocol.
+data DemoProtocols = ChainSync
+  deriving (Eq, Ord, Enum, Bounded)
+
+instance Mx.ProtocolEnum DemoProtocols where
+  fromProtocolEnum ChainSync = 2
+
+  toProtocolEnum 2 = Just ChainSync
+  toProtocolEnum _ = Nothing
+
 
 -- | A demonstration that we can run the simple chain consumer protocol
 -- over a pipe with full message serialisation, framing etc.
@@ -110,16 +120,14 @@ demo chain0 updates = do
 
     let Just expectedChain = Chain.applyChainUpdates updates chain0
         target = Chain.headPoint expectedChain
-        a_mps = Mx.MiniProtocolDescriptions $ M.fromList
-                    [(Mx.ChainSync, Mx.MiniProtocolDescription Mx.ChainSync
-                        (consumerInit consumerDone target consumerVar)
-                        dummyCallback)
-                    ]
-        b_mps = Mx.MiniProtocolDescriptions $ M.fromList
-                    [(Mx.ChainSync, Mx.MiniProtocolDescription Mx.ChainSync
-                        dummyCallback
-                        (producerRsp producerVar))
-                    ]
+        a_mps ChainSync = Mx.MiniProtocolDescription
+                            (Mx.AppProtocolId ChainSync)
+                            (consumerInit consumerDone target consumerVar)
+                            dummyCallback
+        b_mps ChainSync = Mx.MiniProtocolDescription
+                            (Mx.AppProtocolId ChainSync)
+                            dummyCallback
+                            (producerRsp producerVar)
 
     startPipe b_mps (hndRead1, hndWrite2)
     startPipe a_mps (hndRead2, hndWrite1)

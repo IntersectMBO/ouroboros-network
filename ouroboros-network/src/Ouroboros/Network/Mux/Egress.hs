@@ -31,7 +31,7 @@ import           Ouroboros.Network.Mux.Types
 -- > +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 --
 -- All fields are in big endian byteorder.
-encodeMuxSDU :: MuxSDU -> BL.ByteString
+encodeMuxSDU :: ProtocolEnum ptcl => MuxSDU ptcl -> BL.ByteString
 encodeMuxSDU sdu =
   let hdr = Bin.runPut enc in
   BL.append hdr $ msBlob sdu
@@ -41,11 +41,7 @@ encodeMuxSDU sdu =
         putId (msId sdu) (putMode $ msMode sdu)
         Bin.putWord16be $ fromIntegral $ BL.length $ msBlob sdu
 
-    putId Muxcontrol mode   = Bin.putWord16be $ 0 .|. mode
-    putId DeltaQ mode       = Bin.putWord16be $ 1 .|. mode
-    putId ChainSync mode    = Bin.putWord16be $ 2 .|. mode
-    putId BlockFetch mode   = Bin.putWord16be $ 3 .|. mode
-    putId TxSubmission mode = Bin.putWord16be $ 4 .|. mode
+    putId ptcl mode = Bin.putWord16be $ fromProtocolEnum ptcl .|. mode
 
     putMode :: MiniProtocolMode -> Word16
     putMode ModeInitiator = 0
@@ -140,7 +136,7 @@ encodeMuxSDU sdu =
 -- each time it gets to the front of the queue
 mux :: (MonadSTM m)
      => TVar m Int
-     -> PerMuxSharedState m
+     -> PerMuxSharedState ptcl m
      -> m ()
 mux cnt pmss = do
     w <- atomically $ readTBQueue $ tsrQueue pmss
@@ -152,8 +148,8 @@ mux cnt pmss = do
 -- ensures that any other items on the queue will get some service
 -- first.
 processSingleWanton :: MonadSTM m
-                    => PerMuxSharedState m
-                    -> MiniProtocolId
+                    => PerMuxSharedState ptcl m
+                    -> MiniProtocolId ptcl
                     -> MiniProtocolMode
                     -> Wanton m
                     -> TVar m Int

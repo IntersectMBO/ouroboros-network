@@ -3,7 +3,8 @@
 
 module Ouroboros.Network.Mux (
       MiniProtocolDescription (..)
-    , MiniProtocolDescriptions (..)
+    , MiniProtocolDescriptions
+    , ProtocolEnum (..)
     , MiniProtocolId (..)
     , MiniProtocolMode (..)
     , MuxSDU (..)
@@ -18,7 +19,7 @@ import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTimer
 import qualified Data.ByteString.Lazy as BL
-import qualified Data.Map.Strict as M
+import           Data.Array
 import           Data.Word
 
 import           Ouroboros.Network.Channel
@@ -30,13 +31,13 @@ import           Ouroboros.Network.Mux.Types
 -- | muxJobs constructs a list of jobs which needs to be started in separate threads by
 -- the specific Mux Bearer instance.
 -- TODO: replace MonadSay with iohk-monitoring-framework.
-muxJobs :: (MonadSTM m, MonadSay m) =>
-    MiniProtocolDescriptions m ->
-    (MuxSDU -> m (Time m)) ->
-    m (MuxSDU, Time m) ->
+muxJobs :: (MonadSTM m, MonadSay m, Ord ptcl, Enum ptcl, Bounded ptcl) =>
+    MiniProtocolDescriptions ptcl m ->
+    (MuxSDU ptcl -> m (Time m)) ->
+    m (MuxSDU ptcl, Time m) ->
     m Word16 ->
     m [m ()]
-muxJobs (MiniProtocolDescriptions udesc) wfn rfn sdufn = do
+muxJobs udesc wfn rfn sdufn = do
     tbl <- setupTbl
     tq <- atomically $ newTBQueue 100
     cnt <- newTVarM 0
@@ -46,19 +47,19 @@ muxJobs (MiniProtocolDescriptions udesc) wfn rfn sdufn = do
                , muxControl pmss ModeResponder
                , muxControl pmss ModeInitiator
                ]
-    mjobs <- mapM (mpsJob cnt pmss) $ M.elems udesc
+    mjobs <- sequence [ mpsJob cnt pmss (udesc ptcl)
+                      | ptcl <- [minBound..maxBound] ]
     return $ jobs ++ concat mjobs
 
   where
-    setupTbl = do
-        let ps = [Muxcontrol, DeltaQ] ++ M.keys udesc
-        tbl <- foldM addMp M.empty ps
-        return $ MiniProtocolDispatch tbl
-
-    addMp t p = do
-        a <- atomically $ newTBQueue 2
-        b <- atomically $ newTBQueue 2
-        return $ M.insert (p, ModeInitiator) a $ M.insert (p, ModeResponder) b t
+    -- Construct the array of TBQueues, one for each protocol id, and each mode
+    setupTbl = MiniProtocolDispatch
+            -- cover full range of type (MiniProtocolId ptcl, MiniProtocolMode)
+             . array (minBound, maxBound)
+           <$> sequence [ do q <- atomically (newTBQueue 2)
+                             return ((ptcl, mode), q)
+                        | ptcl <- [minBound..maxBound]
+                        , mode <- [ModeInitiator, ModeResponder] ]
 
     mpsJob cnt pmss mpd = do
         w_i <- atomically newEmptyTMVar
@@ -76,8 +77,8 @@ muxJobs (MiniProtocolDescriptions udesc) wfn rfn sdufn = do
         c <- readTVar cnt
         unless (c == 0) retry
 
-muxControl :: (MonadSTM m, MonadSay m) =>
-    PerMuxSharedState m ->
+muxControl :: (MonadSTM m, MonadSay m, Ord ptcl, Enum ptcl) =>
+    PerMuxSharedState ptcl m ->
     MiniProtocolMode ->
     m ()
 muxControl pmss md = do
@@ -90,9 +91,9 @@ muxControl pmss md = do
         atomically $ writeTBQueue (tsrQueue pmss) (TLSRDemand Muxcontrol md (Wanton w))
 
 -- | muxChannel creates a duplex channel for a specific 'MiniProtocolId' and 'MiniProtocolMode'.
-muxChannel :: (MonadSTM m, MonadSay m) =>
-    PerMuxSharedState m ->
-    MiniProtocolId ->
+muxChannel :: (MonadSTM m, MonadSay m, Ord ptcl, Enum ptcl) =>
+    PerMuxSharedState ptcl m ->
+    MiniProtocolId ptcl ->
     MiniProtocolMode ->
     TMVar m BL.ByteString ->
     TVar m Int ->
