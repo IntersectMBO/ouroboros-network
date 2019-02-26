@@ -19,6 +19,8 @@ import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import qualified Data.Text as Text
 import Data.Time.Clock.POSIX (getCurrentTime)
+import Options.Applicative (execParser, fullDesc, help, info, long, metavar,
+                            progDesc, strOption, value)
 import System.Random (StdGen, getStdGen, randomR)
 
 import Cardano.BM.BaseTrace hiding (noTrace)
@@ -38,7 +40,7 @@ import Pos.Chain.Block (recoveryHeadersMessage, streamWindow)
 import Pos.Chain.Update (lastKnownBlockVersion, updateConfiguration)
 import Pos.Configuration (networkConnectionTimeout)
 import Pos.Client.CLI (SimpleNodeArgs (..), CommonNodeArgs (..), CommonArgs (logConfig),
-                       configurationOptions, getSimpleNodeOptions)
+                       commonNodeArgsParser, configurationOptions, nodeArgsParser)
 import Pos.Client.CLI.Params (getNodeParams)
 import Pos.Chain.Genesis (Config (configGeneratedSecrets),
                           configEpochSlots, configGenesisHash,
@@ -109,7 +111,7 @@ byronProxyMain genesisBlock epochSlots indexDB db bp = getStdGen >>= mainLoop No
         mainLoop mBt rndGen
       Left bt -> do
         -- Find our tip of chain from the index.
-        mTip <- Index.indexAt indexDB Index.Tip
+        mTip <- Index.indexRead indexDB Index.Tip
         let tipHash = case mTip of
               Nothing      -> headerHash genesisBlock
               Just (hh, _) -> Index.getOwnHash hh
@@ -133,13 +135,13 @@ byronProxyMain genesisBlock epochSlots indexDB db bp = getStdGen >>= mainLoop No
   -- This is what we do with the blocks that come in from streaming.
   streamer :: StreamBlocks Block IO ()
   streamer = StreamBlocks
-    { streamBlocksMore = \blocks -> do
+    { streamBlocksMore = \blocks -> Index.indexWrite indexDB $ \iwrite -> do
         -- List comes in newest-to-oldest order.
         forM_ (NE.toList (NE.reverse blocks)) $ \blk -> do
           let hh = headerHash blk
               epochSlot = blockHeaderIndex epochSlots (Pos.Chain.Block.getBlockHeader blk)
               rslot = _relativeSlot epochSlot
-          Index.updateTip indexDB hh epochSlot
+          Index.updateTip iwrite hh epochSlot
           appendBinaryBlob db rslot (serializeBuilder blk)
           -- Sometimes we need to start a new epoch...
           when (fromIntegral (getRelativeSlot rslot) == getSlotCount epochSlots)
@@ -229,6 +231,28 @@ convertTrace trace = case trace of
         logNamed   = BM.LogNamed { BM.lnName = name, BM.lnItem = logObject }
     f logNamed
 
+data ByronProxyOptions = ByronProxyOptions
+  { bpoIndexPath    :: !String
+    -- ^ For the index database. We re-use dbPath inside SimpleNodeArgs for
+    -- the immutable DB.
+  , bpoNodeArgs     :: !SimpleNodeArgs
+  }
+
+getCommandLineOptions :: IO ByronProxyOptions
+getCommandLineOptions = execParser programInfo
+  where
+  programInfo = info
+    (ByronProxyOptions <$> indexPathParser <*> simpleNodeArgsParser)
+    (fullDesc <> progDesc "Byron proxy")
+  -- Defined in cardano-sl but not exported.
+  simpleNodeArgsParser = SimpleNodeArgs <$> commonNodeArgsParser <*> nodeArgsParser
+
+  indexPathParser = strOption $
+    long "index-path"         <>
+    metavar "FILEPATH"        <>
+    value "index-byron-proxy" <>
+    help "Index database file path (sqlite)"
+
 -- | Use cardano-sl library stuff to get all of the necessary configuration
 -- options. There's a bunch of stuff that we don't actually need but that's OK.
 main :: IO ()
@@ -237,8 +261,11 @@ main = withCompileInfo $ do
   -- print the git revision...
   -- Take all of the arguments from a cardano-sl node. Hijack db-path and
   -- reinterpret it as the immutable DB path.
-  SimpleNodeArgs cArgs nArgs <- getSimpleNodeOptions
-  let confOpts = configurationOptions (commonArgs cArgs)
+  --
+  -- TODO want to add another CLI for index db path.
+  options <- getCommandLineOptions
+  let SimpleNodeArgs cArgs nArgs = bpoNodeArgs options
+      confOpts = configurationOptions (commonArgs cArgs)
       -- Take the log config file from the common args, and default it.
       loggerConfigFile = fromMaybe "logging.yaml" (logConfig (commonArgs cArgs))
   -- No need to setup logging from cardano-sl-util! Because we don't need a
@@ -279,6 +306,7 @@ main = withCompileInfo $ do
                 -- Diffusion layer logs will have "diffusion" in their names.
                 , fdcTrace = appendName "diffusion" logTrace
                 , fdcStreamWindow = streamWindow
+                , fdcBatchSize    = 64
                 }
               -- 40 seconds.
             , bpcPoolRoundInterval = 40000000
@@ -293,9 +321,9 @@ main = withCompileInfo $ do
           -- configuration, and we assume it will never change.
           epochSlots :: SlotCount
           epochSlots = configEpochSlots genesisConfig
-          -- Default database path is ./db-byron-adapter
+          -- Default database path is ./db-byron-proxy
           dbFilePath :: FsPath
-          dbFilePath = maybe ["db-byron-adapter"] pure (dbPath cArgs)
+          dbFilePath = maybe ["db-byron-proxy"] pure (dbPath cArgs)
           fsMountPoint :: MountPoint
           fsMountPoint = MountPoint ""
           fs :: HasFS IO
@@ -324,12 +352,12 @@ main = withCompileInfo $ do
             NoValidation
           -- The supporting header hash and tip index.
           indexFilePath :: FilePath
-          indexFilePath = "index-byron-adapter"
+          indexFilePath = bpoIndexPath options
       Index.withDB_ indexFilePath $ \indexDB -> do
         -- Now we can use the index to get the tip.
         -- BUT if it's empty, so there is no tip, what do we do? Use epoch 0
         -- I guess.
-        mTip <- Index.indexAt indexDB Index.Tip
+        mTip <- Index.indexRead indexDB Index.Tip
         let dbEpoch = case mTip of
               Nothing -> 0
               Just (_, EpochSlot tipEpoch _) -> tipEpoch
@@ -348,6 +376,7 @@ main = withCompileInfo $ do
           withByronProxy bpc bbs $ \bp -> do
             let userInterrupt = getChar
             outcome <- race userInterrupt (byronProxyMain genesisBlock epochSlots indexDB db bp)
+            putStrLn "Bye"
             case outcome of
               Left _ -> pure ()
               Right impossible -> impossible

@@ -70,6 +70,7 @@ executable byron-proxy
                        directory,
                        iohk-monitoring,
                        lens,
+                       optparse-applicative,
                        ouroboros-consensus,
                        random,
                        stm,
