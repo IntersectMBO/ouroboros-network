@@ -33,6 +33,8 @@ library
                        Ouroboros.Network.Mux.Ingress
                        Ouroboros.Network.Mux.Types
                        Ouroboros.Network.Node
+                       Ouroboros.Network.NodeToNode
+                       Ouroboros.Network.NodeToClient
                        Ouroboros.Network.Pipe
                        Ouroboros.Network.Serialise
                        Ouroboros.Network.Socket
