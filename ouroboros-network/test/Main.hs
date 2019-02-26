@@ -6,6 +6,7 @@ import qualified Test.ChainGenerators (tests)
 import qualified Test.Chain (tests)
 import qualified Test.ChainFragment (tests)
 import qualified Test.ChainProducerState (tests)
+import qualified Test.Mux (tests)
 import qualified Test.Pipe (tests)
 import qualified Test.Ouroboros.Network.Node (tests)
 import qualified Test.Ouroboros.Network.Protocol.ChainSync (tests)
@@ -24,6 +25,7 @@ tests =
   , Test.Chain.tests
   , Test.ChainFragment.tests
   , Test.ChainProducerState.tests
+  , Test.Mux.tests
   , Test.Pipe.tests
   , Test.Socket.tests
   , Test.Ouroboros.Network.Node.tests
