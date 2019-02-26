@@ -1,4 +1,6 @@
-{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Consensus.Util.CBOR (
     -- * Incremental parsing in I/O
@@ -8,6 +10,9 @@ module Ouroboros.Consensus.Util.CBOR (
     -- * Higher-level incremental interface
   , Decoder(..)
   , initDecoderIO
+    -- * HasFS interaction
+  , ReadIncrementalErr(..)
+  , readIncremental
   ) where
 
 import qualified Codec.CBOR.Read as CBOR
@@ -15,10 +20,18 @@ import           Codec.Serialise (Serialise)
 import qualified Codec.Serialise as S
 import           Control.Exception (assert, throwIO)
 import           Control.Monad
-import           Control.Monad.ST (RealWorld, stToIO)
+import           Control.Monad.ST
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
+import           Data.ByteString.Builder.Extra (defaultChunkSize)
 import           Data.IORef
+import           System.IO (IOMode (..))
+
+import           Control.Monad.Class.MonadST
+import           Control.Monad.Class.MonadThrow
+
+import           Ouroboros.Storage.FS.API
+import           Ouroboros.Storage.FS.API.Types
 
 {-------------------------------------------------------------------------------
   Incremental parsing in I/O
@@ -72,6 +85,43 @@ initDecoderIO getChunk = do
   where
     getChunk' :: IO (Maybe ByteString)
     getChunk' = checkEmpty <$> getChunk
+
+    checkEmpty :: ByteString -> Maybe ByteString
+    checkEmpty bs | BS.null bs = Nothing
+                  | otherwise  = Just bs
+
+{-------------------------------------------------------------------------------
+  HasFS interaction
+-------------------------------------------------------------------------------}
+
+data ReadIncrementalErr =
+    -- | Could not deserialise the data
+    ReadFailed S.DeserialiseFailure
+
+    -- | Deserialisation was successful, but there was additional data
+  | TrailingBytes ByteString
+
+-- | Read a file incrementally
+readIncremental :: forall m h a. (Serialise a, MonadST m, MonadThrow m)
+                => HasFS m h -> FsPath -> m (Either ReadIncrementalErr a)
+readIncremental hasFS@HasFS{..} fp = withLiftST $ \f -> do
+    withFile hasFS fp ReadMode $ \h ->
+      go f h =<< f S.deserialiseIncremental
+  where
+    go :: (forall x. ST s x -> m x)
+       -> h
+       -> S.IDecode s a
+       -> m (Either ReadIncrementalErr a)
+    go f h (S.Partial k) = do
+        bs   <- hGet h defaultChunkSize
+        dec' <- f $ k (checkEmpty bs)
+        go f h dec'
+    go _ _ (S.Done leftover _ a) =
+        return $ if BS.null leftover
+                   then Right a
+                   else Left $ TrailingBytes leftover
+    go _ _ (S.Fail _ _ err) =
+        return $ Left $ ReadFailed err
 
     checkEmpty :: ByteString -> Maybe ByteString
     checkEmpty bs | BS.null bs = Nothing
