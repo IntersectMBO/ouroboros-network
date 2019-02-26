@@ -194,9 +194,9 @@ module Ouroboros.Storage.ImmutableDB.Impl
   ) where
 
 import           Control.Exception (assert)
-import           Control.Monad (when, unless, mplus, foldM, forM_, zipWithM_)
-import           Control.Monad.Catch (MonadMask, ExitCase(..), generalBracket)
-import           Control.Monad.Class.MonadSTM (MonadSTM(..))
+import           Control.Monad (foldM, forM_, mplus, unless, when, zipWithM_)
+import           Control.Monad.Catch (ExitCase (..), MonadMask, generalBracket)
+import           Control.Monad.Class.MonadSTM (MonadSTM (..))
 
 import           Data.Bifunctor (first)
 import           Data.ByteString (ByteString)
@@ -325,8 +325,8 @@ lastEpochOnDisk :: (HasCallStack, Monad m)
 lastEpochOnDisk HasFS{..} dbFolder = do
     filesInDBFolder <- listDirectory dbFolder
     return $ case mapMaybe extractEpochNumber $ Set.toList filesInDBFolder of
-      [] -> Nothing
-      epochs  -> Just $ maximum epochs
+      []     -> Nothing
+      epochs -> Just $ maximum epochs
   where
     extractEpochNumber :: String -> Maybe Epoch
     extractEpochNumber s = do
@@ -628,7 +628,9 @@ data IteratorHandle m = IteratorHandle
   }
 
 data IteratorState m = IteratorState
-  { _it_next         :: !EpochSlot
+  { _it_hasFS        :: !(HasFS m)
+    -- ^ Bundled HasFS instance allows to hide type parameters
+  , _it_next         :: !EpochSlot
     -- ^ The location of the next binary blob to read.
     --
     -- TODO check invariants with code/assertions + check them in the tests
@@ -750,7 +752,8 @@ streamBinaryBlobsImpl hasFS@HasFS{..} err dbEnv@ImmutableDBEnv {..} mbStart mbEn
           hSeek eHnd AbsoluteSeek (fromIntegral (offsetOfSlot index nextSlot))
 
           return $ Just IteratorState
-            { _it_next = next
+            { _it_hasFS = hasFS
+            , _it_next = next
             , _it_epoch_handle = eHnd
             , _it_epoch_index = index
             }
@@ -873,7 +876,8 @@ iteratorNextImpl hasFS@HasFS{..} err dbEnv it@IteratorHandle {..} = do
               -- Invariant 3 is OK (thanks to firstFilledSlot), Invariant 4 is
               -- OK.
               atomically $ writeTVar _it_state $ Just IteratorState
-                { _it_next = EpochSlot epoch slot
+                { _it_hasFS = hasFS
+                , _it_next = EpochSlot epoch slot
                 , _it_epoch_handle = eHnd
                 , _it_epoch_index = index
                 }
@@ -1048,7 +1052,7 @@ modifyOpenState HasFS{..} err@ErrorHandling{..} ImmutableDBEnv {..} action = do
 
     -- TODO what if this fails?
     closeOpenHandles :: Either ClosedState (OpenState m) -> m ()
-    closeOpenHandles (Left _) = return ()
+    closeOpenHandles (Left _)               = return ()
     closeOpenHandles (Right OpenState {..}) = hClose _currentEpochWriteHandle
 
 -- | Create a 'ClosedState' from an internal state, open or closed.
