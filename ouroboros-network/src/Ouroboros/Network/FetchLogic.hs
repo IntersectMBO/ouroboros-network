@@ -127,6 +127,255 @@ data FetchLogicExternalState peer header block m =
        --TODO: adding and then registering blocks
      }
 
+type FetchClientRegistry m = m ()
+
+-- | Execute the block fetch logic. It monitors the current chain and candidate
+-- chains. It decided which block bodies to fetch and manages the process of
+-- fetching them, including making alternative decisions based on timeouts and
+-- failures.
+--
+-- This runs forever and should be shutdown using mechanisms such as async.
+--
+fetchLogic :: forall peer time header block m a.
+              (MonadSTM m, Ord peer,
+               HasHeader header, HasHeader block,
+               HeaderHash header ~ HeaderHash block,
+               -- extra debug constraints:
+               MonadSay m, Show peer, Show header, Show block)
+           => FetchLogicExternalState peer header block m
+           -> FetchClientRegistry m
+           -> m a
+fetchLogic externalState clientRegistry = do
+    peerStates  <- newTVarM Map.empty
+    peerDeltaQs <- newTVarM Map.empty
+
+    let fetchTriggerVariables :: FetchTriggerVariables peer header block m
+        fetchTriggerVariables = FetchTriggerVariables {
+          readStateCurrentChain  = readTVar currentChainVar,
+          readStatePeerChains    = traverse readTVar candidateChainVars,
+          readStatePeerStates    = return peerStates,
+          readStateFetchedBlocks = flip Set.member <$> readTVar fetchedBlocksVar
+        }
+
+        fetchNonTriggerVariables :: FetchNonTriggerVariables peer time m
+        fetchNonTriggerVariables = FetchNonTriggerVariables {
+          readStatePeerDeltaQs = readTVar peerDeltaQs
+        }
+
+    fetchLogicIterations
+      fetchPolicyParams
+      fetchTriggerVariables
+      fetchNonTriggerVariables
+      clientRegistry
+  where
+    -- For now, use a fixed policy.
+    -- It's unclear for the moment if this will be fixed external config or
+    -- if the in-fligh per-peer needs to be adaptive.
+    fetchPolicyParams = FetchPolicyParams {
+        maxInFlightBytesPerPeer  = 256 * 1024,
+        maxConcurrentFetchPeers  = 1
+      }
+
+
+
+fetchLogicIterations :: (MonadSTM m, Ord peer,
+                         HasHeader header, HasHeader block,
+                         HeaderHash header ~ HeaderHash block,
+                         -- extra debug constraints:
+                         MonadSay m, Show peer, Show header, Show block)
+                     => FetchPolicyParams
+                     -> FetchTriggerVariables peer header block m
+                     -> FetchNonTriggerVariables peer time m
+                     -> m a
+fetchLogicIterations fetchPolicyParams
+                     fetchTriggerVariables
+                     fetchNonTriggerVariables =
+
+    iterateForever initialFetchStateFingerprint $ \fingerprint -> do
+
+      -- Run a single iteration of the fetch logic:
+      --
+      -- * wait for the state to change and make decisions for the new state
+      -- * act on those decisions
+
+      (fingerprint', decisions)
+        <- fetchLogicIterationDecide
+             fetchPolicyParams
+             fetchTriggerVariables
+             fetchNonTriggerVariables
+             fingerprint
+
+      -- Log the fetch decisions
+      --TODO
+      --say (show fetchDecisions)
+
+      fetchLogicIterationAct decisions
+
+      return fingerprint'
+
+
+iterateForever :: Monad m => a -> (a -> m a) -> m b
+iterateForever x0 m = go x0 where go x = m x >>= go
+
+
+-- | The first half of a single iteration of the fetch logic.
+--
+-- This involves:
+--
+-- * waiting for the state that the fetch decisions depend upon to change;
+-- * taking a snapshot of the state;
+-- * deciding for each peer if we will initiate a new fetch request
+--
+fetchLogicIterationDecide
+  :: (MonadSTM m, Ord peer,
+      HasHeader header, HasHeader block,
+      HeaderHash header ~ HeaderHash block,
+      -- extra debug constraints:
+      MonadSay m, Show peer, Show header, Show block)
+  => FetchPolicyParams
+  -> FetchTriggerVariables peer header block m
+  -> FetchNonTriggerVariables peer time m
+  -> FetchStateFingerprint peer header
+  -> m (FetchStateFingerprint peer header, [FetchDecision header peer])
+fetchLogicIterationDecide fetchPolicyParams
+                          fetchTriggerVariables
+                          fetchNonTriggerVariables
+                          fetchStateFingerprint = do
+
+    -- Gather a snapshot of all the state we need.
+    (fetchStateSnapshot,
+     fetchStateFingerprint') <- atomically $
+                                readStateVariables
+                                  fetchTriggerVariables
+                                  fetchNonTriggerVariables
+                                  fetchStateFingerprint
+
+    assert (fetchStateFingerprint' /= fetchStateFingerprint) $ return ()
+
+--    say (show fetchStatePeerChains)
+
+
+    -- Make all the fetch decisions
+    let fetchDecisions = puttingItAllTogether
+                           fetchPolicyParams
+                           fetchStateFetchedBlocks
+                           fetchStatePeerStates
+                           fetchStatePeerDeltaQs
+                           fetchStateCurrentChain
+                           (map swap (Map.toList fetchStatePeerChains))
+          where
+            FetchStateSnapshot {
+              fetchStateCurrentChain,
+              fetchStatePeerChains,
+              fetchStateFetchedBlocks,
+              fetchStatePeerStates,
+              fetchStatePeerDeltaQs
+            } = fetchStateSnapshot
+
+    return (fetchStateFingerprint', fetchDecisions)
+
+-- | STM actions to read various state variables that the fetch logic depends
+-- upon. Any change in these variables is a trigger to re-evaluate the decision
+-- on what blocks to fetch.
+--
+-- Note that this is a \"level trigger\" not an \"edge trigger\": we do not
+-- have to re-evaluate on every change, it is sufficient to re-evaluate at some
+-- stage after one or more changes. This means it is ok to get somewhat behind,
+-- and it is not necessary to determine exactly what changed, just that there
+-- was some change.
+--
+data FetchTriggerVariables peer header block m = FetchTriggerVariables {
+       -- | Get the length of the Ouroboros current chain
+       readStateCurrentChain  :: Tr m (Chain block),
+
+       -- candidate chains
+       readStatePeerChains    :: Tr m (Map peer (Chain header)),
+
+       -- peer fetch states, timeouts
+       readStatePeerStates    :: Tr m (Map peer PeerFetchState),
+
+       readStateFetchedBlocks :: Tr m (Point block -> Bool)
+     }
+
+-- | STM actions to read various state variables that the fetch logic uses.
+-- While the decisions do make use of the values of these variables, it is not
+-- necessary to re-evaluate when these variables change.
+--
+data FetchNonTriggerVariables peer time m = FetchNonTriggerVariables {
+       readStatePeerDeltaQs :: Tr m (Map peer (GSV time))
+       -- peer GSVs
+       -- 
+     }
+
+data FetchStateSnapshot peer header block time = FetchStateSnapshot {
+       fetchStateCurrentChain  :: Chain block,
+       fetchStatePeerChains    :: Map peer (Chain header),
+       fetchStateFetchedBlocks :: Point block -> Bool,
+       fetchStatePeerStates    :: Map peer PeerFetchState,
+       fetchStatePeerDeltaQs   :: Map peer (GSV time)
+     }
+
+data FetchStateFingerprint peer header =
+     FetchStateFingerprint
+       BlockNo
+       (Map peer (Point header))
+       (Map peer PeerFetchStatus) -- note, we don't include the full PeerFetchState
+       --TODO: trigger for the fetched block set
+  deriving Eq
+
+initialFetchStateFingerprint :: FetchStateFingerprint peer header
+initialFetchStateFingerprint =
+    FetchStateFingerprint
+      genesisBlockNo
+      Map.empty
+      Map.empty
+
+
+readStateVariables :: (MonadSTM m, Eq peer, Eq (Point header),
+                       HasHeader header, HasHeader block)
+                   => FetchTriggerVariables peer header block m
+                   -> FetchNonTriggerVariables peer time m
+                   -> FetchStateFingerprint peer header
+                   -> Tr m (FetchStateSnapshot peer header block time,
+                            FetchStateFingerprint peer header)
+readStateVariables FetchTriggerVariables{..}
+                        FetchNonTriggerVariables{..}
+                        fetchStateFingerprint = do
+
+    -- Read all the trigger state variables
+    fetchStateCurrentChain  <- readStateCurrentChain
+    fetchStatePeerChains    <- readStatePeerChains
+    fetchStatePeerStates    <- readStatePeerStates
+    fetchStateFetchedBlocks <- readStateFetchedBlocks
+
+    -- Construct the change detection fingerprint
+    let fetchStateFingerprint' =
+          FetchStateFingerprint
+            (headBlockNo fetchStateCurrentChain)
+            (Map.map headPoint fetchStatePeerChains)
+            (Map.map peerFetchStatus fetchStatePeerStates)
+
+    -- Check the fingerprint changed, or block and wait until it does
+    check (fetchStateFingerprint' /= fetchStateFingerprint)
+
+    -- Now read all the non-trigger state variables
+    fetchStatePeerDeltaQs <- readStatePeerDeltaQs
+
+    -- Construct the overall snapshot of the state
+    let fetchStateSnapshot = FetchStateSnapshot {
+          fetchStateCurrentChain,
+          fetchStatePeerChains,
+          fetchStateFetchedBlocks,
+          fetchStatePeerStates,
+          fetchStatePeerDeltaQs
+        }
+
+    return (fetchStateSnapshot, fetchStateFingerprint')
+
+
+fetchLogicIterationAct :: Monad m => [FetchDecision header peer] -> m ()
+fetchLogicIterationAct _ = return ()
+
 {-
 We have the node's /current/ or /adopted/ chain. This is the node's chain in
 the sense specified by the Ouroboros algorithm. It is a fully verified chain
@@ -433,7 +682,6 @@ data FetchDecline header peer =
   deriving Show
 
 data FetchPolicyParams = FetchPolicyParams {
-       deadlineSituation :: Bool,
        maxInFlightBytesPerPeer  :: Word,
        maxConcurrentFetchPeers  :: Word
      }
@@ -578,196 +826,6 @@ mkTestFetchedBlockHeap = do
                               modifyTVar' bhvar $ Map.insert (blockPoint b) b
     }
 
--- | STM actions to read various state variables that the fetch logic depends
--- upon. Any change in these variables is a trigger to re-evaluate the decision
--- on what blocks to fetch.
---
--- Note that this is a \"level trigger\" not an \"edge trigger\": we do not
--- have to re-evaluate on every change, it is sufficient to re-evaluate at some
--- stage after one or more changes. This means it is ok to get somewhat behind,
--- and it is not necessary to determine exactly what changed, just that there
--- was some change.
---
-data FetchStateTriggerVariables peer header block m = FetchStateTriggerVariables {
-       -- | Get the length of the Ouroboros current chain
-       readFetchStateCurrentChain  :: Tr m (Chain block),
-
-       -- candidate chains
-       readFetchStatePeerChains    :: Tr m (Map peer (Chain header)),
-
-       -- peer fetch states, timeouts
-       readFetchStatePeerStates    :: Tr m (Map peer PeerFetchState),
-
-       readFetchStateFetchedBlocks :: Tr m (Point block -> Bool)
-     }
-
--- | STM actions to read various state variables that the fetch logic uses.
--- While the decisions do make use of the values of these variables, it is not
--- necessary to re-evaluate when these variables change.
---
-data FetchStateOtherVariables peer time m = FetchStateOtherVariables {
-       readFetchStatePeerDeltaQs :: Tr m (Map peer (GSV time))
-       -- peer GSVs
-       -- 
-     }
-
-data FetchStateSnapshot peer header block time = FetchStateSnapshot {
-       fetchStateCurrentChain  :: Chain block,
-       fetchStatePeerChains    :: Map peer (Chain header),
-       fetchStateFetchedBlocks :: Point block -> Bool,
-       fetchStatePeerStates    :: Map peer PeerFetchState,
-       fetchStatePeerDeltaQs   :: Map peer (GSV time)
-     }
-
-data FetchStateFingerprint peer header =
-     FetchStateFingerprint
-       BlockNo
-       (Map peer (Point header))
-       (Map peer PeerFetchStatus) -- note, we don't include the full PeerFetchState
-       --TODO: trigger for the fetched block set
-  deriving Eq
-
-initialFetchStateFingerprint :: FetchStateFingerprint peer header
-initialFetchStateFingerprint =
-    FetchStateFingerprint
-      genesisBlockNo
-      Map.empty
-      Map.empty
-
-
-readFetchStateVariables :: (MonadSTM m, Eq peer, Eq (Point header),
-                            HasHeader header, HasHeader block)
-                        => FetchStateTriggerVariables peer header block m
-                        -> FetchStateOtherVariables peer time m
-                        -> FetchStateFingerprint peer header
-                        -> Tr m (FetchStateSnapshot peer header block time,
-                                 FetchStateFingerprint peer header)
-readFetchStateVariables FetchStateTriggerVariables{..}
-                        FetchStateOtherVariables{..}
-                        fetchStateFingerprint = do
-
-    -- Read all the trigger state variables
-    fetchStateCurrentChain  <- readFetchStateCurrentChain
-    fetchStatePeerChains    <- readFetchStatePeerChains
-    fetchStatePeerStates    <- readFetchStatePeerStates
-    fetchStateFetchedBlocks <- readFetchStateFetchedBlocks
-
-    -- Construct the change detection fingerprint
-    let fetchStateFingerprint' =
-          FetchStateFingerprint
-            (headBlockNo fetchStateCurrentChain)
-            (Map.map headPoint fetchStatePeerChains)
-            (Map.map peerFetchStatus fetchStatePeerStates)
-
-    -- Check the fingerprint changed, or block and wait until it does
-    check (fetchStateFingerprint' /= fetchStateFingerprint)
-
-    -- Now read all the non-trigger state variables
-    fetchStatePeerDeltaQs <- readFetchStatePeerDeltaQs
-
-    -- Construct the overall snapshot of the state
-    let fetchStateSnapshot = FetchStateSnapshot {
-          fetchStateCurrentChain,
-          fetchStatePeerChains,
-          fetchStateFetchedBlocks,
-          fetchStatePeerStates,
-          fetchStatePeerDeltaQs
-        }
-
-    return (fetchStateSnapshot, fetchStateFingerprint')
-
-
--- | Run a single iteration of the fetch logic.
---
--- This involves:
---
--- * waiting for the state that the fetch decisions depend upon to change;
--- * taking a snapshot of the state;
--- * deciding for each peer if we will initiate a new fetch request; and
--- * acting on those decisions.
---
-fetchLogicIteration :: (MonadSTM m, Ord peer,
-                        HasHeader header, HasHeader block,
-                        HeaderHash header ~ HeaderHash block,
-                        -- extra debug constraints:
-                        MonadSay m, Show peer, Show header, Show block)
-                    => FetchPolicyParams
-                    -> FetchStateTriggerVariables peer header block m
-                    -> FetchStateOtherVariables peer time m
-                    -> FetchStateFingerprint peer header
-                    -> m (FetchStateFingerprint peer header, [FetchDecision header peer])
-fetchLogicIteration fetchPolicyParams
-                    fetchStateTriggerVariables
-                    fetchStateOtherVariables
-                    fetchStateFingerprint = do
-
-    -- Gather a snapshot of all the state we need.
-    (fetchStateSnapshot,
-     fetchStateFingerprint') <- atomically $
-                                readFetchStateVariables
-                                  fetchStateTriggerVariables
-                                  fetchStateOtherVariables
-                                  fetchStateFingerprint
-
-    assert (fetchStateFingerprint' /= fetchStateFingerprint) $ return ()
-
---    say (show fetchStatePeerChains)
-
-
-    -- Make all the fetch decisions
-    let fetchDecisions = puttingItAllTogether
-                           fetchPolicyParams
-                           fetchStateFetchedBlocks
-                           fetchStatePeerStates
-                           fetchStatePeerDeltaQs
-                           fetchStateCurrentChain
-                           (map swap (Map.toList fetchStatePeerChains))
-          where
-            FetchStateSnapshot {
-              fetchStateCurrentChain,
-              fetchStatePeerChains,
-              fetchStateFetchedBlocks,
-              fetchStatePeerStates,
-              fetchStatePeerDeltaQs
-            } = fetchStateSnapshot
-
-    -- Log the fetch decisions
-    --TODO
-    --say (show fetchDecisions)
-
-    -- Act on the fetch decisions
-    sequence_
-      [ return () -- TODO: do it
-      | Right (FetchRequest _header _peer) <- fetchDecisions ]
-
-    return (fetchStateFingerprint', fetchDecisions)
-
-
-
-fetchLogicIterations :: (MonadSTM m, Ord peer,
-                         HasHeader header, HasHeader block,
-                         HeaderHash header ~ HeaderHash block,
-                         -- extra debug constraints:
-                         MonadSay m, Show peer, Show header, Show block)
-                     => FetchPolicyParams
-                     -> FetchStateTriggerVariables peer header block m
-                     -> FetchStateOtherVariables peer time m
-                     -> m a
-fetchLogicIterations fetchPolicyParams
-                     fetchStateTriggerVariables
-                     fetchStateOtherVariables =
-    go initialFetchStateFingerprint
-  where
-    go fetchStateFingerprint =
-
-      fetchLogicIteration
-        fetchPolicyParams
-        fetchStateTriggerVariables
-        fetchStateOtherVariables
-        fetchStateFingerprint
-      >>= go . fst
-
-
 
 demo1 :: Chain Block -> Chain BlockHeader -> Chain BlockHeader
       -> IO (Bool, [FetchDecision BlockHeader String])
@@ -786,30 +844,29 @@ demo1 currentChain candidateChain1 candidateChain2 = do
           Map.fromList [("peer1", GSV 20000 0 (Distribution 0))
                        ,("peer2", GSV 15000 0 (Distribution 0))]
 
-    let fetchStateTriggerVariables :: FetchStateTriggerVariables String BlockHeader Block IO
-        fetchStateTriggerVariables = FetchStateTriggerVariables {
-          readFetchStateCurrentChain  = readTVar currentChainVar,
-          readFetchStatePeerChains    = traverse readTVar candidateChainVars,
-          readFetchStatePeerStates    = return peerStates,
-          readFetchStateFetchedBlocks = flip Set.member <$> readTVar fetchedBlocksVar
+    let fetchTriggerVariables :: FetchTriggerVariables String BlockHeader Block IO
+        fetchTriggerVariables = FetchTriggerVariables {
+          readStateCurrentChain  = readTVar currentChainVar,
+          readStatePeerChains    = traverse readTVar candidateChainVars,
+          readStatePeerStates    = return peerStates,
+          readStateFetchedBlocks = flip Set.member <$> readTVar fetchedBlocksVar
         }
-        fetchStateOtherVariables :: FetchStateOtherVariables String Int IO
-        fetchStateOtherVariables = FetchStateOtherVariables {
-          readFetchStatePeerDeltaQs = return peerDeltaQs
+        fetchNonTriggerVariables :: FetchNonTriggerVariables String Int IO
+        fetchNonTriggerVariables = FetchNonTriggerVariables {
+          readStatePeerDeltaQs = return peerDeltaQs
         }
         fetchStateFingerprint = initialFetchStateFingerprint
 
     (fetchStateFingerprint', fetchDecisions) <-
-      fetchLogicIteration
+      fetchLogicIterationDecide
         fetchPolicyParams
-        fetchStateTriggerVariables
-        fetchStateOtherVariables
+        fetchTriggerVariables
+        fetchNonTriggerVariables
         fetchStateFingerprint
 
     return (fetchStateFingerprint' /= fetchStateFingerprint, fetchDecisions)
   where
     fetchPolicyParams = FetchPolicyParams {
-        deadlineSituation = error "unused: deadlineSituation",
         maxInFlightBytesPerPeer  = 256 * 1024,
         maxConcurrentFetchPeers  = 1
       }
