@@ -195,9 +195,9 @@ data MuxError = MuxError {
     , errorStack :: !CallStack
     } deriving Show
 
-data MuxErrorType = MuxInvalidLength
-                  | MuxUnknownMiniProtocol
+data MuxErrorType = MuxUnknownMiniProtocol
                   | MuxDecodeError
+                  | MuxBearerClosed
                   deriving (Show, Eq)
 
 instance Exception MuxError where

@@ -1,13 +1,15 @@
 
-{-# LANGUAGE DataKinds                  #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Network.Socket (
     --, demo
       demo2
     , killResponder
     , startInitiator
+    , startInitiatorT
     , startResponder
+    , startResponderT
     , hexDump
     ) where
 
@@ -16,45 +18,53 @@ import           Control.Monad
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadTimer
 import           Control.Monad.Class.MonadThrow
+import           Control.Monad.Class.MonadTimer
 import           Data.Bits
 import qualified Data.ByteString.Lazy as BL
 import           Data.Int
 import           Data.Word
+import           GHC.Stack
 import           Network.Socket hiding (recv, recvFrom, send, sendTo)
 import qualified Network.Socket.ByteString.Lazy as Socket (recv, sendAll)
 
+import           Network.TypedProtocol.Driver
 import           Ouroboros.Network.Chain (Chain, ChainUpdate, Point)
 import qualified Ouroboros.Network.Chain as Chain
 import qualified Ouroboros.Network.ChainProducerState as CPS
+import           Ouroboros.Network.Channel
 import qualified Ouroboros.Network.Mux as Mx
 import           Ouroboros.Network.Protocol.ChainSync.Client
 import           Ouroboros.Network.Protocol.ChainSync.Codec
 import           Ouroboros.Network.Protocol.ChainSync.Examples
 import           Ouroboros.Network.Protocol.ChainSync.Server
 import           Ouroboros.Network.Serialise
-import           Ouroboros.Network.Channel
-import           Network.TypedProtocol.Driver
 
 import           Text.Printf
 
 newtype SocketCtx = SocketCtx { scSocket :: Socket }
 
-setupMux :: (DemoProtocols -> Mx.MiniProtocolDescription DemoProtocols IO)
-         -> SocketCtx -> IO ()
-setupMux mpds ctx = do
+setupMux :: (Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl) => (ptcl -> Mx.MiniProtocolDescription ptcl IO)
+         -> SocketCtx
+         -> Maybe (TQueue IO (Maybe SomeException))
+         -> IO ()
+setupMux mpds ctx resq_m = do
     jobs <- Mx.muxJobs mpds (writeSocket ctx) (readSocket ctx) (sduSize ctx)
     aids <- mapM async jobs
     void $ fork (watcher aids)
-
-    return ()
   where
     watcher as = do
         (_,r) <- waitAnyCatchCancel as
-        case r of
-             Left  e -> say $ "Socket Bearer died due to " ++ show e
-             Right _ -> close (scSocket ctx)
+        close (scSocket ctx)
+        case resq_m of
+             Nothing ->
+                 case r of
+                      Left  e -> say $ "Socket Bearer died due to " ++ show e
+                      Right _ -> return ()
+             Just resq ->
+                 case r of
+                      Left  e -> atomically $ writeTQueue resq $ Just e
+                      Right _ -> atomically $ writeTQueue resq Nothing
 
 sduSize :: SocketCtx -> IO Word16
 sduSize ctx = do
@@ -63,7 +73,7 @@ sduSize ctx = do
     -- 1260 = IPv6 min MTU minus TCP header, 8 = mux header size
     return $ fromIntegral $ max (1260 - 8) (min 0xffff (15 * mss - 8))
 
-writeSocket :: SocketCtx -> Mx.MuxSDU DemoProtocols -> IO (Time IO)
+writeSocket :: Mx.ProtocolEnum ptcl => SocketCtx -> Mx.MuxSDU ptcl -> IO (Time IO)
 writeSocket ctx sdu = do
     --say "write"
     ts <- getMonotonicTime
@@ -73,7 +83,7 @@ writeSocket ctx sdu = do
     Socket.sendAll (scSocket ctx) buf
     return ts
 
-readSocket :: SocketCtx -> IO (Mx.MuxSDU DemoProtocols, Time IO)
+readSocket :: Mx.ProtocolEnum ptcl => SocketCtx -> IO (Mx.MuxSDU ptcl, Time IO)
 readSocket ctx = do
         hbuf <- recvLen' (scSocket ctx) 8 []
         --say "read"
@@ -94,11 +104,21 @@ readSocket ctx = do
     recvLen' sd l bufs = do
         buf <- Socket.recv sd l
         if BL.null buf
-            then error "socket closed" -- XXX throw exception
+            then throwM $ Mx.MuxError Mx.MuxBearerClosed "Socket closed when reading data" callStack
             else recvLen' sd (l - fromIntegral (BL.length buf)) (buf : bufs)
 
-startResponder :: Mx.MiniProtocolDescriptions DemoProtocols IO -> AddrInfo -> IO (Socket, Async ())
-startResponder mpds addr = do
+startResponder :: (Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl)
+               => Mx.MiniProtocolDescriptions ptcl IO
+               -> AddrInfo
+               -> IO (Socket, Async ())
+startResponder mpds addr = startResponderT mpds addr Nothing
+
+startResponderT :: (Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl)
+                => Mx.MiniProtocolDescriptions ptcl IO
+                -> AddrInfo
+                -> Maybe (TQueue IO (Maybe SomeException))
+                -> IO (Socket, Async ())
+startResponderT mpds addr resq_m = do
     sd <- socket (addrFamily addr) Stream defaultProtocol
     setSocketOption sd ReuseAddr 1
     setSocketOption sd ReusePort 1
@@ -109,22 +129,34 @@ startResponder mpds addr = do
   where
     server sd = forever $ do
         (client, _) <- accept sd
-        setupMux mpds $ SocketCtx client
+        setupMux mpds (SocketCtx client) resq_m
 
 killResponder :: (Socket, Async ()) -> IO ()
 killResponder (sd, hdl) = do
     cancel hdl
     close sd
 
-startInitiator :: Mx.MiniProtocolDescriptions DemoProtocols IO -> AddrInfo -> AddrInfo -> IO ()
-startInitiator mpds local remote = do
+startInitiator :: (Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl)
+               => Mx.MiniProtocolDescriptions ptcl IO
+               -> AddrInfo
+               -> AddrInfo
+               -> IO ()
+startInitiator mpds local remote = startInitiatorT mpds local remote Nothing
+
+startInitiatorT :: (Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl)
+                => Mx.MiniProtocolDescriptions ptcl IO
+                -> AddrInfo
+                -> AddrInfo
+                -> Maybe (TQueue IO (Maybe SomeException))
+                -> IO ()
+startInitiatorT mpds local remote resq_m = do
     sd <- socket (addrFamily local) Stream defaultProtocol
     setSocketOption sd ReuseAddr 1
     setSocketOption sd ReusePort 1
     bind sd (addrAddress local)
     connect sd (addrAddress remote)
 
-    setupMux mpds $ SocketCtx sd
+    setupMux mpds (SocketCtx sd) resq_m
 
 hexDump :: BL.ByteString -> String -> IO ()
 hexDump buf out | BL.empty == buf = say out
