@@ -21,7 +21,7 @@ module Test.Ouroboros.Storage.ImmutableDB.TestBlock
   ) where
 
 import           Control.Monad (forM, replicateM, void, when)
-import           Control.Monad.Catch (MonadMask)
+import           Control.Monad.Class.MonadThrow
 
 import qualified Data.Binary as Bin
 import qualified Data.ByteString.Builder as BS
@@ -107,7 +107,7 @@ testBlockToBuilder = BS.lazyByteString . Bin.encode
   EpochFileParser
 -------------------------------------------------------------------------------}
 
-testBlockEpochFileParser :: MonadMask m
+testBlockEpochFileParser :: MonadThrow m
                          => HasFS m h
                          -> EpochFileParser String m TestBlock
 testBlockEpochFileParser hasFS@HasFS{..} = EpochFileParser $ \fsPath ->
@@ -132,7 +132,7 @@ testBlockEpochFileParser hasFS@HasFS{..} = EpochFileParser $ \fsPath ->
                 newParsed = (offset, testBlock) : parsed
             in parse bytesInFile newOffset newParsed remaining
 
-testBlockEpochFileParser' :: MonadMask m
+testBlockEpochFileParser' :: MonadThrow m
                           => HasFS m h
                           -> EpochFileParser String m (Int, RelativeSlot)
 testBlockEpochFileParser' hasFS = (\tb -> (testBlockSize, tbRelativeSlot tb)) <$>
@@ -180,7 +180,7 @@ data FileCorruption
 
 -- | Returns 'True' when something was actually corrupted. For example, when
 -- drop the last bytes of an empty file, we don't actually corrupt it.
-corruptFile :: MonadMask m => HasFS m h -> FileCorruption -> FsPath -> m Bool
+corruptFile :: MonadThrow m => HasFS m h -> FileCorruption -> FsPath -> m Bool
 corruptFile hasFS@HasFS{..} fc file = case fc of
     DeleteFile              -> removeFile file $> True
     DropLastBytes n         -> withFile hasFS file AppendMode $ \hnd -> do

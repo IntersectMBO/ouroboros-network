@@ -6,8 +6,8 @@
 module Test.Ouroboros.Storage.ImmutableDB (tests) where
 
 import           Control.Monad (void)
-import           Control.Monad.Catch (MonadMask)
 import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadThrow
 
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
@@ -85,7 +85,7 @@ tests = testGroup "ImmutableDB"
     ]
 
 -- Shorthand
-withTestDB :: (HasCallStack, MonadSTM m, MonadMask m)
+withTestDB :: (HasCallStack, MonadSTM m, MonadCatch m)
            => HasFS m h
            -> ErrorHandling ImmutableDBError m
            -> Map Epoch EpochSize

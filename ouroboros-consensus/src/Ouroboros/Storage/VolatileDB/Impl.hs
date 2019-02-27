@@ -72,8 +72,8 @@ module Ouroboros.Storage.VolatileDB.Impl
     ) where
 
 import           Control.Monad
-import           Control.Monad.Catch (ExitCase (..), MonadMask, generalBracket)
 import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadThrow
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString.Builder as BS
 import           Data.Int (Int64)
@@ -140,7 +140,7 @@ instance Show blockId => Show (InternalState blockId h) where
   VolatileDB API
 ------------------------------------------------------------------------------}
 
-openDB :: (HasCallStack, MonadMask m, MonadSTM m, Ord blockId)
+openDB :: (HasCallStack, MonadCatch m, MonadSTM m, Ord blockId)
        => HasFS m h
        -> ErrorHandling (VolatileDBError blockId) m
        -> FsPath
@@ -150,7 +150,7 @@ openDB :: (HasCallStack, MonadMask m, MonadSTM m, Ord blockId)
        -> m (VolatileDB blockId m)
 openDB h e path p m t = fst <$> openDBFull h e path p m t
 
-openDBFull :: (HasCallStack, MonadMask m, MonadSTM m, Ord blockId)
+openDBFull :: (HasCallStack, MonadCatch m, MonadSTM m, Ord blockId)
            => HasFS m h
            -> ErrorHandling (VolatileDBError blockId) m
            -> FsPath
@@ -172,7 +172,7 @@ openDBFull hasFS err path parser maxBlocksPerFile toSlot = do
 
 -- After opening the db once, the same @maxBlocksPerFile@ must be provided all
 -- next opens.
-openDBImpl :: (HasCallStack, MonadMask m, MonadSTM m, Ord blockId)
+openDBImpl :: (HasCallStack, MonadThrow m, MonadSTM m, Ord blockId)
            => HasFS m h
            -> ErrorHandling (VolatileDBError blockId) m
            -> FsPath
@@ -207,7 +207,7 @@ isOpenDBImpl VolatileDBEnv{..} = do
     mSt <- atomically (readTMVar _dbInternalState)
     return $ isJust mSt
 
-reOpenDBImpl :: (HasCallStack, MonadMask m, MonadSTM m, Ord blockId)
+reOpenDBImpl :: (HasCallStack, MonadCatch m, MonadSTM m, Ord blockId)
              => VolatileDBEnv m blockId
              -> m ()
 reOpenDBImpl VolatileDBEnv{..} = do
@@ -217,7 +217,7 @@ reOpenDBImpl VolatileDBEnv{..} = do
             st <- mkInternalStateDB _dbHasFS _dbErr _dbFolder _parser _maxBlocksPerFile _toSlot
             return (Just st, ())
 
-getBlockImpl :: (MonadSTM m, MonadMask m, Ord blockId)
+getBlockImpl :: (MonadSTM m, MonadCatch m, Ord blockId)
              => VolatileDBEnv m blockId
              -> blockId
              -> m (Maybe ByteString)
@@ -242,7 +242,7 @@ getBlockImpl env@VolatileDBEnv{..} slot = do
 -- and that we are left with an empty Internal State.
 -- We should be careful about not leaking open fds when we open a new file, since this can affect garbage
 -- collection of files.
-putBlockImpl :: forall m. (MonadMask m, MonadSTM m)
+putBlockImpl :: forall m. (MonadCatch m, MonadSTM m)
              => forall blockId. (Ord blockId)
              => (blockId -> Slot)
              -> VolatileDBEnv m blockId
@@ -282,7 +282,7 @@ putBlockImpl toSlot env@VolatileDBEnv{..} blockId builder = do
 -- This is ok only if any fs updates leave the fs in a consistent state every moment.
 -- This approach works since we always close the Database in case of errors,
 -- but we should rethink it if this changes in the future.
-garbageCollectImpl :: forall m blockId. (MonadMask m, MonadSTM m, Ord blockId)
+garbageCollectImpl :: forall m blockId. (MonadCatch m, MonadSTM m, Ord blockId)
                    => VolatileDBEnv m blockId
                    -> Slot
                    -> m ()
@@ -299,7 +299,7 @@ garbageCollectImpl env@VolatileDBEnv{..} slot = do
 -- consistent state, without depending on other calls.
 -- This is achieved so far, since fs calls are reduced to
 -- removeFile and truncate 0.
-tryCollectFile :: forall m h blockId. (MonadMask m, Ord blockId)
+tryCollectFile :: forall m h blockId. (MonadThrow m, Ord blockId)
                => HasFS m h
                -> VolatileDBEnv m blockId
                -> Slot
@@ -336,7 +336,7 @@ getInternalState VolatileDBEnv{..} = do
   Internal functions
 ------------------------------------------------------------------------------}
 
-nextFile :: forall m h blockId. (MonadMask m)
+nextFile :: forall m h blockId. (MonadThrow m)
          => HasFS m h
          -> ErrorHandling (VolatileDBError blockId) m
          -> VolatileDBEnv m blockId
@@ -355,7 +355,7 @@ nextFile HasFS{..} _err VolatileDBEnv{..} st@InternalState{..} = do
         , _currentMap = Map.insert path (Nothing, 0, Map.empty) _currentMap
     }
 
-reOpenFile :: forall m h blockId. (MonadMask m)
+reOpenFile :: forall m h blockId. (MonadThrow m)
            => HasFS m h
            -> ErrorHandling (VolatileDBError blockId) m
            -> VolatileDBEnv m blockId
@@ -368,7 +368,7 @@ reOpenFile HasFS{..} _err VolatileDBEnv{..} st@InternalState{..} = do
    hTruncate _currentWriteHandle 0
    return $ st {_currentMap = Map.insert _currentWritePath (Nothing, 0, Map.empty) _currentMap, _currentWriteOffset = 0}
 
-mkInternalStateDB :: (HasCallStack, MonadMask m, Ord blockId)
+mkInternalStateDB :: (HasCallStack, MonadThrow m, Ord blockId)
                   => HasFS m h
                   -> ErrorHandling (VolatileDBError blockId) m
                   -> FsPath
@@ -382,7 +382,7 @@ mkInternalStateDB hasFS@HasFS{..} err path parser maxBlocksPerFile toSlot = do
         listDirectory path
     mkInternalState hasFS err path parser maxBlocksPerFile allFiles toSlot
 
-mkInternalState :: forall blockId m h. (MonadMask m, HasCallStack, Ord blockId)
+mkInternalState :: forall blockId m h. (MonadThrow m, HasCallStack, Ord blockId)
                 => HasFS m h
                 -> ErrorHandling (VolatileDBError blockId) m
                 -> FsPath
@@ -440,7 +440,7 @@ mkInternalState hasFS@HasFS{..} err basePath parser n files toSlot = do
     go Map.empty Map.empty Nothing Nothing (Set.toList files)
 
 
-modifyState :: forall blockId m r. (HasCallStack, MonadSTM m, MonadMask m)
+modifyState :: forall blockId m r. (HasCallStack, MonadSTM m, MonadCatch m)
             => VolatileDBEnv m blockId
             -> (forall h. HasFS m h -> (InternalState blockId h) -> m (InternalState blockId h, r))
             -> m r

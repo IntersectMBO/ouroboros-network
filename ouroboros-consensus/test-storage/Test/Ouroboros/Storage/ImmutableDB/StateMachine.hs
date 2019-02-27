@@ -19,8 +19,8 @@ module Test.Ouroboros.Storage.ImmutableDB.StateMachine
 import           Prelude hiding (elem, notElem)
 
 import           Control.Monad (forM_, unless, when)
-import           Control.Monad.Catch (MonadMask)
 import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Except (ExceptT (..), runExceptT)
 import           Control.Monad.State (MonadState, State, StateT, evalStateT,
                      get, gets, lift, modify, put, runState)
@@ -602,12 +602,12 @@ postcondition model cmdErr@(At (CmdErr mbErrors _)) resp = case unAt resp of
   where
     ev = lockstep model cmdErr resp
 
-toResp :: (Typeable m, MonadMask n)
+toResp :: (Typeable m, MonadCatch n)
        => n (Success (Iterator m)) -> n (At Resp m Concrete)
 toResp n = At . fmap (reference . Opaque) . Resp <$> tryImmDB n
 
 -- | Ignores the 'Errors'
-semantics :: (MonadMask m, Typeable m)
+semantics :: (MonadCatch m, Typeable m)
           => HasFS m h -> ImmutableDB m -> At CmdErr m Concrete
           -> m (At Resp m Concrete)
 semantics hasFS db (At (CmdErr _ cmd)) =
@@ -635,7 +635,7 @@ semanticsErr errorsVar hasFS db (At cmdErr) = case opaque <$> cmdErr of
           when (unexpectedErrorShouldCloseDB cmd) $ closeDB db
           return $ Resp (Left forcedError)
 
-semanticsCorruption :: MonadMask m
+semanticsCorruption :: MonadCatch m
                     => HasFS m h -> ImmutableDB m
                     -> Corruption (Iterator m)
                     -> m (Success (Iterator m))

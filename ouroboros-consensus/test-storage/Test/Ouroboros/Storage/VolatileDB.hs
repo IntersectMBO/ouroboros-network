@@ -12,8 +12,8 @@
 module Test.Ouroboros.Storage.VolatileDB (tests) where
 
 import           Control.Monad
-import           Control.Monad.Catch (MonadMask)
 import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadThrow
 import qualified Data.Binary as Binary
 import qualified Data.ByteString.Builder as BL
 import qualified Data.ByteString.Lazy.Char8 as C8
@@ -63,7 +63,7 @@ tests = testGroup "VolatileDB"
   , StateMachine.tests
   ]
 
-withTestDB :: (HasCallStack, MonadSTM m, MonadMask m)
+withTestDB :: (HasCallStack, MonadSTM m, MonadCatch m)
            => HasFS m h
            -> ErrorHandling (VolatileDBError MyBlockId) m
            -> FsPath

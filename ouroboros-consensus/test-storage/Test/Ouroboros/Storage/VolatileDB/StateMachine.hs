@@ -19,7 +19,6 @@ module Test.Ouroboros.Storage.VolatileDB.StateMachine (tests) where
 
 import           Prelude
 
-import           Control.Monad.Catch
 import           Control.Monad.Except
 import           Control.Monad.State
 import           Data.Bifunctor (first)
@@ -41,6 +40,7 @@ import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
 import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Storage.FS.API
 import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock

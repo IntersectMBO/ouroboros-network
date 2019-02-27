@@ -8,8 +8,8 @@ module Test.Ouroboros.Storage.Util where
 
 import           Control.Exception (Exception, SomeException)
 import qualified Control.Exception as E
-import           Control.Monad.Catch (MonadCatch, MonadMask)
-import qualified Control.Monad.Catch as C
+import           Control.Monad.Class.MonadThrow (MonadCatch, MonadThrow)
+import qualified Control.Monad.Class.MonadThrow as C
 
 import qualified Data.Binary as Binary
 import           Data.ByteString (ByteString)
@@ -278,12 +278,12 @@ fromBlock _        = error "wrong payload"
 binarySize :: Int
 binarySize = 16
 
-myParser :: (MonadMask m) => Volatile.Parser m MyBlockId
+myParser :: (MonadThrow m) => Volatile.Parser m MyBlockId
 myParser = Volatile.Parser {
     Volatile.parse = parseImpl
     }
 
-parseImpl :: forall m h. (MonadMask m)
+parseImpl :: forall m h. (MonadThrow m)
           => HasFS m h
           -> ErrorHandling (VolatileDBError MyBlockId) m
           -> [String]

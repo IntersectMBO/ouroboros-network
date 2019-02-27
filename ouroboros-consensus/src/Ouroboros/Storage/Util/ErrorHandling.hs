@@ -24,13 +24,14 @@ module Ouroboros.Storage.Util.ErrorHandling (
 
 import           Control.Exception (Exception)
 import qualified Control.Exception as E
-import           Control.Monad.Catch (MonadCatch)
-import qualified Control.Monad.Catch as C
 import           Control.Monad.Except (ExceptT, MonadError)
 import qualified Control.Monad.Except as M
 import           Control.Monad.Reader (ReaderT (..), runReaderT)
 import           Control.Monad.State (StateT (..), runStateT)
 import           Data.Type.Coercion
+
+import           Control.Monad.Class.MonadThrow (MonadCatch)
+import qualified Control.Monad.Class.MonadThrow as C
 
 -- | Reification of the 'MonadError' class
 --

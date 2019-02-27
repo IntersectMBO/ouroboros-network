@@ -7,7 +7,6 @@ module Ouroboros.Storage.FS.API (
     , withFile
     ) where
 
-import           Control.Monad.Catch
 import           Data.ByteString (ByteString)
 import           Data.ByteString.Builder (Builder)
 import           Data.Int (Int64)
@@ -15,6 +14,8 @@ import           Data.Set (Set)
 import           Data.Word (Word64)
 import           GHC.Stack
 import           System.IO (IOMode, SeekMode)
+
+import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
@@ -86,6 +87,6 @@ data HasFS m h = HasFS {
   , hasFsErr                 :: ErrorHandling FsError m
   }
 
-withFile :: (HasCallStack, MonadMask m)
+withFile :: (HasCallStack, MonadThrow m)
          => HasFS m h -> FsPath -> IOMode -> (h -> m a) -> m a
 withFile HasFS{..} fp ioMode = bracket (hOpen fp ioMode) hClose

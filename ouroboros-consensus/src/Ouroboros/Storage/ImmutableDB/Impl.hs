@@ -197,8 +197,9 @@ module Ouroboros.Storage.ImmutableDB.Impl
 
 import           Control.Exception (assert)
 import           Control.Monad (foldM, forM_, mplus, unless, when, zipWithM_)
-import           Control.Monad.Catch (ExitCase (..), MonadMask, generalBracket)
 import           Control.Monad.Class.MonadSTM (MonadSTM (..))
+import           Control.Monad.Class.MonadThrow (ExitCase (..),
+                     MonadCatch (generalBracket), MonadThrow)
 
 import           Data.Bifunctor (first)
 import           Data.ByteString (ByteString)
@@ -301,7 +302,7 @@ data ClosedState = ClosedState
 -- See 'RecoveryPolicy' for more details on the different policies.
 --
 -- __Note__: To be used in conjunction with 'withDB'.
-openDB :: (HasCallStack, MonadSTM m, MonadMask m)
+openDB :: (HasCallStack, MonadSTM m, MonadCatch m)
        => HasFS m h
        -> ErrorHandling ImmutableDBError m
        -> FsPath -> Epoch -> Map Epoch EpochSize -> RecoveryPolicy e m
@@ -342,7 +343,7 @@ lastEpochOnDisk HasFS{..} dbFolder = do
 -- | Open the database at the last epoch on disk.
 --
 -- Combination of 'openDB' and 'lastEpochOnDisk'.
-openLastEpoch :: (HasCallStack, MonadSTM m, MonadMask m)
+openLastEpoch :: (HasCallStack, MonadSTM m, MonadCatch m)
               => HasFS m h
               -> ErrorHandling ImmutableDBError m
               -> FsPath -> Map Epoch EpochSize -> RecoveryPolicy e m
@@ -355,7 +356,7 @@ openLastEpoch hasFS err dbFolder epochSizes recPol = do
   ImmutableDB Implementation
 ------------------------------------------------------------------------------}
 
-openDBImpl :: forall m h e. (HasCallStack, MonadSTM m, MonadMask m)
+openDBImpl :: forall m h e. (HasCallStack, MonadSTM m, MonadThrow m)
            => HasFS m h
            -> ErrorHandling ImmutableDBError m
            -> FsPath
@@ -389,7 +390,7 @@ openDBImpl hasFS@HasFS{..} err dbFolder epoch epochSizes recPol = do
       -- Pad with 'Nothing's to stop early termination of 'zipWithM_'
       (map (Just . fst) (Map.toAscList epochSizes) ++ repeat Nothing)
 
-closeDBImpl :: (HasCallStack, MonadSTM m, MonadMask m)
+closeDBImpl :: (HasCallStack, MonadSTM m, MonadThrow m)
             => ImmutableDBEnv m
             -> m ()
 closeDBImpl ImmutableDBEnv {..} = do
@@ -414,7 +415,7 @@ isOpenImpl ImmutableDBEnv {..} =
 
 
 -- Note that recovery will stop when an 'FsError' is thrown, as usual.
-reopenImpl :: forall m e. (HasCallStack, MonadSTM m, MonadMask m)
+reopenImpl :: forall m e. (HasCallStack, MonadSTM m, MonadThrow m)
            => ImmutableDBEnv m
            -> RecoveryPolicy e m
            -> m LastBlobLocation
@@ -460,7 +461,7 @@ getNextEpochSlotImpl dbEnv@ImmutableDBEnv {..} = do
     return $ EpochSlot _currentEpoch _nextExpectedRelativeSlot
 
 getBinaryBlobImpl
-  :: forall m. (HasCallStack, MonadSTM m, MonadMask m)
+  :: forall m. (HasCallStack, MonadSTM m, MonadThrow m)
   => ImmutableDBEnv m
   -> EpochSlot
   -> m (Maybe ByteString)
@@ -531,7 +532,7 @@ getBinaryBlobImpl dbEnv@ImmutableDBEnv {..} readEpochSlot = do
   where
     HasFS{..} = _dbHasFS
 
-appendBinaryBlobImpl :: (HasCallStack, MonadSTM m, MonadMask m)
+appendBinaryBlobImpl :: (HasCallStack, MonadSTM m, MonadCatch m)
                      => ImmutableDBEnv m
                      -> RelativeSlot
                      -> BS.Builder
@@ -576,7 +577,7 @@ appendBinaryBlobImpl dbEnv@ImmutableDBEnv{..} relativeSlot builder =
                  , _nextExpectedRelativeSlot = relativeSlot + 1
                  }, ())
 
-startNewEpochImpl :: (HasCallStack, MonadSTM m, MonadMask m)
+startNewEpochImpl :: (HasCallStack, MonadSTM m, MonadCatch m)
                   => ImmutableDBEnv m
                   -> EpochSize
                   -> m Epoch
@@ -659,7 +660,7 @@ data IteratorState h = IteratorState
   }
 
 streamBinaryBlobsImpl :: forall m
-                       . (HasCallStack, MonadSTM m, MonadMask m)
+                       . (HasCallStack, MonadSTM m, MonadCatch m)
                       => ImmutableDBEnv m
                       -> Maybe EpochSlot  -- ^ When to start streaming (inclusive).
                       -> Maybe EpochSlot  -- ^ When to stop streaming (inclusive).
@@ -788,7 +789,7 @@ streamBinaryBlobsImpl dbEnv@ImmutableDBEnv {..} mbStart mbEnd = do
             st' = st { _nextIteratorID = succ _nextIteratorID }
         in return (st', it)
 
-iteratorNextImpl :: forall m. (HasCallStack, MonadSTM m, MonadMask m)
+iteratorNextImpl :: forall m. (HasCallStack, MonadSTM m, MonadThrow m)
                  => ImmutableDBEnv m
                  -> IteratorHandle m
                  -> m IteratorResult
@@ -914,7 +915,7 @@ iteratorCloseImpl IteratorHandle {..} = do
 -- If the existing index file is invalid ('isValidIndex'), an
 -- 'InvalidFileError' is thrown. If the size of the epoch file does not match
 -- the last offset in the index file, an 'InvalidFileError' is thrown.
-mkOpenState :: (HasCallStack, MonadMask m)
+mkOpenState :: (HasCallStack, MonadThrow m)
             => HasFS m h
             -> ErrorHandling ImmutableDBError m
             -> FsPath
@@ -1009,7 +1010,7 @@ getOpenState ImmutableDBEnv {..} = do
 --
 -- TODO(adn): we should really just use 'MVar' rather than 'TMVar', but we
 -- currently don't have a simulator for code using 'MVar'.
-modifyOpenState :: forall m r. (HasCallStack, MonadSTM m, MonadMask m)
+modifyOpenState :: forall m r. (HasCallStack, MonadSTM m, MonadCatch m)
                 => ImmutableDBEnv m
                 -> (forall h. HasFS m h -> OpenState h -> m (OpenState h, r))
                 -> m r
@@ -1088,7 +1089,7 @@ type LastBlobLocation = Maybe EpochSlot
 --
 -- When the current epoch is still empty, opens the index of the previous
 -- epoch until a filled slot is found.
-lastBlobInDB :: forall m h. (HasCallStack, MonadMask m)
+lastBlobInDB :: forall m h. (HasCallStack, MonadThrow m)
              => HasFS m h
              -> ErrorHandling ImmutableDBError m
              -> OpenState h
@@ -1169,7 +1170,7 @@ checkIndices reconstructedIndex indexFromFile epochSize
 --
 -- Precondition: the size for each epoch <= the epoch to reopen must be
 -- present in the map of epoch sizes.
-recovery :: forall m h e. (HasCallStack, MonadMask m)
+recovery :: forall m h e. (HasCallStack, MonadThrow m)
          => HasFS m h
          -> ErrorHandling ImmutableDBError m
          -> FsPath -> Epoch -> Map Epoch EpochSize
@@ -1414,7 +1415,7 @@ reconstructSlotOffsets = go 0 [] 0
 
 -- | Variant of 'loadIndex' that throws an 'InvalidFileError' when 'loadIndex'
 -- signalled that there was some invalid trailing data.
-loadIndex' :: (HasCallStack, MonadMask m)
+loadIndex' :: (HasCallStack, MonadThrow m)
            => HasFS m h
            -> ErrorHandling ImmutableDBError m
            -> FsPath
