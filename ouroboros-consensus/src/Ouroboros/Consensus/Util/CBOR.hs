@@ -102,20 +102,28 @@ data ReadIncrementalErr =
   | TrailingBytes ByteString
 
 -- | Read a file incrementally
+--
+-- NOTE: This uses a chunk size of roughly 32k. If we use this function to read
+-- small things this might not be ideal.
+--
+-- NOTE: This currently expects the file to contain precisely one value. If we
+-- wanted to read a file containing multiple values which are /not/ stored as
+-- a proper CBOR list (for instance multiple concatenated blocks) we'd have
+-- to generalize this function slightly.
 readIncremental :: forall m h a. (Serialise a, MonadST m, MonadThrow m)
                 => HasFS m h -> FsPath -> m (Either ReadIncrementalErr a)
-readIncremental hasFS@HasFS{..} fp = withLiftST $ \f -> do
+readIncremental hasFS@HasFS{..} fp = withLiftST $ \liftST -> do
     withFile hasFS fp ReadMode $ \h ->
-      go f h =<< f S.deserialiseIncremental
+      go liftST h =<< liftST S.deserialiseIncremental
   where
     go :: (forall x. ST s x -> m x)
        -> h
        -> S.IDecode s a
        -> m (Either ReadIncrementalErr a)
-    go f h (S.Partial k) = do
+    go liftST h (S.Partial k) = do
         bs   <- hGet h defaultChunkSize
-        dec' <- f $ k (checkEmpty bs)
-        go f h dec'
+        dec' <- liftST $ k (checkEmpty bs)
+        go liftST h dec'
     go _ _ (S.Done leftover _ a) =
         return $ if BS.null leftover
                    then Right a
