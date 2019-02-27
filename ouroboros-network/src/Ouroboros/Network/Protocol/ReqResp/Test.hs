@@ -4,7 +4,7 @@
 {-# LANGUAGE FlexibleInstances   #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Test.Ouroboros.Network.Protocol.ReqResp (tests) where
+module Ouroboros.Network.Protocol.ReqResp.Test (tests) where
 
 import           Control.Monad.ST (runST)
 

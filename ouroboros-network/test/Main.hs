@@ -9,10 +9,10 @@ import qualified Test.ChainProducerState (tests)
 import qualified Test.Mux (tests)
 import qualified Test.Pipe (tests)
 import qualified Test.Ouroboros.Network.Node (tests)
-import qualified Test.Ouroboros.Network.Protocol.ChainSync (tests)
-import qualified Test.Ouroboros.Network.Protocol.BlockFetch (tests)
-import qualified Test.Ouroboros.Network.Protocol.PingPong (tests)
-import qualified Test.Ouroboros.Network.Protocol.ReqResp (tests)
+import qualified Ouroboros.Network.Protocol.ChainSync.Test (tests)
+import qualified Ouroboros.Network.Protocol.BlockFetch.Test (tests)
+import qualified Ouroboros.Network.Protocol.PingPong.Test (tests)
+import qualified Ouroboros.Network.Protocol.ReqResp.Test (tests)
 import qualified Test.Socket (tests)
 
 main :: IO ()
@@ -29,8 +29,8 @@ tests =
   , Test.Pipe.tests
   , Test.Socket.tests
   , Test.Ouroboros.Network.Node.tests
-  , Test.Ouroboros.Network.Protocol.ChainSync.tests
-  , Test.Ouroboros.Network.Protocol.BlockFetch.tests
-  , Test.Ouroboros.Network.Protocol.PingPong.tests
-  , Test.Ouroboros.Network.Protocol.ReqResp.tests
+  , Ouroboros.Network.Protocol.ChainSync.Test.tests
+  , Ouroboros.Network.Protocol.BlockFetch.Test.tests
+  , Ouroboros.Network.Protocol.PingPong.Test.tests
+  , Ouroboros.Network.Protocol.ReqResp.Test.tests
   ]

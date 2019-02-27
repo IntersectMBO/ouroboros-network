@@ -7,7 +7,7 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Test.Ouroboros.Network.Protocol.ChainSync where
+module Ouroboros.Network.Protocol.ChainSync.Test (tests) where
 
 import Control.Monad (unless, void)
 import qualified Control.Monad.ST as ST
