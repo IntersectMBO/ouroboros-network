@@ -13,7 +13,6 @@ import Ouroboros.Network.Mux.Types (ProtocolEnum(..))
 -- make up the overall node-to-client protocol.
 --
 data NodeToClientProtocols = ChainSyncWithBlocks
-                        -- | ClientRPC  -- TODO
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 -- | These are the actual wire format protocol numbers.
