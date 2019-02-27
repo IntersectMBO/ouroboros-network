@@ -68,6 +68,7 @@ library
                        Ouroboros.Network.Protocol.TxSubmission.Type
                        Ouroboros.Network.Protocol.TxSubmission.Client
                        Ouroboros.Network.Protocol.TxSubmission.Server
+                       Ouroboros.Network.Protocol.TxSubmission.Codec
   default-language:    Haskell2010
   other-extensions:    BangPatterns,
                        DataKinds,
