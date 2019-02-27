@@ -4,7 +4,7 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Test.Ouroboros.Network.Protocol.BlockFetch where
+module Ouroboros.Network.Protocol.BlockFetch.Test (tests) where
 
 import           Control.Monad.ST (runST)
 import           Data.ByteString.Lazy (ByteString)
