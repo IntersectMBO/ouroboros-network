@@ -2,7 +2,6 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TypeApplications           #-}
-{-# LANGUAGE TypeFamilies               #-}
 
 module Ouroboros.Storage.FS.Sim.Pure (
     PureSimFS -- opaque

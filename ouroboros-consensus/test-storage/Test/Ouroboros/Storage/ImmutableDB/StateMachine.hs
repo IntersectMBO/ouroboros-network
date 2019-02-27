@@ -1100,8 +1100,12 @@ showLabelledExamples'
   -- ^ Number of tests to run to find examples
   -> (Tag -> Bool)
   -- ^ Tag filter (can be @const True@)
+  -> (   DBModel
+      -> ModelDBPure
+      -> StateMachine (Model m) (At CmdErr m) m (At Resp m)
+     )
   -> IO ()
-showLabelledExamples' mbReplay numTests focus = do
+showLabelledExamples' mbReplay numTests focus stateMachine = do
     replaySeed <- case mbReplay of
       Nothing   -> getStdRandom (randomR (1,999999))
       Just seed -> return seed
@@ -1116,11 +1120,11 @@ showLabelledExamples' mbReplay numTests focus = do
           property True
   where
     (dbm, mdb) = mkDBModel
-    smUnused = sm hasFsUnused dbUnused dbm mdb
+    smUnused = stateMachine dbm mdb
 
 showLabelledExamples :: IO ()
 showLabelledExamples =
-    showLabelledExamples' Nothing 1000 nonError
+    showLabelledExamples' Nothing 1000 nonError (sm hasFsUnused dbUnused)
   where
     nonError TagErrorDuringAppendBinaryBlob = False
     nonError TagErrorDuringStartNewEpoch    = False
@@ -1129,7 +1133,7 @@ showLabelledExamples =
 
 showLabelledErrorExamples :: IO ()
 showLabelledErrorExamples =
-    showLabelledExamples' Nothing 1000 (const True)
+    showLabelledExamples' Nothing 1000 (const True) (smErr (error "errorsVar unused") hasFsUnused dbUnused)
 
 prop_sequential :: Property
 prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do

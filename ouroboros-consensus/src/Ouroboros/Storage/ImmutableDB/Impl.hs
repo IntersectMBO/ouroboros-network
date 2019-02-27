@@ -979,6 +979,13 @@ mkOpenState hasFS@HasFS{..} err dbFolder epoch epochSizes nextIteratorID = do
 
 -- | Get the 'OpenState' of the given database, throw a 'ClosedDBError' in
 -- case it is closed.
+--
+-- NOTE: Since the 'OpenState' is parameterized over a type parameter @h@ of
+-- handles, which is not visible from the type of the @ImmutableDBEnv@,
+-- we return a @SomePair@ here that returns the open state along with a 'HasFS'
+-- instance for the /same/ type parameter @h@. Note that it would be impossible
+-- to use an existing 'HasFS' instance already in scope otherwise, since the
+-- @h@ parameters would not be known to match.
 getOpenState :: (HasCallStack, MonadSTM m)
              => ImmutableDBEnv m
              -> m (SomePair (HasFS m) OpenState)

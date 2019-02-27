@@ -6,7 +6,6 @@
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TupleSections              #-}
 {-# LANGUAGE TypeApplications           #-}
-{-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
 -- | 'HasFS' instance wrapping 'SimFS' that generates errors, suitable for
@@ -206,8 +205,7 @@ type ErrorStreamWithCorruption = Stream (FsErrorType, Maybe PutCorruption)
 -- An 'ErrorStreams' is used in conjunction with 'SimErrorFS', which is a layer
 -- on top of 'SimFS' that simulates methods throwing 'FsError's.
 data Errors = Errors
-  { _newBuffer                :: ErrorStream
-  , _dumpState                :: ErrorStream
+  { _dumpState                :: ErrorStream
 
     -- Operations on files
   , _hOpen                    :: ErrorStream
@@ -215,7 +213,6 @@ data Errors = Errors
   , _hSeek                    :: ErrorStream
   , _hGet                     :: ErrorStream
   , _hPut                     :: ErrorStreamWithCorruption
-  , _hPutBuffer               :: ErrorStream
   , _hTruncate                :: ErrorStream
   , _hGetSize                 :: ErrorStream
 
@@ -241,14 +238,12 @@ instance Show Errors where
 
       streams :: [String]
       streams = catMaybes
-        [ s "_newBuffer"                _newBuffer
-        , s "_dumpState"                _dumpState
+        [ s "_dumpState"                _dumpState
         , s "_hOpen"                    _hOpen
         , s "_hClose"                   _hClose
         , s "_hSeek"                    _hSeek
         , s "_hGet"                     _hGet
         , s "_hPut"                     _hPut
-        , s "_hPutBuffer"               _hPutBuffer
         , s "_hTruncate"                _hTruncate
         , s "_hGetSize"                 _hGetSize
         , s "_createDirectory"          _createDirectory
@@ -261,14 +256,12 @@ instance Show Errors where
 
 instance Semigroup Errors where
   egs1 <> egs2 = Errors
-      { _newBuffer                = combine _newBuffer
-      , _dumpState                = combine _dumpState
+      { _dumpState                = combine _dumpState
       , _hOpen                    = combine _hOpen
       , _hClose                   = combine _hClose
       , _hSeek                    = combine _hSeek
       , _hGet                     = combine _hGet
       , _hPut                     = combine _hPut
-      , _hPutBuffer               = combine _hPutBuffer
       , _hTruncate                = combine _hTruncate
       , _hGetSize                 = combine _hGetSize
       , _createDirectory          = combine _createDirectory
@@ -290,14 +283,12 @@ instance Monoid Errors where
 -- 'hPut'.
 simpleErrors :: ErrorStream -> Errors
 simpleErrors es = Errors
-    { _newBuffer                = es
-    , _dumpState                = es
+    { _dumpState                = es
     , _hOpen                    = es
     , _hClose                   = es
     , _hSeek                    = es
     , _hGet                     = es
     , _hPut                     = fmap (, Nothing) es
-    , _hPutBuffer               = es
     , _hTruncate                = es
     , _hGetSize                 = es
     , _createDirectory          = es
@@ -345,14 +336,12 @@ instance Arbitrary Errors where
     return Errors {..}
 
   shrink err@Errors {..} = catMaybes
-      [ (\s' -> err { _newBuffer = s' })                <$> dropLast _newBuffer
-      , (\s' -> err { _dumpState = s' })                <$> dropLast _dumpState
+      [ (\s' -> err { _dumpState = s' })                <$> dropLast _dumpState
       , (\s' -> err { _hOpen = s' })                    <$> dropLast _hOpen
       , (\s' -> err { _hClose = s' })                   <$> dropLast _hClose
       , (\s' -> err { _hSeek = s' })                    <$> dropLast _hSeek
       , (\s' -> err { _hGet = s' })                     <$> dropLast _hGet
       , (\s' -> err { _hPut = s' })                     <$> dropLast _hPut
-      , (\s' -> err { _hPutBuffer = s' })               <$> dropLast _hPutBuffer
       , (\s' -> err { _hTruncate = s' })                <$> dropLast _hTruncate
       , (\s' -> err { _hGetSize = s' })                 <$> dropLast _hGetSize
       , (\s' -> err { _createDirectory = s' })          <$> dropLast _createDirectory
@@ -426,7 +415,7 @@ mkSimErrorHasFS err fsVar errorsVar =
         , hasFsErr = err
         }
 
--- | Runs a 'SimErrorFS' computation provided an 'Errors' and an initial
+-- | Runs a computation provided an 'Errors' and an initial
 -- 'MockFS', producing a result and the final state of the filesystem.
 runSimErrorFS :: MonadSTM m
               => ErrorHandling FsError m
@@ -458,7 +447,7 @@ withErrors errorsVar tempErrors action = do
 -------------------------------------------------------------------------------}
 
 -- | Advance to the next error in the stream of some 'ErrorStream' in the
--- 'Errors' stored in 'SimErrorFSE'. Extracts the right error stream from the
+-- 'Errors' stored in the 'TVar'. Extracts the right error stream from the
 -- state with the @getter@ and stores the advanced error stream in the state
 -- with the @setter@.
 next :: MonadSTM m

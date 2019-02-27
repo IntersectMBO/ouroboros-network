@@ -1,6 +1,5 @@
 {-# LANGUAGE RankNTypes      #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE TypeFamilies    #-}
 
 -- | An abstract view over the filesystem.
 module Ouroboros.Storage.FS.API (

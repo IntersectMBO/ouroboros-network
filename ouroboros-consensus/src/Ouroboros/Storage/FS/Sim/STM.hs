@@ -1,11 +1,5 @@
-{-# LANGUAGE CPP                        #-}
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE MultiParamTypeClasses      #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE TypeApplications           #-}
-{-# LANGUAGE TypeFamilies               #-}
-{-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 
 -- | 'HasFS' instance using 'MockFS' stored in an STM variable
 module Ouroboros.Storage.FS.Sim.STM (
@@ -31,7 +25,7 @@ import qualified Ouroboros.Storage.Util.ErrorHandling as EH
   The simulation-related types
 ------------------------------------------------------------------------------}
 
---- | Runs a 'SimFs' computation provided an initial 'MockFS', producing a
+--- | Runs a computation provided an initial 'MockFS', producing a
 --- result, the final state of the filesystem and a sequence of actions occurred
 --- in the filesystem.
 runSimFS :: MonadSTM m

@@ -1,7 +1,6 @@
 {-# LANGUAGE BangPatterns      #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TupleSections     #-}
-{-# LANGUAGE TypeFamilies      #-}
 
 -- | IO implementation of the 'HasFS' class
 module Ouroboros.Storage.FS.IO (
