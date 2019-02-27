@@ -20,7 +20,6 @@ import           Control.Monad.Class.MonadTimer
 import           Data.Bits
 import qualified Data.ByteString.Lazy as BL
 import           Data.Int
-import qualified Data.Map.Strict as M
 import           Data.Word
 import           Network.Socket hiding (recv, recvFrom, send, sendTo)
 import qualified Network.Socket.ByteString.Lazy as Socket (recv, sendAll)
@@ -41,7 +40,8 @@ import           Text.Printf
 
 newtype SocketCtx = SocketCtx { scSocket :: Socket }
 
-setupMux :: Mx.MiniProtocolDescriptions IO -> SocketCtx -> IO ()
+setupMux :: (DemoProtocols -> Mx.MiniProtocolDescription DemoProtocols IO)
+         -> SocketCtx -> IO ()
 setupMux mpds ctx = do
     jobs <- Mx.muxJobs mpds (writeSocket ctx) (readSocket ctx) (sduSize ctx)
     aids <- mapM async jobs
@@ -62,7 +62,7 @@ sduSize ctx = do
     -- 1260 = IPv6 min MTU minus TCP header, 8 = mux header size
     return $ fromIntegral $ max (1260 - 8) (min 0xffff (15 * mss - 8))
 
-writeSocket :: SocketCtx -> Mx.MuxSDU -> IO (Time IO)
+writeSocket :: SocketCtx -> Mx.MuxSDU DemoProtocols -> IO (Time IO)
 writeSocket ctx sdu = do
     --say "write"
     ts <- getMonotonicTime
@@ -72,7 +72,7 @@ writeSocket ctx sdu = do
     Socket.sendAll (scSocket ctx) buf
     return ts
 
-readSocket :: SocketCtx -> IO (Mx.MuxSDU, Time IO)
+readSocket :: SocketCtx -> IO (Mx.MuxSDU DemoProtocols, Time IO)
 readSocket ctx = do
         hbuf <- recvLen' (scSocket ctx) 8 []
         --say "read"
@@ -96,7 +96,7 @@ readSocket ctx = do
             then error "socket closed" -- XXX throw exception
             else recvLen' sd (l - fromIntegral (BL.length buf)) (buf : bufs)
 
-startResponder :: Mx.MiniProtocolDescriptions IO -> AddrInfo -> IO (Socket, Async ())
+startResponder :: Mx.MiniProtocolDescriptions DemoProtocols IO -> AddrInfo -> IO (Socket, Async ())
 startResponder mpds addr = do
     sd <- socket (addrFamily addr) Stream defaultProtocol
     setSocketOption sd ReuseAddr 1
@@ -115,7 +115,7 @@ killResponder (sd, hdl) = do
     cancel hdl
     close sd
 
-startInitiator :: Mx.MiniProtocolDescriptions IO -> AddrInfo -> AddrInfo -> IO ()
+startInitiator :: Mx.MiniProtocolDescriptions DemoProtocols IO -> AddrInfo -> AddrInfo -> IO ()
 startInitiator mpds local remote = do
     sd <- socket (addrFamily local) Stream defaultProtocol
     setSocketOption sd ReuseAddr 1
@@ -128,6 +128,17 @@ startInitiator mpds local remote = do
 hexDump :: BL.ByteString -> String -> IO ()
 hexDump buf out | BL.empty == buf = say out
 hexDump buf out = hexDump (BL.tail buf) (out ++ printf "0x%02x " (BL.head buf))
+
+-- | The enumeration of all mini-protocols in our demo protocol.
+data DemoProtocols = ChainSync
+  deriving (Eq, Ord, Enum, Bounded)
+
+instance Mx.ProtocolEnum DemoProtocols where
+  fromProtocolEnum ChainSync = 2
+
+  toProtocolEnum 2 = Just ChainSync
+  toProtocolEnum _ = Nothing
+
 
 demo2 :: forall block .
         (Chain.HasHeader block, Serialise block, Eq block, Show block )
@@ -146,16 +157,14 @@ demo2 chain0 updates = do
 
     let Just expectedChain = Chain.applyChainUpdates updates chain0
         target = Chain.headPoint expectedChain
-        a_mps = Mx.MiniProtocolDescriptions $ M.fromList
-                    [(Mx.ChainSync, Mx.MiniProtocolDescription Mx.ChainSync
-                        (consumerInit consumerDone target consumerVar)
-                        dummyCallback)
-                    ]
-        b_mps = Mx.MiniProtocolDescriptions $ M.fromList
-                    [(Mx.ChainSync, Mx.MiniProtocolDescription Mx.ChainSync
-                        dummyCallback
-                        (producerRsp producerVar))
-                    ]
+        a_mps ChainSync = Mx.MiniProtocolDescription
+                            (Mx.AppProtocolId ChainSync)
+                            (consumerInit consumerDone target consumerVar)
+                            dummyCallback
+        b_mps ChainSync = Mx.MiniProtocolDescription
+                            (Mx.AppProtocolId ChainSync)
+                            dummyCallback
+                            (producerRsp producerVar)
 
     {-printf $ "Expected Chain:\n"
     printf $ Chain.prettyPrintChain "\n" show expectedChain

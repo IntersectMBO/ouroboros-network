@@ -1,6 +1,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
 
 module Ouroboros.Network.Mux.Ingress (
       decodeMuxSDUHeader
@@ -13,9 +14,9 @@ import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM
 import qualified Data.Binary.Get as Bin
 import           Data.Bits
+import           Data.Word
 import qualified Data.ByteString.Lazy as BL
-import qualified Data.Map.Strict as M
-import           Text.Printf
+import           Data.Array
 
 import           Ouroboros.Network.Mux.Types
 
@@ -65,7 +66,8 @@ negMiniProtocolMode ModeResponder = ModeInitiator
 -- >                    +-----------+
 
 {- | Decode a MuSDU header -}
-decodeMuxSDUHeader :: BL.ByteString -> Maybe MuxSDU
+decodeMuxSDUHeader :: ProtocolEnum ptcl
+                   => BL.ByteString -> Maybe (MuxSDU ptcl)
 decodeMuxSDUHeader buf =
     case Bin.runGetOrFail dec buf of
          Left  (_, _, _)  -> Nothing
@@ -83,16 +85,15 @@ decodeMuxSDUHeader buf =
     getMode 0x8000 = ModeResponder
     getMode _      = error "impossible use of bitmask" -- XXX
 
-    getId 0 = Muxcontrol
-    getId 1 = DeltaQ
-    getId 2 = ChainSync
-    getId 3 = BlockFetch
-    getId 4 = TxSubmission
+    getId :: ProtocolEnum ptcl => Word16 -> MiniProtocolId ptcl
+    getId n | Just ptcl <- toProtocolEnum n
+            = ptcl
     getId a = error $ "unknow miniprotocol " ++ show a -- XXX
 
 -- | demux runs as a single separate thread and reads complete 'MuxSDU's from the underlying
 -- Mux Bearer and forwards it to the matching ingress queueu.
-demux :: forall m. (MonadSTM m, MonadSay m) => PerMuxSharedState m -> m ()
+demux :: (MonadSTM m, MonadSay m, Ord ptcl, Enum ptcl)
+      => PerMuxSharedState ptcl m -> m ()
 demux pmss = forever $ do
     (sdu, _) <- Ouroboros.Network.Mux.Types.read pmss
     --say $ printf "demuxing sdu on mid %s mode %s" (show $ msId sdu) (show $ msMode sdu)
@@ -100,12 +101,15 @@ demux pmss = forever $ do
     atomically $ writeTBQueue (ingressQueue (dispatchTable pmss) (msId sdu) (negMiniProtocolMode $ msMode sdu)) (msBlob sdu)
 
 -- | Return the ingress queueu for a given 'MiniProtocolId' and 'MiniProtocolMode'.
-ingressQueue :: forall m. (MonadSTM m) => MiniProtocolDispatch m -> MiniProtocolId -> MiniProtocolMode -> TBQueue m BL.ByteString
+ingressQueue :: (MonadSTM m, Ord ptcl, Enum ptcl)
+             => MiniProtocolDispatch ptcl m
+             -> MiniProtocolId ptcl
+             -> MiniProtocolMode
+             -> TBQueue m BL.ByteString
 ingressQueue (MiniProtocolDispatch tbl) dis mode =
-    case M.lookup (dis, mode) tbl of
-         Nothing -> error $ printf "Missing MiniProtocol %s mode %s in dispatch table"
-                                   (show dis) (show mode) -- XXX
-         Just q  -> q
+    tbl ! (dis, mode)
+    -- We can use array indexing here, because we constructed the dispatch
+    -- table to cover the full range of the type given by 'MiniProtocolId ptcl'
 
 
 
