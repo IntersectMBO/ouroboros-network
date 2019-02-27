@@ -4,14 +4,14 @@
 
 module Ouroboros.Storage.VolatileDB.Util where
 
-import           Control.Monad.Catch (ExitCase (..), MonadMask, generalBracket)
 import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadThrow
 import qualified Data.Text as T
 import           Text.Read (readMaybe)
 
-import           Ouroboros.Storage.VolatileDB.Types
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
+import           Ouroboros.Storage.VolatileDB.Types
 
 {------------------------------------------------------------------------------
   Utilities
@@ -35,7 +35,7 @@ fromEither err = \case
     Left e -> EH.throwError err e
     Right a -> return a
 
-modifyTMVar :: (MonadSTM m, MonadMask m)
+modifyTMVar :: (MonadSTM m, MonadCatch m)
             => TMVar m a
             -> (a -> m (a,b))
             -> m b

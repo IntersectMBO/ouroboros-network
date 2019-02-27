@@ -177,7 +177,7 @@ blockHeaderIndex epochSlots blkHeader = EpochSlot epoch relativeSlot
       . Lens.to (\x -> x - 1)
     BlockHeaderMain mBlkHeader -> mBlkHeader ^.
         gbhConsensus
-      . mcdSlot 
+      . mcdSlot
       . Lens.to siEpoch
       . Lens.to getEpochIndex
       . Lens.to fromIntegral
@@ -326,7 +326,7 @@ main = withCompileInfo $ do
           dbFilePath = maybe ["db-byron-proxy"] pure (dbPath cArgs)
           fsMountPoint :: MountPoint
           fsMountPoint = MountPoint ""
-          fs :: HasFS IO
+          fs :: HasFS IO HandleIO
           fs = ioHasFS fsMountPoint
           errorHandling :: ErrorHandling ImmutableDBError IO
           errorHandling = ErrorHandling

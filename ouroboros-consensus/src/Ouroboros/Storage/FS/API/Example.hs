@@ -23,7 +23,7 @@ import qualified Ouroboros.Storage.Util.ErrorHandling as EH
   Example program that can run in any monad with file system support
 -------------------------------------------------------------------------------}
 
-example :: (HasCallStack, Monad m) => HasFS m -> m [ByteString]
+example :: (HasCallStack, Monad m) => HasFS m h -> m [ByteString]
 example HasFS{..} = do
     h1 <- hOpen ["cardano.txt"] IO.ReadWriteMode
     _  <- hPut h1 "test"
@@ -52,10 +52,10 @@ example HasFS{..} = do
 
 exampleSimFS :: IO ()
 exampleSimFS = do
-    mRes <- try $ runSimFS demo Mock.example
+    mRes <- try demo
     case mRes of
       Left  err      -> putStrLn (prettyFsError err)
       Right (bs, fs) -> putStrLn (Mock.pretty fs) >> print bs
   where
-    demo :: SimFS IO [ByteString]
-    demo = example (simHasFS EH.exceptions)
+    demo :: IO ([ByteString], Mock.MockFS)
+    demo = runSimFS EH.exceptions Mock.example example

@@ -13,7 +13,7 @@ module Ouroboros.Storage.ImmutableDB.API
   , module Ouroboros.Storage.ImmutableDB.Types
   ) where
 
-import           Control.Monad.Catch (MonadMask, bracket)
+import           Control.Monad.Class.MonadThrow
 
 import           Data.ByteString (ByteString)
 import           Data.ByteString.Builder (Builder)
@@ -29,7 +29,7 @@ import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
 -- | Open the database using the given function, perform the given action
 -- using the database, and closes the database using its 'closeDB' function,
 -- in case of success or when an exception was raised.
-withDB :: (HasCallStack, MonadMask m)
+withDB :: (HasCallStack, MonadThrow m)
        => m (ImmutableDB m, Maybe EpochSlot)
           -- ^ How to open the database
        -> (ImmutableDB m -> Maybe EpochSlot -> m a)
@@ -200,7 +200,7 @@ data Iterator m = Iterator
 -- and the given @start@ and @end@ 'EpochSlot's. Perform the given action
 -- using the iterator, and close the iterator using its 'iteratorClose'
 -- function, in case of success or when an exception was raised.
-withIterator :: (HasCallStack, MonadMask m)
+withIterator :: (HasCallStack, MonadThrow m)
              => ImmutableDB m
                 -- ^ The database
              -> Maybe EpochSlot -- ^ Start streaming from here (inclusive)

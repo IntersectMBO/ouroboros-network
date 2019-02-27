@@ -8,6 +8,7 @@
 module Ouroboros.Consensus.Util (
     Dict(..)
   , Some(..)
+  , SomePair(..)
   , foldlM'
   , repeatedly
   , repeatedlyM
@@ -21,6 +22,8 @@ module Ouroboros.Consensus.Util (
   , lastMaybe
   , fib
   , allDisjoint
+  , (.:)
+  , (..:)
   ) where
 
 import qualified Data.ByteString as Strict
@@ -36,6 +39,10 @@ data Dict (a :: Constraint) where
 
 data Some (f :: k -> *) where
     Some :: f a -> Some f
+
+-- | Pair of functors instantiated to the /same/ existential
+data SomePair (f :: k -> *) (g :: k -> *) where
+    SomePair :: f a -> g a -> SomePair f g
 
 foldlM' :: forall m a b. Monad m => (b -> a -> m b) -> b -> [a] -> m b
 foldlM' f = go
@@ -118,3 +125,9 @@ allDisjoint = go Set.empty
     go :: Set a -> [Set a] -> Bool
     go _   []       = True
     go acc (xs:xss) = Set.disjoint acc xs && go (Set.union acc xs) xss
+
+(.:) :: (c -> d) -> (a -> b -> c) -> (a -> b -> d)
+(f .: g) a b = f (g a b)
+
+(..:) :: (d -> e) -> (a -> b -> c -> d) -> (a -> b -> c -> e)
+(f ..: g) a b c = f (g a b c)

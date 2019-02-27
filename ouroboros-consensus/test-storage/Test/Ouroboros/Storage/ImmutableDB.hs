@@ -6,8 +6,8 @@
 module Test.Ouroboros.Storage.ImmutableDB (tests) where
 
 import           Control.Monad (void)
-import           Control.Monad.Catch (MonadMask)
-import           Control.Monad.Class.MonadSTM (MonadSTM)
+import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadThrow
 
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
@@ -21,15 +21,15 @@ import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import           Data.Map (Map)
 import qualified Data.Map.Strict as M
-import           Data.Maybe (fromMaybe, maybeToList, isNothing)
+import           Data.Maybe (fromMaybe, isNothing, maybeToList)
 import           Data.Word (Word64)
 
 import qualified System.IO as IO
 
-import           Test.Ouroboros.Storage.ImmutableDB.Sim (demoScript)
-import qualified Test.Ouroboros.Storage.ImmutableDB.TestBlock as TestBlock
-import qualified Test.Ouroboros.Storage.ImmutableDB.StateMachine as StateMachine
 import qualified Test.Ouroboros.Storage.ImmutableDB.CumulEpochSizes as CumulEpochSizes
+import           Test.Ouroboros.Storage.ImmutableDB.Sim (demoScript)
+import qualified Test.Ouroboros.Storage.ImmutableDB.StateMachine as StateMachine
+import qualified Test.Ouroboros.Storage.ImmutableDB.TestBlock as TestBlock
 import           Test.Ouroboros.Storage.Util
 import           Test.QuickCheck
 import           Test.QuickCheck.Monadic (monadicIO, pick, run)
@@ -43,7 +43,6 @@ import           Ouroboros.Storage.FS.Sim.FsTree (FsTree (..))
 import qualified Ouroboros.Storage.FS.Sim.FsTree as FS
 import           Ouroboros.Storage.FS.Sim.MockFS (MockFS)
 import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
-import           Ouroboros.Storage.FS.Sim.STM (SimFS)
 import qualified Ouroboros.Storage.FS.Sim.STM as Sim
 import           Ouroboros.Storage.ImmutableDB
 import           Ouroboros.Storage.ImmutableDB.Index
@@ -86,8 +85,8 @@ tests = testGroup "ImmutableDB"
     ]
 
 -- Shorthand
-withTestDB :: (HasCallStack, MonadSTM m, MonadMask m)
-           => HasFS m
+withTestDB :: (HasCallStack, MonadSTM m, MonadCatch m)
+           => HasFS m h
            -> ErrorHandling ImmutableDBError m
            -> Map Epoch EpochSize
            -> (ImmutableDB m -> m a)
@@ -96,11 +95,11 @@ withTestDB hasFS err epochSizes f =
     withDB (openDB hasFS err ["test"] 0 epochSizes NoValidation) (\db _ -> f db)
 
 withSimTestDB :: Map Epoch EpochSize
-              -> (ImmutableDB (SimFS IO) -> SimFS IO a)
-              -> SimFS IO a
-withSimTestDB = withTestDB
-                  (Sim.simHasFS     EH.exceptions)
-                  (Sim.liftErrSimFS EH.exceptions)
+              -> (ImmutableDB IO -> IO a)
+              -> IO a
+withSimTestDB epochSizes f = do
+    fsVar <- atomically $ newTVar Mock.empty
+    withTestDB (Sim.simHasFS EH.exceptions fsVar) EH.exceptions epochSizes f
 
 {------------------------------------------------------------------------------
   Builder
@@ -155,7 +154,7 @@ instance Arbitrary AppendAndGet where
 prop_appendAndGet :: AppendAndGet -> Property
 prop_appendAndGet (AppendAndGet append get) = label labelToApply $
     monadicIO $ do
-      r <- run $ tryImmDB $ Sim.runSimFS script Mock.empty
+      r <- run $ tryImmDB script
       assertion r
   where
     script = withSimTestDB (M.singleton 0 epochSize) $ \db -> do
@@ -198,22 +197,22 @@ prop_appendAndGet (AppendAndGet append get) = label labelToApply $
       | get == firstAppend
       = ("get the first blob from the first epoch",
          \case
-            Right (Just b, _) | b == "first" -> return ()
+            Right (Just b) | b == "first" -> return ()
             r -> fail ("Expected Just \"first\", got: " ++ show r))
       | get == secondAppend
       = ("get the second blob from the second epoch",
          \case
-            Right (Just b, _) | b == "second" -> return ()
+            Right (Just b) | b == "second" -> return ()
             r -> fail ("Expected Just \"second\", got: " ++ show r))
       | get == EpochSlot 1 append
       = ("get the append blob from the second epoch",
          \case
-            Right (Just b, _) | b == "haskell" -> return ()
+            Right (Just b) | b == "haskell" -> return ()
             r -> fail ("Expected Just \"haskell\", got: " ++ show r))
       | otherwise
       = ("get a missing slot from an epoch",
          \case
-            Right (Nothing, _) -> return ()
+            Right Nothing -> return ()
             r -> fail ("Expected Nothing, got: " ++ show r))
 
 test_appendAndGet :: Assertion
@@ -509,7 +508,7 @@ prop_iterator IteratorContentsAndRange {..} = monadicIO $ do
         script        = withSimTestDB (M.singleton 0 fixedEpochSize) $ \db -> do
                           executeDBActions db _dbActions
                           withIterator db (Just _start) (Just _end) iteratorToList
-    r <- run $ tryImmDB $ Sim.runSimFS script Mock.empty
+    r <- run $ tryImmDB script
     case r of
       Left (UserError (SlotGreaterThanEpochSizeError {}) _)
         |  getRelativeSlot (_relativeSlot _start) >= fixedEpochSize
@@ -522,7 +521,7 @@ prop_iterator IteratorContentsAndRange {..} = monadicIO $ do
         | _start > lastAppended || _end > lastAppended
         -> return ()
       Left e -> fail $ prettyImmutableDBError e
-      Right (actualBlobs, _) | actualBlobs /= expectedBlobs
+      Right actualBlobs | actualBlobs /= expectedBlobs
         -> fail ("Expected: " <> show expectedBlobs <> " but got: " <>
                  show actualBlobs)
       Right _ -> return ()
@@ -564,18 +563,15 @@ prop_writeIndex_loadIndex index =
     dbFolder = []
     epoch = 0
 
-    prop :: SimFS IO Property
-    prop = do
+    prop :: HasFS IO h -> IO Property
+    prop hasFS = do
       writeIndex hasFS dbFolder epoch index
       (index', mbJunk) <- loadIndex hasFS dbFolder epoch
       return $ index === index' .&&. isNothing mbJunk
 
-    hasFS :: HasFS (SimFS IO)
-    hasFS = Sim.simHasFS EH.exceptions
-
-    runS :: SimFS IO Property -> IO Property
+    runS :: (HasFS IO Mock.Handle -> IO Property) -> IO Property
     runS m = do
-        r <- tryFS (Sim.runSimFS m Mock.empty)
+        r <- tryFS (Sim.runSimFS EH.exceptions Mock.empty m)
         case r of
           Left  e      -> fail (prettyFsError e)
           Right (p, _) -> return p
@@ -587,18 +583,15 @@ prop_writeSlotOffsets_loadIndex_indexToSlotOffsets (SlotOffsets offsets) =
     dbFolder = []
     epoch = 0
 
-    prop :: SimFS IO Property
-    prop = do
+    prop :: HasFS IO h -> IO Property
+    prop hasFS = do
       writeSlotOffsets hasFS dbFolder epoch offsets
       (index, mbJunk) <- loadIndex hasFS dbFolder epoch
       return $ indexToSlotOffsets index === offsets .&&. isNothing mbJunk
 
-    hasFS :: HasFS (SimFS IO)
-    hasFS = Sim.simHasFS EH.exceptions
-
-    runS :: SimFS IO Property -> IO Property
+    runS :: (HasFS IO Mock.Handle -> IO Property) -> IO Property
     runS m = do
-        r <- tryFS (Sim.runSimFS m Mock.empty)
+        r <- tryFS (Sim.runSimFS EH.exceptions Mock.empty m)
         case r of
           Left  e      -> fail (prettyFsError e)
           Right (p, _) -> return p

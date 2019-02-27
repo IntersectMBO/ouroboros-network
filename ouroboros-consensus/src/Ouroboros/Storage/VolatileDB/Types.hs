@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 
@@ -65,17 +66,19 @@ sameVolatileDBError e1 e2 = case (e1, e2) of
     (InvalidArgumentsError _, InvalidArgumentsError _) -> True
     _ -> False
 
-sameParseError :: Eq blockId => ParserError blockId -> ParserError blockId -> Bool
+-- TODO: Why is this not comparing the arguments to 'DuplicatedSlot'?
+sameParseError :: ParserError blockId -> ParserError blockId -> Bool
 sameParseError e1 e2 = case (e1, e2) of
-    (DuplicatedSlot _, DuplicatedSlot _) -> True
+    (DuplicatedSlot _, DuplicatedSlot _)               -> True
     (SlotsPerFileError _ _ _, SlotsPerFileError _ _ _) -> True
-    (InvalidFilename str1, InvalidFilename str2) -> str1 == str2
-    (DecodeFailed _ _, DecodeFailed _ _) -> True
-    _ -> False
+    (InvalidFilename str1, InvalidFilename str2)       -> str1 == str2
+    (DecodeFailed _ _, DecodeFailed _ _)               -> True
+    _                                                  -> False
 
 -- TODO(kde) unify/move/replace
 newtype Parser m blockId = Parser {
-    parse       :: HasFS m
+    parse       :: forall h.
+                   HasFS m h
                 -> ErrorHandling (VolatileDBError blockId) m
                 -> [String]
                 -> m (Int64, Map Int64 (Int, blockId))

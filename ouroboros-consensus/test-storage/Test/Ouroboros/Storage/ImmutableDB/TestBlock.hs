@@ -20,8 +20,8 @@ module Test.Ouroboros.Storage.ImmutableDB.TestBlock
   , tests
   ) where
 
-import           Control.Monad (void, when, replicateM, forM)
-import           Control.Monad.Catch (MonadMask)
+import           Control.Monad (forM, replicateM, void, when)
+import           Control.Monad.Class.MonadThrow
 
 import qualified Data.Binary as Bin
 import qualified Data.ByteString.Builder as BS
@@ -33,7 +33,7 @@ import           Data.Word (Word64)
 
 import           GHC.Generics (Generic)
 
-import           System.IO (IOMode(..))
+import           System.IO (IOMode (..))
 
 import           Test.QuickCheck
 import qualified Test.QuickCheck.Monadic as QCM
@@ -41,10 +41,10 @@ import qualified Test.StateMachine.Utils as QSM
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
-import           Ouroboros.Storage.FS.API (HasFS(..), withFile)
+import           Ouroboros.Storage.FS.API (HasFS (..), withFile)
 import           Ouroboros.Storage.FS.API.Types (FsPath)
 import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
-import           Ouroboros.Storage.FS.Sim.STM (SimFS, runSimFS, simHasFS)
+import           Ouroboros.Storage.FS.Sim.STM (runSimFS)
 import           Ouroboros.Storage.ImmutableDB.Types
 import           Ouroboros.Storage.ImmutableDB.Util (readAll)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
@@ -107,8 +107,8 @@ testBlockToBuilder = BS.lazyByteString . Bin.encode
   EpochFileParser
 -------------------------------------------------------------------------------}
 
-testBlockEpochFileParser :: MonadMask m
-                         => HasFS m
+testBlockEpochFileParser :: MonadThrow m
+                         => HasFS m h
                          -> EpochFileParser String m TestBlock
 testBlockEpochFileParser hasFS@HasFS{..} = EpochFileParser $ \fsPath ->
     withFile hasFS fsPath ReadMode $ \eHnd -> do
@@ -132,8 +132,8 @@ testBlockEpochFileParser hasFS@HasFS{..} = EpochFileParser $ \fsPath ->
                 newParsed = (offset, testBlock) : parsed
             in parse bytesInFile newOffset newParsed remaining
 
-testBlockEpochFileParser' :: MonadMask m
-                          => HasFS m
+testBlockEpochFileParser' :: MonadThrow m
+                          => HasFS m h
                           -> EpochFileParser String m (Int, RelativeSlot)
 testBlockEpochFileParser' hasFS = (\tb -> (testBlockSize, tbRelativeSlot tb)) <$>
     testBlockEpochFileParser hasFS
@@ -141,9 +141,9 @@ testBlockEpochFileParser' hasFS = (\tb -> (testBlockSize, tbRelativeSlot tb)) <$
 
 prop_testBlockEpochFileParser :: TestBlocks -> Property
 prop_testBlockEpochFileParser (TestBlocks blocks) = QCM.monadicIO $ do
-    (offsetsAndBlocks, mbErr) <- QCM.run $ runSimIO $ do
-      writeBlocks
-      readBlocks
+    (offsetsAndBlocks, mbErr) <- QCM.run $ runSimIO $ \hasFS -> do
+      writeBlocks hasFS
+      readBlocks  hasFS
     QSM.liftProperty (mbErr === Nothing)
     let (offsets', blocks') = unzip offsetsAndBlocks
         offsets = dropLast $ scanl (+) 0 $
@@ -153,14 +153,18 @@ prop_testBlockEpochFileParser (TestBlocks blocks) = QCM.monadicIO $ do
   where
     dropLast xs = zipWith const xs (drop 1 xs)
     file = ["test"]
-    hasFS@HasFS{..} = simHasFS EH.exceptions
-    writeBlocks = do
+
+    writeBlocks :: HasFS IO Mock.Handle -> IO ()
+    writeBlocks hasFS@HasFS{..} = do
       let bld = foldMap testBlockToBuilder blocks
       withFile hasFS file AppendMode $ \eHnd -> void $ hPut eHnd bld
-    readBlocks = runEpochFileParser (testBlockEpochFileParser hasFS) file
 
-    runSimIO :: SimFS IO a -> IO a
-    runSimIO m = fst <$> runSimFS m Mock.empty
+    readBlocks :: HasFS IO Mock.Handle
+               -> IO ([(SlotOffset, TestBlock)], Maybe String)
+    readBlocks hasFS = runEpochFileParser (testBlockEpochFileParser hasFS) file
+
+    runSimIO :: (HasFS IO Mock.Handle -> IO a) -> IO a
+    runSimIO m = fst <$> runSimFS EH.exceptions Mock.empty m
 
 
 {-------------------------------------------------------------------------------
@@ -176,7 +180,7 @@ data FileCorruption
 
 -- | Returns 'True' when something was actually corrupted. For example, when
 -- drop the last bytes of an empty file, we don't actually corrupt it.
-corruptFile :: MonadMask m => HasFS m -> FileCorruption -> FsPath -> m Bool
+corruptFile :: MonadThrow m => HasFS m h -> FileCorruption -> FsPath -> m Bool
 corruptFile hasFS@HasFS{..} fc file = case fc of
     DeleteFile              -> removeFile file $> True
     DropLastBytes n         -> withFile hasFS file AppendMode $ \hnd -> do

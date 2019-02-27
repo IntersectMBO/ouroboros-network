@@ -4,7 +4,7 @@ module Test.Ouroboros.Storage.ImmutableDB.Sim ( demoScript ) where
 {-- | An example interaction with the immutable database.
 --}
 
-import           Control.Monad.Catch (MonadMask)
+import           Control.Monad.Class.MonadThrow
 
 import           Data.ByteString (ByteString)
 import           Data.Map (Map)
@@ -15,7 +15,7 @@ import           GHC.Stack (HasCallStack)
 import           Ouroboros.Storage.ImmutableDB.API
 
 
-demoScript :: (HasCallStack, MonadMask m)
+demoScript :: (HasCallStack, MonadThrow m)
            => (    Epoch -> Map Epoch EpochSize -> RecoveryPolicy e m
                 -> m (ImmutableDB m, Maybe EpochSlot)
               )

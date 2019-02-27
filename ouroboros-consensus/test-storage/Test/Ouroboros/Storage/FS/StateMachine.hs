@@ -150,13 +150,13 @@ data Success fp h =
   deriving (Eq, Show, Functor, Foldable)
 
 -- | Successful semantics
-run :: forall m. Monad m
-    => HasFS m
-    -> Cmd FsPath (FsHandle m)
-    -> m (Success FsPath (FsHandle m))
+run :: forall m h. Monad m
+    => HasFS m h
+    -> Cmd FsPath h
+    -> m (Success FsPath h)
 run HasFS{..} = go
   where
-    go :: Cmd FsPath (FsHandle m) -> m (Success FsPath (FsHandle m))
+    go :: Cmd FsPath h -> m (Success FsPath h)
     go (Open pe mode) =
         case mode of
           IO.ReadMode -> withPE pe (\_ -> RHandle) $ \fp -> hOpen fp mode
@@ -176,9 +176,9 @@ run HasFS{..} = go
     go (RemoveFile         pe  ) = withPE pe (const Unit)    $ removeFile
 
     withPE :: PathExpr FsPath
-           -> (FsPath -> a -> Success FsPath (FsHandle m))
+           -> (FsPath -> a -> Success FsPath h)
            -> (FsPath -> m a)
-           -> m (Success FsPath (FsHandle m))
+           -> m (Success FsPath h)
     withPE pe r f = let fp = evalPathExpr pe in r fp <$> f fp
 
 {-------------------------------------------------------------------------------
@@ -204,7 +204,7 @@ runPure cmd mockFS =
     aux (Left e)             = (Resp (Left e), mockFS)
     aux (Right (r, mockFS')) = (Resp (Right r), mockFS')
 
-runIO :: MountPoint -> Cmd FsPath (FsHandle IO) -> IO (Resp FsPath (FsHandle IO))
+runIO :: MountPoint -> Cmd FsPath HandleIO -> IO (Resp FsPath HandleIO)
 runIO mount cmd = Resp <$> E.try (run (ioHasFS mount) cmd)
 
 {-------------------------------------------------------------------------------
@@ -241,10 +241,10 @@ handles = bifoldMap (const []) (:[])
 type PathRef = QSM.Reference FsPath
 
 -- | Concrete or symbolic reference to an IO file handle
-type HandleRef = QSM.Reference (QSM.Opaque (FsHandle IO))
+type HandleRef = QSM.Reference (QSM.Opaque HandleIO)
 
 -- | Mapping between real IO file handles and mock file handles
-type KnownHandles = RefEnv (QSM.Opaque (FsHandle IO)) Mock.Handle
+type KnownHandles = RefEnv (QSM.Opaque HandleIO) Mock.Handle
 
 -- | Mapping between path references and paths
 type KnownPaths = RefEnv FsPath FsPath
@@ -865,7 +865,7 @@ prop_sequential tmpDir =
 
       -- | Close all open handles and delete the temp directory
       liftIO $ do
-        forM_ (RE.keys (knownHandles model)) $ F.close . snd . QSM.opaque
+        forM_ (RE.keys (knownHandles model)) $ F.close . handleIO . QSM.opaque
         removeDirectoryRecursive tstTmpDir
 
       QSM.prettyCommands sm' hist

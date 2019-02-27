@@ -73,7 +73,7 @@ parseDBFile s = case T.splitOn "-" . fst . T.breakOn "." . T.pack $ s of
 -- | Read all the data from the given file handle 64kB at a time.
 --
 -- TODO move to Ouroboros.Storage.FS.Class?
-readAll :: Monad m => HasFS m -> FsHandle m -> m BS.Builder
+readAll :: Monad m => HasFS m h -> h -> m BS.Builder
 readAll HasFS{..} hnd = go mempty
   where
     bufferSize = 64 * 1024
@@ -89,8 +89,8 @@ readAll HasFS{..} hnd = go mempty
 --
 -- TODO move to Ouroboros.Storage.FS.Class?
 hGetRightSize :: (HasCallStack, Monad m)
-              => HasFS m
-              -> FsHandle m
+              => HasFS m h
+              -> h
               -> Int     -- ^ The number of bytes to read.
               -> FsPath  -- ^ The file corresponding with the handle, used for
                          -- error reporting

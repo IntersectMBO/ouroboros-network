@@ -28,7 +28,7 @@ module Ouroboros.Storage.ImmutableDB.Index
 
 import           Control.Exception (assert)
 import           Control.Monad (void)
-import           Control.Monad.Catch (MonadMask)
+import           Control.Monad.Class.MonadThrow
 
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
@@ -79,8 +79,8 @@ indexExpectedFileSize (MkIndex offsets) = V.length offsets * indexEntrySizeBytes
 --
 -- Returns trailing invalid data that could not be read as @'Maybe'
 -- 'ByteString'@.
-loadIndex :: (HasCallStack, MonadMask m)
-          => HasFS m
+loadIndex :: (HasCallStack, MonadThrow m)
+          => HasFS m h
           -> FsPath
           -> Epoch
           -> m (Index, Maybe ByteString)
@@ -103,8 +103,8 @@ loadIndex hasFS dbFolder epoch = do
 -- Then it must be that:
 --
 -- > index === index' .&&. isNothing mbJunk
-writeIndex :: MonadMask m
-           => HasFS m
+writeIndex :: MonadThrow m
+           => HasFS m h
            -> FsPath
            -> Epoch
            -> Index
@@ -129,8 +129,8 @@ writeIndex hasFS@HasFS{..} dbFolder epoch (MkIndex offsets) = do
 -- Then it must be that:
 --
 -- > indexToSlotOffsets index === offsets
-writeSlotOffsets :: MonadMask m
-                 => HasFS m
+writeSlotOffsets :: MonadThrow m
+                 => HasFS m h
                  -> FsPath
                  -> Epoch
                  -> NonEmpty SlotOffset
