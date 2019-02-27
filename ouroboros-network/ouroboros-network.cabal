@@ -169,6 +169,11 @@ test-suite tests
                        Ouroboros.Network.Protocol.PingPong.Test
                        Ouroboros.Network.Protocol.ReqResp.Codec
                        Ouroboros.Network.Protocol.ReqResp.Test
+                       Ouroboros.Network.Protocol.TxSubmission.Client
+                       Ouroboros.Network.Protocol.TxSubmission.Direct
+                       Ouroboros.Network.Protocol.TxSubmission.Examples
+                       Ouroboros.Network.Protocol.TxSubmission.Server
+                       Ouroboros.Network.Protocol.TxSubmission.Type
                        Ouroboros.Network.Socket
                        Ouroboros.Network.Server.Socket
                        Ouroboros.Network.Time
