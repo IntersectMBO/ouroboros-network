@@ -26,10 +26,11 @@ import qualified Test.Mux as Mxt
 tests :: TestTree
 tests =
   testGroup "Socket"
-  [ testProperty "socket send receive IPv4"    prop_socket_send_recv_ipv4
-  , testProperty "socket send receive IPv6"    prop_socket_send_recv_ipv6
-  , testProperty "socket close during receive" prop_socket_recv_close
-  , testProperty "socket sync demo"            prop_socket_demo
+  [ testProperty "socket send receive IPv4"         prop_socket_send_recv_ipv4
+  , testProperty "socket send receive IPv6"         prop_socket_send_recv_ipv6
+  , testProperty "socket close during receive"      prop_socket_recv_close
+  , testProperty "socket client connection failure" prop_socket_client_connect_error
+  , testProperty "socket sync demo"                 prop_socket_demo
   ]
 
 
@@ -122,7 +123,22 @@ prop_socket_recv_close request response = ioProperty $ do
                   Nothing -> return False
          Nothing -> return False
 
+prop_socket_client_connect_error :: Mxt.DummyPayload
+                                 -> Mxt.DummyPayload
+                                 -> Property
+prop_socket_client_connect_error request response = ioProperty $ do
+    clientAddr:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
+    serverAddr:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
 
+    endMpsVar <- atomically $ newTVar 2
 
+    (_, client_mp, _) <- Mxt.setupMiniReqRsp (Mx.AppProtocolId Mxt.ChainSync1)
+                                             (return ()) endMpsVar request response
 
+    let client_mps Mxt.ChainSync1 = client_mp
+
+    res_e <- try $ startInitiator client_mps clientAddr serverAddr :: IO (Either SomeException ())
+    case res_e of
+         Left _  -> return $ property True -- XXX Dissregarding the exact exception type
+         Right _ -> return $ property False
 

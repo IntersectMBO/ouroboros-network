@@ -106,14 +106,18 @@ startResponderT :: (Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl)
                 -> AddrInfo
                 -> Maybe (TBQueue IO (Maybe SomeException))
                 -> IO (Socket, Async ())
-startResponderT mpds addr resq_m = do
-    sd <- socket (addrFamily addr) Stream defaultProtocol
-    setSocketOption sd ReuseAddr 1
-    setSocketOption sd ReusePort 1
-    bind sd (addrAddress addr)
-    listen sd 2
-    rh <- async (server sd)
-    return (sd, rh)
+startResponderT mpds addr resq_m =
+    bracketOnError
+        (socket (addrFamily addr) Stream defaultProtocol)
+        close
+        (\sd -> do
+            setSocketOption sd ReuseAddr 1
+            setSocketOption sd ReusePort 1
+            bind sd (addrAddress addr)
+            listen sd 2
+            rh <- async (server sd)
+            return (sd, rh)
+        )
   where
     server sd = forever $ do
         (client, _) <- accept sd
@@ -138,13 +142,18 @@ startInitiatorT :: (Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl)
                 -> Maybe (TBQueue IO (Maybe SomeException))
                 -> IO ()
 startInitiatorT mpds local remote resq_m = do
-    sd <- socket (addrFamily local) Stream defaultProtocol
-    setSocketOption sd ReuseAddr 1
-    setSocketOption sd ReusePort 1
-    bind sd (addrAddress local)
-    connect sd (addrAddress remote)
+    bracketOnError
+        (socket (addrFamily local) Stream defaultProtocol)
+        close
+        (\sd -> do
+            setSocketOption sd ReuseAddr 1
+            setSocketOption sd ReusePort 1
+            bind sd (addrAddress local)
+            connect sd (addrAddress remote)
 
-    setupMux mpds (SocketCtx sd) resq_m
+            setupMux mpds (SocketCtx sd) resq_m
+        )
+    return ()
 
 hexDump :: BL.ByteString -> String -> IO ()
 hexDump buf out | BL.empty == buf = say out
