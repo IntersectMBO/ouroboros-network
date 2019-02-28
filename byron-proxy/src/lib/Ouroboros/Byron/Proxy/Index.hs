@@ -21,6 +21,8 @@ import Pos.Crypto.Hashing (AbstractHash (..))
 import Pos.DB.Class (Serialized (..), SerializedBlock)
 
 import Ouroboros.Storage.ImmutableDB.API (ImmutableDB)
+import Ouroboros.Storage.ImmutableDB.CumulEpochSizes (EpochSlot(..),
+                                                      RelativeSlot(..))
 import qualified Ouroboros.Storage.ImmutableDB.API as ImmutableDB
 import Ouroboros.Storage.ImmutableDB.Types
 import Ouroboros.Byron.Proxy.Types
@@ -109,7 +111,7 @@ byronBlockSource err genesis idx db = ByronBlockSource
   { bbsStream = streamFrom
   , bbsTip    = indexRead idx Tip >>= \mTip -> case mTip of
       Nothing -> pure genesis
-      Just (_, es) -> ImmutableDB.getBinaryBlob db es >>= \mBs -> case mBs of
+      Just (_, es) -> ImmutableDB.getBinaryBlob db (error "TODO") >>= \mBs -> case mBs of
         Nothing -> err TipNotInDatabase
         Just bs -> pure $ Serialized bs
   }
@@ -120,7 +122,7 @@ byronBlockSource err genesis idx db = ByronBlockSource
     Nothing -> pure ()
     -- Got an entry. Use the EpochSlot to look up in the database, and the
     -- child hash to continue the stream (if Just).
-    Just (ChildHash mChild, es) -> lift (ImmutableDB.getBinaryBlob db es) >>= \mBs -> case mBs of
+    Just (ChildHash mChild, es) -> lift (ImmutableDB.getBinaryBlob db (error "TODO")) >>= \mBs -> case mBs of
       Nothing -> lift $ err $ PointNotInDatabase hh es
       Just bs -> do
         yield (Serialized bs)
@@ -186,7 +188,7 @@ getTip conn = do
      [] -> pure Nothing
      ((hhBlob, epoch, slot) : _) ->
        let hh = AbstractHash $ digestFromByteString_partial hhBlob
-           es = EpochSlot epoch (RelativeSlot slot)
+           es = EpochSlot (Epoch epoch) (RelativeSlot slot)
        in  pure $ Just (hh, es)
 
 sql_get_hash :: Query
@@ -202,7 +204,7 @@ getHash conn (AbstractHash digest) = do
     [] -> pure Nothing
     ((hhChildBlob, epoch, slot) : _) ->
       let hh = fmap (AbstractHash . digestFromByteString_partial) hhChildBlob
-          es = EpochSlot epoch (RelativeSlot slot)
+          es = EpochSlot (Epoch epoch) (RelativeSlot slot)
       in  pure $ Just (hh, es)
 
 sql_insert :: Query
@@ -220,7 +222,7 @@ setTipTx :: Sql.Connection -> HeaderHash -> EpochSlot -> IO ()
 setTipTx conn hh es = Sql.withTransaction conn $ setTip conn hh es
 
 setTip :: Sql.Connection -> HeaderHash -> EpochSlot -> IO ()
-setTip conn (AbstractHash digest) (EpochSlot epoch rslot) = do
+setTip conn (AbstractHash digest) (EpochSlot (Epoch epoch) rslot) = do
   -- Get the current tip.
   mTip :: [Only ByteString] <- Sql.query_ conn sql_get_tip_hash
   case mTip of

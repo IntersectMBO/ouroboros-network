@@ -6,15 +6,13 @@
 import Control.Concurrent (myThreadId)
 import Control.Concurrent.Async (race)
 import Control.Concurrent.STM (STM, atomically, retry)
-import Control.Exception (catch, throwIO)
+import Control.Exception (throwIO)
 import Control.Lens ((^.))
 import qualified Control.Lens as Lens (to)
-import Control.Monad (forM_, void, when)
+import Control.Monad (forM_)
 import Data.Functor.Contravariant (Op (..), contramap)
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
-import Data.Map (Map)
-import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import qualified Data.Text as Text
@@ -59,11 +57,16 @@ import qualified Pos.Util.Wlog as Wlog
 import qualified Ouroboros.Byron.Proxy.Index as Index
 import Ouroboros.Byron.Proxy.Types
 import Ouroboros.Storage.ImmutableDB.API
+import Ouroboros.Storage.ImmutableDB.CumulEpochSizes (EpochSlot(..),
+                                                      RelativeSlot(..))
 import qualified Ouroboros.Storage.ImmutableDB.Impl as DB
 import Ouroboros.Storage.FS.API.Types
 import Ouroboros.Storage.FS.API
 import Ouroboros.Storage.FS.IO
-import Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
+import Ouroboros.Storage.Util.ErrorHandling (exceptions)
+
+-- TODO The ImmutableDB switched from 'EpochSlot' ('Epoch' + 'RelativeSlot')
+-- to 'Slot'. This code must be adapted accordingly.
 
 -- | The main action using the proxy, index, and immutable database: download
 -- the best known chain from the proxy and put it into the database, over and
@@ -142,11 +145,7 @@ byronProxyMain genesisBlock epochSlots indexDB db bp = getStdGen >>= mainLoop No
               epochSlot = blockHeaderIndex epochSlots (Pos.Chain.Block.getBlockHeader blk)
               rslot = _relativeSlot epochSlot
           Index.updateTip iwrite hh epochSlot
-          appendBinaryBlob db rslot (serializeBuilder blk)
-          -- Sometimes we need to start a new epoch...
-          when (fromIntegral (getRelativeSlot rslot) == getSlotCount epochSlots)
-               -- Add 1 because of EBBs
-               (void (startNewEpoch db (fromIntegral (getSlotCount epochSlots) + 1)))
+          appendBinaryBlob db (error "TODO") (serializeBuilder blk)
         pure streamer
     , streamBlocksDone = pure ()
     }
@@ -322,46 +321,34 @@ main = withCompileInfo $ do
           epochSlots :: SlotCount
           epochSlots = configEpochSlots genesisConfig
           -- Default database path is ./db-byron-proxy
-          dbFilePath :: FsPath
-          dbFilePath = maybe ["db-byron-proxy"] pure (dbPath cArgs)
+          dbFilePath :: FilePath
+          dbFilePath = fromMaybe "db-byron-proxy" (dbPath cArgs)
           fsMountPoint :: MountPoint
-          fsMountPoint = MountPoint ""
+          fsMountPoint = MountPoint dbFilePath
           fs :: HasFS IO HandleIO
           fs = ioHasFS fsMountPoint
-          errorHandling :: ErrorHandling ImmutableDBError IO
-          errorHandling = ErrorHandling
-            { throwError = throwIO
-            , catchError = catch
-            }
-          epochSizes :: Map Epoch EpochSize
+          getEpochSize :: Epoch -> IO EpochSize
           -- FIXME the 'fromIntegral' casts from 'Word64' to 'Word'.
           -- For sufficiently high k, on certain machines, there could be an
           -- overflow.
-          -- FIXME need to be able to give a function `const epochSlots`.
-          -- 0 to 200 should be fine for now... I think.
-          --
           -- Add 1 to the slot count because we put EBBs at the end of every
           -- epoch.
-          epochSizes = Map.fromList (fmap (\i -> (i, fromIntegral (getSlotCount epochSlots) + 1)) [0..200])
-          openDB dbEpoch = DB.openDB
+          getEpochSize epoch = return $ EpochSize $
+            fromIntegral (getSlotCount epochSlots) + 1
+          epochFileParser :: EpochFileParser e m (Int, Slot)
+          -- TODO see the documentation for 'EpochFileParser'
+          epochFileParser = undefined
+          openDB = DB.openDB
             fs
-            errorHandling
-            dbFilePath
-            dbEpoch
-            epochSizes
-            NoValidation
+            exceptions
+            getEpochSize
+            ValidateMostRecentEpoch
+            epochFileParser
           -- The supporting header hash and tip index.
           indexFilePath :: FilePath
           indexFilePath = bpoIndexPath options
       Index.withDB_ indexFilePath $ \indexDB -> do
-        -- Now we can use the index to get the tip.
-        -- BUT if it's empty, so there is no tip, what do we do? Use epoch 0
-        -- I guess.
-        mTip <- Index.indexRead indexDB Index.Tip
-        let dbEpoch = case mTip of
-              Nothing -> 0
-              Just (_, EpochSlot tipEpoch _) -> tipEpoch
-        withDB (openDB dbEpoch) $ \db _ -> do
+        withDB openDB $ \db _ -> do
           -- Create the block source to support the logic layer.
           let bbs :: ByronBlockSource IO
               bbs = Index.byronBlockSource
