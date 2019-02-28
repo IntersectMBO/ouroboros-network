@@ -41,12 +41,11 @@ module Ouroboros.Consensus.Ledger.Mock (
 import           Codec.Serialise
 import           Control.Monad.Except
 import           Crypto.Random (MonadRandom)
+import           Data.FingerTree (Measured (measure))
 import qualified Data.IntMap.Strict as IntMap
-import           Data.FingerTree (Measured(measure))
 import           Data.Map (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy
-import           Data.Semigroup ((<>))
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           GHC.Generics (Generic)
@@ -222,17 +221,19 @@ deriving instance (SimpleBlockCrypto c, OuroborosTag p, Eq (Payload p (SimplePre
 deriving instance (SimpleBlockCrypto c, OuroborosTag p, Ord (Payload p (SimplePreHeader p c))) => Ord (SimpleBlock p c)
 
 instance (SimpleBlockCrypto c, OuroborosTag p, Condense (Payload p (SimplePreHeader p c)), Serialise (Payload p (SimplePreHeader p c))) => Condense (SimpleBlock p c) where
-  condense (SimpleBlock hdr@(SimpleHeader _ pl) (SimpleBody txs)) =
-      condensedHash (blockPrevHash hdr)
-          <> "-"
-          <> condense (blockHash hdr)
-          <> ",("
-          <> condense pl
-          <> ",("
-          <> condense (getSlot $ blockSlot hdr)
-          <> ","
-          <> condense txs
-          <> "))])))"
+  condense (SimpleBlock hdr@(SimpleHeader _ pl) (SimpleBody txs)) = mconcat [
+        "("
+      , condensedHash (blockPrevHash hdr)
+      , "->"
+      , condense (blockHash hdr)
+      , ","
+      , condense pl
+      , ","
+      , condense (getSlot $ blockSlot hdr)
+      , ","
+      , condense txs
+      , ")"
+      ]
 
 condensedHash :: Show (HeaderHash b) => Network.Hash b -> String
 condensedHash GenesisHash     = "genesis"

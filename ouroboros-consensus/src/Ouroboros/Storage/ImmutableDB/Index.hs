@@ -1,11 +1,36 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE RecordWildCards  #-}
 
-module Ouroboros.Storage.ImmutableDB.Index where
+module Ouroboros.Storage.ImmutableDB.Index
+  ( Index
+  , indexSlots
+  , indexEntrySizeBytes
+  , indexExpectedFileSize
+  , loadIndex
+  , writeIndex
+  , writeSlotOffsets
+  , isValidIndex
+  , indexFromByteString
+  , indexFromSlotOffsets
+  , indexToSlotOffsets
+  , lastSlotOffset
+  , containsSlot
+  , offsetOfSlot
+  , sizeOfSlot
+  , isFilledSlot
+  , nextFilledSlot
+  , firstFilledSlot
+  , filledSlots
+  , lastFilledSlot
+  , isPrefixOf
+  , extendWithTrailingUnfilledSlotsFrom
+  ) where
 
+import           Control.Exception (assert)
 import           Control.Monad (void)
-import           Control.Monad.Catch (MonadMask)
+import           Control.Monad.Class.MonadThrow
 
+import           Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Builder as BS
 import qualified Data.ByteString.Lazy as BL
@@ -14,7 +39,11 @@ import qualified Data.List.NonEmpty as NE
 import qualified Data.Vector.Unboxed as V
 import           Data.Word (Word64)
 
+import           GHC.Stack (HasCallStack)
+
 import           System.IO (IOMode (..))
+
+import           Ouroboros.Consensus.Util (lastMaybe)
 
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types (FsPath)
@@ -29,7 +58,7 @@ import           Ouroboros.Storage.Util
 
 -- | In-memory representation of the index file.
 newtype Index = MkIndex { getIndex :: V.Vector SlotOffset }
-  deriving (Show)
+  deriving (Show, Eq)
 
 -- | Return the number of slots in the index (the number of offsets - 1).
 indexSlots :: Index -> EpochSize
@@ -41,30 +70,67 @@ indexEntrySizeBytes :: Int
 indexEntrySizeBytes = 8
 {-# INLINE indexEntrySizeBytes #-}
 
+-- | Return the expected size (number of bytes) the given 'Index' requires
+-- when writing it to a file.
+indexExpectedFileSize :: Index -> Int
+indexExpectedFileSize (MkIndex offsets) = V.length offsets * indexEntrySizeBytes
+
 -- | Loads an index file in memory.
-loadIndex :: MonadMask m
-          => HasFS m
+--
+-- Returns trailing invalid data that could not be read as @'Maybe'
+-- 'ByteString'@.
+loadIndex :: (HasCallStack, MonadThrow m)
+          => HasFS m h
           -> FsPath
           -> Epoch
-          -> m Index
+          -> m (Index, Maybe ByteString)
 loadIndex hasFS dbFolder epoch = do
     let indexFile = dbFolder <> renderFile "index" epoch
-    indexContents <- withFile hasFS indexFile ReadMode $ \hnd ->
-      BL.toStrict . BS.toLazyByteString <$> readAll hasFS hnd
-    return $ indexFromByteString indexContents
+    (indexContents, junk) <- withFile hasFS indexFile ReadMode $ \hnd -> do
+      bs <- BL.toStrict . BS.toLazyByteString <$> readAll hasFS hnd
+      let trailingJunkBytes = BS.length bs `rem` indexEntrySizeBytes
+      return $ BS.splitAt (BS.length bs - trailingJunkBytes) bs
+    return ( indexFromByteString indexContents
+           , if BS.null junk then Nothing else Just junk)
 
--- | Write a non-empty list of 'SlotOffset's to a file.
+-- | Write an index to an index file.
 --
--- Property: for @dbFolder@, @epoch@, and @offsets@:
+-- Property: for @hasFS@, @dbFolder@, @epoch@, and @offsets@:
 --
--- > 'writeSlotOffsets' dbFolder epoch offsets
--- > index <- loadIndex dbFolder epoch
+-- > 'writeIndex' hasFS dbFolder epoch index
+-- > (index', mbJunk) <- loadIndex hasFS dbFolder epoch
+--
+-- Then it must be that:
+--
+-- > index === index' .&&. isNothing mbJunk
+writeIndex :: MonadThrow m
+           => HasFS m h
+           -> FsPath
+           -> Epoch
+           -> Index
+           -> m ()
+writeIndex hasFS@HasFS{..} dbFolder epoch (MkIndex offsets) = do
+    let indexFile = dbFolder <> renderFile "index" epoch
+    withFile hasFS indexFile AppendMode $ \iHnd -> do
+      -- NOTE: open it in AppendMode and truncate it first, otherwise we might
+      -- just overwrite part of the data stored in the index file.
+      void $ hTruncate iHnd 0
+      void $ hPut iHnd $ V.foldl'
+        (\acc offset -> acc <> encodeIndexEntry offset) mempty offsets
+  -- TODO efficient enough?
+
+-- | Write a non-empty list of 'SlotOffset's to an index file.
+--
+-- Property: for @hasFS@, @dbFolder@, @epoch@, and @offsets@:
+--
+-- > 'writeSlotOffsets' hasFS dbFolder epoch offsets
+-- > index <- loadIndex hasFS dbFolder epoch
 --
 -- Then it must be that:
 --
 -- > indexToSlotOffsets index === offsets
-writeSlotOffsets :: MonadMask m
-                 => HasFS m
+writeSlotOffsets :: MonadThrow m
+                 => HasFS m h
                  -> FsPath
                  -> Epoch
                  -> NonEmpty SlotOffset
@@ -117,7 +183,7 @@ indexToSlotOffsets (MkIndex offsets)
   | otherwise
   = 0 NE.:| []
 
--- | Return the 'SlotOffset' of the last slot in the index file.
+-- | Return the last 'SlotOffset' in the index file.
 lastSlotOffset :: Index -> SlotOffset
 lastSlotOffset (MkIndex offsets)
   | V.null offsets = 0
@@ -126,7 +192,7 @@ lastSlotOffset (MkIndex offsets)
 -- | Check whether the given slot is within the index.
 containsSlot :: Index -> RelativeSlot -> Bool
 containsSlot (MkIndex offsets) (RelativeSlot slot) =
-  fromIntegral slot < V.length offsets - 1
+  slot < fromIntegral (V.length offsets) - 1
 
 -- | Return the offset for the given slot is filled.
 --
@@ -206,3 +272,61 @@ filledSlots index = go (firstFilledSlot index)
   where
     go Nothing     = []
     go (Just slot) = slot : go (nextFilledSlot index slot)
+
+-- | Return the last filled slot in the index.
+lastFilledSlot :: Index -> Maybe RelativeSlot
+lastFilledSlot = lastMaybe . filledSlots
+-- TODO optimise
+
+-- | Check if the first 'Index' is a prefix of the second 'Index'.
+isPrefixOf :: Index -> Index -> Bool
+isPrefixOf (MkIndex pre) (MkIndex offsets)
+    | V.length pre > V.length offsets
+    = False
+    | otherwise
+    = V.and $ V.zipWith (==) pre offsets
+
+-- | Add trailing unfilled slots from the second index to the end of the
+-- first. The boolean return value indicates whether the second index
+-- contained trailing filled slots after the (possibly 0) trailing unfilled
+-- slots.
+--
+-- Precondition: the first index is non-empty and a prefix of the second
+-- index.
+--
+-- Example: given the indices below:
+--
+-- > ┌───┬───┐
+-- > │ 0 │ 1 │
+-- > └───┴───┘
+--
+-- > ┌───┬───┬───┬───┐
+-- > │ 0 │ 1 │ 1 │ 2 │
+-- > └───┴───┴───┴───┘
+--
+-- Return the following index:
+--
+-- > ┌───┬───┬───┐
+-- > │ 0 │ 1 │ 1 │
+-- > └───┴───┴───┘
+--
+-- and 'True'.
+extendWithTrailingUnfilledSlotsFrom
+  :: Index
+  -> Index
+  -> (Index, Bool)
+extendWithTrailingUnfilledSlotsFrom (MkIndex validOffsets) (MkIndex withTrailingUnfilledSlots) =
+    assert (not (V.null validOffsets)) $
+    assert (validOffsets == prefix)    $
+    ( MkIndex (validOffsets <> trailingUnfilledSlots)
+    , containedTrailingFilledSlots )
+  where
+    (prefix, trailingSlots) =
+      V.splitAt (V.length validOffsets) withTrailingUnfilledSlots
+    trailingUnfilledSlots
+      | V.null trailingSlots
+      = V.empty
+      | otherwise
+      = V.takeWhile (== V.last validOffsets) trailingSlots
+    containedTrailingFilledSlots =
+      V.length trailingUnfilledSlots /= V.length trailingSlots

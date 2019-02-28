@@ -10,26 +10,23 @@ module Ouroboros.Network.Node where
 
 import           Control.Exception (assert)
 import           Control.Monad
-import           Data.Functor (($>))
 import           Data.Hashable
 import           Data.List hiding (inits)
 import           Data.Maybe (catMaybes)
 import           Data.Semigroup (Semigroup (..))
-import           Data.Text (Text)
 import           Data.Tuple (swap)
 import           GHC.Generics (Generic)
 
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadFork
+import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTimer
-import           Control.Monad.Class.MonadProbe
 
-import           Protocol.Codec
-import           Protocol.Core
-import           Protocol.Channel
-import           Protocol.Driver
-import           Protocol.Transition (SomeTransition (..), withSomeTransition)
+import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Driver
+import           Ouroboros.Network.Channel
+import           Ouroboros.Network.Codec
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (Chain (..), Point)
@@ -38,12 +35,11 @@ import           Ouroboros.Network.ChainProducerState (ChainProducerState (..),
                                                        initChainProducerState,
                                                        producerChain,
                                                        switchFork)
-import           Ouroboros.Network.Protocol.ChainSync.Codec.Id (codecChainSync)
+import           Ouroboros.Network.Protocol.ChainSync.Codec (codecChainSyncId)
 import           Ouroboros.Network.Protocol.ChainSync.Client
 import           Ouroboros.Network.Protocol.ChainSync.Server
 import           Ouroboros.Network.Protocol.ChainSync.Type
 import           Ouroboros.Network.Protocol.ChainSync.Examples
-import           Ouroboros.Network.Protocol.Channel.Sim (delayChannel)
 -- FIXME bad module name below. They're examples, sure, but they're also
 -- legit useful.
 import           Ouroboros.Network.Testing.ConcreteBlock hiding (fixupBlock)
@@ -97,75 +93,13 @@ chainValidation peerChainVar candidateChainVar = do
       writeTVar candidateChainVar candidateChain
 
 
-chainTransferProtocol :: forall block m.
-                         ( HasHeader block
-                         , MonadSTM m
-                         , MonadTimer m
-                         )
-                      => Duration (Time m)
-                      -> TVar m (Chain block)
-                      -> TVar m (Chain block)
-                      -> m ()
-chainTransferProtocol delay inputVar outputVar = do
-    st <- atomically (newTVar Chain.genesisPoint)
-    forever (update st)
-  where
-    update :: TVar m (Point block) -> m ()
-    update stateVar = do
-      input <- atomically $ do
-                input    <- readTVar inputVar
-                curPoint <- readTVar stateVar
-                check (Chain.headPoint input /= curPoint)
-                writeTVar stateVar (Chain.headPoint input)
-                return input
-      fork $ threadDelay delay >> atomically (writeTVar outputVar input)
-
--- | Simulated transfer protocol.
---
-transferProtocol :: forall send recv m.
-                    ( MonadSTM m
-                    , MonadTimer m
-                    )
-                 => Duration (Time m)
-                 -> TVar m [send]
-                 -> TVar m [recv]
-                 -> Duplex m m send recv
-transferProtocol delay sendVar recvVar
-  = delayChannel delay $ uniformDuplex sendMsg recvMsg
-  where
-    sendMsg a = atomically (modifyTVar' sendVar (++[a]))
-    recvMsg =
-      atomically $ do
-        xs <- readTVar recvVar
-        case xs of
-          x : xs' -> writeTVar recvVar xs' $> Just x
-          []      -> retry
-
-
--- | Create a symmetric pair of channels in opposite directions.
---
-createCoupledChannels :: forall send recv m.
-                         ( MonadSTM m
-                         , MonadTimer m
-                         )
-                      => Duration (Time m)
-                      -> Duration (Time m)
-                      -> m (Duplex m m send recv, Duplex m m recv send)
-createCoupledChannels delay1 delay2 = do
-  sendVar <- atomically $ newTVar []
-  recvVar <- atomically $ newTVar []
-  let chan1 = transferProtocol delay1 sendVar recvVar
-      chan2 = transferProtocol delay2 recvVar sendVar
-  return (chan1, chan2)
-
-
 -- | Simulated network channels for a given network node.
 --
 data NodeChannels m block = NodeChannels
-  { consumerChans :: [Channel m (SomeTransition (ChainSyncMessage block (Point block)))]
+  { consumerChans :: [Channel m (AnyMessage (ChainSync block (Point block)))]
     -- ^ channels on which the node will play the consumer role:
     -- sending @consMsg@ and receiving @prodMsg@ messages.
-  , producerChans :: [Channel m (SomeTransition (ChainSyncMessage block (Point block)))]
+  , producerChans :: [Channel m (AnyMessage (ChainSync block (Point block)))]
     -- ^ channels on which the node will play the producer role:
     -- sending @prodMsg@ and receiving @consMsg@ messages.
   }
@@ -187,14 +121,14 @@ createOneWaySubscriptionChannels
   -> Duration (Time m)
   -> m (NodeChannels m block, NodeChannels m block)
 createOneWaySubscriptionChannels trDelay1 trDelay2 = do
-  (cr, rc) <- createCoupledChannels trDelay1 trDelay2
+  (cr, rc) <- createConnectedChannels
   return
     ( NodeChannels
         { consumerChans = []
-        , producerChans = [cr]
+        , producerChans = [delayChannel trDelay1 cr]
         }
     , NodeChannels
-        { consumerChans = [rc]
+        { consumerChans = [delayChannel trDelay2 rc]
         , producerChans = []
         }
     )
@@ -220,6 +154,7 @@ createTwoWaySubscriptionChannels trDelay1 trDelay2 = do
 blockGenerator :: forall block m.
                   ( HasHeader block
                   , MonadSTM m
+                  , MonadFork m
                   , MonadTimer m
                   )
                => Duration (Time m)
@@ -238,7 +173,7 @@ blockGenerator slotDuration chain = do
   -- communicate through a @TBQueue@, it is enough to make it very shallow,
   -- since it is supposed to be written and read once a slot time.
   var <- atomically (newTBQueue 1)
-  fork $ go var Nothing chain
+  void $ fork $ go var Nothing chain
   return (readTBQueue var)
  where
   go :: TBQueue m (Maybe block) -> Maybe Slot -> [block] -> m ()
@@ -258,25 +193,22 @@ observeChainProducerState
   :: forall m block.
      ( HasHeader block
      , MonadSTM m
-     , MonadProbe m
      )
   => NodeId
-  -> Probe m (NodeId, Chain block)
+  -> TVar m [(NodeId, Chain block)]
   -> TVar m (ChainProducerState block)
   -> m ()
-observeChainProducerState nid p cpsVar = do
+observeChainProducerState nid probe cpsVar = do
     st <- atomically (newTVar Chain.genesisPoint)
     forever (update st)
   where
     update :: TVar m (Point block) -> m ()
-    update stateVar = do
-      chain <- atomically $ do
-                chain  <- producerChain <$> readTVar cpsVar
-                curPoint <- readTVar stateVar
-                check (Chain.headPoint chain /= curPoint)
-                writeTVar stateVar (Chain.headPoint chain)
-                return chain
-      probeOutput p (nid, chain)
+    update stateVar = atomically $ do
+      chain  <- producerChain <$> readTVar cpsVar
+      curPoint <- readTVar stateVar
+      check (Chain.headPoint chain /= curPoint)
+      writeTVar stateVar (Chain.headPoint chain)
+      modifyTVar probe ((nid, chain):)
 
 data ConsumerId = ConsumerId NodeId Int
   deriving (Eq, Ord, Show)
@@ -287,28 +219,29 @@ data ProducerId = ProducerId NodeId Int
 -- | Channel which logs sent and received messages.
 --
 -- TODO: use a proper logger rather than @'MonadSay'@ constraint.
-loggingChannel :: ( MonadSay sm
-                  , MonadSay rm
+loggingChannel :: ( MonadSay m
                   , Show id
+                  , Show a
                   )
                => id
-               -> (send -> String)
-               -> (recv -> String)
-               -> Duplex sm rm send recv
-               -> Duplex sm rm send recv
-loggingChannel ident showSend showRecv Duplex{send,recv} = Duplex {
+               -> Channel m a
+               -> Channel m a
+loggingChannel ident Channel{send,recv} =
+  Channel {
     send = loggingSend,
     recv = loggingRecv
   }
  where
   loggingSend a = do
-    say (show ident ++ ":send:" ++ showSend a)
-    loggingChannel ident showSend showRecv <$> send a
+    say (show ident ++ ":send:" ++ show a)
+    send a
+
   loggingRecv = do
     msg <- recv
     case msg of
-      (Nothing, _) -> return msg
-      (Just a, _)  -> say (show ident ++ ":recv:" ++ showRecv a) $> fmap (loggingChannel ident showSend showRecv) msg
+      Nothing -> return ()
+      Just a  -> say (show ident ++ ":recv:" ++ show a)
+    return msg
 
 -- | Relay node, which takes @'NodeChannels'@ to communicate with its peers
 -- (upstream and downstream).  If it is subscribed to n nodes and has
@@ -322,6 +255,7 @@ loggingChannel ident showSend showRecv Duplex{send,recv} = Duplex {
 forkRelayKernel :: forall block m.
                 ( HasHeader block
                 , MonadSTM m
+                , MonadFork m
                 )
                 => [TVar m (Chain block)]
                 -- ^ These will track the upstream producers.
@@ -338,7 +272,7 @@ forkRelayKernel upstream cpsVar = do
     upstream
     candidateChainVars
   -- chain selection thread
-  fork $ longestChainSelection candidateChainVars cpsVar
+  void $ fork $ longestChainSelection candidateChainVars cpsVar
 
 -- | Relay node, which takes @'NodeChannels'@ to communicate with its peers
 -- (upstream and downstream).  If it is subscribed to n nodes and has
@@ -351,9 +285,12 @@ forkRelayKernel upstream cpsVar = do
 -- a core node.
 relayNode :: forall m block.
              ( MonadSTM m
+             , MonadFork m
+             , MonadThrow m
              , MonadSay m
              , HasHeader block
              , Show block
+             , MonadTimer m
              )
           => NodeId
           -> Chain block
@@ -374,40 +311,29 @@ relayNode nid initChain chans = do
 
   return cpsVar
   where
-
-    codec
-      :: Codec m Text
-                 (SomeTransition (ChainSyncMessage block (Point block)))
-                 (SomeTransition (ChainSyncMessage block (Point block)))
-                 (ChainSyncMessage block (Point block))
-                 'StIdle
-    codec = codecChainSync
-
     -- Note: there is asymmetry between producers and consumers: we run single
     -- @'ProducerHandlers'@ and multiple @'ConsumerHandlers'@.  An efficient
     -- implementation should run a as many producers as channels and not share
     -- state between producers than necessary (here are producers share chain
     -- state and all the reader states, while we could share just the chain).
     startConsumer :: Int
-                  -> Channel m (SomeTransition (ChainSyncMessage block (Point block)))
+                  -> Channel m (AnyMessage (ChainSync block (Point block)))
                   -> m (TVar m (Chain block))
     startConsumer cid channel = do
       chainVar <- atomically $ newTVar Genesis
       let consumer = chainSyncClientPeer (chainSyncClientExample chainVar pureClient)
-      fork $ void $ useCodecWithDuplex (loggingChannel (ConsumerId nid cid) (withSomeTransition show) (withSomeTransition show) channel) codec consumer
+      void $ fork $ void $ runPeer codecChainSyncId (loggingChannel (ConsumerId nid cid) channel) consumer
       return chainVar
 
-    startProducer :: Peer ChainSyncProtocol (ChainSyncMessage block (Point block))
-                          ('Awaiting 'StIdle) ('Finished 'StDone)
-                          m ()
+    startProducer :: Peer (ChainSync block (Point block)) AsServer StIdle m ()
                   -> Int
-                  -> Channel m (SomeTransition (ChainSyncMessage block (Point block)))
+                  -> Channel m (AnyMessage (ChainSync block (Point block)))
                   -> m ()
     startProducer producer pid channel =
       -- use 'void' because 'fork' only works with 'm ()'
       -- No sense throwing on Unexpected right? since fork will just squelch
       -- it. FIXME: use async...
-      fork $ void $ useCodecWithDuplex (loggingChannel (ProducerId nid pid) (withSomeTransition show) (withSomeTransition show) channel) codec producer
+      void $ fork $ void $ runPeer codecChainSyncId (loggingChannel (ProducerId nid pid) channel) producer
 
 -- | Core node simulation.  Given a chain it will generate a @block@ at its
 -- slot time (i.e. @slotDuration * blockSlot block@).  When the node finds out
@@ -422,6 +348,7 @@ relayNode nid initChain chans = do
 forkCoreKernel :: forall block m.
                   ( HasHeader block
                   , MonadSTM m
+                  , MonadFork m
                   , MonadTimer m
                   )
                => Duration (Time m)
@@ -433,7 +360,7 @@ forkCoreKernel :: forall block m.
                -> m ()
 forkCoreKernel slotDuration gchain fixupBlock cpsVar = do
   getBlock <- blockGenerator slotDuration gchain
-  fork $ applyGeneratedBlock getBlock
+  void $ fork $ applyGeneratedBlock getBlock
 
   where
     applyGeneratedBlock
@@ -472,6 +399,8 @@ forkCoreKernel slotDuration gchain fixupBlock cpsVar = do
 --
 coreNode :: forall m.
         ( MonadSTM m
+        , MonadFork m
+        , MonadThrow m
         , MonadTimer m
         , MonadSay m
         )

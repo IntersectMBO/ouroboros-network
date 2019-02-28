@@ -11,9 +11,11 @@
 module Ouroboros.Storage.Util.ErrorHandling (
     ErrorHandling(..)
   , try
+  , onException
   , monadError
   , exceptions
   , exceptT
+  , monadCatch
   , embed
   , liftErrNewtype
   , liftErrReader
@@ -27,6 +29,9 @@ import qualified Control.Monad.Except as M
 import           Control.Monad.Reader (ReaderT (..), runReaderT)
 import           Control.Monad.State (StateT (..), runStateT)
 import           Data.Type.Coercion
+
+import           Control.Monad.Class.MonadThrow (MonadCatch)
+import qualified Control.Monad.Class.MonadThrow as C
 
 -- | Reification of the 'MonadError' class
 --
@@ -42,6 +47,13 @@ data ErrorHandling e m = ErrorHandling {
 try :: Monad m => ErrorHandling e m -> m a -> m (Either e a)
 try ErrorHandling{..} act = (Right <$> act) `catchError` (return . Left)
 
+-- | Like @finally@, but only performs the final action if there was an
+-- exception raised by the computation.
+onException :: Monad m => ErrorHandling e m -> m a -> m b -> m a
+onException ErrorHandling{..} act onEx = act `catchError` \e -> do
+    _ <- onEx
+    throwError e
+
 monadError :: MonadError e m => ErrorHandling e m
 monadError = ErrorHandling {
       throwError = M.throwError
@@ -50,6 +62,12 @@ monadError = ErrorHandling {
 
 exceptT :: Monad m => ErrorHandling e (ExceptT e m)
 exceptT = monadError
+
+monadCatch :: (MonadCatch m, Exception e) => ErrorHandling e m
+monadCatch = ErrorHandling {
+      throwError = C.throwM
+    , catchError = C.catch
+    }
 
 exceptions :: Exception e => ErrorHandling e IO
 exceptions = ErrorHandling {

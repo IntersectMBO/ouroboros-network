@@ -3,7 +3,7 @@
 module NamedPipe (
   -- * Sending & receiving txs
     withTxPipe
-  , withPipe
+  , withPipeChannel
   , DataFlow(..)
   , NodeMapping((:==>:))
   ) where
@@ -11,11 +11,13 @@ module NamedPipe (
 import           Control.Exception (SomeException, bracket, catch)
 import           Control.Monad (when)
 import           Data.Semigroup ((<>))
+import           Data.ByteString.Lazy (ByteString)
 import           System.Directory (removeFile)
 import           System.IO
 import           System.Posix.Files (createNamedPipe, otherReadMode,
                      otherWriteMode, ownerModes, unionFileModes)
 
+import           Ouroboros.Network.Channel (Channel, handlesAsChannel)
 import           Ouroboros.Network.Node (NodeId (..))
 
 
@@ -28,10 +30,10 @@ data DataFlow =
 -- | Creates two pipes, one for reading, one for writing. The 'DataFlow' input
 -- type is there to make it easier to correctly specify the pipes so that
 -- correct communication can occur.
-withPipe :: DataFlow
-         -> ((Handle, Handle) -> IO a)
-         -> IO a
-withPipe dataflow action = do
+withPipeChannel :: DataFlow
+                -> (Channel IO ByteString -> IO a)
+                -> IO a
+withPipeChannel dataflow action = do
     let (readName, writeName) = mkNames
     bracket (do createNamedPipe readName  (unionFileModes ownerModes otherReadMode)
                     `catch` (\(_ :: SomeException) -> pure ())
@@ -48,7 +50,7 @@ withPipe dataflow action = do
                 removeFile writeName
                   `catch` (\(_ :: SomeException) -> pure ())
                 )
-            action
+            (\(r,w) -> action (handlesAsChannel r w))
 
     -- Creates the correct names for the read and write handles based on the
     -- topology (upstream vs downstream nodes).

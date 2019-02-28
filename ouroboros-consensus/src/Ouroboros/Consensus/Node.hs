@@ -16,13 +16,6 @@ module Ouroboros.Consensus.Node (
   , fromCoreNodeId
     -- * Core node count
   , NumCoreNodes(..)
-    -- * Blockchain time
-  , BlockchainTime(..)
-  , onSlot
-  , NumSlots(..)
-  , finalSlot
-  , testBlockchainTime
-  , realBlockchainTime
     -- * Node
   , NodeKernel(..)
   , NodeCallbacks(..)
@@ -30,7 +23,7 @@ module Ouroboros.Consensus.Node (
   , nodeKernel
     -- * Channels (re-exports from the network layer)
   , Channel
-  , Network.createCoupledChannels
+  , Network.createConnectedChannels
   , Network.loggingChannel
   ) where
 
@@ -40,16 +33,15 @@ import           Crypto.Random (ChaChaDRG)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe, mapMaybe)
-import           Data.Text (Text)
-import           Data.Time
 
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadFork
+import           Control.Monad.Class.MonadThrow
 
-import           Protocol.Channel
-import           Protocol.Codec
-import           Protocol.Driver
+import           Ouroboros.Network.Channel as Network
+import           Ouroboros.Network.Codec
+import           Network.TypedProtocol.Driver
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (Chain (..), ChainUpdate (..), Point)
@@ -61,6 +53,7 @@ import           Ouroboros.Network.Protocol.ChainSync.Server
 import           Ouroboros.Network.Protocol.ChainSync.Type
 import           Ouroboros.Network.Serialise (Serialise)
 
+import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util
@@ -91,82 +84,6 @@ fromCoreNodeId (CoreNodeId n) = CoreId n
 newtype NumCoreNodes = NumCoreNodes { getNumCoreNodes :: Word }
 
 {-------------------------------------------------------------------------------
-  "Blockchain time"
--------------------------------------------------------------------------------}
-
--- | Blockchain time
---
--- When we run the blockchain, there is a single, global time. We abstract over
--- this here to allow to query this time (in terms of the current slot), and
--- execute an action each time we advance a slot.
-data BlockchainTime m = BlockchainTime {
-      -- | Get current slot
-      getCurrentSlot :: Tr m Slot
-
-      -- | Spawn a thread to run an action each time the slot changes
-    , onSlotChange   :: (Slot -> m ()) -> m ()
-    }
-
--- | Execute action on specific slot
-onSlot :: MonadSTM m => BlockchainTime m -> Slot -> m () -> m ()
-onSlot BlockchainTime{..} slot act = onSlotChange $ \slot' -> do
-    when (slot == slot') act
-
--- | Number of slots
-newtype NumSlots = NumSlots Int
-  deriving (Show)
-
-finalSlot :: NumSlots -> Slot
-finalSlot (NumSlots n) = Slot (fromIntegral n)
-
--- | Construct new blockchain time that ticks at the specified slot duration
---
--- NOTE: This is just one way to construct time. We can of course also connect
--- this to the real time (if we are in IO), or indeed to a manual tick
--- (in a demo).
---
--- NOTE: The number of slots is only there to make sure we terminate the
--- thread (otherwise the system will keep waiting).
-testBlockchainTime :: forall m. (MonadSTM m, MonadTimer m)
-                   => NumSlots           -- ^ Number of slots
-                   -> Duration (Time m)  -- ^ Slot duration
-                   -> m (BlockchainTime m)
-testBlockchainTime (NumSlots numSlots) slotDuration = do
-    slotVar <- atomically $ newTVar firstSlot
-    fork $ replicateM_ numSlots $ do
-        threadDelay slotDuration
-        atomically $ modifyTVar slotVar succ
-    return BlockchainTime {
-        getCurrentSlot = readTVar slotVar
-      , onSlotChange   = onEachChange id firstSlot (readTVar slotVar)
-      }
-  where
-    firstSlot :: Slot
-    firstSlot = 0
-
--- | Real blockchain time
-realBlockchainTime :: UTCTime -- ^ Chain start time
-                   -> Double  -- ^ Slot duration (seconds)
-                   -> IO (BlockchainTime IO)
-realBlockchainTime systemStart slotDuration = do
-    first   <- currentSlot
-    slotVar <- atomically $ newTVar first
-    fork $ forever $ do
-      threadDelay $ round (slotDuration * 1000000)
-      atomically . writeTVar slotVar =<< currentSlot
-    return BlockchainTime {
-        getCurrentSlot = readTVar slotVar
-      , onSlotChange   = onEachChange id first (readTVar slotVar)
-      }
-  where
-    currentSlot :: IO Slot
-    currentSlot = do
-      now <- getCurrentTime
-      let diff :: Double -- system duration in seconds
-          diff = realToFrac $ now `diffUTCTime` systemStart
-      return $ Slot $ floor (diff / slotDuration) + 1
-
-{-------------------------------------------------------------------------------
   Relay node
 -------------------------------------------------------------------------------}
 
@@ -182,13 +99,15 @@ data NodeKernel m up blk = NodeKernel {
       --
       -- NOTE: Eventually it will be the responsibility of the network layer
       -- itself to register and deregister peers.
-    , addUpstream       :: forall s r. up -> NodeComms m blk s r -> m ()
+    , addUpstream       :: forall e bytes. Exception e
+                        => up -> NodeComms e m blk bytes -> m ()
 
       -- | Notify network layer of a new downstream node
       --
       -- NOTE: Eventually it will be the responsibility of the network layer
       -- itself to register and deregister peers.
-    , addDownstream     :: forall s r. NodeComms m blk s r -> m ()
+    , addDownstream     :: forall e bytes. Exception e
+                        => NodeComms e m blk bytes -> m ()
     }
 
 -- | Monad that we run protocol specific functions in
@@ -224,6 +143,8 @@ data NodeCallbacks m blk = NodeCallbacks {
 
 nodeKernel :: forall m blk up.
               ( MonadSTM m
+              , MonadFork m
+              , MonadThrow m
               , MonadSay m
               , ProtocolLedgerView blk
               , Eq                 blk
@@ -269,7 +190,13 @@ data InternalState m up blk = IS {
     }
 
 initInternalState :: forall m up blk.
-                     (MonadSTM m, ProtocolLedgerView blk, Ord up, Eq blk)
+                     ( MonadSTM m
+                     , MonadFork m
+                     , MonadThrow m
+                     , ProtocolLedgerView blk
+                     , Eq                 blk
+                     , Ord up
+                     )
                   => NodeConfig (BlockProtocol blk) -- ^ Node configuration
                   -> BlockchainTime m               -- ^ Time
                   -> Chain blk                      -- ^ Initial chain
@@ -301,6 +228,7 @@ initInternalState cfg btime initChain initLedger initState callbacks = do
 
 forkMonitorDownloads :: forall m up blk.
                         ( MonadSTM m
+                        , MonadFork m
                         , MonadSay m
                         , ProtocolLedgerView blk
                         , Eq                 blk
@@ -332,7 +260,10 @@ forkMonitorDownloads st@IS{..} =
     NetworkProvides{..} = networkLayer
     NodeCallbacks{..}   = callbacks
 
-forkBlockProduction :: forall m up blk. (MonadSTM m, ProtocolLedgerView blk)
+forkBlockProduction :: forall m up blk. (
+                         MonadSTM m
+                       , ProtocolLedgerView blk
+                       )
                     => InternalState m up blk -> m ()
 forkBlockProduction st@IS{..} =
     onSlotChange btime $ \slot -> do
@@ -517,8 +448,8 @@ consensusSyncClient :: forall m up blk hdr.
                        ( MonadSTM m
                        , blk ~ hdr -- for now
                        , ProtocolLedgerView hdr
+                       , Eq                 hdr
                        , Ord up
-                       , Eq hdr
                        )
                     => NodeConfig (BlockProtocol hdr)
                     -> BlockchainTime m
@@ -562,7 +493,7 @@ consensusSyncClient cfg btime initLedger varChain candidatesVar up =
 
     handleNext :: TVar m (Chain hdr) -> Consensus ClientStNext hdr m
     handleNext theirChainVar = ClientStNext {
-          recvMsgRollForward = \hdr _theirHead -> ChainSyncClient $
+          recvMsgRollForward = \hdr _theirHead -> ChainSyncClient $ do
             atomically $ do
               -- Right now we validate the entire chain here. We should only
               -- validate the new block.
@@ -646,6 +577,9 @@ newtype Candidates up hdr = Candidates {
       candidates :: [Map up (Chain hdr)]
     }
 
+instance (Condense up, Condense hdr) => Condense (Candidates up hdr) where
+  condense (Candidates cs) = condense cs
+
 noCandidates :: Candidates up hdr
 noCandidates = Candidates []
 
@@ -691,8 +625,8 @@ insertCandidate cfg now (up, cand) (Candidates cands) =
 -- | Update candidates
 updateCandidates :: ( OuroborosTag (BlockProtocol hdr)
                     , HasHeader hdr
+                    , Eq        hdr
                     , Ord up
-                    , Eq hdr
                     , hdr ~ blk
                     )
                  => NodeConfig (BlockProtocol hdr)
@@ -741,9 +675,10 @@ data NetworkRequires m up blk hdr = NetworkRequires {
     }
 
 -- | Required by the network layer to initiate comms to a new node
-data NodeComms m hdr s r = NodeComms {
+data NodeComms e m hdr bytes = NodeComms {
       -- | Codec for concrete send type @s@ and receive type @r@
-      ncCodec    :: Codec m Text s r (ChainSyncMessage hdr (Point hdr)) 'StIdle
+      ncCodec    :: Codec (ChainSync hdr (Point hdr)) e m bytes
+      -- TODO: will need to handle these 'e' exceptions properly
 
       -- | Construct a channel to the node
       --
@@ -751,7 +686,7 @@ data NodeComms m hdr s r = NodeComms {
       -- is important to note that this resource allocation will run in a thread
       -- which itself is untracked, so if resource deallocation absolutely
       -- /must/ happen additional measures must be taken
-    , ncWithChan :: forall a. (Duplex m m s r -> m a) -> m a
+    , ncWithChan :: forall a. (Channel m bytes -> m a) -> m a
     }
 
 data NetworkProvides m up blk hdr = NetworkProvides {
@@ -765,17 +700,21 @@ data NetworkProvides m up blk hdr = NetworkProvides {
       --
       -- NOTE: Eventually it will be the responsibility of the network layer
       -- itself to register and deregister peers.
-    , npAddUpstream   :: forall s r. up -> NodeComms m hdr s r -> m ()
+    , npAddUpstream   :: forall e bytes. Exception e
+                      => up -> NodeComms e m hdr bytes -> m ()
 
       -- | Notify network layer of a new downstream node
       --
       -- NOTE: Eventually it will be the responsibility of the network layer
       -- itself to register and deregister peers.
-    , npAddDownstream :: forall s r. NodeComms m hdr s r -> m ()
+    , npAddDownstream :: forall e bytes. Exception e
+                      => NodeComms e m hdr bytes -> m ()
     }
 
 initNetworkLayer :: forall m up hdr blk.
                     ( MonadSTM m
+                    , MonadFork m
+                    , MonadThrow m
                     , HasHeader hdr
                     , hdr ~ blk     -- TODO: for now
                     , Eq blk        -- TODO: for now
@@ -795,7 +734,7 @@ initNetworkLayer NetworkRequires{..} = do
     -- We continuously monitor the chain candidates, and download one as soon
     -- as one becomes available. This is merely a mock implementation, we make
     -- all chains available as soon as they are candidates.
-    fork $ forever $ atomically $ do
+    void $ fork $ forever $ atomically $ do
       downloaded <- readTVar downloadedVar
       candidates <- (concatMap Map.elems . candidates) <$> nrCandidates
       if candidates == downloaded
@@ -804,7 +743,7 @@ initNetworkLayer NetworkRequires{..} = do
 
     -- We also continously monitor the our own chain, so that we can update our
     -- downstream peers when our chain changes
-    fork $ forever $ atomically $ do
+    void $ fork $ forever $ atomically $ do
       chain <- nrCurrentChain
       cps   <- readTVar cpsVar
       -- TODO: We should probably not just compare the slot
@@ -816,12 +755,14 @@ initNetworkLayer NetworkRequires{..} = do
           npDownloaded = readTVar downloadedVar
         , npAddDownstream = \NodeComms{..} -> do
             let producer = chainSyncServerPeer (chainSyncServerExample () cpsVar)
-            fork $ void $ ncWithChan $ \chan ->
-              useCodecWithDuplex chan ncCodec producer
+            void $ fork $ void $ ncWithChan $ \chan ->
+              runPeer ncCodec chan producer
+              --TODO: deal with the exceptions this throws, use async
         , npAddUpstream = \up NodeComms{..} -> do
             let consumer = nrSyncClient up
-            fork $ void $ ncWithChan $ \chan ->
-              useCodecWithDuplex chan ncCodec (chainSyncClientPeer consumer)
+            void $ fork $ void $ ncWithChan $ \chan ->
+              runPeer ncCodec chan (chainSyncClientPeer consumer)
+              --TODO: deal with the exceptions this throws, use async
         }
 
 {-------------------------------------------------------------------------------

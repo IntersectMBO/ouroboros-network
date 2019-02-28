@@ -1,0 +1,5 @@
+Wireshark Dissector for Ouroboros-Network.
+
+To use copy ouroboros_network.lua to $HOME/.config/wireshark/plugins
+
+

@@ -241,6 +241,7 @@ instance PraosCrypto c => OuroborosTag (Praos c) where
     return $ bi : cs
 
   -- NOTE: We redefine `preferCandidate` but NOT `compareCandidates`
+  -- NOTE: See note regarding clock skew.
   preferCandidate PraosNodeConfig{..} slot ours cand
     | forksAtMostKBlocks k ours' cand' &&
       Chain.length cand' > Chain.length ours'
@@ -248,7 +249,7 @@ instance PraosCrypto c => OuroborosTag (Praos c) where
     | otherwise
     = Nothing
     where
-      clip = upToSlot slot
+      clip = upToSlot (slot + 1)
 
       ours' = clip ours
       cand' = clip cand

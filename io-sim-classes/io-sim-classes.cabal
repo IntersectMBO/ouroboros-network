@@ -9,7 +9,6 @@ maintainer:
 copyright:           2018 IOHK
 category:            Control
 build-type:          Simple
-extra-source-files:  ChangeLog.md
 cabal-version:       >=1.10
 
 source-repository head
@@ -23,11 +22,12 @@ library
   -- At this experiment/prototype stage everything is exposed.
   -- This has to be tidied up once the design becomes clear.
   exposed-modules:
+                       Control.Monad.Class.MonadAsync
                        Control.Monad.Class.MonadFork
-                       Control.Monad.Class.MonadProbe
                        Control.Monad.Class.MonadSay
                        Control.Monad.Class.MonadST
                        Control.Monad.Class.MonadSTM
+                       Control.Monad.Class.MonadThrow
                        Control.Monad.Class.MonadTimer
   default-language:    Haskell2010
   other-extensions:    CPP
@@ -41,7 +41,8 @@ library
                        RankNTypes
   build-depends:       base  >=4.9 && <4.13,
                        mtl   >=2.2 && <2.3,
-                       stm   >=2.4 && <2.6
+                       stm   >=2.4 && <2.6,
+                       async >=2.1
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
                        -fno-ignore-asserts

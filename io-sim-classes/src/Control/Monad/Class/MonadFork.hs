@@ -1,12 +1,12 @@
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE FlexibleContexts    #-}
+
 module Control.Monad.Class.MonadFork
   ( MonadFork (..)
   ) where
 
 import qualified Control.Concurrent as IO
-import           Control.Exception
-import           Control.Monad (void)
-import           Control.Monad.Except
+import           Control.Exception (Exception(..), SomeException)
 import           Control.Monad.Reader
 import           System.IO (hFlush, hPutStrLn, stderr)
 import           System.IO.Unsafe (unsafePerformIO)
@@ -15,10 +15,19 @@ forkPrintExceptionLock :: IO.MVar ()
 {-# NOINLINE forkPrintExceptionLock #-}
 forkPrintExceptionLock = unsafePerformIO $ IO.newMVar ()
 
-class Monad m => MonadFork m where
-  fork    :: m () -> m ()
+class (Monad m, Eq   (ThreadId m),
+                Ord  (ThreadId m),
+                Show (ThreadId m)) => MonadFork m where
+
+  type ThreadId m :: *
+
+  fork       :: m () -> m (ThreadId m)
+  myThreadId :: m (ThreadId m)
+  throwTo    :: Exception e => ThreadId m -> e -> m ()
+
 
 instance MonadFork IO where
+  type ThreadId IO = IO.ThreadId
   fork a =
     let handleException :: Either SomeException () -> IO ()
         handleException (Left e) = do
@@ -28,11 +37,14 @@ instance MonadFork IO where
                               ++ ": " ++ displayException e
               hFlush stderr
         handleException (Right x) = return x
-    in void (IO.forkFinally a handleException)
+    in IO.forkFinally a handleException
+
+  myThreadId = IO.myThreadId
+  throwTo    = IO.throwTo
 
 instance MonadFork m => MonadFork (ReaderT e m) where
+  type ThreadId (ReaderT e m) = ThreadId m
   fork (ReaderT f) = ReaderT $ \e -> fork (f e)
+  myThreadId  = lift myThreadId
+  throwTo e t = lift (throwTo e t)
 
--- NOTE(adn): Is this a sensible instance?
-instance (Show e, MonadFork m) => MonadFork (ExceptT e m) where
-  fork (ExceptT m) = ExceptT $ Right <$> fork (either (error . show) id <$> m)

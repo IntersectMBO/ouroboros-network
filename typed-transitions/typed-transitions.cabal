@@ -57,6 +57,7 @@ test-suite test-typed-transitions
   other-modules:    Test.Protocol.Channel
                     Test.Protocol.Codec
                     Test.Protocol.Codec.PingPong
+  default-language: Haskell2010
   build-depends:    base
                   , async
                   , bytestring

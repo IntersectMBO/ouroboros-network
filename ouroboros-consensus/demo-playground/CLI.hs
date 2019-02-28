@@ -14,9 +14,9 @@ module CLI (
 
 import           Data.Foldable (asum)
 import           Data.Semigroup ((<>))
-import           Data.Time
 import           Options.Applicative
 
+import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Demo
 import qualified Ouroboros.Consensus.Ledger.Mock as Mock
 import           Ouroboros.Consensus.Node (NodeId (..))
@@ -26,33 +26,36 @@ import           Mock.TxSubmission (command', parseMockTx)
 import           Topology (TopologyInfo (..))
 
 data CLI = CLI {
-    systemStart  :: UTCTime
-  , slotDuration :: Double
-  , protocol     :: Some DemoProtocol
+    systemStart  :: SystemStart
+  , slotDuration :: SlotLength
   , command      :: Command
   }
 
 data Command =
-    SimpleNode  TopologyInfo
+    SimpleNode  TopologyInfo (Some DemoProtocol)
   | TxSubmitter TopologyInfo Mock.Tx
 
 parseCLI :: Parser CLI
 parseCLI = CLI
     <$> parseSystemStart
     <*> parseSlotDuration
-    <*> parseProtocol
     <*> parseCommand
 
-parseSystemStart :: Parser UTCTime
-parseSystemStart = option auto (long "system-start" <>
-                                help "The start time of the system (e.g. \"2018-12-10 15:58:06\""
-                               )
+parseSystemStart :: Parser SystemStart
+parseSystemStart = option (SystemStart . fixedFromUTC <$> auto) $ mconcat [
+      long "system-start"
+    , help "The start time of the system (e.g. \"2018-12-10 15:58:06\""
+    ]
 
-parseSlotDuration :: Parser Double
-parseSlotDuration = option auto (long "slot-duration" <>
-                                 value 5.0 <>
-                                 help "The slot duration (seconds)"
-                                )
+parseSlotDuration :: Parser SlotLength
+parseSlotDuration = option (mkSlotLength <$> auto) $ mconcat [
+      long "slot-duration"
+    , value (mkSlotLength 5)
+    , help "The slot duration (seconds)"
+    ]
+  where
+    mkSlotLength :: Integer -> SlotLength
+    mkSlotLength = slotLengthFromMillisec . (* 1000)
 
 parseProtocol :: Parser (Some DemoProtocol)
 parseProtocol = asum [
@@ -69,7 +72,7 @@ parseProtocol = asum [
 parseCommand :: Parser Command
 parseCommand = subparser $ mconcat [
     command' "node" "Run a node." $
-      SimpleNode <$> parseTopologyInfo
+      SimpleNode <$> parseTopologyInfo <*> parseProtocol
   , command' "submit" "Submit a transaction." $
       TxSubmitter <$> parseTopologyInfo <*> parseMockTx
   ]

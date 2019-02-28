@@ -1,12 +1,12 @@
 {-# LANGUAGE BangPatterns      #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TupleSections     #-}
-{-# LANGUAGE TypeFamilies      #-}
 
 -- | IO implementation of the 'HasFS' class
 module Ouroboros.Storage.FS.IO (
     -- * IO implementation & monad
-      ioHasFS
+      HandleIO(..)
+    , ioHasFS
     ) where
 
 import qualified Control.Exception as E
@@ -29,30 +29,33 @@ import qualified Ouroboros.Storage.Util.ErrorHandling as EH
   I/O implementation of HasFS
 -------------------------------------------------------------------------------}
 
-type instance FsHandle IO = (FsPath, F.FHandle)
-data instance Buffer   IO = BufferIO !(ForeignPtr Word8) !Int
+-- | File handlers for the IO instance for HasFS
+--
+-- We store the path the handle points to for better error messages
+data HandleIO = HandleIO {
+      handlePath :: FsPath
+    , handleIO   :: F.FHandle
+    }
+  deriving (Eq)
 
-ioHasFS :: MountPoint -> HasFS IO
+ioHasFS :: MountPoint -> HasFS IO HandleIO
 ioHasFS mount = HasFS {
       -- TODO(adn) Might be useful to implement this properly by reading all
       -- the stuff available at the 'MountPoint'.
       dumpState = return "<dumpState@IO>"
-    , newBuffer = newBufferIO
     , hOpen = \fp ioMode -> rethrowFsError fp $
-        (fp, ) <$> F.open (root fp) ioMode
-    , hClose = \(fp, h) -> rethrowFsError fp $
+        HandleIO fp <$> F.open (root fp) ioMode
+    , hClose = \(HandleIO fp h) -> rethrowFsError fp $
         F.close h
-    , hSeek = \(fp, h) mode o -> rethrowFsError fp $
+    , hSeek = \(HandleIO fp h) mode o -> rethrowFsError fp $
         F.seek h mode o
-    , hGet = \(fp, h) n -> rethrowFsError fp $
+    , hGet = \(HandleIO fp h) n -> rethrowFsError fp $
         F.read h n
-    , hTruncate = \(fp, h) sz -> rethrowFsError fp $
+    , hTruncate = \(HandleIO fp h) sz -> rethrowFsError fp $
         F.truncate h sz
-    , hPutBuffer = \(fp, h) buf bldr -> rethrowFsError fp $
-        hPutBufferIO h buf bldr
-    , hGetSize = \(fp, h) -> rethrowFsError fp $
+    , hGetSize = \(HandleIO fp h) -> rethrowFsError fp $
         F.getSize h
-    , hPut = \(fp, h) builder -> rethrowFsError fp $ do
+    , hPut = \(HandleIO fp h) builder -> rethrowFsError fp $ do
         buf0 <- newBufferIO BS.defaultChunkSize
         hPutBufferIO h buf0 builder
     , createDirectory = \fp -> rethrowFsError fp $
@@ -93,25 +96,27 @@ rethrowFsError fp action = do
   Auxiliary: buffers
 -------------------------------------------------------------------------------}
 
-bufferSize :: Buffer IO -> Int
+data BufferIO = BufferIO !(ForeignPtr Word8) !Int
+
+bufferSize :: BufferIO -> Int
 bufferSize (BufferIO _fptr len) = len
 
-newBufferIO :: Int -> IO (Buffer IO)
+newBufferIO :: Int -> IO BufferIO
 newBufferIO len = do
     fptr <- mallocPlainForeignPtrBytes len
     return $! BufferIO fptr len
 
-withBuffer :: Buffer IO
+withBuffer :: BufferIO
            -> (Ptr Word8 -> Int -> IO a)
            -> IO a
 withBuffer (BufferIO fptr len) action =
     withForeignPtr fptr $ \ptr -> action ptr len
 
-hPutBufferIO :: F.FHandle -> Buffer IO -> Builder -> IO Word64
+hPutBufferIO :: F.FHandle -> BufferIO -> Builder -> IO Word64
 hPutBufferIO hnd buf0 = go 0 buf0 . BS.runBuilder
   where
     go :: Word64
-       -> Buffer IO
+       -> BufferIO
        -> BS.BufferWriter
        -> IO Word64
     go !bytesWritten buf write = do

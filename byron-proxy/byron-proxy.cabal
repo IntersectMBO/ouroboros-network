@@ -1,0 +1,85 @@
+name:                byron-proxy
+version:             0.1.0.0
+synopsis:            Adapter for the Byron net
+-- description:
+homepage:            https://github.com/input-output-hk/ouroboros-network
+license:             BSD3
+license-file:        LICENSE
+author:              Alexander Vieth
+maintainer:          alex@well-typed.com
+-- copyright:
+category:            Ouroboros
+build-type:          Simple
+extra-source-files:  ChangeLog.md
+cabal-version:       >=1.10
+
+library
+  exposed-modules:     Ouroboros.Byron.Proxy.Types,
+                       Ouroboros.Byron.Proxy.Index
+  -- other-modules:
+  -- other-extensions:
+  build-depends:       base,
+                       async,
+                       bytestring,
+                       cardano-sl,
+                       cardano-sl-binary,
+                       cardano-sl-chain,
+                       cardano-sl-core,
+                       cardano-sl-crypto,
+                       cardano-sl-db,
+                       cardano-sl-infra,
+                       cardano-sl-util,
+                       conduit,
+                       containers,
+                       cryptonite,
+                       directory,
+                       exceptions,
+                       free,
+                       io-sim,
+                       io-sim-classes,
+                       lens,
+                       memory,
+                       ouroboros-consensus,
+                       ouroboros-network,
+                       random,
+                       sqlite-simple,
+                       stm,
+                       tagged,
+                       text,
+                       transformers
+  hs-source-dirs:      src/lib
+  default-language:    Haskell2010
+  ghc-options:         -fwarn-incomplete-patterns
+                       -fwarn-unused-imports
+
+executable byron-proxy
+  main-is:             Main.hs
+  -- other-modules:
+  -- other-extensions:
+  build-depends:       base,
+                       async,
+                       byron-proxy,
+                       cardano-sl,
+                       cardano-sl-binary,
+                       cardano-sl-chain,
+                       cardano-sl-core,
+                       cardano-sl-db,
+                       cardano-sl-infra,
+                       cardano-sl-util,
+                       containers,
+                       directory,
+                       iohk-monitoring,
+                       lens,
+                       optparse-applicative,
+                       ouroboros-consensus,
+                       random,
+                       stm,
+                       text,
+                       time
+  hs-source-dirs:      src/exec
+  default-language:    Haskell2010
+  -- -threaded is needed or else the diffusion layer will crash, due to a use
+  -- of registerDelay
+  ghc-options:         -threaded
+                       -fwarn-incomplete-patterns
+                       -fwarn-unused-imports

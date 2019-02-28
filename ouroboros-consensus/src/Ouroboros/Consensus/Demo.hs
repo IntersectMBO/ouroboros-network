@@ -103,6 +103,7 @@ type DemoProtocolConstraints p = (
   , Condense  (Payload p (SimplePreHeader p SimpleBlockMockCrypto))
   , Eq        (Payload p (SimplePreHeader p SimpleBlockMockCrypto))
   , Serialise (Payload p (SimplePreHeader p SimpleBlockMockCrypto))
+  , Show      (Payload p (SimplePreHeader p SimpleBlockMockCrypto))
   )
 
 demoProtocolConstraints :: DemoProtocol p -> Dict (DemoProtocolConstraints p)

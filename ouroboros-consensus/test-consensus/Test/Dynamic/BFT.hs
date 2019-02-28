@@ -27,6 +27,7 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
+import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Demo
 import           Ouroboros.Consensus.Node
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -35,7 +36,7 @@ import           Ouroboros.Network.Chain (Chain)
 
 import           Test.Dynamic.General
 import           Test.Dynamic.Util
-import           Test.Orphans.Arbitrary ()
+import           Test.Util.Orphans.Arbitrary ()
 
 tests :: TestTree
 tests = testGroup "Dynamic chain generation" [
@@ -56,16 +57,13 @@ prop_simple_bft_convergence params numCoreNodes =
       isValid
       numCoreNodes
   where
-    isValid :: Show time
-            => [NodeId]
-            -> [(time, Map NodeId (Chain (Block DemoBFT)))]
+    isValid :: [NodeId]
+            -> Map NodeId (Chain (Block DemoBFT))
             -> Property
-    isValid nodeIds trace = counterexample (show trace) $
-      case trace of
-        [(_, final)] -> collect (shortestLength final)
-                     $    Map.keys final === nodeIds
-                     .&&. allEqual (takeChainPrefix <$> Map.elems final)
-        _otherwise   -> property False
+    isValid nodeIds final = counterexample (show final) $
+          collect (shortestLength final)
+     $    Map.keys final === nodeIds
+     .&&. allEqual (takeChainPrefix <$> Map.elems final)
       where
         takeChainPrefix :: Chain (Block DemoBFT) -> Chain (Block DemoBFT)
         takeChainPrefix = id -- in BFT, chains should indeed all be equal.

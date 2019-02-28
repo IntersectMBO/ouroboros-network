@@ -17,17 +17,20 @@ import qualified Data.Set as Set
 
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadFork
+import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
 
-import           Protocol.Channel
-import           Protocol.Transition
+import           Ouroboros.Network.Channel
+import           Ouroboros.Network.Codec (AnyMessage)
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain
 import qualified Ouroboros.Network.Chain as Chain
-import           Ouroboros.Network.Protocol.ChainSync.Codec.Id
+import           Ouroboros.Network.Protocol.ChainSync.Codec
 import           Ouroboros.Network.Protocol.ChainSync.Type
 
+import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Crypto.Hash
 import           Ouroboros.Consensus.Demo
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -45,6 +48,8 @@ import           Ouroboros.Consensus.Util.STM
 -- each node.
 broadcastNetwork :: forall m p.
                     ( MonadSTM   m
+                    , MonadFork  m
+                    , MonadThrow m
                     , MonadTimer m
                     , MonadSay   m
                     , DemoProtocolConstraints p
@@ -71,9 +76,7 @@ broadcastNetwork btime numCoreNodes pInfo initRNG numSlots = do
     chans :: NodeChans m (Block p)
        <- fmap Map.fromList $ forM nodeIds $ \us -> do
                fmap (us, ) $ fmap Map.fromList $ forM nodeIds $ \them ->
-                 fmap (them, ) $
-                   -- for no, zero delay
-                   createCoupledChannels 0 0
+                 fmap (them, ) $ createConnectedChannels
 
     varRNG <- atomically $ newTVar initRNG
 
@@ -116,18 +119,16 @@ broadcastNetwork btime numCoreNodes pInfo initRNG numSlots = do
                       -> NodeChan m (Block p)
                       -> NodeChan m (Block p)
           withLogging chId = loggingChannel chId
-                                            (withSomeTransition show)
-                                            (withSomeTransition show)
 
       forM_ (filter (/= us) nodeIds) $ \them -> do
         let commsDown = NodeComms {
-                ncCodec    = codecChainSync
+                ncCodec    = codecChainSyncId
               , ncWithChan = \cc -> cc $
                   withLogging (TalkingToConsumer us them) $
                     fst (chans Map.! us Map.! them)
               }
             commsUp = NodeComms {
-                ncCodec    = codecChainSync
+                ncCodec    = codecChainSyncId
               , ncWithChan = \cc -> cc $
                   withLogging (TalkingToProducer us them) $
                     snd (chans Map.! them Map.! us)
@@ -157,7 +158,7 @@ broadcastNetwork btime numCoreNodes pInfo initRNG numSlots = do
 -------------------------------------------------------------------------------}
 
 -- | Communication channel
-type NodeChan  m b = Channel m (SomeTransition (ChainSyncMessage b (Point b)))
+type NodeChan  m b = Channel m (AnyMessage (ChainSync b (Point b)))
 
 -- | All connections between all nodes
 type NodeChans m b = Map NodeId (Map NodeId (NodeChan m b, NodeChan m b))

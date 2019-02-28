@@ -9,20 +9,17 @@ module Run (
 import qualified Control.Concurrent.Async as Async
 import           Control.Concurrent.STM
 import           Control.Monad
-import           Control.Monad.ST (stToIO)
 import           Control.Monad.Trans
 import           Crypto.Random
 import qualified Data.Map.Strict as M
 import           Data.Maybe
 import           Data.Semigroup ((<>))
 
-import           Protocol.Codec (hoistCodec)
-
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (pointHash)
-import qualified Ouroboros.Network.Pipe as P
-import           Ouroboros.Network.Protocol.ChainSync.Codec.Cbor
+import           Ouroboros.Network.Protocol.ChainSync.Codec
 
+import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Demo
 import           Ouroboros.Consensus.Ledger.Abstract
 import qualified Ouroboros.Consensus.Ledger.Mock as Mock
@@ -45,7 +42,7 @@ runNode cli@CLI{..} = do
     case command of
       TxSubmitter topology tx ->
         handleTxSubmission topology tx
-      SimpleNode  topology ->
+      SimpleNode topology protocol ->
         case protocol of
           Some p -> case demoProtocolConstraints p of
                       Dict -> handleSimpleNode p cli topology
@@ -113,7 +110,7 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
                  , adoptedNewChain = logChain loggingQueue
                  }
 
-             btime  <- realBlockchainTime systemStart slotDuration
+             btime  <- realBlockchainTime slotDuration systemStart
              kernel <- nodeKernel
                          pInfoConfig
                          pInfoInitState
@@ -152,10 +149,8 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
         where
           direction = Upstream (producerNodeId :==>: myNodeId)
           nodeComms = NodeComms {
-              ncCodec    = hoistCodec stToIO codecChainSync
-            , ncWithChan = \cc ->
-                NamedPipe.withPipe direction $ \(hndRead, hndWrite) ->
-                  cc (P.pipeDuplex hndRead hndWrite)
+              ncCodec    = codecChainSync
+            , ncWithChan = NamedPipe.withPipeChannel direction
             }
 
       addDownstream' :: NodeKernel IO NodeId (Block p)
@@ -166,8 +161,6 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
         where
           direction = Downstream (myNodeId :==>: consumerNodeId)
           nodeComms = NodeComms {
-              ncCodec    = hoistCodec stToIO codecChainSync
-            , ncWithChan = \cc ->
-                NamedPipe.withPipe direction $ \(hndRead, hndWrite) ->
-                 cc (P.pipeDuplex hndRead hndWrite)
+              ncCodec    = codecChainSync
+            , ncWithChan = NamedPipe.withPipeChannel direction
             }

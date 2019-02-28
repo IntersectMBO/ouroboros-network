@@ -24,6 +24,7 @@ library
      hs-source-dirs:   src-unix/
 
   exposed-modules:
+                       Ouroboros.Consensus.BlockchainTime
                        Ouroboros.Consensus.Crypto.DSIGN
                        Ouroboros.Consensus.Crypto.DSIGN.Class
                        Ouroboros.Consensus.Crypto.DSIGN.Ed448
@@ -57,10 +58,10 @@ library
                        Ouroboros.Consensus.Protocol.ExtNodeConfig
                        Ouroboros.Consensus.Protocol.ModChainSel
                        Ouroboros.Consensus.Util
+                       Ouroboros.Consensus.Util.CBOR
                        Ouroboros.Consensus.Util.Chain
                        Ouroboros.Consensus.Util.Classify
                        Ouroboros.Consensus.Util.Condense
-                       Ouroboros.Consensus.Util.DepFn
                        Ouroboros.Consensus.Util.HList
                        Ouroboros.Consensus.Util.Orphans
                        Ouroboros.Consensus.Util.Random
@@ -85,6 +86,11 @@ library
                        Ouroboros.Storage.ImmutableDB.Util
                        Ouroboros.Storage.Util
                        Ouroboros.Storage.Util.ErrorHandling
+                       Ouroboros.Storage.VolatileDB
+                       Ouroboros.Storage.VolatileDB.API
+                       Ouroboros.Storage.VolatileDB.Impl
+                       Ouroboros.Storage.VolatileDB.Types
+                       Ouroboros.Storage.VolatileDB.Util
                        Ouroboros.Storage.IO
 
   default-language:    Haskell2010
@@ -126,7 +132,7 @@ library
 
   build-depends:       base              >=4.9 && <4.13,
                        ouroboros-network,
-                       typed-transitions,
+                       typed-protocols,
                        io-sim-classes,
 
                        base16-bytestring >=0.1   && <0.2,
@@ -135,7 +141,6 @@ library
                        containers        >=0.5   && <0.7,
                        cryptonite        >=0.25  && <0.26,
                        directory         >=1.3   && <1.4,
-                       exceptions        >=0.10  && <0.11,
                        filepath          >=1.4   && <1.5,
                        fingertree        >=0.1.4.2 && <0.2,
                        memory            >=0.14  && <0.15,
@@ -153,9 +158,7 @@ library
                        text              >=1.2   && <1.3,
                        time,
                        transformers,
-                       vector            >=0.12  && <0.13,
-
-                       QuickCheck        >=2.12 && <2.13
+                       vector            >=0.12  && <0.13
 
   if os(windows)
      build-depends:       Win32
@@ -174,13 +177,11 @@ executable demo-playground
   other-modules:       CLI
                        Logging
                        Mock.Mempool
-                       Mock.Protocol
                        Mock.TxSubmission
                        NamedPipe
                        Run
                        Topology
   build-depends:       base,
-                       typed-transitions,
                        ouroboros-network,
                        ouroboros-consensus,
                        io-sim-classes,
@@ -207,6 +208,7 @@ test-suite test-consensus
   default-language: Haskell2010
   main-is:          Main.hs
   other-modules:
+                    Test.Consensus.BlockchainTime
                     Test.Dynamic.BFT
                     Test.Dynamic.General
                     Test.Dynamic.LeaderSchedule
@@ -214,9 +216,10 @@ test-suite test-consensus
                     Test.Dynamic.Praos
                     Test.Dynamic.Util
                     Test.Ouroboros
-                    Test.Orphans.Arbitrary
+                    Test.Util.Orphans.Arbitrary
+                    Test.Util.DepFn
   build-depends:    base,
-                    typed-transitions,
+                    typed-protocols,
                     ouroboros-network,
                     ouroboros-consensus,
                     io-sim-classes,
@@ -230,15 +233,17 @@ test-suite test-consensus
                     QuickCheck,
                     serialise,
                     tasty,
+                    tasty-hunit,
                     tasty-quickcheck,
-                    text
+                    text,
+                    time
 
   ghc-options:      -Wall
                     -fno-ignore-asserts
 
 test-suite test-crypto
   type:             exitcode-stdio-1.0
-  hs-source-dirs:   test-crypto
+  hs-source-dirs:   test-crypto, test-util
   default-language: Haskell2010
   main-is:          Main.hs
   other-modules:
@@ -246,6 +251,8 @@ test-suite test-crypto
                     Test.Crypto.Hash
                     Test.Crypto.KES
                     Test.Crypto.VRF
+                    Test.Util.Orphans.Arbitrary
+                    Test.Util.QuickCheck
   build-depends:    base,
                     ouroboros-network,
                     ouroboros-consensus,
@@ -253,7 +260,8 @@ test-suite test-crypto
                     bytestring,
                     QuickCheck,
                     tasty,
-                    tasty-quickcheck
+                    tasty-quickcheck,
+                    time
 
   ghc-options:      -Wall
                     -fno-ignore-asserts
@@ -267,9 +275,17 @@ test-suite test-storage
                     Test.Ouroboros.Storage
                     Test.Ouroboros.Storage.Util
                     Test.Ouroboros.Storage.FS
+                    Test.Ouroboros.Storage.FS.Sim.Error
                     Test.Ouroboros.Storage.FS.StateMachine
                     Test.Ouroboros.Storage.ImmutableDB
+                    Test.Ouroboros.Storage.ImmutableDB.CumulEpochSizes
+                    Test.Ouroboros.Storage.ImmutableDB.Model
                     Test.Ouroboros.Storage.ImmutableDB.Sim
+                    Test.Ouroboros.Storage.ImmutableDB.StateMachine
+                    Test.Ouroboros.Storage.ImmutableDB.TestBlock
+                    Test.Ouroboros.Storage.VolatileDB
+                    Test.Ouroboros.Storage.VolatileDB.Model
+                    Test.Ouroboros.Storage.VolatileDB.StateMachine
                     Test.Util.RefEnv
   build-depends:    base,
                     ouroboros-network,
@@ -277,16 +293,18 @@ test-suite test-storage
                     io-sim-classes,
 
                     bifunctors,
+                    binary,
                     bytestring,
+                    cereal,
                     containers,
                     directory,
-                    exceptions,
                     generics-sop,
                     mtl,
                     pretty-show,
                     QuickCheck,
                     quickcheck-state-machine >=0.6.0,
                     random,
+                    stm,
                     tasty,
                     tasty-hunit,
                     tasty-quickcheck,

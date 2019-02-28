@@ -11,8 +11,6 @@ module Ouroboros.Consensus.Crypto.DSIGN.Mock
     , verKeyIdFromSigned
     ) where
 
-import qualified Data.ByteString.Base16 as B16
-import qualified Data.ByteString.Char8 as SB8
 import           GHC.Generics (Generic)
 
 import           Ouroboros.Network.Serialise
@@ -47,9 +45,7 @@ mkSig :: Serialise a => a -> SignKeyDSIGN MockDSIGN -> SigDSIGN MockDSIGN
 mkSig a (SignKeyMockDSIGN n) = SigMockDSIGN (getHash $ hash @ShortHash a) n
 
 instance Condense (SigDSIGN MockDSIGN) where
-    condense (SigMockDSIGN n i) = (SB8.unpack . B16.encode $ n)
-                                <> ":"
-                                <> show i
+    condense (SigMockDSIGN _ i) = show i
 
 instance Serialise (VerKeyDSIGN MockDSIGN)
 instance Serialise (SignKeyDSIGN MockDSIGN)

@@ -81,6 +81,15 @@ instance All Condense as => Condense (HList as) where
 instance (Condense a, Condense b) => Condense (a, b) where
   condense (a, b) = condense (a :* b :* Nil)
 
+instance (Condense a, Condense b, Condense c) => Condense (a, b, c) where
+  condense (a, b, c) = condense (a :* b :* c :* Nil)
+
+instance (Condense a, Condense b, Condense c, Condense d) => Condense (a, b, c, d) where
+  condense (a, b, c, d) = condense (a :* b :* c :* d :* Nil)
+
+instance (Condense a, Condense b, Condense c, Condense d, Condense e) => Condense (a, b, c, d, e) where
+  condense (a, b, c, d, e) = condense (a :* b :* c :* d :* e :* Nil)
+
 instance (Condense k, Condense a) => Condense (Map k a) where
   condense = condense . Map.toList
 
