@@ -26,9 +26,10 @@ import qualified Test.Mux as Mxt
 tests :: TestTree
 tests =
   testGroup "Socket"
-  [ testProperty "socket send receive" prop_socket_send_recv
-  , testProperty "socket close during receive"    prop_socket_recv_close
-  , testProperty "socket sync demo"    prop_socket_demo
+  [ testProperty "socket send receive IPv4"    prop_socket_send_recv_ipv4
+  , testProperty "socket send receive IPv6"    prop_socket_send_recv_ipv6
+  , testProperty "socket close during receive" prop_socket_recv_close
+  , testProperty "socket sync demo"            prop_socket_demo
   ]
 
 
@@ -41,15 +42,34 @@ prop_socket_demo :: TestBlockChainAndUpdates -> Property
 prop_socket_demo (TestBlockChainAndUpdates chain updates) =
     ioProperty $ demo2 chain updates
 
+-- | Send and receive over IPv4
+prop_socket_send_recv_ipv4 :: Mxt.DummyPayload
+                           -> Mxt.DummyPayload
+                           -> Property
+prop_socket_send_recv_ipv4 request response = ioProperty $ do
+    client:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
+    server:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
+    return $ prop_socket_send_recv client server request response
+
+-- | Send and receive over IPv6
+prop_socket_send_recv_ipv6 :: Mxt.DummyPayload
+                      -> Mxt.DummyPayload
+                      -> Property
+prop_socket_send_recv_ipv6 request response = ioProperty $ do
+    client:_ <- getAddrInfo Nothing (Just "::1") (Just "0")
+    server:_ <- getAddrInfo Nothing (Just "::1") (Just "6061")
+    return $ prop_socket_send_recv client server request response
+
+
 -- | Verify that an initiator and a responder can send and receive messages from each other
 -- over a TCP socket. Large DummyPayloads will be split into smaller segments and the
 -- testcases will verify that they are correctly reassembled into the original message.
-prop_socket_send_recv :: Mxt.DummyPayload
+prop_socket_send_recv :: AddrInfo
+                      -> AddrInfo
+                      -> Mxt.DummyPayload
                       -> Mxt.DummyPayload
                       -> Property
-prop_socket_send_recv request response = ioProperty $ do
-    a:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
-    b:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
+prop_socket_send_recv clientAddr serverAddr request response = ioProperty $ do
 
     endMpsVar <- atomically $ newTVar 2
 
@@ -61,8 +81,8 @@ prop_socket_send_recv request response = ioProperty $ do
         server_mps Mxt.ChainSync1 = server_mp
 
 
-    server_h <- startResponder server_mps b
-    startInitiator client_mps a b
+    server_h <- startResponder server_mps serverAddr
+    startInitiator client_mps clientAddr serverAddr
 
     v <- verify
 
