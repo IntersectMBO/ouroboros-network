@@ -1,11 +1,15 @@
 {-# LANGUAGE DataKinds         #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators     #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Test.Socket (tests) where
 
+import           Control.Monad
+import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
+import           Control.Monad.Class.MonadTimer
 import qualified Data.ByteString.Lazy as BL
 import           Network.Socket hiding (recv, recvFrom, send, sendTo)
 import qualified Network.Socket.ByteString.Lazy as Socket (sendAll)
@@ -15,6 +19,17 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 import qualified Ouroboros.Network.Mux as Mx
 import           Ouroboros.Network.Socket
+
+import           Network.TypedProtocol.Driver
+import           Ouroboros.Network.Chain (Chain, ChainUpdate, Point)
+import qualified Ouroboros.Network.Chain as Chain
+import qualified Ouroboros.Network.ChainProducerState as CPS
+import           Ouroboros.Network.Channel
+import           Ouroboros.Network.Protocol.ChainSync.Client
+import           Ouroboros.Network.Protocol.ChainSync.Codec
+import           Ouroboros.Network.Protocol.ChainSync.Examples
+import           Ouroboros.Network.Protocol.ChainSync.Server
+import           Ouroboros.Network.Serialise
 
 import           Test.ChainGenerators (TestBlockChainAndUpdates (..))
 import qualified Test.Mux as Mxt
@@ -41,7 +56,7 @@ tests =
 -- | Test chainsync over a socket bearer
 prop_socket_demo :: TestBlockChainAndUpdates -> Property
 prop_socket_demo (TestBlockChainAndUpdates chain updates) =
-    ioProperty $ demo2 chain updates
+    ioProperty $ demo chain updates
 
 -- | Send and receive over IPv4
 prop_socket_send_recv_ipv4 :: Mxt.DummyPayload
@@ -141,4 +156,83 @@ prop_socket_client_connect_error request response = ioProperty $ do
     case res_e of
          Left _  -> return $ property True -- XXX Dissregarding the exact exception type
          Right _ -> return $ property False
+
+
+demo :: forall block .
+        (Chain.HasHeader block, Serialise block, Eq block, Show block )
+     => Chain block -> [ChainUpdate block] -> IO Bool
+demo chain0 updates = do
+    a:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
+    b:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
+
+    producerVar <- newTVarM (CPS.initChainProducerState chain0)
+    consumerVar <- newTVarM chain0
+    consumerDone <- atomically newEmptyTMVar
+
+    let Just expectedChain = Chain.applyChainUpdates updates chain0
+        target = Chain.headPoint expectedChain
+        a_mps Mxt.ChainSync1 = Mx.MiniProtocolDescription
+                                   (Mx.AppProtocolId Mxt.ChainSync1)
+                                   (consumerInit consumerDone target consumerVar)
+                                   dummyCallback
+        b_mps Mxt.ChainSync1 = Mx.MiniProtocolDescription
+                                   (Mx.AppProtocolId Mxt.ChainSync1)
+                                   dummyCallback
+                                   (producerRsp producerVar)
+
+    b_h <- startResponder b_mps b
+    a_h <- startResponder a_mps a
+    startInitiator a_mps a b
+
+    void $ fork $ sequence_
+        [ do threadDelay 10000 -- just to provide interest
+             atomically $ do
+                 p <- readTVar producerVar
+                 let Just p' = CPS.applyChainUpdate update p
+                 writeTVar producerVar p'
+             | update <- updates
+        ]
+
+    r <- atomically $ takeTMVar consumerDone
+    killResponder b_h
+    killResponder a_h
+
+    return r
+  where
+    checkTip target consumerVar = atomically $ do
+          chain <- readTVar consumerVar
+          return (Chain.headPoint chain == target)
+
+    consumerClient :: Point block -> TVar IO (Chain block) -> Client block IO ()
+    consumerClient target consChain =
+      Client
+        { rollforward = \_ -> checkTip target consChain >>= \b ->
+            if b then pure $ Left ()
+                 else pure $ Right $ consumerClient target consChain
+        , rollbackward = \_ _ -> checkTip target consChain >>= \b ->
+            if b then pure $ Left ()
+                 else pure $ Right $ consumerClient target consChain
+        , points = \_ -> pure $ consumerClient target consChain
+        }
+
+    consumerInit :: TMVar IO Bool -> Point block -> TVar IO (Chain block)
+                 -> Channel IO BL.ByteString -> IO ()
+    consumerInit done target consChain channel = do
+       let consumerPeer = chainSyncClientPeer (chainSyncClientExample consChain
+                                               (consumerClient target consChain))
+
+       runPeer codecChainSync channel consumerPeer
+       atomically $ putTMVar done True
+
+       return ()
+
+    dummyCallback _ = forever $
+        threadDelay 1000000
+
+    producerRsp ::  TVar IO (CPS.ChainProducerState block)
+                -> Channel IO BL.ByteString -> IO ()
+    producerRsp prodChain channel = do
+        let producerPeer = chainSyncServerPeer (chainSyncServerExample () prodChain)
+
+        runPeer codecChainSync channel producerPeer
 

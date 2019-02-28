@@ -1,11 +1,7 @@
 
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Network.Socket (
-    --, demo
-      demo2
-    , killResponder
+      killResponder
     , startInitiator
     , startInitiatorT
     , startResponder
@@ -15,7 +11,6 @@ module Ouroboros.Network.Socket (
 
 import           Control.Concurrent.Async
 import           Control.Monad
-import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
@@ -28,17 +23,7 @@ import           GHC.Stack
 import           Network.Socket hiding (recv, recvFrom, send, sendTo)
 import qualified Network.Socket.ByteString.Lazy as Socket (recv, sendAll)
 
-import           Network.TypedProtocol.Driver
-import           Ouroboros.Network.Chain (Chain, ChainUpdate, Point)
-import qualified Ouroboros.Network.Chain as Chain
-import qualified Ouroboros.Network.ChainProducerState as CPS
-import           Ouroboros.Network.Channel
 import qualified Ouroboros.Network.Mux as Mx
-import           Ouroboros.Network.Protocol.ChainSync.Client
-import           Ouroboros.Network.Protocol.ChainSync.Codec
-import           Ouroboros.Network.Protocol.ChainSync.Examples
-import           Ouroboros.Network.Protocol.ChainSync.Server
-import           Ouroboros.Network.Serialise
 
 import           Text.Printf
 
@@ -158,122 +143,4 @@ startInitiatorT mpds local remote resq_m = do
 hexDump :: BL.ByteString -> String -> IO ()
 hexDump buf out | BL.empty == buf = say out
 hexDump buf out = hexDump (BL.tail buf) (out ++ printf "0x%02x " (BL.head buf))
-
--- | The enumeration of all mini-protocols in our demo protocol.
-data DemoProtocols = ChainSync
-  deriving (Eq, Ord, Enum, Bounded)
-
-instance Mx.ProtocolEnum DemoProtocols where
-  fromProtocolEnum ChainSync = 2
-
-  toProtocolEnum 2 = Just ChainSync
-  toProtocolEnum _ = Nothing
-
-
-demo2 :: forall block .
-        (Chain.HasHeader block, Serialise block, Eq block, Show block )
-     => Chain block -> [ChainUpdate block] -> IO Bool
-demo2 chain0 updates = do
-    a:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
-    b:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
-
-    {-printf $ "\nStart Chain:\n"
-    printf $ (Chain.prettyPrintChain "\n" show chain0)
-    printf "\n"-}
-
-    producerVar <- newTVarM (CPS.initChainProducerState chain0)
-    consumerVar <- newTVarM chain0
-    consumerDone <- atomically newEmptyTMVar
-
-    let Just expectedChain = Chain.applyChainUpdates updates chain0
-        target = Chain.headPoint expectedChain
-        a_mps ChainSync = Mx.MiniProtocolDescription
-                            (Mx.AppProtocolId ChainSync)
-                            (consumerInit consumerDone target consumerVar)
-                            dummyCallback
-        b_mps ChainSync = Mx.MiniProtocolDescription
-                            (Mx.AppProtocolId ChainSync)
-                            dummyCallback
-                            (producerRsp producerVar)
-
-    {-printf $ "Expected Chain:\n"
-    printf $ Chain.prettyPrintChain "\n" show expectedChain
-    printf "\n"-}
-
-    b_h <- startResponder b_mps b
-    --say "started producer"
-    --threadDelay 1000000 -- give the producer time to start
-    a_h <- startResponder a_mps a
-    startInitiator a_mps a b
-    --say "started consumer"
-
-    wd <- async $ clientWatchDog consumerVar
-
-    void $ fork $ sequence_
-        [ do threadDelay 10000 -- just to provide interest
-             atomically $ do
-                 p <- readTVar producerVar
-                 let Just p' = CPS.applyChainUpdate update p
-                 writeTVar producerVar p'
-             | update <- updates
-        ]
-
-    r <- atomically $ takeTMVar consumerDone
-    cancel wd
-    killResponder b_h
-    killResponder a_h
-
-    {-printf $ "\nResult Chain:\n"
-    chain1 <- atomically $ readTVar consumerVar
-    printf $ (Chain.prettyPrintChain "\n" show chain1)
-    printf "\n"-}
-
-    return r
-  where
-
-    clientWatchDog consumerVar = forever $ do
-        threadDelay 10000000
-        say "\nClient WatchDog:\n"
-        x <- atomically $ readTVar consumerVar
-        printf (Chain.prettyPrintChain "\n" show x) :: IO ()
-        printf "\n"
-
-    checkTip target consumerVar = atomically $ do
-          chain <- readTVar consumerVar
-          return (Chain.headPoint chain == target)
-
-    consumerClient :: Point block -> TVar IO (Chain block) -> Client block IO ()
-    consumerClient target consChain =
-      Client
-        { rollforward = \_ -> checkTip target consChain >>= \b ->
-            if b then pure $ Left ()
-                 else pure $ Right $ consumerClient target consChain
-        , rollbackward = \_ _ -> checkTip target consChain >>= \b ->
-            if b then pure $ Left ()
-                 else pure $ Right $ consumerClient target consChain
-        , points = \_ -> pure $ consumerClient target consChain
-        }
-
-    consumerInit :: TMVar IO Bool -> Point block -> TVar IO (Chain block)
-                 -> Channel IO BL.ByteString -> IO ()
-    consumerInit done target consChain channel = do
-       let consumerPeer = chainSyncClientPeer (chainSyncClientExample consChain
-                                               (consumerClient target consChain))
-
-       runPeer codecChainSync channel consumerPeer
-       --say "consumer done"
-       atomically $ putTMVar done True
-
-       return ()
-
-    dummyCallback _ = forever $
-        threadDelay 1000000
-
-    producerRsp ::  TVar IO (CPS.ChainProducerState block)
-                -> Channel IO BL.ByteString -> IO ()
-    producerRsp prodChain channel = do
-        let producerPeer = chainSyncServerPeer (chainSyncServerExample () prodChain)
-
-        runPeer codecChainSync channel producerPeer
-        --say "producer done"
 
