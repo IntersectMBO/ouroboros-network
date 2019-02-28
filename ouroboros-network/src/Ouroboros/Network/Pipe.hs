@@ -8,12 +8,11 @@ module Ouroboros.Network.Pipe (
     demo
   ) where
 
-import           Control.Concurrent.Async
 import           Control.Monad
-import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
+import           Control.Monad.Class.MonadTimer
 import           Data.Bits
 import           Data.Word
 import           System.IO (Handle, hClose, hFlush)
@@ -29,8 +28,8 @@ import           Ouroboros.Network.Protocol.ChainSync.Examples
 import           Ouroboros.Network.Protocol.ChainSync.Server
 import           Ouroboros.Network.Serialise
 
-import           Ouroboros.Network.Channel
 import           Network.TypedProtocol.Driver
+import           Ouroboros.Network.Channel
 
 import qualified Data.ByteString.Lazy as BL
 
@@ -40,19 +39,13 @@ data PipeCtx = PipeCtx {
     }
 
 setupMux :: Mx.MiniProtocolDescriptions DemoProtocols IO -> PipeCtx -> IO ()
-setupMux mpds ctx = do
-    jobs <- Mx.muxJobs mpds (writePipe ctx) (readPipe ctx) (sduSize ctx)
-    aids <- mapM async jobs
-    void $ fork (watcher aids)
+setupMux mpds ctx =
+    void $ Mx.muxStart mpds (writePipe ctx) (readPipe ctx) (sduSize ctx) (closePipe ctx) Nothing
 
-  where
-    watcher as = do
-        (_,r) <- waitAnyCatchCancel as
-        case r of
-             Left  e -> print $ "Pipe Bearer died due to " ++ show e
-             Right _ -> do
-               hClose (pcRead ctx)
-               hClose (pcWrite ctx)
+closePipe :: PipeCtx -> IO ()
+closePipe ctx = do
+    hClose (pcRead ctx)
+    hClose (pcWrite ctx)
 
 sduSize :: PipeCtx -> IO Word16
 sduSize _ = return 32768

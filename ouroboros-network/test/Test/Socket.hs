@@ -77,7 +77,7 @@ prop_socket_recv_close request response = ioProperty $ do
     b:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
 
     endMpsVar <- atomically $ newTVar 2
-    resq <- atomically newTQueue
+    resq <- atomically $ newTBQueue 1
 
     (_, _, server_mp) <- Mxt.setupMiniReqRsp (Mx.AppProtocolId Mxt.ChainSync1)
                                              (return ()) endMpsVar request response
@@ -92,7 +92,7 @@ prop_socket_recv_close request response = ioProperty $ do
     Socket.sendAll sd $ BL.singleton 0xa
     close sd
 
-    res <- atomically $ readTQueue resq
+    res <- atomically $ readTBQueue resq
 
     killResponder server_h
     case res of

@@ -46,25 +46,13 @@ newtype SocketCtx = SocketCtx { scSocket :: Socket }
 
 setupMux :: (Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl) => (ptcl -> Mx.MiniProtocolDescription ptcl IO)
          -> SocketCtx
-         -> Maybe (TQueue IO (Maybe SomeException))
+         -> Maybe (TBQueue IO (Maybe SomeException))
          -> IO ()
-setupMux mpds ctx resq_m = do
-    jobs <- Mx.muxJobs mpds (writeSocket ctx) (readSocket ctx) (sduSize ctx)
-    aids <- mapM async jobs
-    void $ fork (watcher aids)
-  where
-    watcher as = do
-        (_,r) <- waitAnyCatchCancel as
-        close (scSocket ctx)
-        case resq_m of
-             Nothing ->
-                 case r of
-                      Left  e -> say $ "Socket Bearer died due to " ++ show e
-                      Right _ -> return ()
-             Just resq ->
-                 case r of
-                      Left  e -> atomically $ writeTQueue resq $ Just e
-                      Right _ -> atomically $ writeTQueue resq Nothing
+setupMux mpds ctx resq_m =
+    void $ Mx.muxStart mpds (writeSocket ctx) (readSocket ctx) (sduSize ctx) (closeSocket ctx) resq_m
+
+closeSocket :: SocketCtx -> IO ()
+closeSocket ctx = close (scSocket ctx)
 
 sduSize :: SocketCtx -> IO Word16
 sduSize ctx = do
@@ -116,7 +104,7 @@ startResponder mpds addr = startResponderT mpds addr Nothing
 startResponderT :: (Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl)
                 => Mx.MiniProtocolDescriptions ptcl IO
                 -> AddrInfo
-                -> Maybe (TQueue IO (Maybe SomeException))
+                -> Maybe (TBQueue IO (Maybe SomeException))
                 -> IO (Socket, Async ())
 startResponderT mpds addr resq_m = do
     sd <- socket (addrFamily addr) Stream defaultProtocol
@@ -147,7 +135,7 @@ startInitiatorT :: (Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl)
                 => Mx.MiniProtocolDescriptions ptcl IO
                 -> AddrInfo
                 -> AddrInfo
-                -> Maybe (TQueue IO (Maybe SomeException))
+                -> Maybe (TBQueue IO (Maybe SomeException))
                 -> IO ()
 startInitiatorT mpds local remote resq_m = do
     sd <- socket (addrFamily local) Stream defaultProtocol

@@ -13,15 +13,18 @@ module Ouroboros.Network.Mux (
     , RemoteClockModel (..)
     , encodeMuxSDU
     , decodeMuxSDUHeader
-    , muxJobs
+    , muxStart
     ) where
 
 import           Control.Monad
+import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
-import qualified Data.ByteString.Lazy as BL
 import           Data.Array
+import qualified Data.ByteString.Lazy as BL
 import           Data.Word
 
 import           Ouroboros.Network.Channel
@@ -30,16 +33,18 @@ import           Ouroboros.Network.Mux.Egress
 import           Ouroboros.Network.Mux.Ingress
 import           Ouroboros.Network.Mux.Types
 
--- | muxJobs constructs a list of jobs which needs to be started in separate threads by
--- the specific Mux Bearer instance.
+-- | muxStart starts a mux bearer for the specified protocols with the provided read and write
+-- functions.
 -- TODO: replace MonadSay with iohk-monitoring-framework.
-muxJobs :: (MonadSTM m, MonadSay m, Ord ptcl, Enum ptcl, Bounded ptcl) =>
-    MiniProtocolDescriptions ptcl m ->
-    (MuxSDU ptcl -> m (Time m)) ->
-    m (MuxSDU ptcl, Time m) ->
-    m Word16 ->
-    m [m ()]
-muxJobs udesc wfn rfn sdufn = do
+muxStart :: (MonadAsync m, MonadFork m, MonadSay m, MonadSTM m, Ord ptcl, Enum ptcl, Bounded ptcl)
+        => MiniProtocolDescriptions ptcl m
+        -> (MuxSDU ptcl -> m (Time m)) -- Write function
+        -> m (MuxSDU ptcl, Time m)     -- Read function
+        -> m Word16                    -- SDU size function
+        -> m ()                        -- Close function
+        -> Maybe (TBQueue m (Maybe SomeException)) -- Optional queue for result
+        -> m (ThreadId m)
+muxStart udesc wfn rfn sdufn close  resq_m = do
     tbl <- setupTbl
     tq <- atomically $ newTBQueue 100
     cnt <- newTVarM 0
@@ -51,9 +56,29 @@ muxJobs udesc wfn rfn sdufn = do
                ]
     mjobs <- sequence [ mpsJob cnt pmss (udesc ptcl)
                       | ptcl <- [minBound..maxBound] ]
-    return $ jobs ++ concat mjobs
+    aids <- mapM async $ jobs ++ concat mjobs
+    fork $ watcher aids
 
   where
+    watcher as = do
+        (_,r) <- waitAnyCatchCancel as
+        close
+        case resq_m of
+             Nothing ->
+                 case r of
+                      Left  e -> say $ "Mux Bearer died due to " ++ show e
+                      Right _ -> return ()
+             Just resq ->
+                 case r of
+                      Left  e -> evictWrite resq $ Just e
+                      Right _ -> evictWrite resq $ Nothing
+
+    evictWrite q res = atomically $ do
+       full <- isFullTBQueue q
+       when full $
+           void $ readTBQueue q
+       writeTBQueue q res
+
     -- Construct the array of TBQueues, one for each protocol id, and each mode
     setupTbl = MiniProtocolDispatch
             -- cover full range of type (MiniProtocolId ptcl, MiniProtocolMode)
