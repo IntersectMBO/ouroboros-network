@@ -34,6 +34,8 @@ module Ouroboros.Network.ChainFragment (
   fromOldestFirst,
   dropNewest,
   dropOldest,
+  takeWhileNewest,
+  dropWhileNewest,
   length,
   null,
 
@@ -249,6 +251,29 @@ dropOldest :: HasHeader block
            -> ChainFragment block -> ChainFragment block
 dropOldest n (ChainFragment c) =
     ChainFragment $ FT.dropUntil (\v -> bmSize v > n) c
+
+-- | \( O(n) \). Select the newest blocks that satisfy the predicate.
+--
+takeWhileNewest :: HasHeader block
+                => (block -> Bool)
+                -> ChainFragment block
+                -> ChainFragment block
+takeWhileNewest _ Empty    = Empty
+takeWhileNewest p (c :> b)
+               | p b       = takeWhileNewest p c :> b
+               | otherwise = Empty
+
+-- | \( O(n) \). Drop the newest blocks that satisfy the predicate, keeping
+-- the remainder.
+--
+dropWhileNewest :: HasHeader block
+                => (block -> Bool)
+                -> ChainFragment block
+                -> ChainFragment block
+dropWhileNewest _ Empty       = Empty
+dropWhileNewest p c@(c' :> b)
+                  | p b       = dropWhileNewest p c'
+                  | otherwise = c
 
 -- | \( O(1) \).
 length :: HasHeader block => ChainFragment block -> Int
