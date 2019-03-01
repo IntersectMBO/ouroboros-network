@@ -15,7 +15,8 @@ import           Ouroboros.Network.Block (StandardHash)
 import           Ouroboros.Network.Chain (Point)
 import           Network.TypedProtocol.Core (Protocol (..))
 
--- | Range of headers
+-- | A non-empty range on a chain identified by two points. It is inclusive on
+-- both ends.
 --
 data ChainRange header = ChainRange !(Point header) !(Point header)
   deriving (Show, Eq, Ord)

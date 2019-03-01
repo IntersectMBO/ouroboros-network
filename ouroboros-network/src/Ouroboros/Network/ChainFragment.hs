@@ -1,11 +1,11 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ViewPatterns #-}
+
 module Ouroboros.Network.ChainFragment (
   -- * ChainFragment type and fundamental operations
-  ChainFragment,
-  pattern (:>),
-  pattern Empty,
+  ChainFragment(Empty, (:>)),
   valid,
   validExtension,
   isValidSuccessorOf,
@@ -83,7 +83,8 @@ import           Codec.CBOR.Encoding (encodeListLen)
 import           Codec.CBOR.Decoding (decodeListLen)
 
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Chain (Point(..), blockPoint, ChainUpdate(..))
+import           Ouroboros.Network.Chain
+                   ( Point(..), castPoint, blockPoint, ChainUpdate(..) )
 
 --
 -- Blockchain fragment data type.
@@ -404,14 +405,15 @@ splitAfterSlot (ChainFragment t) s = (ChainFragment l, ChainFragment r)
 --
 -- If the chain fragment contained a block at the given 'Point', it will be
 -- the (newest/rightmost) block of the first returned chain.
-splitAfterPoint :: HasHeader block
-                => ChainFragment block
-                -> Point block
-                -> Maybe (ChainFragment block, ChainFragment block)
+splitAfterPoint :: (HasHeader block1, HasHeader block2,
+                    HeaderHash block1 ~ HeaderHash block2)
+                => ChainFragment block1
+                -> Point block2
+                -> Maybe (ChainFragment block1, ChainFragment block1)
 splitAfterPoint c p
   | (l@(ChainFragment lt), r) <- splitAfterSlot c (pointSlot p)
   , _ FT.:> b <- FT.viewr lt  -- O(1)
-  , blockPoint b == p
+  , blockPoint b == castPoint p
   = Just (l, r)
   | otherwise
   = Nothing
@@ -530,23 +532,23 @@ pointOnChainFragmentSpec p = go
 -- >                                    └───┘
 -- > Just (l1,       l2,        r1,       r2)
 intersectChainFragments
-  :: HasHeader block
-  => ChainFragment block -> ChainFragment block
-  -> Maybe (ChainFragment block, ChainFragment block,
-            ChainFragment block, ChainFragment block)
-intersectChainFragments initC1 initC2 = go initC1 initC2
+  :: (HasHeader block1, HasHeader block2, HeaderHash block1 ~ HeaderHash block2)
+  => ChainFragment block1
+  -> ChainFragment block2
+  -> Maybe (ChainFragment block1, ChainFragment block2,
+            ChainFragment block1, ChainFragment block2)
+intersectChainFragments initC1 initC2 =
+    go initC1 initC2
   where
-    go c1 c2 = case c2 of
-      Empty    -> Nothing
-      c2' :> b ->
-        let p = blockPoint b
-        in case splitAfterPoint c1 p of
-             Just (l1, r1)
-               | Just (l2, r2) <- splitAfterPoint initC2 p
-               -- splitAfterPoint initC2 p cannot fail, since p comes out of
-               -- initC2
-               -> Just (l1, l2, r1, r2)
-             _ -> go c1 c2'
+    go _   Empty    = Nothing
+    go c1 (c2 :> b)
+      | let p = blockPoint b
+      , Just (l1, r1) <- splitAfterPoint c1     p
+      , Just (l2, r2) <- splitAfterPoint initC2 p
+                    -- splitAfterPoint initC2 p cannot fail,
+                    -- since p comes out of initC2
+                    = Just (l1, l2, r1, r2)
+      | otherwise   = go c1 c2
 
 -- This is the key operation on chains in this model
 applyChainUpdate :: HasHeader block

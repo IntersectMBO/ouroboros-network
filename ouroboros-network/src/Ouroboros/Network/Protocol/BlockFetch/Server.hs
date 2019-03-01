@@ -54,9 +54,10 @@ blockFetchServerPeer
      Functor m
   => BlockFetchServer header body m a
   -> Peer (BlockFetch header body) AsServer BFIdle m a
-blockFetchServerPeer (BlockFetchServer requestHandler result) = Await (ClientAgency TokIdle) $ \msg -> case msg of
-  MsgRequestRange range -> Effect $ sendBatch <$> requestHandler range
-  MsgClientDone         -> Done TokDone result
+blockFetchServerPeer (BlockFetchServer requestHandler result) =
+    Await (ClientAgency TokIdle) $ \msg -> case msg of
+      MsgRequestRange range -> Effect $ sendBatch <$> requestHandler range
+      MsgClientDone         -> Done TokDone result
  where
   sendBatch
     :: BlockFetchBlockSender header body m a
