@@ -29,13 +29,14 @@ import           GHC.Generics (Generic)
 
 -- | The 0-based index for the Ourboros time slot.
 newtype SlotNo = SlotNo { unSlotNo :: Word64 }
-  deriving (Show, Eq, Ord, Hashable, Enum, Bounded, Num, Serialise, Generic)
+  deriving (Eq, Ord, Enum, Bounded, Show,
+            Num, Real, Integral, Generic, Hashable, Serialise)
 
 -- | The 0-based index of the block in the blockchain.
 -- BlockNo is <= SlotNo and is only equal at slot N if there is a block
 -- for every slot where N <= SlotNo.
 newtype BlockNo = BlockNo { unBlockNo :: Word64 }
-  deriving (Show, Eq, Ord, Hashable, Enum, Bounded, Num, Serialise)
+  deriving (Eq, Ord, Enum, Bounded, Show, Generic, Hashable, Serialise)
 
 -- | Abstract over the shape of blocks (or indeed just block headers)
 class (StandardHash b, Measured BlockMeasure b) => HasHeader b where

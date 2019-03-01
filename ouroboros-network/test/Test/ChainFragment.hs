@@ -18,6 +18,7 @@ import qualified Data.List as L
 import           Data.Maybe (listToMaybe, maybeToList, maybe, fromMaybe, fromJust)
 
 import           Test.QuickCheck
+import           Text.Show.Functions ()
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
@@ -80,6 +81,8 @@ tests = testGroup "ChainFragment"
   , testProperty "toList/head"                               prop_toList_head
   , testProperty "dropNewest"                                prop_dropNewest
   , testProperty "dropOldest"                                prop_dropOldest
+  , testProperty "takeWhileNewest"                           prop_takeWhileNewest
+  , testProperty "dropWhileNewest"                           prop_dropWhileNewest
   , testProperty "addBlock"                                  prop_addBlock
   , testProperty "rollback"                                  prop_rollback
   , testProperty "rollback/head"                             prop_rollback_head
@@ -142,6 +145,16 @@ prop_dropOldest (TestBlockChainFragment chain) =
     let blocks = CF.toOldestFirst chain in
     and [ CF.dropOldest n chain == CF.fromOldestFirst (L.drop n blocks)
         | n <- [0..Prelude.length blocks] ]
+
+prop_takeWhileNewest :: (Block -> Bool) -> TestBlockChainFragment -> Bool
+prop_takeWhileNewest p (TestBlockChainFragment chain) =
+    CF.takeWhileNewest p chain
+ == (CF.fromNewestFirst . L.takeWhile p . CF.toNewestFirst) chain
+
+prop_dropWhileNewest :: (Block -> Bool) -> TestBlockChainFragment -> Bool
+prop_dropWhileNewest p (TestBlockChainFragment chain) =
+    CF.dropWhileNewest p chain
+ == (CF.fromNewestFirst . L.dropWhile p . CF.toNewestFirst) chain
 
 prop_addBlock :: TestAddBlock -> Bool
 prop_addBlock (TestAddBlock c b) =
