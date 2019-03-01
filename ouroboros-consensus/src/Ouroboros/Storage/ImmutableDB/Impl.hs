@@ -137,7 +137,6 @@ module Ouroboros.Storage.ImmutableDB.Impl
 
 import           Prelude hiding (truncate)
 
-import           Control.Exception (assert)
 import           Control.Monad (forM, forM_, replicateM_, unless, void, when)
 import           Control.Monad.Class.MonadSTM (MonadSTM (..))
 import           Control.Monad.Class.MonadThrow (ExitCase (..),
@@ -185,7 +184,7 @@ data ImmutableDBEnv m = forall h e. ImmutableDBEnv
     { _dbHasFS           :: !(HasFS m h)
     , _dbErr             :: !(ErrorHandling ImmutableDBError m)
     , _dbInternalState   :: !(TMVar m (Either (ClosedState m) (OpenState m h)))
-    , _dbEpochFileParser :: !(EpochFileParser e m (Int, Slot))
+    , _dbEpochFileParser :: !(EpochFileParser e m (Word, Slot))
     }
 
 -- | Internal state when the database is open.
@@ -241,7 +240,13 @@ data ClosedState m = ClosedState
 -- policies.
 --
 -- An 'EpochFileParser' must be passed in order to reconstruct indices from
--- epoch files.
+-- epoch files. The 'Word' that the 'EpochFileParser' must return for each
+-- 'Slot' is the size (in bytes) occupied by the (non-empty) block
+-- corresponding to the 'Slot'. We only need to know the size of the blocks to
+-- know the offset of the end of the last block, so we can know where to
+-- truncate the file to in case of invalid trailing data. For all other
+-- blocks, we can derive this from the offset of the next block, but there is
+-- of course no block after the last one.
 --
 -- __Note__: To be used in conjunction with 'withDB'.
 openDB :: (HasCallStack, MonadSTM m, MonadCatch m)
@@ -249,7 +254,7 @@ openDB :: (HasCallStack, MonadSTM m, MonadCatch m)
        -> ErrorHandling ImmutableDBError m
        -> (Epoch -> m EpochSize)
        -> ValidationPolicy
-       -> EpochFileParser e m (Int, Slot)
+       -> EpochFileParser e m (Word, Slot)
        -> m (ImmutableDB m, Maybe Slot)
 openDB = openDBImpl
 
@@ -276,7 +281,7 @@ openDBImpl :: forall m h e. (HasCallStack, MonadSTM m, MonadCatch m)
            -> ErrorHandling ImmutableDBError m
            -> (Epoch -> m EpochSize)
            -> ValidationPolicy
-           -> EpochFileParser e m (Int, Slot)
+           -> EpochFileParser e m (Word, Slot)
            -> m (ImmutableDB m, Maybe Slot)
 openDBImpl hasFS@HasFS{..} err getEpochSize valPol epochFileParser = do
     firstEpochSize <- getEpochSize 0
@@ -846,7 +851,7 @@ validateAndReopen :: (HasCallStack, MonadThrow m)
                   -> ErrorHandling ImmutableDBError m
                   -> (Epoch -> m EpochSize)
                   -> ValidationPolicy
-                  -> EpochFileParser e m (Int, Slot)
+                  -> EpochFileParser e m (Word, Slot)
                   -> CumulEpochSizes
                   -> IteratorID
                   -> m (OpenState m h, Maybe EpochSlot)
@@ -1191,7 +1196,7 @@ type LastBlobLocation = Maybe EpochSlot
 -- of an epoch after the truncation point are allowed to be invalid.
 truncate :: (HasCallStack, MonadThrow m)
          => HasFS m h
-         -> EpochFileParser e m (Int, Slot)
+         -> EpochFileParser e m (Word, Slot)
          -> (Epoch -> m EpochSize)
          -> EpochSlot
          -> StateT CumulEpochSizes m ()
@@ -1224,7 +1229,7 @@ truncateFromEpoch = removeFilesStartingFrom
 -- on disk.
 truncateFromEpochSlot :: (HasCallStack, MonadThrow m)
                       => HasFS m h
-                      -> Either Index (EpochFileParser e m (Int, Slot))
+                      -> Either Index (EpochFileParser e m (Word, Slot))
                       -> (Epoch -> m EpochSize)
                       -> EpochSlot
                       -> StateT CumulEpochSizes m Index
@@ -1300,7 +1305,7 @@ validate :: forall m h e. (HasCallStack, MonadThrow m)
          -> ErrorHandling ImmutableDBError m
          -> (Epoch -> m EpochSize)
          -> ValidationPolicy
-         -> EpochFileParser e m (Int, Slot)
+         -> EpochFileParser e m (Word, Slot)
          -> StateT CumulEpochSizes m ( Maybe (Epoch, Index)
                                      , Maybe LastBlobLocation
                                      )
@@ -1549,7 +1554,7 @@ validate hasFS@HasFS{..} err getEpochSize valPol epochFileParser = do
 -- Also returns the error returned by the 'EpochFileParser'.
 reconstructIndex :: (HasCallStack, MonadThrow m)
                  => FsPath
-                 -> EpochFileParser e m (Int, Slot)
+                 -> EpochFileParser e m (Word, Slot)
                  -> (Epoch -> m EpochSize)
                  -> StateT CumulEpochSizes m (Index, Maybe e)
 reconstructIndex epochFile epochFileParser getEpochSize = do
@@ -1563,36 +1568,6 @@ reconstructIndex epochFile epochFileParser getEpochSize = do
         index       = indexFromSlotOffsets slotOffsets
     return (index, mbErr)
 
--- | Given a list of increasing 'SlotOffset's together with the 'Int' (blob
--- size) and 'RelativeSlot' corresponding to the offset, reconstruct a
--- non-empty list of (decreasing) slot offsets.
---
--- The input list (typically returned by 'EpochFileParser') is assumed to be
--- valid: __strictly__ monotonically increasing offsets as well as
--- __strictly__ monotonically increasing relative slots.
---
--- The 'RelativeSlot's are used to detect empty/unfilled slots that will
--- result in repeated offsets in the output, indicating that the size of the
--- slot is 0.
---
--- The output list will always have 0 as last element.
-reconstructSlotOffsets :: [(SlotOffset, (Int, RelativeSlot))]
-                       -> NonEmpty SlotOffset
-reconstructSlotOffsets = go 0 [] 0
-  where
-    go :: SlotOffset
-       -> [SlotOffset]
-       -> RelativeSlot
-       -> [(SlotOffset, (Int, RelativeSlot))]
-       -> NonEmpty SlotOffset
-    go offsetAfterLast offsets expectedRelSlot ((offset, (len, relSlot)):olrs') =
-      assert (offsetAfterLast == offset) $
-      assert (relSlot >= expectedRelSlot) $
-      let backfill = indexBackfill relSlot expectedRelSlot offset
-      in go (offset + fromIntegral len) (offset : backfill <> offsets)
-            (succ relSlot) olrs'
-    go offsetAfterLast offsets _lastRelSlot [] = offsetAfterLast NE.:| offsets
-
 -- | Variant of 'loadIndex' that ignores any junk returned by 'loadIndex' (the
 -- second return value).
 loadIndex' :: (HasCallStack, MonadThrow m)
@@ -1602,47 +1577,3 @@ loadIndex' :: (HasCallStack, MonadThrow m)
            -> m Index
 loadIndex' hasFS _err epoch = fst <$> loadIndex hasFS epoch
     -- TODO throw an error when there is junk or the index is invalid?
-
--- | Return the slots to backfill the index file with.
---
--- A situation may arise in which we \"skip\" some relative slots, and we
--- write into the DB, for example, every other relative slot. In this case, we
--- need to backfill the index file with offsets for the skipped relative
--- slots. Similarly, before we start a new epoch, we must backfill the index
--- file of the current epoch file to indicate that it is finalised.
---
--- For example, say we have written \"a\" to relative slot 0 and \"bravo\" to
--- relative slot 1. We have the following index file:
---
--- > slot:     0   1   2
--- >         ┌───┬───┬───┐
--- > offset: │ 0 │ 1 │ 6 │
--- >         └───┴───┴───┘
---
--- Now we want to store \"haskell\" in relative slot 4, skipping 2 and 3. We
--- first have to backfill the index by repeating the last offset for the two
--- missing slots:
---
--- > slot:     0   1   2   3   4
--- >         ┌───┬───┬───┬───┬───┐
--- > offset: │ 0 │ 1 │ 6 │ 6 │ 6 │
--- >         └───┴───┴───┴───┴───┘
---
--- After backfilling (writing the offset 6 twice), we can write the next
--- offset:
---
--- > slot:     0   1   2   3   4   5
--- >         ┌───┬───┬───┬───┬───┬───┐
--- > offset: │ 0 │ 1 │ 6 │ 6 │ 6 │ 13│
--- >         └───┴───┴───┴───┴───┴───┘
---
--- For the example above, the output of this funciton would thus be: @[6, 6]@.
---
-indexBackfill :: RelativeSlot  -- ^ The slot to write to (>= next expected slot)
-              -> RelativeSlot  -- ^ The next expected slot to write to
-              -> SlotOffset    -- ^ The last 'SlotOffset' written to
-              -> [SlotOffset]
-indexBackfill (RelativeSlot slot) (RelativeSlot nextExpected) lastOffset =
-    replicate gap lastOffset
-  where
-    gap = fromIntegral $ slot - nextExpected

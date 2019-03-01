@@ -278,7 +278,7 @@ findEpochDropLastBytesRollBackPoint n epoch dbm
     | otherwise
     = RollBackToEpochSlot (epochSlots !! lastValidFilledSlotIndex validBytes)
   where
-    totalBytes = fromIntegral $ testBlockSize * length epochSlots
+    totalBytes = fromIntegral testBlockSize * fromIntegral (length epochSlots)
     validBytes :: Word64
     validBytes
       | n >= totalBytes
@@ -286,8 +286,9 @@ findEpochDropLastBytesRollBackPoint n epoch dbm
       | otherwise
       = totalBytes - n
     epochSlots = epochSlotsInEpoch dbm epoch
+    lastValidFilledSlotIndex :: Word64 -> Int
     lastValidFilledSlotIndex offset =
-      (fromIntegral offset `quot` testBlockSize) - 1
+      (fromIntegral offset `quot` fromIntegral testBlockSize) - 1
 
 findEpochCorruptionRollBackPoint :: FileCorruption -> Epoch -> DBModel
                                  -> RollBackPoint

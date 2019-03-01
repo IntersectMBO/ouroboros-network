@@ -4,6 +4,8 @@
 {-# OPTIONS_GHC -Wno-orphans   #-}
 module Test.Ouroboros.Storage.ImmutableDB (tests) where
 
+import qualified Codec.Serialise as S
+import           Control.Monad (forM_, void)
 import           Control.Monad.Class.MonadSTM (MonadSTM)
 import           Control.Monad.Class.MonadThrow (MonadCatch)
 
@@ -12,7 +14,7 @@ import qualified Data.ByteString as BS
 import           Data.Coerce (coerce)
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
-import           Data.Maybe (isNothing, maybeToList)
+import           Data.Maybe (isJust, isNothing, maybeToList)
 import           Data.Word (Word64)
 
 import qualified System.IO as IO
@@ -40,6 +42,8 @@ import           Ouroboros.Storage.ImmutableDB
 import           Ouroboros.Storage.ImmutableDB.CumulEpochSizes
                      (RelativeSlot (..))
 import           Ouroboros.Storage.ImmutableDB.Index
+import           Ouroboros.Storage.ImmutableDB.Util (cborEpochFileParser',
+                     reconstructSlotOffsets)
 import           Ouroboros.Storage.Util (decodeIndexEntryAt)
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
@@ -63,6 +67,9 @@ tests = testGroup "ImmutableDB"
       , testProperty "writeIndex/loadIndex roundtrip" prop_writeIndex_loadIndex
       , testProperty "writeSlotOffsets/loadIndex/indexToSlotOffsets roundtrip" prop_writeSlotOffsets_loadIndex_indexToSlotOffsets
       ]
+    , testCase     "reconstructSlotOffsets" test_reconstructSlotOffsets
+    , testCase     "reconstructSlotOffsets empty slots" test_reconstructSlotOffsets_empty_slots
+    , testCase     "cborEpochFileParser" test_cborEpochFileParser
     , TestBlock.tests
     , StateMachine.tests
     , CumulEpochSizes.tests
@@ -264,3 +271,57 @@ prop_writeSlotOffsets_loadIndex_indexToSlotOffsets (SlotOffsets offsets) =
         case r of
           Left  e      -> fail (prettyFsError e)
           Right (p, _) -> return p
+
+
+{------------------------------------------------------------------------------
+  reconstructSlotOffsets
+------------------------------------------------------------------------------}
+
+test_reconstructSlotOffsets :: Assertion
+test_reconstructSlotOffsets = reconstructSlotOffsets input @?= output
+  where
+    input  = [(0, (10, 0)), (10, (10, 1)), (20, (5, 2)), (25, (10, 3))]
+    output = NE.fromList [35, 25, 20, 10, 0]
+
+
+test_reconstructSlotOffsets_empty_slots :: Assertion
+test_reconstructSlotOffsets_empty_slots = reconstructSlotOffsets input @?= output
+  where
+    input  = [(0, (10, 2)), (10, (10, 4))]
+    output = NE.fromList [20, 10, 10, 0, 0, 0]
+
+
+
+{------------------------------------------------------------------------------
+  cborEpochFileParser
+------------------------------------------------------------------------------}
+
+test_cborEpochFileParser :: Assertion
+test_cborEpochFileParser = fmap fst $ Sim.runSimFS err Mock.empty $ \hasFS -> do
+    let HasFS{..} = hasFS
+
+    withFile hasFS fp IO.AppendMode $ \h -> do
+      forM_ blocks $ \block ->
+        hPut h (S.serialiseIncremental block)
+      void $ hPut h "trailingjunk"
+
+    (offsetsAndSizesAndBlocks', mbErr) <-
+      runEpochFileParser (cborEpochFileParser' hasFS S.decode) fp
+
+    offsetsAndSizesAndBlocks' @?= offsetsAndSizesAndBlocks
+    assertBool "Expected an error" (isJust mbErr)
+  where
+    blocks :: [ByteString]
+    blocks = map (snd . snd) offsetsAndSizesAndBlocks
+
+    offsetsAndSizesAndBlocks :: [(SlotOffset, (Word, ByteString))]
+    offsetsAndSizesAndBlocks =
+      [ (0, (4, "foo"))
+        -- Note that a "foo" is encoded as "Cfoo", hence the size of 4
+      , (4, (4, "bar"))
+      , (8, (4, "baz"))
+      ]
+
+    fp = ["test"]
+
+    err = EH.exceptions

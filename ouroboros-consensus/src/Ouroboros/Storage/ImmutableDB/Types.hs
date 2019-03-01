@@ -71,8 +71,9 @@ extractTruncateFrom e = case e of
 --
 -- The parsing may include validation of the contents of the epoch file.
 --
--- The returned 'SlotOffset's are from __first to last__ and __strictly__
--- monotonically increasing. The first 'SlotOffset' must be 0.
+-- The 'SlotOffset' is the offset (in bytes) of the start of the corresponding
+-- @t@ (block). The returned 'SlotOffset's are from __first to last__ and
+-- __strictly__ monotonically increasing. The first 'SlotOffset' must be 0.
 --
 -- We assume the output of 'EpochFileParser' to be correct, we will not
 -- validate it.
