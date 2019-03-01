@@ -1,8 +1,9 @@
-{-# LANGUAGE DataKinds         #-}
-{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE CPP                 #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeOperators     #-}
-{-# OPTIONS_GHC -Wno-orphans #-}
+{-# LANGUAGE TypeOperators       #-}
+{-# OPTIONS_GHC -Wno-orphans     #-}
 module Test.Socket (tests) where
 
 import           Control.Monad
@@ -34,6 +35,12 @@ import           Ouroboros.Network.Serialise
 import           Test.ChainGenerators (TestBlockChainAndUpdates (..))
 import qualified Test.Mux as Mxt
 
+{-
+ - The travis build hosts does not support IPv6 so those test cases are hidden
+ - behind the OUROBOROS_NETWORK_IPV6 define for now.
+ -}
+-- #define OUROBOROS_NETWORK_IPV6
+
 --
 -- The list of all tests
 --
@@ -42,7 +49,9 @@ tests :: TestTree
 tests =
   testGroup "Socket"
   [ testProperty "socket send receive IPv4"         prop_socket_send_recv_ipv4
+#ifdef OUROBOROS_NETWORK_IPV6
   , testProperty "socket send receive IPv6"         prop_socket_send_recv_ipv6
+#endif
   , testProperty "socket close during receive"      prop_socket_recv_close
   , testProperty "socket client connection failure" prop_socket_client_connect_error
   , testProperty "socket sync demo"                 prop_socket_demo
@@ -67,6 +76,7 @@ prop_socket_send_recv_ipv4 request response = ioProperty $ do
     server:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
     return $ prop_socket_send_recv client server request response
 
+#ifdef OUROBOROS_NETWORK_IPV6
 -- | Send and receive over IPv6
 prop_socket_send_recv_ipv6 :: Mxt.DummyPayload
                       -> Mxt.DummyPayload
@@ -75,7 +85,7 @@ prop_socket_send_recv_ipv6 request response = ioProperty $ do
     client:_ <- getAddrInfo Nothing (Just "::1") (Just "0")
     server:_ <- getAddrInfo Nothing (Just "::1") (Just "6061")
     return $ prop_socket_send_recv client server request response
-
+#endif
 
 -- | Verify that an initiator and a responder can send and receive messages from each other
 -- over a TCP socket. Large DummyPayloads will be split into smaller segments and the
