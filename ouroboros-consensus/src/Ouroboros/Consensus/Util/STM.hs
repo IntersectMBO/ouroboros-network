@@ -33,7 +33,7 @@ import           Ouroboros.Consensus.Util.Random
 
 -- | Wait until the TVar changed
 blockUntilChanged :: forall m a b. (MonadSTM m, Eq b)
-                  => (a -> b) -> b -> Tr m a -> Tr m (a, b)
+                  => (a -> b) -> b -> STM m a -> STM m (a, b)
 blockUntilChanged f b getA = do
     a <- getA
     let b' = f a
@@ -43,7 +43,7 @@ blockUntilChanged f b getA = do
 
 -- | Spawn a new thread that executes an action each time a TVar changes
 onEachChange :: forall m a b. (MonadSTM m, MonadFork m, Eq b)
-             => (a -> b) -> b -> Tr m a -> (a -> m ()) -> m ()
+             => (a -> b) -> b -> STM m a -> (a -> m ()) -> m ()
 onEachChange f initB getA notify = void $ fork $ go initB
   where
     go :: b -> m ()
@@ -52,23 +52,23 @@ onEachChange f initB getA notify = void $ fork $ go initB
       notify a
       go b'
 
-blockUntilJust :: MonadSTM m => TVar m (Maybe a) -> Tr m a
+blockUntilJust :: MonadSTM m => TVar m (Maybe a) -> STM m a
 blockUntilJust var = do
     ma <- readTVar var
     case ma of
       Nothing -> retry
       Just a  -> return a
 
-blockUntilAllJust :: MonadSTM m => [TVar m (Maybe a)] -> Tr m [a]
+blockUntilAllJust :: MonadSTM m => [TVar m (Maybe a)] -> STM m [a]
 blockUntilAllJust = mapM blockUntilJust
 
 {-------------------------------------------------------------------------------
   Simulate monad stacks
 -------------------------------------------------------------------------------}
 
-type Sim n m = forall a. n a -> Tr m a
+type Sim n m = forall a. n a -> STM m a
 
-simId :: Sim (Tr m) m
+simId :: Sim (STM m) m
 simId = id
 
 simReaderT :: MonadSTM m => TVar m st -> Sim n m -> Sim (ReaderT st n) m

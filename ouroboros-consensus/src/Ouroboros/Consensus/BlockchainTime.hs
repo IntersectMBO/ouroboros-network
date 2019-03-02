@@ -67,7 +67,7 @@ import           Ouroboros.Network.Block (Slot (..))
 -- execute an action each time we advance a slot.
 data BlockchainTime m = BlockchainTime {
       -- | Get current slot
-      getCurrentSlot :: Tr m Slot
+      getCurrentSlot :: STM m Slot
 
       -- | Spawn a thread to run an action each time the slot changes
     , onSlotChange   :: (Slot -> m ()) -> m ()

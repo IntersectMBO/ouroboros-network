@@ -29,9 +29,9 @@ class MonadSTM m => MonadAsync m where
   cancel                :: Async m a -> m ()
   uninterruptibleCancel :: Async m a -> m ()
 
-  waitSTM               :: Async m a -> Tr m a
-  pollSTM               :: Async m a -> Tr m (Maybe (Either SomeException a))
-  waitCatchSTM          :: Async m a -> Tr m (Either SomeException a)
+  waitSTM               :: Async m a -> STM m a
+  pollSTM               :: Async m a -> STM m (Maybe (Either SomeException a))
+  waitCatchSTM          :: Async m a -> STM m (Either SomeException a)
 
   waitAny               :: [Async m a] -> m (Async m a, a)
   waitAnyCatch          :: [Async m a] -> m (Async m a, Either SomeException a)
@@ -50,14 +50,14 @@ class MonadSTM m => MonadAsync m where
   waitEither_           :: Async m a -> Async m b -> m ()
   waitBoth              :: Async m a -> Async m b -> m (a, b)
 
-  waitAnySTM            :: [Async m a] -> Tr m (Async m a, a)
-  waitAnyCatchSTM       :: [Async m a] -> Tr m (Async m a, Either SomeException a)
-  waitEitherSTM         :: Async m a -> Async m b -> Tr m (Either a b)
-  waitEitherSTM_        :: Async m a -> Async m b -> Tr m ()
+  waitAnySTM            :: [Async m a] -> STM m (Async m a, a)
+  waitAnyCatchSTM       :: [Async m a] -> STM m (Async m a, Either SomeException a)
+  waitEitherSTM         :: Async m a -> Async m b -> STM m (Either a b)
+  waitEitherSTM_        :: Async m a -> Async m b -> STM m ()
   waitEitherCatchSTM    :: Async m a -> Async m b
-                        -> Tr m (Either (Either SomeException a)
-                                        (Either SomeException b))
-  waitBothSTM           :: Async m a -> Async m b -> Tr m (a, b) 
+                        -> STM m (Either (Either SomeException a)
+                                         (Either SomeException b))
+  waitBothSTM           :: Async m a -> Async m b -> STM m (a, b)
 
   race                  :: m a -> m b -> m (Either a b)
   race_                 :: m a -> m b -> m ()
@@ -67,7 +67,7 @@ class MonadSTM m => MonadAsync m where
   default withAsync     :: MonadMask m => m a -> (Async m a -> m b) -> m b
   default uninterruptibleCancel
                         :: MonadMask m => Async m a -> m ()
-  default waitSTM       :: MonadThrow (Tr m) => Async m a -> Tr m a
+  default waitSTM       :: MonadThrow (STM m) => Async m a -> STM m a
   default waitAnyCancel         :: MonadThrow m => [Async m a] -> m (Async m a, a) 
   default waitAnyCatchCancel    :: MonadThrow m => [Async m a]
                                 -> m (Async m a, Either SomeException a)
@@ -77,10 +77,10 @@ class MonadSTM m => MonadAsync m where
                                 -> m (Either (Either SomeException a)
                                              (Either SomeException b))
 
-  default waitAnySTM     :: MonadThrow (Tr m) => [Async m a] -> Tr m (Async m a, a)
-  default waitEitherSTM  :: MonadThrow (Tr m) => Async m a -> Async m b -> Tr m (Either a b)
-  default waitEitherSTM_ :: MonadThrow (Tr m) => Async m a -> Async m b -> Tr m ()
-  default waitBothSTM    :: MonadThrow (Tr m) => Async m a -> Async m b -> Tr m (a, b) 
+  default waitAnySTM     :: MonadThrow (STM m) => [Async m a] -> STM m (Async m a, a)
+  default waitEitherSTM  :: MonadThrow (STM m) => Async m a -> Async m b -> STM m (Either a b)
+  default waitEitherSTM_ :: MonadThrow (STM m) => Async m a -> Async m b -> STM m ()
+  default waitBothSTM    :: MonadThrow (STM m) => Async m a -> Async m b -> STM m (a, b)
 
 
   withAsync action inner = mask $ \restore -> do

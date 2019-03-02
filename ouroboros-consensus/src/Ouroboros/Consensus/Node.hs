@@ -89,10 +89,10 @@ fromCoreNodeId (CoreNodeId n) = CoreId n
 -- | Interface against running relay node
 data NodeKernel m up blk = NodeKernel {
       -- | Get current chain
-      getCurrentChain   :: Tr m (Chain blk)
+      getCurrentChain   :: STM m (Chain blk)
 
       -- | Get current extended ledger state
-    , getExtLedgerState :: Tr m (ExtLedgerState blk)
+    , getExtLedgerState :: STM m (ExtLedgerState blk)
 
       -- | Notify network layer of new upstream node
       --
@@ -110,7 +110,7 @@ data NodeKernel m up blk = NodeKernel {
     }
 
 -- | Monad that we run protocol specific functions in
-type ProtocolM blk m = NodeStateT (BlockProtocol blk) (ChaChaT (Tr m))
+type ProtocolM blk m = NodeStateT (BlockProtocol blk) (ChaChaT (STM m))
 
 -- | Callbacks required when initializing the node
 data NodeCallbacks m blk = NodeCallbacks {
@@ -135,7 +135,7 @@ data NodeCallbacks m blk = NodeCallbacks {
 
       -- | Callback called whenever we adopt a 2new chain
       --
-      -- NOTE: This intentionally lives in @m@ rather than @Tr m@ so that this
+      -- NOTE: This intentionally lives in @m@ rather than @STM m@ so that this
       -- callback can have side effects.
     , adoptedNewChain :: Chain blk -> m ()
     }
@@ -301,7 +301,7 @@ forkBlockProduction st@IS{..} =
                                    in (c', [RollBack (Chain.headPoint c')])
       | otherwise                = error "overrideBlock: block in future"
 
-    runProtocol :: TVar m ChaChaDRG -> ProtocolM blk m a -> Tr m a
+    runProtocol :: TVar m ChaChaDRG -> ProtocolM blk m a -> STM m a
     runProtocol varDRG = simOuroborosStateT varState
                        $ simChaChaT varDRG
                        $ id
@@ -313,7 +313,7 @@ adoptNewChain :: forall m up blk.
               => InternalState m up blk
               -> Chain blk  -- ^ Old chain
               -> Chain blk  -- ^ New chain
-              -> Tr m ()
+              -> STM m ()
 adoptNewChain is old new =
     applyUpdate is new upd
   where
@@ -333,7 +333,7 @@ applyUpdate :: ( MonadSTM m
             => InternalState m up blk
             -> Chain blk          -- ^ New chain
             -> [ChainUpdate blk]  -- ^ Update
-            -> Tr m ()
+            -> STM m ()
 applyUpdate st@IS{..} new upd = do
     writeTVar varChain new
     updateLedgerState st new upd
@@ -350,7 +350,7 @@ updateLedgerState :: ( MonadSTM m
                   => InternalState m up blk
                   -> Chain blk          -- ^ New chain (TODO: remove this arg)
                   -> [ChainUpdate blk]  -- ^ Chain update
-                  -> Tr m ()
+                  -> STM m ()
 updateLedgerState IS{..} new upd =
     case upd of
       RollBack _:_ ->
@@ -519,7 +519,7 @@ consensusSyncClient cfg btime initLedger varChain candidatesVar up =
         }
 
     -- Update set of candidates
-    updateCandidates' :: Chain hdr -> Tr m ()
+    updateCandidates' :: Chain hdr -> STM m ()
     updateCandidates' theirChain = do
         now      <- getCurrentSlot btime
         ourChain <- readTVar varChain
@@ -664,13 +664,13 @@ data NetworkRequires m up blk hdr = NetworkRequires {
       nrSyncClient   :: up -> Consensus ChainSyncClient hdr m
 
       -- | Return the current chain
-    , nrCurrentChain :: Tr m (Chain blk)
+    , nrCurrentChain :: STM m (Chain blk)
 
       -- | Get current chain candidates
       --
       -- This is used by the network layer's block download logic.
       -- See 'CandidateChains' for more details.
-    , nrCandidates   :: Tr m (Candidates up hdr)
+    , nrCandidates   :: STM m (Candidates up hdr)
     }
 
 -- | Required by the network layer to initiate comms to a new node
@@ -693,7 +693,7 @@ data NetworkProvides m up blk hdr = NetworkProvides {
       --
       -- It will be the responsibility of the consensus layer to monitor this,
       -- validate new chains when downloaded, and adopt them when appropriate.
-      npDownloaded    :: Tr m [Chain blk]
+      npDownloaded    :: STM m [Chain blk]
 
       -- | Notify network layer of new upstream node
       --

@@ -63,7 +63,7 @@ longestChainSelection :: forall block m.
 longestChainSelection candidateChainVars cpsVar =
     forever (atomically updateCurrentChain)
   where
-    updateCurrentChain :: Tr m ()
+    updateCurrentChain :: STM m ()
     updateCurrentChain = do
       candidateChains <- mapM readTVar candidateChainVars
       cps@ChainProducerState{chainState = chain} <- readTVar cpsVar
@@ -82,7 +82,7 @@ chainValidation peerChainVar candidateChainVar = do
     st <- atomically (newTVar Chain.genesisPoint)
     forever (atomically (update st))
   where
-    update :: TVar m (Point block) -> Tr m ()
+    update :: TVar m (Point block) -> STM m ()
     update stateVar = do
       peerChain      <- readTVar peerChainVar
       candidatePoint <- readTVar stateVar
@@ -164,7 +164,7 @@ blockGenerator :: forall block m.
                -- This allows for upstream users to generate \"half chains\" in
                -- case we want to simulate nodes having access to already part
                -- of the overall chain.
-               -> m (Tr m (Maybe block))
+               -> m (STM m (Maybe block))
                -- ^ returns an stm transaction which returns block.  @Nothing@
                -- signifies that there will be no more blocks.  It is the caller
                -- responsibility to read this transaction untill @Nothing@ is
@@ -338,7 +338,7 @@ forkCoreKernel slotDuration gchain fixupBlock cpsVar = do
 
   where
     applyGeneratedBlock
-      :: Tr m (Maybe block)
+      :: STM m (Maybe block)
       -> m ()
     applyGeneratedBlock getBlock = do
       cont <- atomically $ do
