@@ -13,6 +13,7 @@ module Ouroboros.Network.Channel
   , withFifosAsChannel
   , socketAsChannel
   , delayChannel
+  , loggingChannel
   ) where
 
 import qualified Data.ByteString               as BS
@@ -26,6 +27,7 @@ import qualified Network.Socket.ByteString as Socket
 
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadSay
 
 import           Network.TypedProtocol.Channel
 
@@ -149,3 +151,32 @@ delayChannel :: ( MonadSTM m
              -> Channel m a
 delayChannel delay = channelEffect (\_ -> return ())
                                    (\_ -> threadDelay delay)
+
+
+-- | Channel which logs sent and received messages.
+--
+-- TODO: use a proper logger rather than @'MonadSay'@ constraint.
+loggingChannel :: ( MonadSay m
+                  , Show id
+                  , Show a
+                  )
+               => id
+               -> Channel m a
+               -> Channel m a
+loggingChannel ident Channel{send,recv} =
+  Channel {
+    send = loggingSend,
+    recv = loggingRecv
+  }
+ where
+  loggingSend a = do
+    say (show ident ++ ":send:" ++ show a)
+    send a
+
+  loggingRecv = do
+    msg <- recv
+    case msg of
+      Nothing -> return ()
+      Just a  -> say (show ident ++ ":recv:" ++ show a)
+    return msg
+
