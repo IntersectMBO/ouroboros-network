@@ -73,7 +73,7 @@ class (MonadSTM m, MonadTime m) => MonadTimer m where
   --
   -- You should consider the cancelled state if you plan to use 'cancelTimeout'.
   --
-  readTimeout    :: Timeout m -> Tr m TimeoutState
+  readTimeout    :: Timeout m -> STM m TimeoutState
 
   -- Adjust when this timer will fire, to the given duration into the future.
   --
@@ -95,7 +95,7 @@ class (MonadSTM m, MonadTime m) => MonadTimer m where
   cancelTimeout  :: Timeout m -> m ()
 
   -- | Returns @True@ when the timeout is fired, or @False@ if it is cancelled.
-  awaitTimeout   :: Timeout m -> Tr m Bool
+  awaitTimeout   :: Timeout m -> STM m Bool
   awaitTimeout t  = do s <- readTimeout t
                        case s of
                          TimeoutPending   -> retry
