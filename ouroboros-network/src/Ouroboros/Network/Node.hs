@@ -216,32 +216,6 @@ data ConsumerId = ConsumerId NodeId Int
 data ProducerId = ProducerId NodeId Int
   deriving (Eq, Ord, Show)
 
--- | Channel which logs sent and received messages.
---
--- TODO: use a proper logger rather than @'MonadSay'@ constraint.
-loggingChannel :: ( MonadSay m
-                  , Show id
-                  , Show a
-                  )
-               => id
-               -> Channel m a
-               -> Channel m a
-loggingChannel ident Channel{send,recv} =
-  Channel {
-    send = loggingSend,
-    recv = loggingRecv
-  }
- where
-  loggingSend a = do
-    say (show ident ++ ":send:" ++ show a)
-    send a
-
-  loggingRecv = do
-    msg <- recv
-    case msg of
-      Nothing -> return ()
-      Just a  -> say (show ident ++ ":recv:" ++ show a)
-    return msg
 
 -- | Relay node, which takes @'NodeChannels'@ to communicate with its peers
 -- (upstream and downstream).  If it is subscribed to n nodes and has

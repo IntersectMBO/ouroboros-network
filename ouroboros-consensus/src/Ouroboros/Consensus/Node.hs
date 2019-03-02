@@ -65,7 +65,7 @@ import           Ouroboros.Consensus.Util.STM
 -- in the networking layer to make the division clearer.
 
 import           Ouroboros.Network.Node (NodeId (..))
-import qualified Ouroboros.Network.Node as Network
+
 
 {-------------------------------------------------------------------------------
   Node IDs
