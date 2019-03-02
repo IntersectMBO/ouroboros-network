@@ -5,6 +5,7 @@
 {-# LANGUAGE TypeFamilyDependencies #-}
 module Control.Monad.Class.MonadSTM
   ( MonadSTM (..)
+  , Tr
 
   -- * Default 'TMVar' implementation
   , TMVarDefault (..)
@@ -53,11 +54,12 @@ import           Control.Monad.Reader
 import           GHC.Stack
 import           Numeric.Natural (Natural)
 
+type Tr m = STM m
 
-class (Monad m, Monad (Tr m)) => MonadSTM m where
+class (Monad m, Monad (STM m)) => MonadSTM m where
 
   -- STM transactions
-  type Tr   m = (n :: * -> *) | n -> m
+  type STM  m = (n :: * -> *) | n -> m
   -- The STM primitives
   type TVar m :: * -> *
 
@@ -115,7 +117,7 @@ class (Monad m, Monad (Tr m)) => MonadSTM m where
   isFullTBQueue  :: TBQueue m a -> Tr m Bool
 
 instance MonadSTM m => MonadSTM (ReaderT e m) where
-  type Tr (ReaderT e m)    = ReaderT e (Tr m)
+  type STM  (ReaderT e m)  = ReaderT e (STM m)
   type TVar (ReaderT e m)  = TVar m
   type TMVar (ReaderT e m) = TMVar m
   type TQueue (ReaderT e m)  = TQueue m
@@ -154,7 +156,7 @@ instance MonadSTM m => MonadSTM (ReaderT e m) where
   isFullTBQueue    = lift . isFullTBQueue
 
 instance (Show e, MonadSTM m) => MonadSTM (ExceptT e m) where
-  type Tr (ExceptT e m)      = ExceptT e (Tr m)
+  type STM  (ExceptT e m)    = ExceptT e (STM m)
   type TVar (ExceptT e m)    = TVar m
   type TMVar (ExceptT e m)   = TMVar m
   type TQueue (ExceptT e m)  = TQueue m
@@ -198,7 +200,7 @@ instance (Show e, MonadSTM m) => MonadSTM (ExceptT e m) where
 --
 
 instance MonadSTM IO where
-  type Tr   IO = STM.STM
+  type STM  IO = STM.STM
   type TVar IO = STM.TVar
 
   atomically  = wrapBlockedIndefinitely . STM.atomically

@@ -60,7 +60,7 @@ import qualified Control.Monad.Class.MonadFork as MonadFork
 import           Control.Monad.Class.MonadThrow as MonadThrow
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadSTM hiding (TVar)
+import           Control.Monad.Class.MonadSTM hiding (STM, TVar)
 import qualified Control.Monad.Class.MonadSTM as MonadSTM
 import           Control.Monad.Class.MonadAsync hiding (Async)
 import qualified Control.Monad.Class.MonadAsync as MonadAsync
@@ -278,7 +278,7 @@ instance MonadFork (SimM s) where
   throwTo tid e = SimM $ \k -> ThrowTo (toException e) tid (k ())
 
 instance MonadSTM (SimM s) where
-  type Tr    (SimM s)   = STM s
+  type STM   (SimM s)   = STM s
   type TVar  (SimM s)   = TVar s
   type TMVar (SimM s)   = TMVarDefault (SimM s)
   type TQueue (SimM s)  = TQueueDefault (SimM s)
