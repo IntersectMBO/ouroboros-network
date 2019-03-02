@@ -26,7 +26,7 @@ import           System.Random (Random(..), StdGen)
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (Chain, Point, castPoint, blockPoint)
 import qualified Ouroboros.Network.Chain as Chain
-import           Ouroboros.Network.ChainFragment (ChainFragment(Empty, (:>)))
+import           Ouroboros.Network.ChainFragment (ChainFragment)
 import qualified Ouroboros.Network.ChainFragment as ChainFragment
 
 import           Ouroboros.Network.Protocol.BlockFetch.Server
@@ -62,7 +62,7 @@ Notes:
    ╚═════╪═══════╝                               │
          ▼                                       │
   ┏━━━━━━━━━━━━━┓     ┏━━━━━━━━━━━━━┓     ╔══════╧══════╗
-  ┃  Candiate   ┃     ┃  Candidate  ┃     ║  Chain and  ║
+  ┃  Candidate  ┃     ┃  Candidate  ┃     ║  Chain and  ║
   ┃  chains     ┃     ┃   chains    ┠────▶║   ledger    ║
   ┃  (headers)  ┃     ┃  (blocks)   ┃     ║  validation ║
   ┗━━━━━━┯━━━━━━┛     ┗━━━━━━━━━━━━━┛     ╚══════╤══════╝
@@ -87,6 +87,7 @@ Notes:
 
 We will consider the block fetch logic and the policy (but not mechanism)
 for the block fetch protocol client together as one unit of functionality.
+This is the shaded area in the diagram above.
 
 Looking at the diagram we see that these two threads interact with each other
 and other threads via the following shared state
@@ -94,7 +95,7 @@ and other threads via the following shared state
  ═════════════════════════════╤════════════════╤═════════════════
    State                      │  Interactions  │  {In,Ex}ternal
  ─────────────────────────────┼────────────────┼─────────────────
-   Candiate chains (headers)  │  Read          │  External
+   Candidate chains (headers) │  Read          │  External
    Current chain (blocks)     │  Read          │  External
    Set of downloaded blocks   │  Read & Write  │  External
    Block fetch requests       │  Read & Write  │  Internal
@@ -127,6 +128,10 @@ data FetchLogicExternalState peer header block m =
        readFetchedBlocks      :: Tr m (Point block -> Bool)
 
        --TODO: adding and then registering blocks
+
+       -- blockBodySize      :: header -> Word
+       -- plausibleCandidate :: ChainFragment block -> ChainFragment header -> Bool
+       -- compareCandidates  :: ChainFragment header -> ChainFragment header -> Ordering
      }
 
 type FetchClientRegistry m = m ()
@@ -468,15 +473,18 @@ chain   C         A         B         A                   B         A
 Of course we would at most need to download the blocks in a candidate chain
 that are not already in the current chain. So we must find those intersections.
 
-Before we do that, lets define how we represent a suffix of a chain. We
-represent the range by two points: an exclusive lower bound and an inclusive
-upper bound. Since the upper bound is the point at the head of the chain we
-only need to remember the point at the lower and that defines the range
-implicitly up to the end of the chain.
+Before we do that, lets define how we represent a suffix of a chain. We do this
+very simply as a chain fragment: exactly those blocks contained in the suffix.
+A chain fragment is of course not a chain, but has many similar invariants.
 
-      ○   Start of range, exclusive
+We will later also need to represent chain ranges when we send block fetch
+requests. We do this using a pair of points: the first and last blocks in the
+range.  While we can represent an empty chain fragment, we cannot represent an
+empty fetch range, but this is ok since we never request empty ranges.
+
+ Chain fragment
     ┌───┐
-    │   │
+    │ ◉ │ Start of range, inclusive
     ├───┤
     │   │
     ├───┤
@@ -496,23 +504,23 @@ implicitly up to the end of the chain.
 type ChainSuffix header = ChainFragment header
 
 {-
-We define the /fork range/ as the suffix of the candidate chain up until it
-intersects the current chain.
+We define the /fork range/ as the suffix of the candidate chain up until (but
+not including) where it intersects the current chain.
 
 
    current    peer 1    peer 2
 
     ┆   ┆
     ├───┤
-    │  ◀┿━━┓              ○
-    ├───┤  ┃            ┌───┐
-    │   │  ┗━━━━━━━━━━━━┿   │
+    │  ◀┿━━━━━━━━━━━━━━━━━┓
+    ├───┤               ┌─╂─┐
+    │   │               │ ◉ │
     ├───┤               ├───┤
     │   │               │   │
     ├───┤               ├───┤
-    │  ◀┿━━┓    ○       │   │
- ───┴───┴──╂──┬───┬─────┼───┼───
-           ┗━━┿ ◉ │     │   │
+    │  ◀┿━━━━━━━┓       │   │
+ ───┴───┴─────┬─╂─┬─────┼───┼───
+              │ ◉ │     │   │
               └───┘     ├───┤
                         │ ◉ │
                         └───┘
@@ -520,9 +528,6 @@ intersects the current chain.
 
 In this example we found that C was a strict extension of the current chain
 and chain A was a short fork.
-
-We compute the suffix ranges by finding the intersection point and that becomes
-the exclusive lower bound in the suffix representation.
 
 Note that it's possible that we don't find any intersection within the last K
 blocks. This means the candidate forks by more than K and so we are not
@@ -561,18 +566,26 @@ had its blocks downloaded and block content checked against the headers.
     ├───┤               ┌───┐
     │   │    already    │   │
     ├───┤    fetched    ├───┤
-    │   │    blocks     │ ○ │  ◄
+    │   │    blocks     │   │
     ├───┤               ├───┤
-    │   │       ○   ◄   │░░░│  fetch range
+    │   │               │░◉░│  ◄  fetch range
  ───┴───┴─────┬───┬─────┼───┼───
               │░◉░│ ◄   │░░░│
               └───┘     ├───┤
                         │░◉░│  ◄
                         └───┘
 
-We maintain and rely on the invariant that the ranges of fetched blocks are
-backwards closed. This means we never have discontinuous ranges of fetched or
-not-yet-fetched blocks.
+In earlier versions of this scheme we maintained and relied on the invariant
+that the ranges of fetched blocks are backwards closed. This meant we never had
+discontinuous ranges of fetched or not-yet-fetched blocks. This invariant does
+simplify things somewhat by keeping the ranges continuous however it precludes
+fetching ranges of blocks from different peers in parallel.
+
+We do not maintain any such invariant and so we have to deal with there being
+gaps in the ranges we have already fetched or are yet to fetch. To keep the
+tracking simple we do not track the ranges themselves, rather we track the set
+of individual blocks without their relationship to each other.
+
 -}
 
 -- | Find the fetch suffix range of blocks that have not been fetched.
@@ -602,14 +615,84 @@ from any peer. Decisions about downloading now depend on what we know about the
 peers, such as the recent performance history and what requests we have
 in-flight with that peer.
 
-We split this into two phases. In the first phase we prioritise the chain/peer
-pairs based on the chain fetch suffix and peer, but without considering what
-is already in-flight. In the second phase we go through the chain/peer pairs
-in order and now based on what is already in-flight we decide if it is time to
-initiate any new block fetch requests.
+We split this into two phases.
+
+ 1. In the first phase we prioritise the chain/peer pairs based on the chain
+    fetch suffix and estimated peer performance and status, but with very
+    limited consideration of what is already in-flight. In particular we do not
+    cut the fetch suffix down to exclude those that are already in flight.
+
+ 2. In the second phase we go through the chain/peer pairs in order and now
+    based on what blocks are already in-flight we decide if it is time to
+    initiate any new block fetch requests. The second phase is where we avoid
+    asking the same peer for the same blocks again, and we apply our policies
+    on whether to ask for the same block from multiple peers for redundancy, or
+    to stripe block requests across multiple peers to maximise download speed
+    without overloading individual peers.
+
+The limited consideration of what is in-flight is actually a rather cunning
+simplification of how to estimate the response time of block fetch requests.
+One very simplistic approach would be to ignore what blocks are already
+in-flight and estimate the response time based on the GSV just for the new
+requests. This would of course ignore the fact that the remote peer may still
+be busy sending us replies for requests we asked for previously. So it would
+significantly underestimate the response times. A much more sophisticated
+approach would be to try and track the estimated state of the remote peer's
+queue of requests, to be able to estimate when that queue will empty and thus
+the first moment at which new requests could begin to be serviced. This would
+be complex and is perhaps attempting to be too precise, when there are other
+confounding factors it cannot take into account. Our simpler approximation is
+as follows. We track the size of responses that are still in-flight: that is
+requests for responses of that size have been sent, but responses have not yet
+been received. For streamed responses of multiple blocks, this is the size of
+remaining blocks that have not yet been received. Then to estimate the response
+time of a new request, we calculate it as if we were asking for all the
+existing in-flight and new responses now from an idle state. This is of course
+an overestimate of the response time, but bounded by G, the one-way minimum
+latency. Given our use case this degree of overestimate is fine. We will be
+using these estimated response times to compare between different peers and to
+set timeouts for when a peer is considered to be responding too slowly. And
+given that typical values of G might be as high as 0.3 sec, but our slot times
+are 2 -- 20 seconds, then this is acceptable.
 
 The first phase is simply a re-ordering of the chain/peer pairs. For now we
 can leave this as the identify and defer discussion on the policy.
+
+Slight change of plan to the above:
+
+ * We will include temporary peer performance problems in the ranking,
+   giving them a d-Q of _|_ so they can still be picked, but are always
+   in the category of expecting not to make any deadline.
+
+ * Reminder: why do we say it's ok to ignore what is in-flight when calculating
+   the ETA of new requests? We're treating it as if we ask for all the in-flight
+   plus new stuff now, which is only ever a half round-trip out (G). If we
+   naively took into account in-flight then we'd assume the peer had an empty
+   queue to deal with our new request. To do it in a more sophisticated way would
+   require estimating the queue on the peer's end.
+
+ * The downward closed property is perhaps not that big of a deal. We can track
+   the set of in-flight blocks per-peer. This can be updated atomically when
+   blocks bodies are validated and added to the fetched block heap. This means
+   we can take a strategy where we go through peers in order accumulating the
+   non-aberrant peers in-flight blocks and subtracting them from the ones we
+   choose to fetch. This should give rise to distributing blocks between peers.
+   As soon as one becomes aberrant then it drops to the bottom of the order
+   (and we can also skip it for this accumulation) and we would fill in gaps
+   using other peers.
+
+ * The cost of managing in-flight blocks as individual blocks is probably not
+   that big a deal, there will only ever be a few hundred of them in-flight
+   at once.
+
+ * We can auto-calibrate the max-in flight bytes per-peer to 2.5 -- 3x the
+   bandwidth latency product (based on GSV). Assume symmetric G: then in G time
+   we can send a certain amount (the product), and by the time the leading edge
+   arrives the trailing edge would be leaving. So if we got it perfect, we'd
+   need 2x to not leave any gaps. And then we should just go for a bit more to
+   ensure the pipes stay full without gaps.
+
+ * Need to add (block -> Size) function to fetch logic inputs
 -}
 
 prioritisePeerChains :: HasHeader header
@@ -648,12 +731,11 @@ data FetchRequest header peer = FetchRequest !peer !(ChainRange header)
   deriving Show
 
 
-chainSufficRange :: ChainFragment a -> Maybe (ChainRange a)
-chainSufficRange Empty    = Nothing
-chainSufficRange (c :> b) = Just (ChainRange (previousPoint c b) (blockPoint b))
-  where
-    previousPoint Empty    b = prevPoint b
-    previousPoint (c :> b) _ = previousPoint c b
+chainSuffixRange :: HasHeader a => ChainFragment a -> Maybe (ChainRange a)
+chainSuffixRange c =
+    case (ChainFragment.last c, ChainFragment.head c) of
+      (Just bl, Just bh) -> Just (ChainRange (blockPoint bl) (blockPoint bh))
+      _                  -> Nothing
 
 -- | A range on a chain identified by two points. It is exclusive on the
 -- lower end and inclusive on the upper end.
@@ -777,10 +859,12 @@ fetchRequestDecision FetchPolicyParams {
   = Right (FetchRequest peer fetchReqRange)
   where
     --TODO: limit the request range to fit within maxInFlightBytesPerPeer
-    fetchReqRange = ChainRange undefined undefined
+    --FIXME: separate empty/non-empty cases better:
+    Just fetchReqRange = chainSuffixRange fetchSuffix
                      -- point prior to first block in fetch suffix
                      -- head point of fetch suffix
                      -- (blockPrevHash fetchSuffix) (ChainFragment.headPoint chain)
+
 
 fetchDecisionsForState :: (HasHeader header, HasHeader block,
                            HeaderHash header ~ HeaderHash block, Ord peer)
