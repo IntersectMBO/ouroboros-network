@@ -60,16 +60,20 @@ import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Consensus.Util.STM
 
--- TODO: We currently stil import /some/ stuff from the network layer Node
--- module. We should audit this and perhaps move these to different modules
--- in the networking layer to make the division clearer.
-
-import           Ouroboros.Network.Node (NodeId (..))
-
 
 {-------------------------------------------------------------------------------
   Node IDs
 -------------------------------------------------------------------------------}
+
+-- TODO: This was moved here from the network layer Node module. We should
+-- review this and make sure it makes sense here.
+data NodeId = CoreId Int
+            | RelayId Int
+  deriving (Eq, Ord, Show)
+
+instance Condense NodeId where
+  condense (CoreId  i) = "c" ++ show i
+  condense (RelayId i) = "r" ++ show i
 
 -- | Core node ID
 newtype CoreNodeId = CoreNodeId Int
