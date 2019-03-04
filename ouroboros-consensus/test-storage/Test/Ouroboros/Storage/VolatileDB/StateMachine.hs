@@ -17,7 +17,7 @@
 
 module Test.Ouroboros.Storage.VolatileDB.StateMachine (tests) where
 
-import           Prelude
+import           Prelude hiding (elem)
 
 import           Control.Monad.Except
 import           Control.Monad.State
@@ -27,6 +27,8 @@ import           Data.ByteString (ByteString)
 import qualified Data.ByteString.Builder as BS
 import           Data.Functor.Classes
 import           Data.Kind (Type)
+import qualified Data.List.NonEmpty as NE
+import qualified Data.Map as M
 import           Data.TreeDiff (ToExpr)
 import           Data.TreeDiff.Class
 import           GHC.Generics
@@ -43,7 +45,7 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 
 import qualified Ouroboros.Consensus.Util.Classify as C
-import           Ouroboros.Storage.FS.API
+import           Ouroboros.Storage.FS.API (HasFS (..))
 import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
 import           Ouroboros.Storage.FS.Sim.STM
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
@@ -52,6 +54,7 @@ import           Ouroboros.Storage.VolatileDB.Impl (openDB)
 
 import           Test.Ouroboros.Storage.Util
 import           Test.Ouroboros.Storage.VolatileDB.Model
+import           Test.Ouroboros.Storage.VolatileDB.TestBlock
 
 newtype At t (r :: Type -> Type) = At {unAt :: t}
   deriving (Generic)
@@ -66,17 +69,18 @@ data Success
   | IsMember [Bool] -- We compare two functions based on their results on a list of inputs.
   deriving (Eq, Show)
 
-newtype Resp = Resp {getResp :: Either (VolatileDBError MyBlockId) Success}
+newtype Resp = Resp {getResp :: Either (VolatileDBError BlockId) Success}
     deriving (Eq, Show)
 
 data Cmd
     = IsOpen
     | Close
     | ReOpen
-    | GetBlock MyBlockId
-    | PutBlock MyBlockId
-    | GarbageCollect MyBlockId
+    | GetBlock BlockId
+    | PutBlock BlockId
+    | GarbageCollect BlockId
     | AskIfMember [MyBlockId]
+    | Corrupt Corruptions
     deriving (Show)
 
 deriving instance Generic1          (At Cmd)
@@ -93,10 +97,10 @@ instance Show (Model r) where
     show = show . toShow
 
 deriving instance Show (ModelShow r)
-deriving instance Generic (DBModel MyBlockId)
+deriving instance Generic (DBModel BlockId)
 deriving instance Generic (ModelShow r)
 deriving instance ToExpr SlotNo
-deriving instance ToExpr (DBModel MyBlockId)
+deriving instance ToExpr (DBModel BlockId)
 deriving instance ToExpr (ModelShow r)
 
 
@@ -112,29 +116,28 @@ instance CommandNames (At Cmd) where
         Close            -> "Close"
         ReOpen           -> "ReOpen"
         AskIfMember _    -> "AskIfMember"
+        Corrupt _        -> "Corrupt"
     cmdNames _ = ["not", "suported", "yet"]
 
 data Model (r :: Type -> Type) = Model
-  { dbModel :: DBModel MyBlockId
-    -- ^ A model of the database, used as state for the 'HasImmutableDB'
-    -- instance of 'ModelDB'.
+  { dbModel :: DBModel BlockId
+    -- ^ A model of the database.
   , mockDB  :: ModelDBPure
     -- ^ A handle to the mocked database.
   } deriving (Generic)
 
 data ModelShow (r :: Type -> Type) = Model'
-  { msdbModel        :: DBModel MyBlockId
+  { msdbModel        :: DBModel BlockId
   }
 
 toShow :: Model r -> ModelShow r
 toShow (Model dbm _) = Model' dbm
 
-type PureM = ExceptT (VolatileDBError MyBlockId) (State (DBModel MyBlockId))
-type ModelDBPure = VolatileDB MyBlockId PureM
+type PureM = ExceptT (VolatileDBError BlockId) (State (DBModel BlockId))
+type ModelDBPure = VolatileDB BlockId PureM
 
 -- | An event records the model before and after a command along with the
 -- command itself, and a mocked version of the response.
-
 data Event r = Event
   { eventBefore   :: Model  r
   , eventCmd      :: At Cmd r
@@ -161,47 +164,56 @@ lockstep model@Model {..} (At cmd) (At _resp) = Event
 toMock :: Model r -> At t r -> t
 toMock _ (At t) = t
 
-step :: Model r -> At Cmd r -> (Resp, DBModel MyBlockId)
+step :: Model r -> At Cmd r -> (Resp, DBModel BlockId)
 step model@Model{..} cmd = runPure dbModel mockDB (toMock model cmd)
 
-runPure :: DBModel MyBlockId
+runPure :: DBModel BlockId
         -> ModelDBPure
         -> Cmd
-        -> (Resp, DBModel MyBlockId)
+        -> (Resp, DBModel BlockId)
 runPure dbm mdb cmd =
-    first Resp $ runState (runExceptT $ runDB mdb cmd) dbm
+    first Resp $ runState (runExceptT $ runDB runCorruptions mdb cmd) dbm
+    where
+        runCorruptions :: ModelDBPure -> Corruptions -> PureM Success
+        runCorruptions db cors = do
+            closeDB db
+            runCorruptionModel toSlot cors
+            reOpenDB db
+            return $ Unit ()
 
 runDB :: (HasCallStack, Monad m)
-      => VolatileDB MyBlockId m
+      => (VolatileDB BlockId m -> Corruptions -> m Success)
+      -> VolatileDB BlockId m
       -> Cmd
       -> m Success
-runDB db cmd = case cmd of
-    GetBlock bid -> Blob <$> getBlock db bid
-    PutBlock bid -> Unit <$> putBlock db bid (BS.lazyByteString $ Binary.encode $ toBlock bid)
+runDB runCorruptions db cmd = case cmd of
+    GetBlock bid       -> Blob <$> getBlock db bid
+    PutBlock bid       -> Unit <$> putBlock db bid (BS.lazyByteString $ Binary.encode $ toBlock bid)
     GarbageCollect bid -> Unit <$> garbageCollect db (toSlot bid)
-    IsOpen -> Bl <$> isOpenDB db
-    Close -> Unit <$> closeDB db
-    ReOpen -> Unit <$> reOpenDB db
-    AskIfMember bids -> do
+    IsOpen             -> Bl <$> isOpenDB db
+    Close              -> Unit <$> closeDB db
+    ReOpen             -> Unit <$> reOpenDB db
+    Corrupt cors       -> runCorruptions db cors
+    AskIfMember bids   -> do
         isMember <- getIsMember db
         return $ IsMember $ isMember <$> bids
 
 
-sm :: MonadCatch m => VolatileDB MyBlockId m -> DBModel MyBlockId -> ModelDBPure -> StateMachine Model (At Cmd) m (At Resp)
-sm db dbm vdb = StateMachine {
+sm :: MonadCatch m => HasFS m h -> VolatileDB BlockId m -> DBModel BlockId -> ModelDBPure -> StateMachine Model (At Cmd) m (At Resp)
+sm hasFS db dbm vdb = StateMachine {
         initModel     = initModelImpl dbm vdb
       , transition    = transitionImpl
       , precondition  = preconditionImpl
       , postcondition = postconditionImpl
       , generator     = generatorImpl
       , shrinker      = shrinkerImpl
-      , semantics     = semanticsImpl db
+      , semantics     = semanticsImpl hasFS db
       , mock          = mockImpl
       , invariant     = Nothing
       , distribution  = Nothing
     }
 
-initModelImpl :: DBModel MyBlockId -> ModelDBPure -> Model r
+initModelImpl :: DBModel BlockId -> ModelDBPure -> Model r
 initModelImpl dbm vdm = Model {
       dbModel = dbm
     , mockDB = vdm
@@ -213,6 +225,12 @@ transitionImpl model cmd = eventAfter . lockstep model cmd
 preconditionImpl :: Model Symbolic -> At Cmd Symbolic -> Logic
 preconditionImpl m@Model {..} (At cmd) =
     Not (knownLimitation m (At cmd))
+    .&& case cmd of
+        Corrupt cors ->
+            forall (corruptionFiles cors) (`elem` getDBFiles dbModel)
+        _ -> Top
+  where
+      corruptionFiles = map snd . NE.toList
 
 postconditionImpl :: Model Concrete -> At Cmd Concrete -> At Resp Concrete -> Logic
 postconditionImpl model cmd resp =
@@ -233,7 +251,13 @@ generatorImpl Model {..} = Just $ At <$> do
         , (1, return $ Close)
         , (1, return $ ReOpen)
         , (if null ls then 0 else 1, return $ AskIfMember ls)
+        , (if null dbFiles then 0 else 1, Corrupt <$> generateCorruptions (NE.fromList dbFiles))
         ]
+        where
+            dbFiles :: [String] = getDBFiles dbModel
+
+getDBFiles :: DBModel BlockId -> [String]
+getDBFiles DBModel {..} = M.keys index
 
 newer :: Ord a => Maybe a -> a -> Bool
 newer Nothing _   = True
@@ -242,8 +266,19 @@ newer (Just a) a' = a' >= a
 shrinkerImpl :: Model Symbolic -> At Cmd Symbolic -> [At Cmd Symbolic]
 shrinkerImpl _ _ = []
 
-semanticsImpl :: MonadCatch m => VolatileDB MyBlockId m -> At Cmd Concrete -> m (At Resp Concrete)
-semanticsImpl m (At cmd) = At . Resp <$> tryVolDB (runDB m cmd)
+semanticsImpl :: MonadCatch m => HasFS m h -> VolatileDB BlockId m -> At Cmd Concrete -> m (At Resp Concrete)
+semanticsImpl hasFS m (At cmd) = At . Resp <$> tryVolDB (runDB (semanticsCorruption hasFS) m cmd)
+
+semanticsCorruption :: MonadCatch m
+                    => HasFS m h
+                    -> VolatileDB BlockId m
+                    -> Corruptions
+                    -> m Success
+semanticsCorruption hasFS db corrs = do
+    closeDB db
+    forM_ corrs $ \(corr,file) -> corruptFile hasFS corr file
+    reOpenDB db
+    return $ Unit ()
 
 mockImpl :: Model Symbolic -> At Cmd Symbolic -> GenSym (At Resp Symbolic)
 mockImpl model cmd = At <$> return mockResp
@@ -252,20 +287,24 @@ mockImpl model cmd = At <$> return mockResp
 
 knownLimitation :: Model Symbolic -> Cmd :@ Symbolic -> Logic
 knownLimitation model (At cmd) = case cmd of
-    GetBlock bid -> Boolean $ isLimitation (latestGarbaged $ dbModel model) (toSlot bid)
-    PutBlock bid -> Boolean $ isLimitation (latestGarbaged $ dbModel model) (toSlot bid)
+    GetBlock bid       -> Boolean $ isLimitation (latestGarbaged $ dbModel model) (toSlot bid)
+    PutBlock bid       -> Boolean $ isLimitation (latestGarbaged $ dbModel model) (toSlot bid)
     GarbageCollect _sl -> Bot
-    IsOpen -> Bot
-    Close -> Bot
-    ReOpen -> Bot
-    AskIfMember bids -> exists ((\b -> isLimitation (latestGarbaged $ dbModel model) (toSlot b)) <$> bids) Boolean
+    IsOpen             -> Bot
+    Close              -> Bot
+    ReOpen             -> Bot
+    Corrupt _          -> Bot
+    AskIfMember bids   -> exists ((\b -> isLimitation (latestGarbaged $ dbModel model) (toSlot b)) <$> bids) Boolean
     where
         isLimitation :: (Ord slot) => Maybe slot -> slot -> Bool
         isLimitation Nothing _sl       = False
         isLimitation (Just slot') slot = slot' >  slot
 
-mkDBModel :: MonadState (DBModel MyBlockId) m => (DBModel MyBlockId, VolatileDB MyBlockId (ExceptT (VolatileDBError MyBlockId) m))
-mkDBModel = openDBModel EH.exceptT
+mkDBModel :: MonadState (DBModel BlockId) m
+          => Int
+          -> (BlockId -> Slot)
+          -> (DBModel BlockId, VolatileDB BlockId (ExceptT (VolatileDBError BlockId) m))
+mkDBModel n toSl = openDBModel EH.exceptT n toSl
 
 -- | Predicate on events
 type EventPred = C.Predicate (Event Symbolic) Tag
@@ -322,8 +361,8 @@ prop_sequential =
     forAllCommands smUnused Nothing $ \cmds -> monadicIO $ do
         let test :: HasFS IO h -> PropertyM IO (History (At Cmd) (At Resp), Reason)
             test hasFS = do
-              db <- run $ openDB hasFS EH.monadCatch myParser 7 toSlot True
-              let sm' = sm db dbm vdb
+              db <- run $ openDB hasFS EH.monadCatch myParser 7 toSlot True LenientFillOnlyLast
+              let sm' = sm hasFS db dbm vdb
               (hist, _model, res) <- runCommands sm' cmds
               run $ closeDB db
               return (hist, res)
@@ -335,8 +374,9 @@ prop_sequential =
             $ tabulate "IsMember: At least one True" ([show $ isMemberTrue' (execCmds (initModel smUnused) cmds)])
             $ res === Ok
     where
-        (dbm, vdb) = mkDBModel
-        smUnused = sm (error "semantics and DB used during command generation") dbm vdb
+        -- we use that: MonadState (DBModel BlockId) (State (DBModel BlockId))
+        (dbm, vdb) = mkDBModel 7 toSlot
+        smUnused = sm (error "hasFS used during command generation") (error "semantics and DB used during command generation") dbm vdb
 
 execCmd :: Model Symbolic
         -> Command (At Cmd) (At Resp)
@@ -352,6 +392,6 @@ execCmds model (Commands cs) = go model cs
 
 
 tests :: TestTree
-tests = testGroup "Volatile" [
+tests = testGroup "VolatileDB" [
         testProperty "q-s-m" $ prop_sequential
     ]
