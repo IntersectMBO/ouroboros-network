@@ -68,8 +68,8 @@ negMiniProtocolMode ModeResponder = ModeInitiator
 -- >                    +-----------+
 
 {- | Decode a MuSDU header -}
-decodeMuxSDUHeader :: ProtocolEnum ptcl
-                   => BL.ByteString -> Either MuxError (MuxSDU ptcl)
+decodeMuxSDUHeader :: (HasCallStack , ProtocolEnum ptcl)
+                   => BL.ByteString -> (Either MuxError (MuxSDU ptcl))
 decodeMuxSDUHeader buf =
     case Bin.runGetOrFail dec buf of
          Left  (_, _, e)  -> Left $ MuxError MuxDecodeError e callStack

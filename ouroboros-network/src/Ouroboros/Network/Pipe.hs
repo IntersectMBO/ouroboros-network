@@ -53,7 +53,7 @@ writePipe ctx sdu = do
     hFlush (pcWrite ctx)
     return ts
 
-readPipe :: (Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl)
+readPipe :: (HasCallStack, Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl)
          => PipeCtx
          -> IO (Mx.MuxSDU ptcl, Time IO)
 readPipe ctx = do

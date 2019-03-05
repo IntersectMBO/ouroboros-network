@@ -56,7 +56,7 @@ writeSocket ctx sdu = do
     Socket.sendAll (scSocket ctx) buf
     return ts
 
-readSocket :: Mx.ProtocolEnum ptcl => SocketCtx -> IO (Mx.MuxSDU ptcl, Time IO)
+readSocket :: (HasCallStack , Mx.ProtocolEnum ptcl) => SocketCtx -> IO (Mx.MuxSDU ptcl, Time IO)
 readSocket ctx = do
         hbuf <- recvLen' (scSocket ctx) 8 []
         --say "read"
