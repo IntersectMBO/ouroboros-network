@@ -10,13 +10,15 @@ module Ouroboros.Network.Mux.Ingress (
     ) where
 
 import           Control.Monad
-import           Control.Monad.Class.MonadSay
-import           Control.Monad.Class.MonadSTM
 import qualified Data.Binary.Get as Bin
 import           Data.Bits
 import           Data.Word
 import qualified Data.ByteString.Lazy as BL
 import           Data.Array
+import           GHC.Stack
+
+import           Control.Monad.Class.MonadSay
+import           Control.Monad.Class.MonadSTM
 
 import           Ouroboros.Network.Mux.Types
 
@@ -66,29 +68,38 @@ negMiniProtocolMode ModeResponder = ModeInitiator
 -- >                    +-----------+
 
 {- | Decode a MuSDU header -}
-decodeMuxSDUHeader :: ProtocolEnum ptcl
-                   => BL.ByteString -> Maybe (MuxSDU ptcl)
+decodeMuxSDUHeader :: (HasCallStack , ProtocolEnum ptcl)
+                   => BL.ByteString -> (Either MuxError (MuxSDU ptcl))
 decodeMuxSDUHeader buf =
     case Bin.runGetOrFail dec buf of
-         Left  (_, _, _)  -> Nothing
-         Right (_, _, ph) -> Just ph
-
+         Left  (_, _, e)  -> Left $ MuxError MuxDecodeError e callStack
+         Right (_, _, ph) ->
+             let mode  = getMode $ mshIdAndMode ph
+                 mid_m = getId $ mshIdAndMode ph .&. 0x7fff in
+             case mid_m of
+                  Left  e   -> Left  $ MuxError MuxUnknownMiniProtocol ("id = " ++ show e) callStack
+                  Right mid -> Right $ MuxSDU {
+                        msTimestamp = mshTimestamp ph
+                      , msId = mid
+                      , msMode = mode
+                      , msLength = mshLength ph
+                      , msBlob = BL.empty
+                      }
   where
     dec = do
         ts <- Bin.getWord32be
         mid <- Bin.getWord16be
         len <- Bin.getWord16be
-        return $ MuxSDU (RemoteClockModel ts) (getId (mid .&. 0x7fff)) (getMode (mid .&. 0x8000))
-                        len BL.empty
+        return $ MuxSDUHeader (RemoteClockModel ts) mid len
 
-    getMode 0      = ModeInitiator
-    getMode 0x8000 = ModeResponder
-    getMode _      = error "impossible use of bitmask" -- XXX
+    getMode mid =
+        if mid .&. 0x8000 == 0 then ModeInitiator
+                               else ModeResponder
 
-    getId :: ProtocolEnum ptcl => Word16 -> MiniProtocolId ptcl
+    getId :: ProtocolEnum ptcl => Word16 -> Either Word16 (MiniProtocolId ptcl)
     getId n | Just ptcl <- toProtocolEnum n
-            = ptcl
-    getId a = error $ "unknow miniprotocol " ++ show a -- XXX
+            = Right ptcl
+    getId a = Left a
 
 -- | demux runs as a single separate thread and reads complete 'MuxSDU's from the underlying
 -- Mux Bearer and forwards it to the matching ingress queueu.
