@@ -30,9 +30,9 @@ tests :: TestTree
 tests =
   testGroup "Mux"
   [ testProperty "mux send receive"        prop_mux_snd_recv
-  , testProperty "2 miniprotols"           prop_mux_2_minis
+  , testProperty "2 miniprotocols"         prop_mux_2_minis
   , testProperty "starvation"              prop_mux_starvation
-  , testProperty "unknown miniprot"        prop_mux_unknown_miniprot
+  , testProperty "unknown miniprotocol"    prop_mux_unknown_miniprot
   , testProperty "too short header"        prop_mux_short_header
   ]
 
@@ -112,9 +112,11 @@ startMuxSTM :: (Ord ptcl, Enum ptcl, Bounded ptcl, Mx.ProtocolEnum ptcl)
 startMuxSTM mpds wq rq mtu trace = do
     let ctx = MuxSTMCtx wq rq mtu trace
     resq <- atomically $ newTBQueue 10
-    void $ Mx.muxStart mpds (writeMux ctx) (readMux ctx) (sduSizeMux ctx) (return ()) $ Just resq
+    void $ Mx.muxStart mpds (writeMux ctx) (readMux ctx) (sduSizeMux ctx) (return ()) (Just $ rescb resq)
 
     return resq
+  where
+    rescb resq e_m = atomically $ writeTBQueue resq e_m
 
 -- | Helper function to check if jobs in 'startMuxSTM' exited successfully.
 -- Only checks the first return value

@@ -38,13 +38,13 @@ import           Ouroboros.Network.Mux.Types
 -- TODO: replace MonadSay with iohk-monitoring-framework.
 muxStart :: (MonadAsync m, MonadFork m, MonadSay m, MonadSTM m, Ord ptcl, Enum ptcl, Bounded ptcl)
         => MiniProtocolDescriptions ptcl m
-        -> (MuxSDU ptcl -> m (Time m)) -- Write function
-        -> m (MuxSDU ptcl, Time m)     -- Read function
-        -> m Word16                    -- SDU size function
-        -> m ()                        -- Close function
-        -> Maybe (TBQueue m (Maybe SomeException)) -- Optional queue for result
+        -> (MuxSDU ptcl -> m (Time m))          -- Write function
+        -> m (MuxSDU ptcl, Time m)              -- Read function
+        -> m Word16                             -- SDU size function
+        -> m ()                                 -- Close function
+        -> Maybe (Maybe SomeException -> m ())  -- Optional callback for result
         -> m (ThreadId m)
-muxStart udesc wfn rfn sdufn close  resq_m = do
+muxStart udesc wfn rfn sdufn close  rescb_m = do
     tbl <- setupTbl
     tq <- atomically $ newTBQueue 100
     cnt <- newTVarM 0
@@ -63,21 +63,16 @@ muxStart udesc wfn rfn sdufn close  resq_m = do
     watcher as = do
         (_,r) <- waitAnyCatchCancel as
         close
-        case resq_m of
+        case rescb_m of
              Nothing ->
                  case r of
                       Left  e -> say $ "Mux Bearer died due to " ++ show e
                       Right _ -> return ()
-             Just resq ->
+             Just rescb ->
                  case r of
-                      Left  e -> evictWrite resq $ Just e
-                      Right _ -> evictWrite resq $ Nothing
+                      Left  e -> rescb $ Just e
+                      Right _ -> rescb Nothing
 
-    evictWrite q res = atomically $ do
-       full <- isFullTBQueue q
-       when full $
-           void $ readTBQueue q
-       writeTBQueue q res
 
     -- Construct the array of TBQueues, one for each protocol id, and each mode
     setupTbl = MiniProtocolDispatch

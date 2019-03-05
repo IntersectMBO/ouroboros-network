@@ -130,7 +130,7 @@ prop_socket_recv_close request response = ioProperty $ do
 
     let server_mps Mxt.ChainSync1 = server_mp
 
-    server_h <- startResponderT server_mps b $ Just resq
+    server_h <- startResponderT server_mps b (Just $ rescb resq)
 
     sd <- socket (addrFamily b) Stream defaultProtocol
     connect sd (addrAddress b)
@@ -147,6 +147,9 @@ prop_socket_recv_close request response = ioProperty $ do
                   Just me -> return $ Mx.errorType me == Mx.MuxBearerClosed
                   Nothing -> return False
          Nothing -> return False
+
+  where
+    rescb resq e_m = atomically $ writeTBQueue resq e_m
 
 prop_socket_client_connect_error :: Mxt.DummyPayload
                                  -> Mxt.DummyPayload

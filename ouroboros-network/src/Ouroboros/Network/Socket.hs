@@ -12,7 +12,6 @@ module Ouroboros.Network.Socket (
 import           Control.Concurrent.Async
 import           Control.Monad
 import           Control.Monad.Class.MonadSay
-import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
 import           Data.Bits
@@ -31,10 +30,10 @@ newtype SocketCtx = SocketCtx { scSocket :: Socket }
 
 setupMux :: (Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl) => (ptcl -> Mx.MiniProtocolDescription ptcl IO)
          -> SocketCtx
-         -> Maybe (TBQueue IO (Maybe SomeException))
+         -> Maybe (Maybe SomeException -> IO ())
          -> IO ()
-setupMux mpds ctx resq_m =
-    void $ Mx.muxStart mpds (writeSocket ctx) (readSocket ctx) (sduSize ctx) (closeSocket ctx) resq_m
+setupMux mpds ctx rescb_m =
+    void $ Mx.muxStart mpds (writeSocket ctx) (readSocket ctx) (sduSize ctx) (closeSocket ctx) rescb_m
 
 closeSocket :: SocketCtx -> IO ()
 closeSocket ctx = close (scSocket ctx)
@@ -89,9 +88,9 @@ startResponder mpds addr = startResponderT mpds addr Nothing
 startResponderT :: (Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl)
                 => Mx.MiniProtocolDescriptions ptcl IO
                 -> AddrInfo
-                -> Maybe (TBQueue IO (Maybe SomeException))
+                -> Maybe (Maybe SomeException -> IO ())
                 -> IO (Socket, Async ())
-startResponderT mpds addr resq_m =
+startResponderT mpds addr rescb_m =
     bracketOnError
         (socket (addrFamily addr) Stream defaultProtocol)
         close
@@ -106,7 +105,7 @@ startResponderT mpds addr resq_m =
   where
     server sd = forever $ do
         (client, _) <- accept sd
-        setupMux mpds (SocketCtx client) resq_m
+        setupMux mpds (SocketCtx client) rescb_m
 
 killResponder :: (Socket, Async ()) -> IO ()
 killResponder (sd, hdl) = do
@@ -124,9 +123,9 @@ startInitiatorT :: (Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl)
                 => Mx.MiniProtocolDescriptions ptcl IO
                 -> AddrInfo
                 -> AddrInfo
-                -> Maybe (TBQueue IO (Maybe SomeException))
+                -> Maybe (Maybe SomeException -> IO ())
                 -> IO ()
-startInitiatorT mpds local remote resq_m = do
+startInitiatorT mpds local remote rescb_m = do
     bracketOnError
         (socket (addrFamily local) Stream defaultProtocol)
         close
@@ -136,7 +135,7 @@ startInitiatorT mpds local remote resq_m = do
             bind sd (addrAddress local)
             connect sd (addrAddress remote)
 
-            setupMux mpds (SocketCtx sd) resq_m
+            setupMux mpds (SocketCtx sd) rescb_m
         )
     return ()
 
