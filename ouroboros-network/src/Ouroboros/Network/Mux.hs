@@ -1,5 +1,6 @@
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE TypeFamilies   #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 module Ouroboros.Network.Mux (
       MiniProtocolDescription (..)
@@ -7,12 +8,14 @@ module Ouroboros.Network.Mux (
     , ProtocolEnum (..)
     , MiniProtocolId (..)
     , MiniProtocolMode (..)
+    , MuxBearerState (..)
     , MuxError (..)
     , MuxErrorType (..)
     , MuxSDU (..)
     , RemoteClockModel (..)
     , encodeMuxSDU
     , decodeMuxSDUHeader
+    , muxBearerSetState
     , muxStart
     ) where
 
@@ -22,47 +25,48 @@ import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime (Time)
 import           Data.Array
 import qualified Data.ByteString.Lazy as BL
-import           Data.Word
+import           GHC.Stack
 
 import           Ouroboros.Network.Channel
-
 import           Ouroboros.Network.Mux.Egress
 import           Ouroboros.Network.Mux.Ingress
 import           Ouroboros.Network.Mux.Types
 
--- | muxStart starts a mux bearer for the specified protocols with the provided read and write
--- functions.
+-- | muxStart starts a mux bearer for the specified protocols corresponding to
+-- one of the provided Versions.
 -- TODO: replace MonadSay with iohk-monitoring-framework.
-muxStart :: (MonadAsync m, MonadFork m, MonadSay m, MonadSTM m, Ord ptcl, Enum ptcl, Bounded ptcl)
-        => MiniProtocolDescriptions ptcl m
-        -> (MuxSDU ptcl -> m (Time m))          -- Write function
-        -> m (MuxSDU ptcl, Time m)              -- Read function
-        -> m Word16                             -- SDU size function
-        -> m ()                                 -- Close function
-        -> Maybe (Maybe SomeException -> m ())  -- Optional callback for result
-        -> m (ThreadId m)
-muxStart udesc wfn rfn sdufn close  rescb_m = do
+muxStart :: forall m ptcl.
+            ( MonadAsync m, MonadFork m, MonadSay m, MonadSTM m, MonadThrow m
+            , Ord ptcl, Enum ptcl, Bounded ptcl)
+         => MiniProtocolDescriptions ptcl m
+         -> MuxBearer ptcl m
+         -> Maybe (Maybe SomeException -> m ())  -- Optional callback for result
+         -> m ()
+muxStart udesc bearer rescb_m = do
     tbl <- setupTbl
     tq <- atomically $ newTBQueue 100
     cnt <- newTVarM 0
-    let pmss = PerMuxSS tbl tq wfn rfn sdufn
+
+    let pmss = PerMuxSS tbl tq bearer
         jobs = [ demux pmss
                , mux cnt pmss
                , muxControl pmss ModeResponder
                , muxControl pmss ModeInitiator
                ]
-    mjobs <- sequence [ mpsJob cnt pmss (udesc ptcl)
+    mjobs <- sequence [ mpsJob cnt pmss ptcl
                       | ptcl <- [minBound..maxBound] ]
     aids <- mapM async $ jobs ++ concat mjobs
-    fork $ watcher aids
+    muxBearerSetState bearer Mature
+    watcher aids
 
   where
+    watcher :: [Async m a] -> m ()
     watcher as = do
         (_,r) <- waitAnyCatchCancel as
-        close
+        close bearer
+        muxBearerSetState bearer Dead
         case rescb_m of
              Nothing ->
                  case r of
@@ -75,6 +79,7 @@ muxStart udesc wfn rfn sdufn close  rescb_m = do
 
 
     -- Construct the array of TBQueues, one for each protocol id, and each mode
+    setupTbl :: m (MiniProtocolDispatch ptcl m)
     setupTbl = MiniProtocolDispatch
             -- cover full range of type (MiniProtocolId ptcl, MiniProtocolMode)
              . array (minBound, maxBound)
@@ -83,34 +88,40 @@ muxStart udesc wfn rfn sdufn close  rescb_m = do
                         | ptcl <- [minBound..maxBound]
                         , mode <- [ModeInitiator, ModeResponder] ]
 
-    mpsJob cnt pmss mpd = do
+    mpsJob
+      :: TVar m Int
+      -> PerMuxSharedState ptcl m
+      -> ptcl
+      -> m [m ()]
+    mpsJob cnt pmss mpdId = do
+        let mpd = udesc mpdId
         w_i <- atomically newEmptyTMVar
         w_r <- atomically newEmptyTMVar
 
-        return [ mpdInitiator mpd (muxChannel pmss (mpdId mpd) ModeInitiator w_i cnt)
+        return [ mpdInitiator mpd (muxChannel pmss (AppProtocolId mpdId) ModeInitiator w_i cnt)
                      >> mpsJobExit cnt
-               , mpdResponder mpd (muxChannel pmss (mpdId mpd) ModeResponder w_r cnt)
+               , mpdResponder mpd (muxChannel pmss (AppProtocolId mpdId) ModeResponder w_r cnt)
                      >> mpsJobExit cnt
                ]
 
-    -- cnt represent the number of SDUs that are queued but not yet sent.
-    -- job threads will be prevented from exiting until all SDUs have been transmitted.
-    mpsJobExit cnt = atomically $ do
-        c <- readTVar cnt
-        unless (c == 0) retry
+    -- cnt represent the number of SDUs that are queued but not yet sent.  Job
+    -- threads will be prevented from exiting until all SDUs have been
+    -- transmitted unless an exception/error is encounter. In that case all
+    -- jobs will be cancelled directly.
+    mpsJobExit :: TVar m Int -> m ()
+    mpsJobExit cnt = do
+        muxBearerSetState bearer Dying
+        atomically $ do
+            c <- readTVar cnt
+            unless (c == 0) retry
 
-muxControl :: (MonadSTM m, MonadSay m, Ord ptcl, Enum ptcl) =>
-    PerMuxSharedState ptcl m ->
-    MiniProtocolMode ->
-    m ()
+muxControl :: (HasCallStack, MonadSTM m, MonadSay m, MonadThrow m, Ord ptcl, Enum ptcl)
+           => PerMuxSharedState ptcl m
+           -> MiniProtocolMode
+           -> m ()
 muxControl pmss md = do
-    w <- atomically newEmptyTMVar
-    forever $ do
-        -- XXX actual protocol is missing
-        blob <- atomically $ readTBQueue (ingressQueue (dispatchTable pmss) Muxcontrol md)
-        --say $ printf "muxcontrol mode %s blob len %d" (show md) (BL.length blob)
-        atomically $ putTMVar w blob
-        atomically $ writeTBQueue (tsrQueue pmss) (TLSRDemand Muxcontrol md (Wanton w))
+    _ <- atomically $ readTBQueue (ingressQueue (dispatchTable pmss) Muxcontrol md)
+    throwM $ MuxError MuxControlProtocolError "MuxControl message on mature MuxBearer" callStack
 
 -- | muxChannel creates a duplex channel for a specific 'MiniProtocolId' and 'MiniProtocolMode'.
 muxChannel :: (MonadSTM m, MonadSay m, Ord ptcl, Enum ptcl) =>
@@ -139,3 +150,8 @@ muxChannel pmss mid md w cnt =
            then pure Nothing
            else return $ Just blob
 
+muxBearerSetState :: (MonadSTM m, Ord ptcl, Enum ptcl, Bounded ptcl)
+                  => MuxBearer ptcl m
+                  -> MuxBearerState
+                  -> m ()
+muxBearerSetState bearer newState = atomically $ writeTVar (state bearer) newState

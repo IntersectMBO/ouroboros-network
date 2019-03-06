@@ -50,15 +50,16 @@ import qualified Test.Mux as Mxt
 tests :: TestTree
 tests =
   testGroup "Socket"
-  [ testProperty "socket send receive IPv4"         prop_socket_send_recv_ipv4
+  [ testProperty "socket send receive IPv4"          prop_socket_send_recv_ipv4
+  , testProperty "socket send receive IPv4 vers neg" prop_socket_send_recv_ipv4_verneg
 #ifdef OUROBOROS_NETWORK_IPV6
-  , testProperty "socket send receive IPv6"         prop_socket_send_recv_ipv6
+  , testProperty "socket send receive IPv6"          prop_socket_send_recv_ipv6
+  , testProperty "socket send receive IPv6 vers neg" prop_socket_send_recv_ipv6_ver_neg
 #endif
-  , testProperty "socket close during receive"      prop_socket_recv_close
-  , testProperty "socket client connection failure" prop_socket_client_connect_error
-  , testProperty "socket sync demo"                 prop_socket_demo
+  , testProperty "socket close during receive"       prop_socket_recv_close
+  , testProperty "socket client connection failure"  prop_socket_client_connect_error
+  , testProperty "socket sync demo"                  prop_socket_demo
   ]
-
 
 --
 -- Properties
@@ -78,12 +79,31 @@ prop_socket_send_recv_ipv4 request response = ioProperty $ do
     server:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
     return $ prop_socket_send_recv client server request response
 
+prop_socket_send_recv_ipv4_verneg :: Mxt.DummyPayload
+                           -> Mxt.DummyPayload
+                           -> Property
+prop_socket_send_recv_ipv4_verneg request response = ioProperty $ do
+    client:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
+    server:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
+    return $ prop_socket_send_recv client server request response
+
+
 #ifdef OUROBOROS_NETWORK_IPV6
+
 -- | Send and receive over IPv6
 prop_socket_send_recv_ipv6 :: Mxt.DummyPayload
                       -> Mxt.DummyPayload
                       -> Property
 prop_socket_send_recv_ipv6 request response = ioProperty $ do
+    client:_ <- getAddrInfo Nothing (Just "::1") (Just "0")
+    server:_ <- getAddrInfo Nothing (Just "::1") (Just "6061")
+    return $ prop_socket_send_recv client server request response
+
+-- | Send and receive over IPv6
+prop_socket_send_recv_ipv6_ver_neg :: Mxt.DummyPayload
+                      -> Mxt.DummyPayload
+                      -> Property
+prop_socket_send_recv_ipv6_ver_neg request response = ioProperty $ do
     client:_ <- getAddrInfo Nothing (Just "::1") (Just "0")
     server:_ <- getAddrInfo Nothing (Just "::1") (Just "6061")
     return $ prop_socket_send_recv client server request response
@@ -102,7 +122,6 @@ prop_socket_send_recv clientAddr serverAddr request response = ioProperty $ do
     endMpsVar <- atomically $ newTVar 2
 
     (verify, client_mp, server_mp) <- Mxt.setupMiniReqRsp
-                                        (Mx.AppProtocolId Mxt.ChainSync1)
                                         (return ()) endMpsVar request response
 
     let client_mps Mxt.ChainSync1 = client_mp
@@ -117,6 +136,7 @@ prop_socket_send_recv clientAddr serverAddr request response = ioProperty $ do
     killResponder server_h
     return $ property v
 
+
 -- | Verify that we raise the correct exception in case a socket closes during a read.
 prop_socket_recv_close :: Mxt.DummyPayload
                        -> Mxt.DummyPayload
@@ -127,8 +147,7 @@ prop_socket_recv_close request response = ioProperty $ do
     endMpsVar <- atomically $ newTVar 2
     resq <- atomically $ newTBQueue 1
 
-    (_, _, server_mp) <- Mxt.setupMiniReqRsp (Mx.AppProtocolId Mxt.ChainSync1)
-                                             (return ()) endMpsVar request response
+    (_, _, server_mp) <- Mxt.setupMiniReqRsp (return ()) endMpsVar request response
 
     let server_mps Mxt.ChainSync1 = server_mp
 
@@ -162,8 +181,7 @@ prop_socket_client_connect_error request response = ioProperty $ do
 
     endMpsVar <- atomically $ newTVar 2
 
-    (_, client_mp, _) <- Mxt.setupMiniReqRsp (Mx.AppProtocolId Mxt.ChainSync1)
-                                             (return ()) endMpsVar request response
+    (_, client_mp, _) <- Mxt.setupMiniReqRsp (return ()) endMpsVar request response
 
     let client_mps Mxt.ChainSync1 = client_mp
 
@@ -187,17 +205,15 @@ demo chain0 updates = do
     let Just expectedChain = Chain.applyChainUpdates updates chain0
         target = Chain.headPoint expectedChain
         a_mps Mxt.ChainSync1 = Mx.MiniProtocolDescription
-                                   (Mx.AppProtocolId Mxt.ChainSync1)
                                    (consumerInit consumerDone target consumerVar)
                                    dummyCallback
         b_mps Mxt.ChainSync1 = Mx.MiniProtocolDescription
-                                   (Mx.AppProtocolId Mxt.ChainSync1)
                                    dummyCallback
                                    (producerRsp producerVar)
 
     b_h <- startResponder b_mps b
     a_h <- startResponder a_mps a
-    startInitiator a_mps a b
+    void $ fork $ startInitiator a_mps a b
 
     void $ fork $ sequence_
         [ do threadDelay 10e-3 -- 10 milliseconds, just to provide interest

@@ -1,12 +1,15 @@
+{-# LANGUAGE DataKinds      #-}
+{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE TypeFamilies   #-}
 
 -- | This is the starting point for a module that will bring together the
 -- overall node to client protocol, as a collection of mini-protocols.
 --
 module Ouroboros.Network.NodeToClient (
-  NodeToClientProtocols(..)
+    NodeToClientProtocols(..)
   ) where
 
-import Ouroboros.Network.Mux.Types (ProtocolEnum(..))
+import           Ouroboros.Network.Mux.Types (ProtocolEnum(..))
 
 
 -- | An index type used with the mux to enumerate all the mini-protocols that
@@ -29,4 +32,3 @@ instance ProtocolEnum NodeToClientProtocols where
 
   toProtocolEnum 5 = Just ChainSyncWithBlocks
   toProtocolEnum _ = Nothing
-

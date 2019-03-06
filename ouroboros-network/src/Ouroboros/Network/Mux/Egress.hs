@@ -155,7 +155,7 @@ processSingleWanton :: MonadSTM m
                     -> TVar m Int
                     -> m ()
 processSingleWanton pmss mpi md wanton cnt = do
-    maxSDU <- sduSize pmss
+    maxSDU <- sduSize $ bearer pmss
     blob <- atomically $ do
       -- extract next SDU
       d <- takeTMVar (want wanton)
@@ -171,9 +171,6 @@ processSingleWanton pmss mpi md wanton cnt = do
       -- return data to send
       pure frag
     let sdu = MuxSDU (RemoteClockModel 0) mpi md (fromIntegral $ BL.length blob) blob
-    void $ write pmss sdu
+    void $ (write $ bearer pmss) sdu
     atomically $ modifyTVar' cnt (\a -> a - 1)
     --paceTransmission tNow
-
-
-
