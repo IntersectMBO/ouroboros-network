@@ -306,7 +306,7 @@ test_cborEpochFileParser = fmap fst $ Sim.runSimFS err Mock.empty $ \hasFS -> do
       void $ hPut h "trailingjunk"
 
     (offsetsAndSizesAndBlocks', mbErr) <-
-      runEpochFileParser (cborEpochFileParser' hasFS) fp
+      runEpochFileParser (cborEpochFileParser' hasFS S.decode) fp
 
     offsetsAndSizesAndBlocks' @?= offsetsAndSizesAndBlocks
     assertBool "Expected an error" (isJust mbErr)

@@ -17,6 +17,7 @@ module Ouroboros.Consensus.Util.CBOR (
   ) where
 
 import qualified Codec.CBOR.Read as CBOR
+import qualified Codec.CBOR.Decoding as CBOR (Decoder)
 import           Codec.Serialise (Serialise)
 import qualified Codec.Serialise as S
 import           Control.Exception (assert, throwIO)
@@ -145,17 +146,18 @@ readIncremental hasFS@HasFS{..} fp = withLiftST $ \liftST -> do
 -- and the error.
 --
 -- To be used by 'Ouroboros.Storage.ImmutableDB.Util.cborEpochFileParser''.
-readIncrementalOffsets :: forall m h a. (Serialise a, MonadST m, MonadThrow m)
+readIncrementalOffsets :: forall m h a. (MonadST m, MonadThrow m)
                        => HasFS m h
+                       -> (forall s . CBOR.Decoder s a)
                        -> FsPath
                        -> m ([(Word64, (Word, a))], Maybe ReadIncrementalErr)
                           -- ^ ((the offset of the start of @a@ in the file,
                           --     (the size of @a@ in bytes,
                           --      @a@ itself)),
                           --     error encountered during deserialisation)
-readIncrementalOffsets hasFS@HasFS{..} fp = withLiftST $ \liftST ->
+readIncrementalOffsets hasFS@HasFS{..} decoder fp = withLiftST $ \liftST ->
     withFile hasFS fp ReadMode $ \h ->
-      go liftST h 0 [] Nothing =<< liftST S.deserialiseIncremental
+      go liftST h 0 [] Nothing =<< liftST (CBOR.deserialiseIncremental decoder)
   where
     go :: (forall x. ST s x -> m x)
        -> h
@@ -180,7 +182,7 @@ readIncrementalOffsets hasFS@HasFS{..} fp = withLiftST $ \liftST ->
         case checkEmpty leftover of
           Nothing         -> return (reverse deserialised', Nothing)
           -- Some more bytes, so try to read the next @a@.
-          Just unconsumed -> liftST S.deserialiseIncremental >>=
+          Just unconsumed -> liftST (CBOR.deserialiseIncremental decoder) >>=
             go liftST h nextOffset deserialised' (Just unconsumed)
 
       S.Fail _ _ err -> return (reverse deserialised, Just (ReadFailed err))

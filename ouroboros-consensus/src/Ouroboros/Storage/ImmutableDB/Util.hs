@@ -4,6 +4,7 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE RankNTypes          #-}
 module Ouroboros.Storage.ImmutableDB.Util
   ( renderFile
   , handleUser
@@ -19,7 +20,7 @@ module Ouroboros.Storage.ImmutableDB.Util
   , cborEpochFileParser'
   ) where
 
-import           Codec.Serialise (Serialise)
+import qualified Codec.CBOR.Decoding as CBOR
 import           Control.Exception (assert)
 import           Control.Monad (when)
 import           Control.Monad.Class.MonadST (MonadST)
@@ -236,9 +237,11 @@ indexBackfill (RelativeSlot slot) (RelativeSlot nextExpected) lastOffset =
 
 -- | CBOR-based 'EpochFileParser' that can be used with
 -- 'Ouroboros.Storage.ImmutableDB.Impl.openDB'.
-cborEpochFileParser' :: forall m h a. (Serialise a, MonadST m, MonadThrow m)
+cborEpochFileParser' :: forall m h a. (MonadST m, MonadThrow m)
                      => HasFS m h
+                     -> (forall s . CBOR.Decoder s a)
                      -> EpochFileParser ReadIncrementalErr m (Word, a)
                         -- ^ The 'Word' is the size in bytes of the
                         -- corresponding @a@.
-cborEpochFileParser' hasFS = EpochFileParser (readIncrementalOffsets hasFS)
+cborEpochFileParser' hasFS decoder = EpochFileParser $
+    readIncrementalOffsets hasFS decoder
