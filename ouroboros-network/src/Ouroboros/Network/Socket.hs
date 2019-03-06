@@ -80,17 +80,17 @@ readSocket ctx = do
             else recvLen' sd (l - fromIntegral (BL.length buf)) (buf : bufs)
 
 startResponder :: (Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl)
-               => Mx.MiniProtocolDescriptions ptcl IO
+               => [(Mx.Version, Mx.MiniProtocolDescriptions ptcl IO)]
                -> AddrInfo
                -> IO (Socket, Async ())
 startResponder mpds addr = startResponderT mpds addr Nothing
 
 startResponderT :: (Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl)
-                => Mx.MiniProtocolDescriptions ptcl IO
+                => [(Mx.Version, Mx.MiniProtocolDescriptions ptcl IO)]
                 -> AddrInfo
                 -> Maybe (Maybe SomeException -> IO ())
                 -> IO (Socket, Async ())
-startResponderT mpds addr rescb_m =
+startResponderT verMpds addr rescb_m =
     bracketOnError
         (socket (addrFamily addr) Stream defaultProtocol)
         close
@@ -105,7 +105,29 @@ startResponderT mpds addr rescb_m =
   where
     server sd = forever $ do
         (client, _) <- accept sd
-        setupMux mpds (SocketCtx client) rescb_m
+        aid <- async $ larval client
+        void $ async $ watcher client aid
+
+    larval sd = do
+        let ctx = SocketCtx sd
+        (_, mpds) <- Mx.muxResp verMpds (writeSocket ctx) (readSocket ctx)
+        setupMux mpds ctx rescb_m
+
+        return ()
+
+    watcher sd aid = do
+        res_e <- waitCatch aid
+        case rescb_m of
+             Nothing ->
+                 case res_e of
+                      Left  e -> close sd >> say ("Version negotiation failed with " ++ show e)
+                      Right _ -> return ()
+             Just rescb ->
+                 case res_e of
+                      Left e  -> do
+                          rescb $ Just e
+                          close sd
+                      Right _ -> rescb Nothing
 
 killResponder :: (Socket, Async ()) -> IO ()
 killResponder (sd, hdl) = do
@@ -113,19 +135,19 @@ killResponder (sd, hdl) = do
     close sd
 
 startInitiator :: (Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl)
-               => Mx.MiniProtocolDescriptions ptcl IO
+               => [(Mx.Version, Mx.MiniProtocolDescriptions ptcl IO)]
                -> AddrInfo
                -> AddrInfo
                -> IO ()
 startInitiator mpds local remote = startInitiatorT mpds local remote Nothing
 
 startInitiatorT :: (Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl)
-                => Mx.MiniProtocolDescriptions ptcl IO
+                => [(Mx.Version, Mx.MiniProtocolDescriptions ptcl IO)]
                 -> AddrInfo
                 -> AddrInfo
                 -> Maybe (Maybe SomeException -> IO ())
                 -> IO ()
-startInitiatorT mpds local remote rescb_m = do
+startInitiatorT verMpds local remote rescb_m = do
     bracketOnError
         (socket (addrFamily local) Stream defaultProtocol)
         close
@@ -134,8 +156,10 @@ startInitiatorT mpds local remote rescb_m = do
             setSocketOption sd ReusePort 1
             bind sd (addrAddress local)
             connect sd (addrAddress remote)
-
+            let ctx = SocketCtx sd
+            (_, mpds) <- Mx.muxInit verMpds (writeSocket ctx) (readSocket ctx)
             setupMux mpds (SocketCtx sd) rescb_m
+            return ()
         )
     return ()
 

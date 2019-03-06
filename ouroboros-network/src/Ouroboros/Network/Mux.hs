@@ -10,12 +10,19 @@ module Ouroboros.Network.Mux (
     , MuxError (..)
     , MuxErrorType (..)
     , MuxSDU (..)
+    , NetworkMagic (..)
+    , Version (..)
+    , VersionNumber (..)
     , RemoteClockModel (..)
     , encodeMuxSDU
     , decodeMuxSDUHeader
+    , muxInit
+    , muxResp
     , muxStart
     ) where
 
+import qualified Codec.CBOR.Read as CBOR
+import           Codec.CBOR.Write (toLazyByteString)
 import           Control.Monad
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
@@ -25,13 +32,18 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
 import           Data.Array
 import qualified Data.ByteString.Lazy as BL
+import           Data.List (intersect)
+import           Data.Maybe (fromJust)
 import           Data.Word
+import           GHC.Stack
 
 import           Ouroboros.Network.Channel
-
+import           Ouroboros.Network.Mux.Control
 import           Ouroboros.Network.Mux.Egress
 import           Ouroboros.Network.Mux.Ingress
 import           Ouroboros.Network.Mux.Types
+
+
 
 -- | muxStart starts a mux bearer for the specified protocols with the provided read and write
 -- functions.
@@ -138,4 +150,72 @@ muxChannel pmss mid md w cnt =
         if BL.null blob
            then pure Nothing
            else return $ Just blob
+
+
+muxInit :: (MonadAsync m, MonadFork m, MonadSay m, MonadSTM m, MonadThrow m,
+            Ord ptcl, Enum ptcl, Bounded ptcl, HasCallStack)
+        => [(Version, MiniProtocolDescriptions ptcl m)]
+        -> (MuxSDU ptcl -> m (Time m)) -- Write function
+        -> m (MuxSDU ptcl, Time m)     -- Read function
+        -> m (Version, MiniProtocolDescriptions ptcl m)
+muxInit verMpds wfn rfn = do
+    let versions = map fst verMpds
+        msg = MsgInitReq versions
+        blob = toLazyByteString $ encodeCtrlMsg msg
+        sdu = MuxSDU (RemoteClockModel 0) Muxcontrol ModeInitiator (fromIntegral $ BL.length blob) blob
+
+    void $ wfn sdu
+    (rsp, _) <- rfn
+    if msId rsp /= Muxcontrol || msMode rsp /= ModeResponder
+       then throwM $ MuxError MuxUnknownMiniProtocol "invalid muxInit rsp id or mode" callStack
+       else do
+           let rspMsg_e = CBOR.deserialiseFromBytes decodeCtrlMsg (msBlob rsp)
+           case rspMsg_e of
+                Left e -> throwM e
+                Right (_, MsgInitRsp version) ->
+                    -- verify that rsp version matches one of our proposals
+                    case lookup version verMpds of
+                         Nothing   -> error "muxInit invalid version selected"
+                         Just mpds -> return (version, mpds)
+                Right (_, MsgInitReq _) -> error "muxInit response as request"
+                Right (_, MsgInitFail e) -> throwM $ MuxError MuxControlNoMatchingVersion e callStack
+
+muxResp :: (MonadAsync m, MonadFork m, MonadSay m, MonadSTM m, MonadThrow m,
+            Ord ptcl, Enum ptcl, Bounded ptcl, HasCallStack)
+        => [(Version, MiniProtocolDescriptions ptcl m)]
+        -> (MuxSDU ptcl -> m (Time m)) -- Write function
+        -> m (MuxSDU ptcl, Time m)     -- Read function
+        -> m (Version, MiniProtocolDescriptions ptcl m)
+muxResp verMpds wfn rfn = do
+    let localVersions = map fst verMpds
+    (req, _) <- rfn
+    if msId req /= Muxcontrol || msMode req /= ModeInitiator
+       then throwM $ MuxError MuxUnknownMiniProtocol "invalid muxInit req id or mode" callStack
+       else do
+           let reqMsg_e = CBOR.deserialiseFromBytes decodeCtrlMsg (msBlob req)
+           case reqMsg_e of
+                Left e -> throwM e
+                Right (_, MsgInitReq remoteVersions) -> do
+                    let matchingVersions = localVersions `intersect` remoteVersions
+                    if null matchingVersions
+                       then do
+                           sndSdu $ MsgInitFail $ "No matching version, try " ++
+                                show (last localVersions)
+
+                           throwM $ MuxError MuxControlNoMatchingVersion "no matching version" callStack
+                       else do
+                           let version = maximum matchingVersions
+                               msg  = MsgInitRsp version
+
+                           sndSdu msg
+                           return (version, fromJust $ lookup version verMpds)
+                Right (_, MsgInitRsp _) -> error "muxInit request as response"
+                Right (_, MsgInitFail _) -> error "muxInit fail"
+
+  where
+    sndSdu msg = do
+        let blob = toLazyByteString $ encodeCtrlMsg msg
+            sdu = MuxSDU (RemoteClockModel 0) Muxcontrol ModeResponder
+                         (fromIntegral $ BL.length blob) blob
+        void $ wfn sdu
 

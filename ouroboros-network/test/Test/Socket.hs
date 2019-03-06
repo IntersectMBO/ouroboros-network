@@ -54,9 +54,15 @@ tests =
 #endif
   , testProperty "socket close during receive"      prop_socket_recv_close
   , testProperty "socket client connection failure" prop_socket_client_connect_error
+  , testProperty "socket missmatch mux version"     prop_version_missmatch
   , testProperty "socket sync demo"                 prop_socket_demo
   ]
 
+version0 :: Mx.Version
+version0 = Mx.Version0  (Mx.NetworkMagic 0xcafebeeb)
+
+version1 :: Mx.Version
+version1 = Mx.Version1  (Mx.NetworkMagic 0xcafebeeb)
 
 --
 -- Properties
@@ -107,8 +113,8 @@ prop_socket_send_recv clientAddr serverAddr request response = ioProperty $ do
         server_mps Mxt.ChainSync1 = server_mp
 
 
-    server_h <- startResponder server_mps serverAddr
-    startInitiator client_mps clientAddr serverAddr
+    server_h <- startResponder [(version0, server_mps)] serverAddr
+    startInitiator [(version0, client_mps)] clientAddr serverAddr
 
     v <- verify
 
@@ -130,7 +136,7 @@ prop_socket_recv_close request response = ioProperty $ do
 
     let server_mps Mxt.ChainSync1 = server_mp
 
-    server_h <- startResponderT server_mps b (Just $ rescb resq)
+    server_h <- startResponderT [(version0, server_mps)] b (Just $ rescb resq)
 
     sd <- socket (addrFamily b) Stream defaultProtocol
     connect sd (addrAddress b)
@@ -165,10 +171,52 @@ prop_socket_client_connect_error request response = ioProperty $ do
 
     let client_mps Mxt.ChainSync1 = client_mp
 
-    res_e <- try $ startInitiator client_mps clientAddr serverAddr :: IO (Either SomeException ())
+    res_e <- try $ startInitiator [(version0, client_mps)] clientAddr serverAddr :: IO (Either SomeException ())
     case res_e of
          Left _  -> return $ property True -- XXX Dissregarding the exact exception type
          Right _ -> return $ property False
+
+prop_version_missmatch :: Property
+prop_version_missmatch = ioProperty $ do
+    clientAddr:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
+    serverAddr:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
+    let request = Mxt.DummyPayload $ BL.replicate 4 0xa
+    let response = request
+
+    resq <- atomically $ newTBQueue 1
+    endMpsVar <- atomically $ newTVar 2
+
+    (_, client_mp, server_mp) <- Mxt.setupMiniReqRsp
+                                        (Mx.AppProtocolId Mxt.ChainSync1)
+                                        (return ()) endMpsVar request response
+
+    let client_mps Mxt.ChainSync1 = client_mp
+        server_mps Mxt.ChainSync1 = server_mp
+
+
+    server_h <- startResponderT [(version1, server_mps)] serverAddr (Just $ rescb resq)
+    res_client <- try $ startInitiator [(version0, client_mps)] clientAddr serverAddr
+    res_server <- atomically $ readTBQueue resq
+
+    killResponder server_h
+
+    return (checkResult res_client && checkResult (toEither res_server))
+
+  where
+    toEither Nothing  = Right ()
+    toEither (Just e) = Left e
+
+    checkResult res_e =
+        case res_e of
+             Left e  ->
+                 case fromException e of
+                      Just me -> Mx.errorType me == Mx.MuxControlNoMatchingVersion
+                      Nothing -> False
+             Right _ -> False
+
+    rescb resq e_m = atomically $ writeTBQueue resq e_m
+
+
 
 
 demo :: forall block .
@@ -193,9 +241,9 @@ demo chain0 updates = do
                                    dummyCallback
                                    (producerRsp producerVar)
 
-    b_h <- startResponder b_mps b
-    a_h <- startResponder a_mps a
-    startInitiator a_mps a b
+    b_h <- startResponder [(version0, b_mps)] b
+    a_h <- startResponder [(version0, a_mps)] a
+    startInitiator [(version0, a_mps)] a b
 
     void $ fork $ sequence_
         [ do threadDelay 10000 -- just to provide interest
