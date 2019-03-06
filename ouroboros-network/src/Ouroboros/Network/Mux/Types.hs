@@ -14,26 +14,69 @@ module Ouroboros.Network.Mux.Types (
     , MuxErrorType (..)
     , MuxSDU (..)
     , MuxSDUHeader (..)
+    , NetworkMagic (..)
     , PerMuxSharedState (..)
     , RemoteClockModel (..)
     , TranslocationServiceRequest (..)
+    , Version (..)
+    , versionToVersionNumber
+    , VersionNumber (..)
     , Wanton (..)
     ) where
 
+import qualified Codec.CBOR.Decoding as CBOR
+import qualified Codec.CBOR.Encoding as CBOR
+import           Codec.Serialise.Class
 import           Control.Exception
-import qualified Data.ByteString.Lazy as BL
-import           Data.Word
-import           Data.Ix (Ix(..))
 import           Data.Array
+import qualified Data.ByteString.Lazy as BL
+import           Data.Ix (Ix (..))
+import           Data.Word
 import           GHC.Stack
 import           Text.Printf
 
-import           Control.Exception (throw, ArrayException(IndexOutOfBounds))
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTimer
 import           Ouroboros.Network.Channel
 
 newtype RemoteClockModel = RemoteClockModel { unRemoteClockModel :: Word32 } deriving Eq
+
+data VersionNumber = VersionNumber0
+                   | VersionNumber1
+                   deriving (Eq, Ord, Show, Enum, Ix, Bounded)
+
+newtype NetworkMagic = NetworkMagic { unNetworkMagic :: Word32 } deriving (Eq, Show, Ord)
+
+instance Serialise NetworkMagic where
+    encode (NetworkMagic nm) = encode nm
+    decode = NetworkMagic <$> decode
+
+data Version = Version0 {          -- Plain NodeToNode
+      v0Magic   :: !NetworkMagic
+    }
+    | Version1 {                   -- NodeToClient
+      v1Magic   :: !NetworkMagic
+    }
+    deriving (Eq, Ord)
+
+instance Show Version where
+    show (Version0 m) = printf "Version 0 NetworkMagic %d" $ unNetworkMagic m
+    show (Version1 m) = printf "Version 1 NetworkMagic %d" $ unNetworkMagic m
+
+instance Serialise Version where
+    encode (Version0 m) = CBOR.encodeWord 0 <> encode m
+    encode (Version1 m) = CBOR.encodeWord 1 <> encode m
+
+    decode = do
+        vn <- CBOR.decodeWord
+        case vn of
+             0 -> Version0 . NetworkMagic <$> decode
+             1 -> Version1 . NetworkMagic <$> decode
+             n -> throw $ MuxError MuxControlUnknownVersion ("unknown version " ++ show n) callStack
+
+versionToVersionNumber :: Version -> VersionNumber
+versionToVersionNumber (Version0 _) = VersionNumber0
+versionToVersionNumber (Version1 _) = VersionNumber1
 
 --
 -- Mini-protocol numbers
@@ -133,7 +176,6 @@ data MiniProtocolDescription ptcl m = MiniProtocolDescription {
 
 type MiniProtocolDescriptions ptcl m = ptcl -> MiniProtocolDescription ptcl m
 
-
 --
 -- Mux internal types
 --
@@ -198,6 +240,9 @@ data MuxError = MuxError {
 data MuxErrorType = MuxUnknownMiniProtocol
                   | MuxDecodeError
                   | MuxBearerClosed
+                  | MuxControlUnknownMessage
+                  | MuxControlUnknownVersion
+                  | MuxControlNoMatchingVersion
                   deriving (Show, Eq)
 
 instance Exception MuxError where

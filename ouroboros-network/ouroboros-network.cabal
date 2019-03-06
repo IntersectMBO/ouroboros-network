@@ -35,6 +35,7 @@ library
                        Ouroboros.Network.Channel
                        Ouroboros.Network.Codec
                        Ouroboros.Network.Mux
+                       Ouroboros.Network.Mux.Control
                        Ouroboros.Network.Mux.Egress
                        Ouroboros.Network.Mux.Ingress
                        Ouroboros.Network.Mux.Types
@@ -115,6 +116,7 @@ test-suite tests
                        Ouroboros.Network.Channel
                        Ouroboros.Network.Codec
                        Ouroboros.Network.Mux
+                       Ouroboros.Network.Mux.Control
                        Ouroboros.Network.Mux.Egress
                        Ouroboros.Network.Mux.Ingress
                        Ouroboros.Network.Mux.Types
