@@ -14,7 +14,8 @@ extra-source-files:  ChangeLog.md
 cabal-version:       >=1.10
 
 library
-  exposed-modules:     Ouroboros.Byron.Proxy.Types,
+  exposed-modules:     Ouroboros.Byron.Proxy.DB,
+                       Ouroboros.Byron.Proxy.Types,
                        Ouroboros.Byron.Proxy.Index
   -- other-modules:
   -- other-extensions:
@@ -29,6 +30,7 @@ library
                        cardano-sl-db,
                        cardano-sl-infra,
                        cardano-sl-util,
+                       cborg,
                        conduit,
                        containers,
                        cryptonite,
@@ -42,6 +44,7 @@ library
                        ouroboros-consensus,
                        ouroboros-network,
                        random,
+                       resourcet,
                        sqlite-simple,
                        stm,
                        tagged,
@@ -66,9 +69,11 @@ executable byron-proxy
                        cardano-sl-db,
                        cardano-sl-infra,
                        cardano-sl-util,
+                       cborg,
                        containers,
                        directory,
                        iohk-monitoring,
+                       io-sim-classes,
                        lens,
                        optparse-applicative,
                        ouroboros-consensus,

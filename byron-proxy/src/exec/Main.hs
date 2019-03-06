@@ -7,8 +7,6 @@ import Control.Concurrent (myThreadId)
 import Control.Concurrent.Async (race)
 import Control.Concurrent.STM (STM, atomically, retry)
 import Control.Exception (throwIO)
-import Control.Lens ((^.))
-import qualified Control.Lens as Lens (to)
 import Control.Monad (forM_)
 import Data.Functor.Contravariant (Op (..), contramap)
 import Data.List.NonEmpty (NonEmpty)
@@ -19,6 +17,7 @@ import qualified Data.Text as Text
 import Data.Time.Clock.POSIX (getCurrentTime)
 import Options.Applicative (execParser, fullDesc, help, info, long, metavar,
                             progDesc, strOption, value)
+import qualified System.Directory
 import System.Random (StdGen, getStdGen, randomR)
 
 import Cardano.BM.BaseTrace hiding (noTrace)
@@ -29,11 +28,9 @@ import qualified Cardano.BM.Data.Severity as BM
 import Cardano.BM.Setup (withTrace)
 import qualified Cardano.BM.Trace as BM (Trace)
 
-import Pos.Chain.Block (Block, BlockHeader (..), GenesisBlock, gbhConsensus, gcdEpoch,
-                        genesisBlock0, getBlockHeader, headerHash, mcdSlot)
+import Pos.Chain.Block (Block, BlockHeader (..), genesisBlock0, headerHash)
 import Pos.Chain.Lrc (genesisLeaders)
-import Pos.Core (SlotCount (..), getEpochIndex, getSlotIndex, siEpoch, siSlot)
-import Pos.Binary.Class (serialize', serializeBuilder)
+import Pos.Core (SlotCount (..))
 import Pos.Chain.Block (recoveryHeadersMessage, streamWindow)
 import Pos.Chain.Update (lastKnownBlockVersion, updateConfiguration)
 import Pos.Configuration (networkConnectionTimeout)
@@ -44,7 +41,6 @@ import Pos.Chain.Genesis (Config (configGeneratedSecrets),
                           configEpochSlots, configGenesisHash,
                           configProtocolConstants, configProtocolMagic,
                           configBlockVersionData)
-import Pos.DB.Class (Serialized (..), SerializedBlock)
 import Pos.Diffusion.Full (FullDiffusionConfiguration (..))
 import Pos.Infra.Diffusion.Types
 import Pos.Launcher (NodeParams (..), withConfigurations)
@@ -54,19 +50,15 @@ import Pos.Util.Trace.Named as Trace (LogNamed (..), appendName, named)
 import qualified Pos.Util.Trace
 import qualified Pos.Util.Wlog as Wlog
 
+import qualified Ouroboros.Byron.Proxy.DB as DB
 import qualified Ouroboros.Byron.Proxy.Index as Index
 import Ouroboros.Byron.Proxy.Types
-import Ouroboros.Storage.ImmutableDB.API
-import Ouroboros.Storage.ImmutableDB.CumulEpochSizes (EpochSlot(..),
-                                                      RelativeSlot(..))
-import qualified Ouroboros.Storage.ImmutableDB.Impl as DB
+import qualified Ouroboros.Storage.ImmutableDB.API as Immutable
+import qualified Ouroboros.Storage.ImmutableDB.Impl as Immutable
 import Ouroboros.Storage.FS.API.Types
 import Ouroboros.Storage.FS.API
 import Ouroboros.Storage.FS.IO
 import Ouroboros.Storage.Util.ErrorHandling (exceptions)
-
--- TODO The ImmutableDB switched from 'EpochSlot' ('Epoch' + 'RelativeSlot')
--- to 'Slot'. This code must be adapted accordingly.
 
 -- | The main action using the proxy, index, and immutable database: download
 -- the best known chain from the proxy and put it into the database, over and
@@ -74,13 +66,10 @@ import Ouroboros.Storage.Util.ErrorHandling (exceptions)
 --
 -- No exception handling is done.
 byronProxyMain
-  :: GenesisBlock -- ^ Needed as checkpoint when DB is empty.
-  -> SlotCount    -- ^ Needed in order to know when to start new epoch in DB.
-  -> Index.Index IO
-  -> ImmutableDB IO
+  :: DB.DB IO
   -> ByronProxy
   -> IO x
-byronProxyMain genesisBlock epochSlots indexDB db bp = getStdGen >>= mainLoop Nothing
+byronProxyMain db bp = getStdGen >>= mainLoop Nothing
 
   where
 
@@ -114,12 +103,10 @@ byronProxyMain genesisBlock epochSlots indexDB db bp = getStdGen >>= mainLoop No
         mainLoop mBt rndGen
       Left bt -> do
         -- Find our tip of chain from the index.
-        mTip <- Index.indexRead indexDB Index.Tip
-        let tipHash = case mTip of
-              Nothing      -> headerHash genesisBlock
-              Just (hh, _) -> Index.getOwnHash hh
-        -- Pick a peer from the list of announcers at random and download
-        -- the chain.
+        tip <- DB.readTip db
+        let tipHash = headerHash tip
+            -- Pick a peer from the list of announcers at random and download
+            -- the chain.
             (peer, rndGen') = pickRandom rndGen (btPeers bt)
         putStrLn $ mconcat
           [ "Downloading chain with tip hash "
@@ -135,17 +122,15 @@ byronProxyMain genesisBlock epochSlots indexDB db bp = getStdGen >>= mainLoop No
           streamer
         mainLoop (Just bt) rndGen'
 
-  -- This is what we do with the blocks that come in from streaming.
+  -- If it ends at an EBB, the EBB will _not_ be written. The tip will be the
+  -- parent of the EBB.
+  -- This should be OK.
   streamer :: StreamBlocks Block IO ()
   streamer = StreamBlocks
-    { streamBlocksMore = \blocks -> Index.indexWrite indexDB $ \iwrite -> do
+    { streamBlocksMore = \blocks -> DB.appendBlocks db $ \dbwrite -> do
         -- List comes in newest-to-oldest order.
-        forM_ (NE.toList (NE.reverse blocks)) $ \blk -> do
-          let hh = headerHash blk
-              epochSlot = blockHeaderIndex epochSlots (Pos.Chain.Block.getBlockHeader blk)
-              rslot = _relativeSlot epochSlot
-          Index.updateTip iwrite hh epochSlot
-          appendBinaryBlob db (error "TODO") (serializeBuilder blk)
+        let orderedBlocks = NE.toList (NE.reverse blocks)
+        forM_ orderedBlocks (DB.appendBlock dbwrite)
         pure streamer
     , streamBlocksDone = pure ()
     }
@@ -155,40 +140,6 @@ byronProxyMain genesisBlock epochSlots indexDB db bp = getStdGen >>= mainLoop No
     let (idx, rndGen') = randomR (0, NE.length ne - 1) rndGen
     in  (ne NE.!! idx, rndGen')
 
--- | Extract the DB-relevant indices from a block.
--- For epoch boundary blocks (EBBs, also sometimes called genesis blocks) the
--- epoch is the one _before_ it, and the index is 1 plus the maximum local
--- slot index. We store the first proper main block of an epoch at index 0.
-blockHeaderIndex :: SlotCount -> BlockHeader -> EpochSlot
-blockHeaderIndex epochSlots blkHeader = EpochSlot epoch relativeSlot
-  where
-  -- FIXME
-  -- EpochIndex is Word64. Epoch is Word. Whether Word is big enough depends
-  -- upon the machine/implementation.
-  epoch :: Epoch
-  epoch = case blkHeader of
-    -- Forced to use lenses :(
-    BlockHeaderGenesis gBlkHeader -> gBlkHeader ^.
-        gbhConsensus
-      . gcdEpoch
-      . Lens.to getEpochIndex
-      . Lens.to fromIntegral
-      . Lens.to (\x -> x - 1)
-    BlockHeaderMain mBlkHeader -> mBlkHeader ^.
-        gbhConsensus
-      . mcdSlot
-      . Lens.to siEpoch
-      . Lens.to getEpochIndex
-      . Lens.to fromIntegral
-  relativeSlot :: RelativeSlot
-  relativeSlot = RelativeSlot $ case blkHeader of
-    BlockHeaderGenesis _ -> fromIntegral . getSlotCount $ epochSlots
-    BlockHeaderMain mBlkHeader -> mBlkHeader ^.
-        gbhConsensus
-      . mcdSlot
-      . Lens.to siSlot
-      . Lens.to getSlotIndex
-      . Lens.to fromIntegral
 
 -- | Diffusion layer uses log-waper severity, iohk-monitoring uses its own.
 convertSeverity :: Wlog.Severity -> BM.Severity
@@ -260,8 +211,6 @@ main = withCompileInfo $ do
   -- print the git revision...
   -- Take all of the arguments from a cardano-sl node. Hijack db-path and
   -- reinterpret it as the immutable DB path.
-  --
-  -- TODO want to add another CLI for index db path.
   options <- getCommandLineOptions
   let SimpleNodeArgs cArgs nArgs = bpoNodeArgs options
       confOpts = configurationOptions (commonArgs cArgs)
@@ -312,58 +261,42 @@ main = withCompileInfo $ do
             , bpcSendQueueSize     = 1
             , bpcRecvQueueSize     = 1
             }
-          -- The database configuration follows.
-          -- We need to open it up before starting the Byron proxy server, since
-          -- it needs some block source that we derive from the database.
-          --
           -- The number of slots in an epoch. We use the one in the genesis
           -- configuration, and we assume it will never change.
           epochSlots :: SlotCount
           epochSlots = configEpochSlots genesisConfig
-          -- Default database path is ./db-byron-proxy
-          dbFilePath :: FilePath
-          dbFilePath = fromMaybe "db-byron-proxy" (dbPath cArgs)
-          fsMountPoint :: MountPoint
-          fsMountPoint = MountPoint dbFilePath
-          fs :: HasFS IO HandleIO
-          fs = ioHasFS fsMountPoint
-          getEpochSize :: Epoch -> IO EpochSize
+          getEpochSize :: Immutable.Epoch -> IO Immutable.EpochSize
           -- FIXME the 'fromIntegral' casts from 'Word64' to 'Word'.
           -- For sufficiently high k, on certain machines, there could be an
           -- overflow.
-          -- Add 1 to the slot count because we put EBBs at the end of every
-          -- epoch.
-          getEpochSize epoch = return $ EpochSize $
-            fromIntegral (getSlotCount epochSlots) + 1
-          epochFileParser :: EpochFileParser e m (Int, Slot)
-          -- TODO see the documentation for 'EpochFileParser'
-          epochFileParser = undefined
-          openDB = DB.openDB
+          getEpochSize epoch = return $ Immutable.EpochSize $
+            fromIntegral (getSlotCount epochSlots)
+          -- Default database path is ./db-byron-proxy
+          dbFilePath :: FilePath
+          dbFilePath = fromMaybe "db-byron-proxy" (dbPath cArgs)
+      -- Must ensure that the mount point given to ioHasFS exists or else
+      -- opening the ImmutableDB will fail.
+      -- NB: System.Directory, not the HasFS API.
+      System.Directory.createDirectoryIfMissing True dbFilePath
+      let fsMountPoint :: MountPoint
+          fsMountPoint = MountPoint dbFilePath
+          fs :: HasFS IO HandleIO
+          fs = ioHasFS fsMountPoint
+          openDB = Immutable.openDB
             fs
             exceptions
             getEpochSize
-            ValidateMostRecentEpoch
-            epochFileParser
+            Immutable.ValidateMostRecentEpoch
+            (DB.epochFileParser epochSlots fs)
           -- The supporting header hash and tip index.
           indexFilePath :: FilePath
           indexFilePath = bpoIndexPath options
-      Index.withDB_ indexFilePath $ \indexDB -> do
-        withDB openDB $ \db _ -> do
-          -- Create the block source to support the logic layer.
-          let bbs :: ByronBlockSource IO
-              bbs = Index.byronBlockSource
-                      errInconsistent
-                      genesisSerialized
-                      indexDB
-                      db
-              errInconsistent :: forall x . Index.IndexInconsistent -> IO x
-              errInconsistent = throwIO
-              genesisSerialized :: SerializedBlock
-              genesisSerialized = Serialized (serialize' genesisBlock)
-          withByronProxy bpc bbs $ \bp -> do
-            let userInterrupt = getChar
-            outcome <- race userInterrupt (byronProxyMain genesisBlock epochSlots indexDB db bp)
-            putStrLn "Bye"
-            case outcome of
-              Left _ -> pure ()
-              Right impossible -> impossible
+      Index.withDB_ indexFilePath $ \idx -> do
+        Immutable.withDB openDB $ \idb _ -> do
+          DB.withDB throwIO genesisBlock epochSlots idx idb $ \db ->
+            withByronProxy bpc db $ \bp -> do
+              let userInterrupt = getChar
+              outcome <- race userInterrupt (byronProxyMain db bp)
+              case outcome of
+                Left _ -> pure ()
+                Right impossible -> impossible
