@@ -1,6 +1,8 @@
-{-# LANGUAGE FlexibleContexts  #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards   #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -Wno-orphans   #-}
 module Test.Ouroboros.Storage.ImmutableDB (tests) where
 
@@ -14,7 +16,7 @@ import qualified Data.ByteString as BS
 import           Data.Coerce (coerce)
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
-import           Data.Maybe (isJust, isNothing, maybeToList)
+import           Data.Maybe (isJust, maybeToList)
 import           Data.Word (Word64)
 
 import qualified System.IO as IO
@@ -82,12 +84,13 @@ fixedEpochSize = 10
 fixedGetEpochSize :: Monad m => Epoch -> m EpochSize
 fixedGetEpochSize _ = return fixedEpochSize
 
+type Hash = TestBlock
 
 -- Shorthand
 openTestDB :: (HasCallStack, MonadSTM m, MonadCatch m)
            => HasFS m h
            -> ErrorHandling ImmutableDBError m
-           -> m (ImmutableDB m, Maybe Slot)
+           -> m (ImmutableDB Hash m)
 openTestDB hasFS err =
     openDB hasFS err fixedGetEpochSize ValidateMostRecentEpoch parser
   where
@@ -97,9 +100,9 @@ openTestDB hasFS err =
 withTestDB :: (HasCallStack, MonadSTM m, MonadCatch m)
            => HasFS m h
            -> ErrorHandling ImmutableDBError m
-           -> (ImmutableDB m -> m a)
+           -> (ImmutableDB Hash m -> m a)
            -> m a
-withTestDB hasFS err f = withDB (openTestDB hasFS err) (\db _ -> f db)
+withTestDB hasFS err = withDB (openTestDB hasFS err)
 
 {------------------------------------------------------------------------------
   Equivalence tests between IO and MockFS
@@ -128,31 +131,27 @@ test_ReadFutureSlotErrorEquivalence =
 
 test_openDBEmptyIndexFileEquivalence :: Assertion
 test_openDBEmptyIndexFileEquivalence =
-    apiEquivalenceImmDB (expectUnexpectedError isInvalidFileError) $ \hasFS@HasFS{..} err -> do
+    apiEquivalenceImmDB (expectImmDBResult (@?= TipGenesis)) $ \hasFS@HasFS{..} err -> do
       -- Create an empty index file
       h1 <- hOpen ["epoch-000.dat"] IO.WriteMode
       h2 <- hOpen ["index-000.dat"] IO.WriteMode
       hClose h1
       hClose h2
 
-      withTestDB hasFS err $ \_db ->
-        return ()
-  where
-    isInvalidFileError InvalidFileError {} = True
-    isInvalidFileError _                   = False
+      withTestDB hasFS err getTip
 
 test_reopenDBEquivalence :: Assertion
 test_reopenDBEquivalence =
-    apiEquivalenceImmDB (expectImmDBResult (@?= 6)) $ \hasFS err -> do
+    apiEquivalenceImmDB (expectImmDBResult (@?= TipBlock 5)) $ \hasFS err -> do
       withTestDB hasFS err $ \db ->
         appendBinaryBlob db 5 (testBlockToBuilder (TestBlock 5))
       withTestDB hasFS err $ \db ->
-        getNextSlot db
+        getTip db
 
 test_closeDBIdempotentEquivalence :: Assertion
 test_closeDBIdempotentEquivalence =
     apiEquivalenceImmDB (expectImmDBResult (@?= ())) $ \hasFS err -> do
-      db <- fst <$> openTestDB hasFS err
+      db <- openTestDB hasFS err
       closeDB db
       closeDB db
 
@@ -160,7 +159,7 @@ test_closeDBIdempotentEquivalence =
 test_closeDBAppendBinaryBlobEquivalence :: Assertion
 test_closeDBAppendBinaryBlobEquivalence =
     apiEquivalenceImmDB (expectUserError isClosedDBError) $ \hasFS err -> do
-      db <- fst <$> openTestDB hasFS err
+      db <- openTestDB hasFS err
       closeDB db
       appendBinaryBlob db 0 "foo"
   where
@@ -178,6 +177,8 @@ getIndexContents fs f =
     Right (Folder _) -> fail "Index file is a folder"
     Right (File bs)  -> byteStringToWord64s bs
 
+-- Note: cannot handle a hash after the offsets. Works fine if the hash is
+-- Nothing.
 byteStringToWord64s :: ByteString -> [Word64]
 byteStringToWord64s bs = go 0
   where
@@ -191,12 +192,13 @@ test_startNewEpochPadsTheIndexFile = withMockFS tryImmDB assrt $ \hasFS err ->
       appendBinaryBlob db 0 "a"
       appendBinaryBlob db 1 "bravo"
       appendBinaryBlob db 4 "haskell"
+      -- Skip epoch 1, now in epoch 2
       appendBinaryBlob db 21 "c"
   where
     assrt (Left _)        = assertFailure "Unexpected error"
     assrt (Right (_, fs)) = do
-      getIndexContents fs ["index-000.dat"] @?= [0, 1, 6, 6, 6, 13, 13, 13, 13, 13, 13]
-      getIndexContents fs ["index-001.dat"] @?= [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+      getIndexContents fs ["index-000.dat"] @?= [0, 0, 1, 6, 6, 6, 13, 13, 13, 13, 13, 13]
+      getIndexContents fs ["index-001.dat"] @?= [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
       getIndexContents fs ["index-002.dat"] @?= []
 
 {------------------------------------------------------------------------------
@@ -213,15 +215,21 @@ instance Arbitrary SlotOffsets where
     | offsetList <- shrink $ NE.toList offsets
     , offsets' <- maybeToList $ NE.nonEmpty offsetList ]
 
-instance Arbitrary Index where
-  arbitrary = indexFromSlotOffsets . getSlotOffsets <$> arbitrary
+instance Arbitrary (Index String) where
+  arbitrary = indexFromSlotOffsets
+    <$> (getSlotOffsets <$> arbitrary)
+    <*> frequency [ (3, return Nothing)
+                  , (1, Just <$> elements ["a", "b", "c"])]
+
   shrink index =
-    [ indexFromSlotOffsets $ getSlotOffsets offsets'
-    | offsets' <- shrink (SlotOffsets (indexToSlotOffsets index)) ]
+    [ indexFromSlotOffsets (getSlotOffsets offsets') (getEBBHash index)
+    | offsets' <- shrink (SlotOffsets (indexToSlotOffsets index)) ] <>
+    [ indexFromSlotOffsets (indexToSlotOffsets index) ebbHash'
+    | ebbHash' <- shrink (getEBBHash index) ]
 
 prop_indexToSlotOffsets_indexFromSlotOffsets :: SlotOffsets -> Property
 prop_indexToSlotOffsets_indexFromSlotOffsets (SlotOffsets offsets) =
-  indexToSlotOffsets (indexFromSlotOffsets offsets) === offsets
+  indexToSlotOffsets (indexFromSlotOffsets offsets Nothing) === offsets
 
 prop_filledSlots_isFilledSlot :: SlotOffsets -> Property
 prop_filledSlots_isFilledSlot (SlotOffsets offsets) = conjoin
@@ -232,9 +240,9 @@ prop_filledSlots_isFilledSlot (SlotOffsets offsets) = conjoin
     slots | totalSlots == 0 = []
           | otherwise       = map coerce [0..indexSlots idx-1]
     totalSlots = indexSlots idx
-    idx = indexFromSlotOffsets offsets
+    idx = indexFromSlotOffsets offsets Nothing
 
-prop_writeIndex_loadIndex :: Index -> Property
+prop_writeIndex_loadIndex :: Index String -> Property
 prop_writeIndex_loadIndex index =
     monadicIO $ run $ runS prop
   where
@@ -243,8 +251,9 @@ prop_writeIndex_loadIndex index =
     prop :: HasFS IO h -> IO Property
     prop hasFS = do
       writeIndex hasFS epoch index
-      (index', mbJunk) <- loadIndex hasFS epoch
-      return $ index === index' .&&. isNothing mbJunk
+      let epochSize = indexSlots index
+      index' <- loadIndex hasFS EH.exceptions epoch epochSize
+      return $ index === index'
 
     runS :: (HasFS IO Mock.Handle -> IO Property) -> IO Property
     runS m = do
@@ -253,17 +262,20 @@ prop_writeIndex_loadIndex index =
           Left  e      -> fail (prettyFsError e)
           Right (p, _) -> return p
 
-prop_writeSlotOffsets_loadIndex_indexToSlotOffsets :: SlotOffsets -> Property
-prop_writeSlotOffsets_loadIndex_indexToSlotOffsets (SlotOffsets offsets) =
+prop_writeSlotOffsets_loadIndex_indexToSlotOffsets :: Maybe String
+                                                   -> SlotOffsets
+                                                   -> Property
+prop_writeSlotOffsets_loadIndex_indexToSlotOffsets ebbHash (SlotOffsets offsets) =
     monadicIO $ run $ runS prop
   where
     epoch = 0
 
     prop :: HasFS IO h -> IO Property
     prop hasFS = do
-      writeSlotOffsets hasFS epoch offsets
-      (index, mbJunk) <- loadIndex hasFS epoch
-      return $ indexToSlotOffsets index === offsets .&&. isNothing mbJunk
+      writeSlotOffsets hasFS epoch offsets ebbHash
+      let epochSize = fromIntegral (NE.length offsets - 1)
+      index :: Index String <- loadIndex hasFS EH.exceptions epoch epochSize
+      return $ indexToSlotOffsets index === offsets
 
     runS :: (HasFS IO Mock.Handle -> IO Property) -> IO Property
     runS m = do
@@ -305,9 +317,10 @@ test_cborEpochFileParser = fmap fst $ Sim.runSimFS err Mock.empty $ \hasFS -> do
         hPut h (S.serialiseIncremental block)
       void $ hPut h "trailingjunk"
 
-    (offsetsAndSizesAndBlocks', mbErr) <-
-      runEpochFileParser (cborEpochFileParser' hasFS S.decode) fp
+    (offsetsAndSizesAndBlocks', ebbHash, mbErr) <-
+      runEpochFileParser (cborEpochFileParser' hasFS S.decode getEBBHash) fp
 
+    ebbHash @?= Just "ebb"
     offsetsAndSizesAndBlocks' @?= offsetsAndSizesAndBlocks
     assertBool "Expected an error" (isJust mbErr)
   where
@@ -316,12 +329,16 @@ test_cborEpochFileParser = fmap fst $ Sim.runSimFS err Mock.empty $ \hasFS -> do
 
     offsetsAndSizesAndBlocks :: [(SlotOffset, (Word, ByteString))]
     offsetsAndSizesAndBlocks =
-      [ (0, (4, "foo"))
-        -- Note that a "foo" is encoded as "Cfoo", hence the size of 4
+      [ (0, (4, "ebb"))
+        -- Note that "ebb" is encoded as "Cebb", hence the size of 4
       , (4, (4, "bar"))
       , (8, (4, "baz"))
       ]
 
     fp = ["test"]
+
+    getEBBHash :: ByteString -> Maybe String
+    getEBBHash "ebb" = Just "ebb"
+    getEBBHash _     = Nothing
 
     err = EH.exceptions

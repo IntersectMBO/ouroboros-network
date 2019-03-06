@@ -45,7 +45,7 @@ prop_slotToEpochSlot_epochSlotToSlot ces =
     forAllShrink genValidSlot shrink $ \slot ->
       (slotToEpochSlot ces slot >>= epochSlotToSlot ces) === Just slot
   where
-    genValidSlot = chooseSlot 0 (maxSlot ces + 1)
+    genValidSlot = chooseSlot 0 (maxSlot ces)
 
 prop_epochSlotToSlot_invalid :: CumulEpochSizes -> Property
 prop_epochSlotToSlot_invalid ces =
@@ -57,7 +57,7 @@ prop_epochSlotToSlot_invalid ces =
       filter isInvalid (shrink epochSlot)
     isInvalid (EpochSlot epoch relSlot)
       | Just sz <- epochSize ces epoch
-      = relSlot >= fromIntegral sz
+      = relSlot > fromIntegral sz
       | otherwise
       = False
 
