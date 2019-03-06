@@ -2,6 +2,31 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 -- | Conversion between 'SlotNo's and 'EpochSlot's.
+--
+-- The chain consists of slots ('SlotNo'). Each slot may be occupied by at
+-- most one block. In the 'ImmutableDB', we don't store the chain in one big
+-- file, but group blocks per epoch ('EpochNo'), which are then written to an
+-- epoch file. Within each epoch, the blocks are given 'RelativeSlot's. The
+-- combination of an 'EpochNo' and a 'RelativeSlot' is an 'EpochSlot'. The
+-- 'ImmutableDB' will need to be able to convert 'SlotNo's to 'EpochSlot's and
+-- vice versa.
+--
+-- Additionally, each epoch may store an Epoch Boundary Block (EBB). This EBB
+-- logically lives between the last slot of an epoch and the first slot of the
+-- next epoch. In the 'ImmutableDB', these are stored at the beginning of each
+-- epoch file, namely at relative slot 0.
+--
+-- For example:
+--
+-- > Epochs:         <──────── 0 ────────> <────── 1 ──────>
+-- > Epoch size:               4                   3
+-- >                 ┌───┬───┬───┬───┬───┐ ┌───┬───┬───┬───┐
+-- >                 │   │   │   │   │   │ │   │   │   │   │
+-- >                 └───┴───┴───┴───┴───┘ └───┴───┴───┴───┘
+-- > 'RelativeSlot':   0   1   2   3   4     0   1   2   3
+-- > 'SlotNo':        EBB  0   1   2   3    EBB  4   5   6
+--
+-- Note that the epoch size does not include the (optional) EBB.
 module Ouroboros.Storage.ImmutableDB.CumulEpochSizes
   ( -- * RelativeSlot & EpochSlot
     RelativeSlot(..)
@@ -21,6 +46,7 @@ module Ouroboros.Storage.ImmutableDB.CumulEpochSizes
   , rollBackToEpoch
   , slotToEpochSlot
   , epochSlotToSlot
+  , firstSlotOf
 
     -- * StateT-based helpers
   , getNewEpochSizesUntilM
@@ -30,7 +56,8 @@ module Ouroboros.Storage.ImmutableDB.CumulEpochSizes
   ) where
 
 import           Control.Exception (assert)
-import           Control.Monad.State (StateT (StateT), get, lift, modify, put)
+import           Control.Monad.State.Strict (StateT (StateT), get, lift, modify,
+                     put)
 
 import           Data.Coerce (coerce)
 import qualified Data.Foldable as Foldable
@@ -57,8 +84,11 @@ newtype RelativeSlot = RelativeSlot { unRelativeSlot :: Word64 }
   deriving (Eq, Ord, Enum, Num, Show, Generic)
 
 -- | Return the last relative slot within the given epoch size.
+--
+-- Relative slot 0 is reserved for the EBB and regular relative slots start at
+-- 0, so the last relative slot is equal to the epoch size.
 lastRelativeSlot :: EpochSize -> RelativeSlot
-lastRelativeSlot (EpochSize sz) = RelativeSlot (pred sz)
+lastRelativeSlot (EpochSize sz) = RelativeSlot sz
 
 -- | The combination of an 'EpochNo' and a 'RelativeSlot' within the epoch.
 data EpochSlot = EpochSlot
@@ -67,7 +97,7 @@ data EpochSlot = EpochSlot
   } deriving (Eq, Ord, Generic)
 
 instance Show EpochSlot where
-  show (EpochSlot e (RelativeSlot s)) = show (e, s)
+  show (EpochSlot (EpochNo e) (RelativeSlot s)) = show (e, s)
 
 
 {------------------------------------------------------------------------------
@@ -143,7 +173,8 @@ epochSize (CES ces) epoch =
 -- epoch for which the size is stored. No-op if the current last epoch is <=
 -- the given epoch.
 rollBackToEpoch :: CumulEpochSizes -> EpochNo -> CumulEpochSizes
-rollBackToEpoch (CES ces) epoch = CES $ Seq.take (succ (fromIntegral $ unEpochNo epoch)) ces
+rollBackToEpoch (CES ces) epoch =
+    CES $ Seq.take (succ (fromIntegral $ unEpochNo epoch)) ces
 
 -- | \( O(i) \). Convert a 'SlotNo' to an 'EpochSlot'
 --
@@ -152,27 +183,21 @@ rollBackToEpoch (CES ces) epoch = CES $ Seq.take (succ (fromIntegral $ unEpochNo
 -- > epochs:              0    1    2    3     4
 -- > epoch sizes:       [100, 150, 200, 200, 2160]
 -- > cumul epoch sizes: [100, 250, 450, 650, 2810]
--- > slot: 260 -> epoch slot: (2, 10)
+-- > slot: 260 -> epoch slot: (2, 11)
 slotToEpochSlot :: CumulEpochSizes -> SlotNo -> Maybe EpochSlot
-slotToEpochSlot (CES ces) slot = case ces of
-    _ :|> origLastEs
-      | slot' < origLastEs
-      -> case Seq.dropWhileR (> slot') ces of
-           ces'@(_ :|> lastEs) -> Just $ EpochSlot
-             { _epoch        = fromIntegral (Seq.length ces')
-             , _relativeSlot = coerce (slot' - lastEs)
-             }
-           Empty -> Just $ EpochSlot
-             { _epoch        = 0
-             , _relativeSlot = coerce slot
-             }
-      | origLastEs == slot'
-        -- If the slot == the size of the last epoch, return (epoch + 1, 0).
-      -> Just $ EpochSlot
-           { _epoch        = fromIntegral (Seq.length ces)
-           , _relativeSlot = 0
-           }
-    _ -> Nothing
+slotToEpochSlot (CES ces) slot
+    | _ :|> origLastEs <- ces
+    , slot' < origLastEs
+    = case Seq.dropWhileR (> slot') ces of
+        ces'@(_ :|> lastEs) -> Just $ EpochSlot
+          { _epoch        = fromIntegral (Seq.length ces')
+          , _relativeSlot = succ (coerce (slot' - lastEs))
+          }
+        Empty -> Just $ EpochSlot
+          { _epoch        = 0
+          , _relativeSlot = succ (coerce slot)
+          }
+    | otherwise = Nothing
   where
     slot' :: EpochSize
     slot' = coerce slot
@@ -184,26 +209,41 @@ slotToEpochSlot (CES ces) slot = case ces of
 -- > epochs:              0    1    2    3     4
 -- > epoch sizes:       [100, 150, 200, 200, 2160]
 -- > cumul epoch sizes: [100, 250, 450, 650, 2810]
--- > epoch slot: (2, 10) -> slot: 260
+-- > epoch slot: (2, 11) -> slot: 260
+--
+-- If the 'EpochSlot' has 'RelativeSlot' 0, i.e. it refers to an EBB, then the
+-- first slot of that epoch will be returned.
 epochSlotToSlot :: CumulEpochSizes -> EpochSlot -> Maybe SlotNo
-epochSlotToSlot (CES ces) (EpochSlot epoch relSlot)
-    | relSlot == 0
-    , fromIntegral (unEpochNo epoch) == Seq.length ces
+epochSlotToSlot (CES ces) (EpochSlot epoch relSlot) =
+    case Seq.splitAt (fromIntegral $ unEpochNo epoch) ces of
+      (_ :|> before, at :<| _)
+        | relSlot' < at - before
+        -> Just $ coerce (before + relSlot')
+      (Empty, at :<| _)
+        | relSlot' < at
+        -> Just $ coerce relSlot'
+      _ -> Nothing
+  where
+    relSlot' :: EpochSize
+    relSlot' | relSlot == 0 = 0
+             | otherwise    = coerce relSlot - 1
+             -- RelativeSlot 0 and 1 will point to the same SlotNo
+
+
+-- | Return the first 'SlotNo' of the given 'EpochNo' if the 'EpochNo' is
+-- stored in the 'CumulEpochSizes'.
+firstSlotOf :: CumulEpochSizes -> EpochNo -> Maybe SlotNo
+firstSlotOf (CES ces) epoch
+    | fromIntegral (unEpochNo epoch) == Seq.length ces
     , _ :|> lastEs <- ces
-      -- Handle EpochSlot n 0 where n = the last epoch + 1
     = Just $ coerce lastEs
     | otherwise
     = case Seq.splitAt (fromIntegral $ unEpochNo epoch) ces of
-        (_ :|> before, at :<| _)
-          | relSlot' < at - before
-          -> Just $ coerce (before + relSlot')
-        (Empty, at :<| _)
-          | relSlot' < at
-          -> Just $ coerce relSlot
+        (_ :|> before, _ :<| _)
+          -> Just $ coerce before
+        (Empty, _ :<| _)
+          -> Just 0
         _ -> Nothing
-  where
-    relSlot' :: EpochSize
-    relSlot' = coerce relSlot
 
 
 {------------------------------------------------------------------------------
