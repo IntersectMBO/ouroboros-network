@@ -3,10 +3,9 @@
 
 module Test.Util.Orphans.Arbitrary () where
 
+import           Codec.Serialise (Serialise)
 import           Data.Time
 import           Test.QuickCheck hiding (Fixed (..))
-
-import           Ouroboros.Network.Serialise (Serialise)
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Crypto.DSIGN.Class (DSIGNAlgorithm (..))

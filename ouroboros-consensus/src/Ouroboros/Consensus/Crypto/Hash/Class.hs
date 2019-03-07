@@ -13,6 +13,9 @@ module Ouroboros.Consensus.Crypto.Hash.Class
     , fromHash
     ) where
 
+import           Codec.Serialise (Serialise (..))
+import           Codec.CBOR.Decoding (decodeBytes)
+import           Codec.CBOR.Write (toLazyByteString)
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as SB
 import qualified Data.ByteString.Base16 as B16
@@ -25,7 +28,6 @@ import           GHC.Generics (Generic)
 import           Numeric.Natural
 
 import           Ouroboros.Consensus.Util.Condense
-import           Ouroboros.Network.Serialise
 
 class HashAlgorithm h where
     byteCount :: proxy h -> Natural

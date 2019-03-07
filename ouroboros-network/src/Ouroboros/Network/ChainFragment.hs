@@ -76,10 +76,12 @@ import qualified Data.FingerTree as FT
 import qualified Data.Foldable as Foldable
 import qualified Data.List as L
 import           Data.Maybe (isJust)
+import           Codec.Serialise (Serialise (..))
+import           Codec.CBOR.Encoding (encodeListLen)
+import           Codec.CBOR.Decoding (decodeListLen)
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (Point(..), blockPoint, ChainUpdate(..))
-import           Ouroboros.Network.Serialise
 
 --
 -- Blockchain fragment data type.

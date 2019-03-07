@@ -13,11 +13,10 @@ module Ouroboros.Consensus.Crypto.VRF.Class
   , verifyCertified
   ) where
 
+import           Codec.Serialise (Serialise)
 import           Crypto.Random (MonadRandom)
 import           GHC.Generics (Generic)
 import           Numeric.Natural
-
-import           Ouroboros.Network.Serialise
 
 class ( Show (VerKeyVRF v)
       , Ord (VerKeyVRF v)

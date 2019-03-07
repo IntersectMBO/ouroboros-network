@@ -1,0 +1,56 @@
+name:                ouroboros-network-testing
+version:             0.1.0.0
+synopsis:            Common modules used for testing in ouroboros-network and ouroboros-consensus
+license:             MIT
+license-file:        LICENSE
+author:              Alexander Vieth, Marcin Szamotulski, Duncan Coutts, Karl Knuttson 
+maintainer:
+copyright:           2018 IOHK
+category:            Network
+build-type:          Simple
+extra-source-files:  ChangeLog.md
+cabal-version:       >=1.10
+
+source-repository head
+  type:     git
+  location: https://github.com/input-output-hk/ouroboros-network
+
+library
+  hs-source-dirs:      src
+
+  -- At this experiment/prototype stage everything is exposed.
+  -- This has to be tidied up once the design becomes clear.
+  exposed-modules:
+                       Ouroboros.Network.Testing.Serialise
+  default-language:    Haskell2010
+  other-extensions:    BangPatterns,
+                       DataKinds,
+                       EmptyCase,
+                       ExistentialQuantification,
+                       FlexibleContexts,
+                       FlexibleInstances,
+                       FunctionalDependencies,
+                       GADTs,
+                       GADTSyntax,
+                       GeneralizedNewtypeDeriving,
+                       MultiParamTypeClasses,
+                       NamedFieldPuns,
+                       OverloadedStrings,
+                       PolyKinds,
+                       RankNTypes,
+                       RecordWildCards,
+                       ScopedTypeVariables,
+                       TemplateHaskell,
+                       TupleSections,
+                       TypeApplications,
+                       TypeFamilies,
+                       TypeInType
+  build-depends:       base              >=4.9 && <4.13,
+
+                       cborg             >=0.2.1 && <0.3,
+                       serialise         >=0.2 && <0.3,
+                       QuickCheck
+
+  ghc-options:         -Wall
+                       -Wno-unticked-promoted-constructors
+                       -fno-ignore-asserts

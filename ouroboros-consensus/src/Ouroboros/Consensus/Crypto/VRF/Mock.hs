@@ -10,6 +10,7 @@ module Ouroboros.Consensus.Crypto.VRF.Mock
   , SignKeyVRF (..)
   ) where
 
+import           Codec.Serialise (Serialise)
 import           Data.Proxy (Proxy (..))
 import           GHC.Generics (Generic)
 import           Numeric.Natural (Natural)
@@ -18,7 +19,6 @@ import           Ouroboros.Consensus.Crypto.Hash
 import           Ouroboros.Consensus.Crypto.VRF.Class
 import           Ouroboros.Consensus.Util.HList
 import           Ouroboros.Consensus.Util.Random
-import           Ouroboros.Network.Serialise
 
 data MockVRF
 

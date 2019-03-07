@@ -19,6 +19,7 @@ module Ouroboros.Consensus.Util.Random (
     )
     where
 
+import           Codec.Serialise (Serialise)
 import           Control.Monad.State
 import           Crypto.Number.Generate (generateBetween)
 import           Crypto.Random (ChaChaDRG, MonadPseudoRandom, MonadRandom (..),
@@ -28,8 +29,6 @@ import           Data.List (genericLength)
 import           Data.Word (Word64)
 
 import           Control.Monad.Class.MonadSay
-
-import           Ouroboros.Network.Serialise (Serialise)
 
 {-------------------------------------------------------------------------------
   Producing values in MonadRandom

@@ -11,12 +11,11 @@ module Ouroboros.Consensus.Crypto.KES.Simple
     ( SimpleKES
     ) where
 
+import           Codec.Serialise (Serialise)
 import           Control.Monad (replicateM)
 import           Data.Vector (Vector, fromList, (!?))
 import           GHC.Generics (Generic)
 import           Numeric.Natural (Natural)
-
-import           Ouroboros.Network.Serialise (Serialise)
 
 import           Ouroboros.Consensus.Crypto.DSIGN
 import           Ouroboros.Consensus.Crypto.KES.Class

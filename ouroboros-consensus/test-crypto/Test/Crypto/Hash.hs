@@ -12,11 +12,10 @@ import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
-import           Ouroboros.Network.Serialise
-
 import           Ouroboros.Consensus.Crypto.Hash
 import           Ouroboros.Consensus.Util.Orphans ()
 
+import           Ouroboros.Network.Testing.Serialise
 import           Test.Util.Orphans.Arbitrary ()
 
 --

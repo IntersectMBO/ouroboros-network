@@ -24,7 +24,7 @@ import           Network.TypedProtocol.ReqResp.Server
 import           Ouroboros.Network.Channel
 import qualified Ouroboros.Network.Mux as Mx
 import           Ouroboros.Network.Protocol.ReqResp.Codec
-import           Ouroboros.Network.Serialise
+import           Ouroboros.Network.Testing.Serialise
 
 tests :: TestTree
 tests =

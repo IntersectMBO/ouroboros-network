@@ -20,8 +20,6 @@ import qualified Data.Set as Set
 import           Options.Applicative
 import           System.IO (IOMode (..))
 
-import           Ouroboros.Network.Serialise ()
-
 import           Ouroboros.Consensus.Crypto.Hash (ShortHash)
 import qualified Ouroboros.Consensus.Crypto.Hash as H
 import           Ouroboros.Consensus.Ledger.Abstract

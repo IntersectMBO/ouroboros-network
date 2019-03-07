@@ -1,5 +1,5 @@
 {-# LANGUAGE CPP #-}
-module Ouroboros.Network.Serialise (
+module Ouroboros.Network.Testing.Serialise (
       -- * Class
       Serialise(..)
     , prop_serialise

@@ -11,9 +11,8 @@ module Ouroboros.Consensus.Crypto.DSIGN.Mock
     , verKeyIdFromSigned
     ) where
 
+import           Codec.Serialise (Serialise)
 import           GHC.Generics (Generic)
-
-import           Ouroboros.Network.Serialise
 
 import           Ouroboros.Consensus.Crypto.DSIGN.Class
 import           Ouroboros.Consensus.Crypto.Hash

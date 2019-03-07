@@ -41,7 +41,6 @@ library
                        Ouroboros.Network.NodeToNode
                        Ouroboros.Network.NodeToClient
                        Ouroboros.Network.Pipe
-                       Ouroboros.Network.Serialise
                        Ouroboros.Network.Socket
                        Ouroboros.Network.Testing.ConcreteBlock
                        Ouroboros.Network.Protocol.ChainSync.Client
@@ -99,9 +98,7 @@ library
                        serialise         >=0.2 && <0.3,
                        say,
                        stm               >=2.4 && <2.6,
-                       text              >=1.2 && <1.3,
-
-                       QuickCheck        >=2.12 && <2.13
+                       text              >=1.2 && <1.3
 
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
@@ -142,7 +139,6 @@ test-suite tests
                        Ouroboros.Network.Protocol.PingPong.Test
                        Ouroboros.Network.Protocol.ReqResp.Codec
                        Ouroboros.Network.Protocol.ReqResp.Test
-                       Ouroboros.Network.Serialise
                        Ouroboros.Network.Socket
 
                        Test.Chain
@@ -160,6 +156,7 @@ test-suite tests
                        typed-protocols,
                        io-sim-classes,
                        io-sim            >=0.1 && < 0.2,
+                       ouroboros-network-testing,
 
                        array,
                        async,

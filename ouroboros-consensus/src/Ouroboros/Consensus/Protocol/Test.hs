@@ -18,9 +18,8 @@ module Ouroboros.Consensus.Protocol.Test (
   , Payload(..)
   ) where
 
+import           Codec.Serialise (Serialise)
 import           GHC.Generics (Generic)
-
-import           Ouroboros.Network.Serialise
 
 import           Ouroboros.Consensus.Node (NodeId)
 import           Ouroboros.Consensus.Protocol.Abstract

@@ -9,13 +9,12 @@ module Ouroboros.Consensus.Crypto.DSIGN.Ed448
     ( Ed448DSIGN
     ) where
 
+import           Codec.Serialise (Serialise (..), serialise)
 import           Crypto.PubKey.Ed448
 import           Data.ByteArray (ByteArrayAccess)
 import           Data.ByteString.Lazy (toStrict)
 import           Data.Function (on)
 import           GHC.Generics (Generic)
-
-import           Ouroboros.Network.Serialise
 
 import           Ouroboros.Consensus.Crypto.DSIGN.Class
 import           Ouroboros.Consensus.Crypto.Hash
