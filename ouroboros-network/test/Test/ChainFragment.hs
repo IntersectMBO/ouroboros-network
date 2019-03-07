@@ -24,7 +24,6 @@ import           Test.Tasty.QuickCheck (testProperty)
 import           Test.Chain ()
 import           Test.ChainGenerators
                   ( ArbitraryBlockBody (..)
-                  , genNonNegative
                   , genSlotGap
                   , addSlotGap
                   , mkPartialBlock
@@ -294,7 +293,7 @@ newtype TestHeaderChainFragment = TestHeaderChainFragment (ChainFragment BlockHe
 
 instance Arbitrary TestBlockChainFragment where
     arbitrary = do
-        n <- genNonNegative
+        n <- getNonNegative <$> arbitrary
         TestBlockChainFragment <$> genBlockChainFragment n
 
     shrink (TestBlockChainFragment c) =
@@ -303,7 +302,7 @@ instance Arbitrary TestBlockChainFragment where
 
 instance Arbitrary TestHeaderChainFragment where
     arbitrary = do
-        n <- genNonNegative
+        n <- getNonNegative <$> arbitrary
         TestHeaderChainFragment <$> genHeaderChainFragment n
 
     shrink (TestHeaderChainFragment c) =
@@ -313,7 +312,7 @@ instance Arbitrary TestHeaderChainFragment where
 prop_arbitrary_TestBlockChainFragment :: TestBlockChainFragment -> Property
 prop_arbitrary_TestBlockChainFragment (TestBlockChainFragment c) =
     -- check we get some but not too many zero-length chains
-    cover 95   (not (CF.null c)) "non-null" $
+    cover 80   (not (CF.null c)) "non-null" $
     cover 1.5       (CF.null c)  "null"     $
     CF.valid c
 
@@ -423,7 +422,7 @@ data TestBlockChainFragmentAndUpdates =
 instance Arbitrary TestBlockChainFragmentAndUpdates where
   arbitrary = do
     TestBlockChainFragment chain <- arbitrary
-    m <- genNonNegative
+    m <- getNonNegative <$> arbitrary
     updates <- genChainFragmentUpdates chain m
     return (TestBlockChainFragmentAndUpdates chain updates)
 
@@ -473,7 +472,7 @@ genChainFragmentUpdates chain n = do
 prop_arbitrary_TestBlockChainFragmentAndUpdates :: TestBlockChainFragmentAndUpdates -> Property
 prop_arbitrary_TestBlockChainFragmentAndUpdates (TestBlockChainFragmentAndUpdates c us) =
     cover 1.5 (     null us ) "empty updates"     $
-    cover 95  (not (null us)) "non-empty updates" $
+    cover 83  (not (null us)) "non-empty updates" $
     tabulate "ChainFragmentUpdate" (map updateKind us) $
     tabulate "Growth" [hist (countChainFragmentUpdateNetProgress c us)] $
 
@@ -615,8 +614,8 @@ instance Arbitrary TestChainFragmentFork where
       if sameForks
       then return (l1, l2)
       else do
-        n1 <- genNonNegative
-        n2 <- genNonNegative
+        n1 <- getNonNegative <$> arbitrary
+        n2 <- getNonNegative <$> arbitrary
         c1 <- genAddBlocks n1 l1
         c2 <- genAddBlocks n2 l2
         return (c1, c2)

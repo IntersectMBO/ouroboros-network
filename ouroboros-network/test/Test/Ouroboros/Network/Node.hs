@@ -43,7 +43,6 @@ import           Ouroboros.Network.Testing.ConcreteBlock as ConcreteBlock
 
 import           Test.ChainGenerators
                   ( TestBlockChain (..)
-                  , genNonNegative
                   , genHeaderChain
                   )
 
@@ -432,7 +431,7 @@ genConnectedBidirectionalGraph = do
 -- | Generate a non-empty chain starting with this block header.
 genNonEmptyHeaderChain :: BlockHeader -> Gen (NonEmpty BlockHeader)
 genNonEmptyHeaderChain genesis = do
-  n <- genNonNegative
+  n <- getNonNegative <$> arbitrary
   chain <- reverse . chainToList <$> genHeaderChain n
   pure $ genesis NE.:| chain
 

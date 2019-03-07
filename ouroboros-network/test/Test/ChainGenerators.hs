@@ -23,7 +23,6 @@ module Test.ChainGenerators
   , TestChainFork (..)
 
     -- * Utility functions
-  , genNonNegative
   , genSlotGap
   , addSlotGap
   , genHeaderChain
@@ -125,14 +124,6 @@ newtype ArbitraryBlockHeader = ArbitraryBlockHeader {
 
 instance Arbitrary ArbitraryBlockHeader where
   arbitrary = ArbitraryBlockHeader . blockHeader . fromJust . Chain.head <$> genBlockChain 1
-
--- | The 'NonNegative' generator produces a large proportion of 0s, so we use
--- this one instead for now.
---
--- https://github.com/nick8325/quickcheck/issues/229
---
-genNonNegative :: Gen Int
-genNonNegative = (abs <$> arbitrary) `suchThat` (>= 0)
 
 genBlockChain :: Int -> Gen (Chain Block)
 genBlockChain n = do
@@ -253,7 +244,7 @@ data TestBlockChainAndUpdates =
 instance Arbitrary TestBlockChainAndUpdates where
   arbitrary = do
     TestBlockChain chain <- arbitrary
-    m <- genNonNegative
+    m <- getNonNegative <$> arbitrary
     updates <- genChainUpdates chain m
     return (TestBlockChainAndUpdates chain updates)
 
@@ -349,7 +340,7 @@ newtype TestHeaderChain = TestHeaderChain (Chain BlockHeader)
 
 instance Arbitrary TestBlockChain where
     arbitrary = do
-        n <- genNonNegative
+        n <- getNonNegative <$> arbitrary
         TestBlockChain <$> genBlockChain n
 
     shrink (TestBlockChain c) =
@@ -358,7 +349,7 @@ instance Arbitrary TestBlockChain where
 
 instance Arbitrary TestHeaderChain where
     arbitrary = do
-        n <- genNonNegative
+        n <- getNonNegative <$> arbitrary
         TestHeaderChain <$> genHeaderChain n
 
     shrink (TestHeaderChain c) =
@@ -577,8 +568,8 @@ instance Arbitrary TestChainFork where
     if equalChains
       then return (TestChainFork chain chain chain)
       else do
-        l <- genNonNegative
-        r <- genNonNegative
+        l <- getNonNegative <$> arbitrary
+        r <- getNonNegative <$> arbitrary
         chainL <- genAddBlocks l chain
         chainR <- genAddBlocks r chain
         return (TestChainFork chain chainL chainR)
