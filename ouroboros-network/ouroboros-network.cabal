@@ -218,6 +218,8 @@ test-suite tests
                        pipes,
                        process,
                        QuickCheck,
+                       quickcheck-instances
+                                         >= 0.3.19 && < 0.4,
                        serialise,
                        stm,
                        tasty,

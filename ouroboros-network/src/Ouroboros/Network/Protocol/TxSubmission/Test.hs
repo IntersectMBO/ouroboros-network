@@ -1,7 +1,6 @@
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE TypeApplications           #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -37,6 +36,7 @@ import           Ouroboros.Network.Protocol.TxSubmission.Type
 import           Test.Ouroboros.Network.Testing.Utils (splits2, splits3)
 
 import           Test.QuickCheck
+import           Test.QuickCheck.Instances.Natural ()
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
@@ -146,40 +146,34 @@ txSubmissionServerReference ns txs = take (fromIntegral $ sum ns) txs
 -- Properties goind directly, not via Peer.
 --
 
-prop_direct ::  [NonNegative Integer] -> [Tx] -> Bool
+prop_direct ::  [Natural] -> [Tx] -> Bool
 prop_direct ns txs =
-  let ns' = map (fromIntegral . getNonNegative) ns
-  in
-    runSimOrThrow (direct (testClient ns')
+    runSimOrThrow (direct (testClient ns)
                           (testServer txs))
   ==
-    ( txSubmissionClientReference ns' txs
-    , txSubmissionServerReference ns' txs
+    ( txSubmissionClientReference ns txs
+    , txSubmissionServerReference ns txs
     )
 
-prop_directPipelined1 :: [NonNegative Integer] -> [Tx] -> Bool
+prop_directPipelined1 :: [Natural] -> [Tx] -> Bool
 prop_directPipelined1 ns txs =
-  let ns' = map (fromIntegral . getNonNegative) ns
-  in 
-    runSimOrThrow (direct (txSubmissionClientPipelinedMax ns')
+    runSimOrThrow (direct (txSubmissionClientPipelinedMax ns)
                           (testServer txs))
   ==
-    ( txSubmissionClientMaxReference ns' txs
-    , txSubmissionServerReference ns' txs
+    ( txSubmissionClientMaxReference ns txs
+    , txSubmissionServerReference ns txs
     )
 
-prop_directPipelined2 :: [NonNegative Integer] -> [Tx] -> Bool
+prop_directPipelined2 :: [Natural] -> [Tx] -> Bool
 prop_directPipelined2 ns txs =
-  let ns' = map (fromIntegral . getNonNegative) ns
-  in 
-    runSimOrThrow (direct (txSubmissionClientPipelinedMin ns')
+    runSimOrThrow (direct (txSubmissionClientPipelinedMin ns)
                           (testServer txs))
   ==
     -- it is the same as @'txSubmissionClientMaxReference'@ since
     -- @'Ouroboros.Network.Protocol.TxSubmission.Direct'@ will pipeline as many
     -- requests as possible.
-    ( txSubmissionClientMaxReference ns' txs
-    , txSubmissionServerReference ns' txs
+    ( txSubmissionClientMaxReference ns txs
+    , txSubmissionServerReference ns txs
     )
 
 --
@@ -190,17 +184,16 @@ prop_directPipelined2 ns txs =
 -- Run a simple tx-submission client and server, going via the 'Peer'
 -- representation, but without going via a channel.
 --
-prop_connect :: [NonNegative Integer]
+prop_connect :: [Natural]
              -> [Tx]
              -> Bool
 prop_connect ns txs =
-    let ns' = map (fromIntegral . getNonNegative) ns
-    in case runSimOrThrow
+    case runSimOrThrow
               (connect
-                (forgetPipelined $ txSubmissionClientPeerPipelined (testClient ns'))
+                (forgetPipelined $ txSubmissionClientPeerPipelined (testClient ns))
                 (txSubmissionServerPeer (testServer txs))) of
       (rs, _, TerminalStates TokDone TokDone) ->
-        rs == txSubmissionClientReference ns' txs
+        rs == txSubmissionClientReference ns txs
 
 -- |
 -- Run a pipelined tx-submission client against a server, going via the
@@ -223,43 +216,39 @@ connect_pipelined client txs cs = do
 -- With a client with maximum pipelining we get all requests followed by
 -- all responses.
 --
-prop_connect_pipelined1 :: [NonNegative Integer] -> [Tx] -> [Bool] -> Bool
+prop_connect_pipelined1 :: [Natural] -> [Tx] -> [Bool] -> Bool
 prop_connect_pipelined1 ns txs choices =
-    let ns' = map (fromIntegral . getNonNegative) ns
-    in
       runSimOrThrow
-        (connect_pipelined (txSubmissionClientPipelinedMax ns') txs choices)
+        (connect_pipelined (txSubmissionClientPipelinedMax ns) txs choices)
     ==
-      txSubmissionClientMaxReference ns' txs
+      txSubmissionClientMaxReference ns txs
 
 
 -- | With a client that collects eagerly and the driver chooses maximum
 -- pipelining then we get all requests followed by all responses.
 --
-prop_connect_pipelined2 :: [NonNegative Integer] -> [Tx] -> Bool
+prop_connect_pipelined2 :: [Natural] -> [Tx] -> Bool
 prop_connect_pipelined2 ns txs =
-    let ns' = map (fromIntegral . getNonNegative) ns
-        choices = repeat True
+    let choices = repeat True
     in
       runSimOrThrow
-        (connect_pipelined (txSubmissionClientPipelinedMin ns') txs choices)
+        (connect_pipelined (txSubmissionClientPipelinedMin ns) txs choices)
     ==
-      txSubmissionClientMaxReference ns' txs
+      txSubmissionClientMaxReference ns txs
 
 
 -- |
 -- With a client that collects eagerly and the driver chooses minimum
 -- pipelining then we get the interleaving of requests with responses.
 --
-prop_connect_pipelined3 :: [NonNegative Integer] -> [Tx] -> Bool
+prop_connect_pipelined3 :: [Natural] -> [Tx] -> Bool
 prop_connect_pipelined3 ns txs =
-  let ns' = map (fromIntegral . getNonNegative) ns
-      choices = repeat False
+  let choices = repeat False
   in 
       runSimOrThrow
-        (connect_pipelined (txSubmissionClientPipelinedMin ns') txs choices)
+        (connect_pipelined (txSubmissionClientPipelinedMin ns) txs choices)
     ==
-      txSubmissionClientReference ns' txs
+      txSubmissionClientReference ns txs
 
 
 -- |
@@ -267,15 +256,13 @@ prop_connect_pipelined3 ns txs =
 -- pipelining then we get complex interleavings given by the reference
 -- specification 'pipelineInterleaving'.
 --
-prop_connect_pipelined4 :: [NonNegative Integer] -> [Tx] -> [Bool] -> Bool
+prop_connect_pipelined4 :: [Natural] -> [Tx] -> [Bool] -> Bool
 prop_connect_pipelined4 ns txs choices =
-  let ns' = map (fromIntegral . getNonNegative) ns
-  in
       cannonicalOrder
         (runSimOrThrow
-            (connect_pipelined (txSubmissionClientPipelinedMin ns') txs choices))
+            (connect_pipelined (txSubmissionClientPipelinedMin ns) txs choices))
     ==
-      txSubmissionClientMaxReference ns' txs
+      txSubmissionClientMaxReference ns txs
 
 --
 -- Properties using a channel
@@ -286,34 +273,33 @@ prop_connect_pipelined4 ns txs choices =
 --
 prop_channel :: (MonadAsync m, MonadCatch m, MonadST m)
              => m (Channel m ByteString, Channel m ByteString)
-             -> [NonNegative Integer] -> [Tx] -> m Property
+             -> [Natural] -> [Tx] -> m Property
 prop_channel createChannels ns txs = do
-    let ns' = map (fromIntegral . getNonNegative) ns
     (res, _) <-
       runConnectedPeers
         createChannels codecTxSubmission
-        (forgetPipelined $ txSubmissionClientPeerPipelined (testClient ns'))
+        (forgetPipelined $ txSubmissionClientPeerPipelined (testClient ns))
         (txSubmissionServerPeer (testServer txs))
-    return $ res === txSubmissionClientReference ns' txs
+    return $ res === txSubmissionClientReference ns txs
 
 -- |
 -- Run 'prop_channel' in the simulation monad.
 --
-prop_channel_ST :: [NonNegative Integer] -> [Tx] -> Property
+prop_channel_ST :: [Natural] -> [Tx] -> Property
 prop_channel_ST ns txs =
     runSimOrThrow (prop_channel createConnectedChannels ns txs)
 
 
 -- | Run 'prop_channel' in the IO monad.
 --
-prop_channel_IO :: [NonNegative Integer] -> [Tx] -> Property
+prop_channel_IO :: [Natural] -> [Tx] -> Property
 prop_channel_IO ns txs =
     ioProperty (prop_channel createConnectedChannels ns txs)
 
 
 -- | Run 'prop_channel' in the IO monad using local pipes.
 --
-prop_pipe_IO :: [NonNegative Integer] -> [Tx] -> Property
+prop_pipe_IO :: [Natural] -> [Tx] -> Property
 prop_pipe_IO ns txs =
     ioProperty (prop_channel createPipeConnectedChannels ns txs)
 
@@ -323,7 +309,7 @@ prop_pipe_IO ns txs =
 
 instance Arbitrary (AnyMessageAndAgency (TxSubmission Int Tx)) where
   arbitrary = oneof
-    [ AnyMessageAndAgency (ClientAgency TokIdle) . MsgGetHashes . fromIntegral @Integer . getNonNegative <$> arbitrary
+    [ AnyMessageAndAgency (ClientAgency TokIdle) . MsgGetHashes <$> arbitrary
     , AnyMessageAndAgency (ServerAgency TokSendHashes) . MsgSendHashes <$> arbitrary
     , AnyMessageAndAgency (ClientAgency TokIdle) . MsgGetTx <$> arbitrary
     , AnyMessageAndAgency (ServerAgency TokSendTx) . MsgTx <$> arbitrary
