@@ -12,12 +12,12 @@ module Ouroboros.Consensus.Protocol.LeaderSchedule (
   , NodeConfig (..)
   ) where
 
+import           Codec.Serialise (Serialise)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           GHC.Generics (Generic)
 
 import           Ouroboros.Network.Block (Slot (..))
-import           Ouroboros.Network.Serialise (Serialise)
 
 import           Ouroboros.Consensus.Node (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract

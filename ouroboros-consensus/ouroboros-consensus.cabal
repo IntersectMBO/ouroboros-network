@@ -246,11 +246,13 @@ test-suite test-crypto
                     Test.Util.Orphans.Arbitrary
                     Test.Util.QuickCheck
   build-depends:    base,
+                    ouroboros-network-testing,
                     ouroboros-network,
                     ouroboros-consensus,
 
                     bytestring,
                     QuickCheck,
+                    serialise,
                     tasty,
                     tasty-quickcheck,
                     time

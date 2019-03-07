@@ -25,7 +25,7 @@ import           Ouroboros.Network.Protocol.ChainSync.Client
 import           Ouroboros.Network.Protocol.ChainSync.Codec
 import           Ouroboros.Network.Protocol.ChainSync.Examples
 import           Ouroboros.Network.Protocol.ChainSync.Server
-import           Ouroboros.Network.Serialise
+import           Ouroboros.Network.Testing.Serialise
 
 --
 -- The list of all tests

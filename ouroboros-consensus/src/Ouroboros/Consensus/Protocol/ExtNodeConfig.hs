@@ -16,9 +16,8 @@ module Ouroboros.Consensus.Protocol.ExtNodeConfig (
   , Payload(..)
   ) where
 
+import           Codec.Serialise (Serialise)
 import           GHC.Generics (Generic)
-
-import           Ouroboros.Network.Serialise
 
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.Condense

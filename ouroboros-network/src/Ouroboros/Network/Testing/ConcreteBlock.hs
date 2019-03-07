@@ -30,11 +30,21 @@ module Ouroboros.Network.Testing.ConcreteBlock (
 import           Data.FingerTree (Measured(measure))
 import           Data.Hashable
 import qualified Data.Text as Text
+import           Codec.Serialise (Serialise (..))
+import           Codec.CBOR.Encoding ( encodeListLen
+                                     , encodeInt
+                                     , encodeWord
+                                     , encodeString
+                                     )
+import           Codec.CBOR.Decoding ( decodeListLenOf
+                                     , decodeInt
+                                     , decodeWord
+                                     , decodeString
+                                     )
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain
 import qualified Ouroboros.Network.ChainFragment as CF
-import           Ouroboros.Network.Serialise
 
 {-------------------------------------------------------------------------------
   Concrete block shape used currently in the network layer

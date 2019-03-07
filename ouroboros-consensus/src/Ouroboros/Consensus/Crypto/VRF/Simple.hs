@@ -19,11 +19,11 @@ import           Data.Function (on)
 import           Data.Proxy (Proxy (..))
 import           GHC.Generics (Generic)
 import           Numeric.Natural (Natural)
+import           Codec.Serialise (Serialise (..))
 
 import           Ouroboros.Consensus.Crypto.Hash
 import           Ouroboros.Consensus.Crypto.VRF.Class
 import           Ouroboros.Consensus.Util.HList
-import           Ouroboros.Network.Serialise hiding ((<>))
 
 data SimpleVRF
 

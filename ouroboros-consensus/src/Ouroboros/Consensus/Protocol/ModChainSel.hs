@@ -24,11 +24,11 @@ module Ouroboros.Consensus.Protocol.ModChainSel (
   , SupportedBlock
   ) where
 
+import           Codec.Serialise (Serialise)
 import           Data.Proxy (Proxy (..))
 
 import           Ouroboros.Network.Block (HasHeader, Slot)
 import           Ouroboros.Network.Chain (Chain)
-import           Ouroboros.Network.Serialise
 
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.Condense

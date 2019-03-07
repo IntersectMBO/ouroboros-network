@@ -11,14 +11,13 @@ module Mock.Mempool (
   , consistent
   ) where
 
+import           Codec.Serialise (Serialise)
 import           Control.Monad.Except
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Semigroup (Semigroup, (<>))
 import           Data.Set (Set)
 import qualified Data.Set as Set
-
-import           Ouroboros.Network.Serialise (Serialise)
 
 import           Ouroboros.Consensus.Crypto.Hash
 import           Ouroboros.Consensus.Ledger.Mock

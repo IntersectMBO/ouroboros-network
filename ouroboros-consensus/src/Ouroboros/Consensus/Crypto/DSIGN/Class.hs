@@ -12,10 +12,9 @@ module Ouroboros.Consensus.Crypto.DSIGN.Class
     , verifySignedDSIGN
     ) where
 
+import           Codec.Serialise (Serialise (..))
 import           Crypto.Random (MonadRandom)
 import           GHC.Generics (Generic)
-
-import           Ouroboros.Network.Serialise
 
 import           Ouroboros.Consensus.Util.Condense
 

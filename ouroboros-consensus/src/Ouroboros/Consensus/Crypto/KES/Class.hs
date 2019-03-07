@@ -13,10 +13,9 @@ module Ouroboros.Consensus.Crypto.KES.Class
     , verifySignedKES
     ) where
 
+import           Codec.Serialise (Serialise)
 import           GHC.Generics (Generic)
 import           Numeric.Natural (Natural)
-
-import           Ouroboros.Network.Serialise
 
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Random

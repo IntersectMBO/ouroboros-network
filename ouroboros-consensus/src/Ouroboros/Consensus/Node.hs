@@ -25,6 +25,7 @@ module Ouroboros.Consensus.Node (
   , Network.loggingChannel
   ) where
 
+import           Codec.Serialise (Serialise)
 import           Control.Monad
 import           Control.Monad.Except
 import           Crypto.Random (ChaChaDRG)
@@ -49,7 +50,6 @@ import           Ouroboros.Network.Protocol.ChainSync.Client
 import           Ouroboros.Network.Protocol.ChainSync.Examples
 import           Ouroboros.Network.Protocol.ChainSync.Server
 import           Ouroboros.Network.Protocol.ChainSync.Type
-import           Ouroboros.Network.Serialise (Serialise)
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Ledger.Abstract

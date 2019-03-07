@@ -10,6 +10,7 @@ module Ouroboros.Consensus.Crypto.DSIGN.RSAPSS
     ( RSAPSSDSIGN
     ) where
 
+import           Codec.Serialise (Serialise (..), serialise)
 import           Crypto.PubKey.RSA
 import           Crypto.PubKey.RSA.PSS
 import           Data.ByteString (unpack)
@@ -17,8 +18,6 @@ import           Data.ByteString.Lazy (toStrict)
 import           Data.Function (on)
 import           GHC.Generics (Generic)
 import           Text.Printf (printf)
-
-import           Ouroboros.Network.Serialise
 
 import           Ouroboros.Consensus.Crypto.DSIGN.Class
 import           Ouroboros.Consensus.Crypto.Hash
