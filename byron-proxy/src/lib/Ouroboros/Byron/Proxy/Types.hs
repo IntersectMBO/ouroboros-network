@@ -20,6 +20,7 @@ import Control.Exception (Exception, throwIO)
 import Control.Monad (forM, void)
 import Control.Monad.Trans.Class (lift)
 import Control.Lens ((^.))
+import Data.ByteString (ByteString)
 import Data.Conduit (ConduitT, (.|), await, mapOutput, runConduit, yield)
 import Data.List (maximumBy)
 import Data.List.NonEmpty (NonEmpty)
@@ -56,6 +57,9 @@ import Pos.Infra.DHT.Real.Param (KademliaParams)
 import Pos.Infra.Network.Types (NetworkConfig (..))
 import Pos.Logic.Types hiding (streamBlocks)
 import qualified Pos.Logic.Types as Logic
+
+import Ouroboros.Byron.Proxy.DB (DB)
+import qualified Ouroboros.Byron.Proxy.DB as DB
 
 -- | Definitions required in order to run the Byron proxy.
 data ByronProxyConfig = ByronProxyConfig
@@ -279,58 +283,40 @@ updateBestTipMaybe peer header = maybe bt (updateBestTip peer header)
   where
   bt = BestTip { btTip = header, btPeers = peer NE.:| [] }
 
--- | Serving blocks to a Byron cluster requires a database of blocks keyed
--- on hashes.
-data ByronBlockSource m = ByronBlockSource
-  { -- | Streams blocks from and including the one at this hash, in
-    -- older-to-newer order, or stops without producing anything if this hash is not known.
-    bbsStream :: HeaderHash -> ConduitT () SerializedBlock m ()
-  , bbsTip    :: m SerializedBlock
-  }
-
 bbsStreamBlocks
   :: forall m .
      ( Monad m )
-  => ByronBlockSource m
+  => DB m
   -> (forall a . Text -> m a)
   -- ^ If decoding fails.
   -> HeaderHash
   -> ConduitT () Block m ()
-bbsStreamBlocks bbs onErr hh = bbsStream bbs hh .| decode
+bbsStreamBlocks db onErr hh = DB.readFrom db (DB.ByHash hh) .| decode
   where
-  decode :: ConduitT SerializedBlock Block m ()
+  decode :: ConduitT ByteString Block m ()
   decode = do
-    mSer <- await
-    case fmap (decodeFull' . unSerialized) mSer of
+    mBytes <- await
+    case fmap decodeFull' mBytes of
       Nothing         -> pure ()
       Just (Left err) -> lift $ onErr err
       Just (Right b)  -> yield b >> decode
 
-bbsTipBlock
-  :: forall m .
-     ( Monad m )
-  => ByronBlockSource m
-  -> (forall a . Text -> m a)
-  -> m Block
-bbsTipBlock bbs onErr = bbsTip bbs >>= \ser -> case decodeFull' (unSerialized ser) of
-  Left err -> onErr err
-  Right b  -> pure b
-
 bbsGetSerializedBlock
   :: ( Monad m )
-  => ByronBlockSource m
+  => DB m
   -> HeaderHash
   -> m (Maybe SerializedBlock)
-bbsGetSerializedBlock bbs hh = runConduit (bbsStream bbs hh .| await)
+bbsGetSerializedBlock db hh =
+  (fmap . fmap) Serialized (runConduit (DB.readFrom db (DB.ByHash hh) .| await))
 
 bbsGetBlockHeader
   :: forall m .
      ( Monad m )
-  => ByronBlockSource m
+  => DB m
   -> (forall a . Text -> m a)
   -> HeaderHash
   -> m (Maybe BlockHeader)
-bbsGetBlockHeader bbs onErr hh = runConduit (bbsStreamBlocks bbs onErr hh .| consumeOne)
+bbsGetBlockHeader db onErr hh = runConduit (bbsStreamBlocks db onErr hh .| consumeOne)
   where
   consumeOne :: ConduitT Block x m (Maybe BlockHeader)
   consumeOne = (fmap . fmap) Pos.Chain.Block.getBlockHeader await
@@ -347,16 +333,16 @@ bbsGetBlockHeader bbs onErr hh = runConduit (bbsStreamBlocks bbs onErr hh .| con
 bbsGetHashesRange
   :: forall m .
      ( Monad m )
-  => ByronBlockSource m
+  => DB m
   -> (forall a . Text -> m a)
   -> Maybe Word
   -> HeaderHash
   -> HeaderHash
   -> m (Maybe (OldestFirst NonEmpty HeaderHash))
-bbsGetHashesRange bbs onErr mLimit from to = runConduit (producer .| consumer)
+bbsGetHashesRange db onErr mLimit from to = runConduit (producer .| consumer)
   where
   producer :: ConduitT () HeaderHash m ()
-  producer = mapOutput headerHash (bbsStreamBlocks bbs onErr from)
+  producer = mapOutput headerHash (bbsStreamBlocks db onErr from)
   consumer :: ConduitT HeaderHash x m (Maybe (OldestFirst NonEmpty HeaderHash))
   consumer = goConsumer (fromMaybe maxBound mLimit) []
   goConsumer :: Word
@@ -389,14 +375,14 @@ bbsGetHashesRange bbs onErr mLimit from to = runConduit (producer .| consumer)
 bbsGetBlockHeaders
   :: forall m .
      ( Monad m )
-  => ByronBlockSource m
+  => DB m
   -> (forall a . Text -> m a)
   -> Maybe Word
   -> NonEmpty HeaderHash
   -> HeaderHash
   -> m (Maybe (NewestFirst NonEmpty BlockHeader))
-bbsGetBlockHeaders bbs onErr mLimit checkpoints tip = do
-  knownCheckpoints <- fmap catMaybes $ forM (NE.toList checkpoints) (bbsGetBlockHeader bbs onErr)
+bbsGetBlockHeaders db onErr mLimit checkpoints tip = do
+  knownCheckpoints <- fmap catMaybes $ forM (NE.toList checkpoints) (bbsGetBlockHeader db onErr)
   let newestCheckpoint = maximumBy (comparing getEpochOrSlot) knownCheckpoints
   case knownCheckpoints of
     []    -> pure Nothing
@@ -406,7 +392,7 @@ bbsGetBlockHeaders bbs onErr mLimit checkpoints tip = do
       .| consumer (fromMaybe maxBound mLimit) []
   where
   producer :: HeaderHash -> ConduitT () BlockHeader m ()
-  producer = mapOutput Pos.Chain.Block.getBlockHeader . bbsStreamBlocks bbs onErr
+  producer = mapOutput Pos.Chain.Block.getBlockHeader . bbsStreamBlocks db onErr
   consumer :: Word
            -> [BlockHeader]
            -> ConduitT BlockHeader x m (Maybe (NewestFirst NonEmpty BlockHeader))
@@ -426,11 +412,11 @@ bbsGetBlockHeaders bbs onErr mLimit checkpoints tip = do
 bbsGetLcaMainChain
   :: forall m .
      ( Monad m )
-  => ByronBlockSource m
+  => DB m
   -> (forall a . Text -> m a)
   -> OldestFirst [] HeaderHash
   -> m (NewestFirst [] HeaderHash, OldestFirst [] HeaderHash)
-bbsGetLcaMainChain bbs onErr (OldestFirst otherChain) = case otherChain of
+bbsGetLcaMainChain db onErr (OldestFirst otherChain) = case otherChain of
   -- No starting point, but the answer is obvious.
   [] -> pure (NewestFirst [], OldestFirst [])
   -- Begin producing from the oldest point. 
@@ -438,7 +424,7 @@ bbsGetLcaMainChain bbs onErr (OldestFirst otherChain) = case otherChain of
   (oldest : others) -> runConduit (producer oldest .| consumer (oldest : others) [])
   where
   producer :: HeaderHash -> ConduitT () HeaderHash m ()
-  producer hh = mapOutput headerHash (bbsStreamBlocks bbs onErr hh)
+  producer hh = mapOutput headerHash (bbsStreamBlocks db onErr hh)
   consumer :: [HeaderHash] -- The rest of the input chain (oldest first)
            -> [HeaderHash] -- Those which we've confirmed to be in the db
            -> ConduitT HeaderHash x m (NewestFirst [] HeaderHash, OldestFirst [] HeaderHash)
@@ -459,10 +445,10 @@ instance Exception BlockDecodeError
 -- | Bring up a Byron proxy.
 withByronProxy
   :: ByronProxyConfig
-  -> ByronBlockSource IO
+  -> DB IO
   -> (ByronProxy -> IO t)
   -> IO t
-withByronProxy bpc bbs k =
+withByronProxy bpc db k =
   -- Create pools for all relayed data.
   -- TODO what about for delegation certificates?
   withPool (bpcPoolRoundInterval bpc) $ \(txPool :: TxPool) ->
@@ -567,37 +553,31 @@ withByronProxy bpc bbs k =
           -- With only the immutable, we just need to get the tip and that
           -- will be the LCA if it's in the set of hashes.
           --   tip
-          , getLcaMainChain      = bbsGetLcaMainChain bbs blockDecodeError
+          , getLcaMainChain      = bbsGetLcaMainChain db blockDecodeError
 
           -- MsgGetHeaders conversation
-          -- Needs the index.
-          , Logic.getBlockHeader = bbsGetBlockHeader bbs blockDecodeError
+          , Logic.getBlockHeader = bbsGetBlockHeader db blockDecodeError
           -- MsgGetHeaders conversation
-          -- Needs the index.
           , getBlockHeaders      = \mLimit checkpoints mTip -> do
               tip <- case mTip of
                 Just tip -> pure tip
-                Nothing -> fmap headerHash (bbsTipBlock bbs blockDecodeError)
-              result <- bbsGetBlockHeaders bbs blockDecodeError mLimit checkpoints tip
+                Nothing -> fmap headerHash (DB.readTip db)
+              result <- bbsGetBlockHeaders db blockDecodeError mLimit checkpoints tip
               case result of
                 Nothing -> pure $ Left $ GHFBadInput ""
                 Just it -> pure $ Right it
           -- MsgGetHeaders conversation
-          -- Needs only 'tip'
-          , getTip               = bbsTipBlock bbs blockDecodeError
+          , getTip               = DB.readTip db
           -- GetBlocks conversation
-          -- Needs the index, then we can stream from there.
           , getHashesRange       = \mLimit from to -> do
-              result <- bbsGetHashesRange bbs blockDecodeError mLimit from to
+              result <- bbsGetHashesRange db blockDecodeError mLimit from to
               case result of
                 Nothing -> pure $ Left $ GHRBadInput ""
                 Just it -> pure $ Right it
           -- GetBlocks conversation
-          -- Needs the index.
-          , getSerializedBlock   = bbsGetSerializedBlock bbs
+          , getSerializedBlock   = bbsGetSerializedBlock db
           -- StreamBlocks conversation
-          -- Needs an index, then stream from there.
-          , Logic.streamBlocks   = bbsStream bbs
+          , Logic.streamBlocks   = mapOutput Serialized . DB.readFrom db . DB.ByHash
 
           }
 

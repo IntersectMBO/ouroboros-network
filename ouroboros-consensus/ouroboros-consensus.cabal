@@ -78,6 +78,7 @@ library
                        Ouroboros.Storage.FS.Sim.STM
                        Ouroboros.Storage.ImmutableDB
                        Ouroboros.Storage.ImmutableDB.API
+                       Ouroboros.Storage.ImmutableDB.CumulEpochSizes
                        Ouroboros.Storage.ImmutableDB.Impl
                        Ouroboros.Storage.ImmutableDB.Index
                        Ouroboros.Storage.ImmutableDB.Types
@@ -271,12 +272,12 @@ test-suite test-storage
                     Test.Ouroboros.Storage.ImmutableDB
                     Test.Ouroboros.Storage.ImmutableDB.CumulEpochSizes
                     Test.Ouroboros.Storage.ImmutableDB.Model
-                    Test.Ouroboros.Storage.ImmutableDB.Sim
                     Test.Ouroboros.Storage.ImmutableDB.StateMachine
                     Test.Ouroboros.Storage.ImmutableDB.TestBlock
                     Test.Ouroboros.Storage.VolatileDB
                     Test.Ouroboros.Storage.VolatileDB.Model
                     Test.Ouroboros.Storage.VolatileDB.StateMachine
+                    Test.Util.Orphans.Arbitrary
                     Test.Util.RefEnv
   build-depends:    base,
                     ouroboros-network,
@@ -295,11 +296,13 @@ test-suite test-storage
                     QuickCheck,
                     quickcheck-state-machine >=0.6.0,
                     random,
+                    serialise,
                     stm,
                     tasty,
                     tasty-hunit,
                     tasty-quickcheck,
                     temporary,
+                    time,
                     transformers,
                     tree-diff
 
