@@ -2,6 +2,7 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Test.Pipe (tests) where
 
+import           Codec.Serialise (Serialise)
 import           Control.Monad
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM
@@ -25,7 +26,6 @@ import           Ouroboros.Network.Protocol.ChainSync.Client
 import           Ouroboros.Network.Protocol.ChainSync.Codec
 import           Ouroboros.Network.Protocol.ChainSync.Examples
 import           Ouroboros.Network.Protocol.ChainSync.Server
-import           Ouroboros.Network.Testing.Serialise
 
 --
 -- The list of all tests

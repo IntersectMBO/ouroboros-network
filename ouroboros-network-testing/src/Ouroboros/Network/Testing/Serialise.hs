@@ -5,27 +5,12 @@ module Ouroboros.Network.Testing.Serialise (
     , prop_serialise
     , prop_serialise_valid
     , prop_serialise_roundtrip
-
-
-      -- * Re-exports
-    , module Codec.CBOR.Encoding
-    , module Codec.CBOR.Decoding
-    , (<>)
-    , serialise
-    , deserialise
-    , deserialiseOrFail
-    , toLazyByteString
     )
     where
 
-import           Codec.CBOR.Decoding hiding (DecodeAction (..), TokenType (..))
-import           Codec.CBOR.Encoding hiding (Encoding (..), Tokens (..))
-import           Codec.CBOR.Encoding (Encoding)
 import           Codec.CBOR.FlatTerm
 import           Codec.CBOR.Read (DeserialiseFailure (..))
-import           Codec.CBOR.Write (toLazyByteString)
 import           Codec.Serialise
-import           Codec.Serialise.Decoding (decodeBytes)
 import           Test.QuickCheck (Property, counterexample, property, (.&&.), (===))
 
 -- Class properties
