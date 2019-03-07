@@ -5,6 +5,9 @@ module Test.Mux (
     , setupMiniReqRsp
     , tests) where
 
+import           Codec.Serialise (Serialise (..))
+import           Codec.CBOR.Encoding (encodeBytes)
+import           Codec.CBOR.Decoding (decodeBytes)
 import           Control.Monad
 import qualified Data.Binary.Put as Bin
 import qualified Data.ByteString.Lazy as BL
@@ -24,7 +27,6 @@ import           Network.TypedProtocol.ReqResp.Server
 import           Ouroboros.Network.Channel
 import qualified Ouroboros.Network.Mux as Mx
 import           Ouroboros.Network.Protocol.ReqResp.Codec
-import           Ouroboros.Network.Testing.Serialise
 
 tests :: TestTree
 tests =
