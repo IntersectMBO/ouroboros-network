@@ -9,6 +9,7 @@ module Ouroboros.Network.Pipe (
   ) where
 
 import           Control.Monad
+import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
 import           Data.Bits
@@ -25,13 +26,6 @@ data PipeCtx = PipeCtx {
       pcRead  :: Handle
     , pcWrite :: Handle
     }
-
-setupMux :: (Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl)
-         => Mx.MiniProtocolDescriptions ptcl IO
-         -> PipeCtx
-         -> IO ()
-setupMux mpds ctx =
-    void $ Mx.muxStart mpds (writePipe ctx) (readPipe ctx) (sduSize ctx) (closePipe ctx) Nothing
 
 closePipe :: PipeCtx -> IO ()
 closePipe ctx = do
@@ -78,8 +72,11 @@ readPipe ctx = do
             else recvLen' pd (l - fromIntegral (BL.length buf)) (buf : bufs)
 
 startPipe :: (Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl)
-          => Mx.MiniProtocolDescriptions ptcl IO -> (Handle, Handle) -> IO ()
-startPipe mpds (r, w) = do
+          => [(Mx.Version, Mx.MiniProtocolDescriptions ptcl IO)]
+          -> Mx.MuxStyle
+          -> (Handle, Handle) -> IO ()
+startPipe verMpds style (r, w) = do
     let ctx = PipeCtx r w
-    setupMux mpds ctx
+    bearer <- Mx.muxBearerNew (writePipe ctx) (readPipe ctx) (sduSize ctx) (closePipe ctx)
+    void $ async $ Mx.muxStart verMpds bearer style Nothing
 
