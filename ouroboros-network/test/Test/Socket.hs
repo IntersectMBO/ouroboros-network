@@ -124,7 +124,6 @@ prop_socket_send_recv clientAddr serverAddr clientVersions serverVersions reques
     endMpsVar <- atomically $ newTVar 2
 
     (verify, client_mp, server_mp) <- Mxt.setupMiniReqRsp
-                                        (Mx.AppProtocolId Mxt.ChainSync1)
                                         (return ()) endMpsVar request response
 
     let client_mps Mxt.ChainSync1 = client_mp
@@ -152,8 +151,7 @@ prop_socket_recv_close request response = ioProperty $ do
     endMpsVar <- atomically $ newTVar 2
     resq <- atomically $ newTBQueue 1
 
-    (_, _, server_mp) <- Mxt.setupMiniReqRsp (Mx.AppProtocolId Mxt.ChainSync1)
-                                             (return ()) endMpsVar request response
+    (_, _, server_mp) <- Mxt.setupMiniReqRsp (return ()) endMpsVar request response
 
     let server_mps Mxt.ChainSync1 = server_mp
 
@@ -187,8 +185,7 @@ prop_socket_client_connect_error request response = ioProperty $ do
 
     endMpsVar <- atomically $ newTVar 2
 
-    (_, client_mp, _) <- Mxt.setupMiniReqRsp (Mx.AppProtocolId Mxt.ChainSync1)
-                                             (return ()) endMpsVar request response
+    (_, client_mp, _) <- Mxt.setupMiniReqRsp (return ()) endMpsVar request response
 
     let client_mps Mxt.ChainSync1 = client_mp
 
@@ -208,7 +205,6 @@ prop_version_missmatch = ioProperty $ do
     endMpsVar <- atomically $ newTVar 2
 
     (_, client_mp, server_mp) <- Mxt.setupMiniReqRsp
-                                        (Mx.AppProtocolId Mxt.ChainSync1)
                                         (return ()) endMpsVar request response
 
     let client_mps Mxt.ChainSync1 = client_mp
@@ -248,7 +244,6 @@ prop_network_missmatch = ioProperty $ do
     endMpsVar <- atomically $ newTVar 2
 
     (_, client_mp, server_mp) <- Mxt.setupMiniReqRsp
-                                        (Mx.AppProtocolId Mxt.ChainSync1)
                                         (return ()) endMpsVar request response
 
     let client_mps Mxt.ChainSync1 = client_mp
@@ -293,11 +288,9 @@ demo chain0 updates = do
     let Just expectedChain = Chain.applyChainUpdates updates chain0
         target = Chain.headPoint expectedChain
         a_mps Mxt.ChainSync1 = Mx.MiniProtocolDescription
-                                   (Mx.AppProtocolId Mxt.ChainSync1)
                                    (consumerInit consumerDone target consumerVar)
                                    dummyCallback
         b_mps Mxt.ChainSync1 = Mx.MiniProtocolDescription
-                                   (Mx.AppProtocolId Mxt.ChainSync1)
                                    dummyCallback
                                    (producerRsp producerVar)
 
