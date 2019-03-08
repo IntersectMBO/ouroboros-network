@@ -141,7 +141,7 @@ startInitiatorT :: (Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl)
                 -> AddrInfo
                 -> Maybe (Maybe SomeException -> IO ())
                 -> IO ()
-startInitiatorT verMpds local remote rescb_m = do
+startInitiatorT verMpds local remote rescb_m =
     bracketOnError
         (socket (addrFamily local) Stream defaultProtocol)
         close
@@ -157,7 +157,6 @@ startInitiatorT verMpds local remote rescb_m = do
 
             void $ Mx.muxStart verMpds bearer Mx.StyleClient rescb_m
         )
-    return ()
 
 hexDump :: BL.ByteString -> String -> IO ()
 hexDump buf out | BL.empty == buf = say out
