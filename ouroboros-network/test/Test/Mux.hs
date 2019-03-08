@@ -203,7 +203,6 @@ prop_mux_snd_recv request response = ioProperty $ do
         server_r = client_w
 
     (verify, client_mp, server_mp) <- setupMiniReqRsp
-                                        (Mx.AppProtocolId ChainSync1)
                                         (return ()) endMpsVar request response
 
     let client_mps ChainSync1 = client_mp
@@ -224,20 +223,19 @@ dummyCallback _ = forever $
 
 -- | Create a verification function, a MiniProtocolDescription for the client side and a
 -- MiniProtocolDescription for the server side for a RequestResponce protocol.
-setupMiniReqRsp :: Mx.MiniProtocolId ptcl
-                -> IO ()        -- | Action performed by responder before processing the response
+setupMiniReqRsp :: IO ()        -- | Action performed by responder before processing the response
                 -> TVar IO Int  -- | Total number of miniprotocols.
                 -> DummyPayload -- | Request, sent from initiator.
                 -> DummyPayload -- | Response, sent from responder after receive the request.
                 -> IO (IO Bool
                       , Mx.MiniProtocolDescription ptcl IO
                       , Mx.MiniProtocolDescription ptcl IO)
-setupMiniReqRsp mid serverAction mpsEndVar request response = do
+setupMiniReqRsp serverAction mpsEndVar request response = do
     serverResultVar <- newEmptyTMVarM
     clientResultVar <- newEmptyTMVarM
 
-    let client_mp = Mx.MiniProtocolDescription mid (clientInit clientResultVar) dummyCallback
-        server_mp = Mx.MiniProtocolDescription mid dummyCallback (serverRsp serverResultVar)
+    let client_mp = Mx.MiniProtocolDescription (clientInit clientResultVar) dummyCallback
+        server_mp = Mx.MiniProtocolDescription dummyCallback (serverRsp serverResultVar)
 
     return (verifyCallback serverResultVar clientResultVar, client_mp, server_mp)
   where
@@ -307,11 +305,9 @@ prop_mux_2_minis request0 response0 response1 request1 = ioProperty $ do
         server_r = client_w
 
     (verify_0, client_mp0, server_mp0) <-
-        setupMiniReqRsp (Mx.AppProtocolId ChainSync2)
-                        (return ()) endMpsVar request0 response0
+        setupMiniReqRsp (return ()) endMpsVar request0 response0
     (verify_1, client_mp1, server_mp1) <-
-        setupMiniReqRsp (Mx.AppProtocolId BlockFetch2)
-                        (return ()) endMpsVar request1 response1
+        setupMiniReqRsp (return ()) endMpsVar request1 response1
 
     let client_mps ChainSync2  = client_mp0
         client_mps BlockFetch2 = client_mp1
@@ -353,12 +349,10 @@ prop_mux_starvation response0 response1 =
         server_r = client_w
 
     (verify_short, client_short, server_short) <-
-        setupMiniReqRsp (Mx.AppProtocolId ChainSync2)
-                        (waitOnAllClients activeMpsVar 2)
+        setupMiniReqRsp (waitOnAllClients activeMpsVar 2)
                         endMpsVar request response0
     (verify_long, client_long, server_long) <-
-        setupMiniReqRsp (Mx.AppProtocolId BlockFetch2)
-                        (waitOnAllClients activeMpsVar 2)
+        setupMiniReqRsp (waitOnAllClients activeMpsVar 2)
                         endMpsVar request response1
 
     let client_mps BlockFetch2 = client_short
@@ -457,8 +451,7 @@ failingServer  = do
         request  = DummyPayload $ BL.replicate 4 0xa
         response = request
 
-    (_, _, server_mp) <- setupMiniReqRsp (Mx.AppProtocolId ChainSync1)
-                                         (return ()) endMpsVar request response
+    (_, _, server_mp) <- setupMiniReqRsp (return ()) endMpsVar request response
     let server_mps ChainSync1 = server_mp
     server_res <- startMuxSTM [(version0, server_mps)] Mx.StyleServer server_w server_r sduLen Nothing
 

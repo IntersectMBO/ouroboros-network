@@ -170,10 +170,8 @@ instance Bounded ptcl => Bounded (MiniProtocolId ptcl) where
  along with all other miniprotocols.
  -}
 data MiniProtocolDescription ptcl m = MiniProtocolDescription {
-    -- | The 'MiniProtocolId' described.
-      mpdId        :: MiniProtocolId ptcl
     -- | Initiator function, consumes and produces messages related to the initiator side.
-    , mpdInitiator :: Channel m BL.ByteString -> m ()
+      mpdInitiator :: Channel m BL.ByteString -> m ()
     -- | Responder function, consumes and produces messages related to the responder side.
     , mpdResponder :: Channel m BL.ByteString -> m ()
     }

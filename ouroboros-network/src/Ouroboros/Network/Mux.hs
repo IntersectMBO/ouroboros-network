@@ -70,7 +70,7 @@ muxStart verMpds bearer style rescb_m = do
                , muxControl pmss ModeResponder
                , muxControl pmss ModeInitiator
                ]
-    mjobs <- sequence [ mpsJob cnt pmss (udesc ptcl)
+    mjobs <- sequence [ mpsJob cnt pmss udesc ptcl
                       | ptcl <- [minBound..maxBound] ]
     aids <- mapM async $ jobs ++ concat mjobs
     muxBearerSetState bearer Mature
@@ -101,13 +101,14 @@ muxStart verMpds bearer style rescb_m = do
                         | ptcl <- [minBound..maxBound]
                         , mode <- [ModeInitiator, ModeResponder] ]
 
-    mpsJob cnt pmss mpd = do
+    mpsJob cnt pmss udesc mpdId = do
+        let mpd = udesc mpdId
         w_i <- atomically newEmptyTMVar
         w_r <- atomically newEmptyTMVar
 
-        return [ mpdInitiator mpd (muxChannel pmss (mpdId mpd) ModeInitiator w_i cnt)
+        return [ mpdInitiator mpd (muxChannel pmss (AppProtocolId mpdId) ModeInitiator w_i cnt)
                      >> mpsJobExit cnt
-               , mpdResponder mpd (muxChannel pmss (mpdId mpd) ModeResponder w_r cnt)
+               , mpdResponder mpd (muxChannel pmss (AppProtocolId mpdId) ModeResponder w_r cnt)
                      >> mpsJobExit cnt
                ]
 
