@@ -38,6 +38,7 @@ library
                        Ouroboros.Network.Mux.Control
                        Ouroboros.Network.Mux.Egress
                        Ouroboros.Network.Mux.Ingress
+                       Ouroboros.Network.Mux.Interface
                        Ouroboros.Network.Mux.Types
                        Ouroboros.Network.NodeToNode
                        Ouroboros.Network.NodeToClient
@@ -119,6 +120,7 @@ test-suite tests
                        Ouroboros.Network.Mux.Control
                        Ouroboros.Network.Mux.Egress
                        Ouroboros.Network.Mux.Ingress
+                       Ouroboros.Network.Mux.Interface
                        Ouroboros.Network.Mux.Types
                        Ouroboros.Network.Node
                        Ouroboros.Network.Pipe
