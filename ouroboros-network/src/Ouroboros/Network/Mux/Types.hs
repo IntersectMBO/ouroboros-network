@@ -10,8 +10,11 @@ module Ouroboros.Network.Mux.Types (
     , ProtocolEnum (..)
     , MiniProtocolId (..)
     , MiniProtocolMode (..)
+    , MuxBearer (..)
+    , MuxBearerState (..)
     , MuxError (..)
     , MuxErrorType (..)
+    , MuxStyle (..)
     , MuxSDU (..)
     , MuxSDUHeader (..)
     , NetworkMagic (..)
@@ -187,6 +190,9 @@ newtype MiniProtocolDispatch ptcl m =
 data MiniProtocolMode = ModeInitiator | ModeResponder
   deriving (Eq, Ord, Ix, Enum, Bounded, Show)
 
+data MuxStyle = StyleClient | StyleServer
+  deriving (Eq, Show)
+
 data MuxSDU ptcl = MuxSDU {
       msTimestamp :: !RemoteClockModel
     , msId        :: !(MiniProtocolId ptcl)
@@ -223,13 +229,26 @@ data PerMuxSharedState ptcl m = PerMuxSS {
     dispatchTable :: MiniProtocolDispatch ptcl m
   -- | Egress queue, shared by all miniprotocols
   , tsrQueue      :: TBQueue m (TranslocationServiceRequest ptcl m)
-  -- | Timestamp and send MuxSDU
-  , write         :: MuxSDU ptcl -> m (Time m)
-  -- | Read a MuxSDU
-  , read          :: m (MuxSDU ptcl, Time m)
-  -- | Return a suitable MuxSDU payload size
-  , sduSize       :: m Word16
+  , bearer        :: MuxBearer ptcl m
   }
+
+data MuxBearerState = Larval
+                    | Connected
+                    | Mature
+                    | Dying
+                    | Dead
+                    deriving (Eq, Show)
+
+data MuxBearer ptcl m = MuxBearer {
+    -- | Timestamp and send MuxSDU
+      write   :: MuxSDU ptcl -> m (Time m)
+    -- | Read a MuxSDU
+    , read    :: m (MuxSDU ptcl, Time m)
+    -- | Return a suitable MuxSDU payload size
+    , sduSize :: m Word16
+    , close   :: m ()
+    , state   :: TVar m MuxBearerState
+    }
 
 data MuxError = MuxError {
       errorType  :: !MuxErrorType

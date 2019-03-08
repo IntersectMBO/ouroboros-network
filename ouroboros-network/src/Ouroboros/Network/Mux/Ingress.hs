@@ -69,7 +69,7 @@ negMiniProtocolMode ModeResponder = ModeInitiator
 
 {- | Decode a MuSDU header -}
 decodeMuxSDUHeader :: (HasCallStack , ProtocolEnum ptcl)
-                   => BL.ByteString -> (Either MuxError (MuxSDU ptcl))
+                   => BL.ByteString -> Either MuxError (MuxSDU ptcl)
 decodeMuxSDUHeader buf =
     case Bin.runGetOrFail dec buf of
          Left  (_, _, e)  -> Left $ MuxError MuxDecodeError e callStack
@@ -106,7 +106,7 @@ decodeMuxSDUHeader buf =
 demux :: (MonadSTM m, MonadSay m, Ord ptcl, Enum ptcl)
       => PerMuxSharedState ptcl m -> m ()
 demux pmss = forever $ do
-    (sdu, _) <- Ouroboros.Network.Mux.Types.read pmss
+    (sdu, _) <- Ouroboros.Network.Mux.Types.read $ bearer pmss
     --say $ printf "demuxing sdu on mid %s mode %s" (show $ msId sdu) (show $ msMode sdu)
     -- Notice the mode reversal, ModeResponder is delivered to ModeInitiator and vice versa.
     atomically $ writeTBQueue (ingressQueue (dispatchTable pmss) (msId sdu) (negMiniProtocolMode $ msMode sdu)) (msBlob sdu)

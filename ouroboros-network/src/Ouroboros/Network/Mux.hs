@@ -7,8 +7,10 @@ module Ouroboros.Network.Mux (
     , ProtocolEnum (..)
     , MiniProtocolId (..)
     , MiniProtocolMode (..)
+    , MuxBearerState (..)
     , MuxError (..)
     , MuxErrorType (..)
+    , MuxStyle (..)
     , MuxSDU (..)
     , NetworkMagic (..)
     , Version (..)
@@ -16,8 +18,8 @@ module Ouroboros.Network.Mux (
     , RemoteClockModel (..)
     , encodeMuxSDU
     , decodeMuxSDUHeader
-    , muxInit
-    , muxResp
+    , muxBearerNew
+    , muxBearerSetState
     , muxStart
     ) where
 
@@ -44,23 +46,25 @@ import           Ouroboros.Network.Mux.Ingress
 import           Ouroboros.Network.Mux.Types
 
 
-
--- | muxStart starts a mux bearer for the specified protocols with the provided read and write
--- functions.
+-- | muxStart starts a mux bearer for the specified protocols corresponding to
+-- one of the provided Versions.
 -- TODO: replace MonadSay with iohk-monitoring-framework.
-muxStart :: (MonadAsync m, MonadFork m, MonadSay m, MonadSTM m, Ord ptcl, Enum ptcl, Bounded ptcl)
-        => MiniProtocolDescriptions ptcl m
-        -> (MuxSDU ptcl -> m (Time m))          -- Write function
-        -> m (MuxSDU ptcl, Time m)              -- Read function
-        -> m Word16                             -- SDU size function
-        -> m ()                                 -- Close function
+muxStart :: ( MonadAsync m, MonadFork m, MonadSay m, MonadSTM m, MonadThrow m
+            , Ord ptcl, Enum ptcl, Bounded ptcl)
+        => [(Version, MiniProtocolDescriptions ptcl m)]
+        -> MuxBearer ptcl m
+        -> MuxStyle
         -> Maybe (Maybe SomeException -> m ())  -- Optional callback for result
-        -> m (ThreadId m)
-muxStart udesc wfn rfn sdufn close  rescb_m = do
+        -> m ()
+muxStart verMpds bearer style rescb_m = do
     tbl <- setupTbl
     tq <- atomically $ newTBQueue 100
     cnt <- newTVarM 0
-    let pmss = PerMuxSS tbl tq wfn rfn sdufn
+    let vfn = if style == StyleClient then muxClient
+                                      else muxServer
+    (_, udesc) <- vfn verMpds bearer
+
+    let pmss = PerMuxSS tbl tq bearer
         jobs = [ demux pmss
                , mux cnt pmss
                , muxControl pmss ModeResponder
@@ -69,12 +73,14 @@ muxStart udesc wfn rfn sdufn close  rescb_m = do
     mjobs <- sequence [ mpsJob cnt pmss (udesc ptcl)
                       | ptcl <- [minBound..maxBound] ]
     aids <- mapM async $ jobs ++ concat mjobs
-    fork $ watcher aids
+    muxBearerSetState bearer Mature
+    watcher aids
 
   where
     watcher as = do
         (_,r) <- waitAnyCatchCancel as
-        close
+        close bearer
+        muxBearerSetState bearer Dead
         case rescb_m of
              Nothing ->
                  case r of
@@ -107,9 +113,11 @@ muxStart udesc wfn rfn sdufn close  rescb_m = do
 
     -- cnt represent the number of SDUs that are queued but not yet sent.
     -- job threads will be prevented from exiting until all SDUs have been transmitted.
-    mpsJobExit cnt = atomically $ do
-        c <- readTVar cnt
-        unless (c == 0) retry
+    mpsJobExit cnt = do
+        muxBearerSetState bearer Dying
+        atomically $ do
+            c <- readTVar cnt
+            unless (c == 0) retry
 
 muxControl :: (MonadSTM m, MonadSay m, Ord ptcl, Enum ptcl) =>
     PerMuxSharedState ptcl m ->
@@ -151,21 +159,36 @@ muxChannel pmss mid md w cnt =
            then pure Nothing
            else return $ Just blob
 
+muxBearerNew :: (MonadSTM m, Ord ptcl, Enum ptcl, Bounded ptcl)
+             => (MuxSDU ptcl -> m (Time m)) -- Write action
+             -> m (MuxSDU ptcl, Time m)     -- Read action
+             -> m Word16                    -- SDU size action
+             -> m ()                        -- Close action
+             -> m (MuxBearer ptcl m)
+muxBearerNew wfn rwn sfn cfn = do
+    st <- atomically $ newTVar Larval
+    return $ MuxBearer wfn rwn sfn cfn st
 
-muxInit :: (MonadAsync m, MonadFork m, MonadSay m, MonadSTM m, MonadThrow m,
+muxBearerSetState :: (MonadSTM m, Ord ptcl, Enum ptcl, Bounded ptcl)
+                  => MuxBearer ptcl m
+                  -> MuxBearerState
+                  -> m ()
+muxBearerSetState bearer newState = atomically $ writeTVar (state bearer) newState
+
+
+muxClient :: (MonadAsync m, MonadFork m, MonadSay m, MonadSTM m, MonadThrow m,
             Ord ptcl, Enum ptcl, Bounded ptcl, HasCallStack)
         => [(Version, MiniProtocolDescriptions ptcl m)]
-        -> (MuxSDU ptcl -> m (Time m)) -- Write function
-        -> m (MuxSDU ptcl, Time m)     -- Read function
+        -> MuxBearer ptcl m
         -> m (Version, MiniProtocolDescriptions ptcl m)
-muxInit verMpds wfn rfn = do
+muxClient verMpds bearer = do
     let versions = map fst verMpds
         msg = MsgInitReq versions
         blob = toLazyByteString $ encodeCtrlMsg msg
         sdu = MuxSDU (RemoteClockModel 0) Muxcontrol ModeInitiator (fromIntegral $ BL.length blob) blob
 
-    void $ wfn sdu
-    (rsp, _) <- rfn
+    void $ write bearer sdu
+    (rsp, _) <- Ouroboros.Network.Mux.Types.read bearer
     if msId rsp /= Muxcontrol || msMode rsp /= ModeResponder
        then throwM $ MuxError MuxUnknownMiniProtocol "invalid muxInit rsp id or mode" callStack
        else do
@@ -180,15 +203,14 @@ muxInit verMpds wfn rfn = do
                 Right (_, MsgInitReq _) -> error "muxInit response as request"
                 Right (_, MsgInitFail e) -> throwM $ MuxError MuxControlNoMatchingVersion e callStack
 
-muxResp :: (MonadAsync m, MonadFork m, MonadSay m, MonadSTM m, MonadThrow m,
+muxServer :: (MonadAsync m, MonadFork m, MonadSay m, MonadSTM m, MonadThrow m,
             Ord ptcl, Enum ptcl, Bounded ptcl, HasCallStack)
         => [(Version, MiniProtocolDescriptions ptcl m)]
-        -> (MuxSDU ptcl -> m (Time m)) -- Write function
-        -> m (MuxSDU ptcl, Time m)     -- Read function
+        -> MuxBearer ptcl m
         -> m (Version, MiniProtocolDescriptions ptcl m)
-muxResp verMpds wfn rfn = do
+muxServer verMpds bearer = do
     let localVersions = map fst verMpds
-    (req, _) <- rfn
+    (req, _) <- Ouroboros.Network.Mux.Types.read bearer
     if msId req /= Muxcontrol || msMode req /= ModeInitiator
        then throwM $ MuxError MuxUnknownMiniProtocol "invalid muxInit req id or mode" callStack
        else do
@@ -217,5 +239,5 @@ muxResp verMpds wfn rfn = do
         let blob = toLazyByteString $ encodeCtrlMsg msg
             sdu = MuxSDU (RemoteClockModel 0) Muxcontrol ModeResponder
                          (fromIntegral $ BL.length blob) blob
-        void $ wfn sdu
+        void $ write bearer sdu
 

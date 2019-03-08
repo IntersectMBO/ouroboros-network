@@ -28,13 +28,6 @@ import           Text.Printf
 
 newtype SocketCtx = SocketCtx { scSocket :: Socket }
 
-setupMux :: (Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl) => (ptcl -> Mx.MiniProtocolDescription ptcl IO)
-         -> SocketCtx
-         -> Maybe (Maybe SomeException -> IO ())
-         -> IO ()
-setupMux mpds ctx rescb_m =
-    void $ Mx.muxStart mpds (writeSocket ctx) (readSocket ctx) (sduSize ctx) (closeSocket ctx) rescb_m
-
 closeSocket :: SocketCtx -> IO ()
 closeSocket ctx = close (scSocket ctx)
 
@@ -110,8 +103,9 @@ startResponderT verMpds addr rescb_m =
 
     larval sd = do
         let ctx = SocketCtx sd
-        (_, mpds) <- Mx.muxResp verMpds (writeSocket ctx) (readSocket ctx)
-        setupMux mpds ctx rescb_m
+        bearer <- Mx.muxBearerNew (writeSocket ctx) (readSocket ctx) (sduSize ctx) (closeSocket ctx)
+        Mx.muxBearerSetState bearer Mx.Connected
+        Mx.muxStart verMpds bearer Mx.StyleServer rescb_m
 
         return ()
 
@@ -152,14 +146,16 @@ startInitiatorT verMpds local remote rescb_m = do
         (socket (addrFamily local) Stream defaultProtocol)
         close
         (\sd -> do
+            let ctx = SocketCtx sd
+            bearer <- Mx.muxBearerNew (writeSocket ctx) (readSocket ctx) (sduSize ctx) (closeSocket ctx)
+
             setSocketOption sd ReuseAddr 1
             setSocketOption sd ReusePort 1
             bind sd (addrAddress local)
             connect sd (addrAddress remote)
-            let ctx = SocketCtx sd
-            (_, mpds) <- Mx.muxInit verMpds (writeSocket ctx) (readSocket ctx)
-            setupMux mpds (SocketCtx sd) rescb_m
-            return ()
+            Mx.muxBearerSetState bearer Mx.Connected
+
+            void $ Mx.muxStart verMpds bearer Mx.StyleClient rescb_m
         )
     return ()
 

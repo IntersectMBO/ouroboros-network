@@ -3,11 +3,14 @@ module Test.Mux (
       TestProtocols1 (..)
     , DummyPayload (..)
     , setupMiniReqRsp
-    , tests) where
+    , tests
+    , version0
+    , version0'
+    , version1) where
 
-import           Codec.Serialise (Serialise (..))
-import           Codec.CBOR.Encoding (encodeBytes)
 import           Codec.CBOR.Decoding (decodeBytes)
+import           Codec.CBOR.Encoding (encodeBytes)
+import           Codec.Serialise (Serialise (..))
 import           Control.Monad
 import qualified Data.Binary.Put as Bin
 import qualified Data.ByteString.Lazy as BL
@@ -17,6 +20,7 @@ import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 import           Text.Printf
 
+import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
@@ -37,6 +41,15 @@ tests =
   , testProperty "unknown miniprotocol"    prop_mux_unknown_miniprot
   , testProperty "too short header"        prop_mux_short_header
   ]
+
+version0 :: Mx.Version
+version0 = Mx.Version0  (Mx.NetworkMagic 0xcafebeeb)
+
+version0' :: Mx.Version
+version0' = Mx.Version0  (Mx.NetworkMagic 0xa5a5a5a5)
+
+version1 :: Mx.Version
+version1 = Mx.Version1  (Mx.NetworkMagic 0xbeebcafe)
 
 data TestProtocols1 = ChainSync1
   deriving (Eq, Ord, Enum, Bounded)
@@ -105,20 +118,29 @@ data MuxSTMCtx ptcl m = MuxSTMCtx {
 }
 
 startMuxSTM :: (Ord ptcl, Enum ptcl, Bounded ptcl, Mx.ProtocolEnum ptcl)
-            => Mx.MiniProtocolDescriptions ptcl IO
+            => [(Mx.Version, Mx.MiniProtocolDescriptions ptcl IO)]
+            -> Mx.MuxStyle
             -> TBQueue IO BL.ByteString
             -> TBQueue IO BL.ByteString
             -> Word16
             -> Maybe (TBQueue IO (Mx.MiniProtocolId ptcl, Mx.MiniProtocolMode, Time IO))
             -> IO (TBQueue IO (Maybe SomeException))
-startMuxSTM mpds wq rq mtu trace = do
+startMuxSTM verMpds style wq rq mtu trace = do
     let ctx = MuxSTMCtx wq rq mtu trace
     resq <- atomically $ newTBQueue 10
-    void $ Mx.muxStart mpds (writeMux ctx) (readMux ctx) (sduSizeMux ctx) (return ()) (Just $ rescb resq)
+    void $ async (spawn ctx resq)
 
     return resq
   where
+    spawn ctx resq = do
+        bearer <- Mx.muxBearerNew (writeMux ctx) (readMux ctx) (sduSizeMux ctx) (return ())
+        res_e <- try $ Mx.muxStart verMpds bearer style (Just $ rescb resq)
+        case res_e of
+             Left  e -> rescb resq $ Just e
+             Right _ -> return ()
+
     rescb resq e_m = atomically $ writeTBQueue resq e_m
+
 
 -- | Helper function to check if jobs in 'startMuxSTM' exited successfully.
 -- Only checks the first return value
@@ -187,8 +209,8 @@ prop_mux_snd_recv request response = ioProperty $ do
     let client_mps ChainSync1 = client_mp
         server_mps ChainSync1 = server_mp
 
-    client_resVar <- startMuxSTM client_mps client_w client_r sduLen Nothing
-    server_resVar <- startMuxSTM server_mps server_w server_r sduLen Nothing
+    client_resVar <- startMuxSTM [(version1, client_mps)] Mx.StyleClient client_w client_r sduLen Nothing
+    server_resVar <- startMuxSTM [(version1, server_mps)] Mx.StyleServer server_w server_r sduLen Nothing
 
     v <- verify
     c_e <- normallExit client_resVar
@@ -297,8 +319,8 @@ prop_mux_2_minis request0 response0 response1 request1 = ioProperty $ do
         server_mps ChainSync2  = server_mp0
         server_mps BlockFetch2 = server_mp1
 
-    client_res <- startMuxSTM client_mps client_w client_r sduLen Nothing
-    server_res <- startMuxSTM server_mps server_w server_r sduLen Nothing
+    client_res <- startMuxSTM [(version0, client_mps)] Mx.StyleClient client_w client_r sduLen Nothing
+    server_res <- startMuxSTM [(version0, server_mps)] Mx.StyleServer server_w server_r sduLen Nothing
 
     res0 <- verify_0
     res1 <- verify_1
@@ -345,8 +367,8 @@ prop_mux_starvation response0 response1 =
         server_mps BlockFetch2 = server_short
         server_mps ChainSync2  = server_long
 
-    client_res <- startMuxSTM client_mps client_w client_r sduLen (Just traceQueueVar)
-    server_res <- startMuxSTM server_mps server_w server_r sduLen Nothing
+    client_res <- startMuxSTM [(version0, client_mps)] Mx.StyleClient client_w client_r sduLen (Just traceQueueVar)
+    server_res <- startMuxSTM [(version0, server_mps)] Mx.StyleServer server_w server_r sduLen Nothing
 
     -- First verify that all messages where received correctly
     res_short <- verify_short
@@ -438,7 +460,7 @@ failingServer  = do
     (_, _, server_mp) <- setupMiniReqRsp (Mx.AppProtocolId ChainSync1)
                                          (return ()) endMpsVar request response
     let server_mps ChainSync1 = server_mp
-    server_res <- startMuxSTM server_mps server_w server_r sduLen Nothing
+    server_res <- startMuxSTM [(version0, server_mps)] Mx.StyleServer server_w server_r sduLen Nothing
 
     return (server_r, server_res)
 

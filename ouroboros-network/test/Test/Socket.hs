@@ -48,21 +48,18 @@ import qualified Test.Mux as Mxt
 tests :: TestTree
 tests =
   testGroup "Socket"
-  [ testProperty "socket send receive IPv4"         prop_socket_send_recv_ipv4
+  [ testProperty "socket send receive IPv4"          prop_socket_send_recv_ipv4
+  , testProperty "socket send receive IPv4 vers neg" prop_socket_send_recv_ipv4_verneg
 #ifdef OUROBOROS_NETWORK_IPV6
-  , testProperty "socket send receive IPv6"         prop_socket_send_recv_ipv6
+  , testProperty "socket send receive IPv6"          prop_socket_send_recv_ipv6
+  , testProperty "socket send receive IPv6 vers neg" prop_socket_send_recv_ipv6_ver_neg
 #endif
-  , testProperty "socket close during receive"      prop_socket_recv_close
-  , testProperty "socket client connection failure" prop_socket_client_connect_error
-  , testProperty "socket missmatch mux version"     prop_version_missmatch
-  , testProperty "socket sync demo"                 prop_socket_demo
+  , testProperty "socket close during receive"       prop_socket_recv_close
+  , testProperty "socket client connection failure"  prop_socket_client_connect_error
+  , testProperty "socket missmatch mux version"      prop_version_missmatch
+  , testProperty "socket missmatch mux network"      prop_network_missmatch
+  , testProperty "socket sync demo"                  prop_socket_demo
   ]
-
-version0 :: Mx.Version
-version0 = Mx.Version0  (Mx.NetworkMagic 0xcafebeeb)
-
-version1 :: Mx.Version
-version1 = Mx.Version1  (Mx.NetworkMagic 0xcafebeeb)
 
 --
 -- Properties
@@ -80,9 +77,19 @@ prop_socket_send_recv_ipv4 :: Mxt.DummyPayload
 prop_socket_send_recv_ipv4 request response = ioProperty $ do
     client:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
     server:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
-    return $ prop_socket_send_recv client server request response
+    return $ prop_socket_send_recv client server [Mxt.version0] [Mxt.version0] request response
+
+prop_socket_send_recv_ipv4_verneg :: Mxt.DummyPayload
+                           -> Mxt.DummyPayload
+                           -> Property
+prop_socket_send_recv_ipv4_verneg request response = ioProperty $ do
+    client:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
+    server:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
+    return $ prop_socket_send_recv client server [Mxt.version0, Mxt.version1] [Mxt.version1] request response
+
 
 #ifdef OUROBOROS_NETWORK_IPV6
+
 -- | Send and receive over IPv6
 prop_socket_send_recv_ipv6 :: Mxt.DummyPayload
                       -> Mxt.DummyPayload
@@ -90,7 +97,16 @@ prop_socket_send_recv_ipv6 :: Mxt.DummyPayload
 prop_socket_send_recv_ipv6 request response = ioProperty $ do
     client:_ <- getAddrInfo Nothing (Just "::1") (Just "0")
     server:_ <- getAddrInfo Nothing (Just "::1") (Just "6061")
-    return $ prop_socket_send_recv client server request response
+    return $ prop_socket_send_recv client server [Mxt.version1] [Mxt.version1] request response
+
+-- | Send and receive over IPv6
+prop_socket_send_recv_ipv6_ver_neg :: Mxt.DummyPayload
+                      -> Mxt.DummyPayload
+                      -> Property
+prop_socket_send_recv_ipv6_ver_neg request response = ioProperty $ do
+    client:_ <- getAddrInfo Nothing (Just "::1") (Just "0")
+    server:_ <- getAddrInfo Nothing (Just "::1") (Just "6061")
+    return $ prop_socket_send_recv client server [Mxt.version0] [Mxt.version0, Mxt.version1] request response
 #endif
 
 -- | Verify that an initiator and a responder can send and receive messages from each other
@@ -98,10 +114,12 @@ prop_socket_send_recv_ipv6 request response = ioProperty $ do
 -- testcases will verify that they are correctly reassembled into the original message.
 prop_socket_send_recv :: AddrInfo
                       -> AddrInfo
+                      -> [Mx.Version]
+                      -> [Mx.Version]
                       -> Mxt.DummyPayload
                       -> Mxt.DummyPayload
                       -> Property
-prop_socket_send_recv clientAddr serverAddr request response = ioProperty $ do
+prop_socket_send_recv clientAddr serverAddr clientVersions serverVersions request response = ioProperty $ do
 
     endMpsVar <- atomically $ newTVar 2
 
@@ -113,13 +131,16 @@ prop_socket_send_recv clientAddr serverAddr request response = ioProperty $ do
         server_mps Mxt.ChainSync1 = server_mp
 
 
-    server_h <- startResponder [(version0, server_mps)] serverAddr
-    startInitiator [(version0, client_mps)] clientAddr serverAddr
+    server_h <- startResponder (addVersions serverVersions server_mps) serverAddr
+    startInitiator (addVersions clientVersions client_mps) clientAddr serverAddr
 
     v <- verify
 
     killResponder server_h
     return $ property v
+  where
+    addVersions vs mps = map (\v -> (v, mps)) vs
+
 
 -- | Verify that we raise the correct exception in case a socket closes during a read.
 prop_socket_recv_close :: Mxt.DummyPayload
@@ -136,7 +157,7 @@ prop_socket_recv_close request response = ioProperty $ do
 
     let server_mps Mxt.ChainSync1 = server_mp
 
-    server_h <- startResponderT [(version0, server_mps)] b (Just $ rescb resq)
+    server_h <- startResponderT [(Mxt.version0, server_mps)] b (Just $ rescb resq)
 
     sd <- socket (addrFamily b) Stream defaultProtocol
     connect sd (addrAddress b)
@@ -171,7 +192,7 @@ prop_socket_client_connect_error request response = ioProperty $ do
 
     let client_mps Mxt.ChainSync1 = client_mp
 
-    res_e <- try $ startInitiator [(version0, client_mps)] clientAddr serverAddr :: IO (Either SomeException ())
+    res_e <- try $ startInitiator [(Mxt.version0, client_mps)] clientAddr serverAddr :: IO (Either SomeException ())
     case res_e of
          Left _  -> return $ property True -- XXX Dissregarding the exact exception type
          Right _ -> return $ property False
@@ -194,8 +215,8 @@ prop_version_missmatch = ioProperty $ do
         server_mps Mxt.ChainSync1 = server_mp
 
 
-    server_h <- startResponderT [(version1, server_mps)] serverAddr (Just $ rescb resq)
-    res_client <- try $ startInitiator [(version0, client_mps)] clientAddr serverAddr
+    server_h <- startResponderT [(Mxt.version1, server_mps)] serverAddr (Just $ rescb resq)
+    res_client <- try $ startInitiator [(Mxt.version0, client_mps)] clientAddr serverAddr
     res_server <- atomically $ readTBQueue resq
 
     killResponder server_h
@@ -216,6 +237,45 @@ prop_version_missmatch = ioProperty $ do
 
     rescb resq e_m = atomically $ writeTBQueue resq e_m
 
+prop_network_missmatch :: Property
+prop_network_missmatch = ioProperty $ do
+    clientAddr:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
+    serverAddr:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
+    let request = Mxt.DummyPayload $ BL.replicate 4 0xa
+    let response = request
+
+    resq <- atomically $ newTBQueue 1
+    endMpsVar <- atomically $ newTVar 2
+
+    (_, client_mp, server_mp) <- Mxt.setupMiniReqRsp
+                                        (Mx.AppProtocolId Mxt.ChainSync1)
+                                        (return ()) endMpsVar request response
+
+    let client_mps Mxt.ChainSync1 = client_mp
+        server_mps Mxt.ChainSync1 = server_mp
+
+
+    server_h <- startResponderT [(Mxt.version0, server_mps)] serverAddr (Just $ rescb resq)
+    res_client <- try $ startInitiator [(Mxt.version0', client_mps)] clientAddr serverAddr
+    res_server <- atomically $ readTBQueue resq
+
+    killResponder server_h
+
+    return (checkResult res_client && checkResult (toEither res_server))
+
+  where
+    toEither Nothing  = Right ()
+    toEither (Just e) = Left e
+
+    checkResult res_e =
+        case res_e of
+             Left e  ->
+                 case fromException e of
+                      Just me -> Mx.errorType me == Mx.MuxControlNoMatchingVersion
+                      Nothing -> False
+             Right _ -> False
+
+    rescb resq e_m = atomically $ writeTBQueue resq e_m
 
 
 
@@ -241,9 +301,9 @@ demo chain0 updates = do
                                    dummyCallback
                                    (producerRsp producerVar)
 
-    b_h <- startResponder [(version0, b_mps)] b
-    a_h <- startResponder [(version0, a_mps)] a
-    startInitiator [(version0, a_mps)] a b
+    b_h <- startResponder [(Mxt.version0, b_mps)] b
+    a_h <- startResponder [(Mxt.version0, a_mps)] a
+    void $ fork $ startInitiator [(Mxt.version0, a_mps)] a b
 
     void $ fork $ sequence_
         [ do threadDelay 10000 -- just to provide interest
