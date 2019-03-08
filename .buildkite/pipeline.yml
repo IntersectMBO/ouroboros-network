@@ -1,0 +1,9 @@
+steps:
+  - label: 'check-hydra'
+    command: 'ci/check-hydra.sh'
+    agents:
+      system: x86_64-linux
+  - label: 'stack2nix'
+    command: 'ci/check-stack2nix.sh'
+    agents:
+      system: x86_64-linux

@@ -191,8 +191,11 @@ executable demo-playground
                        stm,
                        string-conv,
                        text,
-                       time,
-                       unix
+                       time
+  if os(windows)
+     build-depends:    Win32
+  else
+     build-depends:    unix
 
 test-suite test-consensus
   type:             exitcode-stdio-1.0
