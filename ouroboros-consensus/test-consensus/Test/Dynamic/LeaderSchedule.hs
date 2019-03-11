@@ -30,7 +30,6 @@ import           Test.Tasty.QuickCheck
 
 import           Ouroboros.Network.Block (Slot (..))
 import           Ouroboros.Network.Chain (Chain)
-import           Ouroboros.Network.Node
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Demo

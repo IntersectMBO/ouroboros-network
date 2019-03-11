@@ -1,42 +1,48 @@
-{ haddock    ? true
-, test       ? true
-, benchmarks ? false
-, error      ? false
-, profiling  ? false
-}:
-# Builds using system <nixpkgs> and ghc863 with the required package curation.
+#
+# The defaul.nix file. This will generate targets for all
+# buildables (see release.nix for nomenclature, excluding
+# the "build machine" last part, specific to release.nix), eg.:
+#
+# - nix build -f default.nix nix-tools.tests.io-sim # All `io-sim` tests
+# - nix build -f default.nix nix-tools.tests.ouroboros-consensus.test-consensus
+# 
+# Generated targets include anything from stack.yaml (via
+# nix-tools:stack-to-nix and the nix/regenerate.sh script)
+# or cabal.project (via nix-tools:plan-to-nix), including all
+# version overrides specified there.
+#
+# Nix-tools stack-to-nix will generate the `nix/.stack-pkgs.nix`
+# file which is imported from the `nix/pkgs.nix` where further
+# customizations outside of the ones in stack.yaml/cabal.project
+# can be specified as needed for nix/ci.
+#
+# Please run `nix/regenerate.sh` after modifying stack.yaml
+# or relevant part of cabal configuration files.
+# When switching to recent stackage or hackage package version,
+# you might also need to update the iohk-nix common lib. You 
+# can do so by running the `nix/update-iohk-nix.sh` script.
+# 
+# More information about iohk-nix and nix-tools is available at:
+# https://github.com/input-output-hk/iohk-nix/blob/master/docs/nix-toolification.org#for-a-stackage-project
+#
+
+
+# We will need to import the iohk-nix common lib, which includes
+# the nix-tools tooling.
 let
-  # Pin nixpkgs to this one.
-  nixpkgs = import ./nix/nixpkgs.nix {};
-  overrides = import ./nix/overrides.nix { inherit nixpkgs; };
-
-  # This is in the develop branch. The oldest commit against which the Byron
-  # proxy will build.
-  cardanoroot = nixpkgs.fetchgit {
-    url = "https://github.com/input-output-hk/cardano-sl";
-    rev = "0af82eb3de205c6a1a681e1c10b0b513d3e8eb2b";
-    sha256 = "13infd9j3g71pa40fw32300gadj4bnv0hyg5m83q716qscw5dr1j";
-  };
-  cardanopkgs = import ./nix/cardanopkgs.nix { inherit nixpkgs cardanoroot; };
-
-  setProfiling = super: {
-    mkDerivation = args: super.mkDerivation (args // {
-      enableLibraryProfiling = true;
-      enableExecutableProfiling = true;
-      /* Profiling makes a bunch of template haskell stuff fail in tests */
-      doCheck = false;
-    });
-  };
-
-  # Build on 8.6.3 with the required overrides: one for packages defined in
-  # this repo, and one to bring in cardano-sl as a library, which is a real
-  # difficult thing to do apparently.
-  compiler = nixpkgs.haskell.packages.ghc863.override {
-    overrides = self: super:
-      (overrides self super) // (cardanopkgs self super) //
-      (if profiling then setProfiling super else {});
-  };
+  commonLib = import ./nix/iohk-common.nix;
 in
-  (import ./pkgs.nix { inherit nixpkgs compiler haddock test benchmarks error; }) // {
-    inherit nixpkgs compiler;
-  }
+# This file needs to export a function that takes
+# the arguments it is passed and forwards them to
+# the default-nix template from iohk-nix. This is
+# important so that the release.nix file can properly
+# parameterize this file when targetting different
+# hosts.
+{ ... }@args:
+# We will instantiate the default-nix template with the
+# nix/pkgs.nix file...
+commonLib.nix-tools.default-nix ./nix/pkgs.nix args 
+# ... and add additional non-haskell packages we want to build on CI:
+// {
+  
+}

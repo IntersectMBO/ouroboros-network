@@ -23,8 +23,8 @@ module Ouroboros.Network.Block (
 import           Data.Hashable
 import           Data.FingerTree (Measured)
 import           GHC.Generics (Generic)
+import           Codec.Serialise (Serialise (..))
 
-import           Ouroboros.Network.Serialise
 
 -- | The Ouroboros time slot index for a block.
 newtype Slot = Slot { getSlot :: Word }

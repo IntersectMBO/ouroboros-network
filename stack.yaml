@@ -1,0 +1,94 @@
+resolver: lts-13.10
+compiler: ghc-8.6.3
+packages:
+- typed-protocols
+- ouroboros-network
+- ouroboros-network-testing
+- ouroboros-consensus
+- io-sim
+- io-sim-classes
+- byron-proxy
+extra-deps:
+- time-units-1.0.0
+- ekg-0.4.0.15
+- ekg-json-0.1.0.6
+- process-1.6.5.0
+- graphviz-2999.20.0.3
+- quickcheck-state-machine-0.6.0
+- transformers-0.5.5.0
+- git: https://github.com/input-output-hk/iohk-monitoring-framework
+  commit: 8456e488fd26e34f0d15c957965d6cc5c51427af
+
+# Cardano-sl dependencies:
+- ekg-wai-0.1.0.3
+- pvss-0.2.0
+- lrucache-1.2.0.1
+- o-clock-1.0.0.1
+- yaml-0.8.32
+- containers-0.5.11.0
+- aeson-1.3.1.1
+- base58-bytestring-0.1.0
+- network-2.6.3.6
+- transformers-lift-0.2.0.1
+- servant-0.14.1
+- servant-client-0.14
+- servant-client-core-0.14.1
+- servant-server-0.14.1
+- servant-swagger-1.1.6
+- free-5.0.2
+- generics-sop-0.3.2.0
+- http-api-data-0.3.10
+- swagger2-2.3.0.1
+- these-0.7.5
+- lzma-clib-5.2.2
+- git: https://github.com/minad/writer-cps-mtl
+  commit: efee5993637c4d844938ae2b2668079f4df0519f # (0.1.1.6, TODO: bump hackage.nix)
+- git: https://github.com/minad/writer-cps-transformers
+  commit: 971e29e0c77f5e47ad829f42ce465f23fa224a38 # (0.5.5.0, TODO: bump hackage.nix)
+#- git: https://github.com/int-index/transformers-lift
+#  commit: 002555ea49ea7e76b401d09ab7367f3d5e582d70
+- git: https://github.com/well-typed/canonical-json
+  commit: a4016204609ae6708f007012c68bf8c8fb3f6e6c
+- git: https://github.com/int-index/ether
+  commit: 84c1d560da241c8111d1a3c98d9a896f0c62087b
+- git: https://github.com/input-output-hk/aeson-options
+  commit: a25b839b6d2cf1b21fd53906eeaeb3e767cc369a
+- git: https://github.com/input-output-hk/serokell-util
+  commit: 42586f5ea157b4a5411fbcbe41d1bf28bd942438
+- git: https://github.com/input-output-hk/cardano-crypto
+  commit: 45e1a0eafac774c109704be44ca06fd8cae193ba
+- git: https://github.com/input-output-hk/cardano-report-server
+  commit: 93f2246c54436e7f98cc363b4e0f8f1cb5e78717
+- git: https://github.com/input-output-hk/log-warper
+  commit: 16246d4fbf16da7984f2a4b6c42f2ed5098182e4
+- git: https://github.com/input-output-hk/rocksdb-haskell-ng
+  commit: 49f501a082d745f3b880677220a29cafaa181452
+- git: https://github.com/serokell/kademlia
+  commit: 7120bb4d28e708acd52dfd61d3dca7914fac7d7f
+- git: https://github.com/serokell/network-transport
+  commit: 018a50b9042c2115c3ec9c9fd5ca5f28737dd29c
+- git: https://github.com/avieth/network-transport-tcp
+  commit: 2634e5e32178bb0456d800d133f8664321daa2ef
+- git: https://github.com/input-output-hk/universum
+  commit: 7f1b2483f71cacdfd032fe447064d6e0a1df50fc
+- git: https://github.com/input-output-hk/haskell-hedgehog
+  commit: e63fb354bfbad07f3befdd43b382c655944218be
+  subdirs:
+    - hedgehog
+- git: https://github.com/input-output-hk/cardano-sl
+  commit: d09d265e6f78621b2520f4b2b98d177c8695c138
+  subdirs:
+    - lib
+    - core
+    - core/test
+    - binary
+    - binary/test
+    - chain
+    - chain/test
+    - crypto
+    - crypto/test
+    - db
+    - infra
+    - util
+    - util/test
+    - networking

@@ -43,12 +43,13 @@ openDBModel err = (dbModel, db)
     where
         dbModel = initDBModel
         db = VolatileDB {
-              closeDB  = closeDBModel
-            , isOpenDB = isOpenModel
-            , reOpenDB = reOpenModel
-            , getBlock = getBlockModel err
-            , putBlock = putBlockModel err
+              closeDB        = closeDBModel
+            , isOpenDB       = isOpenModel
+            , reOpenDB       = reOpenModel
+            , getBlock       = getBlockModel err
+            , putBlock       = putBlockModel err
             , garbageCollect = garbageCollectModel err
+            , getIsMember    = getIsMemberModel err
         }
 
 closeDBModel :: MonadState (DBModel blockId) m => m ()
@@ -96,6 +97,15 @@ garbageCollectModel err sl = do
     dbm@DBModel {..} <- get
     if not open then EH.throwError err ClosedDBError
     else put dbm {latestGarbaged = Just $ maxMaybe latestGarbaged sl}
+
+getIsMemberModel :: MonadState (DBModel blockId) m
+                 => Ord blockId
+                 => ErrorHandling (VolatileDBError blockId) m
+                 -> m (blockId -> Bool)
+getIsMemberModel err = do
+    DBModel {..} <- get
+    if not open then EH.throwError err ClosedDBError
+    else return (\bid -> Map.member bid mp)
 
 maxMaybe :: Ord slot => Maybe slot -> slot -> slot
 maxMaybe Nothing sl    = sl

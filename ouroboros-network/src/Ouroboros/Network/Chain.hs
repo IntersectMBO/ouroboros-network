@@ -71,9 +71,11 @@ import           Prelude hiding (drop, head, length, null)
 
 import           Control.Exception (assert)
 import qualified Data.List as L
+import           Codec.Serialise (Serialise (..))
+import           Codec.CBOR.Encoding (encodeListLen)
+import           Codec.CBOR.Decoding (decodeListLen, decodeListLenOf)
 
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Serialise
 
 --
 -- Blockchain type

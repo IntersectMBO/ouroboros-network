@@ -1,12 +1,13 @@
+{-# LANGUAGE DerivingVia        #-}
 {-# LANGUAGE NumericUnderscores #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Test.Util.Orphans.Arbitrary () where
 
+import           Codec.Serialise (Serialise)
 import           Data.Time
 import           Test.QuickCheck hiding (Fixed (..))
-
-import           Ouroboros.Network.Serialise (Serialise)
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Crypto.DSIGN.Class (DSIGNAlgorithm (..))
@@ -15,6 +16,12 @@ import           Ouroboros.Consensus.Crypto.Hash.Class (Hash,
 import           Ouroboros.Consensus.Crypto.VRF.Class (VRFAlgorithm (..))
 import           Ouroboros.Consensus.Demo
 import           Ouroboros.Consensus.Util.Random (Seed (..), withSeed)
+
+import           Ouroboros.Storage.ImmutableDB.CumulEpochSizes (EpochSlot (..),
+                     RelativeSlot (..))
+import           Ouroboros.Storage.ImmutableDB.Types (Epoch (..),
+                     EpochSize (..), Slot (..))
+
 
 minNumCoreNodes, minNumSlots :: Int
 minNumCoreNodes = 2
@@ -54,12 +61,15 @@ instance Arbitrary FixedUTC where
 instance Arbitrary SlotLength where
   arbitrary = slotLengthFromMillisec <$> choose (1, 20 * 1_000)
 
--- | Defined in terms of 'FixedUTC'
-instance Arbitrary SystemStart where
-  arbitrary = SystemStart <$> arbitrary
+deriving via FixedUTC      instance Arbitrary SystemStart
+deriving via Positive Word instance Arbitrary Slot
+deriving via Word          instance Arbitrary Epoch
+deriving via Positive Word instance Arbitrary EpochSize
+deriving via Word          instance Arbitrary RelativeSlot
 
-instance Arbitrary Slot where
-  arbitrary = Slot . getPositive <$> arbitrary
+instance Arbitrary EpochSlot where
+  arbitrary = EpochSlot <$> arbitrary <*> arbitrary
+  shrink    = genericShrink
 
 {-------------------------------------------------------------------------------
   Crypto

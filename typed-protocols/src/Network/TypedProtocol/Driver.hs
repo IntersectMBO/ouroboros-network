@@ -6,6 +6,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE TypeInType #-}
+{-# LANGUAGE EmptyCase #-}
 
 -- | Drivers for running 'Peer's with a 'Codec' and a 'Channel'.
 --
@@ -31,6 +32,8 @@ module Network.TypedProtocol.Driver (
   -- | This may be useful if you want to write your own driver.
   runDecoderWithChannel,
   ) where
+
+import Data.Void (Void)
 
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Pipelined
@@ -130,12 +133,21 @@ runPipelinedPeer
 runPipelinedPeer maxOutstanding codec channel (PeerPipelined peer) = do
     receiveQueue <- atomically $ newTBQueue maxOutstanding
     collectQueue <- atomically $ newTBQueue maxOutstanding
-    snd <$> runPipelinedPeerReceiverQueue receiveQueue collectQueue
+    a <- runPipelinedPeerReceiverQueue receiveQueue collectQueue
                                           codec channel
-              `concurrently`
-            runPipelinedPeerSender        receiveQueue collectQueue
+           `withAsyncLoop`
+         runPipelinedPeerSender        receiveQueue collectQueue
                                           codec channel peer
+    return a
 
+  where
+    withAsyncLoop :: m Void -> m x -> m x
+    withAsyncLoop left right = do
+      -- race will throw if either of the threads throw
+      res <- race left right
+      case res of
+        Left v  -> case v of {}
+        Right a -> return a
 
 data ReceiveHandler ps pr m c where
      ReceiveHandler :: PeerReceiver ps pr (st :: ps) (st' :: ps) m c
@@ -178,6 +190,8 @@ runPipelinedPeerSender receiveQueue collectQueue Codec{encode} Channel{send} =
         Just c  -> go n (k c)
 
 
+-- NOTE: @'runPipelinedPeer'@ assumes that @'runPipelinedPeerReceiverQueue'@ is
+-- an infinite loop which never returns.
 runPipelinedPeerReceiverQueue
   :: forall ps pr failure bytes m c.
      (MonadSTM m, MonadThrow m, Exception failure)
@@ -185,11 +199,11 @@ runPipelinedPeerReceiverQueue
   -> TBQueue m c
   -> Codec ps failure m bytes
   -> Channel m bytes
-  -> m ()
+  -> m Void
 runPipelinedPeerReceiverQueue receiveQueue collectQueue codec channel =
     go Nothing
   where
-    go :: Maybe bytes -> m ()
+    go :: Maybe bytes -> m Void
     go trailing = do
       ReceiveHandler receiver <- atomically (readTBQueue receiveQueue)
       (c, trailing') <- runPipelinedPeerReceiver codec channel trailing receiver

@@ -7,7 +7,6 @@ import           Crypto.Random
 
 import           Ouroboros.Network.Block (Slot (..))
 import           Ouroboros.Network.Chain (Chain (..))
-import           Ouroboros.Network.Node (NodeId (..))
 
 import           Ouroboros.Consensus.Util.Condense
 
@@ -17,10 +16,6 @@ import           Ouroboros.Consensus.Util.Condense
 
 instance Condense Slot where
   condense (Slot n) = condense n
-
-instance Condense NodeId where
-  condense (CoreId  i) = "c" ++ show i
-  condense (RelayId i) = "r" ++ show i
 
 instance Condense block => Condense (Chain block) where
     condense Genesis   = "Genesis"

@@ -10,12 +10,11 @@ import           Test.QuickCheck (Property, counterexample, (==>))
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
-import           Ouroboros.Network.Serialise (Serialise, prop_serialise)
-
 import           Ouroboros.Consensus.Crypto.VRF
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random (Seed, withSeed)
 
+import           Ouroboros.Network.Testing.Serialise (Serialise, prop_serialise)
 import           Test.Util.Orphans.Arbitrary ()
 
 --

@@ -29,6 +29,7 @@ module Ouroboros.Consensus.Protocol.Abstract (
   , evalNodeState
   ) where
 
+import           Codec.Serialise (Serialise)
 import           Control.Monad.Except
 import           Control.Monad.State
 import           Crypto.Random (MonadRandom (..))
@@ -43,7 +44,6 @@ import           Control.Monad.Class.MonadSay
 import           Ouroboros.Network.Block (HasHeader (..), Slot)
 import           Ouroboros.Network.Chain (Chain (..))
 import qualified Ouroboros.Network.Chain as Chain
-import           Ouroboros.Network.Serialise (Serialise)
 
 import           Ouroboros.Consensus.Util.Chain (upToSlot)
 import           Ouroboros.Consensus.Util.Random

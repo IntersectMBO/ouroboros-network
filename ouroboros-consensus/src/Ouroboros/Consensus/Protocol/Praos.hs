@@ -24,6 +24,8 @@ module Ouroboros.Consensus.Protocol.Praos (
   , Payload(..)
   ) where
 
+import           Codec.Serialise (Serialise, encode)
+import           Codec.CBOR.Encoding (Encoding)
 import           Control.Monad (unless)
 import           Control.Monad.Except (throwError)
 import           Data.IntMap.Strict (IntMap)
@@ -34,7 +36,6 @@ import           Numeric.Natural
 
 import           Ouroboros.Network.Block (HasHeader (..), Slot (..))
 import qualified Ouroboros.Network.Chain as Chain
-import           Ouroboros.Network.Serialise (Encoding, Serialise, encode)
 
 import           Ouroboros.Consensus.Crypto.DSIGN.Ed448 (Ed448DSIGN)
 import           Ouroboros.Consensus.Crypto.Hash.Class (HashAlgorithm (..),

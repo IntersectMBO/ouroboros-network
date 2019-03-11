@@ -35,7 +35,7 @@ import           Ouroboros.Network.Chain (ChainUpdate(..), Point(..))
 import           Ouroboros.Network.ChainFragment (ChainFragment,
                                                   pattern (:>), pattern Empty)
 import qualified Ouroboros.Network.ChainFragment as CF
-import           Ouroboros.Network.Serialise (prop_serialise)
+import           Ouroboros.Network.Testing.Serialise (prop_serialise)
 import           Ouroboros.Network.Testing.ConcreteBlock
 
 

@@ -20,14 +20,11 @@ import qualified Data.Set as Set
 import           Options.Applicative
 import           System.IO (IOMode (..))
 
-import           Ouroboros.Network.Node (NodeId (..))
-import           Ouroboros.Network.Serialise ()
-
 import           Ouroboros.Consensus.Crypto.Hash (ShortHash)
 import qualified Ouroboros.Consensus.Crypto.Hash as H
 import           Ouroboros.Consensus.Ledger.Abstract
 import qualified Ouroboros.Consensus.Ledger.Mock as Mock
-import           Ouroboros.Consensus.Node (NodeKernel (getExtLedgerState))
+import           Ouroboros.Consensus.Node (NodeId(..), NodeKernel (getExtLedgerState))
 import           Ouroboros.Consensus.Util.CBOR (Decoder (..), initDecoderIO)
 import           Ouroboros.Consensus.Util.Condense
 

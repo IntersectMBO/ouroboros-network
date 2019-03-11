@@ -1,10 +1,14 @@
 packages: ./typed-protocols
+	  ./ouroboros-network-testing
           ./ouroboros-network
           ./ouroboros-consensus
           ./io-sim
           ./io-sim-classes
 
 package typed-protocols
+  tests: True
+
+package ouroboros-network-testing
   tests: True
 
 package ouroboros-network

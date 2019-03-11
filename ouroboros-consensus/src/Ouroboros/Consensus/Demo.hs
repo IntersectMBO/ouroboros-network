@@ -30,6 +30,7 @@ module Ouroboros.Consensus.Demo (
   , HasCreator(..)
   ) where
 
+import           Codec.Serialise (Serialise)
 import           Control.Monad.Except
 import           Data.Either (fromRight)
 import           Data.IntMap.Strict (IntMap)
@@ -38,7 +39,6 @@ import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 
 import           Ouroboros.Network.Chain (Chain (..))
-import           Ouroboros.Network.Serialise (Serialise)
 
 import           Ouroboros.Consensus.Crypto.DSIGN
 import           Ouroboros.Consensus.Crypto.DSIGN.Mock (verKeyIdFromSigned)

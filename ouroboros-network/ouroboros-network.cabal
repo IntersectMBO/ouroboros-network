@@ -12,6 +12,12 @@ build-type:          Simple
 extra-source-files:  ChangeLog.md
 cabal-version:       >=1.10
 
+Flag ipv6
+  Description: Enable IPv6 test cases
+  Manual: True
+  -- Default to False since travis lacks IPv6 support
+  Default: False
+
 source-repository head
   type:     git
   location: https://github.com/input-output-hk/ouroboros-network
@@ -32,16 +38,13 @@ library
                        Ouroboros.Network.Mux.Egress
                        Ouroboros.Network.Mux.Ingress
                        Ouroboros.Network.Mux.Types
-                       Ouroboros.Network.Node
                        Ouroboros.Network.NodeToNode
                        Ouroboros.Network.NodeToClient
                        Ouroboros.Network.Pipe
-                       Ouroboros.Network.Serialise
                        Ouroboros.Network.Socket
                        Ouroboros.Network.Testing.ConcreteBlock
                        Ouroboros.Network.Protocol.ChainSync.Client
                        Ouroboros.Network.Protocol.ChainSync.Codec
-                       Ouroboros.Network.Protocol.ChainSync.Direct
                        Ouroboros.Network.Protocol.ChainSync.Server
                        Ouroboros.Network.Protocol.ChainSync.Type
                        Ouroboros.Network.Protocol.ChainSync.Examples
@@ -50,9 +53,7 @@ library
                        Ouroboros.Network.Protocol.BlockFetch.Type
                        Ouroboros.Network.Protocol.BlockFetch.Client
                        Ouroboros.Network.Protocol.BlockFetch.Server
-                       Ouroboros.Network.Protocol.BlockFetch.Direct
                        Ouroboros.Network.Protocol.BlockFetch.Codec
-                       Ouroboros.Network.Protocol.BlockFetch.Examples
   default-language:    Haskell2010
   other-extensions:    BangPatterns,
                        DataKinds,
@@ -97,9 +98,7 @@ library
                        serialise         >=0.2 && <0.3,
                        say,
                        stm               >=2.4 && <2.6,
-                       text              >=1.2 && <1.3,
-
-                       QuickCheck        >=2.12 && <2.13
+                       text              >=1.2 && <1.3
 
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
@@ -140,7 +139,6 @@ test-suite tests
                        Ouroboros.Network.Protocol.PingPong.Test
                        Ouroboros.Network.Protocol.ReqResp.Codec
                        Ouroboros.Network.Protocol.ReqResp.Test
-                       Ouroboros.Network.Serialise
                        Ouroboros.Network.Socket
 
                        Test.Chain
@@ -158,6 +156,7 @@ test-suite tests
                        typed-protocols,
                        io-sim-classes,
                        io-sim            >=0.1 && < 0.2,
+                       ouroboros-network-testing,
 
                        array,
                        async,
@@ -182,3 +181,5 @@ test-suite tests
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
                        -fno-ignore-asserts
+  if flag(ipv6)
+    cpp-options:       -DOUROBOROS_NETWORK_IPV6

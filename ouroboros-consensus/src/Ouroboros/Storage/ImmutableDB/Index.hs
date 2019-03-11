@@ -5,15 +5,14 @@ module Ouroboros.Storage.ImmutableDB.Index
   ( Index
   , indexSlots
   , indexEntrySizeBytes
-  , indexExpectedFileSize
   , loadIndex
   , writeIndex
   , writeSlotOffsets
-  , isValidIndex
   , indexFromByteString
   , indexFromSlotOffsets
   , indexToSlotOffsets
   , lastSlotOffset
+  , lastSlot
   , containsSlot
   , offsetOfSlot
   , sizeOfSlot
@@ -24,6 +23,7 @@ module Ouroboros.Storage.ImmutableDB.Index
   , lastFilledSlot
   , isPrefixOf
   , extendWithTrailingUnfilledSlotsFrom
+  , truncateToSlots
   ) where
 
 import           Control.Exception (assert)
@@ -45,11 +45,13 @@ import           System.IO (IOMode (..))
 
 import           Ouroboros.Consensus.Util (lastMaybe)
 
-import           Ouroboros.Storage.FS.API
-import           Ouroboros.Storage.FS.API.Types (FsPath)
-import           Ouroboros.Storage.ImmutableDB.Types
-import           Ouroboros.Storage.ImmutableDB.Util
-import           Ouroboros.Storage.Util
+import           Ouroboros.Storage.FS.API (HasFS (..), withFile)
+import           Ouroboros.Storage.ImmutableDB.CumulEpochSizes
+                     (RelativeSlot (..))
+import           Ouroboros.Storage.ImmutableDB.Types (Epoch, EpochSize,
+                     SlotOffset)
+import           Ouroboros.Storage.ImmutableDB.Util (readAll, renderFile)
+import           Ouroboros.Storage.Util (decodeIndexEntryAt, encodeIndexEntry)
 
 
 {------------------------------------------------------------------------------
@@ -70,22 +72,16 @@ indexEntrySizeBytes :: Int
 indexEntrySizeBytes = 8
 {-# INLINE indexEntrySizeBytes #-}
 
--- | Return the expected size (number of bytes) the given 'Index' requires
--- when writing it to a file.
-indexExpectedFileSize :: Index -> Int
-indexExpectedFileSize (MkIndex offsets) = V.length offsets * indexEntrySizeBytes
-
 -- | Loads an index file in memory.
 --
 -- Returns trailing invalid data that could not be read as @'Maybe'
 -- 'ByteString'@.
 loadIndex :: (HasCallStack, MonadThrow m)
           => HasFS m h
-          -> FsPath
           -> Epoch
           -> m (Index, Maybe ByteString)
-loadIndex hasFS dbFolder epoch = do
-    let indexFile = dbFolder <> renderFile "index" epoch
+loadIndex hasFS epoch = do
+    let indexFile = renderFile "index" epoch
     (indexContents, junk) <- withFile hasFS indexFile ReadMode $ \hnd -> do
       bs <- BL.toStrict . BS.toLazyByteString <$> readAll hasFS hnd
       let trailingJunkBytes = BS.length bs `rem` indexEntrySizeBytes
@@ -95,22 +91,21 @@ loadIndex hasFS dbFolder epoch = do
 
 -- | Write an index to an index file.
 --
--- Property: for @hasFS@, @dbFolder@, @epoch@, and @offsets@:
+-- Property: for @hasFS@, @epoch@, and @offsets@:
 --
--- > 'writeIndex' hasFS dbFolder epoch index
--- > (index', mbJunk) <- loadIndex hasFS dbFolder epoch
+-- > 'writeIndex' hasFS epoch index
+-- > (index', mbJunk) <- loadIndex hasFS epoch
 --
 -- Then it must be that:
 --
 -- > index === index' .&&. isNothing mbJunk
 writeIndex :: MonadThrow m
            => HasFS m h
-           -> FsPath
            -> Epoch
            -> Index
            -> m ()
-writeIndex hasFS@HasFS{..} dbFolder epoch (MkIndex offsets) = do
-    let indexFile = dbFolder <> renderFile "index" epoch
+writeIndex hasFS@HasFS{..} epoch (MkIndex offsets) = do
+    let indexFile = renderFile "index" epoch
     withFile hasFS indexFile AppendMode $ \iHnd -> do
       -- NOTE: open it in AppendMode and truncate it first, otherwise we might
       -- just overwrite part of the data stored in the index file.
@@ -121,37 +116,24 @@ writeIndex hasFS@HasFS{..} dbFolder epoch (MkIndex offsets) = do
 
 -- | Write a non-empty list of 'SlotOffset's to an index file.
 --
--- Property: for @hasFS@, @dbFolder@, @epoch@, and @offsets@:
+-- Property: for @hasFS@, @epoch@, and @offsets@:
 --
--- > 'writeSlotOffsets' hasFS dbFolder epoch offsets
--- > index <- loadIndex hasFS dbFolder epoch
+-- > 'writeSlotOffsets' hasFS epoch offsets
+-- > index <- loadIndex hasFS epoch
 --
 -- Then it must be that:
 --
 -- > indexToSlotOffsets index === offsets
 writeSlotOffsets :: MonadThrow m
                  => HasFS m h
-                 -> FsPath
                  -> Epoch
                  -> NonEmpty SlotOffset
                  -> m ()
-writeSlotOffsets hasFS@HasFS{..} dbFolder epoch sos = do
-    let indexFile = dbFolder <> renderFile "index" epoch
+writeSlotOffsets hasFS@HasFS{..} epoch sos = do
+    let indexFile = renderFile "index" epoch
     withFile hasFS indexFile WriteMode $ \iHnd ->
       void $ hPut iHnd (foldMap encodeIndexEntry (NE.reverse sos))
   -- TODO efficient enough?
-
-
--- | Check if the index is valid.
---
--- A valid index is non-empty and begins with 0. The index should be
--- monotonically increasing.
-isValidIndex :: Index -> Bool
-isValidIndex (MkIndex offsets) = case offsets V.!? 0 of
-  Just 0 -> let os = V.toList offsets
-            -- TODO if we do this check in a 'hot path', we should optimise it
-            in and $ zipWith (<=) os (drop 1 os)
-  _ -> False
 
 -- | Create an 'Index' from the given 'BS.ByteString'.
 indexFromByteString :: BS.ByteString -> Index
@@ -189,6 +171,10 @@ lastSlotOffset (MkIndex offsets)
   | V.null offsets = 0
   | otherwise = offsets V.! (V.length offsets - 1)
 
+-- | Return the last slot of the index (empty or not).
+lastSlot :: Index -> RelativeSlot
+lastSlot (MkIndex offsets) = fromIntegral (V.length offsets - 2)
+
 -- | Check whether the given slot is within the index.
 containsSlot :: Index -> RelativeSlot -> Bool
 containsSlot (MkIndex offsets) (RelativeSlot slot) =
@@ -224,7 +210,7 @@ isFilledSlot index slot = sizeOfSlot index slot /= 0
 --
 -- Example: given the index below and slot 1:
 --
--- > slot:     0   1   2   3   4    5
+-- > slot:     0   1   2   3   4
 -- >         ┌───┬───┬───┬───┬───┬────┐
 -- > offset: │ 0 │ 1 │ 6 │ 6 │ 6 │ 13 │
 -- >         └───┴───┴───┴───┴───┴────┘
@@ -248,7 +234,7 @@ nextFilledSlot (MkIndex offsets) (RelativeSlot slot) =
 --
 -- Example: given the index below:
 --
--- > slot:     0   1   2
+-- > slot:     0   1
 -- >         ┌───┬───┬───┐
 -- > offset: │ 0 │ 0 │ 4 │
 -- >         └───┴───┴───┘
@@ -287,9 +273,7 @@ isPrefixOf (MkIndex pre) (MkIndex offsets)
     = V.and $ V.zipWith (==) pre offsets
 
 -- | Add trailing unfilled slots from the second index to the end of the
--- first. The boolean return value indicates whether the second index
--- contained trailing filled slots after the (possibly 0) trailing unfilled
--- slots.
+-- first.
 --
 -- Precondition: the first index is non-empty and a prefix of the second
 -- index.
@@ -309,17 +293,14 @@ isPrefixOf (MkIndex pre) (MkIndex offsets)
 -- > ┌───┬───┬───┐
 -- > │ 0 │ 1 │ 1 │
 -- > └───┴───┴───┘
---
--- and 'True'.
 extendWithTrailingUnfilledSlotsFrom
   :: Index
   -> Index
-  -> (Index, Bool)
+  -> Index
 extendWithTrailingUnfilledSlotsFrom (MkIndex validOffsets) (MkIndex withTrailingUnfilledSlots) =
     assert (not (V.null validOffsets)) $
     assert (validOffsets == prefix)    $
-    ( MkIndex (validOffsets <> trailingUnfilledSlots)
-    , containedTrailingFilledSlots )
+    MkIndex (validOffsets <> trailingUnfilledSlots)
   where
     (prefix, trailingSlots) =
       V.splitAt (V.length validOffsets) withTrailingUnfilledSlots
@@ -328,5 +309,12 @@ extendWithTrailingUnfilledSlotsFrom (MkIndex validOffsets) (MkIndex withTrailing
       = V.empty
       | otherwise
       = V.takeWhile (== V.last validOffsets) trailingSlots
-    containedTrailingFilledSlots =
-      V.length trailingUnfilledSlots /= V.length trailingSlots
+
+-- | Truncate the index to the given number of slots (the number of offsets -
+-- 1). No-op if the index is <= the given number of slots.
+truncateToSlots :: EpochSize -> Index -> Index
+truncateToSlots slots index@(MkIndex offsets)
+  | indexSlots index <= slots
+  = index
+  | otherwise
+  = MkIndex $ V.take (fromIntegral slots + 1) offsets

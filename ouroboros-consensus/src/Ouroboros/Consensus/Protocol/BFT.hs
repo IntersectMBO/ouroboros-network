@@ -20,6 +20,7 @@ module Ouroboros.Consensus.Protocol.BFT (
   , Payload(..)
   ) where
 
+import           Codec.Serialise (Serialise)
 import           Control.Monad.Except
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -27,7 +28,6 @@ import           Data.Proxy
 import           GHC.Generics (Generic)
 
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Serialise
 
 import           Ouroboros.Consensus.Crypto.DSIGN.Class
 import           Ouroboros.Consensus.Crypto.DSIGN.Ed448 (Ed448DSIGN)

@@ -31,8 +31,8 @@ import           Test.Tasty.QuickCheck
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain
 import qualified Ouroboros.Network.Chain as Chain
-import           Ouroboros.Network.Node
 
+import           Ouroboros.Consensus.Node (NodeId)
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Demo
 import           Ouroboros.Consensus.Protocol.Abstract

@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP                        #-}
 {-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
@@ -17,7 +16,6 @@ module Test.Ouroboros.Storage.FS.Sim.Error
   , withErrors
     -- * Streams
   , Stream(..)
-  , streamShrink
   , mkStream
   , runStream
   , always
@@ -85,13 +83,6 @@ instance Monoid (Stream a) where
   mempty  = Stream (repeat Nothing)
   mappend = (<>)
 
--- | Shrink the given 'Stream' by shrinking the stream itself, not the
--- individual elements of the stream.
---
--- __Note:__ Only works with finite 'Stream's.
-streamShrink :: Stream a -> [Stream a]
-streamShrink (Stream es) = Stream <$> QC.shrinkList (const []) es
-
 -- | Create a 'Stream' based on the given possibly infinite list of @'Maybe'
 -- a@s.
 mkStream :: [Maybe a] -> Stream a
@@ -155,22 +146,17 @@ data PutCorruption
       -- As we don't know how long the blobs will be, using an absolute number
       -- makes less sense, as we might end up dropping everything from each
       -- blob.
-
--- When used as part of a QuickCheck tag, it's better to not show the
--- Blob/Int, otherwise we get a separate tag for each Blob/Int.
-instance Show PutCorruption where
-  show (SubstituteWithJunk _) = "SubstituteWithJunk"
-  show (DropRatioLastBytes _) = "DropRatioLastBytes"
+    deriving (Show)
 
 instance Arbitrary PutCorruption where
   arbitrary = QC.oneof
       [ SubstituteWithJunk <$> arbitrary
-      , DropRatioLastBytes <$> QC.choose (0, 10)
+      , DropRatioLastBytes <$> QC.choose (1, 10)
       ]
   shrink (SubstituteWithJunk blob) =
       [SubstituteWithJunk blob' | blob' <- shrink blob]
   shrink (DropRatioLastBytes tenths) =
-      [DropRatioLastBytes tenths'  | tenths' <- shrink tenths]
+      [DropRatioLastBytes tenths' | tenths' <- shrink tenths, tenths' > 0]
 
 -- | Apply the 'PutCorruption' to the 'Builder'.
 corrupt :: Builder -> PutCorruption -> Builder
@@ -341,6 +327,7 @@ instance Arbitrary Errors where
       , (\s' -> err { _hClose = s' })                   <$> dropLast _hClose
       , (\s' -> err { _hSeek = s' })                    <$> dropLast _hSeek
       , (\s' -> err { _hGet = s' })                     <$> dropLast _hGet
+        -- TODO shrink the PutCorruption
       , (\s' -> err { _hPut = s' })                     <$> dropLast _hPut
       , (\s' -> err { _hTruncate = s' })                <$> dropLast _hTruncate
       , (\s' -> err { _hGetSize = s' })                 <$> dropLast _hGetSize
