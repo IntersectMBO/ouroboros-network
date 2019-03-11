@@ -41,20 +41,20 @@ source-repository-package
 
 source-repository-package
   type: git
-  location: https://github.com/input-output-hk/cardano-chain
-  tag: 93891a77e654e923c93e359eaaffe545581618b5
+  location: https://github.com/input-output-hk/fm-ledger-rules
+  tag: d2cd93bfa314ccd0fe8ea313115bf5928c43cf52
   subdir: specs/semantics/hs
 
 source-repository-package
   type: git
-  location: https://github.com/input-output-hk/cardano-chain
-  tag: abf63f9fa5fccd3970ee8016b0855caa95b782ee
+  location: https://github.com/input-output-hk/fm-ledger-rules
+  tag: d2cd93bfa314ccd0fe8ea313115bf5928c43cf52
   subdir: specs/chain/hs
 
 source-repository-package
   type: git
-  location: https://github.com/input-output-hk/cardano-chain
-  tag: 93891a77e654e923c93e359eaaffe545581618b5
+  location: https://github.com/input-output-hk/fm-ledger-rules
+  tag: d2cd93bfa314ccd0fe8ea313115bf5928c43cf52
   subdir: specs/ledger/hs
 
 source-repository-package

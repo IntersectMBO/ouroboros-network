@@ -59,12 +59,8 @@ import           Ouroboros.Consensus.Protocol.Praos
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.Condense
 
-import           Chain.Blockchain (T (..))
-import           Chain.GenesisBlock (genesisBlock)
-import           Data.Queue (Queue, newQueue)
 import           Ledger.Core (Owner (Owner), VKey (VKey),
                      VKeyGenesis (VKeyGenesis))
-import           Types (BlockIx)
 
 {-------------------------------------------------------------------------------
   Abstract over the various protocols

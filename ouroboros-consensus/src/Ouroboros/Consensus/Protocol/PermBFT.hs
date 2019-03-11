@@ -17,12 +17,12 @@ module Ouroboros.Consensus.Protocol.PermBFT (
   , Payload(..)
   ) where
 
+import           Codec.Serialise (Serialise)
+import           Control.Lens ((^.))
 import           Control.Monad.Trans.Except (except)
 import           Data.Map.Strict (Map)
 import           GHC.Generics (Generic)
 import           Ouroboros.Consensus.Protocol.Abstract
-
-import           Ouroboros.Network.Serialise
 
 import           Ouroboros.Consensus.Crypto.DSIGN.Class
 import           Ouroboros.Consensus.Crypto.DSIGN.Ed448 (Ed448DSIGN)
@@ -30,12 +30,12 @@ import           Ouroboros.Consensus.Crypto.DSIGN.Mock (MockDSIGN)
 import           Ouroboros.Consensus.Node (NodeId, NumCoreNodes(..))
 import           Ouroboros.Consensus.Util.Condense
 
-import           Chain.Blockchain (BlockchainEnv(..), T)
-import           Chain.GenesisBlock (genesisBlock)
-import           Control.State.Transition (applySTS, PredicateFailure, State, IRC(IRC), TRC(TRC))
-import           Ledger.Core (SlotCount)
-import           Ledger.Delegation (DIEnv)
-import           Types (BC, Block, ProtParams(..))
+import           Control.State.Transition (applySTS, Environment, PredicateFailure, State, IRC(IRC), TRC(TRC))
+import           Ledger.Core (SlotCount, Slot(Slot))
+import           Ledger.Delegation (DIEnv, allowedDelegators, slot)
+import           Ledger.Update (PParams)
+import           Cardano.Spec.Chain.STS.Block (Block)
+import           Cardano.Spec.Chain.STS.Rule.Chain (CHAIN)
 
 
 data PermBft c
@@ -52,17 +52,16 @@ instance PermBftCrypto c => OuroborosTag (PermBft c) where
     , permBftSignKey      :: SignKeyDSIGN (PermBftDSIGN c)
     , permBftNumCoreNodes :: NumCoreNodes
     , permBftVerKeys      :: Map NodeId (VerKeyDSIGN (PermBftDSIGN c))
-    , permBftProtParams   :: ProtParams
+    , permBftProtParams   :: PParams
     , permBftKSize        :: SlotCount
-    , permBftTRatio       :: T
     }
 
-  type ValidationErr  (PermBft c) = [PredicateFailure BC]
+  type ValidationErr  (PermBft c) = [PredicateFailure CHAIN]
   type SupportedBlock (PermBft c) = ((~) Block)
   type NodeState      (PermBft c) = ()
   type LedgerView     (PermBft c) = DIEnv
   type IsLeader       (PermBft c) = ()
-  type ChainState     (PermBft c) = State BC
+  type ChainState     (PermBft c) = State CHAIN
 
   mkPayload PermBftNodeConfig{..} _ preheader = do
     signature <- signedDSIGN preheader permBftSignKey
@@ -70,19 +69,18 @@ instance PermBftCrypto c => OuroborosTag (PermBft c) where
 
   checkIsLeader _ _ _ _ = return $ Just ()
 
-  applyChainState PermBftNodeConfig{..} lv b chainSt@(_, prevBlock, _) =
+  applyChainState PermBftNodeConfig{..} lv b chainSt =
     except $
-      if prevBlock == genesisBlock
+      if lv ^. slot == Slot 0 -- the genesis block
         then applySTS $ IRC bcEnv
         else applySTS $ TRC (bcEnv, chainSt, b)
    where
-    bcEnv :: BlockchainEnv
-    bcEnv = MkBlockChainEnv
-      { bcEnvPp    = permBftProtParams
-      , bcEnvDIEnv = lv
-      , bcEnvK     = permBftKSize
-      , bcEnvT     = permBftTRatio
-      }
+    bcEnv :: Environment CHAIN
+    bcEnv =
+      ( lv ^. slot
+      , lv ^. allowedDelegators
+      , permBftProtParams
+      )
 
 
 deriving instance PermBftCrypto c => Show     (Payload (PermBft c) ph)
