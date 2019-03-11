@@ -1,3 +1,4 @@
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Test.Mux (
       TestProtocols1 (..)
@@ -30,6 +31,8 @@ import           Network.TypedProtocol.ReqResp.Server
 
 import           Ouroboros.Network.Channel
 import qualified Ouroboros.Network.Mux as Mx
+import           Ouroboros.Network.Mux.Types (MuxBearer)
+import qualified Ouroboros.Network.Mux.Types as Mx
 import           Ouroboros.Network.Protocol.ReqResp.Codec
 
 tests :: TestTree
@@ -133,7 +136,7 @@ startMuxSTM verMpds style wq rq mtu trace = do
     return resq
   where
     spawn ctx resq = do
-        bearer <- Mx.muxBearerNew (writeMux ctx) (readMux ctx) (sduSizeMux ctx) (return ())
+        bearer <- queuesAsMuxBearer ctx
         res_e <- try $ Mx.muxStart verMpds bearer style (Just $ rescb resq)
         case res_e of
              Left  e -> rescb resq $ Just e
@@ -153,38 +156,52 @@ normallExit resq = do
          Just _  -> return False
          Nothing -> return True
 
-sduSizeMux :: (Monad m)
-           => MuxSTMCtx ptcl m
-           -> m Word16
-sduSizeMux ctx = return $ sduSize ctx
 
-writeMux :: (MonadTimer m, MonadSTM m, Mx.ProtocolEnum ptcl)
-         => MuxSTMCtx ptcl m
-         -> Mx.MuxSDU ptcl
-         -> m (Time m)
-writeMux ctx sdu = do
-    ts <- getMonotonicTime
-    let buf = Mx.encodeMuxSDU sdu -- XXX Timestamp isn't set
-    atomically $ writeTBQueue (writeQueue ctx) buf
-    return ts
+queuesAsMuxBearer
+  :: forall ptcl m.
+     ( MonadSTM   m
+     , MonadTimer m
+     , MonadThrow m
+     , Mx.ProtocolEnum ptcl
+     )
+  => MuxSTMCtx ptcl m
+  -> m (MuxBearer ptcl m)
+queuesAsMuxBearer ctx = do
+      mxState <- atomically $ newTVar Mx.Larval
+      return $ Mx.MuxBearer {
+          Mx.read    = readMux,
+          Mx.write   = writeMux,
+          Mx.close   = return (),
+          Mx.sduSize = sduSizeMux,
+          Mx.state   = mxState
+        }
+    where
+      readMux :: m (Mx.MuxSDU ptcl, Time m)
+      readMux = do
+          buf <- atomically $ readTBQueue (readQueue ctx)
+          let (hbuf, payload) = BL.splitAt 8 buf
+          case Mx.decodeMuxSDUHeader hbuf of
+              Left  e      -> throwM e
+              Right header -> do
+                  ts <- getMonotonicTime
+                  case traceQueue ctx of
+                        Just q  -> atomically $ do
+                            full <- isFullTBQueue q
+                            if full then return ()
+                                    else writeTBQueue q (Mx.msId header, Mx.msMode header, ts)
+                        Nothing -> return ()
+                  return (header {Mx.msBlob = payload}, ts)
 
-readMux :: (MonadTimer m, MonadSTM m, MonadThrow m, Mx.ProtocolEnum ptcl)
-        => MuxSTMCtx ptcl m
-        -> m (Mx.MuxSDU ptcl, Time m)
-readMux ctx = do
-    buf <- atomically $ readTBQueue (readQueue ctx)
-    let (hbuf, payload) = BL.splitAt 8 buf
-    case Mx.decodeMuxSDUHeader hbuf of
-         Left  e      -> throwM e
-         Right header -> do
-             ts <- getMonotonicTime
-             case traceQueue ctx of
-                  Just q  -> atomically $ do
-                      full <- isFullTBQueue q
-                      if full then return ()
-                              else writeTBQueue q (Mx.msId header, Mx.msMode header, ts)
-                  Nothing -> return ()
-             return (header {Mx.msBlob = payload}, ts)
+      writeMux :: Mx.MuxSDU ptcl
+               -> m (Time m)
+      writeMux sdu = do
+          ts <- getMonotonicTime
+          let buf = Mx.encodeMuxSDU sdu -- XXX Timestamp isn't set
+          atomically $ writeTBQueue (writeQueue ctx) buf
+          return ts
+
+      sduSizeMux :: m Word16
+      sduSizeMux = return $ sduSize ctx
 
 -- | Verify that an initiator and a responder can send and receive messages from each other.
 -- Large DummyPayloads will be split into sduLen sized messages and the testcases will verify

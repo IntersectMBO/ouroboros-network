@@ -18,7 +18,6 @@ module Ouroboros.Network.Mux (
     , RemoteClockModel (..)
     , encodeMuxSDU
     , decodeMuxSDUHeader
-    , muxBearerNew
     , muxBearerSetState
     , muxStart
     ) where
@@ -31,12 +30,10 @@ import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTimer
 import           Data.Array
 import qualified Data.ByteString.Lazy as BL
 import           Data.List (intersect)
 import           Data.Maybe (fromJust)
-import           Data.Word
 import           GHC.Stack
 
 import           Ouroboros.Network.Channel
@@ -159,16 +156,6 @@ muxChannel pmss mid md w cnt =
         if BL.null blob
            then pure Nothing
            else return $ Just blob
-
-muxBearerNew :: (MonadSTM m, Ord ptcl, Enum ptcl, Bounded ptcl)
-             => (MuxSDU ptcl -> m (Time m)) -- Write action
-             -> m (MuxSDU ptcl, Time m)     -- Read action
-             -> m Word16                    -- SDU size action
-             -> m ()                        -- Close action
-             -> m (MuxBearer ptcl m)
-muxBearerNew wfn rwn sfn cfn = do
-    st <- atomically $ newTVar Larval
-    return $ MuxBearer wfn rwn sfn cfn st
 
 muxBearerSetState :: (MonadSTM m, Ord ptcl, Enum ptcl, Bounded ptcl)
                   => MuxBearer ptcl m
