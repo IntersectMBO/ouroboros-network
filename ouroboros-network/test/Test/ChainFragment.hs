@@ -15,7 +15,9 @@ module Test.ChainFragment
   ) where
 
 import qualified Data.List as L
-import           Data.Maybe (listToMaybe, maybeToList, maybe, fromMaybe, fromJust)
+import qualified Data.Set  as Set
+import           Data.Maybe (listToMaybe, maybeToList, maybe,
+                             fromMaybe, fromJust, isNothing)
 
 import           Test.QuickCheck
 import           Text.Show.Functions ()
@@ -93,6 +95,7 @@ tests = testGroup "ChainFragment"
   , testProperty "slotOnChainFragment"                       prop_slotOnChainFragment
   , testProperty "pointOnChainFragment"                      prop_pointOnChainFragment
   , testProperty "lookupByIndexFromEnd"                      prop_lookupByIndexFromEnd
+  , testProperty "filter"                                    prop_filter
   , testProperty "selectPoints"                              prop_selectPoints
   , testGroup "splitAfterSlot"
     [ testProperty "splitAfterSlot join"                     prop_splitAfterSlot_join
@@ -281,6 +284,31 @@ prop_lookupByIndexFromEnd (TestChainFragmentAndIndex c i) =
   case CF.lookupByIndexFromEnd c i of
     CF.Position _ b _  -> b === CF.toNewestFirst c !! i
     _                  -> property (i < 0 || i >= CF.length c)
+
+prop_filter :: (Block -> Bool) -> TestBlockChainFragment -> Property
+prop_filter p (TestBlockChainFragment chain) =
+  let fragments = CF.filter p chain in
+      cover 70 (length fragments > 1) "multiple fragments" $
+
+      -- The fragments contain exactly the blocks where p holds
+      (   Set.fromList (L.map CF.blockPoint (L.filter p (CF.toNewestFirst chain)))
+       ==
+          Set.fromList (L.map CF.blockPoint (concatMap CF.toNewestFirst fragments))
+      )
+   &&
+      -- The fragments are non-empty
+      all (not . CF.null) fragments
+   &&
+      -- The fragments are in order
+      (let fragmentPoints = map (\c -> (CF.blockPoint <$> CF.last c,
+                                        CF.blockPoint <$> CF.head c)) fragments
+        in fragmentPoints == L.sort fragmentPoints)
+   &&
+      -- The fragments are of maximum size
+      and [ isNothing (CF.joinChainFragments a b)
+          | (a,b) <- zip fragments (tail fragments) ]
+
+ 
 
 prop_selectPoints :: TestBlockChainFragment -> Property
 prop_selectPoints (TestBlockChainFragment c) =
@@ -567,8 +595,8 @@ fixupPoint c p =
 prop_arbitrary_TestChainFragmentAndPoint :: TestChainFragmentAndPoint -> Property
 prop_arbitrary_TestChainFragmentAndPoint (TestChainFragmentAndPoint c p) =
   let onChainFragment = CF.pointOnChainFragment p c in
-  cover (85/100) onChainFragment       "point on chain" $
-  cover ( 5/100) (not onChainFragment) "point not on chain" $
+  cover 85 onChainFragment       "point on chain" $
+  cover  5 (not onChainFragment) "point not on chain" $
     CF.valid c
 
 prop_shrink_TestChainFragmentAndPoint :: TestChainFragmentAndPoint -> Bool
@@ -583,7 +611,7 @@ prop_shrink_TestChainFragmentAndPoint cp@(TestChainFragmentAndPoint c _) =
 
 -- | A test generator for two chain fragments that share some blocks (exactly
 -- matching), but one of the two chain fragments can have another prefix (they
--- cannot each have a different prefix). The two chains fragmenst can have
+-- cannot each have a different prefix). The two chains fragment can have
 -- different suffixes, i.e. they are forks.
 --
 -- For example: start with a whole chain, then take a fragment of that chain.
@@ -681,8 +709,8 @@ prop_arbitrary_TestChainFragmentFork_cover t@(TestChainFragmentFork l1 l2 c1 c2)
         c1l = CF.toNewestFirst c1
         c2l = CF.toNewestFirst c2
         sameFork = c1l `L.isPrefixOf` c2l || c2l `L.isPrefixOf` c1l in
-    cover (45/100) samePrefix "same prefix" $
-    cover (4/100)  sameFork   "same fork" $
+    cover 45 samePrefix "same prefix" $
+    cover  4  sameFork   "same fork" $
     prop_arbitrary_TestChainFragmentFork t
 
 prop_arbitrary_TestChainFragmentFork :: TestChainFragmentFork -> Bool
@@ -741,6 +769,6 @@ instance Arbitrary TestChainFragmentAndIndex where
 prop_arbitrary_TestChainFragmentAndIndex :: TestChainFragmentAndIndex -> Property
 prop_arbitrary_TestChainFragmentAndIndex (TestChainFragmentAndIndex c i) =
   let inChainFragment = indexInChainFragment i c in
-  cover (85/100) inChainFragment       "index in chain" $
-  cover ( 5/100) (not inChainFragment) "index not in chain" $
+  cover 85 inChainFragment       "index in chain" $
+  cover  5 (not inChainFragment) "index not in chain" $
   CF.valid c

@@ -5,7 +5,7 @@
 
 module Ouroboros.Network.ChainFragment (
   -- * ChainFragment type and fundamental operations
-  ChainFragment(Empty, (:>)),
+  ChainFragment(Empty, (:>), (:<)),
   valid,
   validExtension,
   isValidSuccessorOf,
@@ -35,6 +35,7 @@ module Ouroboros.Network.ChainFragment (
   fromOldestFirst,
   dropNewest,
   dropOldest,
+  takeNewest,
   takeWhileNewest,
   dropWhileNewest,
   length,
@@ -55,6 +56,7 @@ module Ouroboros.Network.ChainFragment (
   splitAfterSlot,
   splitAfterPoint,
   lookupByIndexFromEnd, FT.SearchResult(..),
+  filter,
   selectPoints,
   findFirstPoint,
   intersectChainFragments,
@@ -71,7 +73,7 @@ module Ouroboros.Network.ChainFragment (
   selectPointsSpec,
   ) where
 
-import           Prelude hiding (drop, head, last, length, null)
+import           Prelude hiding (drop, head, last, length, null, filter)
 
 import           Control.Exception (assert)
 import           Data.FingerTree (FingerTree)
@@ -113,6 +115,12 @@ viewRight (ChainFragment c) = case FT.viewr c of
   FT.EmptyR  -> FT.EmptyR
   c' FT.:> b -> ChainFragment c' FT.:> b
 
+viewLeft :: HasHeader block
+         => ChainFragment block -> FT.ViewL ChainFragment block
+viewLeft (ChainFragment c) = case FT.viewl c of
+  FT.EmptyL  -> FT.EmptyL
+  b FT.:< c' -> b FT.:< ChainFragment c'
+
 pattern Empty :: HasHeader block => ChainFragment block
 pattern Empty <- (viewRight -> FT.EmptyR) where
   Empty = ChainFragment FT.empty
@@ -124,9 +132,18 @@ pattern c :> b <- (viewRight -> (c FT.:> b)) where
   ChainFragment c :> b = assert (validExtension (ChainFragment c) b) $
                          ChainFragment (c FT.|> b)
 
-infixl 5 :>
+-- | \( O(1) \). Add a block to the left of the chain fragment.
+pattern (:<) :: HasHeader block
+             => block -> ChainFragment block -> ChainFragment block
+pattern b :< c <- (viewLeft -> (b FT.:< c)) where
+  b :< ChainFragment c = assert (maybe True (isValidSuccessorOf b)
+                                       (last (ChainFragment c))) $
+                         ChainFragment (b FT.<| c)
+
+infixl 5 :>, :<
 
 {-# COMPLETE Empty, (:>) #-}
+{-# COMPLETE Empty, (:<) #-}
 
 -- | \( O(n) \). Fold a 'ChainFragment'.
 --
@@ -217,8 +234,8 @@ headBlockNo = fmap blockNo . head
 last :: HasHeader block => ChainFragment block -> Maybe block
 last (ChainFragment t) =
     case FT.viewl t of
-      FT.EmptyL  -> Nothing
-      b FT.:< t' -> Just b
+      FT.EmptyL -> Nothing
+      b FT.:< _ -> Just b
 
 -- | TODO. Make a list of blocks from a 'ChainFragment', in newest-to-oldest
 -- order.
@@ -259,6 +276,14 @@ dropOldest :: HasHeader block
            -> ChainFragment block -> ChainFragment block
 dropOldest n (ChainFragment c) =
     ChainFragment $ FT.dropUntil (\v -> bmSize v > n) c
+
+takeNewest :: HasHeader block
+           => Int  -- ^ @n@
+           -> ChainFragment block -> ChainFragment block
+takeNewest n cf@(ChainFragment c) =
+    ChainFragment $ FT.dropUntil (\v -> bmSize v > remainingLength) c
+  where
+    remainingLength = length cf - n
 
 -- | \( O(n) \). Select the newest blocks that satisfy the predicate.
 --
@@ -341,6 +366,23 @@ lookupByIndexFromEnd (ChainFragment t) n =
     FT.search (\vl vr -> bmSize vl >= len - n && bmSize vr <= n) t
   where
     len = bmSize (FT.measure t)
+
+-- | \( O\(n\) \). Filter the chain based on a predicate. As filtering
+-- removes blocks the result is a sequence of disconnected fragments.
+-- The fragments are in the original order and are of maximum size.
+--
+filter :: HasHeader block
+       => (block -> Bool)
+       -> ChainFragment block
+       -> [ChainFragment block]
+filter p = go [] Empty
+  where
+    go cs c'    (b :< c) | p b = go     cs (c' :> b) c
+    go cs Empty (_ :< c)       = go     cs  Empty    c
+    go cs c'    (_ :< c)       = go (c':cs) Empty    c
+
+    go cs Empty  Empty         = reverse     cs
+    go cs c'     Empty         = reverse (c':cs)
 
 -- | \( O(o \log(\min(i,n-i))) \). Select a bunch of 'Point's based on offsets
 -- from the head of the chain fragment. This is used in the chain consumer

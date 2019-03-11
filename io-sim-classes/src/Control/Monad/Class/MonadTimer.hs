@@ -24,7 +24,7 @@ import           Control.Monad.Class.MonadFork (MonadFork(..))
 import           Control.Monad.Class.MonadSTM
 
 
-class (Ord t, Ord (Duration t), Num (Duration t)) => TimeMeasure t where
+class (Ord t, Ord (Duration t), Real (Duration t)) => TimeMeasure t where
   type Duration t :: *
 
   diffTime :: t -> t -> Duration t

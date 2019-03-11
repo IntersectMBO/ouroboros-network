@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
@@ -6,18 +7,27 @@
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE BangPatterns               #-}
 
-module Ouroboros.Network.FetchLogic where
+module Ouroboros.Network.FetchLogic (
+  fetchLogic,
+  FetchClientRegistry,
+  bracketFetchClient,
+  blockFetchClient
+  ) where
 
 import           Data.Maybe
-import           Data.Tuple (swap)
 import           Data.Semigroup ((<>))
 import qualified Data.Map.Strict as Map
 import           Data.Map.Strict (Map)
-import qualified Data.Dequeue as Q
+import qualified Data.Set as Set
+import           Data.Set (Set)
+--import qualified Data.Dequeue as Q
 import           Data.Void
 
+import           Control.Monad (when, unless)
 import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadTimer
 import           Control.Exception (assert)
@@ -26,16 +36,19 @@ import           System.Random (Random(..), StdGen)
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (Chain, Point, castPoint, blockPoint)
 import qualified Ouroboros.Network.Chain as Chain
-import           Ouroboros.Network.ChainFragment (ChainFragment)
+import           Ouroboros.Network.ChainFragment (ChainFragment(..))
 import qualified Ouroboros.Network.ChainFragment as ChainFragment
 
 import           Ouroboros.Network.Protocol.BlockFetch.Server
 --import           Ouroboros.Network.Protocol.BlockFetch.Client
-import           Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange(..))
+import           Ouroboros.Network.Protocol.BlockFetch.Type
+import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Pipelined
 
---import           Ouroboros.Network.Testing.ConcreteBlock
+import           Ouroboros.Network.Testing.ConcreteBlock
 --import           Test.QuickCheck
 --import           Test.Chain
+--import           Debug.Trace
 
 
 {-
@@ -127,21 +140,209 @@ data FetchLogicExternalState peer header block m =
 
        readFetchedBlocks      :: Tr m (Point block -> Bool)
 
-       --TODO: adding and then registering blocks
 
-       -- blockBodySize      :: header -> Word
-       -- plausibleCandidate :: ChainFragment block -> ChainFragment header -> Bool
-       -- compareCandidates  :: ChainFragment header -> ChainFragment header -> Ordering
+       --TODO: need to add blocks
      }
 
-type FetchClientRegistry m = m ()
+
+-- | The consensus layer functionality that the fetch logic depends upon.
+--
+-- These are provided as input to the fetch logic by the consensus layer.
+--
+data ConsensusFunctions header block =
+     ConsensusFunctions {
+
+       -- | Given the current chain, is the given chain plausible as a
+       -- candidate chain. Classically for Ouroboros this would simply
+       -- check if the candidate is strictly longer, but for Ouroboros
+       -- with operational key certificates there are also cases where
+       -- we would consider a chain of equal length to the current chain.
+       --
+       plausibleCandidateChain :: ChainFragment block
+                               -> ChainFragment header -> Bool,
+
+       -- | Compare two candidate chains and return a preference ordering.
+       -- This is used as part of selecting which chains to prioritise for
+       -- downloading block bodies.
+       --
+       compareCandidateChains  :: ChainFragment header
+                               -> ChainFragment header
+                               -> Ordering,
+
+       -- | Much of the logic for deciding which blocks to download from which
+       -- peer depends on making estimates based on recent performance metrics.
+       -- These estimates of course depend on the amount of data we will be
+       -- downloading.
+       --
+       blockFetchSize          :: header -> Word,
+
+       -- | Given a block header, validate the supposed corresponding block
+       -- body.
+       --
+       validateBlockBody       :: header -> block -> Bool
+     }
+
+
+-- | A registry for the threads that are executing the client side of the
+-- 'BlockFetch' protocol to communicate with our peers.
+--
+-- The registry contains the shared variables we use to communicate with these
+-- threads, both to track their status and to provide instructions.
+--
+-- The threads add\/remove themselves to\/from this registry when they start up
+-- and shut down.
+--
+newtype FetchClientRegistry peer header m =
+        FetchClientRegistry (TVar m (Map peer (FetchClientStateVars header m)))
+
+
+-- | A set of variables shared between the block fetch logic thread and each
+-- thread executing the client side of the block fetch protocol. That is, these
+-- are the shared variables per peer. The 'FetchClientRegistry' contains the
+-- mapping of these for all peers.
+--
+-- The variables are used for communicating from the protocol thread to the
+-- decision making thread the status of things with that peer. And in the other
+-- direction one shared variable is for providing new fetch requests.
+--
+data FetchClientStateVars header m =
+     FetchClientStateVars {
+
+       -- | The current status of communication with the peer. It is written
+       -- by the protocol thread and monitored and read by the decision logic
+       -- thread. Changes in this state trigger re-evaluation of fetch
+       -- decisions.
+       --
+       fetchClientStatusVar   :: TVar m PeerFetchStatus,
+
+       -- | The current number of requests in-flight and the amount of data
+       -- in-flight with the peer. It is written by the protocol thread and
+       -- read by the decision logic thread. This is used in fetch decisions
+       -- but changes here do not trigger re-evaluation of fetch decisions.
+       --
+       fetchClientInFlightVar :: TVar m (PeerFetchInFlight header),
+
+       -- | The shared variable used to communicate fetch requests to the thread
+       -- running the block fetch protocol. Fetch requests are posted by the
+       -- decision logic thread. The protocol thread accepts the requests and
+       -- acts on them, updating the in-flight stats. While this is a 'TMVar',
+       -- it is not used as a one-place queue: the requests can be updated
+       -- before being accepted.
+       --
+       fetchClientRequestVar  :: TFetchRequestVar m header
+     }
+
+-- | The status of the block fetch communication with a peer. This is maintained
+-- by fetch protocol threads and used in the block fetch decision making logic.
+-- Changes in this status trigger re-evaluation of fetch decisions.
+--
+data PeerFetchStatus =
+       -- | Communication with the peer has failed. This is a temporary status
+       -- that may occur during the process of shutting down the thread that
+       -- runs the block fetch protocol. The peer will promptly be removed from
+       -- the peer registry and so will not be considered at all.
+       --
+       PeerFetchStatusFailure
+
+       -- | The peer is in a potentially-temporary state in which it has not
+       -- responded to us within a certain expected time limit. This is not
+       -- a hard protocol timeout where the whole connection will be abandoned,
+       -- it is simply a reply that has taken longer than expected. This status
+       -- is used to trigger re-evaluating which peer to ask for blocks from,
+       -- so that we can swiftly ask other peers for blocks if one unexpectedly
+       -- responds too slowly
+       --
+       -- Peers in this state may later return to normal states if communication
+       -- resumes, or they may eventually hit a hard timeout and fail.
+       --
+     | PeerFetchStatusAberrant
+
+       -- | Communication with the peer is in a normal state, and the peer is
+       -- considered too busy to accept new requests. Changing from this state
+       -- to the ready state is used to trigger re-evaluating fetch decisions
+       -- and may eventually result in new fetch requests. This state is used
+       -- as part of a policy to batch new requests: instead of switching to
+       -- the ready state the moment there is tiny bit of capacity available,
+       -- the state is changed once the capacity reaches a certain threshold.
+       --
+     | PeerFetchStatusBusy
+
+       -- | Communication with the peer is in a normal state, and the peer is
+       -- considered ready to accept new requests.
+       --
+     | PeerFetchStatusReady
+  deriving (Eq, Ord, Show)
+
+
+-- | The number of requests in-flight and the amount of data in-flight with a
+-- peer. This is maintained by fetch protocol threads and used in the block
+-- fetch decision making logic.
+--
+data PeerFetchInFlight header = PeerFetchInFlight {
+       -- | The number of block fetch requests that are currently in-flight.
+       -- This is the number of /requests/ not the number of blocks. Each
+       -- request is for a range of blocks.
+       --
+       -- We track this because there is a fixed maximum number of outstanding
+       -- requests that the protocol allows.
+       --
+       peerFetchReqsInFlight :: !Word,
+
+       -- | The sum of the byte count of blocks expected from all in-flight
+       -- fetch requests. This is a close approximation of the amount of data
+       -- we expect to receive, assuming no failures.
+       --
+       -- We track this because we pipeline fetch requests and we want to keep
+       -- some but not too much data in flight at once.
+       --
+       peerFetchBytesInFlight :: !Word,
+
+       -- | The points for the set of blocks that are currently in-flight.
+       -- Note that since requests are for ranges of blocks this does not
+       -- correspond to the number of requests in flight.
+       --
+       -- We track this because as part of the decision for which blocks to
+       -- fetch from which peers we take into account what blocks are already
+       -- in-flight with peers.
+       --
+       peerFetchBlocksInFlight :: Set (Point header)
+     }
+
+
+bracketFetchClient :: (MonadThrow m, MonadSTM m, Ord peer)
+                   => FetchClientRegistry peer header m
+                   -> peer
+                   -> (FetchClientStateVars header m -> m a)
+                   -> m a
+bracketFetchClient (FetchClientRegistry registry) peer =
+    bracket register unregister
+  where
+    register = atomically $ do
+      fetchClientInFlightVar <- newTVar PeerFetchInFlight {
+                                          peerFetchReqsInFlight   = 0,
+                                          peerFetchBytesInFlight  = 0,
+                                          peerFetchBlocksInFlight = Set.empty
+                                        }
+      fetchClientStatusVar   <- newTVar PeerFetchStatusReady
+      fetchClientRequestVar  <- newTFetchRequestVar
+      let stateVars = FetchClientStateVars {
+                        fetchClientStatusVar,
+                        fetchClientInFlightVar,
+                        fetchClientRequestVar
+                      }
+      modifyTVar' registry (Map.insert peer stateVars)
+      return stateVars
+
+    unregister _ =
+      atomically $ modifyTVar' registry (Map.delete peer)
+
 
 -- | Execute the block fetch logic. It monitors the current chain and candidate
 -- chains. It decided which block bodies to fetch and manages the process of
 -- fetching them, including making alternative decisions based on timeouts and
 -- failures.
 --
--- This runs forever and should be shutdown using mechanisms such as async.
+-- This runs forever and should be shut down using mechanisms such as async.
 --
 fetchLogic :: forall peer header block m.
               (MonadSTM m, Ord peer,
@@ -150,30 +351,50 @@ fetchLogic :: forall peer header block m.
                -- extra debug constraints:
                MonadSay m, Show peer, Show header, Show block)
            => FetchLogicExternalState peer header block m
-           -> FetchClientRegistry m
+           -> ConsensusFunctions header block
+           -> FetchClientRegistry peer header m
            -> m Void
-fetchLogic FetchLogicExternalState{..} clientRegistry = do
-    peerStates  <- newTVarM Map.empty
+fetchLogic FetchLogicExternalState{..}
+           consensusFunctions
+           (FetchClientRegistry registry) = do
+
+    -- TODO: get this from elsewhere
     peerDeltaQs <- newTVarM Map.empty
 
     fetchLogicIterations
+      consensusFunctions
       fetchPolicyParams
       FetchTriggerVariables {
         readStateCurrentChain    = readCurrentChain,
         readStateCandidateChains = readCandidateChains,
-        readStatePeerStates      = readTVar peerStates,
-        readStateFetchedBlocks   = readFetchedBlocks
+        readStatePeerStatus      = readPeerStatus
       }
       FetchNonTriggerVariables {
-        readStatePeerDeltaQs = readTVar peerDeltaQs
+        readStateFetchedBlocks = readFetchedBlocks,
+        readStatePeerStates    = readPeerStates,
+        readStatePeerDeltaQs   = readTVar peerDeltaQs,
+        readStatePeerReqVars   = readPeerReqVars
       }
---      clientRegistry
   where
+    readPeerStatus :: Tr m (Map peer PeerFetchStatus)
+    readPeerStatus =
+      readTVar registry >>= traverse (readTVar . fetchClientStatusVar)
+
+    readPeerStates :: Tr m (Map peer (PeerFetchStatus, PeerFetchInFlight header))
+    readPeerStates =
+      readTVar registry >>=
+      traverse (\s -> (,) <$> readTVar (fetchClientStatusVar s)
+                          <*> readTVar (fetchClientInFlightVar s))
+
+    readPeerReqVars :: Tr m (Map peer (TFetchRequestVar m header))
+    readPeerReqVars =
+      readTVar registry >>= return . Map.map fetchClientRequestVar
+
+
     -- For now, use a fixed policy.
-    -- It's unclear for the moment if this will be fixed external config or
-    -- if the in-fligh per-peer needs to be adaptive.
+    -- It's unclear for the moment if this will be fixed external config
     fetchPolicyParams = FetchPolicyParams {
-        maxInFlightBytesPerPeer  = 256 * 1024,
+        maxInFlightReqsPerPeer   = 10,
         maxConcurrentFetchPeers  = 1
       }
 
@@ -182,41 +403,36 @@ fetchLogic FetchLogicExternalState{..} clientRegistry = do
 fetchLogicIterations :: (MonadSTM m, Ord peer,
                          HasHeader header, HasHeader block,
                          HeaderHash header ~ HeaderHash block)
-                     => FetchPolicyParams
+                     => ConsensusFunctions header block
+                     -> FetchPolicyParams
                      -> FetchTriggerVariables peer header block m
-                     -> FetchNonTriggerVariables peer time m
+                     -> FetchNonTriggerVariables peer header block m
                      -> m Void
-fetchLogicIterations fetchPolicyParams
+fetchLogicIterations consensusFunctions
+                     fetchPolicyParams
                      fetchTriggerVariables
                      fetchNonTriggerVariables =
 
-    iterateForever initialFetchStateFingerprint $ \fingerprint -> do
+    iterateForever initialFetchStateFingerprint $ \stateFingerprint ->
 
       -- Run a single iteration of the fetch logic:
       --
       -- * wait for the state to change and make decisions for the new state
       -- * act on those decisions
 
-      (fingerprint', decisions)
-        <- fetchLogicIterationDecide
-             fetchPolicyParams
-             fetchTriggerVariables
-             fetchNonTriggerVariables
-             fingerprint
-
-      -- Log the fetch decisions
-      --TODO use Trace mechanism
-
-      fetchLogicIterationAct decisions
-
-      return fingerprint'
+      fetchLogicIteration
+        consensusFunctions
+        fetchPolicyParams
+        fetchTriggerVariables
+        fetchNonTriggerVariables
+        stateFingerprint
 
 
 iterateForever :: Monad m => a -> (a -> m a) -> m Void
 iterateForever x0 m = go x0 where go x = m x >>= go
 
 
--- | The first half of a single iteration of the fetch logic.
+-- | A single iteration of the fetch logic.
 --
 -- This involves:
 --
@@ -224,48 +440,156 @@ iterateForever x0 m = go x0 where go x = m x >>= go
 -- * taking a snapshot of the state;
 -- * deciding for each peer if we will initiate a new fetch request
 --
-fetchLogicIterationDecide
+fetchLogicIteration
   :: (MonadSTM m, Ord peer,
       HasHeader header, HasHeader block,
       HeaderHash header ~ HeaderHash block)
-  => FetchPolicyParams
+  => ConsensusFunctions header block
+  -> FetchPolicyParams
   -> FetchTriggerVariables peer header block m
-  -> FetchNonTriggerVariables peer time m
-  -> FetchStateFingerprint peer header
-  -> m (FetchStateFingerprint peer header, [FetchDecision header peer])
-fetchLogicIterationDecide fetchPolicyParams
-                          fetchTriggerVariables
-                          fetchNonTriggerVariables
-                          fetchStateFingerprint = do
+  -> FetchNonTriggerVariables peer header block m
+  -> FetchStateFingerprint peer header block
+  -> m (FetchStateFingerprint peer header block)
+fetchLogicIteration consensusFunctions
+                    fetchPolicyParams
+                    fetchTriggerVariables
+                    fetchNonTriggerVariables
+                    stateFingerprint = do
 
     -- Gather a snapshot of all the state we need.
-    (fetchStateSnapshot,
-     fetchStateFingerprint') <- atomically $
-                                readStateVariables
-                                  fetchTriggerVariables
-                                  fetchNonTriggerVariables
-                                  fetchStateFingerprint
+    (stateSnapshot, stateFingerprint') <-
+      atomically $
+        readStateVariables
+          fetchTriggerVariables
+          fetchNonTriggerVariables
+          stateFingerprint
 
-    assert (fetchStateFingerprint' /= fetchStateFingerprint) $ return ()
+    -- TODO: allow for boring PeerFetchStatusBusy transitions where we go round
+    -- again rather than re-evaluating everything.
+    assert (stateFingerprint' /= stateFingerprint) $ return ()
+
+    -- TODO: log the difference in the fingerprint that caused us to wake up
 
     -- Make all the fetch decisions
-    let fetchDecisions = fetchDecisionsForState
-                           fetchPolicyParams
-                           fetchStateFetchedBlocks
-                           fetchStatePeerStates
-                           fetchStatePeerDeltaQs
-                           fetchStateCurrentChain
-                           (map swap (Map.toList fetchStatePeerChains))
-          where
-            FetchStateSnapshot {
-              fetchStateCurrentChain,
-              fetchStatePeerChains,
-              fetchStateFetchedBlocks,
-              fetchStatePeerStates,
-              fetchStatePeerDeltaQs
-            } = fetchStateSnapshot
+    let decisions = fetchDecisionsForStateSnapshot
+                      consensusFunctions
+                      fetchPolicyParams
+                      stateSnapshot
 
-    return (fetchStateFingerprint', fetchDecisions)
+    -- Log the fetch decisions
+    --TODO use Trace mechanism
+
+    let swizzleReqVar (d,(_,_,_,rq)) = (d,rq)
+    fetchLogicIterationAct (map swizzleReqVar decisions)
+
+    return stateFingerprint'
+
+-- | Do a bit of rearranging of data before calling 'fetchDecisions' to do the
+-- real work.
+--
+fetchDecisionsForStateSnapshot
+  :: (HasHeader header, HasHeader block, Ord peer,
+      HeaderHash header ~ HeaderHash block)
+  => ConsensusFunctions header block
+  -> FetchPolicyParams
+  -> FetchStateSnapshot peer header block m
+  -> [( FetchDecision header,
+        PeerInfo header (Time m) (TFetchRequestVar m header)
+      )]
+
+fetchDecisionsForStateSnapshot
+    consensusFunctions
+    fetchPolicyParams
+    FetchStateSnapshot {
+      fetchStateCurrentChain,
+      fetchStatePeerChains,
+      fetchStatePeerStates,
+      fetchStatePeerDeltaQs,
+      fetchStatePeerReqVars,
+      fetchStateFetchedBlocks
+    } =
+    assert (                 Map.keysSet fetchStatePeerChains
+            `Set.isSubsetOf` Map.keysSet fetchStatePeerStates) $
+
+    assert (Map.keysSet fetchStatePeerStates
+         == Map.keysSet fetchStatePeerDeltaQs) $
+
+    assert (Map.keysSet fetchStatePeerStates
+         == Map.keysSet fetchStatePeerReqVars) $
+
+    fetchDecisions
+      consensusFunctions
+      fetchPolicyParams
+      fetchStateCurrentChain
+      fetchStateFetchedBlocks
+      peerChainsAndPeerInfo
+  where
+    peerChainsAndPeerInfo =
+      Map.elems $
+      Map.intersectionWith swizzle
+        (Map.intersectionWith (,) fetchStatePeerChains  fetchStatePeerStates)
+        (Map.intersectionWith (,) fetchStatePeerDeltaQs fetchStatePeerReqVars)
+
+    swizzle (chain, (status, inflight)) (deltaq, reqvar) =
+      (chain, (status, inflight, deltaq, reqvar))
+
+type PeerInfo header time extra =
+       ( PeerFetchStatus,
+         PeerFetchInFlight header,
+         GSV time,
+         extra
+       )
+
+fetchDecisions :: (HasHeader header, HasHeader block,
+                   HeaderHash header ~ HeaderHash block)
+               => ConsensusFunctions header block
+               -> FetchPolicyParams
+               -> ChainFragment block
+               -> (Point block -> Bool)
+               -> [(ChainFragment header, PeerInfo header time extra)]
+               -> [(FetchDecision header, PeerInfo header time extra)]
+fetchDecisions ConsensusFunctions {
+                 plausibleCandidateChain,
+                 compareCandidateChains,
+                 blockFetchSize
+               }
+               fetchPolicyParams
+               currentChain fetchedBlocks =
+
+    fetchRequestDecisions
+      blockFetchSize
+      fetchPolicyParams
+  . map (\(c, p@(status,inflight,_,_)) -> (c, status, inflight, p))
+
+  . prioritisePeerChains
+      compareCandidateChains
+      blockFetchSize
+  . map (\(c, p@(_,inflight,deltaq,_)) -> (c, inflight, deltaq, p))
+
+  . chainsFetchFragments
+      fetchedBlocks
+  . map (\(c, p@(_,inflight,_,_)) -> (c, peerFetchBlocksInFlight inflight, p))
+
+  . chainsForkSuffix
+      currentChain
+
+  . filterLongerCandidateChains
+      plausibleCandidateChain
+      currentChain
+
+
+-- | Act on decisions to send new requests. In fact all we do here is update
+-- request variables that are shared with the threads running the block fetch
+-- protocol with each peer.
+--
+fetchLogicIterationAct :: MonadSTM m
+                       => [(FetchDecision header, TFetchRequestVar m header)]
+                       -> m ()
+fetchLogicIterationAct decisions =
+    sequence_
+      [ atomically (writeTFetchRequestVar peerFetchRequestVar request)
+      | (Right request, peerFetchRequestVar) <- decisions ]
+
 
 -- | STM actions to read various state variables that the fetch logic depends
 -- upon. Any change in these variables is a trigger to re-evaluate the decision
@@ -280,86 +604,94 @@ fetchLogicIterationDecide fetchPolicyParams
 data FetchTriggerVariables peer header block m = FetchTriggerVariables {
        readStateCurrentChain    :: Tr m (ChainFragment block),
        readStateCandidateChains :: Tr m (Map peer (ChainFragment header)),
-       readStatePeerStates      :: Tr m (Map peer PeerFetchState),
-       readStateFetchedBlocks   :: Tr m (Point block -> Bool)
+       readStatePeerStatus      :: Tr m (Map peer PeerFetchStatus)
      }
 
 -- | STM actions to read various state variables that the fetch logic uses.
 -- While the decisions do make use of the values of these variables, it is not
 -- necessary to re-evaluate when these variables change.
 --
-data FetchNonTriggerVariables peer time m = FetchNonTriggerVariables {
-       readStatePeerDeltaQs :: Tr m (Map peer (GSV time))
+data FetchNonTriggerVariables peer header block m = FetchNonTriggerVariables {
+       readStateFetchedBlocks :: Tr m (Point block -> Bool),
+       readStatePeerStates    :: Tr m (Map peer (PeerFetchStatus, PeerFetchInFlight header)),
+       readStatePeerDeltaQs   :: Tr m (Map peer (GSV (Time m))),
+       readStatePeerReqVars   :: Tr m (Map peer (TFetchRequestVar m header))
      }
 
-data FetchStateSnapshot peer header block time = FetchStateSnapshot {
-       fetchStateCurrentChain  :: ChainFragment block,
-       fetchStatePeerChains    :: Map peer (ChainFragment header),
-       fetchStateFetchedBlocks :: Point block -> Bool,
-       fetchStatePeerStates    :: Map peer PeerFetchState,
-       fetchStatePeerDeltaQs   :: Map peer (GSV time)
-     }
 
-data FetchStateFingerprint peer header =
+data FetchStateFingerprint peer header block =
      FetchStateFingerprint
-       (Maybe BlockNo)
+       (Maybe (Point block))
        (Map peer (Maybe (Point header)))
-       (Map peer PeerFetchStatus) -- note, we don't include the full PeerFetchState
-       --TODO: trigger for the fetched block set
+       (Map peer PeerFetchStatus)
   deriving Eq
 
-initialFetchStateFingerprint :: FetchStateFingerprint peer header
+initialFetchStateFingerprint :: FetchStateFingerprint peer header block
 initialFetchStateFingerprint =
     FetchStateFingerprint
       Nothing
       Map.empty
       Map.empty
 
+-- |
+--
+-- Note that the domain of 'fetchStatePeerChains' is a subset of the domain
+-- of 'fetchStatePeerStates' and 'fetchStatePeerReqVars'.
+--
+data FetchStateSnapshot peer header block m = FetchStateSnapshot {
+       fetchStateCurrentChain  :: ChainFragment block,
+       fetchStatePeerChains    :: Map peer (ChainFragment header),
+       fetchStatePeerStates    :: Map peer (PeerFetchStatus, PeerFetchInFlight header),
+       fetchStatePeerDeltaQs   :: Map peer (GSV (Time m)),
+       fetchStatePeerReqVars   :: Map peer (TFetchRequestVar m header),
+       fetchStateFetchedBlocks :: Point block -> Bool
+     }
 
 readStateVariables :: (MonadSTM m, Eq peer, Eq (Point header),
                        HasHeader header, HasHeader block)
                    => FetchTriggerVariables peer header block m
-                   -> FetchNonTriggerVariables peer time m
-                   -> FetchStateFingerprint peer header
-                   -> Tr m (FetchStateSnapshot peer header block time,
-                            FetchStateFingerprint peer header)
+                   -> FetchNonTriggerVariables peer header block m
+                   -> FetchStateFingerprint peer header block
+                   -> Tr m (FetchStateSnapshot peer header block m,
+                            FetchStateFingerprint peer header block)
 readStateVariables FetchTriggerVariables{..}
-                        FetchNonTriggerVariables{..}
-                        fetchStateFingerprint = do
+                   FetchNonTriggerVariables{..}
+                   fetchStateFingerprint = do
 
     -- Read all the trigger state variables
     fetchStateCurrentChain  <- readStateCurrentChain
     fetchStatePeerChains    <- readStateCandidateChains
-    fetchStatePeerStates    <- readStatePeerStates
-    fetchStateFetchedBlocks <- readStateFetchedBlocks
+    fetchStatePeerStatus    <- readStatePeerStatus
 
     -- Construct the change detection fingerprint
     let fetchStateFingerprint' =
           FetchStateFingerprint
-            (ChainFragment.headBlockNo fetchStateCurrentChain)
+            (ChainFragment.headPoint fetchStateCurrentChain)
             (Map.map ChainFragment.headPoint fetchStatePeerChains)
-            (Map.map peerFetchStatus fetchStatePeerStates)
+            fetchStatePeerStatus
 
     -- Check the fingerprint changed, or block and wait until it does
     check (fetchStateFingerprint' /= fetchStateFingerprint)
 
     -- Now read all the non-trigger state variables
-    fetchStatePeerDeltaQs <- readStatePeerDeltaQs
+    fetchStatePeerStates    <- readStatePeerStates
+    fetchStatePeerDeltaQs   <- readStatePeerDeltaQs
+    fetchStatePeerReqVars   <- readStatePeerReqVars
+    fetchStateFetchedBlocks <- readStateFetchedBlocks
 
     -- Construct the overall snapshot of the state
-    let fetchStateSnapshot = FetchStateSnapshot {
-          fetchStateCurrentChain,
-          fetchStatePeerChains,
-          fetchStateFetchedBlocks,
-          fetchStatePeerStates,
-          fetchStatePeerDeltaQs
-        }
+    let fetchStateSnapshot =
+          FetchStateSnapshot {
+            fetchStateCurrentChain,
+            fetchStatePeerChains,
+            fetchStatePeerStates,
+            fetchStatePeerDeltaQs,
+            fetchStatePeerReqVars,
+            fetchStateFetchedBlocks
+          }
 
     return (fetchStateSnapshot, fetchStateFingerprint')
 
-
-fetchLogicIterationAct :: Monad m => [FetchDecision header peer] -> m ()
-fetchLogicIterationAct _ = return ()
 
 {-
 We have the node's /current/ or /adopted/ chain. This is the node's chain in
@@ -441,15 +773,48 @@ We are only interested in candidate chains that are strictly longer than our
 current chain. So our first task is to filter down to this set.
 -}
 
+exCurChain :: ChainFragment Block
+exCurChain =
+  mkChainFragmentSimple ["cur1", "cur2", "cur3", "cur4"]
+
+exPeerChainA :: ChainFragment BlockHeader
+exPeerChainA =
+  mkChainFragmentHeadersSimple ["cur1", "A1", "A2", "A3", "A4", "A5"]
+
+exPeerChainB :: ChainFragment BlockHeader
+exPeerChainB =
+  mkChainFragmentHeadersSimple ["cur1", "cur2", "cur3", "cur4", "B1", "B2"]
+
+exPeerChainC :: ChainFragment BlockHeader
+exPeerChainC =
+  mkChainFragmentHeadersSimple ["cur1", "cur2", "cur3", "cur4", "C1"]
+
+exPeerChainD :: ChainFragment BlockHeader
+exPeerChainD =
+  mkChainFragmentHeadersSimple ["cur1", "cur2", "cur3"]
+
+exPeerChains :: [(ChainFragment BlockHeader, String)]
+exPeerChains =
+  [ (exPeerChainC, "Peer1")
+  , (exPeerChainA, "Peer2")
+  , (exPeerChainB, "Peer3")
+  , (exPeerChainA, "Peer4")
+  , (exPeerChainD, "Peer5")
+  , (exPeerChainB, "Peer6")
+  , (exPeerChainA, "Peer7")
+  ]
+
 -- | Keep only those candidate chains that are strictly longer than a given
 -- length (typically the length of the current adopted chain).
 --
 filterLongerCandidateChains :: HasHeader header
-                            => Maybe BlockNo
-                            -> [(ChainFragment header, peer)]
-                            -> [(ChainFragment header, peer)]
-filterLongerCandidateChains currentBlockNo =
-    filter (\(c, _) -> ChainFragment.headBlockNo c > currentBlockNo)
+                            => (ChainFragment block ->
+                                ChainFragment header -> Bool)
+                            -> ChainFragment block
+                            -> [(ChainFragment header, peerinfo)]
+                            -> [(ChainFragment header, peerinfo)]
+filterLongerCandidateChains plausibleCandidateChain currentChain =
+    filter (\(c, _) -> plausibleCandidateChain currentChain c)
 
 {-
 In the example, this leaves us with only the candidate chains: A, B and C, but
@@ -468,8 +833,28 @@ peer    1         2         3         4                   6         7
                 │   │     │   │     │   │               │   │     │   │
                 └───┘     └───┘     └───┘               └───┘     └───┘
 chain   C         A         B         A                   B         A
+-}
 
+exPeerChains2 :: [(ChainFragment BlockHeader, String)]
+exPeerChains2 = filterLongerCandidateChains
+                  (\currentChain c ->
+                        ChainFragment.headBlockNo c
+                      > ChainFragment.headBlockNo currentChain)
+                  exCurChain
+                  exPeerChains
 
+unit1 :: Bool
+unit1 = exPeerChains2
+     == [ (exPeerChainC, "Peer1")
+        , (exPeerChainA, "Peer2")
+        , (exPeerChainB, "Peer3")
+        , (exPeerChainA, "Peer4")
+          -- filtered out Peer5
+        , (exPeerChainB, "Peer6")
+        , (exPeerChainA, "Peer7")
+        ]
+
+{-
 Of course we would at most need to download the blocks in a candidate chain
 that are not already in the current chain. So we must find those intersections.
 
@@ -501,7 +886,7 @@ empty fetch range, but this is ok since we never request empty ranges.
 --
 -- So for example the empty suffix has the point as the chain head.
 --
-type ChainSuffix header = ChainFragment header
+--type ChainSuffix header = ChainFragment header
 
 {-
 We define the /fork range/ as the suffix of the candidate chain up until (but
@@ -541,7 +926,7 @@ chainForkSuffix :: (HasHeader header, HasHeader block,
                     HeaderHash header ~ HeaderHash block)
                 => ChainFragment block  -- ^ Current chain.
                 -> ChainFragment header -- ^ Candidate chain
-                -> Maybe (ChainSuffix header)
+                -> Maybe (ChainFragment header)
 chainForkSuffix current candidate =
     case ChainFragment.intersectChainFragments current candidate of
       Nothing                         -> Nothing
@@ -550,11 +935,31 @@ chainForkSuffix current candidate =
 chainsForkSuffix :: (HasHeader header, HasHeader block,
                      HeaderHash header ~ HeaderHash block)
                  => ChainFragment block
-                 -> [(ChainFragment header, peer)]
-                 -> [(ChainSuffix   header, peer)]
+                 -> [(ChainFragment header, peerinfo)]
+                 -> [(ChainFragment header, peerinfo)]
 chainsForkSuffix current chains =
     catMaybes [ (,) <$> chainForkSuffix current chain <*> pure peer
               | (chain, peer) <- chains ]
+
+
+exPeerChains3 :: [(ChainFragment BlockHeader, String)]
+exPeerChains3 = chainsForkSuffix
+                  exCurChain
+                  exPeerChains2
+
+unit2 :: Bool
+unit2 = exPeerChains3
+     == [ (exPeerChainC', "Peer1")
+        , (exPeerChainA', "Peer2")
+        , (exPeerChainB', "Peer3")
+        , (exPeerChainA', "Peer4")
+        , (exPeerChainB', "Peer6")
+        , (exPeerChainA', "Peer7")
+        ]
+  where
+    exPeerChainA' = ChainFragment.takeNewest 5 exPeerChainA
+    exPeerChainB' = ChainFragment.takeNewest 2 exPeerChainB
+    exPeerChainC' = ChainFragment.takeNewest 1 exPeerChainC
 
 {-
 We define the /fetch range/ as the suffix of the fork range that has not yet
@@ -588,26 +993,78 @@ of individual blocks without their relationship to each other.
 
 -}
 
--- | Find the fetch suffix range of blocks that have not been fetched.
+-- | Find the fragments of the chain that we still need to fetch, these are the
+-- fragments covering blocks that have not yet been fetched and are not
+-- currently in the process of being fetched from this peer.
 --
--- We rely on the invariant that the set of already downloaded blocks are
--- downward closed.
+-- Typically this is a single fragment forming a suffix of the chain, but in
+-- the general case we can get a bunch of discontiguous chain fragments.
 --
-chainFetchSuffix :: forall header block.
-                    (HasHeader header, HeaderHash header ~ HeaderHash block)
-                 => (Point block -> Bool)
-                 -> ChainSuffix header
-                 -> ChainSuffix header
-chainFetchSuffix alreadyDownloaded =
-    ChainFragment.takeWhileNewest (alreadyDownloaded . castPoint . blockPoint)
+chainFetchFragments :: forall header block.
+                       (HasHeader header, HeaderHash header ~ HeaderHash block)
+                    => (Point block  -> Bool)
+                    -> (Point header -> Bool)
+                    -> ChainFragment header
+                    -> [ChainFragment header]
+chainFetchFragments alreadyDownloaded alreadyInFlight =
+    ChainFragment.filter notAlreadyDownloadedOrAlreadyInFlight
+  where
+    notAlreadyDownloadedOrAlreadyInFlight :: header -> Bool
+    notAlreadyDownloadedOrAlreadyInFlight p =
+        not (alreadyDownloaded (castPoint (blockPoint p))
+          || alreadyInFlight   (blockPoint p))
 
-chainsFetchSuffix :: (HasHeader header, HeaderHash header ~ HeaderHash block)
-                  => (Point block -> Bool)
-                  -> [(ChainSuffix header, peer)]
-                  -> [(ChainSuffix header, peer)]
-chainsFetchSuffix alreadyDownloaded chains =
-    [ (chainFetchSuffix alreadyDownloaded chainsuffix, peer)
-    | (chainsuffix, peer) <- chains ]
+
+chainsFetchFragments :: (HasHeader header,
+                         HeaderHash header ~ HeaderHash block)
+                     => (Point block -> Bool)
+                     -> [ (ChainFragment header,  Set (Point header),
+                                                  peerinfo)]
+                     -> [([ChainFragment header], peerinfo)]
+chainsFetchFragments alreadyDownloaded chains =
+    [ (chainfragments, peer)
+    | (chainsuffix, alreadyInFlight, peer) <- chains
+    , let chainfragments = chainFetchFragments
+                             alreadyDownloaded
+                             (`Set.member` alreadyInFlight)
+                             chainsuffix
+    ]
+
+exPeerChains4 :: [([ChainFragment BlockHeader], String)]
+exPeerChains4 =
+    chainsFetchFragments
+      alreadyDownloaded
+      [ (chain, alreadyInFlight peer, peer) | (chain, peer) <- exPeerChains3 ]
+  where
+    alreadyDownloaded :: Point Block -> Bool
+    alreadyDownloaded = const False
+    alreadyInFlight :: String -> Set (Point BlockHeader)
+    alreadyInFlight "Peer2" = Set.fromList [pointA1, pointA2]
+    alreadyInFlight "Peer4" = Set.fromList [         pointA2]
+    alreadyInFlight _       = Set.empty
+    pointA1 = grabPoint exPeerChainA 2 "A1"
+    pointA2 = grabPoint exPeerChainA 3 "A2"
+    grabPoint chain slot expectedBody =
+      case ChainFragment.lookupBySlot chain slot of
+        Just b
+          | headerBodyHash b == hashBody (BlockBody expectedBody)
+                      -> blockPoint b
+          | otherwise -> error ("grabPoint: expected hash of " ++ show expectedBody)
+        _             -> error ("grabPoint: no block at slot " ++ show slot)
+
+unit3 :: Bool
+unit3 = [ map (map headerBodyHash . ChainFragment.toOldestFirst) cf
+        | (cf, _) <- exPeerChains4 ]
+     == 
+        map (map (map (hashBody . BlockBody)))
+        [ [["C1"]]
+        , [["A3", "A4", "A5"]]
+        , [["B1", "B2"]]
+        , [["A1"], ["A3", "A4", "A5"]] -- two fragments
+        , [["B1", "B2"]]
+        , [["A1", "A2", "A3", "A4", "A5"]]
+        ]
+
 
 {-
 At this point we have all of the blocks we may be interested in downloading
@@ -696,11 +1153,15 @@ Slight change of plan to the above:
 -}
 
 prioritisePeerChains :: HasHeader header
-                     => Map peer PeerFetchState
-                     -> Map peer (GSV time)
-                     -> [(ChainSuffix header, peer)]
-                     -> [(ChainSuffix header, peer)]
-prioritisePeerChains _peersStatus _peerDeltaQs = id
+                     => (ChainFragment header ->
+                         ChainFragment header -> Ordering)
+                     -> (header -> Word)
+                     -> [([ChainFragment header], PeerFetchInFlight header,
+                                                  GSV time,
+                                                  peer)]
+                     -> [([ChainFragment header], peer)]
+prioritisePeerChains _compareCandidateChains _blockFetchSize =
+    map (\(c,_,_,p) -> (c,p))
 
 {-
 In the second phase we walk over the prioritised fetch suffixes for each peer
@@ -724,18 +1185,14 @@ obviously take that into account when considering later peer chains.
 -}
 
 
-type FetchDecision header peer = Either (FetchDecline header peer)
-                                        (FetchRequest header peer)
+type FetchDecision header = Either FetchDecline (FetchRequest header)
 
-data FetchRequest header peer = FetchRequest !peer !(ChainRange header)
+newtype FetchRequest header = FetchRequest [[header]]
   deriving Show
 
+type SizeInBytes = Word
+--TODO use this consistently and put somewhere sensible
 
-chainSuffixRange :: HasHeader a => ChainFragment a -> Maybe (ChainRange a)
-chainSuffixRange c =
-    case (ChainFragment.last c, ChainFragment.head c) of
-      (Just bl, Just bh) -> Just (ChainRange (blockPoint bl) (blockPoint bh))
-      _                  -> Nothing
 
 -- | A range on a chain identified by two points. It is exclusive on the
 -- lower end and inclusive on the upper end.
@@ -743,148 +1200,230 @@ chainSuffixRange c =
 --data ChainRange header = ChainRange !(Point header) !(Point header)
 --  deriving Show
 
-data FetchDecline header peer =
-     FetchDeclineAllDownloaded  peer
-   | FetchDeclineSlowPeer       peer
-   | FetchDeclinePeerFailure    peer
-   | FetchDeclineInFlightLimit  peer Word
-   | FetchDeclineConcLimit      peer Word
+data FetchDecline =
+     FetchDeclineAllDownloaded
+   | FetchDeclinePeerFailure
+   | FetchDeclinePeerSlow
+   | FetchDeclineReqsInFlightLimit  !Word
+   | FetchDeclineBytesInFlightLimit !Word
+   | FetchDeclinePeerBusy           !Word !Word !Word
+   | FetchDeclineConcurrencyLimit   !Word
   deriving Show
 
 data FetchPolicyParams = FetchPolicyParams {
-       maxInFlightBytesPerPeer  :: Word,
-       maxConcurrentFetchPeers  :: Word
+       maxConcurrentFetchPeers  :: Word,
+       maxInFlightReqsPerPeer   :: Word  -- A protocol constant.
      }
 
-data PeerFetchState = PeerFetchState {
-       -- | The number of block fetch requests that are currently in-flight.
-       -- This is the number of /requests/ not the number of blocks. Each
-       -- request is for a range of blocks.
-       --
-       -- We track this because there is a fixed maximum number of outstanding
-       -- requests that the protocol allows.
-       --
-       peerFetchReqsInFlight :: Word,
-
-       -- | The sum of the byte count of blocks expected from all in-flight
-       -- fetch requests. This is a close approximation of the amount of data
-       -- we expect to receive, assuming no failures.
-       --
-       -- We track this because we pipeline fetch requests and we want to keep
-       -- some but not too much data in flight at once.
-       --
-       peerFetchBytesInFlight :: Word,
-
-       -- | The current status of communication with this peer. If the peer
-       -- fetch responses hit a soft timeout then it enters an aberrant state.
-       -- On a hard failure it is in the failure state, and it should be
-       -- removed as a candidate shortly thereafter.
-       --
-       peerFetchStatus :: PeerFetchStatus
+--TODO: compute these based on GSV
+data PeerFetchInFlightLimits = PeerFetchInFlightLimits {
+       inFlightBytesHighWatermark :: Word,
+       inFlightBytesLowWatermark  :: Word
      }
 
-data PeerFetchStatus = PeerFetchStatusNormal
-                     | PeerFetchStatusAberrant
-                     | PeerFetchStatusFailure
-  deriving (Eq, Show)
-
-fetchRequestDecisions :: (HasHeader header, Ord peer)
-                      => FetchPolicyParams
-                      -> Map peer PeerFetchState
-                      -> [(ChainSuffix header, peer)]
-                      -> [FetchDecision header peer]
-fetchRequestDecisions fetchPolicyParams peerFetchStates =
-    go nConcurrentFetchPeers0 []
+fetchRequestDecisions :: HasHeader header
+                      => (header -> Word)
+                      -> FetchPolicyParams
+                      -> [([ChainFragment header], PeerFetchStatus,
+                                                   PeerFetchInFlight header,
+                                                   peer)]
+                      -> [ (FetchDecision header,  peer)]
+fetchRequestDecisions blockFetchSize fetchPolicyParams chains =
+    go nConcurrentFetchPeers0 chains
   where
-    go _nConcurrentFetchPeers decisions [] = decisions
-    go  nConcurrentFetchPeers decisions ((chain, peer) : cps) =
+    go !_ [] = []
+    go !nConcurrentFetchPeers ((chain, peerFetchStatus,
+                                peerFetchInFlight, peer) : cps) =
+        (decision, peer) : go nConcurrentFetchPeers' cps
+      where
+        decision = fetchRequestDecision
+                     blockFetchSize
+                     fetchPolicyParams
+                     nConcurrentFetchPeers
+                     (error "TODO PeerFetchInFlightLimits")
+                     peerFetchInFlight
+                     peerFetchStatus
+                     chain
 
-      let decision = fetchRequestDecision
-                       fetchPolicyParams
-                       nConcurrentFetchPeers
-                       peerFetchState
-                       chain
-                       peer
+        nConcurrentFetchPeers'
+          -- increment if it was idle, and now will not be
+          | peerFetchReqsInFlight peerFetchInFlight == 0
+          , Right{} <- decision = nConcurrentFetchPeers + 1
+          | otherwise           = nConcurrentFetchPeers
 
-          peerFetchState = peerFetchStates Map.! peer
-
-          nConcurrentFetchPeers'
-            -- increment if it was idle, and now will not be
-            | peerFetchBytesInFlight peerFetchState == 0
-            , Right{} <- decision = nConcurrentFetchPeers + 1
-            | otherwise           = nConcurrentFetchPeers
-
-      in go nConcurrentFetchPeers' (decision:decisions) cps
 
     nConcurrentFetchPeers0 =
-      fromIntegral $ Prelude.length
-        [ () | s <- Map.elems peerFetchStates
-             , peerFetchReqsInFlight s > 0 ]
+        fromIntegral
+      . length
+      . filter (> 0)
+      . map (\(_, _, PeerFetchInFlight{peerFetchReqsInFlight}, _) ->
+                       peerFetchReqsInFlight)
+      $ chains
 
 
 fetchRequestDecision :: HasHeader header
-                     => FetchPolicyParams
+                     => (header -> Word)
+                     -> FetchPolicyParams
                      -> Word
-                     -> PeerFetchState
-                     -> ChainSuffix header
-                     -> peer
-                     -> FetchDecision header peer
-fetchRequestDecision FetchPolicyParams {
-                       maxInFlightBytesPerPeer,
-                       maxConcurrentFetchPeers
+                     -> PeerFetchInFlightLimits
+                     -> PeerFetchInFlight header
+                     -> PeerFetchStatus
+                     -> [ChainFragment header]
+                     -> FetchDecision header
+
+fetchRequestDecision _ _ _ _ _ _ [] = Left FetchDeclineAllDownloaded
+
+fetchRequestDecision _ _ _ _ _ PeerFetchStatusFailure _
+                                    = Left FetchDeclinePeerFailure
+
+fetchRequestDecision _ _ _ _ _ PeerFetchStatusAberrant _
+                                    = Left FetchDeclinePeerSlow
+
+fetchRequestDecision blockFetchSize
+                     FetchPolicyParams {
+                       maxConcurrentFetchPeers,
+                       maxInFlightReqsPerPeer
                      }
                      nConcurrentFetchPeers
-                     PeerFetchState{
-                       peerFetchBytesInFlight,
-                       peerFetchStatus
+                     PeerFetchInFlightLimits {
+                       inFlightBytesLowWatermark,
+                       inFlightBytesHighWatermark
                      }
-                     fetchSuffix peer
-  | ChainFragment.null fetchSuffix
-  = Left (FetchDeclineAllDownloaded peer)
+                     PeerFetchInFlight {
+                       peerFetchReqsInFlight,
+                       peerFetchBytesInFlight
+                     }
+                     peerFetchStatus
+                     fetchFragments
 
-  | PeerFetchStatusAberrant <- peerFetchStatus
-  = Left (FetchDeclineSlowPeer peer)
+  | peerFetchReqsInFlight >= maxInFlightReqsPerPeer
+  = Left $ FetchDeclineReqsInFlightLimit
+             maxInFlightReqsPerPeer
 
-  | PeerFetchStatusFailure <- peerFetchStatus
-  = Left (FetchDeclinePeerFailure peer)
+  | peerFetchBytesInFlight >= inFlightBytesHighWatermark
+  = Left $ FetchDeclineBytesInFlightLimit
+             inFlightBytesHighWatermark
 
-  | peerFetchBytesInFlight >= maxInFlightBytesPerPeer
-  = Left (FetchDeclineInFlightLimit peer maxInFlightBytesPerPeer)
+    -- This covers the case when we could still fit in more reqs or bytes, but
+    -- we want to let it drop below a low water mark before sending more so we
+    -- get a bit more batching behaviour, rather than lots of 1-block reqs.
+  | peerFetchStatus == PeerFetchStatusBusy
+  = Left $ FetchDeclinePeerBusy
+             peerFetchBytesInFlight
+             inFlightBytesLowWatermark
+             inFlightBytesHighWatermark
 
-  | peerFetchBytesInFlight == 0
+  | peerFetchReqsInFlight == 0
   , nConcurrentFetchPeers >= maxConcurrentFetchPeers
-  = Left (FetchDeclineConcLimit peer maxConcurrentFetchPeers)
+  = Left $ FetchDeclineConcurrencyLimit
+             maxConcurrentFetchPeers
 
+    -- We've checked our request limit and our byte limit. We are then
+    -- guaranteed to get at least one non-empty request range.
   | otherwise
-  = Right (FetchRequest peer fetchReqRange)
+  = assert (peerFetchReqsInFlight < maxInFlightReqsPerPeer) $
+
+    Right $ selectBlocksUpToLimits
+              blockFetchSize
+              peerFetchReqsInFlight
+              maxInFlightReqsPerPeer
+              peerFetchBytesInFlight
+              inFlightBytesHighWatermark
+              fetchFragments
+
+
+
+-- | 
+--
+-- Precondition: The result will be non-empty if
+--
+-- Property: result is non-empty if preconditions satisfied
+--
+selectBlocksUpToLimits :: HasHeader header
+                       => (header -> Word) -- ^ Block body size
+                       -> Word -- ^ Current number of requests in flight
+                       -> Word -- ^ Maximum number of requests in flight allowed
+                       -> Word -- ^ Current number of bytes in flight
+                       -> Word -- ^ Maximum number of bytes in flight allowed
+                       -> [ChainFragment header]
+                       -> FetchRequest header
+selectBlocksUpToLimits blockFetchSize nreqs0 maxreqs nbytes0 maxbytes fragments =
+    assert (nreqs0 < maxreqs && nbytes0 < maxbytes && not (null fragments)) $
+    -- The case that we are already over our limits has to be checked earlier,
+    -- outside of this function. From here on however we check for limits.
+
+    FetchRequest
+      [ assert (not (ChainFragment.null fragment)) $
+        ChainFragment.toOldestFirst fragment
+      | fragment <- goFrags nreqs0 nbytes0 fragments ]
   where
-    --TODO: limit the request range to fit within maxInFlightBytesPerPeer
-    --FIXME: separate empty/non-empty cases better:
-    Just fetchReqRange = chainSuffixRange fetchSuffix
-                     -- point prior to first block in fetch suffix
-                     -- head point of fetch suffix
-                     -- (blockPrevHash fetchSuffix) (ChainFragment.headPoint chain)
+    goFrags _     _      []     = []
+    goFrags nreqs nbytes (c:cs)
+      | nreqs+1  > maxreqs      = []
+      | otherwise               = goFrag (nreqs+1) nbytes Empty c cs
+      -- Each time we have to pick from a new discontiguous chain fragment then
+      -- that will become a new request, which contributes to our in-flight
+      -- request count. We never break the maxreqs limit.
+
+    goFrag nreqs nbytes c' Empty    cs = c' : goFrags nreqs nbytes cs
+    goFrag nreqs nbytes c' (b :< c) cs
+      | nbytes' >= maxbytes            = [c' :> b]
+      | otherwise                      = goFrag nreqs nbytes' (c' :> b) c cs
+      where
+        nbytes' = nbytes + blockFetchSize b
+      -- Note that we always pick the one last block that crosses the maxbytes
+      -- limit. This cover the case where we otherwise wouldn't even be able to
+      -- request a single block, as it's too large.
 
 
-fetchDecisionsForState :: (HasHeader header, HasHeader block,
-                           HeaderHash header ~ HeaderHash block, Ord peer)
-                       => FetchPolicyParams
-                       -> (Point block -> Bool)
-                       -> Map peer PeerFetchState
-                       -> Map peer (GSV time)
-                       -> ChainFragment block
-                       -> [(ChainFragment header, peer)]
-                       -> [FetchDecision header peer]
-fetchDecisionsForState fetchPolicyParams alreadyDownloaded
-                       peersStatus peerDeltaQs
-                       currentChain =
-    fetchRequestDecisions fetchPolicyParams peersStatus
-  . prioritisePeerChains peersStatus peerDeltaQs
-  . chainsFetchSuffix alreadyDownloaded
-  . chainsForkSuffix currentChain
-  . filterLongerCandidateChains (ChainFragment.headBlockNo currentChain)
+
+{-
+exPeerFetchDecisions :: [(FetchDecision BlockHeader, String)]
+exPeerFetchDecisions =
+    fetchRequestDecisions
+      exampleConsensusFunctions
+      fetchPolicyParams
+      [  | (chain, peer) <- exPeerChains4 ]
+  where
+    fetchPolicyParams = FetchPolicyParams {
+        maxInFlightReqsPerPeer   = 2,
+        maxConcurrentFetchPeers  = 4
+      }
+
+    peerFetchStates =
+      Map.fromList
+        [ ("Peer1", defaultPeerFetchState { peerFetchInFlight = defaultPeerFetchInFlight { peerFetchReqsInFlight = 2 } } )
+        , ("Peer2", defaultPeerFetchState { peerFetchInFlight = defaultPeerFetchInFlight { peerFetchReqsInFlight = 2 } } )
+        , ("Peer3", defaultPeerFetchState { peerFetchInFlight = defaultPeerFetchInFlight { peerFetchReqsInFlight = 2 } } )
+        , ("Peer4", defaultPeerFetchState)
+        , ("Peer5", defaultPeerFetchState)
+        , ("Peer6", defaultPeerFetchState)
+        , ("Peer7", defaultPeerFetchState)
+        ]
+    defaultPeerFetchInFlight = PeerFetchInFlight 0 0 Set.empty
+    defaultPeerFetchState = PeerFetchState
+                              PeerFetchStatusReady
+                              defaultPeerFetchInFlight
+                              (error "TODO: defaultPeerFetchState1")
+                              (error "TODO: defaultPeerFetchState2")
+-}
+
+exampleConsensusFunctions :: ConsensusFunctions BlockHeader Block
+exampleConsensusFunctions =
+    ConsensusFunctions {
+      plausibleCandidateChain = \current candidate ->
+           ChainFragment.headBlockNo candidate
+         > ChainFragment.headBlockNo current,
+      compareCandidateChains   = \a b ->
+        compare (ChainFragment.headBlockNo a)
+                (ChainFragment.headBlockNo b),
+      blockFetchSize    = \_ -> 100,
+      validateBlockBody = \_ _ -> True
+    }
 
 
+
+{-
 data FetchedBlockHeap m block = FetchedBlockHeap {
        getFetchedBlockLookup :: m (Point block -> Maybe block),
        addFetchedBlock       :: block -> m ()
@@ -899,10 +1438,13 @@ mkTestFetchedBlockHeap = do
       addFetchedBlock       = \b -> atomically $
                               modifyTVar' bhvar $ Map.insert (blockPoint b) b
     }
+-}
 
 {-
-demo1 :: Chain Block -> Chain BlockHeader -> Chain BlockHeader
-      -> IO (Bool, [FetchDecision BlockHeader String])
+demo1 :: ChainFragment Block
+      -> ChainFragment BlockHeader
+      -> ChainFragment BlockHeader
+      -> IO Bool
 demo1 currentChain candidateChain1 candidateChain2 = do
     currentChainVar    <- newTVarM currentChain
     fetchedBlocksVar   <- newTVarM Set.empty
@@ -912,8 +1454,8 @@ demo1 currentChain candidateChain1 candidateChain2 = do
           Map.fromList [("peer1", candidateChain1Var)
                        ,("peer2", candidateChain2Var)]
         peerStates =
-          Map.fromList [("peer1", PeerFetchState 0 0 PeerFetchStatusNormal)
-                       ,("peer2", PeerFetchState 0 0 PeerFetchStatusNormal)]
+          Map.fromList [("peer1", PeerFetchState PeerFetchStatusReady (PeerFetchInFlight 0 0 Set.empty) undefined undefined)
+                       ,("peer2", PeerFetchState PeerFetchStatusReady (PeerFetchInFlight 0 0 Set.empty) undefined undefined)]
         peerDeltaQs =
           Map.fromList [("peer1", GSV 20000 0 (Distribution 0))
                        ,("peer2", GSV 15000 0 (Distribution 0))]
@@ -922,28 +1464,30 @@ demo1 currentChain candidateChain1 candidateChain2 = do
         fetchTriggerVariables = FetchTriggerVariables {
           readStateCurrentChain    = readTVar currentChainVar,
           readStateCandidateChains = traverse readTVar candidateChainVars,
-          readStatePeerStates      = return peerStates,
-          readStateFetchedBlocks   = flip Set.member <$> readTVar fetchedBlocksVar
+          readStatePeerStatus      = return (Map.map peerFetchStatus peerStates)
         }
-        fetchNonTriggerVariables :: FetchNonTriggerVariables String Int IO
+        fetchNonTriggerVariables :: FetchNonTriggerVariables String BlockHeader Block IO
         fetchNonTriggerVariables = FetchNonTriggerVariables {
-          readStatePeerDeltaQs = return peerDeltaQs
+          readStateFetchedBlocks = flip Set.member <$> readTVar fetchedBlocksVar,
+          readStatePeerStates    = return peerStates
         }
         fetchStateFingerprint = initialFetchStateFingerprint
 
-    (fetchStateFingerprint', fetchDecisions) <-
-      fetchLogicIterationDecide
+    fetchStateFingerprint' <-
+      fetchLogicIteration
+        consensusFunctions
         fetchPolicyParams
         fetchTriggerVariables
         fetchNonTriggerVariables
         fetchStateFingerprint
 
-    return (fetchStateFingerprint' /= fetchStateFingerprint, fetchDecisions)
+    return (fetchStateFingerprint' /= fetchStateFingerprint)
   where
     fetchPolicyParams = FetchPolicyParams {
-        maxInFlightBytesPerPeer  = 256 * 1024,
+        maxInFlightReqsPerPeer   = 10,
         maxConcurrentFetchPeers  = 1
       }
+    consensusFunctions = undefined
 -}
 
 -- Tests needed for peer logic:
@@ -970,6 +1514,7 @@ demo1 currentChain candidateChain1 candidateChain2 = do
 -- attack resistance properties
 --   unit tests to do the "right" thing in various cases
 
+{-
 --
 -- For testing: simple CandidateChains impl
 --
@@ -1000,7 +1545,7 @@ readCandidateChains' :: MonadSTM m
                     -> Tr m (Map peer (ChainFragment header))
 readCandidateChains' (CandidateChains chainsVar) =
     traverse readTVar =<< readTVar chainsVar
-
+-}
 {-- 
 
 -- | Given a set of chains, and which peer they are from, select an order of
@@ -1273,6 +1818,52 @@ estimateProbabilityMassBeforeDeadline (DeltaQ (Distribution t)) d
   | otherwise = 0
   -- Again, totally bogus.
 
+calculatePeerFetchInFlightLimits :: TimeMeasure time
+                                 => (GSV time, GSV time)
+                                 -> PeerFetchInFlightLimits
+calculatePeerFetchInFlightLimits (_outboundGSV@(GSV g_out _s_out _v_out),
+                                   _inboundGSV@(GSV g_in   s_in  _v_in)) =
+    PeerFetchInFlightLimits {
+      inFlightBytesLowWatermark,
+      inFlightBytesHighWatermark
+    }
+  where
+    -- To keep the remote end busy at all times, we want to make sure that by
+    -- the time it finishes sending its last response that there's another
+    -- request at the remote end that's ready to go. So we must initiate another
+    -- request g_out seconds before the remote end becomes idle.
+    --
+    -- Now it turns out to be more convenient to measure this not in time, but
+    -- based on the number of bytes of requests that are in-flight. This of
+    -- course directly corresponds to time, via S_in.
+    --
+    -- The units of S_in is seconds / octet. We need to calculate the number
+    -- of bytes that can be in flight during a time interval t. So we need
+    -- octets / second * seconds-in-flight = octets.
+    --
+    -- > (1/s_in) * t   or equivalently  t/s_in
+    --
+    -- So for a remote peer, g_out seconds before it becomes idle, it will have
+    -- \( g_in\/s_in \) bytes inbound. Our request will arrive after g_out
+    -- seconds, we should request at minimum \( g_in\/s_in \) bytes.
+    --
+    -- We should also account for the fact that we do not have perfect
+    -- scheduling and cannot initiate the request at exactly the right time, so
+    -- we should request it slightly early (and thus request correspondingly
+    -- more). Lets say our maximum schedule delay is @d@ seconds.
+    --
+    inFlightBytesLowWatermark =
+      ceiling (toRational (g_out + g_in + d) / toRational s_in)
+
+    d = 20 --TODO: switch to concrete type that's in RealFrac
+    -- But note that the minimum here is based on the assumption that we can
+    -- react as the /leading/ edge of the low watermark arrives, but in fact
+    -- we can only react when the /trailing/ edge arrives. So when we 
+
+    -- The high watermark is a bit arbitrary. It's just about making sure we
+    -- have a bit of a buffer so we can ask for more in one go, rather than
+    -- asking for lots of small requests very frequently.
+    inFlightBytesHighWatermark = inFlightBytesLowWatermark * 2
 
 {-
 blockArrivalShedule :: TimeMeasure time
@@ -1327,6 +1918,7 @@ submitFetchReqs range etaschedule FetchTrackingState{..} outQ =
     -- that to limit this to one round trip we need to update the in-flight
     -- data as it arrives, not just at the trailing edge of block messages.
 
+{-
 data FetchTrackingState header time = FetchTrackingState {
        fetchRequestsInFlight      :: Queue (FetchRequestBatch header time),
        fetchRequestsBytesInFlight :: Size
@@ -1337,86 +1929,70 @@ type Queue = Q.BankersDequeue
 data FetchRequestBatch header time =
      FetchRequestBatch
        !(ChainRange header)         -- the requested range
-       !time                        -- leading edge timeout
        [(BlockInfo header, time)]   -- blocks and trailing edge timeouts
 
 data BlockInfo header = BlockInfo !(Point header) !Size
+-}
 
 
 
 estimateBlockFetchResponse :: TimeMeasure time
                            => GSV time
                            -> GSV time
-                           -> FetchTrackingState header time
-                           -> [BlockInfo header]
+                           -> PeerFetchInFlight header
+                           -> [SizeInBytes]
                            -> Duration time
 estimateBlockFetchResponse outboundGSV inboundGSV
-                           FetchTrackingState{fetchRequestsBytesInFlight}
-                           blocks =
+                           PeerFetchInFlight{peerFetchBytesInFlight}
+                           blockSizes =
     estimateDetltaQ99thPercentile $
          gsvTrailingEdgeArrive outboundGSV reqSize
       <> gsvTrailingEdgeArrive inboundGSV  rspSize
   where
     reqSize = 100 -- not exact, but it's small
-    rspSize = fetchRequestsBytesInFlight
-            + sum [ size | BlockInfo _ size <- blocks ]
+    rspSize = peerFetchBytesInFlight + sum blockSizes
 
+-- | The /trailing/ edge arrival schedule for a bunch of blocks.
+--
 blockArrivalShedule :: TimeMeasure time
                     => GSV time
                     -> GSV time
-                    -> FetchTrackingState header time
-                    -> [BlockInfo header]
-                    -> (Duration time, [Duration time])
+                    -> PeerFetchInFlight header
+                    -> [SizeInBytes]
+                    -> [Duration time]
 blockArrivalShedule outboundGSV inboundGSV
-                    FetchTrackingState{fetchRequestsBytesInFlight}
-                    blocks =
-    ( batchLeadingEdgeArrival, blockTrailingEdgesArrival )
+                    PeerFetchInFlight{peerFetchBytesInFlight}
+                    blockSizes =
+    [ estimateDetltaQ99thPercentile $
+           gsvTrailingEdgeArrive outboundGSV reqSize
+        <> gsvTrailingEdgeArrive inboundGSV  rspSize
+    | rspSize <- cumulativeSumFrom peerFetchBytesInFlight blockSizes
+    ]
   where
     reqSize = 100 -- not exact, but it's small
 
-    batchLeadingEdgeArrival =
-        estimateDetltaQ99thPercentile $
-             gsvTrailingEdgeArrive outboundGSV reqSize
-          <> gsvTrailingEdgeArrive inboundGSV  fetchRequestsBytesInFlight
-
-    blockTrailingEdgesArrival =
-      [ estimateDetltaQ99thPercentile $
-             gsvTrailingEdgeArrive outboundGSV reqSize
-          <> gsvTrailingEdgeArrive inboundGSV  rspSize
-      | rspSize <- cumulativeSumFrom fetchRequestsBytesInFlight
-                                     [ size | BlockInfo _ size <- blocks ]
-      ]
-{-
-    batchTrailingEdgeDeparture =
-        estimateDetltaQ99thPercentile $
-             gsvTrailingEdgeArrive outboundGSV reqSize
-          <> gsvTrailingEdgeDepart inboundGSV  rspSize
-      where
-        rspSize = fetchRequestsBytesInFlight + sum (map snd reqblocks)
--}
-
     cumulativeSumFrom n = tail . scanl (+) n
 
+{-
 newFetchRequestBatch :: TimeMeasure time
                      => time
                      -> GSV time
                      -> GSV time
-                     -> FetchTrackingState header time
+                     -> PeerFetchInFlight header
                      -> ChainRange header
                      -> [BlockInfo header]
                      -> FetchRequestBatch header time
 newFetchRequestBatch now outboundGSV inboundGSV fetchTrackingState fetchRange fetchBlocks =
     FetchRequestBatch
       fetchRange
-      (addTime leadingEdge now)
       [ (block, addTime trailingEdge now)
       | (block, trailingEdge) <- zip fetchBlocks blockTrailingEdges ]
   where
-    (leadingEdge, blockTrailingEdges) =
+    blockTrailingEdges =
       blockArrivalShedule outboundGSV inboundGSV
                           fetchTrackingState
                           fetchBlocks
-
+-}
 {-
 updateForNewRequest :: DeltaQ
                     -> DeltaQ
@@ -1473,4 +2049,264 @@ demoBlockServer prng0 chain =
     sendBlocks :: StdGen -> [block] -> m (BlockFetchSendBlocks header block m ())
     sendBlocks prng []     = return $ SendMsgBatchDone (return (senderSide prng))
     sendBlocks prng (b:bs) = return $ SendMsgBlock b (sendBlocks prng bs)
+
+data BlockFetchProtocolFailure =
+       BlockFetchProtocolFailureTooFewBlocks
+     | BlockFetchProtocolFailureTooManyBlocks
+     | BlockFetchProtocolFailureWrongBlock
+     | BlockFetchProtocolFailureInvalidBody
+  deriving (Eq, Show)
+
+instance Exception BlockFetchProtocolFailure
+
+-- | The implementation of the client side of block fetch protocol designed to
+-- work in conjunction with our fetch logic.
+--
+blockFetchClient :: forall header block m.
+                    (MonadSTM m, MonadTime m, MonadThrow m,
+                     HasHeader header, HasHeader block,
+                     HeaderHash header ~ HeaderHash block)
+                 => ConsensusFunctions header block
+                 -> FetchClientStateVars header m
+                 -> Tr m (GSV (Time m), GSV (Time m))
+                 -> PeerPipelined (BlockFetch header block) AsClient BFIdle m ()
+blockFetchClient ConsensusFunctions{blockFetchSize, validateBlockBody}
+                 FetchClientStateVars {
+                   fetchClientStatusVar,
+                   fetchClientInFlightVar,
+                   fetchClientRequestVar
+                 }
+                 readPeerGSVs =
+    PeerPipelined (senderIdle Zero [])
+  where
+    senderIdle :: forall n.
+                  Nat n
+               -> [[header]]
+               -> PeerSender (BlockFetch header block) AsClient
+                             BFIdle n () m ()
+
+    -- We have no requests to send. Check if we have any pending pipelined
+    -- results to collect. If so, go round and collect any more. If not, block
+    -- and wait for some new requests.
+    senderIdle (Succ outstanding) [] =
+      SenderCollect (Just (senderAwait (Succ outstanding)))
+                    (\_ -> senderIdle outstanding [])
+
+    -- And similarly if there are no pending pipelined results at all.
+    senderIdle Zero [] = senderAwait Zero
+
+    -- We now do have some requests that we have accepted but have yet to
+    -- actually send out. Lets send out the first one.
+    senderIdle outstanding (fragment:fragments) =
+      SenderEffect $ do
+{-
+        now <- getMonotonicTime
+        (outboundGSV, inboundGSV) <- atomically readPeerGSVs
+        --TODO: should we pair this up with the senderAwait earlier?
+        inFlight  <- readTVar fetchClientInFlightVar
+
+        let blockTrailingEdges =
+              blockArrivalShedule
+                outboundGSV inboundGSV
+                inFlight
+                (map snd fragment)
+
+        timeout <- newTimeout (head blockTrailingEdges)
+        fork $ do
+          fired <- awaitTimeout timeout
+          when fired $
+            atomically (writeTVar _ PeerFetchStatusAberrant)
+-}
+        let range = assert (not (null fragment)) $
+                    ChainRange (blockPoint (head fragment))
+                               (blockPoint (last fragment))
+        return $
+          SenderPipeline
+            (ClientAgency TokIdle)
+            (MsgRequestRange range)
+            (receiverBusy fragment)
+            (senderIdle (Succ outstanding) fragments)
+
+    senderAwait :: forall n.
+                   Nat n
+                -> PeerSender (BlockFetch header block) AsClient
+                              BFIdle n () m ()
+    senderAwait outstanding =
+      SenderEffect $ do
+      -- Atomically grab our next request and update our tracking state.
+      -- We have now accepted this request.
+      --
+      -- It is important to note that we only update our tracking state when
+      -- we /accept/ the request, not when the fetch logic /sets/ the request.
+      -- The fetching logic can update the request up until the point where
+      -- we accept it here. From here on the request is considered to be
+      -- in-flight, and the tracking state that the fetch logic uses now
+      -- reflects that.
+      --
+      fragments <- atomically $ do
+        FetchRequest fragments <- takeTFetchRequestVar fetchClientRequestVar
+        PeerFetchInFlight{..}  <- readTVar fetchClientInFlightVar
+        writeTVar fetchClientInFlightVar $!
+          PeerFetchInFlight {
+            peerFetchReqsInFlight   = peerFetchReqsInFlight
+                                    + fromIntegral (length fragments),
+
+            peerFetchBytesInFlight  = peerFetchBytesInFlight
+                                    + sum [ blockFetchSize header
+                                          | fragment <- fragments
+                                          , header   <- fragment ],
+
+            peerFetchBlocksInFlight = peerFetchBlocksInFlight
+                          `Set.union` Set.fromList [ blockPoint header
+                                                   | fragment <- fragments
+                                                   , header   <- fragment ]
+          }
+
+        PeerFetchInFlightLimits {
+          inFlightBytesHighWatermark
+        } <- calculatePeerFetchInFlightLimits <$> readPeerGSVs
+
+        -- Set our status to busy if we've got over the high watermark.
+        -- Only update the variable if it changed, to avoid spurious wakeups.
+        currentStatus <- readTVar fetchClientStatusVar
+        when (peerFetchBytesInFlight >= inFlightBytesHighWatermark &&
+              currentStatus == PeerFetchStatusReady) $
+          writeTVar fetchClientStatusVar PeerFetchStatusBusy
+
+        --TODO: think about status aberrant
+
+        return fragments
+
+      return (senderIdle outstanding fragments)
+
+
+    receiverBusy :: [header]
+                 -> PeerReceiver (BlockFetch header block) AsClient
+                                 BFBusy BFIdle m ()
+    receiverBusy headers =
+      ReceiverAwait
+        (ServerAgency TokBusy) $ \msg ->
+        case msg of
+          -- The server is reporting that the range we asked for does not exist.
+          -- This can happen (even if we didn't make any mistakes) if their
+          -- chain forked in the time between when they told us and when we
+          -- asked for this range of blocks. If this happens, it should
+          -- certainly be the case that this peer doesn't continue to tell us
+          -- that this range of blocks is in their chain.
+          --
+          -- FIXME: For now we will not do the detailed error checking to check
+          -- that the peer is not cheating us. Nor will we track these failure
+          -- points to make sure we do not ask for extensions of this again.
+          MsgNoBlocks   -> ReceiverDone ()
+          --TODO: also adjust the in-flight stats
+
+          MsgStartBatch -> ReceiverEffect $ do
+            inFlightLimits <- calculatePeerFetchInFlightLimits <$>
+                                atomically readPeerGSVs
+            return $ receiverStreaming inFlightLimits headers
+
+    receiverStreaming :: PeerFetchInFlightLimits
+                      -> [header]
+                      -> PeerReceiver (BlockFetch header block) AsClient
+                                      BFStreaming BFIdle m ()
+    receiverStreaming inFlightLimits@PeerFetchInFlightLimits {
+                        inFlightBytesLowWatermark
+                      }
+                      headers =
+      ReceiverAwait
+        (ServerAgency TokStreaming) $ \msg ->
+        case (msg, headers) of
+          (MsgBatchDone, []) -> ReceiverEffect $ do
+            atomically $ modifyTVar' fetchClientInFlightVar $ \inflight ->
+              inflight {
+                peerFetchReqsInFlight = peerFetchReqsInFlight inflight - 1
+              }
+            return (ReceiverDone ())
+
+
+          (MsgBlock block, header:headers') -> ReceiverEffect $ do
+
+{-
+            -- Now it's totally possible that the timeout already fired
+            -- if not, we can update it, making sure the delay is > 0
+            now <- getMonotonicTime
+            updateTimeout timeout (diffTime now )
+-}
+
+            -- Update our in-flight stats and our current status
+            atomically $ do
+              inflight <- readTVar fetchClientInFlightVar
+              writeTVar fetchClientInFlightVar $!
+                inflight {
+                  peerFetchBytesInFlight  = peerFetchBytesInFlight inflight
+                                          - blockFetchSize header,
+
+                  peerFetchBlocksInFlight = blockPoint header
+                               `Set.delete` peerFetchBlocksInFlight inflight
+                }
+
+              -- Now crucially, we don't want to end up below the in-flight low
+              -- watermark because that's when the remote peer would go idle.
+              -- But we only get notified of blocks on their /trailing/ edge,
+              -- not their leading edge. Our next best thing is the trailing
+              -- edge of the block before. So, we check if after the /next/
+              -- block we would be below the low watermark, and update our
+              -- status to ready if appropriate.
+              --
+              let nextBytesInFlight =
+                      peerFetchBytesInFlight inflight
+                    - blockFetchSize header
+                    - maybe 0 blockFetchSize (listToMaybe headers')
+              currentStatus <- readTVar fetchClientStatusVar
+              when (nextBytesInFlight <= inFlightBytesLowWatermark &&
+                    currentStatus == PeerFetchStatusBusy) $
+                writeTVar fetchClientStatusVar PeerFetchStatusReady
+
+            unless (blockPoint header == castPoint (blockPoint block)) $
+              throwM BlockFetchProtocolFailureWrongBlock
+
+            unless (validateBlockBody header block) $
+              throwM BlockFetchProtocolFailureInvalidBody
+
+            -- write it to the volatile block store
+            -- update the volatile block heap, notifying of any new tips
+            -- TODO: when do we reset the status from PeerFetchStatusAberrant
+            -- to PeerFetchStatusReady/Busy?
+
+            return (receiverStreaming inFlightLimits headers')
+
+          (MsgBatchDone, (_:_)) -> ReceiverEffect $
+            throwM BlockFetchProtocolFailureTooFewBlocks
+
+          (MsgBlock _, []) -> ReceiverEffect $
+            throwM BlockFetchProtocolFailureTooManyBlocks
+
+
+
+newtype TFetchRequestVar m header =
+        TFetchRequestVar (TMVar m (FetchRequest header))
+
+newTFetchRequestVar :: MonadSTM m => Tr m (TFetchRequestVar m header)
+newTFetchRequestVar = TFetchRequestVar <$> newEmptyTMVar
+
+-- This may seem a bit odd, but we unconditionally overwrite the TMVar here.
+-- The reason is that we are not using this TMVar as a one-place queue of
+-- requests. Rather we use this as a box containing the current request.
+-- The request is not considered accepted when we put it in the box, but
+-- when the fetch protocol client takes it out of the box. Up until the
+-- point that the request is accepted we can overwrite it with a updated
+-- request. So the logic here is that we either fill the box or or
+-- overwrite the contents. We achieve that by atomically trying to empty it
+-- (ignoring any content), followed by filling it.
+--
+writeTFetchRequestVar :: MonadSTM m
+                      => TFetchRequestVar m header
+                      -> FetchRequest header
+                      -> Tr m ()
+writeTFetchRequestVar (TFetchRequestVar v) r = tryTakeTMVar v >> putTMVar v r
+
+takeTFetchRequestVar :: MonadSTM m
+                     => TFetchRequestVar m header
+                     -> Tr m (FetchRequest header)
+takeTFetchRequestVar (TFetchRequestVar v) = takeTMVar v
 

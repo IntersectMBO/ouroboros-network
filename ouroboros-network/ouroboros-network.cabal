@@ -117,7 +117,7 @@ test-suite tests
                        Ouroboros.Network.ChainProducerState
                        Ouroboros.Network.Channel
                        Ouroboros.Network.Codec
-                       Ouroboros.Network.FetchLogic
+--                       Ouroboros.Network.FetchLogic
                        Ouroboros.Network.Mux
                        Ouroboros.Network.Mux.Egress
                        Ouroboros.Network.Mux.Ingress
@@ -168,6 +168,7 @@ test-suite tests
                        bytestring,
                        cborg,
                        containers,
+                       dequeue,
                        free,
                        fingertree,
                        free,
@@ -176,6 +177,7 @@ test-suite tests
                        network,
                        pipes,
                        process,
+                       random,
                        QuickCheck,
                        serialise,
                        tasty,

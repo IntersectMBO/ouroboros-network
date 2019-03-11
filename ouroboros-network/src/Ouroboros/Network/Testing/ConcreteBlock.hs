@@ -21,8 +21,21 @@ module Ouroboros.Network.Testing.ConcreteBlock (
   , BodyHash(..)
   , ConcreteHeaderHash(..)
   , hashBody
+    -- * Creating sample chains
+  , mkChain
+  , mkChainSimple
+  , mkChainHeaders
+  , mkChainHeadersSimple
+  , fromListFixupBlocks
+  , fromListFixupHeaders
   , fixupBlock
   , fixupBlockHeader
+    -- * Creating sample chain fragments
+  , mkChainFragment
+  , mkChainFragmentSimple
+  , mkChainFragmentHeaders
+  , mkChainFragmentHeadersSimple
+  , fromListFixupBlocksCF
   , fixupBlockCF
   , fixupBlockHeaderCF
   ) where
@@ -47,6 +60,7 @@ import           GHC.Generics (Generic)
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain
 import qualified Ouroboros.Network.ChainFragment as CF
+import           Ouroboros.Network.ChainFragment (ChainFragment)
 
 {-------------------------------------------------------------------------------
   Concrete block shape used currently in the network layer
@@ -152,6 +166,59 @@ instance HasHeader Block where
   don't make much sense for real chains.
 -------------------------------------------------------------------------------}
 
+mkChain :: [(Slot, BlockBody)] -> Chain Block
+mkChain = fromListFixupBlocks . map (uncurry mkPartialBlock) . reverse
+
+mkChainSimple :: [BlockBody] -> Chain Block
+mkChainSimple = mkChain . zip [1..]
+
+mkChainHeaders :: [(Slot, BlockBody)] -> Chain BlockHeader
+mkChainHeaders = fromListFixupHeaders . map (uncurry mkPartialBlockHeader). reverse
+
+mkChainHeadersSimple :: [BlockBody] -> Chain BlockHeader
+mkChainHeadersSimple = mkChainHeaders . zip [1..]
+
+mkPartialBlock :: Slot -> BlockBody -> Block
+mkPartialBlock sl body =
+    Block {
+      blockHeader = mkPartialBlockHeader sl body
+    , blockBody   = body
+    }
+
+mkPartialBlockHeader :: Slot -> BlockBody -> BlockHeader
+mkPartialBlockHeader sl body =
+    BlockHeader {
+      headerSlot     = sl,
+      headerSigner   = expectedBFTSigner sl,
+      headerHash     = partialField "headerHash",
+      headerPrevHash = partialField "headerPrevHash",
+      headerBlockNo  = partialField "headerBlockNo",
+      headerBodyHash = hashBody body
+    }
+  where
+    partialField n = error ("mkPartialBlock: you didn't fill in field " ++ n)
+
+    expectedBFTSigner :: Slot -> BlockSigner
+    expectedBFTSigner (Slot n) = BlockSigner (n `mod` 7)
+
+
+-- | To help with chain construction and shrinking it's handy to recalculate
+-- all the hashes.
+--
+fromListFixupBlocks :: [Block] -> Chain Block
+fromListFixupBlocks []      = Genesis
+fromListFixupBlocks (b : c) = c' :> b'
+  where
+    c' = fromListFixupBlocks c
+    b' = fixupBlock c' b
+
+fromListFixupHeaders :: [BlockHeader] -> Chain BlockHeader
+fromListFixupHeaders []      = Genesis
+fromListFixupHeaders (b : c) = c' :> b'
+  where
+    c' = fromListFixupHeaders c
+    b' = fixupBlockHeader c' (headerBodyHash b) b
+
 -- | Fixup block so to fit it on top of a chain.  Only block number, previous
 -- hash and block hash are updated; slot number and signers are kept intact.
 --
@@ -179,6 +246,32 @@ fixupBlockHeader c h b = b'
 {-------------------------------------------------------------------------------
   Variants of "Fixup" for ChainFragment
 -------------------------------------------------------------------------------}
+
+mkChainFragment :: [(Slot, BlockBody)] -> ChainFragment Block
+mkChainFragment = fromListFixupBlocksCF . map (uncurry mkPartialBlock) . reverse
+
+mkChainFragmentSimple :: [String] -> ChainFragment Block
+mkChainFragmentSimple = mkChainFragment . zip [1..] . map BlockBody
+
+mkChainFragmentHeaders :: [(Slot, BlockBody)] -> ChainFragment BlockHeader
+mkChainFragmentHeaders = fromListFixupHeadersCF . map (uncurry mkPartialBlockHeader) . reverse
+
+mkChainFragmentHeadersSimple :: [String] -> ChainFragment BlockHeader
+mkChainFragmentHeadersSimple = mkChainFragmentHeaders . zip [1..] . map BlockBody
+
+fromListFixupBlocksCF :: [Block] -> ChainFragment Block
+fromListFixupBlocksCF []      = CF.Empty
+fromListFixupBlocksCF (b : c) = c' CF.:> b'
+  where
+    c' = fromListFixupBlocksCF c
+    b' = fixupBlockCF c' b
+
+fromListFixupHeadersCF :: [BlockHeader] -> ChainFragment BlockHeader
+fromListFixupHeadersCF []      = CF.Empty
+fromListFixupHeadersCF (b : c) = c' CF.:> b'
+  where
+    c' = fromListFixupHeadersCF c
+    b' = fixupBlockHeaderCF c' (headerBodyHash b) b
 
 -- | Fixup block so to fit it on top of a chain.  Only block number, previous
 -- hash and block hash are updated; slot number and signers are kept intact.
