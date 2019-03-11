@@ -23,6 +23,7 @@ module Ouroboros.Network.Mux.Types (
     , TranslocationServiceRequest (..)
     , Version (..)
     , versionToVersionNumber
+    , versionMagic
     , VersionNumber (..)
     , Wanton (..)
     ) where
@@ -54,13 +55,13 @@ instance Serialise NetworkMagic where
     encode (NetworkMagic nm) = encode nm
     decode = NetworkMagic <$> decode
 
-data Version = Version0 {          -- Plain NodeToNode
-      v0Magic   :: !NetworkMagic
-    }
-    | Version1 {                   -- NodeToClient
-      v1Magic   :: !NetworkMagic
-    }
-    deriving (Eq, Ord)
+data Version = Version0 !NetworkMagic -- Plain NodeToNode
+             | Version1 !NetworkMagic -- NodeToClient
+             deriving (Eq, Ord)
+
+versionMagic :: Version -> NetworkMagic
+versionMagic (Version0 nm) = nm
+versionMagic (Version1 nm) = nm
 
 instance Show Version where
     show (Version0 m) = printf "Version 0 NetworkMagic %d" $ unNetworkMagic m
