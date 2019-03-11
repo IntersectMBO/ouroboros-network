@@ -34,8 +34,9 @@ import           Control.State.Transition (applySTS, Environment, PredicateFailu
 import           Ledger.Core (SlotCount, Slot(Slot))
 import           Ledger.Delegation (DIEnv, allowedDelegators, slot)
 import           Ledger.Update (PParams)
-import           Cardano.Spec.Chain.STS.Block (Block)
+import qualified Cardano.Spec.Chain.STS.Block as CBM -- concrete block module
 import           Cardano.Spec.Chain.STS.Rule.Chain (CHAIN)
+import           Cardano.Spec.Consensus.Block
 
 
 data PermBft c
@@ -57,7 +58,7 @@ instance PermBftCrypto c => OuroborosTag (PermBft c) where
     }
 
   type ValidationErr  (PermBft c) = [PredicateFailure CHAIN]
-  type SupportedBlock (PermBft c) = ((~) Block)
+  type SupportedBlock (PermBft c) = Block
   type NodeState      (PermBft c) = ()
   type LedgerView     (PermBft c) = DIEnv
   type IsLeader       (PermBft c) = ()
@@ -73,7 +74,7 @@ instance PermBftCrypto c => OuroborosTag (PermBft c) where
     except $
       if lv ^. slot == Slot 0 -- the genesis block
         then applySTS $ IRC bcEnv
-        else applySTS $ TRC (bcEnv, chainSt, b)
+        else applySTS $ TRC (bcEnv, chainSt, concretiseBlock b)
    where
     bcEnv :: Environment CHAIN
     bcEnv =
