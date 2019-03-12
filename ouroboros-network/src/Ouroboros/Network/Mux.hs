@@ -33,6 +33,7 @@ import           Control.Monad.Class.MonadThrow
 import           Data.Array
 import qualified Data.ByteString.Lazy as BL
 import           Data.List (intersect)
+import qualified Data.Map.Strict as M
 import           Data.Maybe (fromJust)
 import           GHC.Stack
 
@@ -171,7 +172,7 @@ muxClient :: (MonadAsync m, MonadFork m, MonadSay m, MonadSTM m, MonadThrow m,
         -> m (Version, MiniProtocolDescriptions ptcl m)
 muxClient verMpds bearer = do
     let versions = map fst verMpds
-        msg = MsgInitReq versions
+        msg = MsgInitReq $ M.fromList $ map (\v -> (versionToVersionNumber v, v)) versions
         blob = toLazyByteString $ encodeCtrlMsg msg
         sdu = MuxSDU (RemoteClockModel 0) Muxcontrol ModeInitiator (fromIntegral $ BL.length blob) blob
 
@@ -205,8 +206,9 @@ muxServer verMpds bearer = do
            let reqMsg_e = CBOR.deserialiseFromBytes decodeCtrlMsg (msBlob req)
            case reqMsg_e of
                 Left e -> throwM e
-                Right (_, MsgInitReq remoteVersions) -> do
-                    let matchingVersions = localVersions `intersect` remoteVersions
+                Right (_, MsgInitReq remoteVersionsM) -> do
+                    let remoteVersions = M.elems remoteVersionsM
+                        matchingVersions = localVersions `intersect` remoteVersions
                     if null matchingVersions
                        then do
                            sndSdu $ MsgInitFail $ "No matching version, try " ++
