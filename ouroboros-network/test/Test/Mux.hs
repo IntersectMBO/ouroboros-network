@@ -315,13 +315,13 @@ setupMiniReqRsp serverAction mpsEndVar request response = do
     plainServer :: [DummyPayload] -> ReqRespServer DummyPayload DummyPayload IO [DummyPayload]
     plainServer reqs = ReqRespServer {
         recvMsgReq  = \req -> serverAction >> return (response, plainServer (req:reqs)),
-        recvMsgDone = reverse reqs
+        recvMsgDone = pure $ reverse reqs
     }
 
     plainClient :: [DummyPayload] -> ReqRespClient DummyPayload DummyPayload IO [DummyPayload]
     plainClient = clientGo []
 
-    clientGo resps []         = SendMsgDone (reverse resps)
+    clientGo resps []         = SendMsgDone (pure $ reverse resps)
     clientGo resps (req:reqs) =
       SendMsgReq req $ \resp ->
       return (clientGo (resp:resps) reqs)

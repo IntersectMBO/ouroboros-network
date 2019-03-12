@@ -150,6 +150,7 @@ test-suite tests
                        Test.Ouroboros.Network.Node
                        Test.Mux
                        Test.Mux.Control
+                       Test.Mux.ReqResp
                        Test.Pipe
                        Test.Socket
   default-language:    Haskell2010
