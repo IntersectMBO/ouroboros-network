@@ -28,14 +28,12 @@ import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
 import           Control.Tracer (nullTracer)
 import           Network.TypedProtocol.Driver
 import           Network.TypedProtocol.ReqResp.Client
 import           Network.TypedProtocol.ReqResp.Server
 
 import           Ouroboros.Network.Time
-import           Ouroboros.Network.Channel
 import qualified Ouroboros.Network.Mux as Mx
 import           Ouroboros.Network.Mux.Types (MuxBearer)
 import qualified Ouroboros.Network.Mux.Types as Mx
@@ -223,11 +221,6 @@ prop_mux_snd_recv request response = ioProperty $ do
     s_e <- normallExit server_resVar
     return $ property $ v .&&. c_e .&&. s_e
 
--- Stub for a mpdInitiator or mpdResponder that doesn't send or receive any data.
-dummyCallback :: (MonadTimer m) => Channel m BL.ByteString  -> m ()
-dummyCallback _ = forever $
-    threadDelay 1.0
-
 -- | Create a verification function, a MiniProtocolDescription for the client side and a
 -- MiniProtocolDescription for the server side for a RequestResponce protocol.
 setupMiniReqRsp :: IO ()        -- | Action performed by responder before processing the response
@@ -241,8 +234,8 @@ setupMiniReqRsp serverAction mpsEndVar request response = do
     serverResultVar <- newEmptyTMVarM
     clientResultVar <- newEmptyTMVarM
 
-    let client_mp = Mx.MiniProtocolDescription (clientInit clientResultVar) dummyCallback
-        server_mp = Mx.MiniProtocolDescription dummyCallback (serverRsp serverResultVar)
+    let client_mp = Mx.MiniProtocolDescription (Just $ clientInit clientResultVar) Nothing
+        server_mp = Mx.MiniProtocolDescription Nothing (Just $ serverRsp serverResultVar)
 
     return (verifyCallback serverResultVar clientResultVar, client_mp, server_mp)
   where

@@ -27,6 +27,7 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Data.Array
 import qualified Data.ByteString.Lazy as BL
+import           Data.Maybe (catMaybes)
 import           GHC.Stack
 
 import           Ouroboros.Network.Channel
@@ -98,11 +99,23 @@ muxStart udesc bearer rescb_m = do
         w_i <- atomically newEmptyTMVar
         w_r <- atomically newEmptyTMVar
 
-        return [ mpdInitiator mpd (muxChannel pmss (AppProtocolId mpdId) ModeInitiator w_i cnt)
-                     >> mpsJobExit cnt
-               , mpdResponder mpd (muxChannel pmss (AppProtocolId mpdId) ModeResponder w_r cnt)
-                     >> mpsJobExit cnt
-               ]
+        let initiatorChannel :: Channel m BL.ByteString
+            initiatorChannel = muxChannel pmss
+                                (AppProtocolId mpdId)
+                                ModeInitiator
+                                w_i cnt
+
+            responderChannel :: Channel m BL.ByteString
+            responderChannel = muxChannel pmss
+                                (AppProtocolId mpdId)
+                                ModeResponder
+                                w_r cnt
+
+        return $ map (>> mpsJobExit cnt) $ catMaybes
+          [ mpdInitiator mpd <*> Just initiatorChannel
+                
+          , mpdResponder mpd <*> Just responderChannel
+          ]
 
     -- cnt represent the number of SDUs that are queued but not yet sent.  Job
     -- threads will be prevented from exiting until all SDUs have been

@@ -76,11 +76,11 @@ demo chain0 updates = do
     let Just expectedChain = Chain.applyChainUpdates updates chain0
         target = Chain.headPoint expectedChain
         a_mps ChainSync = Mx.MiniProtocolDescription
-                            (consumerInit consumerDone target consumerVar)
-                            dummyCallback
+                            (Just $ consumerInit consumerDone target consumerVar)
+                            Nothing
         b_mps ChainSync = Mx.MiniProtocolDescription
-                            dummyCallback
-                            (producerRsp producerVar)
+                            Nothing
+                            (Just $ producerRsp producerVar)
 
     startPipe b_mps hndRead1 hndWrite2
     startPipe a_mps hndRead2 hndWrite1
@@ -123,9 +123,6 @@ demo chain0 updates = do
        atomically $ putTMVar done_ True
 
        return ()
-
-    dummyCallback _ = forever $
-        threadDelay 1.0
 
     producerRsp ::  TVar IO (CPS.ChainProducerState block)
                 -> Channel IO BL.ByteString -> IO ()
