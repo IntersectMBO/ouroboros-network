@@ -1,5 +1,7 @@
 resolver: lts-13.10
 compiler: ghc-8.6.3
+nix:
+  packages: [zlib]
 packages:
 - typed-protocols
 - ouroboros-network
