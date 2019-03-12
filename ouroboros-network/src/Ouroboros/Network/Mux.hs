@@ -187,9 +187,11 @@ muxClient verMpds bearer = do
                 Right (_, MsgInitRsp version) ->
                     -- verify that rsp version matches one of our proposals
                     case lookup version verMpds of
-                         Nothing   -> error "muxInit invalid version selected"
+                         Nothing   -> throwM $ MuxError MuxControlProtocolError
+                                               "muxInit invalid version selected" callStack
                          Just mpds -> return (version, mpds)
-                Right (_, MsgInitReq _) -> error "muxInit response as request"
+                Right (_, MsgInitReq _) -> throwM $ MuxError MuxControlProtocolError
+                                                    "muxInit response as request" callStack
                 Right (_, MsgInitFail e) -> throwM $ MuxError MuxControlNoMatchingVersion e callStack
 
 muxServer :: (MonadAsync m, MonadFork m, MonadSay m, MonadSTM m, MonadThrow m,
@@ -221,8 +223,10 @@ muxServer verMpds bearer = do
 
                            sndSdu msg
                            return (version, fromJust $ lookup version verMpds)
-                Right (_, MsgInitRsp _) -> error "muxInit request as response"
-                Right (_, MsgInitFail _) -> error "muxInit fail"
+                Right (_, MsgInitRsp _) -> throwM $ MuxError MuxControlProtocolError
+                                                    "muxInit request as response" callStack
+                Right (_, MsgInitFail _) -> throwM $ MuxError MuxControlProtocolError
+                                                     "muxInit fail in request" callStack
 
   where
     sndSdu msg = do

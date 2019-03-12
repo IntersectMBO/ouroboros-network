@@ -261,6 +261,7 @@ data MuxErrorType = MuxUnknownMiniProtocol
                   | MuxControlUnknownMessage
                   | MuxControlUnknownVersion
                   | MuxControlNoMatchingVersion
+                  | MuxControlProtocolError
                   deriving (Show, Eq)
 
 instance Exception MuxError where
