@@ -29,6 +29,8 @@ module Ouroboros.Network.ChainFragment (
   -- ** Basic operations
   head,
   last,
+  lastPoint,
+  lastSlot,
   toNewestFirst,
   toOldestFirst,
   fromNewestFirst,
@@ -55,6 +57,9 @@ module Ouroboros.Network.ChainFragment (
   lookupBySlot,
   splitAfterSlot,
   splitAfterPoint,
+  splitBeforeSlot,
+  splitBeforePoint,
+  sliceRange,
   lookupByIndexFromEnd, FT.SearchResult(..),
   filter,
   selectPoints,
@@ -220,11 +225,11 @@ headPoint = fmap blockPoint . head
 
 -- | \( O(1) \).
 headSlot :: HasHeader block => ChainFragment block -> Maybe SlotNo
-headSlot = fmap pointSlot . headPoint
+headSlot = fmap blockSlot . head
 
 -- | \( O(1) \).
 headHash :: HasHeader block => ChainFragment block -> Maybe (ChainHash block)
-headHash = fmap pointHash . headPoint
+headHash = fmap (BlockHash . blockHash) . head
 
 -- | \( O(1) \).
 headBlockNo :: HasHeader block => ChainFragment block -> Maybe BlockNo
@@ -232,10 +237,17 @@ headBlockNo = fmap blockNo . head
 
 -- | \( O(1) \).
 last :: HasHeader block => ChainFragment block -> Maybe block
-last (ChainFragment t) =
-    case FT.viewl t of
-      FT.EmptyL -> Nothing
-      b FT.:< _ -> Just b
+last (b :< _) = Just b
+last Empty    = Nothing
+
+-- | \( O(1) \).
+lastPoint :: HasHeader block => ChainFragment block -> Maybe (Point block)
+lastPoint = fmap blockPoint . last
+
+-- | \( O(1) \).
+lastSlot :: HasHeader block => ChainFragment block -> Maybe Slot
+lastSlot = fmap blockSlot . last
+
 
 -- | TODO. Make a list of blocks from a 'ChainFragment', in newest-to-oldest
 -- order.
@@ -439,7 +451,7 @@ successorBlock p c = case lookupBySlotFT c (pointSlot p) of
 -- fragment, split at the location where it would have been.
 --
 -- If the chain fragment contained such a block, it will be the head
--- (newest/rightmost) block on the first returned chain.
+-- (newest\/rightmost) block on the first returned chain.
 splitAfterSlot :: HasHeader block
                => ChainFragment block
                -> SlotNo
@@ -453,7 +465,7 @@ splitAfterSlot (ChainFragment t) s = (ChainFragment l, ChainFragment r)
 --  a block at the given 'Point'.
 --
 -- If the chain fragment contained a block at the given 'Point', it will be
--- the (newest/rightmost) block of the first returned chain.
+-- the (newest\/rightmost) block of the first returned chain.
 splitAfterPoint :: (HasHeader block1, HasHeader block2,
                     HeaderHash block1 ~ HeaderHash block2)
                 => ChainFragment block1
@@ -466,6 +478,52 @@ splitAfterPoint c p
   = Just (l, r)
   | otherwise
   = Nothing
+ 
+-- | \( O(\log(\min(i,n-i)) \). Split the 'ChainFragment' before the block with
+-- the given slot. Or, if there is no block with the given slot in the chain
+-- fragment, split at the location where it would have been.
+--
+-- If the chain fragment contained such a block, it will be the last
+-- (oldest\/leftmost) block on the second returned chain.
+splitBeforeSlot :: HasHeader block
+               => ChainFragment block
+               -> Slot
+               -> (ChainFragment block, ChainFragment block)
+splitBeforeSlot (ChainFragment t) s = (ChainFragment l, ChainFragment r)
+  where
+   (l, r) = FT.split (\v -> bmMaxSlot v >= s) t
+
+splitBeforePoint :: (HasHeader block1, HasHeader block2,
+                    HeaderHash block1 ~ HeaderHash block2)
+                 => ChainFragment block1
+                 -> Point block2
+                 -> Maybe (ChainFragment block1, ChainFragment block1)
+splitBeforePoint c p
+  | (l, r@(ChainFragment rt)) <- splitBeforeSlot c (pointSlot p)
+  , b FT.:< _ <- FT.viewl rt  -- O(1)
+  , blockPoint b == castPoint p
+  = Just (l, r)
+  | otherwise
+  = Nothing
+
+
+-- | Select a slice of a chain fragment between two points, inclusive.
+--
+-- Both points must exist on the chain, in order, or the result is @Nothing@.
+--
+sliceRange :: HasHeader block
+           => ChainFragment block
+           -> Point block
+           -> Point block
+           -> Maybe (ChainFragment block)
+sliceRange c from to
+  | Just (_, c') <- splitBeforePoint c  from
+  , Just (c'',_) <- splitAfterPoint  c' to
+  = Just c''
+
+  | otherwise
+  = Nothing
+
 
 -- | \( O(p \log(\min(i,n-i)) \). Find the first 'Point' in the list of points
 -- that is on the given 'ChainFragment'. Return 'Nothing' if none of them are

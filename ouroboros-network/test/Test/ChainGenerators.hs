@@ -199,6 +199,7 @@ mkPartialBlock sl body =
     expectedBFTSigner (SlotNo n) = BlockSigner (n `mod` 7)
 
 
+{-
 -- | To help with chain construction and shrinking it's handy to recalculate
 -- all the hashes.
 --
@@ -215,6 +216,7 @@ fromListFixupHeaders (b : c) = c' :> b'
   where
     c' = fromListFixupHeaders c
     b' = fixupBlockHeader c' (headerBodyHash b) b
+-}
 
 -- | The Ouroboros K paramater. This is also the maximum rollback length.
 --

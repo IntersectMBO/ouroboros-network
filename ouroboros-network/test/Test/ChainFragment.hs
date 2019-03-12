@@ -27,6 +27,7 @@ import           Test.Tasty.QuickCheck (testProperty)
 import           Test.Chain ()
 import           Test.ChainGenerators
                   ( ArbitraryBlockBody (..)
+                  , TestChainAndRange (..)
                   , genNonNegative
                   , genSlotGap
                   , addSlotGap
@@ -35,11 +36,13 @@ import           Test.ChainGenerators
                   )
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (ChainUpdate(..), Point(..))
-import           Ouroboros.Network.ChainFragment (ChainFragment,
-                                                  pattern (:>), pattern Empty)
+import qualified Ouroboros.Network.Chain as Chain
+import           Ouroboros.Network.ChainFragment
+                   ( ChainFragment(Empty, (:>)) )
 import qualified Ouroboros.Network.ChainFragment as CF
 import           Ouroboros.Network.Testing.Serialise (prop_serialise)
 import           Ouroboros.Network.Testing.ConcreteBlock
+                   hiding (fromListFixupBlocks, fromListFixupHeaders)
 
 
 --
@@ -97,15 +100,11 @@ tests = testGroup "ChainFragment"
   , testProperty "lookupByIndexFromEnd"                      prop_lookupByIndexFromEnd
   , testProperty "filter"                                    prop_filter
   , testProperty "selectPoints"                              prop_selectPoints
-  , testGroup "splitAfterSlot"
-    [ testProperty "splitAfterSlot join"                     prop_splitAfterSlot_join
-    , testProperty "splitAfter slots"                        prop_splitAfterSlot_slots
-    ]
-  , testGroup "splitAfterPoint"
-    [ testProperty "splitAfterPoint join"                    prop_splitAfterPoint_join
-    , testProperty "splitAfter pointOnChainFragment"         prop_splitAfterPoint_pointOnChainFragment
-    , testProperty "splitAfter slots"                        prop_splitAfterPoint_slots
-    ]
+  , testProperty "splitAfterSlot"                            prop_splitAfterSlot
+  , testProperty "splitAfterPoint"                           prop_splitAfterPoint
+  , testProperty "splitBeforeSlot"                           prop_splitBeforeSlot
+  , testProperty "splitBeforePoint"                          prop_splitBeforePoint
+  , testProperty "prop_sliceRange"                           prop_sliceRange
   , testProperty "foldChainFragment"                         prop_foldChainFragment
   ]
 
@@ -233,45 +232,71 @@ prop_pointOnChainFragment :: TestChainFragmentAndPoint -> Bool
 prop_pointOnChainFragment (TestChainFragmentAndPoint c p) =
   CF.pointOnChainFragment p c == CF.pointOnChainFragmentSpec p c
 
-prop_splitAfterSlot_join :: TestChainFragmentAndPoint -> Property
-prop_splitAfterSlot_join (TestChainFragmentAndPoint c p) =
-  let (l, r) = CF.splitAfterSlot c (pointSlot p)
-  in CF.joinChainFragments l r === Just c
-
-prop_splitAfterSlot_slots :: TestChainFragmentAndPoint -> Bool
-prop_splitAfterSlot_slots (TestChainFragmentAndPoint c p) =
+prop_splitAfterSlot :: TestChainFragmentAndPoint -> Bool
+prop_splitAfterSlot (TestChainFragmentAndPoint c p) =
     let (l, r) = CF.splitAfterSlot c (pointSlot p)
-    in all (<= pointSlot p) (slots l) && all (>  pointSlot p) (slots r)
+    in CF.joinChainFragments l r == Just c
+    && all (<= pointSlot p) (slots l)
+    && all (>  pointSlot p) (slots r)
   where
     slots :: ChainFragment Block -> [SlotNo]
     slots = map blockSlot . CF.toOldestFirst
 
-prop_splitAfterPoint_join :: TestChainFragmentAndPoint -> Property
-prop_splitAfterPoint_join (TestChainFragmentAndPoint c p) =
+prop_splitAfterPoint :: TestChainFragmentAndPoint -> Bool
+prop_splitAfterPoint (TestChainFragmentAndPoint c p) =
   case CF.splitAfterPoint c p of
-    Just (l, r) -> CF.joinChainFragments l r === Just c
-    Nothing     -> property $ not (CF.pointOnChainFragment p c)
+    Just (l, r) ->
+         CF.pointOnChainFragment p c
+      && not (CF.pointOnChainFragment p r)
+      && CF.headPoint l == Just p
+      && CF.joinChainFragments l r == Just c
+      && all (<= pointSlot p) (slots l)
+      && all (>  pointSlot p) (slots r)
+    Nothing ->
+         not (CF.pointOnChainFragment p c)
+  where
+    slots :: ChainFragment Block -> [Slot]
+    slots = map blockSlot . CF.toOldestFirst
 
-prop_splitAfterPoint_pointOnChainFragment :: TestChainFragmentAndPoint -> Bool
-prop_splitAfterPoint_pointOnChainFragment (TestChainFragmentAndPoint c p) =
-  case CF.splitAfterPoint c p of
-    Just (l, r) -> not (CF.pointOnChainFragment p r)
-                && CF.joinChainFragments l r == Just c
-                && CF.headPoint l == Just p
-                && if CF.pointOnChainFragment p c
-                   then CF.pointOnChainFragment p l
-                   else True
-    Nothing     -> not (CF.pointOnChainFragment p c)
-
-prop_splitAfterPoint_slots :: TestChainFragmentAndPoint -> Bool
-prop_splitAfterPoint_slots (TestChainFragmentAndPoint c p) =
-  case CF.splitAfterPoint c p of
-    Just (l, r) -> all (<= pointSlot p) (slots l)
-                && all (>  pointSlot p) (slots r)
-    Nothing     -> not (CF.pointOnChainFragment p c)
+prop_splitBeforeSlot :: TestChainFragmentAndPoint -> Bool
+prop_splitBeforeSlot (TestChainFragmentAndPoint c p) =
+    let (l, r) = CF.splitBeforeSlot c (pointSlot p)
+    in CF.joinChainFragments l r == Just c
+    && all (<  pointSlot p) (slots l)
+    && all (>= pointSlot p) (slots r)
   where
     slots :: ChainFragment Block -> [SlotNo]
     slots = map blockSlot . CF.toOldestFirst
+
+prop_splitBeforePoint :: TestChainFragmentAndPoint -> Bool
+prop_splitBeforePoint (TestChainFragmentAndPoint c p) =
+  case CF.splitBeforePoint c p of
+    Just (l, r) ->
+        CF.pointOnChainFragment p c
+     && not (CF.pointOnChainFragment p l)
+     && CF.lastPoint r == Just p
+     && CF.joinChainFragments l r == Just c
+     && all (<  pointSlot p) (slots l)
+     && all (>= pointSlot p) (slots r)
+    Nothing ->
+        not (CF.pointOnChainFragment p c)
+  where
+    slots :: ChainFragment Block -> [Slot]
+    slots = map blockSlot . CF.toOldestFirst
+
+prop_sliceRange :: TestChainAndRange -> Bool
+prop_sliceRange (TestChainAndRange c p1 p2) =
+    case CF.sliceRange c' p1 p2 of
+      Just slice ->
+          CF.valid slice
+       && not (CF.null slice)
+       && CF.headPoint slice == Just p2
+       && CF.lastPoint slice == Just p1
+      Nothing ->
+          not (CF.pointOnChainFragment p1 c')
+       || not (CF.pointOnChainFragment p2 c')
+  where
+    c' = CF.fromNewestFirst (Chain.chainToList c)
 
 prop_foldChainFragment :: TestBlockChainFragment -> Property
 prop_foldChainFragment (TestBlockChainFragment c) =
