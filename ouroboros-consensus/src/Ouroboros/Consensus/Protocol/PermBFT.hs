@@ -39,16 +39,16 @@ import           Cardano.Spec.Chain.STS.Rule.Chain (CHAIN)
 import           Cardano.Spec.Consensus.Block
 
 
-data PermBft c
+data PermBft
 
-instance PermBftCrypto c => OuroborosTag (PermBft c) where
+instance PermBftCrypto c => OuroborosTag PermBft where
   -- | The BFT payload is just the signature
-  newtype Payload (PermBft c) ph = PermBftPayload {
+  newtype Payload PermBft ph = PermBftPayload {
         permBftSignature :: SignedDSIGN (PermBftDSIGN c) ph
       }
     deriving (Generic)
 
-  data NodeConfig (PermBft c) = PermBftNodeConfig
+  data NodeConfig PermBft = PermBftNodeConfig
     { permBftNodeId       :: NodeId
     , permBftSignKey      :: SignKeyDSIGN (PermBftDSIGN c)
     , permBftNumCoreNodes :: NumCoreNodes
@@ -57,12 +57,12 @@ instance PermBftCrypto c => OuroborosTag (PermBft c) where
     , permBftKSize        :: SlotCount
     }
 
-  type ValidationErr  (PermBft c) = [PredicateFailure CHAIN]
-  type SupportedBlock (PermBft c) = Block
-  type NodeState      (PermBft c) = ()
-  type LedgerView     (PermBft c) = DIEnv
-  type IsLeader       (PermBft c) = ()
-  type ChainState     (PermBft c) = State CHAIN
+  type ValidationErr  PermBft = [PredicateFailure CHAIN]
+  type SupportedBlock PermBft = Block
+  type NodeState      PermBft = ()
+  type LedgerView     PermBft = DIEnv
+  type IsLeader       PermBft = ()
+  type ChainState     PermBft = State CHAIN
 
   mkPayload PermBftNodeConfig{..} _ preheader = do
     signature <- signedDSIGN preheader permBftSignKey
@@ -84,31 +84,9 @@ instance PermBftCrypto c => OuroborosTag (PermBft c) where
       )
 
 
-deriving instance PermBftCrypto c => Show     (Payload (PermBft c) ph)
-deriving instance PermBftCrypto c => Eq       (Payload (PermBft c) ph)
-deriving instance PermBftCrypto c => Ord      (Payload (PermBft c) ph)
-deriving instance PermBftCrypto c => Condense (Payload (PermBft c) ph)
-
-instance PermBftCrypto c => Serialise (Payload (PermBft c) ph) where
+instance Serialise (Payload PermBft ph) where
   -- use generic instance
 
 {-------------------------------------------------------------------------------
   Permissive BFT specific types
 -------------------------------------------------------------------------------}
-
-{-------------------------------------------------------------------------------
-  Crypto models
--------------------------------------------------------------------------------}
-
--- | Crypto primitives required by BFT
-class DSIGNAlgorithm (PermBftDSIGN c) => PermBftCrypto c where
-  type family PermBftDSIGN c :: *
-
-data PermBftStandardCrypto
-data PermBftMockCrypto
-
-instance PermBftCrypto PermBftStandardCrypto where
-  type PermBftDSIGN PermBftStandardCrypto = Ed448DSIGN
-
-instance PermBftCrypto PermBftMockCrypto where
-  type PermBftDSIGN PermBftMockCrypto = MockDSIGN

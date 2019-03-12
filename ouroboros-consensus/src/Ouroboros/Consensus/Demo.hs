@@ -47,7 +47,7 @@ import           Ouroboros.Consensus.Crypto.KES
 import           Ouroboros.Consensus.Crypto.VRF
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Mock
-import           Ouroboros.Consensus.Ledger.PermBFT
+-- import           Ouroboros.Consensus.Ledger.PermBFT
 import           Ouroboros.Consensus.Node (CoreNodeId (..), NodeId (..),
                      NumCoreNodes (..))
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -58,6 +58,8 @@ import           Ouroboros.Consensus.Protocol.PermBFT
 import           Ouroboros.Consensus.Protocol.Praos
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.Condense
+
+import qualified Cardano.Spec.Consensus.Block as ByronPermBlock
 
 import           Ledger.Core (Owner (Owner), VKey (VKey),
                      VKeyGenesis (VKeyGenesis))
@@ -74,13 +76,14 @@ type DemoLeaderSchedule = WithLeaderSchedule (Praos PraosMockCrypto)
 -- | Consensus protocol to use
 data DemoProtocol p where
   DemoBFT            :: SecurityParam -> DemoProtocol DemoBFT
-  -- DemoPermBFT        :: SecurityParam -> DemoProtocol DemoPermBFT
+  DemoPermBFT        :: SecurityParam -> DemoProtocol DemoPermBFT
   DemoPraos          :: PraosParams -> DemoProtocol DemoPraos
   DemoLeaderSchedule :: LeaderSchedule -> PraosParams -> DemoProtocol DemoLeaderSchedule
 
 type family Block (p :: *) = b | b -> p
 
 type instance Block DemoBFT            = SimpleBlock DemoBFT            SimpleBlockMockCrypto
+type instance Block DemoPermBFT        = SimpleBlock DemoPermBFT        SimpleBlockMockCrypto
 type instance Block DemoPraos          = SimpleBlock DemoPraos          SimpleBlockMockCrypto
 type instance Block DemoLeaderSchedule = SimpleBlock DemoLeaderSchedule SimpleBlockMockCrypto
 
@@ -104,7 +107,7 @@ type DemoProtocolConstraints p = (
 
 demoProtocolConstraints :: DemoProtocol p -> Dict (DemoProtocolConstraints p)
 demoProtocolConstraints DemoBFT{}            = Dict
--- demoProtocolConstraints DemoPermBFT{}        = Dict
+demoProtocolConstraints DemoPermBFT{}        = Dict
 demoProtocolConstraints DemoPraos{}          = Dict
 demoProtocolConstraints DemoLeaderSchedule{} = Dict
 
@@ -301,12 +304,12 @@ instance HasCreator DemoBFT where
                . headerOuroboros
                . simpleHeader
 
--- instance HasCreator DemoPermBFT where
---     getCreator = CoreNodeId
---                . verKeyIdFromSigned
---                . bftSignature
---                . headerOuroboros
---                . simpleHeader
+instance HasCreator DemoPermBFT where
+    getCreator = CoreNodeId
+               . verKeyIdFromSigned
+               . bftSignature
+               . headerOuroboros
+               . simpleHeader
 
 instance HasCreator DemoPraos where
     getCreator = praosCreator
