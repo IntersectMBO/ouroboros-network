@@ -78,15 +78,12 @@ muxStart versions mpds bearer style rescb_m = do
         (_,r) <- waitAnyCatchCancel as
         close bearer
         muxBearerSetState bearer Dead
-        case rescb_m of
-             Nothing ->
-                 case r of
-                      Left  e -> say $ "Mux Bearer died due to " ++ show e
-                      Right _ -> return ()
-             Just rescb ->
-                 case r of
-                      Left  e -> rescb $ Just e
-                      Right _ -> rescb Nothing
+        case r of
+          Left e -> do
+            say $ "Mux Bearer died due to " ++ show e
+            sequence_ $ rescb_m <*> Just (Just e)
+          Right _ ->
+            sequence_ $ rescb_m <*> Just Nothing
 
 
     -- Construct the array of TBQueues, one for each protocol id, and each mode
