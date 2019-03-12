@@ -1,4 +1,5 @@
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 module Test.Mux (
       TestProtocols1 (..)
@@ -11,10 +12,13 @@ module Test.Mux (
 
 import           Codec.CBOR.Decoding (decodeBytes)
 import           Codec.CBOR.Encoding (encodeBytes)
+import           Codec.CBOR.Read (deserialiseFromBytes)
+import           Codec.CBOR.Write (toLazyByteString)
 import           Codec.Serialise (Serialise (..))
 import           Control.Monad
 import qualified Data.Binary.Put as Bin
 import qualified Data.ByteString.Lazy as BL
+import qualified Data.Map as M
 import           Data.Word
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
@@ -31,6 +35,7 @@ import           Network.TypedProtocol.ReqResp.Server
 
 import           Ouroboros.Network.Channel
 import qualified Ouroboros.Network.Mux as Mx
+import           Ouroboros.Network.Mux.Control
 import           Ouroboros.Network.Mux.Types (MuxBearer)
 import qualified Ouroboros.Network.Mux.Types as Mx
 import           Ouroboros.Network.Protocol.ReqResp.Codec
@@ -38,11 +43,12 @@ import           Ouroboros.Network.Protocol.ReqResp.Codec
 tests :: TestTree
 tests =
   testGroup "Mux"
-  [ testProperty "mux send receive"        prop_mux_snd_recv
-  , testProperty "2 miniprotocols"         prop_mux_2_minis
-  , testProperty "starvation"              prop_mux_starvation
-  , testProperty "unknown miniprotocol"    prop_mux_unknown_miniprot
-  , testProperty "too short header"        prop_mux_short_header
+  [ testProperty "mux send receive"         prop_mux_snd_recv
+  , testProperty "2 miniprotocols"          prop_mux_2_minis
+  , testProperty "starvation"               prop_mux_starvation
+  , testProperty "unknown miniprotocol"     prop_mux_unknown_miniprot
+  , testProperty "too short header"         prop_mux_short_header
+  , testProperty "MuxControl encode/decode" prop_mux_encode_decode
   ]
 
 version0 :: Mx.Version
@@ -112,6 +118,24 @@ instance Arbitrary InvalidSDU where
         len <- arbitrary
 
         return $ InvalidSDU (Mx.RemoteClockModel ts) mid len
+
+
+instance Arbitrary Mx.NetworkMagic where
+    arbitrary = Mx.NetworkMagic <$> arbitrary
+
+instance Arbitrary Mx.Version where
+    arbitrary = do
+        nm <- arbitrary
+        elements [Mx.Version0 nm, Mx.Version1 nm]
+
+instance Arbitrary ControlMsg where
+    arbitrary = do
+        vs <- arbitrary
+        v  <- arbitrary
+        f  <- arbitrary
+        elements [ MsgInitReq (M.fromList $ map (\a -> (Mx.versionToVersionNumber a, a)) vs)
+                 , MsgInitRsp v
+                 , MsgInitFail f]
 
 data MuxSTMCtx ptcl m = MuxSTMCtx {
       writeQueue :: TBQueue m BL.ByteString
@@ -474,3 +498,11 @@ failingServer  = do
 
     return (server_r, server_res)
 
+prop_mux_encode_decode :: ControlMsg
+                       -> Property
+prop_mux_encode_decode msg =
+    let bs = toLazyByteString $ encodeCtrlMsg msg
+        res_e = deserialiseFromBytes decodeCtrlMsg bs in
+    case res_e of
+         Left  _   -> property False
+         Right res -> return msg === res

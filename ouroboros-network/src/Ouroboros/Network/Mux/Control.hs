@@ -2,7 +2,11 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE TypeFamilies   #-}
 
-module Ouroboros.Network.Mux.Control where
+module Ouroboros.Network.Mux.Control (
+      ControlMsg (..)
+    , encodeCtrlMsg
+    , decodeCtrlMsg
+    ) where
 
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Encoding as CBOR
@@ -21,7 +25,7 @@ import           Ouroboros.Network.Mux.Types
 data ControlMsg = MsgInitReq (M.Map VersionNumber Version)
                 | MsgInitRsp Version
                 | MsgInitFail String
-                deriving Show
+                deriving (Eq, Show)
 
 encodeCtrlMsg :: ControlMsg -> CBOR.Encoding
 encodeCtrlMsg (MsgInitReq versions) = CBOR.encodeListLen 2 <> CBOR.encodeWord 0 <> encodeVersionMap versions
