@@ -63,6 +63,7 @@
             (hsPkgs.pipes)
             (hsPkgs.process)
             (hsPkgs.QuickCheck)
+            (hsPkgs.quickcheck-instances)
             (hsPkgs.serialise)
             (hsPkgs.stm)
             (hsPkgs.tasty)
