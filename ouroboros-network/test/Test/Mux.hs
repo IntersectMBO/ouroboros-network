@@ -9,6 +9,7 @@ module Test.Mux (
       NetworkMagic (..)
     , NetworkMagicWithBufSize (..)
     , TestProtocols1 (..)
+    , TestProtocols3 (..)
     , DummyPayload (..)
     , setupMiniReqRsp
     , tests
@@ -105,6 +106,9 @@ version1 = Mx.SomeVersion
   Mx.SNat1
   (NetworkMagicWithBufSize 0xbeebcafe 10)
 
+-- |
+-- Allows to run a single chain-sync protocol.
+--
 data TestProtocols1 = ChainSync1
   deriving (Eq, Ord, Enum, Bounded)
 
@@ -114,6 +118,9 @@ instance Mx.ProtocolEnum TestProtocols1 where
   toProtocolEnum 2 = Just ChainSync1
   toProtocolEnum _ = Nothing
 
+-- |
+-- Allows to run both chain-sync and block-fetch protocols.
+--
 data TestProtocols2 = ChainSync2 | BlockFetch2
   deriving (Eq, Ord, Enum, Bounded)
 
@@ -125,6 +132,17 @@ instance Mx.ProtocolEnum TestProtocols2 where
   toProtocolEnum 3 = Just BlockFetch2
   toProtocolEnum _ = Nothing
 
+-- |
+-- Allow to run a singly req-resp protocol.
+--
+data TestProtocols3 = ReqResp1
+  deriving (Eq, Ord, Enum, Bounded)
+
+instance Mx.ProtocolEnum TestProtocols3 where
+  fromProtocolEnum ReqResp1 = 4
+  
+  toProtocolEnum 4 = Just ReqResp1
+  toProtocolEnum _ = Nothing
 
 newtype DummyPayload = DummyPayload {
       unDummyPayload :: BL.ByteString

@@ -141,7 +141,7 @@ prop_socket_send_recv clientAddr serverAddr clientVersions serverVersions f xs =
     let -- Server Node; only req-resp server
         srvPeer :: Peer (ReqResp.ReqResp Int Int) AsServer ReqResp.StIdle IO ()
         srvPeer = ReqResp.reqRespServerPeer (reqRespServerMapAccumL sv (\a -> pure . f a) 0)
-        srvPeers Mxt.ChainSync1 = OnlyServer ReqResp.codecReqResp srvPeer
+        srvPeers Mxt.ReqResp1 = OnlyServer ReqResp.codecReqResp srvPeer
         serNet = NetworkInterface {
             nodeAddress   = serverAddr,
             knownVersions = serverVersions,
@@ -151,7 +151,7 @@ prop_socket_send_recv clientAddr serverAddr clientVersions serverVersions f xs =
         -- Client Node; only req-resp client
         cliPeer :: Peer (ReqResp.ReqResp Int Int) AsClient ReqResp.StIdle IO ()
         cliPeer = ReqResp.reqRespClientPeer (reqRespClientMap cv xs)
-        cliPeers Mxt.ChainSync1 = OnlyClient ReqResp.codecReqResp cliPeer
+        cliPeers Mxt.ReqResp1 = OnlyClient ReqResp.codecReqResp cliPeer
         cliNet = NetworkInterface {
              nodeAddress   = clientAddr,
              knownVersions = clientVersions,
@@ -188,7 +188,7 @@ prop_socket_recv_close f _ = ioProperty $ do
 
     let srvPeer :: Peer (ReqResp.ReqResp Int Int) AsServer ReqResp.StIdle IO ()
         srvPeer = ReqResp.reqRespServerPeer (reqRespServerMapAccumL sv (\a -> pure . f a) 0)
-        srvPeers Mxt.ChainSync1 = OnlyServer ReqResp.codecReqResp srvPeer
+        srvPeers Mxt.ReqResp1 = OnlyServer ReqResp.codecReqResp srvPeer
         ni = NetworkInterface {
             nodeAddress   = b,
             knownVersions = [Mxt.version0],
@@ -228,7 +228,7 @@ prop_socket_client_connect_error _ xs = ioProperty $ do
 
     let cliPeer :: Peer (ReqResp.ReqResp Int Int) AsClient ReqResp.StIdle IO ()
         cliPeer = ReqResp.reqRespClientPeer (reqRespClientMap cv xs)
-        cliPeers Mxt.ChainSync1 = OnlyClient ReqResp.codecReqResp cliPeer
+        cliPeers Mxt.ReqResp1 = OnlyClient ReqResp.codecReqResp cliPeer
         ni = NetworkInterface {
             nodeAddress   = serverAddr,
             knownVersions = [Mxt.version0],
@@ -259,8 +259,8 @@ prop_version_missmatch f xs = ioProperty $ do
     let -- Server Node
         srvPeer :: Peer (ReqResp.ReqResp Int Int) AsServer ReqResp.StIdle IO ()
         srvPeer = ReqResp.reqRespServerPeer (reqRespServerMapAccumL sv (\a -> pure . f a) 0)
-        srvPeers Mxt.ChainSync1 = OnlyServer ReqResp.codecReqResp srvPeer
-        srvNet :: NetworkInterface Mxt.TestProtocols1 AddrInfo IO 
+        srvPeers Mxt.ReqResp1 = OnlyServer ReqResp.codecReqResp srvPeer
+        srvNet :: NetworkInterface Mxt.TestProtocols3 AddrInfo IO 
         srvNet = NetworkInterface {
             nodeAddress   = serverAddr,
             knownVersions = [Mxt.version1],
@@ -316,7 +316,7 @@ prop_network_missmatch f xs = ioProperty $ do
     let -- Server Node
         srvPeer :: Peer (ReqResp.ReqResp Int Int) AsServer ReqResp.StIdle IO ()
         srvPeer = ReqResp.reqRespServerPeer (reqRespServerMapAccumL sv (\a -> pure . f a) 0)
-        srvPeers Mxt.ChainSync1 = OnlyServer ReqResp.codecReqResp srvPeer
+        srvPeers Mxt.ReqResp1 = OnlyServer ReqResp.codecReqResp srvPeer
         srvNet = NetworkInterface {
             nodeAddress   = serverAddr,
             knownVersions = [Mxt.version0],
@@ -326,7 +326,7 @@ prop_network_missmatch f xs = ioProperty $ do
         -- Client Node
         cliPeer :: Peer (ReqResp.ReqResp Int Int) AsClient ReqResp.StIdle IO ()
         cliPeer = ReqResp.reqRespClientPeer (reqRespClientMap cv xs)
-        cliPeers Mxt.ChainSync1 = OnlyClient ReqResp.codecReqResp cliPeer
+        cliPeers Mxt.ReqResp1 = OnlyClient ReqResp.codecReqResp cliPeer
         cliNet = NetworkInterface {
              nodeAddress   = clientAddr,
              knownVersions = [Mxt.version0'],

@@ -81,11 +81,11 @@ demo chain0 updates = do
         consumerPeer = ChainSync.chainSyncClientPeer
                           (ChainSync.chainSyncClientExample consumerVar
                           (consumerClient done target consumerVar))
-        consumerPeers Mxt.ChainSync1 = Mx.OnlyClient ChainSync.codecChainSync consumerPeer
+        consumerPeers Mxt.ReqResp1 = Mx.OnlyClient ChainSync.codecChainSync consumerPeer
 
         producerPeer :: Peer (ChainSync.ChainSync block (Point block)) AsServer ChainSync.StIdle IO ()
         producerPeer = ChainSync.chainSyncServerPeer (ChainSync.chainSyncServerExample () producerVar)
-        producerPeers Mxt.ChainSync1 = Mx.OnlyServer ChainSync.codecChainSync producerPeer
+        producerPeers Mxt.ReqResp1 = Mx.OnlyServer ChainSync.codecChainSync producerPeer
 
     runNetworkNodeWithPipe [Mxt.version0] (\_ -> Just producerPeers) Mx.StyleServer producerPipeCtx
     runNetworkNodeWithPipe [Mxt.version0] (\_ -> Just consumerPeers) Mx.StyleClient consumerPipeCtx
