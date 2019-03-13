@@ -118,7 +118,7 @@ prop_socket_send_recv clientAddr serverAddr f xs = do
     let -- Server Node; only req-resp server
         srvPeer :: Peer (ReqResp.ReqResp Int Int) AsServer ReqResp.StIdle IO ()
         srvPeer = ReqResp.reqRespServerPeer (reqRespServerMapAccumL sv (\a -> pure . f a) 0)
-        srvPeers Mxt.ChainSync1 = OnlyServer nullTracer ReqResp.codecReqResp srvPeer
+        srvPeers Mxt.ReqResp1 = OnlyServer nullTracer ReqResp.codecReqResp srvPeer
         serNet = NetworkInterface {
             nodeAddress = serverAddr,
             protocols   = srvPeers
@@ -127,7 +127,7 @@ prop_socket_send_recv clientAddr serverAddr f xs = do
         -- Client Node; only req-resp client
         cliPeer :: Peer (ReqResp.ReqResp Int Int) AsClient ReqResp.StIdle IO ()
         cliPeer = ReqResp.reqRespClientPeer (reqRespClientMap cv xs)
-        cliPeers Mxt.ChainSync1 = OnlyClient nullTracer ReqResp.codecReqResp cliPeer
+        cliPeers Mxt.ReqResp1 = OnlyClient nullTracer ReqResp.codecReqResp cliPeer
         cliNet = NetworkInterface {
              nodeAddress = clientAddr,
              protocols   = cliPeers
@@ -163,7 +163,7 @@ prop_socket_recv_close f _ = ioProperty $ do
 
     let srvPeer :: Peer (ReqResp.ReqResp Int Int) AsServer ReqResp.StIdle IO ()
         srvPeer = ReqResp.reqRespServerPeer (reqRespServerMapAccumL sv (\a -> pure . f a) 0)
-        srvPeers Mxt.ChainSync1 = OnlyServer nullTracer ReqResp.codecReqResp srvPeer
+        srvPeers Mxt.ReqResp1 = OnlyServer nullTracer ReqResp.codecReqResp srvPeer
         ni = NetworkInterface {
             nodeAddress = b,
             protocols   = srvPeers
@@ -202,7 +202,7 @@ prop_socket_client_connect_error _ xs = ioProperty $ do
 
     let cliPeer :: Peer (ReqResp.ReqResp Int Int) AsClient ReqResp.StIdle IO ()
         cliPeer = ReqResp.reqRespClientPeer (reqRespClientMap cv xs)
-        cliPeers Mxt.ChainSync1 = OnlyClient nullTracer ReqResp.codecReqResp cliPeer
+        cliPeers Mxt.ReqResp1 = OnlyClient nullTracer ReqResp.codecReqResp cliPeer
         ni = NetworkInterface {
             nodeAddress = serverAddr,
             protocols   = cliPeers
