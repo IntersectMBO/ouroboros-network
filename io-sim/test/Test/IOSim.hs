@@ -422,8 +422,8 @@ unit_catch_6 =
 unit_fork_1 =
       runSimTraceSay example === ["parent"]
  .&&. case traceResult True (runSimTrace example) of
-        Left FailureSloppyShutdown -> property True
-        _                          -> property False
+        Left FailureSloppyShutdown{} -> property True
+        _                            -> property False
   where
     example :: SimM s ()
     example = do

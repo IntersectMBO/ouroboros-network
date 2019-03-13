@@ -1,3 +1,4 @@
+{-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 
