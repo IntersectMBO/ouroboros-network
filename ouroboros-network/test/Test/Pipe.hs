@@ -1,5 +1,8 @@
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# OPTIONS_GHC -Wno-orphans #-}
+
+{-# OPTIONS_GHC -Wno-orphans     #-}
+
 module Test.Pipe (tests) where
 
 import           Codec.Serialise (Serialise)
@@ -7,7 +10,6 @@ import           Control.Monad
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTimer
-import qualified Data.ByteString.Lazy as BL
 import           System.Process (createPipe)
 import           Test.ChainGenerators (TestBlockChainAndUpdates (..))
 import           Test.QuickCheck
@@ -16,18 +18,20 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 import           Control.Tracer (nullTracer)
 
-import           Network.TypedProtocol.Driver
+import           Network.TypedProtocol.Core
 
 import           Ouroboros.Network.Chain (Chain, ChainUpdate, Point)
 import qualified Ouroboros.Network.Chain as Chain
 import qualified Ouroboros.Network.ChainProducerState as CPS
-import           Ouroboros.Network.Channel
 import qualified Ouroboros.Network.Mux as Mx
+import qualified Ouroboros.Network.Mux.Interface as Mx
 import           Ouroboros.Network.Pipe
-import           Ouroboros.Network.Protocol.ChainSync.Client
-import           Ouroboros.Network.Protocol.ChainSync.Codec
-import           Ouroboros.Network.Protocol.ChainSync.Examples
-import           Ouroboros.Network.Protocol.ChainSync.Server
+import           Ouroboros.Network.Protocol.ChainSync.Type     as ChainSync
+import           Ouroboros.Network.Protocol.ChainSync.Client   as ChainSync
+import           Ouroboros.Network.Protocol.ChainSync.Codec    as ChainSync
+import           Ouroboros.Network.Protocol.ChainSync.Examples as ChainSync
+import           Ouroboros.Network.Protocol.ChainSync.Server   as ChainSync
+import qualified Test.Mux as Mxt
 
 --
 -- The list of all tests
@@ -71,19 +75,23 @@ demo chain0 updates = do
 
     producerVar <- atomically $ newTVar (CPS.initChainProducerState chain0)
     consumerVar <- atomically $ newTVar chain0
-    consumerDone <- atomically newEmptyTMVar
+    done <- atomically newEmptyTMVar
 
     let Just expectedChain = Chain.applyChainUpdates updates chain0
         target = Chain.headPoint expectedChain
-        a_mps ChainSync = Mx.MiniProtocolDescription
-                            (Just $ consumerInit consumerDone target consumerVar)
-                            Nothing
-        b_mps ChainSync = Mx.MiniProtocolDescription
-                            Nothing
-                            (Just $ producerRsp producerVar)
 
-    startPipe b_mps hndRead1 hndWrite2
-    startPipe a_mps hndRead2 hndWrite1
+        consumerPeer :: Peer (ChainSync.ChainSync block (Point block)) AsClient ChainSync.StIdle IO ()
+        consumerPeer = ChainSync.chainSyncClientPeer
+                          (ChainSync.chainSyncClientExample consumerVar
+                          (consumerClient done target consumerVar))
+        consumerPeers Mxt.ChainSync1 = Mx.OnlyClient nullTracer ChainSync.codecChainSync consumerPeer
+
+        producerPeer :: Peer (ChainSync.ChainSync block (Point block)) AsServer ChainSync.StIdle IO ()
+        producerPeer = ChainSync.chainSyncServerPeer (ChainSync.chainSyncServerExample () producerVar)
+        producerPeers Mxt.ChainSync1 = Mx.OnlyServer nullTracer ChainSync.codecChainSync producerPeer
+
+    runNetworkNodeWithPipe producerPeers hndRead1 hndWrite2
+    runNetworkNodeWithPipe consumerPeers hndRead2 hndWrite1
 
     void $ fork $ sequence_
         [ do threadDelay 10e-3 -- 10 milliseconds, just to provide interest
@@ -94,40 +102,32 @@ demo chain0 updates = do
              | update <- updates
         ]
 
-    atomically $ takeTMVar consumerDone
+    atomically $ takeTMVar done
 
   where
     checkTip target consumerVar = atomically $ do
-          chain <- readTVar consumerVar
-          return (Chain.headPoint chain == target)
+      chain <- readTVar consumerVar
+      return (Chain.headPoint chain == target)
 
-    consumerClient :: Point block -> TVar IO (Chain block) -> Client block IO ()
-    consumerClient target consChain =
-      Client
-        { rollforward = \_ -> checkTip target consChain >>= \b ->
-            if b then pure $ Left ()
-                 else pure $ Right $ consumerClient target consChain
-        , rollbackward = \_ _ -> checkTip target consChain >>= \b ->
-            if b then pure $ Left ()
-                 else pure $ Right $ consumerClient target consChain
-        , points = \_ -> pure $ consumerClient target consChain
+    -- A simple chain-sync client which runs until it recieves an update to
+    -- a given point (either as a roll forward or as a roll backward).
+    consumerClient :: TMVar IO Bool
+                   -> Point block
+                   -> TVar IO (Chain block)
+                   -> ChainSync.Client block IO ()
+    consumerClient done target chain =
+      ChainSync.Client
+        { ChainSync.rollforward = \_ -> checkTip target chain >>= \b ->
+            if b then do
+                    atomically $ putTMVar done True
+                    pure $ Left ()
+                 else
+                    pure $ Right $ consumerClient done target chain
+        , ChainSync.rollbackward = \_ _ -> checkTip target chain >>= \b ->
+            if b then do
+                    atomically $ putTMVar done True
+                    pure $ Left ()
+                 else
+                    pure $ Right $ consumerClient done target chain
+        , ChainSync.points = \_ -> pure $ consumerClient done target chain
         }
-
-    consumerInit :: TMVar IO Bool -> Point block -> TVar IO (Chain block)
-                 -> Channel IO BL.ByteString -> IO ()
-    consumerInit done_ target consChain channel = do
-       let consumerPeer = chainSyncClientPeer (chainSyncClientExample consChain
-                                               (consumerClient target consChain))
-
-       runPeer nullTracer codecChainSync channel consumerPeer
-       atomically $ putTMVar done_ True
-
-       return ()
-
-    producerRsp ::  TVar IO (CPS.ChainProducerState block)
-                -> Channel IO BL.ByteString -> IO ()
-    producerRsp prodChain channel = do
-        let producerPeer = chainSyncServerPeer (chainSyncServerExample () prodChain)
-
-        runPeer nullTracer codecChainSync channel producerPeer
-
