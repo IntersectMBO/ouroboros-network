@@ -5,13 +5,11 @@
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 module Ouroboros.Consensus.Protocol.PermBFT (
     PermBft
     -- * Classes
-  , PermBftCrypto(..)
-  , PermBftStandardCrypto
-  , PermBftMockCrypto
     -- * Type instances
   , NodeConfig(..)
   , Payload(..)
@@ -31,7 +29,7 @@ import           Ouroboros.Consensus.Node (NodeId, NumCoreNodes(..))
 import           Ouroboros.Consensus.Util.Condense
 
 import           Control.State.Transition (applySTS, Environment, PredicateFailure, State, IRC(IRC), TRC(TRC))
-import           Ledger.Core (SlotCount, Slot(Slot))
+import           Ledger.Core (SlotCount, Slot(Slot), SKey, VKey, Sig, sign)
 import           Ledger.Delegation (DIEnv, allowedDelegators, slot)
 import           Ledger.Update (PParams)
 import qualified Cardano.Spec.Chain.STS.Block as CBM -- concrete block module
@@ -41,18 +39,18 @@ import           Cardano.Spec.Consensus.Block
 
 data PermBft
 
-instance PermBftCrypto c => OuroborosTag PermBft where
+instance OuroborosTag PermBft where
   -- | The BFT payload is just the signature
   newtype Payload PermBft ph = PermBftPayload {
-        permBftSignature :: SignedDSIGN (PermBftDSIGN c) ph
+        permBftSignature :: Sig ph
       }
     deriving (Generic)
 
   data NodeConfig PermBft = PermBftNodeConfig
     { permBftNodeId       :: NodeId
-    , permBftSignKey      :: SignKeyDSIGN (PermBftDSIGN c)
+    , permBftSignKey      :: SKey
     , permBftNumCoreNodes :: NumCoreNodes
-    , permBftVerKeys      :: Map NodeId (VerKeyDSIGN (PermBftDSIGN c))
+    , permBftVerKeys      :: Map NodeId VKey
     , permBftProtParams   :: PParams
     , permBftKSize        :: SlotCount
     }
@@ -65,7 +63,7 @@ instance PermBftCrypto c => OuroborosTag PermBft where
   type ChainState     PermBft = State CHAIN
 
   mkPayload PermBftNodeConfig{..} _ preheader = do
-    signature <- signedDSIGN preheader permBftSignKey
+    let signature = sign permBftSignKey preheader
     return $ PermBftPayload { permBftSignature = signature }
 
   checkIsLeader _ _ _ _ = return $ Just ()
@@ -84,9 +82,31 @@ instance PermBftCrypto c => OuroborosTag PermBft where
       )
 
 
-instance Serialise (Payload PermBft ph) where
+deriving instance Show ph           => Show     (Payload PermBft ph)
+deriving instance Eq ph             => Eq       (Payload PermBft ph)
+deriving instance Ord ph            => Ord      (Payload PermBft ph)
+deriving instance Condense (Sig ph) => Condense (Payload PermBft ph)
+
+instance Serialise (Sig ph) => Serialise (Payload PermBft ph) where
   -- use generic instance
 
 {-------------------------------------------------------------------------------
   Permissive BFT specific types
 -------------------------------------------------------------------------------}
+
+-- {-------------------------------------------------------------------------------
+--   Crypto models
+-- -------------------------------------------------------------------------------}
+
+-- -- | Crypto primitives required by BFT
+-- class DSIGNAlgorithm (PermBftDSIGN c) => PermBftCrypto c where
+--   type family PermBftDSIGN c :: *
+
+-- data PermBftStandardCrypto
+-- data PermBftMockCrypto
+
+-- instance PermBftCrypto PermBftStandardCrypto where
+--   type PermBftDSIGN PermBftStandardCrypto = Ed448DSIGN
+
+-- instance PermBftCrypto PermBftMockCrypto where
+--   type PermBftDSIGN PermBftMockCrypto = MockDSIGN

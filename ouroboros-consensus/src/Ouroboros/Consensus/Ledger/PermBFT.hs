@@ -24,7 +24,6 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.PermBFT
                  (
                    PermBft
-                 , PermBftCrypto
                  )
 import           Ouroboros.Network.Block (HasHeader (..))
 
@@ -42,6 +41,6 @@ instance OuroborosTag PermBft => UpdateLedger (SimpleBlock PermBft c) where
   applyLedgerState b MkLedgerState = undefined
 
 
-instance (PermBftCrypto c, SimpleBlockCrypto c)
+instance SimpleBlockCrypto c
       => ProtocolLedgerView (SimpleBlock PermBft c) where
   protocolLedgerView = undefined
