@@ -16,7 +16,9 @@ cabal-version:       >=1.10
 library
   exposed-modules:     Ouroboros.Byron.Proxy.DB,
                        Ouroboros.Byron.Proxy.Types,
-                       Ouroboros.Byron.Proxy.Index
+                       Ouroboros.Byron.Proxy.Index,
+
+                       Ouroboros.Byron.Proxy.ChainSync.Server
   -- other-modules:
   -- other-extensions:
   build-depends:       base,
