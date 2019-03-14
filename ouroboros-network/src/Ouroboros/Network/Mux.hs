@@ -58,9 +58,8 @@ muxStart verMpds bearer style rescb_m = do
     tbl <- setupTbl
     tq <- atomically $ newTBQueue 100
     cnt <- newTVarM 0
-    let vfn = if style == StyleClient then muxClient
-                                      else muxServer
-    (_, udesc) <- vfn verMpds bearer
+    (_, udesc) <- if style == StyleClient then muxClient verMpds bearer
+                                          else muxServer verMpds bearer
 
     let pmss = PerMuxSS tbl tq bearer
         jobs = [ demux pmss
@@ -159,7 +158,7 @@ muxBearerSetState :: (MonadSTM m, Ord ptcl, Enum ptcl, Bounded ptcl)
                   -> m ()
 muxBearerSetState bearer newState = atomically $ writeTVar (state bearer) newState
 
-
+-- | Initiate version negotiation with the peer the MuxBearer is connected to
 muxClient :: (MonadAsync m, MonadFork m, MonadSay m, MonadSTM m, MonadThrow m,
             Ord ptcl, Enum ptcl, Bounded ptcl, HasCallStack)
         => [(Version, MiniProtocolDescriptions ptcl m)]
@@ -189,6 +188,7 @@ muxClient verMpds bearer = do
                                                     "muxInit response as request" callStack
                 Right (_, MsgInitFail e) -> throwM $ MuxError MuxControlNoMatchingVersion e callStack
 
+-- | Wait for the connected peer to initiate version negotiation.
 muxServer :: (MonadAsync m, MonadFork m, MonadSay m, MonadSTM m, MonadThrow m,
             Ord ptcl, Enum ptcl, Bounded ptcl, HasCallStack)
         => [(Version, MiniProtocolDescriptions ptcl m)]

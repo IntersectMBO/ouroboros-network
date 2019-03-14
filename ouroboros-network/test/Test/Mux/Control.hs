@@ -45,7 +45,6 @@ instance Arbitrary ControlMsg where
                  , MsgInitRsp v
                  , MsgInitFail f]
 
-
 -- | Verify that decoder . encoder = id for ControlMsg.
 prop_mux_encode_decode :: ControlMsg
                        -> Property

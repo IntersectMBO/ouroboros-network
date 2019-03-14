@@ -47,7 +47,7 @@ newtype RemoteClockModel = RemoteClockModel { unRemoteClockModel :: Word32 } der
 
 data VersionNumber = VersionNumber0
                    | VersionNumber1
-                   deriving (Eq, Ord, Show, Enum, Ix, Bounded)
+                   deriving (Eq, Ord, Show)
 
 newtype NetworkMagic = NetworkMagic { unNetworkMagic :: Word32 } deriving (Eq, Show, Ord)
 
@@ -189,8 +189,9 @@ newtype MiniProtocolDispatch ptcl m =
 data MiniProtocolMode = ModeInitiator | ModeResponder
   deriving (Eq, Ord, Ix, Enum, Bounded, Show)
 
-data MuxStyle = StyleClient | StyleServer
-  deriving (Eq, Show)
+data MuxStyle = StyleClient -- Initiate version negotiation directly.
+              | StyleServer -- Wait for peer to initiate version negotiation.
+              deriving (Eq, Show)
 
 data MuxSDU ptcl = MuxSDU {
       msTimestamp :: !RemoteClockModel
@@ -231,11 +232,11 @@ data PerMuxSharedState ptcl m = PerMuxSS {
   , bearer        :: MuxBearer ptcl m
   }
 
-data MuxBearerState = Larval
-                    | Connected
-                    | Mature
-                    | Dying
-                    | Dead
+data MuxBearerState = Larval    -- Newly created MuxBearer.
+                    | Connected -- MuxBearer is connected to a peer.
+                    | Mature    -- MuxBearer has successufully completed verison negotiation.
+                    | Dying     -- MuxBearer is in the process of beeing torn down, requests may fail.
+                    | Dead      -- MuxBearer is dead and the underlying bearer has been closed.
                     deriving (Eq, Show)
 
 data MuxBearer ptcl m = MuxBearer {
