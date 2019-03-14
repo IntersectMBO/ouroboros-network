@@ -39,11 +39,11 @@ import           Ouroboros.Network.Protocol.ReqResp.Codec
 tests :: TestTree
 tests =
   testGroup "Mux"
-  [ testProperty "mux send receive"               prop_mux_snd_recv
-  , testProperty "2 miniprotocols"                prop_mux_2_minis
-  , testProperty "starvation"                     prop_mux_starvation
-  , testProperty "unknown miniprotocol"           prop_mux_unknown_miniprot
-  , testProperty "too short header"               prop_mux_short_header
+  [ testProperty "mux send receive"     prop_mux_snd_recv
+  , testProperty "2 miniprotocols"      prop_mux_2_minis
+  , testProperty "starvation"           prop_mux_starvation
+  , testProperty "unknown miniprotocol" prop_mux_unknown_miniprot
+  , testProperty "too short header"     prop_mux_short_header
   ]
 
 version0 :: Mx.Version
