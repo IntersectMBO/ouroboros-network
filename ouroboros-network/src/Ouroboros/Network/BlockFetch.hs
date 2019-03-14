@@ -3,45 +3,17 @@
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TypeFamilies               #-}
 
-module Ouroboros.Network.BlockFetch (
-    fetchLogic,
-    FetchLogicExternalState(..),
-    --TODO: re-export other bits of public API, mostly client interface
-  ) where
+{-| Let's start with the big picture...
 
-import qualified Data.Map.Strict as Map
-import           Data.Map.Strict (Map)
-import           Data.Void
-
-import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadSay
-import           Control.Monad.Class.MonadTimer
-
-import           Ouroboros.Network.Block
-import           Ouroboros.Network.Chain (Point)
-import           Ouroboros.Network.ChainFragment (ChainFragment(..))
-
-import           Ouroboros.Network.BlockFetch.Types
-import           Ouroboros.Network.BlockFetch.DeltaQ
-import           Ouroboros.Network.BlockFetch.Client
-import           Ouroboros.Network.BlockFetch.State
-
-{-
-Let's start with the big picture...
-
-┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+@
 Key:  ┏━━━━━━━━━━━━┓  ╔═════════════╗  ┏━━━━━━━━━━━━━━┓   ╔════════════╗
       ┃ STM-based  ┃  ║active thread║  ┃state instance┃┓  ║ one thread ║╗
       ┃shared state┃  ║             ║  ┃   per peer   ┃┃  ║  per peer  ║║
       ┗━━━━━━━━━━━━┛  ╚═════════════╝  ┗━━━━━━━━━━━━━━┛┃  ╚════════════╝║
                                         ┗━━━━━━━━━━━━━━┛   ╚════════════╝
-┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
-Notes:
- • Thread communication is via STM based state.
- • Outbound: threads update STM state.
- • Inbound: threads wait on STM state changing (using retry).
- • These are no queues: there is only the current state, not all change events.
-┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+@
+
+@
   ╔═════════════╗     ┏━━━━━━━━━━━━━┓
   ║ Chain sync  ║╗    ┃   Ledger    ┃
   ║  protocol   ║║◀───┨   state     ┃◀───────────╮
@@ -71,22 +43,32 @@ Notes:
 ░░┗━━━━━━━━━━━━━┛┃░░░░╚═════════════╝║░                       ╚═════════════╝║
 ░░░┗━━━━━━━━━━━━━┛░░░░░╚═════════════╝░                        ╚═════════════╝
 ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
-┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+@
+Notes:
 
-We will consider the block fetch logic and the policy (but not mechanism)
-for the block fetch protocol client together as one unit of functionality.
-This is the shaded area in the diagram above.
+ * Thread communication is via STM based state.
+ * Outbound: threads update STM state.
+ * Inbound: threads wait on STM state changing (using retry).
+ * These are no queues: there is only the current state, not all change events.
+
+We consider the block fetch logic and the policy for the block fetch protocol
+client together as one unit of functionality. This is the shaded area in the
+diagram.
 
 Looking at the diagram we see that these two threads interact with each other
 and other threads via the following shared state
 
- ═════════════════════════════╤════════════════╤═════════════════
-   State                      │  Interactions  │  {In,Ex}ternal
- ─────────────────────────────┼────────────────┼─────────────────
-   Candidate chains (headers) │  Read          │  External
-   Current chain (blocks)     │  Read          │  External
-   Set of downloaded blocks   │  Read & Write  │  External
-   Block fetch requests       │  Read & Write  │  Internal
++-----------------------------+----------------+--------------------+
+|  State                      |  Interactions  | Internal\/External |
++=============================+================+====================+
+|  Candidate chains (headers) |  Read          |  External          |
++-----------------------------+----------------+--------------------+
+|  Current chain (blocks)     |  Read          |  External          |
++-----------------------------+----------------+--------------------+
+|  Set of downloaded blocks   |  Read & Write  |  External          |
++-----------------------------+----------------+--------------------+
+|  Block fetch requests       |  Read & Write  |  Internal          |
++-----------------------------+----------------+--------------------+
 
 The block fetch requests state is private between the block fetch logic
 and the block fetch protocol client, so it is implemented here.
@@ -94,10 +76,40 @@ and the block fetch protocol client, so it is implemented here.
 The other state is managed by the consensus layer and is considered external
 here. So here we define interfaces for interacting with the external state.
 These have to be provided when instantiating the block fetch logic.
--}
 
-data FetchLogicExternalState peer header block m =
-     FetchLogicExternalState {
+-}
+module Ouroboros.Network.BlockFetch (
+    blockFetchLogic,
+    BlockFetchConsensusInterface(..),
+
+    -- * The 'FetchClientRegistry'
+    FetchClientRegistry,
+    newFetchClientRegistry,
+  ) where
+
+import qualified Data.Map.Strict as Map
+import           Data.Map.Strict (Map)
+import           Data.Void
+
+import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadTimer (MonadTime, Time)
+
+import           Ouroboros.Network.Block
+import           Ouroboros.Network.Chain (Point)
+import           Ouroboros.Network.ChainFragment (ChainFragment(..))
+
+import           Ouroboros.Network.BlockFetch.Types
+import           Ouroboros.Network.BlockFetch.DeltaQ
+import           Ouroboros.Network.BlockFetch.Client
+import           Ouroboros.Network.BlockFetch.State
+
+
+-- | The consensus layer functionality that the block fetch logic requires.
+--
+-- These are provided as input to the block fetch by the consensus layer.
+--
+data BlockFetchConsensusInterface peer header block m =
+     BlockFetchConsensusInterface {
 
        -- | Read the K-suffixes of the candidate chains.
        --
@@ -116,15 +128,10 @@ data FetchLogicExternalState peer header block m =
        -- | Recent, only within last K
        readFetchedBlocks      :: STM m (Point block -> Bool),
 
-       addFetchedBlock        :: Point block -> block -> m ()
-     }
-
--- | The consensus layer functionality that the fetch logic depends upon.
---
--- These are provided as input to the fetch logic by the consensus layer.
---
-data ConsensusFunctions header block =
-     ConsensusFunctions {
+       -- | This and 'readFetchedBlocks' are required to be linked. Upon
+       -- successful completion of 'addFetchedBlock' it must be the case that
+       -- 'readFetchedBlocks' reports the block.
+       addFetchedBlock        :: Point block -> block -> m (),
 
        -- | Given the current chain, is the given chain plausible as a
        -- candidate chain. Classically for Ouroboros this would simply
@@ -164,19 +171,15 @@ data ConsensusFunctions header block =
 --
 -- This runs forever and should be shut down using mechanisms such as async.
 --
-fetchLogic :: forall peer header block m.
-              (MonadSTM m, MonadTime m, Ord peer,
-               HasHeader header, HasHeader block,
-               HeaderHash header ~ HeaderHash block,
-               -- extra debug constraints:
-               MonadSay m, Show peer, Show header, Show block)
-           => FetchLogicExternalState peer header block m
-           -> ConsensusFunctions header block
-           -> FetchClientRegistry peer header m
-           -> m Void
-fetchLogic FetchLogicExternalState{..}
-           ConsensusFunctions{..}
-           (FetchClientRegistry registry) = do
+blockFetchLogic :: forall peer header block m.
+                   (MonadSTM m, MonadTime m, Ord peer,
+                    HasHeader header, HasHeader block,
+                    HeaderHash header ~ HeaderHash block)
+                => BlockFetchConsensusInterface peer header block m
+                -> FetchClientRegistry peer header m
+                -> m Void
+blockFetchLogic BlockFetchConsensusInterface{..}
+                (FetchClientRegistry registry) = do
 
     -- TODO: get this from elsewhere
     peerGSVs <- newTVarM (Map.empty :: Map peer (PeerGSV (Time m)))

@@ -9,6 +9,7 @@ module Ouroboros.Network.BlockFetch.Client (
     FetchClientPolicy(..),
 
     FetchClientRegistry(..),
+    newFetchClientRegistry,
     bracketFetchClient,
   ) where
 
@@ -308,6 +309,8 @@ blockFetchClient FetchClientPolicy {
 newtype FetchClientRegistry peer header m =
         FetchClientRegistry (TVar m (Map peer (FetchClientStateVars header m)))
 
+newFetchClientRegistry :: MonadSTM m => m (FetchClientRegistry peer header m)
+newFetchClientRegistry = FetchClientRegistry <$> newTVarM Map.empty
 
 bracketFetchClient :: (MonadThrow m, MonadSTM m, Ord peer)
                    => FetchClientRegistry peer header m

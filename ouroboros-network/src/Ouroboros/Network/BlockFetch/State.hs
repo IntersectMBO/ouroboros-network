@@ -55,8 +55,8 @@ fetchLogicIterations fetchDecisionPolicy
 
       -- Run a single iteration of the fetch logic:
       --
-      -- * wait for the state to change and make decisions for the new state
-      -- * act on those decisions
+      -- + wait for the state to change and make decisions for the new state
+      -- + act on those decisions
 
       fetchLogicIteration
         fetchDecisionPolicy
