@@ -18,22 +18,26 @@ import           Data.ByteString (ByteString)
 import           Data.ByteString.Builder
 import           Data.ByteString.Lazy (toStrict)
 import           Data.Either
-import           Data.List (sortOn, splitAt)
+import           Data.List (sortOn, splitAt, uncons)
 import           Data.Map (Map)
 import qualified Data.Map as Map
-import           Data.Maybe (fromMaybe)
+import           Data.Maybe (fromJust, fromMaybe, isJust, isNothing)
 import qualified Data.Set as Set
 
+import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 import           Ouroboros.Storage.VolatileDB.API
 import qualified Ouroboros.Storage.VolatileDB.Impl as Internal
 import           Ouroboros.Storage.VolatileDB.Util
+import           Test.Ouroboros.Storage.FS.Sim.Error
 import           Test.Ouroboros.Storage.VolatileDB.TestBlock (Corruptions,
                      FileCorruption (..), binarySize)
 
 data DBModel blockId = DBModel {
       blocksPerFile  :: Int
+    , lenientParse   :: Bool
+    , parseError     :: Maybe (ParserError blockId)
     , open           :: Bool
     , mp             :: Map blockId ByteString
     , latestGarbaged :: Maybe SlotNo
@@ -42,9 +46,11 @@ data DBModel blockId = DBModel {
     , nextFId        :: FileId
     } deriving (Show)
 
-initDBModel ::Int -> DBModel blockId
-initDBModel bpf = DBModel {
+initDBModel ::Int -> Bool -> DBModel blockId
+initDBModel bpf lp = DBModel {
       blocksPerFile  = bpf
+    , lenientParse   = lp
+    , parseError     = Nothing
     , open           = True
     , mp             = Map.empty
     , latestGarbaged = Nothing
@@ -53,50 +59,66 @@ initDBModel bpf = DBModel {
     , nextFId        = 1
 }
 
-openDBModel :: MonadState (DBModel blockId) m
+type MyState blockId = (DBModel blockId, Maybe Errors)
+
+getDB :: MonadState (MyState blockId) m => m (DBModel blockId)
+getDB = do
+    (db, _) <- get
+    return db
+
+putDB :: MonadState (MyState blockId) m => DBModel blockId -> m ()
+putDB db = do
+    (_, cmdErr) <- get
+    put (db, cmdErr)
+
+openDBModel :: MonadState (MyState blockId) m
             => (Ord blockId)
             => ErrorHandling (VolatileDBError blockId) m
             -> Int
             -> (blockId -> Slot)
+            -> Bool
             -> (DBModel blockId, VolatileDB blockId m)
-openDBModel err maxNumPerFile toSlot = (dbModel, db)
+openDBModel err maxNumPerFile toSlot lenientParsing = (dbModel, db)
     where
-        dbModel = initDBModel maxNumPerFile
+        dbModel = initDBModel maxNumPerFile lenientParsing
         db =  VolatileDB {
               closeDB        = closeDBModel
             , isOpenDB       = isOpenModel
-            , reOpenDB       = reOpenModel
+            , reOpenDB       = reOpenModel err
             , getBlock       = getBlockModel err
             , putBlock       = putBlockModel err maxNumPerFile toSlot
             , garbageCollect = garbageCollectModel err
             , getIsMember    = getIsMemberModel err
         }
 
-closeDBModel :: MonadState (DBModel blockId) m => m ()
+closeDBModel :: MonadState (MyState blockId) m => m ()
 closeDBModel = do
-    dbm <- get
-    put $ dbm {open = False}
+    dbm <- getDB
+    putDB $ dbm {open = False}
 
-isOpenModel :: MonadState (DBModel blockId) m => m Bool
+isOpenModel :: MonadState (MyState blockId) m => m Bool
 isOpenModel = do
-    DBModel {..} <- get
+    DBModel {..} <- getDB
     return open
 
-reOpenModel :: MonadState (DBModel blockId) m => m ()
-reOpenModel = do
-    dbm <- get
-    put $ dbm {open = True}
+reOpenModel :: MonadState (MyState blockId) m
+            => ErrorHandling (VolatileDBError blockId) m
+            -> m ()
+reOpenModel err = do
+    dbm <- getDB
+    dbm' <- recover err dbm
+    putDB dbm' {open = True}
 
-getBlockModel :: forall m blockId. (MonadState (DBModel blockId) m, Ord blockId)
+getBlockModel :: forall m blockId. (MonadState (MyState blockId) m, Ord blockId)
               => ErrorHandling (VolatileDBError blockId) m
               -> blockId
               -> m (Maybe ByteString)
 getBlockModel err sl = do
-    DBModel {..} <- get
+    DBModel {..} <- getDB
     if not open then EH.throwError err ClosedDBError
     else return $ Map.lookup sl mp
 
-putBlockModel :: MonadState (DBModel blockId) m
+putBlockModel :: MonadState (MyState blockId) m
               => Ord blockId
               => ErrorHandling (VolatileDBError blockId) m
               -> Int
@@ -105,35 +127,49 @@ putBlockModel :: MonadState (DBModel blockId) m
               -> Builder
               -> m ()
 putBlockModel err maxNumPerFile toSlot bid bs = do
-    dbm@DBModel {..} <- get
+    let managesToPut errors = do
+            errs <- errors
+            (mErr, _rest) <- uncons $ getStream (_hPut errs)
+            (fsErr, _mCorr) <- mErr
+            return fsErr
+    (dbm@DBModel {..}, cmdErr) <- get
     if not open then EH.throwError err ClosedDBError
     else case Map.lookup bid mp of
         Just _bs -> return ()
-        Nothing -> do
-            let mp' = Map.insert bid (toStrict $ toLazyByteString bs) mp
-                (mbid, n, bids) = fromMaybe
-                    (error "current file does not exist in index")
-                    (Map.lookup currentFile index)
-                n' = n + 1
-                index' = Map.insert currentFile (updateSlotNoBlockId mbid [toSlot bid], n', bid:bids) index
-                (currentFile', index'', nextFId') =
-                    if n' == maxNumPerFile
-                    then ( Internal.filePath nextFId
-                         , Map.insertWith
-                            (\ _ _ -> (error $ "new file " <> currentFile' <> "already in index"))
-                            currentFile' newFileInfo index'
-                         , nextFId + 1)
-                    else ( currentFile
-                         , index'
-                         , nextFId)
-            put dbm {mp = mp', index = index'', currentFile = currentFile', nextFId = nextFId'}
+        Nothing -> case managesToPut cmdErr of
+            Just fsErrT -> EH.throwError err $ FileSystemError $
+                FsError {
+                      fsErrorType = fsErrT
+                    , fsErrorPath = [currentFile]
+                    , fsErrorString = ""
+                    , fsErrorStack = undefined
+                    , fsLimitation = False
+                }
+            Nothing -> do
+                let mp' = Map.insert bid (toStrict $ toLazyByteString bs) mp
+                    (mbid, n, bids) = fromMaybe
+                        (error "current file does not exist in index")
+                        (Map.lookup currentFile index)
+                    n' = n + 1
+                    index' = Map.insert currentFile (updateSlotNoBlockId mbid [toSlot bid], n', bid:bids) index
+                    (currentFile', index'', nextFId') =
+                        if n' == maxNumPerFile
+                        then ( Internal.filePath nextFId
+                            , Map.insertWith
+                                (\ _ _ -> (error $ "new file " <> currentFile' <> "already in index"))
+                                currentFile' newFileInfo index'
+                            , nextFId + 1)
+                        else ( currentFile
+                            , index'
+                            , nextFId)
+                putDB dbm {mp = mp', index = index'', currentFile = currentFile', nextFId = nextFId'}
 
-garbageCollectModel :: MonadState (DBModel blockId) m
+garbageCollectModel :: MonadState (MyState blockId) m
                     => ErrorHandling (VolatileDBError blockId) m
                     -> SlotNo
                     -> m ()
 garbageCollectModel err sl = do
-    dbm@DBModel {..} <- get
+    dbm@DBModel {..} <- getDB
     if not open then EH.throwError err ClosedDBError
     else do
         let f :: String -> (Maybe Slot, Int, [blockId]) -> Maybe (Maybe Slot, Int, [blockId])
@@ -141,22 +177,26 @@ garbageCollectModel err sl = do
                              else if path == currentFile then Just (Nothing,0,[])
                              else Nothing
         let index' = Map.mapMaybeWithKey f index
-        put dbm {index = index', latestGarbaged = Just $ maxMaybe latestGarbaged sl}
+        putDB dbm {index = index', latestGarbaged = Just $ maxMaybe latestGarbaged sl}
 
-runCorruptionModel :: forall blockId m. MonadState (DBModel blockId) m
+runCorruptionModel :: forall blockId m. MonadState (MyState blockId) m
                    => Ord blockId
                    => (blockId -> Slot)
                    -> Corruptions
                    -> m ()
 runCorruptionModel toSlot corrs = do
-    dbm <- get
+    dbm <- getDB
+    -- TODO(kde) need to sort corrs if we want to improve Eq instance of
+    -- Error Types.
     let dbm' = foldr corrupt dbm corrs
-    put $ recover dbm'
+    putDB dbm'
         where
             corrupt :: (FileCorruption, String) -> DBModel blockId -> DBModel blockId
             corrupt (corr, file) dbm = case corr of
                 DeleteFile ->
-                    dbm { mp = mp', index = index'}
+                    dbm { mp = mp'
+                        , index = index'
+                    }
                       where
                         (_, _, bids) = fromMaybe
                             (error "tried to corrupt a file which does not exist")
@@ -164,8 +204,17 @@ runCorruptionModel toSlot corrs = do
                         mp' = Map.withoutKeys (mp dbm) (Set.fromList bids)
                         index' = Map.delete file (index dbm)
                 DropLastBytes n ->
+                    dbm { mp = mp'
+                        , index = index'
+                    -- We predict what error the parser will throw. It's easier to do this
+                    -- here, rather than on reOpening. reOpening will decide if this error
+                    -- will be rethrown to the user or will remain internal, based on whether
+                    -- the parser is lenient or not.
+                        , parseError = parseError'
+                    }
+                      where
                     -- this is how many bids we want to drop, not how many will actually be dropped.
-                    let dropBids = (div n (fromIntegral binarySize)) +
+                        dropBids = (div n (fromIntegral binarySize)) +
                                    (if mod n (fromIntegral binarySize) == 0 then 0 else 1 )
                         (_mmax, size, bids) = fromMaybe
                             (error $ "tried to corrupt file " <> file <>  " which does not exist")
@@ -174,14 +223,30 @@ runCorruptionModel toSlot corrs = do
                         -- are actually at the head of the list.
                         (droppedBids, newBids) = splitAt (fromIntegral dropBids) bids
                         newMmax = snd <$> maxSlotList toSlot newBids
-                        index' = Map.insert file (newMmax, size - fromIntegral (length droppedBids), newBids) (index dbm)
+                        size' = size - fromIntegral (length droppedBids)
+                        index' = Map.insert file (newMmax, size', newBids) (index dbm)
                         mp' = Map.withoutKeys (mp dbm) (Set.fromList droppedBids)
-                    in dbm {mp = mp', index = index'}
-                AppendBytes _ -> dbm
+                        parseError' = if (fromIntegral binarySize)*(length droppedBids) > fromIntegral n
+                                         && not (mod n (fromIntegral binarySize) == 0)
+                                         && isNothing (parseError dbm)
+                                      -- TODO(kde) need to improve error message if we want to compare
+                                      -- with the real one.
+                                      then Just (DecodeFailed (0, Map.empty) "" 0) else parseError dbm
+                AppendBytes n ->
+                    dbm {parseError = parseError'}
+                      where
+                        parseError' = if n > 0 && isNothing (parseError dbm)
+                                      then Just (DecodeFailed (0, Map.empty) "" 0) else parseError dbm
                     -- Appending doesn't actually change anything, since additional bytes will be truncated.
 
-recover :: DBModel blockId -> DBModel blockId
-recover dbm@DBModel {..} = dbm{index = index', currentFile = cFile, nextFId = fid}
+recover :: Monad m
+        => ErrorHandling (VolatileDBError blockId) m
+        -> DBModel blockId
+        -> m (DBModel blockId)
+recover err dbm@DBModel {..} =
+    if not lenientParse && isJust parseError
+    then EH.throwError err $ VParserError $ fromJust parseError
+    else return $ dbm {index = index', currentFile = cFile, nextFId = fid, parseError = Nothing}
   where
     lastFd = fromRight (error "filename in index didn't parse" )
                        (findLastFd $ Set.fromList $ Map.keys index)
@@ -206,12 +271,12 @@ unsafeParseFd file = fromMaybe
 newFileInfo :: (Maybe a, Int, [b])
 newFileInfo = (Nothing, 0, [])
 
-getIsMemberModel :: MonadState (DBModel blockId) m
+getIsMemberModel :: MonadState (MyState blockId) m
                  => Ord blockId
                  => ErrorHandling (VolatileDBError blockId) m
                  -> m (blockId -> Bool)
 getIsMemberModel err = do
-    DBModel {..} <- get
+    DBModel {..} <- getDB
     if not open then EH.throwError err ClosedDBError
     else return (\bid -> Map.member bid mp)
 
