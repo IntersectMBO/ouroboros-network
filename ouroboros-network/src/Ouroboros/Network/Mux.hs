@@ -118,18 +118,13 @@ muxStart verMpds bearer style rescb_m = do
             c <- readTVar cnt
             unless (c == 0) retry
 
-muxControl :: (MonadSTM m, MonadSay m, Ord ptcl, Enum ptcl) =>
-    PerMuxSharedState ptcl m ->
-    MiniProtocolMode ->
-    m ()
+muxControl :: (HasCallStack, MonadSTM m, MonadSay m, MonadThrow m, Ord ptcl, Enum ptcl)
+           => PerMuxSharedState ptcl m
+           -> MiniProtocolMode
+           -> m ()
 muxControl pmss md = do
-    w <- atomically newEmptyTMVar
-    forever $ do
-        -- XXX actual protocol is missing
-        blob <- atomically $ readTBQueue (ingressQueue (dispatchTable pmss) Muxcontrol md)
-        --say $ printf "muxcontrol mode %s blob len %d" (show md) (BL.length blob)
-        atomically $ putTMVar w blob
-        atomically $ writeTBQueue (tsrQueue pmss) (TLSRDemand Muxcontrol md (Wanton w))
+    _ <- atomically $ readTBQueue (ingressQueue (dispatchTable pmss) Muxcontrol md)
+    throwM $ MuxError MuxControlProtocolError "MuxControl message on mature MuxBearer" callStack
 
 -- | muxChannel creates a duplex channel for a specific 'MiniProtocolId' and 'MiniProtocolMode'.
 muxChannel :: (MonadSTM m, MonadSay m, Ord ptcl, Enum ptcl) =>
