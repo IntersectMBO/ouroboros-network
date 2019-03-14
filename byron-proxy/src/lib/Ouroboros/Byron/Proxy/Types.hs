@@ -291,7 +291,7 @@ bbsStreamBlocks
   -- ^ If decoding fails.
   -> HeaderHash
   -> ConduitT () Block m ()
-bbsStreamBlocks db onErr hh = DB.readFrom db (DB.ByHash hh) .| decode
+bbsStreamBlocks db onErr hh = DB.conduitFrom db hh .| decode
   where
   decode :: ConduitT ByteString Block m ()
   decode = do
@@ -307,7 +307,7 @@ bbsGetSerializedBlock
   -> HeaderHash
   -> m (Maybe SerializedBlock)
 bbsGetSerializedBlock db hh =
-  (fmap . fmap) Serialized (runConduit (DB.readFrom db (DB.ByHash hh) .| await))
+  (fmap . fmap) Serialized (runConduit (DB.conduitFrom db hh .| await))
 
 bbsGetBlockHeader
   :: forall m .
@@ -577,8 +577,7 @@ withByronProxy bpc db k =
           -- GetBlocks conversation
           , getSerializedBlock   = bbsGetSerializedBlock db
           -- StreamBlocks conversation
-          , Logic.streamBlocks   = mapOutput Serialized . DB.readFrom db . DB.ByHash
-
+          , Logic.streamBlocks   = mapOutput Serialized . DB.conduitFrom db
           }
 
         networkConfig = bpcNetworkConfig bpc
