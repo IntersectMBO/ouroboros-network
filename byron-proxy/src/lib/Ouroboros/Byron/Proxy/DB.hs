@@ -13,7 +13,7 @@ import qualified Codec.CBOR.Write as CBOR
 import Control.Exception (Exception, bracket)
 import Control.Lens ((^.))
 import qualified Control.Lens as Lens (to)
-import Control.Monad (unless)
+import Control.Monad (when)
 import Control.Monad.Class.MonadST (MonadST)
 import Control.Monad.Class.MonadThrow (MonadThrow)
 import Control.Monad.Trans.Class (lift)
@@ -160,6 +160,65 @@ epochFileParser epochSlots hasFS = cborEpochFileParser' hasFS decoder
       Both  _  bs -> Right <$> CSL.deserialize' bs
     pure (blockHeaderSlot epochSlots (CSL.getBlockHeader blk))
 
+-- | An imperative-style iterator type quite like
+-- `Ouroboros.Storage.ImmutableDB.API.Iterator`, but without the `IteratorID`,
+-- and with the possibility to express a non-effectful stream like
+-- `iteratorOne`.
+data IteratorResource m = IteratorResource
+  { close    :: m ()
+  , iterator :: Iterator m
+  }
+
+newtype Iterator m = Iterator
+  { next :: m (Next m)
+  }
+
+data Next m where
+  Done :: Next m
+  More :: Slot -> ByteString -> Iterator m -> Next m
+
+iteratorNone :: Applicative m => Iterator m
+iteratorNone = Iterator { next = pure Done }
+
+iteratorOne :: Applicative m => Slot -> ByteString -> Iterator m
+iteratorOne slot bs = Iterator { next = pure (More slot bs iteratorNone) }
+
+-- | Make an `Iterator` from an `ImmutableDB` `Iterator`.
+fromImmutableDBIterator
+  :: ( Monad m )
+  => (forall x . CBOR.DeserialiseFailure -> m x)
+  -> Bool -- ^ True means that if the first thing is an EBB and block packed
+          --   together, then don't give the EBB.
+  -> Immutable.Iterator m
+  -> Iterator m
+fromImmutableDBIterator err skipEbb idbIterator = Iterator $ do
+  idbNext <- Immutable.iteratorNext idbIterator
+  case idbNext of
+    Immutable.IteratorExhausted -> pure Done
+    Immutable.IteratorResult slot bs -> case decodeSerialisedBlock (Lazy.fromStrict bs) of
+      Left cborError -> err cborError
+      Right blk -> case blk of
+        EBB   ebbBytes           -> pure $ More slot ebbBytes   recurse
+        Block blockBytes         -> pure $ More slot blockBytes recurse
+        Both ebbBytes blockBytes -> case skipEbb of
+          True ->  pure $ More slot blockBytes recurse
+          False -> pure $ More slot ebbBytes   $ Iterator $
+                   pure $ More slot blockBytes recurse
+  where
+  -- The `ImmutableDB` `Iterator` is 100% effectful; getting its "tail" is
+  -- just the very same recursive call, but we never skip later EBBs
+  recurse = fromImmutableDBIterator err False idbIterator
+
+-- | Make a `ConduitT` from an iterator yielding the bytes for each cardano-sl
+-- `Block`.
+toConduit :: ( Monad m ) => Iterator m -> ConduitT () (Slot, ByteString) m ()
+toConduit iterator = do
+  step <- lift $ next iterator
+  case step of
+    Done -> pure ()
+    More slot bytes iterator' ->
+      Conduit.yield (slot, bytes) >> toConduit iterator'
+
 -- | Identifies a block in the DB: by slot or by header hash.
 data Point where
   ByHash :: CSL.HeaderHash -> Point
@@ -169,10 +228,23 @@ data Point where
 data DB m = DB
   { -- | Append 0 or more blocks within the continuation.
     appendBlocks :: forall t . (DBAppend m -> m t) -> m t
-    -- | Stream serialized blocks from a given point.
-    -- Using `BySlot` for a slot which is divisible by the epoch size will
-    -- begin at an EBB.
-  , readFrom     :: Point -> ConduitT () ByteString m ()
+    -- | Get an `ImmutableDB`-style `Iterator` from a given point inclusive.
+    -- The blobs returned are for individual cardano-sl `Block`s, not the
+    -- `Block` type in this module.
+    --
+    -- NB: caller is responsible for `close`ing the iterator, so `bracket` it
+    -- or use `ResourceT` or similar. In any case, `readFrom` must be treated
+    -- as a resource-acquisition thing, so when `m ~ IO` you must mask/restore
+    -- appropriately.
+    --
+    -- TODO change to take a `Slot` and get rid of `Point`
+  , readFrom     :: Point -> m (IteratorResource m)
+    -- | The Byron logic layer needs a conduit on serialised cardano-sl blocks.
+    -- That's supported by doing individual blob reads on the `ImmutableDB`,
+    -- which is slower than using an iterator via `readFrom`, but doesn't need
+    -- local resource bracketing (the DB itself is the resource, but will be
+    -- open long-term).
+  , conduitFrom  :: CSL.HeaderHash -> ConduitT () ByteString m ()
   , readTip      :: m CSL.Block
   }
 
@@ -245,6 +317,7 @@ openDB err genesis epochSlots idx idb = do
   pure $ DB
     { appendBlocks = \k -> appendBlocksImpl err epochSlots unwrittenEBBRef idx idb k
     , readFrom     = readFromImpl err epochSlots unwrittenEBBRef idx idb
+    , conduitFrom  = conduitFromImpl err epochSlots unwrittenEBBRef idx idb
     , readTip      = readTipImpl err epochSlots unwrittenEBBRef idx idb
     }
 
@@ -315,6 +388,9 @@ dbAppendImpl err epochSlots unwrittenEBBRef iwrite idb = DBAppend $ \cslBlock ->
 
 -- | Stream from a given point, using the index to determine the start point
 -- in case the `Point` is a header hash.
+--
+-- This is a resource-acquiring function and so must be masked/bracketed
+-- appropriately.
 readFromImpl
   :: (forall x . DBError -> IO x)
   -> CSL.SlotCount
@@ -322,7 +398,7 @@ readFromImpl
   -> Index IO
   -> ImmutableDB IO
   -> Point
-  -> ConduitT () ByteString IO ()
+  -> IO (IteratorResource IO)
 readFromImpl err epochSlots unwrittenEBBRef idx idb point = do
   -- First, check whether the point is for the unwritten tip.
   -- TODO is it right to do this though? We do it for `readTipImpl`.
@@ -331,70 +407,95 @@ readFromImpl err epochSlots unwrittenEBBRef idx idb point = do
   -- possibility we miss a block. Between the final read of the stream and the
   -- read of the unwritten tip, a block and then an EBB could be written, and
   -- the intermediate block would be missed.
-  unwrittenEBB <- lift $ readIORef unwrittenEBBRef
+  unwrittenEBB <- readIORef unwrittenEBBRef
   case (unwrittenEBB, point) of
     -- If the point is a slot corresponding to the EBB then we'll yield it
-    -- and stop.
+    -- and stop. We know there is no main block for this slot.
     (UnwrittenEBB _ (Epoch epoch) bs _, BySlot slot) ->
       if slot == fromIntegral (epochSlots * fromIntegral epoch)
-      then Conduit.yield bs
-      else streamFromSlot False slot
-    (_, BySlot slot) -> streamFromSlot False slot
-    (_, ByHash hh)   -> streamFromHash hh
+      then pure $ IteratorResource { close = pure (), iterator = iteratorOne slot bs }
+      else iteratorFromSlot False slot
+    (_, BySlot slot) -> iteratorFromSlot False slot
+    (_, ByHash hh)   -> iteratorFromHash hh
+
   where
 
-  -- Use an `ImmutableDB` iterator to stream serialised blocks. The
-  -- iterator must be bracketed, so we have to use a `ResourceT`.
-  -- Surely there is a better way?
-  streamWithIterator
-    :: Bool -- ^ True means skip the EBB if the iterator is at a block that
-            -- includes an EBB and a main block. Also set to False on recursive
-            -- calls.
-    -> Immutable.Iterator IO
-    -> ConduitT () ByteString (ResourceT IO) ()
-  streamWithIterator skipEbb iter = do
-    next <- lift . lift $ Immutable.iteratorNext iter
-    case next of
-      Immutable.IteratorExhausted -> pure ()
-      -- Must decode the `Block` wrapper.
-      -- The bytes could be an EBB and main block packed together.
-      Immutable.IteratorResult _ bytes -> case decodeSerialisedBlock (Lazy.fromStrict bytes) of
-        Left cborError -> lift . lift $ err $ MalformedBlock cborError
-        Right (EBB bytes) -> do
-          Conduit.yield bytes
-          streamWithIterator False iter
-        Right (Block bytes) -> do
-          Conduit.yield bytes
-          streamWithIterator False iter
-        Right (Both bytesEbb bytesBlock) -> do
-          unless skipEbb (Conduit.yield bytesEbb)
-          Conduit.yield bytesBlock
-          streamWithIterator False iter
+  iteratorFromSlot :: Bool -> Slot -> IO (IteratorResource IO)
+  iteratorFromSlot skipEbb slot = do
+    idbIterator <- Immutable.streamBinaryBlobs idb (Just slot) Nothing
+    pure $ IteratorResource
+      { close    = Immutable.iteratorClose idbIterator
+      , iterator = fromImmutableDBIterator (err . MalformedBlock) skipEbb idbIterator
+      }
 
-  streamFromSlot :: Bool -> Slot -> ConduitT () ByteString IO ()
-  streamFromSlot skipEbb sl = Conduit.transPipe runResourceT $ Conduit.bracketP
-    (Immutable.streamBinaryBlobs idb (Just sl) Nothing)
-    Immutable.iteratorClose
-    (streamWithIterator skipEbb)
-
-  -- Streaming from a hash is done by finding the `Slot` of the start point
-  -- then using `streamFromSlot`.
-  -- NB: we don't even need the forward links in the sqlite database.
-  streamFromHash :: CSL.HeaderHash -> ConduitT () ByteString IO ()
-  streamFromHash hh = do
-    idxItem <- lift $ Index.indexRead idx (Index.ByHash hh)
+  iteratorFromHash :: CSL.HeaderHash -> IO (IteratorResource IO)
+  iteratorFromHash hh = do
+    idxItem <- Index.indexRead idx (Index.ByHash hh)
     case idxItem of
-      -- If the hash is not in the database, it's not an error, we just give an
-      -- empty stream.
-      Nothing -> pure ()
+      -- Iterator from something not in the DB: end immediately.
+      Nothing -> pure $ IteratorResource
+        { close    = pure ()
+        , iterator = iteratorNone
+        }
       -- If the hash is in the database, we now know the slot, but we must take
       -- care in case it's 0 modulo the slots per epoch: if it's not for an
       -- EBB (relative slot 0) then we have to ensure that `streamFromHash`
       -- does not yield the EBB which also lives at that slot. That's what
       -- the `Bool` parameter is for.
-      Just (_, epoch, indexSlot) -> streamFromSlot
+      Just (_, epoch, indexSlot) -> iteratorFromSlot
         (not (isEbbSlot indexSlot))
         (indexToSlot epochSlots epoch indexSlot)
+
+-- | Stream from a given point, using the index to determine the start point
+-- and subsequent points (no `ImmutableDB` `Iterator` is used).
+-- The oldest-to-newest order is obtained by repeatedly querying the index
+-- using an order on the epoch/slot.
+conduitFromImpl
+  :: (forall x . DBError -> IO x)
+  -> CSL.SlotCount
+  -> IORef UnwrittenEBB
+  -> Index IO
+  -> ImmutableDB IO
+  -> CSL.HeaderHash
+  -> ConduitT () ByteString IO ()
+conduitFromImpl err epochSlots unwrittenEBBRef idx idb hh = do
+  unwrittenEBB <- lift $ readIORef unwrittenEBBRef
+  case unwrittenEBB of
+    -- If the point is a slot corresponding to the EBB then we'll yield it
+    -- and stop.
+    UnwrittenEBB hh' _ bs _ ->
+      if hh' == hh
+      then Conduit.yield bs
+      else streamFrom hh
+    _ -> streamFrom hh
+  where
+
+  streamFrom :: CSL.HeaderHash -> ConduitT () ByteString IO ()
+  streamFrom hh = do
+    idxItem <- lift $ Index.indexRead idx (Index.ByHash hh)
+    case idxItem of
+      -- If the hash is not in the database, it's not an error, we just give an
+      -- empty stream.
+      Nothing -> pure ()
+      -- Got enough information to know where to try to read from the
+      -- `ImmutableDB`, and where to stream from next (child hash).
+      Just (Index.ChildHash mHash, epoch, indexSlot) -> do
+        mBytes <- lift $ Immutable.getBinaryBlob idb (indexToSlot epochSlots epoch indexSlot)
+        case mBytes of
+          Nothing -> lift $ err $ IndexInconsistent "conduitFromImpl"
+          Just bytes -> case decodeSerialisedBlock (Lazy.fromStrict bytes) of
+            Left cborError -> lift $ err $ MalformedBlock cborError
+            Right block -> case block of
+              Block blockBytes         -> Conduit.yield blockBytes
+              EBB ebbBytes             -> Conduit.yield ebbBytes
+              -- The index tells us whether the EBB should be ignored.
+              Both ebbBytes blockBytes -> do
+                when (isEbbSlot indexSlot) (Conduit.yield ebbBytes)
+                Conduit.yield blockBytes
+        case mHash of
+          Just hh' -> streamFrom hh'
+          -- Just yielded the tip.
+          Nothing  -> pure ()
 
 readTipImpl
   :: (forall x . DBError -> IO x)
