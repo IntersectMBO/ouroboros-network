@@ -103,7 +103,7 @@ byronProxyMain db bp = getStdGen >>= mainLoop Nothing
         mainLoop mBt rndGen
       Left bt -> do
         -- Find our tip of chain from the index.
-        tip <- DB.readTip db
+        (_tipSlot, tip) <- DB.readTip db
         let tipHash = headerHash tip
             -- Pick a peer from the list of announcers at random and download
             -- the chain.
