@@ -17,7 +17,6 @@ import Control.Monad (when)
 import Control.Monad.Class.MonadST (MonadST)
 import Control.Monad.Class.MonadThrow (MonadThrow)
 import Control.Monad.Trans.Class (lift)
-import Control.Monad.Trans.Resource (ResourceT, runResourceT)
 
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Lazy as Lazy (ByteString, fromStrict, null)
@@ -166,8 +165,8 @@ epochFileParser epochSlots hasFS = cborEpochFileParser' hasFS decoder
 -- and with the possibility to express a non-effectful stream like
 -- `iteratorOne`.
 data IteratorResource m = IteratorResource
-  { close    :: m ()
-  , iterator :: Iterator m
+  { closeIterator :: m ()
+  , iterator      :: Iterator m
   }
 
 newtype Iterator m = Iterator
@@ -245,8 +244,8 @@ data DB m = DB
     -- which is slower than using an iterator via `readFrom`, but doesn't need
     -- local resource bracketing (the DB itself is the resource, but will be
     -- open long-term).
-  , conduitFrom  :: CSL.HeaderHash -> ConduitT () ByteString m ()
-  , readTip      :: m CSL.Block
+  , conduitFrom  :: CSL.HeaderHash -> ConduitT () (Slot, ByteString) m ()
+  , readTip      :: m (Slot, CSL.Block)
   }
 
 data DBAppend m = DBAppend
@@ -414,7 +413,7 @@ readFromImpl err epochSlots unwrittenEBBRef idx idb point = do
     -- and stop. We know there is no main block for this slot.
     (UnwrittenEBB _ (EpochNo epoch) bs _, BySlot slot) ->
       if slot == fromIntegral (epochSlots * fromIntegral epoch)
-      then pure $ IteratorResource { close = pure (), iterator = iteratorOne slot bs }
+      then pure $ IteratorResource { closeIterator = pure (), iterator = iteratorOne slot bs }
       else iteratorFromSlot False slot
     (_, BySlot slot) -> iteratorFromSlot False slot
     (_, ByHash hh)   -> iteratorFromHash hh
@@ -425,8 +424,8 @@ readFromImpl err epochSlots unwrittenEBBRef idx idb point = do
   iteratorFromSlot skipEbb slot = do
     idbIterator <- Immutable.streamBinaryBlobs idb (Just slot) Nothing
     pure $ IteratorResource
-      { close    = Immutable.iteratorClose idbIterator
-      , iterator = fromImmutableDBIterator (err . MalformedBlock) skipEbb idbIterator
+      { closeIterator = Immutable.iteratorClose idbIterator
+      , iterator      = fromImmutableDBIterator (err . MalformedBlock) skipEbb idbIterator
       }
 
   iteratorFromHash :: CSL.HeaderHash -> IO (IteratorResource IO)
@@ -435,8 +434,8 @@ readFromImpl err epochSlots unwrittenEBBRef idx idb point = do
     case idxItem of
       -- Iterator from something not in the DB: end immediately.
       Nothing -> pure $ IteratorResource
-        { close    = pure ()
-        , iterator = iteratorNone
+        { closeIterator = pure ()
+        , iterator      = iteratorNone
         }
       -- If the hash is in the database, we now know the slot, but we must take
       -- care in case it's 0 modulo the slots per epoch: if it's not for an
@@ -458,20 +457,20 @@ conduitFromImpl
   -> Index IO
   -> ImmutableDB IO
   -> CSL.HeaderHash
-  -> ConduitT () ByteString IO ()
+  -> ConduitT () (Slot, ByteString) IO ()
 conduitFromImpl err epochSlots unwrittenEBBRef idx idb hh = do
   unwrittenEBB <- lift $ readIORef unwrittenEBBRef
   case unwrittenEBB of
     -- If the point is a slot corresponding to the EBB then we'll yield it
     -- and stop.
-    UnwrittenEBB hh' _ bs _ ->
+    UnwrittenEBB hh' (Epoch epoch) bs _ ->
       if hh' == hh
-      then Conduit.yield bs
+      then Conduit.yield (fromIntegral (epochSlots * fromIntegral epoch), bs)
       else streamFrom hh
     _ -> streamFrom hh
   where
 
-  streamFrom :: CSL.HeaderHash -> ConduitT () ByteString IO ()
+  streamFrom :: CSL.HeaderHash -> ConduitT () (Slot, ByteString) IO ()
   streamFrom hh = do
     idxItem <- lift $ Index.indexRead idx (Index.ByHash hh)
     case idxItem of
@@ -481,18 +480,19 @@ conduitFromImpl err epochSlots unwrittenEBBRef idx idb hh = do
       -- Got enough information to know where to try to read from the
       -- `ImmutableDB`, and where to stream from next (child hash).
       Just (Index.ChildHash mHash, epoch, indexSlot) -> do
-        mBytes <- lift $ Immutable.getBinaryBlob idb (indexToSlot epochSlots epoch indexSlot)
+        let slot = indexToSlot epochSlots epoch indexSlot
+        mBytes <- lift $ Immutable.getBinaryBlob idb slot
         case mBytes of
           Nothing -> lift $ err $ IndexInconsistent "conduitFromImpl"
           Just bytes -> case decodeSerialisedBlock (Lazy.fromStrict bytes) of
             Left cborError -> lift $ err $ MalformedBlock cborError
             Right block -> case block of
-              Block blockBytes         -> Conduit.yield blockBytes
-              EBB ebbBytes             -> Conduit.yield ebbBytes
+              Block blockBytes         -> Conduit.yield (slot, blockBytes)
+              EBB ebbBytes             -> Conduit.yield (slot, ebbBytes)
               -- The index tells us whether the EBB should be ignored.
               Both ebbBytes blockBytes -> do
-                when (isEbbSlot indexSlot) (Conduit.yield ebbBytes)
-                Conduit.yield blockBytes
+                when (isEbbSlot indexSlot) (Conduit.yield (slot, ebbBytes))
+                Conduit.yield (slot, blockBytes)
         case mHash of
           Just hh' -> streamFrom hh'
           -- Just yielded the tip.
@@ -504,11 +504,12 @@ readTipImpl
   -> IORef UnwrittenEBB
   -> Index IO
   -> ImmutableDB IO
-  -> IO CSL.Block
+  -> IO (Slot, CSL.Block)
 readTipImpl err epochSlots unwrittenEBBRef idx idb = do
   unwritten <- readIORef unwrittenEBBRef
   case unwritten of
-    UnwrittenEBB _ _ _ ebb -> pure (Left ebb)
+    UnwrittenEBB _ (Epoch epoch) _ ebb ->
+      pure (fromIntegral (epochSlots * fromIntegral epoch), Left ebb)
     NoUnwrittenEBB -> Index.indexRead idx Index.Tip >>= \mTip -> case mTip of
       -- If this happens, it's a bug in this module.
       Nothing -> error "readTipImpl: empty index and no unwritten tip"
@@ -518,7 +519,8 @@ readTipImpl err epochSlots unwrittenEBBRef idx idb = do
       -- since EBBs have epochSlots as their relativeSlot, we get 0 for these
       -- and for the first main block.
       Just (_, epoch, indexSlot) -> do
-        mBs <- Immutable.getBinaryBlob idb (indexToSlot epochSlots epoch indexSlot)
+        let slot = indexToSlot epochSlots epoch indexSlot
+        mBs <- Immutable.getBinaryBlob idb slot
         case mBs of
           Nothing -> err $ IndexInconsistent "missing tip"
           -- `epochSlots` and the relative slot from the index tells us whether
@@ -530,16 +532,16 @@ readTipImpl err epochSlots unwrittenEBBRef idx idb = do
               (False, EBB _)      -> err $ IndexInconsistent "missing main block"
               (True,  Both ebbBytes _) -> case decodeFull CSL.decode (Lazy.fromStrict ebbBytes) of
                 Left cborError -> err $ MalformedBlock cborError
-                Right ebb       -> pure $ Left ebb
+                Right ebb       -> pure $ (slot, Left ebb)
               (False, Both _ blkBytes) -> case decodeFull CSL.decode (Lazy.fromStrict blkBytes) of
                 Left cborError -> err $ MalformedBlock cborError
-                Right blk      -> pure $ Right blk
+                Right blk      -> pure $ (slot, Right blk)
               (True,  EBB ebbBytes)    -> case decodeFull CSL.decode (Lazy.fromStrict ebbBytes) of
                 Left cborError -> err $ MalformedBlock cborError
-                Right ebb      -> pure $ Left ebb
+                Right ebb      -> pure $ (slot, Left ebb)
               (False, Block blkBytes)  -> case decodeFull CSL.decode (Lazy.fromStrict blkBytes) of
                 Left cborError -> err $ MalformedBlock cborError
-                Right blk      -> pure $ Right blk
+                Right blk      -> pure $ (slot, Right blk)
 
 -- | The `Epoch` of an EBB.
 ebbEpoch :: CSL.GenesisBlock -> EpochNo
