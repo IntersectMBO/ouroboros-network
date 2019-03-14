@@ -291,7 +291,7 @@ bbsStreamBlocks
   -- ^ If decoding fails.
   -> HeaderHash
   -> ConduitT () Block m ()
-bbsStreamBlocks db onErr hh = DB.conduitFrom db hh .| decode
+bbsStreamBlocks db onErr hh = mapOutput snd (DB.conduitFrom db hh) .| decode
   where
   decode :: ConduitT ByteString Block m ()
   decode = do
@@ -307,7 +307,7 @@ bbsGetSerializedBlock
   -> HeaderHash
   -> m (Maybe SerializedBlock)
 bbsGetSerializedBlock db hh =
-  (fmap . fmap) Serialized (runConduit (DB.conduitFrom db hh .| await))
+  (fmap . fmap) Serialized (runConduit (mapOutput snd (DB.conduitFrom db hh) .| await))
 
 bbsGetBlockHeader
   :: forall m .
@@ -561,13 +561,13 @@ withByronProxy bpc db k =
           , getBlockHeaders      = \mLimit checkpoints mTip -> do
               tip <- case mTip of
                 Just tip -> pure tip
-                Nothing -> fmap headerHash (DB.readTip db)
+                Nothing -> fmap (headerHash . snd) (DB.readTip db)
               result <- bbsGetBlockHeaders db blockDecodeError mLimit checkpoints tip
               case result of
                 Nothing -> pure $ Left $ GHFBadInput ""
                 Just it -> pure $ Right it
           -- MsgGetHeaders conversation
-          , getTip               = DB.readTip db
+          , getTip               = fmap snd (DB.readTip db)
           -- GetBlocks conversation
           , getHashesRange       = \mLimit from to -> do
               result <- bbsGetHashesRange db blockDecodeError mLimit from to
@@ -577,7 +577,7 @@ withByronProxy bpc db k =
           -- GetBlocks conversation
           , getSerializedBlock   = bbsGetSerializedBlock db
           -- StreamBlocks conversation
-          , Logic.streamBlocks   = mapOutput Serialized . DB.conduitFrom db
+          , Logic.streamBlocks   = mapOutput (Serialized . snd) . DB.conduitFrom db
           }
 
         networkConfig = bpcNetworkConfig bpc
