@@ -15,7 +15,6 @@ extra-deps:
 - process-1.6.5.0
 - graphviz-2999.20.0.3
 - quickcheck-state-machine-0.6.0
-- transformers-0.5.5.0
 - git: https://github.com/input-output-hk/iohk-monitoring-framework
   commit: 0c31ff69e28b8a955a5147c03cd9471307b3f349
   subdirs:

@@ -8,7 +8,6 @@
         "process" = (((hackage.process)."1.6.5.0").revisions).default;
         "graphviz" = (((hackage.graphviz)."2999.20.0.3").revisions).default;
         "quickcheck-state-machine" = (((hackage.quickcheck-state-machine)."0.6.0").revisions).default;
-        "transformers" = (((hackage.transformers)."0.5.5.0").revisions).default;
         "libyaml" = (((hackage.libyaml)."0.1.0.0").revisions).default;
         "ekg-wai" = (((hackage.ekg-wai)."0.1.0.3").revisions).default;
         "pvss" = (((hackage.pvss)."0.2.0").revisions).default;
