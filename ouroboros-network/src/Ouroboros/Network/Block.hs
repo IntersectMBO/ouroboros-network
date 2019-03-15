@@ -16,6 +16,10 @@ module Ouroboros.Network.Block (
   , StandardHash
   , ChainHash(..)
   , castHash
+  , Point(..)
+  , castPoint
+  , blockPoint
+  , ChainUpdate(..)
   , BlockMeasure(..)
   , blockMeasure
   ) where
@@ -25,6 +29,9 @@ import           Data.Hashable
 import           Data.FingerTree (Measured)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
+import           Codec.Serialise (Serialise (..))
+import           Codec.CBOR.Encoding (encodeListLen)
+import           Codec.CBOR.Decoding (decodeListLenOf)
 
 
 -- | The 0-based index for the Ourboros time slot.
@@ -104,11 +111,61 @@ castHash GenesisHash   = GenesisHash
 castHash (BlockHash b) = BlockHash b
 
 {-------------------------------------------------------------------------------
+  Point on a chain
+-------------------------------------------------------------------------------}
+
+-- | A point on the chain is identified by its 'Slot' and 'HeaderHash'.
+--
+-- The 'Slot' tells us where to look and the 'HeaderHash' either simply serves
+-- as a check, or in some contexts it disambiguates blocks from different forks
+-- that were in the same slot.
+--
+data Point block = Point {
+       pointSlot :: SlotNo,
+       pointHash :: ChainHash block
+     }
+   deriving (Eq, Ord, Show)
+
+castPoint :: (HeaderHash a ~ HeaderHash b) => Point a -> Point b
+castPoint (Point a b) = Point a (castHash b)
+
+blockPoint :: HasHeader block => block -> Point block
+blockPoint b =
+    Point {
+      pointSlot = blockSlot b,
+      pointHash = BlockHash (blockHash b)
+    }
+
+{-------------------------------------------------------------------------------
+  ChainUpdate type
+-------------------------------------------------------------------------------}
+
+-- | A representation of two actions to update a chain: add a block or roll
+-- back to a previous point.
+--
+data ChainUpdate block = AddBlock block
+                       | RollBack (Point block)
+  deriving (Eq, Show)
+
+
+{-------------------------------------------------------------------------------
   Serialisation
 -------------------------------------------------------------------------------}
 
 instance StandardHash b => Serialise (ChainHash b) where
   -- use the Generic instance
+
+instance HasHeader block => Serialise (Point block) where
+
+  encode Point { pointSlot = s, pointHash = h } =
+      encodeListLen 2
+   <> encode s
+   <> encode h
+
+  decode = do
+      decodeListLenOf 2
+      Point <$> decode
+            <*> decode
 
 {-------------------------------------------------------------------------------
   Finger Tree Measure

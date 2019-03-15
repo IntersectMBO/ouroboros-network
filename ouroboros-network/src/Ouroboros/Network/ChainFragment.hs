@@ -14,9 +14,8 @@ module Ouroboros.Network.ChainFragment (
 
   -- ** Block re-exports
   HasHeader(..),
-
-  -- * Point type
   Point(..),
+  castPoint,
   blockPoint,
 
   -- * ChainFragment construction and inspection
@@ -81,7 +80,6 @@ import           Codec.CBOR.Encoding (encodeListLen)
 import           Codec.CBOR.Decoding (decodeListLen)
 
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Chain (Point(..), blockPoint, ChainUpdate(..))
 
 --
 -- Blockchain fragment data type.
@@ -522,6 +520,7 @@ intersectChainFragments initC1 initC2 = go initC1 initC2
                -- initC2
                -> Just (l1, l2, r1, r2)
              _ -> go c1 c2'
+
 
 -- This is the key operation on chains in this model
 applyChainUpdate :: HasHeader block

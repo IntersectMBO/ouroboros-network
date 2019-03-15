@@ -73,7 +73,7 @@ import           Control.Exception (assert)
 import qualified Data.List as L
 import           Codec.Serialise (Serialise (..))
 import           Codec.CBOR.Encoding (encodeListLen)
-import           Codec.CBOR.Decoding (decodeListLen, decodeListLenOf)
+import           Codec.CBOR.Decoding (decodeListLen)
 
 import           Ouroboros.Network.Block
 
@@ -96,29 +96,6 @@ chainToList = foldChain (flip (:)) []
 
 prettyPrintChain :: String -> (block -> String) -> Chain block -> String
 prettyPrintChain nl ppBlock = foldChain (\s b -> s ++ nl ++ "    " ++ ppBlock b) "Genesis"
-
---
--- Points on blockchains
---
-
--- | A point on the chain is identified by its 'SlotNo' and 'HeaderHash'.
---
--- The 'SlotNo' tells us where to look and the 'HeaderHash' either simply serves
--- as a check, or in some contexts it disambiguates blocks from different forks
--- that were in the same slot.
---
-data Point block = Point {
-       pointSlot :: SlotNo,
-       pointHash :: ChainHash block
-     }
-   deriving (Eq, Ord, Show)
-
-blockPoint :: HasHeader block => block -> Point block
-blockPoint b =
-    Point {
-      pointSlot = blockSlot b,
-      pointHash = BlockHash (blockHash b)
-    }
 
 genesis :: Chain b
 genesis = Genesis
@@ -239,10 +216,6 @@ isPrefixOf :: Eq block => Chain block -> Chain block -> Bool
 a `isPrefixOf` b = reverse (toNewestFirst a) `L.isPrefixOf` reverse (toNewestFirst b)
 
 
-data ChainUpdate block = AddBlock block
-                       | RollBack (Point block)
-  deriving (Eq, Show)
-
 applyChainUpdate :: HasHeader block
                  => ChainUpdate block
                  -> Chain block
@@ -345,14 +318,3 @@ instance Serialise block => Serialise (Chain block) where
       go c n = do b <- decode
                   go (c :> b) (n-1)
 
-instance HasHeader block => Serialise (Point block) where
-
-  encode Point { pointSlot = s, pointHash = h } =
-      encodeListLen 2
-   <> encode s
-   <> encode h
-
-  decode = do
-      decodeListLenOf 2
-      Point <$> decode
-            <*> decode
