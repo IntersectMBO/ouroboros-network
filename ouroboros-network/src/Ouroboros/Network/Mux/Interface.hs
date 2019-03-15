@@ -10,12 +10,14 @@ module Ouroboros.Network.Mux.Interface
   ( NetworkInterface (..)
   , MuxPeer (..)
   , NetworkNode (..)
+  , Connection (..)
 
   -- * Auxiliary functions
   , miniProtocolDescription
   ) where
 
 import qualified Codec.CBOR.Read     as CBOR
+import           Control.Exception (SomeException)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Functor (void)
 import           Numeric.Natural (Natural)
@@ -122,12 +124,32 @@ data NetworkNode addr m = NetworkNode {
       -- This function will run client side of mux version negotation and then
       -- start a the list protocols given by @'NetworkInterface'@.
       --
-      connectTo :: addr -> m (),
+      connectTo :: addr -> m (Connection m),
 
       -- |
       -- This will cancel the thread that is listening for new connections and
       -- close the underlaying bearer.
       killNode  :: m ()
+    }
+
+
+-- |
+-- A way of controling an openned connection.
+--
+data Connection m = Connection {
+      -- |
+      -- After opening a connection to a peer, a clean way to shut down the
+      -- underlaying bearer and wind down the thread that serves this connection.
+      -- Note that this will interupt the protocols running on that connection;
+      -- alternatively you can terminate a protocol by sending its terminal message,
+      -- this will trigger shutdown of the bearer as well.
+      --
+      terminate :: m (),
+
+      -- |
+      -- Await on the mux thread and return an exception that was raised by it
+      -- if any.
+      observe :: m (Maybe SomeException)
     }
 
 -- |

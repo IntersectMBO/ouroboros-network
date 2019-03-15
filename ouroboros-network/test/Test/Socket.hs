@@ -161,7 +161,7 @@ prop_socket_send_recv clientAddr serverAddr clientVersions serverVersions f xs =
     serNode <- runNetworkNodeWithSocket serNet
     cliNode <- runNetworkNodeWithSocket cliNet
 
-    connectTo cliNode serverAddr
+    _ <- connectTo cliNode serverAddr
 
     a <- atomically $ takeTMVar cv
     b <- atomically $ takeTMVar sv
@@ -236,12 +236,13 @@ prop_socket_client_connect_error _ xs = ioProperty $ do
           }
 
     nn <- runNetworkNodeWithSocket ni
-    res_e <- try $ connectTo nn clientAddr :: IO (Either SomeException ())
+    conn <- connectTo nn clientAddr
+    exc  <- observe conn
     killNode nn
 
-    case res_e of
-         Left _  -> return $ property True -- XXX Dissregarding the exact exception type
-         Right _ -> return $ property False
+    case exc of
+         Just _  -> return $ property True -- XXX Dissregarding the exact exception type
+         Nothing -> return $ property False
 
 
 prop_version_missmatch :: (Int -> Int -> (Int, Int))
@@ -395,7 +396,7 @@ demo chain0 updates = do
     producerNode <- runNetworkNodeWithSocket producerNet
     consumerNode <- runNetworkNodeWithSocket consumerNet
 
-    _ <- fork $ connectTo consumerNode (nodeAddress producerNet)
+    conn <- connectTo consumerNode (nodeAddress producerNet)
   
     void $ fork $ sequence_
         [ do threadDelay 10000 -- just to provide interest
@@ -407,6 +408,8 @@ demo chain0 updates = do
         ]
 
     r <- atomically $ takeTMVar done
+
+    terminate conn
     killNode producerNode
     killNode consumerNode
 
