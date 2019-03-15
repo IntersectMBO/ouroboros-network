@@ -40,7 +40,7 @@ import qualified Data.List as L
 import           Data.Maybe (fromJust, catMaybes)
 
 import           Ouroboros.Network.Testing.ConcreteBlock
-import           Ouroboros.Network.Block (Slot (..), Hash (..) , HasHeader (..))
+import           Ouroboros.Network.Block (Slot (..), HasHeader (..))
 import           Ouroboros.Network.Chain (Chain (..), ChainUpdate (..), Point (..))
 import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange (..))
@@ -99,7 +99,7 @@ instance Arbitrary ArbitraryPoint where
   arbitrary = do
     slot <- Slot <$> arbitrary
     hash <- HeaderHash <$> arbitrary
-    return $ ArbitraryPoint $ Point slot (BlockHash hash)
+    return $ ArbitraryPoint $ Point slot hash
 
 newtype ArbitraryChainRange = ArbitraryChainRange {
     getArbitraryChainRange :: ChainRange BlockHeader
@@ -418,7 +418,7 @@ genPointOnChain chain =
     len = Chain.length chain
 
 genPoint :: Gen (Point Block)
-genPoint = (\s h -> Point (Slot s) (BlockHash (HeaderHash h))) <$> arbitrary <*> arbitrary
+genPoint = (\s h -> Point (Slot s) (HeaderHash h)) <$> arbitrary <*> arbitrary
 
 fixupPoint :: HasHeader block => Chain block -> Point block -> Point block
 fixupPoint c p =

@@ -1,8 +1,12 @@
-{-# LANGUAGE NamedFieldPuns  #-}
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE NamedFieldPuns       #-}
+{-# LANGUAGE StandaloneDeriving   #-}
+{-# LANGUAGE TemplateHaskell      #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Ouroboros.Network.ChainProducerState where
 
+import           Ouroboros.Network.Block (HeaderHash)
 import           Ouroboros.Network.Chain (Chain, ChainUpdate (..), HasHeader,
                      Point (..), blockPoint, genesisPoint, pointOnChain)
 import qualified Ouroboros.Network.Chain as Chain
@@ -19,7 +23,9 @@ data ChainProducerState block = ChainProducerState {
        chainState   :: Chain block,
        chainReaders :: ReaderStates block
      }
-  deriving (Eq, Show)
+
+deriving instance (Eq   (HeaderHash block), Eq block)   => Eq   (ChainProducerState block)
+deriving instance (Show (HeaderHash block), Show block) => Show (ChainProducerState block)
 
 -- | Readers are represented here as a relation.
 --
@@ -75,7 +81,9 @@ data ReaderState block = ReaderState {
        -- | A unique tag per reader, to distinguish different readers.
        readerId    :: ReaderId
      }
-  deriving (Eq, Show)
+
+deriving instance Eq   (HeaderHash block) => Eq   (ReaderState block)
+deriving instance Show (HeaderHash block) => Show (ReaderState block)
 
 data ReaderNext = ReaderBackTo | ReaderForwardFrom
   deriving (Eq, Show)

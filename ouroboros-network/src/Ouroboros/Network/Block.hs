@@ -14,15 +14,13 @@ module Ouroboros.Network.Block (
   , BlockNo(..)
   , HasHeader(..)
   , StandardHash
-  , Hash(..)
-  , castHash
   , BlockMeasure(..)
   , blockMeasure
   ) where
 
 import           Data.Hashable
 import           Data.FingerTree (Measured)
-import           GHC.Generics (Generic)
+import           Data.Proxy
 import           Codec.Serialise (Serialise (..))
 
 
@@ -44,9 +42,15 @@ class (StandardHash b, Measured BlockMeasure b) => HasHeader b where
     type HeaderHash b :: *
 
     blockHash      :: b -> HeaderHash b
-    blockPrevHash  :: b -> Hash b
+    blockPrevHash  :: b -> HeaderHash b
     blockSlot      :: b -> Slot
     blockNo        :: b -> BlockNo
+
+    -- |
+    -- The hash of genesis block.  The @'Proxy'@ makes sense here, as we are
+    -- computing a hash of something that is /not/ a block.
+    --
+    genesisHash    :: Proxy b -> HeaderHash b
 
     blockInvariant :: b -> Bool
 
@@ -78,34 +82,6 @@ class ( Eq        (HeaderHash b)
       , Show      (HeaderHash b)
       , Serialise (HeaderHash b)
       ) => StandardHash b
-
-data Hash b = GenesisHash | BlockHash (HeaderHash b)
-  deriving (Generic)
-
-deriving instance StandardHash block => Eq   (Hash block)
-deriving instance StandardHash block => Ord  (Hash block)
-deriving instance StandardHash block => Show (Hash block)
-
--- | 'Hashable' instance for 'Hash'
---
--- We don't insist that 'Hashable' in 'StandardHash' because 'Hashable' is
--- only used in the network layer /tests/.
---
--- This requires @UndecidableInstances@ because @Hashable (HeaderHash b)@
--- is no smaller than @Hashable (Hash b)@.
-instance Hashable (HeaderHash b) => Hashable (Hash b) where
- -- use generic instance
-
-castHash :: HeaderHash b ~ HeaderHash b' => Hash b -> Hash b'
-castHash GenesisHash   = GenesisHash
-castHash (BlockHash b) = BlockHash b
-
-{-------------------------------------------------------------------------------
-  Serialisation
--------------------------------------------------------------------------------}
-
-instance StandardHash b => Serialise (Hash b) where
-  -- use the Generic instance
 
 {-------------------------------------------------------------------------------
   Finger Tree Measure

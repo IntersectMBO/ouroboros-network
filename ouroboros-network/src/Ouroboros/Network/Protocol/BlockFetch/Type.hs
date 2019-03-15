@@ -1,24 +1,31 @@
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE EmptyCase             #-}
 {-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE InstanceSigs          #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE PolyKinds             #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE ExplicitForAll        #-}
+{-# LANGUAGE StandaloneDeriving    #-}
+{-# LANGUAGE UndecidableInstances  #-}
+
 module Ouroboros.Network.Protocol.BlockFetch.Type where
 
 import           Data.Void (Void)
 
-import           Ouroboros.Network.Block (StandardHash)
+import           Ouroboros.Network.Block (HeaderHash, StandardHash)
 import           Ouroboros.Network.Chain (Point)
 import           Network.TypedProtocol.Core (Protocol (..))
 
 -- | Range of headers
 --
 data ChainRange header = ChainRange !(Point header) !(Point header)
-  deriving (Show, Eq, Ord)
+
+deriving instance Eq   (HeaderHash header) => Eq   (ChainRange header)
+deriving instance Ord  (HeaderHash header) => Ord  (ChainRange header)
+deriving instance Show (HeaderHash header) => Show (ChainRange header)
 
 data BlockFetch header body where
   BFIdle      :: BlockFetch header body

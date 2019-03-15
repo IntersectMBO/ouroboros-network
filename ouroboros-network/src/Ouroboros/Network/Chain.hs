@@ -1,8 +1,10 @@
-{-# LANGUAGE DeriveFunctor       #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving  #-}
-{-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE DeriveFunctor        #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE NamedFieldPuns       #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE StandaloneDeriving   #-}
+{-# LANGUAGE TypeApplications     #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 -- | Reference implementation of a representation of a block chain
 --
@@ -71,6 +73,7 @@ import           Prelude hiding (drop, head, length, null)
 
 import           Control.Exception (assert)
 import qualified Data.List as L
+import           Data.Proxy (Proxy (..))
 import           Codec.Serialise (Serialise (..))
 import           Codec.CBOR.Encoding (encodeListLen)
 import           Codec.CBOR.Decoding (decodeListLen, decodeListLenOf)
@@ -109,15 +112,18 @@ prettyPrintChain nl ppBlock = foldChain (\s b -> s ++ nl ++ "    " ++ ppBlock b)
 --
 data Point block = Point {
        pointSlot :: Slot,
-       pointHash :: Hash block
+       pointHash :: HeaderHash block
      }
-   deriving (Eq, Ord, Show)
+
+deriving instance Eq   (HeaderHash block) => Eq   (Point block)
+deriving instance Ord  (HeaderHash block) => Ord  (Point block)
+deriving instance Show (HeaderHash block) => Show (Point block)
 
 blockPoint :: HasHeader block => block -> Point block
 blockPoint b =
     Point {
       pointSlot = blockSlot b,
-      pointHash = BlockHash (blockHash b)
+      pointHash = blockHash b
     }
 
 genesis :: Chain b
@@ -129,8 +135,11 @@ genesisSlot = Slot 0
 genesisBlockNo :: BlockNo
 genesisBlockNo = BlockNo 0
 
-genesisPoint :: Point block
-genesisPoint = Point genesisSlot GenesisHash
+genesisPoint :: forall block. HasHeader block => Point block
+genesisPoint = Point genesisSlot (gh Proxy)
+    where
+      gh :: Proxy block -> HeaderHash block
+      gh = genesisHash
 
 valid :: HasHeader block => Chain block -> Bool
 valid Genesis  = True
@@ -153,7 +162,7 @@ headPoint (_ :> b) = blockPoint b
 headSlot :: HasHeader block => Chain block -> Slot
 headSlot = pointSlot . headPoint
 
-headHash :: HasHeader block => Chain block -> Hash block
+headHash :: HasHeader block => Chain block -> HeaderHash block
 headHash = pointHash . headPoint
 
 headBlockNo :: HasHeader block => Chain block -> BlockNo
@@ -197,7 +206,7 @@ pointOnChain :: HasHeader block => Point block -> Chain block -> Bool
 pointOnChain p Genesis        = p == genesisPoint
 pointOnChain p (c :> b)
   | pointSlot p >  blockSlot b = False
-  | pointSlot p == blockSlot b = pointHash p == BlockHash (blockHash b)
+  | pointSlot p == blockSlot b = pointHash p == blockHash b
   | otherwise                  = pointOnChain p c
 
 rollback :: HasHeader block => Point block -> Chain block -> Maybe (Chain block)
@@ -241,7 +250,9 @@ a `isPrefixOf` b = reverse (toNewestFirst a) `L.isPrefixOf` reverse (toNewestFir
 
 data ChainUpdate block = AddBlock block
                        | RollBack (Point block)
-  deriving (Eq, Show)
+
+deriving instance (Eq   (HeaderHash block), Eq   block) => Eq (ChainUpdate block)
+deriving instance (Show (HeaderHash block), Show block) => Show (ChainUpdate block)
 
 applyChainUpdate :: HasHeader block
                  => ChainUpdate block

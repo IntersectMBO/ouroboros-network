@@ -202,7 +202,7 @@ headSlot :: HasHeader block => ChainFragment block -> Maybe Slot
 headSlot = fmap pointSlot . headPoint
 
 -- | \( O(1) \).
-headHash :: HasHeader block => ChainFragment block -> Maybe (Hash block)
+headHash :: HasHeader block => ChainFragment block -> Maybe (HeaderHash block)
 headHash = fmap pointHash . headPoint
 
 -- | \( O(1) \).

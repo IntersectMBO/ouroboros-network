@@ -30,6 +30,7 @@ module Ouroboros.Network.Testing.ConcreteBlock (
 import           Data.FingerTree (Measured(measure))
 import           Data.Hashable
 import qualified Data.Text as Text
+import           Data.Maybe (fromMaybe)
 import           Codec.Serialise (Serialise (..))
 import           Codec.CBOR.Encoding ( encodeListLen
                                      , encodeInt
@@ -72,7 +73,7 @@ hashBody (BlockBody b) = BodyHash (hash b)
 --
 data BlockHeader = BlockHeader {
        headerHash     :: HeaderHash BlockHeader,  -- ^ The cached 'HeaderHash' of this header.
-       headerPrevHash :: Hash BlockHeader,        -- ^ The 'headerHash' of the previous block header
+       headerPrevHash :: HeaderHash BlockHeader,  -- ^ The 'headerHash' of the previous block header
        headerSlot     :: Slot,                    -- ^ The Ouroboros time slot index of this block
        headerBlockNo  :: BlockNo,                 -- ^ The block index from the Genesis
        headerSigner   :: BlockSigner,             -- ^ Who signed this block
@@ -127,6 +128,8 @@ instance HasHeader BlockHeader where
     blockSlot      = headerSlot
     blockNo        = headerBlockNo
 
+    genesisHash    = \_ -> HeaderHash 0
+
     -- | The header invariant is that the cached header hash is correct.
     --
     blockInvariant = \b -> hashHeader b == headerHash b
@@ -134,10 +137,12 @@ instance HasHeader BlockHeader where
 instance HasHeader Block where
     type HeaderHash Block = ConcreteHeaderHash
 
-    blockHash      =            headerHash     . blockHeader
-    blockPrevHash  = castHash . headerPrevHash . blockHeader
-    blockSlot      =            headerSlot     . blockHeader
-    blockNo        =            headerBlockNo  . blockHeader
+    blockHash      = headerHash     . blockHeader
+    blockPrevHash  = headerPrevHash . blockHeader
+    blockSlot      = headerSlot     . blockHeader
+    blockNo        = headerBlockNo  . blockHeader
+
+    genesisHash    = \_ -> HeaderHash 0
 
     -- | The block invariant is just that the actual block body hash matches the
     -- body hash listed in the header.
@@ -167,12 +172,13 @@ fixupBlockHeader c h b = b'
   where
     b' = BlockHeader {
       headerHash     = hashHeader b',
-      headerPrevHash = castHash (headHash c),
+      headerPrevHash = headHash c,
       headerSlot     = headerSlot b,   -- keep the existing slot number
       headerSigner   = headerSigner b, -- and signer
-      headerBlockNo  = succ $ headBlockNo c,
+      headerBlockNo  = succ (headBlockNo c),
       headerBodyHash = h
     }
+
 
 {-------------------------------------------------------------------------------
   Variants of "Fixup" for ChainFragment
@@ -195,7 +201,7 @@ fixupBlockHeaderCF c h b = b'
   where
     b' = BlockHeader {
       headerHash     = hashHeader b',
-      headerPrevHash = maybe GenesisHash castHash $ CF.headHash c,
+      headerPrevHash = fromMaybe (HeaderHash 0) (CF.headHash c),
                        -- In case c is empty, default to the 'GenesisHash'
                        -- instead of @'headerPrevHash' b@, as it can end up
                        -- being a 'partialField'.
