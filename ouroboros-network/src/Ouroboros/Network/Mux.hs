@@ -58,8 +58,9 @@ muxStart verMpds bearer style rescb_m = do
     tbl <- setupTbl
     tq <- atomically $ newTBQueue 100
     cnt <- newTVarM 0
-    (_, udesc) <- if style == StyleClient then muxClient verMpds bearer
-                                          else muxServer verMpds bearer
+    (_, udesc) <- case style of
+                       StyleClient -> muxClient verMpds bearer
+                       StyleServer -> muxServer verMpds bearer
 
     let pmss = PerMuxSS tbl tq bearer
         jobs = [ demux pmss
@@ -110,7 +111,8 @@ muxStart verMpds bearer style rescb_m = do
                ]
 
     -- cnt represent the number of SDUs that are queued but not yet sent.
-    -- job threads will be prevented from exiting until all SDUs have been transmitted.
+    -- Job threads will be prevented from exiting until all SDUs have been transmitted unless
+    -- an exception/error is encounter. In that case all jobs will be cancelled directly.
     mpsJobExit cnt = do
         muxBearerSetState bearer Dying
         atomically $ do
