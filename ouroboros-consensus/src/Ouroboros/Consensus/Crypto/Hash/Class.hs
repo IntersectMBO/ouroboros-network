@@ -11,6 +11,7 @@ module Ouroboros.Consensus.Crypto.Hash.Class
     , getHash
     , hash
     , fromHash
+    , emptyHash
     ) where
 
 import           Codec.Serialise (Serialise (..))
@@ -35,6 +36,9 @@ class HashAlgorithm h where
 
 newtype Hash h a = Hash {getHash :: ByteString}
     deriving (Eq, Ord, Generic)
+
+emptyHash :: Hash h a
+emptyHash = Hash mempty
 
 instance Condense (Hash h a) where
     condense = show

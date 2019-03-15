@@ -90,7 +90,7 @@ broadcastNetwork btime numCoreNodes pInfo initRNG numSlots = do
       let callbacks :: NodeCallbacks m (Block p)
           callbacks = NodeCallbacks {
               produceBlock = \proof l slot prevPoint prevNo -> do
-                let prevHash  = castHash (Chain.pointHash prevPoint)
+                let prevHash  = Chain.pointHash prevPoint
                     curNo     = succ prevNo
 
                 -- Produce some random transactions

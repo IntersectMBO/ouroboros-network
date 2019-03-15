@@ -17,6 +17,7 @@ import           Data.Foldable (foldl')
 import           Data.Sequence (Seq (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
+import           Data.Proxy
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain
@@ -60,17 +61,17 @@ forksAtMostKBlocks :: forall b. HasHeader b
                    -> Bool     -- ^ Indicates whether their chain forks at most the specified number of blocks.
 forksAtMostKBlocks k ours = go
   where
-    go Genesis   = GenesisHash `Set.member` forkingPoints
-    go (bs :> b) = if BlockHash (blockHash b) `Set.member` forkingPoints
+    go Genesis   = genesisHash (Proxy :: Proxy b) `Set.member` forkingPoints
+    go (bs :> b) = if blockHash b `Set.member` forkingPoints
         then True
         else go bs
 
     -- we can roll back at most k blocks
-    forkingPoints :: Set (Hash b)
+    forkingPoints :: Set (HeaderHash b)
     forkingPoints = takeR (chainToSeq' ours) $ fromIntegral (k + 1)
 
-    chainToSeq' :: Chain b -> Seq (Hash b)
-    chainToSeq' c = GenesisHash :<| (BlockHash . blockHash <$> chainToSeq c)
+    chainToSeq' :: Chain b -> Seq (HeaderHash b)
+    chainToSeq' c = genesisHash (Proxy :: Proxy b) :<| (blockHash <$> chainToSeq c)
 
     takeR :: Ord a => Seq a -> Int -> Set a
     takeR Empty      _ = Set.empty

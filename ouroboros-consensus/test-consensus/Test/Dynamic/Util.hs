@@ -21,6 +21,7 @@ import           Data.GraphViz.Attributes.Complete
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (catMaybes)
+import           Data.Proxy (Proxy (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.Text.Lazy as Text
@@ -83,15 +84,15 @@ shortestLength = fromIntegral . minimum . map Chain.length . Map.elems
 data BlockInfo b = BlockInfo
     { biSlot     :: !Slot
     , biCreator  :: !(Maybe CoreNodeId)
-    , biHash     :: !(Hash b)
-    , biPrevious :: !(Maybe (Hash b))
+    , biHash     :: !(HeaderHash b)
+    , biPrevious :: !(Maybe (HeaderHash b))
     }
 
-genesisBlockInfo :: BlockInfo b
+genesisBlockInfo :: forall b. HasHeader b => BlockInfo b
 genesisBlockInfo = BlockInfo
     { biSlot     = 0
     , biCreator  = Nothing
-    , biHash     = GenesisHash
+    , biHash     = genesisHash (Proxy :: Proxy b)
     , biPrevious = Nothing
     }
 
@@ -99,7 +100,7 @@ blockInfo :: (HasHeader b, HasCreator b) => b -> BlockInfo b
 blockInfo b = BlockInfo
     { biSlot     = blockSlot b
     , biCreator  = Just $ getCreator b
-    , biHash     = BlockHash $ blockHash b
+    , biHash     = blockHash b
     , biPrevious = Just $ blockPrevHash b
     }
 
@@ -138,20 +139,20 @@ tracesToDot :: forall b. (HasHeader b, HasCreator b)
             -> String
 tracesToDot traces = Text.unpack $ printDotGraph $ graphToDot quickParams graph
   where
-    chainBlockInfos :: Chain b -> Map (Hash b) (BlockInfo b)
-    chainBlockInfos = Chain.foldChain f (Map.singleton GenesisHash genesisBlockInfo)
+    chainBlockInfos :: Chain b -> Map (HeaderHash b) (BlockInfo b)
+    chainBlockInfos = Chain.foldChain f (Map.singleton (genesisHash (Proxy :: Proxy b)) genesisBlockInfo)
       where
         f m b = let info = blockInfo b
                 in  Map.insert (biHash info) info m
 
-    blockInfos :: Map (Hash b) (BlockInfo b)
+    blockInfos :: Map (HeaderHash b) (BlockInfo b)
     blockInfos = Map.unions $ map chainBlockInfos $ Map.elems traces
 
-    lastHash :: Chain b -> Hash b
-    lastHash Genesis  = GenesisHash
-    lastHash (_ :> b) = BlockHash $ blockHash b
+    lastHash :: Chain b -> HeaderHash b
+    lastHash Genesis  = genesisHash (Proxy :: Proxy b)
+    lastHash (_ :> b) = blockHash b
 
-    blockInfosAndBelievers :: Map (Hash b) (BlockInfo b, Set NodeId)
+    blockInfosAndBelievers :: Map (HeaderHash b) (BlockInfo b, Set NodeId)
     blockInfosAndBelievers = Map.foldlWithKey f i traces
       where
         i = (\info -> (info, Set.empty)) <$> blockInfos
@@ -161,7 +162,7 @@ tracesToDot traces = Text.unpack $ printDotGraph $ graphToDot quickParams graph
             (lastHash chain)
             m
 
-    hashToId :: Map (Hash b) Node
+    hashToId :: Map (HeaderHash b) Node
     hashToId = Map.fromList $ zip (Map.keys blockInfosAndBelievers) [0..]
 
     ns :: [LNode NodeLabel]

@@ -15,7 +15,6 @@ import qualified Data.Map.Strict as M
 import           Data.Maybe
 import           Data.Semigroup ((<>))
 
-import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (pointHash)
 import           Ouroboros.Network.Protocol.ChainSync.Codec
 
@@ -88,7 +87,7 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
                  callbacks = NodeCallbacks {
                      produceBlock = \proof l slot prevPoint prevBlockNo -> do
                         let curNo    = succ prevBlockNo
-                            prevHash = castHash (pointHash prevPoint)
+                            prevHash = pointHash prevPoint
 
                         -- Before generating a new block, look for incoming transactions.
                         -- If there are, check if the mempool is consistent and, if it is,

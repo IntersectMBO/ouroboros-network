@@ -50,7 +50,7 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           GHC.Generics (Generic)
 
-import           Ouroboros.Network.Block hiding (Hash)
+import           Ouroboros.Network.Block
 import qualified Ouroboros.Network.Block as Network
 import           Ouroboros.Network.Chain (Chain, toOldestFirst)
 
@@ -197,14 +197,34 @@ deriving instance (SimpleBlockCrypto c, OuroborosTag p, Ord (Payload p (SimplePr
 -- (to wit, the pre header plus some ouroboros specific stuff but, crucially,
 -- without the signature itself).
 data SimplePreHeader p c = SimplePreHeader {
-      headerPrev     :: Network.Hash (SimpleHeader p c)
+      headerPrev     :: Network.HeaderHash (SimpleHeader p c)
     , headerSlot     :: Slot
     , headerBlockNo  :: BlockNo
     , headerBodyHash :: Hash (SimpleBlockHash c) SimpleBody
     }
-  deriving (Generic, Show, Eq, Ord)
+  deriving Generic
 
-instance SimpleBlockCrypto c => Condense (SimplePreHeader p c) where
+deriving instance ( SimpleBlockCrypto c
+                  , OuroborosTag p
+                  , Eq (HeaderHash (SimpleHeader p c))
+                  , Eq (Payload p (SimplePreHeader p c)) 
+                  )  => Eq   (SimplePreHeader p c)
+deriving instance ( SimpleBlockCrypto c
+                  , OuroborosTag p
+                  , Ord (HeaderHash (SimpleHeader p c))
+                  , Eq  (Payload p (SimplePreHeader p c)) 
+                  , Ord (Payload p (SimplePreHeader p c)) 
+                  ) => Ord  (SimplePreHeader p c)
+deriving instance ( SimpleBlockCrypto c
+                  , OuroborosTag p
+                  , Show (HeaderHash (SimpleHeader p c))
+                  , Show (Payload p (SimplePreHeader p c)) 
+                  ) => Show (SimplePreHeader p c)
+
+instance ( SimpleBlockCrypto c
+         , OuroborosTag p
+         , Show (Payload p (SimplePreHeader p c))
+         ) => Condense (SimplePreHeader p c) where
     condense = show
 
 data SimpleBody = SimpleBody { getSimpleBody :: Map (Hash ShortHash Tx) Tx }
@@ -223,7 +243,7 @@ deriving instance (SimpleBlockCrypto c, OuroborosTag p, Ord (Payload p (SimplePr
 instance (SimpleBlockCrypto c, OuroborosTag p, Condense (Payload p (SimplePreHeader p c)), Serialise (Payload p (SimplePreHeader p c))) => Condense (SimpleBlock p c) where
   condense (SimpleBlock hdr@(SimpleHeader _ pl) (SimpleBody txs)) = mconcat [
         "("
-      , condensedHash (blockPrevHash hdr)
+      , show (blockPrevHash hdr)
       , "->"
       , condense (blockHash hdr)
       , ","
@@ -234,10 +254,6 @@ instance (SimpleBlockCrypto c, OuroborosTag p, Condense (Payload p (SimplePreHea
       , condense txs
       , ")"
       ]
-
-condensedHash :: Show (HeaderHash b) => Network.Hash b -> String
-condensedHash GenesisHash     = "genesis"
-condensedHash (BlockHash hdr) = show hdr
 
 instance (SimpleBlockCrypto c, OuroborosTag p, Serialise (Payload p (SimplePreHeader p c))) => Measured BlockMeasure (SimpleHeader p c) where
   measure = blockMeasure
@@ -254,15 +270,19 @@ instance (SimpleBlockCrypto c, OuroborosTag p, Serialise (Payload p (SimplePreHe
   blockSlot      = headerSlot    . headerPreHeader
   blockNo        = headerBlockNo . headerPreHeader
 
+  genesisHash    = \_ -> emptyHash
+
   blockInvariant _ = True
 
 instance (SimpleBlockCrypto c, OuroborosTag p, Serialise (Payload p (SimplePreHeader p c))) => HasHeader (SimpleBlock p c) where
   type HeaderHash (SimpleBlock p c) = Hash (SimpleBlockHash c) (SimpleHeader p c)
 
-  blockHash      = blockHash . simpleHeader
-  blockSlot      = blockSlot . simpleHeader
-  blockNo        = blockNo   . simpleHeader
-  blockPrevHash  = Network.castHash . blockPrevHash . simpleHeader
+  blockHash      = blockHash     . simpleHeader
+  blockSlot      = blockSlot     . simpleHeader
+  blockNo        = blockNo       . simpleHeader
+  blockPrevHash  = blockPrevHash . simpleHeader
+
+  genesisHash    = \_ -> emptyHash
 
   blockInvariant SimpleBlock{..} =
        blockInvariant simpleHeader
@@ -283,10 +303,10 @@ forgeBlock :: forall m p c.
               , Serialise (Payload p (SimplePreHeader p c))
               )
            => NodeConfig p
-           -> Slot                            -- ^ Current slot
-           -> BlockNo                         -- ^ Current block number
-           -> Network.Hash (SimpleHeader p c) -- ^ Previous hash
-           -> Map (Hash ShortHash Tx) Tx      -- ^ Txs to add in the block
+           -> Slot                          -- ^ Current slot
+           -> BlockNo                       -- ^ Current block number
+           -> HeaderHash (SimpleHeader p c) -- ^ Previous hash
+           -> Map (Hash ShortHash Tx) Tx    -- ^ Txs to add in the block
            -> IsLeader p
            -> m (SimpleBlock p c)
 forgeBlock cfg curSlot curNo prevHash txs proof = do
