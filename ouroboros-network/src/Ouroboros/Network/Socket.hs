@@ -28,8 +28,10 @@ import qualified Ouroboros.Network.Mux.Types as Mx
 import           Ouroboros.Network.Mux.Types (MuxBearer)
 import           Ouroboros.Network.Mux.Interface ( NetworkInterface (..)
                                                  , NetworkNode (..)
+                                                 , Connection (..)
                                                  , miniProtocolDescription
                                                  )
+
 import           Text.Printf
 
 -- |
@@ -116,7 +118,7 @@ runNetworkNodeWithSocket' NetworkInterface {nodeAddress, protocols} k = do
       (sd, hdl) <- startNode
       return $ NetworkNode {
           connectTo,
-          killNode = killNode sd hdl
+          killNode = closeConn sd hdl
         }
     where
       mpds :: Mx.MiniProtocolDescriptions ptcl IO
@@ -154,7 +156,7 @@ runNetworkNodeWithSocket' NetworkInterface {nodeAddress, protocols} k = do
                 sequence_ $ k <*> (Just (Just e))
               Right _ -> return ()
 
-      connectTo :: AddrInfo -> IO ()
+      connectTo :: AddrInfo -> IO (Connection IO)
       connectTo remote =
         bracketOnError
           (socket (addrFamily nodeAddress) Stream defaultProtocol)
@@ -164,14 +166,18 @@ runNetworkNodeWithSocket' NetworkInterface {nodeAddress, protocols} k = do
               setSocketOption sd ReusePort 1
               bind sd (addrAddress nodeAddress)
               connect sd (addrAddress remote)
-
-              bearer <- socketAsMuxBearer sd
-              Mx.muxBearerSetState bearer Mx.Connected
-              Mx.muxStart mpds bearer k
+              hdl <- async $ do
+                bearer <- socketAsMuxBearer sd
+                Mx.muxBearerSetState bearer Mx.Connected
+                Mx.muxStart mpds bearer k
+              return $ Connection {
+                  terminate = closeConn sd hdl,
+                  await     = either Just (const Nothing) <$> waitCatch hdl
+                }
           )
 
-      killNode :: Socket -> Async () -> IO ()
-      killNode sd hdl = do
+      closeConn :: Socket -> Async () -> IO ()
+      closeConn sd hdl = do
         cancel hdl
         close sd
 

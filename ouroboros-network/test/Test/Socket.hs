@@ -2,6 +2,7 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TupleSections       #-}
 
 {-# OPTIONS_GHC -Wno-orphans     #-}
@@ -12,6 +13,7 @@ import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
+import           Control.Exception (IOException)
 import qualified Data.ByteString.Lazy as BL
 import           Data.List (mapAccumL)
 import           Network.Socket hiding (recv, recvFrom, send, sendTo)
@@ -136,7 +138,7 @@ prop_socket_send_recv clientAddr serverAddr f xs = do
     serNode <- runNetworkNodeWithSocket serNet
     cliNode <- runNetworkNodeWithSocket cliNet
 
-    connectTo cliNode serverAddr
+    _ <- connectTo cliNode serverAddr
 
     a <- atomically $ takeTMVar cv
     b <- atomically $ takeTMVar sv
@@ -209,12 +211,13 @@ prop_socket_client_connect_error _ xs = ioProperty $ do
           }
 
     nn <- runNetworkNodeWithSocket ni
-    res_e <- try $ connectTo nn clientAddr :: IO (Either SomeException ())
+    mconn <- try @IO @IOException $ connectTo nn clientAddr
+    r <- case mconn of
+      Left _     -> return $ property True
+      Right conn -> terminate conn >> return (property False)
     killNode nn
 
-    case res_e of
-         Left _  -> return $ property True -- XXX Dissregarding the exact exception type
-         Right _ -> return $ property False
+    return r
 
 
 demo :: forall block .
@@ -251,7 +254,7 @@ demo chain0 updates = do
     producerNode <- runNetworkNodeWithSocket producerNet
     consumerNode <- runNetworkNodeWithSocket consumerNet
 
-    _ <- fork $ connectTo consumerNode (nodeAddress producerNet)
+    conn <- connectTo consumerNode (nodeAddress producerNet)
   
     void $ fork $ sequence_
         [ do threadDelay 10e-3 -- 10 milliseconds, just to provide interest
@@ -263,6 +266,8 @@ demo chain0 updates = do
         ]
 
     r <- atomically $ takeTMVar done
+
+    terminate conn
     killNode producerNode
     killNode consumerNode
 
