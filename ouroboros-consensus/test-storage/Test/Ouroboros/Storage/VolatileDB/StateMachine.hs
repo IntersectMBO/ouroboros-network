@@ -171,7 +171,7 @@ type ModelDBPure = VolatileDB BlockId PureM
 -- command itself, and a mocked version of the response.
 data Event r = Event
   { eventBefore   :: Model  r
-  , eventCmd      :: At Cmd r
+  , eventCmd      :: At CmdErr r
   , eventAfter    :: Model  r
   , eventMockResp :: Resp
   } deriving (Show)
@@ -181,9 +181,9 @@ lockstep :: forall r.
          -> At CmdErr r
          -> At Resp   r
          -> Event     r
-lockstep model@Model {..} cmdErr@(At (CmdErr cmd _)) (At resp) = Event
+lockstep model@Model {..} cmdErr (At resp) = Event
     { eventBefore   = model
-    , eventCmd      = At cmd
+    , eventCmd      = cmdErr
     , eventAfter    = model'
     , eventMockResp = mockResp
     }
@@ -214,7 +214,7 @@ runPure dbm mdb (CmdErr cmd err) =
             (Nothing, _)                       -> return resp
             (Just _ , Left ClosedDBError)      -> return resp
             (Just _, _) -> do
-                modify $ \(dbm, err) -> (dbm {open = False}, err)
+                modify $ \(dbm', cErr) -> (dbm' {open = False}, cErr)
                 return $ Right $ SimulatedError resp
     where
         runCorruptions :: ModelDBPure -> Corruptions -> PureM Success
@@ -297,6 +297,7 @@ preconditionImpl m@Model {..} (At (CmdErr cmd _)) =
     .&& case cmd of
         Corrupt cors ->
             forall (corruptionFiles cors) (`elem` getDBFiles dbModel)
+            .&& (Boolean $ open dbModel)
         _ -> Top
   where
       corruptionFiles = map snd . NE.toList
@@ -336,7 +337,7 @@ generatorImpl mkErr m@Model {..} = do
         At cmd <- genCmd
         err' <- if noErrorFor cmd then return Nothing
            else frequency
-                [ (4, return Nothing)
+                [ (2, return Nothing)
                 , (if mkErr then 1 else 0, Just <$> arbitrary)]
         let err = erasePutCorruptions err'
         return $ At $ CmdErr cmd err
@@ -350,7 +351,7 @@ generatorImpl mkErr m@Model {..} = do
         noErrorFor IsOpen {}         = False
         noErrorFor Close {}          = False
         noErrorFor AskIfMember {}    = False
-        noErrorFor GarbageCollect {} = True
+        noErrorFor GarbageCollect {} = False
         noErrorFor PutBlock {}       = False
         noErrorFor Corrupt {}        = True
 
@@ -430,6 +431,88 @@ mkDBModel :: MonadState (DBModel BlockId, Maybe Errors) m
           -> (DBModel BlockId, VolatileDB BlockId (ExceptT (VolatileDBError BlockId) m))
 mkDBModel = openDBModel EH.exceptT
 
+prop_sequential :: Property
+prop_sequential =
+    forAllCommands smUnused Nothing $ \cmds -> monadicIO $ do
+        let test :: HasFS IO h -> PropertyM IO (History (At CmdErr) (At Resp), Reason)
+            test hasFS = do
+              db <- run $ openDB hasFS EH.monadCatch myParser 4 toSlot True LenientFillOnlyLast
+              let sm' = sm hasFS db dbm vdb
+              (hist, _model, res) <- runCommands sm' cmds
+              run $ closeDB db
+              return (hist, res)
+        fsVar <- run $ atomically (newTVar Mock.empty)
+        (hist, res) <- test (simHasFS EH.monadCatch fsVar)
+        let events = execCmds (initModel smUnused) cmds
+        let myshow n = if n<5 then show n else if n < 20 then "5-19" else if n < 100 then "20-99" else ">=100"
+        prettyCommands smUnused hist
+            $ tabulate "Tags" (map show $ tag events)
+            $ tabulate "Commands" (cmdName . eventCmd <$> events)
+            $ tabulate "IsMember: Total number of True's" [myshow $ isMemberTrue events]
+            $ tabulate "IsMember: At least one True" [show $ isMemberTrue' events]
+            $ res === Ok
+    where
+        -- we use that: MonadState (DBModel BlockId) (State (DBModel BlockId))
+        (dbm, vdb) = mkDBModel 4 toSlot True
+        smUnused = sm (error "hasFS used during command generation") (error "semantics and DB used during command generation") dbm vdb
+
+prop_sequential_strict_parser :: Property
+prop_sequential_strict_parser =
+    forAllCommands smUnused Nothing $ \cmds -> monadicIO $ do
+        let test :: HasFS IO h
+                 -> PropertyM IO (History (At CmdErr) (At Resp), Reason)
+            test hasFS = do
+                db <- run $ openDB hasFS EH.monadCatch myParser 3 toSlot False LenientFillOnlyLast
+                let sm' = sm hasFS db dbm vdb
+                (hist, _model, res) <- runCommands sm' cmds
+                run $ closeDB db
+                return (hist, res)
+        fsVar <- run $ atomically (newTVar Mock.empty)
+        (hist, res) <- test (simHasFS EH.monadCatch fsVar)
+        let events = execCmds (initModel smUnused) cmds
+        prettyCommands smUnused hist
+            $ tabulate "Tags" [tagParser events]
+            $ res === Ok
+    where
+        -- we use that: MonadState (DBModel BlockId) (State (DBModel BlockId))
+        (dbm, vdb) = mkDBModel 3 toSlot False
+        smUnused = sm (error "hasFS used during command generation") (error "semantics and DB used during command generation") dbm vdb
+
+prop_sequential_errors :: Property
+prop_sequential_errors =
+    forAllCommands smUnused Nothing $ \cmds -> monadicIO $ do
+        let test :: TVar IO Errors
+                 -> HasFS IO h
+                 -> PropertyM IO (History (At CmdErr) (At Resp), Reason)
+            test errorsVar hasFS = do
+              db <- run $ openDB hasFS EH.monadCatch myParser 3 toSlot True LenientFillOnlyLast
+              let sm' = smErr errorsVar hasFS db dbm vdb
+              (hist, _model, res) <- runCommands sm' cmds
+              run $ closeDB db
+              return (hist, res)
+        errorsVar <- run $ atomically (newTVar mempty)
+        fsVar <- run $ atomically (newTVar Mock.empty)
+        (hist, res) <- test errorsVar (mkSimErrorHasFS EH.monadCatch fsVar errorsVar)
+        let events = execCmds (initModel smUnused) cmds
+        prettyCommands smUnused hist
+            $ tabulate "Simulated Errors" (tagSimulatedErrors events)
+            $ res === Ok
+    where
+        -- we use that: MonadState (DBModel BlockId) (State (DBModel BlockId))
+        (dbm, vdb) = mkDBModel 3 toSlot True
+        smUnused = smErr (error "errorsVar unused") (error "hasFS used during command generation") (error "semantics and DB used during command generation") dbm vdb
+
+tests :: TestTree
+tests = testGroup "VolatileDB" [
+        testProperty "q-s-m" $ prop_sequential
+    , testProperty "q-s-m-Parser" $ prop_sequential_strict_parser
+    , testProperty "q-s-m-Errors" $ prop_sequential_errors
+    ]
+
+{-------------------------------------------------------------------------------
+  Labelling
+-------------------------------------------------------------------------------}
+
 -- | Predicate on events
 type EventPred = C.Predicate (Event Symbolic) Tag
 
@@ -463,7 +546,7 @@ tag ls = C.classify
 
     tagGetBinaryBlobNothing :: EventPred
     tagGetBinaryBlobNothing = successful $ \ev r -> case r of
-        Blob Nothing | GetBlock {} <- unAt $ eventCmd ev ->
+        Blob Nothing | GetBlock {} <- cmd $ unAt $ eventCmd ev ->
             Left TagGetNothing
         _ -> Right tagGetBinaryBlobNothing
 
@@ -474,12 +557,12 @@ tag ls = C.classify
     tagJustReOpenJust = tagGetJust $ Right $ reOpen $ Right $ tagGetJust $ Left TagGetReOpenGet
 
     tagGarbageCollect :: Maybe BlockId -> Bool -> EventPred
-    tagGarbageCollect msl bl = C.predicate $ \ev -> case (msl, bl, eventMockResp ev, eventCmd ev) of
-        (Nothing, False, Resp (Right (Blob (Just _))), At (GetBlock bid))
+    tagGarbageCollect msl bl = C.predicate $ \ev -> case (msl, bl, eventMockResp ev, cmd $ unAt $ eventCmd ev) of
+        (Nothing, False, Resp (Right (Blob (Just _))), GetBlock bid)
             -> Right $ tagGarbageCollect (Just bid) False
-        (Just bid, False, Resp (Right (Unit ())), At (GarbageCollect bid'))
+        (Just bid, False, Resp (Right (Unit ())), GarbageCollect bid')
             -> Right $ tagGarbageCollect (Just bid) (toSlot bid < toSlot bid')
-        (Just bid, True, Resp (Right (Blob Nothing)), At (GetBlock bid'))
+        (Just bid, True, Resp (Right (Blob Nothing)), GetBlock bid')
             -> if bid == bid' then Left TagGarbageCollect
                               else Right $ tagGarbageCollect msl bl
         _ -> Right $ tagGarbageCollect msl bl
@@ -490,12 +573,12 @@ tag ls = C.classify
         _                            -> Right $ tagGetJust next
 
     reOpen :: Either Tag EventPred -> EventPred
-    reOpen next = C.predicate $ \ev -> case (unAt $ eventCmd ev, eventMockResp ev) of
+    reOpen next = C.predicate $ \ev -> case (cmd $ unAt $ eventCmd ev, eventMockResp ev) of
         (ReOpen, Resp (Right (Unit ()))) -> next
         _                                -> Right $ reOpen next
 
     tagCorruptWriteFile :: EventPred
-    tagCorruptWriteFile = C.predicate $ \ev -> case unAt (eventCmd ev) of
+    tagCorruptWriteFile = C.predicate $ \ev -> case cmd $ unAt (eventCmd ev) of
         Corrupt cors -> if any (\(cor,file) -> (cor == DeleteFile) && (file == (currentFile $ dbModel $ eventBefore ev))) (NE.toList cors)
                         then Left TagCorruptWriteFile
                         else Right tagCorruptWriteFile
@@ -507,7 +590,7 @@ tag ls = C.classify
             doesAppend (AppendBytes 0) = False
             doesAppend (AppendBytes _) = True
             doesAppend _               = False
-        in  C.predicate $ \ev -> case unAt (eventCmd ev) of
+        in  C.predicate $ \ev -> case cmd $ unAt (eventCmd ev) of
             Corrupt cors -> if any (\(cor,_file) -> doesAppend cor) (NE.toList cors)
                             then Left TagAppendRecover
                             else Right tagAppendRecover
@@ -554,75 +637,14 @@ data Tag = TagGetJust
          | TagClosedError
          deriving Show
 
-prop_sequential :: Property
-prop_sequential =
-    forAllCommands smUnused Nothing $ \cmds -> monadicIO $ do
-        let test :: HasFS IO h -> PropertyM IO (History (At CmdErr) (At Resp), Reason)
-            test hasFS = do
-              db <- run $ openDB hasFS EH.monadCatch myParser 7 toSlot True LenientFillOnlyLast
-              let sm' = sm hasFS db dbm vdb
-              (hist, _model, res) <- runCommands sm' cmds
-              run $ closeDB db
-              return (hist, res)
-        fsVar <- run $ atomically (newTVar Mock.empty)
-        (hist, res) <- test (simHasFS EH.monadCatch fsVar)
-        let events = execCmds (initModel smUnused) cmds
-        let myshow n = if n<5 then show n else if n < 20 then "5-19" else if n < 100 then "20-99" else ">=100"
-        prettyCommands smUnused hist
-            $ tabulate "Tags" (map show $ tag events)
-            $ tabulate "Commands" (cmdName . eventCmd <$> events)
-            $ tabulate "IsMember: Total number of True's" [myshow $ isMemberTrue events]
-            $ tabulate "IsMember: At least one True" [show $ isMemberTrue' events]
-            $ res === Ok
+tagSimulatedErrors :: [Event Symbolic] -> [String]
+tagSimulatedErrors events = fmap f events
     where
-        -- we use that: MonadState (DBModel BlockId) (State (DBModel BlockId))
-        (dbm, vdb) = mkDBModel 7 toSlot True
-        smUnused = sm (error "hasFS used during command generation") (error "semantics and DB used during command generation") dbm vdb
+        f :: Event Symbolic -> String
+        f ev = case eventCmd ev of
+            At (CmdErr _ Nothing) -> "NoError"
+            At (CmdErr cmd _)     -> cmdName (At cmd) <> " Error"
 
-prop_sequential_strict_parser :: Property
-prop_sequential_strict_parser =
-    forAllCommands smUnused Nothing $ \cmds -> monadicIO $ do
-        let test :: HasFS IO h
-                 -> PropertyM IO (History (At CmdErr) (At Resp), Reason)
-            test hasFS = do
-                db <- run $ openDB hasFS EH.monadCatch myParser 7 toSlot False LenientFillOnlyLast
-                let sm' = sm hasFS db dbm vdb
-                (hist, _model, res) <- runCommands sm' cmds
-                run $ closeDB db
-                return (hist, res)
-        fsVar <- run $ atomically (newTVar Mock.empty)
-        (hist, res) <- test (simHasFS EH.monadCatch fsVar)
-        let events = execCmds (initModel smUnused) cmds
-        prettyCommands smUnused hist
-            $ tabulate "Tags" [tagParser events]
-            $ res === Ok
-    where
-        -- we use that: MonadState (DBModel BlockId) (State (DBModel BlockId))
-        (dbm, vdb) = mkDBModel 7 toSlot False
-        smUnused = sm (error "hasFS used during command generation") (error "semantics and DB used during command generation") dbm vdb
-
-prop_sequential_errors :: Property
-prop_sequential_errors = withMaxSuccess 50000 $
-    forAllCommands smUnused Nothing $ \cmds -> monadicIO $ do
-        let test :: TVar IO Errors
-                 -> HasFS IO h
-                 -> PropertyM IO (History (At CmdErr) (At Resp), Reason)
-            test errorsVar hasFS = do
-              db <- run $ openDB hasFS EH.monadCatch myParser 7 toSlot True LenientFillOnlyLast
-              let sm' = smErr errorsVar hasFS db dbm vdb
-              (hist, _model, res) <- runCommands sm' cmds
-              run $ closeDB db
-              return (hist, res)
-        errorsVar <- run $ atomically (newTVar mempty)
-        fsVar <- run $ atomically (newTVar Mock.empty)
-        (hist, res) <- test errorsVar (mkSimErrorHasFS EH.monadCatch fsVar errorsVar)
-        let events = execCmds (initModel smUnused) cmds
-        prettyCommands smUnused hist
-            $ res === Ok
-    where
-        -- we use that: MonadState (DBModel BlockId) (State (DBModel BlockId))
-        (dbm, vdb) = mkDBModel 7 toSlot True
-        smUnused = smErr (error "errorsVar unused") (error "hasFS used during command generation") (error "semantics and DB used during command generation") dbm vdb
 
 
 execCmd :: Model Symbolic
@@ -636,11 +658,3 @@ execCmds model (Commands cs) = go model cs
         go :: Model Symbolic -> [Command (At CmdErr) (At Resp)] -> [Event Symbolic]
         go _ []        = []
         go m (c : css) = let ev = execCmd m c in ev : go (eventAfter ev) css
-
-
-tests :: TestTree
-tests = testGroup "VolatileDB" [
-      testProperty "q-s-m" $ prop_sequential
-    , testProperty "q-s-m-Parser" $ prop_sequential_strict_parser
-    , testProperty "q-s-m-Errors" $ prop_sequential_errors
-    ]

@@ -301,7 +301,7 @@ garbageCollectImpl :: forall m blockId. (MonadCatch m, MonadSTM m, Ord blockId)
                    -> m ()
 garbageCollectImpl env@VolatileDBEnv{..} slot = do
     modifyState env $ \hasFS st -> do
-        st' <- foldM (tryCollectFile hasFS env slot) st (Map.toList (_currentMap st))
+        st' <- foldM (tryCollectFile hasFS env slot) st (sortOn (unsafeParseFd . fst) $ Map.toList (_currentMap st))
         let currentSlot' = if Map.size (_currentMap st') == 0 then Nothing else (_currentBlockId st')
         let st'' = st'{_currentBlockId = currentSlot'}
         return (st'', ())

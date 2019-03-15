@@ -11,6 +11,7 @@ import           Control.Monad.Class.MonadThrow
 import           Data.Int (Int64)
 import           Data.Map (Map)
 import qualified Data.Map as Map
+import           Data.Maybe (fromMaybe)
 import           Data.Set (Set)
 import qualified Data.Text as T
 import           Text.Read (readMaybe)
@@ -32,6 +33,11 @@ parseFd = readMaybe
             . fst
             . T.breakOn "."
             . T.pack
+
+unsafeParseFd :: String -> FileId
+unsafeParseFd file = fromMaybe
+    (error $ "could not parse filename " <> file <> " of index")
+    (parseFd file)
 
 fromEither :: Monad m
            => ErrorHandling e m
@@ -65,7 +71,7 @@ findLastFd files = foldM go Nothing files
             Just a' -> max a' a
         go :: Maybe FileId -> String -> Either (VolatileDBError blockId) (Maybe FileId)
         go fd file = case parseFd file of
-            Nothing -> Left $ VParserError $ InvalidFilename file
+            Nothing  -> Left $ VParserError $ InvalidFilename file
             Just fd' -> Right $ Just $ maxMaybe fd fd'
 
 filePath :: FileId -> String
@@ -82,7 +88,7 @@ maxSlotList :: (blockId -> Slot) -> [blockId] -> Maybe (blockId, Slot)
 maxSlotList toSlot = updateSlot toSlot Nothing
 
 cmpMaybe :: Ord a => Maybe a -> a -> Bool
-cmpMaybe Nothing _ = False
+cmpMaybe Nothing _   = False
 cmpMaybe (Just a) a' = a >= a'
 
 updateSlot :: forall blockId. (blockId -> Slot) -> Maybe blockId -> [blockId] -> Maybe (blockId, Slot)
@@ -98,5 +104,5 @@ updateSlotNoBlockId :: Maybe Slot -> [Slot] -> Maybe Slot
 updateSlotNoBlockId = foldl cmpr
     where
         cmpr :: Maybe Slot -> Slot -> Maybe Slot
-        cmpr Nothing sl' = Just sl'
+        cmpr Nothing sl'   = Just sl'
         cmpr (Just sl) sl' = Just $ max sl sl'

@@ -13,7 +13,8 @@ module Test.Ouroboros.Storage.VolatileDB.Model
     , runCorruptionModel
     ) where
 
-import           Control.Monad.State (MonadState, get, put)
+import           Control.Monad
+import           Control.Monad.State (MonadState, get, modify, put)
 import           Data.ByteString (ByteString)
 import           Data.ByteString.Builder
 import           Data.ByteString.Lazy (toStrict)
@@ -23,6 +24,7 @@ import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe (fromJust, fromMaybe, isJust, isNothing)
 import qualified Data.Set as Set
+import           GHC.Stack.Types
 
 import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
@@ -142,7 +144,7 @@ putBlockModel err maxNumPerFile toSlot bid bs = do
                       fsErrorType = fsErrT
                     , fsErrorPath = [currentFile]
                     , fsErrorString = ""
-                    , fsErrorStack = undefined
+                    , fsErrorStack = EmptyCallStack
                     , fsLimitation = False
                 }
             Nothing -> do
@@ -164,20 +166,64 @@ putBlockModel err maxNumPerFile toSlot bid bs = do
                             , nextFId)
                 putDB dbm {mp = mp', index = index'', currentFile = currentFile', nextFId = nextFId'}
 
-garbageCollectModel :: MonadState (MyState blockId) m
+garbageCollectModel :: forall m blockId
+                     . MonadState (MyState blockId) m
                     => ErrorHandling (VolatileDBError blockId) m
                     -> SlotNo
                     -> m ()
 garbageCollectModel err sl = do
-    dbm@DBModel {..} <- getDB
+    (DBModel {..}, cmdErr) <- get
     if not open then EH.throwError err ClosedDBError
     else do
-        let f :: String -> (Maybe Slot, Int, [blockId]) -> Maybe (Maybe Slot, Int, [blockId])
-            f path (msl,n,bids) = if cmpMaybe msl sl then Just (msl,n,bids)
-                             else if path == currentFile then Just (Nothing,0,[])
-                             else Nothing
-        let index' = Map.mapMaybeWithKey f index
-        putDB dbm {index = index', latestGarbaged = Just $ maxMaybe latestGarbaged sl}
+        modify $ \(dbm', cErr) -> (dbm' {latestGarbaged = Just $ maxMaybe latestGarbaged sl}, cErr)
+        let tru :: Maybe FsErrorType
+            tru = do
+                cErr <- cmdErr
+                let str = getStream . _hTruncate $ cErr
+                (h, _) <- uncons str
+                h
+        let remLs = case cmdErr of
+                Nothing   -> []
+                Just cErr -> getStream . _removeFile $ cErr
+        let f :: [Maybe FsErrorType]
+              -> (String, (Maybe Slot, Int, [blockId]))
+              -> m [Maybe FsErrorType]
+            f fsErr (path, (msl,_n,_bids)) = case (cmpMaybe msl sl, path == currentFile, tru, fsErr) of
+                    (True, _, _, _) -> return fsErr
+                    (_, False, _, []) -> do
+                        modifyIndex $ Map.delete path
+                        return []
+                    (_, False, _, Nothing : rest) -> do
+                        modifyIndex $ Map.delete path
+                        return rest
+                    (_, False, _, (Just e) : _rest) -> EH.throwError err $ FileSystemError $
+                        FsError {
+                              fsErrorType = e
+                            , fsErrorPath = [currentFile]
+                            , fsErrorString = ""
+                            , fsErrorStack = EmptyCallStack
+                            , fsLimitation = False
+                        }
+                    (_, _, Nothing, _) -> do
+                        modifyIndex $ Map.insert path (Nothing,0,[])
+                        return fsErr
+                    (_, _, Just e, _)  -> EH.throwError err $ FileSystemError $
+                        FsError {
+                              fsErrorType = e
+                            , fsErrorPath = [currentFile]
+                            , fsErrorString = ""
+                            , fsErrorStack = EmptyCallStack
+                            , fsLimitation = False
+                        }
+        _ <- foldM f remLs (sortOn (unsafeParseFd . fst) $ Map.toList index)
+        return ()
+
+modifyIndex :: MonadState (MyState blockId) m
+            => (Map String (Maybe Slot, Int, [blockId]) -> Map String (Maybe Slot, Int, [blockId]))
+            -> m ()
+modifyIndex f = do
+    dbm@DBModel {..} <- getDB
+    putDB dbm {index = f index}
 
 runCorruptionModel :: forall blockId m. MonadState (MyState blockId) m
                    => Ord blockId
@@ -188,11 +234,11 @@ runCorruptionModel toSlot corrs = do
     dbm <- getDB
     -- TODO(kde) need to sort corrs if we want to improve Eq instance of
     -- Error Types.
-    let dbm' = foldr corrupt dbm corrs
+    let dbm' = foldr corrupt' dbm corrs
     putDB dbm'
         where
-            corrupt :: (FileCorruption, String) -> DBModel blockId -> DBModel blockId
-            corrupt (corr, file) dbm = case corr of
+            corrupt' :: (FileCorruption, String) -> DBModel blockId -> DBModel blockId
+            corrupt' (corr, file) dbm = case corr of
                 DeleteFile ->
                     dbm { mp = mp'
                         , index = index'
@@ -262,11 +308,6 @@ recover err dbm@DBModel {..} =
             let (file, (_msl, _n, _bids)) = last sorted
             in if unsafeParseFd file == lst then (file, lst + 1, index)
                else (Internal.filePath $ lst + 2, lst + 2, Map.insert (Internal.filePath $ lst + 1) newFileInfo index)
-
-unsafeParseFd :: String -> FileId
-unsafeParseFd file = fromMaybe
-    (error $ "could not parse filename " <> file <> " of index")
-    (parseFd file)
 
 newFileInfo :: (Maybe a, Int, [b])
 newFileInfo = (Nothing, 0, [])
