@@ -135,14 +135,11 @@ prop_socket_send_recv clientAddr serverAddr f xs = do
              protocols   = cliPeers
            }
 
-    serNode <- runNetworkNodeWithSocket serNet
-    cliNode <- runNetworkNodeWithSocket cliNet
-
-    res <- withConnection cliNode serverAddr $ \_ ->
-      atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
-
-    killNode cliNode
-    killNode serNode
+    res <-
+      withNetworkNode serNet $ \_ ->
+        withNetworkNode cliNet $ \cliNode ->
+          withConnection cliNode serverAddr $ \_ ->
+            atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
 
     return (res == mapAccumL f 0 xs)
 
@@ -208,15 +205,13 @@ prop_socket_client_connect_error _ xs = ioProperty $ do
             protocols   = cliPeers
           }
 
-    nn <- runNetworkNodeWithSocket ni
-    mconn <- try @IO @IOException $ connectTo nn clientAddr
-    r <- case mconn of
-      -- XXX Disregarding the exact exception type
-      Left _     -> return $ property True
-      Right conn -> terminate conn >> return (property False)
-    killNode nn
+    (res :: Either IOException Bool)
+      <- try $ withNetworkNode ni $ \nn ->
+                 withConnection nn clientAddr $ \_ -> pure False
 
-    return r
+    -- XXX Disregarding the exact exception type 
+    pure $ either (const True) id res
+
 
 demo :: forall block .
         (Chain.HasHeader block, Serialise block, Eq block, Show block )
@@ -249,26 +244,21 @@ demo chain0 updates = do
               protocols   = producerPeers
             }
 
-    producerNode <- runNetworkNodeWithSocket producerNet
-    consumerNode <- runNetworkNodeWithSocket consumerNet
+    withNetworkNode producerNet $ \_ ->
+      withNetworkNode consumerNet $  \consumerNode ->
+        withConnection consumerNode (nodeAddress producerNet) $ \_ -> do
+          void $ fork $ sequence_
+              [ do
+                  threadDelay 10e-3 -- just to provide interest
+                  atomically $ do
+                    p <- readTVar producerVar
+                    let Just p' = CPS.applyChainUpdate update p
+                    writeTVar producerVar p'
+              | update <- updates
+              ]
 
-    r <- withConnection consumerNode (nodeAddress producerNet) $ \_ -> do
+          atomically $ takeTMVar done
 
-      void $ fork $ sequence_
-          [ do threadDelay 10e-3 -- just to provide interest
-               atomically $ do
-                  p <- readTVar producerVar
-                  let Just p' = CPS.applyChainUpdate update p
-                  writeTVar producerVar p'
-          | update <- updates
-          ]
-
-      atomically $ takeTMVar done
-
-    killNode producerNode
-    killNode consumerNode
-
-    return r
   where
     checkTip target consumerVar = atomically $ do
       chain <- readTVar consumerVar
