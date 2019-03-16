@@ -2,9 +2,15 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
+-- |
+-- Module exports interface for running a node over a socket over TCP \/ IP.
+--
 module Ouroboros.Network.Socket (
-      runNetworkNodeWithSocket
+      withNetworkNode
+    , runNetworkNodeWithSocket
     , runNetworkNodeWithSocket'
+
+    -- * Auxiliary functions
     , hexDump
     ) where
 
@@ -200,3 +206,27 @@ runNetworkNodeWithSocket
   => NetworkInterface ptcl AddrInfo IO
   -> IO (NetworkNode AddrInfo IO)
 runNetworkNodeWithSocket ni = runNetworkNodeWithSocket' ni Nothing
+
+
+-- |
+-- Run a network node within a bracket function.  This means that you don't need
+-- to @'killNode'@ when the continuation exits (either in normal or in error
+-- condition).
+--
+-- This is the __recommended__ way of running a network node.
+--
+withNetworkNode
+  :: forall ptcl a.
+     ( Mx.ProtocolEnum ptcl
+     , Ord ptcl
+     , Enum ptcl
+     , Bounded ptcl
+     )
+  => NetworkInterface ptcl AddrInfo IO
+  -> (NetworkNode AddrInfo IO -> IO a)
+  -> IO a
+withNetworkNode ni k =
+    bracket
+      (runNetworkNodeWithSocket ni)
+      killNode
+      k

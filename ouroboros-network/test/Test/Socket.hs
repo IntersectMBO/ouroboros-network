@@ -158,14 +158,11 @@ prop_socket_send_recv clientAddr serverAddr clientVersions serverVersions f xs =
              protocols     = \_ -> Just cliPeers
            }
 
-    serNode <- runNetworkNodeWithSocket serNet
-    cliNode <- runNetworkNodeWithSocket cliNet
-
-    res <- withConnection cliNode serverAddr $ \_ ->
-      atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
-
-    killNode cliNode
-    killNode serNode
+    res <-
+      withNetworkNode serNet $ \_ ->
+        withNetworkNode cliNet $ \cliNode ->
+          withConnection cliNode serverAddr $ \_ ->
+            atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
 
     return (res == mapAccumL f 0 xs)
 
@@ -233,17 +230,12 @@ prop_socket_client_connect_error _ xs = ioProperty $ do
             protocols     = \_ -> Just cliPeers
           }
 
-    nn <- runNetworkNodeWithSocket ni
-    (conn_e :: Either SomeException (Connection IO))
-       <- try $ connectTo nn clientAddr
-    case conn_e of
-      Left _  -> do
-        killNode nn
-        return $ property True -- XXX Disregarding the exact exception type 
-      Right conn -> do
-        terminate conn
-        killNode nn
-        return $ property False
+    (res :: Either SomeException Bool)
+      <- try $ withNetworkNode ni $ \nn ->
+                 withConnection nn clientAddr $ \_ -> pure False
+
+    -- XXX Disregarding the exact exception type 
+    pure $ either (const True) id res
 
 
 prop_version_missmatch :: (Int -> Int -> (Int, Int))
@@ -397,27 +389,20 @@ demo chain0 updates = do
               protocols     = \_ -> Just producerPeers
             }
 
+    withNetworkNode producerNet $ \_ ->
+      withNetworkNode consumerNet $  \consumerNode ->
+        withConnection consumerNode (nodeAddress producerNet) $ \_ -> do
+          void $ fork $ sequence_
+              [ do
+                  threadDelay 10000 -- just to provide interest
+                  atomically $ do
+                    p <- readTVar producerVar
+                    let Just p' = CPS.applyChainUpdate update p
+                    writeTVar producerVar p'
+              | update <- updates
+              ]
 
-    producerNode <- runNetworkNodeWithSocket producerNet
-    consumerNode <- runNetworkNodeWithSocket consumerNet
-
-    r <- withConnection consumerNode (nodeAddress producerNet) $ \_ -> do
-
-      void $ fork $ sequence_
-          [ do threadDelay 10000 -- just to provide interest
-               atomically $ do
-                  p <- readTVar producerVar
-                  let Just p' = CPS.applyChainUpdate update p
-                  writeTVar producerVar p'
-          | update <- updates
-          ]
-
-      atomically $ takeTMVar done
-
-    killNode producerNode
-    killNode consumerNode
-
-    return r
+          atomically $ takeTMVar done
   where
     checkTip target consumerVar = atomically $ do
       chain <- readTVar consumerVar
