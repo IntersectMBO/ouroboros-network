@@ -12,7 +12,7 @@ module Ouroboros.Network.Protocol.TxSubmission.Client
   )
   where
 
-import           Numeric.Natural (Natural)
+import           Data.Word (Word16)
 
 import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Pipelined
@@ -45,7 +45,7 @@ data TxSubmissionSender hash tx (n :: N) c m a where
   -- Ask the server for a list of transaction hashes by sending @'MsgGetHashes'@.
   --
   SendMsgGetHashes
-    :: Natural
+    :: Word16
     -> ([hash] -> m (TxSubmissionSender hash tx n c m a))
     -> TxSubmissionSender hash tx n c m a
 
@@ -53,7 +53,7 @@ data TxSubmissionSender hash tx (n :: N) c m a where
   -- Piplined version of @'SendMsgGetHashes'@.
   --
   SendMsgGetHashesPipelined
-    :: Natural
+    :: Word16
     -> m (TxSubmissionSender hash tx (S n) c m a)
     -> TxSubmissionSender hash tx    n c m a
 

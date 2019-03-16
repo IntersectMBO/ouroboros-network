@@ -11,8 +11,8 @@ module Ouroboros.Network.Protocol.TxSubmission.Test
 import           Control.Monad.ST (runST)
 import           Codec.Serialise (Serialise)
 import           Data.List (sortBy, foldl')
-import           Numeric.Natural (Natural)
 import           Data.ByteString.Lazy (ByteString)
+import           Data.Word (Word16)
 
 import           Control.Monad.IOSim (runSimOrThrow)
 import           Control.Monad.Class.MonadAsync (MonadAsync)
@@ -36,7 +36,6 @@ import           Ouroboros.Network.Protocol.TxSubmission.Type
 import           Test.Ouroboros.Network.Testing.Utils (splits2, splits3)
 
 import           Test.QuickCheck
-import           Test.QuickCheck.Instances.Natural ()
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
@@ -77,7 +76,7 @@ type    Hash = Int
 type TestClient m = TxSubmissionClientPipelined Hash Tx m [ReqOrResp Hash Tx] 
 type TestServer m = TxSubmissionServer Hash Tx m [Tx]
 
-testClient :: MonadSTM m => [Natural] -> TestClient m
+testClient :: MonadSTM m => [Word16] -> TestClient m
 testClient ns = txSubmissionClient ns
 
 testServer :: MonadSTM m => [Tx] -> TestServer m
@@ -87,10 +86,10 @@ testServer txs = txSubmissionServerFixed txs getHash
 -- A reference implementation of @'txSubmissionClient'@.  It returns the
 -- sequence of requests and responses of a @'txSubmissionClient'@.
 --
-txSubmissionClientReference :: [Natural] -> [Tx] -> [ReqOrResp Hash Tx]
+txSubmissionClientReference :: [Word16] -> [Tx] -> [ReqOrResp Hash Tx]
 txSubmissionClientReference = go []
     where
-      go :: [ReqOrResp Hash Tx] -> [Natural] -> [Tx] -> [ReqOrResp Hash Tx]
+      go :: [ReqOrResp Hash Tx] -> [Word16] -> [Tx] -> [ReqOrResp Hash Tx]
       go acc []     _   = reverse acc
       go acc (n:ns) txs =
         let (requested, txs') = splitAt (fromIntegral n) txs
@@ -103,10 +102,10 @@ txSubmissionClientReference = go []
 -- |
 -- A reference implementation of @'txSubmissionCientMax'@.
 --
-txSubmissionClientMaxReference :: [Natural] -> [Tx] -> [ReqOrResp Hash Tx]
+txSubmissionClientMaxReference :: [Word16] -> [Tx] -> [ReqOrResp Hash Tx]
 txSubmissionClientMaxReference = go []
     where
-      go :: [ReqOrResp Hash Tx] -> [Natural] -> [Tx] -> [ReqOrResp Hash Tx]
+      go :: [ReqOrResp Hash Tx] -> [Word16] -> [Tx] -> [ReqOrResp Hash Tx]
       go acc []     _   = reverse acc
       go acc (n:ns) txs =
         let (requested, txs') = splitAt (fromIntegral n) txs
@@ -139,14 +138,14 @@ cannonicalOrder = go
 -- |
 -- A reference impolementation of @'txSubmissionServer'@.
 --
-txSubmissionServerReference :: [Natural] -> [Tx] -> [Tx]
+txSubmissionServerReference :: [Word16] -> [Tx] -> [Tx]
 txSubmissionServerReference ns txs = take (fromIntegral $ sum ns) txs
 
 --
 -- Properties goind directly, not via Peer.
 --
 
-prop_direct ::  [Natural] -> [Tx] -> Bool
+prop_direct ::  [Word16] -> [Tx] -> Bool
 prop_direct ns txs =
     runSimOrThrow (direct (testClient ns)
                           (testServer txs))
@@ -155,7 +154,7 @@ prop_direct ns txs =
     , txSubmissionServerReference ns txs
     )
 
-prop_directPipelined1 :: [Natural] -> [Tx] -> Bool
+prop_directPipelined1 :: [Word16] -> [Tx] -> Bool
 prop_directPipelined1 ns txs =
     runSimOrThrow (direct (txSubmissionClientPipelinedMax ns)
                           (testServer txs))
@@ -164,7 +163,7 @@ prop_directPipelined1 ns txs =
     , txSubmissionServerReference ns txs
     )
 
-prop_directPipelined2 :: [Natural] -> [Tx] -> Bool
+prop_directPipelined2 :: [Word16] -> [Tx] -> Bool
 prop_directPipelined2 ns txs =
     runSimOrThrow (direct (txSubmissionClientPipelinedMin ns)
                           (testServer txs))
@@ -184,7 +183,7 @@ prop_directPipelined2 ns txs =
 -- Run a simple tx-submission client and server, going via the 'Peer'
 -- representation, but without going via a channel.
 --
-prop_connect :: [Natural]
+prop_connect :: [Word16]
              -> [Tx]
              -> Bool
 prop_connect ns txs =
@@ -216,7 +215,7 @@ connect_pipelined client txs cs = do
 -- With a client with maximum pipelining we get all requests followed by
 -- all responses.
 --
-prop_connect_pipelined1 :: [Natural] -> [Tx] -> [Bool] -> Bool
+prop_connect_pipelined1 :: [Word16] -> [Tx] -> [Bool] -> Bool
 prop_connect_pipelined1 ns txs choices =
       runSimOrThrow
         (connect_pipelined (txSubmissionClientPipelinedMax ns) txs choices)
@@ -227,7 +226,7 @@ prop_connect_pipelined1 ns txs choices =
 -- | With a client that collects eagerly and the driver chooses maximum
 -- pipelining then we get all requests followed by all responses.
 --
-prop_connect_pipelined2 :: [Natural] -> [Tx] -> Bool
+prop_connect_pipelined2 :: [Word16] -> [Tx] -> Bool
 prop_connect_pipelined2 ns txs =
     let choices = repeat True
     in
@@ -241,7 +240,7 @@ prop_connect_pipelined2 ns txs =
 -- With a client that collects eagerly and the driver chooses minimum
 -- pipelining then we get the interleaving of requests with responses.
 --
-prop_connect_pipelined3 :: [Natural] -> [Tx] -> Bool
+prop_connect_pipelined3 :: [Word16] -> [Tx] -> Bool
 prop_connect_pipelined3 ns txs =
   let choices = repeat False
   in 
@@ -256,7 +255,7 @@ prop_connect_pipelined3 ns txs =
 -- pipelining then we get complex interleavings given by the reference
 -- specification 'pipelineInterleaving'.
 --
-prop_connect_pipelined4 :: [Natural] -> [Tx] -> [Bool] -> Bool
+prop_connect_pipelined4 :: [Word16] -> [Tx] -> [Bool] -> Bool
 prop_connect_pipelined4 ns txs choices =
       cannonicalOrder
         (runSimOrThrow
@@ -273,7 +272,7 @@ prop_connect_pipelined4 ns txs choices =
 --
 prop_channel :: (MonadAsync m, MonadCatch m, MonadST m)
              => m (Channel m ByteString, Channel m ByteString)
-             -> [Natural] -> [Tx] -> m Property
+             -> [Word16] -> [Tx] -> m Property
 prop_channel createChannels ns txs = do
     (res, _) <-
       runConnectedPeers
@@ -285,21 +284,21 @@ prop_channel createChannels ns txs = do
 -- |
 -- Run 'prop_channel' in the simulation monad.
 --
-prop_channel_ST :: [Natural] -> [Tx] -> Property
+prop_channel_ST :: [Word16] -> [Tx] -> Property
 prop_channel_ST ns txs =
     runSimOrThrow (prop_channel createConnectedChannels ns txs)
 
 
 -- | Run 'prop_channel' in the IO monad.
 --
-prop_channel_IO :: [Natural] -> [Tx] -> Property
+prop_channel_IO :: [Word16] -> [Tx] -> Property
 prop_channel_IO ns txs =
     ioProperty (prop_channel createConnectedChannels ns txs)
 
 
 -- | Run 'prop_channel' in the IO monad using local pipes.
 --
-prop_pipe_IO :: [Natural] -> [Tx] -> Property
+prop_pipe_IO :: [Word16] -> [Tx] -> Property
 prop_pipe_IO ns txs =
     ioProperty (prop_channel createPipeConnectedChannels ns txs)
 

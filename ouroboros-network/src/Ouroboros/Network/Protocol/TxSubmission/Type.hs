@@ -7,7 +7,7 @@
 
 module Ouroboros.Network.Protocol.TxSubmission.Type where
 
-import           Numeric.Natural (Natural)
+import           Data.Word (Word16)
 
 import           Network.TypedProtocol.Core
 
@@ -43,7 +43,7 @@ instance Protocol (TxSubmission hash tx) where
     -- Get a list of transaction's hashes from the server.
     --
     MsgGetHashes
-      :: Natural
+      :: Word16
       -> Message (TxSubmission hash tx) StIdle StSendHashes
 
     -- |

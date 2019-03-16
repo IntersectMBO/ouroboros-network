@@ -7,7 +7,7 @@
 module Ouroboros.Network.Protocol.TxSubmission.Examples where
 
 import           Data.List (find)
-import           Numeric.Natural (Natural)
+import           Data.Word (Word16)
 
 import           Network.TypedProtocol.Pipelined
 
@@ -50,7 +50,7 @@ txSubmissionServerFixed txs0 txHash = TxSubmissionServer (pure $ handlers [] txs
 -- tx-submission protocol.
 --
 data ReqOrResp hash tx
-  = ReqHashes Natural
+  = ReqHashes Word16
   | RespHashes [hash]
   | ReqTx hash
   | RespTx tx
@@ -64,13 +64,13 @@ data ReqOrResp hash tx
 txSubmissionClient
   :: forall hash tx m.
      Applicative m
-  => [Natural] -- ^ each element corresponds to a single @'MsgGetHashes'@ request
+  => [Word16] -- ^ each element corresponds to a single @'MsgGetHashes'@ request
   -> TxSubmissionClientPipelined hash tx m [ReqOrResp hash tx]
 txSubmissionClient ns0 = TxSubmissionClientPipelined (sender [] ns0)
     where
       sender
         :: [ReqOrResp hash tx]
-        -> [Natural]
+        -> [Word16]
         -> TxSubmissionSender hash tx Z (Collection hash tx) m [ReqOrResp hash tx]
       sender txs []     = SendMsgDone (reverse txs)
       sender txs (n:ns) = SendMsgGetHashes n
@@ -78,7 +78,7 @@ txSubmissionClient ns0 = TxSubmissionClientPipelined (sender [] ns0)
 
       getHashes
         :: [ReqOrResp hash tx]
-        -> [Natural]
+        -> [Word16]
         -> [hash]
         -> TxSubmissionSender hash tx Z (Collection hash tx) m [ReqOrResp hash tx]
       getHashes txs ns []     = sender txs ns
@@ -98,13 +98,13 @@ txSubmissionClient ns0 = TxSubmissionClientPipelined (sender [] ns0)
 txSubmissionClientPipelinedMin
   :: forall hash tx m.
      Applicative m
-  => [Natural]
+  => [Word16]
   -> TxSubmissionClientPipelined hash tx m [ReqOrResp hash tx]
 txSubmissionClientPipelinedMin ns0 = TxSubmissionClientPipelined (sender [] ns0)
     where
       sender
         :: [ReqOrResp hash tx]
-        -> [Natural]
+        -> [Word16]
         -> TxSubmissionSender hash tx Z (Collection hash tx) m [ReqOrResp hash tx]
       sender txs []     = SendMsgDone (reverse txs)
       sender txs (n:ns) = SendMsgGetHashes n
@@ -112,7 +112,7 @@ txSubmissionClientPipelinedMin ns0 = TxSubmissionClientPipelined (sender [] ns0)
 
       getHashes
         :: [ReqOrResp hash tx]
-        -> [Natural]
+        -> [Word16]
         -> [hash]
         -> Nat n
         -> TxSubmissionSender hash tx n (Collection hash tx) m [ReqOrResp hash tx]
@@ -135,7 +135,7 @@ txSubmissionClientPipelinedMin ns0 = TxSubmissionClientPipelined (sender [] ns0)
       
       requestMoreTx 
         :: [ReqOrResp hash tx]
-        -> [Natural]
+        -> [Word16]
         -> hash
         -> [hash]
         -> Nat n
@@ -151,13 +151,13 @@ txSubmissionClientPipelinedMin ns0 = TxSubmissionClientPipelined (sender [] ns0)
 txSubmissionClientPipelinedMax
   :: forall hash tx m.
      Applicative m
-  => [Natural] -- ^ each element corresponds to a single @'MsgGetHashes'@ request
+  => [Word16] -- ^ each element corresponds to a single @'MsgGetHashes'@ request
   -> TxSubmissionClientPipelined hash tx m [ReqOrResp hash tx]
 txSubmissionClientPipelinedMax ns0 = TxSubmissionClientPipelined (sender [] ns0)
     where
       sender
         :: [ReqOrResp hash tx]
-        -> [Natural]
+        -> [Word16]
         -> TxSubmissionSender hash tx Z (Collection hash tx) m [ReqOrResp hash tx]
       sender txs []     = SendMsgDone (reverse txs)
       sender txs (n:ns) = SendMsgGetHashes n 
@@ -165,7 +165,7 @@ txSubmissionClientPipelinedMax ns0 = TxSubmissionClientPipelined (sender [] ns0)
 
       getHashes
         :: [ReqOrResp hash tx]
-        -> [Natural]
+        -> [Word16]
         -> [hash]
         -> Nat n
         -> TxSubmissionSender hash tx n (Collection hash tx) m [ReqOrResp hash tx]
@@ -188,7 +188,7 @@ txSubmissionClientPipelinedAllMin
      ( Applicative m
      , Eq hash
      )
-  => [Natural]
+  => [Word16]
   -> TxSubmissionClientPipelined hash tx m [ReqOrResp hash tx]
 txSubmissionClientPipelinedAllMin ns0 = TxSubmissionClientPipelined (sender [] ns0)
     where
@@ -199,7 +199,7 @@ txSubmissionClientPipelinedAllMin ns0 = TxSubmissionClientPipelined (sender [] n
 
       sender
         :: [ReqOrResp hash tx]
-        -> [Natural]
+        -> [Word16]
         -> TxSubmissionSender hash tx Z (Collection hash tx) m [ReqOrResp hash tx]
       sender txs []     = SendMsgDone (reverse txs)
       sender txs (n:ns) = SendMsgGetHashes n
@@ -207,7 +207,7 @@ txSubmissionClientPipelinedAllMin ns0 = TxSubmissionClientPipelined (sender [] n
 
       senderPipelined
         :: [ReqOrResp hash tx]
-        -> [Natural]
+        -> [Word16]
         -> [hash]
         -> Nat n
         -> TxSubmissionSender hash tx n (Collection hash tx) m [ReqOrResp hash tx]
@@ -227,7 +227,7 @@ txSubmissionClientPipelinedAllMin ns0 = TxSubmissionClientPipelined (sender [] n
       -- marked hash, we pipeline @'MsgGetHashes'@ using @'senderPipelined'@
       getHashes
         :: [ReqOrResp hash tx]
-        -> [Natural]
+        -> [Word16]
         -> [hash]
         -> Maybe hash -- ^ hash at which we do @'senderPipelined'@
         -> Nat n
@@ -256,7 +256,7 @@ txSubmissionClientPipelinedAllMin ns0 = TxSubmissionClientPipelined (sender [] n
       
       requestMoreTx 
         :: [ReqOrResp hash tx]
-        -> [Natural]
+        -> [Word16]
         -> hash
         -> [hash]
         -> Maybe hash

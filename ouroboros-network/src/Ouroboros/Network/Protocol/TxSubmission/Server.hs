@@ -5,7 +5,7 @@
 
 module Ouroboros.Network.Protocol.TxSubmission.Server where
 
-import           Numeric.Natural (Natural)
+import           Data.Word (Word16)
 
 import           Network.TypedProtocol.Core
 
@@ -26,7 +26,7 @@ instance Functor m => Functor (TxSubmissionServer hash tx m) where
 -- (Recursive) handlers of the tx-submission server
 --
 data TxSubmissionHandlers hash tx m a = TxSubmissionHandlers {
-    getHashes :: Natural -> m ([hash], TxSubmissionHandlers hash tx m a),
+    getHashes :: Word16 -> m ([hash], TxSubmissionHandlers hash tx m a),
     getTx     :: hash    -> m (tx,     TxSubmissionHandlers hash tx m a),
     done      :: a
   }
