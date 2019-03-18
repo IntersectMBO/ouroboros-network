@@ -32,6 +32,7 @@ import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise.Class
 import           Control.Exception
+import qualified Control.Monad.Fail as MonadFail (fail)
 import           Data.Array
 import qualified Data.ByteString.Lazy as BL
 import           Data.Ix (Ix (..))
@@ -68,15 +69,19 @@ instance Show Version where
     show (Version1 m) = printf "Version 1 NetworkMagic %d" $ unNetworkMagic m
 
 instance Serialise Version where
-    encode (Version0 m) = CBOR.encodeWord 0 <> encode m
-    encode (Version1 m) = CBOR.encodeWord 1 <> encode m
+    encode (Version0 m) = CBOR.encodeListLen 2 <> CBOR.encodeWord 0 <> encode m
+    encode (Version1 m) = CBOR.encodeListLen 2 <> CBOR.encodeWord 1 <> encode m
 
     decode = do
+        _  <- CBOR.decodeListLen
         vn <- CBOR.decodeWord
         case vn of
              0 -> Version0 . NetworkMagic <$> decode
              1 -> Version1 . NetworkMagic <$> decode
-             n -> throw $ MuxError MuxControlUnknownVersion ("unknown version " ++ show n) callStack
+             -- @'MonadFail'@ instance for @'Decoder'@ will fail with
+             -- @'DeserialiseFailure'@, since we are not throwing an exception
+             -- we can recover from it in pure code.
+             n -> MonadFail.fail ("unknown version " ++ show n)
 
 versionToVersionNumber :: Version -> VersionNumber
 versionToVersionNumber (Version0 _) = VersionNumber0
