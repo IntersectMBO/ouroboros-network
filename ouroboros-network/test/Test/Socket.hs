@@ -138,15 +138,13 @@ prop_socket_send_recv clientAddr serverAddr f xs = do
     serNode <- runNetworkNodeWithSocket serNet
     cliNode <- runNetworkNodeWithSocket cliNet
 
-    _ <- connectTo cliNode serverAddr
-
-    a <- atomically $ takeTMVar cv
-    b <- atomically $ takeTMVar sv
+    res <- withConnection cliNode serverAddr $ \_ ->
+      atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
 
     killNode cliNode
     killNode serNode
 
-    return ((b, a) == mapAccumL f 0 xs)
+    return (res == mapAccumL f 0 xs)
 
 
 -- |
@@ -213,12 +211,12 @@ prop_socket_client_connect_error _ xs = ioProperty $ do
     nn <- runNetworkNodeWithSocket ni
     mconn <- try @IO @IOException $ connectTo nn clientAddr
     r <- case mconn of
+      -- XXX Disregarding the exact exception type
       Left _     -> return $ property True
       Right conn -> terminate conn >> return (property False)
     killNode nn
 
     return r
-
 
 demo :: forall block .
         (Chain.HasHeader block, Serialise block, Eq block, Show block )
@@ -254,20 +252,19 @@ demo chain0 updates = do
     producerNode <- runNetworkNodeWithSocket producerNet
     consumerNode <- runNetworkNodeWithSocket consumerNet
 
-    conn <- connectTo consumerNode (nodeAddress producerNet)
-  
-    void $ fork $ sequence_
-        [ do threadDelay 10e-3 -- 10 milliseconds, just to provide interest
-             atomically $ do
-                 p <- readTVar producerVar
-                 let Just p' = CPS.applyChainUpdate update p
-                 writeTVar producerVar p'
-             | update <- updates
-        ]
+    r <- withConnection consumerNode (nodeAddress producerNet) $ \_ -> do
 
-    r <- atomically $ takeTMVar done
+      void $ fork $ sequence_
+          [ do threadDelay 10e-3 -- just to provide interest
+               atomically $ do
+                  p <- readTVar producerVar
+                  let Just p' = CPS.applyChainUpdate update p
+                  writeTVar producerVar p'
+          | update <- updates
+          ]
 
-    terminate conn
+      atomically $ takeTMVar done
+
     killNode producerNode
     killNode consumerNode
 

@@ -11,13 +11,14 @@ module Ouroboros.Network.Mux.Interface
   , MuxPeer (..)
   , NetworkNode (..)
   , Connection (..)
+  , withConnection
 
   -- * Auxiliary functions
   , miniProtocolDescription
   ) where
 
 import qualified Codec.CBOR.Read     as CBOR
-import           Control.Exception (SomeException)
+import           Control.Exception (SomeException, bracket)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Functor (void)
 import           Numeric.Natural (Natural)
@@ -124,8 +125,8 @@ data NetworkNode addr m = NetworkNode {
       -- This function will run client side of mux version negotation and then
       -- start a the list protocols given by @'NetworkInterface'@.
       --
-      -- Note: it may riase an exception (e.g.
-      -- @'Control.Exception.IOException'@).
+      -- @'connectTo'@ will throw an exception if the underlying bearer breaks,
+      -- or the remote part is not reachable (e.g. @'Control.Exception.IOException'@).
       --
       connectTo :: addr -> m (Connection m),
 
@@ -151,9 +152,24 @@ data Connection m = Connection {
 
       -- |
       -- Await on the mux thread and return an exception that was raised by it
-      -- if any.
+      -- if any.  It will not close the connection in case of an error, use @'terminate'@ for that.
       await :: m (Maybe SomeException)
     }
+
+
+-- |
+-- A bracket of an @IO@ action which opens with @'connectTo'@ and closed with
+-- @'terminate'@.  Inside the callback you should not use @'terminate'@ (this
+-- might result in closing a wrong socket!), but @'observe'@ is safe.
+--
+withConnection
+  :: NetworkNode addr IO
+  -> addr
+  -> (Connection IO -> IO a)
+  -> IO a
+withConnection nn addr k =
+  bracket (connectTo nn addr) terminate k
+
 
 -- |
 -- Transform a @'MuxPeer'@ into @'ProtocolDescription'@ used by the
