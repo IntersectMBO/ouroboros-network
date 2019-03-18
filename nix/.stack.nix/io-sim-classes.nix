@@ -16,7 +16,13 @@
       };
     components = {
       "library" = {
-        depends = [ (hsPkgs.base) (hsPkgs.mtl) (hsPkgs.stm) (hsPkgs.async) ];
+        depends = [
+          (hsPkgs.base)
+          (hsPkgs.mtl)
+          (hsPkgs.stm)
+          (hsPkgs.async)
+          (hsPkgs.bytestring)
+          ];
         };
       };
     } // rec { src = (pkgs.lib).mkDefault .././../io-sim-classes; }

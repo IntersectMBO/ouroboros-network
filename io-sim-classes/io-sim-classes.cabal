@@ -42,7 +42,8 @@ library
   build-depends:       base  >=4.9 && <4.13,
                        mtl   >=2.2 && <2.3,
                        stm   >=2.4 && <2.6,
-                       async >=2.1
+                       async >=2.1,
+                       bytestring
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
                        -fno-ignore-asserts
