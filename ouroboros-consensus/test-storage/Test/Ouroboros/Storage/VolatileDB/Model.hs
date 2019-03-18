@@ -108,7 +108,9 @@ reOpenModel :: MonadState (MyState blockId) m
             -> m ()
 reOpenModel err = do
     dbm <- getDB
-    dbm' <- recover err dbm
+    dbm' <- if not $ open dbm
+            then recover err dbm
+            else return dbm
     putDB dbm' {open = True}
 
 getBlockModel :: forall m blockId. (MonadState (MyState blockId) m, Ord blockId)

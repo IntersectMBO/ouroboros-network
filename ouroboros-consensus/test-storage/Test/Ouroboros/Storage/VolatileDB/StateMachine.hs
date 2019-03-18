@@ -31,6 +31,8 @@ import           Data.Functor.Classes
 import           Data.Kind (Type)
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map as M
+import           Data.Set (Set)
+import qualified Data.Set as S
 import           Data.TreeDiff (ToExpr)
 import           Data.TreeDiff.Class
 import           GHC.Generics
@@ -241,7 +243,6 @@ runDB runCorruptions db cmd = case cmd of
         isMember <- getIsMember db
         return $ IsMember $ isMember <$> bids
 
-
 sm :: MonadCatch m
    => HasFS m h
    -> VolatileDB BlockId m
@@ -337,7 +338,7 @@ generatorImpl mkErr m@Model {..} = do
         At cmd <- genCmd
         err' <- if noErrorFor cmd then return Nothing
            else frequency
-                [ (2, return Nothing)
+                [ (1, return Nothing)
                 , (if mkErr then 1 else 0, Just <$> arbitrary)]
         let err = erasePutCorruptions err'
         return $ At $ CmdErr cmd err
@@ -345,6 +346,7 @@ generatorImpl mkErr m@Model {..} = do
         eraseCorruptions str = (\(fsErr, _) -> (fsErr, Nothing)) <$> str
         erasePutCorruptions mErr = do
             err <- mErr
+            -- we don't use corruptions as part of simulated errors.
             return err {_hPut = eraseCorruptions $ _hPut err}
         noErrorFor GetBlock {}       = False
         noErrorFor ReOpen {}         = False
@@ -504,7 +506,7 @@ prop_sequential_errors =
 
 tests :: TestTree
 tests = testGroup "VolatileDB" [
-        testProperty "q-s-m" $ prop_sequential
+      testProperty "q-s-m" $ prop_sequential
     , testProperty "q-s-m-Parser" $ prop_sequential_strict_parser
     , testProperty "q-s-m-Errors" $ prop_sequential_errors
     ]
@@ -535,9 +537,9 @@ tag [] = [TagEmpty]
 tag ls = C.classify
     [ tagGetBinaryBlobNothing
     , tagGetJust $ Left TagGetJust
-    , tagJustReOpenJust
+    , tagGetReOpenGet
     , tagReOpenJust
-    , tagGarbageCollect Nothing False
+    , tagGarbageCollect S.empty Nothing
     , tagCorruptWriteFile
     , tagAppendRecover
     , tagIsClosedError
@@ -546,39 +548,42 @@ tag ls = C.classify
 
     tagGetBinaryBlobNothing :: EventPred
     tagGetBinaryBlobNothing = successful $ \ev r -> case r of
-        Blob Nothing | GetBlock {} <- cmd $ unAt $ eventCmd ev ->
+        Blob Nothing | GetBlock {} <- getCmd ev ->
             Left TagGetNothing
         _ -> Right tagGetBinaryBlobNothing
 
     tagReOpenJust :: EventPred
-    tagReOpenJust = tagGetJust $ Right $ tagGetJust $ Left TagReOpenGet
+    tagReOpenJust = tagReOpen False $ Right $ tagGetJust $ Left TagReOpenGet
 
-    tagJustReOpenJust :: EventPred
-    tagJustReOpenJust = tagGetJust $ Right $ reOpen $ Right $ tagGetJust $ Left TagGetReOpenGet
+    tagGetReOpenGet :: EventPred
+    tagGetReOpenGet = tagGetJust $ Right $ tagReOpen False $ Right $ tagGetJust $ Left TagGetReOpenGet
 
-    tagGarbageCollect :: Maybe BlockId -> Bool -> EventPred
-    tagGarbageCollect msl bl = C.predicate $ \ev -> case (msl, bl, eventMockResp ev, cmd $ unAt $ eventCmd ev) of
-        (Nothing, False, Resp (Right (Blob (Just _))), GetBlock bid)
-            -> Right $ tagGarbageCollect (Just bid) False
-        (Just bid, False, Resp (Right (Unit ())), GarbageCollect bid')
-            -> Right $ tagGarbageCollect (Just bid) (toSlot bid < toSlot bid')
-        (Just bid, True, Resp (Right (Blob Nothing)), GetBlock bid')
-            -> if bid == bid' then Left TagGarbageCollect
-                              else Right $ tagGarbageCollect msl bl
-        _ -> Right $ tagGarbageCollect msl bl
+    -- This rarely succeeds. I think this is because the last part (get -> Nothing) rarelly succeeds.
+    -- This happens because when a blockId is deleted is very unlikely to be requested.
+    tagGarbageCollect :: Set BlockId -> Maybe BlockId -> EventPred
+    tagGarbageCollect bids mgced = successful $ \ev suc -> case (mgced, suc, getCmd ev) of
+        (Nothing, _, PutBlock bid)
+            -> Right $ tagGarbageCollect (S.insert bid bids) Nothing
+        (Nothing, _, GarbageCollect bid)
+            -> Right $ tagGarbageCollect bids (Just bid)
+        (Just _gced, Blob Nothing, GetBlock bid) | (S.member bid bids)
+            -> Left TagGarbageCollect
+        _ -> Right $ tagGarbageCollect bids mgced
 
     tagGetJust :: Either Tag EventPred -> EventPred
-    tagGetJust next = C.predicate $ \ev -> case eventMockResp ev of
-        Resp (Right (Blob (Just _))) -> next
-        _                            -> Right $ tagGetJust next
+    tagGetJust next = successful $ \_ev suc -> case suc of
+        Blob (Just _) -> next
+        _             -> Right $ tagGetJust next
 
-    reOpen :: Either Tag EventPred -> EventPred
-    reOpen next = C.predicate $ \ev -> case (cmd $ unAt $ eventCmd ev, eventMockResp ev) of
-        (ReOpen, Resp (Right (Unit ()))) -> next
-        _                                -> Right $ reOpen next
+    tagReOpen :: Bool -> Either Tag EventPred -> EventPred
+    tagReOpen hasClosed next = successful $ \ev _ -> case (hasClosed, getCmd ev) of
+        (True, ReOpen)     -> next
+        (False, Close)     -> Right $ tagReOpen True next
+        (False, Corrupt _) -> Right $ tagReOpen True next
+        _                  -> Right $ tagReOpen hasClosed next
 
     tagCorruptWriteFile :: EventPred
-    tagCorruptWriteFile = C.predicate $ \ev -> case cmd $ unAt (eventCmd ev) of
+    tagCorruptWriteFile = successful $ \ev _ -> case getCmd ev of
         Corrupt cors -> if any (\(cor,file) -> (cor == DeleteFile) && (file == (currentFile $ dbModel $ eventBefore ev))) (NE.toList cors)
                         then Left TagCorruptWriteFile
                         else Right tagCorruptWriteFile
@@ -590,16 +595,18 @@ tag ls = C.classify
             doesAppend (AppendBytes 0) = False
             doesAppend (AppendBytes _) = True
             doesAppend _               = False
-        in  C.predicate $ \ev -> case cmd $ unAt (eventCmd ev) of
-            Corrupt cors -> if any (\(cor,_file) -> doesAppend cor) (NE.toList cors)
-                            then Left TagAppendRecover
-                            else Right tagAppendRecover
-            _            -> Right tagAppendRecover
+        in  successful $ \ev _ -> case getCmd ev of
+            Corrupt cors | any (\(cor,_file) -> doesAppend cor) (NE.toList cors)
+              -> Left TagAppendRecover
+            _ -> Right tagAppendRecover
 
     tagIsClosedError :: EventPred
     tagIsClosedError = C.predicate $ \ev -> case eventMockResp ev of
         Resp (Left ClosedDBError) -> Left TagClosedError
         _                         -> Right tagIsClosedError
+
+getCmd :: Event r -> Cmd
+getCmd ev = cmd $ unAt (eventCmd ev)
 
 tagParser :: [Event Symbolic] -> String
 tagParser [] = "TagEmpty"
@@ -626,16 +633,55 @@ isMemberTrue' events = sum $ f <$> events
             Resp (Right (IsMember ls)) -> if length (filter id ls) > 0 then 1 else 0
             Resp (Right _)             -> 0
 
-data Tag = TagGetJust
-         | TagGetNothing
-         | TagGetReOpenGet
-         | TagReOpenGet
-         | TagGarbageCollect
-         | TagCorruptWriteFile
-         | TagAppendRecover
-         | TagEmpty
-         | TagClosedError
-         deriving Show
+data Tag =
+    -- | Request a block successfully
+    --
+    -- > GetBlock (returns Just)
+      TagGetJust
+
+    -- | Try to get a non-existant block
+    --
+    -- > GetBlock (returns Nothing)
+    | TagGetNothing
+
+    -- | Make a request, close, re-open and do another request.
+    --
+    -- > GetBlock (returns Just)
+    -- > CloseDB or Corrupt
+    -- > ReOpen
+    -- > GetBlock (returns Just)
+    | TagGetReOpenGet
+
+    -- | Close, re-open and do a request.
+    --
+    -- > CloseDB or Corrupt
+    -- > ReOpen
+    -- > GetBlock (returns Just)
+    | TagReOpenGet
+
+    -- | Test Garbage Collect.
+    --
+    -- > PutBlock
+    -- > GarbageColect
+    -- > GetBlock (returns Nothing)
+    | TagGarbageCollect
+
+    -- | Try to delete the current active file.
+    --
+    -- > Corrupt Delete
+    | TagCorruptWriteFile
+
+    -- | Recover after writing garbage to a file.
+    --
+    -- > Corrupt Append
+    | TagAppendRecover
+
+    -- | A test with zero commands.
+    | TagEmpty
+
+    -- | Returns ClosedDBError.
+    | TagClosedError
+    deriving Show
 
 tagSimulatedErrors :: [Event Symbolic] -> [String]
 tagSimulatedErrors events = fmap f events
@@ -644,8 +690,6 @@ tagSimulatedErrors events = fmap f events
         f ev = case eventCmd ev of
             At (CmdErr _ Nothing) -> "NoError"
             At (CmdErr cmd _)     -> cmdName (At cmd) <> " Error"
-
-
 
 execCmd :: Model Symbolic
         -> Command (At CmdErr) (At Resp)
