@@ -16,7 +16,12 @@
       };
     components = {
       "library" = {
-        depends = [ (hsPkgs.base) (hsPkgs.io-sim-classes) (hsPkgs.bytestring) ];
+        depends = [
+          (hsPkgs.base)
+          (hsPkgs.io-sim-classes)
+          (hsPkgs.bytestring)
+          (hsPkgs.basic-tracer)
+          ];
         };
       tests = {
         "tests" = {
@@ -24,6 +29,7 @@
             (hsPkgs.base)
             (hsPkgs.async)
             (hsPkgs.bytestring)
+            (hsPkgs.basic-tracer)
             (hsPkgs.io-sim-classes)
             (hsPkgs.io-sim)
             (hsPkgs.QuickCheck)

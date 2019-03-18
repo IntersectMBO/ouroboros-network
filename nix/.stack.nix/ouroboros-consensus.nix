@@ -21,6 +21,7 @@
           (hsPkgs.ouroboros-network)
           (hsPkgs.typed-protocols)
           (hsPkgs.io-sim-classes)
+          (hsPkgs.basic-tracer)
           (hsPkgs.base16-bytestring)
           (hsPkgs.bytestring)
           (hsPkgs.cborg)

@@ -1,5 +1,5 @@
 packages: ./typed-protocols
-	  ./ouroboros-network-testing
+          ./ouroboros-network-testing
           ./ouroboros-network
           ./ouroboros-consensus
           ./io-sim
@@ -20,5 +20,14 @@ package ouroboros-consensus
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/iohk-monitoring-framework
-  tag: 8456e488fd26e34f0d15c957965d6cc5c51427af
+  subdir: iohk-monitoring
+  tag: 0c31ff69e28b8a955a5147c03cd9471307b3f349
 
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/iohk-monitoring-framework
+  subdir:   basic-tracer
+  tag: 0c31ff69e28b8a955a5147c03cd9471307b3f349
+
+package basic-tracer
+  tests: False
