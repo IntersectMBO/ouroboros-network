@@ -161,15 +161,13 @@ prop_socket_send_recv clientAddr serverAddr clientVersions serverVersions f xs =
     serNode <- runNetworkNodeWithSocket serNet
     cliNode <- runNetworkNodeWithSocket cliNet
 
-    _ <- connectTo cliNode serverAddr
-
-    a <- atomically $ takeTMVar cv
-    b <- atomically $ takeTMVar sv
+    res <- withConnection cliNode serverAddr $ \_ ->
+      atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
 
     killNode cliNode
     killNode serNode
 
-    return ((b, a) == mapAccumL f 0 xs)
+    return (res == mapAccumL f 0 xs)
 
 
 -- |
@@ -236,13 +234,16 @@ prop_socket_client_connect_error _ xs = ioProperty $ do
           }
 
     nn <- runNetworkNodeWithSocket ni
-    conn <- connectTo nn clientAddr
-    exc  <- observe conn
-    killNode nn
-
-    case exc of
-         Just _  -> return $ property True -- XXX Dissregarding the exact exception type
-         Nothing -> return $ property False
+    (conn_e :: Either SomeException (Connection IO))
+       <- try $ connectTo nn clientAddr
+    case conn_e of
+      Left _  -> do
+        killNode nn
+        return $ property True -- XXX Disregarding the exact exception type 
+      Right conn -> do
+        terminate conn
+        killNode nn
+        return $ property False
 
 
 prop_version_missmatch :: (Int -> Int -> (Int, Int))
@@ -283,13 +284,15 @@ prop_version_missmatch f xs = ioProperty $ do
     srvNode <- runNetworkNodeWithSocket' srvNet (Just (rescb resq))
     cliNode <- runNetworkNodeWithSocket  cliNet
 
-    res_client <- try $ connectTo cliNode serverAddr
-    res_server <- maybe (Right ()) Left <$> atomically (readTBQueue resq)
+    results <- withConnection cliNode serverAddr $ \conn -> do
+      res_server <- maybe (Right ()) Left <$> atomically (readTBQueue resq)
+      res_client <- maybe (Right ()) Left <$> observe conn
+      return [res_client, res_server]
 
     killNode srvNode
     killNode cliNode
 
-    return (checkResult res_client && checkResult res_server)
+    return $ all checkResult results
 
   where
     checkResult res_e =
@@ -337,13 +340,15 @@ prop_network_missmatch f xs = ioProperty $ do
     srvNode <- runNetworkNodeWithSocket' srvNet (Just (rescb resq))
     cliNode <- runNetworkNodeWithSocket  cliNet
 
-    res_client <- try $ connectTo cliNode serverAddr
-    res_server <- maybe (Right ()) Left <$> atomically (readTBQueue resq)
+    results <- withConnection cliNode serverAddr $ \conn -> do
+      res_server <- maybe (Right ()) Left <$> atomically (readTBQueue resq)
+      res_client <- maybe (Right ()) Left <$> observe conn
+      return [res_server, res_client]
 
     killNode srvNode
     killNode cliNode
 
-    return (checkResult res_client && checkResult res_server)
+    return $ all checkResult results
 
   where
     checkResult res_e =
@@ -396,20 +401,19 @@ demo chain0 updates = do
     producerNode <- runNetworkNodeWithSocket producerNet
     consumerNode <- runNetworkNodeWithSocket consumerNet
 
-    conn <- connectTo consumerNode (nodeAddress producerNet)
-  
-    void $ fork $ sequence_
-        [ do threadDelay 10000 -- just to provide interest
-             atomically $ do
-                 p <- readTVar producerVar
-                 let Just p' = CPS.applyChainUpdate update p
-                 writeTVar producerVar p'
-             | update <- updates
-        ]
+    r <- withConnection consumerNode (nodeAddress producerNet) $ \_ -> do
 
-    r <- atomically $ takeTMVar done
+      void $ fork $ sequence_
+          [ do threadDelay 10000 -- just to provide interest
+               atomically $ do
+                  p <- readTVar producerVar
+                  let Just p' = CPS.applyChainUpdate update p
+                  writeTVar producerVar p'
+          | update <- updates
+          ]
 
-    terminate conn
+      atomically $ takeTMVar done
+
     killNode producerNode
     killNode consumerNode
 
