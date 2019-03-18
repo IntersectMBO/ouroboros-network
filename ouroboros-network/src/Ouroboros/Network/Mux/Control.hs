@@ -22,7 +22,7 @@ import           GHC.Stack
 
 import           Ouroboros.Network.Mux.Types
 
-data ControlMsg = MsgInitReq (M.Map VersionNumber Version)
+data ControlMsg = MsgInitReq [Version]
                 | MsgInitRsp Version
                 | MsgInitFail String
                 deriving (Eq, Show)
@@ -30,19 +30,18 @@ data ControlMsg = MsgInitReq (M.Map VersionNumber Version)
 encodeCtrlMsg :: ControlMsg -> CBOR.Encoding
 encodeCtrlMsg (MsgInitReq versions) = CBOR.encodeListLen 2 <> CBOR.encodeWord 0 <> encodeVersionMap versions
 encodeCtrlMsg (MsgInitRsp version)  = CBOR.encodeListLen 3 <> CBOR.encodeWord 1 <> encode version
-encodeCtrlMsg (MsgInitFail msg)     = CBOR.encodeListLen 2 <> CBOR.encodeWord 2 <> encode msg
 
-encodeVersionMap :: M.Map VersionNumber Version -> CBOR.Encoding
-encodeVersionMap versions =
-    CBOR.encodeMapLen (fromIntegral $ M.size versions)
-    <> foldr (\v b -> encode v <> b) mempty (M.elems versions)
+encodeVersions :: [Version] -> CBOR.Encoding
+encodeVersions versions =
+    CBOR.encodeListLen (fromIntegral $ length versions)
+    <> foldr (\v b -> encode v <> b) mempty versions
 
 decodeCtrlMsg :: HasCallStack => CBOR.Decoder s ControlMsg
 decodeCtrlMsg = do
     _ <- CBOR.decodeListLen
     key <- CBOR.decodeWord
     case key of
-         0 -> MsgInitReq . M.mapMaybeWithKey decodeVersionTerm <$> decodeVersionMap
+         0 -> MsgInitReq <$> decodeVersions
          1 -> MsgInitRsp <$> decode
          2 -> MsgInitFail <$> decode
          a -> throw $ MuxError MuxControlUnknownMessage
@@ -50,30 +49,16 @@ decodeCtrlMsg = do
                       callStack
 
   where
-    decodeVersionMap :: CBOR.Decoder s (M.Map VersionNumber CBOR.Term)
-    decodeVersionMap = do
-        n <- CBOR.decodeMapLen
-        let decodeEntry = do
-              !k <- CBOR.decodeWord
-              !v <- CBOR.decodeTerm
-              case k of
-                   0 -> return $ Just (VersionNumber0, v)
-                   1 -> return $ Just (VersionNumber1, v)
-                   _ -> return Nothing
-        fmap (M.fromList . catMaybes) (replicateM n decodeEntry)
+    decodeVersions :: CBOR.Decoder s [Version]
+    decodeVersions = do
+        n <- CBOR.decodeListLen
+        fmap catMaybes (replicateM n tryDecodeVersion)
 
-    decodeVersionTerm VersionNumber0 t =
-        let bs = toLazyByteString (CBOR.encodeTerm t)
-            v_e  = CBOR.deserialiseFromBytes (Version0 . NetworkMagic <$> decode) bs in
-        case v_e of
-             Left  e      -> throw e
-             Right (_, v) -> Just v
-
-    decodeVersionTerm VersionNumber1 t =
-        let bs = toLazyByteString (CBOR.encodeTerm t)
-            v_e  = CBOR.deserialiseFromBytes (Version1 . NetworkMagic <$> decode) bs in
-        case v_e of
-             Left  e      -> throw e
-             Right (_, v) -> Just v
-
-
+    tryDecodeVersion :: CBOR.Decoder s (Maybe Version)
+    tryDecodeVersion = do
+      v <- CBOR.decodeWord
+      n <- decode
+      case v of
+        0 -> return $ Just (Version0 n)
+        1 -> return $ Just (Version1 n)
+        _ -> return Nothing

@@ -41,7 +41,7 @@ instance Arbitrary ControlMsg where
         vs <- arbitrary
         v  <- arbitrary
         f  <- arbitrary
-        elements [ MsgInitReq (M.fromList $ map (\a -> (Mx.versionToVersionNumber a, a)) vs)
+        elements [ MsgInitReq vs
                  , MsgInitRsp v
                  , MsgInitFail f]
 
@@ -81,7 +81,7 @@ prop_unknown_version_req version len validVersion = version > 1 && len > 0 && le
         res = deserialiseFromBytes decodeCtrlMsg blob in
     case res of
          Left _ -> property False
-         Right (_, MsgInitReq resVersions) -> M.elems resVersions === [validVersion]
+         Right (_, MsgInitReq resVersions) -> resVersions === [validVersion]
          Right _  -> property False
   where
     enc =
