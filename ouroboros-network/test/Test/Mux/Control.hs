@@ -3,21 +3,19 @@
 module Test.Mux.Control (
       tests) where
 
-import           Codec.CBOR.Encoding (Encoding, encodeListLen, encodeMapLen,
-                     encodeWord)
-import           Codec.CBOR.Read (deserialiseFromBytes)
+import           Codec.CBOR.Encoding (Encoding, encodeListLen, encodeWord)
+import           Codec.CBOR.Read (DeserialiseFailure (..), deserialiseFromBytes)
 import           Codec.CBOR.Write (toLazyByteString)
 import           Codec.Serialise (Serialise (..))
 import           Control.Exception
+import           Data.Foldable (foldl')
 import qualified Data.ByteString.Lazy as BL
-import qualified Data.Map as M
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
 import qualified Ouroboros.Network.Mux as Mx
 import           Ouroboros.Network.Mux.Control
-import qualified Ouroboros.Network.Mux.Types as Mx
 
 tests :: TestTree
 tests =
@@ -59,17 +57,13 @@ prop_mux_encode_decode msg =
 prop_unknown_version_rsp :: Word
                          -> Word
                          -> Property
-prop_unknown_version_rsp version len = version > 1 && len > 0 && len < 0xffff ==> ioProperty $ do
+prop_unknown_version_rsp version len = version > 1 && len > 0 && len < 0xffff ==>
     let blob = toLazyByteString $ invalidControlMessage 1 version len
+    in case deserialiseFromBytes decodeCtrlMsg blob of
+      Left (DeserialiseFailure _ err)
+        -> err === ("unknown version " ++ show version)
 
-    res <- try $ return $! deserialiseFromBytes decodeCtrlMsg blob
-    case res of
-         Left e  ->
-             case fromException e of
-                  Just me -> return $ Mx.errorType me == Mx.MuxControlUnknownVersion
-                  Nothing -> return False
-
-         Right _ -> return False
+      _ -> property False
 
 -- | Verify that unknown versions are skipped in MsgInitReq messages.
 prop_unknown_version_req :: Word
@@ -86,8 +80,11 @@ prop_unknown_version_req version len validVersion = version > 1 && len > 0 && le
   where
     enc =
         let term = BL.replicate (fromIntegral len) 0xa in
-        encodeListLen 2 <> encodeWord 0 <> encodeMapLen 2
-        <> foldr (\v b -> b <> encode v) (encodeWord 0xcafebabe <> encode term) [validVersion]
+        encodeListLen 2 <> encodeWord 0 <> encodeListLen 2
+        <> foldl' (\b v -> b <> encode v)
+            -- unknown (or bad) encoding of a Version
+            (encode term)
+            [validVersion]
 
 -- | Verify error handling for ControlMsg with invalid key.
 prop_unknown_version_key :: Word
@@ -110,6 +107,6 @@ prop_unknown_version_key key len = key > 2 && len > 0 && len < 0xffff ==> ioProp
 invalidControlMessage :: Word -> Word -> Word -> Encoding
 invalidControlMessage k v len =
     let term = BL.replicate (fromIntegral len) 0xa in
-    encodeListLen 2 <> encodeWord k <> encode v <> encode term
+    encodeListLen 2 <> encodeWord k <> encodeListLen 2 <> encode v <> encode term
 
 
