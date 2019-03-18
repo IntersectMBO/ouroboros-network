@@ -81,7 +81,7 @@ import           Test.Ouroboros.Storage.ImmutableDB.Model
 import           Test.Ouroboros.Storage.ImmutableDB.TestBlock hiding (tests)
 import           Test.Ouroboros.Storage.Util (collects, tryImmDB)
 
-import           Test.Util.Orphans.Arbitrary ()
+import           Test.Util.Orphans.Arbitrary (genSmallSlotNo)
 import           Test.Util.RefEnv (RefEnv)
 import qualified Test.Util.RefEnv as RE
 
@@ -388,14 +388,14 @@ generateCmd Model {..} = At <$> frequency
     [ (1, GetBinaryBlob <$> frequency
             [ (if empty then 0 else 10, genSlotInThePast)
             , (1,  genSlotInTheFuture)
-            , (1,  arbitrary) ])
+            , (1,  genSmallSlotNo) ])
     , (3, do
-            slot <- arbitrary -- TODO can create many empty epochs
+            slot <- genSmallSlotNo -- TODO can create many empty epochs
             return $ AppendBinaryBlob slot (TestBlock slot))
     , (1, frequency
             -- An iterator with a random and likely invalid range,
-            [ (1, StreamBinaryBlobs <$> (Just <$> arbitrary)
-                                    <*> (Just <$> arbitrary))
+            [ (1, StreamBinaryBlobs <$> (Just <$> genSmallSlotNo)
+                                    <*> (Just <$> genSmallSlotNo))
             -- An iterator that is more likely to be valid.
             , (if empty then 0 else 2, do
                     start <- genSlotInThePast

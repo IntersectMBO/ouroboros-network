@@ -372,11 +372,11 @@ appendBinaryBlobModel err getEpochSize slot bld = do
       throwUserError err $ AppendToSlotInThePastError slot dbmNextSlot
 
     let blob = BL.toStrict $ BS.toLazyByteString bld
-        toPad = unSlotNo (slot - dbmNextSlot)
+        toPad = fromIntegral $ unSlotNo (slot - dbmNextSlot)
 
     -- TODO snoc list?
     put dbm
-      { dbmChain           = dbmChain ++ replicate (fromIntegral toPad) Nothing ++ [Just blob]
+      { dbmChain           = dbmChain ++ replicate toPad Nothing ++ [Just blob]
       , dbmNextSlot        = slot + 1
       , dbmCumulEpochSizes = addMissingEpochSizes dbmCumulEpochSizes
       }

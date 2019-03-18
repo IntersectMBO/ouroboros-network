@@ -95,7 +95,6 @@ instance Show (Model r) where
 deriving instance Show (ModelShow r)
 deriving instance Generic (DBModel MyBlockId)
 deriving instance Generic (ModelShow r)
-deriving instance Generic SlotNo
 deriving instance ToExpr SlotNo
 deriving instance ToExpr (DBModel MyBlockId)
 deriving instance ToExpr (ModelShow r)

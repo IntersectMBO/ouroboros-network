@@ -14,15 +14,15 @@ import           Ouroboros.Network.Block (SlotNo (..))
 import           Ouroboros.Storage.ImmutableDB.CumulEpochSizes
 import           Ouroboros.Storage.ImmutableDB.Types
 
-import           Test.Util.Orphans.Arbitrary ()
+import           Test.Util.Orphans.Arbitrary (genSmallEpochNo, genLimitedEpochSize)
 
 
 instance Arbitrary CumulEpochSizes where
   arbitrary =
-    fromNonEmpty . NE.fromList . fmap getPositive . getNonEmpty <$> arbitrary
+    fromNonEmpty . NE.fromList . getNonEmpty . NonEmpty <$> listOf1 genLimitedEpochSize
   shrink ces =
-    [ fromNonEmpty . NE.fromList . fmap getPositive . getNonEmpty $ es'
-    | let es = NonEmpty . fmap Positive $ toList ces
+    [ fromNonEmpty . NE.fromList . getNonEmpty $ es'
+    | let es = NonEmpty $ toList ces
     , es' <- shrink es
     ]
 
@@ -32,8 +32,9 @@ chooseSlot (SlotNo start) (SlotNo end) = SlotNo <$> choose (start, end)
 prop_ces_roundtrip :: CumulEpochSizes -> Property
 prop_ces_roundtrip ces = fromNonEmpty (NE.fromList (toList ces)) === ces
 
-prop_epochSize :: CumulEpochSizes -> EpochNo -> Property
-prop_epochSize ces epoch =
+prop_epochSize :: CumulEpochSizes -> Property
+prop_epochSize ces =
+    forAll genSmallEpochNo $ \ epoch ->
     epochSize ces epoch === toList ces !? fromIntegral (unEpochNo epoch)
   where
     xs !? i

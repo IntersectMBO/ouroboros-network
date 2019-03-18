@@ -3,7 +3,12 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
-module Test.Util.Orphans.Arbitrary () where
+module Test.Util.Orphans.Arbitrary
+    ( genLimitedEpochSize
+    , genLimitedSlotNo
+    , genSmallEpochNo
+    , genSmallSlotNo
+    ) where
 
 import           Codec.Serialise (Serialise)
 import           Data.Time
@@ -67,6 +72,31 @@ deriving via Positive Word64 instance Arbitrary SlotNo
 deriving via Word64          instance Arbitrary EpochNo
 deriving via Positive Word64 instance Arbitrary EpochSize
 deriving via Word64          instance Arbitrary RelativeSlot
+
+-- | The functions 'slotAtTime' and 'timeUntilNextSlot' suffer from arithmetic
+-- overflow for very large values, so generate values that avoid overflow when
+-- used in these two functions. The largest value generated is still sufficently
+-- large to allow for 5e12 years worth of slots at a slot interval of 20
+-- seconds.
+genLimitedSlotNo :: Gen SlotNo
+genLimitedSlotNo =
+    SlotNo <$> arbitrary `suchThat` (< 0x8000000000000000)
+
+-- | Generate a small SlotNo for the state machine tests. The runtime of the
+-- StateMachine prop_sequential tests is proportional the the upper bound.
+genSmallSlotNo :: Gen SlotNo
+genSmallSlotNo =
+    SlotNo <$> choose (0, 1000)
+
+-- | The tests for 'CumulEpochSizes' requires that the sum of a list of these
+-- values does not overflow.
+genLimitedEpochSize :: Gen EpochSize
+genLimitedEpochSize =
+    EpochSize <$> choose (0, 100_000)
+
+genSmallEpochNo :: Gen EpochNo
+genSmallEpochNo =
+    EpochNo <$> choose (0, 10000)
 
 instance Arbitrary EpochSlot where
   arbitrary = EpochSlot <$> arbitrary <*> arbitrary
