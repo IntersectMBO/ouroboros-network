@@ -7,6 +7,7 @@ module Test.Util.Orphans.Arbitrary () where
 
 import           Codec.Serialise (Serialise)
 import           Data.Time
+import           Data.Word (Word64)
 import           Test.QuickCheck hiding (Fixed (..))
 
 import           Ouroboros.Consensus.BlockchainTime
@@ -19,8 +20,8 @@ import           Ouroboros.Consensus.Util.Random (Seed (..), withSeed)
 
 import           Ouroboros.Storage.ImmutableDB.CumulEpochSizes (EpochSlot (..),
                      RelativeSlot (..))
-import           Ouroboros.Storage.ImmutableDB.Types (Epoch (..),
-                     EpochSize (..), Slot (..))
+import           Ouroboros.Storage.ImmutableDB.Types (EpochNo (..),
+                     EpochSize (..), SlotNo (..))
 
 
 minNumCoreNodes, minNumSlots :: Int
@@ -61,11 +62,11 @@ instance Arbitrary FixedUTC where
 instance Arbitrary SlotLength where
   arbitrary = slotLengthFromMillisec <$> choose (1, 20 * 1_000)
 
-deriving via FixedUTC      instance Arbitrary SystemStart
-deriving via Positive Word instance Arbitrary Slot
-deriving via Word          instance Arbitrary Epoch
-deriving via Positive Word instance Arbitrary EpochSize
-deriving via Word          instance Arbitrary RelativeSlot
+deriving via FixedUTC        instance Arbitrary SystemStart
+deriving via Positive Word64 instance Arbitrary SlotNo
+deriving via Word64          instance Arbitrary EpochNo
+deriving via Positive Word64 instance Arbitrary EpochSize
+deriving via Word64          instance Arbitrary RelativeSlot
 
 instance Arbitrary EpochSlot where
   arbitrary = EpochSlot <$> arbitrary <*> arbitrary

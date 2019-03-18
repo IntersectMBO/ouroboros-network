@@ -25,7 +25,7 @@ module Ouroboros.Network.Chain (
   -- ** Genesis
   genesis,
   genesisPoint,
-  genesisSlot,
+  genesisSlotNo,
 --  genesisHash, -- TODO: currently (temporarily) exported by HasHeader
   genesisBlockNo,
 
@@ -101,14 +101,14 @@ prettyPrintChain nl ppBlock = foldChain (\s b -> s ++ nl ++ "    " ++ ppBlock b)
 -- Points on blockchains
 --
 
--- | A point on the chain is identified by its 'Slot' and 'HeaderHash'.
+-- | A point on the chain is identified by its 'SlotNo' and 'HeaderHash'.
 --
--- The 'Slot' tells us where to look and the 'HeaderHash' either simply serves
+-- The 'SlotNo' tells us where to look and the 'HeaderHash' either simply serves
 -- as a check, or in some contexts it disambiguates blocks from different forks
 -- that were in the same slot.
 --
 data Point block = Point {
-       pointSlot :: Slot,
+       pointSlot :: SlotNo,
        pointHash :: Hash block
      }
    deriving (Eq, Ord, Show)
@@ -123,14 +123,14 @@ blockPoint b =
 genesis :: Chain b
 genesis = Genesis
 
-genesisSlot :: Slot
-genesisSlot = Slot 0
+genesisSlotNo :: SlotNo
+genesisSlotNo = SlotNo 0
 
 genesisBlockNo :: BlockNo
 genesisBlockNo = BlockNo 0
 
 genesisPoint :: Point block
-genesisPoint = Point genesisSlot GenesisHash
+genesisPoint = Point genesisSlotNo GenesisHash
 
 valid :: HasHeader block => Chain block -> Bool
 valid Genesis  = True
@@ -150,7 +150,7 @@ headPoint :: HasHeader block => Chain block -> Point block
 headPoint Genesis  = genesisPoint
 headPoint (_ :> b) = blockPoint b
 
-headSlot :: HasHeader block => Chain block -> Slot
+headSlot :: HasHeader block => Chain block -> SlotNo
 headSlot = pointSlot . headPoint
 
 headHash :: HasHeader block => Chain block -> Hash block
@@ -228,7 +228,7 @@ selectChain c1 c2 =
 lookupBySlot
   :: HasHeader block
   => Chain block
-  -> Slot
+  -> SlotNo
   -> Maybe block
 lookupBySlot Genesis _slot = Nothing
 lookupBySlot (c :> b) slot | blockSlot b == slot = Just b

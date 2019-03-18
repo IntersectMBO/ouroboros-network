@@ -23,6 +23,7 @@ import qualified Data.Map.Strict as M
 import           Data.Serialize
 import           Data.String (IsString (..))
 import           Data.Typeable
+import           Data.Word (Word64)
 
 import           System.Directory (getTemporaryDirectory)
 import qualified System.IO as IO
@@ -45,7 +46,7 @@ import           Ouroboros.Storage.ImmutableDB (ImmutableDBError (..),
 import qualified Ouroboros.Storage.ImmutableDB as Immutable
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
-import           Ouroboros.Storage.VolatileDB (Parser (..), Slot (..),
+import           Ouroboros.Storage.VolatileDB (Parser (..), SlotNo (..),
                      VolatileDBError (..), sameVolatileDBError)
 import qualified Ouroboros.Storage.VolatileDB as Volatile
 
@@ -255,9 +256,9 @@ blobFromBS = MkBlob . BS.byteString
 instance IsString Blob where
     fromString = blobFromBS . C8.pack
 
-type MyBlockId = Word
+type MyBlockId = Word64
 
-type Block = (Word, Int)
+type Block = (Word64, Int)
 
 toBinary :: MyBlockId -> BL.ByteString
 toBinary = Binary.encode . toBlock
@@ -265,8 +266,8 @@ toBinary = Binary.encode . toBlock
 fromBinary :: BL.ByteString -> MyBlockId
 fromBinary = fromBlock . Binary.decode
 
-toSlot :: MyBlockId -> Slot
-toSlot = Slot
+toSlot :: MyBlockId -> SlotNo
+toSlot = SlotNo
 
 toBlock :: MyBlockId -> Block
 toBlock bid = (bid, 0)

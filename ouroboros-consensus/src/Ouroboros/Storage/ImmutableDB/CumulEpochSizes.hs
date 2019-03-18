@@ -1,7 +1,7 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
--- | Conversion between 'Slot's and 'EpochSlot's.
+-- | Conversion between 'SlotNo's and 'EpochSlot's.
 module Ouroboros.Storage.ImmutableDB.CumulEpochSizes
   ( -- * RelativeSlot & EpochSlot
     RelativeSlot(..)
@@ -38,12 +38,13 @@ import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import           Data.Sequence (Seq (..))
 import qualified Data.Sequence as Seq
+import           Data.Word (Word64)
 
 import           GHC.Generics (Generic)
 
-import           Ouroboros.Network.Block (Slot (..))
+import           Ouroboros.Network.Block (SlotNo (..))
 
-import           Ouroboros.Storage.ImmutableDB.Types (Epoch,
+import           Ouroboros.Storage.ImmutableDB.Types (EpochNo (..),
                      EpochSize (EpochSize))
 
 
@@ -51,17 +52,17 @@ import           Ouroboros.Storage.ImmutableDB.Types (Epoch,
   RelativeSlot & EpochSlot
 ------------------------------------------------------------------------------}
 
--- | A /relative/ slot within an 'Epoch'.
-newtype RelativeSlot = RelativeSlot { getRelativeSlot :: Word }
-  deriving (Eq, Ord, Enum, Num, Show, Generic, Real, Integral)
+-- | A /relative/ slot within an 'EpochNo'.
+newtype RelativeSlot = RelativeSlot { unRelativeSlot :: Word64 }
+  deriving (Eq, Ord, Enum, Num, Show, Generic)
 
 -- | Return the last relative slot within the given epoch size.
 lastRelativeSlot :: EpochSize -> RelativeSlot
 lastRelativeSlot (EpochSize sz) = RelativeSlot (pred sz)
 
--- | The combination of an 'Epoch' and a 'RelativeSlot' within the epoch.
+-- | The combination of an 'EpochNo' and a 'RelativeSlot' within the epoch.
 data EpochSlot = EpochSlot
-  { _epoch        :: !Epoch
+  { _epoch        :: !EpochNo
   , _relativeSlot :: !RelativeSlot
   } deriving (Eq, Ord, Generic)
 
@@ -83,7 +84,7 @@ instance Show EpochSlot where
 -- > [100, 250, 450, 650, 2810]
 --
 -- This allows us to recover the original size of each epoch and to convert
--- 'Slot's to 'EpochSlot's (and vice versa).
+-- 'SlotNo's to 'EpochSlot's (and vice versa).
 newtype CumulEpochSizes = CES (Seq EpochSize) -- Invariant: non-empty.
     deriving (Show, Eq, Generic)
 
@@ -94,7 +95,7 @@ singleton = CES . Seq.singleton
 
 -- | \( O(1) \). Add a new epoch to the end with the given size.
 snoc :: CumulEpochSizes -> EpochSize -> CumulEpochSizes
-snoc _         0  = error "Epoch size must be > 0"
+snoc _         0  = error "EpochNo size must be > 0"
 snoc (CES ces) es = case ces of
     Empty        -> error "Impossible: empty CumulEpochSizes"
     _ :|> lastEs -> CES (ces :|> lastEs + es)
@@ -115,7 +116,7 @@ toList (CES ces) = zipWith (-) (Foldable.toList ces) (0 : Foldable.toList ces)
 -- | \( O(1) \). Return the last added epoch.
 --
 -- Epochs start at 0.
-lastEpoch :: CumulEpochSizes -> Epoch
+lastEpoch :: CumulEpochSizes -> EpochNo
 lastEpoch (CES ces) = fromIntegral (Seq.length ces) - 1
 
 -- | \( O(1) \). Return the size of the last added epoch.
@@ -126,14 +127,14 @@ lastEpochSize (CES (_ :|> prevEs :|> lastEs)) = lastEs - prevEs
 
 -- | \( O(1) \). Return the last slot that a blob could be stored at, i.e. the
 -- slot corresponding to the last relative slot of the last epoch.
-maxSlot :: CumulEpochSizes -> Slot
+maxSlot :: CumulEpochSizes -> SlotNo
 maxSlot (CES Empty)          = error "Impossible: empty CumulEpochSizes"
-maxSlot (CES (_ :|> lastEs)) = coerce lastEs - 1
+maxSlot (CES (_ :|> lastEs)) = coerce $ pred lastEs
 
 -- | \( O(\log(\min(i,n-i))) \). Return the size of the given epoch if known.
-epochSize :: CumulEpochSizes -> Epoch -> Maybe EpochSize
+epochSize :: CumulEpochSizes -> EpochNo -> Maybe EpochSize
 epochSize (CES ces) epoch =
-    case Seq.splitAt (fromIntegral epoch) ces of
+    case Seq.splitAt (fromIntegral $ unEpochNo epoch) ces of
       (Empty,        at :<| _) -> Just at
       (_ :|> before, at :<| _) -> Just (at - before)
       _                        -> Nothing
@@ -141,10 +142,10 @@ epochSize (CES ces) epoch =
 -- | \( O(\log(\min(i,n-i))) \). Make sure the the given epoch is the last
 -- epoch for which the size is stored. No-op if the current last epoch is <=
 -- the given epoch.
-rollBackToEpoch :: CumulEpochSizes -> Epoch -> CumulEpochSizes
-rollBackToEpoch (CES ces) epoch = CES $ Seq.take (succ (fromIntegral epoch)) ces
+rollBackToEpoch :: CumulEpochSizes -> EpochNo -> CumulEpochSizes
+rollBackToEpoch (CES ces) epoch = CES $ Seq.take (succ (fromIntegral $ unEpochNo epoch)) ces
 
--- | \( O(i) \). Convert a 'Slot' to an 'EpochSlot'
+-- | \( O(i) \). Convert a 'SlotNo' to an 'EpochSlot'
 --
 -- For example:
 --
@@ -152,7 +153,7 @@ rollBackToEpoch (CES ces) epoch = CES $ Seq.take (succ (fromIntegral epoch)) ces
 -- > epoch sizes:       [100, 150, 200, 200, 2160]
 -- > cumul epoch sizes: [100, 250, 450, 650, 2810]
 -- > slot: 260 -> epoch slot: (2, 10)
-slotToEpochSlot :: CumulEpochSizes -> Slot -> Maybe EpochSlot
+slotToEpochSlot :: CumulEpochSizes -> SlotNo -> Maybe EpochSlot
 slotToEpochSlot (CES ces) slot = case ces of
     _ :|> origLastEs
       | slot' < origLastEs
@@ -176,7 +177,7 @@ slotToEpochSlot (CES ces) slot = case ces of
     slot' :: EpochSize
     slot' = coerce slot
 
--- | \( O(\log(\min(i,n-i))) \). Convert an 'EpochSlot' to a 'Slot'
+-- | \( O(\log(\min(i,n-i))) \). Convert an 'EpochSlot' to a 'SlotNo'
 --
 -- For example:
 --
@@ -184,15 +185,15 @@ slotToEpochSlot (CES ces) slot = case ces of
 -- > epoch sizes:       [100, 150, 200, 200, 2160]
 -- > cumul epoch sizes: [100, 250, 450, 650, 2810]
 -- > epoch slot: (2, 10) -> slot: 260
-epochSlotToSlot :: CumulEpochSizes -> EpochSlot -> Maybe Slot
+epochSlotToSlot :: CumulEpochSizes -> EpochSlot -> Maybe SlotNo
 epochSlotToSlot (CES ces) (EpochSlot epoch relSlot)
     | relSlot == 0
-    , fromIntegral epoch == Seq.length ces
+    , fromIntegral (unEpochNo epoch) == Seq.length ces
     , _ :|> lastEs <- ces
       -- Handle EpochSlot n 0 where n = the last epoch + 1
     = Just $ coerce lastEs
     | otherwise
-    = case Seq.splitAt (fromIntegral epoch) ces of
+    = case Seq.splitAt (fromIntegral $ unEpochNo epoch) ces of
         (_ :|> before, at :<| _)
           | relSlot' < at - before
           -> Just $ coerce (before + relSlot')
@@ -213,7 +214,7 @@ epochSlotToSlot (CES ces) (EpochSlot epoch relSlot)
 -- function returns a @Just a@, then return that @a@.
 getNewEpochSizesUntilM :: forall m a. Monad m
                        => (CumulEpochSizes -> Maybe a)
-                       -> (Epoch -> m EpochSize)
+                       -> (EpochNo -> m EpochSize)
                        -> StateT CumulEpochSizes m a
 getNewEpochSizesUntilM untilJust getEpochSize = StateT go
   where
@@ -231,8 +232,8 @@ getNewEpochSizesUntilM untilJust getEpochSize = StateT go
 -- adds epoch sizes until the size of the epoch is in the 'CumulEpochSizes'.
 -- The possibly updated 'CumulEpochSizes' is returned as the state.
 getEpochSizeM :: Monad m
-              => Epoch
-              -> (Epoch -> m EpochSize)
+              => EpochNo
+              -> (EpochNo -> m EpochSize)
               -> StateT CumulEpochSizes m EpochSize
 getEpochSizeM epoch getEpochSize = do
     ces <- get
@@ -248,11 +249,11 @@ getEpochSizeM epoch getEpochSize = do
         return $ lastEpochSize ces'
 
 
--- | Convert the 'Slot' to an 'EpochSlot', updating the 'CumulEpochSizes'
+-- | Convert the 'SlotNo' to an 'EpochSlot', updating the 'CumulEpochSizes'
 -- cache if necessary.
 slotToEpochSlotM :: Monad m
-                 => Slot
-                 -> (Epoch -> m EpochSize)
+                 => SlotNo
+                 -> (EpochNo -> m EpochSize)
                  -> StateT CumulEpochSizes m EpochSlot
 slotToEpochSlotM slot getEpochSize = go
   where
@@ -266,11 +267,11 @@ slotToEpochSlotM slot getEpochSize = go
           -- Try again
           go
 
--- | Convert the 'Slot' to a 'RelativeSlot', updating the 'CumulEpochSizes'
+-- | Convert the 'SlotNo' to a 'RelativeSlot', updating the 'CumulEpochSizes'
 -- cache if necessary.
 slotToRelativeSlotM :: Monad m
-                    => Slot
-                    -> (Epoch -> m EpochSize)
+                    => SlotNo
+                    -> (EpochNo -> m EpochSize)
                     -> StateT CumulEpochSizes m RelativeSlot
 slotToRelativeSlotM slot getEpochSize =
     _relativeSlot <$> slotToEpochSlotM slot getEpochSize

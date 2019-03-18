@@ -17,19 +17,19 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           GHC.Generics (Generic)
 
-import           Ouroboros.Network.Block (Slot (..))
+import           Ouroboros.Network.Block (SlotNo (..))
 
 import           Ouroboros.Consensus.Node (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.Condense (Condense (..))
 
-newtype LeaderSchedule = LeaderSchedule {getLeaderSchedule :: Map Slot [CoreNodeId]}
+newtype LeaderSchedule = LeaderSchedule {getLeaderSchedule :: Map SlotNo [CoreNodeId]}
     deriving (Show, Eq, Ord)
 
 instance Condense LeaderSchedule where
     condense (LeaderSchedule m) = show
                                 $ map (\(s, ls) ->
-                                    (getSlot s, map (\(CoreNodeId nid) -> nid) ls))
+                                    (unSlotNo s, map (\(CoreNodeId nid) -> nid) ls))
                                 $ Map.toList m
 
 -- | Extension of protocol @p@ by a static leader schedule.

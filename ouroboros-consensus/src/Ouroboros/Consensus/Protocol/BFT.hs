@@ -25,6 +25,7 @@ import           Control.Monad.Except
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy
+import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
 import           Ouroboros.Network.Block
@@ -60,7 +61,7 @@ data BftParams = BftParams {
       bftSecurityParam :: SecurityParam
 
       -- | Number of core nodes
-    , bftNumNodes      :: Word
+    , bftNumNodes      :: Word64
     }
 
 instance BftCrypto c => OuroborosTag (Bft c) where
@@ -93,7 +94,7 @@ instance BftCrypto c => OuroborosTag (Bft c) where
           bftSignature = signature
         }
 
-  checkIsLeader BftNodeConfig{..} (Slot n) _l _cs = do
+  checkIsLeader BftNodeConfig{..} (SlotNo n) _l _cs = do
       return $ case bftNodeId of
                  RelayId _ -> Nothing -- relays are never leaders
                  CoreId  i -> if n `mod` bftNumNodes == fromIntegral i
@@ -111,7 +112,7 @@ instance BftCrypto c => OuroborosTag (Bft c) where
         else throwError BftInvalidSignature
     where
       BftParams{..}  = bftParams
-      Slot n         = blockSlot b
+      SlotNo n       = blockSlot b
       expectedLeader = CoreId $ fromIntegral (n `mod` bftNumNodes)
 
 

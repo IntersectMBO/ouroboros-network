@@ -198,7 +198,7 @@ deriving instance (SimpleBlockCrypto c, OuroborosTag p, Ord (Payload p (SimplePr
 -- without the signature itself).
 data SimplePreHeader p c = SimplePreHeader {
       headerPrev     :: Network.Hash (SimpleHeader p c)
-    , headerSlot     :: Slot
+    , headerSlot     :: SlotNo
     , headerBlockNo  :: BlockNo
     , headerBodyHash :: Hash (SimpleBlockHash c) SimpleBody
     }
@@ -229,7 +229,7 @@ instance (SimpleBlockCrypto c, OuroborosTag p, Condense (Payload p (SimplePreHea
       , ","
       , condense pl
       , ","
-      , condense (getSlot $ blockSlot hdr)
+      , condense (unSlotNo $ blockSlot hdr)
       , ","
       , condense txs
       , ")"
@@ -283,7 +283,7 @@ forgeBlock :: forall m p c.
               , Serialise (Payload p (SimplePreHeader p c))
               )
            => NodeConfig p
-           -> Slot                            -- ^ Current slot
+           -> SlotNo                          -- ^ Current slot
            -> BlockNo                         -- ^ Current block number
            -> Network.Hash (SimpleHeader p c) -- ^ Previous hash
            -> Map (Hash ShortHash Tx) Tx      -- ^ Txs to add in the block

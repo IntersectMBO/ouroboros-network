@@ -25,7 +25,7 @@ import           Ouroboros.Storage.VolatileDB.API
 data DBModel blockId = DBModel {
       open           :: Bool
     , mp             :: Map blockId ByteString
-    , latestGarbaged :: Maybe Slot
+    , latestGarbaged :: Maybe SlotNo
     } deriving (Show)
 
 initDBModel :: DBModel blockId
@@ -91,7 +91,7 @@ putBlockModel err sl bs = do
 
 garbageCollectModel :: MonadState (DBModel blockId) m
                     => ErrorHandling (VolatileDBError blockId) m
-                    -> Slot
+                    -> SlotNo
                     -> m ()
 garbageCollectModel err sl = do
     dbm@DBModel {..} <- get

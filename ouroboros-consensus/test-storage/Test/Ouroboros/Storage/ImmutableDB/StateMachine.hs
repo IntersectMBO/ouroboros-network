@@ -26,7 +26,6 @@ import           Control.Monad.State (MonadState, State, StateT, evalStateT,
 
 import           Data.Bifunctor (first)
 import           Data.ByteString (ByteString)
-import           Data.Coerce (coerce)
 import           Data.Foldable (toList)
 import           Data.Function (on)
 import           Data.Functor (($>))
@@ -40,6 +39,7 @@ import           Data.Proxy (Proxy (..))
 import           Data.TreeDiff (Expr (App))
 import           Data.TreeDiff.Class (ToExpr (..))
 import           Data.Typeable (Typeable)
+import           Data.Word (Word64)
 
 import qualified Generics.SOP as SOP
 
@@ -62,7 +62,7 @@ import           Text.Show.Pretty (ppShow)
 
 import qualified Ouroboros.Consensus.Util.Classify as C
 
-import           Ouroboros.Network.Block (Slot (..))
+import           Ouroboros.Network.Block (SlotNo (..))
 
 import           Ouroboros.Storage.FS.API (HasFS (..))
 import           Ouroboros.Storage.FS.API.Types (FsError (..), FsPath)
@@ -100,9 +100,9 @@ import qualified Test.Util.RefEnv as RE
 -- Where @m@ can be 'PureM', 'RealM', or 'RealErrM', and @r@ can be 'Symbolic'
 -- or 'Concrete'.
 data Cmd it
-  = GetBinaryBlob     Slot
-  | AppendBinaryBlob  Slot TestBlock
-  | StreamBinaryBlobs (Maybe Slot) (Maybe Slot)
+  = GetBinaryBlob     SlotNo
+  | AppendBinaryBlob  SlotNo TestBlock
+  | StreamBinaryBlobs (Maybe SlotNo) (Maybe SlotNo)
   | IteratorNext      it
   | IteratorClose     it
   | Reopen            ValidationPolicy (Maybe TruncateFrom)
@@ -148,10 +148,10 @@ instance Show it => Show (CmdErr it) where
 data Success it
   = Unit         ()
   | Blob         (Maybe ByteString)
-  | Epoch        Epoch
+  | EpochNo        EpochNo
   | Iter         it
   | IterResult   IteratorResult
-  | LastBlob     (Maybe Slot)
+  | LastBlob     (Maybe SlotNo)
   deriving (Eq, Show, Functor, Foldable, Traversable)
 
 -- | Run the command against the given database.
@@ -429,9 +429,9 @@ generateCmd Model {..} = At <$> frequency
 
     genSlotInThePast
       | empty     = discard
-      | otherwise = coerce $ choose @Word (0, coerce dbmNextSlot - 1)
+      | otherwise = SlotNo <$> choose @Word64 (0, unSlotNo dbmNextSlot - 1)
 
-    genSlotInTheFuture = coerce $ choose @Word (coerce dbmNextSlot, maxBound)
+    genSlotInTheFuture = SlotNo <$> choose @Word64 (unSlotNo dbmNextSlot, maxBound)
 
     genCorruption = MkCorruption <$> generateCorruptions (NE.fromList dbFiles)
 
@@ -504,7 +504,7 @@ shrinkCmd Model {..} (At cmd) = fmap At $ case cmd of
     Corruption corr ->
       [Corruption corr' | corr' <- shrinkCorruption corr]
   where
-    shrinkMbSlot :: Maybe Slot -> [Maybe Slot]
+    shrinkMbSlot :: Maybe SlotNo -> [Maybe SlotNo]
     shrinkMbSlot Nothing  = []
     shrinkMbSlot (Just s) = Nothing : map Just (shrink s)
     shrinkCorruption (MkCorruption corrs) =
@@ -904,10 +904,10 @@ instance Show (Iterator PureM) where
 instance Show ModelDBPure where
   show _ = "<ModelDB>"
 
-instance ToExpr Slot where
-  toExpr (Slot w) = App "Slot" [toExpr w]
+instance ToExpr SlotNo where
+  toExpr (SlotNo w) = App "SlotNo" [toExpr w]
 
-instance ToExpr Epoch
+instance ToExpr EpochNo
 instance ToExpr EpochSize
 instance ToExpr EpochSlot
 instance ToExpr RelativeSlot
@@ -975,8 +975,8 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
     let test :: TVar IO Errors -> HasFS IO h -> QC.PropertyM IO (
                     QSM.History (At CmdErr IO) (At Resp IO)
                   , Reason
-                  , Maybe Slot
-                  , Maybe Slot
+                  , Maybe SlotNo
+                  , Maybe SlotNo
                   )
         test errorsVar hasFS = do
           let parser = testBlockEpochFileParser' hasFS
@@ -1020,7 +1020,7 @@ tests = testGroup "ImmutableDB q-s-m"
 fixedEpochSize :: EpochSize
 fixedEpochSize = 10
 
-fixedGetEpochSize :: Monad m => Epoch -> m EpochSize
+fixedGetEpochSize :: Monad m => EpochNo -> m EpochSize
 fixedGetEpochSize _ = return fixedEpochSize
 
 mkDBModel :: MonadState DBModel m

@@ -32,6 +32,7 @@ import           Crypto.Random (ChaChaDRG)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe, mapMaybe)
+import           Data.Word (Word64)
 
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM
@@ -117,7 +118,7 @@ data NodeCallbacks m blk = NodeCallbacks {
       -- | Produce a block
       produceBlock :: IsLeader (BlockProtocol blk) -- Proof we are leader
                    -> ExtLedgerState blk -- Current ledger state
-                   -> Slot               -- Current slot
+                   -> SlotNo             -- Current slot
                    -> Point blk          -- Previous point
                    -> BlockNo            -- Previous block number
                    -> ProtocolM blk m blk
@@ -294,7 +295,7 @@ forkBlockProduction st@IS{..} =
     NodeCallbacks{..} = callbacks
 
     -- Drop the most recent block if it occupies the current slot
-    overrideBlock :: Slot -> Chain blk -> (Chain blk, [ChainUpdate blk])
+    overrideBlock :: SlotNo -> Chain blk -> (Chain blk, [ChainUpdate blk])
     overrideBlock slot c
       | Chain.headSlot c <  slot = (c, [])
       | Chain.headSlot c == slot = let c' = dropMostRecent c
@@ -479,7 +480,7 @@ consensusSyncClient cfg btime initLedger varChain candidatesVar up =
               -- best intersection point was the initial assumption: genesis.
               -- If the genesis point is within k of our own head, this is
               -- fine, but if it is not, we cannot sync with this client
-              if getSlot (Chain.headSlot ourChain) > fromIntegral k
+              if unSlotNo (Chain.headSlot ourChain) > fromIntegral k
                 then return $ SendMsgDone (ForkTooDeep theirHead)
                 else return $ requestNext theirChainVar
           }
@@ -542,10 +543,10 @@ consensusSyncClient cfg btime initLedger varChain candidatesVar up =
     -- For @k = 5@ (during testing), this evaluates to
     --
     -- > [0,1,2,3,5]
-    offsets :: [Word]
+    offsets :: [Word64]
     offsets = [0] ++ takeWhile (< k) [fib n | n <- [2..]] ++ [k]
 
-    k :: Word
+    k :: Word64
     k = maxRollbacks $ protocolSecurityParam cfg
 
 {-------------------------------------------------------------------------------
@@ -603,7 +604,7 @@ insertCandidate :: forall up hdr.
                    , Eq hdr
                    )
                 => NodeConfig (BlockProtocol hdr)
-                -> Slot -- ^ Present slot
+                -> SlotNo -- ^ Present slot
                 -> (up, Chain hdr) -> Candidates up hdr -> Candidates up hdr
 insertCandidate cfg now (up, cand) (Candidates cands) =
     Candidates $ go cands
@@ -629,7 +630,7 @@ updateCandidates :: ( OuroborosTag (BlockProtocol hdr)
                     , hdr ~ blk
                     )
                  => NodeConfig (BlockProtocol hdr)
-                 -> Slot            -- ^ Present slot
+                 -> SlotNo          -- ^ Present slot
                  -> Chain blk       -- ^ Our chain
                  -> (up, Chain hdr) -- ^ New potential candidate
                  -> Candidates up hdr -> Candidates up hdr

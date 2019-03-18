@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
@@ -31,10 +32,11 @@ import           Control.Monad.Except (throwError)
 import           Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import           Data.Proxy (Proxy (..))
+import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           Numeric.Natural
 
-import           Ouroboros.Network.Block (HasHeader (..), Slot (..))
+import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..))
 import qualified Ouroboros.Network.Chain as Chain
 
 import           Ouroboros.Consensus.Crypto.DSIGN.Ed448 (Ed448DSIGN)
@@ -68,8 +70,8 @@ instance Serialise VRFType
 
 data PraosExtraFields c = PraosExtraFields {
       praosCreator :: CoreNodeId
-    , praosRho     :: CertifiedVRF (PraosVRF c) (HList [Natural, Slot, VRFType])
-    , praosY       :: CertifiedVRF (PraosVRF c) (HList [Natural, Slot, VRFType])
+    , praosRho     :: CertifiedVRF (PraosVRF c) (HList [Natural, SlotNo, VRFType])
+    , praosY       :: CertifiedVRF (PraosVRF c) (HList [Natural, SlotNo, VRFType])
     }
   deriving Generic
 
@@ -81,14 +83,14 @@ instance VRFAlgorithm (PraosVRF c) => Serialise (PraosExtraFields c)
   -- use Generic instance for now
 
 data PraosProof c = PraosProof {
-      praosProofRho  :: CertifiedVRF (PraosVRF c) (HList [Natural, Slot, VRFType])
-    , praosProofY    :: CertifiedVRF (PraosVRF c) (HList [Natural, Slot, VRFType])
+      praosProofRho  :: CertifiedVRF (PraosVRF c) (HList [Natural, SlotNo, VRFType])
+    , praosProofY    :: CertifiedVRF (PraosVRF c) (HList [Natural, SlotNo, VRFType])
     , praosLeader    :: CoreNodeId
-    , praosProofSlot :: Slot
+    , praosProofSlot :: SlotNo
     }
 
 data PraosValidationError c =
-      PraosInvalidSlot Slot Slot
+      PraosInvalidSlot SlotNo SlotNo
     | PraosUnknownCoreId Int
     | PraosInvalidSig (VerKeyKES (PraosKES c)) Natural (SigKES (PraosKES c))
     | PraosInvalidCert (VerKeyVRF (PraosVRF c)) Encoding Natural (CertVRF (PraosVRF c))
@@ -96,12 +98,15 @@ data PraosValidationError c =
 
 deriving instance PraosCrypto c => Show (PraosValidationError c)
 
-type Epoch = Word
+-- TODO: This type definition belongs elsewhere.
+newtype EpochNo = EpochNo { unEpochNo :: Word64 }
+    deriving (Eq, Num, Ord, Serialise)
+
 type StakeDist = IntMap Rational
 
 data BlockInfo c = BlockInfo
-    { biSlot  :: Slot
-    , biRho   :: CertifiedVRF (PraosVRF c) (HList [Natural, Slot, VRFType])
+    { biSlot  :: SlotNo
+    , biRho   :: CertifiedVRF (PraosVRF c) (HList [Natural, SlotNo, VRFType])
     , biStake :: StakeDist
     }
 
@@ -117,7 +122,7 @@ data Praos c
 data PraosParams = PraosParams {
       praosLeaderF       :: Double
     , praosSecurityParam :: SecurityParam
-    , praosSlotsPerEpoch :: Word
+    , praosSlotsPerEpoch :: Word64
     , praosLifetimeKES   :: Natural
     }
 
@@ -155,7 +160,7 @@ instance PraosCrypto c => OuroborosTag (Praos c) where
           , praosY       = praosProofY
           }
       m <- signedKES
-        (fromIntegral (getSlot praosProofSlot))
+        (fromIntegral (unSlotNo praosProofSlot))
         (preheader, extraFields)
         keyKES
       case m of
@@ -199,15 +204,14 @@ instance PraosCrypto c => OuroborosTag (Praos c) where
     (vkKES, vkVRF) <- case IntMap.lookup nid praosVerKeys of
         Nothing  -> throwError $ PraosUnknownCoreId nid
         Just vks -> return vks
-    let j = fromIntegral slot
 
     -- verify block signature
     unless (verifySignedKES
                 vkKES
-                j
+                (fromIntegral $ unSlotNo slot)
                 (ph, praosExtraFields)
                 praosSignature) $
-        throwError $ PraosInvalidSig vkKES j (getSig praosSignature)
+        throwError $ PraosInvalidSig vkKES (fromIntegral $ unSlotNo slot) (getSig praosSignature)
 
     let (rho', y', t) = rhoYT cfg cs slot nid
         rho           = praosRho praosExtraFields
@@ -250,14 +254,14 @@ instance PraosCrypto c => OuroborosTag (Praos c) where
     | otherwise
     = Nothing
     where
-      clip = upToSlot (slot + 1)
+      clip = upToSlot (succ slot)
 
       ours' = clip ours
       cand' = clip cand
 
       PraosParams{..} = praosParams
 
-      k :: Word
+      k :: Word64
       k = maxRollbacks praosSecurityParam
 
 
@@ -271,28 +275,28 @@ instance PraosCrypto c => Condense (Payload (Praos c) ph) where
 instance (PraosCrypto c, Serialise ph) => Serialise (Payload (Praos c) ph) where
   -- use generic instance
 
-slotEpoch :: NodeConfig (Praos c) -> Slot -> Epoch
+slotEpoch :: NodeConfig (Praos c) -> SlotNo -> EpochNo
 slotEpoch PraosNodeConfig{..} s =
-    fromIntegral $ 1 + div (getSlot s - 1) praosSlotsPerEpoch
+    EpochNo $ 1 + div (unSlotNo s - 1) praosSlotsPerEpoch
   where
     PraosParams{..} = praosParams
 
-blockInfoEpoch :: NodeConfig (Praos c) -> BlockInfo c -> Epoch
+blockInfoEpoch :: NodeConfig (Praos c) -> BlockInfo c -> EpochNo
 blockInfoEpoch l = slotEpoch l . biSlot
 
-epochStart :: NodeConfig (Praos c) -> Epoch -> Slot
-epochStart PraosNodeConfig{..} e = Slot $ (e - 1) * praosSlotsPerEpoch + 1
+epochStart :: NodeConfig (Praos c) -> EpochNo -> SlotNo
+epochStart PraosNodeConfig{..} e = SlotNo $ (unEpochNo e - 1) * praosSlotsPerEpoch + 1
   where
     PraosParams{..} = praosParams
 
-infosSlice :: Slot -> Slot -> [BlockInfo c] -> [BlockInfo c]
+infosSlice :: SlotNo -> SlotNo -> [BlockInfo c] -> [BlockInfo c]
 infosSlice from to xs = takeWhile (\b -> biSlot b >= from)
                       $ dropWhile (\b -> biSlot b > to) xs
 
 infosEta :: forall c. PraosCrypto c
          => NodeConfig (Praos c)
          -> [BlockInfo c]
-         -> Epoch
+         -> EpochNo
          -> Natural
 infosEta l _  1 = praosInitialEta l
 infosEta l xs e =
@@ -300,20 +304,20 @@ infosEta l xs e =
         eta' = infosEta l xs e'
         from = epochStart l e'
         n    = div (2 * praosSlotsPerEpoch) 3
-        to   = Slot $ getSlot from + fromIntegral (n - 1)
+        to   = SlotNo $ unSlotNo from + fromIntegral (n - 1)
         rhos = reverse [biRho b | b <- infosSlice from to xs]
     in  fromHash $ hash @(PraosHash c) $ eta' :* e :* rhos :* Nil
   where
     PraosParams{..} = praosParams l
 
-infosStake :: NodeConfig (Praos c) -> [BlockInfo c] -> Epoch -> StakeDist
+infosStake :: NodeConfig (Praos c) -> [BlockInfo c] -> EpochNo -> StakeDist
 infosStake s@PraosNodeConfig{..} xs e = case ys of
     []                  -> praosInitialStake
     (BlockInfo{..} : _) -> biStake
   where
     PraosParams{..} = praosParams
 
-    e' = if e >= 2 then e - 2 else 0
+    e' = if e >= 2 then EpochNo (unEpochNo e - 2) else 0
     ys = dropWhile (\b -> blockInfoEpoch s b > e') xs
 
 phi :: NodeConfig (Praos c) -> Rational -> Double
@@ -324,7 +328,7 @@ phi PraosNodeConfig{..} r = 1 - (1 - praosLeaderF) ** fromRational r
 leaderThreshold :: forall c. PraosCrypto c
                 => NodeConfig (Praos c)
                 -> [BlockInfo c]
-                -> Slot
+                -> SlotNo
                 -> Int
                 -> Double
 leaderThreshold st xs s n =
@@ -334,10 +338,10 @@ leaderThreshold st xs s n =
 rhoYT :: PraosCrypto c
       => NodeConfig (Praos c)
       -> [BlockInfo c]
-      -> Slot
+      -> SlotNo
       -> Int
-      -> ( HList '[Natural, Slot, VRFType]
-         , HList '[Natural, Slot, VRFType]
+      -> ( HList '[Natural, SlotNo, VRFType]
+         , HList '[Natural, SlotNo, VRFType]
          , Double
          )
 rhoYT st xs s n =

@@ -11,16 +11,16 @@
 --
 -- = Internal format
 --
--- The API of the ImmutableDB uses 'Slot' to indicate a location in the
+-- The API of the ImmutableDB uses 'SlotNo' to indicate a location in the
 -- chain\/immutable database. The contents of the database are not stored in
 -- one big file that is appended to in eternity, but a separate file is
--- created for each 'Epoch'.
+-- created for each 'EpochNo'.
 --
--- Within each 'Epoch', the entries are numbered by 'RelativeSlot's. Each
--- 'Slot' can be converted to a combination of an 'Epoch' and a 'RelativeSlot'
+-- Within each 'EpochNo', the entries are numbered by 'RelativeSlot's. Each
+-- 'SlotNo' can be converted to a combination of an 'EpochNo' and a 'RelativeSlot'
 -- (= 'EpochSlot') and vice versa. This conversion depends on the size of the
 -- epochs: 'EpochSize'. This size will not be the same for each epoch. When
--- opening the database, the user must give a function of type 'Epoch -> m
+-- opening the database, the user must give a function of type 'EpochNo -> m
 -- EpochSize' that will be used to find out (and cache using
 -- 'CumulEpochSizes') the size of each epoch.
 --
@@ -32,7 +32,7 @@
 -- >                 │   │   │   │   │   │ │   │   │   │   │
 -- >                 └───┴───┴───┴───┴───┘ └───┴───┴───┴───┘
 -- > 'RelativeSlot':   0   1   2   3   4     0   1   2   3
--- > 'Slot':           0   1   2   3   4     5   6   7   8
+-- > 'SlotNo':           0   1   2   3   4     5   6   7   8
 --
 -- = Errors
 --
@@ -165,7 +165,7 @@ import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.Util
 
-import           Ouroboros.Storage.ImmutableDB.API hiding (getEpochSize)
+import           Ouroboros.Storage.ImmutableDB.API
 import           Ouroboros.Storage.ImmutableDB.CumulEpochSizes (CumulEpochSizes,
                      EpochSlot (..), RelativeSlot (..))
 import qualified Ouroboros.Storage.ImmutableDB.CumulEpochSizes as CES
@@ -184,24 +184,24 @@ data ImmutableDBEnv m = forall h e. ImmutableDBEnv
     { _dbHasFS           :: !(HasFS m h)
     , _dbErr             :: !(ErrorHandling ImmutableDBError m)
     , _dbInternalState   :: !(TMVar m (Either (ClosedState m) (OpenState m h)))
-    , _dbEpochFileParser :: !(EpochFileParser e m (Word, Slot))
+    , _dbEpochFileParser :: !(EpochFileParser e m (Word, SlotNo))
     }
 
 -- | Internal state when the database is open.
 data OpenState m h = OpenState
-    { _currentEpoch            :: !Epoch
-    -- ^ The current 'Epoch' the immutable store is writing to.
+    { _currentEpoch            :: !EpochNo
+    -- ^ The current 'EpochNo' the immutable store is writing to.
     , _currentEpochWriteHandle :: !h
     -- ^ The write handle for the current epoch file.
     , _currentEpochOffsets     :: !(NonEmpty SlotOffset)
     -- ^ The offsets to which blobs have been written in the current epoch
     -- file, stored from last to first.
-    , _nextExpectedSlot        :: !Slot
+    , _nextExpectedSlot        :: !SlotNo
     -- ^ The next slot that we can append data to in the epoch file.
-    , _getEpochSize            :: !(Epoch -> m EpochSize)
+    , _getEpochSize            :: !(EpochNo -> m EpochSize)
     -- ^ Function to get the size of an epoch.
     , _cumulEpochSizes         :: !CumulEpochSizes
-    -- ^ Cache of epoch sizes + conversion between 'Slot' and 'EpochSlot' and
+    -- ^ Cache of epoch sizes + conversion between 'SlotNo' and 'EpochSlot' and
     -- vice versa.
     , _nextIteratorID          :: !IteratorID
     -- ^ The ID of the next iterator that will be created.
@@ -212,7 +212,7 @@ data OpenState m h = OpenState
 -- should be restored when the database is reopened. Data not present here
 -- will be recovered when reopening.
 data ClosedState m = ClosedState
-    { _closedGetEpochSize    :: !(Epoch -> m EpochSize)
+    { _closedGetEpochSize    :: !(EpochNo -> m EpochSize)
     -- ^ See '_getEpochSize'.
     , _closedCumulEpochSizes :: !CumulEpochSizes
     -- ^ See '_cumulEpochSizes'
@@ -227,7 +227,7 @@ data ClosedState m = ClosedState
 -- | Open the database, creating it from scratch if necessary or reopening an
 -- existing one using the given 'ValidationPolicy'.
 --
--- In addition to the database, the 'Slot' of the last blob stored in it is
+-- In addition to the database, the 'SlotNo' of the last blob stored in it is
 -- returned, or 'Nothing' in case the database is empty.
 --
 -- A function that can be used to look up the size of an epoch must be passed.
@@ -241,8 +241,8 @@ data ClosedState m = ClosedState
 --
 -- An 'EpochFileParser' must be passed in order to reconstruct indices from
 -- epoch files. The 'Word' that the 'EpochFileParser' must return for each
--- 'Slot' is the size (in bytes) occupied by the (non-empty) block
--- corresponding to the 'Slot'. We only need to know the size of the blocks to
+-- 'SlotNo' is the size (in bytes) occupied by the (non-empty) block
+-- corresponding to the 'SlotNo'. We only need to know the size of the blocks to
 -- know the offset of the end of the last block, so we can know where to
 -- truncate the file to in case of invalid trailing data. For all other
 -- blocks, we can derive this from the offset of the next block, but there is
@@ -252,10 +252,10 @@ data ClosedState m = ClosedState
 openDB :: (HasCallStack, MonadSTM m, MonadCatch m)
        => HasFS m h
        -> ErrorHandling ImmutableDBError m
-       -> (Epoch -> m EpochSize)
+       -> (EpochNo -> m EpochSize)
        -> ValidationPolicy
-       -> EpochFileParser e m (Word, Slot)
-       -> m (ImmutableDB m, Maybe Slot)
+       -> EpochFileParser e m (Word, SlotNo)
+       -> m (ImmutableDB m, Maybe SlotNo)
 openDB = openDBImpl
 
 {------------------------------------------------------------------------------
@@ -279,10 +279,10 @@ mkDBRecord dbEnv = ImmutableDB
 openDBImpl :: forall m h e. (HasCallStack, MonadSTM m, MonadCatch m)
            => HasFS m h
            -> ErrorHandling ImmutableDBError m
-           -> (Epoch -> m EpochSize)
+           -> (EpochNo -> m EpochSize)
            -> ValidationPolicy
-           -> EpochFileParser e m (Word, Slot)
-           -> m (ImmutableDB m, Maybe Slot)
+           -> EpochFileParser e m (Word, SlotNo)
+           -> m (ImmutableDB m, Maybe SlotNo)
 openDBImpl hasFS@HasFS{..} err getEpochSize valPol epochFileParser = do
     firstEpochSize <- getEpochSize 0
     let ces0 = CES.singleton firstEpochSize
@@ -323,7 +323,7 @@ reopenImpl :: (HasCallStack, MonadSTM m, MonadThrow m)
            => ImmutableDBEnv m
            -> ValidationPolicy
            -> Maybe TruncateFrom
-           -> m (Maybe Slot)
+           -> m (Maybe SlotNo)
 reopenImpl dbEnv@ImmutableDBEnv {..} valPol mbTruncateFrom = do
     internalState <- atomically $ takeTMVar _dbInternalState
     case internalState of
@@ -357,7 +357,7 @@ reopenImpl dbEnv@ImmutableDBEnv {..} valPol mbTruncateFrom = do
           (atomically $ putTMVar _dbInternalState internalState) $ do
 
             -- Truncate if requested. First convert the @'TruncateFrom'
-            -- 'Slot'@ to an 'EpochSlot'.
+            -- 'SlotNo'@ to an 'EpochSlot'.
             ces' <- case mbTruncateFrom of
               Nothing                  -> return _closedCumulEpochSizes
               Just (TruncateFrom slot) ->
@@ -392,7 +392,7 @@ onException fsErr err onErr m =
 
 getNextSlotImpl :: (HasCallStack, MonadSTM m)
                 => ImmutableDBEnv m
-                -> m Slot
+                -> m SlotNo
 getNextSlotImpl dbEnv = do
     SomePair _hasFS OpenState {..} <- getOpenState dbEnv
     return _nextExpectedSlot
@@ -400,7 +400,7 @@ getNextSlotImpl dbEnv = do
 getBinaryBlobImpl
   :: forall m. (HasCallStack, MonadSTM m, MonadThrow m)
   => ImmutableDBEnv m
-  -> Slot
+  -> SlotNo
   -> m (Maybe ByteString)
 getBinaryBlobImpl dbEnv@ImmutableDBEnv {..} slot = do
     SomePair _hasFS OpenState {..} <- getOpenState dbEnv
@@ -433,7 +433,7 @@ getBinaryBlobImpl dbEnv@ImmutableDBEnv {..} slot = do
       -- Otherwise, the offsets will have to be read from an index file
       False -> withFile _dbHasFS indexFile ReadMode $ \iHnd -> do
         -- Grab the offset in bytes of the requested slot.
-        let indexSeekPosition = fromIntegral (getRelativeSlot relativeSlot)
+        let indexSeekPosition = fromIntegral (unRelativeSlot relativeSlot)
                               * fromIntegral indexEntrySizeBytes
         hSeek iHnd AbsoluteSeek indexSeekPosition
         -- Compute the offset on disk and the blob size.
@@ -464,7 +464,7 @@ getBinaryBlobImpl dbEnv@ImmutableDBEnv {..} slot = do
 
 appendBinaryBlobImpl :: forall m. (HasCallStack, MonadSTM m, MonadCatch m)
                      => ImmutableDBEnv m
-                     -> Slot
+                     -> SlotNo
                      -> Builder
                      -> m ()
 appendBinaryBlobImpl dbEnv@ImmutableDBEnv{..} slot builder =
@@ -483,7 +483,7 @@ appendBinaryBlobImpl dbEnv@ImmutableDBEnv{..} slot builder =
       -- The operation above can update the _cumulEpochSizes
       when (epoch > _currentEpoch) $ do
         let newEpochsToStart :: Int
-            newEpochsToStart = fromIntegral $ epoch - _currentEpoch
+            newEpochsToStart = fromIntegral . unEpochNo $ epoch - _currentEpoch
         -- Start as many new epochs as needed. Pass the updated state
         -- around.
         replicateM_ newEpochsToStart (startNewEpoch hasFS)
@@ -609,8 +609,8 @@ data IteratorState h = IteratorState
 streamBinaryBlobsImpl :: forall m
                        . (HasCallStack, MonadSTM m, MonadCatch m)
                       => ImmutableDBEnv m
-                      -> Maybe Slot  -- ^ When to start streaming (inclusive).
-                      -> Maybe Slot  -- ^ When to stop streaming (inclusive).
+                      -> Maybe SlotNo  -- ^ When to start streaming (inclusive).
+                      -> Maybe SlotNo  -- ^ When to stop streaming (inclusive).
                       -> m (Iterator m)
 streamBinaryBlobsImpl dbEnv@ImmutableDBEnv {..} mbStart mbEnd = do
     SomePair hasFS st@OpenState {..} <- getOpenState dbEnv
@@ -779,7 +779,7 @@ iteratorNextImpl dbEnv it@IteratorHandle {_it_hasFS = hasFS :: HasFS m h, ..} = 
           where
             next = EpochSlot epoch nextSlot
 
-        -- Epoch exhausted, open the next epoch
+        -- EpochNo exhausted, open the next epoch
         Nothing -> do
           hClose eHnd
           SomePair _hasFS st <- getOpenState dbEnv
@@ -788,7 +788,7 @@ iteratorNextImpl dbEnv it@IteratorHandle {_it_hasFS = hasFS :: HasFS m h, ..} = 
     -- Start opening epochs (starting from the given epoch number) until we
     -- encounter a non-empty one, then update the iterator state accordingly.
     -- If no non-empty epoch can be found, the iterator is closed.
-    openNextNonEmptyEpoch :: Epoch -> OpenState m h' -> m ()
+    openNextNonEmptyEpoch :: EpochNo -> OpenState m h' -> m ()
     openNextNonEmptyEpoch epoch st@OpenState {..}
       | epoch > _epoch _it_end
       = iteratorCloseImpl it
@@ -849,9 +849,9 @@ iteratorCloseImpl IteratorHandle {..} = do
 validateAndReopen :: (HasCallStack, MonadThrow m)
                   => HasFS m h
                   -> ErrorHandling ImmutableDBError m
-                  -> (Epoch -> m EpochSize)
+                  -> (EpochNo -> m EpochSize)
                   -> ValidationPolicy
-                  -> EpochFileParser e m (Word, Slot)
+                  -> EpochFileParser e m (Word, SlotNo)
                   -> CumulEpochSizes
                   -> IteratorID
                   -> m (OpenState m h, Maybe EpochSlot)
@@ -924,8 +924,8 @@ validateAndReopen hasFS err getEpochSize valPol epochFileParser ces nextIterator
 -- Open the epoch file for appending.
 mkOpenState :: (HasCallStack, MonadThrow m)
             => HasFS m h
-            -> Epoch
-            -> (Epoch -> m EpochSize)
+            -> EpochNo
+            -> (EpochNo -> m EpochSize)
             -> CumulEpochSizes
             -> IteratorID
             -> Index
@@ -960,8 +960,8 @@ mkOpenState HasFS{..} epoch getEpochSize ces nextIteratorID index = do
 -- Open the epoch file for appending.
 mkOpenStateNewEpoch :: (HasCallStack, MonadThrow m)
                     => HasFS m h
-                    -> Epoch
-                    -> (Epoch -> m EpochSize)
+                    -> EpochNo
+                    -> (EpochNo -> m EpochSize)
                     -> CumulEpochSizes
                     -> IteratorID
                     -> m (OpenState m h)
@@ -1092,7 +1092,7 @@ closedStateFromInternalState (Right OpenState {..}) = ClosedState
 -- updating the '_cumulEpochSizes' from the open state, storing its updated
 -- value afterwards.
 zoomCumul :: Monad m
-          => (    (Epoch -> m EpochSize)
+          => (    (EpochNo -> m EpochSize)
                -> StateT CumulEpochSizes m a
              )
           -> StateT (OpenState m h) m a
@@ -1103,23 +1103,23 @@ zoomCumul m = do
     return a
 
 -- | Convert an 'EpochSlot' in the past (<= the current epoch) using an up to
--- date 'CumulEpochSizes' to a 'Slot'.
+-- date 'CumulEpochSizes' to a 'SlotNo'.
 --
 -- This conversion may not fail, as the 'EpochSlot' must be in the past, and
 -- all past epoch sizes are known.
 epochSlotInThePastToSlot :: HasCallStack
-                         => CumulEpochSizes -> EpochSlot -> Slot
+                         => CumulEpochSizes -> EpochSlot -> SlotNo
 epochSlotInThePastToSlot ces epochSlot = fromMaybe
   (error "Could not convert EpochSlot to Slot") $
   CES.epochSlotToSlot ces epochSlot
 
--- | Convert a 'Slot' in the past (<= the next slot to write to) using an up
+-- | Convert a 'SlotNo' in the past (<= the next slot to write to) using an up
 -- to date 'CumulEpochSizes' to an 'EpochSlot'.
 --
---This conversion may not fail, as the 'Slot' must be in the past, and all
+--This conversion may not fail, as the 'SlotNo' must be in the past, and all
 -- past epoch sizes are known.
 slotInThePastToEpochSlot :: HasCallStack
-                         => CumulEpochSizes -> Slot -> EpochSlot
+                         => CumulEpochSizes -> SlotNo -> EpochSlot
 slotInThePastToEpochSlot ces slot = fromMaybe
   (error "Could not convert Slot to EpochSlot") $
   CES.slotToEpochSlot ces slot
@@ -1154,7 +1154,7 @@ lastBlobInDB hasFS err OpenState {..}
 lastBlobOnDisk :: (HasCallStack, MonadThrow m)
                => HasFS m h
                -> ErrorHandling ImmutableDBError m
-               -> Epoch
+               -> EpochNo
                -> m (Maybe EpochSlot)
 lastBlobOnDisk hasFS err = go
   where
@@ -1168,7 +1168,7 @@ lastBlobOnDisk hasFS err = go
 
 -- | Go through all files, making two sets: the set of epoch-xxx.dat
 -- files, and the set of index-xxx.dat files, discarding all others.
-dbFilesOnDisk :: Set String -> (Set Epoch, Set Epoch)
+dbFilesOnDisk :: Set String -> (Set EpochNo, Set EpochNo)
 dbFilesOnDisk = foldr categorise mempty
   where
     categorise file fs@(epochFiles, indexFiles) = case parseDBFile file of
@@ -1180,7 +1180,7 @@ dbFilesOnDisk = foldr categorise mempty
 -- the database stores no blobs, i.e. is empty.
 --
 -- This type synonyms is meant for internal used, mainly to avoid @'Maybe'
--- ('Maybe' 'Slot')@.
+-- ('Maybe' 'SlotNo')@.
 type LastBlobLocation = Maybe EpochSlot
 
 -- | Truncate to the given 'EpochSlot'.
@@ -1196,8 +1196,8 @@ type LastBlobLocation = Maybe EpochSlot
 -- of an epoch after the truncation point are allowed to be invalid.
 truncate :: (HasCallStack, MonadThrow m)
          => HasFS m h
-         -> EpochFileParser e m (Word, Slot)
-         -> (Epoch -> m EpochSize)
+         -> EpochFileParser e m (Word, SlotNo)
+         -> (EpochNo -> m EpochSize)
          -> EpochSlot
          -> StateT CumulEpochSizes m ()
 truncate hasFS epochFileParser getEpochSize epochSlot = case epochSlot of
@@ -1211,7 +1211,7 @@ truncate hasFS epochFileParser getEpochSize epochSlot = case epochSlot of
 -- Doesn't read any index files.
 truncateFromEpoch :: (HasCallStack, MonadThrow m)
                   => HasFS m h
-                  -> Epoch
+                  -> EpochNo
                   -> m ()
 truncateFromEpoch = removeFilesStartingFrom
 
@@ -1229,8 +1229,8 @@ truncateFromEpoch = removeFilesStartingFrom
 -- on disk.
 truncateFromEpochSlot :: (HasCallStack, MonadThrow m)
                       => HasFS m h
-                      -> Either Index (EpochFileParser e m (Word, Slot))
-                      -> (Epoch -> m EpochSize)
+                      -> Either Index (EpochFileParser e m (Word, SlotNo))
+                      -> (EpochNo -> m EpochSize)
                       -> EpochSlot
                       -> StateT CumulEpochSizes m Index
 truncateFromEpochSlot hasFS@HasFS{..} indexOrEpochFileParser getEpochSize epochSlot = do
@@ -1260,7 +1260,7 @@ truncateFromEpochSlot hasFS@HasFS{..} indexOrEpochFileParser getEpochSize epochS
 -- | Remove all epoch and index starting from the given epoch (included).
 removeFilesStartingFrom :: (HasCallStack, Monad m)
                         => HasFS m h
-                        -> Epoch
+                        -> EpochNo
                         -> m ()
 removeFilesStartingFrom HasFS{..} epoch = do
     filesInDBFolder <- listDirectory []
@@ -1272,7 +1272,7 @@ removeFilesStartingFrom HasFS{..} epoch = do
 
 -- | Execute the 'ValidationPolicy'.
 --
--- * Epoch files are the main source of truth. Index files can be
+-- * EpochNo files are the main source of truth. Index files can be
 --   reconstructed from the epoch files using the 'EpochFileParser'.
 --
 -- * Only complete index files (with the same number of slots as the epoch
@@ -1303,10 +1303,10 @@ removeFilesStartingFrom HasFS{..} epoch = do
 validate :: forall m h e. (HasCallStack, MonadThrow m)
          => HasFS m h
          -> ErrorHandling ImmutableDBError m
-         -> (Epoch -> m EpochSize)
+         -> (EpochNo -> m EpochSize)
          -> ValidationPolicy
-         -> EpochFileParser e m (Word, Slot)
-         -> StateT CumulEpochSizes m ( Maybe (Epoch, Index)
+         -> EpochFileParser e m (Word, SlotNo)
+         -> StateT CumulEpochSizes m ( Maybe (EpochNo, Index)
                                      , Maybe LastBlobLocation
                                      )
             -- ^ The last epoch on disk and its index (or 'Nothing' when there
@@ -1354,8 +1354,8 @@ validate hasFS@HasFS{..} err getEpochSize valPol epochFileParser = do
     -- When this functions returns without throwing an error, all the given
     -- epochs are valid.
     validateEpochs :: HasCallStack
-                   => Epoch
-                   -> [Epoch]
+                   => EpochNo
+                   -> [EpochNo]
                    -> StateT CumulEpochSizes m (Index, LastBlobLocation)
     validateEpochs epoch epochs = do
         index <- validateEpoch epoch (null epochs)
@@ -1394,7 +1394,7 @@ validate hasFS@HasFS{..} err getEpochSize valPol epochFileParser = do
     -- Important: throw the error that requires the \"earliest\" or the most
     -- truncation.
     validateEpoch :: HasCallStack
-                  => Epoch
+                  => EpochNo
                   -> Bool  -- ^ This epoch is the last epoch on disk
                   -> StateT CumulEpochSizes m Index
     validateEpoch epoch isLastEpoch = do
@@ -1535,7 +1535,7 @@ validate hasFS@HasFS{..} err getEpochSize valPol epochFileParser = do
     -- than the given epoch, so that truncating from this epoch will solve the
     -- problem.
     errorOnIndexFileFrom :: HasCallStack
-                         => Epoch -> StateT CumulEpochSizes m ()
+                         => EpochNo -> StateT CumulEpochSizes m ()
     errorOnIndexFileFrom epoch = do
       filesInDBFolder <- lift $ listDirectory []
       let indexFiles = snd $ dbFilesOnDisk filesInDBFolder
@@ -1554,8 +1554,8 @@ validate hasFS@HasFS{..} err getEpochSize valPol epochFileParser = do
 -- Also returns the error returned by the 'EpochFileParser'.
 reconstructIndex :: (HasCallStack, MonadThrow m)
                  => FsPath
-                 -> EpochFileParser e m (Word, Slot)
-                 -> (Epoch -> m EpochSize)
+                 -> EpochFileParser e m (Word, SlotNo)
+                 -> (EpochNo -> m EpochSize)
                  -> StateT CumulEpochSizes m (Index, Maybe e)
 reconstructIndex epochFile epochFileParser getEpochSize = do
     (offsetsAndSizesAndSlots, mbErr) <- lift $
@@ -1573,7 +1573,7 @@ reconstructIndex epochFile epochFileParser getEpochSize = do
 loadIndex' :: (HasCallStack, MonadThrow m)
            => HasFS m h
            -> ErrorHandling ImmutableDBError m
-           -> Epoch
+           -> EpochNo
            -> m Index
 loadIndex' hasFS _err epoch = fst <$> loadIndex hasFS epoch
     -- TODO throw an error when there is junk or the index is invalid?

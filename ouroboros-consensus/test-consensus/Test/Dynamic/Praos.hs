@@ -23,6 +23,7 @@ module Test.Dynamic.Praos (
 
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Word (Word64)
 import           Test.QuickCheck
 
 import           Test.Tasty
@@ -109,12 +110,12 @@ prop_simple_praos_convergence params numCoreNodes numSlots =
                             (Map.elems final)
 
 prop_all_common_prefix :: (HasHeader b, Condense b, Eq b)
-                       => Word -> [Chain b] -> Property
+                       => Word64 -> [Chain b] -> Property
 prop_all_common_prefix _ []     = property True
 prop_all_common_prefix l (c:cs) = conjoin [prop_common_prefix l c d | d <- cs]
 
 prop_common_prefix :: forall b. (HasHeader b, Condense b, Eq b)
-                   => Word -> Chain b -> Chain b -> Property
+                   => Word64 -> Chain b -> Chain b -> Property
 prop_common_prefix l x y = go x y .&&. go y x
   where
     go c d =
@@ -144,5 +145,5 @@ prop_common_prefix l x y = go x y .&&. go y x
                   <> case lastSlot c of
                         Nothing -> ")"
                         Just s  ->    ", last slot "
-                                   <> show (getSlot s)
+                                   <> show (unSlotNo s)
                                    <> ")"

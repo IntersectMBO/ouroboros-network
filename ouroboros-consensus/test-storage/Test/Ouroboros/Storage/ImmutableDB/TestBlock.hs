@@ -56,16 +56,16 @@ import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 -------------------------------------------------------------------------------}
 
 
-newtype TestBlock = TestBlock { tbSlot :: Slot }
+newtype TestBlock = TestBlock { tbSlot :: SlotNo }
     deriving (Generic, Eq, Ord)
 
 instance Show TestBlock where
-    show = show . getSlot . tbSlot
+    show = show . unSlotNo . tbSlot
 
 instance Arbitrary TestBlock where
-    arbitrary = TestBlock . Slot <$> arbitrary
+    arbitrary = TestBlock . SlotNo <$> arbitrary
 
--- | The binary representation of 'TestBlock' consists of repeating its 'Slot'
+-- | The binary representation of 'TestBlock' consists of repeating its 'SlotNo'
 -- @n@ times, where @n = 'testBlockSize'@.
 testBlockRepeat :: Word
 testBlockRepeat = 10
@@ -84,13 +84,13 @@ testBlockSize = testBlockRepeat * 8
 -- __NOTE__: 'Test.Ouroboros.Storage.ImmutableDB.Model.simulateCorruptions'
 -- depends on this encoding of 'TestBlock'.
 instance Bin.Binary TestBlock where
-    put (TestBlock (Slot slot)) =
+    put (TestBlock (SlotNo slot)) =
       mconcat $ replicate (fromIntegral testBlockRepeat) (Bin.put slot)
     get = do
       (w:ws) <- replicateM (fromIntegral testBlockRepeat) Bin.get
       when (any (/= w) ws) $
         fail "Corrupt TestBlock"
-      return $ TestBlock (Slot w)
+      return $ TestBlock (SlotNo w)
 
 newtype TestBlocks = TestBlocks [TestBlock]
     deriving (Show)
@@ -136,7 +136,7 @@ binaryEpochFileParser hasFS@HasFS{..} = EpochFileParser $ \fsPath ->
 
 testBlockEpochFileParser' :: MonadThrow m
                           => HasFS m h
-                          -> EpochFileParser String m (Word, Slot)
+                          -> EpochFileParser String m (Word, SlotNo)
 testBlockEpochFileParser' hasFS = (\tb -> (testBlockSize, tbSlot tb)) <$>
     binaryEpochFileParser hasFS
 

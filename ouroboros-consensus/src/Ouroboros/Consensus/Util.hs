@@ -32,6 +32,7 @@ import           Data.Kind (Constraint)
 import           Data.List (foldl')
 import           Data.Set (Set)
 import qualified Data.Set as Set
+import           Data.Word (Word64)
 import           GHC.Stack
 
 data Dict (a :: Constraint) where
@@ -111,7 +112,7 @@ lastMaybe [x]    = Just x
 lastMaybe (_:xs) = lastMaybe xs
 
 -- | Fast Fibonacci computation, using Binet's formula
-fib :: Word -> Word
+fib :: Word64 -> Word64
 fib n = round $ phi ** fromIntegral n / sq5
   where
     sq5, phi :: Double

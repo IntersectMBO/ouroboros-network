@@ -24,6 +24,7 @@ import           Data.Maybe (catMaybes)
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.Text.Lazy as Text
+import           Data.Word (Word64)
 import           Numeric.Natural (Natural)
 import           Test.QuickCheck
 
@@ -54,18 +55,18 @@ allEqual (x : xs@(_:_)) =
     g c d = case (Chain.lastSlot c, Chain.lastSlot d) of
         (Nothing, Nothing) -> error "impossible case"
         (Nothing, Just t)  ->    "empty intersection of non-empty chains (one reaches slot "
-                              <> show (getSlot t)
+                              <> show (unSlotNo t)
                               <> " and contains "
                               <> show (Chain.length d)
                               <> "blocks): "
                               <> condense d
         (Just _, Nothing)  -> error "impossible case"
         (Just s, Just t)   ->    "intersection reaches slot "
-                              <> show (getSlot s)
+                              <> show (unSlotNo s)
                               <> " and has length "
                               <> show (Chain.length c)
                               <> ", but at least one chain reaches slot "
-                              <> show (getSlot t)
+                              <> show (unSlotNo t)
                               <> " and has length "
                               <> show (Chain.length d)
                               <> ": "
@@ -81,7 +82,7 @@ shortestLength = fromIntegral . minimum . map Chain.length . Map.elems
 -------------------------------------------------------------------------------}
 
 data BlockInfo b = BlockInfo
-    { biSlot     :: !Slot
+    { biSlot     :: !SlotNo
     , biCreator  :: !(Maybe CoreNodeId)
     , biHash     :: !(Hash b)
     , biPrevious :: !(Maybe (Hash b))
@@ -104,14 +105,14 @@ blockInfo b = BlockInfo
     }
 
 data NodeLabel = NodeLabel
-    { nlSlot      :: Slot
+    { nlSlot      :: SlotNo
     , nlCreator   :: Maybe CoreNodeId
     , nlBelievers :: Set NodeId
     }
 
 instance Labellable NodeLabel where
     toLabelValue NodeLabel{..} = StrLabel $ Text.pack $
-           show (getSlot nlSlot)
+           show (unSlotNo nlSlot)
         <> " "
         <> maybe "" (showNodeId . fromCoreNodeId) nlCreator
         <> showNodeIds nlBelievers
@@ -193,10 +194,10 @@ leaderScheduleFromTrace :: forall b. (HasCreator b, HasHeader b)
 leaderScheduleFromTrace (NumSlots numSlots) =
     LeaderSchedule . Map.foldl' (Chain.foldChain step) initial
   where
-    initial :: Map Slot [CoreNodeId]
+    initial :: Map SlotNo [CoreNodeId]
     initial = Map.fromList [(slot, []) | slot <- [1 .. fromIntegral numSlots]]
 
-    step :: Map Slot [CoreNodeId] -> b -> Map Slot [CoreNodeId]
+    step :: Map SlotNo [CoreNodeId] -> b -> Map SlotNo [CoreNodeId]
     step m b = Map.adjust (insert $ getCreator b) (blockSlot b) m
 
     insert :: CoreNodeId -> [CoreNodeId] -> [CoreNodeId]
@@ -212,10 +213,10 @@ leaderScheduleFromTrace (NumSlots numSlots) =
 -- more than one leader, possibly interrupted by slots without leader.
 -- There can be no such sequence, but if there is, first slot and number of
 -- multi-leader slots are given.
-newtype CrowdedRun = CrowdedRun (Maybe (Slot, Word))
+newtype CrowdedRun = CrowdedRun (Maybe (SlotNo, Word64))
     deriving (Show, Eq)
 
-crowdedRunLength :: CrowdedRun -> Word
+crowdedRunLength :: CrowdedRun -> Word64
 crowdedRunLength (CrowdedRun m) = maybe 0 snd m
 
 instance Ord CrowdedRun where
@@ -224,7 +225,7 @@ instance Ord CrowdedRun where
 noRun :: CrowdedRun
 noRun = CrowdedRun Nothing
 
-incCrowdedRun :: Slot -> CrowdedRun -> CrowdedRun
+incCrowdedRun :: SlotNo -> CrowdedRun -> CrowdedRun
 incCrowdedRun slot (CrowdedRun Nothing)          = CrowdedRun (Just (slot, 1))
 incCrowdedRun _    (CrowdedRun (Just (slot, n))) = CrowdedRun (Just (slot, n + 1))
 
@@ -234,7 +235,7 @@ longestCrowdedRun (LeaderSchedule m) = fst
                                      $ Map.toList
                                      $ fmap length m
   where
-    go :: (CrowdedRun, CrowdedRun) -> (Slot, Int) -> (CrowdedRun, CrowdedRun)
+    go :: (CrowdedRun, CrowdedRun) -> (SlotNo, Int) -> (CrowdedRun, CrowdedRun)
     go (x, y) (slot, n)
         | n == 0    = (x, y)
         | n == 1    = (x, noRun)

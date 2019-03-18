@@ -25,7 +25,7 @@ type Fd = Int
 
 -- For each file, we store the latest blockId, the number of blocks
 -- and a Map for its contents.
-type Index blockId = Map String (Maybe Slot, Int, Map Int64 (Int, blockId))
+type Index blockId = Map String (Maybe SlotNo, Int, Map Int64 (Int, blockId))
 
 -- For each blockId, we store the file we can find the block, the offset and its size
 -- in bytes.

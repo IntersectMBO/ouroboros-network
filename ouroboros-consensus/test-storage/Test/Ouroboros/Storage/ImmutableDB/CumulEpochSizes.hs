@@ -1,5 +1,5 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
--- | Data structure to convert between 'Slot's and 'EpochSlot's.
+-- | Data structure to convert between 'SlotNo's and 'EpochSlot's.
 module Test.Ouroboros.Storage.ImmutableDB.CumulEpochSizes ( tests ) where
 
 import qualified Data.Foldable as Foldable
@@ -9,7 +9,7 @@ import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
-import           Ouroboros.Network.Block (Slot (..))
+import           Ouroboros.Network.Block (SlotNo (..))
 
 import           Ouroboros.Storage.ImmutableDB.CumulEpochSizes
 import           Ouroboros.Storage.ImmutableDB.Types
@@ -26,15 +26,15 @@ instance Arbitrary CumulEpochSizes where
     , es' <- shrink es
     ]
 
-chooseSlot :: Slot -> Slot -> Gen Slot
-chooseSlot (Slot start) (Slot end) = Slot <$> choose (start, end)
+chooseSlot :: SlotNo -> SlotNo -> Gen SlotNo
+chooseSlot (SlotNo start) (SlotNo end) = SlotNo <$> choose (start, end)
 
 prop_ces_roundtrip :: CumulEpochSizes -> Property
 prop_ces_roundtrip ces = fromNonEmpty (NE.fromList (toList ces)) === ces
 
-prop_epochSize :: CumulEpochSizes -> Epoch -> Property
+prop_epochSize :: CumulEpochSizes -> EpochNo -> Property
 prop_epochSize ces epoch =
-    epochSize ces epoch === toList ces !? fromIntegral epoch
+    epochSize ces epoch === toList ces !? fromIntegral (unEpochNo epoch)
   where
     xs !? i
       | 0 <= i, i < Foldable.length xs = Just (xs !! i)

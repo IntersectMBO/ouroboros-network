@@ -55,8 +55,8 @@ import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 ------------------------------------------------------------------------------}
 
 
-renderFile :: String -> Epoch -> FsPath
-renderFile fileType (Epoch epoch) = [printf "%s-%03d.dat" fileType epoch]
+renderFile :: String -> EpochNo -> FsPath
+renderFile fileType (EpochNo epoch) = [printf "%s-%03d.dat" fileType epoch]
 
 handleUser :: HasCallStack
            => ErrorHandling ImmutableDBError m
@@ -87,9 +87,9 @@ throwUnexpectedError = throwError . handleUnexpected
 -- Just ("epoch", 1)
 -- > parseDBFile "index-012.dat"
 -- Just ("index", 12)
-parseDBFile :: String -> Maybe (String, Epoch)
+parseDBFile :: String -> Maybe (String, EpochNo)
 parseDBFile s = case T.splitOn "-" . fst . T.breakOn "." . T.pack $ s of
-    [prefix, n] -> (T.unpack prefix,) . Epoch <$> readMaybe (T.unpack n)
+    [prefix, n] -> (T.unpack prefix,) . EpochNo <$> readMaybe (T.unpack n)
     _           -> Nothing
 
 -- | Read all the data from the given file handle 64kB at a time.
@@ -138,9 +138,9 @@ hGetRightSize HasFS{..} hnd size file = do
 validateIteratorRange
   :: Monad m
   => ErrorHandling ImmutableDBError m
-  -> Slot        -- ^ Next expected write
-  -> Maybe Slot  -- ^ range start (inclusive)
-  -> Maybe Slot  -- ^ range end (inclusive)
+  -> SlotNo        -- ^ Next expected write
+  -> Maybe SlotNo  -- ^ range start (inclusive)
+  -> Maybe SlotNo  -- ^ range end (inclusive)
   -> m ()
 validateIteratorRange err next mbStart mbEnd = do
     case (mbStart, mbEnd) of

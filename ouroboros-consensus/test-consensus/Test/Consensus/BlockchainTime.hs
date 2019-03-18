@@ -71,7 +71,7 @@ prop_Fixed_Nominal_Fixed t = fixedDiffFromNominal (fixedDiffToNominal t) === t
 -------------------------------------------------------------------------------}
 
 -- > slotAtTime (startOfSlot slot)) == (slot, 0)
-prop_startOfSlot :: SlotLength -> SystemStart -> Slot -> Property
+prop_startOfSlot :: SlotLength -> SystemStart -> SlotNo -> Property
 prop_startOfSlot slotLen start slot =
       counterexample ("slotStart: " ++ show slotStart)
     $ slotAtTime slotLen start slotStart === (slot, 0)
@@ -114,7 +114,7 @@ prop_timeUntilNextSlot slotLen start execTime =
              | otherwise                         = "in the middle"
 
 -- > timeUntilNextSlot (startOfSlot slot) == (slotLen, slot + 1)
-prop_timeFromStartOfSlot :: SlotLength -> SystemStart -> Slot -> Property
+prop_timeFromStartOfSlot :: SlotLength -> SystemStart -> SlotNo -> Property
 prop_timeFromStartOfSlot slotLen start slot =
       counterexample ("slotStart: " ++ show slotStart)
     $ timeUntilNextSlot slotLen start slotStart ===
@@ -149,7 +149,7 @@ data TestDelayIO = TestDelayIO {
       -- this as an offset _before_ the start of the test.
       tdioStart'  :: FixedDiffTime
 
-      -- | Slot length
+      -- | SlotNo length
       --
       -- Since this test is run in IO, we will keep the slot length short.
     , tdioSlotLen :: SlotLength

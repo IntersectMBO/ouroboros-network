@@ -28,7 +28,7 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
-import           Ouroboros.Network.Block (Slot (..))
+import           Ouroboros.Network.Block (SlotNo (..))
 import           Ouroboros.Network.Chain (Chain)
 
 import           Ouroboros.Consensus.BlockchainTime
@@ -129,7 +129,7 @@ shrinkLeaderSchedule (NumSlots numSlots) (LeaderSchedule m) =
     , m'   <- reduceSlot slot m
     ]
   where
-    reduceSlot :: Slot -> Map Slot [CoreNodeId] -> [Map Slot [CoreNodeId]]
+    reduceSlot :: SlotNo -> Map SlotNo [CoreNodeId] -> [Map SlotNo [CoreNodeId]]
     reduceSlot s m' = [Map.insert s xs m' | xs <- reduceList $ m' Map.! s]
 
     reduceList :: [a] -> [[a]]
