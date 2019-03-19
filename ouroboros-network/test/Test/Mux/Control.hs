@@ -105,6 +105,8 @@ prop_unknown_version_key key len = key > 2 && len > 0 && len < 0xffff ==> ioProp
 
          Right _ -> return False
 
+-- | Encode an invalid Muxcontrol message with the key 'k', version number 'v' and 'len' bytes
+-- of '0xa' dummy payload.
 invalidControlMessage :: Word -> Word -> Word -> Encoding
 invalidControlMessage k v len =
     let term = BL.replicate (fromIntegral len) 0xa in
