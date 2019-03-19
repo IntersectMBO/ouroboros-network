@@ -11,6 +11,7 @@ module Ouroboros.Storage.Common (
     -- * Indexing
   , Tip(..)
   , tipIsGenesis
+  , tipToPoint
     -- * Serialisation
   , encodeTip
   , decodeTip
@@ -23,6 +24,9 @@ import qualified Codec.CBOR.Encoding as Enc
 import           Codec.Serialise (Serialise (..))
 import           Data.Word
 import           GHC.Generics
+
+import           Ouroboros.Network.Block (Point)
+import qualified Ouroboros.Network.Chain as Chain
 
 {-------------------------------------------------------------------------------
   Epochs
@@ -53,6 +57,10 @@ data Tip r = Tip r | TipGen
 tipIsGenesis :: Tip r -> Bool
 tipIsGenesis TipGen  = True
 tipIsGenesis (Tip _) = False
+
+tipToPoint :: Tip (Point blk) -> Point blk
+tipToPoint TipGen  = Chain.genesisPoint
+tipToPoint (Tip p) = p
 
 {-------------------------------------------------------------------------------
   Serialization

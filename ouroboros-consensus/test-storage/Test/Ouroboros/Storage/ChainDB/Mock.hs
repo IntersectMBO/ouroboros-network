@@ -2,7 +2,7 @@
 
 module Test.Ouroboros.Storage.ChainDB.Mock (tests) where
 
-import           Codec.Serialise (Serialise(encode))
+import           Codec.Serialise (Serialise (encode))
 import           Control.Exception (Exception)
 import           Control.Monad
 import           Test.QuickCheck
@@ -15,10 +15,10 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
 import           Control.Monad.IOSim
 
-import           Ouroboros.Network.Chain (Chain (..), ChainUpdate)
+import           Ouroboros.Network.Chain (Chain (..))
 import qualified Ouroboros.Network.Chain as Chain
 
-import           Ouroboros.Storage.ChainDB.API (ChainDB)
+import           Ouroboros.Storage.ChainDB.API (ChainDB, ChainUpdate)
 import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 import qualified Ouroboros.Storage.ChainDB.Mock as Mock
 
@@ -47,7 +47,7 @@ prop_reader bt p = runSimOrThrow test
     test :: forall s. SimM s Property
     test = do
         db       <- openDB
-        reader   <- ChainDB.newReader db
+        reader   <- ChainDB.readHeaders db
         chainVar <- atomically $ newTVar Genesis
 
         -- Fork a thread that applies all instructions from the reader
@@ -65,17 +65,17 @@ prop_reader bt p = runSimOrThrow test
         return $ current === reconstructed
 
     monitorReader :: TVar (SimM s) (Chain TestBlock)
-                  -> ChainDB.Reader (SimM s) TestBlock
+                  -> ChainDB.Reader (SimM s) TestBlock TestBlock
                   -> SimM s ()
     monitorReader chainVar reader = forever $ do
         upd <- ChainDB.readerInstructionBlocking reader
         atomically $ do
           chain <- readTVar chainVar
-          case Chain.applyChainUpdate upd chain of
+          case Chain.applyChainUpdate (ChainDB.toNetworkChainUpdate upd) chain of
             Just chain' -> writeTVar chainVar chain'
             Nothing     -> throwM $ InvalidUpdate chain upd
 
-data InvalidUpdate = InvalidUpdate (Chain TestBlock) (ChainUpdate TestBlock)
+data InvalidUpdate = InvalidUpdate (Chain TestBlock) (ChainUpdate TestBlock TestBlock)
   deriving (Show)
 
 instance Exception InvalidUpdate

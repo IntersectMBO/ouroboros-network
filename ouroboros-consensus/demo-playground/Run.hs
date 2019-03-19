@@ -39,7 +39,7 @@ import           Ouroboros.Consensus.Util.ThreadRegistry
 
 import           Ouroboros.Storage.ChainDB (ChainDB)
 import qualified Ouroboros.Storage.ChainDB as ChainDB
-import qualified Ouroboros.Storage.ChainDB.Mock as ChainDB
+import qualified Ouroboros.Storage.ChainDB.Mock as ChainDB.Mock
 
 import           CLI
 import           Mock.Mempool
@@ -118,7 +118,7 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
           , produceDRG      = drgNew
           }
 
-      chainDB <- ChainDB.openDB encode pInfoConfig pInfoInitLedger Mock.simpleHeader
+      chainDB <- ChainDB.Mock.openDB encode pInfoConfig pInfoInitLedger Mock.simpleHeader
 
       btime  <- realBlockchainTime registry slotDuration systemStart
       let tracer = contramap ((show myNodeId <> " | ") <>) stdoutTracer
