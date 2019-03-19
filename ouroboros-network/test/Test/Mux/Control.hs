@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -11,7 +12,7 @@ import           Codec.CBOR.Write (toLazyByteString)
 import qualified Codec.CBOR.FlatTerm as CBOR
 import           Codec.Serialise (Serialise (..))
 import qualified Data.ByteString.Char8 as BSC
-import           Data.Maybe (mapMaybe)
+import           Data.Maybe (catMaybes, mapMaybe)
 import qualified Data.Text as T
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
@@ -26,7 +27,8 @@ tests =
   [ testProperty "MuxControl encode/decode"      prop_mux_encode_decode
   , testProperty "MuxControl decoding"           prop_decode_ControlMsg
   , testGroup "generators"
-     [ testProperty "ArbitraryFlatTerm is valid" prop_ArbitraryFlatTerm
+     [ testProperty "ArbitraryFlatTerm is valid"        prop_ArbitraryFlatTerm
+     , testProperty "shrink ArbitraryFlatTerm is valid" prop_shrink_ArbitraryFlatTerm
      ]
   ]
 
@@ -121,12 +123,76 @@ genArbitraryFlatTerm = sized $ \s ->
           <$> resize s' genArbitraryFlatTerm
           <*> resize s' genArbitraryFlatTerm
 
+shrinkArbitraryFlatTerm :: CBOR.FlatTerm -> [CBOR.FlatTerm]
+shrinkArbitraryFlatTerm t = filter (not . null) $ map concat $ shrinkList (const []) (splitFlatTerm t)
+
+splitFlatTerm :: CBOR.FlatTerm -> [CBOR.FlatTerm]
+splitFlatTerm (x@CBOR.TkInt{}       : xs) = [x] : splitFlatTerm xs
+splitFlatTerm (x@CBOR.TkInteger{}   : xs) = [x] : splitFlatTerm xs
+
+-- TODO: this needs to track @TkBreak@, the naive approach will split at wrong
+-- places
+splitFlatTerm (x@CBOR.TkBytesBegin  : xs) =
+  let (ys, ys') = findBreak xs
+  in (x : ys) : splitFlatTerm ys'
+splitFlatTerm (x@CBOR.TkStringBegin : xs) =
+  let (ys, ys') = findBreak xs
+  in (x : ys) : splitFlatTerm ys'
+splitFlatTerm (x@CBOR.TkListBegin   : xs) =
+  let (ys, ys') = findBreak xs
+  in (x : ys) : splitFlatTerm ys'
+splitFlatTerm (x@CBOR.TkMapBegin    : xs) =
+  let (ys, ys') = findBreak xs
+  in (x : ys) : splitFlatTerm ys'
+
+splitFlatTerm (x@(CBOR.TkListLen n) : xs) =
+  let (ys, ys') = splitAt (fromIntegral n) (splitFlatTerm xs)
+  in (x : concat ys) : ys'
+splitFlatTerm (x@(CBOR.TkMapLen n)  : xs) =
+  let (ys, ys') = splitAt (fromIntegral (2 * n)) (splitFlatTerm xs)
+  in (x : concat ys) : ys'
+
+splitFlatTerm (x@CBOR.TkBool{}      : xs) = [x] : splitFlatTerm xs
+splitFlatTerm (x@CBOR.TkSimple{}    : xs) = [x] : splitFlatTerm xs
+splitFlatTerm (x@CBOR.TkFloat16{}   : xs) = [x] : splitFlatTerm xs
+splitFlatTerm (x@CBOR.TkFloat32{}   : xs) = [x] : splitFlatTerm xs
+splitFlatTerm (x@CBOR.TkFloat64{}   : xs) = [x] : splitFlatTerm xs
+splitFlatTerm (x@CBOR.TkTag{}       : xs) = [x] : splitFlatTerm xs
+splitFlatTerm (x@CBOR.TkNull{}      : xs) = [x] : splitFlatTerm xs
+splitFlatTerm (x@CBOR.TkBytes{}     : xs) = case splitFlatTerm xs of
+  []   -> [[x]]
+  y:ys -> (x:y) : ys
+splitFlatTerm (x@CBOR.TkString{}    : xs) = case splitFlatTerm xs of
+  []   -> [[x]]
+  y:ys -> (x:y) : ys
+splitFlatTerm (CBOR.TkBreak{}       : xs) = [CBOR.TkBreak] : splitFlatTerm xs
+splitFlatTerm []                          = []
+
+-- |
+-- Find matching @'CBOR.TkBreak'@
+--
+findBreak :: CBOR.FlatTerm -> (CBOR.FlatTerm, CBOR.FlatTerm)
+findBreak = go 0 []
+    where
+      go :: Int
+         -> CBOR.FlatTerm
+         -> CBOR.FlatTerm
+         -> (CBOR.FlatTerm, CBOR.FlatTerm)
+      go  _ !acc []                          = (reverse acc, [])
+      go  0 !acc (x@CBOR.TkBreak       : xs) = (reverse (x : acc), xs)
+      go !n !acc (x@CBOR.TkBreak       : xs) = go (n - 1) (x : acc) xs
+      go !n !acc (x@CBOR.TkBytesBegin  : xs) = go (n + 1) (x : acc) xs
+      go !n !acc (x@CBOR.TkStringBegin : xs) = go (n + 1) (x : acc) xs
+      go !n !acc (x@CBOR.TkListBegin   : xs) = go (n + 1) (x : acc) xs
+      go !n !acc (x@CBOR.TkMapBegin    : xs) = go (n + 1) (x : acc) xs
+      go !n !acc (x                    : xs) = go n       (x : acc) xs
+
 data ArbitraryFlatTerm = ArbitraryFlatTerm { unArbitraryFlatTerm :: CBOR.FlatTerm }
     deriving Show
 
 instance Arbitrary ArbitraryFlatTerm where
     arbitrary = resize 10 $ ArbitraryFlatTerm <$> genArbitraryFlatTerm
-    -- TODO shrink
+    shrink = map ArbitraryFlatTerm . shrinkArbitraryFlatTerm . unArbitraryFlatTerm
 
 -- Generates valid, but possibly unknown versions.
 -- A version is encoded as a pair, a Word representing the version number and a CBOR.Term
@@ -145,6 +211,9 @@ instance Arbitrary ArbitraryTermPair where
 
 prop_ArbitraryFlatTerm :: ArbitraryFlatTerm -> Bool
 prop_ArbitraryFlatTerm (ArbitraryFlatTerm t) = CBOR.validFlatTerm t
+
+prop_shrink_ArbitraryFlatTerm :: ArbitraryFlatTerm -> Bool
+prop_shrink_ArbitraryFlatTerm (ArbitraryFlatTerm t) = all CBOR.validFlatTerm (shrinkArbitraryFlatTerm t)
 
 data ArbitraryControlMsgFT = ArbitraryControlMsgFT (Maybe ControlMsg) CBOR.FlatTerm
     deriving Show
@@ -203,6 +272,38 @@ instance Arbitrary ArbitraryControlMsgFT where
             (CBOR.TkListLen (fromIntegral $ (length xs) + 1)
               : CBOR.TkInt (x + 2)
               : concat xs)
+
+    -- this shrinking is not good enough, we should shrink simultaneously `vs`
+    -- and `ts`, but this is slightly difficult.
+    shrink (ArbitraryControlMsgFT (Just (MsgInitReq vs)) ts)
+      = [ ArbitraryControlMsgFT (Just (MsgInitReq vs')) (CBOR.toFlatTerm $ encode (MsgInitReq vs'))
+        | vs' <- shrinkList (const []) vs
+        ]
+        ++
+        [ ArbitraryControlMsgFT Nothing ts'
+        | ts' <- shrinkArbitraryFlatTerm ts
+        ]
+        ++
+          case ts of
+            CBOR.TkListLen a : CBOR.TkInt b : CBOR.TkListLen _ : xs ->
+              [ ArbitraryControlMsgFT
+                  (Just (MsgInitReq $ catMaybes $ map fst xs'))
+                  (CBOR.TkListLen a : CBOR.TkInt b : CBOR.TkListLen (fromIntegral $ length xs') : concat (map snd xs'))
+              | xs' <- shrinkList (const []) $ zip' (CBOR.toFlatTerm . encode) vs (splitFlatTerm xs)
+              ]
+            _ -> []
+      where
+        zip' :: Eq b => (a -> b) -> [a] -> [b] -> [(Maybe a, b)]
+        zip' f (a:as) (b:bs) =
+          if f a == b
+          then (Just a, b)  : zip' f as bs
+          else (Nothing, b) : zip' f (a:as) bs
+        zip' _ []     _      = []
+        zip' _ _      []     = []
+
+
+    shrink (ArbitraryControlMsgFT (Just _) _) = []
+    shrink (ArbitraryControlMsgFT Nothing ts) = map (ArbitraryControlMsgFT Nothing) (shrinkArbitraryFlatTerm ts)
 
 -- |
 -- Check that we can decode all version that we know ignoring version's that
