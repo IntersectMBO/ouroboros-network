@@ -298,7 +298,7 @@ instance Arbitrary ArbitraryControlMsgFT where
               : ts)
 
         -- |
-        -- Generate @'ControlMessage'@ with an unknown tag, which includes
+        -- Generate @'ControlMsg'@ with an unknown tag, which includes
         -- unknown terms.
         invalidControlMsgTag :: Gen (ArbitraryControlMsgFT)
         invalidControlMsgTag = do
@@ -343,7 +343,7 @@ instance Arbitrary ArbitraryControlMsgFT where
 
 -- |
 -- Check that we can decode all version that we know ignoring version's that
--- are unkown.
+-- are unknown.
 --
 prop_decode_ControlMsg :: ArbitraryControlMsgFT -> Property
 prop_decode_ControlMsg (ArbitraryControlMsgFT msg t) =
