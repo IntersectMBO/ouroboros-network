@@ -24,6 +24,7 @@ module Ouroboros.Network.Mux (
 
 import qualified Codec.CBOR.Read as CBOR
 import           Codec.CBOR.Write (toLazyByteString)
+import           Codec.Serialise.Class (Serialise (..))
 import           Control.Monad
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
@@ -168,7 +169,7 @@ muxClient :: (MonadAsync m, MonadFork m, MonadSay m, MonadSTM m, MonadThrow m,
 muxClient verMpds bearer = do
     let versions = map fst verMpds
         msg = MsgInitReq versions
-        blob = toLazyByteString $ encodeCtrlMsg msg
+        blob = toLazyByteString $ encode msg
         sdu = MuxSDU (RemoteClockModel 0) Muxcontrol ModeInitiator (fromIntegral $ BL.length blob) blob
 
     void $ write bearer sdu
@@ -176,7 +177,7 @@ muxClient verMpds bearer = do
     if msId rsp /= Muxcontrol || msMode rsp /= ModeResponder
        then throwM $ MuxError MuxUnknownMiniProtocol "invalid muxInit rsp id or mode" callStack
        else do
-           let rspMsg_e = CBOR.deserialiseFromBytes decodeCtrlMsg (msBlob rsp)
+           let rspMsg_e = CBOR.deserialiseFromBytes decode (msBlob rsp)
            case rspMsg_e of
                 Left e -> throwM e
                 Right (_, MsgInitRsp version) ->
@@ -201,7 +202,7 @@ muxServer verMpds bearer = do
     if msId req /= Muxcontrol || msMode req /= ModeInitiator
        then throwM $ MuxError MuxUnknownMiniProtocol "invalid muxInit req id or mode" callStack
        else do
-           let reqMsg_e = CBOR.deserialiseFromBytes decodeCtrlMsg (msBlob req)
+           let reqMsg_e = CBOR.deserialiseFromBytes decode (msBlob req)
            case reqMsg_e of
                 Left e -> throwM e
                 Right (_, MsgInitReq remoteVersions) -> do
@@ -225,7 +226,7 @@ muxServer verMpds bearer = do
 
   where
     sndSdu msg = do
-        let blob = toLazyByteString $ encodeCtrlMsg msg
+        let blob = toLazyByteString $ encode msg
             sdu = MuxSDU (RemoteClockModel 0) Muxcontrol ModeResponder
                          (fromIntegral $ BL.length blob) blob
         void $ write bearer sdu

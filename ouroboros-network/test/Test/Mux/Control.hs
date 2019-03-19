@@ -51,8 +51,8 @@ instance Arbitrary ControlMsg where
 prop_mux_encode_decode :: ControlMsg
                        -> Property
 prop_mux_encode_decode msg =
-    let bs = toLazyByteString $ encodeCtrlMsg msg
-        res_e = deserialiseFromBytes decodeCtrlMsg bs in
+    let bs = toLazyByteString $ encode msg
+        res_e = deserialiseFromBytes decode bs in
     case res_e of
          Left  _   -> property False
          Right res -> return msg === res
@@ -141,7 +141,7 @@ data ArbitraryControlMsgFT = ArbitraryControlMsgFT (Maybe ControlMsg) CBOR.FlatT
 --
 instance Arbitrary ArbitraryControlMsgFT where
     arbitrary = oneof
-        [ (\x -> ArbitraryControlMsgFT (Just x) (CBOR.toFlatTerm $ encodeCtrlMsg x)) <$> arbitrary
+        [ (\x -> ArbitraryControlMsgFT (Just x) (CBOR.toFlatTerm $ encode x)) <$> arbitrary
         , msgInitReq <$> listOf arbitrary
         ,  msgInitRsp <$> arbitrary
         , invalidControlMsgTag
@@ -169,7 +169,7 @@ instance Arbitrary ArbitraryControlMsgFT where
         msgInitRsp (ArbitraryVersionFT (Just v) _) =
           ArbitraryControlMsgFT
             (Just (MsgInitRsp v))
-            (CBOR.toFlatTerm $ encodeCtrlMsg (MsgInitRsp v))
+            (CBOR.toFlatTerm $ encode (MsgInitRsp v))
         msgInitRsp (ArbitraryVersionFT Nothing ts) =
           ArbitraryControlMsgFT
             Nothing
@@ -195,6 +195,6 @@ instance Arbitrary ArbitraryControlMsgFT where
 --
 prop_decode_ControlMsg :: ArbitraryControlMsgFT -> Property
 prop_decode_ControlMsg (ArbitraryControlMsgFT msg t) =
-  case CBOR.fromFlatTerm decodeCtrlMsg t of
+  case CBOR.fromFlatTerm decode t of
     Left _     -> property $ maybe True (const False) msg
     Right msg' -> msg === Just msg'
