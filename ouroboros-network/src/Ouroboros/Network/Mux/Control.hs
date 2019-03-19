@@ -29,7 +29,7 @@ data ControlMsg = MsgInitReq (M.Map VersionNumber Version)
 
 encodeCtrlMsg :: ControlMsg -> CBOR.Encoding
 encodeCtrlMsg (MsgInitReq versions) = CBOR.encodeListLen 2 <> CBOR.encodeWord 0 <> encodeVersionMap versions
-encodeCtrlMsg (MsgInitRsp version)  = CBOR.encodeListLen 2 <> CBOR.encodeWord 1 <> encode version
+encodeCtrlMsg (MsgInitRsp version)  = CBOR.encodeListLen 3 <> CBOR.encodeWord 1 <> encode version
 encodeCtrlMsg (MsgInitFail msg)     = CBOR.encodeListLen 2 <> CBOR.encodeWord 2 <> encode msg
 
 encodeVersionMap :: M.Map VersionNumber Version -> CBOR.Encoding
