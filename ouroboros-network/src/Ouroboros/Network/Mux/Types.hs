@@ -58,15 +58,11 @@ instance Serialise NetworkMagic where
 
 data Version = Version0 !NetworkMagic -- Plain NodeToNode
              | Version1 !NetworkMagic -- NodeToClient
-             deriving (Eq, Ord)
+             deriving (Eq, Ord, Show)
 
 versionMagic :: Version -> NetworkMagic
 versionMagic (Version0 nm) = nm
 versionMagic (Version1 nm) = nm
-
-instance Show Version where
-    show (Version0 m) = printf "Version 0 NetworkMagic %d" $ unNetworkMagic m
-    show (Version1 m) = printf "Version 1 NetworkMagic %d" $ unNetworkMagic m
 
 instance Serialise Version where
     encode (Version0 m) = CBOR.encodeListLen 2 <> CBOR.encodeWord 0 <> encode m
