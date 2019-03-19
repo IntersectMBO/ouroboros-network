@@ -11,8 +11,8 @@ import qualified Data.Set as Set
 
 import           Control.Monad.Class.MonadSTM
 
-import           Ouroboros.Network.Block (ChainUpdate (..), HasHeader (..),
-                     HeaderHash, Point (..))
+import           Ouroboros.Network.Block (HasHeader (..), HeaderHash,
+                     Point (..))
 import qualified Ouroboros.Network.Block as Block
 import qualified Ouroboros.Network.ChainProducerState as CPS
 
@@ -64,7 +64,7 @@ openDB cfg initLedger blockHeader = do
             , iteratorId    = itrId
             }
 
-        reader :: CPS.ReaderId -> Reader m hdr
+        reader :: CPS.ReaderId -> Reader m blk blk
         reader rdrId = Reader {
               readerInstruction = atomically $
                 updateSTM readerInstruction'
@@ -77,14 +77,12 @@ openDB cfg initLedger blockHeader = do
             }
           where
             readerInstruction' :: Model blk
-                               -> (Maybe (ChainUpdate hdr), Model blk)
-            readerInstruction' =
-                  first (fmap castUpdate)
-                . Model.readerInstruction rdrId
+                               -> (Maybe (ChainUpdate blk blk), Model blk)
+            readerInstruction' = Model.readerInstruction rdrId
 
-            readerForward' :: [Point hdr]
+            readerForward' :: [Point blk]
                            -> Model blk
-                           -> (Maybe (Point hdr), Model blk)
+                           -> (Maybe (Point blk), Model blk)
             readerForward' ps =
                   first (fmap Block.castPoint)
                 . Model.readerForward rdrId (map Block.castPoint ps)
@@ -101,11 +99,8 @@ openDB cfg initLedger blockHeader = do
       , knownInvalidBlocks  = query   $ const Set.empty -- TODO
       , pointOnChain        = query'  . flip Model.pointOnChain
       , streamBlocks        = update .: (first iterator ..: Model.streamBlocks)
-      , newReader           = update  $ (first reader     . Model.newReader)
+      , readBlocks          = update  $ (first reader . Model.readBlocks)
+      , readHeaders         = update  $ (first (fmap blockHeader . reader) . Model.readBlocks)
       }
   where
     k = protocolSecurityParam cfg
-
-    castUpdate :: ChainUpdate blk -> ChainUpdate hdr
-    castUpdate (RollBack p) = RollBack (Block.castPoint p)
-    castUpdate (AddBlock b) = AddBlock (blockHeader b)

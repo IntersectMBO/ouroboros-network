@@ -26,7 +26,7 @@ module Ouroboros.Storage.ChainDB.Model (
   , streamBlocks
   , iteratorNext
     -- * Readers
-  , newReader
+  , readBlocks
   , readerInstruction
   , readerForward
   ) where
@@ -39,8 +39,8 @@ import           GHC.Stack (HasCallStack)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as Fragment
-import           Ouroboros.Network.Block (ChainHash (..), ChainUpdate (..),
-                     HasHeader, HeaderHash, Point)
+import           Ouroboros.Network.Block (ChainHash (..), HasHeader, HeaderHash,
+                     Point)
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.Chain (Chain (..))
 import qualified Ouroboros.Network.Chain as Chain
@@ -50,8 +50,9 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util (repeatedly)
 
-import           Ouroboros.Storage.ChainDB.API (IteratorId (..),
-                     IteratorResult (..), StreamFrom (..), StreamTo (..))
+import           Ouroboros.Storage.ChainDB.API (ChainUpdate (..),
+                     IteratorId (..), IteratorResult (..), StreamFrom (..),
+                     StreamTo (..), fromNetworkChainUpdate)
 
 -- | Model of the chain DB
 data Model blk = Model {
@@ -173,22 +174,24 @@ iteratorNext itrId m =
   Readers
 -------------------------------------------------------------------------------}
 
-newReader :: HasHeader blk => Model blk -> (CPS.ReaderId, Model blk)
-newReader m = (rdrId, m { cps = cps' })
+readBlocks :: HasHeader blk => Model blk -> (CPS.ReaderId, Model blk)
+readBlocks m = (rdrId, m { cps = cps' })
   where
     (cps', rdrId) = CPS.initReader Chain.genesisPoint (cps m)
 
 readerInstruction :: forall blk. HasHeader blk
                   => CPS.ReaderId
                   -> Model blk
-                  -> (Maybe (ChainUpdate blk), Model blk)
+                  -> (Maybe (ChainUpdate blk blk), Model blk)
 readerInstruction rdrId m =
     rewrap $ CPS.readerInstruction rdrId (cps m)
   where
-    rewrap :: Maybe (ChainUpdate blk, CPS.ChainProducerState blk)
-           -> (Maybe (ChainUpdate blk), Model blk)
+    rewrap :: Maybe (Chain.ChainUpdate blk, CPS.ChainProducerState blk)
+           -> (Maybe (ChainUpdate blk blk), Model blk)
     rewrap Nothing            = (Nothing, m)
-    rewrap (Just (upd, cps')) = (Just upd, m { cps = cps' })
+    rewrap (Just (upd, cps')) = ( Just (fromNetworkChainUpdate upd)
+                                , m { cps = cps' }
+                                )
 
 readerForward :: HasHeader blk
               => CPS.ReaderId

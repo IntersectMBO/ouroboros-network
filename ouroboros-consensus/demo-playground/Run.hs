@@ -41,7 +41,7 @@ import           Ouroboros.Consensus.Util.ThreadRegistry
 
 import           Ouroboros.Storage.ChainDB (ChainDB)
 import qualified Ouroboros.Storage.ChainDB as ChainDB
-import qualified Ouroboros.Storage.ChainDB.Mock as ChainDB
+import qualified Ouroboros.Storage.ChainDB.Mock as ChainDB.Mock
 
 import           CLI
 import           Mock.TxSubmission
@@ -105,7 +105,7 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
                                proof
           }
 
-      chainDB :: ChainDB IO blk hdr <- ChainDB.openDB
+      chainDB :: ChainDB IO blk hdr <- ChainDB.Mock.openDB
                                          pInfoConfig
                                          pInfoInitLedger
                                          demoGetHeader

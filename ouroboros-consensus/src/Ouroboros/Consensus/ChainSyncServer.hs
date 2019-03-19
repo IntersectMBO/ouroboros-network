@@ -11,10 +11,10 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Tracer
 
 import           Ouroboros.Network.Block (HeaderHash, Point (..), castPoint)
-import           Ouroboros.Network.Chain (ChainUpdate (..))
 import           Ouroboros.Network.Protocol.ChainSync.Server
 
-import           Ouroboros.Storage.ChainDB.API (ChainDB, Reader)
+import           Ouroboros.Storage.ChainDB.API (ChainDB, ChainUpdate (..),
+                     Reader)
 import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 
 
@@ -34,9 +34,9 @@ chainSyncServer
     -> ChainDB m blk hdr
     -> ChainSyncServer hdr (Point hdr) m ()
 chainSyncServer _tracer chainDB = ChainSyncServer $
-    idle <$> ChainDB.newReader chainDB
+    idle <$> ChainDB.readHeaders chainDB
   where
-    idle :: Reader m hdr -> ServerStIdle hdr (Point hdr) m ()
+    idle :: Reader m blk hdr -> ServerStIdle hdr (Point hdr) m ()
     idle rdr =
       ServerStIdle {
         recvMsgRequestNext   = handleRequestNext rdr,
@@ -44,10 +44,10 @@ chainSyncServer _tracer chainDB = ChainSyncServer $
         recvMsgDoneClient    = return ()
       }
 
-    idle' :: Reader m hdr -> ChainSyncServer hdr (Point hdr) m ()
+    idle' :: Reader m blk hdr -> ChainSyncServer hdr (Point hdr) m ()
     idle' = ChainSyncServer . return . idle
 
-    handleRequestNext :: Reader m hdr
+    handleRequestNext :: Reader m blk hdr
                       -> m (Either (ServerStNext hdr (Point hdr) m ())
                                 (m (ServerStNext hdr (Point hdr) m ())))
     handleRequestNext rdr = do
@@ -59,21 +59,21 @@ chainSyncServer _tracer chainDB = ChainSyncServer $
                        -- Reader is at the head, have to block and wait for
                        -- the producer's state to change.
 
-    sendNext :: Reader m hdr
+    sendNext :: Reader m blk hdr
              -> Point hdr
-             -> ChainUpdate hdr
+             -> ChainUpdate blk hdr
              -> ServerStNext hdr (Point hdr) m ()
     sendNext rdr tip update = case update of
-      AddBlock hdr -> SendMsgRollForward  hdr tip (idle' rdr)
-      RollBack pt  -> SendMsgRollBackward pt  tip (idle' rdr)
+      AddBlock hdr -> SendMsgRollForward  hdr            tip (idle' rdr)
+      RollBack pt  -> SendMsgRollBackward (castPoint pt) tip (idle' rdr)
 
-    handleFindIntersect :: Reader m hdr
+    handleFindIntersect :: Reader m blk hdr
                         -> [Point hdr]
                         -> m (ServerStIntersect hdr (Point hdr) m ())
     handleFindIntersect rdr points = do
       -- TODO guard number of points
-      changed <- ChainDB.readerForward rdr points
+      changed <- ChainDB.readerForward rdr (map castPoint points)
       tip     <- atomically $ castPoint <$> ChainDB.getTipPoint chainDB
       return $ case changed of
-        Just pt -> SendMsgIntersectImproved  pt tip (idle' rdr)
-        Nothing -> SendMsgIntersectUnchanged    tip (idle' rdr)
+        Just pt -> SendMsgIntersectImproved (castPoint pt) tip (idle' rdr)
+        Nothing -> SendMsgIntersectUnchanged               tip (idle' rdr)

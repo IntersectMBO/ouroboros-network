@@ -201,7 +201,6 @@ data ImmutableDB hash m = ImmutableDB
       => Maybe (SlotNo, hash)
       -> Maybe (SlotNo, hash)
       -> m (Iterator hash m ByteString)
-      -- TODO inclusive + exclusive bounds
 
     -- | Throw 'ImmutableDB' errors
   , immutableDBErr :: ErrorHandling ImmutableDBError m
