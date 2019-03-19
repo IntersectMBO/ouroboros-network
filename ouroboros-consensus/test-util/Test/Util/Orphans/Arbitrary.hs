@@ -81,7 +81,7 @@ instance Arbitrary Seed where
     arbitrary = do  (\w1 w2 w3 w4 w5 -> Seed (w1, w2, w3, w4, w5))
                 <$> gen <*> gen <*> gen <*> gen <*> gen
       where
-        gen = getLarge <$> arbitrary
+        gen = arbitraryBoundedIntegral
 
     shrink = const []
 
