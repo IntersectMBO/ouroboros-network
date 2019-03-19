@@ -8,13 +8,13 @@ packages: byron-proxy.cabal
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/iohk-monitoring-framework
-  tag: 6c9ff80285b29f9f92a03f7372c049bb77ace522
+  tag: 0c31ff69e28b8a955a5147c03cd9471307b3f349
   subdir: iohk-monitoring
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/iohk-monitoring-framework
-  tag: 6c9ff80285b29f9f92a03f7372c049bb77ace522
+  tag: 0c31ff69e28b8a955a5147c03cd9471307b3f349
   subdir: basic-tracer
 
 --

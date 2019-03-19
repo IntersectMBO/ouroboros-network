@@ -66,3 +66,5 @@ https://github.com/input-output-hk/haskell-hedgehog e63fb354bfbad07f3befdd43b382
 https://github.com/input-output-hk/log-warper 16246d4fbf16da7984f2a4b6c42f2ed5098182e4 . 11vw6h3lshhwrjbxni6z0jr6w9x2x338rv6p2b4b0rgr650pv2a9 log-warper .stack.nix/log-warper.nix
 https://github.com/input-output-hk/iohk-monitoring-framework 6c9ff80285b29f9f92a03f7372c049bb77ace522 iohk-monitoring 1s6fnz959crbapvzabdlsl9wq70dyqdp5sdwl3b0mqdwpmdw7wwm iohk-monitoring .stack.nix/iohk-monitoring.nix
 https://github.com/input-output-hk/iohk-monitoring-framework 6c9ff80285b29f9f92a03f7372c049bb77ace522 basic-tracer 1s6fnz959crbapvzabdlsl9wq70dyqdp5sdwl3b0mqdwpmdw7wwm basic-tracer .stack.nix/basic-tracer.nix
+https://github.com/input-output-hk/iohk-monitoring-framework 0c31ff69e28b8a955a5147c03cd9471307b3f349 iohk-monitoring 0r9rscjary8d6lksafqkd4x18j8814hdwcxpxydzadix63kxsnjs iohk-monitoring .stack.nix/iohk-monitoring.nix
+https://github.com/input-output-hk/iohk-monitoring-framework 0c31ff69e28b8a955a5147c03cd9471307b3f349 basic-tracer 0r9rscjary8d6lksafqkd4x18j8814hdwcxpxydzadix63kxsnjs basic-tracer .stack.nix/basic-tracer.nix

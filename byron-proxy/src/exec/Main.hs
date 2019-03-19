@@ -149,23 +149,9 @@ convertSeverity sev = case sev of
   Wlog.Warning -> BM.Warning
   Wlog.Error   -> BM.Error
 
--- |
--- The iohk-monitoring-framework took the `Trace` type and renamed
--- it `Cardano.BM.BaseTrace.BaseTrace`. Then `Trace` is defined
--- to be `(TraceContext, BaseTrace m NamedLogItem)` where
--- `TraceContext` contains configuration stuff and a mysterious
--- `IO ()`.
---
--- The challenge: how to make the original `Trace` from this
--- thing, to give to the diffusion layer, in such a way that it
--- behaves as expected? What is the `TraceContext` for? Is it
--- needed? It seems all wrong: configuration for the `Trace`
--- should be kept _in its closure_ if need be rather than shown
--- up-front, and with a mention of `IO` to boot. Very poor
--- abstraction.
 convertTrace :: BM.Trace IO Text -> Trace IO (LogNamed (Wlog.Severity, Text))
 convertTrace trace = case trace of
-  (traceContext, Tracer (Op f)) -> Pos.Util.Trace.Trace $ Op $ \namedI -> do
+  Tracer (Op f) -> Pos.Util.Trace.Trace $ Op $ \namedI -> do
     tid <- pack . show <$> myThreadId
     now <- getCurrentTime
     let logName    = Text.intercalate (Text.pack ".") (Trace.lnName namedI)
