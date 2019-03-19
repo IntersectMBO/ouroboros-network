@@ -61,6 +61,7 @@ executable byron-proxy
   -- other-extensions:
   build-depends:       base,
                        async,
+                       basic-tracer,
                        byron-proxy,
                        cardano-sl,
                        cardano-sl-binary,

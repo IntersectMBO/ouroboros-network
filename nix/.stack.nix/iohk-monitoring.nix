@@ -1,9 +1,15 @@
 { system, compiler, flags, pkgs, hsPkgs, pkgconfPkgs, ... }:
   {
-    flags = {};
+    flags = {
+      disable-aggregation = false;
+      disable-ekg = false;
+      disable-gui = false;
+      disable-monitoring = false;
+      disable-observables = false;
+      };
     package = {
       specVersion = "1.10";
-      identifier = { name = "iohk-monitoring"; version = "0.1.2.0"; };
+      identifier = { name = "iohk-monitoring"; version = "0.1.3.0"; };
       license = "MIT";
       copyright = "2018 IOHK";
       maintainer = "";
@@ -16,11 +22,13 @@
       };
     components = {
       "library" = {
-        depends = [
+        depends = (([
           (hsPkgs.base)
+          (hsPkgs.basic-tracer)
           (hsPkgs.aeson)
           (hsPkgs.array)
           (hsPkgs.async)
+          (hsPkgs.async-timer)
           (hsPkgs.attoparsec)
           (hsPkgs.auto-update)
           (hsPkgs.bytestring)
@@ -28,12 +36,11 @@
           (hsPkgs.containers)
           (hsPkgs.contravariant)
           (hsPkgs.directory)
-          (hsPkgs.ekg)
-          (hsPkgs.ekg-core)
           (hsPkgs.filepath)
           (hsPkgs.katip)
           (hsPkgs.lens)
           (hsPkgs.mtl)
+          (hsPkgs.safe)
           (hsPkgs.safe-exceptions)
           (hsPkgs.scientific)
           (hsPkgs.stm)
@@ -46,7 +53,10 @@
           (hsPkgs.vector)
           (hsPkgs.yaml)
           (hsPkgs.libyaml)
-          ] ++ (if system.isWindows
+          ] ++ (pkgs.lib).optionals (!flags.disable-ekg) [
+          (hsPkgs.ekg)
+          (hsPkgs.ekg-core)
+          ]) ++ (pkgs.lib).optional (!flags.disable-gui) (hsPkgs.threepenny-gui)) ++ (if system.isWindows
           then [ (hsPkgs.Win32) ]
           else [ (hsPkgs.unix) ]);
         };
@@ -82,6 +92,7 @@
         "tests" = {
           depends = [
             (hsPkgs.base)
+            (hsPkgs.basic-tracer)
             (hsPkgs.iohk-monitoring)
             (hsPkgs.aeson)
             (hsPkgs.array)
@@ -117,7 +128,8 @@
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
       url = "https://github.com/input-output-hk/iohk-monitoring-framework";
-      rev = "8456e488fd26e34f0d15c957965d6cc5c51427af";
-      sha256 = "0d43rlpp543ig8chjpcd7nwwm5r1lxdyjras770yx1g26dxba340";
+      rev = "6c9ff80285b29f9f92a03f7372c049bb77ace522";
+      sha256 = "1s6fnz959crbapvzabdlsl9wq70dyqdp5sdwl3b0mqdwpmdw7wwm";
       });
+    postUnpack = "sourceRoot+=/iohk-monitoring; echo source root reset to \$sourceRoot";
     }

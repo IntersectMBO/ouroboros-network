@@ -12,7 +12,7 @@ import Data.Functor.Contravariant (Op (..), contramap)
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import Data.Maybe (fromMaybe)
-import Data.Text (Text)
+import Data.Text (Text, pack)
 import qualified Data.Text as Text
 import Data.Time.Clock.POSIX (getCurrentTime)
 import Options.Applicative (execParser, fullDesc, help, info, long, metavar,
@@ -20,10 +20,9 @@ import Options.Applicative (execParser, fullDesc, help, info, long, metavar,
 import qualified System.Directory
 import System.Random (StdGen, getStdGen, randomR)
 
-import Cardano.BM.BaseTrace hiding (noTrace)
+import Cardano.BM.Tracer.Class (Tracer (..))
 import Cardano.BM.Configuration as BM (setup)
 import Cardano.BM.Data.LogItem hiding (LogNamed)
-import qualified Cardano.BM.Data.LogItem as BM
 import qualified Cardano.BM.Data.Severity as BM
 import Cardano.BM.Setup (withTrace)
 import qualified Cardano.BM.Trace as BM (Trace)
@@ -164,22 +163,20 @@ convertSeverity sev = case sev of
 -- should be kept _in its closure_ if need be rather than shown
 -- up-front, and with a mention of `IO` to boot. Very poor
 -- abstraction.
-convertTrace :: BM.Trace IO -> Trace IO (LogNamed (Wlog.Severity, Text))
+convertTrace :: BM.Trace IO Text -> Trace IO (LogNamed (Wlog.Severity, Text))
 convertTrace trace = case trace of
-  (traceContext, BaseTrace (Op f)) -> Pos.Util.Trace.Trace $ Op $ \namedI -> do
-    tid <- myThreadId
+  (traceContext, Tracer (Op f)) -> Pos.Util.Trace.Trace $ Op $ \namedI -> do
+    tid <- pack . show <$> myThreadId
     now <- getCurrentTime
-    let name       = Text.intercalate (Text.pack ".") (Trace.lnName namedI)
+    let logName    = Text.intercalate (Text.pack ".") (Trace.lnName namedI)
         (sev, txt) = Trace.lnItem namedI
-        logMeta    = LOMeta { tstamp = now, tid = tid }
-        logContent = LogMessage logItem
-        logItem    = LogItem { liSelection = Both
-                             , liSeverity = convertSeverity sev
-                             , liPayload = txt
-                             }
-        logObject  = LogObject logMeta logContent
-        logNamed   = BM.LogNamed { BM.lnName = name, BM.lnItem = logObject }
-    f logNamed
+        logMeta    = LOMeta { tstamp = now
+                            , tid = tid
+                            , severity = convertSeverity sev
+                            , privacy = Public }
+        logContent = LogMessage txt
+        logObject  = LogObject logName logMeta logContent
+    f logObject
 
 data ByronProxyOptions = ByronProxyOptions
   { bpoIndexPath    :: !String

@@ -9,6 +9,7 @@
         "graphviz" = (((hackage.graphviz)."2999.20.0.3").revisions).default;
         "quickcheck-state-machine" = (((hackage.quickcheck-state-machine)."0.6.0").revisions).default;
         "transformers" = (((hackage.transformers)."0.5.5.0").revisions).default;
+        "libyaml" = (((hackage.libyaml)."0.1.0.0").revisions).default;
         "ekg-wai" = (((hackage.ekg-wai)."0.1.0.3").revisions).default;
         "pvss" = (((hackage.pvss)."0.2.0").revisions).default;
         "lrucache" = (((hackage.lrucache)."1.2.0.1").revisions).default;
@@ -39,6 +40,7 @@
         io-sim-classes = ./.stack.nix/io-sim-classes.nix;
         byron-proxy = ./.stack.nix/byron-proxy.nix;
         iohk-monitoring = ./.stack.nix/iohk-monitoring.nix;
+        basic-tracer = ./.stack.nix/basic-tracer.nix;
         writer-cps-mtl = ./.stack.nix/writer-cps-mtl.nix;
         writer-cps-transformers = ./.stack.nix/writer-cps-transformers.nix;
         canonical-json = ./.stack.nix/canonical-json.nix;
