@@ -14,7 +14,6 @@ module Ouroboros.Network.Mux (
     , MuxSDU (..)
     , NetworkMagic (..)
     , Version (..)
-    , VersionNumber (..)
     , RemoteClockModel (..)
     , encodeMuxSDU
     , decodeMuxSDUHeader
@@ -42,7 +41,6 @@ import           Ouroboros.Network.Mux.Control
 import           Ouroboros.Network.Mux.Egress
 import           Ouroboros.Network.Mux.Ingress
 import           Ouroboros.Network.Mux.Types
-
 
 -- | muxStart starts a mux bearer for the specified protocols corresponding to
 -- one of the provided Versions.

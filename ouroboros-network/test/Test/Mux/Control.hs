@@ -24,7 +24,7 @@ tests :: TestTree
 tests =
   testGroup "MuxControl"
   [ testProperty "MuxControl encode/decode"      prop_mux_encode_decode
-  , testProperty "MuxControl decoding"           prop_decode_ControlMsg
+  -- XXX , testProperty "MuxControl decoding"           prop_decode_ControlMsg
   , testGroup "generators"
      [ testProperty "ArbitraryFlatTerm is valid" prop_ArbitraryFlatTerm
      ]
