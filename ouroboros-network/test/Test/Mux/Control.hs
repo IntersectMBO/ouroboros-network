@@ -209,8 +209,44 @@ instance Arbitrary ArbitraryTermPair where
     arbitrary = resize 10 $ ArbitraryTermPair <$> genArbitraryTermPair
     -- TODO shrink
 
-prop_ArbitraryFlatTerm :: ArbitraryFlatTerm -> Bool
-prop_ArbitraryFlatTerm (ArbitraryFlatTerm t) = CBOR.validFlatTerm t
+prop_ArbitraryFlatTerm :: ArbitraryFlatTerm -> Property
+prop_ArbitraryFlatTerm (ArbitraryFlatTerm t) =
+      tabulate "Length of terms"
+        [lengthLabel (length t)] $
+      tabulate "FlatTerms" (labelFlatTerm t) $
+        CBOR.validFlatTerm t
+    where
+      -- not surprisingly most of the generated cases are very short, and there
+      -- are some which are very long
+      lengthLabel l | l < 1  = "0"
+                    | l < 2  = "1"
+                    | l < 5  = "2 - 4"
+                    | l < 10 = "5 - 9"
+                    | l < 20 = "10 - 19"
+                    | l < 40 = "20 - 39"
+                    | l < 80 = "40 - 79"
+                    | l < 160 = "80 - 179"
+                    | otherwise = ">160"
+
+      labelFlatTerm [] = []
+      labelFlatTerm (CBOR.TkInt{}       : xs) = "TkInt" : labelFlatTerm xs
+      labelFlatTerm (CBOR.TkInteger{}   : xs) = "TkInteger" : labelFlatTerm xs
+      labelFlatTerm (CBOR.TkBytesBegin  : xs) = "TkBytesBegin" : labelFlatTerm xs
+      labelFlatTerm (CBOR.TkStringBegin : xs) = "TkStringBegin" : labelFlatTerm xs
+      labelFlatTerm (CBOR.TkListBegin   : xs) = "TkListBegin" : labelFlatTerm xs
+      labelFlatTerm (CBOR.TkMapBegin    : xs) = "TkMapBegin" : labelFlatTerm xs
+      labelFlatTerm (CBOR.TkListLen{}   : xs) = "TkListLen" : labelFlatTerm xs
+      labelFlatTerm (CBOR.TkMapLen{}    : xs) = "TkMapLen" : labelFlatTerm xs
+      labelFlatTerm (CBOR.TkBool{}      : xs) = "TkBool" : labelFlatTerm xs
+      labelFlatTerm (CBOR.TkSimple{}    : xs) = "TkSimple" : labelFlatTerm xs
+      labelFlatTerm (CBOR.TkFloat16{}   : xs) = "TkFloat16" : labelFlatTerm xs
+      labelFlatTerm (CBOR.TkFloat32{}   : xs) = "TkFloat32" : labelFlatTerm xs
+      labelFlatTerm (CBOR.TkFloat64{}   : xs) = "TkFloat64" : labelFlatTerm xs
+      labelFlatTerm (CBOR.TkTag{}       : xs) = "TkTag" : labelFlatTerm xs
+      labelFlatTerm (CBOR.TkNull{}      : xs) = "TkNull" : labelFlatTerm xs
+      labelFlatTerm (CBOR.TkBytes{}     : xs) = "TkBytes" : labelFlatTerm xs
+      labelFlatTerm (CBOR.TkString{}    : xs) = "TkString" : labelFlatTerm xs
+      labelFlatTerm (CBOR.TkBreak{}     : xs) = "TkBreak" : labelFlatTerm xs
 
 prop_shrink_ArbitraryFlatTerm :: ArbitraryFlatTerm -> Bool
 prop_shrink_ArbitraryFlatTerm (ArbitraryFlatTerm t) = all CBOR.validFlatTerm (shrinkArbitraryFlatTerm t)
@@ -311,6 +347,20 @@ instance Arbitrary ArbitraryControlMsgFT where
 --
 prop_decode_ControlMsg :: ArbitraryControlMsgFT -> Property
 prop_decode_ControlMsg (ArbitraryControlMsgFT msg t) =
-  case CBOR.fromFlatTerm decode t of
-    Left _     -> property $ maybe True (const False) msg
-    Right msg' -> msg === Just msg'
+      tabulate "Decode successful" [resLabel] $
+      tabulate "Does ControlMsg agrees with CBOR term?" [labelArbCtrlMsg msg t] $
+        case res of
+          Left _     -> property $ maybe True (const False) msg
+          Right msg' -> msg === Just msg'
+    where
+      res = CBOR.fromFlatTerm decode t
+
+      labelArbCtrlMsg (Just a) ts | CBOR.toFlatTerm (encode a) == ts
+                                  = "agrees"
+                                  | otherwise
+                                  = "not agrees"
+      labelArbCtrlMsg Nothing  _  = "arbitrary cborg term"
+
+      resLabel = case res of
+        Left{}  -> "False"
+        Right{} -> "True"
