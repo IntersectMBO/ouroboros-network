@@ -22,9 +22,7 @@ module Ouroboros.Network.Mux.Types (
     , RemoteClockModel (..)
     , TranslocationServiceRequest (..)
     , Version (..)
-    , versionToVersionNumber
     , versionMagic
-    , VersionNumber (..)
     , Wanton (..)
     ) where
 
@@ -46,10 +44,6 @@ import           Ouroboros.Network.Channel
 
 newtype RemoteClockModel = RemoteClockModel { unRemoteClockModel :: Word32 } deriving Eq
 
-data VersionNumber = VersionNumber0
-                   | VersionNumber1
-                   deriving (Eq, Ord, Show)
-
 newtype NetworkMagic = NetworkMagic { unNetworkMagic :: Word32 } deriving (Eq, Show, Ord)
 
 instance Serialise NetworkMagic where
@@ -65,11 +59,10 @@ versionMagic (Version0 nm) = nm
 versionMagic (Version1 nm) = nm
 
 instance Serialise Version where
-    encode (Version0 m) = CBOR.encodeListLen 2 <> CBOR.encodeWord 0 <> encode m
-    encode (Version1 m) = CBOR.encodeListLen 2 <> CBOR.encodeWord 1 <> encode m
+    encode (Version0 m) = CBOR.encodeWord 0 <> encode m
+    encode (Version1 m) = CBOR.encodeWord 1 <> encode m
 
     decode = do
-        _  <- CBOR.decodeListLen
         vn <- CBOR.decodeWord
         case vn of
              0 -> Version0 . NetworkMagic <$> decode
@@ -78,10 +71,6 @@ instance Serialise Version where
              -- @'DeserialiseFailure'@, since we are not throwing an exception
              -- we can recover from it in pure code.
              n -> MonadFail.fail ("unknown version " ++ show n)
-
-versionToVersionNumber :: Version -> VersionNumber
-versionToVersionNumber (Version0 _) = VersionNumber0
-versionToVersionNumber (Version1 _) = VersionNumber1
 
 --
 -- Mini-protocol numbers

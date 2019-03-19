@@ -14,7 +14,7 @@ import           Codec.CBOR.Write (toLazyByteString)
 import           Codec.Serialise.Class
 import           Control.Monad
 import qualified Control.Monad.Fail as Fail
-import           Data.Maybe (mapMaybe)
+import           Data.Maybe (catMaybes)
 
 import           Ouroboros.Network.Mux.Types
 
@@ -25,32 +25,37 @@ data ControlMsg = MsgInitReq [Version]
 
 encodeVersions :: [Version] -> CBOR.Encoding
 encodeVersions versions =
-    CBOR.encodeListLen (fromIntegral $ length versions)
+    CBOR.encodeMapLen (fromIntegral $ length versions)
     <> foldr (\v b -> encode v <> b) mempty versions
 
 instance Serialise ControlMsg where
   encode (MsgInitReq versions) = CBOR.encodeListLen 2 <> CBOR.encodeWord 0 <> encodeVersions versions
-  encode (MsgInitRsp version)  = CBOR.encodeListLen 2 <> CBOR.encodeWord 1 <> encode version
+  encode (MsgInitRsp version)  = CBOR.encodeListLen 3 <> CBOR.encodeWord 1 <> encode version
   encode (MsgInitFail msg)     = CBOR.encodeListLen 2 <> CBOR.encodeWord 2 <> encode msg
 
   decode = do
       _ <- CBOR.decodeListLen
       key <- CBOR.decodeWord
       case key of
-           0 -> MsgInitReq . mapMaybe decodeVersionTerm <$> decodeVersions
+           0 -> MsgInitReq <$> decodeVersions
            1 -> MsgInitRsp <$> decode
            2 -> MsgInitFail <$> decode
            a -> Fail.fail ("unknown control message type " ++ show a)
 
     where
-      decodeVersions :: CBOR.Decoder s [CBOR.Term]
+      -- The only decoding done here is what is specified by a CBOR Map, that is
+      -- a key and an unknown Term. Version specific encoding is handled by the serialise instance
+      -- of 'Version'.
+      decodeVersions :: CBOR.Decoder s [Version]
       decodeVersions = do
-        n <- CBOR.decodeListLen
-        replicateM n CBOR.decodeTerm
+        n <- CBOR.decodeMapLen
+        let decodeEntry = do
+                !vn <- CBOR.decodeWord
+                !t <- CBOR.decodeTerm
+                let bs = toLazyByteString (encode vn <> CBOR.encodeTerm t)
+                case CBOR.deserialiseFromBytes (decode :: CBOR.Decoder s Version) bs of
+                     Left _       -> return Nothing
+                     Right (_, v) -> return $ Just v
 
-      decodeVersionTerm :: CBOR.Term -> Maybe Version
-      decodeVersionTerm t =
-        let bs = toLazyByteString (CBOR.encodeTerm t)
-        in case CBOR.deserialiseFromBytes (decode :: CBOR.Decoder s Version) bs of
-          Left _       -> Nothing
-          Right (_, v) -> Just v
+        catMaybes <$> replicateM n decodeEntry
+
