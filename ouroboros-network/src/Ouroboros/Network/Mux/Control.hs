@@ -14,11 +14,9 @@ import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Term as CBOR
 import           Codec.CBOR.Write (toLazyByteString)
 import           Codec.Serialise.Class
-import           Control.Exception
 import           Control.Monad
-import qualified Data.ByteString.Lazy as BSL
-import           Data.Maybe (catMaybes, mapMaybe)
-import           GHC.Stack
+import qualified Control.Monad.Fail as Fail
+import           Data.Maybe (mapMaybe)
 
 import           Ouroboros.Network.Mux.Types
 
@@ -37,7 +35,7 @@ encodeVersions versions =
     CBOR.encodeListLen (fromIntegral $ length versions)
     <> foldr (\v b -> encode v <> b) mempty versions
 
-decodeCtrlMsg :: HasCallStack => CBOR.Decoder s ControlMsg
+decodeCtrlMsg :: CBOR.Decoder s ControlMsg
 decodeCtrlMsg = do
     _ <- CBOR.decodeListLen
     key <- CBOR.decodeWord
@@ -45,9 +43,7 @@ decodeCtrlMsg = do
          0 -> MsgInitReq . mapMaybe decodeVersionTerm <$> decodeVersions
          1 -> MsgInitRsp <$> decode
          2 -> MsgInitFail <$> decode
-         a -> throw $ MuxError MuxControlUnknownMessage
-                      ("unknown control message type " ++ show a)
-                      callStack
+         a -> Fail.fail ("unknown control message type " ++ show a)
 
   where
     decodeVersions :: CBOR.Decoder s [CBOR.Term]
