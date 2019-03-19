@@ -91,6 +91,18 @@ library
                        Ouroboros.Storage.Common
                        Ouroboros.Storage.ChainDB
                        Ouroboros.Storage.ChainDB.API
+                       Ouroboros.Storage.ChainDB.Impl
+                       Ouroboros.Storage.ChainDB.Impl.Args
+                       Ouroboros.Storage.ChainDB.Impl.Background
+                       Ouroboros.Storage.ChainDB.Impl.ChainSel
+                       Ouroboros.Storage.ChainDB.Impl.ImmDB
+                       Ouroboros.Storage.ChainDB.Impl.Iterator
+                       Ouroboros.Storage.ChainDB.Impl.LgrDB
+                       Ouroboros.Storage.ChainDB.Impl.Query
+                       Ouroboros.Storage.ChainDB.Impl.Reader
+                       Ouroboros.Storage.ChainDB.Impl.Reopen
+                       Ouroboros.Storage.ChainDB.Impl.Types
+                       Ouroboros.Storage.ChainDB.Impl.VolDB
                        Ouroboros.Storage.ChainDB.Mock
                        Ouroboros.Storage.ChainDB.Model
                        Ouroboros.Storage.EpochInfo
@@ -313,6 +325,7 @@ test-suite test-storage
                     bytestring,
                     cereal,
                     containers,
+                    contra-tracer,
                     directory,
                     fingertree,
                     generics-sop,

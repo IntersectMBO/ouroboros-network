@@ -97,6 +97,7 @@
             (hsPkgs.bytestring)
             (hsPkgs.cereal)
             (hsPkgs.containers)
+            (hsPkgs.contra-tracer)
             (hsPkgs.directory)
             (hsPkgs.fingertree)
             (hsPkgs.generics-sop)

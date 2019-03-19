@@ -375,6 +375,32 @@ special case.
 have to be careful to use `preferCandidate` rather than `compareCandidates` as
 appropriate.
 
+### Concurrency
+
+Multiple blocks might be added concurrently, and since this operation is not
+atomic, as it involves writing a block to disk and reading headers from disk,
+we explore the possible interleavings.
+
+The three main steps are:
+
+1. Add a block
+2. Compute candidates and perform chain selection which might result in a
+   candidate that is preferred over the current chain.
+3. Try to install the candidate as the new chain.
+
+We want that all possible interleavings will result in installing the most
+preferable candidate as the new chain. We will reason that this is the case
+(for two concurrent threads).
+
+If either of the two computations (step 2) is done with
+knowledge of both blocks (after step 1), then the computation with knowledge
+of only one block can't possibly construct a candidate that is preferred over
+the candidate produced by the other computation.
+
+For this not to be true, both computations would have to be done with only
+knowledge of their own block (step 1). This is impossible, as the execution of
+step 1 is serialised, so at least one thread must see both blocks.
+
 ## Short volatile fragment
 
 Nothing above relies in any way on the length of the current fragment, but

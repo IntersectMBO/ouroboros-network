@@ -1,9 +1,9 @@
-{-# LANGUAGE DeriveFunctor       #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE PatternSynonyms     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving  #-}
-{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE DeriveFunctor              #-}
+{-# LANGUAGE GADTs                      #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE PatternSynonyms            #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TypeFamilies               #-}
 
 module Ouroboros.Storage.ChainDB.API (
     -- * Main ChainDB API
@@ -22,6 +22,7 @@ module Ouroboros.Storage.ChainDB.API (
   , streamAll
     -- * Readers
   , Reader(..)
+  , ReaderId
     -- * Recovery
   , ChainDbFailure(..)
     -- * Exceptions
@@ -52,6 +53,7 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API.Types (FsError)
 import qualified Ouroboros.Storage.ImmutableDB as ImmDB
+import qualified Ouroboros.Storage.VolatileDB as VolDB
 
 -- | The chain database
 --
@@ -296,7 +298,7 @@ instance Eq (Iterator m blk) where
   (==) = (==) `on` iteratorId
 
 newtype IteratorId = IteratorId Int
-  deriving (Show, Eq, Ord)
+  deriving (Show, Eq, Ord, Enum)
 
 data IteratorResult blk =
     IteratorExhausted
@@ -464,6 +466,23 @@ data ChainDbFailure blk =
     -- not found
   | ImmDbMissingBlock (Either EpochNo SlotNo)
 
+    -- | A block at a certain slot in the immutable DB had an unexpected hash.
+    --
+    -- The immutable DB only knows of slots and not of hashes. This exception
+    -- gets thrown when the block at the given slot (1st argument) in the
+    -- immutable DB had another (3rd argument) hash than the expected one (2nd
+    -- argument).
+  | ImmDbHashMismatch (Point blk) (HeaderHash blk) (HeaderHash blk)
+
+    -- | We requested an iterator that was immediately exhausted
+    --
+    -- When we ask the immutable DB for an iterator with a particular start
+    -- position but no stop position, the resulting iterator cannot be
+    -- exhausted immediately: the start position is inclusive, the DB would
+    -- throw an exception if the slot number is beyond the last written block,
+    -- and the DB does not contain any trailing empty slots.
+  | ImmDbUnexpectedIteratorExhausted (Point blk)
+
     -- | The immutable DB threw an "unexpected error"
     --
     -- These are errors indicative of a disk failure (as opposed to API misuse)
@@ -482,10 +501,19 @@ data ChainDbFailure blk =
     -- successor index) nonetheless was not found
   | VolDbMissingBlock (HeaderHash blk)
 
-    -- | File system error whilst accessing the volatile DB
-  | VolDbFileSystemError FsError
+    -- | The volatile DB throw an "unexpected error"
+    --
+    -- These are errors indicative of a disk failure (as opposed to API misuse)
+  | VolDbFailure (VolDB.UnexpectedError (HeaderHash blk))
 
-deriving instance StandardHash blk => Show (ChainDbFailure blk)
+    -- | The ledger DB threw a file-system error
+  | LgrDbFailure FsError
+
+    -- | Block missing from the chain DB
+    --
+    -- Thrown when we are not sure in which DB the block /should/ have been.
+  | ChainDbMissingBlock (Point blk)
+  deriving (Show, Typeable)
 
 instance (StandardHash blk, Typeable blk) => Exception (ChainDbFailure blk)
 
