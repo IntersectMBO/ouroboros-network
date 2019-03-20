@@ -26,6 +26,7 @@ import Data.Conduit (ConduitT)
 import qualified Data.Conduit as Conduit
 import Data.IORef (IORef, atomicModifyIORef', newIORef, readIORef)
 import Data.Text (Text)
+import Data.Word (Word64)
 
 import qualified Pos.Binary as CSL (decode, deserialize', serialize')
 import qualified Pos.Chain.Block as CSL
@@ -34,7 +35,7 @@ import qualified Pos.Core.Slotting as CSL
 import Ouroboros.Byron.Proxy.Index (Index, IndexWrite)
 import qualified Ouroboros.Byron.Proxy.Index as Index
 import Ouroboros.Consensus.Util.CBOR (ReadIncrementalErr)
-import Ouroboros.Storage.ImmutableDB.API (ImmutableDB, Epoch (..), Slot (..))
+import Ouroboros.Storage.ImmutableDB.API (ImmutableDB, EpochNo (..), SlotNo (..))
 import qualified Ouroboros.Storage.ImmutableDB.API as Immutable
 import Ouroboros.Storage.ImmutableDB.Util (cborEpochFileParser')
 import Ouroboros.Storage.FS.API (HasFS)
@@ -143,10 +144,10 @@ epochFileParser
   :: ( MonadST m, MonadThrow m )
   => CSL.SlotCount
   -> HasFS m h
-  -> Immutable.EpochFileParser ReadIncrementalErr m (Word, Immutable.Slot)
+  -> Immutable.EpochFileParser ReadIncrementalErr m (Word, Immutable.SlotNo)
 epochFileParser epochSlots hasFS = cborEpochFileParser' hasFS decoder
   where
-  decoder :: forall s . CBOR.Decoder s Immutable.Slot
+  decoder :: forall s . CBOR.Decoder s Immutable.SlotNo
   decoder = do
     -- Each piece is a DB.Block, with the encoded GenesisBlock (EBB) or
     -- MainBlock in it. This decoder reads the whole thing, then decodes
@@ -163,7 +164,7 @@ epochFileParser epochSlots hasFS = cborEpochFileParser' hasFS decoder
 -- | Identifies a block in the DB: by slot or by header hash.
 data Point where
   ByHash :: CSL.HeaderHash -> Point
-  BySlot :: Slot           -> Point
+  BySlot :: SlotNo         -> Point
 
 -- | Unified database interface which supports lookup by hash or by slot.
 data DB m = DB
@@ -194,7 +195,7 @@ data UnwrittenEBB where
   -- `CSL.GenesisBlock`
   UnwrittenEBB
     :: !CSL.HeaderHash
-    -> !Epoch
+    -> !EpochNo
     -> !ByteString
     -> !CSL.GenesisBlock
     -> UnwrittenEBB
@@ -287,7 +288,7 @@ dbAppendImpl err epochSlots unwrittenEBBRef iwrite idb = DBAppend $ \cslBlock ->
         Index.updateTip iwrite hh epoch Index.EBBSlot
         -- The slot in the immutable DB for EBBs is the same as the slot for
         -- the first block of this epoch.
-        let slot = fromIntegral (epochSlots * fromIntegral epoch)
+        let slot = SlotNo $ fromIntegral epochSlots * unEpochNo epoch
         Immutable.appendBinaryBlob idb slot (encodeSerialisedBlock (EBB bytes))
   Right mainBlk -> do
     prevUnwrittenEBB <- atomicModifyIORef' unwrittenEBBRef $ \it ->
@@ -295,20 +296,20 @@ dbAppendImpl err epochSlots unwrittenEBBRef iwrite idb = DBAppend $ \cslBlock ->
     case prevUnwrittenEBB of
       NoUnwrittenEBB -> do
         let hh = CSL.headerHash mainBlk
-            (epoch, Slot wslot) = blockEpochAndSlot mainBlk
+            (epoch, SlotNo wslot) = blockEpochAndSlot mainBlk
             bytes = CSL.serialize' mainBlk
             -- wslot is relative to epoch; for the ImmutableDB we need relative
             -- to genesis
-            slot = Slot (fromIntegral epoch * fromIntegral epochSlots + wslot)
+            slot = SlotNo (unEpochNo epoch * fromIntegral epochSlots + wslot)
         Index.updateTip iwrite hh epoch (Index.RealSlot wslot)
         Immutable.appendBinaryBlob idb slot (encodeSerialisedBlock (Block bytes))
       UnwrittenEBB hh epoch bytes _ -> do
         let hh' = CSL.headerHash mainBlk
-            (epoch', Slot wslot) = blockEpochAndSlot mainBlk
+            (epoch', SlotNo wslot) = blockEpochAndSlot mainBlk
             bytes' = CSL.serialize' mainBlk
             -- wslot is relative to epoch; for the ImmutableDB we need relative
             -- to genesis
-            slot = Slot (fromIntegral epoch' * fromIntegral epochSlots + wslot)
+            slot = SlotNo (unEpochNo epoch' * fromIntegral epochSlots + wslot)
         Index.updateTip iwrite hh  epoch  Index.EBBSlot
         Index.updateTip iwrite hh' epoch' (Index.RealSlot wslot)
         Immutable.appendBinaryBlob idb slot (encodeSerialisedBlock (Both bytes bytes'))
@@ -335,7 +336,7 @@ readFromImpl err epochSlots unwrittenEBBRef idx idb point = do
   case (unwrittenEBB, point) of
     -- If the point is a slot corresponding to the EBB then we'll yield it
     -- and stop.
-    (UnwrittenEBB _ (Epoch epoch) bs _, BySlot slot) ->
+    (UnwrittenEBB _ (EpochNo epoch) bs _, BySlot slot) ->
       if slot == fromIntegral (epochSlots * fromIntegral epoch)
       then Conduit.yield bs
       else streamFromSlot False slot
@@ -371,7 +372,7 @@ readFromImpl err epochSlots unwrittenEBBRef idx idb point = do
           Conduit.yield bytesBlock
           streamWithIterator False iter
 
-  streamFromSlot :: Bool -> Slot -> ConduitT () ByteString IO ()
+  streamFromSlot :: Bool -> SlotNo -> ConduitT () ByteString IO ()
   streamFromSlot skipEbb sl = Conduit.transPipe runResourceT $ Conduit.bracketP
     (Immutable.streamBinaryBlobs idb (Just sl) Nothing)
     Immutable.iteratorClose
@@ -440,28 +441,28 @@ readTipImpl err epochSlots unwrittenEBBRef idx idb = do
                 Right blk      -> pure $ Right blk
 
 -- | The `Epoch` of an EBB.
-ebbEpoch :: CSL.GenesisBlock -> Epoch
+ebbEpoch :: CSL.GenesisBlock -> EpochNo
 ebbEpoch ebb = ebb ^.
     CSL.gbHeader
   . CSL.gbhConsensus
   . CSL.gcdEpoch
-  . Lens.to (Epoch . fromIntegral . CSL.getEpochIndex)
+  . Lens.to (EpochNo . fromIntegral . CSL.getEpochIndex)
 
-blockEpochAndSlot :: CSL.MainBlock -> (Epoch, Slot)
+blockEpochAndSlot :: CSL.MainBlock -> (EpochNo, SlotNo)
 blockEpochAndSlot blk = blk ^.
     CSL.gbHeader
   . CSL.gbhConsensus
   . CSL.mcdSlot
   . Lens.to (\sl ->
-      ( Epoch (fromIntegral (CSL.getEpochIndex (CSL.siEpoch sl)))
-      , Slot  (fromIntegral (CSL.getSlotIndex  (CSL.siSlot  sl)))
+      ( EpochNo (fromIntegral (CSL.getEpochIndex (CSL.siEpoch sl)))
+      , SlotNo  (fromIntegral (CSL.getSlotIndex  (CSL.siSlot  sl)))
       )
     )
 
 -- | The slot number relative to genesis of a block header.
 -- EBBs get `epoch * slots_in_epoch`, so they share a slot with the first block
 -- of that epoch. This includes the actual genesis block (at 0).
-blockHeaderSlot :: CSL.SlotCount -> CSL.BlockHeader -> Slot
+blockHeaderSlot :: CSL.SlotCount -> CSL.BlockHeader -> SlotNo
 blockHeaderSlot epochSlots blkHeader = case blkHeader of
   CSL.BlockHeaderMain mBlkHeader -> mBlkHeader ^.
       CSL.gbhConsensus
@@ -485,11 +486,11 @@ isEbbSlot idxSlot = case idxSlot of
 
 -- | Put the EBBs for epoch `n` at the same slot (relative to genesis) as the
 -- first block of epoch `n`.
-indexToSlot :: CSL.SlotCount -> Epoch -> Index.IndexSlot -> Slot
-indexToSlot epochSlots (Epoch epoch) idxSlot = Slot sl
+indexToSlot :: CSL.SlotCount -> EpochNo -> Index.IndexSlot -> SlotNo
+indexToSlot epochSlots (EpochNo epoch) idxSlot = SlotNo sl
   where
   sl = (fromIntegral epochSlots * epoch) + relative
-  relative :: Word
+  relative :: Word64
   relative = case idxSlot of
     Index.EBBSlot    -> 0
     Index.RealSlot w -> w
