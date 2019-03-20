@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE RankNTypes       #-}
 {-# LANGUAGE RecordWildCards  #-}
 
 module Ouroboros.Storage.ImmutableDB.Index
@@ -26,7 +27,10 @@ module Ouroboros.Storage.ImmutableDB.Index
   , truncateToSlots
   ) where
 
-import           Codec.Serialise (Serialise (..), deserialiseOrFail, serialise)
+import           Codec.CBOR.Decoding (Decoder)
+import           Codec.CBOR.Encoding (Encoding)
+import           Codec.CBOR.Read (deserialiseFromBytes)
+import           Codec.CBOR.Write (toLazyByteString)
 import           Control.Exception (assert)
 import           Control.Monad (void, when)
 import           Control.Monad.Class.MonadThrow
@@ -84,14 +88,15 @@ indexEntrySizeBytes = 8
 --
 -- Returns trailing invalid data that could not be read as @'Maybe'
 -- 'ByteString'@.
-loadIndex :: (HasCallStack, MonadThrow m, Serialise hash)
-          => HasFS m h
+loadIndex :: (HasCallStack, MonadThrow m)
+          => (forall s . Decoder s (Maybe hash))
+          -> HasFS m h
           -> ErrorHandling ImmutableDBError m
           -> EpochNo
           -> EpochSize -- ^ The number of slots expected in the index,
                        -- including the EBB: the size of the epoch + 1.
           -> m (Index hash)
-loadIndex hasFS err epoch indexSize = do
+loadIndex hashDecoder hasFS err epoch indexSize = do
     let indexFile       = renderFile "index" epoch
         expectedOffsets = fromIntegral indexSize + 1
         expectedBytes   = fromIntegral $
@@ -105,9 +110,10 @@ loadIndex hasFS err epoch indexSize = do
       let offsetsBS  = BL.toStrict offsetsBL
           offsets    = V.generate expectedOffsets mkEntry
           mkEntry ix = decodeIndexEntryAt (ix * indexEntrySizeBytes) offsetsBS
-      case deserialiseOrFail ebbHashBL of
-        Right ebbHash -> return $ MkIndex offsets ebbHash
-        Left  df      -> throwUnexpectedError err $
+      case deserialiseFromBytes hashDecoder ebbHashBL of
+        -- TODO throw an error when leftover is not empty?
+        Right (_leftover, ebbHash) -> return $ MkIndex offsets ebbHash
+        Left  df                   -> throwUnexpectedError err $
           DeserialisationError df callStack
 
 -- | Write an index to an index file.
@@ -121,12 +127,13 @@ loadIndex hasFS err epoch indexSize = do
 --
 -- > index === index'
 --
-writeIndex :: (MonadThrow m, Serialise hash)
-           => HasFS m h
+writeIndex :: (MonadThrow m)
+           => (Maybe hash -> Encoding)
+           -> HasFS m h
            -> EpochNo
            -> Index hash
            -> m ()
-writeIndex hasFS@HasFS{..} epoch (MkIndex offsets ebbHash) = do
+writeIndex hashEncoder hasFS@HasFS{..} epoch (MkIndex offsets ebbHash) = do
     let indexFile = renderFile "index" epoch
     withFile hasFS indexFile AppendMode $ \iHnd -> do
       -- NOTE: open it in AppendMode and truncate it first, otherwise we might
@@ -135,16 +142,17 @@ writeIndex hasFS@HasFS{..} epoch (MkIndex offsets ebbHash) = do
       -- TODO efficient enough?
       void $ hPut iHnd $ V.foldl'
         (\acc offset -> acc <> encodeIndexEntry offset) mempty offsets
-      void $ hPut iHnd $ BS.lazyByteString $ serialise ebbHash
+      void $ hPut iHnd $ BS.lazyByteString $ toLazyByteString (hashEncoder ebbHash)
 
 -- | Write a non-empty list of 'SlotOffset's to an index file.
-writeSlotOffsets :: (MonadThrow m, Serialise hash)
-                 => HasFS m h
+writeSlotOffsets :: (MonadThrow m)
+                 => (Maybe hash -> Encoding)
+                 -> HasFS m h
                  -> EpochNo
                  -> NonEmpty SlotOffset
                  -> Maybe hash
                  -> m ()
-writeSlotOffsets hasFS@HasFS{..} epoch sos ebbHash = do
+writeSlotOffsets hashEncoder hasFS@HasFS{..} epoch sos ebbHash = do
     let indexFile = renderFile "index" epoch
     withFile hasFS indexFile AppendMode $ \iHnd -> do
       -- NOTE: open it in AppendMode and truncate it first, otherwise we might
@@ -152,7 +160,7 @@ writeSlotOffsets hasFS@HasFS{..} epoch sos ebbHash = do
       void $ hTruncate iHnd 0
       -- TODO efficient enough?
       void $ hPut iHnd (foldMap encodeIndexEntry (NE.reverse sos))
-      void $ hPut iHnd $ BS.lazyByteString $ serialise ebbHash
+      void $ hPut iHnd $ BS.lazyByteString $ toLazyByteString (hashEncoder ebbHash)
 
 -- | Create an 'Index' from the given non-empty list of 'SlotOffset's.
 --

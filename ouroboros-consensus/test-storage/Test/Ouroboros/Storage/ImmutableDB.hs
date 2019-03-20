@@ -92,7 +92,7 @@ openTestDB :: (HasCallStack, MonadSTM m, MonadCatch m)
            -> ErrorHandling ImmutableDBError m
            -> m (ImmutableDB Hash m)
 openTestDB hasFS err =
-    openDB hasFS err fixedGetEpochSize ValidateMostRecentEpoch parser
+    openDB S.decode S.encode hasFS err fixedGetEpochSize ValidateMostRecentEpoch parser
   where
     parser = TestBlock.testBlockEpochFileParser' hasFS
 
@@ -250,9 +250,9 @@ prop_writeIndex_loadIndex index =
 
     prop :: HasFS IO h -> IO Property
     prop hasFS = do
-      writeIndex hasFS epoch index
+      writeIndex S.encode hasFS epoch index
       let epochSize = indexSlots index
-      index' <- loadIndex hasFS EH.exceptions epoch epochSize
+      index' <- loadIndex S.decode hasFS EH.exceptions epoch epochSize
       return $ index === index'
 
     runS :: (HasFS IO Mock.Handle -> IO Property) -> IO Property
@@ -272,9 +272,9 @@ prop_writeSlotOffsets_loadIndex_indexToSlotOffsets ebbHash (SlotOffsets offsets)
 
     prop :: HasFS IO h -> IO Property
     prop hasFS = do
-      writeSlotOffsets hasFS epoch offsets ebbHash
+      writeSlotOffsets S.encode hasFS epoch offsets ebbHash
       let epochSize = fromIntegral (NE.length offsets - 1)
-      index :: Index String <- loadIndex hasFS EH.exceptions epoch epochSize
+      index :: Index String <- loadIndex S.decode hasFS EH.exceptions epoch epochSize
       return $ indexToSlotOffsets index === offsets
 
     runS :: (HasFS IO Mock.Handle -> IO Property) -> IO Property

@@ -18,6 +18,7 @@ module Test.Ouroboros.Storage.ImmutableDB.StateMachine
 
 import           Prelude hiding (elem, notElem)
 
+import           Codec.Serialise (decode, encode)
 import           Control.Monad (forM_, when)
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
@@ -1063,7 +1064,7 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
         test errorsVar hasFS = do
           let parser = testBlockEpochFileParser' hasFS
           db <- QC.run $
-            openDB hasFS EH.monadCatch fixedGetEpochSize ValidateMostRecentEpoch
+            openDB decode encode hasFS EH.monadCatch fixedGetEpochSize ValidateMostRecentEpoch
               parser
           let sm' = sm errorsVar hasFS db dbm mdb
           (hist, model, res) <- runCommands sm' cmds
