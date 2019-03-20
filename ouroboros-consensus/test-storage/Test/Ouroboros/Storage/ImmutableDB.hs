@@ -13,10 +13,11 @@ import           Control.Monad.Class.MonadThrow (MonadCatch)
 
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Builder as BS
 import           Data.Coerce (coerce)
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
-import           Data.Maybe (isJust, maybeToList)
+import           Data.Maybe (isJust, isNothing, maybeToList)
 import           Data.Word (Word64)
 
 import qualified System.IO as IO
@@ -309,20 +310,24 @@ test_reconstructSlotOffsets_empty_slots = reconstructSlotOffsets input @?= outpu
 ------------------------------------------------------------------------------}
 
 test_cborEpochFileParser :: Assertion
-test_cborEpochFileParser = fmap fst $ Sim.runSimFS err Mock.empty $ \hasFS -> do
+test_cborEpochFileParser = forM_ ["junk", ""] $ \junk -> runFS $ \hasFS -> do
+    -- Test once with junk at the end and once without
     let HasFS{..} = hasFS
 
     withFile hasFS fp IO.AppendMode $ \h -> do
       forM_ blocks $ \block ->
         hPut h (S.serialiseIncremental block)
-      void $ hPut h "trailingjunk"
+      void $ hPut h (BS.string8 junk)
 
     (offsetsAndSizesAndBlocks', ebbHash, mbErr) <-
       runEpochFileParser (cborEpochFileParser' hasFS S.decode getEBBHash) fp
 
     ebbHash @?= Just "ebb"
     offsetsAndSizesAndBlocks' @?= offsetsAndSizesAndBlocks
-    assertBool "Expected an error" (isJust mbErr)
+
+    if null junk
+      then assertBool "Unexpected error"  (isNothing mbErr)
+      else assertBool "Expected an error" (isJust    mbErr)
   where
     blocks :: [ByteString]
     blocks = map (snd . snd) offsetsAndSizesAndBlocks
@@ -342,3 +347,6 @@ test_cborEpochFileParser = fmap fst $ Sim.runSimFS err Mock.empty $ \hasFS -> do
     getEBBHash _     = Nothing
 
     err = EH.exceptions
+
+    runFS :: (HasFS IO Mock.Handle -> IO a) -> IO a
+    runFS = fmap fst . Sim.runSimFS err Mock.empty
