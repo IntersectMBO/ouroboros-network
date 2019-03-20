@@ -265,7 +265,7 @@ main = withCompileInfo $ do
           -- configuration, and we assume it will never change.
           epochSlots :: SlotCount
           epochSlots = configEpochSlots genesisConfig
-          getEpochSize :: Immutable.Epoch -> IO Immutable.EpochSize
+          getEpochSize :: Immutable.EpochNo -> IO Immutable.EpochSize
           -- FIXME the 'fromIntegral' casts from 'Word64' to 'Word'.
           -- For sufficiently high k, on certain machines, there could be an
           -- overflow.

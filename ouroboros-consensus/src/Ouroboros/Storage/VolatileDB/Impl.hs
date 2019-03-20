@@ -14,7 +14,7 @@
 --
 -- The db is a key-value store of binary blocks and is parametric
 -- on the key of blocks, named blockId. The only constraints are that one must provide
--- a function (toSlot :: blockId -> Slot), as well as an Ord instance of blockId.
+-- a function (toSlot :: blockId -> SlotNo, as well as an Ord instance of blockId.
 -- The database uses in memory indexes, which are created on each reopening. reopening
 -- includes parsing all blocks of the dbFolder, so it can be an expensive operation
 -- if the database gets big. That's why the intention of this db is to be used for only
@@ -106,7 +106,7 @@ data VolatileDBEnv m blockId = forall h. VolatileDBEnv {
     , _dbFolder         :: !FsPath
     , _maxBlocksPerFile :: !Int
     , _parser           :: !(Parser m blockId)
-    , _toSlot           :: (blockId -> Slot)
+    , _toSlot           :: (blockId -> SlotNo)
     }
 
 data InternalState blockId h = InternalState {
@@ -146,7 +146,7 @@ openDB :: (HasCallStack, MonadCatch m, MonadSTM m, Ord blockId)
        -> FsPath
        -> Parser m blockId
        -> Int
-       -> (blockId -> Slot)
+       -> (blockId -> SlotNo)
        -> m (VolatileDB blockId m)
 openDB h e path p m t = fst <$> openDBFull h e path p m t
 
@@ -156,7 +156,7 @@ openDBFull :: (HasCallStack, MonadCatch m, MonadSTM m, Ord blockId)
            -> FsPath
            -> Parser m blockId
            -> Int
-           -> (blockId -> Slot)
+           -> (blockId -> SlotNo)
            -> m (VolatileDB blockId m, VolatileDBEnv m blockId)
 openDBFull hasFS err path parser maxBlocksPerFile toSlot = do
     env <- openDBImpl hasFS err path parser maxBlocksPerFile toSlot
@@ -179,7 +179,7 @@ openDBImpl :: (HasCallStack, MonadThrow m, MonadSTM m, Ord blockId)
            -> FsPath
            -> Parser m blockId
            -> Int
-           -> (blockId -> Slot)
+           -> (blockId -> SlotNo)
            -> m (VolatileDBEnv m blockId)
 openDBImpl hasFS@HasFS{..} err path parser maxBlocksPerFile toSlot =
     if maxBlocksPerFile <= 0
@@ -245,7 +245,7 @@ getBlockImpl env@VolatileDBEnv{..} slot = do
 -- collection of files.
 putBlockImpl :: forall m. (MonadCatch m, MonadSTM m)
              => forall blockId. (Ord blockId)
-             => (blockId -> Slot)
+             => (blockId -> SlotNo)
              -> VolatileDBEnv m blockId
              -> blockId
              -> BS.Builder
@@ -285,7 +285,7 @@ putBlockImpl toSlot env@VolatileDBEnv{..} blockId builder = do
 -- but we should rethink it if this changes in the future.
 garbageCollectImpl :: forall m blockId. (MonadCatch m, MonadSTM m, Ord blockId)
                    => VolatileDBEnv m blockId
-                   -> Slot
+                   -> SlotNo
                    -> m ()
 garbageCollectImpl env@VolatileDBEnv{..} slot = do
     modifyState env $ \hasFS st -> do
@@ -303,9 +303,9 @@ garbageCollectImpl env@VolatileDBEnv{..} slot = do
 tryCollectFile :: forall m h blockId. (MonadThrow m, Ord blockId)
                => HasFS m h
                -> VolatileDBEnv m blockId
-               -> Slot
+               -> SlotNo
                -> InternalState blockId h
-               -> (String, (Maybe Slot, Int, Map Int64 (Int, blockId)))
+               -> (String, (Maybe SlotNo, Int, Map Int64 (Int, blockId)))
                -> m (InternalState blockId h)
 tryCollectFile hasFS@HasFS{..} env@VolatileDBEnv{..} slot st@InternalState{..} (file, (mmaxSlot, _, fileMp)) =
     let isLess       = not $ cmpMaybe mmaxSlot slot
@@ -384,7 +384,7 @@ mkInternalStateDB :: (HasCallStack, MonadThrow m, Ord blockId)
                   -> FsPath
                   -> Parser m blockId
                   -> Int
-                  -> (blockId -> Slot)
+                  -> (blockId -> SlotNo)
                   -> m (InternalState blockId h)
 mkInternalStateDB hasFS@HasFS{..} err path parser maxBlocksPerFile toSlot = do
     allFiles <- do
@@ -399,7 +399,7 @@ mkInternalState :: forall blockId m h. (MonadThrow m, HasCallStack, Ord blockId)
                 -> Parser m blockId
                 -> Int
                 -> Set String
-                -> (blockId -> Slot)
+                -> (blockId -> SlotNo)
                 -> m (InternalState blockId h)
 mkInternalState hasFS@HasFS{..} err basePath parser n files toSlot = do
     lastFd <- findNextFd err files
@@ -533,28 +533,28 @@ findNextFd err files = foldM go Nothing files
   Comparing utilities
 ------------------------------------------------------------------------------}
 
-maxSlotMap :: Map Int64 (Int, blockId) -> (blockId -> Slot) -> Maybe (blockId, Slot)
+maxSlotMap :: Map Int64 (Int, blockId) -> (blockId -> SlotNo) -> Maybe (blockId, SlotNo)
 maxSlotMap mp toSlot = maxSlotList toSlot $ snd <$> Map.elems mp
 
-maxSlotList :: (blockId -> Slot) -> [blockId] -> Maybe (blockId, Slot)
+maxSlotList :: (blockId -> SlotNo) -> [blockId] -> Maybe (blockId, SlotNo)
 maxSlotList toSlot = updateSlot toSlot Nothing
 
 cmpMaybe :: Ord a => Maybe a -> a -> Bool
 cmpMaybe Nothing _   = False
 cmpMaybe (Just a) a' = a >= a'
 
-updateSlot :: forall blockId. (blockId -> Slot) -> Maybe blockId -> [blockId] -> Maybe (blockId, Slot)
+updateSlot :: forall blockId. (blockId -> SlotNo) -> Maybe blockId -> [blockId] -> Maybe (blockId, SlotNo)
 updateSlot toSlot mbid = foldl cmpr ((\b -> (b, toSlot b)) <$> mbid)
     where
-        cmpr :: Maybe (blockId, Slot) -> blockId -> Maybe (blockId, Slot)
+        cmpr :: Maybe (blockId, SlotNo) -> blockId -> Maybe (blockId, SlotNo)
         cmpr Nothing bid = Just (bid, toSlot bid)
         cmpr (Just (bid, sl)) bid' =
             let sl' = toSlot bid'
             in Just $ if sl > sl' then (bid, sl) else (bid', sl')
 
-updateSlotNoBlockId :: Maybe Slot -> [Slot] -> Maybe Slot
+updateSlotNoBlockId :: Maybe SlotNo -> [SlotNo] -> Maybe SlotNo
 updateSlotNoBlockId = foldl cmpr
     where
-        cmpr :: Maybe Slot -> Slot -> Maybe Slot
+        cmpr :: Maybe SlotNo-> SlotNo-> Maybe SlotNo
         cmpr Nothing sl'   = Just sl'
         cmpr (Just sl) sl' = Just $ max sl sl'

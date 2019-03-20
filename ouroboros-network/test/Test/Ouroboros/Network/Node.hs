@@ -82,7 +82,7 @@ test_blockGenerator chain slotDuration = isValid <$> withProbe (experiment slotD
   where
     isValid :: [(Time m, Block)] -> Property
     isValid = foldl'
-        (\r (t, b) -> r .&&. t === fromStart ((fromIntegral . getSlot . blockSlot $ b) `mult` slotDuration))
+        (\r (t, b) -> r .&&. t === fromStart ((fromIntegral . unSlotNo . blockSlot $ b) `mult` slotDuration))
         (property True)
 
     experiment

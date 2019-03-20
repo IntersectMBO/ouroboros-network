@@ -10,7 +10,7 @@
 -- The network layer does not make any concrete assumptions about what blocks
 -- look like.
 module Ouroboros.Network.Block (
-    Slot(..)
+    SlotNo(..)
   , BlockNo(..)
   , HasHeader(..)
   , StandardHash
@@ -20,19 +20,22 @@ module Ouroboros.Network.Block (
   , blockMeasure
   ) where
 
+import           Codec.Serialise (Serialise (..))
 import           Data.Hashable
 import           Data.FingerTree (Measured)
+import           Data.Word (Word64)
 import           GHC.Generics (Generic)
-import           Codec.Serialise (Serialise (..))
 
 
--- | The Ouroboros time slot index for a block.
-newtype Slot = Slot { getSlot :: Word }
-  deriving (Show, Eq, Ord, Hashable, Enum, Bounded, Serialise, Num, Real, Integral)
+-- | The 0-based index for the Ourboros time slot.
+newtype SlotNo = SlotNo { unSlotNo :: Word64 }
+  deriving (Show, Eq, Ord, Hashable, Enum, Bounded, Num, Serialise, Generic)
 
--- | The 0-based index of the block in the blockchain
-newtype BlockNo = BlockNo Word
-  deriving (Show, Eq, Ord, Hashable, Enum, Bounded, Serialise)
+-- | The 0-based index of the block in the blockchain.
+-- BlockNo is <= SlotNo and is only equal at slot N if there is a block
+-- for every slot where N <= SlotNo.
+newtype BlockNo = BlockNo { unBlockNo :: Word64 }
+  deriving (Show, Eq, Ord, Hashable, Enum, Bounded, Num, Serialise)
 
 -- | Abstract over the shape of blocks (or indeed just block headers)
 class (StandardHash b, Measured BlockMeasure b) => HasHeader b where
@@ -45,7 +48,7 @@ class (StandardHash b, Measured BlockMeasure b) => HasHeader b where
 
     blockHash      :: b -> HeaderHash b
     blockPrevHash  :: b -> Hash b
-    blockSlot      :: b -> Slot
+    blockSlot      :: b -> SlotNo
     blockNo        :: b -> BlockNo
 
     blockInvariant :: b -> Bool
@@ -113,8 +116,8 @@ instance StandardHash b => Serialise (Hash b) where
 
 -- | The measure used for 'Ouroboros.Network.ChainFragment.ChainFragment'.
 data BlockMeasure = BlockMeasure {
-       bmMinSlot :: !Slot,
-       bmMaxSlot :: !Slot,
+       bmMinSlot :: !SlotNo,
+       bmMaxSlot :: !SlotNo,
        bmSize    :: !Int
      }
   deriving Show

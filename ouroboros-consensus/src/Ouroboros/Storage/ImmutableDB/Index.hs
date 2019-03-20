@@ -48,7 +48,7 @@ import           Ouroboros.Consensus.Util (lastMaybe)
 import           Ouroboros.Storage.FS.API (HasFS (..), withFile)
 import           Ouroboros.Storage.ImmutableDB.CumulEpochSizes
                      (RelativeSlot (..))
-import           Ouroboros.Storage.ImmutableDB.Types (Epoch, EpochSize,
+import           Ouroboros.Storage.ImmutableDB.Types (EpochNo, EpochSize,
                      SlotOffset)
 import           Ouroboros.Storage.ImmutableDB.Util (readAll, renderFile)
 import           Ouroboros.Storage.Util (decodeIndexEntryAt, encodeIndexEntry)
@@ -78,7 +78,7 @@ indexEntrySizeBytes = 8
 -- 'ByteString'@.
 loadIndex :: (HasCallStack, MonadThrow m)
           => HasFS m h
-          -> Epoch
+          -> EpochNo
           -> m (Index, Maybe ByteString)
 loadIndex hasFS epoch = do
     let indexFile = renderFile "index" epoch
@@ -101,7 +101,7 @@ loadIndex hasFS epoch = do
 -- > index === index' .&&. isNothing mbJunk
 writeIndex :: MonadThrow m
            => HasFS m h
-           -> Epoch
+           -> EpochNo
            -> Index
            -> m ()
 writeIndex hasFS@HasFS{..} epoch (MkIndex offsets) = do
@@ -126,7 +126,7 @@ writeIndex hasFS@HasFS{..} epoch (MkIndex offsets) = do
 -- > indexToSlotOffsets index === offsets
 writeSlotOffsets :: MonadThrow m
                  => HasFS m h
-                 -> Epoch
+                 -> EpochNo
                  -> NonEmpty SlotOffset
                  -> m ()
 writeSlotOffsets hasFS@HasFS{..} epoch sos = do

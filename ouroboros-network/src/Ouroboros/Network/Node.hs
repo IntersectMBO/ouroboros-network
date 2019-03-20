@@ -176,12 +176,12 @@ blockGenerator slotDuration chain = do
   void $ fork $ go var Nothing chain
   return (readTBQueue var)
  where
-  go :: TBQueue m (Maybe block) -> Maybe Slot -> [block] -> m ()
+  go :: TBQueue m (Maybe block) -> Maybe SlotNo -> [block] -> m ()
   go var _ [] = do
     atomically (writeTBQueue var Nothing)
   go var mslot (b : bs) = do
     let slot  = blockSlot b
-        delay = getSlot slot - maybe 0 getSlot mslot
+        delay = unSlotNo slot - maybe 0 unSlotNo mslot
     threadDelay (slotDuration * fromIntegral delay)
     atomically (writeTBQueue var (Just b))
     go var (Just slot) bs

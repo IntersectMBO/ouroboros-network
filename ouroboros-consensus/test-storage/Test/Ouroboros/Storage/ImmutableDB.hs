@@ -79,7 +79,7 @@ tests = testGroup "ImmutableDB"
 fixedEpochSize :: EpochSize
 fixedEpochSize = 10
 
-fixedGetEpochSize :: Monad m => Epoch -> m EpochSize
+fixedGetEpochSize :: Monad m => EpochNo -> m EpochSize
 fixedGetEpochSize _ = return fixedEpochSize
 
 
@@ -87,7 +87,7 @@ fixedGetEpochSize _ = return fixedEpochSize
 openTestDB :: (HasCallStack, MonadSTM m, MonadCatch m)
            => HasFS m h
            -> ErrorHandling ImmutableDBError m
-           -> m (ImmutableDB m, Maybe Slot)
+           -> m (ImmutableDB m, Maybe SlotNo)
 openTestDB hasFS err =
     openDB hasFS err fixedGetEpochSize ValidateMostRecentEpoch parser
   where

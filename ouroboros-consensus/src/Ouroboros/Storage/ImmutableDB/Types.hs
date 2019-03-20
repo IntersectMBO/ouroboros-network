@@ -3,8 +3,8 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
 module Ouroboros.Storage.ImmutableDB.Types
-  ( Slot(..)
-  , Epoch(..)
+  ( SlotNo(..)
+  , EpochNo(..)
   , EpochSize(..)
   , SlotOffset
   , TruncateFrom(..)
@@ -25,30 +25,30 @@ module Ouroboros.Storage.ImmutableDB.Types
 
 import           Control.Exception (Exception (..))
 
-import           Data.Word (Word, Word64)
+import           Data.Word (Word64)
 
 import           GHC.Generics (Generic)
 import           GHC.Stack (CallStack, prettyCallStack)
 
-import           Ouroboros.Network.Block (Slot (..))
+import           Ouroboros.Network.Block (SlotNo (..))
 
 import           Ouroboros.Storage.FS.API.Types (FsError, FsPath, prettyFsError,
                      sameFsError)
 
 
 -- | An epoch, i.e. the number of the epoch.
-newtype Epoch = Epoch { getEpoch :: Word }
-  deriving (Eq, Ord, Enum, Num, Show, Generic, Real, Integral)
+newtype EpochNo = EpochNo { unEpochNo :: Word64 }
+  deriving (Eq, Ord, Enum, Num, Show, Generic)
 
-newtype EpochSize = EpochSize { getEpochSize :: Word }
+newtype EpochSize = EpochSize { unEpochSize :: Word64 }
   deriving (Eq, Ord, Enum, Num, Show, Generic, Real, Integral)
 
 -- | The offset of a slot in an index file.
 type SlotOffset = Word64
 
--- | Truncate the database starting from the 'Slot' (inclusive). In other
+-- | Truncate the database starting from the 'SlotNo' (inclusive). In other
 -- words, all slots >= the given slot will be removed.
-newtype TruncateFrom = TruncateFrom { getTruncateFrom :: Slot }
+newtype TruncateFrom = TruncateFrom { getTruncateFrom :: SlotNo }
   deriving (Eq, Ord, Show, Generic)
 
 -- | Try to extract a 'TruncateFrom' from a 'ImmutableDBError'.
@@ -161,13 +161,13 @@ prettyImmutableDBError = \case
     UnexpectedError ue    -> prettyUnexpectedError ue
 
 data UserError
-  = AppendToSlotInThePastError Slot Slot
+  = AppendToSlotInThePastError SlotNo SlotNo
     -- ^ When trying to append a new binary blob, the input slot was in the
     -- past, i.e. less than the next expected slot.
     --
     -- The first parameter is the input slot and the second parameter is the
     -- next slot available for appending.
-  | ReadFutureSlotError Slot Slot
+  | ReadFutureSlotError SlotNo SlotNo
     -- ^ When trying to read a slot, the slot was not yet occupied, either
     -- because it's too far in the future or because it is in the process of
     -- being written.
@@ -175,7 +175,7 @@ data UserError
     -- The first parameter is the requested slot and the second parameter is
     -- the next slot that will be appended to, and thus the slot marking the
     -- future.
-  | InvalidIteratorRangeError Slot Slot
+  | InvalidIteratorRangeError SlotNo SlotNo
     -- ^ When the chosen iterator range was invalid, i.e. the @start@ (first
     -- parameter) came after the @end@ (second parameter).
   | ClosedDBError

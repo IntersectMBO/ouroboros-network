@@ -32,16 +32,16 @@ import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
 -- the action), is the last slot at which a blob is stored in the database or
 -- 'Nothing' in case the database is empty.
 withDB :: (HasCallStack, MonadThrow m)
-       => m (ImmutableDB m, Maybe Slot)
+       => m (ImmutableDB m, Maybe SlotNo)
           -- ^ How to open the database
-       -> (ImmutableDB m -> Maybe Slot -> m a)
+       -> (ImmutableDB m -> Maybe SlotNo -> m a)
           -- ^ Action to perform using the database
        -> m a
 withDB openDB action = bracket openDB (\(db, _) -> closeDB db) (uncurry action)
 
 -- | API for the 'ImmutableDB'.
 --
--- The 'ImmutableDB' stores binary blobs in 'Slot's, i.e. the blocks of a
+-- The 'ImmutableDB' stores binary blobs in 'SlotNo's, i.e. the blocks of a
 -- chain.
 --
 -- The database is append-only, so you cannot append a blob to a slot in the
@@ -79,7 +79,7 @@ data ImmutableDB m = ImmutableDB
     -- operation, recover using the given 'ValidationPolicy' and reopen it at
     -- the most recent epoch.
     --
-    -- Returns the 'Slot' at which the last valid blob is stored in the
+    -- Returns the 'SlotNo' at which the last valid blob is stored in the
     -- reopened database or 'Nothing' in case of an empty database.
     --
     -- Optionally truncate the database to the given slot ('TruncateFrom')
@@ -98,15 +98,15 @@ data ImmutableDB m = ImmutableDB
     -- 'TruncateFrom' is given.
   , reopen
       :: HasCallStack
-      => ValidationPolicy -> Maybe TruncateFrom -> m (Maybe Slot)
+      => ValidationPolicy -> Maybe TruncateFrom -> m (Maybe SlotNo)
 
-    -- | Return the next free 'Slot'.
+    -- | Return the next free 'SlotNo'.
     --
     -- Throws a 'ClosedDBError' if the database is closed.
   , getNextSlot
-      :: HasCallStack => m Slot
+      :: HasCallStack => m SlotNo
 
-    -- | Get the binary blob stored at the given 'Slot'.
+    -- | Get the binary blob stored at the given 'SlotNo'.
     --
     -- Returns 'Nothing' if no blob was stored at the given slot.
     --
@@ -115,7 +115,7 @@ data ImmutableDB m = ImmutableDB
     --
     -- Throws a 'ClosedDBError' if the database is closed.
   , getBinaryBlob
-      :: HasCallStack => Slot -> m (Maybe ByteString)
+      :: HasCallStack => SlotNo -> m (Maybe ByteString)
 
     -- | Appends a binary blob at the given slot.
     --
@@ -126,14 +126,14 @@ data ImmutableDB m = ImmutableDB
     --
     -- TODO the given binary blob may not be empty.
   , appendBinaryBlob
-      :: HasCallStack => Slot -> Builder -> m ()
+      :: HasCallStack => SlotNo -> Builder -> m ()
 
     -- | Return an 'Iterator' to efficiently stream binary blocks out of the
     -- database.
     --
     -- Optionally, a start position (first argument) and/or a stop position
     -- (second argument) can be given that will be used to determine from
-    -- which 'Slot' streaming will start and/or stop (both inclusive bounds).
+    -- which 'SlotNo' streaming will start and/or stop (both inclusive bounds).
     --
     -- When no start position is given, streaming wil start from the first
     -- blob in the database. When no stop position is given, streaming will
@@ -155,7 +155,7 @@ data ImmutableDB m = ImmutableDB
     -- The iterator is automatically closed when exhausted, and can be
     -- prematurely closed with 'iteratorClose'.
   , streamBinaryBlobs
-      :: HasCallStack => Maybe Slot -> Maybe Slot -> m (Iterator m)
+      :: HasCallStack => Maybe SlotNo -> Maybe SlotNo -> m (Iterator m)
 
     -- | Throw 'ImmutableDB' errors
   , immutableDBErr :: ErrorHandling ImmutableDBError m
@@ -190,14 +190,14 @@ data Iterator m = Iterator
   }
 
 -- | Create an iterator from the given 'ImmutableDB' using 'streamBinaryBlobs'
--- and the given @start@ and @end@ @Maybe 'Slot'@s. Perform the given action
+-- and the given @start@ and @end@ @Maybe 'SlotNo'@s. Perform the given action
 -- using the iterator, and close the iterator using its 'iteratorClose'
 -- function, in case of success or when an exception was thrown.
 withIterator :: (HasCallStack, MonadThrow m)
              => ImmutableDB m
                 -- ^ The database
-             -> Maybe Slot -- ^ Start streaming from here (inclusive)
-             -> Maybe Slot -- ^ End streaming here (inclusive)
+             -> Maybe SlotNo -- ^ Start streaming from here (inclusive)
+             -> Maybe SlotNo -- ^ End streaming here (inclusive)
              -> (Iterator m -> m a)
                 -- ^ Action to perform using the iterator
              -> m a
@@ -212,7 +212,7 @@ instance Eq (Iterator m) where
 -- | The result of stepping an 'Iterator'.
 data IteratorResult
   = IteratorExhausted
-  | IteratorResult Slot ByteString
+  | IteratorResult SlotNo ByteString
   deriving (Show, Eq)
 
 -- | Consume an 'Iterator' by stepping until it is exhausted. A list of all
@@ -230,9 +230,9 @@ iteratorToList it = go
 -- range.
 blobProducer :: (Monad m, HasCallStack)
              => ImmutableDB m
-             -> Maybe Slot   -- ^ When to start streaming (inclusive).
-             -> Maybe Slot   -- ^ When to stop streaming (inclusive).
-             -> Producer (Slot, ByteString) m ()
+             -> Maybe SlotNo   -- ^ When to start streaming (inclusive).
+             -> Maybe SlotNo   -- ^ When to stop streaming (inclusive).
+             -> Producer (SlotNo, ByteString) m ()
 blobProducer db start end = do
     it <- lift $ streamBinaryBlobs db start end
     let loop = do
