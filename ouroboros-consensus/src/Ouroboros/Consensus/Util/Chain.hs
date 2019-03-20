@@ -67,10 +67,10 @@ forksAtMostKBlocks k ours = go
         else go bs
 
     -- we can roll back at most k blocks
-    forkingPoints :: Set (Hash b)
+    forkingPoints :: Set (ChainHash b)
     forkingPoints = takeR (chainToSeq' ours) $ fromIntegral (k + 1)
 
-    chainToSeq' :: Chain b -> Seq (Hash b)
+    chainToSeq' :: Chain b -> Seq (ChainHash b)
     chainToSeq' c = GenesisHash :<| (BlockHash . blockHash <$> chainToSeq c)
 
     takeR :: Ord a => Seq a -> Int -> Set a

@@ -84,8 +84,8 @@ shortestLength = fromIntegral . minimum . map Chain.length . Map.elems
 data BlockInfo b = BlockInfo
     { biSlot     :: !SlotNo
     , biCreator  :: !(Maybe CoreNodeId)
-    , biHash     :: !(Hash b)
-    , biPrevious :: !(Maybe (Hash b))
+    , biHash     :: !(ChainHash b)
+    , biPrevious :: !(Maybe (ChainHash b))
     }
 
 genesisBlockInfo :: BlockInfo b
@@ -139,20 +139,20 @@ tracesToDot :: forall b. (HasHeader b, HasCreator b)
             -> String
 tracesToDot traces = Text.unpack $ printDotGraph $ graphToDot quickParams graph
   where
-    chainBlockInfos :: Chain b -> Map (Hash b) (BlockInfo b)
+    chainBlockInfos :: Chain b -> Map (ChainHash b) (BlockInfo b)
     chainBlockInfos = Chain.foldChain f (Map.singleton GenesisHash genesisBlockInfo)
       where
         f m b = let info = blockInfo b
                 in  Map.insert (biHash info) info m
 
-    blockInfos :: Map (Hash b) (BlockInfo b)
+    blockInfos :: Map (ChainHash b) (BlockInfo b)
     blockInfos = Map.unions $ map chainBlockInfos $ Map.elems traces
 
-    lastHash :: Chain b -> Hash b
+    lastHash :: Chain b -> ChainHash b
     lastHash Genesis  = GenesisHash
     lastHash (_ :> b) = BlockHash $ blockHash b
 
-    blockInfosAndBelievers :: Map (Hash b) (BlockInfo b, Set NodeId)
+    blockInfosAndBelievers :: Map (ChainHash b) (BlockInfo b, Set NodeId)
     blockInfosAndBelievers = Map.foldlWithKey f i traces
       where
         i = (\info -> (info, Set.empty)) <$> blockInfos
@@ -162,7 +162,7 @@ tracesToDot traces = Text.unpack $ printDotGraph $ graphToDot quickParams graph
             (lastHash chain)
             m
 
-    hashToId :: Map (Hash b) Node
+    hashToId :: Map (ChainHash b) Node
     hashToId = Map.fromList $ zip (Map.keys blockInfosAndBelievers) [0..]
 
     ns :: [LNode NodeLabel]

@@ -40,7 +40,7 @@ import qualified Data.List as L
 import           Data.Maybe (fromJust, catMaybes)
 
 import           Ouroboros.Network.Testing.ConcreteBlock
-import           Ouroboros.Network.Block (SlotNo (..), Hash (..) , HasHeader (..))
+import           Ouroboros.Network.Block (SlotNo (..), ChainHash (..) , HasHeader (..))
 import           Ouroboros.Network.Chain (Chain (..), ChainUpdate (..), Point (..))
 import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange (..))

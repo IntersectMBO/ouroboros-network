@@ -73,8 +73,8 @@ hashBody (BlockBody b) = BodyHash (hash b)
 --
 data BlockHeader = BlockHeader {
        headerHash     :: HeaderHash BlockHeader,  -- ^ The cached 'HeaderHash' of this header.
-       headerPrevHash :: Hash BlockHeader,        -- ^ The 'headerHash' of the previous block header
-       headerSlot     :: SlotNo,                    -- ^ The Ouroboros time slot index of this block
+       headerPrevHash :: ChainHash BlockHeader,   -- ^ The 'headerHash' of the previous block header
+       headerSlot     :: SlotNo,                  -- ^ The Ouroboros time slot index of this block
        headerBlockNo  :: BlockNo,                 -- ^ The block index from the Genesis
        headerSigner   :: BlockSigner,             -- ^ Who signed this block
        headerBodyHash :: BodyHash                 -- ^ The hash of the corresponding block body
