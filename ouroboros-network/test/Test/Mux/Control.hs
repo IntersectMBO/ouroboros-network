@@ -194,21 +194,6 @@ instance Arbitrary ArbitraryFlatTerm where
     arbitrary = resize 10 $ ArbitraryFlatTerm <$> genArbitraryFlatTerm
     shrink = map ArbitraryFlatTerm . shrinkArbitraryFlatTerm . unArbitraryFlatTerm
 
--- Generates valid, but possibly unknown versions.
--- A version is encoded as a pair, a Word representing the version number and a CBOR.Term
-genArbitraryTermPair :: Gen CBOR.FlatTerm
-genArbitraryTermPair = do
-    Positive k <- arbitrary
-    t <- genArbitraryFlatTerm
-    return $ CBOR.TkInt k : t
-
-data ArbitraryTermPair = ArbitraryTermPair { unArbitraryTermPair :: CBOR.FlatTerm }
-    deriving Show
-
-instance Arbitrary ArbitraryTermPair where
-    arbitrary = resize 10 $ ArbitraryTermPair <$> genArbitraryTermPair
-    -- TODO shrink
-
 prop_ArbitraryFlatTerm :: ArbitraryFlatTerm -> Property
 prop_ArbitraryFlatTerm (ArbitraryFlatTerm t) =
       tabulate "Length of terms"
@@ -250,6 +235,21 @@ prop_ArbitraryFlatTerm (ArbitraryFlatTerm t) =
 
 prop_shrink_ArbitraryFlatTerm :: ArbitraryFlatTerm -> Bool
 prop_shrink_ArbitraryFlatTerm (ArbitraryFlatTerm t) = all CBOR.validFlatTerm (shrinkArbitraryFlatTerm t)
+
+-- Generates valid, but possibly unknown versions.
+-- A version is encoded as a pair, a Word representing the version number and a CBOR.Term
+genArbitraryTermPair :: Gen CBOR.FlatTerm
+genArbitraryTermPair = do
+    Positive k <- arbitrary
+    t <- genArbitraryFlatTerm
+    return $ CBOR.TkInt k : t
+
+data ArbitraryTermPair = ArbitraryTermPair { unArbitraryTermPair :: CBOR.FlatTerm }
+    deriving Show
+
+instance Arbitrary ArbitraryTermPair where
+    arbitrary = resize 10 $ ArbitraryTermPair <$> genArbitraryTermPair
+    -- TODO shrink
 
 data ArbitraryControlMsgFT = ArbitraryControlMsgFT (Maybe ControlMsg) CBOR.FlatTerm
     deriving Show
