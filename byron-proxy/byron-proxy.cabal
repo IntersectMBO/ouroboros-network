@@ -64,6 +64,7 @@ executable byron-proxy
   build-depends:       base,
                        async,
                        byron-proxy,
+                       bytestring,
                        cardano-sl,
                        cardano-sl-binary,
                        cardano-sl-chain,

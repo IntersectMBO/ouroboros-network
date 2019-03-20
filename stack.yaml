@@ -76,7 +76,7 @@ extra-deps:
   subdirs:
     - hedgehog
 - git: https://github.com/input-output-hk/cardano-sl
-  commit: 35e8f14b88733a39e4abc7e06d55562ef10986ee
+  commit: f96f3fe04719bd3b0cedc1bbaf80fa6927e937f3
   subdirs:
     - lib
     - core

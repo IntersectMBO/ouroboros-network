@@ -1,5 +1,6 @@
 {-# LANGUAGE GADTSyntax #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Byron.Proxy.ChainSync.Server where
 
@@ -26,40 +27,26 @@ data Point = Point
   { pointSlot :: !Slot
   , pointHash :: !CSL.HeaderHash
   }
+  deriving (Show, Eq)
 
--- | The declarative part of the server state, this is not the whole story:
--- the `IO`-backed `DB.Iterator` contains much implicit state.
---
--- - No slot, no iterator : Initial state. The client has not successfully
---     improved the read pointer, nor requested the next block.
--- - No slot, iterator    : The iterator's next block is the oldest block. The
---     client has not requested any blocks, nor successfully improved the read
---     pointer.
--- - Slot, no iterator : The client has the block at this slot. If it was served
---     to the client, then the iterator that served it has been closed. If not,
---     the client must have showed it in an improve read pointer request.
--- - Slot, iterator : The client has the block at this slot, and the iterator's
---     next block will be the child of the block at that slot (possibly the same
---     slot, in case of EBBs).
-data ServerState = ServerState
-  { -- | Newest slot that we know the client has: either because we sent a block
-    -- at this slot to them, or they showed that they have it by improving the
-    -- read pointer.
-    ssNewestKnownSlot :: !(Maybe Slot)
-    -- | The next block in the iterator is the next block to send to the client.
-    -- The `ReleaseKey` is from the resourcet package, used to de-allocate,
-    -- because we can't do typical bracketing.
-  , ssIterator        :: !(Maybe (DB.Iterator IO, ReleaseKey))
-  }
+data ServerState where
+  -- | Initial server state: we don't know the tip, either because we haven't
+  -- tried to get it yet (no request) or because the database is empty.
+  NoTip    :: ServerState
+  -- | Some tip is known (was once the tip), and there could be a point that
+  -- we know the client has, and there could be an iterator that is serving
+  -- the client.
+  KnownTip :: !Point
+           -> !(Maybe Point)
+           -> !(Maybe (DB.Iterator IO, ReleaseKey))
+           -> ServerState
 
-initialServerState :: ServerState
-initialServerState = ServerState
-  { ssNewestKnownSlot = Nothing
-  , ssIterator        = Nothing
-  }
+-- Problem: getting the next thing after a point.
+-- If we know the client has an EBB, we want to get an iterator which takes
+-- the first block of that epoch, if it's there.
+-- Solution: just take an iterator from a block they definitely have, and
+-- skip the first one.
 
-nextSlot :: Maybe Slot -> Slot
-nextSlot = maybe 0 ((+) 1)
 
 -- | Run any `m` repeatedly until the condition is satisfied.
 -- Since we currently don't have DB change notifications, we have to poll for
@@ -74,7 +61,7 @@ nextSlot = maybe 0 ((+) 1)
 --       Nothing -> threadDelay us >> ioPoll us k m
 --       Just t  -> pure t
 --
-type Poll m = forall s t . (s -> Maybe t) -> m s -> m t
+type Poll m = forall s t . (s -> m (Maybe t)) -> m s -> m t
 
 -- | Since we'll use unfortunately have to use `ResourceT`, we'll need to be
 -- able to take a `Poll (ResourceT IO s)`, but ideally the poll definition
@@ -98,7 +85,7 @@ chainSyncServer
   -> PollT IO
   -> DB IO
   -> ChainSyncServer CSL.Block Point (ResourceT IO) ()
-chainSyncServer err poll db = chainSyncServerAt err poll db initialServerState
+chainSyncServer err poll db = chainSyncServerAt err poll db NoTip
 
 chainSyncServerAt
   :: (forall x . CBOR.DeserialiseFailure -> IO x)
@@ -106,7 +93,60 @@ chainSyncServerAt
   -> DB IO
   -> ServerState
   -> ChainSyncServer CSL.Block Point (ResourceT IO) ()
-chainSyncServerAt err poll db rp = ChainSyncServer $ pure $ chainSyncServerIdle err poll db rp
+chainSyncServerAt err poll db ss = ChainSyncServer $
+  pure $ chainSyncServerIdle err poll db ss
+
+pollForTipChange
+  :: forall m .
+     ( Monad m )
+  => (forall x . CBOR.DeserialiseFailure -> m x)
+  -> PollT m
+  -> DB m
+  -> Maybe Point
+  -> ResourceT m Point
+pollForTipChange err poll db mPoint = poll takePoint (lift (DB.readTip db))
+  where
+  takePoint :: DB.Tip -> ResourceT m (Maybe Point)
+  takePoint tip = case mPoint of
+    -- There's no existing point, so we'll take the tip unless the DB is empty.
+    Nothing -> case tip of
+      DB.TipGenesis -> pure Nothing
+      DB.TipEBB slot hash _ -> pure $ Just (Point slot hash)
+      DB.TipBlock slot bytes -> case DB.decodeFull cslBlockDecoder (Lazy.fromStrict bytes) of
+        Left cborError -> lift $ err cborError
+        Right blk      -> pure $ Just $ Point slot (CSL.headerHash blk)
+    -- Must wait for a tip better than the given point.
+    -- We assume (since there are no forks by assumption) that if the new
+    -- tip is not equal to this point, then it's better.
+    Just point -> do
+      point' <- lift $ pickBetterTip err point tip
+      pure $ if point == point'
+             then Nothing
+             else Just point'
+
+pickBetterTip
+  :: ( Applicative m )
+  => (forall x . CBOR.DeserialiseFailure -> m x)
+  -> Point
+  -> DB.Tip
+  -> m Point
+-- FIXME this case is actually an error. If we have a tip point but the
+-- DB is empty then something went horribly wrong.
+pickBetterTip _ point DB.TipGenesis = pure point
+pickBetterTip _ point (DB.TipEBB slot hash _) =
+  if pointSlot point < slot
+  then pure $ Point slot hash
+  else pure point
+-- Careful: the `point` could be for an EBB, in which case the slots are the
+-- same but we want to pick the block.
+-- So just use a non-strict equality. Since we're only using immutable DB with
+-- no forks, it is correct.
+pickBetterTip err point (DB.TipBlock slot bytes) =
+  if pointSlot point <= slot
+  then case DB.decodeFull cslBlockDecoder (Lazy.fromStrict bytes) of
+    Left cborError -> err cborError
+    Right blk      -> pure $ Point slot (CSL.headerHash blk)
+  else pure point
 
 chainSyncServerIdle
   :: (forall x . CBOR.DeserialiseFailure -> IO x)
@@ -114,106 +154,135 @@ chainSyncServerIdle
   -> DB IO
   -> ServerState
   -> ServerStIdle CSL.Block Point (ResourceT IO) ()
-chainSyncServerIdle err poll db ss = ServerStIdle
-  { recvMsgDoneClient = ()
-
-  , recvMsgFindIntersect = \points -> do
-      -- Order the list by slot descending, and find the first entry which is
-      -- in the database.
-      let cmpSlots p1 p2 = Down (pointSlot p1) `compare` Down (pointSlot p2)
-          orderedPoints = sortBy cmpSlots points
-          -- For each point, take an iterator and the first point from it.
-          -- If there is a first point, that's our new spot. We can de-allocate
-          -- any existing iterator and use this new one.
-          checkForPoint
-            :: Maybe (Slot, CSL.HeaderHash, DB.Iterator IO, ReleaseKey)
-            -> Point
-            -> ResourceT IO (Maybe (Slot, CSL.HeaderHash, DB.Iterator IO, ReleaseKey))
-          checkForPoint = \found point -> case found of
-            Just _  -> pure found
-            Nothing -> do
-              (releaseKey, iteratorResource) <- allocate
-                (DB.readFrom db (DB.BySlot (pointSlot point)))
-                DB.closeIterator
-              next <- lift $ DB.next (DB.iterator iteratorResource)
-              case next of
-                DB.Done -> do
-                  release releaseKey
-                  pure Nothing
-                -- We have to decode the bytes and check the header hash against
-                -- the given point.
-                DB.More slot bytes iterator' -> do
-                  hh <- case DB.decodeFull cslBlockDecoder (Lazy.fromStrict bytes) of
-                    Left cborError -> lift $ err cborError
-                    Right block    -> pure $ CSL.headerHash block
-                  if hh == pointHash point
-                  then pure $ Just (slot, hh, iterator', releaseKey)
-                  else pure Nothing
-      mFound <- foldlM checkForPoint Nothing orderedPoints
-      -- No matter what, we have to give the current tip.
-      -- FIXME why? Should only need to give it if there's a change.
-      (tipSlot, tipBlock) <- lift $ DB.readTip db
-      let tipHash  = CSL.headerHash tipBlock
-          tipPoint = Point tipSlot tipHash
-      -- If there's a new point, release any existing iterator and keep the
-      -- one we just made. Since we already read a block from it that the
-      -- client claims to have, the iterator is now at the appropriate point.
-      case mFound of
-        Nothing -> pure $ SendMsgIntersectUnchanged tipPoint (chainSyncServerAt err poll db ss)
-        Just (newSlot, newHash, newIterator, newReleaseKey) -> do
-          -- Release the old iterator, if any.
-          maybe (pure ()) (release . snd) (ssIterator ss)
-          -- The new iterator is used from now on.
-          let newPoint = Point newSlot newHash
-              ss' = ss { ssNewestKnownSlot = Just newSlot
-                       , ssIterator = Just (newIterator, newReleaseKey)
-                       }
-          pure $ SendMsgIntersectImproved newPoint tipPoint (chainSyncServerAt err poll db ss')
-
-  , recvMsgRequestNext = case ssIterator ss of
-      -- There's no iterator. Bring one up beginning at least from the next
-      -- slot, using `ResourceT` to ensure it gets de-allocated.
-      Nothing -> do
-        let point = DB.BySlot (nextSlot (ssNewestKnownSlot ss))
-        (releaseKey, iteratorResource) <- allocate (DB.readFrom db point) DB.closeIterator
-        -- now we can simply call back into this term with the new state.
-        let ss' = ss { ssIterator = Just (DB.iterator iteratorResource, releaseKey) }
+chainSyncServerIdle err poll db ss = case ss of
+  -- If there's no tip, poll for a tip change only when a request comes in.
+  NoTip -> ServerStIdle
+    { recvMsgDoneClient = pure ()
+    , recvMsgFindIntersect = \points -> do
+        tipPoint <- pollForTipChange err poll db Nothing
+        let ss' = KnownTip tipPoint Nothing Nothing
+        recvMsgFindIntersect (chainSyncServerIdle err poll db ss') points
+    , recvMsgRequestNext = do
+        tipPoint <- pollForTipChange err poll db Nothing
+        let ss' = KnownTip tipPoint Nothing Nothing
         recvMsgRequestNext (chainSyncServerIdle err poll db ss')
-      Just (iterator, releaseKey) -> do
-        next <- lift $ DB.next iterator
-        case next of
-          DB.Done -> pure $ Right $ do
-            -- Release the iterator via `ResourceT`.
-            release releaseKey
-            -- Must block until there's a block with slot greater than or equal
-            -- to the next slot. 
-            let ss' = ss { ssIterator = Nothing }
-                condition = \outcome -> case outcome of
-                  Left stNext -> Just stNext
-                  Right _     -> Nothing
-            poll condition (recvMsgRequestNext (chainSyncServerIdle err poll db ss'))
-          DB.More slot bytes iterator' -> do
-            block <- case DB.decodeFull cslBlockDecoder (Lazy.fromStrict bytes) of
-              Left cborError -> lift $ err cborError
-              Right block    -> pure block
-            -- We need to give the curren tip point with _every_ message.
-            -- FIXME should only give it if it has changed.
-            (tipSlot, tipBlock) <- lift $ DB.readTip db
-            let hh     = CSL.headerHash block
-                point' = Point slot hh
-                tipHash  = CSL.headerHash tipBlock
-                tipPoint = Point tipSlot tipHash
-                ss'    = ss { ssNewestKnownSlot = Just slot
-                            -- The releaseKey is for the whole iterator resource
-                            -- so it stays the same.
-                            , ssIterator        = Just (iterator', releaseKey)
-                            }
-            pure $ Left $ SendMsgRollForward block tipPoint (chainSyncServerAt err poll db ss')
-  }
+    }
 
-  where
-  -- Grab the cardano-sl `Block` decoder from the cardano-sl `Bi` instance.
-  -- The `Decoder` itself is unfortunately never exported, and accessible only
-  -- by way of typeclass.
-  cslBlockDecoder :: CBOR.Decoder s CSL.Block
-  cslBlockDecoder = CSL.decode
+  KnownTip tipPoint mLastKnownPoint mIterator -> ServerStIdle
+    { recvMsgDoneClient = case mIterator of
+        Nothing -> pure ()
+        Just (_, releaseKey) -> release releaseKey
+
+    , recvMsgFindIntersect = \points -> do
+        -- Order the list by slot descending, and find the first entry which is
+        -- in the database.
+        let cmpSlots p1 p2 = Down (pointSlot p1) `compare` Down (pointSlot p2)
+            orderedPoints = sortBy cmpSlots points
+            -- For each point, take an iterator and the first point from it.
+            -- If there is a first point, that's our new spot. We can de-allocate
+            -- any existing iterator and use this new one.
+            checkForPoint
+              :: Maybe (Slot, CSL.HeaderHash, DB.Iterator IO, ReleaseKey)
+              -> Point
+              -> ResourceT IO (Maybe (Slot, CSL.HeaderHash, DB.Iterator IO, ReleaseKey))
+            checkForPoint = \found point -> case found of
+              Just _  -> pure found
+              Nothing -> do
+                (releaseKey, iteratorResource) <- allocate
+                  (DB.readFrom db (DB.FromPoint (pointSlot point) (pointHash point)))
+                  DB.closeIterator
+                next <- lift $ DB.next (DB.iterator iteratorResource)
+                case next of
+                  DB.Done -> do
+                    release releaseKey
+                    pure Nothing
+                  -- EBBs come out of the DB with their hash so we can just
+                  -- compare on that.
+                  DB.NextEBB epoch hash bytes iterator' -> do
+                    -- DB guarantees that `hash = pointHash point`.
+                    pure $ Just (pointSlot point, hash, iterator', releaseKey)
+                  -- The DB does not check that the hash matches, if the item is
+                  -- not an EBB, so to figure out whether this is the block we
+                  -- want, we have to get its header hash, which involves
+                  -- deserialising and then reserialising (via headerHash).
+                  DB.NextBlock slot bytes iterator' -> do
+                    hash <- case DB.decodeFull cslBlockDecoder (Lazy.fromStrict bytes) of
+                      Left cborError -> lift $ err cborError
+                      Right block    -> pure $ CSL.headerHash block
+                    if hash == pointHash point
+                    then pure $ Just (slot, hash, iterator', releaseKey)
+                    else pure Nothing
+        mFound <- foldlM checkForPoint Nothing orderedPoints
+        -- No matter what, we have to give the current tip.
+        -- FIXME why? Should only need to give it if there's a change.
+        dbTip <- lift $ DB.readTip db
+        tipPoint' <- lift $ pickBetterTip err tipPoint dbTip
+        -- If there's a new point, release any existing iterator and keep the
+        -- one we just made. Since we already read a block from it that the
+        -- client claims to have, the iterator is now at the appropriate point.
+        case mFound of
+          Nothing -> do
+            let ss' = KnownTip tipPoint' mLastKnownPoint mIterator
+            pure $ SendMsgIntersectUnchanged tipPoint' (chainSyncServerAt err poll db ss')
+          Just (newSlot, newHash, newIterator, newReleaseKey) -> do
+            -- Release the old iterator, if any.
+            maybe (pure ()) (release . snd) mIterator
+            -- The new iterator is used from now on.
+            let newPoint = Point newSlot newHash
+                ss' = KnownTip tipPoint' (Just newPoint) (Just (newIterator, newReleaseKey))
+            pure $ SendMsgIntersectImproved newPoint tipPoint' (chainSyncServerAt err poll db ss')
+
+    , recvMsgRequestNext = case mIterator of
+        -- There's no iterator. Bring one up beginning at least from the next
+        -- slot, using `ResourceT` to ensure it gets de-allocated.
+        Nothing -> case mLastKnownPoint of
+          Nothing -> do
+            (releaseKey, iteratorResource) <- allocate (DB.readFrom db DB.FromGenesis) DB.closeIterator
+            -- Last known point remains Nothing because we haven't yet served
+            -- a block.
+            let ss' = KnownTip tipPoint Nothing (Just (DB.iterator iteratorResource, releaseKey))
+            recvMsgRequestNext (chainSyncServerIdle err poll db ss')
+          Just point -> do
+            (releaseKey, iteratorResource) <- allocate (DB.readFrom db (DB.FromPoint (pointSlot point) (pointHash point))) DB.closeIterator
+            -- Iterator starts from that point, so we have to pass over it
+            -- before recursing.
+            next <- lift $ DB.next (DB.iterator iteratorResource)
+            iterator' <- case next of
+              -- We served them the block at this point. How could we all of
+              -- a sudden not have it? DB is immutable.
+              DB.Done -> error "this should not happen"
+              DB.NextEBB _ _ _ iterator' -> pure iterator'
+              DB.NextBlock _ _ iterator' -> pure iterator'
+            let ss' = KnownTip tipPoint mLastKnownPoint (Just (iterator', releaseKey))
+            recvMsgRequestNext (chainSyncServerIdle err poll db ss')
+        Just (iterator, releaseKey) -> do
+          next <- lift $ DB.next iterator
+          case next of
+            -- If there's nothing, use the poller to repeatedly call back into
+            -- this piece until it's `Left`.
+            DB.Done -> pure $ Right $ do
+              release releaseKey
+              let ss' = KnownTip tipPoint mLastKnownPoint Nothing
+                  condition term = pure $ case term of
+                    Left serverNext -> Just serverNext
+                    Right _ -> Nothing
+              poll condition (recvMsgRequestNext (chainSyncServerIdle err poll db ss'))
+            DB.NextEBB slot hash bytes iterator' -> case DB.decodeFull cslBlockDecoder (Lazy.fromStrict bytes) of
+              Left cborError -> lift $ err cborError
+              Right ebb -> do
+                dbTip <- lift $ DB.readTip db
+                tipPoint' <- lift $ pickBetterTip err tipPoint dbTip
+                let ss' = KnownTip tipPoint' (Just (Point slot hash)) (Just (iterator', releaseKey))
+                pure $ Left $ SendMsgRollForward ebb tipPoint (chainSyncServerAt err poll db ss')
+            DB.NextBlock slot bytes iterator' -> case DB.decodeFull cslBlockDecoder (Lazy.fromStrict bytes) of
+              Left cborError -> lift $ err cborError
+              Right blk -> do
+                dbTip <- lift $ DB.readTip db
+                tipPoint' <- lift $ pickBetterTip err tipPoint dbTip
+                let hash = CSL.headerHash blk
+                    ss' = KnownTip tipPoint' (Just (Point slot hash)) (Just (iterator', releaseKey))
+                pure $ Left $ SendMsgRollForward blk tipPoint (chainSyncServerAt err poll db ss')
+    }
+
+cslBlockDecoder :: CBOR.Decoder s CSL.Block
+cslBlockDecoder = CSL.decode
