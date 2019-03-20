@@ -109,7 +109,7 @@ prettyPrintChain nl ppBlock = foldChain (\s b -> s ++ nl ++ "    " ++ ppBlock b)
 --
 data Point block = Point {
        pointSlot :: SlotNo,
-       pointHash :: Hash block
+       pointHash :: ChainHash block
      }
    deriving (Eq, Ord, Show)
 
@@ -153,7 +153,7 @@ headPoint (_ :> b) = blockPoint b
 headSlot :: HasHeader block => Chain block -> SlotNo
 headSlot = pointSlot . headPoint
 
-headHash :: HasHeader block => Chain block -> Hash block
+headHash :: HasHeader block => Chain block -> ChainHash block
 headHash = pointHash . headPoint
 
 headBlockNo :: HasHeader block => Chain block -> BlockNo

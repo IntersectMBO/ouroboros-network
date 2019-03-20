@@ -14,7 +14,7 @@ module Ouroboros.Network.Block (
   , BlockNo(..)
   , HasHeader(..)
   , StandardHash
-  , Hash(..)
+  , ChainHash(..)
   , castHash
   , BlockMeasure(..)
   , blockMeasure
@@ -47,7 +47,7 @@ class (StandardHash b, Measured BlockMeasure b) => HasHeader b where
     type HeaderHash b :: *
 
     blockHash      :: b -> HeaderHash b
-    blockPrevHash  :: b -> Hash b
+    blockPrevHash  :: b -> ChainHash b
     blockSlot      :: b -> SlotNo
     blockNo        :: b -> BlockNo
 
@@ -62,7 +62,7 @@ blockMeasure b = BlockMeasure (blockSlot b) (blockSlot b) 1
 --
 -- Without this class we would need to write
 --
--- > deriving instance Eq (HeaderHash block) => Eq (Hash block)`
+-- > deriving instance Eq (HeaderHash block) => Eq (ChainHash block)`
 --
 -- That requires @UndecidableInstances@; not a problem by itself, but it also
 -- means that we can then not use @deriving Eq@ anywhere else for datatypes
@@ -82,12 +82,12 @@ class ( Eq        (HeaderHash b)
       , Serialise (HeaderHash b)
       ) => StandardHash b
 
-data Hash b = GenesisHash | BlockHash (HeaderHash b)
+data ChainHash b = GenesisHash | BlockHash (HeaderHash b)
   deriving (Generic)
 
-deriving instance StandardHash block => Eq   (Hash block)
-deriving instance StandardHash block => Ord  (Hash block)
-deriving instance StandardHash block => Show (Hash block)
+deriving instance StandardHash block => Eq   (ChainHash block)
+deriving instance StandardHash block => Ord  (ChainHash block)
+deriving instance StandardHash block => Show (ChainHash block)
 
 -- | 'Hashable' instance for 'Hash'
 --
@@ -95,11 +95,11 @@ deriving instance StandardHash block => Show (Hash block)
 -- only used in the network layer /tests/.
 --
 -- This requires @UndecidableInstances@ because @Hashable (HeaderHash b)@
--- is no smaller than @Hashable (Hash b)@.
-instance Hashable (HeaderHash b) => Hashable (Hash b) where
+-- is no smaller than @Hashable (ChainHash b)@.
+instance Hashable (HeaderHash b) => Hashable (ChainHash b) where
  -- use generic instance
 
-castHash :: HeaderHash b ~ HeaderHash b' => Hash b -> Hash b'
+castHash :: HeaderHash b ~ HeaderHash b' => ChainHash b -> ChainHash b'
 castHash GenesisHash   = GenesisHash
 castHash (BlockHash b) = BlockHash b
 
@@ -107,7 +107,7 @@ castHash (BlockHash b) = BlockHash b
   Serialisation
 -------------------------------------------------------------------------------}
 
-instance StandardHash b => Serialise (Hash b) where
+instance StandardHash b => Serialise (ChainHash b) where
   -- use the Generic instance
 
 {-------------------------------------------------------------------------------
