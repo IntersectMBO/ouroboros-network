@@ -29,6 +29,7 @@ tests =
   , testGroup "generators"
      [ testProperty "ArbitraryFlatTerm is valid"        prop_ArbitraryFlatTerm
      , testProperty "shrink ArbitraryFlatTerm is valid" prop_shrink_ArbitraryFlatTerm
+     , testProperty "shrink ArbitraryTermPair is valid" prop_shrink_ArbitraryTermPair
      ]
   ]
 
@@ -249,7 +250,19 @@ data ArbitraryTermPair = ArbitraryTermPair { unArbitraryTermPair :: CBOR.FlatTer
 
 instance Arbitrary ArbitraryTermPair where
     arbitrary = resize 10 $ ArbitraryTermPair <$> genArbitraryTermPair
-    -- TODO shrink
+
+    shrink (ArbitraryTermPair (CBOR.TkInt k : ts)) = map (ArbitraryTermPair . (CBOR.TkInt k :)) (shrinkArbitraryFlatTerm ts)
+    shrink _ = []
+
+
+isValidTermPair :: CBOR.FlatTerm -> Bool
+isValidTermPair (CBOR.TkInt _ : t) = CBOR.validFlatTerm t
+isValidTermPair _                  = False
+
+prop_shrink_ArbitraryTermPair
+  :: ArbitraryTermPair
+  -> Bool
+prop_shrink_ArbitraryTermPair a = all (isValidTermPair . unArbitraryTermPair) (shrink a)
 
 data ArbitraryControlMsgFT = ArbitraryControlMsgFT (Maybe ControlMsg) CBOR.FlatTerm
     deriving Show
