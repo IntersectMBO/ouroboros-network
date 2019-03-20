@@ -24,7 +24,7 @@ tests :: TestTree
 tests =
   testGroup "MuxControl"
   [ testProperty "MuxControl encode/decode"      prop_mux_encode_decode
-  -- XXX , testProperty "MuxControl decoding"           prop_decode_ControlMsg
+  , testProperty "MuxControl decoding"           prop_decode_ControlMsg
   , testGroup "generators"
      [ testProperty "ArbitraryFlatTerm is valid" prop_ArbitraryFlatTerm
      ]
@@ -64,27 +64,27 @@ instance Arbitrary ArbitraryVersionFT where
 
   arbitrary = oneof
       [ (\v -> ArbitraryVersionFT (Just v) (CBOR.toFlatTerm $ encode v)) <$> arbitrary
-      , toArbitraryVersionFT . unArbitraryFlatTerm <$> resize 10 arbitrary
+      , toArbitraryVersionFT . unArbitraryTermPair <$> resize 10 arbitrary
       ]
     where
       toArbitraryVersionFT :: CBOR.FlatTerm -> ArbitraryVersionFT
       toArbitraryVersionFT t = ArbitraryVersionFT (toVersion t) t
 
-      -- We allow to encode a version as a list of length >= 2 with two first
-      -- fields as integers, either encoded as `TkInt` or `TkInteger`.
-      toVersion (CBOR.TkListLen n : CBOR.TkInt x : CBOR.TkInt y : _) | n >= 2 && y >= 0 = case x of
+      -- We allow to encode a version as a pair of two integers, either encoded as `TkInt` or
+      -- `TkInteger`.
+      toVersion (CBOR.TkInt x : CBOR.TkInt y : []) | y >= 0 = case x of
         0 -> Just (Mx.Version0 (Mx.NetworkMagic (fromIntegral y)))
         1 -> Just (Mx.Version1 (Mx.NetworkMagic (fromIntegral y)))
         _ -> Nothing
-      toVersion (CBOR.TkListLen n : CBOR.TkInt x : CBOR.TkInteger y : _) | n >= 2 && y >= 0 = case x of
+      toVersion (CBOR.TkInt x : CBOR.TkInteger y : []) | y >= 0 = case x of
         0 -> Just (Mx.Version0 (Mx.NetworkMagic (fromIntegral y)))
         1 -> Just (Mx.Version1 (Mx.NetworkMagic (fromIntegral y)))
         _ -> Nothing
-      toVersion (CBOR.TkListLen n : CBOR.TkInteger x : CBOR.TkInt y : _) | n >= 2 && y >= 0 = case x of
+      toVersion (CBOR.TkInteger x : CBOR.TkInt y :[]) | y >= 0 = case x of
         0 -> Just (Mx.Version0 (Mx.NetworkMagic (fromIntegral y)))
         1 -> Just (Mx.Version1 (Mx.NetworkMagic (fromIntegral y)))
         _ -> Nothing
-      toVersion (CBOR.TkListLen n : CBOR.TkInteger x : CBOR.TkInteger y : _) | n >= 2 && y >= 0 = case x of
+      toVersion (CBOR.TkInteger x : CBOR.TkInteger y : []) | y >= 0 = case x of
         0 -> Just (Mx.Version0 (Mx.NetworkMagic (fromIntegral y)))
         1 -> Just (Mx.Version1 (Mx.NetworkMagic (fromIntegral y)))
         _ -> Nothing
@@ -128,6 +128,21 @@ instance Arbitrary ArbitraryFlatTerm where
     arbitrary = resize 10 $ ArbitraryFlatTerm <$> genArbitraryFlatTerm
     -- TODO shrink
 
+-- Generates valid, but possibly unknown versions.
+-- A version is encoded as a pair, a Word representing the version number and a CBOR.Term
+genArbitraryTermPair :: Gen CBOR.FlatTerm
+genArbitraryTermPair = do
+    Positive k <- arbitrary
+    t <- genArbitraryFlatTerm
+    return $ CBOR.TkInt k : t
+
+data ArbitraryTermPair = ArbitraryTermPair { unArbitraryTermPair :: CBOR.FlatTerm }
+    deriving Show
+
+instance Arbitrary ArbitraryTermPair where
+    arbitrary = resize 10 $ ArbitraryTermPair <$> genArbitraryTermPair
+    -- TODO shrink
+
 prop_ArbitraryFlatTerm :: ArbitraryFlatTerm -> Bool
 prop_ArbitraryFlatTerm (ArbitraryFlatTerm t) = CBOR.validFlatTerm t
 
@@ -143,7 +158,7 @@ instance Arbitrary ArbitraryControlMsgFT where
     arbitrary = oneof
         [ (\x -> ArbitraryControlMsgFT (Just x) (CBOR.toFlatTerm $ encode x)) <$> arbitrary
         , msgInitReq <$> listOf arbitrary
-        ,  msgInitRsp <$> arbitrary
+        , msgInitRsp <$> arbitrary
         , invalidControlMsgTag
         ]
       where
@@ -153,14 +168,14 @@ instance Arbitrary ArbitraryControlMsgFT where
         msgInitReq :: [ArbitraryVersionFT] -> ArbitraryControlMsgFT
         msgInitReq xs =
           let ts :: CBOR.FlatTerm
-              ts = concatMap (\(ArbitraryVersionFT _ t) -> t) xs 
+              ts = concatMap (\(ArbitraryVersionFT _ t) -> t) xs
               vs :: [Mx.Version]
               vs = mapMaybe (\(ArbitraryVersionFT v _) -> v) xs
           in ArbitraryControlMsgFT
             (Just (MsgInitReq vs))
             (CBOR.TkListLen 2
               : CBOR.TkInt 0
-              : CBOR.TkListLen (fromIntegral $ length xs)
+              : CBOR.TkMapLen (fromIntegral $ length xs)
               : ts)
 
         -- |
