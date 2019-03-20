@@ -17,7 +17,11 @@ extra-deps:
 - quickcheck-state-machine-0.6.0
 - transformers-0.5.5.0
 - git: https://github.com/input-output-hk/iohk-monitoring-framework
-  commit: 8456e488fd26e34f0d15c957965d6cc5c51427af
+  commit: 0c31ff69e28b8a955a5147c03cd9471307b3f349
+  subdirs:
+    - iohk-monitoring
+    - basic-tracer
+- libyaml-0.1.0.0
 
 # Cardano-sl dependencies:
 - ekg-wai-0.1.0.3

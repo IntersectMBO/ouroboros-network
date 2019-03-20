@@ -8,7 +8,14 @@ packages: byron-proxy.cabal
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/iohk-monitoring-framework
-  tag: 8456e488fd26e34f0d15c957965d6cc5c51427af
+  tag: 0c31ff69e28b8a955a5147c03cd9471307b3f349
+  subdir: iohk-monitoring
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/iohk-monitoring-framework
+  tag: 0c31ff69e28b8a955a5147c03cd9471307b3f349
+  subdir: basic-tracer
 
 --
 -- from cardano-crypto-1.2.0.nix
