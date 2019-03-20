@@ -246,7 +246,7 @@ readIncrementalOffsetsEBB hasFS decoder getEBBHash fp = withLiftST $ \liftST ->
             mbEBBHash'    | offset == 0 = getEBBHash a
                           | otherwise   = mbEBBHash
         case checkEmpty leftover of
-          Nothing         -> return (reverse deserialised', Nothing, Nothing)
+          Nothing         -> return (reverse deserialised', mbEBBHash', Nothing)
           -- Some more bytes, so try to read the next @a@.
           Just unconsumed -> liftST (CBOR.deserialiseIncremental decoder) >>=
             go liftST h nextOffset deserialised' mbEBBHash' (Just unconsumed)

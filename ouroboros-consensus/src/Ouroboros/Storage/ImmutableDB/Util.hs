@@ -197,13 +197,10 @@ reconstructSlotOffsets = go 0 [] 0
        -> NonEmpty SlotOffset
     go offsetAfterLast offsets expectedRelSlot ((offset, (len, relSlot)):olrs') =
       assert (offsetAfterLast == offset) $
-      --assert (relSlot > expectedRelSlot) $
-      if (relSlot >= expectedRelSlot)
-      then error (mconcat [show relSlot, ", ", show expectedRelSlot])
-      else
-        let backfill = indexBackfill relSlot expectedRelSlot offset
-        in go (offset + fromIntegral len) (offset : backfill <> offsets)
-              (succ relSlot) olrs'
+      assert (relSlot >= expectedRelSlot) $
+      let backfill = indexBackfill relSlot expectedRelSlot offset
+      in  go (offset + fromIntegral len) (offset : backfill <> offsets)
+          (succ relSlot) olrs'
     go offsetAfterLast offsets _lastRelSlot [] = offsetAfterLast NE.:| offsets
 
 
