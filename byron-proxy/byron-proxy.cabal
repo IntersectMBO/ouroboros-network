@@ -65,6 +65,7 @@ executable byron-proxy
                        async,
                        basic-tracer,
                        byron-proxy,
+                       bytestring,
                        cardano-sl,
                        cardano-sl-binary,
                        cardano-sl-chain,

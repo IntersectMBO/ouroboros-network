@@ -4,7 +4,6 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE StandaloneDeriving #-}
 
--- TODO move to Ouroboros.Byron.DB.Index
 module Ouroboros.Byron.Proxy.Index where
 
 import Control.Exception (Exception, throwIO)
@@ -12,7 +11,7 @@ import Crypto.Hash (digestFromByteString)
 import Data.ByteString (ByteString)
 import Data.ByteArray (convert)
 import Data.Word (Word64)
-import Database.SQLite.Simple (Connection, Only (..), Query)
+import Database.SQLite.Simple (Connection, Query)
 import qualified Database.SQLite.Simple as Sql
 import System.Directory (doesFileExist)
 
@@ -24,13 +23,9 @@ import Ouroboros.Storage.ImmutableDB.Types
 -- | A point to read from the index. Looking up the tip gives its own hash,
 -- looking up anything by hash (could happen to be the tip) gives the hash
 -- of its child (nothing iff it's the tip).
-data IndexPoint next where
-  Tip    :: IndexPoint OwnHash
-  ByHash :: HeaderHash -> IndexPoint ChildHash
-
-newtype OwnHash = OwnHash { getOwnHash :: HeaderHash }
-
-newtype ChildHash = ChildHash { getChildHash :: Maybe HeaderHash }
+data IndexPoint t where
+  Tip    :: IndexPoint HeaderHash
+  ByHash :: HeaderHash -> IndexPoint ()
 
 data Index m = Index
   { indexRead  :: forall d . IndexPoint d -> m (Maybe (d, EpochNo, IndexSlot))
@@ -141,7 +136,7 @@ sql_get_tip =
   "SELECT header_hash, epoch, slot FROM block_index\
   \ ORDER BY epoch DESC, slot DESC LIMIT 1;"
 
-getTip :: Sql.Connection -> IO (Maybe (OwnHash, EpochNo, IndexSlot))
+getTip :: Sql.Connection -> IO (Maybe (HeaderHash, EpochNo, IndexSlot))
 getTip conn = do
    rows :: [(ByteString, Word64, Int)] <- Sql.query_ conn sql_get_tip
    case rows of
@@ -156,25 +151,15 @@ getTip conn = do
          else if slotInt >= 0
          then pure (RealSlot (fromIntegral slotInt))
          else throwIO $ InvalidRelativeSlot hh slotInt
-       pure $ Just (OwnHash hh, EpochNo epoch, slot)
+       pure $ Just (hh, EpochNo epoch, slot)
 
 sql_get_hash :: Query
 sql_get_hash =
   "SELECT epoch, slot FROM block_index\
   \ WHERE header_hash = ?;"
 
--- | To get the child hash, give the epoch and slot of the parent, restrict
--- to rows later than that, order ascending, and limit 1.
-sql_get_child :: Query
-sql_get_child =
-  "SELECT header_hash FROM block_index\
-  \ WHERE epoch > ? AND slot > ?\
-  \ ORDER BY epoch ASC, slot ASC\
-  \ LIMIT 1;"
-
--- | When looking up by hash, use a join to get the hash of the next block,
--- if there is one.
-getHash :: Sql.Connection -> HeaderHash -> IO (Maybe (ChildHash, EpochNo, IndexSlot))
+-- | Get epoch and slot by hash.
+getHash :: Sql.Connection -> HeaderHash -> IO (Maybe ((), EpocNoh, IndexSlot))
 getHash conn hh@(AbstractHash digest) = do
   rows :: [(Word64, Int)]
     <- Sql.query conn sql_get_hash (Sql.Only (convert digest :: ByteString))
@@ -187,13 +172,7 @@ getHash conn hh@(AbstractHash digest) = do
         else if slotInt >= 0
         then pure (RealSlot (fromIntegral slotInt))
         else throwIO $ InvalidRelativeSlot hh slotInt
-      childRows :: [Only ByteString] <- Sql.query conn sql_get_child (epoch, slotInt)
-      mChildHash <- case childRows of
-        [] -> pure Nothing
-        (Only hhBlob : _) -> case digestFromByteString hhBlob of
-          Just hh -> pure $ Just (AbstractHash hh)
-          Nothing -> throwIO $ InvalidHash hhBlob
-      pure $ Just (ChildHash mChildHash, EpochNo epoch, slot)
+      pure $ Just ((), EpochNo epoch, slot)
 
 sql_insert :: Query
 sql_insert = "INSERT INTO block_index VALUES (?, ?, ?);"
