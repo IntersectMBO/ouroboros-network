@@ -12,19 +12,18 @@ import qualified Data.ByteString.Lazy as Lazy
 import Data.Foldable (foldlM)
 import Data.List (sortBy)
 import Data.Ord (Down (..))
-import Data.Word (Word)
 
 import qualified Pos.Binary.Class as CSL (decode)
 import qualified Pos.Chain.Block as CSL
 
 import Ouroboros.Byron.Proxy.DB (DB)
 import qualified Ouroboros.Byron.Proxy.DB as DB
-import Ouroboros.Storage.ImmutableDB.API (Epoch (..), Slot (..))
+import Ouroboros.Storage.ImmutableDB.API (SlotNo (..))
 
 import Ouroboros.Network.Protocol.ChainSync.Server
 
 data Point = Point
-  { pointSlot :: !Slot
+  { pointSlot :: !SlotNo
   , pointHash :: !CSL.HeaderHash
   }
   deriving (Show, Eq)
@@ -182,9 +181,9 @@ chainSyncServerIdle err poll db ss = case ss of
             -- If there is a first point, that's our new spot. We can de-allocate
             -- any existing iterator and use this new one.
             checkForPoint
-              :: Maybe (Slot, CSL.HeaderHash, DB.Iterator IO, ReleaseKey)
+              :: Maybe (SlotNo, CSL.HeaderHash, DB.Iterator IO, ReleaseKey)
               -> Point
-              -> ResourceT IO (Maybe (Slot, CSL.HeaderHash, DB.Iterator IO, ReleaseKey))
+              -> ResourceT IO (Maybe (SlotNo, CSL.HeaderHash, DB.Iterator IO, ReleaseKey))
             checkForPoint = \found point -> case found of
               Just _  -> pure found
               Nothing -> do

@@ -159,7 +159,7 @@ sql_get_hash =
   \ WHERE header_hash = ?;"
 
 -- | Get epoch and slot by hash.
-getHash :: Sql.Connection -> HeaderHash -> IO (Maybe ((), EpocNoh, IndexSlot))
+getHash :: Sql.Connection -> HeaderHash -> IO (Maybe ((), EpochNo, IndexSlot))
 getHash conn hh@(AbstractHash digest) = do
   rows :: [(Word64, Int)]
     <- Sql.query conn sql_get_hash (Sql.Only (convert digest :: ByteString))

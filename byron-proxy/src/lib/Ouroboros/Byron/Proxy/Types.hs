@@ -34,8 +34,8 @@ import Data.Text (Text)
 import Numeric.Natural (Natural)
 
 import Pos.Binary.Class (decodeFull')
-import Pos.Chain.Block (Block, BlockHeader, GenesisBlock, HeaderHash,
-                        MainBlockHeader, getBlockHeader, headerHash)
+import Pos.Chain.Block (Block, BlockHeader, HeaderHash, MainBlockHeader,
+                        getBlockHeader, headerHash)
 import Pos.Chain.Delegation (ProxySKHeavy)
 import Pos.Chain.Ssc (MCCommitment (..), MCOpening (..), MCShares (..),
                       MCVssCertificate (..), getCertId)
@@ -59,7 +59,7 @@ import qualified Pos.Logic.Types as Logic
 
 import Ouroboros.Byron.Proxy.DB (DB)
 import qualified Ouroboros.Byron.Proxy.DB as DB
-import Ouroboros.Storage.ImmutableDB.API (Slot (..))
+import Ouroboros.Storage.ImmutableDB.API (SlotNo (..))
 
 -- | Definitions required in order to run the Byron proxy.
 data ByronProxyConfig = ByronProxyConfig
@@ -285,7 +285,7 @@ updateBestTipMaybe peer header = maybe bt (updateBestTip peer header)
 
 bbsStreamBlocks
   :: DB IO
-  -> (forall a . Slot -> Text -> IO a)
+  -> (forall a . SlotNo -> Text -> IO a)
   -- ^ If decoding fails.
   -> HeaderHash
   -> (ConduitT () Block IO () -> IO t)
@@ -315,7 +315,7 @@ bbsGetSerializedBlock db hh = bracket (DB.readFrom db (DB.FromHash hh)) DB.close
 
 bbsGetBlockHeader
   :: DB IO
-  -> (forall a . Slot -> Text -> IO a)
+  -> (forall a . SlotNo -> Text -> IO a)
   -> HeaderHash
   -> IO (Maybe BlockHeader)
 bbsGetBlockHeader db onErr hh = bbsStreamBlocks db onErr hh $ \conduit ->
@@ -335,7 +335,7 @@ bbsGetBlockHeader db onErr hh = bbsStreamBlocks db onErr hh $ \conduit ->
 -- The resulting list includes both endpoints.
 bbsGetHashesRange
   :: DB IO
-  -> (forall a . Slot -> Text -> IO a)
+  -> (forall a . SlotNo -> Text -> IO a)
   -> Maybe Word
   -> HeaderHash
   -> HeaderHash
@@ -376,7 +376,7 @@ bbsGetHashesRange db onErr mLimit from to = bbsStreamBlocks db onErr from $ \con
 -- in at the logic layer using getTip.
 bbsGetBlockHeaders
   :: DB IO
-  -> (forall a . Slot -> Text -> IO a)
+  -> (forall a . SlotNo -> Text -> IO a)
   -> Maybe Word
   -> NonEmpty HeaderHash
   -> Maybe HeaderHash -- ^ Optional endpoint.
@@ -410,7 +410,7 @@ bbsGetBlockHeaders db onErr mLimit checkpoints mTip = do
 -- we find a hash which does not match the corresponding one in the input list.
 bbsGetLcaMainChain
   :: DB IO
-  -> (forall a . Slot -> Text -> IO a)
+  -> (forall a . SlotNo -> Text -> IO a)
   -> OldestFirst [] HeaderHash
   -> IO (NewestFirst [] HeaderHash, OldestFirst [] HeaderHash)
 bbsGetLcaMainChain db onErr (OldestFirst otherChain) = case otherChain of
@@ -434,7 +434,7 @@ bbsGetLcaMainChain db onErr (OldestFirst otherChain) = case otherChain of
                   else pure (NewestFirst acc, OldestFirst (hh : otherChain))
 
 data BlockDecodeError where
-  MalformedBlock :: !Slot -> !Text -> BlockDecodeError
+  MalformedBlock :: !SlotNo -> !Text -> BlockDecodeError
   deriving (Show, Eq)
 
 instance Exception BlockDecodeError
@@ -497,7 +497,7 @@ withByronProxy bpc db k =
           sendAtomToByron diffusion atom
           sendingThread diffusion
 
-        blockDecodeError :: forall x . Slot -> Text -> IO x
+        blockDecodeError :: forall x . SlotNo -> Text -> IO x
         blockDecodeError slot text = throwIO $ MalformedBlock slot text
 
         mkLogic = \_diffusion -> Logic

@@ -298,9 +298,9 @@ openDB_NoSerialiseConstraint
   -> (Maybe hash -> Encoding)
   -> HasFS m h
   -> ErrorHandling ImmutableDBError m
-  -> (Epoch -> m EpochSize)
+  -> (EpochNo -> m EpochSize)
   -> ValidationPolicy
-  -> EpochFileParser e hash m (Word, Slot)
+  -> EpochFileParser e hash m (Word, SlotNo)
   -> m (ImmutableDB hash m)
 openDB_NoSerialiseConstraint = openDBImpl
 

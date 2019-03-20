@@ -74,7 +74,7 @@ epochFileParser epochSlots hasFS =
 -- | The slot number relative to genesis of a block header.
 -- EBBs get `epoch * slots_in_epoch`, so they share a slot with the first block
 -- of that epoch. This includes the actual genesis block (at 0).
-blockHeaderSlot :: CSL.SlotCount -> CSL.BlockHeader -> Slot
+blockHeaderSlot :: CSL.SlotCount -> CSL.BlockHeader -> SlotNo
 blockHeaderSlot epochSlots blkHeader = case blkHeader of
   CSL.BlockHeaderMain mBlkHeader -> mBlkHeader ^.
       CSL.gbhConsensus
@@ -104,13 +104,13 @@ newtype Iterator m = Iterator
 
 data Next m where
   Done      :: Next m
-  NextBlock :: Slot                   -> ByteString -> Iterator m -> Next m
+  NextBlock :: SlotNo                   -> ByteString -> Iterator m -> Next m
   -- | For EBBs, the `Slot` is the same as the first block of that epoch.
-  NextEBB   :: Slot -> CSL.HeaderHash -> ByteString -> Iterator m -> Next m
+  NextEBB   :: SlotNo -> CSL.HeaderHash -> ByteString -> Iterator m -> Next m
 
 data DBRead where
-  ReadEBB   :: Slot -> CSL.HeaderHash -> ByteString -> DBRead
-  ReadBlock :: Slot ->                   ByteString -> DBRead
+  ReadEBB   :: SlotNo -> CSL.HeaderHash -> ByteString -> DBRead
+  ReadBlock :: SlotNo ->                   ByteString -> DBRead
 
 dbBytes :: DBRead -> ByteString
 dbBytes term = case term of
@@ -119,8 +119,8 @@ dbBytes term = case term of
 
 data Tip where
   TipGenesis :: Tip
-  TipEBB     :: Slot -> CSL.HeaderHash -> ByteString -> Tip
-  TipBlock   :: Slot                   -> ByteString -> Tip
+  TipEBB     :: SlotNo -> CSL.HeaderHash -> ByteString -> Tip
+  TipBlock   :: SlotNo                   -> ByteString -> Tip
 
 -- | Make an `Iterator` from an `ImmutableDB` `Iterator`.
 fromImmutableDBIterator
@@ -135,7 +135,7 @@ fromImmutableDBIterator epochSlots idbIterator = Iterator $ do
     Immutable.IteratorResult    slot       bytes -> pure $ NextBlock slot      bytes recurse
     Immutable.IteratorEBB       epoch hash bytes -> pure $ NextEBB   slot hash bytes recurse
       where
-      slot = fromIntegral (epochSlots * fromIntegral epoch)
+      slot = SlotNo $ fromIntegral epochSlots * unEpochNo epoch
   where
   -- The `ImmutableDB` `Iterator` is 100% effectful; getting its "tail" is
   -- just the very same recursive call.
@@ -250,8 +250,8 @@ dbAppendImpl err epochSlots iwrite idb = DBAppend $ \cslBlock ->
           Immutable.appendEBB idb epoch hash builder
         Right blk -> do
           let hash = CSL.headerHash blk
-              (epoch, Slot wslot) = blockEpochAndRelativeSlot blk
-              slot = Slot (fromIntegral epoch * fromIntegral epochSlots + wslot)
+              (epoch, SlotNo wslot) = blockEpochAndRelativeSlot blk
+              slot = SlotNo $ unEpochNo epoch * fromIntegral epochSlots + wslot
           Index.updateTip iwrite hash epoch (Index.RealSlot wslot)
           Immutable.appendBinaryBlob idb slot builder
 
@@ -288,7 +288,7 @@ readFromImpl err epochSlots idx idb point = case point of
         let slot = indexToSlot epochSlots epoch indexSlot
         in  iteratorFromSlot (Just (slot, hash))
   where
-  iteratorFromSlot :: Maybe (Slot, CSL.HeaderHash) -> m (IteratorResource m)
+  iteratorFromSlot :: Maybe (SlotNo, CSL.HeaderHash) -> m (IteratorResource m)
   iteratorFromSlot mStartPoint = do
     idbIterator <- Immutable.streamBinaryBlobs idb mStartPoint Nothing
     pure $ IteratorResource
@@ -325,7 +325,7 @@ readTipImpl err epochSlots idx idb = do
         Nothing -> error "ImmutableDB bug ebb"
         Just (hash, bytes) -> pure $ TipEBB slot hash bytes
           where
-          slot = fromIntegral (epochSlots * fromIntegral epoch)
+          slot = SlotNo $ fromIntegral epochSlots * unEpochNo epoch
     Immutable.TipBlock slot -> do
       mItem <- Immutable.getBinaryBlob idb slot
       case mItem of
@@ -341,7 +341,7 @@ ebbEpoch ebb = ebb ^.
   . CSL.gcdEpoch
   . Lens.to (EpochNo . fromIntegral . CSL.getEpochIndex)
 
-blockEpochAndRelativeSlot :: CSL.MainBlock -> (Epoch, SlotNo)
+blockEpochAndRelativeSlot :: CSL.MainBlock -> (EpochNo, SlotNo)
 blockEpochAndRelativeSlot blk = blk ^.
     CSL.gbHeader
   . CSL.gbhConsensus
