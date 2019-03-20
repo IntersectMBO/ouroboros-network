@@ -137,7 +137,7 @@ chainSyncServerExample recvMsgDoneClient chainvar = ChainSyncServer $
       ServerStIdle {
         recvMsgRequestNext   = handleRequestNext r,
         recvMsgFindIntersect = handleFindIntersect r,
-        recvMsgDoneClient
+        recvMsgDoneClient    = pure recvMsgDoneClient
       }
 
     idle' :: ReaderId -> ChainSyncServer header (Point header) m a
