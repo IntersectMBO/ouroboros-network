@@ -2,11 +2,12 @@
 ; ! allMessages is NOT a valid wire format !
 
 allMessages
-    = chainSyncMessage
-    / reqRespMessage
-    / pingPongMessage
-    / blockFetchMessage
-    / txSubmissionMessage
+    = [0,chainSyncMessage]
+    / [1,reqRespMessage]
+    / [2,pingPongMessage]
+    / [3,blockFetchMessage]
+    / [4,txSubmissionMessage]
+    / [5,muxControlMessage]
 
 ; Chain Sync Protocol
 ; reference implementation of the codec in
@@ -104,3 +105,13 @@ txSubmissionMsgDone = [4]
 
 txHash        = bytes .cbor any
 transaction   = bytes .cbor any
+
+; MuxControl Protocol
+; reference implementation of the codec in
+; ouroboros-network/src/Ouroboros/Network/Mux/Control.hs
+
+muxControlMessage = msgInitReq / msgInitRsp / msgInitFail
+
+msgInitReq  = [0] ; ToDo
+msgInitRsp  = [1]
+msgInitFail = [2]
