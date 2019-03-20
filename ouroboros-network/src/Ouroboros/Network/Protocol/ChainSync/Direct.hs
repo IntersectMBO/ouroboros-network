@@ -52,5 +52,6 @@ direct_  ServerStIdle{recvMsgFindIntersect}
         direct server' (recvMsgIntersectUnchanged pHead)
 
 direct_ ServerStIdle{recvMsgDoneClient}
-       (Client.SendMsgDone clientDone) =
-    return (recvMsgDoneClient, clientDone)
+       (Client.SendMsgDone clientDone) = do
+    msgDoneClient <- recvMsgDoneClient
+    return (msgDoneClient, clientDone)
