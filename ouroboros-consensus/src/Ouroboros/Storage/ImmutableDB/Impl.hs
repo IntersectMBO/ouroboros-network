@@ -136,11 +136,15 @@
 -- unfilled.
 module Ouroboros.Storage.ImmutableDB.Impl
   ( openDB
+  , openDB_NoSerialiseConstraint
   ) where
 
 import           Prelude hiding (truncate)
 
-import           Codec.Serialise (Serialise, deserialiseOrFail)
+import           Codec.CBOR.Decoding (Decoder)
+import           Codec.CBOR.Encoding (Encoding)
+import           Codec.CBOR.Read (deserialiseFromBytes)
+import           Codec.Serialise (Serialise, decode, encode)
 import           Control.Exception (assert)
 import           Control.Monad (forM_, replicateM_, when)
 import           Control.Monad.Class.MonadSTM (MonadSTM (..))
@@ -189,6 +193,8 @@ data ImmutableDBEnv m hash = forall h e. ImmutableDBEnv
     , _dbErr             :: !(ErrorHandling ImmutableDBError m)
     , _dbInternalState   :: !(TMVar m (Either (ClosedState m) (OpenState m hash h)))
     , _dbEpochFileParser :: !(EpochFileParser e hash m (Word, SlotNo))
+    , _dbHashDecoder     :: !(forall s . Decoder s (Maybe hash))
+    , _dbHashEncoder     :: !(Maybe hash -> Encoding)
     }
 
 -- | Internal state when the database is open.
@@ -270,6 +276,13 @@ instance Ord TipEpochSlot where
 -- there is of course no block after the last one.
 --
 -- __Note__: To be used in conjunction with 'withDB'.
+--
+-- NB: the `Serialise hash` constraint implies `Serialise (Maybe hash)` by
+-- way of the instance defined alongside the class in `serialise`. It's the
+-- `Maybe hash` instance which is actually used. You have no reasonable way to
+-- control what this encoding is... because typeclasses...
+-- You may want to use `openDB_NoSerialiseConstraint` instead, where you can
+-- give your own decoder and encoding.
 openDB :: (HasCallStack, MonadSTM m, MonadCatch m, Serialise hash, Eq hash)
        => HasFS m h
        -> ErrorHandling ImmutableDBError m
@@ -277,13 +290,26 @@ openDB :: (HasCallStack, MonadSTM m, MonadCatch m, Serialise hash, Eq hash)
        -> ValidationPolicy
        -> EpochFileParser e hash m (Word, SlotNo)
        -> m (ImmutableDB hash m)
-openDB = openDBImpl
+openDB = openDBImpl decode encode
+
+openDB_NoSerialiseConstraint
+  :: (HasCallStack, MonadSTM m, MonadCatch m, Eq hash)
+  => (forall s . Decoder s (Maybe hash))
+  -> (Maybe hash -> Encoding)
+  -> HasFS m h
+  -> ErrorHandling ImmutableDBError m
+  -> (Epoch -> m EpochSize)
+  -> ValidationPolicy
+  -> EpochFileParser e hash m (Word, Slot)
+  -> m (ImmutableDB hash m)
+openDB_NoSerialiseConstraint = openDBImpl
+
 
 {------------------------------------------------------------------------------
   ImmutableDB Implementation
 ------------------------------------------------------------------------------}
 
-mkDBRecord :: (MonadSTM m, MonadCatch m, Serialise hash, Eq hash)
+mkDBRecord :: (MonadSTM m, MonadCatch m, Eq hash)
            => ImmutableDBEnv m hash
            -> ImmutableDB hash m
 mkDBRecord dbEnv = ImmutableDB
@@ -301,23 +327,25 @@ mkDBRecord dbEnv = ImmutableDB
     }
 
 openDBImpl :: forall m h hash e.
-              (HasCallStack, MonadSTM m, MonadCatch m, Serialise hash, Eq hash)
-           => HasFS m h
+              (HasCallStack, MonadSTM m, MonadCatch m, Eq hash)
+           => (forall s . Decoder s (Maybe hash))
+           -> (Maybe hash -> Encoding)
+           -> HasFS m h
            -> ErrorHandling ImmutableDBError m
            -> (EpochNo -> m EpochSize)
            -> ValidationPolicy
            -> EpochFileParser e hash m (Word, SlotNo)
            -> m (ImmutableDB hash m)
-openDBImpl hasFS@HasFS{..} err getEpochSize valPol epochFileParser = do
+openDBImpl hashDecoder hashEncoder hasFS@HasFS{..} err getEpochSize valPol epochFileParser = do
     firstEpochSize <- getEpochSize 0
     let ces0 = CES.singleton firstEpochSize
 
-    !ost  <- validateAndReopen hasFS err getEpochSize valPol epochFileParser
-      ces0 initialIteratorID
+    !ost  <- validateAndReopen hashDecoder hashEncoder hasFS err getEpochSize
+      valPol epochFileParser ces0 initialIteratorID
 
     stVar <- atomically $ newTMVar (Right ost)
 
-    let dbEnv = ImmutableDBEnv hasFS err stVar epochFileParser
+    let dbEnv = ImmutableDBEnv hasFS err stVar epochFileParser hashDecoder hashEncoder
         db    = mkDBRecord dbEnv
     return db
 
@@ -344,7 +372,7 @@ isOpenImpl ImmutableDBEnv {..} =
     isRight <$> atomically (readTMVar _dbInternalState)
 
 reopenImpl :: forall m hash.
-              (HasCallStack, MonadSTM m, MonadThrow m, Eq hash, Serialise hash)
+              (HasCallStack, MonadSTM m, MonadThrow m, Eq hash)
            => ImmutableDBEnv m hash
            -> ValidationPolicy
            -> m ()
@@ -363,9 +391,9 @@ reopenImpl ImmutableDBEnv {..} valPol = do
         onException hasFsErr _dbErr
           (atomically $ putTMVar _dbInternalState internalState) $ do
 
-            !ost  <- validateAndReopen _dbHasFS _dbErr _closedGetEpochSize
-              valPol _dbEpochFileParser _closedCumulEpochSizes
-              _closedNextIteratorID
+            !ost  <- validateAndReopen _dbHashDecoder _dbHashEncoder _dbHasFS
+              _dbErr _closedGetEpochSize valPol _dbEpochFileParser
+              _closedCumulEpochSizes _closedNextIteratorID
 
             atomically $ putTMVar _dbInternalState (Right ost)
   where
@@ -373,7 +401,7 @@ reopenImpl ImmutableDBEnv {..} valPol = do
 
 -- TODO close all iterators
 deleteAfterImpl :: forall m hash.
-                   (HasCallStack, MonadSTM m, MonadCatch m, Serialise hash)
+                   (HasCallStack, MonadSTM m, MonadCatch m)
                 => ImmutableDBEnv m hash
                 -> Tip
                 -> m ()
@@ -472,7 +500,7 @@ deleteAfterImpl dbEnv tip = modifyOpenState dbEnv $ \hasFS@HasFS{..} -> do
           | epoch == _currentEpoch
           = return $ indexFromSlotOffsets _currentEpochOffsets _currentEBBHash
           | otherwise
-          = loadIndex hasFS _dbErr epoch (succ (epochSizeInThePast ces epoch))
+          = loadIndex (_dbHashDecoder dbEnv) hasFS _dbErr epoch (succ (epochSizeInThePast ces epoch))
 
         -- | Remove the index file of the given epoch, if it exists.
         removeIndex :: EpochNo -> m ()
@@ -496,7 +524,7 @@ getTipImpl dbEnv = do
     return _currentTip
 
 getBinaryBlobImpl
-  :: forall m hash. (HasCallStack, MonadSTM m, MonadCatch m, Serialise hash)
+  :: forall m hash. (HasCallStack, MonadSTM m, MonadCatch m)
   => ImmutableDBEnv m hash
   -> SlotNo
   -> m (Maybe ByteString)
@@ -517,12 +545,12 @@ getBinaryBlobImpl dbEnv slot = withOpenState dbEnv $ \_dbHasFS st@OpenState{..} 
       throwUserError _dbErr $ ReadFutureSlotError slot _currentTip
 
     let epochSlot = slotInThePastToEpochSlot _cumulEpochSizes slot
-    snd <$> getEpochSlot _dbHasFS st _dbErr epochSlot
+    snd <$> getEpochSlot _dbHasFS (_dbHashDecoder dbEnv) st _dbErr epochSlot
   where
     ImmutableDBEnv { _dbErr } = dbEnv
 
 getEBBImpl
-  :: forall m hash. (HasCallStack, MonadSTM m, MonadCatch m, Serialise hash)
+  :: forall m hash. (HasCallStack, MonadSTM m, MonadCatch m)
   => ImmutableDBEnv m hash
   -> EpochNo
   -> m (Maybe (hash, ByteString))
@@ -535,20 +563,21 @@ getEBBImpl dbEnv epoch = withOpenState dbEnv $ \_dbHasFS st@OpenState{..} -> do
     when inTheFuture $
       throwUserError _dbErr $ ReadFutureEBBError epoch _currentEpoch
 
-    (mbEBBHash, mbBlob) <- getEpochSlot _dbHasFS st _dbErr (EpochSlot epoch 0)
+    (mbEBBHash, mbBlob) <- getEpochSlot _dbHasFS (_dbHashDecoder dbEnv) st _dbErr (EpochSlot epoch 0)
     return $ (,) <$> mbEBBHash <*> mbBlob
   where
     ImmutableDBEnv { _dbErr } = dbEnv
 
 -- Preconditions: the given 'EpochSlot' is in the past.
 getEpochSlot
-  :: forall m hash h. (HasCallStack, MonadSTM m, MonadThrow m, Serialise hash)
+  :: forall m hash h. (HasCallStack, MonadSTM m, MonadThrow m)
   => HasFS m h
+  -> (forall s . Decoder s (Maybe hash))
   -> OpenState m hash h
   -> ErrorHandling ImmutableDBError m
   -> EpochSlot
   -> m (Maybe hash, Maybe ByteString)
-getEpochSlot _dbHasFS OpenState {..} _dbErr epochSlot = do
+getEpochSlot _dbHasFS hashDecoder OpenState {..} _dbErr epochSlot = do
     let epochFile = renderFile "epoch" epoch
         indexFile = renderFile "index" epoch
 
@@ -621,14 +650,14 @@ getEpochSlot _dbHasFS OpenState {..} _dbErr epochSlot = do
       TipBlock slot -> _relativeSlot $ slotInThePastToEpochSlot _cumulEpochSizes slot
 
     deserialiseHash :: HasCallStack => Builder -> m (Maybe hash)
-    deserialiseHash bld = case deserialiseOrFail (BS.toLazyByteString bld) of
-      Right hash -> return hash
-      Left df    -> throwUnexpectedError _dbErr $
+    deserialiseHash bld = case deserialiseFromBytes hashDecoder (BS.toLazyByteString bld) of
+      Right (_, hash) -> return hash
+      Left df         -> throwUnexpectedError _dbErr $
         DeserialisationError df callStack
 
 
 appendBinaryBlobImpl :: forall m hash.
-                        (HasCallStack, MonadSTM m, MonadCatch m, Serialise hash)
+                        (HasCallStack, MonadSTM m, MonadCatch m)
                      => ImmutableDBEnv m hash
                      -> SlotNo
                      -> Builder
@@ -656,7 +685,7 @@ appendBinaryBlobImpl dbEnv@ImmutableDBEnv{..} slot builder =
         let newEpochsToStart :: Int
             newEpochsToStart = fromIntegral . unEpochNo $ epoch - _currentEpoch
         -- Start as many new epochs as needed.
-        replicateM_ newEpochsToStart (startNewEpoch hasFS)
+        replicateM_ newEpochsToStart (startNewEpoch _dbHashEncoder hasFS)
 
       let initialEpoch = _currentEpoch
 
@@ -697,10 +726,11 @@ appendBinaryBlobImpl dbEnv@ImmutableDBEnv{..} slot builder =
         , _currentTip = TipBlock slot
         }
 
-startNewEpoch :: (HasCallStack, MonadSTM m, MonadCatch m, Serialise hash)
-              => HasFS m h
+startNewEpoch :: (HasCallStack, MonadSTM m, MonadCatch m)
+              => (Maybe hash -> Encoding)
+              -> HasFS m h
               -> StateT (OpenState m hash h) m ()
-startNewEpoch hasFS@HasFS{..} = do
+startNewEpoch hashEncoder hasFS@HasFS{..} = do
     OpenState {..} <- get
     -- We can close the epoch file
     lift $ hClose _currentEpochWriteHandle
@@ -744,7 +774,7 @@ startNewEpoch hasFS@HasFS{..} = do
         allOffsets = foldr NE.cons _currentEpochOffsets backfillOffsets
 
     -- Now write the offsets and the EBB hash to the index file
-    lift $ writeSlotOffsets hasFS _currentEpoch allOffsets _currentEBBHash
+    lift $ writeSlotOffsets hashEncoder hasFS _currentEpoch allOffsets _currentEBBHash
 
     st <- lift $ mkOpenStateNewEpoch hasFS (succ _currentEpoch) _getEpochSize
       _cumulEpochSizes _nextIteratorID _currentTip
@@ -752,7 +782,7 @@ startNewEpoch hasFS@HasFS{..} = do
     put st
 
 appendEBBImpl :: forall m hash.
-                 (HasCallStack, MonadSTM m, MonadCatch m, Serialise hash)
+                 (HasCallStack, MonadSTM m, MonadCatch m)
               => ImmutableDBEnv m hash
               -> EpochNo
               -> hash
@@ -779,7 +809,7 @@ appendEBBImpl dbEnv@ImmutableDBEnv{..} epoch hash builder =
       let newEpochsToStart :: Int
           newEpochsToStart = fromIntegral . unEpochNo $ epoch - _currentEpoch
       -- Start as many new epochs as needed.
-      replicateM_ newEpochsToStart (startNewEpoch hasFS)
+      replicateM_ newEpochsToStart (startNewEpoch _dbHashEncoder hasFS)
 
       -- We may have updated the state with 'startNewEpoch', so get the
       -- (possibly) updated state.
@@ -853,7 +883,7 @@ data IteratorState hash h = IteratorState
 
 streamBinaryBlobsImpl :: forall m hash.
                          (HasCallStack, MonadSTM m, MonadCatch m,
-                          Serialise hash, Eq hash)
+                          Eq hash)
                       => ImmutableDBEnv m hash
                       -> Maybe (SlotNo, hash)  -- ^ When to start streaming (inclusive).
                       -> Maybe (SlotNo, hash)  -- ^ When to stop streaming (inclusive).
@@ -902,7 +932,7 @@ streamBinaryBlobsImpl dbEnv mbStart mbEnd = withOpenState dbEnv $ \hasFS st -> d
               = return $ indexFromSlotOffsets _currentEpochOffsets
                   _currentEBBHash
               | otherwise
-              = loadIndex hasFS _dbErr epoch
+              = loadIndex (_dbHashDecoder dbEnv) hasFS _dbErr epoch
                   (succ (epochSizeInThePast ces epoch))
 
         startIndex <- openIndex startEpoch
@@ -1042,7 +1072,7 @@ streamBinaryBlobsImpl dbEnv mbStart mbEnd = withOpenState dbEnv $ \hasFS st -> d
 
 
 iteratorNextImpl :: forall m hash.
-                    (HasCallStack, MonadSTM m, MonadCatch m, Serialise hash,
+                    (HasCallStack, MonadSTM m, MonadCatch m,
                      Eq hash)
                  => ImmutableDBEnv m hash
                  -> IteratorHandle hash m
@@ -1140,7 +1170,7 @@ iteratorNextImpl dbEnv it@IteratorHandle {_it_hasFS = hasFS :: HasFS m h, ..} = 
         -- know that _epoch _it_end is <= _currentEpoch, so we know that epoch
         -- <= _currentEpoch.
         index <- case epoch == _currentEpoch of
-          False -> loadIndex hasFS (_dbErr dbEnv) epoch
+          False -> loadIndex (_dbHashDecoder dbEnv) hasFS (_dbErr dbEnv) epoch
             (succ (epochSizeInThePast _cumulEpochSizes epoch))
           True  -> return $
             indexFromSlotOffsets _currentEpochOffsets _currentEBBHash
@@ -1201,8 +1231,10 @@ onException fsErr err onErr m =
 -- | Perform validation as per the 'ValidationPolicy' using 'validate' and
 -- create an 'OpenState' corresponding to its outcome.
 validateAndReopen :: forall m hash h e.
-                     (HasCallStack, MonadThrow m, Eq hash, Serialise hash)
-                  => HasFS m h
+                     (HasCallStack, MonadThrow m, Eq hash)
+                  => (forall s . Decoder s (Maybe hash))
+                  -> (Maybe hash -> Encoding)
+                  -> HasFS m h
                   -> ErrorHandling ImmutableDBError m
                   -> (EpochNo -> m EpochSize)
                   -> ValidationPolicy
@@ -1210,10 +1242,10 @@ validateAndReopen :: forall m hash h e.
                   -> CumulEpochSizes
                   -> IteratorID
                   -> m (OpenState m hash h)
-validateAndReopen hasFS err getEpochSize valPol epochFileParser ces nextIteratorID = do
+validateAndReopen hashDecoder hashEncoder hasFS err getEpochSize valPol epochFileParser ces nextIteratorID = do
     (mbLastValidLocationAndIndex, ces') <-
       flip runStateT ces $
-      validate hasFS err getEpochSize valPol epochFileParser
+      validate hashDecoder hashEncoder hasFS err getEpochSize valPol epochFileParser
 
     case mbLastValidLocationAndIndex of
       Nothing ->
@@ -1573,8 +1605,10 @@ data ValidateResult hash
 --   but the last slot of each epoch is filled, we can reconstruct all index
 --   files from the epochs without needing any truncation.
 validate :: forall m hash h e.
-            (HasCallStack, MonadThrow m, Eq hash, Serialise hash)
-         => HasFS m h
+            (HasCallStack, MonadThrow m, Eq hash)
+         => (forall s . Decoder s (Maybe hash))
+         -> (Maybe hash -> Encoding)
+         -> HasFS m h
          -> ErrorHandling ImmutableDBError m
          -> (EpochNo -> m EpochSize)
          -> ValidationPolicy
@@ -1583,7 +1617,7 @@ validate :: forall m hash h e.
             -- ^ The 'EpochSlot' pointing at the last valid block or EBB on
             -- disk and the 'Index' of the corresponding epoch. 'Nothing' if
             -- the database is empty.
-validate hasFS@HasFS{..} err getEpochSize valPol epochFileParser = do
+validate hashDecoder hashEncoder hasFS@HasFS{..} err getEpochSize valPol epochFileParser = do
     filesInDBFolder <- lift $ listDirectory []
     let epochFiles = fst $ dbFilesOnDisk filesInDBFolder
     case Set.lookupMax epochFiles of
@@ -1788,7 +1822,7 @@ validate hasFS@HasFS{..} err getEpochSize valPol epochFileParser = do
               overwrite <- if indexFileExists
                 then do
                   indexFromFileOrError <- lift $ EH.try loadErr $
-                    loadIndex hasFS err epoch indexSize
+                    loadIndex hashDecoder hasFS err epoch indexSize
                   case indexFromFileOrError of
                     Left _              -> return True
                     Right indexFromFile ->
@@ -1796,12 +1830,12 @@ validate hasFS@HasFS{..} err getEpochSize valPol epochFileParser = do
                 else return True
               when overwrite $
                 -- TODO log
-                lift $ writeIndex hasFS epoch reconstructedIndex
+                lift $ writeIndex hashEncoder hasFS epoch reconstructedIndex
               return $ Complete reconstructedIndex
 
             | indexFileExists -> do
               indexFromFileOrError <- lift $ EH.try loadErr $
-                loadIndex hasFS err epoch indexSize
+                loadIndex hashDecoder hasFS err epoch indexSize
               case indexFromFileOrError of
                 Left _              -> return $ Incomplete reconstructedIndex
                 Right indexFromFile
