@@ -99,6 +99,7 @@ blockFetchClient FetchClientPolicy {
 
     -- And similarly if there are no pending pipelined results at all.
     senderIdle Zero [] = senderAwait Zero
+    --TODO: assert nothing in flight here
 
     -- We now do have some requests that we have accepted but have yet to
     -- actually send out. Lets send out the first one.
@@ -230,6 +231,9 @@ blockFetchClient FetchClientPolicy {
 
 
           (MsgBlock block, header:headers') -> ReceiverEffect $ do
+            --TODO: consider how to enforce expected block size limit.
+            -- They've lied and are sending us a massive amount of data.
+            -- Resource consumption attack.
 
 {-
             -- Now it's totally possible that the timeout already fired
@@ -248,6 +252,8 @@ blockFetchClient FetchClientPolicy {
 
                   peerFetchBlocksInFlight = blockPoint header
                                `Set.delete` peerFetchBlocksInFlight inflight
+                  --TODO: can assert here that we don't go negative, and the
+                  -- block we're deleting was in fact there.
                 }
 
               -- Now crucially, we don't want to end up below the in-flight low
@@ -272,6 +278,7 @@ blockFetchClient FetchClientPolicy {
             unless (blockPoint header == castPoint (blockPoint block)) $
               throwM BlockFetchProtocolFailureWrongBlock
 
+            -- This is moderately expensive.
             unless (blockMatchesHeader header block) $
               throwM BlockFetchProtocolFailureInvalidBody
 
