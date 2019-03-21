@@ -21,8 +21,8 @@ instance Arbitrary CumulEpochSizes where
   arbitrary =
     fromNonEmpty . NE.fromList . getNonEmpty . NonEmpty <$> listOf1 genLimitedEpochSize
   shrink ces =
-    [ fromNonEmpty . NE.fromList . getNonEmpty $ es'
-    | let es = NonEmpty $ toList ces
+    [ fromNonEmpty . NE.fromList . fmap getPositive . getNonEmpty $ es'
+    | let es = NonEmpty . fmap Positive $ toList ces
     , es' <- shrink es
     ]
 
