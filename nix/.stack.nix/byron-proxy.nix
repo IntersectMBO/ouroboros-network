@@ -81,4 +81,4 @@
           };
         };
       };
-    } // rec { src = (pkgs.lib).mkDefault .././../byron-proxy; }
+    } // rec { src = (pkgs.lib).mkDefault ../.././byron-proxy; }

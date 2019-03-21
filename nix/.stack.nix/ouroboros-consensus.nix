@@ -137,4 +137,4 @@
           };
         };
       };
-    } // rec { src = (pkgs.lib).mkDefault .././../ouroboros-consensus; }
+    } // rec { src = (pkgs.lib).mkDefault ../.././ouroboros-consensus; }

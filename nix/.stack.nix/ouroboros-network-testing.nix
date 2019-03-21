@@ -24,4 +24,4 @@
           ];
         };
       };
-    } // rec { src = (pkgs.lib).mkDefault .././../ouroboros-network-testing; }
+    } // rec { src = (pkgs.lib).mkDefault ../.././ouroboros-network-testing; }
