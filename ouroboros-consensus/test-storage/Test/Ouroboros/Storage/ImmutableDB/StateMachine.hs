@@ -66,6 +66,8 @@ import qualified Ouroboros.Consensus.Util.Classify as C
 
 import           Ouroboros.Network.Block (SlotNo (..))
 
+import           Ouroboros.Storage.Common hiding (Tip (..))
+import qualified Ouroboros.Storage.Common as C
 import           Ouroboros.Storage.FS.API (HasFS (..))
 import           Ouroboros.Storage.FS.API.Types (FsError (..), FsPath)
 import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
@@ -110,7 +112,7 @@ data Cmd it
   | IteratorNext      it
   | IteratorClose     it
   | Reopen            ValidationPolicy
-  | DeleteAfter       Tip
+  | DeleteAfter       ImmTip
   | Corruption        Corruption
   deriving (Generic, Show, Functor, Foldable, Traversable)
 
@@ -161,7 +163,7 @@ data Success it
   | EpochNo      EpochNo
   | Iter         it
   | IterResult   (IteratorResult Hash)
-  | Tip          Tip
+  | Tip          ImmTip
   deriving (Eq, Show, Functor, Foldable, Traversable)
 
 -- | Run the command against the given database.
@@ -475,7 +477,7 @@ generateCmd Model {..} = At <$> frequency
     lastSlot :: SlotNo
     lastSlot = fromIntegral $ length dbmChain
 
-    empty = dbmTip == TipGenesis
+    empty = dbmTip == C.TipGen
 
     noEBBs = Map.null dbmEBBs
 
@@ -517,9 +519,9 @@ generateCmd Model {..} = At <$> frequency
     genValPol = elements [ValidateMostRecentEpoch, ValidateAllEpochs]
 
     genTip = frequency
-      [ (1, return TipGenesis)
-      , (2, TipBlock <$> chooseSlot  (0, lastSlot + 3))
-      , (2, TipEBB   <$> chooseEpoch (0, currentEpoch + 3))
+      [ (1, return C.TipGen)
+      , (2, C.Tip . Right <$> chooseSlot  (0, lastSlot + 3))
+      , (2, C.Tip . Left  <$> chooseEpoch (0, currentEpoch + 3))
       ]
 
 -- | Return the files that the database with the given model would have
@@ -611,14 +613,14 @@ shrinkCmd Model {..} (At cmd) = fmap At $ case cmd of
     -- For simplicity, we only shrink to TipEBBs if the tip is an TipEBB,
     -- similarly for TipBlock. Otherwise we have to check whether a TipEBB is
     -- before or after a TipBlock.
-    shrinkTip TipGenesis =
-      map TipBlock [0..lastSlot] ++ map TipEBB [0..currentEpoch]
-    shrinkTip (TipBlock slot)
-      | slot > lastSlot = map TipBlock [lastSlot..slot - 1]
-      | otherwise       = map TipBlock [slot + 1..lastSlot]
-    shrinkTip (TipEBB epoch)
-      | epoch > currentEpoch = map TipEBB [currentEpoch..epoch - 1]
-      | otherwise            = map TipEBB [epoch + 1..currentEpoch]
+    shrinkTip C.TipGen =
+      map (C.Tip . Right) [0..lastSlot] ++ map (C.Tip . Left) [0..currentEpoch]
+    shrinkTip (C.Tip (Right slot))
+      | slot > lastSlot = map (C.Tip . Right) [lastSlot..slot - 1]
+      | otherwise       = map (C.Tip . Right) [slot + 1..lastSlot]
+    shrinkTip (C.Tip (Left epoch))
+      | epoch > currentEpoch = map (C.Tip . Left) [currentEpoch..epoch - 1]
+      | otherwise            = map (C.Tip . Left) [epoch + 1..currentEpoch]
 
 
 {-------------------------------------------------------------------------------
@@ -998,7 +1000,7 @@ instance ToExpr CumulEpochSizes
 instance ToExpr (IteratorResult Hash)
 instance ToExpr (IteratorModel Hash)
 instance ToExpr TestBlock
-instance ToExpr Tip
+instance ToExpr r => ToExpr (C.Tip r)
 instance ToExpr (DBModel Hash)
 
 instance ToExpr FsError where

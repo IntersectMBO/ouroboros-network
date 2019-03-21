@@ -42,6 +42,7 @@ import           Ouroboros.Consensus.Util (lastMaybe)
 
 import           Ouroboros.Network.Block (SlotNo (..))
 
+import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API.Types (FsPath)
 import           Ouroboros.Storage.ImmutableDB.API
 import           Ouroboros.Storage.ImmutableDB.CumulEpochSizes (CumulEpochSizes,
@@ -55,7 +56,7 @@ import           Test.Ouroboros.Storage.ImmutableDB.TestBlock
 data DBModel hash = DBModel
   { dbmChain           :: [Maybe ByteString]
     -- ^ 'Nothing' when a slot is empty
-  , dbmTip             :: Tip
+  , dbmTip             :: ImmTip
   , dbmEBBs            :: Map EpochNo (hash, ByteString)
     -- ^ The EBB for each 'EpochNo'
   , dbmCumulEpochSizes :: CumulEpochSizes
@@ -67,7 +68,7 @@ initDBModel :: EpochSize -- ^ The size of the first epoch
             -> DBModel hash
 initDBModel firstEpochSize = DBModel
   { dbmChain           = []
-  , dbmTip             = TipGenesis
+  , dbmTip             = TipGen
   , dbmEBBs            = Map.empty
   , dbmCumulEpochSizes = CES.singleton firstEpochSize
   , dbmIterators       = Map.empty
@@ -169,14 +170,14 @@ lookupBySlot (SlotNo i) = go i
 -- The user is responsible for giving a valid 'Tip', i.e. a tip that points to
 -- a filled slot or an existing EBB (Genesis is always valid). This function
 -- will not truncate to the last filled slot or EBB itself.
-rollBackToTip :: HasCallStack => Tip -> DBModel hash -> DBModel hash
+rollBackToTip :: HasCallStack => ImmTip -> DBModel hash -> DBModel hash
 rollBackToTip tip dbm@DBModel {..} = case tip of
-    TipGenesis    -> (initDBModel firstEpochSize)
+    TipGen    -> (initDBModel firstEpochSize)
         { dbmNextIterator = dbmNextIterator }
       where
         firstEpochSize = lookupEpochSize dbm 0
 
-    TipEBB epoch
+    Tip (Left epoch)
       | epoch > CES.lastEpoch dbmCumulEpochSizes -> dbm
       | otherwise                                -> dbm
         { dbmChain           = rolledBackChain
@@ -191,7 +192,7 @@ rollBackToTip tip dbm@DBModel {..} = case tip of
                         & takeWhile ((< firstSlotAfter) . fst)
                         & map snd
 
-    TipBlock slot
+    Tip (Right slot)
       | slot >= fromIntegral (length dbmChain) -> dbm
       | otherwise                              -> dbm
         { dbmChain           = rolledBackChain
@@ -231,25 +232,25 @@ filledEpochSlots dbm epoch = (lt, eq, gt)
 
 -- | List all 'Tip's that point to a filled slot or an existing EBB in the
 -- model, including 'TipGenesis'. The tips will be sorted from old to recent.
-tips :: DBModel hash -> NonEmpty Tip
-tips dbm = TipGenesis NE.:| tipsAfter dbm TipGenesis
+tips :: DBModel hash -> NonEmpty ImmTip
+tips dbm = TipGen NE.:| tipsAfter dbm TipGen
 
 -- | List all 'Tip's that point to a filled slot or an existing EBB in the
 -- model that are after the given 'Tip'. The tips will be sorted from old to
 -- recent.
-tipsAfter :: DBModel hash -> Tip -> [Tip]
+tipsAfter :: DBModel hash -> ImmTip -> [ImmTip]
 tipsAfter dbm tip = map toTip $ dropWhile isBeforeTip blobLocations
   where
     blobLocations :: [(EpochSlot, SlotNo)]
     blobLocations = Map.keys $ dbmBlobs dbm
     isBeforeTip :: (EpochSlot, SlotNo) -> Bool
     isBeforeTip (epochSlot, slot) = case tip of
-      TipGenesis     -> False
-      TipEBB epoch   -> epochSlot < EpochSlot epoch 0
-      TipBlock slot' -> slot      < slot'
-    toTip :: (EpochSlot, SlotNo) -> Tip
-    toTip (EpochSlot epoch 0, _)    = TipEBB epoch
-    toTip (_                , slot) = TipBlock slot
+      TipGen            -> False
+      Tip (Left epoch)  -> epochSlot < EpochSlot epoch 0
+      Tip (Right slot') -> slot      < slot'
+    toTip :: (EpochSlot, SlotNo) -> ImmTip
+    toTip (EpochSlot epoch 0, _)    = Tip (Left epoch)
+    toTip (_                , slot) = Tip (Right slot)
 
 
 {------------------------------------------------------------------------------
@@ -293,10 +294,10 @@ instance Ord RollBackPoint where
 
 rollBack :: RollBackPoint -> DBModel hash -> DBModel hash
 rollBack rbp dbm = case rbp of
-    DontRollBack                            ->                               dbm
-    RollBackToGenesis                       -> rollBackToTip TipGenesis      dbm
-    RollBackToEpochSlot (EpochSlot epoch 0) -> rollBackToTip (TipEBB epoch)  dbm
-    RollBackToEpochSlot epochSlot           -> rollBackToTip (TipBlock slot) dbm
+    DontRollBack                            ->                                  dbm
+    RollBackToGenesis                       -> rollBackToTip TipGen             dbm
+    RollBackToEpochSlot (EpochSlot epoch 0) -> rollBackToTip (Tip (Left epoch)) dbm
+    RollBackToEpochSlot epochSlot           -> rollBackToTip (Tip (Right slot)) dbm
       where
         slot = epochSlotToSlot dbm epochSlot
 
@@ -371,10 +372,10 @@ findIndexCorruptionRollBackPoint _corr epoch dbm
   ImmutableDB Implementation
 ------------------------------------------------------------------------------}
 
-getTipModel :: MonadState (DBModel hash) m => m Tip
+getTipModel :: MonadState (DBModel hash) m => m ImmTip
 getTipModel = gets dbmTip
 
-deleteAfterModel :: (HasCallStack, MonadState (DBModel hash) m) => Tip -> m ()
+deleteAfterModel :: (HasCallStack, MonadState (DBModel hash) m) => ImmTip -> m ()
 deleteAfterModel tip =
     -- First roll back to the given tip (which is not guaranteed to be
     -- valid/exist!), then roll back to the last valid remaining tip.
@@ -391,9 +392,9 @@ getBinaryBlobModel err slot = do
 
     -- Check that the slot is not in the future
     let inTheFuture = case dbmTip of
-          TipGenesis        -> True
-          TipBlock lastSlot -> slot > lastSlot
-          TipEBB _          -> slot >= fromIntegral (length dbmChain)
+          TipGen               -> True
+          Tip (Right lastSlot) -> slot > lastSlot
+          Tip (Left  _ebb)     -> slot >= fromIntegral (length dbmChain)
 
     when inTheFuture $
       throwUserError err $ ReadFutureSlotError slot dbmTip
@@ -408,9 +409,9 @@ getEBBModel err epoch = do
     DBModel {..} <- get
     let currentEpoch = CES.lastEpoch dbmCumulEpochSizes
         inTheFuture  = case dbmTip of
-          TipGenesis -> True
-          TipBlock _ -> epoch > currentEpoch
-          TipEBB _   -> epoch > currentEpoch
+          TipGen        -> True
+          Tip (Right _) -> epoch > currentEpoch
+          Tip (Left _)  -> epoch > currentEpoch
 
     when inTheFuture $
       throwUserError err $ ReadFutureEBBError epoch currentEpoch
@@ -428,9 +429,9 @@ appendBinaryBlobModel err getEpochSize slot bld = do
 
     -- Check that we're not appending to the past
     let inThePast = case dbmTip of
-          TipBlock lastSlot -> slot <= lastSlot
-          TipEBB _          -> slot < fromIntegral (length dbmChain)
-          TipGenesis        -> False
+          Tip (Right lastSlot) -> slot <= lastSlot
+          Tip (Left _)         -> slot < fromIntegral (length dbmChain)
+          TipGen               -> False
 
     when inThePast $
       throwUserError err $ AppendToSlotInThePastError slot dbmTip
@@ -442,7 +443,7 @@ appendBinaryBlobModel err getEpochSize slot bld = do
     -- TODO snoc list?
     put dbm
       { dbmChain           = dbmChain ++ replicate toPad Nothing ++ [Just blob]
-      , dbmTip             = TipBlock slot
+      , dbmTip             = Tip (Right slot)
       , dbmCumulEpochSizes = ces'
       }
   where
@@ -472,10 +473,10 @@ appendEBBModel err getEpochSize epoch hash bld = do
     let inThePast = case dbmTip of
           -- There is already a block in this epoch, so the EBB can no
           -- longer be appended in this epoch
-          TipBlock _ -> epoch <= currentEpoch
+          Tip (Right _) -> epoch <= currentEpoch
           -- There is already an EBB in this epoch
-          TipEBB _   -> epoch <= currentEpoch
-          TipGenesis -> False
+          Tip (Left _)  -> epoch <= currentEpoch
+          TipGen        -> False
 
     when inThePast $
       throwUserError err $ AppendToEBBInThePastError epoch currentEpoch
@@ -487,7 +488,7 @@ appendEBBModel err getEpochSize epoch hash bld = do
 
     put dbm
       { dbmChain           = dbmChain ++ replicate toPad Nothing
-      , dbmTip             = TipEBB epoch
+      , dbmTip             = Tip (Left epoch)
       , dbmCumulEpochSizes = ces'
       , dbmEBBs            = Map.insert epoch (hash, blob) dbmEBBs
       }

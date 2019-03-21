@@ -11,10 +11,11 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 import           Ouroboros.Network.Block (SlotNo (..))
 
+import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.ImmutableDB.CumulEpochSizes
-import           Ouroboros.Storage.ImmutableDB.Types
 
-import           Test.Util.Orphans.Arbitrary (genSmallEpochNo, genLimitedEpochSize)
+import           Test.Util.Orphans.Arbitrary (genLimitedEpochSize,
+                     genSmallEpochNo)
 
 
 instance Arbitrary CumulEpochSizes where

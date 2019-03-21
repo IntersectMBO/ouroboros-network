@@ -71,8 +71,7 @@ import           GHC.Generics (Generic)
 
 import           Ouroboros.Network.Block (SlotNo (..))
 
-import           Ouroboros.Storage.ImmutableDB.Types (EpochNo (..),
-                     EpochSize (EpochSize))
+import           Ouroboros.Storage.Common
 
 
 {------------------------------------------------------------------------------

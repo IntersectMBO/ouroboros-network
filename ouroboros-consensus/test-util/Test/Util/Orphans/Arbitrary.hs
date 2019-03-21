@@ -15,6 +15,8 @@ import           Data.Time
 import           Data.Word (Word64)
 import           Test.QuickCheck hiding (Fixed (..))
 
+import           Ouroboros.Network.Block (SlotNo (..))
+
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Crypto.DSIGN.Class (DSIGNAlgorithm (..))
 import           Ouroboros.Consensus.Crypto.Hash.Class (Hash,
@@ -25,8 +27,8 @@ import           Ouroboros.Consensus.Util.Random (Seed (..), withSeed)
 
 import           Ouroboros.Storage.ImmutableDB.CumulEpochSizes (EpochSlot (..),
                      RelativeSlot (..))
-import           Ouroboros.Storage.ImmutableDB.Types (EpochNo (..),
-                     EpochSize (..), SlotNo (..))
+import           Ouroboros.Storage.Common (EpochNo (..),
+                     EpochSize (..))
 
 
 minNumCoreNodes, minNumSlots :: Int

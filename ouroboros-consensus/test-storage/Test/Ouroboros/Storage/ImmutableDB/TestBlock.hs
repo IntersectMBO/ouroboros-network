@@ -47,6 +47,7 @@ import qualified Test.StateMachine.Utils as QSM
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
+import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API (HasFS (..), withFile)
 import           Ouroboros.Storage.FS.API.Types (FsPath)
 import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock

@@ -260,7 +260,7 @@ knownLimitation model (At cmd) = case cmd of
     ReOpen -> Bot
     AskIfMember bids -> exists ((\b -> isLimitation (latestGarbaged $ dbModel model) (toSlot b)) <$> bids) Boolean
     where
-        isLimitation :: (Show slot, Ord slot) => Maybe slot -> slot -> Bool
+        isLimitation :: (Ord slot) => Maybe slot -> slot -> Bool
         isLimitation Nothing _sl       = False
         isLimitation (Just slot') slot = slot' >  slot
 

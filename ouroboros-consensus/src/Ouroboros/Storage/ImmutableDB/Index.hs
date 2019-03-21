@@ -54,8 +54,8 @@ import           Ouroboros.Storage.FS.API (HasFS (..), withFile)
 import           Ouroboros.Storage.ImmutableDB.CumulEpochSizes
                      (RelativeSlot (..))
 
-import           Ouroboros.Storage.ImmutableDB.Types (EpochNo, EpochSize,
-                     ImmutableDBError, SlotOffset,
+import           Ouroboros.Storage.Common
+import           Ouroboros.Storage.ImmutableDB.Types (ImmutableDBError,
                      UnexpectedError (DeserialisationError, InvalidFileError))
 import           Ouroboros.Storage.ImmutableDB.Util (readAll, renderFile,
                      throwUnexpectedError)

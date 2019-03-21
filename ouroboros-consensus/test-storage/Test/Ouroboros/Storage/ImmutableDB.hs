@@ -34,6 +34,7 @@ import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.HUnit
 import           Test.Tasty.QuickCheck (testProperty)
 
+import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.FS.Sim.FsTree (FsTree (..))
@@ -132,7 +133,7 @@ test_ReadFutureSlotErrorEquivalence =
 
 test_openDBEmptyIndexFileEquivalence :: Assertion
 test_openDBEmptyIndexFileEquivalence =
-    apiEquivalenceImmDB (expectImmDBResult (@?= TipGenesis)) $ \hasFS@HasFS{..} err -> do
+    apiEquivalenceImmDB (expectImmDBResult (@?= TipGen)) $ \hasFS@HasFS{..} err -> do
       -- Create an empty index file
       h1 <- hOpen ["epoch-000.dat"] IO.WriteMode
       h2 <- hOpen ["index-000.dat"] IO.WriteMode
@@ -143,7 +144,7 @@ test_openDBEmptyIndexFileEquivalence =
 
 test_reopenDBEquivalence :: Assertion
 test_reopenDBEquivalence =
-    apiEquivalenceImmDB (expectImmDBResult (@?= TipBlock 5)) $ \hasFS err -> do
+    apiEquivalenceImmDB (expectImmDBResult (@?= Tip (Right 5))) $ \hasFS err -> do
       withTestDB hasFS err $ \db ->
         appendBinaryBlob db 5 (testBlockToBuilder (TestBlock 5))
       withTestDB hasFS err $ \db ->

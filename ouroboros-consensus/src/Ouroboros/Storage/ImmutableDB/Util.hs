@@ -42,6 +42,7 @@ import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.CBOR (ReadIncrementalErr (..),
                      readIncrementalOffsetsEBB)
 
+import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.ImmutableDB.CumulEpochSizes (CumulEpochSizes,
@@ -148,7 +149,7 @@ validateIteratorRange
   :: Monad m
   => ErrorHandling ImmutableDBError m
   -> CumulEpochSizes
-  -> Tip
+  -> ImmTip
   -> Maybe (SlotNo, hash)  -- ^ range start (inclusive)
   -> Maybe (SlotNo, hash)  -- ^ range end (inclusive)
   -> m ()
@@ -168,9 +169,9 @@ validateIteratorRange err ces tip mbStart mbEnd = do
         throwUserError err $ ReadFutureSlotError end tip
   where
     isNewerThanTip slot = case tip of
-      TipGenesis           -> True
-      TipEBB     lastEpoch -> maybe True (slot >) $ CES.firstSlotOf ces lastEpoch
-      TipBlock   lastSlot  -> slot > lastSlot
+      TipGen                -> True
+      Tip (Left  lastEpoch) -> maybe True (slot >) $ CES.firstSlotOf ces lastEpoch
+      Tip (Right lastSlot)  -> slot > lastSlot
 
 
 -- | Given a list of increasing 'SlotOffset's together with the 'Word' (blob
