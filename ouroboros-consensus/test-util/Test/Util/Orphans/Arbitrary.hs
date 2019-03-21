@@ -90,9 +90,11 @@ genSmallSlotNo =
 
 -- | The tests for 'CumulEpochSizes' requires that the sum of a list of these
 -- values does not overflow.
+--
+-- An epoch size must be > 0.
 genLimitedEpochSize :: Gen EpochSize
 genLimitedEpochSize =
-    EpochSize <$> choose (0, 100_000)
+    EpochSize <$> choose (1, 100_000)
 
 genSmallEpochNo :: Gen EpochNo
 genSmallEpochNo =

@@ -17,6 +17,7 @@ module Test.Ouroboros.Storage.FS.Sim.Error
     -- * Streams
   , Stream(..)
   , mkStream
+  , null
   , runStream
   , always
   , mkStreamGen
@@ -26,10 +27,13 @@ module Test.Ouroboros.Storage.FS.Sim.Error
   , corrupt
     -- * Error streams for 'HasFS'
   , Errors(..)
+  , allNull
   , simpleErrors
     -- * Testing examples
   , mockErrorDemo
   ) where
+
+import           Prelude hiding (null)
 
 import           Control.Monad (replicateM, void)
 import           Control.Monad.Class.MonadSTM (MonadSTM (..))
@@ -113,6 +117,14 @@ mkStreamGen justLikelihood genA =
       [ (2, return Nothing)
       , (justLikelihood, Just <$> genA)
       ]
+
+-- | Return 'True' if the stream is empty.
+--
+-- A stream consisting of only 'Nothing's (even if it is only one) is not
+-- considered to be empty.
+null :: Stream a -> Bool
+null (Stream []) = True
+null _           = False
 
 -- | An 'ErrorStream' is a possibly infinite 'Stream' of (@Maybe@)
 -- @'FsErrorType'@s.
@@ -210,6 +222,24 @@ data Errors = Errors
   , _doesFileExist            :: ErrorStream
   , _removeFile               :: ErrorStream
   }
+
+-- | Return 'True' if all streams are empty ('null').
+allNull :: Errors -> Bool
+allNull Errors {..} = null _dumpState
+                   && null _hOpen
+                   && null _hClose
+                   && null _hSeek
+                   && null _hGet
+                   && null _hPut
+                   && null _hTruncate
+                   && null _hGetSize
+                   && null _createDirectory
+                   && null _createDirectoryIfMissing
+                   && null _listDirectory
+                   && null _doesDirectoryExist
+                   && null _doesFileExist
+                   && null _removeFile
+
 
 instance Show Errors where
   show Errors {..} =
@@ -321,7 +351,7 @@ instance Arbitrary Errors where
       , FsResourceDoesNotExist, FsResourceInappropriateType ]
     return Errors {..}
 
-  shrink err@Errors {..} = catMaybes
+  shrink err@Errors {..} = filter (not . allNull) $ catMaybes
       [ (\s' -> err { _dumpState = s' })                <$> dropLast _dumpState
       , (\s' -> err { _hOpen = s' })                    <$> dropLast _hOpen
       , (\s' -> err { _hClose = s' })                   <$> dropLast _hClose

@@ -53,7 +53,7 @@ data ServerStIdle header point m a = ServerStIdle {
        recvMsgFindIntersect :: [point]
                             -> m (ServerStIntersect header point m a),
 
-       recvMsgDoneClient :: a
+       recvMsgDoneClient :: m a
      }
 
 -- | In the 'StNext' protocol state, the server has agency and must send either:
@@ -113,7 +113,7 @@ chainSyncServerPeer (ChainSyncServer mterm) = Effect $ mterm >>=
         resp <- recvMsgFindIntersect points
         pure $ handleStIntersect resp 
 
-      MsgDone -> Done TokDone recvMsgDoneClient
+      MsgDone -> Effect $ fmap (Done TokDone) recvMsgDoneClient
 
   where
     handleStNext toknextkind (SendMsgRollForward  header pHead next) =

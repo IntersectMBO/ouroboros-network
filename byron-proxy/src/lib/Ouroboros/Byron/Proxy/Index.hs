@@ -4,7 +4,6 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE StandaloneDeriving #-}
 
--- TODO move to Ouroboros.Byron.DB.Index
 module Ouroboros.Byron.Proxy.Index where
 
 import Control.Exception (Exception, throwIO)
@@ -24,7 +23,7 @@ import Ouroboros.Storage.ImmutableDB.Types
 -- | A point to read from the index. Looking up the tip gives its own hash,
 -- looking up anything by hash (could happen to be the tip) gives the hash
 -- of its child (nothing iff it's the tip).
-data IndexPoint next where
+data IndexPoint t where
   Tip    :: IndexPoint HeaderHash
   ByHash :: HeaderHash -> IndexPoint ()
 
@@ -159,6 +158,7 @@ sql_get_hash =
   "SELECT epoch, slot FROM block_index\
   \ WHERE header_hash = ?;"
 
+-- | Get epoch and slot by hash.
 getHash :: Sql.Connection -> HeaderHash -> IO (Maybe ((), EpochNo, IndexSlot))
 getHash conn hh@(AbstractHash digest) = do
   rows :: [(Word64, Int)]

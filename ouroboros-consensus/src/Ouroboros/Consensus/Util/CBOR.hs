@@ -14,10 +14,11 @@ module Ouroboros.Consensus.Util.CBOR (
   , ReadIncrementalErr(..)
   , readIncremental
   , readIncrementalOffsets
+  , readIncrementalOffsetsEBB
   ) where
 
-import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Decoding as CBOR (Decoder)
+import qualified Codec.CBOR.Read as CBOR
 import           Codec.Serialise (Serialise)
 import qualified Codec.Serialise as S
 import           Control.Exception (assert, throwIO)
@@ -144,8 +145,6 @@ readIncremental hasFS@HasFS{..} fp = withLiftST $ \liftST -> do
 -- Return the offset ('Word64') of the start of each @a@ and the size ('Word')
 -- of each @a@. When deserialising fails, return all already deserialised @a@s
 -- and the error.
---
--- To be used by 'Ouroboros.Storage.ImmutableDB.Util.cborEpochFileParser''.
 readIncrementalOffsets :: forall m h a. (MonadST m, MonadThrow m)
                        => HasFS m h
                        -> (forall s . CBOR.Decoder s a)
@@ -186,6 +185,74 @@ readIncrementalOffsets hasFS@HasFS{..} decoder fp = withLiftST $ \liftST ->
             go liftST h nextOffset deserialised' (Just unconsumed)
 
       S.Fail _ _ err -> return (reverse deserialised, Just (ReadFailed err))
+
+    checkEmpty :: ByteString -> Maybe ByteString
+    checkEmpty bs | BS.null bs = Nothing
+                  | otherwise  = Just bs
+
+-- | Read multiple @a@s incrementally from a file.
+--
+-- Return the offset ('Word64') of the start of each @a@ and the size ('Word')
+-- of each @a@. When deserialising fails, return all already deserialised @a@s
+-- and the error.
+--
+-- TODO remove this function once we have removed
+-- 'Ouroboros.Storage.ImmutableDB.Util.cborEpochFileParser'', the ChainDB will
+-- extract the EBB hash for us.
+readIncrementalOffsetsEBB :: forall m hash h a. (MonadST m, MonadThrow m)
+                          => HasFS m h
+                          -> (forall s . CBOR.Decoder s a)
+                          -> (a -> Maybe hash)
+                              -- ^ In case the given @a@ is an EBB, return its
+                              -- @hash@.
+                          -> FsPath
+                          -> m ([(Word64, (Word, a))],
+                                Maybe hash,
+                                Maybe ReadIncrementalErr)
+                             -- ^ ((the offset of the start of @a@ in the file,
+                             --     (the size of @a@ in bytes,
+                             --      @a@ itself)),
+                             --     the hash of the EBB, if present
+                             --     error encountered during deserialisation)
+readIncrementalOffsetsEBB hasFS decoder getEBBHash fp = withLiftST $ \liftST ->
+    withFile hasFS fp ReadMode $ \h ->
+      liftST (CBOR.deserialiseIncremental decoder) >>=
+        go liftST h 0 [] Nothing Nothing
+  where
+    HasFS{..} = hasFS
+
+    go :: (forall x. ST s x -> m x)
+       -> h
+       -> Word64                -- ^ Offset
+       -> [(Word64, (Word, a))] -- ^ Already deserialised (reverse order)
+       -> Maybe hash            -- ^ The hash of the EBB block
+       -> Maybe ByteString      -- ^ Unconsumed bytes from last time
+       -> S.IDecode s a
+       -> m ([(Word64, (Word, a))], Maybe hash, Maybe ReadIncrementalErr)
+    go liftST h offset deserialised mbEBBHash mbUnconsumed dec = case dec of
+      S.Partial k -> do
+        -- First use the unconsumed bytes from a previous read before read
+        -- some more bytes from the file.
+        bs   <- case mbUnconsumed of
+          Just unconsumed -> return unconsumed
+          Nothing         -> hGet h defaultChunkSize
+        dec' <- liftST $ k (checkEmpty bs)
+        go liftST h offset deserialised mbEBBHash Nothing dec'
+
+      S.Done leftover size a -> do
+        let nextOffset    = offset + fromIntegral size
+            deserialised' = (offset, (fromIntegral size, a)) : deserialised
+            -- The EBB can only occur at the start of the file
+            mbEBBHash'    | offset == 0 = getEBBHash a
+                          | otherwise   = mbEBBHash
+        case checkEmpty leftover of
+          Nothing         -> return (reverse deserialised', mbEBBHash', Nothing)
+          -- Some more bytes, so try to read the next @a@.
+          Just unconsumed -> liftST (CBOR.deserialiseIncremental decoder) >>=
+            go liftST h nextOffset deserialised' mbEBBHash' (Just unconsumed)
+
+      S.Fail _ _ err -> return
+        (reverse deserialised, mbEBBHash, Just (ReadFailed err))
 
     checkEmpty :: ByteString -> Maybe ByteString
     checkEmpty bs | BS.null bs = Nothing

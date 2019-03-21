@@ -1,10 +1,10 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
-{-# LANGUAGE RankNTypes          #-}
 module Ouroboros.Storage.ImmutableDB.Util
   ( renderFile
   , handleUser
@@ -40,12 +40,13 @@ import           Text.Read (readMaybe)
 
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.CBOR (ReadIncrementalErr (..),
-                     readIncrementalOffsets)
+                     readIncrementalOffsetsEBB)
 
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types
-import           Ouroboros.Storage.ImmutableDB.CumulEpochSizes
-                     (RelativeSlot (..))
+import           Ouroboros.Storage.ImmutableDB.CumulEpochSizes (CumulEpochSizes,
+                     RelativeSlot (..))
+import qualified Ouroboros.Storage.ImmutableDB.CumulEpochSizes as CES
 import           Ouroboros.Storage.ImmutableDB.Types
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
@@ -134,30 +135,43 @@ hGetRightSize HasFS{..} hnd size file = do
 
 -- | Check whether the given iterator range is valid.
 --
+-- \"Valid\" means:
+--
+-- * The start slot <= the end slot
+-- * The start slot is <= the tip
+-- * The end slot is <= the tip
+--
+-- The @hash@ is ignored.
+--
 -- See 'Ouroboros.Storage.ImmutableDB.API.streamBinaryBlobs'.
 validateIteratorRange
   :: Monad m
   => ErrorHandling ImmutableDBError m
-  -> SlotNo        -- ^ Next expected write
-  -> Maybe SlotNo  -- ^ range start (inclusive)
-  -> Maybe SlotNo  -- ^ range end (inclusive)
+  -> CumulEpochSizes
+  -> Tip
+  -> Maybe (SlotNo, hash)  -- ^ range start (inclusive)
+  -> Maybe (SlotNo, hash)  -- ^ range end (inclusive)
   -> m ()
-validateIteratorRange err next mbStart mbEnd = do
+validateIteratorRange err ces tip mbStart mbEnd = do
     case (mbStart, mbEnd) of
-      (Just start, Just end) ->
+      (Just (start, _), Just (end, _)) ->
         when (start > end) $
           throwUserError err $ InvalidIteratorRangeError start end
       _ -> return ()
 
-    whenJust mbStart $ \start ->
-      -- Check that the start is not >= the next expected slot
-      when (start >= next) $
-        throwUserError err $ ReadFutureSlotError start next
+    whenJust mbStart $ \(start, _) ->
+      when (isNewerThanTip start) $
+        throwUserError err $ ReadFutureSlotError start tip
 
-    whenJust mbEnd $ \end ->
-      -- Check that the end is not >= the next expected slot
-      when (end >= next) $
-        throwUserError err $ ReadFutureSlotError end next
+    whenJust mbEnd $ \(end, _) ->
+      when (isNewerThanTip end) $
+        throwUserError err $ ReadFutureSlotError end tip
+  where
+    isNewerThanTip slot = case tip of
+      TipGenesis           -> True
+      TipEBB     lastEpoch -> maybe True (slot >) $ CES.firstSlotOf ces lastEpoch
+      TipBlock   lastSlot  -> slot > lastSlot
+
 
 -- | Given a list of increasing 'SlotOffset's together with the 'Word' (blob
 -- size) and 'RelativeSlot' corresponding to the offset, reconstruct a
@@ -237,11 +251,16 @@ indexBackfill (RelativeSlot slot) (RelativeSlot nextExpected) lastOffset =
 
 -- | CBOR-based 'EpochFileParser' that can be used with
 -- 'Ouroboros.Storage.ImmutableDB.Impl.openDB'.
-cborEpochFileParser' :: forall m h a. (MonadST m, MonadThrow m)
+--
+-- TODO remove this function when the ChainDB is available.
+cborEpochFileParser' :: forall m hash h a. (MonadST m, MonadThrow m)
                      => HasFS m h
                      -> (forall s . CBOR.Decoder s a)
-                     -> EpochFileParser ReadIncrementalErr m (Word, a)
+                     -> (a -> Maybe hash)
+                        -- ^ In case the given @a@ is an EBB, return its
+                        -- @hash@.
+                     -> EpochFileParser ReadIncrementalErr hash m (Word, a)
                         -- ^ The 'Word' is the size in bytes of the
                         -- corresponding @a@.
-cborEpochFileParser' hasFS decoder = EpochFileParser $
-    readIncrementalOffsets hasFS decoder
+cborEpochFileParser' hasFS decoder getEBBHash = EpochFileParser $
+    readIncrementalOffsetsEBB hasFS decoder getEBBHash
