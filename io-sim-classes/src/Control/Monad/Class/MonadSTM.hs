@@ -22,7 +22,7 @@ module Control.Monad.Class.MonadSTM
   , swapTMVarDefault
   , isEmptyTMVarDefault
 
-  -- * Default 'TBQueue' implementation
+  -- * Default 'TQueue' implementation
   , TQueueDefault (..)
   , newTQueueDefault
   , readTQueueDefault
@@ -38,6 +38,9 @@ module Control.Monad.Class.MonadSTM
   , writeTBQueueDefault
   , isEmptyTBQueueDefault
   , isFullTBQueueDefault
+  , unGetTBQueueDefault
+  , peekTBQueueDefault
+  , tryPeekTBQueueDefault
   ) where
 
 import           Prelude hiding (read)
@@ -116,6 +119,9 @@ class (Monad m, Monad (STM m)) => MonadSTM m where
   writeTBQueue   :: TBQueue m a -> a -> STM m ()
   isEmptyTBQueue :: TBQueue m a -> STM m Bool
   isFullTBQueue  :: TBQueue m a -> STM m Bool
+  unGetTBQueue   :: TBQueue m a -> a -> STM m ()
+  peekTBQueue    :: TBQueue m a -> STM m a
+  tryPeekTBQueue :: TBQueue m a -> STM m (Maybe a)
 
 instance MonadSTM m => MonadSTM (ReaderT e m) where
   type STM  (ReaderT e m)  = ReaderT e (STM m)
@@ -155,6 +161,9 @@ instance MonadSTM m => MonadSTM (ReaderT e m) where
   writeTBQueue q a = lift $ writeTBQueue q a
   isEmptyTBQueue   = lift . isEmptyTBQueue
   isFullTBQueue    = lift . isFullTBQueue
+  unGetTBQueue q a = lift $ unGetTBQueue q a
+  peekTBQueue      = lift . peekTBQueue
+  tryPeekTBQueue   = lift . tryPeekTBQueue
 
 instance (Show e, MonadSTM m) => MonadSTM (ExceptT e m) where
   type STM  (ExceptT e m)    = ExceptT e (STM m)
@@ -194,6 +203,9 @@ instance (Show e, MonadSTM m) => MonadSTM (ExceptT e m) where
   writeTBQueue q a = lift $ writeTBQueue q a
   isEmptyTBQueue   = lift . isEmptyTBQueue
   isFullTBQueue    = lift . isFullTBQueue
+  unGetTBQueue q a = lift $ unGetTBQueue q a
+  peekTBQueue      = lift . peekTBQueue
+  tryPeekTBQueue   = lift . tryPeekTBQueue
 
 
 --
@@ -251,6 +263,9 @@ instance MonadSTM IO where
   writeTBQueue   = STM.writeTBQueue
   isEmptyTBQueue = STM.isEmptyTBQueue
   isFullTBQueue  = STM.isFullTBQueue
+  unGetTBQueue   = STM.unGetTBQueue
+  peekTBQueue    = STM.peekTBQueue
+  tryPeekTBQueue = STM.tryPeekTBQueue
 
 
 -- | Wrapper around 'BlockedIndefinitelyOnSTM' that stores a call stack
@@ -473,3 +488,32 @@ isFullTBQueueDefault (TBQueue rsize _read wsize _write _size) = do
          if (r > 0)
             then return False
             else return True
+
+unGetTBQueueDefault :: MonadSTM m => TBQueueDefault m a -> a -> STM m ()
+unGetTBQueueDefault (TBQueue rsize _read wsize _write _size) a = do
+  r <- readTVar rsize
+  if (r > 0)
+     then do writeTVar rsize $! r - 1
+     else do
+          w <- readTVar wsize
+          if (w > 0)
+             then writeTVar wsize $! w - 1
+             else retry
+  xs <- readTVar _read
+  writeTVar _read (a:xs)
+
+peekTBQueueDefault :: MonadSTM m => TBQueueDefault m a -> STM m a
+peekTBQueueDefault c = do
+  x <- readTBQueueDefault c
+  unGetTBQueueDefault c x
+  return x
+
+tryPeekTBQueueDefault :: MonadSTM m => TBQueueDefault m a -> STM m (Maybe a)
+tryPeekTBQueueDefault c = do
+  m <- tryReadTBQueueDefault c
+  case m of
+    Nothing -> return Nothing
+    Just x  -> do
+      unGetTBQueueDefault c x
+      return m
+

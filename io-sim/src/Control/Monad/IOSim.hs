@@ -316,6 +316,9 @@ instance MonadSTM (SimM s) where
   writeTBQueue      = writeTBQueueDefault
   isEmptyTBQueue    = isEmptyTBQueueDefault
   isFullTBQueue     = isFullTBQueueDefault
+  unGetTBQueue      = unGetTBQueueDefault
+  peekTBQueue       = peekTBQueueDefault
+  tryPeekTBQueue    = tryPeekTBQueueDefault
 
 data Async s a = Async !ThreadId (TMVar (SimM s) (Either SomeException a))
 
