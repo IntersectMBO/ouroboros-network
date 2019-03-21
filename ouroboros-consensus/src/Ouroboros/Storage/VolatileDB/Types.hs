@@ -12,31 +12,22 @@ module Ouroboros.Storage.VolatileDB.Types
     ) where
 
 import           Control.Exception (Exception (..))
-import           Data.Int (Int64)
 import           Data.Map (Map)
 import           Data.Typeable
+import           Data.Word (Word64)
 
 import           Ouroboros.Network.Block
-import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types
-import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
 
 type FileId = Int
 
 -- For each file, we store the latest blockId, the number of blocks
 -- and a Map for its contents.
-type Index blockId = Map String (Maybe SlotNo, Int, Map Int64 (Int, blockId))
+type Index blockId = Map String (Maybe SlotNo, Int, Map Word64 (Word64, blockId))
 
 -- For each blockId, we store the file we can find the block, the offset and its size
 -- in bytes.
-type ReverseIndex blockId = Map blockId (String, Int64, Int)
-
--- Controls how the db behaves if it finds files with less blocks than expected.
-data BlocksPerFileMode =
-      Strict -- Will raise an exception, unless only the latest file has less blocks.
-    | LenientFillOldFirst -- Here anexception will not be raised and small files
-                          -- will be written first.
-    | LenientFillOnlyLast -- Only the last file can be written.
+type ReverseIndex blockId = Map blockId (String, Word64, Word64)
 
 -- | Errors which might arise when working with this database.
 data VolatileDBError blockId =
@@ -56,7 +47,7 @@ data ParserError blockId =
       DuplicatedSlot (Map blockId ([String], [String]))
     | SlotsPerFileError String
     | InvalidFilename String
-    | DecodeFailed (Int64, Map Int64 (Int, blockId)) String Int
+    | DecodeFailed (Word64, Map Word64 (Word64, blockId)) String Word64
     deriving (Show)
 
 instance Eq blockId => Eq (ParserError blockId) where
@@ -78,12 +69,23 @@ sameParseError e1 e2 = case (e1, e2) of
     (InvalidFilename str1, InvalidFilename str2) -> str1 == str2
     (DecodeFailed _ _ _ , DecodeFailed _ _ _)    -> True
     _                                            -> False
-
+{-}
 -- TODO(kde) unify/move/replace
 newtype Parser m blockId = Parser {
     parse       :: forall h.
                    HasFS m h
                 -> ErrorHandling (VolatileDBError blockId) m
                 -> [String]
-                -> m (Int64, Map Int64 (Int, blockId))
+                -> m (Word64, Map Word64 (Word64, blockId))
+    }
+-}
+type FileSize  = Word64
+type BlockSize = Word64
+
+-- | The offset of a block in an index file.
+type SlotOffset = Word64
+
+newtype Parser m blockId = Parser {
+    -- | Parse block storage at the given path
+    parse :: FsPath -> m (FileSize, Map SlotOffset (BlockSize, blockId))
     }

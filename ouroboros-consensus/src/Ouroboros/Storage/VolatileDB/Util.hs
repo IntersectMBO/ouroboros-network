@@ -8,12 +8,12 @@ module Ouroboros.Storage.VolatileDB.Util where
 import           Control.Monad
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
-import           Data.Int (Int64)
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe (fromMaybe)
 import           Data.Set (Set)
 import qualified Data.Text as T
+import           Data.Word (Word64)
 import           Text.Read (readMaybe)
 
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
@@ -81,7 +81,7 @@ filePath fd = "blocks-" ++ show fd ++ ".dat"
   Comparing utilities
 ------------------------------------------------------------------------------}
 
-maxSlotMap :: Map Int64 (Int, blockId) -> (blockId -> Slot) -> Maybe (blockId, Slot)
+maxSlotMap :: Map Word64 (Word64, blockId) -> (blockId -> Slot) -> Maybe (blockId, Slot)
 maxSlotMap mp toSlot = maxSlotList toSlot $ snd <$> Map.elems mp
 
 maxSlotList :: (blockId -> Slot) -> [blockId] -> Maybe (blockId, Slot)

@@ -10,7 +10,10 @@ module Test.Ouroboros.Storage.VolatileDB.Model
       DBModel (..)
     , initDBModel
     , openDBModel
+    , createFileModel
+    , createInvalidFileModel
     , runCorruptionModel
+    , duplicateBlockModel
     ) where
 
 import           Control.Monad
@@ -22,7 +25,7 @@ import           Data.Either
 import           Data.List (sortOn, splitAt, uncons)
 import           Data.Map (Map)
 import qualified Data.Map as Map
-import           Data.Maybe (fromJust, fromMaybe, isJust, isNothing)
+import           Data.Maybe (fromMaybe, isNothing)
 import qualified Data.Set as Set
 import           GHC.Stack.Types
 
@@ -37,21 +40,19 @@ import           Test.Ouroboros.Storage.VolatileDB.TestBlock (Corruptions,
                      FileCorruption (..), binarySize)
 
 data DBModel blockId = DBModel {
-      blocksPerFile  :: Int
-    , lenientParse   :: Bool
-    , parseError     :: Maybe (ParserError blockId)
-    , open           :: Bool
-    , mp             :: Map blockId ByteString
-    , latestGarbaged :: Maybe SlotNo
-    , index          :: Map String (Maybe Slot, Int, [blockId])
-    , currentFile    :: String
-    , nextFId        :: FileId
+      blocksPerFile  :: Int  -- how many blocks each file has (should follow the real Impl)
+    , parseError     :: Maybe (ParserError blockId) -- an error which indicates the parser will return an error.
+    , open           :: Bool -- is the db open.
+    , mp             :: Map blockId ByteString -- superset of blocks in db. Some of them may be gced already.
+    , latestGarbaged :: Maybe SlotNo -- last gced slot.
+    , index          :: Map String (Maybe Slot, Int, [blockId]) -- what each file contains in the real impl.
+    , currentFile    :: String -- the current open file. If the db is empty this is the next it wil write.
+    , nextFId        :: FileId -- the next file id.
     } deriving (Show)
 
-initDBModel ::Int -> Bool -> DBModel blockId
-initDBModel bpf lp = DBModel {
+initDBModel ::Int -> DBModel blockId
+initDBModel bpf = DBModel {
       blocksPerFile  = bpf
-    , lenientParse   = lp
     , parseError     = Nothing
     , open           = True
     , mp             = Map.empty
@@ -78,11 +79,10 @@ openDBModel :: MonadState (MyState blockId) m
             => ErrorHandling (VolatileDBError blockId) m
             -> Int
             -> (blockId -> Slot)
-            -> Bool
             -> (DBModel blockId, VolatileDB blockId m)
-openDBModel err maxNumPerFile toSlot lenientParsing = (dbModel, db)
+openDBModel err maxNumPerFile toSlot = (dbModel, db)
     where
-        dbModel = initDBModel maxNumPerFile lenientParsing
+        dbModel = initDBModel maxNumPerFile
         db =  VolatileDB {
               closeDB        = closeDBModel
             , isOpenDB       = isOpenModel
@@ -131,6 +131,8 @@ putBlockModel :: MonadState (MyState blockId) m
               -> Builder
               -> m ()
 putBlockModel err maxNumPerFile toSlot bid bs = do
+    -- This depends on the exact sequence of the operations in the real Impl.
+    -- If anything changes there, then this wil also need change.
     let managesToPut errors = do
             errs <- errors
             (mErr, _rest) <- uncons $ getStream (_hPut errs)
@@ -217,6 +219,8 @@ garbageCollectModel err sl = do
                             , fsErrorStack = EmptyCallStack
                             , fsLimitation = False
                         }
+        -- This depends on the exact sequence of the operations in the real Impl.
+        -- If anything changes there, then this wil also need change.
         _ <- foldM f remLs (sortOn (unsafeParseFd . fst) $ Map.toList index)
         return ()
 
@@ -287,14 +291,39 @@ runCorruptionModel toSlot corrs = do
                                       then Just (DecodeFailed (0, Map.empty) "" 0) else parseError dbm
                     -- Appending doesn't actually change anything, since additional bytes will be truncated.
 
-recover :: Monad m
+createFileModel :: forall blockId m. MonadState (MyState blockId) m
+                => m ()
+createFileModel = do
+    dbm <- getDB
+    let currentFile' = filePath $ nextFId dbm
+    let index' = Map.insert currentFile' newFileInfo (index dbm)
+    putDB dbm {index = index', nextFId = (nextFId dbm) + 1, currentFile = currentFile'}
+
+createInvalidFileModel :: forall blockId m. MonadState (MyState blockId) m
+                       => String
+                       -> m ()
+createInvalidFileModel file = do
+    db <- getDB
+    putDB $ db {parseError = Just $ InvalidFilename file}
+
+duplicateBlockModel :: forall blockId m. MonadState (MyState blockId) m
+                    => Ord blockId
+                    => (String, blockId)
+                    -> m ()
+duplicateBlockModel (file, bid) = do
+    db <- getDB
+    let current = currentFile db
+    putDB $ db {parseError = Just $ DuplicatedSlot (Map.fromList [(bid,([file], [current]))])}
+
+recover :: MonadState (MyState blockId) m
         => ErrorHandling (VolatileDBError blockId) m
         -> DBModel blockId
         -> m (DBModel blockId)
-recover err dbm@DBModel {..} =
-    if not lenientParse && isJust parseError
-    then EH.throwError err $ VParserError $ fromJust parseError
-    else return $ dbm {index = index', currentFile = cFile, nextFId = fid, parseError = Nothing}
+recover err dbm@DBModel {..} = do
+    case parseError of
+        Just pError@(InvalidFilename _) -> EH.throwError err $ VParserError pError
+        Just pError@(DuplicatedSlot _) -> EH.throwError err $ VParserError pError
+        _ -> return $ dbm {index = index', currentFile = cFile, nextFId = fid, parseError = Nothing}
   where
     lastFd = fromRight (error "filename in index didn't parse" )
                        (findLastFd $ Set.fromList $ Map.keys index)

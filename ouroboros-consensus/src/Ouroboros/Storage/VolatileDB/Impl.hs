@@ -14,7 +14,10 @@
 --
 -- The db is a key-value store of binary blocks and is parametric
 -- on the key of blocks, named blockId. The only constraints are that one must provide
--- a function (toSlot :: blockId -> SlotNo, as well as an Ord instance of blockId.
+-- a function (toSlot :: blockId -> SlotNo), as well as an Ord instance of blockId.
+-- The db expects NO properties for this Ord instance, not even one that makes
+-- toBlock monotonic.
+
 -- The database uses in memory indexes, which are created on each reopening. reopening
 -- includes parsing all blocks of the dbFolder, so it can be an expensive operation
 -- if the database gets big. That's why the intention of this db is to be used for only
@@ -64,8 +67,8 @@
 --  throw an exception/fill them starting by old first/fill only the latest,
 --  based on option flags.
 --
--- There is an implicit ordering of block files, which is NOT alpharithmetic
--- For example blocks-20.dat < blocks-100.dat
+--  There is an implicit ordering of block files, which is NOT alpharithmetic
+--  For example blocks-20.dat < blocks-100.dat
 --
 module Ouroboros.Storage.VolatileDB.Impl
     ( -- * Opening a database
@@ -84,13 +87,13 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString.Builder as BS
-import           Data.Int (Int64)
 import           Data.List (sortOn)
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe
 import           Data.Set (Set)
 import qualified Data.Set as Set
+import           Data.Word (Word64)
 import           GHC.Stack
 import qualified System.IO as IO
 
@@ -107,21 +110,19 @@ import           Ouroboros.Storage.VolatileDB.Util
 ------------------------------------------------------------------------------}
 
 data VolatileDBEnv m blockId = forall h. VolatileDBEnv {
-      _dbHasFS           :: !(HasFS m h)
-    , _dbErr             :: !(ErrorHandling (VolatileDBError blockId) m)
-    , _dbInternalState   :: !(TMVar m (Maybe (InternalState blockId h)))
-    , _maxBlocksPerFile  :: !Int
-    , _parser            :: !(Parser m blockId)
-    , _toSlot            :: (blockId -> SlotNo)
-    , _lenientParsing    :: !Bool
-    , _blocksPerFileMode :: !BlocksPerFileMode
+      _dbHasFS          :: !(HasFS m h)
+    , _dbErr            :: !(ErrorHandling (VolatileDBError blockId) m)
+    , _dbInternalState  :: !(TMVar m (Maybe (InternalState blockId h)))
+    , _maxBlocksPerFile :: !Int
+    , _parser           :: !(Parser m blockId)
+    , _toSlot           :: (blockId -> SlotNo)
     }
 
 data InternalState blockId h = InternalState {
       _currentWriteHandle :: !h -- The unique open file we append blocks.
     , _currentWritePath   :: !String -- The path of the file above.
-    , _currentWriteOffset :: !Int64 -- The 'WriteHandle' for the same file.
-    , _nextWriteFiles     :: ![(String, Int64)] -- The path and the size of the next files to write
+    , _currentWriteOffset :: !Word64 -- The 'WriteHandle' for the same file.
+    , _nextWriteFiles     :: ![(String, Word)] -- The path and the size of the next files to write
     , _nextNewFileId      :: !Int -- The next file name Id.
     , _currentBlockId     :: !(Maybe blockId) -- The newest block in the db.
     , _currentMap         :: !(Index blockId) -- The content of each file.
@@ -156,10 +157,8 @@ openDB :: (HasCallStack, MonadCatch m, MonadSTM m, Ord blockId)
        -> Parser m blockId
        -> Int
        -> (blockId -> SlotNo)
-       -> Bool
-       -> BlocksPerFileMode
        -> m (VolatileDB blockId m)
-openDB h e p m t lp bm = fst <$> openDBFull h e p m t lp bm
+openDB h e p m t = fst <$> openDBFull h e p m t
 
 openDBFull :: (HasCallStack, MonadCatch m, MonadSTM m, Ord blockId)
            => HasFS m h
@@ -167,11 +166,9 @@ openDBFull :: (HasCallStack, MonadCatch m, MonadSTM m, Ord blockId)
            -> Parser m blockId
            -> Int
            -> (blockId -> SlotNo)
-           -> Bool
-           -> BlocksPerFileMode
            -> m (VolatileDB blockId m, VolatileDBEnv m blockId)
-openDBFull hasFS err parser maxBlocksPerFile toSlot lenientParsing bMode = do
-    env <- openDBImpl hasFS err parser maxBlocksPerFile toSlot lenientParsing bMode
+openDBFull hasFS err parser maxBlocksPerFile toSlot = do
+    env <- openDBImpl hasFS err parser maxBlocksPerFile toSlot
     let db = VolatileDB {
           closeDB        = closeDBImpl  env
         , isOpenDB       = isOpenDBImpl env
@@ -191,16 +188,14 @@ openDBImpl :: (HasCallStack, MonadThrow m, MonadSTM m, Ord blockId)
            -> Parser m blockId
            -> Int
            -> (blockId -> SlotNo)
-           -> Bool
-           -> BlocksPerFileMode
            -> m (VolatileDBEnv m blockId)
-openDBImpl hasFS@HasFS{..} err parser maxBlocksPerFile toSlot lenientParsing bMode =
+openDBImpl hasFS@HasFS{..} err parser maxBlocksPerFile toSlot =
     if maxBlocksPerFile <= 0
     then EH.throwError err $ InvalidArgumentsError "maxBlocksPerFile can't be 0"
     else do
-        st <- mkInternalStateDB hasFS err parser maxBlocksPerFile toSlot lenientParsing bMode
+        st <- mkInternalStateDB hasFS err parser maxBlocksPerFile toSlot
         stVar <- atomically $ newTMVar $ Just st
-        return $ VolatileDBEnv hasFS err stVar maxBlocksPerFile parser toSlot lenientParsing bMode
+        return $ VolatileDBEnv hasFS err stVar maxBlocksPerFile parser toSlot
 
 closeDBImpl :: (MonadSTM m)
             => VolatileDBEnv m blockId
@@ -221,6 +216,8 @@ isOpenDBImpl VolatileDBEnv{..} = do
     mSt <- atomically (readTMVar _dbInternalState)
     return $ isJust mSt
 
+-- closeDB . reOpenDB is a no-op. This is achieved because when we reOpen
+-- we try to append on the latest created file.
 reOpenDBImpl :: (HasCallStack, MonadCatch m, MonadSTM m, Ord blockId)
              => VolatileDBEnv m blockId
              -> m ()
@@ -228,7 +225,7 @@ reOpenDBImpl VolatileDBEnv{..} = do
     modifyTMVar _dbInternalState $ \mbSt -> case mbSt of
         Just (st@InternalState{..}) -> return (Just st, ())
         Nothing -> do
-            st <- mkInternalStateDB _dbHasFS _dbErr _parser _maxBlocksPerFile _toSlot _lenientParsing _blocksPerFileMode
+            st <- mkInternalStateDB _dbHasFS _dbErr _parser _maxBlocksPerFile _toSlot
             return (Just st, ())
 
 getBlockImpl :: (MonadSTM m, MonadCatch m, Ord blockId)
@@ -241,8 +238,8 @@ getBlockImpl env@VolatileDBEnv{..} slot = do
             Nothing -> return (st, Nothing)
             Just (file, w, n) ->  do
                 bs <- withFile hasFS [file] IO.ReadMode $ \hndl -> do
-                        _ <- hSeek hndl IO.AbsoluteSeek w
-                        hGet hndl n
+                        _ <- hSeek hndl IO.AbsoluteSeek (fromIntegral w)
+                        hGet hndl (fromIntegral n)
                 return (st, Just bs)
 
 -- This function follows the approach:
@@ -283,7 +280,7 @@ putBlockImpl toSlot env@VolatileDBEnv{..} blockId builder = do
                         , _currentMap         = mp
                         , _currentRevMap      = revMp
                     }
-                if nBlocks' < _maxBlocksPerFile
+                if nBlocks' < fromIntegral _maxBlocksPerFile
                 then return (st', ())
                 else (\s -> (s,())) <$> nextFile hasFS _dbErr env st'
 
@@ -317,7 +314,7 @@ tryCollectFile :: forall m h blockId. (MonadThrow m, Ord blockId)
                -> VolatileDBEnv m blockId
                -> SlotNo
                -> InternalState blockId h
-               -> (String, (Maybe SlotNo, Int, Map Int64 (Int, blockId)))
+               -> (String, (Maybe SlotNo, Int, Map Word64 (Word64, blockId)))
                -> m (InternalState blockId h)
 tryCollectFile hasFS@HasFS{..} env@VolatileDBEnv{..} slot st@InternalState{..} (file, (mmaxSlot, _, fileMp)) =
     let isLess       = not $ cmpMaybe mmaxSlot slot
@@ -387,7 +384,7 @@ nextFile HasFS{..} _err VolatileDBEnv{..} st = do
             return $ st {
                   _currentWriteHandle = hndl
                 , _currentWritePath   = file
-                , _currentWriteOffset = size
+                , _currentWriteOffset = fromIntegral size
                 , _nextWriteFiles     = rest
             }
 
@@ -414,14 +411,12 @@ mkInternalStateDB :: (HasCallStack, MonadThrow m, Ord blockId)
                   -> Parser m blockId
                   -> Int
                   -> (blockId -> SlotNo)
-                  -> Bool
-                  -> BlocksPerFileMode
                   -> m (InternalState blockId h)
-mkInternalStateDB hasFS@HasFS{..} err parser maxBlocksPerFile toSlot lenientParsing bpfMode = do
+mkInternalStateDB hasFS@HasFS{..} err parser maxBlocksPerFile toSlot = do
     allFiles <- do
         createDirectoryIfMissing True []
         listDirectory []
-    mkInternalState hasFS err parser maxBlocksPerFile allFiles toSlot lenientParsing bpfMode
+    mkInternalState hasFS err parser maxBlocksPerFile allFiles toSlot
 
 mkInternalState :: forall blockId m h. (MonadThrow m, HasCallStack, Ord blockId)
                 => HasFS m h
@@ -431,35 +426,26 @@ mkInternalState :: forall blockId m h. (MonadThrow m, HasCallStack, Ord blockId)
                 -> Set String
                 -> (blockId -> SlotNo)
                 -> m (InternalState blockId h)
-                -> (blockId -> SlotNo)
-                -> Bool
-                -> m (InternalState blockId h)
-mkInternalState hasFS@HasFS{..} err parser n files toSlot lenientParsing = do
+mkInternalState hasFS@HasFS{..} err parser n files toSlot = do
     lastFd <- fromEither err $ findLastFd files
     let
         go :: Index blockId
            -> ReverseIndex blockId
            -> Maybe blockId
-           -> [(FileId, String, Int64)] -- The relative path and size of the files with less than n blocks, if any found already.
+           -> [(FileId, String, Word64)] -- The relative path and size of the files with less than n blocks, if any found already.
            -> [String]
            -> m (InternalState blockId h)
         go mp revMp mBlockId haveLessThanN leftFiles = case leftFiles of
             [] -> do
-                (fileToWrite, nextWriteFiles', nextNewFileId', mp', offset') <- case (bpfMode, sortOn (\(a,_,_) -> a) haveLessThanN, lastFd) of
-                        (_, [], Nothing) -> return (filePath 0, [], 1, Map.insert (filePath 0) (Nothing, 0, Map.empty) mp, 0)
-                        (_, _, Nothing) ->
+                (fileToWrite, nextWriteFiles', nextNewFileId', mp', offset') <- case (sortOn (\(a,_,_) -> a) haveLessThanN, lastFd) of
+                        ([], Nothing) -> return (filePath 0, [], 1, Map.insert (filePath 0) (Nothing, 0, Map.empty) mp, 0)
+                        (_, Nothing) ->
                             error $ "Volatile db invariant violation: A file was found with less than " <> show n <>
                                     " blocks, but there are no files parsed."
-                        (_, [], Just lst) -> let fd' = lst + 1 in
+                        ([], Just lst) -> let fd' = lst + 1 in
                             -- If all files are full, we just open a new file.
                             return (filePath fd', [], lst + 2, Map.insert (filePath fd') (Nothing, 0, Map.empty) mp, 0)
-                        (Strict, [(fd,wrfile,size)], Just lst) -> if fd == lst
-                            then return  (wrfile, [], lst + 1, mp, size)
-                            else EH.throwError err $ VParserError $ SlotsPerFileError wrfile
-                        (Strict, (_,wrfile,_):_rest, _) -> EH.throwError err $ VParserError $ SlotsPerFileError wrfile
-                        (LenientFillOldFirst, (_fd,wrfile,size):rest, Just lst) ->
-                            return (wrfile, (\(_,f,s) -> (f,s)) <$> rest, lst + 1, mp, size)
-                        (LenientFillOnlyLast, ls, Just lst) ->
+                        (ls, Just lst) ->
                             -- last can't fail because the list is not empty.
                             let (fd,wrfile,size) = last ls
                             in if fd == lst then
@@ -482,20 +468,20 @@ mkInternalState hasFS@HasFS{..} err parser n files toSlot lenientParsing = do
                 }
             file : restFiles -> do
                 let path = [file]
-                parsed <- EH.try err (parse parser hasFS err path)
+                parsed <- EH.try err (parse parser path)
                 (offset, fileMp) <- case parsed of
                     Right x -> return x
-                    Left e@(VParserError (DecodeFailed (offset, filemp) _str _n)) ->
-                        if lenientParsing then do
-                            -- the handle of the parser is closed at this point. We need to
-                            -- reOpen the file in AppendMode now (parser opens with ReadMode).
-                            -- Note that no file is open at this point, so we can safely open
-                            -- with AppendMode any file, without the fear of opening multiple
-                            -- concurrent writers, which is not allowed.
-                            withFile hasFS path IO.AppendMode $ \hndl ->
-                                hTruncate hndl (fromIntegral offset)
-                            return (offset, filemp)
-                        else EH.throwError err e
+                    Left (VParserError (DecodeFailed (offset, filemp) _str _n)) -> do
+                        -- the handle of the parser is closed at this point. We need to
+                        -- reOpen the file in AppendMode now (parser opens with ReadMode).
+                        -- Note that no file is open at this point, so we can safely open
+                        -- with AppendMode any file, without the fear of opening multiple
+                        -- concurrent writers, which is not allowed.
+
+                        --TODO(kde) we should add a Warning log here.
+                        withFile hasFS path IO.AppendMode $ \hndl ->
+                            hTruncate hndl (fromIntegral offset)
+                        return (offset, filemp)
                     Left e -> EH.throwError err e
                 let mMaxBlockId = fst <$> maxSlotMap fileMp toSlot
                 let nBlocks = Map.size fileMp
@@ -560,13 +546,13 @@ modifyState VolatileDBEnv{_dbHasFS = hasFS :: HasFS m h, ..} action = do
 reverseMap :: forall blockId. Ord blockId
            => String
            -> ReverseIndex blockId
-           -> Map Int64 (Int, blockId)
+           -> Map Word64 (Word64, blockId)
            -> Either (VolatileDBError blockId) (ReverseIndex blockId)
 reverseMap file revMp mp = foldM f revMp (Map.toList mp)
     where
         f :: ReverseIndex blockId
-          -> (Int64, (Int, blockId))
-          -> Either (VolatileDBError blockId) (Map blockId (String, Int64, Int))
+          -> (Word64, (Word64, blockId))
+          -> Either (VolatileDBError blockId) (Map blockId (String, Word64, Word64))
         f rv (w, (n, slot)) = case Map.lookup slot revMp of
             Nothing -> Right $ Map.insert slot (file, w, n) rv
             Just (file', _w', _n') -> Left $ VParserError
