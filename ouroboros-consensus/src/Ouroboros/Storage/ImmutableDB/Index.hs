@@ -1,6 +1,7 @@
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE RankNTypes       #-}
-{-# LANGUAGE RecordWildCards  #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Storage.ImmutableDB.Index
   ( Index
@@ -25,16 +26,19 @@ module Ouroboros.Storage.ImmutableDB.Index
   , isPrefixOf
   , extendWithTrailingUnfilledSlotsFrom
   , truncateToSlots
+  , serialiseHash
+  , deserialiseHash
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
-import           Codec.CBOR.Read (deserialiseFromBytes)
+import           Codec.CBOR.Read (DeserialiseFailure, deserialiseFromBytes)
 import           Codec.CBOR.Write (toLazyByteString)
 import           Control.Exception (assert)
 import           Control.Monad (void, when)
 import           Control.Monad.Class.MonadThrow
 
+import           Data.Bifunctor (second)
 import qualified Data.ByteString.Builder as BS
 import qualified Data.ByteString.Lazy as BL
 import           Data.List.NonEmpty (NonEmpty)
@@ -88,8 +92,8 @@ indexEntrySizeBytes = 8
 --
 -- Returns trailing invalid data that could not be read as @'Maybe'
 -- 'ByteString'@.
-loadIndex :: (HasCallStack, MonadThrow m)
-          => (forall s . Decoder s (Maybe hash))
+loadIndex :: forall m hash h. (HasCallStack, MonadThrow m)
+          => (forall s . Decoder s hash)
           -> HasFS m h
           -> ErrorHandling ImmutableDBError m
           -> EpochNo
@@ -110,7 +114,7 @@ loadIndex hashDecoder hasFS err epoch indexSize = do
       let offsetsBS  = BL.toStrict offsetsBL
           offsets    = V.generate expectedOffsets mkEntry
           mkEntry ix = decodeIndexEntryAt (ix * indexEntrySizeBytes) offsetsBS
-      case deserialiseFromBytes hashDecoder ebbHashBL of
+      case deserialiseHash hashDecoder ebbHashBL of
         -- TODO throw an error when leftover is not empty?
         Right (_leftover, ebbHash) -> return $ MkIndex offsets ebbHash
         Left  df                   -> throwUnexpectedError err $
@@ -128,7 +132,7 @@ loadIndex hashDecoder hasFS err epoch indexSize = do
 -- > index === index'
 --
 writeIndex :: (MonadThrow m)
-           => (Maybe hash -> Encoding)
+           => (hash -> Encoding)
            -> HasFS m h
            -> EpochNo
            -> Index hash
@@ -142,11 +146,11 @@ writeIndex hashEncoder hasFS@HasFS{..} epoch (MkIndex offsets ebbHash) = do
       -- TODO efficient enough?
       void $ hPut iHnd $ V.foldl'
         (\acc offset -> acc <> encodeIndexEntry offset) mempty offsets
-      void $ hPut iHnd $ BS.lazyByteString $ toLazyByteString (hashEncoder ebbHash)
+      void $ hPut iHnd $ BS.lazyByteString $ serialiseHash hashEncoder ebbHash
 
 -- | Write a non-empty list of 'SlotOffset's to an index file.
 writeSlotOffsets :: (MonadThrow m)
-                 => (Maybe hash -> Encoding)
+                 => (hash -> Encoding)
                  -> HasFS m h
                  -> EpochNo
                  -> NonEmpty SlotOffset
@@ -160,7 +164,7 @@ writeSlotOffsets hashEncoder hasFS@HasFS{..} epoch sos ebbHash = do
       void $ hTruncate iHnd 0
       -- TODO efficient enough?
       void $ hPut iHnd (foldMap encodeIndexEntry (NE.reverse sos))
-      void $ hPut iHnd $ BS.lazyByteString $ toLazyByteString (hashEncoder ebbHash)
+      void $ hPut iHnd $ BS.lazyByteString $ serialiseHash hashEncoder ebbHash
 
 -- | Create an 'Index' from the given non-empty list of 'SlotOffset's.
 --
@@ -346,3 +350,22 @@ truncateToSlots slots index@(MkIndex offsets ebbHash)
   = index
   | otherwise
   = MkIndex (V.take (fromIntegral slots + 1) offsets) ebbHash
+
+{-------------------------------------------------------------------------------
+  Auxiliary: encoding and decoding the EBB hash
+
+  When no EBB is present we use an all-NULL bytestring.
+-------------------------------------------------------------------------------}
+
+deserialiseHash :: (forall s. Decoder s hash)
+                -> BL.ByteString
+                -> Either DeserialiseFailure (BL.ByteString, Maybe hash)
+deserialiseHash hashDecoder bs
+  | BL.null bs = Right (BL.empty, Nothing)
+  | otherwise  = second Just <$> (deserialiseFromBytes hashDecoder bs)
+
+serialiseHash :: (hash -> Encoding)
+              -> Maybe hash
+              -> BL.ByteString
+serialiseHash _           Nothing     = BL.empty
+serialiseHash hashEncoder (Just hash) = toLazyByteString (hashEncoder hash)

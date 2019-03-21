@@ -142,7 +142,6 @@ import           Prelude hiding (truncate)
 
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
-import           Codec.CBOR.Read (deserialiseFromBytes)
 import           Control.Exception (assert)
 import           Control.Monad (forM_, replicateM_, when)
 import           Control.Monad.Class.MonadSTM (MonadSTM (..))
@@ -191,8 +190,8 @@ data ImmutableDBEnv m hash = forall h e. ImmutableDBEnv
     , _dbErr             :: !(ErrorHandling ImmutableDBError m)
     , _dbInternalState   :: !(TMVar m (Either (ClosedState m) (OpenState m hash h)))
     , _dbEpochFileParser :: !(EpochFileParser e hash m (Word, SlotNo))
-    , _dbHashDecoder     :: !(forall s . Decoder s (Maybe hash))
-    , _dbHashEncoder     :: !(Maybe hash -> Encoding)
+    , _dbHashDecoder     :: !(forall s . Decoder s hash)
+    , _dbHashEncoder     :: !(hash -> Encoding)
     }
 
 -- | Internal state when the database is open.
@@ -276,8 +275,8 @@ instance Ord TipEpochSlot where
 -- __Note__: To be used in conjunction with 'withDB'.
 openDB
   :: (HasCallStack, MonadSTM m, MonadCatch m, Eq hash)
-  => (forall s . Decoder s (Maybe hash))
-  -> (Maybe hash -> Encoding)
+  => (forall s . Decoder s hash)
+  -> (hash -> Encoding)
   -> HasFS m h
   -> ErrorHandling ImmutableDBError m
   -> (EpochNo -> m EpochSize)
@@ -310,8 +309,8 @@ mkDBRecord dbEnv = ImmutableDB
 
 openDBImpl :: forall m h hash e.
               (HasCallStack, MonadSTM m, MonadCatch m, Eq hash)
-           => (forall s . Decoder s (Maybe hash))
-           -> (Maybe hash -> Encoding)
+           => (forall s . Decoder s hash)
+           -> (hash -> Encoding)
            -> HasFS m h
            -> ErrorHandling ImmutableDBError m
            -> (EpochNo -> m EpochSize)
@@ -555,7 +554,7 @@ getEBBImpl dbEnv epoch = withOpenState dbEnv $ \_dbHasFS st@OpenState{..} -> do
 getEpochSlot
   :: forall m hash h. (HasCallStack, MonadSTM m, MonadThrow m)
   => HasFS m h
-  -> (forall s . Decoder s (Maybe hash))
+  -> (forall s . Decoder s hash)
   -> OpenState m hash h
   -> ErrorHandling ImmutableDBError m
   -> EpochSlot
@@ -603,7 +602,7 @@ getEpochSlot _dbHasFS hashDecoder OpenState {..} _dbErr epochSlot = do
             let epochSize  = epochSizeInThePast _cumulEpochSizes epoch
                 hashOffset = (fromIntegral epochSize + 2) * indexEntrySizeBytes
             hSeek iHnd AbsoluteSeek (fromIntegral hashOffset)
-            deserialiseHash =<< readAll _dbHasFS iHnd
+            deserialiseHash' =<< readAll _dbHasFS iHnd
           else return Nothing
 
         return (start, end - start, mbEBBHash)
@@ -632,8 +631,8 @@ getEpochSlot _dbHasFS hashDecoder OpenState {..} _dbErr epochSlot = do
       TipGenesis    -> error "Postcondition violated: EpochSlot must be in the past"
       TipBlock slot -> _relativeSlot $ slotInThePastToEpochSlot _cumulEpochSizes slot
 
-    deserialiseHash :: HasCallStack => Builder -> m (Maybe hash)
-    deserialiseHash bld = case deserialiseFromBytes hashDecoder (BS.toLazyByteString bld) of
+    deserialiseHash' :: HasCallStack => Builder -> m (Maybe hash)
+    deserialiseHash' bld = case deserialiseHash hashDecoder (BS.toLazyByteString bld) of
       Right (_, hash) -> return hash
       Left df         -> throwUnexpectedError _dbErr $
         DeserialisationError df callStack
@@ -710,7 +709,7 @@ appendBinaryBlobImpl dbEnv@ImmutableDBEnv{..} slot builder =
         }
 
 startNewEpoch :: (HasCallStack, MonadSTM m, MonadCatch m)
-              => (Maybe hash -> Encoding)
+              => (hash -> Encoding)
               -> HasFS m h
               -> StateT (OpenState m hash h) m ()
 startNewEpoch hashEncoder hasFS@HasFS{..} = do
@@ -1213,8 +1212,8 @@ onException fsErr err onErr m =
 -- create an 'OpenState' corresponding to its outcome.
 validateAndReopen :: forall m hash h e.
                      (HasCallStack, MonadThrow m, Eq hash)
-                  => (forall s . Decoder s (Maybe hash))
-                  -> (Maybe hash -> Encoding)
+                  => (forall s . Decoder s hash)
+                  -> (hash -> Encoding)
                   -> HasFS m h
                   -> ErrorHandling ImmutableDBError m
                   -> (EpochNo -> m EpochSize)
@@ -1587,8 +1586,8 @@ data ValidateResult hash
 --   files from the epochs without needing any truncation.
 validate :: forall m hash h e.
             (HasCallStack, MonadThrow m, Eq hash)
-         => (forall s . Decoder s (Maybe hash))
-         -> (Maybe hash -> Encoding)
+         => (forall s . Decoder s hash)
+         -> (hash -> Encoding)
          -> HasFS m h
          -> ErrorHandling ImmutableDBError m
          -> (EpochNo -> m EpochSize)
