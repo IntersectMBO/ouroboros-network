@@ -115,6 +115,8 @@ runNetworkNodeWithSocket'
      , Ord ptcl
      , Enum ptcl
      , Bounded ptcl
+     , Show ptcl
+     , Mx.MiniProtocolLimits ptcl
      )
   => NetworkInterface ptcl AddrInfo IO
   -> Maybe (Maybe SomeException -> IO ())
@@ -202,6 +204,8 @@ runNetworkNodeWithSocket
      , Ord ptcl
      , Enum ptcl
      , Bounded ptcl
+     , Show ptcl
+     , Mx.MiniProtocolLimits ptcl
      )
   => NetworkInterface ptcl AddrInfo IO
   -> IO (NetworkNode AddrInfo IO)
@@ -221,6 +225,8 @@ withNetworkNode
      , Ord ptcl
      , Enum ptcl
      , Bounded ptcl
+     , Show ptcl
+     , Mx.MiniProtocolLimits ptcl
      )
   => NetworkInterface ptcl AddrInfo IO
   -> (NetworkNode AddrInfo IO -> IO a)

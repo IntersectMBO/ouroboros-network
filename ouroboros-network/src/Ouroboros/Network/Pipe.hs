@@ -54,6 +54,7 @@ pipeAsMuxBearer
      , Ord ptcl
      , Enum ptcl
      , Bounded ptcl
+     , Mx.MiniProtocolLimits ptcl
      )
   => PipeCtx
   -> IO (MuxBearer ptcl IO)
@@ -109,7 +110,7 @@ pipeAsMuxBearer ctx = do
       sduSize = return 32768
 
 runNetworkNodeWithPipe
-    :: (Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl)
+    :: (Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl, Show ptcl, Mx.MiniProtocolLimits ptcl)
     => [Mx.SomeVersion]
     -> (Mx.SomeVersion -> Maybe (ptcl -> Mx.MuxPeer IO))
     -> Mx.MuxStyle

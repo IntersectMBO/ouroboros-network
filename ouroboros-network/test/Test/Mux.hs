@@ -23,6 +23,7 @@ import           Codec.Serialise (Serialise (..))
 import           Control.Monad
 import qualified Data.Binary.Put as Bin
 import qualified Data.ByteString.Lazy as BL
+import           Data.Int
 import           Data.Word
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
@@ -106,11 +107,14 @@ version1 = Mx.SomeVersion
   Mx.SNat1
   (NetworkMagicWithBufSize 0xbeebcafe 10)
 
+defaultMiniProtocolLimit :: Int64
+defaultMiniProtocolLimit = 3000000
+
 -- |
 -- Allows to run a single chain-sync protocol.
 --
 data TestProtocols1 = ChainSync1
-  deriving (Eq, Ord, Enum, Bounded)
+  deriving (Eq, Ord, Enum, Bounded, Show)
 
 instance Mx.ProtocolEnum TestProtocols1 where
   fromProtocolEnum ChainSync1 = 2
@@ -118,11 +122,15 @@ instance Mx.ProtocolEnum TestProtocols1 where
   toProtocolEnum 2 = Just ChainSync1
   toProtocolEnum _ = Nothing
 
+instance Mx.MiniProtocolLimits TestProtocols1 where
+  maximumMessageSize ChainSync1  = defaultMiniProtocolLimit
+  maximumIngressQueue ChainSync1 = defaultMiniProtocolLimit
+
 -- |
 -- Allows to run both chain-sync and block-fetch protocols.
 --
 data TestProtocols2 = ChainSync2 | BlockFetch2
-  deriving (Eq, Ord, Enum, Bounded)
+  deriving (Eq, Ord, Enum, Bounded, Show)
 
 instance Mx.ProtocolEnum TestProtocols2 where
   fromProtocolEnum ChainSync2  = 2
@@ -132,17 +140,28 @@ instance Mx.ProtocolEnum TestProtocols2 where
   toProtocolEnum 3 = Just BlockFetch2
   toProtocolEnum _ = Nothing
 
+instance Mx.MiniProtocolLimits TestProtocols2 where
+  maximumMessageSize ChainSync2   = defaultMiniProtocolLimit
+  maximumMessageSize BlockFetch2  = defaultMiniProtocolLimit
+  maximumIngressQueue ChainSync2  = defaultMiniProtocolLimit
+  maximumIngressQueue BlockFetch2 = defaultMiniProtocolLimit
+
+
 -- |
 -- Allow to run a singly req-resp protocol.
 --
 data TestProtocols3 = ReqResp1
-  deriving (Eq, Ord, Enum, Bounded)
+  deriving (Eq, Ord, Enum, Bounded, Show)
 
 instance Mx.ProtocolEnum TestProtocols3 where
   fromProtocolEnum ReqResp1 = 4
-  
+
   toProtocolEnum 4 = Just ReqResp1
   toProtocolEnum _ = Nothing
+
+instance Mx.MiniProtocolLimits TestProtocols3 where
+  maximumMessageSize ReqResp1  = defaultMiniProtocolLimit
+  maximumIngressQueue ReqResp1 = defaultMiniProtocolLimit
 
 newtype DummyPayload = DummyPayload {
       unDummyPayload :: BL.ByteString
@@ -153,10 +172,16 @@ instance Show DummyPayload where
 
 instance Arbitrary DummyPayload where
     arbitrary = do
-       len  <- choose (0, 2 * 1024 * 1024)
+       n <- choose (0, 128)
+       len <- oneof [ return n
+                    , return $ defaultMiniProtocolLimit - n - cborOverhead
+                    , choose (0, defaultMiniProtocolLimit - cborOverhead)
+                    ]
        p <- arbitrary
        let blob = BL.replicate len p
        return $ DummyPayload blob
+      where
+        cborOverhead = 7 -- XXX Bytes needed by CBOR to encode the dummy payload
 
 instance Serialise DummyPayload where
     encode a = CBOR.encodeBytes (BL.toStrict $ unDummyPayload a)
@@ -190,7 +215,8 @@ data MuxSTMCtx ptcl m = MuxSTMCtx {
     , traceQueue :: Maybe (TBQueue m (Mx.MiniProtocolId ptcl, Mx.MiniProtocolMode, Time m))
 }
 
-startMuxSTM :: (Ord ptcl, Enum ptcl, Bounded ptcl, Mx.ProtocolEnum ptcl)
+startMuxSTM :: ( Ord ptcl, Enum ptcl, Bounded ptcl, Mx.ProtocolEnum ptcl, Show ptcl
+               , Mx.MiniProtocolLimits ptcl )
             => [Mx.SomeVersion]
             -> (Mx.SomeVersion -> Maybe (Mx.MiniProtocolDescriptions ptcl IO))
             -> Mx.MuxStyle
