@@ -20,7 +20,7 @@ runSimGen f = do
     Capture eval <- capture
     return $ runSimOrThrow (eval f)
 
--- | 'SimM; analogue of 'monadicST'
+-- | 'SimM' analogue of 'monadicST'
 --
 -- > monadicST  :: Testable a => (forall s. PropertyM (ST   s) a) -> Property
 -- > monadicSim :: Testable a => (forall s. PropertyM (SimM s) a) -> Property
