@@ -7,6 +7,7 @@ module Ouroboros.Network.Mux.Types (
       MiniProtocolDescription (..)
     , MiniProtocolDescriptions
     , MiniProtocolDispatch (..)
+    , MiniProtocolLimits (..)
     , ProtocolEnum (..)
     , MiniProtocolId (..)
     , MiniProtocolMode (..)
@@ -33,6 +34,7 @@ import           Control.Exception
 import qualified Control.Monad.Fail as MonadFail (fail)
 import           Data.Array
 import qualified Data.ByteString.Lazy as BL
+import           Data.Int
 import           Data.Ix (Ix (..))
 import           Data.Word
 import           GHC.Stack
@@ -41,6 +43,7 @@ import           Text.Printf
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTimer
 import           Ouroboros.Network.Channel
+
 
 newtype RemoteClockModel = RemoteClockModel { unRemoteClockModel :: Word32 } deriving Eq
 
@@ -146,6 +149,22 @@ instance Bounded ptcl => Bounded (MiniProtocolId ptcl) where
   minBound = Muxcontrol
   maxBound = AppProtocolId maxBound
 
+-- | Per Miniprotocol limits
+-- maximumIngressQueue must be >= maximumMessageSize
+class MiniProtocolLimits ptcl where
+    -- | Limit on the maximum message that can be sent over a given miniprotocol.
+    maximumMessageSize :: ptcl -> Int64
+    -- | Limit on the maximum number of bytes that can be queued in the miniprotocol's ingress queue.
+    maximumIngressQueue :: ptcl -> Int64
+
+instance (MiniProtocolLimits ptcl) => MiniProtocolLimits (MiniProtocolId ptcl) where
+    maximumMessageSize Muxcontrol = 0xffff
+    maximumMessageSize DeltaQ     = 0xffff
+    maximumMessageSize (AppProtocolId pid) = maximumMessageSize pid
+
+    maximumIngressQueue Muxcontrol = 0xffff
+    maximumIngressQueue DeltaQ     = 0xffff
+    maximumIngressQueue (AppProtocolId pid) = maximumIngressQueue pid
 
 --
 -- Mini-protocol descriptions
@@ -174,7 +193,7 @@ type MiniProtocolDescriptions ptcl m = ptcl -> MiniProtocolDescription ptcl m
 
 newtype MiniProtocolDispatch ptcl m =
         MiniProtocolDispatch (Array (MiniProtocolId ptcl, MiniProtocolMode)
-                                    (TBQueue m BL.ByteString))
+                                    (TVar m BL.ByteString))
 
 data MiniProtocolMode = ModeInitiator | ModeResponder
   deriving (Eq, Ord, Ix, Enum, Bounded, Show)
@@ -249,10 +268,12 @@ data MuxError = MuxError {
 data MuxErrorType = MuxUnknownMiniProtocol
                   | MuxDecodeError
                   | MuxBearerClosed
+                  | MuxIngressQueueOverRun
                   | MuxControlUnknownMessage
                   | MuxControlUnknownVersion
                   | MuxControlNoMatchingVersion
                   | MuxControlProtocolError
+                  | MuxTooLargeMessage
                   deriving (Show, Eq)
 
 instance Exception MuxError where

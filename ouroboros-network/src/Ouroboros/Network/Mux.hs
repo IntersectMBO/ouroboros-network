@@ -4,6 +4,7 @@
 module Ouroboros.Network.Mux (
       MiniProtocolDescription (..)
     , MiniProtocolDescriptions
+    , MiniProtocolLimits (..)
     , ProtocolEnum (..)
     , MiniProtocolId (..)
     , MiniProtocolMode (..)
@@ -35,6 +36,7 @@ import qualified Data.ByteString.Lazy as BL
 import           Data.List (intersect)
 import           Data.Maybe (fromJust)
 import           GHC.Stack
+import           Text.Printf
 
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Mux.Control
@@ -46,7 +48,7 @@ import           Ouroboros.Network.Mux.Types
 -- one of the provided Versions.
 -- TODO: replace MonadSay with iohk-monitoring-framework.
 muxStart :: ( MonadAsync m, MonadFork m, MonadSay m, MonadSTM m, MonadThrow m
-            , Ord ptcl, Enum ptcl, Bounded ptcl)
+            , Ord ptcl, Enum ptcl, Bounded ptcl, Show ptcl, MiniProtocolLimits ptcl)
         => [(Version, MiniProtocolDescriptions ptcl m)]
         -> MuxBearer ptcl m
         -> MuxStyle
@@ -92,7 +94,7 @@ muxStart verMpds bearer style rescb_m = do
     setupTbl = MiniProtocolDispatch
             -- cover full range of type (MiniProtocolId ptcl, MiniProtocolMode)
              . array (minBound, maxBound)
-           <$> sequence [ do q <- atomically (newTBQueue 2)
+           <$> sequence [ do q <- atomically (newTVar BL.empty)
                              return ((ptcl, mode), q)
                         | ptcl <- [minBound..maxBound]
                         , mode <- [ModeInitiator, ModeResponder] ]
@@ -117,16 +119,21 @@ muxStart verMpds bearer style rescb_m = do
             c <- readTVar cnt
             unless (c == 0) retry
 
-muxControl :: (HasCallStack, MonadSTM m, MonadSay m, MonadThrow m, Ord ptcl, Enum ptcl)
+muxControl :: ( HasCallStack, MonadSTM m, MonadSay m, MonadThrow m, Ord ptcl, Enum ptcl
+              , MiniProtocolLimits ptcl)
            => PerMuxSharedState ptcl m
            -> MiniProtocolMode
            -> m ()
 muxControl pmss md = do
-    _ <- atomically $ readTBQueue (ingressQueue (dispatchTable pmss) Muxcontrol md)
+    _ <- atomically $ do
+        buf <- readTVar (ingressQueue (dispatchTable pmss) Muxcontrol md)
+        when (buf == BL.empty)
+            retry
     throwM $ MuxError MuxControlProtocolError "MuxControl message on mature MuxBearer" callStack
 
 -- | muxChannel creates a duplex channel for a specific 'MiniProtocolId' and 'MiniProtocolMode'.
-muxChannel :: (MonadSTM m, MonadSay m, Ord ptcl, Enum ptcl) =>
+muxChannel :: ( MonadSTM m, MonadSay m, MonadThrow m, Ord ptcl, Enum ptcl, Show ptcl
+              , MiniProtocolLimits ptcl, HasCallStack) =>
     PerMuxSharedState ptcl m ->
     MiniProtocolId ptcl ->
     MiniProtocolMode ->
@@ -140,14 +147,24 @@ muxChannel pmss mid md w cnt =
         -- We send CBOR encoded messages by encoding them into by ByteString
         -- forwarding them to the 'mux' thread, see 'Desired servicing semantics'.
         --say $ printf "send mid %s mode %s" (show mid) (show md)
+        when (BL.length encoding > maximumMessageSize mid) $
+            throwM $ MuxError MuxTooLargeMessage
+                (printf "Attempting to send a message of size %d on %s %s" (BL.length encoding)
+                        (show mid) (show $ md))
+                callStack
         atomically $ modifyTVar' cnt (+ 1)
         atomically $ putTMVar w encoding
         atomically $ writeTBQueue (tsrQueue pmss) (TLSRDemand mid md (Wanton w))
     recv = do
         -- We receive CBOR encoded messages as ByteStrings (possibly partial) from the
         -- matching ingress queueu. This is the same queue the 'demux' thread writes to.
-        blob <- atomically $ readTBQueue (ingressQueue (dispatchTable pmss) mid md)
-        --say $ printf "recv mid %s mode %s blob len %d" (show mid) (show md) (BL.length blob)
+        blob <- atomically $ do
+            let q = ingressQueue (dispatchTable pmss) mid md
+            blob <- readTVar q
+            if blob == BL.empty
+                then retry
+                else writeTVar q BL.empty >> return blob
+        -- say $ printf "recv mid %s mode %s blob len %d" (show mid) (show md) (BL.length blob)
         if BL.null blob
            then pure Nothing
            else return $ Just blob

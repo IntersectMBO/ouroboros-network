@@ -16,6 +16,7 @@ import           Codec.Serialise (Serialise (..))
 import           Control.Monad
 import qualified Data.Binary.Put as Bin
 import qualified Data.ByteString.Lazy as BL
+import           Data.Int
 import           Data.Word
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
@@ -23,6 +24,7 @@ import           Test.Tasty.QuickCheck (testProperty)
 import           Text.Printf
 
 import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
@@ -56,7 +58,7 @@ version1 :: Mx.Version
 version1 = Mx.Version1  (Mx.NetworkMagic 0xbeebcafe)
 
 data TestProtocols1 = ChainSync1
-  deriving (Eq, Ord, Enum, Bounded)
+  deriving (Eq, Ord, Enum, Bounded, Show)
 
 instance Mx.ProtocolEnum TestProtocols1 where
   fromProtocolEnum ChainSync1 = 2
@@ -64,8 +66,15 @@ instance Mx.ProtocolEnum TestProtocols1 where
   toProtocolEnum 2 = Just ChainSync1
   toProtocolEnum _ = Nothing
 
+defaultMiniProtocolLimit :: Int64
+defaultMiniProtocolLimit = 3000000
+
+instance Mx.MiniProtocolLimits TestProtocols1 where
+  maximumMessageSize ChainSync1  = defaultMiniProtocolLimit
+  maximumIngressQueue ChainSync1 = defaultMiniProtocolLimit
+
 data TestProtocols2 = ChainSync2 | BlockFetch2
-  deriving (Eq, Ord, Enum, Bounded)
+  deriving (Eq, Ord, Enum, Bounded, Show)
 
 instance Mx.ProtocolEnum TestProtocols2 where
   fromProtocolEnum ChainSync2  = 2
@@ -75,6 +84,11 @@ instance Mx.ProtocolEnum TestProtocols2 where
   toProtocolEnum 3 = Just BlockFetch2
   toProtocolEnum _ = Nothing
 
+instance Mx.MiniProtocolLimits TestProtocols2 where
+  maximumMessageSize ChainSync2   = defaultMiniProtocolLimit
+  maximumMessageSize BlockFetch2  = defaultMiniProtocolLimit
+  maximumIngressQueue ChainSync2  = defaultMiniProtocolLimit
+  maximumIngressQueue BlockFetch2 = defaultMiniProtocolLimit
 
 newtype DummyPayload = DummyPayload {
       unDummyPayload :: BL.ByteString
@@ -85,10 +99,16 @@ instance Show DummyPayload where
 
 instance Arbitrary DummyPayload where
     arbitrary = do
-       len  <- choose (0, 2 * 1024 * 1024)
+       n <- choose (0, 128)
+       len <- oneof [ return n
+                    , return $ defaultMiniProtocolLimit - n - cborOverhead
+                    , choose (0, defaultMiniProtocolLimit - cborOverhead)
+                    ]
        p <- arbitrary
        let blob = BL.replicate len p
        return $ DummyPayload blob
+      where
+        cborOverhead = 7 -- XXX Bytes needed by CBOR to encode the dummy payload
 
 instance Serialise DummyPayload where
     encode a = encodeBytes (BL.toStrict $ unDummyPayload a)
@@ -122,7 +142,8 @@ data MuxSTMCtx ptcl m = MuxSTMCtx {
     , traceQueue :: Maybe (TBQueue m (Mx.MiniProtocolId ptcl, Mx.MiniProtocolMode, Time m))
 }
 
-startMuxSTM :: (Ord ptcl, Enum ptcl, Bounded ptcl, Mx.ProtocolEnum ptcl)
+startMuxSTM :: (Ord ptcl, Enum ptcl, Bounded ptcl, Mx.ProtocolEnum ptcl, Show ptcl
+               , Mx.MiniProtocolLimits ptcl)
             => [(Mx.Version, Mx.MiniProtocolDescriptions ptcl IO)]
             -> Mx.MuxStyle
             -> TBQueue IO BL.ByteString

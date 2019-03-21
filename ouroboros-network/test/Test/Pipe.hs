@@ -49,13 +49,17 @@ prop_pipe_demo (TestBlockChainAndUpdates chain updates) =
 
 -- | The enumeration of all mini-protocols in our demo protocol.
 data DemoProtocols = ChainSync
-  deriving (Eq, Ord, Enum, Bounded)
+  deriving (Eq, Ord, Enum, Bounded, Show)
 
 instance Mx.ProtocolEnum DemoProtocols where
   fromProtocolEnum ChainSync = 2
 
   toProtocolEnum 2 = Just ChainSync
   toProtocolEnum _ = Nothing
+
+instance Mx.MiniProtocolLimits DemoProtocols where
+  maximumMessageSize ChainSync  = 2000000
+  maximumIngressQueue ChainSync = 2000000
 
 -- | A demonstration that we can run the simple chain consumer protocol
 -- over a pipe with full message serialisation, framing etc.

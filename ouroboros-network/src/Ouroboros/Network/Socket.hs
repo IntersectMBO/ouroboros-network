@@ -89,13 +89,15 @@ socketAsMuxBearer sd = do
           return $ fromIntegral $ max (1260 - 8) (min 0xffff (15 * mss - 8))
 
 
-startResponder :: (Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl)
+startResponder :: ( Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl, Show ptcl
+                  , Mx.MiniProtocolLimits ptcl)
                => [(Mx.Version, Mx.MiniProtocolDescriptions ptcl IO)]
                -> AddrInfo
                -> IO (Socket, Async ())
 startResponder mpds addr = startResponderT mpds addr Nothing
 
-startResponderT :: (Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl)
+startResponderT :: ( Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl, Show ptcl
+                   , Mx.MiniProtocolLimits ptcl)
                 => [(Mx.Version, Mx.MiniProtocolDescriptions ptcl IO)]
                 -> AddrInfo
                 -> Maybe (Maybe SomeException -> IO ())
@@ -142,14 +144,16 @@ killResponder (sd, hdl) = do
     cancel hdl
     close sd
 
-startInitiator :: (Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl)
+startInitiator :: (Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl, Show ptcl
+                   , Mx.MiniProtocolLimits ptcl)
                => [(Mx.Version, Mx.MiniProtocolDescriptions ptcl IO)]
                -> AddrInfo
                -> AddrInfo
                -> IO ()
 startInitiator mpds local remote = startInitiatorT mpds local remote Nothing
 
-startInitiatorT :: (Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl)
+startInitiatorT :: ( Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl, Show ptcl
+                   , Mx.MiniProtocolLimits ptcl)
                 => [(Mx.Version, Mx.MiniProtocolDescriptions ptcl IO)]
                 -> AddrInfo
                 -> AddrInfo

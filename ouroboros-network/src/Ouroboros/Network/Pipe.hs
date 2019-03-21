@@ -36,6 +36,7 @@ pipeAsMuxBearer
      , Ord ptcl
      , Enum ptcl
      , Bounded ptcl
+     , Mx.MiniProtocolLimits ptcl
      )
   => PipeCtx
   -> IO (MuxBearer ptcl IO)
@@ -91,7 +92,8 @@ pipeAsMuxBearer ctx = do
       sduSize = return 32768
 
 
-startPipe :: (Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl)
+startPipe :: ( Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl, Show ptcl
+             , Mx.MiniProtocolLimits ptcl)
           => [(Mx.Version, Mx.MiniProtocolDescriptions ptcl IO)]
           -> Mx.MuxStyle
           -> (Handle, Handle) -> IO ()
