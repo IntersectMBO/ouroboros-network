@@ -1,12 +1,22 @@
+{-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE KindSignatures    #-}
+{-# LANGUAGE TypeFamilies      #-}
 
 -- | This is the starting point for a module that will bring together the
 -- overall node to node protocol, as a collection of mini-protocols.
 --
 module Ouroboros.Network.NodeToNode (
-  NodeToNodeProtocols(..)
+    NodeToNodeProtocols(..)
+  , NodeToNodeVersion (..)
   ) where
 
-import Ouroboros.Network.Mux.Types (ProtocolEnum(..))
+
+import           Data.Word
+import           GHC.TypeNats
+
+import           Ouroboros.Network.Mux.Types (ProtocolEnum(..))
+import           Ouroboros.Network.Mux.Control
 
 
 -- | An index type used with the mux to enumerate all the mini-protocols that
@@ -43,3 +53,9 @@ instance ProtocolEnum NodeToNodeProtocols where
   toProtocolEnum 4 = Just TxSubmission
   toProtocolEnum _ = Nothing
 
+newtype NodeToNodeVersion = NodeToNodeVersion {
+    ntnNetworkMagic :: Word32
+  }
+  deriving (Eq, Ord, Show)
+
+type instance MuxVersion (10 :: Nat) = NodeToNodeVersion

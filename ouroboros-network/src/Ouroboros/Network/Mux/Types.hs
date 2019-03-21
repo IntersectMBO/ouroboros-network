@@ -17,20 +17,13 @@ module Ouroboros.Network.Mux.Types (
     , MuxStyle (..)
     , MuxSDU (..)
     , MuxSDUHeader (..)
-    , NetworkMagic (..)
     , PerMuxSharedState (..)
     , RemoteClockModel (..)
     , TranslocationServiceRequest (..)
-    , Version (..)
-    , versionMagic
     , Wanton (..)
     ) where
 
-import qualified Codec.CBOR.Decoding as CBOR
-import qualified Codec.CBOR.Encoding as CBOR
-import           Codec.Serialise.Class
 import           Control.Exception
-import qualified Control.Monad.Fail as MonadFail (fail)
 import           Data.Array
 import qualified Data.ByteString.Lazy as BL
 import           Data.Ix (Ix (..))
@@ -44,33 +37,6 @@ import           Ouroboros.Network.Channel
 
 newtype RemoteClockModel = RemoteClockModel { unRemoteClockModel :: Word32 } deriving Eq
 
-newtype NetworkMagic = NetworkMagic { unNetworkMagic :: Word32 } deriving (Eq, Show, Ord)
-
-instance Serialise NetworkMagic where
-    encode (NetworkMagic nm) = encode nm
-    decode = NetworkMagic <$> decode
-
-data Version = Version0 !NetworkMagic -- Plain NodeToNode
-             | Version1 !NetworkMagic -- NodeToClient
-             deriving (Eq, Ord, Show)
-
-versionMagic :: Version -> NetworkMagic
-versionMagic (Version0 nm) = nm
-versionMagic (Version1 nm) = nm
-
-instance Serialise Version where
-    encode (Version0 m) = CBOR.encodeWord 0 <> encode m
-    encode (Version1 m) = CBOR.encodeWord 1 <> encode m
-
-    decode = do
-        vn <- CBOR.decodeWord
-        case vn of
-             0 -> Version0 . NetworkMagic <$> decode
-             1 -> Version1 . NetworkMagic <$> decode
-             -- @'MonadFail'@ instance for @'Decoder'@ will fail with
-             -- @'DeserialiseFailure'@, since we are not throwing an exception
-             -- we can recover from it in pure code.
-             n -> MonadFail.fail ("unknown version " ++ show n)
 
 --
 -- Mini-protocol numbers

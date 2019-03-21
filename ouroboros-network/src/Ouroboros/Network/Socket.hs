@@ -1,3 +1,4 @@
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Network.Socket (
@@ -26,6 +27,7 @@ import qualified Network.Socket.ByteString.Lazy as Socket (recv, sendAll)
 import qualified Ouroboros.Network.Mux as Mx
 import qualified Ouroboros.Network.Mux.Types as Mx
 import           Ouroboros.Network.Mux.Types (MuxBearer)
+import qualified Ouroboros.Network.Mux.Control as Mx
 
 import           Text.Printf
 
@@ -90,17 +92,19 @@ socketAsMuxBearer sd = do
 
 
 startResponder :: (Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl)
-               => [(Mx.Version, Mx.MiniProtocolDescriptions ptcl IO)]
+               => [Mx.SomeVersion]
+               -> (Mx.SomeVersion -> Maybe (Mx.MiniProtocolDescriptions ptcl IO))
                -> AddrInfo
                -> IO (Socket, Async ())
-startResponder mpds addr = startResponderT mpds addr Nothing
+startResponder versions mpds addr = startResponderT versions mpds addr Nothing
 
 startResponderT :: (Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl)
-                => [(Mx.Version, Mx.MiniProtocolDescriptions ptcl IO)]
+                => [Mx.SomeVersion]
+                -> (Mx.SomeVersion -> Maybe (Mx.MiniProtocolDescriptions ptcl IO))
                 -> AddrInfo
                 -> Maybe (Maybe SomeException -> IO ())
                 -> IO (Socket, Async ())
-startResponderT verMpds addr rescb_m =
+startResponderT versions mpds addr rescb_m =
     bracketOnError
         (socket (addrFamily addr) Stream defaultProtocol)
         close
@@ -121,7 +125,7 @@ startResponderT verMpds addr rescb_m =
     larval sd = do
         bearer <- socketAsMuxBearer sd
         Mx.muxBearerSetState bearer Mx.Connected
-        Mx.muxStart verMpds bearer Mx.StyleServer rescb_m
+        Mx.muxStart versions mpds bearer Mx.StyleServer rescb_m
 
     watcher sd aid = do
         res_e <- waitCatch aid
@@ -143,19 +147,21 @@ killResponder (sd, hdl) = do
     close sd
 
 startInitiator :: (Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl)
-               => [(Mx.Version, Mx.MiniProtocolDescriptions ptcl IO)]
+               => [Mx.SomeVersion]
+               -> (Mx.SomeVersion -> Maybe (Mx.MiniProtocolDescriptions ptcl IO))
                -> AddrInfo
                -> AddrInfo
                -> IO ()
-startInitiator mpds local remote = startInitiatorT mpds local remote Nothing
+startInitiator versions mpds local remote = startInitiatorT versions mpds local remote Nothing
 
 startInitiatorT :: (Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl)
-                => [(Mx.Version, Mx.MiniProtocolDescriptions ptcl IO)]
+                => [Mx.SomeVersion]
+                -> (Mx.SomeVersion -> Maybe (Mx.MiniProtocolDescriptions ptcl IO))
                 -> AddrInfo
                 -> AddrInfo
                 -> Maybe (Maybe SomeException -> IO ())
                 -> IO ()
-startInitiatorT verMpds local remote rescb_m =
+startInitiatorT versions mpds local remote rescb_m =
     bracketOnError
         (socket (addrFamily local) Stream defaultProtocol)
         close
@@ -167,7 +173,7 @@ startInitiatorT verMpds local remote rescb_m =
             connect sd (addrAddress remote)
             Mx.muxBearerSetState bearer Mx.Connected
 
-            void $ Mx.muxStart verMpds bearer Mx.StyleClient rescb_m
+            void $ Mx.muxStart versions mpds bearer Mx.StyleClient rescb_m
         )
 
 hexDump :: BL.ByteString -> String -> IO ()

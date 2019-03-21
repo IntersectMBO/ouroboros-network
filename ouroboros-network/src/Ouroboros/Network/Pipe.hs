@@ -21,6 +21,7 @@ import           System.IO (Handle, hClose, hFlush)
 import qualified Ouroboros.Network.Mux as Mx
 import           Ouroboros.Network.Mux.Types (MuxBearer)
 import qualified Ouroboros.Network.Mux.Types as Mx
+import qualified Ouroboros.Network.Mux.Control as Mx
 
 
 import qualified Data.ByteString.Lazy as BL
@@ -92,11 +93,12 @@ pipeAsMuxBearer ctx = do
 
 
 startPipe :: (Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl)
-          => [(Mx.Version, Mx.MiniProtocolDescriptions ptcl IO)]
+          => [Mx.SomeVersion]
+          -> (Mx.SomeVersion -> Maybe (Mx.MiniProtocolDescriptions ptcl IO))
           -> Mx.MuxStyle
           -> (Handle, Handle) -> IO ()
-startPipe verMpds style (r, w) = do
+startPipe versions mpds style (r, w) = do
     let ctx = PipeCtx r w
     bearer <- pipeAsMuxBearer ctx
-    void $ async $ Mx.muxStart verMpds bearer style Nothing
+    void $ async $ Mx.muxStart versions mpds bearer style Nothing
 
