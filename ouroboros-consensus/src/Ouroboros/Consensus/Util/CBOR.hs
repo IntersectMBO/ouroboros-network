@@ -108,6 +108,9 @@ data ReadIncrementalErr =
 
 -- | Read a file incrementally
 --
+-- NOTE: The 'MonadThrow' constraint is only needed for 'bracket'. This
+-- function does not actually throw anything.
+--
 -- NOTE: This uses a chunk size of roughly 32k. If we use this function to read
 -- small things this might not be ideal.
 --

@@ -111,6 +111,7 @@
             (hsPkgs.ouroboros-network)
             (hsPkgs.ouroboros-consensus)
             (hsPkgs.io-sim-classes)
+            (hsPkgs.io-sim)
             (hsPkgs.bifunctors)
             (hsPkgs.binary)
             (hsPkgs.bytestring)
