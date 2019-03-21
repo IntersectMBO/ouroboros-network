@@ -59,6 +59,7 @@ import qualified Pos.Util.Wlog as Wlog
 import qualified Ouroboros.Byron.Proxy.DB as DB
 import qualified Ouroboros.Byron.Proxy.Index as Index
 import Ouroboros.Byron.Proxy.Types
+import qualified Ouroboros.Storage.Common as Immutable
 import qualified Ouroboros.Storage.ImmutableDB.API as Immutable
 import qualified Ouroboros.Storage.ImmutableDB.Impl as Immutable
 import Ouroboros.Storage.FS.API.Types
@@ -286,21 +287,6 @@ main = withCompileInfo $ do
           fsMountPoint = MountPoint dbFilePath
           fs :: HasFS IO HandleIO
           fs = ioHasFS fsMountPoint
-          -- Must give CSL.HeaderHash encoder/decoder in order to open the
-          -- `ImmutableDB`.
-          decodeMaybeHash :: forall s . CBOR.Decoder s (Maybe HeaderHash)
-          decodeMaybeHash = do
-            n <- CBOR.decodeListLen
-            case n of
-              0 -> pure Nothing
-              1 -> do
-                !hash <- decodeHeaderHash
-                pure (Just hash)
-              _ -> fail "unknown tag"
-          encodeMaybeHash :: Maybe HeaderHash -> CBOR.Encoding
-          encodeMaybeHash mHash = case mHash of
-            Nothing -> CBOR.encodeListLen 0
-            Just hash -> CBOR.encodeListLen 1 <> encodeHeaderHash hash
           -- These 2 go by way of the cardano-sl `Bi` class, which is not the
           -- same as the `Serialise` class. Typeclasses are way over used and,
           -- more often than not, very annoying.
@@ -309,8 +295,8 @@ main = withCompileInfo $ do
           encodeHeaderHash :: HeaderHash -> CBOR.Encoding
           encodeHeaderHash = CSL.encode
           openDB = Immutable.openDB
-            decodeMaybeHash
-            encodeMaybeHash
+            decodeHeaderHash
+            encodeHeaderHash
             fs
             exceptions
             getEpochSize
