@@ -17,6 +17,7 @@ import           Data.Typeable
 import           Data.Word (Word64)
 
 import           Ouroboros.Network.Block
+import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API.Types
 
 type FileId = Int
@@ -47,7 +48,7 @@ data ParserError blockId =
       DuplicatedSlot (Map blockId ([String], [String]))
     | SlotsPerFileError String
     | InvalidFilename String
-    | DecodeFailed (Word64, Map Word64 (Word64, blockId)) String Word64
+    | DecodeFailed String Word64
     deriving (Show)
 
 instance Eq blockId => Eq (ParserError blockId) where
@@ -67,25 +68,13 @@ sameParseError e1 e2 = case (e1, e2) of
     (DuplicatedSlot _, DuplicatedSlot _)         -> True
     (SlotsPerFileError _, SlotsPerFileError _)   -> True
     (InvalidFilename str1, InvalidFilename str2) -> str1 == str2
-    (DecodeFailed _ _ _ , DecodeFailed _ _ _)    -> True
+    (DecodeFailed _ _ , DecodeFailed _ _)        -> True
     _                                            -> False
-{-}
--- TODO(kde) unify/move/replace
-newtype Parser m blockId = Parser {
-    parse       :: forall h.
-                   HasFS m h
-                -> ErrorHandling (VolatileDBError blockId) m
-                -> [String]
-                -> m (Word64, Map Word64 (Word64, blockId))
-    }
--}
+
 type FileSize  = Word64
 type BlockSize = Word64
 
--- | The offset of a block in an index file.
-type SlotOffset = Word64
-
-newtype Parser m blockId = Parser {
+newtype Parser e m blockId = Parser {
     -- | Parse block storage at the given path
-    parse :: FsPath -> m (FileSize, Map SlotOffset (BlockSize, blockId))
+    parse :: FsPath -> m ([(SlotOffset, (BlockSize, blockId))], Maybe e)
     }

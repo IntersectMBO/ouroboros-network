@@ -63,7 +63,7 @@ import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 import           Ouroboros.Storage.VolatileDB.API
 import qualified Ouroboros.Storage.VolatileDB.Impl as Internal hiding (openDB)
 
-import           Test.Ouroboros.Storage.FS.Sim.Error
+import           Test.Ouroboros.Storage.FS.Sim.Error hiding (null)
 import           Test.Ouroboros.Storage.Util
 import           Test.Ouroboros.Storage.VolatileDB.Model
 import           Test.Ouroboros.Storage.VolatileDB.TestBlock
@@ -134,7 +134,6 @@ instance Show (Model r) where
 deriving instance Show (ModelShow r)
 deriving instance Generic (DBModel BlockId)
 deriving instance Generic (ModelShow r)
-deriving instance Generic SlotNo
 deriving instance ToExpr SlotNo
 deriving instance Generic BlockId
 deriving instance Generic (ParserError BlockId)
@@ -329,6 +328,9 @@ preconditionImpl m@Model {..} (At (CmdErr cmd _)) =
         Corrupt cors ->
             forall (corruptionFiles cors) (`elem` getDBFiles dbModel)
             .&& (Boolean $ open dbModel)
+        DuplicateBlock (_file, bid) ->
+            let bids = concat $ (\(_,(_, _, bs)) -> bs) <$> (M.toList $ index dbModel)
+            in bid `elem` bids
         _ -> Top
   where
       corruptionFiles = map snd . NE.toList
@@ -493,12 +495,12 @@ knownLimitation model (At cmd) = case cmd of
 
 mkDBModel :: MonadState (DBModel BlockId, Maybe Errors) m
           => Int
-          -> (BlockId -> Slot)
+          -> (BlockId -> SlotNo)
           -> (DBModel BlockId, VolatileDB BlockId (ExceptT (VolatileDBError BlockId) m))
 mkDBModel = openDBModel EH.exceptT
 
-prop_sequential_errors :: Property
-prop_sequential_errors =
+prop_sequential :: Property
+prop_sequential = withMaxSuccess 1000 $
     forAllCommands smUnused Nothing $ \cmds -> monadicIO $ do
         let test :: TVar IO Errors
                  -> HasFS IO h
@@ -517,10 +519,9 @@ prop_sequential_errors =
         prettyCommands smUnused hist
             $ tabulate "Tags" (map show $ tag events)
             $ tabulate "Commands" (cmdName . eventCmd <$> events)
-            $ tabulate "Error Tags" (map show $ tagSimulatedErrors events)
+            $ tabulate "Error Tags" (tagSimulatedErrors events)
             $ tabulate "IsMember: Total number of True's" [myshow $ isMemberTrue events]
             $ tabulate "IsMember: At least one True" [show $ isMemberTrue' events]
-            $ tabulate "Ways it end" [tagParser events]
             $ res === Ok
     where
         -- we use that: MonadState (DBModel BlockId) (State (DBModel BlockId))
@@ -531,7 +532,7 @@ prop_sequential_errors =
 
 tests :: TestTree
 tests = testGroup "VolatileDB-q-s-m" [
-      testProperty "q-s-m-Errors" $ prop_sequential_errors
+      testProperty "q-s-m-Errors" $ prop_sequential
     ]
 
 {-------------------------------------------------------------------------------
@@ -646,13 +647,6 @@ tag ls = C.classify
 
 getCmd :: Event r -> Cmd
 getCmd ev = cmd $ unAt (eventCmd ev)
-
-tagParser :: [Event Symbolic] -> String
-tagParser [] = "TagEmpty"
-tagParser ls = if any (\e -> shouldEnd (eventBefore e) || shouldEnd (eventAfter e)) ls
-               then "TagParseErrorEnd"
-               else "TagNormalEnd"
-
 
 isMemberTrue :: [Event Symbolic] -> Int
 isMemberTrue events = sum $ count <$> events

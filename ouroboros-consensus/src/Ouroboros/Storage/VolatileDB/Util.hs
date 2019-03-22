@@ -81,28 +81,28 @@ filePath fd = "blocks-" ++ show fd ++ ".dat"
   Comparing utilities
 ------------------------------------------------------------------------------}
 
-maxSlotMap :: Map Word64 (Word64, blockId) -> (blockId -> Slot) -> Maybe (blockId, Slot)
+maxSlotMap :: Map Word64 (Word64, blockId) -> (blockId -> SlotNo) -> Maybe (blockId, SlotNo)
 maxSlotMap mp toSlot = maxSlotList toSlot $ snd <$> Map.elems mp
 
-maxSlotList :: (blockId -> Slot) -> [blockId] -> Maybe (blockId, Slot)
+maxSlotList :: (blockId -> SlotNo) -> [blockId] -> Maybe (blockId, SlotNo)
 maxSlotList toSlot = updateSlot toSlot Nothing
 
 cmpMaybe :: Ord a => Maybe a -> a -> Bool
 cmpMaybe Nothing _   = False
 cmpMaybe (Just a) a' = a >= a'
 
-updateSlot :: forall blockId. (blockId -> Slot) -> Maybe blockId -> [blockId] -> Maybe (blockId, Slot)
+updateSlot :: forall blockId. (blockId -> SlotNo) -> Maybe blockId -> [blockId] -> Maybe (blockId, SlotNo)
 updateSlot toSlot mbid = foldl cmpr ((\b -> (b, toSlot b)) <$> mbid)
     where
-        cmpr :: Maybe (blockId, Slot) -> blockId -> Maybe (blockId, Slot)
+        cmpr :: Maybe (blockId, SlotNo) -> blockId -> Maybe (blockId, SlotNo)
         cmpr Nothing bid = Just (bid, toSlot bid)
         cmpr (Just (bid, sl)) bid' =
             let sl' = toSlot bid'
             in Just $ if sl > sl' then (bid, sl) else (bid', sl')
 
-updateSlotNoBlockId :: Maybe Slot -> [Slot] -> Maybe Slot
+updateSlotNoBlockId :: Maybe SlotNo -> [SlotNo] -> Maybe SlotNo
 updateSlotNoBlockId = foldl cmpr
     where
-        cmpr :: Maybe Slot -> Slot -> Maybe Slot
+        cmpr :: Maybe SlotNo -> SlotNo -> Maybe SlotNo
         cmpr Nothing sl'   = Just sl'
         cmpr (Just sl) sl' = Just $ max sl sl'

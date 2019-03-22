@@ -39,7 +39,7 @@ import           Test.Ouroboros.Storage.VolatileDB.TestBlock
 withTestDB :: (HasCallStack, MonadSTM m, MonadMask m)
            => HasFS m h
            -> ErrorHandling (VolatileDBError BlockId) m
-           -> Parser m BlockId
+           -> Parser (ParserError BlockId) m BlockId
            -> Int
            -> (VolatileDB BlockId m -> m a)
            -> m a
@@ -77,6 +77,7 @@ prop_VolatileInvalidArg = monadicIO $ do
         )
 
 -- Check if db succesfully garbage-collects.
+-- This can't be replaces by q-s-m because it's a precondition/limitation.
 prop_VolatileGarbageCollect :: HasCallStack => BlockId -> [BlockId] -> [BlockId] -> Property
 prop_VolatileGarbageCollect special ls1 ls2 = monadicIO $ do
     let blocksPerFile = 5

@@ -5,11 +5,9 @@ import           System.IO.Temp
 import           Test.Tasty
 
 import qualified Test.Ouroboros.Storage
-import           Test.Ouroboros.Storage.VolatileDB.StateMachine hiding (tests)
 
 main :: IO ()
 main = do
-  showLabelledExamples
   sysTmpDir <- Dir.getTemporaryDirectory
   withTempDirectory sysTmpDir "cardano-s-m" $ \tmpDir ->
     defaultMain (tests tmpDir)

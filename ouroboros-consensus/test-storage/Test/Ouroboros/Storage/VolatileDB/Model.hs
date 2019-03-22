@@ -45,7 +45,7 @@ data DBModel blockId = DBModel {
     , open           :: Bool -- is the db open.
     , mp             :: Map blockId ByteString -- superset of blocks in db. Some of them may be gced already.
     , latestGarbaged :: Maybe SlotNo -- last gced slot.
-    , index          :: Map String (Maybe Slot, Int, [blockId]) -- what each file contains in the real impl.
+    , index          :: Map String (Maybe SlotNo, Int, [blockId]) -- what each file contains in the real impl.
     , currentFile    :: String -- the current open file. If the db is empty this is the next it wil write.
     , nextFId        :: FileId -- the next file id.
     } deriving (Show)
@@ -78,7 +78,7 @@ openDBModel :: MonadState (MyState blockId) m
             => (Ord blockId)
             => ErrorHandling (VolatileDBError blockId) m
             -> Int
-            -> (blockId -> Slot)
+            -> (blockId -> SlotNo)
             -> (DBModel blockId, VolatileDB blockId m)
 openDBModel err maxNumPerFile toSlot = (dbModel, db)
     where
@@ -126,7 +126,7 @@ putBlockModel :: MonadState (MyState blockId) m
               => Ord blockId
               => ErrorHandling (VolatileDBError blockId) m
               -> Int
-              -> (blockId -> Slot)
+              -> (blockId -> SlotNo)
               -> blockId
               -> Builder
               -> m ()
@@ -190,7 +190,7 @@ garbageCollectModel err sl = do
                 Nothing   -> []
                 Just cErr -> getStream . _removeFile $ cErr
         let f :: [Maybe FsErrorType]
-              -> (String, (Maybe Slot, Int, [blockId]))
+              -> (String, (Maybe SlotNo, Int, [blockId]))
               -> m [Maybe FsErrorType]
             f fsErr (path, (msl,_n,_bids)) = case (cmpMaybe msl sl, path == currentFile, tru, fsErr) of
                     (True, _, _, _) -> return fsErr
@@ -225,7 +225,7 @@ garbageCollectModel err sl = do
         return ()
 
 modifyIndex :: MonadState (MyState blockId) m
-            => (Map String (Maybe Slot, Int, [blockId]) -> Map String (Maybe Slot, Int, [blockId]))
+            => (Map String (Maybe SlotNo, Int, [blockId]) -> Map String (Maybe SlotNo, Int, [blockId]))
             -> m ()
 modifyIndex f = do
     dbm@DBModel {..} <- getDB
@@ -233,7 +233,7 @@ modifyIndex f = do
 
 runCorruptionModel :: forall blockId m. MonadState (MyState blockId) m
                    => Ord blockId
-                   => (blockId -> Slot)
+                   => (blockId -> SlotNo)
                    -> Corruptions
                    -> m ()
 runCorruptionModel toSlot corrs = do
@@ -283,12 +283,12 @@ runCorruptionModel toSlot corrs = do
                                          && isNothing (parseError dbm)
                                       -- TODO(kde) need to improve error message if we want to compare
                                       -- with the real one.
-                                      then Just (DecodeFailed (0, Map.empty) "" 0) else parseError dbm
+                                      then Just (DecodeFailed "" 0) else parseError dbm
                 AppendBytes n ->
                     dbm {parseError = parseError'}
                       where
                         parseError' = if n > 0 && isNothing (parseError dbm)
-                                      then Just (DecodeFailed (0, Map.empty) "" 0) else parseError dbm
+                                      then Just (DecodeFailed "" 0) else parseError dbm
                     -- Appending doesn't actually change anything, since additional bytes will be truncated.
 
 createFileModel :: forall blockId m. MonadState (MyState blockId) m
@@ -338,7 +338,7 @@ recover err dbm@DBModel {..} = do
         (_, Just lst) ->
             let (file, (_msl, _n, _bids)) = last sorted
             in if unsafeParseFd file == lst then (file, lst + 1, index)
-               else (Internal.filePath $ lst + 2, lst + 2, Map.insert (Internal.filePath $ lst + 1) newFileInfo index)
+               else (Internal.filePath $ lst + 1, lst + 2, Map.insert (Internal.filePath $ lst + 1) newFileInfo index)
 
 newFileInfo :: (Maybe a, Int, [b])
 newFileInfo = (Nothing, 0, [])
