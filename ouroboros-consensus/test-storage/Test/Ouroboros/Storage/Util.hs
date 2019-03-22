@@ -40,8 +40,8 @@ import           Ouroboros.Storage.ImmutableDB (ImmutableDBError (..),
 import qualified Ouroboros.Storage.ImmutableDB as Immutable
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
-import           Ouroboros.Storage.VolatileDB (SlotNo (..),
-                     VolatileDBError (..), sameVolatileDBError)
+import           Ouroboros.Storage.VolatileDB (VolatileDBError (..), 
+                     sameVolatileDBError)
 import qualified Ouroboros.Storage.VolatileDB as Volatile
 
 {------------------------------------------------------------------------------

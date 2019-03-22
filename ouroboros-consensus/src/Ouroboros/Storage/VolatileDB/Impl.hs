@@ -177,6 +177,7 @@ openDBFull hasFS err parser maxBlocksPerFile toSlot = do
         , putBlock       = putBlockImpl toSlot env
         , garbageCollect = garbageCollectImpl env
         , getIsMember    = getIsMemberImpl env
+        , getBlockIds    = getBlockIdsImpl env
         }
     return (db, env)
 
@@ -350,6 +351,15 @@ getIsMemberImpl VolatileDBEnv{..} = do
     case mSt of
         Nothing -> EH.throwError _dbErr ClosedDBError
         Just st -> return (\bid -> Map.member bid (_currentRevMap st))
+
+getBlockIdsImpl :: forall m blockId. (MonadSTM m, Ord blockId)
+                => VolatileDBEnv m blockId
+                -> m [blockId]
+getBlockIdsImpl VolatileDBEnv{..} = do
+    mSt <- atomically (readTMVar _dbInternalState)
+    case mSt of
+        Nothing -> EH.throwError _dbErr ClosedDBError
+        Just st -> return $ Map.keys $ _currentRevMap st
 
 {------------------------------------------------------------------------------
   Internal functions

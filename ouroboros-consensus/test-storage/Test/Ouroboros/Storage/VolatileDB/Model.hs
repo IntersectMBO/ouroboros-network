@@ -91,6 +91,7 @@ openDBModel err maxNumPerFile toSlot = (dbModel, db)
             , putBlock       = putBlockModel err maxNumPerFile toSlot
             , garbageCollect = garbageCollectModel err
             , getIsMember    = getIsMemberModel err
+            , getBlockIds    = getBlockIdsModel err
         }
 
 closeDBModel :: MonadState (MyState blockId) m => m ()
@@ -223,6 +224,16 @@ garbageCollectModel err sl = do
         -- If anything changes there, then this wil also need change.
         _ <- foldM f remLs (sortOn (unsafeParseFd . fst) $ Map.toList index)
         return ()
+
+getBlockIdsModel :: forall m blockId
+                 . MonadState (MyState blockId) m
+                 => ErrorHandling (VolatileDBError blockId) m
+                 -> m [blockId]
+getBlockIdsModel err = do
+    DBModel {..} <- getDB
+    if not open then EH.throwError err ClosedDBError
+    else return $ concat $ (\(_,(_, _, bs)) -> bs) <$> (Map.toList $ index)
+     
 
 modifyIndex :: MonadState (MyState blockId) m
             => (Map String (Maybe SlotNo, Int, [blockId]) -> Map String (Maybe SlotNo, Int, [blockId]))

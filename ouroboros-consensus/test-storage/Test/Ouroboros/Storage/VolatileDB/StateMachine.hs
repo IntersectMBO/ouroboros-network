@@ -77,6 +77,7 @@ type (:@) t r = At t r
 data Success
   = Unit     ()
   | Blob     (Maybe ByteString)
+  | Blocks   [BlockId]
   | Bl       Bool
   | IsMember [Bool] -- We compare two functions based on their results on a list of inputs.
   | SimulatedError (Either (VolatileDBError BlockId) Success)
@@ -85,6 +86,7 @@ data Success
 instance Eq Success where
     Unit () == Unit () = True
     Blob mbs == Blob mbs' = mbs == mbs'
+    Blocks ls == Blocks ls' = S.fromList ls == S.fromList ls'
     Bl bl == Bl bl' = bl == bl'
     IsMember ls == IsMember ls' = ls == ls'
     SimulatedError _ == SimulatedError _ = True
@@ -99,6 +101,7 @@ data Cmd
     | Close
     | ReOpen
     | GetBlock BlockId
+    | GetBlockIds
     | PutBlock BlockId
     | GarbageCollect BlockId
     | AskIfMember [BlockId]
@@ -148,6 +151,7 @@ instance ToExpr (Model r) where
 instance CommandNames (At Cmd) where
     cmdName (At cmd) = case cmd of
         GetBlock _        -> "GetBlock"
+        GetBlockIds       -> "GetBlockIds"
         PutBlock _        -> "PutBlock"
         GarbageCollect _  -> "GarbageCollect"
         IsOpen            -> "IsOpen"
@@ -265,6 +269,7 @@ runDB :: (HasCallStack, Monad m)
       -> m Success
 runDB restCmd db cmd = case cmd of
     GetBlock bid       -> Blob <$> getBlock db bid
+    GetBlockIds        -> Blocks <$> getBlockIds db
     PutBlock bid       -> Unit <$> putBlock db bid (BL.lazyByteString $ Binary.encode $ toBlock bid)
     GarbageCollect bid -> Unit <$> garbageCollect db (toSlot bid)
     IsOpen             -> Bl <$> isOpenDB db
@@ -355,6 +360,7 @@ generatorCmdImpl terminatingCmd m@Model {..} =
             _  -> Just <$> elements bids
     cmd <- frequency
         [ (150, return $ GetBlock sl)
+        , (100, return $ GetBlockIds)
         , (150, return $ PutBlock sl)
         , (50, return $ GarbageCollect sl)
         , (50, return $ IsOpen)
@@ -391,6 +397,7 @@ generatorImpl mkErr terminatingCmd m@Model {..} = do
             -- we don't use corruptions as part of simulated errors.
             return err {_hPut = eraseCorruptions $ _hPut err}
         noErrorFor GetBlock {}          = False
+        noErrorFor GetBlockIds          = False
         noErrorFor ReOpen {}            = False
         noErrorFor IsOpen {}            = False
         noErrorFor Close {}             = False
@@ -478,6 +485,7 @@ mockImpl model cmdErr = At <$> return mockResp
 knownLimitation :: Model Symbolic -> Cmd :@ Symbolic -> Logic
 knownLimitation model (At cmd) = case cmd of
     GetBlock bid       -> Boolean $ isLimitation (latestGarbaged $ dbModel model) (toSlot bid)
+    GetBlockIds        -> Bot
     PutBlock bid       -> Boolean $ isLimitation (latestGarbaged $ dbModel model) (toSlot bid)
     GarbageCollect _sl -> Bot
     IsOpen             -> Bot
