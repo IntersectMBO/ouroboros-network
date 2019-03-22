@@ -54,6 +54,7 @@ library
                        Ouroboros.Consensus.Protocol.LeaderSchedule
                        Ouroboros.Consensus.Protocol.PermBFT
                        Ouroboros.Consensus.Protocol.Praos
+                       Ouroboros.Consensus.Protocol.Tags
                        Ouroboros.Consensus.Protocol.Test
                        Ouroboros.Consensus.Protocol.ExtNodeConfig
                        Ouroboros.Consensus.Protocol.ModChainSel

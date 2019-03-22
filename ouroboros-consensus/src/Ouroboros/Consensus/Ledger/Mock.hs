@@ -334,7 +334,7 @@ instance ( OuroborosTag p
       => HasPayload p (SimpleBlock (ExtNodeConfig cfg p) c) where
   blockPayload _ = encPayloadP . headerOuroboros . simpleHeader
 
-instance OuroborosTag p => UpdateLedger (SimpleBlock p c) where
+instance {-# OVERLAPPABLE #-} OuroborosTag p => UpdateLedger (SimpleBlock p c) where
   data LedgerState (SimpleBlock p c) =
       SimpleLedgerState {
           slsUtxo      :: Utxo

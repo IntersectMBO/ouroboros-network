@@ -69,7 +69,7 @@ import           Ledger.Core (Owner (Owner), VKey (VKey),
 -------------------------------------------------------------------------------}
 
 type DemoBFT            = Bft BftMockCrypto
-type DemoPermBFT        = PermBft PermBftMockCrypto
+type DemoPermBFT        = PermBft
 type DemoPraos          = ExtNodeConfig AddrDist (Praos PraosMockCrypto)
 type DemoLeaderSchedule = WithLeaderSchedule (Praos PraosMockCrypto)
 
@@ -80,12 +80,14 @@ data DemoProtocol p where
   DemoPraos          :: PraosParams -> DemoProtocol DemoPraos
   DemoLeaderSchedule :: LeaderSchedule -> PraosParams -> DemoProtocol DemoLeaderSchedule
 
-type family Block (p :: *) = b | b -> p
+-- type family Block (p :: *) = b | b -> p
 
-type instance Block DemoBFT            = SimpleBlock DemoBFT            SimpleBlockMockCrypto
-type instance Block DemoPermBFT        = SimpleBlock DemoPermBFT        SimpleBlockMockCrypto
-type instance Block DemoPraos          = SimpleBlock DemoPraos          SimpleBlockMockCrypto
-type instance Block DemoLeaderSchedule = SimpleBlock DemoLeaderSchedule SimpleBlockMockCrypto
+type Block p = SimpleBlock p SimpleBlockMockCrypto
+
+-- type instance Block DemoBFT            = SimpleBlock DemoBFT            SimpleBlockMockCrypto
+-- type instance Block DemoPermBFT        = SimpleBlock DemoPermBFT        SimpleBlockMockCrypto
+-- type instance Block DemoPraos          = SimpleBlock DemoPraos          SimpleBlockMockCrypto
+-- type instance Block DemoLeaderSchedule = SimpleBlock DemoLeaderSchedule SimpleBlockMockCrypto
 
 -- | Data required to run the specified protocol
 data ProtocolInfo p = ProtocolInfo {

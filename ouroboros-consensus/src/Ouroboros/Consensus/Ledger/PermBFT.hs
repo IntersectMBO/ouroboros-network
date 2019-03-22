@@ -21,26 +21,26 @@ import           Ouroboros.Consensus.Protocol.Abstract
                    OuroborosTag
                  , SupportedBlock
                  )
-import           Ouroboros.Consensus.Protocol.PermBFT
+import           Ouroboros.Consensus.Protocol.Tags
                  (
                    PermBft
                  )
 import           Ouroboros.Network.Block (HasHeader (..))
 
-type instance BlockProtocol (SimpleBlock p c) = p
+-- type instance BlockProtocol (SimpleBlock p c) = p
 
 
-instance OuroborosTag PermBft => UpdateLedger (SimpleBlock PermBft c) where
-  data LedgerState (SimpleBlock PermBft c) =
-    MkLedgerState deriving Show
+-- instance {-# OVERLAPPING #-} OuroborosTag PermBft => UpdateLedger (SimpleBlock PermBft c) where
+--   data LedgerState (SimpleBlock PermBft c) =
+--     MkLedgerState deriving Show
 
-  data LedgerError (SimpleBlock PermBft c) =
-    UndefinedLedgerError deriving Show
+--   data LedgerError (SimpleBlock PermBft c) =
+--     UndefinedLedgerError deriving Show
 
-  -- Apply a block to the ledger state
-  applyLedgerState b MkLedgerState = undefined
+--   -- Apply a block to the ledger state
+--   applyLedgerState b MkLedgerState = undefined
 
 
-instance SimpleBlockCrypto c
-      => ProtocolLedgerView (SimpleBlock PermBft c) where
-  protocolLedgerView = undefined
+-- instance SimpleBlockCrypto c
+--       => ProtocolLedgerView (SimpleBlock PermBft c) where
+--   protocolLedgerView = undefined

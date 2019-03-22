@@ -7,6 +7,7 @@
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
+
 module Ouroboros.Consensus.Protocol.PermBFT (
     PermBft
     -- * Classes
@@ -21,6 +22,7 @@ import           Control.Monad.Trans.Except (except)
 import           Data.Map.Strict (Map)
 import           GHC.Generics (Generic)
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Protocol.Tags (PermBft)
 
 import           Ouroboros.Consensus.Crypto.DSIGN.Class
 import           Ouroboros.Consensus.Crypto.DSIGN.Ed448 (Ed448DSIGN)
@@ -37,9 +39,8 @@ import           Cardano.Spec.Chain.STS.Rule.Chain (CHAIN)
 import           Cardano.Spec.Consensus.Block
 
 
-data PermBft
-
-instance OuroborosTag PermBft where
+instance ( Show (ChainState PermBft)
+         , Show (ValidationErr PermBft) ) => OuroborosTag PermBft where
   -- | The BFT payload is just the signature
   newtype Payload PermBft ph = PermBftPayload {
         permBftSignature :: Sig ph
