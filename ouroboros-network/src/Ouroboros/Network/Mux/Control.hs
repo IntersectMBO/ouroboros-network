@@ -13,7 +13,7 @@
 module Ouroboros.Network.Mux.Control (
     -- * Mux Versions
       MuxVersion
-    , SomeMuxVersion (..)
+    , SomeVersion (..)
     , SNat (..)
     , versionNumber
 
@@ -55,7 +55,7 @@ type family MuxVersion (n :: Nat)
 -- Singletons used to pattern match version.
 --
 -- Adding a new version requires adding a constructor here, this will allow to
--- pattern match on @'SomeMuxVersion'@ and get access to it's second field of type
+-- pattern match on @'SomeVersion'@ and get access to it's second field of type
 -- @'MuxVersion' n@.
 --
 data SNat (n :: Nat) where
@@ -75,8 +75,8 @@ versionNumber = fromIntegral . natVal . asProxy
 -- Existential wrapper for @'VersionField'@; it also carries singleton for @n@
 -- which allows to pattern match on constructors of @'MuxVersion' n@.
 --
-data SomeMuxVersion where
-  SomeMuxVersion
+data SomeVersion where
+  SomeVersion
     :: forall (n :: Nat).
        ( KnownNat   n
        , Serialise (MuxVersion n)
@@ -86,25 +86,25 @@ data SomeMuxVersion where
        )
     => SNat n       -- ^ singleton for (n :: Nat)
     -> MuxVersion n -- ^ version fields
-    -> SomeMuxVersion
+    -> SomeVersion
 
-instance Eq SomeMuxVersion where
-  (SomeMuxVersion n v) == (SomeMuxVersion n' v') =
+instance Eq SomeVersion where
+  (SomeVersion n v) == (SomeVersion n' v') =
     case sameNat (asProxy n) (asProxy n') of
       Just ref -> gcastWith ref (v == v')
       Nothing  -> False
 
-instance Ord SomeMuxVersion where
-  compare (SomeMuxVersion n v) (SomeMuxVersion n' v') =
+instance Ord SomeVersion where
+  compare (SomeVersion n v) (SomeVersion n' v') =
     case sameNat (asProxy n) (asProxy n') of
       Just ref -> gcastWith ref (v `compare` v')
       Nothing  -> natVal n `compare` natVal n'
 
-instance Show SomeMuxVersion where
-  show (SomeMuxVersion n v) = "SomeMuxVersion " ++ show (natVal n) ++ " " ++ show v
+instance Show SomeVersion where
+  show (SomeVersion n v) = "SomeVersion " ++ show (natVal n) ++ " " ++ show v
 
-getDecoder :: SomeMuxVersion -> SomeDecoder s
-getDecoder (SomeMuxVersion n _) = SomeDecoder n decode
+getDecoder :: SomeVersion -> SomeDecoder s
+getDecoder (SomeVersion n _) = SomeDecoder n decode
 
 -- |
 -- Existential wrapper for decoder; this is an internal type only used in this
@@ -123,32 +123,32 @@ data SomeDecoder s where
     -> CBOR.Decoder s (MuxVersion n)
     -> SomeDecoder s
 
-lookupDecoder :: Word -> [SomeMuxVersion] -> Maybe (SomeDecoder s)
-lookupDecoder w vs = case find (\(SomeMuxVersion n _) -> versionNumber n == w) vs of
+lookupDecoder :: Word -> [SomeVersion] -> Maybe (SomeDecoder s)
+lookupDecoder w vs = case find (\(SomeVersion n _) -> versionNumber n == w) vs of
     Just sv -> Just (getDecoder sv)
     Nothing -> Nothing
 
-encodeSomeVersion :: SomeMuxVersion -> CBOR.Encoding
-encodeSomeVersion (SomeMuxVersion n v) =
+encodeSomeVersion :: SomeVersion -> CBOR.Encoding
+encodeSomeVersion (SomeVersion n v) =
        CBOR.encodeListLen 2
     <> CBOR.encodeWord (fromIntegral $ natVal n)
     <> encode v
 
 decodeSomeVersion
-  :: [SomeMuxVersion]
-  -> CBOR.Decoder s SomeMuxVersion
+  :: [SomeVersion]
+  -> CBOR.Decoder s SomeVersion
 decodeSomeVersion knownDecoders = do
     _ <- CBOR.decodeListLen
     !vn <- CBOR.decodeWord
     case lookupDecoder vn knownDecoders of
       Nothing                      -> Fail.fail "unknown version"
-      Just (SomeDecoder n decoder) -> SomeMuxVersion n <$> decoder
+      Just (SomeDecoder n decoder) -> SomeVersion n <$> decoder
 
-encodeSomeVersionList :: [SomeMuxVersion] -> CBOR.Encoding
+encodeSomeVersionList :: [SomeVersion] -> CBOR.Encoding
 encodeSomeVersionList vs =
        CBOR.encodeMapLen (fromIntegral $ length vs)
     <> foldr
-        (\(SomeMuxVersion n v) acc ->
+        (\(SomeVersion n v) acc ->
           CBOR.encodeWord (fromIntegral $ natVal n)
             <> encode v
             <> acc)
@@ -156,20 +156,20 @@ encodeSomeVersionList vs =
         vs
 
 -- |
--- Decode a list of @'SomeMuxVersion'@ if we are given a list of known
+-- Decode a list of @'SomeVersion'@ if we are given a list of known
 -- versions.  From each known version we can get a corresponding decoder.  If
 -- we don't know how to decode a term we skip over it rather than fail.  We
 -- return a list of all recognised versions.
 --
 decodeSomeVersionList
   :: forall s. 
-     [SomeMuxVersion] -- ^ list of known versions
-  -> CBOR.Decoder s [SomeMuxVersion] 
+     [SomeVersion] -- ^ list of known versions
+  -> CBOR.Decoder s [SomeVersion] 
 decodeSomeVersionList knownDecoders = do
     n   <- CBOR.decodeMapLen
     catMaybes <$> replicateM n decodeEntry
   where
-    decodeEntry :: CBOR.Decoder s (Maybe SomeMuxVersion)
+    decodeEntry :: CBOR.Decoder s (Maybe SomeVersion)
     decodeEntry = do
       !vn <- CBOR.decodeWord
       case lookupDecoder vn knownDecoders of
@@ -178,7 +178,7 @@ decodeSomeVersionList knownDecoders = do
           CBOR.decodeTerm $> Nothing 
         Just (SomeDecoder n decoder) -> do
           -- decode single cbor term
-          Just . SomeMuxVersion n <$> decoder
+          Just . SomeVersion n <$> decoder
 
 
 -- |
@@ -188,12 +188,12 @@ data ControlMsg =
 
     -- |
     -- Send version which local node understands
-      MsgInitReq [SomeMuxVersion]
+      MsgInitReq [SomeVersion]
 
     -- |
     -- Receive a version which remove node accepted.  It should be one of the
     -- send versions, otherwise it is a protocol violation.
-    | MsgInitRsp SomeMuxVersion
+    | MsgInitRsp SomeVersion
 
     -- |
     -- If a local node received a version that it does not understands it sends
@@ -215,7 +215,7 @@ encodeControlMsg (MsgInitFail msg)     = CBOR.encodeListLen 2 <> CBOR.encodeWord
 --
 decodeControlMsg
   :: forall s.
-     [SomeMuxVersion] -- ^ known versions
+     [SomeVersion] -- ^ known versions
   -> CBOR.Decoder s ControlMsg
 decodeControlMsg knownDecoders = do
     _ <- CBOR.decodeListLen

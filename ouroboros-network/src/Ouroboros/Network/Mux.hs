@@ -46,8 +46,8 @@ import           Ouroboros.Network.Mux.Types
 muxStart :: forall m ptcl.
             ( MonadAsync m, MonadFork m, MonadSay m, MonadSTM m, MonadThrow m
             , Ord ptcl, Enum ptcl, Bounded ptcl)
-         => [SomeMuxVersion]
-         -> (SomeMuxVersion -> Maybe (MiniProtocolDescriptions ptcl m))
+         => [SomeVersion]
+         -> (SomeVersion -> Maybe (MiniProtocolDescriptions ptcl m))
          -> MuxBearer ptcl m
          -> MuxStyle
          -> Maybe (Maybe SomeException -> m ())  -- Optional callback for result
@@ -172,8 +172,8 @@ muxBearerSetState bearer newState = atomically $ writeTVar (state bearer) newSta
 -- | Initiate version negotiation with the peer the MuxBearer is connected to
 muxClient :: (MonadAsync m, MonadFork m, MonadSay m, MonadSTM m, MonadThrow m,
             Ord ptcl, Enum ptcl, Bounded ptcl, HasCallStack)
-        => [SomeMuxVersion]
-        -> (SomeMuxVersion -> Maybe (MiniProtocolDescriptions ptcl m))
+        => [SomeVersion]
+        -> (SomeVersion -> Maybe (MiniProtocolDescriptions ptcl m))
         -> MuxBearer ptcl m
         -> m (MiniProtocolDescriptions ptcl m)
 muxClient versions mpds_fn bearer = do
@@ -202,8 +202,8 @@ muxClient versions mpds_fn bearer = do
 -- | Wait for the connected peer to initiate version negotiation.
 muxServer :: (MonadAsync m, MonadFork m, MonadSay m, MonadSTM m, MonadThrow m,
              Ord ptcl, Enum ptcl, Bounded ptcl, HasCallStack)
-          => [SomeMuxVersion]
-          -> (SomeMuxVersion -> Maybe (MiniProtocolDescriptions ptcl m))
+          => [SomeVersion]
+          -> (SomeVersion -> Maybe (MiniProtocolDescriptions ptcl m))
           -> MuxBearer ptcl m
           -> m (Maybe (MiniProtocolDescriptions ptcl m))
 muxServer localVersions mpds_fn bearer = do

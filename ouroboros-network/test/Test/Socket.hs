@@ -115,8 +115,8 @@ prop_socket_send_recv_ipv6_ver_neg request response = ioProperty $ do
 -- testcases will verify that they are correctly reassembled into the original message.
 prop_socket_send_recv :: AddrInfo
                       -> AddrInfo
-                      -> [Mx.SomeMuxVersion]
-                      -> [Mx.SomeMuxVersion]
+                      -> [Mx.SomeVersion]
+                      -> [Mx.SomeVersion]
                       -> Mxt.DummyPayload
                       -> Mxt.DummyPayload
                       -> Property

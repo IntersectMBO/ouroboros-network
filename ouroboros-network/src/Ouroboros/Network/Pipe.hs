@@ -93,8 +93,8 @@ pipeAsMuxBearer ctx = do
 
 
 startPipe :: (Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl)
-          => [Mx.SomeMuxVersion]
-          -> (Mx.SomeMuxVersion -> Maybe (Mx.MiniProtocolDescriptions ptcl IO))
+          => [Mx.SomeVersion]
+          -> (Mx.SomeVersion -> Maybe (Mx.MiniProtocolDescriptions ptcl IO))
           -> Mx.MuxStyle
           -> (Handle, Handle) -> IO ()
 startPipe versions mpds style (r, w) = do

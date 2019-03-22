@@ -39,12 +39,12 @@ tests =
      ]
   ]
 
-instance Arbitrary SomeMuxVersion where
+instance Arbitrary SomeVersion where
     arbitrary = do
         nm <- arbitrary
         s  <- arbitrary
-        elements [ SomeMuxVersion SNat0 (NetworkMagic nm)
-                 , SomeMuxVersion SNat1 (NetworkMagicWithBufSize nm s)
+        elements [ SomeVersion SNat0 (NetworkMagic nm)
+                 , SomeVersion SNat1 (NetworkMagicWithBufSize nm s)
                  ]
 
 instance Arbitrary ControlMsg where
@@ -64,8 +64,8 @@ prop_mux_encode_decode msg =
         res_e = deserialiseFromBytes
                   (decodeControlMsg
                       -- TODO: generate these
-                      [ SomeMuxVersion SNat0 (NetworkMagic 0)
-                      , SomeMuxVersion SNat1 (NetworkMagicWithBufSize 0 10)
+                      [ SomeVersion SNat0 (NetworkMagic 0)
+                      , SomeVersion SNat1 (NetworkMagicWithBufSize 0 10)
                       ])
                   bs
     in case res_e of
@@ -73,11 +73,11 @@ prop_mux_encode_decode msg =
          Right res -> return msg === res
 
 -- |
--- A pair of SomeMuxVersion and its encoding as a pair (using @'encodeAsPair'@)
+-- A pair of SomeVersion and its encoding as a pair (using @'encodeAsPair'@)
 -- If the generated @'CBOR.FlatTerm'@ does not correspond to some
--- @'SomeMuxVersion@' then the first field is @'Nothing'@.
+-- @'SomeVersion@' then the first field is @'Nothing'@.
 --
-data ArbitraryVersionFT = ArbitraryVersionFT (Maybe SomeMuxVersion) CBOR.FlatTerm
+data ArbitraryVersionFT = ArbitraryVersionFT (Maybe SomeVersion) CBOR.FlatTerm
     deriving Show
 
 instance Arbitrary ArbitraryVersionFT where
@@ -94,15 +94,15 @@ instance Arbitrary ArbitraryVersionFT where
       toArbitraryVersionFT t = ArbitraryVersionFT (toVersion t) t
 
       toVersion [CBOR.TkInt 0, CBOR.TkInt y] | y >= 0 =
-        Just (SomeMuxVersion SNat0 (NetworkMagic (fromIntegral y)))
+        Just (SomeVersion SNat0 (NetworkMagic (fromIntegral y)))
       toVersion [CBOR.TkInt 1, CBOR.TkListLen 2, CBOR.TkInt y, CBOR.TkInt w] | y >= 0 =
-        Just (SomeMuxVersion SNat1 (NetworkMagicWithBufSize (fromIntegral y) (fromIntegral w)))
+        Just (SomeVersion SNat1 (NetworkMagicWithBufSize (fromIntegral y) (fromIntegral w)))
       toVersion _ = Nothing
 
-encodeAsPair :: SomeMuxVersion -> CBOR.FlatTerm
-encodeAsPair (SomeMuxVersion SNat0 nm) =
+encodeAsPair :: SomeVersion -> CBOR.FlatTerm
+encodeAsPair (SomeVersion SNat0 nm) =
   CBOR.toFlatTerm $ encode (versionNumber SNat0) <> encode nm
-encodeAsPair (SomeMuxVersion SNat1 nm) =
+encodeAsPair (SomeVersion SNat1 nm) =
   CBOR.toFlatTerm $ encode (versionNumber SNat1) <> encode nm
 encodeAsPair _ = []
 
@@ -255,9 +255,9 @@ prop_shrink_ArbitraryFlatTerm (ArbitraryFlatTerm t) = all CBOR.validFlatTerm (sh
 genSomeVersionPair :: Gen CBOR.FlatTerm
 genSomeVersionPair = oneof
     [ -- NetworkMagic case
-      encodeAsPair . SomeMuxVersion SNat0 <$> arbitrary
+      encodeAsPair . SomeVersion SNat0 <$> arbitrary
     , -- NetworkMagicWithBufSize case
-      encodeAsPair . SomeMuxVersion SNat1 <$> arbitrary
+      encodeAsPair . SomeVersion SNat1 <$> arbitrary
     , do
         -- unknown version
         NonNegative k <- arbitrary
@@ -309,7 +309,7 @@ instance Arbitrary ArbitraryControlMsgFT where
         msgInitReq xs =
           let ts :: CBOR.FlatTerm
               ts = concatMap (\(ArbitraryVersionFT _ t) -> t) xs
-              vs :: [SomeMuxVersion]
+              vs :: [SomeVersion]
               vs = mapMaybe (\(ArbitraryVersionFT v _) -> v) xs
           in ArbitraryControlMsgFT
             (Just (MsgInitReq vs))

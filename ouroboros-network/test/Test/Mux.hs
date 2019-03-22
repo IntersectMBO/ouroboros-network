@@ -91,18 +91,18 @@ instance Serialise NetworkMagicWithBufSize where
          decodeListLen
       *> (NetworkMagicWithBufSize <$> decode <*> decode)
 
-version0 :: Mx.SomeMuxVersion
-version0 = Mx.SomeMuxVersion
+version0 :: Mx.SomeVersion
+version0 = Mx.SomeVersion
   Mx.SNat0
   (NetworkMagic 0xcafebeeb)
 
-version0' :: Mx.SomeMuxVersion
-version0' = Mx.SomeMuxVersion
+version0' :: Mx.SomeVersion
+version0' = Mx.SomeVersion
   Mx.SNat0
   (NetworkMagic 0xa5a5a5a)
 
-version1 :: Mx.SomeMuxVersion
-version1 = Mx.SomeMuxVersion
+version1 :: Mx.SomeVersion
+version1 = Mx.SomeVersion
   Mx.SNat1
   (NetworkMagicWithBufSize 0xbeebcafe 10)
 
@@ -174,8 +174,8 @@ data MuxSTMCtx ptcl m = MuxSTMCtx {
 }
 
 startMuxSTM :: (Ord ptcl, Enum ptcl, Bounded ptcl, Mx.ProtocolEnum ptcl)
-            => [Mx.SomeMuxVersion]
-            -> (Mx.SomeMuxVersion -> Maybe (Mx.MiniProtocolDescriptions ptcl IO))
+            => [Mx.SomeVersion]
+            -> (Mx.SomeVersion -> Maybe (Mx.MiniProtocolDescriptions ptcl IO))
             -> Mx.MuxStyle
             -> TBQueue IO BL.ByteString
             -> TBQueue IO BL.ByteString
@@ -277,7 +277,7 @@ prop_mux_snd_recv request response = ioProperty $ do
                                         (return ()) endMpsVar request response
 
     let client_mps, server_mps
-          :: Mx.SomeMuxVersion
+          :: Mx.SomeVersion
           -> Maybe (Mx.MiniProtocolDescriptions TestProtocols1 IO)
         client_mps _ = Just (\_ -> client_mp)
         server_mps _ = Just (\_ -> server_mp)

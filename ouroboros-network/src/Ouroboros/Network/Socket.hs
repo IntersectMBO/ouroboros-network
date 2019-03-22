@@ -92,15 +92,15 @@ socketAsMuxBearer sd = do
 
 
 startResponder :: (Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl)
-               => [Mx.SomeMuxVersion]
-               -> (Mx.SomeMuxVersion -> Maybe (Mx.MiniProtocolDescriptions ptcl IO))
+               => [Mx.SomeVersion]
+               -> (Mx.SomeVersion -> Maybe (Mx.MiniProtocolDescriptions ptcl IO))
                -> AddrInfo
                -> IO (Socket, Async ())
 startResponder versions mpds addr = startResponderT versions mpds addr Nothing
 
 startResponderT :: (Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl)
-                => [Mx.SomeMuxVersion]
-                -> (Mx.SomeMuxVersion -> Maybe (Mx.MiniProtocolDescriptions ptcl IO))
+                => [Mx.SomeVersion]
+                -> (Mx.SomeVersion -> Maybe (Mx.MiniProtocolDescriptions ptcl IO))
                 -> AddrInfo
                 -> Maybe (Maybe SomeException -> IO ())
                 -> IO (Socket, Async ())
@@ -147,16 +147,16 @@ killResponder (sd, hdl) = do
     close sd
 
 startInitiator :: (Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl)
-               => [Mx.SomeMuxVersion]
-               -> (Mx.SomeMuxVersion -> Maybe (Mx.MiniProtocolDescriptions ptcl IO))
+               => [Mx.SomeVersion]
+               -> (Mx.SomeVersion -> Maybe (Mx.MiniProtocolDescriptions ptcl IO))
                -> AddrInfo
                -> AddrInfo
                -> IO ()
 startInitiator versions mpds local remote = startInitiatorT versions mpds local remote Nothing
 
 startInitiatorT :: (Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl)
-                => [Mx.SomeMuxVersion]
-                -> (Mx.SomeMuxVersion -> Maybe (Mx.MiniProtocolDescriptions ptcl IO))
+                => [Mx.SomeVersion]
+                -> (Mx.SomeVersion -> Maybe (Mx.MiniProtocolDescriptions ptcl IO))
                 -> AddrInfo
                 -> AddrInfo
                 -> Maybe (Maybe SomeException -> IO ())
