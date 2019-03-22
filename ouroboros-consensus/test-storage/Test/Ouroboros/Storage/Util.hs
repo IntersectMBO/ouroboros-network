@@ -8,25 +8,19 @@ module Test.Ouroboros.Storage.Util where
 
 import           Control.Exception (Exception, SomeException)
 import qualified Control.Exception as E
-import           Control.Monad.Class.MonadThrow (MonadCatch, MonadThrow)
+import           Control.Monad.Class.MonadThrow (MonadCatch)
 import qualified Control.Monad.Class.MonadThrow as C
 
-import qualified Data.Binary as Binary
 import           Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
 import qualified Data.ByteString.Builder as BS
 import qualified Data.ByteString.Char8 as C8
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Lazy.Char8 as LC8
-import           Data.Int (Int64)
-import qualified Data.Map.Strict as M
-import           Data.Serialize
 import           Data.String (IsString (..))
 import           Data.Typeable
 import           Data.Word (Word64)
 
 import           System.Directory (getTemporaryDirectory)
-import qualified System.IO as IO
 import           System.IO.Temp (withTempDirectory)
 
 import           Test.QuickCheck (ASCIIString (..), Arbitrary (..), Property,
@@ -35,7 +29,7 @@ import           Test.Tasty.HUnit
 
 import           Ouroboros.Consensus.Util (repeatedly)
 
-import           Ouroboros.Storage.FS.API (HasFS (..), withFile)
+import           Ouroboros.Storage.FS.API (HasFS (..))
 import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.FS.IO (ioHasFS)
 import           Ouroboros.Storage.FS.Sim.MockFS (MockFS)
@@ -46,8 +40,8 @@ import           Ouroboros.Storage.ImmutableDB (ImmutableDBError (..),
 import qualified Ouroboros.Storage.ImmutableDB as Immutable
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
-import           Ouroboros.Storage.VolatileDB (Parser (..), SlotNo (..),
-                     VolatileDBError (..), sameVolatileDBError)
+import           Ouroboros.Storage.VolatileDB (VolatileDBError (..), 
+                     sameVolatileDBError)
 import qualified Ouroboros.Storage.VolatileDB as Volatile
 
 {------------------------------------------------------------------------------
@@ -255,56 +249,3 @@ blobFromBS = MkBlob . BS.byteString
 
 instance IsString Blob where
     fromString = blobFromBS . C8.pack
-
-type MyBlockId = Word64
-
-type Block = (Word64, Int)
-
-toBinary :: MyBlockId -> BL.ByteString
-toBinary = Binary.encode . toBlock
-
-fromBinary :: BL.ByteString -> MyBlockId
-fromBinary = fromBlock . Binary.decode
-
-toSlot :: MyBlockId -> SlotNo
-toSlot = SlotNo
-
-toBlock :: MyBlockId -> Block
-toBlock bid = (bid, 0)
-
-fromBlock :: Block -> MyBlockId
-fromBlock (bid, 0) = bid
-fromBlock _        = error "wrong payload"
-
-binarySize :: Int
-binarySize = 16
-
-myParser :: (MonadThrow m) => Volatile.Parser m MyBlockId
-myParser = Volatile.Parser {
-    Volatile.parse = parseImpl
-    }
-
-parseImpl :: forall m h. (MonadThrow m)
-          => HasFS m h
-          -> ErrorHandling (VolatileDBError MyBlockId) m
-          -> [String]
-          -> m (Int64, M.Map Int64 (Int, MyBlockId))
-parseImpl hasFS@HasFS{..} err path =
-    withFile hasFS path IO.ReadMode $ \hndl -> do
-        let go :: M.Map Int64 (Int, MyBlockId)
-               -> Int64
-               -> Int
-               -> [MyBlockId]
-               -> m (Int64, M.Map Int64 (Int, MyBlockId))
-            go mp n trials bids = do
-                bs <- hGet hndl binarySize
-                if BS.length bs == 0 then return (n, mp)
-                else case decode bs of
-                    Left str -> EH.throwError err $ VParserError $ Volatile.DecodeFailed str (BS.length bs)
-                    Right bl -> do
-                        let bid = fromBlock bl
-                        if elem bid bids
-                        then EH.throwError err $ Volatile.VParserError $ Volatile.DuplicatedSlot $ M.singleton bid (path, path)
-                        else let mp' = M.insert n (binarySize, bid) mp
-                            in go mp' (n + fromIntegral binarySize) (trials + 1) (bid : bids)
-        go M.empty 0 0 []
