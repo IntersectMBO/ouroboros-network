@@ -19,6 +19,7 @@ import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
 import qualified Ouroboros.Network.Mux as Mx
+import qualified Ouroboros.Network.Mux.Control as Mx
 import           Ouroboros.Network.Socket
 
 import           Network.TypedProtocol.Driver
@@ -114,8 +115,8 @@ prop_socket_send_recv_ipv6_ver_neg request response = ioProperty $ do
 -- testcases will verify that they are correctly reassembled into the original message.
 prop_socket_send_recv :: AddrInfo
                       -> AddrInfo
-                      -> [Mx.Version]
-                      -> [Mx.Version]
+                      -> [Mx.SomeMuxVersion]
+                      -> [Mx.SomeMuxVersion]
                       -> Mxt.DummyPayload
                       -> Mxt.DummyPayload
                       -> Property
@@ -130,15 +131,13 @@ prop_socket_send_recv clientAddr serverAddr clientVersions serverVersions reques
         server_mps Mxt.ChainSync1 = server_mp
 
 
-    server_h <- startResponder (addVersions serverVersions server_mps) serverAddr
-    startInitiator (addVersions clientVersions client_mps) clientAddr serverAddr
+    server_h <- startResponder serverVersions (\_ -> Just server_mps) serverAddr
+    startInitiator clientVersions (\_ -> Just client_mps) clientAddr serverAddr
 
     v <- verify
 
     killResponder server_h
     return $ property v
-  where
-    addVersions vs mps = map (\v -> (v, mps)) vs
 
 
 -- | Verify that we raise the correct exception in case a socket closes during a read.
@@ -155,7 +154,7 @@ prop_socket_recv_close request response = ioProperty $ do
 
     let server_mps Mxt.ChainSync1 = server_mp
 
-    server_h <- startResponderT [(Mxt.version0, server_mps)] b (Just $ rescb resq)
+    server_h <- startResponderT [Mxt.version0] (\_ -> Just server_mps) b (Just $ rescb resq)
 
     sd <- socket (addrFamily b) Stream defaultProtocol
     connect sd (addrAddress b)
@@ -189,7 +188,7 @@ prop_socket_client_connect_error request response = ioProperty $ do
 
     let client_mps Mxt.ChainSync1 = client_mp
 
-    res_e <- try $ startInitiator [(Mxt.version0, client_mps)] clientAddr serverAddr :: IO (Either SomeException ())
+    res_e <- try $ startInitiator [Mxt.version0] (\_ -> Just client_mps) clientAddr serverAddr :: IO (Either SomeException ())
     case res_e of
          Left _  -> return $ property True -- XXX Dissregarding the exact exception type
          Right _ -> return $ property False
@@ -211,8 +210,8 @@ prop_version_missmatch = ioProperty $ do
         server_mps Mxt.ChainSync1 = server_mp
 
 
-    server_h <- startResponderT [(Mxt.version1, server_mps)] serverAddr (Just $ rescb resq)
-    res_client <- try $ startInitiator [(Mxt.version0, client_mps)] clientAddr serverAddr
+    server_h <- startResponderT [Mxt.version1] (\_ -> Just server_mps) serverAddr (Just $ rescb resq)
+    res_client <- try $ startInitiator [Mxt.version0]  (\_ -> Just client_mps) clientAddr serverAddr
     res_server <- atomically $ readTBQueue resq
 
     killResponder server_h
@@ -250,8 +249,8 @@ prop_network_missmatch = ioProperty $ do
         server_mps Mxt.ChainSync1 = server_mp
 
 
-    server_h <- startResponderT [(Mxt.version0, server_mps)] serverAddr (Just $ rescb resq)
-    res_client <- try $ startInitiator [(Mxt.version0', client_mps)] clientAddr serverAddr
+    server_h <- startResponderT [Mxt.version0] (\_ -> Just server_mps) serverAddr (Just $ rescb resq)
+    res_client <- try $ startInitiator [Mxt.version0'] (\_ -> Just client_mps) clientAddr serverAddr
     res_server <- atomically $ readTBQueue resq
 
     killResponder server_h
@@ -294,9 +293,9 @@ demo chain0 updates = do
                                    dummyCallback
                                    (producerRsp producerVar)
 
-    b_h <- startResponder [(Mxt.version0, b_mps)] b
-    a_h <- startResponder [(Mxt.version0, a_mps)] a
-    void $ fork $ startInitiator [(Mxt.version0, a_mps)] a b
+    b_h <- startResponder [Mxt.version0] (\_ -> Just b_mps) b
+    a_h <- startResponder [Mxt.version0] (\_ -> Just a_mps) a
+    void $ fork $ startInitiator [Mxt.version0] (\_ -> Just a_mps) a b
 
     void $ fork $ sequence_
         [ do threadDelay 10000 -- just to provide interest

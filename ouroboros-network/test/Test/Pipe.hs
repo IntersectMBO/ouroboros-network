@@ -81,8 +81,8 @@ demo chain0 updates = do
                             dummyCallback
                             (producerRsp producerVar)
 
-    startPipe [(Mxt.version0, b_mps)] Mx.StyleServer (hndRead1, hndWrite2)
-    startPipe [(Mxt.version0, a_mps)] Mx.StyleClient (hndRead2, hndWrite1)
+    startPipe [Mxt.version0] (\_ -> Just b_mps) Mx.StyleServer (hndRead1, hndWrite2)
+    startPipe [Mxt.version0] (\_ -> Just a_mps) Mx.StyleClient (hndRead2, hndWrite1)
 
     void $ fork $ sequence_
         [ do threadDelay 10000 -- just to provide interest

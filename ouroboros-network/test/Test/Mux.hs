@@ -1,8 +1,14 @@
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# OPTIONS_GHC -Wno-orphans #-}
+
+{-# OPTIONS_GHC -Wno-orphans     #-}
 
 module Test.Mux (
-      TestProtocols1 (..)
+      NetworkMagic (..)
+    , NetworkMagicWithBufSize (..)
+    , TestProtocols1 (..)
     , DummyPayload (..)
     , setupMiniReqRsp
     , tests
@@ -10,8 +16,8 @@ module Test.Mux (
     , version0'
     , version1) where
 
-import           Codec.CBOR.Decoding (decodeBytes)
-import           Codec.CBOR.Encoding (encodeBytes)
+import           Codec.CBOR.Decoding as CBOR
+import           Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (Serialise (..))
 import           Control.Monad
 import qualified Data.Binary.Put as Bin
@@ -34,6 +40,7 @@ import           Ouroboros.Network.Channel
 import qualified Ouroboros.Network.Mux as Mx
 import           Ouroboros.Network.Mux.Types (MuxBearer)
 import qualified Ouroboros.Network.Mux.Types as Mx
+import qualified Ouroboros.Network.Mux.Control as Mx
 import           Ouroboros.Network.Protocol.ReqResp.Codec
 
 tests :: TestTree
@@ -46,14 +53,58 @@ tests =
   , testProperty "too short header"     prop_mux_short_header
   ]
 
-version0 :: Mx.Version
-version0 = Mx.Version0  (Mx.NetworkMagic 0xcafebeeb)
+newtype NetworkMagic = NetworkMagic Word32
+  deriving (Eq, Ord, Show)
 
-version0' :: Mx.Version
-version0' = Mx.Version0  (Mx.NetworkMagic 0xa5a5a5a5)
+instance Arbitrary NetworkMagic where
+    arbitrary = NetworkMagic <$> arbitrary
+    shrink (NetworkMagic nm) = map NetworkMagic (shrink nm)
 
-version1 :: Mx.Version
-version1 = Mx.Version1  (Mx.NetworkMagic 0xbeebcafe)
+instance Serialise NetworkMagic where
+  encode (NetworkMagic nm) = encode nm
+  decode = NetworkMagic <$> CBOR.decodeWord32
+
+type instance Mx.MuxVersion 0 = NetworkMagic
+
+data NetworkMagicWithBufSize = NetworkMagicWithBufSize Word32 Word16
+  deriving (Eq, Ord, Show)
+
+type instance Mx.MuxVersion 1 = NetworkMagicWithBufSize
+
+instance Arbitrary NetworkMagicWithBufSize where
+    arbitrary = NetworkMagicWithBufSize <$> arbitrary <*> arbitrary
+    shrink (NetworkMagicWithBufSize nm s) =
+      [ NetworkMagicWithBufSize nm' s
+      | nm' <- shrink nm
+      ]
+      ++
+      [ NetworkMagicWithBufSize nm s'
+      | s' <- shrink s
+      ]
+
+instance Serialise NetworkMagicWithBufSize where
+  encode (NetworkMagicWithBufSize nm s) =
+         encodeListLen 2
+      <> encode nm
+      <> encode s
+  decode =
+         decodeListLen
+      *> (NetworkMagicWithBufSize <$> decode <*> decode)
+
+version0 :: Mx.SomeMuxVersion
+version0 = Mx.SomeMuxVersion
+  Mx.SNat0
+  (NetworkMagic 0xcafebeeb)
+
+version0' :: Mx.SomeMuxVersion
+version0' = Mx.SomeMuxVersion
+  Mx.SNat0
+  (NetworkMagic 0xa5a5a5a)
+
+version1 :: Mx.SomeMuxVersion
+version1 = Mx.SomeMuxVersion
+  Mx.SNat1
+  (NetworkMagicWithBufSize 0xbeebcafe 10)
 
 data TestProtocols1 = ChainSync1
   deriving (Eq, Ord, Enum, Bounded)
@@ -91,8 +142,8 @@ instance Arbitrary DummyPayload where
        return $ DummyPayload blob
 
 instance Serialise DummyPayload where
-    encode a = encodeBytes (BL.toStrict $ unDummyPayload a)
-    decode = DummyPayload . BL.fromStrict <$> decodeBytes
+    encode a = CBOR.encodeBytes (BL.toStrict $ unDummyPayload a)
+    decode = DummyPayload . BL.fromStrict <$> CBOR.decodeBytes
 
 data InvalidSDU = InvalidSDU {
       isTimestamp :: !Mx.RemoteClockModel
@@ -123,14 +174,15 @@ data MuxSTMCtx ptcl m = MuxSTMCtx {
 }
 
 startMuxSTM :: (Ord ptcl, Enum ptcl, Bounded ptcl, Mx.ProtocolEnum ptcl)
-            => [(Mx.Version, Mx.MiniProtocolDescriptions ptcl IO)]
+            => [Mx.SomeMuxVersion]
+            -> (Mx.SomeMuxVersion -> Maybe (Mx.MiniProtocolDescriptions ptcl IO))
             -> Mx.MuxStyle
             -> TBQueue IO BL.ByteString
             -> TBQueue IO BL.ByteString
             -> Word16
             -> Maybe (TBQueue IO (Mx.MiniProtocolId ptcl, Mx.MiniProtocolMode, Time IO))
             -> IO (TBQueue IO (Maybe SomeException))
-startMuxSTM verMpds style wq rq mtu trace = do
+startMuxSTM versions mpds style wq rq mtu trace = do
     let ctx = MuxSTMCtx wq rq mtu trace
     resq <- atomically $ newTBQueue 10
     void $ async (spawn ctx resq)
@@ -139,7 +191,7 @@ startMuxSTM verMpds style wq rq mtu trace = do
   where
     spawn ctx resq = do
         bearer <- queuesAsMuxBearer ctx
-        res_e <- try $ Mx.muxStart verMpds bearer style (Just $ rescb resq)
+        res_e <- try $ Mx.muxStart versions mpds bearer style (Just $ rescb resq)
         case res_e of
              Left  e -> rescb resq $ Just e
              Right _ -> return ()
@@ -224,11 +276,14 @@ prop_mux_snd_recv request response = ioProperty $ do
     (verify, client_mp, server_mp) <- setupMiniReqRsp
                                         (return ()) endMpsVar request response
 
-    let client_mps ChainSync1 = client_mp
-        server_mps ChainSync1 = server_mp
+    let client_mps, server_mps
+          :: Mx.SomeMuxVersion
+          -> Maybe (Mx.MiniProtocolDescriptions TestProtocols1 IO)
+        client_mps _ = Just (\_ -> client_mp)
+        server_mps _ = Just (\_ -> server_mp)
 
-    client_resVar <- startMuxSTM [(version1, client_mps)] Mx.StyleClient client_w client_r sduLen Nothing
-    server_resVar <- startMuxSTM [(version1, server_mps)] Mx.StyleServer server_w server_r sduLen Nothing
+    client_resVar <- startMuxSTM [version1] client_mps Mx.StyleClient client_w client_r sduLen Nothing
+    server_resVar <- startMuxSTM [version1] server_mps Mx.StyleServer server_w server_r sduLen Nothing
 
     v <- verify
     c_e <- normallExit client_resVar
@@ -334,8 +389,8 @@ prop_mux_2_minis request0 response0 response1 request1 = ioProperty $ do
         server_mps ChainSync2  = server_mp0
         server_mps BlockFetch2 = server_mp1
 
-    client_res <- startMuxSTM [(version0, client_mps)] Mx.StyleClient client_w client_r sduLen Nothing
-    server_res <- startMuxSTM [(version0, server_mps)] Mx.StyleServer server_w server_r sduLen Nothing
+    client_res <- startMuxSTM [version0] (\_ -> Just client_mps) Mx.StyleClient client_w client_r sduLen Nothing
+    server_res <- startMuxSTM [version0] (\_ -> Just server_mps) Mx.StyleServer server_w server_r sduLen Nothing
 
     res0 <- verify_0
     res1 <- verify_1
@@ -380,8 +435,8 @@ prop_mux_starvation response0 response1 =
         server_mps BlockFetch2 = server_short
         server_mps ChainSync2  = server_long
 
-    client_res <- startMuxSTM [(version0, client_mps)] Mx.StyleClient client_w client_r sduLen (Just traceQueueVar)
-    server_res <- startMuxSTM [(version0, server_mps)] Mx.StyleServer server_w server_r sduLen Nothing
+    client_res <- startMuxSTM [version0] (\_ -> Just client_mps) Mx.StyleClient client_w client_r sduLen (Just traceQueueVar)
+    server_res <- startMuxSTM [version0] (\_ -> Just server_mps) Mx.StyleServer server_w server_r sduLen Nothing
 
     -- First verify that all messages where received correctly
     res_short <- verify_short
@@ -472,7 +527,7 @@ failingServer  = do
 
     (_, _, server_mp) <- setupMiniReqRsp (return ()) endMpsVar request response
     let server_mps ChainSync1 = server_mp
-    server_res <- startMuxSTM [(version0, server_mps)] Mx.StyleServer server_w server_r sduLen Nothing
+    server_res <- startMuxSTM [version0] (\_ -> Just server_mps) Mx.StyleServer server_w server_r sduLen Nothing
 
     return (server_r, server_res)
 
