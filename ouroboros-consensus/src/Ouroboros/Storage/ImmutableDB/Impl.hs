@@ -142,7 +142,6 @@ import           Prelude hiding (truncate)
 
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
-import           Codec.CBOR.Read (deserialiseFromBytes)
 import           Control.Exception (assert)
 import           Control.Monad (forM_, replicateM_, when)
 import           Control.Monad.Class.MonadSTM (MonadSTM (..))
@@ -168,6 +167,7 @@ import           System.IO (IOMode (..), SeekMode (..))
 
 import           Ouroboros.Consensus.Util (SomePair (..))
 
+import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.ImmutableDB.API
@@ -191,8 +191,8 @@ data ImmutableDBEnv m hash = forall h e. ImmutableDBEnv
     , _dbErr             :: !(ErrorHandling ImmutableDBError m)
     , _dbInternalState   :: !(TMVar m (Either (ClosedState m) (OpenState m hash h)))
     , _dbEpochFileParser :: !(EpochFileParser e hash m (Word, SlotNo))
-    , _dbHashDecoder     :: !(forall s . Decoder s (Maybe hash))
-    , _dbHashEncoder     :: !(Maybe hash -> Encoding)
+    , _dbHashDecoder     :: !(forall s . Decoder s hash)
+    , _dbHashEncoder     :: !(hash -> Encoding)
     }
 
 -- | Internal state when the database is open.
@@ -207,7 +207,7 @@ data OpenState m hash h = OpenState
     , _currentEBBHash          :: !(Maybe hash)
     -- ^ The hash of the EBB of the current epoch that must be appended to the
     -- index file when finalising the current epoch.
-    , _currentTip              :: !Tip
+    , _currentTip              :: !ImmTip
     -- ^ The current tip of the database.
     , _getEpochSize            :: !(EpochNo -> m EpochSize)
     -- ^ Function to get the size of an epoch.
@@ -276,8 +276,8 @@ instance Ord TipEpochSlot where
 -- __Note__: To be used in conjunction with 'withDB'.
 openDB
   :: (HasCallStack, MonadSTM m, MonadCatch m, Eq hash)
-  => (forall s . Decoder s (Maybe hash))
-  -> (Maybe hash -> Encoding)
+  => (forall s . Decoder s hash)
+  -> (hash -> Encoding)
   -> HasFS m h
   -> ErrorHandling ImmutableDBError m
   -> (EpochNo -> m EpochSize)
@@ -310,8 +310,8 @@ mkDBRecord dbEnv = ImmutableDB
 
 openDBImpl :: forall m h hash e.
               (HasCallStack, MonadSTM m, MonadCatch m, Eq hash)
-           => (forall s . Decoder s (Maybe hash))
-           -> (Maybe hash -> Encoding)
+           => (forall s . Decoder s hash)
+           -> (hash -> Encoding)
            -> HasFS m h
            -> ErrorHandling ImmutableDBError m
            -> (EpochNo -> m EpochSize)
@@ -385,7 +385,7 @@ reopenImpl ImmutableDBEnv {..} valPol = do
 deleteAfterImpl :: forall m hash.
                    (HasCallStack, MonadSTM m, MonadCatch m)
                 => ImmutableDBEnv m hash
-                -> Tip
+                -> ImmTip
                 -> m ()
 deleteAfterImpl dbEnv tip = modifyOpenState dbEnv $ \hasFS@HasFS{..} -> do
     st@OpenState { _cumulEpochSizes = ces, ..} <- get
@@ -405,7 +405,7 @@ deleteAfterImpl dbEnv tip = modifyOpenState dbEnv $ \hasFS@HasFS{..} -> do
           mbNewTipAndIndex <- lift $ truncateToTipLEQ hasFS st new
           !ost <- lift $ case mbNewTipAndIndex of
             Nothing -> mkOpenStateNewEpoch hasFS 0 _getEpochSize
-              ces _nextIteratorID TipGenesis
+              ces _nextIteratorID TipGen
             Just (epochSlot@(EpochSlot epoch _), index) -> do
               let newTip = epochSlotInThePastToTip ces epochSlot
               mkOpenState hasFS epoch _getEpochSize ces
@@ -415,24 +415,24 @@ deleteAfterImpl dbEnv tip = modifyOpenState dbEnv $ \hasFS@HasFS{..} -> do
     ImmutableDBEnv { _dbErr } = dbEnv
 
     -- | The current tip as a 'TipEpochSlot'
-    currentEpochSlot :: CumulEpochSizes -> Tip -> TipEpochSlot
+    currentEpochSlot :: CumulEpochSizes -> ImmTip -> TipEpochSlot
     currentEpochSlot ces currentTip = case currentTip of
-      TipGenesis    -> TipEpochSlotGenesis
-      TipEBB epoch  -> TipEpochSlot $ EpochSlot epoch 0
-      TipBlock slot -> TipEpochSlot $ slotInThePastToEpochSlot ces slot
+      TipGen           -> TipEpochSlotGenesis
+      Tip (Left epoch) -> TipEpochSlot $ EpochSlot epoch 0
+      Tip (Right slot) -> TipEpochSlot $ slotInThePastToEpochSlot ces slot
 
     -- | The given tip as a 'TipEpochSlot'. 'Nothing' in case it refers to a
     -- slot in the future. Note that the returned 'TipEpochSlot' may still
     -- refer to a future EBB.
     mbNewEpochSlot :: CumulEpochSizes -> Maybe TipEpochSlot
     mbNewEpochSlot ces = case tip of
-      TipGenesis    -> Just $ TipEpochSlotGenesis
-      TipEBB epoch  -> Just $ TipEpochSlot (EpochSlot epoch 0)
+      TipGen           -> Just $ TipEpochSlotGenesis
+      Tip (Left epoch) -> Just $ TipEpochSlot (EpochSlot epoch 0)
       -- If 'CES.slotToEpochSlot', returns 'Nothing', it means that the slot
       -- is in the future. In that case we don't have to delete anything
       -- anyway. So don't bother with gettting the epoch sizes needed to
       -- convert it to an EpochSlot.
-      TipBlock slot -> TipEpochSlot <$> CES.slotToEpochSlot ces slot
+      Tip (Right slot) -> TipEpochSlot <$> CES.slotToEpochSlot ces slot
 
     -- | Truncate to the last valid (filled slot or EBB) tip <= the given tip.
     truncateToTipLEQ :: HasFS m h
@@ -501,7 +501,7 @@ deleteAfterImpl dbEnv tip = modifyOpenState dbEnv $ \hasFS@HasFS{..} -> do
 
 getTipImpl :: (HasCallStack, MonadSTM m)
            => ImmutableDBEnv m hash
-           -> m Tip
+           -> m ImmTip
 getTipImpl dbEnv = do
     SomePair _hasFS OpenState { _currentTip } <- getOpenState dbEnv
     return _currentTip
@@ -513,13 +513,13 @@ getBinaryBlobImpl
   -> m (Maybe ByteString)
 getBinaryBlobImpl dbEnv slot = withOpenState dbEnv $ \_dbHasFS st@OpenState{..} -> do
     let inTheFuture = case _currentTip of
-          TipGenesis          -> True
-          TipBlock lastSlot'  -> slot > lastSlot'
+          TipGen                  -> True
+          Tip (Right lastSlot')   -> slot > lastSlot'
           -- The slot (that pointing to a regular block) corresponding to this
           -- EBB will be empty, as the EBB is the last thing in the database.
           -- So if @slot@ is equal to this slot, it is also refering to the
           -- future.
-          TipEBB lastEBBEpoch -> slot >= ebbSlot
+          Tip (Left lastEBBEpoch) -> slot >= ebbSlot
             where
               ebbSlot = epochSlotInThePastToSlot _cumulEpochSizes
                 (EpochSlot lastEBBEpoch 0)
@@ -539,9 +539,9 @@ getEBBImpl
   -> m (Maybe (hash, ByteString))
 getEBBImpl dbEnv epoch = withOpenState dbEnv $ \_dbHasFS st@OpenState{..} -> do
     let inTheFuture = case _currentTip of
-          TipGenesis -> True
-          TipBlock _ -> epoch > _currentEpoch
-          TipEBB _   -> epoch > _currentEpoch
+          TipGen        -> True
+          Tip (Right _) -> epoch > _currentEpoch
+          Tip (Left _)  -> epoch > _currentEpoch
 
     when inTheFuture $
       throwUserError _dbErr $ ReadFutureEBBError epoch _currentEpoch
@@ -555,7 +555,7 @@ getEBBImpl dbEnv epoch = withOpenState dbEnv $ \_dbHasFS st@OpenState{..} -> do
 getEpochSlot
   :: forall m hash h. (HasCallStack, MonadSTM m, MonadThrow m)
   => HasFS m h
-  -> (forall s . Decoder s (Maybe hash))
+  -> (forall s . Decoder s hash)
   -> OpenState m hash h
   -> ErrorHandling ImmutableDBError m
   -> EpochSlot
@@ -603,7 +603,7 @@ getEpochSlot _dbHasFS hashDecoder OpenState {..} _dbErr epochSlot = do
             let epochSize  = epochSizeInThePast _cumulEpochSizes epoch
                 hashOffset = (fromIntegral epochSize + 2) * indexEntrySizeBytes
             hSeek iHnd AbsoluteSeek (fromIntegral hashOffset)
-            deserialiseHash =<< readAll _dbHasFS iHnd
+            deserialiseHash' =<< readAll _dbHasFS iHnd
           else return Nothing
 
         return (start, end - start, mbEBBHash)
@@ -628,12 +628,12 @@ getEpochSlot _dbHasFS hashDecoder OpenState {..} _dbErr epochSlot = do
     EpochSlot epoch relativeSlot = epochSlot
 
     lastRelativeSlot = case _currentTip of
-      TipEBB _      -> 0
-      TipGenesis    -> error "Postcondition violated: EpochSlot must be in the past"
-      TipBlock slot -> _relativeSlot $ slotInThePastToEpochSlot _cumulEpochSizes slot
+      TipGen           -> error "Postcondition violated: EpochSlot must be in the past"
+      Tip (Left  _)    -> 0
+      Tip (Right slot) -> _relativeSlot $ slotInThePastToEpochSlot _cumulEpochSizes slot
 
-    deserialiseHash :: HasCallStack => Builder -> m (Maybe hash)
-    deserialiseHash bld = case deserialiseFromBytes hashDecoder (BS.toLazyByteString bld) of
+    deserialiseHash' :: HasCallStack => Builder -> m (Maybe hash)
+    deserialiseHash' bld = case deserialiseHash hashDecoder (BS.toLazyByteString bld) of
       Right (_, hash) -> return hash
       Left df         -> throwUnexpectedError _dbErr $
         DeserialisationError df callStack
@@ -654,9 +654,9 @@ appendBinaryBlobImpl dbEnv@ImmutableDBEnv{..} slot builder =
 
       -- Check that we're not appending to the past
       let inThePast = case _currentTip of
-            TipBlock lastSlot'  -> slot  <= lastSlot'
-            TipEBB lastEBBEpoch -> epoch <  lastEBBEpoch
-            TipGenesis          -> False
+            Tip (Right lastSlot')   -> slot  <= lastSlot'
+            Tip (Left lastEBBEpoch) -> epoch <  lastEBBEpoch
+            TipGen                  -> False
 
       when inThePast $ lift $ throwUserError _dbErr $
         AppendToSlotInThePastError slot _currentTip
@@ -682,9 +682,9 @@ appendBinaryBlobImpl dbEnv@ImmutableDBEnv{..} slot builder =
             -- epoch before _currentEpoch.
             | epoch > initialEpoch = 0
             | otherwise             = case _currentTip of
-              TipEBB {}          -> 1
-              TipGenesis         -> 0
-              TipBlock lastSlot' -> succ . _relativeSlot $
+              TipGen                -> 0
+              Tip (Left _ebb)       -> 1
+              Tip (Right lastSlot') -> succ . _relativeSlot $
                 slotInThePastToEpochSlot _cumulEpochSizes lastSlot'
           lastEpochOffset = NE.head _currentEpochOffsets
           backfillOffsets =
@@ -706,11 +706,11 @@ appendBinaryBlobImpl dbEnv@ImmutableDBEnv{..} slot builder =
       modify $ \st -> st
         { _currentEpochOffsets =
             (newOffset NE.:| backfillOffsets) <> _currentEpochOffsets
-        , _currentTip = TipBlock slot
+        , _currentTip = Tip (Right slot)
         }
 
 startNewEpoch :: (HasCallStack, MonadSTM m, MonadCatch m)
-              => (Maybe hash -> Encoding)
+              => (hash -> Encoding)
               -> HasFS m h
               -> StateT (OpenState m hash h) m ()
 startNewEpoch hashEncoder hasFS@HasFS{..} = do
@@ -738,9 +738,9 @@ startNewEpoch hashEncoder hasFS@HasFS{..} = do
           = 0
           | otherwise
           = case _currentTip of
-              TipEBB {}          -> 1
-              TipGenesis         -> 0
-              TipBlock lastSlot' -> succ . _relativeSlot $
+              TipGen                -> 0
+              Tip (Left _ebb)       -> 1
+              Tip (Right lastSlot') -> succ . _relativeSlot $
                 slotInThePastToEpochSlot _cumulEpochSizes lastSlot'
 
     -- The above calls may have modified the _cumulEpochSizes, so get it
@@ -779,10 +779,10 @@ appendEBBImpl dbEnv@ImmutableDBEnv{..} epoch hash builder =
       let inThePast = case _currentTip of
             -- There is already a block in this epoch, so the EBB can no
             -- longer be appended in this epoch
-            TipBlock _ -> epoch <= _currentEpoch
+            Tip (Right _) -> epoch <= _currentEpoch
             -- There is already an EBB in this epoch
-            TipEBB _   -> epoch <= _currentEpoch
-            TipGenesis -> False
+            Tip (Left _)  -> epoch <= _currentEpoch
+            TipGen        -> False
 
       when inThePast $ lift $ throwUserError _dbErr $
         AppendToEBBInThePastError epoch _currentEpoch
@@ -815,7 +815,7 @@ appendEBBImpl dbEnv@ImmutableDBEnv{..} epoch hash builder =
       modify $ \st -> st
         { _currentEpochOffsets = newOffset NE.<| _currentEpochOffsets
         , _currentEBBHash      = Just hash
-        , _currentTip          = TipEBB epoch
+        , _currentTip          = Tip (Left epoch)
         }
 
 {------------------------------------------------------------------------------
@@ -878,14 +878,14 @@ streamBinaryBlobsImpl dbEnv mbStart mbEnd = withOpenState dbEnv $ \hasFS st -> d
     validateIteratorRange _dbErr ces _currentTip mbStart mbEnd
 
     let emptyOrEndBound = case _currentTip of
-          TipGenesis -> Nothing
-          TipEBB epoch
+          TipGen -> Nothing
+          Tip (Left epoch)
             | Just (endSlot, endHash) <- mbEnd
             -> let endEpochSlot = slotInThePastToEpochSlot ces endSlot
                in Just (endEpochSlot, Just endHash)
             | otherwise
             -> Just (EpochSlot epoch 0, Nothing)
-          TipBlock lastSlot'
+          Tip (Right lastSlot')
             | Just (endSlot, endHash) <- mbEnd
             -> let endEpochSlot = slotInThePastToEpochSlot ces endSlot
                in Just (endEpochSlot, Just endHash)
@@ -1213,8 +1213,8 @@ onException fsErr err onErr m =
 -- create an 'OpenState' corresponding to its outcome.
 validateAndReopen :: forall m hash h e.
                      (HasCallStack, MonadThrow m, Eq hash)
-                  => (forall s . Decoder s (Maybe hash))
-                  -> (Maybe hash -> Encoding)
+                  => (forall s . Decoder s hash)
+                  -> (hash -> Encoding)
                   -> HasFS m h
                   -> ErrorHandling ImmutableDBError m
                   -> (EpochNo -> m EpochSize)
@@ -1230,7 +1230,7 @@ validateAndReopen hashDecoder hashEncoder hasFS err getEpochSize valPol epochFil
 
     case mbLastValidLocationAndIndex of
       Nothing ->
-        mkOpenStateNewEpoch hasFS 0 getEpochSize ces' nextIteratorID TipGenesis
+        mkOpenStateNewEpoch hasFS 0 getEpochSize ces' nextIteratorID TipGen
       Just (lastValidLocation, index) -> do
         let tip   = epochSlotInThePastToTip ces' lastValidLocation
             epoch = _epoch lastValidLocation
@@ -1245,7 +1245,7 @@ mkOpenState :: (HasCallStack, MonadThrow m)
             -> (EpochNo -> m EpochSize)
             -> CumulEpochSizes
             -> IteratorID
-            -> Tip
+            -> ImmTip
             -> Index hash
             -> m (OpenState m hash h)
 mkOpenState HasFS{..} epoch getEpochSize ces nextIteratorID tip index = do
@@ -1277,7 +1277,7 @@ mkOpenStateNewEpoch :: (HasCallStack, MonadThrow m)
                     -> (EpochNo -> m EpochSize)
                     -> CumulEpochSizes
                     -> IteratorID
-                    -> Tip
+                    -> ImmTip
                     -> m (OpenState m hash h)
 mkOpenStateNewEpoch HasFS{..} epoch getEpochSize ces nextIteratorID tip = do
     let epochFile    = renderFile "epoch" epoch
@@ -1514,9 +1514,9 @@ epochSizeInThePast ces epoch = fromMaybe
 -- | Convert an 'EpochSlot' to a 'Tip' using an up-to-date 'CumulEpochSizes'.
 --
 -- This conversion may not fail, as the 'EpochSlot' must be in the past.
-epochSlotInThePastToTip :: CumulEpochSizes -> EpochSlot -> Tip
-epochSlotInThePastToTip _   (EpochSlot epoch 0) = TipEBB epoch
-epochSlotInThePastToTip ces epochSlot           = TipBlock $
+epochSlotInThePastToTip :: CumulEpochSizes -> EpochSlot -> ImmTip
+epochSlotInThePastToTip _   (EpochSlot epoch 0) = Tip (Left epoch)
+epochSlotInThePastToTip ces epochSlot           = Tip . Right $
     epochSlotInThePastToSlot ces epochSlot
 
 -- | Go through all files, making two sets: the set of epoch-xxx.dat
@@ -1587,8 +1587,8 @@ data ValidateResult hash
 --   files from the epochs without needing any truncation.
 validate :: forall m hash h e.
             (HasCallStack, MonadThrow m, Eq hash)
-         => (forall s . Decoder s (Maybe hash))
-         -> (Maybe hash -> Encoding)
+         => (forall s . Decoder s hash)
+         -> (hash -> Encoding)
          -> HasFS m h
          -> ErrorHandling ImmutableDBError m
          -> (EpochNo -> m EpochSize)

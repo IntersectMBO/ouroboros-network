@@ -4,10 +4,7 @@
 {-# LANGUAGE LambdaCase                 #-}
 module Ouroboros.Storage.ImmutableDB.Types
   ( SlotNo (..)
-  , EpochNo (..)
-  , EpochSize (..)
-  , SlotOffset
-  , Tip (..)
+  , ImmTip
   , TruncateTo (..)
   , EpochFileParser (..)
   , ValidationPolicy (..)
@@ -26,44 +23,21 @@ module Ouroboros.Storage.ImmutableDB.Types
 import           Codec.Serialise (DeserialiseFailure)
 import           Control.Exception (Exception (..))
 
-import           Data.Word (Word64)
-
 import           GHC.Generics (Generic)
 import           GHC.Stack (CallStack, prettyCallStack)
 
 import           Ouroboros.Network.Block (SlotNo (..))
 
+import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API.Types (FsError, FsPath, prettyFsError,
                      sameFsError)
 
-
--- | An epoch, i.e. the number of the epoch.
-newtype EpochNo = EpochNo { unEpochNo :: Word64 }
-  deriving (Eq, Ord, Enum, Num, Show, Generic)
-
-newtype EpochSize = EpochSize { unEpochSize :: Word64 }
-  deriving (Eq, Ord, Enum, Num, Show, Generic, Real, Integral)
-
--- | The offset of a slot in an index file.
-type SlotOffset = Word64
-
--- | The tip of the 'Ouroboros.Storage.ImmutableDB.API.ImmutableDB'.
--- TODO unify with Edsko's Tip:
---
--- data Tip r = Tip r | TipGen
-data Tip
-  = TipGenesis
-    -- ^ The database is empty
-  | TipEBB     EpochNo
-    -- ^ The last thing in the database is the EBB of this 'EpochNo'.
-  | TipBlock   SlotNo
-    -- ^ The last thing in the database is the block at this 'SlotNo'.
-  deriving (Eq, Show, Generic)
+type ImmTip = Tip (Either EpochNo SlotNo)
 
 -- | Truncate the database to some 'Tip'. This means that everything in the
 -- database that comes after the 'Tip' will be removed, excluding the EBB or
 -- block the 'Tip' points to.
-newtype TruncateTo = TruncateTo { getTruncateTo :: Tip }
+newtype TruncateTo = TruncateTo { getTruncateTo :: ImmTip }
   deriving (Eq, Show, Generic)
 
 -- | Parse the contents of an epoch file.
@@ -167,7 +141,7 @@ prettyImmutableDBError = \case
     UnexpectedError ue    -> prettyUnexpectedError ue
 
 data UserError
-  = AppendToSlotInThePastError SlotNo Tip
+  = AppendToSlotInThePastError SlotNo ImmTip
     -- ^ When trying to append a new binary blob, the input slot was in the
     -- past, i.e. before or equal to the tip of the database.
   | AppendToEBBInThePastError EpochNo EpochNo
@@ -177,7 +151,7 @@ data UserError
     --
     -- The first parameter is the input epoch and the second parameter is the
     -- current epoch.
-  | ReadFutureSlotError SlotNo Tip
+  | ReadFutureSlotError SlotNo ImmTip
     -- ^ When trying to read a slot, the slot was not yet occupied, because
     -- it's too far in the future, i.e. it is after the tip of the database.
   | ReadFutureEBBError EpochNo EpochNo

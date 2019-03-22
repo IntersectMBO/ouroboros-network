@@ -29,7 +29,10 @@ import qualified Pos.Core.Slotting as CSL
 import Ouroboros.Byron.Proxy.Index (Index, IndexWrite)
 import qualified Ouroboros.Byron.Proxy.Index as Index
 import Ouroboros.Consensus.Util.CBOR (ReadIncrementalErr)
-import Ouroboros.Storage.ImmutableDB.API (ImmutableDB, EpochNo (..), SlotNo (..))
+import Ouroboros.Network.Block (SlotNo (..))
+import Ouroboros.Storage.Common (EpochNo (..))
+import qualified Ouroboros.Storage.Common as Immutable
+import Ouroboros.Storage.ImmutableDB.API (ImmutableDB)
 import qualified Ouroboros.Storage.ImmutableDB.API as Immutable
 import Ouroboros.Storage.ImmutableDB.Util (cborEpochFileParser')
 import Ouroboros.Storage.FS.API (HasFS)
@@ -239,7 +242,7 @@ dbAppendImpl err epochSlots iwrite idb = DBAppend $ \cslBlock ->
   -- Must serialise as a `Block` rather than a `MainBlock` or `GenesisBlock`,
   -- because the epoch file parser needs to be able to discriminate them.
   let builder = CSL.serializeBuilder cslBlock
-  in  case cslBlock of 
+  in  case cslBlock of
         Left ebb -> do
           -- Write the index first, so that if something goes wrong with the
           -- `appendEBB` to the `ImmutableDB`, the transaction will quit and the
@@ -317,8 +320,8 @@ readTipImpl err epochSlots idx idb = do
   tip <- Immutable.getTip idb
   case tip of
     -- Empty DB. Hm...
-    Immutable.TipGenesis   -> pure TipGenesis
-    Immutable.TipEBB epoch -> do
+    Immutable.TipGen -> pure TipGenesis
+    Immutable.Tip (Left epoch) -> do
       mItem <- Immutable.getEBB idb epoch
       case mItem of
         -- FIXME ImmutableDB bug
@@ -326,7 +329,7 @@ readTipImpl err epochSlots idx idb = do
         Just (hash, bytes) -> pure $ TipEBB slot hash bytes
           where
           slot = SlotNo $ fromIntegral epochSlots * unEpochNo epoch
-    Immutable.TipBlock slot -> do
+    Immutable.Tip (Right slot) -> do
       mItem <- Immutable.getBinaryBlob idb slot
       case mItem of
         -- FIXME ImmutableDB bug

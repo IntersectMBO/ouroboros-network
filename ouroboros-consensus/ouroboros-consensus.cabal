@@ -68,6 +68,7 @@ library
                        Ouroboros.Consensus.Util.STM
 
                        -- Storing things on disk
+                       Ouroboros.Storage.Common
                        Ouroboros.Storage.FS.API
                        Ouroboros.Storage.FS.API.Example
                        Ouroboros.Storage.FS.API.Types

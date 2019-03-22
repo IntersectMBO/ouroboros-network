@@ -57,6 +57,7 @@ import           GHC.Generics (Generic)
 
 import           Ouroboros.Consensus.Util
 
+import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.LedgerDB.Conf
 import           Ouroboros.Storage.LedgerDB.MemPolicy
 import           Ouroboros.Storage.LedgerDB.Offsets
@@ -77,14 +78,6 @@ data BlockInfo r b =
 {-------------------------------------------------------------------------------
   Chain summary
 -------------------------------------------------------------------------------}
-
--- | Tip of the chain
-data Tip r = Tip r | TipGen
-  deriving (Show, Eq, Generic)
-
-tipIsGenesis :: Tip r -> Bool
-tipIsGenesis TipGen  = True
-tipIsGenesis (Tip _) = False
 
 -- | Summary of the chain at a particular point in time
 data ChainSummary l r = ChainSummary {
@@ -437,7 +430,6 @@ snapshotsShape (Tail os _)   = go os
   TODO: We shouldn't use the 'Generic' instances here
 -------------------------------------------------------------------------------}
 
-instance (Serialise r)              => Serialise (Tip r)
 instance (Serialise r, Serialise l) => Serialise (ChainSummary l r)
 
 {-------------------------------------------------------------------------------

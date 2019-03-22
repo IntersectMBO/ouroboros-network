@@ -18,7 +18,7 @@ import System.Directory (doesFileExist)
 import Pos.Chain.Block (HeaderHash)
 import Pos.Crypto.Hashing (AbstractHash (..))
 
-import Ouroboros.Storage.ImmutableDB.Types
+import Ouroboros.Storage.Common (EpochNo(..))
 
 -- | A point to read from the index. Looking up the tip gives its own hash,
 -- looking up anything by hash (could happen to be the tip) gives the hash

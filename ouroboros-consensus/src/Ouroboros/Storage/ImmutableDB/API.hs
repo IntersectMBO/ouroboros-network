@@ -23,6 +23,7 @@ import           GHC.Stack (HasCallStack)
 
 import           Pipes (Producer, lift, yield)
 
+import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.ImmutableDB.Types
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
 
@@ -102,7 +103,7 @@ data ImmutableDB hash m = ImmutableDB
     --
     -- Throws a 'ClosedDBError' if the database is closed.
   , deleteAfter
-      :: HasCallStack => Tip -> m ()
+      :: HasCallStack => ImmTip -> m ()
 
     -- | Return the tip of the database.
     --
@@ -111,7 +112,7 @@ data ImmutableDB hash m = ImmutableDB
     --
     -- Throws a 'ClosedDBError' if the database is closed.
   , getTip
-      :: HasCallStack => m Tip
+      :: HasCallStack => m ImmTip
 
     -- | Get the binary blob stored at the given 'SlotNo'.
     --
