@@ -63,6 +63,7 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.LeaderSchedule
+import           Ouroboros.Consensus.Protocol.PermBFT
 import           Ouroboros.Consensus.Protocol.Praos
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.Condense
@@ -363,6 +364,10 @@ type AddrDist = Map Addr NodeId
 instance (BftCrypto c, SimpleBlockCrypto c')
       => ProtocolLedgerView (SimpleBlock (Bft c) c') where
   protocolLedgerView _ _ = ()
+
+instance SimpleBlockCrypto c'
+      => ProtocolLedgerView (SimpleBlock PermBft c') where
+  protocolLedgerView _ _ = _
 
 instance (PraosCrypto c, SimpleBlockCrypto c')
       => ProtocolLedgerView (SimpleBlock (ExtNodeConfig AddrDist (Praos c)) c') where
