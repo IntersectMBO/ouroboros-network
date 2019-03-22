@@ -72,6 +72,11 @@ prop_mux_encode_decode msg =
          Left  e   -> counterexample (show e) False
          Right res -> return msg === res
 
+-- |
+-- A pair of SomeMuxVersion and its encoding as a pair (using @'encodeAsPair'@)
+-- If the generated @'CBOR.FlatTerm'@ does not correspond to some
+-- @'SomeMuxVersion@' then the first field is @'Nothing'@.
+--
 data ArbitraryVersionFT = ArbitraryVersionFT (Maybe SomeMuxVersion) CBOR.FlatTerm
     deriving Show
 
@@ -139,8 +144,6 @@ splitFlatTerm :: CBOR.FlatTerm -> [CBOR.FlatTerm]
 splitFlatTerm (x@CBOR.TkInt{}       : xs) = [x] : splitFlatTerm xs
 splitFlatTerm (x@CBOR.TkInteger{}   : xs) = [x] : splitFlatTerm xs
 
--- TODO: this needs to track @TkBreak@, the naive approach will split at wrong
--- places
 splitFlatTerm (x@CBOR.TkBytesBegin  : xs) =
   let (ys, ys') = findBreak xs
   in (x : ys) : splitFlatTerm ys'
