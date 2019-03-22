@@ -1,5 +1,6 @@
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE TypeFamilies   #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 module Ouroboros.Network.Mux (
       MiniProtocolDescription (..)
@@ -42,7 +43,8 @@ import           Ouroboros.Network.Mux.Types
 -- | muxStart starts a mux bearer for the specified protocols corresponding to
 -- one of the provided Versions.
 -- TODO: replace MonadSay with iohk-monitoring-framework.
-muxStart :: ( MonadAsync m, MonadFork m, MonadSay m, MonadSTM m, MonadThrow m
+muxStart :: forall m ptcl.
+            ( MonadAsync m, MonadFork m, MonadSay m, MonadSTM m, MonadThrow m
             , Ord ptcl, Enum ptcl, Bounded ptcl)
          => [SomeMuxVersion]
          -> (SomeMuxVersion -> Maybe (MiniProtocolDescriptions ptcl m))
@@ -71,6 +73,7 @@ muxStart versions mpds bearer style rescb_m = do
     watcher aids
 
   where
+    watcher :: [Async m a] -> m ()
     watcher as = do
         (_,r) <- waitAnyCatchCancel as
         close bearer
@@ -87,6 +90,7 @@ muxStart versions mpds bearer style rescb_m = do
 
 
     -- Construct the array of TBQueues, one for each protocol id, and each mode
+    setupTbl :: m (MiniProtocolDispatch ptcl m)
     setupTbl = MiniProtocolDispatch
             -- cover full range of type (MiniProtocolId ptcl, MiniProtocolMode)
              . array (minBound, maxBound)
@@ -95,7 +99,14 @@ muxStart versions mpds bearer style rescb_m = do
                         | ptcl <- [minBound..maxBound]
                         , mode <- [ModeInitiator, ModeResponder] ]
 
-    mpsJob cnt pmss udesc mpdId = do
+    mpsJob
+      :: TVar m Int
+      -> PerMuxSharedState ptcl m
+      -> Maybe (MiniProtocolDescriptions ptcl m)
+      -> ptcl
+      -> m [m ()]
+    mpsJob _   _    Nothing      _     = pure []
+    mpsJob cnt pmss (Just udesc) mpdId = do
         let mpd = udesc mpdId
         w_i <- atomically newEmptyTMVar
         w_r <- atomically newEmptyTMVar
@@ -106,9 +117,11 @@ muxStart versions mpds bearer style rescb_m = do
                      >> mpsJobExit cnt
                ]
 
-    -- cnt represent the number of SDUs that are queued but not yet sent.
-    -- Job threads will be prevented from exiting until all SDUs have been transmitted unless
-    -- an exception/error is encounter. In that case all jobs will be cancelled directly.
+    -- cnt represent the number of SDUs that are queued but not yet sent.  Job
+    -- threads will be prevented from exiting until all SDUs have been
+    -- transmitted unless an exception/error is encounter. In that case all
+    -- jobs will be cancelled directly.
+    mpsJobExit :: TVar m Int -> m ()
     mpsJobExit cnt = do
         muxBearerSetState bearer Dying
         atomically $ do
