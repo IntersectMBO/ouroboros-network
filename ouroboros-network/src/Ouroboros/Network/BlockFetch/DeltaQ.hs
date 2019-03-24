@@ -3,8 +3,8 @@
 {-# LANGUAGE StandaloneDeriving         #-}
 
 module Ouroboros.Network.BlockFetch.DeltaQ (
-    GSV(..),
-    Distribution(..),
+    GSV,
+    Distribution,
     DeltaQ,
     PeerGSV(..),
     estimateBlockFetchResponse,
@@ -13,68 +13,13 @@ module Ouroboros.Network.BlockFetch.DeltaQ (
     calculatePeerFetchInFlightLimits,
   ) where
 
-import           Data.Semigroup ((<>))
 import           Control.Monad.Class.MonadTimer
 
+import           Ouroboros.Network.DeltaQ
 import           Ouroboros.Network.BlockFetch.Types
-                   ( SizeInBytes, PeerFetchInFlight(..) )
+                   ( PeerFetchInFlight(..) )
 
 
-data Distribution n = Distribution n
--- This is a totally bogus representation. It's just a PoC.
--- This says that there's a single value that it takes with probability 1.
-
-instance Num n => Semigroup (Distribution n) where
-  (<>) = convolveDistribution
-
-convolveDistribution :: Num n => Distribution n -> Distribution n -> Distribution n
-convolveDistribution (Distribution d) (Distribution d') = Distribution (d+d')
--- Again, totally bogus.
-
-shiftDistribution :: Num n => n -> Distribution n -> Distribution n
-shiftDistribution n (Distribution d) = Distribution (n+d)
--- Again, totally bogus.
-
-data GSV t = GSV (Duration t)                -- G as seconds
-                 (Duration t)                -- S as seconds / octet
-                 (Distribution (Duration t)) -- V as distribution
-
-instance TimeMeasure t => Semigroup (GSV t) where
-  GSV g1 s1 v1 <> GSV g2 s2 v2 = GSV (g1+g2) (s1+s2) (v1 <> v2)
-
-newtype DeltaQ t = DeltaQ (Distribution (Duration t))
-
-deriving instance TimeMeasure t => Semigroup (DeltaQ t)
-
-gsvLeadingEdgeArrive  :: TimeMeasure t => GSV t ->                DeltaQ t
-gsvTrailingEdgeDepart :: TimeMeasure t => GSV t -> SizeInBytes -> DeltaQ t  -- perhaps a bit dubious
-gsvTrailingEdgeArrive :: TimeMeasure t => GSV t -> SizeInBytes -> DeltaQ t
-
-gsvLeadingEdgeArrive (GSV g _s v) =
-  DeltaQ (shiftDistribution g v)
-
-gsvTrailingEdgeDepart (GSV _g s v) bytes =
-  DeltaQ (shiftDistribution (s * fromIntegral bytes) v)
-
-gsvTrailingEdgeArrive (GSV g s v) bytes =
-  DeltaQ (shiftDistribution (g + s * fromIntegral bytes) v)
-
-
-estimateDetltaQ99thPercentile :: DeltaQ t -> Duration t
-estimateDetltaQ99thPercentile (DeltaQ (Distribution t)) = t
--- Again, totally bogus.
-
-estimateProbabilityMassBeforeDeadline :: TimeMeasure t
-                                      => DeltaQ t -> Duration t -> Double
-estimateProbabilityMassBeforeDeadline (DeltaQ (Distribution t)) d
-  | t < d     = 1
-  | otherwise = 0
-  -- Again, totally bogus.
-
-data PeerGSV time = PeerGSV {
-                      outboundGSV :: !(GSV time),
-                      inboundGSV  :: !(GSV time)
-                    }
 
 data PeerFetchInFlightLimits = PeerFetchInFlightLimits {
        inFlightBytesHighWatermark :: SizeInBytes,
@@ -119,7 +64,8 @@ calculatePeerFetchInFlightLimits PeerGSV {
     -- more). Lets say our maximum schedule delay is @d@ seconds.
     --
     inFlightBytesLowWatermark =
-      ceiling (toRational (g_out + g_in + d) / toRational s_in)
+      ceiling (toRational (g_out + g_in + d) / toRational (s_in 1))
+      --FIXME: s is now a function of bytes, not unit seconds / octet
 
     d = 2000 --TODO: switch to concrete type that's in RealFrac
     -- But note that the minimum here is based on the assumption that we can
@@ -207,15 +153,13 @@ estimateBlockFetchResponse :: TimeMeasure time
                            -> PeerFetchInFlight header
                            -> [SizeInBytes]
                            -> Duration time
-estimateBlockFetchResponse PeerGSV{outboundGSV, inboundGSV}
+estimateBlockFetchResponse gsvs
                            PeerFetchInFlight{peerFetchBytesInFlight}
                            blockSizes =
-    estimateDetltaQ99thPercentile $
-         gsvTrailingEdgeArrive outboundGSV reqSize
-      <> gsvTrailingEdgeArrive inboundGSV  rspSize
+    gsvRequestResponseDuration gsvs reqSize respSize
   where
-    reqSize = 100 -- not exact, but it's small
-    rspSize = peerFetchBytesInFlight + sum blockSizes
+    reqSize  = 100 -- not exact, but it's small
+    respSize = peerFetchBytesInFlight + sum blockSizes
 
 -- | The /trailing/ edge arrival schedule for a bunch of blocks.
 --
@@ -224,13 +168,11 @@ blockArrivalShedule :: TimeMeasure time
                     -> PeerFetchInFlight header
                     -> [SizeInBytes]
                     -> [Duration time]
-blockArrivalShedule PeerGSV{outboundGSV, inboundGSV}
+blockArrivalShedule gsvs
                     PeerFetchInFlight{peerFetchBytesInFlight}
                     blockSizes =
-    [ estimateDetltaQ99thPercentile $
-           gsvTrailingEdgeArrive outboundGSV reqSize
-        <> gsvTrailingEdgeArrive inboundGSV  rspSize
-    | rspSize <- cumulativeSumFrom peerFetchBytesInFlight blockSizes
+    [ gsvRequestResponseDuration gsvs reqSize respSize
+    | respSize <- cumulativeSumFrom peerFetchBytesInFlight blockSizes
     ]
   where
     reqSize = 100 -- not exact, but it's small

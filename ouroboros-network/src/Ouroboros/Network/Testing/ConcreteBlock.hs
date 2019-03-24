@@ -166,26 +166,26 @@ instance HasHeader Block where
   don't make much sense for real chains.
 -------------------------------------------------------------------------------}
 
-mkChain :: [(Slot, BlockBody)] -> Chain Block
+mkChain :: [(SlotNo, BlockBody)] -> Chain Block
 mkChain = fromListFixupBlocks . map (uncurry mkPartialBlock) . reverse
 
 mkChainSimple :: [BlockBody] -> Chain Block
 mkChainSimple = mkChain . zip [1..]
 
-mkChainHeaders :: [(Slot, BlockBody)] -> Chain BlockHeader
+mkChainHeaders :: [(SlotNo, BlockBody)] -> Chain BlockHeader
 mkChainHeaders = fromListFixupHeaders . map (uncurry mkPartialBlockHeader). reverse
 
 mkChainHeadersSimple :: [BlockBody] -> Chain BlockHeader
 mkChainHeadersSimple = mkChainHeaders . zip [1..]
 
-mkPartialBlock :: Slot -> BlockBody -> Block
+mkPartialBlock :: SlotNo -> BlockBody -> Block
 mkPartialBlock sl body =
     Block {
       blockHeader = mkPartialBlockHeader sl body
     , blockBody   = body
     }
 
-mkPartialBlockHeader :: Slot -> BlockBody -> BlockHeader
+mkPartialBlockHeader :: SlotNo -> BlockBody -> BlockHeader
 mkPartialBlockHeader sl body =
     BlockHeader {
       headerSlot     = sl,
@@ -198,8 +198,8 @@ mkPartialBlockHeader sl body =
   where
     partialField n = error ("mkPartialBlock: you didn't fill in field " ++ n)
 
-    expectedBFTSigner :: Slot -> BlockSigner
-    expectedBFTSigner (Slot n) = BlockSigner (n `mod` 7)
+    expectedBFTSigner :: SlotNo -> BlockSigner
+    expectedBFTSigner (SlotNo n) = BlockSigner (n `mod` 7)
 
 
 -- | To help with chain construction and shrinking it's handy to recalculate
@@ -247,13 +247,13 @@ fixupBlockHeader c h b = b'
   Variants of "Fixup" for ChainFragment
 -------------------------------------------------------------------------------}
 
-mkChainFragment :: [(Slot, BlockBody)] -> ChainFragment Block
+mkChainFragment :: [(SlotNo, BlockBody)] -> ChainFragment Block
 mkChainFragment = fromListFixupBlocksCF . map (uncurry mkPartialBlock) . reverse
 
 mkChainFragmentSimple :: [String] -> ChainFragment Block
 mkChainFragmentSimple = mkChainFragment . zip [1..] . map BlockBody
 
-mkChainFragmentHeaders :: [(Slot, BlockBody)] -> ChainFragment BlockHeader
+mkChainFragmentHeaders :: [(SlotNo, BlockBody)] -> ChainFragment BlockHeader
 mkChainFragmentHeaders = fromListFixupHeadersCF . map (uncurry mkPartialBlockHeader) . reverse
 
 mkChainFragmentHeadersSimple :: [String] -> ChainFragment BlockHeader

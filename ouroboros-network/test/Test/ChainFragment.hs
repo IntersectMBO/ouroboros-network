@@ -255,7 +255,7 @@ prop_splitAfterPoint (TestChainFragmentAndPoint c p) =
     Nothing ->
          not (CF.pointOnChainFragment p c)
   where
-    slots :: ChainFragment Block -> [Slot]
+    slots :: ChainFragment Block -> [SlotNo]
     slots = map blockSlot . CF.toOldestFirst
 
 prop_splitBeforeSlot :: TestChainFragmentAndPoint -> Bool
@@ -281,7 +281,7 @@ prop_splitBeforePoint (TestChainFragmentAndPoint c p) =
     Nothing ->
         not (CF.pointOnChainFragment p c)
   where
-    slots :: ChainFragment Block -> [Slot]
+    slots :: ChainFragment Block -> [SlotNo]
     slots = map blockSlot . CF.toOldestFirst
 
 prop_sliceRange :: TestChainAndRange -> Bool

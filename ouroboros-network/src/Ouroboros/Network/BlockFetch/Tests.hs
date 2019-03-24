@@ -40,8 +40,8 @@ import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Driver
 import           Ouroboros.Network.Channel
 
+import           Ouroboros.Network.DeltaQ
 import           Ouroboros.Network.BlockFetch.Types
-import           Ouroboros.Network.BlockFetch.DeltaQ
 import           Ouroboros.Network.BlockFetch.Client
 import           Ouroboros.Network.BlockFetch.Decision
 
@@ -669,7 +669,7 @@ demo2 chain = do
         -- roughly 10ms ping time and 1MBit/s bandwidth
         -- leads to 2000 bytes in flight minimum
         readPeerGSVs = return PeerGSV{outboundGSV, inboundGSV}
-        inboundGSV   = GSV 10000 10 (Distribution 0)
+        inboundGSV   = ballisticGSV 10000 10 (degenerateDistribution 0)
         outboundGSV  = inboundGSV
 
         -- Watch and log the client's status and in-flight vars

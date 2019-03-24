@@ -245,7 +245,7 @@ lastPoint :: HasHeader block => ChainFragment block -> Maybe (Point block)
 lastPoint = fmap blockPoint . last
 
 -- | \( O(1) \).
-lastSlot :: HasHeader block => ChainFragment block -> Maybe Slot
+lastSlot :: HasHeader block => ChainFragment block -> Maybe SlotNo
 lastSlot = fmap blockSlot . last
 
 
@@ -487,7 +487,7 @@ splitAfterPoint c p
 -- (oldest\/leftmost) block on the second returned chain.
 splitBeforeSlot :: HasHeader block
                => ChainFragment block
-               -> Slot
+               -> SlotNo
                -> (ChainFragment block, ChainFragment block)
 splitBeforeSlot (ChainFragment t) s = (ChainFragment l, ChainFragment r)
   where

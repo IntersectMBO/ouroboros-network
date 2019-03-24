@@ -17,9 +17,8 @@ import           Data.Set (Set)
 import           Control.Monad.Class.MonadSTM
 
 import           Ouroboros.Network.Chain (Point)
+import           Ouroboros.Network.DeltaQ (SizeInBytes)
 
-
-type SizeInBytes = Word
 
 -- | A set of variables shared between the block fetch logic thread and each
 -- thread executing the client side of the block fetch protocol. That is, these

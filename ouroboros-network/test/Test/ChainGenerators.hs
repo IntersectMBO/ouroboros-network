@@ -139,12 +139,12 @@ instance Arbitrary ArbitraryBlockHeader where
 -- We use default implementations using generics.
 instance CoArbitrary Block
 instance CoArbitrary BlockHeader
-instance CoArbitrary Slot
+instance CoArbitrary SlotNo
 instance CoArbitrary BlockNo
 instance CoArbitrary BlockSigner
 instance CoArbitrary BodyHash
 instance CoArbitrary BlockBody
-instance CoArbitrary (Hash BlockHeader)
+instance CoArbitrary (ChainHash BlockHeader)
 instance CoArbitrary ConcreteHeaderHash
 
 -- | The 'NonNegative' generator produces a large proportion of 0s, so we use
