@@ -20,6 +20,7 @@ import           Text.Printf
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
+import           Cardano.BM.Tracer (nullTracer)
 import           Network.TypedProtocol.Driver
 import           Network.TypedProtocol.ReqResp.Client
 import           Network.TypedProtocol.ReqResp.Server
@@ -242,12 +243,12 @@ setupMiniReqRsp mid serverAction mpsEndVar request response = do
     clientPeer = reqRespClientPeer (plainClient [request])
 
     clientInit clientResultVar clientChan = do
-        result <- runPeer codecReqResp clientChan clientPeer
+        result <- runPeer nullTracer codecReqResp clientChan clientPeer
         atomically (putTMVar clientResultVar result)
         end
 
     serverRsp serverResultVar serverChan = do
-        result <- runPeer codecReqResp serverChan serverPeer
+        result <- runPeer nullTracer codecReqResp serverChan serverPeer
         atomically (putTMVar serverResultVar result)
         end
 

@@ -14,6 +14,8 @@ import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
+import           Cardano.BM.Tracer (nullTracer)
+
 import           Network.TypedProtocol.Driver
 
 import           Ouroboros.Network.Chain (Chain, ChainUpdate, Point)
@@ -119,7 +121,7 @@ demo chain0 updates = do
        let consumerPeer = chainSyncClientPeer (chainSyncClientExample consChain
                                                (consumerClient target consChain))
 
-       runPeer codecChainSync channel consumerPeer
+       runPeer nullTracer codecChainSync channel consumerPeer
        atomically $ putTMVar done_ True
 
        return ()
@@ -132,5 +134,5 @@ demo chain0 updates = do
     producerRsp prodChain channel = do
         let producerPeer = chainSyncServerPeer (chainSyncServerExample () prodChain)
 
-        runPeer codecChainSync channel producerPeer
+        runPeer nullTracer codecChainSync channel producerPeer
 

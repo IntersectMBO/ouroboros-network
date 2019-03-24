@@ -14,6 +14,7 @@ import           Control.Monad.Class.MonadST (MonadST)
 import           Control.Monad.Class.MonadSTM (MonadSTM)
 import           Control.Monad.Class.MonadAsync (MonadAsync)
 import           Control.Monad.Class.MonadThrow (MonadCatch)
+import           Cardano.BM.Tracer (nullTracer)
 
 import           Network.TypedProtocol.Driver
 import           Network.TypedProtocol.Codec
@@ -266,7 +267,7 @@ prop_channel :: (MonadAsync m, MonadCatch m, MonadST m)
 prop_channel createChannels chain points = do
     (bodies, ()) <-
       runConnectedPeers
-        createChannels codecBlockFetch
+        createChannels nullTracer codecBlockFetch
         (blockFetchClientPeer (testClient chain points))
         (blockFetchServerPeer (testServer chain))
     return $ reverse bodies === concat (receivedBlockBodies chain points)

@@ -38,6 +38,7 @@ import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadThrow
+import           Cardano.BM.Tracer (nullTracer)
 
 import           Ouroboros.Network.Channel as Network
 import           Ouroboros.Network.Codec
@@ -756,12 +757,12 @@ initNetworkLayer NetworkRequires{..} = do
         , npAddDownstream = \NodeComms{..} -> do
             let producer = chainSyncServerPeer (chainSyncServerExample () cpsVar)
             void $ fork $ void $ ncWithChan $ \chan ->
-              runPeer ncCodec chan producer
+              runPeer nullTracer ncCodec chan producer
               --TODO: deal with the exceptions this throws, use async
         , npAddUpstream = \up NodeComms{..} -> do
             let consumer = nrSyncClient up
             void $ fork $ void $ ncWithChan $ \chan ->
-              runPeer ncCodec chan (chainSyncClientPeer consumer)
+              runPeer nullTracer ncCodec chan (chainSyncClientPeer consumer)
               --TODO: deal with the exceptions this throws, use async
         }
 

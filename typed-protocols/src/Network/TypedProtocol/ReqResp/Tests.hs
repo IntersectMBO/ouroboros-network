@@ -20,6 +20,7 @@ import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
 import Control.Monad.IOSim (runSimOrThrow)
+import Cardano.BM.Tracer (nullTracer)
 
 import Data.Functor.Identity (Identity (..))
 import Data.Tuple (swap)
@@ -149,6 +150,7 @@ prop_channel :: (MonadSTM m, MonadAsync m, MonadCatch m)
              -> m Bool
 prop_channel f xs = do
     (c, s) <- runConnectedPeers createConnectedChannels
+                                nullTracer
                                 codecReqResp client server
     return ((s, c) == mapAccumL f 0 xs)
   where
