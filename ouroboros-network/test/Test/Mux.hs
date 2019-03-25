@@ -36,6 +36,7 @@ import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
+import           Control.Monad.IOSim (runSimStrictShutdown)
 import           Network.TypedProtocol.Driver
 import           Network.TypedProtocol.ReqResp.Client
 import           Network.TypedProtocol.ReqResp.Server
@@ -49,11 +50,13 @@ import           Ouroboros.Network.Protocol.ReqResp.Codec
 tests :: TestTree
 tests =
   testGroup "Mux"
-  [ testProperty "mux send receive"     prop_mux_snd_recv
-  , testProperty "2 miniprotocols"      prop_mux_2_minis
-  , testProperty "starvation"           prop_mux_starvation
-  , testProperty "unknown miniprotocol" prop_mux_unknown_miniprot
-  , testProperty "too short header"     prop_mux_short_header
+  [ testProperty "mux send receive"          prop_mux_snd_recv
+  , testProperty "2 miniprotocols"           prop_mux_2_minis
+  , testProperty "starvation"                prop_mux_starvation
+  , testProperty "unknown miniprotocol (IO)" prop_mux_unknown_miniprot_io
+  , testProperty "unknow miniprotocol (Sim)" prop_mux_unknown_miniprot_sim
+  , testProperty "too short header (IO)"     prop_mux_short_header_io
+  , testProperty "too short header (Sim)"    prop_mux_short_header_sim
   ]
 
 newtype NetworkMagic = NetworkMagic Word32
@@ -227,35 +230,21 @@ startMuxSTM :: ( MonadAsync m, MonadCatch m, MonadSay m, MonadSTM m, MonadThrow 
             -> TBQueue m BL.ByteString
             -> Word16
             -> Maybe (TBQueue m (Mx.MiniProtocolId ptcl, Mx.MiniProtocolMode, Time m))
-            -> m (TBQueue m (Maybe SomeException))
+            -> m (Async m (Maybe SomeException))
 startMuxSTM versions mpds style wq rq mtu trace = do
     let ctx = MuxSTMCtx wq rq mtu trace
     resq <- atomically $ newTBQueue 10
-    void $ async (spawn ctx resq)
+    async (spawn ctx resq)
 
-    return resq
   where
     spawn ctx resq = do
         bearer <- queuesAsMuxBearer ctx
         res_e <- try $ Mx.muxStart versions mpds bearer style (Just $ rescb resq)
         case res_e of
-             Left  e -> rescb resq $ Just e
-             Right _ -> return ()
+             Left  e -> return $ Just e
+             Right _ -> atomically $ readTBQueue resq
 
     rescb resq e_m = atomically $ writeTBQueue resq e_m
-
-
--- | Helper function to check if jobs in 'startMuxSTM' exited successfully.
--- Only checks the first return value
-normallExit :: MonadSTM m
-            => TBQueue m (Maybe SomeException)
-            -> m Bool
-normallExit resq = do
-    res <- atomically $ readTBQueue resq
-    case res of
-         Just _  -> return False
-         Nothing -> return True
-
 
 queuesAsMuxBearer
   :: forall ptcl m.
@@ -328,13 +317,14 @@ prop_mux_snd_recv request response = ioProperty $ do
         client_mps _ = Just (\_ -> client_mp)
         server_mps _ = Just (\_ -> server_mp)
 
-    client_resVar <- startMuxSTM [version1] client_mps Mx.StyleClient client_w client_r sduLen Nothing
-    server_resVar <- startMuxSTM [version1] server_mps Mx.StyleServer server_w server_r sduLen Nothing
+    caid <- startMuxSTM [version1] client_mps Mx.StyleClient client_w client_r sduLen Nothing
+    said <- startMuxSTM [version1] server_mps Mx.StyleServer server_w server_r sduLen Nothing
 
-    v <- verify
-    c_e <- normallExit client_resVar
-    s_e <- normallExit server_resVar
-    return $ property $ v .&&. c_e .&&. s_e
+    r <- waitBoth caid said
+    case r of
+         (Just _, _) -> return $ property False
+         (_, Just _) -> return $ property False
+         _           -> property <$> verify
 
 -- | Create a verification function, a MiniProtocolDescription for the client side and a
 -- MiniProtocolDescription for the server side for a RequestResponce protocol.
@@ -431,15 +421,18 @@ prop_mux_2_minis request0 response0 response1 request1 = ioProperty $ do
         server_mps ChainSync2  = server_mp0
         server_mps BlockFetch2 = server_mp1
 
-    client_res <- startMuxSTM [version0] (\_ -> Just client_mps) Mx.StyleClient client_w client_r sduLen Nothing
-    server_res <- startMuxSTM [version0] (\_ -> Just server_mps) Mx.StyleServer server_w server_r sduLen Nothing
+    caid <- startMuxSTM [version0] (\_ -> Just client_mps) Mx.StyleClient client_w client_r sduLen Nothing
+    said<- startMuxSTM [version0] (\_ -> Just server_mps) Mx.StyleServer server_w server_r sduLen Nothing
 
-    res0 <- verify_0
-    res1 <- verify_1
-    c_e <- normallExit client_res
-    s_e <- normallExit server_res
+    r <- waitBoth caid said
+    case r of
+         (Just _, _) -> return $ property False
+         (_, Just _) -> return $ property False
+         _           -> do
+             res0 <- verify_0
+             res1 <- verify_1
 
-    return $ property $ res0 .&&. res1 .&&. c_e .&&. s_e
+             return $ property $ res0 .&&. res1
 
 -- | Attempt to verify that capacity is diveded fairly between two active miniprotocols.
 -- Two initiators send a request over two different miniprotocols and the corresponding responders
@@ -477,22 +470,25 @@ prop_mux_starvation response0 response1 =
         server_mps BlockFetch2 = server_short
         server_mps ChainSync2  = server_long
 
-    client_res <- startMuxSTM [version0] (\_ -> Just client_mps) Mx.StyleClient client_w client_r sduLen (Just traceQueueVar)
-    server_res <- startMuxSTM [version0] (\_ -> Just server_mps) Mx.StyleServer server_w server_r sduLen Nothing
+    caid <- startMuxSTM [version0] (\_ -> Just client_mps) Mx.StyleClient client_w client_r sduLen (Just traceQueueVar)
+    said <- startMuxSTM [version0] (\_ -> Just server_mps) Mx.StyleServer server_w server_r sduLen Nothing
 
-    -- First verify that all messages where received correctly
-    res_short <- verify_short
-    res_long <- verify_long
-    c_e <- normallExit client_res
-    s_e <- normallExit server_res
+    r <- waitBoth caid said
+    case r of
+         (Just _, _) -> return $ property False
+         (_, Just _) -> return $ property False
+         _           -> do
+             -- First verify that all messages where received correctly
+             res_short <- verify_short
+             res_long <- verify_long
 
-    -- Then look at the message trace to check for starvation.
-    trace <- atomically $ flushTBQueue traceQueueVar []
-    let es = map (\(e, _, _) -> e) trace
-        ls = dropWhile (\e -> e == head es) es
-        fair = verifyStarvation ls
+             -- Then look at the message trace to check for starvation.
+             trace <- atomically $ flushTBQueue traceQueueVar []
+             let es = map (\(e, _, _) -> e) trace
+                 ls = dropWhile (\e -> e == head es) es
+                 fair = verifyStarvation ls
 
-    return $ property $ res_short .&&. res_long .&&. fair .&&. c_e .&&. s_e
+             return $ property $ res_short .&&. res_long .&&. fair
 
   where
    -- We can't make 100% sure that both servers start responding at the same time
@@ -514,22 +510,6 @@ prop_mux_starvation response0 response1 =
                  a <- readTBQueue q
                  flushTBQueue q (a : acc)
 
--- | Send message for an unknown miniprotocol and verify that the correct exception is thrown.
-prop_mux_unknown_miniprot :: InvalidSDU
-                          -> Property
-prop_mux_unknown_miniprot badSdu = ioProperty $ do
-    (client_w, resq) <- failingServer
-
-    atomically $ writeTBQueue client_w (encodeInvalidMuxSDU badSdu)
-
-    res <- atomically $ readTBQueue resq
-    case res of
-         Just e  ->
-             case fromException e of
-                  Just me -> return $ Mx.errorType me == Mx.MuxUnknownMiniProtocol
-                  Nothing -> return False
-         Nothing -> return False
-
 encodeInvalidMuxSDU :: InvalidSDU -> BL.ByteString
 encodeInvalidMuxSDU sdu = Bin.runPut enc
   where
@@ -538,28 +518,10 @@ encodeInvalidMuxSDU sdu = Bin.runPut enc
         Bin.putWord16be $ isIdAndMode sdu
         Bin.putWord16be $ isLength sdu
 
--- | Send a too short SDU header and verify that the correct exception is thrown.
-prop_mux_short_header :: InvalidSDU
-                      -> Word8
-                      -> Property
-prop_mux_short_header badSdu shortCutOffArg = ioProperty $ do
-    let shortCutOff = fromIntegral $ min shortCutOffArg 7 -- XXX Quickcheck 'Giving up' hack
-    (client_w, resq) <- failingServer
-
-    atomically $ writeTBQueue client_w (BL.take shortCutOff $ encodeInvalidMuxSDU badSdu)
-
-    res <- atomically $ readTBQueue resq
-    case res of
-         Just e  ->
-             case fromException e of
-                  Just me -> return $ Mx.errorType me == Mx.MuxDecodeError
-                  Nothing -> return False
-         Nothing -> return False
-
 -- | Start a ReqResp server that is expected to fail, returns the server's read channel
 failingServer :: forall m. ( MonadAsync m, MonadCatch m, MonadSay m, MonadST m, MonadSTM m
                            , MonadThrow m, MonadTimer m )
-              => m (TBQueue m BL.ByteString, TBQueue m (Maybe SomeException))
+              => m (TBQueue m BL.ByteString, Async m (Maybe SomeException))
 failingServer  = do
     server_r <- atomically $ newTBQueue 10
     server_w <- atomically $ newTBQueue 10
@@ -571,8 +533,82 @@ failingServer  = do
 
     (_, _, server_mp) <- setupMiniReqRsp (return ()) endMpsVar request response
     let server_mps ChainSync1 = server_mp
-    server_res <- startMuxSTM [version0] (\_ -> Just server_mps) Mx.StyleServer server_w server_r sduLen Nothing
+    said <- startMuxSTM [version0] (\_ -> Just server_mps) Mx.StyleServer server_w server_r sduLen Nothing
 
-    return (server_r, server_res)
+    return (server_r, said)
 
+-- | Send message for an unknown miniprotocol and verify that the correct exception is thrown.
+prop_mux_unknown_miniprot :: forall m.
+                     ( MonadAsync m
+                     , MonadCatch m
+                     , MonadSay m
+                     , MonadST m
+                     , MonadSTM m
+                     , MonadTimer m)
+                  => InvalidSDU
+                  -> m Property
+prop_mux_unknown_miniprot badSdu = do
+    (client_w, said) <- failingServer
+
+    atomically $ writeTBQueue client_w (encodeInvalidMuxSDU badSdu)
+
+    res <- wait said
+    case res of
+         Just e  ->
+             case fromException e of
+                  Just me -> return $ Mx.errorType me === Mx.MuxUnknownMiniProtocol
+                  Nothing -> return $ property False
+         Nothing -> return $ property False
+
+prop_mux_unknown_miniprot_io :: InvalidSDU
+                             -> Property
+prop_mux_unknown_miniprot_io badSdu =
+    ioProperty $ prop_mux_unknown_miniprot badSdu
+
+prop_mux_unknown_miniprot_sim :: InvalidSDU
+             -> Property
+prop_mux_unknown_miniprot_sim badSdu  =
+    let r_e =  runSimStrictShutdown $ prop_mux_unknown_miniprot badSdu in
+    case r_e of
+         Left  _ -> property False
+         Right r -> r
+
+prop_mux_short_header :: forall m.
+                         ( MonadAsync m
+                         , MonadCatch m
+                         , MonadSay m
+                         , MonadST m
+                         , MonadSTM m
+                         , MonadTimer m)
+                      => InvalidSDU
+                      -> Word8
+                      -> m Property
+prop_mux_short_header badSdu shortCutOffArg = do
+    let shortCutOff = fromIntegral $ min shortCutOffArg 7 -- XXX Quickcheck 'Giving up' hack
+    (client_w, said) <- failingServer
+
+    atomically $ writeTBQueue client_w (BL.take shortCutOff $ encodeInvalidMuxSDU badSdu)
+
+    res <- wait said
+    case res of
+         Just e  ->
+             case fromException e of
+                  Just me -> return $ Mx.errorType me === Mx.MuxDecodeError
+                  Nothing -> return $ property False
+         Nothing -> return $ property False
+
+prop_mux_short_header_io :: InvalidSDU
+                         -> Word8
+                         -> Property
+prop_mux_short_header_io badSdu shortCutOffArg=
+    ioProperty $ prop_mux_short_header badSdu shortCutOffArg
+
+prop_mux_short_header_sim :: InvalidSDU
+                          -> Word8
+                          -> Property
+prop_mux_short_header_sim badSdu shortCutOffArg =
+    let r_e =  runSimStrictShutdown $ prop_mux_short_header badSdu shortCutOffArg in
+    case r_e of
+         Left  _ -> property False
+         Right r -> r
 
