@@ -15,9 +15,12 @@ module Test.ChainFragment
   ) where
 
 import qualified Data.List as L
-import           Data.Maybe (listToMaybe, maybeToList, maybe, fromMaybe, fromJust)
+import qualified Data.Set  as Set
+import           Data.Maybe (listToMaybe, maybeToList, maybe,
+                             fromMaybe, fromJust, isNothing)
 
 import           Test.QuickCheck
+import           Text.Show.Functions ()
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
@@ -91,6 +94,7 @@ tests = testGroup "ChainFragment"
   , testProperty "slotOnChainFragment"                       prop_slotOnChainFragment
   , testProperty "pointOnChainFragment"                      prop_pointOnChainFragment
   , testProperty "lookupByIndexFromEnd"                      prop_lookupByIndexFromEnd
+  , testProperty "filter"                                    prop_filter
   , testProperty "selectPoints"                              prop_selectPoints
   , testGroup "splitAfterSlot"
     [ testProperty "splitAfterSlot join"                     prop_splitAfterSlot_join
@@ -273,6 +277,31 @@ prop_lookupByIndexFromEnd (TestChainFragmentAndIndex c i) =
   case CF.lookupByIndexFromEnd c i of
     CF.Position _ b _  -> b === CF.toNewestFirst c !! i
     _                  -> property (i < 0 || i >= CF.length c)
+
+prop_filter :: (Block -> Bool) -> TestBlockChainFragment -> Property
+prop_filter p (TestBlockChainFragment chain) =
+  let fragments = CF.filter p chain in
+      cover 70 (length fragments > 1) "multiple fragments" $
+
+      -- The fragments contain exactly the blocks where p holds
+      (   Set.fromList (L.map CF.blockPoint (L.filter p (CF.toNewestFirst chain)))
+       ==
+          Set.fromList (L.map CF.blockPoint (concatMap CF.toNewestFirst fragments))
+      )
+   &&
+      -- The fragments are non-empty
+      all (not . CF.null) fragments
+   &&
+      -- The fragments are in order
+      (let fragmentPoints = map (\c -> (CF.blockPoint <$> CF.last c,
+                                        CF.blockPoint <$> CF.head c)) fragments
+        in fragmentPoints == L.sort fragmentPoints)
+   &&
+      -- The fragments are of maximum size
+      and [ isNothing (CF.joinChainFragments a b)
+          | (a,b) <- zip fragments (tail fragments) ]
+
+
 
 prop_selectPoints :: TestBlockChainFragment -> Property
 prop_selectPoints (TestBlockChainFragment c) =
