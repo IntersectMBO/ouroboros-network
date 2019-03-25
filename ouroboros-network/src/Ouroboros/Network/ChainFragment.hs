@@ -51,6 +51,7 @@ module Ouroboros.Network.ChainFragment (
   splitAfterSlot,
   splitAfterPoint,
   lookupByIndexFromEnd, FT.SearchResult(..),
+  filter,
   selectPoints,
   findFirstPoint,
   intersectChainFragments,
@@ -67,7 +68,7 @@ module Ouroboros.Network.ChainFragment (
   selectPointsSpec,
   ) where
 
-import           Prelude hiding (drop, head, last, length, null)
+import           Prelude hiding (drop, head, last, length, null, filter)
 
 import           Control.Exception (assert)
 import           Data.FingerTree (FingerTree)
@@ -326,6 +327,23 @@ lookupByIndexFromEnd (ChainFragment t) n =
     FT.search (\vl vr -> bmSize vl >= len - n && bmSize vr <= n) t
   where
     len = bmSize (FT.measure t)
+
+-- | \( O\(n\) \). Filter the chain based on a predicate. As filtering
+-- removes blocks the result is a sequence of disconnected fragments.
+-- The fragments are in the original order and are of maximum size.
+--
+filter :: HasHeader block
+       => (block -> Bool)
+       -> ChainFragment block
+       -> [ChainFragment block]
+filter p = go [] Empty
+  where
+    go cs c'    (b :< c) | p b = go     cs (c' :> b) c
+    go cs Empty (_ :< c)       = go     cs  Empty    c
+    go cs c'    (_ :< c)       = go (c':cs) Empty    c
+
+    go cs Empty  Empty         = reverse     cs
+    go cs c'     Empty         = reverse (c':cs)
 
 -- | \( O(o \log(\min(i,n-i))) \). Select a bunch of 'Point's based on offsets
 -- from the head of the chain fragment. This is used in the chain consumer
