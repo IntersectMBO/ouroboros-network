@@ -50,8 +50,7 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           GHC.Generics (Generic)
 
-import           Ouroboros.Network.Block hiding (Hash)
-import qualified Ouroboros.Network.Block as Network
+import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (Chain, toOldestFirst)
 
 import           Ouroboros.Consensus.Crypto.Hash.Class
@@ -198,8 +197,8 @@ deriving instance (SimpleBlockCrypto c, OuroborosTag p, Ord (Payload p (SimplePr
 -- (to wit, the pre header plus some ouroboros specific stuff but, crucially,
 -- without the signature itself).
 data SimplePreHeader p c = SimplePreHeader {
-      headerPrev     :: Network.Hash (SimpleHeader p c)
-    , headerSlot     :: Slot
+      headerPrev     :: ChainHash (SimpleHeader p c)
+    , headerSlot     :: SlotNo
     , headerBlockNo  :: BlockNo
     , headerBodyHash :: Hash (SimpleBlockHash c) SimpleBody
     }
@@ -230,13 +229,13 @@ instance (SimpleBlockCrypto c, OuroborosTag p, Condense (Payload p (SimplePreHea
       , ","
       , condense pl
       , ","
-      , condense (getSlot $ blockSlot hdr)
+      , condense (unSlotNo $ blockSlot hdr)
       , ","
       , condense txs
       , ")"
       ]
 
-condensedHash :: Show (HeaderHash b) => Network.Hash b -> String
+condensedHash :: Show (HeaderHash b) => ChainHash b -> String
 condensedHash GenesisHash     = "genesis"
 condensedHash (BlockHash hdr) = show hdr
 
@@ -263,7 +262,7 @@ instance (SimpleBlockCrypto c, OuroborosTag p, Serialise (Payload p (SimplePreHe
   blockHash      = blockHash . simpleHeader
   blockSlot      = blockSlot . simpleHeader
   blockNo        = blockNo   . simpleHeader
-  blockPrevHash  = Network.castHash . blockPrevHash . simpleHeader
+  blockPrevHash  = castHash . blockPrevHash . simpleHeader
 
   blockInvariant SimpleBlock{..} =
        blockInvariant simpleHeader
@@ -284,9 +283,9 @@ forgeBlock :: forall m p c.
               , Serialise (Payload p (SimplePreHeader p c))
               )
            => NodeConfig p
-           -> Slot                            -- ^ Current slot
+           -> SlotNo                          -- ^ Current slot
            -> BlockNo                         -- ^ Current block number
-           -> Network.Hash (SimpleHeader p c) -- ^ Previous hash
+           -> ChainHash (SimpleHeader p c) -- ^ Previous hash
            -> Map (Hash ShortHash Tx) Tx      -- ^ Txs to add in the block
            -> IsLeader p
            -> m (SimpleBlock p c)

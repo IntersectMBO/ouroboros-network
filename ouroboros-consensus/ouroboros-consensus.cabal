@@ -71,6 +71,7 @@ library
                        Ouroboros.Consensus.Util.STM
 
                        -- Storing things on disk
+                       Ouroboros.Storage.Common
                        Ouroboros.Storage.FS.API
                        Ouroboros.Storage.FS.API.Example
                        Ouroboros.Storage.FS.API.Types
@@ -86,6 +87,13 @@ library
                        Ouroboros.Storage.ImmutableDB.Index
                        Ouroboros.Storage.ImmutableDB.Types
                        Ouroboros.Storage.ImmutableDB.Util
+                       Ouroboros.Storage.IO
+                       Ouroboros.Storage.LedgerDB.Conf
+                       Ouroboros.Storage.LedgerDB.DiskPolicy
+                       Ouroboros.Storage.LedgerDB.InMemory
+                       Ouroboros.Storage.LedgerDB.MemPolicy
+                       Ouroboros.Storage.LedgerDB.Offsets
+                       Ouroboros.Storage.LedgerDB.OnDisk
                        Ouroboros.Storage.Util
                        Ouroboros.Storage.Util.ErrorHandling
                        Ouroboros.Storage.VolatileDB
@@ -93,7 +101,6 @@ library
                        Ouroboros.Storage.VolatileDB.Impl
                        Ouroboros.Storage.VolatileDB.Types
                        Ouroboros.Storage.VolatileDB.Util
-                       Ouroboros.Storage.IO
 
   default-language:    Haskell2010
   other-extensions:
@@ -281,7 +288,6 @@ test-suite test-storage
   main-is:          Main.hs
   other-modules:
                     Test.Ouroboros.Storage
-                    Test.Ouroboros.Storage.Util
                     Test.Ouroboros.Storage.FS
                     Test.Ouroboros.Storage.FS.Sim.Error
                     Test.Ouroboros.Storage.FS.StateMachine
@@ -290,15 +296,21 @@ test-suite test-storage
                     Test.Ouroboros.Storage.ImmutableDB.Model
                     Test.Ouroboros.Storage.ImmutableDB.StateMachine
                     Test.Ouroboros.Storage.ImmutableDB.TestBlock
+                    Test.Ouroboros.Storage.LedgerDB
+                    Test.Ouroboros.Storage.LedgerDB.InMemory
+                    Test.Ouroboros.Storage.LedgerDB.OnDisk
+                    Test.Ouroboros.Storage.Util
                     Test.Ouroboros.Storage.VolatileDB
                     Test.Ouroboros.Storage.VolatileDB.Model
                     Test.Ouroboros.Storage.VolatileDB.StateMachine
+                    Test.Ouroboros.Storage.VolatileDB.TestBlock
                     Test.Util.Orphans.Arbitrary
                     Test.Util.RefEnv
   build-depends:    base,
                     ouroboros-network,
                     ouroboros-consensus,
                     io-sim-classes,
+                    io-sim,
 
                     bifunctors,
                     binary,

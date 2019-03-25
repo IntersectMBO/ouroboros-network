@@ -1,5 +1,5 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
--- | Data structure to convert between 'Slot's and 'EpochSlot's.
+-- | Data structure to convert between 'SlotNo's and 'EpochSlot's.
 module Test.Ouroboros.Storage.ImmutableDB.CumulEpochSizes ( tests ) where
 
 import qualified Data.Foldable as Foldable
@@ -9,32 +9,34 @@ import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
-import           Ouroboros.Network.Block (Slot (..))
+import           Ouroboros.Network.Block (SlotNo (..))
 
+import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.ImmutableDB.CumulEpochSizes
-import           Ouroboros.Storage.ImmutableDB.Types
 
-import           Test.Util.Orphans.Arbitrary ()
+import           Test.Util.Orphans.Arbitrary (genLimitedEpochSize,
+                     genSmallEpochNo)
 
 
 instance Arbitrary CumulEpochSizes where
   arbitrary =
-    fromNonEmpty . NE.fromList . fmap getPositive . getNonEmpty <$> arbitrary
+    fromNonEmpty . NE.fromList . getNonEmpty . NonEmpty <$> listOf1 genLimitedEpochSize
   shrink ces =
     [ fromNonEmpty . NE.fromList . fmap getPositive . getNonEmpty $ es'
     | let es = NonEmpty . fmap Positive $ toList ces
     , es' <- shrink es
     ]
 
-chooseSlot :: Slot -> Slot -> Gen Slot
-chooseSlot (Slot start) (Slot end) = Slot <$> choose (start, end)
+chooseSlot :: SlotNo -> SlotNo -> Gen SlotNo
+chooseSlot (SlotNo start) (SlotNo end) = SlotNo <$> choose (start, end)
 
 prop_ces_roundtrip :: CumulEpochSizes -> Property
 prop_ces_roundtrip ces = fromNonEmpty (NE.fromList (toList ces)) === ces
 
-prop_epochSize :: CumulEpochSizes -> Epoch -> Property
-prop_epochSize ces epoch =
-    epochSize ces epoch === toList ces !? fromIntegral epoch
+prop_epochSize :: CumulEpochSizes -> Property
+prop_epochSize ces =
+    forAll genSmallEpochNo $ \ epoch ->
+    epochSize ces epoch === toList ces !? fromIntegral (unEpochNo epoch)
   where
     xs !? i
       | 0 <= i, i < Foldable.length xs = Just (xs !! i)
@@ -45,7 +47,7 @@ prop_slotToEpochSlot_epochSlotToSlot ces =
     forAllShrink genValidSlot shrink $ \slot ->
       (slotToEpochSlot ces slot >>= epochSlotToSlot ces) === Just slot
   where
-    genValidSlot = chooseSlot 0 (maxSlot ces + 1)
+    genValidSlot = chooseSlot 0 (maxSlot ces)
 
 prop_epochSlotToSlot_invalid :: CumulEpochSizes -> Property
 prop_epochSlotToSlot_invalid ces =
@@ -57,7 +59,7 @@ prop_epochSlotToSlot_invalid ces =
       filter isInvalid (shrink epochSlot)
     isInvalid (EpochSlot epoch relSlot)
       | Just sz <- epochSize ces epoch
-      = relSlot >= fromIntegral sz
+      = relSlot > fromIntegral sz
       | otherwise
       = False
 

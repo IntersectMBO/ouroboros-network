@@ -1,3 +1,4 @@
+{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- | Classification of lists of symbols
@@ -8,11 +9,14 @@
 module Ouroboros.Consensus.Util.Classify (
     Predicate(..)
   , predicate
+  , maximum
   , classify
     -- * Example
   , Tag
   , example
   ) where
+
+import           Prelude hiding (maximum)
 
 import           Data.Either (partitionEithers)
 import           Data.Maybe (catMaybes)
@@ -30,9 +34,30 @@ data Predicate a b = Predicate {
   , predFinish :: Maybe b
   }
 
+instance Functor (Predicate a) where
+  fmap f Predicate{..} = Predicate {
+        predApply  = either (Left . f) (Right . fmap f) . predApply
+      , predFinish = f <$> predFinish
+      }
+
 -- | Construct simply predicate that returns 'Nothing' on termination
 predicate :: (a -> Either b (Predicate a b)) -> Predicate a b
 predicate f = Predicate f Nothing
+
+-- | Maximum value found, if any
+maximum :: forall a b. Ord b => (a -> Maybe b) -> Predicate a b
+maximum f = go Nothing
+  where
+    go :: Maybe b -> Predicate a b
+    go maxSoFar = Predicate {
+          predApply  = \a -> Right $ go (upd maxSoFar (f a))
+        , predFinish = maxSoFar
+        }
+
+    upd :: Maybe b -> Maybe b -> Maybe b
+    upd Nothing         mb       = mb
+    upd (Just maxSoFar) Nothing  = Just maxSoFar
+    upd (Just maxSoFar) (Just b) = Just (max maxSoFar b)
 
 -- | Do a linear scan over the list, returning all successful classifications
 classify :: forall a b. [Predicate a b] -> [a] -> [b]

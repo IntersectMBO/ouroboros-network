@@ -2,10 +2,11 @@ module Test.Ouroboros.Storage
   ( tests
   ) where
 
-import GHC.Stack (HasCallStack)
+import           GHC.Stack (HasCallStack)
 
 import qualified Test.Ouroboros.Storage.FS as FS
 import qualified Test.Ouroboros.Storage.ImmutableDB as ImmutableDB
+import qualified Test.Ouroboros.Storage.LedgerDB as LedgerDB
 import qualified Test.Ouroboros.Storage.VolatileDB as VolatileDB
 import           Test.Tasty (TestTree, testGroup)
 
@@ -19,4 +20,5 @@ tests tmpDir = testGroup "Storage"
     [ FS.tests tmpDir
     , ImmutableDB.tests
     , VolatileDB.tests
+    , LedgerDB.tests
     ]

@@ -17,6 +17,7 @@ import           Data.Foldable (foldl')
 import           Data.Sequence (Seq (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
+import           Data.Word (Word64)
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain
@@ -25,7 +26,7 @@ import           Ouroboros.Network.Chain
   Utility functions on chains
 -------------------------------------------------------------------------------}
 
-lastSlot :: HasHeader b => Chain b -> Maybe Slot
+lastSlot :: HasHeader b => Chain b -> Maybe SlotNo
 lastSlot Genesis  = Nothing
 lastSlot (_ :> b) = Just $ blockSlot b
 
@@ -39,7 +40,7 @@ commonPrefix c d = chainFromSeq $ go (chainToSeq c) (chainToSeq d)
         | x == y             = x :<| go xs ys
         | otherwise          = Empty
 
-upToSlot :: HasHeader b => Slot -> Chain b -> Chain b
+upToSlot :: HasHeader b => SlotNo -> Chain b -> Chain b
 upToSlot slot = go
   where
     go Genesis = Genesis
@@ -54,7 +55,7 @@ dropLastBlocks i bs@(cs :> _)
     | otherwise = dropLastBlocks (i - 1) cs
 
 forksAtMostKBlocks :: forall b. HasHeader b
-                   => Word     -- ^ How many blocks can it fork?
+                   => Word64   -- ^ How many blocks can it fork?
                    -> Chain b  -- ^ Our chain.
                    -> Chain b  -- ^ Their chain.
                    -> Bool     -- ^ Indicates whether their chain forks at most the specified number of blocks.
@@ -66,10 +67,10 @@ forksAtMostKBlocks k ours = go
         else go bs
 
     -- we can roll back at most k blocks
-    forkingPoints :: Set (Hash b)
+    forkingPoints :: Set (ChainHash b)
     forkingPoints = takeR (chainToSeq' ours) $ fromIntegral (k + 1)
 
-    chainToSeq' :: Chain b -> Seq (Hash b)
+    chainToSeq' :: Chain b -> Seq (ChainHash b)
     chainToSeq' c = GenesisHash :<| (BlockHash . blockHash <$> chainToSeq c)
 
     takeR :: Ord a => Seq a -> Int -> Set a
@@ -78,7 +79,7 @@ forksAtMostKBlocks k ours = go
         | l <= 0       = Set.empty
         | otherwise    = Set.insert x $ takeR xs $ l - 1
 
-intersectionSlot :: (Eq b, HasHeader b) => Chain b -> Chain b -> Maybe Slot
+intersectionSlot :: (Eq b, HasHeader b) => Chain b -> Chain b -> Maybe SlotNo
 intersectionSlot c d = lastSlot $ commonPrefix c d
 
 {-------------------------------------------------------------------------------

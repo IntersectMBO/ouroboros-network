@@ -16,7 +16,9 @@ cabal-version:       >=1.10
 library
   exposed-modules:     Ouroboros.Byron.Proxy.DB,
                        Ouroboros.Byron.Proxy.Types,
-                       Ouroboros.Byron.Proxy.Index
+                       Ouroboros.Byron.Proxy.Index,
+
+                       Ouroboros.Byron.Proxy.ChainSync.Server
   -- other-modules:
   -- other-extensions:
   build-depends:       base,
@@ -61,7 +63,9 @@ executable byron-proxy
   -- other-extensions:
   build-depends:       base,
                        async,
+                       basic-tracer,
                        byron-proxy,
+                       bytestring,
                        cardano-sl,
                        cardano-sl-binary,
                        cardano-sl-chain,

@@ -14,9 +14,8 @@ module Ouroboros.Network.ChainFragment (
 
   -- ** Block re-exports
   HasHeader(..),
-
-  -- * Point type
   Point(..),
+  castPoint,
   blockPoint,
 
   -- * ChainFragment construction and inspection
@@ -81,7 +80,6 @@ import           Codec.CBOR.Encoding (encodeListLen)
 import           Codec.CBOR.Decoding (decodeListLen)
 
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Chain (Point(..), blockPoint, ChainUpdate(..))
 
 --
 -- Blockchain fragment data type.
@@ -99,7 +97,7 @@ import           Ouroboros.Network.Chain (Point(..), blockPoint, ChainUpdate(..)
 -- since @minBound \@Word == 0@.
 --
 -- A fragment is represented by a finger tree for efficient searching based on
--- the 'Slot' (or 'Point') of a block.
+-- the 'SlotNo' (or 'Point') of a block.
 newtype ChainFragment block = ChainFragment (FingerTree BlockMeasure block)
   deriving (Show, Eq)
 
@@ -183,7 +181,7 @@ isValidSuccessorOf bSucc b =
 validExtension ::  HasHeader block => ChainFragment block -> block -> Bool
 validExtension c bSucc =
     blockInvariant bSucc
- && blockSlot bSucc /= Slot 0
+ && blockSlot bSucc /= SlotNo 0
  && case head c of
       Nothing -> True
       Just b  -> bSucc `isValidSuccessorOf` b
@@ -198,11 +196,11 @@ headPoint :: HasHeader block => ChainFragment block -> Maybe (Point block)
 headPoint = fmap blockPoint . head
 
 -- | \( O(1) \).
-headSlot :: HasHeader block => ChainFragment block -> Maybe Slot
+headSlot :: HasHeader block => ChainFragment block -> Maybe SlotNo
 headSlot = fmap pointSlot . headPoint
 
 -- | \( O(1) \).
-headHash :: HasHeader block => ChainFragment block -> Maybe (Hash block)
+headHash :: HasHeader block => ChainFragment block -> Maybe (ChainHash block)
 headHash = fmap pointHash . headPoint
 
 -- | \( O(1) \).
@@ -278,7 +276,7 @@ rollback p c = fst <$> splitAfterPoint c p
 -- returns a 'FT.SearchResult'.
 lookupBySlotFT :: HasHeader block
                => ChainFragment block
-               -> Slot
+               -> SlotNo
                -> FT.SearchResult BlockMeasure block
 lookupBySlotFT (ChainFragment t) s =
     FT.search (\vl vr -> bmMaxSlot vl >= s && bmMinSlot vr >= s) t
@@ -287,7 +285,7 @@ lookupBySlotFT (ChainFragment t) s =
 -- with a slot equal to the given slot.
 lookupBySlot :: HasHeader block
              => ChainFragment block
-             -> Slot
+             -> SlotNo
              -> Maybe block
 lookupBySlot c s = case lookupBySlotFT c s of
   FT.Position _ b _ | blockSlot b == s -> Just b
@@ -367,7 +365,7 @@ successorBlock p c = case lookupBySlotFT c (pointSlot p) of
 -- (newest/rightmost) block on the first returned chain.
 splitAfterSlot :: HasHeader block
                => ChainFragment block
-               -> Slot
+               -> SlotNo
                -> (ChainFragment block, ChainFragment block)
 splitAfterSlot (ChainFragment t) s = (ChainFragment l, ChainFragment r)
   where
@@ -402,7 +400,7 @@ findFirstPoint
 findFirstPoint ps c = L.find (`pointOnChainFragment` c) ps
 
 -- | \( O(\log(\min(i,n-i)) \).
-slotOnChainFragment :: HasHeader block => Slot -> ChainFragment block -> Bool
+slotOnChainFragment :: HasHeader block => SlotNo -> ChainFragment block -> Bool
 slotOnChainFragment slot c = isJust (lookupBySlot c slot)
 
 -- | \( O(n) \). Specification of 'slotOnChainFragment'.
@@ -411,7 +409,7 @@ slotOnChainFragment slot c = isJust (lookupBySlot c slot)
 --
 -- This function is used to verify whether 'slotOnChainFragment' behaves as
 -- expected.
-slotOnChainFragmentSpec :: HasHeader block => Slot -> ChainFragment block -> Bool
+slotOnChainFragmentSpec :: HasHeader block => SlotNo -> ChainFragment block -> Bool
 slotOnChainFragmentSpec slot = go
   where
     -- Recursively search the fingertree from the right
@@ -522,6 +520,7 @@ intersectChainFragments initC1 initC2 = go initC1 initC2
                -- initC2
                -> Just (l1, l2, r1, r2)
              _ -> go c1 c2'
+
 
 -- This is the key operation on chains in this model
 applyChainUpdate :: HasHeader block

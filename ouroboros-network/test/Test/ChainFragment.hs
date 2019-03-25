@@ -227,7 +227,7 @@ prop_splitAfterSlot_slots (TestChainFragmentAndPoint c p) =
     let (l, r) = CF.splitAfterSlot c (pointSlot p)
     in all (<= pointSlot p) (slots l) && all (>  pointSlot p) (slots r)
   where
-    slots :: ChainFragment Block -> [Slot]
+    slots :: ChainFragment Block -> [SlotNo]
     slots = map blockSlot . CF.toOldestFirst
 
 prop_splitAfterPoint_join :: TestChainFragmentAndPoint -> Property
@@ -254,14 +254,14 @@ prop_splitAfterPoint_slots (TestChainFragmentAndPoint c p) =
                 && all (>  pointSlot p) (slots r)
     Nothing     -> not (CF.pointOnChainFragment p c)
   where
-    slots :: ChainFragment Block -> [Slot]
+    slots :: ChainFragment Block -> [SlotNo]
     slots = map blockSlot . CF.toOldestFirst
 
 prop_foldChainFragment :: TestBlockChainFragment -> Property
 prop_foldChainFragment (TestBlockChainFragment c) =
     CF.foldChainFragment f [] c === CF.foldChainFragmentSpec f [] c
   where
-    f l block = getSlot (blockSlot block) : l
+    f l block = unSlotNo (blockSlot block) : l
 
 prop_lookupByIndexFromEnd :: TestChainFragmentAndIndex -> Property
 prop_lookupByIndexFromEnd (TestChainFragmentAndIndex c i) =
@@ -335,10 +335,10 @@ genBlockChainFragment n = do
     slots  <- mkSlots <$> vectorOf n genSlotGap
     return (mkChainFragment slots bodies)
   where
-    mkSlots :: [Int] -> [Slot]
+    mkSlots :: [Int] -> [SlotNo]
     mkSlots = map toEnum . tail . scanl (+) 0
 
-    mkChainFragment :: [Slot] -> [BlockBody] -> ChainFragment Block
+    mkChainFragment :: [SlotNo] -> [BlockBody] -> ChainFragment Block
     mkChainFragment slots bodies =
         fromListFixupBlocks
       . reverse
@@ -396,7 +396,7 @@ genAddBlock chain = do
     slotGap <- genSlotGap
     body    <- getArbitraryBlockBody <$> arbitrary
     let pb = mkPartialBlock (addSlotGap slotGap
-                                        (fromMaybe (Slot 0) $ CF.headSlot chain))
+                                        (fromMaybe (SlotNo 0) $ CF.headSlot chain))
                                         body
         b  = fixupBlockCF chain pb
     return b

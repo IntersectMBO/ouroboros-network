@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
@@ -21,15 +22,19 @@ module Test.Ouroboros.Storage.ImmutableDB.TestBlock
   , tests
   ) where
 
+import           Codec.Serialise (Serialise)
 import           Control.Monad (forM, replicateM, void, when)
 import           Control.Monad.Class.MonadThrow
 
 import qualified Data.Binary as Bin
+import qualified Data.Binary.Get as Bin
+import qualified Data.Binary.Put as Bin
 import qualified Data.ByteString.Builder as BS
 import qualified Data.ByteString.Lazy as BL
 import           Data.Functor (($>))
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
+import           Data.Maybe (isJust, maybeToList)
 import           Data.Word (Word64)
 
 import           GHC.Generics (Generic)
@@ -42,6 +47,7 @@ import qualified Test.StateMachine.Utils as QSM
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
+import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API (HasFS (..), withFile)
 import           Ouroboros.Storage.FS.API.Types (FsPath)
 import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
@@ -50,32 +56,45 @@ import           Ouroboros.Storage.ImmutableDB.Types
 import           Ouroboros.Storage.ImmutableDB.Util (readAll)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
+import           Test.Util.Orphans.Arbitrary ()
 
 {-------------------------------------------------------------------------------
   TestBlock
 -------------------------------------------------------------------------------}
 
 
-newtype TestBlock = TestBlock { tbSlot :: Slot }
-    deriving (Generic, Eq, Ord)
+data TestBlock
+  = TestBlock { tbSlot :: SlotNo }
+  | TestEBB   { tbSlot :: SlotNo }
+  deriving (Generic, Eq, Ord)
 
 instance Show TestBlock where
-    show = show . getSlot . tbSlot
+    show (TestBlock slot) = "(TestBlock " <> show (unSlotNo slot) <> ")"
+    show (TestEBB   slot) = "(TestEBB "   <> show (unSlotNo slot) <> ")"
 
+-- | Only generates 'TestBlock's, no 'TestEBB's.
 instance Arbitrary TestBlock where
-    arbitrary = TestBlock . Slot <$> arbitrary
+  arbitrary = TestBlock <$> arbitrary
+  shrink    = genericShrink
 
--- | The binary representation of 'TestBlock' consists of repeating its 'Slot'
+testBlockIsEBB :: TestBlock -> Bool
+testBlockIsEBB TestBlock {} = False
+testBlockIsEBB TestEBB   {} = True
+
+-- | The binary representation of 'TestBlock' consists of repeating its 'SlotNo'
 -- @n@ times, where @n = 'testBlockSize'@.
 testBlockRepeat :: Word
-testBlockRepeat = 10
+testBlockRepeat = 9
 
 -- | The number of bytes the binary representation 'TestBlock' takes up.
 testBlockSize :: Word
-testBlockSize = testBlockRepeat * 8
+testBlockSize = 8 + testBlockRepeat * 8
 
--- | The encoding of TestBlock @x@ is the encoding of @x@ as a 'Word',
--- repeated 10 times. This means that:
+-- | The encoding is as follows:
+--
+-- First a tag, either the bytestring @"bbbbbbbb"@ for a 'TestBlock' or the
+-- bytestring @"ebbebbeb"@ for a 'TestEBB'. Then the encoding of the @slot@ as
+-- a 'Word', repeated 9 times. This means that:
 --
 -- * We know the size of each block (no delimiters needed)
 -- * We know the slot of the block
@@ -84,69 +103,108 @@ testBlockSize = testBlockRepeat * 8
 -- __NOTE__: 'Test.Ouroboros.Storage.ImmutableDB.Model.simulateCorruptions'
 -- depends on this encoding of 'TestBlock'.
 instance Bin.Binary TestBlock where
-    put (TestBlock (Slot slot)) =
-      mconcat $ replicate (fromIntegral testBlockRepeat) (Bin.put slot)
+    put testBlock =
+        tag <> mconcat (replicate (fromIntegral testBlockRepeat) (Bin.put slot))
+      where
+        slot = unSlotNo (tbSlot testBlock)
+        tag  = Bin.putByteString $ case testBlock of
+          TestBlock {} -> "bbbbbbbb"
+          TestEBB   {} -> "ebbebbeb"
     get = do
+      tag <- Bin.getByteString 8
+      let constr = case tag of
+            "bbbbbbbb" -> TestBlock
+            "ebbebbeb" -> TestEBB
+            _          -> fail ("Unknown tag: " <> show tag)
       (w:ws) <- replicateM (fromIntegral testBlockRepeat) Bin.get
       when (any (/= w) ws) $
         fail "Corrupt TestBlock"
-      return $ TestBlock (Slot w)
+      return $ constr (SlotNo w)
 
-newtype TestBlocks = TestBlocks [TestBlock]
+-- | The list contains regular @TestBlock@s ordered by their slot.
+-- The @Maybe TestBlock@ is an optional @TestEBB@.
+data TestBlocks = TestBlocks (Maybe TestBlock) [TestBlock]
     deriving (Show)
 
 instance Arbitrary TestBlocks where
-    arbitrary = TestBlocks <$> orderedList
-    shrink (TestBlocks testBlocks) =
-      TestBlocks <$> shrinkList (const []) testBlocks
+    arbitrary = do
+      regularBlocks <- orderedList
+      mbEBB           <- frequency
+        [ (2, return Nothing)
+        , (1, Just . TestEBB <$> arbitrary)
+        ]
+      return $ TestBlocks mbEBB regularBlocks
+
+    shrink (TestBlocks mbEBB testBlocks) =
+      -- If there is an EBB, also return a list without it
+      (if isJust mbEBB then (TestBlocks Nothing testBlocks :) else id)
+      (TestBlocks mbEBB <$> shrinkList (const []) testBlocks)
 
 testBlockToBuilder :: TestBlock -> BS.Builder
 testBlockToBuilder = BS.lazyByteString . Bin.encode
 
+prop_TestBlock_Binary :: SlotNo -> Property
+prop_TestBlock_Binary slot =
+    Bin.decode (Bin.encode testBlock) === testBlock .&&.
+    Bin.decode (Bin.encode testEBB)   === testEBB
+  where
+    testBlock = TestBlock slot
+    testEBB   = TestEBB   slot
+
+instance Serialise TestBlock
 
 {-------------------------------------------------------------------------------
   EpochFileParser
 -------------------------------------------------------------------------------}
 
 
-binaryEpochFileParser :: forall b m h. (MonadThrow m, Bin.Binary b)
+-- The EBB can only occur at offset 0
+binaryEpochFileParser :: forall b m hash h. (MonadThrow m, Bin.Binary b)
                       => HasFS m h
-                      -> EpochFileParser String m b
-binaryEpochFileParser hasFS@HasFS{..} = EpochFileParser $ \fsPath ->
+                      -> (b -> Bool)  -- ^ Is the block an EBB?
+                      -> (b -> hash)
+                      -> EpochFileParser String hash m b
+binaryEpochFileParser hasFS@HasFS{..} isEBB getHash = EpochFileParser $ \fsPath ->
     withFile hasFS fsPath ReadMode $ \eHnd -> do
       bytesInFile <- hGetSize eHnd
-      parse (fromIntegral bytesInFile) 0 [] . BS.toLazyByteString <$>
+      parse bytesInFile 0 [] Nothing . BS.toLazyByteString <$>
         readAll hasFS eHnd
   where
     parse :: SlotOffset
           -> SlotOffset
           -> [(SlotOffset, b)]
+          -> Maybe hash
           -> BL.ByteString
-          -> ([(SlotOffset, b)], Maybe String)
-    parse bytesInFile offset parsed bs
+          -> ([(SlotOffset, b)], Maybe hash, Maybe String)
+    parse bytesInFile offset parsed ebbHash bs
       | offset >= bytesInFile
-      = (reverse parsed, Nothing)
+      = (reverse parsed, ebbHash, Nothing)
       | otherwise
       = case Bin.decodeOrFail bs of
-          Left (_, _, e) -> (reverse parsed, Just e)
+          Left (_, _, e) -> (reverse parsed, ebbHash, Just e)
           Right (remaining, bytesConsumed, b) ->
             let newOffset = offset + fromIntegral bytesConsumed
                 newParsed = (offset, b) : parsed
-            in parse bytesInFile newOffset newParsed remaining
+                ebbHash'
+                  | offset == 0, isEBB b = Just (getHash b)
+                  | otherwise            = ebbHash
+            in parse bytesInFile newOffset newParsed ebbHash' remaining
 
+-- | We use 'TestBlock' as the @hash@.
 testBlockEpochFileParser' :: MonadThrow m
                           => HasFS m h
-                          -> EpochFileParser String m (Word, Slot)
+                          -> EpochFileParser String TestBlock m (Word, SlotNo)
 testBlockEpochFileParser' hasFS = (\tb -> (testBlockSize, tbSlot tb)) <$>
-    binaryEpochFileParser hasFS
+    binaryEpochFileParser hasFS testBlockIsEBB id
 
 
 prop_testBlockEpochFileParser :: TestBlocks -> Property
-prop_testBlockEpochFileParser (TestBlocks blocks) = QCM.monadicIO $ do
-    (offsetsAndBlocks, mbErr) <- QCM.run $ runSimIO $ \hasFS -> do
+prop_testBlockEpochFileParser (TestBlocks mbEBB regularBlocks) = QCM.monadicIO $ do
+    (offsetsAndBlocks, ebbHash, mbErr) <- QCM.run $ runSimIO $ \hasFS -> do
       writeBlocks hasFS
       readBlocks  hasFS
-    QSM.liftProperty (mbErr === Nothing)
+    QSM.liftProperty (mbErr   === Nothing)
+    QSM.liftProperty (ebbHash === mbEBB)
     let (offsets', blocks') = unzip offsetsAndBlocks
         offsets = dropLast $ scanl (+) 0 $
           map (const (fromIntegral testBlockSize)) blocks
@@ -156,14 +214,18 @@ prop_testBlockEpochFileParser (TestBlocks blocks) = QCM.monadicIO $ do
     dropLast xs = zipWith const xs (drop 1 xs)
     file = ["test"]
 
+    blocks = maybeToList mbEBB <> regularBlocks
+
     writeBlocks :: HasFS IO Mock.Handle -> IO ()
     writeBlocks hasFS@HasFS{..} = do
       let bld = foldMap testBlockToBuilder blocks
       withFile hasFS file AppendMode $ \eHnd -> void $ hPut eHnd bld
 
     readBlocks :: HasFS IO Mock.Handle
-               -> IO ([(SlotOffset, TestBlock)], Maybe String)
-    readBlocks hasFS = runEpochFileParser (binaryEpochFileParser hasFS) file
+               -> IO ([(SlotOffset, TestBlock)], Maybe TestBlock, Maybe String)
+    readBlocks hasFS = runEpochFileParser
+      (binaryEpochFileParser hasFS testBlockIsEBB id)
+      file
 
     runSimIO :: (HasFS IO Mock.Handle -> IO a) -> IO a
     runSimIO m = fst <$> runSimFS EH.exceptions Mock.empty m
@@ -223,5 +285,6 @@ shrinkCorruptions =
 
 tests :: TestTree
 tests = testGroup "TestBlock"
-    [ testProperty "testBlockEpochFileParser" prop_testBlockEpochFileParser
+    [ testProperty "TestBlock Binary roundtrip" prop_TestBlock_Binary
+    , testProperty "testBlockEpochFileParser" prop_testBlockEpochFileParser
     ]

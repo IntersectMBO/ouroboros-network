@@ -18,6 +18,7 @@
       "library" = {
         depends = [
           (hsPkgs.base)
+          (hsPkgs.io-sim)
           (hsPkgs.cborg)
           (hsPkgs.serialise)
           (hsPkgs.QuickCheck)

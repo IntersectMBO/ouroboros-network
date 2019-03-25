@@ -55,7 +55,9 @@
           depends = [
             (hsPkgs.base)
             (hsPkgs.async)
+            (hsPkgs.basic-tracer)
             (hsPkgs.byron-proxy)
+            (hsPkgs.bytestring)
             (hsPkgs.cardano-sl)
             (hsPkgs.cardano-sl-binary)
             (hsPkgs.cardano-sl-chain)

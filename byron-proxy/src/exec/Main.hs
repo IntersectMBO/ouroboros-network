@@ -2,17 +2,22 @@
 {-# LANGUAGE GADTSyntax #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE BangPatterns #-}
+
+import qualified Codec.CBOR.Encoding as CBOR
+import qualified Codec.CBOR.Decoding as CBOR
 
 import Control.Concurrent (myThreadId)
 import Control.Concurrent.Async (race)
 import Control.Concurrent.STM (STM, atomically, retry)
 import Control.Exception (throwIO)
 import Control.Monad (forM_)
+import qualified Data.ByteString.Lazy as Lazy (fromStrict)
 import Data.Functor.Contravariant (Op (..), contramap)
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import Data.Maybe (fromMaybe)
-import Data.Text (Text)
+import Data.Text (Text, pack)
 import qualified Data.Text as Text
 import Data.Time.Clock.POSIX (getCurrentTime)
 import Options.Applicative (execParser, fullDesc, help, info, long, metavar,
@@ -20,15 +25,16 @@ import Options.Applicative (execParser, fullDesc, help, info, long, metavar,
 import qualified System.Directory
 import System.Random (StdGen, getStdGen, randomR)
 
-import Cardano.BM.BaseTrace hiding (noTrace)
+import Cardano.BM.Tracer.Class (Tracer (..))
 import Cardano.BM.Configuration as BM (setup)
 import Cardano.BM.Data.LogItem hiding (LogNamed)
-import qualified Cardano.BM.Data.LogItem as BM
 import qualified Cardano.BM.Data.Severity as BM
 import Cardano.BM.Setup (withTrace)
 import qualified Cardano.BM.Trace as BM (Trace)
 
-import Pos.Chain.Block (Block, BlockHeader (..), genesisBlock0, headerHash)
+import qualified Pos.Binary.Class as CSL (decode, encode)
+import Pos.Chain.Block (Block, BlockHeader (..), HeaderHash, genesisBlock0,
+                        headerHash)
 import Pos.Chain.Lrc (genesisLeaders)
 import Pos.Core (SlotCount (..))
 import Pos.Chain.Block (recoveryHeadersMessage, streamWindow)
@@ -53,6 +59,7 @@ import qualified Pos.Util.Wlog as Wlog
 import qualified Ouroboros.Byron.Proxy.DB as DB
 import qualified Ouroboros.Byron.Proxy.Index as Index
 import Ouroboros.Byron.Proxy.Types
+import qualified Ouroboros.Storage.Common as Immutable
 import qualified Ouroboros.Storage.ImmutableDB.API as Immutable
 import qualified Ouroboros.Storage.ImmutableDB.Impl as Immutable
 import Ouroboros.Storage.FS.API.Types
@@ -102,24 +109,38 @@ byronProxyMain db bp = getStdGen >>= mainLoop Nothing
           ]
         mainLoop mBt rndGen
       Left bt -> do
-        -- Find our tip of chain from the index.
+        -- Get the tip from the database.
+        -- It must not be empty; the DB must be seeded with the genesis block.
+        -- FIXME throw exception, don't use error.
         tip <- DB.readTip db
-        let tipHash = headerHash tip
-            -- Pick a peer from the list of announcers at random and download
-            -- the chain.
-            (peer, rndGen') = pickRandom rndGen (btPeers bt)
+        (isEBB, tipSlot, tipHash) <- case tip of
+          DB.TipGenesis -> error "database is empty"
+          DB.TipEBB   slot hash _ -> pure (True, slot, hash)
+          DB.TipBlock slot bytes -> case DB.decodeFull CSL.decode (Lazy.fromStrict bytes) of
+            Left cborError -> error "failed to decode block"
+            Right (blk :: Block) -> pure (False, slot, headerHash blk)
+        -- Pick a peer from the list of announcers at random and download
+        -- the chain.
+        let (peer, rndGen') = pickRandom rndGen (btPeers bt)
         putStrLn $ mconcat
-          [ "Downloading chain with tip hash "
+          [ "Using tip with hash "
+          , show tipHash
+          , " at slot "
+          , show tipSlot
+          , if isEBB then " (EBB)" else ""
+          ]
+        putStrLn $ mconcat
+          [ "Downloading the chain with tip hash "
           , show tipHash
           , " from "
           , show peer
           ]
         _ <- downloadChain
-          bp
-          peer
-          (headerHash (btTip bt))
-          [tipHash]
-          streamer
+              bp
+              peer
+              (headerHash (btTip bt))
+              [tipHash]
+              streamer
         mainLoop (Just bt) rndGen'
 
   -- If it ends at an EBB, the EBB will _not_ be written. The tip will be the
@@ -150,36 +171,20 @@ convertSeverity sev = case sev of
   Wlog.Warning -> BM.Warning
   Wlog.Error   -> BM.Error
 
--- |
--- The iohk-monitoring-framework took the `Trace` type and renamed
--- it `Cardano.BM.BaseTrace.BaseTrace`. Then `Trace` is defined
--- to be `(TraceContext, BaseTrace m NamedLogItem)` where
--- `TraceContext` contains configuration stuff and a mysterious
--- `IO ()`.
---
--- The challenge: how to make the original `Trace` from this
--- thing, to give to the diffusion layer, in such a way that it
--- behaves as expected? What is the `TraceContext` for? Is it
--- needed? It seems all wrong: configuration for the `Trace`
--- should be kept _in its closure_ if need be rather than shown
--- up-front, and with a mention of `IO` to boot. Very poor
--- abstraction.
-convertTrace :: BM.Trace IO -> Trace IO (LogNamed (Wlog.Severity, Text))
+convertTrace :: BM.Trace IO Text -> Trace IO (LogNamed (Wlog.Severity, Text))
 convertTrace trace = case trace of
-  (traceContext, BaseTrace (Op f)) -> Pos.Util.Trace.Trace $ Op $ \namedI -> do
-    tid <- myThreadId
+  Tracer (Op f) -> Pos.Util.Trace.Trace $ Op $ \namedI -> do
+    tid <- pack . show <$> myThreadId
     now <- getCurrentTime
-    let name       = Text.intercalate (Text.pack ".") (Trace.lnName namedI)
+    let logName    = Text.intercalate (Text.pack ".") (Trace.lnName namedI)
         (sev, txt) = Trace.lnItem namedI
-        logMeta    = LOMeta { tstamp = now, tid = tid }
-        logContent = LogMessage logItem
-        logItem    = LogItem { liSelection = Both
-                             , liSeverity = convertSeverity sev
-                             , liPayload = txt
-                             }
-        logObject  = LogObject logMeta logContent
-        logNamed   = BM.LogNamed { BM.lnName = name, BM.lnItem = logObject }
-    f logNamed
+        logMeta    = LOMeta { tstamp = now
+                            , tid = tid
+                            , severity = convertSeverity sev
+                            , privacy = Public }
+        logContent = LogMessage txt
+        logObject  = LogObject logName logMeta logContent
+    f logObject
 
 data ByronProxyOptions = ByronProxyOptions
   { bpoIndexPath    :: !String
@@ -265,7 +270,7 @@ main = withCompileInfo $ do
           -- configuration, and we assume it will never change.
           epochSlots :: SlotCount
           epochSlots = configEpochSlots genesisConfig
-          getEpochSize :: Immutable.Epoch -> IO Immutable.EpochSize
+          getEpochSize :: Immutable.EpochNo -> IO Immutable.EpochSize
           -- FIXME the 'fromIntegral' casts from 'Word64' to 'Word'.
           -- For sufficiently high k, on certain machines, there could be an
           -- overflow.
@@ -282,7 +287,16 @@ main = withCompileInfo $ do
           fsMountPoint = MountPoint dbFilePath
           fs :: HasFS IO HandleIO
           fs = ioHasFS fsMountPoint
+          -- These 2 go by way of the cardano-sl `Bi` class, which is not the
+          -- same as the `Serialise` class. Typeclasses are way over used and,
+          -- more often than not, very annoying.
+          decodeHeaderHash :: forall s . CBOR.Decoder s HeaderHash
+          decodeHeaderHash = CSL.decode
+          encodeHeaderHash :: HeaderHash -> CBOR.Encoding
+          encodeHeaderHash = CSL.encode
           openDB = Immutable.openDB
+            decodeHeaderHash
+            encodeHeaderHash
             fs
             exceptions
             getEpochSize
@@ -292,11 +306,24 @@ main = withCompileInfo $ do
           indexFilePath :: FilePath
           indexFilePath = bpoIndexPath options
       Index.withDB_ indexFilePath $ \idx -> do
-        Immutable.withDB openDB $ \idb _ -> do
-          DB.withDB throwIO genesisBlock epochSlots idx idb $ \db ->
-            withByronProxy bpc db $ \bp -> do
-              let userInterrupt = getChar
-              outcome <- race userInterrupt (byronProxyMain db bp)
-              case outcome of
-                Left _ -> pure ()
-                Right impossible -> impossible
+        putStrLn "Index is open. Press any key to create immutable DB"
+        getChar
+        Immutable.withDB openDB $ \idb -> do
+          putStrLn "Immutable DB is open. Press any key to start downloading."
+          getChar
+          let db = DB.mkDB throwIO epochSlots idx idb
+          -- Check the tip, and if it says the DB is empty, seed it with
+          -- the genesis block (`Left genesisBlock :: Block`).
+          tip <- DB.readTip db
+          case tip of
+            DB.TipGenesis -> do
+              putStrLn "DB is empty. Seeding with genesis."
+              DB.appendBlocks db $ \dbAppend ->
+                DB.appendBlock dbAppend (Left genesisBlock)
+            _ -> pure ()
+          withByronProxy bpc db $ \bp -> do
+            let userInterrupt = getChar
+            outcome <- race userInterrupt (byronProxyMain db bp)
+            case outcome of
+              Left _ -> pure ()
+              Right impossible -> impossible

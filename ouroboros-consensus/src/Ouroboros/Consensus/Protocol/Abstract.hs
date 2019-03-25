@@ -38,10 +38,11 @@ import           Data.Functor.Identity
 import           Data.Kind (Constraint)
 import           Data.List (sortBy)
 import           Data.Maybe (listToMaybe, mapMaybe)
+import           Data.Word (Word64)
 
 import           Control.Monad.Class.MonadSay
 
-import           Ouroboros.Network.Block (HasHeader (..), Slot)
+import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..))
 import           Ouroboros.Network.Chain (Chain (..))
 import qualified Ouroboros.Network.Chain as Chain
 
@@ -108,7 +109,7 @@ class ( Show (ChainState    p)
   -- NOTE: Assumes that our chain does not extend into the future.
   preferCandidate :: (Eq b, HasHeader b)
                   => NodeConfig p
-                  -> Slot         -- ^ Present slot
+                  -> SlotNo       -- ^ Present slot
                   -> Chain b      -- ^ Our chain
                   -> Chain b      -- ^ Candidate
                   -> Maybe (Chain b)
@@ -124,19 +125,19 @@ class ( Show (ChainState    p)
       -- TODO: Review the above.
       -- TODO: The Genesis paper says to /reject/ chains containing blocks
       -- in the future rather than prune.
-      cand' = upToSlot (now + 1) cand
+      cand' = upToSlot (SlotNo $ unSlotNo now + 1) cand
 
   -- | Compare two candidates, both of which we prefer to our own chain
   compareCandidates :: (Eq b, HasHeader b)
                     => NodeConfig p
-                    -> Slot         -- ^ Present slot
+                    -> SlotNo       -- ^ Present slot
                     -> Chain b -> Chain b -> Ordering
   compareCandidates _ _ = compare `on` Chain.length
 
   -- | Check if a node is the leader
   checkIsLeader :: (HasNodeState p m, MonadRandom m)
                 => NodeConfig p
-                -> Slot
+                -> SlotNo
                 -> LedgerView p
                 -> ChainState p
                 -> m (Maybe (IsLeader p))
@@ -161,7 +162,7 @@ class ( Show (ChainState    p)
 --
 -- NOTE: This talks about the number of /blocks/ we can roll back, not
 -- the number of /slots/.
-newtype SecurityParam = SecurityParam { maxRollbacks :: Word }
+newtype SecurityParam = SecurityParam { maxRollbacks :: Word64 }
 
 -- | Extract the pre-header from a block
 class (HasHeader b, Serialise (PreHeader b)) => HasPreHeader b where
@@ -185,7 +186,7 @@ class HasPreHeader b => HasPayload p b where
 -- Returns 'Nothing' if we stick with our current chain.
 selectChain :: forall p b. (OuroborosTag p, Eq b, HasHeader b)
             => NodeConfig p
-            -> Slot         -- ^ Present slot
+            -> SlotNo       -- ^ Present slot
             -> Chain b      -- ^ Our chain
             -> [Chain b]    -- ^ Upstream chains
             -> Maybe (Chain b)

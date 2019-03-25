@@ -12,6 +12,7 @@ module Ouroboros.Consensus.Util (
   , foldlM'
   , repeatedly
   , repeatedlyM
+  , nTimes
   , chunks
   , byteStringChunks
   , lazyByteStringChunks
@@ -24,6 +25,9 @@ module Ouroboros.Consensus.Util (
   , allDisjoint
   , (.:)
   , (..:)
+  , takeLast
+  , dropLast
+  , mustBeRight
   ) where
 
 import qualified Data.ByteString as Strict
@@ -32,6 +36,8 @@ import           Data.Kind (Constraint)
 import           Data.List (foldl')
 import           Data.Set (Set)
 import qualified Data.Set as Set
+import           Data.Void
+import           Data.Word (Word64)
 import           GHC.Stack
 
 data Dict (a :: Constraint) where
@@ -56,6 +62,13 @@ repeatedly = flip . foldl' . flip
 
 repeatedlyM :: Monad m => (a -> b -> m b) -> ([a] -> b -> m b)
 repeatedlyM = flip . foldlM' . flip
+
+nTimes :: forall a. (a -> a) -> Word64 -> (a -> a)
+nTimes f = go
+  where
+    go :: Word64 -> (a -> a)
+    go 0 x = x
+    go n x = go (n - 1) (f x)
 
 chunks :: Int -> [a] -> [[a]]
 chunks _ [] = []
@@ -111,7 +124,7 @@ lastMaybe [x]    = Just x
 lastMaybe (_:xs) = lastMaybe xs
 
 -- | Fast Fibonacci computation, using Binet's formula
-fib :: Word -> Word
+fib :: Word64 -> Word64
 fib n = round $ phi ** fromIntegral n / sq5
   where
     sq5, phi :: Double
@@ -131,3 +144,15 @@ allDisjoint = go Set.empty
 
 (..:) :: (d -> e) -> (a -> b -> c -> d) -> (a -> b -> c -> e)
 (f ..: g) a b c = f (g a b c)
+
+-- | Take the last @n@ elements
+takeLast :: Word64 -> [a] -> [a]
+takeLast n = reverse . take (fromIntegral n) . reverse
+
+-- | Drop the last @n@ elements
+dropLast :: Word64 -> [a] -> [a]
+dropLast n = reverse . drop (fromIntegral n) . reverse
+
+mustBeRight :: Either Void a -> a
+mustBeRight (Left  v) = absurd v
+mustBeRight (Right a) = a

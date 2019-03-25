@@ -35,7 +35,6 @@
           (hsPkgs.pipes)
           (hsPkgs.process)
           (hsPkgs.serialise)
-          (hsPkgs.say)
           (hsPkgs.stm)
           (hsPkgs.text)
           ];

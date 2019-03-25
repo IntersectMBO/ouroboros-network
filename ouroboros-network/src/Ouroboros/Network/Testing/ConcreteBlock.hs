@@ -30,15 +30,16 @@ module Ouroboros.Network.Testing.ConcreteBlock (
 import           Data.FingerTree (Measured(measure))
 import           Data.Hashable
 import qualified Data.Text as Text
+import           Data.Word (Word64)
 import           Codec.Serialise (Serialise (..))
 import           Codec.CBOR.Encoding ( encodeListLen
                                      , encodeInt
-                                     , encodeWord
+                                     , encodeWord64
                                      , encodeString
                                      )
 import           Codec.CBOR.Decoding ( decodeListLenOf
                                      , decodeInt
-                                     , decodeWord
+                                     , decodeWord64
                                      , decodeString
                                      )
 
@@ -72,8 +73,8 @@ hashBody (BlockBody b) = BodyHash (hash b)
 --
 data BlockHeader = BlockHeader {
        headerHash     :: HeaderHash BlockHeader,  -- ^ The cached 'HeaderHash' of this header.
-       headerPrevHash :: Hash BlockHeader,        -- ^ The 'headerHash' of the previous block header
-       headerSlot     :: Slot,                    -- ^ The Ouroboros time slot index of this block
+       headerPrevHash :: ChainHash BlockHeader,   -- ^ The 'headerHash' of the previous block header
+       headerSlot     :: SlotNo,                  -- ^ The Ouroboros time slot index of this block
        headerBlockNo  :: BlockNo,                 -- ^ The block index from the Genesis
        headerSigner   :: BlockSigner,             -- ^ Who signed this block
        headerBodyHash :: BodyHash                 -- ^ The hash of the corresponding block body
@@ -88,7 +89,7 @@ data BlockHeader = BlockHeader {
 --
 -- TODO: This can probably go, the network layer does not need to worry
 -- about signatures.
-newtype BlockSigner = BlockSigner Word
+newtype BlockSigner = BlockSigner Word64
   deriving (Show, Eq, Ord, Hashable)
 
 -- | Compute the 'HeaderHash' of the 'BlockHeader'.
@@ -234,7 +235,7 @@ instance Serialise BlockHeader where
   encode BlockHeader {
          headerHash     = headerHash,
          headerPrevHash = headerPrevHash,
-         headerSlot     = Slot headerSlot,
+         headerSlot     = SlotNo headerSlot,
          headerBlockNo  = BlockNo headerBlockNo,
          headerSigner   = BlockSigner headerSigner,
          headerBodyHash = BodyHash headerBodyHash
@@ -242,18 +243,18 @@ instance Serialise BlockHeader where
       encodeListLen 6
    <> encode     headerHash
    <> encode     headerPrevHash
-   <> encodeWord headerSlot
-   <> encodeWord headerBlockNo
-   <> encodeWord headerSigner
+   <> encodeWord64 headerSlot
+   <> encodeWord64 headerBlockNo
+   <> encodeWord64 headerSigner
    <> encodeInt  headerBodyHash
 
   decode = do
       decodeListLenOf 6
       BlockHeader <$> decode
                   <*> decode
-                  <*> (Slot <$> decodeWord)
-                  <*> (BlockNo <$> decodeWord)
-                  <*> (BlockSigner <$> decodeWord)
+                  <*> (SlotNo <$> decodeWord64)
+                  <*> (BlockNo <$> decodeWord64)
+                  <*> (BlockSigner <$> decodeWord64)
                   <*> (BodyHash <$> decodeInt)
 
 instance Serialise BlockBody where

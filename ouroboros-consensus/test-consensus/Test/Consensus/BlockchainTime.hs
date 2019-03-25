@@ -12,7 +12,7 @@ import           Test.Tasty.QuickCheck
 
 import           Ouroboros.Consensus.BlockchainTime
 
-import           Test.Util.Orphans.Arbitrary ()
+import           Test.Util.Orphans.Arbitrary (genLimitedSlotNo)
 
 tests :: TestTree
 tests = testGroup "BlockchainTime" [
@@ -71,12 +71,11 @@ prop_Fixed_Nominal_Fixed t = fixedDiffFromNominal (fixedDiffToNominal t) === t
 -------------------------------------------------------------------------------}
 
 -- > slotAtTime (startOfSlot slot)) == (slot, 0)
-prop_startOfSlot :: SlotLength -> SystemStart -> Slot -> Property
-prop_startOfSlot slotLen start slot =
-      counterexample ("slotStart: " ++ show slotStart)
-    $ slotAtTime slotLen start slotStart === (slot, 0)
-  where
-    slotStart = startOfSlot slotLen start slot
+prop_startOfSlot :: SlotLength -> SystemStart -> Property
+prop_startOfSlot slotLen start = forAll genLimitedSlotNo $ \ slot ->
+    let slotStart = startOfSlot slotLen start slot in
+    counterexample ("slotStart: " ++ show slotStart)
+        $ slotAtTime slotLen start slotStart === (slot, 0)
 
 -- > now - slotLen < startOfSlot (fst (slotAtTime now)) <= now
 -- > 0 <= snd (slotAtTime now) < slotLen
@@ -114,13 +113,12 @@ prop_timeUntilNextSlot slotLen start execTime =
              | otherwise                         = "in the middle"
 
 -- > timeUntilNextSlot (startOfSlot slot) == (slotLen, slot + 1)
-prop_timeFromStartOfSlot :: SlotLength -> SystemStart -> Slot -> Property
-prop_timeFromStartOfSlot slotLen start slot =
-      counterexample ("slotStart: " ++ show slotStart)
-    $ timeUntilNextSlot slotLen start slotStart ===
-      (getSlotLength slotLen, slot + 1)
-  where
-    slotStart = startOfSlot slotLen start slot
+prop_timeFromStartOfSlot :: SlotLength -> SystemStart -> Property
+prop_timeFromStartOfSlot slotLen start = forAll genLimitedSlotNo $ \ slot ->
+    let slotStart = startOfSlot slotLen start slot in
+    counterexample ("slotStart: " ++ show slotStart)
+      $ timeUntilNextSlot slotLen start slotStart ===
+        (getSlotLength slotLen, slot + 1)
 
 -- > slotAtTime (now + fst (timeUntilNextSlot now)) == bimap (+1) (const 0) (slotAtTime now)
 -- > fst (slotAtTime (now + fst (timeUntilNextSlot now))) == snd (timeUntilNextSlot now)
@@ -149,7 +147,7 @@ data TestDelayIO = TestDelayIO {
       -- this as an offset _before_ the start of the test.
       tdioStart'  :: FixedDiffTime
 
-      -- | Slot length
+      -- | SlotNo length
       --
       -- Since this test is run in IO, we will keep the slot length short.
     , tdioSlotLen :: SlotLength

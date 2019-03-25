@@ -34,6 +34,7 @@ library
                        Ouroboros.Network.ChainProducerState
                        Ouroboros.Network.Channel
                        Ouroboros.Network.Codec
+                       Ouroboros.Network.DeltaQ
                        Ouroboros.Network.Mux
                        Ouroboros.Network.Mux.Egress
                        Ouroboros.Network.Mux.Ingress
@@ -96,7 +97,6 @@ library
                        pipes             >=4.3 && <4.4,
                        process           >=1.6 && <1.7,
                        serialise         >=0.2 && <0.3,
-                       say,
                        stm               >=2.4 && <2.6,
                        text              >=1.2 && <1.3
 

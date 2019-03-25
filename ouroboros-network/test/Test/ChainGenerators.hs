@@ -13,7 +13,7 @@ module Test.ChainGenerators
     -- These generators are used to test various scenarios that require
     -- a chain: e.g. appending a block to chain, arbitrary updates
     -- (rollforwards \/ backwards), chain forks.
-  , TestAddBlock (..) 
+  , TestAddBlock (..)
   , TestBlockChainAndUpdates (..)
   , TestBlockChain (..)
   , TestHeaderChain (..)
@@ -40,7 +40,7 @@ import qualified Data.List as L
 import           Data.Maybe (fromJust, catMaybes)
 
 import           Ouroboros.Network.Testing.ConcreteBlock
-import           Ouroboros.Network.Block (Slot (..), Hash (..) , HasHeader (..))
+import           Ouroboros.Network.Block (SlotNo (..), ChainHash (..) , HasHeader (..))
 import           Ouroboros.Network.Chain (Chain (..), ChainUpdate (..), Point (..))
 import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange (..))
@@ -97,7 +97,7 @@ newtype ArbitraryPoint = ArbitraryPoint {
 
 instance Arbitrary ArbitraryPoint where
   arbitrary = do
-    slot <- Slot <$> arbitrary
+    slot <- SlotNo <$> arbitrary
     hash <- HeaderHash <$> arbitrary
     return $ ArbitraryPoint $ Point slot (BlockHash hash)
 
@@ -140,10 +140,10 @@ genBlockChain n = do
     slots  <- mkSlots <$> vectorOf n genSlotGap
     return (mkChain slots bodies)
   where
-    mkSlots :: [Int] -> [Slot]
+    mkSlots :: [Int] -> [SlotNo]
     mkSlots = map toEnum . tail . scanl (+) 0
 
-    mkChain :: [Slot] -> [BlockBody] -> Chain Block
+    mkChain :: [SlotNo] -> [BlockBody] -> Chain Block
     mkChain slots bodies =
         fromListFixupBlocks
       . reverse
@@ -152,13 +152,13 @@ genBlockChain n = do
 genSlotGap :: Gen Int
 genSlotGap = frequency [(25, pure 1), (5, pure 2), (1, pure 3)]
 
-addSlotGap :: Int -> Slot -> Slot
-addSlotGap g (Slot n) = Slot (n + fromIntegral g)
+addSlotGap :: Int -> SlotNo -> SlotNo
+addSlotGap g (SlotNo n) = SlotNo (n + fromIntegral g)
 
 genHeaderChain :: Int -> Gen (Chain BlockHeader)
 genHeaderChain = fmap (fmap blockHeader) . genBlockChain
 
-mkPartialBlock :: Slot -> BlockBody -> Block
+mkPartialBlock :: SlotNo -> BlockBody -> Block
 mkPartialBlock sl body =
     Block {
       blockHeader = BlockHeader {
@@ -174,8 +174,8 @@ mkPartialBlock sl body =
   where
     partialField n = error ("mkPartialBlock: you didn't fill in field " ++ n)
 
-    expectedBFTSigner :: Slot -> BlockSigner
-    expectedBFTSigner (Slot n) = BlockSigner (n `mod` 7)
+    expectedBFTSigner :: SlotNo -> BlockSigner
+    expectedBFTSigner (SlotNo n) = BlockSigner (n `mod` 7)
 
 
 -- | To help with chain construction and shrinking it's handy to recalculate
@@ -418,7 +418,7 @@ genPointOnChain chain =
     len = Chain.length chain
 
 genPoint :: Gen (Point Block)
-genPoint = (\s h -> Point (Slot s) (BlockHash (HeaderHash h))) <$> arbitrary <*> arbitrary
+genPoint = (\s h -> Point (SlotNo s) (BlockHash (HeaderHash h))) <$> arbitrary <*> arbitrary
 
 fixupPoint :: HasHeader block => Chain block -> Point block -> Point block
 fixupPoint c p =

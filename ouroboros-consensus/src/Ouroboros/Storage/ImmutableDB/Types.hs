@@ -3,69 +3,42 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
 module Ouroboros.Storage.ImmutableDB.Types
-  ( Slot(..)
-  , Epoch(..)
-  , EpochSize(..)
-  , SlotOffset
-  , TruncateFrom(..)
-  , extractTruncateFrom
-  , EpochFileParser(..)
-  , ValidationPolicy(..)
+  ( SlotNo (..)
+  , ImmTip
+  , TruncateTo (..)
+  , EpochFileParser (..)
+  , ValidationPolicy (..)
   , IteratorID
-  , initialIteratorId
-  , ImmutableDBError(..)
+  , initialIteratorID
+  , ImmutableDBError (..)
   , sameImmutableDBError
   , prettyImmutableDBError
-  , UserError(..)
+  , UserError (..)
   , prettyUserError
-  , UnexpectedError(..)
+  , UnexpectedError (..)
   , sameUnexpectedError
   , prettyUnexpectedError
   ) where
 
+import           Codec.Serialise (DeserialiseFailure)
 import           Control.Exception (Exception (..))
-
-import           Data.Word (Word, Word64)
 
 import           GHC.Generics (Generic)
 import           GHC.Stack (CallStack, prettyCallStack)
 
-import           Ouroboros.Network.Block (Slot (..))
+import           Ouroboros.Network.Block (SlotNo (..))
 
+import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API.Types (FsError, FsPath, prettyFsError,
                      sameFsError)
 
+type ImmTip = Tip (Either EpochNo SlotNo)
 
--- | An epoch, i.e. the number of the epoch.
-newtype Epoch = Epoch { getEpoch :: Word }
-  deriving (Eq, Ord, Enum, Num, Show, Generic, Real, Integral)
-
-newtype EpochSize = EpochSize { getEpochSize :: Word }
-  deriving (Eq, Ord, Enum, Num, Show, Generic, Real, Integral)
-
--- | The offset of a slot in an index file.
-type SlotOffset = Word64
-
--- | Truncate the database starting from the 'Slot' (inclusive). In other
--- words, all slots >= the given slot will be removed.
-newtype TruncateFrom = TruncateFrom { getTruncateFrom :: Slot }
-  deriving (Eq, Ord, Show, Generic)
-
--- | Try to extract a 'TruncateFrom' from a 'ImmutableDBError'.
---
--- When validation detects a missing or corrupt file, a 'InvalidFileError' or
--- 'MissingFileError' is thrown. Both contain a 'TruncateFrom' that can be
--- used to truncate the database to its last valid slot. Pass the
--- 'TruncateFrom' to 'Ouroboros.Storage.ImmutableDB.API.reopen' to truncate
--- and reopen.
-extractTruncateFrom :: ImmutableDBError -> Maybe TruncateFrom
-extractTruncateFrom e = case e of
-    UserError {}       -> Nothing
-    UnexpectedError ue -> case ue of
-      FileSystemError {}         -> Nothing
-      InvalidFileError _ trunc _ -> Just trunc
-      MissingFileError _ trunc _ -> Just trunc
-    -- TODO let validation only throw 'UnexpectedError'?
+-- | Truncate the database to some 'Tip'. This means that everything in the
+-- database that comes after the 'Tip' will be removed, excluding the EBB or
+-- block the 'Tip' points to.
+newtype TruncateTo = TruncateTo { getTruncateTo :: ImmTip }
+  deriving (Eq, Show, Generic)
 
 -- | Parse the contents of an epoch file.
 --
@@ -75,13 +48,20 @@ extractTruncateFrom e = case e of
 -- @t@ (block). The returned 'SlotOffset's are from __first to last__ and
 -- __strictly__ monotonically increasing. The first 'SlotOffset' must be 0.
 --
+-- The @Maybe hash@ is the hash of the EBB, if present. The EBB itself should
+-- be the first entry in the list, if present.
+--
 -- We assume the output of 'EpochFileParser' to be correct, we will not
 -- validate it.
 --
 -- An error may be returned in the form of @'Maybe' e@. The 'SlotOffset's may
--- be accompanied with other data of type @t@.
-newtype EpochFileParser e m t = EpochFileParser
-  { runEpochFileParser :: FsPath -> m ([(SlotOffset, t)], Maybe e) }
+-- be accompanied with other data of type @t@. Note that we are not using
+-- @Either e ..@ because the error @e@ might occur after some valid slots have
+-- been parsed successfully, in which case we still want these valid slots,
+-- but also want to know about the error so we can truncate the file to get
+-- rid of the unparseable data.
+newtype EpochFileParser e hash m t = EpochFileParser
+  { runEpochFileParser :: FsPath -> m ([(SlotOffset, t)], Maybe hash, Maybe e) }
   deriving (Functor)
 
 -- | The validation policy used when (re)opening an
@@ -126,8 +106,8 @@ newtype IteratorID = IteratorID { getIteratorID :: Int }
   deriving (Show, Eq, Ord, Enum, Generic)
 
 -- | Initial identifier number, use 'succ' to generate the next one.
-initialIteratorId :: IteratorID
-initialIteratorId = IteratorID 0
+initialIteratorID :: IteratorID
+initialIteratorID = IteratorID 0
 
 -- | Errors that might arise when working with this database.
 data ImmutableDBError
@@ -161,25 +141,33 @@ prettyImmutableDBError = \case
     UnexpectedError ue    -> prettyUnexpectedError ue
 
 data UserError
-  = AppendToSlotInThePastError Slot Slot
+  = AppendToSlotInThePastError SlotNo ImmTip
     -- ^ When trying to append a new binary blob, the input slot was in the
-    -- past, i.e. less than the next expected slot.
+    -- past, i.e. before or equal to the tip of the database.
+  | AppendToEBBInThePastError EpochNo EpochNo
+    -- ^ When trying to append a new EBB, the input epoch was in the past,
+    -- i.e. less than the current epoch or blobs have already been appended to
+    -- the current epoch.
     --
-    -- The first parameter is the input slot and the second parameter is the
-    -- next slot available for appending.
-  | ReadFutureSlotError Slot Slot
-    -- ^ When trying to read a slot, the slot was not yet occupied, either
-    -- because it's too far in the future or because it is in the process of
-    -- being written.
+    -- The first parameter is the input epoch and the second parameter is the
+    -- current epoch.
+  | ReadFutureSlotError SlotNo ImmTip
+    -- ^ When trying to read a slot, the slot was not yet occupied, because
+    -- it's too far in the future, i.e. it is after the tip of the database.
+  | ReadFutureEBBError EpochNo EpochNo
+    -- ^ When trying to read an EBB, the requested epoch was in the future.
     --
-    -- The first parameter is the requested slot and the second parameter is
-    -- the next slot that will be appended to, and thus the slot marking the
-    -- future.
-  | InvalidIteratorRangeError Slot Slot
+    -- The first parameter is the requested epoch and the second parameter is
+    -- the current epoch.
+  | InvalidIteratorRangeError SlotNo SlotNo
     -- ^ When the chosen iterator range was invalid, i.e. the @start@ (first
     -- parameter) came after the @end@ (second parameter).
   | ClosedDBError
-    -- ^ When performing an operation on a closed DB.
+    -- ^ When performing an operation on a closed DB that is only allowed when
+    -- the database is open.
+  | OpenDBError
+    -- ^ When performing an operation on an open DB that is only allowed when
+    -- the database is closed.
   deriving (Eq, Show, Generic)
 
 
@@ -187,47 +175,61 @@ data UserError
 -- its callstack.
 prettyUserError :: UserError -> String
 prettyUserError = \case
-    AppendToSlotInThePastError is es ->
+    AppendToSlotInThePastError is tip ->
       "AppendToSlotInThePastError (input slot was " <> show is <>
-      ", expected was " <> show es <> ")"
-    ReadFutureSlotError requested futureSlot ->
+      ", tip is " <> show tip <> ")"
+    AppendToEBBInThePastError ie ce ->
+      "AppendToEBBInThePastError (input epoch was " <> show ie <>
+      ", current epoch is " <> show ce <> ")"
+    ReadFutureSlotError requested tip ->
       "ReadFutureSlotError (requested was " <> show requested <>
-      ", the future starts at " <> show futureSlot <> ")"
+      ", tip is " <> show tip <> ")"
+    ReadFutureEBBError re ce ->
+      "ReadFutureEBBError (requested was " <> show re <>
+      ", the current epoch is " <> show ce <> ")"
     InvalidIteratorRangeError start end ->
       "InvalidIteratorRangeError (start was " <> show start <> " end was " <>
       show end <> ")"
     ClosedDBError -> "ClosedDBError"
+    OpenDBError   -> "OpenDBError"
 
 
 data UnexpectedError
   = FileSystemError FsError -- An FsError already stores the callstack
     -- ^ An IO operation on the file-system threw an error.
-  | InvalidFileError FsPath TruncateFrom CallStack
+  | InvalidFileError FsPath CallStack
     -- ^ When loading an epoch or index file, its contents did not pass
     -- validation.
-  | MissingFileError FsPath TruncateFrom CallStack
+  | MissingFileError FsPath CallStack
     -- ^ A missing epoch or index file.
+  | DeserialisationError DeserialiseFailure CallStack
+    -- ^ Deserialisation ('Codec.Serialise.Serialise') went wrong.
   deriving (Show, Generic)
 
 -- | Check if two 'Ouroboros.Storage.ImmutableDB.Types.UnexpectedError's are
 -- equal while ignoring their 'CallStack's.
 sameUnexpectedError :: UnexpectedError -> UnexpectedError -> Bool
 sameUnexpectedError ue1 ue2 = case (ue1, ue2) of
-    (FileSystemError fse1,     FileSystemError fse2)     -> sameFsError fse1 fse2
-    (FileSystemError {},       _)                        -> False
-    (InvalidFileError p1 t1 _, InvalidFileError p2 t2 _) -> p1 == p2 && t1 == t2
-    (InvalidFileError {},      _)                        -> False
-    (MissingFileError p1 t1 _, MissingFileError p2 t2 _) -> p1 == p2 && t1 == t2
-    (MissingFileError {},      _)                        -> False
+    (FileSystemError fse1,       FileSystemError fse2)       -> sameFsError fse1 fse2
+    (FileSystemError {},         _)                          -> False
+    (InvalidFileError p1 _,      InvalidFileError p2 _)      -> p1 == p2
+    (InvalidFileError {},        _)                          -> False
+    (MissingFileError p1 _,      MissingFileError p2 _)      -> p1 == p2
+    (MissingFileError {},        _)                          -> False
+    (DeserialisationError df1 _, DeserialisationError df2 _) -> df1 == df2
+    (DeserialisationError {},    _)                          -> False
 
 -- | Pretty-print an 'Ouroboros.Storage.ImmutableDB.Types.UnexpectedError',
 -- including its callstack.
 prettyUnexpectedError :: UnexpectedError -> String
 prettyUnexpectedError = \case
     FileSystemError fse -> prettyFsError fse
-    InvalidFileError path trunc cs ->
-      "InvalidFileError (" <> show path <> ", " <> show trunc <> "): " <>
+    InvalidFileError path cs ->
+      "InvalidFileError (" <> show path <> "): " <>
       prettyCallStack cs
-    MissingFileError path trunc cs ->
-      "MissingFileError (" <> show path <> ", " <> show trunc <> "): " <>
+    MissingFileError path cs ->
+      "MissingFileError (" <> show path <> "): " <>
+      prettyCallStack cs
+    DeserialisationError df cs ->
+      "DeserialisationError (" <> displayException df <> "): " <>
       prettyCallStack cs

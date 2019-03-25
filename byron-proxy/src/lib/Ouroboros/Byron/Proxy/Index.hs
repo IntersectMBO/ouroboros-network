@@ -4,13 +4,13 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE StandaloneDeriving #-}
 
--- TODO move to Ouroboros.Byron.DB.Index
 module Ouroboros.Byron.Proxy.Index where
 
 import Control.Exception (Exception, throwIO)
 import Crypto.Hash (digestFromByteString)
 import Data.ByteString (ByteString)
 import Data.ByteArray (convert)
+import Data.Word (Word64)
 import Database.SQLite.Simple (Connection, Query)
 import qualified Database.SQLite.Simple as Sql
 import System.Directory (doesFileExist)
@@ -18,26 +18,26 @@ import System.Directory (doesFileExist)
 import Pos.Chain.Block (HeaderHash)
 import Pos.Crypto.Hashing (AbstractHash (..))
 
-import Ouroboros.Storage.ImmutableDB.Types
+import Ouroboros.Storage.Common (EpochNo(..))
 
 -- | A point to read from the index. Looking up the tip gives its own hash,
 -- looking up anything by hash (could happen to be the tip) gives the hash
 -- of its child (nothing iff it's the tip).
-data IndexPoint next where
+data IndexPoint t where
   Tip    :: IndexPoint HeaderHash
   ByHash :: HeaderHash -> IndexPoint ()
 
 data Index m = Index
-  { indexRead  :: forall d . IndexPoint d -> m (Maybe (d, Epoch, IndexSlot))
+  { indexRead  :: forall d . IndexPoint d -> m (Maybe (d, EpochNo, IndexSlot))
   , indexWrite :: forall t . (IndexWrite m -> m t) -> m t
   }
 
 data IndexSlot where
-  RealSlot :: Word -> IndexSlot
+  RealSlot :: Word64 -> IndexSlot
   EBBSlot  :: IndexSlot
 
 data IndexWrite m = IndexWrite
-  { updateTip :: HeaderHash -> Epoch -> IndexSlot -> m ()
+  { updateTip :: HeaderHash -> EpochNo -> IndexSlot -> m ()
   }
 
 -- TODO Move SQlite implemention into a separate module.
@@ -91,16 +91,16 @@ instance Exception IndexInternallyInconsistent
 
 -- | The index is the relation:
 --
--- +------------+-------+------+
--- | HeaderHash | Epoch | Slot |
--- +------------+-------+------+
--- | ByteString | Word  | Int  |
--- +------------+--------------+
+-- +------------+---------+------+
+-- | HeaderHash | EpochNo | Slot |
+-- +------------+---------+------+
+-- | ByteString | Word    | Int  |
+-- +------------+----------------+
 --
 -- HeaderHash primary key, epoch and relative slot unique in the table
 -- (as a pair) and there's an index on this pair.
 --
--- Epoch boundary blocks get slot number -1, thereby packing them in-between
+-- EpochNo boundary blocks get slot number -1, thereby packing them in-between
 -- the last block of the prior epoch, and the first block of the next epoch.
 --
 -- Forward links aren't necessary, since we can tell what the next block is
@@ -136,9 +136,9 @@ sql_get_tip =
   "SELECT header_hash, epoch, slot FROM block_index\
   \ ORDER BY epoch DESC, slot DESC LIMIT 1;"
 
-getTip :: Sql.Connection -> IO (Maybe (HeaderHash, Epoch, IndexSlot))
+getTip :: Sql.Connection -> IO (Maybe (HeaderHash, EpochNo, IndexSlot))
 getTip conn = do
-   rows :: [(ByteString, Word, Int)] <- Sql.query_ conn sql_get_tip
+   rows :: [(ByteString, Word64, Int)] <- Sql.query_ conn sql_get_tip
    case rows of
      [] -> pure Nothing
      ((hhBlob, epoch, slotInt) : _) -> do
@@ -151,16 +151,17 @@ getTip conn = do
          else if slotInt >= 0
          then pure (RealSlot (fromIntegral slotInt))
          else throwIO $ InvalidRelativeSlot hh slotInt
-       pure $ Just (hh, Epoch epoch, slot)
+       pure $ Just (hh, EpochNo epoch, slot)
 
 sql_get_hash :: Query
 sql_get_hash =
   "SELECT epoch, slot FROM block_index\
   \ WHERE header_hash = ?;"
 
-getHash :: Sql.Connection -> HeaderHash -> IO (Maybe ((), Epoch, IndexSlot))
+-- | Get epoch and slot by hash.
+getHash :: Sql.Connection -> HeaderHash -> IO (Maybe ((), EpochNo, IndexSlot))
 getHash conn hh@(AbstractHash digest) = do
-  rows :: [(Word, Int)]
+  rows :: [(Word64, Int)]
     <- Sql.query conn sql_get_hash (Sql.Only (convert digest :: ByteString))
   case rows of
     [] -> pure Nothing
@@ -171,13 +172,13 @@ getHash conn hh@(AbstractHash digest) = do
         else if slotInt >= 0
         then pure (RealSlot (fromIntegral slotInt))
         else throwIO $ InvalidRelativeSlot hh slotInt
-      pure $ Just ((), Epoch epoch, slot)
+      pure $ Just ((), EpochNo epoch, slot)
 
 sql_insert :: Query
 sql_insert = "INSERT INTO block_index VALUES (?, ?, ?);"
 
-setTip :: Sql.Connection -> HeaderHash -> Epoch -> IndexSlot -> IO ()
-setTip conn (AbstractHash digest) (Epoch epoch) slot = do
+setTip :: Sql.Connection -> HeaderHash -> EpochNo -> IndexSlot -> IO ()
+setTip conn (AbstractHash digest) (EpochNo epoch) slot = do
   Sql.execute conn sql_insert (hashBytes, epoch, slotInt)
   where
   slotInt :: Int

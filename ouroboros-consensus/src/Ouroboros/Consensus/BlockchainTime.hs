@@ -39,7 +39,7 @@ module Ouroboros.Consensus.BlockchainTime (
   , getCurrentSlotIO
   , waitUntilNextSlotIO
     -- * Re-exports
-  , Slot(..)
+  , SlotNo (..)
   ) where
 
 import           Control.Monad
@@ -47,6 +47,7 @@ import           Data.Fixed
 import           Data.Proxy
 import           Data.Time
 import           Data.Time.Clock.System
+import           Data.Word (Word64)
 
 import           Control.Monad (void)
 import           Control.Monad.Class.MonadSTM
@@ -54,7 +55,7 @@ import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadTimer
 
 import           Ouroboros.Consensus.Util.STM
-import           Ouroboros.Network.Block (Slot (..))
+import           Ouroboros.Network.Block (SlotNo (..))
 
 {-------------------------------------------------------------------------------
   Abstract definition
@@ -67,14 +68,14 @@ import           Ouroboros.Network.Block (Slot (..))
 -- execute an action each time we advance a slot.
 data BlockchainTime m = BlockchainTime {
       -- | Get current slot
-      getCurrentSlot :: STM m Slot
+      getCurrentSlot :: STM m SlotNo
 
       -- | Spawn a thread to run an action each time the slot changes
-    , onSlotChange   :: (Slot -> m ()) -> m ()
+    , onSlotChange   :: (SlotNo -> m ()) -> m ()
     }
 
 -- | Execute action on specific slot
-onSlot :: MonadSTM m => BlockchainTime m -> Slot -> m () -> m ()
+onSlot :: MonadSTM m => BlockchainTime m -> SlotNo -> m () -> m ()
 onSlot BlockchainTime{..} slot act = onSlotChange $ \slot' -> do
     when (slot == slot') act
 
@@ -86,8 +87,8 @@ onSlot BlockchainTime{..} slot act = onSlotChange $ \slot' -> do
 newtype NumSlots = NumSlots Int
   deriving (Show)
 
-finalSlot :: NumSlots -> Slot
-finalSlot (NumSlots n) = Slot (fromIntegral n)
+finalSlot :: NumSlots -> SlotNo
+finalSlot (NumSlots n) = SlotNo (fromIntegral n)
 
 -- | Construct new blockchain time that ticks at the specified slot duration
 --
@@ -111,8 +112,7 @@ testBlockchainTime (NumSlots numSlots) slotLen = do
       , onSlotChange   = onEachChange id firstSlot (readTVar slotVar)
       }
   where
-    firstSlot :: Slot
-    firstSlot = 0
+    firstSlot = SlotNo 0
 
 {-------------------------------------------------------------------------------
   "Real" blockchain time
@@ -237,21 +237,21 @@ newtype SystemStart = SystemStart { getSystemStart :: FixedUTC }
 -- | Compute start of the specified slot
 --
 -- > slotAtTime (startOfSlot slot) == (slot, 0)
-startOfSlot :: SlotLength -> SystemStart -> Slot -> FixedUTC
-startOfSlot (SlotLength d) (SystemStart start) (Slot n) =
+startOfSlot :: SlotLength -> SystemStart -> SlotNo -> FixedUTC
+startOfSlot (SlotLength d) (SystemStart start) (SlotNo n) =
     addFixedUTC (multFixedDiffTime (fromIntegral n) d) start
 
 -- | Compute slot at the specified time and how far we are into that slot
 --
 -- > now - slotLen < startOfSlot (fst (slotAtTime now)) <= now
 -- > 0 <= snd (slotAtTime now) < slotLen
-slotAtTime :: SlotLength -> SystemStart -> FixedUTC -> (Slot, FixedDiffTime)
+slotAtTime :: SlotLength -> SystemStart -> FixedUTC -> (SlotNo, FixedDiffTime)
 slotAtTime (SlotLength d) (SystemStart start) now = conv $
               (fixedDiffTime (now `diffFixedUTC` start))
     `divMod'` (fixedDiffTime d)
   where
-    conv :: (Word, Fixed E3) -> (Slot, FixedDiffTime)
-    conv (slot, time) = (Slot slot, FixedDiffTime time)
+    conv :: (Word64, Fixed E3) -> (SlotNo, FixedDiffTime)
+    conv (slot, time) = (SlotNo slot, FixedDiffTime time)
 
 -- | Compute time until the next slot and the number of that next slot
 --
@@ -262,19 +262,19 @@ slotAtTime (SlotLength d) (SystemStart start) now = conv $
 timeUntilNextSlot :: SlotLength
                   -> SystemStart
                   -> FixedUTC
-                  -> (FixedDiffTime, Slot)
+                  -> (FixedDiffTime, SlotNo)
 timeUntilNextSlot slotLen start now =
-    (getSlotLength slotLen - timeInCurrentSlot, currentSlot + 1)
+    (getSlotLength slotLen - timeInCurrentSlot, succ currentSlot)
   where
     (currentSlot, timeInCurrentSlot) = slotAtTime slotLen start now
 
 -- | Get current slot
-getCurrentSlotIO :: SlotLength -> SystemStart -> IO Slot
+getCurrentSlotIO :: SlotLength -> SystemStart -> IO SlotNo
 getCurrentSlotIO slotLen start =
     fst . slotAtTime slotLen start <$> getCurrentFixedUTC
 
 -- | Wait until next slot, and return number of that slot
-waitUntilNextSlotIO :: SlotLength -> SystemStart -> IO Slot
+waitUntilNextSlotIO :: SlotLength -> SystemStart -> IO SlotNo
 waitUntilNextSlotIO slotLen start = do
     now <- getCurrentFixedUTC
     let (delay, nextSlot) = timeUntilNextSlot slotLen start now

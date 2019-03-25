@@ -10,29 +10,39 @@
 -- The network layer does not make any concrete assumptions about what blocks
 -- look like.
 module Ouroboros.Network.Block (
-    Slot(..)
+    SlotNo(..)
   , BlockNo(..)
   , HasHeader(..)
   , StandardHash
-  , Hash(..)
+  , ChainHash(..)
   , castHash
+  , Point(..)
+  , castPoint
+  , blockPoint
+  , ChainUpdate(..)
   , BlockMeasure(..)
   , blockMeasure
   ) where
 
+import           Codec.Serialise (Serialise (..))
 import           Data.Hashable
 import           Data.FingerTree (Measured)
+import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           Codec.Serialise (Serialise (..))
+import           Codec.CBOR.Encoding (encodeListLen)
+import           Codec.CBOR.Decoding (decodeListLenOf)
 
 
--- | The Ouroboros time slot index for a block.
-newtype Slot = Slot { getSlot :: Word }
-  deriving (Show, Eq, Ord, Hashable, Enum, Bounded, Serialise, Num, Real, Integral)
+-- | The 0-based index for the Ourboros time slot.
+newtype SlotNo = SlotNo { unSlotNo :: Word64 }
+  deriving (Show, Eq, Ord, Hashable, Enum, Bounded, Num, Serialise, Generic)
 
--- | The 0-based index of the block in the blockchain
-newtype BlockNo = BlockNo Word
-  deriving (Show, Eq, Ord, Hashable, Enum, Bounded, Serialise)
+-- | The 0-based index of the block in the blockchain.
+-- BlockNo is <= SlotNo and is only equal at slot N if there is a block
+-- for every slot where N <= SlotNo.
+newtype BlockNo = BlockNo { unBlockNo :: Word64 }
+  deriving (Show, Eq, Ord, Hashable, Enum, Bounded, Num, Serialise)
 
 -- | Abstract over the shape of blocks (or indeed just block headers)
 class (StandardHash b, Measured BlockMeasure b) => HasHeader b where
@@ -44,8 +54,8 @@ class (StandardHash b, Measured BlockMeasure b) => HasHeader b where
     type HeaderHash b :: *
 
     blockHash      :: b -> HeaderHash b
-    blockPrevHash  :: b -> Hash b
-    blockSlot      :: b -> Slot
+    blockPrevHash  :: b -> ChainHash b
+    blockSlot      :: b -> SlotNo
     blockNo        :: b -> BlockNo
 
     blockInvariant :: b -> Bool
@@ -59,7 +69,7 @@ blockMeasure b = BlockMeasure (blockSlot b) (blockSlot b) 1
 --
 -- Without this class we would need to write
 --
--- > deriving instance Eq (HeaderHash block) => Eq (Hash block)`
+-- > deriving instance Eq (HeaderHash block) => Eq (ChainHash block)`
 --
 -- That requires @UndecidableInstances@; not a problem by itself, but it also
 -- means that we can then not use @deriving Eq@ anywhere else for datatypes
@@ -79,12 +89,12 @@ class ( Eq        (HeaderHash b)
       , Serialise (HeaderHash b)
       ) => StandardHash b
 
-data Hash b = GenesisHash | BlockHash (HeaderHash b)
+data ChainHash b = GenesisHash | BlockHash (HeaderHash b)
   deriving (Generic)
 
-deriving instance StandardHash block => Eq   (Hash block)
-deriving instance StandardHash block => Ord  (Hash block)
-deriving instance StandardHash block => Show (Hash block)
+deriving instance StandardHash block => Eq   (ChainHash block)
+deriving instance StandardHash block => Ord  (ChainHash block)
+deriving instance StandardHash block => Show (ChainHash block)
 
 -- | 'Hashable' instance for 'Hash'
 --
@@ -92,20 +102,70 @@ deriving instance StandardHash block => Show (Hash block)
 -- only used in the network layer /tests/.
 --
 -- This requires @UndecidableInstances@ because @Hashable (HeaderHash b)@
--- is no smaller than @Hashable (Hash b)@.
-instance Hashable (HeaderHash b) => Hashable (Hash b) where
+-- is no smaller than @Hashable (ChainHash b)@.
+instance Hashable (HeaderHash b) => Hashable (ChainHash b) where
  -- use generic instance
 
-castHash :: HeaderHash b ~ HeaderHash b' => Hash b -> Hash b'
+castHash :: HeaderHash b ~ HeaderHash b' => ChainHash b -> ChainHash b'
 castHash GenesisHash   = GenesisHash
 castHash (BlockHash b) = BlockHash b
+
+{-------------------------------------------------------------------------------
+  Point on a chain
+-------------------------------------------------------------------------------}
+
+-- | A point on the chain is identified by its 'Slot' and 'HeaderHash'.
+--
+-- The 'Slot' tells us where to look and the 'HeaderHash' either simply serves
+-- as a check, or in some contexts it disambiguates blocks from different forks
+-- that were in the same slot.
+--
+data Point block = Point {
+       pointSlot :: SlotNo,
+       pointHash :: ChainHash block
+     }
+   deriving (Eq, Ord, Show)
+
+castPoint :: (HeaderHash a ~ HeaderHash b) => Point a -> Point b
+castPoint (Point a b) = Point a (castHash b)
+
+blockPoint :: HasHeader block => block -> Point block
+blockPoint b =
+    Point {
+      pointSlot = blockSlot b,
+      pointHash = BlockHash (blockHash b)
+    }
+
+{-------------------------------------------------------------------------------
+  ChainUpdate type
+-------------------------------------------------------------------------------}
+
+-- | A representation of two actions to update a chain: add a block or roll
+-- back to a previous point.
+--
+data ChainUpdate block = AddBlock block
+                       | RollBack (Point block)
+  deriving (Eq, Show)
+
 
 {-------------------------------------------------------------------------------
   Serialisation
 -------------------------------------------------------------------------------}
 
-instance StandardHash b => Serialise (Hash b) where
+instance StandardHash b => Serialise (ChainHash b) where
   -- use the Generic instance
+
+instance HasHeader block => Serialise (Point block) where
+
+  encode Point { pointSlot = s, pointHash = h } =
+      encodeListLen 2
+   <> encode s
+   <> encode h
+
+  decode = do
+      decodeListLenOf 2
+      Point <$> decode
+            <*> decode
 
 {-------------------------------------------------------------------------------
   Finger Tree Measure
@@ -113,8 +173,8 @@ instance StandardHash b => Serialise (Hash b) where
 
 -- | The measure used for 'Ouroboros.Network.ChainFragment.ChainFragment'.
 data BlockMeasure = BlockMeasure {
-       bmMinSlot :: !Slot,
-       bmMaxSlot :: !Slot,
+       bmMinSlot :: !SlotNo,
+       bmMaxSlot :: !SlotNo,
        bmSize    :: !Int
      }
   deriving Show
