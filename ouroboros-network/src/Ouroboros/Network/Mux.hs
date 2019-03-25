@@ -26,7 +26,6 @@ import qualified Codec.CBOR.Read as CBOR
 import           Codec.CBOR.Write (toLazyByteString)
 import           Control.Monad
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
@@ -47,7 +46,7 @@ import           Ouroboros.Network.Mux.Types
 -- one of the provided Versions.
 -- TODO: replace MonadSay with iohk-monitoring-framework.
 muxStart :: forall m ptcl.
-            ( MonadAsync m, MonadFork m, MonadSay m, MonadSTM m, MonadThrow m
+            ( MonadAsync m, MonadSay m, MonadSTM m, MonadThrow m
             , Ord ptcl, Enum ptcl, Bounded ptcl, Show ptcl, MiniProtocolLimits ptcl)
          => [SomeVersion]
          -> (SomeVersion -> Maybe (MiniProtocolDescriptions ptcl m))
@@ -197,7 +196,7 @@ muxBearerSetState :: (MonadSTM m, Ord ptcl, Enum ptcl, Bounded ptcl)
 muxBearerSetState bearer newState = atomically $ writeTVar (state bearer) newState
 
 -- | Initiate version negotiation with the peer the MuxBearer is connected to
-muxClient :: (MonadAsync m, MonadFork m, MonadSay m, MonadSTM m, MonadThrow m,
+muxClient :: (MonadAsync m, MonadSay m, MonadSTM m, MonadThrow m,
             Ord ptcl, Enum ptcl, Bounded ptcl, HasCallStack)
         => [SomeVersion]
         -> (SomeVersion -> Maybe (MiniProtocolDescriptions ptcl m))
@@ -227,7 +226,7 @@ muxClient versions mpds_fn bearer = do
                 Right (_, MsgInitFail e) -> throwM $ MuxError MuxControlNoMatchingVersion e callStack
 
 -- | Wait for the connected peer to initiate version negotiation.
-muxServer :: (MonadAsync m, MonadFork m, MonadSay m, MonadSTM m, MonadThrow m,
+muxServer :: (MonadAsync m, MonadSay m, MonadSTM m, MonadThrow m,
              Ord ptcl, Enum ptcl, Bounded ptcl, HasCallStack)
           => [SomeVersion]
           -> (SomeVersion -> Maybe (MiniProtocolDescriptions ptcl m))
