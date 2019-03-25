@@ -31,6 +31,8 @@ import           Test.Tasty.QuickCheck (testProperty)
 import           Text.Printf
 
 import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadSay
+import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
@@ -215,16 +217,17 @@ data MuxSTMCtx ptcl m = MuxSTMCtx {
     , traceQueue :: Maybe (TBQueue m (Mx.MiniProtocolId ptcl, Mx.MiniProtocolMode, Time m))
 }
 
-startMuxSTM :: ( Ord ptcl, Enum ptcl, Bounded ptcl, Mx.ProtocolEnum ptcl, Show ptcl
+startMuxSTM :: ( MonadAsync m, MonadCatch m, MonadSay m, MonadSTM m, MonadThrow m, MonadTimer m
+               , Ord ptcl, Enum ptcl, Bounded ptcl, Mx.ProtocolEnum ptcl, Show ptcl
                , Mx.MiniProtocolLimits ptcl )
             => [Mx.SomeVersion]
-            -> (Mx.SomeVersion -> Maybe (Mx.MiniProtocolDescriptions ptcl IO))
+            -> (Mx.SomeVersion -> Maybe (Mx.MiniProtocolDescriptions ptcl m))
             -> Mx.MuxStyle
-            -> TBQueue IO BL.ByteString
-            -> TBQueue IO BL.ByteString
+            -> TBQueue m BL.ByteString
+            -> TBQueue m BL.ByteString
             -> Word16
-            -> Maybe (TBQueue IO (Mx.MiniProtocolId ptcl, Mx.MiniProtocolMode, Time IO))
-            -> IO (TBQueue IO (Maybe SomeException))
+            -> Maybe (TBQueue m (Mx.MiniProtocolId ptcl, Mx.MiniProtocolMode, Time m))
+            -> m (TBQueue m (Maybe SomeException))
 startMuxSTM versions mpds style wq rq mtu trace = do
     let ctx = MuxSTMCtx wq rq mtu trace
     resq <- atomically $ newTBQueue 10
@@ -335,13 +338,14 @@ prop_mux_snd_recv request response = ioProperty $ do
 
 -- | Create a verification function, a MiniProtocolDescription for the client side and a
 -- MiniProtocolDescription for the server side for a RequestResponce protocol.
-setupMiniReqRsp :: IO ()        -- | Action performed by responder before processing the response
-                -> TVar IO Int  -- | Total number of miniprotocols.
+setupMiniReqRsp :: forall m ptcl. ( MonadST m, MonadSTM m, MonadThrow m )
+                => m ()        -- | Action performed by responder before processing the response
+                -> TVar m Int  -- | Total number of miniprotocols.
                 -> DummyPayload -- | Request, sent from initiator.
                 -> DummyPayload -- | Response, sent from responder after receive the request.
-                -> IO (IO Bool
-                      , Mx.MiniProtocolDescription ptcl IO
-                      , Mx.MiniProtocolDescription ptcl IO)
+                -> m (m Bool
+                      , Mx.MiniProtocolDescription ptcl m
+                      , Mx.MiniProtocolDescription ptcl m)
 setupMiniReqRsp serverAction mpsEndVar request response = do
     serverResultVar <- newEmptyTMVarM
     clientResultVar <- newEmptyTMVarM
@@ -356,13 +360,13 @@ setupMiniReqRsp serverAction mpsEndVar request response = do
             (,) <$> takeTMVar serverResultVar <*> takeTMVar clientResultVar
         return $ head request' == request && head response' == response
 
-    plainServer :: [DummyPayload] -> ReqRespServer DummyPayload DummyPayload IO [DummyPayload]
+    plainServer :: [DummyPayload] -> ReqRespServer DummyPayload DummyPayload m [DummyPayload]
     plainServer reqs = ReqRespServer {
         recvMsgReq  = \req -> serverAction >> return (response, plainServer (req:reqs)),
         recvMsgDone = pure $ reverse reqs
     }
 
-    plainClient :: [DummyPayload] -> ReqRespClient DummyPayload DummyPayload IO [DummyPayload]
+    plainClient :: [DummyPayload] -> ReqRespClient DummyPayload DummyPayload m [DummyPayload]
     plainClient = clientGo []
 
     clientGo resps []         = SendMsgDone (pure $ reverse resps)
@@ -390,9 +394,9 @@ setupMiniReqRsp serverAction mpsEndVar request response = do
             c <- readTVar mpsEndVar
             unless (c == 0) retry
 
-waitOnAllClients :: TVar IO Int
+waitOnAllClients :: MonadSTM m => TVar m Int
                  -> Int
-                 -> IO ()
+                 -> m ()
 waitOnAllClients clientVar clientTot = do
         atomically $ modifyTVar' clientVar (+ 1)
         atomically $ do
@@ -553,7 +557,9 @@ prop_mux_short_header badSdu shortCutOffArg = ioProperty $ do
          Nothing -> return False
 
 -- | Start a ReqResp server that is expected to fail, returns the server's read channel
-failingServer :: IO (TBQueue IO BL.ByteString, TBQueue IO (Maybe SomeException))
+failingServer :: forall m. ( MonadAsync m, MonadCatch m, MonadSay m, MonadST m, MonadSTM m
+                           , MonadThrow m, MonadTimer m )
+              => m (TBQueue m BL.ByteString, TBQueue m (Maybe SomeException))
 failingServer  = do
     server_r <- atomically $ newTBQueue 10
     server_w <- atomically $ newTBQueue 10
