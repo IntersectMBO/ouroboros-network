@@ -2,7 +2,8 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeOperators       #-}
+{-# LANGUAGE TupleSections       #-}
+
 {-# OPTIONS_GHC -Wno-orphans     #-}
 module Test.Socket (tests) where
 
@@ -12,29 +13,39 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
 import qualified Data.ByteString.Lazy as BL
+import           Data.List (mapAccumL)
 import           Network.Socket hiding (recv, recvFrom, send, sendTo)
 import qualified Network.Socket.ByteString.Lazy as Socket (sendAll)
-import           Test.QuickCheck
-import           Test.Tasty (TestTree, testGroup)
-import           Test.Tasty.QuickCheck (testProperty)
+
+import           Network.TypedProtocol.Core
+import qualified Network.TypedProtocol.ReqResp.Type       as ReqResp
+import qualified Network.TypedProtocol.ReqResp.Client     as ReqResp
+import qualified Network.TypedProtocol.ReqResp.Server     as ReqResp
+import qualified Ouroboros.Network.Protocol.ReqResp.Codec as ReqResp
 
 import qualified Ouroboros.Network.Mux as Mx
 import qualified Ouroboros.Network.Mux.Control as Mx
+import           Ouroboros.Network.Mux.Interface
 import           Ouroboros.Network.Socket
 
-import           Network.TypedProtocol.Driver
 import           Ouroboros.Network.Chain (Chain, ChainUpdate, Point)
 import qualified Ouroboros.Network.Chain as Chain
 import qualified Ouroboros.Network.ChainProducerState as CPS
-import           Ouroboros.Network.Channel
-import           Ouroboros.Network.Protocol.ChainSync.Client
-import           Ouroboros.Network.Protocol.ChainSync.Codec
-import           Ouroboros.Network.Protocol.ChainSync.Examples
-import           Ouroboros.Network.Protocol.ChainSync.Server
+import qualified Ouroboros.Network.Protocol.ChainSync.Type     as ChainSync
+import qualified Ouroboros.Network.Protocol.ChainSync.Client   as ChainSync
+import qualified Ouroboros.Network.Protocol.ChainSync.Codec    as ChainSync
+import qualified Ouroboros.Network.Protocol.ChainSync.Examples as ChainSync
+import qualified Ouroboros.Network.Protocol.ChainSync.Server   as ChainSync
 import           Ouroboros.Network.Testing.Serialise
 
 import           Test.ChainGenerators (TestBlockChainAndUpdates (..))
 import qualified Test.Mux as Mxt
+import           Test.Mux.ReqResp
+
+import           Test.QuickCheck
+import           Text.Show.Functions ()
+import           Test.Tasty (TestTree, testGroup)
+import           Test.Tasty.QuickCheck (testProperty)
 
 {-
  - The travis build hosts does not support IPv6 so those test cases are hidden
@@ -72,42 +83,44 @@ prop_socket_demo (TestBlockChainAndUpdates chain updates) =
     ioProperty $ demo chain updates
 
 -- | Send and receive over IPv4
-prop_socket_send_recv_ipv4 :: Mxt.DummyPayload
-                           -> Mxt.DummyPayload
-                           -> Property
-prop_socket_send_recv_ipv4 request response = ioProperty $ do
+prop_socket_send_recv_ipv4
+  :: (Int -> Int -> (Int, Int))
+  -> [Int]
+  -> Property
+prop_socket_send_recv_ipv4 f xs = ioProperty $ do
     client:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
     server:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
-    return $ prop_socket_send_recv client server [Mxt.version0] [Mxt.version0] request response
+    prop_socket_send_recv client server [Mxt.version0] [Mxt.version0] f xs
 
-prop_socket_send_recv_ipv4_verneg :: Mxt.DummyPayload
-                           -> Mxt.DummyPayload
-                           -> Property
-prop_socket_send_recv_ipv4_verneg request response = ioProperty $ do
+prop_socket_send_recv_ipv4_verneg
+  :: (Int -> Int -> (Int, Int))
+  -> [Int]
+  -> Property
+prop_socket_send_recv_ipv4_verneg f xs = ioProperty $ do
     client:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
     server:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
-    return $ prop_socket_send_recv client server [Mxt.version0, Mxt.version1] [Mxt.version1] request response
+    prop_socket_send_recv client server [Mxt.version0, Mxt.version1] [Mxt.version1] f xs
 
 
 #ifdef OUROBOROS_NETWORK_IPV6
 
 -- | Send and receive over IPv6
-prop_socket_send_recv_ipv6 :: Mxt.DummyPayload
-                      -> Mxt.DummyPayload
-                      -> Property
+prop_socket_send_recv_ipv6 :: (Int ->  Int -> (Int, Int))
+                           -> [Int]
+                           -> Property
 prop_socket_send_recv_ipv6 request response = ioProperty $ do
     client:_ <- getAddrInfo Nothing (Just "::1") (Just "0")
     server:_ <- getAddrInfo Nothing (Just "::1") (Just "6061")
-    return $ prop_socket_send_recv client server [Mxt.version1] [Mxt.version1] request response
+    prop_socket_send_recv client server [Mxt.version1] [Mxt.version1] request response
 
 -- | Send and receive over IPv6
-prop_socket_send_recv_ipv6_ver_neg :: Mxt.DummyPayload
-                      -> Mxt.DummyPayload
-                      -> Property
+prop_socket_send_recv_ipv6_ver_neg :: (Int -> Int -> (Int, Int))
+                                   -> [Int]
+                                   -> Property
 prop_socket_send_recv_ipv6_ver_neg request response = ioProperty $ do
     client:_ <- getAddrInfo Nothing (Just "::1") (Just "0")
     server:_ <- getAddrInfo Nothing (Just "::1") (Just "6061")
-    return $ prop_socket_send_recv client server [Mxt.version0] [Mxt.version0, Mxt.version1] request response
+    prop_socket_send_recv client server [Mxt.version0] [Mxt.version0, Mxt.version1] request response
 #endif
 
 -- | Verify that an initiator and a responder can send and receive messages from each other
@@ -117,44 +130,72 @@ prop_socket_send_recv :: AddrInfo
                       -> AddrInfo
                       -> [Mx.SomeVersion]
                       -> [Mx.SomeVersion]
-                      -> Mxt.DummyPayload
-                      -> Mxt.DummyPayload
-                      -> Property
-prop_socket_send_recv clientAddr serverAddr clientVersions serverVersions request response = ioProperty $ do
+                      -> (Int -> Int -> (Int, Int))
+                      -> [Int]
+                      -> IO Bool
+prop_socket_send_recv clientAddr serverAddr clientVersions serverVersions f xs = do
 
-    endMpsVar <- atomically $ newTVar 2
+    cv <- newEmptyTMVarM
+    sv <- newEmptyTMVarM
 
-    (verify, client_mp, server_mp) <- Mxt.setupMiniReqRsp
-                                        (return ()) endMpsVar request response
+    let -- Server Node; only req-resp server
+        srvPeer :: Peer (ReqResp.ReqResp Int Int) AsServer ReqResp.StIdle IO ()
+        srvPeer = ReqResp.reqRespServerPeer (reqRespServerMapAccumL sv (\a -> pure . f a) 0)
+        srvPeers Mxt.ChainSync1 = OnlyServer ReqResp.codecReqResp srvPeer
+        serNet = NetworkInterface {
+            nodeAddress   = serverAddr,
+            knownVersions = serverVersions,
+            protocols     = \_ -> Just srvPeers
+          }
 
-    let client_mps Mxt.ChainSync1 = client_mp
-        server_mps Mxt.ChainSync1 = server_mp
+        -- Client Node; only req-resp client
+        cliPeer :: Peer (ReqResp.ReqResp Int Int) AsClient ReqResp.StIdle IO ()
+        cliPeer = ReqResp.reqRespClientPeer (reqRespClientMap cv xs)
+        cliPeers Mxt.ChainSync1 = OnlyClient ReqResp.codecReqResp cliPeer
+        cliNet = NetworkInterface {
+             nodeAddress   = clientAddr,
+             knownVersions = clientVersions,
+             protocols     = \_ -> Just cliPeers
+           }
+
+    serNode <- runNetworkNodeWithSocket serNet
+    cliNode <- runNetworkNodeWithSocket cliNet
+
+    connectTo cliNode serverAddr
+
+    a <- atomically $ takeTMVar cv
+    b <- atomically $ takeTMVar sv
+
+    killNode cliNode
+    killNode serNode
+
+    return ((b, a) == mapAccumL f 0 xs)
 
 
-    server_h <- startResponder serverVersions (\_ -> Just server_mps) serverAddr
-    startInitiator clientVersions (\_ -> Just client_mps) clientAddr serverAddr
-
-    v <- verify
-
-    killResponder server_h
-    return $ property v
-
-
--- | Verify that we raise the correct exception in case a socket closes during a read.
-prop_socket_recv_close :: Mxt.DummyPayload
-                       -> Mxt.DummyPayload
+-- |
+-- Verify that we raise the correct exception in case a socket closes during
+-- a read.
+-- 
+-- Note: the socket is closed during version negotation.
+prop_socket_recv_close :: (Int -> Int -> (Int, Int))
+                       -> [Int]
                        -> Property
-prop_socket_recv_close request response = ioProperty $ do
+prop_socket_recv_close f _ = ioProperty $ do
     b:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
 
-    endMpsVar <- atomically $ newTVar 2
+    sv   <- newEmptyTMVarM
     resq <- atomically $ newTBQueue 1
 
-    (_, _, server_mp) <- Mxt.setupMiniReqRsp (return ()) endMpsVar request response
-
-    let server_mps Mxt.ChainSync1 = server_mp
-
-    server_h <- startResponderT [Mxt.version0] (\_ -> Just server_mps) b (Just $ rescb resq)
+    let srvPeer :: Peer (ReqResp.ReqResp Int Int) AsServer ReqResp.StIdle IO ()
+        srvPeer = ReqResp.reqRespServerPeer (reqRespServerMapAccumL sv (\a -> pure . f a) 0)
+        srvPeers Mxt.ChainSync1 = OnlyServer ReqResp.codecReqResp srvPeer
+        ni = NetworkInterface {
+            nodeAddress   = b,
+            knownVersions = [Mxt.version0],
+            protocols     = \_ -> Just srvPeers
+          }
+            
+    nn <- runNetworkNodeWithSocket' ni (Just (rescb resq))
 
     sd <- socket (addrFamily b) Stream defaultProtocol
     connect sd (addrAddress b)
@@ -164,7 +205,7 @@ prop_socket_recv_close request response = ioProperty $ do
 
     res <- atomically $ readTBQueue resq
 
-    killResponder server_h
+    killNode nn
     case res of
          Just e  ->
              case fromException e of
@@ -175,53 +216,81 @@ prop_socket_recv_close request response = ioProperty $ do
   where
     rescb resq e_m = atomically $ writeTBQueue resq e_m
 
-prop_socket_client_connect_error :: Mxt.DummyPayload
-                                 -> Mxt.DummyPayload
+
+prop_socket_client_connect_error :: (Int -> Int -> (Int, Int))
+                                 -> [Int]
                                  -> Property
-prop_socket_client_connect_error request response = ioProperty $ do
+prop_socket_client_connect_error _ xs = ioProperty $ do
     clientAddr:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
-    serverAddr:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
+    serverAddr:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
 
-    endMpsVar <- atomically $ newTVar 2
+    cv <- newEmptyTMVarM
 
-    (_, client_mp, _) <- Mxt.setupMiniReqRsp (return ()) endMpsVar request response
+    let cliPeer :: Peer (ReqResp.ReqResp Int Int) AsClient ReqResp.StIdle IO ()
+        cliPeer = ReqResp.reqRespClientPeer (reqRespClientMap cv xs)
+        cliPeers Mxt.ChainSync1 = OnlyClient ReqResp.codecReqResp cliPeer
+        ni = NetworkInterface {
+            nodeAddress   = serverAddr,
+            knownVersions = [Mxt.version0],
+            protocols     = \_ -> Just cliPeers
+          }
 
-    let client_mps Mxt.ChainSync1 = client_mp
+    nn <- runNetworkNodeWithSocket ni
+    res_e <- try $ connectTo nn clientAddr :: IO (Either SomeException ())
+    killNode nn
 
-    res_e <- try $ startInitiator [Mxt.version0] (\_ -> Just client_mps) clientAddr serverAddr :: IO (Either SomeException ())
     case res_e of
          Left _  -> return $ property True -- XXX Dissregarding the exact exception type
          Right _ -> return $ property False
 
-prop_version_missmatch :: Property
-prop_version_missmatch = ioProperty $ do
+
+prop_version_missmatch :: (Int -> Int -> (Int, Int))
+                       -> [Int]
+                       -> Property
+prop_version_missmatch f xs = ioProperty $ do
     clientAddr:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
     serverAddr:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
-    let request = Mxt.DummyPayload $ BL.replicate 4 0xa
-    let response = request
 
     resq <- atomically $ newTBQueue 1
-    endMpsVar <- atomically $ newTVar 2
 
-    (_, client_mp, server_mp) <- Mxt.setupMiniReqRsp
-                                        (return ()) endMpsVar request response
+    cv <- newEmptyTMVarM
+    sv <- newEmptyTMVarM
 
-    let client_mps Mxt.ChainSync1 = client_mp
-        server_mps Mxt.ChainSync1 = server_mp
+    let -- Server Node
+        srvPeer :: Peer (ReqResp.ReqResp Int Int) AsServer ReqResp.StIdle IO ()
+        srvPeer = ReqResp.reqRespServerPeer (reqRespServerMapAccumL sv (\a -> pure . f a) 0)
+        srvPeers Mxt.ChainSync1 = OnlyServer ReqResp.codecReqResp srvPeer
+        srvNet :: NetworkInterface Mxt.TestProtocols1 AddrInfo IO 
+        srvNet = NetworkInterface {
+            nodeAddress   = serverAddr,
+            knownVersions = [Mxt.version1],
+            protocols     = \_ -> Just srvPeers
+          }
+
+        -- Client Node
+        cliPeer :: Peer (ReqResp.ReqResp Int Int) AsClient ReqResp.StIdle IO ()
+        cliPeer = ReqResp.reqRespClientPeer (reqRespClientMap cv xs)
+        cliPeers Mxt.ChainSync1 = OnlyClient ReqResp.codecReqResp cliPeer
+        cliNet :: NetworkInterface Mxt.TestProtocols1 AddrInfo IO 
+        cliNet = NetworkInterface {
+             nodeAddress   = clientAddr,
+             knownVersions = [Mxt.version0],
+             protocols     = \_ -> Just cliPeers
+           }
 
 
-    server_h <- startResponderT [Mxt.version1] (\_ -> Just server_mps) serverAddr (Just $ rescb resq)
-    res_client <- try $ startInitiator [Mxt.version0]  (\_ -> Just client_mps) clientAddr serverAddr
-    res_server <- atomically $ readTBQueue resq
+    srvNode <- runNetworkNodeWithSocket' srvNet (Just (rescb resq))
+    cliNode <- runNetworkNodeWithSocket  cliNet
 
-    killResponder server_h
+    res_client <- try $ connectTo cliNode serverAddr
+    res_server <- maybe (Right ()) Left <$> atomically (readTBQueue resq)
 
-    return (checkResult res_client && checkResult (toEither res_server))
+    killNode srvNode
+    killNode cliNode
+
+    return (checkResult res_client && checkResult res_server)
 
   where
-    toEither Nothing  = Right ()
-    toEither (Just e) = Left e
-
     checkResult res_e =
         case res_e of
              Left e  ->
@@ -232,35 +301,50 @@ prop_version_missmatch = ioProperty $ do
 
     rescb resq e_m = atomically $ writeTBQueue resq e_m
 
-prop_network_missmatch :: Property
-prop_network_missmatch = ioProperty $ do
+prop_network_missmatch :: (Int -> Int -> (Int, Int))
+                       -> [Int]
+                       -> Property
+prop_network_missmatch f xs = ioProperty $ do
     clientAddr:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
     serverAddr:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
-    let request = Mxt.DummyPayload $ BL.replicate 4 0xa
-    let response = request
 
     resq <- atomically $ newTBQueue 1
-    endMpsVar <- atomically $ newTVar 2
 
-    (_, client_mp, server_mp) <- Mxt.setupMiniReqRsp
-                                        (return ()) endMpsVar request response
+    cv <- newEmptyTMVarM
+    sv <- newEmptyTMVarM
 
-    let client_mps Mxt.ChainSync1 = client_mp
-        server_mps Mxt.ChainSync1 = server_mp
+    let -- Server Node
+        srvPeer :: Peer (ReqResp.ReqResp Int Int) AsServer ReqResp.StIdle IO ()
+        srvPeer = ReqResp.reqRespServerPeer (reqRespServerMapAccumL sv (\a -> pure . f a) 0)
+        srvPeers Mxt.ChainSync1 = OnlyServer ReqResp.codecReqResp srvPeer
+        srvNet = NetworkInterface {
+            nodeAddress   = serverAddr,
+            knownVersions = [Mxt.version0],
+            protocols     = \_ -> Just srvPeers
+          }
 
+        -- Client Node
+        cliPeer :: Peer (ReqResp.ReqResp Int Int) AsClient ReqResp.StIdle IO ()
+        cliPeer = ReqResp.reqRespClientPeer (reqRespClientMap cv xs)
+        cliPeers Mxt.ChainSync1 = OnlyClient ReqResp.codecReqResp cliPeer
+        cliNet = NetworkInterface {
+             nodeAddress   = clientAddr,
+             knownVersions = [Mxt.version0'],
+             protocols     = \_ -> Just cliPeers
+           }
 
-    server_h <- startResponderT [Mxt.version0] (\_ -> Just server_mps) serverAddr (Just $ rescb resq)
-    res_client <- try $ startInitiator [Mxt.version0'] (\_ -> Just client_mps) clientAddr serverAddr
-    res_server <- atomically $ readTBQueue resq
+    srvNode <- runNetworkNodeWithSocket' srvNet (Just (rescb resq))
+    cliNode <- runNetworkNodeWithSocket  cliNet
 
-    killResponder server_h
+    res_client <- try $ connectTo cliNode serverAddr
+    res_server <- maybe (Right ()) Left <$> atomically (readTBQueue resq)
 
-    return (checkResult res_client && checkResult (toEither res_server))
+    killNode srvNode
+    killNode cliNode
+
+    return (checkResult res_client && checkResult res_server)
 
   where
-    toEither Nothing  = Right ()
-    toEither (Just e) = Left e
-
     checkResult res_e =
         case res_e of
              Left e  ->
@@ -277,26 +361,42 @@ demo :: forall block .
         (Chain.HasHeader block, Serialise block, Eq block, Show block )
      => Chain block -> [ChainUpdate block] -> IO Bool
 demo chain0 updates = do
-    a:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
-    b:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
+    consumerAddress:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
+    producerAddress:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
 
     producerVar <- newTVarM (CPS.initChainProducerState chain0)
     consumerVar <- newTVarM chain0
-    consumerDone <- atomically newEmptyTMVar
+    done <- atomically newEmptyTMVar
 
     let Just expectedChain = Chain.applyChainUpdates updates chain0
         target = Chain.headPoint expectedChain
-        a_mps Mxt.ChainSync1 = Mx.MiniProtocolDescription
-                                   (Just (consumerInit consumerDone target consumerVar))
-                                   Nothing
-        b_mps Mxt.ChainSync1 = Mx.MiniProtocolDescription
-                                   Nothing
-                                   (Just (producerRsp producerVar))
 
-    b_h <- startResponder [Mxt.version0] (\_ -> Just b_mps) b
-    a_h <- startResponder [Mxt.version0] (\_ -> Just a_mps) a
-    void $ fork $ startInitiator [Mxt.version0] (\_ -> Just a_mps) a b
+    let consumerPeer :: Peer (ChainSync.ChainSync block (Point block)) AsClient ChainSync.StIdle IO ()
+        consumerPeer = ChainSync.chainSyncClientPeer
+                        (ChainSync.chainSyncClientExample consumerVar
+                        (consumerClient done target consumerVar))
+        consumerPeers Mxt.ChainSync1 = OnlyClient ChainSync.codecChainSync consumerPeer
+        consumerNet = NetworkInterface {
+              nodeAddress   = consumerAddress,
+              knownVersions = [Mxt.version0],
+              protocols     = \_ -> Just consumerPeers
+            }
 
+        producerPeer :: Peer (ChainSync.ChainSync block (Point block)) AsServer ChainSync.StIdle IO ()
+        producerPeer = ChainSync.chainSyncServerPeer (ChainSync.chainSyncServerExample () producerVar)
+        producerPeers Mxt.ChainSync1 = OnlyServer ChainSync.codecChainSync producerPeer
+        producerNet = NetworkInterface {
+              nodeAddress   = producerAddress,
+              knownVersions = [Mxt.version0],
+              protocols     = \_ -> Just producerPeers
+            }
+
+
+    producerNode <- runNetworkNodeWithSocket producerNet
+    consumerNode <- runNetworkNodeWithSocket consumerNet
+
+    _ <- fork $ connectTo consumerNode (nodeAddress producerNet)
+  
     void $ fork $ sequence_
         [ do threadDelay 10000 -- just to provide interest
              atomically $ do
@@ -306,43 +406,35 @@ demo chain0 updates = do
              | update <- updates
         ]
 
-    r <- atomically $ takeTMVar consumerDone
-    killResponder b_h
-    killResponder a_h
+    r <- atomically $ takeTMVar done
+    killNode producerNode
+    killNode consumerNode
 
     return r
   where
     checkTip target consumerVar = atomically $ do
-          chain <- readTVar consumerVar
-          return (Chain.headPoint chain == target)
+      chain <- readTVar consumerVar
+      return (Chain.headPoint chain == target)
 
-    consumerClient :: Point block -> TVar IO (Chain block) -> Client block IO ()
-    consumerClient target consChain =
-      Client
-        { rollforward = \_ -> checkTip target consChain >>= \b ->
-            if b then pure $ Left ()
-                 else pure $ Right $ consumerClient target consChain
-        , rollbackward = \_ _ -> checkTip target consChain >>= \b ->
-            if b then pure $ Left ()
-                 else pure $ Right $ consumerClient target consChain
-        , points = \_ -> pure $ consumerClient target consChain
+    -- A simple chain-sync client which runs until it recieves an update to
+    -- a given point (either as a roll forward or as a roll backward).
+    consumerClient :: TMVar IO Bool
+                   -> Point block
+                   -> TVar IO (Chain block)
+                   -> ChainSync.Client block IO ()
+    consumerClient done target chain =
+      ChainSync.Client
+        { ChainSync.rollforward = \_ -> checkTip target chain >>= \b ->
+            if b then do
+                    atomically $ putTMVar done True
+                    pure $ Left ()
+                 else
+                    pure $ Right $ consumerClient done target chain
+        , ChainSync.rollbackward = \_ _ -> checkTip target chain >>= \b ->
+            if b then do
+                    atomically $ putTMVar done True
+                    pure $ Left ()
+                 else
+                    pure $ Right $ consumerClient done target chain
+        , ChainSync.points = \_ -> pure $ consumerClient done target chain
         }
-
-    consumerInit :: TMVar IO Bool -> Point block -> TVar IO (Chain block)
-                 -> Channel IO BL.ByteString -> IO ()
-    consumerInit done target consChain channel = do
-       let consumerPeer = chainSyncClientPeer (chainSyncClientExample consChain
-                                               (consumerClient target consChain))
-
-       runPeer codecChainSync channel consumerPeer
-       atomically $ putTMVar done True
-
-       return ()
-
-    producerRsp ::  TVar IO (CPS.ChainProducerState block)
-                -> Channel IO BL.ByteString -> IO ()
-    producerRsp prodChain channel = do
-        let producerPeer = chainSyncServerPeer (chainSyncServerExample () prodChain)
-
-        runPeer codecChainSync channel producerPeer
-

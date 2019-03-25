@@ -101,11 +101,11 @@ data NetworkInterface ptcl addr m = NetworkInterface {
       -- |
       -- List of mux versions that we understand
       --
-      knownMuxVersions :: [SomeVersion],
+      knownVersions :: [SomeVersion],
 
       -- |
       -- Map of protocols that we run.  @'SomeVersion'@ will be one of the
-      -- @'knownMuxVersions'@
+      -- @'knownVersions'@
       --
       protocols        :: (SomeVersion -> Maybe (ptcl -> MuxPeer m))
     }
