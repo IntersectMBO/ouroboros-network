@@ -1,11 +1,10 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ViewPatterns #-}
+
 module Ouroboros.Network.ChainFragment (
   -- * ChainFragment type and fundamental operations
-  ChainFragment,
-  pattern (:>),
-  pattern Empty,
+  ChainFragment(Empty, (:>), (:<)),
   valid,
   validExtension,
   isValidSuccessorOf,
@@ -107,6 +106,12 @@ viewRight (ChainFragment c) = case FT.viewr c of
   FT.EmptyR  -> FT.EmptyR
   c' FT.:> b -> ChainFragment c' FT.:> b
 
+viewLeft :: HasHeader block
+         => ChainFragment block -> FT.ViewL ChainFragment block
+viewLeft (ChainFragment c) = case FT.viewl c of
+  FT.EmptyL  -> FT.EmptyL
+  b FT.:< c' -> b FT.:< ChainFragment c'
+
 pattern Empty :: HasHeader block => ChainFragment block
 pattern Empty <- (viewRight -> FT.EmptyR) where
   Empty = ChainFragment FT.empty
@@ -118,9 +123,16 @@ pattern c :> b <- (viewRight -> (c FT.:> b)) where
   ChainFragment c :> b = assert (validExtension (ChainFragment c) b) $
                          ChainFragment (c FT.|> b)
 
-infixl 5 :>
+-- | \( O(1) \). Add a block to the left of the chain fragment.
+pattern (:<) :: HasHeader block
+             => block -> ChainFragment block -> ChainFragment block
+pattern b :< c <- (viewLeft -> (b FT.:< c)) where
+  b :< ChainFragment c = ChainFragment (b FT.<| c)
+
+infixl 5 :>, :<
 
 {-# COMPLETE Empty, (:>) #-}
+{-# COMPLETE Empty, (:<) #-}
 
 -- | \( O(n) \). Fold a 'ChainFragment'.
 --
