@@ -78,6 +78,7 @@ tests = testGroup "ChainFragment"
   , testProperty "fromNewestFirst/toNewestFirst"             prop_fromNewestFirst_toNewestFirst
   , testProperty "fromOldestFirst/toOldestFirst"             prop_fromOldestFirst_toOldestFirst
   , testProperty "toList/head"                               prop_toList_head
+  , testProperty "toList/last"                               prop_toList_last
   , testProperty "dropNewest"                                prop_dropNewest
   , testProperty "dropOldest"                                prop_dropOldest
   , testProperty "addBlock"                                  prop_addBlock
@@ -130,6 +131,10 @@ prop_fromOldestFirst_toOldestFirst (TestBlockChainFragment chain) =
 prop_toList_head :: TestBlockChainFragment -> Bool
 prop_toList_head (TestBlockChainFragment chain) =
     (listToMaybe . CF.toNewestFirst) chain == CF.head chain
+
+prop_toList_last :: TestBlockChainFragment -> Bool
+prop_toList_last (TestBlockChainFragment chain) =
+    (listToMaybe . CF.toOldestFirst) chain == CF.last chain
 
 prop_dropNewest :: TestBlockChainFragment -> Bool
 prop_dropNewest (TestBlockChainFragment chain) =

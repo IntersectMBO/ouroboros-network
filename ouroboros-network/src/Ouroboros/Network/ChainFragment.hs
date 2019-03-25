@@ -26,6 +26,7 @@ module Ouroboros.Network.ChainFragment (
 
   -- ** Basic operations
   head,
+  last,
   toNewestFirst,
   toOldestFirst,
   fromNewestFirst,
@@ -66,7 +67,7 @@ module Ouroboros.Network.ChainFragment (
   selectPointsSpec,
   ) where
 
-import           Prelude hiding (drop, head, length, null)
+import           Prelude hiding (drop, head, last, length, null)
 
 import           Control.Exception (assert)
 import           Data.FingerTree (FingerTree)
@@ -127,7 +128,9 @@ pattern c :> b <- (viewRight -> (c FT.:> b)) where
 pattern (:<) :: HasHeader block
              => block -> ChainFragment block -> ChainFragment block
 pattern b :< c <- (viewLeft -> (b FT.:< c)) where
-  b :< ChainFragment c = ChainFragment (b FT.<| c)
+  b :< ChainFragment c = assert (maybe True (isValidSuccessorOf b)
+                                       (last (ChainFragment c))) $
+                         ChainFragment (b FT.<| c)
 
 infixl 5 :>, :<
 
@@ -218,6 +221,11 @@ headHash = fmap pointHash . headPoint
 -- | \( O(1) \).
 headBlockNo :: HasHeader block => ChainFragment block -> Maybe BlockNo
 headBlockNo = fmap blockNo . head
+
+-- | \( O(1) \).
+last :: HasHeader block => ChainFragment block -> Maybe block
+last (b :< _) = Just b
+last Empty    = Nothing
 
 
 -- | TODO. Make a list of blocks from a 'ChainFragment', in newest-to-oldest
