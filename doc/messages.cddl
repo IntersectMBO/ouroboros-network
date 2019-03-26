@@ -1,8 +1,8 @@
 ; The only purpose of allMessages is to have an entry point for testing all parts of the specification.
 ; ! allMessages is NOT a valid wire format !
 
-allMessages
-    = [0,chainSyncMessage]
+allMessages =
+      [0,chainSyncMessage]
     / [1,reqRespMessage]
     / [2,pingPongMessage]
     / [3,blockFetchMessage]
@@ -70,21 +70,26 @@ pingPongMsgDone = 2
 ; ouroboros-network/src/Ouroboros/Network/Protocol/BlockFetch/Codec.hs
 
 blockFetchMessage
-    = msgRequestRange
-    / msgStartBatch
-    / msgNoBlocks
-    / msgBlock
-    / msgBatchDone
-    / msgClientDone
+     = msgRequestRange
+     / msgClientDone
+     / msgStartBatch
+     / msgNoBlocks
+     / msgBlock
+     /msgBatchDone
 
-msgRequestRange = [0, point, point]
+msgRequestRange = [0, bfPoint, bfPoint]
 msgClientDone   = [1]
 msgStartBatch   = [2]
 msgNoBlocks     = [3]
-msgBlock        = [4, body]
+msgBlock        = [4, bfBody]
 msgBatchDone    = [5]
 
-body            = bytes .cbor any
+bfPoint           = [slotNo, chainHash]
+slotNo          = uint ; word64
+chainHash       = [0]  ; this is the representation of the GenesisHash
+
+bfBody         = tstr
+
 
 ; Transaction Submission Protocol
 ; reference implementation of the codec in
