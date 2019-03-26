@@ -20,6 +20,8 @@ import           Codec.Serialise (Serialise)
 import           Control.Lens ((^.))
 import           Control.Monad.Trans.Except (except)
 import           Data.Map.Strict (Map)
+import           Data.Set (Set)
+import qualified Data.Set as Set
 import           GHC.Generics (Generic)
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Tags (PermBft)
@@ -31,7 +33,7 @@ import           Ouroboros.Consensus.Node (NodeId, NumCoreNodes(..))
 import           Ouroboros.Consensus.Util.Condense
 
 import           Control.State.Transition (applySTS, Environment, PredicateFailure, State, IRC(IRC), TRC(TRC))
-import           Ledger.Core (SlotCount, Slot(Slot), SKey, VKey, Sig, sign)
+import           Ledger.Core (SlotCount, Slot(Slot), SKey, VKey, Sig, sign, VKeyGenesis, Epoch)
 import           Ledger.Delegation (DIEnv, allowedDelegators, slot)
 import           Ledger.Update (PParams)
 import qualified Cardano.Spec.Chain.STS.Block as CBM -- concrete block module
@@ -54,6 +56,10 @@ instance ( Show (ChainState PermBft)
     , permBftVerKeys      :: Map NodeId VKey
     , permBftProtParams   :: PParams
     , permBftKSize        :: SlotCount
+    , permBftGenesisKeys  :: Set VKeyGenesis
+    , permBftEpoch        :: Epoch
+    , permBftSlot         :: Slot
+    , permBftLiveness     :: SlotCount
     }
 
   type ValidationErr  PermBft = [PredicateFailure CHAIN]

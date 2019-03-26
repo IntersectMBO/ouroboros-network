@@ -38,6 +38,7 @@ module Ouroboros.Consensus.Ledger.Mock (
   , totalStakes
   ) where
 
+import qualified Cardano.Spec.Consensus.Block as BlockSpec
 import           Codec.Serialise
 import           Control.Monad.Except
 import           Crypto.Random (MonadRandom)
@@ -50,6 +51,8 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           GHC.Generics (Generic)
 
+import           Ledger.Core (Sig, Owner(Owner))
+import           Ledger.Delegation (DIEnv, DSEnv(..))
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (Chain, toOldestFirst)
 
@@ -334,7 +337,7 @@ instance ( OuroborosTag p
       => HasPayload p (SimpleBlock (ExtNodeConfig cfg p) c) where
   blockPayload _ = encPayloadP . headerOuroboros . simpleHeader
 
-instance {-# OVERLAPPABLE #-} OuroborosTag p => UpdateLedger (SimpleBlock p c) where
+instance OuroborosTag p => UpdateLedger (SimpleBlock p c) where
   data LedgerState (SimpleBlock p c) =
       SimpleLedgerState {
           slsUtxo      :: Utxo
@@ -364,9 +367,19 @@ instance (BftCrypto c, SimpleBlockCrypto c')
       => ProtocolLedgerView (SimpleBlock (Bft c) c') where
   protocolLedgerView _ _ = ()
 
-instance SimpleBlockCrypto c'
-      => ProtocolLedgerView (SimpleBlock PermBft c') where
-  protocolLedgerView _ _ = _
+instance ( BlockSpec.Block (SimpleBlock PermBft c')
+         , SimpleBlockCrypto c' )
+         => ProtocolLedgerView (SimpleBlock PermBft c') where
+  -- protocolLedgerView :: NodeConfig (BlockProtocol b)
+  --                    -> LedgerState b
+  --                    -> LedgerView (BlockProtocol b)
+  protocolLedgerView PermBftNodeConfig{..} _ =
+    DSEnv
+      { _dSEnvAllowedDelegators = permBftGenesisKeys
+      , _dSEnvEpoch             = permBftEpoch
+      , _dSEnvSlot              = permBftSlot
+      , _dSEnvLiveness          = permBftLiveness
+      }
 
 instance (PraosCrypto c, SimpleBlockCrypto c')
       => ProtocolLedgerView (SimpleBlock (ExtNodeConfig AddrDist (Praos c)) c') where
@@ -415,6 +428,11 @@ totalStakes addrDist = foldl f Map.empty
 instance Serialise Tx
 instance Serialise SimpleBody
 
-instance (SimpleBlockCrypto c, OuroborosTag p, Serialise (Payload p (SimplePreHeader p c))) => Serialise (SimpleHeader    p c)
-instance (SimpleBlockCrypto c, OuroborosTag p, Serialise (Payload p (SimplePreHeader p c))) => Serialise (SimplePreHeader p c)
-instance (SimpleBlockCrypto c, OuroborosTag p, Serialise (Payload p (SimplePreHeader p c))) => Serialise (SimpleBlock     p c)
+instance                      (SimpleBlockCrypto c, OuroborosTag p, Serialise (Payload p (SimplePreHeader p c))) => Serialise (SimpleHeader    p c)
+instance                      (SimpleBlockCrypto c, OuroborosTag p, Serialise (Payload p (SimplePreHeader p c))) => Serialise (SimplePreHeader p c)
+instance {-# OVERLAPPABLE #-} (SimpleBlockCrypto c, OuroborosTag p, Serialise (Payload p (SimplePreHeader p c))) => Serialise (SimpleBlock     p c)
+
+deriving instance Serialise Owner
+
+instance                    (SimpleBlockCrypto c, OuroborosTag PermBft, Serialise (Payload PermBft (SimplePreHeader PermBft c))) => Serialise (Sig (SimplePreHeader PermBft c))
+instance {-# OVERLAPING #-} (SimpleBlockCrypto c, OuroborosTag PermBft, Serialise (Payload PermBft (SimplePreHeader PermBft c))) => Serialise (SimpleBlock PermBft c)
