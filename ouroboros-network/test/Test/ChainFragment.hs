@@ -27,6 +27,7 @@ import           Test.Tasty.QuickCheck (testProperty)
 import           Test.Chain ()
 import           Test.ChainGenerators
                   ( ArbitraryBlockBody (..)
+                  , TestBlockChain (..)
                   , TestChainAndRange (..)
                   , genNonNegative
                   , genSlotGap
@@ -108,6 +109,8 @@ tests = testGroup "ChainFragment"
   , testProperty "splitBeforePoint"                          prop_splitBeforePoint
   , testProperty "prop_sliceRange"                           prop_sliceRange
   , testProperty "foldChainFragment"                         prop_foldChainFragment
+  , testProperty "fromChain/toChain"                         prop_fromChain_toChain
+  , testProperty "toChain/fromChain"                         prop_toChain_fromChain
   ]
 
 --
@@ -360,6 +363,14 @@ prop_selectPoints (TestBlockChainFragment c) =
     CF.selectPoints [1,1]   c === CF.selectPointsSpec [1,1]   c
   where
     offsets = [0,1,2,3,5,8,13,21,34,55,89,144,233,377,610,987,1597,2584]
+
+prop_fromChain_toChain :: TestBlockChainFragment -> Property
+prop_fromChain_toChain (TestBlockChainFragment c) =
+    CF.fromChain (CF.toChain c) === c
+
+prop_toChain_fromChain :: TestBlockChain -> Property
+prop_toChain_fromChain (TestBlockChain c) =
+    CF.toChain (CF.fromChain c) === c
 
 
 --
