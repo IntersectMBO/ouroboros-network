@@ -53,7 +53,7 @@ import           Ouroboros.Consensus.Crypto.VRF.Simple (SimpleVRF)
 import           Ouroboros.Consensus.Node (CoreNodeId (..), NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Test
-import           Ouroboros.Consensus.Util.Chain (forksAtMostKBlocks, upToSlot)
+import           Ouroboros.Consensus.Util.Chain (forksAtMostKBlocks)
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.HList (HList)
 import           Ouroboros.Consensus.Util.HList (HList (..))
@@ -247,18 +247,10 @@ instance PraosCrypto c => OuroborosTag (Praos c) where
 
   -- NOTE: We redefine `preferCandidate` but NOT `compareCandidates`
   -- NOTE: See note regarding clock skew.
-  preferCandidate PraosNodeConfig{..} slot ours cand
-    | forksAtMostKBlocks k ours' cand' &&
-      Chain.length cand' > Chain.length ours'
-    = Just cand'
-    | otherwise
-    = Nothing
+  preferCandidate PraosNodeConfig{..} ours cand =
+      forksAtMostKBlocks k ours cand &&
+      Chain.length cand > Chain.length ours
     where
-      clip = upToSlot (succ slot)
-
-      ours' = clip ours
-      cand' = clip cand
-
       PraosParams{..} = praosParams
 
       k :: Word64

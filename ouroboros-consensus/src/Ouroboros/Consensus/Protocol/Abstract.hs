@@ -37,7 +37,7 @@ import           Data.Function (on)
 import           Data.Functor.Identity
 import           Data.Kind (Constraint)
 import           Data.List (sortBy)
-import           Data.Maybe (listToMaybe, mapMaybe)
+import           Data.Maybe (listToMaybe)
 import           Data.Word (Word64)
 
 import           Control.Monad.Class.MonadSay
@@ -46,7 +46,6 @@ import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..))
 import           Ouroboros.Network.Chain (Chain (..))
 import qualified Ouroboros.Network.Chain as Chain
 
-import           Ouroboros.Consensus.Util.Chain (upToSlot)
 import           Ouroboros.Consensus.Util.Random
 
 -- | The (open) universe of Ouroboros protocols
@@ -104,35 +103,23 @@ class ( Show (ChainState    p)
 
   -- | Do we prefer the candidate chain over ours?
   --
-  -- Returns a (prefix of) the candidate if we do prefer the candidate.
+  -- Returns 'True' when we prefer the candidate over our chain.
   --
   -- NOTE: Assumes that our chain does not extend into the future.
   preferCandidate :: (Eq b, HasHeader b)
                   => NodeConfig p
-                  -> SlotNo       -- ^ Present slot
                   -> Chain b      -- ^ Our chain
                   -> Chain b      -- ^ Candidate
-                  -> Maybe (Chain b)
-  preferCandidate _ now ours cand
-    | Chain.length cand' > Chain.length ours = Just cand'
-    | otherwise                              = Nothing
-    where
-      -- NOTE: In deviation from the paper, we allow for blocks one slot ahead
-      -- in the future. We do this to avoid rejecting chains that are
-      -- perfectly fine but appear to contain "blocks in the future" due to
-      -- clock skew.
-      --
-      -- TODO: Review the above.
-      -- TODO: The Genesis paper says to /reject/ chains containing blocks
-      -- in the future rather than prune.
-      cand' = upToSlot (SlotNo $ unSlotNo now + 1) cand
+                  -> Bool
+  preferCandidate _ ours cand =
+    Chain.length cand > Chain.length ours
+    -- TODO handle genesis
 
   -- | Compare two candidates, both of which we prefer to our own chain
   compareCandidates :: (Eq b, HasHeader b)
                     => NodeConfig p
-                    -> SlotNo       -- ^ Present slot
                     -> Chain b -> Chain b -> Ordering
-  compareCandidates _ _ = compare `on` Chain.length
+  compareCandidates _ = compare `on` Chain.length
 
   -- | Check if a node is the leader
   checkIsLeader :: (HasNodeState p m, MonadRandom m)
@@ -186,15 +173,14 @@ class HasPreHeader b => HasPayload p b where
 -- Returns 'Nothing' if we stick with our current chain.
 selectChain :: forall p b. (OuroborosTag p, Eq b, HasHeader b)
             => NodeConfig p
-            -> SlotNo       -- ^ Present slot
             -> Chain b      -- ^ Our chain
             -> [Chain b]    -- ^ Upstream chains
             -> Maybe (Chain b)
-selectChain cfg now ours candidates =
-    listToMaybe $ sortBy (flip (compareCandidates cfg now)) preferred
+selectChain cfg ours candidates =
+    listToMaybe $ sortBy (flip (compareCandidates cfg)) preferred
   where
     preferred :: [Chain b]
-    preferred = mapMaybe (preferCandidate cfg now ours) candidates
+    preferred = filter (preferCandidate cfg ours) candidates
 
 {-------------------------------------------------------------------------------
   State monad

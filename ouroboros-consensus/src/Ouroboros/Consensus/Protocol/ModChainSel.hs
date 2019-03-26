@@ -27,7 +27,7 @@ module Ouroboros.Consensus.Protocol.ModChainSel (
 import           Codec.Serialise (Serialise)
 import           Data.Proxy (Proxy (..))
 
-import           Ouroboros.Network.Block (HasHeader, SlotNo)
+import           Ouroboros.Network.Block (HasHeader)
 import           Ouroboros.Network.Chain (Chain)
 
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -38,15 +38,13 @@ class OuroborosTag p => ChainSelection p s where
   preferCandidate' :: (Eq b, HasHeader b)
                    => proxy s
                    -> NodeConfig p
-                   -> SlotNo       -- ^ Present slot
                    -> Chain b      -- ^ Our chain
                    -> Chain b      -- ^ Candidate
-                   -> Maybe (Chain b)
+                   -> Bool
 
   compareCandidates' :: (Eq b, HasHeader b)
                      => proxy s
                      -> NodeConfig p
-                     -> SlotNo       -- ^ Present slot
                      -> Chain b -> Chain b -> Ordering
 
 data ModChainSel p s
