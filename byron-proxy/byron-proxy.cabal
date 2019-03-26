@@ -63,7 +63,6 @@ executable byron-proxy
   -- other-extensions:
   build-depends:       base,
                        async,
-                       basic-tracer,
                        byron-proxy,
                        bytestring,
                        cardano-sl,
@@ -75,6 +74,7 @@ executable byron-proxy
                        cardano-sl-util,
                        cborg,
                        containers,
+                       contra-tracer,
                        directory,
                        iohk-monitoring,
                        io-sim-classes,

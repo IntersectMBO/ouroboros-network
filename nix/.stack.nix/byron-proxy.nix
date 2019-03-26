@@ -55,7 +55,6 @@
           depends = [
             (hsPkgs.base)
             (hsPkgs.async)
-            (hsPkgs.basic-tracer)
             (hsPkgs.byron-proxy)
             (hsPkgs.bytestring)
             (hsPkgs.cardano-sl)
@@ -67,6 +66,7 @@
             (hsPkgs.cardano-sl-util)
             (hsPkgs.cborg)
             (hsPkgs.containers)
+            (hsPkgs.contra-tracer)
             (hsPkgs.directory)
             (hsPkgs.iohk-monitoring)
             (hsPkgs.io-sim-classes)

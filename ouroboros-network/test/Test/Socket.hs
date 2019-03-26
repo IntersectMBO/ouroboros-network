@@ -18,7 +18,7 @@ import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
-import           Cardano.BM.Tracer (nullTracer)
+import           Control.Tracer (nullTracer)
 
 import qualified Ouroboros.Network.Mux as Mx
 import           Ouroboros.Network.Socket

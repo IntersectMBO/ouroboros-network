@@ -14,7 +14,7 @@ import           Control.Monad.Class.MonadST (MonadST)
 import           Control.Monad.Class.MonadSTM (MonadSTM)
 import           Control.Monad.Class.MonadAsync (MonadAsync)
 import           Control.Monad.Class.MonadThrow (MonadCatch)
-import           Cardano.BM.Tracer (nullTracer)
+import           Control.Tracer (nullTracer)
 
 import           Network.TypedProtocol.Driver
 import           Network.TypedProtocol.Codec

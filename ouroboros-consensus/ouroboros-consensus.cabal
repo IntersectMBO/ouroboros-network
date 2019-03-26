@@ -140,7 +140,7 @@ library
                        ouroboros-network,
                        typed-protocols,
                        io-sim-classes,
-                       basic-tracer,
+                       contra-tracer,
 
                        base16-bytestring >=0.1   && <0.2,
                        bytestring        >=0.10  && <0.11,

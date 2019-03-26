@@ -16,10 +16,10 @@ extra-deps:
 - graphviz-2999.20.0.3
 - quickcheck-state-machine-0.6.0
 - git: https://github.com/input-output-hk/iohk-monitoring-framework
-  commit: 0c31ff69e28b8a955a5147c03cd9471307b3f349
+  commit: b656651fd3c357860d8136598b223b048c195eae
   subdirs:
     - iohk-monitoring
-    - basic-tracer
+    - contra-tracer
 - libyaml-0.1.0.0
 
 # Cardano-sl dependencies:

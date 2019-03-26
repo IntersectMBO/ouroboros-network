@@ -44,7 +44,7 @@ import Network.TypedProtocol.Codec
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
-import Cardano.BM.Tracer (Tracer, tracingWith)
+import Control.Tracer (Tracer, traceWith)
 
 import Numeric.Natural (Natural)
 
@@ -108,7 +108,7 @@ runPeer tr Codec{encode, decode} channel@Channel{send} =
     go _        (Done _ x) = return x
 
     go trailing (Yield stok msg k) = do
-      tracingWith tr (TraceSendMsg (AnyMessage msg))
+      traceWith tr (TraceSendMsg (AnyMessage msg))
       send (encode stok msg)
       go trailing k
 
@@ -117,7 +117,7 @@ runPeer tr Codec{encode, decode} channel@Channel{send} =
       res <- runDecoderWithChannel channel trailing decoder
       case res of
         Right (SomeMessage msg, trailing') -> do
-          tracingWith tr (TraceRecvMsg (AnyMessage msg))
+          traceWith tr (TraceRecvMsg (AnyMessage msg))
           go trailing' (k msg)
         Left failure ->
           throwM failure
@@ -185,13 +185,13 @@ runPipelinedPeerSender tr receiveQueue collectQueue Codec{encode} Channel{send} 
     go Zero (SenderDone _ x) = return x
 
     go n (SenderYield stok msg k) = do
-      tracingWith tr (TraceSendMsg (AnyMessage msg))
+      traceWith tr (TraceSendMsg (AnyMessage msg))
       send (encode stok msg)
       go n k
 
     go n (SenderPipeline stok msg receiver k) = do
       atomically (writeTBQueue receiveQueue (ReceiveHandler receiver))
-      tracingWith tr (TraceSendMsg (AnyMessage msg))
+      traceWith tr (TraceSendMsg (AnyMessage msg))
       send (encode stok msg)
       go (Succ n) k
 
@@ -252,7 +252,7 @@ runPipelinedPeerReceiver tr Codec{decode} channel = go
       res <- runDecoderWithChannel channel trailing decoder
       case res of
         Right (SomeMessage msg, trailing') -> do
-          tracingWith tr (TraceRecvMsg (AnyMessage msg))
+          traceWith tr (TraceRecvMsg (AnyMessage msg))
           go trailing' (k msg)
         Left failure ->
           throwM failure

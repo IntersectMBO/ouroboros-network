@@ -14,7 +14,7 @@ import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
-import           Cardano.BM.Tracer (nullTracer)
+import           Control.Tracer (nullTracer)
 
 import           Network.TypedProtocol.Driver
 

@@ -22,7 +22,7 @@ import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTimer
-import           Cardano.BM.Tracer (nullTracer)
+import           Control.Tracer (nullTracer)
 
 import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Driver

@@ -17,7 +17,7 @@ import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
-import Cardano.BM.Tracer (nullTracer)
+import Control.Tracer (nullTracer)
 
 import Control.Monad.IOSim (runSimOrThrow)
 

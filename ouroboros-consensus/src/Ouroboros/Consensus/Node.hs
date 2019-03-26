@@ -38,7 +38,7 @@ import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadThrow
-import           Cardano.BM.Tracer (nullTracer)
+import           Control.Tracer (nullTracer)
 
 import           Ouroboros.Network.Channel as Network
 import           Ouroboros.Network.Codec

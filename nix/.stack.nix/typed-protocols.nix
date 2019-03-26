@@ -20,7 +20,7 @@
           (hsPkgs.base)
           (hsPkgs.io-sim-classes)
           (hsPkgs.bytestring)
-          (hsPkgs.basic-tracer)
+          (hsPkgs.contra-tracer)
           ];
         };
       tests = {
@@ -29,7 +29,7 @@
             (hsPkgs.base)
             (hsPkgs.async)
             (hsPkgs.bytestring)
-            (hsPkgs.basic-tracer)
+            (hsPkgs.contra-tracer)
             (hsPkgs.io-sim-classes)
             (hsPkgs.io-sim)
             (hsPkgs.QuickCheck)

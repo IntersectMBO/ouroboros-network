@@ -20,7 +20,7 @@ import           Text.Printf
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
-import           Cardano.BM.Tracer (nullTracer)
+import           Control.Tracer (nullTracer)
 import           Network.TypedProtocol.Driver
 import           Network.TypedProtocol.ReqResp.Client
 import           Network.TypedProtocol.ReqResp.Server

@@ -20,7 +20,7 @@ import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
 import Control.Monad.IOSim (runSimOrThrow)
-import Cardano.BM.Tracer (nullTracer)
+import Control.Tracer (nullTracer)
 
 import Data.Functor.Identity (Identity (..))
 import Data.Tuple (swap)

@@ -39,7 +39,7 @@
         io-sim-classes = ./.stack.nix/io-sim-classes.nix;
         byron-proxy = ./.stack.nix/byron-proxy.nix;
         iohk-monitoring = ./.stack.nix/iohk-monitoring.nix;
-        basic-tracer = ./.stack.nix/basic-tracer.nix;
+        contra-tracer = ./.stack.nix/contra-tracer.nix;
         writer-cps-mtl = ./.stack.nix/writer-cps-mtl.nix;
         writer-cps-transformers = ./.stack.nix/writer-cps-transformers.nix;
         canonical-json = ./.stack.nix/canonical-json.nix;
