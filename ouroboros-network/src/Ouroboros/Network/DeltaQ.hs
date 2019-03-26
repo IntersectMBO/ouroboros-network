@@ -34,7 +34,7 @@ module Ouroboros.Network.DeltaQ (
   ) where
 
 import           Data.Semigroup ((<>))
-import           Control.Monad.Class.MonadTimer (Duration)
+import           Control.Monad.Class.MonadTime (Duration)
 
 
 --

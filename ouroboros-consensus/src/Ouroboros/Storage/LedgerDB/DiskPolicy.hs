@@ -4,7 +4,7 @@ module Ouroboros.Storage.LedgerDB.DiskPolicy (
   ) where
 
 import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime (Duration)
 
 import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 
@@ -55,7 +55,7 @@ data DiskPolicy m = DiskPolicy {
     }
 
 -- | Default on-disk policy
-defaultDiskPolicy :: (MonadSTM m, MonadTime m)
+defaultDiskPolicy :: MonadSTM m
                   => SecurityParam     -- ^ Maximum rollback
                   -> Duration          -- ^ Slot length
                   -> STM m (DiskPolicy m)

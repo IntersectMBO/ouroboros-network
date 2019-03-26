@@ -52,6 +52,7 @@ import           Data.Word (Word64)
 import           Control.Monad (void)
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadFork
+import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 
 import           Ouroboros.Consensus.Util.STM

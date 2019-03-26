@@ -31,6 +31,7 @@ import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadThrow
+import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import qualified Control.Monad.IOSim as Sim
 
@@ -72,6 +73,7 @@ test_blockGenerator
   :: forall m.
      ( MonadSTM m
      , MonadFork m
+     , MonadTime m
      , MonadTimer m
      , Show (Time m)
      )
@@ -94,6 +96,7 @@ test_blockGenerator chain slotDuration = do
     experiment
       :: ( MonadSTM m
          , MonadFork m
+         , MonadTime m
          , MonadTimer m
          )
       => Duration
@@ -127,8 +130,8 @@ prop_blockGenerator_IO (TestBlockChain chain) (Positive slotDuration) =
 coreToRelaySim :: ( MonadSTM m
                   , MonadFork m
                   , MonadThrow m
-                  , MonadTimer m
                   , MonadSay m
+                  , MonadTime m
                   , MonadTimer m
                   )
                => Bool              -- ^ two way subscription
@@ -205,8 +208,8 @@ prop_coreToRelay (TestNodeSim chain slotDuration coreTrDelay relayTrDelay) =
 coreToRelaySim2 :: ( MonadSTM m
                    , MonadFork m
                    , MonadThrow m
-                   , MonadTimer m
                    , MonadSay m
+                   , MonadTime m
                    , MonadTimer m
                    )
                 => Chain Block
@@ -302,8 +305,8 @@ networkGraphSim :: forall m.
                   ( MonadSTM m
                   , MonadFork m
                   , MonadThrow m
-                  , MonadTimer m
                   , MonadSay m
+                  , MonadTime m
                   , MonadTimer m
                   )
                 => TestNetworkGraph

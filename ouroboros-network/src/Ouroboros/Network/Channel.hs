@@ -26,6 +26,7 @@ import qualified Network.Socket            as Socket hiding (send, recv)
 import qualified Network.Socket.ByteString as Socket
 
 import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadTime (Duration)
 import           Control.Monad.Class.MonadTimer
 import           Control.Monad.Class.MonadSay
 

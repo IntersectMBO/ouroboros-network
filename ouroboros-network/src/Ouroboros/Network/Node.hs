@@ -21,6 +21,7 @@ import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 
 import           Network.TypedProtocol.Core

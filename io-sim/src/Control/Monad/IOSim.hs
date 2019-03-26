@@ -63,6 +63,7 @@ import           Control.Monad.Class.MonadSTM hiding (STM, TVar)
 import qualified Control.Monad.Class.MonadSTM as MonadSTM
 import           Control.Monad.Class.MonadAsync hiding (Async)
 import qualified Control.Monad.Class.MonadAsync as MonadAsync
+import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 
 {-# ANN module "HLint: ignore Use readTVarIO" #-}

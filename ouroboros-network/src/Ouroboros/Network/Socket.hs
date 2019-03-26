@@ -13,7 +13,7 @@ import           Control.Concurrent.Async
 import           Control.Monad
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime
 import qualified Data.ByteString.Lazy as BL
 import           Data.Int
 import           Data.Word

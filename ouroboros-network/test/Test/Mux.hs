@@ -19,6 +19,7 @@ import           Text.Printf
 
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
+import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Network.TypedProtocol.Driver
 import           Network.TypedProtocol.ReqResp.Client
@@ -136,7 +137,7 @@ sduSizeMux :: (Monad m)
            -> m Word16
 sduSizeMux ctx = return $ sduSize ctx
 
-writeMux :: (MonadTimer m, MonadSTM m, Mx.ProtocolEnum ptcl)
+writeMux :: (MonadTime m, MonadSTM m, Mx.ProtocolEnum ptcl)
          => MuxSTMCtx ptcl m
          -> Mx.MuxSDU ptcl
          -> m (Time m)
@@ -146,7 +147,7 @@ writeMux ctx sdu = do
     atomically $ writeTBQueue (writeQueue ctx) buf
     return ts
 
-readMux :: (MonadTimer m, MonadSTM m, MonadThrow m, Mx.ProtocolEnum ptcl)
+readMux :: (MonadTime m, MonadSTM m, MonadThrow m, Mx.ProtocolEnum ptcl)
         => MuxSTMCtx ptcl m
         -> m (Mx.MuxSDU ptcl, Time m)
 readMux ctx = do
