@@ -21,9 +21,13 @@ module Ouroboros.Network.ChainFragment (
   -- * ChainFragment construction and inspection
   -- ** Head inspection
   headPoint,
+  headOrGenPoint,
   headSlot,
+  headOrGenSlot,
   headHash,
+  headOrGenHash,
   headBlockNo,
+  headOrGenBlockNo,
 
   -- ** Basic operations
   head,
@@ -47,13 +51,16 @@ module Ouroboros.Network.ChainFragment (
   ChainUpdate(..),
   addBlock,
   rollback,
+  rollback',
   applyChainUpdate,
   applyChainUpdates,
 
   -- * Special operations
   slotOnChainFragment,
   pointOnChainFragment,
+  pointOrGenOnChainFragment,
   successorBlock,
+  successorBlock',
   lookupBySlot,
   splitAfterSlot,
   splitAfterPoint,
@@ -90,13 +97,14 @@ import           Data.FingerTree (FingerTree)
 import qualified Data.FingerTree as FT
 import qualified Data.Foldable as Foldable
 import qualified Data.List as L
-import           Data.Maybe (isJust)
+import           Data.Maybe (fromMaybe, isJust)
 import           Codec.Serialise (Serialise (..))
 import           Codec.CBOR.Encoding (encodeListLen)
 import           Codec.CBOR.Decoding (decodeListLen)
 
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Chain (Chain)
+import           Ouroboros.Network.Chain (Chain, genesisBlockNo, genesisPoint,
+                     genesisSlotNo)
 import qualified Ouroboros.Network.Chain as Chain
 
 --
@@ -228,17 +236,37 @@ head Empty    = Nothing
 headPoint :: HasHeader block => ChainFragment block -> Maybe (Point block)
 headPoint = fmap blockPoint . head
 
+-- | \( O(1) \). Variant of 'headPoint' that returns 'genesisPoint' when the
+-- fragment is empty.
+headOrGenPoint :: HasHeader block => ChainFragment block -> Point block
+headOrGenPoint = fromMaybe genesisPoint . headPoint
+
 -- | \( O(1) \).
 headSlot :: HasHeader block => ChainFragment block -> Maybe SlotNo
 headSlot = fmap blockSlot . head
+
+-- | \( O(1) \). Variant of 'headSlot' that returns 'genesisSlotNo' when the
+-- fragment is empty.
+headOrGenSlot :: HasHeader block => ChainFragment block -> SlotNo
+headOrGenSlot = fromMaybe genesisSlotNo . headSlot
 
 -- | \( O(1) \).
 headHash :: HasHeader block => ChainFragment block -> Maybe (ChainHash block)
 headHash = fmap (BlockHash . blockHash) . head
 
+-- | \( O(1) \). Variant of 'headHash' that returns 'GenesisHash' when the
+-- fragment is empty.
+headOrGenHash :: HasHeader block => ChainFragment block -> ChainHash block
+headOrGenHash = fromMaybe GenesisHash . headHash
+
 -- | \( O(1) \).
 headBlockNo :: HasHeader block => ChainFragment block -> Maybe BlockNo
 headBlockNo = fmap blockNo . head
+
+-- | \( O(1) \). Variant of 'headBlockNo' that returns 'genesisBlockNo' when
+-- the fragment is empty.
+headOrGenBlockNo :: HasHeader block => ChainFragment block -> BlockNo
+headOrGenBlockNo = fromMaybe genesisBlockNo . headBlockNo
 
 -- | \( O(1) \).
 last :: HasHeader block => ChainFragment block -> Maybe block
@@ -358,6 +386,24 @@ rollback :: HasHeader block
          => Point block -> ChainFragment block -> Maybe (ChainFragment block)
 rollback p c = fst <$> splitAfterPoint c p
 
+-- TODO make default?
+-- | \( O(\log(\min(i,n-i)) \). Variant of 'rollback' that works when the
+-- given point is the 'genesisPoint'.
+--
+-- Rolling back to genesis is possible if the chain fragment is empty or when
+-- the first block in the chain fragment has block number 1. In both cases, an
+-- empty chain fragment is returned instead of 'Nothing'.
+rollback' :: HasHeader block
+          => Point block -> ChainFragment block -> Maybe (ChainFragment block)
+rollback' p c
+    | p == genesisPoint
+    = case c of
+        Empty                                        -> Just Empty
+        b :< _ | blockNo b == succ genesisBlockNo -> Just Empty
+               | otherwise                           -> Nothing
+    | otherwise
+    = fst <$> splitAfterPoint c p
+
 -- | \( O(\log(\min(i,n-i)) \). Internal variant of 'lookupBySlot' that
 -- returns a 'FT.SearchResult'.
 lookupBySlotFT :: HasHeader block
@@ -459,6 +505,22 @@ successorBlock p c = case lookupBySlotFT c (pointSlot p) of
     , n FT.:< _ <- FT.viewl ft' -- O(1)
     -> Just n
   _ -> Nothing
+
+-- TODO make default?
+-- | \( O(\log(\min(i,n-i)) \). Variant of 'successorBlock' that works when
+-- the given point is the 'genesisPoint'.
+--
+-- The successor block of the genesis point is the first block in the chain
+-- fragment __if__ is has block number 1.
+successorBlock' :: HasHeader block
+                => Point block -> ChainFragment block -> Maybe block
+successorBlock' p c
+    | p == genesisPoint
+    = case c of
+        b :< _ | blockNo b == succ genesisBlockNo -> Just b
+        _                                         -> Nothing
+    | otherwise
+    = successorBlock p c
 
 -- | \( O(\log(\min(i,n-i)) \). Split the 'ChainFragment' after the block with
 -- given slot. Or, if there is no block with the given slot in the chain
@@ -588,6 +650,24 @@ pointOnChainFragmentSpec p = go
     go (c' :> b) | blockPoint b == p = True
                  | otherwise         = go c'
 
+-- TODO make default?
+-- TODO similar variant for other functions, e.g., 'slotOnChainFragment'?
+-- | \( O(\log(\min(i,n-i)) \). Variant of 'pointOnChainFragment' that works
+-- when the given point is the 'genesisPoint'.
+--
+-- Since the chain fragment will only contain the last k blocks, the genesis
+-- point is only \"on\" the chain fragment when it is empty, or when the first
+-- block is the block after the genesis block (checked via the block number).
+pointOrGenOnChainFragment :: HasHeader block
+                          => Point block -> ChainFragment block -> Bool
+pointOrGenOnChainFragment p c
+    | p == genesisPoint
+    = case c of
+        Empty  -> True
+        b :< _ -> blockNo b == succ genesisBlockNo
+    | otherwise
+    = pointOnChainFragment p c
+
 -- | \( O(n_2 \log(n_1)) \). Look for the intersection of the two
 -- 'ChainFragment's @c1@ and @c2@.
 --
@@ -696,8 +776,8 @@ applyChainUpdate :: HasHeader block
                  => ChainUpdate block
                  -> ChainFragment block
                  -> Maybe (ChainFragment block)
-applyChainUpdate (AddBlock b) c = Just (addBlock b c)
-applyChainUpdate (RollBack p) c =       rollback p c
+applyChainUpdate (AddBlock b) c = Just (addBlock  b c)
+applyChainUpdate (RollBack p) c =       rollback' p c
 
 applyChainUpdates :: HasHeader block
                   => [ChainUpdate block]

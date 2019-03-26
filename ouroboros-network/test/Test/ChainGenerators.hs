@@ -437,7 +437,12 @@ genPointOnChain chain =
     len = Chain.length chain
 
 genPoint :: Gen (Point Block)
-genPoint = (\s h -> Point (SlotNo s) (BlockHash (HeaderHash h))) <$> arbitrary <*> arbitrary
+genPoint = frequency
+    [ (9, mkPoint <$> arbitrary <*> arbitrary)
+    , (1, return Chain.genesisPoint)
+    ]
+  where
+    mkPoint s h = Point (SlotNo s) (BlockHash (HeaderHash h))
 
 fixupPoint :: HasHeader block => Chain block -> Point block -> Point block
 fixupPoint c p =

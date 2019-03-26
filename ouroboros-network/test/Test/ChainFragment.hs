@@ -36,10 +36,11 @@ import           Test.ChainGenerators
                   , genPoint
                   )
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Chain (ChainUpdate(..), Point(..))
+import           Ouroboros.Network.Chain (ChainUpdate (..), Point (..),
+                     genesisBlockNo, genesisPoint)
 import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.ChainFragment
-                   ( ChainFragment(Empty, (:>)) )
+                     (ChainFragment ((:<), (:>), Empty))
 import qualified Ouroboros.Network.ChainFragment as CF
 import           Ouroboros.Network.Testing.Serialise (prop_serialise)
 import           Ouroboros.Network.Testing.ConcreteBlock
@@ -94,13 +95,17 @@ tests = testGroup "ChainFragment"
   , testProperty "addBlock"                                  prop_addBlock
   , testProperty "rollback"                                  prop_rollback
   , testProperty "rollback/head"                             prop_rollback_head
+  , testProperty "rollback'"                                 prop_rollback'
+  , testProperty "rollback'/head"                            prop_rollback'_head
   , testProperty "successorBlock"                            prop_successorBlock
+  , testProperty "successorBlock'"                           prop_successorBlock'
   , testProperty "lookupBySlot"                              prop_lookupBySlot
   , testProperty "intersectChainFragments"                   prop_intersectChainFragments
   , testProperty "intersectionPoint"                         prop_intersectionPoint
   , testProperty "serialise chain"                           prop_serialise_chain
   , testProperty "slotOnChainFragment"                       prop_slotOnChainFragment
   , testProperty "pointOnChainFragment"                      prop_pointOnChainFragment
+  , testProperty "pointOrGenOnChainFragment"                 prop_pointOrGenOnChainFragment
   , testProperty "lookupByIndexFromEnd"                      prop_lookupByIndexFromEnd
   , testProperty "filter"                                    prop_filter
   , testProperty "selectPoints"                              prop_selectPoints
@@ -214,12 +219,38 @@ prop_rollback_head (TestBlockChainFragment c) =
     Nothing      -> True
     Just headPnt -> CF.rollback headPnt c == Just c
 
+prop_rollback' :: TestChainFragmentAndPoint -> Bool
+prop_rollback' (TestChainFragmentAndPoint c p) =
+    case CF.rollback' p c of
+      Nothing -> not (CF.pointOrGenOnChainFragment p c)
+      Just c' ->
+        -- chain is a prefix of original
+           CF.isPrefixOf c' c
+        -- chain head point is the rollback point,
+        && (CF.headPoint c' == Just p ||
+            -- or we rolled back to genesis
+            CF.null c' && p == genesisPoint)
+
+prop_rollback'_head :: TestBlockChainFragment -> Bool
+prop_rollback'_head (TestBlockChainFragment c) =
+  case CF.headPoint c of
+    Nothing      -> CF.rollback' genesisPoint c == Just c
+    Just headPnt -> CF.rollback' headPnt      c == Just c
+
 prop_successorBlock :: TestChainFragmentAndPoint -> Property
 prop_successorBlock (TestChainFragmentAndPoint c p) =
   CF.pointOnChainFragment p c ==>
   case CF.successorBlock p c of
     Nothing -> CF.headPoint c === Just p
-    Just b  -> property $ CF.pointOnChainFragment (CF.blockPoint b) c
+    Just b  -> property $ CF.pointOrGenOnChainFragment (CF.blockPoint b) c
+          .&&. blockPrevHash b === pointHash p
+
+prop_successorBlock' :: TestChainFragmentAndPoint -> Property
+prop_successorBlock' (TestChainFragmentAndPoint c p) =
+  CF.pointOrGenOnChainFragment p c ==>
+  case CF.successorBlock' p c of
+    Nothing -> CF.headPoint c === Just p .||. p === genesisPoint
+    Just b  -> property $ CF.pointOrGenOnChainFragment (CF.blockPoint b) c
           .&&. blockPrevHash b === pointHash p
 
 prop_lookupBySlot :: TestChainFragmentAndPoint -> Bool
@@ -262,6 +293,15 @@ prop_slotOnChainFragment (TestChainFragmentAndPoint c p) =
 prop_pointOnChainFragment :: TestChainFragmentAndPoint -> Bool
 prop_pointOnChainFragment (TestChainFragmentAndPoint c p) =
   CF.pointOnChainFragment p c == CF.pointOnChainFragmentSpec p c
+
+prop_pointOrGenOnChainFragment :: TestChainFragmentAndPoint -> Bool
+prop_pointOrGenOnChainFragment (TestChainFragmentAndPoint c p)
+  | p == genesisPoint
+  = CF.pointOrGenOnChainFragment p c == case c of
+      Empty  -> True
+      b :< _ -> blockNo b == succ genesisBlockNo
+  | otherwise
+  = CF.pointOrGenOnChainFragment p c == CF.pointOnChainFragmentSpec p c
 
 prop_splitAfterSlot :: TestChainFragmentAndPoint -> Bool
 prop_splitAfterSlot (TestChainFragmentAndPoint c p) =
