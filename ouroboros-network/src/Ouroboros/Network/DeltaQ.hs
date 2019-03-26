@@ -34,7 +34,7 @@ module Ouroboros.Network.DeltaQ (
   ) where
 
 import           Data.Semigroup ((<>))
-import           Control.Monad.Class.MonadTimer (TimeMeasure, Duration)
+import           Control.Monad.Class.MonadTimer (Duration)
 
 
 --
@@ -50,12 +50,12 @@ import           Control.Monad.Class.MonadTimer (TimeMeasure, Duration)
 -- the time for a leading edge or trailing edge of a packet to traverse a
 -- network (or failing to do so), and many others besides.
 --
-newtype DeltaQ t = DeltaQ (Distribution (Duration t))
+newtype DeltaQ = DeltaQ (Distribution Duration)
 
 -- | DeltaQ distributions (as independent random variables) are semi-groups
 -- by convolution.
 --
-deriving instance TimeMeasure t => Semigroup (DeltaQ t)
+deriving instance Semigroup DeltaQ
 
 -- | The point in time in the distribution for which 99% of the probability
 -- mass is before that time.
@@ -66,7 +66,7 @@ deriving instance TimeMeasure t => Semigroup (DeltaQ t)
 --
 -- TODO: this needs to be specified better for improper distributions.
 --
-deltaqQ99thPercentile :: DeltaQ t -> Duration t
+deltaqQ99thPercentile :: DeltaQ -> Duration
 deltaqQ99thPercentile (DeltaQ (DegenerateDistribution t)) = t
 
 -- | This is another way of looking at a 𝚫Q distribution. Instead of giving
@@ -78,9 +78,8 @@ deltaqQ99thPercentile (DeltaQ (DegenerateDistribution t)) = t
 -- are prepared to wait. This is useful for evaluating different options for
 -- which has the greatest probability of success within a deadline.
 --
-deltaqProbabilityMassBeforeDeadline :: TimeMeasure t
-                                    => DeltaQ t
-                                    -> Duration t
+deltaqProbabilityMassBeforeDeadline :: DeltaQ
+                                    -> Duration
                                     -> Double
 deltaqProbabilityMassBeforeDeadline (DeltaQ (DegenerateDistribution t)) d
   | t < d     = 1
@@ -167,24 +166,23 @@ shiftDistribution n (DegenerateDistribution d) = DegenerateDistribution (n+d)
 -- to the size. Thus the combination of /G/ and /S/ is simply a linear function
 -- of the size.
 --
-data GSV t = GSV (Duration t)                -- G as seconds
-                 (SizeInBytes -> Duration t) -- S as seconds for size
-                 (Distribution (Duration t)) -- V as distribution
+data GSV = GSV !Duration                  -- G as seconds
+               !(SizeInBytes -> Duration) -- S as seconds for size
+               !(Distribution Duration)   -- V as distribution
 
 -- | GSVs are semi-groups by convolution on the three individual components.
 --
-instance TimeMeasure t => Semigroup (GSV t) where
+instance Semigroup GSV where
   GSV g1 s1 v1 <> GSV g2 s2 v2 = GSV (g1+g2) (\sz -> s1 sz + s2 sz) (v1 <> v2)
 
 
 -- | The case of ballistic packet transmission where the /S/ is directly
 -- proportional to the packet size.
 --
-ballisticGSV :: TimeMeasure t
-             => Duration t                -- ^ /G/
-             -> Duration t                -- ^ /S/ as time per byte.
-             -> Distribution (Duration t) -- ^ /V/ distribution
-             -> GSV t
+ballisticGSV :: Duration               -- ^ /G/
+             -> Duration               -- ^ /S/ as time per byte.
+             -> Distribution Duration  -- ^ /V/ distribution
+             -> GSV
 ballisticGSV g s v = GSV g (\sz -> s * fromIntegral sz) v
 
 
@@ -197,7 +195,7 @@ type SizeInBytes = Word
 -- | The 𝚫Q for when the leading edge of a transmission unit arrives at the
 -- destination. This is just the convolution of the /G/ and /V/ components.
 --
-gsvLeadingEdgeArrive  :: TimeMeasure t => GSV t ->                DeltaQ t
+gsvLeadingEdgeArrive  :: GSV ->                DeltaQ
 
 -- | The 𝚫Q for when the trailing edge of a transmission unit departs the
 -- sending end. This is just the convolution of the /S/ and /V/ components.
@@ -205,7 +203,7 @@ gsvLeadingEdgeArrive  :: TimeMeasure t => GSV t ->                DeltaQ t
 -- Since it involves /S/ then it depends on the 'SizeInBytes' of the
 -- transmission unit.
 --
-gsvTrailingEdgeDepart :: TimeMeasure t => GSV t -> SizeInBytes -> DeltaQ t
+gsvTrailingEdgeDepart :: GSV -> SizeInBytes -> DeltaQ
 
 -- | The 𝚫Q for when the trailing edge of a transmission unit arrives at the
 -- destination. This is the convolution of the /G/, /S/ and /V/ components.
@@ -213,7 +211,7 @@ gsvTrailingEdgeDepart :: TimeMeasure t => GSV t -> SizeInBytes -> DeltaQ t
 -- Since it involves /S/ then it depends on the 'SizeInBytes' of the
 -- transmission unit.
 --
-gsvTrailingEdgeArrive :: TimeMeasure t => GSV t -> SizeInBytes -> DeltaQ t
+gsvTrailingEdgeArrive :: GSV -> SizeInBytes -> DeltaQ
 
 gsvLeadingEdgeArrive (GSV g _s v) =
   DeltaQ (shiftDistribution g v) -- dubious for anything other than ballistic
@@ -231,10 +229,10 @@ gsvTrailingEdgeArrive (GSV g s v) bytes =
 
 -- | The 'GSV' for both directions with a peer, outbound and inbound.
 --
-data PeerGSV time = PeerGSV {
-                      outboundGSV :: !(GSV time),
-                      inboundGSV  :: !(GSV time)
-                    }
+data PeerGSV = PeerGSV {
+                 outboundGSV :: !GSV,
+                 inboundGSV  :: !GSV
+               }
 
 -- | This is an example derived operation using the other 'GSV' and 'DeltaQ'
 -- primitives.
@@ -256,11 +254,10 @@ data PeerGSV time = PeerGSV {
 -- >  <> gsvTrailingEdgeArrive inboundGSV respSize
 -- >  <> processingDeltaQ
 --
-gsvRequestResponseDuration :: TimeMeasure t
-                           => PeerGSV t
+gsvRequestResponseDuration :: PeerGSV
                            -> SizeInBytes -- ^ Request size
                            -> SizeInBytes -- ^ Expected response size
-                           -> Duration t
+                           -> Duration
 gsvRequestResponseDuration PeerGSV{outboundGSV, inboundGSV}
                            reqSize respSize =
     deltaqQ99thPercentile $

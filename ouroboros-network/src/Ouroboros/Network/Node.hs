@@ -117,8 +117,8 @@ createOneWaySubscriptionChannels
      ( MonadSTM m
      , MonadTimer m
      )
-  => Duration (Time m)
-  -> Duration (Time m)
+  => Duration
+  -> Duration
   -> m (NodeChannels m block, NodeChannels m block)
 createOneWaySubscriptionChannels trDelay1 trDelay2 = do
   (cr, rc) <- createConnectedChannels
@@ -141,8 +141,8 @@ createTwoWaySubscriptionChannels
      ( MonadSTM m
      , MonadTimer m
      )
-  => Duration (Time m)
-  -> Duration (Time m)
+  => Duration
+  -> Duration
   -> m (NodeChannels m block, NodeChannels m block)
 createTwoWaySubscriptionChannels trDelay1 trDelay2 = do
   r12 <- createOneWaySubscriptionChannels trDelay1 trDelay2
@@ -157,7 +157,7 @@ blockGenerator :: forall block m.
                   , MonadFork m
                   , MonadTimer m
                   )
-               => Duration (Time m)
+               => Duration
                -- ^ slot duration
                -> [block]
                -- ^ The list of blocks to generate in increasing slot order.
@@ -325,7 +325,7 @@ forkCoreKernel :: forall block m.
                   , MonadFork m
                   , MonadTimer m
                   )
-               => Duration (Time m)
+               => Duration
                -- ^ slot duration
                -> [block]
                -- ^ Blocks to produce (in order they should be produced)
@@ -379,7 +379,7 @@ coreNode :: forall m.
         , MonadSay m
         )
      => NodeId
-     -> Duration (Time m)
+     -> Duration
      -- ^ slot duration
      -> [Block]
      -> NodeChannels m Block

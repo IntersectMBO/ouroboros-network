@@ -146,7 +146,7 @@ createSocketConnectedChannels family = do
 delayChannel :: ( MonadSTM m
                 , MonadTimer m
                 )
-             => Duration (Time m)
+             => Duration
              -> Channel m a
              -> Channel m a
 delayChannel delay = channelEffect (\_ -> return ())

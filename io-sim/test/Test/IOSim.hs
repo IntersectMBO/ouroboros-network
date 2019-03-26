@@ -190,9 +190,8 @@ test_timers :: forall m.
                , MonadSTM m
                , MonadTimer m
                , Show (Time m)
-               , Show (Duration (Time m))
                )
-            => [Duration (Time m)]
+            => [Duration]
             -> m Property
 test_timers xs =
     label (lbl xs) . isValid <$> withProbe experiment
@@ -208,7 +207,7 @@ test_timers xs =
       let p = (if null as then 0 else (100 * countUnique as) `div` length as) `mod` 10 * 10
       in show p ++ "% unique"
 
-    experiment :: Probe m (Duration (Time m), Int) -> m ()
+    experiment :: Probe m (Duration, Int) -> m ()
     experiment p = do
       tvars <- forM (zip xs [0..]) $ \(t, idx) -> do
         v <- atomically $ newTVar False
@@ -220,7 +219,7 @@ test_timers xs =
       -- wait for all tvars
       forM_ tvars $ \v -> atomically (readTVar v >>= check)
 
-    isValid :: [(Duration (Time m), Int)] -> Property
+    isValid :: [(Duration, Int)] -> Property
     isValid tr =
          -- all timers should fire
          (length tr === length xs)
@@ -229,11 +228,12 @@ test_timers xs =
 
 prop_timers_ST :: TestMicro -> Property
 prop_timers_ST (TestMicro xs) =
-  let ds = map VTimeDuration xs
+  let ds = map secondsDuration xs
   in runSimOrThrow $ test_timers ds
 
 prop_timers_IO :: [Positive Int] -> Property
-prop_timers_IO = ioProperty . test_timers . map ((*100) . getPositive)
+prop_timers_IO = ioProperty . test_timers
+               . map (microsecondsDuration . fromIntegral . (*100) . getPositive)
 
 
 --
