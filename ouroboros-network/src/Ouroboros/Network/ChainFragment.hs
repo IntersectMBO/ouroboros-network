@@ -1,11 +1,11 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ViewPatterns #-}
+
 module Ouroboros.Network.ChainFragment (
   -- * ChainFragment type and fundamental operations
-  ChainFragment,
-  pattern (:>),
-  pattern Empty,
+  ChainFragment(Empty, (:>), (:<)),
   valid,
   validExtension,
   isValidSuccessorOf,
@@ -27,6 +27,7 @@ module Ouroboros.Network.ChainFragment (
 
   -- ** Basic operations
   head,
+  last,
   toNewestFirst,
   toOldestFirst,
   fromNewestFirst,
@@ -51,6 +52,7 @@ module Ouroboros.Network.ChainFragment (
   splitAfterSlot,
   splitAfterPoint,
   lookupByIndexFromEnd, FT.SearchResult(..),
+  filter,
   selectPoints,
   findFirstPoint,
   intersectChainFragments,
@@ -67,7 +69,7 @@ module Ouroboros.Network.ChainFragment (
   selectPointsSpec,
   ) where
 
-import           Prelude hiding (drop, head, length, null)
+import           Prelude hiding (drop, head, last, length, null, filter)
 
 import           Control.Exception (assert)
 import           Data.FingerTree (FingerTree)
@@ -107,6 +109,12 @@ viewRight (ChainFragment c) = case FT.viewr c of
   FT.EmptyR  -> FT.EmptyR
   c' FT.:> b -> ChainFragment c' FT.:> b
 
+viewLeft :: HasHeader block
+         => ChainFragment block -> FT.ViewL ChainFragment block
+viewLeft (ChainFragment c) = case FT.viewl c of
+  FT.EmptyL  -> FT.EmptyL
+  b FT.:< c' -> b FT.:< ChainFragment c'
+
 pattern Empty :: HasHeader block => ChainFragment block
 pattern Empty <- (viewRight -> FT.EmptyR) where
   Empty = ChainFragment FT.empty
@@ -118,9 +126,18 @@ pattern c :> b <- (viewRight -> (c FT.:> b)) where
   ChainFragment c :> b = assert (validExtension (ChainFragment c) b) $
                          ChainFragment (c FT.|> b)
 
-infixl 5 :>
+-- | \( O(1) \). Add a block to the left of the chain fragment.
+pattern (:<) :: HasHeader block
+             => block -> ChainFragment block -> ChainFragment block
+pattern b :< c <- (viewLeft -> (b FT.:< c)) where
+  b :< ChainFragment c = assert (maybe True (isValidSuccessorOf b)
+                                       (last (ChainFragment c))) $
+                         ChainFragment (b FT.<| c)
+
+infixl 5 :>, :<
 
 {-# COMPLETE Empty, (:>) #-}
+{-# COMPLETE Empty, (:<) #-}
 
 -- | \( O(n) \). Fold a 'ChainFragment'.
 --
@@ -206,6 +223,11 @@ headHash = fmap pointHash . headPoint
 -- | \( O(1) \).
 headBlockNo :: HasHeader block => ChainFragment block -> Maybe BlockNo
 headBlockNo = fmap blockNo . head
+
+-- | \( O(1) \).
+last :: HasHeader block => ChainFragment block -> Maybe block
+last (b :< _) = Just b
+last Empty    = Nothing
 
 
 -- | TODO. Make a list of blocks from a 'ChainFragment', in newest-to-oldest
@@ -307,6 +329,23 @@ lookupByIndexFromEnd (ChainFragment t) n =
   where
     len = bmSize (FT.measure t)
 
+-- | \( O\(n\) \). Filter the chain based on a predicate. As filtering
+-- removes blocks the result is a sequence of disconnected fragments.
+-- The fragments are in the original order and are of maximum size.
+--
+filter :: HasHeader block
+       => (block -> Bool)
+       -> ChainFragment block
+       -> [ChainFragment block]
+filter p = go [] Empty
+  where
+    go cs c'    (b :< c) | p b = go     cs (c' :> b) c
+    go cs Empty (_ :< c)       = go     cs  Empty    c
+    go cs c'    (_ :< c)       = go (c':cs) Empty    c
+
+    go cs Empty  Empty         = reverse     cs
+    go cs c'     Empty         = reverse (c':cs)
+
 -- | \( O(o \log(\min(i,n-i))) \). Select a bunch of 'Point's based on offsets
 -- from the head of the chain fragment. This is used in the chain consumer
 -- protocol as part of finding the intersection between a local and remote
@@ -376,15 +415,16 @@ splitAfterSlot (ChainFragment t) s = (ChainFragment l, ChainFragment r)
 --  a block at the given 'Point'.
 --
 -- If the chain fragment contained a block at the given 'Point', it will be
--- the (newest/rightmost) block of the first returned chain.
-splitAfterPoint :: HasHeader block
-                => ChainFragment block
-                -> Point block
-                -> Maybe (ChainFragment block, ChainFragment block)
+-- the (newest\/rightmost) block of the first returned chain.
+splitAfterPoint :: (HasHeader block1, HasHeader block2,
+                    HeaderHash block1 ~ HeaderHash block2)
+                => ChainFragment block1
+                -> Point block2
+                -> Maybe (ChainFragment block1, ChainFragment block1)
 splitAfterPoint c p
   | (l@(ChainFragment lt), r) <- splitAfterSlot c (pointSlot p)
   , _ FT.:> b <- FT.viewr lt  -- O(1)
-  , blockPoint b == p
+  , blockPoint b == castPoint p
   = Just (l, r)
   | otherwise
   = Nothing
@@ -503,24 +543,23 @@ pointOnChainFragmentSpec p = go
 -- >                                    └───┘
 -- > Just (l1,       l2,        r1,       r2)
 intersectChainFragments
-  :: HasHeader block
-  => ChainFragment block -> ChainFragment block
-  -> Maybe (ChainFragment block, ChainFragment block,
-            ChainFragment block, ChainFragment block)
-intersectChainFragments initC1 initC2 = go initC1 initC2
+  :: (HasHeader block1, HasHeader block2, HeaderHash block1 ~ HeaderHash block2)
+  => ChainFragment block1
+  -> ChainFragment block2
+  -> Maybe (ChainFragment block1, ChainFragment block2,
+            ChainFragment block1, ChainFragment block2)
+intersectChainFragments initC1 initC2 =
+    go initC1 initC2
   where
-    go c1 c2 = case c2 of
-      Empty    -> Nothing
-      c2' :> b ->
-        let p = blockPoint b
-        in case splitAfterPoint c1 p of
-             Just (l1, r1)
-               | Just (l2, r2) <- splitAfterPoint initC2 p
-               -- splitAfterPoint initC2 p cannot fail, since p comes out of
-               -- initC2
-               -> Just (l1, l2, r1, r2)
-             _ -> go c1 c2'
-
+    go _   Empty    = Nothing
+    go c1 (c2 :> b)
+      | let p = blockPoint b
+      , Just (l1, r1) <- splitAfterPoint c1     p
+      , Just (l2, r2) <- splitAfterPoint initC2 p
+                    -- splitAfterPoint initC2 p cannot fail,
+                    -- since p comes out of initC2
+                    = Just (l1, l2, r1, r2)
+      | otherwise   = go c1 c2
 
 -- This is the key operation on chains in this model
 applyChainUpdate :: HasHeader block

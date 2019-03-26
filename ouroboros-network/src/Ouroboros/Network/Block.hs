@@ -24,7 +24,6 @@ module Ouroboros.Network.Block (
   , blockMeasure
   ) where
 
-import           Codec.Serialise (Serialise (..))
 import           Data.Hashable
 import           Data.FingerTree (Measured)
 import           Data.Word (Word64)
@@ -42,7 +41,7 @@ newtype SlotNo = SlotNo { unSlotNo :: Word64 }
 -- BlockNo is <= SlotNo and is only equal at slot N if there is a block
 -- for every slot where N <= SlotNo.
 newtype BlockNo = BlockNo { unBlockNo :: Word64 }
-  deriving (Show, Eq, Ord, Hashable, Enum, Bounded, Num, Serialise)
+  deriving (Show, Eq, Ord, Hashable, Enum, Bounded, Num, Serialise, Generic)
 
 -- | Abstract over the shape of blocks (or indeed just block headers)
 class (StandardHash b, Measured BlockMeasure b) => HasHeader b where

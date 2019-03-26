@@ -1,4 +1,8 @@
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE FlexibleInstances #-}
+
+{-# OPTIONS_GHC -Wno-orphans #-}
+
 -- | Arbitrary generators for chains, headers and blocks
 --
 module Test.ChainGenerators
@@ -40,8 +44,8 @@ import qualified Data.List as L
 import           Data.Maybe (fromJust, catMaybes)
 
 import           Ouroboros.Network.Testing.ConcreteBlock
-import           Ouroboros.Network.Block (SlotNo (..), ChainHash (..) , HasHeader (..))
-import           Ouroboros.Network.Chain (Chain (..), ChainUpdate (..), Point (..))
+import           Ouroboros.Network.Block
+import           Ouroboros.Network.Chain (Chain (..))
 import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange (..))
 
@@ -125,6 +129,21 @@ newtype ArbitraryBlockHeader = ArbitraryBlockHeader {
 
 instance Arbitrary ArbitraryBlockHeader where
   arbitrary = ArbitraryBlockHeader . blockHeader . fromJust . Chain.head <$> genBlockChain 1
+
+-- Note that we do not provide any instance Arbitrary Block
+-- because it's of little help with making chains.
+
+-- We do provide CoArbitrary instances however, for (Block -> _) functions
+-- We use default implementations using generics.
+instance CoArbitrary Block
+instance CoArbitrary BlockHeader
+instance CoArbitrary SlotNo
+instance CoArbitrary BlockNo
+instance CoArbitrary BlockSigner
+instance CoArbitrary BodyHash
+instance CoArbitrary BlockBody
+instance CoArbitrary (ChainHash BlockHeader)
+instance CoArbitrary ConcreteHeaderHash
 
 -- | The 'NonNegative' generator produces a large proportion of 0s, so we use
 -- this one instead for now.

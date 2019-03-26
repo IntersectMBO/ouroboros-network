@@ -1,7 +1,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE NamedFieldPuns             #-}
-{-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 
 -- | Concrete block
@@ -42,6 +42,7 @@ import           Codec.CBOR.Decoding ( decodeListLenOf
                                      , decodeWord64
                                      , decodeString
                                      )
+import           GHC.Generics (Generic)
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain
@@ -60,10 +61,10 @@ data Block = Block {
        blockHeader :: BlockHeader,
        blockBody   :: BlockBody
      }
-   deriving (Show, Eq)
+   deriving (Show, Eq, Generic)
 
 data BlockBody = BlockBody String
-  deriving (Show, Eq, Ord)
+  deriving (Show, Eq, Ord, Generic)
 
 hashBody :: BlockBody -> BodyHash
 hashBody (BlockBody b) = BodyHash (hash b)
@@ -79,7 +80,7 @@ data BlockHeader = BlockHeader {
        headerSigner   :: BlockSigner,             -- ^ Who signed this block
        headerBodyHash :: BodyHash                 -- ^ The hash of the corresponding block body
      }
-   deriving (Show, Eq)
+   deriving (Show, Eq, Generic)
 
 -- | An identifier for someone signing a block.
 --
@@ -90,7 +91,7 @@ data BlockHeader = BlockHeader {
 -- TODO: This can probably go, the network layer does not need to worry
 -- about signatures.
 newtype BlockSigner = BlockSigner Word64
-  deriving (Show, Eq, Ord, Hashable)
+  deriving (Show, Eq, Ord, Generic, Hashable)
 
 -- | Compute the 'HeaderHash' of the 'BlockHeader'.
 --
@@ -100,12 +101,12 @@ hashHeader (BlockHeader _ b c d e f) = HeaderHash (hash (b, c, d, e, f))
 -- | The hash of all the information in a 'BlockHeader'.
 --
 newtype ConcreteHeaderHash = HeaderHash Int
-  deriving (Show, Eq, Ord, Hashable)
+  deriving (Show, Eq, Ord, Generic, Hashable)
 
 -- | The hash of all the information in a 'BlockBody'.
 --
 newtype BodyHash = BodyHash Int
-  deriving (Show, Eq, Ord, Hashable)
+  deriving (Show, Eq, Ord, Generic, Hashable)
 
 {-------------------------------------------------------------------------------
   HasHeader instances
