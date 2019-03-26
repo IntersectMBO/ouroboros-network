@@ -26,8 +26,8 @@ import qualified Pos.Binary as CSL (decode, serializeBuilder)
 import qualified Pos.Chain.Block as CSL
 import qualified Pos.Core.Slotting as CSL
 
-import Ouroboros.Byron.Proxy.Index (Index, IndexWrite)
-import qualified Ouroboros.Byron.Proxy.Index as Index
+import Ouroboros.Byron.Proxy.Index.Types (Index, IndexWrite)
+import qualified Ouroboros.Byron.Proxy.Index.Types as Index
 import Ouroboros.Consensus.Util.CBOR (ReadIncrementalErr)
 import Ouroboros.Network.Block (SlotNo (..))
 import Ouroboros.Storage.Common (EpochNo (..))
