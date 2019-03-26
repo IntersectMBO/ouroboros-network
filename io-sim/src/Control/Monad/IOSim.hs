@@ -21,7 +21,6 @@ module Control.Monad.IOSim (
   liftST,
   traceM,
   VTime(..),
-  VTimeDuration(..),
   Trace(..),
   TraceEvent(..),
   traceEvents,
@@ -87,8 +86,8 @@ data SimA s a where
   LiftST       :: StrictST.ST s a -> (a -> SimA s b) -> SimA s b
 
   GetTime      :: (VTime -> SimA s b) -> SimA s b
-  NewTimeout   :: VTimeDuration -> (Timeout (SimM s) -> SimA s b) -> SimA s b
-  UpdateTimeout:: Timeout (SimM s) -> VTimeDuration -> SimA s b -> SimA s b
+  NewTimeout   :: Duration -> (Timeout (SimM s) -> SimA s b) -> SimA s b
+  UpdateTimeout:: Timeout (SimM s) -> Duration -> SimA s b -> SimA s b
   CancelTimeout:: Timeout (SimM s) -> SimA s b -> SimA s b
 
   Throw        :: SomeException -> SimA s a
@@ -180,17 +179,14 @@ instance Monad (STM s) where
 
     fail = MonadFail.fail
 
-newtype VTime         = VTime Micro
+newtype VTime = VTime Micro
   deriving (Eq, Ord, Show)
-newtype VTimeDuration = VTimeDuration Micro
-  deriving (Eq, Ord, Show, Num, Real, Fractional)
 
 instance TimeMeasure VTime where
-  type Duration VTime = VTimeDuration
 
-  diffTime (VTime t) (VTime t') = VTimeDuration (t-t')
-  addTime  (VTimeDuration d) (VTime t) = VTime (t+d)
-  zero = VTime 0
+  diffTime (VTime t) (VTime t') = secondsDuration (t-t')
+  addTime d (VTime t) = VTime (t + durationSeconds d)
+  zeroTime = VTime 0
 
 instance MonadFail (SimM s) where
   fail msg = SimM $ \_ -> Throw (toException (IO.Error.userError msg))

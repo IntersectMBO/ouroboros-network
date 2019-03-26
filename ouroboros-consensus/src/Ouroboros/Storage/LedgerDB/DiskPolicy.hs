@@ -51,13 +51,13 @@ data DiskPolicy m = DiskPolicy {
       -- of blocks means that during chain synchronization (where a node is
       -- catching up with its neighbours) the frequency of writes /in terms of
       -- blocks/ automatically goes down.
-    , onDiskWriteInterval :: STM m (Duration (Time m))
+    , onDiskWriteInterval :: STM m Duration
     }
 
 -- | Default on-disk policy
 defaultDiskPolicy :: (MonadSTM m, MonadTime m)
                   => SecurityParam     -- ^ Maximum rollback
-                  -> Duration (Time m) -- ^ Slot length
+                  -> Duration          -- ^ Slot length
                   -> STM m (DiskPolicy m)
 defaultDiskPolicy (SecurityParam k) slotLength = do
     constantDelay <- newTVar (fromIntegral k * slotLength)

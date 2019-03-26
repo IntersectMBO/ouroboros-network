@@ -1,21 +1,31 @@
-{-# LANGUAGE TypeFamilies          #-}
-{-# LANGUAGE DefaultSignatures     #-}
-{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE DefaultSignatures          #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Control.Monad.Class.MonadTimer (
     MonadTime(..)
   , MonadTimer(..)
   , TimeoutState(..)
   , TimeMeasure(..)
-  , mult
-  , fromStart
+
+    -- * Duration type
+  , Duration
+  , secondsDuration
+  , microsecondsDuration
+  , durationSeconds
+  , durationMicroseconds
+  , multiplyDuration
   ) where
 
 import qualified Control.Concurrent as IO
 import qualified Control.Concurrent.STM.TVar as STM
 import qualified Control.Monad.STM as STM
+import           Control.Exception (assert)
 import           Data.Functor (void)
+import           Data.Int (Int64)
 import           Data.Word (Word64)
+import           Data.Fixed as Fixed (Fixed(MkFixed), Micro)
 
 import qualified GHC.Event as GHC (TimeoutKey, getSystemTimerManager,
                      registerTimeout, unregisterTimeout, updateTimeout)
@@ -23,28 +33,63 @@ import qualified GHC.Event as GHC (TimeoutKey, getSystemTimerManager,
 import           Control.Monad.Class.MonadFork (MonadFork(..))
 import           Control.Monad.Class.MonadSTM
 
-
-class (Ord t, Ord (Duration t), Num (Duration t)) => TimeMeasure t where
-  type Duration t :: *
-
-  diffTime :: t -> t -> Duration t
-  addTime  :: Duration t -> t -> t
-  zero :: t
-
--- | Helper function to multiply `Duration t` by an `Int`.
+-- | Time duration, with microsecond precision.
 --
-mult :: Num d => Int -> d -> d
-mult n = sum . replicate n
-
--- | Count time since @'zero'@.
+-- This is a vector in time so it can represent negative as well as positive
+-- durations. This is useful for measuring the time between two events.
 --
-fromStart :: TimeMeasure t => Duration t -> t
-fromStart = flip addTime zero
+-- Construct using 'fromIntegral' and 'fromRational' in units of seconds. Use
+-- 'microsecondsDuration' to create from microseconds.
+--
+-- Use 'Num' and 'Fractional' operations, and 'toRational', 'durationSeconds'
+-- and 'durationMicroseconds' to convert.
+--
+newtype Duration = Duration Fixed.Micro
+  deriving (Eq, Ord, Show, Num, Fractional)
 
-class (Monad m, TimeMeasure (Time m), Show (Time m)) => MonadTime m where
+-- | A duration in seconds, with microsecond precision.
+durationSeconds :: Duration -> Fixed.Micro
+durationSeconds (Duration micro) = micro
+
+-- | A duration in microseconds.
+durationMicroseconds :: Duration -> Int64
+durationMicroseconds (Duration (MkFixed micro)) = fromIntegral micro
+
+-- | Make a duration given a value in seconds, with microsecond precision.
+secondsDuration :: Fixed.Micro -> Duration
+secondsDuration = Duration
+
+-- | Make a duration given a value in microseconds.
+microsecondsDuration :: Int64 -> Duration
+microsecondsDuration = Duration . MkFixed . fromIntegral
+
+multiplyDuration :: Real a => a -> Duration -> Duration
+multiplyDuration a (Duration d) = Duration (realToFrac a * d)
+
+
+-- | A type that represents points in time. The operations
+--
+class Ord t => TimeMeasure t where
+
+  -- | The time duration between two points in time (positive or negative).
+  diffTime  :: t -> t -> Duration
+
+  -- | Add a duration to a point in time, giving another time.
+  addTime   :: Duration -> t -> t
+
+  -- | The time epoch where points in time are measured relative to.
+  --
+  -- For example POSIX time is relative to 1970-01-01 00:00 UTC. For a
+  -- monotonic clock this would be an arbitrary point, not related to any
+  -- wall clock time.
+  --
+  zeroTime  :: t
+
+class (Monad m, TimeMeasure (Time m)) => MonadTime m where
   type Time m :: *
 
   getMonotonicTime :: m (Time m)
+
 
 data TimeoutState = TimeoutPending | TimeoutFired | TimeoutCancelled
 
@@ -63,7 +108,7 @@ class (MonadSTM m, MonadTime m) => MonadTimer m where
   -- (as this would be very racy). You should create a new timeout if you need
   -- this functionality.
   --
-  newTimeout     :: Duration (Time m) -> m (Timeout m)
+  newTimeout     :: Duration -> m (Timeout m)
 
   -- | Read the current state of a timeout. This does not block, but returns
   -- the current state. It is your responsibility to use 'retry' to wait.
@@ -83,7 +128,7 @@ class (MonadSTM m, MonadTime m) => MonadTimer m where
   -- The new time can be before or after the original expiry time, though
   -- arguably it is an application design flaw to move timeouts sooner.
   --
-  updateTimeout  :: Timeout m -> Duration (Time m) -> m ()
+  updateTimeout  :: Timeout m -> Duration -> m ()
 
   -- | Cancel a timeout (unless it has already fired), putting it into the
   -- 'TimeoutCancelled' state. Code reading and acting on the timeout state
@@ -102,12 +147,12 @@ class (MonadSTM m, MonadTime m) => MonadTimer m where
                          TimeoutFired     -> return True
                          TimeoutCancelled -> return False
 
-  threadDelay    :: Duration (Time m) -> m ()
+  threadDelay    :: Duration -> m ()
   threadDelay d   = void . atomically . awaitTimeout =<< newTimeout d
 
-  registerDelay :: Duration (Time m) -> m (TVar m Bool)
+  registerDelay :: Duration -> m (TVar m Bool)
 
-  default registerDelay :: MonadFork m => Duration (Time m) -> m (TVar m Bool)
+  default registerDelay :: MonadFork m => Duration -> m (TVar m Bool)
   registerDelay d = do
     v <- atomically $ newTVar False
     t <- newTimeout d
@@ -118,16 +163,25 @@ class (MonadSTM m, MonadTime m) => MonadTimer m where
 -- Instances for IO
 --
 
-instance TimeMeasure Int where
-  type Duration Int = Int -- microseconds
+-- | Time in a monotonic clock, with microsecond precision. The epoch for this
+-- clock is arbitrary and does not correspond to any wall clock or calendar.
+--
+newtype MonotonicTimeIO = MonotonicTimeIO Int64
+  deriving (Eq, Ord, Show)
 
-  diffTime t t' = t-t'
-  addTime  d t  = t+d
-  zero = 0
+instance TimeMeasure MonotonicTimeIO where
+  diffTime (MonotonicTimeIO t) (MonotonicTimeIO t') =
+    microsecondsDuration (t - t')
+
+  addTime d (MonotonicTimeIO t) =
+    MonotonicTimeIO (t + durationMicroseconds d)
+
+  zeroTime = MonotonicTimeIO 0
 
 instance MonadTime IO where
-  type Time IO = Int -- microseconds
-  getMonotonicTime = fmap (fromIntegral . (`div` 1000)) getMonotonicNSec
+  type Time IO = MonotonicTimeIO
+  getMonotonicTime = fmap (MonotonicTimeIO . fromIntegral . (`div` 1000))
+                          getMonotonicNSec
 
 foreign import ccall unsafe "getMonotonicNSec"
     getMonotonicNSec :: IO Word64
@@ -137,10 +191,11 @@ instance MonadTimer IO where
 
   readTimeout (TimeoutIO var _key) = STM.readTVar var
 
-  newTimeout = \usec -> do
+  newTimeout = \d -> do
       var <- STM.newTVarIO TimeoutPending
       mgr <- GHC.getSystemTimerManager
-      key <- GHC.registerTimeout mgr usec (STM.atomically (timeoutAction var))
+      key <- GHC.registerTimeout mgr (durationMicrosecondsAsInt d)
+                                     (STM.atomically (timeoutAction var))
       return (TimeoutIO var key)
     where
       timeoutAction var = do
@@ -152,9 +207,9 @@ instance MonadTimer IO where
 
   -- In GHC's TimerManager this has no effect if the timer already fired.
   -- It is safe to race against the timer firing.
-  updateTimeout (TimeoutIO _var key) usec = do
+  updateTimeout (TimeoutIO _var key) d = do
       mgr <- GHC.getSystemTimerManager
-      GHC.updateTimeout mgr key usec
+      GHC.updateTimeout mgr key (durationMicrosecondsAsInt d)
 
   cancelTimeout (TimeoutIO var key) = do
       STM.atomically $ do
@@ -166,6 +221,16 @@ instance MonadTimer IO where
       mgr <- GHC.getSystemTimerManager
       GHC.unregisterTimeout mgr key
 
-  threadDelay d = IO.threadDelay d
+  threadDelay d = IO.threadDelay (durationMicrosecondsAsInt d)
 
-  registerDelay = STM.registerDelay
+  registerDelay = STM.registerDelay . durationMicrosecondsAsInt
+
+durationMicrosecondsAsInt :: Duration -> Int
+durationMicrosecondsAsInt d =
+    let usec :: Int64
+        usec = durationMicroseconds d in
+    -- Can only represent usec times that fit within an Int, which on 32bit
+    -- systems means 2^31 usec, which is only ~35 minutes.
+    assert (usec <= fromIntegral (maxBound :: Int)) $
+    fromIntegral usec
+

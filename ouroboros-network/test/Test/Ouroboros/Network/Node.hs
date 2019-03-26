@@ -76,21 +76,27 @@ test_blockGenerator
      , Show (Time m)
      )
   => Chain Block
-  -> Duration (Time m)
+  -> Duration
   -> m Property
-test_blockGenerator chain slotDuration = isValid <$> withProbe (experiment slotDuration)
+test_blockGenerator chain slotDuration = do
+    startTime <- getMonotonicTime
+    isValid startTime <$> withProbe (experiment slotDuration)
   where
-    isValid :: [(Time m, Block)] -> Property
-    isValid = foldl'
-        (\r (t, b) -> r .&&. t === fromStart ((fromIntegral . unSlotNo . blockSlot $ b) `mult` slotDuration))
+    isValid :: Time m -> [(Time m, Block)] -> Property
+    isValid startTime = foldl'
+        (\r (t, b) -> r .&&. t === slotTime (blockSlot b))
         (property True)
+      where
+        slotTime :: SlotNo -> Time m
+        slotTime s = (unSlotNo s `multiplyDuration` slotDuration)
+                     `addTime` startTime
 
     experiment
       :: ( MonadSTM m
          , MonadFork m
          , MonadTimer m
          )
-      => Duration (Time m)
+      => Duration
       -> Probe m (Time m, Block)
       -> m ()
     experiment slotDur p = do
@@ -108,11 +114,15 @@ test_blockGenerator chain slotDuration = isValid <$> withProbe (experiment slotD
 prop_blockGenerator_ST :: TestBlockChain -> Positive Micro -> Property
 prop_blockGenerator_ST (TestBlockChain chain) (Positive slotDuration) =
     Sim.runSimOrThrow $
-      test_blockGenerator chain (Sim.VTimeDuration slotDuration)
+      test_blockGenerator chain (secondsDuration slotDuration)
 
 prop_blockGenerator_IO :: TestBlockChain -> Positive Int -> Property
 prop_blockGenerator_IO (TestBlockChain chain) (Positive slotDuration) =
-    ioProperty $ test_blockGenerator chain (slotDuration * 100)
+    ioProperty $
+      test_blockGenerator chain slotDuration'
+  where
+    slotDuration' :: Duration
+    slotDuration' = microsecondsDuration (100 * fromIntegral slotDuration)
 
 coreToRelaySim :: ( MonadSTM m
                   , MonadFork m
@@ -123,9 +133,9 @@ coreToRelaySim :: ( MonadSTM m
                   )
                => Bool              -- ^ two way subscription
                -> Chain Block
-               -> Duration (Time m) -- ^ slot duration
-               -> Duration (Time m) -- ^ core transport delay
-               -> Duration (Time m) -- ^ relay transport delay
+               -> Duration          -- ^ slot duration
+               -> Duration          -- ^ core transport delay
+               -> Duration          -- ^ relay transport delay
                -> Probe m (NodeId, Chain Block)
                -> m ()
 coreToRelaySim duplex chain slotDuration coreTrDelay relayTrDelay probe = do
@@ -152,9 +162,9 @@ coreToRelaySim duplex chain slotDuration coreTrDelay relayTrDelay probe = do
 
 data TestNodeSim = TestNodeSim
   { testChain               :: Chain Block
-  , testSlotDuration        :: Sim.VTimeDuration
-  , testCoreTransportDelay  :: Sim.VTimeDuration
-  , testRealyTransportDelay :: Sim.VTimeDuration
+  , testSlotDuration        :: Duration
+  , testCoreTransportDelay  :: Duration
+  , testRealyTransportDelay :: Duration
   }
   deriving (Show, Eq)
 
@@ -165,7 +175,9 @@ instance Arbitrary TestNodeSim where
     Positive slotDuration <- arbitrary
     Positive testCoreTransportDelay <- arbitrary
     Positive testRelayTransportDelay <- arbitrary
-    return $ TestNodeSim testChain (Sim.VTimeDuration slotDuration) (Sim.VTimeDuration testCoreTransportDelay) (Sim.VTimeDuration testRelayTransportDelay)
+    return $ TestNodeSim testChain (secondsDuration slotDuration)
+                                   (secondsDuration testCoreTransportDelay)
+                                   (secondsDuration testRelayTransportDelay)
 
   -- TODO: shrink
 
@@ -198,11 +210,11 @@ coreToRelaySim2 :: ( MonadSTM m
                    , MonadTimer m
                    )
                 => Chain Block
-                -> Duration (Time m)
+                -> Duration
                 -- ^ slot length
-                -> Duration (Time m)
+                -> Duration
                 -- ^ core transport delay
-                -> Duration (Time m)
+                -> Duration
                 -- ^ relay transport delay
                 -> Probe m (NodeId, Chain Block)
                 -> m ()
@@ -295,9 +307,9 @@ networkGraphSim :: forall m.
                   , MonadTimer m
                   )
                 => TestNetworkGraph
-                -> Duration (Time m) -- ^ slot duration
-                -> Duration (Time m) -- ^ core transport delay
-                -> Duration (Time m) -- ^ relay transport delay
+                -> Duration          -- ^ slot duration
+                -> Duration          -- ^ core transport delay
+                -> Duration          -- ^ relay transport delay
                 -> Probe m (NodeId, Chain Block)
                 -> m ()
 networkGraphSim (TestNetworkGraph g cs) slotDuration coreTrDelay relayTrDelay probe = do
@@ -331,15 +343,15 @@ networkGraphSim (TestNetworkGraph g cs) slotDuration coreTrDelay relayTrDelay pr
 
 data NetworkTest = NetworkTest
   { networkTestGraph        :: TestNetworkGraph
-  , networkTestSlotDuration :: Sim.VTimeDuration
-  , networkTestCoreTrDelay  :: Sim.VTimeDuration
-  , networkTestRelayTrDelay :: Sim.VTimeDuration
+  , networkTestSlotDuration :: Duration
+  , networkTestCoreTrDelay  :: Duration
+  , networkTestRelayTrDelay :: Duration
   }
 
 instance Arbitrary NetworkTest where
   arbitrary = NetworkTest <$> arbitrary <*> duration <*> duration <*> duration
     where
-      duration = Sim.VTimeDuration . getPositive <$> arbitrary
+      duration = secondsDuration . getPositive <$> arbitrary
 
 instance Show NetworkTest where
   show (NetworkTest g slotDuration coreDelay relayDelay) =

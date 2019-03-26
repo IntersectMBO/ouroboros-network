@@ -11,7 +11,6 @@ module Ouroboros.Network.Pipe (
 import           Control.Monad
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
-import           Data.Bits
 import           Data.Word
 import           GHC.Stack
 import           System.IO (Handle, hClose, hFlush)
@@ -47,7 +46,10 @@ writePipe :: (Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl)
           -> IO (Time IO)
 writePipe ctx sdu = do
     ts <- getMonotonicTime
-    let sdu' = sdu { Mx.msTimestamp = Mx.RemoteClockModel $ fromIntegral $ ts .&. 0xffffffff }
+    let ts32 :: Word32
+               -- grab the low 32bits of the timestamp in microseconds
+        ts32 = fromIntegral (durationMicroseconds (ts `diffTime` zeroTime))
+    let sdu' = sdu { Mx.msTimestamp = Mx.RemoteClockModel ts32 }
         buf = Mx.encodeMuxSDU sdu'
     BL.hPut (pcWrite ctx) buf
     hFlush (pcWrite ctx)

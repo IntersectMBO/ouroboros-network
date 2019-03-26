@@ -14,7 +14,6 @@ import           Control.Monad
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
-import           Data.Bits
 import qualified Data.ByteString.Lazy as BL
 import           Data.Int
 import           Data.Word
@@ -49,7 +48,10 @@ writeSocket :: Mx.ProtocolEnum ptcl => SocketCtx -> Mx.MuxSDU ptcl -> IO (Time I
 writeSocket ctx sdu = do
     --say "write"
     ts <- getMonotonicTime
-    let sdu' = sdu { Mx.msTimestamp = Mx.RemoteClockModel $ fromIntegral $ ts .&. 0xffffffff }
+    let ts32 :: Word32
+               -- grab the low 32bits of the timestamp in microseconds
+        ts32 = fromIntegral (durationMicroseconds (ts `diffTime` zeroTime))
+    let sdu' = sdu { Mx.msTimestamp = Mx.RemoteClockModel ts32 }
         buf = Mx.encodeMuxSDU sdu'
     --hexDump buf ""
     Socket.sendAll (scSocket ctx) buf

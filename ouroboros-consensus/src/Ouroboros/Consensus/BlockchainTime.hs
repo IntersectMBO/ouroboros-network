@@ -100,7 +100,7 @@ finalSlot (NumSlots n) = SlotNo (fromIntegral n)
 -- thread (otherwise the system will keep waiting).
 testBlockchainTime :: forall m. (MonadSTM m, MonadFork m, MonadTimer m)
                    => NumSlots           -- ^ Number of slots
-                   -> Duration (Time m)  -- ^ Slot duration
+                   -> Duration           -- ^ Slot duration
                    -> m (BlockchainTime m)
 testBlockchainTime (NumSlots numSlots) slotLen = do
     slotVar <- atomically $ newTVar firstSlot
@@ -193,7 +193,9 @@ fixedDiffToMicroseconds :: FixedDiffTime -> Int
 fixedDiffToMicroseconds (FixedDiffTime d) = round (d * 1_000_000)
 
 threadDelayByFixedDiff :: FixedDiffTime -> IO ()
-threadDelayByFixedDiff = threadDelay . fixedDiffToMicroseconds
+threadDelayByFixedDiff = threadDelay
+                       . microsecondsDuration . fromIntegral
+                       . fixedDiffToMicroseconds
 
 multFixedDiffTime :: Int -> FixedDiffTime -> FixedDiffTime
 multFixedDiffTime n (FixedDiffTime d) = FixedDiffTime (fromIntegral n * d)
