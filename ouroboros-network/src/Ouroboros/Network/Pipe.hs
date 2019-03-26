@@ -10,7 +10,7 @@ module Ouroboros.Network.Pipe (
 
 import           Control.Monad
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime
 import           Data.Word
 import           GHC.Stack
 import           System.IO (Handle, hClose, hFlush)

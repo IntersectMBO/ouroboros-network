@@ -22,7 +22,7 @@ import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime (Time)
 import           Data.Array
 import qualified Data.ByteString.Lazy as BL
 import           Data.Word

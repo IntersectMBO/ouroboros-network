@@ -30,7 +30,7 @@ import           Text.Printf
 
 import           Control.Exception (throw, ArrayException(IndexOutOfBounds))
 import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime
 import           Ouroboros.Network.Channel
 
 newtype RemoteClockModel = RemoteClockModel { unRemoteClockModel :: Word32 } deriving Eq
