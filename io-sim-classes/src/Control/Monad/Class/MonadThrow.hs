@@ -12,6 +12,8 @@ module Control.Monad.Class.MonadThrow
 
 import           Control.Exception (Exception (..), SomeException)
 import qualified Control.Exception as IO
+import qualified Control.Monad.STM as STM
+import           Control.Monad.STM (STM)
 import           Control.Monad (liftM)
 import           Control.Monad.Except (ExceptT (..), lift, runExceptT)
 import           Control.Monad.Reader (ReaderT (..), runReaderT)
@@ -69,7 +71,8 @@ class MonadThrow m => MonadCatch m where
   generalBracket :: m a -> (a -> ExitCase b -> m c) -> (a -> m b) -> m (b, c)
 
   default generalBracket
-                 :: MonadMask m => m a -> (a -> ExitCase b -> m c) -> (a -> m b) -> m (b, c)
+                 :: MonadMask m
+                 => m a -> (a -> ExitCase b -> m c) -> (a -> m b) -> m (b, c)
 
   catchJust p a handler =
       catch a handler'
@@ -170,6 +173,25 @@ instance MonadMask IO where
 
   uninterruptibleMask  = IO.uninterruptibleMask
   uninterruptibleMask_ = IO.uninterruptibleMask_
+
+--
+-- Instance for STM uses STM primitives and default implementations
+--
+
+instance MonadThrow STM where
+  throwM = STM.throwSTM
+
+instance MonadCatch STM where
+  catch  = STM.catchSTM
+
+  generalBracket acquire release use = do
+    resource <- acquire
+    b <- use resource `catch` \e -> do
+      _ <- release resource (ExitCaseException e)
+      throwM e
+    c <- release resource (ExitCaseSuccess b)
+    return (b, c)
+
 
 --
 -- Instances for ReaderT
