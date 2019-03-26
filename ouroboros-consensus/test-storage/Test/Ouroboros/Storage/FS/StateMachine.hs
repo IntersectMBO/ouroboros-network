@@ -185,7 +185,7 @@ run HasFS{..} = go
   Instantiating the semantics
 -------------------------------------------------------------------------------}
 
--- | Responses are either succesful termination or an error
+-- | Responses are either successful termination or an error
 newtype Resp fp h = Resp { getResp :: Either FsError (Success fp h) }
   deriving (Show, Functor, Foldable)
 
@@ -653,6 +653,112 @@ data Tag =
     -- > Put h1 ..
     -- > Get h2 ..
   | TagConcurrentWriterReader
+
+    -- | Writing many times should append the bytes.
+    --
+    -- > h1 <- Open fp WriteMode ..   |    > h2 <- Open fp ReadMode ..
+    -- > Put h1 ..                    |
+    -- > Put h1 ..                    |
+
+    -- > Get h2 ..
+  | TagWriteWriteRead
+
+  -- | Try to open a directory
+  --
+  -- > CreateDirectoryIfMissing True fp
+  -- > Open hp IO.WriteMode
+  | TagOpenDirectory
+
+  -- | Write to a file
+  --
+  -- > Put h1
+  | TagWrite
+
+  -- | Seek from end of a file
+  --
+  -- > Seek h IO.SeekFromEnd n (n<0)
+  | TagSeekFromEnd
+
+  -- | Create a directory
+  --
+  -- > CreateDirIfMissing True ..
+  | TagCreateDirectory
+
+  -- | DoesFileExistOK returns True
+  | TagDoesFileExistOK
+
+  -- | DoesFileExistOK returns False
+  | TagDoesFileExistKO
+
+  -- | DoesDirectoryExistOK returns True
+  | TagDoesDirectoryExistOK
+
+  -- | DoesDirectoryExistOK returns False
+  | TagDoesDirectoryExistKO
+
+  -- | Remove a file
+  --
+  -- > RemoveFile fe
+  -- > DoesFileExist fe
+  | TagRemoveFile
+
+  -- | Put truncate and Get
+  --
+  -- > Put ..
+  -- > Truncate ..
+  -- > Get ..
+  | TagPutTruncateGet
+
+  -- Close a handle 2 times
+  --
+  -- > h <- Open ..
+  -- > close h
+  -- > close h
+  | TagClosedTwice
+
+  -- Open an existing file with ReadMode and then with WriteMode
+  --
+  -- > open fp ReadMode
+  -- > open fp Write
+  | TagOpenReadThenWrite
+
+  -- Open 2 Readers of a file.
+  --
+  -- > open fp ReadMode
+  -- > open fp ReadMode
+  | TagOpenReadThenRead
+
+  -- ListDir on a non empty dirextory.
+  --
+  -- > CreateDirIfMissing True a/b
+  -- > ListDirectory a
+  | TagCreateDirWithParentsThenListDirNotNull
+
+  -- Read from an AppendMode file
+  --
+  -- > h <- Open fp AppendMode
+  -- > Read h ..
+  | TagReadInvalid
+
+  -- Write to a read only file
+  --
+  -- > h <- Open fp ReadMode
+  -- > Put h ..
+  | TagWriteInvalid
+
+  -- Put Seek and Get
+  --
+  -- > Put ..
+  -- > Seek ..
+  -- > Get ..
+  | TagPutSeekGet
+
+  -- Put Seek (negative) and Get
+  --
+  -- > Put ..
+  -- > Seek .. (negative)
+  -- > Get ..
+  | TagPutSeekNegGet
   deriving (Show, Eq)
 
 -- | Predicate on events
@@ -681,6 +787,25 @@ tag = C.classify [
     , tagAtLeastNOpenFiles 0
     , tagPutTruncatePut Map.empty Map.empty Map.empty
     , tagConcurrentWriterReader Map.empty
+    , tagWriteWriteRead Map.empty
+    , tagOpenDirectory Set.empty
+    , tagWrite
+    , tagSeekFromEnd
+    , tagCreateDirectory
+    , tagDoesFileExistOK
+    , tagDoesFileExistKO
+    , tagDoesDirectoryExistOK
+    , tagDoesDirectoryExistKO
+    , tagRemoveFile Set.empty
+    , tagPutTruncateGet Map.empty Set.empty
+    , tagClosedTwice Set.empty
+    , tagOpenReadThenWrite Set.empty
+    , tagOpenReadThenRead Set.empty
+    , tagCreateDirWithParentsThenListDirNotNull Set.empty
+    , tagReadInvalid Set.empty
+    , tagWriteInvalid Set.empty
+    , tagPutSeekGet Set.empty Set.empty
+    , tagPutSeekNegGet Set.empty Set.empty
     ]
   where
     tagCreateDirThenListDir :: Set FsPath -> EventPred
@@ -711,6 +836,21 @@ tag = C.classify [
           _otherwise ->
             Right $ tagCreateDirWithParentsThenListDir created
 
+    tagCreateDirWithParentsThenListDirNotNull :: Set FsPath -> EventPred
+    tagCreateDirWithParentsThenListDirNotNull created = successful $ \ev suc ->
+        case (eventMockCmd ev, suc) of
+          (CreateDirIfMissing True fe, _) | length fp > 1 ->
+              Right $ tagCreateDirWithParentsThenListDirNotNull (Set.insert fp created)
+            where
+              fp = evalPathExpr fe
+          (ListDirectory fe, Strings set) | fp `Set.member` (Set.map init created) && not (Set.null set) ->
+              Left TagCreateDirWithParentsThenListDirNotNull
+            where
+              fp = evalPathExpr fe
+          _otherwise ->
+            Right $ tagCreateDirWithParentsThenListDirNotNull created
+
+
     -- TODO: It turns out we never hit the 10 (or higher) open handles case
     -- Not sure if this is a problem or not.
     tagAtLeastNOpenFiles :: Int -> EventPred
@@ -728,6 +868,26 @@ tag = C.classify [
       where
         countOpen :: Model r -> Int
         countOpen = Mock.numOpenHandles . mockFS
+
+    tagPutTruncateGet :: Map (Mock.Handle, FsPath) Int64
+                      -> Set (Mock.Handle, FsPath)
+                      -> EventPred
+    tagPutTruncateGet put truncated = successful $ \ev _ ->
+      case resolveCmd  ev of
+        Put (h, fp) bs | BL.length bs /= 0 ->
+          let
+              f Nothing  = Just $ BL.length bs
+              f (Just n) = Just $ (BL.length bs) + n
+              put' = Map.alter f (h, fp) put
+          in Right $ tagPutTruncateGet put' truncated
+        Truncate (h, fp) sz | sz > 0 -> case Map.lookup (h, fp) put of
+          Just p | fromIntegral sz < p ->
+            let truncated' = Set.insert (h, fp) truncated
+            in Right $ tagPutTruncateGet put truncated'
+          _otherwise -> Right $ tagPutTruncateGet put truncated
+        Get (h, fp) n | n > 0 && (not $ Set.null $ Set.filter (\(hRead, fp') -> fp' == fp && not (hRead == h)) truncated) ->
+              Left TagPutTruncateGet
+        _otherwise -> Right $ tagPutTruncateGet put truncated
 
     tagPutTruncatePut :: Map Mock.Handle BL.ByteString
                       -> Map Mock.Handle BL.ByteString
@@ -781,6 +941,167 @@ tag = C.classify [
             Left TagConcurrentWriterReader
           _otherwise ->
             Right $ tagConcurrentWriterReader put
+
+    tagOpenReadThenWrite :: Set FsPath -> EventPred
+    tagOpenReadThenWrite readOpen = successful $ \ev@Event{..} _ ->
+      case eventMockCmd ev of
+        Open (PExpPath fp) IO.ReadMode ->
+          Right $ tagOpenReadThenWrite $ Set.insert fp readOpen
+        Open (PExpPath fp) IO.WriteMode | Set.member fp readOpen ->
+          Left TagOpenReadThenWrite
+        _otherwise -> Right $ tagOpenReadThenWrite readOpen
+
+    tagOpenReadThenRead :: Set FsPath -> EventPred
+    tagOpenReadThenRead readOpen = successful $ \ev@Event{..} _ ->
+      case eventMockCmd ev of
+        Open (PExpPath fp) IO.ReadMode | Set.member fp readOpen ->
+          Left TagOpenReadThenRead
+        Open (PExpPath fp) IO.ReadMode ->
+          Right $ tagOpenReadThenRead $ Set.insert fp readOpen
+        _otherwise -> Right $ tagOpenReadThenRead readOpen
+
+    tagWriteWriteRead :: Map (Mock.Handle, FsPath) Int -> EventPred
+    tagWriteWriteRead wr = successful $ \ev@Event{..} _ ->
+      case resolveCmd ev of
+        Put (h, fp) bs | BL.length bs > 0 ->
+          let f Nothing  = Just 0
+              f (Just x) = Just $ x + 1
+          in Right $ tagWriteWriteRead $ Map.alter f (h, fp) wr
+        Get (hRead, fp) n | n > 1 ->
+          if not $ Map.null $ Map.filterWithKey (\(hWrite, fp') times -> fp' == fp && times > 1 && not (hWrite == hRead)) wr
+          then Left TagWriteWriteRead
+          else Right $ tagWriteWriteRead wr
+        _otherwise ->
+          Right $ tagWriteWriteRead wr
+
+    -- this never succeeds because of an fsLimitation
+    tagOpenDirectory :: Set FsPath -> EventPred
+    tagOpenDirectory created = C.predicate $ \ev ->
+        case (eventMockCmd ev, eventMockResp ev) of
+          (CreateDir fe, Resp (Right _)) ->
+            Right $ tagOpenDirectory (Set.insert fp created)
+              where
+                fp = evalPathExpr fe
+          (CreateDirIfMissing True fe, Resp (Right _)) ->
+            Right $ tagOpenDirectory (Set.insert fp created)
+              where
+                fp = evalPathExpr fe
+          (Open fe _mode, _) | Set.member (evalPathExpr fe) created ->
+            Left TagOpenDirectory
+          _otherwise ->
+            Right $ tagOpenDirectory created
+
+    tagWrite :: EventPred
+    tagWrite = successful $ \ev@Event{..} _ ->
+      case eventMockCmd ev of
+        Put _ bs | BL.length bs > 0 ->
+          Left TagWrite
+        _otherwise -> Right tagWrite
+
+    tagSeekFromEnd :: EventPred
+    tagSeekFromEnd = successful $ \ev@Event{..} _ ->
+      case eventMockCmd ev of
+        Seek _ IO.SeekFromEnd n | n < 0 -> Left TagSeekFromEnd
+        _otherwise                      -> Right tagSeekFromEnd
+
+    tagCreateDirectory :: EventPred
+    tagCreateDirectory = successful $ \ev@Event{..} _ ->
+      case resolveCmd ev of
+        CreateDirIfMissing True (PExpPath fp) | length fp > 1 ->
+          Left TagCreateDirectory
+        _otherwise ->
+          Right tagCreateDirectory
+
+    tagDoesFileExistOK :: EventPred
+    tagDoesFileExistOK = successful $ \ev@Event{..} suc ->
+      case (eventMockCmd ev, suc) of
+        (DoesFileExist _, Bool True) -> Left TagDoesFileExistOK
+        _otherwise                   -> Right tagDoesFileExistOK
+
+    tagDoesFileExistKO :: EventPred
+    tagDoesFileExistKO = successful $ \ev@Event{..} suc ->
+      case (eventMockCmd ev, suc) of
+        (DoesFileExist _, Bool False) -> Left TagDoesFileExistKO
+        _otherwise                    -> Right tagDoesFileExistKO
+
+    tagDoesDirectoryExistOK :: EventPred
+    tagDoesDirectoryExistOK = successful $ \ev@Event{..} suc ->
+      case (eventMockCmd ev, suc) of
+        (DoesDirectoryExist (PExpPath fp), Bool True) | not (fp == ["/"])
+                   -> Left TagDoesDirectoryExistOK
+        _otherwise -> Right tagDoesDirectoryExistOK
+
+    tagDoesDirectoryExistKO :: EventPred
+    tagDoesDirectoryExistKO = successful $ \ev@Event{..} suc ->
+      case (eventMockCmd ev, suc) of
+        (DoesDirectoryExist _, Bool False) -> Left TagDoesDirectoryExistKO
+        _otherwise                         -> Right tagDoesDirectoryExistKO
+
+    tagRemoveFile :: Set FsPath -> EventPred
+    tagRemoveFile removed = successful $ \ev@Event{..} _suc ->
+      case resolveCmd ev of
+        RemoveFile fe -> Right $ tagRemoveFile $ Set.insert fp removed
+          where
+            fp = evalPathExpr fe
+        DoesFileExist fe -> if Set.member fp removed
+          then Left TagRemoveFile
+          else Right $ tagRemoveFile removed
+            where
+              fp = evalPathExpr fe
+        _otherwise -> Right $ tagRemoveFile removed
+
+    tagClosedTwice :: Set Mock.Handle -> EventPred
+    tagClosedTwice closed = successful $ \ev@Event{..} _suc ->
+      case eventMockCmd ev of
+        Close h | Set.member h closed -> Left TagClosedTwice
+        Close h -> Right $ tagClosedTwice $ Set.insert h closed
+        _otherwise -> Right $ tagClosedTwice closed
+
+    -- this never succeeds because of an fsLimitation
+    tagReadInvalid :: Set Mock.Handle -> EventPred
+    tagReadInvalid openAppend = C.predicate $ \ev ->
+      case (eventMockCmd ev, eventMockResp ev) of
+        (Open _ IO.AppendMode, Resp (Right (WHandle _ h))) ->
+          Right $ tagReadInvalid $ Set.insert h openAppend
+        (Close h, Resp (Right _)) ->
+          Right $ tagReadInvalid $ Set.delete h openAppend
+        (Get h _, Resp (Left _)) | Set.member h openAppend ->
+          Left TagReadInvalid
+        _otherwise -> Right $ tagReadInvalid openAppend
+
+    -- never succeeds, not sure why.
+    tagWriteInvalid :: Set Mock.Handle -> EventPred
+    tagWriteInvalid openRead = C.predicate $ \ev ->
+      case (eventMockCmd ev, eventMockResp ev) of
+        (Open _ IO.ReadMode, Resp (Right (WHandle _ h))) ->
+          Right $ tagWriteInvalid $ Set.insert h openRead
+        (Close h, Resp (Right _)) ->
+          Right $ tagWriteInvalid $ Set.delete h openRead
+        (Put h _, _) | Set.member h openRead ->
+          Left TagWriteInvalid
+        _otherwise -> Right $ tagWriteInvalid openRead
+
+    tagPutSeekGet :: Set Mock.Handle -> Set Mock.Handle -> EventPred
+    tagPutSeekGet put seek = successful $ \ev@Event{..} _suc ->
+      case eventMockCmd ev of
+        Put h bs | BL.length bs > 0 ->
+          Right $ tagPutSeekGet (Set.insert h put) seek
+        Seek h IO.RelativeSeek n | n > 0 && Set.member h put->
+          Right $ tagPutSeekGet put (Set.insert h seek)
+        Get h n | n > 0 && Set.member h seek ->
+          Left TagPutSeekGet
+        _otherwise -> Right $ tagPutSeekGet put seek
+
+    tagPutSeekNegGet :: Set Mock.Handle -> Set Mock.Handle -> EventPred
+    tagPutSeekNegGet put seek = successful $ \ev@Event{..} _suc ->
+      case eventMockCmd ev of
+        Put h bs | BL.length bs > 0 ->
+          Right $ tagPutSeekNegGet (Set.insert h put) seek
+        Seek h IO.RelativeSeek n | n < 0 && Set.member h put->
+          Right $ tagPutSeekNegGet put (Set.insert h seek)
+        Get h n | n > 0 && Set.member h seek ->
+          Left TagPutSeekNegGet
+        _otherwise -> Right $ tagPutSeekNegGet put seek
 
 -- | Step the model using a 'QSM.Command' (i.e., a command associated with
 -- an explicit set of variables)
