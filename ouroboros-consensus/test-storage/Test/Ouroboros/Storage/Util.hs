@@ -18,7 +18,6 @@ import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Lazy.Char8 as LC8
 import           Data.String (IsString (..))
 import           Data.Typeable
-import           Data.Word (Word64)
 
 import           System.Directory (getTemporaryDirectory)
 import           System.IO.Temp (withTempDirectory)
@@ -40,7 +39,7 @@ import           Ouroboros.Storage.ImmutableDB (ImmutableDBError (..),
 import qualified Ouroboros.Storage.ImmutableDB as Immutable
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
-import           Ouroboros.Storage.VolatileDB (VolatileDBError (..), 
+import           Ouroboros.Storage.VolatileDB (VolatileDBError (..),
                      sameVolatileDBError)
 import qualified Ouroboros.Storage.VolatileDB as Volatile
 

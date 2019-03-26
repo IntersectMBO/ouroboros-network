@@ -1172,7 +1172,7 @@ showLabelledExamples' mReplay numTests focus = do
     pp  = \x -> ppShow x ++ "\n" ++ condense x
 
 showLabelledExamples :: IO ()
-showLabelledExamples = showLabelledExamples' Nothing 30000 (const True)
+showLabelledExamples = showLabelledExamples' Nothing 1000 (const True)
 
 prop_sequential :: FilePath -> Property
 prop_sequential tmpDir =
