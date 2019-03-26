@@ -759,13 +759,13 @@ protocol that applicable, i.e.
 Node-to-node, Node-to-Wallet and Node-to-Chain-Consumer connections use different sets of mini protocols
 (e.g. different protocol versions).
 
-Figure~\ref{node-diagram-concurency} illustrates parts of the data flow in a node.
+Figure~\ref{node-diagram-concurrency} illustrates parts of the data flow in a node.
 A small circle represents a thread that runs one of the mini protocols (the mini protocols are explained in
 Chapter~\ref{state-machine-section}).
 There are two kinds of data flows involved.
 Mini protocols communicate with mini protocols of other nodes by sending and receiving messages,
 and, within a node, mini protocol communicate by reading from- and writing to- shared mutable state.
-(The boxes in Figure~\ref{node-diagram-concurency} represent the mutable state.)
+(The boxes in Figure~\ref{node-diagram-concurrency} represent the mutable state.)
 Software transactional memory (STM) is a mechanism for safe and lock-free concurrent
 access to mutable state and the reference implementation makes heavy use of STM.
 
@@ -1037,7 +1037,7 @@ to replicate the producer's block chain locally. As it is polymorphic in blocks,
 it supports a family of Ouroboros protocols.
 The chain synchronisation protocol is used by clients which synchronise just headers (node-to-node),
 and also clients which synchronize actual the block chain (e.g., node-to-wallet).
-(See Figure~\ref{node-diagram-concurency}.)
+(See Figure~\ref{node-diagram-concurrency}.)
 
 A node communicates with several upstream and downstream nodes.
 A node runs an independent client instance and a independent server instance for every
@@ -1142,7 +1142,8 @@ We call the state, the producer maintains about the consumer, the $read~pointer$
 The $read~pointer$ basically tracks what the producer knows about the head of
 the consumer's chain without storing the consumers chain itself.
 It points to a block on the current chain of the chain producer.
-The $read~pointers$ are part of the shared state of the node (Figure~\ref{node-diagram-concurency}) and
+The $read~pointers$ are part of the shared state of the node
+(Figure~\ref{node-diagram-concurrency}) and
 $read~pointer$s are concurrently updated by the thread that runs the chain-sync mini-protocol and the
 chain tracking logic of the node itself.
 
@@ -1752,14 +1753,6 @@ This section is most useful for people who work with the Haskell reference imple
 may give some extra insights for anybody who is interested in implementing the
 network component.
 For understanding the protocol, it is save to skip this section.
-\begin{figure}
-\pgfdeclareimage[height=10cm]{node-diagram-concurrency}{node-diagram-concurrency.pdf}
-\begin{center}
-\pgfuseimage{node-diagram-concurrency}
-\end{center}
-\caption{Data-flow within a node.}
-\label{node-diagram-concurrency}
-\end{figure}
 \section{Constant Memory Consumption}
 \section{The State Machine Framework}
 \label{Haskell-state-machine}
