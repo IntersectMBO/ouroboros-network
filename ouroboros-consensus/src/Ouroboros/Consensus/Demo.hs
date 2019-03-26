@@ -58,11 +58,12 @@ import           Ouroboros.Consensus.Protocol.PermBFT
 import           Ouroboros.Consensus.Protocol.Praos
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.Condense
+import           Ouroboros.Network.Block (SlotNo(..))
 
 import qualified Cardano.Spec.Consensus.Block as ByronPermBlock
 
 import           Ledger.Core (Owner (Owner), VKey (VKey),
-                     VKeyGenesis (VKeyGenesis))
+                     VKeyGenesis (VKeyGenesis), Slot(Slot))
 
 {-------------------------------------------------------------------------------
   Abstract over the various protocols
@@ -107,6 +108,22 @@ type DemoProtocolConstraints p = (
   , Show      (Payload p (SimplePreHeader p SimpleBlockMockCrypto))
   )
 
+instance (ByronPermBlock.BlockHeader
+           (SimpleHeader PermBft SimpleBlockMockCrypto)) where
+  bhPrevHash h = undefined 
+  bhSig = undefined
+  bhIssuer = undefined
+  bhSlot h = (Slot . unSlotNo . headerSlot . headerPreHeader) h
+
+-- data SimpleBlock p c = SimpleBlock {
+--       simpleHeader :: SimpleHeader p c
+--     , simpleBody   :: SimpleBody
+--     }
+--   deriving (Generic)
+
+-- instance (ByronPermBlock.Block
+--            (SimpleBlock PermBft SimpleBlockMockCrypto)) where
+  
 demoProtocolConstraints :: DemoProtocol p -> Dict (DemoProtocolConstraints p)
 demoProtocolConstraints DemoBFT{}            = Dict
 demoProtocolConstraints DemoPermBFT{}        = Dict
