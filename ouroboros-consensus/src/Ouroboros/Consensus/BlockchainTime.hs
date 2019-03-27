@@ -44,8 +44,6 @@ module Ouroboros.Consensus.BlockchainTime (
 import           Control.Monad
 import           Data.Fixed
 import           Data.Time
-import           Data.Time.Clock (DiffTime)
-import           Data.Time.Clock.System
 import           Data.Word (Word64)
 
 import           Control.Monad (void)
@@ -146,28 +144,17 @@ realBlockchainTime slotLen start = do
 --
 -- > fixedToUTC (fixedFromUTC t) ~= t
 -- > fixedFromUTC (fixedToUTC t) == t
-newtype FixedUTC = FixedUTC { fixedSecondsSinceEpoch :: Fixed E3 }
+newtype FixedUTC = FixedUTC { fixedSecondsSinceEpoch :: UTCTime }
   deriving (Eq, Ord)
 
 instance Show FixedUTC where
   show = show . fixedToUTC
 
 fixedFromUTC :: UTCTime -> FixedUTC
-fixedFromUTC = FixedUTC . conv . utcToSystemTime
-  where
-    conv :: SystemTime -> Fixed E3
-    conv (MkSystemTime secs nsecs) = MkFixed $
-          (fromIntegral secs * 1_000)
-        + (fromIntegral nsecs `div` 1_000_000)
+fixedFromUTC = FixedUTC
 
 fixedToUTC :: FixedUTC -> UTCTime
-fixedToUTC = systemToUTCTime . conv . fixedSecondsSinceEpoch
-  where
-    conv :: Fixed E3 -> SystemTime
-    conv (MkFixed millisecs) = MkSystemTime {
-          systemSeconds     = fromIntegral $  millisecs `div` 1_000
-        , systemNanoseconds = fromIntegral $ (millisecs `mod` 1_000) * 1_000_000
-        }
+fixedToUTC = fixedSecondsSinceEpoch
 
 getCurrentFixedUTC :: IO FixedUTC
 getCurrentFixedUTC = fixedFromUTC <$> getCurrentTime
@@ -176,31 +163,29 @@ getCurrentFixedUTC = fixedFromUTC <$> getCurrentTime
 --
 -- > fixedToNominal (fixedFromNominal d) ~= d
 -- > fixedFromNominal (fixedToNominal t) == t
-newtype FixedDiffTime = FixedDiffTime { fixedDiffTime :: Fixed E3 }
+newtype FixedDiffTime = FixedDiffTime { fixedDiffTime :: NominalDiffTime }
   deriving (Eq, Ord, Num)
 
 instance Show FixedDiffTime where
   show = show . fixedDiffToNominal
 
 fixedDiffFromNominal :: NominalDiffTime -> FixedDiffTime
-fixedDiffFromNominal = FixedDiffTime . realToFrac
+fixedDiffFromNominal = FixedDiffTime
 
 fixedDiffToNominal :: FixedDiffTime -> NominalDiffTime
-fixedDiffToNominal = realToFrac . fixedDiffTime
+fixedDiffToNominal = fixedDiffTime
 
 threadDelayByFixedDiff :: FixedDiffTime -> IO ()
-threadDelayByFixedDiff = threadDelay
-                       . (realToFrac :: Fixed E3 -> DiffTime)
-                       . fixedDiffTime
+threadDelayByFixedDiff = threadDelay . realToFrac . fixedDiffTime
 
 multFixedDiffTime :: Int -> FixedDiffTime -> FixedDiffTime
 multFixedDiffTime n (FixedDiffTime d) = FixedDiffTime (fromIntegral n * d)
 
 diffFixedUTC :: FixedUTC -> FixedUTC -> FixedDiffTime
-diffFixedUTC (FixedUTC t) (FixedUTC t') = FixedDiffTime (t - t')
+diffFixedUTC (FixedUTC t) (FixedUTC t') = FixedDiffTime (t `diffUTCTime` t')
 
 addFixedUTC :: FixedDiffTime -> FixedUTC -> FixedUTC
-addFixedUTC (FixedDiffTime d) (FixedUTC t) = FixedUTC (t + d)
+addFixedUTC (FixedDiffTime d) (FixedUTC t) = FixedUTC (d `addUTCTime` t)
 
 {-------------------------------------------------------------------------------
   Time to slots and back again
@@ -215,16 +200,20 @@ slotLengthFromMillisec = SlotLength . FixedDiffTime . conv
   where
     -- Explicit type annotation here means that /if/ we change the precision,
     -- we are forced to reconsider this code.
-    conv :: Integer -> Fixed E3
-    conv = MkFixed
+    conv :: Integer -> NominalDiffTime
+    conv = (realToFrac :: Pico -> NominalDiffTime)
+         . (/ 1000)
+         . (fromInteger :: Integer -> Pico)
 
 slotLengthToMillisec :: SlotLength -> Integer
 slotLengthToMillisec = conv . fixedDiffTime . getSlotLength
   where
     -- Explicit type annotation here means that /if/ we change the precision,
     -- we are forced to reconsider this code.
-    conv :: Fixed E3 -> Integer
-    conv (MkFixed n) = n
+    conv :: NominalDiffTime -> Integer
+    conv = truncate
+         . (* 1000)
+         . (realToFrac :: NominalDiffTime -> Pico)
 
 -- | System start
 --
@@ -248,7 +237,7 @@ slotAtTime (SlotLength d) (SystemStart start) now = conv $
               (fixedDiffTime (now `diffFixedUTC` start))
     `divMod'` (fixedDiffTime d)
   where
-    conv :: (Word64, Fixed E3) -> (SlotNo, FixedDiffTime)
+    conv :: (Word64, NominalDiffTime) -> (SlotNo, FixedDiffTime)
     conv (slot, time) = (SlotNo slot, FixedDiffTime time)
 
 -- | Compute time until the next slot and the number of that next slot
