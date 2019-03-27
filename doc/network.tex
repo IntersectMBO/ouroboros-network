@@ -1136,7 +1136,7 @@ The protocol uses the following messages:
 \begin{tabular}{|l|l|l|l|}
   \hline
   \multicolumn{4}{|c|}{Transition table} \\ \hline
-  from state & message             & parameter                           & to state    \\ \hline\hline
+  from state & message             & parameters                          & to state    \\ \hline\hline
   \Idle      & \RequestNext        &                                     & \CanAwait   \\ \hline
   \Idle      & \FindIntersect      & $\langle point\rangle$              & \Intersect  \\ \hline
   \Idle      & \MsgDone            &                                     & \Done       \\ \hline
@@ -1349,7 +1349,7 @@ Transition table:
 \begin{tabular}{|l|l|l|l|}
   \hline
   \multicolumn{4}{|c|}{Transition table} \\ \hline
-  from state   & message             & parameter              & to state    \\ \hline\hline
+  from state   & message             & parameters             & to state    \\ \hline\hline
   \Idle        & \ClientDone         &                        & \Done       \\ \hline
   \Idle        & \RequestRange       & $range$                & \Busy       \\ \hline
   \Busy        & \NoBlocks           &                        & \Idle       \\ \hline
@@ -1393,7 +1393,7 @@ application of the protocol determines the type of the requests and responses.
 
 \begin{tabular}{|l|l|l|l|} \hline
 \multicolumn{4}{|c|}{Transition table} \\ \hline
-  from         & message            & parameter              & to       \\ \hline\hline
+  from         & message            & parameters             & to       \\ \hline\hline
   \Idle        & \Request           & $request$              & \Busy     \\ \hline
   \Busy        & \Response          & $response$             & \Done     \\ \hline
 \end{tabular}
@@ -1457,7 +1457,7 @@ Messages of the protocol:
 
 \begin{tabular}{|l|l|l|l|} \hline
 \multicolumn{4}{|c|}{Transition table} \\ \hline
-  message/event      & parameter              & from        & to          \\ \hline
+  message/event      & parameters             & from        & to          \\ \hline
   \GetHashes          & $n$                   & \Idle       & \SendHashes  \\ \hline
   \SendHashes         & $hashes$              & \SendHashes & \Idle \\ \hline
   \GetTx              & $hash$                & \Idle       & \SendTx \\ \hline
