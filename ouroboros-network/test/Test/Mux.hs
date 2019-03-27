@@ -202,7 +202,7 @@ prop_mux_snd_recv request response = ioProperty $ do
 -- Stub for a mpdInitiator or mpdResponder that doesn't send or receive any data.
 dummyCallback :: (MonadTimer m) => Channel m BL.ByteString  -> m ()
 dummyCallback _ = forever $
-    threadDelay 1000000
+    threadDelay 1.0
 
 -- | Create a verification function, a MiniProtocolDescription for the client side and a
 -- MiniProtocolDescription for the server side for a RequestResponce protocol.
