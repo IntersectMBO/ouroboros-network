@@ -1042,6 +1042,50 @@ The messages of the Ping-Pong protocol do not carry any data.
   \Idle        & \MsgDone           & \Done       \\ \hline
 \end{tabular}
 
+\section{Request Response Protocol}
+\label{request-response-protocol}
+\renewcommand{\Idle}{\state{Idle}}
+\renewcommand{\Busy}{\state{Busy}}
+\renewcommand{\Done}{\state{Done}}
+\newcommand{\Request}{\msg{Request}}
+\newcommand{\Response}{\msg{Response}}
+
+\subsection{Description}
+The request response protocol is polymorphic in the request and response data that is being transmitted.
+This means that there are different possible applications of this protocol and the
+application of the protocol determines the type of the requests and responses.
+
+This is just an example protocol which does not need to be supported, but it
+may be useful in the future.  It's also useful as a simple example of
+a protocol description.
+
+\subsection{State machine}
+\hsref{ouroboros-network/src/Ouroboros/Network/Protocol/ReqResp/Type.hs}
+
+\begin{tabular}{|l|l|}
+  \hline
+  \multicolumn{2}{|c|}{Agency} \\ \hline
+  Client has Agency & \Idle \\  \hline
+  Server has Agency & \Busy \\ \hline
+\end{tabular}
+
+\begin{tikzpicture}[->,>=stealth',shorten >=1pt,auto,node distance=4.5cm, semithick]
+  \tikzstyle{every state}=[fill=red,draw=none,text=white]
+  \node[state, green, initial]                                   (Idle)      {\Idle};
+  \node[state, blue, right of=Idle]                              (Busy)      {\Busy};
+  \node[state, right of=Busy]                                    (Done)      {\Done};
+
+  \draw (Idle)         edge[]      node{\Request}           (Busy);
+  \draw (Busy)         edge[]      node{\Response}          (Done);
+\end{tikzpicture}
+
+\begin{tabular}{|l|l|l|l|} \hline
+\multicolumn{4}{|c|}{Transition table} \\ \hline
+  from         & message            & parameters             & to       \\ \hline\hline
+  \Idle        & \Request           & $request$              & \Busy     \\ \hline
+  \Busy        & \Response          & $response$             & \Done     \\ \hline
+\end{tabular}
+
 \section{Single Phase Chain Synchronisation Protocol}
 \label{chain-sync-protocol}
 \hsref{ouroboros-network/src/Ouroboros/Network/Protocol/ChainSync/Type.hs}
@@ -1372,50 +1416,6 @@ Transition table:
   \Busy        & \StartBatch         &                        & \Streaming  \\ \hline
   \Streaming   & \Block              & $body$                 & \Streaming  \\ \hline
   \Streaming   & \BatchDone          &                        & \Idle       \\ \hline
-\end{tabular}
-
-\section{Request Response Protocol}
-\label{request-response-protocol}
-\renewcommand{\Idle}{\state{Idle}}
-\renewcommand{\Busy}{\state{Busy}}
-\renewcommand{\Done}{\state{Done}}
-\newcommand{\Request}{\msg{Request}}
-\newcommand{\Response}{\msg{Response}}
-
-\subsection{Description}
-The request response protocol is polymorphic in the request and response data that is being transmitted.
-This means that there are different possible applications of this protocol and the
-application of the protocol determines the type of the requests and responses.
-
-This is just an example protocol which does not need to be supported, but it
-may be useful in the future.  It's also useful as a simple example of
-a protocol description.
-
-\subsection{State machine}
-\hsref{ouroboros-network/src/Ouroboros/Network/Protocol/ReqResp/Type.hs}
-
-\begin{tabular}{|l|l|}
-  \hline
-  \multicolumn{2}{|c|}{Agency} \\ \hline
-  Client has Agency & \Idle \\  \hline
-  Server has Agency & \Busy \\ \hline
-\end{tabular}
-
-\begin{tikzpicture}[->,>=stealth',shorten >=1pt,auto,node distance=4.5cm, semithick]
-  \tikzstyle{every state}=[fill=red,draw=none,text=white]
-  \node[state, green, initial]                                   (Idle)      {\Idle};
-  \node[state, blue, right of=Idle]                              (Busy)      {\Busy};
-  \node[state, right of=Busy]                                    (Done)      {\Done};
-
-  \draw (Idle)         edge[]      node{\Request}           (Busy);
-  \draw (Busy)         edge[]      node{\Response}          (Done);
-\end{tikzpicture}
-
-\begin{tabular}{|l|l|l|l|} \hline
-\multicolumn{4}{|c|}{Transition table} \\ \hline
-  from         & message            & parameters             & to       \\ \hline\hline
-  \Idle        & \Request           & $request$              & \Busy     \\ \hline
-  \Busy        & \Response          & $response$             & \Done     \\ \hline
 \end{tabular}
 
 \section{Transaction Submission Mini Protocol}
