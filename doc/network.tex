@@ -1085,7 +1085,7 @@ other node it communicates with.
   \node[state, blue, above of=Idle]                       (Intersect) {\Intersect};
 
   \draw (Idle)         edge[left, bend right]      node{\RequestNext}           (CanAwait);
-  \draw (CanAwait)     edge[above, bend right]     node{\AwaitReply}            (MustReply);
+  \draw (CanAwait)     edge[below, bend right]     node{\AwaitReply}            (MustReply);
   \draw (CanAwait)     edge[above,bend right=45]     node{\RollForward}           (Idle);
   \draw (MustReply)    edge[right,bend right=45]     node{\RollForward}           (Idle);
   \draw (CanAwait)     edge[above,bend right=80]     node{\RollBackward}          (Idle);
@@ -1151,19 +1151,25 @@ The protocol uses the following messages:
 \end{tabular}
 
 \subsection{Implementation of the Chain Producer}
-The trade-offs between the robustness and the efficiency of possible chain-sync protocols are
+The trade-offs between the robustness and efficiency of possible chain-sync protocols are
 discussed in Section~\ref{chain-sync-discussion}.
 This section describes a state-full implementation of a chain producer that is suitable for a setting where
 the producer cannot trust the chain consumer.
-A important requirement, in this setting,
+An important requirement, in this setting,
 is that a chain consumer must never be able to cause excessive resource use on the producer side.
 The presented implementation meets this requirement.
 It strictly only uses a constant amount of memory to store the state, that the producer maintains
-per chain consumer.
+per chain consumer.  This protocol is only used to reproduce the producer
+chain locally by consumer.  By running many instances of this protocol against
+different peers, a node can reproduce chains in the network and
+do chain selection which by design is not part of this protocol.  An important
+note is that the consumer's chain described in this section is the chain
+reproduced by the client of chain-sync protocol, rather than the chain of that
+node.
 
-We call the state, the producer maintains about the consumer, the $read~pointer$.
+We call the state which the producer maintains about the consumer, the $read~pointer$.
 The $read~pointer$ basically tracks what the producer knows about the head of
-the consumer's chain without storing the consumers chain itself.
+the consumer's chain without storing it locally.
 It points to a block on the current chain of the chain producer.
 The $read~pointers$ are part of the shared state of the node (Figure~\ref{node-diagram-concurrency}) and
 $read~pointer$s are concurrently updated by the thread that runs the chain-sync mini-protocol and the
@@ -1181,7 +1187,9 @@ chain (this also comprises a consumer booting from genesis).
 In this case, the protocol follows a simple, consumer-driven, request-response pattern.
 The consumer sends \RequestNext~messages to ask for the next block.
 If the $read~pointer$ is not yet at the head of the chain,
-the producer advances the $read~pointer$ to the next block and replies with a \RollForward.
+the producer replies with a \RollForward{} and advances the $read~pointer$ to
+the next block (optimistically assuming that the client will update its chain
+accordingly).
 The \RollForward~message contains the next block and also the head-point of the producer.
 The protocol follows this pattern until the $read~pointer$ reaches the end of its chain.
 
@@ -1195,16 +1203,17 @@ The protocol follows this pattern until the $read~pointer$ reaches the end of it
 \end{figure}
 
 \subparagraph{Producer driven updates}
-If the $read~pointer$ points to the end of the chain and the producer receives a \RequestNext~
+If the $read~pointer$ points to the end of the chain and the producer receives
+a \RequestNext{}
 the consumers chain is already up to date.
-The producer informs the consumer with a \AwaitReply~that no new data is available.
+The producer informs the consumer with an \AwaitReply{} that no new data is available.
 After receiving a \AwaitReply, the consumer just waits for a new message and the producer keeps agency.
 The \AwaitReply~switches from a consumer driven phase to a producer driven phase.
 
 The producer blocks until new data becomes available.
-When a new block is a available, the producer will finally unblock and
-reply with a \RollForward~and give agency back to the consumer.
-The producer can also get unblocked when the nodes switches to a new chain fork.
+When a new block is available, the producer will
+reply with a \RollForward{} message and give agency back to the consumer.
+The producer can also get unblocked when its node switches to a new chain fork.
 
 \subparagraph{Producer switches to a new fork}
 The node of the chain producer can switch to a new fork at any time, independent of the
@@ -1235,7 +1244,7 @@ Finally the producer thread must unblock if it is in the \MustReply~state.
 
 Figure~\ref{read-pointer-rollback} illustrates a fork switch that requires an update of the $read~pointer$
 for one of the chain consumers, i.e. an example for case 2).
-Before the switch, the $read~pointer$ of one of the consumers points to block $0x660f$.
+Before the switch, the $read~pointer$ of the consumer points to block $0x660f$.
 The producer switches to a new chain with the head of the chain at block $0xcdf0$.
 The node must update the $read~pointer$ to block $0xfa40$ and the next message to the consumer will be a \RollBackward.
 
@@ -1250,7 +1259,8 @@ starts to track the producer.
 The protocol provides an efficient method to search for the longest common prefix (called intersection here)
 between the fork of the producer and the fork that is known to the consumer.
 
-To do so, the consumer sends \FindIntersect~messages with a list of chain points it knows to the producer.
+To do so, the consumer sends \FindIntersect~message with a list of chain
+points which belong to its node chain.
 If the producer does not know any of the points it replies with \IntersectUnchanged.
 Otherwise it replies with \IntersectImproved~and the best (i.e. the newest) of the points that it knows
 and also updates the $read~pointer$ accordingly.
@@ -1270,9 +1280,11 @@ $b$ is the head of the consumer fork.
 In principle, the chain consumer has to guard against a malicious chain producer
 as much as the other way around.
 However, two aspects of the protocol play in favour of the consumer here.
-1) The protocol is basically consumer driver, i.e. the producer has simply no way to send unsolicited
+\begin{itemize}
+  \item The protocol is basically consumer driver, i.e. the producer has simply no way to send unsolicited
 data to the consumer (within the protocol).
-2) The consumer can verify the response data itself.
+  \item The consumer can verify the response data itself.
+\end{itemize}
 Here are some cases to consider:
 \begin{description}
 \item[\FindIntersect~Phase] The consumer and the producer play a number guessing game, the consumer can easily detect inconsistent behaviour.
@@ -1280,9 +1292,11 @@ Here are some cases to consider:
   (with the help for the ledger layer)
   (The consumer may need to download the block first, if the protocol only sends block headers.)
 \item[The producer replies with a \RollBackward] The consumer tracks several producers.
-  If the producer sends false \RollBackward~messages the consumer
-  will, at some point, just start to track an other longer chain fork.
-\item[The Producer is just passive/slow] The consumer will start to track an other longer chain fork.
+  If the producer sends false \RollBackward~messages the consumer's node
+  will, at some point, just switch to a longer chain fork.
+\item[The Producer is just passive/slow] The consumer's node will switch to
+  a longer chain coming from another producer via another instance of
+    chain-sync protocol.
 \end{description}
 \wip{This should be explained in detail}
 
