@@ -6,11 +6,8 @@
 
 {-# OPTIONS_GHC "-fwarn-incomplete-patterns" #-}
 
--- TODO probably better as Ouroboros.Proxy.Byron
 module Ouroboros.Byron.Proxy.Types where
 
-import Control.Applicative ((<|>))
-import Control.Concurrent (threadDelay)
 import Control.Concurrent.Async (withAsync)
 import Control.Concurrent.STM (STM, atomically)
 import Control.Concurrent.STM.TBQueue (TBQueue, newTBQueueIO, readTBQueue,
@@ -24,8 +21,6 @@ import Data.Conduit (ConduitT, (.|), await, mapOutput, runConduit, yield)
 import Data.List (maximumBy)
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
-import Data.Map (Map)
-import qualified Data.Map as Map
 import Data.Maybe (catMaybes, fromMaybe)
 import Data.Ord (comparing)
 import Data.Proxy (Proxy (..))
@@ -59,6 +54,8 @@ import qualified Pos.Logic.Types as Logic
 
 import Ouroboros.Byron.Proxy.DB (DB)
 import qualified Ouroboros.Byron.Proxy.DB as DB
+import Ouroboros.Byron.Proxy.Pool (Pool, withPool)
+import qualified Ouroboros.Byron.Proxy.Pool as Pool (insert, lookup)
 import Ouroboros.Storage.ImmutableDB.API (SlotNo (..))
 
 -- | Definitions required in order to run the Byron proxy.
@@ -111,54 +108,6 @@ data ByronProxy = ByronProxy
   , sendAtom      :: Atom -> STM ()
   }
 
--- | Mutable STM interface to a 'PoolRounds k v'.
--- Use `withPool` to get a `Pool` which will be automatically cleared on a
--- given interval. Entries will stay in the `Pool` at least n microseconds and
--- at most 2*n microseconds.
-newtype Pool k v = Pool
-  { getPool :: TVar (PoolRounds k v)
-  }
-
--- | A current pool and the previous current pool.
-data PoolRounds k v = PoolRounds
-  { poolCurrent :: !(Map k v)
-  , poolRecent  :: !(Map k v)
-  }
-
-newRound :: PoolRounds k v -> PoolRounds k v
-newRound pr = PoolRounds { poolCurrent = Map.empty, poolRecent = poolCurrent pr }
-
-poolRoundsInsert :: ( Ord k ) => k -> v -> PoolRounds k v -> PoolRounds k v
-poolRoundsInsert k v pr = pr { poolCurrent = Map.insert k v (poolCurrent pr) }
-
-poolRoundsLookup :: ( Ord k ) => k -> PoolRounds k v -> Maybe v
-poolRoundsLookup k pr =
-  Map.lookup k (poolCurrent pr) <|> Map.lookup k (poolRecent pr)
-
-poolInsert :: ( Ord k ) => k -> v -> Pool k v -> STM ()
-poolInsert k v pool = modifyTVar' (getPool pool) (poolRoundsInsert k v)
-
-poolLookup :: ( Ord k ) => k -> Pool k v -> STM (Maybe v)
-poolLookup k pool = do
-  rounds <- readTVar (getPool pool)
-  pure $ poolRoundsLookup k rounds
-
--- | Create and use a 'Pool' with rounds of a given length in microseconds.
--- Data will remain in the pool for at least this interval and at most twice
--- this interval.
--- We use 'Pool's to back the inv/req/data relay. The length must be
--- sufficiently long that we can expect all relaying to be done before this
--- interval has passed.
-withPool :: Natural -> (Pool k v -> IO t) -> IO t
-withPool usNat k = do
-  poolVar <- newTVarIO (PoolRounds Map.empty Map.empty)
-  withAsync (reaper poolVar) $ \_ -> k (Pool poolVar)
-  where
-  us :: Int
-  us = fromEnum usNat
-  reaper poolVar = threadDelay us >> swapRounds poolVar >> reaper poolVar
-  swapRounds poolVar = atomically $ modifyTVar' poolVar newRound
-
 -- | Make a logic layer `KeyVal` from a `Pool`. A `Tagged` is thrown on
 -- because that's what the logic layer needs on all keys.
 taggedKeyValFromPool
@@ -176,14 +125,14 @@ taggedKeyValFromPool ptag keyFromValue process pool = KeyVal
     toKey = pure . tagWith ptag . keyFromValue
     -- Handle an INV: True if we don't have it, False if we do.
   , handleInv = \k -> fmap (maybe True (const False)) $ atomically $
-      poolLookup (untag k) pool
+      Pool.lookup (untag k) pool
     -- Handle a REQ: Nothing if we don't have it, Just if we do.
-  , handleReq = \k -> atomically $ poolLookup (untag k) pool
+  , handleReq = \k -> atomically $ Pool.lookup (untag k) pool
     -- Handle a DATA: put it into the pool, process it, and give False to mean it
     -- should _not_ be relayed. For this Byron proxy, we'll never relay data
     -- received from Byron to another Byron node.
   , handleData = \v -> do
-      atomically $ poolInsert (keyFromValue v) v pool
+      atomically $ Pool.insert (keyFromValue v) v pool
       process v
       pure False
   }
