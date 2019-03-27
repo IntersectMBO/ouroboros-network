@@ -34,16 +34,7 @@ tests = testGroup "BlockchainTime" [
 
 -- > fixedToUTC (fixedFromUTC t) ~= t
 prop_UTC_Fixed_UTC :: UTCTime -> Property
-prop_UTC_Fixed_UTC t =
-      counterexample ("t':  " ++ show t')
-    . counterexample ("t'': " ++ show t'')
-    $ realToFrac (diffUTCTime t t'') < maxError
-  where
-    t'  = fixedFromUTC t
-    t'' = fixedToUTC   t'
-
-    maxError :: Double
-    maxError = 0.001 -- millisecond resolution
+prop_UTC_Fixed_UTC t = fixedToUTC (fixedFromUTC t) === t
 
 -- > fixedFromUTC (fixedToUTC t) == t
 prop_Fixed_UTC_Fixed :: FixedUTC -> Property
@@ -51,16 +42,7 @@ prop_Fixed_UTC_Fixed t = fixedFromUTC (fixedToUTC t) === t
 
 -- > fixedToNominal (fixedFromNominal d) ~= d
 prop_Nominal_Fixed_Nominal :: NominalDiffTime -> Property
-prop_Nominal_Fixed_Nominal d =
-      counterexample ("t':  " ++ show d')
-    . counterexample ("t'': " ++ show d'')
-    $ realToFrac (d - d'') < maxError
-  where
-    d'  = fixedDiffFromNominal d
-    d'' = fixedDiffToNominal   d'
-
-    maxError :: Double
-    maxError = 0.001 -- millisecond resolution
+prop_Nominal_Fixed_Nominal t = fixedDiffToNominal (fixedDiffFromNominal t) === t
 
 -- > fixedFromNominal (fixedToNominal t) == t
 prop_Fixed_Nominal_Fixed :: FixedDiffTime -> Property
