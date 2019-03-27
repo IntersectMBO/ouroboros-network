@@ -7,11 +7,13 @@
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
 
-import Control.Concurrent (myThreadId)
-import Control.Concurrent.Async (race)
+import Control.Concurrent (myThreadId, threadDelay)
+import Control.Concurrent.Async (concurrently, race)
 import Control.Concurrent.STM (STM, atomically, retry)
 import Control.Exception (throwIO)
 import Control.Monad (forM_)
+import Control.Monad.Trans.Class (lift)
+import Control.Monad.Trans.Resource (ResourceT, runResourceT)
 import qualified Data.ByteString.Lazy as Lazy (fromStrict)
 import Data.Functor.Contravariant (Op (..), contramap)
 import Data.List.NonEmpty (NonEmpty)
@@ -51,13 +53,23 @@ import Pos.Diffusion.Full (FullDiffusionConfiguration (..))
 import Pos.Infra.Diffusion.Types
 import Pos.Launcher (NodeParams (..), withConfigurations)
 import Pos.Util.CompileInfo (withCompileInfo)
-import Pos.Util.Trace (Trace)
+import Pos.Util.Trace (Trace, traceWith)
 import Pos.Util.Trace.Named as Trace (LogNamed (..), appendName, named)
 import qualified Pos.Util.Trace
 import qualified Pos.Util.Wlog as Wlog
 
+import qualified Network.TypedProtocol.Proofs as Protocol (connect)
+import Network.TypedProtocols.Driver (runPeer)
+
+import Ouroboros.Network.Channel (socketAsChannel)
+import qualified Ouroboros.Network.Protocol.ChainSync.Client as ChainSync
+import qualified Ouroboros.Network.Protocol.ChainSync.Server as ChainSync
+import qualified Ouroboros.Byron.Proxy.ChainSync.Client as Client
+import qualified Ouroboros.Byron.Proxy.ChainSync.Server as Server
+import qualified Ouroboros.Byron.Proxy.ChainSync.Types as ChainSync
+
 import qualified Ouroboros.Byron.Proxy.DB as DB
-import qualified Ouroboros.Byron.Proxy.Index as Index
+import qualified Ouroboros.Byron.Proxy.Index.Sqlite as Index
 import Ouroboros.Byron.Proxy.Types
 import qualified Ouroboros.Storage.Common as Immutable
 import qualified Ouroboros.Storage.ImmutableDB.API as Immutable
@@ -161,6 +173,54 @@ byronProxyMain db bp = getStdGen >>= mainLoop Nothing
     let (idx, rndGen') = randomR (0, NE.length ne - 1) rndGen
     in  (ne NE.!! idx, rndGen')
 
+-- | Echos rolls (forward or backward) using a trace.
+chainSyncClient
+  :: forall m .
+     ( Monad m )
+  => Trace m (Either ChainSync.Point ChainSync.Block, ChainSync.Point)
+  -> ChainSync.ChainSyncClient ChainSync.Block ChainSync.Point m ()
+chainSyncClient trace = Client.chainSyncClient fold
+  where
+  fold :: Client.Fold m ()
+  fold = Client.Fold $ pure $ Client.Continue forward backward
+  forward :: ChainSync.Block -> ChainSync.Point -> Client.Fold m ()
+  forward blk point = Client.Fold $ do
+    traceWith trace (Right blk, point)
+    Client.runFold fold
+  backward :: ChainSync.Point -> ChainSync.Point -> Client.Fold m ()
+  backward point1 point2 = Client.Fold $ do
+    traceWith trace (Left point1, point2)
+    Client.runFold fold
+
+-- | Use a DB and a given number of microseconds to poll for changes, to get
+-- a chain sync server that serves whole blocks.
+-- The `ResourceT` is needed because we deal with DB iterators.
+chainSyncServer
+  :: Int
+  -> DB.DB IO
+  -> ChainSync.ChainSyncServer ChainSync.Block ChainSync.Point (ResourceT IO) ()
+chainSyncServer usPoll = Server.chainSyncServer err poll
+  where
+  err = throwIO
+  poll :: Server.PollT IO
+  poll p m = do
+    s <- m
+    mbT <- p s
+    case mbT of
+      Nothing -> lift (threadDelay usPoll) >> poll p m
+      Just t  -> pure t
+
+{-
+-- | Run a chain sync server over a UNIX domain socket.
+-- Accepts at most one connection at a time, for simplicity.
+runChainSyncServer :: Int -> DB.DB IO -> IO x
+runChainSyncServer usPoll db = bracket mkSocket Socket.close $ \socket -> do
+  let channel = socketAsChannel sock
+  runPeer codec channel (chainSyncServer usPoll db)
+  where
+  codec = ChainSync.codec
+  sock <- Socket.socket Socket.AF_UNIX Socket.Stream Socket.defaultProtocol
+-}
 
 -- | Diffusion layer uses log-waper severity, iohk-monitoring uses its own.
 convertSeverity :: Wlog.Severity -> BM.Severity
@@ -323,7 +383,35 @@ main = withCompileInfo $ do
             _ -> pure ()
           withByronProxy bpc db $ \bp -> do
             let userInterrupt = getChar
-            outcome <- race userInterrupt (byronProxyMain db bp)
+                usPoll = 1000000 -- microseconds
+                -- Client must go in `ResourceT`, since the server is in
+                -- `ResourceT`.
+                clientEcho :: Trace (ResourceT IO) (Either ChainSync.Point ChainSync.Block, ChainSync.Point)
+                clientEcho = Pos.Util.Trace.Trace $ Op $ \(roll, _tip) ->
+                  let msg = case roll of
+                        Left  back    -> mconcat
+                          [ "Roll back to "
+                          , show back
+                          ]
+                        Right forward -> mconcat
+                          [ "Roll forward to "
+                          , case ChainSync.getBlock forward of
+                              Left ebb  -> show $ DB.ebbEpoch ebb
+                              Right blk -> show $ DB.blockEpochAndRelativeSlot blk
+                          ]
+                  in  lift (putStrLn msg)
+                client = chainSyncClient clientEcho
+                server = chainSyncServer usPoll db
+                -- NB: 'connect' actually makes a distinction between client
+                -- and server, much to my dismay. The "client" (whatever that
+                -- means) must be the first parameter.
+                chainSyncThread = runResourceT $ Protocol.connect
+                  (ChainSync.chainSyncClientPeer client)
+                  (ChainSync.chainSyncServerPeer server)
+                {- chainSyncThread = runChainSyncServer readFifo writeFifo usPoll db -}
+                byronThread = byronProxyMain db bp
+                mainThread = fst <$> concurrently byronThread chainSyncThread
+            outcome <- race userInterrupt mainThread
             case outcome of
               Left _ -> pure ()
               Right impossible -> impossible

@@ -15,12 +15,16 @@ cabal-version:       >=1.10
 
 library
   exposed-modules:     Ouroboros.Byron.Proxy.DB,
+                       Ouroboros.Byron.Proxy.Pool,
                        Ouroboros.Byron.Proxy.Main,
+                       Ouroboros.Byron.Proxy.Server,
 
                        Ouroboros.Byron.Proxy.Index.Sqlite,
                        Ouroboros.Byron.Proxy.Index.Types,
 
+                       Ouroboros.Byron.Proxy.ChainSync.Client,
                        Ouroboros.Byron.Proxy.ChainSync.Server,
+                       Ouroboros.Byron.Proxy.ChainSync.Types
   -- other-modules:
   -- other-extensions:
   build-depends:       base,
@@ -50,10 +54,12 @@ library
                        random,
                        resourcet,
                        sqlite-simple,
+                       serialise,
                        stm,
                        tagged,
                        text,
-                       transformers
+                       transformers,
+                       typed-protocols
   hs-source-dirs:      src/lib
   default-language:    Haskell2010
   ghc-options:         -fwarn-incomplete-patterns
@@ -83,10 +89,14 @@ executable byron-proxy
                        lens,
                        optparse-applicative,
                        ouroboros-consensus,
+                       ouroboros-network,
                        random,
+                       resourcet,
                        stm,
                        text,
-                       time
+                       time,
+                       transformers,
+                       typed-protocols
   hs-source-dirs:      src/exec
   default-language:    Haskell2010
   -- -threaded is needed or else the diffusion layer will crash, due to a use
