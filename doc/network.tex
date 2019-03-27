@@ -1547,7 +1547,7 @@ to the messages of other mini protocols.
 \label{multiplexing-section}
 Multiplexing is used to run several mini protocols in parallel over a single
 channel (for example a single TCP connection).
-Figure~\ref{mux-diagram} shows an example of two nodes that each run three instances of
+Figure~\ref{mux-diagram} shows an example of two nodes, each running three
 mini protocols and a multiplexer/de-multiplexer.
 All the data, that is transmitted between the nodes, passes through the MUX/DEMUX of the nodes.
 There is a fixed pairing of the mini protocol instances, i.e. each mini protocol instance only
@@ -1566,7 +1566,7 @@ The implementation of the mini protocol also handles the serialisation and de-se
 The mini protocols write chunks of bytes to the MUX and read chunks of bytes from the DEMUX.
 The MUX reads the data from the mini protocols, splits the data into segments, adds a segment header
 and transmits the segments to the DEMUX of its peer.
-The DEMUX uses the segment headers to reassemble the byte streams for the mini protocols on its side.
+The DEMUX uses the segment's headers to reassemble the byte streams for the mini protocols on its side.
 The multiplexing protocol itself is completely agnostic to the structure of the multiplexed data.
 
 \subsection{Wire Format}
@@ -1625,7 +1625,7 @@ The mini protocol will block when it sends a message and the buffer is full.
 A concrete implementation of a multiplexer may use a variety of data structures and heuristics to
 yield the overall best efficiency.
 For example, although, the multiplexing protocol itself is agnostic to the underlying structure of
-the data, the multiplexer may try to avoid to split small mini protocol messages into two segments.
+the data, the multiplexer may in the future try to avoid to split small mini protocol messages into two segments.
 
 \subsection{Flow-control and Buffering in the Demultiplexer}
 The demultiplexer eagerly reads data from its ingress.
@@ -1691,7 +1691,7 @@ Roughly the implementation performs the following tasks:
 
 A connection passes through several stages during its life cycle.
 \begin{description}
-\item[\Larval]    The connection exists but nothing has be initialised.
+\item[\Larval]    The connection exists but nothing has been initialised yet.
 \item[\Connected] The OS-level primitives (sockets or pipes) are connected.
 \item[\Mature] The mini protocols are running.
 \item[\Dying]  One of the mini protocols has terminated.
@@ -1705,7 +1705,7 @@ A connection passes through several stages during its life cycle.
 \subsection{Setup of a Connection with the Mux-Control Protocol}
 The Mux-Control protocol is used to negotiate the versions of the mini
 protocols that are used by the client and the server.
-It is run exactly once after the the connection enters the \Connected-state and before
+It is run exactly once after the connection enters the \Connected-state and before
 any of the mini protocols is initialised.
 In a run of the Mux-Control protocol the peers exchange only two messages:
 The client request to connect with a \InitReq~message that contains a map of all supported protocol versions
@@ -1716,9 +1716,9 @@ Section~\label{included-cddl} contains the CDDL-specification of the binary form
 Each message is transmitted and within single MUX segment, i.e. with a proper segment header,
 but, as the MUX/DEMUX is not yet running the messages must not be split into multiple segments.
 
-\hsref{ouroboros-network/src/Ouroboros/Network/Mux/Types.hs}
-\hsref{ouroboros-network/src/Ouroboros/Network/NodeToNode.hs}
-\hsref{ouroboros-network/src/Ouroboros/Network/NodeToClient.hs}
+\noindent\hsref{ouroboros-network/src/Ouroboros/Network/Mux/Types.hs}
+\newline\hsref{ouroboros-network/src/Ouroboros/Network/NodeToNode.hs}
+\newline\hsref{ouroboros-network/src/Ouroboros/Network/NodeToClient.hs}
 
 \todo{Update needed !}
 \begin{table}[h]
