@@ -16,11 +16,11 @@ module Ouroboros.Consensus.BlockchainTime (
     -- * Real blockchain time
   , realBlockchainTime
     -- * Time utilities
-  , FixedUTC(..)
+  , FixedUTC
   , fixedFromUTC
   , fixedToUTC
   , getCurrentFixedUTC
-  , FixedDiffTime(..)
+  , FixedDiffTime
   , fixedDiffFromNominal
   , fixedDiffToNominal
   , threadDelayByFixedDiff
@@ -144,14 +144,13 @@ realBlockchainTime slotLen start = do
 --
 -- > fixedToUTC (fixedFromUTC t) == t
 -- > fixedFromUTC (fixedToUTC t) == t
-newtype FixedUTC = FixedUTC { fixedSecondsSinceEpoch :: UTCTime }
-  deriving (Eq, Ord)
+type FixedUTC = UTCTime
 
-instance Show FixedUTC where
-  show = show . fixedToUTC
+fixedSecondsSinceEpoch :: FixedUTC -> UTCTime
+fixedSecondsSinceEpoch = id
 
 fixedFromUTC :: UTCTime -> FixedUTC
-fixedFromUTC = FixedUTC
+fixedFromUTC = id
 
 fixedToUTC :: FixedUTC -> UTCTime
 fixedToUTC = fixedSecondsSinceEpoch
@@ -163,14 +162,13 @@ getCurrentFixedUTC = fixedFromUTC <$> getCurrentTime
 --
 -- > fixedToNominal (fixedFromNominal d) == d
 -- > fixedFromNominal (fixedToNominal t) == t
-newtype FixedDiffTime = FixedDiffTime { fixedDiffTime :: NominalDiffTime }
-  deriving (Eq, Ord, Num)
+type FixedDiffTime = NominalDiffTime
 
-instance Show FixedDiffTime where
-  show = show . fixedDiffToNominal
+fixedDiffTime :: FixedDiffTime -> NominalDiffTime
+fixedDiffTime = id
 
 fixedDiffFromNominal :: NominalDiffTime -> FixedDiffTime
-fixedDiffFromNominal = FixedDiffTime
+fixedDiffFromNominal = id
 
 fixedDiffToNominal :: FixedDiffTime -> NominalDiffTime
 fixedDiffToNominal = fixedDiffTime
@@ -179,13 +177,13 @@ threadDelayByFixedDiff :: FixedDiffTime -> IO ()
 threadDelayByFixedDiff = threadDelay . realToFrac . fixedDiffTime
 
 multFixedDiffTime :: Int -> FixedDiffTime -> FixedDiffTime
-multFixedDiffTime n (FixedDiffTime d) = FixedDiffTime (fromIntegral n * d)
+multFixedDiffTime n d = fromIntegral n * d
 
 diffFixedUTC :: FixedUTC -> FixedUTC -> FixedDiffTime
-diffFixedUTC (FixedUTC t) (FixedUTC t') = FixedDiffTime (t `diffUTCTime` t')
+diffFixedUTC t t' = t `diffUTCTime` t'
 
 addFixedUTC :: FixedDiffTime -> FixedUTC -> FixedUTC
-addFixedUTC (FixedDiffTime d) (FixedUTC t) = FixedUTC (d `addUTCTime` t)
+addFixedUTC d t = d `addUTCTime` t
 
 {-------------------------------------------------------------------------------
   Time to slots and back again
@@ -196,7 +194,7 @@ newtype SlotLength = SlotLength { getSlotLength :: FixedDiffTime }
   deriving (Show)
 
 slotLengthFromMillisec :: Integer -> SlotLength
-slotLengthFromMillisec = SlotLength . FixedDiffTime . conv
+slotLengthFromMillisec = SlotLength . conv
   where
     -- Explicit type annotation here means that /if/ we change the precision,
     -- we are forced to reconsider this code.
@@ -238,7 +236,7 @@ slotAtTime (SlotLength d) (SystemStart start) now = conv $
     `divMod'` (fixedDiffTime d)
   where
     conv :: (Word64, NominalDiffTime) -> (SlotNo, FixedDiffTime)
-    conv (slot, time) = (SlotNo slot, FixedDiffTime time)
+    conv (slot, time) = (SlotNo slot, time)
 
 -- | Compute time until the next slot and the number of that next slot
 --

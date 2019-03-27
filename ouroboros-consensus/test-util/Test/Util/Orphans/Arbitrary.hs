@@ -57,14 +57,6 @@ instance Arbitrary NominalDiffTime where
 instance Arbitrary UTCTime where
   arbitrary = (`addUTCTime` dawnOfTime) <$> arbitrary
 
--- | Defined in terms of instance for 'NominalDiffTime'
-instance Arbitrary FixedDiffTime where
-   arbitrary = fixedDiffFromNominal <$> arbitrary
-
--- | Defined in terms of instance for 'UTCTime'
-instance Arbitrary FixedUTC where
-  arbitrary = fixedFromUTC <$> arbitrary
-
 -- | Length between 0.001 and 20 seconds, millisecond granularity
 instance Arbitrary SlotLength where
   arbitrary = slotLengthFromMillisec <$> choose (1, 20 * 1_000)
