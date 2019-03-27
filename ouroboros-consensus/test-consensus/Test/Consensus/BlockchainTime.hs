@@ -4,6 +4,7 @@
 module Test.Consensus.BlockchainTime (tests) where
 
 import           Data.Bifunctor
+import           Data.Time.Clock (addUTCTime)
 import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.HUnit
@@ -42,12 +43,12 @@ prop_slotAtTime slotLen start execTime =
     . counterexample ("currentSlot: " ++ show currentSlot)
     . counterexample ("timeSpent:   " ++ show timeSpent)
     . counterexample ("slotStart:   " ++ show slotStart)
-    $    addFixedUTC (negate slotLen') now < startOfSlot slotLen start currentSlot
+    $    addUTCTime (negate slotLen') now < startOfSlot slotLen start currentSlot
     .&&. slotStart <= now
     .&&. 0 <= timeSpent
     .&&. timeSpent < getSlotLength slotLen
   where
-    now                      = addFixedUTC execTime (getSystemStart start)
+    now                      = addUTCTime execTime (getSystemStart start)
     (currentSlot, timeSpent) = slotAtTime slotLen start now
     slotStart                = startOfSlot slotLen start currentSlot
     slotLen'                 = getSlotLength slotLen
@@ -61,7 +62,7 @@ prop_timeUntilNextSlot slotLen start execTime =
     $    0 < timeLeft
     .&&. timeLeft <= getSlotLength slotLen
   where
-    now               = addFixedUTC execTime (getSystemStart start)
+    now               = addUTCTime execTime (getSystemStart start)
     (timeLeft, _next) = timeUntilNextSlot slotLen start now
 
     edgeCase :: String
@@ -88,9 +89,9 @@ prop_slotAfterTime slotLen start execTime =
          bimap (+1) (const 0) (slotAtTime slotLen start now)
     .&&. fst (slotAtTime slotLen start afterDelay) === next
   where
-    now              = addFixedUTC execTime (getSystemStart start)
+    now              = addUTCTime execTime (getSystemStart start)
     (timeLeft, next) = timeUntilNextSlot slotLen start now
-    afterDelay       = addFixedUTC timeLeft now
+    afterDelay       = addUTCTime timeLeft now
 
 {-------------------------------------------------------------------------------
   Test for IO
@@ -133,4 +134,4 @@ prop_delayNextSlot TestDelayIO{..} = withMaxSuccess 10 $ ioProperty $ do
     pickSystemStart = pick <$> getCurrentFixedUTC
       where
         pick :: FixedUTC -> SystemStart
-        pick = SystemStart . addFixedUTC (negate tdioStart')
+        pick = SystemStart . addUTCTime (negate tdioStart')

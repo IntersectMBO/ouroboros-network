@@ -20,9 +20,6 @@ module Ouroboros.Consensus.BlockchainTime (
   , getCurrentFixedUTC
   , FixedDiffTime
   , threadDelayByFixedDiff
-  , multFixedDiffTime
-  , diffFixedUTC
-  , addFixedUTC
     -- * Time to slots and back again
   , SlotLength(..)
   , slotLengthFromMillisec
@@ -150,15 +147,6 @@ type FixedDiffTime = NominalDiffTime
 threadDelayByFixedDiff :: FixedDiffTime -> IO ()
 threadDelayByFixedDiff = threadDelay . realToFrac
 
-multFixedDiffTime :: Int -> FixedDiffTime -> FixedDiffTime
-multFixedDiffTime n d = fromIntegral n * d
-
-diffFixedUTC :: FixedUTC -> FixedUTC -> FixedDiffTime
-diffFixedUTC t t' = t `diffUTCTime` t'
-
-addFixedUTC :: FixedDiffTime -> FixedUTC -> FixedUTC
-addFixedUTC d t = d `addUTCTime` t
-
 {-------------------------------------------------------------------------------
   Time to slots and back again
 -------------------------------------------------------------------------------}
@@ -198,7 +186,7 @@ newtype SystemStart = SystemStart { getSystemStart :: FixedUTC }
 -- > slotAtTime (startOfSlot slot) == (slot, 0)
 startOfSlot :: SlotLength -> SystemStart -> SlotNo -> FixedUTC
 startOfSlot (SlotLength d) (SystemStart start) (SlotNo n) =
-    addFixedUTC (multFixedDiffTime (fromIntegral n) d) start
+    addUTCTime (fromIntegral n * d) start
 
 -- | Compute slot at the specified time and how far we are into that slot
 --
@@ -206,7 +194,7 @@ startOfSlot (SlotLength d) (SystemStart start) (SlotNo n) =
 -- > 0 <= snd (slotAtTime now) < slotLen
 slotAtTime :: SlotLength -> SystemStart -> FixedUTC -> (SlotNo, FixedDiffTime)
 slotAtTime (SlotLength d) (SystemStart start) now =
-    conv $ (now `diffFixedUTC` start) `divMod'` d
+    conv $ (now `diffUTCTime` start) `divMod'` d
   where
     conv :: (Word64, NominalDiffTime) -> (SlotNo, FixedDiffTime)
     conv (slot, time) = (SlotNo slot, time)
