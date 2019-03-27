@@ -39,10 +39,12 @@ instance Serialise Point where
   encode point =
        CBOR.encodeListLen 2
     <> encode (pointSlot point)
+       -- `CSL.encode` is from the `Bi` class.
     <> CSL.encode (pointHash point)
   decode = do
     n <- CBOR.decodeListLen
     case n of
+      -- `CSL.decode` is from the `Bi` class.
       2 -> Point <$> decode <*> CSL.decode
       _ -> fail "Point: invalid list length"
 
