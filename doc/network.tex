@@ -1300,7 +1300,7 @@ Here are some cases to consider:
 \end{description}
 \wip{This should be explained in detail}
 
-\section{Block Fetching}
+\section{Block Fetch Protocol}
 \label{block-fetching-protocol}
 
 \hsref{ouroboros-network/src/Ouroboros/Network/Protocol/BlockFetch/Type.hs}
@@ -1338,7 +1338,7 @@ The block fetching mechanism enables a node to download a range of blocks.
   \draw (Idle)         edge[above]                node{\ClientDone}                  (Done);
   \draw (Idle)         edge[left,bend right]      node{\RequestRange}                (Busy);
   \draw (Busy)         edge[above,bend right]     node{\NoBlocks}                    (Idle);
-  \draw (Busy)         edge[above]                node{\StartBatch}                  (Streaming);
+  \draw (Busy)         edge[below]                node{\StartBatch}                  (Streaming);
   \draw (Streaming)    edge[loop right]           node{\Block}                       (Streaming);
   \draw (Streaming)    edge[right]                node{\BatchDone}                   (Idle);
 \end{tikzpicture}
@@ -1351,7 +1351,7 @@ The block fetching mechanism enables a node to download a range of blocks.
 \item [\StartBatch]
   The server starts block streaming.
 \item [\Block~{\boldmath $body$}]
-  Stream a single block.
+  Stream a single block's body.
 \item [\BatchDone]
   The server ends block streaming.
 \item [ClientDone]
@@ -1381,9 +1381,13 @@ Transition table:
 \newcommand{\Response}{\msg{Response}}
 
 \subsection{Description}
-The request response protocol is polymorphic in the request and response data that is been transmitted.
+The request response protocol is polymorphic in the request and response data that is being transmitted.
 This means that there are different possible applications of this protocol and the
 application of the protocol determines the type of the requests and responses.
+
+This is just an example protocol which does not need to be supported, but it
+may be useful in the future.  It's also useful as a simple example of
+a protocol description.
 
 \subsection{State machine}
 \hsref{ouroboros-network/src/Ouroboros/Network/Protocol/ReqResp/Type.hs}
@@ -1471,12 +1475,12 @@ Messages of the protocol:
 
 \begin{tabular}{|l|l|l|l|} \hline
 \multicolumn{4}{|c|}{Transition table} \\ \hline
-  message/event      & parameters             & from        & to          \\ \hline
-  \GetHashes          & $n$                   & \Idle       & \SendHashes  \\ \hline
-  \SendHashes         & $hashes$              & \SendHashes & \Idle \\ \hline
-  \GetTx              & $hash$                & \Idle       & \SendTx \\ \hline
-  \Tx                 & $tx$                  & \SendTx     & \Idle \\ \hline
-  \MsgDone            &                       & \Idle       & \Done\\ \hline
+  from        & message/event      & parameters            & to          \\ \hline\hline
+  \Idle       & \GetHashes         & $n$                   & \SendHashes  \\ \hline
+  \SendHashes & \SendHashes        & $hashes$              & \Idle \\ \hline
+  \Idle       & \GetTx             & $hash$                & \SendTx \\ \hline
+  \SendTx     & \Tx                & $tx$                  & \Idle \\ \hline
+  \Idle       & \MsgDone           &                       & \Done\\ \hline
 \end{tabular}
 
 \subsection{Client and Server Implementation}
