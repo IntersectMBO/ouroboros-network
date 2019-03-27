@@ -19,8 +19,6 @@ module Ouroboros.Consensus.BlockchainTime (
   , FixedUTC
   , getCurrentFixedUTC
   , FixedDiffTime
-  , fixedDiffFromNominal
-  , fixedDiffToNominal
   , threadDelayByFixedDiff
   , multFixedDiffTime
   , diffFixedUTC
@@ -147,15 +145,7 @@ getCurrentFixedUTC = getCurrentTime
 
 -- | Fixed precision time span (resolution: milliseconds)
 --
--- > fixedToNominal (fixedFromNominal d) == d
--- > fixedFromNominal (fixedToNominal t) == t
 type FixedDiffTime = NominalDiffTime
-
-fixedDiffFromNominal :: NominalDiffTime -> FixedDiffTime
-fixedDiffFromNominal = id
-
-fixedDiffToNominal :: FixedDiffTime -> NominalDiffTime
-fixedDiffToNominal = id
 
 threadDelayByFixedDiff :: FixedDiffTime -> IO ()
 threadDelayByFixedDiff = threadDelay . realToFrac

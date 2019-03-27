@@ -4,7 +4,6 @@
 module Test.Consensus.BlockchainTime (tests) where
 
 import           Data.Bifunctor
-import           Data.Time
 import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.HUnit
@@ -16,27 +15,13 @@ import           Test.Util.Orphans.Arbitrary (genLimitedSlotNo)
 
 tests :: TestTree
 tests = testGroup "BlockchainTime" [
-      testProperty "Nominal_Fixed_Nominal" prop_Nominal_Fixed_Nominal
-    , testProperty "Fixed_Nominal_Fixed"   prop_Fixed_Nominal_Fixed
-    , testProperty "startOfSlot"           prop_startOfSlot
+      testProperty "startOfSlot"           prop_startOfSlot
     , testProperty "slotAtTime"            prop_slotAtTime
     , testProperty "timeUntilNextSlot"     prop_timeUntilNextSlot
     , testProperty "timeFromStartOfSlot"   prop_timeFromStartOfSlot
     , testProperty "slotAfterTime"         prop_slotAfterTime
     , testProperty "delayNextSlot"         prop_delayNextSlot
     ]
-
-{-------------------------------------------------------------------------------
-  Roundtrip properties for time conversion functions
--------------------------------------------------------------------------------}
-
--- > fixedToNominal (fixedFromNominal d) ~= d
-prop_Nominal_Fixed_Nominal :: NominalDiffTime -> Property
-prop_Nominal_Fixed_Nominal t = fixedDiffToNominal (fixedDiffFromNominal t) === t
-
--- > fixedFromNominal (fixedToNominal t) == t
-prop_Fixed_Nominal_Fixed :: FixedDiffTime -> Property
-prop_Fixed_Nominal_Fixed t = fixedDiffFromNominal (fixedDiffToNominal t) === t
 
 {-------------------------------------------------------------------------------
   Properties of the time utilities
