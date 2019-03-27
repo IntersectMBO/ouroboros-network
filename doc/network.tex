@@ -1136,17 +1136,17 @@ The protocol uses the following messages:
 \begin{tabular}{|l|l|l|l|}
   \hline
   \multicolumn{4}{|c|}{Transition table} \\ \hline
-  from state   & message            & parameter              & to state    \\ \hline\hline
-  \Idle        & \RequestNext        &                        & \CanAwait   \\ \hline
-  \Idle        & \FindIntersect      & $points$               & \Intersect  \\ \hline
-  \Idle        & \MsgDone            &                        & \Done       \\ \hline
-  \CanAwait    & \AwaitReply         &                        & \MustReply  \\ \hline
-  \CanAwait    & \RollForward        & $header$,$point$       & \Idle       \\ \hline
-  \CanAwait    & \RollBackward       & $header$,$point$       & \Idle       \\ \hline
-  \MustReply   & \RollForward        & $header$,$point$       & \Idle       \\ \hline
-  \MustReply   & \RollBackward       & $point$,$point$        & \Idle       \\ \hline
-  \Intersect   & \IntersectImproved  & $point_1$,$point_2$    & \Idle       \\ \hline
-  \Intersect   & \IntersectUnchanged & $point$                & \Idle       \\ \hline
+  from state & message             & parameter                           & to state    \\ \hline\hline
+  \Idle      & \RequestNext        &                                     & \CanAwait   \\ \hline
+  \Idle      & \FindIntersect      & $\langle point\rangle$              & \Intersect  \\ \hline
+  \Idle      & \MsgDone            &                                     & \Done       \\ \hline
+  \CanAwait  & \AwaitReply         &                                     & \MustReply  \\ \hline
+  \CanAwait  & \RollForward        & $header$, $point_{head}$            & \Idle       \\ \hline
+  \CanAwait  & \RollBackward       & $header$, $point_{head}$            & \Idle       \\ \hline
+  \MustReply & \RollForward        & $header$, $point_{head}$            & \Idle       \\ \hline
+  \MustReply & \RollBackward       & $point_{old}$, $point_{head}$       & \Idle       \\ \hline
+  \Intersect & \IntersectImproved  & $point_{intersect}$, $point_{head}$ & \Idle       \\ \hline
+  \Intersect & \IntersectUnchanged & $point_{head}$                      & \Idle       \\ \hline
 
 \end{tabular}
 
