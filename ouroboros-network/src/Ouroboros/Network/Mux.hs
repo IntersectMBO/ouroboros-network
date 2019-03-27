@@ -82,7 +82,9 @@ muxStart versions mpds bearer style rescb_m = do
         muxBearerSetState bearer Dead
         case r of
           Left e -> do
-            say $ "Mux Bearer died due to " ++ show e
+            case rescb_m of
+                 Nothing -> say $ "Mux Bearer died due to " ++ show e
+                 Just _  -> return ()
             sequence_ $ rescb_m <*> Just (Just e)
           Right _ ->
             sequence_ $ rescb_m <*> Just Nothing
