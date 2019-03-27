@@ -4,7 +4,7 @@
 module Test.Consensus.BlockchainTime (tests) where
 
 import           Data.Bifunctor
-import           Data.Time.Clock (addUTCTime)
+import           Data.Time.Clock (getCurrentTime, addUTCTime)
 import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.HUnit
@@ -131,7 +131,7 @@ prop_delayNextSlot TestDelayIO{..} = withMaxSuccess 10 $ ioProperty $ do
     assertEqual "nextSlot"              nextSlot                slotAfterDelay
   where
     pickSystemStart :: IO SystemStart
-    pickSystemStart = pick <$> getCurrentFixedUTC
+    pickSystemStart = pick <$> getCurrentTime
       where
         pick :: FixedUTC -> SystemStart
         pick = SystemStart . addUTCTime (negate tdioStart')

@@ -17,9 +17,7 @@ module Ouroboros.Consensus.BlockchainTime (
   , realBlockchainTime
     -- * Time utilities
   , FixedUTC
-  , getCurrentFixedUTC
   , FixedDiffTime
-  , threadDelayByFixedDiff
     -- * Time to slots and back again
   , SlotLength(..)
   , slotLengthFromMillisec
@@ -137,15 +135,9 @@ realBlockchainTime slotLen start = do
 --
 type FixedUTC = UTCTime
 
-getCurrentFixedUTC :: IO FixedUTC
-getCurrentFixedUTC = getCurrentTime
-
 -- | Fixed precision time span (resolution: milliseconds)
 --
 type FixedDiffTime = NominalDiffTime
-
-threadDelayByFixedDiff :: FixedDiffTime -> IO ()
-threadDelayByFixedDiff = threadDelay . realToFrac
 
 {-------------------------------------------------------------------------------
   Time to slots and back again
@@ -217,13 +209,13 @@ timeUntilNextSlot slotLen start now =
 -- | Get current slot
 getCurrentSlotIO :: SlotLength -> SystemStart -> IO SlotNo
 getCurrentSlotIO slotLen start =
-    fst . slotAtTime slotLen start <$> getCurrentFixedUTC
+    fst . slotAtTime slotLen start <$> getCurrentTime
 
 -- | Wait until next slot, and return number of that slot
 waitUntilNextSlotIO :: SlotLength -> SystemStart -> IO SlotNo
 waitUntilNextSlotIO slotLen start = do
-    now <- getCurrentFixedUTC
+    now <- getCurrentTime
     let (delay, nextSlot) = timeUntilNextSlot slotLen start now
-    threadDelayByFixedDiff delay
+    threadDelay ((realToFrac :: NominalDiffTime -> DiffTime) delay)
     return nextSlot
 
