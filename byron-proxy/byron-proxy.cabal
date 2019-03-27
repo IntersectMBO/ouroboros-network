@@ -17,7 +17,6 @@ library
   exposed-modules:     Ouroboros.Byron.Proxy.DB,
                        Ouroboros.Byron.Proxy.Pool,
                        Ouroboros.Byron.Proxy.Main,
-                       Ouroboros.Byron.Proxy.Server,
 
                        Ouroboros.Byron.Proxy.Index.Sqlite,
                        Ouroboros.Byron.Proxy.Index.Types,
