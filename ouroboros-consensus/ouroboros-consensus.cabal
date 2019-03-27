@@ -193,6 +193,7 @@ executable demo-playground
                        Run
                        Topology
   build-depends:       base,
+                       contra-tracer,
                        ouroboros-network,
                        ouroboros-consensus,
                        io-sim-classes,
@@ -240,7 +241,9 @@ test-suite test-consensus
                     io-sim-classes,
                     io-sim,
 
+                    bytestring,
                     containers,
+                    contra-tracer,
                     cryptonite,
                     fgl,
                     graphviz,

@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
@@ -31,6 +32,7 @@ module Ouroboros.Consensus.Ledger.Mock (
   , SimplePreHeader(..)
   , SimpleBody(..)
   , forgeBlock
+  , blockMatchesHeader
     -- * Updating the Ledger state
   , LedgerState(..)
   , HeaderState(..)
@@ -224,6 +226,19 @@ deriving instance (Typeable p, SimpleBlockCrypto c, OuroborosTag p, Show (Payloa
 deriving instance (Typeable p, SimpleBlockCrypto c, OuroborosTag p, Eq (Payload p (SimplePreHeader p c))) => Eq (SimpleBlock p c)
 deriving instance (Typeable p, SimpleBlockCrypto c, OuroborosTag p, Ord (Payload p (SimplePreHeader p c))) => Ord (SimpleBlock p c)
 
+instance (Typeable p, SimpleBlockCrypto c, OuroborosTag p, Condense (Payload p (SimplePreHeader p c)), Serialise (Payload p (SimplePreHeader p c))) => Condense (SimpleHeader p c) where
+  condense hdr@(SimpleHeader _ pl) = mconcat [
+        "("
+      , condensedHash (blockPrevHash hdr)
+      , "->"
+      , condense (blockHash hdr)
+      , ","
+      , condense pl
+      , ","
+      , condense (unSlotNo $ blockSlot hdr)
+      , ")"
+      ]
+
 instance (Typeable p, SimpleBlockCrypto c, OuroborosTag p, Condense (Payload p (SimplePreHeader p c)), Serialise (Payload p (SimplePreHeader p c))) => Condense (SimpleBlock p c) where
   condense (SimpleBlock hdr@(SimpleHeader _ pl) (SimpleBody txs)) = mconcat [
         "("
@@ -317,6 +332,11 @@ forgeBlock cfg curSlot curNo prevHash txs proof = do
         , headerBodyHash  = hash body
         , headerBlockSize = bodySize
         }
+
+-- | Check whether the block matches the header
+blockMatchesHeader :: SimpleBlockCrypto c => SimpleHeader p c -> SimpleBlock p c -> Bool
+blockMatchesHeader SimpleHeader { headerPreHeader } SimpleBlock { simpleBody } =
+    headerBodyHash headerPreHeader == hash simpleBody
 
 {-------------------------------------------------------------------------------
   Updating the Ledger

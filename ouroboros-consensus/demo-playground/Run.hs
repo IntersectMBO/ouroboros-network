@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -11,22 +12,32 @@ import qualified Control.Concurrent.Async as Async
 import           Control.Concurrent.STM
 import           Control.Monad
 import           Control.Monad.Trans
+import           Control.Tracer (nullTracer)
 import           Crypto.Random
 import qualified Data.Map.Strict as M
 import           Data.Maybe
 import           Data.Semigroup ((<>))
 
+import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Chain (pointHash)
+import           Ouroboros.Network.Chain (genesisPoint, pointHash)
+import           Ouroboros.Network.Protocol.BlockFetch.Codec
 import           Ouroboros.Network.Protocol.ChainSync.Codec
 
 import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
 import           Ouroboros.Consensus.Demo
 import           Ouroboros.Consensus.Ledger.Abstract
 import qualified Ouroboros.Consensus.Ledger.Mock as Mock
 import           Ouroboros.Consensus.Node
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.Orphans ()
+import           Ouroboros.Consensus.Util.STM
+import           Ouroboros.Consensus.Util.ThreadRegistry
+
+import           Ouroboros.Storage.ChainDB (ChainDB)
+import qualified Ouroboros.Storage.ChainDB as ChainDB
+import qualified Ouroboros.Storage.ChainDB.Mock as ChainDB
 
 import           CLI
 import           Logging
@@ -48,121 +59,148 @@ runNode cli@CLI{..} = do
           Some p -> case demoProtocolConstraints p of
                       Dict -> handleSimpleNode p cli topology
 
--- | Setups a simple node, which will run the chain-following protocol and,
--- if core, will also look at the mempool when trying to create a new block.
+-- | Sets up a simple node, which will run the chain sync protocol and block
+-- fetch protocol, and, if core, will also look at the mempool when trying to
+-- create a new block.
 handleSimpleNode :: forall p. DemoProtocolConstraints p
                  => DemoProtocol p -> CLI -> TopologyInfo -> IO ()
 handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
     putStrLn $ "System started at " <> show systemStart
-    topoE <- readTopologyFile topologyFile
-    case topoE of
-         Left e -> error e
-         Right t@(NetworkTopology nodeSetups) -> do
-             let topology  = toNetworkMap t
-                 nodeSetup = fromMaybe (error "node not found.") $
-                                   M.lookup myNodeId topology
+    t@(NetworkTopology nodeSetups) <-
+      either error id <$> readTopologyFile topologyFile
+    let topology  = toNetworkMap t
+        nodeSetup = fromMaybe (error "node not found.") $
+                          M.lookup myNodeId topology
 
-             putStrLn $ "**************************************"
-             putStrLn $ "I am Node = " <> show myNodeId
-             putStrLn $ "My consumers are " <> show (consumers nodeSetup)
-             putStrLn $ "My producers are " <> show (producers nodeSetup)
-             putStrLn $ "**************************************"
+    putStrLn $ "**************************************"
+    putStrLn $ "I am Node = " <> show myNodeId
+    putStrLn $ "My consumers are " <> show (consumers nodeSetup)
+    putStrLn $ "My producers are " <> show (producers nodeSetup)
+    putStrLn $ "**************************************"
 
-             let ProtocolInfo{..} = protocolInfo
-                                      p
-                                      (NumCoreNodes (length nodeSetups))
-                                      (CoreNodeId nid)
+    -- CONTINUE with this
+    let ProtocolInfo{..} = protocolInfo
+                             p
+                             (NumCoreNodes (length nodeSetups))
+                             (CoreNodeId nid)
 
-             -- Creates a TBQueue to be used by all the logger threads to monitor
-             -- the traffic.
-             loggingQueue    <- atomically $ newTBQueue 50
-             terminalThread  <- spawnTerminalLogger loggingQueue
+    withThreadRegistry $ \registry -> do
 
-             let initialPool :: Mempool Mock.Tx
-                 initialPool = mempty
+      -- Creates a TBQueue to be used by all the logger threads to monitor
+      -- the traffic.
+      loggingQueue    <- atomically $ newTBQueue 50
+      terminalThread  <- fork registry $ showNetworkTraffic loggingQueue
 
-             -- Each node has a mempool, regardless from its consumer
-             -- and producer threads.
-             nodeMempool <- atomically $ newTVar initialPool
+      let initialPool :: Mempool Mock.Tx
+          initialPool = mempty
 
-             let callbacks :: NodeCallbacks IO (Block p)
-                 callbacks = NodeCallbacks {
-                     produceBlock = \proof l slot prevPoint prevBlockNo -> do
-                        let curNo    = succ prevBlockNo
-                            prevHash = castHash (pointHash prevPoint)
+      -- Each node has a mempool, regardless from its consumer
+      -- and producer threads.
+      nodeMempool <- atomically $ newTVar initialPool
 
-                        -- Before generating a new block, look for incoming transactions.
-                        -- If there are, check if the mempool is consistent and, if it is,
-                        -- grab the valid new transactions and incorporate them into a
-                        -- new block.
-                        mp  <- lift . lift $ readTVar nodeMempool
-                        txs <- do let ts  = collect (Mock.slsUtxo . ledgerState $ l) mp
-                                      mp' = mempoolRemove (M.keysSet ts) $ mp
-                                  lift . lift $ writeTVar nodeMempool mp'
-                                  return ts
+      let callbacks :: NodeCallbacks IO (Block p)
+          callbacks = NodeCallbacks {
+              produceBlock = \proof l slot prevPoint prevBlockNo -> do
+                 let curNo    = succ prevBlockNo
+                     prevHash = castHash (pointHash prevPoint)
 
-                        Mock.forgeBlock pInfoConfig
-                                        slot
-                                        curNo
-                                        prevHash
-                                        txs
-                                        proof
-                 , produceDRG      = drgNew
-                 , adoptedNewChain = logChain loggingQueue
-                 }
+                 -- Before generating a new block, look for incoming transactions.
+                 -- If there are, check if the mempool is consistent and, if it is,
+                 -- grab the valid new transactions and incorporate them into a
+                 -- new block.
+                 mp  <- lift . lift $ readTVar nodeMempool
+                 txs <- do let ts  = collect (Mock.slsUtxo . ledgerState $ l) mp
+                               mp' = mempoolRemove (M.keysSet ts) $ mp
+                           lift . lift $ writeTVar nodeMempool mp'
+                           return ts
 
-             btime  <- realBlockchainTime slotDuration systemStart
-             kernel <- nodeKernel
-                         encode
-                         pInfoConfig
-                         pInfoInitState
-                         btime
-                         pInfoInitLedger
-                         pInfoInitChain
-                         callbacks
+                 Mock.forgeBlock pInfoConfig
+                                 slot
+                                 curNo
+                                 prevHash
+                                 txs
+                                 proof
+          , produceDRG      = drgNew
+          }
 
-             -- Spawn the thread which listens to the mempool.
-             mempoolThread <- spawnMempoolListener myNodeId nodeMempool kernel
+      chainDB <- ChainDB.openDB encode pInfoConfig pInfoInitLedger Mock.simpleHeader
 
-             forM_ (producers nodeSetup) (addUpstream'   kernel)
-             forM_ (consumers nodeSetup) (addDownstream' kernel)
+      btime  <- realBlockchainTime registry slotDuration systemStart
+      let nodeParams = NodeParams
+            { tracer             = nullTracer
+            , threadRegistry     = registry
+            , maxClockSkew       = ClockSkew 1
+            , cfg                = pInfoConfig
+            , initState          = pInfoInitState
+            , btime
+            , chainDB
+            , callbacks
+            , blockFetchSize     = Mock.headerBlockSize . Mock.headerPreHeader
+            , blockMatchesHeader = Mock.blockMatchesHeader
+            }
+      kernel <- nodeKernel nodeParams
 
-             let allThreads = terminalThread : [mempoolThread]
-             void $ Async.waitAnyCancel allThreads
+      watchChain registry loggingQueue chainDB
 
+      -- Spawn the thread which listens to the mempool.
+      mempoolThread <- spawnMempoolListener myNodeId nodeMempool kernel
+
+      forM_ (producers nodeSetup) (addUpstream'   kernel)
+      forM_ (consumers nodeSetup) (addDownstream' kernel)
+
+      let allThreads = [terminalThread, mempoolThread]
+      void $ Async.waitAnyCancel allThreads
   where
       nid :: Int
       nid = case myNodeId of
               CoreId  n -> n
               RelayId _ -> error "Non-core nodes currently not supported"
 
-      spawnTerminalLogger :: TBQueue LogEvent -> IO (Async.Async ())
-      spawnTerminalLogger q = do
-          Async.async $ showNetworkTraffic q
+      watchChain :: ThreadRegistry IO
+                 -> TBQueue LogEvent
+                 -> ChainDB IO (Block p) (Header p) -> IO ()
+      watchChain registry q chainDB = onEachChange
+          registry fingerprint initFingerprint
+          (ChainDB.getCurrentChain chainDB) (const logFullChain)
+        where
+          initFingerprint  = (genesisPoint, genesisPoint)
+          fingerprint frag = (AF.headPoint frag, AF.anchorPoint frag)
+          logFullChain = do
+            chain <- ChainDB.toChain chainDB
+            logChain q chain
 
       -- We need to make sure that both nodes read from the same file
       -- We therefore use the convention to distinguish between
       -- upstream and downstream from the perspective of the "lower numbered" node
-      addUpstream' :: NodeKernel IO NodeId (Block p)
+      addUpstream' :: NodeKernel IO NodeId (Block p) (Header p)
                    -> NodeId
                    -> IO ()
       addUpstream' kernel producerNodeId =
-          addUpstream kernel producerNodeId nodeComms
+          addUpstream kernel producerNodeId nodeCommsCS nodeCommsBF
         where
           direction = Upstream (producerNodeId :==>: myNodeId)
-          nodeComms = NodeComms {
+          nodeCommsCS = NodeComms {
               ncCodec    = codecChainSync
-            , ncWithChan = NamedPipe.withPipeChannel direction
+            , ncWithChan = NamedPipe.withPipeChannel "chain-sync" direction
+            }
+          nodeCommsBF = NodeComms {
+              ncCodec    = codecBlockFetch
+            , ncWithChan = NamedPipe.withPipeChannel "block-fetch" direction
             }
 
-      addDownstream' :: NodeKernel IO NodeId (Block p)
+
+      addDownstream' :: NodeKernel IO NodeId (Block p) (Header p)
                      -> NodeId
                      -> IO ()
       addDownstream' kernel consumerNodeId =
-          addDownstream kernel nodeComms
+          addDownstream kernel nodeCommsCS nodeCommsBF
         where
           direction = Downstream (myNodeId :==>: consumerNodeId)
-          nodeComms = NodeComms {
+          nodeCommsCS = NodeComms {
               ncCodec    = codecChainSync
-            , ncWithChan = NamedPipe.withPipeChannel direction
+            , ncWithChan = NamedPipe.withPipeChannel "chain-sync" direction
+            }
+          nodeCommsBF = NodeComms {
+              ncCodec    = codecBlockFetch
+            , ncWithChan = NamedPipe.withPipeChannel "block-fetch" direction
             }

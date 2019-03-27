@@ -1,67 +1,88 @@
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 -- | Setup network
 module Test.Dynamic.Network (
     broadcastNetwork
   ) where
 
-import           Codec.Serialise (Serialise(encode))
+import           Codec.Serialise (Serialise (encode))
 import           Control.Monad
+import           Control.Tracer (nullTracer)
 import           Crypto.Number.Generate (generateBetween)
 import           Crypto.Random (ChaChaDRG, drgNew)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 
-import           Control.Monad.Class.MonadFork
+import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadFork (MonadFork)
 import           Control.Monad.Class.MonadSay
+import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
+import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 
 import           Ouroboros.Network.Channel
-import           Ouroboros.Network.Codec (AnyMessage)
+import           Ouroboros.Network.Codec (AnyMessage, Codec)
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain
 import qualified Ouroboros.Network.Chain as Chain
+import           Ouroboros.Network.Protocol.BlockFetch.Codec
+import           Ouroboros.Network.Protocol.BlockFetch.Type
 import           Ouroboros.Network.Protocol.ChainSync.Codec
 import           Ouroboros.Network.Protocol.ChainSync.Type
 
 import           Ouroboros.Consensus.BlockchainTime
-import           Ouroboros.Consensus.Crypto.Hash
+import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
+import           Ouroboros.Consensus.Crypto.Hash hiding (ByteString)
 import           Ouroboros.Consensus.Demo
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Mock
+import qualified Ouroboros.Consensus.Ledger.Mock as Mock
 import           Ouroboros.Consensus.Node
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Consensus.Util.STM
+import           Ouroboros.Consensus.Util.ThreadRegistry
+
+import qualified Ouroboros.Storage.ChainDB.API as ChainDB
+import qualified Ouroboros.Storage.ChainDB.Mock as ChainDB
+
 
 -- | Setup fully-connected topology, where every node is both a producer
 -- and a consumer
 --
 -- We run for the specified number of blocks, then return the final state of
 -- each node.
-broadcastNetwork :: forall m p.
-                    ( MonadSTM   m
+broadcastNetwork :: forall m p blk hdr.
+                    ( MonadAsync m
                     , MonadFork  m
-                    , MonadThrow m
-                    , MonadTimer m
+                    , MonadMask  m
                     , MonadSay   m
+                    , MonadST    m
+                    , MonadTime  m
+                    , MonadTimer m
+                    , MonadThrow (STM m)
                     , DemoProtocolConstraints p
+                    , blk ~ Block p
+                    , hdr ~ Header p
                     )
-                 => BlockchainTime m
+                 => ThreadRegistry m
+                 -> BlockchainTime m
                  -> NumCoreNodes
                  -> (CoreNodeId -> ProtocolInfo p)
                  -> ChaChaDRG
                  -> NumSlots
-                 -> m (Map NodeId (Chain (Block p)))
-broadcastNetwork btime numCoreNodes pInfo initRNG numSlots = do
+                 -> m (Map NodeId (Chain blk))
+broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots = do
 
     -- all known addresses
     let addrs :: [Addr]
@@ -73,11 +94,7 @@ broadcastNetwork btime numCoreNodes pInfo initRNG numSlots = do
                       nodeAddrs  = map fst (Map.elems nodeUtxo)
                 ]
 
-    -- Create the communication channels
-    chans :: NodeChans m (Block p)
-       <- fmap Map.fromList $ forM nodeIds $ \us -> do
-               fmap (us, ) $ fmap Map.fromList $ forM nodeIds $ \them ->
-                 fmap (them, ) $ createConnectedChannels
+    chans :: NodeChans m blk hdr <- createCommunicationChannels
 
     varRNG <- atomically $ newTVar initRNG
 
@@ -85,10 +102,7 @@ broadcastNetwork btime numCoreNodes pInfo initRNG numSlots = do
       let us               = fromCoreNodeId coreNodeId
           ProtocolInfo{..} = pInfo coreNodeId
 
-      -- STM variable to record the final chain of the node
-      varRes <- atomically $ newTVar Nothing
-
-      let callbacks :: NodeCallbacks m (Block p)
+      let callbacks :: NodeCallbacks m blk
           callbacks = NodeCallbacks {
               produceBlock = \proof l slot prevPoint prevNo -> do
                 let prevHash  = castHash (Chain.pointHash prevPoint)
@@ -100,51 +114,69 @@ broadcastNetwork btime numCoreNodes pInfo initRNG numSlots = do
                            slot
                            curNo
                            prevHash
-                           (Map.fromList $ [(hash t, t) | t <- txs])
+                           (Map.fromList [(hash t, t) | t <- txs])
                            proof
 
             , produceDRG      = atomically $ simChaChaT varRNG id $ drgNew
-            , adoptedNewChain = \_newChain -> return ()
             }
 
-      node <- nodeKernel
-                encode
-                pInfoConfig
-                pInfoInitState
-                btime
-                pInfoInitLedger
-                pInfoInitChain
-                callbacks
+      chainDB <- ChainDB.openDB encode pInfoConfig pInfoInitLedger simpleHeader
 
-      let withLogging :: Show id
-                      => id
-                      -> NodeChan m (Block p)
-                      -> NodeChan m (Block p)
-          withLogging chId = loggingChannel chId
+      let nodeParams = NodeParams
+            { tracer             = nullTracer
+            , threadRegistry     = registry
+            , maxClockSkew       = ClockSkew 1
+            , cfg                = pInfoConfig
+            , initState          = pInfoInitState
+            , btime
+            , chainDB
+            , callbacks
+            , blockFetchSize     = headerBlockSize . headerPreHeader
+            , blockMatchesHeader = Mock.blockMatchesHeader
+            }
+
+      node <- nodeKernel nodeParams
 
       forM_ (filter (/= us) nodeIds) $ \them -> do
-        let commsDown = NodeComms {
-                ncCodec    = codecChainSyncId
+        let mkCommsDown :: Show bytes
+                        => (NodeChan m blk hdr -> Channel m bytes)
+                        -> Codec ps e m bytes -> NodeComms m ps e bytes
+            mkCommsDown getChan codec = NodeComms {
+                ncCodec    = codec
               , ncWithChan = \cc -> cc $
-                  withLogging (TalkingToConsumer us them) $
-                    fst (chans Map.! us Map.! them)
+                  loggingChannel (TalkingToConsumer us them) $
+                    getChan (chans Map.! us Map.! them)
               }
-            commsUp = NodeComms {
-                ncCodec    = codecChainSyncId
+            mkCommsUp :: Show bytes
+                      => (NodeChan m blk hdr -> Channel m bytes)
+                      -> Codec ps e m bytes -> NodeComms m ps e bytes
+            mkCommsUp getChan codec = NodeComms {
+                ncCodec    = codec
               , ncWithChan = \cc -> cc $
-                  withLogging (TalkingToProducer us them) $
-                    snd (chans Map.! them Map.! us)
+                  loggingChannel (TalkingToProducer us them) $
+                    getChan (chans Map.! them Map.! us)
               }
-        addDownstream node      commsDown
-        addUpstream   node them commsUp
+        addDownstream node
+          (mkCommsDown chainSyncConsumer  codecChainSyncId)
+          (mkCommsDown blockFetchConsumer codecBlockFetchId)
+        addUpstream node them
+          (mkCommsUp   chainSyncProducer  codecChainSyncId)
+          (mkCommsUp   blockFetchProducer codecBlockFetchId)
 
-      onSlot btime (finalSlot numSlots) $ atomically $ do
-        chain <- getCurrentChain node
-        writeTVar varRes $ Just (us, chain)
+      return (us, node)
 
-      return varRes
+    -- STM variable to record the final chains of the nodes
+    varRes <- atomically $ newTVar Nothing
 
-    atomically $ Map.fromList <$> blockUntilAllJust (map readTVar nodes)
+    onSlot btime (finalSlot numSlots) $ do
+      -- Wait a random amount of time after the final slot for the block fetch
+      -- and chain sync to finish
+      threadDelay 2000
+      res <- fmap Map.fromList $ forM nodes $ \(us, node) ->
+        (us, ) <$> ChainDB.toChain (getChainDB node)
+      atomically $ writeTVar varRes (Just res)
+
+    atomically $ blockUntilJust (readTVar varRes)
   where
     nodeIds :: [NodeId]
     nodeIds = map fromCoreNodeId coreNodeIds
@@ -152,18 +184,38 @@ broadcastNetwork btime numCoreNodes pInfo initRNG numSlots = do
     coreNodeIds :: [CoreNodeId]
     coreNodeIds = enumCoreNodes numCoreNodes
 
-    getUtxo :: ExtLedgerState (Block p) -> Utxo
+    getUtxo :: ExtLedgerState blk -> Utxo
     getUtxo = slsUtxo . ledgerState
+
+    createCommunicationChannels :: m (NodeChans m blk hdr)
+    createCommunicationChannels = fmap Map.fromList $ forM nodeIds $ \us ->
+      fmap ((us, ) . Map.fromList) $ forM (filter (/= us) nodeIds) $ \them -> do
+        (chainSyncConsumer,  chainSyncProducer)  <- createConnectedChannels
+        (blockFetchConsumer, blockFetchProducer) <- createConnectedChannels
+        return (them, NodeChan {..})
+
 
 {-------------------------------------------------------------------------------
   Internal auxiliary
 -------------------------------------------------------------------------------}
 
--- | Communication channel
-type NodeChan  m b = Channel m (AnyMessage (ChainSync b (Point b)))
+-- | Communication channel used for the Chain Sync protocol
+type ChainSyncChannel m hdr = Channel m (AnyMessage (ChainSync hdr (Point hdr)))
+
+-- | Communication channel used for the Block Fetch protocol
+type BlockFetchChannel m blk hdr = Channel m (AnyMessage (BlockFetch hdr blk))
+
+-- | The communication channels from and to each node
+data NodeChan m blk hdr = NodeChan
+  { chainSyncConsumer  :: ChainSyncChannel  m     hdr
+  , chainSyncProducer  :: ChainSyncChannel  m     hdr
+  , blockFetchConsumer :: BlockFetchChannel m blk hdr
+  , blockFetchProducer :: BlockFetchChannel m blk hdr
+  }
 
 -- | All connections between all nodes
-type NodeChans m b = Map NodeId (Map NodeId (NodeChan m b, NodeChan m b))
+type NodeChans m blk hdr = Map NodeId (Map NodeId (NodeChan m blk hdr))
+
 
 {-------------------------------------------------------------------------------
   Internal: generating random transactions

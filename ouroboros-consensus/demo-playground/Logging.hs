@@ -46,7 +46,7 @@ logChain :: Condense [b]
          -> Chain b
          -> IO ()
 logChain loggingQueue chain = do
-    let m = "Adopted chain: " <> condense (Chain.toOldestFirst chain)
+    let m = "Updated chain: " <> condense (Chain.toOldestFirst chain)
     atomically $ writeTBQueue loggingQueue $ LogEvent m
 
 {-------------------------------------------------------------------------------

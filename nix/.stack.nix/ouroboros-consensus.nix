@@ -48,6 +48,7 @@
         "demo-playground" = {
           depends = [
             (hsPkgs.base)
+            (hsPkgs.contra-tracer)
             (hsPkgs.ouroboros-network)
             (hsPkgs.ouroboros-consensus)
             (hsPkgs.io-sim-classes)
@@ -79,7 +80,9 @@
             (hsPkgs.ouroboros-consensus)
             (hsPkgs.io-sim-classes)
             (hsPkgs.io-sim)
+            (hsPkgs.bytestring)
             (hsPkgs.containers)
+            (hsPkgs.contra-tracer)
             (hsPkgs.cryptonite)
             (hsPkgs.fgl)
             (hsPkgs.graphviz)
