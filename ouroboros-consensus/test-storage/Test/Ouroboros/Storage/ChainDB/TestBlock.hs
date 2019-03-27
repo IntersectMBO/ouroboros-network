@@ -114,10 +114,17 @@ instance UpdateLedger TestBlock where
         }
     deriving (Show)
 
+  data HeaderState TestBlock = TestHeaderState
+
   applyLedgerState TestBlock{..} TestLedger{..} =
       if tbPrevHash == lastApplied
         then return     $ TestLedger (BlockHash tbHash)
         else throwError $ InvalidHash lastApplied tbPrevHash
+
+  getHeaderState _ _ = TestHeaderState
+
+  advanceHeader  _ _ _ = return TestHeaderState
+
 
 instance ProtocolLedgerView TestBlock where
   protocolLedgerView _ _ = ()

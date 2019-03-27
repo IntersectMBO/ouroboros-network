@@ -33,6 +33,7 @@ module Ouroboros.Consensus.Ledger.Mock (
   , forgeBlock
     -- * Updating the Ledger state
   , LedgerState(..)
+  , HeaderState(..)
   , AddrDist
   , relativeStakes
   , totalStakes
@@ -314,6 +315,9 @@ forgeBlock cfg curSlot curNo prevHash txs proof = do
 
 type instance BlockProtocol (SimpleBlock p c) = p
 
+type instance BlockProtocol (SimpleHeader p c) = p
+
+
 instance (SimpleBlockCrypto c, OuroborosTag p, Serialise (Payload p (SimplePreHeader p c)))
       => HasPreHeader (SimpleBlock p c) where
   type PreHeader (SimpleBlock p c) = SimplePreHeader p c
@@ -346,10 +350,19 @@ instance OuroborosTag p => UpdateLedger (SimpleBlock p c) where
   data LedgerError (SimpleBlock p c) = LedgerErrorInvalidInputs InvalidInputs
     deriving (Show)
 
+  -- | For the mock implementation, we don't need any state for header
+  -- validation at all, after all, we validate blocks /anyway/. The only thing
+  -- we do need to know is that the hash in the 'Point' matches the block.
+  data HeaderState (SimpleBlock p c) = SimpleHeaderState
+
   -- Apply a block to the ledger state
   applyLedgerState b (SimpleLedgerState u c) = do
       u' <- withExceptT LedgerErrorInvalidInputs $ updateUtxo b u
       return $ SimpleLedgerState u' (c `Set.union` confirmed b)
+
+  getHeaderState _ _ = SimpleHeaderState
+
+  advanceHeader  _ _ _ = return SimpleHeaderState
 
 deriving instance OuroborosTag p => Show (LedgerState (SimpleBlock p c))
 

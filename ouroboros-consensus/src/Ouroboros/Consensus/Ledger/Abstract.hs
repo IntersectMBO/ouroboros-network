@@ -30,6 +30,8 @@ import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Control.Monad.Except
 
+import           Data.Word (Word64)
+
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util (repeatedlyM)
 import           Ouroboros.Network.Block (HasHeader (..))
@@ -45,6 +47,9 @@ class ( Show (LedgerState b)
       ) => UpdateLedger (b :: *) where
   data family LedgerState b :: *
   data family LedgerError b :: *
+  -- | The 'HeaderState' can be used to verify the headers of blocks using
+  -- 'advanceHeader'.
+  data family HeaderState b :: *
 
   -- | Apply a block to the ledger state
   --
@@ -54,6 +59,33 @@ class ( Show (LedgerState b)
   applyLedgerState :: b
                    -> LedgerState b
                    -> Except (LedgerError b) (LedgerState b)
+
+  -- | Obtain from the given 'LedgerState' a 'HeaderState' corresponding to
+  -- some block in the past (relative to the given 'LedgerState').
+  getHeaderState :: LedgerState b
+                 -> Word64  -- ^ How many blocks in the past, max 2k slots
+                 -> HeaderState b
+
+  -- | Validate the given header and return the updated 'HeaderState', or, in
+  -- case of an invalid header, a 'LedgerError'.
+  --
+  -- For Ouroboros Classic, a 'HeaderState' can only be used for a window of
+  -- 2k slots forward and 2k slots backwards. So after advancing a
+  -- 'HeaderState' beyond the window, a new 'HeaderState' must be obtained
+  -- from the 'LedgerState'. Instead of burdening the user with this
+  -- responsibility, it is shifted to the __implementors__ of this method:
+  -- when the given 'HeaderState' is no longer valid (the user has advanced it
+  -- beyond the valid window), it must be ignored and a new 'HeaderState' must
+  -- be obtained from the 'LedgerState' and used to validate the header (and
+  -- returned).
+  advanceHeader :: HasHeader hdr
+                => LedgerState b
+                -> hdr
+                -> HeaderState b
+                -> Except (LedgerError b) (HeaderState b)
+  -- TODO make hdr a type parameter or a data/type family?
+
+
 
 -- | Link blocks to their unique protocol
 type family BlockProtocol b :: *
