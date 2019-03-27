@@ -43,7 +43,6 @@ module Ouroboros.Consensus.BlockchainTime (
 
 import           Control.Monad
 import           Data.Fixed
-import           Data.Proxy
 import           Data.Time
 import           Data.Time.Clock (DiffTime)
 import           Data.Time.Clock.System
@@ -184,10 +183,10 @@ instance Show FixedDiffTime where
   show = show . fixedDiffToNominal
 
 fixedDiffFromNominal :: NominalDiffTime -> FixedDiffTime
-fixedDiffFromNominal = FixedDiffTime . doubleToFixed round . realToFrac
+fixedDiffFromNominal = FixedDiffTime . realToFrac
 
 fixedDiffToNominal :: FixedDiffTime -> NominalDiffTime
-fixedDiffToNominal = realToFrac . fixedToDouble . fixedDiffTime
+fixedDiffToNominal = realToFrac . fixedDiffTime
 
 threadDelayByFixedDiff :: FixedDiffTime -> IO ()
 threadDelayByFixedDiff = threadDelay
@@ -280,25 +279,3 @@ waitUntilNextSlotIO slotLen start = do
     threadDelayByFixedDiff delay
     return nextSlot
 
-{-------------------------------------------------------------------------------
-  Auxiliary
--------------------------------------------------------------------------------}
-
--- | Convert 'Double' to fixed precision
---
--- For precision 'E1', we have
---
--- >           1.000 1.010 1.040 1.049 1.050  1.051 1.090 1.100
--- > floor   | 1.0   1.0   1.0   1.0   1.0    1.0   1.0   1.1
--- > round   | 1.0   1.0   1.0   1.0   1.0(*) 1.1   1.1   1.1
--- > ceiling | 1.0   1.1   1.1   1.1   1.1    1.1   1.1   1.1
---
--- (*): See <https://en.wikipedia.org/wiki/IEEE_754#Rounding_rules>
-doubleToFixed :: forall a. HasResolution a
-              => (Double -> Integer) -- ^ Rounding policy
-              -> Double -> Fixed a
-doubleToFixed r d = MkFixed $ r (d * fromIntegral (resolution (Proxy @a)))
-
--- | Convert fixed precision number to 'Double'
-fixedToDouble :: HasResolution a => Fixed a -> Double
-fixedToDouble = realToFrac
