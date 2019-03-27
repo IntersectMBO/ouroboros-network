@@ -11,8 +11,7 @@ module Ouroboros.Network.Protocol.BlockFetch.Type where
 
 import           Data.Void (Void)
 
-import           Ouroboros.Network.Block (StandardHash)
-import           Ouroboros.Network.Chain (Point)
+import           Ouroboros.Network.Block (StandardHash, Point)
 import           Network.TypedProtocol.Core (Protocol (..))
 
 -- | Range of headers

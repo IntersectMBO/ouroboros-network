@@ -151,10 +151,10 @@ data ChainUpdate block = AddBlock block
   Serialisation
 -------------------------------------------------------------------------------}
 
-instance StandardHash b => Serialise (ChainHash b) where
+instance Serialise (HeaderHash b) => Serialise (ChainHash b) where
   -- use the Generic instance
 
-instance HasHeader block => Serialise (Point block) where
+instance Serialise (HeaderHash block) => Serialise (Point block) where
 
   encode Point { pointSlot = s, pointHash = h } =
       encodeListLen 2

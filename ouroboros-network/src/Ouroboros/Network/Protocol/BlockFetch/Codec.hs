@@ -4,6 +4,7 @@
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 
 module Ouroboros.Network.Protocol.BlockFetch.Codec where
@@ -21,7 +22,7 @@ import qualified Codec.Serialise.Class as CBOR
 import           Network.TypedProtocol.Codec
 import           Ouroboros.Network.Codec
 
-import           Ouroboros.Network.Block (HasHeader)
+import           Ouroboros.Network.Block (HeaderHash)
 import           Ouroboros.Network.Protocol.BlockFetch.Type
 
 codecBlockFetch
@@ -30,7 +31,7 @@ codecBlockFetch
      , MonadST m
      , Serialise header
      , Serialise body
-     , HasHeader header
+     , Serialise (HeaderHash header)
      )
   => Codec (BlockFetch header body) CBOR.DeserialiseFailure m ByteString
 codecBlockFetch = mkCodecCborLazyBS encode decode
