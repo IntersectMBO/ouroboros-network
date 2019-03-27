@@ -7,7 +7,7 @@ import Data.Word (Word64)
 
 import Pos.Chain.Block (HeaderHash)
 
-import Ouroboros.Storage.ImmutableDB.Types (EpochNo)
+import Ouroboros.Storage.Common (EpochNo)
 
 -- | A point to read from the index. Looking up the tip gives its own hash,
 -- looking up anything by hash (could happen to be the tip) gives the hash

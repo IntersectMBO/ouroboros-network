@@ -59,7 +59,7 @@ import qualified Pos.Util.Trace
 import qualified Pos.Util.Wlog as Wlog
 
 import qualified Network.TypedProtocol.Proofs as Protocol (connect)
-import Network.TypedProtocols.Driver (runPeer)
+import Network.TypedProtocol.Driver (runPeer)
 
 import Ouroboros.Network.Channel (socketAsChannel)
 import qualified Ouroboros.Network.Protocol.ChainSync.Client as ChainSync
@@ -70,7 +70,7 @@ import qualified Ouroboros.Byron.Proxy.ChainSync.Types as ChainSync
 
 import qualified Ouroboros.Byron.Proxy.DB as DB
 import qualified Ouroboros.Byron.Proxy.Index.Sqlite as Index
-import Ouroboros.Byron.Proxy.Types
+import Ouroboros.Byron.Proxy.Main
 import qualified Ouroboros.Storage.Common as Immutable
 import qualified Ouroboros.Storage.ImmutableDB.API as Immutable
 import qualified Ouroboros.Storage.ImmutableDB.Impl as Immutable
