@@ -178,4 +178,4 @@ secondsPerDay = 24 * 60 * 60
 --
 -- Everybody knows nothing happened before 2000-01-01 00:00:00
 dawnOfTime :: UTCTime
-dawnOfTime = read "2000-01-01 00:00:00"
+dawnOfTime = UTCTime (fromGregorian 2000 01 01) 0
