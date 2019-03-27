@@ -146,14 +146,11 @@ realBlockchainTime slotLen start = do
 -- > fixedFromUTC (fixedToUTC t) == t
 type FixedUTC = UTCTime
 
-fixedSecondsSinceEpoch :: FixedUTC -> UTCTime
-fixedSecondsSinceEpoch = id
-
 fixedFromUTC :: UTCTime -> FixedUTC
 fixedFromUTC = id
 
 fixedToUTC :: FixedUTC -> UTCTime
-fixedToUTC = fixedSecondsSinceEpoch
+fixedToUTC = id
 
 getCurrentFixedUTC :: IO FixedUTC
 getCurrentFixedUTC = fixedFromUTC <$> getCurrentTime
@@ -164,17 +161,14 @@ getCurrentFixedUTC = fixedFromUTC <$> getCurrentTime
 -- > fixedFromNominal (fixedToNominal t) == t
 type FixedDiffTime = NominalDiffTime
 
-fixedDiffTime :: FixedDiffTime -> NominalDiffTime
-fixedDiffTime = id
-
 fixedDiffFromNominal :: NominalDiffTime -> FixedDiffTime
 fixedDiffFromNominal = id
 
 fixedDiffToNominal :: FixedDiffTime -> NominalDiffTime
-fixedDiffToNominal = fixedDiffTime
+fixedDiffToNominal = id
 
 threadDelayByFixedDiff :: FixedDiffTime -> IO ()
-threadDelayByFixedDiff = threadDelay . realToFrac . fixedDiffTime
+threadDelayByFixedDiff = threadDelay . realToFrac
 
 multFixedDiffTime :: Int -> FixedDiffTime -> FixedDiffTime
 multFixedDiffTime n d = fromIntegral n * d
@@ -204,7 +198,7 @@ slotLengthFromMillisec = SlotLength . conv
          . (fromInteger :: Integer -> Pico)
 
 slotLengthToMillisec :: SlotLength -> Integer
-slotLengthToMillisec = conv . fixedDiffTime . getSlotLength
+slotLengthToMillisec = conv . getSlotLength
   where
     -- Explicit type annotation here means that /if/ we change the precision,
     -- we are forced to reconsider this code.
@@ -231,9 +225,8 @@ startOfSlot (SlotLength d) (SystemStart start) (SlotNo n) =
 -- > now - slotLen < startOfSlot (fst (slotAtTime now)) <= now
 -- > 0 <= snd (slotAtTime now) < slotLen
 slotAtTime :: SlotLength -> SystemStart -> FixedUTC -> (SlotNo, FixedDiffTime)
-slotAtTime (SlotLength d) (SystemStart start) now = conv $
-              (fixedDiffTime (now `diffFixedUTC` start))
-    `divMod'` (fixedDiffTime d)
+slotAtTime (SlotLength d) (SystemStart start) now =
+    conv $ (now `diffFixedUTC` start) `divMod'` d
   where
     conv :: (Word64, NominalDiffTime) -> (SlotNo, FixedDiffTime)
     conv (slot, time) = (SlotNo slot, time)
