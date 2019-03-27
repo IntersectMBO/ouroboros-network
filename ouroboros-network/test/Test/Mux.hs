@@ -25,6 +25,7 @@ import           Network.TypedProtocol.Driver
 import           Network.TypedProtocol.ReqResp.Client
 import           Network.TypedProtocol.ReqResp.Server
 
+import           Ouroboros.Network.Time
 import           Ouroboros.Network.Channel
 import qualified Ouroboros.Network.Mux as Mx
 import           Ouroboros.Network.Protocol.ReqResp.Codec
@@ -143,7 +144,9 @@ writeMux :: (MonadTime m, MonadSTM m, Mx.ProtocolEnum ptcl)
          -> m (Time m)
 writeMux ctx sdu = do
     ts <- getMonotonicTime
-    let buf = Mx.encodeMuxSDU sdu -- XXX Timestamp isn't set
+    let ts32 = timestampMicrosecondsLow32Bits ts
+        sdu' = sdu { Mx.msTimestamp = Mx.RemoteClockModel ts32 }
+        buf  = Mx.encodeMuxSDU sdu'
     atomically $ writeTBQueue (writeQueue ctx) buf
     return ts
 
