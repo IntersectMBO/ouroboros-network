@@ -23,7 +23,6 @@ module Ouroboros.Consensus.BlockchainTime (
   , FixedDiffTime(..)
   , fixedDiffFromNominal
   , fixedDiffToNominal
-  , fixedDiffToMicroseconds
   , threadDelayByFixedDiff
   , multFixedDiffTime
   , diffFixedUTC
@@ -46,13 +45,13 @@ import           Control.Monad
 import           Data.Fixed
 import           Data.Proxy
 import           Data.Time
+import           Data.Time.Clock (DiffTime)
 import           Data.Time.Clock.System
 import           Data.Word (Word64)
 
 import           Control.Monad (void)
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 
 import           Ouroboros.Consensus.Util.STM
@@ -101,7 +100,7 @@ finalSlot (NumSlots n) = SlotNo (fromIntegral n)
 -- thread (otherwise the system will keep waiting).
 testBlockchainTime :: forall m. (MonadSTM m, MonadFork m, MonadTimer m)
                    => NumSlots           -- ^ Number of slots
-                   -> Duration           -- ^ Slot duration
+                   -> DiffTime           -- ^ Slot duration
                    -> m (BlockchainTime m)
 testBlockchainTime (NumSlots numSlots) slotLen = do
     slotVar <- atomically $ newTVar firstSlot
@@ -190,13 +189,10 @@ fixedDiffFromNominal = FixedDiffTime . doubleToFixed round . realToFrac
 fixedDiffToNominal :: FixedDiffTime -> NominalDiffTime
 fixedDiffToNominal = realToFrac . fixedToDouble . fixedDiffTime
 
-fixedDiffToMicroseconds :: FixedDiffTime -> Int
-fixedDiffToMicroseconds (FixedDiffTime d) = round (d * 1_000_000)
-
 threadDelayByFixedDiff :: FixedDiffTime -> IO ()
 threadDelayByFixedDiff = threadDelay
-                       . microsecondsDuration . fromIntegral
-                       . fixedDiffToMicroseconds
+                       . (realToFrac :: Fixed E3 -> DiffTime)
+                       . fixedDiffTime
 
 multFixedDiffTime :: Int -> FixedDiffTime -> FixedDiffTime
 multFixedDiffTime n (FixedDiffTime d) = FixedDiffTime (fromIntegral n * d)

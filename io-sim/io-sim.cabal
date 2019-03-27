@@ -53,7 +53,8 @@ test-suite tests
                        io-sim-classes,
                        QuickCheck,
                        tasty,
-                       tasty-quickcheck
+                       tasty-quickcheck,
+                       time
 
   ghc-options:         -Wall
                        -fno-ignore-asserts

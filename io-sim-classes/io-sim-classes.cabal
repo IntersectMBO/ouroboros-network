@@ -41,10 +41,11 @@ library
                        ScopedTypeVariables
                        RankNTypes
   build-depends:       base  >=4.9 && <4.13,
+                       async >=2.1,
+                       bytestring,
                        mtl   >=2.2 && <2.3,
                        stm   >=2.4 && <2.6,
-                       async >=2.1,
-                       bytestring
+                       time  >=1.6 && <1.10
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
                        -fno-ignore-asserts
