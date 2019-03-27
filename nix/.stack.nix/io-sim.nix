@@ -35,6 +35,7 @@
             (hsPkgs.QuickCheck)
             (hsPkgs.tasty)
             (hsPkgs.tasty-quickcheck)
+            (hsPkgs.time)
             ];
           };
         };

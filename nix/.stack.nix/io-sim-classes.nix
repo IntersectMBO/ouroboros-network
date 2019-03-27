@@ -18,10 +18,11 @@
       "library" = {
         depends = [
           (hsPkgs.base)
-          (hsPkgs.mtl)
-          (hsPkgs.stm)
           (hsPkgs.async)
           (hsPkgs.bytestring)
+          (hsPkgs.mtl)
+          (hsPkgs.stm)
+          (hsPkgs.time)
           ];
         };
       };

@@ -37,6 +37,7 @@
           (hsPkgs.serialise)
           (hsPkgs.stm)
           (hsPkgs.text)
+          (hsPkgs.time)
           ];
         };
       tests = {
@@ -66,6 +67,7 @@
             (hsPkgs.tasty)
             (hsPkgs.tasty-quickcheck)
             (hsPkgs.text)
+            (hsPkgs.time)
             ];
           };
         };
