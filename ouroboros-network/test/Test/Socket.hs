@@ -198,7 +198,7 @@ demo chain0 updates = do
     startInitiator a_mps a b
 
     void $ fork $ sequence_
-        [ do threadDelay 10000 -- just to provide interest
+        [ do threadDelay 10e-3 -- 10 milliseconds, just to provide interest
              atomically $ do
                  p <- readTVar producerVar
                  let Just p' = CPS.applyChainUpdate update p
@@ -240,7 +240,7 @@ demo chain0 updates = do
        return ()
 
     dummyCallback _ = forever $
-        threadDelay 1000000
+        threadDelay 1.0
 
     producerRsp ::  TVar IO (CPS.ChainProducerState block)
                 -> Channel IO BL.ByteString -> IO ()
