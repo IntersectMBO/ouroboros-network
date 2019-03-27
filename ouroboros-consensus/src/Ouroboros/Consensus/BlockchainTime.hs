@@ -15,9 +15,6 @@ module Ouroboros.Consensus.BlockchainTime (
   , testBlockchainTime
     -- * Real blockchain time
   , realBlockchainTime
-    -- * Time utilities
-  , FixedUTC
-  , FixedDiffTime
     -- * Time to slots and back again
   , SlotLength(..)
   , slotLengthFromMillisec
@@ -126,25 +123,11 @@ realBlockchainTime slotLen start = do
       }
 
 {-------------------------------------------------------------------------------
-  Time utilities
-
-  We avoid using Double here to avoid rounding problems.
--------------------------------------------------------------------------------}
-
--- | Fixed precision UTC time (resolution: milliseconds)
---
-type FixedUTC = UTCTime
-
--- | Fixed precision time span (resolution: milliseconds)
---
-type FixedDiffTime = NominalDiffTime
-
-{-------------------------------------------------------------------------------
   Time to slots and back again
 -------------------------------------------------------------------------------}
 
 -- | Slot length
-newtype SlotLength = SlotLength { getSlotLength :: FixedDiffTime }
+newtype SlotLength = SlotLength { getSlotLength :: NominalDiffTime }
   deriving (Show)
 
 slotLengthFromMillisec :: Integer -> SlotLength
@@ -170,13 +153,13 @@ slotLengthToMillisec = conv . getSlotLength
 -- | System start
 --
 -- Slots are counted from the system start.
-newtype SystemStart = SystemStart { getSystemStart :: FixedUTC }
+newtype SystemStart = SystemStart { getSystemStart :: UTCTime }
   deriving (Show)
 
 -- | Compute start of the specified slot
 --
 -- > slotAtTime (startOfSlot slot) == (slot, 0)
-startOfSlot :: SlotLength -> SystemStart -> SlotNo -> FixedUTC
+startOfSlot :: SlotLength -> SystemStart -> SlotNo -> UTCTime
 startOfSlot (SlotLength d) (SystemStart start) (SlotNo n) =
     addUTCTime (fromIntegral n * d) start
 
@@ -184,11 +167,11 @@ startOfSlot (SlotLength d) (SystemStart start) (SlotNo n) =
 --
 -- > now - slotLen < startOfSlot (fst (slotAtTime now)) <= now
 -- > 0 <= snd (slotAtTime now) < slotLen
-slotAtTime :: SlotLength -> SystemStart -> FixedUTC -> (SlotNo, FixedDiffTime)
+slotAtTime :: SlotLength -> SystemStart -> UTCTime -> (SlotNo, NominalDiffTime)
 slotAtTime (SlotLength d) (SystemStart start) now =
     conv $ (now `diffUTCTime` start) `divMod'` d
   where
-    conv :: (Word64, NominalDiffTime) -> (SlotNo, FixedDiffTime)
+    conv :: (Word64, NominalDiffTime) -> (SlotNo, NominalDiffTime)
     conv (slot, time) = (SlotNo slot, time)
 
 -- | Compute time until the next slot and the number of that next slot
@@ -199,8 +182,8 @@ slotAtTime (SlotLength d) (SystemStart start) now =
 -- > fst (slotAtTime (now + fst (timeUntilNextSlot now))) == snd (timeUntilNextSlot now)
 timeUntilNextSlot :: SlotLength
                   -> SystemStart
-                  -> FixedUTC
-                  -> (FixedDiffTime, SlotNo)
+                  -> UTCTime
+                  -> (NominalDiffTime, SlotNo)
 timeUntilNextSlot slotLen start now =
     (getSlotLength slotLen - timeInCurrentSlot, succ currentSlot)
   where

@@ -4,7 +4,7 @@
 module Test.Consensus.BlockchainTime (tests) where
 
 import           Data.Bifunctor
-import           Data.Time.Clock (getCurrentTime, addUTCTime)
+import           Data.Time.Clock
 import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.HUnit
@@ -37,7 +37,7 @@ prop_startOfSlot slotLen start = forAll genLimitedSlotNo $ \ slot ->
 
 -- > now - slotLen < startOfSlot (fst (slotAtTime now)) <= now
 -- > 0 <= snd (slotAtTime now) < slotLen
-prop_slotAtTime :: SlotLength -> SystemStart -> FixedDiffTime -> Property
+prop_slotAtTime :: SlotLength -> SystemStart -> NominalDiffTime -> Property
 prop_slotAtTime slotLen start execTime =
       counterexample ("now:         " ++ show now)
     . counterexample ("currentSlot: " ++ show currentSlot)
@@ -54,7 +54,7 @@ prop_slotAtTime slotLen start execTime =
     slotLen'                 = getSlotLength slotLen
 
 -- > 0 < fst (timeUntilNextSlot now) <= slotLen
-prop_timeUntilNextSlot :: SlotLength -> SystemStart -> FixedDiffTime -> Property
+prop_timeUntilNextSlot :: SlotLength -> SystemStart -> NominalDiffTime -> Property
 prop_timeUntilNextSlot slotLen start execTime =
       counterexample ("now:      " ++ show now)
     . counterexample ("timeLeft: " ++ show timeLeft)
@@ -80,7 +80,7 @@ prop_timeFromStartOfSlot slotLen start = forAll genLimitedSlotNo $ \ slot ->
 
 -- > slotAtTime (now + fst (timeUntilNextSlot now)) == bimap (+1) (const 0) (slotAtTime now)
 -- > fst (slotAtTime (now + fst (timeUntilNextSlot now))) == snd (timeUntilNextSlot now)
-prop_slotAfterTime :: SlotLength -> SystemStart -> FixedDiffTime -> Property
+prop_slotAfterTime :: SlotLength -> SystemStart -> NominalDiffTime -> Property
 prop_slotAfterTime slotLen start execTime =
       counterexample ("now:        " ++ show now)
     . counterexample ("timeLeft:   " ++ show timeLeft)
@@ -103,7 +103,7 @@ data TestDelayIO = TestDelayIO {
       --
       -- Since we don't actually " start " the system in any way, we specify
       -- this as an offset _before_ the start of the test.
-      tdioStart'  :: FixedDiffTime
+      tdioStart'  :: NominalDiffTime
 
       -- | SlotNo length
       --
@@ -133,5 +133,5 @@ prop_delayNextSlot TestDelayIO{..} = withMaxSuccess 10 $ ioProperty $ do
     pickSystemStart :: IO SystemStart
     pickSystemStart = pick <$> getCurrentTime
       where
-        pick :: FixedUTC -> SystemStart
+        pick :: UTCTime -> SystemStart
         pick = SystemStart . addUTCTime (negate tdioStart')

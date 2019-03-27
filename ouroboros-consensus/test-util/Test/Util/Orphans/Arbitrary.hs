@@ -61,7 +61,7 @@ instance Arbitrary UTCTime where
 instance Arbitrary SlotLength where
   arbitrary = slotLengthFromMillisec <$> choose (1, 20 * 1_000)
 
-deriving via FixedUTC        instance Arbitrary SystemStart
+deriving via UTCTime         instance Arbitrary SystemStart
 deriving via Positive Word64 instance Arbitrary SlotNo
 deriving via Word64          instance Arbitrary EpochNo
 deriving via Positive Word64 instance Arbitrary EpochSize
