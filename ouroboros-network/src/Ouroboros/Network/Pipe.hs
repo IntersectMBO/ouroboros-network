@@ -16,7 +16,7 @@ import           GHC.Stack
 import           System.IO (Handle, hClose, hFlush)
 
 import qualified Ouroboros.Network.Mux as Mx
-
+import           Ouroboros.Network.Time
 
 import qualified Data.ByteString.Lazy as BL
 
@@ -46,11 +46,9 @@ writePipe :: (Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl)
           -> IO (Time IO)
 writePipe ctx sdu = do
     ts <- getMonotonicTime
-    let ts32 :: Word32
-               -- grab the low 32bits of the timestamp in microseconds
-        ts32 = fromIntegral (durationMicroseconds (ts `diffTime` zeroTime))
-    let sdu' = sdu { Mx.msTimestamp = Mx.RemoteClockModel ts32 }
-        buf = Mx.encodeMuxSDU sdu'
+    let ts32 = timestampMicrosecondsLow32Bits ts
+        sdu' = sdu { Mx.msTimestamp = Mx.RemoteClockModel ts32 }
+        buf  = Mx.encodeMuxSDU sdu'
     BL.hPut (pcWrite ctx) buf
     hFlush (pcWrite ctx)
     return ts

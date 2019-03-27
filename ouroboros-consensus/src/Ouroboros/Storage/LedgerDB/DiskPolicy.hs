@@ -3,8 +3,8 @@ module Ouroboros.Storage.LedgerDB.DiskPolicy (
   , defaultDiskPolicy
   ) where
 
+import           Data.Time.Clock (DiffTime)
 import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadTime (Duration)
 
 import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 
@@ -51,13 +51,13 @@ data DiskPolicy m = DiskPolicy {
       -- of blocks means that during chain synchronization (where a node is
       -- catching up with its neighbours) the frequency of writes /in terms of
       -- blocks/ automatically goes down.
-    , onDiskWriteInterval :: STM m Duration
+    , onDiskWriteInterval :: STM m DiffTime
     }
 
 -- | Default on-disk policy
 defaultDiskPolicy :: MonadSTM m
                   => SecurityParam     -- ^ Maximum rollback
-                  -> Duration          -- ^ Slot length
+                  -> DiffTime          -- ^ Slot length
                   -> STM m (DiskPolicy m)
 defaultDiskPolicy (SecurityParam k) slotLength = do
     constantDelay <- newTVar (fromIntegral k * slotLength)

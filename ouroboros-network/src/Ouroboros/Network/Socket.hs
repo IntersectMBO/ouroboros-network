@@ -22,6 +22,7 @@ import           Network.Socket hiding (recv, recvFrom, send, sendTo)
 import qualified Network.Socket.ByteString.Lazy as Socket (recv, sendAll)
 
 import qualified Ouroboros.Network.Mux as Mx
+import           Ouroboros.Network.Time
 
 import           Text.Printf
 
@@ -48,11 +49,9 @@ writeSocket :: Mx.ProtocolEnum ptcl => SocketCtx -> Mx.MuxSDU ptcl -> IO (Time I
 writeSocket ctx sdu = do
     --say "write"
     ts <- getMonotonicTime
-    let ts32 :: Word32
-               -- grab the low 32bits of the timestamp in microseconds
-        ts32 = fromIntegral (durationMicroseconds (ts `diffTime` zeroTime))
-    let sdu' = sdu { Mx.msTimestamp = Mx.RemoteClockModel ts32 }
-        buf = Mx.encodeMuxSDU sdu'
+    let ts32 = timestampMicrosecondsLow32Bits ts
+        sdu' = sdu { Mx.msTimestamp = Mx.RemoteClockModel ts32 }
+        buf  = Mx.encodeMuxSDU sdu'
     --hexDump buf ""
     Socket.sendAll (scSocket ctx) buf
     return ts

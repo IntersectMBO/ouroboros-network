@@ -33,7 +33,7 @@ import           Data.OrdPSQ (OrdPSQ)
 import qualified Data.OrdPSQ as PSQ
 import qualified Data.List as List
 import           Data.Maybe (maybeToList)
-import           Data.Fixed (Micro)
+import           Data.Fixed (Pico)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
@@ -87,8 +87,8 @@ data SimA s a where
   LiftST       :: StrictST.ST s a -> (a -> SimA s b) -> SimA s b
 
   GetTime      :: (VTime -> SimA s b) -> SimA s b
-  NewTimeout   :: Duration -> (Timeout (SimM s) -> SimA s b) -> SimA s b
-  UpdateTimeout:: Timeout (SimM s) -> Duration -> SimA s b -> SimA s b
+  NewTimeout   :: DiffTime -> (Timeout (SimM s) -> SimA s b) -> SimA s b
+  UpdateTimeout:: Timeout (SimM s) -> DiffTime -> SimA s b -> SimA s b
   CancelTimeout:: Timeout (SimM s) -> SimA s b -> SimA s b
 
   Throw        :: SomeException -> SimA s a
@@ -180,13 +180,13 @@ instance Monad (STM s) where
 
     fail = MonadFail.fail
 
-newtype VTime = VTime Micro
+newtype VTime = VTime Pico
   deriving (Eq, Ord, Show)
 
 instance TimeMeasure VTime where
 
-  diffTime (VTime t) (VTime t') = secondsDuration (t-t')
-  addTime d (VTime t) = VTime (t + durationSeconds d)
+  diffTime (VTime t) (VTime t') = realToFrac (t-t')
+  addTime d (VTime t) = VTime (t + realToFrac d)
   zeroTime = VTime 0
 
 instance MonadFail (SimM s) where

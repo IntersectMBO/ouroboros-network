@@ -34,7 +34,7 @@ module Ouroboros.Network.DeltaQ (
   ) where
 
 import           Data.Semigroup ((<>))
-import           Control.Monad.Class.MonadTime (Duration)
+import           Data.Time.Clock (DiffTime)
 
 
 --
@@ -50,7 +50,7 @@ import           Control.Monad.Class.MonadTime (Duration)
 -- the time for a leading edge or trailing edge of a packet to traverse a
 -- network (or failing to do so), and many others besides.
 --
-newtype DeltaQ = DeltaQ (Distribution Duration)
+newtype DeltaQ = DeltaQ (Distribution DiffTime)
 
 -- | DeltaQ distributions (as independent random variables) are semi-groups
 -- by convolution.
@@ -66,7 +66,7 @@ deriving instance Semigroup DeltaQ
 --
 -- TODO: this needs to be specified better for improper distributions.
 --
-deltaqQ99thPercentile :: DeltaQ -> Duration
+deltaqQ99thPercentile :: DeltaQ -> DiffTime
 deltaqQ99thPercentile (DeltaQ (DegenerateDistribution t)) = t
 
 -- | This is another way of looking at a 𝚫Q distribution. Instead of giving
@@ -79,7 +79,7 @@ deltaqQ99thPercentile (DeltaQ (DegenerateDistribution t)) = t
 -- which has the greatest probability of success within a deadline.
 --
 deltaqProbabilityMassBeforeDeadline :: DeltaQ
-                                    -> Duration
+                                    -> DiffTime
                                     -> Double
 deltaqProbabilityMassBeforeDeadline (DeltaQ (DegenerateDistribution t)) d
   | t < d     = 1
@@ -166,9 +166,9 @@ shiftDistribution n (DegenerateDistribution d) = DegenerateDistribution (n+d)
 -- to the size. Thus the combination of /G/ and /S/ is simply a linear function
 -- of the size.
 --
-data GSV = GSV !Duration                  -- G as seconds
-               !(SizeInBytes -> Duration) -- S as seconds for size
-               !(Distribution Duration)   -- V as distribution
+data GSV = GSV !DiffTime                  -- G as seconds
+               !(SizeInBytes -> DiffTime) -- S as seconds for size
+               !(Distribution DiffTime)   -- V as distribution
 
 -- | GSVs are semi-groups by convolution on the three individual components.
 --
@@ -179,9 +179,9 @@ instance Semigroup GSV where
 -- | The case of ballistic packet transmission where the /S/ is directly
 -- proportional to the packet size.
 --
-ballisticGSV :: Duration               -- ^ /G/
-             -> Duration               -- ^ /S/ as time per byte.
-             -> Distribution Duration  -- ^ /V/ distribution
+ballisticGSV :: DiffTime               -- ^ /G/
+             -> DiffTime               -- ^ /S/ as time per byte.
+             -> Distribution DiffTime  -- ^ /V/ distribution
              -> GSV
 ballisticGSV g s v = GSV g (\sz -> s * fromIntegral sz) v
 
@@ -257,7 +257,7 @@ data PeerGSV = PeerGSV {
 gsvRequestResponseDuration :: PeerGSV
                            -> SizeInBytes -- ^ Request size
                            -> SizeInBytes -- ^ Expected response size
-                           -> Duration
+                           -> DiffTime
 gsvRequestResponseDuration PeerGSV{outboundGSV, inboundGSV}
                            reqSize respSize =
     deltaqQ99thPercentile $

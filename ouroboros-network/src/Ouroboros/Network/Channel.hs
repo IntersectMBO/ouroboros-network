@@ -19,6 +19,7 @@ module Ouroboros.Network.Channel
 import qualified Data.ByteString               as BS
 import qualified Data.ByteString.Lazy          as LBS
 import qualified Data.ByteString.Lazy.Internal as LBS (smallChunkSize)
+import           Data.Time.Clock (DiffTime)
 import qualified System.Process as IO (createPipe)
 import qualified System.IO      as IO
                    ( withFile, IOMode(..) )
@@ -26,7 +27,6 @@ import qualified Network.Socket            as Socket hiding (send, recv)
 import qualified Network.Socket.ByteString as Socket
 
 import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadTime (Duration)
 import           Control.Monad.Class.MonadTimer
 import           Control.Monad.Class.MonadSay
 
@@ -147,7 +147,7 @@ createSocketConnectedChannels family = do
 delayChannel :: ( MonadSTM m
                 , MonadTimer m
                 )
-             => Duration
+             => DiffTime
              -> Channel m a
              -> Channel m a
 delayChannel delay = channelEffect (\_ -> return ())

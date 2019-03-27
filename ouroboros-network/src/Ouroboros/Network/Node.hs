@@ -21,7 +21,6 @@ import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 
 import           Network.TypedProtocol.Core
@@ -29,6 +28,7 @@ import           Network.TypedProtocol.Driver
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Codec
 
+import           Ouroboros.Network.Time
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (Chain (..), Point)
 import qualified Ouroboros.Network.Chain as Chain
@@ -118,8 +118,8 @@ createOneWaySubscriptionChannels
      ( MonadSTM m
      , MonadTimer m
      )
-  => Duration
-  -> Duration
+  => DiffTime
+  -> DiffTime
   -> m (NodeChannels m block, NodeChannels m block)
 createOneWaySubscriptionChannels trDelay1 trDelay2 = do
   (cr, rc) <- createConnectedChannels
@@ -142,8 +142,8 @@ createTwoWaySubscriptionChannels
      ( MonadSTM m
      , MonadTimer m
      )
-  => Duration
-  -> Duration
+  => DiffTime
+  -> DiffTime
   -> m (NodeChannels m block, NodeChannels m block)
 createTwoWaySubscriptionChannels trDelay1 trDelay2 = do
   r12 <- createOneWaySubscriptionChannels trDelay1 trDelay2
@@ -158,7 +158,7 @@ blockGenerator :: forall block m.
                   , MonadFork m
                   , MonadTimer m
                   )
-               => Duration
+               => DiffTime
                -- ^ slot duration
                -> [block]
                -- ^ The list of blocks to generate in increasing slot order.
@@ -326,7 +326,7 @@ forkCoreKernel :: forall block m.
                   , MonadFork m
                   , MonadTimer m
                   )
-               => Duration
+               => DiffTime
                -- ^ slot duration
                -> [block]
                -- ^ Blocks to produce (in order they should be produced)
@@ -380,7 +380,7 @@ coreNode :: forall m.
         , MonadSay m
         )
      => NodeId
-     -> Duration
+     -> DiffTime
      -- ^ slot duration
      -> [Block]
      -> NodeChannels m Block
