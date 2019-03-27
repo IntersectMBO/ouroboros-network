@@ -15,7 +15,7 @@ cabal-version:       >=1.10
 
 library
   exposed-modules:     Ouroboros.Byron.Proxy.DB,
-                       Ouroboros.Byron.Proxy.Types,
+                       Ouroboros.Byron.Proxy.Main,
 
                        Ouroboros.Byron.Proxy.Index.Sqlite,
                        Ouroboros.Byron.Proxy.Index.Types,

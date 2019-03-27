@@ -6,7 +6,7 @@
 
 {-# OPTIONS_GHC "-fwarn-incomplete-patterns" #-}
 
-module Ouroboros.Byron.Proxy.Types where
+module Ouroboros.Byron.Proxy.Main where
 
 import Control.Concurrent.Async (withAsync)
 import Control.Concurrent.STM (STM, atomically)
