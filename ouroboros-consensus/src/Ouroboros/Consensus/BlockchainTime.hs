@@ -17,8 +17,6 @@ module Ouroboros.Consensus.BlockchainTime (
   , realBlockchainTime
     -- * Time utilities
   , FixedUTC
-  , fixedFromUTC
-  , fixedToUTC
   , getCurrentFixedUTC
   , FixedDiffTime
   , fixedDiffFromNominal
@@ -142,18 +140,10 @@ realBlockchainTime slotLen start = do
 
 -- | Fixed precision UTC time (resolution: milliseconds)
 --
--- > fixedToUTC (fixedFromUTC t) == t
--- > fixedFromUTC (fixedToUTC t) == t
 type FixedUTC = UTCTime
 
-fixedFromUTC :: UTCTime -> FixedUTC
-fixedFromUTC = id
-
-fixedToUTC :: FixedUTC -> UTCTime
-fixedToUTC = id
-
 getCurrentFixedUTC :: IO FixedUTC
-getCurrentFixedUTC = fixedFromUTC <$> getCurrentTime
+getCurrentFixedUTC = getCurrentTime
 
 -- | Fixed precision time span (resolution: milliseconds)
 --

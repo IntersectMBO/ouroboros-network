@@ -16,9 +16,7 @@ import           Test.Util.Orphans.Arbitrary (genLimitedSlotNo)
 
 tests :: TestTree
 tests = testGroup "BlockchainTime" [
-      testProperty "UTC_Fixed_UTC"         prop_UTC_Fixed_UTC
-    , testProperty "Nominal_Fixed_Nominal" prop_Nominal_Fixed_Nominal
-    , testProperty "Fixed_UTC_Fixed"       prop_Fixed_UTC_Fixed
+      testProperty "Nominal_Fixed_Nominal" prop_Nominal_Fixed_Nominal
     , testProperty "Fixed_Nominal_Fixed"   prop_Fixed_Nominal_Fixed
     , testProperty "startOfSlot"           prop_startOfSlot
     , testProperty "slotAtTime"            prop_slotAtTime
@@ -31,14 +29,6 @@ tests = testGroup "BlockchainTime" [
 {-------------------------------------------------------------------------------
   Roundtrip properties for time conversion functions
 -------------------------------------------------------------------------------}
-
--- > fixedToUTC (fixedFromUTC t) ~= t
-prop_UTC_Fixed_UTC :: UTCTime -> Property
-prop_UTC_Fixed_UTC t = fixedToUTC (fixedFromUTC t) === t
-
--- > fixedFromUTC (fixedToUTC t) == t
-prop_Fixed_UTC_Fixed :: FixedUTC -> Property
-prop_Fixed_UTC_Fixed t = fixedFromUTC (fixedToUTC t) === t
 
 -- > fixedToNominal (fixedFromNominal d) ~= d
 prop_Nominal_Fixed_Nominal :: NominalDiffTime -> Property

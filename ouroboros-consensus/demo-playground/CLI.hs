@@ -42,7 +42,7 @@ parseCLI = CLI
     <*> parseCommand
 
 parseSystemStart :: Parser SystemStart
-parseSystemStart = option (SystemStart . fixedFromUTC <$> auto) $ mconcat [
+parseSystemStart = option (SystemStart <$> auto) $ mconcat [
       long "system-start"
     , help "The start time of the system (e.g. \"2018-12-10 15:58:06\""
     ]
