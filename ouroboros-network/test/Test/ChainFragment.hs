@@ -27,6 +27,7 @@ import           Test.Tasty.QuickCheck (testProperty)
 import           Test.Chain ()
 import           Test.ChainGenerators
                   ( ArbitraryBlockBody (..)
+                  , TestChainAndRange (..)
                   , genNonNegative
                   , genSlotGap
                   , addSlotGap
@@ -35,6 +36,7 @@ import           Test.ChainGenerators
                   )
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (ChainUpdate(..), Point(..))
+import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.ChainFragment
                    ( ChainFragment(Empty, (:>)) )
 import qualified Ouroboros.Network.ChainFragment as CF
@@ -104,6 +106,7 @@ tests = testGroup "ChainFragment"
   , testProperty "splitAfterPoint"                           prop_splitAfterPoint
   , testProperty "splitBeforeSlot"                           prop_splitBeforeSlot
   , testProperty "splitBeforePoint"                          prop_splitBeforePoint
+  , testProperty "prop_sliceRange"                           prop_sliceRange
   , testProperty "foldChainFragment"                         prop_foldChainFragment
   ]
 
@@ -298,6 +301,20 @@ prop_splitBeforePoint (TestChainFragmentAndPoint c p) =
   where
     slots :: ChainFragment Block -> [SlotNo]
     slots = map blockSlot . CF.toOldestFirst
+
+prop_sliceRange :: TestChainAndRange -> Bool
+prop_sliceRange (TestChainAndRange c p1 p2) =
+    case CF.sliceRange c' p1 p2 of
+      Just slice ->
+          CF.valid slice
+       && not (CF.null slice)
+       && CF.headPoint slice == Just p2
+       && CF.lastPoint slice == Just p1
+      Nothing ->
+          not (CF.pointOnChainFragment p1 c')
+       || not (CF.pointOnChainFragment p2 c')
+  where
+    c' = CF.fromNewestFirst (Chain.chainToList c)
 
 prop_foldChainFragment :: TestBlockChainFragment -> Property
 prop_foldChainFragment (TestBlockChainFragment c) =

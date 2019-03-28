@@ -59,6 +59,7 @@ module Ouroboros.Network.ChainFragment (
   splitAfterPoint,
   splitBeforeSlot,
   splitBeforePoint,
+  sliceRange,
   lookupByIndexFromEnd, FT.SearchResult(..),
   filter,
   selectPoints,
@@ -509,6 +510,24 @@ splitBeforePoint c p
   , b FT.:< _ <- FT.viewl rt  -- O(1)
   , blockPoint b == castPoint p
   = Just (l, r)
+  | otherwise
+  = Nothing
+
+
+-- | Select a slice of a chain fragment between two points, inclusive.
+--
+-- Both points must exist on the chain, in order, or the result is @Nothing@.
+--
+sliceRange :: HasHeader block
+           => ChainFragment block
+           -> Point block
+           -> Point block
+           -> Maybe (ChainFragment block)
+sliceRange c from to
+  | Just (_, c') <- splitBeforePoint c  from
+  , Just (c'',_) <- splitAfterPoint  c' to
+  = Just c''
+
   | otherwise
   = Nothing
 
