@@ -35,8 +35,8 @@ import           Test.ChainGenerators
                   )
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (ChainUpdate(..), Point(..))
-import           Ouroboros.Network.ChainFragment (ChainFragment,
-                                                  pattern (:>), pattern Empty)
+import           Ouroboros.Network.ChainFragment
+                   ( ChainFragment(Empty, (:>)) )
 import qualified Ouroboros.Network.ChainFragment as CF
 import           Ouroboros.Network.Testing.Serialise (prop_serialise)
 import           Ouroboros.Network.Testing.ConcreteBlock
@@ -84,6 +84,10 @@ tests = testGroup "ChainFragment"
   , testProperty "toList/last"                               prop_toList_last
   , testProperty "dropNewest"                                prop_dropNewest
   , testProperty "dropOldest"                                prop_dropOldest
+  , testProperty "takeNewest"                                prop_takeNewest
+  , testProperty "takeOldest"                                prop_takeOldest
+  , testProperty "takeWhileNewest"                           prop_takeWhileNewest
+  , testProperty "dropWhileNewest"                           prop_dropWhileNewest
   , testProperty "addBlock"                                  prop_addBlock
   , testProperty "rollback"                                  prop_rollback
   , testProperty "rollback/head"                             prop_rollback_head
@@ -151,6 +155,28 @@ prop_dropOldest (TestBlockChainFragment chain) =
     let blocks = CF.toOldestFirst chain in
     and [ CF.dropOldest n chain == CF.fromOldestFirst (L.drop n blocks)
         | n <- [0..Prelude.length blocks] ]
+
+prop_takeNewest :: TestBlockChainFragment -> Bool
+prop_takeNewest (TestBlockChainFragment chain) =
+    let blocks = CF.toNewestFirst chain in
+    and [ CF.takeNewest n chain == CF.fromNewestFirst (L.take n blocks)
+        | n <- [0..Prelude.length blocks] ]
+
+prop_takeOldest :: TestBlockChainFragment -> Bool
+prop_takeOldest (TestBlockChainFragment chain) =
+    let blocks = CF.toOldestFirst chain in
+    and [ CF.takeOldest n chain == CF.fromOldestFirst (L.take n blocks)
+        | n <- [0..Prelude.length blocks] ]
+
+prop_takeWhileNewest :: (Block -> Bool) -> TestBlockChainFragment -> Bool
+prop_takeWhileNewest p (TestBlockChainFragment chain) =
+    CF.takeWhileNewest p chain
+ == (CF.fromNewestFirst . L.takeWhile p . CF.toNewestFirst) chain
+
+prop_dropWhileNewest :: (Block -> Bool) -> TestBlockChainFragment -> Bool
+prop_dropWhileNewest p (TestBlockChainFragment chain) =
+    CF.dropWhileNewest p chain
+ == (CF.fromNewestFirst . L.dropWhile p . CF.toNewestFirst) chain
 
 prop_addBlock :: TestAddBlock -> Bool
 prop_addBlock (TestAddBlock c b) =
