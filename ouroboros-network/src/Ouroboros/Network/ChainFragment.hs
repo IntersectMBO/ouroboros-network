@@ -28,6 +28,8 @@ module Ouroboros.Network.ChainFragment (
   -- ** Basic operations
   head,
   last,
+  lastPoint,
+  lastSlot,
   toNewestFirst,
   toOldestFirst,
   fromNewestFirst,
@@ -218,11 +220,11 @@ headPoint = fmap blockPoint . head
 
 -- | \( O(1) \).
 headSlot :: HasHeader block => ChainFragment block -> Maybe SlotNo
-headSlot = fmap pointSlot . headPoint
+headSlot = fmap blockSlot . head
 
 -- | \( O(1) \).
 headHash :: HasHeader block => ChainFragment block -> Maybe (ChainHash block)
-headHash = fmap pointHash . headPoint
+headHash = fmap (BlockHash . blockHash) . head
 
 -- | \( O(1) \).
 headBlockNo :: HasHeader block => ChainFragment block -> Maybe BlockNo
@@ -233,6 +235,13 @@ last :: HasHeader block => ChainFragment block -> Maybe block
 last (b :< _) = Just b
 last Empty    = Nothing
 
+-- | \( O(1) \).
+lastPoint :: HasHeader block => ChainFragment block -> Maybe (Point block)
+lastPoint = fmap blockPoint . last
+
+-- | \( O(1) \).
+lastSlot :: HasHeader block => ChainFragment block -> Maybe SlotNo
+lastSlot = fmap blockSlot . last
 
 -- | TODO. Make a list of blocks from a 'ChainFragment', in newest-to-oldest
 -- order.
