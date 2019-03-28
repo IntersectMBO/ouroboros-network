@@ -57,6 +57,8 @@ module Ouroboros.Network.ChainFragment (
   lookupBySlot,
   splitAfterSlot,
   splitAfterPoint,
+  splitBeforeSlot,
+  splitBeforePoint,
   lookupByIndexFromEnd, FT.SearchResult(..),
   filter,
   selectPoints,
@@ -482,6 +484,34 @@ splitAfterPoint c p
   = Just (l, r)
   | otherwise
   = Nothing
+
+-- | \( O(\log(\min(i,n-i)) \). Split the 'ChainFragment' before the block with
+-- the given slot. Or, if there is no block with the given slot in the chain
+-- fragment, split at the location where it would have been.
+--
+-- If the chain fragment contained such a block, it will be the last
+-- (oldest\/leftmost) block on the second returned chain.
+splitBeforeSlot :: HasHeader block
+               => ChainFragment block
+               -> SlotNo
+               -> (ChainFragment block, ChainFragment block)
+splitBeforeSlot (ChainFragment t) s = (ChainFragment l, ChainFragment r)
+  where
+   (l, r) = FT.split (\v -> bmMaxSlot v >= s) t
+
+splitBeforePoint :: (HasHeader block1, HasHeader block2,
+                    HeaderHash block1 ~ HeaderHash block2)
+                 => ChainFragment block1
+                 -> Point block2
+                 -> Maybe (ChainFragment block1, ChainFragment block1)
+splitBeforePoint c p
+  | (l, r@(ChainFragment rt)) <- splitBeforeSlot c (pointSlot p)
+  , b FT.:< _ <- FT.viewl rt  -- O(1)
+  , blockPoint b == castPoint p
+  = Just (l, r)
+  | otherwise
+  = Nothing
+
 
 -- | \( O(p \log(\min(i,n-i)) \). Find the first 'Point' in the list of points
 -- that is on the given 'ChainFragment'. Return 'Nothing' if none of them are
