@@ -119,7 +119,7 @@ lower level protocol details.
 \item[Version 0.5, July 13, 2018] Extend the discussion of the alternative broadcast approach.
 \item[Version 0.6, July 17, 2018] Fleshed out section on chain following protocols.
 \item[Version 0.6.1, July 19, 2018] Minor additional text, to aid understanding.
-\item[Version 0.7, November 29, 2018] Consolodated requirements into this document
+\item[Version 0.7, November 29, 2018] Consolidated requirements into this document
 \end{description}
 
 \section{Introduction}
@@ -224,7 +224,7 @@ blockchain but not do full validation.
 
 Once one considers a node-to-consumer protocol as a first class citizen then it
 opens up opportunities for different system architecture choices. The
-architecture of the original Cardano Mainnet release was entirely homogeneous:
+architecture of the original Cardano Main-net release was entirely homogeneous:
 every node behaved the same, each trusted nothing but itself and paid the full
 networking and processing cost of engaging in the consensus protocol.  In
 particular everything was integrated into a single process: the consensus
@@ -235,7 +235,7 @@ then we can make many other choices.
 With an efficient \emph{local} IPC protocol we can have applications
 like wallets and explorers as separate processes. Even for tightly
 integrated components it can make sense to run them in separate OS
-processes and the associated OS mamagement tools. Not only is the
+processes and the associated OS management tools. Not only is the
 timing constraints for a consensus node are much easier to manage when
 it does not have to share CPU resources with chain consumers, but it
 enables the use of operating system features to give finer control
@@ -294,7 +294,7 @@ join the Cardano network so I can participate in the network.
 
 \paragraph{Participate in network as small stakeholder}
 
-As a Deadalus home user operating a core node with a small stake, I would like
+As a Daedalus home user operating a core node with a small stake, I would like
 to join the Cardano network so I can participate in the network as a core node
 that produces blocks i.e. have not delegated to someone else.
 
@@ -422,7 +422,7 @@ green & (not applicable) \\[1em]
 Block chain following \\
 \hline
 red   & it has been more that 200s since a slot indication was received. \\
-amber & it has been more than 60s since a slot indiction was received. \\
+amber & it has been more than 60s since a slot indication was received. \\
 green & otherwise. 
 \end{tabular}
 \end{center}
@@ -472,7 +472,7 @@ assured my network resource is not eaten up by the data diffusion function.
 \item The cap should be based on a fraction of a typical home internet
       connection -- it can be changed by configuration including ``don't act
       as a super node''.
-\item The system will allow users synching with the latest version of the
+\item The system will allow users syncing with the latest version of the
       blockchain to download blocks from more then one and up to five network
       peers concurrently.
 \item A cap on no. of incoming subscribers.
@@ -580,10 +580,10 @@ TODO: cover notes on:
 \item recursion as an indicator of completeness \marginpar{\njd{what does this mean Duncan?}}
 \item family of protocol variations for different environments: STM, IO, local
   IPC, remote IPC
-  \njd{\\noting different levels of implict trust here - we need
-    to think whether the STM enviroment is one we treat differently (e.g. trust
+  \njd{\\noting different levels of implicit trust here - we need
+    to think whether the STM environment is one we treat differently (e.g. trust
     forwarding only correctly signed blocks reducing the checks in the consumer
-    end) or do we assume even shared process nodes are potentially missbehaving
+    end) or do we assume even shared process nodes are potentially misbehaving
     and play up the way in which that helps defend against other forms of attack? }
 \item optimised case for immutable chain, e.g. shared files
 \item STM interface
@@ -1295,7 +1295,7 @@ selection rules.
 \begin{center}
 \pgfuseimage{node-diagram-concurency}
 \end{center}
-\caption{Dataflow within a node.}
+\caption{Data flow within a node.}
 \label{node-diagram-concurency}
 \end{figure}
 
@@ -1332,14 +1332,14 @@ selection rules.
   As for network I/O and CPU resource use: an adversary can only induce an
   honest node to work on one chain, namely the adversary's claimed best chain.
   By judiciously queueing network input we can ensure that adversaries cannot
-  cut out honests.}
+  cut out honest nodes.}
 
-  \avieth{The probabilty that a node has multiple chains which disagree on the
+  \avieth{The probability that a node has multiple chains which disagree on the
   slot $n$ behind the current slot is marginal for sufficiently large $n$
   (theorem 4.13). This gives a local correctness property: by increasing the
-  number of slots retained by this forking data struture ($k$) we can
+  number of slots retained by this forking data structure ($k$) we can
   decrease the probability that the oldest slot will include more than one
-  candidate (mutiple blocks, or no block, because some maximal chain is known
+  candidate (multiple blocks, or no block, because some maximal chain is known
   with no block at this slot). Multiple candidates for the oldest slot means
   there is a flat fork of size $k$: 2 tines of equal block count intersecting
   at the slot $k$ behind the current slot. This is highly unlikely for high
@@ -1363,7 +1363,7 @@ selection rules.
   better chain must have had a comparatively high number of slots in which
   it could have informed the node with the weaker chain of its better chain.
   This is informal but I think it captures the idea and we may be able to
-  work it into some explict probabilistic guarantee.}
+  work it into some explicit probabilistic guarantee.}
 
 \avieth{\subsection{Broadcasting the best chain}}
 
@@ -1437,7 +1437,7 @@ This works when the adversary controls the current slot, but is unlikely to be
 satisfied for prior slots: the honest nodes will have been working on a longer
 chain which makes the second condition fail.
 
-Alternatively, the rule could state that a header is realyed without the
+Alternatively, the rule could state that a header is relayed without the
 verified body only for the current slot.
 
 \subsubsection{Raising the difficulty for attackers}
@@ -1675,7 +1675,7 @@ The two phases have different state machines.
 \end{tikzpicture}
 \end{center}
 
-\subsubsection{Phase 2, reproducing produer's chain on the consumer's end}
+\subsubsection{Phase 2, reproducing producer's chain on the consumer's end}
 
 \begin{center}
 \begin{tikzpicture}
@@ -1743,16 +1743,16 @@ according to the value of $\var{next'}$.
 \subsection{Duration of miss-information}
 \begin{itemize}
 \item how many slots could an attacker maintain a fiction with a)
-  unfettered power of eclipse; b) $\rho$ adverserial stake at its disposal.
+  unfettered power of eclipse; b) $\rho$ adversarial stake at its disposal.
 \item what indicators of certainty are available to inform end user?
 \end{itemize}
-\subsection{Inherent Assymetry}
+\subsection{Inherent Asymmetry}
 \begin{itemize}
 \item How much un-eclipsed information is needed to detect eclipse? Is
   a unicast channel enough? (this would permit other technological
   approaches in the longer run)
 \item Given that a node is not totally eclipsed (i.e $\exists$
-  potentially reachable non-adversrial bearer node) how does this help?
+  potentially reachable non-adversarial bearer node) how does this help?
 \end{itemize}  
 
 \end{document}
