@@ -4,7 +4,7 @@
 module Test.Consensus.BlockchainTime (tests) where
 
 import           Data.Bifunctor
-import           Data.Time
+import           Data.Time.Clock
 import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.HUnit
@@ -16,55 +16,13 @@ import           Test.Util.Orphans.Arbitrary (genLimitedSlotNo)
 
 tests :: TestTree
 tests = testGroup "BlockchainTime" [
-      testProperty "UTC_Fixed_UTC"         prop_UTC_Fixed_UTC
-    , testProperty "Nominal_Fixed_Nominal" prop_Nominal_Fixed_Nominal
-    , testProperty "Fixed_UTC_Fixed"       prop_Fixed_UTC_Fixed
-    , testProperty "Fixed_Nominal_Fixed"   prop_Fixed_Nominal_Fixed
-    , testProperty "startOfSlot"           prop_startOfSlot
+      testProperty "startOfSlot"           prop_startOfSlot
     , testProperty "slotAtTime"            prop_slotAtTime
     , testProperty "timeUntilNextSlot"     prop_timeUntilNextSlot
     , testProperty "timeFromStartOfSlot"   prop_timeFromStartOfSlot
     , testProperty "slotAfterTime"         prop_slotAfterTime
     , testProperty "delayNextSlot"         prop_delayNextSlot
     ]
-
-{-------------------------------------------------------------------------------
-  Roundtrip properties for time conversion functions
--------------------------------------------------------------------------------}
-
--- > fixedToUTC (fixedFromUTC t) ~= t
-prop_UTC_Fixed_UTC :: UTCTime -> Property
-prop_UTC_Fixed_UTC t =
-      counterexample ("t':  " ++ show t')
-    . counterexample ("t'': " ++ show t'')
-    $ realToFrac (diffUTCTime t t'') < maxError
-  where
-    t'  = fixedFromUTC t
-    t'' = fixedToUTC   t'
-
-    maxError :: Double
-    maxError = 0.001 -- millisecond resolution
-
--- > fixedFromUTC (fixedToUTC t) == t
-prop_Fixed_UTC_Fixed :: FixedUTC -> Property
-prop_Fixed_UTC_Fixed t = fixedFromUTC (fixedToUTC t) === t
-
--- > fixedToNominal (fixedFromNominal d) ~= d
-prop_Nominal_Fixed_Nominal :: NominalDiffTime -> Property
-prop_Nominal_Fixed_Nominal d =
-      counterexample ("t':  " ++ show d')
-    . counterexample ("t'': " ++ show d'')
-    $ realToFrac (d - d'') < maxError
-  where
-    d'  = fixedDiffFromNominal d
-    d'' = fixedDiffToNominal   d'
-
-    maxError :: Double
-    maxError = 0.001 -- millisecond resolution
-
--- > fixedFromNominal (fixedToNominal t) == t
-prop_Fixed_Nominal_Fixed :: FixedDiffTime -> Property
-prop_Fixed_Nominal_Fixed t = fixedDiffFromNominal (fixedDiffToNominal t) === t
 
 {-------------------------------------------------------------------------------
   Properties of the time utilities
@@ -79,24 +37,24 @@ prop_startOfSlot slotLen start = forAll genLimitedSlotNo $ \ slot ->
 
 -- > now - slotLen < startOfSlot (fst (slotAtTime now)) <= now
 -- > 0 <= snd (slotAtTime now) < slotLen
-prop_slotAtTime :: SlotLength -> SystemStart -> FixedDiffTime -> Property
+prop_slotAtTime :: SlotLength -> SystemStart -> NominalDiffTime -> Property
 prop_slotAtTime slotLen start execTime =
       counterexample ("now:         " ++ show now)
     . counterexample ("currentSlot: " ++ show currentSlot)
     . counterexample ("timeSpent:   " ++ show timeSpent)
     . counterexample ("slotStart:   " ++ show slotStart)
-    $    addFixedUTC (negate slotLen') now < startOfSlot slotLen start currentSlot
+    $    addUTCTime (negate slotLen') now < startOfSlot slotLen start currentSlot
     .&&. slotStart <= now
     .&&. 0 <= timeSpent
     .&&. timeSpent < getSlotLength slotLen
   where
-    now                      = addFixedUTC execTime (getSystemStart start)
+    now                      = addUTCTime execTime (getSystemStart start)
     (currentSlot, timeSpent) = slotAtTime slotLen start now
     slotStart                = startOfSlot slotLen start currentSlot
     slotLen'                 = getSlotLength slotLen
 
 -- > 0 < fst (timeUntilNextSlot now) <= slotLen
-prop_timeUntilNextSlot :: SlotLength -> SystemStart -> FixedDiffTime -> Property
+prop_timeUntilNextSlot :: SlotLength -> SystemStart -> NominalDiffTime -> Property
 prop_timeUntilNextSlot slotLen start execTime =
       counterexample ("now:      " ++ show now)
     . counterexample ("timeLeft: " ++ show timeLeft)
@@ -104,7 +62,7 @@ prop_timeUntilNextSlot slotLen start execTime =
     $    0 < timeLeft
     .&&. timeLeft <= getSlotLength slotLen
   where
-    now               = addFixedUTC execTime (getSystemStart start)
+    now               = addUTCTime execTime (getSystemStart start)
     (timeLeft, _next) = timeUntilNextSlot slotLen start now
 
     edgeCase :: String
@@ -122,7 +80,7 @@ prop_timeFromStartOfSlot slotLen start = forAll genLimitedSlotNo $ \ slot ->
 
 -- > slotAtTime (now + fst (timeUntilNextSlot now)) == bimap (+1) (const 0) (slotAtTime now)
 -- > fst (slotAtTime (now + fst (timeUntilNextSlot now))) == snd (timeUntilNextSlot now)
-prop_slotAfterTime :: SlotLength -> SystemStart -> FixedDiffTime -> Property
+prop_slotAfterTime :: SlotLength -> SystemStart -> NominalDiffTime -> Property
 prop_slotAfterTime slotLen start execTime =
       counterexample ("now:        " ++ show now)
     . counterexample ("timeLeft:   " ++ show timeLeft)
@@ -131,9 +89,9 @@ prop_slotAfterTime slotLen start execTime =
          bimap (+1) (const 0) (slotAtTime slotLen start now)
     .&&. fst (slotAtTime slotLen start afterDelay) === next
   where
-    now              = addFixedUTC execTime (getSystemStart start)
+    now              = addUTCTime execTime (getSystemStart start)
     (timeLeft, next) = timeUntilNextSlot slotLen start now
-    afterDelay       = addFixedUTC timeLeft now
+    afterDelay       = addUTCTime timeLeft now
 
 {-------------------------------------------------------------------------------
   Test for IO
@@ -145,7 +103,7 @@ data TestDelayIO = TestDelayIO {
       --
       -- Since we don't actually " start " the system in any way, we specify
       -- this as an offset _before_ the start of the test.
-      tdioStart'  :: FixedDiffTime
+      tdioStart'  :: NominalDiffTime
 
       -- | SlotNo length
       --
@@ -173,7 +131,7 @@ prop_delayNextSlot TestDelayIO{..} = withMaxSuccess 10 $ ioProperty $ do
     assertEqual "nextSlot"              nextSlot                slotAfterDelay
   where
     pickSystemStart :: IO SystemStart
-    pickSystemStart = pick <$> getCurrentFixedUTC
+    pickSystemStart = pick <$> getCurrentTime
       where
-        pick :: FixedUTC -> SystemStart
-        pick = SystemStart . addFixedUTC (negate tdioStart')
+        pick :: UTCTime -> SystemStart
+        pick = SystemStart . addUTCTime (negate tdioStart')

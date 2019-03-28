@@ -57,19 +57,11 @@ instance Arbitrary NominalDiffTime where
 instance Arbitrary UTCTime where
   arbitrary = (`addUTCTime` dawnOfTime) <$> arbitrary
 
--- | Defined in terms of instance for 'NominalDiffTime'
-instance Arbitrary FixedDiffTime where
-   arbitrary = fixedDiffFromNominal <$> arbitrary
-
--- | Defined in terms of instance for 'UTCTime'
-instance Arbitrary FixedUTC where
-  arbitrary = fixedFromUTC <$> arbitrary
-
 -- | Length between 0.001 and 20 seconds, millisecond granularity
 instance Arbitrary SlotLength where
   arbitrary = slotLengthFromMillisec <$> choose (1, 20 * 1_000)
 
-deriving via FixedUTC        instance Arbitrary SystemStart
+deriving via UTCTime         instance Arbitrary SystemStart
 deriving via Positive Word64 instance Arbitrary SlotNo
 deriving via Word64          instance Arbitrary EpochNo
 deriving via Positive Word64 instance Arbitrary EpochSize
@@ -186,4 +178,4 @@ secondsPerDay = 24 * 60 * 60
 --
 -- Everybody knows nothing happened before 2000-01-01 00:00:00
 dawnOfTime :: UTCTime
-dawnOfTime = read "2000-01-01 00:00:00"
+dawnOfTime = UTCTime (fromGregorian 2000 01 01) 0

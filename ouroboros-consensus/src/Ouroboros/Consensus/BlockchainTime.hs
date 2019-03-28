@@ -15,18 +15,6 @@ module Ouroboros.Consensus.BlockchainTime (
   , testBlockchainTime
     -- * Real blockchain time
   , realBlockchainTime
-    -- * Time utilities
-  , FixedUTC(..)
-  , fixedFromUTC
-  , fixedToUTC
-  , getCurrentFixedUTC
-  , FixedDiffTime(..)
-  , fixedDiffFromNominal
-  , fixedDiffToNominal
-  , threadDelayByFixedDiff
-  , multFixedDiffTime
-  , diffFixedUTC
-  , addFixedUTC
     -- * Time to slots and back again
   , SlotLength(..)
   , slotLengthFromMillisec
@@ -43,10 +31,7 @@ module Ouroboros.Consensus.BlockchainTime (
 
 import           Control.Monad
 import           Data.Fixed
-import           Data.Proxy
 import           Data.Time
-import           Data.Time.Clock (DiffTime)
-import           Data.Time.Clock.System
 import           Data.Word (Word64)
 
 import           Control.Monad (void)
@@ -138,119 +123,56 @@ realBlockchainTime slotLen start = do
       }
 
 {-------------------------------------------------------------------------------
-  Time utilities
-
-  We avoid using Double here to avoid rounding problems.
--------------------------------------------------------------------------------}
-
--- | Fixed precision UTC time (resolution: milliseconds)
---
--- > fixedToUTC (fixedFromUTC t) ~= t
--- > fixedFromUTC (fixedToUTC t) == t
-newtype FixedUTC = FixedUTC { fixedSecondsSinceEpoch :: Fixed E3 }
-  deriving (Eq, Ord)
-
-instance Show FixedUTC where
-  show = show . fixedToUTC
-
-fixedFromUTC :: UTCTime -> FixedUTC
-fixedFromUTC = FixedUTC . conv . utcToSystemTime
-  where
-    conv :: SystemTime -> Fixed E3
-    conv (MkSystemTime secs nsecs) = MkFixed $
-          (fromIntegral secs * 1_000)
-        + (fromIntegral nsecs `div` 1_000_000)
-
-fixedToUTC :: FixedUTC -> UTCTime
-fixedToUTC = systemToUTCTime . conv . fixedSecondsSinceEpoch
-  where
-    conv :: Fixed E3 -> SystemTime
-    conv (MkFixed millisecs) = MkSystemTime {
-          systemSeconds     = fromIntegral $  millisecs `div` 1_000
-        , systemNanoseconds = fromIntegral $ (millisecs `mod` 1_000) * 1_000_000
-        }
-
-getCurrentFixedUTC :: IO FixedUTC
-getCurrentFixedUTC = fixedFromUTC <$> getCurrentTime
-
--- | Fixed precision time span (resolution: milliseconds)
---
--- > fixedToNominal (fixedFromNominal d) ~= d
--- > fixedFromNominal (fixedToNominal t) == t
-newtype FixedDiffTime = FixedDiffTime { fixedDiffTime :: Fixed E3 }
-  deriving (Eq, Ord, Num)
-
-instance Show FixedDiffTime where
-  show = show . fixedDiffToNominal
-
-fixedDiffFromNominal :: NominalDiffTime -> FixedDiffTime
-fixedDiffFromNominal = FixedDiffTime . doubleToFixed round . realToFrac
-
-fixedDiffToNominal :: FixedDiffTime -> NominalDiffTime
-fixedDiffToNominal = realToFrac . fixedToDouble . fixedDiffTime
-
-threadDelayByFixedDiff :: FixedDiffTime -> IO ()
-threadDelayByFixedDiff = threadDelay
-                       . (realToFrac :: Fixed E3 -> DiffTime)
-                       . fixedDiffTime
-
-multFixedDiffTime :: Int -> FixedDiffTime -> FixedDiffTime
-multFixedDiffTime n (FixedDiffTime d) = FixedDiffTime (fromIntegral n * d)
-
-diffFixedUTC :: FixedUTC -> FixedUTC -> FixedDiffTime
-diffFixedUTC (FixedUTC t) (FixedUTC t') = FixedDiffTime (t - t')
-
-addFixedUTC :: FixedDiffTime -> FixedUTC -> FixedUTC
-addFixedUTC (FixedDiffTime d) (FixedUTC t) = FixedUTC (t + d)
-
-{-------------------------------------------------------------------------------
   Time to slots and back again
 -------------------------------------------------------------------------------}
 
 -- | Slot length
-newtype SlotLength = SlotLength { getSlotLength :: FixedDiffTime }
+newtype SlotLength = SlotLength { getSlotLength :: NominalDiffTime }
   deriving (Show)
 
 slotLengthFromMillisec :: Integer -> SlotLength
-slotLengthFromMillisec = SlotLength . FixedDiffTime . conv
+slotLengthFromMillisec = SlotLength . conv
   where
     -- Explicit type annotation here means that /if/ we change the precision,
     -- we are forced to reconsider this code.
-    conv :: Integer -> Fixed E3
-    conv = MkFixed
+    conv :: Integer -> NominalDiffTime
+    conv = (realToFrac :: Pico -> NominalDiffTime)
+         . (/ 1000)
+         . (fromInteger :: Integer -> Pico)
 
 slotLengthToMillisec :: SlotLength -> Integer
-slotLengthToMillisec = conv . fixedDiffTime . getSlotLength
+slotLengthToMillisec = conv . getSlotLength
   where
     -- Explicit type annotation here means that /if/ we change the precision,
     -- we are forced to reconsider this code.
-    conv :: Fixed E3 -> Integer
-    conv (MkFixed n) = n
+    conv :: NominalDiffTime -> Integer
+    conv = truncate
+         . (* 1000)
+         . (realToFrac :: NominalDiffTime -> Pico)
 
 -- | System start
 --
 -- Slots are counted from the system start.
-newtype SystemStart = SystemStart { getSystemStart :: FixedUTC }
+newtype SystemStart = SystemStart { getSystemStart :: UTCTime }
   deriving (Show)
 
 -- | Compute start of the specified slot
 --
 -- > slotAtTime (startOfSlot slot) == (slot, 0)
-startOfSlot :: SlotLength -> SystemStart -> SlotNo -> FixedUTC
+startOfSlot :: SlotLength -> SystemStart -> SlotNo -> UTCTime
 startOfSlot (SlotLength d) (SystemStart start) (SlotNo n) =
-    addFixedUTC (multFixedDiffTime (fromIntegral n) d) start
+    addUTCTime (fromIntegral n * d) start
 
 -- | Compute slot at the specified time and how far we are into that slot
 --
 -- > now - slotLen < startOfSlot (fst (slotAtTime now)) <= now
 -- > 0 <= snd (slotAtTime now) < slotLen
-slotAtTime :: SlotLength -> SystemStart -> FixedUTC -> (SlotNo, FixedDiffTime)
-slotAtTime (SlotLength d) (SystemStart start) now = conv $
-              (fixedDiffTime (now `diffFixedUTC` start))
-    `divMod'` (fixedDiffTime d)
+slotAtTime :: SlotLength -> SystemStart -> UTCTime -> (SlotNo, NominalDiffTime)
+slotAtTime (SlotLength d) (SystemStart start) now =
+    conv $ (now `diffUTCTime` start) `divMod'` d
   where
-    conv :: (Word64, Fixed E3) -> (SlotNo, FixedDiffTime)
-    conv (slot, time) = (SlotNo slot, FixedDiffTime time)
+    conv :: (Word64, NominalDiffTime) -> (SlotNo, NominalDiffTime)
+    conv (slot, time) = (SlotNo slot, time)
 
 -- | Compute time until the next slot and the number of that next slot
 --
@@ -260,8 +182,8 @@ slotAtTime (SlotLength d) (SystemStart start) now = conv $
 -- > fst (slotAtTime (now + fst (timeUntilNextSlot now))) == snd (timeUntilNextSlot now)
 timeUntilNextSlot :: SlotLength
                   -> SystemStart
-                  -> FixedUTC
-                  -> (FixedDiffTime, SlotNo)
+                  -> UTCTime
+                  -> (NominalDiffTime, SlotNo)
 timeUntilNextSlot slotLen start now =
     (getSlotLength slotLen - timeInCurrentSlot, succ currentSlot)
   where
@@ -270,35 +192,13 @@ timeUntilNextSlot slotLen start now =
 -- | Get current slot
 getCurrentSlotIO :: SlotLength -> SystemStart -> IO SlotNo
 getCurrentSlotIO slotLen start =
-    fst . slotAtTime slotLen start <$> getCurrentFixedUTC
+    fst . slotAtTime slotLen start <$> getCurrentTime
 
 -- | Wait until next slot, and return number of that slot
 waitUntilNextSlotIO :: SlotLength -> SystemStart -> IO SlotNo
 waitUntilNextSlotIO slotLen start = do
-    now <- getCurrentFixedUTC
+    now <- getCurrentTime
     let (delay, nextSlot) = timeUntilNextSlot slotLen start now
-    threadDelayByFixedDiff delay
+    threadDelay ((realToFrac :: NominalDiffTime -> DiffTime) delay)
     return nextSlot
 
-{-------------------------------------------------------------------------------
-  Auxiliary
--------------------------------------------------------------------------------}
-
--- | Convert 'Double' to fixed precision
---
--- For precision 'E1', we have
---
--- >           1.000 1.010 1.040 1.049 1.050  1.051 1.090 1.100
--- > floor   | 1.0   1.0   1.0   1.0   1.0    1.0   1.0   1.1
--- > round   | 1.0   1.0   1.0   1.0   1.0(*) 1.1   1.1   1.1
--- > ceiling | 1.0   1.1   1.1   1.1   1.1    1.1   1.1   1.1
---
--- (*): See <https://en.wikipedia.org/wiki/IEEE_754#Rounding_rules>
-doubleToFixed :: forall a. HasResolution a
-              => (Double -> Integer) -- ^ Rounding policy
-              -> Double -> Fixed a
-doubleToFixed r d = MkFixed $ r (d * fromIntegral (resolution (Proxy @a)))
-
--- | Convert fixed precision number to 'Double'
-fixedToDouble :: HasResolution a => Fixed a -> Double
-fixedToDouble = realToFrac
