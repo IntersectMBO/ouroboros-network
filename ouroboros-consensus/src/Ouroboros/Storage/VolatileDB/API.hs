@@ -11,7 +11,7 @@ import           Control.Monad.Class.MonadThrow
 
 import           Data.ByteString (ByteString)
 import           Data.ByteString.Builder (Builder)
-
+import           Data.Set (Set)
 import           GHC.Stack (HasCallStack)
 
 import           Ouroboros.Storage.VolatileDB.Types
@@ -32,8 +32,9 @@ data VolatileDB blockId m = VolatileDB {
     , isOpenDB       :: HasCallStack => m Bool
     , reOpenDB       :: HasCallStack => m ()
     , getBlock       :: HasCallStack => blockId -> m (Maybe ByteString)
-    , putBlock       :: HasCallStack => blockId -> Builder -> m ()
+    , putBlock       :: HasCallStack => blockId -> blockId -> Builder -> m ()
     , getBlockIds    :: HasCallStack => m [blockId]
+    , getSuccessors  :: HasCallStack => blockId -> m (Set blockId)
     , garbageCollect :: HasCallStack => SlotNo -> m ()
     , getIsMember    :: HasCallStack => m (blockId -> Bool)
 }

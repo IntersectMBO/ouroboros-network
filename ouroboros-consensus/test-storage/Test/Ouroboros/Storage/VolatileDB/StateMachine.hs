@@ -34,7 +34,7 @@ import           Data.Functor.Classes
 import           Data.Kind (Type)
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map as M
-import           Data.Maybe (fromJust, isJust)
+import           Data.Maybe (fromJust, isJust, mapMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as S
 import           Data.TreeDiff (ToExpr)
@@ -81,6 +81,7 @@ data Success
   | Bl       Bool
   | IsMember [Bool] -- We compare two functions based on their results on a list of inputs.
   | SimulatedError (Either (VolatileDBError BlockId) Success)
+  | Successors (Set BlockId)
   deriving Show
 
 instance Eq Success where
@@ -90,6 +91,7 @@ instance Eq Success where
     Bl bl == Bl bl' = bl == bl'
     IsMember ls == IsMember ls' = ls == ls'
     SimulatedError _ == SimulatedError _ = True
+    Successors st1 == Successors st2 = st1 == st2
     _ == _ = False
 
 
@@ -102,13 +104,14 @@ data Cmd
     | ReOpen
     | GetBlock BlockId
     | GetBlockIds
-    | PutBlock BlockId
+    | PutBlock BlockId Predecessor
     | GarbageCollect BlockId
     | AskIfMember [BlockId]
     | Corrupt Corruptions
     | CreateFile
     | CreateInvalidFile
-    | DuplicateBlock (String, BlockId)
+    | DuplicateBlock String BlockId Predecessor
+    | GetSuccessors Predecessor
     deriving Show
 
 data CmdErr = CmdErr
@@ -150,18 +153,19 @@ instance ToExpr (Model r) where
 
 instance CommandNames (At Cmd) where
     cmdName (At cmd) = case cmd of
-        GetBlock _        -> "GetBlock"
-        GetBlockIds       -> "GetBlockIds"
-        PutBlock _        -> "PutBlock"
-        GarbageCollect _  -> "GarbageCollect"
-        IsOpen            -> "IsOpen"
-        Close             -> "Close"
-        ReOpen            -> "ReOpen"
-        AskIfMember _     -> "AskIfMember"
-        Corrupt _         -> "Corrupt"
-        CreateFile        -> "CreateFile"
-        CreateInvalidFile -> "CreateInvalidFile"
-        DuplicateBlock _  -> "DuplicateBlock"
+        GetBlock {}          -> "GetBlock"
+        GetBlockIds          -> "GetBlockIds"
+        PutBlock {}          -> "PutBlock"
+        GarbageCollect {}    -> "GarbageCollect"
+        IsOpen               -> "IsOpen"
+        Close                -> "Close"
+        ReOpen               -> "ReOpen"
+        AskIfMember {}       -> "AskIfMember"
+        Corrupt {}           -> "Corrupt"
+        CreateFile {}        -> "CreateFile"
+        CreateInvalidFile {} -> "CreateInvalidFile"
+        DuplicateBlock {}    -> "DuplicateBlock"
+        GetSuccessors {}     -> "GetSuccessors"
     cmdNames _ = ["not", "suported", "yet"]
 
 instance CommandNames (At CmdErr) where
@@ -255,9 +259,9 @@ runPure dbm mdb (CmdErr cmd err) =
                 createInvalidFileModel "invalidFileName.dat"
                 reOpenDB db
                 return $ Unit ()
-            DuplicateBlock bid -> do
+            DuplicateBlock file bid _pbid -> do
                 closeDB db
-                duplicateBlockModel bid
+                duplicateBlockModel (file, bid)
                 reOpenDB db
                 return $ Unit ()
             _ -> error "invalid cmd"
@@ -270,15 +274,16 @@ runDB :: (HasCallStack, Monad m)
 runDB restCmd db cmd = case cmd of
     GetBlock bid       -> Blob <$> getBlock db bid
     GetBlockIds        -> Blocks <$> getBlockIds db
-    PutBlock bid       -> Unit <$> putBlock db bid (BL.lazyByteString $ Binary.encode $ toBlock bid)
+    PutBlock b pb      -> Unit <$> putBlock db b pb (BL.lazyByteString $ Binary.encode $ toBlock (b, pb))
+    GetSuccessors b    -> Successors <$> getSuccessors db b
     GarbageCollect bid -> Unit <$> garbageCollect db (toSlot bid)
     IsOpen             -> Bl <$> isOpenDB db
     Close              -> Unit <$> closeDB db
     ReOpen             -> Unit <$> reOpenDB db
-    Corrupt _          -> restCmd db cmd
+    Corrupt {}         -> restCmd db cmd
     CreateFile         -> restCmd db cmd
     CreateInvalidFile  -> restCmd db cmd
-    DuplicateBlock _   -> restCmd db cmd
+    DuplicateBlock {}  -> restCmd db cmd
     AskIfMember bids   -> do
         isMember <- getIsMember db
         return $ IsMember $ isMember <$> bids
@@ -333,9 +338,9 @@ preconditionImpl m@Model {..} (At (CmdErr cmd _)) =
         Corrupt cors ->
             forall (corruptionFiles cors) (`elem` getDBFiles dbModel)
             .&& (Boolean $ open dbModel)
-        DuplicateBlock (_file, bid) ->
-            let bids = concat $ (\(_,(_, _, bs)) -> bs) <$> (M.toList $ index dbModel)
-            in bid `elem` bids
+        DuplicateBlock file bid pbid ->
+            let bids = concat $ (\(f,(_, _, bs)) -> ((\(b,bp)->(f,b,bp)) <$> bs)) <$> (M.toList $ index dbModel)
+            in (file, bid, pbid) `elem` bids
         _ -> Top
   where
       corruptionFiles = map snd . NE.toList
@@ -349,19 +354,22 @@ postconditionImpl model cmdErr resp =
 generatorCmdImpl :: Bool -> Model Symbolic -> Maybe (Gen (At Cmd Symbolic))
 generatorCmdImpl terminatingCmd m@Model {..} =
     if shouldEnd then Nothing else Just $ do
-    sl <- blockIdgenerator m
+    sl <- blockIdGenerator m
+    psl <- predecessorGenerator m
     let lastGC = latestGarbaged dbModel
     let dbFiles :: [String] = getDBFiles dbModel
-    ls <- filter (newer lastGC . toSlot) <$> (listOf $ blockIdgenerator m)
+    ls <- filter (newer lastGC . toSlot) <$> (listOf $ blockIdGenerator m)
     bid <- do
-        let bids = concat $ (\(f,(_, _, bs)) -> map (\b -> (f,b)) bs) <$> (M.toList $ index dbModel)
+        let bids = concat $ (\(f,(_, _, bs)) -> map (\(b, pb) -> (f, b, pb)) bs) <$> (M.toList $ index dbModel)
         case bids of
             [] -> return Nothing
             _  -> Just <$> elements bids
+    let duplicate = (\(f, b, pb) -> DuplicateBlock f b pb) <$> bid
     cmd <- frequency
         [ (150, return $ GetBlock sl)
         , (100, return $ GetBlockIds)
-        , (150, return $ PutBlock sl)
+        , (150, return $ PutBlock sl psl)
+        , (100, return $ GetSuccessors psl)
         , (50, return $ GarbageCollect sl)
         , (50, return $ IsOpen)
         , (50, return $ Close)
@@ -373,7 +381,7 @@ generatorCmdImpl terminatingCmd m@Model {..} =
         , (if null ls then 0 else 30, return $ AskIfMember ls)
         , (if null dbFiles then 0 else 30, Corrupt <$> generateCorruptions (NE.fromList dbFiles))
         , (if terminatingCmd then 1 else 0, return CreateInvalidFile)
-        , (if terminatingCmd && isJust bid then 1 else 0, return $ DuplicateBlock $ fromJust bid)
+        , (if terminatingCmd && isJust duplicate then 1 else 0, return $ fromJust duplicate)
         ]
     return $ At cmd
 
@@ -404,16 +412,20 @@ generatorImpl mkErr terminatingCmd m@Model {..} = do
         noErrorFor AskIfMember {}       = False
         noErrorFor GarbageCollect {}    = False
         noErrorFor PutBlock {}          = False
+        noErrorFor GetSuccessors {}     = False
         noErrorFor CreateInvalidFile {} = True
         noErrorFor CreateFile {}        = True
         noErrorFor Corrupt {}           = True
         noErrorFor DuplicateBlock {}    = True
 
-blockIdgenerator :: Model Symbolic -> Gen BlockId
-blockIdgenerator Model {..} = do
+blockIdGenerator :: Model Symbolic -> Gen BlockId
+blockIdGenerator Model {..} = do
     sl <- arbitrary
     -- list must be non empty
     elements $ sl : (M.keys $ mp dbModel)
+
+predecessorGenerator :: Model Symbolic -> Gen BlockId
+predecessorGenerator Model {..} = elements [0..2]
 
 getDBFiles :: DBModel BlockId -> [String]
 getDBFiles DBModel {..} = M.keys index
@@ -467,8 +479,8 @@ semanticsRestCmd hasFS env db cmd = case cmd of
             return ()
         reOpenDB db
         return $ Unit ()
-    DuplicateBlock (_file, bid) -> do
-        let specialEnc = Binary.encode $ toBlock bid
+    DuplicateBlock _file  bid preBid -> do
+        let specialEnc = Binary.encode $ toBlock (bid, preBid)
         SomePair stHasFS st <- Internal.getInternalState env
         let hndl = Internal._currentWriteHandle st
         _ <- hPut stHasFS hndl (BL.lazyByteString specialEnc)
@@ -486,7 +498,8 @@ knownLimitation :: Model Symbolic -> Cmd :@ Symbolic -> Logic
 knownLimitation model (At cmd) = case cmd of
     GetBlock bid       -> Boolean $ isLimitation (latestGarbaged $ dbModel model) (toSlot bid)
     GetBlockIds        -> Bot
-    PutBlock bid       -> Boolean $ isLimitation (latestGarbaged $ dbModel model) (toSlot bid)
+    GetSuccessors {}   -> Bot
+    PutBlock bid _pbid -> Boolean $ isLimitation (latestGarbaged $ dbModel model) (toSlot bid)
     GarbageCollect _sl -> Bot
     IsOpen             -> Bot
     Close              -> Bot
@@ -495,7 +508,7 @@ knownLimitation model (At cmd) = case cmd of
     CreateFile         -> Boolean $ not $ open $ dbModel model
     AskIfMember bids   -> exists ((\b -> isLimitation (latestGarbaged $ dbModel model) (toSlot b)) <$> bids) Boolean
     CreateInvalidFile  -> Boolean $ not $ open $ dbModel model
-    DuplicateBlock _   -> Boolean $ not $ open $ dbModel model
+    DuplicateBlock {}  -> Boolean $ not $ open $ dbModel model
     where
         isLimitation :: (Ord slot) => Maybe slot -> slot -> Bool
         isLimitation Nothing _sl       = False
@@ -530,6 +543,7 @@ prop_sequential = withMaxSuccess 1000 $
             $ tabulate "Error Tags" (tagSimulatedErrors events)
             $ tabulate "IsMember: Total number of True's" [myshow $ isMemberTrue events]
             $ tabulate "IsMember: At least one True" [show $ isMemberTrue' events]
+            $ tabulate "Successors" (tagGetSuccessors events)
             $ res === Ok
     where
         -- we use that: MonadState (DBModel BlockId) (State (DBModel BlockId))
@@ -598,7 +612,7 @@ tag ls = C.classify
     tagGarbageCollect keep bids mgced = successful $ \ev suc ->
         if not keep then Right $ tagGarbageCollect keep bids mgced
         else case (mgced, suc, getCmd ev) of
-            (Nothing, _, PutBlock bid)
+            (Nothing, _, PutBlock bid _pbid)
                 -> Right $ tagGarbageCollect True (S.insert bid bids) Nothing
             (Nothing, _, GarbageCollect bid)
                 -> Right $ tagGarbageCollect True bids (Just bid)
@@ -743,6 +757,16 @@ tagSimulatedErrors events = fmap f events
         f ev = case eventCmd ev of
             At (CmdErr _ Nothing) -> "NoError"
             At (CmdErr cmd _)     -> cmdName (At cmd) <> " Error"
+
+tagGetSuccessors :: [Event Symbolic] -> [String]
+tagGetSuccessors = mapMaybe f
+    where
+        f :: Event Symbolic -> Maybe String
+        f ev = case (getCmd ev, eventMockResp ev) of
+            (GetSuccessors _pid, Resp (Right (Successors st))) ->
+                if S.null st then Just "Empty Successors"
+                else Just "Non empty Successors"
+            _otherwise -> Nothing
 
 execCmd :: Model Symbolic
         -> Command (At CmdErr) (At Resp)

@@ -8,11 +8,13 @@
 module Ouroboros.Storage.VolatileDB.Types
     (
       module Ouroboros.Storage.VolatileDB.Types
+    , module Ouroboros.Storage.Common
     , module Ouroboros.Network.Block
     ) where
 
 import           Control.Exception (Exception (..))
 import           Data.Map (Map)
+import           Data.Set (Set)
 import           Data.Typeable
 import           Data.Word (Word64)
 
@@ -24,11 +26,15 @@ type FileId = Int
 
 -- For each file, we store the latest blockId, the number of blocks
 -- and a Map for its contents.
-type Index blockId = Map String (Maybe SlotNo, Int, Map Word64 (Word64, blockId))
+type Index blockId = Map String (Maybe SlotNo, Int, Map SlotOffset (BlockSize, blockId))
 
--- For each blockId, we store the file we can find the block, the offset and its size
--- in bytes.
-type ReverseIndex blockId = Map blockId (String, Word64, Word64)
+-- For each blockId, we store the file we can find the block, the offset, its size
+-- in bytes and its predecessor.
+type ReverseIndex blockId = Map blockId (String, SlotOffset, BlockSize, blockId)
+
+-- For each block, we store the Set of all blocks which have this block as
+-- a predecessor (its successors).
+type SuccessorsIndex blockId = Map blockId (Set blockId)
 
 -- | Errors which might arise when working with this database.
 data VolatileDBError blockId =
@@ -75,6 +81,7 @@ type FileSize  = Word64
 type BlockSize = Word64
 
 newtype Parser e m blockId = Parser {
-    -- | Parse block storage at the given path
-    parse :: FsPath -> m ([(SlotOffset, (BlockSize, blockId))], Maybe e)
+    -- | Parse block storage at the given path.
+    --   The parser returns for each block, its size its blockId and its predecessor's blockId.
+    parse :: FsPath -> m ([(SlotOffset, (BlockSize, blockId, blockId))], Maybe e)
     }
