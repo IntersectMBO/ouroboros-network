@@ -28,6 +28,7 @@ and partly the ledger team:
 - [ ] #285 Implement Windows-specific parts
 - [ ] #292 Support O_EXCL in posix bindings
 - [ ] #305 Make sure IO HasFS wrapper includes mount point in error messages
+- [ ] #398 Delete remaining unit test 
 
 ## Immutable DB
 
@@ -41,6 +42,8 @@ and partly the ledger team:
 
 - [ ] #328 Close open iterators when the immutable DB is closed or truncated
 - [ ] #369 Inclusive/exclusive iterator bounds for the ImmutableDB
+- [ ] #379 Immutable DB: Audit memory footprint
+- [ ] #384 Let the ImmutableDB return lazy ByteStrings
 
 ### Improved testing/minor improvements
 
@@ -49,11 +52,14 @@ and partly the ledger team:
 
 ## Volatile DB
 
-- [ ] #202 Volatile block storage
-- [ ] #251 Volatile DB: add labelling
-- [ ] #252 Volatile DB: Extend q-s-m tests to test reopening
-- [ ] #253 Volatile DB: Migrate unit tests to q-s-m tests
-- [ ] #273 Volatile DB: Check against simulated errors
+- [x] #202 Volatile block storage
+- [x] #251 Volatile DB: add labelling
+- [x] #252 Volatile DB: Extend q-s-m tests to test reopening
+- [x] #253 Volatile DB: Migrate unit tests to q-s-m tests
+- [x] #273 Volatile DB: Check against simulated errors
+
+- [ ] #373 Volatile DB: Add fingerprint
+- [ ] #378 Volatile DB: Audit memory footprint
 
 ## Ledger DB
 
@@ -71,6 +77,7 @@ and partly the ledger team:
 - [ ] #246 ChainState: q-s-m tests
 - [ ] #296 ChainState: Move blocks from immutable DB to mutable DB on corruption
 - [ ] #264 Sync/Resync
+- [ ] #380 Chain DB: Audit memory footprint
 
 ## Use storage system in consensus layer
 
@@ -162,8 +169,10 @@ and partly the ledger team:
 
 # Clean up technical debt
 
+- [X] #227 Replace remaining unit tests for the mock file system
+
 - [ ] #322 Take advantage of new async infrastructure
 - [ ] #254 Generalize q-s-m framework
 - [ ] #224 Reintroduce `QuantifiedConstraints`
 - [ ] #225 Replace remaining unit tests for immutable DB
-- [ ] #227 Replace remaining unit tests for the mock file system
+
