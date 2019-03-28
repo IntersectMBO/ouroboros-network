@@ -29,6 +29,12 @@ library
   -- This has to be tidied up once the design becomes clear.
   exposed-modules:
                        Ouroboros.Network.Block
+                       Ouroboros.Network.BlockFetch
+                       Ouroboros.Network.BlockFetch.Client
+                       Ouroboros.Network.BlockFetch.Decision
+                       Ouroboros.Network.BlockFetch.DeltaQ
+                       Ouroboros.Network.BlockFetch.State
+                       Ouroboros.Network.BlockFetch.Types
                        Ouroboros.Network.Chain
                        Ouroboros.Network.ChainFragment
                        Ouroboros.Network.ChainProducerState
@@ -113,11 +119,18 @@ test-suite tests
   main-is:             Main.hs
   other-modules:       Ouroboros.Network.Testing.ConcreteBlock
                        Ouroboros.Network.Block
+                       Ouroboros.Network.BlockFetch
+                       Ouroboros.Network.BlockFetch.Client
+                       Ouroboros.Network.BlockFetch.Decision
+                       Ouroboros.Network.BlockFetch.DeltaQ
+                       Ouroboros.Network.BlockFetch.State
+                       Ouroboros.Network.BlockFetch.Types
                        Ouroboros.Network.Chain
                        Ouroboros.Network.ChainFragment
                        Ouroboros.Network.ChainProducerState
                        Ouroboros.Network.Channel
                        Ouroboros.Network.Codec
+                       Ouroboros.Network.DeltaQ
                        Ouroboros.Network.Mux
                        Ouroboros.Network.Mux.Egress
                        Ouroboros.Network.Mux.Ingress
