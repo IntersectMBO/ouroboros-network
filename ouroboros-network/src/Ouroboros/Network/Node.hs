@@ -22,6 +22,7 @@ import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTimer
+import           Control.Tracer (nullTracer)
 
 import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Driver
@@ -297,7 +298,7 @@ relayNode nid initChain chans = do
     startConsumer cid channel = do
       chainVar <- atomically $ newTVar Genesis
       let consumer = chainSyncClientPeer (chainSyncClientExample chainVar pureClient)
-      void $ fork $ void $ runPeer codecChainSyncId (loggingChannel (ConsumerId nid cid) channel) consumer
+      void $ fork $ void $ runPeer nullTracer codecChainSyncId (loggingChannel (ConsumerId nid cid) channel) consumer
       return chainVar
 
     startProducer :: Peer (ChainSync block (Point block)) AsServer StIdle m ()
@@ -308,7 +309,7 @@ relayNode nid initChain chans = do
       -- use 'void' because 'fork' only works with 'm ()'
       -- No sense throwing on Unexpected right? since fork will just squelch
       -- it. FIXME: use async...
-      void $ fork $ void $ runPeer codecChainSyncId (loggingChannel (ProducerId nid pid) channel) producer
+      void $ fork $ void $ runPeer nullTracer codecChainSyncId (loggingChannel (ProducerId nid pid) channel) producer
 
 -- | Core node simulation.  Given a chain it will generate a @block@ at its
 -- slot time (i.e. @slotDuration * blockSlot block@).  When the node finds out

@@ -82,6 +82,7 @@ library
   build-depends:       base              >=4.9 && <4.13,
                        typed-protocols   >=0.1 && < 1.0,
                        io-sim-classes    >=0.1 && < 0.2,
+                       contra-tracer,
 
                        array             >=0.5 && <0.6,
                        async             >=2.2 && <2.3,
@@ -160,6 +161,7 @@ test-suite tests
                        io-sim-classes,
                        io-sim            >=0.1 && < 0.2,
                        ouroboros-network-testing,
+                       contra-tracer,
 
                        array,
                        async,

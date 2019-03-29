@@ -18,6 +18,8 @@ import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
+import           Control.Tracer (nullTracer)
+
 import qualified Ouroboros.Network.Mux as Mx
 import           Ouroboros.Network.Socket
 
@@ -234,7 +236,7 @@ demo chain0 updates = do
        let consumerPeer = chainSyncClientPeer (chainSyncClientExample consChain
                                                (consumerClient target consChain))
 
-       runPeer codecChainSync channel consumerPeer
+       runPeer nullTracer codecChainSync channel consumerPeer
        atomically $ putTMVar done True
 
        return ()
@@ -247,5 +249,5 @@ demo chain0 updates = do
     producerRsp prodChain channel = do
         let producerPeer = chainSyncServerPeer (chainSyncServerExample () prodChain)
 
-        runPeer codecChainSync channel producerPeer
+        runPeer nullTracer codecChainSync channel producerPeer
 

@@ -28,6 +28,7 @@ import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
 import Control.Monad.IOSim (runSimOrThrow)
+import Control.Tracer (Tracer, nullTracer)
 
 import Data.List (inits, tails)
 
@@ -269,9 +270,10 @@ prop_connect_pipelined5 choices (Positive omax) (NonNegative n) =
 -- | Run a non-pipelined client and server over a channel using a codec.
 --
 prop_channel :: (MonadSTM m, MonadAsync m, MonadCatch m)
-             => NonNegative Int -> m Bool
-prop_channel (NonNegative n) = do
+             => NonNegative Int -> Tracer m (TraceSendRecv PingPong) -> m Bool
+prop_channel (NonNegative n) tr = do
     ((), n') <- runConnectedPeers createConnectedChannels
+                                  tr
                                   codecPingPong client server
     return (n' == n)
   where
@@ -281,11 +283,11 @@ prop_channel (NonNegative n) = do
 
 prop_channel_IO :: NonNegative Int -> Property
 prop_channel_IO n =
-    ioProperty (prop_channel n)
+    ioProperty (prop_channel n nullTracer)
 
 prop_channel_ST :: NonNegative Int -> Bool
-prop_channel_ST n = 
-    runSimOrThrow (prop_channel n)
+prop_channel_ST n =
+    runSimOrThrow (prop_channel n nullTracer)
 
 
 --

@@ -25,12 +25,12 @@ import Options.Applicative (execParser, fullDesc, help, info, long, metavar,
 import qualified System.Directory
 import System.Random (StdGen, getStdGen, randomR)
 
-import Cardano.BM.Tracer.Class (Tracer (..))
 import Cardano.BM.Configuration as BM (setup)
 import Cardano.BM.Data.LogItem hiding (LogNamed)
 import qualified Cardano.BM.Data.Severity as BM
 import Cardano.BM.Setup (withTrace)
 import qualified Cardano.BM.Trace as BM (Trace)
+import Control.Tracer (Tracer (..))
 
 import qualified Pos.Binary.Class as CSL (decode, encode)
 import Pos.Chain.Block (Block, BlockHeader (..), HeaderHash, genesisBlock0,
@@ -173,7 +173,7 @@ convertSeverity sev = case sev of
 
 convertTrace :: BM.Trace IO Text -> Trace IO (LogNamed (Wlog.Severity, Text))
 convertTrace trace = case trace of
-  Tracer (Op f) -> Pos.Util.Trace.Trace $ Op $ \namedI -> do
+  Tracer f -> Pos.Util.Trace.Trace $ Op $ \namedI -> do
     tid <- pack . show <$> myThreadId
     now <- getCurrentTime
     let logName    = Text.intercalate (Text.pack ".") (Trace.lnName namedI)

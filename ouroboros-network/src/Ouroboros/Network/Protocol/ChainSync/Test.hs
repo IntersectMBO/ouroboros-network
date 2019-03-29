@@ -17,6 +17,7 @@ import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
+import Control.Tracer (nullTracer)
 
 import Control.Monad.IOSim (runSimOrThrow)
 
@@ -231,8 +232,8 @@ chainSyncDemo clientChan serverChan (ChainProducerStateForkTest cps chain) = do
 
       client = ChainSyncExamples.chainSyncClientExample chainVar (testClient doneVar (Chain.headPoint pchain))
 
-  void $ fork (void $ runPeer codecChainSync serverChan (chainSyncServerPeer server))
-  void $ fork (void $ runPeer codecChainSync clientChan (chainSyncClientPeer client))
+  void $ fork (void $ runPeer nullTracer codecChainSync serverChan (chainSyncServerPeer server))
+  void $ fork (void $ runPeer nullTracer codecChainSync clientChan (chainSyncClientPeer client))
 
   atomically $ do
     done <- readTVar doneVar

@@ -20,6 +20,7 @@ module Network.TypedProtocol.Driver (
 
   -- * Normal peers
   runPeer,
+  TraceSendRecv(..),
 
   -- * Pipelined peers
   runPipelinedPeer,
@@ -43,6 +44,7 @@ import Network.TypedProtocol.Codec
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
+import Control.Tracer (Tracer, traceWith)
 
 import Numeric.Natural (Natural)
 
@@ -77,6 +79,11 @@ import Numeric.Natural (Natural)
 -- Driver for normal peers
 --
 
+-- | Structured 'Tracer' output for 'runPeer' and derivitives.
+--
+data TraceSendRecv ps = TraceSendMsg (AnyMessage ps)
+                      | TraceRecvMsg (AnyMessage ps)
+
 -- | Run a peer with the given channel via the given codec.
 --
 -- This runs the peer to completion (if the protocol allows for termination).
@@ -84,12 +91,13 @@ import Numeric.Natural (Natural)
 runPeer
   :: forall ps (st :: ps) pr failure bytes m a .
      (MonadThrow m, Exception failure)
-  => Codec ps failure m bytes
+  => Tracer m (TraceSendRecv ps)
+  -> Codec ps failure m bytes
   -> Channel m bytes
   -> Peer ps pr st m a
   -> m a
 
-runPeer Codec{encode, decode} channel@Channel{send} =
+runPeer tr Codec{encode, decode} channel@Channel{send} =
     go Nothing
   where
     go :: forall st'.
@@ -100,6 +108,7 @@ runPeer Codec{encode, decode} channel@Channel{send} =
     go _        (Done _ x) = return x
 
     go trailing (Yield stok msg k) = do
+      traceWith tr (TraceSendMsg (AnyMessage msg))
       send (encode stok msg)
       go trailing k
 
@@ -107,8 +116,11 @@ runPeer Codec{encode, decode} channel@Channel{send} =
       decoder <- decode stok
       res <- runDecoderWithChannel channel trailing decoder
       case res of
-        Right (SomeMessage msg, trailing') -> go trailing' (k msg)
-        Left failure                       -> throwM failure
+        Right (SomeMessage msg, trailing') -> do
+          traceWith tr (TraceRecvMsg (AnyMessage msg))
+          go trailing' (k msg)
+        Left failure ->
+          throwM failure
 
 
 --
@@ -126,17 +138,18 @@ runPipelinedPeer
   :: forall ps (st :: ps) pr failure bytes m a.
      (MonadSTM m, MonadAsync m, MonadCatch m, Exception failure)
   => Natural
+  -> Tracer m (TraceSendRecv ps)
   -> Codec ps failure m bytes
   -> Channel m bytes
   -> PeerPipelined ps pr st m a
   -> m a
-runPipelinedPeer maxOutstanding codec channel (PeerPipelined peer) = do
+runPipelinedPeer maxOutstanding tr codec channel (PeerPipelined peer) = do
     receiveQueue <- atomically $ newTBQueue maxOutstanding
     collectQueue <- atomically $ newTBQueue maxOutstanding
-    a <- runPipelinedPeerReceiverQueue receiveQueue collectQueue
+    a <- runPipelinedPeerReceiverQueue tr receiveQueue collectQueue
                                           codec channel
            `withAsyncLoop`
-         runPipelinedPeerSender        receiveQueue collectQueue
+         runPipelinedPeerSender        tr receiveQueue collectQueue
                                           codec channel peer
     return a
 
@@ -157,13 +170,14 @@ data ReceiveHandler ps pr m c where
 runPipelinedPeerSender
   :: forall ps (st :: ps) pr failure bytes c m a.
      MonadSTM m
-  => TBQueue m (ReceiveHandler ps pr m c)
+  => Tracer m (TraceSendRecv ps)
+  -> TBQueue m (ReceiveHandler ps pr m c)
   -> TBQueue m c
   -> Codec ps failure m bytes
   -> Channel m bytes
   -> PeerSender ps pr st Z c m a
   -> m a
-runPipelinedPeerSender receiveQueue collectQueue Codec{encode} Channel{send} =
+runPipelinedPeerSender tr receiveQueue collectQueue Codec{encode} Channel{send} =
     go Zero
   where
     go :: forall st' n. Nat n -> PeerSender ps pr st' n c m a -> m a
@@ -171,11 +185,13 @@ runPipelinedPeerSender receiveQueue collectQueue Codec{encode} Channel{send} =
     go Zero (SenderDone _ x) = return x
 
     go n (SenderYield stok msg k) = do
+      traceWith tr (TraceSendMsg (AnyMessage msg))
       send (encode stok msg)
       go n k
 
     go n (SenderPipeline stok msg receiver k) = do
       atomically (writeTBQueue receiveQueue (ReceiveHandler receiver))
+      traceWith tr (TraceSendMsg (AnyMessage msg))
       send (encode stok msg)
       go (Succ n) k
 
@@ -195,18 +211,19 @@ runPipelinedPeerSender receiveQueue collectQueue Codec{encode} Channel{send} =
 runPipelinedPeerReceiverQueue
   :: forall ps pr failure bytes m c.
      (MonadSTM m, MonadThrow m, Exception failure)
-  => TBQueue m (ReceiveHandler ps pr m c)
+  => Tracer m (TraceSendRecv ps)
+  -> TBQueue m (ReceiveHandler ps pr m c)
   -> TBQueue m c
   -> Codec ps failure m bytes
   -> Channel m bytes
   -> m Void
-runPipelinedPeerReceiverQueue receiveQueue collectQueue codec channel =
+runPipelinedPeerReceiverQueue tr receiveQueue collectQueue codec channel =
     go Nothing
   where
     go :: Maybe bytes -> m Void
     go trailing = do
       ReceiveHandler receiver <- atomically (readTBQueue receiveQueue)
-      (c, trailing') <- runPipelinedPeerReceiver codec channel trailing receiver
+      (c, trailing') <- runPipelinedPeerReceiver tr codec channel trailing receiver
       atomically (writeTBQueue collectQueue c)
       go trailing'
 
@@ -214,12 +231,13 @@ runPipelinedPeerReceiverQueue receiveQueue collectQueue codec channel =
 runPipelinedPeerReceiver
   :: forall ps (st :: ps) (stdone :: ps) pr failure bytes m c.
      (MonadThrow m, Exception failure)
-  => Codec ps failure m bytes
+  => Tracer m (TraceSendRecv ps)
+  -> Codec ps failure m bytes
   -> Channel m bytes
   -> Maybe bytes
   -> PeerReceiver ps pr (st :: ps) (stdone :: ps) m c
   -> m (c, Maybe bytes)
-runPipelinedPeerReceiver Codec{decode} channel = go
+runPipelinedPeerReceiver tr Codec{decode} channel = go
   where
     go :: forall st' st''.
           Maybe bytes
@@ -233,8 +251,11 @@ runPipelinedPeerReceiver Codec{decode} channel = go
       decoder <- decode stok
       res <- runDecoderWithChannel channel trailing decoder
       case res of
-        Right (SomeMessage msg, trailing') -> go trailing' (k msg)
-        Left failure                       -> throwM failure
+        Right (SomeMessage msg, trailing') -> do
+          traceWith tr (TraceRecvMsg (AnyMessage msg))
+          go trailing' (k msg)
+        Left failure ->
+          throwM failure
 
 
 --
@@ -268,30 +289,32 @@ runDecoderWithChannel Channel{recv} = go
 runConnectedPeers :: (MonadSTM m, MonadAsync m, MonadCatch m,
                       Exception failure)
                   => m (Channel m bytes, Channel m bytes)
+                  -> Tracer m (TraceSendRecv ps)
                   -> Codec ps failure m bytes
                   -> Peer ps AsClient st m a
                   -> Peer ps AsServer st m b
                   -> m (a, b)
-runConnectedPeers createChannels codec client server =
+runConnectedPeers createChannels tr codec client server =
     createChannels >>= \(clientChannel, serverChannel) ->
 
-    runPeer codec clientChannel client
+    runPeer tr codec clientChannel client
       `concurrently`
-    runPeer codec serverChannel server
+    runPeer tr codec serverChannel server
 
 
 runConnectedPeersPipelined :: (MonadSTM m, MonadAsync m, MonadCatch m,
                                Exception failure)
                            => m (Channel m bytes, Channel m bytes)
+                           -> Tracer m (TraceSendRecv ps)
                            -> Codec ps failure m bytes
                            -> Natural
                            -> PeerPipelined ps AsClient st m a
                            -> Peer          ps AsServer st m b
                            -> m (a, b)
-runConnectedPeersPipelined createChannels codec maxOutstanding client server =
+runConnectedPeersPipelined createChannels tr codec maxOutstanding client server =
     createChannels >>= \(clientChannel, serverChannel) ->
 
-    runPipelinedPeer maxOutstanding codec clientChannel client
+    runPipelinedPeer maxOutstanding tr codec clientChannel client
       `concurrently`
-    runPeer                         codec serverChannel server
+    runPeer                         tr codec serverChannel server
 
