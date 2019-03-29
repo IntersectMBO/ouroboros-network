@@ -154,8 +154,14 @@ getHash conn hh@(AbstractHash digest) = do
         else throwIO $ InvalidRelativeSlot hh slotInt
       pure $ Just ((), EpochNo epoch, slot)
 
+-- The ON CONFLICT DO NOTHING is essential. The DB into which this index points
+-- may fall behind the index, for instance because of an unclean shutdown in
+-- which some of the block data was not sync'd to disk. In that case, the index
+-- is still "correct" under our assumption of immutability (no forks).
 sql_insert :: Query
-sql_insert = "INSERT INTO block_index VALUES (?, ?, ?);"
+sql_insert =
+  "INSERT INTO block_index VALUES (?, ?, ?)\
+  \  ON CONFLICT DO NOTHING;"
 
 setTip :: Sql.Connection -> HeaderHash -> EpochNo -> IndexSlot -> IO ()
 setTip conn (AbstractHash digest) (EpochNo epoch) slot = do
