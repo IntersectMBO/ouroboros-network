@@ -1,8 +1,10 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE RankNTypes #-}
 
 module Network.TypedProtocol.Channel
   ( Channel (..)
+  , hoistChannel
   , fixedInputChannel
   , mvarsAsChannel
   , handlesAsChannel
@@ -46,7 +48,14 @@ data Channel m a = Channel {
        recv :: m (Maybe a)
      }
 
-
+hoistChannel
+  :: (forall x . m x -> n x)
+  -> Channel m a
+  -> Channel n a
+hoistChannel nat channel = Channel
+  { send = nat . send channel
+  , recv = nat (recv channel)
+  }
 
 -- | A 'Channel' with a fixed input, and where all output is discarded.
 --
