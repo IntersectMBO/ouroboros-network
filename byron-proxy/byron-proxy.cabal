@@ -50,6 +50,7 @@ library
                        io-sim-classes,
                        lens,
                        memory,
+                       network,
                        ouroboros-consensus,
                        ouroboros-network,
                        random,
@@ -85,9 +86,11 @@ executable byron-proxy
                        containers,
                        contra-tracer,
                        directory,
+                       exceptions,
                        iohk-monitoring,
                        io-sim-classes,
                        lens,
+                       network,
                        optparse-applicative,
                        ouroboros-consensus,
                        ouroboros-network,
@@ -97,6 +100,25 @@ executable byron-proxy
                        text,
                        time,
                        transformers,
+                       typed-protocols
+  hs-source-dirs:      src/exec
+  default-language:    Haskell2010
+  -- -threaded is needed or else the diffusion layer will crash, due to a use
+  -- of registerDelay
+  ghc-options:         -threaded
+                       -fwarn-incomplete-patterns
+                       -fwarn-unused-imports
+
+executable byron-proxy-client-demo
+  main-is:             Client.hs
+  -- other-modules:
+  -- other-extensions:
+  build-depends:       base,
+                       async,
+                       byron-proxy,
+                       cardano-sl-util,
+                       network,
+                       ouroboros-network,
                        typed-protocols
   hs-source-dirs:      src/exec
   default-language:    Haskell2010

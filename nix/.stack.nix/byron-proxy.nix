@@ -39,15 +39,18 @@
           (hsPkgs.io-sim-classes)
           (hsPkgs.lens)
           (hsPkgs.memory)
+          (hsPkgs.network)
           (hsPkgs.ouroboros-consensus)
           (hsPkgs.ouroboros-network)
           (hsPkgs.random)
           (hsPkgs.resourcet)
           (hsPkgs.sqlite-simple)
+          (hsPkgs.serialise)
           (hsPkgs.stm)
           (hsPkgs.tagged)
           (hsPkgs.text)
           (hsPkgs.transformers)
+          (hsPkgs.typed-protocols)
           ];
         };
       exes = {
@@ -68,15 +71,29 @@
             (hsPkgs.containers)
             (hsPkgs.contra-tracer)
             (hsPkgs.directory)
+            (hsPkgs.exceptions)
             (hsPkgs.iohk-monitoring)
             (hsPkgs.io-sim-classes)
             (hsPkgs.lens)
+            (hsPkgs.network)
             (hsPkgs.optparse-applicative)
             (hsPkgs.ouroboros-consensus)
+            (hsPkgs.ouroboros-network)
             (hsPkgs.random)
+            (hsPkgs.resourcet)
             (hsPkgs.stm)
             (hsPkgs.text)
             (hsPkgs.time)
+            (hsPkgs.transformers)
+            (hsPkgs.typed-protocols)
+            ];
+          };
+        "byron-proxy-client-demo" = {
+          depends = [
+            (hsPkgs.base)
+            (hsPkgs.byron-proxy)
+            (hsPkgs.ouroboros-network)
+            (hsPkgs.typed-protocols)
             ];
           };
         };

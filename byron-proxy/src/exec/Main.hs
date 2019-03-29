@@ -3,18 +3,21 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
 
 import Control.Concurrent (myThreadId, threadDelay)
-import Control.Concurrent.Async (concurrently, race)
+import Control.Concurrent.Async (concurrently, withAsync)
 import Control.Concurrent.STM (STM, atomically, retry)
-import Control.Exception (throwIO)
+import Control.Concurrent.STM.TMVar (newEmptyTMVarIO, putTMVar, readTMVar)
+import Control.Exception (SomeException, bracket, catch, throwIO)
 import Control.Monad (forM_)
+import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Resource (ResourceT, runResourceT)
-import qualified Data.ByteString.Lazy as Lazy (fromStrict)
+import qualified Data.ByteString.Lazy as Lazy (ByteString, fromStrict)
 import Data.Functor.Contravariant (Op (..), contramap)
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
@@ -22,7 +25,7 @@ import Data.Maybe (fromMaybe)
 import Data.Text (Text, pack)
 import qualified Data.Text as Text
 import Data.Time.Clock.POSIX (getCurrentTime)
-import Options.Applicative (execParser, fullDesc, help, info, long, metavar,
+import Options.Applicative (execParser, flag, fullDesc, help, info, long, metavar,
                             progDesc, strOption, value)
 import qualified System.Directory
 import System.Random (StdGen, getStdGen, randomR)
@@ -53,24 +56,26 @@ import Pos.Diffusion.Full (FullDiffusionConfiguration (..))
 import Pos.Infra.Diffusion.Types
 import Pos.Launcher (NodeParams (..), withConfigurations)
 import Pos.Util.CompileInfo (withCompileInfo)
-import Pos.Util.Trace (Trace, traceWith)
+import Pos.Util.Trace (Trace)
 import Pos.Util.Trace.Named as Trace (LogNamed (..), appendName, named)
 import qualified Pos.Util.Trace
 import qualified Pos.Util.Wlog as Wlog
 
-import qualified Network.TypedProtocol.Proofs as Protocol (connect)
+import Network.TypedProtocol.Channel (Channel, hoistChannel)
+import Network.TypedProtocol.Codec (hoistCodec)
 import Network.TypedProtocol.Driver (runPeer)
+import Network.Socket (Socket)
+import qualified Network.Socket as Socket
 
 import Ouroboros.Network.Channel (socketAsChannel)
-import qualified Ouroboros.Network.Protocol.ChainSync.Client as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Server as ChainSync
-import qualified Ouroboros.Byron.Proxy.ChainSync.Client as Client
 import qualified Ouroboros.Byron.Proxy.ChainSync.Server as Server
 import qualified Ouroboros.Byron.Proxy.ChainSync.Types as ChainSync
 
 import qualified Ouroboros.Byron.Proxy.DB as DB
 import qualified Ouroboros.Byron.Proxy.Index.Sqlite as Index
 import Ouroboros.Byron.Proxy.Main
+import qualified Ouroboros.Byron.Proxy.Server.Socket as Server
 import qualified Ouroboros.Storage.Common as Immutable
 import qualified Ouroboros.Storage.ImmutableDB.API as Immutable
 import qualified Ouroboros.Storage.ImmutableDB.Impl as Immutable
@@ -78,6 +83,9 @@ import Ouroboros.Storage.FS.API.Types
 import Ouroboros.Storage.FS.API
 import Ouroboros.Storage.FS.IO
 import Ouroboros.Storage.Util.ErrorHandling (exceptions)
+
+import qualified Control.Monad.Class.MonadThrow as NonStandard
+import qualified Control.Monad.Catch as Standard
 
 -- | The main action using the proxy, index, and immutable database: download
 -- the best known chain from the proxy and put it into the database, over and
@@ -173,25 +181,6 @@ byronProxyMain db bp = getStdGen >>= mainLoop Nothing
     let (idx, rndGen') = randomR (0, NE.length ne - 1) rndGen
     in  (ne NE.!! idx, rndGen')
 
--- | Echos rolls (forward or backward) using a trace.
-chainSyncClient
-  :: forall m .
-     ( Monad m )
-  => Trace m (Either ChainSync.Point ChainSync.Block, ChainSync.Point)
-  -> ChainSync.ChainSyncClient ChainSync.Block ChainSync.Point m ()
-chainSyncClient trace = Client.chainSyncClient fold
-  where
-  fold :: Client.Fold m ()
-  fold = Client.Fold $ pure $ Client.Continue forward backward
-  forward :: ChainSync.Block -> ChainSync.Point -> Client.Fold m ()
-  forward blk point = Client.Fold $ do
-    traceWith trace (Right blk, point)
-    Client.runFold fold
-  backward :: ChainSync.Point -> ChainSync.Point -> Client.Fold m ()
-  backward point1 point2 = Client.Fold $ do
-    traceWith trace (Left point1, point2)
-    Client.runFold fold
-
 -- | Use a DB and a given number of microseconds to poll for changes, to get
 -- a chain sync server that serves whole blocks.
 -- The `ResourceT` is needed because we deal with DB iterators.
@@ -210,17 +199,85 @@ chainSyncServer usPoll = Server.chainSyncServer err poll
       Nothing -> lift (threadDelay usPoll) >> poll p m
       Just t  -> pure t
 
-{-
 -- | Run a chain sync server over a UNIX domain socket.
 -- Accepts at most one connection at a time, for simplicity.
-runChainSyncServer :: Int -> DB.DB IO -> IO x
-runChainSyncServer usPoll db = bracket mkSocket Socket.close $ \socket -> do
-  let channel = socketAsChannel sock
-  runPeer codec channel (chainSyncServer usPoll db)
+--
+-- The `STM ()` is for normal shutdown. When it returns, the server stops.
+-- So, for instance, use `STM.retry` to never stop (until killed).
+runChainSyncServer :: STM () -> Int -> DB.DB IO -> IO ()
+runChainSyncServer closeTx usPoll db = bracket mkSocket Socket.close $ \socket -> do
+  Server.run (fromSocket socket) throwIO accept complete serverMain ()
   where
-  codec = ChainSync.codec
-  sock <- Socket.socket Socket.AF_UNIX Socket.Stream Socket.defaultProtocol
--}
+  -- New connections are always accepted. The channel is used to run the
+  -- chain sync server. Some stdout printing is done just to help you see
+  -- what's going on.
+  accept sockAddr _st = pure $ Server.accept $ \channel -> do
+    let peer = ChainSync.chainSyncServerPeer (chainSyncServer usPoll db)
+        -- `peer` is in ResourceT`, so we must hoist channel and codec into
+        -- `ResourceT`
+        inResourceT :: forall x . IO x -> ResourceT IO x
+        inResourceT = liftIO
+        codec' = hoistCodec inResourceT ChainSync.codec
+        channel' = hoistChannel inResourceT channel
+    putStrLn $ mconcat
+      [ "Got connection from "
+      , show sockAddr
+      ]
+    (runResourceT $ runPeer codec' channel' peer) `catch` (\(e :: SomeException) -> do
+      putStrLn $ mconcat
+        [ "Connection from "
+        , show sockAddr
+        , " terminated with exception "
+        , show e
+        ]
+      throwIO e
+      )
+    putStrLn $ mconcat
+      [ "Connection from "
+      , show sockAddr
+      , " terminated normally"
+      ]
+  -- When a connection completes, we do nothing. State is ().
+  -- Crucially: we don't re-throw exceptions, because doing so would
+  -- bring down the server.
+  -- For the demo, the client will stop by closing the socket, which causes
+  -- a deserialise failure (unexpected end of input) and we don't want that
+  -- to bring down the proxy.
+  complete outcome st = case outcome of
+    Left  err -> pure st
+    Right r   -> pure st
+  -- Close the server "now" (don't wait for running threads) whenever the
+  -- `closeTx` finishes.
+  serverMain _st = closeTx >> pure (Server.Now ())
+  mkSocket :: IO Socket
+  mkSocket = do
+    socket <- Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol
+    Socket.setSocketOption socket Socket.ReuseAddr 1
+    Socket.bind socket (Socket.SockAddrInet 7777 (Socket.tupleToHostAddress (127, 0, 0, 1)))
+    Socket.listen socket 1
+    pure socket
+  -- Make a server-compatibile socket from a network socket.
+  fromSocket :: Socket -> Server.Socket Socket.SockAddr (Channel IO Lazy.ByteString)
+  fromSocket socket = Server.Socket
+    { Server.acceptConnection = do
+        (socket', addr) <- Socket.accept socket
+        pure (addr, socketAsChannel socket', Socket.close socket')
+    }
+
+-- Orphans, forced upon me because of the IO sim stuff.
+
+instance NonStandard.MonadThrow (ResourceT IO) where
+  throwM = Standard.throwM
+
+-- Non-standard MonadThrow includes bracket... we can get it for free if we
+-- give a non-standard MonadCatch
+
+instance NonStandard.MonadCatch (ResourceT IO) where
+  catch = Standard.catch
+
+instance NonStandard.MonadMask (ResourceT IO) where
+  mask = Standard.mask
+  uninterruptibleMask = Standard.uninterruptibleMask
 
 -- | Diffusion layer uses log-waper severity, iohk-monitoring uses its own.
 convertSeverity :: Wlog.Severity -> BM.Severity
@@ -250,6 +307,8 @@ data ByronProxyOptions = ByronProxyOptions
   { bpoIndexPath    :: !String
     -- ^ For the index database. We re-use dbPath inside SimpleNodeArgs for
     -- the immutable DB.
+  , bpoNoDownload   :: !Bool
+    -- ^ Set to true if you don't want to download from Byron.
   , bpoNodeArgs     :: !SimpleNodeArgs
   }
 
@@ -257,7 +316,7 @@ getCommandLineOptions :: IO ByronProxyOptions
 getCommandLineOptions = execParser programInfo
   where
   programInfo = info
-    (ByronProxyOptions <$> indexPathParser <*> simpleNodeArgsParser)
+    (ByronProxyOptions <$> indexPathParser <*> noDownloadParser <*> simpleNodeArgsParser)
     (fullDesc <> progDesc "Byron proxy")
   -- Defined in cardano-sl but not exported.
   simpleNodeArgsParser = SimpleNodeArgs <$> commonNodeArgsParser <*> nodeArgsParser
@@ -267,6 +326,10 @@ getCommandLineOptions = execParser programInfo
     metavar "FILEPATH"        <>
     value "index-byron-proxy" <>
     help "Index database file path (sqlite)"
+
+  noDownloadParser = flag False True $
+    long "no-download" <>
+    help "Set this if you don't want to download from Byron"
 
 -- | Use cardano-sl library stuff to get all of the necessary configuration
 -- options. There's a bunch of stuff that we don't actually need but that's OK.
@@ -285,6 +348,8 @@ main = withCompileInfo $ do
   -- instance `WithLogger`! Wonderful. iohk-monitoring-framework is used
   -- directly.
   traceConfig <- BM.setup loggerConfigFile
+  -- Fill it to close the server (normal shutdown).
+  closeVar <- newEmptyTMVarIO
   withTrace traceConfig "byron-proxy" $ \trace -> do
     let -- Convert from the BM trace to the cardano-sl-util trace.
         logTrace = convertTrace trace
@@ -366,11 +431,7 @@ main = withCompileInfo $ do
           indexFilePath :: FilePath
           indexFilePath = bpoIndexPath options
       Index.withDB_ indexFilePath $ \idx -> do
-        putStrLn "Index is open. Press any key to create immutable DB"
-        getChar
         Immutable.withDB openDB $ \idb -> do
-          putStrLn "Immutable DB is open. Press any key to start downloading."
-          getChar
           let db = DB.mkDB throwIO epochSlots idx idb
           -- Check the tip, and if it says the DB is empty, seed it with
           -- the genesis block (`Left genesisBlock :: Block`).
@@ -382,36 +443,22 @@ main = withCompileInfo $ do
                 DB.appendBlock dbAppend (Left genesisBlock)
             _ -> pure ()
           withByronProxy bpc db $ \bp -> do
-            let userInterrupt = getChar
-                usPoll = 1000000 -- microseconds
-                -- Client must go in `ResourceT`, since the server is in
-                -- `ResourceT`.
-                clientEcho :: Trace (ResourceT IO) (Either ChainSync.Point ChainSync.Block, ChainSync.Point)
-                clientEcho = Pos.Util.Trace.Trace $ Op $ \(roll, _tip) ->
-                  let msg = case roll of
-                        Left  back    -> mconcat
-                          [ "Roll back to "
-                          , show back
-                          ]
-                        Right forward -> mconcat
-                          [ "Roll forward to "
-                          , case ChainSync.getBlock forward of
-                              Left ebb  -> show $ DB.ebbEpoch ebb
-                              Right blk -> show $ DB.blockEpochAndRelativeSlot blk
-                          ]
-                  in  lift (putStrLn msg)
-                client = chainSyncClient clientEcho
-                server = chainSyncServer usPoll db
-                -- NB: 'connect' actually makes a distinction between client
-                -- and server, much to my dismay. The "client" (whatever that
-                -- means) must be the first parameter.
-                chainSyncThread = runResourceT $ Protocol.connect
-                  (ChainSync.chainSyncClientPeer client)
-                  (ChainSync.chainSyncServerPeer server)
-                {- chainSyncThread = runChainSyncServer readFifo writeFifo usPoll db -}
-                byronThread = byronProxyMain db bp
-                mainThread = fst <$> concurrently byronThread chainSyncThread
-            outcome <- race userInterrupt mainThread
-            case outcome of
-              Left _ -> pure ()
-              Right impossible -> impossible
+            let usPoll = 1000000 -- microseconds
+                chainSyncThread = runChainSyncServer (readTMVar closeVar) usPoll db
+                byronThread =
+                  if bpoNoDownload options
+                  then pure ()
+                  else byronProxyMain db bp
+                userInterrupt = getChar >>= const (atomically (putTMVar closeVar ()))
+            -- The byron thread goes in `withAsync` because the only way to
+            -- stop it is to kill it.
+            -- The chain sync thread will stop when the user interrupt kills
+            -- the TMVar, so we can put them `concurrently`.
+            -- Could also do
+            --   it <- race byronThread (concurrently chainSyncThread userInterrupt)
+            --   case it of
+            --     Left impossible -> impossible
+            --     Right _ -> pure ()
+            _ <- withAsync byronThread $ \_ ->
+              concurrently chainSyncThread userInterrupt
+            pure ()
