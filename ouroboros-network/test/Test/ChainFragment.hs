@@ -638,8 +638,8 @@ fixupPoint c p =
 prop_arbitrary_TestChainFragmentAndPoint :: TestChainFragmentAndPoint -> Property
 prop_arbitrary_TestChainFragmentAndPoint (TestChainFragmentAndPoint c p) =
   let onChainFragment = CF.pointOnChainFragment p c in
-  cover (85/100) onChainFragment       "point on chain" $
-  cover ( 5/100) (not onChainFragment) "point not on chain" $
+  cover 85 onChainFragment       "point on chain" $
+  cover  5 (not onChainFragment) "point not on chain" $
     CF.valid c
 
 prop_shrink_TestChainFragmentAndPoint :: TestChainFragmentAndPoint -> Bool
@@ -654,7 +654,7 @@ prop_shrink_TestChainFragmentAndPoint cp@(TestChainFragmentAndPoint c _) =
 
 -- | A test generator for two chain fragments that share some blocks (exactly
 -- matching), but one of the two chain fragments can have another prefix (they
--- cannot each have a different prefix). The two chains fragmenst can have
+-- cannot each have a different prefix). The two chains fragment can have
 -- different suffixes, i.e. they are forks.
 --
 -- For example: start with a whole chain, then take a fragment of that chain.
@@ -752,8 +752,8 @@ prop_arbitrary_TestChainFragmentFork_cover t@(TestChainFragmentFork l1 l2 c1 c2)
         c1l = CF.toNewestFirst c1
         c2l = CF.toNewestFirst c2
         sameFork = c1l `L.isPrefixOf` c2l || c2l `L.isPrefixOf` c1l in
-    cover (45/100) samePrefix "same prefix" $
-    cover (4/100)  sameFork   "same fork" $
+    cover 45 samePrefix "same prefix" $
+    cover  4  sameFork   "same fork" $
     prop_arbitrary_TestChainFragmentFork t
 
 prop_arbitrary_TestChainFragmentFork :: TestChainFragmentFork -> Bool
@@ -812,6 +812,6 @@ instance Arbitrary TestChainFragmentAndIndex where
 prop_arbitrary_TestChainFragmentAndIndex :: TestChainFragmentAndIndex -> Property
 prop_arbitrary_TestChainFragmentAndIndex (TestChainFragmentAndIndex c i) =
   let inChainFragment = indexInChainFragment i c in
-  cover (85/100) inChainFragment       "index in chain" $
-  cover ( 5/100) (not inChainFragment) "index not in chain" $
+  cover 85 inChainFragment       "index in chain" $
+  cover  5 (not inChainFragment) "index not in chain" $
   CF.valid c
