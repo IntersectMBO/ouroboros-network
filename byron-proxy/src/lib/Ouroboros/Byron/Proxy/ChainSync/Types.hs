@@ -1,6 +1,7 @@
 module Ouroboros.Byron.Proxy.ChainSync.Types
   ( Block (..)
   , Point (..)
+  , codec
   ) where
 
 import Control.Monad.Class.MonadST (MonadST)
