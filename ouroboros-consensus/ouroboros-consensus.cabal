@@ -51,6 +51,7 @@ library
                        Ouroboros.Consensus.Protocol.BFT
                        Ouroboros.Consensus.Protocol.LeaderSchedule
                        Ouroboros.Consensus.Protocol.Praos
+                       Ouroboros.Consensus.Protocol.PBFT
                        Ouroboros.Consensus.Protocol.Test
                        Ouroboros.Consensus.Protocol.ExtNodeConfig
                        Ouroboros.Consensus.Protocol.ModChainSel
@@ -136,6 +137,7 @@ library
                        ViewPatterns
 
   build-depends:       base              >=4.9 && <4.13,
+                       cardano-ledger,
                        ouroboros-network,
                        typed-protocols,
                        io-sim-classes,
