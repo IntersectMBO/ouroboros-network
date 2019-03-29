@@ -443,7 +443,7 @@ data Failure =
        -- | The main thread terminated normally but other threads were still
        -- alive, and strict shutdown checking was requested.
        -- See 'runSimStrictShutdown'
-     | FailureSloppyShutdown
+     | FailureSloppyShutdown [ThreadId]
   deriving Show
 
 instance Exception Failure
@@ -470,11 +470,12 @@ runSimStrictShutdown mainAction = traceResult True (runSimTrace mainAction)
 traceResult :: Bool -> Trace a -> Either Failure a
 traceResult strict = go
   where
-    go (Trace _ _ _ t)                      = go t
-    go (TraceMainReturn _ _ (_:_)) | strict = Left FailureSloppyShutdown
-    go (TraceMainReturn _ x _)              = Right x
-    go (TraceMainException _ e _)           = Left (FailureException e)
-    go (TraceDeadlock   _   _)              = Left FailureDeadlock
+    go (Trace _ _ _ t)                  = go t
+    go (TraceMainReturn _ _ tids@(_:_))
+                               | strict = Left (FailureSloppyShutdown tids)
+    go (TraceMainReturn _ x _)          = Right x
+    go (TraceMainException _ e _)       = Left (FailureException e)
+    go (TraceDeadlock   _   _)          = Left FailureDeadlock
 
 traceEvents :: Trace a -> [(VTime, ThreadId, TraceEvent)]
 traceEvents (Trace time tid event t) = (time, tid, event) : traceEvents t
