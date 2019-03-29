@@ -117,6 +117,7 @@ executable byron-proxy-client-demo
                        async,
                        byron-proxy,
                        cardano-sl-util,
+                       contra-tracer,
                        network,
                        ouroboros-network,
                        typed-protocols

@@ -35,7 +35,7 @@ import Cardano.BM.Data.LogItem hiding (LogNamed)
 import qualified Cardano.BM.Data.Severity as BM
 import Cardano.BM.Setup (withTrace)
 import qualified Cardano.BM.Trace as BM (Trace)
-import Control.Tracer (Tracer (..))
+import Control.Tracer (Tracer (..), nullTracer)
 
 import qualified Pos.Binary.Class as CSL (decode, encode)
 import Pos.Chain.Block (Block, BlockHeader (..), HeaderHash, genesisBlock0,
@@ -223,7 +223,7 @@ runChainSyncServer closeTx usPoll db = bracket mkSocket Socket.close $ \socket -
       [ "Got connection from "
       , show sockAddr
       ]
-    (runResourceT $ runPeer codec' channel' peer) `catch` (\(e :: SomeException) -> do
+    (runResourceT $ runPeer nullTracer codec' channel' peer) `catch` (\(e :: SomeException) -> do
       putStrLn $ mconcat
         [ "Connection from "
         , show sockAddr

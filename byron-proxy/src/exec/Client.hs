@@ -2,6 +2,7 @@
 
 import Control.Concurrent.Async (race)
 import Control.Exception (bracket)
+import Control.Tracer (nullTracer)
 import Data.Functor.Contravariant (Op (..))
 
 import Pos.Util.Trace (Trace (..), traceWith)
@@ -41,7 +42,7 @@ runChainSyncClient = bracket mkSocket Socket.close $ \socket -> do
   _ <- Socket.connect socket (Socket.SockAddrInet 7777 (Socket.tupleToHostAddress (127, 0, 0, 1)))
   let channel = socketAsChannel socket
       peer = ChainSync.chainSyncClientPeer (chainSyncClient clientEcho)
-  runPeer ChainSync.codec channel peer
+  runPeer nullTracer ChainSync.codec channel peer
   where
   mkSocket = do
     socket <- Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol
