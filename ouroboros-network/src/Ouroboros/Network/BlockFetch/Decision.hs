@@ -4,16 +4,19 @@
 {-# LANGUAGE BangPatterns               #-}
 
 module Ouroboros.Network.BlockFetch.Decision (
+    -- * Deciding what to fetch
     fetchDecisions,
-    fetchRequestDecisions,
-    prioritisePeerChains,
-    filterNotAlreadyFetchedOrInFlight,
-    selectForkSuffixes,
-    filterPlausibleCandidates,
+    FetchDecisionPolicy(..),
     PeerInfo,
     FetchDecision,
     FetchDecline(..),
-    FetchDecisionPolicy(..),
+
+    -- ** Components of the decision-making process
+    filterPlausibleCandidates,
+    selectForkSuffixes,
+    filterNotAlreadyFetchedOrInFlight,
+    prioritisePeerChains,
+    fetchRequestDecisions,
   ) where
 
 import           Data.Maybe
