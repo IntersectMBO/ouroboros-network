@@ -63,7 +63,11 @@ type PeerInfo header extra =
          extra
        )
 
-type FetchDecision header = Either FetchDecline (FetchRequest header)
+-- | Throughout the decision making process we accumulate reasons to decline
+-- to fetch any blocks. This type is used to wrap intermediate and final
+-- results.
+--
+type FetchDecision result = Either FetchDecline result
 
 -- | All the various reasons we can decide not to fetch blocks from a peer.
 --
@@ -85,7 +89,7 @@ fetchDecisions
   -> ChainFragment block
   -> (Point block -> Bool)
   -> [(ChainFragment header, PeerInfo header extra)]
-  -> [(FetchDecision header, PeerInfo header extra)]
+  -> [(FetchDecision (FetchRequest header), PeerInfo header extra)]
 fetchDecisions fetchDecisionPolicy@FetchDecisionPolicy {
                  plausibleCandidateChain,
                  compareCandidateChains,
@@ -485,17 +489,17 @@ obviously take that into account when considering later peer chains.
 fetchRequestDecisions
   :: HasHeader header
   => FetchDecisionPolicy header block
-  -> [([ChainFragment header], PeerFetchStatus,
-                               PeerFetchInFlight header,
-                               PeerGSV,
-                               peer)]
-  -> [ (FetchDecision header,  peer)]
+  -> [([ChainFragment header],               PeerFetchStatus,
+                                             PeerFetchInFlight header,
+                                             PeerGSV,
+                                             peer)]
+  -> [(FetchDecision (FetchRequest header),  peer)]
 fetchRequestDecisions fetchDecisionPolicy chains =
     go nConcurrentFetchPeers0 chains
   where
     go !_ [] = []
     go !nConcurrentFetchPeers
-       ((chain, status, inflight, gsvs, peer) : cps) =
+       ((chainfragments, status, inflight, gsvs, peer) : cps) =
 
         (decision, peer)
       : go nConcurrentFetchPeers' cps
@@ -506,7 +510,7 @@ fetchRequestDecisions fetchDecisionPolicy chains =
                      (calculatePeerFetchInFlightLimits gsvs)
                      inflight
                      status
-                     chain
+                     chainfragments
 
         nConcurrentFetchPeers'
           -- increment if it was idle, and now will not be
@@ -531,7 +535,7 @@ fetchRequestDecision
   -> PeerFetchInFlight header
   -> PeerFetchStatus
   -> [ChainFragment header]
-  -> FetchDecision header
+  -> FetchDecision (FetchRequest  header)
 
 fetchRequestDecision _ _ _ _ _ [] = Left FetchDeclineNothingToDo
 

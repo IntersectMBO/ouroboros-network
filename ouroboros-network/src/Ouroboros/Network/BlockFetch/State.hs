@@ -24,7 +24,8 @@ import           Ouroboros.Network.ChainFragment (ChainFragment(..))
 import qualified Ouroboros.Network.ChainFragment as ChainFragment
 
 import           Ouroboros.Network.BlockFetch.Types
-                   ( PeerFetchInFlight(..)
+                   ( FetchRequest
+                   , PeerFetchInFlight(..)
                    , PeerFetchStatus(..)
                    , TFetchRequestVar
                    , writeTFetchRequestVar
@@ -126,7 +127,7 @@ fetchDecisionsForStateSnapshot
       Ord peer)
   => FetchDecisionPolicy header block
   -> FetchStateSnapshot peer header block m
-  -> [( FetchDecision header,
+  -> [( FetchDecision (FetchRequest header),
         PeerInfo header (TFetchRequestVar m header)
       )]
 
@@ -170,7 +171,8 @@ fetchDecisionsForStateSnapshot
 -- protocol with each peer.
 --
 fetchLogicIterationAct :: MonadSTM m
-                       => [(FetchDecision header, TFetchRequestVar m header)]
+                       => [(FetchDecision (FetchRequest header),
+                            TFetchRequestVar m header)]
                        -> m ()
 fetchLogicIterationAct decisions =
     sequence_
