@@ -59,13 +59,14 @@ type PeerInfo header extra =
          extra
        )
 
-fetchDecisions :: (HasHeader header, HasHeader block,
-                   HeaderHash header ~ HeaderHash block)
-               => FetchDecisionPolicy header block
-               -> ChainFragment block
-               -> (Point block -> Bool)
-               -> [(ChainFragment header, PeerInfo header extra)]
-               -> [(FetchDecision header, PeerInfo header extra)]
+fetchDecisions
+  :: (HasHeader header, HasHeader block,
+      HeaderHash header ~ HeaderHash block)
+  => FetchDecisionPolicy header block
+  -> ChainFragment block
+  -> (Point block -> Bool)
+  -> [(ChainFragment header, PeerInfo header extra)]
+  -> [(FetchDecision header, PeerInfo header extra)]
 fetchDecisions fetchDecisionPolicy@FetchDecisionPolicy {
                  plausibleCandidateChain,
                  compareCandidateChains,
@@ -180,12 +181,12 @@ current chain. So our first task is to filter down to this set.
 -- | Keep only those candidate chains that are strictly longer than a given
 -- length (typically the length of the current adopted chain).
 --
-filterPlausibleCandidates :: HasHeader header
-                            => (ChainFragment block ->
-                                ChainFragment header -> Bool)
-                            -> ChainFragment block
-                            -> [(ChainFragment header, peerinfo)]
-                            -> [(ChainFragment header, peerinfo)]
+filterPlausibleCandidates
+  :: HasHeader header
+  => (ChainFragment block -> ChainFragment header -> Bool)
+  -> ChainFragment block
+  -> [(ChainFragment header, peerinfo)]
+  -> [(ChainFragment header, peerinfo)]
 filterPlausibleCandidates plausibleCandidateChain currentChain =
     filter (\(c, _) -> plausibleCandidateChain currentChain c)
 
@@ -277,21 +278,23 @@ interested in this candidate at all.
 -- | Find the fork suffix range for a candidate chain, with respect to the
 -- current chain.
 --
-chainForkSuffix :: (HasHeader header, HasHeader block,
-                    HeaderHash header ~ HeaderHash block)
-                => ChainFragment block  -- ^ Current chain.
-                -> ChainFragment header -- ^ Candidate chain
-                -> Maybe (ChainFragment header)
+chainForkSuffix
+  :: (HasHeader header, HasHeader block,
+      HeaderHash header ~ HeaderHash block)
+  => ChainFragment block  -- ^ Current chain.
+  -> ChainFragment header -- ^ Candidate chain
+  -> Maybe (ChainFragment header)
 chainForkSuffix current candidate =
     case ChainFragment.intersectChainFragments current candidate of
       Nothing                         -> Nothing
       Just (_, _, _, candidateSuffix) -> Just candidateSuffix
 
-selectForkSuffixes :: (HasHeader header, HasHeader block,
-                     HeaderHash header ~ HeaderHash block)
-                 => ChainFragment block
-                 -> [(ChainFragment header, peerinfo)]
-                 -> [(ChainFragment header, peerinfo)]
+selectForkSuffixes
+  :: (HasHeader header, HasHeader block,
+      HeaderHash header ~ HeaderHash block)
+  => ChainFragment block
+  -> [(ChainFragment header, peerinfo)]
+  -> [(ChainFragment header, peerinfo)]
 selectForkSuffixes current chains =
     catMaybes [ (,) <$> chainForkSuffix current chain <*> pure peer
               | (chain, peer) <- chains ]
@@ -351,12 +354,13 @@ chainFetchFragments alreadyDownloaded alreadyInFlight =
           || alreadyInFlight   (blockPoint p))
 
 
-filterNotAlreadyFetchedOrInFlight :: (HasHeader header,
-                         HeaderHash header ~ HeaderHash block)
-                     => (Point block -> Bool)
-                     -> [ (ChainFragment header,  Set (Point header),
-                                                  peerinfo)]
-                     -> [([ChainFragment header], peerinfo)]
+filterNotAlreadyFetchedOrInFlight
+  :: (HasHeader header,
+     HeaderHash header ~ HeaderHash block)
+  => (Point block -> Bool)
+  -> [ (ChainFragment header,  Set (Point header),
+                               peerinfo)]
+  -> [([ChainFragment header], peerinfo)]
 filterNotAlreadyFetchedOrInFlight alreadyDownloaded chains =
     [ (chainfragments, peer)
     | (chainsuffix, alreadyInFlight, peer) <- chains
@@ -368,14 +372,15 @@ filterNotAlreadyFetchedOrInFlight alreadyDownloaded chains =
 
 
 
-prioritisePeerChains :: HasHeader header
-                     => (ChainFragment header ->
-                         ChainFragment header -> Ordering)
-                     -> (header -> SizeInBytes)
-                     -> [([ChainFragment header], PeerFetchInFlight header,
-                                                  PeerGSV,
-                                                  peer)]
-                     -> [([ChainFragment header], peer)]
+prioritisePeerChains
+  :: HasHeader header
+  => (ChainFragment header ->
+     ChainFragment header -> Ordering)
+  -> (header -> SizeInBytes)
+  -> [([ChainFragment header], PeerFetchInFlight header,
+                               PeerGSV,
+                               peer)]
+  -> [([ChainFragment header], peer)]
 prioritisePeerChains _compareCandidateChains _blockFetchSize =
     map (\(c,_,_,p) -> (c,p))
 
@@ -420,14 +425,15 @@ data FetchDecline =
 
 -- data FetchMode = TODO
 
-fetchRequestDecisions :: HasHeader header
-                      => FetchDecisionPolicy header block
-                      -> Bool -- TODO make an enum
-                      -> [([ChainFragment header], PeerFetchStatus,
-                                                   PeerFetchInFlight header,
-                                                   PeerGSV,
-                                                   peer)]
-                      -> [ (FetchDecision header,  peer)]
+fetchRequestDecisions
+  :: HasHeader header
+  => FetchDecisionPolicy header block
+  -> Bool -- TODO make an enum
+  -> [([ChainFragment header], PeerFetchStatus,
+                               PeerFetchInFlight header,
+                               PeerGSV,
+                               peer)]
+  -> [ (FetchDecision header,  peer)]
 fetchRequestDecisions fetchDecisionPolicy parallelFetchMode chains =
     go nConcurrentFetchPeers0 Set.empty chains
   where
@@ -471,14 +477,15 @@ fetchRequestDecisions fetchDecisionPolicy parallelFetchMode chains =
       $ chains
 
 
-fetchRequestDecision :: HasHeader header
-                     => FetchDecisionPolicy header block
-                     -> Word
-                     -> PeerFetchInFlightLimits
-                     -> PeerFetchInFlight header
-                     -> PeerFetchStatus
-                     -> [ChainFragment header]
-                     -> FetchDecision header
+fetchRequestDecision
+  :: HasHeader header
+  => FetchDecisionPolicy header block
+  -> Word
+  -> PeerFetchInFlightLimits
+  -> PeerFetchInFlight header
+  -> PeerFetchStatus
+  -> [ChainFragment header]
+  -> FetchDecision header
 
 fetchRequestDecision _ _ _ _ _ [] = Left FetchDeclineNothingToDo
 
@@ -547,14 +554,15 @@ fetchRequestDecision FetchDecisionPolicy {
 --
 -- Property: result is non-empty if preconditions satisfied
 --
-selectBlocksUpToLimits :: HasHeader header
-                       => (header -> SizeInBytes) -- ^ Block body size
-                       -> Word -- ^ Current number of requests in flight
-                       -> Word -- ^ Maximum number of requests in flight allowed
-                       -> SizeInBytes -- ^ Current number of bytes in flight
-                       -> SizeInBytes -- ^ Maximum number of bytes in flight allowed
-                       -> [ChainFragment header]
-                       -> FetchRequest header
+selectBlocksUpToLimits
+  :: HasHeader header
+  => (header -> SizeInBytes) -- ^ Block body size
+  -> Word -- ^ Current number of requests in flight
+  -> Word -- ^ Maximum number of requests in flight allowed
+  -> SizeInBytes -- ^ Current number of bytes in flight
+  -> SizeInBytes -- ^ Maximum number of bytes in flight allowed
+  -> [ChainFragment header]
+  -> FetchRequest header
 selectBlocksUpToLimits blockFetchSize nreqs0 maxreqs nbytes0 maxbytes fragments =
     assert (nreqs0 < maxreqs && nbytes0 < maxbytes && not (null fragments)) $
     -- The case that we are already over our limits has to be checked earlier,
