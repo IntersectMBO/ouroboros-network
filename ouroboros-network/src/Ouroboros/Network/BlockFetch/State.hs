@@ -8,6 +8,8 @@ module Ouroboros.Network.BlockFetch.State (
     FetchDecisionPolicy(..),
     FetchTriggerVariables(..),
     FetchNonTriggerVariables(..),
+    FetchDecision,
+    FetchDecline(..),
   ) where
 
 import qualified Data.Map.Strict as Map
@@ -17,6 +19,7 @@ import           Data.Void
 
 import           Control.Monad.Class.MonadSTM
 import           Control.Exception (assert)
+import           Control.Tracer (Tracer, traceWith)
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (Point)
@@ -24,7 +27,7 @@ import           Ouroboros.Network.ChainFragment (ChainFragment(..))
 import qualified Ouroboros.Network.ChainFragment as ChainFragment
 
 import           Ouroboros.Network.BlockFetch.Types
-                   ( FetchRequest
+                   ( FetchRequest(..)
                    , PeerFetchInFlight(..)
                    , PeerFetchStatus(..)
                    , TFetchRequestVar
@@ -33,22 +36,26 @@ import           Ouroboros.Network.BlockFetch.Types
 import           Ouroboros.Network.BlockFetch.Decision
                    ( fetchDecisions
                    , PeerInfo
-                   , FetchDecision
                    , FetchDecisionPolicy(..)
                    , FetchMode(..)
+                   , FetchDecision
+                   , FetchDecline(..)
                    )
 import           Ouroboros.Network.BlockFetch.DeltaQ
                    ( PeerGSV(..) )
 
 
-fetchLogicIterations :: (MonadSTM m, Ord peer,
-                         HasHeader header, HasHeader block,
-                         HeaderHash header ~ HeaderHash block)
-                     => FetchDecisionPolicy header block
-                     -> FetchTriggerVariables peer header block m
-                     -> FetchNonTriggerVariables peer header block m
-                     -> m Void
-fetchLogicIterations fetchDecisionPolicy
+fetchLogicIterations
+  :: (MonadSTM m, Ord peer,
+      HasHeader header, HasHeader block,
+      HeaderHash header ~ HeaderHash block)
+  => Tracer m [FetchDecision [Point header]]
+  -> FetchDecisionPolicy header block
+  -> FetchTriggerVariables peer header block m
+  -> FetchNonTriggerVariables peer header block m
+  -> m Void
+fetchLogicIterations decisionTracer
+                     fetchDecisionPolicy
                      fetchTriggerVariables
                      fetchNonTriggerVariables =
 
@@ -60,6 +67,7 @@ fetchLogicIterations fetchDecisionPolicy
       -- + act on those decisions
 
       fetchLogicIteration
+        decisionTracer
         fetchDecisionPolicy
         fetchTriggerVariables
         fetchNonTriggerVariables
@@ -82,12 +90,14 @@ fetchLogicIteration
   :: (MonadSTM m, Ord peer,
       HasHeader header, HasHeader block,
       HeaderHash header ~ HeaderHash block)
-  => FetchDecisionPolicy header block
+  => Tracer m [FetchDecision [Point header]]
+  -> FetchDecisionPolicy header block
   -> FetchTriggerVariables peer header block m
   -> FetchNonTriggerVariables peer header block m
   -> FetchStateFingerprint peer header block
   -> m (FetchStateFingerprint peer header block)
-fetchLogicIteration fetchDecisionPolicy
+fetchLogicIteration decisionTracer
+                    fetchDecisionPolicy
                     fetchTriggerVariables
                     fetchNonTriggerVariables
                     stateFingerprint = do
@@ -111,13 +121,25 @@ fetchLogicIteration fetchDecisionPolicy
                       fetchDecisionPolicy
                       stateSnapshot
 
-    -- Log the fetch decisions
-    --TODO use Trace mechanism
+    -- If we want to trace timings, we can do it here after forcing:
+    -- _ <- evaluate (force decisions)
 
-    let swizzleReqVar (d,(_,_,_,rq)) = (d,rq)
+    -- Trace the batch of fetch decisions
+    traceWith decisionTracer (map (fmap fetchRequestPoints . fst) decisions)
+
+    -- Tell the fetch clients to act on our decisions
     fetchLogicIterationAct (map swizzleReqVar decisions)
 
     return stateFingerprint'
+  where
+    swizzleReqVar (d,(_,_,_,rq)) = (d,rq)
+
+    fetchRequestPoints :: HasHeader hdr => FetchRequest hdr -> [Point hdr]
+    fetchRequestPoints (FetchRequest headerss) =
+      -- Flatten multiple fragments and trace points, not full headers
+      [ blockPoint header
+      | headers <- headerss
+      , header  <- headers ]
 
 -- | Do a bit of rearranging of data before calling 'fetchDecisions' to do the
 -- real work.

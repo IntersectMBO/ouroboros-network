@@ -92,6 +92,7 @@ import           Data.Map.Strict (Map)
 import           Data.Void
 
 import           Control.Monad.Class.MonadSTM
+import           Control.Tracer (Tracer)
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (Point)
@@ -173,16 +174,19 @@ blockFetchLogic :: forall peer header block m.
                    (MonadSTM m, Ord peer,
                     HasHeader header, HasHeader block,
                     HeaderHash header ~ HeaderHash block)
-                => BlockFetchConsensusInterface peer header block m
+                => Tracer m [FetchDecision [Point header]]
+                -> BlockFetchConsensusInterface peer header block m
                 -> FetchClientRegistry peer header m
                 -> m Void
-blockFetchLogic BlockFetchConsensusInterface{..}
+blockFetchLogic decisionTracer
+                BlockFetchConsensusInterface{..}
                 (FetchClientRegistry registry) = do
 
     -- TODO: get this from elsewhere
     peerGSVs <- newTVarM Map.empty
 
     fetchLogicIterations
+      decisionTracer
       FetchDecisionPolicy {
         -- For now, use a fixed policy.
         -- It's unclear for the moment if this will be fixed external config
