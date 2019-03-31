@@ -187,7 +187,8 @@ blockFetchLogic BlockFetchConsensusInterface{..}
         -- For now, use a fixed policy.
         -- It's unclear for the moment if this will be fixed external config
         maxInFlightReqsPerPeer   = 10,
-        maxConcurrentFetchPeers  = 1,
+        maxConcurrencyBulkSync   = 2,
+        maxConcurrencyDeadline   = 1,
 
         plausibleCandidateChain,
         compareCandidateChains,

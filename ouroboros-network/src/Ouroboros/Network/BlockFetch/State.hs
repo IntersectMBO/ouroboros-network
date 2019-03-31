@@ -35,6 +35,7 @@ import           Ouroboros.Network.BlockFetch.Decision
                    , PeerInfo
                    , FetchDecision
                    , FetchDecisionPolicy(..)
+                   , FetchMode(..)
                    )
 import           Ouroboros.Network.BlockFetch.DeltaQ
                    ( PeerGSV(..) )
@@ -152,6 +153,7 @@ fetchDecisionsForStateSnapshot
 
     fetchDecisions
       fetchDecisionPolicy
+      FetchModeBulkSync --TODO: make configurable or automatic
       fetchStateCurrentChain
       fetchStateFetchedBlocks
       peerChainsAndPeerInfo

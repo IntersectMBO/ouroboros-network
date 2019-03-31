@@ -7,6 +7,7 @@ module Ouroboros.Network.BlockFetch.Decision (
     -- * Deciding what to fetch
     fetchDecisions,
     FetchDecisionPolicy(..),
+    FetchMode(..),
     PeerInfo,
     FetchDecision,
     FetchDecline(..),
@@ -42,8 +43,10 @@ import           Ouroboros.Network.BlockFetch.DeltaQ
 
 
 data FetchDecisionPolicy header block = FetchDecisionPolicy {
-       maxConcurrentFetchPeers :: Word,
        maxInFlightReqsPerPeer  :: Word,  -- A protocol constant.
+
+       maxConcurrencyBulkSync  :: Word,
+       maxConcurrencyDeadline  :: Word,
 
        plausibleCandidateChain :: ChainFragment block
                                -> ChainFragment header -> Bool,
@@ -54,6 +57,12 @@ data FetchDecisionPolicy header block = FetchDecisionPolicy {
 
        blockFetchSize          :: header -> SizeInBytes
      }
+
+
+data FetchMode =
+       FetchModeBulkSync
+     | FetchModeDeadline
+  deriving (Eq, Show)
 
 
 type PeerInfo header extra =
@@ -82,7 +91,7 @@ data FetchDecline =
    | FetchDeclineReqsInFlightLimit  !Word
    | FetchDeclineBytesInFlightLimit !SizeInBytes
    | FetchDeclinePeerBusy           !SizeInBytes !SizeInBytes !SizeInBytes
-   | FetchDeclineConcurrencyLimit   !Word
+   | FetchDeclineConcurrencyLimit   !FetchMode !Word
   deriving (Eq, Show)
 
 
@@ -99,6 +108,7 @@ fetchDecisions
   :: (HasHeader header, HasHeader block,
       HeaderHash header ~ HeaderHash block)
   => FetchDecisionPolicy header block
+  -> FetchMode
   -> ChainFragment block
   -> (Point block -> Bool)
   -> [(ChainFragment header, PeerInfo header extra)]
@@ -108,17 +118,19 @@ fetchDecisions fetchDecisionPolicy@FetchDecisionPolicy {
                  compareCandidateChains,
                  blockFetchSize
                }
+               fetchMode
                currentChain
                fetchedBlocks =
 
     -- Finally, make a decision for each (chain, peer) pair.
     fetchRequestDecisions
       fetchDecisionPolicy
+      fetchMode
   . map swizzleSIG
 
     -- Filter to keep blocks that are not already in-flight with other peers.
   . filterNotAlreadyInFlightWithOtherPeers
-      True -- TODO: supply properly
+      fetchMode
   . map swizzleSI
 
     -- Reorder chains based on consensus policy and network timing data.
@@ -442,26 +454,23 @@ filterNotAlreadyInFlightWithPeer chains =
       blockPoint b `Set.notMember` peerFetchBlocksInFlight inflight
 
 
--- data FetchMode = TODO
-
 -- One last step of filtering, but this time across peers, rather than
 -- individually for each peer. If we're following the parallel fetch
 -- mode then we filter out blocks that are already in-flight with other
 -- peers.
 filterNotAlreadyInFlightWithOtherPeers
   :: HasHeader header
-  => Bool -- TODO make an enum
+  => FetchMode
   -> [(FetchDecision [ChainFragment header], PeerFetchStatus,
                                              PeerFetchInFlight header,
                                              peer)]
   -> [(FetchDecision [ChainFragment header], peer)]
 
-filterNotAlreadyInFlightWithOtherPeers parallelFetchMode chains
-  | not parallelFetchMode
-  = [ (mchainfragments,       peer)
+filterNotAlreadyInFlightWithOtherPeers FetchModeDeadline chains =
+    [ (mchainfragments,       peer)
     | (mchainfragments, _, _, peer) <- chains ]
 
-filterNotAlreadyInFlightWithOtherPeers _ chains =
+filterNotAlreadyInFlightWithOtherPeers FetchModeBulkSync chains =
     go Set.empty chains
   where
     go !_ [] = []
@@ -525,12 +534,13 @@ obviously take that into account when considering later peer chains.
 fetchRequestDecisions
   :: HasHeader header
   => FetchDecisionPolicy header block
+  -> FetchMode
   -> [(FetchDecision [ChainFragment header], PeerFetchStatus,
                                              PeerFetchInFlight header,
                                              PeerGSV,
                                              peer)]
   -> [(FetchDecision (FetchRequest header),  peer)]
-fetchRequestDecisions fetchDecisionPolicy chains =
+fetchRequestDecisions fetchDecisionPolicy fetchMode chains =
     go nConcurrentFetchPeers0 chains
   where
     go !_ [] = []
@@ -542,6 +552,7 @@ fetchRequestDecisions fetchDecisionPolicy chains =
       where
         decision = fetchRequestDecision
                      fetchDecisionPolicy
+                     fetchMode
                      nConcurrentFetchPeers
                      (calculatePeerFetchInFlightLimits gsvs)
                      inflight
@@ -566,6 +577,7 @@ fetchRequestDecisions fetchDecisionPolicy chains =
 fetchRequestDecision
   :: HasHeader header
   => FetchDecisionPolicy header block
+  -> FetchMode
   -> Word
   -> PeerFetchInFlightLimits
   -> PeerFetchInFlight header
@@ -573,20 +585,22 @@ fetchRequestDecision
   -> FetchDecision [ChainFragment header]
   -> FetchDecision (FetchRequest  header)
 
-fetchRequestDecision _ _ _ _ _ (Left decline)
-                                  = Left decline
+fetchRequestDecision _ _ _ _ _ _ (Left decline)
+  = Left decline
 
-fetchRequestDecision _ _ _ _ PeerFetchStatusShutdown _
-                                  = Left FetchDeclinePeerShutdown
+fetchRequestDecision _ _ _ _ _ PeerFetchStatusShutdown _
+  = Left FetchDeclinePeerShutdown
 
-fetchRequestDecision _ _ _ _ PeerFetchStatusAberrant _
-                                  = Left FetchDeclinePeerSlow
+fetchRequestDecision _ _ _ _ _ PeerFetchStatusAberrant _
+  = Left FetchDeclinePeerSlow
 
 fetchRequestDecision FetchDecisionPolicy {
-                       maxConcurrentFetchPeers,
+                       maxConcurrencyBulkSync,
+                       maxConcurrencyDeadline,
                        maxInFlightReqsPerPeer,
                        blockFetchSize
                      }
+                     fetchMode
                      nConcurrentFetchPeers
                      PeerFetchInFlightLimits {
                        inFlightBytesLowWatermark,
@@ -617,9 +631,12 @@ fetchRequestDecision FetchDecisionPolicy {
              inFlightBytesHighWatermark
 
   | peerFetchReqsInFlight == 0
+  , let maxConcurrentFetchPeers = case fetchMode of
+                                    FetchModeBulkSync -> maxConcurrencyBulkSync
+                                    FetchModeDeadline -> maxConcurrencyDeadline
   , nConcurrentFetchPeers >= maxConcurrentFetchPeers
   = Left $ FetchDeclineConcurrencyLimit
-             maxConcurrentFetchPeers
+             fetchMode maxConcurrentFetchPeers
 
     -- We've checked our request limit and our byte limit. We are then
     -- guaranteed to get at least one non-empty request range.
