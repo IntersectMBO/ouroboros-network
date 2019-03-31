@@ -7,9 +7,9 @@ module Ouroboros.Network.BlockFetch.Decision (
     fetchDecisions,
     fetchRequestDecisions,
     prioritisePeerChains,
-    chainsFetchFragments,
-    chainsForkSuffix,
-    filterLongerCandidateChains,
+    filterNotAlreadyFetchedOrInFlight,
+    selectForkSuffixes,
+    filterPlausibleCandidates,
     PeerInfo,
     FetchDecision,
     FetchDecline(..),
@@ -84,14 +84,14 @@ fetchDecisions fetchDecisionPolicy@FetchDecisionPolicy {
       blockFetchSize
   . map (\(c, p@(_,inflight,gsvs,_)) -> (c, inflight, gsvs, p))
 
-  . chainsFetchFragments
+  . filterNotAlreadyFetchedOrInFlight
       fetchedBlocks
   . map (\(c, p@(_,inflight,_,_)) -> (c, peerFetchBlocksInFlight inflight, p))
 
-  . chainsForkSuffix
+  . selectForkSuffixes
       currentChain
 
-  . filterLongerCandidateChains
+  . filterPlausibleCandidates
       plausibleCandidateChain
       currentChain
 
@@ -180,13 +180,13 @@ current chain. So our first task is to filter down to this set.
 -- | Keep only those candidate chains that are strictly longer than a given
 -- length (typically the length of the current adopted chain).
 --
-filterLongerCandidateChains :: HasHeader header
+filterPlausibleCandidates :: HasHeader header
                             => (ChainFragment block ->
                                 ChainFragment header -> Bool)
                             -> ChainFragment block
                             -> [(ChainFragment header, peerinfo)]
                             -> [(ChainFragment header, peerinfo)]
-filterLongerCandidateChains plausibleCandidateChain currentChain =
+filterPlausibleCandidates plausibleCandidateChain currentChain =
     filter (\(c, _) -> plausibleCandidateChain currentChain c)
 
 {-
@@ -287,12 +287,12 @@ chainForkSuffix current candidate =
       Nothing                         -> Nothing
       Just (_, _, _, candidateSuffix) -> Just candidateSuffix
 
-chainsForkSuffix :: (HasHeader header, HasHeader block,
+selectForkSuffixes :: (HasHeader header, HasHeader block,
                      HeaderHash header ~ HeaderHash block)
                  => ChainFragment block
                  -> [(ChainFragment header, peerinfo)]
                  -> [(ChainFragment header, peerinfo)]
-chainsForkSuffix current chains =
+selectForkSuffixes current chains =
     catMaybes [ (,) <$> chainForkSuffix current chain <*> pure peer
               | (chain, peer) <- chains ]
 
@@ -351,13 +351,13 @@ chainFetchFragments alreadyDownloaded alreadyInFlight =
           || alreadyInFlight   (blockPoint p))
 
 
-chainsFetchFragments :: (HasHeader header,
+filterNotAlreadyFetchedOrInFlight :: (HasHeader header,
                          HeaderHash header ~ HeaderHash block)
                      => (Point block -> Bool)
                      -> [ (ChainFragment header,  Set (Point header),
                                                   peerinfo)]
                      -> [([ChainFragment header], peerinfo)]
-chainsFetchFragments alreadyDownloaded chains =
+filterNotAlreadyFetchedOrInFlight alreadyDownloaded chains =
     [ (chainfragments, peer)
     | (chainsuffix, alreadyInFlight, peer) <- chains
     , let chainfragments = chainFetchFragments
