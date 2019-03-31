@@ -14,14 +14,14 @@ module Ouroboros.Network.BlockFetch.Decision (
     -- ** Components of the decision-making process
     filterPlausibleCandidates,
     selectForkSuffixes,
-    filterNotAlreadyFetchedOrInFlight,
+    filterNotAlreadyFetched,
+    filterNotAlreadyInFlightWithPeer,
     prioritisePeerChains,
     fetchRequestDecisions,
   ) where
 
 import           Data.Maybe
 import qualified Data.Set as Set
-import           Data.Set (Set)
 
 import           Control.Exception (assert)
 
@@ -88,9 +88,11 @@ fetchDecisions fetchDecisionPolicy@FetchDecisionPolicy {
       blockFetchSize
   . map (\(c, p@(_,inflight,gsvs,_)) -> (c, inflight, gsvs, p))
 
-  . filterNotAlreadyFetchedOrInFlight
+  . filterNotAlreadyInFlightWithPeer
+  . map (\(c, p@(_,inflight,_,_)) -> (c, inflight, p))
+
+  . filterNotAlreadyFetched
       fetchedBlocks
-  . map (\(c, p@(_,inflight,_,_)) -> (c, peerFetchBlocksInFlight inflight, p))
 
   . selectForkSuffixes
       currentChain
@@ -342,36 +344,35 @@ of individual blocks without their relationship to each other.
 -- Typically this is a single fragment forming a suffix of the chain, but in
 -- the general case we can get a bunch of discontiguous chain fragments.
 --
-chainFetchFragments :: forall header block.
-                       (HasHeader header, HeaderHash header ~ HeaderHash block)
-                    => (Point block  -> Bool)
-                    -> (Point header -> Bool)
-                    -> ChainFragment header
-                    -> [ChainFragment header]
-chainFetchFragments alreadyDownloaded alreadyInFlight =
-    ChainFragment.filter notAlreadyDownloadedOrAlreadyInFlight
-  where
-    notAlreadyDownloadedOrAlreadyInFlight :: header -> Bool
-    notAlreadyDownloadedOrAlreadyInFlight p =
-        not (alreadyDownloaded (castPoint (blockPoint p))
-          || alreadyInFlight   (blockPoint p))
-
-
-filterNotAlreadyFetchedOrInFlight
-  :: (HasHeader header,
-     HeaderHash header ~ HeaderHash block)
+filterNotAlreadyFetched
+  :: (HasHeader header, HeaderHash header ~ HeaderHash block)
   => (Point block -> Bool)
-  -> [ (ChainFragment header,  Set (Point header),
-                               peerinfo)]
+  -> [ (ChainFragment header,  peerinfo)]
   -> [([ChainFragment header], peerinfo)]
-filterNotAlreadyFetchedOrInFlight alreadyDownloaded chains =
+filterNotAlreadyFetched alreadyDownloaded chains =
     [ (chainfragments, peer)
-    | (chainsuffix, alreadyInFlight, peer) <- chains
-    , let chainfragments = chainFetchFragments
-                             alreadyDownloaded
-                             (`Set.member` alreadyInFlight)
-                             chainsuffix
+    | (chainsuffix,    peer) <- chains
+    , let chainfragments =
+            ChainFragment.filter notAlreadyFetched chainsuffix
     ]
+  where
+    notAlreadyFetched = not . alreadyDownloaded . castPoint . blockPoint
+
+
+filterNotAlreadyInFlightWithPeer
+  :: HasHeader header
+  => [([ChainFragment header], PeerFetchInFlight header, peerinfo)]
+  -> [([ChainFragment header],                           peerinfo)]
+filterNotAlreadyInFlightWithPeer chains =
+    [ (chainfragments',          peer)
+    | (chainfragments, inflight, peer) <- chains
+    , let chainfragments' =
+            concatMap (ChainFragment.filter (notAlreadyInFlight inflight))
+                      chainfragments
+    ]
+  where
+    notAlreadyInFlight inflight b =
+      blockPoint b `Set.notMember` peerFetchBlocksInFlight inflight
 
 
 
