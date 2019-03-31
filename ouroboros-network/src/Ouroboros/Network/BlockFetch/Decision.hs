@@ -79,28 +79,35 @@ fetchDecisions fetchDecisionPolicy@FetchDecisionPolicy {
                currentChain
                fetchedBlocks =
 
+    -- Finally, make a decision for each (chain, peer) pair.
     fetchRequestDecisions
       fetchDecisionPolicy
   . map (\(c, p@(status,inflight,gsvs,_)) -> (c, status, inflight, gsvs, p))
 
+    -- Filter to keep blocks that are not already in-flight with other peers.
   . filterNotAlreadyInFlightWithOtherPeers
       True -- TODO: supply properly
   . map (\(c, p@(status,inflight,_,_)) -> (c, status, inflight, p))
 
+    -- Reorder chains based on consensus policy and network timing data.
   . prioritisePeerChains
       compareCandidateChains
       blockFetchSize
   . map (\(c, p@(_,inflight,gsvs,_)) -> (c, inflight, gsvs, p))
 
+    -- Filter to keep blocks that are not already in-flight for this peer.
   . filterNotAlreadyInFlightWithPeer
   . map (\(c, p@(_,inflight,_,_)) -> (c, inflight, p))
 
+    -- Filter to keep blocks that have not already been downloaded.
   . filterNotAlreadyFetched
       fetchedBlocks
 
+    -- Select the suffix up to the intersection with the current chain.
   . selectForkSuffixes
       currentChain
 
+    -- First, filter to keep chains the consensus layer tells us are plausible.
   . filterPlausibleCandidates
       plausibleCandidateChain
       currentChain
