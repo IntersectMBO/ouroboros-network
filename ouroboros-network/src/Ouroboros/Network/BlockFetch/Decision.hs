@@ -17,6 +17,7 @@ module Ouroboros.Network.BlockFetch.Decision (
     filterNotAlreadyFetched,
     filterNotAlreadyInFlightWithPeer,
     prioritisePeerChains,
+    filterNotAlreadyInFlightWithOtherPeers,
     fetchRequestDecisions,
   ) where
 
@@ -80,8 +81,11 @@ fetchDecisions fetchDecisionPolicy@FetchDecisionPolicy {
 
     fetchRequestDecisions
       fetchDecisionPolicy
-      True -- TODO: supply properly
   . map (\(c, p@(status,inflight,gsvs,_)) -> (c, status, inflight, gsvs, p))
+
+  . filterNotAlreadyInFlightWithOtherPeers
+      True -- TODO: supply properly
+  . map (\(c, p@(status,inflight,_,_)) -> (c, status, inflight, p))
 
   . prioritisePeerChains
       compareCandidateChains
@@ -375,6 +379,47 @@ filterNotAlreadyInFlightWithPeer chains =
       blockPoint b `Set.notMember` peerFetchBlocksInFlight inflight
 
 
+-- data FetchMode = TODO
+
+-- One last step of filtering, but this time across peers, rather than
+-- individually for each peer. If we're following the parallel fetch
+-- mode then we filter out blocks that are already in-flight with other
+-- peers.
+filterNotAlreadyInFlightWithOtherPeers
+  :: HasHeader header
+  => Bool -- TODO make an enum
+  -> [([ChainFragment header], PeerFetchStatus,
+                               PeerFetchInFlight header,
+                               peer)]
+  -> [([ChainFragment header], peer)]
+
+filterNotAlreadyInFlightWithOtherPeers parallelFetchMode chains
+  | not parallelFetchMode
+  = [ (mchainfragments,       peer)
+    | (mchainfragments, _, _, peer) <- chains ]
+
+filterNotAlreadyInFlightWithOtherPeers _ chains =
+    go Set.empty chains
+  where
+    go !_ [] = []
+    go !blocksInFlightWithOtherPeers
+       ((chainfragments, status, inflight, peer) : cps) =
+
+        (chainfragments', peer)
+      : go blocksInFlightWithOtherPeers' cps
+      where
+        chainfragments' =
+          concatMap (ChainFragment.filter notAlreadyInFlight) chainfragments
+
+        notAlreadyInFlight b =
+          blockPoint b `Set.notMember` blocksInFlightWithOtherPeers
+
+        blocksInFlightWithOtherPeers' = case status of
+          PeerFetchStatusShutdown -> blocksInFlightWithOtherPeers
+          PeerFetchStatusAberrant -> blocksInFlightWithOtherPeers
+          _other                  -> blocksInFlightWithOtherPeers
+                         `Set.union` peerFetchBlocksInFlight inflight
+
 
 prioritisePeerChains
   :: HasHeader header
@@ -426,27 +471,23 @@ data FetchDecline =
   deriving Show
 
 
-
--- data FetchMode = TODO
-
 fetchRequestDecisions
   :: HasHeader header
   => FetchDecisionPolicy header block
-  -> Bool -- TODO make an enum
   -> [([ChainFragment header], PeerFetchStatus,
                                PeerFetchInFlight header,
                                PeerGSV,
                                peer)]
   -> [ (FetchDecision header,  peer)]
-fetchRequestDecisions fetchDecisionPolicy parallelFetchMode chains =
-    go nConcurrentFetchPeers0 Set.empty chains
+fetchRequestDecisions fetchDecisionPolicy chains =
+    go nConcurrentFetchPeers0 chains
   where
-    go !_ _ [] = []
-    go !nConcurrentFetchPeers !blocksInFlightOtherPeers
+    go !_ [] = []
+    go !nConcurrentFetchPeers
        ((chain, status, inflight, gsvs, peer) : cps) =
 
         (decision, peer)
-      : go nConcurrentFetchPeers' blocksInFlightOtherPeers' cps
+      : go nConcurrentFetchPeers' cps
       where
         decision = fetchRequestDecision
                      fetchDecisionPolicy
@@ -454,23 +495,13 @@ fetchRequestDecisions fetchDecisionPolicy parallelFetchMode chains =
                      (calculatePeerFetchInFlightLimits gsvs)
                      inflight
                      status
-                     chain'
-
-        chain' | parallelFetchMode
-               = concatMap (ChainFragment.filter alreadyInFlight) chain
-
-               | otherwise
-               = chain
-        alreadyInFlight h = blockPoint h `Set.member` blocksInFlightOtherPeers
+                     chain
 
         nConcurrentFetchPeers'
           -- increment if it was idle, and now will not be
           | peerFetchReqsInFlight inflight == 0
           , Right{} <- decision = nConcurrentFetchPeers + 1
           | otherwise           = nConcurrentFetchPeers
-
-        blocksInFlightOtherPeers' = blocksInFlightOtherPeers
-                        `Set.union` peerFetchBlocksInFlight inflight
 
     nConcurrentFetchPeers0 =
         fromIntegral
