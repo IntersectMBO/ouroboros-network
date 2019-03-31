@@ -124,6 +124,20 @@ data BlockFetchConsensusInterface peer header block m =
        --
        readCurrentChain       :: STM m (ChainFragment block),
 
+       -- | Read the current fetch mode that the block fetch logic should use.
+       --
+       -- The fetch mode is a dynamic part of the block fetch policy. In
+       -- 'FetchModeBulkSync' it follows a policy that optimises for expected
+       -- bandwidth over latency to fetch any particular block, whereas in
+       -- 'FetchModeDeadline' it follows a policy optimises for the latency
+       -- to fetch blocks, at the expense of wasting bandwidth.
+       --
+       -- This mode should be set so that when the node's current chain is near
+       -- to \"now\" it uses the deadline mode, and when it is far away it uses
+       -- the bulk sync mode.
+       --
+       readFetchMode          :: STM m FetchMode,
+
        -- | Recent, only within last K
        readFetchedBlocks      :: STM m (Point block -> Bool),
 
@@ -207,7 +221,8 @@ blockFetchLogic decisionTracer
         readStateFetchedBlocks = readFetchedBlocks,
         readStatePeerStates    = readPeerStates,
         readStatePeerGSVs      = readTVar peerGSVs,
-        readStatePeerReqVars   = readPeerReqVars
+        readStatePeerReqVars   = readPeerReqVars,
+        readStateFetchMode     = readFetchMode
       }
   where
     --TODO: move these next to the FetchClientRegistry

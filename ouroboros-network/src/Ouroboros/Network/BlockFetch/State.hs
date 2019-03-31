@@ -10,6 +10,7 @@ module Ouroboros.Network.BlockFetch.State (
     FetchNonTriggerVariables(..),
     FetchDecision,
     FetchDecline(..),
+    FetchMode(..)
   ) where
 
 import qualified Data.Map.Strict as Map
@@ -162,7 +163,8 @@ fetchDecisionsForStateSnapshot
       fetchStatePeerStates,
       fetchStatePeerGSVs,
       fetchStatePeerReqVars,
-      fetchStateFetchedBlocks
+      fetchStateFetchedBlocks,
+      fetchStateFetchMode
     } =
     assert (                 Map.keysSet fetchStatePeerChains
             `Set.isSubsetOf` Map.keysSet fetchStatePeerStates) $
@@ -175,7 +177,7 @@ fetchDecisionsForStateSnapshot
 
     fetchDecisions
       fetchDecisionPolicy
-      FetchModeBulkSync --TODO: make configurable or automatic
+      fetchStateFetchMode
       fetchStateCurrentChain
       fetchStateFetchedBlocks
       peerChainsAndPeerInfo
@@ -228,7 +230,8 @@ data FetchNonTriggerVariables peer header block m = FetchNonTriggerVariables {
        readStateFetchedBlocks :: STM m (Point block -> Bool),
        readStatePeerStates    :: STM m (Map peer (PeerFetchStatus, PeerFetchInFlight header)),
        readStatePeerGSVs      :: STM m (Map peer PeerGSV),
-       readStatePeerReqVars   :: STM m (Map peer (TFetchRequestVar m header))
+       readStatePeerReqVars   :: STM m (Map peer (TFetchRequestVar m header)),
+       readStateFetchMode     :: STM m FetchMode
      }
 
 
@@ -257,7 +260,8 @@ data FetchStateSnapshot peer header block m = FetchStateSnapshot {
        fetchStatePeerStates    :: Map peer (PeerFetchStatus, PeerFetchInFlight header),
        fetchStatePeerGSVs      :: Map peer PeerGSV,
        fetchStatePeerReqVars   :: Map peer (TFetchRequestVar m header),
-       fetchStateFetchedBlocks :: Point block -> Bool
+       fetchStateFetchedBlocks :: Point block -> Bool,
+       fetchStateFetchMode     :: FetchMode
      }
 
 readStateVariables :: (MonadSTM m, Eq peer, Eq (Point header),
@@ -291,6 +295,7 @@ readStateVariables FetchTriggerVariables{..}
     fetchStatePeerGSVs      <- readStatePeerGSVs
     fetchStatePeerReqVars   <- readStatePeerReqVars
     fetchStateFetchedBlocks <- readStateFetchedBlocks
+    fetchStateFetchMode     <- readStateFetchMode
 
     -- Construct the overall snapshot of the state
     let fetchStateSnapshot =
@@ -300,7 +305,8 @@ readStateVariables FetchTriggerVariables{..}
             fetchStatePeerStates,
             fetchStatePeerGSVs,
             fetchStatePeerReqVars,
-            fetchStateFetchedBlocks
+            fetchStateFetchedBlocks,
+            fetchStateFetchMode
           }
 
     return (fetchStateSnapshot, fetchStateFingerprint')
