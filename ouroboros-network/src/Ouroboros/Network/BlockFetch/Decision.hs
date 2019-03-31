@@ -82,22 +82,22 @@ fetchDecisions fetchDecisionPolicy@FetchDecisionPolicy {
     -- Finally, make a decision for each (chain, peer) pair.
     fetchRequestDecisions
       fetchDecisionPolicy
-  . map (\(c, p@(status,inflight,gsvs,_)) -> (c, status, inflight, gsvs, p))
+  . map swizzleSIG
 
     -- Filter to keep blocks that are not already in-flight with other peers.
   . filterNotAlreadyInFlightWithOtherPeers
       True -- TODO: supply properly
-  . map (\(c, p@(status,inflight,_,_)) -> (c, status, inflight, p))
+  . map swizzleSI
 
     -- Reorder chains based on consensus policy and network timing data.
   . prioritisePeerChains
       compareCandidateChains
       blockFetchSize
-  . map (\(c, p@(_,inflight,gsvs,_)) -> (c, inflight, gsvs, p))
+  . map swizzleIG
 
     -- Filter to keep blocks that are not already in-flight for this peer.
   . filterNotAlreadyInFlightWithPeer
-  . map (\(c, p@(_,inflight,_,_)) -> (c, inflight, p))
+  . map swizzleI
 
     -- Filter to keep blocks that have not already been downloaded.
   . filterNotAlreadyFetched
@@ -111,7 +111,12 @@ fetchDecisions fetchDecisionPolicy@FetchDecisionPolicy {
   . filterPlausibleCandidates
       plausibleCandidateChain
       currentChain
-
+  where
+    -- Data swizzling functions to get the right info into each stage.
+    swizzleI   (c, p@(_,     inflight,_,   _)) = (c,         inflight,       p)
+    swizzleIG  (c, p@(_,     inflight,gsvs,_)) = (c,         inflight, gsvs, p)
+    swizzleSI  (c, p@(status,inflight,_,   _)) = (c, status, inflight,       p)
+    swizzleSIG (c, p@(status,inflight,gsvs,_)) = (c, status, inflight, gsvs, p)
 
 {-
 We have the node's /current/ or /adopted/ chain. This is the node's chain in
