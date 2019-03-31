@@ -21,10 +21,10 @@ module Ouroboros.Network.BlockFetch.Decision (
     fetchRequestDecisions,
   ) where
 
-import           Data.Maybe
 import qualified Data.Set as Set
 
 import           Control.Exception (assert)
+import           Control.Monad (guard)
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.ChainFragment (ChainFragment(..))
@@ -72,7 +72,11 @@ type FetchDecision result = Either FetchDecline result
 -- | All the various reasons we can decide not to fetch blocks from a peer.
 --
 data FetchDecline =
-     FetchDeclineNothingToDo
+     FetchDeclineChainNotPlausible
+   | FetchDeclineChainNoIntersection
+   | FetchDeclineAlreadyFetched
+   | FetchDeclineInFlightThisPeer
+   | FetchDeclineInFlightOtherPeer
    | FetchDeclinePeerShutdown
    | FetchDeclinePeerSlow
    | FetchDeclineReqsInFlightLimit  !Word
@@ -80,6 +84,15 @@ data FetchDecline =
    | FetchDeclinePeerBusy           !SizeInBytes !SizeInBytes !SizeInBytes
    | FetchDeclineConcurrencyLimit   !Word
   deriving (Eq, Show)
+
+
+-- | The \"oh noes?!\" operator.
+--
+-- In the case of an error, the operator provides a specific error value.
+--
+(?!) :: Maybe a -> e -> Either e a
+Just x  ?! _ = Right x
+Nothing ?! e = Left  e
 
 
 fetchDecisions
@@ -226,9 +239,16 @@ filterPlausibleCandidates
   => (ChainFragment block -> ChainFragment header -> Bool)
   -> ChainFragment block
   -> [(ChainFragment header, peerinfo)]
-  -> [(ChainFragment header, peerinfo)]
-filterPlausibleCandidates plausibleCandidateChain currentChain =
-    filter (\(c, _) -> plausibleCandidateChain currentChain c)
+  -> [(FetchDecision (ChainFragment header), peerinfo)]
+filterPlausibleCandidates plausibleCandidateChain currentChain chains =
+    [ (chain', peer)
+    | (chain,  peer) <- chains
+    , let chain' = do
+            guard (plausibleCandidateChain currentChain chain)
+              ?! FetchDeclineChainNotPlausible
+            return chain
+    ]
+
 
 {-
 In the example, this leaves us with only the candidate chains: A, B and C, but
@@ -333,12 +353,15 @@ selectForkSuffixes
   :: (HasHeader header, HasHeader block,
       HeaderHash header ~ HeaderHash block)
   => ChainFragment block
-  -> [(ChainFragment header, peerinfo)]
-  -> [(ChainFragment header, peerinfo)]
+  -> [(FetchDecision (ChainFragment header), peerinfo)]
+  -> [(FetchDecision (ChainFragment header), peerinfo)]
 selectForkSuffixes current chains =
-    catMaybes [ (,) <$> chainForkSuffix current chain <*> pure peer
-              | (chain, peer) <- chains ]
-
+    [ (mchain', peer)
+    | (mchain,  peer) <- chains
+    , let mchain' = do
+            chain <- mchain
+            chainForkSuffix current chain ?! FetchDeclineChainNoIntersection
+    ]
 
 {-
 We define the /fetch range/ as the suffix of the fork range that has not yet
@@ -382,13 +405,17 @@ of individual blocks without their relationship to each other.
 filterNotAlreadyFetched
   :: (HasHeader header, HeaderHash header ~ HeaderHash block)
   => (Point block -> Bool)
-  -> [ (ChainFragment header,  peerinfo)]
-  -> [([ChainFragment header], peerinfo)]
+  -> [(FetchDecision (ChainFragment header), peerinfo)]
+  -> [(FetchDecision [ChainFragment header], peerinfo)]
 filterNotAlreadyFetched alreadyDownloaded chains =
-    [ (chainfragments, peer)
-    | (chainsuffix,    peer) <- chains
-    , let chainfragments =
-            ChainFragment.filter notAlreadyFetched chainsuffix
+    [ (mchainfragments, peer)
+    | (mchainfragment,  peer) <- chains
+    , let mchainfragments = do
+            chainfragment <- mchainfragment
+            let fragments = ChainFragment.filter notAlreadyFetched
+                                                 chainfragment
+            guard (not (null fragments)) ?! FetchDeclineAlreadyFetched
+            return fragments
     ]
   where
     notAlreadyFetched = not . alreadyDownloaded . castPoint . blockPoint
@@ -396,14 +423,19 @@ filterNotAlreadyFetched alreadyDownloaded chains =
 
 filterNotAlreadyInFlightWithPeer
   :: HasHeader header
-  => [([ChainFragment header], PeerFetchInFlight header, peerinfo)]
-  -> [([ChainFragment header],                           peerinfo)]
+  => [(FetchDecision [ChainFragment header], PeerFetchInFlight header,
+                                             peerinfo)]
+  -> [(FetchDecision [ChainFragment header], peerinfo)]
 filterNotAlreadyInFlightWithPeer chains =
-    [ (chainfragments',          peer)
-    | (chainfragments, inflight, peer) <- chains
-    , let chainfragments' =
-            concatMap (ChainFragment.filter (notAlreadyInFlight inflight))
-                      chainfragments
+    [ (mchainfragments',          peer)
+    | (mchainfragments, inflight, peer) <- chains
+    , let mchainfragments' = do
+            chainfragments <- mchainfragments
+            let fragments = concatMap (ChainFragment.filter
+                                         (notAlreadyInFlight inflight))
+                                      chainfragments
+            guard (not (null fragments)) ?! FetchDeclineInFlightThisPeer
+            return fragments
     ]
   where
     notAlreadyInFlight inflight b =
@@ -419,10 +451,10 @@ filterNotAlreadyInFlightWithPeer chains =
 filterNotAlreadyInFlightWithOtherPeers
   :: HasHeader header
   => Bool -- TODO make an enum
-  -> [([ChainFragment header], PeerFetchStatus,
-                               PeerFetchInFlight header,
-                               peer)]
-  -> [([ChainFragment header], peer)]
+  -> [(FetchDecision [ChainFragment header], PeerFetchStatus,
+                                             PeerFetchInFlight header,
+                                             peer)]
+  -> [(FetchDecision [ChainFragment header], peer)]
 
 filterNotAlreadyInFlightWithOtherPeers parallelFetchMode chains
   | not parallelFetchMode
@@ -434,13 +466,17 @@ filterNotAlreadyInFlightWithOtherPeers _ chains =
   where
     go !_ [] = []
     go !blocksInFlightWithOtherPeers
-       ((chainfragments, status, inflight, peer) : cps) =
+       ((mchainfragments, status, inflight, peer) : cps) =
 
-        (chainfragments', peer)
+        (mchainfragments', peer)
       : go blocksInFlightWithOtherPeers' cps
       where
-        chainfragments' =
-          concatMap (ChainFragment.filter notAlreadyInFlight) chainfragments
+        mchainfragments' = do
+          chainfragments <- mchainfragments
+          let fragments = concatMap (ChainFragment.filter notAlreadyInFlight)
+                                    chainfragments
+          guard (not (null fragments)) ?! FetchDeclineInFlightOtherPeer
+          return fragments
 
         notAlreadyInFlight b =
           blockPoint b `Set.notMember` blocksInFlightWithOtherPeers
@@ -454,15 +490,15 @@ filterNotAlreadyInFlightWithOtherPeers _ chains =
 
 prioritisePeerChains
   :: HasHeader header
-  => (ChainFragment header ->
-     ChainFragment header -> Ordering)
+  => (ChainFragment header -> ChainFragment header -> Ordering)
   -> (header -> SizeInBytes)
-  -> [([ChainFragment header], PeerFetchInFlight header,
-                               PeerGSV,
-                               peer)]
-  -> [([ChainFragment header], peer)]
+  -> [(FetchDecision [ChainFragment header], PeerFetchInFlight header,
+                                             PeerGSV,
+                                             peer)]
+  -> [(FetchDecision [ChainFragment header], peer)]
 prioritisePeerChains _compareCandidateChains _blockFetchSize =
     map (\(c,_,_,p) -> (c,p))
+
 
 {-
 In the second phase we walk over the prioritised fetch suffixes for each peer
@@ -489,7 +525,7 @@ obviously take that into account when considering later peer chains.
 fetchRequestDecisions
   :: HasHeader header
   => FetchDecisionPolicy header block
-  -> [([ChainFragment header],               PeerFetchStatus,
+  -> [(FetchDecision [ChainFragment header], PeerFetchStatus,
                                              PeerFetchInFlight header,
                                              PeerGSV,
                                              peer)]
@@ -499,7 +535,7 @@ fetchRequestDecisions fetchDecisionPolicy chains =
   where
     go !_ [] = []
     go !nConcurrentFetchPeers
-       ((chainfragments, status, inflight, gsvs, peer) : cps) =
+       ((mchainfragments, status, inflight, gsvs, peer) : cps) =
 
         (decision, peer)
       : go nConcurrentFetchPeers' cps
@@ -510,7 +546,7 @@ fetchRequestDecisions fetchDecisionPolicy chains =
                      (calculatePeerFetchInFlightLimits gsvs)
                      inflight
                      status
-                     chainfragments
+                     mchainfragments
 
         nConcurrentFetchPeers'
           -- increment if it was idle, and now will not be
@@ -534,10 +570,11 @@ fetchRequestDecision
   -> PeerFetchInFlightLimits
   -> PeerFetchInFlight header
   -> PeerFetchStatus
-  -> [ChainFragment header]
+  -> FetchDecision [ChainFragment header]
   -> FetchDecision (FetchRequest  header)
 
-fetchRequestDecision _ _ _ _ _ [] = Left FetchDeclineNothingToDo
+fetchRequestDecision _ _ _ _ _ (Left decline)
+                                  = Left decline
 
 fetchRequestDecision _ _ _ _ PeerFetchStatusShutdown _
                                   = Left FetchDeclinePeerShutdown
@@ -560,7 +597,7 @@ fetchRequestDecision FetchDecisionPolicy {
                        peerFetchBytesInFlight
                      }
                      peerFetchStatus
-                     fetchFragments
+                     (Right fetchFragments)
 
   | peerFetchReqsInFlight >= maxInFlightReqsPerPeer
   = Left $ FetchDeclineReqsInFlightLimit
@@ -588,6 +625,7 @@ fetchRequestDecision FetchDecisionPolicy {
     -- guaranteed to get at least one non-empty request range.
   | otherwise
   = assert (peerFetchReqsInFlight < maxInFlightReqsPerPeer) $
+    assert (not (null fetchFragments)) $
 
     Right $ selectBlocksUpToLimits
               blockFetchSize
