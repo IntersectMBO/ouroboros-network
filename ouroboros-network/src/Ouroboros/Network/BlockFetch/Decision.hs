@@ -63,6 +63,21 @@ type PeerInfo header extra =
          extra
        )
 
+type FetchDecision header = Either FetchDecline (FetchRequest header)
+
+-- | All the various reasons we can decide not to fetch blocks from a peer.
+--
+data FetchDecline =
+     FetchDeclineNothingToDo
+   | FetchDeclinePeerShutdown
+   | FetchDeclinePeerSlow
+   | FetchDeclineReqsInFlightLimit  !Word
+   | FetchDeclineBytesInFlightLimit !SizeInBytes
+   | FetchDeclinePeerBusy           !SizeInBytes !SizeInBytes !SizeInBytes
+   | FetchDeclineConcurrencyLimit   !Word
+  deriving (Eq, Show)
+
+
 fetchDecisions
   :: (HasHeader header, HasHeader block,
       HeaderHash header ~ HeaderHash block)
@@ -465,22 +480,6 @@ make earlier can affect decisions later, in particular the number of peers we
 fetch from concurrently can increase if we fetch from a new peer, and we must
 obviously take that into account when considering later peer chains.
 -}
-
-
-type FetchDecision header = Either FetchDecline (FetchRequest header)
-
-
-data FetchDecline =
-
-     -- | All the blocks have been fetched or are in-flight.
-     FetchDeclineNothingToDo
-   | FetchDeclinePeerShutdown
-   | FetchDeclinePeerSlow
-   | FetchDeclineReqsInFlightLimit  !Word
-   | FetchDeclineBytesInFlightLimit !SizeInBytes
-   | FetchDeclinePeerBusy           !SizeInBytes !SizeInBytes !SizeInBytes
-   | FetchDeclineConcurrencyLimit   !Word
-  deriving Show
 
 
 fetchRequestDecisions
