@@ -200,7 +200,7 @@ blockFetchLogic :: forall peer header block m.
                 -> m Void
 blockFetchLogic decisionTracer
                 BlockFetchConsensusInterface{..}
-                (FetchClientRegistry registry) = do
+                registry = do
 
     -- TODO: get this from elsewhere
     peerGSVs <- newTVarM Map.empty
@@ -221,28 +221,14 @@ blockFetchLogic decisionTracer
       FetchTriggerVariables {
         readStateCurrentChain    = readCurrentChain,
         readStateCandidateChains = readCandidateChains,
-        readStatePeerStatus      = readPeerStatus
+        readStatePeerStatus      = readFetchClientsStatus registry
       }
       FetchNonTriggerVariables {
         readStateFetchedBlocks = readFetchedBlocks,
-        readStatePeerStates    = readPeerStates,
+        readStatePeerStates    = readFetchClientsStates registry,
         readStatePeerGSVs      = readTVar peerGSVs,
-        readStatePeerReqVars   = readPeerReqVars,
+        readStatePeerReqVars   = readFetchClientsReqVars registry,
         readStateFetchMode     = readFetchMode
       }
   where
-    --TODO: move these next to the FetchClientRegistry
-    readPeerStatus :: STM m (Map peer PeerFetchStatus)
-    readPeerStatus =
-      readTVar registry >>= traverse (readTVar . fetchClientStatusVar)
-
-    readPeerStates :: STM m (Map peer (PeerFetchStatus, PeerFetchInFlight header))
-    readPeerStates =
-      readTVar registry >>=
-      traverse (\s -> (,) <$> readTVar (fetchClientStatusVar s)
-                          <*> readTVar (fetchClientInFlightVar s))
-
-    readPeerReqVars :: STM m (Map peer (TFetchRequestVar m header))
-    readPeerReqVars =
-      readTVar registry >>= return . Map.map fetchClientRequestVar
 

@@ -5,12 +5,17 @@
 {-# LANGUAGE TypeFamilies               #-}
 
 module Ouroboros.Network.BlockFetch.Client (
+    -- * Block fetch protocol client implementation
     blockFetchClient,
     FetchClientPolicy(..),
 
+    -- * Registry of block fetch clients
     FetchClientRegistry(..),
     newFetchClientRegistry,
     bracketFetchClient,
+    readFetchClientsStatus,
+    readFetchClientsStates,
+    readFetchClientsReqVars,
   ) where
 
 import           Data.Maybe
@@ -35,6 +40,7 @@ import           Ouroboros.Network.BlockFetch.Types
                    , PeerFetchInFlight(..), initialPeerFetchInFlight
                    , SizeInBytes
                    , FetchRequest(..)
+                   , TFetchRequestVar
                    , newTFetchRequestVar, takeTFetchRequestVar )
 import           Ouroboros.Network.BlockFetch.DeltaQ
                    ( PeerGSV(..), PeerFetchInFlightLimits(..)
@@ -342,4 +348,34 @@ bracketFetchClient (FetchClientRegistry registry) peer =
       atomically $ do
         writeTVar fetchClientStatusVar PeerFetchStatusShutdown
         modifyTVar' registry (Map.delete peer)
+
+-- | A read-only 'STM' action to get the current 'PeerFetchStatus' for all
+-- fetch clients in the 'FetchClientRegistry'.
+--
+readFetchClientsStatus :: MonadSTM m
+                       => FetchClientRegistry peer header m
+                       -> STM m (Map peer PeerFetchStatus)
+readFetchClientsStatus (FetchClientRegistry registry) =
+  readTVar registry >>= traverse (readTVar . fetchClientStatusVar)
+
+-- | A read-only 'STM' action to get the current 'PeerFetchStatus' and
+-- 'PeerFetchInFlight' for all fetch clients in the 'FetchClientRegistry'.
+--
+readFetchClientsStates :: MonadSTM m
+                       => FetchClientRegistry peer header m
+                       -> STM m (Map peer (PeerFetchStatus,
+                                           PeerFetchInFlight header))
+readFetchClientsStates (FetchClientRegistry registry) =
+  readTVar registry >>=
+  traverse (\s -> (,) <$> readTVar (fetchClientStatusVar s)
+                      <*> readTVar (fetchClientInFlightVar s))
+
+-- | A read-only 'STM' action to get the current 'TFetchRequestVar' for all
+-- fetch clients in the 'FetchClientRegistry'.
+--
+readFetchClientsReqVars :: MonadSTM m
+                        => FetchClientRegistry peer header m
+                        -> STM m (Map peer (TFetchRequestVar m header))
+readFetchClientsReqVars (FetchClientRegistry registry) =
+  readTVar registry >>= return . Map.map fetchClientRequestVar
 
