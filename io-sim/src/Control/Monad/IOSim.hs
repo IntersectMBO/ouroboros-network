@@ -443,7 +443,7 @@ data Failure =
        -- | The main thread terminated normally but other threads were still
        -- alive, and strict shutdown checking was requested.
        -- See 'runSimStrictShutdown'
-     | FailureSloppyShutdown
+     | FailureSloppyShutdown [ThreadId]
   deriving Show
 
 instance Exception Failure
@@ -470,11 +470,12 @@ runSimStrictShutdown mainAction = traceResult True (runSimTrace mainAction)
 traceResult :: Bool -> Trace a -> Either Failure a
 traceResult strict = go
   where
-    go (Trace _ _ _ t)                      = go t
-    go (TraceMainReturn _ _ (_:_)) | strict = Left FailureSloppyShutdown
-    go (TraceMainReturn _ x _)              = Right x
-    go (TraceMainException _ e _)           = Left (FailureException e)
-    go (TraceDeadlock   _   _)              = Left FailureDeadlock
+    go (Trace _ _ _ t)                  = go t
+    go (TraceMainReturn _ _ tids@(_:_))
+                               | strict = Left (FailureSloppyShutdown tids)
+    go (TraceMainReturn _ x _)          = Right x
+    go (TraceMainException _ e _)       = Left (FailureException e)
+    go (TraceDeadlock   _   _)          = Left FailureDeadlock
 
 traceEvents :: Trace a -> [(VTime, ThreadId, TraceEvent)]
 traceEvents (Trace time tid event t) = (time, tid, event) : traceEvents t
@@ -636,10 +637,10 @@ schedule thread@Thread{
     UpdateTimeout (Timeout _tvar tmid) d k -> do
           -- updating an expired timeout is a noop, so it is safe
           -- to race using a timeout with updating or cancelling it
-      let updateTimout  Nothing       = ((), Nothing)
-          updateTimout (Just (_p, v)) = ((), Just (expiry, v))
+      let updateTimeout  Nothing       = ((), Nothing)
+          updateTimeout (Just (_p, v)) = ((), Just (expiry, v))
           expiry  = d `addTime` time
-          timers' = snd (PSQ.alter updateTimout tmid timers)
+          timers' = snd (PSQ.alter updateTimeout tmid timers)
           thread' = thread { threadControl = ThreadControl k ctl }
       trace <- schedule thread' simstate { timers = timers' }
       return (Trace time tid (EventTimerUpdated tmid expiry) trace)
