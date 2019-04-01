@@ -96,6 +96,9 @@ import           Control.Tracer (Tracer)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import           Ouroboros.Network.Block
+import           Ouroboros.Network.ChainFragment (ChainFragment(..))
+import           Ouroboros.Network.DeltaQ
+                   ( PeerGSV(..), ballisticGSV, degenerateDistribution )
 
 import           Ouroboros.Network.BlockFetch.Client
 import           Ouroboros.Network.BlockFetch.State
@@ -200,17 +203,21 @@ blockFetchLogic :: forall peer header block m.
                 -> m Void
 blockFetchLogic decisionTracer
                 BlockFetchConsensusInterface{..}
-                registry = do
-
-    -- TODO: get this from elsewhere
-    peerGSVs <- newTVarM Map.empty
-
+                registry =
     fetchLogicIterations
       decisionTracer
+      fetchDecisionPolicy
+      fetchTriggerVariables
+      fetchNonTriggerVariables
+  where
+    fetchDecisionPolicy :: FetchDecisionPolicy header block
+    fetchDecisionPolicy =
       FetchDecisionPolicy {
-        -- For now, use a fixed policy.
-        -- It's unclear for the moment if this will be fixed external config
+        -- TODO: This is a protocol constant, but determined elsewhere.
+        -- It should be passed in.
         maxInFlightReqsPerPeer   = 10,
+
+        -- TODO: These should be determined by external local node config.
         maxConcurrencyBulkSync   = 2,
         maxConcurrencyDeadline   = 1,
 
@@ -218,17 +225,30 @@ blockFetchLogic decisionTracer
         compareCandidateChains,
         blockFetchSize
       }
+
+    fetchTriggerVariables :: FetchTriggerVariables peer header block m
+    fetchTriggerVariables =
       FetchTriggerVariables {
         readStateCurrentChain    = readCurrentChain,
         readStateCandidateChains = readCandidateChains,
         readStatePeerStatus      = readFetchClientsStatus registry
       }
+
+    fetchNonTriggerVariables :: FetchNonTriggerVariables peer header block m
+    fetchNonTriggerVariables =
       FetchNonTriggerVariables {
         readStateFetchedBlocks = readFetchedBlocks,
         readStatePeerStates    = readFetchClientsStates registry,
-        readStatePeerGSVs      = readTVar peerGSVs,
+        readStatePeerGSVs      = readPeerGSVs,
         readStatePeerReqVars   = readFetchClientsReqVars registry,
         readStateFetchMode     = readFetchMode
       }
-  where
+
+    -- TODO: get this from elsewhere once we have DeltaQ info available
+    readPeerGSVs = Map.map (const dummyGSVs) <$> readFetchClientsStates registry
+    -- roughly 10ms ping time and 1MBit/s bandwidth
+    -- leads to ~2200 bytes in flight minimum
+    dummyGSVs    = PeerGSV{outboundGSV, inboundGSV}
+    inboundGSV   = ballisticGSV 10e-3 10e-6 (degenerateDistribution 0)
+    outboundGSV  = inboundGSV
 
