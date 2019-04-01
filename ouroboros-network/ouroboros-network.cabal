@@ -47,6 +47,9 @@ library
                        Ouroboros.Network.Mux.Types
                        Ouroboros.Network.NodeToNode
                        Ouroboros.Network.NodeToClient
+                       Ouroboros.Network.Pipe
+                       Ouroboros.Network.Server.Socket
+                       Ouroboros.Network.Socket
                        Ouroboros.Network.Time
                        Ouroboros.Network.Protocol.ChainSync.Client
                        Ouroboros.Network.Protocol.ChainSync.Codec

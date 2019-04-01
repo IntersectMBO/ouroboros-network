@@ -3,7 +3,10 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE BangPatterns #-}
 
-module Ouroboros.Byron.Proxy.Server.Socket
+-- `accept` is shadowed, but so what?
+{-# OPTIONS_GHC "-fno-warn-name-shadowing" #-}
+
+module Ouroboros.Network.Server.Socket
   ( Accept
   , Complete
   , Main

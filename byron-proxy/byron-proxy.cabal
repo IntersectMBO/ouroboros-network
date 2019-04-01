@@ -21,8 +21,6 @@ library
                        Ouroboros.Byron.Proxy.Index.Sqlite,
                        Ouroboros.Byron.Proxy.Index.Types,
 
-                       Ouroboros.Byron.Proxy.Server.Socket,
-
                        Ouroboros.Byron.Proxy.ChainSync.Client,
                        Ouroboros.Byron.Proxy.ChainSync.Server,
                        Ouroboros.Byron.Proxy.ChainSync.Types
