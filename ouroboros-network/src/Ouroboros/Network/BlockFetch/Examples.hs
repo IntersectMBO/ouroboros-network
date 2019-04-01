@@ -97,6 +97,9 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
   where
     serverMsgTracer = nullTracer
 
+    currentChainHeaders =
+      AnchoredFragment.mapAnchoredFragment blockHeader currentChain
+
     candidateChainHeaders =
       Map.fromList $ zip [1..] $
       map (AnchoredFragment.mapAnchoredFragment blockHeader) candidateChains
@@ -110,7 +113,7 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
     blockFetch registry blockHeap =
         blockFetchLogic
           decisionTracer
-          (sampleBlockFetchPolicy1 blockHeap currentChain candidateChainHeaders)
+          (sampleBlockFetchPolicy1 blockHeap currentChainHeaders candidateChainHeaders)
           registry
         >> return ()
 
@@ -129,7 +132,7 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
 
 sampleBlockFetchPolicy1 :: (MonadSTM m, HasHeader header, HasHeader block)
                         => TestFetchedBlockHeap m block
-                        -> AnchoredFragment block
+                        -> AnchoredFragment header
                         -> Map peer (AnchoredFragment header)
                         -> BlockFetchConsensusInterface peer header block m
 sampleBlockFetchPolicy1 blockHeap currentChain candidateChains =

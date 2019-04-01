@@ -50,8 +50,8 @@ fetchLogicIterations
       HasHeader header, HasHeader block,
       HeaderHash header ~ HeaderHash block)
   => Tracer m [FetchDecision [Point header]]
-  -> FetchDecisionPolicy header block
-  -> FetchTriggerVariables peer header block m
+  -> FetchDecisionPolicy header
+  -> FetchTriggerVariables peer header m
   -> FetchNonTriggerVariables peer header block m
   -> m Void
 fetchLogicIterations decisionTracer
@@ -91,8 +91,8 @@ fetchLogicIteration
       HasHeader header, HasHeader block,
       HeaderHash header ~ HeaderHash block)
   => Tracer m [FetchDecision [Point header]]
-  -> FetchDecisionPolicy header block
-  -> FetchTriggerVariables peer header block m
+  -> FetchDecisionPolicy header
+  -> FetchTriggerVariables peer header m
   -> FetchNonTriggerVariables peer header block m
   -> FetchStateFingerprint peer header block
   -> m (FetchStateFingerprint peer header block)
@@ -148,7 +148,7 @@ fetchDecisionsForStateSnapshot
   :: (HasHeader header, HasHeader block,
       HeaderHash header ~ HeaderHash block,
       Ord peer)
-  => FetchDecisionPolicy header block
+  => FetchDecisionPolicy header
   -> FetchStateSnapshot peer header block m
   -> [( FetchDecision (FetchRequest header),
         PeerInfo header (TFetchRequestVar m header)
@@ -215,8 +215,8 @@ fetchLogicIterationAct decisions =
 -- and it is not necessary to determine exactly what changed, just that there
 -- was some change.
 --
-data FetchTriggerVariables peer header block m = FetchTriggerVariables {
-       readStateCurrentChain    :: STM m (AnchoredFragment block),
+data FetchTriggerVariables peer header m = FetchTriggerVariables {
+       readStateCurrentChain    :: STM m (AnchoredFragment header),
        readStateCandidateChains :: STM m (Map peer (AnchoredFragment header)),
        readStatePeerStatus      :: STM m (Map peer (PeerFetchStatus header))
      }
@@ -255,7 +255,7 @@ initialFetchStateFingerprint =
 -- of 'fetchStatePeerStates' and 'fetchStatePeerReqVars'.
 --
 data FetchStateSnapshot peer header block m = FetchStateSnapshot {
-       fetchStateCurrentChain  :: AnchoredFragment block,
+       fetchStateCurrentChain  :: AnchoredFragment header,
        fetchStatePeerChains    :: Map peer (AnchoredFragment header),
        fetchStatePeerStates    :: Map peer (PeerFetchStatus   header,
                                             PeerFetchInFlight header),
@@ -265,9 +265,10 @@ data FetchStateSnapshot peer header block m = FetchStateSnapshot {
        fetchStateFetchMode     :: FetchMode
      }
 
-readStateVariables :: (MonadSTM m, Eq peer, Eq (Point header),
-                       HasHeader header, HasHeader block)
-                   => FetchTriggerVariables peer header block m
+readStateVariables :: (MonadSTM m, Eq peer,
+                       HasHeader header, HasHeader block,
+                       HeaderHash header ~ HeaderHash block)
+                   => FetchTriggerVariables peer header m
                    -> FetchNonTriggerVariables peer header block m
                    -> FetchStateFingerprint peer header block
                    -> STM m (FetchStateSnapshot peer header block m,
@@ -284,7 +285,7 @@ readStateVariables FetchTriggerVariables{..}
     -- Construct the change detection fingerprint
     let fetchStateFingerprint' =
           FetchStateFingerprint
-            (Just (AnchoredFragment.headPoint fetchStateCurrentChain))
+            (Just (castPoint (AnchoredFragment.headPoint fetchStateCurrentChain)))
             (Map.map AnchoredFragment.headPoint fetchStatePeerChains)
             fetchStatePeerStatus
 

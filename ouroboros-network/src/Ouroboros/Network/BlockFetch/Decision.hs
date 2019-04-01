@@ -44,13 +44,13 @@ import           Ouroboros.Network.BlockFetch.DeltaQ
                    , calculatePeerFetchInFlightLimits )
 
 
-data FetchDecisionPolicy header block = FetchDecisionPolicy {
+data FetchDecisionPolicy header = FetchDecisionPolicy {
        maxInFlightReqsPerPeer  :: Word,  -- A protocol constant.
 
        maxConcurrencyBulkSync  :: Word,
        maxConcurrencyDeadline  :: Word,
 
-       plausibleCandidateChain :: AnchoredFragment block
+       plausibleCandidateChain :: AnchoredFragment header
                                -> AnchoredFragment header -> Bool,
 
        compareCandidateChains  :: AnchoredFragment header
@@ -120,9 +120,9 @@ type CandidateFragments header = (ChainSuffix header, [ChainFragment header])
 fetchDecisions
   :: (HasHeader header, HasHeader block,
       HeaderHash header ~ HeaderHash block)
-  => FetchDecisionPolicy header block
+  => FetchDecisionPolicy header
   -> FetchMode
-  -> AnchoredFragment block
+  -> AnchoredFragment header
   -> (Point block -> Bool)
   -> [(AnchoredFragment header, PeerInfo header extra)]
   -> [(FetchDecision (FetchRequest header), PeerInfo header extra)]
@@ -559,7 +559,7 @@ obviously take that into account when considering later peer chains.
 
 fetchRequestDecisions
   :: HasHeader header
-  => FetchDecisionPolicy header block
+  => FetchDecisionPolicy header
   -> FetchMode
   -> [(FetchDecision [ChainFragment header], PeerFetchStatus header,
                                              PeerFetchInFlight header,
@@ -602,7 +602,7 @@ fetchRequestDecisions fetchDecisionPolicy fetchMode chains =
 
 fetchRequestDecision
   :: HasHeader header
-  => FetchDecisionPolicy header block
+  => FetchDecisionPolicy header
   -> FetchMode
   -> Word
   -> PeerFetchInFlightLimits
