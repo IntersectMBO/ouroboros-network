@@ -97,6 +97,7 @@ tests = testGroup "ChainFragment"
   , testProperty "successorBlock"                            prop_successorBlock
   , testProperty "lookupBySlot"                              prop_lookupBySlot
   , testProperty "intersectChainFragments"                   prop_intersectChainFragments
+  , testProperty "intersectionPoint"                         prop_intersectionPoint
   , testProperty "serialise chain"                           prop_serialise_chain
   , testProperty "slotOnChainFragment"                       prop_slotOnChainFragment
   , testProperty "pointOnChainFragment"                      prop_pointOnChainFragment
@@ -239,6 +240,15 @@ prop_intersectChainFragments (TestChainFragmentFork origL1 origL2 c1 c2) =
       CF.headPoint l1 == CF.headPoint l2 &&
       CF.joinChainFragments l1 r1 == Just c1 &&
       CF.joinChainFragments l2 r2 == Just c2
+
+prop_intersectionPoint :: TestChainFragmentFork -> Bool
+prop_intersectionPoint (TestChainFragmentFork origL1 origL2 c1 c2) =
+  case CF.intersectionPoint c1 c2 of
+    Nothing -> (CF.null origL1 || CF.null origL2)
+            && L.intersect (CF.toNewestFirst c1) (CF.toNewestFirst c2) == []
+    Just iPoint ->
+      CF.headPoint origL1 == Just iPoint &&
+      CF.headPoint origL2 == Just iPoint
 
 prop_serialise_chain :: TestBlockChainFragment -> Property
 prop_serialise_chain (TestBlockChainFragment chain) =

@@ -65,6 +65,7 @@ module Ouroboros.Network.ChainFragment (
   selectPoints,
   findFirstPoint,
   intersectChainFragments,
+  intersectionPoint,
   isPrefixOf,
   joinChainFragments,
 
@@ -669,6 +670,26 @@ intersectChainFragments initC1 initC2 =
                     -- since p comes out of initC2
                     = Just (l1, l2, r1, r2)
       | otherwise   = go c1 c2
+
+-- | \( O(n_2 \log(n_1)) \). Variant of 'intersectChainFragments' that returns
+-- the intersection point, i.e. the last 'Point' the two chain fragments have
+-- in common.
+--
+-- In the example shown in 'intersectChainFragments', this would be the
+-- 'Point' corresponding to block 5.
+intersectionPoint
+  :: (HasHeader block1, HasHeader block2, HeaderHash block1 ~ HeaderHash block2)
+  => ChainFragment block1
+  -> ChainFragment block2
+  -> Maybe (Point block1)
+intersectionPoint c1 c2
+    | Just (c1', _, _, _) <- intersectChainFragments c1 c2
+    = Just $ fromMaybe (error msg) $ headPoint c1'
+    | otherwise
+    = Nothing
+  where
+    msg = "intersectChainFragments found an intersection in an empty chain"
+
 
 -- This is the key operation on chains in this model
 applyChainUpdate :: HasHeader block
