@@ -7,6 +7,8 @@
 
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
+import qualified Codec.CBOR.Write as CBOR (toStrictByteString)
+import Codec.Serialise (Serialise (..), deserialiseOrFail)
 
 import Control.Concurrent (myThreadId, threadDelay)
 import Control.Concurrent.Async (concurrently, withAsync)
@@ -18,9 +20,12 @@ import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Resource (ResourceT, runResourceT)
 import qualified Data.ByteString.Lazy as Lazy (ByteString, fromStrict)
+import qualified Data.ByteString.Lazy.Char8 as Lazy (pack)
+import Data.Either (either)
 import Data.Functor.Contravariant (Op (..), contramap)
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
+import qualified Data.Map as Map (fromList)
 import Data.Maybe (fromMaybe)
 import Data.Text (Text, pack)
 import qualified Data.Text as Text
@@ -72,6 +77,10 @@ import qualified Ouroboros.Network.Server.Socket as Server
 import qualified Ouroboros.Network.Protocol.ChainSync.Server as ChainSync
 import qualified Ouroboros.Byron.Proxy.ChainSync.Server as Server
 import qualified Ouroboros.Byron.Proxy.ChainSync.Types as ChainSync
+
+import Ouroboros.Network.Server.Version (Application (..), Dict (..), Version (..), Versions (..), Sigma (..))
+import Ouroboros.Network.Server.Version.Protocol (serverPeerFromVersions)
+import qualified Ouroboros.Network.Server.Version.CBOR as Version
 
 import qualified Ouroboros.Byron.Proxy.DB as DB
 import qualified Ouroboros.Byron.Proxy.Index.Sqlite as Index
@@ -199,44 +208,101 @@ chainSyncServer usPoll = Server.chainSyncServer err poll
       Nothing -> lift (threadDelay usPoll) >> poll p m
       Just t  -> pure t
 
--- | Run a chain sync server over a UNIX domain socket.
--- Accepts at most one connection at a time, for simplicity.
+versions
+  :: Int
+  -> DB.DB IO
+  -> Versions Version.Number (Dict Serialise) (Channel IO Lazy.ByteString -> IO ())
+versions usPoll db = Versions $ Map.fromList
+  [ (0, version0)
+  , (1, version1 usPoll db)
+  ]
+
+version0 :: Sigma (Version (Dict Serialise) (Channel IO Lazy.ByteString -> IO ()))
+version0 = Sigma (42 :: Int) $ Version
+  { versionExtra = Dict
+  , versionApplication = application0
+  }
+
+application0 :: Application (anything -> IO ()) Int
+application0 = Application $ \_localData remoteData _channel ->
+  putStrLn $ mconcat
+    [ "Version 0. Remote data is "
+    , show remoteData
+    ]
+
+application1
+  :: Int
+  -> DB.DB IO
+  -> Application (Channel IO Lazy.ByteString -> IO ()) Lazy.ByteString
+application1 usPoll db = Application $ \_localData remoteData channel -> do
+  putStrLn $ mconcat
+    [ "Version 1. Remote data is "
+    , show remoteData
+    ]
+  let peer = ChainSync.chainSyncServerPeer (chainSyncServer usPoll db)
+      -- `peer` is in ResourceT`, so we must hoist channel and codec into
+      -- `ResourceT`
+      inResourceT :: forall x . IO x -> ResourceT IO x
+      inResourceT = liftIO
+      codec' = hoistCodec inResourceT ChainSync.codec
+      channel' = hoistChannel inResourceT channel
+  (runResourceT $ runPeer nullTracer codec' channel' peer) `catch` (\(e :: SomeException) -> do
+    putStrLn $ mconcat
+      [ "Version 1 connection from terminated with exception "
+      , show e
+      ]
+    throwIO e
+    )
+  putStrLn $ mconcat
+    [ "Version 1 connection from terminated normally"
+    ]
+
+version1
+  :: Int
+  -> DB.DB IO
+  -> Sigma (Version (Dict Serialise) (Channel IO Lazy.ByteString -> IO ()))
+version1 usPoll db = Sigma (Lazy.pack "server version data here") $ Version
+  { versionExtra = Dict
+  , versionApplication = application1 usPoll db
+  }
+
+encodeBlob :: Dict Serialise t -> t -> Version.Blob
+encodeBlob Dict = CBOR.toStrictByteString . encode
+
+decodeBlob :: Dict Serialise t -> Version.Blob -> Maybe t
+decodeBlob Dict = either (const Nothing) Just . deserialiseOrFail . Lazy.fromStrict
+
+-- | Run a chain sync server over a socket.
 --
 -- The `STM ()` is for normal shutdown. When it returns, the server stops.
 -- So, for instance, use `STM.retry` to never stop (until killed).
-runChainSyncServer :: STM () -> Int -> DB.DB IO -> IO ()
-runChainSyncServer closeTx usPoll db = bracket mkSocket Socket.close $ \socket -> do
+runVersionedServer :: STM () -> Int -> DB.DB IO -> IO ()
+runVersionedServer closeTx usPoll db = bracket mkSocket Socket.close $ \socket ->
   Server.run (fromSocket socket) throwIO accept complete serverMain ()
   where
   -- New connections are always accepted. The channel is used to run the
-  -- chain sync server. Some stdout printing is done just to help you see
-  -- what's going on.
+  -- version negotiation protocol determined by `versions`. Some stdout
+  -- printing is done just to help you see what's going on.
   accept sockAddr _st = pure $ Server.accept $ \channel -> do
-    let peer = ChainSync.chainSyncServerPeer (chainSyncServer usPoll db)
-        -- `peer` is in ResourceT`, so we must hoist channel and codec into
-        -- `ResourceT`
-        inResourceT :: forall x . IO x -> ResourceT IO x
-        inResourceT = liftIO
-        codec' = hoistCodec inResourceT ChainSync.codec
-        channel' = hoistChannel inResourceT channel
     putStrLn $ mconcat
       [ "Got connection from "
       , show sockAddr
       ]
-    (runResourceT $ runPeer nullTracer codec' channel' peer) `catch` (\(e :: SomeException) -> do
+    let versionServer = serverPeerFromVersions encodeBlob decodeBlob (versions usPoll db)
+    mbVersion <- runPeer nullTracer Version.codec channel versionServer `catch` (\(e :: SomeException) -> do
       putStrLn $ mconcat
-        [ "Connection from "
+        [ "Exception during version negotation with "
         , show sockAddr
-        , " terminated with exception "
+        , ": "
         , show e
         ]
-      throwIO e
-      )
-    putStrLn $ mconcat
-      [ "Connection from "
-      , show sockAddr
-      , " terminated normally"
-      ]
+      throwIO e)
+    case mbVersion of
+      Nothing -> putStrLn $ mconcat
+        [ "No compatible versions with "
+        , show sockAddr
+        ]
+      Just k -> k channel
   -- When a connection completes, we do nothing. State is ().
   -- Crucially: we don't re-throw exceptions, because doing so would
   -- bring down the server.
@@ -444,7 +510,7 @@ main = withCompileInfo $ do
             _ -> pure ()
           withByronProxy bpc db $ \bp -> do
             let usPoll = 1000000 -- microseconds
-                chainSyncThread = runChainSyncServer (readTMVar closeVar) usPoll db
+                shelleyThread = runVersionedServer (readTMVar closeVar) usPoll db
                 byronThread =
                   if bpoNoDownload options
                   then pure ()
@@ -455,10 +521,10 @@ main = withCompileInfo $ do
             -- The chain sync thread will stop when the user interrupt kills
             -- the TMVar, so we can put them `concurrently`.
             -- Could also do
-            --   it <- race byronThread (concurrently chainSyncThread userInterrupt)
+            --   it <- race byronThread (concurrently shelleyThread userInterrupt)
             --   case it of
             --     Left impossible -> impossible
             --     Right _ -> pure ()
             _ <- withAsync byronThread $ \_ ->
-              concurrently chainSyncThread userInterrupt
+              concurrently shelleyThread userInterrupt
             pure ()
