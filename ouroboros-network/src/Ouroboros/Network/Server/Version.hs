@@ -25,22 +25,12 @@ import Data.Typeable ((:~:)(Refl), Typeable, eqT)
 --   (peculiar to that version, existentially-quantified) to some result
 --   type (called `r` in this module).
 -- - A version-numbering scheme, and the set of supported versions, is
---   defined simultaneously by a `Map` keyed on `Wird32`. The `Sigma`
---   GADT pairs the particular version data with each version definition.
+--   defined simultaneously by a `Map` keyed on something, perhaps `Word32` in
+--   a real-world instance. The `Sigma` GADT pairs the particular version data
+--   with each version definition.
 
 -- | The set of versions supported by the local agent are described by a map
--- keyed on the version identifier (32 bits).
---
--- TODO may be best to use
---
---   Map Word32 (Sigma (Pair (Version r) extra))
---
--- and have generic stuff work `forall extra`. It expresses the idea that
--- the `Map Word32 (Sigma (Version r))` is the bare-minimum, but there can
--- be extra stuff for particular implementations (like a codec).
---
--- Ideally that `Typeable` could be brought out, given a suitable
--- generalization. 
+-- keyed on the version identifier.
 newtype Versions vNum extra r = Versions
   { getVersions :: Map vNum (Sigma (Version extra r))
   }
@@ -65,10 +55,7 @@ data VersionMismatch vNum where
 data Dict constraint thing where
   Dict :: constraint thing => Dict constraint thing
 
--- Problem: at what point to we give the _actual_ extra data? It has to be
--- in the map itself, under the `Sigma`
-
--- | Pick the version with the highest version number (`Ord Word32`) common
+-- | Pick the version with the highest version number (by `Ord vNum`) common
 -- in both maps.
 --
 -- This is a useful guide for comparison with a version negotiation scheme for

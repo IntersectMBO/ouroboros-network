@@ -27,6 +27,40 @@ import qualified Codec.CBOR.Read as CBOR
 import qualified Data.ByteString.Lazy as Lazy (ByteString)
 import Ouroboros.Network.Codec (Codec, SomeMessage (..), mkCodecCborLazyBS)
 
+-- FIXME
+-- This is just an MVP draft alpha sort of thing. It does not deal properly
+-- with a case in which client and server have a different newest version.
+-- What are the options?
+-- - Send all of the supported versions. Then the server can definitely say
+--   what is the newest common version.
+--   This isn't good because as we add more versions we front-load the protocol
+--   even though it will almost always be a waste.
+-- - Allow the negotiation to carry on in a loop. If the first one is not
+--   known to the server, the server can counter-offer, and if the
+--   counter-offer is not known to the client, the client can counter-offer.
+-- A failure to decode a blob is always an end-of-protocol. It means they
+-- agree on the number but have different definitions for that version, which
+-- is simply an incompatibility.
+-- What we want is a flipping of the same thing:
+--
+--   Offer >-> Accept
+--         >-> Reject
+--         >-> Counter-Offer >-> Accept
+--                           >-> Reject
+--                           >-> <recurse>
+--
+-- In the best case, the client can exit the version negotiation successfully
+-- after 1 round-trip: send the offer, receive the accept. It can then send
+-- its accept confirmation and eagerly start on the actual application. The
+-- server must wait for the accept. But that's fine. Presumably it would
+-- have to wait for the client anyway, as the client/server nomenclature
+-- suggests.
+--
+-- We can also dump the "hopeless" transitions, if we use a `Versions` type
+-- which is always non-empty, by putting a "principal" version (newest)
+-- alongside a possibly empty map of older versions. When we recurse, we can
+-- use `maxView` on the map to get a smaller `Versions` type.
+
 -- | State type is also used as a key on the Protocol typeclass.
 -- So even though the `vNumber` parameter has nothing at all to do with the
 -- state types, we have to put it here.
