@@ -108,6 +108,7 @@ tests = testGroup "ChainFragment"
   , testProperty "splitBeforePoint"                          prop_splitBeforePoint
   , testProperty "prop_sliceRange"                           prop_sliceRange
   , testProperty "foldChainFragment"                         prop_foldChainFragment
+  , testProperty "(:<)"                                      prop_prepend
   ]
 
 --
@@ -360,6 +361,11 @@ prop_selectPoints (TestBlockChainFragment c) =
     CF.selectPoints [1,1]   c === CF.selectPointsSpec [1,1]   c
   where
     offsets = [0,1,2,3,5,8,13,21,34,55,89,144,233,377,610,987,1597,2584]
+
+prop_prepend :: TestBlockChainFragment -> Bool
+prop_prepend (TestBlockChainFragment c) = case c of
+    Empty      -> True
+    b CF.:< c' -> CF.valid (b CF.:< c')
 
 
 --
