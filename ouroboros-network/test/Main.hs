@@ -2,6 +2,7 @@ module Main (main) where
 
 import           Test.Tasty
 
+import qualified Test.AnchoredFragment (tests)
 import qualified Test.ChainGenerators (tests)
 import qualified Test.Chain (tests)
 import qualified Test.ChainFragment (tests)
@@ -21,7 +22,8 @@ main = defaultMain tests
 tests :: TestTree
 tests =
   testGroup "ouroboros-network"
-  [ Test.ChainGenerators.tests
+  [ Test.AnchoredFragment.tests
+  , Test.ChainGenerators.tests
   , Test.Chain.tests
   , Test.ChainFragment.tests
   , Test.ChainProducerState.tests

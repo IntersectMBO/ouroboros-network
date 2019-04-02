@@ -8,7 +8,9 @@ module Test.ChainFragment
   ( tests
   , TestBlockChainFragmentAndUpdates(..)
   , TestBlockChainFragment(..)
+  , TestChainFragmentAndPoint (..)
   , TestChainFragmentFork(..)
+  , TestAddBlock(..)
   , mkRollbackPoint
   , genBlockChainFragment
   , genHeaderChainFragment
