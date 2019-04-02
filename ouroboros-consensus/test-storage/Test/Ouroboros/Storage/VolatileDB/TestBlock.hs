@@ -17,6 +17,8 @@ import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map.Strict as M
 import           Data.Serialize
+import           Data.Set (Set)
+import qualified Data.Set as Set
 import           Data.Word (Word64)
 import qualified System.IO as IO
 import           Test.QuickCheck
@@ -32,31 +34,34 @@ import           Ouroboros.Storage.VolatileDB
 import qualified Ouroboros.Storage.VolatileDB.Impl as Internal hiding (openDB)
 
 type BlockId = Word
+type SerialMagic = Int
+type Predecessor = BlockId
+type BlockInfo = (BlockId, Predecessor)
 
-type TestBlock = (Word, Int)
+type TestBlock = (BlockId, Predecessor, SerialMagic)
 
-toBinary :: BlockId -> BL.ByteString
+toBinary :: (BlockId, BlockId) -> BL.ByteString
 toBinary = Binary.encode . toBlock
 
-fromBinary :: BS.ByteString -> Either String BlockId
+fromBinary :: BS.ByteString -> Either String BlockInfo
 fromBinary bs = do
     block <- decode bs
     case block of
-        (bid, 1 :: Int) -> Right bid
-        _               -> Left "wrong payload"
+        (bid, predb, 1 :: SerialMagic) -> Right (bid, predb)
+        _                              -> Left "wrong payload"
 
 toSlot :: BlockId -> SlotNo
 toSlot = SlotNo . fromIntegral
 
-toBlock :: BlockId -> TestBlock
-toBlock bid = (bid, 1)
+toBlock :: BlockInfo -> TestBlock
+toBlock (b, pb) = (b, pb, 1)
 
-fromBlock :: TestBlock -> BlockId
-fromBlock (bid, 1) = bid
-fromBlock _        = error "wrong payload"
+fromBlock :: TestBlock -> BlockInfo
+fromBlock (bid, pbid, 1) = (bid, pbid)
+fromBlock _              = error "wrong payload"
 
 binarySize :: Int
-binarySize = 16
+binarySize = 24
 
 myParser :: (Monad m, MonadThrow m)
          => HasFS m h
@@ -70,26 +75,26 @@ parseImpl :: forall m h. (Monad m, MonadThrow m)
           => HasFS m h
           -> ErrorHandling (VolatileDBError BlockId) m
           -> FsPath
-          -> m ([(SlotOffset, (BlockSize, BlockId))], Maybe (ParserError BlockId))
+          -> m ([(SlotOffset, (BlockSize, BlockId, BlockId))], Maybe (ParserError BlockId))
 parseImpl hasFS@HasFS{..} _err path =
     withFile hasFS path IO.ReadMode $ \hndl -> do
-        let go :: M.Map Word64 (Word64, BlockId)
+        let go :: M.Map SlotOffset (Word64, BlockId, BlockId)
                -> Word64
                -> Int
-               -> [BlockId]
-               -> m ([(SlotOffset, (BlockSize, BlockId))], Maybe (ParserError BlockId))
+               -> Set BlockId
+               -> m ([(SlotOffset, (BlockSize, BlockId, BlockId))], Maybe (ParserError BlockId))
             go mp n trials bids = do
                 bs <- hGet hndl binarySize
                 if BS.length bs == 0 then return (M.toList mp, Nothing)
                 else case fromBinary bs of
                     Left str ->
                         return (M.toList mp, Just $ DecodeFailed str (fromIntegral $ BS.length bs))
-                    Right bid ->
-                        if elem bid bids
+                    Right (bid, prebid) ->
+                        if Set.member bid bids
                         then return (M.toList mp, Just $ DuplicatedSlot $ M.singleton bid (path, path))
-                        else let mp' = M.insert n (fromIntegral binarySize, bid) mp
-                            in go mp' (n + fromIntegral binarySize) (trials + 1) (bid : bids)
-        go M.empty 0 0 []
+                        else let mp' = M.insert n (fromIntegral binarySize, bid, prebid) mp
+                            in go mp' (n + fromIntegral binarySize) (trials + 1) (Set.insert bid bids)
+        go M.empty 0 0 Set.empty
 
 
 {-------------------------------------------------------------------------------

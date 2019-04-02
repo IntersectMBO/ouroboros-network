@@ -12,6 +12,7 @@ import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe (fromMaybe)
 import           Data.Set (Set)
+import qualified Data.Set as Set
 import qualified Data.Text as T
 import           Data.Word (Word64)
 import           Text.Read (readMaybe)
@@ -76,6 +77,47 @@ findLastFd files = foldM go Nothing files
 
 filePath :: FileId -> String
 filePath fd = "blocks-" ++ show fd ++ ".dat"
+
+forth :: (a,b,c,d) -> d
+forth (_, _, _, d) = d
+
+third :: (a,b,c) -> c
+third (_,_,c) = c
+
+firstTwo :: (a,b,c) -> (a,b)
+firstTwo (a,b,_) = (a,b)
+
+{------------------------------------------------------------------------------
+  Map of Set operations
+------------------------------------------------------------------------------}
+
+alterfInsert :: Ord blockId
+             => blockId
+             -> Maybe (Set blockId)
+             -> Maybe (Set blockId)
+alterfInsert successor mSet = case mSet of
+    Nothing  -> Just $ Set.singleton successor
+    Just set -> Just $ Set.insert successor set
+
+insertMapSet :: Ord blockId
+             => SuccessorsIndex blockId
+             -> (blockId, blockId)
+             -> SuccessorsIndex blockId
+insertMapSet mapSet (bid, pbid) = Map.alter (alterfInsert bid) pbid mapSet
+
+alterfDelete :: Ord blockId
+             => blockId
+             -> Maybe (Set blockId)
+             -> Maybe (Set blockId)
+alterfDelete successor mSet = case mSet of
+    Nothing  -> Nothing
+    Just set -> Just $ Set.delete successor set
+
+deleteMapSet :: Ord blockId
+             => SuccessorsIndex blockId
+             -> (blockId, blockId)
+             -> SuccessorsIndex blockId
+deleteMapSet mapSet (bid, pbid) = Map.alter (alterfDelete bid) pbid mapSet
 
 {------------------------------------------------------------------------------
   Comparing utilities

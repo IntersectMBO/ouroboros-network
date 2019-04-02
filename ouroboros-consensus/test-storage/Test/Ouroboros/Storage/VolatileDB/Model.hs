@@ -26,6 +26,7 @@ import           Data.List (sortOn, splitAt, uncons)
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe (fromMaybe, isNothing)
+import           Data.Set (Set)
 import qualified Data.Set as Set
 import           GHC.Stack.Types
 
@@ -45,10 +46,10 @@ data DBModel blockId = DBModel {
     , open           :: Bool -- is the db open.
     , mp             :: Map blockId ByteString -- superset of blocks in db. Some of them may be gced already.
     , latestGarbaged :: Maybe SlotNo -- last gced slot.
-    , index          :: Map String (Maybe SlotNo, Int, [blockId]) -- what each file contains in the real impl.
+    , index          :: Map String (Maybe SlotNo, Int, [(blockId, blockId)]) -- what each file contains in the real impl.
     , currentFile    :: String -- the current open file. If the db is empty this is the next it wil write.
     , nextFId        :: FileId -- the next file id.
-    } deriving (Show)
+    } deriving Show
 
 initDBModel ::Int -> DBModel blockId
 initDBModel bpf = DBModel {
@@ -92,6 +93,7 @@ openDBModel err maxNumPerFile toSlot = (dbModel, db)
             , garbageCollect = garbageCollectModel err
             , getIsMember    = getIsMemberModel err
             , getBlockIds    = getBlockIdsModel err
+            , getSuccessors  = getSuccessorsModel err
         }
 
 closeDBModel :: MonadState (MyState blockId) m => m ()
@@ -129,9 +131,10 @@ putBlockModel :: MonadState (MyState blockId) m
               -> Int
               -> (blockId -> SlotNo)
               -> blockId
+              -> blockId
               -> Builder
               -> m ()
-putBlockModel err maxNumPerFile toSlot bid bs = do
+putBlockModel err maxNumPerFile toSlot bid bidPred bs = do
     -- This depends on the exact sequence of the operations in the real Impl.
     -- If anything changes there, then this wil also need change.
     let managesToPut errors = do
@@ -158,7 +161,7 @@ putBlockModel err maxNumPerFile toSlot bid bs = do
                         (error "current file does not exist in index")
                         (Map.lookup currentFile index)
                     n' = n + 1
-                    index' = Map.insert currentFile (updateSlotNoBlockId mbid [toSlot bid], n', bid:bids) index
+                    index' = Map.insert currentFile (updateSlotNoBlockId mbid [toSlot bid], n', (bid, bidPred):bids) index
                     (currentFile', index'', nextFId') =
                         if n' == maxNumPerFile
                         then ( Internal.filePath nextFId
@@ -169,7 +172,12 @@ putBlockModel err maxNumPerFile toSlot bid bs = do
                         else ( currentFile
                             , index'
                             , nextFId)
-                putDB dbm {mp = mp', index = index'', currentFile = currentFile', nextFId = nextFId'}
+                putDB dbm {
+                      mp = mp'
+                    , index = index''
+                    , currentFile = currentFile'
+                    , nextFId = nextFId'
+                    }
 
 garbageCollectModel :: forall m blockId
                      . MonadState (MyState blockId) m
@@ -191,7 +199,7 @@ garbageCollectModel err sl = do
                 Nothing   -> []
                 Just cErr -> getStream . _removeFile $ cErr
         let f :: [Maybe FsErrorType]
-              -> (String, (Maybe SlotNo, Int, [blockId]))
+              -> (String, (Maybe SlotNo, Int, [(blockId, blockId)]))
               -> m [Maybe FsErrorType]
             f fsErr (path, (msl,_n,_bids)) = case (cmpMaybe msl sl, path == currentFile, tru, fsErr) of
                     (True, _, _, _) -> return fsErr
@@ -221,7 +229,7 @@ garbageCollectModel err sl = do
                             , fsLimitation = False
                         }
         -- This depends on the exact sequence of the operations in the real Impl.
-        -- If anything changes there, then this wil also need change.
+        -- If anything changes there, then this will also need change.
         _ <- foldM f remLs (sortOn (unsafeParseFd . fst) $ Map.toList index)
         return ()
 
@@ -232,11 +240,24 @@ getBlockIdsModel :: forall m blockId
 getBlockIdsModel err = do
     DBModel {..} <- getDB
     if not open then EH.throwError err ClosedDBError
-    else return $ concat $ (\(_,(_, _, bs)) -> bs) <$> (Map.toList $ index)
-     
+    else return $ concat $ (\(_,(_, _, bs)) -> fst <$> bs) <$> (Map.toList $ index)
+
+getSuccessorsModel :: forall m blockId
+                   . MonadState (MyState blockId) m
+                   => Ord blockId
+                       => ErrorHandling (VolatileDBError blockId) m
+                   -> blockId
+                   -> m (Set blockId)
+getSuccessorsModel err bid = do
+    DBModel {..} <- getDB
+    if not open then EH.throwError err ClosedDBError
+    else return $
+        Set.fromList $ fst <$> filter (\(_b,pb) -> pb == bid) (concat $ third <$> Map.elems index)
 
 modifyIndex :: MonadState (MyState blockId) m
-            => (Map String (Maybe SlotNo, Int, [blockId]) -> Map String (Maybe SlotNo, Int, [blockId]))
+            => (Map String (Maybe SlotNo, Int, [(blockId, blockId)])
+                  -> Map String (Maybe SlotNo, Int, [(blockId, blockId)])
+               )
             -> m ()
 modifyIndex f = do
     dbm@DBModel {..} <- getDB
@@ -264,7 +285,7 @@ runCorruptionModel toSlot corrs = do
                         (_, _, bids) = fromMaybe
                             (error "tried to corrupt a file which does not exist")
                             (Map.lookup file (index dbm))
-                        mp' = Map.withoutKeys (mp dbm) (Set.fromList bids)
+                        mp' = Map.withoutKeys (mp dbm) (Set.fromList $ fst <$> bids)
                         index' = Map.delete file (index dbm)
                 DropLastBytes n ->
                     dbm { mp = mp'
@@ -285,10 +306,10 @@ runCorruptionModel toSlot corrs = do
                         -- we prepend on list of blockIds, so last bytes
                         -- are actually at the head of the list.
                         (droppedBids, newBids) = splitAt (fromIntegral dropBids) bids
-                        newMmax = snd <$> maxSlotList toSlot newBids
+                        newMmax = snd <$> maxSlotList toSlot (fst <$> newBids)
                         size' = size - fromIntegral (length droppedBids)
                         index' = Map.insert file (newMmax, size', newBids) (index dbm)
-                        mp' = Map.withoutKeys (mp dbm) (Set.fromList droppedBids)
+                        mp' = Map.withoutKeys (mp dbm) (Set.fromList $ fst <$> droppedBids)
                         parseError' = if (fromIntegral binarySize)*(length droppedBids) > fromIntegral n
                                          && not (mod n (fromIntegral binarySize) == 0)
                                          && isNothing (parseError dbm)
@@ -308,7 +329,9 @@ createFileModel = do
     dbm <- getDB
     let currentFile' = filePath $ nextFId dbm
     let index' = Map.insert currentFile' newFileInfo (index dbm)
-    putDB dbm {index = index', nextFId = (nextFId dbm) + 1, currentFile = currentFile'}
+    putDB dbm { index = index'
+              , nextFId = (nextFId dbm) + 1
+              , currentFile = currentFile'}
 
 createInvalidFileModel :: forall blockId m. MonadState (MyState blockId) m
                        => String
