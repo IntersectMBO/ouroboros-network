@@ -83,11 +83,11 @@ testBlockIsEBB TestEBB   {} = True
 
 -- | The binary representation of 'TestBlock' consists of repeating its 'SlotNo'
 -- @n@ times, where @n = 'testBlockSize'@.
-testBlockRepeat :: Word
+testBlockRepeat :: Word64
 testBlockRepeat = 9
 
 -- | The number of bytes the binary representation 'TestBlock' takes up.
-testBlockSize :: Word
+testBlockSize :: Word64
 testBlockSize = 8 + testBlockRepeat * 8
 
 -- | The encoding is as follows:
@@ -193,7 +193,7 @@ binaryEpochFileParser hasFS@HasFS{..} isEBB getHash = EpochFileParser $ \fsPath 
 -- | We use 'TestBlock' as the @hash@.
 testBlockEpochFileParser' :: MonadThrow m
                           => HasFS m h
-                          -> EpochFileParser String TestBlock m (Word, SlotNo)
+                          -> EpochFileParser String TestBlock m (Word64, SlotNo)
 testBlockEpochFileParser' hasFS = (\tb -> (testBlockSize, tbSlot tb)) <$>
     binaryEpochFileParser hasFS testBlockIsEBB id
 

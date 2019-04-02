@@ -145,14 +145,14 @@ readIncremental hasFS@HasFS{..} fp = withLiftST $ \liftST -> do
 
 -- | Read multiple @a@s incrementally from a file.
 --
--- Return the offset ('Word64') of the start of each @a@ and the size ('Word')
+-- Return the offset ('Word64') of the start of each @a@ and the size ('Word64')
 -- of each @a@. When deserialising fails, return all already deserialised @a@s
 -- and the error.
 readIncrementalOffsets :: forall m h a. (MonadST m, MonadThrow m)
                        => HasFS m h
                        -> (forall s . CBOR.Decoder s a)
                        -> FsPath
-                       -> m ([(Word64, (Word, a))], Maybe ReadIncrementalErr)
+                       -> m ([(Word64, (Word64, a))], Maybe ReadIncrementalErr)
                           -- ^ ((the offset of the start of @a@ in the file,
                           --     (the size of @a@ in bytes,
                           --      @a@ itself)),
@@ -163,11 +163,11 @@ readIncrementalOffsets hasFS@HasFS{..} decoder fp = withLiftST $ \liftST ->
   where
     go :: (forall x. ST s x -> m x)
        -> h
-       -> Word64                -- ^ Offset
-       -> [(Word64, (Word, a))] -- ^ Already deserialised (reverse order)
-       -> Maybe ByteString      -- ^ Unconsumed bytes from last time
+       -> Word64                  -- ^ Offset
+       -> [(Word64, (Word64, a))] -- ^ Already deserialised (reverse order)
+       -> Maybe ByteString        -- ^ Unconsumed bytes from last time
        -> S.IDecode s a
-       -> m ([(Word64, (Word, a))], Maybe ReadIncrementalErr)
+       -> m ([(Word64, (Word64, a))], Maybe ReadIncrementalErr)
     go liftST h offset deserialised mbUnconsumed dec = case dec of
       S.Partial k -> do
         -- First use the unconsumed bytes from a previous read before read
@@ -195,7 +195,7 @@ readIncrementalOffsets hasFS@HasFS{..} decoder fp = withLiftST $ \liftST ->
 
 -- | Read multiple @a@s incrementally from a file.
 --
--- Return the offset ('Word64') of the start of each @a@ and the size ('Word')
+-- Return the offset ('Word64') of the start of each @a@ and the size ('Word64')
 -- of each @a@. When deserialising fails, return all already deserialised @a@s
 -- and the error.
 --
@@ -209,7 +209,7 @@ readIncrementalOffsetsEBB :: forall m hash h a. (MonadST m, MonadThrow m)
                               -- ^ In case the given @a@ is an EBB, return its
                               -- @hash@.
                           -> FsPath
-                          -> m ([(Word64, (Word, a))],
+                          -> m ([(Word64, (Word64, a))],
                                 Maybe hash,
                                 Maybe ReadIncrementalErr)
                              -- ^ ((the offset of the start of @a@ in the file,
@@ -226,12 +226,12 @@ readIncrementalOffsetsEBB hasFS decoder getEBBHash fp = withLiftST $ \liftST ->
 
     go :: (forall x. ST s x -> m x)
        -> h
-       -> Word64                -- ^ Offset
-       -> [(Word64, (Word, a))] -- ^ Already deserialised (reverse order)
-       -> Maybe hash            -- ^ The hash of the EBB block
-       -> Maybe ByteString      -- ^ Unconsumed bytes from last time
+       -> Word64                  -- ^ Offset
+       -> [(Word64, (Word64, a))] -- ^ Already deserialised (reverse order)
+       -> Maybe hash              -- ^ The hash of the EBB block
+       -> Maybe ByteString        -- ^ Unconsumed bytes from last time
        -> S.IDecode s a
-       -> m ([(Word64, (Word, a))], Maybe hash, Maybe ReadIncrementalErr)
+       -> m ([(Word64, (Word64, a))], Maybe hash, Maybe ReadIncrementalErr)
     go liftST h offset deserialised mbEBBHash mbUnconsumed dec = case dec of
       S.Partial k -> do
         -- First use the unconsumed bytes from a previous read before read

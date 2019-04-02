@@ -333,7 +333,7 @@ test_cborEpochFileParser = forM_ ["junk", ""] $ \junk -> runFS $ \hasFS -> do
     blocks :: [ByteString]
     blocks = map (snd . snd) offsetsAndSizesAndBlocks
 
-    offsetsAndSizesAndBlocks :: [(SlotOffset, (Word, ByteString))]
+    offsetsAndSizesAndBlocks :: [(SlotOffset, (Word64, ByteString))]
     offsetsAndSizesAndBlocks =
       [ (0, (4, "ebb"))
         -- Note that "ebb" is encoded as "Cebb", hence the size of 4

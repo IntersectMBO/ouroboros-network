@@ -32,6 +32,7 @@ import qualified Data.ByteString.Builder as BS
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Text as T
+import           Data.Word
 
 import           GHC.Stack (HasCallStack, callStack, popCallStack)
 
@@ -187,14 +188,14 @@ validateIteratorRange err ces tip mbStart mbEnd = do
 -- slot is 0.
 --
 -- The output list will always have 0 as last element.
-reconstructSlotOffsets :: [(SlotOffset, (Word, RelativeSlot))]
+reconstructSlotOffsets :: [(SlotOffset, (Word64, RelativeSlot))]
                        -> NonEmpty SlotOffset
 reconstructSlotOffsets = go 0 [] 0
   where
     go :: SlotOffset
        -> [SlotOffset]
        -> RelativeSlot
-       -> [(SlotOffset, (Word, RelativeSlot))]
+       -> [(SlotOffset, (Word64, RelativeSlot))]
        -> NonEmpty SlotOffset
     go offsetAfterLast offsets expectedRelSlot ((offset, (len, relSlot)):olrs') =
       assert (offsetAfterLast == offset) $
@@ -260,7 +261,7 @@ cborEpochFileParser' :: forall m hash h a. (MonadST m, MonadThrow m)
                      -> (a -> Maybe hash)
                         -- ^ In case the given @a@ is an EBB, return its
                         -- @hash@.
-                     -> EpochFileParser ReadIncrementalErr hash m (Word, a)
+                     -> EpochFileParser ReadIncrementalErr hash m (Word64, a)
                         -- ^ The 'Word' is the size in bytes of the
                         -- corresponding @a@.
 cborEpochFileParser' hasFS decoder getEBBHash = EpochFileParser $
