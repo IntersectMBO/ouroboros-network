@@ -10,6 +10,7 @@ module Ouroboros.Network.Server.Version
   , Version (..)
   , Sigma (..)
 
+  , Dict (..)
   , pickVersions
   , VersionMismatch (..)
   ) where
