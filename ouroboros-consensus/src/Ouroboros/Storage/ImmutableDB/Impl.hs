@@ -160,6 +160,7 @@ import qualified Data.List.NonEmpty as NE
 import           Data.Maybe (fromMaybe, isJust)
 import           Data.Set (Set)
 import qualified Data.Set as Set
+import           Data.Word
 
 import           GHC.Stack (HasCallStack, callStack)
 
@@ -190,7 +191,7 @@ data ImmutableDBEnv m hash = forall h e. ImmutableDBEnv
     { _dbHasFS           :: !(HasFS m h)
     , _dbErr             :: !(ErrorHandling ImmutableDBError m)
     , _dbInternalState   :: !(TMVar m (Either (ClosedState m) (OpenState m hash h)))
-    , _dbEpochFileParser :: !(EpochFileParser e hash m (Word, SlotNo))
+    , _dbEpochFileParser :: !(EpochFileParser e hash m (Word64, SlotNo))
     , _dbHashDecoder     :: !(forall s . Decoder s hash)
     , _dbHashEncoder     :: !(hash -> Encoding)
     }
@@ -282,7 +283,7 @@ openDB
   -> ErrorHandling ImmutableDBError m
   -> (EpochNo -> m EpochSize)
   -> ValidationPolicy
-  -> EpochFileParser e hash m (Word, SlotNo)
+  -> EpochFileParser e hash m (Word64, SlotNo)
   -> m (ImmutableDB hash m)
 openDB = openDBImpl
 
@@ -316,7 +317,7 @@ openDBImpl :: forall m h hash e.
            -> ErrorHandling ImmutableDBError m
            -> (EpochNo -> m EpochSize)
            -> ValidationPolicy
-           -> EpochFileParser e hash m (Word, SlotNo)
+           -> EpochFileParser e hash m (Word64, SlotNo)
            -> m (ImmutableDB hash m)
 openDBImpl hashDecoder hashEncoder hasFS@HasFS{..} err getEpochSize valPol epochFileParser = do
     firstEpochSize <- getEpochSize 0
@@ -1219,7 +1220,7 @@ validateAndReopen :: forall m hash h e.
                   -> ErrorHandling ImmutableDBError m
                   -> (EpochNo -> m EpochSize)
                   -> ValidationPolicy
-                  -> EpochFileParser e hash m (Word, SlotNo)
+                  -> EpochFileParser e hash m (Word64, SlotNo)
                   -> CumulEpochSizes
                   -> IteratorID
                   -> m (OpenState m hash h)
@@ -1593,7 +1594,7 @@ validate :: forall m hash h e.
          -> ErrorHandling ImmutableDBError m
          -> (EpochNo -> m EpochSize)
          -> ValidationPolicy
-         -> EpochFileParser e hash m (Word, SlotNo)
+         -> EpochFileParser e hash m (Word64, SlotNo)
          -> StateT CumulEpochSizes m (Maybe (EpochSlot, Index hash))
             -- ^ The 'EpochSlot' pointing at the last valid block or EBB on
             -- disk and the 'Index' of the corresponding epoch. 'Nothing' if
@@ -1858,7 +1859,7 @@ validate hashDecoder hashEncoder hasFS@HasFS{..} err getEpochSize valPol epochFi
 -- Also returns the error returned by the 'EpochFileParser'.
 reconstructIndex :: forall m e hash. MonadThrow m
                  => FsPath
-                 -> EpochFileParser e hash m (Word, SlotNo)
+                 -> EpochFileParser e hash m (Word64, SlotNo)
                  -> (EpochNo -> m EpochSize)
                  -> StateT CumulEpochSizes m (Index hash, Maybe e)
 reconstructIndex epochFile epochFileParser getEpochSize = do
@@ -1878,10 +1879,10 @@ reconstructIndex epochFile epochFileParser getEpochSize = do
         index       = indexFromSlotOffsets slotOffsets ebbHash
     return (index, mbErr)
   where
-    slotsToRelSlots :: [(SlotOffset, (Word, SlotNo))]
+    slotsToRelSlots :: [(SlotOffset, (Word64, SlotNo))]
                     -> StateT CumulEpochSizes
                               m
-                              [(SlotOffset, (Word, RelativeSlot))]
+                              [(SlotOffset, (Word64, RelativeSlot))]
     slotsToRelSlots = mapM $ \(offset, (size, slot)) -> do
       relSlot <- CES.slotToRelativeSlotM slot getEpochSize
       return (offset, (size, relSlot))

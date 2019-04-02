@@ -342,7 +342,7 @@ getIsMemberImpl VolatileDBEnv{..} = do
         Nothing -> EH.throwError _dbErr ClosedDBError
         Just st -> return (\bid -> Map.member bid (_currentRevMap st))
 
-getBlockIdsImpl :: forall m blockId. (MonadSTM m, Ord blockId)
+getBlockIdsImpl :: forall m blockId. (MonadSTM m)
                 => VolatileDBEnv m blockId
                 -> m [blockId]
 getBlockIdsImpl VolatileDBEnv{..} = do
@@ -368,8 +368,7 @@ getSuccessorsImpl VolatileDBEnv{..} blockId = do
 
 -- db first tries to fill files from _nextWriteFiles list.
 -- If none find it creates new ones.
-nextFile :: forall h m. MonadSTM m
-         => forall blockId. Ord blockId
+nextFile :: forall h m blockId. MonadSTM m
          => HasFS m h
          -> ErrorHandling (VolatileDBError blockId) m
          -> VolatileDBEnv m blockId

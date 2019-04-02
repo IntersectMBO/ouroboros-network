@@ -59,7 +59,7 @@ epochFileParser
   :: ( MonadST m, MonadThrow m )
   => CSL.SlotCount
   -> HasFS m h
-  -> Immutable.EpochFileParser ReadIncrementalErr CSL.HeaderHash m (Word, Immutable.SlotNo)
+  -> Immutable.EpochFileParser ReadIncrementalErr CSL.HeaderHash m (Word64, Immutable.SlotNo)
 epochFileParser epochSlots hasFS =
   fmap (\(w, block) -> (w, takeSlot block))
        (cborEpochFileParser' hasFS decoder hashOfEBB)
