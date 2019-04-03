@@ -232,7 +232,6 @@ forkMonitorDownloads :: forall m up blk.
                         , MonadFork m
                         , MonadSay m
                         , ProtocolLedgerView blk
-                        , Eq                 blk
                         , Condense           blk
                         )
                      => InternalState m up blk -> m ()
@@ -246,8 +245,7 @@ forkMonitorDownloads st@IS{..} =
 
       mNew <- atomically $ do
         old <- readTVar varChain
-        now <- getCurrentSlot btime
-        case selectChain cfg now old downloaded of
+        case selectChain cfg old downloaded of
           Nothing  -> return Nothing
           Just new -> do
             adoptNewChain st old new
@@ -449,7 +447,6 @@ consensusSyncClient :: forall m up blk hdr.
                        ( MonadSTM m
                        , blk ~ hdr -- for now
                        , ProtocolLedgerView hdr
-                       , Eq                 hdr
                        , Ord up
                        )
                     => NodeConfig (BlockProtocol hdr)
@@ -458,7 +455,7 @@ consensusSyncClient :: forall m up blk hdr.
                     -> TVar m (Chain blk)
                     -> TVar m (Candidates up hdr)
                     -> up -> Consensus ChainSyncClient hdr m
-consensusSyncClient cfg btime initLedger varChain candidatesVar up =
+consensusSyncClient cfg _btime initLedger varChain candidatesVar up =
     ChainSyncClient initialise
   where
     initialise :: m (Consensus ClientStIdle hdr m)
@@ -523,10 +520,9 @@ consensusSyncClient cfg btime initLedger varChain candidatesVar up =
     -- Update set of candidates
     updateCandidates' :: Chain hdr -> STM m ()
     updateCandidates' theirChain = do
-        now      <- getCurrentSlot btime
         ourChain <- readTVar varChain
         modifyTVar candidatesVar $
-          updateCandidates cfg now ourChain (up, theirChain)
+          updateCandidates cfg ourChain (up, theirChain)
 
     -- Recent offsets
     --
@@ -602,18 +598,16 @@ insertCandidate :: forall up hdr.
                    ( OuroborosTag (BlockProtocol hdr)
                    , HasHeader hdr
                    , Ord up
-                   , Eq hdr
                    )
                 => NodeConfig (BlockProtocol hdr)
-                -> SlotNo -- ^ Present slot
                 -> (up, Chain hdr) -> Candidates up hdr -> Candidates up hdr
-insertCandidate cfg now (up, cand) (Candidates cands) =
+insertCandidate cfg (up, cand) (Candidates cands) =
     Candidates $ go cands
   where
     go :: [Map up (Chain hdr)] -> [Map up (Chain hdr)]
     go []       = [Map.singleton up cand]
     go (cs:css) =
-      case compareCandidates cfg now cand (head' cs) of
+      case compareCandidates cfg cand (head' cs) of
         GT -> Map.singleton up cand : cs : css
         EQ -> Map.insert up cand cs : css
         LT -> cs : go css
@@ -626,19 +620,18 @@ insertCandidate cfg now (up, cand) (Candidates cands) =
 -- | Update candidates
 updateCandidates :: ( OuroborosTag (BlockProtocol hdr)
                     , HasHeader hdr
-                    , Eq        hdr
                     , Ord up
                     , hdr ~ blk
                     )
                  => NodeConfig (BlockProtocol hdr)
-                 -> SlotNo          -- ^ Present slot
                  -> Chain blk       -- ^ Our chain
                  -> (up, Chain hdr) -- ^ New potential candidate
                  -> Candidates up hdr -> Candidates up hdr
-updateCandidates cfg now ourChain (up, theirChain) cs =
-    case preferCandidate cfg now ourChain theirChain of
-      Just cand' -> insertCandidate cfg now (up, cand') cs'
-      Nothing    -> cs' -- if candidate not strictly preferred, we ignore it
+updateCandidates cfg ourChain (up, theirChain) cs
+    | preferCandidate cfg ourChain theirChain
+    = insertCandidate cfg (up, theirChain) cs'
+    | otherwise
+    = cs' -- if candidate not strictly preferred, we ignore it
   where
     -- We unconditionally remove the old chain
     --

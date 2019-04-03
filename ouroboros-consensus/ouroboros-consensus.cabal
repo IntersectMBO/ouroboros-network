@@ -49,7 +49,6 @@ library
                        Ouroboros.Consensus.Node
                        Ouroboros.Consensus.Protocol.Abstract
                        Ouroboros.Consensus.Protocol.BFT
-                       Ouroboros.Consensus.Protocol.Genesis
                        Ouroboros.Consensus.Protocol.LeaderSchedule
                        Ouroboros.Consensus.Protocol.Praos
                        Ouroboros.Consensus.Protocol.Test

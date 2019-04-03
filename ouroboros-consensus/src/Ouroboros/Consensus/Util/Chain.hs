@@ -7,7 +7,6 @@
 module Ouroboros.Consensus.Util.Chain (
     lastSlot
   , commonPrefix
-  , upToSlot
   , dropLastBlocks
   , forksAtMostKBlocks
   , intersectionSlot
@@ -39,14 +38,6 @@ commonPrefix c d = chainFromSeq $ go (chainToSeq c) (chainToSeq d)
     go (x :<| xs) (y :<| ys)
         | x == y             = x :<| go xs ys
         | otherwise          = Empty
-
-upToSlot :: HasHeader b => SlotNo -> Chain b -> Chain b
-upToSlot slot = go
-  where
-    go Genesis = Genesis
-    go bs@(cs :> b)
-        | blockSlot b <= slot = bs
-        | otherwise           = go cs
 
 dropLastBlocks :: Int -> Chain b -> Chain b
 dropLastBlocks _ Genesis = Genesis
