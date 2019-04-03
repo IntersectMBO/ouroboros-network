@@ -23,9 +23,8 @@ import           Control.Exception (assert)
 import           Control.Tracer (Tracer, traceWith)
 
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Chain (Point)
-import           Ouroboros.Network.ChainFragment (ChainFragment(..))
-import qualified Ouroboros.Network.ChainFragment as ChainFragment
+import           Ouroboros.Network.AnchoredFragment (AnchoredFragment(..))
+import qualified Ouroboros.Network.AnchoredFragment as AnchoredFragment
 
 import           Ouroboros.Network.BlockFetch.Types
                    ( FetchRequest(..)
@@ -217,8 +216,8 @@ fetchLogicIterationAct decisions =
 -- was some change.
 --
 data FetchTriggerVariables peer header block m = FetchTriggerVariables {
-       readStateCurrentChain    :: STM m (ChainFragment block),
-       readStateCandidateChains :: STM m (Map peer (ChainFragment header)),
+       readStateCurrentChain    :: STM m (AnchoredFragment block),
+       readStateCandidateChains :: STM m (Map peer (AnchoredFragment header)),
        readStatePeerStatus      :: STM m (Map peer PeerFetchStatus)
      }
 
@@ -238,7 +237,7 @@ data FetchNonTriggerVariables peer header block m = FetchNonTriggerVariables {
 data FetchStateFingerprint peer header block =
      FetchStateFingerprint
        (Maybe (Point block))
-       (Map peer (Maybe (Point header)))
+       (Map peer (Point header))
        (Map peer PeerFetchStatus)
   deriving Eq
 
@@ -255,8 +254,8 @@ initialFetchStateFingerprint =
 -- of 'fetchStatePeerStates' and 'fetchStatePeerReqVars'.
 --
 data FetchStateSnapshot peer header block m = FetchStateSnapshot {
-       fetchStateCurrentChain  :: ChainFragment block,
-       fetchStatePeerChains    :: Map peer (ChainFragment header),
+       fetchStateCurrentChain  :: AnchoredFragment block,
+       fetchStatePeerChains    :: Map peer (AnchoredFragment header),
        fetchStatePeerStates    :: Map peer (PeerFetchStatus, PeerFetchInFlight header),
        fetchStatePeerGSVs      :: Map peer PeerGSV,
        fetchStatePeerReqVars   :: Map peer (TFetchRequestVar m header),
@@ -283,8 +282,8 @@ readStateVariables FetchTriggerVariables{..}
     -- Construct the change detection fingerprint
     let fetchStateFingerprint' =
           FetchStateFingerprint
-            (ChainFragment.headPoint fetchStateCurrentChain)
-            (Map.map ChainFragment.headPoint fetchStatePeerChains)
+            (Just (AnchoredFragment.headPoint fetchStateCurrentChain))
+            (Map.map AnchoredFragment.headPoint fetchStatePeerChains)
             fetchStatePeerStatus
 
     -- Check the fingerprint changed, or block and wait until it does

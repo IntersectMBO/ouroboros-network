@@ -1,7 +1,7 @@
-{-# LANGUAGE NamedFieldPuns             #-}
-{-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 {-| Let's start with the big picture...
 
@@ -87,20 +87,19 @@ module Ouroboros.Network.BlockFetch (
     newFetchClientRegistry,
   ) where
 
-import qualified Data.Map.Strict as Map
 import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import           Data.Void
 
 import           Control.Monad.Class.MonadSTM
 import           Control.Tracer (Tracer)
 
+import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Chain (Point)
-import           Ouroboros.Network.ChainFragment (ChainFragment(..))
 
-import           Ouroboros.Network.BlockFetch.Types
 import           Ouroboros.Network.BlockFetch.Client
 import           Ouroboros.Network.BlockFetch.State
+import           Ouroboros.Network.BlockFetch.Types
 
 
 -- | The consensus layer functionality that the block fetch logic requires.
@@ -115,14 +114,21 @@ data BlockFetchConsensusInterface peer header block m =
        -- They must be already validated and contain the last @K@ headers
        -- (unless we're near the chain genesis of course).
        --
-       readCandidateChains    :: STM m (Map peer (ChainFragment header)),
+       -- Each candidate chain will be anchored within the bounds
+       -- ('AnchoredFragment.withinFragmentBounds') of the current chain
+       -- ('readCurrentChain'), which means that there will be an intersection
+       -- between the candidate chain and the current chain. In other words,
+       -- each candidate forks off within the last @K@ blocks of the current
+       -- chain (or less when we're near genesis).
+       --
+       readCandidateChains    :: STM m (Map peer (AnchoredFragment header)),
 
        -- | Read the K-suffix of the current chain.
        --
        -- This must contain info on the last @K@ blocks (unless we're near
        -- the chain genesis of course).
        --
-       readCurrentChain       :: STM m (ChainFragment block),
+       readCurrentChain       :: STM m (AnchoredFragment block),
 
        -- | Read the current fetch mode that the block fetch logic should use.
        --
@@ -152,15 +158,15 @@ data BlockFetchConsensusInterface peer header block m =
        -- with operational key certificates there are also cases where
        -- we would consider a chain of equal length to the current chain.
        --
-       plausibleCandidateChain :: ChainFragment block
-                               -> ChainFragment header -> Bool,
+       plausibleCandidateChain :: AnchoredFragment block
+                               -> AnchoredFragment header -> Bool,
 
        -- | Compare two candidate chains and return a preference ordering.
        -- This is used as part of selecting which chains to prioritise for
        -- downloading block bodies.
        --
-       compareCandidateChains  :: ChainFragment header
-                               -> ChainFragment header
+       compareCandidateChains  :: AnchoredFragment header
+                               -> AnchoredFragment header
                                -> Ordering,
 
        -- | Much of the logic for deciding which blocks to download from which
