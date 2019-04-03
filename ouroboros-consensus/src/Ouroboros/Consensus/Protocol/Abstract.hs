@@ -106,7 +106,7 @@ class ( Show (ChainState    p)
   -- Returns 'True' when we prefer the candidate over our chain.
   --
   -- NOTE: Assumes that our chain does not extend into the future.
-  preferCandidate :: (Eq b, HasHeader b)
+  preferCandidate :: HasHeader b
                   => NodeConfig p
                   -> Chain b      -- ^ Our chain
                   -> Chain b      -- ^ Candidate
@@ -116,7 +116,7 @@ class ( Show (ChainState    p)
     -- TODO handle genesis
 
   -- | Compare two candidates, both of which we prefer to our own chain
-  compareCandidates :: (Eq b, HasHeader b)
+  compareCandidates :: HasHeader b
                     => NodeConfig p
                     -> Chain b -> Chain b -> Ordering
   compareCandidates _ = compare `on` Chain.length
@@ -171,7 +171,7 @@ class HasPreHeader b => HasPayload p b where
 -- | Chain selection between our chain and list of candidates
 --
 -- Returns 'Nothing' if we stick with our current chain.
-selectChain :: forall p b. (OuroborosTag p, Eq b, HasHeader b)
+selectChain :: forall p b. (OuroborosTag p, HasHeader b)
             => NodeConfig p
             -> Chain b      -- ^ Our chain
             -> [Chain b]    -- ^ Upstream chains

@@ -35,14 +35,14 @@ import           Ouroboros.Consensus.Util.Condense
 
 class OuroborosTag p => ChainSelection p s where
 
-  preferCandidate' :: (Eq b, HasHeader b)
+  preferCandidate' :: HasHeader b
                    => proxy s
                    -> NodeConfig p
                    -> Chain b      -- ^ Our chain
                    -> Chain b      -- ^ Candidate
                    -> Bool
 
-  compareCandidates' :: (Eq b, HasHeader b)
+  compareCandidates' :: HasHeader b
                      => proxy s
                      -> NodeConfig p
                      -> Chain b -> Chain b -> Ordering

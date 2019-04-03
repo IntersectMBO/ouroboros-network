@@ -232,7 +232,6 @@ forkMonitorDownloads :: forall m up blk.
                         , MonadFork m
                         , MonadSay m
                         , ProtocolLedgerView blk
-                        , Eq                 blk
                         , Condense           blk
                         )
                      => InternalState m up blk -> m ()
@@ -448,7 +447,6 @@ consensusSyncClient :: forall m up blk hdr.
                        ( MonadSTM m
                        , blk ~ hdr -- for now
                        , ProtocolLedgerView hdr
-                       , Eq                 hdr
                        , Ord up
                        )
                     => NodeConfig (BlockProtocol hdr)
@@ -600,7 +598,6 @@ insertCandidate :: forall up hdr.
                    ( OuroborosTag (BlockProtocol hdr)
                    , HasHeader hdr
                    , Ord up
-                   , Eq hdr
                    )
                 => NodeConfig (BlockProtocol hdr)
                 -> (up, Chain hdr) -> Candidates up hdr -> Candidates up hdr
@@ -623,7 +620,6 @@ insertCandidate cfg (up, cand) (Candidates cands) =
 -- | Update candidates
 updateCandidates :: ( OuroborosTag (BlockProtocol hdr)
                     , HasHeader hdr
-                    , Eq        hdr
                     , Ord up
                     , hdr ~ blk
                     )
