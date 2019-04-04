@@ -40,13 +40,13 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           GHC.Stack (HasCallStack)
 
+import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
+import qualified Ouroboros.Network.AnchoredFragment as Fragment
 import           Ouroboros.Network.Block (ChainHash (..), ChainUpdate (..),
                      HasHeader, HeaderHash, Point)
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.Chain (Chain)
 import qualified Ouroboros.Network.Chain as Chain
-import           Ouroboros.Network.ChainFragment (ChainFragment)
-import qualified Ouroboros.Network.ChainFragment as Fragment
 import qualified Ouroboros.Network.ChainProducerState as CPS
 
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -95,12 +95,11 @@ tipPoint = maybe Chain.genesisPoint Block.blockPoint . tipBlock
 
 lastK :: HasHeader a
       => SecurityParam
-      -> (blk -> a)  -- ^ Provided since `ChainFragment` is not a functor
+      -> (blk -> a)  -- ^ Provided since `AnchoredFragment` is not a functor
       -> Model blk
-      -> ChainFragment a
+      -> AnchoredFragment a
 lastK (SecurityParam k) f =
-      Fragment.takeNewest (fromIntegral k)
-    . Fragment.fromChain
+      Fragment.anchorNewest k
     . fmap f
     . currentChain
 

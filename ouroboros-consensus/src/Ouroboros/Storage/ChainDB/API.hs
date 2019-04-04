@@ -32,11 +32,11 @@ import           Data.Typeable (Typeable)
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 
+import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import           Ouroboros.Network.Block (ChainUpdate (..), HasHeader (..),
                      SlotNo, StandardHash)
 import           Ouroboros.Network.Chain (Chain (..), Point (..))
 import qualified Ouroboros.Network.Chain as Chain
-import           Ouroboros.Network.ChainFragment (ChainFragment)
 import           Ouroboros.Network.ChainProducerState (ReaderId)
 
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -91,7 +91,7 @@ data ChainDB m blk hdr =
       --
       -- NOTE: A direct consequence of this guarantee is that the anchor of the
       -- fragment will move as the chain grows.
-    , getCurrentChain    :: STM m (ChainFragment hdr)
+    , getCurrentChain    :: STM m (AnchoredFragment hdr)
 
       -- | Get current ledger
     , getCurrentLedger   :: STM m (ExtLedgerState blk)
