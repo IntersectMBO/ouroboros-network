@@ -1,5 +1,4 @@
 {-# LANGUAGE ConstraintKinds            #-}
-{-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
@@ -28,8 +27,8 @@ import           Codec.Serialise (Serialise)
 import           Data.Proxy (Proxy (..))
 import           Data.Typeable (Typeable)
 
+import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import           Ouroboros.Network.Block (HasHeader)
-import           Ouroboros.Network.Chain (Chain)
 
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.Condense
@@ -39,14 +38,14 @@ class OuroborosTag p => ChainSelection p s where
   preferCandidate' :: HasHeader b
                    => proxy s
                    -> NodeConfig p
-                   -> Chain b      -- ^ Our chain
-                   -> Chain b      -- ^ Candidate
+                   -> AnchoredFragment b      -- ^ Our chain
+                   -> AnchoredFragment b      -- ^ Candidate
                    -> Bool
 
   compareCandidates' :: HasHeader b
                      => proxy s
                      -> NodeConfig p
-                     -> Chain b -> Chain b -> Ordering
+                     -> AnchoredFragment b -> AnchoredFragment b -> Ordering
 
 data ModChainSel p s
 

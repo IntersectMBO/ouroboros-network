@@ -4,7 +4,6 @@
 {-# LANGUAGE FunctionalDependencies     #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TupleSections              #-}
@@ -35,6 +34,7 @@ import           Codec.Serialise.Encoding (Encoding)
 import           Control.Monad.Except
 import           Control.Monad.State
 import           Crypto.Random (MonadRandom (..))
+import           Data.Bifunctor (first)
 import           Data.Function (on)
 import           Data.Functor.Identity
 import           Data.Kind (Constraint)
@@ -45,10 +45,12 @@ import           Data.Word (Word64)
 
 import           Control.Monad.Class.MonadSay
 
+import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
+import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..))
-import           Ouroboros.Network.Chain (Chain (..))
-import qualified Ouroboros.Network.Chain as Chain
+import           Ouroboros.Network.Chain (Chain)
 
+import qualified Ouroboros.Consensus.Util.AnchoredFragment as AF
 import           Ouroboros.Consensus.Util.Random
 
 -- | The (open) universe of Ouroboros protocols
@@ -110,21 +112,31 @@ class ( Show (ChainState    p)
   --
   -- Returns 'True' when we prefer the candidate over our chain.
   --
-  -- NOTE: Assumes that our chain does not extend into the future.
+  -- PRECONDITION: the candidate chain does not extend into the future.
+  --
+  -- Note: we make no assumptions about the anchor points of the fragments.
+  --
+  -- Note: we do not assume that the candidate fragments fork less than @k@
+  -- blocks back.
   preferCandidate :: HasHeader b
                   => NodeConfig p
-                  -> Chain b      -- ^ Our chain
-                  -> Chain b      -- ^ Candidate
+                  -> AnchoredFragment b      -- ^ Our chain
+                  -> AnchoredFragment b      -- ^ Candidate
                   -> Bool
   preferCandidate _ ours cand =
-    Chain.length cand > Chain.length ours
+    AF.compareHeadBlockNo cand ours == GT
     -- TODO handle genesis
 
   -- | Compare two candidates, both of which we prefer to our own chain
+  --
+  -- Note: we make no assumptions about the anchor points of the fragments.
+  --
+  -- Note: we do not assume that the candidate fragments fork less than @k@
+  -- blocks back.
   compareCandidates :: HasHeader b
                     => NodeConfig p
-                    -> Chain b -> Chain b -> Ordering
-  compareCandidates _ = compare `on` Chain.length
+                    -> AnchoredFragment b -> AnchoredFragment b -> Ordering
+  compareCandidates _ = AF.compareHeadBlockNo
 
   -- | Check if a node is the leader
   checkIsLeader :: (HasNodeState p m, MonadRandom m)
@@ -191,11 +203,20 @@ selectChain :: forall p b l. (OuroborosTag p, HasHeader b)
             -> Chain b           -- ^ Our chain
             -> [(Chain b, l)]    -- ^ Upstream chains
             -> Maybe (Chain b, l)
-selectChain cfg ours candidates =
-    listToMaybe $ sortBy (flip (compareCandidates cfg `on` fst)) preferred
+selectChain cfg ours' candidates' =
+    fmap (first toChain) $ listToMaybe $
+    sortBy (flip (compareCandidates cfg `on` fst)) preferred
   where
-    preferred :: [(Chain b, l)]
+    ours       = AF.fromChain ours'
+    candidates = map (first AF.fromChain) candidates'
+    preferred :: [(AnchoredFragment b, l)]
     preferred = filter (preferCandidate cfg ours . fst) candidates
+    toChain :: AnchoredFragment b -> Chain b
+    toChain af
+      | Just c <- AF.toChain af
+      = c
+      | otherwise
+      = error "impossible: fragment was anchored at genesis"
 
 -- | Chain selection on unvalidated chains
 selectUnvalidatedChain :: forall p b. (OuroborosTag p, HasHeader b)
