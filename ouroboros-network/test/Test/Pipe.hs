@@ -82,8 +82,8 @@ demo chain0 updates = do
                             dummyCallback
                             (producerRsp producerVar)
 
-    startPipe b_mps (hndRead1, hndWrite2)
-    startPipe a_mps (hndRead2, hndWrite1)
+    startPipe b_mps hndRead1 hndWrite2
+    startPipe a_mps hndRead2 hndWrite1
 
     void $ fork $ sequence_
         [ do threadDelay 10e-3 -- 10 milliseconds, just to provide interest
