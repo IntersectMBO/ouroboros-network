@@ -24,11 +24,6 @@ import qualified Ouroboros.Network.Mux.Types as Mx
 
 import qualified Data.ByteString.Lazy as BL
 
-data PipeCtx = PipeCtx {
-      pcRead  :: Handle
-    , pcWrite :: Handle
-    }
-
 pipeAsMuxBearer
   :: forall ptcl.
      ( Mx.ProtocolEnum ptcl
@@ -36,9 +31,10 @@ pipeAsMuxBearer
      , Enum ptcl
      , Bounded ptcl
      )
-  => PipeCtx
+  => Handle -- ^ read handle
+  -> Handle -- ^ write handle
   -> IO (MuxBearer ptcl IO)
-pipeAsMuxBearer ctx = do
+pipeAsMuxBearer pcRead pcWrite = do
       mxState <- atomically $ newTVar Mx.Larval
       return $ Mx.MuxBearer {
           Mx.read = readPipe,
@@ -51,15 +47,13 @@ pipeAsMuxBearer ctx = do
       readPipe :: (HasCallStack)
                => IO (Mx.MuxSDU ptcl, Time IO)
       readPipe = do
-          hbuf <- recvLen' (pcRead ctx) 8 []
+          hbuf <- recvLen' pcRead 8 []
           case Mx.decodeMuxSDUHeader hbuf of
               Left e     -> throwM e
               Right header -> do
                   --say $ printf "decoded mux header, goint to read %d bytes" (Mx.msLength header)
-                  blob <- recvLen' (pcRead ctx)
-                                    (fromIntegral $ Mx.msLength header) []
+                  blob <- recvLen' pcRead (fromIntegral $ Mx.msLength header) []
                   ts <- getMonotonicTime
-                  --say $ (scName ctx) ++ " read blob"
                   --hexDump blob ""
                   return (header {Mx.msBlob = blob}, ts)
 
@@ -78,14 +72,14 @@ pipeAsMuxBearer ctx = do
           let ts32 = timestampMicrosecondsLow32Bits ts
               sdu' = sdu { Mx.msTimestamp = Mx.RemoteClockModel ts32 }
               buf  = Mx.encodeMuxSDU sdu'
-          BL.hPut (pcWrite ctx) buf
-          hFlush (pcWrite ctx)
+          BL.hPut pcWrite buf
+          hFlush pcWrite
           return ts
 
       closePipe :: IO ()
       closePipe = do
-          hClose (pcRead ctx)
-          hClose (pcWrite ctx)
+          hClose pcRead
+          hClose pcWrite
 
       sduSize :: IO Word16
       sduSize = return 32768
@@ -93,9 +87,9 @@ pipeAsMuxBearer ctx = do
 
 startPipe :: (Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl)
           => Mx.MiniProtocolDescriptions ptcl IO
-          -> (Handle, Handle) -> IO ()
-startPipe mpds (r, w) = do
-    let ctx = PipeCtx r w
-    bearer <- pipeAsMuxBearer ctx
+          -> Handle -- ^ read handle
+          -> Handle -- ^ write handle
+          -> IO ()
+startPipe mpds r w = do
+    bearer <- pipeAsMuxBearer r w
     void $ async $ Mx.muxStart mpds bearer Nothing
-
