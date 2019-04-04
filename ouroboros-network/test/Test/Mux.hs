@@ -111,13 +111,6 @@ instance Arbitrary InvalidSDU where
         return $ InvalidSDU (Mx.RemoteClockModel ts) mid len
 
 
-data MuxSTMCtx ptcl m = MuxSTMCtx {
-      writeQueue :: TBQueue m BL.ByteString
-    , readQueue  :: TBQueue m BL.ByteString
-    , sduSize    :: Word16
-    , traceQueue :: Maybe (TBQueue m (Mx.MiniProtocolId ptcl, Mx.MiniProtocolMode, Time m))
-}
-
 startMuxSTM :: (Ord ptcl, Enum ptcl, Bounded ptcl, Mx.ProtocolEnum ptcl)
             => Mx.MiniProtocolDescriptions ptcl IO
             -> TBQueue IO BL.ByteString
@@ -126,14 +119,13 @@ startMuxSTM :: (Ord ptcl, Enum ptcl, Bounded ptcl, Mx.ProtocolEnum ptcl)
             -> Maybe (TBQueue IO (Mx.MiniProtocolId ptcl, Mx.MiniProtocolMode, Time IO))
             -> IO (TBQueue IO (Maybe SomeException))
 startMuxSTM mpds wq rq mtu trace = do
-    let ctx = MuxSTMCtx wq rq mtu trace
     resq <- atomically $ newTBQueue 10
-    void $ async (spawn ctx resq)
+    void $ async $ spawn resq
 
     return resq
   where
-    spawn ctx resq = do
-        bearer <- queuesAsMuxBearer ctx
+    spawn resq = do
+        bearer <- queuesAsMuxBearer wq rq mtu trace
         res_e <- try $ Mx.muxStart mpds bearer (Just $ rescb resq)
         case res_e of
              Left  e -> rescb resq $ Just e
@@ -160,9 +152,12 @@ queuesAsMuxBearer
      , MonadThrow m
      , Mx.ProtocolEnum ptcl
      )
-  => MuxSTMCtx ptcl m
+  => TBQueue m BL.ByteString
+  -> TBQueue m BL.ByteString
+  -> Word16
+  -> Maybe (TBQueue m (Mx.MiniProtocolId ptcl, Mx.MiniProtocolMode, Time m))
   -> m (MuxBearer ptcl m)
-queuesAsMuxBearer ctx = do
+queuesAsMuxBearer writeQueue readQueue sduSize traceQueue = do
       mxState <- atomically $ newTVar Mx.Larval
       return $ Mx.MuxBearer {
           Mx.read    = readMux,
@@ -174,13 +169,13 @@ queuesAsMuxBearer ctx = do
     where
       readMux :: m (Mx.MuxSDU ptcl, Time m)
       readMux = do
-          buf <- atomically $ readTBQueue (readQueue ctx)
+          buf <- atomically $ readTBQueue readQueue
           let (hbuf, payload) = BL.splitAt 8 buf
           case Mx.decodeMuxSDUHeader hbuf of
               Left  e      -> throwM e
               Right header -> do
                   ts <- getMonotonicTime
-                  case traceQueue ctx of
+                  case traceQueue of
                         Just q  -> atomically $ do
                             full <- isFullTBQueue q
                             if full then return ()
@@ -195,11 +190,11 @@ queuesAsMuxBearer ctx = do
           let ts32 = timestampMicrosecondsLow32Bits ts
               sdu' = sdu { Mx.msTimestamp = Mx.RemoteClockModel ts32 }
               buf  = Mx.encodeMuxSDU sdu'
-          atomically $ writeTBQueue (writeQueue ctx) buf
+          atomically $ writeTBQueue writeQueue buf
           return ts
 
       sduSizeMux :: m Word16
-      sduSizeMux = return $ sduSize ctx
+      sduSizeMux = return $ sduSize
 
 -- | Verify that an initiator and a responder can send and receive messages from each other.
 -- Large DummyPayloads will be split into sduLen sized messages and the testcases will verify
