@@ -171,6 +171,6 @@ processSingleWanton pmss mpi md wanton cnt = do
       -- return data to send
       pure frag
     let sdu = MuxSDU (RemoteClockModel 0) mpi md (fromIntegral $ BL.length blob) blob
-    void $ (write $ bearer pmss) sdu
+    void $ write (bearer pmss) sdu
     atomically $ modifyTVar' cnt (\a -> a - 1)
     --paceTransmission tNow
