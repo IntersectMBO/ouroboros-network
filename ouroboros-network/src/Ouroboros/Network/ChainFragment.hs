@@ -139,7 +139,7 @@ pattern c :> b <- (viewRight -> (c FT.:> b)) where
 pattern (:<) :: HasHeader block
              => block -> ChainFragment block -> ChainFragment block
 pattern b :< c <- (viewLeft -> (b FT.:< c)) where
-  b :< ChainFragment c = assert (maybe True (isValidSuccessorOf b)
+  b :< ChainFragment c = assert (maybe True (`isValidSuccessorOf` b)
                                        (last (ChainFragment c))) $
                          ChainFragment (b FT.<| c)
 
