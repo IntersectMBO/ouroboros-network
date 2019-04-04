@@ -11,6 +11,7 @@
 
 module Ouroboros.Consensus.Protocol.PBFT (
     PBft
+  , PBftLedgerView(..)
   , PBftParams(..)
     -- * Classes
   , PBftCrypto(..)
@@ -59,6 +60,11 @@ invertBijection
   . fmap swap
   . Map.toList
 
+data PBftLedgerView c = PBftLedgerView
+  ProtocolParameters
+      -- Map from genesis to delegate keys. Note that this map is injective by
+      -- construction.
+  (Map (VerKeyDSIGN (PBftDSIGN c)) (VerKeyDSIGN (PBftDSIGN c)))
 
 {-------------------------------------------------------------------------------
   Protocol proper
@@ -112,13 +118,10 @@ instance PBftCrypto c => OuroborosTag (PBft c) where
   --
   --   - Protocol parameters, for the signature window and threshold.
   --   - The delegation map.
-  type LedgerView     (PBft c) =
-    ( ProtocolParameters
-      -- Map from genesis to delegate keys. Note that this map is injective by
-      -- construction.
-    , Map (VerKeyDSIGN (PBftDSIGN c)) (VerKeyDSIGN (PBftDSIGN c))
-    )
+  type LedgerView     (PBft c) = PBftLedgerView c
+
   type IsLeader       (PBft c) = ()
+
   -- | Chain state consists of two things:
   --   - a list of the last 'pbftSignatureWindow' signatures.
   --   - The last seen block slot
@@ -146,7 +149,7 @@ instance PBftCrypto c => OuroborosTag (PBft c) where
     where
       PBftParams{..}  = pbftParams
 
-  applyChainState PBftNodeConfig{..} (_pp, dms) b (signers, lastSlot) = do
+  applyChainState PBftNodeConfig{..} (PBftLedgerView _pp dms) b (signers, lastSlot) = do
       -- Check that the issuer signature verifies, and that it's a delegate of a
       -- genesis key, and that genesis key hasn't voted too many times.
 
@@ -161,14 +164,16 @@ instance PBftCrypto c => OuroborosTag (PBft c) where
       case Map.lookup (pbftIssuer payload) $ invertBijection dms of
         Nothing -> throwError PBftNotGenesisDelegate
         Just gk -> do
-          when (Seq.length (Seq.filter (== gk) signers) >= wt)
+          when (Seq.length signers >= winSize
+                && Seq.length (Seq.filter (== gk) signers) >= wt)
             $ throwError PBftExceededSignThreshold
-          let signers' = Seq.drop (Seq.length signers - fromIntegral pbftSignatureWindow - 1) signers Seq.|> gk
+          let signers' = Seq.drop (Seq.length signers - winSize - 1) signers Seq.|> gk
           return (signers', blockSlot b)
     where
       PBftParams{..}  = pbftParams
       payload = blockPayload (Proxy @(PBft c)) b
-      wt = floor $ pbftSignatureThreshold * fromIntegral pbftSignatureWindow
+      winSize = fromIntegral pbftSignatureWindow
+      wt = floor $ pbftSignatureThreshold * fromIntegral winSize
 
 
 deriving instance PBftCrypto c => Show     (Payload (PBft c) ph)

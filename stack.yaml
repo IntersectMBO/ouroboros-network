@@ -4,6 +4,7 @@ packages:
   - ./typed-transitions
   - ./typed-protocols
   - ./ouroboros-network
+  - ./ouroboros-network-testing
   - ./ouroboros-consensus
   - ./io-sim
   - ./io-sim-classes
@@ -41,6 +42,9 @@ extra-deps:
   - libyaml-0.1.0.0
   - time-units-1.0.0
   - ekg-json-0.1.0.6
+  - graphviz-2999.20.0.3@sha256:cde383c356bc41136ed53cd27e0800f46dbd2185600dd0de18d66d5c49739d94
+  - quickcheck-state-machine-0.6.0@sha256:3e4f8df0f6b5d415e3c8840dc75034a63e37f56f5f8cfa1035ded16345235ac4
+  - pretty-show-1.9.5@sha256:92aa3f43d8459a9b543e102fbb0b7a6aae0074e18ca6a9970d9922a867114f53
 
 nix:
   packages:

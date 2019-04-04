@@ -217,6 +217,7 @@ test-suite test-consensus
                     Test.Dynamic.General
                     Test.Dynamic.LeaderSchedule
                     Test.Dynamic.Network
+                    Test.Dynamic.PBFT
                     Test.Dynamic.Praos
                     Test.Dynamic.Util
                     Test.Ouroboros
