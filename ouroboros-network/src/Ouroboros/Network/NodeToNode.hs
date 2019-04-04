@@ -1,12 +1,17 @@
+{-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE KindSignatures    #-}
+{-# LANGUAGE TypeFamilies      #-}
 
 -- | This is the starting point for a module that will bring together the
 -- overall node to node protocol, as a collection of mini-protocols.
 --
 module Ouroboros.Network.NodeToNode (
-  NodeToNodeProtocols(..)
+    NodeToNodeProtocols(..)
   ) where
 
-import Ouroboros.Network.Mux.Types (ProtocolEnum(..))
+
+import           Ouroboros.Network.Mux.Types (ProtocolEnum(..))
 
 
 -- | An index type used with the mux to enumerate all the mini-protocols that
@@ -42,4 +47,3 @@ instance ProtocolEnum NodeToNodeProtocols where
   toProtocolEnum 3 = Just BlockFetch
   toProtocolEnum 4 = Just TxSubmission
   toProtocolEnum _ = Nothing
-

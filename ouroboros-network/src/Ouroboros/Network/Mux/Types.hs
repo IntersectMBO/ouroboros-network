@@ -10,6 +10,8 @@ module Ouroboros.Network.Mux.Types (
     , ProtocolEnum (..)
     , MiniProtocolId (..)
     , MiniProtocolMode (..)
+    , MuxBearer (..)
+    , MuxBearerState (..)
     , MuxError (..)
     , MuxErrorType (..)
     , MuxSDU (..)
@@ -21,19 +23,19 @@ module Ouroboros.Network.Mux.Types (
     ) where
 
 import           Control.Exception
-import qualified Data.ByteString.Lazy as BL
-import           Data.Word
-import           Data.Ix (Ix(..))
 import           Data.Array
+import qualified Data.ByteString.Lazy as BL
+import           Data.Ix (Ix (..))
+import           Data.Word
 import           GHC.Stack
 import           Text.Printf
 
-import           Control.Exception (throw, ArrayException(IndexOutOfBounds))
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
 import           Ouroboros.Network.Channel
 
 newtype RemoteClockModel = RemoteClockModel { unRemoteClockModel :: Word32 } deriving Eq
+
 
 --
 -- Mini-protocol numbers
@@ -123,16 +125,13 @@ instance Bounded ptcl => Bounded (MiniProtocolId ptcl) where
  along with all other miniprotocols.
  -}
 data MiniProtocolDescription ptcl m = MiniProtocolDescription {
-    -- | The 'MiniProtocolId' described.
-      mpdId        :: MiniProtocolId ptcl
     -- | Initiator function, consumes and produces messages related to the initiator side.
-    , mpdInitiator :: Channel m BL.ByteString -> m ()
+      mpdInitiator :: Channel m BL.ByteString -> m ()
     -- | Responder function, consumes and produces messages related to the responder side.
     , mpdResponder :: Channel m BL.ByteString -> m ()
     }
 
 type MiniProtocolDescriptions ptcl m = ptcl -> MiniProtocolDescription ptcl m
-
 
 --
 -- Mux internal types
@@ -181,13 +180,26 @@ data PerMuxSharedState ptcl m = PerMuxSS {
     dispatchTable :: MiniProtocolDispatch ptcl m
   -- | Egress queue, shared by all miniprotocols
   , tsrQueue      :: TBQueue m (TranslocationServiceRequest ptcl m)
-  -- | Timestamp and send MuxSDU
-  , write         :: MuxSDU ptcl -> m (Time m)
-  -- | Read a MuxSDU
-  , read          :: m (MuxSDU ptcl, Time m)
-  -- | Return a suitable MuxSDU payload size
-  , sduSize       :: m Word16
+  , bearer        :: MuxBearer ptcl m
   }
+
+data MuxBearerState = Larval    -- Newly created MuxBearer.
+                    | Connected -- MuxBearer is connected to a peer.
+                    | Mature    -- MuxBearer has successufully completed verison negotiation.
+                    | Dying     -- MuxBearer is in the process of beeing torn down, requests may fail.
+                    | Dead      -- MuxBearer is dead and the underlying bearer has been closed.
+                    deriving (Eq, Show)
+
+data MuxBearer ptcl m = MuxBearer {
+    -- | Timestamp and send MuxSDU
+      write   :: MuxSDU ptcl -> m (Time m)
+    -- | Read a MuxSDU
+    , read    :: m (MuxSDU ptcl, Time m)
+    -- | Return a suitable MuxSDU payload size
+    , sduSize :: m Word16
+    , close   :: m ()
+    , state   :: TVar m MuxBearerState
+    }
 
 data MuxError = MuxError {
       errorType  :: !MuxErrorType
@@ -198,6 +210,7 @@ data MuxError = MuxError {
 data MuxErrorType = MuxUnknownMiniProtocol
                   | MuxDecodeError
                   | MuxBearerClosed
+                  | MuxControlProtocolError
                   deriving (Show, Eq)
 
 instance Exception MuxError where

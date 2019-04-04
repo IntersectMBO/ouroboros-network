@@ -76,11 +76,9 @@ demo chain0 updates = do
     let Just expectedChain = Chain.applyChainUpdates updates chain0
         target = Chain.headPoint expectedChain
         a_mps ChainSync = Mx.MiniProtocolDescription
-                            (Mx.AppProtocolId ChainSync)
                             (consumerInit consumerDone target consumerVar)
                             dummyCallback
         b_mps ChainSync = Mx.MiniProtocolDescription
-                            (Mx.AppProtocolId ChainSync)
                             dummyCallback
                             (producerRsp producerVar)
 

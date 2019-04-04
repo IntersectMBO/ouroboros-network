@@ -1,13 +1,20 @@
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
-module Test.Mux (
-      TestProtocols1 (..)
+{-# OPTIONS_GHC -Wno-orphans     #-}
+
+module Test.Mux
+    ( TestProtocols1 (..)
     , DummyPayload (..)
     , setupMiniReqRsp
-    , tests) where
+    , tests
+    ) where
 
+import           Codec.CBOR.Decoding as CBOR
+import           Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (Serialise (..))
-import           Codec.CBOR.Encoding (encodeBytes)
-import           Codec.CBOR.Decoding (decodeBytes)
 import           Control.Monad
 import qualified Data.Binary.Put as Bin
 import qualified Data.ByteString.Lazy as BL
@@ -17,6 +24,7 @@ import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 import           Text.Printf
 
+import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
@@ -29,16 +37,18 @@ import           Network.TypedProtocol.ReqResp.Server
 import           Ouroboros.Network.Time
 import           Ouroboros.Network.Channel
 import qualified Ouroboros.Network.Mux as Mx
+import           Ouroboros.Network.Mux.Types (MuxBearer)
+import qualified Ouroboros.Network.Mux.Types as Mx
 import           Ouroboros.Network.Protocol.ReqResp.Codec
 
 tests :: TestTree
 tests =
   testGroup "Mux"
-  [ testProperty "mux send receive"        prop_mux_snd_recv
-  , testProperty "2 miniprotocols"         prop_mux_2_minis
-  , testProperty "starvation"              prop_mux_starvation
-  , testProperty "unknown miniprotocol"    prop_mux_unknown_miniprot
-  , testProperty "too short header"        prop_mux_short_header
+  [ testProperty "mux send receive"     prop_mux_snd_recv
+  , testProperty "2 miniprotocols"      prop_mux_2_minis
+  , testProperty "starvation"           prop_mux_starvation
+  , testProperty "unknown miniprotocol" prop_mux_unknown_miniprot
+  , testProperty "too short header"     prop_mux_short_header
   ]
 
 data TestProtocols1 = ChainSync1
@@ -77,8 +87,8 @@ instance Arbitrary DummyPayload where
        return $ DummyPayload blob
 
 instance Serialise DummyPayload where
-    encode a = encodeBytes (BL.toStrict $ unDummyPayload a)
-    decode = DummyPayload . BL.fromStrict <$> decodeBytes
+    encode a = CBOR.encodeBytes (BL.toStrict $ unDummyPayload a)
+    decode = DummyPayload . BL.fromStrict <$> CBOR.decodeBytes
 
 data InvalidSDU = InvalidSDU {
       isTimestamp :: !Mx.RemoteClockModel
@@ -100,6 +110,7 @@ instance Arbitrary InvalidSDU where
 
         return $ InvalidSDU (Mx.RemoteClockModel ts) mid len
 
+
 data MuxSTMCtx ptcl m = MuxSTMCtx {
       writeQueue :: TBQueue m BL.ByteString
     , readQueue  :: TBQueue m BL.ByteString
@@ -117,11 +128,19 @@ startMuxSTM :: (Ord ptcl, Enum ptcl, Bounded ptcl, Mx.ProtocolEnum ptcl)
 startMuxSTM mpds wq rq mtu trace = do
     let ctx = MuxSTMCtx wq rq mtu trace
     resq <- atomically $ newTBQueue 10
-    void $ Mx.muxStart mpds (writeMux ctx) (readMux ctx) (sduSizeMux ctx) (return ()) (Just $ rescb resq)
+    void $ async (spawn ctx resq)
 
     return resq
   where
+    spawn ctx resq = do
+        bearer <- queuesAsMuxBearer ctx
+        res_e <- try $ Mx.muxStart mpds bearer (Just $ rescb resq)
+        case res_e of
+             Left  e -> rescb resq $ Just e
+             Right _ -> return ()
+
     rescb resq e_m = atomically $ writeTBQueue resq e_m
+
 
 -- | Helper function to check if jobs in 'startMuxSTM' exited successfully.
 -- Only checks the first return value
@@ -134,40 +153,53 @@ normallExit resq = do
          Just _  -> return False
          Nothing -> return True
 
-sduSizeMux :: (Monad m)
-           => MuxSTMCtx ptcl m
-           -> m Word16
-sduSizeMux ctx = return $ sduSize ctx
+queuesAsMuxBearer
+  :: forall ptcl m.
+     ( MonadSTM   m
+     , MonadTime  m
+     , MonadThrow m
+     , Mx.ProtocolEnum ptcl
+     )
+  => MuxSTMCtx ptcl m
+  -> m (MuxBearer ptcl m)
+queuesAsMuxBearer ctx = do
+      mxState <- atomically $ newTVar Mx.Larval
+      return $ Mx.MuxBearer {
+          Mx.read    = readMux,
+          Mx.write   = writeMux,
+          Mx.close   = return (),
+          Mx.sduSize = sduSizeMux,
+          Mx.state   = mxState
+        }
+    where
+      readMux :: m (Mx.MuxSDU ptcl, Time m)
+      readMux = do
+          buf <- atomically $ readTBQueue (readQueue ctx)
+          let (hbuf, payload) = BL.splitAt 8 buf
+          case Mx.decodeMuxSDUHeader hbuf of
+              Left  e      -> throwM e
+              Right header -> do
+                  ts <- getMonotonicTime
+                  case traceQueue ctx of
+                        Just q  -> atomically $ do
+                            full <- isFullTBQueue q
+                            if full then return ()
+                                    else writeTBQueue q (Mx.msId header, Mx.msMode header, ts)
+                        Nothing -> return ()
+                  return (header {Mx.msBlob = payload}, ts)
 
-writeMux :: (MonadTime m, MonadSTM m, Mx.ProtocolEnum ptcl)
-         => MuxSTMCtx ptcl m
-         -> Mx.MuxSDU ptcl
-         -> m (Time m)
-writeMux ctx sdu = do
-    ts <- getMonotonicTime
-    let ts32 = timestampMicrosecondsLow32Bits ts
-        sdu' = sdu { Mx.msTimestamp = Mx.RemoteClockModel ts32 }
-        buf  = Mx.encodeMuxSDU sdu'
-    atomically $ writeTBQueue (writeQueue ctx) buf
-    return ts
+      writeMux :: Mx.MuxSDU ptcl
+               -> m (Time m)
+      writeMux sdu = do
+          ts <- getMonotonicTime
+          let ts32 = timestampMicrosecondsLow32Bits ts
+              sdu' = sdu { Mx.msTimestamp = Mx.RemoteClockModel ts32 }
+              buf  = Mx.encodeMuxSDU sdu'
+          atomically $ writeTBQueue (writeQueue ctx) buf
+          return ts
 
-readMux :: (MonadTime m, MonadSTM m, MonadThrow m, Mx.ProtocolEnum ptcl)
-        => MuxSTMCtx ptcl m
-        -> m (Mx.MuxSDU ptcl, Time m)
-readMux ctx = do
-    buf <- atomically $ readTBQueue (readQueue ctx)
-    let (hbuf, payload) = BL.splitAt 8 buf
-    case Mx.decodeMuxSDUHeader hbuf of
-         Left  e      -> throwM e
-         Right header -> do
-             ts <- getMonotonicTime
-             case traceQueue ctx of
-                  Just q  -> atomically $ do
-                      full <- isFullTBQueue q
-                      if full then return ()
-                              else writeTBQueue q (Mx.msId header, Mx.msMode header, ts)
-                  Nothing -> return ()
-             return (header {Mx.msBlob = payload}, ts)
+      sduSizeMux :: m Word16
+      sduSizeMux = return $ sduSize ctx
 
 -- | Verify that an initiator and a responder can send and receive messages from each other.
 -- Large DummyPayloads will be split into sduLen sized messages and the testcases will verify
@@ -186,14 +218,10 @@ prop_mux_snd_recv request response = ioProperty $ do
         server_r = client_w
 
     (verify, client_mp, server_mp) <- setupMiniReqRsp
-                                        (Mx.AppProtocolId ChainSync1)
                                         (return ()) endMpsVar request response
 
-    let client_mps ChainSync1 = client_mp
-        server_mps ChainSync1 = server_mp
-
-    client_resVar <- startMuxSTM client_mps client_w client_r sduLen Nothing
-    server_resVar <- startMuxSTM server_mps server_w server_r sduLen Nothing
+    client_resVar <- startMuxSTM (\ChainSync1 -> client_mp) client_w client_r sduLen Nothing
+    server_resVar <- startMuxSTM (\ChainSync1 -> server_mp) server_w server_r sduLen Nothing
 
     v <- verify
     c_e <- normallExit client_resVar
@@ -207,20 +235,19 @@ dummyCallback _ = forever $
 
 -- | Create a verification function, a MiniProtocolDescription for the client side and a
 -- MiniProtocolDescription for the server side for a RequestResponce protocol.
-setupMiniReqRsp :: Mx.MiniProtocolId ptcl
-                -> IO ()        -- | Action performed by responder before processing the response
+setupMiniReqRsp :: IO ()        -- | Action performed by responder before processing the response
                 -> TVar IO Int  -- | Total number of miniprotocols.
                 -> DummyPayload -- | Request, sent from initiator.
                 -> DummyPayload -- | Response, sent from responder after receive the request.
                 -> IO (IO Bool
                       , Mx.MiniProtocolDescription ptcl IO
                       , Mx.MiniProtocolDescription ptcl IO)
-setupMiniReqRsp mid serverAction mpsEndVar request response = do
+setupMiniReqRsp serverAction mpsEndVar request response = do
     serverResultVar <- newEmptyTMVarM
     clientResultVar <- newEmptyTMVarM
 
-    let client_mp = Mx.MiniProtocolDescription mid (clientInit clientResultVar) dummyCallback
-        server_mp = Mx.MiniProtocolDescription mid dummyCallback (serverRsp serverResultVar)
+    let client_mp = Mx.MiniProtocolDescription (clientInit clientResultVar) dummyCallback
+        server_mp = Mx.MiniProtocolDescription dummyCallback (serverRsp serverResultVar)
 
     return (verifyCallback serverResultVar clientResultVar, client_mp, server_mp)
   where
@@ -290,11 +317,9 @@ prop_mux_2_minis request0 response0 response1 request1 = ioProperty $ do
         server_r = client_w
 
     (verify_0, client_mp0, server_mp0) <-
-        setupMiniReqRsp (Mx.AppProtocolId ChainSync2)
-                        (return ()) endMpsVar request0 response0
+        setupMiniReqRsp (return ()) endMpsVar request0 response0
     (verify_1, client_mp1, server_mp1) <-
-        setupMiniReqRsp (Mx.AppProtocolId BlockFetch2)
-                        (return ()) endMpsVar request1 response1
+        setupMiniReqRsp (return ()) endMpsVar request1 response1
 
     let client_mps ChainSync2  = client_mp0
         client_mps BlockFetch2 = client_mp1
@@ -336,12 +361,10 @@ prop_mux_starvation response0 response1 =
         server_r = client_w
 
     (verify_short, client_short, server_short) <-
-        setupMiniReqRsp (Mx.AppProtocolId ChainSync2)
-                        (waitOnAllClients activeMpsVar 2)
+        setupMiniReqRsp (waitOnAllClients activeMpsVar 2)
                         endMpsVar request response0
     (verify_long, client_long, server_long) <-
-        setupMiniReqRsp (Mx.AppProtocolId BlockFetch2)
-                        (waitOnAllClients activeMpsVar 2)
+        setupMiniReqRsp (waitOnAllClients activeMpsVar 2)
                         endMpsVar request response1
 
     let client_mps BlockFetch2 = client_short
@@ -440,10 +463,10 @@ failingServer  = do
         request  = DummyPayload $ BL.replicate 4 0xa
         response = request
 
-    (_, _, server_mp) <- setupMiniReqRsp (Mx.AppProtocolId ChainSync1)
-                                         (return ()) endMpsVar request response
+    (_, _, server_mp) <- setupMiniReqRsp (return ()) endMpsVar request response
     let server_mps ChainSync1 = server_mp
     server_res <- startMuxSTM server_mps server_w server_r sduLen Nothing
 
     return (server_r, server_res)
+
 
