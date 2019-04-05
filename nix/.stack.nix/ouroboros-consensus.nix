@@ -18,6 +18,7 @@
       "library" = {
         depends = [
           (hsPkgs.base)
+          (hsPkgs.cardano-ledger)
           (hsPkgs.ouroboros-network)
           (hsPkgs.typed-protocols)
           (hsPkgs.io-sim-classes)
@@ -138,4 +139,4 @@
           };
         };
       };
-    } // rec { src = (pkgs.lib).mkDefault .././../ouroboros-consensus; }
+    } // rec { src = (pkgs.lib).mkDefault ../../././ouroboros-consensus; }

@@ -1,4 +1,4 @@
-resolver: https://raw.githubusercontent.com/input-output-hk/cardano-prelude/e492731486f7015313815f2c18a2fd79167c167c/snapshot.yaml
+resolver: https://raw.githubusercontent.com/input-output-hk/cardano-prelude/d0d22fc64eb91908d34c69a4aeff9df3f8d0decd/snapshot.yaml
 
 packages:
   - ./typed-transitions
@@ -27,16 +27,8 @@ extra-deps:
       - .
       - crypto
 
-  - git: https://github.com/well-typed/cborg
-    commit: 80fbe0ee5e67a5622e2cb9eaa9d8594a2214322d
-    subdirs:
-      - cborg
-
   - git: https://github.com/input-output-hk/cardano-prelude
     commit: e1fb84b1a955b6e3e3e53d9022e8bc0f927417a2
-
-  - git: https://github.com/input-output-hk/cardano-crypto
-    commit: f5cecb6e424cc84f85b6a3e1f803517bb7b4cfb1
 
   - ekg-0.4.0.15
   - libyaml-0.1.0.0
@@ -44,7 +36,6 @@ extra-deps:
   - ekg-json-0.1.0.6
   - graphviz-2999.20.0.3@sha256:cde383c356bc41136ed53cd27e0800f46dbd2185600dd0de18d66d5c49739d94
   - quickcheck-state-machine-0.6.0@sha256:3e4f8df0f6b5d415e3c8840dc75034a63e37f56f5f8cfa1035ded16345235ac4
-  - pretty-show-1.9.5@sha256:92aa3f43d8459a9b543e102fbb0b7a6aae0074e18ca6a9970d9922a867114f53
 
 nix:
   packages:
