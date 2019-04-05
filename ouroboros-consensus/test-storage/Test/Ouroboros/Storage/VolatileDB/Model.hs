@@ -79,9 +79,8 @@ openDBModel :: MonadState (MyState blockId) m
             => (Ord blockId)
             => ErrorHandling (VolatileDBError blockId) m
             -> Int
-            -> (blockId -> SlotNo)
             -> (DBModel blockId, VolatileDB blockId m)
-openDBModel err maxNumPerFile toSlot = (dbModel, db)
+openDBModel err maxNumPerFile = (dbModel, db)
     where
         dbModel = initDBModel maxNumPerFile
         db =  VolatileDB {
@@ -89,7 +88,7 @@ openDBModel err maxNumPerFile toSlot = (dbModel, db)
             , isOpenDB       = isOpenModel
             , reOpenDB       = reOpenModel err
             , getBlock       = getBlockModel err
-            , putBlock       = putBlockModel err maxNumPerFile toSlot
+            , putBlock       = putBlockModel err maxNumPerFile
             , garbageCollect = garbageCollectModel err
             , getIsMember    = getIsMemberModel err
             , getBlockIds    = getBlockIdsModel err
@@ -129,12 +128,12 @@ putBlockModel :: MonadState (MyState blockId) m
               => Ord blockId
               => ErrorHandling (VolatileDBError blockId) m
               -> Int
-              -> (blockId -> SlotNo)
               -> blockId
+              -> SlotNo
               -> blockId
               -> Builder
               -> m ()
-putBlockModel err maxNumPerFile toSlot bid bidPred bs = do
+putBlockModel err maxNumPerFile bid slot bidPred bs = do
     -- This depends on the exact sequence of the operations in the real Impl.
     -- If anything changes there, then this wil also need change.
     let managesToPut errors = do
@@ -161,7 +160,7 @@ putBlockModel err maxNumPerFile toSlot bid bidPred bs = do
                         (error "current file does not exist in index")
                         (Map.lookup currentFile index)
                     n' = n + 1
-                    index' = Map.insert currentFile (updateSlotNoBlockId mbid [toSlot bid], n', (bid, bidPred):bids) index
+                    index' = Map.insert currentFile (updateSlotNoBlockId mbid [slot], n', (bid, bidPred):bids) index
                     (currentFile', index'', nextFId') =
                         if n' == maxNumPerFile
                         then ( Internal.filePath nextFId
@@ -268,7 +267,7 @@ runCorruptionModel :: forall blockId m. MonadState (MyState blockId) m
                    => (blockId -> SlotNo)
                    -> Corruptions
                    -> m ()
-runCorruptionModel toSlot corrs = do
+runCorruptionModel guessSlot corrs = do
     dbm <- getDB
     -- TODO(kde) need to sort corrs if we want to improve Eq instance of
     -- Error Types.
@@ -306,7 +305,7 @@ runCorruptionModel toSlot corrs = do
                         -- we prepend on list of blockIds, so last bytes
                         -- are actually at the head of the list.
                         (droppedBids, newBids) = splitAt (fromIntegral dropBids) bids
-                        newMmax = snd <$> maxSlotList toSlot (fst <$> newBids)
+                        newMmax = snd <$> maxSlotList ((\(b,_) -> (b, guessSlot b)) <$> newBids)
                         size' = size - fromIntegral (length droppedBids)
                         index' = Map.insert file (newMmax, size', newBids) (index dbm)
                         mp' = Map.withoutKeys (mp dbm) (Set.fromList $ fst <$> droppedBids)

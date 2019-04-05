@@ -8,6 +8,7 @@ module Ouroboros.Storage.VolatileDB.Util where
 import           Control.Monad
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
+import           Data.List (maximumBy)
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe (fromMaybe)
@@ -78,14 +79,14 @@ findLastFd files = foldM go Nothing files
 filePath :: FileId -> String
 filePath fd = "blocks-" ++ show fd ++ ".dat"
 
-forth :: (a,b,c,d) -> d
-forth (_, _, _, d) = d
+fifth :: (a,b,c,d,e) -> e
+fifth (_, _, _, _, e) = e
 
 third :: (a,b,c) -> c
 third (_,_,c) = c
 
-firstTwo :: (a,b,c) -> (a,b)
-firstTwo (a,b,_) = (a,b)
+firstTwo :: (a,b,c,d) -> (a,b)
+firstTwo (a,b,_,_) = (a,b)
 
 {------------------------------------------------------------------------------
   Map of Set operations
@@ -123,28 +124,30 @@ deleteMapSet mapSet (bid, pbid) = Map.alter (alterfDelete bid) pbid mapSet
   Comparing utilities
 ------------------------------------------------------------------------------}
 
-maxSlotMap :: Map Word64 (Word64, blockId) -> (blockId -> SlotNo) -> Maybe (blockId, SlotNo)
-maxSlotMap mp toSlot = maxSlotList toSlot $ snd <$> Map.elems mp
+maxSlotMap :: Map Word64 (Word64, blockId, SlotNo, blockId) -> Maybe (blockId, SlotNo)
+maxSlotMap mp = f <$> safeMaximumBy (\a b -> compare (getSlot a) (getSlot b)) (Map.elems mp)
+    where
+        f (_, b, sl, _) = (b,sl)
+        getSlot (_, _, sl, _) = sl
 
-maxSlotList :: (blockId -> SlotNo) -> [blockId] -> Maybe (blockId, SlotNo)
-maxSlotList toSlot = updateSlot toSlot Nothing
+maxSlotList :: [(blockId, SlotNo)] -> Maybe (blockId, SlotNo)
+maxSlotList = updateSlot Nothing
 
 cmpMaybe :: Ord a => Maybe a -> a -> Bool
 cmpMaybe Nothing _   = False
 cmpMaybe (Just a) a' = a >= a'
 
-updateSlot :: forall blockId. (blockId -> SlotNo) -> Maybe blockId -> [blockId] -> Maybe (blockId, SlotNo)
-updateSlot toSlot mbid = foldl cmpr ((\b -> (b, toSlot b)) <$> mbid)
-    where
-        cmpr :: Maybe (blockId, SlotNo) -> blockId -> Maybe (blockId, SlotNo)
-        cmpr Nothing bid = Just (bid, toSlot bid)
-        cmpr (Just (bid, sl)) bid' =
-            let sl' = toSlot bid'
-            in Just $ if sl > sl' then (bid, sl) else (bid', sl')
+updateSlot :: forall blockId. Maybe (blockId, SlotNo) -> [(blockId, SlotNo)] -> Maybe (blockId, SlotNo)
+updateSlot msl ls = safeMaximumBy (\a b -> compare (snd a) (snd b))
+    $ case msl of
+        Nothing -> ls
+        Just sl -> sl : ls
 
 updateSlotNoBlockId :: Maybe SlotNo -> [SlotNo] -> Maybe SlotNo
-updateSlotNoBlockId = foldl cmpr
-    where
-        cmpr :: Maybe SlotNo -> SlotNo -> Maybe SlotNo
-        cmpr Nothing sl'   = Just sl'
-        cmpr (Just sl) sl' = Just $ max sl sl'
+updateSlotNoBlockId msl ls = safeMaximumBy compare $ case msl of
+        Nothing -> ls
+        Just sl -> sl : ls
+
+safeMaximumBy :: (a -> a -> Ordering) -> [a] -> Maybe a
+safeMaximumBy _cmp [] = Nothing
+safeMaximumBy cmp ls  = Just $ maximumBy cmp ls

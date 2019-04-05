@@ -51,6 +51,6 @@ prop_VolatileInvalidArg = monadicIO $ do
             Left (InvalidArgumentsError _str) -> return ()
             somethingElse -> fail $ "IO returned " <> show somethingElse <> " instead of InvalidArgumentsError"
     run $ apiEquivalenceVolDB fExpected (\hasFS err -> do
-            _ <- Internal.openDBFull hasFS err (myParser hasFS err) 0 toSlot
+            _ <- Internal.openDBFull hasFS err (myParser hasFS err) 0
             return ()
         )
