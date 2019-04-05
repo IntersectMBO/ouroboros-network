@@ -53,6 +53,7 @@ module Ouroboros.Network.AnchoredFragment (
   successorBlock,
   selectPoints,
   isPrefixOf,
+  splitAfterPoint,
   join,
   intersect,
   intersectionPoint,
@@ -438,6 +439,29 @@ isPrefixOf :: (HasHeader block, Eq block)
 AnchoredFragment a1 c1 `isPrefixOf` AnchoredFragment a2 c2 =
     a1 == a2 && c1 `CF.isPrefixOf` c2
 
+-- | \( O(\log(\min(i,n-i)) \). Split the 'AnchoredFragment' after the given
+--  'Point'. Return 'Nothing' if given 'Point' is not within the fragment
+--  bounds ('withinFragmentBounds').
+--
+-- The given 'Point' may be the anchor point of the fragment, in which case
+-- the empty fragment with the given anchor point and the original fragment
+-- are returned.
+splitAfterPoint
+   :: forall block1 block2.
+      (HasHeader block1, HasHeader block2, HeaderHash block1 ~ HeaderHash block2)
+   => AnchoredFragment block1
+   -> Point block2
+   -> Maybe (AnchoredFragment block1, AnchoredFragment block1)
+splitAfterPoint c pt = case CF.splitAfterPoint (unanchorFragment c) pt of
+   Just (cp, cs)
+     -> let p = mkAnchoredFragment (anchorPoint c) cp
+        in Just (p, mkAnchoredFragment (headPoint p) cs)
+   Nothing
+     | anchorPoint c == castPoint pt
+     -> Just (mkAnchoredFragment (anchorPoint c) CF.Empty, c)
+     | otherwise
+     -> Nothing
+
 -- | \( O(\log(\min(n_1, n_2))) \). Join two anchored fragments if the anchor
 -- of the second fragment is the head (newest block) of the first fragment.
 --
@@ -466,93 +490,115 @@ join af1@(AnchoredFragment a1 c1) af2@(AnchoredFragment a2 c2) =
 -- | \( O(n_2 \log(n_1)) \). Look for the most recent intersection of two
 -- 'AnchoredFragment's @c1@ and @c2@.
 --
--- __Precondition__: the two 'AnchoredFragment's have the same anchor @a@.
+-- The fragments need not have the same anchor point.
 --
--- We return:
+-- If they intersect, i.e., share a common 'Point' (possibly the anchor
+-- point), then return a tuple of:
 --
--- * @p@ anchored at @a@: the common prefix shared between the fragments @c1@
---   and @c2@. The head (most recent) point of this prefix will become the
---   anchor of the suffixes; let's call it @a'@.
--- * @s1@ anchored at @a'@: the suffix of the first fragment @c1@ that comes
---   after @p@.
--- * @s2@ anchored at @a'@: the suffix of the second fragment @c2@ that comes
---   after @p@.
+-- * @p1@: the prefix of the first  fragment
+-- * @p2@: the prefix of the second fragment
+-- * @s1@: the suffix of the first  fragment
+-- * @s2@: the suffix of the second fragment
 --
--- Since @c1@ and @c2@ have the same anchor, there /must/ always be at least
--- one intersection, i.e. the anchor point.
---
--- If the fragments fork off directly after the anchor point and don't share
--- any more points besides the anchor point, then @p@ is the empty fragment
--- anchored at @a@, @s1 = c1@, @s2 = c2@ and @a' = a@.
---
--- The original fragments @c1@ and @c2@ can be obtained by joining @p@ and
--- @s1@, and @p@ and @s2@ respectively:
+-- @p1@ and @p2@ will have the same /head/ (possibly an anchor point), namely
+-- the intersection point @i@. The original chain @c1@ can be obtained by
+-- putting @s1@ after @p1@, similarly for @c2@: by putting @s2@ after @p2@:
 --
 -- @
--- Just c1 = 'join' p s1
--- Just c2 = 'join' p s2
+-- Just c1 = 'join' p1 s1
+-- Just c2 = 'join' p2 s2
 -- @
 --
--- For example:
+-- Take for example the following two fragments that share blocks 4 and 5. The
+-- two fragments are fragments of the same chain, but don't contain all blocks
+-- of the original chain. The anchor points of the fragments are indicated
+-- with an asterisk (*). The @-A@ and @-B@ suffixes denote that blocks are
+-- part of a fork of the chain.
 --
 -- >
--- >     ┆ A ┆     ┆ A ┆
+-- >
+-- >     ┆ 1*┆
+-- >     ├───┤
+-- >     │ 2 │     ┆ 2*┆
 -- >     ├───┤     ├───┤
--- >     │ b │     │ b │
+-- >     │ 4 │     │ 4 │
 -- >     ├───┤     ├───┤
--- >     │ c │     │ c │
+-- >     │ 5 │     │ 5 │
 -- > ────┼───┼─────┼───┼───
--- >     │ d │     │ d'│
+-- >     │ 6A│     │ 6B│
 -- >     └───┘     ├───┤
--- >               │ e'│
+-- >               │ 8B│
 -- >               └───┘
 -- >       c1        c2
 --
--- Where @A@ is the anchor of both chains. The most recent intersection of
--- @c1@ and @c2@ is block @c@. We return the following fragments:
+-- The intersection of @c1@ and @c2@ is block 5 (the last 'Point' the two
+-- fragments have in common) and we return the following fragments:
 --
 -- >
--- >     ┆ A ┆
+-- >
+-- >     ┆ 1*┆
 -- >     ├───┤
--- >     │ b │
--- >     ├───┤
--- >     │ c │     ┆ C ┆     ┆ C ┆
--- > ────┴───┴─────┼───┼─────┼───┼───
--- >               │ d │     │ d'│
--- >               └───┘     ├───┤
--- >                         │ e'│
--- >                         └───┘
--- >      (p,       s1,       s2)
+-- >     │ 2 │     ┆ 2*┆
+-- >     ├───┤     ├───┤
+-- >     │ 4 │     │ 4 │
+-- >     ├───┤     ├───┤
+-- >     │ 5 │     │ 5 │      ┆ 5*┆     ┆ 5*┆
+-- > ────┴───┴─────┴───┴──────┼───┼─────┼───┼──
+-- >                          │ 6A│     │ 6B│
+-- >                          └───┘     ├───┤
+-- >                                    │ 8B│
+-- >                                    └───┘
+-- > Just (p1,       p2,        s1,       s2)
+--
+-- The intersection point will be the anchor point of fragments @s1@ and @s2@.
+-- Fragment @p1@ will have the same anchor as @c1@ and @p2@ will have the same
+-- anchor as @c2@.
+--
+-- Note that an empty fragment can still intersect another fragment, as its
+-- anchor point can still intersect the other fragment. In that case the
+-- respective prefix and suffix are both equal to original empty fragment.
+-- Additionally, two empty fragments intersect if their anchor points are
+-- equal, in which case all prefixes and suffixes are equal to the empty
+-- fragment with the anchor point in question.
 intersect
-    :: (HasHeader block1, HasHeader block2, HeaderHash block1 ~ HeaderHash block2)
+    :: forall block1 block2.
+       (HasHeader block1, HasHeader block2, HeaderHash block1 ~ HeaderHash block2)
     => AnchoredFragment block1
     -> AnchoredFragment block2
-    -> (AnchoredFragment block1, AnchoredFragment block1, AnchoredFragment block2)
-intersect c1 c2 =
-    assert (anchorPoint c1 == castPoint (anchorPoint c2)) $
-    case CF.intersectChainFragments cf1 cf2 of
-      Nothing                -> (Empty a, c1, c2)
-      Just (cp, _, cs1, cs2) ->
-        let p  = mkAnchoredFragment a cp
-            a' = headPoint p
-        in (p, mkAnchoredFragment a' cs1, mkAnchoredFragment (castPoint a') cs2)
+    -> Maybe (AnchoredFragment block1, AnchoredFragment block2,
+              AnchoredFragment block1, AnchoredFragment block2)
+intersect c1 c2 = go c2
   where
-    a   = anchorPoint c1
-    cf1 = unanchorFragment c1
-    cf2 = unanchorFragment c2
+    go :: AnchoredFragment block2
+       -> Maybe (AnchoredFragment block1, AnchoredFragment block2,
+                 AnchoredFragment block1, AnchoredFragment block2)
+    go (Empty a2)
+      | Just (p1, s1) <- splitAfterPoint c1 a2
+      = Just (p1, mkAnchoredFragment a2 CF.Empty, s1, c2)
+      | otherwise
+      = Nothing
+    go (c2' :> b)
+      | let pt = blockPoint b
+      , Just (p1, s1) <- splitAfterPoint c1 pt
+      , Just (p2, s2) <- splitAfterPoint c2 pt
+        -- splitAfterPoint c2 pt cannot fail,
+        -- since pt comes out of c2
+      = Just (p1, p2, s1, s2)
+      | otherwise
+      = go c2'
 
 -- | \( O(n_2 \log(n_1)) \). Look for the most recent intersection point of
 -- two 'AnchoredFragment's
 --
--- __Precondition__: the two 'AnchoredFragment's have the same anchor.
+-- The fragments need not have the same anchor point.
 --
 -- Reusing the example in the docstring of 'intersect': this function will
--- return the anchor point @C@.
+-- return the anchor point @5*@.
 intersectionPoint
     :: (HasHeader block1, HasHeader block2, HeaderHash block1 ~ HeaderHash block2)
     => AnchoredFragment block1
     -> AnchoredFragment block2
-    -> Point block1
-intersectionPoint c1 c2 = anchorPoint s1
-  where
-    (_, s1, _) = c1 `intersect` c2
+    -> Maybe (Point block1)
+intersectionPoint c1 c2 = case c1 `intersect` c2 of
+    Just (_, _, s1, _) -> Just (anchorPoint s1)
+    Nothing            -> Nothing
