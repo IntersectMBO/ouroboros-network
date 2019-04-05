@@ -9,7 +9,7 @@ module Test.AnchoredFragment
   ) where
 
 import qualified Data.List as L
-import           Data.Maybe (listToMaybe, maybe, maybeToList)
+import           Data.Maybe (isJust, listToMaybe, maybe, maybeToList)
 import           Data.Word (Word64)
 
 import           Test.QuickCheck
@@ -26,10 +26,10 @@ import           Ouroboros.Network.ChainFragment (ChainFragment)
 import qualified Ouroboros.Network.ChainFragment as CF
 import           Ouroboros.Network.Testing.ConcreteBlock
 import           Test.ChainFragment (TestBlockChainFragment (..),
-                     TestChainFragmentAndPoint (..))
+                     TestChainFragmentAndPoint (..),
+                     TestChainFragmentFork (..))
 import qualified Test.ChainFragment as CF
-import           Test.ChainGenerators (TestBlockChain (..), TestChainFork (..),
-                     genPoint)
+import           Test.ChainGenerators (TestBlockChain (..), genPoint)
 
 
 --
@@ -51,9 +51,6 @@ tests = testGroup "AnchoredFragment"
     , testProperty "arbitrary for TestAnchoredFragmentAndPoint" prop_arbitrary_TestAnchoredFragmentAndPoint
     , testProperty "shrink for TestAnchoredFragmentAndPoint"    prop_shrink_TestAnchoredFragmentAndPoint
 
-    , testProperty "arbitrary for TestAnchoredFragmentFork"  prop_arbitrary_TestAnchoredFragmentFork
-    , testProperty "shrink for TestAnchoredFragmentFork"     prop_shrink_TestAnchoredFragmentFork
-
     , testProperty "arbitrary for TestJoinableAnchoredFragments" prop_arbitrary_TestJoinableAnchoredFragments
     ]
 
@@ -72,8 +69,10 @@ tests = testGroup "AnchoredFragment"
   , testProperty "successorBlock"                     prop_successorBlock
   , testProperty "pointOnFragment"                    prop_pointOnFragment
   , testProperty "selectPoints"                       prop_selectPoints
+  , testProperty "splitAfterPoint"                    prop_splitAfterPoint
   , testProperty "join"                               prop_join
-  , testProperty "join/intersect"                     prop_join_intersect
+  , testProperty "intersect"                          prop_intersect
+  , testProperty "intersect when within bounds"       prop_intersect_bounds
   , testProperty "toChain/fromChain"                  prop_toChain_fromChain
   , testProperty  "anchorNewest"                      prop_anchorNewest
   ]
@@ -198,6 +197,18 @@ prop_selectPoints taf@(TestBlockAnchoredFragment c) =
     offsets = [0,1,2,3,5,8,13,21,34,55,89,144,233,377,610,987,1597,2584]
     cf      = toChainFragment taf
 
+prop_splitAfterPoint :: TestAnchoredFragmentAndPoint -> Property
+prop_splitAfterPoint (TestAnchoredFragmentAndPoint c pt) =
+  case AF.splitAfterPoint c pt of
+    Just (p, s) ->
+         AF.withinFragmentBounds pt c
+      .&&. AF.anchorPoint p === AF.anchorPoint c
+      .&&. AF.headPoint   p === pt
+      .&&. AF.anchorPoint s === pt
+      .&&. AF.headPoint   s === AF.headPoint c
+      .&&. AF.join p s      === Just c
+    Nothing -> property $ not $ AF.withinFragmentBounds pt c
+
 prop_join :: TestJoinableAnchoredFragments -> Property
 prop_join t@(TestJoinableAnchoredFragments c1 c2) = case AF.join c1 c2 of
     Just joined -> joinable t .&&.
@@ -207,20 +218,29 @@ prop_join t@(TestJoinableAnchoredFragments c1 c2) = case AF.join c1 c2 of
     Nothing     -> not (joinable t) .&&.
                    AF.headPoint c1 =/= AF.anchorPoint c2
 
-prop_join_intersect :: TestAnchoredFragmentFork -> Property
-prop_join_intersect (TestAnchoredFragmentFork c1 c2) =
-    AF.join p s1 === Just c1 .&&.
-    AF.join p s2 === Just c2 .&&.
-    AF.anchorPoint p  === a  .&&.
-    AF.anchorPoint s1 === a' .&&.
-    AF.anchorPoint s2 === a' .&&.
-    if AF.null p
-    then s1 === c1 .&&. s2 === c2
-    else property True
+prop_intersect :: TestAnchoredFragmentFork -> Property
+prop_intersect (TestAnchoredFragmentFork origP1 origP2 c1 c2) =
+  case AF.intersect c1 c2 of
+    Nothing ->
+      L.intersect (pointsList c1) (pointsList c2) === []
+    Just (p1, p2, s1, s2) ->
+      p1 === origP1 .&&. p2 === origP2 .&&.
+      AF.join p1 s1 === Just c1 .&&.
+      AF.join p2 s2 === Just c2 .&&.
+      AF.headPoint p1   === AF.headPoint   p2 .&&.
+      AF.anchorPoint p1 === AF.anchorPoint c1 .&&.
+      AF.anchorPoint p2 === AF.anchorPoint c2 .&&.
+      AF.anchorPoint s1 === AF.headPoint   p1 .&&.
+      AF.anchorPoint s2 === AF.headPoint   p2
   where
-    (p, s1, s2) = AF.intersect c1 c2
-    a  = AF.anchorPoint c1
-    a' = AF.headPoint p
+    pointsList c = AF.anchorPoint c : map blockPoint (AF.toOldestFirst c)
+
+prop_intersect_bounds :: TestAnchoredFragmentFork -> Property
+prop_intersect_bounds (TestAnchoredFragmentFork _ _ c1 c2) =
+    intersects === (AF.withinFragmentBounds (AF.anchorPoint c1) c2 ||
+                    AF.withinFragmentBounds (AF.anchorPoint c2) c1)
+  where
+    intersects = isJust (AF.intersect c1 c2) || isJust (AF.intersect c2 c1)
 
 prop_toChain_fromChain :: TestBlockChain -> Property
 prop_toChain_fromChain (TestBlockChain ch) =
@@ -542,20 +562,19 @@ prop_arbitrary_TestJoinableAnchoredFragments t =
 
 
 --
--- Generator for two forks starting at the same anchor
+-- Generator for two forks based on TestChainFragmentFork
 --
 
-data TestAnchoredFragmentFork = TestAnchoredFragmentFork_ Int TestChainFork
-    -- We don't want all anchored fragments to start from genesis, so the
-    -- 'Int' indicates the number of blocks to drop from the beginning. We
-    -- guarantee that this number is small enough to not end up with any empty
-    -- anchored fragment (remember that we need one extra block in the chain
-    -- fragment for the anchor point).
-
+newtype TestAnchoredFragmentFork = TestAnchoredFragmentFork_ TestChainFragmentFork
+    -- We guarantee that the first two 'ChainFragment's in
+    -- TestChainFragmentFork (and consequently the last two arguments also)
+    -- can be turned into 'AnchoredFragment's.
 
 instance Show TestAnchoredFragmentFork where
-  show (TestAnchoredFragmentFork c1 c2) =
+  show (TestAnchoredFragmentFork p1 p2 c1 c2) =
       "TestAnchoredFragmentFork" ++ nl ++
+      AF.prettyPrint nl show show p1 ++ nl ++ nl ++
+      AF.prettyPrint nl show show p2 ++ nl ++ nl ++
       AF.prettyPrint nl show show c1 ++ nl ++ nl ++
       AF.prettyPrint nl show show c2
     where
@@ -563,48 +582,44 @@ instance Show TestAnchoredFragmentFork where
 
 viewAnchoredFragmentForks
     :: TestAnchoredFragmentFork
-    -> (AnchoredFragment Block, AnchoredFragment Block)
-viewAnchoredFragmentForks (TestAnchoredFragmentFork_ n tcf) =
-    (dropOldest leftFork, dropOldest rightFork)
+    -> (AnchoredFragment Block, AnchoredFragment Block,
+        AnchoredFragment Block, AnchoredFragment Block)
+viewAnchoredFragmentForks (TestAnchoredFragmentFork_ tcff) =
+    (anchor p1, anchor p2, anchor s1, anchor s2)
   where
-    TestChainFork _ leftFork rightFork = tcf
-    dropOldest ch
-      | 0 == n
-      = AF.fromChain ch
-      | (ab:bs) <- drop (n - 1) (Chain.toOldestFirst ch)
-      = AF.fromOldestFirst (blockPoint ab) bs
-      | otherwise
-      = error "dropping too many blocks from the start of the chain"
+    msg = "TestAnchoredFragmentFork: chain fragment cannot be anchored "
+    anchor :: ChainFragment Block -> AnchoredFragment Block
+    anchor cf = maybe (error (msg <> show cf)) getTestAnchoredFragment $
+      toTestBlockAnchoredFragment cf
+
+    TestChainFragmentFork p1 p2 s1 s2 = tcff
 
 pattern TestAnchoredFragmentFork
     :: AnchoredFragment Block
     -> AnchoredFragment Block
+    -> AnchoredFragment Block
+    -> AnchoredFragment Block
     -> TestAnchoredFragmentFork
-pattern TestAnchoredFragmentFork c1 c2 <-
-    (viewAnchoredFragmentForks -> (c1, c2))
+pattern TestAnchoredFragmentFork p1 p2 c1 c2 <-
+    (viewAnchoredFragmentForks -> (p1, p2, c1, c2))
 
 {-# COMPLETE TestAnchoredFragmentFork #-}
 
 instance Arbitrary TestAnchoredFragmentFork where
   arbitrary = do
-    tcf@(TestChainFork commonPrefix _ _) <- arbitrary
-    n <- choose (0, Chain.length commonPrefix)
-    return (TestAnchoredFragmentFork_ n tcf)
-  shrink (TestAnchoredFragmentFork_ n tcf) =
-    [ TestAnchoredFragmentFork_ n' tcf'
-    | tcf'@(TestChainFork commonPrefix' _ _) <- shrink tcf
-    , let n' = min n (Chain.length commonPrefix')
+    tcff <- arbitrary `suchThat` \(TestChainFragmentFork p1 p2 _ _) ->
+      not (CF.null p1) && not (CF.null p2)
+    return (TestAnchoredFragmentFork_ tcff)
+  shrink (TestAnchoredFragmentFork_ tcff) =
+    [ TestAnchoredFragmentFork_ tcff'
+    | tcff'@(TestChainFragmentFork p1 p2 _ _) <- shrink tcff
+    , not (CF.null p1) && not (CF.null p2)
+    ] ++
+    -- Also try just shrinking the suffixes
+    [ TestAnchoredFragmentFork_  (TestChainFragmentFork p1 p2 cf1' cf2')
+    | let TestChainFragmentFork p1 p2 cf1 cf2 = tcff
+    , n1 <- [1..CF.length cf1 - CF.length p1]
+    , n2 <- [1..CF.length cf2 - CF.length p2]
+    , let cf1' = CF.dropNewest n1 cf1
+          cf2' = CF.dropNewest n2 cf2
     ]
-
-prop_arbitrary_TestAnchoredFragmentFork :: TestAnchoredFragmentFork -> Property
-prop_arbitrary_TestAnchoredFragmentFork (TestAnchoredFragmentFork c1 c2) =
-    let anchorIsGenesis = AF.anchorPoint c1 == Chain.genesisPoint in
-    cover 5 anchorIsGenesis       "Anchored at genesis"    $
-    cover 5 (not anchorIsGenesis) "Anchored after genesis" $
-    AF.valid c1 .&&. AF.valid c2 .&&. AF.anchorPoint c1 === AF.anchorPoint c2
-
-prop_shrink_TestAnchoredFragmentFork :: TestAnchoredFragmentFork -> Property
-prop_shrink_TestAnchoredFragmentFork t = conjoin
-    [ AF.valid c1' .&&. AF.valid c2' .&&.
-      AF.anchorPoint c1' === AF.anchorPoint c2'
-    | TestAnchoredFragmentFork c1' c2' <- shrink t ]
