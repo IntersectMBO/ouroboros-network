@@ -30,7 +30,7 @@ type Index blockId = Map String (Maybe SlotNo, Int, Map SlotOffset (BlockSize, b
 
 -- For each blockId, we store the file we can find the block, the offset, its size
 -- in bytes and its predecessor.
-type ReverseIndex blockId = Map blockId (String, SlotOffset, BlockSize, blockId)
+type ReverseIndex blockId = Map blockId (String, SlotOffset, BlockSize, SlotNo, blockId)
 
 -- For each block, we store the Set of all blocks which have this block as
 -- a predecessor (its successors).
@@ -82,6 +82,6 @@ type BlockSize = Word64
 
 newtype Parser e m blockId = Parser {
     -- | Parse block storage at the given path.
-    --   The parser returns for each block, its size its blockId and its predecessor's blockId.
-    parse :: FsPath -> m ([(SlotOffset, (BlockSize, blockId, blockId))], Maybe e)
+    --   The parser returns for each block, its size its blockId, its slot and its predecessor's blockId.
+    parse :: FsPath -> m ([(SlotOffset, (BlockSize, blockId, SlotNo, blockId))], Maybe e)
     }

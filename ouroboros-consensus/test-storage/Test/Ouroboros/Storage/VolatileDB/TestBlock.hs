@@ -50,8 +50,8 @@ fromBinary bs = do
         (bid, predb, 1 :: SerialMagic) -> Right (bid, predb)
         _                              -> Left "wrong payload"
 
-toSlot :: BlockId -> SlotNo
-toSlot = SlotNo . fromIntegral
+guessSlot :: BlockId -> SlotNo
+guessSlot = SlotNo . fromIntegral
 
 toBlock :: BlockInfo -> TestBlock
 toBlock (b, pb) = (b, pb, 1)
@@ -75,14 +75,14 @@ parseImpl :: forall m h. (Monad m, MonadThrow m)
           => HasFS m h
           -> ErrorHandling (VolatileDBError BlockId) m
           -> FsPath
-          -> m ([(SlotOffset, (BlockSize, BlockId, BlockId))], Maybe (ParserError BlockId))
+          -> m ([(SlotOffset, (BlockSize, BlockId, SlotNo, BlockId))], Maybe (ParserError BlockId))
 parseImpl hasFS@HasFS{..} _err path =
     withFile hasFS path IO.ReadMode $ \hndl -> do
-        let go :: M.Map SlotOffset (Word64, BlockId, BlockId)
+        let go :: M.Map SlotOffset (Word64, BlockId, SlotNo, BlockId)
                -> Word64
                -> Int
                -> Set BlockId
-               -> m ([(SlotOffset, (BlockSize, BlockId, BlockId))], Maybe (ParserError BlockId))
+               -> m ([(SlotOffset, (BlockSize, BlockId, SlotNo, BlockId))], Maybe (ParserError BlockId))
             go mp n trials bids = do
                 bs <- hGet hndl binarySize
                 if BS.length bs == 0 then return (M.toList mp, Nothing)
@@ -92,7 +92,7 @@ parseImpl hasFS@HasFS{..} _err path =
                     Right (bid, prebid) ->
                         if Set.member bid bids
                         then return (M.toList mp, Just $ DuplicatedSlot $ M.singleton bid (path, path))
-                        else let mp' = M.insert n (fromIntegral binarySize, bid, prebid) mp
+                        else let mp' = M.insert n (fromIntegral binarySize, bid, SlotNo $ fromIntegral bid, prebid) mp
                             in go mp' (n + fromIntegral binarySize) (trials + 1) (Set.insert bid bids)
         go M.empty 0 0 Set.empty
 

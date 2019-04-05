@@ -246,7 +246,7 @@ runPure dbm mdb (CmdErr cmd err) =
         runRest db cmd' = case cmd' of
             Corrupt cors -> do
                 closeDB db
-                runCorruptionModel toSlot cors
+                runCorruptionModel guessSlot cors
                 reOpenDB db
                 return $ Unit ()
             CreateFile -> do
@@ -274,9 +274,9 @@ runDB :: (HasCallStack, Monad m)
 runDB restCmd db cmd = case cmd of
     GetBlock bid       -> Blob <$> getBlock db bid
     GetBlockIds        -> Blocks <$> getBlockIds db
-    PutBlock b pb      -> Unit <$> putBlock db b pb (BL.lazyByteString $ Binary.encode $ toBlock (b, pb))
+    PutBlock b pb      -> Unit <$> putBlock db b (guessSlot b) pb (BL.lazyByteString $ Binary.encode $ toBlock (b, pb))
     GetSuccessors b    -> Successors <$> getSuccessors db b
-    GarbageCollect bid -> Unit <$> garbageCollect db (toSlot bid)
+    GarbageCollect bid -> Unit <$> garbageCollect db (guessSlot bid)
     IsOpen             -> Bl <$> isOpenDB db
     Close              -> Unit <$> closeDB db
     ReOpen             -> Unit <$> reOpenDB db
@@ -358,7 +358,7 @@ generatorCmdImpl terminatingCmd m@Model {..} =
     psl <- predecessorGenerator m
     let lastGC = latestGarbaged dbModel
     let dbFiles :: [String] = getDBFiles dbModel
-    ls <- filter (newer lastGC . toSlot) <$> (listOf $ blockIdGenerator m)
+    ls <- filter (newer lastGC . guessSlot) <$> (listOf $ blockIdGenerator m)
     bid <- do
         let bids = concat $ (\(f,(_, _, bs)) -> map (\(b, pb) -> (f, b, pb)) bs) <$> (M.toList $ index dbModel)
         case bids of
@@ -496,17 +496,17 @@ mockImpl model cmdErr = At <$> return mockResp
 
 knownLimitation :: Model Symbolic -> Cmd :@ Symbolic -> Logic
 knownLimitation model (At cmd) = case cmd of
-    GetBlock bid       -> Boolean $ isLimitation (latestGarbaged $ dbModel model) (toSlot bid)
+    GetBlock bid       -> Boolean $ isLimitation (latestGarbaged $ dbModel model) (guessSlot bid)
     GetBlockIds        -> Bot
     GetSuccessors {}   -> Bot
-    PutBlock bid _pbid -> Boolean $ isLimitation (latestGarbaged $ dbModel model) (toSlot bid)
+    PutBlock bid _pbid -> Boolean $ isLimitation (latestGarbaged $ dbModel model) (guessSlot bid)
     GarbageCollect _sl -> Bot
     IsOpen             -> Bot
     Close              -> Bot
     ReOpen             -> Bot
     Corrupt _          -> Bot
     CreateFile         -> Boolean $ not $ open $ dbModel model
-    AskIfMember bids   -> exists ((\b -> isLimitation (latestGarbaged $ dbModel model) (toSlot b)) <$> bids) Boolean
+    AskIfMember bids   -> exists ((\b -> isLimitation (latestGarbaged $ dbModel model) (guessSlot b)) <$> bids) Boolean
     CreateInvalidFile  -> Boolean $ not $ open $ dbModel model
     DuplicateBlock {}  -> Boolean $ not $ open $ dbModel model
     where
@@ -516,7 +516,6 @@ knownLimitation model (At cmd) = case cmd of
 
 mkDBModel :: MonadState (DBModel BlockId, Maybe Errors) m
           => Int
-          -> (BlockId -> SlotNo)
           -> (DBModel BlockId, VolatileDB BlockId (ExceptT (VolatileDBError BlockId) m))
 mkDBModel = openDBModel EH.exceptT
 
@@ -527,7 +526,7 @@ prop_sequential = withMaxSuccess 1000 $
                  -> HasFS IO h
                  -> PropertyM IO (History (At CmdErr) (At Resp), Reason)
             test errorsVar hasFS = do
-              (db, env) <- run $ Internal.openDBFull hasFS EH.monadCatch (myParser hasFS EH.monadCatch) 3 toSlot
+              (db, env) <- run $ Internal.openDBFull hasFS EH.monadCatch (myParser hasFS EH.monadCatch) 3
               let sm' = smErr True errorsVar hasFS db env dbm vdb
               (hist, _model, res) <- runCommands sm' cmds
               run $ closeDB db
@@ -547,7 +546,7 @@ prop_sequential = withMaxSuccess 1000 $
             $ res === Ok
     where
         -- we use that: MonadState (DBModel BlockId) (State (DBModel BlockId))
-        (dbm, vdb) = mkDBModel 3 toSlot
+        (dbm, vdb) = mkDBModel 3
         smUnused = stateMachine
                     dbm
                     vdb
@@ -802,7 +801,7 @@ showLabelledExamples' mReplay numTests = do
             collects (tag . execCmds (initModel smUnused) $ cmds) $
                 property True
   where
-    (dbm, vdb) = mkDBModel 3 toSlot
+    (dbm, vdb) = mkDBModel 3
     smUnused :: StateMachine Model (At CmdErr) IO (At Resp)
     smUnused = stateMachine
                 dbm
