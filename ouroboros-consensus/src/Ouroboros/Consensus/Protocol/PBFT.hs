@@ -22,7 +22,6 @@ module Ouroboros.Consensus.Protocol.PBFT (
   , Payload(..)
   ) where
 
-import           Cardano.Chain.Update (ProtocolParameters)
 import           Codec.Serialise (Serialise)
 import           Control.Monad.Except
 import           Data.Map.Strict (Map)
@@ -61,9 +60,11 @@ invertBijection
   . Map.toList
 
 data PBftLedgerView c = PBftLedgerView
-  ProtocolParameters
-      -- Map from genesis to delegate keys. Note that this map is injective by
-      -- construction.
+  -- TODO Once we have the window and threshold in the protocol parameters, we
+  -- will use them here and remove the parameters from 'PBftParams' below.
+
+  -- ProtocolParameters Map from genesis to delegate keys.
+  -- Note that this map is injective by construction.
   (Map (VerKeyDSIGN (PBftDSIGN c)) (VerKeyDSIGN (PBftDSIGN c)))
 
 {-------------------------------------------------------------------------------
@@ -85,6 +86,9 @@ data PBftParams = PBftParams {
 
       -- | Number of core nodes
     , pbftNumNodes      :: Word64
+
+      -- TODO These will ultimately be protocol parameters, but at the moment such
+      -- parameters are missing in the ledger.
 
       -- | Size of the window over which to check the proportion of signed keys.
     , pbftSignatureWindow :: Word64
@@ -149,7 +153,7 @@ instance PBftCrypto c => OuroborosTag (PBft c) where
     where
       PBftParams{..}  = pbftParams
 
-  applyChainState PBftNodeConfig{..} (PBftLedgerView _pp dms) b (signers, lastSlot) = do
+  applyChainState PBftNodeConfig{..} (PBftLedgerView dms) b (signers, lastSlot) = do
       -- Check that the issuer signature verifies, and that it's a delegate of a
       -- genesis key, and that genesis key hasn't voted too many times.
 

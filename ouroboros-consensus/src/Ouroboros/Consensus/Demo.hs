@@ -138,7 +138,6 @@ protocolInfo (DemoPBFT params) (NumCoreNodes numCoreNodes) (CoreNodeId nid) =
               , pbftVerKey   = VerKeyMockDSIGN nid
               }
             , encNodeConfigExt = PBftLedgerView
-                undefined -- This is currently not used
                 (Map.fromList [(VerKeyMockDSIGN n, VerKeyMockDSIGN n) | n <- [0 .. numCoreNodes - 1]])
           }
       , pInfoInitChain  = Genesis

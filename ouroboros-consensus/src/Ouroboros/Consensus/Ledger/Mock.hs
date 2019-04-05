@@ -367,8 +367,8 @@ instance (BftCrypto c, SimpleBlockCrypto c')
 -- | Mock ledger is capable of running PBFT, but we simply assume the delegation
 -- map and the protocol parameters can be found statically in the node
 -- configuration.
-instance (PBftCrypto c, SimpleBlockCrypto c', lv ~ LedgerView (PBft c))
-  => ProtocolLedgerView (SimpleBlock (ExtNodeConfig lv (PBft c)) c') where
+instance (PBftCrypto c, SimpleBlockCrypto c')
+  => ProtocolLedgerView (SimpleBlock (ExtNodeConfig (PBftLedgerView c) (PBft c)) c') where
   protocolLedgerView (EncNodeConfig _ pbftParams) _ls = pbftParams
 
 instance (PraosCrypto c, SimpleBlockCrypto c')
