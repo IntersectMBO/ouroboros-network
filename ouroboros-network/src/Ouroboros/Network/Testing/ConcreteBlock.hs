@@ -156,23 +156,23 @@ instance HasHeader Block where
 -- hash and block hash are updated; slot number and signers are kept intact.
 --
 fixupBlock :: (HasHeader block, HeaderHash block ~ HeaderHash Block)
-           => Chain block -> Block -> Block
-fixupBlock c b@Block{blockBody, blockHeader} =
-    b { blockHeader = fixupBlockHeader c (hashBody blockBody) blockHeader }
+           => Maybe block -> Block -> Block
+fixupBlock pb b@Block{blockBody, blockHeader} =
+    b { blockHeader = fixupBlockHeader pb (hashBody blockBody) blockHeader }
 
 -- | Fixup block header to fit it on top of a chain.  Only block number and
 -- previous hash are updated; the slot and signer are kept unchanged.
 --
 fixupBlockHeader :: (HasHeader block, HeaderHash block ~ HeaderHash Block)
-                 => Chain block -> BodyHash -> BlockHeader -> BlockHeader
-fixupBlockHeader c h b = b'
+                 => Maybe block -> BodyHash -> BlockHeader -> BlockHeader
+fixupBlockHeader pb h b = b'
   where
     b' = BlockHeader {
       headerHash     = hashHeader b',
-      headerPrevHash = castHash (headHash c),
+      headerPrevHash = maybe GenesisHash (BlockHash . blockHash) pb,
       headerSlot     = headerSlot b,   -- keep the existing slot number
       headerSigner   = headerSigner b, -- and signer
-      headerBlockNo  = succ $ headBlockNo c,
+      headerBlockNo  = maybe (BlockNo 1) (succ . blockNo) pb,
       headerBodyHash = h
     }
 
