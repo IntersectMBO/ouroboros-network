@@ -450,14 +450,14 @@ fromListFixupBlocks []      = Empty
 fromListFixupBlocks (b : c) = c' :> b'
   where
     c' = fromListFixupBlocks c
-    b' = fixupBlockCF c' b
+    b' = fixupBlock (CF.head c') b
 
 fromListFixupHeaders :: [BlockHeader] -> ChainFragment BlockHeader
 fromListFixupHeaders []      = Empty
 fromListFixupHeaders (b : c) = c' :> b'
   where
     c' = fromListFixupHeaders c
-    b' = fixupBlockHeaderCF c' (headerBodyHash b) b
+    b' = fixupBlockHeader (CF.head c') (headerBodyHash b) b
 
 -- | The Ouroboros K paramater. This is also the maximum rollback length.
 --
@@ -482,7 +482,7 @@ instance Arbitrary TestAddBlock where
   shrink (TestAddBlock c b) =
     [ TestAddBlock c' b'
     | TestBlockChainFragment c' <- shrink (TestBlockChainFragment c)
-    , let b' = fixupBlockCF c' b
+    , let b' = fixupBlock (CF.head c') b
     ]
 
 genAddBlock :: (HasHeader block, HeaderHash block ~ ConcreteHeaderHash)
@@ -493,7 +493,7 @@ genAddBlock chain = do
     let pb = mkPartialBlock (addSlotGap slotGap
                                         (fromMaybe (SlotNo 0) $ CF.headSlot chain))
                                         body
-        b  = fixupBlockCF chain pb
+        b  = fixupBlock (CF.head chain) pb
     return b
 
 prop_arbitrary_TestAddBlock :: TestAddBlock -> Bool
