@@ -205,14 +205,14 @@ fromListFixupBlocks []      = Genesis
 fromListFixupBlocks (b : c) = c' :> b'
   where
     c' = fromListFixupBlocks c
-    b' = fixupBlock c' b
+    b' = fixupBlock (Chain.head c') b
 
 fromListFixupHeaders :: [BlockHeader] -> Chain BlockHeader
 fromListFixupHeaders []      = Genesis
 fromListFixupHeaders (b : c) = c' :> b'
   where
     c' = fromListFixupHeaders c
-    b' = fixupBlockHeader c' (headerBodyHash b) b
+    b' = fixupBlockHeader (Chain.head c') (headerBodyHash b) b
 
 -- | The Ouroboros K paramater. This is also the maximum rollback length.
 --
@@ -237,7 +237,7 @@ instance Arbitrary TestAddBlock where
   shrink (TestAddBlock c b) =
     [ TestAddBlock c' b'
     | TestBlockChain c' <- shrink (TestBlockChain c)
-    , let b' = fixupBlock c' b
+    , let b' = fixupBlock (Chain.head c') b
     ]
 
 genAddBlock :: (HasHeader block, HeaderHash block ~ ConcreteHeaderHash)
@@ -246,7 +246,7 @@ genAddBlock chain = do
     slotGap <- genSlotGap
     body    <- getArbitraryBlockBody <$> arbitrary
     let pb = mkPartialBlock (addSlotGap slotGap (Chain.headSlot chain)) body
-        b  = fixupBlock chain pb
+        b  = fixupBlock (Chain.head chain) pb
     return b
 
 prop_arbitrary_TestAddBlock :: TestAddBlock -> Bool
