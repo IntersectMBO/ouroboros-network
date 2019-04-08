@@ -5,8 +5,6 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE FlexibleInstances #-}
 
-import qualified Codec.CBOR.Encoding as CBOR
-import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Write as CBOR (toStrictByteString)
 import Codec.Serialise (Serialise (..), deserialiseOrFail)
 
@@ -32,7 +30,6 @@ import qualified Data.Text as Text
 import Data.Time.Clock.POSIX (getCurrentTime)
 import Options.Applicative (execParser, flag, fullDesc, help, info, long, metavar,
                             progDesc, strOption, value)
-import qualified System.Directory
 import System.Random (StdGen, getStdGen, randomR)
 
 import Cardano.BM.Configuration as BM (setup)
@@ -42,11 +39,9 @@ import Cardano.BM.Setup (withTrace)
 import qualified Cardano.BM.Trace as BM (Trace)
 import Control.Tracer (Tracer (..), nullTracer)
 
-import qualified Pos.Binary.Class as CSL (decode, encode)
-import Pos.Chain.Block (Block, BlockHeader (..), HeaderHash, genesisBlock0,
-                        headerHash)
+import qualified Pos.Binary.Class as CSL (decode)
+import Pos.Chain.Block (Block, BlockHeader (..), genesisBlock0, headerHash)
 import Pos.Chain.Lrc (genesisLeaders)
-import Pos.Core (SlotCount (..))
 import Pos.Chain.Block (recoveryHeadersMessage, streamWindow)
 import Pos.Chain.Update (lastKnownBlockVersion, updateConfiguration)
 import Pos.Configuration (networkConnectionTimeout)
@@ -83,18 +78,12 @@ import Ouroboros.Network.Server.Version.Protocol (serverPeerFromVersions)
 import qualified Ouroboros.Network.Server.Version.CBOR as Version
 
 import qualified Ouroboros.Byron.Proxy.DB as DB
-import qualified Ouroboros.Byron.Proxy.Index.Sqlite as Index
 import Ouroboros.Byron.Proxy.Main
-import qualified Ouroboros.Storage.Common as Immutable
-import qualified Ouroboros.Storage.ImmutableDB.API as Immutable
-import qualified Ouroboros.Storage.ImmutableDB.Impl as Immutable
-import Ouroboros.Storage.FS.API.Types
-import Ouroboros.Storage.FS.API
-import Ouroboros.Storage.FS.IO
-import Ouroboros.Storage.Util.ErrorHandling (exceptions)
 
 import qualified Control.Monad.Class.MonadThrow as NonStandard
 import qualified Control.Monad.Catch as Standard
+
+import DB (DBConfig (..), seedWithGenesis, withDB)
 
 -- | The main action using the proxy, index, and immutable database: download
 -- the best known chain from the proxy and put it into the database, over and
@@ -454,74 +443,34 @@ main = withCompileInfo $ do
             , bpcSendQueueSize     = 1
             , bpcRecvQueueSize     = 1
             }
-          -- The number of slots in an epoch. We use the one in the genesis
-          -- configuration, and we assume it will never change.
-          epochSlots :: SlotCount
-          epochSlots = configEpochSlots genesisConfig
-          getEpochSize :: Immutable.EpochNo -> IO Immutable.EpochSize
-          -- FIXME the 'fromIntegral' casts from 'Word64' to 'Word'.
-          -- For sufficiently high k, on certain machines, there could be an
-          -- overflow.
-          getEpochSize epoch = return $ Immutable.EpochSize $
-            fromIntegral (getSlotCount epochSlots)
-          -- Default database path is ./db-byron-proxy
-          dbFilePath :: FilePath
-          dbFilePath = fromMaybe "db-byron-proxy" (dbPath cArgs)
-      -- Must ensure that the mount point given to ioHasFS exists or else
-      -- opening the ImmutableDB will fail.
-      -- NB: System.Directory, not the HasFS API.
-      System.Directory.createDirectoryIfMissing True dbFilePath
-      let fsMountPoint :: MountPoint
-          fsMountPoint = MountPoint dbFilePath
-          fs :: HasFS IO HandleIO
-          fs = ioHasFS fsMountPoint
-          -- These 2 go by way of the cardano-sl `Bi` class, which is not the
-          -- same as the `Serialise` class. Typeclasses are way over used and,
-          -- more often than not, very annoying.
-          decodeHeaderHash :: forall s . CBOR.Decoder s HeaderHash
-          decodeHeaderHash = CSL.decode
-          encodeHeaderHash :: HeaderHash -> CBOR.Encoding
-          encodeHeaderHash = CSL.encode
-          openDB = Immutable.openDB
-            decodeHeaderHash
-            encodeHeaderHash
-            fs
-            exceptions
-            getEpochSize
-            Immutable.ValidateMostRecentEpoch
-            (DB.epochFileParser epochSlots fs)
-          -- The supporting header hash and tip index.
-          indexFilePath :: FilePath
-          indexFilePath = bpoIndexPath options
-      Index.withDB_ indexFilePath $ \idx -> do
-        Immutable.withDB openDB $ \idb -> do
-          let db = DB.mkDB throwIO epochSlots idx idb
-          -- Check the tip, and if it says the DB is empty, seed it with
-          -- the genesis block (`Left genesisBlock :: Block`).
-          tip <- DB.readTip db
-          case tip of
-            DB.TipGenesis -> do
-              putStrLn "DB is empty. Seeding with genesis."
-              DB.appendBlocks db $ \dbAppend ->
-                DB.appendBlock dbAppend (Left genesisBlock)
-            _ -> pure ()
-          withByronProxy bpc db $ \bp -> do
-            let usPoll = 1000000 -- microseconds
-                shelleyThread = runVersionedServer (readTMVar closeVar) usPoll db
-                byronThread =
-                  if bpoNoDownload options
-                  then pure ()
-                  else byronProxyMain db bp
-                userInterrupt = getChar >>= const (atomically (putTMVar closeVar ()))
-            -- The byron thread goes in `withAsync` because the only way to
-            -- stop it is to kill it.
-            -- The chain sync thread will stop when the user interrupt kills
-            -- the TMVar, so we can put them `concurrently`.
-            -- Could also do
-            --   it <- race byronThread (concurrently shelleyThread userInterrupt)
-            --   case it of
-            --     Left impossible -> impossible
-            --     Right _ -> pure ()
-            _ <- withAsync byronThread $ \_ ->
-              concurrently shelleyThread userInterrupt
-            pure ()
+          dbc :: DBConfig
+          dbc = DBConfig
+            { dbFilePath = fromMaybe "db-byron-proxy" (dbPath cArgs)
+            , indexFilePath = bpoIndexPath options
+            , slotsPerEpoch = configEpochSlots genesisConfig
+            }
+      withDB dbc $ \db -> do
+        -- The DB must not be empty, or else it will fail to run the Byron
+        -- logic layer, which assumes it can always get a tip (genesis block is
+        -- considered a block).
+        seedWithGenesis genesisBlock db
+        withByronProxy bpc db $ \bp -> do
+          let usPoll = 1000000 -- microseconds
+              shelleyThread = runVersionedServer (readTMVar closeVar) usPoll db
+              byronThread =
+                if bpoNoDownload options
+                then pure ()
+                else byronProxyMain db bp
+              userInterrupt = getChar >>= const (atomically (putTMVar closeVar ()))
+          -- The byron thread goes in `withAsync` because the only way to
+          -- stop it is to kill it.
+          -- The chain sync thread will stop when the user interrupt kills
+          -- the TMVar, so we can put them `concurrently`.
+          -- Could also do
+          --   it <- race byronThread (concurrently shelleyThread userInterrupt)
+          --   case it of
+          --     Left impossible -> impossible
+          --     Right _ -> pure ()
+          _ <- withAsync byronThread $ \_ ->
+            concurrently shelleyThread userInterrupt
+          pure ()

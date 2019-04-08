@@ -66,7 +66,7 @@ library
 
 executable byron-proxy
   main-is:             Main.hs
-  -- other-modules:
+  other-modules:       DB
   -- other-extensions:
   build-depends:       base,
                        async,
@@ -109,17 +109,22 @@ executable byron-proxy
 
 executable byron-proxy-client-demo
   main-is:             Client.hs
-  -- other-modules:
+  other-modules:       DB
   -- other-extensions:
   build-depends:       base,
                        async,
                        byron-proxy,
                        bytestring,
+                       cardano-sl-binary,
+                       cardano-sl-chain,
+                       cardano-sl-core,
                        cardano-sl-util,
                        cborg,
                        containers,
                        contra-tracer,
+                       directory,
                        network,
+                       ouroboros-consensus,
                        ouroboros-network,
                        serialise,
                        typed-protocols
