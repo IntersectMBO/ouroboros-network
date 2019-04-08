@@ -7,11 +7,10 @@
 {-# OPTIONS_GHC "-fno-warn-name-shadowing" #-}
 
 module Ouroboros.Network.Server.Socket
-  ( Accept
+  ( BeginConnection
   , HandleConnection (..)
   , CompleteConnection
   , Main
-  , Stop (..)
   , run
 
   , Socket (..)
@@ -45,13 +44,7 @@ ioSocket io = Socket
       pure (addr, channel, pure ())
   }
 
--- | Status of a server, and whether or not new connections should be accepted
--- (no if Finished).
-data Status st where
-  Finished :: !st -> Status st
-  Running  :: !st -> Status st
-
-type StatusVar st = STM.TVar (Status st)
+type StatusVar st = STM.TVar st
 
 -- | What to do with a new connection: reject it and give a new state, or
 -- accept it and give a new state with a continuation to run against the
@@ -62,30 +55,21 @@ data HandleConnection channel st r where
   Reject :: !st -> HandleConnection channel st r
   Accept :: !st -> !(channel -> IO r) -> HandleConnection channel st r
 
-handleConnectionState :: HandleConnection channel st r -> st
-handleConnectionState (Reject st)   = st
-handleConnectionState (Accept st _) = st
-
 -- | What to do on a new connection: accept and run this `IO`, or reject.
-type Accept addr channel st r = addr -> st -> STM (HandleConnection channel st r)
+type BeginConnection addr channel st r = addr -> st -> STM (HandleConnection channel st r)
 
 -- | How to update state when a connection finishes. Can use `throwSTM` to
 -- terminate the server.
 type CompleteConnection st r = Either SomeException r -> st -> STM st
 
--- | Given a current state, `retry` unless you want to stop the server. When
--- this transaction finishes, you can choose whether to kill any running
--- threads, or to wait for them. If waiting, `st -> t` will be used on the
--- final `st`, which may be different from the `st` given at first, because
--- threads that finish up may modify it.
-type Main st t = st -> STM (Stop st t)
-
--- | See the comment on `Main`.
-data Stop st t where
-  -- | Don't wait for existing threads to finish.
-  Now  :: t -> Stop st t
-  -- | Do wait for existing threads to finish.
-  Wait :: (st -> t) -> Stop st t
+-- | Given a current state, `retry` unless you want to stop the server.
+-- When this transaction returns, any running threads spawned by the server
+-- will be killed.
+--
+-- It's possible that a connection is accepted after the main thread
+-- returns, but before the server stops. In that case, it will be killed, and
+-- the `CompleteConnection` will not run against it.
+type Main st t = st -> STM t
 
 -- | To avoid repeatedly blocking on the set of all running threads (a
 -- potentially very large STM transaction) the results come in by way of a
@@ -97,7 +81,8 @@ type ResultQ r = STM.TQueue (Result r)
 
 -- | The product of a spawned thread. We catch all (even async) exceptions.
 data Result r = Result
-  { resultValue  :: !(Either SomeException r)
+  { resultThread :: !(Async ())
+  , resultValue  :: !(Either SomeException r)
   }
 
 -- | The set of all spawned threads. Used for waiting or cancelling them when
@@ -122,10 +107,10 @@ spawnOne resQ threadsVar io = mask_ $ do
             -- deadlock, since we use a `TQueue`. If the server kills its
             -- children, and stops clearing the queue, it will be collected
             -- shortly thereafter, so no problem.
-            STM.atomically $ do
-              STM.writeTQueue resQ (Result val)
-              STM.modifyTVar' threadsVar (Set.delete thread)
+            STM.atomically $ STM.writeTQueue resQ (Result thread val)
       thread <- Async.asyncWithUnmask threadAction
+  -- The main loop `connectionTx` will remove this entry from the set, once
+  -- it receives the result.
   STM.atomically $ STM.modifyTVar' threadsVar (Set.insert thread)
 
 -- | The accept thread is controlled entirely by the `accept` call. To
@@ -135,12 +120,12 @@ acceptLoop
   :: ResultQ r
   -> ThreadsVar
   -> StatusVar st
-  -> Accept addr channel st r
+  -> BeginConnection addr channel st r
   -> (SomeException -> IO ()) -- ^ Exception on `Socket.accept`.
   -> Socket addr channel
   -> IO x
-acceptLoop resQ threadsVar statusVar accept acceptException socket = forever $
-  acceptOne resQ threadsVar statusVar accept acceptException socket
+acceptLoop resQ threadsVar statusVar beginConnection acceptException socket = forever $
+  acceptOne resQ threadsVar statusVar beginConnection acceptException socket
 
 -- | Accept once from the socket, use the `Accept` to make a decision (accept
 -- or reject), and spawn the thread if accepted.
@@ -148,36 +133,34 @@ acceptOne
   :: ResultQ r
   -> ThreadsVar
   -> StatusVar st
-  -> Accept addr channel st r
+  -> BeginConnection addr channel st r
   -> (SomeException -> IO ()) -- ^ Exception on `Socket.accept`.
   -> Socket addr channel
   -> IO ()
-acceptOne resQ threadsVar statusVar accept acceptException socket = mask $ \restore -> do
+acceptOne resQ threadsVar statusVar beginConnection acceptException socket = mask $ \restore -> do
   -- mask is to assure that every socket is closed.
   outcome <- try (restore (acceptConnection socket))
   case outcome of
     Left ex -> restore (acceptException ex)
     Right (addr, channel, close) -> do
-      -- Whether we accept depends upon the current status: never accept if
-      -- it's 'Finished'; otherwise, use the `Accept` function, and update
-      -- the state accordingly.
+      -- Decide whether to accept or reject, using the current state, and
+      -- update it according to the decision.
       let decision = STM.atomically $ do
-            status <- STM.readTVar statusVar
-            case status of
-              Finished _  -> pure Nothing
-              Running  st -> do
-                !handleConn <- accept addr st
-                STM.writeTVar statusVar (Running (handleConnectionState handleConn))
-                pure $ Just handleConn
+            st <- STM.readTVar statusVar
+            !handleConn <- beginConnection addr st
+            case handleConn of
+              Reject st' -> do
+                STM.writeTVar statusVar st'
+                pure Nothing
+              Accept st' io -> do
+                STM.writeTVar statusVar st'
+                pure $ Just io
       -- this could be interrupted, so we use `onException` to close the
       -- socket.
-      conn <- decision `onException` close
-      case conn of
-        Nothing            -> close
-        -- In either case, we can ignore the updated state, as it was already
-        -- written by the `decision` transaction.
-        Just (Reject _)    -> close
-        Just (Accept _ io) -> spawnOne resQ threadsVar (io channel `finally` close)
+      choice <- decision `onException` close
+      case choice of
+        Nothing -> close
+        Just io -> spawnOne resQ threadsVar (io channel `finally` close)
 
 -- | Main server loop, which runs alongside the `acceptLoop`. It waits for
 -- the results of connection threads, as well as the `Main` action, which
@@ -195,67 +178,46 @@ mainLoop resQ threadsVar statusVar complete main =
 
   where
 
+  -- Sample the status, and run the main action. If it does not retry, then
+  -- the `mainLoop` finishes with `pure t` where `t` is the main action result.
   mainTx :: STM (IO t)
   mainTx = do
-    status <- STM.readTVar statusVar
-    case status of
-      Finished _ -> STM.retry
-      Running  st -> do
-        -- user-supplied transaction can retry if it doesn't want to close.
-        stop <- main st
-        STM.writeTVar statusVar (Finished st)
-        case stop of
-          Wait f -> pure $ waitShutdown f
-          Now t  -> pure $ nowShutdown t
+    st <- STM.readTVar statusVar
+    t <- main st
+    pure $ pure t
 
+  -- Wait for some connection to finish, update the state with its result,
+  -- then recurse onto `mainLoop`.
   connectionTx :: STM (IO t)
   connectionTx = do
     result <- STM.readTQueue resQ
-    status <- STM.readTVar statusVar
-    case status of
-      Finished st -> do
-        !st' <- complete (resultValue result) st
-        STM.writeTVar statusVar (Finished st')
-      Running  st -> do
-        !st' <- complete (resultValue result) st
-        STM.writeTVar statusVar (Running st')
-    pure (mainLoop resQ threadsVar statusVar complete main)
-
-  waitShutdown :: (st -> t) -> IO t
-  waitShutdown f = do
-    children <- STM.atomically $ STM.readTVar threadsVar
-    forM_ (Set.toList children) Async.wait
-    status <- STM.atomically $ STM.readTVar statusVar
-    case status of
-      -- `waitShutdown` is only used after writing `Finished` to the `statusVar`,
-      -- and nowhere is it ever switched from `Finished` back to `Running`.
-      Running _ -> error "impossible"
-      Finished st -> pure (f st)
-
-  nowShutdown :: t -> IO t
-  nowShutdown t = do
-    children <- STM.atomically $ STM.readTVar threadsVar
-    forM_ (Set.toList children) Async.cancel
-    pure t
+    st <- STM.readTVar statusVar
+    !st' <- complete (resultValue result) st
+    STM.writeTVar statusVar st'
+    -- It was inserted by `spawnOne`.
+    STM.modifyTVar' threadsVar (Set.delete (resultThread result))
+    pure $ mainLoop resQ threadsVar statusVar complete main
 
 -- | Run a server.
 run
   :: Socket addr channel
   -> (SomeException -> IO ())
-  -> Accept addr channel st r
+  -> BeginConnection addr channel st r
   -> CompleteConnection st r
   -> Main st t
   -> st
   -> IO t
-run socket acceptException accept complete main st = do
+run socket acceptException beginConnection complete main st = do
   resQ <- STM.newTQueueIO
   threadsVar <- STM.newTVarIO Set.empty
-  statusVar <- STM.newTVarIO (Running st)
-  let acceptLoopDo = acceptLoop resQ threadsVar statusVar accept acceptException socket
+  statusVar <- STM.newTVarIO st
+  let acceptLoopDo = acceptLoop resQ threadsVar statusVar beginConnection acceptException socket
+      -- The accept loop is killed when the main loop stops.
       mainDo = Async.withAsync acceptLoopDo $ \_ ->
         mainLoop resQ threadsVar statusVar complete main
-      exceptionalShutdown = do
+      killChildren = do
         children <- STM.atomically $ STM.readTVar threadsVar
         forM_ (Set.toList children) Async.cancel
-  mainDo `onException` exceptionalShutdown
-
+  -- After both the main and accept loop have been killed, any remaining
+  -- spawned threads are cancelled.
+  mainDo `finally` killChildren

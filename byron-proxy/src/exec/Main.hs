@@ -278,7 +278,7 @@ decodeBlob Dict = either (const Nothing) Just . deserialiseOrFail . Lazy.fromStr
 -- So, for instance, use `STM.retry` to never stop (until killed).
 runVersionedServer :: STM () -> Int -> DB.DB IO -> IO ()
 runVersionedServer closeTx usPoll db = bracket mkSocket Socket.close $ \socket ->
-  Server.run (fromSocket socket) throwIO accept complete serverMain ()
+  Server.run (fromSocket socket) throwIO accept complete (const closeTx) ()
   where
   -- New connections are always accepted. The channel is used to run the
   -- version negotiation protocol determined by `versions`. Some stdout
@@ -312,9 +312,6 @@ runVersionedServer closeTx usPoll db = bracket mkSocket Socket.close $ \socket -
   complete outcome st = case outcome of
     Left  err -> pure st
     Right r   -> pure st
-  -- Close the server "now" (don't wait for running threads) whenever the
-  -- `closeTx` finishes.
-  serverMain _st = closeTx >> pure (Server.Now ())
   mkSocket :: IO Socket
   mkSocket = do
     socket <- Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol
