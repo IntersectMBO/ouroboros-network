@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
@@ -39,7 +40,7 @@ import           Ouroboros.Network.Mux.Types
 -- one of the provided Versions.
 -- TODO: replace MonadSay with iohk-monitoring-framework.
 muxStart :: forall m ptcl.
-            ( MonadAsync m, MonadFork m, MonadSay m, MonadSTM m, MonadThrow m
+            ( MonadAsync m, MonadFork m, MonadSay m, MonadSTM m, MonadThrow m , MonadMask m
             , Ord ptcl, Enum ptcl, Bounded ptcl)
          => MiniProtocolDescriptions ptcl m
          -> MuxBearer ptcl m
@@ -58,14 +59,16 @@ muxStart udesc bearer rescb_m = do
                ]
     mjobs <- sequence [ mpsJob cnt pmss ptcl
                       | ptcl <- [minBound..maxBound] ]
-    aids <- mapM async $ jobs ++ concat mjobs
-    muxBearerSetState bearer Mature
-    watcher aids
+
+    mask $ \unmask -> do
+      as <- traverse (async . unmask) (jobs ++ concat mjobs)
+      muxBearerSetState bearer Mature
+      unmask (watcher as) `onException` forM_ as cancel
 
   where
     watcher :: [Async m a] -> m ()
     watcher as = do
-        (_,r) <- waitAnyCatchCancel as
+        (_,r) <- waitAnyCatch as
         close bearer
         muxBearerSetState bearer Dead
         case rescb_m of
