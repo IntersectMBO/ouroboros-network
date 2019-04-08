@@ -393,7 +393,7 @@ instance Arbitrary TestBlockChainFragment where
         TestBlockChainFragment <$> genBlockChainFragment n
 
     shrink (TestBlockChainFragment c) =
-        [ TestBlockChainFragment (fromListFixupBlocks c')
+        [ TestBlockChainFragment (fixupChainFragment fixupBlock c')
         | c' <- shrinkList (const []) (CF.toNewestFirst c) ]
 
 instance Arbitrary TestHeaderChainFragment where
@@ -402,7 +402,7 @@ instance Arbitrary TestHeaderChainFragment where
         TestHeaderChainFragment <$> genHeaderChainFragment n
 
     shrink (TestHeaderChainFragment c) =
-        [ TestHeaderChainFragment (fromListFixupHeaders c')
+        [ TestHeaderChainFragment (fixupChainFragment fixupBlockHeader c')
         | c' <- shrinkList (const []) (CF.toNewestFirst c) ]
 
 prop_arbitrary_TestBlockChainFragment :: TestBlockChainFragment -> Property
@@ -428,36 +428,14 @@ genBlockChainFragment :: Int -> Gen (ChainFragment Block)
 genBlockChainFragment n = do
     bodies <- map getArbitraryBlockBody <$> vector n
     slots  <- mkSlots <$> vectorOf n genSlotGap
-    return (mkChainFragment slots bodies)
+    return (mkChainFragment (zip slots bodies))
   where
     mkSlots :: [Int] -> [SlotNo]
     mkSlots = map toEnum . tail . scanl (+) 0
 
-    mkChainFragment :: [SlotNo] -> [BlockBody] -> ChainFragment Block
-    mkChainFragment slots bodies =
-        fromListFixupBlocks
-      . reverse
-      $ zipWith mkPartialBlock slots bodies
-
 genHeaderChainFragment :: Int -> Gen (ChainFragment BlockHeader)
 genHeaderChainFragment = fmap (CF.mapChainFragment blockHeader) . genBlockChainFragment
 
--- | To help with chain construction and shrinking it's handy to recalculate
--- all the hashes.
---
-fromListFixupBlocks :: [Block] -> ChainFragment Block
-fromListFixupBlocks []      = Empty
-fromListFixupBlocks (b : c) = c' :> b'
-  where
-    c' = fromListFixupBlocks c
-    b' = fixupBlock (CF.head c') b
-
-fromListFixupHeaders :: [BlockHeader] -> ChainFragment BlockHeader
-fromListFixupHeaders []      = Empty
-fromListFixupHeaders (b : c) = c' :> b'
-  where
-    c' = fromListFixupHeaders c
-    b' = fixupBlockHeader (CF.head c') (headerBodyHash b) b
 
 -- | The Ouroboros K paramater. This is also the maximum rollback length.
 --
@@ -736,22 +714,22 @@ instance Arbitrary TestChainFragmentFork where
         ex1 = extensionFragment c1 l1
         ex2 = extensionFragment c2 l2 in
     [ TestChainFragmentFork
-        (fromListFixupBlocks longestPrefix')
-        (fromListFixupBlocks shortestPrefix')
-        (fromListFixupBlocks (ex1 ++ longestPrefix'))
-        (fromListFixupBlocks (ex2 ++ shortestPrefix'))
+        (fixupChainFragment fixupBlock longestPrefix')
+        (fixupChainFragment fixupBlock shortestPrefix')
+        (fixupChainFragment fixupBlock (ex1 ++ longestPrefix'))
+        (fixupChainFragment fixupBlock (ex2 ++ shortestPrefix'))
     | longestPrefix' <- shrinkList (const []) (CF.toNewestFirst longestPrefix)
     , let shortestPrefix' = reverse $ drop toDrop $ reverse longestPrefix'
     ]
     -- shrink the first fork
    ++ [ TestChainFragmentFork l1 l2 c1' c2
       | ex1' <- shrinkList (const []) ex1
-      , let c1' = fromListFixupBlocks (ex1' ++ CF.toNewestFirst l1)
+      , let c1' = fixupChainFragment fixupBlock (ex1' ++ CF.toNewestFirst l1)
       ]
     -- shrink the second fork
    ++ [ TestChainFragmentFork l1 l2 c1 c2'
       | ex2' <- shrinkList (const []) ex2
-      , let c2' = fromListFixupBlocks (ex2' ++ CF.toNewestFirst l2)
+      , let c2' = fixupChainFragment fixupBlock (ex2' ++ CF.toNewestFirst l2)
       ]
     where
       extensionFragment :: ChainFragment Block -> ChainFragment Block -> [Block]
