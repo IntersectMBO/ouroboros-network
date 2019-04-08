@@ -20,9 +20,11 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
+import           Control.Exception (IOException)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Int
 import           Data.Word
+import           GHC.IO.Exception (IOErrorType (..), ioe_type)
 import           GHC.Stack
 import           Network.Socket hiding (recv, recvFrom, send, sendTo)
 import qualified Network.Socket.ByteString.Lazy as Socket (recv, sendAll)
@@ -144,10 +146,21 @@ runNetworkNodeWithSocket' NetworkInterface {nodeAddress, protocols} k = do
                 return (sd, rh)
             )
         where
-          server sd = forever $ do
-            (client, _) <- accept sd
-            aid <- async $ larval client
-            void $ async $ watcher client aid
+          server sd = forever $
+            do
+              bracketOnError (fst <$> accept sd) close $ \sd' -> do
+                aid <- async $ larval sd'
+                void $ async $ watcher sd' aid
+            `catch` ioErrorHandler
+
+          ioErrorHandler :: IOException -> IO ()
+          ioErrorHandler err = case ioe_type err of
+            -- TODO log exceptions
+            ResourceBusy      -> return ()
+            ResourceExhausted -> return ()
+            ResourceVanished  -> return ()
+            SystemError       -> return ()
+            _                 -> throwM err
 
           larval sd = do
             bearer <- socketAsMuxBearer sd
