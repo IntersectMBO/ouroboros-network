@@ -157,16 +157,10 @@ genBlockChain :: Int -> Gen (Chain Block)
 genBlockChain n = do
     bodies <- map getArbitraryBlockBody <$> vector n
     slots  <- mkSlots <$> vectorOf n genSlotGap
-    return (mkChain slots bodies)
+    return (mkChain (zip slots bodies))
   where
     mkSlots :: [Int] -> [SlotNo]
     mkSlots = map toEnum . tail . scanl (+) 0
-
-    mkChain :: [SlotNo] -> [BlockBody] -> Chain Block
-    mkChain slots bodies =
-        fromListFixupBlocks
-      . reverse
-      $ zipWith mkPartialBlock slots bodies
 
 genSlotGap :: Gen Int
 genSlotGap = frequency [(25, pure 1), (5, pure 2), (1, pure 3)]
@@ -177,42 +171,6 @@ addSlotGap g (SlotNo n) = SlotNo (n + fromIntegral g)
 genHeaderChain :: Int -> Gen (Chain BlockHeader)
 genHeaderChain = fmap (fmap blockHeader) . genBlockChain
 
-mkPartialBlock :: SlotNo -> BlockBody -> Block
-mkPartialBlock sl body =
-    Block {
-      blockHeader = BlockHeader {
-        headerSlot     = sl,
-        headerSigner   = expectedBFTSigner sl,
-        headerHash     = partialField "headerHash",
-        headerPrevHash = partialField "headerPrevHash",
-        headerBlockNo  = partialField "headerBlockNo",
-        headerBodyHash = hashBody body
-      }
-    , blockBody = body
-    }
-  where
-    partialField n = error ("mkPartialBlock: you didn't fill in field " ++ n)
-
-    expectedBFTSigner :: SlotNo -> BlockSigner
-    expectedBFTSigner (SlotNo n) = BlockSigner (n `mod` 7)
-
-
--- | To help with chain construction and shrinking it's handy to recalculate
--- all the hashes.
---
-fromListFixupBlocks :: [Block] -> Chain Block
-fromListFixupBlocks []      = Genesis
-fromListFixupBlocks (b : c) = c' :> b'
-  where
-    c' = fromListFixupBlocks c
-    b' = fixupBlock (Chain.head c') b
-
-fromListFixupHeaders :: [BlockHeader] -> Chain BlockHeader
-fromListFixupHeaders []      = Genesis
-fromListFixupHeaders (b : c) = c' :> b'
-  where
-    c' = fromListFixupHeaders c
-    b' = fixupBlockHeader (Chain.head c') (headerBodyHash b) b
 
 -- | The Ouroboros K paramater. This is also the maximum rollback length.
 --
@@ -372,7 +330,7 @@ instance Arbitrary TestBlockChain where
         TestBlockChain <$> genBlockChain n
 
     shrink (TestBlockChain c) =
-        [ TestBlockChain (fromListFixupBlocks c')
+        [ TestBlockChain (fixupChain fixupBlock c')
         | c' <- shrinkList (const []) (Chain.toNewestFirst c) ]
 
 instance Arbitrary TestHeaderChain where
@@ -381,7 +339,7 @@ instance Arbitrary TestHeaderChain where
         TestHeaderChain <$> genHeaderChain n
 
     shrink (TestHeaderChain c) =
-        [ TestHeaderChain (fromListFixupHeaders c')
+        [ TestHeaderChain (fixupChain fixupBlockHeader c')
         | c' <- shrinkList (const []) (Chain.toNewestFirst c) ]
 
 prop_arbitrary_TestBlockChain :: TestBlockChain -> Property
@@ -614,9 +572,9 @@ instance Arbitrary TestChainFork where
 
   shrink (TestChainFork common l r) =
         -- shrink the common prefix
-      [ TestChainFork (fromListFixupBlocks common')
-                      (fromListFixupBlocks (exl ++ common'))
-                      (fromListFixupBlocks (exr ++ common'))
+      [ TestChainFork (fixupChain fixupBlock common')
+                      (fixupChain fixupBlock (exl ++ common'))
+                      (fixupChain fixupBlock (exr ++ common'))
       | let exl = extensionFragment common l
             exr = extensionFragment common r
       , common' <- shrinkList (const []) (Chain.toNewestFirst common)
@@ -625,13 +583,13 @@ instance Arbitrary TestChainFork where
    ++ [ TestChainFork common l' r
       | let exl = extensionFragment common l
       , exl' <- shrinkList (const []) exl
-      , let l' = fromListFixupBlocks (exl' ++ Chain.toNewestFirst common)
+      , let l' = fixupChain fixupBlock (exl' ++ Chain.toNewestFirst common)
       ]
         -- shrink the right fork
    ++ [ TestChainFork common l r'
       | let exr = extensionFragment common r
       , exr' <- shrinkList (const []) exr
-      , let r' = fromListFixupBlocks (exr' ++ Chain.toNewestFirst common)
+      , let r' = fixupChain fixupBlock (exr' ++ Chain.toNewestFirst common)
       ]
     where
       extensionFragment :: Chain Block -> Chain Block -> [Block]
