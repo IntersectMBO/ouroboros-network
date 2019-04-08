@@ -24,7 +24,7 @@ import Control.Concurrent.Async (Async)
 import qualified Control.Concurrent.Async as Async
 import Control.Concurrent.STM (STM)
 import qualified Control.Concurrent.STM as STM
-import Control.Monad (forM_, join)
+import Control.Monad (forever, forM_, join)
 import Data.Set (Set)
 import qualified Data.Set as Set
 
@@ -135,9 +135,8 @@ acceptLoop
   -> (SomeException -> IO ()) -- ^ Exception on `Socket.accept`.
   -> Socket addr channel
   -> IO x
-acceptLoop resQ threadsVar statusVar accept acceptException socket = do
-  _ <- acceptOne resQ threadsVar statusVar accept acceptException socket
-  acceptLoop resQ threadsVar statusVar accept acceptException socket
+acceptLoop resQ threadsVar statusVar accept acceptException socket = forever $
+  acceptOne resQ threadsVar statusVar accept acceptException socket
 
 -- | Accept once from the socket, use the `Accept` to make a decision (accept
 -- or reject), and spawn the thread if accepted.
