@@ -283,7 +283,7 @@ runVersionedServer closeTx usPoll db = bracket mkSocket Socket.close $ \socket -
   -- New connections are always accepted. The channel is used to run the
   -- version negotiation protocol determined by `versions`. Some stdout
   -- printing is done just to help you see what's going on.
-  accept sockAddr _st = pure $ Server.accept $ \channel -> do
+  accept sockAddr st = pure $ Server.Accept st $ \channel -> do
     putStrLn $ mconcat
       [ "Got connection from "
       , show sockAddr
