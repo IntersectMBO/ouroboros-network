@@ -79,14 +79,8 @@ findLastFd files = foldM go Nothing files
 filePath :: FileId -> String
 filePath fd = "blocks-" ++ show fd ++ ".dat"
 
-fifth :: (a,b,c,d,e) -> e
-fifth (_, _, _, _, e) = e
-
-third :: (a,b,c) -> c
-third (_,_,c) = c
-
-firstTwo :: (a,b,c,d) -> (a,b)
-firstTwo (a,b,_,_) = (a,b)
+sizeAndId :: (BlockSize, BlockInfo blockId) -> (BlockSize, blockId)
+sizeAndId (size, bInfo) = (size, bbid bInfo)
 
 {------------------------------------------------------------------------------
   Map of Set operations
@@ -102,7 +96,7 @@ alterfInsert successor mSet = case mSet of
 
 insertMapSet :: Ord blockId
              => SuccessorsIndex blockId
-             -> (blockId, blockId)
+             -> (blockId, Maybe blockId)
              -> SuccessorsIndex blockId
 insertMapSet mapSet (bid, pbid) = Map.alter (alterfInsert bid) pbid mapSet
 
@@ -116,7 +110,7 @@ alterfDelete successor mSet = case mSet of
 
 deleteMapSet :: Ord blockId
              => SuccessorsIndex blockId
-             -> (blockId, blockId)
+             -> (blockId, Maybe blockId)
              -> SuccessorsIndex blockId
 deleteMapSet mapSet (bid, pbid) = Map.alter (alterfDelete bid) pbid mapSet
 
@@ -124,11 +118,11 @@ deleteMapSet mapSet (bid, pbid) = Map.alter (alterfDelete bid) pbid mapSet
   Comparing utilities
 ------------------------------------------------------------------------------}
 
-maxSlotMap :: Map Word64 (Word64, blockId, SlotNo, blockId) -> Maybe (blockId, SlotNo)
+maxSlotMap :: Map Word64 (Word64, BlockInfo blockId) -> Maybe (blockId, SlotNo)
 maxSlotMap mp = f <$> safeMaximumBy (\a b -> compare (getSlot a) (getSlot b)) (Map.elems mp)
     where
-        f (_, b, sl, _) = (b,sl)
-        getSlot (_, _, sl, _) = sl
+        f (_, bInfo) = (bbid bInfo, bslot bInfo)
+        getSlot (_, bInfo) = bslot bInfo
 
 maxSlotList :: [(blockId, SlotNo)] -> Maybe (blockId, SlotNo)
 maxSlotList = updateSlot Nothing

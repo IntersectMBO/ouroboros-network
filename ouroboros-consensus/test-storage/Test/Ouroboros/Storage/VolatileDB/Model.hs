@@ -46,7 +46,7 @@ data DBModel blockId = DBModel {
     , open           :: Bool -- is the db open.
     , mp             :: Map blockId ByteString -- superset of blocks in db. Some of them may be gced already.
     , latestGarbaged :: Maybe SlotNo -- last gced slot.
-    , index          :: Map String (Maybe SlotNo, Int, [(blockId, blockId)]) -- what each file contains in the real impl.
+    , index          :: Map String (Maybe SlotNo, Int, [(blockId, Maybe blockId)]) -- what each file contains in the real impl.
     , currentFile    :: String -- the current open file. If the db is empty this is the next it wil write.
     , nextFId        :: FileId -- the next file id.
     } deriving Show
@@ -128,12 +128,10 @@ putBlockModel :: MonadState (MyState blockId) m
               => Ord blockId
               => ErrorHandling (VolatileDBError blockId) m
               -> Int
-              -> blockId
-              -> SlotNo
-              -> blockId
+              -> BlockInfo blockId
               -> Builder
               -> m ()
-putBlockModel err maxNumPerFile bid slot bidPred bs = do
+putBlockModel err maxNumPerFile BlockInfo{..} bs = do
     -- This depends on the exact sequence of the operations in the real Impl.
     -- If anything changes there, then this wil also need change.
     let managesToPut errors = do
@@ -143,7 +141,7 @@ putBlockModel err maxNumPerFile bid slot bidPred bs = do
             return fsErr
     (dbm@DBModel {..}, cmdErr) <- get
     if not open then EH.throwError err ClosedDBError
-    else case Map.lookup bid mp of
+    else case Map.lookup bbid mp of
         Just _bs -> return ()
         Nothing -> case managesToPut cmdErr of
             Just fsErrT -> EH.throwError err $ FileSystemError $
@@ -155,12 +153,12 @@ putBlockModel err maxNumPerFile bid slot bidPred bs = do
                     , fsLimitation = False
                 }
             Nothing -> do
-                let mp' = Map.insert bid (toStrict $ toLazyByteString bs) mp
+                let mp' = Map.insert bbid (toStrict $ toLazyByteString bs) mp
                     (mbid, n, bids) = fromMaybe
                         (error "current file does not exist in index")
                         (Map.lookup currentFile index)
                     n' = n + 1
-                    index' = Map.insert currentFile (updateSlotNoBlockId mbid [slot], n', (bid, bidPred):bids) index
+                    index' = Map.insert currentFile (updateSlotNoBlockId mbid [bslot], n', (bbid, bpreBid):bids) index
                     (currentFile', index'', nextFId') =
                         if n' == maxNumPerFile
                         then ( Internal.filePath nextFId
@@ -198,7 +196,7 @@ garbageCollectModel err sl = do
                 Nothing   -> []
                 Just cErr -> getStream . _removeFile $ cErr
         let f :: [Maybe FsErrorType]
-              -> (String, (Maybe SlotNo, Int, [(blockId, blockId)]))
+              -> (String, (Maybe SlotNo, Int, [(blockId, Maybe blockId)]))
               -> m [Maybe FsErrorType]
             f fsErr (path, (msl,_n,_bids)) = case (cmpMaybe msl sl, path == currentFile, tru, fsErr) of
                     (True, _, _, _) -> return fsErr
@@ -244,18 +242,17 @@ getBlockIdsModel err = do
 getSuccessorsModel :: forall m blockId
                    . MonadState (MyState blockId) m
                    => Ord blockId
-                       => ErrorHandling (VolatileDBError blockId) m
-                   -> blockId
-                   -> m (Set blockId)
-getSuccessorsModel err bid = do
+                   => ErrorHandling (VolatileDBError blockId) m
+                   -> m (Maybe blockId -> Set blockId)
+getSuccessorsModel err = do
     DBModel {..} <- getDB
     if not open then EH.throwError err ClosedDBError
-    else return $
-        Set.fromList $ fst <$> filter (\(_b,pb) -> pb == bid) (concat $ third <$> Map.elems index)
+    else return $ \bid ->
+        Set.fromList $ fst <$> filter (\(_b,pb) -> pb == bid) (concat $ (\(_,_,c) -> c) <$> Map.elems index)
 
 modifyIndex :: MonadState (MyState blockId) m
-            => (Map String (Maybe SlotNo, Int, [(blockId, blockId)])
-                  -> Map String (Maybe SlotNo, Int, [(blockId, blockId)])
+            => (Map String (Maybe SlotNo, Int, [(blockId, Maybe blockId)])
+                  -> Map String (Maybe SlotNo, Int, [(blockId, Maybe  blockId)])
                )
             -> m ()
 modifyIndex f = do

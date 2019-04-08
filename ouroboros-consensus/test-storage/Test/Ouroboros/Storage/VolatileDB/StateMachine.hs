@@ -81,7 +81,7 @@ data Success
   | Bl       Bool
   | IsMember [Bool] -- We compare two functions based on their results on a list of inputs.
   | SimulatedError (Either (VolatileDBError BlockId) Success)
-  | Successors (Set BlockId)
+  | Successors [Set BlockId]
   deriving Show
 
 instance Eq Success where
@@ -111,7 +111,7 @@ data Cmd
     | CreateFile
     | CreateInvalidFile
     | DuplicateBlock String BlockId Predecessor
-    | GetSuccessors Predecessor
+    | GetSuccessors [Predecessor]
     deriving Show
 
 data CmdErr = CmdErr
@@ -274,8 +274,10 @@ runDB :: (HasCallStack, Monad m)
 runDB restCmd db cmd = case cmd of
     GetBlock bid       -> Blob <$> getBlock db bid
     GetBlockIds        -> Blocks <$> getBlockIds db
-    PutBlock b pb      -> Unit <$> putBlock db b (guessSlot b) pb (BL.lazyByteString $ Binary.encode $ toBlock (b, pb))
-    GetSuccessors b    -> Successors <$> getSuccessors db b
+    PutBlock b pb      -> Unit <$> putBlock db (BlockInfo b (guessSlot b) pb) (BL.lazyByteString $ Binary.encode $ toBlock (b, pb))
+    GetSuccessors bids -> do
+        successors <- getSuccessors db
+        return $ Successors $ successors <$> bids
     GarbageCollect bid -> Unit <$> garbageCollect db (guessSlot bid)
     IsOpen             -> Bl <$> isOpenDB db
     Close              -> Unit <$> closeDB db
@@ -368,8 +370,8 @@ generatorCmdImpl terminatingCmd m@Model {..} =
     cmd <- frequency
         [ (150, return $ GetBlock sl)
         , (100, return $ GetBlockIds)
-        , (150, return $ PutBlock sl psl)
-        , (100, return $ GetSuccessors psl)
+        , (150, return $ PutBlock sl $ Just psl)
+        , (100, return $ GetSuccessors $ Just sl : (Just <$> possiblePredecessors))
         , (50, return $ GarbageCollect sl)
         , (50, return $ IsOpen)
         , (50, return $ Close)
@@ -425,7 +427,10 @@ blockIdGenerator Model {..} = do
     elements $ sl : (M.keys $ mp dbModel)
 
 predecessorGenerator :: Model Symbolic -> Gen BlockId
-predecessorGenerator Model {..} = elements [0..2]
+predecessorGenerator Model {..} = elements possiblePredecessors
+
+possiblePredecessors :: [BlockId]
+possiblePredecessors = [0,1,2]
 
 getDBFiles :: DBModel BlockId -> [String]
 getDBFiles DBModel {..} = M.keys index
@@ -763,7 +768,7 @@ tagGetSuccessors = mapMaybe f
         f :: Event Symbolic -> Maybe String
         f ev = case (getCmd ev, eventMockResp ev) of
             (GetSuccessors _pid, Resp (Right (Successors st))) ->
-                if S.null st then Just "Empty Successors"
+                if all S.null st then Just "Empty Successors"
                 else Just "Non empty Successors"
             _otherwise -> Nothing
 

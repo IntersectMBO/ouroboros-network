@@ -26,15 +26,15 @@ type FileId = Int
 
 -- For each file, we store the latest blockId, the number of blocks
 -- and a Map for its contents.
-type Index blockId = Map String (Maybe SlotNo, Int, Map SlotOffset (BlockSize, blockId))
+type Index blockId = Map String (FileInfo blockId)
 
 -- For each blockId, we store the file we can find the block, the offset, its size
 -- in bytes and its predecessor.
-type ReverseIndex blockId = Map blockId (String, SlotOffset, BlockSize, SlotNo, blockId)
+type ReverseIndex blockId = Map blockId (InternalBlockInfo blockId)
 
 -- For each block, we store the Set of all blocks which have this block as
 -- a predecessor (its successors).
-type SuccessorsIndex blockId = Map blockId (Set blockId)
+type SuccessorsIndex blockId = Map (Maybe blockId) (Set blockId)
 
 -- | Errors which might arise when working with this database.
 data VolatileDBError blockId =
@@ -52,7 +52,6 @@ instance (Show blockId, Typeable blockId) => Exception (VolatileDBError blockId)
 
 data ParserError blockId =
       DuplicatedSlot (Map blockId ([String], [String]))
-    | SlotsPerFileError String
     | InvalidFilename String
     | DecodeFailed String Word64
     deriving (Show)
@@ -72,7 +71,6 @@ sameVolatileDBError e1 e2 = case (e1, e2) of
 sameParseError :: ParserError blockId -> ParserError blockId -> Bool
 sameParseError e1 e2 = case (e1, e2) of
     (DuplicatedSlot _, DuplicatedSlot _)         -> True
-    (SlotsPerFileError _, SlotsPerFileError _)   -> True
     (InvalidFilename str1, InvalidFilename str2) -> str1 == str2
     (DecodeFailed _ _ , DecodeFailed _ _)        -> True
     _                                            -> False
@@ -83,5 +81,28 @@ type BlockSize = Word64
 newtype Parser e m blockId = Parser {
     -- | Parse block storage at the given path.
     --   The parser returns for each block, its size its blockId, its slot and its predecessor's blockId.
-    parse :: FsPath -> m ([(SlotOffset, (BlockSize, blockId, SlotNo, blockId))], Maybe e)
+    parse :: FsPath -> m ([(SlotOffset, (BlockSize, BlockInfo blockId))], Maybe e)
+    }
+
+-- This is the information a user has to provide for each new block.
+data BlockInfo blockId = BlockInfo {
+      bbid    :: blockId
+    , bslot   :: SlotNo
+    , bpreBid :: Maybe blockId
+    }
+
+-- The Internal information the db keeps for each block.
+data InternalBlockInfo blockId = InternalBlockInfo {
+      ibFile       :: String
+    , ibSlotOffset :: SlotOffset
+    , ibBlockSize  :: BlockSize
+    , ibSlot       :: SlotNo
+    , ibPreBid     :: Maybe blockId
+    }
+
+-- The Internal information the db keeps for each file.
+data FileInfo blockId = FileInfo {
+      fLatestSlot :: Maybe SlotNo
+    , fNBlocks    :: Int
+    , fContents   :: Map SlotOffset (BlockSize, blockId)
     }
