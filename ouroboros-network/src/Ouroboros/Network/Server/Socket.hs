@@ -216,7 +216,7 @@ mainLoop resQ threadsVar statusVar complete main =
     forM_ (Set.toList children) Async.wait
     status <- STM.atomically $ STM.readTVar statusVar
     case status of
-      -- `normalShutdown` is only used after writing `Finished` to the `statusVar`,
+      -- `waitShutdown` is only used after writing `Finished` to the `statusVar`,
       -- and nowhere is it ever switched from `Finished` back to `Continue`.
       Continue _ -> error "impossible"
       Finished st -> pure (f st)
