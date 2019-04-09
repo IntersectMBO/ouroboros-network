@@ -57,7 +57,7 @@ data ServerState where
 --
 type Poll m = forall s t . (s -> m (Maybe t)) -> m s -> m t
 
--- | Since we'll use unfortunately have to use `ResourceT`, we'll need to be
+-- | Since we'll unfortunately have to use `ResourceT`, we'll need to be
 -- able to take a `Poll (ResourceT IO s)`, but ideally the poll definition
 -- would not be allowed to use any of the `ResourceT` stuff, so we'll use an
 -- arbitrary `MonadTrans`.
@@ -72,7 +72,7 @@ type PollT m = forall f . (Monad (f m), MonadTrans f) => Poll (f m)
 -- same problem that conduit/pipes/streaming suffer from.
 --
 -- And then, since we use `ResourceT`, we're essentially forced to use `IO`,
--- by they type of `allocate`: `ResourceT` uses an `IORef`, so we're stuck.
+-- by the type of `allocate`: `ResourceT` uses an `IORef`, so we're stuck.
 -- It's tragic.
 chainSyncServer
   :: (forall x . CBOR.DeserialiseFailure -> IO x)
