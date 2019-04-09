@@ -118,7 +118,7 @@ data StmA s a where
   ReadTVar     :: TVar s a -> (a -> StmA s b) -> StmA s b
   WriteTVar    :: TVar s a ->  a -> StmA s b  -> StmA s b
   Retry        :: StmA s b
-
+  OrElse       :: StmA s a -> StmA s a -> StmA s a
 
 data MaskingState = Unmasked | MaskedInterruptible | MaskedUninterruptible
   deriving (Eq, Ord, Show)
@@ -287,6 +287,7 @@ instance MonadSTM (SimM s) where
   readTVar   tvar   = STM $ \k -> ReadTVar tvar k
   writeTVar  tvar x = STM $ \k -> WriteTVar tvar x (k ())
   retry             = STM $ \_ -> Retry
+  orElse x y        = STM $ \k -> OrElse (unSTM x k) (unSTM y k)
 
   newTMVar          = newTMVarDefault
   newTMVarM         = newTMVarMDefault
@@ -968,7 +969,27 @@ traceMany ((time, tid, event):ts) trace =
 data TVar s a = TVar !TVarId
                      !(STRef s a)          -- current value
                      !(STRef s (Maybe a))  -- saved revert value
+                     !(STRef s (Maybe a))  -- saved revert value for `orElse`
                      !(STRef s [ThreadId]) -- threads blocked on read
+
+-- 
+-- Why we need to store only single revert value even for nested @orElse@?
+--
+-- Let @a `orElse` b@ be an stm expression (which might be nested inside
+-- a bigger stm transaction). In both cases: only @a@ retries or both @a@ and
+-- @b@ retry, we'll need to revert the state to pre @a `orElse` b@ state.  This
+-- means that we need to store the state of variables before execution of @a
+-- `orElse` b@.  We record the state of @TVar@s using @Maybe a@, where
+-- @Nothing@ means that the state hasn't been recoreded or it has been
+-- reverted.  Whenever one uses @retry@ in one of the branches, this reverts
+-- the state also also resets the state of recorded state to @Nothing@.  This
+-- means that we can reuse it later.
+--
+-- We only need to store the state for @retry@ inside @orElse@ seprately from
+-- @retry@ used outside of it.  This is to ensure that in @orElse@ branches we
+-- revert to the value just before entering evaluation of @orElse@, rather than
+-- the initial change that might have happened much earlier in the same
+-- trasaction.
 
 data StmTxResult s a =
        StmTxComitted a
@@ -985,27 +1006,44 @@ execAtomically :: ThreadId
                -> TVarId
                -> StmA s a
                -> ST s (StmTxResult s a)
-execAtomically mytid = go [] []
+execAtomically mytid = go [] [] []
   where
-    go :: [SomeTVar s] -> [SomeTVar s] -> TVarId
+    go :: [SomeTVar s]
+       -> [SomeTVar s]
+       -> [(Int, StmA s a)] -- list of indexes of written variables at the
+                            -- point of `OrElse` and second argument of `orElse`
+       -> TVarId
        -> StmA s a -> ST s (StmTxResult s a)
-    go read written nextVid action = case action of
+    go read written orElses nextVid action = case action of
       ReturnStm x     -> do (vids, tids) <- finaliseCommit written
                             return (StmTxComitted x vids tids nextVid)
       ThrowStm e      -> do finaliseAbort written
                             return (StmTxAborted (toException e))
-      Retry           -> do vids <- finaliseRetry read written
-                            return (StmTxBlocked vids)
+      Retry           -> case orElses of
+                            [] -> do
+                              vids <- finaliseRetry read written
+                              return (StmTxBlocked vids)
+                            (idx, action') : orElses' -> do
+                              -- revert TVar's written since last @OrElse@
+                              finaliseAbortOrElse (drop idx written)
+                              go read written orElses' nextVid action'
       NewTVar x k     -> do v <- execNewTVar nextVid x
-                            go read written (succ nextVid) (k v)
+                            go read written orElses (succ nextVid) (k v)
       ReadTVar v k    -> do x <- execReadTVar v
-                            go (SomeTVar v : read) written nextVid (k x)
-      WriteTVar v x k -> do execWriteTVar v x
-                            go read (SomeTVar v : written) nextVid k
+                            go (SomeTVar v : read) written orElses nextVid (k x)
+      WriteTVar v x k -> do case orElses of
+                              []  -> execWriteTVar v x
+                              _:_ -> execWriteTVarOrElse v x
+                            go read (SomeTVar v : written) orElses nextVid k
+      OrElse x y      -> go read written ((length written, y) : orElses) nextVid x
 
     -- Revert all the TVar writes
     finaliseAbort written =
       sequence_ [ revertTVar  tvar | SomeTVar tvar <- reverse written ]
+
+    -- Revert all the TVar writes done during first argument of @orElse@
+    finaliseAbortOrElse written =
+      sequence_ [ revertTVarOrElse tvar | SomeTVar tvar <- reverse written ]
 
     -- Revert all the TVar writes and put this thread on the blocked queue for
     -- all the TVars read in this transaction
@@ -1013,10 +1051,10 @@ execAtomically mytid = go [] []
     finaliseRetry read written = do
       sequence_ [ revertTVar  tvar | SomeTVar tvar <- reverse written ]
       sequence_ [ blockOnTVar tvar | SomeTVar tvar <- read ]
-      return [ vid | SomeTVar (TVar vid _ _ _) <- read ]
+      return [ vid | SomeTVar (TVar vid _ _ _ _) <- read ]
 
     blockOnTVar :: TVar s a -> ST s ()
-    blockOnTVar (TVar _vid _vcur _vsaved blocked) =
+    blockOnTVar (TVar _vid _vcur _vsaved _vorElse blocked) =
       --TODO: avoid duplicates!
       modifySTRef blocked (mytid:)
 
@@ -1040,7 +1078,7 @@ execAtomically' = go []
 finaliseCommit :: [SomeTVar s] -> ST s ([TVarId], [(ThreadId, [TVarId])])
 finaliseCommit written = do
   tidss <- sequence [ (,) vid <$> commitTVar tvar
-                    | SomeTVar tvar@(TVar vid _ _ _) <- written ]
+                    | SomeTVar tvar@(TVar vid _ _ _ _) <- written ]
   let -- for each thread, what var writes woke it up
       wokeVars    = Map.fromListWith (\l r -> List.nub $ l ++ r)
                       [ (tid, [vid]) | (vid, tids) <- tidss, tid <- tids ]
@@ -1048,22 +1086,23 @@ finaliseCommit written = do
       wokeThreads = [ (tid, wokeVars Map.! tid)
                     | tid <- ordNub [ tid | (_, tids) <- tidss, tid <- reverse tids ]
                     ]
-      writtenVids = [ vid | SomeTVar (TVar vid _ _ _) <- written ]
+      writtenVids = [ vid | SomeTVar (TVar vid _ _ _ _) <- written ]
   return (writtenVids, wokeThreads)
 
 execNewTVar :: TVarId -> a -> ST s (TVar s a)
 execNewTVar nextVid x = do
   vcur    <- newSTRef x
   vsaved  <- newSTRef Nothing
+  vorElse <- newSTRef Nothing
   blocked <- newSTRef []
-  return (TVar nextVid vcur vsaved blocked)
+  return (TVar nextVid vcur vsaved vorElse blocked)
 
 execReadTVar :: TVar s a -> ST s a
-execReadTVar (TVar _vid vcur _vsaved _blocked) =
+execReadTVar (TVar _vid vcur _vsaved _vorElse _blocked) =
   readSTRef vcur
 
 execWriteTVar :: TVar s a -> a -> ST s ()
-execWriteTVar (TVar _vid vcur vsaved _blocked) x = do
+execWriteTVar (TVar _vid vcur vsaved _vorElse _blocked) x = do
   msaved <- readSTRef vsaved
   case msaved of
     -- on first write, save original value
@@ -1072,8 +1111,18 @@ execWriteTVar (TVar _vid vcur vsaved _blocked) x = do
     Just _  -> return ()
   writeSTRef vcur x
 
+execWriteTVarOrElse :: TVar s a -> a -> ST s ()
+execWriteTVarOrElse (TVar _vid vcur _vsaved vorElse _blocked) x = do
+  morElse <- readSTRef vorElse
+  case morElse of
+    -- on first write, save original value in @vorElse@
+    Nothing -> writeSTRef vorElse . Just =<< readSTRef vcur
+    -- on subsequent writes do nothing
+    Just _  -> return ()
+  writeSTRef vcur x
+
 revertTVar :: TVar s a -> ST s ()
-revertTVar (TVar _vid vcur vsaved _blocked) = do
+revertTVar (TVar _vid vcur vsaved _vorElse _blocked) = do
   msaved <- readSTRef vsaved
   case msaved of
     -- on first revert, restore original value
@@ -1081,8 +1130,17 @@ revertTVar (TVar _vid vcur vsaved _blocked) = do
     -- on subsequent reverts do nothing
     Nothing    -> return ()
 
+revertTVarOrElse :: TVar s a -> ST s ()
+revertTVarOrElse (TVar _vid vcur _vsaved vorElse _blocked) = do
+  morElse <- readSTRef vorElse
+  case morElse of
+    -- on first revert, restore the value recorded during @orElse@
+    Just orElse_ -> writeSTRef vcur orElse_ >> writeSTRef vorElse Nothing
+    -- on subsequent reverts do nothing
+    Nothing      -> return ()
+
 commitTVar :: TVar s a -> ST s [ThreadId]
-commitTVar (TVar _vid _vcur vsaved blocked) = do
+commitTVar (TVar _vid _vcur vsaved _vorElse blocked) = do
   msaved <- readSTRef vsaved
   case msaved of
     -- on first commit, forget saved value and collect blocked threads

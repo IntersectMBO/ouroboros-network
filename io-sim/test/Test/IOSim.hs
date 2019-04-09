@@ -15,7 +15,7 @@ import           System.IO.Error
 import           Data.Array
 import           Data.Fixed (Fixed (..), Micro)
 import           Data.Graph
-import           Data.List (sort)
+import           Data.List (nub, sort)
 import           Data.Time.Clock (DiffTime, picosecondsToDiffTime)
 
 import           Test.QuickCheck
@@ -71,6 +71,26 @@ tests =
     , testProperty "14" unit_async_14
     , testProperty "15" unit_async_15
     , testProperty "16" unit_async_16
+    ]
+  , testGroup "orElse"
+    [ testProperty "1"  unit_orElse_1
+    , testProperty "2"  unit_orElse_2
+    , testProperty "3"  unit_orElse_3
+    , testProperty "4"  unit_orElse_4
+    , testProperty "5"  unit_orElse_5
+    , testProperty "6"  unit_orElse_6
+    -- there are two interesting trees of depth 2 
+    -- /\  and  /\
+    --  /\     /\
+    -- each leaf has 2 * 5 possible values, thus there are 2000 of them.
+    -- They represent ~10% of all the trees, thus in 1000 of them we will have
+    -- 1/20 (5%) of all cases.
+    --
+    , testProperty "nested" (withMaxSuccess 1000 $ prop_nested_orElse)
+    ]
+  , testGroup "generators"
+    [ testProperty "arbitrary LabeledTree" prop_arbitrary_LabeledTree
+    , testProperty "shrink LabeledTree"    prop_shrink_LabeledTree
     ]
   ]
 
@@ -773,3 +793,203 @@ selectTraceSay :: Trace a -> [String]
 selectTraceSay (Trace _ _ (EventSay msg) trace) = msg : selectTraceSay trace
 selectTraceSay (Trace _ _ _              trace) = selectTraceSay trace
 selectTraceSay  _                               = []
+
+-- return the first argument of `orElse` if it does not `retry`.
+unit_orElse_1 :: Blind (Int -> Int) -> Property
+unit_orElse_1 (Blind f) =
+    case runSim exp_ of
+      Left _  -> property False
+      Right x -> ioProperty $ (x ===) <$> exp_
+  where
+    exp_ :: MonadSTM m => m Int
+    exp_ = atomically $ do
+      x <- newTVar 0
+      modifyTVar x f
+      modifyTVar x f `orElse` modifyTVar x f
+      readTVar x
+
+-- return the second argument of `orElse` if the first one retried.
+unit_orElse_2 :: Property
+unit_orElse_2 =
+    case runSim exp_ of
+      Left _  -> property False
+      Right x -> ioProperty $  (x ===) <$> exp_
+  where
+    exp_ :: MonadSTM m => m Int
+    exp_ = atomically $ do
+      x <- newTVar 0
+      modifyTVar x succ
+      retry `orElse` modifyTVar x succ
+      readTVar x
+
+-- if both arguments retry, whole computation retries, which can be observed as
+-- a deadlock of @retry `orElse` retry@.
+unit_orElse_3 :: Property
+unit_orElse_3 =
+    case runSim $ atomically (retry `orElse` retry) of
+      Left FailureDeadlock  -> property True
+      Left e                -> counterexample (show e) False
+      Right _               -> property False
+
+-- if first stm action retries, it's effects do not affect second stm
+-- computation
+unit_orElse_4 :: Property
+unit_orElse_4 =
+    case runSim exp_ of
+      Left _  -> property False
+      Right x -> ioProperty $ (x ===) <$> exp_
+  where
+    exp_ :: MonadSTM m => m Int
+    exp_ = atomically $ do
+      x <- newTVar 0
+      (modifyTVar x succ >> retry) `orElse` readTVar x
+
+-- check that variables that were written in the first argument of @orElse@ are
+-- reverted before running the second STM computation.
+unit_orElse_5 :: Blind (Int -> Int) -> Property
+unit_orElse_5 (Blind f) =
+    case runSim exp_ of
+      Left _  -> property False
+      Right x -> ioProperty $ (x ===) <$> exp_
+  where
+    exp_ :: MonadSTM m => m Int
+    exp_ = atomically $ do
+      x <- newTVar 0
+      (modifyTVar x f >> retry) `orElse` modifyTVar x f
+      readTVar x
+
+-- check that variables that were written in the first argument of @orElse@ are
+-- reverted to the right state
+unit_orElse_6 :: Blind (Int -> Int) -> Property
+unit_orElse_6 (Blind f) =
+    case runSim exp_ of
+      Left _  -> property False
+      Right x -> ioProperty $  (x ===) <$> exp_
+  where
+    exp_ :: MonadSTM m => m Int
+    exp_ = atomically $ do
+      x <- newTVar 0
+      modifyTVar x f
+      (modifyTVar x f >> retry) `orElse` modifyTVar x f
+      readTVar x
+
+
+data BinaryTree a = Branch (BinaryTree a) (BinaryTree a)
+                  | Leaf a
+  deriving Show
+
+depth :: BinaryTree a -> Int
+depth Leaf{} = 1
+depth (Branch l r) = 1 + max (depth l) (depth r)
+
+instance Functor BinaryTree where
+    fmap f (Leaf a)       = Leaf (f a)
+    fmap f (Branch l r) = Branch (f <$> l) (f <$> r)
+
+instance Foldable BinaryTree where
+    foldMap f (Leaf a) = f a
+    foldMap f (Branch l r) = foldMap f l <> foldMap f r
+
+genBinaryTree
+  :: forall a.
+     Int
+  -> Gen a
+  -> Gen (BinaryTree a)
+genBinaryTree n gen =
+      suchThat arbitrary (\x -> 1 <= x && x <= n) >>= go
+    where
+      go :: Int -> Gen (BinaryTree a)
+      go s =
+        if s <= 1
+          then Leaf <$> gen
+          else Branch <$> go (pred s) <*> go (pred s)
+
+instance Arbitrary a => Arbitrary (BinaryTree a) where
+    arbitrary = sized $ \s -> genBinaryTree s arbitrary
+
+    shrink Leaf{} = []
+    shrink (Branch left right) =
+      [ Branch left' right
+      | left' <- shrink left
+      ] ++
+      [ Branch left right'
+      | right' <- shrink right
+      ]
+
+-- A skewed arbitrary generator of boolean values
+newtype SkewedBool = SkewedBool { runSkewedBool :: Bool }
+    deriving Show
+
+instance Arbitrary SkewedBool where
+    arbitrary = frequency 
+      [ (1, pure (SkewedBool True))
+      , (2, pure (SkewedBool False))
+      ]
+    shrink (SkewedBool b) = map SkewedBool (shrink b)
+
+-- |
+-- A tree of ids and boolean values, where ids are positive smaller or equal 5.
+-- The list contains initial values.
+--
+data LabeledTree = LabeledTree (BinaryTree (Int, Bool)) [Int]
+    deriving Show
+
+-- |
+-- Generate a small integer number from a constant distribution.
+--
+genInt :: Int -> Gen Int
+genInt l = oneof $ map return [0 .. pred l]
+
+instance Arbitrary LabeledTree where
+    arbitrary = do
+        -- size (max number of variables) between 1 and 5
+        s <- succ <$> genInt 5
+        tree <- genBinaryTree 10 $
+              (,)
+          <$> genInt s
+          <*> (runSkewedBool <$> arbitrary)
+        x0 <- replicateM s arbitrary
+        return $ LabeledTree tree x0
+
+    shrink (LabeledTree tree xs) =
+      [ LabeledTree tree' xs
+      | tree' <- shrink tree
+      ]
+
+valid_Labeled_Tree :: LabeledTree -> Bool
+valid_Labeled_Tree (LabeledTree tree xs) = all (\(x, _) -> x < length xs) tree
+
+prop_arbitrary_LabeledTree :: LabeledTree -> Bool
+prop_arbitrary_LabeledTree t@(LabeledTree tree xs) =
+     valid_Labeled_Tree t
+  && length (nub $ foldr (\(y,_) ys -> y:ys) [] tree) <= length xs -- or 5
+
+prop_shrink_LabeledTree :: LabeledTree -> Bool
+prop_shrink_LabeledTree l = all valid_Labeled_Tree (shrink l)
+
+prop_nested_orElse :: Fun Int Int
+                   -> LabeledTree
+                   -> Property
+prop_nested_orElse f (LabeledTree tree xs) =
+    tabulate "depth" [show treeDepth] $
+    tabulate "number of variables" [show $ length $ nub $ foldr (\(y,_) ys -> y:ys) [] tree] $
+    case runSim (exp_ :: forall s. SimM s [Int]) of
+      Left e@FailureDeadlock ->
+        -- termination condition
+        if any snd tree
+          then counterexample (show e) False
+          else property True
+      Left  e -> counterexample (show e) False
+      Right r -> ioProperty $ (r ===) <$> (exp_ :: IO [Int])
+  where
+    g :: MonadSTM m => [TVar m Int] -> (Int, Bool) -> STM m ()
+    g vs (x, True)  = modifyTVar (vs !! x) (applyFun f)
+    g vs (x, False) = modifyTVar (vs !! x) (applyFun f) >> retry
+
+    exp_ :: MonadSTM m => m [Int]
+    exp_ = atomically $ do
+      vs <- traverse newTVar xs
+      foldl1 orElse (g vs <$> tree)
+      traverse readTVar vs
+
+    treeDepth = depth tree
