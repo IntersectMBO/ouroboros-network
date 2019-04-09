@@ -84,7 +84,8 @@ pipeAsMuxBearer pcRead pcWrite = do
       sduSize = return 32768
 
 runNetworkNodeWithPipe
-    :: (Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl)
+    :: ( Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl, Show ptcl
+       , Mx.MiniProtocolLimits ptcl)
     => (ptcl -> Mx.MuxPeer IO)
     -> Handle -- ^ read handle
     -> Handle -- ^ write handle
@@ -93,3 +94,4 @@ runNetworkNodeWithPipe protocols pcRead pcWrite = do
     let  mpds = Mx.miniProtocolDescription . protocols
     bearer <- pipeAsMuxBearer pcRead pcWrite
     Mx.muxStart mpds bearer
+

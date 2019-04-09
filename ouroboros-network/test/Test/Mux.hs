@@ -1,4 +1,6 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE TypeFamilies        #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -20,28 +22,46 @@ import           Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (Serialise (..))
 import           Control.Monad
 import qualified Data.Binary.Put as Bin
+import           Data.Bits
 import qualified Data.ByteString.Lazy as BL
-import           Data.Maybe (isNothing)
+import           Data.Int
 import           Data.Word
+import           Test.ChainGenerators (TestBlockChainAndUpdates (..))
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 import           Text.Printf
 
 import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadFork
+import           Control.Monad.Class.MonadSay
+import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTimer
 import           Control.Tracer (nullTracer)
+import           Control.Monad.IOSim (runSimStrictShutdown)
+import           Network.TypedProtocol.Channel (recv)
+import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Driver
 import           Network.TypedProtocol.ReqResp.Client
 import           Network.TypedProtocol.ReqResp.Server
 
-import           Ouroboros.Network.Time
+import           Ouroboros.Network.Chain (Chain, ChainUpdate, Point)
+import qualified Ouroboros.Network.Chain as Chain
+import qualified Ouroboros.Network.ChainProducerState as CPS
+import qualified Ouroboros.Network.Protocol.ChainSync.Type     as ChainSync
+import qualified Ouroboros.Network.Protocol.ChainSync.Client   as ChainSync
+import qualified Ouroboros.Network.Protocol.ChainSync.Codec    as ChainSync
+import qualified Ouroboros.Network.Protocol.ChainSync.Examples as ChainSync
+import qualified Ouroboros.Network.Protocol.ChainSync.Server   as ChainSync
 import qualified Ouroboros.Network.Mux as Mx
+import qualified Ouroboros.Network.Mux.Interface as Mx
 import           Ouroboros.Network.Mux.Types (MuxBearer)
 import qualified Ouroboros.Network.Mux.Types as Mx
 import           Ouroboros.Network.Protocol.ReqResp.Codec
+import           Ouroboros.Network.Time
 
 tests :: TestTree
 tests =
@@ -49,12 +69,20 @@ tests =
   [ testProperty "mux send receive"     prop_mux_snd_recv
   , testProperty "2 miniprotocols"      prop_mux_2_minis
   , testProperty "starvation"           prop_mux_starvation
-  , testProperty "unknown miniprotocol" prop_mux_unknown_miniprot
-  , testProperty "too short header"     prop_mux_short_header
+  , testProperty "demuxing (Sim)"       prop_demux_sdu_sim
+  , testProperty "demuxing (IO)"        prop_demux_sdu_io
+  , testProperty "ChainSync Demo (IO)"  prop_mux_demo_io
+  , testProperty "ChainSync Demo (Sim)" prop_mux_demo_sim
   ]
 
+defaultMiniProtocolLimit :: Int64
+defaultMiniProtocolLimit = 3000000
+
+smallMiniProtocolLimit :: Int64
+smallMiniProtocolLimit = 16*1024
+
 data TestProtocols1 = ChainSync1
-  deriving (Eq, Ord, Enum, Bounded)
+  deriving (Eq, Ord, Enum, Bounded, Show)
 
 instance Mx.ProtocolEnum TestProtocols1 where
   fromProtocolEnum ChainSync1 = 2
@@ -62,11 +90,15 @@ instance Mx.ProtocolEnum TestProtocols1 where
   toProtocolEnum 2 = Just ChainSync1
   toProtocolEnum _ = Nothing
 
+instance Mx.MiniProtocolLimits TestProtocols1 where
+  maximumMessageSize ChainSync1  = defaultMiniProtocolLimit
+  maximumIngressQueue ChainSync1 = defaultMiniProtocolLimit
+
 -- |
 -- Allows to run both chain-sync and block-fetch protocols.
 --
 data TestProtocols2 = ChainSync2 | BlockFetch2
-  deriving (Eq, Ord, Enum, Bounded)
+  deriving (Eq, Ord, Enum, Bounded, Show)
 
 instance Mx.ProtocolEnum TestProtocols2 where
   fromProtocolEnum ChainSync2  = 2
@@ -76,17 +108,40 @@ instance Mx.ProtocolEnum TestProtocols2 where
   toProtocolEnum 3 = Just BlockFetch2
   toProtocolEnum _ = Nothing
 
+instance Mx.MiniProtocolLimits TestProtocols2 where
+  maximumMessageSize ChainSync2   = defaultMiniProtocolLimit
+  maximumMessageSize BlockFetch2  = defaultMiniProtocolLimit
+  maximumIngressQueue ChainSync2  = defaultMiniProtocolLimit
+  maximumIngressQueue BlockFetch2 = defaultMiniProtocolLimit
+
+data TestProtocolsSmall = ChainSyncSmall
+  deriving (Eq, Ord, Enum, Bounded, Show)
+
+instance Mx.ProtocolEnum TestProtocolsSmall where
+  fromProtocolEnum ChainSyncSmall = 2
+
+  toProtocolEnum 2 = Just ChainSyncSmall
+  toProtocolEnum _ = Nothing
+
+instance Mx.MiniProtocolLimits TestProtocolsSmall where
+  maximumMessageSize ChainSyncSmall  = smallMiniProtocolLimit
+  maximumIngressQueue ChainSyncSmall = smallMiniProtocolLimit
+
 -- |
 -- Allow to run a singly req-resp protocol.
 --
 data TestProtocols3 = ReqResp1
-  deriving (Eq, Ord, Enum, Bounded)
+  deriving (Eq, Ord, Enum, Bounded, Show)
 
 instance Mx.ProtocolEnum TestProtocols3 where
   fromProtocolEnum ReqResp1 = 4
 
   toProtocolEnum 4 = Just ReqResp1
   toProtocolEnum _ = Nothing
+
+instance Mx.MiniProtocolLimits TestProtocols3 where
+  maximumMessageSize ReqResp1  = defaultMiniProtocolLimit
+  maximumIngressQueue ReqResp1 = defaultMiniProtocolLimit
 
 newtype DummyPayload = DummyPayload {
       unDummyPayload :: BL.ByteString
@@ -97,51 +152,115 @@ instance Show DummyPayload where
 
 instance Arbitrary DummyPayload where
     arbitrary = do
-       len  <- choose (0, 2 * 1024 * 1024)
-       p <- arbitrary
-       let blob = BL.replicate len p
-       return $ DummyPayload blob
+        n <- choose (1, 128)
+        len <- oneof [ return n
+                     , return $ defaultMiniProtocolLimit - n - cborOverhead
+                     , choose (1, defaultMiniProtocolLimit - cborOverhead)
+                     ]
+        p <- arbitrary
+        let blob = BL.replicate len p
+        return $ DummyPayload blob
+      where
+        cborOverhead = 7 -- XXX Bytes needed by CBOR to encode the dummy payload
 
 instance Serialise DummyPayload where
     encode a = CBOR.encodeBytes (BL.toStrict $ unDummyPayload a)
     decode = DummyPayload . BL.fromStrict <$> CBOR.decodeBytes
 
 data InvalidSDU = InvalidSDU {
-      isTimestamp :: !Mx.RemoteClockModel
-    , isIdAndMode :: !Word16
-    , isLength    :: !Word16
+      isTimestamp  :: !Mx.RemoteClockModel
+    , isIdAndMode  :: !Word16
+    , isLength     :: !Word16
+    , isRealLength :: !Int64
     }
 
 instance Show InvalidSDU where
-    show a = printf "InvalidSDU 0x%08x 0x%04x 0x%04x\n"
+    show a = printf "InvalidSDU 0x%08x 0x%04x 0x%04x 0x%04x\n"
                     (Mx.unRemoteClockModel $ isTimestamp a)
                     (isIdAndMode a)
                     (isLength a)
+                    (isRealLength a)
 
-instance Arbitrary InvalidSDU where
-    arbitrary = do
-        ts  <- arbitrary
-        mid <- choose (5, 0xffff) -- TxSubmission with 4 is the highest valid mid
-        len <- arbitrary
+data ArbitrarySDU = ArbitraryInvalidSDU InvalidSDU Mx.MuxBearerState Mx.MuxErrorType
+                  | ArbitraryValidSDU DummyPayload Mx.MuxBearerState (Maybe Mx.MuxErrorType)
+                  deriving Show
 
-        return $ InvalidSDU (Mx.RemoteClockModel ts) mid len
+instance Arbitrary ArbitrarySDU where
+    arbitrary = oneof [ unknownMiniProtocol
+                      , invalidLenght
+                      , validSdu
+                      , tooLargeSdu
+                      ]
+      where
+        validSdu = do
+            b <- arbitrary
 
+            -- Valid SDUs before version negotiation does only make sense for single SDUs.
+            state <- if BL.length (unDummyPayload b) < 0xffff
+                         then arbitrary
+                         else return Mx.Mature
+            let err_m = if state == Mx.Larval || state == Mx.Connected
+                            then Just Mx.MuxUnknownMiniProtocol
+                            else Nothing
 
-startMuxSTM :: (Ord ptcl, Enum ptcl, Bounded ptcl, Mx.ProtocolEnum ptcl)
-            => Mx.MiniProtocolDescriptions ptcl IO
-            -> TBQueue IO BL.ByteString
-            -> TBQueue IO BL.ByteString
+            return $ ArbitraryValidSDU b state err_m
+
+        tooLargeSdu = do
+            l <- choose (1 + smallMiniProtocolLimit , 2 * smallMiniProtocolLimit)
+            p <- arbitrary
+            let b = DummyPayload $ BL.replicate l p
+
+            return $ ArbitraryValidSDU b Mx.Mature (Just Mx.MuxIngressQueueOverRun)
+
+        unknownMiniProtocol = do
+            ts  <- arbitrary
+            mid <- choose (6, 0x7fff) -- ClientChainSynWithBlocks with 5 is the highest valid mid
+            mode <- oneof [return 0x0, return 0x8000]
+            len <- arbitrary
+            state <- arbitrary
+
+            return $ ArbitraryInvalidSDU (InvalidSDU (Mx.RemoteClockModel ts) (mid .|. mode) len
+                                          (8 + fromIntegral len))
+                                         state
+                                         Mx.MuxUnknownMiniProtocol
+        invalidLenght = do
+            ts  <- arbitrary
+            mid <- arbitrary
+            len <- arbitrary
+            realLen <- choose (0, 7) -- Size of mux header is 8
+            state <- arbitrary
+
+            return $ ArbitraryInvalidSDU (InvalidSDU (Mx.RemoteClockModel ts) mid len realLen)
+                                         state
+                                         Mx.MuxDecodeError
+
+instance Arbitrary Mx.MuxBearerState where
+     -- XXX Larval and Connected test behaviour is dependant on version negotation
+     -- so they are disabled for now.
+     arbitrary = elements [ -- Mx.Larval
+                            -- , Mx.Connected
+                            Mx.Mature
+                          , Mx.Dying
+                          , Mx.Dead
+                          ]
+
+startMuxSTM :: ( MonadAsync m, MonadCatch m, MonadFork m, MonadMask m, MonadSay m, MonadSTM m
+               , MonadThrow m , MonadTime m , MonadTimer m, Ord ptcl, Enum ptcl, Bounded ptcl
+               , Mx.ProtocolEnum ptcl , Show ptcl, Mx.MiniProtocolLimits ptcl)
+            => Mx.MiniProtocolDescriptions ptcl m
+            -> TBQueue m BL.ByteString
+            -> TBQueue m BL.ByteString
             -> Word16
-            -> Maybe (TBQueue IO (Mx.MiniProtocolId ptcl, Mx.MiniProtocolMode, Time IO))
-            -> IO (Async IO (Maybe SomeException))
+            -> Maybe (TBQueue m (Mx.MiniProtocolId ptcl, Mx.MiniProtocolMode, Time m))
+            -> m (Async m (Maybe SomeException))
 startMuxSTM mpds wq rq mtu trace = async spawn
+
   where
     spawn = bracket (queuesAsMuxBearer wq rq mtu trace) Mx.close $ \bearer -> do
         res_e <- try $ Mx.muxStart mpds bearer
         case res_e of
              Left  e -> return (Just e)
              Right _ -> return Nothing
-
 
 queuesAsMuxBearer
   :: forall ptcl m.
@@ -216,7 +335,11 @@ prop_mux_snd_recv request response = ioProperty $ do
     clientAsync <- startMuxSTM (\ChainSync1 -> client_mp) client_w client_r sduLen Nothing
     serverAsync <- startMuxSTM (\ChainSync1 -> server_mp) server_w server_r sduLen Nothing
 
-    (\a b c -> a .&&. isNothing b .&&. isNothing c) <$> verify <*> wait clientAsync <*> wait serverAsync
+    r <- waitBoth clientAsync serverAsync
+    case r of
+         (Just _, _) -> return $ property False
+         (_, Just _) -> return $ property False
+         _           -> property <$> verify
 
 -- | Create a verification function, a MiniProtocolDescription for the client side and a
 -- MiniProtocolDescription for the server side for a RequestResponce protocol.
@@ -248,7 +371,7 @@ setupMiniReqRsp serverAction mpsEndVar request response = do
     plainClient :: [DummyPayload] -> ReqRespClient DummyPayload DummyPayload IO Bool
     plainClient = go []
       where
-        go resps []         = SendMsgDone (pure $ reverse resps == [response])
+        go resps []         = Network.TypedProtocol.ReqResp.Client.SendMsgDone (pure $ reverse resps == [response])
         go resps (req:reqs) = SendMsgReq req $ \resp -> return (go (resp:resps) reqs)
 
     serverPeer = reqRespServerPeer (plainServer [])
@@ -311,11 +434,16 @@ prop_mux_2_minis request0 response0 response1 request1 = ioProperty $ do
     clientAsync <- startMuxSTM client_mps client_w client_r sduLen Nothing
     serverAsync <- startMuxSTM server_mps server_w server_r sduLen Nothing
 
-    (\a b c d -> a .&&. b .&&. isNothing c .&&. isNothing d)
-      <$> verify_0
-      <*> verify_1
-      <*> wait clientAsync
-      <*> wait serverAsync
+
+    !r <- waitBoth clientAsync serverAsync
+    case r of
+         (Just _, _) -> return $ property False
+         (_, Just _) -> return $ property False
+         _           -> do
+             res0 <- verify_0
+             res1 <- verify_1
+
+             return $ property $ res0 .&&. res1
 
 -- | Attempt to verify that capacity is diveded fairly between two active miniprotocols.
 -- Two initiators send a request over two different miniprotocols and the corresponding responders
@@ -357,19 +485,21 @@ prop_mux_starvation response0 response1 =
     serverAsync <- startMuxSTM server_mps server_w server_r sduLen Nothing
 
     -- First verify that all messages where received correctly
-    res_short <- verify_short
-    res_long <- verify_long
-    c_e <- isNothing <$> wait clientAsync
-    s_e <- isNothing <$> wait serverAsync
+    r <- waitBoth clientAsync serverAsync
+    case r of
+         (Just _, _) -> return $ property False
+         (_, Just _) -> return $ property False
+         _           -> do
+             -- First verify that all messages where received correctly
+             res_short <- verify_short
+             res_long <- verify_long
 
-    -- Then look at the message trace to check for starvation.
-    trace <- atomically $ flushTBQueue traceQueueVar []
-    let es = map (\(e, _, _) -> e) trace
-        ls = dropWhile (\e -> e == head es) es
-        fair = verifyStarvation ls
-
-    return $ property $ res_short .&&. res_long .&&. fair .&&. c_e .&&. s_e
-
+             -- Then look at the message trace to check for starvation.
+             trace <- atomically $ flushTBQueue traceQueueVar []
+             let es = map (\(e, _, _) -> e) trace
+                 ls = dropWhile (\e -> e == head es) es
+                 fair = verifyStarvation ls
+             return $ property $ res_short .&&. res_long .&&. fair
   where
    -- We can't make 100% sure that both servers start responding at the same time
    -- but once they are both up and running messages should alternate between
@@ -390,61 +520,270 @@ prop_mux_starvation response0 response1 =
                  a <- readTBQueue q
                  flushTBQueue q (a : acc)
 
--- | Send message for an unknown miniprotocol and verify that the correct exception is thrown.
-prop_mux_unknown_miniprot :: InvalidSDU
-                          -> Property
-prop_mux_unknown_miniprot badSdu = ioProperty $ do
-    (client_w, serverAsync) <- failingServer
-
-    atomically $ writeTBQueue client_w (encodeInvalidMuxSDU badSdu)
-
-    res <- wait serverAsync
-    case res of
-         Just e  ->
-             case fromException e of
-                  Just me -> return $ Mx.errorType me == Mx.MuxUnknownMiniProtocol
-                  Nothing -> return False
-         Nothing -> return False
-
 encodeInvalidMuxSDU :: InvalidSDU -> BL.ByteString
-encodeInvalidMuxSDU sdu = Bin.runPut enc
+encodeInvalidMuxSDU sdu =
+    let header = Bin.runPut enc in
+    BL.append header $ BL.replicate (fromIntegral $ isLength sdu) 0xa
   where
     enc = do
         Bin.putWord32be $ Mx.unRemoteClockModel $ isTimestamp sdu
         Bin.putWord16be $ isIdAndMode sdu
         Bin.putWord16be $ isLength sdu
 
--- | Send a too short SDU header and verify that the correct exception is thrown.
-prop_mux_short_header :: InvalidSDU
-                      -> Word8
-                      -> Property
-prop_mux_short_header badSdu shortCutOffArg = ioProperty $ do
-    let shortCutOff = fromIntegral $ min shortCutOffArg 7 -- XXX Quickcheck 'Giving up' hack
-    (client_w, serverAsync) <- failingServer
+-- | Verify ingress processing of valid and invalid SDUs.
+prop_demux_sdu :: forall m.
+                    ( MonadAsync m
+                    , MonadCatch m
+                    , MonadFork m
+                    , MonadMask m
+                    , MonadSay m
+                    , MonadST m
+                    , MonadSTM m
+                    , MonadTime m
+                    , MonadTimer m)
+                 => ArbitrarySDU
+                 -> m Property
+prop_demux_sdu a = do
+    r <- run a
+    return $ tabulate "SDU type" [stateLabel a] $
+             tabulate "SDU Violation " [violationLabel a] r
+  where
+    run (ArbitraryValidSDU sdu state (Just Mx.MuxIngressQueueOverRun)) = do
+        stopVar <- newEmptyTMVarM
 
-    atomically $ writeTBQueue client_w (BL.take shortCutOff $ encodeInvalidMuxSDU badSdu)
+        let server_mp = Mx.MiniProtocolDescription Nothing (Just $ serverRsp stopVar)
+        -- To trigger MuxIngressQueueOverRun we use a special test protocol with
+        -- an ingress queue which is less than 0xffff so that it can be triggered by a
+        -- single segment.
+        let server_small ChainSyncSmall = server_mp
 
-    res <- wait serverAsync
-    case res of
-         Just e  ->
-             case fromException e of
-                  Just me -> return $ Mx.errorType me == Mx.MuxDecodeError
-                  Nothing -> return False
-         Nothing -> return False
+        (client_w, said) <- plainServer server_small
+        setup state client_w
 
--- | Start a ReqResp server that is expected to fail, returns the server's read channel
-failingServer :: IO (TBQueue IO BL.ByteString, Async IO (Maybe SomeException))
-failingServer  = do
-    server_r <- atomically $ newTBQueue 10
-    server_w <- atomically $ newTBQueue 10
-    endMpsVar <- atomically $ newTVar 2
+        writeSdu client_w $! unDummyPayload sdu
 
-    let sduLen = 1260
-        request  = DummyPayload $ BL.replicate 4 0xa
-        response = request
+        atomically $! putTMVar stopVar $ unDummyPayload sdu
 
-    (_, _, server_mp) <- setupMiniReqRsp (return ()) endMpsVar request response
-    let server_mps ChainSync1 = server_mp
-    serverAsync <- startMuxSTM server_mps server_w server_r sduLen Nothing
+        res <- wait said
+        case res of
+            Just e  ->
+                case fromException e of
+                    Just me -> return $ Mx.errorType me === Mx.MuxIngressQueueOverRun
+                    Nothing -> return $ property False
+            Nothing -> return $ property False
 
-    return (server_r, serverAsync)
+    run (ArbitraryValidSDU sdu state err_m) = do
+        stopVar <- newEmptyTMVarM
+
+        let server_mp = Mx.MiniProtocolDescription Nothing (Just $ serverRsp stopVar)
+        let server_std ChainSync1 = server_mp
+
+        (client_w, said) <- plainServer server_std
+
+        setup state client_w
+
+        atomically $! putTMVar stopVar $! unDummyPayload sdu
+        writeSdu client_w $ unDummyPayload sdu
+
+        res <- wait said
+        case res of
+            Just e  ->
+                case fromException e of
+                    Just me -> case err_m of
+                                    Just err -> return $ Mx.errorType me === err
+                                    Nothing  -> return $ property False
+                    Nothing -> return $ property False
+            Nothing -> return $ err_m === Nothing
+
+    run (ArbitraryInvalidSDU badSdu state err) = do
+        stopVar <- newEmptyTMVarM
+
+        let server_mp = Mx.MiniProtocolDescription Nothing (Just $ serverRsp stopVar)
+        let server_std ChainSync1 = server_mp
+
+        (client_w, said) <- plainServer server_std
+
+        setup state client_w
+        atomically $ writeTBQueue client_w $ BL.take (isRealLength badSdu) $ encodeInvalidMuxSDU badSdu
+        atomically $ putTMVar stopVar BL.empty
+
+        res <- wait said
+        case res of
+            Just e  ->
+                case fromException e of
+                    Just me -> return $ Mx.errorType me === err
+                    Nothing -> return $ property False
+            Nothing -> return $ property False
+
+    plainServer server_mps = do
+        server_w <- atomically $ newTBQueue 10
+        server_r <- atomically $ newTBQueue 10
+
+        said <- startMuxSTM server_mps server_w server_r 1280 Nothing
+
+        return (server_r, said)
+
+    -- Server that expects to receive a specific ByteString.
+    -- Doesn't send a reply.
+    serverRsp stopVar chan =
+        atomically (takeTMVar stopVar) >>= loop
+      where
+        loop e | e == BL.empty = return ()
+        loop e = do
+            msg_m <- recv chan
+            case msg_m of
+                 Just msg ->
+                     let e_m = BL.stripPrefix msg e in
+                     case e_m of
+                          Just e' -> loop e'
+                          Nothing -> error "recv corruption"
+                 Nothing -> error "eof corruption"
+
+    writeSdu _ payload | payload == BL.empty = return ()
+    writeSdu queue payload = do
+        let (!frag, !rest) = BL.splitAt 0xffff payload
+            sdu' = Mx.MuxSDU (Mx.RemoteClockModel 0) (Mx.AppProtocolId ChainSyncSmall)
+                              Mx.ModeInitiator
+                             (fromIntegral $ BL.length frag) frag
+            !pkt = Mx.encodeMuxSDU (sdu' :: Mx.MuxSDU TestProtocolsSmall)
+
+        atomically $ writeTBQueue queue pkt
+        writeSdu queue rest
+
+    -- Unless we are in Larval or Connected we fake version negotiation before
+    -- we run the test.
+    {- Not yet! setup state q | state /= Mx.Larval && state /= Mx.Connected = do
+        let msg = Mx.MsgInitReq [version0]
+            blob = toLazyByteString $ Mx.encodeControlMsg msg
+            pkt = Mx.MuxSDU (Mx.RemoteClockModel 0) Mx.Muxcontrol Mx.ModeInitiator
+                            (fromIntegral $ BL.length blob) blob
+        atomically $ writeTBQueue q $ Mx.encodeMuxSDU (pkt :: Mx.MuxSDU TestProtocols1)
+        return () -}
+    setup _ _ = return ()
+
+    stateLabel (ArbitraryInvalidSDU _ state _) = "Invalid " ++ versionLabel state
+    stateLabel (ArbitraryValidSDU _ state _)   = "Valid " ++ versionLabel state
+
+    versionLabel Mx.Larval    = "before version negotiation"
+    versionLabel Mx.Connected = "before version negotiation"
+    versionLabel _            = "after version negotiation"
+
+    violationLabel (ArbitraryValidSDU _ _ err_m) = sduViolation err_m
+    violationLabel (ArbitraryInvalidSDU _ _ err) = sduViolation $ Just err
+
+    sduViolation (Just Mx.MuxUnknownMiniProtocol) = "unknown miniprotocol"
+    sduViolation (Just Mx.MuxDecodeError        ) = "decode error"
+    sduViolation (Just Mx.MuxIngressQueueOverRun) = "ingress queue overrun"
+    sduViolation (Just _                        ) = "unknown violation"
+    sduViolation Nothing                          = "none"
+
+prop_demux_sdu_sim :: ArbitrarySDU
+                     -> Property
+prop_demux_sdu_sim badSdu =
+    let r_e =  runSimStrictShutdown $ prop_demux_sdu badSdu in
+    case r_e of
+         Left  _ -> property False
+         Right r -> r
+
+prop_demux_sdu_io :: ArbitrarySDU
+                    -> Property
+prop_demux_sdu_io badSdu = ioProperty $ prop_demux_sdu badSdu
+
+demo :: forall m block.
+        ( MonadAsync m
+        , MonadCatch m
+        , MonadFork m
+        , MonadMask m
+        , MonadSay m
+        , MonadST m
+        , MonadSTM m
+        , MonadTime m
+        , MonadTimer m
+        , Chain.HasHeader block
+        , Serialise (Chain.HeaderHash block)
+        , Serialise block
+        , Eq block
+        , Show block )
+     => Chain block -> [ChainUpdate block] -> DiffTime -> m Property
+demo chain0 updates delay = do
+    client_w <- atomically $ newTBQueue 10
+    client_r <- atomically $ newTBQueue 10
+    let sduLen = 1280
+    let server_w = client_r
+        server_r = client_w
+    producerVar <- atomically $ newTVar (CPS.initChainProducerState chain0)
+    consumerVar <- atomically $ newTVar chain0
+    done <- atomically newEmptyTMVar
+
+    let Just expectedChain = Chain.applyChainUpdates updates chain0
+        target = Chain.headPoint expectedChain
+
+        consumerPeer :: Peer (ChainSync.ChainSync block (Point block)) AsClient ChainSync.StIdle m ()
+        consumerPeer = ChainSync.chainSyncClientPeer
+                          (ChainSync.chainSyncClientExample consumerVar
+                          (consumerClient done target consumerVar))
+        consumerPeers ChainSync1 = Mx.OnlyClient nullTracer (ChainSync.codecChainSync encode decode encode decode) consumerPeer
+
+        producerPeer :: Peer (ChainSync.ChainSync block (Point block)) AsServer ChainSync.StIdle m ()
+        producerPeer = ChainSync.chainSyncServerPeer (ChainSync.chainSyncServerExample () producerVar)
+        producerPeers ChainSync1 = Mx.OnlyServer nullTracer (ChainSync.codecChainSync encode decode encode decode) producerPeer
+
+    clientAsync <- startMuxSTM (Mx.miniProtocolDescription . consumerPeers) client_w client_r sduLen Nothing
+    serverAsync <- startMuxSTM (Mx.miniProtocolDescription . producerPeers) server_w server_r sduLen Nothing
+
+    updateAid <- async $ sequence_
+        [ do threadDelay delay -- X milliseconds, just to provide interest
+             atomically $ do
+                 p <- readTVar producerVar
+                 let Just p' = CPS.applyChainUpdate update p
+                 writeTVar producerVar p'
+             | update <- updates
+        ]
+
+    wait updateAid
+    r <- waitBoth clientAsync serverAsync
+    case r of
+         (Just _, _) -> return $ property False
+         (_, Just _) -> return $ property False
+         _           -> do
+             ret <- atomically $ takeTMVar done
+             return $ property ret
+
+  where
+    checkTip target consumerVar = atomically $ do
+          chain <- readTVar consumerVar
+          return (Chain.headPoint chain == target)
+
+    -- A simple chain-sync client which runs until it recieves an update to
+    -- a given point (either as a roll forward or as a roll backward).
+    consumerClient :: TMVar m Bool
+                   -> Point block
+                   -> TVar m (Chain block)
+                   -> ChainSync.Client block m ()
+    consumerClient done target chain =
+      ChainSync.Client
+        { ChainSync.rollforward = \_ -> checkTip target chain >>= \b ->
+            if b then do
+                    atomically $ putTMVar done True
+                    pure $ Left ()
+                 else
+                    pure $ Right $ consumerClient done target chain
+        , ChainSync.rollbackward = \_ _ -> checkTip target chain >>= \b ->
+            if b then do
+                    atomically $ putTMVar done True
+                    pure $ Left ()
+                 else
+                    pure $ Right $ consumerClient done target chain
+        , ChainSync.points = \_ -> pure $ consumerClient done target chain
+        }
+
+prop_mux_demo_io :: TestBlockChainAndUpdates -> Property
+prop_mux_demo_io (TestBlockChainAndUpdates chain updates) =
+    ioProperty $ demo chain updates 10e-3
+
+prop_mux_demo_sim :: TestBlockChainAndUpdates -> Property
+prop_mux_demo_sim (TestBlockChainAndUpdates chain updates) =
+    case runSimStrictShutdown $ demo chain updates 10e-4 of
+         Left  _ -> property  False
+         Right r -> r
+
