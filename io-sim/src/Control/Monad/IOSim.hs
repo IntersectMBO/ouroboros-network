@@ -1011,8 +1011,7 @@ execAtomically mytid = go [] [] []
     go :: [SomeTVar s]
        -> [SomeTVar s]
        -> [(Int, StmA s a)] -- list of checkpoints of written variables at the
-                            -- point of @OrElse@ and second argument of
-                            -- @OrElse@
+                            -- point of @OrElse@ and second argument of @OrElse@
        -> TVarId
        -> StmA s a -> ST s (StmTxResult s a)
     go read written orElses nextVid action = case action of
