@@ -60,9 +60,9 @@
       };
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
-      url = "https://github.com/input-output-hk/haskell-hedgehog";
-      rev = "e63fb354bfbad07f3befdd43b382c655944218be";
-      sha256 = "1p2yzlaiqj34pkk26cgg0dkvkm1zwjpgx1zk95md5xj0cijb34gj";
+      url = "https://github.com/hedgehogqa/haskell-hedgehog";
+      rev = "2505055760d06ba6343f803783ed023fb0ed6c48";
+      sha256 = "0m29y881kbqvs12vjcbaaqrpbqbc2rvg3ffwx5wfaymbn1djyz9q";
       });
     postUnpack = "sourceRoot+=/hedgehog; echo source root reset to \$sourceRoot";
     }

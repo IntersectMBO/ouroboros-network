@@ -42,8 +42,8 @@
       };
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
-      url = "https://github.com/well-typed/canonical-json";
-      rev = "a4016204609ae6708f007012c68bf8c8fb3f6e6c";
+      url = "http://github.com/nc6/canonical-json";
+      rev = "a9dc9b893649bc2e2a770ab22d278a780f7e3a3c";
       sha256 = "0alwbi9xqaj6fmwzs6lr2drqrnhlnp13d9k2qkl5ga7h4grz9zcr";
       });
     }
