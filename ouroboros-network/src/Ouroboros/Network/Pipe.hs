@@ -8,9 +8,7 @@ module Ouroboros.Network.Pipe (
     runNetworkNodeWithPipe
   ) where
 
-import           Control.Monad
 import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Data.Word
@@ -94,4 +92,4 @@ runNetworkNodeWithPipe
 runNetworkNodeWithPipe protocols pcRead pcWrite = do
     let  mpds = Mx.miniProtocolDescription . protocols
     bearer <- pipeAsMuxBearer pcRead pcWrite
-    void $ async $ Mx.muxStart mpds bearer Nothing
+    Mx.muxStart mpds bearer Nothing

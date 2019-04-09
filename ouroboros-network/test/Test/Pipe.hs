@@ -7,6 +7,7 @@ module Test.Pipe (tests) where
 
 import           Codec.Serialise (Serialise)
 import           Control.Monad
+import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTimer
@@ -90,8 +91,8 @@ demo chain0 updates = do
         producerPeer = ChainSync.chainSyncServerPeer (ChainSync.chainSyncServerExample () producerVar)
         producerPeers Mxt.ChainSync1 = Mx.OnlyServer nullTracer ChainSync.codecChainSync producerPeer
 
-    runNetworkNodeWithPipe producerPeers hndRead1 hndWrite2
-    runNetworkNodeWithPipe consumerPeers hndRead2 hndWrite1
+    _ <- async $ runNetworkNodeWithPipe producerPeers hndRead1 hndWrite2
+    _ <- async $ runNetworkNodeWithPipe consumerPeers hndRead2 hndWrite1
 
     void $ fork $ sequence_
         [ do threadDelay 10e-3 -- 10 milliseconds, just to provide interest
