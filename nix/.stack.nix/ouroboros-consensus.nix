@@ -120,6 +120,7 @@
             (hsPkgs.cereal)
             (hsPkgs.containers)
             (hsPkgs.directory)
+            (hsPkgs.fingertree)
             (hsPkgs.generics-sop)
             (hsPkgs.mtl)
             (hsPkgs.pretty-show)
