@@ -637,10 +637,10 @@ schedule thread@Thread{
     UpdateTimeout (Timeout _tvar tmid) d k -> do
           -- updating an expired timeout is a noop, so it is safe
           -- to race using a timeout with updating or cancelling it
-      let updateTimeout  Nothing       = ((), Nothing)
-          updateTimeout (Just (_p, v)) = ((), Just (expiry, v))
+      let updateTimeout_  Nothing       = ((), Nothing)
+          updateTimeout_ (Just (_p, v)) = ((), Just (expiry, v))
           expiry  = d `addTime` time
-          timers' = snd (PSQ.alter updateTimeout tmid timers)
+          timers' = snd (PSQ.alter updateTimeout_ tmid timers)
           thread' = thread { threadControl = ThreadControl k ctl }
       trace <- schedule thread' simstate { timers = timers' }
       return (Trace time tid (EventTimerUpdated tmid expiry) trace)
