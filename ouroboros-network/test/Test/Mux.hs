@@ -779,11 +779,11 @@ demo chain0 updates delay = do
 
 prop_mux_demo_io :: TestBlockChainAndUpdates -> Property
 prop_mux_demo_io (TestBlockChainAndUpdates chain updates) =
-    ioProperty $ demo chain updates 10e-3
+    ioProperty $ demo chain updates 10e-4
 
 prop_mux_demo_sim :: TestBlockChainAndUpdates -> Property
 prop_mux_demo_sim (TestBlockChainAndUpdates chain updates) =
-    case runSimStrictShutdown $ demo chain updates 10e-4 of
+    case runSimStrictShutdown $ demo chain updates 10e-3 of
          Left  _ -> property  False
          Right r -> r
 

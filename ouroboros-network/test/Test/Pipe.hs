@@ -115,7 +115,7 @@ demo chain0 updates = do
     _ <- async $ runNetworkNodeWithPipe consumerPeers hndRead2 hndWrite1
 
     void $ fork $ sequence_
-        [ do threadDelay 10e-3 -- 10 milliseconds, just to provide interest
+        [ do threadDelay 10e-4 -- 1 milliseconds, just to provide interest
              atomically $ do
                  p <- readTVar producerVar
                  let Just p' = CPS.applyChainUpdate update p
