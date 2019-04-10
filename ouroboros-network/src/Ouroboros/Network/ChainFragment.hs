@@ -179,7 +179,9 @@ prettyPrintChainFragment :: HasHeader block
 prettyPrintChainFragment nl ppBlock =
     foldChainFragment (\s b -> s ++ nl ++ "    " ++ ppBlock b) "ChainFragment:"
 
--- | \( O(n) \).
+-- | \( O(n) \). Maps over the chain blocks. This is not allowed to change the
+-- block `Point`s, or it would create an invalid chain.
+--
 mapChainFragment :: (HasHeader block1, HasHeader block2)
                  => (block1 -> block2) -> ChainFragment block1 -> ChainFragment block2
 mapChainFragment f (ChainFragment c) = ChainFragment (FT.fmap' f c)
