@@ -5,26 +5,16 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE FlexibleInstances #-}
 
-import qualified Codec.CBOR.Write as CBOR (toStrictByteString)
-import Codec.Serialise (Serialise (..), deserialiseOrFail)
-
-import Control.Concurrent (myThreadId, threadDelay)
+import Control.Concurrent (myThreadId)
 import Control.Concurrent.Async (concurrently, withAsync)
 import Control.Concurrent.STM (STM, atomically, retry)
 import Control.Concurrent.STM.TMVar (newEmptyTMVarIO, putTMVar, readTMVar)
-import Control.Exception (SomeException, bracket, catch, throwIO)
 import Control.Monad (forM_)
-import Control.Monad.IO.Class (liftIO)
-import Control.Monad.Trans.Class (lift)
-import Control.Monad.Trans.Resource (ResourceT, runResourceT)
-import Control.Tracer (Tracer (..), contramap, nullTracer, stdoutTracer, traceWith)
-import qualified Data.ByteString.Lazy as Lazy (ByteString, fromStrict)
-import qualified Data.ByteString.Lazy.Char8 as Lazy (pack)
-import Data.Either (either)
+import Control.Tracer (Tracer (..), contramap, stdoutTracer, traceWith)
+import qualified Data.ByteString.Lazy as Lazy (fromStrict)
 import Data.Functor.Contravariant (Op (..))
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
-import qualified Data.Map as Map (fromList)
 import Data.Maybe (fromMaybe)
 import Data.Text (Text, pack)
 import qualified Data.Text as Text
@@ -61,29 +51,13 @@ import Pos.Util.Trace.Named as Trace (LogNamed (..), appendName, named)
 import qualified Pos.Util.Trace
 import qualified Pos.Util.Wlog as Wlog
 
-import Network.TypedProtocol.Channel (Channel, hoistChannel)
-import Network.TypedProtocol.Codec (hoistCodec)
-import Network.TypedProtocol.Driver (runPeer)
-import Network.Socket (Socket)
 import qualified Network.Socket as Socket
-
-import Ouroboros.Network.Channel (socketAsChannel)
-import qualified Ouroboros.Network.Server.Socket as Server
-import qualified Ouroboros.Network.Protocol.ChainSync.Server as ChainSync
-import qualified Ouroboros.Byron.Proxy.ChainSync.Server as Server
-import qualified Ouroboros.Byron.Proxy.ChainSync.Types as ChainSync
-
-import Ouroboros.Network.Server.Version (Application (..), Dict (..), Version (..), Versions (..), Sigma (..))
-import Ouroboros.Network.Server.Version.Protocol (serverPeerFromVersions)
-import qualified Ouroboros.Network.Server.Version.CBOR as Version
 
 import qualified Ouroboros.Byron.Proxy.DB as DB
 import Ouroboros.Byron.Proxy.Main
 
-import qualified Control.Monad.Class.MonadThrow as NonStandard
-import qualified Control.Monad.Catch as Standard
-
 import DB (DBConfig (..), seedWithGenesis, withDB)
+import IPC (runVersionedServer)
 
 -- | The main action using the proxy, index, and immutable database: download
 -- the best known chain from the proxy and put it into the database, over and
@@ -179,163 +153,6 @@ byronProxyMain tracer db bp = getStdGen >>= mainLoop Nothing
   pickRandom rndGen ne =
     let (idx, rndGen') = randomR (0, NE.length ne - 1) rndGen
     in  (ne NE.!! idx, rndGen')
-
--- | Use a DB and a given number of microseconds to poll for changes, to get
--- a chain sync server that serves whole blocks.
--- The `ResourceT` is needed because we deal with DB iterators.
-chainSyncServer
-  :: Int
-  -> DB.DB IO
-  -> ChainSync.ChainSyncServer ChainSync.Block ChainSync.Point (ResourceT IO) ()
-chainSyncServer usPoll = Server.chainSyncServer err poll
-  where
-  err = throwIO
-  poll :: Server.PollT IO
-  poll p m = do
-    s <- m
-    mbT <- p s
-    case mbT of
-      Nothing -> lift (threadDelay usPoll) >> poll p m
-      Just t  -> pure t
-
-versions
-  :: Tracer IO String
-  -> Int
-  -> DB.DB IO
-  -> Versions Version.Number (Dict Serialise) (Channel IO Lazy.ByteString -> IO ())
-versions tracer usPoll db = Versions $ Map.fromList
-  [ (0, version0 tracer)
-  , (1, version1 tracer usPoll db)
-  ]
-
-version0
-  :: Tracer IO String 
-  -> Sigma (Version (Dict Serialise) (Channel IO Lazy.ByteString -> IO ()))
-version0 tracer = Sigma (42 :: Int) $ Version
-  { versionExtra = Dict
-  , versionApplication = application0 tracer
-  }
-
-application0 :: Tracer IO String -> Application (anything -> IO ()) Int
-application0 tracer = Application $ \_localData remoteData _channel ->
-  traceWith tracer $ mconcat
-    [ "Version 0. Remote data is "
-    , show remoteData
-    ]
-
-application1
-  :: Tracer IO String
-  -> Int
-  -> DB.DB IO
-  -> Application (Channel IO Lazy.ByteString -> IO ()) Lazy.ByteString
-application1 tracer usPoll db = Application $ \_localData remoteData channel -> do
-  traceWith tracer $ mconcat
-    [ "Version 1. Remote data is "
-    , show remoteData
-    ]
-  let peer = ChainSync.chainSyncServerPeer (chainSyncServer usPoll db)
-      -- `peer` is in ResourceT`, so we must hoist channel and codec into
-      -- `ResourceT`
-      inResourceT :: forall x . IO x -> ResourceT IO x
-      inResourceT = liftIO
-      codec' = hoistCodec inResourceT ChainSync.codec
-      channel' = hoistChannel inResourceT channel
-  (runResourceT $ runPeer nullTracer codec' channel' peer) `catch` (\(e :: SomeException) -> do
-    traceWith tracer $ mconcat
-      [ "Version 1 connection from terminated with exception "
-      , show e
-      ]
-    throwIO e
-    )
-  traceWith tracer $ mconcat
-    [ "Version 1 connection from terminated normally"
-    ]
-
-version1
-  :: Tracer IO String
-  -> Int
-  -> DB.DB IO
-  -> Sigma (Version (Dict Serialise) (Channel IO Lazy.ByteString -> IO ()))
-version1 tracer usPoll db = Sigma (Lazy.pack "server version data here") $ Version
-  { versionExtra = Dict
-  , versionApplication = application1 tracer usPoll db
-  }
-
-encodeBlob :: Dict Serialise t -> t -> Version.Blob
-encodeBlob Dict = CBOR.toStrictByteString . encode
-
-decodeBlob :: Dict Serialise t -> Version.Blob -> Maybe t
-decodeBlob Dict = either (const Nothing) Just . deserialiseOrFail . Lazy.fromStrict
-
--- | Run a chain sync server over a socket.
---
--- The `STM ()` is for normal shutdown. When it returns, the server stops.
--- So, for instance, use `STM.retry` to never stop (until killed).
-runVersionedServer :: Tracer IO String -> STM () -> Int -> DB.DB IO -> IO ()
-runVersionedServer tracer closeTx usPoll db = bracket mkSocket Socket.close $ \socket ->
-  Server.run (fromSocket socket) throwIO accept complete (const closeTx) ()
-  where
-  -- New connections are always accepted. The channel is used to run the
-  -- version negotiation protocol determined by `versions`. Some stdout
-  -- printing is done just to help you see what's going on.
-  accept sockAddr st = pure $ Server.Accept st $ \channel -> do
-    traceWith tracer $ mconcat
-      [ "Got connection from "
-      , show sockAddr
-      ]
-    let versionServer = serverPeerFromVersions encodeBlob decodeBlob (versions tracer usPoll db)
-    mbVersion <- runPeer nullTracer Version.codec channel versionServer `catch` (\(e :: SomeException) -> do
-      traceWith tracer $ mconcat
-        [ "Exception during version negotation with "
-        , show sockAddr
-        , ": "
-        , show e
-        ]
-      throwIO e)
-    case mbVersion of
-      Nothing -> traceWith tracer $ mconcat
-        [ "No compatible versions with "
-        , show sockAddr
-        ]
-      Just k -> k channel
-  -- When a connection completes, we do nothing. State is ().
-  -- Crucially: we don't re-throw exceptions, because doing so would
-  -- bring down the server.
-  -- For the demo, the client will stop by closing the socket, which causes
-  -- a deserialise failure (unexpected end of input) and we don't want that
-  -- to bring down the proxy.
-  complete outcome st = case outcome of
-    Left  err -> pure st
-    Right r   -> pure st
-  mkSocket :: IO Socket
-  mkSocket = do
-    socket <- Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol
-    Socket.setSocketOption socket Socket.ReuseAddr 1
-    Socket.bind socket (Socket.SockAddrInet 7777 (Socket.tupleToHostAddress (127, 0, 0, 1)))
-    Socket.listen socket 1
-    pure socket
-  -- Make a server-compatibile socket from a network socket.
-  fromSocket :: Socket -> Server.Socket Socket.SockAddr (Channel IO Lazy.ByteString)
-  fromSocket socket = Server.Socket
-    { Server.acceptConnection = do
-        (socket', addr) <- Socket.accept socket
-        pure (addr, socketAsChannel socket', Socket.close socket')
-    }
-
--- Orphans, forced upon me because of the IO sim stuff.
-
-instance NonStandard.MonadThrow (ResourceT IO) where
-  throwM = Standard.throwM
-
--- Non-standard MonadThrow includes bracket... we can get it for free if we
--- give a non-standard MonadCatch
-
-instance NonStandard.MonadCatch (ResourceT IO) where
-  catch = Standard.catch
-
-instance NonStandard.MonadMask (ResourceT IO) where
-  mask = Standard.mask
-  uninterruptibleMask = Standard.uninterruptibleMask
 
 -- | Diffusion layer uses log-waper severity, iohk-monitoring uses its own.
 convertSeverity :: Wlog.Severity -> BM.Severity
@@ -464,7 +281,10 @@ main = withCompileInfo $ do
         seedWithGenesis genesisBlock db
         withByronProxy bpc db $ \bp -> do
           let usPoll = 1000000 -- microseconds
-              shelleyThread = runVersionedServer stdoutTracer (readTMVar closeVar) usPoll db
+              -- TODO get from CLI
+              host = Socket.tupleToHostAddress (127, 0, 0, 1)
+              port = 7777
+              shelleyThread = runVersionedServer host port stdoutTracer (readTMVar closeVar) usPoll db
               byronThread =
                 if bpoNoDownload options
                 then pure ()
