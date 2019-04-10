@@ -17,10 +17,11 @@ import Control.Monad (forM_)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Resource (ResourceT, runResourceT)
+import Control.Tracer (Tracer (..), contramap, nullTracer, stdoutTracer, traceWith)
 import qualified Data.ByteString.Lazy as Lazy (ByteString, fromStrict)
 import qualified Data.ByteString.Lazy.Char8 as Lazy (pack)
 import Data.Either (either)
-import Data.Functor.Contravariant (Op (..), contramap)
+import Data.Functor.Contravariant (Op (..))
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map as Map (fromList)
@@ -37,7 +38,6 @@ import Cardano.BM.Data.LogItem hiding (LogNamed)
 import qualified Cardano.BM.Data.Severity as BM
 import Cardano.BM.Setup (withTrace)
 import qualified Cardano.BM.Trace as BM (Trace)
-import Control.Tracer (Tracer (..), nullTracer)
 
 import qualified Pos.Binary.Class as CSL (decode)
 import Pos.Chain.Block (Block, BlockHeader (..), genesisBlock0, headerHash)
@@ -91,10 +91,11 @@ import DB (DBConfig (..), seedWithGenesis, withDB)
 --
 -- No exception handling is done.
 byronProxyMain
-  :: DB.DB IO
+  :: Tracer IO String
+  -> DB.DB IO
   -> ByronProxy
   -> IO x
-byronProxyMain db bp = getStdGen >>= mainLoop Nothing
+byronProxyMain tracer db bp = getStdGen >>= mainLoop Nothing
 
   where
 
@@ -121,7 +122,7 @@ byronProxyMain db bp = getStdGen >>= mainLoop Nothing
       -- TODO we don't get to know from where it was received. Problem? Maybe
       -- not.
       Right atom -> do
-        putStrLn $ mconcat
+        traceWith tracer $ mconcat
           [ "Got atom: "
           , show atom
           ]
@@ -140,14 +141,14 @@ byronProxyMain db bp = getStdGen >>= mainLoop Nothing
         -- Pick a peer from the list of announcers at random and download
         -- the chain.
         let (peer, rndGen') = pickRandom rndGen (btPeers bt)
-        putStrLn $ mconcat
+        traceWith tracer $ mconcat
           [ "Using tip with hash "
           , show tipHash
           , " at slot "
           , show tipSlot
           , if isEBB then " (EBB)" else ""
           ]
-        putStrLn $ mconcat
+        traceWith tracer $ mconcat
           [ "Downloading the chain with tip hash "
           , show tipHash
           , " from "
@@ -198,33 +199,37 @@ chainSyncServer usPoll = Server.chainSyncServer err poll
       Just t  -> pure t
 
 versions
-  :: Int
+  :: Tracer IO String
+  -> Int
   -> DB.DB IO
   -> Versions Version.Number (Dict Serialise) (Channel IO Lazy.ByteString -> IO ())
-versions usPoll db = Versions $ Map.fromList
-  [ (0, version0)
-  , (1, version1 usPoll db)
+versions tracer usPoll db = Versions $ Map.fromList
+  [ (0, version0 tracer)
+  , (1, version1 tracer usPoll db)
   ]
 
-version0 :: Sigma (Version (Dict Serialise) (Channel IO Lazy.ByteString -> IO ()))
-version0 = Sigma (42 :: Int) $ Version
+version0
+  :: Tracer IO String 
+  -> Sigma (Version (Dict Serialise) (Channel IO Lazy.ByteString -> IO ()))
+version0 tracer = Sigma (42 :: Int) $ Version
   { versionExtra = Dict
-  , versionApplication = application0
+  , versionApplication = application0 tracer
   }
 
-application0 :: Application (anything -> IO ()) Int
-application0 = Application $ \_localData remoteData _channel ->
-  putStrLn $ mconcat
+application0 :: Tracer IO String -> Application (anything -> IO ()) Int
+application0 tracer = Application $ \_localData remoteData _channel ->
+  traceWith tracer $ mconcat
     [ "Version 0. Remote data is "
     , show remoteData
     ]
 
 application1
-  :: Int
+  :: Tracer IO String
+  -> Int
   -> DB.DB IO
   -> Application (Channel IO Lazy.ByteString -> IO ()) Lazy.ByteString
-application1 usPoll db = Application $ \_localData remoteData channel -> do
-  putStrLn $ mconcat
+application1 tracer usPoll db = Application $ \_localData remoteData channel -> do
+  traceWith tracer $ mconcat
     [ "Version 1. Remote data is "
     , show remoteData
     ]
@@ -236,23 +241,24 @@ application1 usPoll db = Application $ \_localData remoteData channel -> do
       codec' = hoistCodec inResourceT ChainSync.codec
       channel' = hoistChannel inResourceT channel
   (runResourceT $ runPeer nullTracer codec' channel' peer) `catch` (\(e :: SomeException) -> do
-    putStrLn $ mconcat
+    traceWith tracer $ mconcat
       [ "Version 1 connection from terminated with exception "
       , show e
       ]
     throwIO e
     )
-  putStrLn $ mconcat
+  traceWith tracer $ mconcat
     [ "Version 1 connection from terminated normally"
     ]
 
 version1
-  :: Int
+  :: Tracer IO String
+  -> Int
   -> DB.DB IO
   -> Sigma (Version (Dict Serialise) (Channel IO Lazy.ByteString -> IO ()))
-version1 usPoll db = Sigma (Lazy.pack "server version data here") $ Version
+version1 tracer usPoll db = Sigma (Lazy.pack "server version data here") $ Version
   { versionExtra = Dict
-  , versionApplication = application1 usPoll db
+  , versionApplication = application1 tracer usPoll db
   }
 
 encodeBlob :: Dict Serialise t -> t -> Version.Blob
@@ -265,21 +271,21 @@ decodeBlob Dict = either (const Nothing) Just . deserialiseOrFail . Lazy.fromStr
 --
 -- The `STM ()` is for normal shutdown. When it returns, the server stops.
 -- So, for instance, use `STM.retry` to never stop (until killed).
-runVersionedServer :: STM () -> Int -> DB.DB IO -> IO ()
-runVersionedServer closeTx usPoll db = bracket mkSocket Socket.close $ \socket ->
+runVersionedServer :: Tracer IO String -> STM () -> Int -> DB.DB IO -> IO ()
+runVersionedServer tracer closeTx usPoll db = bracket mkSocket Socket.close $ \socket ->
   Server.run (fromSocket socket) throwIO accept complete (const closeTx) ()
   where
   -- New connections are always accepted. The channel is used to run the
   -- version negotiation protocol determined by `versions`. Some stdout
   -- printing is done just to help you see what's going on.
   accept sockAddr st = pure $ Server.Accept st $ \channel -> do
-    putStrLn $ mconcat
+    traceWith tracer $ mconcat
       [ "Got connection from "
       , show sockAddr
       ]
-    let versionServer = serverPeerFromVersions encodeBlob decodeBlob (versions usPoll db)
+    let versionServer = serverPeerFromVersions encodeBlob decodeBlob (versions tracer usPoll db)
     mbVersion <- runPeer nullTracer Version.codec channel versionServer `catch` (\(e :: SomeException) -> do
-      putStrLn $ mconcat
+      traceWith tracer $ mconcat
         [ "Exception during version negotation with "
         , show sockAddr
         , ": "
@@ -287,7 +293,7 @@ runVersionedServer closeTx usPoll db = bracket mkSocket Socket.close $ \socket -
         ]
       throwIO e)
     case mbVersion of
-      Nothing -> putStrLn $ mconcat
+      Nothing -> traceWith tracer $ mconcat
         [ "No compatible versions with "
         , show sockAddr
         ]
@@ -340,6 +346,8 @@ convertSeverity sev = case sev of
   Wlog.Warning -> BM.Warning
   Wlog.Error   -> BM.Error
 
+-- | Convert to the cardano-sl-util version of `Trace`, which is still
+-- used by the full diffusion layer.
 convertTrace :: BM.Trace IO Text -> Trace IO (LogNamed (Wlog.Severity, Text))
 convertTrace trace = case trace of
   Tracer f -> Pos.Util.Trace.Trace $ Op $ \namedI -> do
@@ -456,11 +464,11 @@ main = withCompileInfo $ do
         seedWithGenesis genesisBlock db
         withByronProxy bpc db $ \bp -> do
           let usPoll = 1000000 -- microseconds
-              shelleyThread = runVersionedServer (readTMVar closeVar) usPoll db
+              shelleyThread = runVersionedServer stdoutTracer (readTMVar closeVar) usPoll db
               byronThread =
                 if bpoNoDownload options
                 then pure ()
-                else byronProxyMain db bp
+                else byronProxyMain stdoutTracer db bp
               userInterrupt = getChar >>= const (atomically (putTMVar closeVar ()))
           -- The byron thread goes in `withAsync` because the only way to
           -- stop it is to kill it.

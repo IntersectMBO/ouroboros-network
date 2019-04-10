@@ -4,14 +4,11 @@ import qualified Codec.CBOR.Write as CBOR (toStrictByteString)
 import Codec.Serialise (Serialise (..), deserialiseOrFail)
 import Control.Concurrent.Async (race)
 import Control.Exception (bracket)
-import Control.Tracer (nullTracer)
+import Control.Tracer (Tracer (..), contramap, nullTracer, stdoutTracer, traceWith)
 import qualified Data.ByteString.Lazy as Lazy (ByteString, fromStrict)
 import qualified Data.ByteString.Lazy.Char8 as Lazy (pack)
 import Data.Either (either)
-import Data.Functor.Contravariant (Op (..))
 import qualified Data.Map as Map
-
-import Pos.Util.Trace (Trace (..), traceWith)
 
 import Network.TypedProtocol.Driver (runPeer)
 import qualified Network.Socket as Socket
@@ -31,7 +28,7 @@ import qualified Ouroboros.Byron.Proxy.DB as DB (blockEpochAndRelativeSlot, ebbE
 chainSyncClient
   :: forall m x .
      ( Monad m )
-  => Trace m (Either ChainSync.Point ChainSync.Block, ChainSync.Point)
+  => Tracer m (Either ChainSync.Point ChainSync.Block, ChainSync.Point)
   -> ChainSync.ChainSyncClient ChainSync.Block ChainSync.Point m x
 chainSyncClient trace = Client.chainSyncClient fold
   where
@@ -47,44 +44,48 @@ chainSyncClient trace = Client.chainSyncClient fold
     Client.runFold fold
 
 versions
-  :: Trace IO (Either ChainSync.Point ChainSync.Block, ChainSync.Point)
+  :: Tracer IO String
   -> Versions Version.Number (Dict Serialise) (Channel IO Lazy.ByteString -> IO ())
-versions trace = Versions $ Map.fromList
-  [ (0, version0)
-  , (1, version1 trace)
+versions tracer = Versions $ Map.fromList
+  [ (0, version0 tracer)
+  , (1, version1 tracer)
   ]
 
-application0 :: Application (Channel IO Lazy.ByteString -> IO ()) Int
-application0 = Application $ \_localData remoteData _channel ->
-  putStrLn $ mconcat
+application0
+  :: Tracer IO String
+  -> Application (Channel IO Lazy.ByteString -> IO ()) Int
+application0 tracer = Application $ \_localData remoteData _channel ->
+  traceWith tracer $ mconcat
     [ "Version 0. Remote data is "
     , show remoteData
     ]
 
-version0 :: Sigma (Version (Dict Serialise) (Channel IO Lazy.ByteString -> IO ()))
-version0 = Sigma (42 :: Int) $ Version
+version0
+  :: Tracer IO String
+  -> Sigma (Version (Dict Serialise) (Channel IO Lazy.ByteString -> IO ()))
+version0 tracer = Sigma (42 :: Int) $ Version
   { versionExtra = Dict
-  , versionApplication = application0
+  , versionApplication = application0 tracer
   }
 
 application1
-  :: Trace IO (Either ChainSync.Point ChainSync.Block, ChainSync.Point)
+  :: Tracer IO String
   -> Application (Channel IO Lazy.ByteString -> IO ()) Lazy.ByteString
-application1 trace = Application $ \_localData remoteData channel -> do
-  putStrLn $ mconcat
+application1 tracer = Application $ \_localData remoteData channel -> do
+  traceWith tracer $ mconcat
     [ "Version 1. Remote data is "
     , show remoteData
     ]
   runPeer nullTracer ChainSync.codec channel peer
   where
-  peer = ChainSync.chainSyncClientPeer (chainSyncClient trace)
+  peer = ChainSync.chainSyncClientPeer (chainSyncClient (contramap chainSyncShow tracer))
 
 version1
-  :: Trace IO (Either ChainSync.Point ChainSync.Block, ChainSync.Point)
+  :: Tracer IO String
   -> Sigma (Version (Dict Serialise) (Channel IO Lazy.ByteString -> IO ()))
-version1 trace = Sigma (Lazy.pack "this is the client version data") $ Version
+version1 tracer = Sigma (Lazy.pack "this is the client version data") $ Version
   { versionExtra = Dict
-  , versionApplication = application1 trace
+  , versionApplication = application1 tracer
   }
 
 encodeBlob :: Dict Serialise t -> t -> Version.Blob
@@ -95,11 +96,11 @@ decodeBlob Dict = either (const Nothing) Just . deserialiseOrFail . Lazy.fromStr
 
 -- | Connects to a server at 127.0.0.1:7777 and runs the version negotiation
 -- protocol determined by `versions`.
-runVersionedClient :: IO ()
-runVersionedClient = bracket mkSocket Socket.close $ \socket -> do
+runVersionedClient :: Tracer IO String -> IO ()
+runVersionedClient tracer = bracket mkSocket Socket.close $ \socket -> do
   _ <- Socket.connect socket (Socket.SockAddrInet 7777 (Socket.tupleToHostAddress (127, 0, 0, 1)))
   let channel = socketAsChannel socket
-      versionClient = clientPeerFromVersions encodeBlob decodeBlob (versions chainSyncEcho)
+      versionClient = clientPeerFromVersions encodeBlob decodeBlob (versions tracer)
   -- Run the version negotiation client, and then whatever continuation it
   -- produces.
   mbVersion <- runPeer nullTracer Version.codec channel versionClient
@@ -113,25 +114,25 @@ runVersionedClient = bracket mkSocket Socket.close $ \socket -> do
     Socket.bind socket (Socket.SockAddrInet 0 (Socket.tupleToHostAddress (0, 0, 0, 0)))
     pure socket
 
-chainSyncEcho :: Trace IO (Either ChainSync.Point ChainSync.Block, ChainSync.Point)
-chainSyncEcho = Trace $ Op $ \(roll, _tip) ->
-  let msg = case roll of
-        Left  back    -> mconcat
-          [ "Roll back to "
-          , show back
-          ]
-        Right forward -> mconcat
-          [ "Roll forward to "
-          , case ChainSync.getBlock forward of
-              Left ebb  -> show $ DB.ebbEpoch ebb
-              Right blk -> show $ DB.blockEpochAndRelativeSlot blk
-          ]
-  in  putStrLn msg
+chainSyncShow
+  :: (Either ChainSync.Point ChainSync.Block, ChainSync.Point)
+  -> String
+chainSyncShow = \(roll, _tip) -> case roll of
+  Left  back    -> mconcat
+    [ "Roll back to "
+    , show back
+    ]
+  Right forward -> mconcat
+    [ "Roll forward to "
+    , case ChainSync.getBlock forward of
+        Left ebb  -> show $ DB.ebbEpoch ebb
+        Right blk -> show $ DB.blockEpochAndRelativeSlot blk
+    ]
 
 main :: IO ()
 main = do
   let userInterrupt = getChar
-      mainThread = runVersionedClient
+      mainThread = runVersionedClient stdoutTracer
   outcome <- race userInterrupt mainThread
   case outcome of
     Left  _ -> pure ()
