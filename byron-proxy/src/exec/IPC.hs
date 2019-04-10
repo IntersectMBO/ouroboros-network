@@ -188,19 +188,21 @@ chainSyncServer usPoll = Server.chainSyncServer err poll
       Nothing -> lift (threadDelay usPoll) >> poll p m
       Just t  -> pure t
 
--- | Run a chain sync server over an IPv4 socket.
+-- | Run a chain sync server over some socket.
+--
+-- You can give the `AddrInfo`, but you won't get good results if it's not
+-- reliable ordered.
 --
 -- The `STM ()` is for normal shutdown. When it returns, the server stops.
 -- So, for instance, use `STM.retry` to never stop (until killed).
 runVersionedServer
-  :: Socket.HostAddress
-  -> Socket.PortNumber
+  :: Socket.AddrInfo
   -> Tracer IO String
   -> STM ()
   -> Int
   -> DB.DB IO
   -> IO ()
-runVersionedServer host port tracer closeTx usPoll db = bracket mkSocket Socket.close $ \socket ->
+runVersionedServer addrInfo tracer closeTx usPoll db = bracket mkSocket Socket.close $ \socket ->
   Server.run (fromSocket socket) throwIO accept complete (const closeTx) ()
   where
   -- New connections are always accepted. The channel is used to run the
@@ -237,9 +239,12 @@ runVersionedServer host port tracer closeTx usPoll db = bracket mkSocket Socket.
     Right r   -> pure st
   mkSocket :: IO Socket
   mkSocket = do
-    socket <- Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol
+    socket <- Socket.socket
+      (Socket.addrFamily addrInfo)
+      (Socket.addrSocketType addrInfo)
+      (Socket.addrProtocol addrInfo)
     Socket.setSocketOption socket Socket.ReuseAddr 1
-    Socket.bind socket (Socket.SockAddrInet port host)
+    Socket.bind socket (Socket.addrAddress addrInfo)
     Socket.listen socket 1
     pure socket
   -- Make a server-compatibile socket from a network socket.
@@ -250,15 +255,17 @@ runVersionedServer host port tracer closeTx usPoll db = bracket mkSocket Socket.
         pure (addr, socketAsChannel socket', Socket.close socket')
     }
 
--- | Connects (IPv4) to a server at a given address and runs the version
--- negotiation protocol determined by `clientVersions`.
+-- | Connect to a server at a given address and run the version negotiation
+-- protocol determined by `clientVersions`.
+--
+-- You can give the `AddrInfo`, but you won't get good results if it's not
+-- reliable ordered.
 runVersionedClient
-  :: Socket.HostAddress
-  -> Socket.PortNumber
+  :: Socket.AddrInfo -- ^ For the remote end.
   -> Tracer IO String
   -> IO ()
-runVersionedClient host port tracer = bracket mkSocket Socket.close $ \socket -> do
-  _ <- Socket.connect socket (Socket.SockAddrInet port host)
+runVersionedClient addrInfo tracer = bracket mkSocket Socket.close $ \socket -> do
+  _ <- Socket.connect socket (Socket.addrAddress addrInfo)
   let channel = socketAsChannel socket
       versionClient = clientPeerFromVersions encodeBlob decodeBlob (clientVersions tracer)
   -- Run the version negotiation client, and then whatever continuation it
@@ -270,8 +277,10 @@ runVersionedClient host port tracer = bracket mkSocket Socket.close $ \socket ->
     Just k  -> k channel
   where
   mkSocket = do
-    socket <- Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol
-    Socket.bind socket (Socket.SockAddrInet 0 (Socket.tupleToHostAddress (0, 0, 0, 0)))
+    socket <- Socket.socket
+      (Socket.addrFamily addrInfo)
+      (Socket.addrSocketType addrInfo)
+      (Socket.addrProtocol addrInfo)
     pure socket
 
 -- Orphans, forced upon me because of the IO sim stuff.
