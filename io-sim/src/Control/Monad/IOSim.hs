@@ -1010,8 +1010,9 @@ execAtomically mytid = go [] [] []
   where
     go :: [SomeTVar s]
        -> [SomeTVar s]
-       -> [(Int, StmA s a)] -- list of indexes of written variables at the
-                            -- point of `OrElse` and second argument of `orElse`
+       -> [(Int, StmA s a)] -- list of checkpoints of written variables at the
+                            -- point of @OrElse@ and second argument of
+                            -- @OrElse@
        -> TVarId
        -> StmA s a -> ST s (StmTxResult s a)
     go read written orElses nextVid action = case action of
@@ -1026,6 +1027,8 @@ execAtomically mytid = go [] [] []
                             (idx, action') : orElses' -> do
                               -- revert TVar's written since last @OrElse@
                               finaliseAbortOrElse (drop idx written)
+                              -- and continue evaluating the other branch of
+                              -- @OrElse@
                               go read written orElses' nextVid action'
       NewTVar x k     -> do v <- execNewTVar nextVid x
                             go read written orElses (succ nextVid) (k v)
@@ -1035,7 +1038,11 @@ execAtomically mytid = go [] [] []
                               []  -> execWriteTVar v x
                               _:_ -> execWriteTVarOrElse v x
                             go read (SomeTVar v : written) orElses nextVid k
-      OrElse x y      -> go read written ((length written, y) : orElses) nextVid x
+      OrElse x y      -> -- store checkpoints and possible continuation needed
+                         -- in case of a @retry@: to revert the variables
+                         -- modified after this point and jump to the recorded
+                         -- transaction
+                         go read written ((length written, y) : orElses) nextVid x
 
     -- Revert all the TVar writes
     finaliseAbort written =
