@@ -57,6 +57,7 @@ module Ouroboros.Network.AnchoredFragment (
   join,
   intersect,
   intersectionPoint,
+  mapAnchoredFragment,
 
   -- * Conversion to/from Chain
   fromChain,
@@ -602,3 +603,16 @@ intersectionPoint
 intersectionPoint c1 c2 = case c1 `intersect` c2 of
     Just (_, _, s1, _) -> Just (anchorPoint s1)
     Nothing            -> Nothing
+
+-- | \( O(n) \). Maps over the chain blocks. This is not allowed to change the
+-- block `Point`s, or it would create an invalid chain. The 'anchorPoint' is
+-- not affected.
+--
+mapAnchoredFragment :: (HasHeader block1, HasHeader block2,
+                        HeaderHash block1 ~ HeaderHash block2)
+                 => (block1 -> block2)
+                 -> AnchoredFragment block1
+                 -> AnchoredFragment block2
+mapAnchoredFragment f (AnchoredFragment a c) =
+    AnchoredFragment (castPoint a) (CF.mapChainFragment f c)
+
