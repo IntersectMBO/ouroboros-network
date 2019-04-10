@@ -48,6 +48,7 @@ import qualified Data.Map.Strict as Map
 import           Data.Proxy
 import           Data.Set (Set)
 import qualified Data.Set as Set
+import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 
 import           Ouroboros.Network.Block
@@ -160,7 +161,7 @@ instance All HasUtxo as => HasUtxo (HList as) where
 
 -------------------------------------------------------------------------------}
 
-class HashAlgorithm (SimpleBlockHash c) => SimpleBlockCrypto c where
+class (HashAlgorithm (SimpleBlockHash c), Typeable c) => SimpleBlockCrypto c where
   type family SimpleBlockHash c :: *
 
 data SimpleBlockStandardCrypto
@@ -187,9 +188,9 @@ data SimpleHeader p c = SimpleHeader {
     }
   deriving (Generic)
 
-deriving instance (SimpleBlockCrypto c, OuroborosTag p, Show (Payload p (SimplePreHeader p c))) => Show (SimpleHeader p c)
-deriving instance (SimpleBlockCrypto c, OuroborosTag p, Eq (Payload p (SimplePreHeader p c))) => Eq   (SimpleHeader p c)
-deriving instance (SimpleBlockCrypto c, OuroborosTag p, Ord (Payload p (SimplePreHeader p c))) => Ord  (SimpleHeader p c)
+deriving instance (Typeable p, SimpleBlockCrypto c, OuroborosTag p, Show (Payload p (SimplePreHeader p c))) => Show (SimpleHeader p c)
+deriving instance (Typeable p, SimpleBlockCrypto c, OuroborosTag p, Eq   (Payload p (SimplePreHeader p c))) => Eq   (SimpleHeader p c)
+deriving instance (Typeable p, SimpleBlockCrypto c, OuroborosTag p, Ord  (Payload p (SimplePreHeader p c))) => Ord  (SimpleHeader p c)
 
 -- | The preheader is the header without the ouroboros protocol specific payload
 --
@@ -204,7 +205,7 @@ data SimplePreHeader p c = SimplePreHeader {
     }
   deriving (Generic, Show, Eq, Ord)
 
-instance SimpleBlockCrypto c => Condense (SimplePreHeader p c) where
+instance (Typeable p, SimpleBlockCrypto c) => Condense (SimplePreHeader p c) where
     condense = show
 
 data SimpleBody = SimpleBody { getSimpleBody :: Map (Hash ShortHash Tx) Tx }
@@ -216,11 +217,11 @@ data SimpleBlock p c = SimpleBlock {
     }
   deriving (Generic)
 
-deriving instance (SimpleBlockCrypto c, OuroborosTag p, Show (Payload p (SimplePreHeader p c))) => Show (SimpleBlock p c)
-deriving instance (SimpleBlockCrypto c, OuroborosTag p, Eq (Payload p (SimplePreHeader p c))) => Eq (SimpleBlock p c)
-deriving instance (SimpleBlockCrypto c, OuroborosTag p, Ord (Payload p (SimplePreHeader p c))) => Ord (SimpleBlock p c)
+deriving instance (Typeable p, SimpleBlockCrypto c, OuroborosTag p, Show (Payload p (SimplePreHeader p c))) => Show (SimpleBlock p c)
+deriving instance (Typeable p, SimpleBlockCrypto c, OuroborosTag p, Eq (Payload p (SimplePreHeader p c))) => Eq (SimpleBlock p c)
+deriving instance (Typeable p, SimpleBlockCrypto c, OuroborosTag p, Ord (Payload p (SimplePreHeader p c))) => Ord (SimpleBlock p c)
 
-instance (SimpleBlockCrypto c, OuroborosTag p, Condense (Payload p (SimplePreHeader p c)), Serialise (Payload p (SimplePreHeader p c))) => Condense (SimpleBlock p c) where
+instance (Typeable p, SimpleBlockCrypto c, OuroborosTag p, Condense (Payload p (SimplePreHeader p c)), Serialise (Payload p (SimplePreHeader p c))) => Condense (SimpleBlock p c) where
   condense (SimpleBlock hdr@(SimpleHeader _ pl) (SimpleBody txs)) = mconcat [
         "("
       , condensedHash (blockPrevHash hdr)
@@ -246,7 +247,7 @@ instance (SimpleBlockCrypto c, OuroborosTag p, Serialise (Payload p (SimplePreHe
   measure = blockMeasure
 
 
-instance (SimpleBlockCrypto c, OuroborosTag p, Serialise (Payload p (SimplePreHeader p c))) => HasHeader (SimpleHeader p c) where
+instance (Typeable p, SimpleBlockCrypto c, OuroborosTag p, Serialise (Payload p (SimplePreHeader p c))) => HasHeader (SimpleHeader p c) where
   type HeaderHash (SimpleHeader p c) = Hash (SimpleBlockHash c) (SimpleHeader p c)
 
   blockHash      = hash
@@ -268,8 +269,8 @@ instance (SimpleBlockCrypto c, OuroborosTag p, Serialise (Payload p (SimplePreHe
        blockInvariant simpleHeader
     && hash simpleBody == headerBodyHash (headerPreHeader simpleHeader)
 
-instance SimpleBlockCrypto c => StandardHash (SimpleHeader p c)
-instance SimpleBlockCrypto c => StandardHash (SimpleBlock  p c)
+instance (Typeable p, SimpleBlockCrypto c) => StandardHash (SimpleHeader p c)
+instance (Typeable p, SimpleBlockCrypto c) => StandardHash (SimpleBlock  p c)
 
 {-------------------------------------------------------------------------------
   Creating blocks
@@ -330,6 +331,7 @@ instance ( SimpleBlockCrypto c
 instance ( OuroborosTag p
          , SimpleBlockCrypto c
          , Serialise (Payload p (SimplePreHeader (ExtNodeConfig cfg p) c))
+         , Typeable cfg
          )
       => HasPayload p (SimpleBlock (ExtNodeConfig cfg p) c) where
   blockPayload _ = encPayloadP . headerOuroboros . simpleHeader

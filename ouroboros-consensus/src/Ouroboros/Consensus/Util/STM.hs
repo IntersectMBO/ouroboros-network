@@ -21,8 +21,8 @@ import           Control.Monad.Reader
 import           Control.Monad.State
 import           Control.Monad.Writer
 
-import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadFork
+import           Control.Monad.Class.MonadSTM
 
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.Random
@@ -52,14 +52,14 @@ onEachChange f initB getA notify = void $ fork $ go initB
       notify a
       go b'
 
-blockUntilJust :: MonadSTM m => TVar m (Maybe a) -> STM m a
-blockUntilJust var = do
-    ma <- readTVar var
+blockUntilJust :: MonadSTM m => STM m (Maybe a) -> STM m a
+blockUntilJust getMaybeA = do
+    ma <- getMaybeA
     case ma of
       Nothing -> retry
       Just a  -> return a
 
-blockUntilAllJust :: MonadSTM m => [TVar m (Maybe a)] -> STM m [a]
+blockUntilAllJust :: MonadSTM m => [STM m (Maybe a)] -> STM m [a]
 blockUntilAllJust = mapM blockUntilJust
 
 {-------------------------------------------------------------------------------

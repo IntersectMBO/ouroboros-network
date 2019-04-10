@@ -9,6 +9,7 @@ module Ouroboros.Consensus.Crypto.DSIGN.Mock
     , SignKeyDSIGN(..)
     , VerKeyDSIGN(..)
     , verKeyIdFromSigned
+    , mockSign
     ) where
 
 import           Codec.Serialise (Serialise)
@@ -36,12 +37,12 @@ instance DSIGNAlgorithm MockDSIGN where
 
     deriveVerKeyDSIGN (SignKeyMockDSIGN n) = VerKeyMockDSIGN n
 
-    signDSIGN a sk = return $ mkSig a sk
+    signDSIGN a sk = return $ mockSign a sk
 
-    verifyDSIGN (VerKeyMockDSIGN n) a s = s == mkSig a (SignKeyMockDSIGN n)
+    verifyDSIGN (VerKeyMockDSIGN n) a s = s == mockSign a (SignKeyMockDSIGN n)
 
-mkSig :: Serialise a => a -> SignKeyDSIGN MockDSIGN -> SigDSIGN MockDSIGN
-mkSig a (SignKeyMockDSIGN n) = SigMockDSIGN (getHash $ hash @ShortHash a) n
+mockSign :: Serialise a => a -> SignKeyDSIGN MockDSIGN -> SigDSIGN MockDSIGN
+mockSign a (SignKeyMockDSIGN n) = SigMockDSIGN (getHash $ hash @ShortHash a) n
 
 instance Condense (SigDSIGN MockDSIGN) where
     condense (SigMockDSIGN _ i) = show i

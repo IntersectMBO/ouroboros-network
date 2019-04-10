@@ -34,15 +34,15 @@ import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe, mapMaybe)
 import           Data.Word (Word64)
 
+import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer (nullTracer)
 
+import           Network.TypedProtocol.Driver
 import           Ouroboros.Network.Channel as Network
 import           Ouroboros.Network.Codec
-import           Network.TypedProtocol.Driver
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (Chain (..), ChainUpdate (..), Point)
@@ -245,7 +245,7 @@ forkMonitorDownloads st@IS{..} =
 
       mNew <- atomically $ do
         old <- readTVar varChain
-        case selectChain cfg old downloaded of
+        case selectUnvalidatedChain cfg old downloaded of
           Nothing  -> return Nothing
           Just new -> do
             adoptNewChain st old new

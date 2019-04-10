@@ -13,9 +13,9 @@ module Ouroboros.Consensus.Crypto.Hash.Class
     , fromHash
     ) where
 
-import           Codec.Serialise (Serialise (..))
 import           Codec.CBOR.Decoding (decodeBytes)
 import           Codec.CBOR.Write (toLazyByteString)
+import           Codec.Serialise (Serialise (..))
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as SB
 import qualified Data.ByteString.Base16 as B16
@@ -24,17 +24,18 @@ import qualified Data.ByteString.Lazy as LB
 import           Data.List (foldl')
 import           Data.Proxy (Proxy (..))
 import           Data.String (IsString (..))
+import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 import           Numeric.Natural
 
 import           Ouroboros.Consensus.Util.Condense
 
-class HashAlgorithm h where
+class Typeable h => HashAlgorithm h where
     byteCount :: proxy h -> Natural
     digest :: proxy h -> ByteString -> ByteString
 
 newtype Hash h a = Hash {getHash :: ByteString}
-    deriving (Eq, Ord, Generic)
+    deriving (Eq, Ord, Generic, Typeable)
 
 instance Condense (Hash h a) where
     condense = show

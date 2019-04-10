@@ -7,6 +7,7 @@
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TupleSections              #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
@@ -17,6 +18,7 @@ module Ouroboros.Consensus.Protocol.Abstract (
   , HasPayload(..)
   , SecurityParam(..)
   , selectChain
+  , selectUnvalidatedChain
     -- * State monad for Ouroboros state
   , HasNodeState
   , HasNodeState_(..)
@@ -38,6 +40,7 @@ import           Data.Functor.Identity
 import           Data.Kind (Constraint)
 import           Data.List (sortBy)
 import           Data.Maybe (listToMaybe)
+import           Data.Typeable (Typeable)
 import           Data.Word (Word64)
 
 import           Control.Monad.Class.MonadSay
@@ -54,6 +57,7 @@ import           Ouroboros.Consensus.Util.Random
 -- block representation.
 class ( Show (ChainState    p)
       , Show (ValidationErr p)
+      , Typeable p -- so that p can appear in exceptions
       ) => OuroborosTag p where
 
   -- | Static node configuration
@@ -170,17 +174,34 @@ class HasPreHeader b => HasPayload p b where
 
 -- | Chain selection between our chain and list of candidates
 --
+-- This is only a /model/ of chain selection: in reality of course we will not
+-- work with entire chains in memory. This function is intended as an
+-- explanation of how chain selection should work conceptually.
+--
+-- The @l@ parameter here models the ledger state for each chain, and serves as
+-- evidence that the chains we are selecting between have been validated. (It
+-- would /not/ be  correct to run chain selection on unvalidated chains and then
+-- somehow fail if the selected chain turns out to be invalid.)
+--
 -- Returns 'Nothing' if we stick with our current chain.
-selectChain :: forall p b. (OuroborosTag p, HasHeader b)
+selectChain :: forall p b l. (OuroborosTag p, HasHeader b)
             => NodeConfig p
-            -> Chain b      -- ^ Our chain
-            -> [Chain b]    -- ^ Upstream chains
-            -> Maybe (Chain b)
+            -> Chain b           -- ^ Our chain
+            -> [(Chain b, l)]    -- ^ Upstream chains
+            -> Maybe (Chain b, l)
 selectChain cfg ours candidates =
-    listToMaybe $ sortBy (flip (compareCandidates cfg)) preferred
+    listToMaybe $ sortBy (flip (compareCandidates cfg `on` fst)) preferred
   where
-    preferred :: [Chain b]
-    preferred = filter (preferCandidate cfg ours) candidates
+    preferred :: [(Chain b, l)]
+    preferred = filter (preferCandidate cfg ours . fst) candidates
+
+-- | Chain selection on unvalidated chains
+selectUnvalidatedChain :: forall p b. (OuroborosTag p, HasHeader b)
+                       => NodeConfig p
+                       -> Chain b
+                       -> [Chain b]
+                       -> Maybe (Chain b)
+selectUnvalidatedChain cfg ours = fmap fst . selectChain cfg ours . map (, ())
 
 {-------------------------------------------------------------------------------
   State monad

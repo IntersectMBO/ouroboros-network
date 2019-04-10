@@ -30,6 +30,7 @@ import           Data.Proxy
 import           Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import           Data.Tuple (swap)
+import           Data.Typeable (Typeable)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
@@ -82,23 +83,23 @@ data PBftParams = PBftParams {
       --
       -- Although the protocol proper does not have such a security parameter,
       -- we insist on it.
-      pbftSecurityParam :: SecurityParam
+      pbftSecurityParam      :: SecurityParam
 
       -- | Number of core nodes
-    , pbftNumNodes      :: Word64
+    , pbftNumNodes           :: Word64
 
       -- TODO These will ultimately be protocol parameters, but at the moment such
       -- parameters are missing in the ledger.
 
       -- | Size of the window over which to check the proportion of signed keys.
-    , pbftSignatureWindow :: Word64
+    , pbftSignatureWindow    :: Word64
 
       -- | Signature threshold. This represents the proportion of blocks in a
       -- pbftSignatureWindow-sized window which may be signed by any single key.
     , pbftSignatureThreshold :: Double
     }
 
-instance PBftCrypto c => OuroborosTag (PBft c) where
+instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
   -- | The BFT payload is just the issuer and signature
   data Payload (PBft c) ph = PBftPayload {
         pbftIssuer    :: VerKeyDSIGN (PBftDSIGN c)
@@ -205,7 +206,7 @@ data PBftValidationErr
 -------------------------------------------------------------------------------}
 
 -- | Crypto primitives required by BFT
-class DSIGNAlgorithm (PBftDSIGN c) => PBftCrypto c where
+class (Typeable c, DSIGNAlgorithm (PBftDSIGN c)) => PBftCrypto c where
   type family PBftDSIGN c :: *
 
 data PBftStandardCrypto

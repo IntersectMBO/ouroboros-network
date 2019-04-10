@@ -1,15 +1,15 @@
-{-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE DeriveGeneric         #-}
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE RecordWildCards       #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE StandaloneDeriving    #-}
-{-# LANGUAGE TypeApplications      #-}
-{-# LANGUAGE TypeFamilies          #-}
-{-# LANGUAGE UndecidableInstances  #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 module Ouroboros.Consensus.Protocol.Praos (
     StakeDist
@@ -25,13 +25,14 @@ module Ouroboros.Consensus.Protocol.Praos (
   , Payload(..)
   ) where
 
-import           Codec.Serialise (Serialise, encode)
 import           Codec.CBOR.Encoding (Encoding)
+import           Codec.Serialise (Serialise, encode)
 import           Control.Monad (unless)
 import           Control.Monad.Except (throwError)
 import           Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import           Data.Proxy (Proxy (..))
+import           Data.Typeable (Typeable)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           Numeric.Natural
@@ -348,9 +349,10 @@ rhoYT st xs s n =
   Crypto models
 -------------------------------------------------------------------------------}
 
-class ( KESAlgorithm  (PraosKES c)
-      , VRFAlgorithm  (PraosVRF c)
+class ( KESAlgorithm  (PraosKES  c)
+      , VRFAlgorithm  (PraosVRF  c)
       , HashAlgorithm (PraosHash c)
+      , Typeable c
       ) => PraosCrypto (c :: *) where
   type family PraosKES c  :: *
   type family PraosVRF c  :: *

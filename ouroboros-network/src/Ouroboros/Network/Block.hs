@@ -24,14 +24,14 @@ module Ouroboros.Network.Block (
   , blockMeasure
   ) where
 
-import           Data.Hashable
+import           Codec.CBOR.Decoding (decodeListLenOf)
+import           Codec.CBOR.Encoding (encodeListLen)
+import           Codec.Serialise (Serialise (..))
 import           Data.FingerTree (Measured)
+import           Data.Hashable
+import           Data.Typeable (Typeable)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
-import           Codec.Serialise (Serialise (..))
-import           Codec.CBOR.Encoding (encodeListLen)
-import           Codec.CBOR.Decoding (decodeListLenOf)
-
 
 -- | The 0-based index for the Ourboros time slot.
 newtype SlotNo = SlotNo { unSlotNo :: Word64 }
@@ -44,7 +44,7 @@ newtype BlockNo = BlockNo { unBlockNo :: Word64 }
   deriving (Show, Eq, Ord, Hashable, Enum, Bounded, Num, Serialise, Generic)
 
 -- | Abstract over the shape of blocks (or indeed just block headers)
-class (StandardHash b, Measured BlockMeasure b) => HasHeader b where
+class (StandardHash b, Measured BlockMeasure b, Typeable b) => HasHeader b where
     -- TODO: I /think/ we should be able to make this injective, but I'd have
     -- to check after the redesign of the block abstraction (which will live
     -- in the consensus layer), to make sure injectivity is compatible with that
@@ -86,6 +86,7 @@ class ( Eq        (HeaderHash b)
       , Ord       (HeaderHash b)
       , Show      (HeaderHash b)
       , Serialise (HeaderHash b)
+      , Typeable  (HeaderHash b)
       ) => StandardHash b
 
 data ChainHash b = GenesisHash | BlockHash (HeaderHash b)

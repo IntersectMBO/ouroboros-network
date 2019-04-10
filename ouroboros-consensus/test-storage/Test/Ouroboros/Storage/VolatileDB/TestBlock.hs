@@ -63,7 +63,7 @@ fromBlock _              = error "wrong payload"
 binarySize :: Int
 binarySize = 25
 
-myParser :: (Monad m, MonadThrow m)
+myParser :: (MonadThrow m)
          => HasFS m h
          -> ErrorHandling (VolatileDBError BlockId) m
          -> Parser (ParserError BlockId) m BlockId
@@ -71,7 +71,7 @@ myParser hasFs err = Parser {
     parse = parseImpl hasFs err
     }
 
-parseImpl :: forall m h. (Monad m, MonadThrow m)
+parseImpl :: forall m h. (MonadThrow m)
           => HasFS m h
           -> ErrorHandling (VolatileDBError BlockId) m
           -> FsPath
