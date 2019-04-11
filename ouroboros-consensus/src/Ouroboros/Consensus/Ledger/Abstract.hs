@@ -90,15 +90,17 @@ data ExtValidationError b =
 deriving instance ProtocolLedgerView b => Show (ExtValidationError b)
 
 applyExtLedgerState :: ProtocolLedgerView b
-                    => NodeConfig (BlockProtocol b)
+                    => (PreHeader b -> Encoding) -- Serialiser for the preheader
+                    -> NodeConfig (BlockProtocol b)
                     -> b
                     -> ExtLedgerState b
                     -> Except (ExtValidationError b) (ExtLedgerState b)
-applyExtLedgerState cfg b ExtLedgerState{..} = do
+applyExtLedgerState toEnc cfg b ExtLedgerState{..} = do
     ledgerState'         <- withExcept ExtValidationErrorLedger $
                               applyLedgerState b ledgerState
     ouroborosChainState' <- withExcept ExtValidationErrorOuroboros $
                               applyChainState
+                                toEnc
                                 cfg
                                 (protocolLedgerView cfg ledgerState')
                                 b
@@ -106,28 +108,31 @@ applyExtLedgerState cfg b ExtLedgerState{..} = do
     return $ ExtLedgerState ledgerState' ouroborosChainState'
 
 foldExtLedgerState :: ProtocolLedgerView b
-                   => NodeConfig (BlockProtocol b)
+                   => (PreHeader b -> Encoding) -- Serialiser for the preheader
+                   -> NodeConfig (BlockProtocol b)
                    -> [b] -- ^ Blocks to apply, oldest first
                    -> ExtLedgerState b
                    -> Except (ExtValidationError b) (ExtLedgerState b)
-foldExtLedgerState = repeatedlyM . applyExtLedgerState
+foldExtLedgerState toEnc = repeatedlyM . applyExtLedgerState toEnc
 
 -- TODO: This should check stuff like backpointers also
 chainExtLedgerState :: ProtocolLedgerView b
-                    => NodeConfig (BlockProtocol b)
+                    => (PreHeader b -> Encoding) -- Serialiser for the preheader
+                    -> NodeConfig (BlockProtocol b)
                     -> Chain b
                     -> ExtLedgerState b
                     -> Except (ExtValidationError b) (ExtLedgerState b)
-chainExtLedgerState cfg = foldExtLedgerState cfg . toOldestFirst
+chainExtLedgerState toEnc cfg = foldExtLedgerState toEnc cfg . toOldestFirst
 
 -- | Validation of an entire chain
 verifyChain :: ProtocolLedgerView b
-            => NodeConfig (BlockProtocol b)
+            => (PreHeader b -> Encoding) -- Serialiser for the preheader
+            -> NodeConfig (BlockProtocol b)
             -> ExtLedgerState b
             -> Chain b
             -> Bool
-verifyChain cfg initSt c =
-    case runExcept (chainExtLedgerState cfg c initSt) of
+verifyChain toEnc cfg initSt c =
+    case runExcept (chainExtLedgerState toEnc cfg c initSt) of
       Left  _err -> False
       Right _st' -> True
 

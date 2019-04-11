@@ -8,6 +8,7 @@ module Test.Dynamic.Network (
     broadcastNetwork
   ) where
 
+import           Codec.Serialise (Serialise(encode))
 import           Control.Monad
 import           Crypto.Number.Generate (generateBetween)
 import           Crypto.Random (ChaChaDRG, drgNew)
@@ -107,6 +108,7 @@ broadcastNetwork btime numCoreNodes pInfo initRNG numSlots = do
             }
 
       node <- nodeKernel
+                encode
                 pInfoConfig
                 pInfoInitState
                 btime

@@ -61,8 +61,8 @@ instance OuroborosTag p => OuroborosTag (TestProtocol p) where
   type ValidationErr   (TestProtocol p) = ValidationErr  p
   type SupportedBlock  (TestProtocol p) = SupportedBlock p
 
-  mkPayload (TestNodeConfig cfg _) (proof, stake) ph = do
-      standardPayload <- mkPayload cfg proof ph
+  mkPayload toEnc (TestNodeConfig cfg _) (proof, stake) ph = do
+      standardPayload <- mkPayload toEnc cfg proof ph
       return TestPayload {
           testPayloadP     = standardPayload
         , testPayloadStake = stake
@@ -76,7 +76,7 @@ instance OuroborosTag p => OuroborosTag (TestProtocol p) where
 
   preferCandidate       (TestNodeConfig cfg _) = preferCandidate       cfg
   compareCandidates     (TestNodeConfig cfg _) = compareCandidates     cfg
-  applyChainState       (TestNodeConfig cfg _) = applyChainState       cfg . fst
+  applyChainState toEnc (TestNodeConfig cfg _) = applyChainState toEnc cfg . fst
   protocolSecurityParam (TestNodeConfig cfg _) = protocolSecurityParam cfg
 
 deriving instance (OuroborosTag p, Show (Payload p ph)) => Show (Payload (TestProtocol p) ph)

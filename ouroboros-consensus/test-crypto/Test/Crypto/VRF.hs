@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 
@@ -14,7 +15,7 @@ import           Ouroboros.Consensus.Crypto.VRF
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random (Seed, withSeed)
 
-import           Ouroboros.Network.Testing.Serialise (Serialise, prop_serialise)
+import           Ouroboros.Network.Testing.Serialise (Serialise(..), prop_serialise)
 import           Test.Util.Orphans.Arbitrary ()
 
 --
@@ -27,7 +28,9 @@ tests =
   , testVRFAlgorithm (Proxy :: Proxy SimpleVRF) "SimpleVRF"
   ]
 
-testVRFAlgorithm :: forall proxy v. VRFAlgorithm v => proxy v -> String -> TestTree
+testVRFAlgorithm :: forall proxy v.
+                   ( VRFAlgorithm v , Serialise (VerKeyVRF v), Serialise (SignKeyVRF v))
+  => proxy v -> String -> TestTree
 testVRFAlgorithm _ n =
     testGroup n
         [ testProperty "serialise VerKey"  $ prop_serialise @(VerKeyVRF v)
@@ -44,7 +47,7 @@ prop_vrf_max :: forall a v. (Serialise a, VRFAlgorithm v)
              -> SignKeyVRF v
              -> Property
 prop_vrf_max seed a sk =
-    let (y, _) = withSeed seed $ evalVRF a sk
+    let (y, _) = withSeed seed $ evalVRF encode a sk
         m      = maxVRF (Proxy :: Proxy v)
     in  counterexample ("expected " ++ show y ++ " <= " ++ show m) $ y <= m
 
@@ -54,9 +57,9 @@ prop_vrf_verify_pos :: forall a v. (Serialise a, VRFAlgorithm v)
                     -> SignKeyVRF v
                     -> Bool
 prop_vrf_verify_pos seed a sk =
-    let (y, c) = withSeed seed $ evalVRF a sk
+    let (y, c) = withSeed seed $ evalVRF encode a sk
         vk     = deriveVerKeyVRF sk
-    in  verifyVRF vk a (y, c)
+    in  verifyVRF encode vk a (y, c)
 
 prop_vrf_verify_neg :: forall a v. (Serialise a, VRFAlgorithm v)
                     => Seed
@@ -65,6 +68,6 @@ prop_vrf_verify_neg :: forall a v. (Serialise a, VRFAlgorithm v)
                     -> SignKeyVRF v
                     -> Property
 prop_vrf_verify_neg seed a sk sk' = sk /= sk' ==>
-    let (y, c) = withSeed seed $ evalVRF a sk'
+    let (y, c) = withSeed seed $ evalVRF encode a sk'
         vk     = deriveVerKeyVRF sk
-    in  not $ verifyVRF vk a (y, c)
+    in  not $ verifyVRF encode vk a (y, c)

@@ -29,7 +29,7 @@ module Test.Ouroboros.Storage.ChainDB.TestBlock (
   , permute
   ) where
 
-import           Codec.Serialise (Serialise)
+import           Codec.Serialise (Serialise(encode))
 import           Control.Monad.Except (throwError)
 import           Data.FingerTree (Measured (..))
 import           Data.Int
@@ -95,7 +95,7 @@ instance HasPreHeader TestBlock where
 
 instance HasPayload (Bft BftMockCrypto) TestBlock where
   blockPayload _ _ = BftPayload {
-        bftSignature = SignedDSIGN (mockSign () (SignKeyMockDSIGN 0))
+        bftSignature = SignedDSIGN (mockSign encode () (SignKeyMockDSIGN 0))
       }
 
 instance UpdateLedger TestBlock where

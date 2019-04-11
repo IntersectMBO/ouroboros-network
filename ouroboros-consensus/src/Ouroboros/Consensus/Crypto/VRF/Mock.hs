@@ -10,7 +10,8 @@ module Ouroboros.Consensus.Crypto.VRF.Mock
   , SignKeyVRF (..)
   ) where
 
-import           Codec.Serialise (Serialise)
+import           Codec.Serialise (Serialise(..))
+import           Codec.Serialise.Encoding (Encoding)
 import           Data.Proxy (Proxy (..))
 import           GHC.Generics (Generic)
 import           Numeric.Natural (Natural)
@@ -39,13 +40,13 @@ instance VRFAlgorithm MockVRF where
 
     deriveVerKeyVRF (SignKeyMockVRF n) = VerKeyMockVRF n
 
-    evalVRF a sk = return $ evalVRF' a sk
+    evalVRF toEnc a sk = return $ evalVRF' toEnc a sk
 
-    verifyVRF (VerKeyMockVRF n) a c = evalVRF' a (SignKeyMockVRF n) == c
+    verifyVRF toEnc (VerKeyMockVRF n) a c = evalVRF' toEnc a (SignKeyMockVRF n) == c
 
-evalVRF' :: Serialise a => a -> SignKeyVRF MockVRF -> (Natural, CertVRF MockVRF)
-evalVRF' a sk@(SignKeyMockVRF n) =
-    let y = fromHash $ hash @MD5 $ a :* sk :* Nil
+evalVRF' :: (a -> Encoding) -> a -> SignKeyVRF MockVRF -> (Natural, CertVRF MockVRF)
+evalVRF' toEnc a sk@(SignKeyMockVRF n) =
+    let y = fromHash $ hashWithSerialiser @MD5 id $ (toEnc a) <> (encode $ sk :* Nil)
     in  (y, CertMockVRF n)
 
 instance Serialise (VerKeyVRF MockVRF)

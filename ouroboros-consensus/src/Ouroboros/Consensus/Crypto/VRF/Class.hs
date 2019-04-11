@@ -13,17 +13,16 @@ module Ouroboros.Consensus.Crypto.VRF.Class
   , verifyCertified
   ) where
 
-import           Codec.Serialise (Serialise)
+import           Codec.Serialise (Serialise(..))
+import           Codec.Serialise.Encoding (Encoding)
 import           Crypto.Random (MonadRandom)
 import           GHC.Generics (Generic)
 import           Numeric.Natural
 
 class ( Show (VerKeyVRF v)
       , Ord (VerKeyVRF v)
-      , Serialise (VerKeyVRF v)
       , Show (SignKeyVRF v)
       , Ord (SignKeyVRF v)
-      , Serialise (SignKeyVRF v)
       , Show (CertVRF v)
       , Ord (CertVRF v)
       , Serialise (CertVRF v)
@@ -37,8 +36,8 @@ class ( Show (VerKeyVRF v)
     maxVRF :: proxy v -> Natural
     genKeyVRF :: MonadRandom m => m (SignKeyVRF v)
     deriveVerKeyVRF :: SignKeyVRF v -> VerKeyVRF v
-    evalVRF :: (MonadRandom m, Serialise a) => a -> SignKeyVRF v -> m (Natural, CertVRF v)
-    verifyVRF :: Serialise a => VerKeyVRF v -> a -> (Natural, CertVRF v) -> Bool
+    evalVRF :: (MonadRandom m) => (a -> Encoding) -> a -> SignKeyVRF v -> m (Natural, CertVRF v)
+    verifyVRF :: (a -> Encoding) -> VerKeyVRF v -> a -> (Natural, CertVRF v) -> Bool
 
 data CertifiedVRF v a = CertifiedVRF {
       certifiedNatural :: Natural
@@ -51,12 +50,12 @@ deriving instance VRFAlgorithm v => Eq   (CertifiedVRF v a)
 deriving instance VRFAlgorithm v => Ord  (CertifiedVRF v a)
 
 instance VRFAlgorithm v => Serialise (CertifiedVRF v a) where
-  -- use generic instance for now
+  -- Use generic instance for now
 
-evalCertified :: (VRFAlgorithm v, MonadRandom m, Serialise a)
-              => a -> SignKeyVRF v -> m (CertifiedVRF v a)
-evalCertified a key = uncurry CertifiedVRF <$> evalVRF a key
+evalCertified :: (VRFAlgorithm v, MonadRandom m)
+              => (a -> Encoding) -> a -> SignKeyVRF v -> m (CertifiedVRF v a)
+evalCertified toEnc a key = uncurry CertifiedVRF <$> evalVRF toEnc a key
 
-verifyCertified :: (VRFAlgorithm v, Serialise a)
-                => VerKeyVRF v -> a -> CertifiedVRF v a -> Bool
-verifyCertified vk a CertifiedVRF{..} = verifyVRF vk a (certifiedNatural, certifiedProof)
+verifyCertified :: (VRFAlgorithm v)
+                => (a -> Encoding) -> VerKeyVRF v -> a -> CertifiedVRF v a -> Bool
+verifyCertified toEnc vk a CertifiedVRF{..} = verifyVRF toEnc vk a (certifiedNatural, certifiedProof)

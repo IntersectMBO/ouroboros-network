@@ -21,6 +21,24 @@ extra-deps:
     - iohk-monitoring
     - contra-tracer
 - libyaml-0.1.0.0
+- git: https://github.com/input-output-hk/cardano-base
+  commit: 2f33cbf9101dfee1cb488271ec96e210329eec96
+  subdirs:
+    - binary
+
+- git: https://github.com/input-output-hk/cardano-ledger
+  commit: 595cfb5b20863fca869550423a4e27aab8e68aed
+  subdirs:
+    - .
+    - crypto
+
+- git: https://github.com/input-output-hk/cardano-prelude
+  commit: e1fb84b1a955b6e3e3e53d9022e8bc0f927417a2
+- streaming-binary-0.3.0.1
+- git: https://github.com/well-typed/cborg
+  commit: 80fbe0ee5e67a5622e2cb9eaa9d8594a2214322d
+  subdirs:
+    - cborg
 
 # Cardano-sl dependencies:
 - ekg-wai-0.1.0.3
@@ -95,3 +113,11 @@ extra-deps:
     - util
     - util/test
     - networking
+nix:
+  packages:
+    - zlib
+    - openssl
+    - rocksdb
+    - lzma
+    - haskellPackages.happy
+    - haskellPackages.cpphs

@@ -8,6 +8,7 @@
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 module Ouroboros.Consensus.Protocol.PBFT (
     PBft
@@ -22,7 +23,9 @@ module Ouroboros.Consensus.Protocol.PBFT (
   , Payload(..)
   ) where
 
-import           Codec.Serialise (Serialise)
+import           Codec.Serialise (Serialise(..))
+import qualified Codec.Serialise.Encoding as Enc
+import qualified Codec.Serialise.Decoding as Dec
 import           Control.Monad.Except
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -138,8 +141,8 @@ instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
 
   protocolSecurityParam = pbftSecurityParam . pbftParams
 
-  mkPayload PBftNodeConfig{..} _proof preheader = do
-      signature <- signedDSIGN preheader pbftSignKey
+  mkPayload toEnc PBftNodeConfig{..} _proof preheader = do
+      signature <- signedDSIGN toEnc preheader pbftSignKey
       return $ PBftPayload {
           pbftIssuer = pbftVerKey
         , pbftSignature = signature
@@ -154,11 +157,11 @@ instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
     where
       PBftParams{..}  = pbftParams
 
-  applyChainState PBftNodeConfig{..} (PBftLedgerView dms) b (signers, lastSlot) = do
+  applyChainState toEnc PBftNodeConfig{..} (PBftLedgerView dms) b (signers, lastSlot) = do
       -- Check that the issuer signature verifies, and that it's a delegate of a
       -- genesis key, and that genesis key hasn't voted too many times.
 
-      unless (verifySignedDSIGN (pbftIssuer payload)
+      unless (verifySignedDSIGN toEnc (pbftIssuer payload)
                       (blockPreHeader b)
                       (pbftSignature payload))
         $ throwError PBftInvalidSignature
@@ -187,8 +190,15 @@ deriving instance PBftCrypto c => Ord      (Payload (PBft c) ph)
 instance PBftCrypto c => Condense (Payload (PBft c) ph) where
     condense (PBftPayload _ sig) = condense sig
 
-instance PBftCrypto c => Serialise (Payload (PBft c) ph) where
-  -- use generic instance
+instance (DSIGNAlgorithm (PBftDSIGN c)) => Serialise (Payload (PBft c) ph) where
+  encode (PBftPayload issuer sig) = mconcat
+    [ Enc.encodeListLen 2
+    , encodeVerKeyDSIGN issuer
+    , encodeSignedDSIGN sig
+    ]
+  decode = do
+    Dec.decodeListLenOf 2
+    PBftPayload <$> decodeVerKeyDSIGN <*> decodeSignedDSIGN
 
 {-------------------------------------------------------------------------------
   BFT specific types

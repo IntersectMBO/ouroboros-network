@@ -10,9 +10,11 @@ module Ouroboros.Consensus.Crypto.Hash.Class
     , Hash
     , getHash
     , hash
+    , hashWithSerialiser
     , fromHash
     ) where
 
+import           Codec.Serialise.Encoding (Encoding)
 import           Codec.CBOR.Decoding (decodeBytes)
 import           Codec.CBOR.Write (toLazyByteString)
 import           Codec.Serialise (Serialise (..))
@@ -59,7 +61,10 @@ instance HashAlgorithm h => Serialise (Hash h a) where
             else fail $ "expected " ++ show le ++ " byte(s), but got " ++ show la
 
 hash :: forall h a. (HashAlgorithm h, Serialise a) => a -> Hash h a
-hash = Hash . digest (Proxy :: Proxy h)  . LB.toStrict . toLazyByteString . encode
+hash = hashWithSerialiser encode
+
+hashWithSerialiser :: forall h a. HashAlgorithm h => (a -> Encoding) -> a -> Hash h a
+hashWithSerialiser toEnc = Hash . digest (Proxy :: Proxy h)  . LB.toStrict . toLazyByteString . toEnc
 
 fromHash :: Hash h a -> Natural
 fromHash = foldl' f 0 . SB.unpack . getHash

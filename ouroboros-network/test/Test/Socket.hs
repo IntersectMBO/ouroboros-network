@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
@@ -220,12 +221,13 @@ prop_socket_client_connect_error _ xs = ioProperty $ do
       <- try $ withNetworkNode ni $ \nn ->
                  const False <$> withConnection (connect nn) clientAddr
 
-    -- XXX Disregarding the exact exception type 
+    -- XXX Disregarding the exact exception type
     pure $ either (const True) id res
 
 
 demo :: forall block .
-        (Chain.HasHeader block, Serialise block, Eq block, Show block )
+        ( Chain.HasHeader block, Serialise (Chain.HeaderHash block)
+        , Serialise block, Eq block, Show block )
      => Chain block -> [ChainUpdate block] -> IO Bool
 demo chain0 updates = do
     consumerAddress:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
