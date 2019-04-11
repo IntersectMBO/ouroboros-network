@@ -247,6 +247,29 @@ blockFetchClient FetchClientPolicy {
             updateTimeout timeout (diffTime now )
 -}
 
+            unless (blockPoint header == castPoint (blockPoint block)) $
+              throwM BlockFetchProtocolFailureWrongBlock
+
+            -- This is moderately expensive.
+            unless (blockMatchesHeader header block) $
+              throwM BlockFetchProtocolFailureInvalidBody
+
+            -- write it to the volatile block store
+            --FIXME: this is not atomic wrt the in-flight and status updates
+            -- above. This would allow a read where the block is no longer
+            -- in-flight but is still not in the fetched block store.
+            -- either 1. make it atomic, or 2. do this first, or 3. some safe
+            -- interleaving
+
+            -- Add the block to the chain DB, notifying of any new chains.
+            addFetchedBlock (castPoint (blockPoint header)) block
+
+            -- Note that we add the block to the chain DB /before/ updating our
+            -- current status and in-flight stats. Otherwise blocks will
+            -- disappear from our in-flight set without yet appearing in the
+            -- fetched block set. The fetch logic would conclude it has to
+            -- download the missing block(s) again.
+
             -- Update our in-flight stats and our current status
             atomically $ do
               inflight <- readTVar fetchClientInFlightVar
@@ -278,24 +301,6 @@ blockFetchClient FetchClientPolicy {
                     currentStatus == PeerFetchStatusBusy) $
                 writeTVar fetchClientStatusVar PeerFetchStatusReady
 
-            --TODO: should we validate the expected block size? peers can lie
-
-            unless (blockPoint header == castPoint (blockPoint block)) $
-              throwM BlockFetchProtocolFailureWrongBlock
-
-            -- This is moderately expensive.
-            unless (blockMatchesHeader header block) $
-              throwM BlockFetchProtocolFailureInvalidBody
-
-            -- write it to the volatile block store
-            --FIXME: this is not atomic wrt the in-flight and status updates
-            -- above. This would allow a read where the block is no longer
-            -- in-flight but is still not in the fetched block store.
-            -- either 1. make it atomic, or 2. do this first, or 3. some safe
-            -- interleaving
-            addFetchedBlock (castPoint (blockPoint header)) block
-
-            -- update the volatile block heap, notifying of any new tips
             -- TODO: when do we reset the status from PeerFetchStatusAberrant
             -- to PeerFetchStatusReady/Busy?
 
