@@ -180,11 +180,15 @@ blockFetchClient FetchClientPolicy {
         } <- calculatePeerFetchInFlightLimits <$> readPeerGSVs
 
         -- Set our status to busy if we've got over the high watermark.
+        let currentStatus'
+             | peerFetchBytesInFlight inflight' >= inFlightBytesHighWatermark
+             = PeerFetchStatusBusy
+             | otherwise
+             = PeerFetchStatusReady
         -- Only update the variable if it changed, to avoid spurious wakeups.
         currentStatus <- readTVar fetchClientStatusVar
-        when (peerFetchBytesInFlight inflight' >= inFlightBytesHighWatermark &&
-              currentStatus == PeerFetchStatusReady) $
-          writeTVar fetchClientStatusVar PeerFetchStatusBusy
+        when (currentStatus' /= currentStatus) $
+          writeTVar fetchClientStatusVar currentStatus'
 
         --TODO: think about status aberrant
 
@@ -299,10 +303,15 @@ blockFetchClient FetchClientPolicy {
                       peerFetchBytesInFlight inflight
                     - blockFetchSize header
                     - maybe 0 blockFetchSize (listToMaybe headers')
+                  currentStatus'
+                    | nextBytesInFlight <= inFlightBytesLowWatermark
+                    = PeerFetchStatusReady
+                    | otherwise
+                    = PeerFetchStatusBusy
+              -- Only update the variable if it changed, to avoid spurious wakeups.
               currentStatus <- readTVar fetchClientStatusVar
-              when (nextBytesInFlight <= inFlightBytesLowWatermark &&
-                    currentStatus == PeerFetchStatusBusy) $
-                writeTVar fetchClientStatusVar PeerFetchStatusReady
+              when (currentStatus' /= currentStatus) $
+                writeTVar fetchClientStatusVar currentStatus'
 
             -- TODO: when do we reset the status from PeerFetchStatusAberrant
             -- to PeerFetchStatusReady/Busy?
