@@ -36,20 +36,19 @@ import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Encoding as Enc
 import           Codec.Serialise (Serialise (..))
 import           Data.FingerTree (Measured)
-import           Data.Hashable
 import           Data.Typeable (Typeable)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
 -- | The 0-based index for the Ourboros time slot.
 newtype SlotNo = SlotNo { unSlotNo :: Word64 }
-  deriving (Show, Eq, Ord, Hashable, Enum, Bounded, Num, Serialise, Generic)
+  deriving (Show, Eq, Ord, Enum, Bounded, Num, Serialise, Generic)
 
 -- | The 0-based index of the block in the blockchain.
 -- BlockNo is <= SlotNo and is only equal at slot N if there is a block
 -- for every slot where N <= SlotNo.
 newtype BlockNo = BlockNo { unBlockNo :: Word64 }
-  deriving (Show, Eq, Ord, Hashable, Enum, Bounded, Num, Serialise, Generic)
+  deriving (Show, Eq, Ord, Enum, Bounded, Num, Serialise, Generic)
 
 -- | Abstract over the shape of blocks (or indeed just block headers)
 class (StandardHash b, Measured BlockMeasure b, Typeable b) => HasHeader b where
@@ -104,16 +103,6 @@ deriving instance StandardHash block => Eq   (ChainHash block)
 deriving instance StandardHash block => Ord  (ChainHash block)
 deriving instance StandardHash block => Show (ChainHash block)
 
--- | 'Hashable' instance for 'Hash'
---
--- We don't insist that 'Hashable' in 'StandardHash' because 'Hashable' is
--- only used in the network layer /tests/.
---
--- This requires @UndecidableInstances@ because @Hashable (HeaderHash b)@
--- is no smaller than @Hashable (ChainHash b)@.
-instance Hashable (HeaderHash b) => Hashable (ChainHash b) where
- -- use generic instance
-
 castHash :: HeaderHash b ~ HeaderHash b' => ChainHash b -> ChainHash b'
 castHash GenesisHash   = GenesisHash
 castHash (BlockHash b) = BlockHash b
@@ -160,6 +149,7 @@ data ChainUpdate block = AddBlock block
   Serialisation
 -------------------------------------------------------------------------------}
 
+--TODO: these two instances require UndecidableInstances
 instance Serialise (HeaderHash b) => Serialise (ChainHash b) where
   encode = encodeChainHash encode
   decode = decodeChainHash decode

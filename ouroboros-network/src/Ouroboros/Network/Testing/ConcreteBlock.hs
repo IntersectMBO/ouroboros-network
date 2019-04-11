@@ -1,8 +1,13 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE UndecidableInstances       #-}
+
+-- This module is for examples and tests (not the library) so orphans are ok
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 -- | Concrete block
 --
@@ -116,6 +121,19 @@ newtype BlockSigner = BlockSigner Word64
 --
 hashHeader :: BlockHeader -> ConcreteHeaderHash
 hashHeader (BlockHeader _ b c d e f) = HeaderHash (hash (b, c, d, e, f))
+
+deriving instance Hashable SlotNo
+deriving instance Hashable BlockNo
+
+-- | 'Hashable' instance for 'Hash'
+--
+-- We don't insist that 'Hashable' in 'StandardHash' because 'Hashable' is
+-- only used in the network layer /tests/.
+--
+-- This requires @UndecidableInstances@ because @Hashable (HeaderHash b)@
+-- is no smaller than @Hashable (ChainHash b)@.
+instance Hashable (HeaderHash b) => Hashable (ChainHash b)
+ -- use generic instance
 
 -- | The hash of all the information in a 'BlockHeader'.
 --
