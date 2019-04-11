@@ -6,6 +6,7 @@ module Run (
       runNode
     ) where
 
+import           Codec.Serialise (encode)
 import qualified Control.Concurrent.Async as Async
 import           Control.Concurrent.STM
 import           Control.Monad
@@ -112,6 +113,7 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
 
              btime  <- realBlockchainTime slotDuration systemStart
              kernel <- nodeKernel
+                         encode
                          pInfoConfig
                          pInfoInitState
                          btime

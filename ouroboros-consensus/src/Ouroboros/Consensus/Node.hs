@@ -26,6 +26,7 @@ module Ouroboros.Consensus.Node (
   ) where
 
 import           Codec.Serialise (Serialise)
+import           Codec.Serialise.Encoding (Encoding)
 import           Control.Monad
 import           Control.Monad.Except
 import           Crypto.Random (ChaChaDRG)
@@ -152,18 +153,19 @@ nodeKernel :: forall m blk up.
               , Condense           blk
               , Ord up
               )
-           => NodeConfig (BlockProtocol blk)
+           => (PreHeader blk -> Encoding)
+           -> NodeConfig (BlockProtocol blk)
            -> NodeState (BlockProtocol blk)
            -> BlockchainTime m
            -> ExtLedgerState blk
            -> Chain blk
            -> NodeCallbacks m blk
            -> m (NodeKernel m up blk)
-nodeKernel cfg initState btime initLedger initChain callbacks = do
-    st <- initInternalState cfg btime initChain initLedger initState callbacks
+nodeKernel toEnc cfg initState btime initLedger initChain callbacks = do
+    st <- initInternalState toEnc cfg btime initChain initLedger initState callbacks
 
-    forkMonitorDownloads st
-    forkBlockProduction  st
+    forkMonitorDownloads toEnc st
+    forkBlockProduction  toEnc st
 
     return NodeKernel {
         addUpstream       = npAddUpstream   (networkLayer st)
@@ -198,14 +200,15 @@ initInternalState :: forall m up blk.
                      , Eq                 blk
                      , Ord up
                      )
-                  => NodeConfig (BlockProtocol blk) -- ^ Node configuration
+                  => (PreHeader blk -> Encoding)
+                  -> NodeConfig (BlockProtocol blk) -- ^ Node configuration
                   -> BlockchainTime m               -- ^ Time
                   -> Chain blk                      -- ^ Initial chain
                   -> ExtLedgerState blk             -- ^ Initial ledger state
                   -> NodeState (BlockProtocol blk)  -- ^ Init node state
                   -> NodeCallbacks m blk            -- ^ Callbacks
                   -> m (InternalState m up blk)
-initInternalState cfg btime initChain initLedger initState callbacks = do
+initInternalState toEnc cfg btime initChain initLedger initState callbacks = do
     varChain      <- atomically $ newTVar initChain
     varLedger     <- atomically $ newTVar initLedger
     varCandidates <- atomically $ newTVar noCandidates
@@ -216,6 +219,7 @@ initInternalState cfg btime initChain initLedger initState callbacks = do
             nrCurrentChain = readTVar varChain
           , nrCandidates   = readTVar varCandidates
           , nrSyncClient   = consensusSyncClient
+                               toEnc
                                cfg
                                btime
                                initLedger
@@ -234,8 +238,9 @@ forkMonitorDownloads :: forall m up blk.
                         , ProtocolLedgerView blk
                         , Condense           blk
                         )
-                     => InternalState m up blk -> m ()
-forkMonitorDownloads st@IS{..} =
+                     => (PreHeader blk -> Encoding)
+                     -> InternalState m up blk -> m ()
+forkMonitorDownloads toEnc st@IS{..} =
     -- TODO: We should probably not just look at the headSlot
     onEachChange (map Chain.headSlot) [] npDownloaded $ \downloaded -> do
       -- TODO: At this point we should validate the chain /bodies/
@@ -248,7 +253,7 @@ forkMonitorDownloads st@IS{..} =
         case selectUnvalidatedChain cfg old downloaded of
           Nothing  -> return Nothing
           Just new -> do
-            adoptNewChain st old new
+            adoptNewChain toEnc st old new
             return (Just new)
       case mNew of
         Nothing  -> say $ "Ignoring downloaded chains " ++ condense downloaded
@@ -263,8 +268,9 @@ forkBlockProduction :: forall m up blk. (
                          MonadSTM m
                        , ProtocolLedgerView blk
                        )
-                    => InternalState m up blk -> m ()
-forkBlockProduction st@IS{..} =
+                    => (PreHeader blk -> Encoding)
+                    -> InternalState m up blk -> m ()
+forkBlockProduction toEnc st@IS{..} =
     onSlotChange btime $ \slot -> do
       drg  <- produceDRG
       mNew <- atomically $ do
@@ -286,7 +292,7 @@ forkBlockProduction st@IS{..} =
             newBlock <- runProtocol varDRG $
                           produceBlock proof l slot prevPoint prevNo
             let new = Chain.addBlock newBlock old
-            applyUpdate st new (upd ++ [AddBlock newBlock])
+            applyUpdate toEnc st new (upd ++ [AddBlock newBlock])
             return $ Just new
 
       forM_ mNew adoptedNewChain
@@ -310,12 +316,13 @@ adoptNewChain :: forall m up blk.
                  ( MonadSTM m
                  , ProtocolLedgerView blk
                  )
-              => InternalState m up blk
+              => (PreHeader blk -> Encoding)
+              -> InternalState m up blk
               -> Chain blk  -- ^ Old chain
               -> Chain blk  -- ^ New chain
               -> STM m ()
-adoptNewChain is old new =
-    applyUpdate is new upd
+adoptNewChain toEnc is old new =
+    applyUpdate toEnc is new upd
   where
     i :: Point blk
     i = fromMaybe Chain.genesisPoint $ Chain.intersectChains old new
@@ -330,13 +337,14 @@ adoptNewChain is old new =
 applyUpdate :: ( MonadSTM m
                , ProtocolLedgerView blk
                )
-            => InternalState m up blk
+            => (PreHeader blk -> Encoding)
+            -> InternalState m up blk
             -> Chain blk          -- ^ New chain
             -> [ChainUpdate blk]  -- ^ Update
             -> STM m ()
-applyUpdate st@IS{..} new upd = do
+applyUpdate toEnc st@IS{..} new upd = do
     writeTVar varChain new
-    updateLedgerState st new upd
+    updateLedgerState toEnc st new upd
 
 -- | Update the ledger state
 --
@@ -347,21 +355,22 @@ applyUpdate st@IS{..} new upd = do
 updateLedgerState :: ( MonadSTM m
                      , ProtocolLedgerView blk
                      )
-                  => InternalState m up blk
+                  => (PreHeader blk -> Encoding)
+                  -> InternalState m up blk
                   -> Chain blk          -- ^ New chain (TODO: remove this arg)
                   -> [ChainUpdate blk]  -- ^ Chain update
                   -> STM m ()
-updateLedgerState IS{..} new upd =
+updateLedgerState toEnc IS{..} new upd =
     case upd of
       RollBack _:_ ->
         -- TODO: Properly implement support for rollback
         modifyTVar' varLedger $ \_st ->
-          case runExcept (chainExtLedgerState cfg new initLedger) of
+          case runExcept (chainExtLedgerState toEnc cfg new initLedger) of
             Left err  -> error (show err)
             Right st' -> st'
       _otherwise ->
         modifyTVar' varLedger $ \st ->
-          case runExcept (foldExtLedgerState cfg (map newBlock upd) st) of
+          case runExcept (foldExtLedgerState toEnc cfg (map newBlock upd) st) of
             Left err  -> error (show err)
             Right st' -> st'
   where
@@ -449,13 +458,14 @@ consensusSyncClient :: forall m up blk hdr.
                        , ProtocolLedgerView hdr
                        , Ord up
                        )
-                    => NodeConfig (BlockProtocol hdr)
+                    => (PreHeader blk -> Encoding)
+                    -> NodeConfig (BlockProtocol hdr)
                     -> BlockchainTime m
                     -> ExtLedgerState blk
                     -> TVar m (Chain blk)
                     -> TVar m (Candidates up hdr)
                     -> up -> Consensus ChainSyncClient hdr m
-consensusSyncClient cfg _btime initLedger varChain candidatesVar up =
+consensusSyncClient toEnc cfg _btime initLedger varChain candidatesVar up =
     ChainSyncClient initialise
   where
     initialise :: m (Consensus ClientStIdle hdr m)
@@ -497,7 +507,7 @@ consensusSyncClient cfg _btime initLedger varChain candidatesVar up =
               -- validate the new block.
               theirChain <- readTVar theirChainVar
               let theirChain' = Chain.addBlock hdr theirChain
-              if not (verifyChain cfg initLedger theirChain') then
+              if not (verifyChain toEnc cfg initLedger theirChain') then
                 return $ SendMsgDone (InvalidBlock theirChain')
               else do
                 writeTVar theirChainVar theirChain'

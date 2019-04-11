@@ -7,6 +7,7 @@
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 module Ouroboros.Consensus.Protocol.BFT (
     Bft
@@ -20,7 +21,7 @@ module Ouroboros.Consensus.Protocol.BFT (
   , Payload(..)
   ) where
 
-import           Codec.Serialise (Serialise)
+import           Codec.Serialise (Serialise(..))
 import           Control.Monad.Except
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -89,8 +90,8 @@ instance BftCrypto c => OuroborosTag (Bft c) where
 
   protocolSecurityParam = bftSecurityParam . bftParams
 
-  mkPayload BftNodeConfig{..} _proof preheader = do
-      signature <- signedDSIGN preheader bftSignKey
+  mkPayload toEnc BftNodeConfig{..} _proof preheader = do
+      signature <- signedDSIGN toEnc preheader bftSignKey
       return $ BftPayload {
           bftSignature = signature
         }
@@ -104,9 +105,9 @@ instance BftCrypto c => OuroborosTag (Bft c) where
     where
       BftParams{..}  = bftParams
 
-  applyChainState BftNodeConfig{..} _l b _cs = do
+  applyChainState toEnc BftNodeConfig{..} _l b _cs = do
       -- TODO: Should deal with unknown node IDs
-      if verifySignedDSIGN (bftVerKeys Map.! expectedLeader)
+      if verifySignedDSIGN toEnc (bftVerKeys Map.! expectedLeader)
                       (blockPreHeader b)
                       (bftSignature (blockPayload (Proxy @(Bft c)) b))
         then return ()
@@ -122,8 +123,9 @@ deriving instance BftCrypto c => Eq       (Payload (Bft c) ph)
 deriving instance BftCrypto c => Ord      (Payload (Bft c) ph)
 deriving instance BftCrypto c => Condense (Payload (Bft c) ph)
 
-instance BftCrypto c => Serialise (Payload (Bft c) ph) where
-  -- use generic instance
+instance (DSIGNAlgorithm (BftDSIGN c)) => Serialise (Payload (Bft c) ph) where
+  encode (BftPayload sig) = encodeSignedDSIGN sig
+  decode = BftPayload <$> decodeSignedDSIGN
 
 {-------------------------------------------------------------------------------
   BFT specific types

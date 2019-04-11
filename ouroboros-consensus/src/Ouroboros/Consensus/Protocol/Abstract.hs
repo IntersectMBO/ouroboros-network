@@ -31,7 +31,7 @@ module Ouroboros.Consensus.Protocol.Abstract (
   , evalNodeState
   ) where
 
-import           Codec.Serialise (Serialise)
+import           Codec.Serialise.Encoding (Encoding)
 import           Control.Monad.Except
 import           Control.Monad.State
 import           Crypto.Random (MonadRandom (..))
@@ -99,8 +99,9 @@ class ( Show (ChainState    p)
   -- | Construct the ouroboros-specific payload of a block
   --
   -- Gets the proof that we are the leader and the preheader as arguments.
-  mkPayload :: (HasNodeState p m, MonadRandom m, Serialise ph)
-            => NodeConfig p
+  mkPayload :: (HasNodeState p m, MonadRandom m)
+            => (ph -> Encoding)
+            -> NodeConfig p
             -> IsLeader p
             -> ph
             -> m (Payload p ph)
@@ -135,7 +136,8 @@ class ( Show (ChainState    p)
 
   -- | Apply a block
   applyChainState :: SupportedBlock p b
-                  => NodeConfig p
+                  => (PreHeader b -> Encoding) -- Serialiser for the preheader
+                  -> NodeConfig p
                   -> LedgerView p -- /Updated/ ledger state
                   -> b
                   -> ChainState p -- /Previous/ Ouroboros state
@@ -156,7 +158,7 @@ class ( Show (ChainState    p)
 newtype SecurityParam = SecurityParam { maxRollbacks :: Word64 }
 
 -- | Extract the pre-header from a block
-class (HasHeader b, Serialise (PreHeader b)) => HasPreHeader b where
+class (HasHeader b) => HasPreHeader b where
   type family PreHeader b :: *
   blockPreHeader :: b -> PreHeader b
 

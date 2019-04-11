@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 {-# OPTIONS_GHC -Wno-orphans     #-}
@@ -67,7 +68,7 @@ instance Mx.ProtocolEnum DemoProtocols where
 -- over a pipe with full message serialisation, framing etc.
 --
 demo :: forall block .
-        (Chain.HasHeader block, Serialise block, Eq block )
+        (Chain.HasHeader block, Serialise (Chain.HeaderHash block), Serialise block, Eq block )
      => Chain block -> [ChainUpdate block] -> IO Bool
 demo chain0 updates = do
 
