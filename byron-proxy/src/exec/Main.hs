@@ -4,6 +4,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE ApplicativeDo #-}
 
 import Control.Concurrent (myThreadId)
 import Control.Concurrent.Async (concurrently)
@@ -15,6 +16,7 @@ import Data.Functor.Contravariant (Op (..))
 import Data.List (intercalate)
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
+import Data.String (fromString)
 import Data.Text (Text)
 import qualified Data.Text as Text
 import Data.Time.Clock.POSIX (getCurrentTime)
@@ -43,8 +45,13 @@ import qualified Pos.Chain.Genesis as CSL (configEpochSlots, configGenesisHash,
 import qualified Pos.Diffusion.Full as CSL (FullDiffusionConfiguration (..))
 import qualified Pos.Infra.Diffusion.Types as CSL
 
-import qualified Pos.Infra.Network.CLI as CSL (NetworkConfigOpts (..), intNetworkConfigOpts, networkConfigOption)
-import qualified Pos.Launcher.Configuration as CSL (ConfigurationOptions (..), HasConfigurations, withConfigurations)
+import qualified Pos.Infra.Network.CLI as CSL (NetworkConfigOpts (..),
+                                               externalNetworkAddressOption,
+                                               intNetworkConfigOpts,
+                                               listenNetworkAddressOption)
+import qualified Pos.Launcher.Configuration as CSL (ConfigurationOptions (..),
+                                                    HasConfigurations,
+                                                    withConfigurations)
 import qualified Pos.Client.CLI.Options as CSL (configurationOptionsParser)
 
 import Pos.Util.Trace (Trace)
@@ -296,24 +303,79 @@ cliParser = ByronProxyOptions
 
   cliHostName prefix = Opt.strOption $
     Opt.long (dashconcat (prefix ++ ["host"])) <>
+    Opt.metavar "HOST" <>
     Opt.help "Host"
 
   cliServiceName prefix = Opt.strOption $
     Opt.long (dashconcat (prefix ++ ["port"])) <>
+    Opt.metavar "PORT" <>
     Opt.help "Port"
 
-  -- FIXME
-  -- TODO it's impossible for this to ever fail, so it's impossible to ever
-  -- _not_ run a client.
   cliClientOptions :: Opt.Parser (Maybe ClientOptions)
   cliClientOptions = Opt.optional $
-    (Left <$> cliShelleyClient) Opt.<|> (Right <$> cliByronClient)
+    (Left <$> cliShelleyClient) Opt.<|> (Right . ByronClientOptions <$> cliNetworkConfig)
 
   cliShelleyClient = ShelleyClientOptions
     <$> cliHostName ["remote"]
     <*> cliServiceName ["remote"]
 
-  cliByronClient = ByronClientOptions <$> CSL.networkConfigOption
+  -- We can't use `Pos.Infra.Network.CLI.networkConfigOption` from
+  -- cardano-sl-infra because all of its fields are optional, but we need at
+  -- least one non-optional, so that this parser can fail, and therefore
+  -- `cliClientOptions` can give `Nothing.
+  -- Very similar to `Pos.Infra.Network.CLI.networkConfigOption`, but the
+  -- topology file is _not_ optional.
+  cliNetworkConfig :: Opt.Parser CSL.NetworkConfigOpts
+  cliNetworkConfig = do
+      ncoTopology <-
+          fmap Just $
+          Opt.strOption $
+          mconcat
+              [ Opt.long "topology"
+              , Opt.metavar "FILEPATH"
+              , Opt.help "Path to a YAML file containing the network topology"
+              ]
+      ncoKademlia <-
+          Opt.optional $ Opt.strOption $
+          mconcat
+              [ Opt.long "kademlia"
+              , Opt.metavar "FILEPATH"
+              , Opt.help
+                    "Path to a YAML file containing the kademlia configuration"
+              ]
+      ncoSelf <-
+          Opt.optional $ Opt.option (fromString <$> Opt.str) $
+          mconcat
+              [ Opt.long "node-id"
+              , Opt.metavar "NODE_ID"
+              , Opt.help "Identifier for this node within the network"
+              ]
+      ncoPort <-
+          Opt.option Opt.auto $
+          mconcat
+              [ Opt.long "default-port"
+              , Opt.metavar "PORT"
+              , Opt.help "Port number for IP address to node ID translation"
+              , Opt.value 3000
+              ]
+      ncoPolicies <-
+          Opt.optional $ Opt.strOption $
+          mconcat
+              [ Opt.long "policies"
+              , Opt.metavar "FILEPATH"
+              , Opt.help "Path to a YAML file containing the network policies"
+              ]
+      ncoExternalAddress <- Opt.optional $ CSL.externalNetworkAddressOption Nothing
+      ncoBindAddress <- Opt.optional $ CSL.listenNetworkAddressOption Nothing
+      pure $ CSL.NetworkConfigOpts
+        { CSL.ncoTopology = ncoTopology
+        , CSL.ncoKademlia = ncoKademlia
+        , CSL.ncoSelf = ncoSelf
+        , CSL.ncoPort = ncoPort
+        , CSL.ncoPolicies = ncoPolicies
+        , CSL.ncoExternalAddress = ncoExternalAddress
+        , CSL.ncoBindAddress = ncoBindAddress
+        }
 
   dashconcat :: [String] -> String
   dashconcat = intercalate "-"
