@@ -125,6 +125,7 @@ test-suite tests
                        Ouroboros.Network.BlockFetch.Client
                        Ouroboros.Network.BlockFetch.Decision
                        Ouroboros.Network.BlockFetch.DeltaQ
+                       Ouroboros.Network.BlockFetch.Examples
                        Ouroboros.Network.BlockFetch.State
                        Ouroboros.Network.BlockFetch.Types
                        Ouroboros.Network.Chain
@@ -166,6 +167,7 @@ test-suite tests
                        Test.ChainFragment
                        Test.ChainProducerState
                        Test.Ouroboros.Network.Testing.Utils
+                       Test.Ouroboros.Network.BlockFetch
                        Test.Ouroboros.Network.Node
                        Test.Mux
                        Test.Pipe
