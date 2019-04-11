@@ -23,8 +23,9 @@ module Ouroboros.Storage.LedgerDB.OnDisk (
   , snapshotToPath
   ) where
 
-import           Codec.Serialise (Serialise)
-import qualified Codec.Serialise as S
+import qualified Codec.CBOR.Write as CBOR
+import           Codec.Serialise.Decoding (Decoder)
+import           Codec.Serialise.Encoding (Encoding)
 import           Control.Monad.Except
 import qualified Data.List as List
 import           Data.Maybe (mapMaybe)
@@ -38,7 +39,8 @@ import           Text.Read (readMaybe)
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadThrow
 
-import           Ouroboros.Consensus.Util.CBOR
+import           Ouroboros.Consensus.Util.CBOR (ReadIncrementalErr,
+                     readIncremental)
 
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types
@@ -114,18 +116,15 @@ streamAll StreamAPI{..} tip notFound e f = ExceptT $
 -- /compute/ all subsequent ones. This is important, because the ledger states
 -- obtained in this way will (hopefully) share much of their memory footprint
 -- with their predecessors.
-initLedgerDB :: forall m h l r b e. (
-                  MonadST    m
-                , MonadThrow m
-                , Serialise l
-                , Serialise r
-                )
+initLedgerDB :: forall m h l r b e. (MonadST m, MonadThrow m)
              => HasFS m h
+             -> (forall s. Decoder s l)
+             -> (forall s. Decoder s r)
              -> MemPolicy
              -> LedgerDbConf m l r b e
              -> StreamAPI m r b
              -> m (LedgerDB l r)
-initLedgerDB hasFS policy conf streamAPI = do
+initLedgerDB hasFS decLedger decRef policy conf streamAPI = do
     snapshots <- listSnapshots hasFS
     tryNewestFirst snapshots
   where
@@ -139,7 +138,14 @@ initLedgerDB hasFS policy conf streamAPI = do
           Right l -> return l
     tryNewestFirst (s:ss) = do
         -- If we fail to use this snapshot, delete it and try an older one
-        ml <- runExceptT $ initFromSnapshot hasFS policy conf streamAPI s
+        ml <- runExceptT $ initFromSnapshot
+                             hasFS
+                             decLedger
+                             decRef
+                             policy
+                             conf
+                             streamAPI
+                             s
         case ml of
           Left _  -> deleteSnapshot hasFS s >> tryNewestFirst ss
           Right l -> return l
@@ -171,16 +177,19 @@ data InitFailure r =
 -- and an error is returned. This should not throw any errors itself (ignoring
 -- unexpected exceptions such as asynchronous exceptions, of course).
 initFromSnapshot :: forall m h l r b e.
-                    (MonadST m, MonadThrow m, Serialise l, Serialise r)
+                    (MonadST m, MonadThrow m)
                  => HasFS m h
+                 -> (forall s. Decoder s l)
+                 -> (forall s. Decoder s r)
                  -> MemPolicy
                  -> LedgerDbConf m l r b e
                  -> StreamAPI m r b
                  -> DiskSnapshot
                  -> ExceptT (InitFailure r) m (LedgerDB l r)
-initFromSnapshot hasFS policy conf streamAPI ss = do
+initFromSnapshot hasFS decLedger decRef policy conf streamAPI ss = do
     initDb <- withExceptT InitFailureRead $
-                ledgerDbFromChain policy <$> readSnapshot hasFS ss
+                ledgerDbFromChain policy <$>
+                  readSnapshot hasFS decLedger decRef ss
     initStartingWith conf streamAPI initDb
 
 -- | Attempt to initialize the ledger DB starting from the given ledger DB
@@ -223,11 +232,14 @@ initStartingWith conf@LedgerDbConf{..} streamAPI initDb = do
 -- is more than @k@ back).
 --
 -- TODO: Should we delete the file if an error occurs during writing?
-takeSnapshot :: (MonadThrow m, Serialise l, Serialise r)
-             => HasFS m h -> LedgerDB l r -> m DiskSnapshot
-takeSnapshot hasFS db = do
+takeSnapshot :: (MonadThrow m)
+             => HasFS m h
+             -> (l -> Encoding)
+             -> (r -> Encoding)
+             -> LedgerDB l r -> m DiskSnapshot
+takeSnapshot hasFS encLedger encRef db = do
     ss <- nextAvailable <$> listSnapshots hasFS
-    writeSnapshot hasFS ss (ledgerDbTail db)
+    writeSnapshot hasFS encLedger encRef ss (ledgerDbTail db)
     return ss
 
 {-------------------------------------------------------------------------------
@@ -244,18 +256,32 @@ nextAvailable [] = DiskSnapshot 1
 nextAvailable ss = let DiskSnapshot n = maximum ss in DiskSnapshot (n + 1)
 
 -- | Read snapshot from disk
-readSnapshot :: (MonadST m, MonadThrow m, Serialise l, Serialise r)
+readSnapshot :: forall m l r h. (MonadST m, MonadThrow m)
              => HasFS m h
+             -> (forall s. Decoder s l)
+             -> (forall s. Decoder s r)
              -> DiskSnapshot
              -> ExceptT ReadIncrementalErr m (ChainSummary l r)
-readSnapshot hasFS = ExceptT . readIncremental hasFS . snapshotToPath
+readSnapshot hasFS decLedger decRef =
+      ExceptT
+    . readIncremental hasFS decoder
+    . snapshotToPath
+  where
+    decoder :: Decoder s (ChainSummary l r)
+    decoder = decodeChainSummary decLedger decRef
 
 -- | Write snapshot to disk
-writeSnapshot :: (MonadThrow m, Serialise l, Serialise r)
-              => HasFS m h -> DiskSnapshot -> ChainSummary l r -> m ()
-writeSnapshot hasFS@HasFS{..} ss cs = do
+writeSnapshot :: forall m l r h. MonadThrow m
+              => HasFS m h
+              -> (l -> Encoding)
+              -> (r -> Encoding)
+              -> DiskSnapshot -> ChainSummary l r -> m ()
+writeSnapshot hasFS@HasFS{..} encLedger encRef ss cs = do
     withFile hasFS (snapshotToPath ss) WriteMode $ \h ->
-      void $ hPut h (S.serialiseIncremental cs)
+      void $ hPut h $ CBOR.toBuilder (encode cs)
+  where
+    encode :: ChainSummary l r -> Encoding
+    encode = encodeChainSummary encLedger encRef
 
 -- | Delete snapshot from disk
 deleteSnapshot :: HasCallStack => HasFS m h -> DiskSnapshot -> m ()

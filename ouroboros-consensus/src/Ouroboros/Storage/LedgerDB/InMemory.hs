@@ -1,5 +1,6 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
@@ -44,11 +45,17 @@ module Ouroboros.Storage.LedgerDB.InMemory (
    , Shape(..)
    , memPolicyShape
    , snapshotsShape
+     -- * Serialisation
+   , encodeChainSummary
+   , decodeChainSummary
      -- * Demo
    , demo
    ) where
 
-import           Codec.Serialise (Serialise)
+import           Codec.Serialise.Decoding (Decoder)
+import           Codec.Serialise.Decoding as Dec
+import           Codec.Serialise.Encoding (Encoding)
+import           Codec.Serialise.Encoding as Enc
 import           Control.Monad.Except
 import           Data.Functor.Identity
 import           Data.Void
@@ -426,11 +433,31 @@ snapshotsShape (Tail os _)   = go os
 
 {-------------------------------------------------------------------------------
   Serialisation
-
-  TODO: We shouldn't use the 'Generic' instances here
 -------------------------------------------------------------------------------}
 
-instance (Serialise r, Serialise l) => Serialise (ChainSummary l r)
+encodeChainSummary :: (l -> Encoding)
+                   -> (r -> Encoding)
+                   -> ChainSummary l r -> Encoding
+encodeChainSummary encodeLedger encodeRef ChainSummary{..} = mconcat [
+      case csTip of
+        TipGen -> encodeWord8 0
+        Tip r  -> encodeWord8 1 <> encodeRef r
+    , encodeWord64 csLength
+    , encodeLedger csLedger
+    ]
+
+decodeChainSummary :: (forall s. Decoder s l)
+                   -> (forall s. Decoder s r)
+                   -> forall s. Decoder s (ChainSummary l r)
+decodeChainSummary decodeLedger decodeRef = do
+    tipIsGen <- decodeWord8
+    csTip    <- case tipIsGen of
+                  0 -> return TipGen
+                  1 -> Tip <$> decodeRef
+                  _ -> fail "decodeChainSummary: invalid tag"
+    csLength <- decodeWord64
+    csLedger <- decodeLedger
+    return ChainSummary{..}
 
 {-------------------------------------------------------------------------------
   Demo
@@ -472,13 +499,3 @@ demo = db0 : go 1 8 db0
         let blockInfo = BlockVal NotPrevApplied (DR ('a', n), DB ('a', n))
             Identity (Right db') = ledgerDbPush demoConf blockInfo db
         in db' : go (n + 1) m db'
-
-
-{-
-ledgerDbSwitch :: forall m l r b e. Monad m
-               => LedgerDbConf m l r b e
-               -> Word64              -- ^ How many blocks to roll back
-               -> [BlockInfo r b]   -- ^ New blocks to apply
-               -> LedgerDB l r
-               -> m (Either e (LedgerDB l r))
--}
