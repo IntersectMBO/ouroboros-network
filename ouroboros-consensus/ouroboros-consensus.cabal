@@ -69,6 +69,10 @@ library
 
                        -- Storing things on disk
                        Ouroboros.Storage.Common
+                       Ouroboros.Storage.ChainDB
+                       Ouroboros.Storage.ChainDB.API
+                       Ouroboros.Storage.ChainDB.Mock
+                       Ouroboros.Storage.ChainDB.Model
                        Ouroboros.Storage.FS.API
                        Ouroboros.Storage.FS.API.Example
                        Ouroboros.Storage.FS.API.Types
@@ -280,6 +284,10 @@ test-suite test-storage
   main-is:          Main.hs
   other-modules:
                     Test.Ouroboros.Storage
+                    Test.Ouroboros.Storage.ChainDB
+                    Test.Ouroboros.Storage.ChainDB.Mock
+                    Test.Ouroboros.Storage.ChainDB.Model
+                    Test.Ouroboros.Storage.ChainDB.TestBlock
                     Test.Ouroboros.Storage.FS
                     Test.Ouroboros.Storage.FS.Sim.Error
                     Test.Ouroboros.Storage.FS.StateMachine
@@ -310,6 +318,7 @@ test-suite test-storage
                     cereal,
                     containers,
                     directory,
+                    fingertree,
                     generics-sop,
                     mtl,
                     pretty-show,

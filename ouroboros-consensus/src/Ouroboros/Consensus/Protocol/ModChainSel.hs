@@ -26,6 +26,7 @@ module Ouroboros.Consensus.Protocol.ModChainSel (
 
 import           Codec.Serialise (Serialise)
 import           Data.Proxy (Proxy (..))
+import           Data.Typeable (Typeable)
 
 import           Ouroboros.Network.Block (HasHeader)
 import           Ouroboros.Network.Chain (Chain)
@@ -49,7 +50,7 @@ class OuroborosTag p => ChainSelection p s where
 
 data ModChainSel p s
 
-instance ChainSelection p s => OuroborosTag (ModChainSel p s) where
+instance (Typeable p, Typeable s, ChainSelection p s) => OuroborosTag (ModChainSel p s) where
 
     newtype NodeConfig     (ModChainSel p s)    = McsNodeConfig (NodeConfig p)
     newtype Payload        (ModChainSel p s) ph = McsPayload (Payload p ph)

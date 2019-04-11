@@ -15,9 +15,9 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 
+import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
 
@@ -142,7 +142,7 @@ broadcastNetwork btime numCoreNodes pInfo initRNG numSlots = do
 
       return varRes
 
-    atomically $ Map.fromList <$> blockUntilAllJust nodes
+    atomically $ Map.fromList <$> blockUntilAllJust (map readTVar nodes)
   where
     nodeIds :: [NodeId]
     nodeIds = map fromCoreNodeId coreNodeIds

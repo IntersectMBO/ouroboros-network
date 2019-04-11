@@ -40,6 +40,7 @@ module Ouroboros.Network.Chain (
   toNewestFirst,
   toOldestFirst,
   fromNewestFirst,
+  fromOldestFirst,
   drop,
   length,
   null,
@@ -69,11 +70,11 @@ module Ouroboros.Network.Chain (
 
 import           Prelude hiding (drop, head, length, null)
 
+import           Codec.CBOR.Decoding (decodeListLen)
+import           Codec.CBOR.Encoding (encodeListLen)
+import           Codec.Serialise (Serialise (..))
 import           Control.Exception (assert)
 import qualified Data.List as L
-import           Codec.Serialise (Serialise (..))
-import           Codec.CBOR.Encoding (encodeListLen)
-import           Codec.CBOR.Decoding (decodeListLen)
 
 import           Ouroboros.Network.Block
 
@@ -153,6 +154,12 @@ fromNewestFirst :: HasHeader block => [block] -> Chain block
 fromNewestFirst bs = assert (valid c) c
   where
     c = foldr (flip (:>)) Genesis bs
+
+-- | Construct chain from list of blocks from oldest to newest
+fromOldestFirst :: HasHeader block => [block] -> Chain block
+fromOldestFirst bs = assert (valid c) c
+  where
+    c = L.foldl' (:>) Genesis bs
 
 drop :: Int -> Chain block -> Chain block
 drop 0 c        = c
@@ -317,4 +324,3 @@ instance Serialise block => Serialise (Chain block) where
       go c 0 = return c
       go c n = do b <- decode
                   go (c :> b) (n-1)
-

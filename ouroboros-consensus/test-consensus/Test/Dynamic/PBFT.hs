@@ -22,7 +22,6 @@ module Test.Dynamic.PBFT (
 
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Word (Word64)
 import           Test.QuickCheck
 
 import           Test.Tasty
@@ -33,7 +32,6 @@ import           Ouroboros.Consensus.Demo
 import           Ouroboros.Consensus.Node
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.PBFT
-import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Network.Chain (Chain)
 

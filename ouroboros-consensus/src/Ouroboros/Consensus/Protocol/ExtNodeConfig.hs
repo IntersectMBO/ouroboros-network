@@ -17,6 +17,7 @@ module Ouroboros.Consensus.Protocol.ExtNodeConfig (
   ) where
 
 import           Codec.Serialise (Serialise)
+import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -25,7 +26,7 @@ import           Ouroboros.Consensus.Util.Condense
 -- | Extension of protocol @p@ by additional static node configuration @cfg@.
 data ExtNodeConfig cfg p
 
-instance OuroborosTag p => OuroborosTag (ExtNodeConfig cfg p) where
+instance (Typeable cfg, OuroborosTag p) => OuroborosTag (ExtNodeConfig cfg p) where
 
   --
   -- Most types remain the same

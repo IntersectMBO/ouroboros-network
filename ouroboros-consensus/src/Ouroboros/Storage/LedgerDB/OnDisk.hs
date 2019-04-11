@@ -108,6 +108,12 @@ streamAll StreamAPI{..} tip notFound e f = ExceptT $
 -- * They are too close to the tip of the chain to give all snapshots required
 --   by the memory policy (the snapshot being /ahead/ of the chain is a
 --   special case of this).
+--
+-- We do /not/ attempt to use multiple ledger states from disk to construct the
+-- ledger DB. Instead we load only a /single/ ledger state from disk, and
+-- /compute/ all subsequent ones. This is important, because the ledger states
+-- obtained in this way will (hopefully) share much of their memory footprint
+-- with their predecessors.
 initLedgerDB :: forall m h l r b e. (
                   MonadST    m
                 , MonadThrow m
