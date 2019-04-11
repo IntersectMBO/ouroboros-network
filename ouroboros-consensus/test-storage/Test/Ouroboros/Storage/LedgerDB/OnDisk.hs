@@ -30,6 +30,7 @@ module Test.Ouroboros.Storage.LedgerDB.OnDisk (
 import           Prelude hiding (elem)
 
 import           Codec.Serialise (Serialise)
+import qualified Codec.Serialise as S
 import           Control.Monad.Except (Except, runExcept, throwError)
 import           Control.Monad.State (StateT (..))
 import qualified Control.Monad.State as State
@@ -486,9 +487,15 @@ runDB standalone@DB{..} cmd =
         upd (switch n bs) $ ledgerDbSwitch conf n (map new bs)
     go hasFS Snap = do
         (_, db) <- atomically $ readTVar dbState
-        Snapped <$> takeSnapshot hasFS db
+        Snapped <$> takeSnapshot hasFS S.encode S.encode db
     go hasFS Restore = do
-        db <- initLedgerDB hasFS (dbMemPolicy dbEnv) conf streamAPI
+        db <- initLedgerDB
+                hasFS
+                S.decode
+                S.decode
+                (dbMemPolicy dbEnv)
+                conf
+                streamAPI
         atomically $ modifyTVar dbState (\(rs, _) -> (rs, db))
         go hasFS Current
     go hasFS (Corrupt c ss) =
