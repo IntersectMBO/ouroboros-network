@@ -145,15 +145,15 @@ data TokNextKind (k :: StNextKind) where
   TokMustReply :: TokNextKind StMustReply
 
 
-instance Show (Message (ChainSync header point) from to) where
-  show MsgRequestNext          = "MsgRequestNext"
-  show MsgAwaitReply           = "MsgAwaitReply"
-  show MsgRollForward{}        = "MsgRollForward"
-  show MsgRollBackward{}       = "MsgRollBackward"
-  show MsgFindIntersect{}      = "MsgFindIntersect"
-  show MsgIntersectImproved{}  = "MsgIntersectImproved"
-  show MsgIntersectUnchanged{} = "MsgIntersectUnchanged"
-  show MsgDone{}               = "MsgDone"
+instance (Show header, Show point) => Show (Message (ChainSync header point) from to) where
+  show MsgRequestNext               = "MsgRequestNext"
+  show MsgAwaitReply                = "MsgAwaitReply"
+  show (MsgRollForward h tip)       = "MsgRollForward " ++ show h ++ " " ++ show tip
+  show (MsgRollBackward p tip)      = "MsgRollBackward " ++ show p ++ " " ++ show tip
+  show (MsgFindIntersect ps)        = "MsgFindIntersect " ++ show ps
+  show (MsgIntersectImproved p tip) = "MsgIntersectImproved " ++ show p ++ " " ++ show tip
+  show (MsgIntersectUnchanged p)    = "MsgIntersectUnchanged " ++ show p
+  show MsgDone{}                    = "MsgDone"
 
 instance (Show header, Show point) => Show (AnyMessage (ChainSync header point)) where
   show (AnyMessage msg) = show msg
