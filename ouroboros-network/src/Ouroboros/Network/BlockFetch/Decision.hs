@@ -91,7 +91,7 @@ data FetchDecline =
    | FetchDeclinePeerShutdown
    | FetchDeclinePeerSlow
    | FetchDeclineReqsInFlightLimit  !Word
-   | FetchDeclineBytesInFlightLimit !SizeInBytes
+   | FetchDeclineBytesInFlightLimit !SizeInBytes !SizeInBytes !SizeInBytes
    | FetchDeclinePeerBusy           !SizeInBytes !SizeInBytes !SizeInBytes
    | FetchDeclineConcurrencyLimit   !FetchMode !Word
   deriving (Eq, Show)
@@ -645,6 +645,8 @@ fetchRequestDecision FetchDecisionPolicy {
 
   | peerFetchBytesInFlight >= inFlightBytesHighWatermark
   = Left $ FetchDeclineBytesInFlightLimit
+             peerFetchBytesInFlight
+             inFlightBytesLowWatermark
              inFlightBytesHighWatermark
 
     -- This covers the case when we could still fit in more reqs or bytes, but
