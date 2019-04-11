@@ -184,7 +184,7 @@ blockFetchClient FetchClientPolicy {
              | peerFetchBytesInFlight inflight' >= inFlightBytesHighWatermark
              = PeerFetchStatusBusy
              | otherwise
-             = PeerFetchStatusReady
+             = PeerFetchStatusReady (peerFetchBlocksInFlight inflight')
         -- Only update the variable if it changed, to avoid spurious wakeups.
         currentStatus <- readTVar fetchClientStatusVar
         when (currentStatus' /= currentStatus) $
@@ -305,7 +305,7 @@ blockFetchClient FetchClientPolicy {
                     - maybe 0 blockFetchSize (listToMaybe headers')
                   currentStatus'
                     | nextBytesInFlight <= inFlightBytesLowWatermark
-                    = PeerFetchStatusReady
+                    = PeerFetchStatusReady (peerFetchBlocksInFlight inflight')
                     | otherwise
                     = PeerFetchStatusBusy
               -- Only update the variable if it changed, to avoid spurious wakeups.
@@ -351,7 +351,7 @@ bracketFetchClient (FetchClientRegistry registry) peer =
   where
     register = atomically $ do
       fetchClientInFlightVar <- newTVar initialPeerFetchInFlight
-      fetchClientStatusVar   <- newTVar PeerFetchStatusReady
+      fetchClientStatusVar   <- newTVar (PeerFetchStatusReady Set.empty)
       fetchClientRequestVar  <- newTFetchRequestVar
       let stateVars = FetchClientStateVars {
                         fetchClientStatusVar,
@@ -371,7 +371,7 @@ bracketFetchClient (FetchClientRegistry registry) peer =
 --
 readFetchClientsStatus :: MonadSTM m
                        => FetchClientRegistry peer header m
-                       -> STM m (Map peer PeerFetchStatus)
+                       -> STM m (Map peer (PeerFetchStatus header))
 readFetchClientsStatus (FetchClientRegistry registry) =
   readTVar registry >>= traverse (readTVar . fetchClientStatusVar)
 
@@ -380,7 +380,7 @@ readFetchClientsStatus (FetchClientRegistry registry) =
 --
 readFetchClientsStates :: MonadSTM m
                        => FetchClientRegistry peer header m
-                       -> STM m (Map peer (PeerFetchStatus,
+                       -> STM m (Map peer (PeerFetchStatus   header,
                                            PeerFetchInFlight header))
 readFetchClientsStates (FetchClientRegistry registry) =
   readTVar registry >>=

@@ -68,7 +68,7 @@ data FetchMode =
 
 
 type PeerInfo header extra =
-       ( PeerFetchStatus,
+       ( PeerFetchStatus header,
          PeerFetchInFlight header,
          PeerGSV,
          extra
@@ -487,7 +487,7 @@ filterNotAlreadyInFlightWithPeer chains =
 filterNotAlreadyInFlightWithOtherPeers
   :: HasHeader header
   => FetchMode
-  -> [(FetchDecision [ChainFragment header], PeerFetchStatus,
+  -> [(FetchDecision [ChainFragment header], PeerFetchStatus header,
                                              PeerFetchInFlight header,
                                              peer)]
   -> [(FetchDecision [ChainFragment header], peer)]
@@ -561,7 +561,7 @@ fetchRequestDecisions
   :: HasHeader header
   => FetchDecisionPolicy header block
   -> FetchMode
-  -> [(FetchDecision [ChainFragment header], PeerFetchStatus,
+  -> [(FetchDecision [ChainFragment header], PeerFetchStatus header,
                                              PeerFetchInFlight header,
                                              PeerGSV,
                                              peer)]
@@ -607,7 +607,7 @@ fetchRequestDecision
   -> Word
   -> PeerFetchInFlightLimits
   -> PeerFetchInFlight header
-  -> PeerFetchStatus
+  -> PeerFetchStatus header
   -> FetchDecision [ChainFragment header]
   -> FetchDecision (FetchRequest  header)
 
