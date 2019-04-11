@@ -218,7 +218,7 @@ fetchLogicIterationAct decisions =
 data FetchTriggerVariables peer header block m = FetchTriggerVariables {
        readStateCurrentChain    :: STM m (AnchoredFragment block),
        readStateCandidateChains :: STM m (Map peer (AnchoredFragment header)),
-       readStatePeerStatus      :: STM m (Map peer PeerFetchStatus)
+       readStatePeerStatus      :: STM m (Map peer (PeerFetchStatus header))
      }
 
 -- | STM actions to read various state variables that the fetch logic uses.
@@ -227,7 +227,8 @@ data FetchTriggerVariables peer header block m = FetchTriggerVariables {
 --
 data FetchNonTriggerVariables peer header block m = FetchNonTriggerVariables {
        readStateFetchedBlocks :: STM m (Point block -> Bool),
-       readStatePeerStates    :: STM m (Map peer (PeerFetchStatus, PeerFetchInFlight header)),
+       readStatePeerStates    :: STM m (Map peer (PeerFetchStatus   header,
+                                                  PeerFetchInFlight header)),
        readStatePeerGSVs      :: STM m (Map peer PeerGSV),
        readStatePeerReqVars   :: STM m (Map peer (TFetchRequestVar m header)),
        readStateFetchMode     :: STM m FetchMode
@@ -238,7 +239,7 @@ data FetchStateFingerprint peer header block =
      FetchStateFingerprint
        (Maybe (Point block))
        (Map peer (Point header))
-       (Map peer PeerFetchStatus)
+       (Map peer (PeerFetchStatus header))
   deriving Eq
 
 initialFetchStateFingerprint :: FetchStateFingerprint peer header block
@@ -256,7 +257,8 @@ initialFetchStateFingerprint =
 data FetchStateSnapshot peer header block m = FetchStateSnapshot {
        fetchStateCurrentChain  :: AnchoredFragment block,
        fetchStatePeerChains    :: Map peer (AnchoredFragment header),
-       fetchStatePeerStates    :: Map peer (PeerFetchStatus, PeerFetchInFlight header),
+       fetchStatePeerStates    :: Map peer (PeerFetchStatus   header,
+                                            PeerFetchInFlight header),
        fetchStatePeerGSVs      :: Map peer PeerGSV,
        fetchStatePeerReqVars   :: Map peer (TFetchRequestVar m header),
        fetchStateFetchedBlocks :: Point block -> Bool,
