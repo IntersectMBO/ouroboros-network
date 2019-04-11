@@ -44,6 +44,8 @@ import           Data.FingerTree (Measured(measure))
 import           Data.Hashable
 import qualified Data.Text as Text
 import           Data.Word (Word64)
+import           Data.String (IsString)
+
 import           Codec.Serialise (Serialise (..))
 import           Codec.CBOR.Encoding ( encodeListLen
                                      , encodeInt
@@ -80,8 +82,8 @@ data Block = Block {
      }
    deriving (Show, Eq, Generic)
 
-data BlockBody = BlockBody String
-  deriving (Show, Eq, Ord, Generic)
+newtype BlockBody = BlockBody String
+  deriving (Show, Eq, Ord, IsString, Generic)
 
 hashBody :: BlockBody -> BodyHash
 hashBody (BlockBody b) = BodyHash (hash b)
