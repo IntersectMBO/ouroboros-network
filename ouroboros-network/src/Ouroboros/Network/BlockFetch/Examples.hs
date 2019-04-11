@@ -64,21 +64,23 @@ import           Ouroboros.Network.Testing.ConcreteBlock
 blockFetchExample1 :: forall m. (MonadSTM m, MonadST m, MonadAsync m,
                                  MonadCatch m, MonadTime m)
                    => Tracer m [FetchDecision [Point BlockHeader]]
+                   -> Tracer m (TraceFetchClientEvent BlockHeader)
                    -> Tracer m (TraceSendRecv (BlockFetch BlockHeader Block))
                    -> AnchoredFragment Block   -- ^ Fixed current chain
                    -> [AnchoredFragment Block] -- ^ Fixed candidate chains
                    -> m ()
-blockFetchExample1 decisionTracer clientTracer currentChain candidateChains = do
+blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
+                   currentChain candidateChains = do
 
     registry    <- newFetchClientRegistry
     blockHeap   <- mkTestFetchedBlockHeap (anchoredChainPoints currentChain)
 
     peerAsyncs  <- sequence
                     [ runFetchClientAndServerAsync
-                        clientTracer
-                        nullTracer
+                        clientMsgTracer
+                        serverMsgTracer
                         registry peerno
-                        (mockedBlockFetchClient1 blockHeap)
+                        (mockedBlockFetchClient1 clientStateTracer blockHeap)
                         (mockBlockFetchServer1 (unanchorFragment candidateChain))
                     | (peerno, candidateChain) <- zip [1..] candidateChains ]
     fetchAsync  <- async $ blockFetch registry blockHeap
@@ -93,6 +95,8 @@ blockFetchExample1 decisionTracer clientTracer currentChain candidateChains = do
     return ()
 
   where
+    serverMsgTracer = nullTracer
+
     candidateChainHeaders =
       Map.fromList $ zip [1..] $
       map (AnchoredFragment.mapAnchoredFragment blockHeader) candidateChains
@@ -224,12 +228,14 @@ runFetchClientAndServerAsync clientTracer serverTracer
 mockedBlockFetchClient1 :: (MonadSTM m, MonadTime m, MonadThrow m,
                             HasHeader header, HasHeader block,
                             HeaderHash header ~ HeaderHash block)
-                        => TestFetchedBlockHeap m block
+                        => Tracer m (TraceFetchClientEvent header)
+                        -> TestFetchedBlockHeap m block
                         -> FetchClientStateVars header m
                         -> PeerPipelined (BlockFetch header block)
                                          AsClient BFIdle m ()
-mockedBlockFetchClient1 blockHeap clientStateVars =
+mockedBlockFetchClient1 clientStateTracer blockHeap clientStateVars =
     blockFetchClient
+      clientStateTracer
       (mockFetchClientPolicy1 blockHeap)
       clientStateVars
       (return exampleFixedPeerGSVs)

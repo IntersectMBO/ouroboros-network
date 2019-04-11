@@ -147,6 +147,8 @@ initialPeerFetchInFlight =
 newtype FetchRequest header = FetchRequest [[header]]
   deriving Show
 
+instance Functor FetchRequest where
+  fmap f (FetchRequest hdrss) = FetchRequest (map (map f) hdrss)
 
 newtype TFetchRequestVar m header =
         TFetchRequestVar (TMVar m (FetchRequest header))

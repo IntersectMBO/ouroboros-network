@@ -32,7 +32,7 @@ prop_blockFetchExample1 (TestChainFork common fork1 fork2) =
     -- So far, this just checks it runs to completion without deadlocking.
     -- TODO: use the tracers and check properties of the trace.
     runSimOrThrow (blockFetchExample1
-                     nullTracer nullTracer
+                     nullTracer nullTracer nullTracer
                      common' forks) == ()
   where
     -- TODO: consider making a specific generator for anchored fragment forks
