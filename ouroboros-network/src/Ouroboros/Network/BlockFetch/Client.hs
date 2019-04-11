@@ -9,6 +9,7 @@ module Ouroboros.Network.BlockFetch.Client (
     -- * Block fetch protocol client implementation
     blockFetchClient,
     FetchClientPolicy(..),
+    TraceFetchClientEvent(..),
 
     -- * Registry of block fetch clients
     FetchClientRegistry(..),
@@ -29,6 +30,7 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Exception (assert)
+import           Control.Tracer (Tracer, traceWith)
 
 import           Ouroboros.Network.Block
 
@@ -65,6 +67,18 @@ data BlockFetchProtocolFailure =
 
 instance Exception BlockFetchProtocolFailure
 
+data TraceFetchClientEvent header =
+       AcceptedFetchRequest
+         (FetchRequest (Point header))
+         (PeerFetchInFlight header)
+          PeerFetchInFlightLimits
+         (PeerFetchStatus header)
+     | CompletedBlockFetch
+         (Point header)
+         (PeerFetchInFlight header)
+          PeerFetchInFlightLimits
+         (PeerFetchStatus header)
+  deriving Show
 
 -- | The implementation of the client side of block fetch protocol designed to
 -- work in conjunction with our fetch logic.
@@ -73,11 +87,13 @@ blockFetchClient :: forall header block m.
                     (MonadSTM m, MonadTime m, MonadThrow m,
                      HasHeader header, HasHeader block,
                      HeaderHash header ~ HeaderHash block)
-                 => FetchClientPolicy header block m
+                 => Tracer m (TraceFetchClientEvent header)
+                 -> FetchClientPolicy header block m
                  -> FetchClientStateVars header m
                  -> STM m PeerGSV
                  -> PeerPipelined (BlockFetch header block) AsClient BFIdle m ()
-blockFetchClient FetchClientPolicy {
+blockFetchClient tracer
+                 FetchClientPolicy {
                    blockFetchSize,
                    blockMatchesHeader,
                    addFetchedBlock
@@ -155,7 +171,7 @@ blockFetchClient FetchClientPolicy {
       -- in-flight, and the tracking state that the fetch logic uses now
       -- reflects that.
       --
-      fragments <- atomically $ do
+      (fragments, inflight, inflightlimits, currentStatus) <- atomically $ do
         FetchRequest fragments <- takeTFetchRequestVar fetchClientRequestVar
         inflight <- readTVar fetchClientInFlightVar
         let !inflight' =
@@ -175,7 +191,7 @@ blockFetchClient FetchClientPolicy {
               }
         writeTVar fetchClientInFlightVar inflight'
 
-        PeerFetchInFlightLimits {
+        inflightlimits@PeerFetchInFlightLimits {
           inFlightBytesHighWatermark
         } <- calculatePeerFetchInFlightLimits <$> readPeerGSVs
 
@@ -192,7 +208,12 @@ blockFetchClient FetchClientPolicy {
 
         --TODO: think about status aberrant
 
-        return fragments
+        return (fragments, inflight', inflightlimits, currentStatus')
+
+      traceWith tracer $ AcceptedFetchRequest
+                           (fmap blockPoint (FetchRequest fragments))
+                           inflight inflightlimits
+                           currentStatus
 
       return (senderIdle outstanding fragments)
 
@@ -277,7 +298,7 @@ blockFetchClient FetchClientPolicy {
             -- download the missing block(s) again.
 
             -- Update our in-flight stats and our current status
-            atomically $ do
+            (inflight, currentStatus) <- atomically $ do
               inflight <- readTVar fetchClientInFlightVar
               let !inflight' =
                     inflight {
@@ -315,6 +336,13 @@ blockFetchClient FetchClientPolicy {
 
             -- TODO: when do we reset the status from PeerFetchStatusAberrant
             -- to PeerFetchStatusReady/Busy?
+
+              return (inflight', currentStatus')
+
+            traceWith tracer $ CompletedBlockFetch
+                                 (blockPoint header)
+                                 inflight inFlightLimits
+                                 currentStatus
 
             return (receiverStreaming inFlightLimits headers')
 
