@@ -36,9 +36,7 @@ library
                        Ouroboros.Network.BlockFetch.DeltaQ
                        Ouroboros.Network.BlockFetch.State
                        Ouroboros.Network.BlockFetch.Types
-                       Ouroboros.Network.Chain
                        Ouroboros.Network.ChainFragment
-                       Ouroboros.Network.ChainProducerState
                        Ouroboros.Network.Channel
                        Ouroboros.Network.Codec
                        Ouroboros.Network.DeltaQ
@@ -51,7 +49,6 @@ library
                        Ouroboros.Network.Pipe
                        Ouroboros.Network.Socket
                        Ouroboros.Network.Time
-                       Ouroboros.Network.Testing.ConcreteBlock
                        Ouroboros.Network.Protocol.ChainSync.Client
                        Ouroboros.Network.Protocol.ChainSync.Codec
                        Ouroboros.Network.Protocol.ChainSync.Server
@@ -99,7 +96,6 @@ library
                        clock             >=0.7 && <0.8,
                        containers,
                        fingertree        >=0.1.4.2 && <0.2,
-                       hashable          >=1.2 && <1.3,
                        iohk-monitoring,
                        mtl               >=2.2 && <2.3,
                        network,
@@ -107,12 +103,20 @@ library
                        process           >=1.6 && <1.7,
                        serialise         >=0.2 && <0.3,
                        stm               >=2.4 && <2.6,
-                       text              >=1.2 && <1.3,
                        time              >=1.6 && <1.10
 
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
                        -fno-ignore-asserts
+
+  -- Still in the lib for now as they're used in ouroboros-consensus.
+  -- They should be moved to the separate test lib if they're still needed.
+  exposed-modules:     Ouroboros.Network.Chain
+                       Ouroboros.Network.ChainProducerState
+                       Ouroboros.Network.Testing.ConcreteBlock
+  build-depends:       hashable          >=1.2 && <1.3,
+                       text              >=1.2 && <1.3
+
 
 test-suite tests
   type:                exitcode-stdio-1.0
