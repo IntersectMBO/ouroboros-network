@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE BangPatterns               #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TypeFamilies               #-}
 
@@ -156,22 +157,23 @@ blockFetchClient FetchClientPolicy {
       --
       fragments <- atomically $ do
         FetchRequest fragments <- takeTFetchRequestVar fetchClientRequestVar
-        PeerFetchInFlight{..}  <- readTVar fetchClientInFlightVar
-        writeTVar fetchClientInFlightVar $!
-          PeerFetchInFlight {
-            peerFetchReqsInFlight   = peerFetchReqsInFlight
-                                    + fromIntegral (length fragments),
+        inflight <- readTVar fetchClientInFlightVar
+        let !inflight' =
+              PeerFetchInFlight {
+                peerFetchReqsInFlight   = peerFetchReqsInFlight inflight
+                                        + fromIntegral (length fragments),
 
-            peerFetchBytesInFlight  = peerFetchBytesInFlight
-                                    + sum [ blockFetchSize header
-                                          | fragment <- fragments
-                                          , header   <- fragment ],
+                peerFetchBytesInFlight  = peerFetchBytesInFlight inflight
+                                        + sum [ blockFetchSize header
+                                              | fragment <- fragments
+                                              , header   <- fragment ],
 
-            peerFetchBlocksInFlight = peerFetchBlocksInFlight
-                          `Set.union` Set.fromList [ blockPoint header
-                                                   | fragment <- fragments
-                                                   , header   <- fragment ]
-          }
+                peerFetchBlocksInFlight = peerFetchBlocksInFlight inflight
+                              `Set.union` Set.fromList [ blockPoint header
+                                                       | fragment <- fragments
+                                                       , header   <- fragment ]
+              }
+        writeTVar fetchClientInFlightVar inflight'
 
         PeerFetchInFlightLimits {
           inFlightBytesHighWatermark
@@ -180,7 +182,7 @@ blockFetchClient FetchClientPolicy {
         -- Set our status to busy if we've got over the high watermark.
         -- Only update the variable if it changed, to avoid spurious wakeups.
         currentStatus <- readTVar fetchClientStatusVar
-        when (peerFetchBytesInFlight >= inFlightBytesHighWatermark &&
+        when (peerFetchBytesInFlight inflight' >= inFlightBytesHighWatermark &&
               currentStatus == PeerFetchStatusReady) $
           writeTVar fetchClientStatusVar PeerFetchStatusBusy
 
@@ -273,16 +275,17 @@ blockFetchClient FetchClientPolicy {
             -- Update our in-flight stats and our current status
             atomically $ do
               inflight <- readTVar fetchClientInFlightVar
-              writeTVar fetchClientInFlightVar $!
-                inflight {
-                  peerFetchBytesInFlight  = peerFetchBytesInFlight inflight
-                                          - blockFetchSize header,
+              let !inflight' =
+                    inflight {
+                      peerFetchBytesInFlight  = peerFetchBytesInFlight inflight
+                                              - blockFetchSize header,
 
-                  peerFetchBlocksInFlight = blockPoint header
-                               `Set.delete` peerFetchBlocksInFlight inflight
-                  --TODO: can assert here that we don't go negative, and the
-                  -- block we're deleting was in fact there.
-                }
+                      peerFetchBlocksInFlight = blockPoint header
+                                   `Set.delete` peerFetchBlocksInFlight inflight
+                      --TODO: can assert here that we don't go negative, and the
+                      -- block we're deleting was in fact there.
+                    }
+              writeTVar fetchClientInFlightVar inflight'
 
               -- Now crucially, we don't want to end up below the in-flight low
               -- watermark because that's when the remote peer would go idle.
