@@ -46,8 +46,6 @@ library
                        Ouroboros.Network.Mux.Types
                        Ouroboros.Network.NodeToNode
                        Ouroboros.Network.NodeToClient
-                       Ouroboros.Network.Pipe
-                       Ouroboros.Network.Socket
                        Ouroboros.Network.Time
                        Ouroboros.Network.Protocol.ChainSync.Client
                        Ouroboros.Network.Protocol.ChainSync.Codec
@@ -55,7 +53,6 @@ library
                        Ouroboros.Network.Protocol.ChainSync.Type
                        Ouroboros.Network.Protocol.ChainSync.Examples
                        Ouroboros.Network.Protocol.PingPong.Codec
-                       Ouroboros.Network.Protocol.ReqResp.Codec
                        Ouroboros.Network.Protocol.BlockFetch.Type
                        Ouroboros.Network.Protocol.BlockFetch.Client
                        Ouroboros.Network.Protocol.BlockFetch.Server
@@ -93,13 +90,10 @@ library
                        binary            >=0.8 && <0.9,
                        bytestring        >=0.10 && <0.11,
                        cborg             >=0.2.1 && <0.3,
-                       clock             >=0.7 && <0.8,
                        containers,
                        fingertree        >=0.1.4.2 && <0.2,
-                       iohk-monitoring,
                        mtl               >=2.2 && <2.3,
                        network,
-                       pipes             >=4.3 && <4.4,
                        process           >=1.6 && <1.7,
                        serialise         >=0.2 && <0.3,
                        stm               >=2.4 && <2.6,
