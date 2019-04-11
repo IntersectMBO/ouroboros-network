@@ -71,6 +71,8 @@ openDB cfg initLedger blockHeader = do
                 blockUntilJust $ updateSTM readerInstruction'
             , readerForward = \ps -> atomically $
                 updateSTM $ readerForward' ps
+            , readerId =
+                rdrId
             }
           where
             readerInstruction' :: Model blk
@@ -92,6 +94,8 @@ openDB cfg initLedger blockHeader = do
       , getCurrentLedger    = query   $ Model.currentLedger
       , getBlock            = query'  . Model.getBlockByPoint
       , getTipBlock         = query'  $ Model.tipBlock
+      , getTipHeader        = query'  $ (fmap blockHeader . Model.tipBlock)
+      , getTipPoint         = query   $ Model.tipPoint
       , getIsFetched        = query   $ flip Model.hasBlockByPoint
       , knownInvalidBlocks  = query   $ const Set.empty -- TODO
       , pointOnChain        = query'  . flip Model.pointOnChain

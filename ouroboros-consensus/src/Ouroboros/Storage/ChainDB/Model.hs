@@ -16,6 +16,7 @@ module Ouroboros.Storage.ChainDB.Model (
   , currentLedger
   , lastK
   , tipBlock
+  , tipPoint
   , getBlock
   , getBlockByPoint
   , hasBlock
@@ -87,6 +88,9 @@ hasBlockByPoint = hasBlock . notGenesis
 
 tipBlock :: Model blk -> Maybe blk
 tipBlock = Chain.head . currentChain
+
+tipPoint :: HasHeader blk => Model blk -> Point blk
+tipPoint = maybe Chain.genesisPoint Block.blockPoint . tipBlock
 
 lastK :: HasHeader a
       => SecurityParam

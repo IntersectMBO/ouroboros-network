@@ -26,7 +26,7 @@ module Test.Ouroboros.Storage.ChainDB.TestBlock (
   , testConfig
     -- * Support for tests
   , Permutation(..)
-  , permutation
+  , permute
   ) where
 
 import           Codec.Serialise (Serialise)
@@ -138,7 +138,7 @@ testConfig = BftNodeConfig {
                               , bftNumNodes      = 1
                               }
     , bftNodeId   = CoreId 0
-    , bftSignKey  = SignKeyMockDSIGN 0 -- :: SignKeyDSIGN (BftDSIGN c)
+    , bftSignKey  = SignKeyMockDSIGN 0
     , bftVerKeys  = Map.singleton (CoreId 0) (VerKeyMockDSIGN 0)
     }
   where
@@ -153,7 +153,7 @@ newtype BlockChain = BlockChain [TestHash]
   deriving (Show)
 
 blockChain :: BlockChain -> Chain TestBlock
-blockChain = Chain.fromNewestFirst . reverse . chainToBlocks
+blockChain = Chain.fromOldestFirst . chainToBlocks
 
 chainToBlocks :: BlockChain -> [TestBlock]
 chainToBlocks (BlockChain c) = go 1 GenesisHash c
@@ -199,7 +199,7 @@ treeToBlocks :: BlockTree -> [TestBlock]
 treeToBlocks = Tree.flatten . blockTree
 
 treeToChains :: BlockTree -> [Chain TestBlock]
-treeToChains = map (Chain.fromNewestFirst . reverse) . allPaths . blockTree
+treeToChains = map Chain.fromOldestFirst . allPaths . blockTree
 
 treePreferredChain :: BlockTree -> Chain TestBlock
 treePreferredChain = fromMaybe Genesis
@@ -278,8 +278,8 @@ instance Arbitrary Permutation where
   -- Doesn't make sense to shrink PRNG seed
   shrink _ = []
 
-permutation :: Permutation -> [a] -> [a]
-permutation (Permutation n) = go (R.mkStdGen n)
+permute :: Permutation -> [a] -> [a]
+permute (Permutation n) = go (R.mkStdGen n)
   where
     go :: R.StdGen -> [a] -> [a]
     go _ [] = []

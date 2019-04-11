@@ -41,7 +41,7 @@ prop_chainRoundtrip bc = runSimOrThrow test
 prop_reader :: BlockTree -> Permutation -> Property
 prop_reader bt p = runSimOrThrow test
   where
-    blocks = permutation p $ treeToBlocks bt
+    blocks = permute p $ treeToBlocks bt
 
     test :: forall s. SimM s Property
     test = do

@@ -26,15 +26,13 @@ tests = testGroup "Model" [
     , testProperty "alwaysPickPreferredChain" prop_alwaysPickPreferredChain
     ]
 
-prop_getBlock_addBlock :: BlockTree -> Property
-prop_getBlock_addBlock bt =
-        M.getBlock (blockHash lastBlock) (M.addBlock testConfig lastBlock model)
-    === Just lastBlock
+prop_getBlock_addBlock :: BlockTree -> Permutation -> Property
+prop_getBlock_addBlock bt p =
+        M.getBlock (blockHash newBlock) (M.addBlock testConfig newBlock model)
+    === Just newBlock
   where
-    blocks     = treeToBlocks bt
-    initBlocks = init blocks
-    lastBlock  = last blocks
-    model      = M.addBlocks testConfig initBlocks (M.empty testInitExtLedger)
+    (newBlock:initBlocks) = permute p $ treeToBlocks bt
+    model = M.addBlocks testConfig initBlocks (M.empty testInitExtLedger)
 
 prop_getChain_addChain :: BlockChain -> Property
 prop_getChain_addChain bc =
@@ -50,6 +48,6 @@ prop_alwaysPickPreferredChain bt p =
       | candidate <- treeToChains bt
       ]
   where
-    blocks  = permutation p $ treeToBlocks bt
+    blocks  = permute p $ treeToBlocks bt
     model   = M.addBlocks testConfig blocks (M.empty testInitExtLedger)
     current = M.currentChain model

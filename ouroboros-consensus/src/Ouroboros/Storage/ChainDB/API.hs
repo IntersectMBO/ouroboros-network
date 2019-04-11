@@ -7,9 +7,6 @@
 module Ouroboros.Storage.ChainDB.API (
     -- * Main ChainDB API
     ChainDB(..)
-    -- * Derived functionality
-  , getTipHeader
-  , getTipPoint
     -- * Support for tests
   , toChain
   , fromChain
@@ -37,11 +34,10 @@ import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.Block (ChainUpdate (..), HasHeader (..),
                      SlotNo, StandardHash)
-import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.Chain (Chain (..), Point (..))
 import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.ChainFragment (ChainFragment)
-import qualified Ouroboros.Network.ChainFragment as Fragment
+import           Ouroboros.Network.ChainProducerState (ReaderId)
 
 import           Ouroboros.Consensus.Ledger.Abstract
 
@@ -101,7 +97,25 @@ data ChainDB m blk hdr =
     , getCurrentLedger   :: STM m (ExtLedgerState blk)
 
       -- | Get block at the tip of the chain, if one exists
+      --
+      -- Returns 'Nothing' if the database is empty.
     , getTipBlock        :: m (Maybe blk)
+
+      -- | Get header at the tip of the chain
+      --
+      -- NOTE: Calling 'getTipHeader' is cheaper than 'getTipBlock' and then
+      -- extracting the header: most of the time the header at the tip is
+      -- actually in memory, whereas the block never is.
+      --
+      -- Returns 'Nothing' if the database is empty.
+    , getTipHeader       :: m (Maybe hdr)
+
+      -- | Get point of the tip of the chain
+      --
+      -- Will return 'genesisPoint' if the database is empty; if the
+      -- current chain fragment is empty due to data loss in the volatile DB,
+      -- 'getTipPoint' will return the tip of the immutable DB.
+    , getTipPoint        :: STM m (Point blk)
 
       -- | Get block at the specified point (if it exists)
     , getBlock           :: Point blk -> m (Maybe blk)
@@ -154,22 +168,6 @@ data ChainDB m blk hdr =
       -- current chain fragment, it might have to query the immutable DB.
     , pointOnChain       :: Point blk -> m Bool
     }
-
-{-------------------------------------------------------------------------------
-  Derived
--------------------------------------------------------------------------------}
-
-getTipHeader :: MonadSTM m => ChainDB m blk hdr -> STM m hdr
-getTipHeader ChainDB{..} =
-    mustExist . Fragment.head <$> getCurrentChain
-  where
-    mustExist :: Maybe a -> a
-    mustExist (Just a) = a
-    mustExist Nothing  = error "invariant violation: empty current chain"
-
-getTipPoint :: MonadSTM m => ChainDB m blk hdr -> STM m (Point blk)
-getTipPoint chainDB@ChainDB{..} =
-    Block.castPoint . Chain.blockPoint <$> getTipHeader chainDB
 
 {-------------------------------------------------------------------------------
   Support for tests
@@ -271,7 +269,17 @@ data Reader m hdr = Reader {
       -- Cannot live in @STM@ because the points specified might live in the
       -- immutable DB.
     , readerForward             :: [Point hdr] -> m (Maybe (Point hdr))
+
+      -- | Per-database reader ID
+      --
+      -- Two readers with the same ID are guaranteed to be the same reader,
+      -- provided that they are constructed by the same database. (We don't
+      -- expect to have more than one instance of the 'ChainDB', however.)
+    , readerId                  :: ReaderId
     }
+
+instance Eq (Reader m hdr) where
+  (==) = (==) `on` readerId
 
 {-------------------------------------------------------------------------------
   Recovery
