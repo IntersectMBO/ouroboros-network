@@ -44,9 +44,8 @@ muxStart :: forall m ptcl.
             , Ord ptcl, Enum ptcl, Bounded ptcl)
          => MiniProtocolDescriptions ptcl m
          -> MuxBearer ptcl m
-         -> Maybe (Maybe SomeException -> m ())  -- Optional callback for result
          -> m ()
-muxStart udesc bearer rescb_m = do
+muxStart udesc bearer = do
     tbl <- setupTbl
     tq <- atomically $ newTBQueue 100
     cnt <- newTVarM 0
@@ -63,25 +62,11 @@ muxStart udesc bearer rescb_m = do
     mask $ \unmask -> do
       as <- traverse (async . unmask) (jobs ++ concat mjobs)
       muxBearerSetState bearer Mature
-      unmask (watcher as) `onException` forM_ as cancel
+      unmask (void $ waitAny as) `onException` do
+        mapM_ cancel as
+        muxBearerSetState bearer Dead
 
   where
-    watcher :: [Async m a] -> m ()
-    watcher as = do
-        (_,r) <- waitAnyCatch as
-        close bearer
-        muxBearerSetState bearer Dead
-        case rescb_m of
-             Nothing ->
-                 case r of
-                      Left  e -> say $ "Mux Bearer died due to " ++ show e
-                      Right _ -> return ()
-             Just rescb ->
-                 case r of
-                      Left  e -> rescb $ Just e
-                      Right _ -> rescb Nothing
-
-
     -- Construct the array of TBQueues, one for each protocol id, and each mode
     setupTbl :: m (MiniProtocolDispatch ptcl m)
     setupTbl = MiniProtocolDispatch

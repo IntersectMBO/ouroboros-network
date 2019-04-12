@@ -138,14 +138,11 @@ startMuxSTM mpds wq rq mtu trace = do
 
     return resq
   where
-    spawn resq = do
-        bearer <- queuesAsMuxBearer wq rq mtu trace
-        res_e <- try $ Mx.muxStart mpds bearer (Just $ rescb resq)
+    spawn resq = bracket (queuesAsMuxBearer wq rq mtu trace) Mx.close $ \bearer -> do
+        res_e <- try $ Mx.muxStart mpds bearer
         case res_e of
-             Left  e -> rescb resq $ Just e
-             Right _ -> return ()
-
-    rescb resq e_m = atomically $ writeTBQueue resq e_m
+             Left  e -> atomically $ writeTBQueue resq (Just e)
+             Right _ -> atomically $ writeTBQueue resq Nothing
 
 
 -- | Helper function to check if jobs in 'startMuxSTM' exited successfully.

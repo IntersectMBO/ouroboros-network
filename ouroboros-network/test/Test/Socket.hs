@@ -9,6 +9,7 @@
 module Test.Socket (tests) where
 
 import           Control.Monad
+import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
@@ -16,7 +17,7 @@ import           Control.Monad.Class.MonadTimer
 import           Control.Exception (IOException)
 import qualified Data.ByteString.Lazy as BL
 import           Data.List (mapAccumL)
-import           Network.Socket hiding (recv, recvFrom, send, sendTo)
+import qualified Network.Socket as Socket
 import qualified Network.Socket.ByteString.Lazy as Socket (sendAll)
 
 import           Network.TypedProtocol.Core
@@ -25,7 +26,7 @@ import qualified Network.TypedProtocol.ReqResp.Client     as ReqResp
 import qualified Network.TypedProtocol.ReqResp.Server     as ReqResp
 import qualified Ouroboros.Network.Protocol.ReqResp.Codec as ReqResp
 
-import           Control.Tracer (nullTracer)
+import           Control.Tracer
 
 import qualified Ouroboros.Network.Mux as Mx
 import           Ouroboros.Network.Mux.Interface
@@ -87,8 +88,8 @@ prop_socket_send_recv_ipv4
   -> [Int]
   -> Property
 prop_socket_send_recv_ipv4 f xs = ioProperty $ do
-    client:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
-    server:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
+    client:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
+    server:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
     prop_socket_send_recv client server f xs
 
 
@@ -99,16 +100,16 @@ prop_socket_send_recv_ipv6 :: (Int ->  Int -> (Int, Int))
                            -> [Int]
                            -> Property
 prop_socket_send_recv_ipv6 request response = ioProperty $ do
-    client:_ <- getAddrInfo Nothing (Just "::1") (Just "0")
-    server:_ <- getAddrInfo Nothing (Just "::1") (Just "6061")
+    client:_ <- Socket.getAddrInfo Nothing (Just "::1") (Just "0")
+    server:_ <- Socket.getAddrInfo Nothing (Just "::1") (Just "6061")
     prop_socket_send_recv client server request response
 #endif
 
 -- | Verify that an initiator and a responder can send and receive messages from each other
 -- over a TCP socket. Large DummyPayloads will be split into smaller segments and the
 -- testcases will verify that they are correctly reassembled into the original message.
-prop_socket_send_recv :: AddrInfo
-                      -> AddrInfo
+prop_socket_send_recv :: Socket.AddrInfo
+                      -> Socket.AddrInfo
                       -> (Int -> Int -> (Int, Int))
                       -> [Int]
                       -> IO Bool
@@ -138,7 +139,8 @@ prop_socket_send_recv clientAddr serverAddr f xs = do
     res <-
       withNetworkNode serNet $ \_ ->
         withNetworkNode cliNet $ \cliNode ->
-          withConnection cliNode serverAddr $ \_ ->
+          runWithConnection (connect cliNode) serverAddr $ \conn -> do
+            runConnection conn
             atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
 
     return (res == mapAccumL f 0 xs)
@@ -147,53 +149,62 @@ prop_socket_send_recv clientAddr serverAddr f xs = do
 -- |
 -- Verify that we raise the correct exception in case a socket closes during
 -- a read.
--- 
--- Note: the socket is closed during version negotation.
 prop_socket_recv_close :: (Int -> Int -> (Int, Int))
                        -> [Int]
                        -> Property
 prop_socket_recv_close f _ = ioProperty $ do
-    b:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
 
     sv   <- newEmptyTMVarM
-    resq <- atomically $ newTBQueue 1
 
     let srvPeer :: Peer (ReqResp.ReqResp Int Int) AsServer ReqResp.StIdle IO ()
         srvPeer = ReqResp.reqRespServerPeer (reqRespServerMapAccumL sv (\a -> pure . f a) 0)
         srvPeers Mxt.ReqResp1 = OnlyServer nullTracer ReqResp.codecReqResp srvPeer
-        ni = NetworkInterface {
-            nodeAddress = b,
-            protocols   = srvPeers
-          }
-            
-    nn <- runNetworkNodeWithSocket' ni (Just (rescb resq))
 
-    sd <- socket (addrFamily b) Stream defaultProtocol
-    connect sd (addrAddress b)
+    bracket
+      (Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol)
+      Socket.close
+      $ \sd -> do
+        -- bind the socket
+        muxAddress:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
+        Socket.setSocketOption sd Socket.ReuseAddr 1
+        Socket.bind sd (Socket.addrAddress muxAddress)
+        Socket.listen sd 1
 
-    Socket.sendAll sd $ BL.singleton 0xa
-    close sd
+        withAsync
+          (do
+              -- accept a connection and start mux on it
+              bracket
+                (Socket.accept sd)
+                (\(sd',_) -> Socket.close sd')
+                $ \(sd',_) -> do
+                  bearer <- socketAsMuxBearer sd'
+                  Mx.muxBearerSetState bearer Mx.Connected
+                  Mx.muxStart (miniProtocolDescription . srvPeers) bearer
+          )
+          $ \muxAsync -> do
 
-    res <- atomically $ readTBQueue resq
+          -- connect to muxAddress
+          sd' <- Socket.socket (Socket.addrFamily muxAddress) Socket.Stream Socket.defaultProtocol
+          Socket.connect sd' (Socket.addrAddress muxAddress)
 
-    killNode nn
-    case res of
-         Just e  ->
-             case fromException e of
-                  Just me -> return $ Mx.errorType me == Mx.MuxBearerClosed
-                  Nothing -> return False
-         Nothing -> return False
+          Socket.sendAll sd' $ BL.singleton 0xa
+          Socket.close sd'
 
-  where
-    rescb resq e_m = atomically $ writeTBQueue resq e_m
+          res <- waitCatch muxAsync
+          case res of
+              Left e  ->
+                  case fromException e of
+                        Just me -> return $ Mx.errorType me === Mx.MuxBearerClosed
+                        Nothing -> return $ counterexample (show e) False
+              Right _ -> return $ property $ False
 
 
 prop_socket_client_connect_error :: (Int -> Int -> (Int, Int))
                                  -> [Int]
                                  -> Property
 prop_socket_client_connect_error _ xs = ioProperty $ do
-    clientAddr:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
-    serverAddr:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
+    clientAddr:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
+    serverAddr:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
 
     cv <- newEmptyTMVarM
 
@@ -207,7 +218,7 @@ prop_socket_client_connect_error _ xs = ioProperty $ do
 
     (res :: Either IOException Bool)
       <- try $ withNetworkNode ni $ \nn ->
-                 withConnection nn clientAddr $ \_ -> pure False
+                 const False <$> withConnection (connect nn) clientAddr
 
     -- XXX Disregarding the exact exception type 
     pure $ either (const True) id res
@@ -217,8 +228,8 @@ demo :: forall block .
         (Chain.HasHeader block, Serialise block, Eq block, Show block )
      => Chain block -> [ChainUpdate block] -> IO Bool
 demo chain0 updates = do
-    consumerAddress:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
-    producerAddress:_ <- getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
+    consumerAddress:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
+    producerAddress:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
 
     producerVar <- newTVarM (CPS.initChainProducerState chain0)
     consumerVar <- newTVarM chain0
@@ -246,7 +257,7 @@ demo chain0 updates = do
 
     withNetworkNode producerNet $ \_ ->
       withNetworkNode consumerNet $  \consumerNode ->
-        withConnection consumerNode (nodeAddress producerNet) $ \_ -> do
+        withConnectionAsync (connect consumerNode) (nodeAddress producerNet) $ \_connAsync -> do
           void $ fork $ sequence_
               [ do
                   threadDelay 10e-3 -- just to provide interest

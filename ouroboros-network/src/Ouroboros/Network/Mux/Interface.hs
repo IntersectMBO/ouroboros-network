@@ -3,27 +3,35 @@
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE PolyKinds           #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- TODO: this module should be exposed as 'Ouorboros.Network'
 module Ouroboros.Network.Mux.Interface
-  ( NetworkInterface (..)
+  (
+  -- * High level interface for the multiplex layer
+  -- $interface
+    NetworkInterface (..)
   , MuxPeer (..)
   , NetworkNode (..)
+
+  -- * Run mux layer on initiated connections
   , Connection (..)
+  , WithConnection
   , withConnection
+  , runWithConnection
+  , withConnectionAsync
 
   -- * Auxiliary functions
   , miniProtocolDescription
   ) where
 
 import qualified Codec.CBOR.Read     as CBOR
-import           Control.Exception (SomeException, bracket)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Functor (void)
 import           Numeric.Natural (Natural)
 
-import           Control.Monad.Class.MonadAsync ( MonadAsync )
+import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadThrow ( MonadCatch
                                                 , MonadThrow
                                                 )
@@ -36,6 +44,17 @@ import           Network.TypedProtocol.Driver
 import           Network.TypedProtocol.Pipelined
 
 import           Ouroboros.Network.Mux.Types
+
+-- $interface
+--
+-- To run a node you will also need a bearer and a way to run a server, see
+--
+-- * @'Ouroboros.Network.Socket'@ module provides a socket based bearer and
+--   a server that accepts connections and allows to connect to remote peers.
+--
+-- * @'Ouroboros.Network.Pipe'@ module provides a pipe based bearer with
+--   a function that runs the mux layer on it.
+--
 
 -- |
 -- Specification for peers of a protocol.  This type instructs the multiplexing
@@ -99,7 +118,7 @@ data MuxPeer m where
 -- |
 -- Public network interface for 'ouroboros-network'.
 --
-data NetworkInterface ptcl addr m = NetworkInterface {
+data NetworkInterface ptcl addr m r = NetworkInterface {
       -- |
       -- Address of the node to run.  The node will bind to this address, and
       -- listen for incoming connections.  Some bearers do not have a notion of
@@ -116,7 +135,7 @@ data NetworkInterface ptcl addr m = NetworkInterface {
 -- | Low level network interface.  It can be intiatiated using a socket, pair
 -- of pipes or a pair queues.
 --
-data NetworkNode addr m = NetworkNode {
+data NetworkNode addr m r = NetworkNode {
       -- |
       -- The way to connect ot other peers.  On startup the network interface
       -- will run this to connect with a given list of peer.  But it can also
@@ -124,11 +143,7 @@ data NetworkNode addr m = NetworkNode {
       --
       -- This function will run client side of mux version negotation and then
       -- start a the list protocols given by @'NetworkInterface'@.
-      --
-      -- @'connectTo'@ will throw an exception if the underlying bearer breaks,
-      -- or the remote part is not reachable (e.g. @'Control.Exception.IOException'@).
-      --
-      connectTo :: addr -> m (Connection m),
+      connect :: WithConnection m addr (Connection m) r,
 
       -- |
       -- This will cancel the thread that is listening for new connections and
@@ -138,38 +153,48 @@ data NetworkNode addr m = NetworkNode {
 
 
 -- |
--- A way of controling an openned connection.
+-- Monadic computation which runs mux layer for initiated connection.
 --
-data Connection m = Connection {
-      -- |
-      -- After opening a connection to a peer, a clean way to shut down the
-      -- underlaying bearer and wind down the thread that serves this connection.
-      -- Note that this will interupt the protocols running on that connection;
-      -- alternatively you can terminate a protocol by sending its terminal message,
-      -- this will trigger shutdown of the bearer as well.
-      --
-      terminate :: m (),
-
-      -- |
-      -- Await on the mux thread and return an exception that was raised by it
-      -- if any.  It will not close the connection in case of an error, use @'terminate'@ for that.
-      await :: m (Maybe SomeException)
+newtype Connection m = Connection {
+      runConnection :: m ()
     }
 
+-- |
+-- CPS style for runing mux layer
+--
+type WithConnection m addr a r = addr -> (a -> m r) -> m r
 
 -- |
--- A bracket of an @IO@ action which opens with @'connectTo'@ and closed with
--- @'terminate'@.  Inside the callback you should not use @'terminate'@ (this
--- might result in closing a wrong socket!), but @'observe'@ is safe.
+-- Run @'WithConnection' m addr (Connection m) ()@ in the current thread.  The
+-- implemntation of @'WithConnection'@ handles resouce aquisition,
+-- see @'Ouroboros.Network.Socket.withNetworkNode'@.
 --
-withConnection
-  :: NetworkNode addr IO
-  -> addr
-  -> (Connection IO -> IO a)
-  -> IO a
-withConnection nn addr k =
-  bracket (connectTo nn addr) terminate k
+withConnection :: WithConnection m addr (Connection m) () -> addr -> m ()
+withConnection withConn addr = withConn addr runConnection
 
+-- |
+-- Run @'WithConnection'@ with supplied @addr@ and continuation.
+--
+runWithConnection :: WithConnection m addr a r -> addr -> (a -> m r) -> m r
+runWithConnection withConn a k = withConn a k
+
+-- |
+-- Run @'WithConnectionAsync' m addr (Connection m) ()@ in another thread giving
+-- acces to the @'Async' m@.  Note: when the call back @k@ will terminate the
+-- connection will be teared down (by @'WithConnection'@) and the spawned thread
+-- will be killed.
+--
+withConnectionAsync :: MonadAsync m
+                    => WithConnection m addr (Connection m) r
+                    -> addr
+                    -> (Async m () -> m r)
+                    -> m r
+withConnectionAsync withConn addr0 k0 = runWithConnection (asAsync withConn) addr0 k0
+    where
+      asAsync :: MonadAsync m
+              => WithConnection m addr (Connection m) r
+              -> WithConnection m addr (Async m ()) r
+      asAsync f = \addr k -> f addr $ \conn -> withAsync (runConnection conn) k
 
 -- |
 -- Transform a @'MuxPeer'@ into @'ProtocolDescription'@ used by the

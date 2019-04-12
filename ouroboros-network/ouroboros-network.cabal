@@ -162,6 +162,7 @@ test-suite tests
                        Ouroboros.Network.Protocol.ReqResp.Codec
                        Ouroboros.Network.Protocol.ReqResp.Test
                        Ouroboros.Network.Socket
+                       Ouroboros.Network.Server.Socket
                        Ouroboros.Network.Time
 
                        Test.AnchoredFragment
@@ -201,6 +202,7 @@ test-suite tests
                        process,
                        QuickCheck,
                        serialise,
+                       stm,
                        tasty,
                        tasty-quickcheck,
                        text,

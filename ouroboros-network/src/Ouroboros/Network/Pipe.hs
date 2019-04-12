@@ -92,4 +92,4 @@ runNetworkNodeWithPipe
 runNetworkNodeWithPipe protocols pcRead pcWrite = do
     let  mpds = Mx.miniProtocolDescription . protocols
     bearer <- pipeAsMuxBearer pcRead pcWrite
-    Mx.muxStart mpds bearer Nothing
+    Mx.muxStart mpds bearer
