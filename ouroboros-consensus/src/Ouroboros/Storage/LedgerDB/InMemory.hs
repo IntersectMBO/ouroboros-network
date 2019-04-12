@@ -52,10 +52,11 @@ module Ouroboros.Storage.LedgerDB.InMemory (
    , demo
    ) where
 
+import           Codec.Serialise (Serialise (..))
 import           Codec.Serialise.Decoding (Decoder)
-import           Codec.Serialise.Decoding as Dec
+import qualified Codec.Serialise.Decoding as Dec
 import           Codec.Serialise.Encoding (Encoding)
-import           Codec.Serialise.Encoding as Enc
+import qualified Codec.Serialise.Encoding as Enc
 import           Control.Monad.Except
 import           Data.Functor.Identity
 import           Data.Void
@@ -435,14 +436,17 @@ snapshotsShape (Tail os _)   = go os
   Serialisation
 -------------------------------------------------------------------------------}
 
+instance (Serialise l, Serialise r) => Serialise (ChainSummary l r) where
+  encode = encodeChainSummary encode encode
+  decode = decodeChainSummary decode decode
+
 encodeChainSummary :: (l -> Encoding)
                    -> (r -> Encoding)
                    -> ChainSummary l r -> Encoding
 encodeChainSummary encodeLedger encodeRef ChainSummary{..} = mconcat [
-      case csTip of
-        TipGen -> encodeWord8 0
-        Tip r  -> encodeWord8 1 <> encodeRef r
-    , encodeWord64 csLength
+      Enc.encodeListLen 3
+    , encodeTip encodeRef csTip
+    , Enc.encodeWord64 csLength
     , encodeLedger csLedger
     ]
 
@@ -450,12 +454,9 @@ decodeChainSummary :: (forall s. Decoder s l)
                    -> (forall s. Decoder s r)
                    -> forall s. Decoder s (ChainSummary l r)
 decodeChainSummary decodeLedger decodeRef = do
-    tipIsGen <- decodeWord8
-    csTip    <- case tipIsGen of
-                  0 -> return TipGen
-                  1 -> Tip <$> decodeRef
-                  _ -> fail "decodeChainSummary: invalid tag"
-    csLength <- decodeWord64
+    Dec.decodeListLenOf 3
+    csTip    <- decodeTip decodeRef
+    csLength <- Dec.decodeWord64
     csLedger <- decodeLedger
     return ChainSummary{..}
 

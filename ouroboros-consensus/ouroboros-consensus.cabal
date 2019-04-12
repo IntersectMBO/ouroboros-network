@@ -308,6 +308,7 @@ test-suite test-storage
                     Test.Util.RefEnv
   build-depends:    base,
                     ouroboros-network,
+                    ouroboros-network-testing,
                     ouroboros-consensus,
                     io-sim-classes,
                     io-sim,
