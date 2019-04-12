@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
@@ -22,10 +23,17 @@ module Ouroboros.Network.Block (
   , ChainUpdate(..)
   , BlockMeasure(..)
   , blockMeasure
+    -- * Serialisation
+  , encodePoint
+  , encodeChainHash
+  , decodePoint
+  , decodeChainHash
   ) where
 
-import           Codec.CBOR.Decoding (decodeListLenOf)
-import           Codec.CBOR.Encoding (encodeListLen)
+import           Codec.CBOR.Decoding (Decoder)
+import qualified Codec.CBOR.Decoding as Dec
+import           Codec.CBOR.Encoding (Encoding)
+import qualified Codec.CBOR.Encoding as Enc
 import           Codec.Serialise (Serialise (..))
 import           Data.FingerTree (Measured)
 import           Data.Hashable
@@ -153,19 +161,42 @@ data ChainUpdate block = AddBlock block
 -------------------------------------------------------------------------------}
 
 instance Serialise (HeaderHash b) => Serialise (ChainHash b) where
-  -- use the Generic instance
+  encode = encodeChainHash encode
+  decode = decodeChainHash decode
 
 instance Serialise (HeaderHash block) => Serialise (Point block) where
+  encode = encodePoint encode
+  decode = decodePoint decode
 
-  encode Point { pointSlot = s, pointHash = h } =
-      encodeListLen 2
-   <> encode s
-   <> encode h
+encodeChainHash :: (HeaderHash block -> Encoding)
+                -> (ChainHash  block -> Encoding)
+encodeChainHash encodeHash chainHash =
+    case chainHash of
+      GenesisHash -> Enc.encodeListLen 0
+      BlockHash h -> Enc.encodeListLen 1 <> encodeHash h
 
-  decode = do
-      decodeListLenOf 2
+decodeChainHash :: (forall s. Decoder s (HeaderHash block))
+                -> (forall s. Decoder s (ChainHash  block))
+decodeChainHash decodeHash = do
+    tag <- Dec.decodeListLen
+    case tag of
+      0 -> return GenesisHash
+      1 -> BlockHash <$> decodeHash
+      _ -> fail "decodeChainHash: invalid tag"
+
+encodePoint :: (ChainHash block -> Encoding)
+            -> (Point     block -> Encoding)
+encodePoint encodeHash Point { pointSlot = s, pointHash = h } =
+       Enc.encodeListLen 2
+    <> encode s
+    <> encodeHash h
+
+decodePoint :: (forall s. Decoder s (ChainHash block))
+            -> (forall s. Decoder s (Point     block))
+decodePoint decodeHash = do
+      Dec.decodeListLenOf 2
       Point <$> decode
-            <*> decode
+            <*> decodeHash
 
 {-------------------------------------------------------------------------------
   Finger Tree Measure

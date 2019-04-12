@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE RankNTypes                 #-}
 
 module Ouroboros.Storage.Common (
     -- * Epochs
@@ -10,9 +11,16 @@ module Ouroboros.Storage.Common (
     -- * Indexing
   , Tip(..)
   , tipIsGenesis
+    -- * Serialisation
+  , encodeTip
+  , decodeTip
   ) where
 
-import           Codec.Serialise
+import           Codec.CBOR.Decoding (Decoder)
+import qualified Codec.CBOR.Decoding as Dec
+import           Codec.CBOR.Encoding (Encoding)
+import qualified Codec.CBOR.Encoding as Enc
+import           Codec.Serialise (Serialise (..))
 import           Data.Word
 import           GHC.Generics
 
@@ -50,5 +58,22 @@ tipIsGenesis (Tip _) = False
   Serialization
 -------------------------------------------------------------------------------}
 
-instance (Serialise r) => Serialise (Tip r)
-  -- TODO: Don't use generic instance
+instance Serialise r => Serialise (Tip r) where
+  encode = encodeTip encode
+  decode = decodeTip decode
+
+encodeTip :: (r     -> Encoding)
+          -> (Tip r -> Encoding)
+encodeTip encodeR tip =
+    case tip of
+      TipGen -> Enc.encodeListLen 0
+      Tip r  -> Enc.encodeListLen 1 <> encodeR r
+
+decodeTip :: (forall s. Decoder s r)
+          -> (forall s. Decoder s (Tip r))
+decodeTip decodeR = do
+    tag <- Dec.decodeListLen
+    case tag of
+      0 -> return TipGen
+      1 -> Tip <$> decodeR
+      _ -> fail "decodeTip: invalid tag"
