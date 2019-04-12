@@ -111,6 +111,7 @@
           depends = [
             (hsPkgs.base)
             (hsPkgs.ouroboros-network)
+            (hsPkgs.ouroboros-network-testing)
             (hsPkgs.ouroboros-consensus)
             (hsPkgs.io-sim-classes)
             (hsPkgs.io-sim)
