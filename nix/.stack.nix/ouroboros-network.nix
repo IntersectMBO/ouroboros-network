@@ -26,19 +26,16 @@
           (hsPkgs.binary)
           (hsPkgs.bytestring)
           (hsPkgs.cborg)
-          (hsPkgs.clock)
           (hsPkgs.containers)
           (hsPkgs.fingertree)
-          (hsPkgs.hashable)
-          (hsPkgs.iohk-monitoring)
           (hsPkgs.mtl)
           (hsPkgs.network)
-          (hsPkgs.pipes)
           (hsPkgs.process)
           (hsPkgs.serialise)
           (hsPkgs.stm)
-          (hsPkgs.text)
           (hsPkgs.time)
+          (hsPkgs.hashable)
+          (hsPkgs.text)
           ];
         };
       tests = {
