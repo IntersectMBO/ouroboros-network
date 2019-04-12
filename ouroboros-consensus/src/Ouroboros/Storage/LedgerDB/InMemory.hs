@@ -21,7 +21,6 @@ module Ouroboros.Storage.LedgerDB.InMemory (
    , ledgerDbMaxRollback
    , ledgerDbCurrent
    , ledgerDbTip
-   , ledgerDbIsComplete
    , ledgerDbIsSaturated
    , ledgerDbTail
      -- ** Updates
@@ -57,11 +56,14 @@ import           Codec.Serialise.Decoding (Decoder)
 import qualified Codec.Serialise.Decoding as Dec
 import           Codec.Serialise.Encoding (Encoding)
 import qualified Codec.Serialise.Encoding as Enc
+import           Control.Exception (Exception, throw)
 import           Control.Monad.Except
 import           Data.Functor.Identity
+import           Data.Typeable (Typeable)
 import           Data.Void
 import           Data.Word
 import           GHC.Generics (Generic)
+import           GHC.Stack (CallStack, HasCallStack, callStack)
 
 import           Ouroboros.Consensus.Util
 
@@ -112,6 +114,13 @@ genesisChainSummary l = ChainSummary TipGen 0 l
 -- In addition to the ledger snapshots @l@ themselves we also store references
 -- @r@ to the blocks that led to those snapshots. This is important when we
 -- need to recompute the snapshots (in particular for rollback).
+--
+-- We maintain the invariant that the shape of the 'LedgerDB' (see 'Shape')
+-- is always equal to the shape required by the memory policy. This implies that
+--
+-- * we always store the most recent snapshot (provided that the memory policy
+--   requires a ledger state at offset 0)
+-- * as well as one at offset @k@ (so that we can roll back at most @k@ blocks)
 data LedgerDB l r =
     -- | Apply block @r@ and take a snapshot of the resulting ledger state @l@
     Snap r l (LedgerDB l r)
@@ -212,19 +221,6 @@ ledgerDbTip (Snap r _ _) = Tip r
 ledgerDbTip (Skip r   _) = Tip r
 ledgerDbTip (Tail _ cs)  = csTip cs
 
--- | Is the ledger DB complete?
---
--- This is 'False' if the ledger DB is not saturated, /unless/ this is due to
--- being close to genesis. In other words, the ledger DB is considered complete
--- when it supports the maximum rollback required (if we are close to genesis
--- the maximum required rollback can't go past genesis).
-ledgerDbIsComplete :: LedgerDB l r -> Bool
-ledgerDbIsComplete (Snap _ _ ss)   = ledgerDbIsComplete ss
-ledgerDbIsComplete (Skip _   ss)   = ledgerDbIsComplete ss
-ledgerDbIsComplete (Tail []    _)  = True
-ledgerDbIsComplete (Tail [0]   _)  = True
-ledgerDbIsComplete (Tail (_:_) cs) = tipIsGenesis (csTip cs)
-
 -- | Have all snapshots been filled?
 --
 -- TODO: Here and elsewhere it would be much nicer to avoid this @Tail [0]@
@@ -290,15 +286,23 @@ ledgerDbPushMany conf = runExceptT .: repeatedlyM (ExceptT .: ledgerDbPush conf)
 -- | Switch to a fork
 --
 -- PRE: Must have at least as many new blocks as we are rolling back.
-ledgerDbSwitch :: forall m l r b e. Monad m
+ledgerDbSwitch :: forall m l r b e. (
+                    Monad m
+                  , HasCallStack
+                  , Show l
+                  , Show r
+                  , Typeable l
+                  , Typeable r
+                  )
                => LedgerDbConf m l r b e
                -> Word64              -- ^ How many blocks to roll back
                -> [BlockInfo r b]   -- ^ New blocks to apply
                -> LedgerDB l r
                -> m (Either e (LedgerDB l r))
 ledgerDbSwitch cfg numRollbacks newBlocks ss =
-      fromSuffix cfg newBlocks
-    $ rollbackMany numRollbacks (toSuffix ss)
+    case runExcept $ rollbackMany numRollbacks (toSuffix ss) of
+      Right suffix -> fromSuffix cfg newBlocks suffix
+      Left  err    -> throw $ InvalidRollback numRollbacks ss err callStack
 
 {-------------------------------------------------------------------------------
   Internal: implementation of rollback
@@ -363,13 +367,35 @@ fromSuffix cfg = \bs suffix -> runExceptT $ do
     go []     (Suffix _  (SSnap _)) _ = error "fromSuffix: too few blocks"
     go []     (Suffix _  (SSkip _)) _ = error "fromSuffix: too few blocks"
 
-rollback :: Suffix l r -> Suffix l r
-rollback (Suffix (Snap _ _ ss) missing) = Suffix ss (SSnap missing)
-rollback (Suffix (Skip _   ss) missing) = Suffix ss (SSkip missing)
-rollback (Suffix (Tail _ _)    _) = error "rollback: cannot rollback past end"
+rollback :: Suffix l r -> Except String (Suffix l r)
+rollback (Suffix (Snap _ _ ss) missing) = return $ Suffix ss (SSnap missing)
+rollback (Suffix (Skip _   ss) missing) = return $ Suffix ss (SSkip missing)
+rollback (Suffix (Tail _ _)    _) = throwError "rollback: cannot rollback past end"
 
-rollbackMany :: Word64 -> Suffix l r -> Suffix l r
-rollbackMany = nTimes rollback
+rollbackMany :: Word64 -> Suffix l r -> Except String (Suffix l r)
+rollbackMany = nTimesM rollback
+
+-- | Invalid rollback exception
+--
+-- If this is ever thrown it indicates a bug in the code
+data InvalidRollbackException l r =
+    InvalidRollback {
+        -- | Number of blocks requested to rollback
+        invalidRollbackCount :: Word64
+
+        -- | The ledger DB at the time of the rollback
+      , invalidRollbackDb    :: LedgerDB l r
+
+        -- | Error message
+      , invalidRollbackErr   :: String
+
+        -- | Callstack
+      , invalidRollbackStack :: CallStack
+      }
+  deriving (Show)
+
+instance (Typeable l, Typeable r, Show r, Show l)
+      => Exception (InvalidRollbackException l r)
 
 {-------------------------------------------------------------------------------
   Pure variations (primarily for testing)
@@ -390,7 +416,8 @@ ledgerDbPushMany' :: PureLedgerDbConf l b
                   -> [BlockInfo b b] -> LedgerDB l b -> LedgerDB l b
 ledgerDbPushMany' f = fromIdentity .: ledgerDbPushMany f
 
-ledgerDbSwitch' :: PureLedgerDbConf l b
+ledgerDbSwitch' :: (HasCallStack, Show l, Show b, Typeable l, Typeable b)
+                => PureLedgerDbConf l b
                 -> Word64 -> [BlockInfo b b] -> LedgerDB l b -> LedgerDB l b
 ledgerDbSwitch' f n = fromIdentity .: ledgerDbSwitch f n
 
