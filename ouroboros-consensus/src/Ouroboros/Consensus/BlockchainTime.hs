@@ -1,9 +1,7 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE NumericUnderscores         #-}
-{-# LANGUAGE RankNTypes                 #-}
-{-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE NumericUnderscores  #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Consensus.BlockchainTime (
     -- * Abstract definition
@@ -29,17 +27,19 @@ module Ouroboros.Consensus.BlockchainTime (
   , SlotNo (..)
   ) where
 
-import           Control.Monad
+import           Control.Monad (forever, replicateM_, void, when)
 import           Data.Fixed
 import           Data.Time
 import           Data.Word (Word64)
 
-import           Control.Monad (void)
+import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadFork (MonadFork)
 import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadFork
+import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
 
 import           Ouroboros.Consensus.Util.STM
+import           Ouroboros.Consensus.Util.ThreadRegistry
 import           Ouroboros.Network.Block (SlotNo (..))
 
 {-------------------------------------------------------------------------------
@@ -61,7 +61,7 @@ data BlockchainTime m = BlockchainTime {
 
 -- | Execute action on specific slot
 onSlot :: MonadSTM m => BlockchainTime m -> SlotNo -> m () -> m ()
-onSlot BlockchainTime{..} slot act = onSlotChange $ \slot' -> do
+onSlot BlockchainTime{..} slot act = onSlotChange $ \slot' ->
     when (slot == slot') act
 
 {-------------------------------------------------------------------------------
@@ -83,18 +83,20 @@ finalSlot (NumSlots n) = SlotNo (fromIntegral n)
 --
 -- NOTE: The number of slots is only there to make sure we terminate the
 -- thread (otherwise the system will keep waiting).
-testBlockchainTime :: forall m. (MonadSTM m, MonadFork m, MonadTimer m)
-                   => NumSlots           -- ^ Number of slots
-                   -> DiffTime           -- ^ Slot duration
-                   -> m (BlockchainTime m)
-testBlockchainTime (NumSlots numSlots) slotLen = do
+testBlockchainTime
+    :: forall m. (MonadAsync m, MonadTimer m, MonadMask m, MonadFork m)
+    => ThreadRegistry m
+    -> NumSlots           -- ^ Number of slots
+    -> DiffTime           -- ^ Slot duration
+    -> m (BlockchainTime m)
+testBlockchainTime registry (NumSlots numSlots) slotLen = do
     slotVar <- atomically $ newTVar firstSlot
-    void $ fork $ replicateM_ numSlots $ do
+    void $ forkLinked registry $ replicateM_ numSlots $ do
         threadDelay slotLen
         atomically $ modifyTVar slotVar succ
     return BlockchainTime {
         getCurrentSlot = readTVar slotVar
-      , onSlotChange   = onEachChange id firstSlot (readTVar slotVar)
+      , onSlotChange   = onEachChange registry id firstSlot (readTVar slotVar)
       }
   where
     firstSlot = SlotNo 0
@@ -108,18 +110,20 @@ testBlockchainTime (NumSlots numSlots) slotLen = do
 -- TODO: Right now this requires a single specific slot duration. This is
 -- not going to be the case when we move to Praos. We need to think this
 -- through carefully.
-realBlockchainTime :: SlotLength -> SystemStart -> IO (BlockchainTime IO)
-realBlockchainTime slotLen start = do
+realBlockchainTime :: ThreadRegistry IO
+                   -> SlotLength -> SystemStart
+                   -> IO (BlockchainTime IO)
+realBlockchainTime registry slotLen start = do
     first   <- getCurrentSlotIO slotLen start
     slotVar <- atomically $ newTVar first
-    void $ fork $ forever $ do
+    void $ forkLinked registry $ forever $ do
       -- In each iteration of the loop, we recompute how long to wait until
       -- the next slot. This minimizes clock skew.
       next <- waitUntilNextSlotIO slotLen start
       atomically $ writeTVar slotVar next
     return BlockchainTime {
         getCurrentSlot = readTVar slotVar
-      , onSlotChange   = onEachChange id first (readTVar slotVar)
+      , onSlotChange   = onEachChange registry id first (readTVar slotVar)
       }
 
 {-------------------------------------------------------------------------------
