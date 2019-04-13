@@ -1,3 +1,7 @@
+{-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE BangPatterns               #-}
 
 module Ouroboros.Network.BlockFetch.ClientState (
     FetchClientStateVars(..),
@@ -5,19 +9,29 @@ module Ouroboros.Network.BlockFetch.ClientState (
     PeerFetchInFlight(..),
     initialPeerFetchInFlight,
     FetchRequest(..),
+    setFetchRequest,
+    acceptFetchRequest,
+    completeBlockDownload,
+    completeFetchBatch,
+
     TFetchRequestVar,
     newTFetchRequestVar,
     takeTFetchRequestVar,
     writeTFetchRequestVar,
   ) where
 
+import           Data.Maybe (listToMaybe)
 import qualified Data.Set as Set
 import           Data.Set (Set)
+
+import           Control.Monad (when)
 import           Control.Monad.Class.MonadSTM
 
-import           Ouroboros.Network.Chain (Point)
-import           Ouroboros.Network.DeltaQ (SizeInBytes)
-
+import           Ouroboros.Network.Block (Point, blockPoint, HasHeader)
+import           Ouroboros.Network.BlockFetch.DeltaQ
+                   ( PeerFetchInFlightLimits(..)
+                   , calculatePeerFetchInFlightLimits
+                   , SizeInBytes, PeerGSV )
 
 -- | A set of variables shared between the block fetch logic thread and each
 -- thread executing the client side of the block fetch protocol. That is, these
@@ -151,6 +165,122 @@ instance Functor FetchRequest where
 
 newtype TFetchRequestVar m header =
         TFetchRequestVar (TMVar m (FetchRequest header))
+
+setFetchRequest :: MonadSTM m
+                => TFetchRequestVar m header -- TODO: use FetchClientStateVars header m
+                -> FetchRequest header
+                -> m ()
+setFetchRequest fetchClientRequestVar request =
+    atomically (writeTFetchRequestVar fetchClientRequestVar request)
+
+acceptFetchRequest :: (MonadSTM m, HasHeader header)
+                   => (header -> SizeInBytes)
+                   -> STM m PeerGSV
+                   -> FetchClientStateVars header m
+                   -> m ( [[header]]
+                        , PeerFetchInFlight header
+                        , PeerFetchInFlightLimits
+                        , PeerFetchStatus header )
+
+acceptFetchRequest blockFetchSize readPeerGSVs FetchClientStateVars {..} =
+    atomically $ do
+      FetchRequest fragments <- takeTFetchRequestVar fetchClientRequestVar
+      inflight <- readTVar fetchClientInFlightVar
+      let !inflight' =
+            PeerFetchInFlight {
+              peerFetchReqsInFlight   = peerFetchReqsInFlight inflight
+                                      + fromIntegral (length fragments),
+
+              peerFetchBytesInFlight  = peerFetchBytesInFlight inflight
+                                      + sum [ blockFetchSize header
+                                            | fragment <- fragments
+                                            , header   <- fragment ],
+
+              peerFetchBlocksInFlight = peerFetchBlocksInFlight inflight
+                            `Set.union` Set.fromList [ blockPoint header
+                                                     | fragment <- fragments
+                                                     , header   <- fragment ]
+            }
+      writeTVar fetchClientInFlightVar inflight'
+
+      inflightlimits@PeerFetchInFlightLimits {
+        inFlightBytesHighWatermark
+      } <- calculatePeerFetchInFlightLimits <$> readPeerGSVs
+
+      -- Set our status to busy if we've got over the high watermark.
+      let currentStatus'
+           | peerFetchBytesInFlight inflight' >= inFlightBytesHighWatermark
+           = PeerFetchStatusBusy
+           | otherwise
+           = PeerFetchStatusReady (peerFetchBlocksInFlight inflight')
+      -- Only update the variable if it changed, to avoid spurious wakeups.
+      currentStatus <- readTVar fetchClientStatusVar
+      when (currentStatus' /= currentStatus) $
+        writeTVar fetchClientStatusVar currentStatus'
+
+      --TODO: think about status aberrant
+
+      return (fragments, inflight', inflightlimits, currentStatus')
+
+completeBlockDownload :: (MonadSTM m, HasHeader header)
+                      => (header -> SizeInBytes)
+                      -> PeerFetchInFlightLimits
+                      -> header
+                      -> [header]
+                      -> FetchClientStateVars header m
+                      -> m (PeerFetchInFlight header, PeerFetchStatus header)
+
+completeBlockDownload blockFetchSize inFlightLimits header headers' FetchClientStateVars {..} =
+    atomically $ do
+      inflight <- readTVar fetchClientInFlightVar
+      let !inflight' =
+            inflight {
+              peerFetchBytesInFlight  = peerFetchBytesInFlight inflight
+                                      - blockFetchSize header,
+
+              peerFetchBlocksInFlight = blockPoint header
+                           `Set.delete` peerFetchBlocksInFlight inflight
+              --TODO: can assert here that we don't go negative, and the
+              -- block we're deleting was in fact there.
+            }
+      writeTVar fetchClientInFlightVar inflight'
+
+      -- Now crucially, we don't want to end up below the in-flight low
+      -- watermark because that's when the remote peer would go idle.
+      -- But we only get notified of blocks on their /trailing/ edge,
+      -- not their leading edge. Our next best thing is the trailing
+      -- edge of the block before. So, we check if after the /next/
+      -- block we would be below the low watermark, and update our
+      -- status to ready if appropriate.
+      --
+      let nextBytesInFlight =
+              peerFetchBytesInFlight inflight
+            - blockFetchSize header
+            - maybe 0 blockFetchSize (listToMaybe headers')
+          currentStatus'
+            | nextBytesInFlight <= inFlightBytesLowWatermark inFlightLimits
+            = PeerFetchStatusReady (peerFetchBlocksInFlight inflight')
+            | otherwise
+            = PeerFetchStatusBusy
+      -- Only update the variable if it changed, to avoid spurious wakeups.
+      currentStatus <- readTVar fetchClientStatusVar
+      when (currentStatus' /= currentStatus) $
+        writeTVar fetchClientStatusVar currentStatus'
+
+    -- TODO: when do we reset the status from PeerFetchStatusAberrant
+    -- to PeerFetchStatusReady/Busy?
+
+      return (inflight', currentStatus')
+
+completeFetchBatch :: MonadSTM m
+                   => FetchClientStateVars header m
+                   -> m ()
+completeFetchBatch FetchClientStateVars {fetchClientInFlightVar} =
+    atomically $ modifyTVar' fetchClientInFlightVar $ \inflight ->
+      inflight {
+        peerFetchReqsInFlight = peerFetchReqsInFlight inflight - 1
+      }
+
 
 newTFetchRequestVar :: MonadSTM m => STM m (TFetchRequestVar m header)
 newTFetchRequestVar = TFetchRequestVar <$> newEmptyTMVar
