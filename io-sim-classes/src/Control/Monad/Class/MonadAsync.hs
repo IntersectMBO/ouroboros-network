@@ -8,6 +8,7 @@ module Control.Monad.Class.MonadAsync
 
 import           Prelude hiding (read)
 
+import           Control.Monad (void)
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Exception (SomeException)
@@ -114,89 +115,35 @@ class MonadSTM m => MonadAsync m where
   waitEitherCatchCancel left right =
     waitEitherCatch left right `finally` (cancel left >> cancel right)
 
-  -- Our MonadSTM does not cover orElse, so these all use low level versions
-  waitAnySTM []     = retry
-  waitAnySTM (a:as) = do
-    mr <- pollSTM a
-    case mr of
-      Nothing        -> waitAnySTM as
-      Just (Left  e) -> throwM e
-      Just (Right r) -> return (a, r)
-{-
+  waitAnySTM as =
     foldr orElse retry $
-      map (\a -> do r <- waitSTM a; return (a, r)) asyncs
--}
+      map (\a -> do r <- waitSTM a; return (a, r)) as
 
-  waitAnyCatchSTM []     = retry
-  waitAnyCatchSTM (a:as) = do
-    mr <- pollSTM a
-    case mr of
-      Nothing -> waitAnyCatchSTM as
-      Just r  -> return (a, r)
-{-
+  waitAnyCatchSTM as =
     foldr orElse retry $
-      map (\a -> do r <- waitCatchSTM a; return (a, r)) asyncs
--}
+      map (\a -> do r <- waitCatchSTM a; return (a, r)) as
 
-  waitEitherSTM left right = do
-    ml <- pollSTM left
-    mr <- pollSTM right
-    case (ml, mr) of
-      (Just (Left  e), _) -> throwM e
-      (Just (Right l), _) -> return (Left l)
-      (_, Just (Left  e)) -> throwM e
-      (_, Just (Right r)) -> return (Right r)
-      (Nothing,  Nothing) -> retry
-{-
+  waitEitherSTM left right =
     (Left  <$> waitSTM left)
       `orElse`
     (Right <$> waitSTM right)
--}
 
-
-  waitEitherSTM_ left right = do
-    ml <- pollSTM left
-    mr <- pollSTM right
-    case (ml, mr) of
-      (Just (Left  e), _) -> throwM e
-      (Just (Right _), _) -> return ()
-      (_, Just (Left  e)) -> throwM e
-      (_, Just (Right _)) -> return ()
-      (Nothing,  Nothing) -> retry
-{-
+  waitEitherSTM_ left right =
       (void $ waitSTM left)
         `orElse`
       (void $ waitSTM right)
--}
 
-  waitEitherCatchSTM left right = do
-    ml <- pollSTM left
-    mr <- pollSTM right
-    case (ml, mr) of
-      (Just l,  _      ) -> return (Left l)
-      (_,       Just r ) -> return (Right r)
-      (Nothing, Nothing) -> retry
-{-
+  waitEitherCatchSTM left right =
       (Left  <$> waitCatchSTM left)
         `orElse`
       (Right <$> waitCatchSTM right)
--}
 
   waitBothSTM left right = do
-    ml <- pollSTM left
-    mr <- pollSTM right
-    case (ml, mr) of
-      (Just (Left  e), _)              -> throwM e
-      (_,              Just (Left  e)) -> throwM e
-      (Just (Right l), Just (Right r)) -> return (l, r)
-      (_,  _)                          -> retry
-{-
       a <- waitSTM left
              `orElse`
            (waitSTM right >> retry)
       b <- waitSTM right
       return (a,b)
--}
 
   race            left right = withAsync left  $ \a ->
                                withAsync right $ \b ->
