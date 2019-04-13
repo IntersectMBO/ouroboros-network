@@ -21,12 +21,11 @@ module Ouroboros.Network.BlockFetch.Client (
     readFetchClientsReqVars,
   ) where
 
-import           Data.Maybe
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 import           Data.Map (Map)
 
-import           Control.Monad (when, unless)
+import           Control.Monad (unless)
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
@@ -44,7 +43,10 @@ import           Ouroboros.Network.BlockFetch.ClientState
                    , PeerFetchInFlight(..), initialPeerFetchInFlight
                    , FetchRequest(..)
                    , TFetchRequestVar
-                   , newTFetchRequestVar, takeTFetchRequestVar )
+                   , newTFetchRequestVar
+                   , acceptFetchRequest
+                   , completeBlockDownload
+                   , completeFetchBatch )
 import           Ouroboros.Network.BlockFetch.DeltaQ
                    ( PeerGSV(..), SizeInBytes
                    , PeerFetchInFlightLimits(..)
@@ -100,11 +102,7 @@ blockFetchClient tracer
                    blockMatchesHeader,
                    addFetchedBlock
                  }
-                 FetchClientStateVars {
-                   fetchClientStatusVar,
-                   fetchClientInFlightVar,
-                   fetchClientRequestVar
-                 }
+                 stateVars
                  readPeerGSVs =
     PeerPipelined (senderIdle Zero [])
   where
@@ -173,44 +171,8 @@ blockFetchClient tracer
       -- in-flight, and the tracking state that the fetch logic uses now
       -- reflects that.
       --
-      (fragments, inflight, inflightlimits, currentStatus) <- atomically $ do
-        FetchRequest fragments <- takeTFetchRequestVar fetchClientRequestVar
-        inflight <- readTVar fetchClientInFlightVar
-        let !inflight' =
-              PeerFetchInFlight {
-                peerFetchReqsInFlight   = peerFetchReqsInFlight inflight
-                                        + fromIntegral (length fragments),
-
-                peerFetchBytesInFlight  = peerFetchBytesInFlight inflight
-                                        + sum [ blockFetchSize header
-                                              | fragment <- fragments
-                                              , header   <- fragment ],
-
-                peerFetchBlocksInFlight = peerFetchBlocksInFlight inflight
-                              `Set.union` Set.fromList [ blockPoint header
-                                                       | fragment <- fragments
-                                                       , header   <- fragment ]
-              }
-        writeTVar fetchClientInFlightVar inflight'
-
-        inflightlimits@PeerFetchInFlightLimits {
-          inFlightBytesHighWatermark
-        } <- calculatePeerFetchInFlightLimits <$> readPeerGSVs
-
-        -- Set our status to busy if we've got over the high watermark.
-        let currentStatus'
-             | peerFetchBytesInFlight inflight' >= inFlightBytesHighWatermark
-             = PeerFetchStatusBusy
-             | otherwise
-             = PeerFetchStatusReady (peerFetchBlocksInFlight inflight')
-        -- Only update the variable if it changed, to avoid spurious wakeups.
-        currentStatus <- readTVar fetchClientStatusVar
-        when (currentStatus' /= currentStatus) $
-          writeTVar fetchClientStatusVar currentStatus'
-
-        --TODO: think about status aberrant
-
-        return (fragments, inflight', inflightlimits, currentStatus')
+      (fragments, inflight, inflightlimits, currentStatus) <-
+        acceptFetchRequest blockFetchSize readPeerGSVs stateVars
 
       traceWith tracer $ AcceptedFetchRequest
                            (fmap blockPoint (FetchRequest fragments))
@@ -249,18 +211,12 @@ blockFetchClient tracer
                       -> [header]
                       -> PeerReceiver (BlockFetch header block) AsClient
                                       BFStreaming BFIdle m ()
-    receiverStreaming inFlightLimits@PeerFetchInFlightLimits {
-                        inFlightBytesLowWatermark
-                      }
-                      headers =
+    receiverStreaming inFlightLimits headers =
       ReceiverAwait
         (ServerAgency TokStreaming) $ \msg ->
         case (msg, headers) of
           (MsgBatchDone, []) -> ReceiverEffect $ do
-            atomically $ modifyTVar' fetchClientInFlightVar $ \inflight ->
-              inflight {
-                peerFetchReqsInFlight = peerFetchReqsInFlight inflight - 1
-              }
+            completeFetchBatch stateVars
             return (ReceiverDone ())
 
 
@@ -300,46 +256,9 @@ blockFetchClient tracer
             -- download the missing block(s) again.
 
             -- Update our in-flight stats and our current status
-            (inflight, currentStatus) <- atomically $ do
-              inflight <- readTVar fetchClientInFlightVar
-              let !inflight' =
-                    inflight {
-                      peerFetchBytesInFlight  = peerFetchBytesInFlight inflight
-                                              - blockFetchSize header,
-
-                      peerFetchBlocksInFlight = blockPoint header
-                                   `Set.delete` peerFetchBlocksInFlight inflight
-                      --TODO: can assert here that we don't go negative, and the
-                      -- block we're deleting was in fact there.
-                    }
-              writeTVar fetchClientInFlightVar inflight'
-
-              -- Now crucially, we don't want to end up below the in-flight low
-              -- watermark because that's when the remote peer would go idle.
-              -- But we only get notified of blocks on their /trailing/ edge,
-              -- not their leading edge. Our next best thing is the trailing
-              -- edge of the block before. So, we check if after the /next/
-              -- block we would be below the low watermark, and update our
-              -- status to ready if appropriate.
-              --
-              let nextBytesInFlight =
-                      peerFetchBytesInFlight inflight
-                    - blockFetchSize header
-                    - maybe 0 blockFetchSize (listToMaybe headers')
-                  currentStatus'
-                    | nextBytesInFlight <= inFlightBytesLowWatermark
-                    = PeerFetchStatusReady (peerFetchBlocksInFlight inflight')
-                    | otherwise
-                    = PeerFetchStatusBusy
-              -- Only update the variable if it changed, to avoid spurious wakeups.
-              currentStatus <- readTVar fetchClientStatusVar
-              when (currentStatus' /= currentStatus) $
-                writeTVar fetchClientStatusVar currentStatus'
-
-            -- TODO: when do we reset the status from PeerFetchStatusAberrant
-            -- to PeerFetchStatusReady/Busy?
-
-              return (inflight', currentStatus')
+            (inflight, currentStatus) <-
+              completeBlockDownload blockFetchSize inFlightLimits
+                                    header headers' stateVars
 
             traceWith tracer $ CompletedBlockFetch
                                  (blockPoint header)

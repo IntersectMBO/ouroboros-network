@@ -31,7 +31,7 @@ import           Ouroboros.Network.BlockFetch.ClientState
                    , PeerFetchInFlight(..)
                    , PeerFetchStatus(..)
                    , TFetchRequestVar
-                   , writeTFetchRequestVar
+                   , setFetchRequest
                    )
 import           Ouroboros.Network.BlockFetch.Decision
                    ( fetchDecisions
@@ -201,7 +201,7 @@ fetchLogicIterationAct :: MonadSTM m
                        -> m ()
 fetchLogicIterationAct decisions =
     sequence_
-      [ atomically (writeTFetchRequestVar peerFetchRequestVar request)
+      [ setFetchRequest peerFetchRequestVar request
       | (Right request, peerFetchRequestVar) <- decisions ]
 
 
