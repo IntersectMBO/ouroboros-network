@@ -39,7 +39,6 @@ import           Network.TypedProtocol.Driver
 import           Ouroboros.Network.Channel
 
 import           Ouroboros.Network.DeltaQ
-import           Ouroboros.Network.BlockFetch.Types
 import           Ouroboros.Network.BlockFetch.Client
 import           Ouroboros.Network.BlockFetch.State
 import           Ouroboros.Network.BlockFetch

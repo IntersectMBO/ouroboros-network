@@ -1,6 +1,5 @@
 
-module Ouroboros.Network.BlockFetch.Types (
-    SizeInBytes,
+module Ouroboros.Network.BlockFetch.ClientState (
     FetchClientStateVars(..),
     PeerFetchStatus(..),
     PeerFetchInFlight(..),
