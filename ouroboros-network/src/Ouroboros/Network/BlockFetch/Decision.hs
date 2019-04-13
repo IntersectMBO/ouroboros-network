@@ -33,14 +33,14 @@ import           Ouroboros.Network.Block
 import           Ouroboros.Network.ChainFragment (ChainFragment(..))
 import qualified Ouroboros.Network.ChainFragment as ChainFragment
 
-import           Ouroboros.Network.BlockFetch.Types
+import           Ouroboros.Network.BlockFetch.ClientState
                    ( FetchRequest(..)
                    , PeerFetchInFlight(..)
                    , PeerFetchStatus(..)
-                   , SizeInBytes
                    )
 import           Ouroboros.Network.BlockFetch.DeltaQ
-                   ( PeerGSV(..), PeerFetchInFlightLimits(..)
+                   ( PeerGSV(..), SizeInBytes
+                   , PeerFetchInFlightLimits(..)
                    , calculatePeerFetchInFlightLimits )
 
 

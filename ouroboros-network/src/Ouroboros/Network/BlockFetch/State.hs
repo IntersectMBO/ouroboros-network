@@ -26,7 +26,7 @@ import           Ouroboros.Network.Block
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment(..))
 import qualified Ouroboros.Network.AnchoredFragment as AnchoredFragment
 
-import           Ouroboros.Network.BlockFetch.Types
+import           Ouroboros.Network.BlockFetch.ClientState
                    ( FetchRequest(..)
                    , PeerFetchInFlight(..)
                    , PeerFetchStatus(..)

@@ -10,6 +10,7 @@ module Ouroboros.Network.BlockFetch.Client (
     blockFetchClient,
     FetchClientPolicy(..),
     TraceFetchClientEvent(..),
+    FetchClientStateVars,
 
     -- * Registry of block fetch clients
     FetchClientRegistry(..),
@@ -38,15 +39,15 @@ import           Ouroboros.Network.Protocol.BlockFetch.Type
 import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Pipelined
 
-import           Ouroboros.Network.BlockFetch.Types
+import           Ouroboros.Network.BlockFetch.ClientState
                    ( FetchClientStateVars(..), PeerFetchStatus(..)
                    , PeerFetchInFlight(..), initialPeerFetchInFlight
-                   , SizeInBytes
                    , FetchRequest(..)
                    , TFetchRequestVar
                    , newTFetchRequestVar, takeTFetchRequestVar )
 import           Ouroboros.Network.BlockFetch.DeltaQ
-                   ( PeerGSV(..), PeerFetchInFlightLimits(..)
+                   ( PeerGSV(..), SizeInBytes
+                   , PeerFetchInFlightLimits(..)
                    , calculatePeerFetchInFlightLimits )
 
 

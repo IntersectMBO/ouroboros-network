@@ -7,6 +7,7 @@ module Ouroboros.Network.BlockFetch.DeltaQ (
     Distribution,
     DeltaQ,
     PeerGSV(..),
+    SizeInBytes,
     estimateBlockFetchResponse,
     blockArrivalShedule,
     PeerFetchInFlightLimits(..),
@@ -17,7 +18,7 @@ import           Data.Fixed as Fixed (Pico)
 import           Control.Monad.Class.MonadTime
 
 import           Ouroboros.Network.DeltaQ
-import           Ouroboros.Network.BlockFetch.Types
+import           Ouroboros.Network.BlockFetch.ClientState
                    ( PeerFetchInFlight(..) )
 
 
