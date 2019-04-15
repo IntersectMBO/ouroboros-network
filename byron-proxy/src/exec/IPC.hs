@@ -8,6 +8,7 @@ import Codec.Serialise (Serialise (..), deserialiseOrFail)
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.STM (STM)
 import Control.Exception (SomeException, bracket, catch, throwIO)
+import Control.Monad.Class.MonadST (MonadST)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Resource (ResourceT, runResourceT)
@@ -35,20 +36,20 @@ import qualified Ouroboros.Byron.Proxy.ChainSync.Client as Client
 import qualified Ouroboros.Byron.Proxy.ChainSync.Server as Server
 import qualified Ouroboros.Byron.Proxy.ChainSync.Types as ChainSync
 
-import qualified Ouroboros.Byron.Proxy.DB as DB (DB, blockEpochAndRelativeSlot, ebbEpoch)
+import qualified Ouroboros.Byron.Proxy.DB as DB
 
 import qualified Control.Monad.Class.MonadThrow as NonStandard
 import qualified Control.Monad.Catch as Standard
 
 version0
-  :: Tracer IO String 
-  -> Sigma (Version (Dict Serialise) (Channel IO Lazy.ByteString -> IO ()))
+  :: Tracer m String
+  -> Sigma (Version (Dict Serialise) (Channel m Lazy.ByteString -> m ()))
 version0 tracer = Sigma (42 :: Int) $ Version
   { versionExtra = Dict
   , versionApplication = application0 tracer
   }
 
-application0 :: Tracer IO String -> Application (anything -> IO ()) Int
+application0 :: Tracer m String -> Application (anything -> m ()) Int
 application0 tracer = Application $ \_localData remoteData _channel ->
   traceWith tracer $ mconcat
     [ "Version 0. Remote data is "
@@ -56,23 +57,27 @@ application0 tracer = Application $ \_localData remoteData _channel ->
     ]
 
 clientApplication1
-  :: Tracer IO String
-  -> Application (Channel IO Lazy.ByteString -> IO ()) Lazy.ByteString
-clientApplication1 tracer = Application $ \_localData remoteData channel -> do
+  :: ( Monad m, MonadST m, NonStandard.MonadThrow m )
+  => Tracer m String
+  -> DB.DB m
+  -> Application (Channel m Lazy.ByteString -> m ()) Lazy.ByteString
+clientApplication1 tracer db = Application $ \_localData remoteData channel -> do
   traceWith tracer $ mconcat
     [ "Client version 1. Remote data is "
     , show remoteData
     ]
   runPeer nullTracer ChainSync.codec channel peer
   where
-  peer = ChainSync.chainSyncClientPeer (chainSyncClient (contramap chainSyncShow tracer))
+  peer = ChainSync.chainSyncClientPeer (chainSyncClient (contramap chainSyncShow tracer) db)
 
 clientVersion1
-  :: Tracer IO String
-  -> Sigma (Version (Dict Serialise) (Channel IO Lazy.ByteString -> IO ()))
-clientVersion1 tracer = Sigma (Lazy.pack "this is the client version data") $ Version
+  :: ( Monad m, MonadST m, NonStandard.MonadThrow m )
+  => Tracer m String
+  -> DB.DB m
+  -> Sigma (Version (Dict Serialise) (Channel m Lazy.ByteString -> m ()))
+clientVersion1 tracer db = Sigma (Lazy.pack "this is the client version data") $ Version
   { versionExtra = Dict
-  , versionApplication = clientApplication1 tracer
+  , versionApplication = clientApplication1 tracer db
   }
 
 serverApplication1
@@ -114,13 +119,17 @@ serverVersion1 tracer usPoll db = Sigma (Lazy.pack "server version data here") $
   }
 
 clientVersions
-  :: Tracer IO String
-  -> Versions Version.Number (Dict Serialise) (Channel IO Lazy.ByteString -> IO ())
-clientVersions tracer = Versions $ Map.fromList
+  :: ( Monad m, MonadST m, NonStandard.MonadThrow m )
+  => Tracer m String
+  -> DB.DB m
+  -> Versions Version.Number (Dict Serialise) (Channel m Lazy.ByteString -> m ())
+clientVersions tracer db = Versions $ Map.fromList
   [ (0, version0 tracer)
-  , (1, clientVersion1 tracer)
+  , (1, clientVersion1 tracer db)
   ]
 
+-- | Must be in IO because we use `threadDelay` to do polling.
+-- FIXME can use a sim constraint.
 serverVersions
   :: Tracer IO String
   -> Int
@@ -138,18 +147,33 @@ decodeBlob :: Dict Serialise t -> Version.Blob -> Maybe t
 decodeBlob Dict = either (const Nothing) Just . deserialiseOrFail . Lazy.fromStrict
 
 -- | Echos rolls (forward or backward) using a trace.
+--
+-- TODO we want to batch-write to a DB.
+-- How to do that? The Fold must accumulate them, then write inside a
+-- transaction.
+-- Or, perhaps we can put it into CPS?
 chainSyncClient
   :: forall m x .
      ( Monad m )
   => Tracer m (Either ChainSync.Point ChainSync.Block, ChainSync.Point)
+  -> DB.DB m
   -> ChainSync.ChainSyncClient ChainSync.Block ChainSync.Point m x
-chainSyncClient trace = Client.chainSyncClient fold
+chainSyncClient trace db = Client.chainSyncClient fold
   where
   fold :: Client.Fold m x
   fold = Client.Fold $ pure $ Client.Continue forward backward
   forward :: ChainSync.Block -> ChainSync.Point -> Client.Fold m x
   forward blk point = Client.Fold $ do
     traceWith trace (Right blk, point)
+    -- FIXME
+    -- Write one block at a time. CPS doesn't mix well with the typed
+    -- protocol style.
+    -- This will give terrible performance for the SQLite index as it is
+    -- currently defined.
+    -- Possible solution: do the batching automatically, within the index
+    -- itself?
+    DB.appendBlocks db $ \dbAppend ->
+      DB.appendBlock dbAppend (ChainSync.getBlock blk)
     Client.runFold fold
   backward :: ChainSync.Point -> ChainSync.Point -> Client.Fold m x
   backward point1 point2 = Client.Fold $ do
@@ -263,11 +287,12 @@ runVersionedServer addrInfo tracer closeTx usPoll db = bracket mkSocket Socket.c
 runVersionedClient
   :: Socket.AddrInfo -- ^ For the remote end.
   -> Tracer IO String
+  -> DB.DB IO
   -> IO ()
-runVersionedClient addrInfo tracer = bracket mkSocket Socket.close $ \socket -> do
+runVersionedClient addrInfo tracer db = bracket mkSocket Socket.close $ \socket -> do
   _ <- Socket.connect socket (Socket.addrAddress addrInfo)
   let channel = socketAsChannel socket
-      versionClient = clientPeerFromVersions encodeBlob decodeBlob (clientVersions tracer)
+      versionClient = clientPeerFromVersions encodeBlob decodeBlob (clientVersions tracer db)
   -- Run the version negotiation client, and then whatever continuation it
   -- produces.
   mbVersion <- runPeer nullTracer Version.codec channel versionClient

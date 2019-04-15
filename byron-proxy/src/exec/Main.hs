@@ -436,7 +436,7 @@ runClient tracer clientOptions genesisConfig db = case clientOptions of
     addrInfos <- Network.getAddrInfo (Just addrInfoHints) (Just host) (Just port)
     case addrInfos of
       [] -> error "no getAddrInfo"
-      (addrInfo : _) -> runVersionedClient addrInfo stringTracer
+      (addrInfo : _) -> runVersionedClient addrInfo stringTracer db
     where
 
     host = scoHostName shelleyClientOptions
