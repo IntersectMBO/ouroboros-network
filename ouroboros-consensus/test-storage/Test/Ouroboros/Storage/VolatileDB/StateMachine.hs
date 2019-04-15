@@ -189,7 +189,7 @@ data ModelShow (r :: Type -> Type) = Model'
 toShow :: Model r -> ModelShow r
 toShow (Model dbm _ se) = Model' dbm se
 
-type PureM = ExceptT (VolatileDBError BlockId) (State (DBModel BlockId, Maybe Errors))
+type PureM = ExceptT (VolatileDBError BlockId) (StateT (DBModel BlockId, Maybe Errors) MockIdentity)
 type ModelDBPure = VolatileDB BlockId PureM
 
 -- | An event records the model before and after a command along with the
@@ -217,8 +217,8 @@ lockstep model@Model {..} cmdErr (At resp) = Event
     model' = model {
               dbModel = dbModel'
             , shouldEnd = case resp of
-                    Resp (Left (VParserError _)) -> True
-                    _                            -> False
+                    Resp (Left (UnexpectedError (ParserError _))) -> True
+                    _                                             -> False
             }
 
 -- | Key property of the model is that we can go from real to mock responses
@@ -233,12 +233,12 @@ runPure :: DBModel BlockId
         -> CmdErr
         -> (Resp, DBModel BlockId)
 runPure dbm mdb (CmdErr cmd err) =
-    bimap Resp fst $ flip runState (dbm, err) $ do
+    bimap Resp fst $ runMockIdentity $ flip runStateT (dbm, err) $ do
         resp <- runExceptT $ runDB runRest mdb cmd
         case (err, resp) of
-            (Nothing, _)                       -> return resp
-            (Just _ , Left ClosedDBError)      -> return resp
-            (Just _, _) -> do
+            (Nothing, _)                                   -> return resp
+            (Just _ , Left (UserError ClosedDBError))      -> return resp
+            (Just _, _)                                    -> do
                 modify $ \(dbm', cErr) -> (dbm' {open = False}, cErr)
                 return $ Right $ SimulatedError resp
     where
@@ -266,7 +266,7 @@ runPure dbm mdb (CmdErr cmd err) =
                 return $ Unit ()
             _ -> error "invalid cmd"
 
-runDB :: (HasCallStack, Monad m)
+runDB :: (HasCallStack, Monad m, MonadSTM m)
       => (VolatileDB BlockId m -> Cmd -> m Success)
       -> VolatileDB BlockId m
       -> Cmd
@@ -287,8 +287,10 @@ runDB restCmd db cmd = case cmd of
     CreateInvalidFile  -> restCmd db cmd
     DuplicateBlock {}  -> restCmd db cmd
     AskIfMember bids   -> do
-        isMember <- getIsMember db
-        return $ IsMember $ isMember <$> bids
+        mIsMember <- atomically $ getIsMember db
+        return $ case mIsMember of
+            Nothing       -> IsMember []
+            Just isMember -> IsMember $ isMember <$> bids
 
 smErr :: (MonadCatch m, MonadSTM m)
       => Bool
@@ -451,12 +453,12 @@ semanticsImplErr :: (MonadCatch m, MonadSTM m)
                  -> m (At Resp Concrete)
 semanticsImplErr errorsVar hasFS m env (At cmderr) = At . Resp <$> case cmderr of
     CmdErr cmd Nothing ->
-        tryVolDB (runDB (semanticsRestCmd hasFS env) m cmd)
+        try (runDB (semanticsRestCmd hasFS env) m cmd)
     CmdErr cmd (Just errors) -> do
         res <- withErrors errorsVar errors $
-            tryVolDB (runDB (semanticsRestCmd hasFS env) m cmd)
+            try (runDB (semanticsRestCmd hasFS env) m cmd)
         case res of
-            Left ClosedDBError -> return res
+            Left (UserError ClosedDBError) -> return res
             _                  -> do
                 closeDB m
                 return $ Right $ SimulatedError res
@@ -519,9 +521,8 @@ knownLimitation model (At cmd) = case cmd of
         isLimitation Nothing _sl       = False
         isLimitation (Just slot') slot = slot' >  slot
 
-mkDBModel :: MonadState (DBModel BlockId, Maybe Errors) m
-          => Int
-          -> (DBModel BlockId, VolatileDB BlockId (ExceptT (VolatileDBError BlockId) m))
+mkDBModel :: Int
+          -> (DBModel BlockId, VolatileDB BlockId (MyMonad BlockId))
 mkDBModel = openDBModel EH.exceptT
 
 prop_sequential :: Property
@@ -657,8 +658,8 @@ tag ls = C.classify
 
     tagIsClosedError :: EventPred
     tagIsClosedError = C.predicate $ \ev -> case eventMockResp ev of
-        Resp (Left ClosedDBError) -> Left TagClosedError
-        _                         -> Right tagIsClosedError
+        Resp (Left (UserError ClosedDBError)) -> Left TagClosedError
+        _                                     -> Right tagIsClosedError
 
     tagGarbageCollectThenReOpen :: EventPred
     tagGarbageCollectThenReOpen = successful $ \ev _ -> case getCmd ev of

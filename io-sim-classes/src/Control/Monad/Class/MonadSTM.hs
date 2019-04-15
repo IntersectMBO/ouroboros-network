@@ -42,15 +42,16 @@ module Control.Monad.Class.MonadSTM
 
 import           Prelude hiding (read)
 
-import qualified Control.Monad.STM as STM
-import qualified Control.Concurrent.STM.TVar as STM
+import qualified Control.Concurrent.STM.TBQueue as STM
 import qualified Control.Concurrent.STM.TMVar as STM
 import qualified Control.Concurrent.STM.TQueue as STM
-import qualified Control.Concurrent.STM.TBQueue as STM
+import qualified Control.Concurrent.STM.TVar as STM
+import qualified Control.Monad.STM as STM
 
 import           Control.Exception
 import           Control.Monad.Except
 import           Control.Monad.Reader
+import           Control.Monad.State
 import           GHC.Stack
 import           Numeric.Natural (Natural)
 
@@ -125,6 +126,45 @@ instance MonadSTM m => MonadSTM (ReaderT e m) where
   type TBQueue (ReaderT e m) = TBQueue m
 
   atomically (ReaderT t) = ReaderT $ \e -> atomically (t e)
+  newTVar          = lift . newTVar
+  readTVar         = lift . readTVar
+  writeTVar t a    = lift $ writeTVar t a
+  retry            = lift retry
+
+  newTMVar         = lift . newTMVar
+  newTMVarM        = lift . newTMVarM
+  newEmptyTMVar    = lift newEmptyTMVar
+  newEmptyTMVarM   = lift newEmptyTMVarM
+  takeTMVar        = lift . takeTMVar
+  tryTakeTMVar     = lift . tryTakeTMVar
+  putTMVar   t a   = lift $ putTMVar t a
+  tryPutTMVar t a  = lift $ tryPutTMVar t a
+  readTMVar        = lift . readTMVar
+  tryReadTMVar     = lift . tryReadTMVar
+  swapTMVar t a    = lift $ swapTMVar t a
+  isEmptyTMVar     = lift . isEmptyTMVar
+
+  newTQueue        = lift $ newTQueue
+  readTQueue       = lift . readTQueue
+  tryReadTQueue    = lift . tryReadTQueue
+  writeTQueue q a  = lift $ writeTQueue q a
+  isEmptyTQueue    = lift . isEmptyTQueue
+
+  newTBQueue       = lift . newTBQueue
+  readTBQueue      = lift . readTBQueue
+  tryReadTBQueue   = lift . tryReadTBQueue
+  writeTBQueue q a = lift $ writeTBQueue q a
+  isEmptyTBQueue   = lift . isEmptyTBQueue
+  isFullTBQueue    = lift . isFullTBQueue
+
+instance MonadSTM m => MonadSTM (StateT s m) where
+  type STM (StateT s m) = StateT s (STM m)
+  type TVar (StateT s m)  = TVar m
+  type TMVar (StateT s m) = TMVar m
+  type TQueue (StateT s m)  = TQueue m
+  type TBQueue (StateT s m) = TBQueue m
+
+  atomically (StateT t) = StateT $ \e -> atomically (t e)
   newTVar          = lift . newTVar
   readTVar         = lift . readTVar
   writeTVar t a    = lift $ writeTVar t a

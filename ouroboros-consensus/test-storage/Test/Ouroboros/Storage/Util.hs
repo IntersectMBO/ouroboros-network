@@ -189,10 +189,10 @@ tryFS :: IO a -> IO (Either FsError a)
 tryFS = E.try
 
 tryImmDB :: MonadCatch m => m a -> m (Either ImmutableDBError a)
-tryImmDB = tryDB (UnexpectedError . Immutable.FileSystemError)
+tryImmDB = tryDB (Immutable.UnexpectedError . Immutable.FileSystemError)
 
 tryVolDB :: (Show blockId, Typeable blockId, MonadCatch m) => m a -> m (Either (VolatileDBError blockId) a)
-tryVolDB = tryDB Volatile.FileSystemError
+tryVolDB = tryDB (Volatile.UnexpectedError . Volatile.FileSystemError)
 
 tryDB :: forall e a m. (Exception e, MonadCatch m) => (FsError -> e) -> m a -> m (Either e a)
 tryDB fromFS = fmap squash . C.try . C.try

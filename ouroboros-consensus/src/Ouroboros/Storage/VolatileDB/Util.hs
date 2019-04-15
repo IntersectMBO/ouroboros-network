@@ -15,6 +15,7 @@ import           Data.Maybe (fromMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.Text as T
+import           Data.Typeable
 import           Data.Word (Word64)
 import           Text.Read (readMaybe)
 
@@ -61,6 +62,15 @@ modifyTMVar m action =
             ExitCaseAbort                -> putTMVar m oldState
        ) action
 
+wrapFsError :: (Show blockId, MonadCatch m, Monad m, Typeable blockId)
+            => ErrorHandling (VolatileDBError blockId) m -> m a -> m a
+wrapFsError err action = do
+    mr <- try . try $ action
+    case mr of
+        Left fsError    -> throwError err $ UnexpectedError $ FileSystemError fsError
+        Right (Right a) -> return a
+        Right (Left e)  -> throwError err e
+
 -- Throws an error if one of the given file names does not parse.
 findLastFd :: forall blockId.
               Set String
@@ -73,7 +83,7 @@ findLastFd files = foldM go Nothing files
             Just a' -> max a' a
         go :: Maybe FileId -> String -> Either (VolatileDBError blockId) (Maybe FileId)
         go fd file = case parseFd file of
-            Nothing  -> Left $ VParserError $ InvalidFilename file
+            Nothing  -> Left $ UnexpectedError $ ParserError $ InvalidFilename file
             Just fd' -> Right $ Just $ maxMaybe fd fd'
 
 filePath :: FileId -> String
