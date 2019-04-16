@@ -15,6 +15,7 @@
 {-# LANGUAGE RecordWildCards           #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE StandaloneDeriving        #-}
+{-# LANGUAGE TupleSections             #-}
 {-# LANGUAGE TypeApplications          #-}
 {-# LANGUAGE TypeFamilies              #-}
 {-# LANGUAGE TypeOperators             #-}
@@ -43,6 +44,7 @@ import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromJust)
 import           Data.Proxy
 import           Data.TreeDiff (ToExpr (..))
+import           Data.Typeable (Typeable)
 import           Data.Word
 import           GHC.Generics (Generic)
 import           System.IO (IOMode (..))
@@ -98,6 +100,8 @@ data LedgerUnderTest = LedgerSimple
 class ( Show      (BlockRef  t)
       , Ord       (BlockRef  t)
       , Serialise (BlockRef  t)
+      , ToExpr    (BlockRef  t)
+      , Typeable  (BlockRef  t)
       , Show      (BlockVal  t)
       , Eq        (BlockVal  t)
       , ToExpr    (BlockVal  t)
@@ -107,6 +111,7 @@ class ( Show      (BlockRef  t)
       , ToExpr    (LedgerSt  t)
       , Eq        (LedgerErr t)
       , Show      (LedgerErr t)
+      , Typeable t
       ) => LUT (t :: LedgerUnderTest) where
   data family LedgerSt  t :: *
   type family LedgerErr t :: *
@@ -203,11 +208,7 @@ data Cmd (t :: LedgerUnderTest) ss =
     -- | Take a snapshot (write to disk)
   | Snap
 
-    -- | Restore the DB from on-disk, then return it
-    --
-    -- We could avoid returning the ledger from 'Restore', instead relying on
-    -- 'Current' to do the check, but returning the ledger immediately means
-    -- we spot problems sooner and makes tagging easier.
+    -- | Restore the DB from on-disk, then return it along with the init log
   | Restore
 
     -- | Corrupt a previously taken snapshot
@@ -235,7 +236,8 @@ data Success t ss =
     Unit ()
   | MaybeErr (Either (LedgerErr t) ())
   | Ledger (LedgerSt t)
-  | Snapped ss
+  | Snapped (ss, Tip' t)
+  | Restored (MockInitLog t ss, LedgerSt t)
   deriving (Functor, Foldable, Traversable)
 
 -- | Currently we don't have any error responses
@@ -255,7 +257,7 @@ deriving instance (LUT t, Eq   ss) => Eq   (Resp t ss)
   Pure model
 -------------------------------------------------------------------------------}
 
--- The mock ledger records the blocks and ledger values at each point
+-- The mock ledger records the blocks and ledger values (new to old)
 type MockLedger t = [(BlockVal t, LedgerSt t)]
 
 -- | We simply enumerate snapshots
@@ -266,14 +268,38 @@ type MockLedger t = [(BlockVal t, LedgerSt t)]
 newtype MockSnap = MockSnap Int
   deriving (Show, Eq, Ord, Generic, ToExpr)
 
+-- | State of all snapshots on disk
+--
+-- In addition to the state of the snapshot we also record the tip of the chain
+-- at the time we took the snapshot; this is important for 'mockMaxRollback'.
+type MockSnaps t = Map MockSnap (Tip' t, SnapState)
+
 -- | Mock implementation
 --
 -- The mock implementation simply records the ledger at every point.
 -- We store the chain most recent first.
 data Mock t = Mock {
-      mockLedger :: MockLedger t
-    , mockSnaps  :: Map MockSnap SnapState
-    , mockNext   :: Int
+      -- | Current ledger
+      mockLedger  :: MockLedger t
+
+      -- | Current state the snapshots
+    , mockSnaps   :: MockSnaps t
+
+      -- | The oldest (tail) block in the real DB at the most recent restore
+      --
+      -- This puts a limit on how far we can roll back.
+      -- See also 'applyMockLog', 'mockMaxRollback'.
+    , mockRestore :: Tip' t
+
+      -- | Counter to assign 'MockSnap's
+    , mockNext    :: Int
+
+      -- | Memory policy
+      --
+      -- We need the memory policy only to compute which snapshots the real
+      -- implementation would take, so that we can accurately predict how far
+      -- the real implementation can roll back.
+    , mockPolicy  :: MemPolicy
     }
   deriving (Generic)
 
@@ -283,8 +309,8 @@ deriving instance LUT t => ToExpr (Mock t)
 data SnapState = SnapOk | SnapCorrupted Corruption
   deriving (Show, Eq, Generic, ToExpr)
 
-mockInit :: Mock t
-mockInit = Mock [] Map.empty 1
+mockInit :: MemPolicy -> Mock t
+mockInit = Mock [] Map.empty TipGen 1
 
 mockCurrent :: LUT t => Mock t -> LedgerSt t
 mockCurrent Mock{..} =
@@ -310,8 +336,92 @@ mockUpdateLedger f mock =
 mockRecentSnap :: Mock t -> Maybe SnapState
 mockRecentSnap Mock{..} =
     case Map.toDescList mockSnaps of
-      []        -> Nothing
-      (_, st):_ -> Just st
+      []             -> Nothing
+      (_, (_, st)):_ -> Just st
+
+{-------------------------------------------------------------------------------
+  Modelling restoration
+
+  Although the mock implementation itself is not affected by disk failures
+  (in fact, the concept makes no sense, since we don't store anything on disk),
+  we /do/ need to be able to accurately predict how the real DB will be
+  initialized (from which snapshot); this is important, because this dictates
+  how far the real DB can roll back.
+-------------------------------------------------------------------------------}
+
+data MockInitLog t ss =
+    MockFromGenesis
+  | MockFromSnapshot ss (Tip' t)
+  | MockReadFailure  ss          (MockInitLog t ss)
+  | MockTooRecent    ss (Tip' t) (MockInitLog t ss)
+  deriving (Functor, Foldable, Traversable)
+
+deriving instance (LUT t, Show ss) => Show (MockInitLog t ss)
+deriving instance (LUT t, Eq   ss) => Eq   (MockInitLog t ss)
+
+fromInitLog :: InitLog (BlockRef t) -> MockInitLog t DiskSnapshot
+fromInitLog  InitFromGenesis          = MockFromGenesis
+fromInitLog (InitFromSnapshot ss tip) = MockFromSnapshot ss tip
+fromInitLog (InitFailure ss err log') =
+    case err of
+      InitFailureRead _err     -> MockReadFailure ss     (fromInitLog log')
+      InitFailureTooRecent tip -> MockTooRecent   ss tip (fromInitLog log')
+
+mockInitLog :: forall t. LUT t => Mock t -> MockInitLog t MockSnap
+mockInitLog Mock{..} = go (Map.toDescList mockSnaps)
+  where
+    go :: [(MockSnap, (Tip' t, SnapState))] -> MockInitLog t MockSnap
+    go []                         = MockFromGenesis
+    go ((snap, (mr, state)):snaps) =
+        case (state, mr) of
+          (SnapCorrupted Delete, _) ->
+            -- The real DB won't even see deleted snapshots
+            go snaps
+          (SnapCorrupted Truncate, _) ->
+            -- If it's truncated, it will skip it
+            MockReadFailure snap $ go snaps
+          (SnapOk, TipGen) ->
+            -- Took Snapshot at genesis: definitely useable
+            MockFromSnapshot snap mr
+          (SnapOk, Tip r) ->
+            if onChain r
+              then MockFromSnapshot snap mr
+              else MockTooRecent    snap mr $ go snaps
+
+    onChain :: BlockRef t -> Bool
+    onChain r = any (\(b, _l) -> blockRef b == r) mockLedger
+
+applyMockLog :: forall t. MockInitLog t MockSnap -> Mock t -> Mock t
+applyMockLog = go
+  where
+    go :: MockInitLog t MockSnap -> Mock t -> Mock t
+    go  MockFromGenesis             mock = mock { mockRestore = TipGen }
+    go (MockFromSnapshot _  tip)    mock = mock { mockRestore = tip    }
+    go (MockReadFailure  ss   log') mock = go log' $ deleteSnap ss mock
+    go (MockTooRecent    ss _ log') mock = go log' $ deleteSnap ss mock
+
+    deleteSnap :: MockSnap -> Mock t -> Mock t
+    deleteSnap ss mock = mock {
+          mockSnaps = Map.alter setIsDeleted ss (mockSnaps mock)
+        }
+
+    setIsDeleted :: Maybe (Tip (BlockRef t), SnapState)
+                 -> Maybe (Tip (BlockRef t), SnapState)
+    setIsDeleted Nothing         = error "setIsDeleted: impossible"
+    setIsDeleted (Just (tip, _)) = Just (tip, SnapCorrupted Delete)
+
+
+-- | Compute theretical maximum rollback
+--
+-- The actual maximum rollback will be restricted by the memory policy.
+mockMaxRollback :: forall t. LUT t => Mock t -> Word64
+mockMaxRollback Mock{..} = go mockLedger
+  where
+    go :: MockLedger t -> Word64
+    go ((b, _l):bs)
+      | Tip (blockRef b) == mockRestore = 0
+      | otherwise                       = 1 + go bs
+    go []                               = 0
 
 {-------------------------------------------------------------------------------
   Interpreter
@@ -322,31 +432,47 @@ runMock :: forall t. LUT t
 runMock = first Resp .: go
   where
     go :: Cmd t MockSnap -> Mock t -> (Success t MockSnap, Mock t)
-    go Current        = \mock -> (Ledger (cur (mockLedger mock)), mock)
-    go (Push b)       = first MaybeErr . mockUpdateLedger (push b)
-    go (Switch n bs)  = first MaybeErr . mockUpdateLedger (switch n bs)
-    go Restore        = go Current
-    go Snap           = \mock@Mock{..} -> (
-          Snapped (MockSnap mockNext)
-        , mock { mockNext  = mockNext + 1
-               , mockSnaps = Map.insert (MockSnap mockNext) SnapOk mockSnaps
+    go Current       mock = (Ledger (cur (mockLedger mock)), mock)
+    go (Push b)      mock = first MaybeErr $ mockUpdateLedger (push b)      mock
+    go (Switch n bs) mock = first MaybeErr $ mockUpdateLedger (switch n bs) mock
+    go Restore       mock = (Restored (initLog, cur (mockLedger mock')), mock')
+      where
+        initLog = mockInitLog mock
+        mock'   = applyMockLog initLog mock
+    go Snap          mock = (
+          Snapped (MockSnap (mockNext mock), snapped)
+        , mock { mockNext  = mockNext mock + 1
+               , mockSnaps = Map.insert (MockSnap (mockNext mock))
+                                        (snapped, SnapOk)
+                                        (mockSnaps mock)
                }
         )
-    go (Corrupt c ss) = \mock -> (
+      where
+        -- The snapshot that the real implementation will write to disk
+        --
+        -- When we write a snapshot, we write the ledger state @k@ blocks back,
+        -- since we only want to write immutable ledger states
+        snapped :: Tip' t
+        snapped =
+            case drop (fromIntegral k) (mockLedger mock) of
+              []       -> TipGen
+              (b, _):_ -> Tip (blockRef b)
+          where
+            k = min (memPolicyMaxRollback (mockPolicy mock))
+                    (mockMaxRollback mock)
+    go (Corrupt c ss) mock = (
           Unit ()
         , mock { mockSnaps = Map.alter corrupt ss (mockSnaps mock) }
         )
       where
-        -- Deletion trumps corruption
-        corrupt :: Maybe SnapState -> Maybe SnapState
-        corrupt old = Just $
-          case (c, old) of
-            (_        , Nothing    )               -> SnapCorrupted c
-            (Delete   , _          )               -> SnapCorrupted Delete
-            (Truncate , Just SnapOk)               -> SnapCorrupted Truncate
-            (Truncate , (Just (SnapCorrupted c'))) -> SnapCorrupted c'
-    go (Drop n) = \mock@Mock{..} ->
-        go Restore $ mock { mockLedger = drop (fromIntegral n) mockLedger }
+        corrupt :: Maybe (Tip' t, SnapState)
+                -> Maybe (Tip' t, SnapState)
+        corrupt Nothing         = error "corrupt: impossible"
+        corrupt (Just (ref, _)) = Just $ (ref, SnapCorrupted c)
+    go (Drop n) mock =
+        go Restore $ mock {
+            mockLedger = drop (fromIntegral n) (mockLedger mock)
+          }
 
     push :: BlockVal t -> StateT (MockLedger t) (Except (LedgerErr t)) ()
     push b = do
@@ -434,13 +560,24 @@ dbStreamAPI DB{..} = StreamAPI {..}
   where
     streamAfter :: Tip' t -> (Maybe (m (NextBlock' t)) -> m a) -> m a
     streamAfter tip k = do
-        rs       <- atomically $ reverse . fst <$> readTVar dbState
-        toStream <- case tip of
-                      TipGen -> do atomically $ Just <$> newTVar rs
-                      Tip r  -> case dropWhile (/= r) rs of
-                                   []    -> return Nothing
-                                   _:rs' -> atomically $ Just <$> newTVar rs'
-        k (getNext <$> toStream)
+        rs <- atomically $ reverse . fst <$> readTVar dbState
+        if unknownBlock tip rs
+          then k Nothing
+          else do
+            toStream <- atomically $ newTVar (blocksToStream tip rs)
+            k (Just (getNext toStream))
+
+    -- Ignore requests to start streaming from blocks not on the current chain
+    unknownBlock :: Tip' t -> [BlockRef t] -> Bool
+    unknownBlock TipGen  _  = False
+    unknownBlock (Tip r) rs = r `L.notElem` rs
+
+    -- Blocks to stream
+    --
+    -- Precondition: tip must be on the current chain
+    blocksToStream :: Tip' t -> [BlockRef t] -> [BlockRef t]
+    blocksToStream TipGen  = id
+    blocksToStream (Tip r) = tail . dropWhile (/= r)
 
     getNext :: TVar m [BlockRef t] -> m (NextBlock' t)
     getNext toStream = do
@@ -489,15 +626,15 @@ runDB standalone@DB{..} cmd =
         (_, db) <- atomically $ readTVar dbState
         Snapped <$> takeSnapshot hasFS S.encode S.encode db
     go hasFS Restore = do
-        db <- initLedgerDB
-                hasFS
-                S.decode
-                S.decode
-                (dbMemPolicy dbEnv)
-                conf
-                streamAPI
+        (initLog, db) <- initLedgerDB
+                           hasFS
+                           S.decode
+                           S.decode
+                           (dbMemPolicy dbEnv)
+                           conf
+                           streamAPI
         atomically $ modifyTVar dbState (\(rs, _) -> (rs, db))
-        go hasFS Current
+        return $ Restored (fromInitLog initLog, ledgerDbCurrent db)
     go hasFS (Corrupt c ss) =
         EH.catchError (hasFsErr hasFS)
           (case c of
@@ -568,8 +705,8 @@ data Model t r = Model {
 
 deriving instance (Show1 r, LUT t) => Show (Model t r)
 
-initModel :: Model t r
-initModel = Model mockInit []
+initModel :: MemPolicy -> Model t r
+initModel memPolicy = Model (mockInit memPolicy) []
 
 toMock :: (Functor f, Eq1 r) => Model t r -> f :@ r -> f MockSnap
 toMock m (At fr) = (modelSnaps m !) <$> fr
@@ -614,9 +751,10 @@ execCmd :: LUT t
 execCmd model (QSM.Command cmd resp _vars) = lockstep model cmd resp
 
 execCmds :: forall t. LUT t
-         => QSM.Commands (At (Cmd t)) (At (Resp t))
+         => MemPolicy
+         -> QSM.Commands (At (Cmd t)) (At (Resp t))
          -> [Event t Symbolic]
-execCmds = \(QSM.Commands cs) -> go initModel cs
+execCmds memPolicy = \(QSM.Commands cs) -> go (initModel memPolicy) cs
   where
     go :: Model t Symbolic
        -> [QSM.Command (At (Cmd t)) (At (Resp t))]
@@ -634,7 +772,9 @@ generator :: forall t. LUT t
           => MemPolicy -> Model t Symbolic -> Maybe (Gen (Cmd t :@ Symbolic))
 generator memPolicy (Model mock hs) = Just $ QC.oneof $ concat [
       withoutRef
-    , withRef
+    , if null possibleCorruptions
+        then []
+        else [(At . uncurry Corrupt) <$> QC.elements possibleCorruptions]
     ]
   where
     withoutRef :: [Gen (Cmd t :@ Symbolic)]
@@ -643,7 +783,7 @@ generator memPolicy (Model mock hs) = Just $ QC.oneof $ concat [
         , fmap At $ Push <$> genBlock (mockCurrent mock)
         , fmap At $ do
             let maxRollback = minimum [
-                    mockChainLength mock
+                    mockMaxRollback mock
                   , memPolicyMaxRollback memPolicy
                   ]
             numRollback  <- QC.choose (0, maxRollback)
@@ -655,19 +795,39 @@ generator memPolicy (Model mock hs) = Just $ QC.oneof $ concat [
         , fmap At $ (Drop . fromIntegral) <$> QC.choose (0, mockChainLength mock)
         ]
 
-    withRef :: [Gen (Cmd t :@ Symbolic)]
-    withRef = [
-          fmap At $ Corrupt <$> genCorruption <*> genSnapshot
-        ]
+    possibleCorruptions :: [(Corruption, Reference DiskSnapshot Symbolic)]
+    possibleCorruptions = concatMap aux hs
+      where
+        aux :: (Reference DiskSnapshot Symbolic, MockSnap)
+            -> [(Corruption, Reference DiskSnapshot Symbolic)]
+        aux (diskSnap, mockSnap) =
+            case Map.lookup mockSnap (mockSnaps mock) of
+              Just (_tip, state) ->
+                map (, diskSnap) $ possibleCorruptionsInState state
+              Nothing ->
+                error "possibleCorruptions: impossible"
 
-    genCorruption :: Gen Corruption
-    genCorruption = QC.elements [Delete, Truncate]
-
-    genSnapshot :: Gen (Reference DiskSnapshot Symbolic)
-    genSnapshot = QC.elements (map fst hs)
+    possibleCorruptionsInState :: SnapState -> [Corruption]
+    possibleCorruptionsInState SnapOk                   = [Delete, Truncate]
+    possibleCorruptionsInState (SnapCorrupted Truncate) = [Delete]
+    possibleCorruptionsInState (SnapCorrupted Delete)   = []
 
 shrinker :: Model t Symbolic -> Cmd t :@ Symbolic -> [Cmd t :@ Symbolic]
-shrinker _ _ = []
+shrinker _ (At cmd) =
+    case cmd of
+      Current      -> []
+      Push _b      -> []
+      Snap         -> []
+      Restore      -> []
+      Switch 0 [b] -> [At $ Push b]
+      Switch n bs  -> if length bs > fromIntegral n
+                        then [At $ Switch n (init bs)]
+                        else []
+      -- an absent snapshot is easier than a corrupted one
+      Corrupt c ss -> case c of
+                        Truncate -> [At $ Corrupt Delete ss]
+                        Delete   -> []
+      Drop n       -> At . Drop <$> QC.shrink n
 
 {-------------------------------------------------------------------------------
   Additional type class instances required by QSM
@@ -712,6 +872,8 @@ instance Traversable t => Rank2.Traversable (At t) where
       lift f (QSM.Reference x) = QSM.Reference <$> f x
 
 instance LUT t => ToExpr (Model t Concrete)
+instance ToExpr a => ToExpr (Tip a)
+instance ToExpr MemPolicy
 
 deriving instance ToExpr DiskSnapshot
 
@@ -740,13 +902,14 @@ postcondition m cmd r = toMock (eventAfter e) r .== eventMockResp e
   where
     e = lockstep m cmd r
 
-precondition :: Model t Symbolic -> Cmd t :@ Symbolic -> Logic
+precondition :: LUT t => Model t Symbolic -> Cmd t :@ Symbolic -> Logic
 precondition (Model mock hs) (At c) =
         forall (toList c) (`elem` map fst hs)
     .&& validCmd c
   where
+    -- Maximum rollback might decrease if shrinking removed blocks
     validCmd :: Cmd t ss -> Logic
-    validCmd (Switch n _) = n .<= mockChainLength mock
+    validCmd (Switch n _) = n .<= mockMaxRollback mock
     validCmd _otherwise   = Top
 
 symbolicResp :: LUT t
@@ -762,7 +925,7 @@ sm :: (MonadSTM m, MonadThrow m, MonadST m, LUT t)
    -> StandaloneDB m t
    -> StateMachine (Model t) (At (Cmd t)) m (At (Resp t))
 sm memPolicy db = StateMachine {
-      initModel     = initModel
+      initModel     = initModel memPolicy
     , transition    = transition
     , precondition  = precondition
     , postcondition = postcondition
@@ -774,28 +937,30 @@ sm memPolicy db = StateMachine {
     , mock          = symbolicResp
     }
 
-prop_sequential :: forall t. LUT t => Proxy t -> MemPolicy -> QC.Property
+prop_sequential :: LUT t => Proxy t -> MemPolicy -> QC.Property
 prop_sequential p memPolicy =
     QC.collect (tagMemPolicy memPolicy) $
       forAllCommands (sm memPolicy (dbUnused p)) Nothing $ \cmds ->
-        QC.monadicIO (prop cmds)
+        QC.monadicIO (propCmds memPolicy cmds)
+
+-- Ideally we'd like to use @SimM s@ instead of IO, but unfortunately
+-- QSM requires monads that implement MonadIO.
+propCmds :: LUT t
+         => MemPolicy
+         -> QSM.Commands (At (Cmd t)) (At (Resp t))
+         -> QC.PropertyM IO ()
+propCmds memPolicy cmds = do
+    fs <- QC.run $ atomically $ newTVar MockFS.empty
+    let dbEnv :: DbEnv IO
+        dbEnv = DbEnv (simHasFS EH.exceptions fs) memPolicy
+    db <- QC.run $ initStandaloneDB dbEnv
+    let sm' = sm memPolicy db
+    (hist, _model, res) <- runCommands sm' cmds
+    prettyCommands sm' hist
+      $ QC.tabulate "Tags" (map show $ tagEvents k (execCmds memPolicy cmds))
+      $ res QC.=== Ok
   where
     k = memPolicyMaxRollback memPolicy
-
-    -- Ideally we'd like to use @SimM s@ instead of IO, but unfortunately
-    -- QSM requires monads that implement MonadIO.
-    prop :: QSM.Commands (At (Cmd t)) (At (Resp t))
-         -> QC.PropertyM IO ()
-    prop cmds = do
-      fs <- QC.run $ atomically $ newTVar MockFS.empty
-      let dbEnv :: DbEnv IO
-          dbEnv = DbEnv (simHasFS EH.exceptions fs) memPolicy
-      db <- QC.run $ initStandaloneDB dbEnv
-      let sm' = sm memPolicy db
-      (hist, _model, res) <- runCommands sm' cmds
-      prettyCommands sm' hist
-        $ QC.tabulate "Tags" (map show $ tagEvents k (execCmds cmds))
-        $ res QC.=== Ok
 
 dbUnused :: Proxy t -> StandaloneDB IO t
 dbUnused = error "DB unused during command generation"
@@ -898,12 +1063,14 @@ showLabelledExamples memPolicy mReplay relevant = do
 
     QC.labelledExamplesWith args $
       forAllCommands (sm memPolicy (dbUnused p)) Nothing $ \cmds ->
-        repeatedly QC.collect (filter relevant . tagEvents k . execCmds $ cmds) $
+        repeatedly QC.collect (run cmds) $
           QC.property True
   where
     k = memPolicyMaxRollback memPolicy
     p = Proxy @'LedgerSimple
 
+    run :: LUT t => QSM.Commands (At (Cmd t)) (At (Resp t)) -> [Tag]
+    run = filter relevant . tagEvents k . execCmds memPolicy
 
 {-------------------------------------------------------------------------------
   Auxiliary
