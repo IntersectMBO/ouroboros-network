@@ -8,7 +8,8 @@ module Ouroboros.Storage.ImmutableDB.Types
   , TruncateTo (..)
   , EpochFileParser (..)
   , ValidationPolicy (..)
-  , IteratorID
+  , BaseIteratorID
+  , IteratorID(..)
   , initialIteratorID
   , ImmutableDBError (..)
   , sameImmutableDBError
@@ -101,13 +102,17 @@ data ValidationPolicy
     -- of a missing or invalid epoch file, or an invalid index file.
   deriving (Show, Eq, Generic)
 
+-- | ID of an iterator that is not derived from another iterator
+newtype BaseIteratorID = MkBaseIteratorID Int
+  deriving (Show, Eq, Ord, Generic, Enum)
+
 -- | A unique identifier for an iterator.
-newtype IteratorID = IteratorID { getIteratorID :: Int }
-  deriving (Show, Eq, Ord, Enum, Generic)
+data IteratorID = BaseIteratorID BaseIteratorID | DerivedIteratorID IteratorID
+  deriving (Show, Eq, Ord, Generic)
 
 -- | Initial identifier number, use 'succ' to generate the next one.
-initialIteratorID :: IteratorID
-initialIteratorID = IteratorID 0
+initialIteratorID :: BaseIteratorID
+initialIteratorID = MkBaseIteratorID 0
 
 -- | Errors that might arise when working with this database.
 data ImmutableDBError

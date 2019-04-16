@@ -61,7 +61,7 @@ data DBModel hash = DBModel
     -- ^ The EBB for each 'EpochNo'
   , dbmCumulEpochSizes :: CumulEpochSizes
   , dbmIterators       :: Map IteratorID (IteratorModel hash)
-  , dbmNextIterator    :: IteratorID
+  , dbmNextIterator    :: BaseIteratorID
   } deriving (Show, Generic)
 
 initDBModel :: EpochSize -- ^ The size of the first epoch
@@ -97,7 +97,7 @@ dbmBlobs dbm@DBModel {..} = foldr add ebbs (zip (map SlotNo [0..]) dbmChain)
 -- The model of an iterator is just the list of 'IteratorResult's it streams
 -- over. Advancing the iterator will yield the first one and should drop it
 -- from the model.
-newtype IteratorModel hash = IteratorModel [IteratorResult hash]
+newtype IteratorModel hash = IteratorModel [IteratorResult hash ByteString]
   deriving (Show, Eq, Generic)
 
 
@@ -505,7 +505,7 @@ streamBinaryBlobsModel :: forall m hash.
                        => ErrorHandling ImmutableDBError m
                        -> Maybe (SlotNo, hash)
                        -> Maybe (SlotNo, hash)
-                       -> m (Iterator hash m)
+                       -> m (Iterator hash m ByteString)
 streamBinaryBlobsModel err mbStart mbEnd = do
     dbm@DBModel {..} <- get
 
@@ -513,10 +513,10 @@ streamBinaryBlobsModel err mbStart mbEnd = do
 
     let results = iteratorResults dbm
         itm     = IteratorModel results
-        itID    = dbmNextIterator
+        itID    = BaseIteratorID dbmNextIterator
     put dbm
       { dbmNextIterator = succ dbmNextIterator
-      , dbmIterators    = Map.insert dbmNextIterator itm dbmIterators
+      , dbmIterators    = Map.insert itID itm dbmIterators
       }
     return Iterator
       { iteratorNext  = iteratorNextModel  itID
@@ -576,7 +576,7 @@ streamBinaryBlobsModel err mbStart mbEnd = do
 
 iteratorNextModel :: MonadState (DBModel hash) m
                   => IteratorID
-                  -> m (IteratorResult hash)
+                  -> m (IteratorResult hash ByteString)
 iteratorNextModel itID = do
     dbm@DBModel {..} <- get
     case Map.lookup itID dbmIterators of

@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE RankNTypes    #-}
 module Ouroboros.Storage.ImmutableDB.API
@@ -199,7 +200,7 @@ data ImmutableDB hash m = ImmutableDB
       :: HasCallStack
       => Maybe (SlotNo, hash)
       -> Maybe (SlotNo, hash)
-      -> m (Iterator hash m)
+      -> m (Iterator hash m ByteString)
       -- TODO inclusive + exclusive bounds
 
     -- | Throw 'ImmutableDB' errors
@@ -208,7 +209,7 @@ data ImmutableDB hash m = ImmutableDB
 
 -- | An 'Iterator' is a handle which can be used to efficiently stream binary
 -- blobs. Slots not containing a blob and missing EBBs are skipped.
-data Iterator hash m = Iterator
+data Iterator hash m a = Iterator
   { -- | Steps an 'Iterator' yielding an 'IteratorResult'.
     --
     -- Throws a 'ClosedDBError' if the database is closed.
@@ -219,7 +220,7 @@ data Iterator hash m = Iterator
     -- The iterator is automatically closed when exhausted
     -- ('IteratorExhausted'), and can be prematurely closed with
     -- 'iteratorClose'.
-    iteratorNext  :: HasCallStack => m (IteratorResult hash)
+    iteratorNext  :: HasCallStack => m (IteratorResult hash a)
 
     -- | Dispose of the 'Iterator' by closing any open handles.
     --
@@ -234,37 +235,50 @@ data Iterator hash m = Iterator
   , iteratorID    :: IteratorID
   }
 
+instance Functor m => Functor (Iterator hash m) where
+  fmap f itr = Iterator{
+        iteratorNext  = fmap f <$> iteratorNext itr
+      , iteratorClose = iteratorClose itr
+      , iteratorID    = DerivedIteratorID $ iteratorID itr
+      }
 
 -- | Create an iterator from the given 'ImmutableDB' using
 -- 'streamBinaryBlobs'. Perform the given action using the iterator, and close
 -- the iterator using its 'iteratorClose' function, in case of success or when
 -- an exception was thrown.
 withIterator :: (HasCallStack, MonadThrow m)
-             => ImmutableDB hash m        -- ^ The database
-             -> Maybe (SlotNo, hash)      -- ^ Start streaming from here
-             -> Maybe (SlotNo, hash)      -- ^ End streaming here
-             -> (Iterator hash m -> m a)  -- ^ Action to perform on the iterator
+             => ImmutableDB hash m
+             -- ^ The database
+             -> Maybe (SlotNo, hash)
+             -- ^ Start streaming from here
+             -> Maybe (SlotNo, hash)
+             -- ^ End streaming here
+             -> (Iterator hash m ByteString -> m a)
+             -- ^ Action to perform on the iterator
              -> m a
 withIterator db start end =
     bracket (streamBinaryBlobs db start end) iteratorClose
 
 
 -- | Equality based on 'iteratorID'
-instance Eq (Iterator hash m) where
+instance Eq (Iterator hash m a) where
   (==) = (==) `on` iteratorID
 
+instance Ord (Iterator hash m a) where
+  compare = compare `on` iteratorID
+
 -- | The result of stepping an 'Iterator'.
-data IteratorResult hash
+data IteratorResult hash a
   = IteratorExhausted
-  | IteratorResult    SlotNo       ByteString
-  | IteratorEBB       EpochNo hash ByteString
-  deriving (Show, Eq, Generic)
+  | IteratorResult    SlotNo       a
+  | IteratorEBB       EpochNo hash a
+  deriving (Show, Eq, Generic, Functor)
 
 -- | Consume an 'Iterator' by stepping until it is exhausted. A list of all
 -- the 'IteratorResult's (excluding the final 'IteratorExhausted') produced by
 -- the 'Iterator' is returned.
 iteratorToList :: (HasCallStack, Monad m)
-               => Iterator hash m -> m [IteratorResult hash]
+               => Iterator hash m a -> m [IteratorResult hash a]
 iteratorToList it = go
   where
     go = do
