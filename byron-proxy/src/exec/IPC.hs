@@ -24,6 +24,9 @@ import Network.TypedProtocol.Driver (runPeer)
 import Network.Socket (Socket)
 import qualified Network.Socket as Socket
 
+import qualified Pos.Binary as CSL (decode)
+import qualified Pos.Chain.Block as CSL (Block, headerHash)
+
 import Ouroboros.Network.Channel (Channel, socketAsChannel)
 import qualified Ouroboros.Network.Server.Socket as Server
 import Ouroboros.Network.Server.Version (Application (..), Dict (..), Version (..), Versions (..), Sigma (..))
@@ -146,12 +149,11 @@ encodeBlob Dict = CBOR.toStrictByteString . encode
 decodeBlob :: Dict Serialise t -> Version.Blob -> Maybe t
 decodeBlob Dict = either (const Nothing) Just . deserialiseOrFail . Lazy.fromStrict
 
--- | Echos rolls (forward or backward) using a trace.
---
--- TODO we want to batch-write to a DB.
--- How to do that? The Fold must accumulate them, then write inside a
--- transaction.
--- Or, perhaps we can put it into CPS?
+-- | This chain sync client will first try to improve the read pointer to
+-- the tip of the database, and then will roll forward forever, stopping
+-- if there is a roll-back.
+-- It makes sense given that we only have an immutable database and one
+-- source for blocks: one read pointer improve is always enough.
 chainSyncClient
   :: forall m x .
      ( Monad m )
@@ -161,7 +163,31 @@ chainSyncClient
 chainSyncClient trace db = Client.chainSyncClient fold
   where
   fold :: Client.Fold m x
-  fold = Client.Fold $ pure $ Client.Continue forward backward
+  fold = Client.Fold $ do
+    tip <- DB.readTip db
+    mPoint <- case tip of
+      -- DB is empty. Can go without improving read pointer.
+      DB.TipGenesis -> pure Nothing
+      -- EBB is nice because we already have the header hash.
+      DB.TipEBB   slotNo hhash _     -> pure $ Just $ ChainSync.Point
+        { ChainSync.pointSlot = slotNo
+        , ChainSync.pointHash = hhash
+        }
+      DB.TipBlock slotNo       bytes -> pure $ Just $ ChainSync.Point
+        { ChainSync.pointSlot = slotNo
+        , ChainSync.pointHash = hhash
+        }
+        where
+        hhash = case DB.decodeFull CSL.decode (Lazy.fromStrict bytes) of
+          Left cborError -> error "failed to decode block"
+          Right (blk :: CSL.Block) -> CSL.headerHash blk
+    case mPoint of
+      Nothing -> Client.runFold roll
+      -- We don't need to do anything with the result; the point is that
+      -- the server now knows the proper read pointer.
+      Just point -> pure $ Client.Improve [point] $ \_ _ -> roll
+  roll :: Client.Fold m x
+  roll = Client.Fold $ pure $ Client.Continue forward backward
   forward :: ChainSync.Block -> ChainSync.Point -> Client.Fold m x
   forward blk point = Client.Fold $ do
     traceWith trace (Right blk, point)
