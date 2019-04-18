@@ -217,8 +217,8 @@ lockstep model@Model {..} cmdErr (At resp) = Event
     model' = model {
               dbModel = dbModel'
             , shouldEnd = case resp of
-                    Resp (Left (VParserError _)) -> True
-                    _                            -> False
+                    Resp (Left (UnexpectedError (ParserError _))) -> True
+                    _                                             -> False
             }
 
 -- | Key property of the model is that we can go from real to mock responses
@@ -236,8 +236,8 @@ runPure dbm mdb (CmdErr cmd err) =
     bimap Resp fst $ flip runState (dbm, err) $ do
         resp <- runExceptT $ runDB runRest mdb cmd
         case (err, resp) of
-            (Nothing, _)                       -> return resp
-            (Just _ , Left ClosedDBError)      -> return resp
+            (Nothing, _)                             -> return resp
+            (Just _ , Left (UserError ClosedDBError)) -> return resp
             (Just _, _) -> do
                 modify $ \(dbm', cErr) -> (dbm' {open = False}, cErr)
                 return $ Right $ SimulatedError resp
@@ -287,8 +287,10 @@ runDB restCmd db cmd = case cmd of
     CreateInvalidFile  -> restCmd db cmd
     DuplicateBlock {}  -> restCmd db cmd
     AskIfMember bids   -> do
-        isMember <- getIsMember db
-        return $ IsMember $ isMember <$> bids
+        mIsMember <- undefined -- atomically $ getIsMember db
+        return $ case mIsMember of
+            Nothing       -> IsMember []
+            Just isMember -> IsMember $ isMember <$> bids
 
 smErr :: (MonadCatch m, MonadSTM m)
       => Bool
@@ -456,8 +458,8 @@ semanticsImplErr errorsVar hasFS m env (At cmderr) = At . Resp <$> case cmderr o
         res <- withErrors errorsVar errors $
             tryVolDB (runDB (semanticsRestCmd hasFS env) m cmd)
         case res of
-            Left ClosedDBError -> return res
-            _                  -> do
+            Left (UserError ClosedDBError) -> return res
+            _                              -> do
                 closeDB m
                 return $ Right $ SimulatedError res
 
@@ -657,8 +659,8 @@ tag ls = C.classify
 
     tagIsClosedError :: EventPred
     tagIsClosedError = C.predicate $ \ev -> case eventMockResp ev of
-        Resp (Left ClosedDBError) -> Left TagClosedError
-        _                         -> Right tagIsClosedError
+        Resp (Left (UserError ClosedDBError)) -> Left TagClosedError
+        _                                     -> Right tagIsClosedError
 
     tagGarbageCollectThenReOpen :: EventPred
     tagGarbageCollectThenReOpen = successful $ \ev _ -> case getCmd ev of
