@@ -106,7 +106,8 @@ import           Ouroboros.Consensus.Util (SomePair (..))
 
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types
-import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
+import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..),
+                     ThrowCantCatch (..))
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 import           Ouroboros.Storage.VolatileDB.API
 import           Ouroboros.Storage.VolatileDB.Util
@@ -118,6 +119,7 @@ import           Ouroboros.Storage.VolatileDB.Util
 data VolatileDBEnv m blockId = forall h. VolatileDBEnv {
       _dbHasFS          :: !(HasFS m h)
     , _dbErr            :: !(ErrorHandling (VolatileDBError blockId) m)
+    , _dbErrSTM         :: !(ThrowCantCatch (VolatileDBError blockId) (STM m))
     , _dbInternalState  :: !(TMVar m (Maybe (InternalState blockId h)))
     , _maxBlocksPerFile :: !Int
     , _parser           :: !(Parser (ParserError blockId) m blockId)
@@ -141,19 +143,21 @@ data InternalState blockId h = InternalState {
 openDB :: (HasCallStack, MonadCatch m, MonadSTM m, Ord blockId, Typeable blockId, Show blockId)
        => HasFS m h
        -> ErrorHandling (VolatileDBError blockId) m
+       -> ThrowCantCatch (VolatileDBError blockId) (STM m)
        -> Parser (ParserError blockId) m blockId
        -> Int
        -> m (VolatileDB blockId m)
-openDB h e p m = fst <$> openDBFull h e p m
+openDB h e e' p m = fst <$> openDBFull h e e' p m
 
 openDBFull :: (HasCallStack, MonadCatch m, MonadSTM m, Ord blockId, Show blockId, Typeable blockId)
            => HasFS m h
            -> ErrorHandling (VolatileDBError blockId) m
+           -> ThrowCantCatch (VolatileDBError blockId) (STM m)
            -> Parser (ParserError blockId) m blockId
            -> Int
            -> m (VolatileDB blockId m, VolatileDBEnv m blockId)
-openDBFull hasFS err parser maxBlocksPerFile = do
-    env <- openDBImpl hasFS err parser maxBlocksPerFile
+openDBFull hasFS err errSTM parser maxBlocksPerFile = do
+    env <- openDBImpl hasFS err errSTM parser maxBlocksPerFile
     let db = VolatileDB {
           closeDB        = closeDBImpl  env
         , isOpenDB       = isOpenDBImpl env
@@ -169,19 +173,20 @@ openDBFull hasFS err parser maxBlocksPerFile = do
 
 -- After opening the db once, the same @maxBlocksPerFile@ must be provided all
 -- next opens.
-openDBImpl :: (HasCallStack, MonadCatch m, Typeable blockId, MonadThrow m, MonadSTM m, Ord blockId, Show blockId)
+openDBImpl :: (HasCallStack, MonadCatch m, Typeable blockId, MonadSTM m, Ord blockId, Show blockId)
            => HasFS m h
            -> ErrorHandling (VolatileDBError blockId) m
+           -> ThrowCantCatch (VolatileDBError blockId) (STM m)
            -> Parser (ParserError blockId) m blockId
            -> Int
            -> m (VolatileDBEnv m blockId)
-openDBImpl hasFS@HasFS{..} err parser maxBlocksPerFile =
+openDBImpl hasFS@HasFS{..} err errSTM parser maxBlocksPerFile =
     if maxBlocksPerFile <= 0
     then EH.throwError err $ UserError . InvalidArgumentsError $ "maxBlocksPerFile should be positive"
     else do
         st <- mkInternalStateDB hasFS err parser maxBlocksPerFile
         stVar <- atomically $ newTMVar $ Just st
-        return $ VolatileDBEnv hasFS err stVar maxBlocksPerFile parser
+        return $ VolatileDBEnv hasFS err errSTM stVar maxBlocksPerFile parser
 
 closeDBImpl :: MonadSTM m
             => VolatileDBEnv m blockId
@@ -344,11 +349,12 @@ getInternalState VolatileDBEnv{..} = do
 
 getIsMemberImpl :: forall m blockId. (MonadSTM m, Ord blockId)
                 => VolatileDBEnv m blockId
-                -> STM m (Maybe (blockId -> Bool))
+                -> STM m (blockId -> Bool)
 getIsMemberImpl VolatileDBEnv{..} = do
     mSt <- readTMVar _dbInternalState
-    return $ flip fmap mSt $ \st -> \bid ->
-        Map.member bid (_currentRevMap st)
+    case mSt of
+        Nothing -> EH.throwError' _dbErrSTM $ UserError ClosedDBError
+        Just st -> return $ \bid -> Map.member bid (_currentRevMap st)
 
 getBlockIdsImpl :: forall m blockId. (MonadSTM m)
                 => VolatileDBEnv m blockId

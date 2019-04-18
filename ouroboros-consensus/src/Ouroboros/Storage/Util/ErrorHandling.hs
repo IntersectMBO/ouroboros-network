@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -9,18 +10,28 @@
 -- > import Ouroboros.Storage.Util.ErrorHandling (ErrorHandling(..))
 -- > import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 module Ouroboros.Storage.Util.ErrorHandling (
+    -- * Error handling (throw and catch)
     ErrorHandling(..)
   , try
   , onException
+    -- ** Construction
   , monadError
   , exceptions
   , exceptT
   , monadCatch
   , noErrors
+    -- ** Lift
   , embed
   , liftErrNewtype
   , liftErrReader
   , liftErrState
+    -- * Throw only
+  , ThrowCantCatch(..)
+    -- ** Construction
+  , throwCantCatch
+  , throwSTM
+    -- ** Lift
+  , liftThrowT
   ) where
 
 import           Control.Exception (Exception)
@@ -29,11 +40,17 @@ import           Control.Monad.Except (ExceptT, MonadError)
 import qualified Control.Monad.Except as M
 import           Control.Monad.Reader (ReaderT (..), runReaderT)
 import           Control.Monad.State (StateT (..), runStateT)
+import           Control.Monad.Trans.Class (MonadTrans (..))
 import           Data.Type.Coercion
 import           Data.Void
 
+import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow (MonadCatch)
 import qualified Control.Monad.Class.MonadThrow as C
+
+{-------------------------------------------------------------------------------
+  Error handling
+-------------------------------------------------------------------------------}
 
 -- | Reification of the 'MonadError' class
 --
@@ -55,6 +72,10 @@ onException :: Monad m => ErrorHandling e m -> m a -> m b -> m a
 onException ErrorHandling{..} act onEx = act `catchError` \e -> do
     _ <- onEx
     throwError e
+
+{-------------------------------------------------------------------------------
+  Construct ErrorHandling
+-------------------------------------------------------------------------------}
 
 monadError :: MonadError e m => ErrorHandling e m
 monadError = ErrorHandling {
@@ -84,6 +105,10 @@ noErrors = ErrorHandling {
       throwError = absurd
     , catchError = const
     }
+
+{-------------------------------------------------------------------------------
+  Lift ErrorHandling
+-------------------------------------------------------------------------------}
 
 -- | Embed one kind of error in another
 embed :: (e' -> e)
@@ -133,3 +158,33 @@ liftErrState _ ErrorHandling{..} = ErrorHandling{
                                      catchError (runStateT act st) $ \e ->
                                        runStateT (handler e) st
     }
+
+{-------------------------------------------------------------------------------
+  Throw without catch
+-------------------------------------------------------------------------------}
+
+-- | Throw without the ability to catch
+--
+-- We occassionally have contexts in which we have the ability to throw
+-- exceptions, but not catch them; STM being the primary example.
+data ThrowCantCatch e m = ThrowCantCatch {
+      throwError' :: forall a. e -> m a
+    }
+
+{-------------------------------------------------------------------------------
+  ThrowCantCatch construction
+-------------------------------------------------------------------------------}
+
+throwCantCatch :: ErrorHandling e m -> ThrowCantCatch e m
+throwCantCatch ErrorHandling{..} = ThrowCantCatch throwError
+
+throwSTM :: (C.MonadThrow (STM m), Exception e) => ThrowCantCatch e (STM m)
+throwSTM = ThrowCantCatch $ C.throwM
+
+{-------------------------------------------------------------------------------
+  Lifting ThrowCantCatch
+-------------------------------------------------------------------------------}
+
+liftThrowT :: (MonadTrans t, Monad m)
+           => ThrowCantCatch e m -> ThrowCantCatch e (t m)
+liftThrowT ThrowCantCatch{..} = ThrowCantCatch (lift . throwError')
