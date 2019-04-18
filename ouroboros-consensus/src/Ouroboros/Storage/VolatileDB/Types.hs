@@ -38,10 +38,22 @@ type SuccessorsIndex blockId = Map (Maybe blockId) (Set blockId)
 
 -- | Errors which might arise when working with this database.
 data VolatileDBError blockId =
-      FileSystemError FsError
-    | VParserError (ParserError blockId)
-    | InvalidArgumentsError String
+       UserError UserError
+    -- ^ An error thrown because of incorrect usage of the volatile database
+    -- by the user.
+    | UnexpectedError (UnexpectedError blockId)
+    -- ^ An unexpected error thrown because something went wrong on a lower
+    -- layer.
+    deriving Show
+
+data UserError =
+      InvalidArgumentsError String
     | ClosedDBError
+    deriving (Show, Eq)
+
+data UnexpectedError blockId =
+      FileSystemError FsError
+    | ParserError (ParserError blockId)
     deriving (Show)
 
 instance Eq blockId => Eq (VolatileDBError blockId) where
@@ -61,13 +73,24 @@ instance Eq blockId => Eq (ParserError blockId) where
 
 sameVolatileDBError :: Eq blockId => VolatileDBError blockId -> VolatileDBError blockId -> Bool
 sameVolatileDBError e1 e2 = case (e1, e2) of
-    (FileSystemError fs1, FileSystemError fs2)         -> sameFsError fs1 fs2
-    (VParserError p1, VParserError p2)                 -> p1 == p2
-    (ClosedDBError, ClosedDBError)                     -> True
-    (InvalidArgumentsError _, InvalidArgumentsError _) -> True
-    _                                                  -> False
+    (UserError ue1, UserError ue2)             -> ue1 == ue2
+    (UnexpectedError ue1, UnexpectedError ue2) -> sameUnexpectedError ue1 ue2
+    _                                          -> False
+
+--    (FileSystemError fs1, FileSystemError fs2)         -> sameFsError fs1 fs2
+--    (VParserError p1, VParserError p2)                 -> p1 == p2
+--    (ClosedDBError, ClosedDBError)                     -> True
+--    (InvalidArgumentsError _, InvalidArgumentsError _) -> True
+--    _                                                  -> False
 
 -- TODO: Why is this not comparing the arguments to 'DuplicatedSlot'?
+sameUnexpectedError :: Eq blockId => UnexpectedError blockId -> UnexpectedError blockId -> Bool
+sameUnexpectedError e1 e2 = case (e1, e2) of
+    (FileSystemError fs1, FileSystemError fs2) -> sameFsError fs1 fs2
+    (ParserError p1, ParserError p2)           -> p1 == p2
+    _                                          -> False
+
+
 sameParseError :: ParserError blockId -> ParserError blockId -> Bool
 sameParseError e1 e2 = case (e1, e2) of
     (DuplicatedSlot _, DuplicatedSlot _)         -> True
