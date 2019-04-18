@@ -62,7 +62,7 @@ modifyTMVar m action =
             ExitCaseAbort                -> putTMVar m oldState
        ) action
 
-wrapFsError :: (Show blockId, MonadCatch m, Monad m, Typeable blockId)
+wrapFsError :: (Show blockId, MonadCatch m, Typeable blockId)
             => ErrorHandling (VolatileDBError blockId) m -> m a -> m a
 wrapFsError err action = do
     mr <- try . try $ action

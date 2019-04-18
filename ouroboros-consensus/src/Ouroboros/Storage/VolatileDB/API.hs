@@ -37,5 +37,5 @@ data VolatileDB blockId m = VolatileDB {
     , getBlockIds    :: HasCallStack => m [blockId]
     , getSuccessors  :: HasCallStack => m (Maybe blockId -> Set blockId)
     , garbageCollect :: HasCallStack => SlotNo -> m ()
-    , getIsMember    :: HasCallStack => STM m (Maybe (blockId -> Bool))
+    , getIsMember    :: HasCallStack => STM m (blockId -> Bool)
 }
