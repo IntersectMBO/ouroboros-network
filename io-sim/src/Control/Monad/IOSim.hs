@@ -334,6 +334,10 @@ instance MonadAsync (SimM s) where
 
   cancel a@(Async tid _) = throwTo tid AsyncCancelled <* waitCatch a
 
+  isCancel _ e
+    | Just AsyncCancelled <- fromException e = True
+    | otherwise                              = False
+
   waitCatchSTM (Async _ var) = readTMVar var
   pollSTM      (Async _ var) = tryReadTMVar var
 
