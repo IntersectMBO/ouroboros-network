@@ -66,6 +66,7 @@ library
                        Ouroboros.Consensus.Util.Serialise
                        Ouroboros.Consensus.Util.Singletons
                        Ouroboros.Consensus.Util.STM
+                       Ouroboros.Consensus.Util.ThreadRegistry
 
                        -- Storing things on disk
                        Ouroboros.Storage.Common
