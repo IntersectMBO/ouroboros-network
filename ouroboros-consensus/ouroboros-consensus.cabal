@@ -25,6 +25,7 @@ library
 
   exposed-modules:
                        Ouroboros.Consensus.BlockchainTime
+                       Ouroboros.Consensus.BlockFetchClient
                        Ouroboros.Consensus.ChainSyncClient
                        Ouroboros.Consensus.ChainSyncServer
                        Ouroboros.Consensus.Crypto.DSIGN

@@ -50,6 +50,7 @@ import           Ouroboros.Network.BlockFetch.DeltaQ
                    , calculatePeerFetchInFlightLimits )
 
 
+-- TODO #468 extract this from BlockFetchConsensusInterface
 data FetchClientPolicy header block m =
      FetchClientPolicy {
        blockFetchSize     :: header -> SizeInBytes,
