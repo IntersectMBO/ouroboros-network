@@ -42,6 +42,7 @@ module Ouroboros.Consensus.Ledger.Mock (
 import           Codec.Serialise
 import           Control.Monad.Except
 import           Crypto.Random (MonadRandom)
+import qualified Data.ByteString.Lazy as BL
 import           Data.FingerTree (Measured (measure))
 import qualified Data.IntMap.Strict as IntMap
 import           Data.Map (Map)
@@ -199,10 +200,11 @@ deriving instance (Typeable p, SimpleBlockCrypto c, OuroborosTag p, Ord  (Payloa
 -- (to wit, the pre header plus some ouroboros specific stuff but, crucially,
 -- without the signature itself).
 data SimplePreHeader p c = SimplePreHeader {
-      headerPrev     :: ChainHash (SimpleHeader p c)
-    , headerSlot     :: SlotNo
-    , headerBlockNo  :: BlockNo
-    , headerBodyHash :: Hash (SimpleBlockHash c) SimpleBody
+      headerPrev      :: ChainHash (SimpleHeader p c)
+    , headerSlot      :: SlotNo
+    , headerBlockNo   :: BlockNo
+    , headerBodyHash  :: Hash (SimpleBlockHash c) SimpleBody
+    , headerBlockSize :: Word
     }
   deriving (Generic, Show, Eq, Ord)
 
@@ -301,12 +303,19 @@ forgeBlock cfg curSlot curNo prevHash txs proof = do
     body :: SimpleBody
     body = SimpleBody txs
 
+    -- We use the size of the body, not of the whole block (= header + body),
+    -- since the header size is fixed and this size is only used for
+    -- prioritisation.
+    bodySize :: Word
+    bodySize = fromIntegral $ BL.length $ serialise body
+
     preHeader :: SimplePreHeader p c
     preHeader = SimplePreHeader {
-          headerPrev     = prevHash
-        , headerSlot     = curSlot
-        , headerBlockNo  = curNo
-        , headerBodyHash = hash body
+          headerPrev      = prevHash
+        , headerSlot      = curSlot
+        , headerBlockNo   = curNo
+        , headerBodyHash  = hash body
+        , headerBlockSize = bodySize
         }
 
 {-------------------------------------------------------------------------------
