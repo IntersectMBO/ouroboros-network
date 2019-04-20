@@ -32,6 +32,7 @@ library
                        Ouroboros.Network.Block
                        Ouroboros.Network.BlockFetch
                        Ouroboros.Network.BlockFetch.Client
+                       Ouroboros.Network.BlockFetch.ClientRegistry
                        Ouroboros.Network.BlockFetch.ClientState
                        Ouroboros.Network.BlockFetch.Decision
                        Ouroboros.Network.BlockFetch.DeltaQ
@@ -128,6 +129,7 @@ test-suite tests
                        Ouroboros.Network.Block
                        Ouroboros.Network.BlockFetch
                        Ouroboros.Network.BlockFetch.Client
+                       Ouroboros.Network.BlockFetch.ClientRegistry
                        Ouroboros.Network.BlockFetch.ClientState
                        Ouroboros.Network.BlockFetch.Decision
                        Ouroboros.Network.BlockFetch.DeltaQ

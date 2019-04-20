@@ -5,6 +5,7 @@
 
 module Ouroboros.Network.BlockFetch.ClientState (
     FetchClientStateVars(..),
+    newFetchClientStateVars,
     PeerFetchStatus(..),
     PeerFetchInFlight(..),
     initialPeerFetchInFlight,
@@ -68,6 +69,13 @@ data FetchClientStateVars header m =
        --
        fetchClientRequestVar  :: TFetchRequestVar m header
      }
+
+newFetchClientStateVars :: MonadSTM m => STM m (FetchClientStateVars header m)
+newFetchClientStateVars = do
+    fetchClientInFlightVar <- newTVar initialPeerFetchInFlight
+    fetchClientStatusVar   <- newTVar (PeerFetchStatusReady Set.empty)
+    fetchClientRequestVar  <- newTFetchRequestVar
+    return FetchClientStateVars {..}
 
 
 -- | The status of the block fetch communication with a peer. This is maintained
