@@ -34,7 +34,7 @@ import           Ouroboros.Network.BlockFetch.ClientState
 -- and shut down.
 --
 newtype FetchClientRegistry peer header m =
-        FetchClientRegistry (TVar m (Map peer (FetchClientStateVars header m)))
+        FetchClientRegistry (TVar m (Map peer (FetchClientStateVars m header)))
 
 newFetchClientRegistry :: MonadSTM m => m (FetchClientRegistry peer header m)
 newFetchClientRegistry = FetchClientRegistry <$> newTVarM Map.empty
@@ -42,7 +42,7 @@ newFetchClientRegistry = FetchClientRegistry <$> newTVarM Map.empty
 bracketFetchClient :: (MonadThrow m, MonadSTM m, Ord peer)
                    => FetchClientRegistry peer header m
                    -> peer
-                   -> (FetchClientStateVars header m -> m a)
+                   -> (FetchClientStateVars m header -> m a)
                    -> m a
 bracketFetchClient (FetchClientRegistry registry) peer =
     bracket register unregister
@@ -71,7 +71,7 @@ readFetchClientsStatus (FetchClientRegistry registry) =
 --
 readFetchClientsStateVars :: MonadSTM m
                           => FetchClientRegistry peer header m
-                          -> STM m (Map peer (FetchClientStateVars header m))
+                          -> STM m (Map peer (FetchClientStateVars m header))
 readFetchClientsStateVars (FetchClientRegistry registry) = readTVar registry
 
 -- | A read-only 'STM' action to get the current 'PeerFetchStatus' and

@@ -79,7 +79,7 @@ blockFetchClient :: forall header block m.
                      HeaderHash header ~ HeaderHash block)
                  => Tracer m (TraceFetchClientEvent header)
                  -> FetchClientPolicy header block m
-                 -> FetchClientStateVars header m
+                 -> FetchClientStateVars m header
                  -> STM m PeerGSV
                  -> PeerPipelined (BlockFetch header block) AsClient BFIdle m ()
 blockFetchClient tracer

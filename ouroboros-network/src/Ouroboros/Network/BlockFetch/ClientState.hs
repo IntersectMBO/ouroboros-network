@@ -43,7 +43,7 @@ import           Ouroboros.Network.BlockFetch.DeltaQ
 -- decision making thread the status of things with that peer. And in the other
 -- direction one shared variable is for providing new fetch requests.
 --
-data FetchClientStateVars header m =
+data FetchClientStateVars m header =
      FetchClientStateVars {
 
        -- | The current status of communication with the peer. It is written
@@ -70,7 +70,7 @@ data FetchClientStateVars header m =
        fetchClientRequestVar  :: TFetchRequestVar m header
      }
 
-newFetchClientStateVars :: MonadSTM m => STM m (FetchClientStateVars header m)
+newFetchClientStateVars :: MonadSTM m => STM m (FetchClientStateVars m header)
 newFetchClientStateVars = do
     fetchClientInFlightVar <- newTVar initialPeerFetchInFlight
     fetchClientStatusVar   <- newTVar (PeerFetchStatusReady Set.empty)
@@ -184,7 +184,7 @@ setFetchRequest fetchClientRequestVar request =
 acceptFetchRequest :: (MonadSTM m, HasHeader header)
                    => (header -> SizeInBytes)
                    -> STM m PeerGSV
-                   -> FetchClientStateVars header m
+                   -> FetchClientStateVars m header
                    -> m ( [[header]]
                         , PeerFetchInFlight header
                         , PeerFetchInFlightLimits
@@ -235,7 +235,7 @@ completeBlockDownload :: (MonadSTM m, HasHeader header)
                       -> PeerFetchInFlightLimits
                       -> header
                       -> [header]
-                      -> FetchClientStateVars header m
+                      -> FetchClientStateVars m header
                       -> m (PeerFetchInFlight header, PeerFetchStatus header)
 
 completeBlockDownload blockFetchSize inFlightLimits header headers' FetchClientStateVars {..} =
@@ -281,7 +281,7 @@ completeBlockDownload blockFetchSize inFlightLimits header headers' FetchClientS
       return (inflight', currentStatus')
 
 completeFetchBatch :: MonadSTM m
-                   => FetchClientStateVars header m
+                   => FetchClientStateVars m header
                    -> m ()
 completeFetchBatch FetchClientStateVars {fetchClientInFlightVar} =
     atomically $ modifyTVar' fetchClientInFlightVar $ \inflight ->

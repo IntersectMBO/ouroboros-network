@@ -171,7 +171,7 @@ runFetchClient :: (MonadCatch m, MonadAsync m, MonadST m, Ord peerid,
                 -> FetchClientRegistry peerid header m
                 -> peerid
                 -> Channel m LBS.ByteString
-                -> (  FetchClientStateVars header m
+                -> (  FetchClientStateVars m header
                    -> PeerPipelined (BlockFetch header block)
                                     AsClient BFIdle m a)
                 -> m a
@@ -199,7 +199,7 @@ runFetchClientAndServerAsync
                 -> Tracer m (TraceSendRecv (BlockFetch header block))
                 -> FetchClientRegistry peerid header m
                 -> peerid
-                -> (  FetchClientStateVars header m
+                -> (  FetchClientStateVars m header
                    -> PeerPipelined (BlockFetch header block)
                                     AsClient BFIdle m a)
                 -> BlockFetchServer header block m b
@@ -233,7 +233,7 @@ mockedBlockFetchClient1 :: (MonadSTM m, MonadTime m, MonadThrow m,
                             HeaderHash header ~ HeaderHash block)
                         => Tracer m (TraceFetchClientEvent header)
                         -> TestFetchedBlockHeap m block
-                        -> FetchClientStateVars header m
+                        -> FetchClientStateVars m header
                         -> PeerPipelined (BlockFetch header block)
                                          AsClient BFIdle m ()
 mockedBlockFetchClient1 clientStateTracer blockHeap clientStateVars =
