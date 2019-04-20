@@ -40,6 +40,7 @@ import           Ouroboros.Network.Channel
 
 import           Ouroboros.Network.DeltaQ
 import           Ouroboros.Network.BlockFetch.Client
+import           Ouroboros.Network.BlockFetch.ClientRegistry
 import           Ouroboros.Network.BlockFetch.State
 import           Ouroboros.Network.BlockFetch
 

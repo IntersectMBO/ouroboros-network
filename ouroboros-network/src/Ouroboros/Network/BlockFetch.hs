@@ -100,8 +100,11 @@ import           Ouroboros.Network.DeltaQ
                    ( PeerGSV(..), ballisticGSV, degenerateDistribution
                    , SizeInBytes )
 
-import           Ouroboros.Network.BlockFetch.Client
 import           Ouroboros.Network.BlockFetch.State
+import           Ouroboros.Network.BlockFetch.ClientRegistry
+                   ( FetchClientRegistry, newFetchClientRegistry
+                   , readFetchClientsStatus, readFetchClientsStates
+                   , readFetchClientsReqVars )
 
 
 -- | The consensus layer functionality that the block fetch logic requires.
