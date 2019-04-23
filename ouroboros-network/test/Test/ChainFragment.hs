@@ -17,33 +17,26 @@ module Test.ChainFragment
   ) where
 
 import qualified Data.List as L
-import qualified Data.Set  as Set
-import           Data.Maybe (listToMaybe, maybeToList, maybe,
-                             fromMaybe, fromJust, isNothing)
+import           Data.Maybe (fromJust, fromMaybe, isNothing, listToMaybe, maybe,
+                     maybeToList)
+import qualified Data.Set as Set
 
 import           Test.QuickCheck
-import           Text.Show.Functions ()
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
+import           Text.Show.Functions ()
 
-import           Test.Chain ()
-import           Test.ChainGenerators
-                  ( ArbitraryBlockBody (..)
-                  , TestChainAndRange (..)
-                  , genNonNegative
-                  , genSlotGap
-                  , addSlotGap
-                  , mkPartialBlock
-                  , genPoint
-                  )
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Chain (ChainUpdate(..), Point(..))
+import           Ouroboros.Network.Chain (ChainUpdate (..), Point (..))
 import qualified Ouroboros.Network.Chain as Chain
-import           Ouroboros.Network.ChainFragment
-                   ( ChainFragment(Empty, (:>)) )
+import           Ouroboros.Network.ChainFragment (ChainFragment ((:>), Empty))
 import qualified Ouroboros.Network.ChainFragment as CF
-import           Ouroboros.Network.Testing.Serialise (prop_serialise)
 import           Ouroboros.Network.Testing.ConcreteBlock
+import           Ouroboros.Network.Testing.Serialise (prop_serialise)
+import           Test.Chain ()
+import           Test.ChainGenerators (ArbitraryBlockBody (..),
+                     TestBlockChain (..), TestChainAndRange (..), addSlotGap,
+                     genNonNegative, genPoint, genSlotGap, mkPartialBlock)
 
 
 --
@@ -111,6 +104,8 @@ tests = testGroup "ChainFragment"
   , testProperty "prop_sliceRange"                           prop_sliceRange
   , testProperty "foldChainFragment"                         prop_foldChainFragment
   , testProperty "(:<)"                                      prop_prepend
+  , testProperty "fromChain/toChain"                         prop_fromChain_toChain
+  , testProperty "toChain/fromChain"                         prop_toChain_fromChain
   ]
 
 --
@@ -191,7 +186,7 @@ prop_addBlock (TestAddBlock c b) =
       && CF.valid c'
       -- removing the block gives the original
       && case CF.headPoint c of
-           Nothing -> True
+           Nothing      -> True
            Just headPnt -> CF.rollback headPnt c' == Just c
       && CF.dropNewest 1 c' == c
       -- chain is one longer
@@ -328,8 +323,8 @@ prop_foldChainFragment (TestBlockChainFragment c) =
 prop_lookupByIndexFromEnd :: TestChainFragmentAndIndex -> Property
 prop_lookupByIndexFromEnd (TestChainFragmentAndIndex c i) =
   case CF.lookupByIndexFromEnd c i of
-    CF.Position _ b _  -> b === CF.toNewestFirst c !! i
-    _                  -> property (i < 0 || i >= CF.length c)
+    CF.Position _ b _ -> b === CF.toNewestFirst c !! i
+    _                 -> property (i < 0 || i >= CF.length c)
 
 prop_filter :: (Block -> Bool) -> TestBlockChainFragment -> Property
 prop_filter p (TestBlockChainFragment chain) =
@@ -369,6 +364,14 @@ prop_prepend (TestBlockChainFragment c) = case c of
     Empty      -> True
     b CF.:< c' -> CF.valid (b CF.:< c')
 
+prop_fromChain_toChain :: TestBlockChainFragment -> Property
+prop_fromChain_toChain (TestBlockChainFragment c) =
+    CF.fromChain (CF.toChain c) === c
+
+prop_toChain_fromChain :: TestBlockChain -> Property
+prop_toChain_fromChain (TestBlockChain c) =
+    CF.toChain (CF.fromChain c) === c
+
 
 --
 -- Generators for chains
@@ -390,7 +393,7 @@ instance Arbitrary TestBlockChainFragment where
         TestBlockChainFragment <$> genBlockChainFragment n
 
     shrink (TestBlockChainFragment c) =
-        [ TestBlockChainFragment (fromListFixupBlocks c')
+        [ TestBlockChainFragment (fixupChainFragment fixupBlock c')
         | c' <- shrinkList (const []) (CF.toNewestFirst c) ]
 
 instance Arbitrary TestHeaderChainFragment where
@@ -399,7 +402,7 @@ instance Arbitrary TestHeaderChainFragment where
         TestHeaderChainFragment <$> genHeaderChainFragment n
 
     shrink (TestHeaderChainFragment c) =
-        [ TestHeaderChainFragment (fromListFixupHeaders c')
+        [ TestHeaderChainFragment (fixupChainFragment fixupBlockHeader c')
         | c' <- shrinkList (const []) (CF.toNewestFirst c) ]
 
 prop_arbitrary_TestBlockChainFragment :: TestBlockChainFragment -> Property
@@ -425,36 +428,14 @@ genBlockChainFragment :: Int -> Gen (ChainFragment Block)
 genBlockChainFragment n = do
     bodies <- map getArbitraryBlockBody <$> vector n
     slots  <- mkSlots <$> vectorOf n genSlotGap
-    return (mkChainFragment slots bodies)
+    return (mkChainFragment (zip slots bodies))
   where
     mkSlots :: [Int] -> [SlotNo]
     mkSlots = map toEnum . tail . scanl (+) 0
 
-    mkChainFragment :: [SlotNo] -> [BlockBody] -> ChainFragment Block
-    mkChainFragment slots bodies =
-        fromListFixupBlocks
-      . reverse
-      $ zipWith mkPartialBlock slots bodies
-
 genHeaderChainFragment :: Int -> Gen (ChainFragment BlockHeader)
 genHeaderChainFragment = fmap (CF.mapChainFragment blockHeader) . genBlockChainFragment
 
--- | To help with chain construction and shrinking it's handy to recalculate
--- all the hashes.
---
-fromListFixupBlocks :: [Block] -> ChainFragment Block
-fromListFixupBlocks []      = Empty
-fromListFixupBlocks (b : c) = c' :> b'
-  where
-    c' = fromListFixupBlocks c
-    b' = fixupBlockCF c' b
-
-fromListFixupHeaders :: [BlockHeader] -> ChainFragment BlockHeader
-fromListFixupHeaders []      = Empty
-fromListFixupHeaders (b : c) = c' :> b'
-  where
-    c' = fromListFixupHeaders c
-    b' = fixupBlockHeaderCF c' (headerBodyHash b) b
 
 -- | The Ouroboros K paramater. This is also the maximum rollback length.
 --
@@ -479,7 +460,7 @@ instance Arbitrary TestAddBlock where
   shrink (TestAddBlock c b) =
     [ TestAddBlock c' b'
     | TestBlockChainFragment c' <- shrink (TestBlockChainFragment c)
-    , let b' = fixupBlockCF c' b
+    , let b' = fixupBlock (CF.head c') b
     ]
 
 genAddBlock :: (HasHeader block, HeaderHash block ~ ConcreteHeaderHash)
@@ -490,7 +471,7 @@ genAddBlock chain = do
     let pb = mkPartialBlock (addSlotGap slotGap
                                         (fromMaybe (SlotNo 0) $ CF.headSlot chain))
                                         body
-        b  = fixupBlockCF chain pb
+        b  = fixupBlock (CF.head chain) pb
     return b
 
 prop_arbitrary_TestAddBlock :: TestAddBlock -> Bool
@@ -733,22 +714,22 @@ instance Arbitrary TestChainFragmentFork where
         ex1 = extensionFragment c1 l1
         ex2 = extensionFragment c2 l2 in
     [ TestChainFragmentFork
-        (fromListFixupBlocks longestPrefix')
-        (fromListFixupBlocks shortestPrefix')
-        (fromListFixupBlocks (ex1 ++ longestPrefix'))
-        (fromListFixupBlocks (ex2 ++ shortestPrefix'))
+        (fixupChainFragment fixupBlock longestPrefix')
+        (fixupChainFragment fixupBlock shortestPrefix')
+        (fixupChainFragment fixupBlock (ex1 ++ longestPrefix'))
+        (fixupChainFragment fixupBlock (ex2 ++ shortestPrefix'))
     | longestPrefix' <- shrinkList (const []) (CF.toNewestFirst longestPrefix)
     , let shortestPrefix' = reverse $ drop toDrop $ reverse longestPrefix'
     ]
     -- shrink the first fork
    ++ [ TestChainFragmentFork l1 l2 c1' c2
       | ex1' <- shrinkList (const []) ex1
-      , let c1' = fromListFixupBlocks (ex1' ++ CF.toNewestFirst l1)
+      , let c1' = fixupChainFragment fixupBlock (ex1' ++ CF.toNewestFirst l1)
       ]
     -- shrink the second fork
    ++ [ TestChainFragmentFork l1 l2 c1 c2'
       | ex2' <- shrinkList (const []) ex2
-      , let c2' = fromListFixupBlocks (ex2' ++ CF.toNewestFirst l2)
+      , let c2' = fixupChainFragment fixupBlock (ex2' ++ CF.toNewestFirst l2)
       ]
     where
       extensionFragment :: ChainFragment Block -> ChainFragment Block -> [Block]

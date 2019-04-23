@@ -114,15 +114,16 @@ data ReadIncrementalErr =
 -- NOTE: This uses a chunk size of roughly 32k. If we use this function to read
 -- small things this might not be ideal.
 --
--- NOTE: This currently expects the file to contain precisely one value. If we
--- wanted to read a file containing multiple values which are /not/ stored as
--- a proper CBOR list (for instance multiple concatenated blocks) we'd have
--- to generalize this function slightly.
-readIncremental :: forall m h a. (Serialise a, MonadST m, MonadThrow m)
-                => HasFS m h -> FsPath -> m (Either ReadIncrementalErr a)
-readIncremental hasFS@HasFS{..} fp = withLiftST $ \liftST -> do
+-- NOTE: This currently expects the file to contain precisely one value; see also
+-- 'readIncrementalOffsets'.
+readIncremental :: forall m h a. (MonadST m, MonadThrow m)
+                => HasFS m h
+                -> (forall s . CBOR.Decoder s a)
+                -> FsPath
+                -> m (Either ReadIncrementalErr a)
+readIncremental hasFS@HasFS{..} decoder fp = withLiftST $ \liftST -> do
     withFile hasFS fp ReadMode $ \h ->
-      go liftST h =<< liftST S.deserialiseIncremental
+      go liftST h =<< liftST (CBOR.deserialiseIncremental decoder)
   where
     go :: (forall x. ST s x -> m x)
        -> h

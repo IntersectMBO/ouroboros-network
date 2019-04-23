@@ -12,19 +12,22 @@
 module Ouroboros.Storage.LedgerDB.OnDisk (
     -- * Opening the database
     initLedgerDB
+  , InitLog(..)
+  , InitFailure(..)
     -- ** Abstraction over the stream API
   , NextBlock(..)
   , StreamAPI(..)
     -- * Write to disk
   , takeSnapshot
     -- * Low-level API (primarily exposed for testing)
-  , DiskSnapshot
+  , DiskSnapshot -- opaque
   , deleteSnapshot
   , snapshotToPath
   ) where
 
-import           Codec.Serialise (Serialise)
-import qualified Codec.Serialise as S
+import qualified Codec.CBOR.Write as CBOR
+import           Codec.Serialise.Decoding (Decoder)
+import           Codec.Serialise.Encoding (Encoding)
 import           Control.Monad.Except
 import qualified Data.List as List
 import           Data.Maybe (mapMaybe)
@@ -38,7 +41,8 @@ import           Text.Read (readMaybe)
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadThrow
 
-import           Ouroboros.Consensus.Util.CBOR
+import           Ouroboros.Consensus.Util.CBOR (ReadIncrementalErr,
+                     readIncremental)
 
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types
@@ -54,22 +58,27 @@ import           Ouroboros.Storage.LedgerDB.MemPolicy
 -- | Next block returned during streaming
 data NextBlock r b = NoMoreBlocks | NextBlock (r, b)
 
--- | Abstraction over block streaming
+-- | Stream blocks from the immutable DB
+--
+-- When we initialize the ledger DB, we try to find a snapshot close to the
+-- tip of the immutable DB, and then stream blocks from the immutable DB to its
+-- tip to bring the ledger up to date with the tip of the immutable DB.
 --
 -- In CPS form to enable the use of 'withXYZ' style iterator init functions.
 data StreamAPI m r b = StreamAPI {
       -- | Start streaming after the specified block
       streamAfter :: forall a.
            Tip r
-        -- Current tip (exclusive lower bound point for streaming)
+        -- Reference to the block corresponding to the snapshot we found
+        -- (or 'TipGen' if we didn't find any)
 
         -> (Maybe (m (NextBlock r b)) -> m a)
         -- Get the next block (by value)
         --
-        -- 'Nothing' if the lower bound could not be found
-        -- (this can happen if the chain was truncated due to disk corruption
-        -- and this particular snapshot is now too recent)
-
+        -- Should be 'Nothing' if the snapshot we found is more recent than
+        -- the tip of the immutable DB; since we only store snapshots to disk
+        -- for blocks in the immutable DB, this can only happen if the
+        -- immutable DB got truncated due to disk corruption.
         -> m a
     }
 
@@ -96,9 +105,34 @@ streamAll StreamAPI{..} tip notFound e f = ExceptT $
   Initialize the DB
 -------------------------------------------------------------------------------}
 
+-- | Initialization log
+--
+-- The initialization log records which snapshots from disk were considered,
+-- in which order, and why some snapshots were rejected. It is primarily useful
+-- for monitoring purposes.
+data InitLog r =
+    -- | Defaulted to initialization from genesis
+    --
+    -- NOTE: Unless the blockchain is near genesis, we should see this /only/
+    -- if data corrupted occurred.
+    InitFromGenesis
+
+    -- | Used a snapshot corresponding to the specified tip
+  | InitFromSnapshot DiskSnapshot (Tip r)
+
+    -- | Initialization skipped a snapshot
+    --
+    -- We record the reason why it was skipped.
+    --
+    -- NOTE: We should /only/ see this if data corrupted occurred.
+  | InitFailure DiskSnapshot (InitFailure r) (InitLog r)
+  deriving (Show, Eq)
+
 -- | Initialize the ledger DB from the most recent snapshot on disk
 --
--- If no such snapshot can be found, use the genesis ledger DB.
+-- If no such snapshot can be found, use the genesis ledger DB. Returns the
+-- initialized DB as well as the block reference corresponding to the snapshot
+-- we found on disk (the latter primarily for testing/monitoring purposes).
 --
 -- We do /not/ catch any exceptions thrown during streaming; should any be
 -- thrown, it is the responsibility of the 'ChainStateDB' to catch these
@@ -108,35 +142,50 @@ streamAll StreamAPI{..} tip notFound e f = ExceptT $
 -- * They are too close to the tip of the chain to give all snapshots required
 --   by the memory policy (the snapshot being /ahead/ of the chain is a
 --   special case of this).
-initLedgerDB :: forall m h l r b e. (
-                  MonadST    m
-                , MonadThrow m
-                , Serialise l
-                , Serialise r
-                )
+--
+-- We do /not/ attempt to use multiple ledger states from disk to construct the
+-- ledger DB. Instead we load only a /single/ ledger state from disk, and
+-- /compute/ all subsequent ones. This is important, because the ledger states
+-- obtained in this way will (hopefully) share much of their memory footprint
+-- with their predecessors.
+initLedgerDB :: forall m h l r b e. (MonadST m, MonadThrow m, HasCallStack)
              => HasFS m h
+             -> (forall s. Decoder s l)
+             -> (forall s. Decoder s r)
              -> MemPolicy
              -> LedgerDbConf m l r b e
              -> StreamAPI m r b
-             -> m (LedgerDB l r)
-initLedgerDB hasFS policy conf streamAPI = do
+             -> m (InitLog r, LedgerDB l r)
+initLedgerDB hasFS decLedger decRef policy conf streamAPI = do
     snapshots <- listSnapshots hasFS
-    tryNewestFirst snapshots
+    tryNewestFirst id snapshots
   where
-    tryNewestFirst :: [DiskSnapshot] -> m (LedgerDB l r)
-    tryNewestFirst [] = do
+    tryNewestFirst :: (InitLog r -> InitLog r)
+                   -> [DiskSnapshot]
+                   -> m (InitLog r, LedgerDB l r)
+    tryNewestFirst acc [] = do
         -- We're out of snapshots. Start at genesis
         initDb <- ledgerDbFromGenesis policy <$> ledgerDbGenesis conf
         ml     <- runExceptT $ initStartingWith conf streamAPI initDb
         case ml of
           Left _  -> error "invariant violation: invalid current chain"
-          Right l -> return l
-    tryNewestFirst (s:ss) = do
+          Right l -> return (acc InitFromGenesis, l)
+    tryNewestFirst acc (s:ss) = do
         -- If we fail to use this snapshot, delete it and try an older one
-        ml <- runExceptT $ initFromSnapshot hasFS policy conf streamAPI s
+        ml <- runExceptT $ initFromSnapshot
+                             hasFS
+                             decLedger
+                             decRef
+                             policy
+                             conf
+                             streamAPI
+                             s
         case ml of
-          Left _  -> deleteSnapshot hasFS s >> tryNewestFirst ss
-          Right l -> return l
+          Left err -> do
+            deleteSnapshot hasFS s
+            tryNewestFirst (acc . InitFailure s err) ss
+          Right (r, l) ->
+            return (acc (InitFromSnapshot s r), l)
 
 {-------------------------------------------------------------------------------
   Internal: initialize using the given snapshot
@@ -150,47 +199,39 @@ data InitFailure r =
 
     -- | This snapshot is too recent (ahead of the tip of the chain)
   | InitFailureTooRecent (Tip r)
-
-    -- | Insufficient blocks applied to on-disk snapshot
-    --
-    -- We apply blocks to the on-disk snapshot to get back to a state where we
-    -- can support @k@ rollback. If a particular snapshot is too recent (due
-    -- to data loss in either the immutable DB or the volatile DB), we must
-    -- try an older snapshot instead.
-  | InitFailureIncomplete
+  deriving (Show, Eq)
 
 -- | Attempt to initialize the ledger DB from the given snapshot
 --
 -- If the chain DB or ledger layer reports an error, the whole thing is aborted
 -- and an error is returned. This should not throw any errors itself (ignoring
 -- unexpected exceptions such as asynchronous exceptions, of course).
-initFromSnapshot :: forall m h l r b e.
-                    (MonadST m, MonadThrow m, Serialise l, Serialise r)
+initFromSnapshot :: forall m h l r b e. (MonadST m, MonadThrow m, HasCallStack)
                  => HasFS m h
+                 -> (forall s. Decoder s l)
+                 -> (forall s. Decoder s r)
                  -> MemPolicy
                  -> LedgerDbConf m l r b e
                  -> StreamAPI m r b
                  -> DiskSnapshot
-                 -> ExceptT (InitFailure r) m (LedgerDB l r)
-initFromSnapshot hasFS policy conf streamAPI ss = do
-    initDb <- withExceptT InitFailureRead $
-                ledgerDbFromChain policy <$> readSnapshot hasFS ss
-    initStartingWith conf streamAPI initDb
+                 -> ExceptT (InitFailure r) m (Tip r, LedgerDB l r)
+initFromSnapshot hasFS decLedger decRef policy conf streamAPI ss = do
+    initSS <- withExceptT InitFailureRead $
+                readSnapshot hasFS decLedger decRef ss
+    initDB <- initStartingWith conf streamAPI (ledgerDbFromChain policy initSS)
+    return (csTip initSS, initDB)
 
 -- | Attempt to initialize the ledger DB starting from the given ledger DB
-initStartingWith :: forall m l r b e. Monad m
+initStartingWith :: forall m l r b e. (Monad m, HasCallStack)
                  => LedgerDbConf m l r b e
                  -> StreamAPI m r b
                  -> LedgerDB l r
                  -> ExceptT (InitFailure r) m (LedgerDB l r)
 initStartingWith conf@LedgerDbConf{..} streamAPI initDb = do
-    applied <- streamAll streamAPI (ledgerDbTip initDb)
-                 InitFailureTooRecent
-                 initDb
-                 push
-    ExceptT $ return $ if ledgerDbIsComplete applied
-                         then Right applied
-                         else Left InitFailureIncomplete
+    streamAll streamAPI (ledgerDbTip initDb)
+      InitFailureTooRecent
+      initDb
+      push
   where
     push :: (r, b) -> LedgerDB l r -> m (LedgerDB l r)
     push b db = mustBeValid <$> ledgerDbPush conf (BlockVal NotPrevApplied b) db
@@ -210,19 +251,30 @@ initStartingWith conf@LedgerDbConf{..} streamAPI initDb = do
   Write to disk
 -------------------------------------------------------------------------------}
 
--- | Take a snapshot of the ledger DB
+-- | Take a snapshot of the /oldest ledger state/ in the ledger DB
+--
+-- We write the /oldest/ ledger state to disk because the intention is to only
+-- write ledger states to disk that we know to be immutable. Primarily for
+-- testing purposes, 'takeSnapshot' returns the block reference corresponding
+-- to the snapshot that we wrote.
 --
 -- NOTE: This is a lower-level API that unconditionally takes a snapshot
 -- (i.e., independent from whether this snapshot corresponds to a state that
 -- is more than @k@ back).
 --
 -- TODO: Should we delete the file if an error occurs during writing?
-takeSnapshot :: (MonadThrow m, Serialise l, Serialise r)
-             => HasFS m h -> LedgerDB l r -> m DiskSnapshot
-takeSnapshot hasFS db = do
+takeSnapshot :: forall m l r h. MonadThrow m
+             => HasFS m h
+             -> (l -> Encoding)
+             -> (r -> Encoding)
+             -> LedgerDB l r -> m (DiskSnapshot, Tip r)
+takeSnapshot hasFS encLedger encRef db = do
     ss <- nextAvailable <$> listSnapshots hasFS
-    writeSnapshot hasFS ss (ledgerDbTail db)
-    return ss
+    writeSnapshot hasFS encLedger encRef ss oldest
+    return (ss, csTip oldest)
+  where
+    oldest :: ChainSummary l r
+    oldest = ledgerDbTail db
 
 {-------------------------------------------------------------------------------
   Internal: reading from disk
@@ -238,18 +290,32 @@ nextAvailable [] = DiskSnapshot 1
 nextAvailable ss = let DiskSnapshot n = maximum ss in DiskSnapshot (n + 1)
 
 -- | Read snapshot from disk
-readSnapshot :: (MonadST m, MonadThrow m, Serialise l, Serialise r)
+readSnapshot :: forall m l r h. (MonadST m, MonadThrow m)
              => HasFS m h
+             -> (forall s. Decoder s l)
+             -> (forall s. Decoder s r)
              -> DiskSnapshot
              -> ExceptT ReadIncrementalErr m (ChainSummary l r)
-readSnapshot hasFS = ExceptT . readIncremental hasFS . snapshotToPath
+readSnapshot hasFS decLedger decRef =
+      ExceptT
+    . readIncremental hasFS decoder
+    . snapshotToPath
+  where
+    decoder :: Decoder s (ChainSummary l r)
+    decoder = decodeChainSummary decLedger decRef
 
 -- | Write snapshot to disk
-writeSnapshot :: (MonadThrow m, Serialise l, Serialise r)
-              => HasFS m h -> DiskSnapshot -> ChainSummary l r -> m ()
-writeSnapshot hasFS@HasFS{..} ss cs = do
+writeSnapshot :: forall m l r h. MonadThrow m
+              => HasFS m h
+              -> (l -> Encoding)
+              -> (r -> Encoding)
+              -> DiskSnapshot -> ChainSummary l r -> m ()
+writeSnapshot hasFS@HasFS{..} encLedger encRef ss cs = do
     withFile hasFS (snapshotToPath ss) WriteMode $ \h ->
-      void $ hPut h (S.serialiseIncremental cs)
+      void $ hPut h $ CBOR.toBuilder (encode cs)
+  where
+    encode :: ChainSummary l r -> Encoding
+    encode = encodeChainSummary encLedger encRef
 
 -- | Delete snapshot from disk
 deleteSnapshot :: HasCallStack => HasFS m h -> DiskSnapshot -> m ()

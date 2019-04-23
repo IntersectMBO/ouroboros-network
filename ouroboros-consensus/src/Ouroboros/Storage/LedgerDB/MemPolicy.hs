@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveGeneric #-}
+
 module Ouroboros.Storage.LedgerDB.MemPolicy (
     MemPolicy -- opaque
   , memPolicyVerify
@@ -12,6 +14,7 @@ module Ouroboros.Storage.LedgerDB.MemPolicy (
 
 import           Data.Either (isRight)
 import           Data.Word
+import           GHC.Generics (Generic)
 
 import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 
@@ -45,7 +48,7 @@ newtype MemPolicy = MemPolicy {
     -- mean we keep absolutely all snapshots.
     memPolicyToSkips :: [Word64]
   }
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic)
 
 -- | Default in-memory policy
 --

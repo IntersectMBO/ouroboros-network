@@ -1,8 +1,13 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE UndecidableInstances       #-}
+
+-- This module is for examples and tests (not the library) so orphans are ok
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 -- | Concrete block
 --
@@ -21,16 +26,31 @@ module Ouroboros.Network.Testing.ConcreteBlock (
   , BodyHash(..)
   , ConcreteHeaderHash(..)
   , hashBody
+
+    -- * Creating sample chains
+  , mkChain
+  , mkChainSimple
+  , mkChainFragment
+  , mkChainFragmentSimple
+  , mkAnchoredFragment
+  , mkAnchoredFragmentSimple
+
+    -- * Generator utilities
+  , mkPartialBlock
+  , mkPartialBlockHeader
   , fixupBlock
   , fixupBlockHeader
-  , fixupBlockCF
-  , fixupBlockHeaderCF
+  , fixupChain
+  , fixupChainFragment
+  , fixupAnchoredFragment
   ) where
 
 import           Data.FingerTree (Measured(measure))
 import           Data.Hashable
 import qualified Data.Text as Text
 import           Data.Word (Word64)
+import           Data.String (IsString)
+
 import           Codec.Serialise (Serialise (..))
 import           Codec.CBOR.Encoding ( encodeListLen
                                      , encodeInt
@@ -45,8 +65,12 @@ import           Codec.CBOR.Decoding ( decodeListLenOf
 import           GHC.Generics (Generic)
 
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Chain
+import qualified Ouroboros.Network.Chain as C
+import           Ouroboros.Network.Chain (Chain)
 import qualified Ouroboros.Network.ChainFragment as CF
+import           Ouroboros.Network.ChainFragment (ChainFragment)
+import qualified Ouroboros.Network.AnchoredFragment as AF
+import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 
 {-------------------------------------------------------------------------------
   Concrete block shape used currently in the network layer
@@ -63,8 +87,8 @@ data Block = Block {
      }
    deriving (Show, Eq, Generic)
 
-data BlockBody = BlockBody String
-  deriving (Show, Eq, Ord, Generic)
+newtype BlockBody = BlockBody String
+  deriving (Show, Eq, Ord, IsString, Generic)
 
 hashBody :: BlockBody -> BodyHash
 hashBody (BlockBody b) = BodyHash (hash b)
@@ -97,6 +121,19 @@ newtype BlockSigner = BlockSigner Word64
 --
 hashHeader :: BlockHeader -> ConcreteHeaderHash
 hashHeader (BlockHeader _ b c d e f) = HeaderHash (hash (b, c, d, e, f))
+
+deriving instance Hashable SlotNo
+deriving instance Hashable BlockNo
+
+-- | 'Hashable' instance for 'Hash'
+--
+-- We don't insist that 'Hashable' in 'StandardHash' because 'Hashable' is
+-- only used in the network layer /tests/.
+--
+-- This requires @UndecidableInstances@ because @Hashable (HeaderHash b)@
+-- is no smaller than @Hashable (ChainHash b)@.
+instance Hashable (HeaderHash b) => Hashable (ChainHash b)
+ -- use generic instance
 
 -- | The hash of all the information in a 'BlockHeader'.
 --
@@ -148,6 +185,61 @@ instance HasHeader Block where
         headerBodyHash == hashBody blockBody
 
 {-------------------------------------------------------------------------------
+  Constructing sample chains
+-------------------------------------------------------------------------------}
+
+-- | This takes the blocks in order from /oldest to newest/.
+--
+mkChain :: [(SlotNo, BlockBody)] -> Chain Block
+mkChain = fixupChain fixupBlock
+        . map (uncurry mkPartialBlock)
+        . reverse
+
+mkChainSimple :: [BlockBody] -> Chain Block
+mkChainSimple = mkChain . zip [1..]
+
+mkChainFragment :: [(SlotNo, BlockBody)] -> ChainFragment Block
+mkChainFragment = fixupChainFragment fixupBlock
+                . map (uncurry mkPartialBlock)
+                . reverse
+
+mkChainFragmentSimple :: [BlockBody] -> ChainFragment Block
+mkChainFragmentSimple = mkChainFragment . zip [1..]
+
+mkAnchoredFragment :: Point Block -> [(SlotNo, BlockBody)]
+                   -> AnchoredFragment Block
+mkAnchoredFragment anchor = fixupAnchoredFragment anchor fixupBlock
+                          . map (uncurry mkPartialBlock)
+                          . reverse
+
+mkAnchoredFragmentSimple :: [BlockBody] -> AnchoredFragment Block
+mkAnchoredFragmentSimple = mkAnchoredFragment (Point 0 GenesisHash) . zip [1..]
+
+
+mkPartialBlock :: SlotNo -> BlockBody -> Block
+mkPartialBlock sl body =
+    Block {
+      blockHeader = mkPartialBlockHeader sl body
+    , blockBody   = body
+    }
+
+mkPartialBlockHeader :: SlotNo -> BlockBody -> BlockHeader
+mkPartialBlockHeader sl body =
+    BlockHeader {
+      headerSlot     = sl,
+      headerSigner   = expectedBFTSigner sl,
+      headerHash     = partialField "headerHash",
+      headerPrevHash = partialField "headerPrevHash",
+      headerBlockNo  = partialField "headerBlockNo",
+      headerBodyHash = hashBody body
+    }
+  where
+    partialField n = error ("mkPartialBlock: you didn't fill in field " ++ n)
+
+    expectedBFTSigner :: SlotNo -> BlockSigner
+    expectedBFTSigner (SlotNo n) = BlockSigner (n `mod` 7)
+
+{-------------------------------------------------------------------------------
   "Fixup" is used for chain construction in the network tests. These functions
   don't make much sense for real chains.
 -------------------------------------------------------------------------------}
@@ -156,57 +248,57 @@ instance HasHeader Block where
 -- hash and block hash are updated; slot number and signers are kept intact.
 --
 fixupBlock :: (HasHeader block, HeaderHash block ~ HeaderHash Block)
-           => Chain block -> Block -> Block
-fixupBlock c b@Block{blockBody, blockHeader} =
-    b { blockHeader = fixupBlockHeader c (hashBody blockBody) blockHeader }
+           => Maybe block -> Block -> Block
+fixupBlock pb b@Block{blockBody, blockHeader} =
+    b {
+      blockHeader = (fixupBlockHeader pb blockHeader) {
+                      headerBodyHash = hashBody blockBody
+                    }
+    }
 
 -- | Fixup block header to fit it on top of a chain.  Only block number and
 -- previous hash are updated; the slot and signer are kept unchanged.
 --
 fixupBlockHeader :: (HasHeader block, HeaderHash block ~ HeaderHash Block)
-                 => Chain block -> BodyHash -> BlockHeader -> BlockHeader
-fixupBlockHeader c h b = b'
+                 => Maybe block -> BlockHeader -> BlockHeader
+fixupBlockHeader pb b = b'
   where
     b' = BlockHeader {
       headerHash     = hashHeader b',
-      headerPrevHash = castHash (headHash c),
+      headerPrevHash = maybe GenesisHash (BlockHash . blockHash) pb,
       headerSlot     = headerSlot b,   -- keep the existing slot number
       headerSigner   = headerSigner b, -- and signer
-      headerBlockNo  = succ $ headBlockNo c,
-      headerBodyHash = h
+      headerBlockNo  = maybe (BlockNo 1) (succ . blockNo) pb,
+      headerBodyHash = headerBodyHash b
     }
 
-{-------------------------------------------------------------------------------
-  Variants of "Fixup" for ChainFragment
--------------------------------------------------------------------------------}
-
--- | Fixup block so to fit it on top of a chain.  Only block number, previous
--- hash and block hash are updated; slot number and signers are kept intact.
---
-fixupBlockCF :: (HasHeader block, HeaderHash block ~ HeaderHash Block)
-             => CF.ChainFragment block -> Block -> Block
-fixupBlockCF c b@Block{blockBody, blockHeader} =
-    b { blockHeader = fixupBlockHeaderCF c (hashBody blockBody) blockHeader }
-
--- | Fixup block header to fit it on top of a chain.  Only block number and
--- previous hash are updated; the slot and signer are kept unchanged.
---
-fixupBlockHeaderCF :: (HasHeader block, HeaderHash block ~ HeaderHash Block)
-                   => CF.ChainFragment block -> BodyHash -> BlockHeader -> BlockHeader
-fixupBlockHeaderCF c h b = b'
+fixupBlocks :: (c -> b -> c)
+            -> c
+            -> (Maybe b -> b -> b)
+            -> [b] -> c
+fixupBlocks f z fixup = fst . go
   where
-    b' = BlockHeader {
-      headerHash     = hashHeader b',
-      headerPrevHash = maybe GenesisHash castHash $ CF.headHash c,
-                       -- In case c is empty, default to the 'GenesisHash'
-                       -- instead of @'headerPrevHash' b@, as it can end up
-                       -- being a 'partialField'.
-      headerSlot     = headerSlot b,   -- keep the existing slot number
-      headerSigner   = headerSigner b, -- and signer
-      headerBlockNo  = maybe (BlockNo 1) succ $ CF.headBlockNo c,
-                       -- See the comment for 'headerPrevHash'
-      headerBodyHash = h
-    }
+    go []      = (z, Nothing)
+    go (b : c) = (c' `f` b', Just b')
+      where
+        (c', chead) = go c
+        b'          = fixup chead b
+
+fixupChain :: (Maybe b -> b -> b)
+           -> [b] -> Chain b
+fixupChain = fixupBlocks (C.:>) C.Genesis
+
+fixupChainFragment :: HasHeader b
+                   => (Maybe b -> b -> b)
+                   -> [b] -> ChainFragment b
+fixupChainFragment = fixupBlocks (CF.:>) CF.Empty
+
+fixupAnchoredFragment :: HasHeader b
+                      => Point b
+                      -> (Maybe b -> b -> b)
+                      -> [b] -> AnchoredFragment b
+fixupAnchoredFragment anchor = fixupBlocks (AF.:>) (AF.Empty anchor)
+
 
 {-------------------------------------------------------------------------------
   Serialisation

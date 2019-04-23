@@ -68,6 +68,10 @@ module Ouroboros.Network.ChainFragment (
   isPrefixOf,
   joinChainFragments,
 
+  -- * Conversion to/from Chain
+  toChain,
+  fromChain,
+
   -- * Helper functions
   prettyPrintChainFragment,
 
@@ -91,6 +95,8 @@ import           Codec.CBOR.Encoding (encodeListLen)
 import           Codec.CBOR.Decoding (decodeListLen)
 
 import           Ouroboros.Network.Block
+import           Ouroboros.Network.Chain (Chain)
+import qualified Ouroboros.Network.Chain as Chain
 
 --
 -- Blockchain fragment data type.
@@ -173,7 +179,9 @@ prettyPrintChainFragment :: HasHeader block
 prettyPrintChainFragment nl ppBlock =
     foldChainFragment (\s b -> s ++ nl ++ "    " ++ ppBlock b) "ChainFragment:"
 
--- | \( O(n) \).
+-- | \( O(n) \). Maps over the chain blocks. This is not allowed to change the
+-- block `Point`s, or it would create an invalid chain.
+--
 mapChainFragment :: (HasHeader block1, HasHeader block2)
                  => (block1 -> block2) -> ChainFragment block1 -> ChainFragment block2
 mapChainFragment f (ChainFragment c) = ChainFragment (FT.fmap' f c)
@@ -701,6 +709,15 @@ joinChainFragments c1@(ChainFragment t1) c2@(ChainFragment t2) =
       (_ FT.:> b1, b2 FT.:< _) | b2 `isValidSuccessorOf` b1
                                -> Just (ChainFragment (t1 FT.>< t2))
       _                        -> Nothing
+
+-- | Convert a 'ChainFragment' to a 'Chain'.
+toChain :: HasHeader block => ChainFragment block -> Chain block
+toChain = Chain.fromNewestFirst . toNewestFirst
+
+-- | Convert a 'Chain' to a 'ChainFragment'.
+fromChain :: HasHeader block => Chain block -> ChainFragment block
+fromChain = fromNewestFirst . Chain.toNewestFirst
+
 
 --
 -- Serialisation

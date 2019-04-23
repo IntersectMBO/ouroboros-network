@@ -37,7 +37,7 @@ data FetchClientStateVars header m =
        -- thread. Changes in this state trigger re-evaluation of fetch
        -- decisions.
        --
-       fetchClientStatusVar   :: TVar m PeerFetchStatus,
+       fetchClientStatusVar   :: TVar m (PeerFetchStatus header),
 
        -- | The current number of requests in-flight and the amount of data
        -- in-flight with the peer. It is written by the protocol thread and
@@ -61,7 +61,7 @@ data FetchClientStateVars header m =
 -- by fetch protocol threads and used in the block fetch decision making logic.
 -- Changes in this status trigger re-evaluation of fetch decisions.
 --
-data PeerFetchStatus =
+data PeerFetchStatus header =
        -- | Communication with the peer has failed. This is a temporary status
        -- that may occur during the process of shutting down the thread that
        -- runs the block fetch protocol. The peer will promptly be removed from
@@ -95,8 +95,8 @@ data PeerFetchStatus =
        -- | Communication with the peer is in a normal state, and the peer is
        -- considered ready to accept new requests.
        --
-     | PeerFetchStatusReady
-  deriving (Eq, Ord, Show)
+     | PeerFetchStatusReady (Set (Point header))
+  deriving (Eq, Show)
 
 
 -- | The number of requests in-flight and the amount of data in-flight with a
@@ -147,6 +147,8 @@ initialPeerFetchInFlight =
 newtype FetchRequest header = FetchRequest [[header]]
   deriving Show
 
+instance Functor FetchRequest where
+  fmap f (FetchRequest hdrss) = FetchRequest (map (map f) hdrss)
 
 newtype TFetchRequestVar m header =
         TFetchRequestVar (TMVar m (FetchRequest header))

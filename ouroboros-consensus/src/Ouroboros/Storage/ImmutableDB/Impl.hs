@@ -215,7 +215,7 @@ data OpenState m hash h = OpenState
     , _cumulEpochSizes         :: !CumulEpochSizes
     -- ^ Cache of epoch sizes + conversion between 'SlotNo' and 'EpochSlot' and
     -- vice versa.
-    , _nextIteratorID          :: !IteratorID
+    , _nextIteratorID          :: !BaseIteratorID
     -- ^ The ID of the next iterator that will be created.
     }
 
@@ -228,7 +228,7 @@ data ClosedState m = ClosedState
     -- ^ See '_getEpochSize'.
     , _closedCumulEpochSizes :: !CumulEpochSizes
     -- ^ See '_cumulEpochSizes'
-    , _closedNextIteratorID  :: !IteratorID
+    , _closedNextIteratorID  :: !BaseIteratorID
     -- ^ See '_nextIteratorID'.
     }
 
@@ -286,7 +286,6 @@ openDB
   -> EpochFileParser e hash m (Word64, SlotNo)
   -> m (ImmutableDB hash m)
 openDB = openDBImpl
-
 
 {------------------------------------------------------------------------------
   ImmutableDB Implementation
@@ -868,9 +867,11 @@ data IteratorState hash h = IteratorState
 streamBinaryBlobsImpl :: forall m hash.
                          (HasCallStack, MonadSTM m, MonadCatch m, Eq hash)
                       => ImmutableDBEnv m hash
-                      -> Maybe (SlotNo, hash)  -- ^ When to start streaming (inclusive).
-                      -> Maybe (SlotNo, hash)  -- ^ When to stop streaming (inclusive).
-                      -> m (Iterator hash m)
+                      -> Maybe (SlotNo, hash)
+                      -- ^ When to start streaming (inclusive).
+                      -> Maybe (SlotNo, hash)
+                      -- ^ When to stop streaming (inclusive).
+                      -> m (Iterator hash m ByteString)
 streamBinaryBlobsImpl dbEnv mbStart mbEnd = withOpenState dbEnv $ \hasFS st -> do
     let ImmutableDBEnv { _dbErr }               = dbEnv
         HasFS {..}                              = hasFS
@@ -1039,17 +1040,17 @@ streamBinaryBlobsImpl dbEnv mbStart mbEnd = withOpenState dbEnv $ \hasFS st -> d
           let it = Iterator
                 { iteratorNext  = iteratorNextImpl  dbEnv ith
                 , iteratorClose = iteratorCloseImpl       ith
-                , iteratorID    = _nextIteratorID
+                , iteratorID    = BaseIteratorID _nextIteratorID
                 }
           in (it, st' { _nextIteratorID = succ _nextIteratorID })
   where
-    mkEmptyIterator :: m (Iterator hash m)
+    mkEmptyIterator :: m (Iterator hash m ByteString)
     mkEmptyIterator =
       modifyOpenState dbEnv $ \_hasFS -> state $ \st@OpenState {..} ->
         let it = Iterator
               { iteratorNext  = return IteratorExhausted
               , iteratorClose = return ()
-              , iteratorID    = _nextIteratorID
+              , iteratorID    = BaseIteratorID _nextIteratorID
               }
         in (it, st { _nextIteratorID = succ _nextIteratorID })
 
@@ -1058,7 +1059,7 @@ iteratorNextImpl :: forall m hash.
                     (HasCallStack, MonadSTM m, MonadCatch m, Eq hash)
                  => ImmutableDBEnv m hash
                  -> IteratorHandle hash m
-                 -> m (IteratorResult hash)
+                 -> m (IteratorResult hash ByteString)
 iteratorNextImpl dbEnv it@IteratorHandle {_it_hasFS = hasFS :: HasFS m h, ..} = do
     -- The idea is that if the state is not Nothing, then '_it_next' is always
     -- ready to be read. After reading it with 'readNext', 'stepIterator' will
@@ -1222,7 +1223,7 @@ validateAndReopen :: forall m hash h e.
                   -> ValidationPolicy
                   -> EpochFileParser e hash m (Word64, SlotNo)
                   -> CumulEpochSizes
-                  -> IteratorID
+                  -> BaseIteratorID
                   -> m (OpenState m hash h)
 validateAndReopen hashDecoder hashEncoder hasFS err getEpochSize valPol epochFileParser ces nextIteratorID = do
     (mbLastValidLocationAndIndex, ces') <-
@@ -1245,7 +1246,7 @@ mkOpenState :: (HasCallStack, MonadThrow m)
             -> EpochNo
             -> (EpochNo -> m EpochSize)
             -> CumulEpochSizes
-            -> IteratorID
+            -> BaseIteratorID
             -> ImmTip
             -> Index hash
             -> m (OpenState m hash h)
@@ -1277,7 +1278,7 @@ mkOpenStateNewEpoch :: (HasCallStack, MonadThrow m)
                     -> EpochNo
                     -> (EpochNo -> m EpochSize)
                     -> CumulEpochSizes
-                    -> IteratorID
+                    -> BaseIteratorID
                     -> ImmTip
                     -> m (OpenState m hash h)
 mkOpenStateNewEpoch HasFS{..} epoch getEpochSize ces nextIteratorID tip = do

@@ -137,10 +137,12 @@ convertCborDecoderLBS cborDecode liftST =
     -- and our choice here that consumes lazy bytestrings.
     go :: [BS.ByteString] -> CBOR.IDecode s a
        -> m (DecodeStep LBS.ByteString CBOR.DeserialiseFailure m a)
-    go _  (CBOR.Done  trailing _ x)
+    go [] (CBOR.Done  trailing _ x)
       | BS.null trailing    = return (DecodeDone x Nothing)
       | otherwise           = return (DecodeDone x (Just trailing'))
                                 where trailing' = LBS.fromStrict trailing
+    go cs (CBOR.Done  trailing _ x) = return (DecodeDone x (Just trailing'))
+                                where trailing' = LBS.fromChunks (trailing : cs)
     go _  (CBOR.Fail _ _ e) = return (DecodeFail e)
 
     -- We keep a bunch of chunks and supply the CBOR decoder with them

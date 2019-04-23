@@ -25,6 +25,7 @@ import           Control.Monad.Except
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy
+import           Data.Typeable (Typeable)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
@@ -136,7 +137,7 @@ data BftValidationErr = BftInvalidSignature
 -------------------------------------------------------------------------------}
 
 -- | Crypto primitives required by BFT
-class DSIGNAlgorithm (BftDSIGN c) => BftCrypto c where
+class (Typeable c, DSIGNAlgorithm (BftDSIGN c)) => BftCrypto c where
   type family BftDSIGN c :: *
 
 data BftStandardCrypto

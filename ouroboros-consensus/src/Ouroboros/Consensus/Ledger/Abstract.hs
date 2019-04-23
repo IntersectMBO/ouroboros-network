@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleContexts        #-}
 {-# LANGUAGE KindSignatures          #-}
 {-# LANGUAGE MultiParamTypeClasses   #-}
+{-# LANGUAGE RankNTypes              #-}
 {-# LANGUAGE RecordWildCards         #-}
 {-# LANGUAGE StandaloneDeriving      #-}
 {-# LANGUAGE TypeFamilies            #-}
@@ -20,8 +21,13 @@ module Ouroboros.Consensus.Ledger.Abstract (
   , foldExtLedgerState
   , chainExtLedgerState
   , verifyChain
+    -- * Serialisation
+  , encodeExtLedgerState
+  , decodeExtLedgerState
   ) where
 
+import           Codec.CBOR.Decoding (Decoder)
+import           Codec.CBOR.Encoding (Encoding)
 import           Control.Monad.Except
 
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -124,3 +130,25 @@ verifyChain cfg initSt c =
     case runExcept (chainExtLedgerState cfg c initSt) of
       Left  _err -> False
       Right _st' -> True
+
+{-------------------------------------------------------------------------------
+  Serialisation
+-------------------------------------------------------------------------------}
+
+encodeExtLedgerState :: (LedgerState b -> Encoding)
+                     -> (ChainState (BlockProtocol b) -> Encoding)
+                     -> ExtLedgerState b -> Encoding
+encodeExtLedgerState encodeLedger
+                     encodeChainState
+                     ExtLedgerState{..} = mconcat [
+      encodeLedger     ledgerState
+    , encodeChainState ouroborosChainState
+    ]
+
+decodeExtLedgerState :: (forall s. Decoder s (LedgerState b))
+                     -> (forall s. Decoder s (ChainState (BlockProtocol b)))
+                     -> forall s. Decoder s (ExtLedgerState b)
+decodeExtLedgerState decodeLedger decodeChainState = do
+    ledgerState         <- decodeLedger
+    ouroborosChainState <- decodeChainState
+    return ExtLedgerState{..}

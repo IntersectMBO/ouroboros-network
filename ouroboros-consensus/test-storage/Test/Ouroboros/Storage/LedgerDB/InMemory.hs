@@ -22,6 +22,8 @@ import           Test.Tasty.QuickCheck
 import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 import           Ouroboros.Consensus.Util
 
+import           Ouroboros.Network.Testing.Serialise (prop_serialise)
+
 import           Ouroboros.Storage.LedgerDB.Conf
 import           Ouroboros.Storage.LedgerDB.InMemory
 import           Ouroboros.Storage.LedgerDB.MemPolicy
@@ -29,7 +31,10 @@ import           Ouroboros.Storage.LedgerDB.Offsets
 
 tests :: TestTree
 tests = testGroup "InMemory" [
-      testGroup "MemPolicy" [
+      testGroup "Serialisation" [
+          testProperty "ChainSummary" prop_serialise_ChainSummary
+        ]
+    , testGroup "MemPolicy" [
           testProperty "invariant"     prop_memPolicy_invariant
         , testProperty "fromToSkips"   prop_memPolicy_fromToSkips
         , testProperty "toFromSkips"   prop_memPolicy_toFromSkips
@@ -58,6 +63,13 @@ tests = testGroup "InMemory" [
         , testProperty "switchExpectedLedger"   prop_switchExpectedLedger
         ]
     ]
+
+{-------------------------------------------------------------------------------
+  Serialisation
+-------------------------------------------------------------------------------}
+
+prop_serialise_ChainSummary :: Trivial (ChainSummary Int Int) -> Property
+prop_serialise_ChainSummary (Trivial summary) = prop_serialise summary
 
 {-------------------------------------------------------------------------------
   Memory policy
@@ -465,3 +477,24 @@ maxNumBlocks = 1500
 
 neverCalled :: HasCallStack => a
 neverCalled = error "this should not be called"
+
+{-------------------------------------------------------------------------------
+  Serialisation roundtrip
+-------------------------------------------------------------------------------}
+
+-- | Marker that we're not recording anything interesting, but merely testing
+-- roundtrip properties
+newtype Trivial a = Trivial { trivial :: a }
+  deriving (Show)
+
+instance Arbitrary (Trivial (ChainSummary Int Int)) where
+  arbitrary = fmap Trivial $
+                ChainSummary <$> (trivial <$> arbitrary)
+                             <*> arbitrary
+                             <*> arbitrary
+
+instance Arbitrary (Trivial (Tip Int)) where
+  arbitrary = fmap Trivial $ do
+                gen <- arbitrary
+                if gen then return TipGen
+                       else Tip <$> arbitrary

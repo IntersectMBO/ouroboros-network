@@ -162,18 +162,18 @@ data Success it
   | EBB          (Maybe (Hash, ByteString))
   | EpochNo      EpochNo
   | Iter         it
-  | IterResult   (IteratorResult Hash)
+  | IterResult   (IteratorResult Hash ByteString)
   | Tip          ImmTip
   deriving (Eq, Show, Functor, Foldable, Traversable)
 
 -- | Run the command against the given database.
 run :: (HasCallStack, Monad m)
-    => (ImmutableDB Hash m -> Corruption -> m (Success (Iterator Hash m)))
+    => (ImmutableDB Hash m -> Corruption -> m (Success (Iterator Hash m ByteString)))
        -- ^ How to run a 'Corruption' command.
-    -> [Iterator Hash m]
+    -> [Iterator Hash m ByteString]
     -> ImmutableDB Hash m
-    -> Cmd (Iterator Hash m)
-    -> m (Success (Iterator Hash m))
+    -> Cmd (Iterator Hash m ByteString)
+    -> m (Success (Iterator Hash m ByteString))
 run runCorruption its db cmd = case cmd of
   GetBinaryBlob     s   -> Blob       <$> getBinaryBlob db s
   GetEBB            e   -> EBB        <$> getEBB db e
@@ -230,8 +230,8 @@ type ModelDBPure = ImmutableDB Hash PureM
 -- | Run a command against the pure model
 runPure :: DBModel Hash
         -> ModelDBPure
-        -> CmdErr (Iterator Hash PureM)
-        -> (Resp (Iterator Hash PureM), DBModel Hash)
+        -> CmdErr (Iterator Hash PureM ByteString)
+        -> (Resp (Iterator Hash PureM ByteString), DBModel Hash)
 runPure dbm mdb (CmdErr mbErrors cmd its) =
     first Resp $ flip runState dbm $ do
       resp <- runExceptT $ run runCorruption its mdb cmd
@@ -261,7 +261,7 @@ runPure dbm mdb (CmdErr mbErrors cmd its) =
           gets (Right . Tip . dbmTip)
   where
     runCorruption :: ModelDBPure -> Corruption
-                  -> PureM (Success (Iterator Hash PureM))
+                  -> PureM (Success (Iterator Hash PureM ByteString))
     runCorruption _ (MkCorruption corrs) = do
       modify $ simulateCorruptions corrs
       gets (Tip . dbmTip)
@@ -280,10 +280,11 @@ iters = toList
 -------------------------------------------------------------------------------}
 
 -- | Concrete or symbolic references to a real (or model) iterator
-type IterRef m = Reference (Opaque (Iterator Hash m))
+type IterRef m = Reference (Opaque (Iterator Hash m ByteString))
 
 -- | Mapping between iterator references and mocked iterators
-type KnownIters m = RefEnv (Opaque (Iterator Hash m)) (Iterator Hash PureM)
+type KnownIters m = RefEnv (Opaque (Iterator Hash m     ByteString))
+                                   (Iterator Hash PureM ByteString)
 
 -- | Execution model
 data Model m r = Model
@@ -304,12 +305,15 @@ initModel dbModel mockDB = Model
     }
 
 -- | Key property of the model is that we can go from real to mock responses
-toMock :: (Functor t, Eq1 r) => Model m r -> At t m r -> t (Iterator Hash PureM)
+toMock :: (Functor t, Eq1 r)
+       => Model m r -> At t m r -> t (Iterator Hash PureM ByteString)
 toMock Model {..} (At t) = fmap (knownIters RE.!) t
 
 -- | Step the mock semantics
 step :: Eq1 r
-     => Model m r -> At CmdErr m r -> (Resp (Iterator Hash PureM), DBModel Hash)
+     => Model m r
+     -> At CmdErr m r
+     -> (Resp (Iterator Hash PureM ByteString), DBModel Hash)
 step model@Model{..} cmdErr = runPure dbModel mockDB (toMock model cmdErr)
 
 
@@ -353,13 +357,13 @@ data Event m r = Event
   { eventBefore   :: Model     m r
   , eventCmdErr   :: At CmdErr m r
   , eventAfter    :: Model     m r
-  , eventMockResp :: Resp (Iterator Hash PureM)
+  , eventMockResp :: Resp (Iterator Hash PureM ByteString)
   } deriving (Show)
 
 eventCmd :: Event m r -> At Cmd m r
 eventCmd = At . _cmd . unAt . eventCmdErr
 
-eventMockCmd :: Eq1 r => Event m r -> Cmd (Iterator Hash PureM)
+eventMockCmd :: Eq1 r => Event m r -> Cmd (Iterator Hash PureM ByteString)
 eventMockCmd ev@Event {..} = toMock eventBefore (eventCmd ev)
 
 
@@ -721,7 +725,7 @@ semanticsCorruption :: MonadCatch m
                     => HasFS m h
                     -> ImmutableDB Hash m
                     -> Corruption
-                    -> m (Success (Iterator Hash m))
+                    -> m (Success (Iterator Hash m ByteString))
 semanticsCorruption hasFS db (MkCorruption corrs) = do
     closeDB db
     forM_ corrs $ \(corr, file) -> corruptFile hasFS corr file
@@ -817,7 +821,7 @@ type EventPred m = C.Predicate (Event m Symbolic) Tag
 
 -- | Convenience combinator for creating classifiers for successful commands
 successful :: (    Event m Symbolic
-                -> Success (Iterator Hash PureM)
+                -> Success (Iterator Hash PureM ByteString)
                 -> Either Tag (EventPred m)
               )
            -> EventPred m
@@ -912,7 +916,7 @@ tag = C.classify
       InvalidIteratorRangeError {} -> Left TagInvalidIteratorRangeError
       _                            -> Right tagInvalidIteratorRangeError
 
-    tagIteratorStreamedNBlobs :: Map (Iterator Hash PureM) Int
+    tagIteratorStreamedNBlobs :: Map (Iterator Hash PureM ByteString) Int
                               -> EventPred m
     tagIteratorStreamedNBlobs blobsStreamed = C.Predicate
       { C.predApply = \ev -> case eventMockResp ev of
@@ -982,7 +986,7 @@ instance CommandNames (At CmdErr m) where
   cmdNames (_ :: Proxy (At CmdErr m r)) =
     constrNames (Proxy @(Cmd (IterRef m r)))
 
-instance Show (Iterator Hash PureM) where
+instance Show (Iterator hash m a) where
   show it = "<iterator " <> show (iteratorID it) <> ">"
 
 instance Show ModelDBPure where
@@ -995,9 +999,10 @@ instance ToExpr EpochNo
 instance ToExpr EpochSize
 instance ToExpr EpochSlot
 instance ToExpr RelativeSlot
+instance ToExpr BaseIteratorID
 instance ToExpr IteratorID
 instance ToExpr CumulEpochSizes
-instance ToExpr (IteratorResult Hash)
+instance ToExpr (IteratorResult Hash ByteString)
 instance ToExpr (IteratorModel Hash)
 instance ToExpr TestBlock
 instance ToExpr r => ToExpr (C.Tip r)
@@ -1009,14 +1014,10 @@ instance ToExpr FsError where
 instance ToExpr ModelDBPure where
   toExpr db = App (show db) []
 
-instance ToExpr (Iterator Hash PureM) where
+instance ToExpr (Iterator hash m a) where
   toExpr it = App (show it) []
 
 instance ToExpr (Model m Concrete)
-
--- Orphan instance to store 'Iterator's in a 'Map'.
-instance Ord (Iterator Hash m) where
-  compare = compare `on` iteratorID
 
 {-------------------------------------------------------------------------------
   Top-level tests
