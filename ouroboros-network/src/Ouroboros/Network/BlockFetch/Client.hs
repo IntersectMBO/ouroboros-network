@@ -90,28 +90,59 @@ blockFetchClient tracer
                  }
                  stateVars
                  readPeerGSVs =
-    PeerPipelined (senderIdle Zero [])
+    PeerPipelined (senderAwait Zero)
   where
     senderIdle :: forall n.
                   Nat n
-               -> [[header]]
                -> PeerSender (BlockFetch header block) AsClient
                              BFIdle n () m ()
 
     -- We have no requests to send. Check if we have any pending pipelined
     -- results to collect. If so, go round and collect any more. If not, block
     -- and wait for some new requests.
-    senderIdle (Succ outstanding) [] =
+    senderIdle (Succ outstanding) =
       SenderCollect (Just (senderAwait (Succ outstanding)))
-                    (\_ -> senderIdle outstanding [])
+                    (\_ -> senderIdle outstanding)
 
     -- And similarly if there are no pending pipelined results at all.
-    senderIdle Zero [] = senderAwait Zero
+    senderIdle Zero = senderAwait Zero
     --TODO: assert nothing in flight here
+
+    senderAwait :: forall n.
+                   Nat n
+                -> PeerSender (BlockFetch header block) AsClient
+                              BFIdle n () m ()
+    senderAwait outstanding =
+      SenderEffect $ do
+      -- Atomically grab our next request and update our tracking state.
+      -- We have now accepted this request.
+      --
+      -- It is important to note that we only update our tracking state when
+      -- we /accept/ the request, not when the fetch logic /sets/ the request.
+      -- The fetching logic can update the request up until the point where
+      -- we accept it here. From here on the request is considered to be
+      -- in-flight, and the tracking state that the fetch logic uses now
+      -- reflects that.
+      --
+      (fragments, inflight, inflightlimits, currentStatus) <-
+        acceptFetchRequest blockFetchSize readPeerGSVs stateVars
+
+      traceWith tracer $ AcceptedFetchRequest
+                           (fmap blockPoint (FetchRequest fragments))
+                           inflight inflightlimits
+                           currentStatus
+
+      return (senderActive outstanding fragments)
+
+    senderActive :: forall n.
+                    Nat n
+                 -> [[header]]
+                 -> PeerSender (BlockFetch header block) AsClient
+                               BFIdle n () m ()
 
     -- We now do have some requests that we have accepted but have yet to
     -- actually send out. Lets send out the first one.
-    senderIdle outstanding (fragment:fragments) =
+    senderActive outstanding (fragment:fragments) =
       SenderEffect $ do
 {-
         now <- getMonotonicTime
@@ -139,33 +170,10 @@ blockFetchClient tracer
             (ClientAgency TokIdle)
             (MsgRequestRange range)
             (receiverBusy fragment)
-            (senderIdle (Succ outstanding) fragments)
+            (senderActive (Succ outstanding) fragments)
 
-    senderAwait :: forall n.
-                   Nat n
-                -> PeerSender (BlockFetch header block) AsClient
-                              BFIdle n () m ()
-    senderAwait outstanding =
-      SenderEffect $ do
-      -- Atomically grab our next request and update our tracking state.
-      -- We have now accepted this request.
-      --
-      -- It is important to note that we only update our tracking state when
-      -- we /accept/ the request, not when the fetch logic /sets/ the request.
-      -- The fetching logic can update the request up until the point where
-      -- we accept it here. From here on the request is considered to be
-      -- in-flight, and the tracking state that the fetch logic uses now
-      -- reflects that.
-      --
-      (fragments, inflight, inflightlimits, currentStatus) <-
-        acceptFetchRequest blockFetchSize readPeerGSVs stateVars
-
-      traceWith tracer $ AcceptedFetchRequest
-                           (fmap blockPoint (FetchRequest fragments))
-                           inflight inflightlimits
-                           currentStatus
-
-      return (senderIdle outstanding fragments)
+    -- And when we run out, go back to idle.
+    senderActive outstanding [] = senderIdle outstanding
 
 
     receiverBusy :: [header]
