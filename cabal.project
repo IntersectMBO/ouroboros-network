@@ -5,7 +5,6 @@ packages: ./typed-protocols
           ./io-sim
           ./io-sim-classes
           ./byron-proxy
-          ./type-operators
 
 package typed-protocols
   tests: True

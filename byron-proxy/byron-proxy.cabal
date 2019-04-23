@@ -84,7 +84,8 @@ executable byron-proxy
                        random,
                        stm,
                        text,
-                       time
+                       time,
+                       type-operators == 0.1.0.4
   hs-source-dirs:      src/exec
   default-language:    Haskell2010
   -- -threaded is needed or else the diffusion layer will crash, due to a use
