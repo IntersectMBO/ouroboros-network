@@ -12,7 +12,6 @@
 module Ouroboros.Network.Protocol.ChainSync.Type where
 
 import Network.TypedProtocol.Core
-import Network.TypedProtocol.Codec (AnyMessage (..))
 
 
 -- | A kind to identify our protocol, and the types of the states in the state
@@ -154,6 +153,3 @@ instance (Show header, Show point) => Show (Message (ChainSync header point) fro
   show (MsgIntersectImproved p tip) = "MsgIntersectImproved " ++ show p ++ " " ++ show tip
   show (MsgIntersectUnchanged p)    = "MsgIntersectUnchanged " ++ show p
   show MsgDone{}                    = "MsgDone"
-
-instance (Show header, Show point) => Show (AnyMessage (ChainSync header point)) where
-  show (AnyMessage msg) = show msg

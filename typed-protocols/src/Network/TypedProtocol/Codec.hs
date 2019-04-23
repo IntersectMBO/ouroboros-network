@@ -7,6 +7,10 @@
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE TypeInType                 #-}
+-- @UndecidableInstances@ extension is required for defining @Show@ instance of
+-- @'AnyMessage'@.
+{-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE QuantifiedConstraints      #-}
 
 module Network.TypedProtocol.Codec (
     -- * Defining and using Codecs
@@ -195,6 +199,7 @@ data CodecFailure = CodecFailureOutOfInput
                   | CodecFailure String
   deriving (Eq, Show)
 
+-- safe instance with @UndecidableInstances@ in scope
 instance Exception CodecFailure
 
 
@@ -241,6 +246,10 @@ runDecoderPure runM decoder bs = runM (runDecoder bs =<< decoder)
 --
 data AnyMessage ps where
      AnyMessage :: Message ps st st' -> AnyMessage ps
+
+-- requires @UndecidableInstances@ and @QuantifiedConstraints@.
+instance (forall st st'. Show (Message ps st st')) => Show (AnyMessage ps) where
+    show (AnyMessage msg) = show msg
 
 -- | Used to hold the 'PeerHasAgency' state token and a corresponding 'Message'.
 --
