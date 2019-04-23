@@ -51,6 +51,7 @@ withDB o fp k = Sql.withConnection fp $ \conn -> do
       createTable conn
       createIndex conn
     Existing -> pure ()
+  Sql.execute_ conn "PRAGMA main.synchronous = 0;"
   k (sqliteIndex conn)
 
 -- | Like withDB but uses file existence check to determine whether it's new
