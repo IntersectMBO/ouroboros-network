@@ -35,8 +35,7 @@ import           Ouroboros.Network.BlockFetch.ClientState
                    , completeFetchBatch )
 import           Ouroboros.Network.BlockFetch.DeltaQ
                    ( PeerGSV(..), SizeInBytes
-                   , PeerFetchInFlightLimits(..)
-                   , calculatePeerFetchInFlightLimits )
+                   , PeerFetchInFlightLimits(..) )
 
 
 -- TODO #468 extract this from BlockFetchConsensusInterface
@@ -132,17 +131,18 @@ blockFetchClient tracer
                            inflight inflightlimits
                            currentStatus
 
-      return (senderActive outstanding fragments)
+      return (senderActive outstanding inflightlimits fragments)
 
     senderActive :: forall n.
                     Nat n
+                 -> PeerFetchInFlightLimits
                  -> [[header]]
                  -> PeerSender (BlockFetch header block) AsClient
                                BFIdle n () m ()
 
     -- We now do have some requests that we have accepted but have yet to
     -- actually send out. Lets send out the first one.
-    senderActive outstanding (fragment:fragments) =
+    senderActive outstanding inflightlimits (fragment:fragments) =
       SenderEffect $ do
 {-
         now <- getMonotonicTime
@@ -169,17 +169,18 @@ blockFetchClient tracer
           SenderPipeline
             (ClientAgency TokIdle)
             (MsgRequestRange range)
-            (receiverBusy fragment)
-            (senderActive (Succ outstanding) fragments)
+            (receiverBusy fragment inflightlimits)
+            (senderActive (Succ outstanding) inflightlimits fragments)
 
     -- And when we run out, go back to idle.
-    senderActive outstanding [] = senderIdle outstanding
+    senderActive outstanding _ [] = senderIdle outstanding
 
 
     receiverBusy :: [header]
+                 -> PeerFetchInFlightLimits
                  -> PeerReceiver (BlockFetch header block) AsClient
                                  BFBusy BFIdle m ()
-    receiverBusy headers =
+    receiverBusy headers inflightlimits =
       ReceiverAwait
         (ServerAgency TokBusy) $ \msg ->
         case msg of
@@ -196,16 +197,13 @@ blockFetchClient tracer
           MsgNoBlocks   -> ReceiverDone ()
           --TODO: also adjust the in-flight stats
 
-          MsgStartBatch -> ReceiverEffect $ do
-            inFlightLimits <- calculatePeerFetchInFlightLimits <$>
-                                atomically readPeerGSVs
-            return $ receiverStreaming inFlightLimits headers
+          MsgStartBatch -> receiverStreaming inflightlimits headers
 
     receiverStreaming :: PeerFetchInFlightLimits
                       -> [header]
                       -> PeerReceiver (BlockFetch header block) AsClient
                                       BFStreaming BFIdle m ()
-    receiverStreaming inFlightLimits headers =
+    receiverStreaming inflightlimits headers =
       ReceiverAwait
         (ServerAgency TokStreaming) $ \msg ->
         case (msg, headers) of
@@ -251,15 +249,15 @@ blockFetchClient tracer
 
             -- Update our in-flight stats and our current status
             (inflight, currentStatus) <-
-              completeBlockDownload blockFetchSize inFlightLimits
+              completeBlockDownload blockFetchSize inflightlimits
                                     header headers' stateVars
 
             traceWith tracer $ CompletedBlockFetch
                                  (blockPoint header)
-                                 inflight inFlightLimits
+                                 inflight inflightlimits
                                  currentStatus
 
-            return (receiverStreaming inFlightLimits headers')
+            return (receiverStreaming inflightlimits headers')
 
           (MsgBatchDone, (_:_)) -> ReceiverEffect $
             throwM BlockFetchProtocolFailureTooFewBlocks
