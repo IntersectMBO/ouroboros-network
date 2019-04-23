@@ -163,6 +163,42 @@ initialPeerFetchInFlight =
       peerFetchBlocksInFlight = Set.empty
     }
 
+addHeadersInFlight :: HasHeader header
+                   => (header -> SizeInBytes)
+                   -> [[header]]
+                   -> PeerFetchInFlight header
+                   -> PeerFetchInFlight header
+addHeadersInFlight blockFetchSize fragments inflight =
+    PeerFetchInFlight {
+      peerFetchReqsInFlight   = peerFetchReqsInFlight inflight
+                              + fromIntegral (length fragments),
+
+      peerFetchBytesInFlight  = peerFetchBytesInFlight inflight
+                              + sum [ blockFetchSize header
+                                    | fragment <- fragments
+                                    , header   <- fragment ],
+
+      peerFetchBlocksInFlight = peerFetchBlocksInFlight inflight
+                    `Set.union` Set.fromList [ blockPoint header
+                                             | fragment <- fragments
+                                             , header   <- fragment ]
+    }
+
+deleteHeaderInFlight :: HasHeader header
+                     => (header -> SizeInBytes)
+                     -> header
+                     -> PeerFetchInFlight header
+                     -> PeerFetchInFlight header
+deleteHeaderInFlight blockFetchSize header inflight =
+    inflight {
+      peerFetchBytesInFlight  = peerFetchBytesInFlight inflight
+                              - blockFetchSize header,
+
+      peerFetchBlocksInFlight = blockPoint header
+                   `Set.delete` peerFetchBlocksInFlight inflight
+      --TODO: can assert here that we don't go negative, and the
+      -- block we're deleting was in fact there.
+    }
 
 
 newtype FetchRequest header = FetchRequest [[header]]
@@ -194,21 +230,7 @@ acceptFetchRequest blockFetchSize readPeerGSVs FetchClientStateVars {..} =
     atomically $ do
       FetchRequest fragments <- takeTFetchRequestVar fetchClientRequestVar
       inflight <- readTVar fetchClientInFlightVar
-      let !inflight' =
-            PeerFetchInFlight {
-              peerFetchReqsInFlight   = peerFetchReqsInFlight inflight
-                                      + fromIntegral (length fragments),
-
-              peerFetchBytesInFlight  = peerFetchBytesInFlight inflight
-                                      + sum [ blockFetchSize header
-                                            | fragment <- fragments
-                                            , header   <- fragment ],
-
-              peerFetchBlocksInFlight = peerFetchBlocksInFlight inflight
-                            `Set.union` Set.fromList [ blockPoint header
-                                                     | fragment <- fragments
-                                                     , header   <- fragment ]
-            }
+      let !inflight' = addHeadersInFlight blockFetchSize fragments inflight
       writeTVar fetchClientInFlightVar inflight'
 
       inflightlimits@PeerFetchInFlightLimits {
@@ -241,16 +263,7 @@ completeBlockDownload :: (MonadSTM m, HasHeader header)
 completeBlockDownload blockFetchSize inFlightLimits header headers' FetchClientStateVars {..} =
     atomically $ do
       inflight <- readTVar fetchClientInFlightVar
-      let !inflight' =
-            inflight {
-              peerFetchBytesInFlight  = peerFetchBytesInFlight inflight
-                                      - blockFetchSize header,
-
-              peerFetchBlocksInFlight = blockPoint header
-                           `Set.delete` peerFetchBlocksInFlight inflight
-              --TODO: can assert here that we don't go negative, and the
-              -- block we're deleting was in fact there.
-            }
+      let !inflight' = deleteHeaderInFlight blockFetchSize header inflight
       writeTVar fetchClientInFlightVar inflight'
 
       -- Now crucially, we don't want to end up below the in-flight low
