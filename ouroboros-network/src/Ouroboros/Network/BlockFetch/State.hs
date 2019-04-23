@@ -30,8 +30,9 @@ import           Ouroboros.Network.BlockFetch.ClientState
                    ( FetchRequest(..)
                    , PeerFetchInFlight(..)
                    , PeerFetchStatus(..)
-                   , TFetchRequestVar
+                   , FetchClientStateVars
                    , setFetchRequest
+                   , readFetchClientState
                    )
 import           Ouroboros.Network.BlockFetch.Decision
                    ( fetchDecisions
@@ -151,7 +152,7 @@ fetchDecisionsForStateSnapshot
   => FetchDecisionPolicy header
   -> FetchStateSnapshot peer header block m
   -> [( FetchDecision (FetchRequest header),
-        PeerInfo header (TFetchRequestVar m header)
+        PeerInfo header (FetchClientStateVars m header)
       )]
 
 fetchDecisionsForStateSnapshot
@@ -161,7 +162,6 @@ fetchDecisionsForStateSnapshot
       fetchStatePeerChains,
       fetchStatePeerStates,
       fetchStatePeerGSVs,
-      fetchStatePeerReqVars,
       fetchStateFetchedBlocks,
       fetchStateFetchMode
     } =
@@ -170,9 +170,6 @@ fetchDecisionsForStateSnapshot
 
     assert (Map.keysSet fetchStatePeerStates
          == Map.keysSet fetchStatePeerGSVs) $
-
-    assert (Map.keysSet fetchStatePeerStates
-         == Map.keysSet fetchStatePeerReqVars) $
 
     fetchDecisions
       fetchDecisionPolicy
@@ -185,10 +182,10 @@ fetchDecisionsForStateSnapshot
       Map.elems $
       Map.intersectionWith swizzle
         (Map.intersectionWith (,) fetchStatePeerChains fetchStatePeerStates)
-        (Map.intersectionWith (,) fetchStatePeerGSVs   fetchStatePeerReqVars)
+        fetchStatePeerGSVs
 
-    swizzle (chain, (status, inflight)) (gsvs, reqvar) =
-      (chain, (status, inflight, gsvs, reqvar))
+    swizzle (chain, (status, inflight, vars)) gsvs =
+      (chain, (status, inflight, gsvs, vars))
 
 
 -- | Act on decisions to send new requests. In fact all we do here is update
@@ -197,12 +194,12 @@ fetchDecisionsForStateSnapshot
 --
 fetchLogicIterationAct :: MonadSTM m
                        => [(FetchDecision (FetchRequest header),
-                            TFetchRequestVar m header)]
+                            FetchClientStateVars m header)]
                        -> m ()
 fetchLogicIterationAct decisions =
     sequence_
-      [ setFetchRequest peerFetchRequestVar request
-      | (Right request, peerFetchRequestVar) <- decisions ]
+      [ setFetchRequest stateVars request
+      | (Right request, stateVars) <- decisions ]
 
 
 -- | STM actions to read various state variables that the fetch logic depends
@@ -227,10 +224,8 @@ data FetchTriggerVariables peer header m = FetchTriggerVariables {
 --
 data FetchNonTriggerVariables peer header block m = FetchNonTriggerVariables {
        readStateFetchedBlocks :: STM m (Point block -> Bool),
-       readStatePeerStates    :: STM m (Map peer (PeerFetchStatus   header,
-                                                  PeerFetchInFlight header)),
+       readStatePeerStateVars :: STM m (Map peer (FetchClientStateVars m header)),
        readStatePeerGSVs      :: STM m (Map peer PeerGSV),
-       readStatePeerReqVars   :: STM m (Map peer (TFetchRequestVar m header)),
        readStateFetchMode     :: STM m FetchMode
      }
 
@@ -258,9 +253,9 @@ data FetchStateSnapshot peer header block m = FetchStateSnapshot {
        fetchStateCurrentChain  :: AnchoredFragment header,
        fetchStatePeerChains    :: Map peer (AnchoredFragment header),
        fetchStatePeerStates    :: Map peer (PeerFetchStatus   header,
-                                            PeerFetchInFlight header),
+                                            PeerFetchInFlight header,
+                                            FetchClientStateVars m header),
        fetchStatePeerGSVs      :: Map peer PeerGSV,
-       fetchStatePeerReqVars   :: Map peer (TFetchRequestVar m header),
        fetchStateFetchedBlocks :: Point block -> Bool,
        fetchStateFetchMode     :: FetchMode
      }
@@ -293,9 +288,9 @@ readStateVariables FetchTriggerVariables{..}
     check (fetchStateFingerprint' /= fetchStateFingerprint)
 
     -- Now read all the non-trigger state variables
-    fetchStatePeerStates    <- readStatePeerStates
+    fetchStatePeerStates    <- readStatePeerStateVars
+                           >>= traverse readFetchClientState
     fetchStatePeerGSVs      <- readStatePeerGSVs
-    fetchStatePeerReqVars   <- readStatePeerReqVars
     fetchStateFetchedBlocks <- readStateFetchedBlocks
     fetchStateFetchMode     <- readStateFetchMode
 
@@ -306,7 +301,6 @@ readStateVariables FetchTriggerVariables{..}
             fetchStatePeerChains,
             fetchStatePeerStates,
             fetchStatePeerGSVs,
-            fetchStatePeerReqVars,
             fetchStateFetchedBlocks,
             fetchStateFetchMode
           }

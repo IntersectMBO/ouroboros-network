@@ -10,8 +10,6 @@ module Ouroboros.Network.BlockFetch.ClientRegistry (
     bracketFetchClient,
     readFetchClientsStatus,
     readFetchClientsStateVars,
-    readFetchClientsStates,
-    readFetchClientsReqVars,
   ) where
 
 import qualified Data.Map as Map
@@ -73,25 +71,4 @@ readFetchClientsStateVars :: MonadSTM m
                           => FetchClientRegistry peer header m
                           -> STM m (Map peer (FetchClientStateVars m header))
 readFetchClientsStateVars (FetchClientRegistry registry) = readTVar registry
-
--- | A read-only 'STM' action to get the current 'PeerFetchStatus' and
--- 'PeerFetchInFlight' for all fetch clients in the 'FetchClientRegistry'.
---
-readFetchClientsStates :: MonadSTM m
-                       => FetchClientRegistry peer header m
-                       -> STM m (Map peer (PeerFetchStatus   header,
-                                           PeerFetchInFlight header))
-readFetchClientsStates (FetchClientRegistry registry) =
-  readTVar registry >>=
-  traverse (\s -> (,) <$> readTVar (fetchClientStatusVar s)
-                      <*> readTVar (fetchClientInFlightVar s))
-
--- | A read-only 'STM' action to get the current 'TFetchRequestVar' for all
--- fetch clients in the 'FetchClientRegistry'.
---
-readFetchClientsReqVars :: MonadSTM m
-                        => FetchClientRegistry peer header m
-                        -> STM m (Map peer (TFetchRequestVar m header))
-readFetchClientsReqVars (FetchClientRegistry registry) =
-  readTVar registry >>= return . Map.map fetchClientRequestVar
 

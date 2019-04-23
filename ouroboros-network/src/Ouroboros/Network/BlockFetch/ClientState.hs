@@ -6,6 +6,7 @@
 module Ouroboros.Network.BlockFetch.ClientState (
     FetchClientStateVars(..),
     newFetchClientStateVars,
+    readFetchClientState,
     PeerFetchStatus(..),
     PeerFetchInFlight(..),
     initialPeerFetchInFlight,
@@ -14,11 +15,6 @@ module Ouroboros.Network.BlockFetch.ClientState (
     acceptFetchRequest,
     completeBlockDownload,
     completeFetchBatch,
-
-    TFetchRequestVar,
-    newTFetchRequestVar,
-    takeTFetchRequestVar,
-    writeTFetchRequestVar,
   ) where
 
 import           Data.Maybe (listToMaybe)
@@ -77,6 +73,15 @@ newFetchClientStateVars = do
     fetchClientRequestVar  <- newTFetchRequestVar
     return FetchClientStateVars {..}
 
+readFetchClientState :: MonadSTM m
+                     => FetchClientStateVars m header
+                     -> STM m (PeerFetchStatus header,
+                               PeerFetchInFlight header,
+                               FetchClientStateVars m header)
+readFetchClientState vars@FetchClientStateVars{..} =
+    (,,) <$> readTVar fetchClientStatusVar
+         <*> readTVar fetchClientInFlightVar
+         <*> pure vars
 
 -- | The status of the block fetch communication with a peer. This is maintained
 -- by fetch protocol threads and used in the block fetch decision making logic.
@@ -211,10 +216,10 @@ newtype TFetchRequestVar m header =
         TFetchRequestVar (TMVar m (FetchRequest header))
 
 setFetchRequest :: MonadSTM m
-                => TFetchRequestVar m header -- TODO: use FetchClientStateVars header m
+                => FetchClientStateVars m header
                 -> FetchRequest header
                 -> m ()
-setFetchRequest fetchClientRequestVar request =
+setFetchRequest FetchClientStateVars{fetchClientRequestVar} request =
     atomically (writeTFetchRequestVar fetchClientRequestVar request)
 
 acceptFetchRequest :: (MonadSTM m, HasHeader header)
