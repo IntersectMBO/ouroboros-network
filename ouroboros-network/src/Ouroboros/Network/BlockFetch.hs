@@ -103,8 +103,7 @@ import           Ouroboros.Network.DeltaQ
 import           Ouroboros.Network.BlockFetch.State
 import           Ouroboros.Network.BlockFetch.ClientRegistry
                    ( FetchClientRegistry, newFetchClientRegistry
-                   , readFetchClientsStatus, readFetchClientsStates
-                   , readFetchClientsReqVars )
+                   , readFetchClientsStatus, readFetchClientsStateVars )
 
 
 -- | The consensus layer functionality that the block fetch logic requires.
@@ -234,14 +233,13 @@ blockFetchLogic decisionTracer
     fetchNonTriggerVariables =
       FetchNonTriggerVariables {
         readStateFetchedBlocks = readFetchedBlocks,
-        readStatePeerStates    = readFetchClientsStates registry,
+        readStatePeerStateVars = readFetchClientsStateVars registry,
         readStatePeerGSVs      = readPeerGSVs,
-        readStatePeerReqVars   = readFetchClientsReqVars registry,
         readStateFetchMode     = readFetchMode
       }
 
     -- TODO: get this from elsewhere once we have DeltaQ info available
-    readPeerGSVs = Map.map (const dummyGSVs) <$> readFetchClientsStates registry
+    readPeerGSVs = Map.map (const dummyGSVs) <$> readFetchClientsStateVars registry
     -- roughly 10ms ping time and 1MBit/s bandwidth
     -- leads to ~2200 bytes in flight minimum
     dummyGSVs    = PeerGSV{outboundGSV, inboundGSV}
