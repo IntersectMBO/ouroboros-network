@@ -7,7 +7,10 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 
-module Ouroboros.Network.Protocol.BlockFetch.Codec where
+module Ouroboros.Network.Protocol.BlockFetch.Codec
+  ( codecBlockFetch
+  , codecBlockFetchId
+  ) where
 
 import           Control.Monad.Class.MonadST
 
@@ -74,3 +77,29 @@ codecBlockFetch = mkCodecCborLazyBS encode decode
       (ClientAgency TokIdle, _)      -> fail "codecBlockFetch.Idle: unexpected key"
       (ServerAgency TokBusy, _)      -> fail "codecBlockFetch.Busy: unexpected key"
       (ServerAgency TokStreaming, _) -> fail "codecBlockFetch.Streaming: unexpected key"
+
+
+codecBlockFetchId
+  :: forall header body m. Monad m
+  => Codec (BlockFetch header body) CodecFailure m (AnyMessage (BlockFetch header body))
+codecBlockFetchId = Codec encode decode
+ where
+  encode :: forall (pr :: PeerRole) st st'.
+            PeerHasAgency pr st
+         -> Message (BlockFetch header body) st st'
+         -> AnyMessage (BlockFetch header body)
+  encode _ = AnyMessage
+
+  decode :: forall (pr :: PeerRole) st.
+            PeerHasAgency pr st
+         -> m (DecodeStep (AnyMessage (BlockFetch header body))
+                          CodecFailure m (SomeMessage st))
+  decode stok = return $ DecodePartial $ \bytes -> case (stok, bytes) of
+    (_, Nothing) -> return $ DecodeFail CodecFailureOutOfInput
+    (ClientAgency TokIdle,      Just (AnyMessage msg@(MsgRequestRange {}))) -> return (DecodeDone (SomeMessage msg) Nothing)
+    (ClientAgency TokIdle,      Just (AnyMessage msg@(MsgClientDone {})))   -> return (DecodeDone (SomeMessage msg) Nothing)
+    (ServerAgency TokBusy,      Just (AnyMessage msg@(MsgStartBatch {})))   -> return (DecodeDone (SomeMessage msg) Nothing)
+    (ServerAgency TokBusy,      Just (AnyMessage msg@(MsgNoBlocks {})))     -> return (DecodeDone (SomeMessage msg) Nothing)
+    (ServerAgency TokStreaming, Just (AnyMessage msg@(MsgBlock {})))        -> return (DecodeDone (SomeMessage msg) Nothing)
+    (ServerAgency TokStreaming, Just (AnyMessage msg@(MsgBatchDone {})))    -> return (DecodeDone (SomeMessage msg) Nothing)
+    (_, _) -> return $ DecodeFail (CodecFailure "codecBlockFetchId: no matching message")
