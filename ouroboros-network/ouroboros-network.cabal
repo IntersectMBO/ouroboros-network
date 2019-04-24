@@ -209,7 +209,8 @@ test-suite tests
 executable test-cddl
   hs-source-dirs:      test-cddl src
   main-is:             Main.hs
-  other-modules:       Ouroboros.Network.Protocol.ChainSync.Codec
+  other-modules:       Ouroboros.Network.AnchoredFragment
+                       Ouroboros.Network.Protocol.ChainSync.Codec
                        Ouroboros.Network.Protocol.ChainSync.Type
                        Ouroboros.Network.Block
                        Ouroboros.Network.Chain
