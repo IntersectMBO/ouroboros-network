@@ -247,7 +247,7 @@ blockFetchClient tracer
             -- Update our in-flight stats and our current status
             (inflight, currentStatus) <-
               completeBlockDownload blockFetchSize inflightlimits
-                                    header headers' stateVars
+                                    header stateVars
 
             traceWith tracer $ CompletedBlockFetch
                                  (blockPoint header)

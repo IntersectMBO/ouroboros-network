@@ -17,7 +17,6 @@ module Ouroboros.Network.BlockFetch.ClientState (
     completeFetchBatch,
   ) where
 
-import           Data.Maybe (listToMaybe)
 import qualified Data.Set as Set
 import           Data.Set (Set)
 import           Data.Semigroup (Semigroup, Last(..))
@@ -235,18 +234,18 @@ acceptFetchRequest blockFetchSize FetchClientStateVars {..} =
     atomically $ do
       (FetchRequest fragments, gsvs) <-
         takeTFetchRequestVar fetchClientRequestVar
+      let inflightlimits = calculatePeerFetchInFlightLimits gsvs
+      --TODO: if recalculating the limits here is expensive we can pass them
+      -- along with the fetch request and the gsvs
 
       inflight <- readTVar fetchClientInFlightVar
       let !inflight' = addHeadersInFlight blockFetchSize fragments inflight
       writeTVar fetchClientInFlightVar inflight'
 
-      let inflightlimits@PeerFetchInFlightLimits {
-            inFlightBytesHighWatermark
-          } = calculatePeerFetchInFlightLimits gsvs
-
       -- Set our status to busy if we've got over the high watermark.
       let currentStatus'
-           | peerFetchBytesInFlight inflight' >= inFlightBytesHighWatermark
+           | peerFetchBytesInFlight inflight'
+             >= inFlightBytesHighWatermark inflightlimits
            = PeerFetchStatusBusy
            | otherwise
            = PeerFetchStatusReady (peerFetchBlocksInFlight inflight')
@@ -263,30 +262,20 @@ completeBlockDownload :: (MonadSTM m, HasHeader header)
                       => (header -> SizeInBytes)
                       -> PeerFetchInFlightLimits
                       -> header
-                      -> [header]
                       -> FetchClientStateVars m header
                       -> m (PeerFetchInFlight header, PeerFetchStatus header)
 
-completeBlockDownload blockFetchSize inflightlimits header headers' FetchClientStateVars {..} =
+completeBlockDownload blockFetchSize inflightlimits
+                      header FetchClientStateVars {..} =
     atomically $ do
       inflight <- readTVar fetchClientInFlightVar
       let !inflight' = deleteHeaderInFlight blockFetchSize header inflight
       writeTVar fetchClientInFlightVar inflight'
 
-      -- Now crucially, we don't want to end up below the in-flight low
-      -- watermark because that's when the remote peer would go idle.
-      -- But we only get notified of blocks on their /trailing/ edge,
-      -- not their leading edge. Our next best thing is the trailing
-      -- edge of the block before. So, we check if after the /next/
-      -- block we would be below the low watermark, and update our
-      -- status to ready if appropriate.
-      --
-      let nextBytesInFlight =
-              peerFetchBytesInFlight inflight
-            - blockFetchSize header
-            - maybe 0 blockFetchSize (listToMaybe headers')
-          currentStatus'
-            | nextBytesInFlight <= inFlightBytesLowWatermark inflightlimits
+      -- Set our status to ready if we're under the low watermark.
+      let currentStatus'
+            | peerFetchBytesInFlight inflight'
+              <= inFlightBytesLowWatermark inflightlimits
             = PeerFetchStatusReady (peerFetchBlocksInFlight inflight')
             | otherwise
             = PeerFetchStatusBusy
