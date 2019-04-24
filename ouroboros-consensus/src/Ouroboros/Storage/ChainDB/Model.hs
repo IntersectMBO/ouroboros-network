@@ -36,8 +36,6 @@ import           Control.Monad.Except (runExcept)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe, isJust, mapMaybe)
-import           Data.Set (Set)
-import qualified Data.Set as Set
 import           GHC.Stack (HasCallStack)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
@@ -45,7 +43,7 @@ import qualified Ouroboros.Network.AnchoredFragment as Fragment
 import           Ouroboros.Network.Block (ChainHash (..), ChainUpdate (..),
                      HasHeader, HeaderHash, Point)
 import qualified Ouroboros.Network.Block as Block
-import           Ouroboros.Network.Chain (Chain)
+import           Ouroboros.Network.Chain (Chain (..))
 import qualified Ouroboros.Network.Chain as Chain
 import qualified Ouroboros.Network.ChainProducerState as CPS
 
@@ -232,36 +230,33 @@ validate toEnc cfg initLedger chain =
 
 chains :: forall blk. (HasHeader blk)
        => Map (HeaderHash blk) blk -> [Chain blk]
-chains bs = (Chain.fromNewestFirst . reverse) <$> go GenesisHash
+chains bs = go Chain.Genesis
   where
     -- Construct chains,
-    go :: ChainHash blk -> [[blk]]
-    go prev =
-          [] -- the empty chain is always a possibility
-        : concatMap withSucc succs
+    go :: Chain blk -> [Chain blk]
+    go ch | null extensions = [ch]
+          | otherwise       = extensions
+          -- If we can extend the chain, don't include the chain itself. See
+          -- the property "Always Extend".
       where
-        succs :: [HeaderHash blk]
-        succs = Set.toList $ Map.findWithDefault Set.empty prev fwd
+        extensions :: [Chain blk]
+        extensions = concat [go (ch :> b) | b <- succs]
 
-        withSucc :: HeaderHash blk -> [[blk]]
-        withSucc next = map (this :) (go (BlockHash next))
-          where
-            this :: blk
-            this = Map.findWithDefault blockMustExist next bs
+        succs :: [blk]
+        succs = Map.elems $
+          Map.findWithDefault Map.empty (Chain.headHash ch) fwd
 
-    fwd :: Map (ChainHash blk) (Set (HeaderHash blk))
+    fwd :: Map (ChainHash blk) (Map (HeaderHash blk) blk)
     fwd = successors (Map.elems bs)
 
-    blockMustExist :: a
-    blockMustExist = error "chains: impossible"
-
+-- Map (HeaderHash blk) blk maps a block's hash to the block itself
 successors :: forall blk. HasHeader blk
-           => [blk] -> Map (ChainHash blk) (Set (HeaderHash blk))
-successors = Map.unionsWith Set.union . map single
+           => [blk] -> Map (ChainHash blk) (Map (HeaderHash blk) blk)
+successors = Map.unionsWith Map.union . map single
   where
-    single :: blk -> Map (ChainHash blk) (Set (HeaderHash blk))
+    single :: blk -> Map (ChainHash blk) (Map (HeaderHash blk) blk)
     single b = Map.singleton (Block.blockPrevHash b)
-                             (Set.singleton (Block.blockHash b))
+                             (Map.singleton (Block.blockHash b) b)
 
 between :: forall blk. HasHeader blk
         => StreamFrom blk -> StreamTo blk -> Chain blk -> [blk]
