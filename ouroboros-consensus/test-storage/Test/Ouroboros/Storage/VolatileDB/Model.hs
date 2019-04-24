@@ -9,16 +9,25 @@
 module Test.Ouroboros.Storage.VolatileDB.Model
     (
       DBModel (..)
-    , initDBModel
-    , openDBModel
+    , MyState
+    , closeModel
     , createFileModel
     , createInvalidFileModel
-    , runCorruptionModel
     , duplicateBlockModel
+    , garbageCollectModel
+    , getBlockIdsModel
+    , getBlockModel
+    , getIsMemberModel
+    , getSuccessorsModel
+    , initDBModel
+    , isOpenModel
+    , putBlockModel
+    , reOpenModel
+    , runCorruptionModel
     ) where
 
 import           Control.Monad
-import           Control.Monad.State (MonadState, StateT, get, modify, put)
+import           Control.Monad.State (MonadState, get, modify, put)
 import           Data.ByteString (ByteString)
 import           Data.ByteString.Builder
 import           Data.ByteString.Lazy (toStrict)
@@ -30,10 +39,6 @@ import           Data.Maybe (fromMaybe, isNothing)
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           GHC.Stack.Types
-
-import           Control.Monad.Class.MonadSTM
-import           Ouroboros.Consensus.Util ((.:))
-import           Ouroboros.Consensus.Util.STM (simStateT)
 
 import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.Util.ErrorHandling (ThrowCantCatch)
@@ -80,45 +85,8 @@ putDB db = do
     (_, cmdErr) <- get
     put (db, cmdErr)
 
-openDBModel :: forall m blockId.
-               MonadSTM m
-            => (Ord blockId)
-            => ThrowCantCatch (VolatileDBError blockId) (STM m)
-            -> Int
-            -> m (DBModel blockId, VolatileDB blockId m)
-openDBModel err maxNumPerFile = do
-    dbVar <- atomically $ newTVar (dbModel, Nothing)
-    return (dbModel, db dbVar)
-  where
-    dbModel = initDBModel maxNumPerFile
-
-    db :: TVar m (MyState blockId) -> VolatileDB blockId m
-    db dbVar = VolatileDB {
-          closeDB        = wrapModel' dbVar  $ closeDBModel
-        , isOpenDB       = wrapModel' dbVar  $ isOpenModel
-        , reOpenDB       = wrapModel' dbVar  $ reOpenModel         err'
-        , getBlock       = wrapModel' dbVar  . getBlockModel       err'
-        , putBlock       = wrapModel' dbVar .: putBlockModel       err' maxNumPerFile
-        , garbageCollect = wrapModel' dbVar  . garbageCollectModel err'
-        , getIsMember    = wrapModel  dbVar  $ getIsMemberModel    err'
-        , getBlockIds    = wrapModel' dbVar  $ getBlockIdsModel    err'
-        , getSuccessors  = wrapModel' dbVar  $ getSuccessorsModel  err'
-        }
-
-    err' :: ThrowCantCatch (VolatileDBError blockId)
-                           (StateT (MyState blockId) (STM m))
-    err' = EH.liftThrowT err
-
-    wrapModel' :: TVar m (MyState blockId)
-               -> StateT (MyState blockId) (STM m) a -> m a
-    wrapModel' dbVar = atomically . wrapModel dbVar
-
-    wrapModel :: TVar m (MyState blockId)
-              -> StateT (MyState blockId) (STM m) a -> STM m a
-    wrapModel dbVar = simStateT dbVar $ id
-
-closeDBModel :: MonadState (MyState blockId) m => m ()
-closeDBModel = do
+closeModel :: MonadState (MyState blockId) m => m ()
+closeModel = do
     dbm <- getDB
     putDB $ dbm {open = False}
 
@@ -149,11 +117,10 @@ getBlockModel err sl = do
 putBlockModel :: MonadState (MyState blockId) m
               => Ord blockId
               => ThrowCantCatch (VolatileDBError blockId) m
-              -> Int
               -> BlockInfo blockId
               -> Builder
               -> m ()
-putBlockModel err maxNumPerFile BlockInfo{..} bs = do
+putBlockModel err BlockInfo{..} bs = do
     -- This depends on the exact sequence of the operations in the real Impl.
     -- If anything changes there, then this wil also need change.
     let managesToPut errors = do
@@ -182,7 +149,7 @@ putBlockModel err maxNumPerFile BlockInfo{..} bs = do
                     n' = n + 1
                     index' = Map.insert currentFile (updateSlotNoBlockId mbid [bslot], n', (bbid, bpreBid):bids) index
                     (currentFile', index'', nextFId') =
-                        if n' == maxNumPerFile
+                        if n' == blocksPerFile
                         then ( Internal.filePath nextFId
                             , Map.insertWith
                                 (\ _ _ -> (error $ "new file " <> currentFile' <> "already in index"))
