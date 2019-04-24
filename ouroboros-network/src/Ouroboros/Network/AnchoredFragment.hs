@@ -404,7 +404,7 @@ applyChainUpdates (u:us) c = applyChainUpdates us =<< applyChainUpdate u c
 --
 -- The anchor of the fragment will be 'Chain.genesisPoint'.
 fromChain :: HasHeader block => Chain block -> AnchoredFragment block
-fromChain = fromNewestFirst Chain.genesisPoint . Chain.toNewestFirst
+fromChain = mkAnchoredFragment Chain.genesisPoint . CF.unvalidatedFromChain
 
 -- | Convert an 'AnchoredFragment' to a 'Chain'.
 --
