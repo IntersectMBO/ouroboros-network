@@ -153,9 +153,14 @@ pattern (:>) :: HasHeader block
              => AnchoredFragment block -> block -> AnchoredFragment block
 pattern af' :> b <- (viewRight -> ConsR af' b)
   where
-    af@(AnchoredFragment a c) :> b =
-      assert (validExtension af b) $
-      AnchoredFragment a (c CF.:> b)
+    af@(AnchoredFragment a c) :> b = case c of
+      -- When the chain fragment is empty, validate to check whether the block
+      -- fits onto the anchor point.
+      CF.Empty -> assert (validExtension af b) $
+                  AnchoredFragment a (c CF.:> b)
+      -- Don't validate when we're just appending a block to the chain
+      -- fragment, as 'CF.:>' will already validate for us.
+      _        -> AnchoredFragment a (c CF.:> b)
 
 -- | Auxiliary data type to define the pattern synonym
 data ViewLeft block
