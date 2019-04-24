@@ -8,6 +8,7 @@
 module Ouroboros.Network.BlockFetch.Examples (
     blockFetchExample1,
     mockBlockFetchServer1,
+    exampleFixedPeerGSVs,
   ) where
 
 import qualified Data.Map.Strict as Map
@@ -241,7 +242,6 @@ mockedBlockFetchClient1 clientStateTracer blockHeap clientStateVars =
       clientStateTracer
       (mockFetchClientPolicy1 blockHeap)
       clientStateVars
-      (return exampleFixedPeerGSVs)
 
 mockFetchClientPolicy1 :: TestFetchedBlockHeap m block
                        -> FetchClientPolicy header block m

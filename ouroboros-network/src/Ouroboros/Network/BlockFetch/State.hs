@@ -133,7 +133,7 @@ fetchLogicIteration decisionTracer
 
     return stateFingerprint'
   where
-    swizzleReqVar (d,(_,_,_,rq)) = (d,rq)
+    swizzleReqVar (d,(_,_,g,rq)) = (d,g,rq)
 
     fetchRequestPoints :: HasHeader hdr => FetchRequest hdr -> [Point hdr]
     fetchRequestPoints (FetchRequest headerss) =
@@ -194,12 +194,13 @@ fetchDecisionsForStateSnapshot
 --
 fetchLogicIterationAct :: MonadSTM m
                        => [(FetchDecision (FetchRequest header),
+                            PeerGSV,
                             FetchClientStateVars m header)]
                        -> m ()
 fetchLogicIterationAct decisions =
     sequence_
-      [ setFetchRequest stateVars request
-      | (Right request, stateVars) <- decisions ]
+      [ setFetchRequest stateVars request gsvs
+      | (Right request, gsvs, stateVars) <- decisions ]
 
 
 -- | STM actions to read various state variables that the fetch logic depends

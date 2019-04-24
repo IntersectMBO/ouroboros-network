@@ -217,29 +217,32 @@ instance Functor FetchRequest where
 setFetchRequest :: MonadSTM m
                 => FetchClientStateVars m header
                 -> FetchRequest header
+                -> PeerGSV
                 -> m ()
-setFetchRequest FetchClientStateVars{fetchClientRequestVar} request =
-    atomically (writeTFetchRequestVar fetchClientRequestVar request)
+setFetchRequest FetchClientStateVars{fetchClientRequestVar} request gsvs =
+    atomically (writeTFetchRequestVar fetchClientRequestVar request gsvs)
 
 acceptFetchRequest :: (MonadSTM m, HasHeader header)
                    => (header -> SizeInBytes)
-                   -> STM m PeerGSV
                    -> FetchClientStateVars m header
                    -> m ( [[header]]
+                        , PeerGSV
                         , PeerFetchInFlight header
                         , PeerFetchInFlightLimits
                         , PeerFetchStatus header )
 
-acceptFetchRequest blockFetchSize readPeerGSVs FetchClientStateVars {..} =
+acceptFetchRequest blockFetchSize FetchClientStateVars {..} =
     atomically $ do
-      FetchRequest fragments <- takeTFetchRequestVar fetchClientRequestVar
+      (FetchRequest fragments, gsvs) <-
+        takeTFetchRequestVar fetchClientRequestVar
+
       inflight <- readTVar fetchClientInFlightVar
       let !inflight' = addHeadersInFlight blockFetchSize fragments inflight
       writeTVar fetchClientInFlightVar inflight'
 
-      inflightlimits@PeerFetchInFlightLimits {
-        inFlightBytesHighWatermark
-      } <- calculatePeerFetchInFlightLimits <$> readPeerGSVs
+      let inflightlimits@PeerFetchInFlightLimits {
+            inFlightBytesHighWatermark
+          } = calculatePeerFetchInFlightLimits gsvs
 
       -- Set our status to busy if we've got over the high watermark.
       let currentStatus'
@@ -254,7 +257,7 @@ acceptFetchRequest blockFetchSize readPeerGSVs FetchClientStateVars {..} =
 
       --TODO: think about status aberrant
 
-      return (fragments, inflight', inflightlimits, currentStatus')
+      return (fragments, gsvs, inflight', inflightlimits, currentStatus')
 
 completeBlockDownload :: (MonadSTM m, HasHeader header)
                       => (header -> SizeInBytes)
@@ -264,7 +267,7 @@ completeBlockDownload :: (MonadSTM m, HasHeader header)
                       -> FetchClientStateVars m header
                       -> m (PeerFetchInFlight header, PeerFetchStatus header)
 
-completeBlockDownload blockFetchSize inFlightLimits header headers' FetchClientStateVars {..} =
+completeBlockDownload blockFetchSize inflightlimits header headers' FetchClientStateVars {..} =
     atomically $ do
       inflight <- readTVar fetchClientInFlightVar
       let !inflight' = deleteHeaderInFlight blockFetchSize header inflight
@@ -283,7 +286,7 @@ completeBlockDownload blockFetchSize inFlightLimits header headers' FetchClientS
             - blockFetchSize header
             - maybe 0 blockFetchSize (listToMaybe headers')
           currentStatus'
-            | nextBytesInFlight <= inFlightBytesLowWatermark inFlightLimits
+            | nextBytesInFlight <= inFlightBytesLowWatermark inflightlimits
             = PeerFetchStatusReady (peerFetchBlocksInFlight inflight')
             | otherwise
             = PeerFetchStatusBusy
@@ -321,7 +324,8 @@ completeFetchBatch FetchClientStateVars {fetchClientInFlightVar} =
 -- client has not accepted the request yet then we can replace it with the
 -- request based on the more recent state.
 --
-type TFetchRequestVar m header = TMergeVar m (Last (FetchRequest header))
+type TFetchRequestVar m header =
+       TMergeVar m (Last (FetchRequest header, PeerGSV))
 
 newTFetchRequestVar :: MonadSTM m => STM m (TFetchRequestVar m header)
 newTFetchRequestVar = newTMergeVar
@@ -329,12 +333,13 @@ newTFetchRequestVar = newTMergeVar
 writeTFetchRequestVar :: MonadSTM m
                       => TFetchRequestVar m header
                       -> FetchRequest header
+                      -> PeerGSV
                       -> STM m ()
-writeTFetchRequestVar v = writeTMergeVar v . Last
+writeTFetchRequestVar v r g = writeTMergeVar v (Last (r, g))
 
 takeTFetchRequestVar :: MonadSTM m
                      => TFetchRequestVar m header
-                     -> STM m (FetchRequest header)
+                     -> STM m (FetchRequest header, PeerGSV)
 takeTFetchRequestVar v = getLast <$> takeTMergeVar v
 
 

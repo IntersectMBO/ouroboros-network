@@ -34,8 +34,7 @@ import           Ouroboros.Network.BlockFetch.ClientState
                    , completeBlockDownload
                    , completeFetchBatch )
 import           Ouroboros.Network.BlockFetch.DeltaQ
-                   ( PeerGSV(..), SizeInBytes
-                   , PeerFetchInFlightLimits(..) )
+                   ( SizeInBytes, PeerFetchInFlightLimits(..) )
 
 
 -- TODO #468 extract this from BlockFetchConsensusInterface
@@ -79,7 +78,6 @@ blockFetchClient :: forall header block m.
                  => Tracer m (TraceFetchClientEvent header)
                  -> FetchClientPolicy header block m
                  -> FetchClientStateVars m header
-                 -> STM m PeerGSV
                  -> PeerPipelined (BlockFetch header block) AsClient BFIdle m ()
 blockFetchClient tracer
                  FetchClientPolicy {
@@ -87,8 +85,7 @@ blockFetchClient tracer
                    blockMatchesHeader,
                    addFetchedBlock
                  }
-                 stateVars
-                 readPeerGSVs =
+                 stateVars =
     PeerPipelined (senderAwait Zero)
   where
     senderIdle :: forall n.
@@ -123,8 +120,8 @@ blockFetchClient tracer
       -- in-flight, and the tracking state that the fetch logic uses now
       -- reflects that.
       --
-      (fragments, inflight, inflightlimits, currentStatus) <-
-        acceptFetchRequest blockFetchSize readPeerGSVs stateVars
+      (fragments, _gsvs, inflight, inflightlimits, currentStatus) <-
+        acceptFetchRequest blockFetchSize stateVars
 
       traceWith tracer $ AcceptedFetchRequest
                            (fmap blockPoint (FetchRequest fragments))
