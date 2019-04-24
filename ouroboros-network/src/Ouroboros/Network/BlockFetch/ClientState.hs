@@ -20,6 +20,7 @@ module Ouroboros.Network.BlockFetch.ClientState (
 import           Data.Maybe (listToMaybe)
 import qualified Data.Set as Set
 import           Data.Set (Set)
+import           Data.Semigroup (Semigroup, Last(..))
 
 import           Control.Monad (when)
 import           Control.Monad.Class.MonadSTM
@@ -212,8 +213,6 @@ newtype FetchRequest header = FetchRequest [[header]]
 instance Functor FetchRequest where
   fmap f (FetchRequest hdrss) = FetchRequest (map (map f) hdrss)
 
-newtype TFetchRequestVar m header =
-        TFetchRequestVar (TMVar m (FetchRequest header))
 
 setFetchRequest :: MonadSTM m
                 => FetchClientStateVars m header
@@ -307,28 +306,62 @@ completeFetchBatch FetchClientStateVars {fetchClientInFlightVar} =
         peerFetchReqsInFlight = peerFetchReqsInFlight inflight - 1
       }
 
+--
+-- STM TFetchRequestVar
+--
+
+-- | The 'TFetchRequestVar' is a 'TMergeVar' for communicating the
+-- 'FetchRequest's from the logic thread to a fetch client thread.
+--
+-- The pattern is that the logic thread determines a current request and this
+-- is written to the var with 'writeTMergeVar'. The fetch client thread uses
+-- 'takeTMergeVar', which blocks until a value is available. On the other hand,
+-- 'writeTMergeVar' never blocks, if a value is already present then it
+-- overwrites it. This makes sense for the fetch requests because if a fetch
+-- client has not accepted the request yet then we can replace it with the
+-- request based on the more recent state.
+--
+type TFetchRequestVar m header = TMergeVar m (Last (FetchRequest header))
 
 newTFetchRequestVar :: MonadSTM m => STM m (TFetchRequestVar m header)
-newTFetchRequestVar = TFetchRequestVar <$> newEmptyTMVar
+newTFetchRequestVar = newTMergeVar
 
--- This may seem a bit odd, but we unconditionally overwrite the TMVar here.
--- The reason is that we are not using this TMVar as a one-place queue of
--- requests. Rather we use this as a box containing the current request.
--- The request is not considered accepted when we put it in the box, but
--- when the fetch protocol client takes it out of the box. Up until the
--- point that the request is accepted we can overwrite it with a updated
--- request. So the logic here is that we either fill the box or or
--- overwrite the contents. We achieve that by atomically trying to empty it
--- (ignoring any content), followed by filling it.
---
 writeTFetchRequestVar :: MonadSTM m
                       => TFetchRequestVar m header
                       -> FetchRequest header
                       -> STM m ()
-writeTFetchRequestVar (TFetchRequestVar v) r = tryTakeTMVar v >> putTMVar v r
+writeTFetchRequestVar v = writeTMergeVar v . Last
 
 takeTFetchRequestVar :: MonadSTM m
                      => TFetchRequestVar m header
                      -> STM m (FetchRequest header)
-takeTFetchRequestVar (TFetchRequestVar v) = takeTMVar v
+takeTFetchRequestVar v = getLast <$> takeTMergeVar v
+
+
+--
+-- STM TMergeVar mini-abstraction
+--
+
+-- | The 'TMergeVar' is like a 'TMVar' in that we take it, leaving it empty.
+-- Unlike an ordinary 'TMVar' with a blocking \'put\' operation, it has a
+-- non-blocking combiing write operation: if a value is already present then
+-- the values are combined using the 'Semigroup' operator.
+--
+-- This is used much like a 'TMVar' as a one-place queue between threads but
+-- with the property that we can \"improve\" the current value (if any).
+--
+newtype TMergeVar m a = TMergeVar (TMVar m a)
+
+newTMergeVar :: MonadSTM m => STM m (TMergeVar m a)
+newTMergeVar = TMergeVar <$> newEmptyTMVar
+
+writeTMergeVar :: (MonadSTM m, Semigroup a) => TMergeVar m a -> a -> STM m ()
+writeTMergeVar (TMergeVar v) x = do
+    mx0 <- tryTakeTMVar v
+    case mx0 of
+      Nothing -> putTMVar v x
+      Just x0 -> putTMVar v x' where !x' = x0 <> x
+
+takeTMergeVar :: MonadSTM m => TMergeVar m a -> STM m a
+takeTMergeVar (TMergeVar v) = takeTMVar v
 
