@@ -32,7 +32,7 @@ tests = testGroup "VolatileDB"
 prop_VolatileInvalidArg :: HasCallStack => Property
 prop_VolatileInvalidArg = monadicIO $ do
     let fExpected = \case
-            Left (InvalidArgumentsError _str) -> return ()
+            Left (UserError (InvalidArgumentsError _str)) -> return ()
             somethingElse -> fail $ "IO returned " <> show somethingElse <> " instead of InvalidArgumentsError"
     run $ apiEquivalenceVolDB fExpected (\hasFS err -> do
             _ <- Internal.openDBFull hasFS err (myParser hasFS err) 0
