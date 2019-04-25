@@ -28,7 +28,7 @@ import qualified Network.Socket.ByteString.Lazy as Socket (recv, sendAll)
 
 import           Ouroboros.Network.Time
 
-import qualified Ouroboros.Network.Server.Socket as Server          
+import qualified Ouroboros.Network.Server.Socket as Server
 import qualified Ouroboros.Network.Mux as Mx
 import qualified Ouroboros.Network.Mux.Types as Mx
 import           Ouroboros.Network.Mux.Types (MuxBearer)
@@ -67,7 +67,7 @@ socketAsMuxBearer sd = do
           case Mx.decodeMuxSDUHeader hbuf of
               Left  e      -> throwM e
               Right header -> do
-                    -- say $ printf "decoded mux header, goint to read %d bytes" (Mx.msLength header)
+                  -- say $ printf "decoded mux header, goint to read %d bytes" (Mx.msLength header)
                   blob <- recvLen' (fromIntegral $ Mx.msLength header) []
                   ts <- getMonotonicTime
                   --hexDump blob ""

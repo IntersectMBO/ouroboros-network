@@ -403,8 +403,8 @@ prop_mux_unknown_miniprot badSdu = ioProperty $ do
          Just e  ->
              case fromException e of
                   Just me -> return $ Mx.errorType me == Mx.MuxUnknownMiniProtocol
-                  Nothing -> return $ False
-         Nothing -> return $ False
+                  Nothing -> return False
+         Nothing -> return False
 
 encodeInvalidMuxSDU :: InvalidSDU -> BL.ByteString
 encodeInvalidMuxSDU sdu = Bin.runPut enc
