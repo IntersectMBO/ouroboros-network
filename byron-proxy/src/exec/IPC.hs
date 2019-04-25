@@ -195,16 +195,17 @@ chainSyncClient trace db = Client.chainSyncClient fold
     -- Write one block at a time. CPS doesn't mix well with the typed
     -- protocol style.
     -- This will give terrible performance for the SQLite index as it is
-    -- currently defined.
+    -- currently defined. As a workaround, the SQLite index is set to use
+    -- non-synchronous writes (per connection).
     -- Possible solution: do the batching automatically, within the index
     -- itself?
     DB.appendBlocks db $ \dbAppend ->
       DB.appendBlock dbAppend (ChainSync.getBlock blk)
-    Client.runFold fold
+    Client.runFold roll
   backward :: ChainSync.Point -> ChainSync.Point -> Client.Fold m x
   backward point1 point2 = Client.Fold $ do
     traceWith trace (Left point1, point2)
-    Client.runFold fold
+    Client.runFold roll
 
 chainSyncShow
   :: (Either ChainSync.Point ChainSync.Block, ChainSync.Point)
