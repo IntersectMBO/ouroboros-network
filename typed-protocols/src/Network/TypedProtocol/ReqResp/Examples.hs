@@ -22,7 +22,7 @@ reqRespServerMapAccumL f !acc =
     ReqRespServer {
       recvMsgReq  = \req -> do (acc', resp) <- f acc req
                                return (resp, reqRespServerMapAccumL f acc'),
-      recvMsgDone = acc
+      recvMsgDone = pure acc
     }
 
 
@@ -34,7 +34,7 @@ reqRespClientMap :: Monad m
                  -> ReqRespClient req resp m [resp]
 reqRespClientMap = go []
   where
-    go resps []         = SendMsgDone (reverse resps)
+    go resps []         = SendMsgDone (pure $ reverse resps)
     go resps (req:reqs) =
       SendMsgReq req $ \resp ->
       return (go (resp:resps) reqs)

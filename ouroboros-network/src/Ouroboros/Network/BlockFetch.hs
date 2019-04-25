@@ -96,7 +96,6 @@ import           Control.Tracer (Tracer)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.ChainFragment (ChainFragment(..))
 import           Ouroboros.Network.DeltaQ
                    ( PeerGSV(..), ballisticGSV, degenerateDistribution )
 

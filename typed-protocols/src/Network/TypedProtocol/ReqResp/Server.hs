@@ -15,7 +15,7 @@ data ReqRespServer req resp m a = ReqRespServer {
 
     -- | The client terminated. Here we have a pure return value, but we
     -- could have done another action in 'm' if we wanted to.
-  , recvMsgDone  :: a
+  , recvMsgDone  :: m a
   }
 
 
@@ -37,7 +37,7 @@ reqRespServerPeer ReqRespServer{..} =
 
       -- The client sent the done transition, so we're in the 'StDone' state
       -- so all we can do is stop using 'done', with a return value.
-      MsgDone -> Done TokDone recvMsgDone
+      MsgDone -> Effect $ Done TokDone <$> recvMsgDone
 
       -- The client sent us a ping request, so now we're in the 'StBusy' state
       -- which means it's the server's turn to send.

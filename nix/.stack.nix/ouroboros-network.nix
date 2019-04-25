@@ -80,6 +80,7 @@
             (hsPkgs.process)
             (hsPkgs.QuickCheck)
             (hsPkgs.serialise)
+            (hsPkgs.stm)
             (hsPkgs.tasty)
             (hsPkgs.tasty-quickcheck)
             (hsPkgs.text)
