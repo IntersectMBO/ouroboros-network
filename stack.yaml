@@ -31,6 +31,16 @@ extra-deps:
   - git: https://github.com/input-output-hk/cardano-prelude
     commit: e1fb84b1a955b6e3e3e53d9022e8bc0f927417a2
 
+  - ekg-0.4.0.15
+  - libyaml-0.1.0.0
+  - time-units-1.0.0
+  - ekg-json-0.1.0.6
+  - graphviz-2999.20.0.3@sha256:cde383c356bc41136ed53cd27e0800f46dbd2185600dd0de18d66d5c49739d94
+  - quickcheck-state-machine-0.6.0@sha256:3e4f8df0f6b5d415e3c8840dc75034a63e37f56f5f8cfa1035ded16345235ac4
+
+  # The following are required only for byron-proxy
+  # They will be removed when that package is factored out to its own
+  # repository.
   - git: https://github.com/input-output-hk/cardano-sl
     commit: f96f3fe04719bd3b0cedc1bbaf80fa6927e937f3
     subdirs:
@@ -84,13 +94,6 @@ extra-deps:
 
   - git: https://github.com/input-output-hk/transformers-lift.git
     commit: c830bc7e7e41895e3c50488a92d34405b68b4ad8
-
-  - ekg-0.4.0.15
-  - libyaml-0.1.0.0
-  - time-units-1.0.0
-  - ekg-json-0.1.0.6
-  - graphviz-2999.20.0.3@sha256:cde383c356bc41136ed53cd27e0800f46dbd2185600dd0de18d66d5c49739d94
-  - quickcheck-state-machine-0.6.0@sha256:3e4f8df0f6b5d415e3c8840dc75034a63e37f56f5f8cfa1035ded16345235ac4
   - aeson-options-0.1.0
   - pvss-0.2.0
   - lrucache-1.2.0.1
@@ -98,6 +101,9 @@ extra-deps:
   - writer-cps-transformers-0.5.6.0
   - o-clock-1.0.0.1
   - ekg-wai-0.1.0.3
+  # End of byron-proxy-induced dependencies.
+
+
 
 nix:
   packages:
