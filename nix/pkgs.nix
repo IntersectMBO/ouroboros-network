@@ -32,6 +32,7 @@ let
         # This is similar to jailbreakCabal, however it
         # does not require any messing with cabal files.
         packages.katip.components.library.doExactConfig = true;
+        packages.ouroboros-network.configureFlags = [ "--ghc-option=-Werror" ];
       }
     ];
   };
