@@ -62,9 +62,8 @@ muxStart udesc bearer = do
     mask $ \unmask -> do
       as <- traverse (async . unmask) (jobs ++ concat mjobs)
       muxBearerSetState bearer Mature
-      unmask (void $ waitAny as) `onException` do
-        mapM_ cancel as
-        muxBearerSetState bearer Dead
+      unmask (void $ waitAnyCancel as)
+      muxBearerSetState bearer Dead
 
   where
     -- Construct the array of TBQueues, one for each protocol id, and each mode
