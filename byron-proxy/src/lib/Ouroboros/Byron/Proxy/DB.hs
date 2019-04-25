@@ -129,7 +129,7 @@ data Tip where
 fromImmutableDBIterator
   :: ( Monad m )
   => CSL.SlotCount
-  -> Immutable.Iterator CSL.HeaderHash m
+  -> Immutable.Iterator CSL.HeaderHash m ByteString
   -> Iterator m
 fromImmutableDBIterator epochSlots idbIterator = Iterator $ do
   idbNext <- Immutable.iteratorNext idbIterator
