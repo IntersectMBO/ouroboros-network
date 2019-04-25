@@ -155,6 +155,7 @@ withNetworkNode NetworkInterface {nodeAddress, protocols} k =
     mkSocket = do
       sd <- Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol
       Socket.setSocketOption sd Socket.ReuseAddr 1
+      Socket.setSocketOption sd Socket.ReusePort 1
       Socket.bind sd (Socket.addrAddress nodeAddress)
       Socket.listen sd 1
       pure sd
@@ -192,6 +193,9 @@ withNetworkNode NetworkInterface {nodeAddress, protocols} k =
         (Socket.socket (Socket.addrFamily nodeAddress) Socket.Stream Socket.defaultProtocol)
         Socket.close
         (\sd -> do
+            Socket.setSocketOption sd Socket.ReuseAddr 1
+            Socket.setSocketOption sd Socket.ReusePort 1
+            Socket.bind sd (Socket.addrAddress nodeAddress)
             Socket.connect sd (Socket.addrAddress remoteAddr)
             bearer <- socketAsMuxBearer sd
             Mx.muxBearerSetState bearer Mx.Connected
