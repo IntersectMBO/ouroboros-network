@@ -20,7 +20,7 @@ data ReqRespClient req resp m a where
                  -> (resp -> m (ReqRespClient req resp m a))
                  -> ReqRespClient req resp m a
 
-  SendMsgDone    :: a -> ReqRespClient req resp m a
+  SendMsgDone    :: m a -> ReqRespClient req resp m a
 
 
 -- | Interpret a particular client action sequence into the client side of the
@@ -35,7 +35,9 @@ reqRespClientPeer (SendMsgDone result) =
     -- We do an actual transition using 'yield', to go from the 'StIdle' to
     -- 'StDone' state. Once in the 'StDone' state we can actually stop using
     -- 'done', with a return value.
-    Yield (ClientAgency TokIdle) MsgDone (Done TokDone result)
+    Effect $ do
+      r <- result
+      return $ Yield (ClientAgency TokIdle) MsgDone (Done TokDone r)
 
 reqRespClientPeer (SendMsgReq req next) =
 

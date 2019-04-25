@@ -5,24 +5,23 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Network.Pipe (
-    startPipe
+    runNetworkNodeWithPipe
   ) where
 
-import           Control.Monad
 import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Data.Word
+import qualified Data.ByteString.Lazy as BL
 import           GHC.Stack
 import           System.IO (Handle, hClose, hFlush)
 
 import qualified Ouroboros.Network.Mux as Mx
+import qualified Ouroboros.Network.Mux.Interface as Mx
 import           Ouroboros.Network.Time
 import           Ouroboros.Network.Mux.Types (MuxBearer)
 import qualified Ouroboros.Network.Mux.Types as Mx
 
-import qualified Data.ByteString.Lazy as BL
 
 pipeAsMuxBearer
   :: forall ptcl.
@@ -84,12 +83,13 @@ pipeAsMuxBearer pcRead pcWrite = do
       sduSize :: IO Word16
       sduSize = return 32768
 
-
-startPipe :: (Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl)
-          => Mx.MiniProtocolDescriptions ptcl IO
-          -> Handle -- ^ read handle
-          -> Handle -- ^ write handle
-          -> IO ()
-startPipe mpds r w = do
-    bearer <- pipeAsMuxBearer r w
-    void $ async $ Mx.muxStart mpds bearer Nothing
+runNetworkNodeWithPipe
+    :: (Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl)
+    => (ptcl -> Mx.MuxPeer IO)
+    -> Handle -- ^ read handle
+    -> Handle -- ^ write handle
+    -> IO ()
+runNetworkNodeWithPipe protocols pcRead pcWrite = do
+    let  mpds = Mx.miniProtocolDescription . protocols
+    bearer <- pipeAsMuxBearer pcRead pcWrite
+    Mx.muxStart mpds bearer

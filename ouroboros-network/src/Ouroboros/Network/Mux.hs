@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
@@ -27,6 +28,7 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Data.Array
 import qualified Data.ByteString.Lazy as BL
+import           Data.Maybe (catMaybes)
 import           GHC.Stack
 
 import           Ouroboros.Network.Channel
@@ -38,13 +40,12 @@ import           Ouroboros.Network.Mux.Types
 -- one of the provided Versions.
 -- TODO: replace MonadSay with iohk-monitoring-framework.
 muxStart :: forall m ptcl.
-            ( MonadAsync m, MonadFork m, MonadSay m, MonadSTM m, MonadThrow m
+            ( MonadAsync m, MonadFork m, MonadSay m, MonadSTM m, MonadThrow m , MonadMask m
             , Ord ptcl, Enum ptcl, Bounded ptcl)
          => MiniProtocolDescriptions ptcl m
          -> MuxBearer ptcl m
-         -> Maybe (Maybe SomeException -> m ())  -- Optional callback for result
          -> m ()
-muxStart udesc bearer rescb_m = do
+muxStart udesc bearer = do
     tbl <- setupTbl
     tq <- atomically $ newTBQueue 100
     cnt <- newTVarM 0
@@ -57,27 +58,14 @@ muxStart udesc bearer rescb_m = do
                ]
     mjobs <- sequence [ mpsJob cnt pmss ptcl
                       | ptcl <- [minBound..maxBound] ]
-    aids <- mapM async $ jobs ++ concat mjobs
-    muxBearerSetState bearer Mature
-    watcher aids
+
+    mask $ \unmask -> do
+      as <- traverse (async . unmask) (jobs ++ concat mjobs)
+      muxBearerSetState bearer Mature
+      unmask (void $ waitAnyCancel as)
+      muxBearerSetState bearer Dead
 
   where
-    watcher :: [Async m a] -> m ()
-    watcher as = do
-        (_,r) <- waitAnyCatchCancel as
-        close bearer
-        muxBearerSetState bearer Dead
-        case rescb_m of
-             Nothing ->
-                 case r of
-                      Left  e -> say $ "Mux Bearer died due to " ++ show e
-                      Right _ -> return ()
-             Just rescb ->
-                 case r of
-                      Left  e -> rescb $ Just e
-                      Right _ -> rescb Nothing
-
-
     -- Construct the array of TBQueues, one for each protocol id, and each mode
     setupTbl :: m (MiniProtocolDispatch ptcl m)
     setupTbl = MiniProtocolDispatch
@@ -98,11 +86,23 @@ muxStart udesc bearer rescb_m = do
         w_i <- atomically newEmptyTMVar
         w_r <- atomically newEmptyTMVar
 
-        return [ mpdInitiator mpd (muxChannel pmss (AppProtocolId mpdId) ModeInitiator w_i cnt)
-                     >> mpsJobExit cnt
-               , mpdResponder mpd (muxChannel pmss (AppProtocolId mpdId) ModeResponder w_r cnt)
-                     >> mpsJobExit cnt
-               ]
+        let initiatorChannel :: Channel m BL.ByteString
+            initiatorChannel = muxChannel pmss
+                                (AppProtocolId mpdId)
+                                ModeInitiator
+                                w_i cnt
+
+            responderChannel :: Channel m BL.ByteString
+            responderChannel = muxChannel pmss
+                                (AppProtocolId mpdId)
+                                ModeResponder
+                                w_r cnt
+
+        return $ map (>> mpsJobExit cnt) $ catMaybes
+          [ mpdInitiator mpd <*> Just initiatorChannel
+                
+          , mpdResponder mpd <*> Just responderChannel
+          ]
 
     -- cnt represent the number of SDUs that are queued but not yet sent.  Job
     -- threads will be prevented from exiting until all SDUs have been

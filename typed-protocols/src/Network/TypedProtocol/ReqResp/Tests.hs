@@ -1,6 +1,7 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE TupleSections #-}
 
 
 module Network.TypedProtocol.ReqResp.Tests (tests) where
@@ -63,7 +64,7 @@ direct :: Monad m
        -> m (a, b)
 
 direct (SendMsgDone clientResult) ReqRespServer{recvMsgDone} =
-    pure (clientResult, recvMsgDone)
+    (,) <$> clientResult <*> recvMsgDone
 
 direct (SendMsgReq req kResp) ReqRespServer{recvMsgReq} = do
     (resp, server') <- recvMsgReq req
@@ -84,7 +85,7 @@ directPipelined (ReqRespClientPipelined client0) server0 =
        -> ReqRespServer req resp     m b
        -> m (a, b)
     go EmptyQ (SendMsgDonePipelined clientResult) ReqRespServer{recvMsgDone} =
-      pure (clientResult, recvMsgDone)
+      (clientResult,) <$> recvMsgDone
 
     go q (SendMsgReqPipelined req kResp client') ReqRespServer{recvMsgReq} = do
       (resp, server') <- recvMsgReq req
