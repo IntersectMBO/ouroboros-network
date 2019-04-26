@@ -24,7 +24,7 @@ and partly the ledger team:
 - [X] #208 Bug in removeFile or its tests bug
 - [X] #166 Take another look at trying to remove the ExceptT from the HasFS stack
 
-- [ ] #277 Simulate partial writes and reads for the immutable DB
+- [ ] #277 Correctly deal with partial reads and writes
 - [ ] #285 Implement Windows-specific parts
 - [ ] #292 Support O_EXCL in posix bindings
 - [ ] #305 Make sure IO HasFS wrapper includes mount point in error messages
@@ -42,6 +42,7 @@ and partly the ledger team:
 
 - [ ] #328 Close open iterators when the immutable DB is closed or truncated
 - [ ] #369 Inclusive/exclusive iterator bounds for the ImmutableDB
+- [ ] #372 Immutable DB: Add `getBlockAtTip` API call
 - [ ] #379 Immutable DB: Audit memory footprint
 - [ ] #384 Let the ImmutableDB return lazy ByteStrings
 
@@ -49,6 +50,7 @@ and partly the ledger team:
 
 - [ ] #290 Simulate random bit flip corruptions for the immutable DB
 - [ ] #338 Use `Vector` rather than `Seq` to store culumative epoch sizes in immutable DB
+- [ ] #428 Cleanup exception handling
 
 ## Volatile DB
 
@@ -57,10 +59,13 @@ and partly the ledger team:
 - [x] #252 Volatile DB: Extend q-s-m tests to test reopening
 - [x] #253 Volatile DB: Migrate unit tests to q-s-m tests
 - [x] #273 Volatile DB: Check against simulated errors
+- [x] #435 uncover STM transactions of some VolatileDB api calls
+- [x] #450 Vol DB: `getIsMember` should not return a `Maybe`
+- [x] #463 Volatile DB: make getIsMember transactional
 
 - [ ] #373 Volatile DB: Add fingerprint
 - [ ] #378 Volatile DB: Audit memory footprint
-- [ ] #450 Vol DB: `getIsMember` should not return a `Maybe`
+- [ ] #430 Volatile DB: Duplicate Blocks
 
 ## Ledger DB
 
@@ -80,6 +85,7 @@ and partly the ledger team:
 - [ ] #246 ChainState: q-s-m tests
 - [ ] #264 Sync/Resync
 - [ ] #380 Chain DB: Audit memory footprint
+- [ ] #392 ChainDB: Instruct immutable DB to verify previous epoch file once closed
 - [ ] #445 Protect against unintended file deletion in ChainDB
 
 ## Use storage system in consensus layer
