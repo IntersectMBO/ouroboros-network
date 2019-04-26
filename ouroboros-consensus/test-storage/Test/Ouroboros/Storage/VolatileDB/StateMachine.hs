@@ -168,7 +168,7 @@ data Model (r :: Type -> Type) = Model
   , shouldEnd :: Bool
   } deriving (Generic, Show)
 
-type PureM = ExceptT (VolatileDBError BlockId) (State (DBModel BlockId, Maybe Errors))
+type PureM = ExceptT (VolatileDBError BlockId) (State (DBModel BlockId))
 
 -- | An event records the model before and after a command along with the
 -- command itself, and a mocked version of the response.
@@ -210,13 +210,13 @@ runPure :: DBModel BlockId
         -> CmdErr
         -> (Resp, DBModel BlockId)
 runPure dbm (CmdErr cmd err) =
-    bimap Resp fst $ flip runState (dbm, err) $ do
+    bimap Resp id $ flip runState dbm $ do
         resp <- runExceptT go
         case (err, resp) of
             (Nothing, _)                             -> return resp
             (Just _ , Left (UserError ClosedDBError)) -> return resp
             (Just _, _) -> do
-                modify $ \(dbm', cErr) -> (dbm' {open = False}, cErr)
+                modify $ \dbm' -> dbm' {open = False}
                 return $ Right $ SimulatedError resp
     where
         tnc :: EH.ThrowCantCatch (VolatileDBError BlockId) PureM = EH.throwCantCatch EH.exceptT
@@ -227,11 +227,11 @@ runPure dbm (CmdErr cmd err) =
             GetBlockIds        ->
                 Blocks <$> getBlockIdsModel tnc
             PutBlock b pb      ->
-                Unit <$> putBlockModel tnc (BlockInfo b (guessSlot b) pb) (BL.lazyByteString $ Binary.encode $ toBlock (b, pb))
+                Unit <$> putBlockModel tnc err (BlockInfo b (guessSlot b) pb) (BL.lazyByteString $ Binary.encode $ toBlock (b, pb))
             GetSuccessors bids -> do
                 successors <- getSuccessorsModel tnc
                 return $ Successors $ successors <$> bids
-            GarbageCollect bid -> Unit <$> garbageCollectModel tnc (guessSlot bid)
+            GarbageCollect bid -> Unit <$> garbageCollectModel tnc err (guessSlot bid)
             IsOpen             -> Bl <$> isOpenModel
             Close              -> Unit <$> closeModel
             ReOpen             -> Unit <$> reOpenModel tnc

@@ -188,7 +188,8 @@ openDBImpl hasFS@HasFS{..} err errSTM parser maxBlocksPerFile =
         stVar <- atomically $ newTMVar $ Just st
         return $ VolatileDBEnv hasFS err errSTM stVar maxBlocksPerFile parser
 
-closeDBImpl :: MonadSTM m
+closeDBImpl :: (Show blockId, Typeable blockId)
+            => (MonadSTM m, MonadCatch m)
             => VolatileDBEnv m blockId
             -> m ()
 closeDBImpl VolatileDBEnv{..} = do
@@ -196,7 +197,7 @@ closeDBImpl VolatileDBEnv{..} = do
         case mbInternalState of
             Nothing -> return ()
             Just InternalState{..} ->
-                hClose _currentWriteHandle
+                wrapFsError _dbErr $ hClose _currentWriteHandle
   where
     HasFS{..} = _dbHasFS
 
@@ -309,6 +310,7 @@ garbageCollectImpl env@VolatileDBEnv{..} slot = do
 -- consistent state, without depending on other calls.
 -- This is achieved so far, since fs calls are reduced to
 -- removeFile and truncate 0.
+-- This may throw an FsError.
 tryCollectFile :: forall m h blockId. (MonadThrow m, Ord blockId)
                => HasFS m h
                -> VolatileDBEnv m blockId
@@ -381,6 +383,7 @@ getSuccessorsImpl VolatileDBEnv{..} = do
 
 -- db first tries to fill files from _nextWriteFiles list.
 -- If none find it creates new ones.
+-- This may throw an FsError.
 nextFile :: forall h m blockId. MonadSTM m
          => HasFS m h
          -> ErrorHandling (VolatileDBError blockId) m
@@ -411,7 +414,7 @@ nextFile HasFS{..} _err VolatileDBEnv{..} st = do
                 , _nextWriteFiles     = rest
             }
 
-
+-- This may throw an FsError.
 reOpenFile :: forall m h blockId. (MonadThrow m)
            => HasFS m h
            -> ErrorHandling (VolatileDBError blockId) m
@@ -580,7 +583,7 @@ modifyState VolatileDBEnv{_dbHasFS = hasFS :: HasFS m h, ..} action = do
     -- TODO what if this fails?
     closeOpenHandle :: Maybe (InternalState blockId h) -> m ()
     closeOpenHandle Nothing                   = return ()
-    closeOpenHandle (Just InternalState {..}) = hClose _currentWriteHandle
+    closeOpenHandle (Just InternalState {..}) = wrapFsError _dbErr $ hClose _currentWriteHandle
 
 reverseMap :: forall blockId. Ord blockId
            => String

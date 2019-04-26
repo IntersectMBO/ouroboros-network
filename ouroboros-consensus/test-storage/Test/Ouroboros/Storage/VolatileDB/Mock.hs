@@ -21,32 +21,32 @@ openDBMock  :: forall m blockId.
             -> Int
             -> m (DBModel blockId, VolatileDB blockId m)
 openDBMock err maxNumPerFile = do
-    dbVar <- atomically $ newTVar (dbModel, Nothing)
+    dbVar <- atomically $ newTVar dbModel
     return (dbModel, db dbVar)
   where
     dbModel = initDBModel maxNumPerFile
 
-    db :: TVar m (MyState blockId) -> VolatileDB blockId m
+    db :: TVar m (DBModel blockId) -> VolatileDB blockId m
     db dbVar = VolatileDB {
           closeDB        = wrapModel' dbVar  $ closeModel
         , isOpenDB       = wrapModel' dbVar  $ isOpenModel
         , reOpenDB       = wrapModel' dbVar  $ reOpenModel         err'
         , getBlock       = wrapModel' dbVar  . getBlockModel       err'
-        , putBlock       = wrapModel' dbVar .: putBlockModel       err'
-        , garbageCollect = wrapModel' dbVar  . garbageCollectModel err'
+        , putBlock       = wrapModel' dbVar .: putBlockModel       err' Nothing
+        , garbageCollect = wrapModel' dbVar  . garbageCollectModel err' Nothing
         , getIsMember    = wrapModel  dbVar  $ getIsMemberModel    err'
         , getBlockIds    = wrapModel' dbVar  $ getBlockIdsModel    err'
         , getSuccessors  = wrapModel' dbVar  $ getSuccessorsModel  err'
         }
 
     err' :: ThrowCantCatch (VolatileDBError blockId)
-                           (StateT (MyState blockId) (STM m))
+                           (StateT (DBModel blockId) (STM m))
     err' = EH.liftThrowT err
 
-    wrapModel' :: TVar m (MyState blockId)
-               -> StateT (MyState blockId) (STM m) a -> m a
+    wrapModel' :: TVar m (DBModel blockId)
+               -> StateT (DBModel blockId) (STM m) a -> m a
     wrapModel' dbVar = atomically . wrapModel dbVar
 
-    wrapModel :: TVar m (MyState blockId)
-              -> StateT (MyState blockId) (STM m) a -> STM m a
+    wrapModel :: TVar m (DBModel blockId)
+              -> StateT (DBModel blockId) (STM m) a -> STM m a
     wrapModel dbVar = simStateT dbVar $ id

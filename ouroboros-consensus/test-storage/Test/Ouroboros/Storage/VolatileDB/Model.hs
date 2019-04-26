@@ -9,7 +9,6 @@
 module Test.Ouroboros.Storage.VolatileDB.Model
     (
       DBModel (..)
-    , MyState
     , closeModel
     , createFileModel
     , createInvalidFileModel
@@ -73,54 +72,43 @@ initDBModel bpf = DBModel {
     , nextFId        = 1
 }
 
-type MyState blockId = (DBModel blockId, Maybe Errors)
-
-getDB :: MonadState (MyState blockId) m => m (DBModel blockId)
-getDB = do
-    (db, _) <- get
-    return db
-
-putDB :: MonadState (MyState blockId) m => DBModel blockId -> m ()
-putDB db = do
-    (_, cmdErr) <- get
-    put (db, cmdErr)
-
-closeModel :: MonadState (MyState blockId) m => m ()
+closeModel :: MonadState (DBModel blockId) m => m ()
 closeModel = do
-    dbm <- getDB
-    putDB $ dbm {open = False}
+    dbm <- get
+    put $ dbm {open = False}
 
-isOpenModel :: MonadState (MyState blockId) m => m Bool
+isOpenModel :: MonadState (DBModel blockId) m => m Bool
 isOpenModel = do
-    DBModel {..} <- getDB
+    DBModel {..} <- get
     return open
 
-reOpenModel :: MonadState (MyState blockId) m
+reOpenModel :: MonadState (DBModel blockId) m
             => ThrowCantCatch (VolatileDBError blockId) m
             -> m ()
 reOpenModel err = do
-    dbm <- getDB
+    dbm <- get
     dbm' <- if not $ open dbm
             then recover err dbm
             else return dbm
-    putDB dbm' {open = True}
+    put dbm' {open = True}
 
-getBlockModel :: forall m blockId. (MonadState (MyState blockId) m, Ord blockId)
+getBlockModel :: forall m blockId. (MonadState (DBModel blockId) m, Ord blockId)
               => ThrowCantCatch (VolatileDBError blockId) m
               -> blockId
               -> m (Maybe ByteString)
 getBlockModel err sl = do
-    DBModel {..} <- getDB
+    DBModel {..} <- get
     if not open then EH.throwError' err $ UserError ClosedDBError
     else return $ Map.lookup sl mp
 
-putBlockModel :: MonadState (MyState blockId) m
+putBlockModel :: MonadState (DBModel blockId) m
               => Ord blockId
               => ThrowCantCatch (VolatileDBError blockId) m
+              -> Maybe Errors
               -> BlockInfo blockId
               -> Builder
               -> m ()
-putBlockModel err BlockInfo{..} bs = do
+putBlockModel err cmdErr BlockInfo{..} bs = do
     -- This depends on the exact sequence of the operations in the real Impl.
     -- If anything changes there, then this wil also need change.
     let managesToPut errors = do
@@ -128,7 +116,7 @@ putBlockModel err BlockInfo{..} bs = do
             (mErr, _rest) <- uncons $ getStream (_hPut errs)
             (fsErr, _mCorr) <- mErr
             return fsErr
-    (dbm@DBModel {..}, cmdErr) <- get
+    dbm@DBModel {..} <- get
     if not open then EH.throwError' err $ UserError ClosedDBError
     else case Map.lookup bbid mp of
         Just _bs -> return ()
@@ -158,7 +146,7 @@ putBlockModel err BlockInfo{..} bs = do
                         else ( currentFile
                             , index'
                             , nextFId)
-                putDB dbm {
+                put dbm {
                       mp = mp'
                     , index = index''
                     , currentFile = currentFile'
@@ -166,15 +154,16 @@ putBlockModel err BlockInfo{..} bs = do
                     }
 
 garbageCollectModel :: forall m blockId
-                     . MonadState (MyState blockId) m
+                     . MonadState (DBModel blockId) m
                     => ThrowCantCatch (VolatileDBError blockId) m
+                    -> Maybe Errors
                     -> SlotNo
                     -> m ()
-garbageCollectModel err sl = do
-    (DBModel {..}, cmdErr) <- get
+garbageCollectModel err cmdErr sl = do
+    DBModel {..} <- get
     if not open then EH.throwError' err $ UserError ClosedDBError
     else do
-        modify $ \(dbm', cErr) -> (dbm' {latestGarbaged = Just $ maxMaybe latestGarbaged sl}, cErr)
+        modify $ \dbm' -> dbm' {latestGarbaged = Just $ maxMaybe latestGarbaged sl}
         let tru :: Maybe FsErrorType
             tru = do
                 cErr <- cmdErr
@@ -220,45 +209,45 @@ garbageCollectModel err sl = do
         return ()
 
 getBlockIdsModel :: forall m blockId
-                 . MonadState (MyState blockId) m
+                 . MonadState (DBModel blockId) m
                  => ThrowCantCatch (VolatileDBError blockId) m
                  -> m [blockId]
 getBlockIdsModel err = do
-    DBModel {..} <- getDB
+    DBModel {..} <- get
     if not open then EH.throwError' err $ UserError ClosedDBError
     else return $ concat $ (\(_,(_, _, bs)) -> fst <$> bs) <$> (Map.toList $ index)
 
 getSuccessorsModel :: forall m blockId
-                   . MonadState (MyState blockId) m
+                   . MonadState (DBModel blockId) m
                    => Ord blockId
                    => ThrowCantCatch (VolatileDBError blockId) m
                    -> m (Maybe blockId -> Set blockId)
 getSuccessorsModel err = do
-    DBModel {..} <- getDB
+    DBModel {..} <- get
     if not open then EH.throwError' err $ UserError ClosedDBError
     else return $ \bid ->
         Set.fromList $ fst <$> filter (\(_b,pb) -> pb == bid) (concat $ (\(_,_,c) -> c) <$> Map.elems index)
 
-modifyIndex :: MonadState (MyState blockId) m
+modifyIndex :: MonadState (DBModel blockId) m
             => (Map String (Maybe SlotNo, Int, [(blockId, Maybe blockId)])
                   -> Map String (Maybe SlotNo, Int, [(blockId, Maybe  blockId)])
                )
             -> m ()
 modifyIndex f = do
-    dbm@DBModel {..} <- getDB
-    putDB dbm {index = f index}
+    dbm@DBModel {..} <- get
+    put dbm {index = f index}
 
-runCorruptionModel :: forall blockId m. MonadState (MyState blockId) m
+runCorruptionModel :: forall blockId m. MonadState (DBModel blockId) m
                    => Ord blockId
                    => (blockId -> SlotNo)
                    -> Corruptions
                    -> m ()
 runCorruptionModel guessSlot corrs = do
-    dbm <- getDB
+    dbm <- get
     -- TODO(kde) need to sort corrs if we want to improve Eq instance of
     -- Error Types.
     let dbm' = foldr corrupt' dbm corrs
-    putDB dbm'
+    put dbm'
         where
             corrupt' :: (FileCorruption, String) -> DBModel blockId -> DBModel blockId
             corrupt' (corr, file) dbm = case corr of
@@ -308,33 +297,33 @@ runCorruptionModel guessSlot corrs = do
                                       then Just (DecodeFailed "" 0) else parseError dbm
                     -- Appending doesn't actually change anything, since additional bytes will be truncated.
 
-createFileModel :: forall blockId m. MonadState (MyState blockId) m
+createFileModel :: forall blockId m. MonadState (DBModel blockId) m
                 => m ()
 createFileModel = do
-    dbm <- getDB
+    dbm <- get
     let currentFile' = filePath $ nextFId dbm
     let index' = Map.insert currentFile' newFileInfo (index dbm)
-    putDB dbm { index = index'
+    put dbm { index = index'
               , nextFId = (nextFId dbm) + 1
               , currentFile = currentFile'}
 
-createInvalidFileModel :: forall blockId m. MonadState (MyState blockId) m
+createInvalidFileModel :: forall blockId m. MonadState (DBModel blockId) m
                        => String
                        -> m ()
 createInvalidFileModel file = do
-    db <- getDB
-    putDB $ db {parseError = Just $ InvalidFilename file}
+    db <- get
+    put $ db {parseError = Just $ InvalidFilename file}
 
-duplicateBlockModel :: forall blockId m. MonadState (MyState blockId) m
+duplicateBlockModel :: forall blockId m. MonadState (DBModel blockId) m
                     => Ord blockId
                     => (String, blockId)
                     -> m ()
 duplicateBlockModel (file, bid) = do
-    db <- getDB
+    db <- get
     let current = currentFile db
-    putDB $ db {parseError = Just $ DuplicatedSlot (Map.fromList [(bid,([file], [current]))])}
+    put $ db {parseError = Just $ DuplicatedSlot (Map.fromList [(bid,([file], [current]))])}
 
-recover :: MonadState (MyState blockId) m
+recover :: MonadState (DBModel blockId) m
         => ThrowCantCatch (VolatileDBError blockId) m
         -> DBModel blockId
         -> m (DBModel blockId)
@@ -362,12 +351,12 @@ recover err dbm@DBModel {..} = do
 newFileInfo :: (Maybe a, Int, [b])
 newFileInfo = (Nothing, 0, [])
 
-getIsMemberModel :: MonadState (MyState blockId) m
+getIsMemberModel :: MonadState (DBModel blockId) m
                  => Ord blockId
                  => ThrowCantCatch (VolatileDBError blockId) m
                  -> m (blockId -> Bool)
 getIsMemberModel err = do
-    DBModel {..} <- getDB
+    DBModel {..} <- get
     if not open then EH.throwError' err $ UserError ClosedDBError
     else return (\bid -> Map.member bid mp)
 
