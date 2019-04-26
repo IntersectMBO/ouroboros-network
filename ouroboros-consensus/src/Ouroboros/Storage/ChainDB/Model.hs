@@ -31,6 +31,7 @@ module Ouroboros.Storage.ChainDB.Model (
   , readerForward
   ) where
 
+import           Codec.CBOR.Encoding (Encoding)
 import           Control.Monad.Except (runExcept)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -120,9 +121,10 @@ empty initLedger = Model {
     }
 
 addBlock :: forall blk. ProtocolLedgerView blk
-         => NodeConfig (BlockProtocol blk)
+         => (PreHeader blk -> Encoding)
+         -> NodeConfig (BlockProtocol blk)
          -> blk -> Model blk -> Model blk
-addBlock cfg blk m = Model {
+addBlock toEnc cfg blk m = Model {
       blocks        = blocks'
     , cps           = CPS.switchFork newChain (cps m)
     , currentLedger = newLedger
@@ -134,7 +136,7 @@ addBlock cfg blk m = Model {
     blocks' = Map.insert (Block.blockHash blk) blk (blocks m)
 
     candidates :: [(Chain blk, ExtLedgerState blk)]
-    candidates = mapMaybe (validate cfg (initLedger m)) $ chains blocks'
+    candidates = mapMaybe (validate toEnc cfg (initLedger m)) $ chains blocks'
 
     newChain  :: Chain blk
     newLedger :: ExtLedgerState blk
@@ -142,9 +144,10 @@ addBlock cfg blk m = Model {
                                selectChain cfg (currentChain m) candidates
 
 addBlocks :: forall blk. ProtocolLedgerView blk
-          => NodeConfig (BlockProtocol blk)
+          => (PreHeader blk -> Encoding)
+          -> NodeConfig (BlockProtocol blk)
           -> [blk] -> Model blk -> Model blk
-addBlocks cfg = repeatedly (addBlock cfg)
+addBlocks toEnc cfg = repeatedly (addBlock toEnc cfg)
 
 {-------------------------------------------------------------------------------
   Iterators
@@ -218,14 +221,15 @@ notGenesis p =
       BlockHash h -> h
 
 validate :: ProtocolLedgerView blk
-         => NodeConfig (BlockProtocol blk)
+         => (PreHeader blk -> Encoding)
+         -> NodeConfig (BlockProtocol blk)
          -> ExtLedgerState blk
          -> Chain blk
          -> Maybe (Chain blk, ExtLedgerState blk)
-validate cfg initLedger chain =
+validate toEnc cfg initLedger chain =
       either (const Nothing) (\ledger -> Just (chain, ledger))
     . runExcept
-    $ chainExtLedgerState cfg chain initLedger
+    $ chainExtLedgerState toEnc cfg chain initLedger
 
 chains :: forall blk. (HasHeader blk)
        => Map (HeaderHash blk) blk -> [Chain blk]

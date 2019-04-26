@@ -21,8 +21,10 @@ dist/
 *.swp
 *.swo
 *~
+*_flymake.hs
 result*
 tags
+TAGS
 
 .stack-work/
 *.tix

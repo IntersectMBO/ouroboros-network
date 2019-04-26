@@ -10,7 +10,7 @@ module Test.Util.Orphans.Arbitrary
     , genSmallSlotNo
     ) where
 
-import           Codec.Serialise (Serialise)
+import           Codec.Serialise (Serialise(..))
 import           Data.Time
 import           Data.Word (Word64)
 import           Test.QuickCheck hiding (Fixed (..))
@@ -134,7 +134,7 @@ instance DSIGNAlgorithm v => Arbitrary (SigDSIGN v) where
         a    <- arbitrary :: Gen Int
         sk   <- arbitrary
         seed <- arbitrary
-        return $ withSeed seed $ signDSIGN a sk
+        return $ withSeed seed $ signDSIGN encode a sk
 
     shrink = const []
 
@@ -156,7 +156,7 @@ instance VRFAlgorithm v => Arbitrary (CertVRF v) where
         a    <- arbitrary :: Gen Int
         sk   <- arbitrary
         seed <- arbitrary
-        return $ withSeed seed $ fmap snd $ evalVRF a sk
+        return $ withSeed seed $ fmap snd $ evalVRF encode a sk
 
     shrink = const []
 

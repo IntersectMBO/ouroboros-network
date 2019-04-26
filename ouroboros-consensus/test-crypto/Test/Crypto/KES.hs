@@ -1,8 +1,10 @@
-{-# LANGUAGE DeriveAnyClass      #-}
-{-# LANGUAGE DeriveGeneric       #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving  #-}
-{-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE DeriveAnyClass       #-}
+{-# LANGUAGE DeriveGeneric        #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE StandaloneDeriving   #-}
+{-# LANGUAGE TypeApplications     #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Test.Crypto.KES
     ( tests
@@ -19,7 +21,7 @@ import           Ouroboros.Consensus.Crypto.DSIGN
 import           Ouroboros.Consensus.Crypto.KES
 import           Ouroboros.Consensus.Util.Random
 
-import           Ouroboros.Network.Testing.Serialise (Serialise, prop_serialise)
+import           Ouroboros.Network.Testing.Serialise (Serialise(..), prop_serialise)
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.QuickCheck
 
@@ -33,7 +35,9 @@ tests =
   , testKESAlgorithm (Proxy :: Proxy (SimpleKES Ed448DSIGN)) "SimpleKES (with Ed448)"
   ]
 
-testKESAlgorithm :: KESAlgorithm v => proxy v -> String -> TestTree
+testKESAlgorithm :: (KESAlgorithm v
+                   , Serialise (VerKeyKES v), Serialise (SignKeyKES v), Serialise (SigKES v)
+                   ) => proxy v -> String -> TestTree
 testKESAlgorithm p n =
     testGroup n
         [ testProperty "serialise VerKey"                $ prop_KES_serialise_VerKey p
@@ -45,21 +49,21 @@ testKESAlgorithm p n =
         , testProperty "verify negative (wrong time)"    $ prop_KES_verify_neg_time p
         ]
 
-prop_KES_serialise_VerKey :: KESAlgorithm v
+prop_KES_serialise_VerKey :: (KESAlgorithm v, Serialise (VerKeyKES v))
                           => proxy v
                           -> Duration_Seed_SK v
                           -> Property
 prop_KES_serialise_VerKey _ (Duration_Seed_SK _ _ sk _) =
     prop_serialise (deriveVerKeyKES sk)
 
-prop_KES_serialise_SignKey :: KESAlgorithm v
+prop_KES_serialise_SignKey :: (KESAlgorithm v, Serialise (SignKeyKES v))
                            => proxy v
                            -> Duration_Seed_SK v
                            -> Property
 prop_KES_serialise_SignKey _ (Duration_Seed_SK _ _ sk _) =
     prop_serialise sk
 
-prop_KES_serialise_Sig :: KESAlgorithm v
+prop_KES_serialise_Sig :: (KESAlgorithm v, Serialise (SigKES v))
                        => proxy v
                        -> Duration_Seed_SK_Times v String
                        -> Seed
@@ -77,7 +81,7 @@ prop_KES_verify_pos _ d seed =
     let vk = getFirstVerKey d
     in  case withSeed seed $ trySign d of
             Left e   -> counterexample e False
-            Right xs -> conjoin [verifyKES vk j a sig | (j, a, sig) <- xs]
+            Right xs -> conjoin [verifyKES encode vk j a sig | (j, a, sig) <- xs]
 
 prop_KES_verify_neg_key :: KESAlgorithm v
                         => proxy v
@@ -87,7 +91,7 @@ prop_KES_verify_neg_key :: KESAlgorithm v
 prop_KES_verify_neg_key _ d seed = getDuration d > 0 ==>
     case withSeed seed $ trySign d of
         Left e   -> counterexample e False
-        Right xs -> conjoin [ not $ verifyKES (getSecondVerKey d) j a sig
+        Right xs -> conjoin [ not $ verifyKES encode (getSecondVerKey d) j a sig
                             | (j, a, sig) <- xs]
 
 prop_KES_verify_neg_msg :: KESAlgorithm v
@@ -100,7 +104,7 @@ prop_KES_verify_neg_msg _ d a seed =
     let vk = getFirstVerKey d
     in  case withSeed seed $ trySign d of
             Left e   -> counterexample e False
-            Right xs -> conjoin [a /= a' ==> not $ verifyKES vk j a sig | (j, a', sig) <- xs]
+            Right xs -> conjoin [a /= a' ==> not $ verifyKES encode vk j a sig | (j, a', sig) <- xs]
 
 prop_KES_verify_neg_time :: KESAlgorithm v
                          => proxy v
@@ -113,7 +117,7 @@ prop_KES_verify_neg_time _ d i =
         t    = fromIntegral $ abs i
     in  case withSeed seed $ trySign d of
             Left e   -> counterexample e False
-            Right xs -> conjoin [t /= j ==> not $ verifyKES vk t a sig | (j, a, sig) <- xs]
+            Right xs -> conjoin [t /= j ==> not $ verifyKES encode vk t a sig | (j, a, sig) <- xs]
 
 getDuration :: Duration_Seed_SK_Times v a -> Natural
 getDuration d = case d of
@@ -142,7 +146,7 @@ trySign (Duration_Seed_SK_Times _ _ sk _ ts) =
        -> m (Either String [(Natural, a, SigKES v)])
     go _ []              = return $ Right []
     go sk' ((j, a) : xs) = do
-        m <- signKES j a sk'
+        m <- signKES encode j a sk'
         case m of
             Nothing          -> return $ Left $
                                     "trySign: error signing " ++
@@ -158,7 +162,9 @@ data Duration_Seed_SK v = Duration_Seed_SK Natural Seed (SignKeyKES v) (VerKeyKE
 
 deriving instance KESAlgorithm v => Show (Duration_Seed_SK v)
 deriving instance KESAlgorithm v => Eq (Duration_Seed_SK v)
-deriving instance KESAlgorithm v => Serialise (Duration_Seed_SK v)
+deriving instance ( KESAlgorithm v
+                  , Serialise (SignKeyKES v), Serialise (VerKeyKES v)
+                  ) => Serialise (Duration_Seed_SK v)
 
 instance KESAlgorithm v => Arbitrary (Duration_Seed_SK v) where
 
@@ -185,7 +191,9 @@ instance (KESAlgorithm v, Arbitrary a) => Arbitrary (Duration_Seed_SK_Times v a)
 
 deriving instance (KESAlgorithm v, Show a) => Show (Duration_Seed_SK_Times v a)
 deriving instance (KESAlgorithm v, Eq a) => Eq (Duration_Seed_SK_Times v a)
-deriving instance (KESAlgorithm v, Serialise a) => Serialise (Duration_Seed_SK_Times v a)
+deriving instance (KESAlgorithm v, Serialise a
+                  , Serialise (SignKeyKES v), Serialise (VerKeyKES v)
+                  ) => Serialise (Duration_Seed_SK_Times v a)
 
 duration_Seed_SK :: KESAlgorithm v => Natural -> Seed -> Duration_Seed_SK v
 duration_Seed_SK duration seed =

@@ -57,13 +57,13 @@ instance (Typeable cfg, OuroborosTag p) => OuroborosTag (ExtNodeConfig cfg p) wh
   -- Propagate changes
   --
 
-  mkPayload (EncNodeConfig cfg _) proof ph =
-      EncPayload <$> mkPayload cfg proof ph
+  mkPayload toEnc (EncNodeConfig cfg _) proof ph =
+      EncPayload <$> mkPayload toEnc cfg proof ph
 
   preferCandidate       (EncNodeConfig cfg _) = preferCandidate       cfg
   compareCandidates     (EncNodeConfig cfg _) = compareCandidates     cfg
   checkIsLeader         (EncNodeConfig cfg _) = checkIsLeader         cfg
-  applyChainState       (EncNodeConfig cfg _) = applyChainState       cfg
+  applyChainState toEnc (EncNodeConfig cfg _) = applyChainState toEnc cfg
   protocolSecurityParam (EncNodeConfig cfg _) = protocolSecurityParam cfg
 
 deriving instance Eq       (Payload p ph) => Eq       (Payload (ExtNodeConfig cfg p) ph)

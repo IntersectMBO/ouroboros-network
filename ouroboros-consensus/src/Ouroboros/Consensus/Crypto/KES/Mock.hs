@@ -11,7 +11,7 @@ module Ouroboros.Consensus.Crypto.KES.Mock
     , SignKeyKES(..)
     ) where
 
-import           Codec.Serialise (Serialise)
+import           Codec.Serialise (Serialise(..))
 import           GHC.Generics (Generic)
 import           Numeric.Natural (Natural)
 
@@ -35,23 +35,31 @@ instance KESAlgorithm MockKES where
     data SigKES MockKES = SigMockKES Natural (SignKeyKES MockKES)
         deriving (Show, Eq, Ord, Generic)
 
+    encodeVerKeyKES = encode
+    encodeSignKeyKES = encode
+    encodeSigKES = encode
+
+    decodeSignKeyKES = decode
+    decodeVerKeyKES = decode
+    decodeSigKES = decode
+
     genKeyKES duration = do
         vk <- VerKeyMockKES <$> nonNegIntR
         return $ SignKeyMockKES (vk, 0, duration)
 
     deriveVerKeyKES (SignKeyMockKES (vk, _, _)) = vk
 
-    signKES j a (SignKeyMockKES (vk, k, t))
+    signKES toEnc j a (SignKeyMockKES (vk, k, t))
         | j >= k && j < t = return $ Just
-            ( SigMockKES (fromHash $ hash @H a) (SignKeyMockKES (vk, j, t))
+            ( SigMockKES (fromHash $ hashWithSerialiser @H toEnc a) (SignKeyMockKES (vk, j, t))
             , SignKeyMockKES (vk, j + 1, t)
             )
         | otherwise       = return Nothing
 
-    verifyKES vk j a (SigMockKES h (SignKeyMockKES (vk', j', _))) =
+    verifyKES toEnc vk j a (SigMockKES h (SignKeyMockKES (vk', j', _))) =
         j == j' &&
         vk == vk' &&
-        fromHash (hash @H a) == h
+        fromHash (hashWithSerialiser @H toEnc a) == h
 
 instance Serialise (SigKES MockKES) where
 

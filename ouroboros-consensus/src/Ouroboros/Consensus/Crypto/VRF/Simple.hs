@@ -19,7 +19,8 @@ import           Data.Function (on)
 import           Data.Proxy (Proxy (..))
 import           GHC.Generics (Generic)
 import           Numeric.Natural (Natural)
-import           Codec.Serialise (Serialise (..))
+import           Codec.Serialise (Serialise(..))
+import           Codec.Serialise.Encoding (Encoding)
 
 import           Ouroboros.Consensus.Crypto.Hash
 import           Ouroboros.Consensus.Crypto.VRF.Class
@@ -69,11 +70,11 @@ pow = Point . C.pointBaseMul curve
 pow' :: Point -> Integer -> Point
 pow' (Point p) n = Point $ C.pointMul curve n p
 
-h :: Serialise a => a -> Natural
-h = fromHash . hash @H
+h :: Encoding -> Natural
+h = fromHash . hashWithSerialiser @H id
 
-h' :: Serialise a => a -> Integer -> Point
-h' a l = pow $ mod (l * (fromIntegral $ h a)) q
+h' :: Encoding -> Integer -> Point
+h' enc l = pow $ mod (l * (fromIntegral $ h enc)) q
 
 getR :: MonadRandom m => m Integer
 getR = generateBetween 0 (q - 1)
@@ -99,26 +100,28 @@ instance VRFAlgorithm SimpleVRF where
     deriveVerKeyVRF (SignKeySimpleVRF k) =
         VerKeySimpleVRF $ pow k
 
-    evalVRF a sk@(SignKeySimpleVRF k) = do
-        let u                 = h' a k
-            y                 = h $ a :* u :* Nil
+    evalVRF toEnc a sk@(SignKeySimpleVRF k) = do
+        let u                 = h' (toEnc a) k
+            y                 = h $ (toEnc a) <> (encode $ u :* Nil)
             VerKeySimpleVRF v = deriveVerKeyVRF sk
         r <- getR
-        let c = h $ a :* v :* pow r :* h' a r :* Nil
+        let c = h $ (toEnc a) <> (encode $ v :* pow r :* h' (toEnc a) r :* Nil)
             s = mod (r + k * fromIntegral c) q
         return (y, CertSimpleVRF u c s)
 
-    verifyVRF (VerKeySimpleVRF v) a (y, cert) =
+    verifyVRF toEnc (VerKeySimpleVRF v) a (y, cert) =
         let u   = certU cert
             c   = certC cert
             c'  = - fromIntegral c
             s   = certS cert
-            b1  = y == h (a :* u :* Nil)
-            rhs = h $  a
-                    :* v
-                    :* (pow s <> pow' v c')
-                    :* (h' a s <> pow' u c')
-                    :* Nil
+            b1  = y == (h $ (toEnc a) <> (encode $ u :* Nil))
+            rhs = h $  (toEnc a)
+                    <> (encode
+                       $  v
+                       :* (pow s <> pow' v c')
+                       :* (h' (toEnc a) s <> pow' u c')
+                       :* Nil
+                      )
         in  b1 && c == rhs
 
 instance Serialise (SignKeyVRF SimpleVRF)

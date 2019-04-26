@@ -38,7 +38,6 @@ import           Data.Maybe (fromJust, isJust, mapMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as S
 import           Data.TreeDiff (ToExpr)
-import           Data.TreeDiff.Class
 import           GHC.Generics
 import           GHC.Stack
 import qualified System.IO as IO
@@ -134,22 +133,13 @@ deriving instance Generic1        (At Resp)
 deriving instance Rank2.Foldable  (At Resp)
 deriving instance Show1 r => Show (Resp :@ r)
 
-instance Show (Model r) where
-    show = show . toShow
-
-deriving instance Show (ModelShow r)
 deriving instance Generic (DBModel BlockId)
-deriving instance Generic (ModelShow r)
 deriving instance ToExpr SlotNo
 deriving instance Generic BlockId
 deriving instance Generic (ParserError BlockId)
 deriving instance ToExpr (ParserError BlockId)
 deriving instance ToExpr (DBModel BlockId)
-deriving instance ToExpr (ModelShow r)
-
-
-instance ToExpr (Model r) where
-    toExpr = toExpr . toShow
+deriving instance ToExpr (Model r)
 
 instance CommandNames (At Cmd) where
     cmdName (At cmd) = case cmd of
@@ -172,25 +162,13 @@ instance CommandNames (At CmdErr) where
     cmdName (At (CmdErr cmd _)) = cmdName (At cmd)
     cmdNames _ = ["not", "suported", "yet"]
 
-
 data Model (r :: Type -> Type) = Model
   { dbModel   :: DBModel BlockId
     -- ^ A model of the database.
-  , mockDB    :: ModelDBPure
-    -- ^ A handle to the mocked database.
   , shouldEnd :: Bool
-  } deriving (Generic)
+  } deriving (Generic, Show)
 
-data ModelShow (r :: Type -> Type) = Model'
-  { msdbModel   :: DBModel BlockId
-  , msShouldEnd :: Bool
-  }
-
-toShow :: Model r -> ModelShow r
-toShow (Model dbm _ se) = Model' dbm se
-
-type PureM = ExceptT (VolatileDBError BlockId) (State (DBModel BlockId, Maybe Errors))
-type ModelDBPure = VolatileDB BlockId PureM
+type PureM = ExceptT (VolatileDBError BlockId) (State (DBModel BlockId))
 
 -- | An event records the model before and after a command along with the
 -- command itself, and a mocked version of the response.
@@ -217,8 +195,8 @@ lockstep model@Model {..} cmdErr (At resp) = Event
     model' = model {
               dbModel = dbModel'
             , shouldEnd = case resp of
-                    Resp (Left (VParserError _)) -> True
-                    _                            -> False
+                    Resp (Left (UnexpectedError (ParserError _))) -> True
+                    _                                             -> False
             }
 
 -- | Key property of the model is that we can go from real to mock responses
@@ -226,47 +204,62 @@ toMock :: Model r -> At t r -> t
 toMock _ (At t) = t
 
 step :: Model r -> At CmdErr r -> (Resp, DBModel BlockId)
-step model@Model{..} cmderr = runPure dbModel mockDB (toMock model cmderr)
+step model@Model{..} cmderr = runPure dbModel (toMock model cmderr)
 
 runPure :: DBModel BlockId
-        -> ModelDBPure
         -> CmdErr
         -> (Resp, DBModel BlockId)
-runPure dbm mdb (CmdErr cmd err) =
-    bimap Resp fst $ flip runState (dbm, err) $ do
-        resp <- runExceptT $ runDB runRest mdb cmd
+runPure dbm (CmdErr cmd err) =
+    bimap Resp id $ flip runState dbm $ do
+        resp <- runExceptT go
         case (err, resp) of
-            (Nothing, _)                       -> return resp
-            (Just _ , Left ClosedDBError)      -> return resp
+            (Nothing, _)                             -> return resp
+            (Just _ , Left (UserError ClosedDBError)) -> return resp
             (Just _, _) -> do
-                modify $ \(dbm', cErr) -> (dbm' {open = False}, cErr)
+                modify $ \dbm' -> dbm' {open = False}
                 return $ Right $ SimulatedError resp
     where
-        runRest :: ModelDBPure -> Cmd -> PureM Success
-        runRest db cmd' = case cmd' of
-            Corrupt cors -> do
-                closeDB db
+        tnc :: EH.ThrowCantCatch (VolatileDBError BlockId) PureM = EH.throwCantCatch EH.exceptT
+        go :: PureM Success
+        go = case cmd of
+            GetBlock bid       -> do
+                Blob <$> getBlockModel tnc bid
+            GetBlockIds        ->
+                Blocks <$> getBlockIdsModel tnc
+            PutBlock b pb      ->
+                Unit <$> putBlockModel tnc err (BlockInfo b (guessSlot b) pb) (BL.lazyByteString $ Binary.encode $ toBlock (b, pb))
+            GetSuccessors bids -> do
+                successors <- getSuccessorsModel tnc
+                return $ Successors $ successors <$> bids
+            GarbageCollect bid -> Unit <$> garbageCollectModel tnc err (guessSlot bid)
+            IsOpen             -> Bl <$> isOpenModel
+            Close              -> Unit <$> closeModel
+            ReOpen             -> Unit <$> reOpenModel tnc
+            AskIfMember bids   -> do
+                isMember <- getIsMemberModel tnc
+                return $ IsMember $ isMember <$> bids
+            Corrupt cors       -> do
+                closeModel
                 runCorruptionModel guessSlot cors
-                reOpenDB db
+                reOpenModel tnc
                 return $ Unit ()
-            CreateFile -> do
-                closeDB db
+            CreateFile         -> do
+                closeModel
                 createFileModel
-                reOpenDB db
+                reOpenModel tnc
                 return $ Unit ()
-            CreateInvalidFile -> do
-                closeDB db
+            CreateInvalidFile  -> do
+                closeModel
                 createInvalidFileModel "invalidFileName.dat"
-                reOpenDB db
+                reOpenModel tnc
                 return $ Unit ()
             DuplicateBlock file bid _pbid -> do
-                closeDB db
+                closeModel
                 duplicateBlockModel (file, bid)
-                reOpenDB db
+                reOpenModel tnc
                 return $ Unit ()
-            _ -> error "invalid cmd"
 
-runDB :: (HasCallStack, Monad m)
+runDB :: (HasCallStack, Monad m, MonadSTM m)
       => (VolatileDB BlockId m -> Cmd -> m Success)
       -> VolatileDB BlockId m
       -> Cmd
@@ -287,20 +280,19 @@ runDB restCmd db cmd = case cmd of
     CreateInvalidFile  -> restCmd db cmd
     DuplicateBlock {}  -> restCmd db cmd
     AskIfMember bids   -> do
-        isMember <- getIsMember db
+        isMember <- atomically $ getIsMember db
         return $ IsMember $ isMember <$> bids
 
-smErr :: (MonadCatch m, MonadSTM m)
-      => Bool
-      -> TVar m Errors
-      -> HasFS m h
-      -> VolatileDB BlockId m
-      -> Internal.VolatileDBEnv m blockId
-      -> DBModel BlockId
-      -> ModelDBPure
-      -> StateMachine Model (At CmdErr) m (At Resp)
-smErr terminatingCmd errorsVar hasFS db env dbm vdb = StateMachine {
-     initModel     = initModelImpl dbm vdb
+sm :: (MonadCatch m, MonadSTM m)
+   => Bool
+   -> TVar m Errors
+   -> HasFS m h
+   -> VolatileDB BlockId m
+   -> Internal.VolatileDBEnv m blockId
+   -> DBModel BlockId
+   -> StateMachine Model (At CmdErr) m (At Resp)
+sm terminatingCmd errorsVar hasFS db env dbm = StateMachine {
+     initModel     = initModelImpl dbm
    , transition    = transitionImpl
    , precondition  = preconditionImpl
    , postcondition = postconditionImpl
@@ -314,19 +306,17 @@ smErr terminatingCmd errorsVar hasFS db env dbm vdb = StateMachine {
 
 stateMachine :: (MonadCatch m, MonadSTM m)
              => DBModel BlockId
-             -> ModelDBPure
              -> StateMachine Model (At CmdErr) m (At Resp)
-stateMachine = smErr
+stateMachine = sm
                 True
                 (error "errorsVar unused")
                 (error "hasFS used during command generation")
                 (error "semantics and DB used during command generation")
                 (error "env used during command generation")
 
-initModelImpl :: DBModel BlockId -> ModelDBPure -> Model r
-initModelImpl dbm vdm = Model {
+initModelImpl :: DBModel BlockId -> Model r
+initModelImpl dbm = Model {
       dbModel   = dbm
-    , mockDB    = vdm
     , shouldEnd = False
     }
 
@@ -456,8 +446,8 @@ semanticsImplErr errorsVar hasFS m env (At cmderr) = At . Resp <$> case cmderr o
         res <- withErrors errorsVar errors $
             tryVolDB (runDB (semanticsRestCmd hasFS env) m cmd)
         case res of
-            Left ClosedDBError -> return res
-            _                  -> do
+            Left (UserError ClosedDBError) -> return res
+            _                              -> do
                 closeDB m
                 return $ Right $ SimulatedError res
 
@@ -519,11 +509,6 @@ knownLimitation model (At cmd) = case cmd of
         isLimitation Nothing _sl       = False
         isLimitation (Just slot') slot = slot' >  slot
 
-mkDBModel :: MonadState (DBModel BlockId, Maybe Errors) m
-          => Int
-          -> (DBModel BlockId, VolatileDB BlockId (ExceptT (VolatileDBError BlockId) m))
-mkDBModel = openDBModel EH.exceptT
-
 prop_sequential :: Property
 prop_sequential = withMaxSuccess 1000 $
     forAllCommands smUnused Nothing $ \cmds -> monadicIO $ do
@@ -531,8 +516,8 @@ prop_sequential = withMaxSuccess 1000 $
                  -> HasFS IO h
                  -> PropertyM IO (History (At CmdErr) (At Resp), Reason)
             test errorsVar hasFS = do
-              (db, env) <- run $ Internal.openDBFull hasFS EH.monadCatch (myParser hasFS EH.monadCatch) 3
-              let sm' = smErr True errorsVar hasFS db env dbm vdb
+              (db, env) <- run $ Internal.openDBFull hasFS EH.monadCatch (EH.throwCantCatch EH.monadCatch) (myParser hasFS EH.monadCatch) 3
+              let sm' = sm True errorsVar hasFS db env dbm
               (hist, _model, res) <- runCommands sm' cmds
               run $ closeDB db
               return (hist, res)
@@ -551,10 +536,9 @@ prop_sequential = withMaxSuccess 1000 $
             $ res === Ok
     where
         -- we use that: MonadState (DBModel BlockId) (State (DBModel BlockId))
-        (dbm, vdb) = mkDBModel 3
+        dbm = initDBModel 3
         smUnused = stateMachine
                     dbm
-                    vdb
 
 tests :: TestTree
 tests = testGroup "VolatileDB-q-s-m" [
@@ -657,8 +641,8 @@ tag ls = C.classify
 
     tagIsClosedError :: EventPred
     tagIsClosedError = C.predicate $ \ev -> case eventMockResp ev of
-        Resp (Left ClosedDBError) -> Left TagClosedError
-        _                         -> Right tagIsClosedError
+        Resp (Left (UserError ClosedDBError)) -> Left TagClosedError
+        _                                     -> Right tagIsClosedError
 
     tagGarbageCollectThenReOpen :: EventPred
     tagGarbageCollectThenReOpen = successful $ \ev _ -> case getCmd ev of
@@ -806,8 +790,7 @@ showLabelledExamples' mReplay numTests = do
             collects (tag . execCmds (initModel smUnused) $ cmds) $
                 property True
   where
-    (dbm, vdb) = mkDBModel 3
+    dbm = initDBModel 3
     smUnused :: StateMachine Model (At CmdErr) IO (At Resp)
     smUnused = stateMachine
                 dbm
-                vdb

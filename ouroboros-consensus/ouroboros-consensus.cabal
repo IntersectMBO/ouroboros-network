@@ -302,6 +302,7 @@ test-suite test-storage
                     Test.Ouroboros.Storage.LedgerDB.OnDisk
                     Test.Ouroboros.Storage.Util
                     Test.Ouroboros.Storage.VolatileDB
+                    Test.Ouroboros.Storage.VolatileDB.Mock
                     Test.Ouroboros.Storage.VolatileDB.Model
                     Test.Ouroboros.Storage.VolatileDB.StateMachine
                     Test.Ouroboros.Storage.VolatileDB.TestBlock

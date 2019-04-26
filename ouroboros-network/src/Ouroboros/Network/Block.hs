@@ -92,7 +92,6 @@ blockMeasure b = BlockMeasure (blockSlot b) (blockSlot b) 1
 class ( Eq        (HeaderHash b)
       , Ord       (HeaderHash b)
       , Show      (HeaderHash b)
-      , Serialise (HeaderHash b)
       , Typeable  (HeaderHash b)
       ) => StandardHash b
 

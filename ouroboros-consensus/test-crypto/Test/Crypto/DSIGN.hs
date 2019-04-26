@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 
@@ -14,7 +15,7 @@ import           Ouroboros.Consensus.Crypto.DSIGN
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random (Seed, withSeed)
 
-import           Ouroboros.Network.Testing.Serialise (Serialise, prop_serialise)
+import           Ouroboros.Network.Testing.Serialise (Serialise(..), prop_serialise)
 import           Test.Util.Orphans.Arbitrary ()
 
 --
@@ -28,7 +29,10 @@ tests =
   , testDSIGNAlgorithm (Proxy :: Proxy RSAPSSDSIGN) "RSAPSSDSIGN"
   ]
 
-testDSIGNAlgorithm :: forall proxy v. DSIGNAlgorithm v => proxy v -> String -> TestTree
+testDSIGNAlgorithm :: forall proxy v.
+                     ( DSIGNAlgorithm v
+                     , Serialise (VerKeyDSIGN v), Serialise (SignKeyDSIGN v), Serialise (SigDSIGN v)
+                     )=> proxy v -> String -> TestTree
 testDSIGNAlgorithm _ n =
     testGroup n
         [ testProperty "serialise VerKey"                 $ prop_serialise @(VerKeyDSIGN v)
@@ -45,9 +49,9 @@ prop_dsign_verify_pos :: forall a v. (Serialise a, DSIGNAlgorithm v)
                       -> SignKeyDSIGN v
                       -> Bool
 prop_dsign_verify_pos seed a sk =
-    let sig = withSeed seed $ signDSIGN a sk
+    let sig = withSeed seed $ signDSIGN encode a sk
         vk  = deriveVerKeyDSIGN sk
-    in  verifyDSIGN vk a sig
+    in  verifyDSIGN encode vk a sig
 
 prop_dsign_verify_neg_key :: forall a v. (Serialise a, DSIGNAlgorithm v)
                           => Seed
@@ -56,9 +60,9 @@ prop_dsign_verify_neg_key :: forall a v. (Serialise a, DSIGNAlgorithm v)
                           -> SignKeyDSIGN v
                           -> Property
 prop_dsign_verify_neg_key seed a sk sk' = sk /= sk' ==>
-    let sig = withSeed seed $ signDSIGN a sk'
+    let sig = withSeed seed $ signDSIGN encode a sk'
         vk  = deriveVerKeyDSIGN sk
-    in  not $ verifyDSIGN vk a sig
+    in  not $ verifyDSIGN encode vk a sig
 
 prop_dsign_verify_neg_msg :: forall a v. (Serialise a, Eq a, DSIGNAlgorithm v)
                           => Seed
@@ -67,6 +71,6 @@ prop_dsign_verify_neg_msg :: forall a v. (Serialise a, Eq a, DSIGNAlgorithm v)
                           -> SignKeyDSIGN v
                           -> Property
 prop_dsign_verify_neg_msg seed a a' sk = a /= a' ==>
-    let sig = withSeed seed $ signDSIGN a sk
+    let sig = withSeed seed $ signDSIGN encode a sk
         vk  = deriveVerKeyDSIGN sk
-    in  not $ verifyDSIGN vk a' sig
+    in  not $ verifyDSIGN encode vk a' sig

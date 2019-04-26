@@ -57,7 +57,7 @@ instance OuroborosTag p => OuroborosTag (WithLeaderSchedule p) where
     , lsNodeConfigNodeId   :: CoreNodeId
     }
 
-  mkPayload cfg () _ph = return $ WLSPayload $ lsNodeConfigNodeId cfg
+  mkPayload _ cfg () _ph = return $ WLSPayload $ lsNodeConfigNodeId cfg
 
   preferCandidate       WLSNodeConfig{..} = preferCandidate       lsNodeConfigP
   compareCandidates     WLSNodeConfig{..} = compareCandidates     lsNodeConfigP
@@ -70,7 +70,7 @@ instance OuroborosTag p => OuroborosTag (WithLeaderSchedule p) where
             | lsNodeConfigNodeId `elem` nids -> Just ()
             | otherwise                      -> Nothing
 
-  applyChainState _ _ _ _ = return ()
+  applyChainState _ _ _ _ _ = return ()
 
 deriving instance Eq   (Payload (WithLeaderSchedule p) ph)
 deriving instance Ord  (Payload (WithLeaderSchedule p) ph)
