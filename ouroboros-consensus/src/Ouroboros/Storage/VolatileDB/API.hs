@@ -7,6 +7,7 @@ module Ouroboros.Storage.VolatileDB.API
   , module Ouroboros.Storage.VolatileDB.Types
   ) where
 
+import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 
 import           Data.ByteString (ByteString)
@@ -36,5 +37,5 @@ data VolatileDB blockId m = VolatileDB {
     , getBlockIds    :: HasCallStack => m [blockId]
     , getSuccessors  :: HasCallStack => m (Maybe blockId -> Set blockId)
     , garbageCollect :: HasCallStack => SlotNo -> m ()
-    , getIsMember    :: HasCallStack => m (blockId -> Bool)
+    , getIsMember    :: HasCallStack => STM m (blockId -> Bool)
 }

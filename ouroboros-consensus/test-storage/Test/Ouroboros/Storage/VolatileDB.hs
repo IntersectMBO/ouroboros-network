@@ -17,6 +17,7 @@ import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.HUnit
 import           Test.Tasty.QuickCheck (testProperty)
 
+import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 import           Ouroboros.Storage.VolatileDB.API
 import qualified Ouroboros.Storage.VolatileDB.Impl as Internal hiding (openDB)
 import           Test.Ouroboros.Storage.Util
@@ -32,9 +33,9 @@ tests = testGroup "VolatileDB"
 prop_VolatileInvalidArg :: HasCallStack => Property
 prop_VolatileInvalidArg = monadicIO $ do
     let fExpected = \case
-            Left (InvalidArgumentsError _str) -> return ()
+            Left (UserError (InvalidArgumentsError _str)) -> return ()
             somethingElse -> fail $ "IO returned " <> show somethingElse <> " instead of InvalidArgumentsError"
     run $ apiEquivalenceVolDB fExpected (\hasFS err -> do
-            _ <- Internal.openDBFull hasFS err (myParser hasFS err) 0
+            _ <- Internal.openDBFull hasFS err (EH.throwCantCatch EH.monadCatch) (myParser hasFS err) 0
             return ()
         )
