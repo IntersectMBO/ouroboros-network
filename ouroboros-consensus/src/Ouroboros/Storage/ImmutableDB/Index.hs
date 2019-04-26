@@ -43,6 +43,7 @@ import qualified Data.ByteString.Builder as BS
 import qualified Data.ByteString.Lazy as BL
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
+import           Data.Maybe (isJust)
 import qualified Data.Vector.Unboxed as V
 import           Data.Word (Word64)
 
@@ -114,9 +115,13 @@ loadIndex hashDecoder hasFS err epoch indexSize = do
       let offsetsBS  = BL.toStrict offsetsBL
           offsets    = V.generate expectedOffsets mkEntry
           mkEntry ix = decodeIndexEntryAt (ix * indexEntrySizeBytes) offsetsBS
+          -- If the second offset is non-zero, there is an EBB
+          hasEBB     = V.length offsets >= 2 && offsets V.! 1 /= 0
       case deserialiseHash hashDecoder ebbHashBL of
-        -- TODO throw an error when leftover is not empty?
-        Right (_leftover, ebbHash) -> return $ MkIndex offsets ebbHash
+        Right (leftover, ebbHash) -> do
+          when (hasEBB /= isJust ebbHash || not (BL.null leftover)) $
+            throwUnexpectedError err $ InvalidFileError indexFile callStack
+          return $ MkIndex offsets ebbHash
         Left  df                   -> throwUnexpectedError err $
           DeserialisationError df callStack
 
@@ -354,7 +359,7 @@ truncateToSlots slots index@(MkIndex offsets ebbHash)
 {-------------------------------------------------------------------------------
   Auxiliary: encoding and decoding the EBB hash
 
-  When no EBB is present we use an all-NULL bytestring.
+  When no EBB is present we use an empty bytestring.
 -------------------------------------------------------------------------------}
 
 deserialiseHash :: (forall s. Decoder s hash)
