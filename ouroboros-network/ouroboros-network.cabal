@@ -49,6 +49,9 @@ library
                        Ouroboros.Network.NodeToClient
                        Ouroboros.Network.Pipe
                        Ouroboros.Network.Server.Socket
+                       Ouroboros.Network.Server.Version
+                       Ouroboros.Network.Server.Version.CBOR
+                       Ouroboros.Network.Server.Version.Protocol
                        Ouroboros.Network.Socket
                        Ouroboros.Network.Time
                        Ouroboros.Network.Protocol.ChainSync.Client

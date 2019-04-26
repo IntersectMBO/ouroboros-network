@@ -15,9 +15,9 @@ cabal-version:       >=1.10
 
 library
   exposed-modules:     Ouroboros.Byron.Proxy.DB,
-                       Ouroboros.Byron.Proxy.Types,
-                       Ouroboros.Byron.Proxy.Index,
-                       Ouroboros.Byron.Proxy.ChainSync.Server
+                       Ouroboros.Byron.Proxy.Pool,
+                       Ouroboros.Byron.Proxy.Main,
+
                        Ouroboros.Byron.Proxy.Index.Sqlite,
                        Ouroboros.Byron.Proxy.Index.Types,
 
@@ -53,10 +53,12 @@ library
                        random,
                        resourcet,
                        sqlite-simple,
+                       serialise,
                        stm,
                        tagged,
                        text,
-                       transformers
+                       transformers,
+                       typed-protocols
   hs-source-dirs:      src/lib
   default-language:    Haskell2010
   ghc-options:         -fwarn-incomplete-patterns
@@ -64,7 +66,8 @@ library
 
 executable byron-proxy
   main-is:             Main.hs
-  -- other-modules:
+  other-modules:       DB,
+                       IPC
   -- other-extensions:
   build-depends:       base,
                        async,
@@ -81,15 +84,22 @@ executable byron-proxy
                        containers,
                        contra-tracer,
                        directory,
+                       exceptions,
                        iohk-monitoring,
                        io-sim-classes,
                        lens,
+                       network,
                        optparse-applicative,
                        ouroboros-consensus,
+                       ouroboros-network,
                        random,
+                       resourcet,
+                       serialise,
                        stm,
                        text,
-                       time
+                       time,
+                       transformers,
+                       typed-protocols
   hs-source-dirs:      src/exec
   default-language:    Haskell2010
   -- -threaded is needed or else the diffusion layer will crash, due to a use

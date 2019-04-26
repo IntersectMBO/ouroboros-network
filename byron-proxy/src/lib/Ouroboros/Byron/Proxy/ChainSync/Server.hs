@@ -16,17 +16,12 @@ import Data.Ord (Down (..))
 import qualified Pos.Binary.Class as CSL (decode)
 import qualified Pos.Chain.Block as CSL
 
+import Ouroboros.Byron.Proxy.ChainSync.Types (Block (..), Point (..))
 import Ouroboros.Byron.Proxy.DB (DB)
 import qualified Ouroboros.Byron.Proxy.DB as DB
+import Ouroboros.Network.Protocol.ChainSync.Server
 import Ouroboros.Storage.ImmutableDB.API (SlotNo (..))
 
-import Ouroboros.Network.Protocol.ChainSync.Server
-
-data Point = Point
-  { pointSlot :: !SlotNo
-  , pointHash :: !CSL.HeaderHash
-  }
-  deriving (Show, Eq)
 
 data ServerState where
   -- | Initial server state: we don't know the tip, either because we haven't
@@ -62,11 +57,11 @@ data ServerState where
 --
 type Poll m = forall s t . (s -> m (Maybe t)) -> m s -> m t
 
--- | Since we'll use unfortunately have to use `ResourceT`, we'll need to be
+-- | Since we'll unfortunately have to use `ResourceT`, we'll need to be
 -- able to take a `Poll (ResourceT IO s)`, but ideally the poll definition
 -- would not be allowed to use any of the `ResourceT` stuff, so we'll use an
 -- arbitrary `MonadTrans`.
-type PollT m = forall t . MonadTrans t => Poll (t m)
+type PollT m = forall f . (Monad (f m), MonadTrans f) => Poll (f m)
 
 -- | A ChainSync server of full cardano-sl `Block`s (that includes EBBs)
 -- backed by a `DB`. Will never give a rollback because the DB (for now) is
@@ -77,13 +72,13 @@ type PollT m = forall t . MonadTrans t => Poll (t m)
 -- same problem that conduit/pipes/streaming suffer from.
 --
 -- And then, since we use `ResourceT`, we're essentially forced to use `IO`,
--- by they type of `allocate`: `ResourceT` uses an `IORef`, so we're stuck.
+-- by the type of `allocate`: `ResourceT` uses an `IORef`, so we're stuck.
 -- It's tragic.
 chainSyncServer
   :: (forall x . CBOR.DeserialiseFailure -> IO x)
   -> PollT IO
   -> DB IO
-  -> ChainSyncServer CSL.Block Point (ResourceT IO) ()
+  -> ChainSyncServer Block Point (ResourceT IO) ()
 chainSyncServer err poll db = chainSyncServerAt err poll db NoTip
 
 chainSyncServerAt
@@ -91,7 +86,7 @@ chainSyncServerAt
   -> PollT IO
   -> DB IO
   -> ServerState
-  -> ChainSyncServer CSL.Block Point (ResourceT IO) ()
+  -> ChainSyncServer Block Point (ResourceT IO) ()
 chainSyncServerAt err poll db ss = ChainSyncServer $
   pure $ chainSyncServerIdle err poll db ss
 
@@ -152,7 +147,7 @@ chainSyncServerIdle
   -> PollT IO
   -> DB IO
   -> ServerState
-  -> ServerStIdle CSL.Block Point (ResourceT IO) ()
+  -> ServerStIdle Block Point (ResourceT IO) ()
 chainSyncServerIdle err poll db ss = case ss of
   -- If there's no tip, poll for a tip change only when a request comes in.
   NoTip -> ServerStIdle
@@ -272,7 +267,7 @@ chainSyncServerIdle err poll db ss = case ss of
                 dbTip <- lift $ DB.readTip db
                 tipPoint' <- lift $ pickBetterTip err tipPoint dbTip
                 let ss' = KnownTip tipPoint' (Just (Point slot hash)) (Just (iterator', releaseKey))
-                pure $ Left $ SendMsgRollForward ebb tipPoint (chainSyncServerAt err poll db ss')
+                pure $ Left $ SendMsgRollForward (Block ebb) tipPoint (chainSyncServerAt err poll db ss')
             DB.NextBlock slot bytes iterator' -> case DB.decodeFull cslBlockDecoder (Lazy.fromStrict bytes) of
               Left cborError -> lift $ err cborError
               Right blk -> do
@@ -280,7 +275,7 @@ chainSyncServerIdle err poll db ss = case ss of
                 tipPoint' <- lift $ pickBetterTip err tipPoint dbTip
                 let hash = CSL.headerHash blk
                     ss' = KnownTip tipPoint' (Just (Point slot hash)) (Just (iterator', releaseKey))
-                pure $ Left $ SendMsgRollForward blk tipPoint (chainSyncServerAt err poll db ss')
+                pure $ Left $ SendMsgRollForward (Block blk) tipPoint (chainSyncServerAt err poll db ss')
     }
 
 cslBlockDecoder :: CBOR.Decoder s CSL.Block

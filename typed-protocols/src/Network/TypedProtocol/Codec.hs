@@ -11,6 +11,7 @@
 module Network.TypedProtocol.Codec (
     -- * Defining and using Codecs
     Codec(..)
+  , hoistCodec
     -- ** Related types
   , PeerRole(..)
   , PeerHasAgency(..)
@@ -121,6 +122,15 @@ data Codec ps failure m bytes = Codec {
               -> m (DecodeStep bytes failure m (SomeMessage st))
      }
 
+hoistCodec
+  :: ( Functor n )
+  => (forall x . m x -> n x)
+  -> Codec ps failure m bytes
+  -> Codec ps failure n bytes
+hoistCodec nat codec = codec
+  { decode = fmap (hoistDecodeStep nat) . nat . decode codec
+  }
+
 -- The types here are pretty fancy. The decode is polymorphic in the protocol
 -- state, but only for kinds that are the same kind as the protocol state.
 -- The TheyHaveAgency is a type family that resolves to a singleton, and the
@@ -158,6 +168,15 @@ data DecodeStep bytes failure m a =
     -- @'fail'@ or was not provided enough input.
   | DecodeFail failure
 
+hoistDecodeStep
+  :: ( Functor n )
+  => (forall x . m x -> n x)
+  -> DecodeStep bytes failure m a
+  -> DecodeStep bytes failure n a
+hoistDecodeStep nat step = case step of
+  DecodeDone a mb -> DecodeDone a mb
+  DecodeFail fail_AvoidNameShadow -> DecodeFail fail_AvoidNameShadow
+  DecodePartial k -> DecodePartial (fmap (hoistDecodeStep nat) . nat . k)
 
 -- | When decoding a 'Message' we only know the expected \"from\" state. We
 -- cannot know the \"to\" state as this depends on the message we decode. To

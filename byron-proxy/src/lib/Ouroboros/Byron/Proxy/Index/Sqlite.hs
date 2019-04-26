@@ -4,7 +4,7 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE StandaloneDeriving #-}
 
-module Ouroboros.Byron.Proxy.Index where
+module Ouroboros.Byron.Proxy.Index.Sqlite where
 
 import Control.Exception (Exception, throwIO)
 import Crypto.Hash (digestFromByteString)
@@ -20,27 +20,7 @@ import Pos.Crypto.Hashing (AbstractHash (..))
 
 import Ouroboros.Storage.Common (EpochNo(..))
 
--- | A point to read from the index. Looking up the tip gives its own hash,
--- looking up anything by hash (could happen to be the tip) gives the hash
--- of its child (nothing iff it's the tip).
-data IndexPoint t where
-  Tip    :: IndexPoint HeaderHash
-  ByHash :: HeaderHash -> IndexPoint ()
-
-data Index m = Index
-  { indexRead  :: forall d . IndexPoint d -> m (Maybe (d, EpochNo, IndexSlot))
-  , indexWrite :: forall t . (IndexWrite m -> m t) -> m t
-  }
-
-data IndexSlot where
-  RealSlot :: Word64 -> IndexSlot
-  EBBSlot  :: IndexSlot
-
-data IndexWrite m = IndexWrite
-  { updateTip :: HeaderHash -> EpochNo -> IndexSlot -> m ()
-  }
-
--- TODO Move SQlite implemention into a separate module.
+import Ouroboros.Byron.Proxy.Index.Types
 
 -- | Make an index from an SQLite connection (sqlite-simple).
 -- Every `indexWrite` continuation runs in an SQLite transaction
@@ -71,6 +51,7 @@ withDB o fp k = Sql.withConnection fp $ \conn -> do
       createTable conn
       createIndex conn
     Existing -> pure ()
+  Sql.execute_ conn "PRAGMA main.synchronous = 0;"
   k (sqliteIndex conn)
 
 -- | Like withDB but uses file existence check to determine whether it's new
@@ -174,8 +155,14 @@ getHash conn hh@(AbstractHash digest) = do
         else throwIO $ InvalidRelativeSlot hh slotInt
       pure $ Just ((), EpochNo epoch, slot)
 
+-- The ON CONFLICT DO NOTHING is essential. The DB into which this index points
+-- may fall behind the index, for instance because of an unclean shutdown in
+-- which some of the block data was not sync'd to disk. In that case, the index
+-- is still "correct" under our assumption of immutability (no forks).
 sql_insert :: Query
-sql_insert = "INSERT INTO block_index VALUES (?, ?, ?);"
+sql_insert =
+  "INSERT INTO block_index VALUES (?, ?, ?)\
+  \  ON CONFLICT DO NOTHING;"
 
 setTip :: Sql.Connection -> HeaderHash -> EpochNo -> IndexSlot -> IO ()
 setTip conn (AbstractHash digest) (EpochNo epoch) slot = do
