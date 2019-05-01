@@ -36,7 +36,8 @@ import           Ouroboros.Network.BlockFetch.ClientState
                    , completeBlockDownload
                    , completeFetchBatch )
 import           Ouroboros.Network.BlockFetch.DeltaQ
-                   ( SizeInBytes, PeerFetchInFlightLimits(..) )
+                   ( PeerGSV(..), SizeInBytes
+                   , PeerFetchInFlightLimits(..) )
 
 
 -- TODO #468 extract this from BlockFetchConsensusInterface
@@ -119,15 +120,16 @@ blockFetchClient tracer
       -- in-flight, and the tracking state that the fetch logic uses now
       -- reflects that.
       --
-      (request, _gsvs, inflightlimits) <- acknowledgeFetchRequest stateVars
+      (request, gsvs, inflightlimits) <- acknowledgeFetchRequest stateVars
 
       traceWith tracer (AcknowledgedFetchRequest request)
 
-      return $ senderActive outstanding inflightlimits
+      return $ senderActive outstanding gsvs inflightlimits
                             (fetchRequestFragments request)
 
     senderActive :: forall n.
                     Nat n
+                 -> PeerGSV
                  -> PeerFetchInFlightLimits
                  -> [ChainFragment header]
                  -> PeerSender (BlockFetch header block) AsClient
@@ -135,17 +137,16 @@ blockFetchClient tracer
 
     -- We now do have some requests that we have accepted but have yet to
     -- actually send out. Lets send out the first one.
-    senderActive outstanding inflightlimits (fragment:fragments) =
+    senderActive outstanding gsvs inflightlimits (fragment:fragments) =
       SenderEffect $ do
 {-
         now <- getMonotonicTime
-        (outboundGSV, inboundGSV) <- atomically readPeerGSVs
         --TODO: should we pair this up with the senderAwait earlier?
         inFlight  <- readTVar fetchClientInFlightVar
 
         let blockTrailingEdges =
               blockArrivalShedule
-                outboundGSV inboundGSV
+                gsvs
                 inFlight
                 (map snd fragment)
 
@@ -167,10 +168,10 @@ blockFetchClient tracer
             (ClientAgency TokIdle)
             (MsgRequestRange range)
             (receiverBusy (ChainFragment.toOldestFirst fragment) inflightlimits)
-            (senderActive (Succ outstanding) inflightlimits fragments)
+            (senderActive (Succ outstanding) gsvs inflightlimits fragments)
 
     -- And when we run out, go back to idle.
-    senderActive outstanding _ [] = senderIdle outstanding
+    senderActive outstanding _ _ [] = senderIdle outstanding
 
 
     receiverBusy :: [header]
