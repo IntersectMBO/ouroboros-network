@@ -32,7 +32,7 @@ import           Ouroboros.Network.BlockFetch.ClientState
                    , PeerFetchInFlight(..)
                    , PeerFetchStatus(..)
                    , FetchClientStateVars
-                   , setFetchRequest
+                   , addNewFetchRequest
                    , readFetchClientState
                    )
 import           Ouroboros.Network.BlockFetch.Decision
@@ -130,7 +130,7 @@ fetchLogicIteration decisionTracer
     traceWith decisionTracer (map (fmap fetchRequestPoints . fst) decisions)
 
     -- Tell the fetch clients to act on our decisions
-    fetchLogicIterationAct (map swizzleReqVar decisions)
+    fetchLogicIterationAct fetchDecisionPolicy (map swizzleReqVar decisions)
 
     return stateFingerprint'
   where
@@ -193,14 +193,15 @@ fetchDecisionsForStateSnapshot
 -- request variables that are shared with the threads running the block fetch
 -- protocol with each peer.
 --
-fetchLogicIterationAct :: MonadSTM m
-                       => [(FetchDecision (FetchRequest header),
+fetchLogicIterationAct :: (MonadSTM m, HasHeader header)
+                       => FetchDecisionPolicy header
+                       -> [(FetchDecision (FetchRequest header),
                             PeerGSV,
                             FetchClientStateVars m header)]
                        -> m ()
-fetchLogicIterationAct decisions =
+fetchLogicIterationAct FetchDecisionPolicy{blockFetchSize} decisions =
     sequence_
-      [ setFetchRequest stateVars request gsvs
+      [ addNewFetchRequest blockFetchSize stateVars request gsvs
       | (Right request, gsvs, stateVars) <- decisions ]
 
 

@@ -32,7 +32,7 @@ import           Ouroboros.Network.BlockFetch.ClientState
                    ( FetchClientStateVars, PeerFetchStatus(..)
                    , PeerFetchInFlight(..)
                    , FetchRequest(..)
-                   , acceptFetchRequest
+                   , acknowledgeFetchRequest
                    , completeBlockDownload
                    , completeFetchBatch )
 import           Ouroboros.Network.BlockFetch.DeltaQ
@@ -58,11 +58,8 @@ data BlockFetchProtocolFailure =
 instance Exception BlockFetchProtocolFailure
 
 data TraceFetchClientEvent header =
-       AcceptedFetchRequest
+       AcknowledgedFetchRequest
          (FetchRequest header)
-         (PeerFetchInFlight header)
-          PeerFetchInFlightLimits
-         (PeerFetchStatus header)
      | CompletedBlockFetch
          (Point header)
          (PeerFetchInFlight header)
@@ -122,13 +119,9 @@ blockFetchClient tracer
       -- in-flight, and the tracking state that the fetch logic uses now
       -- reflects that.
       --
-      (request, _gsvs, inflight, inflightlimits, currentStatus) <-
-        acceptFetchRequest blockFetchSize stateVars
+      (request, _gsvs, inflightlimits) <- acknowledgeFetchRequest stateVars
 
-      traceWith tracer $ AcceptedFetchRequest
-                           request
-                           inflight inflightlimits
-                           currentStatus
+      traceWith tracer (AcknowledgedFetchRequest request)
 
       return $ senderActive outstanding inflightlimits
                             (fetchRequestFragments request)
