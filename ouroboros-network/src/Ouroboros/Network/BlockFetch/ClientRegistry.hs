@@ -17,6 +17,7 @@ import           Data.Map (Map)
 
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
+import           Control.Exception (assert)
 
 import           Ouroboros.Network.BlockFetch.ClientState
 
@@ -47,13 +48,17 @@ bracketFetchClient (FetchClientRegistry registry) peer =
   where
     register = atomically $ do
       stateVars <- newFetchClientStateVars
-      modifyTVar' registry (Map.insert peer stateVars)
+      modifyTVar' registry $ \m ->
+        assert (peer `Map.notMember` m) $
+        Map.insert peer stateVars m
       return stateVars
 
     unregister FetchClientStateVars{fetchClientStatusVar} =
       atomically $ do
         writeTVar fetchClientStatusVar PeerFetchStatusShutdown
-        modifyTVar' registry (Map.delete peer)
+        modifyTVar' registry $ \m ->
+          assert (peer `Map.member` m) $
+          Map.delete peer m
 
 -- | A read-only 'STM' action to get the current 'PeerFetchStatus' for all
 -- fetch clients in the 'FetchClientRegistry'.
