@@ -25,6 +25,8 @@ import           Control.Monad (when)
 import           Control.Monad.Class.MonadSTM
 
 import           Ouroboros.Network.Block (Point, blockPoint, HasHeader)
+import qualified Ouroboros.Network.ChainFragment as CF
+import           Ouroboros.Network.ChainFragment (ChainFragment)
 import           Ouroboros.Network.BlockFetch.DeltaQ
                    ( PeerFetchInFlightLimits(..)
                    , calculatePeerFetchInFlightLimits
@@ -170,10 +172,10 @@ initialPeerFetchInFlight =
 
 addHeadersInFlight :: HasHeader header
                    => (header -> SizeInBytes)
-                   -> [[header]]
+                   -> FetchRequest header
                    -> PeerFetchInFlight header
                    -> PeerFetchInFlight header
-addHeadersInFlight blockFetchSize fragments inflight =
+addHeadersInFlight blockFetchSize (FetchRequest fragments) inflight =
     PeerFetchInFlight {
       peerFetchReqsInFlight   = peerFetchReqsInFlight inflight
                               + fromIntegral (length fragments),
@@ -181,12 +183,13 @@ addHeadersInFlight blockFetchSize fragments inflight =
       peerFetchBytesInFlight  = peerFetchBytesInFlight inflight
                               + sum [ blockFetchSize header
                                     | fragment <- fragments
-                                    , header   <- fragment ],
+                                    , header   <- CF.toOldestFirst fragment ],
 
       peerFetchBlocksInFlight = peerFetchBlocksInFlight inflight
-                    `Set.union` Set.fromList [ blockPoint header
-                                             | fragment <- fragments
-                                             , header   <- fragment ]
+                    `Set.union` Set.fromList
+                                  [ blockPoint header
+                                  | fragment <- fragments
+                                  , header   <- CF.toOldestFirst fragment ]
     }
 
 deleteHeaderInFlight :: HasHeader header
@@ -206,11 +209,9 @@ deleteHeaderInFlight blockFetchSize header inflight =
     }
 
 
-newtype FetchRequest header = FetchRequest [[header]]
+newtype FetchRequest header =
+        FetchRequest { fetchRequestFragments :: [ChainFragment header] }
   deriving Show
-
-instance Functor FetchRequest where
-  fmap f (FetchRequest hdrss) = FetchRequest (map (map f) hdrss)
 
 
 setFetchRequest :: MonadSTM m
@@ -224,7 +225,7 @@ setFetchRequest FetchClientStateVars{fetchClientRequestVar} request gsvs =
 acceptFetchRequest :: (MonadSTM m, HasHeader header)
                    => (header -> SizeInBytes)
                    -> FetchClientStateVars m header
-                   -> m ( [[header]]
+                   -> m ( FetchRequest header
                         , PeerGSV
                         , PeerFetchInFlight header
                         , PeerFetchInFlightLimits
@@ -232,14 +233,13 @@ acceptFetchRequest :: (MonadSTM m, HasHeader header)
 
 acceptFetchRequest blockFetchSize FetchClientStateVars {..} =
     atomically $ do
-      (FetchRequest fragments, gsvs) <-
-        takeTFetchRequestVar fetchClientRequestVar
+      (request, gsvs) <- takeTFetchRequestVar fetchClientRequestVar
       let inflightlimits = calculatePeerFetchInFlightLimits gsvs
       --TODO: if recalculating the limits here is expensive we can pass them
       -- along with the fetch request and the gsvs
 
       inflight <- readTVar fetchClientInFlightVar
-      let !inflight' = addHeadersInFlight blockFetchSize fragments inflight
+      let !inflight' = addHeadersInFlight blockFetchSize request inflight
       writeTVar fetchClientInFlightVar inflight'
 
       -- Set our status to busy if we've got over the high watermark.
@@ -256,7 +256,7 @@ acceptFetchRequest blockFetchSize FetchClientStateVars {..} =
 
       --TODO: think about status aberrant
 
-      return (fragments, gsvs, inflight', inflightlimits, currentStatus')
+      return (request, gsvs, inflight', inflightlimits, currentStatus')
 
 completeBlockDownload :: (MonadSTM m, HasHeader header)
                       => (header -> SizeInBytes)

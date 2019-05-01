@@ -701,10 +701,9 @@ selectBlocksUpToLimits blockFetchSize nreqs0 maxreqs nbytes0 maxbytes fragments 
     -- The case that we are already over our limits has to be checked earlier,
     -- outside of this function. From here on however we check for limits.
 
-    FetchRequest
-      [ assert (not (ChainFragment.null fragment)) $
-        ChainFragment.toOldestFirst fragment
-      | fragment <- goFrags nreqs0 nbytes0 fragments ]
+    let fragments' = goFrags nreqs0 nbytes0 fragments in
+    assert (all (not . ChainFragment.null) fragments') $
+    FetchRequest fragments'
   where
     goFrags _     _      []     = []
     goFrags nreqs nbytes (c:cs)
