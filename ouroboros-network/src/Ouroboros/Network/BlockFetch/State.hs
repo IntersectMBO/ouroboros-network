@@ -25,6 +25,7 @@ import           Control.Tracer (Tracer, traceWith)
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment(..))
 import qualified Ouroboros.Network.AnchoredFragment as AnchoredFragment
+import qualified Ouroboros.Network.ChainFragment    as ChainFragment
 
 import           Ouroboros.Network.BlockFetch.ClientState
                    ( FetchRequest(..)
@@ -140,7 +141,7 @@ fetchLogicIteration decisionTracer
       -- Flatten multiple fragments and trace points, not full headers
       [ blockPoint header
       | headers <- headerss
-      , header  <- headers ]
+      , header  <- ChainFragment.toOldestFirst headers ]
 
 -- | Do a bit of rearranging of data before calling 'fetchDecisions' to do the
 -- real work.

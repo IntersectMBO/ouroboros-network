@@ -26,6 +26,8 @@ import           Ouroboros.Network.Protocol.BlockFetch.Type
 import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Pipelined
 
+import qualified Ouroboros.Network.ChainFragment as ChainFragment
+import           Ouroboros.Network.ChainFragment (ChainFragment)
 import           Ouroboros.Network.BlockFetch.ClientState
                    ( FetchClientStateVars, PeerFetchStatus(..)
                    , PeerFetchInFlight(..)
@@ -57,7 +59,7 @@ instance Exception BlockFetchProtocolFailure
 
 data TraceFetchClientEvent header =
        AcceptedFetchRequest
-         (FetchRequest (Point header))
+         (FetchRequest header)
          (PeerFetchInFlight header)
           PeerFetchInFlightLimits
          (PeerFetchStatus header)
@@ -120,20 +122,21 @@ blockFetchClient tracer
       -- in-flight, and the tracking state that the fetch logic uses now
       -- reflects that.
       --
-      (fragments, _gsvs, inflight, inflightlimits, currentStatus) <-
+      (request, _gsvs, inflight, inflightlimits, currentStatus) <-
         acceptFetchRequest blockFetchSize stateVars
 
       traceWith tracer $ AcceptedFetchRequest
-                           (fmap blockPoint (FetchRequest fragments))
+                           request
                            inflight inflightlimits
                            currentStatus
 
-      return (senderActive outstanding inflightlimits fragments)
+      return $ senderActive outstanding inflightlimits
+                            (fetchRequestFragments request)
 
     senderActive :: forall n.
                     Nat n
                  -> PeerFetchInFlightLimits
-                 -> [[header]]
+                 -> [ChainFragment header]
                  -> PeerSender (BlockFetch header block) AsClient
                                BFIdle n () m ()
 
@@ -159,14 +162,18 @@ blockFetchClient tracer
           when fired $
             atomically (writeTVar _ PeerFetchStatusAberrant)
 -}
-        let range = assert (not (null fragment)) $
-                    ChainRange (blockPoint (head fragment))
-                               (blockPoint (last fragment))
+        let range = assert (not (ChainFragment.null fragment)) $
+                    ChainRange (blockPoint lower)
+                               (blockPoint upper)
+              where
+                Just lower = ChainFragment.last fragment
+                Just upper = ChainFragment.head fragment
+
         return $
           SenderPipeline
             (ClientAgency TokIdle)
             (MsgRequestRange range)
-            (receiverBusy fragment inflightlimits)
+            (receiverBusy (ChainFragment.toOldestFirst fragment) inflightlimits)
             (senderActive (Succ outstanding) inflightlimits fragments)
 
     -- And when we run out, go back to idle.

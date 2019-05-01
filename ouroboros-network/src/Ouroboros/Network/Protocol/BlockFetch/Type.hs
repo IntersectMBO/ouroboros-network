@@ -15,7 +15,7 @@ import           Ouroboros.Network.Block (StandardHash, Point)
 import           Network.TypedProtocol.Codec (AnyMessage (..))
 import           Network.TypedProtocol.Core (Protocol (..))
 
--- | Range of headers
+-- | Range of headers, defined by a lower and upper point, inclusive.
 --
 data ChainRange header = ChainRange !(Point header) !(Point header)
   deriving (Show, Eq, Ord)
