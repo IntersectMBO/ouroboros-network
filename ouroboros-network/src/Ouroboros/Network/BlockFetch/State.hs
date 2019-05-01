@@ -1,4 +1,5 @@
 {-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE BangPatterns               #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE FlexibleContexts           #-}
@@ -132,7 +133,7 @@ fetchLogicIteration decisionTracer
     -- Tell the fetch clients to act on our decisions
     statusUpdates <- fetchLogicIterationAct fetchDecisionPolicy
                                             (map swizzleReqVar decisions)
-    let stateFingerprint'' =
+    let !stateFingerprint'' =
           updateFetchStateFingerprintPeerStatus statusUpdates stateFingerprint'
 
     return stateFingerprint''
@@ -239,9 +240,9 @@ data FetchNonTriggerVariables peer header block m = FetchNonTriggerVariables {
 
 data FetchStateFingerprint peer header block =
      FetchStateFingerprint
-       (Maybe (Point block))
-       (Map peer (Point header))
-       (Map peer (PeerFetchStatus header))
+       !(Maybe (Point block))
+       !(Map peer (Point header))
+       !(Map peer (PeerFetchStatus header))
   deriving Eq
 
 initialFetchStateFingerprint :: FetchStateFingerprint peer header block
@@ -296,7 +297,7 @@ readStateVariables FetchTriggerVariables{..}
     fetchStatePeerStatus    <- readStatePeerStatus
 
     -- Construct the change detection fingerprint
-    let fetchStateFingerprint' =
+    let !fetchStateFingerprint' =
           FetchStateFingerprint
             (Just (castPoint (AnchoredFragment.headPoint fetchStateCurrentChain)))
             (Map.map AnchoredFragment.headPoint fetchStatePeerChains)
