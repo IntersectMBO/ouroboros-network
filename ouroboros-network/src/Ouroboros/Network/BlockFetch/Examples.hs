@@ -24,6 +24,7 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadTime
 import           Control.Tracer (Tracer, nullTracer)
+import           Control.Exception (assert)
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.ChainFragment (ChainFragment(..))
@@ -285,7 +286,9 @@ mockBlockFetchServer1 chain =
 
     receiveReq :: ChainRange header
                -> m (BlockFetchBlockSender header block m ())
-    receiveReq (ChainRange lpoint upoint) = do
+    receiveReq (ChainRange lpoint upoint) =
+      -- We can only assert this for tests, not for the real thing.
+      assert (pointSlot lpoint <= pointSlot upoint) $
       case ChainFragment.sliceRange chain
              (castPoint lpoint) (castPoint upoint) of
         Nothing     -> return $ SendMsgNoBlocks (return senderSide)
