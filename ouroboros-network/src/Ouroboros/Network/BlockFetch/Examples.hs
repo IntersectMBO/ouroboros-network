@@ -9,6 +9,7 @@ module Ouroboros.Network.BlockFetch.Examples (
     blockFetchExample1,
     mockBlockFetchServer1,
     exampleFixedPeerGSVs,
+    TraceLabelPeer(..),
   ) where
 
 import qualified Data.Map.Strict as Map
@@ -23,7 +24,7 @@ import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadTime
-import           Control.Tracer (Tracer, nullTracer)
+import           Control.Tracer (Tracer, contramap, nullTracer)
 import           Control.Exception (assert)
 
 import           Ouroboros.Network.Block
@@ -66,8 +67,10 @@ import           Ouroboros.Network.Testing.ConcreteBlock
 blockFetchExample1 :: forall m. (MonadSTM m, MonadST m, MonadAsync m,
                                  MonadCatch m, MonadTime m)
                    => Tracer m [FetchDecision [Point BlockHeader]]
-                   -> Tracer m (TraceFetchClientEvent BlockHeader)
-                   -> Tracer m (TraceSendRecv (BlockFetch BlockHeader Block))
+                   -> Tracer m (TraceLabelPeer Int
+                                 (TraceFetchClientEvent BlockHeader))
+                   -> Tracer m (TraceLabelPeer Int
+                                 (TraceSendRecv (BlockFetch BlockHeader Block)))
                    -> AnchoredFragment Block   -- ^ Fixed current chain
                    -> [AnchoredFragment Block] -- ^ Fixed candidate chains
                    -> m ()
@@ -79,12 +82,17 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
 
     peerAsyncs  <- sequence
                     [ runFetchClientAndServerAsync
-                        clientMsgTracer
+                        clientMsgTracer'
                         serverMsgTracer
                         registry peerno
-                        (mockedBlockFetchClient1 clientStateTracer blockHeap)
+                        (mockedBlockFetchClient1 clientStateTracer' blockHeap)
                         (mockBlockFetchServer1 (unanchorFragment candidateChain))
-                    | (peerno, candidateChain) <- zip [1..] candidateChains ]
+                    | (peerno, candidateChain) <- zip [1..] candidateChains
+                    , let clientMsgTracer'   = contramap (TraceLabelPeer peerno)
+                                                         clientMsgTracer
+                          clientStateTracer' = contramap (TraceLabelPeer peerno)
+                                                         clientStateTracer
+                    ]
     fetchAsync  <- async $ blockFetch registry blockHeap
     driverAsync <- async $ driver blockHeap
 
@@ -164,6 +172,9 @@ sampleBlockFetchPolicy1 blockHeap currentChain candidateChains =
 --
 -- Utils to run fetch clients and servers
 --
+
+data TraceLabelPeer peerid a = TraceLabelPeer peerid a
+  deriving Show
 
 runFetchClient :: (MonadCatch m, MonadAsync m, MonadST m, Ord peerid,
                    Serialise header,
