@@ -130,11 +130,14 @@ fetchLogicIteration decisionTracer
     traceWith decisionTracer (map (fmap fetchRequestPoints . fst) decisions)
 
     -- Tell the fetch clients to act on our decisions
-    fetchLogicIterationAct fetchDecisionPolicy (map swizzleReqVar decisions)
+    statusUpdates <- fetchLogicIterationAct fetchDecisionPolicy
+                                            (map swizzleReqVar decisions)
+    let stateFingerprint'' =
+          updateFetchStateFingerprintPeerStatus statusUpdates stateFingerprint'
 
-    return stateFingerprint'
+    return stateFingerprint''
   where
-    swizzleReqVar (d,(_,_,g,rq)) = (d,g,rq)
+    swizzleReqVar (d,(_,_,g,(rq,p))) = (d,g,rq,p)
 
     fetchRequestPoints :: HasHeader hdr => FetchRequest hdr -> [Point hdr]
     fetchRequestPoints (FetchRequest headerss) =
@@ -153,7 +156,7 @@ fetchDecisionsForStateSnapshot
   => FetchDecisionPolicy header
   -> FetchStateSnapshot peer header block m
   -> [( FetchDecision (FetchRequest header),
-        PeerInfo header (FetchClientStateVars m header)
+        PeerInfo header (FetchClientStateVars m header, peer)
       )]
 
 fetchDecisionsForStateSnapshot
@@ -180,13 +183,13 @@ fetchDecisionsForStateSnapshot
       peerChainsAndPeerInfo
   where
     peerChainsAndPeerInfo =
-      Map.elems $
-      Map.intersectionWith swizzle
+      map swizzle . Map.toList $
+      Map.intersectionWith (,)
         (Map.intersectionWith (,) fetchStatePeerChains fetchStatePeerStates)
         fetchStatePeerGSVs
 
-    swizzle (chain, (status, inflight, vars)) gsvs =
-      (chain, (status, inflight, gsvs, vars))
+    swizzle (peer, ((chain, (status, inflight, vars)), gsvs)) =
+      (chain, (status, inflight, gsvs, (vars, peer)))
 
 
 -- | Act on decisions to send new requests. In fact all we do here is update
@@ -197,12 +200,13 @@ fetchLogicIterationAct :: (MonadSTM m, HasHeader header)
                        => FetchDecisionPolicy header
                        -> [(FetchDecision (FetchRequest header),
                             PeerGSV,
-                            FetchClientStateVars m header)]
-                       -> m ()
+                            FetchClientStateVars m header,
+                            peer)]
+                       -> m [(peer, PeerFetchStatus header)]
 fetchLogicIterationAct FetchDecisionPolicy{blockFetchSize} decisions =
-    sequence_
-      [ addNewFetchRequest blockFetchSize stateVars request gsvs
-      | (Right request, gsvs, stateVars) <- decisions ]
+    sequence
+      [ (,) peer <$> addNewFetchRequest blockFetchSize stateVars request gsvs
+      | (Right request, gsvs, stateVars, peer) <- decisions ]
 
 
 -- | STM actions to read various state variables that the fetch logic depends
@@ -246,6 +250,17 @@ initialFetchStateFingerprint =
       Nothing
       Map.empty
       Map.empty
+
+updateFetchStateFingerprintPeerStatus :: Ord peer
+                                      => [(peer, PeerFetchStatus header)]
+                                      -> FetchStateFingerprint peer header block
+                                      -> FetchStateFingerprint peer header block
+updateFetchStateFingerprintPeerStatus statuses'
+    (FetchStateFingerprint current candidates statuses) =
+    FetchStateFingerprint
+      current
+      candidates
+      (Map.union (Map.fromList statuses') statuses) -- left overrides right
 
 -- |
 --
