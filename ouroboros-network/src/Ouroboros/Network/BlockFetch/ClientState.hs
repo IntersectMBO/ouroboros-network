@@ -11,8 +11,8 @@ module Ouroboros.Network.BlockFetch.ClientState (
     PeerFetchInFlight(..),
     initialPeerFetchInFlight,
     FetchRequest(..),
-    setFetchRequest,
-    acceptFetchRequest,
+    addNewFetchRequest,
+    acknowledgeFetchRequest,
     completeBlockDownload,
     completeFetchBatch,
   ) where
@@ -213,36 +213,42 @@ newtype FetchRequest header =
         FetchRequest { fetchRequestFragments :: [ChainFragment header] }
   deriving Show
 
+instance HasHeader header => Semigroup (FetchRequest header) where
+  FetchRequest afs@(_:_) <> FetchRequest bfs@(_:_)
+    | Just f <- CF.joinChainFragments (last afs) (head bfs)
+    = FetchRequest (init afs ++ f : tail bfs)
 
-setFetchRequest :: MonadSTM m
-                => FetchClientStateVars m header
-                -> FetchRequest header
-                -> PeerGSV
-                -> m ()
-setFetchRequest FetchClientStateVars{fetchClientRequestVar} request gsvs =
-    atomically (writeTFetchRequestVar fetchClientRequestVar request gsvs)
+  FetchRequest afs <> FetchRequest bfs
+    = FetchRequest (afs ++ bfs)
 
-acceptFetchRequest :: (MonadSTM m, HasHeader header)
+-- | Add a new fetch request for a single peer. This is used by the fetch
+-- decision logic thread to add new fetch requests.
+--
+-- We have as a pre-condition that all requested blocks are new, i.e. none
+-- should appear in the existing 'peerFetchBlocksInFlight'. This is a
+-- relatively easy precondition to satisfy since the decision logic can filter
+-- its requests based on this in-flight blocks state, and this operation is the
+-- only operation that grows the in-flight blocks, and is only used by the
+-- fetch decision logic thread.
+--
+addNewFetchRequest :: (MonadSTM m, HasHeader header)
                    => (header -> SizeInBytes)
                    -> FetchClientStateVars m header
-                   -> m ( FetchRequest header
-                        , PeerGSV
-                        , PeerFetchInFlight header
-                        , PeerFetchInFlightLimits
-                        , PeerFetchStatus header )
-
-acceptFetchRequest blockFetchSize FetchClientStateVars {..} =
+                   -> FetchRequest header
+                   -> PeerGSV
+                   -> m (PeerFetchStatus header)
+addNewFetchRequest blockFetchSize FetchClientStateVars{..} request gsvs =
     atomically $ do
-      (request, gsvs) <- takeTFetchRequestVar fetchClientRequestVar
       let inflightlimits = calculatePeerFetchInFlightLimits gsvs
       --TODO: if recalculating the limits here is expensive we can pass them
       -- along with the fetch request and the gsvs
 
+      -- Update our in-flight stats
       inflight <- readTVar fetchClientInFlightVar
       let !inflight' = addHeadersInFlight blockFetchSize request inflight
       writeTVar fetchClientInFlightVar inflight'
 
-      -- Set our status to busy if we've got over the high watermark.
+      -- Set the peer status to busy if it went over the high watermark.
       let currentStatus'
            | peerFetchBytesInFlight inflight'
              >= inFlightBytesHighWatermark inflightlimits
@@ -256,7 +262,21 @@ acceptFetchRequest blockFetchSize FetchClientStateVars {..} =
 
       --TODO: think about status aberrant
 
-      return (request, gsvs, inflight', inflightlimits, currentStatus')
+      -- Add a new fetch request, or extend the current unacknowledged one.
+      writeTFetchRequestVar fetchClientRequestVar request gsvs inflightlimits
+
+      return currentStatus'
+
+
+-- | This is used by the fetch client threads.
+--
+acknowledgeFetchRequest :: (MonadSTM m, HasHeader header)
+                        => FetchClientStateVars m header
+                        -> m ( FetchRequest header
+                             , PeerGSV
+                             , PeerFetchInFlightLimits )
+acknowledgeFetchRequest FetchClientStateVars {..} =
+    atomically $ takeTFetchRequestVar fetchClientRequestVar
 
 completeBlockDownload :: (MonadSTM m, HasHeader header)
                       => (header -> SizeInBytes)
@@ -314,22 +334,28 @@ completeFetchBatch FetchClientStateVars {fetchClientInFlightVar} =
 -- request based on the more recent state.
 --
 type TFetchRequestVar m header =
-       TMergeVar m (Last (FetchRequest header, PeerGSV))
+       TMergeVar m (FetchRequest header,
+                    Last PeerGSV,
+                    Last PeerFetchInFlightLimits)
 
 newTFetchRequestVar :: MonadSTM m => STM m (TFetchRequestVar m header)
 newTFetchRequestVar = newTMergeVar
 
-writeTFetchRequestVar :: MonadSTM m
+writeTFetchRequestVar :: (MonadSTM m, HasHeader header)
                       => TFetchRequestVar m header
                       -> FetchRequest header
                       -> PeerGSV
+                      -> PeerFetchInFlightLimits
                       -> STM m ()
-writeTFetchRequestVar v r g = writeTMergeVar v (Last (r, g))
+writeTFetchRequestVar v r g l = writeTMergeVar v (r, Last g, Last l)
 
 takeTFetchRequestVar :: MonadSTM m
                      => TFetchRequestVar m header
-                     -> STM m (FetchRequest header, PeerGSV)
-takeTFetchRequestVar v = getLast <$> takeTMergeVar v
+                     -> STM m (FetchRequest header,
+                               PeerGSV,
+                               PeerFetchInFlightLimits)
+takeTFetchRequestVar v = (\(r,g,l) -> (r, getLast g, getLast l))
+                     <$> takeTMergeVar v
 
 
 --
