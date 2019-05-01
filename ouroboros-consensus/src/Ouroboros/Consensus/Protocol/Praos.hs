@@ -40,7 +40,6 @@ import           GHC.Generics (Generic)
 import           Numeric.Natural
 
 import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..))
-import qualified Ouroboros.Network.Chain as Chain
 
 import           Ouroboros.Consensus.Crypto.DSIGN.Ed448 (Ed448DSIGN)
 import           Ouroboros.Consensus.Crypto.Hash.Class (HashAlgorithm (..),
@@ -56,9 +55,8 @@ import           Ouroboros.Consensus.Crypto.VRF.Simple (SimpleVRF)
 import           Ouroboros.Consensus.Node (CoreNodeId (..), NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Test
-import           Ouroboros.Consensus.Util.Chain (forksAtMostKBlocks)
+import qualified Ouroboros.Consensus.Util.AnchoredFragment as AF
 import           Ouroboros.Consensus.Util.Condense
-import           Ouroboros.Consensus.Util.HList (HList)
 import           Ouroboros.Consensus.Util.HList (HList (..))
 
 {-------------------------------------------------------------------------------
@@ -253,8 +251,8 @@ instance (Serialise (PraosExtraFields c), PraosCrypto c) => OuroborosTag (Praos 
   -- NOTE: We redefine `preferCandidate` but NOT `compareCandidates`
   -- NOTE: See note regarding clock skew.
   preferCandidate PraosNodeConfig{..} ours cand =
-      forksAtMostKBlocks k ours cand &&
-      Chain.length cand > Chain.length ours
+      AF.forksAtMostKBlocks k ours cand &&
+      AF.compareHeadBlockNo cand ours == GT
     where
       PraosParams{..} = praosParams
 

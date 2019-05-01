@@ -71,6 +71,7 @@ module Ouroboros.Network.ChainFragment (
   -- * Conversion to/from Chain
   toChain,
   fromChain,
+  unvalidatedFromChain,
 
   -- * Helper functions
   prettyPrintChainFragment,
@@ -718,6 +719,12 @@ toChain = Chain.fromNewestFirst . toNewestFirst
 fromChain :: HasHeader block => Chain block -> ChainFragment block
 fromChain = fromNewestFirst . Chain.toNewestFirst
 
+-- | Variant of 'fromChain' that assumes a valid chain and will not validate
+-- the construct 'ChainFragment'.
+unvalidatedFromChain :: HasHeader block => Chain block -> ChainFragment block
+unvalidatedFromChain = unvalidatedFromNewestFirst . Chain.toNewestFirst
+  where
+    unvalidatedFromNewestFirst = ChainFragment . foldr (flip (FT.|>)) FT.empty
 
 --
 -- Serialisation

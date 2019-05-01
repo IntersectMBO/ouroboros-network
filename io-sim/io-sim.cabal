@@ -11,6 +11,11 @@ category:            Testing
 build-type:          Simple
 cabal-version:       >=1.10
 
+flag asserts
+  description: Enable assertionss
+  manual:      False
+  default:     False
+
 source-repository head
   type:     git
   location: https://github.com/input-output-hk/ouroboros-network
@@ -38,7 +43,8 @@ library
                        psqueues          >=0.2 && <0.3
 
   ghc-options:         -Wall
-                       -fno-ignore-asserts
+  if flag(asserts)
+     ghc-options:      -fno-ignore-asserts
 
 test-suite tests
   type:                exitcode-stdio-1.0

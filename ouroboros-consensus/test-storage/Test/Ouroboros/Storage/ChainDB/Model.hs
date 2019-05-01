@@ -16,6 +16,7 @@ import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
 import           Ouroboros.Consensus.Protocol.Abstract
+import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (HasHeader (..))
 import qualified Ouroboros.Storage.ChainDB.Model as M
 import           Test.Ouroboros.Storage.ChainDB.TestBlock
@@ -45,7 +46,7 @@ prop_getChain_addChain bc =
 prop_alwaysPickPreferredChain :: BlockTree -> Permutation -> Property
 prop_alwaysPickPreferredChain bt p =
     conjoin [
-        not $ preferCandidate testConfig current candidate
+        not $ preferCandidate testConfig (AF.fromChain current) (AF.fromChain candidate)
       | candidate <- treeToChains bt
       ]
   where

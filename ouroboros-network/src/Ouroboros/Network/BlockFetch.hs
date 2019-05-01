@@ -113,16 +113,10 @@ data BlockFetchConsensusInterface peer header block m =
 
        -- | Read the K-suffixes of the candidate chains.
        --
-       -- They must be already validated and contain the last @K@ headers
-       -- (unless we're near the chain genesis of course).
-       --
-       -- Each candidate chain will be anchored within the bounds
-       -- ('AnchoredFragment.withinFragmentBounds') of the current chain
-       -- ('readCurrentChain'), which means that there will be an intersection
-       -- between the candidate chain and the current chain. In other words,
-       -- each candidate forks off within the last @K@ blocks of the current
-       -- chain (or less when we're near genesis).
-       --
+       -- Assumptions:
+       -- * They must be already validated.
+       -- * They may contain /fewer/ than @K@ blocks.
+       -- * Their anchor does not have to intersect with the current chain.
        readCandidateChains    :: STM m (Map peer (AnchoredFragment header)),
 
        -- | Read the K-suffix of the current chain.
@@ -130,7 +124,7 @@ data BlockFetchConsensusInterface peer header block m =
        -- This must contain info on the last @K@ blocks (unless we're near
        -- the chain genesis of course).
        --
-       readCurrentChain       :: STM m (AnchoredFragment block),
+       readCurrentChain       :: STM m (AnchoredFragment header),
 
        -- | Read the current fetch mode that the block fetch logic should use.
        --
@@ -160,7 +154,7 @@ data BlockFetchConsensusInterface peer header block m =
        -- with operational key certificates there are also cases where
        -- we would consider a chain of equal length to the current chain.
        --
-       plausibleCandidateChain :: AnchoredFragment block
+       plausibleCandidateChain :: AnchoredFragment header
                                -> AnchoredFragment header -> Bool,
 
        -- | Compare two candidate chains and return a preference ordering.
@@ -209,7 +203,7 @@ blockFetchLogic decisionTracer
       fetchTriggerVariables
       fetchNonTriggerVariables
   where
-    fetchDecisionPolicy :: FetchDecisionPolicy header block
+    fetchDecisionPolicy :: FetchDecisionPolicy header
     fetchDecisionPolicy =
       FetchDecisionPolicy {
         -- TODO: This is a protocol constant, but determined elsewhere.
@@ -225,7 +219,7 @@ blockFetchLogic decisionTracer
         blockFetchSize
       }
 
-    fetchTriggerVariables :: FetchTriggerVariables peer header block m
+    fetchTriggerVariables :: FetchTriggerVariables peer header m
     fetchTriggerVariables =
       FetchTriggerVariables {
         readStateCurrentChain    = readCurrentChain,

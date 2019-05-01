@@ -1,23 +1,26 @@
+{-# LANGUAGE ConstraintKinds            #-}
 {-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DuplicateRecordFields      #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE KindSignatures             #-}
+{-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE TupleSections              #-}
-{-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
+
+{-# OPTIONS_GHC -Wredundant-constraints -Werror=missing-fields #-}
 
 module Ouroboros.Consensus.Node (
     -- * Node IDs
-    NodeId(..)
-  , CoreNodeId(..)
+    NodeId (..)
+  , CoreNodeId (..)
   , fromCoreNodeId
     -- * Node
-  , NodeKernel(..)
-  , NodeCallbacks(..)
-  , NodeComms(..)
+  , NodeKernel (..)
+  , NodeCallbacks (..)
+  , NodeComms (..)
+  , NodeParams (..)
   , nodeKernel
     -- * Channels (re-exports from the network layer)
   , Channel
@@ -26,35 +29,44 @@ module Ouroboros.Consensus.Node (
   ) where
 
 import           Codec.Serialise (Serialise)
-import           Codec.Serialise.Encoding (Encoding)
-import           Control.Monad
-import           Control.Monad.Except
+import           Control.Monad (void)
 import           Crypto.Random (ChaChaDRG)
 import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
-import           Data.Maybe (fromMaybe, mapMaybe)
-import           Data.Word (Word64)
+import           Data.Void (Void)
 
-import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSay
+import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadFork (MonadFork)
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
-import           Control.Tracer (nullTracer)
+import           Control.Monad.Class.MonadTime
+import           Control.Tracer
 
 import           Network.TypedProtocol.Driver
 import           Ouroboros.Network.Channel as Network
 import           Ouroboros.Network.Codec
 
+import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..),
+                     headSlot)
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Chain (Chain (..), ChainUpdate (..), Point)
+import           Ouroboros.Network.BlockFetch
+                     (BlockFetchConsensusInterface (..), FetchClientRegistry,
+                     blockFetchLogic, newFetchClientRegistry)
+import qualified Ouroboros.Network.BlockFetch.Client as BlockFetchClient
+import           Ouroboros.Network.BlockFetch.State (FetchMode (..))
+import           Ouroboros.Network.BlockFetch.Types (SizeInBytes)
 import qualified Ouroboros.Network.Chain as Chain
-import           Ouroboros.Network.ChainProducerState
+import           Ouroboros.Network.Protocol.BlockFetch.Server
+                     (BlockFetchServer (..), blockFetchServerPeer)
+import           Ouroboros.Network.Protocol.BlockFetch.Type (BlockFetch)
 import           Ouroboros.Network.Protocol.ChainSync.Client
-import           Ouroboros.Network.Protocol.ChainSync.Examples
 import           Ouroboros.Network.Protocol.ChainSync.Server
 import           Ouroboros.Network.Protocol.ChainSync.Type
 
 import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.BlockFetchClient
+import           Ouroboros.Consensus.BlockFetchServer
+import           Ouroboros.Consensus.ChainSyncClient
+import           Ouroboros.Consensus.ChainSyncServer
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util
@@ -62,6 +74,10 @@ import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Consensus.Util.STM
+import           Ouroboros.Consensus.Util.ThreadRegistry
+
+import           Ouroboros.Storage.ChainDB.API (ChainDB)
+import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 
 
 {-------------------------------------------------------------------------------
@@ -90,26 +106,30 @@ fromCoreNodeId (CoreNodeId n) = CoreId n
 -------------------------------------------------------------------------------}
 
 -- | Interface against running relay node
-data NodeKernel m up blk = NodeKernel {
-      -- | Get current chain
-      getCurrentChain   :: STM m (Chain blk)
-
-      -- | Get current extended ledger state
-    , getExtLedgerState :: STM m (ExtLedgerState blk)
+data NodeKernel m up blk hdr = NodeKernel {
+      -- | The 'ChainDB' of the node
+      getChainDB   :: ChainDB m blk hdr
 
       -- | Notify network layer of new upstream node
       --
       -- NOTE: Eventually it will be the responsibility of the network layer
       -- itself to register and deregister peers.
-    , addUpstream       :: forall e bytes. Exception e
-                        => up -> NodeComms e m blk bytes -> m ()
+    , addUpstream   :: forall eCS eBF bytesCS bytesBF.
+                       (Exception eCS, Exception eBF)
+                    => up
+                    -> NodeComms m (ChainSync hdr (Point hdr)) eCS bytesCS
+                    -> NodeComms m (BlockFetch hdr blk)        eBF bytesBF
+                    -> m ()
 
       -- | Notify network layer of a new downstream node
       --
       -- NOTE: Eventually it will be the responsibility of the network layer
       -- itself to register and deregister peers.
-    , addDownstream     :: forall e bytes. Exception e
-                        => NodeComms e m blk bytes -> m ()
+    , addDownstream :: forall eCS eBF bytesCS bytesBF.
+                       (Exception eCS, Exception eBF)
+                    => NodeComms m (ChainSync hdr (Point hdr)) eCS bytesCS
+                    -> NodeComms m (BlockFetch hdr blk)        eBF bytesBF
+                    -> m ()
     }
 
 -- | Monad that we run protocol specific functions in
@@ -135,649 +155,393 @@ data NodeCallbacks m blk = NodeCallbacks {
       --
       -- In IO, can use 'Crypto.Random.drgNew'.
     , produceDRG :: m ChaChaDRG
-
-      -- | Callback called whenever we adopt a 2new chain
-      --
-      -- NOTE: This intentionally lives in @m@ rather than @STM m@ so that this
-      -- callback can have side effects.
-    , adoptedNewChain :: Chain blk -> m ()
     }
 
-nodeKernel :: forall m blk up.
-              ( MonadSTM m
-              , MonadFork m
-              , MonadThrow m
-              , MonadSay m
-              , ProtocolLedgerView blk
-              , Eq                 blk
-              , Condense           blk
-              , Ord up
-              )
-           => (PreHeader blk -> Encoding)
-           -> NodeConfig (BlockProtocol blk)
-           -> NodeState (BlockProtocol blk)
-           -> BlockchainTime m
-           -> ExtLedgerState blk
-           -> Chain blk
-           -> NodeCallbacks m blk
-           -> m (NodeKernel m up blk)
-nodeKernel toEnc cfg initState btime initLedger initChain callbacks = do
-    st <- initInternalState toEnc cfg btime initChain initLedger initState callbacks
+-- | Parameters required when initializing a node
+data NodeParams m up blk hdr = NodeParams {
+      tracer             :: Tracer m String
+    , threadRegistry     :: ThreadRegistry m
+    , maxClockSkew       :: ClockSkew
+    , cfg                :: NodeConfig (BlockProtocol blk)
+    , initState          :: NodeState (BlockProtocol blk)
+    , btime              :: BlockchainTime m
+    , chainDB            :: ChainDB m blk hdr
+    , callbacks          :: NodeCallbacks m blk
+    , blockFetchSize     :: hdr -> SizeInBytes
+    , blockMatchesHeader :: hdr -> blk -> Bool
+    }
 
-    forkMonitorDownloads toEnc st
-    forkBlockProduction  toEnc st
+nodeKernel
+    :: forall m up blk hdr.
+       ( MonadAsync m
+       , MonadFork  m
+       , MonadMask  m
+       , MonadTime  m
+       , MonadThrow (STM m)
+       , ProtocolLedgerView blk
+       , HasHeader hdr
+       , HeaderHash hdr ~ HeaderHash blk
+       , BlockProtocol hdr ~ BlockProtocol blk
+       , Ord up
+       , TraceConstraints up blk hdr
+       )
+    => NodeParams m up blk hdr
+    -> m (NodeKernel m up blk hdr)
+nodeKernel params@NodeParams { tracer, threadRegistry } = do
+    st <- initInternalState params
+
+    forkBlockProduction st
+
+    let IS { blockFetchInterface, fetchClientRegistry, chainDB } = st
+
+    -- Run the block fetch logic in the background. This will call
+    -- 'addFetchedBlock' whenever a new block is downloaded.
+    void $ forkLinked threadRegistry $ blockFetchLogic
+        (showTracing tracer)
+        blockFetchInterface
+        fetchClientRegistry
 
     return NodeKernel {
-        addUpstream       = npAddUpstream   (networkLayer st)
-      , addDownstream     = npAddDownstream (networkLayer st)
-      , getCurrentChain   = readTVar (varChain  st)
-      , getExtLedgerState = readTVar (varLedger st)
+        getChainDB    = chainDB
+      , addUpstream   = npAddUpstream   (networkLayer st)
+      , addDownstream = npAddDownstream (networkLayer st)
       }
 
 {-------------------------------------------------------------------------------
   Internal node components
 -------------------------------------------------------------------------------}
 
--- TODO: Turn into single TVar for chain and ledger state
-data InternalState m up blk = IS {
-      cfg           :: NodeConfig (BlockProtocol blk)
-    , btime         :: BlockchainTime m
-    , initChain     :: Chain blk
-    , initLedger    :: ExtLedgerState blk
-    , callbacks     :: NodeCallbacks m blk
-    , networkLayer  :: NetworkProvides m up blk blk
-    , varChain      :: TVar m (Chain blk)
-    , varLedger     :: TVar m (ExtLedgerState blk)
-    , varCandidates :: TVar m (Candidates up blk)
-    , varState      :: TVar m (NodeState (BlockProtocol blk))
+-- | Constraints required to trace nodes, block, headers, etc.
+type TraceConstraints up blk hdr =
+  (Condense up, Condense blk, Condense hdr)
+
+data InternalState m up blk hdr = IS {
+      cfg                 :: NodeConfig (BlockProtocol blk)
+    , threadRegistry      :: ThreadRegistry m
+    , btime               :: BlockchainTime m
+    , callbacks           :: NodeCallbacks m blk
+    , networkLayer        :: NetworkProvides m up blk hdr
+    , chainDB             :: ChainDB m blk hdr
+    , blockFetchInterface :: BlockFetchConsensusInterface up hdr blk m
+    , fetchClientRegistry :: FetchClientRegistry up hdr m
+    , varCandidates       :: TVar m (Map up (TVar m (CandidateState blk hdr)))
+    , varState            :: TVar m (NodeState (BlockProtocol blk))
+    , tracer              :: Tracer m String
     }
 
-initInternalState :: forall m up blk.
-                     ( MonadSTM m
-                     , MonadFork m
-                     , MonadThrow m
-                     , ProtocolLedgerView blk
-                     , Eq                 blk
-                     , Ord up
-                     )
-                  => (PreHeader blk -> Encoding)
-                  -> NodeConfig (BlockProtocol blk) -- ^ Node configuration
-                  -> BlockchainTime m               -- ^ Time
-                  -> Chain blk                      -- ^ Initial chain
-                  -> ExtLedgerState blk             -- ^ Initial ledger state
-                  -> NodeState (BlockProtocol blk)  -- ^ Init node state
-                  -> NodeCallbacks m blk            -- ^ Callbacks
-                  -> m (InternalState m up blk)
-initInternalState toEnc cfg btime initChain initLedger initState callbacks = do
-    varChain      <- atomically $ newTVar initChain
-    varLedger     <- atomically $ newTVar initLedger
-    varCandidates <- atomically $ newTVar noCandidates
-    varState      <- atomically $ newTVar initState
+initInternalState
+    :: forall m up blk hdr.
+       ( MonadAsync m
+       , MonadFork  m
+       , MonadMask  m
+       , MonadTime  m
+       , MonadThrow (STM m)
+       , HasHeader hdr
+       , HeaderHash hdr ~ HeaderHash blk
+       , ProtocolLedgerView blk
+       , BlockProtocol hdr ~ BlockProtocol blk
+       , Ord up
+       , TraceConstraints up blk hdr
+       )
+    => NodeParams m up blk hdr
+    -> m (InternalState m up blk hdr)
+initInternalState NodeParams {..} = do
+    varCandidates   <- atomically $ newTVar mempty
+    varState        <- atomically $ newTVar initState
 
-    let networkRequires :: NetworkRequires m up blk blk
-        networkRequires = NetworkRequires {
-            nrCurrentChain = readTVar varChain
-          , nrCandidates   = readTVar varCandidates
-          , nrSyncClient   = consensusSyncClient
-                               toEnc
-                               cfg
-                               btime
-                               initLedger
-                               varChain
-                               varCandidates
-          }
+    fetchClientRegistry <- newFetchClientRegistry
 
-    networkLayer <- initNetworkLayer networkRequires
+    let getCandidates :: STM m (Map up (AnchoredFragment hdr))
+        getCandidates = readTVar varCandidates >>=
+                        traverse (fmap candidateChain . readTVar)
 
-    return IS{..}
+        blockFetchInterface :: BlockFetchConsensusInterface up hdr blk m
+        blockFetchInterface = initBlockFetchConsensusInterface
+          cfg chainDB getCandidates blockFetchSize blockMatchesHeader btime
 
-forkMonitorDownloads :: forall m up blk.
-                        ( MonadSTM m
-                        , MonadFork m
-                        , MonadSay m
-                        , ProtocolLedgerView blk
-                        , Condense           blk
-                        )
-                     => (PreHeader blk -> Encoding)
-                     -> InternalState m up blk -> m ()
-forkMonitorDownloads toEnc st@IS{..} =
-    -- TODO: We should probably not just look at the headSlot
-    onEachChange (map Chain.headSlot) [] npDownloaded $ \downloaded -> do
-      -- TODO: At this point we should validate the chain /bodies/
-      -- (we'd only have verified headers so far)
-      -- TODO: Right now we have no way of informing the network layer when
-      -- block verification failed
+        nrChainSyncClient :: up -> Consensus ChainSyncClient hdr m
+        nrChainSyncClient up = chainSyncClient
+          (tracePrefix "CSClient" (Just up))
+          cfg
+          btime
+          maxClockSkew
+          (ChainDB.getCurrentChain chainDB)
+          (ChainDB.getCurrentLedger chainDB)
+          varCandidates
+          up
 
-      mNew <- atomically $ do
-        old <- readTVar varChain
-        case selectUnvalidatedChain cfg old downloaded of
-          Nothing  -> return Nothing
-          Just new -> do
-            adoptNewChain toEnc st old new
-            return (Just new)
-      case mNew of
-        Nothing  -> say $ "Ignoring downloaded chains " ++ condense downloaded
-        Just new -> say $ "Adopted new chain " ++ condense new
+        nrChainSyncServer :: ChainSyncServer hdr (Point hdr) m ()
+        nrChainSyncServer =
+          chainSyncServer (tracePrefix "CSServer" Nothing) chainDB
 
-      forM_ mNew adoptedNewChain
+        nrBlockFetchClient :: up -> BlockFetchClient hdr blk m ()
+        nrBlockFetchClient up =
+          blockFetchClient (tracePrefix "BFClient" (Just up)) blockFetchInterface up
+
+        nrBlockFetchServer :: BlockFetchServer hdr blk m ()
+        nrBlockFetchServer =
+          blockFetchServer (tracePrefix "BFServer" Nothing) chainDB
+
+        nrFetchClientRegistry = fetchClientRegistry
+
+        networkRequires :: NetworkRequires m up blk hdr
+        networkRequires = NetworkRequires {..}
+
+        networkLayer :: NetworkProvides m up blk hdr
+        networkLayer = initNetworkLayer
+          (contramap ("BlockFetch | " <>) tracer)
+          threadRegistry
+          networkRequires
+
+    return IS {..}
   where
-    NetworkProvides{..} = networkLayer
-    NodeCallbacks{..}   = callbacks
+    tracePrefix :: String -> Maybe up -> Tracer m String
+    tracePrefix p mbUp =
+      let prefix = p <> maybe "" ((" " <>) . condense) mbUp <> " | "
+      in contramap (prefix <>) tracer
 
-forkBlockProduction :: forall m up blk. (
-                         MonadSTM m
-                       , ProtocolLedgerView blk
-                       )
-                    => (PreHeader blk -> Encoding)
-                    -> InternalState m up blk -> m ()
-forkBlockProduction toEnc st@IS{..} =
-    onSlotChange btime $ \slot -> do
+
+initBlockFetchConsensusInterface
+    :: forall m up blk hdr.
+       ( MonadSTM m
+       , OuroborosTag (BlockProtocol blk)
+       , HasHeader hdr
+       )
+    => NodeConfig (BlockProtocol blk)
+    -> ChainDB m blk hdr
+    -> STM m (Map up (AnchoredFragment hdr))
+    -> (hdr -> SizeInBytes)
+    -> (hdr -> blk -> Bool)
+    -> BlockchainTime m
+    -> BlockFetchConsensusInterface up hdr blk m
+initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize
+    blockMatchesHeader btime = BlockFetchConsensusInterface {..}
+  where
+    readCandidateChains :: STM m (Map up (AnchoredFragment hdr))
+    readCandidateChains = getCandidates
+
+    readCurrentChain :: STM m (AnchoredFragment hdr)
+    readCurrentChain = ChainDB.getCurrentChain chainDB
+
+    readFetchMode :: STM m FetchMode
+    readFetchMode = do
+      curSlot      <- getCurrentSlot btime
+      curChainSlot <- headSlot <$> ChainDB.getCurrentChain chainDB
+      let slotsBehind = unSlotNo curSlot - unSlotNo curChainSlot
+          maxBlocksBehind = 5
+          -- Convert from blocks to slots. This is more or less the @f@
+          -- parameter, the frequency of blocks. TODO should be 10 for Praos,
+          -- so make this part of 'OuroborosTag'.
+          blocksToSlots = 1
+      return $ if slotsBehind < maxBlocksBehind * blocksToSlots
+       -- When the current chain is near to "now", use deadline mode, when it
+       -- is far away, use bulk sync mode.
+        then FetchModeDeadline
+        else FetchModeBulkSync
+
+    readFetchedBlocks :: STM m (Point blk -> Bool)
+    readFetchedBlocks = ChainDB.getIsFetched chainDB
+
+    addFetchedBlock :: Point blk -> blk -> m ()
+    addFetchedBlock _pt = ChainDB.addBlock chainDB
+
+    plausibleCandidateChain :: AnchoredFragment hdr
+                            -> AnchoredFragment hdr
+                            -> Bool
+    plausibleCandidateChain = preferCandidate cfg
+
+    compareCandidateChains :: AnchoredFragment hdr
+                           -> AnchoredFragment hdr
+                           -> Ordering
+    compareCandidateChains = compareCandidates cfg
+
+forkBlockProduction
+    :: forall m up blk hdr.
+       ( MonadAsync m
+       , ProtocolLedgerView blk
+       , HasHeader hdr
+       , HeaderHash hdr ~ HeaderHash blk
+       , TraceConstraints up blk hdr
+       )
+    => InternalState m up blk hdr -> m ()
+forkBlockProduction IS{..} =
+    onSlotChange btime $ \currentSlot -> do
       drg  <- produceDRG
-      mNew <- atomically $ do
+      mNewBlock <- atomically $ do
         varDRG <- newTVar drg
-        l@ExtLedgerState{..} <- readTVar varLedger
+        l@ExtLedgerState{..} <- ChainDB.getCurrentLedger chainDB
         mIsLeader            <- runProtocol varDRG $
                                    checkIsLeader
                                      cfg
-                                     slot
+                                     currentSlot
                                      (protocolLedgerView cfg ledgerState)
                                      ouroborosChainState
 
         case mIsLeader of
           Nothing    -> return Nothing
           Just proof -> do
-            (old, upd) <- overrideBlock slot <$> readTVar varChain
-            let prevPoint = Chain.headPoint   old
-                prevNo    = Chain.headBlockNo old
+            (prevPoint, prevNo) <- prevPointAndBlockNo currentSlot <$>
+              ChainDB.getCurrentChain chainDB
             newBlock <- runProtocol varDRG $
-                          produceBlock proof l slot prevPoint prevNo
-            let new = Chain.addBlock newBlock old
-            applyUpdate toEnc st new (upd ++ [AddBlock newBlock])
-            return $ Just new
+              produceBlock proof l currentSlot (castPoint prevPoint) prevNo
+            return $ Just newBlock
 
-      forM_ mNew adoptedNewChain
+      whenJust mNewBlock $ \newBlock -> do
+        traceWith tracer $
+          "I'm the leader of slot " <> show currentSlot <>
+          " and I produced: " <> condense newBlock
+        ChainDB.addBlock chainDB newBlock
   where
     NodeCallbacks{..} = callbacks
 
-    -- Drop the most recent block if it occupies the current slot
-    overrideBlock :: SlotNo -> Chain blk -> (Chain blk, [ChainUpdate blk])
-    overrideBlock slot c
-      | Chain.headSlot c <  slot = (c, [])
-      | Chain.headSlot c == slot = let c' = dropMostRecent c
-                                   in (c', [RollBack (Chain.headPoint c')])
-      | otherwise                = error "overrideBlock: block in future"
+    -- Return the point and block number of the most recent block in the
+    -- current chain with a slot < the given slot. These will either
+    -- correspond to the header at the tip of the current chain or, in case
+    -- another node was also elected leader and managed to produce a block
+    -- before us, the header right before the one at the tip of the chain.
+    prevPointAndBlockNo :: SlotNo
+                        -> AnchoredFragment hdr
+                        -> (Point hdr, BlockNo)
+    prevPointAndBlockNo slot c = case c of
+        Empty _   -> (Chain.genesisPoint, Chain.genesisBlockNo)
+        c' :> hdr -> case blockSlot hdr `compare` slot of
+          LT -> (blockPoint hdr, blockNo hdr)
+          -- The block at the tip of our chain has a slot that lies in the
+          -- future.
+          GT -> error "prevPointAndBlockNo: block in future"
+          -- The block at the tip has the same slot as the block we're going
+          -- to produce (@slot@), so look at the block before it.
+          EQ | _ :> hdr' <- c'
+             -> (blockPoint hdr', blockNo hdr')
+             | otherwise
+               -- If there is no block before it, so use genesis.
+             -> (Chain.genesisPoint, Chain.genesisBlockNo)
 
     runProtocol :: TVar m ChaChaDRG -> ProtocolM blk m a -> STM m a
     runProtocol varDRG = simOuroborosStateT varState
                        $ simChaChaT varDRG
                        $ id
 
-adoptNewChain :: forall m up blk.
-                 ( MonadSTM m
-                 , ProtocolLedgerView blk
-                 )
-              => (PreHeader blk -> Encoding)
-              -> InternalState m up blk
-              -> Chain blk  -- ^ Old chain
-              -> Chain blk  -- ^ New chain
-              -> STM m ()
-adoptNewChain toEnc is old new =
-    applyUpdate toEnc is new upd
-  where
-    i :: Point blk
-    i = fromMaybe Chain.genesisPoint $ Chain.intersectChains old new
-
-    upd :: [ChainUpdate blk]
-    upd = (if i /= Chain.headPoint old
-            then (RollBack i :)
-            else id)
-        $ map AddBlock (afterPoint i new)
-
--- | Apply chain update
-applyUpdate :: ( MonadSTM m
-               , ProtocolLedgerView blk
-               )
-            => (PreHeader blk -> Encoding)
-            -> InternalState m up blk
-            -> Chain blk          -- ^ New chain
-            -> [ChainUpdate blk]  -- ^ Update
-            -> STM m ()
-applyUpdate toEnc st@IS{..} new upd = do
-    writeTVar varChain new
-    updateLedgerState toEnc st new upd
-
--- | Update the ledger state
---
--- TODO: Rethink this in relation to validation. Chains have already been
--- validated at this point, but now we need to compute ledger state;
--- but validation basically /is/ ledger updating. Perhaps we need to store
--- the updated ledger state with the candidates. Or something.
-updateLedgerState :: ( MonadSTM m
-                     , ProtocolLedgerView blk
-                     )
-                  => (PreHeader blk -> Encoding)
-                  -> InternalState m up blk
-                  -> Chain blk          -- ^ New chain (TODO: remove this arg)
-                  -> [ChainUpdate blk]  -- ^ Chain update
-                  -> STM m ()
-updateLedgerState toEnc IS{..} new upd =
-    case upd of
-      RollBack _:_ ->
-        -- TODO: Properly implement support for rollback
-        modifyTVar' varLedger $ \_st ->
-          case runExcept (chainExtLedgerState toEnc cfg new initLedger) of
-            Left err  -> error (show err)
-            Right st' -> st'
-      _otherwise ->
-        modifyTVar' varLedger $ \st ->
-          case runExcept (foldExtLedgerState toEnc cfg (map newBlock upd) st) of
-            Left err  -> error (show err)
-            Right st' -> st'
-  where
-    -- Only the first update can be a rollback
-    newBlock :: ChainUpdate b -> b
-    newBlock (RollBack _) = error "newBlock: unexpected rollback"
-    newBlock (AddBlock b) = b
-
-{-------------------------------------------------------------------------------
-  (Consensus layer provided) Chain sync client
-
-  TODO: Implement genesis here
-
-  Genesis in paper:
-
-    When we compare a candidate to our own chain, and that candidate forks off
-    more than k in the past, we compute the intersection point between that
-    candidate and our chain, select s slots from both chains, and compare the
-    number of blocks within those s slots. If the candidate has more blocks
-    in those s slots, we prefer the candidate, otherwise we stick with our own
-    chain.
-
-  Genesis as we will implement it:
-
-    * We decide we are in genesis mode if the head of our chain is more than
-      @k@ blocks behind the blockchain time. We will have to approximate this
-      as @k/f@ /slots/ behind the blockchain time time.
-    * In this situation, we must make sure we have a sufficient number of
-      upstream nodes "and collect chains from all of them"
-    * We still never consider chains that would require /us/ to rollback more
-      than k blocks.
-    * In order to compare two candidates, we compute the intersection point of
-      X of those two candidates and compare the density at point X.
-
-
-
-
-  Scribbled notes during meeting with Duncan:
-
-   geensis mode: compare clock to our chain
-   do we have enough peers?
-   still only interested in chains that don't fork more than k from our own chain
-
-     downloading headers from a /single/ node, download at least s headers
-     inform /other/ peers: "here is a point on our chain"
-     if all agree ("intersection imporved") -- all peers agree
-     avoid downloading tons of headers
-     /if/ there is a difference, get s headers from the peer who disagrees,
-       pick the denser one, and ignore the other
-       PROBLEM: what if the denser node has invalid block bodies??
--------------------------------------------------------------------------------}
-
--- | Something went wrong during the chain sync protocol
---
--- This either indicates an intentional failure (malicious client) or a buggy
--- client. The additional data we record here is for debugging only.
-data ChainSyncFailure hdr =
-    -- | The node we're connecting to forked more than k slots ago
-    --
-    -- We record their current head.
-    ForkTooDeep (Point hdr)
-
-    -- | They send us an invalid header
-    --
-    -- We record their (invalid) chain.
-    --
-    -- TODO: Of course eventually this won't be possible, and we should
-    -- just record the invalid block.
-  | InvalidBlock (Chain hdr)
-
-    -- | The client sent us an intersection point not on their chain
-    --
-    -- We record the intersection point and their head.
-  | InvalidRollback (Point hdr) (Point hdr)
-
-type Consensus (client :: * -> * -> (* -> *) -> * -> *) hdr m =
-   client hdr (Point hdr) m (ChainSyncFailure hdr)
-
--- | Chain sync client
---
--- This only terminates on failures.
-consensusSyncClient :: forall m up blk hdr.
-                       ( MonadSTM m
-                       , blk ~ hdr -- for now
-                       , ProtocolLedgerView hdr
-                       , Ord up
-                       )
-                    => (PreHeader blk -> Encoding)
-                    -> NodeConfig (BlockProtocol hdr)
-                    -> BlockchainTime m
-                    -> ExtLedgerState blk
-                    -> TVar m (Chain blk)
-                    -> TVar m (Candidates up hdr)
-                    -> up -> Consensus ChainSyncClient hdr m
-consensusSyncClient toEnc cfg _btime initLedger varChain candidatesVar up =
-    ChainSyncClient initialise
-  where
-    initialise :: m (Consensus ClientStIdle hdr m)
-    initialise = do
-      (theirChainVar, ourChain) <- atomically $ do
-        -- We optimistically assume that the upstream node's chain is similar to
-        -- ours, so we start with assuming it's /equal/ to our chain, and then
-        -- let the chain sync protocol do its job
-        chain <- readTVar varChain
-        (, chain) <$> newTVar chain
-
-      return $ SendMsgFindIntersect (Chain.selectPoints (map fromIntegral offsets) ourChain) $
-        ClientStIntersect {
-            recvMsgIntersectImproved = \_intersection _theirHead ->
-              -- We found an intersection within the last k slots. All good
-              ChainSyncClient $ return (requestNext theirChainVar)
-
-          , recvMsgIntersectUnchanged = \theirHead -> ChainSyncClient $
-              -- If the intersection point is unchanged, this means that the
-              -- best intersection point was the initial assumption: genesis.
-              -- If the genesis point is within k of our own head, this is
-              -- fine, but if it is not, we cannot sync with this client
-              if unSlotNo (Chain.headSlot ourChain) > fromIntegral k
-                then return $ SendMsgDone (ForkTooDeep theirHead)
-                else return $ requestNext theirChainVar
-          }
-
-    requestNext :: TVar m (Chain hdr) -> Consensus ClientStIdle hdr m
-    requestNext theirChainVar =
-        SendMsgRequestNext
-          (handleNext theirChainVar)
-          (return (handleNext theirChainVar)) -- case for when we have to wait
-
-    handleNext :: TVar m (Chain hdr) -> Consensus ClientStNext hdr m
-    handleNext theirChainVar = ClientStNext {
-          recvMsgRollForward = \hdr _theirHead -> ChainSyncClient $ do
-            atomically $ do
-              -- Right now we validate the entire chain here. We should only
-              -- validate the new block.
-              theirChain <- readTVar theirChainVar
-              let theirChain' = Chain.addBlock hdr theirChain
-              if not (verifyChain toEnc cfg initLedger theirChain') then
-                return $ SendMsgDone (InvalidBlock theirChain')
-              else do
-                writeTVar theirChainVar theirChain'
-                updateCandidates' theirChain'
-                return $ requestNext theirChainVar
-
-        , recvMsgRollBackward = \intersection theirHead -> ChainSyncClient $
-            atomically $ do
-              theirChain <- readTVar theirChainVar
-              case Chain.rollback intersection theirChain of
-                Just theirChain' -> do
-                  -- No need to validate (prefix of a valid chain must be valid)
-                  writeTVar theirChainVar theirChain'
-                  updateCandidates' theirChain'
-                  return $ requestNext theirChainVar
-                Nothing ->
-                  return $ SendMsgDone (InvalidRollback intersection theirHead)
-        }
-
-    -- Update set of candidates
-    updateCandidates' :: Chain hdr -> STM m ()
-    updateCandidates' theirChain = do
-        ourChain <- readTVar varChain
-        modifyTVar candidatesVar $
-          updateCandidates cfg ourChain (up, theirChain)
-
-    -- Recent offsets
-    --
-    -- These offsets are used to find an intersection point between our chain
-    -- and the upstream node's. We use the fibonacci sequence to try blocks
-    -- closer to our tip, and fewer blocks further down the chain. It is
-    -- important that this sequence constains at least a point @k@ back: if
-    -- no intersection can be found at most @k@ back, then this is not a peer
-    -- that we can sync with (since we will never roll back more than @k).
-    --
-    -- For @k = 2160@, this evaluates to
-    --
-    -- > [0,1,2,3,5,8,13,21,34,55,89,144,233,377,610,987,1597,2160]
-    --
-    -- For @k = 5@ (during testing), this evaluates to
-    --
-    -- > [0,1,2,3,5]
-    offsets :: [Word64]
-    offsets = [0] ++ takeWhile (< k) [fib n | n <- [2..]] ++ [k]
-
-    k :: Word64
-    k = maxRollbacks $ protocolSecurityParam cfg
-
-{-------------------------------------------------------------------------------
-  Chain candidates
--------------------------------------------------------------------------------}
-
-newtype Candidates up hdr = Candidates {
-      -- | Candidate chains
-      --
-      -- When we track upstream nodes, /candidate/ chains are chains that the
-      -- chain selection rule tells us are preferred over our current chain.
-      -- We network layer will ask the consensus layer to prioritize these
-      -- candidates: elements earlier in the list are preferred over elements
-      -- later in the list; we have no preference between candidates within
-      -- a single map.
-      --
-      -- Invariants:
-      --
-      -- * All maps must be non-empty
-      -- * All map domains must be mutually disjoint
-      -- * All elements of a single map must be equally preferable
-      --   (according to the protocol's chain selection rule)
-      -- * Elements earlier in the list must be strictly preferred over elements
-      --   later in the list (again, according to chain selection)
-      --
-      -- Moreover, we should have a system invariant that /all/ candidates we
-      -- record must be preferred over our own chain.
-      candidates :: [Map up (Chain hdr)]
-    }
-
-instance (Condense up, Condense hdr) => Condense (Candidates up hdr) where
-  condense (Candidates cs) = condense cs
-
-noCandidates :: Candidates up hdr
-noCandidates = Candidates []
-
--- | Remove candidate from a certain node
-removeCandidate :: forall up hdr. Ord up
-                => up -> Candidates up hdr -> Candidates up hdr
-removeCandidate up (Candidates cs) = Candidates $ mapMaybe delete cs
-  where
-    delete :: Map up (Chain hdr) -> Maybe (Map up (Chain hdr))
-    delete m = do
-        let m' = Map.delete up m
-        guard $ not (Map.null m')
-        return m'
-
--- | Insert a new candidate (one that we /know/ we prefer over our own chain)
---
--- Precondition: no chain for this upstream node already present.
-insertCandidate :: forall up hdr.
-                   ( OuroborosTag (BlockProtocol hdr)
-                   , HasHeader hdr
-                   , Ord up
-                   )
-                => NodeConfig (BlockProtocol hdr)
-                -> (up, Chain hdr) -> Candidates up hdr -> Candidates up hdr
-insertCandidate cfg (up, cand) (Candidates cands) =
-    Candidates $ go cands
-  where
-    go :: [Map up (Chain hdr)] -> [Map up (Chain hdr)]
-    go []       = [Map.singleton up cand]
-    go (cs:css) =
-      case compareCandidates cfg cand (head' cs) of
-        GT -> Map.singleton up cand : cs : css
-        EQ -> Map.insert up cand cs : css
-        LT -> cs : go css
-
-    -- Pick any candidate from this (necessarily non-empty) map
-    -- (Any element will do, because all elements are equally preferable)
-    head' :: Map a b -> b
-    head' = snd . head . Map.toList
-
--- | Update candidates
-updateCandidates :: ( OuroborosTag (BlockProtocol hdr)
-                    , HasHeader hdr
-                    , Ord up
-                    , hdr ~ blk
-                    )
-                 => NodeConfig (BlockProtocol hdr)
-                 -> Chain blk       -- ^ Our chain
-                 -> (up, Chain hdr) -- ^ New potential candidate
-                 -> Candidates up hdr -> Candidates up hdr
-updateCandidates cfg ourChain (up, theirChain) cs
-    | preferCandidate cfg ourChain theirChain
-    = insertCandidate cfg (up, theirChain) cs'
-    | otherwise
-    = cs' -- if candidate not strictly preferred, we ignore it
-  where
-    -- We unconditionally remove the old chain
-    --
-    -- This means that /if/ we for some reason prefer the old candidate from
-    -- this node but not the new, we nonetheless forget this old candidate.
-    -- This is reasonable: the node might not even be able to serve this
-    -- old candidate anymore.
-    --
-    -- TODO: Discuss this with Duncan.
-    cs' = removeCandidate up cs
-
 {-------------------------------------------------------------------------------
   New network layer
 -------------------------------------------------------------------------------}
 
 data NetworkRequires m up blk hdr = NetworkRequires {
-      -- | Start tracking a new upstream node
-      --
-      -- Although it is (typically) the responsibility of the network layer to
-      -- decide whether or not to track another peer, each time it does decide
-      -- to do so, it will ask the consensus layer for a client to track this
-      -- upstream node. It will be the responsibility of this client to do
-      -- block validation and implement the logic required to implement the
-      -- genesis rule.
-      nrSyncClient   :: up -> Consensus ChainSyncClient hdr m
+      -- | Start a chain sync client that communicates with the given upstream
+      -- node.
+      nrChainSyncClient     :: up -> ChainSyncClient hdr (Point hdr) m Void
 
-      -- | Return the current chain
-    , nrCurrentChain :: STM m (Chain blk)
+      -- | Start a chain sync server.
+    , nrChainSyncServer     :: ChainSyncServer hdr (Point hdr) m ()
 
-      -- | Get current chain candidates
-      --
-      -- This is used by the network layer's block download logic.
-      -- See 'CandidateChains' for more details.
-    , nrCandidates   :: STM m (Candidates up hdr)
+      -- | Start a block fetch client that communicates with the given
+      -- upstream node.
+    , nrBlockFetchClient    :: up -> BlockFetchClient hdr blk m ()
+
+      -- | Start a block fetch server server.
+    , nrBlockFetchServer    :: BlockFetchServer hdr blk m ()
+
+      -- | The fetch client registry, used by the block fetch client.
+    , nrFetchClientRegistry :: FetchClientRegistry up hdr m
     }
 
 -- | Required by the network layer to initiate comms to a new node
-data NodeComms e m hdr bytes = NodeComms {
-      -- | Codec for concrete send type @s@ and receive type @r@
-      ncCodec    :: Codec (ChainSync hdr (Point hdr)) e m bytes
-      -- TODO: will need to handle these 'e' exceptions properly
+data NodeComms m ps e bytes = NodeComms {
+      -- | Codec used for the protocol
+      ncCodec    :: Codec ps e m bytes
 
       -- | Construct a channel to the node
       --
-      -- This is in CPS style to allow for resource allocation. However, it
-      -- is important to note that this resource allocation will run in a thread
-      -- which itself is untracked, so if resource deallocation absolutely
-      -- /must/ happen additional measures must be taken
+      -- This is in CPS style to allow for resource allocation.
     , ncWithChan :: forall a. (Channel m bytes -> m a) -> m a
     }
 
+-- TODO something nicer than eCS, eBF, bytesCS, and bytesBF. Mux them over one
+-- channel.
 data NetworkProvides m up blk hdr = NetworkProvides {
-      -- | The chains downloaded by the network layer
-      --
-      -- It will be the responsibility of the consensus layer to monitor this,
-      -- validate new chains when downloaded, and adopt them when appropriate.
-      npDownloaded    :: STM m [Chain blk]
-
       -- | Notify network layer of new upstream node
       --
       -- NOTE: Eventually it will be the responsibility of the network layer
       -- itself to register and deregister peers.
-    , npAddUpstream   :: forall e bytes. Exception e
-                      => up -> NodeComms e m hdr bytes -> m ()
+      npAddUpstream   :: forall eCS eBF bytesCS bytesBF.
+                         (Exception eCS, Exception eBF)
+                      => up
+                      -> NodeComms m (ChainSync hdr (Point hdr)) eCS bytesCS
+                         -- Communication for the Chain Sync protocol
+                      -> NodeComms m (BlockFetch hdr blk)        eBF bytesBF
+                         -- Communication for the Block Fetch protocol
+                      -> m ()
 
       -- | Notify network layer of a new downstream node
       --
       -- NOTE: Eventually it will be the responsibility of the network layer
-      -- itself to register and deregister peers.
-    , npAddDownstream :: forall e bytes. Exception e
-                      => NodeComms e m hdr bytes -> m ()
+      -- itself to register and deregister peers.p
+    , npAddDownstream :: forall eCS eBF bytesCS bytesBF.
+                         (Exception eCS, Exception eBF)
+                      => NodeComms m (ChainSync hdr (Point hdr)) eCS bytesCS
+                         -- Communication for the Chain Sync protocol
+                      -> NodeComms m (BlockFetch hdr blk)        eBF bytesBF
+                         -- Communication for the Block Fetch protocol
+                      -> m ()
     }
 
-initNetworkLayer :: forall m up hdr blk.
-                    ( MonadSTM m
-                    , MonadFork m
-                    , MonadThrow m
-                    , HasHeader hdr
-                    , hdr ~ blk     -- TODO: for now
-                    , Eq blk        -- TODO: for now
-                    )
-                 => NetworkRequires m up blk hdr
-                 -> m (NetworkProvides m up blk hdr)
-initNetworkLayer NetworkRequires{..} = do
-    -- The chain producer state is entirely the responsibility of the network
-    -- layer; it does not get exposed in the 'NetworkLayer' API. Moreover, it
-    -- is not necessary for the chain in the chain producer state to be updated
-    -- synchronously with our chain, it is fine for this to lag.
-    cpsVar <- atomically $ newTVar . initChainProducerState =<< nrCurrentChain
+initNetworkLayer
+    :: forall m up hdr blk.
+       ( MonadSTM   m
+       , MonadAsync m
+       , MonadFork  m
+       , MonadCatch m
+       , MonadMask  m
+       , Ord up
+       )
+    => Tracer m String
+    -> ThreadRegistry m
+    -> NetworkRequires m up blk hdr
+    -> NetworkProvides m up blk hdr
+initNetworkLayer _tracer registry NetworkRequires{..} = NetworkProvides {..}
+  where
+    npAddDownstream :: (Exception eCS, Exception eBF)
+                    => NodeComms m (ChainSync hdr (Point hdr)) eCS bytesCS
+                    -> NodeComms m (BlockFetch hdr blk)        eBF bytesBF
+                    -> m ()
+    npAddDownstream ncCS ncBF = do
+      -- TODO use subregistry here?
+      let NodeComms csCodec csWithChan = ncCS
+          NodeComms bfCodec bfWithChan = ncBF
+      void $ forkLinked registry $ bfWithChan $ \chan ->
+        runPeer nullTracer bfCodec chan $
+          blockFetchServerPeer nrBlockFetchServer
+      void $ forkLinked registry $ csWithChan $ \chan ->
+        runPeer nullTracer csCodec chan $
+          chainSyncServerPeer nrChainSyncServer
 
-    -- Downloaded chains
-    downloadedVar <- atomically $ newTVar []
+    npAddUpstream :: (Exception eCS, Exception eBF)
+                  => up
+                  -> NodeComms m (ChainSync hdr (Point hdr)) eCS bytesCS
+                  -> NodeComms m (BlockFetch hdr blk)        eBF bytesBF
+                  -> m ()
+    npAddUpstream up ncCS ncBF = do
+      -- TODO use subregistry here?
+      let NodeComms csCodec csWithChan = ncCS
+          NodeComms bfCodec bfWithChan = ncBF
 
-    -- We continuously monitor the chain candidates, and download one as soon
-    -- as one becomes available. This is merely a mock implementation, we make
-    -- all chains available as soon as they are candidates.
-    void $ fork $ forever $ atomically $ do
-      downloaded <- readTVar downloadedVar
-      candidates <- (concatMap Map.elems . candidates) <$> nrCandidates
-      if candidates == downloaded
-        then retry
-        else writeTVar downloadedVar candidates
+      clientRegistered <- newEmptyTMVarM
 
-    -- We also continously monitor the our own chain, so that we can update our
-    -- downstream peers when our chain changes
-    void $ fork $ forever $ atomically $ do
-      chain <- nrCurrentChain
-      cps   <- readTVar cpsVar
-      -- TODO: We should probably not just compare the slot
-      if Chain.headSlot chain == Chain.headSlot (chainState cps)
-        then retry
-        else modifyTVar cpsVar (switchFork chain)
+      void $ forkLinked registry $ bfWithChan $ \chan ->
+        BlockFetchClient.bracketFetchClient nrFetchClientRegistry up $ \stateVars -> do
+          atomically $ putTMVar clientRegistered ()
+          -- TODO make 10 a parameter. Or encapsulate the pipelining
+          -- stuff
+          runPipelinedPeer 10 nullTracer bfCodec chan $
+            nrBlockFetchClient up stateVars
 
-    return $ NetworkProvides {
-          npDownloaded = readTVar downloadedVar
-        , npAddDownstream = \NodeComms{..} -> do
-            let producer = chainSyncServerPeer (chainSyncServerExample () cpsVar)
-            void $ fork $ void $ ncWithChan $ \chan ->
-              runPeer nullTracer ncCodec chan producer
-              --TODO: deal with the exceptions this throws, use async
-        , npAddUpstream = \up NodeComms{..} -> do
-            let consumer = nrSyncClient up
-            void $ fork $ void $ ncWithChan $ \chan ->
-              runPeer nullTracer ncCodec chan (chainSyncClientPeer consumer)
-              --TODO: deal with the exceptions this throws, use async
-        }
+      -- The block fetch logic thread in the background wants there to be a
+      -- block fetch client thread for each chain sync candidate it sees. So
+      -- start the chain sync client after the block fetch thread was
+      -- registered to make sure it never sees a chain sync candidate without
+      -- a corresponding block fetch client thread.
+      atomically $ takeTMVar clientRegistered
 
-{-------------------------------------------------------------------------------
-  Auxiliary
--------------------------------------------------------------------------------}
-
--- | The suffix of the chain starting after the specified point
-afterPoint :: HasHeader b => Point b -> Chain b -> [b]
-afterPoint p = dropWhile (\b -> blockSlot b <= Chain.pointSlot p)
-            . Chain.toOldestFirst
-
-dropMostRecent :: Chain b -> Chain b
-dropMostRecent Genesis  = error "dropMostRecent: empty chain"
-dropMostRecent (c :> _) = c
+      void $ forkNonTerminating registry $ csWithChan $ \chan ->
+        runPeer nullTracer csCodec chan $
+          chainSyncClientPeer (nrChainSyncClient up)

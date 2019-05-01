@@ -30,10 +30,11 @@ data DataFlow =
 -- | Creates two pipes, one for reading, one for writing. The 'DataFlow' input
 -- type is there to make it easier to correctly specify the pipes so that
 -- correct communication can occur.
-withPipeChannel :: DataFlow
+withPipeChannel :: String  -- ^ Identifier used in the pipe name
+                -> DataFlow
                 -> (Channel IO ByteString -> IO a)
                 -> IO a
-withPipeChannel dataflow action = do
+withPipeChannel ident dataflow action = do
     let (readName, writeName) = mkNames
     bracket (do createNamedPipe readName  (unionFileModes ownerModes otherReadMode)
                     `catch` (\(_ :: SomeException) -> pure ())
@@ -59,13 +60,13 @@ withPipeChannel dataflow action = do
     mkNames = case dataflow of
         Downstream (source :==>: destination) ->
             let [src,tgt] = map dashify [source, destination]
-            in ( "upstream-"   <> src <> "-" <> tgt
-               , "downstream-" <> src <> "-" <> tgt
+            in ( "upstream-"   <> ident <> "-" <> src <> "-" <> tgt
+               , "downstream-" <> ident <> "-" <> src <> "-" <> tgt
                )
         Upstream   (source :==>: destination) ->
             let [src,tgt] = map dashify [source, destination]
-            in ( "downstream-" <> src <> "-" <> tgt
-               , "upstream-"   <> src <> "-" <> tgt
+            in ( "downstream-" <> ident <> "-" <> src <> "-" <> tgt
+               , "upstream-"   <> ident <> "-" <> src <> "-" <> tgt
                )
 
 -- | Given a 'NodeId', it dashifies it.

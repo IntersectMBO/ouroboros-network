@@ -24,10 +24,11 @@ import           Ouroboros.Consensus.Crypto.Hash (ShortHash)
 import qualified Ouroboros.Consensus.Crypto.Hash as H
 import           Ouroboros.Consensus.Ledger.Abstract
 import qualified Ouroboros.Consensus.Ledger.Mock as Mock
-import           Ouroboros.Consensus.Node (NodeId (..),
-                     NodeKernel (getExtLedgerState))
+import           Ouroboros.Consensus.Node (NodeId (..), NodeKernel (getChainDB))
 import           Ouroboros.Consensus.Util.CBOR (Decoder (..), initDecoderIO)
 import           Ouroboros.Consensus.Util.Condense
+
+import           Ouroboros.Storage.ChainDB (getCurrentLedger)
 
 import           Mock.Mempool (Mempool (..), consistent, mempoolInsert)
 import           NamedPipe
@@ -99,13 +100,13 @@ submitTx n tx = do
     putStrLn $ "The Id for this transaction is: " <> condense (H.hash @ShortHash tx)
 
 readIncomingTx :: TVar IO (Mempool Mock.Tx)
-               -> NodeKernel IO NodeId (Mock.SimpleBlock p c)
+               -> NodeKernel IO NodeId (Mock.SimpleBlock p c) (Mock.SimpleHeader p c)
                -> Decoder IO
                -> IO ()
 readIncomingTx poolVar kernel Decoder{..} = forever $ do
     newTx <- decodeNext
     liftIO $ atomically $ do
-        l <- getExtLedgerState kernel
+        l <- getCurrentLedger $ getChainDB kernel
         mempool <- readTVar poolVar
         isConsistent <- runExceptT $ consistent (Mock.slsUtxo . ledgerState $ l) mempool newTx
         case isConsistent of
@@ -115,7 +116,7 @@ readIncomingTx poolVar kernel Decoder{..} = forever $ do
 
 spawnMempoolListener :: NodeId
                      -> TVar IO (Mempool Mock.Tx)
-                     -> NodeKernel IO NodeId (Mock.SimpleBlock p c)
+                     -> NodeKernel IO NodeId (Mock.SimpleBlock p c) (Mock.SimpleHeader p c)
                      -> IO (Async.Async ())
 spawnMempoolListener myNodeId poolVar kernel = do
     Async.async $ do

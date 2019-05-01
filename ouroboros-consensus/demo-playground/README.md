@@ -33,7 +33,7 @@ You can chain transactions once you know the hash, which is printed after you
 submit the transaction:
 
 ```
-> ./demo-playground/submit-tx.sh 2 a 1000
+> ./demo-playground/submit-tx.sh -n 2 --address a --amount 1000
 Up to date
 The Id for this transaction is: 6f6e1118
 ```

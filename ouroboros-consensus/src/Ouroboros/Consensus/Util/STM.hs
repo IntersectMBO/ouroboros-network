@@ -21,11 +21,16 @@ import           Control.Monad.Reader
 import           Control.Monad.State
 import           Control.Monad.Writer
 
-import           Control.Monad.Class.MonadFork
+import           Data.Void (Void)
+
+import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadFork (MonadFork)
 import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.Random
+import           Ouroboros.Consensus.Util.ThreadRegistry
 
 {-------------------------------------------------------------------------------
   Misc
@@ -42,11 +47,12 @@ blockUntilChanged f b getA = do
       else return (a, b')
 
 -- | Spawn a new thread that executes an action each time a TVar changes
-onEachChange :: forall m a b. (MonadSTM m, MonadFork m, Eq b)
-             => (a -> b) -> b -> STM m a -> (a -> m ()) -> m ()
-onEachChange f initB getA notify = void $ fork $ go initB
+onEachChange :: forall m a b. (MonadAsync m, MonadMask m, MonadFork m, Eq b)
+             => ThreadRegistry m
+             -> (a -> b) -> b -> STM m a -> (a -> m ()) -> m ()
+onEachChange registry f initB getA notify = void $ forkLinked registry $ go initB
   where
-    go :: b -> m ()
+    go :: b -> m Void
     go b = do
       (a, b') <- atomically $ blockUntilChanged f b getA
       notify a

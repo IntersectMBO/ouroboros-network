@@ -58,7 +58,7 @@ allEqual (x : xs@(_:_)) =
                               <> show (unSlotNo t)
                               <> " and contains "
                               <> show (Chain.length d)
-                              <> "blocks): "
+                              <> " blocks): "
                               <> condense d
         (Just _, Nothing)  -> error "impossible case"
         (Just s, Just t)   ->    "intersection reaches slot "

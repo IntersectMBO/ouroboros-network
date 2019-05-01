@@ -86,7 +86,7 @@ prop_simple_leader_schedule_convergence numSlots numCoreNodes params seed =
      $    collect (shortestLength final)
      $    Map.keys final === nodeIds
      .&&. prop_all_common_prefix
-            (fromIntegral (maxRollbacks $ praosSecurityParam params))
+            (maxRollbacks $ praosSecurityParam params)
             (Map.elems final)
 
 {-------------------------------------------------------------------------------

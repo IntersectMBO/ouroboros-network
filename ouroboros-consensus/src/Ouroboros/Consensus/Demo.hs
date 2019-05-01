@@ -16,6 +16,7 @@ module Ouroboros.Consensus.Demo (
   , DemoPraos
   , DemoLeaderSchedule
   , Block
+  , Header
   , NumCoreNodes(..)
   , ProtocolInfo(..)
   , protocolInfo
@@ -37,8 +38,7 @@ import qualified Data.Map.Strict as Map
 import qualified Data.Sequence as Seq
 import qualified Data.Set as Set
 
-import           Ouroboros.Network.Block (SlotNo(..))
-import           Ouroboros.Network.Chain (Chain (..))
+import           Ouroboros.Network.Block (SlotNo (..))
 
 import           Ouroboros.Consensus.Crypto.DSIGN
 import           Ouroboros.Consensus.Crypto.DSIGN.Mock (verKeyIdFromSigned)
@@ -76,10 +76,13 @@ data DemoProtocol p where
 -- | Our 'Block' type stays the same.
 type Block p = SimpleBlock p SimpleBlockMockCrypto
 
--- | Data required to run the specified protocol
+-- | Our 'Header' type stays the same.
+type Header p = SimpleHeader p SimpleBlockMockCrypto
+
+-- | Data required to run the specified protocol.
 data ProtocolInfo p = ProtocolInfo {
         pInfoConfig     :: NodeConfig p
-      , pInfoInitChain  :: Chain (Block p)
+        -- | The ledger state at genesis
       , pInfoInitLedger :: ExtLedgerState (Block p)
       , pInfoInitState  :: NodeState p
       }
@@ -119,7 +122,6 @@ protocolInfo (DemoBFT securityParam) (NumCoreNodes numCoreNodes) (CoreNodeId nid
               | n <- [0 .. numCoreNodes - 1]
               ]
           }
-      , pInfoInitChain  = Genesis
       , pInfoInitLedger = ExtLedgerState (genesisLedgerState addrDist) ()
       , pInfoInitState  = ()
       }
@@ -140,7 +142,6 @@ protocolInfo (DemoPBFT params) (NumCoreNodes numCoreNodes) (CoreNodeId nid) =
             , encNodeConfigExt = PBftLedgerView
                 (Map.fromList [(VerKeyMockDSIGN n, VerKeyMockDSIGN n) | n <- [0 .. numCoreNodes - 1]])
           }
-      , pInfoInitChain  = Genesis
       , pInfoInitLedger = ExtLedgerState (genesisLedgerState addrDist) ( Seq.empty, SlotNo 0 )
       , pInfoInitState  = ()
       }
@@ -160,7 +161,6 @@ protocolInfo (DemoPraos params) (NumCoreNodes numCoreNodes) (CoreNodeId nid) =
               }
           , encNodeConfigExt = addrDist
           }
-      , pInfoInitChain  = Genesis
       , pInfoInitLedger = ExtLedgerState {
             ledgerState         = genesisLedgerState addrDist
           , ouroborosChainState = []
@@ -195,7 +195,6 @@ protocolInfo (DemoLeaderSchedule schedule params)
             }
         , lsNodeConfigNodeId   = CoreNodeId nid
         }
-    , pInfoInitChain  = Genesis
     , pInfoInitLedger = ExtLedgerState
         { ledgerState         = genesisLedgerState addrDist
         , ouroborosChainState = ()

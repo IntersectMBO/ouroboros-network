@@ -25,6 +25,10 @@ library
 
   exposed-modules:
                        Ouroboros.Consensus.BlockchainTime
+                       Ouroboros.Consensus.BlockFetchClient
+                       Ouroboros.Consensus.BlockFetchServer
+                       Ouroboros.Consensus.ChainSyncClient
+                       Ouroboros.Consensus.ChainSyncServer
                        Ouroboros.Consensus.Crypto.DSIGN
                        Ouroboros.Consensus.Crypto.DSIGN.Class
                        Ouroboros.Consensus.Crypto.DSIGN.Ed448
@@ -56,6 +60,7 @@ library
                        Ouroboros.Consensus.Protocol.ExtNodeConfig
                        Ouroboros.Consensus.Protocol.ModChainSel
                        Ouroboros.Consensus.Util
+                       Ouroboros.Consensus.Util.AnchoredFragment
                        Ouroboros.Consensus.Util.CBOR
                        Ouroboros.Consensus.Util.Chain
                        Ouroboros.Consensus.Util.Classify
@@ -188,6 +193,7 @@ executable demo-playground
                        Run
                        Topology
   build-depends:       base,
+                       contra-tracer,
                        ouroboros-network,
                        ouroboros-consensus,
                        io-sim-classes,
@@ -235,7 +241,9 @@ test-suite test-consensus
                     io-sim-classes,
                     io-sim,
 
+                    bytestring,
                     containers,
+                    contra-tracer,
                     cryptonite,
                     fgl,
                     graphviz,
