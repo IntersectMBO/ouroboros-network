@@ -23,6 +23,7 @@ import           Data.Semigroup (Semigroup, Last(..))
 
 import           Control.Monad (when)
 import           Control.Monad.Class.MonadSTM
+import           Control.Exception (assert)
 
 import           Ouroboros.Network.Block (Point, blockPoint, HasHeader)
 import qualified Ouroboros.Network.ChainFragment as CF
@@ -176,6 +177,9 @@ addHeadersInFlight :: HasHeader header
                    -> PeerFetchInFlight header
                    -> PeerFetchInFlight header
 addHeadersInFlight blockFetchSize (FetchRequest fragments) inflight =
+    assert (and [ blockPoint header `Set.notMember` peerFetchBlocksInFlight inflight
+                | fragment <- fragments
+                , header   <- CF.toOldestFirst fragment ]) $
     PeerFetchInFlight {
       peerFetchReqsInFlight   = peerFetchReqsInFlight inflight
                               + fromIntegral (length fragments),
@@ -198,14 +202,14 @@ deleteHeaderInFlight :: HasHeader header
                      -> PeerFetchInFlight header
                      -> PeerFetchInFlight header
 deleteHeaderInFlight blockFetchSize header inflight =
+    assert (peerFetchBytesInFlight inflight >= blockFetchSize header) $
+    assert (blockPoint header `Set.member` peerFetchBlocksInFlight inflight) $
     inflight {
       peerFetchBytesInFlight  = peerFetchBytesInFlight inflight
                               - blockFetchSize header,
 
       peerFetchBlocksInFlight = blockPoint header
                    `Set.delete` peerFetchBlocksInFlight inflight
-      --TODO: can assert here that we don't go negative, and the
-      -- block we're deleting was in fact there.
     }
 
 
@@ -314,6 +318,10 @@ completeFetchBatch :: MonadSTM m
                    -> m ()
 completeFetchBatch FetchClientStateVars {fetchClientInFlightVar} =
     atomically $ modifyTVar' fetchClientInFlightVar $ \inflight ->
+      assert (if peerFetchReqsInFlight inflight == 1
+                 then peerFetchBytesInFlight inflight == 0
+                   && Set.null (peerFetchBlocksInFlight inflight)
+                 else True)
       inflight {
         peerFetchReqsInFlight = peerFetchReqsInFlight inflight - 1
       }
