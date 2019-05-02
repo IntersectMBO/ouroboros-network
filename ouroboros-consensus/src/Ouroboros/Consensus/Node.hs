@@ -49,11 +49,7 @@ import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..),
                      headSlot)
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.BlockFetch
-                     (BlockFetchConsensusInterface (..), FetchClientRegistry,
-                     blockFetchLogic, newFetchClientRegistry)
-import qualified Ouroboros.Network.BlockFetch.Client as BlockFetchClient
 import           Ouroboros.Network.BlockFetch.State (FetchMode (..))
-import           Ouroboros.Network.BlockFetch.Types (SizeInBytes)
 import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.Protocol.BlockFetch.Server
                      (BlockFetchServer (..), blockFetchServerPeer)
@@ -528,7 +524,7 @@ initNetworkLayer _tracer registry NetworkRequires{..} = NetworkProvides {..}
       clientRegistered <- newEmptyTMVarM
 
       void $ forkLinked registry $ bfWithChan $ \chan ->
-        BlockFetchClient.bracketFetchClient nrFetchClientRegistry up $ \stateVars -> do
+        bracketFetchClient nrFetchClientRegistry up $ \stateVars -> do
           atomically $ putTMVar clientRegistered ()
           -- TODO make 10 a parameter. Or encapsulate the pipelining
           -- stuff
