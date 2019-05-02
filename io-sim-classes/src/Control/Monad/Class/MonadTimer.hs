@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                        #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE DefaultSignatures          #-}
 
@@ -13,8 +14,12 @@ import           Control.Exception (assert)
 import           Data.Functor (void)
 import           Data.Time.Clock (DiffTime, diffTimeToPicoseconds)
 
+#if defined(__GLASGOW_HASKELL__) && !defined(mingw32_HOST_OS)
 import qualified GHC.Event as GHC (TimeoutKey, getSystemTimerManager,
                      registerTimeout, unregisterTimeout, updateTimeout)
+#else
+import           Control.Monad (when)
+#endif
 
 import           Control.Monad.Class.MonadFork (MonadFork(..))
 import           Control.Monad.Class.MonadSTM
@@ -93,6 +98,7 @@ class MonadSTM m => MonadTimer m where
 -- Instances for IO
 --
 
+#if defined(__GLASGOW_HASKELL__) && !defined(mingw32_HOST_OS)
 instance MonadTimer IO where
   data Timeout IO = TimeoutIO !(STM.TVar TimeoutState) !GHC.TimeoutKey
 
@@ -131,6 +137,37 @@ instance MonadTimer IO where
   threadDelay d = IO.threadDelay (diffTimeToMicrosecondsAsInt d)
 
   registerDelay = STM.registerDelay . diffTimeToMicrosecondsAsInt
+#else
+instance MonadTimer IO where
+  data Timeout IO = TimeoutIO !(STM.TVar (STM.TVar Bool)) !(STM.TVar Bool)
+
+  readTimeout (TimeoutIO timeoutvarvar cancelvar) = do
+    canceled <- STM.readTVar cancelvar
+    fired    <- STM.readTVar =<< STM.readTVar timeoutvarvar
+    case (canceled, fired) of
+      (True, _)  -> return TimeoutCancelled
+      (_, False) -> return TimeoutPending
+      (_, True)  -> return TimeoutFired
+
+  newTimeout d = do
+    timeoutvar    <- STM.registerDelay (diffTimeToMicrosecondsAsInt d)
+    timeoutvarvar <- STM.newTVarIO timeoutvar
+    cancelvar     <- STM.newTVarIO False
+    return (TimeoutIO timeoutvarvar cancelvar)
+
+  updateTimeout (TimeoutIO timeoutvarvar _cancelvar) d = do
+    timeoutvar' <- STM.registerDelay (diffTimeToMicrosecondsAsInt d)
+    STM.atomically $ STM.writeTVar timeoutvarvar timeoutvar'
+
+  cancelTimeout (TimeoutIO timeoutvarvar cancelvar) =
+    STM.atomically $ do
+      fired <- STM.readTVar =<< STM.readTVar timeoutvarvar
+      when (not fired) $ STM.writeTVar cancelvar True
+
+  threadDelay d = IO.threadDelay (diffTimeToMicrosecondsAsInt d)
+
+  registerDelay = STM.registerDelay . diffTimeToMicrosecondsAsInt
+#endif
 
 diffTimeToMicrosecondsAsInt :: DiffTime -> Int
 diffTimeToMicrosecondsAsInt d =
