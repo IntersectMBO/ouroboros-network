@@ -21,8 +21,7 @@ import           Ouroboros.Network.BlockFetch
                      (BlockFetchConsensusInterface (..))
 import           Ouroboros.Network.BlockFetch.Client (FetchClientPolicy (..))
 import qualified Ouroboros.Network.BlockFetch.Client as BlockFetchClient
-import           Ouroboros.Network.BlockFetch.Types (FetchClientStateVars)
-import           Ouroboros.Network.DeltaQ
+import           Ouroboros.Network.BlockFetch.ClientState (FetchClientStateVars)
 import           Ouroboros.Network.Protocol.BlockFetch.Type
                      (BlockFetch (BFIdle))
 
@@ -30,7 +29,7 @@ import           Ouroboros.Network.Protocol.BlockFetch.Type
 -- | The block fetch layer doesn't provide a readable type for the client yet,
 -- so define it ourselves for now.
 type BlockFetchClient hdr blk m a =
-  FetchClientStateVars hdr m ->
+  FetchClientStateVars m hdr ->
   PeerPipelined (BlockFetch hdr blk) AsClient BFIdle m a
 
 -- | Block fetch client based on
@@ -43,14 +42,12 @@ blockFetchClient
     => Tracer m String
     -> BlockFetchConsensusInterface up hdr blk m
     -> up -> BlockFetchClient hdr blk m ()
-blockFetchClient tracer blockFetchInterface _up clientStateVars =
-   -- TODO use @up@ in the tracer.
+blockFetchClient _tracer blockFetchInterface _up clientStateVars =
+   -- TODO trace and use @up@ in the output.
     BlockFetchClient.blockFetchClient
-        (showTracing tracer)
+        nullTracer
         policy
         clientStateVars
-        -- TODO #469 replace with real GSV
-        (return exampleFixedPeerGSVs)
   where
     BlockFetchConsensusInterface
       { blockFetchSize, blockMatchesHeader, addFetchedBlock } =
@@ -60,12 +57,3 @@ blockFetchClient tracer blockFetchInterface _up clientStateVars =
     -- as this isn't done yet, let's do it ourselves.
     policy = FetchClientPolicy
       { blockFetchSize, blockMatchesHeader, addFetchedBlock }
-
-    -- | Roughly 10ms ping time and 1MBit\/s bandwidth, leads to ~2200 bytes
-    -- in flight minimum.
-    --
-    exampleFixedPeerGSVs :: PeerGSV
-    exampleFixedPeerGSVs = PeerGSV { outboundGSV, inboundGSV }
-      where
-        inboundGSV  = ballisticGSV 10e-3 10e-6 (degenerateDistribution 0)
-        outboundGSV = inboundGSV
