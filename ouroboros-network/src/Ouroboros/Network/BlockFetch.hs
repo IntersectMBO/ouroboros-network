@@ -85,6 +85,11 @@ module Ouroboros.Network.BlockFetch (
     -- * The 'FetchClientRegistry'
     FetchClientRegistry,
     newFetchClientRegistry,
+    bracketFetchClient,
+
+    -- * Re-export types used by 'BlockFetchConsensusInterface'
+    FetchMode (..),
+    SizeInBytes,
   ) where
 
 import           Data.Map.Strict (Map)
@@ -103,7 +108,8 @@ import           Ouroboros.Network.DeltaQ
 import           Ouroboros.Network.BlockFetch.State
 import           Ouroboros.Network.BlockFetch.ClientRegistry
                    ( FetchClientRegistry, newFetchClientRegistry
-                   , readFetchClientsStatus, readFetchClientsStateVars )
+                   , readFetchClientsStatus, readFetchClientsStateVars
+                   , bracketFetchClient )
 
 
 -- | The consensus layer functionality that the block fetch logic requires.
