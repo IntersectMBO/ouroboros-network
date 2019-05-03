@@ -10,7 +10,7 @@
 module Ouroboros.Consensus.ChainSyncClient (
     Consensus
   , chainSyncClient
-  , ChainSyncClientException
+  , ChainSyncClientException (..)
   , ClockSkew (..)
   , CandidateState (..)
   ) where
