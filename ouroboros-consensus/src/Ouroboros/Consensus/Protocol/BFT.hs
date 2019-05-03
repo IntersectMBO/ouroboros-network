@@ -21,7 +21,7 @@ module Ouroboros.Consensus.Protocol.BFT (
   , Payload(..)
   ) where
 
-import           Codec.Serialise (Serialise(..))
+import           Codec.Serialise (Serialise (..))
 import           Control.Monad.Except
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -117,6 +117,7 @@ instance BftCrypto c => OuroborosTag (Bft c) where
       SlotNo n       = blockSlot b
       expectedLeader = CoreId $ fromIntegral (n `mod` bftNumNodes)
 
+  rewindChainState _ _ _ = Just ()
 
 deriving instance BftCrypto c => Show     (Payload (Bft c) ph)
 deriving instance BftCrypto c => Eq       (Payload (Bft c) ph)

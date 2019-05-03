@@ -35,7 +35,6 @@ module Ouroboros.Consensus.Ledger.Mock (
   , blockMatchesHeader
     -- * Updating the Ledger state
   , LedgerState(..)
-  , HeaderState(..)
   , AddrDist
   , relativeStakes
   , totalStakes
@@ -366,6 +365,11 @@ type instance BlockProtocol (SimpleBlock p c) = p
 
 type instance BlockProtocol (SimpleHeader p c) = p
 
+instance (SimpleBlockCrypto c, OuroborosTag p, Serialise (Payload p (SimplePreHeader p c)))
+      => HasPreHeader (SimpleHeader p c) where
+  type PreHeader (SimpleHeader p c) = SimplePreHeader p c
+
+  blockPreHeader = headerPreHeader
 
 instance (SimpleBlockCrypto c, OuroborosTag p, Serialise (Payload p (SimplePreHeader p c)))
       => HasPreHeader (SimpleBlock p c) where
@@ -377,8 +381,24 @@ instance ( SimpleBlockCrypto c
          , OuroborosTag p
          , Serialise (Payload p (SimplePreHeader p c))
          )
+      => HasPayload p (SimpleHeader p c) where
+  blockPayload _ = headerOuroboros
+
+instance ( SimpleBlockCrypto c
+         , OuroborosTag p
+         , Serialise (Payload p (SimplePreHeader p c))
+         )
       => HasPayload p (SimpleBlock p c) where
   blockPayload _ = headerOuroboros . simpleHeader
+
+-- TODO: This instance is ugly.. can we avoid it?
+instance ( OuroborosTag p
+         , SimpleBlockCrypto c
+         , Serialise (Payload p (SimplePreHeader (ExtNodeConfig cfg p) c))
+         , Typeable cfg
+         )
+      => HasPayload p (SimpleHeader (ExtNodeConfig cfg p) c) where
+  blockPayload _ = encPayloadP . headerOuroboros
 
 -- TODO: This instance is ugly.. can we avoid it?
 instance ( OuroborosTag p
@@ -398,23 +418,19 @@ instance OuroborosTag p => UpdateLedger (SimpleBlock p c) where
 
   data LedgerError (SimpleBlock p c) = LedgerErrorInvalidInputs InvalidInputs
     deriving (Show)
+  data LedgerConfig (SimpleBlock p c) = MockLedgerConfig
 
-  -- | For the mock implementation, we don't need any state for header
-  -- validation at all, after all, we validate blocks /anyway/. The only thing
-  -- we do need to know is that the hash in the 'Point' matches the block.
-  data HeaderState (SimpleBlock p c) = SimpleHeaderState
+  applyLedgerHeader _ _ = pure
 
   -- Apply a block to the ledger state
-  applyLedgerState b (SimpleLedgerState u c) = do
+  applyLedgerBlock _ b (SimpleLedgerState u c) = do
       u' <- withExceptT LedgerErrorInvalidInputs $ updateUtxo b u
       return $ SimpleLedgerState u' (c `Set.union` confirmed b)
 
-  getHeaderState _ _ = SimpleHeaderState
-
-  advanceHeader  _ _ _ = return SimpleHeaderState
-
 deriving instance OuroborosTag p => Show (LedgerState (SimpleBlock p c))
 
+instance OuroborosTag p => LedgerConfigView (SimpleBlock p c) where
+  ledgerConfigView = const MockLedgerConfig
 {-------------------------------------------------------------------------------
   Support for various consensus algorithms
 -------------------------------------------------------------------------------}
@@ -427,22 +443,28 @@ type AddrDist = Map Addr NodeId
 instance (BftCrypto c, SimpleBlockCrypto c')
       => ProtocolLedgerView (SimpleBlock (Bft c) c') where
   protocolLedgerView _ _ = ()
+  anachronisticProtocolLedgerView _ _ _ = Just $ slotUnbounded ()
 
 -- | Mock ledger is capable of running PBFT, but we simply assume the delegation
 -- map and the protocol parameters can be found statically in the node
 -- configuration.
-instance (PBftCrypto c, SimpleBlockCrypto c')
-  => ProtocolLedgerView (SimpleBlock (ExtNodeConfig (PBftLedgerView c) (PBft c)) c') where
+instance (SimpleBlockCrypto c')
+  => ProtocolLedgerView (SimpleBlock (ExtNodeConfig (PBftLedgerView PBftMockCrypto) (PBft PBftMockCrypto)) c') where
   protocolLedgerView (EncNodeConfig _ pbftParams) _ls = pbftParams
+
+  anachronisticProtocolLedgerView = error "TODO"
 
 instance ( PraosCrypto c, SimpleBlockCrypto c')
       => ProtocolLedgerView (SimpleBlock (ExtNodeConfig AddrDist (Praos c)) c') where
   protocolLedgerView (EncNodeConfig _ addrDist) (SimpleLedgerState u _) =
       relativeStakes $ totalStakes addrDist u
 
+  anachronisticProtocolLedgerView = error "TODO: write up discussion with Jared, Nicholas and Duncan"
+
 instance (PraosCrypto c, SimpleBlockCrypto c')
       => ProtocolLedgerView (SimpleBlock (WithLeaderSchedule (Praos c)) c') where
   protocolLedgerView _ _ = ()
+  anachronisticProtocolLedgerView _ _ _ = Just $ slotUnbounded ()
 
 {-------------------------------------------------------------------------------
   Compute relative stake

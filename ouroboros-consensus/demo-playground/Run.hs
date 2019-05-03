@@ -14,6 +14,7 @@ import           Control.Monad
 import           Control.Monad.Trans
 import           Control.Tracer
 import           Crypto.Random
+import           Data.Functor.Contravariant (contramap)
 import qualified Data.Map.Strict as M
 import           Data.Maybe
 import           Data.Semigroup ((<>))
@@ -123,7 +124,8 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
       btime  <- realBlockchainTime registry slotDuration systemStart
       let tracer = contramap ((show myNodeId <> " | ") <>) stdoutTracer
           nodeParams = NodeParams
-            { tracer
+            { encoder            = encode
+            , tracer             = nullTracer
             , threadRegistry     = registry
             , maxClockSkew       = ClockSkew 1
             , cfg                = pInfoConfig

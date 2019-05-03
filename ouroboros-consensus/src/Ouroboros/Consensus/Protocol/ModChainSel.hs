@@ -65,6 +65,7 @@ instance (Typeable p, Typeable s, ChainSelection p s) => OuroborosTag (ModChainS
 
     checkIsLeader         (McsNodeConfig cfg) = checkIsLeader         cfg
     applyChainState toEnc (McsNodeConfig cfg) = applyChainState toEnc cfg
+    rewindChainState      (McsNodeConfig cfg) = rewindChainState      cfg
     protocolSecurityParam (McsNodeConfig cfg) = protocolSecurityParam cfg
 
     preferCandidate   (McsNodeConfig cfg) = preferCandidate'   (Proxy :: Proxy s) cfg

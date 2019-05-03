@@ -39,8 +39,6 @@ import qualified Data.Map.Strict as Map
 import qualified Data.Sequence as Seq
 import qualified Data.Set as Set
 
-import           Ouroboros.Network.Block (SlotNo (..))
-
 import           Ouroboros.Consensus.Crypto.DSIGN
 import           Ouroboros.Consensus.Crypto.DSIGN.Mock (verKeyIdFromSigned)
 import           Ouroboros.Consensus.Crypto.Hash
@@ -91,6 +89,7 @@ data ProtocolInfo p = ProtocolInfo {
 type DemoProtocolConstraints p = (
     OuroborosTag p
   , ProtocolLedgerView (Block p)
+  , SupportedBlock p (SimpleHeader p SimpleBlockMockCrypto)
   , HasCreator (Block p)
   , Condense  (Payload p (SimplePreHeader p SimpleBlockMockCrypto))
   , Eq        (Payload p (SimplePreHeader p SimpleBlockMockCrypto))
@@ -143,7 +142,7 @@ protocolInfo (DemoPBFT params) (NumCoreNodes numCoreNodes) (CoreNodeId nid) =
             , encNodeConfigExt = PBftLedgerView
                 (Map.fromList [(VerKeyMockDSIGN n, VerKeyMockDSIGN n) | n <- [0 .. numCoreNodes - 1]])
           }
-      , pInfoInitLedger = ExtLedgerState (genesisLedgerState addrDist) ( Seq.empty, SlotNo 0 )
+      , pInfoInitLedger = ExtLedgerState (genesisLedgerState addrDist) Seq.empty
       , pInfoInitState  = ()
       }
   where

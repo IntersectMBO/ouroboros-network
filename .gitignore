@@ -24,7 +24,7 @@ dist/
 *_flymake.hs
 result*
 tags
-TAGS
+**/TAGS
 
 .stack-work/
 *.tix

@@ -158,6 +158,20 @@ class ( Show (ChainState    p)
   -- | We require that protocols support a @k@ security parameter
   protocolSecurityParam :: NodeConfig p -> SecurityParam
 
+  -- | We require that it's possible to reverse the chain state up to '2k'
+  -- slots.
+  --
+  -- This function should attempt to rewind the chain state to the state at some
+  -- given slot.
+  --
+  -- Implementers should take care that this function accurately reflects the
+  -- slot number, rather than the number of blocks, since naively the
+  -- 'ChainState' will be updated only on processing an actual block.
+  rewindChainState :: NodeConfig p
+                   -> ChainState p
+                   -> SlotNo -- ^ Slot to rewind to.
+                   -> Maybe (ChainState p)
+
 -- | Protocol security parameter
 --
 -- We interpret this as the number of rollbacks we support.

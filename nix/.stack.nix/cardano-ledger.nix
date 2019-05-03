@@ -19,7 +19,6 @@
         depends = [
           (hsPkgs.base)
           (hsPkgs.aeson)
-          (hsPkgs.base16-bytestring)
           (hsPkgs.base58-bytestring)
           (hsPkgs.base64-bytestring-type)
           (hsPkgs.binary)
@@ -28,14 +27,15 @@
           (hsPkgs.cardano-binary)
           (hsPkgs.cardano-crypto-wrapper)
           (hsPkgs.cardano-prelude)
-          (hsPkgs.cborg)
           (hsPkgs.containers)
+          (hsPkgs.concurrency)
           (hsPkgs.cryptonite)
           (hsPkgs.Cabal)
+          (hsPkgs.deepseq)
           (hsPkgs.directory)
           (hsPkgs.filepath)
           (hsPkgs.formatting)
-          (hsPkgs.lens)
+          (hsPkgs.iohk-monitoring)
           (hsPkgs.memory)
           (hsPkgs.mtl)
           (hsPkgs.resourcet)
@@ -53,7 +53,6 @@
             (hsPkgs.base)
             (hsPkgs.base16-bytestring)
             (hsPkgs.bytestring)
-            (hsPkgs.canonical-json)
             (hsPkgs.cardano-binary)
             (hsPkgs.cardano-binary-test)
             (hsPkgs.cardano-ledger)
@@ -67,7 +66,6 @@
             (hsPkgs.cryptonite)
             (hsPkgs.cs-blockchain)
             (hsPkgs.cs-ledger)
-            (hsPkgs.directory)
             (hsPkgs.filepath)
             (hsPkgs.formatting)
             (hsPkgs.hedgehog)
@@ -86,7 +84,7 @@
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
       url = "https://github.com/input-output-hk/cardano-ledger";
-      rev = "595cfb5b20863fca869550423a4e27aab8e68aed";
-      sha256 = "0khfa77lx4xvnqrl62px7cvzqy4s0h9w6sz8fcxm310dap1bvlwp";
+      rev = "12838595066398cbe49f6ea1f0c4f4c03882e530";
+      sha256 = "13904x9bg9yrykqy73aglsacck5h761359wca0bx234g39fi1fy0";
       });
     }

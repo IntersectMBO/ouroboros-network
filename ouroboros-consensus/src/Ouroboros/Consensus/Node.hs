@@ -28,9 +28,11 @@ module Ouroboros.Consensus.Node (
   , Network.loggingChannel
   ) where
 
+import           Codec.CBOR.Encoding (Encoding)
 import           Codec.Serialise (Serialise)
 import           Control.Monad (void)
 import           Crypto.Random (ChaChaDRG)
+import           Data.Functor.Contravariant (contramap)
 import           Data.Map.Strict (Map)
 import           Data.Void (Void)
 
@@ -155,7 +157,8 @@ data NodeCallbacks m blk = NodeCallbacks {
 
 -- | Parameters required when initializing a node
 data NodeParams m up blk hdr = NodeParams {
-      tracer             :: Tracer m String
+      encoder            :: PreHeader blk -> Encoding
+    , tracer             :: Tracer m String
     , threadRegistry     :: ThreadRegistry m
     , maxClockSkew       :: ClockSkew
     , cfg                :: NodeConfig (BlockProtocol blk)
@@ -177,9 +180,11 @@ nodeKernel
        , ProtocolLedgerView blk
        , HasHeader hdr
        , HeaderHash hdr ~ HeaderHash blk
+       , SupportedBlock (BlockProtocol hdr) hdr
        , BlockProtocol hdr ~ BlockProtocol blk
        , Ord up
        , TraceConstraints up blk hdr
+       , Serialise (PreHeader hdr)
        )
     => NodeParams m up blk hdr
     -> m (NodeKernel m up blk hdr)
@@ -220,7 +225,7 @@ data InternalState m up blk hdr = IS {
     , chainDB             :: ChainDB m blk hdr
     , blockFetchInterface :: BlockFetchConsensusInterface up hdr blk m
     , fetchClientRegistry :: FetchClientRegistry up hdr m
-    , varCandidates       :: TVar m (Map up (TVar m (CandidateState blk hdr)))
+    , varCandidates       :: TVar m (Map up (TVar m (CandidateState hdr)))
     , varState            :: TVar m (NodeState (BlockProtocol blk))
     , tracer              :: Tracer m String
     }
@@ -235,9 +240,11 @@ initInternalState
        , HasHeader hdr
        , HeaderHash hdr ~ HeaderHash blk
        , ProtocolLedgerView blk
+       , SupportedBlock (BlockProtocol hdr) hdr
        , BlockProtocol hdr ~ BlockProtocol blk
        , Ord up
        , TraceConstraints up blk hdr
+       , Serialise (PreHeader hdr)
        )
     => NodeParams m up blk hdr
     -> m (InternalState m up blk hdr)

@@ -17,34 +17,37 @@ package ouroboros-network
 package ouroboros-consensus
   tests: True
 
+package basic-tracer
+  tests: False
+
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/iohk-monitoring-framework
   subdir: iohk-monitoring
-  tag: b656651fd3c357860d8136598b223b048c195eae
+  tag: 8614c66d9f13ad7bd68975700651a720a78d620e
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/iohk-monitoring-framework
   subdir:   contra-tracer
-  tag: b656651fd3c357860d8136598b223b048c195eae
+  tag: 8614c66d9f13ad7bd68975700651a720a78d620e
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-base
-  tag: 2f33cbf9101dfee1cb488271ec96e210329eec96
+  tag: 0d255c9b69e2fb76699e51d8474039f7ad9e25a9
   subdir: binary
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger
-  tag: 595cfb5b20863fca869550423a4e27aab8e68aed
+  tag: 7d958e16f3ba319234817106d8303d22cb93ec42
   subdir: .
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger
-  tag: 595cfb5b20863fca869550423a4e27aab8e68aed
+  tag: 7d958e16f3ba319234817106d8303d22cb93ec42
   subdir: crypto
 
 source-repository-package

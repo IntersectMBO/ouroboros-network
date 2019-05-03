@@ -117,7 +117,7 @@ empty initLedger = Model {
     , iterators     = Map.empty
     }
 
-addBlock :: forall blk. ProtocolLedgerView blk
+addBlock :: forall blk. (ProtocolLedgerView blk, LedgerConfigView blk)
          => (PreHeader blk -> Encoding)
          -> NodeConfig (BlockProtocol blk)
          -> blk -> Model blk -> Model blk
@@ -140,7 +140,7 @@ addBlock toEnc cfg blk m = Model {
     (newChain, newLedger) = fromMaybe (currentChain m, currentLedger m) $
                                selectChain cfg (currentChain m) candidates
 
-addBlocks :: forall blk. ProtocolLedgerView blk
+addBlocks :: forall blk. (ProtocolLedgerView blk, LedgerConfigView blk)
           => (PreHeader blk -> Encoding)
           -> NodeConfig (BlockProtocol blk)
           -> [blk] -> Model blk -> Model blk
@@ -217,7 +217,7 @@ notGenesis p =
       GenesisHash -> error "Ouroboros.Storage.ChainDB.Model: notGenesis"
       BlockHash h -> h
 
-validate :: ProtocolLedgerView blk
+validate :: (ProtocolLedgerView blk, LedgerConfigView blk)
          => (PreHeader blk -> Encoding)
          -> NodeConfig (BlockProtocol blk)
          -> ExtLedgerState blk

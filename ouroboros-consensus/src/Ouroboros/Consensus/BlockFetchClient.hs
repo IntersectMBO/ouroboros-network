@@ -31,7 +31,7 @@ import           Ouroboros.Consensus.Util.Condense
 -- so define it ourselves for now.
 type BlockFetchClient hdr blk m a =
   FetchClientStateVars m hdr ->
-  PeerPipelined (BlockFetch hdr blk) AsClient BFIdle m a
+  PeerPipelined (BlockFetch hdr blk) 'AsClient 'BFIdle m a
 
 -- | Block fetch client based on
 -- 'Ouroboros.Network.BlockFetch.Examples.mockedBlockFetchClient1', but using

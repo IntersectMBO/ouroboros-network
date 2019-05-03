@@ -64,6 +64,7 @@ instance (Typeable cfg, OuroborosTag p) => OuroborosTag (ExtNodeConfig cfg p) wh
   compareCandidates     (EncNodeConfig cfg _) = compareCandidates     cfg
   checkIsLeader         (EncNodeConfig cfg _) = checkIsLeader         cfg
   applyChainState toEnc (EncNodeConfig cfg _) = applyChainState toEnc cfg
+  rewindChainState      (EncNodeConfig cfg _) = rewindChainState      cfg
   protocolSecurityParam (EncNodeConfig cfg _) = protocolSecurityParam cfg
 
 deriving instance Eq       (Payload p ph) => Eq       (Payload (ExtNodeConfig cfg p) ph)

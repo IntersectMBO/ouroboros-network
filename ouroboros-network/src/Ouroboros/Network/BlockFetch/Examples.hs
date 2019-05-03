@@ -17,6 +17,7 @@ import           Data.Map (Map)
 import qualified Data.Set as Set
 import           Data.Set (Set)
 import qualified Data.ByteString.Lazy as LBS
+import           Data.Functor.Contravariant (contramap)
 import           Codec.Serialise (Serialise)
 
 import           Control.Monad.Class.MonadSTM
@@ -24,7 +25,7 @@ import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadTime
-import           Control.Tracer (Tracer, contramap, nullTracer)
+import           Control.Tracer (Tracer, nullTracer)
 import           Control.Exception (assert)
 
 import           Ouroboros.Network.Block
@@ -341,4 +342,3 @@ mkTestFetchedBlockHeap points = do
       getTestFetchedBlocks = readTVar v,
       addTestFetchedBlock  = \p _b -> atomically (modifyTVar' v (Set.insert p))
     }
-
