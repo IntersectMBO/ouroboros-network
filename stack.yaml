@@ -1,4 +1,4 @@
-resolver: https://raw.githubusercontent.com/input-output-hk/cardano-prelude/d0d22fc64eb91908d34c69a4aeff9df3f8d0decd/snapshot.yaml
+resolver: https://raw.githubusercontent.com/input-output-hk/cardano-prelude/b25eed0ab3b6da51bc10970759d491331e56c822/snapshot.yaml
 
 packages:
   - ./typed-transitions
@@ -8,28 +8,27 @@ packages:
   - ./ouroboros-consensus
   - ./io-sim
   - ./io-sim-classes
-  - ./byron-proxy
 
 extra-deps:
   - git: https://github.com/input-output-hk/iohk-monitoring-framework
-    commit: b656651fd3c357860d8136598b223b048c195eae
+    commit: 8614c66d9f13ad7bd68975700651a720a78d620e
     subdirs:
       - iohk-monitoring
       - contra-tracer
 
   - git: https://github.com/input-output-hk/cardano-base
-    commit: 2f33cbf9101dfee1cb488271ec96e210329eec96
+    commit: 5bca69f048c4d599c362d797ee8b036c118f77f4
     subdirs:
       - binary
 
   - git: https://github.com/input-output-hk/cardano-ledger
-    commit: 595cfb5b20863fca869550423a4e27aab8e68aed
+    commit: 12838595066398cbe49f6ea1f0c4f4c03882e530
     subdirs:
       - .
       - crypto
 
   - git: https://github.com/input-output-hk/cardano-prelude
-    commit: e1fb84b1a955b6e3e3e53d9022e8bc0f927417a2
+    commit: b25eed0ab3b6da51bc10970759d491331e56c822
 
   - ekg-0.4.0.15
   - libyaml-0.1.0.0
