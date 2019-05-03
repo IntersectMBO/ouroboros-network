@@ -1,5 +1,6 @@
 packages: byron-proxy.cabal
           ../ouroboros-network
+          ../ouroboros-network-testing
           ../ouroboros-consensus
           ../io-sim-classes
           ../io-sim
@@ -187,3 +188,27 @@ source-repository-package
   location: https://github.com/input-output-hk/cardano-sl
   tag: 0af82eb3de205c6a1a681e1c10b0b513d3e8eb2b
   subdir: util/test
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/cardano-base
+  tag: 2f33cbf9101dfee1cb488271ec96e210329eec96
+  subdir: binary
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/cardano-ledger
+  tag: 595cfb5b20863fca869550423a4e27aab8e68aed
+  subdir: .
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/cardano-ledger
+  tag: 595cfb5b20863fca869550423a4e27aab8e68aed
+  subdir: crypto
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/cardano-prelude
+  tag: e1fb84b1a955b6e3e3e53d9022e8bc0f927417a2
+
