@@ -59,11 +59,11 @@ and partly the ledger team:
 - [x] #252 Volatile DB: Extend q-s-m tests to test reopening
 - [x] #253 Volatile DB: Migrate unit tests to q-s-m tests
 - [x] #273 Volatile DB: Check against simulated errors
+- [x] #373 Volatile DB: Add fingerprint
 - [x] #435 uncover STM transactions of some VolatileDB api calls
 - [x] #450 Vol DB: `getIsMember` should not return a `Maybe`
 - [x] #463 Volatile DB: make getIsMember transactional
 
-- [ ] #373 Volatile DB: Add fingerprint
 - [ ] #378 Volatile DB: Audit memory footprint
 - [ ] #430 Volatile DB: Duplicate Blocks
 
@@ -90,8 +90,9 @@ and partly the ledger team:
 
 ## Use storage system in consensus layer
 
+- [X] #266 Write chainSyncServer that uses on-disk storage
+
 - [ ] #245 Actually use on-disk storage and do proper rollback
-- [ ] #266 Write chainSyncServer that uses on-disk storage
 
 # Perm_BFT
 
@@ -115,13 +116,20 @@ and partly the ledger team:
 # Header-Body split
 
 - [X] #189 Consensus_Incorporate Network Layer (Header/Body Split) [DUP]
+- [X] #243 Update network abstraction for header/body split
 
 - [ ] #244 Header validation without corresponding bodies
-- [ ] #243 Update network abstraction for header/body split
+
+## Chain Sync Client
+
+- [ ] #465 Chain Sync Client: trim and reject candidate chains
+- [ ] #466 Chain Sync Client: disconnect from nodes with invalid blocks
+- [ ] #467 Chain Sync Client: switch to their head if possible
+- [ ] #472 Chain Sync Client: make sure the HeaderState and LedgerState don't drift too far apart
 
 ## Stretch goals
 
-- [ ] #423 Rate limiting in the Chain Sync client
+- [ ] #423 Chain Sync Client: rate limiting
 
 # Mempool
 
@@ -150,6 +158,7 @@ and partly the ledger team:
 - [ ] #236 Protocol testing: test chain quality
 - [ ] #237 Protocol testing: check liveness
 - [ ] #269 Protocol testing: recovery from disk failure
+- [ ] #470 Protocol testing: test what happens when blocks don't match their headers
 
 # Shelley
 
