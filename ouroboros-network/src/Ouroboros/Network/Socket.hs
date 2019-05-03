@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -101,12 +102,15 @@ socketAsMuxBearer sd = do
       closeSocket = Socket.close sd
 
       sduSize :: IO Word16
+#if defined(mingw32_HOST_OS)
+      sduSize = return 13000 -- MaxSegment isn't supported on Windows
+#else
       sduSize = do
           -- XXX it is really not acceptable to call getSocketOption for every SDU we want to send
           mss <- Socket.getSocketOption sd Socket.MaxSegment
           -- 1260 = IPv6 min MTU minus TCP header, 8 = mux header size
           return $ fromIntegral $ max (1260 - 8) (min 0xffff (15 * mss - 8))
-
+#endif
 
 hexDump :: BL.ByteString -> String -> IO ()
 hexDump buf out | BL.empty == buf = say out
@@ -155,7 +159,9 @@ withNetworkNode NetworkInterface {nodeAddress, protocols} k =
     mkSocket = do
       sd <- Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol
       Socket.setSocketOption sd Socket.ReuseAddr 1
+#if !defined(mingw32_HOST_OS)
       Socket.setSocketOption sd Socket.ReusePort 1
+#endif
       Socket.bind sd (Socket.addrAddress nodeAddress)
       Socket.listen sd 1
       pure sd
@@ -194,7 +200,9 @@ withNetworkNode NetworkInterface {nodeAddress, protocols} k =
         Socket.close
         (\sd -> do
             Socket.setSocketOption sd Socket.ReuseAddr 1
+#if !defined(mingw32_HOST_OS)
             Socket.setSocketOption sd Socket.ReusePort 1
+#endif
             Socket.bind sd (Socket.addrAddress nodeAddress)
             Socket.connect sd (Socket.addrAddress remoteAddr)
             bearer <- socketAsMuxBearer sd
