@@ -59,7 +59,6 @@ extra-deps:
       - crypto
       - crypto/test
       - networking
-      - networking/test
 
   - git: https://github.com/input-output-hk/cardano-report-server
     commit: 93f2246c54436e7f98cc363b4e0f8f1cb5e78717
