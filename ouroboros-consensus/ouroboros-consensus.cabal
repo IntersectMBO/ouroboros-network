@@ -224,6 +224,7 @@ test-suite test-consensus
   main-is:          Main.hs
   other-modules:
                     Test.Consensus.BlockchainTime
+                    Test.Consensus.ChainSyncClient
                     Test.Dynamic.BFT
                     Test.Dynamic.General
                     Test.Dynamic.LeaderSchedule
@@ -234,6 +235,7 @@ test-suite test-consensus
                     Test.Ouroboros
                     Test.Util.Orphans.Arbitrary
                     Test.Util.DepFn
+                    Test.Util.TestBlock
   build-depends:    base,
                     typed-protocols,
                     ouroboros-network,
@@ -246,9 +248,11 @@ test-suite test-consensus
                     contra-tracer,
                     cryptonite,
                     fgl,
+                    fingertree,
                     graphviz,
                     mtl,
                     QuickCheck,
+                    random,
                     serialise,
                     tasty,
                     tasty-hunit,

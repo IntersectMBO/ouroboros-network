@@ -18,6 +18,7 @@ import           Test.QuickCheck hiding (Fixed (..))
 import           Ouroboros.Network.Block (SlotNo (..))
 
 import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
 import           Ouroboros.Consensus.Crypto.DSIGN.Class (DSIGNAlgorithm (..))
 import           Ouroboros.Consensus.Crypto.Hash.Class (Hash,
                      HashAlgorithm (..), hash)
@@ -97,6 +98,10 @@ genSmallEpochNo =
 instance Arbitrary EpochSlot where
   arbitrary = EpochSlot <$> arbitrary <*> arbitrary
   shrink    = genericShrink
+
+instance Arbitrary ClockSkew where
+  arbitrary = ClockSkew <$> choose (0, 5)
+  shrink (ClockSkew n) = [ ClockSkew n' | n' <- shrink n ]
 
 {-------------------------------------------------------------------------------
   Crypto
