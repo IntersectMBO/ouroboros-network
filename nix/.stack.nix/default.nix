@@ -29,7 +29,6 @@
         ouroboros-consensus = ./ouroboros-consensus.nix;
         io-sim = ./io-sim.nix;
         io-sim-classes = ./io-sim-classes.nix;
-        byron-proxy = ./byron-proxy.nix;
         iohk-monitoring = ./iohk-monitoring.nix;
         contra-tracer = ./contra-tracer.nix;
         cardano-binary = ./cardano-binary.nix;
