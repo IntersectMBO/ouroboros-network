@@ -49,7 +49,7 @@ ioHasFS mount = HasFS {
         F.close h
     , hSeek = \(HandleIO fp h) mode o -> rethrowFsError fp $
         F.seek h mode o
-    , hGet = \(HandleIO fp h) n -> rethrowFsError fp $
+    , hGetSome = \(HandleIO fp h) n -> rethrowFsError fp $
         F.read h n
     , hTruncate = \(HandleIO fp h) sz -> rethrowFsError fp $
         F.truncate h sz
@@ -125,8 +125,8 @@ hPutBufferIO hnd buf0 = go 0 buf0 . BS.runBuilder
         (n, next) <- write ptr sz
         -- so now our buffer contains 'n' bytes
         -- write it all out to the handle leaving our buffer empty
-        bytesCount <- F.write hnd ptr (fromIntegral n)
-        return (bytesCount, next)
+        F.writeFull hnd ptr (fromIntegral n)
+        return (n, next)
       case next of
         BS.Done -> return (bytesWritten + fromIntegral bytesCount)
         BS.More minSize write' | bufferSize buf < minSize -> do
@@ -136,6 +136,7 @@ hPutBufferIO hnd buf0 = go 0 buf0 . BS.runBuilder
         BS.More _minSize write' ->
           go (bytesWritten + fromIntegral bytesCount) buf write'
         BS.Chunk chunk   write' -> do
-          n <- BS.unsafeUseAsCStringLen chunk $ \(ptr, len) ->
-                   F.write hnd (castPtr ptr) (fromIntegral len)
-          go (bytesWritten + fromIntegral n + fromIntegral bytesCount) buf write'
+          len <- BS.unsafeUseAsCStringLen chunk $ \(ptr, len) -> do
+                   F.writeFull hnd (castPtr ptr) (fromIntegral len)
+                   return len
+          go (bytesWritten + fromIntegral len + fromIntegral bytesCount) buf write'

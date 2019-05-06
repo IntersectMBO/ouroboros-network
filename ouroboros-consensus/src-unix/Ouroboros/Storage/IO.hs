@@ -6,6 +6,7 @@ module Ouroboros.Storage.IO (
     , seek
     , read
     , write
+    , writeFull
     , close
     , getSize
     , isHandleClosedException
@@ -21,7 +22,7 @@ import           Data.ByteString.Internal as Internal
 
 import           Data.Int (Int64)
 import           Data.Word (Word32, Word64, Word8)
-import           Foreign (Ptr)
+import           Foreign (Ptr, plusPtr)
 import           System.IO (IOMode (..), SeekMode (..))
 import qualified System.IO.Error as IO
 import           System.Posix (Fd)
@@ -78,6 +79,15 @@ open fp ioMode = do
 write :: FHandle -> Ptr Word8 -> Int64 -> IO Word32
 write h data' bytes = withOpenHandle "write" h $ \fd ->
     fromIntegral <$> Posix.fdWriteBuf fd data' (fromIntegral bytes)
+
+-- | Like write, but it also makes sure that the whole buffer is flushed.
+writeFull :: FHandle -> Ptr Word8 -> Int64 -> IO ()
+writeFull h data' bytes =
+    withOpenHandle "write" h $ go data' bytes
+      where go _ 0 _ = return ()
+            go ptr remainingBytes fd = do
+              writtenBytes <- Posix.fdWriteBuf fd ptr (fromIntegral remainingBytes)
+              go (plusPtr ptr (fromIntegral writtenBytes)) (remainingBytes - (fromIntegral writtenBytes)) fd
 
 -- | Seek within the file.
 --
