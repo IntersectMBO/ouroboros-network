@@ -51,7 +51,7 @@ data HasFS m h = HasFS {
   , hSeek                    :: HasCallStack => h -> SeekMode -> Int64 -> m ()
 
     -- | Try to read @n@ bytes from a handle
-  , hGet                     :: HasCallStack => h -> Int -> m BS.ByteString
+  , hGetSome                 :: HasCallStack => h -> Int -> m BS.ByteString
 
     -- | Write to a handle
   , hPut                     :: HasCallStack => h -> Builder -> m Word64
@@ -111,7 +111,7 @@ hGetExactly hasFS path h n = go n []
       go :: Int -> [BS.ByteString] -> m BL.ByteString
       go 0 bss = return $ BL.fromChunks $ reverse bss
       go remainingBytes acc = do
-        bs <- hGet hasFS h remainingBytes
+        bs <- hGetSome hasFS h remainingBytes
         if BS.null bs then
           throwError (hasFsErr hasFS) FsError {
               fsErrorType   = FsReachedEOF
@@ -134,7 +134,7 @@ hGetLenient hasFS h n = go n []
     go :: Int -> [BS.ByteString] -> m BL.ByteString
     go 0 bss = return $ BL.fromChunks $ reverse bss
     go remainingBytes acc = do
-      bs <- hGet hasFS h remainingBytes
+      bs <- hGetSome hasFS h remainingBytes
       if BS.null bs then
         go 0 acc
       else go (remainingBytes - BS.length bs) (bs : acc)

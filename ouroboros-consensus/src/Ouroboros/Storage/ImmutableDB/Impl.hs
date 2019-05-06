@@ -153,6 +153,7 @@ import           Control.Monad.State.Strict (StateT (..), execStateT, get, lift,
 import           Data.ByteString (ByteString)
 import           Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as BS
+import           Data.ByteString.Lazy (toStrict)
 import           Data.Either (isRight)
 import           Data.Functor (($>), (<&>))
 import           Data.List.NonEmpty (NonEmpty)
@@ -590,10 +591,10 @@ getEpochSlot _dbHasFS hashDecoder OpenState {..} _dbErr epochSlot = do
         hSeek iHnd AbsoluteSeek indexSeekPosition
         -- Compute the offset on disk and the blob size.
         let nbBytesToGet = indexEntrySizeBytes * 2
-        -- Note the use of hGetRightSize: we must get enough bytes from the
+        -- Note the use of hGetExactly: we must get enough bytes from the
         -- index file, otherwise 'decodeIndexEntry' (and its variant) would
         -- fail.
-        bytes <- hGetRightSize _dbHasFS iHnd nbBytesToGet indexFile
+        bytes <- toStrict <$> hGetExactly _dbHasFS indexFile iHnd nbBytesToGet
         let !start = decodeIndexEntry   bytes
             !end   = decodeIndexEntryAt indexEntrySizeBytes bytes
 
@@ -620,7 +621,7 @@ getEpochSlot _dbHasFS hashDecoder OpenState {..} _dbErr epochSlot = do
       _ -> withFile _dbHasFS epochFile ReadMode $ \eHnd -> do
         -- Seek in the epoch file
         hSeek eHnd AbsoluteSeek (fromIntegral blobOffset)
-        Just <$> hGetRightSize _dbHasFS eHnd (fromIntegral blobSize) epochFile
+        Just . toStrict <$> hGetExactly _dbHasFS epochFile eHnd (fromIntegral blobSize)
 
     return (mbEBBHash, mbBlob)
   where
@@ -1111,7 +1112,7 @@ iteratorNextImpl dbEnv it@IteratorHandle {_it_hasFS = hasFS :: HasFS m h, ..} = 
       -- Read from the epoch file. No need for seeking: as we are streaming,
       -- we are already positioned at the correct place (Invariant 4).
       let epochFile = renderFile "epoch" epoch
-      hGetRightSize hasFS eHnd (fromIntegral blobSize) epochFile
+      toStrict <$> hGetExactly hasFS epochFile eHnd (fromIntegral blobSize)
 
     -- Move the iterator to the next position that can be read from, advancing
     -- epochs if necessary. If no next position can be found, the iterator is

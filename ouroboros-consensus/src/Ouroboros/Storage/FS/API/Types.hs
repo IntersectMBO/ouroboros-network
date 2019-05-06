@@ -57,7 +57,7 @@ data FsError = FsError {
       -- | Human-readable string giving additional information about the error
     , fsErrorString :: String
 
-      -- | Call staack
+      -- | Call stack
     , fsErrorStack  :: CallStack
 
       -- | Is this error due to a limitation of the mock file system?

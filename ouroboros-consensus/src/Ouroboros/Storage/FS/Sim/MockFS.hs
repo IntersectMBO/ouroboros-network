@@ -29,7 +29,7 @@ module Ouroboros.Storage.FS.Sim.MockFS (
   , hOpen
   , hClose
   , hSeek
-  , hGet
+  , hGetSome
   , hPut
   , hPutBuffer
   , hTruncate
@@ -514,9 +514,9 @@ hSeek err h seekMode o = withOpenHandleRead err h $ \fs hs -> do
 
 -- | Get bytes from handle
 --
--- NOTE: Unlike real I/O, we disallow 'hGet' on a handle in append mode.
-hGet :: CanSimFS m => ErrorHandling FsError m -> Handle -> Int -> m ByteString
-hGet err@ErrorHandling{..} h n =
+-- NOTE: Unlike real I/O, we disallow 'hGetSome' on a handle in append mode.
+hGetSome :: CanSimFS m => ErrorHandling FsError m -> Handle -> Int -> m ByteString
+hGetSome err@ErrorHandling{..} h n =
     withOpenHandleRead err h $ \fs hs@OpenHandle{..} -> do
       file <- checkFsTree err $ FS.getFile openFilePath (mockFiles fs)
       case openPtr of
@@ -527,7 +527,7 @@ hGet err@ErrorHandling{..} h n =
           throwError FsError {
               fsErrorType   = FsInvalidArgument
             , fsErrorPath   = openFilePath
-            , fsErrorString = "cannot hGet in append mode"
+            , fsErrorString = "cannot hGetSome in append mode"
             , fsErrorStack  = callStack
             , fsLimitation  = True
             }

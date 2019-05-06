@@ -13,7 +13,6 @@ module Ouroboros.Storage.ImmutableDB.Util
   , throwUnexpectedError
   , parseDBFile
   , readAll
-  , hGetRightSize
   , validateIteratorRange
   , reconstructSlotOffsets
   , indexBackfill
@@ -26,7 +25,6 @@ import           Control.Monad (when)
 import           Control.Monad.Class.MonadST (MonadST)
 import           Control.Monad.Class.MonadThrow (MonadThrow)
 
-import           Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Builder as BS
 import           Data.List.NonEmpty (NonEmpty)
@@ -103,37 +101,11 @@ readAll HasFS{..} hnd = go mempty
   where
     bufferSize = 64 * 1024
     go acc = do
-      bytesRead <- hGet hnd bufferSize
+      bytesRead <- hGetSome hnd bufferSize
       let acc' = acc <> BS.byteString bytesRead
       case BS.length bytesRead < bufferSize of
         True  -> return acc'
         False -> go acc'
-
--- | Variant of 'hGet' that throws an 'FsReachedEOF' 'FsError' when the gotten
--- number of bytes didn't match the number of request bytes.
---
--- TODO move to Ouroboros.Storage.FS.Class?
-hGetRightSize :: (HasCallStack, Monad m)
-              => HasFS m h
-              -> h
-              -> Int     -- ^ The number of bytes to read.
-              -> FsPath  -- ^ The file corresponding with the handle, used for
-                         -- error reporting
-              -> m ByteString
-hGetRightSize HasFS{..} hnd size file = do
-    bytes <- hGet hnd size
-    -- TODO loop until we get the number of bytes requested, see #277
-    if BS.length bytes /= size
-      then throwError hasFsErr $ FsError
-             { fsErrorType   = FsReachedEOF
-             , fsErrorPath   = file
-             , fsErrorString = errMsg
-             , fsErrorStack  = callStack
-             , fsLimitation  = False
-             }
-      else return bytes
-  where
-    errMsg = "different number of bytes read by hGet than expected"
 
 -- | Check whether the given iterator range is valid.
 --

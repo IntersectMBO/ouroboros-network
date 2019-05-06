@@ -130,7 +130,7 @@ readIncremental hasFS@HasFS{..} decoder fp = withLiftST $ \liftST -> do
        -> S.IDecode s a
        -> m (Either ReadIncrementalErr a)
     go liftST h (S.Partial k) = do
-        bs   <- hGet h defaultChunkSize
+        bs   <- hGetSome h defaultChunkSize
         dec' <- liftST $ k (checkEmpty bs)
         go liftST h dec'
     go _ _ (S.Done leftover _ a) =
@@ -175,7 +175,7 @@ readIncrementalOffsets hasFS@HasFS{..} decoder fp = withLiftST $ \liftST ->
         -- some more bytes from the file.
         bs   <- case mbUnconsumed of
           Just unconsumed -> return unconsumed
-          Nothing         -> hGet h defaultChunkSize
+          Nothing         -> hGetSome h defaultChunkSize
         dec' <- liftST $ k (checkEmpty bs)
         go liftST h offset deserialised Nothing dec'
 
@@ -239,7 +239,7 @@ readIncrementalOffsetsEBB hasFS decoder getEBBHash fp = withLiftST $ \liftST ->
         -- some more bytes from the file.
         bs   <- case mbUnconsumed of
           Just unconsumed -> return unconsumed
-          Nothing         -> hGet h defaultChunkSize
+          Nothing         -> hGetSome h defaultChunkSize
         dec' <- liftST $ k (checkEmpty bs)
         go liftST h offset deserialised mbEBBHash Nothing dec'
 

@@ -25,7 +25,7 @@ import           Test.QuickCheck
 
 import           Ouroboros.Consensus.Util (SomePair (..))
 import           Ouroboros.Storage.Common
-import           Ouroboros.Storage.FS.API (HasFS (..), withFile)
+import           Ouroboros.Storage.FS.API (HasFS (..), hGetLenient, withFile)
 import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
 import           Ouroboros.Storage.VolatileDB (Parser (..), SlotNo (..),
@@ -84,7 +84,7 @@ parseImpl hasFS@HasFS{..} _err path =
                -> Set BlockId
                -> m ([(SlotOffset, (BlockSize, BlockInfo BlockId))], Maybe (ParserError BlockId))
             go mp n trials bids = do
-                bs <- hGet hndl binarySize
+                bs <- BL.toStrict <$> hGetLenient hasFS hndl binarySize
                 if BS.length bs == 0 then return (M.toList mp, Nothing)
                 else case fromBinary bs of
                     Left str ->
