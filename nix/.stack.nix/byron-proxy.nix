@@ -84,6 +84,7 @@
             (hsPkgs.stm)
             (hsPkgs.text)
             (hsPkgs.time)
+            (hsPkgs.type-operators)
             (hsPkgs.transformers)
             (hsPkgs.typed-protocols)
             ];
