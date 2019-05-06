@@ -10,7 +10,7 @@
 module Ouroboros.Consensus.ChainSyncClient (
     Consensus
   , chainSyncClient
-  , ChainSyncClientException
+  , ChainSyncClientException (..)
   , ClockSkew (..)
   , CandidateState (..)
   ) where
@@ -221,7 +221,7 @@ chainSyncClient _tracer cfg btime (ClockSkew maxSkew) getCurrentChain
         -- with. The node must have sent us an invalid intersection point.
         Nothing -> disconnect $ InvalidIntersection intersection
 
-      -- Get the HeaderState corresponding to point/block/header we rolled
+      -- Get the HeaderState corresponding to the point/block/header we rolled
       -- back to.
       let candidateHeaderState' =
             getHeaderStateFor curLedger candidateChain candidateChain'
@@ -316,11 +316,19 @@ chainSyncClient _tracer cfg btime (ClockSkew maxSkew) getCurrentChain
       CandidateState {..} <- readTVar varCandidate
       candidateChain' <- case AF.rollback intersection candidateChain of
         Just candidateChain' -> return candidateChain'
-        -- TODO This is not correct, this limits their rollback to the point
-        -- where we started talking to them. It's entirely possible that we
-        -- don't have many of their blocks yet, and now they roll back more
-        -- than that number of blocks. Indeed, we might even just have one
-        -- block, and they might roll back two.
+        -- Remember that we use our current chain fragment as the starting
+        -- point for the candidate's chain. Our fragment contained @k@
+        -- headers. At this point, the candidate fragment might have grown to
+        -- more than @k@ or rolled back to less than @k@ headers.
+        --
+        -- But now, it rolled back to some point that is not on the fragment,
+        -- which means that it tried to roll back to some point before one of
+        -- the last @k@ headers we initially started from. We could never
+        -- switch to this fork anyway, so just disconnect. Furthermore, our
+        -- current chain might have advanced in the meantime, so the point we
+        -- would have to roll back to might have been much further back than
+        -- @k@ blocks (> @k@ + the number of blocks we have advanced since
+        -- starting syncing).
         Nothing              -> disconnect $
           InvalidRollBack intersection theirHead
 
