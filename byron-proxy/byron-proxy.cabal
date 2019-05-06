@@ -98,6 +98,7 @@ executable byron-proxy
                        stm,
                        text,
                        time,
+                       type-operators == 0.1.0.4,
                        transformers,
                        typed-protocols
   hs-source-dirs:      src/exec
