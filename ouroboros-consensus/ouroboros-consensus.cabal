@@ -316,6 +316,7 @@ test-suite test-storage
                     Test.Ouroboros.Storage.VolatileDB.TestBlock
                     Test.Util.Orphans.Arbitrary
                     Test.Util.RefEnv
+                    Test.Util.TestBlock
   build-depends:    base,
                     ouroboros-network,
                     ouroboros-network-testing,
