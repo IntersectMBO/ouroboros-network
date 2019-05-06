@@ -108,85 +108,85 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-sl
-  tag: 0af82eb3de205c6a1a681e1c10b0b513d3e8eb2b
+  tag: f96f3fe04719bd3b0cedc1bbaf80fa6927e937f3
   subdir: util
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-sl
-  tag: 0af82eb3de205c6a1a681e1c10b0b513d3e8eb2b
+  tag: f96f3fe04719bd3b0cedc1bbaf80fa6927e937f3
   subdir: infra
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-sl
-  tag: 0af82eb3de205c6a1a681e1c10b0b513d3e8eb2b
+  tag: f96f3fe04719bd3b0cedc1bbaf80fa6927e937f3
   subdir: db
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-sl
-  tag: 0af82eb3de205c6a1a681e1c10b0b513d3e8eb2b
+  tag: f96f3fe04719bd3b0cedc1bbaf80fa6927e937f3
   subdir: crypto
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-sl
-  tag: 0af82eb3de205c6a1a681e1c10b0b513d3e8eb2b
+  tag: f96f3fe04719bd3b0cedc1bbaf80fa6927e937f3
   subdir: core
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-sl
-  tag: 0af82eb3de205c6a1a681e1c10b0b513d3e8eb2b
+  tag: f96f3fe04719bd3b0cedc1bbaf80fa6927e937f3
   subdir: chain
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-sl
-  tag: 0af82eb3de205c6a1a681e1c10b0b513d3e8eb2b
+  tag: f96f3fe04719bd3b0cedc1bbaf80fa6927e937f3
   subdir: binary
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-sl
-  tag: 0af82eb3de205c6a1a681e1c10b0b513d3e8eb2b
+  tag: f96f3fe04719bd3b0cedc1bbaf80fa6927e937f3
   subdir: lib
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-sl
-  tag: 0af82eb3de205c6a1a681e1c10b0b513d3e8eb2b
+  tag: f96f3fe04719bd3b0cedc1bbaf80fa6927e937f3
   subdir: networking
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-sl
-  tag: 0af82eb3de205c6a1a681e1c10b0b513d3e8eb2b
+  tag: f96f3fe04719bd3b0cedc1bbaf80fa6927e937f3
   subdir: crypto/test
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-sl
-  tag: 0af82eb3de205c6a1a681e1c10b0b513d3e8eb2b
+  tag: f96f3fe04719bd3b0cedc1bbaf80fa6927e937f3
   subdir: core/test
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-sl
-  tag: 0af82eb3de205c6a1a681e1c10b0b513d3e8eb2b
+  tag: f96f3fe04719bd3b0cedc1bbaf80fa6927e937f3
   subdir: chain/test
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-sl
-  tag: 0af82eb3de205c6a1a681e1c10b0b513d3e8eb2b
+  tag: f96f3fe04719bd3b0cedc1bbaf80fa6927e937f3
   subdir: binary/test
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-sl
-  tag: 0af82eb3de205c6a1a681e1c10b0b513d3e8eb2b
+  tag: f96f3fe04719bd3b0cedc1bbaf80fa6927e937f3
   subdir: util/test
 
 source-repository-package
@@ -211,4 +211,45 @@ source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-prelude
   tag: e1fb84b1a955b6e3e3e53d9022e8bc0f927417a2
+
+source-repository-package
+  type: git
+  location: https://github.com/well-typed/cborg
+  tag: 80fbe0ee5e67a5622e2cb9eaa9d8594a2214322d
+  subdir: cborg
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/serokell-util.git
+  tag: 42586f5ea157b4a5411fbcbe41d1bf28bd942438
+
+source-repository-package
+  type: git
+  location: https://github.com/hedgehogqa/haskell-hedgehog
+  tag: 2505055760d06ba6343f803783ed023fb0ed6c48
+  subdir: hedgehog
+
+source-repository-package
+  type: git
+  location: https://github.com/haskell-servant/servant.git
+  tag: e3e5d2b23057c2c3409e5e210b613527baf3b77d
+  subdir: servant
+
+source-repository-package
+  type: git
+  location: https://github.com/haskell-servant/servant.git
+  tag: e3e5d2b23057c2c3409e5e210b613527baf3b77d
+  subdir: servant-server
+
+source-repository-package
+  type: git
+  location: https://github.com/haskell-servant/servant.git
+  tag: e3e5d2b23057c2c3409e5e210b613527baf3b77d
+  subdir: servant-client
+
+source-repository-package
+  type: git
+  location: https://github.com/haskell-servant/servant.git
+  tag: e3e5d2b23057c2c3409e5e210b613527baf3b77d
+  subdir: servant-client-core
 
