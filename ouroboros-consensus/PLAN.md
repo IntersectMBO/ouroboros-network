@@ -59,13 +59,14 @@ and partly the ledger team:
 - [x] #252 Volatile DB: Extend q-s-m tests to test reopening
 - [x] #253 Volatile DB: Migrate unit tests to q-s-m tests
 - [x] #273 Volatile DB: Check against simulated errors
-- [x] #373 Volatile DB: Add fingerprint
+- [x] #373 Volatile DB: Add fingerprint [WONTFIX]
+- [x] #430 Volatile DB: Duplicate Blocks [WONTFIX]
 - [x] #435 uncover STM transactions of some VolatileDB api calls
 - [x] #450 Vol DB: `getIsMember` should not return a `Maybe`
 - [x] #463 Volatile DB: make getIsMember transactional
+- [x] #488 Volatile DB: Make parser error type variable
 
 - [ ] #378 Volatile DB: Audit memory footprint
-- [ ] #430 Volatile DB: Duplicate Blocks
 
 ## Ledger DB
 
@@ -201,3 +202,4 @@ and partly the ledger team:
 - [ ] #254 Generalize q-s-m framework
 - [ ] #224 Reintroduce `QuantifiedConstraints`
 - [ ] #225 Replace remaining unit tests for immutable DB
+- [ ] #483 Clean up test blocks
