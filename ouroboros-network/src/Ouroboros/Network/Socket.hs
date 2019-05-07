@@ -15,6 +15,7 @@ module Ouroboros.Network.Socket (
     ) where
 
 import           Control.Concurrent.Async
+import           Control.Monad (when)
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadThrow
@@ -107,9 +108,14 @@ socketAsMuxBearer sd = do
 #else
       sduSize = do
           -- XXX it is really not acceptable to call getSocketOption for every SDU we want to send
-          mss <- Socket.getSocketOption sd Socket.MaxSegment
-          -- 1260 = IPv6 min MTU minus TCP header, 8 = mux header size
-          return $ fromIntegral $ max (1260 - 8) (min 0xffff (15 * mss - 8))
+          {- getSocketOption for MaxSegment is not supported for AF_UNIX sockets -}
+          addr <- Socket.getSocketName sd
+          case addr of
+               Socket.SockAddrUnix _ -> return 0xffff
+               _                     -> do
+                    mss <- Socket.getSocketOption sd Socket.MaxSegment
+                    -- 1260 = IPv6 min MTU minus TCP header, 8 = mux header size
+                    return $ fromIntegral $ max (1260 - 8) (min 0xffff (15 * mss - 8))
 #endif
 
 hexDump :: BL.ByteString -> String -> IO ()
@@ -157,10 +163,12 @@ withNetworkNode NetworkInterface {nodeAddress, protocols} k =
     -- Make the server listening socket
     mkSocket :: IO Socket.Socket
     mkSocket = do
-      sd <- Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol
-      Socket.setSocketOption sd Socket.ReuseAddr 1
+      sd <- Socket.socket (Socket.addrFamily nodeAddress) Socket.Stream Socket.defaultProtocol
+      when (Socket.addrFamily nodeAddress == Socket.AF_INET ||
+            Socket.addrFamily nodeAddress == Socket.AF_INET6) $ do
+          Socket.setSocketOption sd Socket.ReuseAddr 1
 #if !defined(mingw32_HOST_OS)
-      Socket.setSocketOption sd Socket.ReusePort 1
+          Socket.setSocketOption sd Socket.ReusePort 1
 #endif
       Socket.bind sd (Socket.addrAddress nodeAddress)
       Socket.listen sd 1
@@ -199,11 +207,13 @@ withNetworkNode NetworkInterface {nodeAddress, protocols} k =
         (Socket.socket (Socket.addrFamily nodeAddress) Socket.Stream Socket.defaultProtocol)
         Socket.close
         (\sd -> do
-            Socket.setSocketOption sd Socket.ReuseAddr 1
+            when (Socket.addrFamily nodeAddress == Socket.AF_INET ||
+                  Socket.addrFamily nodeAddress == Socket.AF_INET6) $ do
+                Socket.setSocketOption sd Socket.ReuseAddr 1
 #if !defined(mingw32_HOST_OS)
-            Socket.setSocketOption sd Socket.ReusePort 1
+                Socket.setSocketOption sd Socket.ReusePort 1
 #endif
-            Socket.bind sd (Socket.addrAddress nodeAddress)
+                Socket.bind sd (Socket.addrAddress nodeAddress)
             Socket.connect sd (Socket.addrAddress remoteAddr)
             bearer <- socketAsMuxBearer sd
             Mx.muxBearerSetState bearer Mx.Connected
