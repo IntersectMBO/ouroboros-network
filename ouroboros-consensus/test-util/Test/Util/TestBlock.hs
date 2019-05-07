@@ -52,13 +52,14 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Node (NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
+import           Ouroboros.Consensus.Util.Condense
 
 {-------------------------------------------------------------------------------
   Test infrastructure: test block
 -------------------------------------------------------------------------------}
 
 newtype TestHash = TestHash Word64
-  deriving newtype (Show, Eq, Ord, Serialise, Num)
+  deriving newtype (Show, Eq, Ord, Serialise, Num, Condense)
 
 
 data TestBlock = TestBlock {
@@ -82,6 +83,24 @@ instance Block.StandardHash TestBlock
 
 instance Measured Block.BlockMeasure TestBlock where
   measure = Block.blockMeasure
+
+instance Condense TestBlock where
+  condense TestBlock{..} = mconcat [
+        "("
+      , condense tbPrevHash
+      , "->"
+      , condense tbHash
+      , ","
+      , condense tbSlot
+      , ","
+      , condense (Block.unBlockNo tbNo)
+      , ")"
+      ]
+
+instance Condense (ChainHash TestBlock) where
+  condense GenesisHash   = "genesis"
+  condense (BlockHash h) = show h
+
 
 {-------------------------------------------------------------------------------
   Test infrastructure: ledger state

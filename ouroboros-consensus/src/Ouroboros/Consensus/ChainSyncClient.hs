@@ -38,6 +38,7 @@ import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util
+import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
 
@@ -113,6 +114,7 @@ chainSyncClient
        , HasHeader hdr
        , BlockProtocol hdr ~ BlockProtocol blk
        , Ord up
+       , Condense hdr, Condense (ChainHash hdr)
        )
     => Tracer m String
     -> NodeConfig (BlockProtocol hdr)
@@ -124,7 +126,7 @@ chainSyncClient
        -- ^ The candidate chains, we need the whole map because we
        -- (de)register nodes (@up@).
     -> up -> Consensus ChainSyncClient hdr m
-chainSyncClient _tracer cfg btime (ClockSkew maxSkew) getCurrentChain
+chainSyncClient tracer cfg btime (ClockSkew maxSkew) getCurrentChain
                 getCurrentLedger varCandidates up =
     ChainSyncClient initialise
   where
@@ -280,8 +282,14 @@ chainSyncClient _tracer cfg btime (ClockSkew maxSkew) getCurrentChain
     handleNext :: TVar m (CandidateState blk hdr)
                -> Consensus ClientStNext hdr m
     handleNext varCandidate = ClientStNext
-      { recvMsgRollForward  = ChainSyncClient .: rollForward  varCandidate
-      , recvMsgRollBackward = ChainSyncClient .: rollBackward varCandidate
+      { recvMsgRollForward  = \hdr theirHead -> ChainSyncClient $ do
+          res <- rollForward varCandidate hdr theirHead
+          traceWith tracer $ "Downloaded header: " <> condense hdr
+          return res
+      , recvMsgRollBackward = \intersection theirHead -> ChainSyncClient $ do
+          res <- rollBackward varCandidate intersection theirHead
+          traceWith tracer $ "Rolled back to: " <> condense intersection
+          return res
       }
 
     rollForward :: TVar m (CandidateState blk hdr)

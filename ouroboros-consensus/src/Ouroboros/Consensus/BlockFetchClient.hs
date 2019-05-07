@@ -25,6 +25,7 @@ import           Ouroboros.Network.BlockFetch.ClientState (FetchClientStateVars)
 import           Ouroboros.Network.Protocol.BlockFetch.Type
                      (BlockFetch (BFIdle))
 
+import           Ouroboros.Consensus.Util.Condense
 
 -- | The block fetch layer doesn't provide a readable type for the client yet,
 -- so define it ourselves for now.
@@ -38,11 +39,12 @@ type BlockFetchClient hdr blk m a =
 blockFetchClient
     :: forall m up hdr blk.
        (MonadSTM m, MonadTime m, MonadThrow m,
-        HasHeader blk, HasHeader hdr, HeaderHash hdr ~ HeaderHash blk)
+        HasHeader blk, HasHeader hdr, HeaderHash hdr ~ HeaderHash blk,
+        Condense blk)
     => Tracer m String
     -> BlockFetchConsensusInterface up hdr blk m
     -> up -> BlockFetchClient hdr blk m ()
-blockFetchClient _tracer blockFetchInterface _up clientStateVars =
+blockFetchClient tracer blockFetchInterface _up clientStateVars =
    -- TODO trace and use @up@ in the output.
     BlockFetchClient.blockFetchClient
         nullTracer
@@ -56,4 +58,8 @@ blockFetchClient _tracer blockFetchInterface _up clientStateVars =
     -- 'BlockFetchConsensusInterface' to make a 'FetchClientPolicy'. So long
     -- as this isn't done yet, let's do it ourselves.
     policy = FetchClientPolicy
-      { blockFetchSize, blockMatchesHeader, addFetchedBlock }
+      { blockFetchSize, blockMatchesHeader,
+        addFetchedBlock = \pt blk -> do
+          addFetchedBlock pt blk
+          traceWith tracer $ "Downloaded block: " <> condense blk
+      }

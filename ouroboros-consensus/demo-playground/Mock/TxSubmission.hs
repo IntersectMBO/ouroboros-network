@@ -14,6 +14,7 @@ import           Control.Concurrent (threadDelay)
 import qualified Control.Concurrent.Async as Async
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Except
+import           Control.Tracer
 import qualified Data.ByteString as BS
 import qualified Data.Map.Strict as M
 import qualified Data.Set as Set
@@ -99,30 +100,37 @@ submitTx n tx = do
     withTxPipe n WriteMode False $ \h -> hPutSerialise h tx
     putStrLn $ "The Id for this transaction is: " <> condense (H.hash @ShortHash tx)
 
-readIncomingTx :: TVar IO (Mempool Mock.Tx)
+readIncomingTx :: Tracer IO String
+               -> TVar IO (Mempool Mock.Tx)
                -> NodeKernel IO NodeId (Mock.SimpleBlock p c) (Mock.SimpleHeader p c)
                -> Decoder IO
                -> IO ()
-readIncomingTx poolVar kernel Decoder{..} = forever $ do
-    newTx <- decodeNext
-    liftIO $ atomically $ do
+readIncomingTx tracer poolVar kernel Decoder{..} = forever $ do
+    newTx    <- decodeNext
+    accepted <- liftIO $ atomically $ do
         l <- getCurrentLedger $ getChainDB kernel
         mempool <- readTVar poolVar
         isConsistent <- runExceptT $ consistent (Mock.slsUtxo . ledgerState $ l) mempool newTx
         case isConsistent of
-            Left _err -> return ()
-            Right ()  -> writeTVar poolVar (mempoolInsert newTx mempool)
+            Left _err -> return False
+            Right ()  -> do
+              writeTVar poolVar (mempoolInsert newTx mempool)
+              return True
+    traceWith tracer $
+      (if accepted then "Accepted" else "Rejected") <>
+      " transaction: " <> show newTx
     liftIO $ threadDelay 1000
 
-spawnMempoolListener :: NodeId
+spawnMempoolListener :: Tracer IO String
+                     -> NodeId
                      -> TVar IO (Mempool Mock.Tx)
                      -> NodeKernel IO NodeId (Mock.SimpleBlock p c) (Mock.SimpleHeader p c)
                      -> IO (Async.Async ())
-spawnMempoolListener myNodeId poolVar kernel = do
+spawnMempoolListener tracer myNodeId poolVar kernel = do
     Async.async $ do
         -- Apparently I have to pass 'ReadWriteMode' here, otherwise the
         -- node will die prematurely with a (DeserialiseFailure 0 "end of input")
         -- error.
         withTxPipe myNodeId ReadWriteMode True $ \h -> do
             let getChunk = BS.hGetSome h 1024
-            readIncomingTx poolVar kernel =<< initDecoderIO getChunk
+            readIncomingTx tracer poolVar kernel =<< initDecoderIO getChunk
