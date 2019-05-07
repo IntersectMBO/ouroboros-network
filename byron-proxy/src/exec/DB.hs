@@ -62,7 +62,7 @@ withDB dbOptions k = do
         fs
         FS.exceptions
         epochInfo
-        Immutable.ValidateMostRecentEpoch
+        Immutable.ValidateAllEpochs
         (DB.epochFileParser (slotsPerEpoch dbOptions) fs)
   Index.withDB_ (indexFilePath dbOptions) $ \idx ->
     Immutable.withDB openImmutableDB $ \idb ->
