@@ -118,7 +118,11 @@ newtype ArbitraryBlockBody = ArbitraryBlockBody {
   deriving (Show, Eq)
 
 instance Arbitrary ArbitraryBlockBody where
-    arbitrary = ArbitraryBlockBody . BlockBody <$> vectorOf 4 (choose ('A', 'Z'))
+    arbitrary =
+      ArbitraryBlockBody . BlockBody <$>
+        -- Sometimes pick a common block so some are equal
+        frequency [ (1, pure "EMPTY")
+                  , (4, vectorOf 4 (choose ('A', 'Z'))) ]
     -- probably no need for shrink, the content is arbitrary and opaque
     -- if we add one, it might be to shrink to an empty block
 
@@ -558,6 +562,14 @@ instance Arbitrary TestChainFork where
         r <- genNonNegative
         chainL <- genAddBlocks l chain
         chainR <- genAddBlocks r chain
+                    -- But we want to avoid the extensions starting off equal
+                    -- which would mean the most recent intersection was not
+                    -- the declared common prefix.
+                    `suchThat` \chainR ->
+                      Chain.intersectChains chainL chainR
+                    ==
+                      if chain == Genesis then Nothing
+                                          else Just (Chain.headPoint chain)
         return (TestChainFork chain chainL chainR)
 
     where
@@ -584,22 +596,37 @@ instance Arbitrary TestChainFork where
       | let exl = extensionFragment common l
       , exl' <- shrinkList (const []) exl
       , let l' = fixupChain fixupBlock (exl' ++ Chain.toNewestFirst common)
+      , longestCommonPrefix l' r
       ]
         -- shrink the right fork
    ++ [ TestChainFork common l r'
       | let exr = extensionFragment common r
       , exr' <- shrinkList (const []) exr
       , let r' = fixupChain fixupBlock (exr' ++ Chain.toNewestFirst common)
+      , longestCommonPrefix l r'
       ]
     where
       extensionFragment :: Chain Block -> Chain Block -> [Block]
       extensionFragment c = reverse . L.drop (Chain.length c) . Chain.toOldestFirst
+
+      -- Need to make sure that when we shrink that we don't make the longest
+      -- common prefix be a strict extension of the original common prefix.
+      longestCommonPrefix l' r' =
+          Chain.intersectChains l' r'
+        ==
+          if common == Genesis then Nothing
+                               else Just (Chain.headPoint common)
 
 prop_arbitrary_TestChainFork :: TestChainFork -> Bool
 prop_arbitrary_TestChainFork (TestChainFork c l r) =
     Chain.valid c && Chain.valid l && Chain.valid r
  && c `Chain.isPrefixOf` l
  && c `Chain.isPrefixOf` r
+    -- And c is not just a common prefix, but the maximum common prefix
+ && (Chain.intersectChains l r
+     ==
+     if c == Genesis then Nothing else Just (Chain.headPoint c))
+
 
 prop_shrink_TestChainFork :: TestChainFork -> Bool
 prop_shrink_TestChainFork forks =
