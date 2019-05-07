@@ -81,6 +81,10 @@ These have to be provided when instantiating the block fetch logic.
 module Ouroboros.Network.BlockFetch (
     blockFetchLogic,
     BlockFetchConsensusInterface(..),
+    -- ** Tracer types
+    FetchDecision,
+    TraceFetchClientState(..),
+    TraceLabelPeer(..),
 
     -- * The 'FetchClientRegistry'
     FetchClientRegistry,
@@ -198,15 +202,16 @@ blockFetchLogic :: forall peer header block m.
                    (MonadSTM m, Ord peer,
                     HasHeader header, HasHeader block,
                     HeaderHash header ~ HeaderHash block)
-                => Tracer m [FetchDecision [Point header]]
+                => Tracer m [TraceLabelPeer peer (FetchDecision [Point header])]
+                -> Tracer m (TraceLabelPeer peer (TraceFetchClientState header))
                 -> BlockFetchConsensusInterface peer header block m
                 -> FetchClientRegistry peer header m
                 -> m Void
-blockFetchLogic decisionTracer
+blockFetchLogic decisionTracer clientStateTracer
                 BlockFetchConsensusInterface{..}
                 registry =
     fetchLogicIterations
-      decisionTracer
+      decisionTracer clientStateTracer
       fetchDecisionPolicy
       fetchTriggerVariables
       fetchNonTriggerVariables
