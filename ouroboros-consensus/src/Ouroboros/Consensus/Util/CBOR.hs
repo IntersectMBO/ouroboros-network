@@ -149,6 +149,8 @@ readIncremental hasFS@HasFS{..} decoder fp = withLiftST $ \liftST -> do
 -- Return the offset ('Word64') of the start of each @a@ and the size ('Word64')
 -- of each @a@. When deserialising fails, return all already deserialised @a@s
 -- and the error.
+--
+-- TODO parameterise over 'defaultChunkSize'
 readIncrementalOffsets :: forall m h a. (MonadST m, MonadThrow m)
                        => HasFS m h
                        -> (forall s . CBOR.Decoder s a)
@@ -159,17 +161,23 @@ readIncrementalOffsets :: forall m h a. (MonadST m, MonadThrow m)
                           --      @a@ itself)),
                           --     error encountered during deserialisation)
 readIncrementalOffsets hasFS@HasFS{..} decoder fp = withLiftST $ \liftST ->
-    withFile hasFS fp ReadMode $ \h ->
-      go liftST h 0 [] Nothing =<< liftST (CBOR.deserialiseIncremental decoder)
+    withFile hasFS fp ReadMode $ \h -> do
+      fileSize <- hGetSize h
+      if fileSize == 0
+        -- If the file is empty, we will immediately get "end of input"
+        then return ([], Nothing)
+        else liftST (CBOR.deserialiseIncremental decoder) >>=
+             go liftST h 0 [] Nothing fileSize
   where
     go :: (forall x. ST s x -> m x)
        -> h
        -> Word64                  -- ^ Offset
        -> [(Word64, (Word64, a))] -- ^ Already deserialised (reverse order)
        -> Maybe ByteString        -- ^ Unconsumed bytes from last time
+       -> Word64                  -- ^ Total file size
        -> S.IDecode s a
        -> m ([(Word64, (Word64, a))], Maybe ReadIncrementalErr)
-    go liftST h offset deserialised mbUnconsumed dec = case dec of
+    go liftST h offset deserialised mbUnconsumed fileSize dec = case dec of
       S.Partial k -> do
         -- First use the unconsumed bytes from a previous read before read
         -- some more bytes from the file.
@@ -177,16 +185,19 @@ readIncrementalOffsets hasFS@HasFS{..} decoder fp = withLiftST $ \liftST ->
           Just unconsumed -> return unconsumed
           Nothing         -> hGet h defaultChunkSize
         dec' <- liftST $ k (checkEmpty bs)
-        go liftST h offset deserialised Nothing dec'
+        go liftST h offset deserialised Nothing fileSize dec'
 
       S.Done leftover size a -> do
         let nextOffset    = offset + fromIntegral size
             deserialised' = (offset, (fromIntegral size, a)) : deserialised
         case checkEmpty leftover of
-          Nothing         -> return (reverse deserialised', Nothing)
+          Nothing
+            | nextOffset == fileSize
+              -- We're at the end of the file, so stop
+            -> return (reverse deserialised', Nothing)
           -- Some more bytes, so try to read the next @a@.
-          Just unconsumed -> liftST (CBOR.deserialiseIncremental decoder) >>=
-            go liftST h nextOffset deserialised' (Just unconsumed)
+          mbLeftover -> liftST (CBOR.deserialiseIncremental decoder) >>=
+            go liftST h nextOffset deserialised' mbLeftover fileSize
 
       S.Fail _ _ err -> return (reverse deserialised, Just (ReadFailed err))
 
@@ -204,7 +215,8 @@ readIncrementalOffsets hasFS@HasFS{..} decoder fp = withLiftST $ \liftST ->
 -- 'Ouroboros.Storage.ImmutableDB.Util.cborEpochFileParser'', the ChainDB will
 -- extract the EBB hash for us.
 readIncrementalOffsetsEBB :: forall m hash h a. (MonadST m, MonadThrow m)
-                          => HasFS m h
+                          => Int -- ^ Chunk size when reading bytes
+                          -> HasFS m h
                           -> (forall s . CBOR.Decoder s a)
                           -> (a -> Maybe hash)
                               -- ^ In case the given @a@ is an EBB, return its
@@ -218,10 +230,14 @@ readIncrementalOffsetsEBB :: forall m hash h a. (MonadST m, MonadThrow m)
                              --      @a@ itself)),
                              --     the hash of the EBB, if present
                              --     error encountered during deserialisation)
-readIncrementalOffsetsEBB hasFS decoder getEBBHash fp = withLiftST $ \liftST ->
-    withFile hasFS fp ReadMode $ \h ->
-      liftST (CBOR.deserialiseIncremental decoder) >>=
-        go liftST h 0 [] Nothing Nothing
+readIncrementalOffsetsEBB chunkSize hasFS decoder getEBBHash fp = withLiftST $ \liftST ->
+    withFile hasFS fp ReadMode $ \h -> do
+      fileSize <- hGetSize h
+      if fileSize == 0
+        -- If the file is empty, we will immediately get "end of input"
+        then return ([], Nothing, Nothing)
+        else liftST (CBOR.deserialiseIncremental decoder) >>=
+             go liftST h 0 [] Nothing Nothing fileSize
   where
     HasFS{..} = hasFS
 
@@ -231,17 +247,18 @@ readIncrementalOffsetsEBB hasFS decoder getEBBHash fp = withLiftST $ \liftST ->
        -> [(Word64, (Word64, a))] -- ^ Already deserialised (reverse order)
        -> Maybe hash              -- ^ The hash of the EBB block
        -> Maybe ByteString        -- ^ Unconsumed bytes from last time
+       -> Word64                  -- ^ Total file size
        -> S.IDecode s a
        -> m ([(Word64, (Word64, a))], Maybe hash, Maybe ReadIncrementalErr)
-    go liftST h offset deserialised mbEBBHash mbUnconsumed dec = case dec of
+    go liftST h offset deserialised mbEBBHash mbUnconsumed fileSize dec = case dec of
       S.Partial k -> do
-        -- First use the unconsumed bytes from a previous read before read
+        -- First use the unconsumed bytes from a previous read before reading
         -- some more bytes from the file.
         bs   <- case mbUnconsumed of
           Just unconsumed -> return unconsumed
-          Nothing         -> hGet h defaultChunkSize
+          Nothing         -> hGet h chunkSize
         dec' <- liftST $ k (checkEmpty bs)
-        go liftST h offset deserialised mbEBBHash Nothing dec'
+        go liftST h offset deserialised mbEBBHash Nothing fileSize dec'
 
       S.Done leftover size a -> do
         let nextOffset    = offset + fromIntegral size
@@ -250,10 +267,17 @@ readIncrementalOffsetsEBB hasFS decoder getEBBHash fp = withLiftST $ \liftST ->
             mbEBBHash'    | offset == 0 = getEBBHash a
                           | otherwise   = mbEBBHash
         case checkEmpty leftover of
-          Nothing         -> return (reverse deserialised', mbEBBHash', Nothing)
-          -- Some more bytes, so try to read the next @a@.
-          Just unconsumed -> liftST (CBOR.deserialiseIncremental decoder) >>=
-            go liftST h nextOffset deserialised' mbEBBHash' (Just unconsumed)
+          Nothing
+            | nextOffset == fileSize
+              -- We're at the end of the file, so stop
+            -> return (reverse deserialised', mbEBBHash', Nothing)
+          -- Otherwise, there are some left-over bytes or we know there are
+          -- still some more bytes in the file to read, so try to read the
+          -- next @a@.
+          mbLeftover -> do
+            dec' <- liftST $ CBOR.deserialiseIncremental decoder
+            go liftST h nextOffset deserialised' mbEBBHash' mbLeftover
+               fileSize dec'
 
       S.Fail _ _ err -> return
         (reverse deserialised, mbEBBHash, Just (ReadFailed err))
