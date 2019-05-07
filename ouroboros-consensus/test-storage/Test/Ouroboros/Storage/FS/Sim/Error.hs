@@ -4,7 +4,6 @@
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TupleSections              #-}
-{-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
 -- | 'HasFS' instance wrapping 'SimFS' that generates errors, suitable for
@@ -39,6 +38,7 @@ import           Control.Monad (replicateM, void)
 import           Control.Monad.Class.MonadSTM (MonadSTM (..))
 import           Control.Monad.Except (runExceptT)
 
+import qualified Data.ByteString as BS
 import           Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as BS
 import qualified Data.ByteString.Lazy as BL
@@ -187,6 +187,38 @@ corrupt bld pc = case pc of
 -- corruption.
 type ErrorStreamWithCorruption = Stream (FsErrorType, Maybe PutCorruption)
 
+
+{-------------------------------------------------------------------------------
+  Generating partial reads for hGetSome
+-------------------------------------------------------------------------------}
+
+data PartialGet
+    = SubtractRatioRequestedBytes Int
+      -- ^ Subtract a number from the number of requested bytes where the
+      -- number is @n/10@ of the total number of requested bytes.
+      --
+      -- As we don't know how many bytes will be requested, using an absolute
+      -- number makes less sense, as we might end up reducing the number of
+      -- bytes to 0, which is invalid, as all 'hGetSome' calls must request >
+      -- 0 bytes.
+    deriving (Show)
+
+instance Arbitrary PartialGet where
+  arbitrary = SubtractRatioRequestedBytes <$> QC.choose (1, 9)
+  shrink (SubtractRatioRequestedBytes tenths) =
+    [SubtractRatioRequestedBytes tenths' | tenths' <- [1..tenths]]
+
+makePartial :: Int -> PartialGet -> Int
+makePartial requestedBytes (SubtractRatioRequestedBytes tenths) = toRequest
+  where
+    toRequest :: Int
+    toRequest = max 1 (requestedBytes - round toSubtract)
+    toSubtract :: Double
+    toSubtract = fromIntegral requestedBytes * fromIntegral tenths / 10.0
+
+-- | 'ErrorStream' that can be an error or a partial get
+type ErrorStreamWithPartialGet = Stream (Either FsErrorType PartialGet)
+
 {-------------------------------------------------------------------------------
   Simulated errors
 -------------------------------------------------------------------------------}
@@ -209,7 +241,7 @@ data Errors = Errors
   , _hOpen                    :: ErrorStream
   , _hClose                   :: ErrorStream
   , _hSeek                    :: ErrorStream
-  , _hGetSome                 :: ErrorStream
+  , _hGetSome                 :: ErrorStreamWithPartialGet
   , _hPut                     :: ErrorStreamWithCorruption
   , _hTruncate                :: ErrorStream
   , _hGetSize                 :: ErrorStream
@@ -303,7 +335,7 @@ simpleErrors es = Errors
     , _hOpen                    = es
     , _hClose                   = es
     , _hSeek                    = es
-    , _hGetSome                 = es
+    , _hGetSome                 = fmap Left        es
     , _hPut                     = fmap (, Nothing) es
     , _hTruncate                = es
     , _hGetSize                 = es
@@ -333,7 +365,9 @@ instance Arbitrary Errors where
       , FsResourceAlreadyInUse, FsResourceAlreadyExist
       , FsInsufficientPermissions ]
     _hSeek      <- streamGen 3 [ FsReachedEOF ]
-    _hGetSome   <- streamGen 3 [ FsReachedEOF ]
+    _hGetSome   <- mkStreamGen 5 $ QC.frequency
+      [ (1, return $ Left FsReachedEOF)
+      , (3, Right . SubtractRatioRequestedBytes <$> arbitrary) ]
     _hPut       <- mkStreamGen 2 $ (,) <$> return FsDeviceFull <*> arbitrary
     _hPutBuffer <- streamGen 3 [ FsDeviceFull ]
     _hGetSize   <- streamGen 2 [ FsResourceDoesNotExist ]
@@ -400,9 +434,7 @@ mkSimErrorHasFS err fsVar errorsVar =
         , hSeek      = \h m n ->
             withErr' err fsVar errorsVar h (hSeek h m n) "hSeek"
             _hSeek (\e es -> es { _hSeek = e })
-        , hGetSome   = \h n ->
-            withErr' err fsVar errorsVar h (hGetSome h n) "hGetSome"
-            _hGetSome (\e es -> es { _hGetSome = e })
+        , hGetSome   = hGetSome' err fsVar errorsVar hGetSome
         , hPut       = hPut' err fsVar errorsVar hPut
         , hTruncate  = \h w ->
             withErr' err fsVar errorsVar h (hTruncate h w) "hTruncate"
@@ -546,6 +578,31 @@ hPut' ErrorHandling{..} fsVar errorsVar hPutWrapped handle bld = do
           , fsErrorStack  = callStack
           , fsLimitation  = False
           }
+
+-- | Execute the wrapped 'hGetSome', make the read partial, or throw an error,
+-- depending on the corresponding 'ErrorStreamWithPartialGet' (see
+-- 'nextError').
+hGetSome'  :: (MonadSTM m, HasCallStack)
+           => ErrorHandling FsError m
+           -> TVar m MockFS
+           -> TVar m Errors
+           -> (Handle -> Int -> m BS.ByteString)  -- ^ Wrapped 'hGetSome'
+           -> Handle -> Int -> m BS.ByteString
+hGetSome' ErrorHandling{..} fsVar errorsVar hGetSomeWrapped handle n = do
+    mockFS <- atomically $ readTVar fsVar
+    let path = handleFsPath mockFS handle
+    mbErrOrPartial <- next errorsVar _hGetSome (\e es -> es { _hGetSome = e })
+    case mbErrOrPartial of
+      Nothing      -> hGetSomeWrapped handle n
+      Just (Left errType) -> throwError FsError
+        { fsErrorType   = errType
+        , fsErrorPath   = path
+        , fsErrorString = "simulated error: hGetSome"
+        , fsErrorStack  = callStack
+        , fsLimitation  = False
+        }
+      Just (Right partial) ->
+        hGetSomeWrapped handle (makePartial n partial)
 
 
 {-------------------------------------------------------------------------------
