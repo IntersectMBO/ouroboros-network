@@ -70,6 +70,7 @@
             (hsPkgs.bytestring)
             (hsPkgs.cborg)
             (hsPkgs.containers)
+            (hsPkgs.directory)
             (hsPkgs.free)
             (hsPkgs.fingertree)
             (hsPkgs.free)

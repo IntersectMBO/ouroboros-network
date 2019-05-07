@@ -197,6 +197,7 @@ test-suite tests
                        bytestring,
                        cborg,
                        containers,
+                       directory,
                        free,
                        fingertree,
                        free,

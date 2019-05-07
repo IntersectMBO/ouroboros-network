@@ -20,6 +20,8 @@ import qualified Data.ByteString.Lazy as BL
 import           Data.List (mapAccumL)
 import qualified Network.Socket as Socket
 import qualified Network.Socket.ByteString.Lazy as Socket (sendAll)
+import           System.Directory (removeFile)
+import           System.IO.Error
 
 import           Network.TypedProtocol.Core
 import qualified Network.TypedProtocol.ReqResp.Type       as ReqResp
@@ -69,6 +71,7 @@ tests =
 #ifdef OUROBOROS_NETWORK_IPV6
   , testProperty "socket send receive IPv6"          prop_socket_send_recv_ipv6
 #endif
+  , testProperty "socket send receive Unix"          prop_socket_send_recv_unix
   , testProperty "socket close during receive"       prop_socket_recv_close
   , testProperty "socket client connection failure"  prop_socket_client_connect_error
   , testProperty "socket sync demo"                  prop_socket_demo
@@ -104,6 +107,30 @@ prop_socket_send_recv_ipv6 request response = ioProperty $ do
     client:_ <- Socket.getAddrInfo Nothing (Just "::1") (Just "0")
     server:_ <- Socket.getAddrInfo Nothing (Just "::1") (Just "6061")
     prop_socket_send_recv client server request response
+#endif
+
+#ifndef mingw32_HOST_OS
+prop_socket_send_recv_unix :: (Int ->  Int -> (Int, Int))
+                           -> [Int]
+                           -> Property
+prop_socket_send_recv_unix request response = ioProperty $ do
+    let serverName = "server_socket.test"
+    let clientName = "client_socket.test"
+    cleanUp serverName
+    cleanUp clientName
+    let clientAddr = Socket.AddrInfo [] Socket.AF_UNIX  Socket.Stream Socket.defaultProtocol
+                         (Socket.SockAddrUnix clientName) Nothing
+        serverAddr = Socket.AddrInfo [] Socket.AF_UNIX  Socket.Stream Socket.defaultProtocol
+                         (Socket.SockAddrUnix serverName) Nothing
+    r <- prop_socket_send_recv clientAddr serverAddr request response
+    cleanUp serverName
+    cleanUp clientName
+    return $ r
+  where
+    cleanUp name = do
+        catchJust (\e -> if isDoesNotExistErrorType (ioeGetErrorType e) then Just () else Nothing)
+                  (removeFile name)
+                  (\_ -> return ())
 #endif
 
 -- | Verify that an initiator and a responder can send and receive messages from each other
