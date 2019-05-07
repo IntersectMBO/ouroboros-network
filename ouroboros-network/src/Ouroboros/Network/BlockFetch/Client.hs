@@ -9,7 +9,8 @@ module Ouroboros.Network.BlockFetch.Client (
     -- * Block fetch protocol client implementation
     blockFetchClient,
     FetchClientPolicy(..),
-    TraceFetchClientEvent(..),
+    TraceFetchClientState,
+    FetchRequest(..),
     FetchClientStateVars,
   ) where
 
@@ -18,7 +19,7 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Exception (assert)
-import           Control.Tracer (Tracer, traceWith)
+import           Control.Tracer (Tracer)
 
 import           Ouroboros.Network.Block
 
@@ -29,9 +30,9 @@ import           Network.TypedProtocol.Pipelined
 import qualified Ouroboros.Network.ChainFragment as ChainFragment
 import           Ouroboros.Network.ChainFragment (ChainFragment)
 import           Ouroboros.Network.BlockFetch.ClientState
-                   ( FetchClientStateVars, PeerFetchStatus(..)
-                   , PeerFetchInFlight(..)
+                   ( FetchClientStateVars
                    , FetchRequest(..)
+                   , TraceFetchClientState
                    , acknowledgeFetchRequest
                    , completeBlockDownload
                    , completeFetchBatch )
@@ -58,16 +59,6 @@ data BlockFetchProtocolFailure =
 
 instance Exception BlockFetchProtocolFailure
 
-data TraceFetchClientEvent header =
-       AcknowledgedFetchRequest
-         (FetchRequest header)
-     | CompletedBlockFetch
-         (Point header)
-         (PeerFetchInFlight header)
-          PeerFetchInFlightLimits
-         (PeerFetchStatus header)
-  deriving Show
-
 -- | The implementation of the client side of block fetch protocol designed to
 -- work in conjunction with our fetch logic.
 --
@@ -75,7 +66,7 @@ blockFetchClient :: forall header block m.
                     (MonadSTM m, MonadTime m, MonadThrow m,
                      HasHeader header, HasHeader block,
                      HeaderHash header ~ HeaderHash block)
-                 => Tracer m (TraceFetchClientEvent header)
+                 => Tracer m (TraceFetchClientState header)
                  -> FetchClientPolicy header block m
                  -> FetchClientStateVars m header
                  -> PeerPipelined (BlockFetch header block) AsClient BFIdle m ()
@@ -120,9 +111,8 @@ blockFetchClient tracer
       -- in-flight, and the tracking state that the fetch logic uses now
       -- reflects that.
       --
-      (request, gsvs, inflightlimits) <- acknowledgeFetchRequest stateVars
-
-      traceWith tracer (AcknowledgedFetchRequest request)
+      (request, gsvs, inflightlimits) <-
+        acknowledgeFetchRequest tracer stateVars
 
       return $ senderActive outstanding gsvs inflightlimits
                             (fetchRequestFragments request)
@@ -246,14 +236,8 @@ blockFetchClient tracer
             -- download the missing block(s) again.
 
             -- Update our in-flight stats and our current status
-            (inflight, currentStatus) <-
-              completeBlockDownload blockFetchSize inflightlimits
-                                    header stateVars
-
-            traceWith tracer $ CompletedBlockFetch
-                                 (blockPoint header)
-                                 inflight inflightlimits
-                                 currentStatus
+            completeBlockDownload tracer blockFetchSize inflightlimits
+                                  header stateVars
 
             return (receiverStreaming inflightlimits headers')
 
