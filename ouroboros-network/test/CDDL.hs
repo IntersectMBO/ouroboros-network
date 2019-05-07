@@ -5,7 +5,6 @@
 module Main
 where
 
-import System.Environment (getArgs)
 import System.Exit (ExitCode(..))
 import System.Process.ByteString.Lazy
 import Control.Monad
@@ -35,13 +34,7 @@ type RR = ReqResp DummyBytes DummyBytes
 type BF = BlockFetch BlockHeader BlockBody
 
 main :: IO ()
-main = getArgs >>= \case
-    [cddlCmd,diag2cborCmd,cddlSpec,rounds]
-        -> generateAndDecode cddlCmd diag2cborCmd cddlSpec (read rounds)
-    _ -> error "call with 4 arguments"
-
-test :: IO ()
-test = generateAndDecode "./cddl" "./diag2cbor.rb" "../doc/messages.cddl" 100
+main = generateAndDecode "cddl" "diag2cbor.rb" "test/messages.cddl" 100
 
 generateAndDecode :: FilePath -> FilePath -> FilePath -> Int -> IO ()
 generateAndDecode cddlCmd diag2cborCmd cddlSpec rounds = do

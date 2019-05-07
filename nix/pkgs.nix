@@ -36,6 +36,8 @@ let
         packages.io-sim.configureFlags = [ "--ghc-option=-Werror" ];
         packages.io-sim-classes.configureFlags = [ "--ghc-option=-Werror" ];
         packages.ouroboros-network.configureFlags = [ "--ghc-option=-Werror" ];
+        packages.ouroboros-network.flags.cddl = true;
+        packages.ouroboros-network.components.tests.cddl.build-tools = [pkgs.cddl pkgs.cbor-diag];
         packages.ouroboros-consensus.configureFlags = [ "--ghc-option=-Werror" ];
       }
     ];

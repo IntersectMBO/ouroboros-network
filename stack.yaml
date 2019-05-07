@@ -108,3 +108,5 @@ nix:
   packages:
     - zlib
     - openssl
+    - cddl
+    - cbor-diag

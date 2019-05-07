@@ -9,13 +9,21 @@ maintainer:
 copyright:           2018 IOHK
 category:            Network
 build-type:          Simple
-extra-source-files:  ChangeLog.md
+extra-source-files:
+  ChangeLog.md
+  test/messages.cddl
 cabal-version:       >=1.10
 
 Flag ipv6
   Description: Enable IPv6 test cases
   Manual: True
   -- Default to False since travis lacks IPv6 support
+  Default: False
+
+flag cddl
+  Description: Enable CDDL based tests of the CBOR encoding
+  Manual: True
+  -- These tests need the cddl and the cbor-diag Ruby-package
   Default: False
 
 source-repository head
@@ -220,10 +228,12 @@ test-suite tests
   if flag(ipv6)
     cpp-options:       -DOUROBOROS_NETWORK_IPV6
 
-test-suite test-cddl
+test-suite cddl
   type:                exitcode-stdio-1.0
-  hs-source-dirs:      test-cddl src
-  main-is:             Main.hs
+  hs-source-dirs:      test src
+  main-is:             CDDL.hs
+  if !flag(cddl)
+    buildable: False
   other-modules:       Ouroboros.Network.AnchoredFragment
                        Ouroboros.Network.Protocol.ChainSync.Codec
                        Ouroboros.Network.Protocol.ChainSync.Type

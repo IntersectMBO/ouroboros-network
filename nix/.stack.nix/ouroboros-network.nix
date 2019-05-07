@@ -1,6 +1,6 @@
 { system, compiler, flags, pkgs, hsPkgs, pkgconfPkgs, ... }:
   {
-    flags = { ipv6 = false; };
+    flags = { ipv6 = false; cddl = false; };
     package = {
       specVersion = "1.10";
       identifier = { name = "ouroboros-network"; version = "0.1.0.0"; };
@@ -71,7 +71,7 @@
             (hsPkgs.time)
             ];
           };
-        "test-cddl" = {
+        "cddl" = {
           depends = [
             (hsPkgs.base)
             (hsPkgs.bytestring)
