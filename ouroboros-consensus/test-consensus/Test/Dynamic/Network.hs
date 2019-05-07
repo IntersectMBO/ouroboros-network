@@ -22,7 +22,6 @@ import qualified Data.Set as Set
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork (MonadFork)
 import           Control.Monad.Class.MonadSay
-import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
@@ -67,7 +66,6 @@ broadcastNetwork :: forall m p blk hdr.
                     , MonadFork  m
                     , MonadMask  m
                     , MonadSay   m
-                    , MonadST    m
                     , MonadTime  m
                     , MonadTimer m
                     , MonadThrow (STM m)

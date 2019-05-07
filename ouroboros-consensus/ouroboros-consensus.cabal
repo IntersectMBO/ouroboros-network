@@ -79,6 +79,10 @@ library
                        Ouroboros.Storage.ChainDB.API
                        Ouroboros.Storage.ChainDB.Mock
                        Ouroboros.Storage.ChainDB.Model
+                       Ouroboros.Storage.EpochInfo
+                       Ouroboros.Storage.EpochInfo.API
+                       Ouroboros.Storage.EpochInfo.CumulEpochSizes
+                       Ouroboros.Storage.EpochInfo.Impl
                        Ouroboros.Storage.FS.API
                        Ouroboros.Storage.FS.API.Example
                        Ouroboros.Storage.FS.API.Types
@@ -89,9 +93,9 @@ library
                        Ouroboros.Storage.FS.Sim.STM
                        Ouroboros.Storage.ImmutableDB
                        Ouroboros.Storage.ImmutableDB.API
-                       Ouroboros.Storage.ImmutableDB.CumulEpochSizes
                        Ouroboros.Storage.ImmutableDB.Impl
                        Ouroboros.Storage.ImmutableDB.Index
+                       Ouroboros.Storage.ImmutableDB.Layout
                        Ouroboros.Storage.ImmutableDB.Types
                        Ouroboros.Storage.ImmutableDB.Util
                        Ouroboros.Storage.IO
@@ -162,6 +166,7 @@ library
                        filepath          >=1.4   && <1.5,
                        fingertree        >=0.1.4.2 && <0.2,
                        memory            >=0.14  && <0.15,
+                       mmorph            >=1.1   && <1.2,
                        mtl               >=2.2   && <2.3,
                        pipes             >=4.3   && <4.4,
                        serialise         >=0.2   && <0.3,

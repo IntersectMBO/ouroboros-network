@@ -12,7 +12,8 @@ import           Test.Tasty.QuickCheck (testProperty)
 import           Ouroboros.Network.Block (SlotNo (..))
 
 import           Ouroboros.Storage.Common
-import           Ouroboros.Storage.ImmutableDB.CumulEpochSizes
+import           Ouroboros.Storage.EpochInfo.CumulEpochSizes
+import           Ouroboros.Storage.ImmutableDB.Layout
 
 import           Test.Util.Orphans.Arbitrary (genLimitedEpochSize,
                      genSmallEpochNo)
@@ -36,7 +37,7 @@ prop_ces_roundtrip ces = fromNonEmpty (NE.fromList (toList ces)) === ces
 prop_epochSize :: CumulEpochSizes -> Property
 prop_epochSize ces =
     forAll genSmallEpochNo $ \ epoch ->
-    epochSize ces epoch === toList ces !? fromIntegral (unEpochNo epoch)
+    epochSize epoch ces === toList ces !? fromIntegral (unEpochNo epoch)
   where
     xs !? i
       | 0 <= i, i < Foldable.length xs = Just (xs !! i)
@@ -45,20 +46,35 @@ prop_epochSize ces =
 prop_slotToEpochSlot_epochSlotToSlot :: CumulEpochSizes -> Property
 prop_slotToEpochSlot_epochSlotToSlot ces =
     forAllShrink genValidSlot shrink $ \slot ->
-      (slotToEpochSlot ces slot >>= epochSlotToSlot ces) === Just slot
+      inBounds slot === Just True
   where
     genValidSlot = chooseSlot 0 (maxSlot ces)
 
+    inBounds :: SlotNo -> Maybe Bool
+    inBounds slot = do
+        epoch                 <- slotToEpoch slot  ces
+        (_size, first, final) <- epochInfo   epoch ces
+        return $ first <= slot && slot <= final
+
+epochInfo :: EpochNo -> CumulEpochSizes -> Maybe (EpochSize, SlotNo, SlotNo)
+epochInfo epochNo ces = do
+    SlotNo    first <- firstSlotOf epochNo ces
+    EpochSize size  <- epochSize   epochNo ces
+    return (EpochSize size, SlotNo first, SlotNo (first + size - 1))
+
 prop_epochSlotToSlot_invalid :: CumulEpochSizes -> Property
 prop_epochSlotToSlot_invalid ces =
-    forAllShrink genInvalidEpochSlot shrinkInvalidEpochSlot $ \epochSlot ->
-      epochSlotToSlot ces epochSlot === Nothing
+    forAllShrink genInvalidEpochSlot shrinkInvalidEpochSlot $
+      \(EpochSlot epochNo (RelativeSlot relSlot)) -> do
+        case epochInfo epochNo ces of
+          Nothing                     -> True
+          Just (EpochSize size, _, _) -> relSlot >= size
   where
     genInvalidEpochSlot = arbitrary `suchThat` isInvalid
     shrinkInvalidEpochSlot epochSlot =
       filter isInvalid (shrink epochSlot)
     isInvalid (EpochSlot epoch relSlot)
-      | Just sz <- epochSize ces epoch
+      | Just sz <- epochSize epoch ces
       = relSlot > fromIntegral sz
       | otherwise
       = False
@@ -66,7 +82,7 @@ prop_epochSlotToSlot_invalid ces =
 prop_slotToEpochSlot_greater_than_maxSlot :: CumulEpochSizes -> Property
 prop_slotToEpochSlot_greater_than_maxSlot ces =
     forAllShrink genInvalidSlot shrink $ \invalidSlot ->
-      slotToEpochSlot ces invalidSlot === Nothing
+      slotToEpoch invalidSlot ces === Nothing
   where
     genInvalidSlot = chooseSlot (succ (maxSlot ces)) maxBound
 

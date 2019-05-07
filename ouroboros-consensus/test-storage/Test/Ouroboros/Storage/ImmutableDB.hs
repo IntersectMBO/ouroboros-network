@@ -36,6 +36,7 @@ import           Test.Tasty.HUnit
 import           Test.Tasty.QuickCheck (testProperty)
 
 import           Ouroboros.Storage.Common
+import           Ouroboros.Storage.EpochInfo
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.FS.Sim.FsTree (FsTree (..))
@@ -44,9 +45,8 @@ import           Ouroboros.Storage.FS.Sim.MockFS (MockFS)
 import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
 import qualified Ouroboros.Storage.FS.Sim.STM as Sim
 import           Ouroboros.Storage.ImmutableDB
-import           Ouroboros.Storage.ImmutableDB.CumulEpochSizes
-                     (RelativeSlot (..))
 import           Ouroboros.Storage.ImmutableDB.Index
+import           Ouroboros.Storage.ImmutableDB.Layout
 import           Ouroboros.Storage.ImmutableDB.Util (cborEpochFileParser',
                      reconstructSlotOffsets)
 import           Ouroboros.Storage.Util (decodeIndexEntryAt)
@@ -84,9 +84,6 @@ tests = testGroup "ImmutableDB"
 fixedEpochSize :: EpochSize
 fixedEpochSize = 10
 
-fixedGetEpochSize :: Monad m => EpochNo -> m EpochSize
-fixedGetEpochSize _ = return fixedEpochSize
-
 type Hash = TestBlock
 
 -- Shorthand
@@ -95,7 +92,7 @@ openTestDB :: (HasCallStack, MonadSTM m, MonadCatch m)
            -> ErrorHandling ImmutableDBError m
            -> m (ImmutableDB Hash m)
 openTestDB hasFS err =
-    openDB S.decode S.encode hasFS err fixedGetEpochSize ValidateMostRecentEpoch parser
+    openDB S.decode S.encode hasFS err (fixedSizeEpochInfo fixedEpochSize) ValidateMostRecentEpoch parser
   where
     parser = TestBlock.testBlockEpochFileParser' hasFS
 

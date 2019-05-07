@@ -147,8 +147,8 @@ import           Control.Monad (forM_, replicateM_, when)
 import           Control.Monad.Class.MonadSTM (MonadSTM (..))
 import           Control.Monad.Class.MonadThrow (ExitCase (..),
                      MonadCatch (generalBracket), MonadThrow)
-import           Control.Monad.State.Strict (StateT (..), execStateT, get, lift,
-                     modify, put, runStateT, state)
+import           Control.Monad.State.Strict (StateT (..), get, lift, modify,
+                     put, runStateT, state)
 
 import           Data.ByteString (ByteString)
 import           Data.ByteString.Builder (Builder)
@@ -169,17 +169,17 @@ import           System.IO (IOMode (..), SeekMode (..))
 import           Ouroboros.Consensus.Util (SomePair (..))
 
 import           Ouroboros.Storage.Common
+import           Ouroboros.Storage.EpochInfo
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types
-import           Ouroboros.Storage.ImmutableDB.API
-import           Ouroboros.Storage.ImmutableDB.CumulEpochSizes (CumulEpochSizes,
-                     EpochSlot (..), RelativeSlot (..))
-import qualified Ouroboros.Storage.ImmutableDB.CumulEpochSizes as CES
-import           Ouroboros.Storage.ImmutableDB.Index
-import           Ouroboros.Storage.ImmutableDB.Util
 import           Ouroboros.Storage.Util
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
+
+import           Ouroboros.Storage.ImmutableDB.API
+import           Ouroboros.Storage.ImmutableDB.Index
+import           Ouroboros.Storage.ImmutableDB.Layout
+import           Ouroboros.Storage.ImmutableDB.Util
 
 {------------------------------------------------------------------------------
   Main types
@@ -210,11 +210,8 @@ data OpenState m hash h = OpenState
     -- index file when finalising the current epoch.
     , _currentTip              :: !ImmTip
     -- ^ The current tip of the database.
-    , _getEpochSize            :: !(EpochNo -> m EpochSize)
+    , _epochInfo               :: !(EpochInfo m)
     -- ^ Function to get the size of an epoch.
-    , _cumulEpochSizes         :: !CumulEpochSizes
-    -- ^ Cache of epoch sizes + conversion between 'SlotNo' and 'EpochSlot' and
-    -- vice versa.
     , _nextIteratorID          :: !BaseIteratorID
     -- ^ The ID of the next iterator that will be created.
     }
@@ -224,11 +221,9 @@ data OpenState m hash h = OpenState
 -- should be restored when the database is reopened. Data not present here
 -- will be recovered when reopening.
 data ClosedState m = ClosedState
-    { _closedGetEpochSize    :: !(EpochNo -> m EpochSize)
+    { _closedEpochInfo      :: !(EpochInfo m)
     -- ^ See '_getEpochSize'.
-    , _closedCumulEpochSizes :: !CumulEpochSizes
-    -- ^ See '_cumulEpochSizes'
-    , _closedNextIteratorID  :: !BaseIteratorID
+    , _closedNextIteratorID :: !BaseIteratorID
     -- ^ See '_nextIteratorID'.
     }
 
@@ -281,7 +276,7 @@ openDB
   -> (hash -> Encoding)
   -> HasFS m h
   -> ErrorHandling ImmutableDBError m
-  -> (EpochNo -> m EpochSize)
+  -> EpochInfo m
   -> ValidationPolicy
   -> EpochFileParser e hash m (Word64, SlotNo)
   -> m (ImmutableDB hash m)
@@ -314,16 +309,13 @@ openDBImpl :: forall m h hash e.
            -> (hash -> Encoding)
            -> HasFS m h
            -> ErrorHandling ImmutableDBError m
-           -> (EpochNo -> m EpochSize)
+           -> EpochInfo m
            -> ValidationPolicy
            -> EpochFileParser e hash m (Word64, SlotNo)
            -> m (ImmutableDB hash m)
-openDBImpl hashDecoder hashEncoder hasFS@HasFS{..} err getEpochSize valPol epochFileParser = do
-    firstEpochSize <- getEpochSize 0
-    let ces0 = CES.singleton firstEpochSize
-
-    !ost  <- validateAndReopen hashDecoder hashEncoder hasFS err getEpochSize
-      valPol epochFileParser ces0 initialIteratorID
+openDBImpl hashDecoder hashEncoder hasFS@HasFS{..} err epochInfo valPol epochFileParser = do
+    !ost  <- validateAndReopen hashDecoder hashEncoder hasFS err epochInfo
+      valPol epochFileParser initialIteratorID
 
     stVar <- atomically $ newTMVar (Right ost)
 
@@ -374,8 +366,8 @@ reopenImpl ImmutableDBEnv {..} valPol = do
           (atomically $ putTMVar _dbInternalState internalState) $ do
 
             !ost  <- validateAndReopen _dbHashDecoder _dbHashEncoder _dbHasFS
-              _dbErr _closedGetEpochSize valPol _dbEpochFileParser
-              _closedCumulEpochSizes _closedNextIteratorID
+              _dbErr _closedEpochInfo valPol _dbEpochFileParser
+              _closedNextIteratorID
 
             atomically $ putTMVar _dbInternalState (Right ost)
   where
@@ -388,15 +380,14 @@ deleteAfterImpl :: forall m hash.
                 -> ImmTip
                 -> m ()
 deleteAfterImpl dbEnv tip = modifyOpenState dbEnv $ \hasFS@HasFS{..} -> do
-    st@OpenState { _cumulEpochSizes = ces, ..} <- get
+    st@OpenState {..} <- get
+    currentEpochSlot <- lift $ tipToEpochSlot _epochInfo _currentTip
+    newEpochSlot     <- lift $ tipToEpochSlot _epochInfo tip
 
-    case (currentEpochSlot ces _currentTip, mbNewEpochSlot ces) of
+    case (currentEpochSlot, newEpochSlot) of
       -- If we're already at genesis we don't have to do anything
       (TipEpochSlotGenesis, _)      -> return ()
-      -- Nothing means that the new tip refers to a slot in the future, so
-      -- we don't have to do anything either
-      (_, Nothing)                  -> return ()
-      (TipEpochSlot cur, Just new)
+      (TipEpochSlot cur, new)
         -- No truncation needed either
         | new >= TipEpochSlot cur   -> return ()
         | otherwise                 -> do
@@ -404,35 +395,22 @@ deleteAfterImpl dbEnv tip = modifyOpenState dbEnv $ \hasFS@HasFS{..} -> do
           lift $ hClose _currentEpochWriteHandle
           mbNewTipAndIndex <- lift $ truncateToTipLEQ hasFS st new
           !ost <- lift $ case mbNewTipAndIndex of
-            Nothing -> mkOpenStateNewEpoch hasFS 0 _getEpochSize
-              ces _nextIteratorID TipGen
+            Nothing -> mkOpenStateNewEpoch hasFS 0 _epochInfo
+              _nextIteratorID TipGen
             Just (epochSlot@(EpochSlot epoch _), index) -> do
-              let newTip = epochSlotInThePastToTip ces epochSlot
-              mkOpenState hasFS epoch _getEpochSize ces
+              newTip <- epochSlotToTip _epochInfo epochSlot
+              mkOpenState hasFS epoch _epochInfo
                 _nextIteratorID newTip index
           put ost
   where
     ImmutableDBEnv { _dbErr } = dbEnv
 
     -- | The current tip as a 'TipEpochSlot'
-    currentEpochSlot :: CumulEpochSizes -> ImmTip -> TipEpochSlot
-    currentEpochSlot ces currentTip = case currentTip of
-      TipGen           -> TipEpochSlotGenesis
-      Tip (Left epoch) -> TipEpochSlot $ EpochSlot epoch 0
-      Tip (Right slot) -> TipEpochSlot $ slotInThePastToEpochSlot ces slot
-
-    -- | The given tip as a 'TipEpochSlot'. 'Nothing' in case it refers to a
-    -- slot in the future. Note that the returned 'TipEpochSlot' may still
-    -- refer to a future EBB.
-    mbNewEpochSlot :: CumulEpochSizes -> Maybe TipEpochSlot
-    mbNewEpochSlot ces = case tip of
-      TipGen           -> Just $ TipEpochSlotGenesis
-      Tip (Left epoch) -> Just $ TipEpochSlot (EpochSlot epoch 0)
-      -- If 'CES.slotToEpochSlot', returns 'Nothing', it means that the slot
-      -- is in the future. In that case we don't have to delete anything
-      -- anyway. So don't bother with gettting the epoch sizes needed to
-      -- convert it to an EpochSlot.
-      Tip (Right slot) -> TipEpochSlot <$> CES.slotToEpochSlot ces slot
+    tipToEpochSlot :: EpochInfo m -> ImmTip -> m TipEpochSlot
+    tipToEpochSlot epochInfo currentTip = case currentTip of
+      TipGen           -> return $ TipEpochSlotGenesis
+      Tip (Left epoch) -> return $ TipEpochSlot (EpochSlot epoch 0)
+      Tip (Right slot) -> TipEpochSlot <$> epochInfoBlockRelative epochInfo slot
 
     -- | Truncate to the last valid (filled slot or EBB) tip <= the given tip.
     truncateToTipLEQ :: HasFS m h
@@ -451,8 +429,6 @@ deleteAfterImpl dbEnv tip = modifyOpenState dbEnv $ \hasFS@HasFS{..} -> do
           index <- truncateIndex relSlot <$> openIndex epoch
           go epoch index
       where
-        ces = _cumulEpochSizes
-
         -- | Look for the last filled relative slot in the given epoch (the
         -- index of the epoch is the second argument). When found, return it
         -- and the index that has the relative slot as its last slot. Removes
@@ -482,8 +458,8 @@ deleteAfterImpl dbEnv tip = modifyOpenState dbEnv $ \hasFS@HasFS{..} -> do
           | epoch == _currentEpoch
           = return $ indexFromSlotOffsets _currentEpochOffsets _currentEBBHash
           | otherwise
-          = loadIndex (_dbHashDecoder dbEnv) hasFS _dbErr epoch
-              (succ (epochSizeInThePast ces epoch))
+          = epochInfoSize _epochInfo epoch >>= \size ->
+            loadIndex (_dbHashDecoder dbEnv) hasFS _dbErr epoch (succ size)
 
         -- | Remove the index file of the given epoch, if it exists.
         removeIndex :: EpochNo -> m ()
@@ -512,22 +488,21 @@ getBinaryBlobImpl
   -> SlotNo
   -> m (Maybe ByteString)
 getBinaryBlobImpl dbEnv slot = withOpenState dbEnv $ \_dbHasFS st@OpenState{..} -> do
-    let inTheFuture = case _currentTip of
-          TipGen                  -> True
-          Tip (Right lastSlot')   -> slot > lastSlot'
+    inTheFuture <- case _currentTip of
+          TipGen                  -> return $ True
+          Tip (Right lastSlot')   -> return $ slot > lastSlot'
           -- The slot (that pointing to a regular block) corresponding to this
           -- EBB will be empty, as the EBB is the last thing in the database.
           -- So if @slot@ is equal to this slot, it is also refering to the
           -- future.
-          Tip (Left lastEBBEpoch) -> slot >= ebbSlot
-            where
-              ebbSlot = epochSlotInThePastToSlot _cumulEpochSizes
-                (EpochSlot lastEBBEpoch 0)
+          Tip (Left lastEBBEpoch) -> do
+            ebbSlot <- epochInfoAbsolute _epochInfo (EpochSlot lastEBBEpoch 0)
+            return $ slot >= ebbSlot
 
     when inTheFuture $
       throwUserError _dbErr $ ReadFutureSlotError slot _currentTip
 
-    let epochSlot = slotInThePastToEpochSlot _cumulEpochSizes slot
+    epochSlot <- epochInfoBlockRelative _epochInfo slot
     snd <$> getEpochSlot _dbHasFS (_dbHashDecoder dbEnv) st _dbErr epochSlot
   where
     ImmutableDBEnv { _dbErr } = dbEnv
@@ -563,6 +538,11 @@ getEpochSlot
 getEpochSlot _dbHasFS hashDecoder OpenState {..} _dbErr epochSlot = do
     let epochFile = renderFile "epoch" epoch
         indexFile = renderFile "index" epoch
+
+    lastRelativeSlot <- case _currentTip of
+      TipGen           -> error "Postcondition violated: EpochSlot must be in the past"
+      Tip (Left  _)    -> return 0
+      Tip (Right slot) -> _relativeSlot <$> epochInfoBlockRelative _epochInfo slot
 
     (blobOffset, blobSize, mbEBBHash) <- case epoch == _currentEpoch of
       -- If the requested epoch is the current epoch, the offsets are still in
@@ -600,8 +580,8 @@ getEpochSlot _dbHasFS hashDecoder OpenState {..} _dbErr epochSlot = do
         mbEBBHash <- if relativeSlot == 0 && end > start
           then do
             -- Seek till after the offsets so we can read the hash
-            let epochSize  = epochSizeInThePast _cumulEpochSizes epoch
-                hashOffset = (fromIntegral epochSize + 2) * indexEntrySizeBytes
+            epochSize <- epochInfoSize _epochInfo epoch
+            let hashOffset = (fromIntegral epochSize + 2) * indexEntrySizeBytes
             hSeek iHnd AbsoluteSeek (fromIntegral hashOffset)
             deserialiseHash' =<< readAll _dbHasFS iHnd
           else return Nothing
@@ -627,11 +607,6 @@ getEpochSlot _dbHasFS hashDecoder OpenState {..} _dbErr epochSlot = do
     HasFS{..}                    = _dbHasFS
     EpochSlot epoch relativeSlot = epochSlot
 
-    lastRelativeSlot = case _currentTip of
-      TipGen           -> error "Postcondition violated: EpochSlot must be in the past"
-      Tip (Left  _)    -> 0
-      Tip (Right slot) -> _relativeSlot $ slotInThePastToEpochSlot _cumulEpochSizes slot
-
     deserialiseHash' :: HasCallStack => Builder -> m (Maybe hash)
     deserialiseHash' bld = case deserialiseHash hashDecoder (BS.toLazyByteString bld) of
       Right (_, hash) -> return hash
@@ -648,9 +623,9 @@ appendBinaryBlobImpl :: forall m hash.
 appendBinaryBlobImpl dbEnv@ImmutableDBEnv{..} slot builder =
     modifyOpenState dbEnv $ \hasFS@HasFS{..} -> do
 
-      EpochSlot epoch relSlot <- zoomCumul $ CES.slotToEpochSlotM slot
+      OpenState { _currentEpoch, _currentTip, _epochInfo } <- get
 
-      OpenState { _currentEpoch, _currentTip } <- get
+      EpochSlot epoch relSlot <- lift $ epochInfoBlockRelative _epochInfo slot
 
       -- Check that we're not appending to the past
       let inThePast = case _currentTip of
@@ -676,17 +651,18 @@ appendBinaryBlobImpl dbEnv@ImmutableDBEnv{..} slot builder =
       -- (possibly) updated state.
       OpenState {..} <- get
       -- If necessary, backfill for any slots we skipped in the current epoch
-      let nextFreeRelSlot
+      nextFreeRelSlot <- lift $
+          if epoch > initialEpoch
             -- If we had to start a new epoch, we start with slot 0. Note that
             -- in this case the _currentTip will refer to something in an
             -- epoch before _currentEpoch.
-            | epoch > initialEpoch = 0
-            | otherwise             = case _currentTip of
-              TipGen                -> 0
-              Tip (Left _ebb)       -> 1
-              Tip (Right lastSlot') -> succ . _relativeSlot $
-                slotInThePastToEpochSlot _cumulEpochSizes lastSlot'
-          lastEpochOffset = NE.head _currentEpochOffsets
+            then return 0
+            else case _currentTip of
+                   TipGen                -> return $ 0
+                   Tip (Left _ebb)       -> return $ 1
+                   Tip (Right lastSlot') -> succ . _relativeSlot <$>
+                     epochInfoBlockRelative _epochInfo lastSlot'
+      let lastEpochOffset = NE.head _currentEpochOffsets
           backfillOffsets =
             indexBackfill relSlot nextFreeRelSlot lastEpochOffset
 
@@ -722,33 +698,32 @@ startNewEpoch hashEncoder hasFS@HasFS{..} = do
     -- _currentEpochOffsets to match the size before writing them to the index
     -- file. When looking at the index file, it will then be clear that the
     -- epoch is finalised.
-    epochSize <- zoomCumul $ CES.getEpochSizeM _currentEpoch
+    epochSize <- lift $ epochInfoSize _epochInfo _currentEpoch
 
     -- Calculate what to pad the file with
-    let nextFreeRelSlot
-          | null (NE.tail _currentEpochOffsets)
-            -- We have to take care when starting multiple new epochs in a
-            -- row. In the first call the tip will be in the current epoch,
-            -- but in subsequent calls, the tip will still be in an epoch in
-            -- the past, not the '_currentEpoch'. In that case, we can't use
-            -- the relative slot of the tip, since it will point to a relative
-            -- slot in a past epoch. So when the current epoch is empty
-            -- (detected by looking at the offsets), we use relative slot 0 to
-            -- calculate how much to pad.
-          = 0
-          | otherwise
-          = case _currentTip of
-              TipGen                -> 0
-              Tip (Left _ebb)       -> 1
-              Tip (Right lastSlot') -> succ . _relativeSlot $
-                slotInThePastToEpochSlot _cumulEpochSizes lastSlot'
+    nextFreeRelSlot <- lift $
+        if null (NE.tail _currentEpochOffsets)
+          -- We have to take care when starting multiple new epochs in a
+          -- row. In the first call the tip will be in the current epoch,
+          -- but in subsequent calls, the tip will still be in an epoch in
+          -- the past, not the '_currentEpoch'. In that case, we can't use
+          -- the relative slot of the tip, since it will point to a relative
+          -- slot in a past epoch. So when the current epoch is empty
+          -- (detected by looking at the offsets), we use relative slot 0 to
+          -- calculate how much to pad.
+          then return 0
+          else case _currentTip of
+                 TipGen                -> return $ 0
+                 Tip (Left _ebb)       -> return $ 1
+                 Tip (Right lastSlot') -> succ . _relativeSlot <$>
+                   epochInfoBlockRelative _epochInfo lastSlot'
 
     -- The above calls may have modified the _cumulEpochSizes, so get it
     -- again.
     OpenState {..} <- get
     let lastEpochOffset = NE.head _currentEpochOffsets
         -- The last relative slot in the file
-        lastRelSlot     = CES.lastRelativeSlot epochSize
+        lastRelSlot     = maxRelativeSlot epochSize
         backfillOffsets =
           indexBackfill (succ lastRelSlot) nextFreeRelSlot lastEpochOffset
         -- Prepend the backfillOffsets to the current offsets to get a
@@ -759,8 +734,8 @@ startNewEpoch hashEncoder hasFS@HasFS{..} = do
     -- Now write the offsets and the EBB hash to the index file
     lift $ writeSlotOffsets hashEncoder hasFS _currentEpoch allOffsets _currentEBBHash
 
-    st <- lift $ mkOpenStateNewEpoch hasFS (succ _currentEpoch) _getEpochSize
-      _cumulEpochSizes _nextIteratorID _currentTip
+    st <- lift $ mkOpenStateNewEpoch hasFS (succ _currentEpoch) _epochInfo
+      _nextIteratorID _currentTip
 
     put st
 
@@ -873,27 +848,31 @@ streamBinaryBlobsImpl :: forall m hash.
                       -- ^ When to stop streaming (inclusive).
                       -> m (Iterator hash m ByteString)
 streamBinaryBlobsImpl dbEnv mbStart mbEnd = withOpenState dbEnv $ \hasFS st -> do
-    let ImmutableDBEnv { _dbErr }               = dbEnv
-        HasFS {..}                              = hasFS
-        OpenState { _cumulEpochSizes = ces, ..} = st
+    let ImmutableDBEnv { _dbErr } = dbEnv
+        HasFS {..}                = hasFS
+        OpenState {..}            = st
 
-    validateIteratorRange _dbErr ces _currentTip mbStart mbEnd
+    validateIteratorRange _dbErr _epochInfo _currentTip mbStart mbEnd
 
-    let emptyOrEndBound = case _currentTip of
-          TipGen -> Nothing
+    emptyOrEndBound <- case _currentTip of
+          TipGen -> return $ Nothing
           Tip (Left epoch)
             | Just (endSlot, endHash) <- mbEnd
-            -> let endEpochSlot = slotInThePastToEpochSlot ces endSlot
-               in Just (endEpochSlot, Just endHash)
+            -> do -- We don't really know if the upper bound points at a
+                  -- regular block or an EBB here. We conservatively assume it
+                  -- must a regular block (which would come /after/ the EBB),
+                  -- and then check this when we actually reach the end.
+                  endEpochSlot <- epochInfoBlockRelative _epochInfo endSlot
+                  return $ Just (endEpochSlot, Just endHash)
             | otherwise
-            -> Just (EpochSlot epoch 0, Nothing)
+            -> return $ Just (EpochSlot epoch 0, Nothing)
           Tip (Right lastSlot')
             | Just (endSlot, endHash) <- mbEnd
-            -> let endEpochSlot = slotInThePastToEpochSlot ces endSlot
-               in Just (endEpochSlot, Just endHash)
+            -> do endEpochSlot <- epochInfoBlockRelative _epochInfo endSlot
+                  return $ Just (endEpochSlot, Just endHash)
             | otherwise
-            -> let endEpochSlot = slotInThePastToEpochSlot ces lastSlot'
-               in Just (endEpochSlot, Nothing)
+            -> do endEpochSlot <- epochInfoBlockRelative _epochInfo lastSlot'
+                  return $ Just (endEpochSlot, Nothing)
 
     case emptyOrEndBound of
       -- The database is empty, just return an empty iterator (directly
@@ -901,14 +880,16 @@ streamBinaryBlobsImpl dbEnv mbStart mbEnd = withOpenState dbEnv $ \hasFS st -> d
       Nothing -> mkEmptyIterator
       Just (end, mbEndHash) -> do
         -- Fill in missing start bound
-        let (start@(EpochSlot startEpoch startRelSlot), mbStartHash)
-              | Just (startSlot, startHash) <- mbStart
-              = case slotInThePastToEpochSlot ces startSlot of
+        (start@(EpochSlot startEpoch startRelSlot), mbStartHash) <-
+          case mbStart of
+            Just (startSlot, startHash) -> do
+              startEpochSlot <- epochInfoBlockRelative _epochInfo startSlot
+              return $ case startEpochSlot of
                   -- Include the EBB by setting the start relative slot to 0
                   EpochSlot epoch 1 -> (EpochSlot epoch 0, Just startHash)
                   epochSlot         -> (epochSlot,         Just startHash)
-              | otherwise
-              = (EpochSlot 0 0, Nothing)
+            _otherwise ->
+              return (EpochSlot 0 0, Nothing)
 
         -- Helper function to open the index file of an epoch.
         let openIndex epoch
@@ -916,8 +897,8 @@ streamBinaryBlobsImpl dbEnv mbStart mbEnd = withOpenState dbEnv $ \hasFS st -> d
               = return $ indexFromSlotOffsets _currentEpochOffsets
                   _currentEBBHash
               | otherwise
-              = loadIndex (_dbHashDecoder dbEnv) hasFS _dbErr epoch
-                  (succ (epochSizeInThePast ces epoch))
+              = epochInfoSize _epochInfo epoch >>= \size ->
+                loadIndex (_dbHashDecoder dbEnv) hasFS _dbErr epoch (succ size)
 
         startIndex <- openIndex startEpoch
 
@@ -1070,8 +1051,7 @@ iteratorNextImpl dbEnv it@IteratorHandle {_it_hasFS = hasFS :: HasFS m h, ..} = 
       Nothing -> return IteratorExhausted
       -- Valid @next@ thanks to Invariant 1, so go ahead and read it
       Just iteratorState@IteratorState{..} -> withOpenState dbEnv $ \_ st -> do
-        let ces = _cumulEpochSizes st
-            slot = epochSlotInThePastToSlot ces _it_next
+        slot <- epochInfoAbsolute (_epochInfo st) _it_next
         blob <- readNext iteratorState
         case _it_next of
           -- It's an EBB
@@ -1153,8 +1133,8 @@ iteratorNextImpl dbEnv it@IteratorHandle {_it_hasFS = hasFS :: HasFS m h, ..} = 
         -- know that _epoch _it_end is <= _currentEpoch, so we know that epoch
         -- <= _currentEpoch.
         index <- case epoch == _currentEpoch of
-          False -> loadIndex (_dbHashDecoder dbEnv) hasFS (_dbErr dbEnv) epoch
-            (succ (epochSizeInThePast _cumulEpochSizes epoch))
+          False -> epochInfoSize _epochInfo epoch >>= \size ->
+                   loadIndex (_dbHashDecoder dbEnv) hasFS (_dbErr dbEnv) epoch (succ size)
           True  -> return $
             indexFromSlotOffsets _currentEpochOffsets _currentEBBHash
 
@@ -1219,24 +1199,22 @@ validateAndReopen :: forall m hash h e.
                   -> (hash -> Encoding)
                   -> HasFS m h
                   -> ErrorHandling ImmutableDBError m
-                  -> (EpochNo -> m EpochSize)
+                  -> EpochInfo m
                   -> ValidationPolicy
                   -> EpochFileParser e hash m (Word64, SlotNo)
-                  -> CumulEpochSizes
                   -> BaseIteratorID
                   -> m (OpenState m hash h)
-validateAndReopen hashDecoder hashEncoder hasFS err getEpochSize valPol epochFileParser ces nextIteratorID = do
-    (mbLastValidLocationAndIndex, ces') <-
-      flip runStateT ces $
-      validate hashDecoder hashEncoder hasFS err getEpochSize valPol epochFileParser
+validateAndReopen hashDecoder hashEncoder hasFS err epochInfo valPol epochFileParser nextIteratorID = do
+    mbLastValidLocationAndIndex <-
+      validate hashDecoder hashEncoder hasFS err epochInfo valPol epochFileParser
 
     case mbLastValidLocationAndIndex of
       Nothing ->
-        mkOpenStateNewEpoch hasFS 0 getEpochSize ces' nextIteratorID TipGen
+        mkOpenStateNewEpoch hasFS 0 epochInfo nextIteratorID TipGen
       Just (lastValidLocation, index) -> do
-        let tip   = epochSlotInThePastToTip ces' lastValidLocation
-            epoch = _epoch lastValidLocation
-        mkOpenState hasFS epoch getEpochSize ces' nextIteratorID tip index
+        tip <- epochSlotToTip epochInfo lastValidLocation
+        let epoch = _epoch lastValidLocation
+        mkOpenState hasFS epoch epochInfo nextIteratorID tip index
 
 -- | Create the internal open state based on an epoch with the given 'Index'.
 --
@@ -1244,18 +1222,14 @@ validateAndReopen hashDecoder hashEncoder hasFS err getEpochSize valPol epochFil
 mkOpenState :: (HasCallStack, MonadThrow m)
             => HasFS m h
             -> EpochNo
-            -> (EpochNo -> m EpochSize)
-            -> CumulEpochSizes
+            -> EpochInfo m
             -> BaseIteratorID
             -> ImmTip
             -> Index hash
             -> m (OpenState m hash h)
-mkOpenState HasFS{..} epoch getEpochSize ces nextIteratorID tip index = do
+mkOpenState HasFS{..} epoch epochInfo nextIteratorID tip index = do
     let epochFile     = renderFile "epoch" epoch
         epochOffsets  = indexToSlotOffsets index
-
-    -- Add missing epoch sizes
-    ces' <- execStateT (CES.getEpochSizeM epoch getEpochSize) ces
 
     eHnd <- hOpen epochFile AppendMode
 
@@ -1265,8 +1239,7 @@ mkOpenState HasFS{..} epoch getEpochSize ces nextIteratorID tip index = do
       , _currentEpochOffsets     = epochOffsets
       , _currentEBBHash          = getEBBHash index
       , _currentTip              = tip
-      , _getEpochSize            = getEpochSize
-      , _cumulEpochSizes         = ces'
+      , _epochInfo               = epochInfo
       , _nextIteratorID          = nextIteratorID
       }
 
@@ -1276,17 +1249,13 @@ mkOpenState HasFS{..} epoch getEpochSize ces nextIteratorID tip index = do
 mkOpenStateNewEpoch :: (HasCallStack, MonadThrow m)
                     => HasFS m h
                     -> EpochNo
-                    -> (EpochNo -> m EpochSize)
-                    -> CumulEpochSizes
+                    -> EpochInfo m
                     -> BaseIteratorID
                     -> ImmTip
                     -> m (OpenState m hash h)
-mkOpenStateNewEpoch HasFS{..} epoch getEpochSize ces nextIteratorID tip = do
+mkOpenStateNewEpoch HasFS{..} epoch epochInfo nextIteratorID tip = do
     let epochFile    = renderFile "epoch" epoch
         epochOffsets = 0 NE.:| []
-
-    -- Add missing epoch sizes
-    ces' <- execStateT (CES.getEpochSizeM epoch getEpochSize) ces
 
     eHnd <- hOpen epochFile AppendMode
     -- TODO Use new O_EXCL create when we expect it to be empty, see #292
@@ -1297,8 +1266,7 @@ mkOpenStateNewEpoch HasFS{..} epoch getEpochSize ces nextIteratorID tip = do
       , _currentEpochOffsets     = epochOffsets
       , _currentEBBHash          = Nothing
       , _currentTip              = tip
-      , _getEpochSize            = getEpochSize
-      , _cumulEpochSizes         = ces'
+      , _epochInfo               = epochInfo
       , _nextIteratorID          = nextIteratorID
       }
 
@@ -1462,64 +1430,15 @@ closedStateFromInternalState :: Either (ClosedState m) (OpenState m hash h)
                              -> ClosedState m
 closedStateFromInternalState (Left cst) = cst
 closedStateFromInternalState (Right OpenState {..}) = ClosedState
-  { _closedGetEpochSize    = _getEpochSize
-  , _closedCumulEpochSizes = _cumulEpochSizes
+  { _closedEpochInfo       = _epochInfo
   , _closedNextIteratorID  = _nextIteratorID
   }
 
--- | Run the given function using '_getEpochSize' from the open state,
--- updating the '_cumulEpochSizes' from the open state, storing its updated
--- value afterwards.
-zoomCumul :: Monad m
-          => (    (EpochNo -> m EpochSize)
-               -> StateT CumulEpochSizes m a
-             )
-          -> StateT (OpenState m hash h) m a
-zoomCumul m = do
-    OpenState { _cumulEpochSizes = ces, _getEpochSize } <- get
-    (a, ces') <- lift $ runStateT (m _getEpochSize) ces
-    modify $ \st -> st { _cumulEpochSizes = ces' }
-    return a
-
--- | Convert an 'EpochSlot' in the past (<= the current epoch) using an up to
--- date 'CumulEpochSizes' to a 'SlotNo'.
---
--- This conversion may not fail, as the 'EpochSlot' must be in the past, and
--- all past epoch sizes are known.
-epochSlotInThePastToSlot :: HasCallStack
-                         => CumulEpochSizes -> EpochSlot -> SlotNo
-epochSlotInThePastToSlot ces epochSlot = fromMaybe
-  (error ("Could not convert EpochSlot to Slot: " <> show epochSlot)) $
-  CES.epochSlotToSlot ces epochSlot
-
--- | Convert a 'SlotNo' in the past (<= the next slot to write to) using an up
--- to date 'CumulEpochSizes' to an 'EpochSlot'.
---
--- This conversion may not fail, as the 'SlotNo' must be in the past, and all
--- past epoch sizes are known.
-slotInThePastToEpochSlot :: HasCallStack
-                         => CumulEpochSizes -> SlotNo -> EpochSlot
-slotInThePastToEpochSlot ces slot = fromMaybe
-  (error ("Could not convert Slot to EpochSlot: " <> show slot)) $
-  CES.slotToEpochSlot ces slot
-
--- | Look up the 'EpochSize' of an 'EpochNo' using an up-to-date
--- 'CumulEpochSizes'.
---
--- This conversion may not fail, as the 'EpochNo' must be in the past (or
--- current), and all past epoch sizes are known.
-epochSizeInThePast :: HasCallStack
-                   => CumulEpochSizes -> EpochNo -> EpochSize
-epochSizeInThePast ces epoch = fromMaybe
-  (error ("Unknown epoch size: " <> show epoch)) $ CES.epochSize ces epoch
-
--- | Convert an 'EpochSlot' to a 'Tip' using an up-to-date 'CumulEpochSizes'.
---
--- This conversion may not fail, as the 'EpochSlot' must be in the past.
-epochSlotInThePastToTip :: CumulEpochSizes -> EpochSlot -> ImmTip
-epochSlotInThePastToTip _   (EpochSlot epoch 0) = Tip (Left epoch)
-epochSlotInThePastToTip ces epochSlot           = Tip . Right $
-    epochSlotInThePastToSlot ces epochSlot
+-- | Convert an 'EpochSlot' to a 'Tip'
+epochSlotToTip :: Monad m => EpochInfo m -> EpochSlot -> m ImmTip
+epochSlotToTip _         (EpochSlot epoch 0) = return $ Tip (Left epoch)
+epochSlotToTip epochInfo epochSlot           = Tip . Right <$>
+    epochInfoAbsolute epochInfo epochSlot
 
 -- | Go through all files, making two sets: the set of epoch-xxx.dat
 -- files, and the set of index-xxx.dat files, discarding all others.
@@ -1593,20 +1512,20 @@ validate :: forall m hash h e.
          -> (hash -> Encoding)
          -> HasFS m h
          -> ErrorHandling ImmutableDBError m
-         -> (EpochNo -> m EpochSize)
+         -> EpochInfo m
          -> ValidationPolicy
          -> EpochFileParser e hash m (Word64, SlotNo)
-         -> StateT CumulEpochSizes m (Maybe (EpochSlot, Index hash))
+         -> m (Maybe (EpochSlot, Index hash))
             -- ^ The 'EpochSlot' pointing at the last valid block or EBB on
             -- disk and the 'Index' of the corresponding epoch. 'Nothing' if
             -- the database is empty.
-validate hashDecoder hashEncoder hasFS@HasFS{..} err getEpochSize valPol epochFileParser = do
-    filesInDBFolder <- lift $ listDirectory []
+validate hashDecoder hashEncoder hasFS@HasFS{..} err epochInfo valPol epochFileParser = do
+    filesInDBFolder <- listDirectory []
     let epochFiles = fst $ dbFilesOnDisk filesInDBFolder
     case Set.lookupMax epochFiles of
       Nothing              -> do
         -- Remove left-over index files
-        lift $ removeFilesStartingFrom hasFS 0
+        removeFilesStartingFrom hasFS 0
         -- TODO calls listDirectory again
         return Nothing
 
@@ -1627,7 +1546,7 @@ validate hashDecoder hashEncoder hasFS@HasFS{..} err getEpochSize valPol epochFi
     -- All data after the last valid block or EBB is truncated.
     validateMostRecentEpoch :: HasCallStack
                             => EpochNo
-                            -> StateT CumulEpochSizes m (Maybe (EpochSlot, Index hash))
+                            -> m (Maybe (EpochSlot, Index hash))
     validateMostRecentEpoch = go
       where
         go epoch = do
@@ -1642,7 +1561,7 @@ validate hashDecoder hashEncoder hasFS@HasFS{..} err getEpochSize valPol epochFi
               -> return $ Just (EpochSlot epoch lastRelativeSlot, index)
               | otherwise
               -> do
-                lift $ removeFile (renderFile "epoch" epoch)
+                removeFile (renderFile "epoch" epoch)
                 continueIfPossible
             Complete index
               | Just lastRelativeSlot <- lastFilledSlot index
@@ -1654,15 +1573,15 @@ validate hashDecoder hashEncoder hasFS@HasFS{..} err getEpochSize valPol epochFi
                   | otherwise                          -> do
                     -- As the epoch will no longer be complete, remove the
                     -- index file.
-                    lift $ removeFile (renderFile "index" epoch)
+                    removeFile (renderFile "index" epoch)
                     let newIndexSize = EpochSize . unRelativeSlot
                                      $ succ lastRelativeSlot
                     return $ truncateToSlots newIndexSize index
                 return $ Just (EpochSlot epoch lastRelativeSlot, index')
               | otherwise
               -> do
-                lift $ removeFile (renderFile "epoch" epoch)
-                lift $ removeFile (renderFile "index" epoch)
+                removeFile (renderFile "epoch" epoch)
+                removeFile (renderFile "index" epoch)
                 continueIfPossible
 
     -- | Validate all the epochs using @validateEpoch@, starting from the most
@@ -1682,7 +1601,7 @@ validate hashDecoder hashEncoder hasFS@HasFS{..} err getEpochSize valPol epochFi
     -- All data after the last valid block or EBB is truncated.
     validateAllEpochs :: HasCallStack
                       => EpochNo
-                      -> StateT CumulEpochSizes m (Maybe (EpochSlot, Index hash))
+                      -> m (Maybe (EpochSlot, Index hash))
     validateAllEpochs = go Nothing
       where
         go lastValid epoch = do
@@ -1695,10 +1614,10 @@ validate hashDecoder hashEncoder hasFS@HasFS{..} err getEpochSize valPol epochFi
               -- Remove all valid files that may come after it. Note that
               -- 'Invalid' guarantees that there is no epoch or index file for
               -- this epoch.
-              lift $ removeFilesStartingFrom hasFS (succ epoch)
+              removeFilesStartingFrom hasFS (succ epoch)
               continueIfPossible Nothing
             Incomplete index -> do
-              lift $ removeFilesStartingFrom hasFS (succ epoch)
+              removeFilesStartingFrom hasFS (succ epoch)
               let lastValid' = lastFilledSlot index <&> \lastRelativeSlot ->
                     (EpochSlot epoch lastRelativeSlot, index)
               continueIfPossible lastValid'
@@ -1719,7 +1638,7 @@ validate hashDecoder hashEncoder hasFS@HasFS{..} err getEpochSize valPol epochFi
                   | otherwise                          -> do
                     -- As the epoch will no longer be complete, remove the
                     -- index file.
-                    lift $ removeFile (renderFile "index" epoch)
+                    removeFile (renderFile "index" epoch)
                     let newIndexSize = EpochSize . unRelativeSlot
                                      $ succ lastRelativeSlot
                     return $ truncateToSlots newIndexSize index
@@ -1729,8 +1648,8 @@ validate hashDecoder hashEncoder hasFS@HasFS{..} err getEpochSize valPol epochFi
                 -- is empty, we can't use it as lastValid, so remove it and
                 -- continue.
               -> do
-                lift $ removeFile (renderFile "epoch" epoch)
-                lift $ removeFile (renderFile "index" epoch)
+                removeFile (renderFile "epoch" epoch)
+                removeFile (renderFile "index" epoch)
                 continueIfPossible Nothing
 
     -- | Validates the epoch and index file of the given epoch.
@@ -1760,37 +1679,37 @@ validate hashDecoder hashEncoder hasFS@HasFS{..} err getEpochSize valPol epochFi
     -- truth.
     validateEpoch :: HasCallStack
                   => EpochNo
-                  -> StateT CumulEpochSizes m (ValidateResult hash)
+                  -> m (ValidateResult hash)
     validateEpoch epoch = do
-      epochSize <- CES.getEpochSizeM epoch getEpochSize
+      epochSize <- epochInfoSize epochInfo epoch
 
       let indexSize = succ epochSize  -- One extra slot for the EBB
           indexFile = renderFile "index" epoch
           epochFile = renderFile "epoch" epoch
 
-      epochFileExists <- lift $ doesFileExist epochFile
-      indexFileExists <- lift $ doesFileExist indexFile
+      epochFileExists <- doesFileExist epochFile
+      indexFileExists <- doesFileExist indexFile
       if not epochFileExists
         then do
-          when indexFileExists $ lift $ removeFile indexFile
+          when indexFileExists $ removeFile indexFile
           return Missing
         else do
 
           -- Read the epoch file and reconstruct an index from it.
           (reconstructedIndex, mbErr) <- reconstructIndex epochFile
-            epochFileParser getEpochSize
+            epochFileParser epochInfo
 
           -- If there was an error parsing the epoch file, truncate it
           case mbErr of
             -- If there was an error parsing the epoch file, truncate it
             Just _ ->
-              lift $ withFile hasFS epochFile AppendMode $ \eHnd ->
+              withFile hasFS epochFile AppendMode $ \eHnd ->
                 hTruncate eHnd (lastSlotOffset reconstructedIndex)
             -- If not, check that the last offset matches the epoch file size.
             -- If it does not, it means the 'EpochFileParser' is incorrect. We
             -- can't recover from this.
             Nothing -> do
-              epochFileSize <- lift $ withFile hasFS epochFile ReadMode hGetSize
+              epochFileSize <- withFile hasFS epochFile ReadMode hGetSize
               -- TODO assert?
               when (lastSlotOffset reconstructedIndex /= epochFileSize) $
                 error $ "EpochFileParser incorrect: expected last offset = " <>
@@ -1816,7 +1735,7 @@ validate hashDecoder hashEncoder hasFS@HasFS{..} err getEpochSize valPol epochFi
               -- unaware of. Write the reconstructed index to disk if needed.
               overwrite <- if indexFileExists
                 then do
-                  indexFromFileOrError <- lift $ EH.try loadErr $
+                  indexFromFileOrError <- EH.try loadErr $
                     loadIndex hashDecoder hasFS err epoch indexSize
                   case indexFromFileOrError of
                     Left _              -> return True
@@ -1825,11 +1744,11 @@ validate hashDecoder hashEncoder hasFS@HasFS{..} err getEpochSize valPol epochFi
                 else return True
               when overwrite $
                 -- TODO log
-                lift $ writeIndex hashEncoder hasFS epoch reconstructedIndex
+                writeIndex hashEncoder hasFS epoch reconstructedIndex
               return $ Complete reconstructedIndex
 
             | indexFileExists -> do
-              indexFromFileOrError <- lift $ EH.try loadErr $
+              indexFromFileOrError <- EH.try loadErr $
                 loadIndex hashDecoder hasFS err epoch indexSize
               case indexFromFileOrError of
                 Left _              -> return $ Incomplete reconstructedIndex
@@ -1852,13 +1771,13 @@ validate hashDecoder hashEncoder hasFS@HasFS{..} err getEpochSize valPol epochFi
                     if indexSlots extendedIndex /= indexSize ||
                        indexSlots indexFromFile > indexSlots extendedIndex
                       then do
-                        lift $ removeFile indexFile
+                        removeFile indexFile
                         return $ Incomplete reconstructedIndex
                       else return $ Complete extendedIndex
 
                   | otherwise -> do
                     -- No prefix: the index file is invalid
-                    lift $ removeFile indexFile
+                    removeFile indexFile
                     return $ Incomplete reconstructedIndex
 
             -- No index file, either because it is missing or because the
@@ -1873,10 +1792,10 @@ validate hashDecoder hashEncoder hasFS@HasFS{..} err getEpochSize valPol epochFi
 reconstructIndex :: forall m e hash. MonadThrow m
                  => FsPath
                  -> EpochFileParser e hash m (Word64, SlotNo)
-                 -> (EpochNo -> m EpochSize)
-                 -> StateT CumulEpochSizes m (Index hash, Maybe e)
-reconstructIndex epochFile epochFileParser getEpochSize = do
-    (offsetsAndSizesAndSlots, ebbHash, mbErr) <- lift $
+                 -> EpochInfo m
+                 -> m (Index hash, Maybe e)
+reconstructIndex epochFile epochFileParser epochInfo = do
+    (offsetsAndSizesAndSlots, ebbHash, mbErr) <-
       runEpochFileParser epochFileParser epochFile
     offsetsAndSizesAndRelSlots <- case offsetsAndSizesAndSlots of
       [] -> return []
@@ -1893,9 +1812,7 @@ reconstructIndex epochFile epochFileParser getEpochSize = do
     return (index, mbErr)
   where
     slotsToRelSlots :: [(SlotOffset, (Word64, SlotNo))]
-                    -> StateT CumulEpochSizes
-                              m
-                              [(SlotOffset, (Word64, RelativeSlot))]
+                    -> m [(SlotOffset, (Word64, RelativeSlot))]
     slotsToRelSlots = mapM $ \(offset, (size, slot)) -> do
-      relSlot <- CES.slotToRelativeSlotM slot getEpochSize
+      relSlot <- _relativeSlot <$> epochInfoBlockRelative epochInfo slot
       return (offset, (size, relSlot))
