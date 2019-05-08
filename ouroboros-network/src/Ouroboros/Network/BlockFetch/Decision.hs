@@ -480,47 +480,48 @@ filterNotAlreadyInFlightWithPeer chains =
       blockPoint b `Set.notMember` peerFetchBlocksInFlight inflight
 
 
--- One last step of filtering, but this time across peers, rather than
+-- | A penultimate step of filtering, but this time across peers, rather than
 -- individually for each peer. If we're following the parallel fetch
 -- mode then we filter out blocks that are already in-flight with other
 -- peers.
+--
+-- Note that this does /not/ cover blocks that are proposed to be fetched in
+-- this round of decisions. That step is covered  in 'fetchRequestDecisions'.
+--
 filterNotAlreadyInFlightWithOtherPeers
   :: HasHeader header
   => FetchMode
   -> [(FetchDecision [ChainFragment header], PeerFetchStatus header,
                                              PeerFetchInFlight header,
-                                             peer)]
-  -> [(FetchDecision [ChainFragment header], peer)]
+                                             peerinfo)]
+  -> [(FetchDecision [ChainFragment header], peerinfo)]
 
 filterNotAlreadyInFlightWithOtherPeers FetchModeDeadline chains =
     [ (mchainfragments,       peer)
     | (mchainfragments, _, _, peer) <- chains ]
 
 filterNotAlreadyInFlightWithOtherPeers FetchModeBulkSync chains =
-    go Set.empty chains
+    [ (mcandidatefragments',      peer)
+    | (mcandidatefragments, _, _, peer) <- chains
+    , let mcandidatefragments' = do
+            chainfragments <- mcandidatefragments
+            let fragments = concatMap (ChainFragment.filter notAlreadyInFlight)
+                                      chainfragments
+            guard (not (null fragments)) ?! FetchDeclineInFlightOtherPeer
+            return fragments
+    ]
   where
-    go !_ [] = []
-    go !blocksInFlightWithOtherPeers
-       ((mchainfragments, status, inflight, peer) : cps) =
+    notAlreadyInFlight b =
+      blockPoint b `Set.notMember` blocksInFlightWithOtherPeers
 
-        (mchainfragments', peer)
-      : go blocksInFlightWithOtherPeers' cps
-      where
-        mchainfragments' = do
-          chainfragments <- mchainfragments
-          let fragments = concatMap (ChainFragment.filter notAlreadyInFlight)
-                                    chainfragments
-          guard (not (null fragments)) ?! FetchDeclineInFlightOtherPeer
-          return fragments
-
-        notAlreadyInFlight b =
-          blockPoint b `Set.notMember` blocksInFlightWithOtherPeers
-
-        blocksInFlightWithOtherPeers' = case status of
-          PeerFetchStatusShutdown -> blocksInFlightWithOtherPeers
-          PeerFetchStatusAberrant -> blocksInFlightWithOtherPeers
-          _other                  -> blocksInFlightWithOtherPeers
-                         `Set.union` peerFetchBlocksInFlight inflight
+   -- All the blocks that are already in-flight with all peers
+    blocksInFlightWithOtherPeers =
+      Set.unions
+        [ case status of
+            PeerFetchStatusShutdown -> Set.empty
+            PeerFetchStatusAberrant -> Set.empty
+            _other                  -> peerFetchBlocksInFlight inflight
+        | (_, status, inflight, _) <- chains ]
 
 
 prioritisePeerChains
@@ -567,14 +568,14 @@ fetchRequestDecisions
                                              peer)]
   -> [(FetchDecision (FetchRequest header),  peer)]
 fetchRequestDecisions fetchDecisionPolicy fetchMode chains =
-    go nConcurrentFetchPeers0 chains
+    go nConcurrentFetchPeers0 Set.empty chains
   where
-    go !_ [] = []
-    go !nConcurrentFetchPeers
+    go !_ !_ [] = []
+    go !nConcurrentFetchPeers !blocksFetchedThisRound
        ((mchainfragments, status, inflight, gsvs, peer) : cps) =
 
         (decision, peer)
-      : go nConcurrentFetchPeers' cps
+      : go nConcurrentFetchPeers' blocksFetchedThisRound' cps
       where
         decision = fetchRequestDecision
                      fetchDecisionPolicy
@@ -583,13 +584,42 @@ fetchRequestDecisions fetchDecisionPolicy fetchMode chains =
                      (calculatePeerFetchInFlightLimits gsvs)
                      inflight
                      status
-                     mchainfragments
+                     mchainfragments'
+
+        mchainfragments' =
+          case fetchMode of
+            FetchModeDeadline -> mchainfragments
+            FetchModeBulkSync -> do
+                chainfragments <- mchainfragments
+                let fragments =
+                      concatMap (ChainFragment.filter notFetchedThisRound)
+                                chainfragments
+                guard (not (null fragments)) ?! FetchDeclineInFlightOtherPeer
+                return fragments
+              where
+                notFetchedThisRound h =
+                  blockPoint h `Set.notMember` blocksFetchedThisRound
 
         nConcurrentFetchPeers'
           -- increment if it was idle, and now will not be
           | peerFetchReqsInFlight inflight == 0
           , Right{} <- decision = nConcurrentFetchPeers + 1
           | otherwise           = nConcurrentFetchPeers
+
+        -- This is only for avoiding duplication between fetch requests in this
+        -- round of decisions. Avoiding duplication with blocks that are already
+        -- in flight is handled by filterNotAlreadyInFlightWithOtherPeers
+        blocksFetchedThisRound' =
+          case decision of
+            Left _                         -> blocksFetchedThisRound
+            Right (FetchRequest fragments) -> blocksFetchedThisRound
+                                  `Set.union` blocksFetchedThisDecision
+              where
+                blocksFetchedThisDecision =
+                  Set.fromList
+                    [ blockPoint header
+                    | fragment <- fragments
+                    , header   <- ChainFragment.toOldestFirst fragment ]
 
     nConcurrentFetchPeers0 =
         fromIntegral
