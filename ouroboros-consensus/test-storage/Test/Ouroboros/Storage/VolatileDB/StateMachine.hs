@@ -61,6 +61,7 @@ import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 import           Ouroboros.Storage.VolatileDB.API
 import qualified Ouroboros.Storage.VolatileDB.Impl as Internal hiding (openDB)
+import           Ouroboros.Storage.VolatileDB.Util
 
 import           Test.Ouroboros.Storage.FS.Sim.Error hiding (null)
 import           Test.Ouroboros.Storage.Util
@@ -288,7 +289,7 @@ sm :: (MonadCatch m, MonadSTM m)
    -> TVar m Errors
    -> HasFS m h
    -> VolatileDB BlockId m
-   -> Internal.VolatileDBEnv m blockId
+   -> Internal.VolatileDBEnv m BlockId
    -> DBModel BlockId
    -> StateMachine Model (At CmdErr) m (At Resp)
 sm terminatingCmd errorsVar hasFS db env dbm = StateMachine {
@@ -516,7 +517,7 @@ prop_sequential = withMaxSuccess 1000 $
                  -> HasFS IO h
                  -> PropertyM IO (History (At CmdErr) (At Resp), Reason)
             test errorsVar hasFS = do
-              (db, env) <- run $ Internal.openDBFull hasFS EH.monadCatch (EH.throwCantCatch EH.monadCatch) (myParser hasFS EH.monadCatch) 3
+              (db, env) <- run $ Internal.openDBFull hasFS EH.monadCatch (EH.throwCantCatch EH.monadCatch) (myParser hasFS) 3
               let sm' = sm True errorsVar hasFS db env dbm
               (hist, _model, res) <- runCommands sm' cmds
               run $ closeDB db

@@ -265,9 +265,7 @@ runCorruptionModel guessSlot corrs = do
                     dbm { mp = mp'
                         , index = index'
                     -- We predict what error the parser will throw. It's easier to do this
-                    -- here, rather than on reOpening. reOpening will decide if this error
-                    -- will be rethrown to the user or will remain internal, based on whether
-                    -- the parser is lenient or not.
+                    -- here, rather than on reOpening. reOpening will later actualy throw the error.
                         , parseError = parseError'
                     }
                       where
@@ -287,14 +285,12 @@ runCorruptionModel guessSlot corrs = do
                         parseError' = if (fromIntegral binarySize)*(length droppedBids) > fromIntegral n
                                          && not (mod n (fromIntegral binarySize) == 0)
                                          && isNothing (parseError dbm)
-                                      -- TODO(kde) need to improve error message if we want to compare
-                                      -- with the real one.
-                                      then Just (DecodeFailed "" 0) else parseError dbm
+                                      then Nothing else parseError dbm
                 AppendBytes n ->
                     dbm {parseError = parseError'}
                       where
                         parseError' = if n > 0 && isNothing (parseError dbm)
-                                      then Just (DecodeFailed "" 0) else parseError dbm
+                                      then Nothing else parseError dbm
                     -- Appending doesn't actually change anything, since additional bytes will be truncated.
 
 createFileModel :: forall blockId m. MonadState (DBModel blockId) m
@@ -321,7 +317,7 @@ duplicateBlockModel :: forall blockId m. MonadState (DBModel blockId) m
 duplicateBlockModel (file, bid) = do
     db <- get
     let current = currentFile db
-    put $ db {parseError = Just $ DuplicatedSlot (Map.fromList [(bid,([file], [current]))])}
+    put $ db {parseError = Just $ DuplicatedSlot bid file current}
 
 recover :: MonadState (DBModel blockId) m
         => ThrowCantCatch (VolatileDBError blockId) m
@@ -330,7 +326,7 @@ recover :: MonadState (DBModel blockId) m
 recover err dbm@DBModel {..} = do
     case parseError of
         Just pError@(InvalidFilename _) -> EH.throwError' err $ UnexpectedError $ ParserError pError
-        Just pError@(DuplicatedSlot _) -> EH.throwError' err $ UnexpectedError $ ParserError pError
+        Just pError@(DuplicatedSlot _ _ _) -> EH.throwError' err $ UnexpectedError $ ParserError pError
         _ -> return $ dbm {index = index', currentFile = cFile, nextFId = fid, parseError = Nothing}
   where
     lastFd = fromRight (error "filename in index didn't parse" )
