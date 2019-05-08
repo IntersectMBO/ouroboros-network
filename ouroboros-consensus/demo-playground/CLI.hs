@@ -67,6 +67,10 @@ parseProtocol = asum [
           long "praos"
         , help "Use the Praos consensus algorithm"
         ]
+    , flag' (Some (DemoPBFT defaultDemoPBftParams)) $ mconcat [
+          long "pbft"
+        , help "Use the Permissive BFT consensus algorithm"
+        ]
     ]
 
 parseCommand :: Parser Command

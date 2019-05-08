@@ -12,7 +12,7 @@ import qualified Control.Concurrent.Async as Async
 import           Control.Concurrent.STM
 import           Control.Monad
 import           Control.Monad.Trans
-import           Control.Tracer (nullTracer)
+import           Control.Tracer
 import           Crypto.Random
 import qualified Data.Map.Strict as M
 import           Data.Maybe
@@ -21,6 +21,7 @@ import           Data.Semigroup ((<>))
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (genesisPoint, pointHash)
+import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.Protocol.BlockFetch.Codec
 import           Ouroboros.Network.Protocol.ChainSync.Codec
 
@@ -31,6 +32,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import qualified Ouroboros.Consensus.Ledger.Mock as Mock
 import           Ouroboros.Consensus.Node
 import           Ouroboros.Consensus.Util
+import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.STM
 import           Ouroboros.Consensus.Util.ThreadRegistry
@@ -40,7 +42,6 @@ import qualified Ouroboros.Storage.ChainDB as ChainDB
 import qualified Ouroboros.Storage.ChainDB.Mock as ChainDB
 
 import           CLI
-import           Logging
 import           Mock.Mempool
 import           Mock.TxSubmission
 import           NamedPipe (DataFlow (..), NodeMapping ((:==>:)))
@@ -78,18 +79,12 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
     putStrLn $ "My producers are " <> show (producers nodeSetup)
     putStrLn $ "**************************************"
 
-    -- CONTINUE with this
     let ProtocolInfo{..} = protocolInfo
                              p
                              (NumCoreNodes (length nodeSetups))
                              (CoreNodeId nid)
 
     withThreadRegistry $ \registry -> do
-
-      -- Creates a TBQueue to be used by all the logger threads to monitor
-      -- the traffic.
-      loggingQueue    <- atomically $ newTBQueue 50
-      terminalThread  <- fork registry $ showNetworkTraffic loggingQueue
 
       let initialPool :: Mempool Mock.Tx
           initialPool = mempty
@@ -126,8 +121,9 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
       chainDB <- ChainDB.openDB encode pInfoConfig pInfoInitLedger Mock.simpleHeader
 
       btime  <- realBlockchainTime registry slotDuration systemStart
-      let nodeParams = NodeParams
-            { tracer             = nullTracer
+      let tracer = contramap ((show myNodeId <> " | ") <>) stdoutTracer
+          nodeParams = NodeParams
+            { tracer
             , threadRegistry     = registry
             , maxClockSkew       = ClockSkew 1
             , cfg                = pInfoConfig
@@ -140,16 +136,15 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
             }
       kernel <- nodeKernel nodeParams
 
-      watchChain registry loggingQueue chainDB
+      watchChain registry tracer chainDB
 
       -- Spawn the thread which listens to the mempool.
-      mempoolThread <- spawnMempoolListener myNodeId nodeMempool kernel
+      mempoolThread <- spawnMempoolListener tracer myNodeId nodeMempool kernel
 
       forM_ (producers nodeSetup) (addUpstream'   kernel)
       forM_ (consumers nodeSetup) (addDownstream' kernel)
 
-      let allThreads = [terminalThread, mempoolThread]
-      void $ Async.waitAnyCancel allThreads
+      Async.wait mempoolThread
   where
       nid :: Int
       nid = case myNodeId of
@@ -157,9 +152,10 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
               RelayId _ -> error "Non-core nodes currently not supported"
 
       watchChain :: ThreadRegistry IO
-                 -> TBQueue LogEvent
-                 -> ChainDB IO (Block p) (Header p) -> IO ()
-      watchChain registry q chainDB = onEachChange
+                 -> Tracer IO String
+                 -> ChainDB IO (Block p) (Header p)
+                 -> IO ()
+      watchChain registry tracer chainDB = onEachChange
           registry fingerprint initFingerprint
           (ChainDB.getCurrentChain chainDB) (const logFullChain)
         where
@@ -167,7 +163,8 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
           fingerprint frag = (AF.headPoint frag, AF.anchorPoint frag)
           logFullChain = do
             chain <- ChainDB.toChain chainDB
-            logChain q chain
+            traceWith tracer $
+              "Updated chain: " <> condense (Chain.toOldestFirst chain)
 
       -- We need to make sure that both nodes read from the same file
       -- We therefore use the convention to distinguish between

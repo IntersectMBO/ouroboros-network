@@ -271,6 +271,9 @@ instance (Typeable p, SimpleBlockCrypto c, OuroborosTag p, Condense (Payload p (
       , ")"
       ]
 
+instance Condense (ChainHash (SimpleHeader p c)) where
+  condense = condensedHash
+
 condensedHash :: Show (HeaderHash b) => ChainHash b -> String
 condensedHash GenesisHash     = "genesis"
 condensedHash (BlockHash hdr) = show hdr

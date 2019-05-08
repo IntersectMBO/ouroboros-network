@@ -183,7 +183,7 @@ nodeKernel
        )
     => NodeParams m up blk hdr
     -> m (NodeKernel m up blk hdr)
-nodeKernel params@NodeParams { tracer, threadRegistry } = do
+nodeKernel params@NodeParams { threadRegistry } = do
     st <- initInternalState params
 
     forkBlockProduction st
@@ -193,7 +193,7 @@ nodeKernel params@NodeParams { tracer, threadRegistry } = do
     -- Run the block fetch logic in the background. This will call
     -- 'addFetchedBlock' whenever a new block is downloaded.
     void $ forkLinked threadRegistry $ blockFetchLogic
-        (showTracing tracer)
+        nullTracer
         blockFetchInterface
         fetchClientRegistry
 
@@ -209,7 +209,7 @@ nodeKernel params@NodeParams { tracer, threadRegistry } = do
 
 -- | Constraints required to trace nodes, block, headers, etc.
 type TraceConstraints up blk hdr =
-  (Condense up, Condense blk, Condense hdr)
+  (Condense up, Condense blk, Condense hdr, Condense (ChainHash hdr))
 
 data InternalState m up blk hdr = IS {
       cfg                 :: NodeConfig (BlockProtocol blk)
@@ -384,8 +384,8 @@ forkBlockProduction IS{..} =
 
       whenJust mNewBlock $ \newBlock -> do
         traceWith tracer $
-          "I'm the leader of slot " <> show currentSlot <>
-          " and I produced: " <> condense newBlock
+          "As leader of slot " <> condense currentSlot <> " I produce: " <>
+          condense newBlock
         ChainDB.addBlock chainDB newBlock
   where
     NodeCallbacks{..} = callbacks
