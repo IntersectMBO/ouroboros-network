@@ -157,7 +157,7 @@ import           Data.Either (isRight)
 import           Data.Functor (($>), (<&>))
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
-import           Data.Maybe (fromMaybe, isJust)
+import           Data.Maybe (fromMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Word
@@ -1781,9 +1781,21 @@ validate hashDecoder hashEncoder hasFS@HasFS{..} err getEpochSize valPol epochFi
             epochFileParser getEpochSize
 
           -- If there was an error parsing the epoch file, truncate it
-          when (isJust mbErr) $ lift $
-            withFile hasFS epochFile AppendMode $ \eHnd ->
-              hTruncate eHnd (lastSlotOffset reconstructedIndex)
+          case mbErr of
+            -- If there was an error parsing the epoch file, truncate it
+            Just _ ->
+              lift $ withFile hasFS epochFile AppendMode $ \eHnd ->
+                hTruncate eHnd (lastSlotOffset reconstructedIndex)
+            -- If not, check that the last offset matches the epoch file size.
+            -- If it does not, it means the 'EpochFileParser' is incorrect. We
+            -- can't recover from this.
+            Nothing -> do
+              epochFileSize <- lift $ withFile hasFS epochFile ReadMode hGetSize
+              -- TODO assert?
+              when (lastSlotOffset reconstructedIndex /= epochFileSize) $
+                error $ "EpochFileParser incorrect: expected last offset = " <>
+                        show (lastSlotOffset reconstructedIndex) <>
+                        ", actual last offset = " <> show epochFileSize
 
           -- If the last slot of the epoch is filled, we don't need an index
           -- file. We can reconstruct it and don't have to throw an error.

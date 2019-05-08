@@ -17,6 +17,7 @@ module Ouroboros.Storage.ImmutableDB.Util
   , validateIteratorRange
   , reconstructSlotOffsets
   , indexBackfill
+  , cborEpochFileParser
   , cborEpochFileParser'
   ) where
 
@@ -29,6 +30,7 @@ import           Control.Monad.Class.MonadThrow (MonadThrow)
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Builder as BS
+import           Data.ByteString.Builder.Extra (defaultChunkSize)
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Text as T
@@ -255,6 +257,23 @@ indexBackfill (RelativeSlot slot) (RelativeSlot nextExpected) lastOffset =
 -- 'Ouroboros.Storage.ImmutableDB.Impl.openDB'.
 --
 -- TODO remove this function when the ChainDB is available.
+cborEpochFileParser :: forall m hash h a. (MonadST m, MonadThrow m)
+                    => Int  -- ^ Chunk size
+                    -> HasFS m h
+                    -> (forall s . CBOR.Decoder s a)
+                    -> (a -> Maybe hash)
+                       -- ^ In case the given @a@ is an EBB, return its
+                       -- @hash@.
+                    -> EpochFileParser ReadIncrementalErr hash m (Word64, a)
+                       -- ^ The 'Word' is the size in bytes of the
+                       -- corresponding @a@.
+cborEpochFileParser chunkSize hasFS decoder getEBBHash = EpochFileParser $
+    readIncrementalOffsetsEBB chunkSize hasFS decoder getEBBHash
+
+-- | Variant of 'cborEpochFileParser' that uses 'defaultChunkSize' as the
+-- chunk size.
+--
+-- TODO remove this function when the ChainDB is available.
 cborEpochFileParser' :: forall m hash h a. (MonadST m, MonadThrow m)
                      => HasFS m h
                      -> (forall s . CBOR.Decoder s a)
@@ -264,5 +283,4 @@ cborEpochFileParser' :: forall m hash h a. (MonadST m, MonadThrow m)
                      -> EpochFileParser ReadIncrementalErr hash m (Word64, a)
                         -- ^ The 'Word' is the size in bytes of the
                         -- corresponding @a@.
-cborEpochFileParser' hasFS decoder getEBBHash = EpochFileParser $
-    readIncrementalOffsetsEBB hasFS decoder getEBBHash
+cborEpochFileParser' = cborEpochFileParser defaultChunkSize

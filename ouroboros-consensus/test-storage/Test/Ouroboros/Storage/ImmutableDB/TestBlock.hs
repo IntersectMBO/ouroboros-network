@@ -22,7 +22,7 @@ module Test.Ouroboros.Storage.ImmutableDB.TestBlock
   , tests
   ) where
 
-import           Codec.Serialise (Serialise)
+import           Codec.Serialise (Serialise, decode, serialiseIncremental)
 import           Control.Monad (forM, replicateM, void, when)
 import           Control.Monad.Class.MonadThrow
 
@@ -53,8 +53,11 @@ import           Ouroboros.Storage.FS.API.Types (FsPath)
 import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
 import           Ouroboros.Storage.FS.Sim.STM (runSimFS)
 import           Ouroboros.Storage.ImmutableDB.Types
-import           Ouroboros.Storage.ImmutableDB.Util (readAll)
+import           Ouroboros.Storage.ImmutableDB.Util (cborEpochFileParser,
+                     readAll)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
+
+import           Ouroboros.Consensus.Util.CBOR (ReadIncrementalErr)
 
 import           Test.Util.Orphans.Arbitrary ()
 
@@ -207,7 +210,7 @@ prop_testBlockEpochFileParser (TestBlocks mbEBB regularBlocks) = QCM.monadicIO $
     QSM.liftProperty (ebbHash === mbEBB)
     let (offsets', blocks') = unzip offsetsAndBlocks
         offsets = dropLast $ scanl (+) 0 $
-          map (const (fromIntegral testBlockSize)) blocks
+          map (const testBlockSize) blocks
     QSM.liftProperty (blocks  ===  blocks')
     QSM.liftProperty (offsets === offsets')
   where
@@ -230,6 +233,71 @@ prop_testBlockEpochFileParser (TestBlocks mbEBB regularBlocks) = QCM.monadicIO $
     runSimIO :: (HasFS IO Mock.Handle -> IO a) -> IO a
     runSimIO m = fst <$> runSimFS EH.exceptions Mock.empty m
 
+{-------------------------------------------------------------------------------
+  CBOR EpochFileParser
+-------------------------------------------------------------------------------}
+
+-- [readIncrementalOffsetsEBB bug]
+--
+-- There was a bug in 'readIncrementalOffsetsEBB' (used in the implementation
+-- of 'cborEpochFileParser') that caused it to prematurely stop the
+-- incremental deserialisation of blocks from a file. Whenever the 'Done' case
+-- (of 'IDecode') was reached with no leftover bytes, deserialisation was
+-- stopped incorrectly. In this case, deserialisation only has to stop when
+-- there are no more bytes in the file. The absence of leftover bytes in the
+-- 'Done' constructor was mistakenly interpreted to represent this. In
+-- reality, it means that no more bytes are left over in the /chunk/ that was
+-- read from the file, not that no more bytes are left over in the /file/ that
+-- is being read.
+--
+-- The test below tries to trigger this bug by using a chunk size equal to the
+-- size of the first block so that it can be deserialised with exactly all the
+-- bytes that have been read in one chunk (resulting in no leftover bytes).
+
+prop_testBlockCborEpochFileParser :: TestBlocks -> Property
+prop_testBlockCborEpochFileParser (TestBlocks mbEBB regularBlocks) = QCM.monadicIO $ do
+    (offsetsAndSizesAndBlocks, ebbHash, mbErr) <- QCM.run $ runSimIO $ \hasFS -> do
+      writeBlocks hasFS
+      readBlocks  hasFS
+    QSM.liftProperty (mbErr   === Nothing)
+    QSM.liftProperty (ebbHash === mbEBB)
+    let (offsets', sizesAndBlocks) = unzip offsetsAndSizesAndBlocks
+        blocks' = map snd sizesAndBlocks
+    QSM.liftProperty (blocks  === blocks')
+    QSM.liftProperty (offsets === offsets')
+  where
+    dropLast xs = zipWith const xs (drop 1 xs)
+    file = ["test"]
+
+    blocks = maybeToList mbEBB <> regularBlocks
+    blockSizes = map blockSize blocks
+    offsets = dropLast $ scanl (+) 0 blockSizes
+    chunkSize = case blockSizes of
+      []               -> 32
+      firstBlockSize:_ -> fromIntegral firstBlockSize
+
+    writeBlocks :: HasFS IO Mock.Handle -> IO ()
+    writeBlocks hasFS@HasFS{..} = do
+      let bld = foldMap serialiseIncremental blocks
+      withFile hasFS file AppendMode $ \eHnd -> void $ hPut eHnd bld
+
+    readBlocks :: HasFS IO Mock.Handle
+               -> IO ( [(SlotOffset, (Word64, TestBlock))]
+                     , Maybe TestBlock
+                     , Maybe ReadIncrementalErr)
+    readBlocks hasFS = runEpochFileParser
+      (cborEpochFileParser chunkSize hasFS decode extractEBB)
+      file
+
+    extractEBB :: TestBlock -> Maybe TestBlock
+    extractEBB b | testBlockIsEBB b = Just b
+                 | otherwise        = Nothing
+
+    blockSize :: TestBlock -> SlotOffset
+    blockSize = fromIntegral . BL.length . BS.toLazyByteString . serialiseIncremental
+
+    runSimIO :: (HasFS IO Mock.Handle -> IO a) -> IO a
+    runSimIO m = fst <$> runSimFS EH.exceptions Mock.empty m
 
 {-------------------------------------------------------------------------------
   Corruption
@@ -285,6 +353,7 @@ shrinkCorruptions =
 
 tests :: TestTree
 tests = testGroup "TestBlock"
-    [ testProperty "TestBlock Binary roundtrip" prop_TestBlock_Binary
-    , testProperty "testBlockEpochFileParser" prop_testBlockEpochFileParser
+    [ testProperty "TestBlock Binary roundtrip"   prop_TestBlock_Binary
+    , testProperty "testBlockEpochFileParser"     prop_testBlockEpochFileParser
+    , testProperty "testBlockCborEpochFileParser" prop_testBlockCborEpochFileParser
     ]
