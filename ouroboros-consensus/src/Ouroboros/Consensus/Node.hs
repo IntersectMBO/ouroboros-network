@@ -31,6 +31,7 @@ module Ouroboros.Consensus.Node (
 import           Codec.Serialise (Serialise)
 import           Control.Monad (void)
 import           Crypto.Random (ChaChaDRG)
+import           Data.Functor.Contravariant (contramap)
 import           Data.Map.Strict (Map)
 import           Data.Void (Void)
 
