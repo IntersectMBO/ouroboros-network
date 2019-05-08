@@ -25,6 +25,7 @@ module Ouroboros.Consensus.Demo (
     -- * Support for runnig the demos
   , defaultSecurityParam
   , defaultDemoPraosParams
+  , defaultDemoPBftParams
   , enumCoreNodes
   , HasCreator(..)
   ) where
@@ -231,6 +232,16 @@ defaultDemoPraosParams = PraosParams {
     , praosLeaderF       = 0.5
     , praosLifetimeKES   = 1000000
     }
+
+defaultDemoPBftParams :: PBftParams
+defaultDemoPBftParams = PBftParams {
+      pbftSecurityParam      = defaultSecurityParam
+    , pbftNumNodes           = nn
+    , pbftSignatureWindow    = fromIntegral $ nn * 10
+    , pbftSignatureThreshold = (1.0 / fromIntegral nn) + 0.1
+    }
+  where
+    nn = 3
 
 enumCoreNodes :: NumCoreNodes -> [CoreNodeId]
 enumCoreNodes (NumCoreNodes numNodes) = [ CoreNodeId n
