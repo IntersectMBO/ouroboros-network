@@ -269,7 +269,7 @@ runDB restCmd db cmd = case cmd of
     GetBlockIds        -> Blocks <$> getBlockIds db
     PutBlock b pb      -> Unit <$> putBlock db (BlockInfo b (guessSlot b) pb) (BL.lazyByteString $ Binary.encode $ toBlock (b, pb))
     GetSuccessors bids -> do
-        successors <- getSuccessors db
+        successors <- atomically $ getSuccessors db
         return $ Successors $ successors <$> bids
     GarbageCollect bid -> Unit <$> garbageCollect db (guessSlot bid)
     IsOpen             -> Bl <$> isOpenDB db

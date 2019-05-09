@@ -369,11 +369,11 @@ getBlockIdsImpl VolatileDBEnv{..} = do
 
 getSuccessorsImpl :: forall m blockId. (MonadSTM m, Ord blockId)
                   => VolatileDBEnv m blockId
-                  -> m (Maybe blockId -> Set blockId)
+                  -> STM m (Maybe blockId -> Set blockId)
 getSuccessorsImpl VolatileDBEnv{..} = do
-    mSt <- atomically (readTMVar _dbInternalState)
+    mSt <- readTMVar _dbInternalState
     case mSt of
-        Nothing -> EH.throwError _dbErr $ UserError ClosedDBError
+        Nothing -> EH.throwError' _dbErrSTM $ UserError ClosedDBError
         Just st -> return $ \blockId ->
             fromMaybe Set.empty (Map.lookup blockId (_currentSuccMap st))
 
