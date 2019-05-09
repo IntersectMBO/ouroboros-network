@@ -1,5 +1,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module IPC where
 
@@ -12,10 +13,11 @@ import Control.Monad.Class.MonadST (MonadST)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Resource (ResourceT, runResourceT)
-import Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)
+import Control.Tracer (Tracer (..), nullTracer, traceWith)
 import qualified Data.ByteString.Lazy as Lazy (ByteString, fromStrict)
 import qualified Data.ByteString.Lazy.Char8 as Lazy (pack)
 import Data.Either (either)
+import Data.Functor.Contravariant (contramap)
 import qualified Data.Map as Map
 
 import Network.TypedProtocol.Channel (hoistChannel)
@@ -24,8 +26,9 @@ import Network.TypedProtocol.Driver (runPeer)
 import Network.Socket (Socket)
 import qualified Network.Socket as Socket
 
-import qualified Pos.Binary as CSL (decode)
-import qualified Pos.Chain.Block as CSL (Block, headerHash)
+import qualified Cardano.Binary as Binary
+import qualified Cardano.Chain.Block as Cardano
+import qualified Cardano.Chain.Slotting as Cardano
 
 import Ouroboros.Network.Channel (Channel, socketAsChannel)
 import qualified Ouroboros.Network.Server.Socket as Server
@@ -63,43 +66,46 @@ application0 tracer = Application $ \_localData remoteData _channel ->
 clientApplication1
   :: ( Monad m, MonadST m, NonStandard.MonadThrow m )
   => Tracer m String
+  -> Cardano.EpochSlots
   -> DB.DB m
   -> Application (Channel m Lazy.ByteString -> m ()) Lazy.ByteString
-clientApplication1 tracer db = Application $ \_localData remoteData channel -> do
+clientApplication1 tracer epochSlots db = Application $ \_localData remoteData channel -> do
   traceWith tracer $ mconcat
     [ "Client version 1. Remote data is "
     , show remoteData
     ]
-  runPeer nullTracer ChainSync.codec channel peer
+  runPeer nullTracer (ChainSync.codec epochSlots) channel peer
   where
-  peer = ChainSync.chainSyncClientPeer (chainSyncClient (contramap chainSyncShow tracer) db)
+  peer = ChainSync.chainSyncClientPeer (chainSyncClient (contramap chainSyncShow tracer) epochSlots db)
 
 clientVersion1
   :: ( Monad m, MonadST m, NonStandard.MonadThrow m )
   => Tracer m String
+  -> Cardano.EpochSlots
   -> DB.DB m
   -> Sigma (Version (Dict Serialise) (Channel m Lazy.ByteString -> m ()))
-clientVersion1 tracer db = Sigma (Lazy.pack "this is the client version data") $ Version
+clientVersion1 tracer epochSlots db = Sigma (Lazy.pack "this is the client version data") $ Version
   { versionExtra = Dict
-  , versionApplication = clientApplication1 tracer db
+  , versionApplication = clientApplication1 tracer epochSlots db
   }
 
 serverApplication1
   :: Tracer IO String
+  -> Cardano.EpochSlots
   -> Int
   -> DB.DB IO
   -> Application (Channel IO Lazy.ByteString -> IO ()) Lazy.ByteString
-serverApplication1 tracer usPoll db = Application $ \_localData remoteData channel -> do
+serverApplication1 tracer epochSlots usPoll db = Application $ \_localData remoteData channel -> do
   traceWith tracer $ mconcat
     [ "Server version 1. Remote data is "
     , show remoteData
     ]
-  let peer = ChainSync.chainSyncServerPeer (chainSyncServer usPoll db)
+  let peer = ChainSync.chainSyncServerPeer (chainSyncServer epochSlots usPoll db)
       -- `peer` is in ResourceT`, so we must hoist channel and codec into
       -- `ResourceT`
       inResourceT :: forall x . IO x -> ResourceT IO x
       inResourceT = liftIO
-      codec' = hoistCodec inResourceT ChainSync.codec
+      codec' = hoistCodec inResourceT (ChainSync.codec epochSlots)
       channel' = hoistChannel inResourceT channel
   (runResourceT $ runPeer nullTracer codec' channel' peer) `catch` (\(e :: SomeException) -> do
     traceWith tracer $ mconcat
@@ -114,34 +120,37 @@ serverApplication1 tracer usPoll db = Application $ \_localData remoteData chann
 
 serverVersion1
   :: Tracer IO String
+  -> Cardano.EpochSlots
   -> Int
   -> DB.DB IO
   -> Sigma (Version (Dict Serialise) (Channel IO Lazy.ByteString -> IO ()))
-serverVersion1 tracer usPoll db = Sigma (Lazy.pack "server version data here") $ Version
+serverVersion1 tracer epochSlots usPoll db = Sigma (Lazy.pack "server version data here") $ Version
   { versionExtra = Dict
-  , versionApplication = serverApplication1 tracer usPoll db
+  , versionApplication = serverApplication1 tracer epochSlots usPoll db
   }
 
 clientVersions
   :: ( Monad m, MonadST m, NonStandard.MonadThrow m )
   => Tracer m String
+  -> Cardano.EpochSlots
   -> DB.DB m
   -> Versions Version.Number (Dict Serialise) (Channel m Lazy.ByteString -> m ())
-clientVersions tracer db = Versions $ Map.fromList
+clientVersions tracer epochSlots db = Versions $ Map.fromList
   [ (0, version0 tracer)
-  , (1, clientVersion1 tracer db)
+  , (1, clientVersion1 tracer epochSlots db)
   ]
 
 -- | Must be in IO because we use `threadDelay` to do polling.
 -- FIXME can use a sim constraint.
 serverVersions
   :: Tracer IO String
+  -> Cardano.EpochSlots
   -> Int
   -> DB.DB IO
   -> Versions Version.Number (Dict Serialise) (Channel IO Lazy.ByteString -> IO ())
-serverVersions tracer usPoll db = Versions $ Map.fromList
+serverVersions tracer epochSlots usPoll db = Versions $ Map.fromList
   [ (0, version0 tracer)
-  , (1, serverVersion1 tracer usPoll db)
+  , (1, serverVersion1 tracer epochSlots usPoll db)
   ]
 
 encodeBlob :: Dict Serialise t -> t -> Version.Blob
@@ -159,9 +168,10 @@ chainSyncClient
   :: forall m x .
      ( Monad m )
   => Tracer m (Either ChainSync.Point ChainSync.Block, ChainSync.Point)
+  -> Cardano.EpochSlots
   -> DB.DB m
   -> ChainSync.ChainSyncClient ChainSync.Block ChainSync.Point m x
-chainSyncClient trace db = Client.chainSyncClient fold
+chainSyncClient trace epochSlots db = Client.chainSyncClient fold
   where
   fold :: Client.Fold m x
   fold = Client.Fold $ do
@@ -179,9 +189,11 @@ chainSyncClient trace db = Client.chainSyncClient fold
         , ChainSync.pointHash = hhash
         }
         where
-        hhash = case DB.decodeFull CSL.decode (Lazy.fromStrict bytes) of
+        hhash = case Binary.decodeFullAnnotatedBytes "Block or boundary" (Cardano.fromCBORABlockOrBoundary epochSlots) (Lazy.fromStrict bytes) of
           Left cborError -> error "failed to decode block"
-          Right (blk :: CSL.Block) -> CSL.headerHash blk
+          Right blk -> case blk of
+            Cardano.ABOBBoundary _ -> error "Corrupt DB: expected block but got EBB"
+            Cardano.ABOBBlock blk  -> Cardano.blockHashAnnotated blk
     case mPoint of
       Nothing -> Client.runFold roll
       -- We don't need to do anything with the result; the point is that
@@ -201,7 +213,7 @@ chainSyncClient trace db = Client.chainSyncClient fold
     -- Possible solution: do the batching automatically, within the index
     -- itself?
     DB.appendBlocks db $ \dbAppend ->
-      DB.appendBlock dbAppend (ChainSync.getBlock blk)
+      DB.appendBlock dbAppend (DB.CardanoBlockToWrite blk)
     Client.runFold roll
   backward :: ChainSync.Point -> ChainSync.Point -> Client.Fold m x
   backward point1 point2 = Client.Fold $ do
@@ -218,18 +230,20 @@ chainSyncShow = \(roll, _tip) -> case roll of
     ]
   Right forward -> mconcat
     [ "Roll forward to "
-    , case ChainSync.getBlock forward of
-        Left ebb  -> show $ DB.ebbEpoch ebb
-        Right blk -> show $ DB.blockEpochAndRelativeSlot blk
+    , case Binary.unAnnotated forward of
+        Cardano.ABOBBoundary ebb -> show ebb
+        -- TODO Cardano.renderBlock
+        Cardano.ABOBBlock    blk -> show blk
     ]
 
 -- a chain sync server that serves whole blocks.
 -- The `ResourceT` is needed because we deal with DB iterators.
 chainSyncServer
-  :: Int
+  :: Cardano.EpochSlots
+  -> Int
   -> DB.DB IO
   -> ChainSync.ChainSyncServer ChainSync.Block ChainSync.Point (ResourceT IO) ()
-chainSyncServer usPoll = Server.chainSyncServer err poll
+chainSyncServer epochSlots usPoll = Server.chainSyncServer epochSlots err poll
   where
   err = throwIO
   poll :: Server.PollT IO
@@ -250,11 +264,12 @@ chainSyncServer usPoll = Server.chainSyncServer err poll
 runVersionedServer
   :: Socket.AddrInfo
   -> Tracer IO String
+  -> Cardano.EpochSlots
   -> STM ()
   -> Int
   -> DB.DB IO
   -> IO ()
-runVersionedServer addrInfo tracer closeTx usPoll db = bracket mkSocket Socket.close $ \socket ->
+runVersionedServer addrInfo tracer epochSlots closeTx usPoll db = bracket mkSocket Socket.close $ \socket ->
   Server.run (fromSocket socket) throwIO accept complete (const closeTx) ()
   where
   -- New connections are always accepted. The channel is used to run the
@@ -265,7 +280,7 @@ runVersionedServer addrInfo tracer closeTx usPoll db = bracket mkSocket Socket.c
       [ "Got connection from "
       , show sockAddr
       ]
-    let versionServer = serverPeerFromVersions encodeBlob decodeBlob (serverVersions tracer usPoll db)
+    let versionServer = serverPeerFromVersions encodeBlob decodeBlob (serverVersions tracer epochSlots usPoll db)
     mbVersion <- runPeer nullTracer Version.codec channel versionServer `catch` (\(e :: SomeException) -> do
       traceWith tracer $ mconcat
         [ "Exception during version negotation with "
@@ -315,12 +330,13 @@ runVersionedServer addrInfo tracer closeTx usPoll db = bracket mkSocket Socket.c
 runVersionedClient
   :: Socket.AddrInfo -- ^ For the remote end.
   -> Tracer IO String
+  -> Cardano.EpochSlots
   -> DB.DB IO
   -> IO ()
-runVersionedClient addrInfo tracer db = bracket mkSocket Socket.close $ \socket -> do
+runVersionedClient addrInfo tracer epochSlots db = bracket mkSocket Socket.close $ \socket -> do
   _ <- Socket.connect socket (Socket.addrAddress addrInfo)
   let channel = socketAsChannel socket
-      versionClient = clientPeerFromVersions encodeBlob decodeBlob (clientVersions tracer db)
+      versionClient = clientPeerFromVersions encodeBlob decodeBlob (clientVersions tracer epochSlots db)
   -- Run the version negotiation client, and then whatever continuation it
   -- produces.
   mbVersion <- runPeer nullTracer Version.codec channel versionClient

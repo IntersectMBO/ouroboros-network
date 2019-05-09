@@ -10,9 +10,9 @@ import Control.Concurrent (myThreadId)
 import Control.Concurrent.Async (concurrently)
 import Control.Concurrent.STM (STM, atomically, retry)
 import Control.Monad (forM_)
-import Control.Tracer (Tracer (..), contramap, traceWith)
+import Control.Tracer (Tracer (..), traceWith)
 import qualified Data.ByteString.Lazy as Lazy (fromStrict)
-import Data.Functor.Contravariant (Op (..))
+import Data.Functor.Contravariant (Op (..), contramap)
 import Data.List (intercalate)
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
@@ -32,8 +32,12 @@ import qualified Cardano.BM.Data.Severity as Monitoring
 import qualified Cardano.BM.Setup as Monitoring (withTrace)
 import qualified Cardano.BM.Trace as Monitoring (Trace)
 
-import qualified Pos.Binary.Class as CSL (decode)
-import qualified Pos.Chain.Block as CSL (Block, BlockHeader (..), genesisBlock0, headerHash)
+import qualified Cardano.Binary as Binary
+import qualified Cardano.Chain.Block as Cardano
+import qualified Cardano.Chain.Slotting as Cardano
+
+import qualified Pos.Chain.Block as CSL (Block, BlockHeader (..), HeaderHash,
+                                         genesisBlock0, headerHash)
 import qualified Pos.Chain.Lrc as CSL (genesisLeaders)
 import qualified Pos.Chain.Block as CSL (recoveryHeadersMessage, streamWindow)
 import qualified Pos.Chain.Update as CSL (lastKnownBlockVersion, updateConfiguration)
@@ -64,7 +68,7 @@ import qualified Network.Socket as Network
 import qualified Ouroboros.Byron.Proxy.DB as DB
 import Ouroboros.Byron.Proxy.Main
 
-import DB (DBConfig (..), seedWithGenesis, withDB)
+import DB (DBConfig (..), withDB)
 import IPC (runVersionedClient, runVersionedServer)
 
 -- | The main action using the proxy, index, and immutable database: download
@@ -74,10 +78,14 @@ import IPC (runVersionedClient, runVersionedServer)
 -- No exception handling is done.
 byronProxyMain
   :: Tracer IO String
+  -> CSL.HeaderHash -- ^ Of genesis, for use as checkpoint when DB is empty.
+                    -- Sadly, old Byron net API doesn't give any meaning to an
+                    -- empty checkpoint set; it'll just fall over.
+  -> Cardano.EpochSlots
   -> DB.DB IO
   -> ByronProxy
   -> IO x
-byronProxyMain tracer db bp = getStdGen >>= mainLoop Nothing
+byronProxyMain tracer genesisHash epochSlots db bp = getStdGen >>= mainLoop Nothing
 
   where
 
@@ -115,11 +123,16 @@ byronProxyMain tracer db bp = getStdGen >>= mainLoop Nothing
         -- FIXME throw exception, don't use error.
         tip <- DB.readTip db
         (isEBB, tipSlot, tipHash) <- case tip of
-          DB.TipGenesis -> error "database is empty"
-          DB.TipEBB   slot hash _ -> pure (True, slot, hash)
-          DB.TipBlock slot bytes -> case DB.decodeFull CSL.decode (Lazy.fromStrict bytes) of
-            Left cborError -> error "failed to decode block"
-            Right (blk :: CSL.Block) -> pure (False, slot, CSL.headerHash blk)
+          DB.TipGenesis -> pure (True, 0, genesisHash)
+          DB.TipEBB   slot hash _ -> pure (True, slot, DB.coerceHashToLegacy hash)
+          DB.TipBlock slot bytes -> case Binary.decodeFullAnnotatedBytes "Block or boundary" (Cardano.fromCBORABlockOrBoundary epochSlots) (Lazy.fromStrict bytes) of
+            Left decoderError -> error $ "failed to decode block: " ++ show decoderError
+            Right (Cardano.ABOBBoundary _) -> error $ "Corrput DB: got EBB where block expected"
+            -- We have a cardano-ledger `HeaderHash` but we need a cardano-sl
+            -- `HeaderHash`.
+            -- FIXME should not come from DB module
+            Right (Cardano.ABOBBlock blk) ->
+              pure (False, slot, DB.coerceHashToLegacy (Cardano.blockHashAnnotated blk))
         -- Pick a peer from the list of announcers at random and download
         -- the chain.
         let (peer, rndGen') = pickRandom rndGen (btPeers bt)
@@ -152,7 +165,7 @@ byronProxyMain tracer db bp = getStdGen >>= mainLoop Nothing
     { CSL.streamBlocksMore = \blocks -> DB.appendBlocks db $ \dbwrite -> do
         -- List comes in newest-to-oldest order.
         let orderedBlocks = NE.toList (NE.reverse blocks)
-        forM_ orderedBlocks (DB.appendBlock dbwrite)
+        forM_ orderedBlocks (DB.appendBlock dbwrite . DB.LegacyBlockToWrite)
         pure streamer
     , CSL.streamBlocksDone = pure ()
     }
@@ -395,13 +408,14 @@ cliParserInfo = Opt.info cliParser infoMod
 runServer
   :: Tracer IO (Monitoring.LoggerName, Monitoring.Severity, Text)
   -> ServerOptions
+  -> Cardano.EpochSlots
   -> DB.DB IO
   -> IO ()
-runServer tracer serverOptions db = do
+runServer tracer serverOptions epochSlots db = do
   addrInfos <- Network.getAddrInfo (Just addrInfoHints) (Just host) (Just port)
   case addrInfos of
     [] -> error "no getAddrInfo"
-    (addrInfo : _) -> runVersionedServer addrInfo stringTracer mainTx usPoll db
+    (addrInfo : _) -> runVersionedServer addrInfo stringTracer epochSlots mainTx usPoll db
 
   where
   host = soHostName serverOptions
@@ -428,9 +442,10 @@ runClient
   => Tracer IO (Monitoring.LoggerName, Monitoring.Severity, Text)
   -> Maybe ClientOptions
   -> CSL.Genesis.Config
+  -> Cardano.EpochSlots
   -> DB.DB IO
   -> IO ()
-runClient tracer clientOptions genesisConfig db = case clientOptions of
+runClient tracer clientOptions genesisConfig epochSlots db = case clientOptions of
 
   Nothing -> pure ()
 
@@ -438,7 +453,7 @@ runClient tracer clientOptions genesisConfig db = case clientOptions of
     addrInfos <- Network.getAddrInfo (Just addrInfoHints) (Just host) (Just port)
     case addrInfos of
       [] -> error "no getAddrInfo"
-      (addrInfo : _) -> runVersionedClient addrInfo stringTracer db
+      (addrInfo : _) -> runVersionedClient addrInfo stringTracer epochSlots db
     where
 
     host = scoHostName shelleyClientOptions
@@ -473,8 +488,12 @@ runClient tracer clientOptions genesisConfig db = case clientOptions of
           , bpcSendQueueSize     = 1
           , bpcRecvQueueSize     = 1
           }
+
+        genesisBlock = CSL.genesisBlock0 (CSL.configProtocolMagic genesisConfig)
+                                         (CSL.configGenesisHash genesisConfig)
+                                         (CSL.genesisLeaders genesisConfig)
     withByronProxy bpc db $ \bp -> do
-      byronProxyMain stringTracer db bp
+      byronProxyMain stringTracer (CSL.headerHash genesisBlock) epochSlots db bp
 
   where
 
@@ -504,10 +523,7 @@ main = do
         infoTrace = contramap ((,) Wlog.Info) (Trace.named cslTrace)
         confOpts = bpoCardanoConfigurationOptions bpo
     CSL.withConfigurations infoTrace Nothing Nothing False confOpts $ \genesisConfig _ _ _ -> do
-      let genesisBlock = CSL.genesisBlock0 (CSL.configProtocolMagic genesisConfig)
-                                           (CSL.configGenesisHash genesisConfig)
-                                           (CSL.genesisLeaders genesisConfig)
-          epochSlots = CSL.configEpochSlots genesisConfig
+      let epochSlots = Cardano.EpochSlots (fromIntegral (CSL.configEpochSlots genesisConfig))
           -- Next, set up the database, taking care to seed with the genesis
           -- block if it's empty.
           dbc :: DBConfig
@@ -517,8 +533,7 @@ main = do
             , slotsPerEpoch = epochSlots
             }
       withDB dbc $ \db -> do
-        seedWithGenesis genesisBlock db
-        let server = runServer (convertTrace trace) (bpoServerOptions bpo) db
-            client = runClient (convertTrace trace) (bpoClientOptions bpo) genesisConfig db
+        let server = runServer (convertTrace trace) (bpoServerOptions bpo) epochSlots db
+            client = runClient (convertTrace trace) (bpoClientOptions bpo) genesisConfig epochSlots db
         _ <- concurrently server client
         pure ()

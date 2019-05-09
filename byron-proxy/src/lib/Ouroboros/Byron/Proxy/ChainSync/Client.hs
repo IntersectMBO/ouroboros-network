@@ -5,7 +5,7 @@ module Ouroboros.Byron.Proxy.ChainSync.Client where
 
 import Ouroboros.Network.Protocol.ChainSync.Client
 
-import Ouroboros.Byron.Proxy.ChainSync.Types (Block (..), Point (..))
+import Ouroboros.Byron.Proxy.ChainSync.Types (Block, Point (..))
 
 newtype Fold m a = Fold
   { runFold :: m (Next m a)

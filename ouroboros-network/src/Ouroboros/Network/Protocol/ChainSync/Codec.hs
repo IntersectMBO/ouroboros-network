@@ -18,38 +18,25 @@ import           Ouroboros.Network.Codec
 import           Ouroboros.Network.Protocol.ChainSync.Type
 
 
-import qualified Codec.CBOR.Encoding as CBOR (Encoding)
+import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Read     as CBOR
-import qualified Codec.CBOR.Decoding as CBOR (Decoder)
+import qualified Codec.CBOR.Decoding as CBOR
 
 import Data.ByteString.Lazy (ByteString)
-import Codec.CBOR.Encoding (
-    Encoding
-  , encodeBreak
-  , encodeListLen
-  , encodeListLenIndef
-  , encodeWord
-  )
-import Codec.CBOR.Decoding (
-    Decoder
-  , decodeListLen
-  , decodeListLenOrIndef
-  , decodeSequenceLenIndef
-  , decodeSequenceLenN
-  , decodeWord
-  )
+import Codec.CBOR.Encoding (encodeListLen, encodeWord)
+import Codec.CBOR.Decoding (decodeListLen, decodeWord)
 
 -- | The main CBOR 'Codec' for the 'ChainSync' protocol.
 --
 codecChainSync :: forall header point m.
-                  MonadST m
-               => (header -> Encoding)
-               -> (point  -> Encoding)
-               -> (forall s. Decoder s header)
-               -> (forall s. Decoder s point)
+                  (MonadST m)
+               => (header -> CBOR.Encoding)
+               -> (forall s . CBOR.Decoder s header)
+               -> (point -> CBOR.Encoding)
+               -> (forall s . CBOR.Decoder s point)
                -> Codec (ChainSync header point)
                         CBOR.DeserialiseFailure m ByteString
-codecChainSync encodeHeader encodePoint decodeHeader decodePoint =
+codecChainSync encodeHeader decodeHeader encodePoint decodePoint =
     mkCodecCborLazyBS encode decode
   where
     encode :: forall (pr :: PeerRole) (st :: ChainSync header point) (st' :: ChainSync header point).
@@ -122,6 +109,17 @@ codecChainSync encodeHeader encodePoint decodeHeader decodePoint =
 
         _ -> fail ("codecChainSync: unexpected key " ++ show (key, len))
 
+encodeList :: (a -> CBOR.Encoding) -> [a] -> CBOR.Encoding
+encodeList _   [] = CBOR.encodeListLen 0
+encodeList enc xs = CBOR.encodeListLenIndef
+                 <> Prelude.foldr (\x r -> enc x <> r) CBOR.encodeBreak xs
+
+decodeList :: CBOR.Decoder s a -> CBOR.Decoder s [a]
+decodeList dec = do
+  mn <- CBOR.decodeListLenOrIndef
+  case mn of
+    Nothing -> CBOR.decodeSequenceLenIndef (flip (:)) [] reverse   dec
+    Just n  -> CBOR.decodeSequenceLenN     (flip (:)) [] reverse n dec
 
 -- | An identity 'Codec' for the 'ChainSync' protocol. It does not do any
 -- serialisation. It keeps the typed messages, wrapped in 'AnyMessage'.

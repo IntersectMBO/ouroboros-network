@@ -62,6 +62,8 @@
             (hsPkgs.async)
             (hsPkgs.byron-proxy)
             (hsPkgs.bytestring)
+            (hsPkgs.cardano-binary)
+            (hsPkgs.cardano-ledger)
             (hsPkgs.cardano-sl)
             (hsPkgs.cardano-sl-binary)
             (hsPkgs.cardano-sl-chain)
