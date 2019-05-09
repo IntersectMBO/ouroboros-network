@@ -1,5 +1,6 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
 
@@ -23,7 +24,6 @@ module Ouroboros.Network.Mux (
 
 import           Control.Monad
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
@@ -42,8 +42,8 @@ import           Ouroboros.Network.Mux.Types
 -- one of the provided Versions.
 -- TODO: replace MonadSay with iohk-monitoring-framework.
 muxStart :: forall m ptcl.
-            ( MonadAsync m, MonadFork m, MonadSay m, MonadSTM m, MonadThrow m , MonadMask m
-            , Ord ptcl, Enum ptcl, Bounded ptcl, Show ptcl, MiniProtocolLimits ptcl)
+            ( MonadAsync m, MonadSay m, MonadSTM m, MonadThrow m, MonadThrow (STM m)
+            , MonadMask m , Ord ptcl, Enum ptcl, Bounded ptcl, Show ptcl, MiniProtocolLimits ptcl)
          => MiniProtocolDescriptions ptcl m
          -> MuxBearer ptcl m
          -> m ()
@@ -144,6 +144,8 @@ muxChannel pmss mid md w cnt =
     send encoding = do
         -- We send CBOR encoded messages by encoding them into by ByteString
         -- forwarding them to the 'mux' thread, see 'Desired servicing semantics'.
+        -- This check is dependant on the good will of the sender and a receiver can't
+        -- assume that it will never receive messages larger than maximumMessageSize.
         --say $ printf "send mid %s mode %s" (show mid) (show md)
         when (BL.length encoding > maximumMessageSize mid) $
             throwM $ MuxError MuxTooLargeMessage

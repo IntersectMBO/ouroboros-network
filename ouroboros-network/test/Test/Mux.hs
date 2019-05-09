@@ -24,6 +24,7 @@ import           Control.Monad
 import qualified Data.Binary.Put as Bin
 import           Data.Bits
 import qualified Data.ByteString.Lazy as BL
+import qualified Data.ByteString.Lazy.Char8 as BL8 (pack)
 import           Data.Int
 import           Data.Word
 import           Test.ChainGenerators (TestBlockChainAndUpdates (..))
@@ -33,7 +34,6 @@ import           Test.Tasty.QuickCheck (testProperty)
 import           Text.Printf
 
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM
@@ -109,10 +109,8 @@ instance Mx.ProtocolEnum TestProtocols2 where
   toProtocolEnum _ = Nothing
 
 instance Mx.MiniProtocolLimits TestProtocols2 where
-  maximumMessageSize ChainSync2   = defaultMiniProtocolLimit
-  maximumMessageSize BlockFetch2  = defaultMiniProtocolLimit
-  maximumIngressQueue ChainSync2  = defaultMiniProtocolLimit
-  maximumIngressQueue BlockFetch2 = defaultMiniProtocolLimit
+  maximumMessageSize _  = defaultMiniProtocolLimit
+  maximumIngressQueue _ = defaultMiniProtocolLimit
 
 data TestProtocolsSmall = ChainSyncSmall
   deriving (Eq, Ord, Enum, Bounded, Show)
@@ -157,9 +155,16 @@ instance Arbitrary DummyPayload where
                      , return $ defaultMiniProtocolLimit - n - cborOverhead
                      , choose (1, defaultMiniProtocolLimit - cborOverhead)
                      ]
-        p <- arbitrary
-        let blob = BL.replicate len p
-        return $ DummyPayload blob
+        -- Generating a completly arbitrary bytestring is too costly so it is only
+        -- done for short bytestrings.
+        if len <= 128
+            then do
+                pl <- BL8.pack <$> replicateM (fromIntegral len) arbitrary
+                return $ DummyPayload pl
+            else do
+                p <- arbitrary
+                let blob = BL.replicate len p
+                return $ DummyPayload blob
       where
         cborOverhead = 7 -- XXX Bytes needed by CBOR to encode the dummy payload
 
@@ -172,14 +177,16 @@ data InvalidSDU = InvalidSDU {
     , isIdAndMode  :: !Word16
     , isLength     :: !Word16
     , isRealLength :: !Int64
+    , isPattern    :: !Word8
     }
 
 instance Show InvalidSDU where
-    show a = printf "InvalidSDU 0x%08x 0x%04x 0x%04x 0x%04x\n"
+    show a = printf "InvalidSDU 0x%08x 0x%04x 0x%04x 0x%04x 0x%02x\n"
                     (Mx.unRemoteClockModel $ isTimestamp a)
                     (isIdAndMode a)
                     (isLength a)
                     (isRealLength a)
+                    (isPattern a)
 
 data ArbitrarySDU = ArbitraryInvalidSDU InvalidSDU Mx.MuxBearerState Mx.MuxErrorType
                   | ArbitraryValidSDU DummyPayload Mx.MuxBearerState (Maybe Mx.MuxErrorType)
@@ -207,10 +214,12 @@ instance Arbitrary ArbitrarySDU where
 
         tooLargeSdu = do
             l <- choose (1 + smallMiniProtocolLimit , 2 * smallMiniProtocolLimit)
-            p <- arbitrary
-            let b = DummyPayload $ BL.replicate l p
+            pl <- BL8.pack <$> replicateM (fromIntegral l) arbitrary
 
-            return $ ArbitraryValidSDU b Mx.Mature (Just Mx.MuxIngressQueueOverRun)
+            -- This SDU is still considered valid, since the header itself will
+            -- not cause a trouble, the error will be triggered by the fact that
+            -- it is sent as a single message.
+            return $ ArbitraryValidSDU (DummyPayload pl) Mx.Mature (Just Mx.MuxIngressQueueOverRun)
 
         unknownMiniProtocol = do
             ts  <- arbitrary
@@ -218,9 +227,10 @@ instance Arbitrary ArbitrarySDU where
             mode <- oneof [return 0x0, return 0x8000]
             len <- arbitrary
             state <- arbitrary
+            p <- arbitrary
 
             return $ ArbitraryInvalidSDU (InvalidSDU (Mx.RemoteClockModel ts) (mid .|. mode) len
-                                          (8 + fromIntegral len))
+                                          (8 + fromIntegral len) p)
                                          state
                                          Mx.MuxUnknownMiniProtocol
         invalidLenght = do
@@ -228,9 +238,10 @@ instance Arbitrary ArbitrarySDU where
             mid <- arbitrary
             len <- arbitrary
             realLen <- choose (0, 7) -- Size of mux header is 8
+            p <- arbitrary
             state <- arbitrary
 
-            return $ ArbitraryInvalidSDU (InvalidSDU (Mx.RemoteClockModel ts) mid len realLen)
+            return $ ArbitraryInvalidSDU (InvalidSDU (Mx.RemoteClockModel ts) mid len realLen p)
                                          state
                                          Mx.MuxDecodeError
 
@@ -244,9 +255,10 @@ instance Arbitrary Mx.MuxBearerState where
                           , Mx.Dead
                           ]
 
-startMuxSTM :: ( MonadAsync m, MonadCatch m, MonadFork m, MonadMask m, MonadSay m, MonadSTM m
-               , MonadThrow m , MonadTime m , MonadTimer m, Ord ptcl, Enum ptcl, Bounded ptcl
-               , Mx.ProtocolEnum ptcl , Show ptcl, Mx.MiniProtocolLimits ptcl)
+startMuxSTM :: ( MonadAsync m, MonadCatch m, MonadMask m, MonadSay m, MonadSTM m
+               , MonadThrow m , MonadThrow (STM m), MonadTime m , MonadTimer m, Ord ptcl
+               , Enum ptcl, Bounded ptcl , Mx.ProtocolEnum ptcl , Show ptcl
+               , Mx.MiniProtocolLimits ptcl)
             => Mx.MiniProtocolDescriptions ptcl m
             -> TBQueue m BL.ByteString
             -> TBQueue m BL.ByteString
@@ -435,7 +447,7 @@ prop_mux_2_minis request0 response0 response1 request1 = ioProperty $ do
     serverAsync <- startMuxSTM server_mps server_w server_r sduLen Nothing
 
 
-    !r <- waitBoth clientAsync serverAsync
+    r <- waitBoth clientAsync serverAsync
     case r of
          (Just _, _) -> return $ property False
          (_, Just _) -> return $ property False
@@ -523,7 +535,7 @@ prop_mux_starvation response0 response1 =
 encodeInvalidMuxSDU :: InvalidSDU -> BL.ByteString
 encodeInvalidMuxSDU sdu =
     let header = Bin.runPut enc in
-    BL.append header $ BL.replicate (fromIntegral $ isLength sdu) 0xa
+    BL.append header $ BL.replicate (fromIntegral $ isLength sdu) (isPattern sdu)
   where
     enc = do
         Bin.putWord32be $ Mx.unRemoteClockModel $ isTimestamp sdu
@@ -534,11 +546,11 @@ encodeInvalidMuxSDU sdu =
 prop_demux_sdu :: forall m.
                     ( MonadAsync m
                     , MonadCatch m
-                    , MonadFork m
                     , MonadMask m
                     , MonadSay m
                     , MonadST m
                     , MonadSTM m
+                    , MonadThrow (STM m)
                     , MonadTime m
                     , MonadTimer m)
                  => ArbitrarySDU
@@ -575,8 +587,7 @@ prop_demux_sdu a = do
     run (ArbitraryValidSDU sdu state err_m) = do
         stopVar <- newEmptyTMVarM
 
-        let server_mp = Mx.MiniProtocolDescription Nothing (Just $ serverRsp stopVar)
-        let server_std ChainSync1 = server_mp
+        let server_std ChainSync1 = Mx.MiniProtocolDescription Nothing (Just $ serverRsp stopVar)
 
         (client_w, said) <- plainServer server_std
 
@@ -605,7 +616,7 @@ prop_demux_sdu a = do
 
         setup state client_w
         atomically $ writeTBQueue client_w $ BL.take (isRealLength badSdu) $ encodeInvalidMuxSDU badSdu
-        atomically $ putTMVar stopVar BL.empty
+        atomically $ putTMVar stopVar $ BL.replicate (fromIntegral $ isLength badSdu) 0xa
 
         res <- wait said
         case res of
@@ -633,8 +644,7 @@ prop_demux_sdu a = do
             msg_m <- recv chan
             case msg_m of
                  Just msg ->
-                     let e_m = BL.stripPrefix msg e in
-                     case e_m of
+                     case BL.stripPrefix msg e of
                           Just e' -> loop e'
                           Nothing -> error "recv corruption"
                  Nothing -> error "eof corruption"
@@ -692,11 +702,11 @@ prop_demux_sdu_io badSdu = ioProperty $ prop_demux_sdu badSdu
 demo :: forall m block.
         ( MonadAsync m
         , MonadCatch m
-        , MonadFork m
         , MonadMask m
         , MonadSay m
         , MonadST m
         , MonadSTM m
+        , MonadThrow (STM m)
         , MonadTime m
         , MonadTimer m
         , Chain.HasHeader block
