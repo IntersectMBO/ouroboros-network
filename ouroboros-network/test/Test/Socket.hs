@@ -20,8 +20,10 @@ import qualified Data.ByteString.Lazy as BL
 import           Data.List (mapAccumL)
 import qualified Network.Socket as Socket
 import qualified Network.Socket.ByteString.Lazy as Socket (sendAll)
+#ifndef mingw32_HOST_OS
 import           System.Directory (removeFile)
 import           System.IO.Error
+#endif
 
 import           Network.TypedProtocol.Core
 import qualified Network.TypedProtocol.ReqResp.Type       as ReqResp
@@ -71,7 +73,9 @@ tests =
 #ifdef OUROBOROS_NETWORK_IPV6
   , testProperty "socket send receive IPv6"          prop_socket_send_recv_ipv6
 #endif
+#ifndef mingw32_HOST_OS
   , testProperty "socket send receive Unix"          prop_socket_send_recv_unix
+#endif
   , testProperty "socket close during receive"       prop_socket_recv_close
   , testProperty "socket client connection failure"  prop_socket_client_connect_error
   , testProperty "socket sync demo"                  prop_socket_demo
