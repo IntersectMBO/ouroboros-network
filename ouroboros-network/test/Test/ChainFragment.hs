@@ -690,18 +690,26 @@ instance Arbitrary TestChainFragmentFork where
       else do
         n1 <- genNonNegative
         n2 <- genNonNegative
-        c1 <- genAddBlocks n1 l1
-        c2 <- genAddBlocks n2 l2
+        c1 <- genAddBlocks n1 l1 []
+        c2 <- genAddBlocks n2 l2 (CF.toOldestFirst c1)
         return (c1, c2)
     return (TestChainFragmentFork l1 l2 c1 c2)
     where
       genAddBlocks :: Int
                    -> ChainFragment Block
+                   -> [Block]
                    -> Gen (ChainFragment Block)
-      genAddBlocks 0 c = return c
-      genAddBlocks n c = do
-          b <- genAddBlock c
-          genAddBlocks (n-1) (CF.addBlock b c)
+      genAddBlocks 0 c _               = return c
+      genAddBlocks n c forbiddenBlocks = do
+          -- Make sure that we don't generate the same block that we generated
+          -- for the other fork, otherwise we would have to extend the
+          -- prefixes. For example, say the prefixes are 4-5 and 5, and we
+          -- have generated 6-7 as the first fork suffix. If we now were to
+          -- generate 6-7'-8' as the second fork suffix, then the prefixes
+          -- would actually be 4-5-6 and 5-6. To prevent this, make sure we
+          -- don't generate 6 in the second fork prefix (but 6').
+          b <- genAddBlock c `suchThat` (`notElem` forbiddenBlocks)
+          genAddBlocks (n-1) (CF.addBlock b c) forbiddenBlocks
 
   shrink (TestChainFragmentFork l1 l2 c1 c2) =
     -- shrink the prefixes
