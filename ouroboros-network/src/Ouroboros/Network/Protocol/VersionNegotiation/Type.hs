@@ -48,7 +48,7 @@ import qualified Codec.Serialise     as CBOR
 
 import           Network.TypedProtocol.Core
 
-import           Ouroboros.Network.Server.Version
+import           Ouroboros.Network.Protocol.VersionNegotiation.Version
 
 -- |
 -- State transitions of the version negotation protocol.

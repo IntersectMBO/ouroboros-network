@@ -50,7 +50,6 @@ library
                        Ouroboros.Network.NodeToClient
                        Ouroboros.Network.Pipe
                        Ouroboros.Network.Server.Socket
-                       Ouroboros.Network.Server.Version
                        Ouroboros.Network.Server.Version.CBOR
                        Ouroboros.Network.Server.Version.Protocol
                        Ouroboros.Network.Socket
@@ -67,6 +66,7 @@ library
                        Ouroboros.Network.Protocol.BlockFetch.Codec
                        Ouroboros.Network.Protocol.VersionNegotiation.Type
                        Ouroboros.Network.Protocol.VersionNegotiation.Codec
+                       Ouroboros.Network.Protocol.VersionNegotiation.Version
   default-language:    Haskell2010
   other-extensions:    BangPatterns,
                        DataKinds,

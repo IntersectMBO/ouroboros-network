@@ -31,7 +31,7 @@ import           Test.Ouroboros.Network.Testing.Utils (splits2, splits3)
 
 import           Ouroboros.Network.Protocol.VersionNegotiation.Type
 import           Ouroboros.Network.Protocol.VersionNegotiation.Codec
-import           Ouroboros.Network.Server.Version
+import           Ouroboros.Network.Protocol.VersionNegotiation.Version
 
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
