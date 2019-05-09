@@ -37,6 +37,7 @@ openDBMock err maxNumPerFile = do
         , getIsMember    = wrapModel  dbVar  $ getIsMemberModel    err'
         , getBlockIds    = wrapModel' dbVar  $ getBlockIdsModel    err'
         , getSuccessors  = wrapModel  dbVar  $ getSuccessorsModel  err'
+        , getPredecessor = wrapModel  dbVar  $ getPredecessorModel err'
         }
 
     err' :: ThrowCantCatch (VolatileDBError blockId)

@@ -168,6 +168,7 @@ openDBFull hasFS err errSTM parser maxBlocksPerFile = do
         , getIsMember    = getIsMemberImpl env
         , getBlockIds    = getBlockIdsImpl env
         , getSuccessors  = getSuccessorsImpl env
+        , getPredecessor = getPredecessorImpl env
         }
     return (db, env)
 
@@ -376,6 +377,18 @@ getSuccessorsImpl VolatileDBEnv{..} = do
         Nothing -> EH.throwError' _dbErrSTM $ UserError ClosedDBError
         Just st -> return $ \blockId ->
             fromMaybe Set.empty (Map.lookup blockId (_currentSuccMap st))
+
+getPredecessorImpl :: forall m blockId. (MonadSTM m, Ord blockId, HasCallStack)
+                   => VolatileDBEnv m blockId
+                   -> STM m (blockId -> Maybe blockId)
+getPredecessorImpl VolatileDBEnv{..} = do
+    mSt <- readTMVar _dbInternalState
+    case mSt of
+        Nothing -> EH.throwError' _dbErrSTM $ UserError ClosedDBError
+        Just st -> return $ \blockId ->
+            maybe (error msg) ibPreBid (Map.lookup blockId (_currentRevMap st))
+  where
+    msg = "precondition violated: block not member of the VolatileDB"
 
 {------------------------------------------------------------------------------
   Internal functions
