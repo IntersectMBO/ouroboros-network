@@ -7,8 +7,9 @@
 % \usepackage{url}
 \usepackage{natbib}
 % \usepackage{parskip} % very ugly with lemmas, invariants, etc without intervening text
-% \usepackage[disable]{todonotes}
+
 \usepackage{todonotes}
+% \usepackage[disable]{todonotes}
 \usepackage{slashed}
 \usepackage{tikz}
 \usetikzlibrary{automata, positioning, arrows}
@@ -63,8 +64,10 @@
 
 % add reference to the relevant Haskell source (as comment)
 %\newcommand{\hsref}[1]{}  should be hidden in the final document
-\newcommand{\hsref}[1]{\href{https://github.com/input-output-hk/ouroboros-network/blob/master/#1}{\emph{Haskell source: #1}}}
-\newcommand{\wip}[1]{\color{magenta}{#1}\color{black}}
+\newcommand{\hsref}[1]{}
+%\newcommand{\hsref}[1]{\href{https://github.com/input-output-hk/ouroboros-network/blob/master/#1}{\emph{Haskell source: #1}}}
+%\newcommand{\wip}[1]{\color{magenta}{#1}\color{black}}
+\newcommand{\wip}[1]{}
 \newcommand{\hide}[1]{}
 \newcommand{\trans}[1]{\texttt{#1}}
 \newcommand{\state}[1]{\texttt{#1}}
@@ -135,118 +138,132 @@
 \section*{Version history}
 
 \begin{description}
-\item[Version 0.1, Dec 20, 2018  Draft of the table of contents.]
+\item[Version 0.1, Dec 20, 2018 Draft of the table of contents.]
 \item[Version 0.2, Jan 08, 2019 Structure and outline.]
-\item[Version 0.3, Jan 25, 2019 Start elaborating contents.]
-  Description of state machines; Binary representation.
-\item[Version 0.4, Jan 28, 2019 Extend state machine description]
-\item[Version 0.5, Feb 1,  2019  add PingPong and Block-Fetch protocol]
-\item[Version 0.6, Feb 18, 2019  Overview sections and gluing parts]
-\item[Version 0.7, Feb 25, 2019 ]
-  complete ChainSync Protocol;Request Response Protocol;
-\item[Version 0.8, Mar 11, 2019 ]
-  complete Transaction Submission Protocol
+\item[Version 0.9, Apr 03, 2019 Clean-up todos and WIP remarks]
 \end{description}
 
 \chapter{Overview}
-Ouroboros is a family of new protocols for a proof of stake crypto currency.
+The Cardano blockchain system is based on the Ouroboros family of protocols
+for a proof-of-stake cryptocurrency.
+The operation of these protocols on a node, working in collaboration with the consensus
+and ledger aspects of Cardano, create the overall distributed system.
+It is that distributed system that defines the "single source of truth" that is the distributed ledger.
 The Ouroboros papers describe these protocols in a high-level mathematical formalism
 that allows for a concise presentation and is appropriate for peer review by cryptography experts.
 For separation of concerns, the papers do not describe a concrete implementation of the Ouroboros
 protocols.
 
 This document has a broader scope.
-It addresses system designers and engineer who want to implement Ouroboros or understand
-the references implementation and who have an IT background but are not necessarily crypto experts. 
-The description of the protocol in this document contains
-all information that is needed to implement a compatible network node.
-It covers, how nodes join the network, the binary format of the messages that nodes exchange and
-the order in which nodes send and receive the messages of the protocol.
-This is the information that is typically found in the description of network protocols.
+It is addressed to system designers and engineers who have an IT background
+but are not necessarily crypto experts,
+but want to implement Cardano or to understand the reference implementation.
+The description of the protocol in this document contains all the information needed to
+implement the data diffusion functionality of a compatibleCardano network node.
+It covers:
+\begin{itemize}
+\item How nodes join the network.
+\item The general semantics of the messages that nodes exchange.
+\item The binary format of the messages.
+\item The order in which nodes send and receive the messages of the protocol.
+\item The permissible protocol states for each participant in the protocol.
+\end{itemize}
+This information is typically found in the description of network protocols.
 
-However, the Ouroboros proof of stake crypto currency has additional requirements,
-that the nodes and the network must meet, and, that are not typically covered in a
+However, the Ouroboros proof-of-stake cryptocurrency has additional requirements,
+of a sort that are not typically covered in a
 protocol  description itself.
-These underlying requirements are essential for understanding the design of the protocol.
-Although, not necessarily needed for a bare protocol description,
-it makes sense to also discuss these aspects and requirements in this document.
+While these underlying requirements are essential for understanding the design of the protocol,
+it also makes sense to also discuss these aspects and requirements in this document.
+Typical network protocols describe simple information exchanges;
+the distributed nature of blockchain computation means
+that additional contextual information is available.
+Use of this context allows, for example, for validated store and forward
+which is an essential feature to contain the effect of potential malicious actions
+against the distributed system.
 
-Shelley is a first fully decentralised release of Ouroboros protocol.
+Shelley is a first fully decentralised release of Cardano system, implementing the Ouroboros protocol.
 
 This Chapter contains an overview of the content and scope of this document and aspects that
 are being discussed.
 
+\wip{
 \subparagraph{Software assurance}
-\wip{Software assurance}
+Software assurance
+}
 
 \subparagraph{Layered Protocols}
 Traditionally network protocols are presented as a stack of layers where
 upper layers build on services provided by lower layers and lower layers
-are agnostic of the implementation of the upper layers.
+are independent of the implementation of the upper layers.
 This concept of layers is misleading when discussing Ouroboros.
-It is {\em not} the case that the consensus (layer) is build on top of the network (layer).
+For example, it is {\em not} the case that the consensus (layer)
+is built on top of the network (layer).
 It is more appropriate to talk about a network component than a network layer.
-The network component provides services to the consensus component and vice versa.
-Both components rely on each other.
-The network component uses the consensus component validate
-information that it distributes to other nodes.
-This is essential to guard against certain kinds of DoS attacks.
+The network component provides services to the consensus component and vice versa;
+both components rely on each other.
+The network component uses the consensus component to validate
+information that it distributes to other nodes, which
+is essential to guard against certain kinds of DoS attacks.
 Existing peer-to-peer systems focus on a slightly different problem domain.
 For example, they do not consider the information validation issue
-or have worries \todo{(Neil : I could not read the word)}, such as 'eclipse' that to not
+or are concerned with issues such as 'eclipse attacks' that to not
 apply to the Ouroboros family of protocols.
 
-\missingfigure[figwidth=6cm]{Testing a long text string}
+%\missingfigure[figwidth=6cm]{Testing a long text string}
 
-\subparagraph{Performance of Peer to Peer Networks}
-In computer science, Byzantine Fault Tolerance is a property which states
-that a distributed algorithm works for the honest participants of the algorithm
-under the assumption that a certain percentage of the participants is indeed honest.
-A similar, but more informal property applies to peer to peer networks as well.
+\subparagraph{Performance of the Ouroboros Network}
+In computer science, Byzantine Fault Tolerance is a property of a distributed algorithm, which states
+that it works for the honest participants
+under the assumption that a certain proportion of the participants are indeed honest.
+A similar, but more informal property applies to performance of the Ouroboros network as well.
 
-A peer to peer network, is a system which provides a service to its participants while at the same
-time the participants of the network provide a service to the network.
-The performance of the P2P network depends (among other things) on the performance of the nodes,
+The network provides a service to its participants while at the same
+time the participants provide a service to the network.
+The performance of the Ouroboros network depends (among other things) on the performance of the nodes,
 while the performance of a node also depends on the performance of the network.
 Not only are there honest and adversarial participant, but there is also a huge variety of
 possible network topographies, bandwidths and latencies of network connections and other
 factors that determine the performance of the network.
-This document discusses the high level business requirements for Cardano and what are the
-assumptions on the structure of the underlying P2P network.
+
+This document discusses the high level functional and performance requirements for Ourobors and the
+assumptions made about the structure of the underlying P2P network.
 
 \subparagraph{Protocol vs Implementation}
-Network Protocols are written on different levels of abstractions.
-To be useful a protocol must be precise enough to be implemented.
-At the same time a protocol should not only be precise but also abstract.
-A high level of abstraction allows different alternative implementations of the protocol
-and also makes it possible to develop and improve it.
-Furthermore, it should not only, in principle, be possible to implement an
+Network Protocols are written at different levels of abstraction.
+To be useful, a protocol description must be precise enough to be implemented.
+A protocol description should also be abstract enough to allow alternative implementations of the protocol
+and to facilitate developing and improving it.
+Furthermore, it should be possible to both implement an
 abstract version of a protocol
-but also faithfully interpret it in a real world scenario.
+and interpret it in a real-world scenario.
 For example, it must be possible to implement a protocol
-such that the real world software runs on a real world machine with a common size of main memory
-and a common speed network adaptor.
-The Shelley network protocol has been developed in parallel with a reference implementation in Haskell.
+such that the real-world software runs on a machine with a typical size of memory
+and a typical speed network connection.
+
+The Shelley network protocol design has been developed in parallel
+with a reference implementation in Haskell.
 Haskell (more precisely GHC) has built-in support for high level concurrency abstractions
-like, for example, light-weight threads and software transactional memory.
+such as light-weight threads and software transactional memory.
 While the protocol itself is completely language agnostic, it still makes sense to discuss some
 aspects of the Haskell reference implementation in this document.
-In particular, the document describes how to achieve good resource bound, for
+In particular, the document describes how to achieve good resource bounds for
 a protocol implementation.
 
-\subparagraph{Threats}
-\wip{Reference the Threats section.
+\wip{
+  \subparagraph{Threats}
+  Reference the Threats section.
   'eclipse' can be deterred}
 
 
 \wip{TODO:extended abstract, scope of the document}
 
-\section{High level requirements}
+\section{High level requirements and User Stories}
 
 These are the high level business requirements for the networking that were
-gathered and signed off in late 2017. As such they are expressed in an informal
-prose style, and often following a ``user story'' style.
-Roughly there are three different kinds of users:
+gathered and signed off in late 2017. As such they are expressed in informal
+prose, often following a ``user story'' style.
+Roughly, there are three different kinds of users:
 \begin{itemize}
 \item Users who have delegated.
 \item Small stakeholders.
@@ -257,39 +274,40 @@ Roughly there are three different kinds of users:
 
 \paragraph{Participate as a user who has delegated}
 
-As a Daedalus home user with my stake delegated to other users I would like to
-join the Cardano network so I can participate in the network.
+As a Daedalus home user with my stake delegated to other users
+I would like to join the Cardano network so I can participate in the network.
 \begin{itemize}
-\item The system be designed to provide this user segment with the ability
-      to catch up and keep up with the blockchain without having to do any local
-      network configuration.
-\item The system be designed to provide this user segment with the ability to
+\item The system must be designed to provide this user segment with the ability
+      to catch up and keep up with the blockchain without having
+      to do any local network configuration.
+\item The system must be designed to provide this user segment with the ability to
       continuously find and maintain a discovery of a sufficient number of
       other network participants that have reasonable connectivity.
-\item The system be designed to provide this user segment with the ability to
+\item The system must be designed to provide this user segment with the ability to
       find and maintain a minimum of 3 other network participants to maintain
       connectivity with performance that is sufficient to catch up with the
       blockchain.
 \item The system design will take into account that this user will probably be
       behind a firewall.
-\item Users in the segment can be defined by as having all their stake
+\item Users in the segment can be defined by having all their stake
       delegated to other network participants.
+      As such they will never be selected as a slot leader (i.e required to generate a block).
 \end{itemize}
 
 
 \paragraph{Participate in network as small stakeholder}
 
-As a Daedalus home user operating a core node with a small stake, I would like
-to join the Cardano network so I can participate in the network as a core node
-that produces blocks i.e. have not delegated to someone else.
+As a Daedalus home user operating a node with a small stake,
+I would like to join the Cardano network so I can participate in the network as a
+node that produces blocks i.e. my stake is not delegated to someone else.
 
 \begin{itemize}
-\item The system be designed to provide this user segment with the ability to
+\item The system must be designed to provide this user segment with the ability to
       receive the transactions that will be incorporated into blocks (although
       sizing the operation of the distributed system to ensure that all such
       participants would be able to receive all transactions is not a bounding
       constraint).
-\item The system be designed to provide this user segment with the ability to
+\item The system must be designed to provide this user segment with the ability to
       participate in the MPC protocol\footnote{This requirement is now
       redundant because the MPC protocol is specific to Ouroboros Classic.}.
 \item The system will be designed to provide this user segment with the ability
@@ -298,9 +316,9 @@ that produces blocks i.e. have not delegated to someone else.
 \item The user will have sufficient connectivity and performance to receive a
       block within a time slot {\sc and} they have to be able to create and
       broadcast a block within a time slot in which the block is received by
-      other core nodes.
+      other participating nodes.
 \item The system will be designed to maximise the likelihood that 50\% of home
-      users operating a core node are compliant with the previous requirement
+      users operating a participating node are compliant with the previous requirement
       at any one time.
 \item The system will be designed to provide this user segment with the ability
       to continuously find and maintain a discovery of a sufficient number of
@@ -316,9 +334,9 @@ that produces blocks i.e. have not delegated to someone else.
 \item Users in this segment will be defined as {\sc not}
       \begin{itemize}
       \item[a)] being in the top 100 users ranked by stake or
-      \item[b)] in a ranked set of users who combined control 80\% of the stake
+      \item[b)] in a ranked set of users who together control 80\% of the stake
       \end{itemize}
-\item Users in this segment will not be part of the Core Diff, but still
+\item Users in this segment will not be part of the Core Dif, but still
       subject to the normal incentives related to creating blocks.
 \end{itemize}
 
@@ -337,7 +355,7 @@ a core server node that produces blocks i.e. have not delegated to someone else.
       \end{itemize}
 \item Assuming that this user has sufficient connectivity and performance, the
       system should ensure that the collective operation of the distributed
-      system will ensure that they have a high probability, of receiving a
+      system will ensure that they have a high probability of receiving a
       block within a time slot such that they have sufficient time to be able
       to create and broadcast a block within a time slot where the block is
       received by other core nodes.
@@ -400,7 +418,7 @@ green & otherwise  \\[1em]
 
 Recovery \\
 \hline
-red   & receiving $<1$ slot block per 10s \\
+red   & receiving $<1$ block per 10s \\
 amber & otherwise  \\
 green & (not applicable) \\[1em]
 
@@ -412,14 +430,15 @@ green & otherwise.
 \end{tabular}
 \end{center}
 
-This assumes that the slot time remains 20 seconds.
+This assumes that the slot time remains 20 seconds, or at least that the average time
+between production of new blocks is 20 seconds.
 
 
 \subsubsection{Distributed System Performance}
 
 \paragraph{Transaction Throughput}
 
-The transaction per second of the system as a whole will be:
+The transaction rate of the system as a whole will be:
 %
 \begin{center}
 \begin{tabular}{lr}
@@ -429,7 +448,7 @@ Stretch   & 50 tps  \\
 \end{tabular}
 \end{center}
 
-This assumes that the slot time remains 20 seconds.
+This assumes that the slot/inter-block time remains 20 seconds.
 
 \paragraph{Transaction Latency}
 
@@ -474,7 +493,7 @@ assured my network resource is not eaten up by the data diffusion function.
 \paragraph{Participant performance measurement}
 
 There may be a requirement for measuring if a large stakeholder is not meeting
-their network obligation.
+their network obligation \cite{DBLP:journals/corr/abs-1807-11218}.
 
 It is accepted that this requirement is a ``nice to have'', and it has not been
 established that it is possible, nor has it been incorporated into the
@@ -510,7 +529,7 @@ a DDoS attack.
       each other within the usual timing constraints in this situation.
 \end{itemize}
 
-IP addresses will be hidden
+IP addresses will be hidden.
 
 \begin{itemize}
 \item Encrypted IP addresses will be published by 10 of the other members of
@@ -523,7 +542,7 @@ Assumption
 \item Core node operators will not publish their IP addresses publicly.
 \item Encrypted IP addresses will be published by the 10 of the other members
       of the group of large stakeholder core nodes.
-\item If a node operators IP address is compromised the operator will respond
+\item If a node operator's IP address is compromised the operator will respond
       and change the IP address of their node.
 \item The system will allow operators to change the address of their core nodes
       and communicate with that new IP address within a reasonable period of
@@ -531,7 +550,7 @@ Assumption
 \end{itemize}
 
 
-\subsubsection{Network decentralisation's}
+\subsubsection{Network decentralisation}
 
 \paragraph{No hegemony}
 
@@ -542,10 +561,12 @@ necessity to the network so that network hegemony is avoided.
 \begin{itemize}
 \item IOHK should be in the same position on the network as any other
       stakeholder with an equivalent amount of stake.
-\item There is more general requirement that no other actor could do this
-      either.
+\item There is a more general requirement that no other actor could
+      achieve hegemonic control of the operation of the data diffusion layer.
 \end{itemize}
 
+
+\wip{
 \section{Context and Introduction}
 
 How this work relates (in general terms) to the rest of the Shelley
@@ -568,33 +589,37 @@ development and the Ouroboros papers.
   \end{itemize}
 \end{itemize}
 \subsection{Functional Layering}
-\todo[inline]{pictures as to how the various functional layers relate; How the Data
+\hide[inline]{pictures as to how the various functional layers relate; How the Data
 diffusion layer relates to Ledger etc; How data diffusion relates to
 point-to-point overlay network.}
 
 \subsubsection{Non-function aspects}
 Performance; trustworthiness; Forwarding as an expression of confirmed
 ``trust'' (and corollary - forwarding of \emph{clearly} incorrect information
-seen as prima-facia evidence of adversarial action.
+seen as prima-facie evidence of adversarial action.
 \subsection{Protocol Roles}
 Peer relationship between various nodes; Limited trust and
 verification; (Brief) description of the expectations and assumptions across
-the functionality boundaries; 
+the functionality boundaries;
+}
 
+\wip{
 \subsubsection{Mini Protocols}
 \begin{description}
 \item[Chain Sync]
 \item[Block Fetch]
 \item[Transaction Submission]
 \item[$\Delta Q$ Measurement] (not really a mini protocol, in that it
-  is point to point and not part of the diffusion process itself,
+  is point-to-point and not part of the diffusion process itself,
   placed here because it ``sits'' on top of the overlay network. Role
   to generate active endpoint performance data to help optimise
   time-to-diffuse critical information exchanges (e.g. newly minted
   block diffusion)
-\end{description}  
-\subsubsection{Point to point Overlay Network}
-\todo[inline]{need a picture} Note that long term eclipse attacks are not an issue
+\end{description}
+}
+\wip{
+\subsubsection{Point-to-point Overlay Network}
+\hide[inline]{need a picture} Note that long term eclipse attacks are not an issue
 here (cover why a bit later); tie in chain growth requirements with
 need for ``better'' communications performance between (major)
 stake pools (notion of Core DIF); association explain need for
@@ -604,8 +629,9 @@ stake pools (notion of Core DIF); association explain need for
 \item Distributed endpoint discovery (subset of notion of peer in
   other approaches)
 \end{itemize}
+}
 
-  
+\wip{
 \section{Layout of the Document}
 
 \begin{itemize}
@@ -615,13 +641,15 @@ stake pools (notion of Core DIF); association explain need for
 \end{itemize}
 
 \section{Notation}
+}
 
+\wip{
 \chapter{Requirements}
 
 \section{Performance Requirements and User Stories}
 \subsection{Classes of Participants}
 \wip{todo: make a nice table}
-\todo{Some information about participants is in the previous
+\hide{Some information about participants is in the previous
 section~\ref{network-connectivity}}
 
 \subsubsection{Stake pool} % lookup what this is called in the protocols.tex
@@ -638,8 +666,9 @@ There are two kinds of Requirements:
 \item What services that the system provides to the user.
 \end{enumerate}
 
+}
 
-
+\hide{
 \section{Protocol Updates on the Blockchain}
 \begin{itemize}
 \item Hybrid phase of federation and decentralisation
@@ -664,11 +693,13 @@ use different sets of protocols for both uses cases.
 Throughout the document it will be clear which variant of we are referring to.
 
 \section{Threat Model}
+
 \wip{
   WIP discussion of the threat model
 \subsection{Resource Consumption Attacks}
 }
-
+}
+\hide{
 \section{Ouroboros}
 \wip{
 How PoS is different from PoW in its network requirements:
@@ -680,8 +711,10 @@ How PoS is different from PoW in its network requirements:
 \end{itemize}
 
 \section{Delegation}
+}
 
 \chapter{System Architecture}
+\hide{
 \section{Overview}
 This section describes the key underlying aspects and considerations of the design
 of the network protocol and tries to give a big picture the overall network protocol.
@@ -703,38 +736,40 @@ of the network protocol and tries to give a big picture the overall network prot
 \section{Modular Design and Mini Protocols}
 \wip{Why are mini protocols a good idea ?}
 \wip{How does polymorphism help modularity ?}
+}
 
 \section{Congestion Control}
-A central design goal of the system is robust operation at high work loads.
-For example, it is a normal working condition of the P2P network
-that transactions arrive at a higher rate than the number of transaction
-that can be included in block chain.
-An increase of the rate at which transactions arrive at the network must not cause a decrease
+A central design goal of the system is robust operation at high workloads.
+For example, it is a normal working condition of the networking design
+that transactions arrive at a higher rate than the number
+that can be included in blockchain.
+An increase of the rate at which transactions are submitted must not cause a decrease
 of the block chain quality.
 
-The TCP network layer itself does not deal well with over-loading.
+Point-to-point TCP bearers do not deal well with overloading.
 A TCP connection has a certain maximal bandwidth,
-i.e. a certain maximum load that it can relatively reliably handle under normal conditions,
-but, if the connection is ever overloaded, the throughput will
-drastically break down and the connection will typically not recover by
-itself.  This means that the node must actively control the load it puts on
-its network connections.
+i.e. a certain maximum load that it can handle relatively reliably under normal conditions.
+If the connection is ever overloaded,
+the performance characteristics will degrade rapidly unless
+the load presented to the TCP connection is appropriately managed.
 
-At the same time, the node itself has a limit on the rate, at which it can process data.
-In particular, a node will have to share its processing power with other processes that run on the
-same machine/operation system instance, which means, that a node may get slowed down for some reason,
-and the system may get in a situation,
+
+At the same time, the node itself has a limit on the rate at which it can process data.
+In particular, a node may have to share its processing power with other processes that run on the
+same machine/operation system instance, which means that a node may get slowed down for some reason,
+and the system may get in a situation
 where there is more data available from the network than the node can process.
-The design must guarantee that the node still works properly in this situation.
-In any condition, a node must not exceed its memory limits.
-(It must not buffer incoming data that cannot be processed in time.)
+The design must operate appropriately in this situation and recover form transient conditions.
+In any condition, a node must not exceed its memory limits, 
+that is there must be defined limits, breaches of which being treated like protocol violations.
 
-Of cause it makes no sense if the system design is robust, but so defensive that it wastes on the possible
-performance.
-An example would be a protocol that never transmits a messages unless it has received and
-explicit ACK for the previous message. This approach might be safe of overloading the network, but,
-on the other hand it also waste most of the bandwidth that is potentially available.
+Of cause it makes no sense if the system design is robust,
+but so defensive that it fails to meet performance goals.
+An example would be a protocol that never transmits a message unless it has received an
+explicit ACK for the previous message. This approach might avoid overloading the network,
+but would waste most of the potential bandwidth.
 
+\hide{
 \subsection{Back Pressure}
 Back Pressure is a strategy for congestion control for push based buffered channels like
 ,for example, TCP connections.
@@ -746,8 +781,9 @@ Back Pressure is a strategy for congestion control for push based buffered chann
 \wip{TODO: data flow inside the node is pull based}
 \subsection{Delta Q}
 \wip{TODO: explain what delta Q means and what it has to do with congestion control.}
+}
 
-\begin{figure}[h]
+\begin{figure}[ht]
   \pgfdeclareimage[height=10cm]{node-diagram-chains-state}{node-diagram-concurrency.pdf}
   \begin{center}
     \pgfuseimage{node-diagram-chains-state}
@@ -756,50 +792,50 @@ Back Pressure is a strategy for congestion control for push based buffered chann
   \label{node-diagram-concurrency}
 \end{figure}
 
-
 \section{Data Flow in a Node}
-Nodes maintain connections with the peers that have been chosen with help of the peer selection process.
+Nodes maintain connections with the peers that have been chosen
+with help of the peer selection process.
 Suppose node $A$ is connected to node $B$.
 The Ouroboros protocol schedules a node $N$ to generate a new block in a given time slot.
 Depending on the location of nodes $A$, $B$ and $N$ in the network topology and whether the new
-block arrives first at $A$ or $B$ ($A$ can be either up-stream or down-stream of $B$).
+block arrives first at $A$ or $B$, $A$ can be either up-stream or down-stream of $B$.
 Therefore, node $A$ runs an instance of the client side of the chain-sync mini protocol
 that talks with a server instance of chain-sync at node $B$ and also a server instance of chain sync
 that talks with a client instance at $B$.
 The situation is similar for the other mini protocols (block fetch, transaction submission, etc).
-The set of mini protocols that runs over a connection is determined by version of the network
+The set of mini protocols that runs over a connection is determined by the version of the network
 protocol, i.e.  Node-to-Node, Node-to-Wallet and Node-to-Chain-Consumer
 connections use different sets of mini protocols (e.g. different protocol
 versions).  The version is negotiated when a new connection is established
 using protocol which is described in Chapter~\ref{connection-management}.
-\todo{Add description of this protocol in Chapter~\ref{connection-management}
+\hide{Add description of this protocol in Chapter~\ref{connection-management}
 and link it.}
 
 Figure~\ref{node-diagram-concurrency} illustrates parts of the data flow in a node.
 Circles represents a thread that runs one of the mini protocols (the mini protocols are explained in
 Chapter~\ref{state-machine-section}).
-There are two kinds of data flows involved.
-Mini protocols communicate with mini protocols of other nodes by sending and receiving messages,
+There are two kinds of data flows:
+mini protocols communicate with mini protocols of other nodes by sending and receiving messages;
 and, within a node, they communicate by reading from- and writing to- a shared
 mutable state (represented by boxes in Figure~\ref{node-diagram-concurrency}).
-\href{https://en.wikipedia.org/wiki/Software_transactional_memory}{Software transactional memory} (STM) is a mechanism for safe and lock-free concurrent
-access to mutable state and the reference implementation makes heavy use of it.
+\href{https://en.wikipedia.org/wiki/Software_transactional_memory}{Software transactional memory}
+(STM) is a mechanism for safe and lock-free concurrent
+access to mutable state and the reference implementation makes intensive use of this abstraction.
 
 \section{Real-time Constraints and Coordinated Universal Time}
-Ouroboros splits the physical time into an infinite sequence of time slots,
-i.e. contiguous, equal-length intervals of time
-and assigns the slot leaders, i.e. the nodes that are eligible to create a new block, to those time slots.
+Ouroboros models the passage of physical time as an infinite sequence of time slots,
+i.e. contiguous, equal-length intervals of time,
+and assigns slot leaders (nodes that are eligible to create a new block) to those time slots.
 At the beginning of a time slot, the slot leader selects the block chain and transactions that are the basis
 for the new block, then it creates the new block and sends the new block to its peers.
-If the new block reaches the next block leader before the beginning of next time slot,
+When the new block reaches the next block leader before the beginning of next time slot,
 the next block leader can extend the block chain upon this block (if the block
-did not arrive on time the next leader will create a new block regardless of
-the missing block).
+did not arrive on time the next leader will create a new block anyway).
 
 There are some trade-offs when choosing the slot time that is used for the protocol but
 basically the slot length should be long enough such that a new block has a good chance to reach the
 next slot leader in time.
-A typical value for the slot length is 20 seconds.
+A chosen value for the slot length is 20 seconds.
 It is assumed that the clock skews between the local clocks of the nodes is small with respect to the
 slot length.
 
@@ -807,7 +843,7 @@ However, no matter how accurate the local clocks of the nodes are with respect t
 the effects of a possible clock skew must still be carefully considered.
 For example, when a node time-stamps incoming blocks with its local clock time, it may encounter
 blocks that are created in the future
-(with respect to the local clock of the node).
+with respect to the local clock of the node.
 The node must then decide whether this is because of a clock skew or whether the node considers this
 as adversarial behaviour of an other node.
 
@@ -835,24 +871,25 @@ At any time a node will typically run many instances of mini protocols, includin
 same mini protocol.
 Each mini protocol instance of the node communicates with the dual
 instance of exactly one peer.
-All mini protocols, that communicate with the same peer,
+All mini protocols that communicate with the same peer
 share a single communication channel (pipe or socket)
 and a multiplexer/de-multiplexer is used to multiplex the protocols over that channel.
 Section~\ref{multiplexing-section} describes the multiplexing layer.
 
-The set of mini protocols, that run on a connection between two participants of the system,
-depends on the role of the participants, i.e. whether the nodes acts as a full node or just
+The set of mini protocols that run on a connection between two participants of the system
+depends on the role of the participants, i.e. whether the node acts as a full node or just
 a block chain consumer, for example a wallet.
-Section~\ref{peer-setup-section} describes how a connection between two nodes,
-that run a set of mini protocols, is set up.
+Section~\ref{peer-setup-section} describes how a connection between two nodes
+that run a set of mini protocols is set up.
 
 \section{Protocols as State Machines}
 The reference implementation of several mini protocols uses a generic framework
 for state machines.
-
+\hide{
 The Haskell implementation of the state machine framework is described in
-Section~\ref{Haskell-state-machine}. It uses correct-by-construction
-techniques to guarantee
+Section~\ref{Haskell-state-machine}.
+}
+This framework uses correct-by-construction techniques to guarantee
 several properties of the protocol and the implementation.
 In particular, it guarantees that there are no deadlocks, i.e., at any time, one side has agency
 (is expected to transmit the next message) and the other side is awaiting for
@@ -860,13 +897,13 @@ the message (or both sides agree that the protocol has terminated).
 If either side receives a message that is not expected according to the protocol
 the communication is aborted.
 
-For each mini protocol, that is based on this underlying framework, the description provides the
+For each mini protocol that is based on this underlying framework the description provides the
 following pieces of information:
 
 \begin{itemize}
 \item An informal description of the protocol.
-\item States of the state machine
-\item The messages that are exchanged
+\item States of the state machine.
+\item The messages that are exchanged.
 \item A transition graph of the global view of the state machine.
 \item The client implementation of the protocol.
 \item The server implementation of the protocol.
@@ -875,41 +912,40 @@ following pieces of information:
 \begin{description}
 \item[State Machine]
   Each mini protocol is described as a state machine.
-  This document uses a simple diagram representations for state machines, we
-  also include corresponding transition tables.
-  Description of a state machines in this section are directly derived from
-  specification of a mini protocol using the state machine framework.
+  This document uses a simple diagram representations for state machines, and
+  also includes corresponding transition tables.
+  Descriptions of state machines in this section are directly derived from
+  specifications of mini protocols using the state machine framework.
 
-  The state machine framework, that is used to specify the protocol, can be instantiated
+  The state machine framework that is used to specify the protocol can be instantiated
   with different implementations that work at different levels of abstraction
   (for example implementations used for simulation, implementations that run over virtual
-  connections and implementations that actually transmit messages over the real networks).
-  The exact interpretation of the states and the transitions of the state machine
-  depends on the actual implementation.
+  connections and implementations that actually transmit messages over the real network).
+  
 
 \item[States]
-  State are abstract, they are not a value of some variables in a node, but
-  rather describe the state of the two party communication as whole, e.g.
+  States are abstract: they are not a value of some variables in a node, but
+  rather describe the state of the two-party communication as whole, e.g.
   that a client is responsible for sending a particular type of message and
   the server is awaiting on it.  This, in particular, means that if the state
   machine is in a given state, both client and server are in this state.
-  Additional pice of information that differentiates the roles of peers in
+  An additional piece of information that differentiates the roles of peers in
   a given state is agency, which describes which side is responsible for
   sending the next message.
 
   In the state machine framework, abstract states of a state machine are
-  modelled as promoted types (so they do not correspond to any particular
-  value hold by one of the peers).
+  modelled as promoted types, so they do not correspond to any particular
+  value hold by one of the peers.
 
   The document presents this abstract view of mini protocols and the state
   machines where the client and server are always in identical states, which
   also means that client and server simultaneously transit to new states.
   For this description network delays are not important.
 
-  An interpretation, which is closer to the real-world implementation (but
-  less concise), is that there are independent client and server states
-  and that transitions on either side happens independently when a message is send or received.
-  
+  An interpretation, which is closer to the real-world implementation but
+  less concise, is that there are independent client and server states
+  and that transitions on either side happen independently when a message is sent or received.
+
 \item[Messages]
   Messages exchanged by peers form edges of a state machine diagram, in other
   words they are transitions between states.
@@ -922,7 +958,7 @@ following pieces of information:
 
 \item[Agency]
   A node has agency if it is expected to send the next message.
-  In every state (except the \Done-state) either the client or server has agency
+  In every state (except the \Done-state) either the client or server has agency.
   In the \Done-state the protocol has terminated and neither side is expected to send any more
   messages.
 
@@ -931,9 +967,9 @@ following pieces of information:
       States with agency at the client are drawn in green, states with agency at the server in blue and
       the \Done-state in black.
       By construction, the system is always in exactly one state,
-      i.e. client's state is always the same state as server's,
+      i.e. the client's state is always the same state as server's,
       and the colour indicates who is the agent.
-      It is also important to understand, that the arrows in the state transition diagram denote
+      It is also important to understand that the arrows in the state transition diagram denote
       state transitions and not the direction of the message that is being transmitted.
       For the agent of the particular state it will mean send a message to the
       other peer, for a non-agent, listen for incoming message.
@@ -968,17 +1004,17 @@ following pieces of information:
       As $D$ is also blue the agency remains at the server.
 
 \item[Client and server implementation]
-  The state machine describes which messages are send and received and in which order.
+  The state machine describes which messages are sent and received and in which order.
   This is the external view of the protocol that every compatible implementation MUST follow.
   In addition to the external view of the protocol, this part of the specification describes
   how the client and server actually process the transmitted messages,
   i.e. how the client and server update their internal mutable state
-  upon the transmission of messages.
+  upon the exchange of messages.
 
   Strictly speaking, the representation of the node-local mutable state
-  and the updates to the node-local state, are implementation details that are
-  not part of the communication protocol between the nodes,  and it will
-  depend on an application that is build on top of the network service
+  and the updates to the node-local state are implementation details that are
+  not part of the communication protocol between the nodes,  and will
+  depend on an application that is built on top of the network service
   (wallet, core node, explorer, etc.).
   The corresponding sections were added to clarify mode of operation of the
   mini protocols.
@@ -993,7 +1029,7 @@ following pieces of information:
 
 \subsection{Description}
 A client can use the Ping-Pong protocol to check that the server is responsive.
-The Ping-Pong protocol is very simple, because the messages do not carry any data and
+The Ping-Pong protocol is very simple because the messages do not carry any data and
 because the Ping-Pong client and the Ping-Pong server do not access the internal state of the node.
 It uses the same framework for state machines as the other protocols,
 but because the protocol is so simple,
@@ -1015,7 +1051,7 @@ find it useful to get familiar with the protocol description we present in this 
   \draw (Busy)         edge[right, bend right]   node{\Pong}                     (Idle);
 \end{tikzpicture}
 
-\begin{figure}[H]
+\begin{figure}[ht]
 \begin{tabular}{|l|l|} \hline
 \multicolumn{2}{|c|}{Agency} \\ \hline
   Client has Agency & \Idle \\  \hline
@@ -1056,7 +1092,7 @@ The request response protocol is polymorphic in the request and response data th
 This means that there are different possible applications of this protocol and the
 application of the protocol determines the type of the requests and responses.
 
-This is just an example protocol which does not need to be supported, but it
+This is just an example protocol which does not currently need to be supported, but it
 may be useful in the future.  It's also useful as a simple example of
 a protocol description.
 
@@ -1105,8 +1141,8 @@ a protocol description.
 The chain synchronisation protocol is used by the block chain consumer
 to replicate the producer's block chain locally. As it is polymorphic in blocks,
 it supports a family of Ouroboros protocols.
-The chain synchronisation protocol is used by clients which synchronise just headers (node-to-node),
-and also clients which synchronize actual block chain (e.g., node-to-wallet).
+The chain synchronisation protocol is used by clients that synchronise just headers (node-to-node),
+and also clients which synchronize actual block chains (e.g., node-to-wallet).
 (See Figure~\ref{node-diagram-concurrency}.)
 
 A node communicates with several upstream and downstream nodes.
@@ -1155,24 +1191,24 @@ The protocol uses the following messages:
       Acknowledge the request but require the consumer to wait for the next update.
       This means that the consumer is synced with the producer, and
       the producer is waiting for its own chain state to change.
-\item [\RollForward~{\boldmath $(header,point)$}]
+\item [\RollForward{} {\boldmath $(header,point)$}]
       Tell the consumer to extend their chain with the given $header$.
       The message also tells the consumer about the $head$ point of the producer.
-\item [\RollBackward~{\boldmath $(point_{old},point_{head})$}]
+\item [\RollBackward{} {\boldmath $(point_{old},point_{head})$}]
       Tell the consumer to roll back to a given $point_{old}$ on their chain.
       The message also tells the consumer about the current head $point_{head}$ of the producer.
-\item [\FindIntersect~{\boldmath $\langle point_{head} \rangle $}]
+\item [\FindIntersect{} {\boldmath $\langle point_{head} \rangle $}]
       Ask the producer to try to find an improved intersection point between
       the consumer and producer's chains.
       The consumer sends a sequence {\boldmath $\langle point \rangle $}
       and it is up to the producer
       to find the first intersection point on its chain and send it back to the consumer.
-\item [\IntersectImproved~{\boldmath $(point_{intersect},point_{head})$}]
+\item [\IntersectImproved{} {\boldmath $(point_{intersect},point_{head})$}]
       The reply to the consumer about an intersection found, but {\bf only} if this
-      is an improvement over previously established intersection point.
-      The consumer can decide weather to send more points.
+      is an improvement over the previously established intersection point.
+      The consumer can decide whether to send more points.
       The message also tells the consumer about the head point of the producer.
-\item [\IntersectUnchanged~{\boldmath $(point_{head})$}]
+\item [\IntersectUnchanged{} {\boldmath $(point_{head})$}]
       The reply to the consumer that no intersection was found: none of the
       points the consumer supplied are on the producer chain.
       The message also tells the consumer about the head point of the producer.
@@ -1198,23 +1234,23 @@ The protocol uses the following messages:
 \end{tabular}
 
 \subsection{Implementation of the Chain Producer}
-The trade-offs between the robustness and efficiency of possible chain-sync protocols are
+\hide{The trade-offs between the robustness and efficiency of possible chain-sync protocols are
 discussed in Section~\ref{chain-sync-discussion}.
+}
 This section describes a state-full implementation of a chain producer that is suitable for a setting where
 the producer cannot trust the chain consumer.
-An important requirement, in this setting,
+An important requirement in this setting
 is that a chain consumer must never be able to cause excessive resource use on the producer side.
 The presented implementation meets this requirement.
-It strictly only uses a constant amount of memory to store the state, that the producer maintains
+It uses a constant amount of memory to store the state that the producer maintains
 per chain consumer.  This protocol is only used to reproduce the producer
 chain locally by consumer.  By running many instances of this protocol against
 different peers, a node can reproduce chains in the network and
 do chain selection which by design is not part of this protocol.  An important
 note is that the consumer's chain described in this section is the chain
-reproduced by the client of chain-sync protocol, rather than the chain of that
-node.
+reproduced by the client of chain-sync protocol, rather than the chain of that node.
 
-We call the state which the producer maintains about the consumer, the $read~pointer$.
+We call the state which the producer maintains about the consumer the $read~pointer$.
 The $read~pointer$ basically tracks what the producer knows about the head of
 the consumer's chain without storing it locally.
 It points to a block on the current chain of the chain producer.
@@ -1230,17 +1266,17 @@ with a pointer to the genesis block on its chain.
 
 \subparagraph{Downloading a chain of blocks}
 A typical situation is when the consumer follows the chain of the producer but is not yet at the head of the
-chain (this also comprises a consumer booting from genesis).
+chain (this also covers a consumer booting from genesis).
 In this case, the protocol follows a simple, consumer-driven, request-response pattern.
-The consumer sends \RequestNext~messages to ask for the next block.
+The consumer sends \RequestNext{} messages to ask for the next block.
 If the $read~pointer$ is not yet at the head of the chain,
 the producer replies with a \RollForward{} and advances the $read~pointer$ to
 the next block (optimistically assuming that the client will update its chain
 accordingly).
-The \RollForward~message contains the next block and also the head-point of the producer.
+The \RollForward{} message contains the next block and also the head-point of the producer.
 The protocol follows this pattern until the $read~pointer$ reaches the end of its chain.
 
-\begin{figure}[h]
+\begin{figure}[ht]
 \pgfdeclareimage[height=7cm]{read-pointer-consumer-driver}{read-pointer-consumer-driven.pdf}
 \begin{center}
 \pgfuseimage{read-pointer-consumer-driver}
@@ -1255,11 +1291,11 @@ a \RequestNext{}
 the consumers chain is already up to date.
 The producer informs the consumer with an \AwaitReply{} that no new data is available.
 After receiving a \AwaitReply, the consumer just waits for a new message and the producer keeps agency.
-The \AwaitReply~switches from a consumer driven phase to a producer driven phase.
+The \AwaitReply{} switches from a consumer driven phase to a producer driven phase.
 
-The producer blocks until new data becomes available.
+The producer waits until new data becomes available.
 When a new block is available, the producer will
-reply with a \RollForward{} message and give agency back to the consumer.
+sned a \RollForward{} message and give agency back to the consumer.
 The producer can also get unblocked when its node switches to a new chain fork.
 
 \subparagraph{Producer switches to a new fork}
@@ -1273,12 +1309,11 @@ There are two cases:
 1) If the $read~pointer$ points to a block that is on the common prefix of the new
 fork and the old fork, no update of the $read~pointer$ is needed.
 
-2) If the $read~pointer$ points to a block that is no longer part of the chain,
-that is followed by the node,
+2) If the $read~pointer$ points to a block that is no longer part of the chain that is followed by the node,
 the $read~pointer$ is set to the last block that is common between the new and the old chain.
-The node also sets a flag that signals the chain-sync thread to reply with a \RollBackward~instead
+The node also sets a flag that signals the chain-sync thread to send a \RollBackward{} instead
 of a \RollForward.
-Finally the producer thread must unblock if it is in the \MustReply~state.
+Finally the producer thread must unblock if it is in the \MustReply{} state.
 
 \begin{figure}[h]
 \pgfdeclareimage[height=5cm]{read-pointer-rollback}{read-pointer-rollback.pdf}
@@ -1290,10 +1325,11 @@ Finally the producer thread must unblock if it is in the \MustReply~state.
 \end{figure}
 
 Figure~\ref{read-pointer-rollback} illustrates a fork switch that requires an update of the $read~pointer$
-for one of the chain consumers, i.e. an example for case 2).
+for one of the chain consumers, i.e. an example for case 2.
 Before the switch, the $read~pointer$ of the consumer points to block $0x660f$.
 The producer switches to a new chain with the head of the chain at block $0xcdf0$.
-The node must update the $read~pointer$ to block $0xfa40$ and the next message to the consumer will be a \RollBackward.
+The node must update the $read~pointer$ to block $0xfa40$ and the next message to the consumer
+will be a \RollBackward.
 
 Note, that a node typically communicates with several consumers. For each consumer it runs an independent
 version of the chain-sync-protocol state machine in an independent thread and with its own $read~pointer$.
@@ -1303,20 +1339,20 @@ either case 1) or case 2) can apply.
 \subparagraph{Consumer starts with an arbitrary fork}
 Typically, the consumer already knows some fork of the block chain when it
 starts to track the producer.
-The protocol provides an efficient method to search for the longest common prefix (called intersection here)
+The protocol provides an efficient method to search for the longest common prefix (here called intersection)
 between the fork of the producer and the fork that is known to the consumer.
 
-To do so, the consumer sends \FindIntersect~message with a list of chain
+To do so, the consumer sends a \FindIntersect{} message with a list of chain
 points which belong to its node chain.
 If the producer does not know any of the points it replies with \IntersectUnchanged.
-Otherwise it replies with \IntersectImproved~and the best (i.e. the newest) of the points that it knows
+Otherwise it replies with \IntersectImproved{} and the best (i.e. the newest) of the points that it knows
 and also updates the $read~pointer$ accordingly.
 For efficiency, the consumer should use a binary search scheme to search for the longest common
 prefix.
 
-It is advised that the consumer always starts with \FindIntersect~in a fresh connection
-and it is free to use \FindIntersect~at any time later as seems beneficial.
-If the consumer does not know anything about the consumers chain,
+It is advised that the consumer always starts with \FindIntersect{} in a fresh connection
+and it is free to use \FindIntersect{} at any time later as seems beneficial.
+If the consumer does not know anything about the producer's chain,
 it can start the search with the following list of points:
 $\langle point(b), point(b-1), point(b-2), point(b-4), point (p-8),\ldots \rangle$
 where $point(b-i)$ is the point of the $i$th predecessor of block $b$ and
@@ -1328,18 +1364,20 @@ In principle, the chain consumer has to guard against a malicious chain producer
 as much as the other way around.
 However, two aspects of the protocol play in favour of the consumer here.
 \begin{itemize}
-  \item The protocol is basically consumer driver, i.e. the producer has simply no way to send unsolicited
+  \item The protocol is basically consumer driven, i.e. the producer has no way to send unsolicited
 data to the consumer (within the protocol).
   \item The consumer can verify the response data itself.
 \end{itemize}
 Here are some cases to consider:
 \begin{description}
-\item[\FindIntersect~Phase] The consumer and the producer play a number guessing game, the consumer can easily detect inconsistent behaviour.
+\item[\FindIntersect~Phase]
+  The consumer and the producer play a number guessing game, so the consumer can easily detect
+  inconsistent behaviour.
 \item[The producer replies with a \RollForward] The consumer can verify the block itself
-  (with the help for the ledger layer)
+  with the help of the ledger layer.
   (The consumer may need to download the block first, if the protocol only sends block headers.)
-\item[The producer replies with a \RollBackward] The consumer tracks several producers.
-  If the producer sends false \RollBackward~messages the consumer's node
+\item[The producer replies with a \RollBackward] The consumer tracks several producers, so
+  if the producer sends false \RollBackward{} messages the consumer's node
   will, at some point, just switch to a longer chain fork.
 \item[The Producer is just passive/slow] The consumer's node will switch to
   a longer chain coming from another producer via another instance of
@@ -1391,17 +1429,17 @@ The block fetching mechanism enables a node to download a range of blocks.
 \end{tikzpicture}
 
 \begin{description}
-\item [\RequestRange~{\boldmath $range$}]
+\item [\RequestRange{} {\boldmath $range$}]
   The client requests a {\boldmath $range$} of blocks from the server.
 \item [\NoBlocks]
   The server tells the client that it does not have blocks.
 \item [\StartBatch]
   The server starts block streaming.
-\item [\Block~{\boldmath $body$}]
+\item [\Block{} {\boldmath $body$}]
   Stream a single block's body.
 \item [\BatchDone]
   The server ends block streaming.
-\item [ClientDone]
+\item [\ClientDone]
   The client terminates the protocol.
 \end{description}
 
@@ -1420,7 +1458,7 @@ Transition table:
 \end{tabular}
 
 \section{Transaction Submission Mini Protocol}
-\hsref{src/Ouroboros/Network/Protocol/TxSubmission/Type.hs}
+\hsref{src/Ouroboros/Network/Protocol/TxSubmission/Type.hs in branch coot/tx-submission}
 \label{tx-submission-protocol}
 \newcommand{\SendTx}{\state{SendTx}}
 \newcommand{\SendHashes}{\state{SendHashes}}
@@ -1441,7 +1479,7 @@ Note, that the protocol is {\bf not} used to forward transactions from one core 
   \hline
   \multicolumn{2}{|c|}{Agency} \\ \hline
   Client has Agency & \Idle \\  \hline
-  Server has Agency & \SendHashes,~\SendTx \\ \hline
+  Server has Agency & \SendHashes, \SendTx \\ \hline
 \end{tabular}
 
 \begin{tikzpicture}[->,>=stealth',shorten >=1pt,auto,node distance=4cm, semithick]
@@ -1461,16 +1499,16 @@ Note, that the protocol is {\bf not} used to forward transactions from one core 
 
 Messages of the protocol:
 \begin{description}
-\item [\GetHashes~{\boldmath $n$}]
+\item [\GetHashes{} {\boldmath $n$}]
       The client asks for transaction hashes from the server.
       $n$ is the maximum number of hashes it will accept.
-\item [\SendHashes~{\boldmath $hashes$}]
+\item [\SendHashes{} {\boldmath $hashes$}]
       The server replies with a list of $hashes$.
-\item [\GetTx~{\boldmath $hash$}]
-      The client request the transaction with $hash$.
+\item [\GetTx{} {\boldmath $hash$}]
+      The client requests the transaction with $hash$.
       The client must only send \GetTx~messages with hashes it has received
       in a \SendHashes~message from the this server.
-\item [\Tx~{\boldmath $tx$}]
+\item [\Tx{} {\boldmath $tx$}]
       The server sends transaction $tx$ to the client.
 \item [\MsgDone]
       The client terminates the mini protocol.
@@ -1490,9 +1528,9 @@ Messages of the protocol:
 The transaction submission protocol is strictly only used
 by a (core) node to retrieve transactions from a wallet (or a similar source of transactions).
 It is {\bf not} used to relay transactions from node to node.
-It is important to note, that core nodes only ever run client instances of the protocol,
+It is important to note that core nodes only ever run client instances of the protocol,
 while the server instance is implemented by the wallet.
-Therefore only the client instance of the protocol has to be save a against an adversarial server
+Therefore only the client instance of the protocol has to be safe a against an adversarial server
 and not the other way around.
 
 A client can use the \GetHashes~$n$ message to request a limited number transaction hashes from the server
@@ -1504,33 +1542,36 @@ Depending on the rate of incoming transactions and on the frequency of invalid t
 a client can implement a suitable policy to throttle down a server or to disconnect altogether.
 
 \section{Pipelining of Mini Protocols}
-Protocol pipelining is a technique that allows to improve the performance of some protocols.
+\label{pipelining}
+Protocol pipelining is a technique that improves the performance of some protocols.
 The underlying idea is that a client, which wants to perform several requests,
-just transmits those request in sequence without blocking and waiting for the reply from the server.
+just transmits those requests in sequence without blocking and waiting for the reply from the server.
 In the reference implementation, pipelining is used by the clients of all mini protocol except Chain-Sync.
-Those mini protocols follow a request response pattern that is amenable to pipelining such
+Those mini protocols follow a request-response pattern that is amenable to pipelining such
 that pipelining becomes a feature of the client implementation that does not require any
 modifications of the server implementation.
 
-As an example, lets consider the Block-Fetch mini protocol.
+As an example, let's consider the Block-Fetch mini protocol.
 When a client follows the protocol and sends a sequence of \RequestRange~messages to the server
 the data stream from the client to the server will only consist of \RequestRange~messages
 (and a final \ClientDone~message) and no other message types.
 The server can simply follow the state machine of the protocol and process the messages in turn,
 regardless whether the client uses pipelining or not.
-The MUX/DEMUX layer (Section~\ref{multiplexing-section}) guaranties that messages of the same mini protocol
-are delivered in transmission order, and therefore the client can determine
-which response belongs to which request.
+The MUX/DEMUX layer (Section~\ref{multiplexing-section}) guarantees
+that messages of the same mini protocol are delivered in transmission order,
+and therefore the client can determine which response belongs to which request.
 
 The MUX/DEMUX layer also provides a fixed size buffer between the egress of DEMUX and the ingress
 of mini protocol thread.
 The size of this buffer is a protocol parameter that determines how many messages
-a client can send before waiting for a reply from the server.
-The protocol requires that a client must never cause a overrun of theses buffers on a server node.
+a client can send before waiting for a reply from the server (see Section~\ref{mux-flow-control}).
+The protocol requires that a client must never cause a overrun of these buffers on a server node.
 If a message arrives at the server that would cause the buffer to overrun,
-the server treats this case as a protocol violation of the peer (and closes the connection to the peer).
+the server treats this case as a protocol violation of the peer
+(and closes the connection to the peer).
+\hide{
 The buffer sizes are listed in Table~\ref{bla} in Section~\ref{blub}.
-
+}
 \section{DeltaQ Mini Protocol}
 \wip{
   WIP : Explain DeltaQ measurement back pressure and how we deal with slow connection.
@@ -1542,7 +1583,7 @@ to the messages of other mini protocols.
 
 \chapter{Connection Management}
 \label{connection-management}
-\todo[inline]{Add a section which describes version negotiation protocol.}
+\hide[inline]{Add a section which describes version negotiation protocol.}
 
 \section{The Multiplexing Layer}
 \label{multiplexing-section}
@@ -1550,11 +1591,11 @@ Multiplexing is used to run several mini protocols in parallel over a single
 channel (for example a single TCP connection).
 Figure~\ref{mux-diagram} shows an example of two nodes, each running three
 mini protocols and a multiplexer/de-multiplexer.
-All the data, that is transmitted between the nodes, passes through the MUX/DEMUX of the nodes.
+All the data that is transmitted between the nodes passes through the MUX/DEMUX of the nodes.
 There is a fixed pairing of the mini protocol instances, i.e. each mini protocol instance only
 communicates with its dual instance.
 
-\begin{figure}[h]
+\begin{figure}[ht]
 \pgfdeclareimage[height=5cm]{mux-diagram}{mux-diagram.pdf}
 \begin{center}
 \pgfuseimage{mux-diagram}
@@ -1625,18 +1666,25 @@ The mini protocol will block when it sends a message and the buffer is full.
 
 A concrete implementation of a multiplexer may use a variety of data structures and heuristics to
 yield the overall best efficiency.
-For example, although, the multiplexing protocol itself is agnostic to the underlying structure of
-the data, the multiplexer may try to avoid to split small mini protocol messages into two segments.
+For example, although the multiplexing protocol itself is agnostic to the underlying structure of
+the data, the multiplexer may try to avoid spliting small mini protocol messages into two segments.
+The multiplexer may also try to merge multiple messages from one mini protocol into a
+single segment.
+Note that, the messages within a segment must all belong to the same mini protocol.
 
 \subsection{Flow-control and Buffering in the Demultiplexer}
+\label{mux-flow-control}
 The demultiplexer eagerly reads data from its ingress.
 There is a fixed size buffer between the egress of the demultiplexer and the ingress of
 the mini protocols.
 Each mini protocol implements its own mechanism for flow control which guaranties that this buffer
-never overflows.
+never overflows (See Section~\ref{pipelining}.).
 If the demultiplexer detects an overflow of the buffer, it means that the peer violated the
 protocol and the MUX/DEMUX layer shuts down the connection to the peer.
+
+\hide{
 The size of the buffers is listed in Table~\ref{demux-buffers}.
+}
 
 \section{Setup, Shutdown and Management of Connections}
 \label{peer-setup-section}
@@ -1646,12 +1694,12 @@ This section describes the parts of the protocol that deal with setting up, shut
 managing a connection between two peers.
 In this section, we use the term {\bf connection} or {\bf bearer} for the multiplexing-layer object
 that manages the mini protocol threads, the buffers and the OS-level connection
-(for example TCP socket) that deal with one peer of the node.
+(for example TCP socket) that deals with one peer of the node.
 
 The multiplexing layer (Section~\ref{multiplexing-section}) is the central crossing between
 the mini protocols and the network channel.
 Therefore, the reference implementation takes the approach
-to implement the functions for connection management in the same part of the source code
+of implementing the functions for connection management in the same part of the source code
 that also implements the multiplexing layer itself.
 
 This section describes the protocol and sketches a possible implementation.
@@ -1683,9 +1731,10 @@ Roughly the implementation performs the following tasks:
   \node[state, below of=Mature]                   (Dying)        {\Dying};
   \node[state, below of=Dying]                    (Dead)         {\Dead};
   \draw (Larval)            edge[]      node{OS connect}         (Connected);
-  \draw (Connected)         edge[]      node{agree protocol versions, start mini protocols}           (Mature);
+  \draw (Connected)         edge[]      node{agree protocol versions, start mini protocols}    (Mature);
   \draw (Mature)         edge[]      node{termination of any mini protocol}           (Dying);
-  \draw (Dying)         edge[]      node{transmission of messages that are already buffered,OS disconnect}           (Dead);
+  \draw (Dying)         edge[]      node{transmission of messages that are already buffered,OS disconnect}
+         (Dead);
 \end{tikzpicture}
 
 
@@ -1708,21 +1757,24 @@ The Mux-Control protocol is used to negotiate the versions of the mini
 protocols that are used by the client and the server.
 It is run exactly once after the connection enters the \Connected-state and before
 any of the mini protocols is initialised.
-In a run of the Mux-Control protocol the peers exchange only two messages:
-The client request to connect with a \InitReq~message that contains a map of all supported protocol versions
+
+In a run of the version negotiation within the Mux-Control protocol
+the peers exchange only two messages:
+The client requests to connect with a \InitReq~message that contains a map of all supported
+protocol versions
 and the server replies either with a \InitRsp~message containing the negotiated version
 or a \InitFail~message.
 
-Section~\label{included-cddl} contains the CDDL-specification of the binary format of the messages.
-Each message is transmitted and within single MUX segment, i.e. with a proper segment header,
+Section~\ref{included-cddl} contains the CDDL-specification of the binary format of the messages.
+Each message is transmitted within single MUX segment, i.e. with a proper segment header,
 but, as the MUX/DEMUX is not yet running the messages must not be split into multiple segments.
 
 \noindent\hsref{ouroboros-network/src/Ouroboros/Network/Mux/Types.hs}
 \newline\hsref{ouroboros-network/src/Ouroboros/Network/NodeToNode.hs}
 \newline\hsref{ouroboros-network/src/Ouroboros/Network/NodeToClient.hs}
 
-\todo{Update needed !}
-\begin{table}[h]
+\hide{Update needed !}
+\begin{table}[ht]
 \centering
 \begin{tabular}{|l|l|l|l|}
   \hline
@@ -1756,14 +1808,15 @@ The two variants of Chain-Sync use different protocol IDs.
 
 % Ping Pong ?
 %
-
+\wip{
 \subsection{Time Measurement}
+}
 
 \subsection{Error Handling}
 When a mini protocol thread detects that a peer violates the mini protocol it throws an exception.
 The MUX-layer catches the exceptions from the mini protocol threads and shuts down the connection.
 
-
+\hide{
 \chapter{Peer Discovery and Peer Selection}
 \wip{
   Peer discovery and peer selection are relatively independent for the core components of a node.
@@ -1789,7 +1842,9 @@ MTU
 \section{Operating Systems}
 \section{Firewall}
 \section{Nodes and Hosting}
+}
 
+\hide{
 \chapter{Haskell}
 While the network protocol itself can be implemented in many programming languages,
 it has been developed in parallel with a Haskell reference implementation.
@@ -1802,7 +1857,9 @@ For understanding the protocol, it is save to skip this section.
 \section{Constant Memory Consumption}
 \section{The State Machine Framework}
 \label{Haskell-state-machine}
+}
 
+\hide{
 \chapter{Discussion}
 \section{Related Work}
 \subsection{Other Crypto Currencies}
@@ -1810,6 +1867,7 @@ For understanding the protocol, it is save to skip this section.
 \subsubsection{PoS Systems}
 \subsection{Generic Peer to Peer Systems}
 \subsection{Formal Correctness}
+}
 \wip{
   The correctness of distributed and concurrent systems has been studied intensively for decades.
 \begin{description}
@@ -1857,9 +1915,10 @@ For understanding the protocol, it is save to skip this section.
 \item[Process algebras]
 \end{description}
 }
-
+\hide{
 \wip{WIP: Poldercast,etc}
 \section{Overview}
+}
 \section{Design Discussion}
 \subsubsection{Why distinguish between node to node and node-to-consumer IPC}
 \label{why_distinguish_protocols}
@@ -1872,14 +1931,14 @@ We use two different sets of protocols for these two use cases.
       wallet, explorer or other custom application.
 \end{description}
 
-This section describes the differences between those two variants of IPC and why both use
+This section describes the differences between those two variants of IPC and why they use
 different protocols.
 
 The node-to-node protocol is conducted in a P2P environment
 with very limited trust between peers. The node-to-node protocol utilises
 store-and-forward over selected \emph{bearers} which form the underlying
-connectivity graph. A concern in this setting are asymmetric resource
-consumption attacks. Ease of implementation is a nice to have, but is
+connectivity graph. A concern in this setting is asymmetric resource
+consumption attacks. Ease of implementation is desirable, but is
 subordinate to the other hard constraints.
 
 A node-to-consumer protocol is intended to support blockchain applications
@@ -1889,7 +1948,7 @@ catch up and keep up with the blockchain of that producer. It is assumed that
 a consumer only consumes from one producer (or one of a related set of
 producers), so unlike in the node-to-node protocol there is no need to choose
 between different available chains. The producer may still not fully trust the
-consumer and does not want to be subject to highly asymmetric resource
+consumer and does not want to be subject to asymmetric resource
 consumption attacks. In this use case, because of the wider range of
 applications that wish to consume the blockchain, having some options that are
 easy to implement is more important, even if this involves a trade-off with
@@ -1919,18 +1978,18 @@ then we can make many other choices.
 With an efficient \emph{local} IPC protocol we can have applications
 like wallets and explorers as separate processes. Even for tightly
 integrated components it can make sense to run them in separate OS
-processes and the associated OS management tools. Not only is the
-timing constraints for a consensus node are much easier to manage when
-it does not have to share CPU resources with chain consumers, but it
-enables the use of operating system features to give finer control
-over resource consumption for sophisticated end-users.  There have
-been cases in production where a highly loaded wallet component takes
+processes and using associated OS management tools. Not only are the
+timing constraints for a consensus node much easier to manage when
+it does not have to share CPU resources with chain consumers,
+but it enables sophisticated end-users to use operating system features
+to have finer control over resource consumption.
+There have been cases in production where a highly loaded wallet component takes
 more than its allowed allocation of CPU resources and causes the local
 node to miss its deadlines.  By giving a consensus node a dedicated
-CPU core it becomes more plausible to provide the necessary hard real
+CPU core it becomes easier to provide the necessary hard real
 time guarantees. In addition, scaling on multi-core machines is
 significantly easier with multiple OS processes than with a
-multi-threaded OS process with a shared-heap. This could allow for
+multi-threaded OS process with a shared-heap. This could allow
 larger capacity Cardano relay deployments where there are multiple
 network facing proxy processes that all get their chain from a single
 local consensus node.
@@ -1940,10 +1999,11 @@ but extend it across multiple machines. This permits: large
 organisations to achieve better alignment with their security
 policies; clusters of relays operated by a single organisation to use
 the more efficient (less resource costly) node-to-consumer protocol
-instead of the node-to-node protocol; Similarly it allows for wallet
+instead of the node-to-node protocol; and wallet
 or explorer-like applications that need to scale out, and are able to
 make use of a trusted node.
 
+\hide{
 \section{Requirements}
 \section{Threat Vectors}
 \wip{
@@ -1993,6 +2053,7 @@ the reference implementation
 \item Parts of the document should be in a logical connection
 \end{itemize}
 \subparagraph{Workflow}
+}
 
 \appendix
 \chapter{CDDL Specification of the Protocol Messages}
@@ -2011,20 +2072,21 @@ Both identifiers refer to the same message format.
 
 All transmitted messages satisfy the shown CDDL specification.
 However, CDDL, by design, also permits variants in the encoding that are not valid in the protocol.
-In particular, the notation ${\tt [} ... {\tt ]}$ in CDDL can be used for both fixed-length  
-and variable-length CBOR-list, while only either of the two encodings is valid in the protocol.
+In particular, the notation ${\tt [} ... {\tt ]}$ in CDDL can be used for both fixed-length
+and variable-length CBOR-list, while only one of the two encodings is valid in the protocol.
 We add comments in specification to make clear which encoding must be used.
 
-Note that, in the case of the request response mini protocol (Section~ref{request-response-protocol})
+Note that, in the case of the request-response mini protocol (Section~ref{request-response-protocol})
 there in only ever one possible kind of message in each state.
-This means that there is no need to tag messages at all and protocol can directly transmit the plain
-request and response data.
+This means that there is no need to tag messages at all
+and the protocol can directly transmit the plain request and response data.
 
 \wip{TODO: test that messages.cddl actually works !}
 \lstinputlisting{messages.cddl}
 \bibliographystyle{apalike}
 \bibliography{references}
 
+\hide{
 \chapter{Key Figures of the Protocol and the P2P Network}
 This section list some key figures of the network protocol.
 There is a variety of figures that quantify some aspects of the protocol, for example:
@@ -2081,4 +2143,5 @@ Network topology:\\
 \item[egress,ingress]
 \item[head of line blocking]
 \end{description}
+}
 \end{document}
