@@ -168,6 +168,10 @@ test-suite tests
                        Ouroboros.Network.Protocol.PingPong.Test
                        Ouroboros.Network.Protocol.ReqResp.Codec
                        Ouroboros.Network.Protocol.ReqResp.Test
+                       Ouroboros.Network.Protocol.VersionNegotiation.Type
+                       Ouroboros.Network.Protocol.VersionNegotiation.Codec
+                       Ouroboros.Network.Protocol.VersionNegotiation.Test
+                       Ouroboros.Network.Protocol.VersionNegotiation.Version
                        Ouroboros.Network.Socket
                        Ouroboros.Network.Server.Socket
                        Ouroboros.Network.Time
