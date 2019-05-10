@@ -183,7 +183,6 @@ test-suite tests
                        Test.Pipe
                        Test.Socket
   default-language:    Haskell2010
-  default-extensions:  NamedFieldPuns
   build-depends:       base,
                        typed-protocols,
                        io-sim-classes,
@@ -242,7 +241,6 @@ test-suite test-cddl
                        Ouroboros.Network.Chain
                        Ouroboros.Network.Codec
   default-language:    Haskell2010
-  default-extensions:  NamedFieldPuns
   build-depends:       base,
                        bytestring,
                        cborg,
