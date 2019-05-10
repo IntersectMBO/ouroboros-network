@@ -18,6 +18,7 @@ import Ouroboros.Byron.Proxy.DB (DB)
 import qualified Ouroboros.Byron.Proxy.DB as DB
 import qualified Ouroboros.Byron.Proxy.Index.Sqlite as Index
 import qualified Ouroboros.Storage.Common as Immutable
+import qualified Ouroboros.Storage.EpochInfo as Immutable
 import qualified Ouroboros.Storage.ImmutableDB.API as Immutable
 import qualified Ouroboros.Storage.ImmutableDB.Impl as Immutable
 import Ouroboros.Storage.FS.API.Types (MountPoint (..))
@@ -54,12 +55,13 @@ withDB dbOptions k = do
       fs = ioHasFS fsMountPoint
       getEpochSize epoch = pure $ Immutable.EpochSize $
         fromIntegral (CSL.getSlotCount (slotsPerEpoch dbOptions))
-      openImmutableDB = Immutable.openDB
+  epochInfo <- Immutable.newEpochInfo getEpochSize
+  let openImmutableDB = Immutable.openDB
         decodeHeaderHash
         encodeHeaderHash
         fs
         FS.exceptions
-        getEpochSize
+        epochInfo
         Immutable.ValidateMostRecentEpoch
         (DB.epochFileParser (slotsPerEpoch dbOptions) fs)
   Index.withDB_ (indexFilePath dbOptions) $ \idx ->
