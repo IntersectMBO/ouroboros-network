@@ -220,7 +220,8 @@ test-suite tests
   if flag(ipv6)
     cpp-options:       -DOUROBOROS_NETWORK_IPV6
 
-executable test-cddl
+test-suite test-cddl
+  type:                exitcode-stdio-1.0
   hs-source-dirs:      test-cddl src
   main-is:             Main.hs
   other-modules:       Ouroboros.Network.AnchoredFragment
