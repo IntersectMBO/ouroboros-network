@@ -1,13 +1,17 @@
-{-# LANGUAGE RankNTypes      #-}
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 -- | An abstract view over the filesystem.
 module Ouroboros.Storage.FS.API (
       HasFS(..)
+    , hGetExactly
+    , hGetLenient
     , withFile
     ) where
 
-import           Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BL
 import           Data.ByteString.Builder (Builder)
 import           Data.Int (Int64)
 import           Data.Set (Set)
@@ -18,7 +22,7 @@ import           System.IO (IOMode, SeekMode)
 import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Storage.FS.API.Types
-import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
+import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling, throwError)
 
 {------------------------------------------------------------------------------
  Typeclass which abstracts over the filesystem
@@ -47,7 +51,7 @@ data HasFS m h = HasFS {
   , hSeek                    :: HasCallStack => h -> SeekMode -> Int64 -> m ()
 
     -- | Try to read @n@ bytes from a handle
-  , hGet                     :: HasCallStack => h -> Int -> m ByteString
+  , hGet                     :: HasCallStack => h -> Int -> m BS.ByteString
 
     -- | Write to a handle
   , hPut                     :: HasCallStack => h -> Builder -> m Word64
@@ -92,3 +96,45 @@ data HasFS m h = HasFS {
 withFile :: (HasCallStack, MonadThrow m)
          => HasFS m h -> FsPath -> IOMode -> (h -> m a) -> m a
 withFile HasFS{..} fp ioMode = bracket (hOpen fp ioMode) hClose
+
+-- | Makes sure it reads all requested bytes.
+-- If eof is found before all bytes are read, it throws an exception.
+hGetExactly :: forall m h
+            . (HasCallStack, Monad m)
+            => HasFS m h
+            -> FsPath
+            -> h
+            -> Int
+            -> m BL.ByteString
+hGetExactly hasFS path h n = go n []
+    where
+      go :: Int -> [BS.ByteString] -> m BL.ByteString
+      go 0 bss = return $ BL.fromChunks $ reverse bss
+      go remainingBytes acc = do
+        bs <- hGet hasFS h remainingBytes
+        if BS.null bs then
+          throwError (hasFsErr hasFS) FsError {
+              fsErrorType   = FsReachedEOF
+            , fsErrorPath   = path
+            , fsErrorString = "hGetExactly found eof before reading " ++ show n ++ " bytes"
+            , fsErrorStack  = callStack
+            , fsLimitation  = False
+            }
+        else go (remainingBytes - BS.length bs) (bs : acc)
+
+-- | Like hGetExactly, but it does not throw an exception if eof is found.
+hGetLenient :: forall m h
+            . (HasCallStack, Monad m)
+            => HasFS m h
+            -> h
+            -> Int
+            -> m BL.ByteString
+hGetLenient hasFS h n = go n []
+  where
+    go :: Int -> [BS.ByteString] -> m BL.ByteString
+    go 0 bss = return $ BL.fromChunks $ reverse bss
+    go remainingBytes acc = do
+      bs <- hGet hasFS h remainingBytes
+      if BS.null bs then
+        go 0 acc
+      else go (remainingBytes - BS.length bs) (bs : acc)
