@@ -70,7 +70,8 @@ library
 executable byron-proxy
   main-is:             Main.hs
   other-modules:       DB,
-                       IPC
+                       IPC,
+                       Logging
   -- other-extensions:
   build-depends:       base,
                        async,

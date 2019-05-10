@@ -6,7 +6,6 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ApplicativeDo #-}
 
-import Control.Concurrent (myThreadId)
 import Control.Concurrent.Async (concurrently)
 import Control.Concurrent.STM (STM, atomically, retry)
 import Control.Monad (forM_)
@@ -19,18 +18,11 @@ import qualified Data.List.NonEmpty as NE
 import Data.String (fromString)
 import Data.Text (Text)
 import qualified Data.Text as Text
-import Data.Time.Clock.POSIX (getCurrentTime)
 import qualified Options.Applicative as Opt
 import System.Random (StdGen, getStdGen, randomR)
 
-import qualified Cardano.BM.Configuration.Model as Monitoring (setupFromRepresentation)
-import qualified Cardano.BM.Data.BackendKind as Monitoring
-import qualified Cardano.BM.Data.Configuration as Monitoring (Representation (..), parseRepresentation)
 import qualified Cardano.BM.Data.LogItem as Monitoring
-import qualified Cardano.BM.Data.Output as Monitoring
 import qualified Cardano.BM.Data.Severity as Monitoring
-import qualified Cardano.BM.Setup as Monitoring (withTrace)
-import qualified Cardano.BM.Trace as Monitoring (Trace)
 
 import qualified Cardano.Binary as Binary
 import qualified Cardano.Chain.Block as Cardano
@@ -70,6 +62,7 @@ import Ouroboros.Byron.Proxy.Main
 
 import DB (DBConfig (..), withDB)
 import IPC (runVersionedClient, runVersionedServer)
+import qualified Logging as Logging
 
 -- | The main action using the proxy, index, and immutable database: download
 -- the best known chain from the proxy and put it into the database, over and
@@ -175,29 +168,6 @@ byronProxyMain tracer genesisHash epochSlots db bp = getStdGen >>= mainLoop Noth
     let (idx, rndGen') = randomR (0, NE.length ne - 1) rndGen
     in  (ne NE.!! idx, rndGen')
 
--- | `withTrace` from the monitoring framework gives us a trace that
--- works on `LogObjects`. `convertTrace` will make it into a `Trace IO Text`
--- which fills in the `LogObject` details.
---
--- It's not a contramap, because it requires grabbing the thread id and
--- the current time.
-convertTrace
-  :: Monitoring.Trace IO Text
-  -> Tracer IO (Monitoring.LoggerName, Monitoring.Severity, Text)
-convertTrace trace = case trace of
-  Tracer f -> Tracer $ \(name, sev, text) -> do
-    tid <- Text.pack . show <$> myThreadId
-    now <- getCurrentTime
-    let logMeta    = Monitoring.LOMeta
-                       { Monitoring.tstamp = now
-                       , Monitoring.tid = tid
-                       , Monitoring.severity = sev
-                       , Monitoring.privacy = Monitoring.Public
-                       }
-        logContent = Monitoring.LogMessage text
-        logObject  = Monitoring.LogObject name logMeta logContent
-    f logObject
-
 -- | `Tracer` comes from the `contra-tracer` package, but cardano-sl still
 -- works with the cardano-sl-util definition of the same thing.
 mkCSLTrace
@@ -219,31 +189,6 @@ mkCSLTrace tracer = case tracer of
     Wlog.Notice  -> Monitoring.Notice
     Wlog.Warning -> Monitoring.Warning
     Wlog.Error   -> Monitoring.Error
-
--- | It's called `Representation` but is closely related to the `Configuration`
--- from iohk-monitoring. The latter has to do with `MVar`s. It's all very
--- weird.
-defaultLoggerConfig :: Monitoring.Representation
-defaultLoggerConfig = Monitoring.Representation
-  { Monitoring.minSeverity     = Monitoring.Debug
-  , Monitoring.rotation        = Nothing
-  , Monitoring.setupScribes    = [stdoutScribe]
-  , Monitoring.defaultScribes  = [(Monitoring.StdoutSK, "stdout")]
-  , Monitoring.setupBackends   = [Monitoring.KatipBK]
-  , Monitoring.defaultBackends = [Monitoring.KatipBK]
-  , Monitoring.hasEKG          = Nothing
-  , Monitoring.hasPrometheus   = Nothing
-  , Monitoring.hasGUI          = Nothing
-  , Monitoring.options         = mempty
-  }
-  where
-  stdoutScribe = Monitoring.ScribeDefinition
-    { Monitoring.scKind     = Monitoring.StdoutSK
-    , Monitoring.scFormat   = Monitoring.ScText
-    , Monitoring.scName     = "stdout"
-    , Monitoring.scPrivacy  = Monitoring.ScPublic
-    , Monitoring.scRotation = Nothing
-    }
 
 -- Problem: optparse-applicative doesn't seem to allow for choices of options
 -- (due to its applicative nature). Ideally we'd have core options, then a
@@ -505,21 +450,13 @@ runClient tracer clientOptions genesisConfig epochSlots db = case clientOptions 
 main :: IO ()
 main = do
   bpo <- Opt.execParser cliParserInfo
-  -- Set up logging. If there's a config file we read it, otherwise use a
-  -- default.
-  loggerConfig <- case bpoLoggerConfigPath bpo of
-    Nothing -> pure defaultLoggerConfig
-    Just fp -> Monitoring.parseRepresentation fp
-  -- iohk-monitoring uses some MVar for configuration, which corresponds to
-  -- the "Representation" which we call config.
-  loggerConfig' <- Monitoring.setupFromRepresentation loggerConfig
-  Monitoring.withTrace loggerConfig' "byron-proxy" $ \trace -> do
+  Logging.withLogging (bpoLoggerConfigPath bpo) "byron-proxy" $ \trace -> do
     -- We always need the cardano-sl configuration, even if we're not
     -- connecting to a Byron peer, because that's where the blockchain
     -- configuration comes from: slots-per-epoch in particular.
     -- We'll use the tracer that was just set up to give debug output. That
     -- requires converting the iohk-monitoring trace to the one used in CSL.
-    let cslTrace = mkCSLTrace (convertTrace trace)
+    let cslTrace = mkCSLTrace (Logging.convertTrace trace)
         infoTrace = contramap ((,) Wlog.Info) (Trace.named cslTrace)
         confOpts = bpoCardanoConfigurationOptions bpo
     CSL.withConfigurations infoTrace Nothing Nothing False confOpts $ \genesisConfig _ _ _ -> do
@@ -533,7 +470,7 @@ main = do
             , slotsPerEpoch = epochSlots
             }
       withDB dbc $ \db -> do
-        let server = runServer (convertTrace trace) (bpoServerOptions bpo) epochSlots db
-            client = runClient (convertTrace trace) (bpoClientOptions bpo) genesisConfig epochSlots db
+        let server = runServer (Logging.convertTrace trace) (bpoServerOptions bpo) epochSlots db
+            client = runClient (Logging.convertTrace trace) (bpoClientOptions bpo) genesisConfig epochSlots db
         _ <- concurrently server client
         pure ()
