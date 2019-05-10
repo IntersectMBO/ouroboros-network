@@ -1,7 +1,7 @@
 name:                typed-protocols
 version:             0.1.0.0
 synopsis:            A framework for strongly typed protocols
--- description:         
+-- description:
 license:             MIT
 license-file:        LICENSE
 author:              Alexander Vieth, Duncan Coutts, Marcin Szamotulski
@@ -9,7 +9,10 @@ maintainer:          alex@well-typed.com, duncan@well-typed.com, marcin.szamotul
 copyright:           2018-2019 IOHK
 category:            Control
 build-type:          Simple
-extra-source-files:  ChangeLog.md, README.md
+
+-- These should probably be added at some point.
+-- extra-source-files:  ChangeLog.md, README.md
+
 cabal-version:       >=1.10
 
 library
