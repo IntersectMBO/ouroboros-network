@@ -944,18 +944,15 @@ prop_sequential :: LUT t => Proxy t -> MemPolicy -> QC.Property
 prop_sequential p memPolicy =
     QC.collect (tagMemPolicy memPolicy) $
       forAllCommands (sm memPolicy (dbUnused p)) Nothing $ \cmds ->
-        QC.monadicIO (propCmds k memPolicy cmds)
-  where
-    k = SecurityParam $ memPolicyMaxRollback memPolicy
+        QC.monadicIO (propCmds memPolicy cmds)
 
 -- Ideally we'd like to use @SimM s@ instead of IO, but unfortunately
 -- QSM requires monads that implement MonadIO.
 propCmds :: LUT t
-         => SecurityParam
-         -> MemPolicy
+         => MemPolicy
          -> QSM.Commands (At (Cmd t)) (At (Resp t))
          -> QC.PropertyM IO ()
-propCmds k memPolicy cmds = do
+propCmds memPolicy cmds = do
     fs <- QC.run $ atomically $ newTVar MockFS.empty
     let dbEnv :: DbEnv IO
         dbEnv = DbEnv (simHasFS EH.exceptions fs) memPolicy
@@ -965,6 +962,8 @@ propCmds k memPolicy cmds = do
     prettyCommands sm' hist
       $ QC.tabulate "Tags" (map show $ tagEvents k (execCmds memPolicy cmds))
       $ res QC.=== Ok
+  where
+    k = SecurityParam $ memPolicyMaxRollback memPolicy
 
 dbUnused :: Proxy t -> StandaloneDB IO t
 dbUnused = error "DB unused during command generation"
