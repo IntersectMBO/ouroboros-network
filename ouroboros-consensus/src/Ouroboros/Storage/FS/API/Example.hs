@@ -28,12 +28,12 @@ example HasFS{..} = do
     h1 <- hOpen ["cardano.txt"] IO.ReadWriteMode
     _  <- hPut h1 "test"
     _  <- hSeek h1 IO.AbsoluteSeek 0
-    r1 <- hGet h1 4
+    r1 <- hGetSome h1 4
     _  <- hPut h1 "ing"
     h2 <- hOpen ["bar.txt"] IO.ReadWriteMode
     _  <- hPut h2 "blockchain"
     _  <- hSeek h2 IO.AbsoluteSeek 0
-    r2 <- hGet h2 5
+    r2 <- hGetSome h2 5
     _  <- listDirectory []
     _  <- listDirectory ["var"]
     createDirectory ["var", "tmp", "my-temp-dir"]
@@ -42,8 +42,8 @@ example HasFS{..} = do
     hClose h1
     hClose h2
     checkThat "listDirectory [var, tmp]" ((==) (Set.fromList ["my-temp-dir", "foo.txt"])) f1
-    checkThat "hGet h1 4" ((==) "test") r1
-    checkThat "hGet h2 5" ((==) "block") r2
+    checkThat "hGetSome h1 4" ((==) "test") r1
+    checkThat "hGetSome h2 5" ((==) "block") r2
     return [r1, r2]
 
 {-------------------------------------------------------------------------------

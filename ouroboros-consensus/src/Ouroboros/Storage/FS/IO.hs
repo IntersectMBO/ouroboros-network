@@ -51,7 +51,7 @@ ioHasFS mount = HasFS {
         F.close h
     , hSeek = \h mode o -> rethrowFsError (handlePath h) $
         F.seek h mode o
-    , hGet = \h n -> rethrowFsError (handlePath h) $
+    , hGetSome = \h n -> rethrowFsError (handlePath h) $
         F.read h n
     , hTruncate = \h sz -> rethrowFsError (handlePath h) $
         F.truncate h sz

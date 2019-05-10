@@ -209,7 +209,7 @@ data Errors = Errors
   , _hOpen                    :: ErrorStream
   , _hClose                   :: ErrorStream
   , _hSeek                    :: ErrorStream
-  , _hGet                     :: ErrorStream
+  , _hGetSome                 :: ErrorStream
   , _hPut                     :: ErrorStreamWithCorruption
   , _hTruncate                :: ErrorStream
   , _hGetSize                 :: ErrorStream
@@ -229,7 +229,7 @@ allNull Errors {..} = null _dumpState
                    && null _hOpen
                    && null _hClose
                    && null _hSeek
-                   && null _hGet
+                   && null _hGetSome
                    && null _hPut
                    && null _hTruncate
                    && null _hGetSize
@@ -258,7 +258,7 @@ instance Show Errors where
         , s "_hOpen"                    _hOpen
         , s "_hClose"                   _hClose
         , s "_hSeek"                    _hSeek
-        , s "_hGet"                     _hGet
+        , s "_hGetSome"                 _hGetSome
         , s "_hPut"                     _hPut
         , s "_hTruncate"                _hTruncate
         , s "_hGetSize"                 _hGetSize
@@ -276,7 +276,7 @@ instance Semigroup Errors where
       , _hOpen                    = combine _hOpen
       , _hClose                   = combine _hClose
       , _hSeek                    = combine _hSeek
-      , _hGet                     = combine _hGet
+      , _hGetSome                 = combine _hGetSome
       , _hPut                     = combine _hPut
       , _hTruncate                = combine _hTruncate
       , _hGetSize                 = combine _hGetSize
@@ -303,7 +303,7 @@ simpleErrors es = Errors
     , _hOpen                    = es
     , _hClose                   = es
     , _hSeek                    = es
-    , _hGet                     = es
+    , _hGetSome                 = es
     , _hPut                     = fmap (, Nothing) es
     , _hTruncate                = es
     , _hGetSize                 = es
@@ -333,7 +333,7 @@ instance Arbitrary Errors where
       , FsResourceAlreadyInUse, FsResourceAlreadyExist
       , FsInsufficientPermissions ]
     _hSeek      <- streamGen 3 [ FsReachedEOF ]
-    _hGet       <- streamGen 3 [ FsReachedEOF ]
+    _hGetSome   <- streamGen 3 [ FsReachedEOF ]
     _hPut       <- mkStreamGen 2 $ (,) <$> return FsDeviceFull <*> arbitrary
     _hPutBuffer <- streamGen 3 [ FsDeviceFull ]
     _hGetSize   <- streamGen 2 [ FsResourceDoesNotExist ]
@@ -356,7 +356,7 @@ instance Arbitrary Errors where
       , (\s' -> err { _hOpen = s' })                    <$> dropLast _hOpen
       , (\s' -> err { _hClose = s' })                   <$> dropLast _hClose
       , (\s' -> err { _hSeek = s' })                    <$> dropLast _hSeek
-      , (\s' -> err { _hGet = s' })                     <$> dropLast _hGet
+      , (\s' -> err { _hGetSome = s' })                 <$> dropLast _hGetSome
         -- TODO shrink the PutCorruption
       , (\s' -> err { _hPut = s' })                     <$> dropLast _hPut
       , (\s' -> err { _hTruncate = s' })                <$> dropLast _hTruncate
@@ -400,9 +400,9 @@ mkSimErrorHasFS err fsVar errorsVar =
         , hSeek      = \h m n ->
             withErr' err fsVar errorsVar h (hSeek h m n) "hSeek"
             _hSeek (\e es -> es { _hSeek = e })
-        , hGet       = \h n ->
-            withErr' err fsVar errorsVar h (hGet h n) "hGet"
-            _hGet (\e es -> es { _hGet = e })
+        , hGetSome   = \h n ->
+            withErr' err fsVar errorsVar h (hGetSome h n) "hGetSome"
+            _hGetSome (\e es -> es { _hGetSome = e })
         , hPut       = hPut' err fsVar errorsVar hPut
         , hTruncate  = \h w ->
             withErr' err fsVar errorsVar h (hTruncate h w) "hTruncate"
