@@ -25,6 +25,7 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Except (ExceptT (..), runExceptT)
 import           Control.Monad.State.Strict (MonadState, State, evalState, gets,
                      modify, put, runState)
+import           Data.Functor.Identity
 
 import           Data.Bifunctor (first)
 import           Data.ByteString (ByteString)
@@ -36,7 +37,7 @@ import           Data.List (sortBy)
 import qualified Data.List.NonEmpty as NE
 import           Data.Map (Map)
 import qualified Data.Map as Map
-import           Data.Maybe (listToMaybe, mapMaybe)
+import           Data.Maybe (listToMaybe)
 import           Data.Proxy (Proxy (..))
 import           Data.TreeDiff (Expr (App))
 import           Data.TreeDiff.Class (ToExpr (..))
@@ -68,13 +69,12 @@ import           Ouroboros.Network.Block (SlotNo (..))
 
 import           Ouroboros.Storage.Common hiding (Tip (..))
 import qualified Ouroboros.Storage.Common as C
+import           Ouroboros.Storage.EpochInfo
 import           Ouroboros.Storage.FS.API (HasFS (..))
 import           Ouroboros.Storage.FS.API.Types (FsError (..), FsPath)
 import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
 import           Ouroboros.Storage.ImmutableDB
-import           Ouroboros.Storage.ImmutableDB.CumulEpochSizes (CumulEpochSizes,
-                     EpochSlot (..), RelativeSlot (..))
-import qualified Ouroboros.Storage.ImmutableDB.CumulEpochSizes as CES
+import           Ouroboros.Storage.ImmutableDB.Layout
 import           Ouroboros.Storage.ImmutableDB.Util (renderFile)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
@@ -476,7 +476,7 @@ generateCmd Model {..} = At <$> frequency
   where
     DBModel {..} = dbModel
 
-    currentEpoch = CES.lastEpoch dbmCumulEpochSizes
+    currentEpoch = dbmCurrentEpoch dbModel
 
     lastSlot :: SlotNo
     lastSlot = fromIntegral $ length dbmChain
@@ -504,7 +504,7 @@ generateCmd Model {..} = At <$> frequency
       | noEBBs
       = discard
       | otherwise
-      = elements $ mapMaybe (CES.firstSlotOf dbmCumulEpochSizes)
+      = elements $ map (runIdentity . epochInfoFirst dbmEpochInfo)
       $ Map.keys dbmEBBs
 
     genSlotInTheFuture :: Gen SlotNo
@@ -532,7 +532,7 @@ generateCmd Model {..} = At <$> frequency
 -- created. For each epoch an index and epoch file, except for the last epoch:
 -- only an epoch but no index file.
 getDBFiles :: DBModel Hash -> [FsPath]
-getDBFiles DBModel {..}
+getDBFiles dbm@DBModel {..}
     | null dbmChain
     = []
     | 0 <- lastEpoch
@@ -540,7 +540,7 @@ getDBFiles DBModel {..}
     | otherwise
     = lastEpochFiles <> epochsBeforeLastFiles
   where
-    lastEpoch = CES.lastEpoch dbmCumulEpochSizes
+    lastEpoch = dbmCurrentEpoch dbm
     lastEpochFiles = [renderFile "epoch" lastEpoch]
     epochsBeforeLastFiles = [0..lastEpoch-1] >>= \epoch ->
       [ renderFile "index" epoch
@@ -591,7 +591,7 @@ shrinkCmd Model {..} (At cmd) = fmap At $ case cmd of
   where
     DBModel {..} = dbModel
 
-    currentEpoch = CES.lastEpoch dbmCumulEpochSizes
+    currentEpoch = dbmCurrentEpoch dbModel
 
     lastSlot :: SlotNo
     lastSlot = fromIntegral $ length dbmChain
@@ -603,7 +603,7 @@ shrinkCmd Model {..} (At cmd) = fmap At $ case cmd of
     shrinkMbBound (Just (s, TestEBB _)) = Nothing :
       [ Just (s', TestEBB s')
       | s' <- takeWhile (< s)  ebbSlots]
-    ebbSlots = mapMaybe (CES.firstSlotOf dbmCumulEpochSizes) $ Map.keys dbmEBBs
+    ebbSlots = map (runIdentity . epochInfoFirst dbmEpochInfo) $ Map.keys dbmEBBs
 
     shrinkCorruption (MkCorruption corrs) =
       [ MkCorruption corrs'
@@ -1001,7 +1001,6 @@ instance ToExpr EpochSlot
 instance ToExpr RelativeSlot
 instance ToExpr BaseIteratorID
 instance ToExpr IteratorID
-instance ToExpr CumulEpochSizes
 instance ToExpr (IteratorResult Hash ByteString)
 instance ToExpr (IteratorModel Hash)
 instance ToExpr TestBlock
@@ -1016,6 +1015,9 @@ instance ToExpr ModelDBPure where
 
 instance ToExpr (Iterator hash m a) where
   toExpr it = App (show it) []
+
+instance ToExpr (EpochInfo Identity) where
+  toExpr it = App "fixedSizeEpochInfo" [App (show (runIdentity $ epochInfoSize it 0)) []]
 
 instance ToExpr (Model m Concrete)
 
@@ -1067,7 +1069,7 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
         test errorsVar hasFS = do
           let parser = testBlockEpochFileParser' hasFS
           db <- QC.run $
-            openDB decode encode hasFS EH.monadCatch fixedGetEpochSize ValidateMostRecentEpoch
+            openDB decode encode hasFS EH.monadCatch (fixedSizeEpochInfo fixedEpochSize) ValidateMostRecentEpoch
               parser
           let sm' = sm errorsVar hasFS db dbm mdb
           (hist, model, res) <- runCommands sm' cmds
@@ -1102,9 +1104,6 @@ tests = testGroup "ImmutableDB q-s-m"
 
 fixedEpochSize :: EpochSize
 fixedEpochSize = 10
-
-fixedGetEpochSize :: Monad m => EpochNo -> m EpochSize
-fixedGetEpochSize _ = return fixedEpochSize
 
 mkDBModel :: MonadState (DBModel Hash) m
           => (DBModel Hash, ImmutableDB Hash (ExceptT ImmutableDBError m))

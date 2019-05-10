@@ -52,17 +52,16 @@ import           GHC.Stack (HasCallStack, callStack)
 import           System.IO (IOMode (..))
 
 import           Ouroboros.Storage.FS.API (HasFS (..), withFile)
-import           Ouroboros.Storage.ImmutableDB.CumulEpochSizes
-                     (RelativeSlot (..))
 
 import           Ouroboros.Storage.Common
+import           Ouroboros.Storage.Util (decodeIndexEntryAt, encodeIndexEntry)
+import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
+
+import           Ouroboros.Storage.ImmutableDB.Layout
 import           Ouroboros.Storage.ImmutableDB.Types (ImmutableDBError,
                      UnexpectedError (DeserialisationError, InvalidFileError))
 import           Ouroboros.Storage.ImmutableDB.Util (readAll, renderFile,
                      throwUnexpectedError)
-import           Ouroboros.Storage.Util (decodeIndexEntryAt, encodeIndexEntry)
-import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
-
 
 {------------------------------------------------------------------------------
   Index

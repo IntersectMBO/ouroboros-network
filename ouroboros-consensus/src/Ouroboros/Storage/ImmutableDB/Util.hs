@@ -46,14 +46,14 @@ import           Ouroboros.Consensus.Util.CBOR (ReadIncrementalErr (..),
                      readIncrementalOffsetsEBB)
 
 import           Ouroboros.Storage.Common
+import           Ouroboros.Storage.EpochInfo.API
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types
-import           Ouroboros.Storage.ImmutableDB.CumulEpochSizes (CumulEpochSizes,
-                     RelativeSlot (..))
-import qualified Ouroboros.Storage.ImmutableDB.CumulEpochSizes as CES
-import           Ouroboros.Storage.ImmutableDB.Types
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
+
+import           Ouroboros.Storage.ImmutableDB.Layout
+import           Ouroboros.Storage.ImmutableDB.Types
 
 {------------------------------------------------------------------------------
   Utilities
@@ -149,32 +149,35 @@ hGetRightSize HasFS{..} hnd size file = do
 --
 -- See 'Ouroboros.Storage.ImmutableDB.API.streamBinaryBlobs'.
 validateIteratorRange
-  :: Monad m
+  :: forall m hash. Monad m
   => ErrorHandling ImmutableDBError m
-  -> CumulEpochSizes
+  -> EpochInfo m
   -> ImmTip
   -> Maybe (SlotNo, hash)  -- ^ range start (inclusive)
   -> Maybe (SlotNo, hash)  -- ^ range end (inclusive)
   -> m ()
-validateIteratorRange err ces tip mbStart mbEnd = do
+validateIteratorRange err epochInfo tip mbStart mbEnd = do
     case (mbStart, mbEnd) of
       (Just (start, _), Just (end, _)) ->
         when (start > end) $
           throwUserError err $ InvalidIteratorRangeError start end
       _ -> return ()
 
-    whenJust mbStart $ \(start, _) ->
-      when (isNewerThanTip start) $
+    whenJust mbStart $ \(start, _) -> do
+      isNewer <- isNewerThanTip start
+      when isNewer $
         throwUserError err $ ReadFutureSlotError start tip
 
-    whenJust mbEnd $ \(end, _) ->
-      when (isNewerThanTip end) $
+    whenJust mbEnd $ \(end, _) -> do
+      isNewer <- isNewerThanTip end
+      when isNewer $
         throwUserError err $ ReadFutureSlotError end tip
   where
+    isNewerThanTip :: SlotNo -> m Bool
     isNewerThanTip slot = case tip of
-      TipGen                -> True
-      Tip (Left  lastEpoch) -> maybe True (slot >) $ CES.firstSlotOf ces lastEpoch
-      Tip (Right lastSlot)  -> slot > lastSlot
+      TipGen                -> return True
+      Tip (Left  lastEpoch) -> (slot >) <$> epochInfoFirst epochInfo lastEpoch
+      Tip (Right lastSlot)  -> return $ slot > lastSlot
 
 
 -- | Given a list of increasing 'SlotOffset's together with the 'Word' (blob

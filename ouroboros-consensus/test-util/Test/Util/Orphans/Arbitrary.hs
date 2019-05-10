@@ -26,8 +26,7 @@ import           Ouroboros.Consensus.Crypto.VRF.Class (VRFAlgorithm (..))
 import           Ouroboros.Consensus.Demo
 import           Ouroboros.Consensus.Util.Random (Seed (..), withSeed)
 
-import           Ouroboros.Storage.ImmutableDB.CumulEpochSizes (EpochSlot (..),
-                     RelativeSlot (..))
+import           Ouroboros.Storage.ImmutableDB.Layout
 import           Ouroboros.Storage.Common (EpochNo (..),
                      EpochSize (..))
 

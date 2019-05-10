@@ -11,6 +11,7 @@
 -- filled (@Just ByteString@).
 module Test.Ouroboros.Storage.ImmutableDB.Model
   ( DBModel(..)
+  , dbmCurrentEpoch
   , dbmBlobs
   , initDBModel
   , IteratorModel
@@ -20,63 +21,67 @@ module Test.Ouroboros.Storage.ImmutableDB.Model
   ) where
 
 import           Control.Monad (when)
-import           Control.Monad.State.Strict (MonadState, execState, get, gets,
-                     modify, put, runState)
+import           Control.Monad.State.Strict (MonadState, get, gets, modify, put)
 
 import           Data.ByteString (ByteString)
 import           Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as BS
 import qualified Data.ByteString.Lazy as BL
 import           Data.Function ((&))
+import           Data.Functor.Identity
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import           Data.Map (Map)
 import qualified Data.Map as Map
-import           Data.Maybe (fromMaybe)
 import           Data.Word (Word64)
 
 import           GHC.Generics (Generic)
-import           GHC.Stack (HasCallStack, withFrozenCallStack)
+import           GHC.Stack (HasCallStack)
 
 import           Ouroboros.Consensus.Util (lastMaybe)
 
 import           Ouroboros.Network.Block (SlotNo (..))
 
 import           Ouroboros.Storage.Common
+import           Ouroboros.Storage.EpochInfo
 import           Ouroboros.Storage.FS.API.Types (FsPath)
 import           Ouroboros.Storage.ImmutableDB.API
-import           Ouroboros.Storage.ImmutableDB.CumulEpochSizes (CumulEpochSizes,
-                     EpochSlot (..))
-import qualified Ouroboros.Storage.ImmutableDB.CumulEpochSizes as CES
+import           Ouroboros.Storage.ImmutableDB.Layout
 import           Ouroboros.Storage.ImmutableDB.Util
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
 
 import           Test.Ouroboros.Storage.ImmutableDB.TestBlock
 
 data DBModel hash = DBModel
-  { dbmChain           :: [Maybe ByteString]
+  { dbmChain        :: [Maybe ByteString]
     -- ^ 'Nothing' when a slot is empty
-  , dbmTip             :: ImmTip
-  , dbmEBBs            :: Map EpochNo (hash, ByteString)
+  , dbmTip          :: ImmTip
+  , dbmEBBs         :: Map EpochNo (hash, ByteString)
     -- ^ The EBB for each 'EpochNo'
-  , dbmCumulEpochSizes :: CumulEpochSizes
-  , dbmIterators       :: Map IteratorID (IteratorModel hash)
-  , dbmNextIterator    :: BaseIteratorID
+  , dbmEpochInfo    :: EpochInfo Identity
+  , dbmIterators    :: Map IteratorID (IteratorModel hash)
+  , dbmNextIterator :: BaseIteratorID
   } deriving (Show, Generic)
 
-initDBModel :: EpochSize -- ^ The size of the first epoch
+initDBModel :: EpochSize -- ^ We assume fixed epoch size
             -> DBModel hash
-initDBModel firstEpochSize = DBModel
-  { dbmChain           = []
-  , dbmTip             = TipGen
-  , dbmEBBs            = Map.empty
-  , dbmCumulEpochSizes = CES.singleton firstEpochSize
-  , dbmIterators       = Map.empty
-  , dbmNextIterator    = initialIteratorID
+initDBModel epochSize = DBModel
+  { dbmChain        = []
+  , dbmTip          = TipGen
+  , dbmEBBs         = Map.empty
+  , dbmEpochInfo    = fixedSizeEpochInfo epochSize
+  , dbmIterators    = Map.empty
+  , dbmNextIterator = initialIteratorID
   }
 
-dbmBlobs :: HasCallStack
-         => DBModel hash
+dbmCurrentEpoch :: DBModel hash -> EpochNo
+dbmCurrentEpoch dbm@DBModel{..} =
+    case dbmTip of
+      TipGen            -> EpochNo 0
+      Tip (Right slot ) -> slotToEpoch dbm slot
+      Tip (Left epoch') -> epoch'
+
+dbmBlobs :: DBModel hash
          -> Map (EpochSlot, SlotNo) (Either (hash, ByteString) ByteString)
 dbmBlobs dbm@DBModel {..} = foldr add ebbs (zip (map SlotNo [0..]) dbmChain)
   where
@@ -120,8 +125,8 @@ openDBModel err getEpochSize = (dbModel, db)
       , getTip            = getTipModel
       , getBinaryBlob     = getBinaryBlobModel     err
       , getEBB            = getEBBModel            err
-      , appendBinaryBlob  = appendBinaryBlobModel  err getEpochSize
-      , appendEBB         = appendEBBModel         err getEpochSize
+      , appendBinaryBlob  = appendBinaryBlobModel  err
+      , appendEBB         = appendEBBModel         err
       , streamBinaryBlobs = streamBinaryBlobsModel err
       , immutableDBErr    = err
       }
@@ -130,33 +135,17 @@ openDBModel err getEpochSize = (dbModel, db)
   Helpers
 ------------------------------------------------------------------------------}
 
-impossible :: HasCallStack => String -> a
-impossible msg = withFrozenCallStack (error ("Impossible: " ++ msg))
+lookupEpochSize :: DBModel hash -> EpochNo -> EpochSize
+lookupEpochSize DBModel {..} = runIdentity . epochInfoSize dbmEpochInfo
 
-mustBeJust :: HasCallStack => String -> Maybe a -> a
-mustBeJust msg = fromMaybe (impossible msg)
+epochSlotToSlot :: DBModel hash -> EpochSlot -> SlotNo
+epochSlotToSlot DBModel {..} = runIdentity . epochInfoAbsolute dbmEpochInfo
 
-lookupEpochSize :: HasCallStack => DBModel hash -> EpochNo -> EpochSize
-lookupEpochSize DBModel {..} epoch =
-    mustBeJust msg $ CES.epochSize dbmCumulEpochSizes epoch
-  where
-    msg = "epoch (" <> show epoch <> ") size unknown (" <>
-          show dbmCumulEpochSizes <> ")"
+slotToEpochSlot :: DBModel hash -> SlotNo -> EpochSlot
+slotToEpochSlot DBModel {..} = runIdentity . epochInfoBlockRelative dbmEpochInfo
 
-epochSlotToSlot :: HasCallStack => DBModel hash -> EpochSlot -> SlotNo
-epochSlotToSlot DBModel {..} epochSlot =
-    mustBeJust msg $ CES.epochSlotToSlot dbmCumulEpochSizes epochSlot
-  where
-    msg = "epochSlot (" <> show epochSlot <>
-          ") could not be converted to a slot"
-
-slotToEpochSlot :: HasCallStack => DBModel hash -> SlotNo -> EpochSlot
-slotToEpochSlot DBModel {..} slot =
-    mustBeJust msg $ CES.slotToEpochSlot dbmCumulEpochSizes slot
-  where
-    msg = "slot (" <> show slot <>
-          ") could not be converted to an epochSlot (" <>
-          show dbmCumulEpochSizes <> ")"
+slotToEpoch :: DBModel hash -> SlotNo -> EpochNo
+slotToEpoch DBModel {..} = runIdentity . epochInfoEpoch dbmEpochInfo
 
 lookupBySlot :: HasCallStack => SlotNo -> [Maybe b] -> Maybe b
 lookupBySlot (SlotNo i) = go i
@@ -170,20 +159,17 @@ lookupBySlot (SlotNo i) = go i
 -- The user is responsible for giving a valid 'Tip', i.e. a tip that points to
 -- a filled slot or an existing EBB (Genesis is always valid). This function
 -- will not truncate to the last filled slot or EBB itself.
-rollBackToTip :: HasCallStack => ImmTip -> DBModel hash -> DBModel hash
+rollBackToTip :: ImmTip -> DBModel hash -> DBModel hash
 rollBackToTip tip dbm@DBModel {..} = case tip of
     TipGen    -> (initDBModel firstEpochSize)
         { dbmNextIterator = dbmNextIterator }
       where
         firstEpochSize = lookupEpochSize dbm 0
 
-    Tip (Left epoch)
-      | epoch > CES.lastEpoch dbmCumulEpochSizes -> dbm
-      | otherwise                                -> dbm
-        { dbmChain           = rolledBackChain
-        , dbmEBBs            = ebbsUpToEpoch epoch
-        , dbmTip             = tip
-        , dbmCumulEpochSizes = CES.rollBackToEpoch dbmCumulEpochSizes epoch
+    Tip (Left epoch) -> dbm
+        { dbmChain = rolledBackChain
+        , dbmEBBs  = ebbsUpToEpoch epoch
+        , dbmTip   = tip
         }
       where
         firstSlotAfter  = epochSlotToSlot dbm (EpochSlot epoch 1)
@@ -195,10 +181,9 @@ rollBackToTip tip dbm@DBModel {..} = case tip of
     Tip (Right slot)
       | slot >= fromIntegral (length dbmChain) -> dbm
       | otherwise                              -> dbm
-        { dbmChain           = rolledBackChain
-        , dbmEBBs            = ebbsUpToEpoch epoch
-        , dbmTip             = tip
-        , dbmCumulEpochSizes = CES.rollBackToEpoch dbmCumulEpochSizes epoch
+        { dbmChain = rolledBackChain
+        , dbmEBBs  = ebbsUpToEpoch epoch
+        , dbmTip   = tip
         }
       where
         EpochSlot epoch _ = slotToEpochSlot dbm slot
@@ -211,7 +196,7 @@ rollBackToTip tip dbm@DBModel {..} = case tip of
       Map.filterWithKey (\ebbEpoch _ -> ebbEpoch <= epoch) dbmEBBs
 
 -- | Return the filled 'EpochSlot's of the given 'EpochNo' stored in the model.
-epochSlotsInEpoch :: HasCallStack => DBModel hash -> EpochNo -> [EpochSlot]
+epochSlotsInEpoch :: DBModel hash -> EpochNo -> [EpochSlot]
 epochSlotsInEpoch dbm epoch =
     filter ((== epoch) . _epoch) $
     map (fst . fst) $
@@ -219,8 +204,7 @@ epochSlotsInEpoch dbm epoch =
 
 -- | Return the filled 'EpochSlot's (including EBBs) before, in, and after the
 -- given 'EpochNo'.
-filledEpochSlots :: HasCallStack
-                 => DBModel hash
+filledEpochSlots :: DBModel hash
                  -> EpochNo
                  -> ([EpochSlot], [EpochSlot], [EpochSlot])
 filledEpochSlots dbm epoch = (lt, eq, gt)
@@ -365,7 +349,7 @@ findIndexCorruptionRollBackPoint _corr epoch dbm
   where
     (beforeEpoch, inEpoch, _afterEpoch) = filledEpochSlots dbm epoch
     isLastSlotOfEpoch (EpochSlot epoch' relSlot) =
-      relSlot == CES.lastRelativeSlot (lookupEpochSize dbm epoch')
+      relSlot == maxRelativeSlot (lookupEpochSize dbm epoch')
 
 
 {------------------------------------------------------------------------------
@@ -375,7 +359,7 @@ findIndexCorruptionRollBackPoint _corr epoch dbm
 getTipModel :: MonadState (DBModel hash) m => m ImmTip
 getTipModel = gets dbmTip
 
-deleteAfterModel :: (HasCallStack, MonadState (DBModel hash) m) => ImmTip -> m ()
+deleteAfterModel :: (MonadState (DBModel hash) m) => ImmTip -> m ()
 deleteAfterModel tip =
     -- First roll back to the given tip (which is not guaranteed to be
     -- valid/exist!), then roll back to the last valid remaining tip.
@@ -406,12 +390,9 @@ getEBBModel :: (HasCallStack, MonadState (DBModel hash) m)
             -> EpochNo
             -> m (Maybe (hash, ByteString))
 getEBBModel err epoch = do
-    DBModel {..} <- get
-    let currentEpoch = CES.lastEpoch dbmCumulEpochSizes
-        inTheFuture  = case dbmTip of
-          TipGen        -> True
-          Tip (Right _) -> epoch > currentEpoch
-          Tip (Left _)  -> epoch > currentEpoch
+    dbm@DBModel {..} <- get
+    let currentEpoch = dbmCurrentEpoch dbm
+        inTheFuture  = epoch > currentEpoch || dbmTip == TipGen
 
     when inTheFuture $
       throwUserError err $ ReadFutureEBBError epoch currentEpoch
@@ -420,11 +401,10 @@ getEBBModel err epoch = do
 
 appendBinaryBlobModel :: (HasCallStack, MonadState (DBModel hash) m)
                       => ErrorHandling ImmutableDBError m
-                      -> (EpochNo -> EpochSize)
                       -> SlotNo
                       -> Builder
                       -> m ()
-appendBinaryBlobModel err getEpochSize slot bld = do
+appendBinaryBlobModel err slot bld = do
     dbm@DBModel {..} <- get
 
     -- Check that we're not appending to the past
@@ -438,70 +418,42 @@ appendBinaryBlobModel err getEpochSize slot bld = do
 
     let blob  = BL.toStrict $ BS.toLazyByteString bld
         toPad = fromIntegral (unSlotNo slot) - length dbmChain
-        ces'  = addMissingEpochSizes dbmCumulEpochSizes
 
     -- TODO snoc list?
     put dbm
-      { dbmChain           = dbmChain ++ replicate toPad Nothing ++ [Just blob]
-      , dbmTip             = Tip (Right slot)
-      , dbmCumulEpochSizes = ces'
+      { dbmChain = dbmChain ++ replicate toPad Nothing ++ [Just blob]
+      , dbmTip   = Tip (Right slot)
       }
-  where
-    -- | Add 'EpochSize's to 'CumulEpochSizes' until the 'CES.maxSlot' is
-    -- greater or equal to the 'SlotNo'.
-    addMissingEpochSizes :: CumulEpochSizes -> CumulEpochSizes
-    addMissingEpochSizes = execState $
-       CES.getNewEpochSizesUntilM done (return . getEpochSize)
-      where
-        done :: CumulEpochSizes -> Maybe ()
-        done ces | slot <= CES.maxSlot ces = Just ()
-                 | otherwise               = Nothing
 
-
-appendEBBModel :: (HasCallStack, MonadState (DBModel hash) m)
+appendEBBModel :: (MonadState (DBModel hash) m)
                => ErrorHandling ImmutableDBError m
-               -> (EpochNo -> EpochSize)
                -> EpochNo
                -> hash
                -> Builder
                -> m ()
-appendEBBModel err getEpochSize epoch hash bld = do
+appendEBBModel err epoch hash bld = do
     dbm@DBModel {..} <- get
-    let currentEpoch = CES.lastEpoch dbmCumulEpochSizes
 
     -- Check that we're not appending to the past
-    let inThePast = case dbmTip of
-          -- There is already a block in this epoch, so the EBB can no
-          -- longer be appended in this epoch
-          Tip (Right _) -> epoch <= currentEpoch
-          -- There is already an EBB in this epoch
-          Tip (Left _)  -> epoch <= currentEpoch
-          TipGen        -> False
+    let currentEpoch = dbmCurrentEpoch dbm
+        inThePast    = epoch <= currentEpoch && dbmTip /= TipGen
 
     when inThePast $
       throwUserError err $ AppendToEBBInThePastError epoch currentEpoch
 
-    let blob            = BL.toStrict $ BS.toLazyByteString bld
-        ebbEpochSlot    = EpochSlot epoch 0
-        (ebbSlot, ces') = addMissingEpochSizes ebbEpochSlot dbmCumulEpochSizes
-        toPad           = fromIntegral (unSlotNo ebbSlot) - length dbmChain
+    let blob         = BL.toStrict $ BS.toLazyByteString bld
+        ebbEpochSlot = EpochSlot epoch 0
+        ebbSlot      = epochSlotToSlot dbm ebbEpochSlot
+        toPad        = fromIntegral (unSlotNo ebbSlot) - length dbmChain
 
     put dbm
-      { dbmChain           = dbmChain ++ replicate toPad Nothing
-      , dbmTip             = Tip (Left epoch)
-      , dbmCumulEpochSizes = ces'
-      , dbmEBBs            = Map.insert epoch (hash, blob) dbmEBBs
+      { dbmChain = dbmChain ++ replicate toPad Nothing
+      , dbmTip   = Tip (Left epoch)
+      , dbmEBBs  = Map.insert epoch (hash, blob) dbmEBBs
       }
-  where
-    addMissingEpochSizes :: EpochSlot -> CumulEpochSizes
-                         -> (SlotNo, CumulEpochSizes)
-    addMissingEpochSizes epochSlot = runState $ CES.getNewEpochSizesUntilM
-      (`CES.epochSlotToSlot` epochSlot)
-      (return . getEpochSize)
-
 
 streamBinaryBlobsModel :: forall m hash.
-                          (HasCallStack, MonadState (DBModel hash) m, Eq hash)
+                          (MonadState (DBModel hash) m, Eq hash)
                        => ErrorHandling ImmutableDBError m
                        -> Maybe (SlotNo, hash)
                        -> Maybe (SlotNo, hash)
@@ -509,7 +461,7 @@ streamBinaryBlobsModel :: forall m hash.
 streamBinaryBlobsModel err mbStart mbEnd = do
     dbm@DBModel {..} <- get
 
-    validateIteratorRange err dbmCumulEpochSizes dbmTip mbStart mbEnd
+    validateIteratorRange err (generalizeEpochInfo dbmEpochInfo) dbmTip mbStart mbEnd
 
     let results = iteratorResults dbm
         itm     = IteratorModel results
