@@ -82,6 +82,7 @@ data Success
   | IsMember [Bool] -- We compare two functions based on their results on a list of inputs.
   | SimulatedError (Either (VolatileDBError BlockId) Success)
   | Successors [Set BlockId]
+  | Predecessor [Predecessor]
   deriving Show
 
 instance Eq Success where
@@ -92,6 +93,7 @@ instance Eq Success where
     IsMember ls == IsMember ls' = ls == ls'
     SimulatedError _ == SimulatedError _ = True
     Successors st1 == Successors st2 = st1 == st2
+    Predecessor p1 == Predecessor p2 = p1 == p2
     _ == _ = False
 
 
@@ -112,6 +114,7 @@ data Cmd
     | CreateInvalidFile
     | DuplicateBlock String BlockId Predecessor
     | GetSuccessors [Predecessor]
+    | GetPredecessor [BlockId]
     deriving Show
 
 data CmdErr = CmdErr
@@ -157,6 +160,7 @@ instance CommandNames (At Cmd) where
         CreateInvalidFile {} -> "CreateInvalidFile"
         DuplicateBlock {}    -> "DuplicateBlock"
         GetSuccessors {}     -> "GetSuccessors"
+        GetPredecessor {}    -> "GetPredecessor"
     cmdNames _ = ["not", "suported", "yet"]
 
 instance CommandNames (At CmdErr) where
@@ -232,6 +236,9 @@ runPure dbm (CmdErr cmd err) =
             GetSuccessors bids -> do
                 successors <- getSuccessorsModel tnc
                 return $ Successors $ successors <$> bids
+            GetPredecessor bids   -> do
+                predecessor <- getPredecessorModel tnc
+                return $ Predecessor $ predecessor <$> bids
             GarbageCollect bid -> Unit <$> garbageCollectModel tnc err (guessSlot bid)
             IsOpen             -> Bl <$> isOpenModel
             Close              -> Unit <$> closeModel
@@ -270,8 +277,11 @@ runDB restCmd db cmd = case cmd of
     GetBlockIds        -> Blocks <$> getBlockIds db
     PutBlock b pb      -> Unit <$> putBlock db (BlockInfo b (guessSlot b) pb) (BL.lazyByteString $ Binary.encode $ toBlock (b, pb))
     GetSuccessors bids -> do
-        successors <- getSuccessors db
+        successors <- atomically $ getSuccessors db
         return $ Successors $ successors <$> bids
+    GetPredecessor bids -> do
+        predecessor <- atomically $ getPredecessor db
+        return $ Predecessor $ predecessor <$> bids
     GarbageCollect bid -> Unit <$> garbageCollect db (guessSlot bid)
     IsOpen             -> Bl <$> isOpenDB db
     Close              -> Unit <$> closeDB db
@@ -334,9 +344,19 @@ preconditionImpl m@Model {..} (At (CmdErr cmd _)) =
         DuplicateBlock file bid pbid ->
             let bids = concat $ (\(f,(_, _, bs)) -> ((\(b,bp)->(f,b,bp)) <$> bs)) <$> (M.toList $ index dbModel)
             in (file, bid, pbid) `elem` bids
+        GetSuccessors preds ->
+            forall preds (`elem` predsInModel)
+        GetPredecessor bids ->
+            forall bids (`elem` bidsInModel)
         _ -> Top
   where
       corruptionFiles = map snd . NE.toList
+      (bidsInModel, predsInModel)
+        = unzip
+        $ filter (newer (latestGarbaged dbModel) . guessSlot . fst)
+        $ concatMap (\(_, _, x) -> x)
+        $ M.elems
+        $ index dbModel
 
 postconditionImpl :: Model Concrete -> At CmdErr Concrete -> At Resp Concrete -> Logic
 postconditionImpl model cmdErr resp =
@@ -363,6 +383,7 @@ generatorCmdImpl terminatingCmd m@Model {..} =
         , (100, return $ GetBlockIds)
         , (150, return $ PutBlock sl $ Just psl)
         , (100, return $ GetSuccessors $ Just sl : (Just <$> possiblePredecessors))
+        , (100, return $ GetPredecessor ls)
         , (50, return $ GarbageCollect sl)
         , (50, return $ IsOpen)
         , (50, return $ Close)
@@ -406,6 +427,7 @@ generatorImpl mkErr terminatingCmd m@Model {..} = do
         noErrorFor GarbageCollect {}    = False
         noErrorFor PutBlock {}          = False
         noErrorFor GetSuccessors {}     = False
+        noErrorFor GetPredecessor {}    = False
         noErrorFor CreateInvalidFile {} = True
         noErrorFor CreateFile {}        = True
         noErrorFor Corrupt {}           = True
@@ -495,6 +517,7 @@ knownLimitation model (At cmd) = case cmd of
     GetBlock bid       -> Boolean $ isLimitation (latestGarbaged $ dbModel model) (guessSlot bid)
     GetBlockIds        -> Bot
     GetSuccessors {}   -> Bot
+    GetPredecessor {}  -> Bot
     PutBlock bid _pbid -> Boolean $ isLimitation (latestGarbaged $ dbModel model) (guessSlot bid)
     GarbageCollect _sl -> Bot
     IsOpen             -> Bot
@@ -534,6 +557,7 @@ prop_sequential = withMaxSuccess 1000 $
             $ tabulate "IsMember: Total number of True's" [myshow $ isMemberTrue events]
             $ tabulate "IsMember: At least one True" [show $ isMemberTrue' events]
             $ tabulate "Successors" (tagGetSuccessors events)
+            $ tabulate "Predecessor" (tagGetPredecessor events)
             $ res === Ok
     where
         -- we use that: MonadState (DBModel BlockId) (State (DBModel BlockId))
@@ -755,6 +779,15 @@ tagGetSuccessors = mapMaybe f
             (GetSuccessors _pid, Resp (Right (Successors st))) ->
                 if all S.null st then Just "Empty Successors"
                 else Just "Non empty Successors"
+            _otherwise -> Nothing
+
+tagGetPredecessor :: [Event Symbolic] -> [String]
+tagGetPredecessor = mapMaybe f
+    where
+        f :: Event Symbolic -> Maybe String
+        f ev = case (getCmd ev, eventMockResp ev) of
+            (GetPredecessor _pid, Resp (Right (Predecessor _))) ->
+                Just "Predecessor"
             _otherwise -> Nothing
 
 execCmd :: Model Symbolic

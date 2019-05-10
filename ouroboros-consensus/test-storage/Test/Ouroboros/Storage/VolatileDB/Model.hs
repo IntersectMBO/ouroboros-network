@@ -18,6 +18,7 @@ module Test.Ouroboros.Storage.VolatileDB.Model
     , getBlockModel
     , getIsMemberModel
     , getSuccessorsModel
+    , getPredecessorModel
     , initDBModel
     , isOpenModel
     , putBlockModel
@@ -31,7 +32,7 @@ import           Data.ByteString (ByteString)
 import           Data.ByteString.Builder
 import           Data.ByteString.Lazy (toStrict)
 import           Data.Either
-import           Data.List (sortOn, splitAt, uncons)
+import           Data.List (find, sortOn, splitAt, uncons)
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe (fromMaybe, isNothing)
@@ -226,7 +227,23 @@ getSuccessorsModel err = do
     DBModel {..} <- get
     if not open then EH.throwError' err $ UserError ClosedDBError
     else return $ \bid ->
-        Set.fromList $ fst <$> filter (\(_b,pb) -> pb == bid) (concat $ (\(_,_,c) -> c) <$> Map.elems index)
+        toSet $ fst <$> filter (\(_b,pb) -> pb == bid) (concat $ (\(_,_,c) -> c) <$> Map.elems index)
+  where
+    toSet [] = error "precondition violated: block not member of the VolatileDB"
+    toSet xs = Set.fromList xs
+
+getPredecessorModel :: forall m blockId
+                    . MonadState (DBModel blockId) m
+                    => Ord blockId
+                    => ThrowCantCatch (VolatileDBError blockId) m
+                    -> m (blockId -> Maybe blockId)
+getPredecessorModel err = do
+    DBModel {..} <- get
+    if not open then EH.throwError' err $ UserError ClosedDBError
+    else return $ \bid ->
+        maybe (error msg) snd $ find (\(b,_pb) -> b == bid) (concat $ (\(_,_,c) -> c) <$> Map.elems index)
+  where
+    msg = "precondition violated: block not member of the VolatileDB"
 
 modifyIndex :: MonadState (DBModel blockId) m
             => (Map String (Maybe SlotNo, Int, [(blockId, Maybe blockId)])
