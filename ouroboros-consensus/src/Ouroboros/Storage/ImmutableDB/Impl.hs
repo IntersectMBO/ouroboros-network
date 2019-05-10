@@ -222,7 +222,7 @@ data OpenState m hash h = OpenState
 -- will be recovered when reopening.
 data ClosedState m = ClosedState
     { _closedEpochInfo      :: !(EpochInfo m)
-    -- ^ See '_getEpochSize'.
+    -- ^ See '_epochInfo'.
     , _closedNextIteratorID :: !BaseIteratorID
     -- ^ See '_nextIteratorID'.
     }

@@ -28,7 +28,7 @@ import           Ouroboros.Storage.Common
 --
 -- The other functions provide some derived information from epoch sizes. In the
 -- default implementation all of these functions query and update an internal
--- catch maintaining cumulative epoch sizes; for that reason, all of these
+-- cache maintaining cumulative epoch sizes; for that reason, all of these
 -- functions live in a monad @m@.
 data EpochInfo m = EpochInfo {
       -- | Return the size of the given epoch as a number of slots

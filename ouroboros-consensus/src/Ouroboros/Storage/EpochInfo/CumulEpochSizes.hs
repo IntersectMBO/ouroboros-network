@@ -1,6 +1,5 @@
-{-# LANGUAGE DeriveGeneric              #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Ouroboros.Storage.EpochInfo.CumulEpochSizes
   ( CumulEpochSizes
   , singleton
