@@ -19,6 +19,7 @@ import           Data.Typeable
 import           Data.Word (Word64)
 import           Text.Read (readMaybe)
 
+import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 import           Ouroboros.Storage.VolatileDB.Types
@@ -62,7 +63,7 @@ modifyTMVar m action =
             ExitCaseAbort                -> putTMVar m oldState
        ) action
 
-wrapFsError :: (Show blockId, MonadCatch m, Typeable blockId)
+wrapFsError :: (MonadCatch m, Show blockId, Typeable blockId)
             => ErrorHandling (VolatileDBError blockId) m -> m a -> m a
 wrapFsError err action = do
     mr <- try . try $ action
@@ -91,6 +92,17 @@ filePath fd = "blocks-" ++ show fd ++ ".dat"
 
 sizeAndId :: (BlockSize, BlockInfo blockId) -> (BlockSize, blockId)
 sizeAndId (size, bInfo) = (size, bbid bInfo)
+
+tryVolDB :: forall m blockId a
+         .  (MonadCatch m, Show blockId, Typeable blockId)
+         => m a -> m (Either (VolatileDBError blockId) a)
+tryVolDB = fmap squash . try . try
+    where
+        fromFS = UnexpectedError . FileSystemError
+
+        squash :: Either FsError (Either (VolatileDBError blockId) x)
+               -> Either (VolatileDBError blockId) x
+        squash = either (Left . fromFS) id
 
 {------------------------------------------------------------------------------
   Map of Set operations

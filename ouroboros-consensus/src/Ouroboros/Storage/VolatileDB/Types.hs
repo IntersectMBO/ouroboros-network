@@ -38,7 +38,7 @@ type SuccessorsIndex blockId = Map (Maybe blockId) (Set blockId)
 
 -- | Errors which might arise when working with this database.
 data VolatileDBError blockId =
-       UserError UserError
+      UserError UserError
     -- ^ An error thrown because of incorrect usage of the volatile database
     -- by the user.
     | UnexpectedError (UnexpectedError blockId)
@@ -63,9 +63,8 @@ instance (Show blockId, Typeable blockId) => Exception (VolatileDBError blockId)
     displayException = show
 
 data ParserError blockId =
-      DuplicatedSlot (Map blockId ([String], [String]))
+      DuplicatedSlot blockId String String
     | InvalidFilename String
-    | DecodeFailed String Word64
     deriving (Show)
 
 instance Eq blockId => Eq (ParserError blockId) where
@@ -86,9 +85,8 @@ sameUnexpectedError e1 e2 = case (e1, e2) of
 
 sameParseError :: ParserError blockId -> ParserError blockId -> Bool
 sameParseError e1 e2 = case (e1, e2) of
-    (DuplicatedSlot _, DuplicatedSlot _)         -> True
+    (DuplicatedSlot _ _ _, DuplicatedSlot _ _ _) -> True
     (InvalidFilename str1, InvalidFilename str2) -> str1 == str2
-    (DecodeFailed _ _ , DecodeFailed _ _)        -> True
     _                                            -> False
 
 type FileSize  = Word64
@@ -105,7 +103,7 @@ data BlockInfo blockId = BlockInfo {
       bbid    :: blockId
     , bslot   :: SlotNo
     , bpreBid :: Maybe blockId
-    }
+    } deriving Show
 
 -- The Internal information the db keeps for each block.
 data InternalBlockInfo blockId = InternalBlockInfo {
@@ -114,11 +112,11 @@ data InternalBlockInfo blockId = InternalBlockInfo {
     , ibBlockSize  :: BlockSize
     , ibSlot       :: SlotNo
     , ibPreBid     :: Maybe blockId
-    }
+    } deriving Show
 
 -- The Internal information the db keeps for each file.
 data FileInfo blockId = FileInfo {
       fLatestSlot :: Maybe SlotNo
     , fNBlocks    :: Int
     , fContents   :: Map SlotOffset (BlockSize, blockId)
-    }
+    } deriving Show

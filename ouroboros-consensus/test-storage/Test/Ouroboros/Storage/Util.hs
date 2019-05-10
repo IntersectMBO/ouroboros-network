@@ -41,7 +41,7 @@ import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 import           Ouroboros.Storage.VolatileDB (VolatileDBError (..),
                      sameVolatileDBError)
-import qualified Ouroboros.Storage.VolatileDB as Volatile
+import           Ouroboros.Storage.VolatileDB.Util
 
 {------------------------------------------------------------------------------
  Handy combinators
@@ -190,9 +190,6 @@ tryFS = E.try
 
 tryImmDB :: MonadCatch m => m a -> m (Either ImmutableDBError a)
 tryImmDB = tryDB (Immutable.UnexpectedError . Immutable.FileSystemError)
-
-tryVolDB :: (Show blockId, Typeable blockId, MonadCatch m) => m a -> m (Either (VolatileDBError blockId) a)
-tryVolDB = tryDB (Volatile.UnexpectedError . Volatile.FileSystemError)
 
 tryDB :: forall e a m. (Exception e, MonadCatch m) => (FsError -> e) -> m a -> m (Either e a)
 tryDB fromFS = fmap squash . C.try . C.try
