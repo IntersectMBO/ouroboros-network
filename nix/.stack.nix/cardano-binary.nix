@@ -55,4 +55,11 @@
           };
         };
       };
-    } // rec { src = (pkgs.lib).mkDefault ../.././../cardano-base/binary; }
+    } // {
+    src = (pkgs.lib).mkDefault (pkgs.fetchgit {
+      url = "https://github.com/input-output-hk/cardano-base";
+      rev = "577162e98ba2fbe42c1b6042a9a0a15bbc4956d0";
+      sha256 = "02wzcic9q2zrp7x6vz5dwipp3q08r572ysp2k0n59d4za5w911qh";
+      });
+    postUnpack = "sourceRoot+=/binary; echo source root reset to \$sourceRoot";
+    }

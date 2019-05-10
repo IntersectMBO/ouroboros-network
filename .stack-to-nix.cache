@@ -66,3 +66,4 @@ https://github.com/input-output-hk/cardano-ledger c97e676d525f3d5a07a769901a088c
 https://github.com/input-output-hk/cardano-ledger 9254662d3d44cfaca3deede715b17547b8571db6 . 0gj6ywazidjvjp0p8bcg03rfranqlqazwdvch5ws2wdcmq1s0rv1 cardano-ledger cardano-ledger.nix
 https://github.com/input-output-hk/cardano-ledger 9254662d3d44cfaca3deede715b17547b8571db6 crypto 0gj6ywazidjvjp0p8bcg03rfranqlqazwdvch5ws2wdcmq1s0rv1 cardano-crypto-wrapper cardano-crypto-wrapper.nix
 https://github.com/input-output-hk/cardano-base 5bca69f048c4d599c362d797ee8b036c118f77f4 binary 1xhazql8ybn7pprgn2zqgd4waf89z1xicdiwmpsizp97s1k0paki cardano-binary cardano-binary.nix
+https://github.com/input-output-hk/cardano-base 577162e98ba2fbe42c1b6042a9a0a15bbc4956d0 binary 02wzcic9q2zrp7x6vz5dwipp3q08r572ysp2k0n59d4za5w911qh cardano-binary cardano-binary.nix
