@@ -32,6 +32,7 @@
           (hsPkgs.filepath)
           (hsPkgs.fingertree)
           (hsPkgs.memory)
+          (hsPkgs.mmorph)
           (hsPkgs.mtl)
           (hsPkgs.pipes)
           (hsPkgs.serialise)
