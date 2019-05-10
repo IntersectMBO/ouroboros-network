@@ -44,6 +44,8 @@ import           Test.Dynamic.General
 import           Test.Dynamic.Praos (prop_all_common_prefix)
 import           Test.Dynamic.Util
 
+import           Test.Util.Range
+
 tests :: TestTree
 tests = testGroup "Dynamic chain generation"
     [ testProperty
@@ -83,7 +85,7 @@ prop_simple_leader_schedule_convergence numSlots numCoreNodes params seed =
             -> Property
     isValid nodeIds final =
           counterexample (tracesToDot final)
-     $    collect (shortestLength final)
+     $    tabulate "shortestLength" [show (rangeK (praosSecurityParam params) (shortestLength final))]
      $    Map.keys final === nodeIds
      .&&. prop_all_common_prefix
             (maxRollbacks $ praosSecurityParam params)

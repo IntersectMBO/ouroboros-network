@@ -237,8 +237,9 @@ test-suite test-consensus
                     Test.Dynamic.Praos
                     Test.Dynamic.Util
                     Test.Ouroboros
-                    Test.Util.Orphans.Arbitrary
                     Test.Util.DepFn
+                    Test.Util.Orphans.Arbitrary
+                    Test.Util.Range
                     Test.Util.TestBlock
   build-depends:    base,
                     typed-protocols,
@@ -323,6 +324,7 @@ test-suite test-storage
                     Test.Ouroboros.Storage.VolatileDB.StateMachine
                     Test.Ouroboros.Storage.VolatileDB.TestBlock
                     Test.Util.Orphans.Arbitrary
+                    Test.Util.Range
                     Test.Util.RefEnv
                     Test.Util.TestBlock
   build-depends:    base,

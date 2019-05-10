@@ -33,9 +33,9 @@ import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain
 import qualified Ouroboros.Network.Chain as Chain
 
-import           Ouroboros.Consensus.Node (NodeId)
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Demo
+import           Ouroboros.Consensus.Node (NodeId)
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Praos
 import           Ouroboros.Consensus.Util.Chain (dropLastBlocks, lastSlot)
@@ -44,7 +44,9 @@ import           Ouroboros.Consensus.Util.Random
 
 import           Test.Dynamic.General
 import           Test.Dynamic.Util
+
 import           Test.Util.Orphans.Arbitrary ()
+import           Test.Util.Range
 
 tests :: TestTree
 tests = testGroup "Dynamic chain generation"
@@ -100,7 +102,7 @@ prop_simple_praos_convergence params numCoreNodes numSlots =
           $ counterexample (condense schedule)
           $ counterexample (show longest)
           $ label ("longest crowded run " <> show crowded)
-          $ collect (shortestLength final)
+          $ tabulate "shortestLength" [show (rangeK praosSecurityParam (shortestLength final))]
           $ (Map.keys final === nodeIds)
             .&&. if crowded > maxRollbacks praosSecurityParam
                   then label "too crowded"     $ property True

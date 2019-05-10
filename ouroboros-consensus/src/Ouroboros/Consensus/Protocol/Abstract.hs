@@ -168,6 +168,7 @@ class ( Show (ChainState    p)
 -- NOTE: This talks about the number of /blocks/ we can roll back, not
 -- the number of /slots/.
 newtype SecurityParam = SecurityParam { maxRollbacks :: Word64 }
+  deriving (Eq)
 
 -- | Extract the pre-header from a block
 class (HasHeader b) => HasPreHeader b where
