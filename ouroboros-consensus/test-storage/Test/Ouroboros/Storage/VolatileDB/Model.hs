@@ -227,7 +227,10 @@ getSuccessorsModel err = do
     DBModel {..} <- get
     if not open then EH.throwError' err $ UserError ClosedDBError
     else return $ \bid ->
-        Set.fromList $ fst <$> filter (\(_b,pb) -> pb == bid) (concat $ (\(_,_,c) -> c) <$> Map.elems index)
+        toSet $ fst <$> filter (\(_b,pb) -> pb == bid) (concat $ (\(_,_,c) -> c) <$> Map.elems index)
+  where
+    toSet [] = error "precondition violated: block not member of the VolatileDB"
+    toSet xs = Set.fromList xs
 
 getPredecessorModel :: forall m blockId
                     . MonadState (DBModel blockId) m

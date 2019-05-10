@@ -343,14 +343,19 @@ preconditionImpl m@Model {..} (At (CmdErr cmd _)) =
         DuplicateBlock file bid pbid ->
             let bids = concat $ (\(f,(_, _, bs)) -> ((\(b,bp)->(f,b,bp)) <$> bs)) <$> (M.toList $ index dbModel)
             in (file, bid, pbid) `elem` bids
+        GetSuccessors preds ->
+            forall preds (`elem` predsInModel)
         GetPredecessor bids ->
             forall bids (`elem` bidsInModel)
         _ -> Top
   where
       corruptionFiles = map snd . NE.toList
-      bidsInModel = filter (newer (latestGarbaged dbModel) . guessSlot)
-                  $ M.keys
-                  $ mp dbModel
+      (bidsInModel, predsInModel)
+        = unzip
+        $ filter (newer (latestGarbaged dbModel) . guessSlot . fst)
+        $ concatMap (\(_, _, x) -> x)
+        $ M.elems
+        $ index dbModel
 
 postconditionImpl :: Model Concrete -> At CmdErr Concrete -> At Resp Concrete -> Logic
 postconditionImpl model cmdErr resp =
