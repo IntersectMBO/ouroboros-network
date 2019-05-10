@@ -31,6 +31,9 @@ extra-deps:
   - git: https://github.com/input-output-hk/cardano-prelude
     commit: e1fb84b1a955b6e3e3e53d9022e8bc0f927417a2
 
+  - git: https://github.com/input-output-hk/cardano-shell
+    commit: acf5b26fbf3c3a3927507e093d54e70ad521787b
+
   - ekg-0.4.0.15
   - libyaml-0.1.0.0
   - time-units-1.0.0

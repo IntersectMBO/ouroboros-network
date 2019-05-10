@@ -61,7 +61,7 @@ import qualified Ouroboros.Byron.Proxy.DB as DB
 import Ouroboros.Byron.Proxy.Main
 
 import DB (DBConfig (..), withDB)
-import IPC (runVersionedClient, runVersionedServer)
+import qualified IPC as IPC (runClient, runServer)
 import qualified Logging as Logging
 
 -- | The main action using the proxy, index, and immutable database: download
@@ -360,7 +360,7 @@ runServer tracer serverOptions epochSlots db = do
   addrInfos <- Network.getAddrInfo (Just addrInfoHints) (Just host) (Just port)
   case addrInfos of
     [] -> error "no getAddrInfo"
-    (addrInfo : _) -> runVersionedServer addrInfo stringTracer epochSlots mainTx usPoll db
+    (addrInfo : _) -> IPC.runServer addrInfo stringTracer epochSlots mainTx usPoll db
 
   where
   host = soHostName serverOptions
@@ -398,7 +398,7 @@ runClient tracer clientOptions genesisConfig epochSlots db = case clientOptions 
     addrInfos <- Network.getAddrInfo (Just addrInfoHints) (Just host) (Just port)
     case addrInfos of
       [] -> error "no getAddrInfo"
-      (addrInfo : _) -> runVersionedClient addrInfo stringTracer epochSlots db
+      (addrInfo : _) -> IPC.runClient addrInfo stringTracer epochSlots db
     where
 
     host = scoHostName shelleyClientOptions

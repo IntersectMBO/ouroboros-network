@@ -114,3 +114,43 @@ executable byron-proxy
   ghc-options:         -threaded
                        -fwarn-incomplete-patterns
                        -fwarn-unused-imports
+
+executable validator
+  main-is:             Validator.hs
+  other-modules:       Logging
+  -- other-extensions:
+  build-depends:       base,
+                       async,
+                       byron-proxy,
+                       bytestring,
+                       cardano-binary,
+                       cardano-ledger,
+                       cardano-shell,
+                       cborg,
+                       containers,
+                       contra-tracer,
+                       directory,
+                       exceptions,
+                       iohk-monitoring,
+                       io-sim-classes,
+                       lens,
+                       network,
+                       optparse-applicative,
+                       ouroboros-consensus,
+                       ouroboros-network,
+                       random,
+                       resourcet,
+                       serialise,
+                       stm,
+                       text,
+                       time,
+                       type-operators == 0.1.0.4,
+                       transformers,
+                       typed-protocols
+  hs-source-dirs:      src/exec
+  default-language:    Haskell2010
+  -- -threaded is needed or else the diffusion layer will crash, due to a use
+  -- of registerDelay
+  ghc-options:         -threaded
+                       -fwarn-incomplete-patterns
+                       -fwarn-unused-imports

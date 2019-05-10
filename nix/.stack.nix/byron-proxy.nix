@@ -94,6 +94,38 @@
             (hsPkgs.typed-protocols)
             ];
           };
+        "validator" = {
+          depends = [
+            (hsPkgs.base)
+            (hsPkgs.async)
+            (hsPkgs.byron-proxy)
+            (hsPkgs.bytestring)
+            (hsPkgs.cardano-binary)
+            (hsPkgs.cardano-ledger)
+            (hsPkgs.cardano-shell)
+            (hsPkgs.cborg)
+            (hsPkgs.containers)
+            (hsPkgs.contra-tracer)
+            (hsPkgs.directory)
+            (hsPkgs.exceptions)
+            (hsPkgs.iohk-monitoring)
+            (hsPkgs.io-sim-classes)
+            (hsPkgs.lens)
+            (hsPkgs.network)
+            (hsPkgs.optparse-applicative)
+            (hsPkgs.ouroboros-consensus)
+            (hsPkgs.ouroboros-network)
+            (hsPkgs.random)
+            (hsPkgs.resourcet)
+            (hsPkgs.serialise)
+            (hsPkgs.stm)
+            (hsPkgs.text)
+            (hsPkgs.time)
+            (hsPkgs.type-operators)
+            (hsPkgs.transformers)
+            (hsPkgs.typed-protocols)
+            ];
+          };
         };
       };
     } // rec { src = (pkgs.lib).mkDefault ../../././byron-proxy; }
