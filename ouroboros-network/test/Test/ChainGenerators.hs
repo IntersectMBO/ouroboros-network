@@ -41,7 +41,7 @@ module Test.ChainGenerators
   where
 
 import qualified Data.List as L
-import           Data.Maybe (fromJust, catMaybes)
+import           Data.Maybe (fromJust, catMaybes, listToMaybe)
 
 import           Ouroboros.Network.Testing.ConcreteBlock
 import           Ouroboros.Network.Block
@@ -560,26 +560,28 @@ instance Arbitrary TestChainFork where
       else do
         l <- genNonNegative
         r <- genNonNegative
-        chainL <- genAddBlocks l chain
-        chainR <- genAddBlocks r chain
-                    -- But we want to avoid the extensions starting off equal
-                    -- which would mean the most recent intersection was not
-                    -- the declared common prefix.
-                    `suchThat` \chainR ->
-                      Chain.intersectChains chainL chainR
-                    ==
-                      if chain == Genesis then Nothing
-                                          else Just (Chain.headPoint chain)
+        chainL <- genAddBlocks l chain Nothing
+        let exL = L.drop (Chain.length chain) (Chain.toOldestFirst chainL)
+        chainR <- genAddBlocks r chain (listToMaybe exL)
         return (TestChainFork chain chainL chainR)
 
     where
       genAddBlocks :: Int
                    -> Chain Block
+                   -> Maybe Block
                    -> Gen (Chain Block)
-      genAddBlocks 0 c = return c
-      genAddBlocks n c = do
+      genAddBlocks 0 c _       = return c
+      genAddBlocks n c Nothing = do
           b <- genAddBlock c
-          genAddBlocks (n-1) (Chain.addBlock b c)
+          genAddBlocks (n-1) (Chain.addBlock b c) Nothing
+
+      -- But we want to avoid the extensions starting off equal which would
+      -- mean the longest common prefix was not the declared common prefix.
+      -- So we optionally take the first block to avoid and use that in the
+      -- second fork we generate.
+      genAddBlocks n c (Just forbiddenBlock) = do
+          b <- genAddBlock c `suchThat` (/= forbiddenBlock)
+          genAddBlocks (n-1) (Chain.addBlock b c) Nothing
 
 
   shrink (TestChainFork common l r) =
@@ -596,14 +598,14 @@ instance Arbitrary TestChainFork where
       | let exl = extensionFragment common l
       , exl' <- shrinkList (const []) exl
       , let l' = fixupChain fixupBlock (exl' ++ Chain.toNewestFirst common)
-      , longestCommonPrefix l' r
+      , isLongestCommonPrefix l' r
       ]
         -- shrink the right fork
    ++ [ TestChainFork common l r'
       | let exr = extensionFragment common r
       , exr' <- shrinkList (const []) exr
       , let r' = fixupChain fixupBlock (exr' ++ Chain.toNewestFirst common)
-      , longestCommonPrefix l r'
+      , isLongestCommonPrefix l r'
       ]
     where
       extensionFragment :: Chain Block -> Chain Block -> [Block]
@@ -611,11 +613,12 @@ instance Arbitrary TestChainFork where
 
       -- Need to make sure that when we shrink that we don't make the longest
       -- common prefix be a strict extension of the original common prefix.
-      longestCommonPrefix l' r' =
-          Chain.intersectChains l' r'
-        ==
-          if common == Genesis then Nothing
-                               else Just (Chain.headPoint common)
+      isLongestCommonPrefix l' r' =
+        case (L.drop (Chain.length common) (Chain.toOldestFirst l'),
+              L.drop (Chain.length common) (Chain.toOldestFirst r')) of
+          (lhead : _, rhead : _) -> lhead /= rhead
+          _                      -> True
+
 
 prop_arbitrary_TestChainFork :: TestChainFork -> Bool
 prop_arbitrary_TestChainFork (TestChainFork c l r) =
@@ -623,9 +626,10 @@ prop_arbitrary_TestChainFork (TestChainFork c l r) =
  && c `Chain.isPrefixOf` l
  && c `Chain.isPrefixOf` r
     -- And c is not just a common prefix, but the maximum common prefix
- && (Chain.intersectChains l r
-     ==
-     if c == Genesis then Nothing else Just (Chain.headPoint c))
+ && case (L.drop (Chain.length c) (Chain.toOldestFirst l),
+          L.drop (Chain.length c) (Chain.toOldestFirst r)) of
+      (lhead : _, rhead : _) -> lhead /= rhead
+      _                      -> True
 
 
 prop_shrink_TestChainFork :: TestChainFork -> Bool
