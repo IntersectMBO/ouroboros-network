@@ -110,6 +110,7 @@ data Cmd it
   | AppendEBB         EpochNo Hash TestBlock
   | StreamBinaryBlobs (Maybe (SlotNo, Hash)) (Maybe (SlotNo, Hash))
   | IteratorNext      it
+  | IteratorPeek      it
   | IteratorClose     it
   | Reopen            ValidationPolicy
   | DeleteAfter       ImmTip
@@ -181,6 +182,7 @@ run runCorruption its db cmd = case cmd of
   AppendEBB       e h b -> Unit       <$> appendEBB db e h (testBlockToBuilder b)
   StreamBinaryBlobs s e -> Iter       <$> streamBinaryBlobs db s e
   IteratorNext  it      -> IterResult <$> iteratorNext it
+  IteratorPeek  it      -> IterResult <$> iteratorPeek it
   IteratorClose it      -> Unit       <$> iteratorClose it
   DeleteAfter tip       -> do
     mapM_ iteratorClose its
@@ -438,7 +440,7 @@ generateCmd Model {..} = At <$> frequency
               , (3, chooseEpoch (currentEpoch, currentEpoch + 5))
               ]
             return $ AppendEBB epoch (TestEBB 0) (TestEBB 0))
-    , (0, frequency
+    , (4, frequency
             -- An iterator with a random and likely invalid range,
             [ (1, StreamBinaryBlobs <$> (Just <$> arbitrary)
                                     <*> (Just <$> arbitrary))
@@ -464,6 +466,7 @@ generateCmd Model {..} = At <$> frequency
     , (if Map.null dbmIterators then 0 else 4, do
          iter <- elements $ RE.keys knownIters
          frequency [ (4, return $ IteratorNext  iter)
+                   , (4, return $ IteratorPeek  iter)
                    , (1, return $ IteratorClose iter) ])
     , (1, Reopen <$> genValPol)
 
@@ -582,6 +585,7 @@ shrinkCmd Model {..} (At cmd) = fmap At $ case cmd of
     GetEBB epoch                    ->
       [GetEBB epoch' | epoch' <- shrink epoch]
     IteratorNext  {}                -> []
+    IteratorPeek  {}                -> []
     IteratorClose {}                -> []
     DeleteAfter tip                 ->
       [DeleteAfter tip' | tip' <- shrinkTip tip]
@@ -811,6 +815,8 @@ data Tag
 
   | TagErrorDuringIteratorNext
 
+  | TagErrorDuringIteratorPeek
+
   | TagErrorDuringIteratorClose
 
   deriving (Show, Eq)
@@ -885,6 +891,8 @@ tag = C.classify
       { At (StreamBinaryBlobs {}) -> True ; _ -> False }
     , tagErrorDuring TagErrorDuringIteratorNext $ \case
       { At (IteratorNext {}) -> True; _ -> False }
+    , tagErrorDuring TagErrorDuringIteratorPeek $ \case
+      { At (IteratorPeek {}) -> True; _ -> False }
     , tagErrorDuring TagErrorDuringIteratorClose $ \case
        { At (IteratorClose {}) -> True; _ -> False }
     ]

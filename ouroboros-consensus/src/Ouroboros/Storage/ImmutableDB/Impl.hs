@@ -143,10 +143,10 @@ import           Prelude hiding (truncate)
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Control.Exception (assert)
-import           Control.Monad (forM_, replicateM_, when)
+import           Control.Monad (forM_, replicateM_, unless, when)
 import           Control.Monad.Class.MonadSTM (MonadSTM (..))
 import           Control.Monad.Class.MonadThrow (ExitCase (..),
-                     MonadCatch (generalBracket), MonadThrow)
+                     MonadCatch (generalBracket), MonadThrow, finally)
 import           Control.Monad.State.Strict (StateT (..), get, lift, modify,
                      put, runStateT, state)
 
@@ -1019,7 +1019,8 @@ streamBinaryBlobsImpl dbEnv mbStart mbEnd = withOpenState dbEnv $ \hasFS st -> d
         -- Safely increment '_nextIteratorID' in the 'OpenState'.
         modifyOpenState dbEnv $ \_hasFS -> state $ \st'@OpenState {..} ->
           let it = Iterator
-                { iteratorNext  = iteratorNextImpl  dbEnv ith
+                { iteratorNext  = iteratorNextImpl  dbEnv ith True
+                , iteratorPeek  = iteratorNextImpl  dbEnv ith False
                 , iteratorClose = iteratorCloseImpl       ith
                 , iteratorID    = BaseIteratorID _nextIteratorID
                 }
@@ -1030,6 +1031,7 @@ streamBinaryBlobsImpl dbEnv mbStart mbEnd = withOpenState dbEnv $ \hasFS st -> d
       modifyOpenState dbEnv $ \_hasFS -> state $ \st@OpenState {..} ->
         let it = Iterator
               { iteratorNext  = return IteratorExhausted
+              , iteratorPeek  = return IteratorExhausted
               , iteratorClose = return ()
               , iteratorID    = BaseIteratorID _nextIteratorID
               }
@@ -1040,11 +1042,12 @@ iteratorNextImpl :: forall m hash.
                     (HasCallStack, MonadSTM m, MonadCatch m, Eq hash)
                  => ImmutableDBEnv m hash
                  -> IteratorHandle hash m
+                 -> Bool  -- ^ Step the iterator after reading iff True
                  -> m (IteratorResult hash ByteString)
-iteratorNextImpl dbEnv it@IteratorHandle {_it_hasFS = hasFS :: HasFS m h, ..} = do
+iteratorNextImpl dbEnv it@IteratorHandle {_it_hasFS = hasFS :: HasFS m h, ..} step = do
     -- The idea is that if the state is not Nothing, then '_it_next' is always
     -- ready to be read. After reading it with 'readNext', 'stepIterator' will
-    -- advance the iterator to the next valid epoch slot.
+    -- advance the iterator to the next valid epoch slot if @step@ is True.
     mbIteratorState <- atomically $ readTVar _it_state
     case mbIteratorState of
       -- Iterator already closed
@@ -1059,7 +1062,7 @@ iteratorNextImpl dbEnv it@IteratorHandle {_it_hasFS = hasFS :: HasFS m h, ..} = 
             | let ebbHash = fromMaybe (error "missing EBB hash") $
                     getEBBHash _it_epoch_index
             -> do
-              case (_it_end, _it_end_hash) of
+              when step $ case (_it_end, _it_end_hash) of
                 -- Special case: if the thing we are returning is an EBB and
                 -- its 'EpochSlot' matches '_it_end' and its EBB hash matches
                 -- '_it_end_hash', then we must stop after this EBB. Note that
@@ -1074,9 +1077,9 @@ iteratorNextImpl dbEnv it@IteratorHandle {_it_hasFS = hasFS :: HasFS m h, ..} = 
                 _ -> stepIterator st iteratorState
               return $ IteratorEBB epoch ebbHash blob
           _ -> do
-            -- Advance the iterator before returning the read blob, so it has
-            -- a valid @next@ to read the next time.
-            stepIterator st iteratorState
+            -- If @step@ is True, advance the iterator before returning the
+            -- read blob, so it has a valid @next@ to read the next time.
+            when step $ stepIterator st iteratorState
             return $ IteratorResult slot blob
   where
     HasFS{..} = hasFS
@@ -1092,6 +1095,9 @@ iteratorNextImpl dbEnv it@IteratorHandle {_it_hasFS = hasFS :: HasFS m h, ..} = 
       -- we are already positioned at the correct place (Invariant 4).
       let epochFile = renderFile "epoch" epoch
       hGetRightSize hasFS eHnd (fromIntegral blobSize) epochFile
+        `finally`
+        -- Seek to the previous position if we shouldn't step to the next.
+        unless step (hSeek eHnd RelativeSeek (negate (fromIntegral blobSize)))
 
     -- Move the iterator to the next position that can be read from, advancing
     -- epochs if necessary. If no next position can be found, the iterator is

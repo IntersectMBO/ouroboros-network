@@ -212,6 +212,9 @@ data ImmutableDB hash m = ImmutableDB
 data Iterator hash m a = Iterator
   { -- | Steps an 'Iterator' yielding an 'IteratorResult'.
     --
+    -- After returning the blob as an 'IteratorResult', the iterator is
+    -- advanced to the next non-empty slot or non-empty EBB.
+    --
     -- Throws a 'ClosedDBError' if the database is closed.
     --
     -- TODO NOTE(adn): This works under the assumption that the user is the
@@ -221,6 +224,16 @@ data Iterator hash m a = Iterator
     -- ('IteratorExhausted'), and can be prematurely closed with
     -- 'iteratorClose'.
     iteratorNext  :: HasCallStack => m (IteratorResult hash a)
+
+    -- | Read the blob the 'Iterator' is currently pointing.
+    --
+    -- This operation is idempotent.
+    --
+    -- The next time 'iteratorNext' is called, the same 'IteratorResult' will
+    -- be returned.
+    --
+    -- Throws a 'ClosedDBError' if the database is closed.
+  , iteratorPeek  :: HasCallStack => m (IteratorResult hash a)
 
     -- | Dispose of the 'Iterator' by closing any open handles.
     --
@@ -238,6 +251,7 @@ data Iterator hash m a = Iterator
 instance Functor m => Functor (Iterator hash m) where
   fmap f itr = Iterator{
         iteratorNext  = fmap f <$> iteratorNext itr
+      , iteratorPeek  = fmap f <$> iteratorPeek itr
       , iteratorClose = iteratorClose itr
       , iteratorID    = DerivedIteratorID $ iteratorID itr
       }

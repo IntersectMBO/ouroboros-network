@@ -472,6 +472,7 @@ streamBinaryBlobsModel err mbStart mbEnd = do
       }
     return Iterator
       { iteratorNext  = iteratorNextModel  itID
+      , iteratorPeek  = iteratorPeekModel  itID
       , iteratorClose = iteratorCloseModel itID
       , iteratorID    = itID
       }
@@ -541,6 +542,16 @@ iteratorNextModel itID = do
           { dbmIterators = Map.insert itID (IteratorModel ress) dbmIterators
           }
         return res
+
+iteratorPeekModel :: MonadState (DBModel hash) m
+                  => IteratorID
+                  -> m (IteratorResult hash ByteString)
+iteratorPeekModel itID = do
+    DBModel {..} <- get
+    case Map.lookup itID dbmIterators of
+      Nothing                      -> return IteratorExhausted
+      Just (IteratorModel [])      -> return IteratorExhausted
+      Just (IteratorModel (res:_)) -> return res
 
 iteratorCloseModel :: MonadState (DBModel hash) m
                    => IteratorID -> m ()
