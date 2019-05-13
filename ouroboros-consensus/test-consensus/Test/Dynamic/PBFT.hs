@@ -37,7 +37,9 @@ import           Ouroboros.Network.Chain (Chain)
 
 import           Test.Dynamic.General
 import           Test.Dynamic.Util
+
 import           Test.Util.Orphans.Arbitrary ()
+import           Test.Util.Range
 
 tests :: TestTree
 tests = testGroup "Dynamic chain generation" [
@@ -65,7 +67,7 @@ prop_simple_pbft_convergence sp numCoreNodes@(NumCoreNodes nn) =
             -> Map NodeId (Chain (Block DemoPBFT))
             -> Property
     isValid nodeIds final = counterexample (show final) $
-          collect (shortestLength final)
+          tabulate "shortestLength" [show (rangeK sp (shortestLength final))]
      $    Map.keys final === nodeIds
      .&&. allEqual (takeChainPrefix <$> Map.elems final)
       where

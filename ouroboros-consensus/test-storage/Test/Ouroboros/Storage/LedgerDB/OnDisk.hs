@@ -64,6 +64,7 @@ import qualified Test.StateMachine.Types.Rank2 as Rank2
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
+import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 import           Ouroboros.Consensus.Util
 import qualified Ouroboros.Consensus.Util.Classify as C
 
@@ -80,6 +81,8 @@ import           Ouroboros.Storage.LedgerDB.OnDisk
 
 -- For the Arbitrary instance of 'MemPolicy'
 import           Test.Ouroboros.Storage.LedgerDB.InMemory ()
+
+import           Test.Util.Range
 
 {-------------------------------------------------------------------------------
   Top-level tests
@@ -960,7 +963,7 @@ propCmds memPolicy cmds = do
       $ QC.tabulate "Tags" (map show $ tagEvents k (execCmds memPolicy cmds))
       $ res QC.=== Ok
   where
-    k = memPolicyMaxRollback memPolicy
+    k = SecurityParam $ memPolicyMaxRollback memPolicy
 
 dbUnused :: Proxy t -> StandaloneDB IO t
 dbUnused = error "DB unused during command generation"
@@ -978,7 +981,7 @@ tagMemPolicy :: MemPolicy -> TagMemPolicy
 tagMemPolicy = go . offsetsDropValues . memPolicyToOffsets
   where
     go :: [Word64] -> TagMemPolicy
-    go os = MemPolicyMaxOffset $ range maxBound (maximum os)
+    go os = MemPolicyMaxOffset $ range (maximum os)
 
 {-------------------------------------------------------------------------------
   Event labelling
@@ -994,22 +997,22 @@ data Tag =
     -- if any has been created.
     --
     -- We will look for the /maximum/ chain length in each case.
-    TagRestore (Maybe SnapState) (Range Word64)
+    TagRestore (Maybe SnapState) RangeK
 
     -- | Tag rollback
     --
     -- We record the rollback length
-  | TagMaxRollback (Range Word64)
+  | TagMaxRollback RangeK
 
     -- | Tag chain truncation
     --
     -- We record how many blocks were dropped
-  | TagMaxDrop (Range Word64)
+  | TagMaxDrop RangeK
   deriving (Show, Eq)
 
 type EventPred t = C.Predicate (Event t Symbolic) Tag
 
-tagEvents :: forall t. Word64 -> [Event t Symbolic] -> [Tag]
+tagEvents :: forall t. SecurityParam -> [Event t Symbolic] -> [Tag]
 tagEvents k = C.classify [
       tagMaxRollback
     , tagMaxDrop
@@ -1021,21 +1024,21 @@ tagEvents k = C.classify [
   where
     tagMaxRollback :: EventPred t
     tagMaxRollback =
-        fmap (TagMaxRollback . range k) $ C.maximum $ \ev ->
+        fmap (TagMaxRollback . rangeK k) $ C.maximum $ \ev ->
           case eventCmd ev of
             At (Switch n _) -> Just n
             _otherwise      -> Nothing
 
     tagMaxDrop :: EventPred t
     tagMaxDrop =
-        fmap (TagMaxDrop . range k) $ C.maximum $ \ev ->
+        fmap (TagMaxDrop . rangeK k) $ C.maximum $ \ev ->
           case eventCmd ev of
             At (Drop n) -> Just n
             _otherwise  -> Nothing
 
     tagRestore :: Maybe SnapState -> EventPred t
     tagRestore mST =
-        fmap (TagRestore mST . range k) $ C.maximum $ \ev ->
+        fmap (TagRestore mST . rangeK k) $ C.maximum $ \ev ->
           let mock = modelMock (eventBefore ev) in
           case eventCmd ev of
             At Restore | mockRecentSnap mock == mST -> Just (mockChainLength mock)
@@ -1066,29 +1069,8 @@ showLabelledExamples memPolicy mReplay relevant = do
         repeatedly QC.collect (run cmds) $
           QC.property True
   where
-    k = memPolicyMaxRollback memPolicy
+    k = SecurityParam $ memPolicyMaxRollback memPolicy
     p = Proxy @'LedgerSimple
 
     run :: LUT t => QSM.Commands (At (Cmd t)) (At (Resp t)) -> [Tag]
     run = filter relevant . tagEvents k . execCmds memPolicy
-
-{-------------------------------------------------------------------------------
-  Auxiliary
--------------------------------------------------------------------------------}
-
-data Range n = R_Eq n | R_Btwn (n, n) | R_Gt n | R_Gt_k
-  deriving (Show, Eq)
-
-range :: (Ord n, Show n, Num n) => n -> n -> Range n
-range k n
-  | n > k           = R_Gt_k
-  | n > limit       = R_Gt limit
-  | n `L.elem` vals = R_Eq n
-  | otherwise       =
-      case L.find (\(lo, hi) -> lo <= n && n <= hi) rngs of
-        Nothing  -> error $ "range: unable to classify " ++ show n
-        Just rng -> R_Btwn rng
-  where
-    vals  = [0, 1, 2, 3, 4]
-    rngs  = [(5, 10), (11, 20)]
-    limit = 20
