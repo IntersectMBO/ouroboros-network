@@ -3,7 +3,7 @@
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Ouroboros.Network.Protocol.VersionNegotiation.Test where
+module Ouroboros.Network.Protocol.Handshake.Test where
 
 import           Control.Monad.ST (runST)
 import           Data.Bool (bool)
@@ -29,9 +29,9 @@ import           Ouroboros.Network.Channel
 
 import           Test.Ouroboros.Network.Testing.Utils (splits2, splits3)
 
-import           Ouroboros.Network.Protocol.VersionNegotiation.Type
-import           Ouroboros.Network.Protocol.VersionNegotiation.Codec
-import           Ouroboros.Network.Protocol.VersionNegotiation.Version
+import           Ouroboros.Network.Protocol.Handshake.Type
+import           Ouroboros.Network.Protocol.Handshake.Codec
+import           Ouroboros.Network.Protocol.Handshake.Version
 
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
@@ -45,16 +45,16 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 tests :: TestTree
 tests =
-  testGroup "Ouroboros.Network.Protocol.VersionNegotiation"
+  testGroup "Ouroboros.Network.Protocol.Handshake"
   [ testProperty "connect"             prop_connect
   , testProperty "channel ST"          prop_channel_ST
   , testProperty "channel IO"          prop_channel_IO
   , testProperty "pipe IO"             prop_pipe_IO
   , testProperty "codec RefuseReason"  prop_codec_RefuseReason
-  , testProperty "codec"               prop_codec_VersionNegotiation
-  , testProperty "codec 2-splits"      prop_codec_splits2_VersionNegotiation
+  , testProperty "codec"               prop_codec_Handshake
+  , testProperty "codec 2-splits"      prop_codec_splits2_Handshake
   , testProperty "codec 3-splits"    $ withMaxSuccess 30
-                                       prop_codec_splits3_VersionNegotiation
+                                       prop_codec_splits3_Handshake
   , testGroup "Generators"
     [ testProperty "ArbitraryVersions" $
         checkCoverage prop_arbitrary_ArbitraryVersions
@@ -326,22 +326,22 @@ prop_arbitrary_ArbitraryVersions (ArbitraryVersions (Versions vs) (Versions vs')
 
     knownVersionNumbers = Map.keys vs'
 
--- | Run a version negotiation, but without going via a channel.
+-- | Run a handshake protocol, without going via a channel.
 --
 prop_connect :: ArbitraryVersions -> Property
 prop_connect (ArbitraryVersions clientVersions serverVersions) =
-  let (serverRes, clientRes) = pureVersionNegotiation
+  let (serverRes, clientRes) = pureHandshake
         (\DictVersion -> Dict)
         (\DictVersion -> (==))
         serverVersions
         clientVersions
   in case runSimOrThrow
            (connect
-              (versionNegotiationClientPeer
+              (handshakeClientPeer
                 (\DictVersion -> encodeTerm)
                 (\DictVersion -> decodeTerm)
                 clientVersions)
-              (versionNegotiationServerPeer
+              (handshakeServerPeer
                 (\DictVersion -> encodeTerm)
                 (\DictVersion -> decodeTerm)
                 (\DictVersion vData vData' -> bool (Refuse $ T.pack "refused") Accept $ vData == vData')
@@ -365,7 +365,7 @@ prop_channel :: ( MonadAsync m
              -> Versions VersionNumber DictVersion Bool
              -> m Property
 prop_channel createChannels clientVersions serverVersions =
-  let (serverRes, clientRes) = pureVersionNegotiation
+  let (serverRes, clientRes) = pureHandshake
         (\DictVersion -> Dict)
         (\DictVersion -> (==))
         serverVersions
@@ -373,12 +373,12 @@ prop_channel createChannels clientVersions serverVersions =
   in do
     (clientRes', serverRes') <-
       runConnectedPeers
-        createChannels nullTracer codecVersionNegotiation
-        (versionNegotiationClientPeer
+        createChannels nullTracer codecHandshake
+        (handshakeClientPeer
           (\DictVersion -> encodeTerm)
           (\DictVersion -> decodeTerm)
           clientVersions)
-        (versionNegotiationServerPeer
+        (handshakeServerPeer
           (\DictVersion -> encodeTerm)
           (\DictVersion -> decodeTerm)
           (\DictVersion vData vData' -> bool (Refuse $ T.pack "") Accept $ vData == vData')
@@ -413,17 +413,17 @@ prop_pipe_IO (ArbitraryVersions clientVersions serverVersions) =
 -- Codec tests
 --
 
-instance Eq (AnyMessage (VersionNegotiationProtocol VersionNumber CBOR.Term)) where
+instance Eq (AnyMessage (Handshake VersionNumber CBOR.Term)) where
   AnyMessage (MsgProposeVersions vs)          == AnyMessage (MsgProposeVersions vs')  = vs == vs'
   AnyMessage (MsgAcceptVersion vNumber vParams) == AnyMessage (MsgAcceptVersion vNumber' vParams')
                                                                                       = vNumber == vNumber' && vParams == vParams'
   AnyMessage (MsgRefuse vReason)              == AnyMessage (MsgRefuse vReason')      = vReason == vReason'
   _                                           == _                                    = False
 
-instance Show (AnyMessageAndAgency (VersionNegotiationProtocol VersionNumber CBOR.Term)) where
+instance Show (AnyMessageAndAgency (Handshake VersionNumber CBOR.Term)) where
   show (AnyMessageAndAgency _ msg) = show msg
 
-instance Arbitrary (AnyMessageAndAgency (VersionNegotiationProtocol VersionNumber CBOR.Term)) where
+instance Arbitrary (AnyMessageAndAgency (Handshake VersionNumber CBOR.Term)) where
   arbitrary = oneof
     [ AnyMessageAndAgency (ClientAgency TokPropose) . MsgProposeVersions . fmap (\(Sigma vData (Version _ DictVersion)) -> encodeTerm vData) . getVersions <$> genVersions
     , AnyMessageAndAgency (ServerAgency TokConfirm) . uncurry MsgAcceptVersion <$> genValidVersion'
@@ -446,7 +446,7 @@ newtype ArbitraryRefuseReason = ArbitraryRefuseReason {
 instance Arbitrary ArbitraryRefuseReason where
     arbitrary = ArbitraryRefuseReason <$> oneof
       [ VersionMismatch <$> arbitrary
-      , VersionNegotiationDecodeError <$> arbitrary <*> arbitraryText
+      , HandshakeDecodeError <$> arbitrary <*> arbitraryText
       , Refused <$> arbitrary <*> arbitraryText
       ]
       where
@@ -459,20 +459,20 @@ prop_codec_RefuseReason
 prop_codec_RefuseReason (ArbitraryRefuseReason vReason) = 
   CBOR.deserialise (CBOR.serialise vReason) == vReason
 
-prop_codec_VersionNegotiation
-  :: AnyMessageAndAgency (VersionNegotiationProtocol VersionNumber CBOR.Term)
+prop_codec_Handshake
+  :: AnyMessageAndAgency (Handshake VersionNumber CBOR.Term)
   -> Bool
-prop_codec_VersionNegotiation msg =
-  runST (prop_codecM codecVersionNegotiation msg)
+prop_codec_Handshake msg =
+  runST (prop_codecM codecHandshake msg)
 
-prop_codec_splits2_VersionNegotiation
-  :: AnyMessageAndAgency (VersionNegotiationProtocol VersionNumber CBOR.Term)
+prop_codec_splits2_Handshake
+  :: AnyMessageAndAgency (Handshake VersionNumber CBOR.Term)
   -> Bool
-prop_codec_splits2_VersionNegotiation msg =
-  runST (prop_codec_splitsM splits2 codecVersionNegotiation msg)
+prop_codec_splits2_Handshake msg =
+  runST (prop_codec_splitsM splits2 codecHandshake msg)
 
-prop_codec_splits3_VersionNegotiation
-  :: AnyMessageAndAgency (VersionNegotiationProtocol VersionNumber CBOR.Term)
+prop_codec_splits3_Handshake
+  :: AnyMessageAndAgency (Handshake VersionNumber CBOR.Term)
   -> Bool
-prop_codec_splits3_VersionNegotiation msg =
-  runST (prop_codec_splitsM splits3 codecVersionNegotiation msg)
+prop_codec_splits3_Handshake msg =
+  runST (prop_codec_splitsM splits3 codecHandshake msg)

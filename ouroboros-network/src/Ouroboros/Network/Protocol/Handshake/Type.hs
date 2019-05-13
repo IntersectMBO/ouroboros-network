@@ -12,24 +12,24 @@
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE StandaloneDeriving    #-}
 
-module Ouroboros.Network.Protocol.VersionNegotiation.Type
+module Ouroboros.Network.Protocol.Handshake.Type
   (
-  -- * Version Negotiation Protocol
-    VersionNegotiationProtocol (..)
+  -- * Handshake Protocol
+    Handshake (..)
   , Message (..)
   , ClientHasAgency (..)
   , ServerHasAgency (..)
   , NobodyHasAgency (..)
   , RefuseReason (..)
 
-  -- ** Version Negotiation client
-  , versionNegotiationClientPeer
-  -- ** Version Negotiation server
-  , versionNegotiationServerPeer
+  -- ** Handshake client
+  , handshakeClientPeer
+  -- ** Handshake server
+  , handshakeServerPeer
   , Accept (..)
 
   -- ** Tests
-  , pureVersionNegotiation
+  , pureHandshake
   )
   where
 
@@ -48,15 +48,17 @@ import qualified Codec.Serialise     as CBOR
 
 import           Network.TypedProtocol.Core
 
-import           Ouroboros.Network.Protocol.VersionNegotiation.Version
+import           Ouroboros.Network.Protocol.Handshake.Version
 
 -- |
--- State transitions of the version negotation protocol.
+-- The handshake mini-protocol is used initially to agree the version and
+-- associated parameters of the protocol to use for all subsequent
+-- communication.
 --
-data VersionNegotiationProtocol vNumber vParams where
-    StPropose :: VersionNegotiationProtocol vNumber vParams
-    StConfirm :: VersionNegotiationProtocol vNumber vParams
-    StDone    :: VersionNegotiationProtocol vNumber vParams
+data Handshake vNumber vParams where
+    StPropose :: Handshake vNumber vParams
+    StConfirm :: Handshake vNumber vParams
+    StDone    :: Handshake vNumber vParams
 
 -- |
 -- Reasons by which a server can refuse proposed version.
@@ -67,7 +69,7 @@ data RefuseReason vNumber
   = VersionMismatch [vNumber]
   -- |
   -- The server failed to decode version parameters.
-  | VersionNegotiationDecodeError vNumber Text
+  | HandshakeDecodeError vNumber Text
   -- |
   -- The server refused to run the proposed version parameters
   | Refused vNumber Text
@@ -78,7 +80,7 @@ instance Serialise vNumber => Serialise (RefuseReason vNumber) where
          CBOR.encodeListLen 2
       <> CBOR.encodeWord 0
       <> CBOR.encode vs
-    encode (VersionNegotiationDecodeError vNumber vError) =
+    encode (HandshakeDecodeError vNumber vError) =
          CBOR.encodeListLen 3
       <> CBOR.encodeWord 1
       <> CBOR.encode vNumber
@@ -94,14 +96,14 @@ instance Serialise vNumber => Serialise (RefuseReason vNumber) where
       tag <- CBOR.decodeWord
       case tag of
         0 -> VersionMismatch <$> CBOR.decode
-        1 -> VersionNegotiationDecodeError <$> CBOR.decode <*> CBOR.decodeString
+        1 -> HandshakeDecodeError <$> CBOR.decode <*> CBOR.decodeString
         2 -> Refused <$> CBOR.decode <*> CBOR.decodeString
         _ -> fail $ "decode RefuseReason: unknown tag " ++ show tag
 
 
-instance Protocol (VersionNegotiationProtocol vNumber vParams) where
+instance Protocol (Handshake vNumber vParams) where
 
-    data Message (VersionNegotiationProtocol vNumber vParams) from to where
+    data Message (Handshake vNumber vParams) from to where
 
       -- |
       -- Propose versions together with version parameters.  It must be
@@ -109,23 +111,23 @@ instance Protocol (VersionNegotiationProtocol vNumber vParams) where
       --
       MsgProposeVersions
         :: Map vNumber vParams
-        -> Message (VersionNegotiationProtocol vNumber vParams) StPropose StConfirm
+        -> Message (Handshake vNumber vParams) StPropose StConfirm
 
       -- |
-      -- The remote end decides which version to use and sends choosen version.
+      -- The remote end decides which version to use and sends chosen version.
       -- The server is allowed to modify version parameters. 
       --
       MsgAcceptVersion
         :: vNumber
         -> vParams
-        -> Message (VersionNegotiationProtocol vNumber vParams) StConfirm StDone
+        -> Message (Handshake vNumber vParams) StConfirm StDone
 
       -- |
       -- or it refuses to run any version,
       --
       MsgRefuse
         :: RefuseReason vNumber
-        -> Message (VersionNegotiationProtocol vNumber vParams) StConfirm StDone
+        -> Message (Handshake vNumber vParams) StConfirm StDone
 
     data ClientHasAgency st where
       TokPropose :: ClientHasAgency StPropose
@@ -141,7 +143,7 @@ instance Protocol (VersionNegotiationProtocol vNumber vParams) where
     exclusionLemma_NobodyAndServerHaveAgency TokDone    tok = case tok of {}
 
 deriving instance (Show vNumber, Show vParams)
-    => Show (Message (VersionNegotiationProtocol vNumber vParams) from to)
+    => Show (Message (Handshake vNumber vParams) from to)
 
 encodeVersions
   :: forall vNumber extra r vParams.
@@ -154,26 +156,26 @@ encodeVersions encoder (Versions vs) = go <$> vs
       go (Sigma vData Version {versionExtra}) = encoder versionExtra vData
 
 -- |
--- Client errors, which extends version negotation error @'RefuseReason'@ type,
+-- Client errors, which extends handshake error @'RefuseReason'@ type,
 -- by client specific errors.
 --
 data ClientProtocolError vNumber
-  = VersionNegotiationError (RefuseReason vNumber)
+  = HandshakeError (RefuseReason vNumber)
   | NotRecognisedVersion vNumber
   deriving (Eq, Show)
 
 -- |
--- Version negotiation client which offers @'KnownVersions' vNumber r@ to the
+-- Handshake client which offers @'Versions' vNumber vData@ to the
 -- remote peer.
 --
--- TODO: GADT encoding of the client (@VersionNegotiation.Client@ module).
-versionNegotiationClientPeer
+-- TODO: GADT encoding of the client (@Handshake.Client@ module).
+handshakeClientPeer
   :: Ord vNumber
   => (forall vData. extra vData -> vData -> CBOR.Term)
   -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
   -> Versions vNumber extra r
-  -> Peer (VersionNegotiationProtocol vNumber CBOR.Term) AsClient StPropose m (Either (ClientProtocolError vNumber) r)
-versionNegotiationClientPeer encodeData decodeData versions =
+  -> Peer (Handshake vNumber CBOR.Term) AsClient StPropose m (Either (ClientProtocolError vNumber) r)
+handshakeClientPeer encodeData decodeData versions =
   -- send known versions
   Yield (ClientAgency TokPropose) (MsgProposeVersions $ encodeVersions encodeData versions) $
 
@@ -181,7 +183,7 @@ versionNegotiationClientPeer encodeData decodeData versions =
 
       -- the server refused common highest version
       MsgRefuse vReason ->
-        Done TokDone (Left $ VersionNegotiationError vReason)
+        Done TokDone (Left $ HandshakeError vReason)
 
       -- the server accepted a version, sent back the version number and its
       -- version data blob
@@ -192,7 +194,7 @@ versionNegotiationClientPeer encodeData decodeData versions =
             case decodeData (versionExtra version) vParams of
 
               Left err ->
-                Done TokDone (Left (VersionNegotiationError $ VersionNegotiationDecodeError vNumber err))
+                Done TokDone (Left (HandshakeError $ HandshakeDecodeError vNumber err))
 
               Right vData' ->
                 Done TokDone $ Right $ runApplication (versionApplication version) vData vData'
@@ -206,18 +208,18 @@ data Accept
   deriving (Eq, Show)
 
 -- |
--- Version negotiation server which accepts highest version offered by the peer
--- that also belongs to @knownVersion@.
+-- Server following the handshake protocol; it accepts highest version offered
+-- by the peer that also belongs to the server @versions@.
 --
--- TODO: GADT encoding of the server (@VersionNegotiation.Server@ module).
-versionNegotiationServerPeer
+-- TODO: GADT encoding of the server (@Handshake.Server@ module).
+handshakeServerPeer
   :: Ord vNumber
   => (forall vData. extra vData -> vData -> vParams)
   -> (forall vData. extra vData -> vParams -> Either Text vData)
   -> (forall vData. extra vData -> vData -> vData -> Accept)
   -> Versions vNumber extra r
-  -> Peer (VersionNegotiationProtocol vNumber vParams) AsServer StPropose m (Either (RefuseReason vNumber) r)
-versionNegotiationServerPeer encodeData decodeData acceptVersion versions =
+  -> Peer (Handshake vNumber vParams) AsServer StPropose m (Either (RefuseReason vNumber) r)
+handshakeServerPeer encodeData decodeData acceptVersion versions =
     -- await for versions proposed by a client
     Await (ClientAgency TokPropose) $ \msg -> case msg of
 
@@ -236,7 +238,7 @@ versionNegotiationServerPeer encodeData decodeData acceptVersion versions =
             case (getVersions versions Map.! vNumber, vMap Map.! vNumber) of
               (Sigma vData version, vParams) -> case decodeData (versionExtra version) vParams of
                 Left err ->
-                  let vReason = VersionNegotiationDecodeError vNumber err
+                  let vReason = HandshakeDecodeError vNumber err
                   in Yield (ServerAgency TokConfirm)
                            (MsgRefuse vReason)
                            (Done TokDone $ Left vReason)
@@ -244,7 +246,7 @@ versionNegotiationServerPeer encodeData decodeData acceptVersion versions =
                 Right vData' ->
                   case acceptVersion (versionExtra version) vData vData' of
 
-                    -- We agree on the version; send back the aggreed version
+                    -- We agree on the version; send back the agreed version
                     -- number @vNumber@ and encoded data associated with our
                     -- version.
                     Accept ->
@@ -260,19 +262,19 @@ versionNegotiationServerPeer encodeData decodeData acceptVersion versions =
                                (Done TokDone $ Left $ vReason)
 
 -- |
--- Pure computation which serves as a reference impementation of the
--- @'VersionNegotiationProtocol'@ protocol. Useful for testing
--- @'versionNegotiationClientPeer'@ against @'versionNegotiationServerPeer'@
+-- Pure computation which serves as a reference implementation of the
+-- @'Handshake'@ protocol. Useful for testing
+-- @'handshakeClientPeer'@ against @'handshakeServerPeer'@
 -- using  @'connect'@
 --
-pureVersionNegotiation
+pureHandshake
   ::forall vNumber extra r. Ord vNumber
   => (forall vData. extra vData -> Dict Typeable vData)
   -> (forall vData. extra vData -> vData -> vData -> Bool)
   -> Versions vNumber extra r -- reponders's \/ server's known versions
   -> Versions vNumber extra r -- initiator's \/ client's known versions
   -> (Maybe r, Maybe r)
-pureVersionNegotiation isTypeable acceptVersion (Versions serverVersions) (Versions clientVersions) =
+pureHandshake isTypeable acceptVersion (Versions serverVersions) (Versions clientVersions) =
 
       case Map.toDescList $ serverVersions `Map.intersection` clientVersions of
 

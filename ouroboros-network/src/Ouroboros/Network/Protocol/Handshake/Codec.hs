@@ -6,8 +6,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 
-module Ouroboros.Network.Protocol.VersionNegotiation.Codec
-  ( codecVersionNegotiation
+module Ouroboros.Network.Protocol.Handshake.Codec
+  ( codecHandshake
   , SerialiseTerm (..)
   ) where
 
@@ -28,14 +28,14 @@ import qualified Codec.Serialise     as CBOR
 import           Network.TypedProtocol.Codec hiding (encode, decode)
 import           Ouroboros.Network.Codec (mkCodecCborLazyBS)
 
-import           Ouroboros.Network.Protocol.VersionNegotiation.Type
+import           Ouroboros.Network.Protocol.Handshake.Type
 
 
 -- |
 -- Decoding proposed version is done in two stages.  First decode
--- a @'CBOR.Term'@, this is done by @'codecVersionNegotiation'@, the second
+-- a @'CBOR.Term'@, this is done by @'codecHandshake'@, the second
 -- phase is handled by interface defined in this type class and it is used by
--- @'versionNegotiationClientPeer'@ and @'versionNeogitationServerPeer'@.
+-- @'handshakeClientPeer'@ and @'handshakeServerPeer'@.
 --
 -- todo: find a better place for this class
 class SerialiseTerm a where
@@ -43,13 +43,13 @@ class SerialiseTerm a where
   decodeTerm :: CBOR.Term -> Either Text a
 
 -- |
--- @'VersionNegotiationProtocol'@ codec.  The @'MsgProposeVersions'@ encodes
--- proposed map in ascending order and it expects to receive them in this order.
--- This allows to construct the map in linear time.  There is also another
--- limiting factor to the number of versions on can present: the whole message
--- must fit into a single TCP segment.
+-- @'Handshake'@ codec.  The @'MsgProposeVersions'@ encodes proposed map in
+-- ascending order and it expects to receive them in this order.  This allows
+-- to construct the map in linear time.  There is also another limiting factor
+-- to the number of versions on can present: the whole message must fit into
+-- a single TCP segment.
 --
-codecVersionNegotiation
+codecHandshake
   :: forall vNumber m.
      ( Monad m
      , MonadST m
@@ -58,12 +58,12 @@ codecVersionNegotiation
      , Serialise vNumber
      , Show vNumber
      )
-  => Codec (VersionNegotiationProtocol vNumber CBOR.Term) CBOR.DeserialiseFailure m ByteString
-codecVersionNegotiation = mkCodecCborLazyBS encode decode
+  => Codec (Handshake vNumber CBOR.Term) CBOR.DeserialiseFailure m ByteString
+codecHandshake = mkCodecCborLazyBS encode decode
     where
       encode :: forall (pr :: PeerRole) st st'.
                 PeerHasAgency pr st
-             -> Message (VersionNegotiationProtocol vNumber CBOR.Term) st st'
+             -> Message (Handshake vNumber CBOR.Term) st st'
              -> CBOR.Encoding
 
       encode (ClientAgency TokPropose) (MsgProposeVersions vs) =
@@ -101,11 +101,11 @@ codecVersionNegotiation = mkCodecCborLazyBS encode decode
         vNumber <- CBOR.decode
         let next = Just vNumber
         unless (next > prev)
-          $ fail "codecVersionNegotation.Propose: unordered version"
+          $ fail "codecHandshake.Propose: unordered version"
         vParams <- CBOR.decodeTerm
         decodeMap (pred l) next ((vNumber,vParams) : vs)
 
-      decode :: forall (pr :: PeerRole) s (st :: VersionNegotiationProtocol vNumber CBOR.Term).
+      decode :: forall (pr :: PeerRole) s (st :: Handshake vNumber CBOR.Term).
                 PeerHasAgency pr st
              -> CBOR.Decoder s (SomeMessage st)
       decode stok = do
@@ -120,5 +120,5 @@ codecVersionNegotiation = mkCodecCborLazyBS encode decode
             SomeMessage <$> (MsgAcceptVersion <$> CBOR.decode <*> CBOR.decodeTerm)
           (ServerAgency TokConfirm, 2) -> SomeMessage . MsgRefuse <$> CBOR.decode
 
-          (ClientAgency TokPropose, _) -> fail "codecVersionNegotation.Propose: unexpected key"
-          (ServerAgency TokConfirm, _) -> fail "codecVersionNegotation.Confirm: unexpected key"
+          (ClientAgency TokPropose, _) -> fail "codecHandshake.Propose: unexpected key"
+          (ServerAgency TokConfirm, _) -> fail "codecHandshake.Confirm: unexpected key"
