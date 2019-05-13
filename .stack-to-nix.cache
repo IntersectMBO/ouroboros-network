@@ -68,3 +68,5 @@ https://github.com/input-output-hk/cardano-ledger 9254662d3d44cfaca3deede715b175
 https://github.com/input-output-hk/cardano-base 5bca69f048c4d599c362d797ee8b036c118f77f4 binary 1xhazql8ybn7pprgn2zqgd4waf89z1xicdiwmpsizp97s1k0paki cardano-binary cardano-binary.nix
 https://github.com/input-output-hk/cardano-base 577162e98ba2fbe42c1b6042a9a0a15bbc4956d0 binary 02wzcic9q2zrp7x6vz5dwipp3q08r572ysp2k0n59d4za5w911qh cardano-binary cardano-binary.nix
 https://github.com/input-output-hk/cardano-shell acf5b26fbf3c3a3927507e093d54e70ad521787b . 1b5dl1xvbkn3cdxi4rbzd1gjdsv2a2qcpjl6zmpswqpz30cr9mzr cardano-shell cardano-shell.nix
+https://github.com/input-output-hk/cardano-shell 70944ad492aa49661ccf269434bf05a513cf4451 . 16fbnd3bzxld9ypxw6k9j35rnbj3790bkrnh9hdb7l8c90yrq6iz cardano-shell cardano-shell.nix
+https://github.com/input-output-hk/cardano-sl-x509 e8bfc1294e088f90e5ae0b4aedbc82ee46ac5ee4 . 11qi871sb52vcbxibsjbc3s112pl26ljjvv13q53lvd1ydcgbc3n cardano-sl-x509 cardano-sl-x509.nix
