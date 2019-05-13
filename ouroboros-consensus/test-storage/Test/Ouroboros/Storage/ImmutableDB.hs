@@ -354,7 +354,7 @@ test_cborEpochFileParser = forM_ ["junk", ""] $ \junk -> runFS $ \hasFS -> do
       void $ hPut h (BS.string8 junk)
 
     (offsetsAndSizesAndBlocks', ebbHash, mbErr) <-
-      runEpochFileParser (cborEpochFileParser' hasFS S.decode getEBBHash) fp
+      runEpochFileParser (cborEpochFileParser' hasFS S.decode (const getEBBHash)) fp
 
     ebbHash @?= Just "ebb"
     offsetsAndSizesAndBlocks' @?= offsetsAndSizesAndBlocks

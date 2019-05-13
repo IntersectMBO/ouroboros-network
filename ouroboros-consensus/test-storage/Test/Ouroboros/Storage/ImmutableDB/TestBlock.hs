@@ -286,7 +286,7 @@ prop_testBlockCborEpochFileParser (TestBlocks mbEBB regularBlocks) = QCM.monadic
                      , Maybe TestBlock
                      , Maybe ReadIncrementalErr)
     readBlocks hasFS = runEpochFileParser
-      (cborEpochFileParser chunkSize hasFS decode extractEBB)
+      (cborEpochFileParser chunkSize hasFS decode (const extractEBB))
       file
 
     extractEBB :: TestBlock -> Maybe TestBlock

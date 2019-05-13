@@ -74,6 +74,7 @@ defaultLoggerConfig = Monitoring.Representation
   where
   stdoutScribe = Monitoring.ScribeDefinition
     { Monitoring.scKind     = Monitoring.StdoutSK
+    , Monitoring.scFormat   = Monitoring.ScText
     , Monitoring.scName     = "stdout"
     , Monitoring.scPrivacy  = Monitoring.ScPublic
     , Monitoring.scRotation = Nothing

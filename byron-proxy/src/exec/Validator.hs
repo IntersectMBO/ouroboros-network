@@ -17,6 +17,7 @@ import Cardano.Chain.Block (ChainValidationError, ChainValidationState (..))
 import qualified Cardano.Chain.Block as Block
 import Cardano.Chain.Common (parseReqNetworkMag)
 import qualified Cardano.Chain.Genesis as Genesis
+import Cardano.Chain.Slotting (FlatSlotId(..))
 
 import Cardano.Shell.Constants.Types (CardanoConfiguration (..), Core (..), Genesis (..))
 import Cardano.Shell.Presets (mainnetConfiguration)
@@ -49,7 +50,7 @@ clientFold tracer genesisConfig stopCondition cvs = Client.Fold $ pure $ Client.
         traceWith tracer msg
         pure $ Client.Stop $ Left err
       Right cvs' -> do
-        let msg = pack $ mconcat ["Validated block at slot ", show (cvsLastSlot cvs')]
+        let msg = pack $ mconcat ["Validated block at slot ", show (unFlatSlotId $ cvsLastSlot cvs')]
         traceWith tracer msg
         maybeStop <- stopCondition block
         case maybeStop of
