@@ -24,7 +24,7 @@ import qualified Data.ByteString.Lazy as BL
 import           Data.Int
 import           Data.Word
 import           GHC.Stack
-import qualified Network.Socket as Socket hiding (recv)
+import qualified Network.Socket as Socket
 import qualified Network.Socket.ByteString.Lazy as Socket (recv, sendAll)
 
 import           Ouroboros.Network.Time

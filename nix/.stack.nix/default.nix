@@ -9,6 +9,7 @@
         "aeson-options" = (((hackage.aeson-options)."0.1.0").revisions).default;
         "pvss" = (((hackage.pvss)."0.2.0").revisions).default;
         "lrucache" = (((hackage.lrucache)."1.2.0.1").revisions).default;
+        "network" = (((hackage.network)."3.1.0.0").revisions).default;
         "writer-cps-mtl" = (((hackage.writer-cps-mtl)."0.1.1.6").revisions).default;
         "writer-cps-transformers" = (((hackage.writer-cps-transformers)."0.5.6.0").revisions).default;
         "o-clock" = (((hackage.o-clock)."1.0.0.1").revisions).default;
