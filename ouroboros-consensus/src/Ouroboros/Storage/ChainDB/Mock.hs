@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
 
@@ -9,6 +10,7 @@ import           Data.Bifunctor (first)
 import qualified Data.Set as Set
 
 import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.Block (ChainUpdate)
 import qualified Ouroboros.Network.ChainProducerState as CPS
@@ -25,7 +27,9 @@ import           Ouroboros.Storage.ChainDB.Model (Model)
 import qualified Ouroboros.Storage.ChainDB.Model as Model
 
 openDB :: forall m blk.
-          ( MonadSTM m
+          ( MonadSTM   m
+          , MonadThrow m
+          , MonadThrow (STM m)
           , ProtocolLedgerView blk
           )
        => NodeConfig (BlockProtocol blk)
@@ -48,6 +52,14 @@ openDB cfg initLedger = do
 
         update :: (Model blk -> (a, Model blk)) -> m a
         update = atomically . updateSTM
+
+        updateE :: (Model blk -> (Either (ChainDbError blk) (a, Model blk)))
+                -> m a
+        updateE f = atomically $ do
+            err <- f <$> readTVar db
+            case err of
+              Left e        -> throwM e
+              Right (a, m') -> writeTVar db m' >> return a
 
         update_ :: (Model blk -> Model blk) -> m ()
         update_ f = update (\m -> ((), f m))
@@ -85,7 +97,7 @@ openDB cfg initLedger = do
       , getTipPoint         = query   $ Model.tipPoint
       , getIsFetched        = query   $ flip Model.hasBlockByPoint
       , knownInvalidBlocks  = query   $ const Set.empty -- TODO
-      , streamBlocks        = update .: (first iterator ..: Model.streamBlocks)
+      , streamBlocks        = updateE .: (fmap (first (fmap iterator)) ..: Model.streamBlocks k)
       , newBlockReader      = update  $ (first reader . Model.readBlocks)
       , newHeaderReader     = update  $ (first (fmap getHeader . reader) . Model.readBlocks)
         -- A no-op

@@ -16,6 +16,9 @@ module Ouroboros.Storage.ChainDB.API (
   , Iterator(..)
   , IteratorId(..)
   , IteratorResult(..)
+  , UnknownRange(..)
+  , validBounds
+  , streamAll
     -- * Readers
   , Reader(..)
     -- * Recovery
@@ -35,9 +38,9 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
-import           Ouroboros.Network.Block (ChainUpdate, HasHeader (..),
-                     HeaderHash, SlotNo, StandardHash)
-import           Ouroboros.Network.Chain (Chain (..), Point (..))
+import           Ouroboros.Network.Block (ChainHash (..), ChainUpdate,
+                     HasHeader (..), HeaderHash, SlotNo, StandardHash)
+import           Ouroboros.Network.Chain (Chain (..), Point (..), genesisPoint)
 import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.ChainProducerState (ReaderId)
 
@@ -148,10 +151,16 @@ data ChainDB m blk = ChainDB {
 
       -- | Stream blocks
       --
-      -- Streaming is not restricted to the current fork, but there must be
-      -- an unbroken path from the starting point to the end point /at the time
+      -- Streaming is not restricted to the current fork, but there must be an
+      -- unbroken path from the starting point to the end point /at the time
       -- of initialization/ of the iterator. Once the iterator has been
-      -- initialized, it will not be affected by subsequent calls to 'addBlock'.
+      -- initialized, it will not be affected by subsequent calls to
+      -- 'addBlock'. To track the current chain, use a 'Reader' instead.
+      --
+      -- Streaming blocks older than @k@ is permitted, but only when they are
+      -- part of the current fork (at the time of initialization). Streaming a
+      -- fork that forks off more than @k@ blocks in the past is not permitted
+      -- and an 'UnknownRange' error will be returned in that case.
       --
       -- The iterator /does/ have a limited lifetime, however. The chain DB
       -- internally partitions the chain into an " immutable " part and a
@@ -167,7 +176,17 @@ data ChainDB m blk = ChainDB {
       -- then the first block on that fork will become unavailable as soon as
       -- another block is pushed to the current chain and the subsequent
       -- time delay expires.
-    , streamBlocks       :: StreamFrom blk -> StreamTo blk -> m (Iterator m blk)
+      --
+      -- When the given bounds are nonsensical, an 'InvalidIteratorRange' is
+      -- thrown.
+      --
+      -- When the given bounds are not part of the chain DB, an 'UnknownRange'
+      -- error is returned.
+      --
+      -- To stream all blocks from the current chain, use 'streamAll', as it
+      -- correctly handles an empty ChainDB.
+    , streamBlocks       :: StreamFrom blk -> StreamTo blk
+                         -> m (Either (UnknownRange blk) (Iterator m blk))
 
       -- | Chain reader
       --
@@ -215,12 +234,12 @@ data ChainDB m blk = ChainDB {
 -------------------------------------------------------------------------------}
 
 toChain :: forall m blk.
-           (MonadThrow m, HasHeader blk)
+           (MonadThrow m, HasHeader blk, MonadSTM m)
         => ChainDB m blk -> m (Chain blk)
 toChain chainDB = bracket
-    (streamBlocks chainDB StreamFromGenesis StreamToEnd)
-    iteratorClose
-    (go Genesis)
+    (streamAll chainDB)
+    (mapM_ iteratorClose)
+    (maybe (return Genesis) (go Genesis))
   where
     go :: Chain blk -> Iterator m blk -> m (Chain blk)
     go chain it = do
@@ -244,15 +263,19 @@ fromChain openDB chain = do
   Iterator API
 -------------------------------------------------------------------------------}
 
+-- | The lower bound for a ChainDB iterator.
+--
+-- Hint: use @'StreamFromExclusive' 'genesisPoint'@ to start streaming from
+-- Genesis.
 data StreamFrom blk =
     StreamFromInclusive (Point blk)
   | StreamFromExclusive (Point blk)
-  | StreamFromGenesis
+  deriving (Show, Eq)
 
 data StreamTo blk =
     StreamToInclusive (Point blk)
   | StreamToExclusive (Point blk)
-  | StreamToEnd
+  deriving (Show, Eq)
 
 data Iterator m blk = Iterator {
       iteratorNext  :: m (IteratorResult blk)
@@ -281,6 +304,63 @@ data IteratorResult blk =
     -- the VolatileDB, but not added to the ImmutableDB.
     --
     -- This will only happen when streaming very old forks very slowly.
+
+data UnknownRange blk =
+    -- | The block at the given point was not found in the ChainDB.
+    MissingBlock (Point blk)
+    -- | The requested range forks off too far in the past, i.e. it doesn't
+    -- fit on the tip of the ImmutableDB.
+  | ForkTooOld (StreamFrom blk)
+  deriving (Eq, Show)
+
+-- | Check whether the bounds make sense
+--
+-- An example of bounds that don't make sense:
+--
+-- > StreamFromExclusive (Point { pointSlot = SlotNo 3 , .. }
+-- > StreamToInclusive   (Point { pointSlot = SlotNo 3 , .. }
+validBounds :: StreamFrom blk -> StreamTo blk -> Bool
+validBounds from to = case from of
+  StreamFromInclusive (Point { pointHash = GenesisHash }) -> False
+
+  StreamFromInclusive (Point { pointSlot = sfrom }) -> case to of
+    StreamToInclusive (Point { pointSlot = sto }) -> sfrom <= sto
+    StreamToExclusive (Point { pointSlot = sto }) -> sfrom <  sto
+
+  StreamFromExclusive (Point { pointSlot = sfrom }) -> case to of
+    StreamToInclusive (Point { pointSlot = sto }) -> sfrom <  sto
+    StreamToExclusive (Point { pointSlot = sto }) -> sfrom <  sto
+
+-- | Stream all blocks from the current chain.
+--
+-- To stream all blocks from the current chain from the ChainDB, one would use
+-- @'StreamFromExclusive' 'genesisPoint'@ as the lower bound and
+-- @'StreamToInclusive' tip@ as the upper bound where @tip@ is retrieved with
+-- 'getTipPoint'.
+--
+-- However, when the ChainDB is empty, @tip@ will be 'genesisPoint' too, in
+-- which case the bounds don't make sense. This function correctly handles
+-- this case.
+--
+-- Note that this is not a 'Reader', so the stream will not include blocks
+-- that are added to the current chain after starting the stream.
+streamAll :: (MonadSTM m, StandardHash blk) => ChainDB m blk
+          -> m (Maybe (Iterator m blk))
+streamAll chainDB = do
+    tip <- atomically $ getTipPoint chainDB
+    if tip == genesisPoint
+      then return Nothing
+      else do
+        errIt <- streamBlocks
+                   chainDB
+                   (StreamFromExclusive genesisPoint)
+                   (StreamToInclusive tip)
+        case errIt of
+          -- TODO this is theoretically possible if the current chain has
+          -- changed significantly between getting the tip and asking for the
+          -- stream.
+          Left  e  -> error (show e)
+          Right it -> return $ Just it
 
 {-------------------------------------------------------------------------------
   Readers
@@ -407,6 +487,14 @@ data ChainDbError blk =
     -- This will be thrown when performing any operation on the ChainDB except
     -- for 'isOpen' and 'closeDB'.
   | ClosedDBError
+
+    -- | When there is no chain/fork that satisfies the bounds passed to
+    -- 'streamBlocks'.
+    --
+    -- * The lower and upper bound are not on the same chain.
+    -- * The bounds don't make sense, e.g., the lower bound starts after the
+    --   upper bound, or the lower bound starts from genesis, /inclusive/.
+  | InvalidIteratorRange (StreamFrom blk) (StreamTo blk)
   deriving (Eq, Show, Typeable)
 
 instance (StandardHash blk, Typeable blk) => Exception (ChainDbError blk)

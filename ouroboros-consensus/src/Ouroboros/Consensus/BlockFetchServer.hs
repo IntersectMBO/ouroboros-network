@@ -20,8 +20,9 @@ import           Ouroboros.Network.Protocol.BlockFetch.Server
                      BlockFetchServer (..))
 import           Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange (..))
 
-import           Ouroboros.Storage.ChainDB.API (ChainDB, IteratorResult (..))
-import qualified Ouroboros.Storage.ChainDB.API as ChainDB
+import           Ouroboros.Storage.ChainDB (ChainDB, IteratorResult (..),
+                     UnknownRange)
+import qualified Ouroboros.Storage.ChainDB as ChainDB
 
 data BlockFetchServerException blk =
       -- | A block that was supposed to be included in a batch was garbage
@@ -63,13 +64,15 @@ blockFetchServer _tracer chainDB = senderSide
 
     receiveReq :: ChainRange blk
                -> m (BlockFetchBlockSender blk m ())
-    receiveReq chainRange = withIter chainRange $ \it ->
-      -- When we got an iterator, it will stream at least one block since its
-      -- bounds are inclusive (when the bounds are invalid, we won't get an
-      -- iterator and we reply with 'SendMsgNoBlocks'), so we don't have to
-      -- check whether the iterator is empty (and reply with
-      -- 'SendMsgNoBlocks').
-      return $ SendMsgStartBatch $ sendBlocks it
+    receiveReq chainRange = withIter chainRange $ \errIt ->
+      return $ case errIt of
+        -- The range is not in the ChainDB or it forks off more than @k@
+        -- blocks back.
+        Left  _  -> SendMsgNoBlocks $ return senderSide
+        -- When we got an iterator, it will stream at least one block since
+        -- its bounds are inclusive, so we don't have to check whether the
+        -- iterator is empty.
+        Right it -> SendMsgStartBatch $ sendBlocks it
 
 
     sendBlocks :: ChainDB.Iterator m blk
@@ -77,16 +80,16 @@ blockFetchServer _tracer chainDB = senderSide
     sendBlocks it = do
       next <- ChainDB.iteratorNext it
       case next of
-        IteratorExhausted      -> return $ SendMsgBatchDone (return senderSide)
+        IteratorExhausted      -> return $ SendMsgBatchDone $ return senderSide
         IteratorResult blk     -> return $ SendMsgBlock blk (sendBlocks it)
         IteratorBlockGCed hash -> throwM $ BlockGCed @blk hash
 
-    withIter :: ChainRange blk -> (ChainDB.Iterator m blk -> m a) -> m a
+    withIter :: ChainRange blk
+             -> (Either (UnknownRange blk) (ChainDB.Iterator m blk) -> m a)
+             -> m a
     withIter (ChainRange start end) = bracket
-      -- TODO when streamBlocks throws an exception, we should return
-      -- SendMsgNoBlocks. Which exception will the ChainDB throw?
         (ChainDB.streamBlocks
           chainDB
           (ChainDB.StreamFromInclusive start)
           (ChainDB.StreamToInclusive   end))
-        ChainDB.iteratorClose
+        (mapM_ ChainDB.iteratorClose)

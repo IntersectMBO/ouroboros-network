@@ -28,8 +28,13 @@ module Ouroboros.Storage.ChainDB.Model (
   , readBlocks
   , readerInstruction
   , readerForward
+    -- * Exported for testing purposes
+  , between
+  , blocks
+  , chains
   ) where
 
+import           Control.Monad (unless)
 import           Control.Monad.Except (runExcept)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -49,9 +54,11 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util (repeatedly)
+import qualified Ouroboros.Consensus.Util.AnchoredFragment as Fragment
 
-import           Ouroboros.Storage.ChainDB.API (IteratorId (..),
-                     IteratorResult (..), StreamFrom (..), StreamTo (..))
+import           Ouroboros.Storage.ChainDB.API (ChainDbError (..),
+                     IteratorId (..), IteratorResult (..), StreamFrom (..),
+                     StreamTo (..), UnknownRange (..), validBounds)
 
 -- | Model of the chain DB
 data Model blk = Model {
@@ -144,14 +151,18 @@ addBlocks cfg = repeatedly (addBlock cfg)
 -------------------------------------------------------------------------------}
 
 streamBlocks :: HasHeader blk
-             => StreamFrom blk -> StreamTo blk
-             -> Model blk -> (IteratorId, Model blk)
-streamBlocks from to m = (itrId, m {
-      iterators = Map.insert
-                    itrId
-                    (between from to (currentChain m))
-                    (iterators m)
-    })
+             => SecurityParam
+             -> StreamFrom blk -> StreamTo blk
+             -> Model blk
+             -> Either (ChainDbError blk)
+                       (Either (UnknownRange blk) IteratorId, Model blk)
+streamBlocks securityParam from to m = do
+    unless (validBounds from to) $ Left (InvalidIteratorRange from to)
+    case between securityParam from to m of
+      Left  e    -> return (Left e,      m)
+      Right blks -> return (Right itrId, m {
+          iterators = Map.insert itrId blks (iterators m)
+        })
   where
     itrId :: IteratorId
     itrId = IteratorId (Map.size (iterators m)) -- we never delete iterators
@@ -256,25 +267,83 @@ successors = Map.unionsWith Map.union . map single
                              (Map.singleton (Block.blockHash b) b)
 
 between :: forall blk. HasHeader blk
-        => StreamFrom blk -> StreamTo blk -> Chain blk -> [blk]
-between from to =
-      (reverse . dropAfterTo to . reverse)
-    . dropBeforeFrom from
-    . Chain.toOldestFirst
+        => SecurityParam -> StreamFrom blk -> StreamTo blk -> Model blk
+        -> Either (UnknownRange blk) [blk]
+between (SecurityParam k) from to m = do
+    fork <- errFork
+    if Fragment.forksAtMostKBlocks k currentFrag fork
+      then return $ Fragment.toOldestFirst fork
+           -- We cannot stream from an old fork
+      else Left $ ForkTooOld from
   where
-    -- Drop everything before the start point
-    -- This runs on the list /from oldest to newest/
-    dropBeforeFrom :: StreamFrom blk -> [blk] -> [blk]
-    dropBeforeFrom StreamFromGenesis       = id
-    dropBeforeFrom (StreamFromInclusive p) = dropWhile (isNot p)
-    dropBeforeFrom (StreamFromExclusive p) = tail . dropWhile (isNot p)
+    currentFrag :: AnchoredFragment blk
+    currentFrag = Fragment.fromChain (currentChain m)
 
-    -- Drop everything after the end point
-    -- This runs on the /reversed/ list (from newest to oldest)
-    dropAfterTo :: StreamTo blk -> [blk] -> [blk]
-    dropAfterTo StreamToEnd           = id
-    dropAfterTo (StreamToInclusive p) = dropWhile (isNot p)
-    dropAfterTo (StreamToExclusive p) = tail . dropWhile (isNot p)
+    -- A fragment for each possible chain in the database
+    fragments :: [AnchoredFragment blk]
+    fragments = map Fragment.fromChain
+              . chains
+              . blocks
+              $ m
 
-    isNot :: Point blk -> blk -> Bool
-    p `isNot` b = p /= Block.blockPoint b
+    -- The fork that contained the start and end point, i.e. the fork to
+    -- stream from. This relies on the fact that each block uniquely
+    -- determines its prefix.
+    errFork :: Either (UnknownRange blk) (AnchoredFragment blk)
+    errFork = do
+      -- The error refers to @to@, because if the list is empty, @to@ was not
+      -- found on any chain
+      let err = MissingBlock $ case to of
+            StreamToInclusive p -> p
+            StreamToExclusive p -> p
+      -- Note that any chain that contained @to@, must have an identical
+      -- prefix because the hashes of the blocks enforce this. So we can just
+      -- pick any fork.
+      afterTo <- anyFork (map cutOffAfterTo fragments) err
+      cutOffBeforeFrom afterTo
+
+    -- Select the first 'Right' in the list, otherwise return the last 'Left'.
+    -- If the list is empty, return the error given as second argument.
+    --
+    -- See 'errFork' for why it doesn't matter which fork we return.
+    anyFork :: [Either (UnknownRange blk) (AnchoredFragment blk)]
+            ->  UnknownRange blk
+            ->  Either (UnknownRange blk) (AnchoredFragment blk)
+    anyFork (Right f : _ ) _ = Right f
+    anyFork (Left  u : []) _ = Left u
+    anyFork (Left  _ : fs) e = anyFork fs e
+    anyFork []             e = Left e
+
+    -- If @to@ is on the fragment, remove all blocks after it, including @to@
+    -- itself in case of 'StreamToExclusive'. If it is not on the fragment,
+    -- return a 'MissingBlock' error.
+    cutOffAfterTo :: AnchoredFragment blk
+                  -> Either (UnknownRange blk) (AnchoredFragment blk)
+    cutOffAfterTo frag = case to of
+      StreamToInclusive p
+        | Just frag' <- fst <$> Fragment.splitAfterPoint frag p
+        -> return frag'
+        | otherwise
+        -> Left $ MissingBlock p
+      StreamToExclusive p
+        | Just frag' <- fst <$> Fragment.splitAfterPoint frag p
+        -> return $ Fragment.dropNewest 1 frag'
+        | otherwise
+        -> Left $ MissingBlock p
+
+    -- If @from@ is on the fragment, remove all blocks before it, including
+    -- @from@ itself in case of 'StreamFromExclusive'. It it is not on the
+    -- fragment, return a 'MissingBlock' error.
+    cutOffBeforeFrom :: AnchoredFragment blk
+                     -> Either (UnknownRange blk) (AnchoredFragment blk)
+    cutOffBeforeFrom frag = case from of
+      StreamFromInclusive p
+        | Just frag' <- snd <$> Fragment.splitBeforePoint frag p
+        -> return frag'
+        | otherwise
+        -> Left $ MissingBlock p
+      StreamFromExclusive p
+        | Just frag' <- snd <$> Fragment.splitAfterPoint frag p
+        -> return frag'
+        | otherwise
+        -> Left $ MissingBlock p
