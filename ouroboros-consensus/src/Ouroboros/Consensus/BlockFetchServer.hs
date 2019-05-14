@@ -1,27 +1,58 @@
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE StandaloneDeriving   #-}
+{-# LANGUAGE TypeApplications     #-}
+{-# LANGUAGE TypeFamilies         #-}
+{-# LANGUAGE UndecidableInstances #-}
 module Ouroboros.Consensus.BlockFetchServer
   ( blockFetchServer
   ) where
+
+import           Data.Typeable (Typeable)
 
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer (Tracer)
 
+import           Ouroboros.Network.Block (HeaderHash, StandardHash)
 import           Ouroboros.Network.Protocol.BlockFetch.Server
                      (BlockFetchBlockSender (..), BlockFetchSendBlocks (..),
                      BlockFetchServer (..))
 import           Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange (..))
 
-import           Ouroboros.Storage.ChainDB.API (ChainDB)
+import           Ouroboros.Storage.ChainDB.API (ChainDB, IteratorResult (..))
 import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 
+data BlockFetchServerException blk =
+      -- | A block that was supposed to be included in a batch was garbage
+      -- collected since we started the batch and can no longer be sent.
+      --
+      -- This will very rarely happen, only in the following scenario: when
+      -- the batch started, the requested blocks were on the current chain,
+      -- but then the current chain changed such that the requested blocks are
+      -- now on a fork. If while requesting the blocks from the batch, there
+      -- were a pause of /hours/ such that the fork gets older than @k@, then
+      -- the next request after this long pause could result in this
+      -- exception, as the block to stream from the old fork could have been
+      -- garbage collected. However, the network protocol will have timed out
+      -- long before this happens.
+      BlockGCed (HeaderHash blk)
+
+deriving instance StandardHash blk => Show (BlockFetchServerException blk)
+
+instance (Typeable blk, StandardHash blk)
+      => Exception (BlockFetchServerException blk)
 
 -- | Block fetch server based on
 -- 'Ouroboros.Network.BlockFetch.Examples.mockBlockFetchServer1', but using
 -- the 'ChainDB'.
 blockFetchServer
-    :: forall m blk. (MonadSTM m, MonadThrow m)
+    :: forall m blk.
+       ( MonadSTM   m
+       , MonadThrow m
+       , StandardHash blk
+       , Typeable     blk
+       )
     => Tracer m String
     -> ChainDB m blk
     -> BlockFetchServer blk m ()
@@ -45,9 +76,10 @@ blockFetchServer _tracer chainDB = senderSide
                -> m (BlockFetchSendBlocks blk m ())
     sendBlocks it = do
       next <- ChainDB.iteratorNext it
-      return $ case next of
-        ChainDB.IteratorExhausted  -> SendMsgBatchDone (return senderSide)
-        ChainDB.IteratorResult blk -> SendMsgBlock blk (sendBlocks it)
+      case next of
+        IteratorExhausted      -> return $ SendMsgBatchDone (return senderSide)
+        IteratorResult blk     -> return $ SendMsgBlock blk (sendBlocks it)
+        IteratorBlockGCed hash -> throwM $ BlockGCed @blk hash
 
     withIter :: ChainRange blk -> (ChainDB.Iterator m blk -> m a) -> m a
     withIter (ChainRange start end) = bracket

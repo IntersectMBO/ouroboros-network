@@ -220,8 +220,10 @@ toChain chainDB = bracket
     go chain it = do
       next <- iteratorNext it
       case next of
-        IteratorExhausted  -> return chain
-        IteratorResult blk -> go (Chain.addBlock blk chain) it
+        IteratorResult blk  -> go (Chain.addBlock blk chain) it
+        IteratorExhausted   -> return chain
+        IteratorBlockGCed _ ->
+          error "block on the current chain was garbage-collected"
 
 fromChain :: forall m blk. Monad m
           => m (ChainDB m blk)
@@ -268,6 +270,11 @@ newtype IteratorId = IteratorId Int
 data IteratorResult blk =
     IteratorExhausted
   | IteratorResult blk
+  | IteratorBlockGCed (HeaderHash blk)
+    -- ^ The block that was supposed to be streamed was garbage-collected from
+    -- the VolatileDB, but not added to the ImmutableDB.
+    --
+    -- This will only happen when streaming very old forks very slowly.
 
 {-------------------------------------------------------------------------------
   Readers
