@@ -12,6 +12,9 @@ module Test.Socket (tests) where
 import           Control.Monad
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
+#ifdef OUROBOROS_NETWORK_SOCKET_DEBUG
+import           Control.Monad.Class.MonadSay
+#endif
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
@@ -61,6 +64,16 @@ import           Test.Tasty.QuickCheck (testProperty)
  - behind the OUROBOROS_NETWORK_IPV6 define for now.
  -}
 -- #define OUROBOROS_NETWORK_IPV6
+
+-- #define OUROBOROS_NETWORK_SOCKET_DEBUG
+
+#ifdef OUROBOROS_NETWORK_SOCKET_DEBUG
+socketSendRecvTracer :: Show a => Tracer IO a
+socketSendRecvTracer = Tracer (say . show)
+#else
+socketSendRecvTracer :: Tracer IO a
+socketSendRecvTracer = nullTracer
+#endif
 
 --
 -- The list of all tests
@@ -161,7 +174,7 @@ prop_socket_send_recv clientAddr serverAddr f xs = do
     let -- Server Node; only req-resp server
         srvPeer :: Peer (ReqResp.ReqResp Int Int) AsServer ReqResp.StIdle IO ()
         srvPeer = ReqResp.reqRespServerPeer (reqRespServerMapAccumL sv (\a -> pure . f a) 0)
-        srvPeers Mxt.ReqResp1 = OnlyServer nullTracer ReqResp.codecReqResp srvPeer
+        srvPeers Mxt.ReqResp1 = OnlyServer socketSendRecvTracer ReqResp.codecReqResp srvPeer
         serNet = NetworkInterface {
             nodeAddress = serverAddr,
             protocols   = srvPeers
@@ -170,7 +183,7 @@ prop_socket_send_recv clientAddr serverAddr f xs = do
         -- Client Node; only req-resp client
         cliPeer :: Peer (ReqResp.ReqResp Int Int) AsClient ReqResp.StIdle IO ()
         cliPeer = ReqResp.reqRespClientPeer (reqRespClientMap cv xs)
-        cliPeers Mxt.ReqResp1 = OnlyClient nullTracer ReqResp.codecReqResp cliPeer
+        cliPeers Mxt.ReqResp1 = OnlyClient socketSendRecvTracer ReqResp.codecReqResp cliPeer
         cliNet = NetworkInterface {
              nodeAddress = clientAddr,
              protocols   = cliPeers
@@ -198,7 +211,7 @@ prop_socket_recv_close f _ = ioProperty $ do
 
     let srvPeer :: Peer (ReqResp.ReqResp Int Int) AsServer ReqResp.StIdle IO ()
         srvPeer = ReqResp.reqRespServerPeer (reqRespServerMapAccumL sv (\a -> pure . f a) 0)
-        srvPeers Mxt.ReqResp1 = OnlyServer nullTracer ReqResp.codecReqResp srvPeer
+        srvPeers Mxt.ReqResp1 = OnlyServer socketSendRecvTracer ReqResp.codecReqResp srvPeer
 
     bracket
       (Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol)
@@ -250,7 +263,7 @@ prop_socket_client_connect_error _ xs = ioProperty $ do
 
     let cliPeer :: Peer (ReqResp.ReqResp Int Int) AsClient ReqResp.StIdle IO ()
         cliPeer = ReqResp.reqRespClientPeer (reqRespClientMap cv xs)
-        cliPeers Mxt.ReqResp1 = OnlyClient nullTracer ReqResp.codecReqResp cliPeer
+        cliPeers Mxt.ReqResp1 = OnlyClient socketSendRecvTracer ReqResp.codecReqResp cliPeer
         ni = NetworkInterface {
             nodeAddress = serverAddr,
             protocols   = cliPeers
@@ -282,7 +295,7 @@ demo chain0 updates = do
         consumerPeer = ChainSync.chainSyncClientPeer
                         (ChainSync.chainSyncClientExample consumerVar
                         (consumerClient done target consumerVar))
-        consumerPeers Mxt.ChainSync1 = OnlyClient nullTracer ChainSync.codecChainSync consumerPeer
+        consumerPeers Mxt.ChainSync1 = OnlyClient socketSendRecvTracer ChainSync.codecChainSync consumerPeer
         consumerNet = NetworkInterface {
               nodeAddress = consumerAddress,
               protocols   = consumerPeers
@@ -290,7 +303,7 @@ demo chain0 updates = do
 
         producerPeer :: Peer (ChainSync.ChainSync block (Point block)) AsServer ChainSync.StIdle IO ()
         producerPeer = ChainSync.chainSyncServerPeer (ChainSync.chainSyncServerExample () producerVar)
-        producerPeers Mxt.ChainSync1 = OnlyServer nullTracer ChainSync.codecChainSync producerPeer
+        producerPeers Mxt.ChainSync1 = OnlyServer socketSendRecvTracer ChainSync.codecChainSync producerPeer
         producerNet = NetworkInterface {
               nodeAddress = producerAddress,
               protocols   = producerPeers

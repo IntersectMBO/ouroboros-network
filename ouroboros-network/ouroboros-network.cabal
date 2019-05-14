@@ -18,6 +18,11 @@ Flag ipv6
   -- Default to False since travis lacks IPv6 support
   Default: False
 
+Flag socket-debug
+  Description: Enable verbose debug output during socket tests
+  Manual: True
+  Default: False
+
 source-repository head
   type:     git
   location: https://github.com/input-output-hk/ouroboros-network
@@ -219,6 +224,9 @@ test-suite tests
                        -fno-ignore-asserts
   if flag(ipv6)
     cpp-options:       -DOUROBOROS_NETWORK_IPV6
+
+  if flag(socket-debug)
+    cpp-options:       -DOUROBOROS_NETWORK_SOCKET_DEBUG
 
 test-suite test-cddl
   type:                exitcode-stdio-1.0
