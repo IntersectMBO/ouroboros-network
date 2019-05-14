@@ -16,22 +16,22 @@ import           Ouroboros.Network.Protocol.TxSubmission.Server
 
 
 -- |
--- An example @'TxSubmissionServer'@ which sends trasactions from a fixed pool
+-- An example @'TxSubmissionClient'@ which sends trasactions from a fixed pool
 -- of transactions.  It returns a list of @tx@ sent back to the client.
 --
--- It is only ment to be used in test.  The server will error if a client will
--- ask for a transaction which is not in the pool or if a client will ask for
+-- It is only ment to be used in test.  The client will error if a server will
+-- ask for a transaction which is not in the pool or if a server will ask for
 -- the same trasaction twice.
 --
-txSubmissionServerFixed
+txSubmissionClientFixed
   :: forall hash tx m.
      ( Applicative m
      , Eq hash
      )
   => [tx]
   -> (tx -> hash)
-  -> TxSubmissionServer hash tx m [tx]
-txSubmissionServerFixed txs0 txHash = TxSubmissionServer (pure $ handlers [] txs0)
+  -> TxSubmissionClient hash tx m [tx]
+txSubmissionClientFixed txs0 txHash = TxSubmissionClient (pure $ handlers [] txs0)
     where
       handlers :: [tx] -> [tx] -> TxSubmissionHandlers hash tx m [tx]
       handlers !sent txs =
@@ -57,16 +57,16 @@ data ReqOrResp hash tx
   deriving (Eq, Show)
 
 -- |
--- A non pipelined tx-submission client.  It send @'MsgGetHashes'@ awaits for
+-- A non pipelined tx-submission server.  It send @'MsgGetHashes'@ awaits for
 -- the response and then requests each transaction awaiting for it before
 -- sending the next @'MsgGetTx'@ request.
 --
-txSubmissionClient
+txSubmissionServer
   :: forall hash tx m.
      Applicative m
   => [Word16] -- ^ each element corresponds to a single @'MsgGetHashes'@ request
-  -> TxSubmissionClientPipelined hash tx m [ReqOrResp hash tx]
-txSubmissionClient ns0 = TxSubmissionClientPipelined (sender [] ns0)
+  -> TxSubmissionServerPipelined hash tx m [ReqOrResp hash tx]
+txSubmissionServer ns0 = TxSubmissionServerPipelined (sender [] ns0)
     where
       sender
         :: [ReqOrResp hash tx]
@@ -89,18 +89,18 @@ txSubmissionClient ns0 = TxSubmissionClientPipelined (sender [] ns0)
                                               Right tx -> pure $ getHashes (RespTx tx:ReqTx h:txs) ns hs )
 
 -- |
--- A piplined tx-submission client that sends @'MsgGetTx'@ eagerly but always tries to
+-- A piplined tx-submission server that sends @'MsgGetTx'@ eagerly but always tries to
 -- collect any replies as soon as they are available.  This keeps pipelining to
 -- bare minimum, and gives maximum choice to the environment (drivers).
 --
 -- It returns the interleaving of requests and received trasactions.
 --
-txSubmissionClientPipelinedMin
+txSubmissionServerPipelinedMin
   :: forall hash tx m.
      Applicative m
   => [Word16]
-  -> TxSubmissionClientPipelined hash tx m [ReqOrResp hash tx]
-txSubmissionClientPipelinedMin ns0 = TxSubmissionClientPipelined (sender [] ns0)
+  -> TxSubmissionServerPipelined hash tx m [ReqOrResp hash tx]
+txSubmissionServerPipelinedMin ns0 = TxSubmissionServerPipelined (sender [] ns0)
     where
       sender
         :: [ReqOrResp hash tx]
@@ -119,13 +119,13 @@ txSubmissionClientPipelinedMin ns0 = TxSubmissionClientPipelined (sender [] ns0)
       getHashes txs ns []         (Succ o) = CollectPipelined
                                                 Nothing
                                                 (\c -> case c of
-                                                  Left _   -> error "txSubmissionClientPipelinedMin"
+                                                  Left _   -> error "txSubmissionServerPipelinedMin"
                                                   Right tx -> pure $ getHashes (RespTx tx:txs) ns [] o)
 
       getHashes txs ns hs@(h:hs') (Succ o) = CollectPipelined
                                                (Just $ requestMoreTx txs ns h hs' (Succ o))
                                                (\c -> case c of
-                                                 Left _   -> error "txSubmissionClientPiplinedMin"
+                                                 Left _   -> error "txSubmissionServerPiplinedMin"
                                                  Right tx -> pure $ getHashes (RespTx tx:txs) ns hs o)
       
       getHashes txs ns (h:hs)     Zero     = requestMoreTx txs ns h hs Zero
@@ -144,16 +144,16 @@ txSubmissionClientPipelinedMin ns0 = TxSubmissionClientPipelined (sender [] ns0)
 
 
 -- |
--- An example tx-submission client which sends @'MsgGetHashes'@ awaits for the
+-- An example tx-submission server which sends @'MsgGetHashes'@ awaits for the
 -- response, and then piplines requests for each received hash.  The responses
 -- are collected before next @'MsgGetHashes'@.
 --
-txSubmissionClientPipelinedMax
+txSubmissionServerPipelinedMax
   :: forall hash tx m.
      Applicative m
   => [Word16] -- ^ each element corresponds to a single @'MsgGetHashes'@ request
-  -> TxSubmissionClientPipelined hash tx m [ReqOrResp hash tx]
-txSubmissionClientPipelinedMax ns0 = TxSubmissionClientPipelined (sender [] ns0)
+  -> TxSubmissionServerPipelined hash tx m [ReqOrResp hash tx]
+txSubmissionServerPipelinedMax ns0 = TxSubmissionServerPipelined (sender [] ns0)
     where
       sender
         :: [ReqOrResp hash tx]
@@ -177,20 +177,20 @@ txSubmissionClientPipelinedMax ns0 = TxSubmissionClientPipelined (sender [] ns0)
                                           Right tx -> pure $ getHashes (RespTx tx:txs) ns [] o)
 
 -- |
--- Like @'txSubmissionClientPipelinedMin'@ but it also pipelines @'MsgGetHashes'@.
+-- Like @'txSubmissionServerPipelinedMin'@ but it also pipelines @'MsgGetHashes'@.
 -- We pipeline the request for more hashes whenever we already get half of the
 -- transactions.
 --
 -- It returns the interleaving of requests and received trasactions.
 --
-txSubmissionClientPipelinedAllMin
+txSubmissionServerPipelinedAllMin
   :: forall hash tx m.
      ( Applicative m
      , Eq hash
      )
   => [Word16]
-  -> TxSubmissionClientPipelined hash tx m [ReqOrResp hash tx]
-txSubmissionClientPipelinedAllMin ns0 = TxSubmissionClientPipelined (sender [] ns0)
+  -> TxSubmissionServerPipelined hash tx m [ReqOrResp hash tx]
+txSubmissionServerPipelinedAllMin ns0 = TxSubmissionServerPipelined (sender [] ns0)
     where
       middle :: [as] -> Maybe as
       middle as = let l = length as

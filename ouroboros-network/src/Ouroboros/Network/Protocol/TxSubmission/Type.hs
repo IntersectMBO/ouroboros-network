@@ -40,7 +40,7 @@ instance Protocol (TxSubmission hash tx) where
 
   data Message (TxSubmission hash tx) from to where
     -- |
-    -- Get a list of transaction's hashes from the server.
+    -- Get a list of transaction's hashes from the client.
     --
     MsgGetHashes
       :: Word16
@@ -74,16 +74,16 @@ instance Protocol (TxSubmission hash tx) where
       :: Message (TxSubmission hash tx) StIdle StDone
 
   data ClientHasAgency st where
-    TokIdle       :: ClientHasAgency StIdle
+    TokSendHashes :: ClientHasAgency StSendHashes
+    TokSendTx     :: ClientHasAgency StSendTx
 
   data ServerHasAgency st where
-    TokSendHashes :: ServerHasAgency StSendHashes
-    TokSendTx     :: ServerHasAgency StSendTx
+    TokIdle       :: ServerHasAgency StIdle
 
   data NobodyHasAgency st where
     TokDone       :: NobodyHasAgency StDone
 
-  exclusionLemma_ClientAndServerHaveAgency TokIdle tok = case tok of {}
+  exclusionLemma_ClientAndServerHaveAgency tok TokIdle = case tok of {}
 
   exclusionLemma_NobodyAndClientHaveAgency TokDone tok = case tok of {}
 

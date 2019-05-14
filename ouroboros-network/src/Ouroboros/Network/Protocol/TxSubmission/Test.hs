@@ -1,6 +1,10 @@
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE KindSignatures             #-}
+{-# LANGUAGE PolyKinds                  #-}
+{-# LANGUAGE DataKinds                  #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -20,6 +24,7 @@ import           Control.Monad.Class.MonadST (MonadST)
 import           Control.Monad.Class.MonadSTM (MonadSTM)
 import           Control.Monad.Class.MonadThrow (MonadCatch)
 
+import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Channel
 import           Network.TypedProtocol.Codec
 import           Network.TypedProtocol.Driver
@@ -73,21 +78,21 @@ newtype Tx   = Tx { getHash :: Int }
 
 type    Hash = Int
 
-type TestClient m = TxSubmissionClientPipelined Hash Tx m [ReqOrResp Hash Tx] 
-type TestServer m = TxSubmissionServer Hash Tx m [Tx]
+type TestServer m = TxSubmissionServerPipelined Hash Tx m [ReqOrResp Hash Tx] 
+type TestClient m = TxSubmissionClient Hash Tx m [Tx]
 
-testClient :: MonadSTM m => [Word16] -> TestClient m
-testClient ns = txSubmissionClient ns
+testServer :: MonadSTM m => [Word16] -> TestServer m
+testServer ns = txSubmissionServer ns
 
-testServer :: MonadSTM m => [Tx] -> TestServer m
-testServer txs = txSubmissionServerFixed txs getHash
+testClient :: MonadSTM m => [Tx] -> TestClient m
+testClient txs = txSubmissionClientFixed txs getHash
 
 -- |
--- A reference implementation of @'txSubmissionClient'@.  It returns the
--- sequence of requests and responses of a @'txSubmissionClient'@.
+-- A reference implementation of @'txSubmissionServer'@.  It returns the
+-- sequence of requests and responses of a @'txSubmissionServer'@.
 --
-txSubmissionClientReference :: [Word16] -> [Tx] -> [ReqOrResp Hash Tx]
-txSubmissionClientReference = go []
+txSubmissionServerReference :: [Word16] -> [Tx] -> [ReqOrResp Hash Tx]
+txSubmissionServerReference = go []
     where
       go :: [ReqOrResp Hash Tx] -> [Word16] -> [Tx] -> [ReqOrResp Hash Tx]
       go acc []     _   = reverse acc
@@ -102,8 +107,8 @@ txSubmissionClientReference = go []
 -- |
 -- A reference implementation of @'txSubmissionCientMax'@.
 --
-txSubmissionClientMaxReference :: [Word16] -> [Tx] -> [ReqOrResp Hash Tx]
-txSubmissionClientMaxReference = go []
+txSubmissionServerMaxReference :: [Word16] -> [Tx] -> [ReqOrResp Hash Tx]
+txSubmissionServerMaxReference = go []
     where
       go :: [ReqOrResp Hash Tx] -> [Word16] -> [Tx] -> [ReqOrResp Hash Tx]
       go acc []     _   = reverse acc
@@ -136,10 +141,10 @@ cannonicalOrder = go
 
 
 -- |
--- A reference impolementation of @'txSubmissionServer'@.
+-- A reference impolementation of @'txSubmissionClient'@.
 --
-txSubmissionServerReference :: [Word16] -> [Tx] -> [Tx]
-txSubmissionServerReference ns txs = take (fromIntegral $ sum ns) txs
+txSubmissionClientReference :: [Word16] -> [Tx] -> [Tx]
+txSubmissionClientReference ns txs = take (fromIntegral $ sum ns) txs
 
 --
 -- Properties goind directly, not via Peer.
@@ -147,32 +152,32 @@ txSubmissionServerReference ns txs = take (fromIntegral $ sum ns) txs
 
 prop_direct ::  [Word16] -> [Tx] -> Bool
 prop_direct ns txs =
-    runSimOrThrow (direct (testClient ns)
-                          (testServer txs))
+    runSimOrThrow (direct (testServer ns)
+                          (testClient txs))
   ==
-    ( txSubmissionClientReference ns txs
-    , txSubmissionServerReference ns txs
+    ( txSubmissionServerReference ns txs
+    , txSubmissionClientReference ns txs
     )
 
 prop_directPipelined1 :: [Word16] -> [Tx] -> Bool
 prop_directPipelined1 ns txs =
-    runSimOrThrow (direct (txSubmissionClientPipelinedMax ns)
-                          (testServer txs))
+    runSimOrThrow (direct (txSubmissionServerPipelinedMax ns)
+                          (testClient txs))
   ==
-    ( txSubmissionClientMaxReference ns txs
-    , txSubmissionServerReference ns txs
+    ( txSubmissionServerMaxReference ns txs
+    , txSubmissionClientReference ns txs
     )
 
 prop_directPipelined2 :: [Word16] -> [Tx] -> Bool
 prop_directPipelined2 ns txs =
-    runSimOrThrow (direct (txSubmissionClientPipelinedMin ns)
-                          (testServer txs))
+    runSimOrThrow (direct (txSubmissionServerPipelinedMin ns)
+                          (testClient txs))
   ==
-    -- it is the same as @'txSubmissionClientMaxReference'@ since
+    -- it is the same as @'txSubmissionServerMaxReference'@ since
     -- @'Ouroboros.Network.Protocol.TxSubmission.Direct'@ will pipeline as many
     -- requests as possible.
-    ( txSubmissionClientMaxReference ns txs
-    , txSubmissionServerReference ns txs
+    ( txSubmissionServerMaxReference ns txs
+    , txSubmissionClientReference ns txs
     )
 
 --
@@ -189,25 +194,26 @@ prop_connect :: [Word16]
 prop_connect ns txs =
     case runSimOrThrow
               (connect
-                (forgetPipelined $ txSubmissionClientPeerPipelined (testClient ns))
-                (txSubmissionServerPeer (testServer txs))) of
-      (rs, _, TerminalStates TokDone TokDone) ->
-        rs == txSubmissionClientReference ns txs
+                (txSubmissionClientPeer (testClient txs))
+                (forgetPipelined $ txSubmissionServerPeerPipelined (testServer ns))) of
+      (_, rs, TerminalStates TokDone TokDone) ->
+        rs == txSubmissionServerReference ns txs
+
 
 -- |
 -- Run a pipelined tx-submission client against a server, going via the
 -- 'Peer' representation, but without going via a channel.
 --
 connect_pipelined :: MonadSTM m
-                  => TestClient m
+                  => TestServer m
                   -> [Tx]
                   -> [Bool]
                   -> m [ReqOrResp Hash Tx]
-connect_pipelined client txs cs = do
+connect_pipelined server txs cs = do
     (res, _, TerminalStates TokDone TokDone)
       <- connectPipelined cs
-           (txSubmissionClientPeerPipelined client)
-           (txSubmissionServerPeer (testServer txs))
+           (txSubmissionServerPeerPipelined server)
+           (txSubmissionClientPeer (testClient txs))
     return res
 
 
@@ -218,12 +224,12 @@ connect_pipelined client txs cs = do
 prop_connect_pipelined1 :: [Word16] -> [Tx] -> [Bool] -> Bool
 prop_connect_pipelined1 ns txs choices =
       runSimOrThrow
-        (connect_pipelined (txSubmissionClientPipelinedMax ns) txs choices)
+        (connect_pipelined (txSubmissionServerPipelinedMax ns) txs choices)
     ==
-      txSubmissionClientMaxReference ns txs
+      txSubmissionServerMaxReference ns txs
 
 
--- | With a client that collects eagerly and the driver chooses maximum
+-- | With a server that collects eagerly and the driver chooses maximum
 -- pipelining then we get all requests followed by all responses.
 --
 prop_connect_pipelined2 :: [Word16] -> [Tx] -> Bool
@@ -231,13 +237,13 @@ prop_connect_pipelined2 ns txs =
     let choices = repeat True
     in
       runSimOrThrow
-        (connect_pipelined (txSubmissionClientPipelinedMin ns) txs choices)
+        (connect_pipelined (txSubmissionServerPipelinedMin ns) txs choices)
     ==
-      txSubmissionClientMaxReference ns txs
+      txSubmissionServerMaxReference ns txs
 
 
 -- |
--- With a client that collects eagerly and the driver chooses minimum
+-- With a server that collects eagerly and the driver chooses minimum
 -- pipelining then we get the interleaving of requests with responses.
 --
 prop_connect_pipelined3 :: [Word16] -> [Tx] -> Bool
@@ -245,13 +251,13 @@ prop_connect_pipelined3 ns txs =
   let choices = repeat False
   in 
       runSimOrThrow
-        (connect_pipelined (txSubmissionClientPipelinedMin ns) txs choices)
+        (connect_pipelined (txSubmissionServerPipelinedMin ns) txs choices)
     ==
-      txSubmissionClientReference ns txs
+      txSubmissionServerReference ns txs
 
 
 -- |
--- With a client that collects eagerly and the driver chooses arbitrary
+-- With a server that collects eagerly and the driver chooses arbitrary
 -- pipelining then we get complex interleavings given by the reference
 -- specification 'pipelineInterleaving'.
 --
@@ -259,9 +265,9 @@ prop_connect_pipelined4 :: [Word16] -> [Tx] -> [Bool] -> Bool
 prop_connect_pipelined4 ns txs choices =
       cannonicalOrder
         (runSimOrThrow
-            (connect_pipelined (txSubmissionClientPipelinedMin ns) txs choices))
+            (connect_pipelined (txSubmissionServerPipelinedMin ns) txs choices))
     ==
-      txSubmissionClientMaxReference ns txs
+      txSubmissionServerMaxReference ns txs
 
 --
 -- Properties using a channel
@@ -274,12 +280,12 @@ prop_channel :: (MonadAsync m, MonadCatch m, MonadST m)
              => m (Channel m ByteString, Channel m ByteString)
              -> [Word16] -> [Tx] -> m Property
 prop_channel createChannels ns txs = do
-    (res, _) <-
+    (_, res) <-
       runConnectedPeers
         createChannels codecTxSubmission
-        (forgetPipelined $ txSubmissionClientPeerPipelined (testClient ns))
-        (txSubmissionServerPeer (testServer txs))
-    return $ res === txSubmissionClientReference ns txs
+        (txSubmissionClientPeer (testClient txs))
+        (forgetPipelined $ txSubmissionServerPeerPipelined (testServer ns))
+    return $ res === txSubmissionServerReference ns txs
 
 -- |
 -- Run 'prop_channel' in the simulation monad.
@@ -308,11 +314,11 @@ prop_pipe_IO ns txs =
 
 instance Arbitrary (AnyMessageAndAgency (TxSubmission Int Tx)) where
   arbitrary = oneof
-    [ AnyMessageAndAgency (ClientAgency TokIdle) . MsgGetHashes <$> arbitrary
-    , AnyMessageAndAgency (ServerAgency TokSendHashes) . MsgSendHashes <$> arbitrary
-    , AnyMessageAndAgency (ClientAgency TokIdle) . MsgGetTx <$> arbitrary
-    , AnyMessageAndAgency (ServerAgency TokSendTx) . MsgTx <$> arbitrary
-    , return $ AnyMessageAndAgency (ClientAgency TokIdle) MsgDone
+    [ AnyMessageAndAgency (ServerAgency TokIdle) . MsgGetHashes <$> arbitrary
+    , AnyMessageAndAgency (ClientAgency TokSendHashes) . MsgSendHashes <$> arbitrary
+    , AnyMessageAndAgency (ServerAgency TokIdle) . MsgGetTx <$> arbitrary
+    , AnyMessageAndAgency (ClientAgency TokSendTx) . MsgTx <$> arbitrary
+    , return $ AnyMessageAndAgency (ServerAgency TokIdle) MsgDone
     ]
 
 instance Show (AnyMessageAndAgency (TxSubmission Int Tx)) where

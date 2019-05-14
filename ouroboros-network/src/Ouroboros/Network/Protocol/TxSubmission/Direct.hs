@@ -13,11 +13,11 @@ import           Ouroboros.Network.Protocol.TxSubmission.Server
 direct
   :: forall hash tx m a b.
      Monad m
-  => TxSubmissionClientPipelined hash tx m a
-  -> TxSubmissionServer hash tx m b
+  => TxSubmissionServerPipelined hash tx m a
+  -> TxSubmissionClient hash tx m b
   -> m (a, b)
-direct (TxSubmissionClientPipelined client) (TxSubmissionServer mserver) =
-    mserver >>= directSender EmptyQ client
+direct (TxSubmissionServerPipelined server) (TxSubmissionClient mclient) =
+    mclient >>= directSender EmptyQ server
   where
     directSender :: Queue n (Either [hash] tx)
                  -> TxSubmissionSender   hash tx n (Collection hash tx) m a

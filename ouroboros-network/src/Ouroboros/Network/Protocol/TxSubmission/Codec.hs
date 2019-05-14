@@ -37,15 +37,15 @@ codecTxSubmission = mkCodecCborLazyBS encode decode
               PeerHasAgency pr st
            -> Message (TxSubmission hash tx) st st'
            -> CBOR.Encoding
-    encode (ClientAgency TokIdle) (MsgGetHashes n) =
+    encode (ServerAgency TokIdle) (MsgGetHashes n) =
       CBOR.encodeListLen 2 <> CBOR.encodeWord 0 <> CBOR.encode n
-    encode (ServerAgency TokSendHashes) (MsgSendHashes hs) =
+    encode (ClientAgency TokSendHashes) (MsgSendHashes hs) =
       CBOR.encodeListLen 2 <> CBOR.encodeWord 1 <> CBOR.encode hs
-    encode (ClientAgency TokIdle) (MsgGetTx hash) =
+    encode (ServerAgency TokIdle) (MsgGetTx hash) =
       CBOR.encodeListLen 2 <> CBOR.encodeWord 2 <> CBOR.encode hash
-    encode (ServerAgency TokSendTx) (MsgTx tx) =
+    encode (ClientAgency TokSendTx) (MsgTx tx) =
       CBOR.encodeListLen 2 <> CBOR.encodeWord 3 <> CBOR.encode tx
-    encode (ClientAgency TokIdle) MsgDone =
+    encode (ServerAgency TokIdle) MsgDone =
       CBOR.encodeListLen 1 <> CBOR.encodeWord 4
 
     decode :: forall (pr :: PeerRole) s (st :: TxSubmission hash tx).
@@ -55,12 +55,12 @@ codecTxSubmission = mkCodecCborLazyBS encode decode
       len <- CBOR.decodeListLen
       key <- CBOR.decodeWord
       case (stok, len, key) of
-        (ClientAgency TokIdle,       2, 0) -> SomeMessage . MsgGetHashes  <$> CBOR.decode
-        (ServerAgency TokSendHashes, 2, 1) -> SomeMessage . MsgSendHashes <$> CBOR.decode
-        (ClientAgency TokIdle,       2, 2) -> SomeMessage . MsgGetTx      <$> CBOR.decode
-        (ServerAgency TokSendTx,     2, 3) -> SomeMessage . MsgTx         <$> CBOR.decode
-        (ClientAgency TokIdle,       1, 4) -> return (SomeMessage MsgDone)
+        (ServerAgency TokIdle,       2, 0) -> SomeMessage . MsgGetHashes  <$> CBOR.decode
+        (ClientAgency TokSendHashes, 2, 1) -> SomeMessage . MsgSendHashes <$> CBOR.decode
+        (ServerAgency TokIdle,       2, 2) -> SomeMessage . MsgGetTx      <$> CBOR.decode
+        (ClientAgency TokSendTx,     2, 3) -> SomeMessage . MsgTx         <$> CBOR.decode
+        (ServerAgency TokIdle,       1, 4) -> return (SomeMessage MsgDone)
 
-        (ClientAgency TokIdle,       _, _) -> fail "codecTxSubmission.Idle: unexpected key"
-        (ServerAgency TokSendHashes, _, _) -> fail "codecTxSubmission.SendHashes: unexpected key"
-        (ServerAgency TokSendTx,     _, _) -> fail "codecTxSubmission.SendTx: unexpected key"
+        (ServerAgency TokIdle,       _, _) -> fail "codecTxSubmission.Idle: unexpected key"
+        (ClientAgency TokSendHashes, _, _) -> fail "codecTxSubmission.SendHashes: unexpected key"
+        (ClientAgency TokSendTx,     _, _) -> fail "codecTxSubmission.SendTx: unexpected key"
