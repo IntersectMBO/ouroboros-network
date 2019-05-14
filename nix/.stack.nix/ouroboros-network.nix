@@ -28,7 +28,6 @@
           (hsPkgs.cborg)
           (hsPkgs.containers)
           (hsPkgs.fingertree)
-          (hsPkgs.mtl)
           (hsPkgs.network)
           (hsPkgs.process)
           (hsPkgs.serialise)
@@ -54,9 +53,7 @@
             (hsPkgs.cborg)
             (hsPkgs.containers)
             (hsPkgs.directory)
-            (hsPkgs.free)
             (hsPkgs.fingertree)
-            (hsPkgs.free)
             (hsPkgs.hashable)
             (hsPkgs.mtl)
             (hsPkgs.network)
@@ -82,7 +79,6 @@
             (hsPkgs.serialise)
             (hsPkgs.text)
             (hsPkgs.io-sim-classes)
-            (hsPkgs.ouroboros-network-testing)
             (hsPkgs.typed-protocols)
             ];
           };

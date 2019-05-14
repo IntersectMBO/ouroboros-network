@@ -43,20 +43,7 @@ import qualified Ouroboros.Storage.ImmutableDB.API as Immutable
 import Ouroboros.Storage.ImmutableDB.Util (cborEpochFileParser')
 import Ouroboros.Storage.FS.API (HasFS)
 
-{-
--- | Run a Decoder and fail if it does not consume all of the input bytes.
-decodeFull
-  :: (forall s . CBOR.Decoder s t)
-  -> Lazy.ByteString
-  -> Either CBOR.DeserialiseFailure t
-decodeFull decoder lbs = case CBOR.deserialiseFromBytesWithSize decoder lbs of
-  Left failure -> Left failure
-  Right (bs, offset, t) ->
-    if Lazy.null bs
-    then Right t
-    else Left (CBOR.DeserialiseFailure offset "decodeFull: did not consume all input")
--}
-
+-- TODO: Move these functions to a compatibility module
 coerceHashToLegacy :: Cardano.HeaderHash -> CSL.HeaderHash
 coerceHashToLegacy (AbstractHash digest) = Legacy.AbstractHash digest
 

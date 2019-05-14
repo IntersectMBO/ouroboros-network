@@ -17,7 +17,7 @@ import Codec.CBOR.Decoding (decodeWord, decodeListLenOf, decodeBytes)
 import Codec.CBOR.Read
 
 import Ouroboros.Network.Protocol.ChainSync.Type as CS
-import Ouroboros.Network.Protocol.ChainSync.Codec (codecChainSync)
+import Ouroboros.Network.Protocol.ChainSync.Codec (codecSerialise)
 import Network.TypedProtocol.ReqResp.Type as ReqResp
 import Ouroboros.Network.Protocol.ReqResp.Codec (codecReqResp)
 import Ouroboros.Network.Protocol.PingPong.Codec (codecPingPong)
@@ -114,7 +114,7 @@ decodeMsg (tag, input) = case tag of
              -> PeerHasAgency pr st -> IO Bool
         run codec state = runCodec ((decode codec) state) input
 
-        runCS = run (codecChainSync :: MonoCodec CS)
+        runCS = run (codecSerialise :: MonoCodec CS)
         chainSyncParsers = [
               runCS (ClientAgency CS.TokIdle)
             , runCS (ServerAgency (CS.TokNext TokCanAwait))

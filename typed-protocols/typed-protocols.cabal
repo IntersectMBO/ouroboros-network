@@ -75,7 +75,6 @@ test-suite tests
                    , Network.TypedProtocol.ReqResp.Tests
                    , Network.TypedProtocol.ReqResp.Type
   build-depends:     base
-                   , async
                    , bytestring
                    , contra-tracer
                    , io-sim-classes

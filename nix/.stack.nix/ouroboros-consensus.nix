@@ -18,7 +18,6 @@
       "library" = {
         depends = [
           (hsPkgs.base)
-          (hsPkgs.cardano-ledger)
           (hsPkgs.ouroboros-network)
           (hsPkgs.typed-protocols)
           (hsPkgs.io-sim-classes)
@@ -36,7 +35,6 @@
           (hsPkgs.mtl)
           (hsPkgs.pipes)
           (hsPkgs.serialise)
-          (hsPkgs.stm)
           (hsPkgs.text)
           (hsPkgs.time)
           (hsPkgs.transformers)
@@ -56,7 +54,6 @@
             (hsPkgs.aeson)
             (hsPkgs.async)
             (hsPkgs.bytestring)
-            (hsPkgs.cborg)
             (hsPkgs.containers)
             (hsPkgs.cryptonite)
             (hsPkgs.directory)
@@ -66,7 +63,6 @@
             (hsPkgs.stm)
             (hsPkgs.string-conv)
             (hsPkgs.text)
-            (hsPkgs.time)
             ] ++ (if system.isWindows
             then [ (hsPkgs.Win32) ]
             else [ (hsPkgs.unix) ]);
@@ -81,7 +77,6 @@
             (hsPkgs.ouroboros-consensus)
             (hsPkgs.io-sim-classes)
             (hsPkgs.io-sim)
-            (hsPkgs.bytestring)
             (hsPkgs.containers)
             (hsPkgs.contra-tracer)
             (hsPkgs.cryptonite)
@@ -135,7 +130,6 @@
             (hsPkgs.quickcheck-state-machine)
             (hsPkgs.random)
             (hsPkgs.serialise)
-            (hsPkgs.stm)
             (hsPkgs.tasty)
             (hsPkgs.tasty-hunit)
             (hsPkgs.tasty-quickcheck)
