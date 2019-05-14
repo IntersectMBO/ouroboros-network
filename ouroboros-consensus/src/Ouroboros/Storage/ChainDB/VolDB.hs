@@ -1,9 +1,12 @@
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE RecordWildCards           #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE StandaloneDeriving        #-}
 {-# LANGUAGE TypeApplications          #-}
 {-# LANGUAGE TypeFamilies              #-}
+{-# LANGUAGE UndecidableInstances      #-}
 
 -- | Thin wrapper around the volatile DB
 module Ouroboros.Storage.ChainDB.VolDB (
@@ -14,9 +17,14 @@ module Ouroboros.Storage.ChainDB.VolDB (
   , openDB
     -- * Candidates
   , candidates
+    -- * Paths
+  , Path(..)
+  , computePath
+  , computePathSTM
     -- * Getting and parsing blocks
   , getKnownHeader
   , getKnownBlock
+  , getHeader
   , getBlock
     -- * Wrappers
   , getIsMember
@@ -40,12 +48,13 @@ import           Control.Monad.Class.MonadThrow
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as Fragment
 import           Ouroboros.Network.Block (ChainHash (..), HasHeader (..),
-                     HeaderHash, Point, StandardHash)
+                     HeaderHash, Point (..), StandardHash)
 import qualified Ouroboros.Network.Block as Block
 
 import qualified Ouroboros.Consensus.Util.CBOR as Util.CBOR
 
-import           Ouroboros.Storage.ChainDB.API (ChainDbFailure (..))
+import           Ouroboros.Storage.ChainDB.API (ChainDbError (..),
+                     ChainDbFailure (..), StreamFrom (..), StreamTo (..))
 import           Ouroboros.Storage.FS.API (HasFS)
 import           Ouroboros.Storage.FS.API.Types (MountPoint (..))
 import           Ouroboros.Storage.FS.IO (ioHasFS)
@@ -188,6 +197,129 @@ candidates db start = do
           return $ next : rest
 
 {-------------------------------------------------------------------------------
+  Compute paths
+-------------------------------------------------------------------------------}
+
+-- | Construct a path backwards through the VolatileDB.
+--
+-- We walk backwards through the VolatileDB, constructing a 'Path' from the
+-- 'StreamTo' to the 'StreamFrom'.
+--
+-- If the range is invalid, 'Nothing' is returned.
+--
+-- See the documentation of 'Path'.
+computePath
+  :: forall blk. HasHeader blk
+  => (HeaderHash blk -> Maybe (HeaderHash blk)) -- ^ @getPredecessor@
+  -> (HeaderHash blk -> Bool)                   -- ^ @isMember@
+  -> StreamFrom blk
+  -> StreamTo   blk
+  -> Maybe (Path blk)
+computePath predecessor isMember from to = case to of
+    StreamToInclusive (Point { pointHash = GenesisHash })
+      -> Nothing
+    StreamToExclusive (Point { pointHash = GenesisHash })
+      -> Nothing
+    StreamToInclusive (Point { pointHash = BlockHash end })
+      | isMember end     -> go [end] end
+      | otherwise        -> return $ NotInVolDB end
+    StreamToExclusive (Point { pointHash = BlockHash end })
+      | isMember end     -> go [] end
+      | otherwise        -> return $ NotInVolDB end
+  where
+    -- Invariant: @isMember hash@ and @hash@ has been added to @acc@ (if
+    -- allowed by the bounds)
+    go :: [HeaderHash blk] -> HeaderHash blk -> Maybe (Path blk)
+    go acc hash = case predecessor hash of
+      -- Found genesis
+      Nothing -> case from of
+        StreamFromInclusive _
+          -> Nothing
+        StreamFromExclusive (Point { pointHash = GenesisHash })
+          -> return $ CompletelyInVolDB acc
+        StreamFromExclusive (Point { pointHash = BlockHash _ })
+          -> Nothing
+
+      Just predHash
+        | isMember predHash -> case from of
+          StreamFromInclusive pt
+            | BlockHash predHash == Block.pointHash pt
+            -> return $ CompletelyInVolDB (predHash : acc)
+          StreamFromExclusive pt
+            | BlockHash predHash == Block.pointHash pt
+            -> return $ CompletelyInVolDB acc
+          -- Bound not yet reached, invariants both ok!
+          _ -> go (predHash : acc) predHash
+        -- Predecessor not in the VolatileDB
+        | StreamFromExclusive pt <- from
+        , BlockHash predHash == Block.pointHash pt
+          -- That's fine if we don't need to include it in the path.
+        -> return $ CompletelyInVolDB acc
+        | otherwise
+        -> return $ PartiallyInVolDB predHash acc
+
+-- | Variant of 'computePath' that obtains its arguments in the same 'STM'
+-- transaction. Throws an 'InvalidIteratorRange' exception when the range is
+-- invalid (i.e., 'computePath' returned 'Nothing').
+computePathSTM
+  :: forall m blk hdr.
+     ( MonadSTM m
+     , MonadThrow (STM m)
+     , HasHeader blk
+     )
+  => VolDB m blk hdr
+  -> StreamFrom blk
+  -> StreamTo   blk
+  -> STM m (Path blk)
+computePathSTM volDB from to = do
+    (predecessor, isMember) <- withSTM volDB $ \db ->
+      (,) <$> VolDB.getPredecessor db <*> VolDB.getIsMember db
+    case computePath predecessor isMember from to of
+      Just path -> return path
+      Nothing   -> throwM $ InvalidIteratorRange from to
+
+-- | A path through the VolatileDB from a 'StreamFrom' to a 'StreamTo'.
+--
+-- Invariant: the @ChainFragment@ (oldest first) constructed using the blocks
+-- corresponding to the hashes in the path will be valid, i.e. the blocks will
+-- fit onto each other.
+data Path blk
+  = NotInVolDB (HeaderHash blk)
+    -- ^ The @end@ point (@'StreamToInclusive' end@ or @'StreamToExclusive'
+    -- end@) was not part of the VolatileDB.
+  | CompletelyInVolDB [HeaderHash blk]
+    -- ^ A complete path, from start point to end point was constructed from
+    -- the VolatileDB. The list contains the hashes from oldest to newest.
+    --
+    -- * If the lower bound was @'StreamFromInclusive' pt@, then @pt@ will be
+    --   the first element of the list.
+    -- * If the lower bound was @'StreamFromExclusive' pt@, then the first
+    --   element of the list will correspond to the first block after @pt@.
+    --
+    -- * If the upper bound was @'StreamToInclusive' pt@, then @pt@ will be
+    --   the last element of the list.
+    -- * If the upper bound was @'StreamToExclusive' pt@, then the last
+    --   element of the list will correspond to the first block before @pt@.
+  | PartiallyInVolDB (HeaderHash blk) [HeaderHash blk]
+    -- ^ Only a partial path could be constructed from the VolatileDB. The
+    -- missing predecessor could still be in the ImmutableDB. The list
+    -- contains the hashes from oldest to newest.
+    --
+    -- * The first element in the list is the point for which no predecessor
+    --   is available in the VolatileDB. The block corresponding to the point
+    --   itself, /is/ available in the VolatileDB.
+    -- * The first argument is the hash of predecessor, the block that is not
+    --   available in the VolatileDB.
+    --
+    -- Note: if the lower bound is exclusive, the block corresponding to it
+    -- doesn't have to be part of the VolatileDB, it will result in a
+    -- 'StartToEnd'.
+    --
+    -- The same invariants hold for the upper bound as for 'StartToEnd'.
+
+deriving instance Show (HeaderHash blk) => Show (Path blk)
+
+{-------------------------------------------------------------------------------
   Getting and parsing blocks
 -------------------------------------------------------------------------------}
 
@@ -203,6 +335,11 @@ getKnownBlock db hash = do
     case mBlock of
       Right b  -> return b
       Left err -> throwM err
+
+getHeader :: (MonadCatch m, StandardHash blk, Typeable blk)
+          => VolDB m blk hdr -> HeaderHash blk -> m (Maybe hdr)
+getHeader db@VolDB{..} hash =
+    fmap header <$> getBlock db hash
 
 getBlock :: (MonadCatch m, StandardHash blk, Typeable blk)
          => VolDB m blk hdr -> HeaderHash blk -> m (Maybe blk)

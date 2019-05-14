@@ -1,9 +1,9 @@
-{-# LANGUAGE DeriveFunctor       #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE RecordWildCards     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving  #-}
-{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE DeriveFunctor              #-}
+{-# LANGUAGE GADTs                      #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeFamilies               #-}
 
 module Ouroboros.Storage.ChainDB.API (
     -- * Main ChainDB API
@@ -17,6 +17,7 @@ module Ouroboros.Storage.ChainDB.API (
   , Iterator(..)
   , IteratorId(..)
   , IteratorResult(..)
+  , UnknownRange(..)
     -- * Readers
   , ChainUpdate(..)
   , fromNetworkChainUpdate
@@ -41,7 +42,7 @@ import           Control.Monad.Class.MonadThrow
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import           Ouroboros.Network.Block (HasHeader (..), HeaderHash, SlotNo,
                      StandardHash)
-import           Ouroboros.Network.Chain (Chain (..), Point (..))
+import           Ouroboros.Network.Chain (Chain (..), Point (..), genesisPoint)
 import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.ChainProducerState (ReaderId)
 
@@ -186,7 +187,8 @@ data ChainDB m blk hdr =
       --
       -- TODO: How should iterators respond to corruption? (Readers can roll
       -- back, but iterators cannot.)
-    , streamBlocks       :: StreamFrom blk -> StreamTo blk -> m (Iterator m blk)
+    , streamBlocks       :: StreamFrom blk -> StreamTo blk
+                         -> m (Either (UnknownRange blk) (Iterator m blk))
 
       -- | Chain reader
       --
@@ -212,13 +214,18 @@ data ChainDB m blk hdr =
 -------------------------------------------------------------------------------}
 
 toChain :: forall m blk hdr.
-           (MonadThrow m, HasHeader blk)
+           (MonadThrow m, HasHeader blk, MonadSTM m)
         => ChainDB m blk hdr -> m (Chain blk)
-toChain chainDB = bracket
-    (streamBlocks chainDB StreamFromGenesis StreamToEnd)
-    iteratorClose
-    (go Genesis)
+toChain chainDB = bracket streamAll iteratorClose (go Genesis)
   where
+    streamAll = do
+      tip   <- atomically $ getTipPoint chainDB
+      errIt <- streamBlocks chainDB (StreamFromExclusive genesisPoint)
+                                    (StreamToInclusive tip)
+      case errIt of
+        Left  e  -> error (show e)
+        Right it -> return it
+
     go :: Chain blk -> Iterator m blk -> m (Chain blk)
     go chain it = do
       next <- iteratorNext it
@@ -240,17 +247,19 @@ fromChain openDB chain = do
   Iterator API
 -------------------------------------------------------------------------------}
 
+-- | The lower bound for a ChainDB iterator.
+--
+-- Hint: use @'StreamFromExclusive' 'genesisPoint'@ to start streaming from
+-- Genesis.
 data StreamFrom blk =
     StreamFromInclusive (Point blk)
   | StreamFromExclusive (Point blk)
-  | StreamFromGenesis
-  deriving (Show)
+  deriving (Show, Eq)
 
 data StreamTo blk =
     StreamToInclusive (Point blk)
   | StreamToExclusive (Point blk)
-  | StreamToEnd
-  deriving (Show)
+  deriving (Show, Eq)
 
 data Iterator m blk = Iterator {
       iteratorNext  :: m (IteratorResult blk)
@@ -269,7 +278,7 @@ instance Eq (Iterator m blk) where
   (==) = (==) `on` iteratorId
 
 newtype IteratorId = IteratorId Int
-  deriving (Show, Eq, Ord)
+  deriving (Show, Eq, Ord, Enum)
 
 data IteratorResult blk =
     IteratorExhausted
@@ -279,6 +288,14 @@ data IteratorResult blk =
     -- the VolatileDB, but not added to the ImmutableDB.
     --
     -- This will only happen when streaming very old forks.
+
+data UnknownRange blk =
+    -- | The block at the given point was not found in the ChainDB.
+    MissingBlock (Point blk)
+    -- | The requested range forks off too far in the past, i.e. it doesn't
+    -- fit on the tip of the ImmutableDB.
+  | ForkTooOld (StreamFrom blk)
+  deriving (Show, Eq)
 
 {-------------------------------------------------------------------------------
   Chain updates
@@ -445,6 +462,14 @@ data ChainDbError blk =
     -- it does not actually exist other than as a concept; we cannot read and
     -- return it.
     NoGenesisBlock
+
+    -- | When there is no chain/fork that satisfies the bounds passed to
+    -- 'streamBlocks'.
+    --
+    -- * The lower and upper bound are not on the same chain.
+    -- * The bounds don't make sense, e.g., the lower bound starts after the
+    --   upper bound, or the lower bound starts from genesis, /inclusive/.
+  | InvalidIteratorRange (StreamFrom blk) (StreamTo blk)
 
 deriving instance StandardHash blk => Show (ChainDbError blk)
 

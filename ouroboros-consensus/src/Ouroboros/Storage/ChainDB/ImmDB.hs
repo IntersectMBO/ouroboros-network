@@ -20,8 +20,9 @@ module Ouroboros.Storage.ChainDB.ImmDB (
   , getBlock
   , getBlob
     -- * Streaming
-  , streamBlocks
-  , streamBlobs
+  , streamBlocksFrom
+  , streamBlocksFromUnchecked
+  , streamBlocksAfter
     -- * Wrappers
   , closeDB
     -- * Re-exports
@@ -35,6 +36,7 @@ import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Read as CBOR
 import           Control.Monad
+import           Control.Monad.Except
 import           Data.Bifunctor (first)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Proxy
@@ -46,13 +48,14 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.Block (ChainHash (..), HasHeader (..),
-                     HeaderHash, Point (..), SlotNo)
+                     HeaderHash, Point (..), SlotNo, blockPoint)
 import           Ouroboros.Network.Chain (genesisSlotNo)
 
 import qualified Ouroboros.Consensus.Util.CBOR as Util.CBOR
 
+
 import           Ouroboros.Storage.ChainDB.API (ChainDbError (..),
-                     ChainDbFailure (..), StreamFrom (..))
+                     ChainDbFailure (..), StreamFrom (..), UnknownRange (..))
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.EpochInfo (EpochInfo (..), newEpochInfo)
 import           Ouroboros.Storage.FS.API (HasFS)
@@ -132,6 +135,9 @@ openDB args@ImmDbArgs{..} = do
 
 -- | Return the block corresponding to the given point, if it is part of the
 -- ImmutableDB.
+--
+-- If we have a block at the slot of the point, but its hash differs, we
+-- return 'Nothing'.
 getBlockWithPoint :: (MonadCatch m, HasHeader blk)
                   => ImmDB m blk -> Point blk -> m (Maybe blk)
 getBlockWithPoint db Point{..} = do
@@ -212,38 +218,117 @@ getBlob db epochOrSlot = withDB db $ \imm ->
   Streaming
 -------------------------------------------------------------------------------}
 
--- | Stream blocks
+-- | Stream blocks from the given 'StreamFrom'.
 --
--- See also 'streamBlobs'.
-streamBlocks :: forall m blk. (MonadCatch m, HasHeader blk)
-             => ImmDB m blk
-             -> StreamFrom blk
-             -> m (Iterator (HeaderHash blk) m blk)
-streamBlocks db low = wrap <$> streamBlobs db low
+-- Checks whether the block at the lower bound has the right hash. If not,
+-- 'Nothing' is returned. This check comes at a cost, as to know the hash of a
+-- block, it first has be read from disk.
+--
+-- When the slot of the lower bound is greater than the slot at the tip in the
+-- ImmutableDB, we return 'MissingBlock' (instead of throwing a
+-- 'ReadFutureSlotError' or 'ReadFutureEBBError').
+--
+-- When passed @'StreamFromInclusive' pt@ where @pt@ refers to Genesis, a
+-- 'NoGenesisBlock' exception will be thrown.
+streamBlocksFrom :: forall m blk.
+                   ( MonadCatch m
+                   , HasHeader blk
+                   )
+                 => ImmDB m blk
+                 -> StreamFrom blk
+                 -> m (Either (UnknownRange blk)
+                              (ImmDB.Iterator (HeaderHash blk) m blk))
+streamBlocksFrom db from = withDB db $ \imm -> runExceptT $ case from of
+    StreamFromExclusive pt@Point { pointHash = BlockHash hash } -> do
+      checkFutureSlot pt
+      it    <- stream imm (Just (pointSlot pt, hash)) Nothing
+      itRes <- lift $ iteratorNext it
+      if blockMatchesPoint itRes pt
+        then return it
+        else do
+          lift $ iteratorClose it
+          throwError $ MissingBlock pt
+    StreamFromExclusive    Point { pointHash = GenesisHash    } ->
+      stream imm Nothing Nothing
+    StreamFromInclusive pt@Point { pointHash = BlockHash hash } -> do
+      checkFutureSlot pt
+      it    <- stream imm (Just (pointSlot pt, hash)) Nothing
+      itRes <- lift $ iteratorPeek it
+      if blockMatchesPoint itRes pt
+        then return it
+        else do
+          lift $ iteratorClose it
+          throwError $ MissingBlock pt
+    StreamFromInclusive    Point { pointHash = GenesisHash    } ->
+      throwM $ NoGenesisBlock @blk
   where
-    wrap :: Iterator (HeaderHash blk) m Lazy.ByteString
-         -> Iterator (HeaderHash blk) m blk
-    wrap itr = Iterator {
-          iteratorNext    = parseIteratorResult db =<< iteratorNext itr
-        , iteratorPeek    = parseIteratorResult db =<< iteratorPeek itr
-        , iteratorHasNext = iteratorHasNext itr
-        , iteratorClose   = iteratorClose   itr
-        , iteratorID      = ImmDB.DerivedIteratorID $ iteratorID itr
-        }
+    -- | Check if the slot of the lower bound is <= the slot of the tip. If
+    -- not, throw a 'MissingBlock' error.
+    --
+    -- Note that between this check and the actual opening of the iterator, a
+    -- block may be appended to the ImmutableDB such that the requested slot
+    -- is no longer in the future, but we have returned 'MissingBlock'
+    -- nonetheless. This is fine, since the request to stream from the slot
+    -- was made earlier, at a moment where it still was in the future.
+    checkFutureSlot :: Point blk -> ExceptT (UnknownRange blk) m ()
+    checkFutureSlot pt = do
+      slotNoAtTip <- lift $ getSlotNoAtTip db
+      when (pointSlot pt > slotNoAtTip) $
+        throwError $ MissingBlock pt
 
--- | Stream blobs
-streamBlobs :: forall m blk. (MonadCatch m, HasHeader blk)
-            => ImmDB m blk
-            -> StreamFrom blk
-            -> m (Iterator (HeaderHash blk) m Lazy.ByteString)
-streamBlobs db low = case low of
-    StreamFromExclusive pt -> streamBlobsAfter db pt
-    StreamFromGenesis      -> withDB db $ \imm ->
-      ImmDB.streamBinaryBlobs imm Nothing Nothing
-    StreamFromInclusive pt -> case pointHash pt of
-      GenesisHash -> throwM $ NoGenesisBlock @blk
-      BlockHash h -> withDB db $ \imm ->
-        ImmDB.streamBinaryBlobs imm (Just (pointSlot pt, h)) Nothing
+    stream imm start end = lift $ parseIterator db <$>
+      ImmDB.streamBinaryBlobs imm start end
+
+    -- | Check that the result of the iterator is a block that matches the
+    -- given point.
+    blockMatchesPoint :: ImmDB.IteratorResult (HeaderHash blk) blk
+                      -> Point blk
+                      -> Bool
+    blockMatchesPoint itRes pt = case itRes of
+      ImmDB.IteratorExhausted    -> False
+      ImmDB.IteratorResult _ blk -> blockPoint blk == pt
+      ImmDB.IteratorEBB  _ _ blk -> blockPoint blk == pt
+
+-- | Same as 'streamBlocksFrom', but without checking the hash of the lower
+-- bound.
+--
+-- There is still a cost when the lower bound is 'StreamFromExclusive': the
+-- block will be read from disk, but it won't be parsed.
+--
+-- When passed @'StreamFromInclusive' pt@ where @pt@ refers to Genesis, a
+-- 'NoGenesisBlock' exception will be thrown.
+streamBlocksFromUnchecked  :: forall m blk.
+                              ( MonadCatch m
+                              , HasHeader blk
+                              )
+                           => ImmDB m blk
+                           -> StreamFrom blk
+                           -> m (ImmDB.Iterator (HeaderHash blk) m blk)
+streamBlocksFromUnchecked db from = withDB db $ \imm -> case from of
+    StreamFromExclusive pt@Point { pointHash = BlockHash hash } -> do
+      it    <- ImmDB.streamBinaryBlobs imm (Just (pointSlot pt, hash)) Nothing
+      void $ iteratorNext it
+      return $ parseIterator db it
+    StreamFromExclusive    Point { pointHash = GenesisHash    } ->
+      stream imm Nothing Nothing
+    StreamFromInclusive pt@Point { pointHash = BlockHash hash } ->
+      stream imm (Just (pointSlot pt, hash)) Nothing
+    StreamFromInclusive    Point { pointHash = GenesisHash    } ->
+      throwM $ NoGenesisBlock @blk
+  where
+    stream imm start end = parseIterator db <$>
+      ImmDB.streamBinaryBlobs imm start end
+
+-- | Stream blocks after the given point
+--
+-- See also 'streamBlobsAfter'.
+--
+-- PRECONDITION: the exclusive lower bound is part of the ImmutableDB.
+streamBlocksAfter :: forall m blk. (MonadCatch m, HasHeader blk)
+                  => ImmDB m blk
+                  -> Point blk -- ^ Exclusive lower bound
+                  -> m (Iterator (HeaderHash blk) m blk)
+streamBlocksAfter db low = parseIterator db <$> streamBlobsAfter db low
 
 -- | Stream blobs after the given point
 --
@@ -294,6 +379,19 @@ streamBlobsAfter db low = withDB db $ \imm -> do
                     throwM $ ImmDbHashMismatch low hash hash'
               IteratorExhausted ->
                   throwM $ ImmDbUnexpectedIteratorExhausted low
+
+-- | Parse the bytestrings returned by an iterator as blocks.
+parseIterator :: (MonadThrow m, HasHeader blk)
+              => ImmDB m blk
+              -> Iterator (HeaderHash blk) m Lazy.ByteString
+              -> Iterator (HeaderHash blk) m blk
+parseIterator db itr = Iterator {
+      iteratorNext    = parseIteratorResult db =<< iteratorNext itr
+    , iteratorPeek    = parseIteratorResult db =<< iteratorPeek itr
+    , iteratorHasNext = iteratorHasNext itr
+    , iteratorClose   = iteratorClose   itr
+    , iteratorID      = ImmDB.DerivedIteratorID $ iteratorID itr
+    }
 
 parseIteratorResult :: (MonadThrow m, HasHeader blk)
                     => ImmDB m blk

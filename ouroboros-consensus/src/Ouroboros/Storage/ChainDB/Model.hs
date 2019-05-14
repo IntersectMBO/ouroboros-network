@@ -51,7 +51,7 @@ import           Ouroboros.Consensus.Util (repeatedly)
 
 import           Ouroboros.Storage.ChainDB.API (ChainUpdate (..),
                      IteratorId (..), IteratorResult (..), StreamFrom (..),
-                     StreamTo (..), fromNetworkChainUpdate)
+                     StreamTo (..), UnknownRange (..), fromNetworkChainUpdate)
 
 -- | Model of the chain DB
 data Model blk = Model {
@@ -144,8 +144,8 @@ addBlocks cfg = repeatedly (addBlock cfg)
 
 streamBlocks :: HasHeader blk
              => StreamFrom blk -> StreamTo blk
-             -> Model blk -> (IteratorId, Model blk)
-streamBlocks from to m = (itrId, m {
+             -> Model blk -> (Either (UnknownRange blk) IteratorId, Model blk)
+streamBlocks from to m = (Right itrId, m {
       iterators = Map.insert
                     itrId
                     (between from to (currentChain m))
@@ -259,6 +259,7 @@ successors = Map.unionsWith Map.union . map single
     single b = Map.singleton (Block.blockPrevHash b)
                              (Map.singleton (Block.blockHash b) b)
 
+-- TODO return UnknownRange
 between :: forall blk. HasHeader blk
         => StreamFrom blk -> StreamTo blk -> Chain blk -> [blk]
 between from to =
@@ -269,14 +270,12 @@ between from to =
     -- Drop everything before the start point
     -- This runs on the list /from oldest to newest/
     dropBeforeFrom :: StreamFrom blk -> [blk] -> [blk]
-    dropBeforeFrom StreamFromGenesis       = id
     dropBeforeFrom (StreamFromInclusive p) = dropWhile (isNot p)
     dropBeforeFrom (StreamFromExclusive p) = tail . dropWhile (isNot p)
 
     -- Drop everything after the end point
     -- This runs on the /reversed/ list (from newest to oldest)
     dropAfterTo :: StreamTo blk -> [blk] -> [blk]
-    dropAfterTo StreamToEnd           = id
     dropAfterTo (StreamToInclusive p) = dropWhile (isNot p)
     dropAfterTo (StreamToExclusive p) = tail . dropWhile (isNot p)
 

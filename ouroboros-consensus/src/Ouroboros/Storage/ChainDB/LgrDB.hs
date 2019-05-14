@@ -42,7 +42,6 @@ import           Ouroboros.Storage.LedgerDB.OnDisk (NextBlock (..),
                      StreamAPI (..))
 import qualified Ouroboros.Storage.LedgerDB.OnDisk as LedgerDB
 
-import           Ouroboros.Storage.ChainDB.API (StreamFrom (..))
 import           Ouroboros.Storage.ChainDB.ImmDB (ImmDB)
 import qualified Ouroboros.Storage.ChainDB.ImmDB as ImmDB
 
@@ -155,7 +154,7 @@ streamAPI immDB = StreamAPI streamAfter
                 -> (Maybe (m (NextBlock (Point blk) blk)) -> m a)
                 -> m a
     streamAfter tip k = bracket
-      (ImmDB.streamBlocks immDB (StreamFromExclusive (tipToPoint tip)))
+      (ImmDB.streamBlocksAfter immDB (tipToPoint tip))
       ImmDB.iteratorClose
       $ \itr -> do
         first <- ImmDB.iteratorNext itr
