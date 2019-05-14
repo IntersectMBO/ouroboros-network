@@ -53,7 +53,7 @@ import           Test.Mux.ReqResp
 
 import           Test.QuickCheck
 import           Text.Show.Functions ()
-import           Test.Tasty (TestTree, testGroup)
+import           Test.Tasty (TestTree, testGroup, after, DependencyType(..))
 import           Test.Tasty.QuickCheck (testProperty)
 
 {-
@@ -69,17 +69,25 @@ import           Test.Tasty.QuickCheck (testProperty)
 tests :: TestTree
 tests =
   testGroup "Socket"
-  [ testProperty "socket send receive IPv4"          prop_socket_send_recv_ipv4
+  [ testProperty "socket send receive IPv4"              prop_socket_send_recv_ipv4
 #ifdef OUROBOROS_NETWORK_IPV6
-  , testProperty "socket send receive IPv6"          prop_socket_send_recv_ipv6
+  , after AllFinish "socket send receive IPv4" $
+    testProperty "socket send receive IPv6"              prop_socket_send_recv_ipv6
+#define LAST_IP_TEST "socket send receive IPv6"
+#else
+#define LAST_IP_TEST "socket send receive IPv4"
 #endif
 #ifndef mingw32_HOST_OS
-  , testProperty "socket send receive Unix"          prop_socket_send_recv_unix
+  , testProperty "socket send receive Unix"              prop_socket_send_recv_unix
 #endif
-  , testProperty "socket close during receive"       prop_socket_recv_close
-  , testProperty "socket client connection failure"  prop_socket_client_connect_error
-  , testProperty "socket sync demo"                  prop_socket_demo
+  , after AllFinish LAST_IP_TEST $
+    testProperty "socket close during receive"           prop_socket_recv_close
+  , after AllFinish "socket close during receive" $
+    testProperty "socket client connection failure"      prop_socket_client_connect_error
+  , after AllFinish "socket client connection failure" $
+    testProperty "socket sync demo"                      prop_socket_demo
   ]
+#undef LAST_IP_TEST
 
 --
 -- Properties
