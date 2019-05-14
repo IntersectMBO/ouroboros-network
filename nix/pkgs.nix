@@ -37,6 +37,7 @@ let
         packages.io-sim-classes.configureFlags = [ "--ghc-option=-Werror" ];
         packages.ouroboros-network.configureFlags = [ "--ghc-option=-Werror" ];
         packages.ouroboros-consensus.configureFlags = [ "--ghc-option=-Werror" ];
+        packages.prometheus.components.library.doExactConfig = true;
       }
     ];
   };

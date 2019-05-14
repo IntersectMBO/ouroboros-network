@@ -6,8 +6,9 @@
         "libyaml" = (((hackage.libyaml)."0.1.0.0").revisions).default;
         "time-units" = (((hackage.time-units)."1.0.0").revisions).default;
         "ekg-json" = (((hackage.ekg-json)."0.1.0.6").revisions).default;
-        "prometheus" = (((hackage.prometheus)."2.1.1").revisions).default;
         "ekg-prometheus-adapter" = (((hackage.ekg-prometheus-adapter)."0.1.0.4").revisions).default;
+        "prometheus" = (((hackage.prometheus)."2.1.1").revisions).default;
+        "containers" = (((hackage.containers)."0.5.11.0").revisions).default;
         "aeson-options" = (((hackage.aeson-options)."0.1.0").revisions).default;
         "pvss" = (((hackage.pvss)."0.2.0").revisions).default;
         "lrucache" = (((hackage.lrucache)."1.2.0.1").revisions).default;
@@ -15,6 +16,7 @@
         "writer-cps-transformers" = (((hackage.writer-cps-transformers)."0.5.6.0").revisions).default;
         "o-clock" = (((hackage.o-clock)."1.0.0.1").revisions).default;
         "ekg-wai" = (((hackage.ekg-wai)."0.1.0.3").revisions).default;
+        "lzma-clib" = (((hackage.lzma-clib)."5.2.2").revisions).default;
         "base58-bytestring" = (((hackage.base58-bytestring)."0.1.0").revisions).default;
         "half" = (((hackage.half)."0.2.2.3").revisions).default;
         "micro-recursion-schemes" = (((hackage.micro-recursion-schemes)."5.0.2.2").revisions).default;
