@@ -141,7 +141,7 @@ withNetworkNode
   => NetworkInterface ptcl Socket.AddrInfo IO r
   -> (NetworkNode Socket.AddrInfo IO r -> IO t)
   -> IO t
-withNetworkNode NetworkInterface {nodeAddress, protocols} k =
+withNetworkNode NetworkInterface {nodeAddress, nodeApplication} k =
     bracket mkSocket Socket.close $ \sd -> do
 
       killVar <- newEmptyTMVarM
@@ -160,7 +160,7 @@ withNetworkNode NetworkInterface {nodeAddress, protocols} k =
   where
 
     mpds :: Mx.MiniProtocolDescriptions ptcl IO
-    mpds = miniProtocolDescription . protocols
+    mpds = miniProtocolDescription nodeApplication
 
     -- Make the server listening socket
     mkSocket :: IO Socket.Socket
