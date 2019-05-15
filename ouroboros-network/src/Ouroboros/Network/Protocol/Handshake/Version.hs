@@ -4,7 +4,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE ConstraintKinds #-}
 
-module Ouroboros.Network.Server.Version
+module Ouroboros.Network.Protocol.Handshake.Version
   ( Versions (..)
   , Application (..)
   , Version (..)

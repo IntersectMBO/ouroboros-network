@@ -17,7 +17,7 @@ import qualified Data.Map as Map
 
 import Network.TypedProtocol.Core
 
-import Ouroboros.Network.Server.Version
+import Ouroboros.Network.Protocol.Handshake.Version
 
 -- The following is for `cborCodec`, which should be defined in another module.
 import Control.Monad.Class.MonadST (MonadST)
