@@ -26,6 +26,7 @@ import           System.IO.Error
 #endif
 
 import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Driver
 import qualified Network.TypedProtocol.ReqResp.Type       as ReqResp
 import qualified Network.TypedProtocol.ReqResp.Client     as ReqResp
 import qualified Network.TypedProtocol.ReqResp.Server     as ReqResp
@@ -161,19 +162,19 @@ prop_socket_send_recv clientAddr serverAddr f xs = do
     let -- Server Node; only req-resp server
         srvPeer :: Peer (ReqResp.ReqResp Int Int) AsServer ReqResp.StIdle IO ()
         srvPeer = ReqResp.reqRespServerPeer (reqRespServerMapAccumL sv (\a -> pure . f a) 0)
-        srvPeers Mxt.ReqResp1 = OnlyServer nullTracer ReqResp.codecReqResp srvPeer
+        srvPeers = MuxServerApplication $ \Mxt.ReqResp1 channel -> runPeer nullTracer ReqResp.codecReqResp channel srvPeer
         serNet = NetworkInterface {
             nodeAddress = serverAddr,
-            protocols   = srvPeers
+            nodeApplication = srvPeers
           }
 
         -- Client Node; only req-resp client
         cliPeer :: Peer (ReqResp.ReqResp Int Int) AsClient ReqResp.StIdle IO ()
         cliPeer = ReqResp.reqRespClientPeer (reqRespClientMap cv xs)
-        cliPeers Mxt.ReqResp1 = OnlyClient nullTracer ReqResp.codecReqResp cliPeer
+        cliPeers = MuxClientApplication $ \ Mxt.ReqResp1 channel -> runPeer nullTracer ReqResp.codecReqResp channel cliPeer
         cliNet = NetworkInterface {
              nodeAddress = clientAddr,
-             protocols   = cliPeers
+             nodeApplication   = cliPeers
            }
 
     res <-
@@ -198,7 +199,7 @@ prop_socket_recv_close f _ = ioProperty $ do
 
     let srvPeer :: Peer (ReqResp.ReqResp Int Int) AsServer ReqResp.StIdle IO ()
         srvPeer = ReqResp.reqRespServerPeer (reqRespServerMapAccumL sv (\a -> pure . f a) 0)
-        srvPeers Mxt.ReqResp1 = OnlyServer nullTracer ReqResp.codecReqResp srvPeer
+        srvPeers = MuxServerApplication $ \Mxt.ReqResp1 channel -> runPeer nullTracer ReqResp.codecReqResp channel srvPeer
 
     bracket
       (Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol)
@@ -219,7 +220,7 @@ prop_socket_recv_close f _ = ioProperty $ do
                 $ \(sd',_) -> do
                   bearer <- socketAsMuxBearer sd'
                   Mx.muxBearerSetState bearer Mx.Connected
-                  Mx.muxStart (miniProtocolDescription . srvPeers) bearer
+                  Mx.muxStart (miniProtocolDescription srvPeers) bearer
           )
           $ \muxAsync -> do
 
@@ -250,10 +251,10 @@ prop_socket_client_connect_error _ xs = ioProperty $ do
 
     let cliPeer :: Peer (ReqResp.ReqResp Int Int) AsClient ReqResp.StIdle IO ()
         cliPeer = ReqResp.reqRespClientPeer (reqRespClientMap cv xs)
-        cliPeers Mxt.ReqResp1 = OnlyClient nullTracer ReqResp.codecReqResp cliPeer
+        cliPeers = MuxClientApplication $ \Mxt.ReqResp1 channel -> runPeer nullTracer ReqResp.codecReqResp channel cliPeer
         ni = NetworkInterface {
             nodeAddress = serverAddr,
-            protocols   = cliPeers
+            nodeApplication   = cliPeers
           }
 
     (res :: Either IOException Bool)
@@ -282,18 +283,18 @@ demo chain0 updates = do
         consumerPeer = ChainSync.chainSyncClientPeer
                         (ChainSync.chainSyncClientExample consumerVar
                         (consumerClient done target consumerVar))
-        consumerPeers Mxt.ChainSync1 = OnlyClient nullTracer (ChainSync.codecChainSync encode decode encode decode) consumerPeer
+        consumerPeers = MuxClientApplication $ \Mxt.ChainSync1 channel -> runPeer nullTracer (ChainSync.codecChainSync encode decode encode decode) channel consumerPeer
         consumerNet = NetworkInterface {
               nodeAddress = consumerAddress,
-              protocols   = consumerPeers
+              nodeApplication = consumerPeers
             }
 
         producerPeer :: Peer (ChainSync.ChainSync block (Point block)) AsServer ChainSync.StIdle IO ()
         producerPeer = ChainSync.chainSyncServerPeer (ChainSync.chainSyncServerExample () producerVar)
-        producerPeers Mxt.ChainSync1 = OnlyServer nullTracer (ChainSync.codecChainSync encode decode encode decode) producerPeer
+        producerPeers = MuxServerApplication $ \Mxt.ChainSync1 channel -> runPeer nullTracer (ChainSync.codecChainSync encode decode encode decode) channel producerPeer
         producerNet = NetworkInterface {
               nodeAddress = producerAddress,
-              protocols   = producerPeers
+              nodeApplication = producerPeers
             }
 
     withNetworkNode producerNet $ \_ ->

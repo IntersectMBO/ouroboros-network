@@ -12,7 +12,7 @@ module Ouroboros.Network.Mux.Interface
   -- * High level interface for the multiplex layer
   -- $interface
     NetworkInterface (..)
-  , MuxPeer (..)
+  , MuxApplication (..)
   , NetworkNode (..)
 
   -- * Run mux layer on initiated connections
@@ -26,22 +26,15 @@ module Ouroboros.Network.Mux.Interface
   , miniProtocolDescription
   ) where
 
-import qualified Codec.CBOR.Read     as CBOR
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Functor (void)
-import           Numeric.Natural (Natural)
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadThrow ( MonadCatch
                                                 , MonadThrow
                                                 )
 
-import           Control.Tracer
-
-import           Network.TypedProtocol.Core
-import           Network.TypedProtocol.Codec
-import           Network.TypedProtocol.Driver
-import           Network.TypedProtocol.Pipelined
+import           Network.TypedProtocol.Channel
 
 import           Ouroboros.Network.Mux.Types
 
@@ -56,64 +49,41 @@ import           Ouroboros.Network.Mux.Types
 --   a function that runs the mux layer on it.
 --
 
+
 -- |
--- Specification for peers of a protocol.  This type instructs the multiplexing
--- layer to run a given client \/ server peers.
+-- Application run by mux layer.
 --
-data MuxPeer m where
-  -- |
-  -- A non pipeliend peer together with a codec.
-  --
-  OnlyClient
-    :: forall ps (st :: ps) m a.
-       Tracer m (TraceSendRecv ps)
-    -> Codec ps CBOR.DeserialiseFailure m ByteString
-    -> Peer ps AsClient st m a
-    -> MuxPeer m
+-- * enumeration of client application, e.g. a wallet application communicating
+--   with a node using ChainSync and TxSubmission protocols; this only requires
+--   to run client side of each protocol.
+--
+-- * enumeration of server applications: this application type is mostly useful
+--   tests.
+--
+-- * enumeration of both client and server applications, e.g. a full node
+--   serving downstream peers using server side of each protocol and getting
+--   updates from upstream peers using client side of each of the protocols.
+--
+data MuxApplication ptcl m where
+  MuxClientApplication
+    -- Client application; most simple application will be @'runPeer'@ or
+    -- @'runPipelinedPeer'@ supplied with a codec and a @'Peer'@ for each
+    -- @ptcl@.  But it allows to handle resources if just application of
+    -- @'runPeer'@ is not enough.  It will be run as @'muxInitiator'@.
+    :: (ptcl -> Channel m ByteString -> m a)
+    -> MuxApplication ptcl m
 
-  -- |
-  -- A pipelined peer together with a codec.
-  --
-  OnlyPipelinedClient
-    :: forall ps (st :: ps) m a.
-       Natural
-    -> Tracer m (TraceSendRecv ps)
-    -> Codec ps CBOR.DeserialiseFailure m ByteString
-    -> PeerPipelined ps AsClient st m a
-    -> MuxPeer m
+  MuxServerApplication
+    -- Server application; similarly to the @'MuxClientApplication'@ but it
+    -- will be run using @'muxResponder'@.
+    :: (ptcl -> Channel m ByteString -> m a)
+    -> MuxApplication ptcl m
 
-  -- |
-  -- Server peer with a codec
-  OnlyServer
-    :: forall ps (st :: ps) m a.
-       Tracer m (TraceSendRecv ps)
-    -> Codec ps CBOR.DeserialiseFailure m ByteString
-    -> Peer ps AsServer st m a
-    -> MuxPeer m
-
-  -- |
-  -- Client and server peers with the corresponding codec.
-  --
-  ClientAndServer
-    :: forall ps (st :: ps) m a.
-       Tracer m (TraceSendRecv ps)
-    -> Codec ps CBOR.DeserialiseFailure m ByteString
-    -> Peer ps AsClient st m a
-    -> Peer ps AsServer st m a
-    -> MuxPeer m
-
-  -- |
-  -- Pipelined client and a server with the correspnding codec.
-  --
-  PipelinedClientAndServer
-    :: forall ps (st :: ps) m a.
-       Natural
-    -> Tracer m (TraceSendRecv ps)
-    -> Codec ps CBOR.DeserialiseFailure m ByteString
-    -> PeerPipelined ps AsClient st m a
-    -> Peer ps AsServer st m a
-    -> MuxPeer m
-
+  MuxClientAndServerApplication
+    -- Client and server applications.
+    :: (ptcl -> Channel m ByteString -> m a)
+    -> (ptcl -> Channel m ByteString -> m b)
+    -> MuxApplication ptcl m
 
 -- |
 -- Public network interface for 'ouroboros-network'.
@@ -124,12 +94,12 @@ data NetworkInterface ptcl addr m r = NetworkInterface {
       -- listen for incoming connections.  Some bearers do not have a notion of
       -- address.
       --
-      nodeAddress      :: addr,
+      nodeAddress     :: addr,
 
       -- |
       -- Map of protocols that we run
       --
-      protocols        :: ptcl -> MuxPeer m
+      nodeApplication :: MuxApplication ptcl m
    }
 
 -- | Low level network interface.  It can be intiatiated using a socket, pair
@@ -206,30 +176,20 @@ miniProtocolDescription
      , MonadCatch m
      , MonadThrow m
      )
-  => MuxPeer m
-  -> MiniProtocolDescription ptcl m
-miniProtocolDescription (OnlyClient tr codec peer) =
+  => MuxApplication ptcl m
+  -> MiniProtocolDescriptions ptcl m
+miniProtocolDescription (MuxClientApplication client) = \ptcl ->
   MiniProtocolDescription {
-      mpdInitiator = Just (\chan -> void (runPeer tr codec chan peer)),
+      mpdInitiator = Just (void . client ptcl),
       mpdResponder = Nothing
     }
-miniProtocolDescription (OnlyPipelinedClient omax tr codec peer) =
-  MiniProtocolDescription {
-      mpdInitiator = Just (\chan -> void (runPipelinedPeer omax tr codec chan peer)),
-      mpdResponder = Nothing
-    }
-miniProtocolDescription (OnlyServer tr codec peer) =
+miniProtocolDescription (MuxServerApplication server) = \ptcl ->
   MiniProtocolDescription {
       mpdInitiator = Nothing,
-      mpdResponder = Just (\chan -> void (runPeer tr codec chan peer))
+      mpdResponder = Just (void . server ptcl)
     }
-miniProtocolDescription (ClientAndServer tr codec clientPeer serverPeer) =
+miniProtocolDescription (MuxClientAndServerApplication client server) = \ptcl ->
   MiniProtocolDescription {
-      mpdInitiator = Just (\chan -> void (runPeer tr codec chan clientPeer)),
-      mpdResponder = Just (\chan -> void (runPeer tr codec chan serverPeer))
-    }
-miniProtocolDescription (PipelinedClientAndServer omax tr codec clientPeer serverPeer) =
-  MiniProtocolDescription {
-      mpdInitiator = Just (\chan -> void (runPipelinedPeer omax tr codec chan clientPeer)),
-      mpdResponder = Just (\chan -> void (runPeer tr codec chan serverPeer))
+      mpdInitiator = Just (void . client ptcl),
+      mpdResponder = Just (void . server ptcl)
     }
