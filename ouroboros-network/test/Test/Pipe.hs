@@ -22,16 +22,12 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 import           Control.Tracer (nullTracer)
 
-import           Network.TypedProtocol.Core
-import           Network.TypedProtocol.Driver
-
 import           Ouroboros.Network.Chain (Chain, ChainUpdate, Point)
 import qualified Ouroboros.Network.Chain as Chain
 import qualified Ouroboros.Network.ChainProducerState as CPS
 import qualified Ouroboros.Network.Mux as Mx
 import qualified Ouroboros.Network.Mux.Interface as Mx
 import           Ouroboros.Network.Pipe
-import           Ouroboros.Network.Protocol.ChainSync.Type     as ChainSync
 import           Ouroboros.Network.Protocol.ChainSync.Client   as ChainSync
 import           Ouroboros.Network.Protocol.ChainSync.Codec    as ChainSync
 import           Ouroboros.Network.Protocol.ChainSync.Examples as ChainSync
@@ -102,18 +98,25 @@ demo chain0 updates = do
     let Just expectedChain = Chain.applyChainUpdates updates chain0
         target = Chain.headPoint expectedChain
 
-        consumerPeer :: Peer (ChainSync.ChainSync block (Point block)) AsClient ChainSync.StIdle IO ()
-        consumerPeer = ChainSync.chainSyncClientPeer
+        consumerApp :: Mx.MuxApplication Mxt.TestProtocols1 IO
+        consumerApp = Mx.simpleMuxClientApplication $
+          \Mxt.ChainSync1 ->
+            Mx.MuxPeer nullTracer
+                       (ChainSync.codecChainSync encode decode encode decode)
+                       (ChainSync.chainSyncClientPeer
                           (ChainSync.chainSyncClientExample consumerVar
-                          (consumerClient done target consumerVar))
-        consumerPeers = Mx.MuxClientApplication $ \Mxt.ChainSync1 channel -> runPeer nullTracer (ChainSync.codecChainSync encode decode encode decode) channel consumerPeer
+                            (consumerClient done target consumerVar)))
 
-        producerPeer :: Peer (ChainSync.ChainSync block (Point block)) AsServer ChainSync.StIdle IO ()
-        producerPeer = ChainSync.chainSyncServerPeer (ChainSync.chainSyncServerExample () producerVar)
-        producerPeers = Mx.MuxServerApplication $ \Mxt.ChainSync1 channel -> runPeer nullTracer (ChainSync.codecChainSync encode decode encode decode) channel producerPeer
+        producerApp :: Mx.MuxApplication Mxt.TestProtocols1 IO
+        producerApp = Mx.simpleMuxServerApplication $
+          \Mxt.ChainSync1 ->
+            Mx.MuxPeer nullTracer
+                       (ChainSync.codecChainSync encode decode encode decode)
+                       (ChainSync.chainSyncServerPeer
+                         (ChainSync.chainSyncServerExample () producerVar))
 
-    _ <- async $ runNetworkNodeWithPipe producerPeers hndRead1 hndWrite2
-    _ <- async $ runNetworkNodeWithPipe consumerPeers hndRead2 hndWrite1
+    _ <- async $ runNetworkNodeWithPipe producerApp hndRead1 hndWrite2
+    _ <- async $ runNetworkNodeWithPipe consumerApp hndRead2 hndWrite1
 
     void $ fork $ sequence_
         [ do threadDelay 10e-4 -- 1 milliseconds, just to provide interest
