@@ -1,4 +1,5 @@
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE RecordWildCards           #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
@@ -127,6 +128,8 @@ openDB args@ImmDbArgs{..} = do
   Getting and parsing blocks
 -------------------------------------------------------------------------------}
 
+-- | Return the block corresponding to the given point, if it is part of the
+-- ImmutableDB.
 getBlockWithPoint :: (MonadCatch m, HasHeader blk)
                   => ImmDB m blk -> Point blk -> m (Maybe blk)
 getBlockWithPoint db Point{..} = do
@@ -141,14 +144,19 @@ getBlockWithPoint db Point{..} = do
     --   non-existent after)
     -- * If the block does not exist in the database at all, we'd have done two
     --   reads before returning 'Nothing', but both of those reads are cheap
-    mbImmBlock <- getBlock db (Right pointSlot)
-    case mbImmBlock of
-      Just block -> return $ Just block
+    mbBlock <- getBlockWithHash (Right pointSlot) pointHash
+    case mbBlock of
+      Just block -> return (Just block)
       Nothing    -> do
         epochNo <- epochInfoEpoch pointSlot
-        getBlock db (Left epochNo)
+        getBlockWithHash (Left epochNo) pointHash
   where
     EpochInfo{..} = immEpochInfo db
+
+    -- Important: we check whether the block's hash matches the point's hash
+    getBlockWithHash epochOrSlot hash = getBlock db epochOrSlot >>= \case
+      Just block | BlockHash (blockHash block) == hash -> return $ Just block
+      _                                                -> return $ Nothing
 
 getBlockAtTip :: (MonadCatch m, HasHeader blk)
               => ImmDB m blk -> m (Maybe blk)
