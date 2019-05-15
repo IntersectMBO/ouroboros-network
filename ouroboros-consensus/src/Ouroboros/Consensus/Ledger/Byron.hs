@@ -37,6 +37,7 @@ import           Data.Foldable (find)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Sequence as Seq
+import           Data.Typeable
 import           Data.Word
 import           Ouroboros.Consensus.Crypto.DSIGN
 import           Ouroboros.Consensus.Crypto.Hash
@@ -53,43 +54,70 @@ byronEpochSlots :: CC.Slot.EpochSlots
 byronEpochSlots = CC.Slot.EpochSlots 21600
 
 -- | Newtype wrapper to avoid orphan instances
-newtype ByronBlock = ByronBlock { unByronBlock :: CC.Block.ABlock ByteString }
+--
+-- The phantom type parameter is there to record the additional information
+-- we need to work with this block. Most of the code here does not care,
+-- but we may need different additional information when running the chain
+-- for real as when we are running the demo.
+newtype ByronBlock cfg = ByronBlock { unByronBlock :: CC.Block.ABlock ByteString }
   deriving (Eq, Show)
 
 newtype ByronHeader = ByronHeader { unByronHeader :: CC.Block.AHeader ByteString }
 
-byronHeader :: ByronBlock -> ByronHeader
+byronHeader :: ByronBlock cfg -> ByronHeader
 byronHeader (ByronBlock b) = ByronHeader (CC.Block.blockHeader b)
 
-instance StandardHash ByronBlock
+instance Typeable cfg => Measured BlockMeasure (ByronBlock cfg) where
+  measure = blockMeasure
 
-instance Measured BlockMeasure ByronBlock where
+instance Measured BlockMeasure ByronHeader where
   measure = blockMeasure
 
 convertSlot :: CC.Slot.FlatSlotId -> SlotNo
 convertSlot = fromIntegral @Word64 . coerce
 
-instance HasHeader ByronBlock where
-  type HeaderHash ByronBlock = CC.Block.HeaderHash
+instance Typeable cfg => HasHeader (ByronBlock cfg) where
+  type HeaderHash (ByronBlock cfg) = CC.Block.HeaderHash
 
-  blockHash = CC.Block.blockHashAnnotated . unByronBlock
-  -- TODO distinguish the genesis hash? How do we do this after the fact?
-  blockPrevHash = BlockHash . CC.Block.blockPrevHash . unByronBlock
-  blockSlot = convertSlot . CC.Block.blockSlot . unByronBlock
-  blockNo = BlockNo . CC.Common.unChainDifficulty . CC.Block.blockDifficulty . unByronBlock
+  blockHash      =            blockHash     . byronHeader
+  blockPrevHash  = castHash . blockPrevHash . byronHeader
+  blockSlot      =            blockSlot     . byronHeader
+  blockNo        =            blockNo       . byronHeader
   blockInvariant = const True
 
+instance HasHeader ByronHeader where
+  type HeaderHash ByronHeader = CC.Block.HeaderHash
 
-instance UpdateLedger ByronBlock where
-  data LedgerState ByronBlock = ByronLedgerState
+  -- Implementation of 'blockHash' derived from
+  --
+  -- > blockHashAnnotated :: ABlock ByteString -> HeaderHash
+  -- > blockHashAnnotated = hashDecoded . fmap wrapHeaderBytes . blockHeader
+  --
+  -- I couldn't find a version for headers
+  blockHash = Crypto.hashDecoded . fmap CC.Block.wrapHeaderBytes . unByronHeader
+
+  -- We should distinguish the genesis hash
+  -- TODO: I think this already lives somewhere. I don't know where. In fact,
+  -- I think Erik or Ru already wrote this very 'HasHeader' instance :/
+  blockPrevHash = BlockHash . CC.Block.headerPrevHash . unByronHeader
+
+  blockSlot      = convertSlot . CC.Block.headerSlot . unByronHeader
+  blockNo        = BlockNo . CC.Common.unChainDifficulty . CC.Block.headerDifficulty . unByronHeader
+  blockInvariant = const True
+
+instance StandardHash (ByronBlock cfg)
+instance StandardHash ByronHeader
+
+instance UpdateLedger (ByronBlock cfg) where
+  data LedgerState (ByronBlock cfg) = ByronLedgerState
       { blsCurrent :: CC.Block.ChainValidationState
         -- | Slot-bounded snapshots of the chain state
       , blsSnapshots :: Seq.Seq (SlotBounded CC.Block.ChainValidationState)
       }
     deriving (Eq, Show)
-  newtype LedgerError ByronBlock = ByronLedgerError CC.Block.ChainValidationError
+  newtype LedgerError (ByronBlock cfg) = ByronLedgerError CC.Block.ChainValidationError
     deriving (Eq, Show)
-  newtype LedgerConfig ByronBlock = ByronLedgerConfig Genesis.Config
+  newtype LedgerConfig (ByronBlock cfg) = ByronLedgerConfig Genesis.Config
 
   applyLedgerBlock (ByronLedgerConfig cfg) (ByronBlock block) (ByronLedgerState state snapshots)
     = mapExcept (bimap ByronLedgerError id) $ do
@@ -170,14 +198,14 @@ instance UpdateLedger ByronBlock where
   Support for PBFT consensus algorithm
 -------------------------------------------------------------------------------}
 
-type instance BlockProtocol ByronBlock = PBft PBftCardanoCrypto
+type instance BlockProtocol (ByronBlock cfg) = ExtNodeConfig cfg (PBft PBftCardanoCrypto)
 
-instance HasPreHeader ByronBlock where
-  type PreHeader ByronBlock = CC.Block.ToSign
+instance Typeable cfg => HasPreHeader (ByronBlock cfg) where
+  type PreHeader (ByronBlock cfg) = CC.Block.ToSign
   blockPreHeader = unAnnotated . CC.Block.recoverSignedBytes byronEpochSlots
                    . CC.Block.blockHeader . unByronBlock
 
-instance HasPayload (PBft PBftCardanoCrypto) ByronBlock where
+instance Typeable cfg => HasPayload (PBft PBftCardanoCrypto) (ByronBlock cfg) where
   blockPayload _ (ByronBlock aBlock) = PBftPayload
     { pbftIssuer = VerKeyCardanoDSIGN
                    . Crypto.pskIssuerVK
@@ -196,7 +224,7 @@ instance HasPayload (PBft PBftCardanoCrypto) ByronBlock where
                       $ aBlock
     }
 
-instance ProtocolLedgerView ByronBlock where
+instance Typeable cfg => ProtocolLedgerView (ByronBlock cfg) where
   protocolLedgerView _ns (ByronLedgerState ls _) = PBftLedgerView
     -- Delegation map
     ( Delegation.unMap
@@ -267,7 +295,7 @@ forgeByronDemoBlock
   -> ChainHash ByronHeader                 -- ^ Previous hash
   -> Map (Hash ShortHash Mock.Tx) Mock.Tx  -- ^ Txs to add in the block
   -> ()                                    -- Leader proof (IsLeader)
-  -> m ByronBlock
+  -> m (ByronBlock ByronDemoConfig)
 forgeByronDemoBlock = undefined
 {-
 forgeBlockFromMock

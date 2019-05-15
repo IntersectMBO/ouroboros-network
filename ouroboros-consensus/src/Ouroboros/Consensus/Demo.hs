@@ -18,7 +18,7 @@ module Ouroboros.Consensus.Demo (
   , DemoLeaderSchedule
   , DemoMockPBFT
   , DemoRealPBFT
-  , DemoForgeBlock(..)
+  , RunDemo(..)
   , Block
   , Header
   , NumCoreNodes(..)
@@ -34,7 +34,6 @@ module Ouroboros.Consensus.Demo (
   , HasCreator(..)
   ) where
 
-import           Codec.Serialise (Serialise)
 import           Control.Monad.Except
 import           Crypto.Random (MonadRandom)
 import qualified Data.Bimap as Bimap
@@ -52,7 +51,8 @@ import qualified Cardano.Chain.Genesis as Cardano.Genesis
 import qualified Cardano.Crypto as Cardano
 import qualified Cardano.Crypto.Signing as Cardano.KeyGen
 
-import           Ouroboros.Network.Block (BlockNo, ChainHash, SlotNo)
+import           Ouroboros.Network.Block (BlockNo, ChainHash, HasHeader,
+                     HeaderHash, SlotNo, StandardHash)
 
 import           Ouroboros.Consensus.Crypto.DSIGN
 import           Ouroboros.Consensus.Crypto.DSIGN.Mock (verKeyIdFromSigned)
@@ -100,7 +100,7 @@ data DemoProtocol p where
   DemoRealPBFT       :: PBftParams -> DemoProtocol DemoRealPBFT
 
 type family Block p = b | b -> p where
-  Block DemoRealPBFT = ByronBlock
+  Block DemoRealPBFT = ByronBlock ByronDemoConfig
 
   -- Demos using mock ledger/block
   Block p = SimpleBlock p SimpleBlockMockCrypto
@@ -126,9 +126,12 @@ type DemoProtocolConstraints p = (
     , HasCreator p
     , Condense  (Payload p (PreHeader (Block p)))
     , Eq        (Payload p (PreHeader (Block p)))
-    , Serialise (Payload p (PreHeader (Block p)))
     , Show      (Payload p (PreHeader (Block p)))
-    , DemoForgeBlock p
+    , RunDemo p
+    , BlockProtocol (Block p) ~ p
+    , HeaderHash (Block p) ~ HeaderHash (Header p)
+    , StandardHash (Header p)
+    , HasHeader (Header p)
     )
 
 demoProtocolConstraints :: DemoProtocol p -> Dict (DemoProtocolConstraints p)
@@ -386,10 +389,10 @@ instance HasCreator DemoRealPBFT where
            $ b
 
 {-------------------------------------------------------------------------------
-  Forging blocks
+  Additional functions needed to run the demo
 -------------------------------------------------------------------------------}
 
-class DemoForgeBlock p where
+class RunDemo p where
   demoForgeBlock :: (HasNodeState p m, MonadRandom m)
                  => NodeConfig p
                  -> SlotNo                      -- ^ Current slot
@@ -399,17 +402,24 @@ class DemoForgeBlock p where
                  -> IsLeader p
                  -> m (Block p)
 
-instance DemoForgeBlock DemoBFT where
-  demoForgeBlock = forgeSimpleBlock
+  demoGetHeader :: Block p -> Header p
 
-instance DemoForgeBlock DemoPraos where
+instance RunDemo DemoBFT where
   demoForgeBlock = forgeSimpleBlock
+  demoGetHeader  = simpleHeader
 
-instance DemoForgeBlock DemoLeaderSchedule where
+instance RunDemo DemoPraos where
   demoForgeBlock = forgeSimpleBlock
+  demoGetHeader  = simpleHeader
 
-instance DemoForgeBlock DemoMockPBFT where
+instance RunDemo DemoLeaderSchedule where
   demoForgeBlock = forgeSimpleBlock
+  demoGetHeader  = simpleHeader
 
-instance DemoForgeBlock DemoRealPBFT where
+instance RunDemo DemoMockPBFT where
+  demoForgeBlock = forgeSimpleBlock
+  demoGetHeader  = simpleHeader
+
+instance RunDemo DemoRealPBFT where
   demoForgeBlock = forgeByronDemoBlock
+  demoGetHeader  = byronHeader

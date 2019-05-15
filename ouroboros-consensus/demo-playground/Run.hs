@@ -98,6 +98,8 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
       let callbacks :: NodeCallbacks IO (Block p)
           callbacks = NodeCallbacks {
               produceBlock = \proof l slot prevPoint prevBlockNo -> do
+                 undefined
+                 {-
                  let curNo    = succ prevBlockNo
                      prevHash = castHash (pointHash prevPoint)
 
@@ -117,12 +119,16 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
                                 prevHash
                                 txs
                                 proof
+               -}
 
           , produceDRG      = drgNew
           }
 
-      chainDB <- ChainDB.openDB encode pInfoConfig pInfoInitLedger Mock.simpleHeader
+      chainDB :: ChainDB IO (Block p) (Header p) <-
+        ChainDB.openDB encode pInfoConfig pInfoInitLedger demoGetHeader
 
+      undefined
+{-
       btime  <- realBlockchainTime registry slotDuration systemStart
       let tracer = contramap ((show myNodeId <> " | ") <>) stdoutTracer
           nodeParams = NodeParams
@@ -149,6 +155,7 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
       forM_ (consumers nodeSetup) (addDownstream' kernel)
 
       Async.wait mempoolThread
+-}
   where
       nid :: Int
       nid = case myNodeId of
