@@ -32,6 +32,7 @@ openDB :: forall m blk hdr.
           , HeaderHash blk ~ HeaderHash hdr
           , ProtocolLedgerView blk
           , LedgerConfigView blk
+          , SupportedPreHeader (BlockProtocol blk) (PreHeader blk)
           )
        => (PreHeader blk -> Encoding)
        -> NodeConfig (BlockProtocol blk)

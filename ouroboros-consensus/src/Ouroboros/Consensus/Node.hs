@@ -181,6 +181,7 @@ nodeKernel
        , HasHeader hdr
        , HeaderHash hdr ~ HeaderHash blk
        , SupportedBlock (BlockProtocol hdr) hdr
+       , SupportedPreHeader (BlockProtocol blk) (PreHeader hdr)
        , BlockProtocol hdr ~ BlockProtocol blk
        , Ord up
        , TraceConstraints up blk hdr
@@ -241,6 +242,7 @@ initInternalState
        , HeaderHash hdr ~ HeaderHash blk
        , ProtocolLedgerView blk
        , SupportedBlock (BlockProtocol hdr) hdr
+       , SupportedPreHeader (BlockProtocol blk) (PreHeader hdr)
        , BlockProtocol hdr ~ BlockProtocol blk
        , Ord up
        , TraceConstraints up blk hdr

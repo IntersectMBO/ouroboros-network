@@ -66,7 +66,7 @@ data BftParams = BftParams {
     , bftNumNodes      :: Word64
     }
 
-instance BftCrypto c => OuroborosTag (Bft c) where
+instance (BftCrypto c) => OuroborosTag (Bft c) where
   -- | The BFT payload is just the signature
   newtype Payload (Bft c) ph = BftPayload {
         bftSignature :: SignedDSIGN (BftDSIGN c) ph
@@ -139,8 +139,12 @@ data BftValidationErr = BftInvalidSignature
   Crypto models
 -------------------------------------------------------------------------------}
 
+
+-- The equality constraint here is slightly weird; we need it to force GHC to
+-- partially apply this constraint in `OuroborosTag` and thus conclude that it
+-- can satisfy it universally.
 -- | Crypto primitives required by BFT
-class (Typeable c, DSIGNAlgorithm (BftDSIGN c)) => BftCrypto c where
+class (Typeable c, DSIGNAlgorithm (BftDSIGN c), Signable (BftDSIGN c) ~ Empty) => BftCrypto c where
   type family BftDSIGN c :: *
 
 data BftStandardCrypto

@@ -73,6 +73,7 @@ data PBftLedgerView c = PBftLedgerView
 
   -- ProtocolParameters Map from genesis to delegate keys.
   -- Note that this map is injective by construction.
+  -- TODO Use BiMap here
   (Map (PBftVerKeyHash c) (PBftVerKeyHash c))
 
 {-------------------------------------------------------------------------------
@@ -106,7 +107,8 @@ data PBftParams = PBftParams {
     , pbftSignatureThreshold :: Double
     }
 
-instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
+instance ( PBftCrypto c, Typeable c
+         ) => OuroborosTag (PBft c) where
   -- | The BFT payload is just the issuer and signature
   data Payload (PBft c) ph = PBftPayload {
         pbftIssuer    :: VerKeyDSIGN (PBftDSIGN c)
@@ -124,6 +126,7 @@ instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
 
   type ValidationErr  (PBft c) = PBftValidationErr
   type SupportedBlock (PBft c) = HasPayload (PBft c)
+  type SupportedPreHeader (PBft c) = Signable (PBftDSIGN c)
   type NodeState      (PBft c) = ()
 
   -- | We require two things from the ledger state:
@@ -245,7 +248,7 @@ class ( Typeable c
 
 data PBftMockCrypto
 
-instance PBftCrypto PBftMockCrypto where
+instance (Signable MockDSIGN ~ Empty) => PBftCrypto PBftMockCrypto where
   type PBftDSIGN PBftMockCrypto = MockDSIGN
   type PBftVerKeyHash PBftMockCrypto = VerKeyDSIGN MockDSIGN
 
@@ -253,7 +256,7 @@ instance PBftCrypto PBftMockCrypto where
 
 data PBftCardanoCrypto
 
-instance PBftCrypto PBftCardanoCrypto where
+instance (Signable CardanoDSIGN ~ HasSignTag) => PBftCrypto PBftCardanoCrypto where
   type PBftDSIGN PBftCardanoCrypto = CardanoDSIGN
   type PBftVerKeyHash PBftCardanoCrypto = CC.Common.StakeholderId
 

@@ -43,6 +43,7 @@ instance (Typeable cfg, OuroborosTag p) => OuroborosTag (ExtNodeConfig cfg p) wh
   type ValidationErr  (ExtNodeConfig cfg p) = ValidationErr  p
   type IsLeader       (ExtNodeConfig cfg p) = IsLeader       p
   type SupportedBlock (ExtNodeConfig cfg p) = SupportedBlock p
+  type SupportedPreHeader (ExtNodeConfig cfg p) = SupportedPreHeader p
 
   --
   -- Only type that changes is the node config

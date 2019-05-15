@@ -50,6 +50,8 @@ import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..))
 import           Ouroboros.Network.Chain (Chain)
 
+-- TODO Better place to put the Empty class?
+import           Ouroboros.Consensus.Crypto.DSIGN.Class (Empty)
 import qualified Ouroboros.Consensus.Util.AnchoredFragment as AF
 import           Ouroboros.Consensus.Util.Random
 
@@ -98,10 +100,14 @@ class ( Show (ChainState    p)
   -- | Blocks that the protocol can run on
   type family SupportedBlock p :: * -> Constraint
 
+  -- | Constraints on the preheader which can be incorporated into a payload.
+  type family SupportedPreHeader p :: * -> Constraint
+  type SupportedPreHeader p = Empty
+
   -- | Construct the ouroboros-specific payload of a block
   --
   -- Gets the proof that we are the leader and the preheader as arguments.
-  mkPayload :: (HasNodeState p m, MonadRandom m)
+  mkPayload :: (SupportedPreHeader p ph, HasNodeState p m, MonadRandom m)
             => (ph -> Encoding)
             -> NodeConfig p
             -> IsLeader p
@@ -147,7 +153,7 @@ class ( Show (ChainState    p)
                 -> m (Maybe (IsLeader p))
 
   -- | Apply a block
-  applyChainState :: SupportedBlock p b
+  applyChainState :: (SupportedBlock p b, SupportedPreHeader p (PreHeader b))
                   => (PreHeader b -> Encoding) -- Serialiser for the preheader
                   -> NodeConfig p
                   -> LedgerView p -- /Updated/ ledger state

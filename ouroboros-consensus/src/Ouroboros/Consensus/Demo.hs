@@ -91,6 +91,7 @@ type DemoProtocolConstraints p = (
   , ProtocolLedgerView (Block p)
   , SupportedBlock p (SimpleHeader p SimpleBlockMockCrypto)
   , HasCreator (Block p)
+  , SupportedPreHeader p ~ Empty
   , Condense  (Payload p (SimplePreHeader p SimpleBlockMockCrypto))
   , Eq        (Payload p (SimplePreHeader p SimpleBlockMockCrypto))
   , Serialise (Payload p (SimplePreHeader p SimpleBlockMockCrypto))

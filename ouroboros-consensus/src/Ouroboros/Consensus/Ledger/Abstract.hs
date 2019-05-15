@@ -148,7 +148,10 @@ data ExtValidationError b =
 
 deriving instance ProtocolLedgerView b => Show (ExtValidationError b)
 
-applyExtLedgerState :: (LedgerConfigView b, ProtocolLedgerView b)
+applyExtLedgerState :: ( LedgerConfigView b
+                       , ProtocolLedgerView b
+                       , SupportedPreHeader (BlockProtocol b) (PreHeader b)
+                       )
                     => (PreHeader b -> Encoding) -- Serialiser for the preheader
                     -> NodeConfig (BlockProtocol b)
                     -> b
@@ -168,7 +171,10 @@ applyExtLedgerState toEnc cfg b ExtLedgerState{..} = do
                               applyLedgerBlock (ledgerConfigView cfg) b ledgerState'
     return $ ExtLedgerState ledgerState'' ouroborosChainState'
 
-foldExtLedgerState :: (LedgerConfigView b, ProtocolLedgerView b)
+foldExtLedgerState :: ( LedgerConfigView b
+                      , ProtocolLedgerView b
+                      , SupportedPreHeader (BlockProtocol b) (PreHeader b)
+                      )
                    => (PreHeader b -> Encoding) -- Serialiser for the preheader
                    -> NodeConfig (BlockProtocol b)
                    -> [b] -- ^ Blocks to apply, oldest first
@@ -177,7 +183,10 @@ foldExtLedgerState :: (LedgerConfigView b, ProtocolLedgerView b)
 foldExtLedgerState toEnc = repeatedlyM . applyExtLedgerState toEnc
 
 -- TODO: This should check stuff like backpointers also
-chainExtLedgerState :: (LedgerConfigView b, ProtocolLedgerView b)
+chainExtLedgerState :: ( LedgerConfigView b
+                       , ProtocolLedgerView b
+                       , SupportedPreHeader (BlockProtocol b) (PreHeader b)
+                       )
                     => (PreHeader b -> Encoding) -- Serialiser for the preheader
                     -> NodeConfig (BlockProtocol b)
                     -> Chain b
@@ -186,7 +195,10 @@ chainExtLedgerState :: (LedgerConfigView b, ProtocolLedgerView b)
 chainExtLedgerState toEnc cfg = foldExtLedgerState toEnc cfg . toOldestFirst
 
 -- | Validation of an entire chain
-verifyChain :: (LedgerConfigView b, ProtocolLedgerView b)
+verifyChain :: ( LedgerConfigView b
+               , ProtocolLedgerView b
+               , SupportedPreHeader (BlockProtocol b) (PreHeader b)
+               )
             => (PreHeader b -> Encoding) -- Serialiser for the preheader
             -> NodeConfig (BlockProtocol b)
             -> ExtLedgerState b

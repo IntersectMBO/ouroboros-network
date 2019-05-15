@@ -60,6 +60,7 @@ import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (Chain, toOldestFirst)
 
 import           Ouroboros.Consensus.Crypto.Hash.Class
+import           Ouroboros.Consensus.Crypto.DSIGN.Class (Empty)
 import           Ouroboros.Consensus.Crypto.Hash.MD5 (MD5)
 import           Ouroboros.Consensus.Crypto.Hash.Short (ShortHash)
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -319,6 +320,8 @@ forgeBlock :: forall m p c.
               , OuroborosTag p
               , SimpleBlockCrypto c
               , Serialise (Payload p (SimplePreHeader p c))
+                -- TODO Decide whether we want to fix this constraint here.
+              , SupportedPreHeader p ~ Empty
               )
            => NodeConfig p
            -> SlotNo                          -- ^ Current slot
@@ -451,8 +454,10 @@ instance (BftCrypto c, SimpleBlockCrypto c')
 instance (SimpleBlockCrypto c')
   => ProtocolLedgerView (SimpleBlock (ExtNodeConfig (PBftLedgerView PBftMockCrypto) (PBft PBftMockCrypto)) c') where
   protocolLedgerView (EncNodeConfig _ pbftParams) _ls = pbftParams
-
-  anachronisticProtocolLedgerView = error "TODO"
+  -- This instance is correct, because the delegation map doesn't change in the
+  -- node configuration.
+  anachronisticProtocolLedgerView (EncNodeConfig _ pbftParams) _ _
+    = Just $ slotUnbounded pbftParams
 
 instance ( PraosCrypto c, SimpleBlockCrypto c')
       => ProtocolLedgerView (SimpleBlock (ExtNodeConfig AddrDist (Praos c)) c') where

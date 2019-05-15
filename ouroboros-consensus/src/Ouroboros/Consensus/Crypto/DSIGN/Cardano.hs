@@ -10,10 +10,21 @@ module Ouroboros.Consensus.Crypto.DSIGN.Cardano
     , VerKeyDSIGN(..)
     , SignKeyDSIGN(..)
     , SigDSIGN(..)
+    , HasSignTag(..)
     ) where
 
 import           Cardano.Binary
 import           Cardano.Crypto
+  ( ProtocolMagicId
+  , SignTag
+  , PublicKey
+  , Signature
+  , SecretKey
+  , keyGen
+  , toPublic
+  , signEncoded
+  , verifySignature
+  )
 import           Data.Coerce (coerce)
 import           Data.Function (on)
 import           GHC.Generics (Generic)
@@ -24,8 +35,8 @@ import           Ouroboros.Consensus.Util.Condense
 pm :: ProtocolMagicId
 pm = undefined
 
-st :: SignTag
-st = undefined
+class HasSignTag a where
+  signTag :: a -> SignTag
 
 data CardanoDSIGN
 
@@ -39,6 +50,8 @@ instance DSIGNAlgorithm CardanoDSIGN where
 
     newtype SigDSIGN CardanoDSIGN = SigCardanoDSIGN (Signature Encoding)
         deriving (Show, Eq, Generic)
+
+    type Signable CardanoDSIGN = HasSignTag
 
     encodeVerKeyDSIGN (VerKeyCardanoDSIGN pk) = toCBOR pk
     decodeVerKeyDSIGN = VerKeyCardanoDSIGN <$> fromCBOR
@@ -54,9 +67,10 @@ instance DSIGNAlgorithm CardanoDSIGN where
     deriveVerKeyDSIGN (SignKeyCardanoDSIGN sk) = VerKeyCardanoDSIGN $ toPublic sk
 
     signDSIGN toEnc a (SignKeyCardanoDSIGN sk) = do
-        return $ SigCardanoDSIGN $ signEncoded pm st sk (toEnc a)
+        return $ SigCardanoDSIGN $ signEncoded pm (signTag a) sk (toEnc a)
 
-    verifyDSIGN toEnc (VerKeyCardanoDSIGN vk) a (SigCardanoDSIGN sig) = verifySignature toEnc pm st vk a $ coerce sig
+    verifyDSIGN toEnc (VerKeyCardanoDSIGN vk) a (SigCardanoDSIGN sig)
+      = verifySignature toEnc pm (signTag a) vk a $ coerce sig
 
 instance Ord (VerKeyDSIGN CardanoDSIGN) where
     compare = compare `on` show

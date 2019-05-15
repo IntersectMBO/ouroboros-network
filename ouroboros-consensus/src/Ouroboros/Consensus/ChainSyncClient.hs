@@ -121,6 +121,7 @@ chainSyncClient
        , Ord up
        , Condense hdr, Condense (ChainHash hdr)
        , BlockProtocol blk ~ BlockProtocol hdr
+       , SupportedPreHeader (BlockProtocol hdr) (PreHeader hdr)
        , Serialise (PreHeader hdr)
        )
     => Tracer m String

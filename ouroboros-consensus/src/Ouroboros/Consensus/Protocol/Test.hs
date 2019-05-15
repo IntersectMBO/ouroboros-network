@@ -60,6 +60,7 @@ instance OuroborosTag p => OuroborosTag (TestProtocol p) where
   type ChainState      (TestProtocol p) = ChainState     p
   type ValidationErr   (TestProtocol p) = ValidationErr  p
   type SupportedBlock  (TestProtocol p) = SupportedBlock p
+  type SupportedPreHeader (TestProtocol p) = SupportedPreHeader p
 
   mkPayload toEnc (TestNodeConfig cfg _) (proof, stake) ph = do
       standardPayload <- mkPayload toEnc cfg proof ph
