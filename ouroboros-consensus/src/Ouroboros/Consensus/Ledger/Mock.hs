@@ -466,17 +466,18 @@ instance ( PraosCrypto c, SimpleBlockCrypto c')
       => ProtocolLedgerView (SimpleBlock (ExtNodeConfig AddrDist (Praos c)) c') where
   protocolLedgerView (EncNodeConfig _ addrDist) _ =
       equalStakeDistr addrDist
-    where
-      equalStakeDistr :: AddrDist -> StakeDist
-      equalStakeDistr = IntMap.fromList
-                      . mapMaybe (nodeStake . snd)
-                      . Map.toList
+  anachronisticProtocolLedgerView (EncNodeConfig _ addrDist) _ _ =
+      Just $ slotUnbounded $ equalStakeDistr addrDist
 
-      nodeStake :: NodeId -> Maybe (Int, Rational)
-      nodeStake (RelayId _) = Nothing
-      nodeStake (CoreId i)  = Just (i, 1)
+equalStakeDistr :: AddrDist -> StakeDist
+equalStakeDistr = IntMap.fromList
+                . mapMaybe (nodeStake . snd)
+                . Map.toList
+  where
+    nodeStake :: NodeId -> Maybe (Int, Rational)
+    nodeStake (RelayId _) = Nothing
+    nodeStake (CoreId i)  = Just (i, 1)
 
-  anachronisticProtocolLedgerView = error "TODO: write up discussion with Jared, Nicholas and Duncan"
 
 instance (PraosCrypto c, SimpleBlockCrypto c')
       => ProtocolLedgerView (SimpleBlock (WithLeaderSchedule (Praos c)) c') where
