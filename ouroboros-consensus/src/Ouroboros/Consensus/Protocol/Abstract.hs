@@ -92,6 +92,44 @@ class ( Show (ChainState    p)
   type family IsLeader p :: *
 
   -- | Projection of the ledger state the Ouroboros protocol needs access to
+  --
+  -- The 'LedgerView' is a summary of the state of the ledger that the consensus
+  -- algorithm requires to do its job. Under certain circumstances the consensus
+  -- algorithm may require the 'LedgerView' for slots in the past (before the
+  -- current tip of the chain) or in the (near) future (beyond the tip of the
+  -- current chain, without having seen those future blocks yet).
+  --
+  -- This puts limitations on what the 'LedgerView' can be. For example, it
+  -- cannot be the "current stake distribution", since it is of course
+  -- impossible to compute the current stake distibution for a slot in the
+  -- future. This means that for a consensus algorithm that requires the
+  -- stake distribution such as Praos, the 'LedgerView' for a particular slot
+  -- must be the "stake distribution for the purpose of leader selection".
+  -- This "active" stake distribution /can/ be computed for slots in the
+  -- (near) future because it is based on historical stake, not current.
+  --
+  -- A somewhat unfortunate consequence of this is that some decisions that
+  -- ought to live in the consensus layer (such as the decision precisely which
+  -- historical stake to sample to determine the active stake distribution)
+  -- instead live in the ledger layer. It is difficult to disentangle this,
+  -- because the ledger may indeed /depend/ on those sampling decisions (for
+  -- example, reward calculations /must/ be based on that same stake
+  -- distribution).
+  --
+  -- There are also some /advantages/ to moving these sorts of decisions to the
+  -- ledger layer. It means that the consensus algorithm can continue to
+  -- function without modifications if we decide that the stake distribution for
+  -- leader selection should be based on something else instead (for example,
+  -- for some bespoke version of the blockchain we may wish to use a committee
+  -- instead of a decentralized blockchain). Having sampling decisions in the
+  -- ledger layer rather than the consensus layer means that these decisions can
+  -- be made without modifying the consensus algorithm.
+  --
+  -- Note that for the specific case of Praos, whilst the ledger layer provides
+  -- the active stake distribution, the precise leader election must still live
+  -- in the consensus layer since that depends on the computation (and sampling)
+  -- of entropy, which is done consensus side, not ledger side (the reward
+  -- calculation does not depend on this).
   type family LedgerView p :: *
 
   -- | Validation errors
