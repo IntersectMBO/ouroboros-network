@@ -231,7 +231,6 @@ openDB args = do
       , readBlocks         = undefined
       , readHeaders        = undefined
       , knownInvalidBlocks = cdbKnownInvalidBlocks env
-      , pointOnChain       = undefined
       }
   where
     (argsImmDb, argsVolDb, argsLgrDb) = fromChainDbArgs args

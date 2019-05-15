@@ -21,7 +21,6 @@ module Ouroboros.Storage.ChainDB.Model (
   , getBlockByPoint
   , hasBlock
   , hasBlockByPoint
-  , pointOnChain
     -- * Iterators
   , streamBlocks
   , iteratorNext
@@ -100,9 +99,6 @@ lastK (SecurityParam k) f =
       Fragment.anchorNewest k
     . fmap f
     . currentChain
-
-pointOnChain :: HasHeader blk => Model blk -> Point blk -> Bool
-pointOnChain m p = Chain.pointOnChain p (currentChain m)
 
 {-------------------------------------------------------------------------------
   Construction

@@ -97,7 +97,6 @@ openDB cfg initLedger blockHeader = do
       , getTipPoint         = query   $ Model.tipPoint
       , getIsFetched        = query   $ flip Model.hasBlockByPoint
       , knownInvalidBlocks  = query   $ const Set.empty -- TODO
-      , pointOnChain        = query'  . flip Model.pointOnChain
       , streamBlocks        = update .: (first iterator ..: Model.streamBlocks)
       , readBlocks          = update  $ (first reader . Model.readBlocks)
       , readHeaders         = update  $ (first (fmap blockHeader . reader) . Model.readBlocks)
