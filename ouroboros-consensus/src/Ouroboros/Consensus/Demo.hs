@@ -1,20 +1,23 @@
-{-# LANGUAGE ConstraintKinds       #-}
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE FlexibleInstances     #-}
-{-# LANGUAGE GADTs                 #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE RecordWildCards       #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE UndecidableInstances  #-}
+{-# LANGUAGE ConstraintKinds        #-}
+{-# LANGUAGE FlexibleContexts       #-}
+{-# LANGUAGE FlexibleInstances      #-}
+{-# LANGUAGE GADTs                  #-}
+{-# LANGUAGE MultiParamTypeClasses  #-}
+{-# LANGUAGE RecordWildCards        #-}
+{-# LANGUAGE ScopedTypeVariables    #-}
+{-# LANGUAGE TypeFamilies           #-}
+{-# LANGUAGE TypeFamilyDependencies #-}
+{-# LANGUAGE UndecidableInstances   #-}
 
 -- | Instantiations of the protocol stack used in tests and demos
 module Ouroboros.Consensus.Demo (
     -- * Abstract over protocols
     DemoProtocol(..)
   , DemoBFT
-  , DemoPBFT
   , DemoPraos
   , DemoLeaderSchedule
+  , DemoMockPBFT
+  , DemoRealPBFT
   , Block
   , Header
   , NumCoreNodes(..)
@@ -32,12 +35,20 @@ module Ouroboros.Consensus.Demo (
 
 import           Codec.Serialise (Serialise)
 import           Control.Monad.Except
+import qualified Data.Bimap as Bimap
+import qualified Data.ByteString as BS
 import           Data.Either (fromRight)
 import           Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
+import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Sequence as Seq
 import qualified Data.Set as Set
+
+import qualified Cardano.Chain.Block as Cardano.Block
+import qualified Cardano.Chain.Genesis as Cardano.Genesis
+import qualified Cardano.Crypto as Cardano
+import qualified Cardano.Crypto.Signing as Cardano.KeyGen
 
 import           Ouroboros.Consensus.Crypto.DSIGN
 import           Ouroboros.Consensus.Crypto.DSIGN.Mock (verKeyIdFromSigned)
@@ -45,6 +56,7 @@ import           Ouroboros.Consensus.Crypto.Hash
 import           Ouroboros.Consensus.Crypto.KES
 import           Ouroboros.Consensus.Crypto.VRF
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Byron
 import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Node (CoreNodeId (..), NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -57,26 +69,55 @@ import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.Condense
 
 {-------------------------------------------------------------------------------
+  Support for PBFT against the real ledger
+-------------------------------------------------------------------------------}
+
+-- Extended configuration we need to run PBFT with the real ledger
+data ExtRealPBFT = ExtRealPBFT {
+      -- | Mapping from generic keys to core node IDs
+      --
+      -- TODO: Think about delegation
+      pbftNodes :: Map Cardano.VerificationKey CoreNodeId
+    }
+
+{-------------------------------------------------------------------------------
   Abstract over the various protocols
 -------------------------------------------------------------------------------}
 
 type DemoBFT            = Bft BftMockCrypto
-type DemoPBFT           = ExtNodeConfig (PBftLedgerView PBftMockCrypto) (PBft PBftMockCrypto)
 type DemoPraos          = ExtNodeConfig AddrDist (Praos PraosMockCrypto)
 type DemoLeaderSchedule = WithLeaderSchedule (Praos PraosMockCrypto)
+type DemoMockPBFT       = ExtNodeConfig (PBftLedgerView PBftMockCrypto) (PBft PBftMockCrypto)
+type DemoRealPBFT       = ExtNodeConfig ExtRealPBFT (PBft PBftCardanoCrypto)
 
 -- | Consensus protocol to use
 data DemoProtocol p where
+  -- | Run BFT against the mock ledger
   DemoBFT            :: SecurityParam -> DemoProtocol DemoBFT
-  DemoPBFT           :: PBftParams -> DemoProtocol DemoPBFT
+
+  -- | Run Praos against the mock ledger
   DemoPraos          :: PraosParams -> DemoProtocol DemoPraos
+
+  -- | Run Praos against the mock ledger but with an explicit leader schedule
   DemoLeaderSchedule :: LeaderSchedule -> PraosParams -> DemoProtocol DemoLeaderSchedule
 
--- | Our 'Block' type stays the same.
-type Block p = SimpleBlock p SimpleBlockMockCrypto
+  -- | Run PBFT against the mock ledger
+  DemoMockPBFT       :: PBftParams -> DemoProtocol DemoMockPBFT
 
--- | Our 'Header' type stays the same.
-type Header p = SimpleHeader p SimpleBlockMockCrypto
+  -- | Run PBFT against the real ledger
+  DemoRealPBFT       :: PBftParams -> DemoProtocol DemoRealPBFT
+
+type family Block p = b | b -> p where
+  Block DemoRealPBFT = ByronBlock
+
+  -- Demos using mock ledger/block
+  Block p = SimpleBlock p SimpleBlockMockCrypto
+
+type family Header p :: * where
+  Header DemoRealPBFT = ByronHeader
+
+  -- Demos using mock ledger/block
+  Header p = SimpleHeader p SimpleBlockMockCrypto
 
 -- | Data required to run the specified protocol.
 data ProtocolInfo p = ProtocolInfo {
@@ -87,22 +128,22 @@ data ProtocolInfo p = ProtocolInfo {
       }
 
 type DemoProtocolConstraints p = (
-    OuroborosTag p
-  , ProtocolLedgerView (Block p)
-  , SupportedBlock p (SimpleHeader p SimpleBlockMockCrypto)
-  , HasCreator (Block p)
-  , SupportedPreHeader p ~ Empty
-  , Condense  (Payload p (SimplePreHeader p SimpleBlockMockCrypto))
-  , Eq        (Payload p (SimplePreHeader p SimpleBlockMockCrypto))
-  , Serialise (Payload p (SimplePreHeader p SimpleBlockMockCrypto))
-  , Show      (Payload p (SimplePreHeader p SimpleBlockMockCrypto))
-  )
+      OuroborosTag p
+    , ProtocolLedgerView (Block p)
+--    , SupportedBlock p (SimpleHeader p SimpleBlockMockCrypto)
+    , HasCreator p
+    , Condense  (Payload p (PreHeader (Block p)))
+    , Eq        (Payload p (PreHeader (Block p)))
+    , Serialise (Payload p (PreHeader (Block p)))
+    , Show      (Payload p (PreHeader (Block p)))
+    )
 
 demoProtocolConstraints :: DemoProtocol p -> Dict (DemoProtocolConstraints p)
 demoProtocolConstraints DemoBFT{}            = Dict
-demoProtocolConstraints DemoPBFT{}           = Dict
 demoProtocolConstraints DemoPraos{}          = Dict
 demoProtocolConstraints DemoLeaderSchedule{} = Dict
+demoProtocolConstraints DemoMockPBFT{}       = Dict
+demoProtocolConstraints DemoRealPBFT{}       = Dict
 
 newtype NumCoreNodes = NumCoreNodes Int
   deriving (Show)
@@ -124,26 +165,6 @@ protocolInfo (DemoBFT securityParam) (NumCoreNodes numCoreNodes) (CoreNodeId nid
               ]
           }
       , pInfoInitLedger = ExtLedgerState (genesisLedgerState addrDist) ()
-      , pInfoInitState  = ()
-      }
-  where
-    addrDist :: AddrDist
-    addrDist = mkAddrDist numCoreNodes
-protocolInfo (DemoPBFT params) (NumCoreNodes numCoreNodes) (CoreNodeId nid) =
-    ProtocolInfo {
-        pInfoConfig = EncNodeConfig {
-            encNodeConfigP = PBftNodeConfig {
-                pbftParams   = params {
-                    pbftNumNodes      = fromIntegral numCoreNodes
-                    }
-              , pbftNodeId   = CoreId nid
-              , pbftSignKey  = SignKeyMockDSIGN nid
-              , pbftVerKey   = VerKeyMockDSIGN nid
-              }
-            , encNodeConfigExt = PBftLedgerView
-                (Map.fromList [(VerKeyMockDSIGN n, VerKeyMockDSIGN n) | n <- [0 .. numCoreNodes - 1]])
-          }
-      , pInfoInitLedger = ExtLedgerState (genesisLedgerState addrDist) Seq.empty
       , pInfoInitState  = ()
       }
   where
@@ -209,14 +230,62 @@ protocolInfo (DemoLeaderSchedule schedule params)
     verKeys = IntMap.fromList [ (nd, (VerKeyMockKES nd, VerKeyMockVRF nd))
                               | nd <- [0 .. numCoreNodes - 1]
                               ]
+protocolInfo (DemoMockPBFT params)
+             (NumCoreNodes numCoreNodes)
+             (CoreNodeId nid) =
+    ProtocolInfo {
+        pInfoConfig = EncNodeConfig {
+            encNodeConfigP = PBftNodeConfig {
+                pbftParams   = params {pbftNumNodes = fromIntegral numCoreNodes}
+              , pbftNodeId   = CoreId nid
+              , pbftSignKey  = SignKeyMockDSIGN nid
+              , pbftVerKey   = VerKeyMockDSIGN nid
+              }
+            , encNodeConfigExt = PBftLedgerView
+                (Bimap.fromList [(VerKeyMockDSIGN n, VerKeyMockDSIGN n) | n <- [0 .. numCoreNodes - 1]])
+          }
+      , pInfoInitLedger = ExtLedgerState (genesisLedgerState addrDist) Seq.empty
+      , pInfoInitState  = ()
+      }
+  where
+    addrDist :: AddrDist
+    addrDist = mkAddrDist numCoreNodes
+protocolInfo (DemoRealPBFT params)
+             (NumCoreNodes numCoreNodes)
+             (CoreNodeId nid) =
+    ProtocolInfo {
+        pInfoConfig = EncNodeConfig {
+            encNodeConfigP = PBftNodeConfig {
+                  pbftParams  = params {pbftNumNodes = fromIntegral numCoreNodes}
+                , pbftNodeId  = CoreId nid
+                , pbftSignKey = SignKeyCardanoDSIGN (snd (mkKey nid))
+                , pbftVerKey  = VerKeyCardanoDSIGN  (fst (mkKey nid))
+                }
+          , encNodeConfigExt = ExtRealPBFT {
+                pbftNodes = Map.fromList [
+                                (fst (mkKey n), CoreNodeId n)
+                              | n <- [0 .. numCoreNodes]
+                              ]
+              }
+          }
+      , pInfoInitLedger = ExtLedgerState {
+            ledgerState = ByronLedgerState {
+                blsCurrent   = initState
+              , blsSnapshots = Seq.empty
+              }
+          , ouroborosChainState = Seq.empty
+          }
+      , pInfoInitState  = ()
+      }
+  where
+    initState :: Cardano.Block.ChainValidationState
+    Right initState = runExcept $
+        Cardano.Block.initialChainValidationState (pbftGenesisConfig params)
 
-{-
-  data NodeConfig (WithLeaderSchedule p) = WLSNodeConfig
-    { lsNodeConfigWithLeaderSchedule :: LeaderSchedule
-    , lsNodeConfigP                  :: NodeConfig p
-    , lsNodeConfigNodeId             :: Int
-    }
-    -}
+    mkKey :: Int -> (Cardano.VerificationKey, Cardano.SigningKey)
+    mkKey n =
+        Cardano.KeyGen.deterministicKeyGen $
+          BS.pack $ replicate 32 (fromIntegral n)
 
 {-------------------------------------------------------------------------------
   Support for running the demos
@@ -233,12 +302,13 @@ defaultDemoPraosParams = PraosParams {
     , praosLifetimeKES   = 1000000
     }
 
-defaultDemoPBftParams :: PBftParams
-defaultDemoPBftParams = PBftParams {
+defaultDemoPBftParams :: Cardano.Genesis.Config -> PBftParams
+defaultDemoPBftParams genesisConfig = PBftParams {
       pbftSecurityParam      = defaultSecurityParam
     , pbftNumNodes           = nn
     , pbftSignatureWindow    = fromIntegral $ nn * 10
     , pbftSignatureThreshold = (1.0 / fromIntegral nn) + 0.1
+    , pbftGenesisConfig      = genesisConfig
     }
   where
     nn = 3
@@ -283,32 +353,41 @@ genesisStakeDist addrDist =
   Who created a block?
 -------------------------------------------------------------------------------}
 
-class HasCreator b where
-    getCreator :: b -> CoreNodeId
+class HasCreator p where
+    getCreator :: NodeConfig p -> Block p -> CoreNodeId
 
-instance HasCreator (Block DemoBFT) where
-    getCreator = CoreNodeId
-               . verKeyIdFromSigned
-               . bftSignature
-               . headerOuroboros
-               . simpleHeader
+instance HasCreator DemoBFT where
+    getCreator _ = CoreNodeId
+                 . verKeyIdFromSigned
+                 . bftSignature
+                 . headerOuroboros
+                 . simpleHeader
 
-instance HasCreator (Block DemoPBFT) where
-    getCreator = CoreNodeId
-               . verKeyIdFromSigned
-               . pbftSignature
-               . encPayloadP
-               . headerOuroboros
-               . simpleHeader
+instance HasCreator DemoPraos where
+    getCreator _ = praosCreator
+                 . praosExtraFields
+                 . encPayloadP
+                 . headerOuroboros
+                 . simpleHeader
 
-instance HasCreator (Block DemoPraos) where
-    getCreator = praosCreator
-               . praosExtraFields
-               . encPayloadP
-               . headerOuroboros
-               . simpleHeader
+instance HasCreator DemoLeaderSchedule where
+    getCreator _ = getWLSPayload
+                 . headerOuroboros
+                 . simpleHeader
 
-instance HasCreator (Block DemoLeaderSchedule) where
-    getCreator = getWLSPayload
-               . headerOuroboros
-               . simpleHeader
+instance HasCreator DemoMockPBFT where
+    getCreator _ = CoreNodeId
+                 . verKeyIdFromSigned
+                 . pbftSignature
+                 . encPayloadP
+                 . headerOuroboros
+                 . simpleHeader
+
+instance HasCreator DemoRealPBFT where
+    getCreator (EncNodeConfig _ ExtRealPBFT{..}) (ByronBlock b) =
+        Map.findWithDefault (error "getCreator: unknown key") key pbftNodes
+     where
+       key :: Cardano.VerificationKey
+       key = Cardano.Block.headerGenesisKey
+           . Cardano.Block.blockHeader
+           $ b

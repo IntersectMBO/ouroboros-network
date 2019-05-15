@@ -60,8 +60,8 @@ import           GHC.Generics (Generic)
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (Chain, toOldestFirst)
 
-import           Ouroboros.Consensus.Crypto.Hash.Class
 import           Ouroboros.Consensus.Crypto.DSIGN.Class (Empty)
+import           Ouroboros.Consensus.Crypto.Hash.Class
 import           Ouroboros.Consensus.Crypto.Hash.MD5 (MD5)
 import           Ouroboros.Consensus.Crypto.Hash.Short (ShortHash)
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -435,6 +435,7 @@ deriving instance OuroborosTag p => Show (LedgerState (SimpleBlock p c))
 
 instance OuroborosTag p => LedgerConfigView (SimpleBlock p c) where
   ledgerConfigView = const MockLedgerConfig
+
 {-------------------------------------------------------------------------------
   Support for various consensus algorithms
 -------------------------------------------------------------------------------}

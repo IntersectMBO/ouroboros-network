@@ -11,24 +11,39 @@ packages:
 
 extra-deps:
   - git: https://github.com/input-output-hk/iohk-monitoring-framework
-    commit: 8614c66d9f13ad7bd68975700651a720a78d620e
+    commit: 00413dcad916a41cf392437199cfba7a2e2c76d7
     subdirs:
       - iohk-monitoring
       - contra-tracer
 
   - git: https://github.com/input-output-hk/cardano-base
-    commit: 0d255c9b69e2fb76699e51d8474039f7ad9e25a9
+    commit: b676160954cea07d4378ccca870a61242bc188a2
     subdirs:
       - binary
+      - binary/test
 
   - git: https://github.com/input-output-hk/cardano-ledger
-    commit: 7d958e16f3ba319234817106d8303d22cb93ec42
+    commit: 387b54646ababbd91e26b9d7b0d33e874dbd96cb
     subdirs:
       - .
       - crypto
+      - crypto/test
+      - test
 
   - git: https://github.com/input-output-hk/cardano-prelude
-    commit: b25eed0ab3b6da51bc10970759d491331e56c822
+    commit: d8091767addc1a51e11cb2f04392e4eb40e39b18
+    subdirs:
+      - .
+      - test
+
+  - git: https://github.com/input-output-hk/cardano-shell
+    commit: 4be5660c721cae4b001187ec614ef5cf4fad8fc7
+
+  - git: https://github.com/input-output-hk/cardano-sl-x509
+    commit: e8bfc1294e088f90e5ae0b4aedbc82ee46ac5ee4
+
+  - git: https://github.com/joelwilliamson/bimap
+    commit: 997fbb38b08dec14d225d064dac05b0a85f4ceae
 
   - ekg-0.4.0.15
   - libyaml-0.1.0.0

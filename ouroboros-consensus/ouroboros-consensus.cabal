@@ -160,6 +160,7 @@ library
                        contra-tracer,
 
                        base16-bytestring >=0.1   && <0.2,
+                       bimap             >=0.3   && <0.4,
                        bytestring        >=0.10  && <0.11,
                        cardano-binary,
                        cardano-crypto-wrapper,
@@ -207,6 +208,10 @@ executable demo-playground
                        ouroboros-network,
                        ouroboros-consensus,
                        io-sim-classes,
+                       cardano-crypto-wrapper,
+                       cardano-ledger,
+                       cardano-ledger-test,
+                       cardano-prelude,
 
                        aeson,
                        async,
@@ -215,6 +220,7 @@ executable demo-playground
                        containers,
                        cryptonite,
                        directory,
+                       formatting,
                        mtl,
                        optparse-applicative,
                        serialise,

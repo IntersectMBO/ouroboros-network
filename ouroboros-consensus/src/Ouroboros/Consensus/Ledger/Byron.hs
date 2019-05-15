@@ -13,9 +13,9 @@ module Ouroboros.Consensus.Ledger.Byron where
 import           Cardano.Binary (Annotated (..), reAnnotate)
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.Common as CC.Common
-import qualified Cardano.Chain.Delegation.Validation.Activation as CC.Delegation
-import qualified Cardano.Chain.Delegation.Validation.Interface as CC.Delegation
-import qualified Cardano.Chain.Delegation.Validation.Scheduling as CC.Delegation
+import qualified Cardano.Chain.Delegation as Delegation
+import qualified Cardano.Chain.Delegation.Validation.Interface as V.Interface
+import qualified Cardano.Chain.Delegation.Validation.Scheduling as V.Scheduling
 import qualified Cardano.Chain.Genesis as Genesis
 import qualified Cardano.Chain.Slotting as CC.Slot
 import qualified Cardano.Chain.Update.Validation.Interface as CC.UPI
@@ -23,11 +23,11 @@ import qualified Cardano.Crypto as Crypto
 import           Cardano.Prelude (panic)
 import           Control.Monad.Except
 import           Data.Bifunctor (bimap)
+import qualified Data.Bimap as Bimap
 import           Data.ByteString (ByteString)
 import           Data.Coerce
 import           Data.FingerTree (Measured (..))
 import           Data.Foldable (find)
-import qualified Data.Map.Strict as Map
 import qualified Data.Sequence as Seq
 import           Data.Word
 import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
@@ -44,6 +44,11 @@ byronEpochSlots = CC.Slot.EpochSlots 21600
 -- | Newtype wrapper to avoid orphan instances
 newtype ByronBlock = ByronBlock { unByronBlock :: CC.Block.ABlock ByteString }
   deriving (Eq, Show)
+
+newtype ByronHeader = ByronHeader { unByronHeader :: CC.Block.AHeader ByteString }
+
+byronHeader :: ByronBlock -> ByronHeader
+byronHeader (ByronBlock b) = ByronHeader (CC.Block.blockHeader b)
 
 instance StandardHash ByronBlock
 
@@ -145,7 +150,7 @@ instance UpdateLedger ByronBlock where
             | otherwise -> fromIntegral n
 
       delegationMap =
-        CC.Delegation.asDelegationMap . CC.Delegation.isActivationState
+        V.Interface.delegationMap
         $ CC.Block.cvsDelegationState state
 
       fixPMI pmi = reAnnotate $ Annotated pmi ()
@@ -164,11 +169,10 @@ instance HasPreHeader ByronBlock where
 instance HasPayload (PBft PBftCardanoCrypto) ByronBlock where
   blockPayload _ (ByronBlock aBlock) = PBftPayload
     { pbftIssuer = VerKeyCardanoDSIGN
-                   . Crypto.pskIssuerPk
+                   . Crypto.pskIssuerVK
                    . Crypto.psigPsk
                    . CC.Block.unBlockSignature
-                   . CC.Block.consensusSignature
-                   . CC.Block.headerConsensusData
+                   . CC.Block.headerSignature
                    . CC.Block.blockHeader
                    $ aBlock
     , pbftSignature = SignedDSIGN
@@ -176,8 +180,7 @@ instance HasPayload (PBft PBftCardanoCrypto) ByronBlock where
                       . Crypto.Signature
                       . Crypto.psigSig
                       . CC.Block.unBlockSignature
-                      . CC.Block.consensusSignature
-                      . CC.Block.headerConsensusData
+                      . CC.Block.headerSignature
                       . CC.Block.blockHeader
                       $ aBlock
     }
@@ -185,8 +188,8 @@ instance HasPayload (PBft PBftCardanoCrypto) ByronBlock where
 instance ProtocolLedgerView ByronBlock where
   protocolLedgerView _ns (ByronLedgerState ls _) = PBftLedgerView
     -- Delegation map
-    ( CC.Delegation.asDelegationMap
-      . CC.Delegation.isActivationState
+    ( Delegation.unMap
+      . V.Interface.delegationMap
       . CC.Block.cvsDelegationState
       $ ls
     )
@@ -203,8 +206,9 @@ instance ProtocolLedgerView ByronBlock where
   anachronisticProtocolLedgerView _ns (ByronLedgerState ls ss) slot =
       case find (containsSlot slot) ss of
         -- We can find a snapshot which supports this slot
-        Just sb -> Just $ PBftLedgerView . CC.Delegation.asDelegationMap
-                  . CC.Delegation.isActivationState . CC.Block.cvsDelegationState <$> sb
+        Just sb -> Just $ PBftLedgerView . Delegation.unMap
+                  . V.Interface.delegationMap
+                  . CC.Block.cvsDelegationState <$> sb
         -- No snapshot - we could be in the past or in the future
         Nothing ->
           -- TODO Check that the slot is within 2k slots
@@ -215,17 +219,17 @@ instance ProtocolLedgerView ByronBlock where
       currentSlot = convertSlot $ CC.Block.cvsLastSlot ls
       containsSlot s sb = sbLower sb <= s && sbUpper sb >= s
       applyUpcomingUpdates = let
-          dsNow = CC.Delegation.asDelegationMap
-                  . CC.Delegation.isActivationState
+          dsNow = Delegation.unMap
+                  . V.Interface.delegationMap
                   . CC.Block.cvsDelegationState
                   $ ls
-          dsScheduled = CC.Delegation.ssScheduledDelegations
-                  . CC.Delegation.isSchedulingState
+          dsScheduled = V.Scheduling.scheduledDelegations
+                  . V.Interface.schedulingState
                   . CC.Block.cvsDelegationState
                   $ ls
-        in case Seq.takeWhileL (\sd -> convertSlot (CC.Delegation.sdSlot sd) <= slot) dsScheduled of
+        in case Seq.takeWhileL (\sd -> convertSlot (V.Scheduling.sdSlot sd) <= slot) dsScheduled of
           Seq.Empty -> slotBounded currentSlot slot dsNow
           -- TODO We can issue the ledger view for longer than just up to the
           -- requested slot, but we need to know k to do so
-          toApply@(_ Seq.:|> la) -> slotBounded (convertSlot . CC.Delegation.sdSlot $ la) slot
-            $ foldl (\acc x -> Map.insert (CC.Delegation.sdDelegator x) (CC.Delegation.sdDelegate x) acc) dsNow toApply
+          toApply@(_ Seq.:|> la) -> slotBounded (convertSlot . V.Scheduling.sdSlot $ la) slot
+            $ foldl (\acc x -> Bimap.insert (V.Scheduling.sdDelegator x) (V.Scheduling.sdDelegate x) acc) dsNow toApply

@@ -15,19 +15,10 @@ module Ouroboros.Consensus.Crypto.DSIGN.Cardano
 
 import           Cardano.Binary
 import qualified Cardano.Chain.Block as CC.Block
-import qualified Cardano.Chain.Txp as CC.Txp
-import           Cardano.Crypto
-  ( ProtocolMagicId
-  , ProxyVerificationKey
-  , SignTag(..)
-  , PublicKey
-  , Signature
-  , SecretKey
-  , keyGen
-  , toPublic
-  , signEncoded
-  , verifySignature
-  )
+import qualified Cardano.Chain.UTxO as CC.UTxO
+import           Cardano.Crypto (ProtocolMagicId, ProxyVerificationKey,
+                     SignTag (..), Signature, SigningKey, VerificationKey,
+                     keyGen, signEncoded, toVerification, verifySignature)
 import           Data.Coerce (coerce)
 import           Data.Function (on)
 import           GHC.Generics (Generic)
@@ -41,7 +32,7 @@ pm = undefined
 class HasSignTag a where
   signTag :: a -> SignTag
 
-instance HasSignTag CC.Txp.TxSigData where
+instance HasSignTag CC.UTxO.TxSigData where
   signTag = const SignTx
 
 instance HasSignTag CC.Block.ToSign where
@@ -54,10 +45,10 @@ data CardanoDSIGN
 
 instance DSIGNAlgorithm CardanoDSIGN where
 
-    newtype VerKeyDSIGN CardanoDSIGN = VerKeyCardanoDSIGN PublicKey
+    newtype VerKeyDSIGN CardanoDSIGN = VerKeyCardanoDSIGN VerificationKey
         deriving (Show, Eq, Generic)
 
-    newtype SignKeyDSIGN CardanoDSIGN = SignKeyCardanoDSIGN SecretKey
+    newtype SignKeyDSIGN CardanoDSIGN = SignKeyCardanoDSIGN SigningKey
         deriving (Show, Eq, Generic)
 
     newtype SigDSIGN CardanoDSIGN = SigCardanoDSIGN (Signature Encoding)
@@ -76,7 +67,7 @@ instance DSIGNAlgorithm CardanoDSIGN where
 
     genKeyDSIGN = SignKeyCardanoDSIGN . snd <$> keyGen
 
-    deriveVerKeyDSIGN (SignKeyCardanoDSIGN sk) = VerKeyCardanoDSIGN $ toPublic sk
+    deriveVerKeyDSIGN (SignKeyCardanoDSIGN sk) = VerKeyCardanoDSIGN $ toVerification sk
 
     signDSIGN toEnc a (SignKeyCardanoDSIGN sk) = do
         return $ SigCardanoDSIGN $ signEncoded pm (signTag a) sk (toEnc a)

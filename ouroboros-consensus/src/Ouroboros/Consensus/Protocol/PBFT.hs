@@ -26,46 +26,31 @@ module Ouroboros.Consensus.Protocol.PBFT (
   , Payload(..)
   ) where
 
-import qualified Cardano.Chain.Common as CC.Common
-import           Codec.Serialise (Serialise(..))
-import qualified Codec.Serialise.Encoding as Enc
+import           Codec.Serialise (Serialise (..))
 import qualified Codec.Serialise.Decoding as Dec
+import qualified Codec.Serialise.Encoding as Enc
 import           Control.Monad.Except
-import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
+import           Data.Bimap (Bimap)
+import qualified Data.Bimap as Bimap
 import           Data.Proxy
 import           Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
-import           Data.Tuple (swap)
 import           Data.Typeable (Typeable)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
+import qualified Cardano.Chain.Common as CC.Common
+import qualified Cardano.Chain.Genesis as CC.Genesis
+
 import           Ouroboros.Network.Block
 
-import           Ouroboros.Consensus.Crypto.DSIGN.Class
 import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
+import           Ouroboros.Consensus.Crypto.DSIGN.Class
 import           Ouroboros.Consensus.Crypto.DSIGN.Mock (MockDSIGN)
 import           Ouroboros.Consensus.Node (NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Test
 import           Ouroboros.Consensus.Util.Condense
-
--- | Invert a map which we assert to be a bijection.
---   If this map is not a bijection, the behaviour is not guaranteed.
---
---   Examples:
---
---   >>> invertBijection (Map.fromList [('a', 1 :: Int), ('b', 2), ('c', 3)])
---   fromList [(1,'a'),(2,'b'),(3,'c')]
-invertBijection
-  :: Ord v
-  => Map k v
-  -> Map v k
-invertBijection
-  = Map.fromListWith const
-  . fmap swap
-  . Map.toList
 
 data PBftLedgerView c = PBftLedgerView
   -- TODO Once we have the window and threshold in the protocol parameters, we
@@ -74,7 +59,7 @@ data PBftLedgerView c = PBftLedgerView
   -- ProtocolParameters Map from genesis to delegate keys.
   -- Note that this map is injective by construction.
   -- TODO Use BiMap here
-  (Map (PBftVerKeyHash c) (PBftVerKeyHash c))
+  (Bimap (PBftVerKeyHash c) (PBftVerKeyHash c))
 
 {-------------------------------------------------------------------------------
   Protocol proper
@@ -105,6 +90,12 @@ data PBftParams = PBftParams {
       -- | Signature threshold. This represents the proportion of blocks in a
       -- pbftSignatureWindow-sized window which may be signed by any single key.
     , pbftSignatureThreshold :: Double
+
+      -- | Genesis config
+      --
+      -- TODO: This doesn't really belong here; PBFT the consensus algorithm
+      -- does not require it.
+    , pbftGenesisConfig      :: CC.Genesis.Config
     }
 
 instance ( PBftCrypto c, Typeable c
@@ -177,7 +168,7 @@ instance ( PBftCrypto c, Typeable c
       unless (blockSlot b > lastSlot)
         $ throwError PBftInvalidSlot
 
-      case Map.lookup (hashVerKey $ pbftIssuer payload) $ invertBijection dms of
+      case Bimap.lookup (hashVerKey $ pbftIssuer payload) $ Bimap.twist dms of
         Nothing -> throwError PBftNotGenesisDelegate
         Just gk -> do
           when (Seq.length signers >= winSize
@@ -196,7 +187,7 @@ instance ( PBftCrypto c, Typeable c
 
   rewindChainState _ cs slot = case Seq.takeWhileL (\(_, s) -> s <= slot) cs of
     _ Seq.:<| _ -> Just cs
-    _ -> Nothing
+    _           -> Nothing
 
 deriving instance PBftCrypto c => Show     (Payload (PBft c) ph)
 deriving instance PBftCrypto c => Eq       (Payload (PBft c) ph)

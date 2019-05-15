@@ -57,10 +57,10 @@ runNode cli@CLI{..} = do
     case command of
       TxSubmitter topology tx ->
         handleTxSubmission topology tx
-      SimpleNode topology protocol ->
-        case protocol of
-          Some p -> case demoProtocolConstraints p of
-                      Dict -> handleSimpleNode p cli topology
+      SimpleNode topology protocol -> do
+        Some p <- fromProtocol protocol
+        case demoProtocolConstraints p of
+          Dict -> handleSimpleNode p cli topology
 
 -- | Sets up a simple node, which will run the chain sync protocol and block
 -- fetch protocol, and, if core, will also look at the mempool when trying to
@@ -117,6 +117,7 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
                                  prevHash
                                  txs
                                  proof
+
           , produceDRG      = drgNew
           }
 

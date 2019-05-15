@@ -24,36 +24,61 @@ source-repository-package
   type: git
   location: https://github.com/input-output-hk/iohk-monitoring-framework
   subdir: iohk-monitoring
-  tag: 8614c66d9f13ad7bd68975700651a720a78d620e
+  tag: 00413dcad916a41cf392437199cfba7a2e2c76d7
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/iohk-monitoring-framework
   subdir:   contra-tracer
-  tag: 8614c66d9f13ad7bd68975700651a720a78d620e
+  tag: 00413dcad916a41cf392437199cfba7a2e2c76d7
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-base
-  tag: 0d255c9b69e2fb76699e51d8474039f7ad9e25a9
+  tag: b676160954cea07d4378ccca870a61242bc188a2
   subdir: binary
 
 source-repository-package
   type: git
+  location: https://github.com/input-output-hk/cardano-base
+  tag: b676160954cea07d4378ccca870a61242bc188a2
+  subdir: binary/test
+
+source-repository-package
+  type: git
   location: https://github.com/input-output-hk/cardano-ledger
-  tag: 7d958e16f3ba319234817106d8303d22cb93ec42
+  tag: 387b54646ababbd91e26b9d7b0d33e874dbd96cb
   subdir: .
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger
-  tag: 7d958e16f3ba319234817106d8303d22cb93ec42
+  tag: 387b54646ababbd91e26b9d7b0d33e874dbd96cb
   subdir: crypto
 
 source-repository-package
   type: git
+  location: https://github.com/input-output-hk/cardano-ledger
+  tag: 387b54646ababbd91e26b9d7b0d33e874dbd96cb
+  subdir: test
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/cardano-ledger
+  tag: 387b54646ababbd91e26b9d7b0d33e874dbd96cb
+  subdir: crypto/test
+
+source-repository-package
+  type: git
   location: https://github.com/input-output-hk/cardano-prelude
-  tag: e1fb84b1a955b6e3e3e53d9022e8bc0f927417a2
+  tag: b25eed0ab3b6da51bc10970759d491331e56c822
+  subdir: .
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/cardano-prelude
+  tag: d8091767addc1a51e11cb2f04392e4eb40e39b18
+  subdir: test
 
 source-repository-package
   type: git
@@ -62,9 +87,27 @@ source-repository-package
 
 source-repository-package
   type: git
+  location: https://github.com/input-output-hk/cardano-shell
+  tag: 4be5660c721cae4b001187ec614ef5cf4fad8fc7
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/cardano-sl-x509
+  tag: e8bfc1294e088f90e5ae0b4aedbc82ee46ac5ee4
+
+source-repository-package
+  type: git
   location: https://github.com/well-typed/cborg
   tag: 80fbe0ee5e67a5622e2cb9eaa9d8594a2214322d
   subdir: cborg
 
+source-repository-package
+  type: git
+  location: https://github.com/joelwilliamson/bimap
+  tag: 997fbb38b08dec14d225d064dac05b0a85f4ceae
+
 package contra-tracer
   tests: False
+
+constraints:
+  ip < 1.5
