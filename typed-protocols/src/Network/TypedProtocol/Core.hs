@@ -23,6 +23,7 @@ module Network.TypedProtocol.Core (
   -- * Engaging in protocols
   -- $using
   PeerRole(..),
+  FlipAgency,
   PeerHasAgency(..),
   WeHaveAgency,
   TheyHaveAgency,
