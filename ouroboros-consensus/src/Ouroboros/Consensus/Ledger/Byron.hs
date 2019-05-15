@@ -17,8 +17,11 @@ import qualified Cardano.Chain.Delegation as Delegation
 import qualified Cardano.Chain.Delegation.Validation.Interface as V.Interface
 import qualified Cardano.Chain.Delegation.Validation.Scheduling as V.Scheduling
 import qualified Cardano.Chain.Genesis as Genesis
+import qualified Cardano.Chain.Ssc as CC.Ssc
 import qualified Cardano.Chain.Slotting as CC.Slot
+import qualified Cardano.Chain.Update as CC.Update
 import qualified Cardano.Chain.Update.Validation.Interface as CC.UPI
+import qualified Cardano.Chain.UTxO as CC.UTxO
 import qualified Cardano.Crypto as Crypto
 import           Cardano.Prelude (panic)
 import           Control.Monad.Except
@@ -28,6 +31,8 @@ import           Data.ByteString (ByteString)
 import           Data.Coerce
 import           Data.FingerTree (Measured (..))
 import           Data.Foldable (find)
+import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import qualified Data.Sequence as Seq
 import           Data.Word
 import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
@@ -233,3 +238,59 @@ instance ProtocolLedgerView ByronBlock where
           -- requested slot, but we need to know k to do so
           toApply@(_ Seq.:|> la) -> slotBounded (convertSlot . V.Scheduling.sdSlot $ la) slot
             $ foldl (\acc x -> Bimap.insert (V.Scheduling.sdDelegator x) (V.Scheduling.sdDelegate x) acc) dsNow toApply
+
+{-------------------------------------------------------------------------------
+  Forging blocks
+-------------------------------------------------------------------------------}
+
+forgeBlockFromMock
+  :: forall m. NodeConfig (PBft PBftCardanoCrypto)
+  -> SlotNo                          -- ^ Current slot
+  -> BlockNo                         -- ^ Current block number
+  -> CC.Block.HeaderHash             -- ^ Previous hash
+  -> Map (Hash ShortHash Tx) Tx      -- ^ Txs to add in the block
+  -> m ByronBlock
+forgeBlockFromMock cfg curSlot curNo prevHash txs = do
+    ouroborosPayload <- mkPayload toCBOR cfg () preHeader
+    return $ CC.Block.ABlock header body ()
+  where
+
+    header :: CC.Block.Header
+    header = CC.Block.AHeader
+      (Annotated pm ())
+      (Annotated prevHash ())
+      (Annotated curSlot ())
+      (Annotated (coerce curNo) ())
+      pv
+      sv
+      (Annotated proof ())
+      (pbftIssuer ouroborosPayload)
+      (pbftSignature ouroborosPayload)
+      ()
+      ()
+
+    body :: CC.Block.Body
+    body = CC.Block.ABody
+      { CC.Block.bodyTxPayload = txPayoad
+      , CC.Block.bodySscPayload = CC.Ssc.SscPayload
+      , CC.Block.bodyDlgPayload = CC.Delegation.unsafePayload []
+      , CC.Block.bodyUpdatePayload = CC.Update.payload Nothing []
+      }
+
+    txPayload :: CC.UTxO.TxPayload
+    txPayload = undefined
+
+    proof = CC.Block.Proof
+          { CC.Block.proofTxp        = CC.Txp.mkTxProof txPayload
+          , CC.Block.proofSsc        = CC.Ssc.SscProof
+          , CC.Block.proofDelegation = hash $ CC.Block.bodyDlgPayload body
+          , CC.Block.proofUpdate     = hash $ CC.Block.bodyUpdatePayload body
+          }
+
+    preHeader :: CC.Block.ToSign
+    preHeader = CC.Block.ToSign {
+          CC.Block._msHeaderHash = prevHash
+        , CC.Block._msSlot       = curSlot
+        , CC.Block._msChainDiff  = coerce curNo
+        , CC.Block._msBodyProof  = proof
+        }
