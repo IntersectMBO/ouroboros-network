@@ -14,9 +14,12 @@ module Ouroboros.Consensus.Crypto.DSIGN.Cardano
     ) where
 
 import           Cardano.Binary
+import qualified Cardano.Chain.Block as CC.Block
+import qualified Cardano.Chain.Txp as CC.Txp
 import           Cardano.Crypto
   ( ProtocolMagicId
-  , SignTag
+  , ProxyVerificationKey
+  , SignTag(..)
   , PublicKey
   , Signature
   , SecretKey
@@ -37,6 +40,15 @@ pm = undefined
 
 class HasSignTag a where
   signTag :: a -> SignTag
+
+instance HasSignTag CC.Txp.TxSigData where
+  signTag = const SignTx
+
+instance HasSignTag CC.Block.ToSign where
+  signTag = const SignMainBlock
+
+instance HasSignTag (ProxyVerificationKey w) where
+  signTag = const SignProxyVK
 
 data CardanoDSIGN
 
