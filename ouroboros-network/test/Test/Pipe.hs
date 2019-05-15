@@ -21,6 +21,7 @@ import           Test.Tasty.QuickCheck (testProperty)
 import           Control.Tracer (nullTracer)
 
 import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Driver
 
 import           Ouroboros.Network.Chain (Chain, ChainUpdate, Point)
 import qualified Ouroboros.Network.Chain as Chain
@@ -86,11 +87,11 @@ demo chain0 updates = do
         consumerPeer = ChainSync.chainSyncClientPeer
                           (ChainSync.chainSyncClientExample consumerVar
                           (consumerClient done target consumerVar))
-        consumerPeers Mxt.ChainSync1 = Mx.OnlyClient nullTracer (ChainSync.codecChainSync encode encode decode decode) consumerPeer
+        consumerPeers = Mx.MuxClientApplication $ \Mxt.ChainSync1 channel -> runPeer nullTracer (ChainSync.codecChainSync encode encode decode decode) channel consumerPeer
 
         producerPeer :: Peer (ChainSync.ChainSync block (Point block)) AsServer ChainSync.StIdle IO ()
         producerPeer = ChainSync.chainSyncServerPeer (ChainSync.chainSyncServerExample () producerVar)
-        producerPeers Mxt.ChainSync1 = Mx.OnlyServer nullTracer (ChainSync.codecChainSync encode encode decode decode) producerPeer
+        producerPeers = Mx.MuxServerApplication $ \Mxt.ChainSync1 channel -> runPeer nullTracer (ChainSync.codecChainSync encode encode decode decode) channel producerPeer
 
     _ <- async $ runNetworkNodeWithPipe producerPeers hndRead1 hndWrite2
     _ <- async $ runNetworkNodeWithPipe consumerPeers hndRead2 hndWrite1
