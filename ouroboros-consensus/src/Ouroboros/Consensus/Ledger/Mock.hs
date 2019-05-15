@@ -51,6 +51,7 @@ import           Data.FingerTree (Measured (measure))
 import qualified Data.IntMap.Strict as IntMap
 import           Data.Map (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Maybe (mapMaybe)
 import           Data.Proxy
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -435,10 +436,27 @@ instance (PBftCrypto c, SimpleBlockCrypto c')
   => ProtocolLedgerView (SimpleBlock (ExtNodeConfig (PBftLedgerView c) (PBft c)) c') where
   protocolLedgerView (EncNodeConfig _ pbftParams) _ls = pbftParams
 
+-- | Praos needs a ledger that can give it the "active stake distribution"
+--
+-- TODO: Currently our mock ledger does not do this, and just assumes that all
+-- the leaders have equal stake at all times. In a way this is not wrong: it
+-- is just a different instantiation of the same consensus algorithm (see
+-- documentation of 'LedgerView'). Ideally we'd change this however, but it
+-- may not be worth it; it would be a bit of work, and after we have integrated
+-- the Shelley rules, we'll have a proper instance anyway.
 instance ( PraosCrypto c, SimpleBlockCrypto c')
       => ProtocolLedgerView (SimpleBlock (ExtNodeConfig AddrDist (Praos c)) c') where
-  protocolLedgerView (EncNodeConfig _ addrDist) (SimpleLedgerState u _) =
-      relativeStakes $ totalStakes addrDist u
+  protocolLedgerView (EncNodeConfig _ addrDist) _ =
+      equalStakeDistr addrDist
+    where
+      equalStakeDistr :: AddrDist -> StakeDist
+      equalStakeDistr = IntMap.fromList
+                      . mapMaybe (nodeStake . snd)
+                      . Map.toList
+
+      nodeStake :: NodeId -> Maybe (Int, Rational)
+      nodeStake (RelayId _) = Nothing
+      nodeStake (CoreId i)  = Just (i, 1)
 
 instance (PraosCrypto c, SimpleBlockCrypto c')
       => ProtocolLedgerView (SimpleBlock (WithLeaderSchedule (Praos c)) c') where
