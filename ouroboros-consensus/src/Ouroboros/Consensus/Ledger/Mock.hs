@@ -31,7 +31,7 @@ module Ouroboros.Consensus.Ledger.Mock (
   , SimpleHeader(..)
   , SimplePreHeader(..)
   , SimpleBody(..)
-  , forgeBlock
+  , forgeSimpleBlock
   , blockMatchesHeader
     -- * Updating the Ledger state
   , LedgerState(..)
@@ -315,23 +315,23 @@ instance (Typeable p, SimpleBlockCrypto c) => StandardHash (SimpleBlock  p c)
   Creating blocks
 -------------------------------------------------------------------------------}
 
-forgeBlock :: forall m p c.
-              ( HasNodeState p m
-              , MonadRandom m
-              , OuroborosTag p
-              , SimpleBlockCrypto c
-              , Serialise (Payload p (SimplePreHeader p c))
-                -- TODO Decide whether we want to fix this constraint here.
-              , SupportedPreHeader p ~ Empty
-              )
-           => NodeConfig p
-           -> SlotNo                          -- ^ Current slot
-           -> BlockNo                         -- ^ Current block number
-           -> ChainHash (SimpleHeader p c) -- ^ Previous hash
-           -> Map (Hash ShortHash Tx) Tx      -- ^ Txs to add in the block
-           -> IsLeader p
-           -> m (SimpleBlock p c)
-forgeBlock cfg curSlot curNo prevHash txs proof = do
+forgeSimpleBlock :: forall m p c.
+                    ( HasNodeState p m
+                    , MonadRandom m
+                    , OuroborosTag p
+                    , SimpleBlockCrypto c
+                    , Serialise (Payload p (SimplePreHeader p c))
+                      -- TODO Decide whether we want to fix this constraint here.
+                    , SupportedPreHeader p ~ Empty
+                    )
+                 => NodeConfig p
+                 -> SlotNo                          -- ^ Current slot
+                 -> BlockNo                         -- ^ Current block number
+                 -> ChainHash (SimpleHeader p c) -- ^ Previous hash
+                 -> Map (Hash ShortHash Tx) Tx      -- ^ Txs to add in the block
+                 -> IsLeader p
+                 -> m (SimpleBlock p c)
+forgeSimpleBlock cfg curSlot curNo prevHash txs proof = do
     ouroborosPayload <- mkPayload encode cfg proof preHeader
     return $ SimpleBlock {
         simpleHeader = mkSimpleHeader preHeader ouroborosPayload

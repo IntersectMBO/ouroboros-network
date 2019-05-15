@@ -18,6 +18,7 @@ module Ouroboros.Consensus.Demo (
   , DemoLeaderSchedule
   , DemoMockPBFT
   , DemoRealPBFT
+  , DemoForgeBlock(..)
   , Block
   , Header
   , NumCoreNodes(..)
@@ -35,6 +36,7 @@ module Ouroboros.Consensus.Demo (
 
 import           Codec.Serialise (Serialise)
 import           Control.Monad.Except
+import           Crypto.Random (MonadRandom)
 import qualified Data.Bimap as Bimap
 import qualified Data.ByteString as BS
 import           Data.Either (fromRight)
@@ -49,6 +51,8 @@ import qualified Cardano.Chain.Block as Cardano.Block
 import qualified Cardano.Chain.Genesis as Cardano.Genesis
 import qualified Cardano.Crypto as Cardano
 import qualified Cardano.Crypto.Signing as Cardano.KeyGen
+
+import           Ouroboros.Network.Block (BlockNo, ChainHash, SlotNo)
 
 import           Ouroboros.Consensus.Crypto.DSIGN
 import           Ouroboros.Consensus.Crypto.DSIGN.Mock (verKeyIdFromSigned)
@@ -136,6 +140,7 @@ type DemoProtocolConstraints p = (
     , Eq        (Payload p (PreHeader (Block p)))
     , Serialise (Payload p (PreHeader (Block p)))
     , Show      (Payload p (PreHeader (Block p)))
+    , DemoForgeBlock p
     )
 
 demoProtocolConstraints :: DemoProtocol p -> Dict (DemoProtocolConstraints p)
@@ -391,3 +396,32 @@ instance HasCreator DemoRealPBFT where
        key = Cardano.Block.headerGenesisKey
            . Cardano.Block.blockHeader
            $ b
+
+{-------------------------------------------------------------------------------
+  Forging blocks
+-------------------------------------------------------------------------------}
+
+class DemoForgeBlock p where
+  demoForgeBlock :: (HasNodeState p m, MonadRandom m)
+                 => NodeConfig p
+                 -> SlotNo                      -- ^ Current slot
+                 -> BlockNo                     -- ^ Current block number
+                 -> ChainHash (Header p)        -- ^ Previous hash
+                 -> Map (Hash ShortHash Tx) Tx  -- ^ Txs to add in the block
+                 -> IsLeader p
+                 -> m (Block p)
+
+instance DemoForgeBlock DemoBFT where
+  demoForgeBlock = forgeSimpleBlock
+
+instance DemoForgeBlock DemoPraos where
+  demoForgeBlock = forgeSimpleBlock
+
+instance DemoForgeBlock DemoLeaderSchedule where
+  demoForgeBlock = forgeSimpleBlock
+
+instance DemoForgeBlock DemoMockPBFT where
+  demoForgeBlock = forgeSimpleBlock
+
+instance DemoForgeBlock DemoRealPBFT where
+  demoForgeBlock = error "TODO (Nick)"

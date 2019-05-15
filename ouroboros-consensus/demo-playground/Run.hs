@@ -111,12 +111,12 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
                            lift . lift $ writeTVar nodeMempool mp'
                            return ts
 
-                 Mock.forgeBlock pInfoConfig
-                                 slot
-                                 curNo
-                                 prevHash
-                                 txs
-                                 proof
+                 demoForgeBlock pInfoConfig
+                                slot
+                                curNo
+                                prevHash
+                                txs
+                                proof
 
           , produceDRG      = drgNew
           }
