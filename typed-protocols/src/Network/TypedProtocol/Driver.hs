@@ -298,8 +298,8 @@ runConnectedPeers :: (MonadSTM m, MonadAsync m, MonadCatch m,
                   => m (Channel m bytes, Channel m bytes)
                   -> Tracer m (TraceSendRecv ps)
                   -> Codec ps failure m bytes
-                  -> Peer ps AsClient st m a
-                  -> Peer ps AsServer st m b
+                  -> Peer ps pr st m a
+                  -> Peer ps (FlipAgency pr) st m b
                   -> m (a, b)
 runConnectedPeers createChannels tr codec client server =
     createChannels >>= \(clientChannel, serverChannel) ->
@@ -315,8 +315,8 @@ runConnectedPeersPipelined :: (MonadSTM m, MonadAsync m, MonadCatch m,
                            -> Tracer m (TraceSendRecv ps)
                            -> Codec ps failure m bytes
                            -> Natural
-                           -> PeerPipelined ps AsClient st m a
-                           -> Peer          ps AsServer st m b
+                           -> PeerPipelined ps pr st m a
+                           -> Peer          ps (FlipAgency pr) st m b
                            -> m (a, b)
 runConnectedPeersPipelined createChannels tr codec maxOutstanding client server =
     createChannels >>= \(clientChannel, serverChannel) ->
