@@ -103,12 +103,12 @@ class ( Show (ChainState    p)
   -- future. This means that for a consensus algorithm that requires the
   -- stake distribution such as Praos, the 'LedgerView' for a particular slot
   -- must be the "stake distribution for the purpose of leader selection".
-  -- This "active" stake distribution /can/ be computed for slots in the
+  -- This "relevant" stake distribution /can/ be computed for slots in the
   -- (near) future because it is based on historical stake, not current.
   --
   -- A somewhat unfortunate consequence of this is that some decisions that
   -- ought to live in the consensus layer (such as the decision precisely which
-  -- historical stake to sample to determine the active stake distribution)
+  -- historical stake to sample to determine the relevant stake distribution)
   -- instead live in the ledger layer. It is difficult to disentangle this,
   -- because the ledger may indeed /depend/ on those sampling decisions (for
   -- example, reward calculations /must/ be based on that same stake
@@ -124,7 +124,7 @@ class ( Show (ChainState    p)
   -- be made without modifying the consensus algorithm.
   --
   -- Note that for the specific case of Praos, whilst the ledger layer provides
-  -- the active stake distribution, the precise leader election must still live
+  -- the relevant stake distribution, the precise leader election must still live
   -- in the consensus layer since that depends on the computation (and sampling)
   -- of entropy, which is done consensus side, not ledger side (the reward
   -- calculation does not depend on this).

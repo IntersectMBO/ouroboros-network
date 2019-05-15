@@ -438,7 +438,7 @@ instance (PBftCrypto c, SimpleBlockCrypto c')
 
 -- | Praos needs a ledger that can give it the "active stake distribution"
 --
--- TODO: Currently out mock ledger does not do this, and just assumes that all
+-- TODO: Currently our mock ledger does not do this, and just assumes that all
 -- the leaders have equal stake at all times. In a way this is not wrong: it
 -- is just a different instantiation of the same consensus algorithm (see
 -- documentation of 'LedgerView'). Ideally we'd change this however, but it
