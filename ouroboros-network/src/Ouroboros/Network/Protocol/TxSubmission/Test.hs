@@ -24,6 +24,8 @@ import           Control.Monad.Class.MonadST (MonadST)
 import           Control.Monad.Class.MonadSTM (MonadSTM)
 import           Control.Monad.Class.MonadThrow (MonadCatch)
 
+import           Control.Tracer (nullTracer)
+
 import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Channel
 import           Network.TypedProtocol.Codec
@@ -282,7 +284,7 @@ prop_channel :: (MonadAsync m, MonadCatch m, MonadST m)
 prop_channel createChannels ns txs = do
     (_, res) <-
       runConnectedPeers
-        createChannels codecTxSubmission
+        createChannels nullTracer codecTxSubmission
         (txSubmissionClientPeer (testClient txs))
         (forgetPipelined $ txSubmissionServerPeerPipelined (testServer ns))
     return $ res === txSubmissionServerReference ns txs
