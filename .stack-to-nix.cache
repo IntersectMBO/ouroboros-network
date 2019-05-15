@@ -1,5 +1,3 @@
-https://github.com/input-output-hk/iohk-monitoring-framework b656651fd3c357860d8136598b223b048c195eae iohk-monitoring 08763nx69b959d14w3ksdyc5267n9gblinkbvw071yg3gnndn712 iohk-monitoring iohk-monitoring.nix
-https://github.com/input-output-hk/iohk-monitoring-framework b656651fd3c357860d8136598b223b048c195eae contra-tracer 08763nx69b959d14w3ksdyc5267n9gblinkbvw071yg3gnndn712 contra-tracer contra-tracer.nix
 https://github.com/input-output-hk/cardano-base 2f33cbf9101dfee1cb488271ec96e210329eec96 binary 0ar9pwf1ibbla60pns6dqcmc6wc705j4nqfd6752xbij8ra144mi cardano-binary cardano-binary.nix
 https://github.com/input-output-hk/cardano-ledger 595cfb5b20863fca869550423a4e27aab8e68aed . 0khfa77lx4xvnqrl62px7cvzqy4s0h9w6sz8fcxm310dap1bvlwp cardano-ledger cardano-ledger.nix
 https://github.com/input-output-hk/cardano-ledger 595cfb5b20863fca869550423a4e27aab8e68aed crypto 0khfa77lx4xvnqrl62px7cvzqy4s0h9w6sz8fcxm310dap1bvlwp cardano-crypto-wrapper cardano-crypto-wrapper.nix
@@ -61,3 +59,5 @@ https://github.com/input-output-hk/ether.git cf9f66372f6cf20730dac880b1df769e053
 https://github.com/input-output-hk/transformers-lift.git c830bc7e7e41895e3c50488a92d34405b68b4ad8 . 022iiq9bg3kczv1awqzjllz6rd1dzcai9kivz26i8adnicp9b8xl transformers-lift transformers-lift.nix
 https://github.com/input-output-hk/ether.git 944cdb812005dac9737cbd1bb46b5ec11f411d2e . 1ag1nlkrbsma914gncwc6373m6x627ql8qw1acz12zqjijmj17g8 ether ether.nix
 https://github.com/input-output-hk/ether.git a311878ae17ed5f201421bdcd5392a24b746ff0b . 0xvbsap7brpyvac6v5k59vv7lfpdr9ridyz7nd8p27rwdlsn3ip9 ether ether.nix
+https://github.com/input-output-hk/iohk-monitoring-framework cbe7ab32354f3838dc8c95c64109904c8f503347 iohk-monitoring 1yipq7ghjmk5h0cjdpqbq9s00iv6wpj7zqh5b2nk4a6pz93fm6rv iohk-monitoring iohk-monitoring.nix
+https://github.com/input-output-hk/iohk-monitoring-framework cbe7ab32354f3838dc8c95c64109904c8f503347 contra-tracer 1yipq7ghjmk5h0cjdpqbq9s00iv6wpj7zqh5b2nk4a6pz93fm6rv contra-tracer contra-tracer.nix

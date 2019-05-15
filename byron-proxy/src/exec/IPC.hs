@@ -29,7 +29,8 @@ import qualified Pos.Chain.Block as CSL (Block, headerHash)
 
 import Ouroboros.Network.Channel (Channel, socketAsChannel)
 import qualified Ouroboros.Network.Server.Socket as Server
-import Ouroboros.Network.Server.Version (Application (..), Dict (..), Version (..), Versions (..), Sigma (..))
+import Ouroboros.Network.Protocol.Handshake.Version (Application (..), Dict (..), Version (..),
+                                                     Versions (..), Sigma (..))
 import Ouroboros.Network.Server.Version.Protocol (clientPeerFromVersions, serverPeerFromVersions)
 import qualified Ouroboros.Network.Server.Version.CBOR as Version
 

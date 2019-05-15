@@ -219,12 +219,14 @@ defaultLoggerConfig = Monitoring.Representation
   , Monitoring.setupBackends   = [Monitoring.KatipBK]
   , Monitoring.defaultBackends = [Monitoring.KatipBK]
   , Monitoring.hasEKG          = Nothing
+  , Monitoring.hasPrometheus   = Nothing
   , Monitoring.hasGUI          = Nothing
   , Monitoring.options         = mempty
   }
   where
   stdoutScribe = Monitoring.ScribeDefinition
     { Monitoring.scKind     = Monitoring.StdoutSK
+    , Monitoring.scFormat   = Monitoring.ScText
     , Monitoring.scName     = "stdout"
     , Monitoring.scPrivacy  = Monitoring.ScPublic
     , Monitoring.scRotation = Nothing

@@ -39,6 +39,7 @@ let
         packages.ouroboros-network.flags.cddl = true;
         packages.ouroboros-network.components.tests.cddl.build-tools = [pkgs.cddl pkgs.cbor-diag];
         packages.ouroboros-consensus.configureFlags = [ "--ghc-option=-Werror" ];
+        packages.prometheus.components.library.doExactConfig = true;
       }
     ];
   };
