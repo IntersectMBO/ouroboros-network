@@ -1,8 +1,10 @@
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 
@@ -17,14 +19,15 @@ import qualified Cardano.Chain.Delegation as Delegation
 import qualified Cardano.Chain.Delegation.Validation.Interface as V.Interface
 import qualified Cardano.Chain.Delegation.Validation.Scheduling as V.Scheduling
 import qualified Cardano.Chain.Genesis as Genesis
-import qualified Cardano.Chain.Ssc as CC.Ssc
 import qualified Cardano.Chain.Slotting as CC.Slot
+import qualified Cardano.Chain.Ssc as CC.Ssc
 import qualified Cardano.Chain.Update as CC.Update
 import qualified Cardano.Chain.Update.Validation.Interface as CC.UPI
 import qualified Cardano.Chain.UTxO as CC.UTxO
 import qualified Cardano.Crypto as Crypto
 import           Cardano.Prelude (panic)
 import           Control.Monad.Except
+import           Crypto.Random (MonadRandom)
 import           Data.Bifunctor (bimap)
 import qualified Data.Bimap as Bimap
 import           Data.ByteString (ByteString)
@@ -35,10 +38,13 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Sequence as Seq
 import           Data.Word
-import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
-import           Ouroboros.Consensus.Crypto.DSIGN.Class (SignedDSIGN (..))
+import           Ouroboros.Consensus.Crypto.DSIGN
+import           Ouroboros.Consensus.Crypto.Hash
 import           Ouroboros.Consensus.Ledger.Abstract
+import qualified Ouroboros.Consensus.Ledger.Mock as Mock
+import           Ouroboros.Consensus.Node (CoreNodeId)
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.PBFT
 import           Ouroboros.Network.Block
 
@@ -240,9 +246,30 @@ instance ProtocolLedgerView ByronBlock where
             $ foldl (\acc x -> Bimap.insert (V.Scheduling.sdDelegator x) (V.Scheduling.sdDelegate x) acc) dsNow toApply
 
 {-------------------------------------------------------------------------------
-  Forging blocks
+  Running Byron in the demo
 -------------------------------------------------------------------------------}
 
+-- Extended configuration we need for the demo
+data ByronDemoConfig = ByronDemoConfig {
+      -- | Mapping from generic keys to core node IDs
+      --
+      -- TODO: Think about delegation
+      pbftNodes :: Map Crypto.VerificationKey CoreNodeId
+    }
+
+forgeByronDemoBlock
+  :: ( HasNodeState_ () m  -- @()@ is the @NodeState@ of PBFT
+     , MonadRandom m
+     )
+  => NodeConfig (ExtNodeConfig ByronDemoConfig (PBft PBftCardanoCrypto))
+  -> SlotNo                                -- ^ Current slot
+  -> BlockNo                               -- ^ Current block number
+  -> ChainHash ByronHeader                 -- ^ Previous hash
+  -> Map (Hash ShortHash Mock.Tx) Mock.Tx  -- ^ Txs to add in the block
+  -> ()                                    -- Leader proof (IsLeader)
+  -> m ByronBlock
+forgeByronDemoBlock = undefined
+{-
 forgeBlockFromMock
   :: forall m. NodeConfig (PBft PBftCardanoCrypto)
   -> SlotNo                          -- ^ Current slot
@@ -294,3 +321,4 @@ forgeBlockFromMock cfg curSlot curNo prevHash txs = do
         , CC.Block._msChainDiff  = coerce curNo
         , CC.Block._msBodyProof  = proof
         }
+-}

@@ -73,18 +73,6 @@ import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.Condense
 
 {-------------------------------------------------------------------------------
-  Support for PBFT against the real ledger
--------------------------------------------------------------------------------}
-
--- Extended configuration we need to run PBFT with the real ledger
-data ExtRealPBFT = ExtRealPBFT {
-      -- | Mapping from generic keys to core node IDs
-      --
-      -- TODO: Think about delegation
-      pbftNodes :: Map Cardano.VerificationKey CoreNodeId
-    }
-
-{-------------------------------------------------------------------------------
   Abstract over the various protocols
 -------------------------------------------------------------------------------}
 
@@ -92,7 +80,7 @@ type DemoBFT            = Bft BftMockCrypto
 type DemoPraos          = ExtNodeConfig AddrDist (Praos PraosMockCrypto)
 type DemoLeaderSchedule = WithLeaderSchedule (Praos PraosMockCrypto)
 type DemoMockPBFT       = ExtNodeConfig (PBftLedgerView PBftMockCrypto) (PBft PBftMockCrypto)
-type DemoRealPBFT       = ExtNodeConfig ExtRealPBFT (PBft PBftCardanoCrypto)
+type DemoRealPBFT       = ExtNodeConfig ByronDemoConfig (PBft PBftCardanoCrypto)
 
 -- | Consensus protocol to use
 data DemoProtocol p where
@@ -266,7 +254,7 @@ protocolInfo (DemoRealPBFT params)
                 , pbftSignKey = SignKeyCardanoDSIGN (snd (mkKey nid))
                 , pbftVerKey  = VerKeyCardanoDSIGN  (fst (mkKey nid))
                 }
-          , encNodeConfigExt = ExtRealPBFT {
+          , encNodeConfigExt = ByronDemoConfig {
                 pbftNodes = Map.fromList [
                                 (fst (mkKey n), CoreNodeId n)
                               | n <- [0 .. numCoreNodes]
@@ -389,7 +377,7 @@ instance HasCreator DemoMockPBFT where
                  . simpleHeader
 
 instance HasCreator DemoRealPBFT where
-    getCreator (EncNodeConfig _ ExtRealPBFT{..}) (ByronBlock b) =
+    getCreator (EncNodeConfig _ ByronDemoConfig{..}) (ByronBlock b) =
         Map.findWithDefault (error "getCreator: unknown key") key pbftNodes
      where
        key :: Cardano.VerificationKey
@@ -424,4 +412,4 @@ instance DemoForgeBlock DemoMockPBFT where
   demoForgeBlock = forgeSimpleBlock
 
 instance DemoForgeBlock DemoRealPBFT where
-  demoForgeBlock = error "TODO (Nick)"
+  demoForgeBlock = forgeByronDemoBlock
