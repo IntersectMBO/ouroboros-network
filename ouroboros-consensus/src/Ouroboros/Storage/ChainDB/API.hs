@@ -196,12 +196,6 @@ data ChainDB m blk = ChainDB {
 
       -- | Known to be invalid blocks
     , knownInvalidBlocks :: STM m (Set (Point blk))
-
-      -- | Check if the specified point is on the current chain
-      --
-      -- This lives in @m@, not @STM m@, because if the point is not on the
-      -- current chain fragment, it might have to query the immutable DB.
-    , pointOnChain       :: Point blk -> m Bool
     }
 
 {-------------------------------------------------------------------------------
