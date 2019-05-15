@@ -5,6 +5,7 @@
 {-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 
 module Test.Ouroboros.Network.Node where
 
