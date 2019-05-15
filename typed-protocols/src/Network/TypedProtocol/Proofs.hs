@@ -79,16 +79,16 @@ import Data.Void (absurd)
 -- * It is useful for testing peer implementations against each other in a
 -- minimalistic setting.
 --
-connect :: forall ps (st :: ps) m a b.
+connect :: forall ps (pr :: PeerRole) (st :: ps) m a b.
            (Monad m, Protocol ps)
-        => Peer ps AsClient st m a
-        -> Peer ps AsServer st m b
+        => Peer ps pr st m a
+        -> Peer ps (FlipAgency pr) st m b
         -> m (a, b, TerminalStates ps)
 connect = go
   where
     go :: forall (st' :: ps).
-          Peer ps AsClient st' m a
-       -> Peer ps AsServer st' m b
+          Peer ps pr st' m a
+       -> Peer ps (FlipAgency pr) st' m b
        -> m (a, b, TerminalStates ps)
     go (Done stA a)    (Done stB b)    = return (a, b, TerminalStates stA stB)
     go (Effect a )      b              = a >>= \a' -> go a' b
@@ -101,20 +101,38 @@ connect = go
     go (Yield (ClientAgency stA) _ _) (Yield (ServerAgency stB) _ _) =
       absurd (exclusionLemma_ClientAndServerHaveAgency stA stB)
 
+    go (Yield (ServerAgency stA) _ _) (Yield (ClientAgency stB) _ _) =
+      absurd (exclusionLemma_ClientAndServerHaveAgency stB stA)
+
     go (Await (ServerAgency stA) _)   (Await (ClientAgency stB) _)   =
       absurd (exclusionLemma_ClientAndServerHaveAgency stB stA)
+
+    go (Await (ClientAgency stA) _)   (Await (ServerAgency stB) _)   =
+      absurd (exclusionLemma_ClientAndServerHaveAgency stA stB)
 
     go (Done  stA _)            (Yield (ServerAgency stB) _ _) =
       absurd (exclusionLemma_NobodyAndServerHaveAgency stA stB)
 
+    go (Done  stA _)            (Yield (ClientAgency stB) _ _) =
+      absurd (exclusionLemma_NobodyAndClientHaveAgency stA stB)
+
     go (Done  stA _)            (Await (ClientAgency stB) _)   =
       absurd (exclusionLemma_NobodyAndClientHaveAgency stA stB)
+
+    go (Done  stA _)            (Await (ServerAgency stB) _)   =
+      absurd (exclusionLemma_NobodyAndServerHaveAgency stA stB)
 
     go (Yield (ClientAgency stA) _ _) (Done stB _)    =
       absurd (exclusionLemma_NobodyAndClientHaveAgency stB stA)
 
+    go (Yield (ServerAgency stA) _ _) (Done stB _)    =
+      absurd (exclusionLemma_NobodyAndServerHaveAgency stB stA)
+
     go (Await (ServerAgency stA) _)   (Done stB _)    =
       absurd (exclusionLemma_NobodyAndServerHaveAgency stB stA)
+
+    go (Await (ClientAgency stA) _)   (Done stB _)    =
+      absurd (exclusionLemma_NobodyAndClientHaveAgency stB stA)
 
 
 -- | The terminal states for the protocol. Used in 'connect' and
@@ -137,11 +155,11 @@ data TerminalStates ps where
 --
 -- This can be exercised using a QuickCheck style generator.
 --
-connectPipelined :: forall ps (st :: ps) m a b.
+connectPipelined :: forall ps (pr :: PeerRole) (st :: ps) m a b.
                     (Monad m, Protocol ps)
                  => [Bool] -- ^ Interleaving choices. [] gives no pipelining.
-                 -> PeerPipelined ps AsClient st m a
-                 -> Peer          ps AsServer st m b
+                 -> PeerPipelined ps pr st m a
+                 -> Peer          ps (FlipAgency pr) st m b
                  -> m (a, b, TerminalStates ps)
 
 connectPipelined cs0 (PeerPipelined peerA) peerB =
@@ -150,8 +168,8 @@ connectPipelined cs0 (PeerPipelined peerA) peerB =
     goSender :: forall (st' :: ps) n c.
                 [Bool]
              -> Queue                      n c
-             -> PeerSender ps AsClient st' n c m a
-             -> Peer       ps AsServer st'     m b
+             -> PeerSender ps pr st' n c m a
+             -> Peer       ps (FlipAgency pr) st'     m b
              -> m (a, b, TerminalStates ps)
 
     goSender _ EmptyQ (SenderDone stA a) (Done stB b) = return (a, b, terminals)
@@ -181,26 +199,44 @@ connectPipelined cs0 (PeerPipelined peerA) peerB =
     goSender _ _ (SenderDone stA _) (Yield (ServerAgency stB) _ _) =
       absurd (exclusionLemma_NobodyAndServerHaveAgency stA stB)
 
+    goSender _ _ (SenderDone stA _) (Yield (ClientAgency stB) _ _) =
+      absurd (exclusionLemma_NobodyAndClientHaveAgency stA stB)
+
     goSender _ _ (SenderDone stA _) (Await (ClientAgency stB) _) =
       absurd (exclusionLemma_NobodyAndClientHaveAgency stA stB)
+
+    goSender _ _ (SenderDone stA _) (Await (ServerAgency stB) _) =
+      absurd (exclusionLemma_NobodyAndServerHaveAgency stA stB)
 
     goSender _ _ (SenderYield (ClientAgency stA) _ _) (Done stB _) =
       absurd (exclusionLemma_NobodyAndClientHaveAgency stB stA)
 
+    goSender _ _ (SenderYield (ServerAgency stA) _ _) (Done stB _) =
+      absurd (exclusionLemma_NobodyAndServerHaveAgency stB stA)
+
     goSender _ _ (SenderYield (ClientAgency stA) _ _) (Yield (ServerAgency stB) _ _) =
       absurd (exclusionLemma_ClientAndServerHaveAgency stA stB)
+
+    goSender _ _ (SenderYield (ServerAgency stA) _ _) (Yield (ClientAgency stB) _ _) =
+      absurd (exclusionLemma_ClientAndServerHaveAgency stB stA)
 
     goSender _ _ (SenderPipeline (ClientAgency stA) _ _ _) (Done stB _) =
       absurd (exclusionLemma_NobodyAndClientHaveAgency stB stA)
 
+    goSender _ _ (SenderPipeline (ServerAgency stA) _ _ _) (Done stB _) =
+      absurd (exclusionLemma_NobodyAndServerHaveAgency stB stA)
+
     goSender _ _ (SenderPipeline (ClientAgency stA) _ _ _) (Yield (ServerAgency stB) _ _) =
       absurd (exclusionLemma_ClientAndServerHaveAgency stA stB)
 
+    goSender _ _ (SenderPipeline (ServerAgency stA) _ _ _) (Yield (ClientAgency stB) _ _) =
+      absurd (exclusionLemma_ClientAndServerHaveAgency stB stA)
+
 
     goReceiver :: forall (st' :: ps) (stdone :: ps) c.
-                  PeerReceiver ps AsClient st' stdone m c
-               -> Peer         ps AsServer st'        m b
-               -> m (Peer      ps AsServer     stdone m b, c)
+                  PeerReceiver ps pr st' stdone m c
+               -> Peer         ps (FlipAgency pr) st'        m b
+               -> m (Peer      ps (FlipAgency pr)     stdone m b, c)
 
     goReceiver (ReceiverDone x)    b         = return (b, x)
     goReceiver (ReceiverEffect a)  b         = a >>= \a' -> goReceiver a' b
@@ -213,8 +249,14 @@ connectPipelined cs0 (PeerPipelined peerA) peerB =
     goReceiver (ReceiverAwait (ServerAgency stA) _) (Done  stB _) =
       absurd (exclusionLemma_NobodyAndServerHaveAgency stB stA)
 
+    goReceiver (ReceiverAwait (ClientAgency stA) _) (Done  stB _) =
+      absurd (exclusionLemma_NobodyAndClientHaveAgency stB stA)
+
     goReceiver (ReceiverAwait (ServerAgency stA) _) (Await (ClientAgency stB) _) =
       absurd (exclusionLemma_ClientAndServerHaveAgency stB stA)
+
+    goReceiver (ReceiverAwait (ClientAgency stA) _) (Await (ServerAgency stB) _) =
+      absurd (exclusionLemma_ClientAndServerHaveAgency stA stB)
 
 
 -- | Prove that we have a total conversion from pipelined peers to regular
