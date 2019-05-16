@@ -74,9 +74,19 @@ epochFileParser epochSlots hasFS =
   hashOfEBB :: Lazy.ByteString -> Cardano.ABlockOrBoundary ByteSpan -> Maybe Cardano.HeaderHash
   hashOfEBB bytes blk = case blk of
     Cardano.ABOBBlock    _   -> Nothing
-    Cardano.ABOBBoundary ebb ->
-      Just $ unsafeAbstractHash (Cardano.boundaryHeaderBytes ebbWithBytes)
+    Cardano.ABOBBoundary ebb -> Just hash
       where
+      -- TODO make a function for this
+      -- TODO fix the toStrict/fromStrict marshalling?
+      -- Cardano.wrapBoundaryBytes should work on lazy bytestrings: if you
+      -- have a strict, getting a lazy is cheap, if you have a lazy,
+      -- going to strict is not.
+      hash = unsafeAbstractHash
+        . Lazy.fromStrict
+        . Cardano.wrapBoundaryBytes
+        . Lazy.toStrict
+        . Cardano.boundaryHeaderBytes
+        $ ebbWithBytes
       ebbWithBytes = fmap (slice bytes) ebb
 
 -- | An iterator type quite like `Ouroboros.Storage.ImmutableDB.API.Iterator`,
@@ -246,7 +256,7 @@ dbAppendImpl err epochSlots iwrite idb = DBAppend $ \blockToWrite ->
         CardanoBlockToWrite (Annotated _ bytes) ->
           Builder.byteString bytes
   in  case blockToWrite of
-        LegacyBlockToWrite (Left ebb) -> do
+        LegacyBlockToWrite b@(Left ebb) -> do
           -- Write the index first, so that if something goes wrong with the
           -- `appendEBB` to the `ImmutableDB`, the transaction will quit and the
           -- index/db will remain consistent.
@@ -254,7 +264,7 @@ dbAppendImpl err epochSlots iwrite idb = DBAppend $ \blockToWrite ->
               epoch = ebbEpoch ebb
           Index.updateTip iwrite hash epoch Index.EBBSlot
           Immutable.appendEBB idb epoch (coerceHashFromLegacy hash) builder
-        LegacyBlockToWrite (Right blk) -> do
+        LegacyBlockToWrite b@(Right blk) -> do
           let hash = CSL.headerHash blk
               (epoch, SlotNo wslot) = blockEpochAndRelativeSlot blk
               slot = SlotNo $ unEpochNo epoch * Cardano.unEpochSlots epochSlots + wslot
@@ -269,7 +279,11 @@ dbAppendImpl err epochSlots iwrite idb = DBAppend $ \blockToWrite ->
           Index.updateTip iwrite (coerceHashToLegacy hash) (EpochNo epoch) (Index.RealSlot slot)
           Immutable.appendBinaryBlob idb (SlotNo slot) builder
         CardanoBlockToWrite (Annotated (Cardano.ABOBBoundary ebb) _) -> do
-          let hash = unsafeAbstractHash (Lazy.fromStrict (Cardano.boundaryHeaderBytes ebb))
+          let hash = unsafeAbstractHash
+                . Lazy.fromStrict
+                . Cardano.wrapBoundaryBytes
+                . Cardano.boundaryHeaderBytes
+                $ ebb
               epoch = EpochNo (Cardano.boundaryEpoch ebb)
           Index.updateTip iwrite (coerceHashToLegacy hash) epoch Index.EBBSlot
           Immutable.appendEBB idb epoch hash builder
