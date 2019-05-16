@@ -194,7 +194,7 @@ newtype Connection m = Connection {
 -- |
 -- CPS style for runing mux layer
 --
-type WithConnection m addr a r = addr -> (a -> m r) -> m r
+type WithConnection m addr conn r = addr -> (conn -> m r) -> m r
 
 -- |
 -- Run @'WithConnection' m addr (Connection m) ()@ in the current thread.  The
@@ -207,8 +207,8 @@ withConnection withConn addr = withConn addr runConnection
 -- |
 -- Run @'WithConnection'@ with supplied @addr@ and continuation.
 --
-runWithConnection :: WithConnection m addr a r -> addr -> (a -> m r) -> m r
-runWithConnection withConn a k = withConn a k
+runWithConnection :: WithConnection m addr conn r -> addr -> (conn -> m r) -> m r
+runWithConnection withConn conn k = withConn conn k
 
 -- |
 -- Run @'WithConnectionAsync' m addr (Connection m) ()@ in another thread giving
