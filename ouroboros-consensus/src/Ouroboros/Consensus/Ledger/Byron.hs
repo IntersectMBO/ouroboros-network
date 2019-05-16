@@ -22,6 +22,7 @@ import           Crypto.Random (MonadRandom)
 import           Data.Bifunctor (bimap)
 import qualified Data.Bimap as Bimap
 import           Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
 import           Data.Coerce
 import           Data.FingerTree (Measured (..))
 import           Data.Foldable (find)
@@ -99,6 +100,9 @@ instance Typeable cfg => HasHeader (ByronBlock cfg) where
   blockNo        =            blockNo       . byronHeader
   blockInvariant = const True
 
+genesisHash :: CC.Block.HeaderHash
+genesisHash = undefined
+
 instance HasHeader ByronHeader where
   type HeaderHash ByronHeader = CC.Block.HeaderHash
 
@@ -113,7 +117,9 @@ instance HasHeader ByronHeader where
   -- We should distinguish the genesis hash
   -- TODO: I think this already lives somewhere. I don't know where. In fact,
   -- I think Erik or Ru already wrote this very 'HasHeader' instance :/
-  blockPrevHash = BlockHash . CC.Block.headerPrevHash . unByronHeader
+  blockPrevHash (ByronHeader h) = case CC.Block.headerPrevHash h of
+    h' | h' == genesisHash -> GenesisHash
+    _ -> BlockHash $ CC.Block.headerPrevHash $ h
 
   blockSlot      = convertSlot . CC.Block.headerSlot . unByronHeader
   blockNo        = BlockNo . CC.Common.unChainDifficulty . CC.Block.headerDifficulty . unByronHeader
