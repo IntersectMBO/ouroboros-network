@@ -82,16 +82,20 @@ newtype ByronBlock cfg = ByronBlock { unByronBlock :: CC.Block.ABlock ByteString
 instance Condense (ByronBlock cfg) where
   condense = show -- TODO
 
-newtype ByronHeader = ByronHeader { unByronHeader :: CC.Block.AHeader ByteString }
+newtype ByronHeader cfg = ByronHeader { unByronHeader :: CC.Block.AHeader ByteString }
   deriving (Eq, Show)
 
-byronHeader :: ByronBlock cfg -> ByronHeader
+instance Condense (ByronHeader cfg) where
+  condense = show -- TODO
+
+
+byronHeader :: ByronBlock cfg -> ByronHeader cfg
 byronHeader (ByronBlock b) = ByronHeader (CC.Block.blockHeader b)
 
 instance Typeable cfg => Measured BlockMeasure (ByronBlock cfg) where
   measure = blockMeasure
 
-instance Measured BlockMeasure ByronHeader where
+instance Typeable cfg => Measured BlockMeasure (ByronHeader cfg) where
   measure = blockMeasure
 
 convertSlot :: CC.Slot.FlatSlotId -> SlotNo
@@ -112,8 +116,8 @@ instance Typeable cfg => HasHeader (ByronBlock cfg) where
 genesisHash :: CC.Block.HeaderHash
 genesisHash = coerce Dummy.dummyGenesisHash
 
-instance HasHeader ByronHeader where
-  type HeaderHash ByronHeader = CC.Block.HeaderHash
+instance Typeable cfg => HasHeader (ByronHeader cfg) where
+  type HeaderHash (ByronHeader cfg) = CC.Block.HeaderHash
 
   -- Implementation of 'blockHash' derived from
   --
@@ -135,7 +139,7 @@ instance HasHeader ByronHeader where
   blockInvariant = const True
 
 instance StandardHash (ByronBlock cfg)
-instance StandardHash ByronHeader
+instance StandardHash (ByronHeader cfg)
 
 instance Typeable cfg => LedgerConfigView (ByronBlock cfg) where
   ledgerConfigView EncNodeConfig{..} =
@@ -233,19 +237,21 @@ instance UpdateLedger (ByronBlock cfg) where
 
 type instance BlockProtocol (ByronBlock cfg) = ExtNodeConfig cfg (PBft PBftCardanoCrypto)
 
+type instance BlockProtocol (ByronHeader cfg) = ExtNodeConfig cfg (PBft PBftCardanoCrypto)
+
 instance Typeable cfg => HasPreHeader (ByronBlock cfg) where
   type PreHeader (ByronBlock cfg) = CC.Block.ToSign
   blockPreHeader = unAnnotated . CC.Block.recoverSignedBytes byronEpochSlots
                    . CC.Block.blockHeader . unByronBlock
 
 -- TODO get rid of this once we have a BlockHeader type family
-instance HasPreHeader ByronHeader where
-  type PreHeader ByronHeader = CC.Block.ToSign
+instance Typeable cfg => HasPreHeader (ByronHeader cfg) where
+  type PreHeader (ByronHeader cfg) = CC.Block.ToSign
   blockPreHeader = unAnnotated . CC.Block.recoverSignedBytes byronEpochSlots
                    . unByronHeader
 
 -- TODO get rid of this once we have a BlockHeader type family
-instance HasPayload (PBft PBftCardanoCrypto) ByronHeader where
+instance Typeable cfg => HasPayload (PBft PBftCardanoCrypto) (ByronHeader cfg) where
   blockPayload _ (ByronHeader header) = PBftPayload
     { pbftIssuer = VerKeyCardanoDSIGN
                    . Crypto.pskIssuerVK
@@ -368,7 +374,7 @@ forgeByronDemoBlock
   => NodeConfig (ExtNodeConfig ByronDemoConfig (PBft PBftCardanoCrypto))
   -> SlotNo                                -- ^ Current slot
   -> BlockNo                               -- ^ Current block number
-  -> ChainHash ByronHeader                 -- ^ Previous hash
+  -> ChainHash (ByronHeader cfg)           -- ^ Previous hash
   -> Map (Hash ShortHash Mock.Tx) Mock.Tx  -- ^ Txs to add in the block
   -> ()                                    -- ^ Leader proof (IsLeader)
   -> m (ByronBlock ByronDemoConfig)
@@ -578,7 +584,7 @@ annotateTx =
 -------------------------------------------------------------------------------}
 
 encodeByronDemoHeader :: NodeConfig (ExtNodeConfig ByronDemoConfig (PBft PBftCardanoCrypto))
-                      -> ByronHeader -> Encoding
+                      -> ByronHeader ByronDemoConfig -> Encoding
 encodeByronDemoHeader cfg =
       CC.Block.toCBORHeader epochSlots
     . fmap (const ())
@@ -596,7 +602,7 @@ encodeByronDemoBlock cfg =
     epochSlots = pbftEpochSlots (encNodeConfigExt cfg)
 
 encodeByronDemoHeaderHash :: NodeConfig (ExtNodeConfig ByronDemoConfig (PBft PBftCardanoCrypto))
-                          -> HeaderHash ByronHeader -> Encoding
+                          -> HeaderHash (ByronHeader ByronDemoConfig) -> Encoding
 encodeByronDemoHeaderHash _cfg = toCBOR
 
 encodeByronDemoPreHeader :: NodeConfig (ExtNodeConfig ByronDemoConfig (PBft PBftCardanoCrypto))
@@ -604,7 +610,7 @@ encodeByronDemoPreHeader :: NodeConfig (ExtNodeConfig ByronDemoConfig (PBft PBft
 encodeByronDemoPreHeader _cfg = toCBOR
 
 decodeByronDemoHeader :: NodeConfig (ExtNodeConfig ByronDemoConfig (PBft PBftCardanoCrypto))
-                      -> Decoder s ByronHeader
+                      -> Decoder s (ByronHeader ByronDemoConfig)
 decodeByronDemoHeader cfg =
     fmap (ByronHeader . annotate) $
       CC.Block.fromCBORAHeader epochSlots
@@ -628,5 +634,5 @@ decodeByronDemoBlock cfg =
     epochSlots = pbftEpochSlots (encNodeConfigExt cfg)
 
 decodeByronDemoHeaderHash :: NodeConfig (ExtNodeConfig ByronDemoConfig (PBft PBftCardanoCrypto))
-                          -> Decoder s (HeaderHash ByronHeader)
+                          -> Decoder s (HeaderHash (ByronHeader ByronDemoConfig))
 decodeByronDemoHeaderHash _cfg = fromCBOR

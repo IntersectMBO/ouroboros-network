@@ -113,7 +113,7 @@ type family Block p = b | b -> p where
   Block p = SimpleBlock p SimpleBlockMockCrypto
 
 type family Header p :: * where
-  Header DemoRealPBFT = ByronHeader
+  Header DemoRealPBFT = ByronHeader ByronDemoConfig
 
   -- Demos using mock ledger/block
   Header p = SimpleHeader p SimpleBlockMockCrypto
@@ -416,7 +416,7 @@ class ( OuroborosTag p
       , Eq        (Payload p (PreHeader (Block p)))
       , Show      (Payload p (PreHeader (Block p)))
       , BlockProtocol (Block  p) ~ p
-      -- , BlockProtocol (Header p) ~ p
+      , BlockProtocol (Header p) ~ p
       , HeaderHash (Block p) ~ HeaderHash (Header p)
       , StandardHash (Header p)
       , HasHeader (Header p)
@@ -508,10 +508,5 @@ instance RunDemo DemoRealPBFT where
   demoDecodeHeaderHash = decodeByronDemoHeaderHash
   demoDecodeBlock      = decodeByronDemoBlock
 
--- TODO remove once SupportedBlock has been renamed to SupportedHeader and
--- uses the BlockHeader type family
-type instance BlockProtocol ByronHeader = BlockProtocol (ByronBlock DemoRealPBFT)
-
 -- TODO
-instance Condense ByronHeader where
-instance Condense (ChainHash ByronHeader) where
+instance Condense (ChainHash (ByronHeader cfg)) where
