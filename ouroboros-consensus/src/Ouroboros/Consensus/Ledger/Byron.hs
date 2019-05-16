@@ -69,7 +69,7 @@ import qualified Test.Cardano.Chain.Genesis.Dummy as Dummy
 
 -- | Hard-coded number of slots per epoch in the Byron era
 byronEpochSlots :: CC.Slot.EpochSlots
-byronEpochSlots = CC.Slot.EpochSlots 21600
+byronEpochSlots = Dummy.dummyEpochSlots
 
 -- | Newtype wrapper to avoid orphan instances
 --
@@ -258,7 +258,7 @@ instance Typeable cfg => HasPreHeader (ByronHeader cfg) where
 instance Typeable cfg => HasPayload (PBft PBftCardanoCrypto) (ByronHeader cfg) where
   blockPayload _ (ByronHeader header) = PBftPayload
     { pbftIssuer = VerKeyCardanoDSIGN
-                   . Crypto.pskIssuerVK
+                   . Crypto.pskDelegateVK
                    . Crypto.psigPsk
                    . CC.Block.unBlockSignature
                    . CC.Block.headerSignature
@@ -274,23 +274,7 @@ instance Typeable cfg => HasPayload (PBft PBftCardanoCrypto) (ByronHeader cfg) w
 
 
 instance Typeable cfg => HasPayload (PBft PBftCardanoCrypto) (ByronBlock cfg) where
-  blockPayload _ (ByronBlock aBlock) = PBftPayload
-    { pbftIssuer = VerKeyCardanoDSIGN
-                   . Crypto.pskIssuerVK
-                   . Crypto.psigPsk
-                   . CC.Block.unBlockSignature
-                   . CC.Block.headerSignature
-                   . CC.Block.blockHeader
-                   $ aBlock
-    , pbftSignature = SignedDSIGN
-                      . SigCardanoDSIGN
-                      . Crypto.Signature
-                      . Crypto.psigSig
-                      . CC.Block.unBlockSignature
-                      . CC.Block.headerSignature
-                      . CC.Block.blockHeader
-                      $ aBlock
-    }
+  blockPayload cfg = blockPayload cfg . byronHeader
 
 instance Typeable cfg => ProtocolLedgerView (ByronBlock cfg) where
   protocolLedgerView _ns (ByronLedgerState ls _) = PBftLedgerView
