@@ -150,7 +150,7 @@ simpleMuxServerApplication fn = MuxServerApplication $ \ptcl channel ->
 -- |
 -- Public network interface for 'ouroboros-network'.
 --
-data NetworkInterface ptcl addr m r = NetworkInterface {
+data NetworkInterface ptcl addr m = NetworkInterface {
       -- |
       -- Address of the node to run.  The node will bind to this address, and
       -- listen for incoming connections.  Some bearers do not have a notion of
