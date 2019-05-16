@@ -28,7 +28,7 @@ import qualified Data.Sequence as Seq
 import           Data.Typeable
 import           Data.Word
 
-import           Cardano.Binary (Annotated (..), reAnnotate)
+import           Cardano.Binary (Annotated (..), reAnnotate, toCBOR)
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.Common as CC.Common
 import qualified Cardano.Chain.Delegation as Delegation
@@ -296,6 +296,9 @@ data ByronDemoConfig = ByronDemoConfig {
       --
       -- TODO: Think about delegation
       pbftNodes :: Map Crypto.VerificationKey CoreNodeId
+    , protocolMagic :: Crypto.ProtocolMagic
+    , protocolVersion :: CC.Update.ProtocolVersion
+    , softwareVersion :: CC.Update.SoftwareVersion
     }
 
 forgeByronDemoBlock
@@ -310,21 +313,16 @@ forgeByronDemoBlock
   -> ()                                    -- Leader proof (IsLeader)
   -> m (ByronBlock ByronDemoConfig)
 forgeByronDemoBlock = undefined
-{-
-forgeBlockFromMock
-  :: forall m. NodeConfig (PBft PBftCardanoCrypto)
-  -> SlotNo                          -- ^ Current slot
-  -> BlockNo                         -- ^ Current block number
-  -> CC.Block.HeaderHash             -- ^ Previous hash
-  -> Map (Hash ShortHash Tx) Tx      -- ^ Txs to add in the block
-  -> m ByronBlock
-forgeBlockFromMock cfg curSlot curNo prevHash txs = do
+{-forgeByronDemoBlock cfg curSlot curNo prevHash txs () = do
     ouroborosPayload <- mkPayload toCBOR cfg () preHeader
-    return $ CC.Block.ABlock header body ()
+    return . ByronBlock $ CC.Block.ABlock (header ouroborosPayload) body ()
   where
+    pm = protocolMagic cfg
+    pv = protocolVersion cfg
+    sv = softwareVersion cfg
 
-    header :: CC.Block.Header
-    header = CC.Block.AHeader
+    -- header :: CC.Block.Header
+    header ouroborosPayload = CC.Block.AHeader
       (Annotated pm ())
       (Annotated prevHash ())
       (Annotated curSlot ())
@@ -339,9 +337,9 @@ forgeBlockFromMock cfg curSlot curNo prevHash txs = do
 
     body :: CC.Block.Body
     body = CC.Block.ABody
-      { CC.Block.bodyTxPayload = txPayoad
+      { CC.Block.bodyTxPayload = txPayload
       , CC.Block.bodySscPayload = CC.Ssc.SscPayload
-      , CC.Block.bodyDlgPayload = CC.Delegation.unsafePayload []
+      , CC.Block.bodyDlgPayload = Delegation.unsafePayload []
       , CC.Block.bodyUpdatePayload = CC.Update.payload Nothing []
       }
 
@@ -349,7 +347,7 @@ forgeBlockFromMock cfg curSlot curNo prevHash txs = do
     txPayload = undefined
 
     proof = CC.Block.Proof
-          { CC.Block.proofTxp        = CC.Txp.mkTxProof txPayload
+          { CC.Block.proofUTxO       = CC.UTxO.mkTxProof txPayload
           , CC.Block.proofSsc        = CC.Ssc.SscProof
           , CC.Block.proofDelegation = hash $ CC.Block.bodyDlgPayload body
           , CC.Block.proofUpdate     = hash $ CC.Block.bodyUpdatePayload body
@@ -357,9 +355,9 @@ forgeBlockFromMock cfg curSlot curNo prevHash txs = do
 
     preHeader :: CC.Block.ToSign
     preHeader = CC.Block.ToSign {
-          CC.Block._msHeaderHash = prevHash
-        , CC.Block._msSlot       = curSlot
-        , CC.Block._msChainDiff  = coerce curNo
-        , CC.Block._msBodyProof  = proof
+          CC.Block.tsHeaderHash = prevHash
+        , CC.Block.tsSlot       = curSlot
+        , CC.Block.tsDifficulty = coerce curNo
+        , CC.Block.tsBodyProof  = proof
         }
--}
+--}
