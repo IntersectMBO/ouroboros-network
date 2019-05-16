@@ -142,21 +142,21 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
 
       btime  <- realBlockchainTime registry slotDuration systemStart
       let tracer = contramap ((show myNodeId <> " | ") <>) stdoutTracer
-      --     nodeParams = NodeParams
-      --       { encoder            = demoEncodePreHeader pInfoConfig
-      --       , tracer             = nullTracer
-      --       , threadRegistry     = registry
-      --       , maxClockSkew       = ClockSkew 1
-      --       , cfg                = pInfoConfig
-      --       , initState          = pInfoInitState
-      --       , btime
-      --       , chainDB
-      --       , callbacks
-      --       , blockFetchSize     = undefined -- Mock.headerBlockSize . Mock.headerPreHeader
-      --       , blockMatchesHeader = undefined -- Mock.blockMatchesHeader
-      --       }
+          nodeParams = NodeParams
+            { encoder            = demoEncodePreHeader pInfoConfig
+            , tracer             = nullTracer
+            , threadRegistry     = registry
+            , maxClockSkew       = ClockSkew 1
+            , cfg                = pInfoConfig
+            , initState          = pInfoInitState
+            , btime
+            , chainDB
+            , callbacks
+            , blockFetchSize     = undefined -- Mock.headerBlockSize . Mock.headerPreHeader
+            , blockMatchesHeader = undefined -- Mock.blockMatchesHeader
+            }
 
-      kernel :: NodeKernel IO NodeId (Block p) (Header p) <- undefined -- nodeKernel nodeParams
+      kernel <- nodeKernel nodeParams
 
       watchChain registry tracer chainDB
 
