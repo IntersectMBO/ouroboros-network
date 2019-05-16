@@ -46,8 +46,7 @@ import qualified Ouroboros.Network.Server.Socket as Server
 import qualified Ouroboros.Network.Mux as Mx
 import qualified Ouroboros.Network.Mux.Types as Mx
 import           Ouroboros.Network.Mux.Types (MuxBearer)
-import           Ouroboros.Network.Mux.Interface ( Connection (..)
-                                                 , MuxApplication
+import           Ouroboros.Network.Mux.Interface ( MuxApplication
                                                  , clientApplication
                                                  , NetworkNode (..)
                                                  , miniProtocolDescription
@@ -150,7 +149,7 @@ withConnection
      )
   => (ptcl -> Channel IO ByteString -> IO ())
   -> Socket.AddrInfo
-  -> ((Connection IO) -> IO r)
+  -> (IO () -> IO r)
   -> IO r
 withConnection app remoteAddr kConn =
     bracket
@@ -166,12 +165,10 @@ withConnection app remoteAddr kConn =
           Socket.connect sd (Socket.addrAddress remoteAddr)
           bearer <- socketAsMuxBearer sd
           Mx.muxBearerSetState bearer Mx.Connected
-          kConn $ Connection {
-              runConnection =
-                Mx.muxStart mpds bearer
-                `catch`
-                handleMuxError
-            }
+          kConn $
+            Mx.muxStart mpds bearer
+            `catch`
+            handleMuxError
       )
     where
       mpds :: Mx.MiniProtocolDescriptions ptcl IO

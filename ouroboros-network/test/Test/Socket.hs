@@ -175,7 +175,7 @@ prop_socket_send_recv clientAddr serverAddr f xs = do
       withNetworkNode (Socket.addrFamily serverAddr) (Socket.addrAddress serverAddr) serverApp $ \_ _ ->
         withNetworkNode (Socket.addrFamily clientAddr) (Socket.addrAddress clientAddr) clientApp $ \cliNode _ ->
           (connect cliNode) serverAddr $ \conn -> do
-            runConnection conn
+            conn
             atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
 
     return (res == mapAccumL f 0 xs)
@@ -258,7 +258,7 @@ prop_socket_client_connect_error _ xs = ioProperty $ do
 
     (res :: Either IOException Bool)
       <- try $ withNetworkNode (Socket.addrFamily serverAddr) (Socket.addrAddress serverAddr) app $ \nn _ ->
-                 const False <$> (connect nn) clientAddr runConnection
+                 const False <$> (connect nn) clientAddr id
 
     -- XXX Disregarding the exact exception type
     pure $ either (const True) id res
@@ -298,7 +298,7 @@ demo chain0 updates = do
     withNetworkNode (Socket.addrFamily producerAddress) (Socket.addrAddress producerAddress) producerApp $ \_ _ ->
       withNetworkNode (Socket.addrFamily consumerAddress) (Socket.addrAddress consumerAddress) consumerApp $ \consumerNode _ ->
         (connect consumerNode) producerAddress $ \conn ->
-          withAsync (runConnection conn) $ \_connAsync -> do
+          withAsync conn $ \_connAsync -> do
             void $ fork $ sequence_
                 [ do
                     threadDelay 10e-4 -- just to provide interest
