@@ -183,7 +183,7 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
           fingerprint frag = (AF.headPoint frag, AF.anchorPoint frag)
           logFullChain = do
             chain <- ChainDB.toChain chainDB
-            traceWith tracer $
+            traceWith debugTracer $
               "Updated chain: " <> condense (Chain.toOldestFirst chain)
 
       -- We need to make sure that both nodes read from the same file

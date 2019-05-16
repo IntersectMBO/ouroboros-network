@@ -36,6 +36,7 @@ import           Control.Monad.Except (runExcept)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe, isJust, mapMaybe)
+import           Debug.Trace
 import           GHC.Stack (HasCallStack)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
@@ -223,7 +224,8 @@ notGenesis p =
       GenesisHash -> error "Ouroboros.Storage.ChainDB.Model: notGenesis"
       BlockHash h -> h
 
-validate :: (ProtocolLedgerView blk
+validate :: forall blk.
+           ( ProtocolLedgerView blk
            , LedgerConfigView blk
            , SupportedPreHeader (BlockProtocol blk) (PreHeader blk)
            )
@@ -233,9 +235,15 @@ validate :: (ProtocolLedgerView blk
          -> Chain blk
          -> Maybe (Chain blk, ExtLedgerState blk)
 validate toEnc cfg initLedger chain =
-      either (const Nothing) (\ledger -> Just (chain, ledger))
+      -- either (const Nothing) (\ledger -> Just (chain, ledger))
+      fromEither
     . runExcept
     $ chainExtLedgerState toEnc cfg chain initLedger
+  where
+    fromEither :: Either (ExtValidationError blk) (ExtLedgerState blk)
+               -> Maybe (Chain blk, ExtLedgerState blk)
+    fromEither (Left err) = trace ("Validation error: " ++ show err) Nothing
+    fromEither (Right l)  = Just (chain, l)
 
 chains :: forall blk. (HasHeader blk)
        => Map (HeaderHash blk) blk -> [Chain blk]

@@ -397,6 +397,7 @@ forkBlockProduction IS{..} =
             return $ Just newBlock
 
       whenJust mNewBlock $ \newBlock -> do
+        traceWith tracer $ "Hi!"
         traceWith debugTracer $
           "As leader of slot " <> condense currentSlot <> " I produce: " <>
           condense newBlock
