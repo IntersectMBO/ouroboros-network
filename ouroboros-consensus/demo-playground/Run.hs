@@ -8,7 +8,9 @@ module Run (
       runNode
     ) where
 
-import           Codec.Serialise (encode, decode)
+import           Codec.CBOR.Decoding (Decoder)
+import           Codec.CBOR.Encoding (Encoding)
+import           Codec.Serialise (decode, encode)
 import qualified Control.Concurrent.Async as Async
 import           Control.Concurrent.STM
 import           Control.Monad
@@ -22,6 +24,7 @@ import           Data.Semigroup ((<>))
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block
+import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.Chain (genesisPoint, pointHash)
 import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.Protocol.BlockFetch.Codec
@@ -180,34 +183,60 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
       -- We need to make sure that both nodes read from the same file
       -- We therefore use the convention to distinguish between
       -- upstream and downstream from the perspective of the "lower numbered" node
-      addUpstream' :: NodeKernel IO NodeId (Block p) (Header p)
+      addUpstream' :: ProtocolInfo p
+                   -> NodeKernel IO NodeId (Block p) (Header p)
                    -> NodeId
                    -> IO ()
-      addUpstream' kernel producerNodeId =
+      addUpstream' pInfo@ProtocolInfo{..} kernel producerNodeId =
           addUpstream kernel producerNodeId nodeCommsCS nodeCommsBF
         where
           direction = Upstream (producerNodeId :==>: myNodeId)
           nodeCommsCS = NodeComms {
-              ncCodec    = codecChainSync encode encode decode decode
+              ncCodec    = codecChainSync
+                             (demoEncodeHeader     pInfoConfig)
+                             (encodePoint'         pInfo)
+                             (demoDecodeHeader     pInfoConfig)
+                             (decodePoint'         pInfo)
             , ncWithChan = NamedPipe.withPipeChannel "chain-sync" direction
             }
           nodeCommsBF = NodeComms {
-              ncCodec    = codecBlockFetch encode encode decode decode
+              ncCodec    = codecBlockFetch
+                             (demoEncodeBlock      pInfoConfig)
+                             (demoEncodeHeaderHash pInfoConfig)
+                             (demoDecodeBlock      pInfoConfig)
+                             (demoDecodeHeaderHash pInfoConfig)
             , ncWithChan = NamedPipe.withPipeChannel "block-fetch" direction
             }
 
-      addDownstream' :: NodeKernel IO NodeId (Block p) (Header p)
+      addDownstream' :: ProtocolInfo p
+                     -> NodeKernel IO NodeId (Block p) (Header p)
                      -> NodeId
                      -> IO ()
-      addDownstream' kernel consumerNodeId =
+      addDownstream' pInfo@ProtocolInfo{..} kernel consumerNodeId =
           addDownstream kernel nodeCommsCS nodeCommsBF
         where
           direction = Downstream (myNodeId :==>: consumerNodeId)
           nodeCommsCS = NodeComms {
-              ncCodec    = codecChainSync encode encode decode decode
+              ncCodec    = codecChainSync
+                             (demoEncodeHeader     pInfoConfig)
+                             (encodePoint'         pInfo)
+                             (demoDecodeHeader     pInfoConfig)
+                             (decodePoint'         pInfo)
             , ncWithChan = NamedPipe.withPipeChannel "chain-sync" direction
             }
           nodeCommsBF = NodeComms {
-              ncCodec    = codecBlockFetch encode encode decode decode
+              ncCodec    = codecBlockFetch
+                             (demoEncodeBlock      pInfoConfig)
+                             (demoEncodeHeaderHash pInfoConfig)
+                             (demoDecodeBlock      pInfoConfig)
+                             (demoDecodeHeaderHash pInfoConfig)
             , ncWithChan = NamedPipe.withPipeChannel "block-fetch" direction
             }
+
+      encodePoint' :: ProtocolInfo p -> Point (Header p) -> Encoding
+      encodePoint' ProtocolInfo{..} =
+          Block.encodePoint $ Block.encodeChainHash (demoEncodeHeaderHash pInfoConfig)
+
+      decodePoint' :: forall s. ProtocolInfo p -> Decoder s (Point (Header p))
+      decodePoint' ProtocolInfo{..} =
+          Block.decodePoint $ Block.decodeChainHash (demoDecodeHeaderHash pInfoConfig)

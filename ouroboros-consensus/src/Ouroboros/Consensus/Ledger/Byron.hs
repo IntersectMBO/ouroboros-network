@@ -13,6 +13,8 @@
 
 module Ouroboros.Consensus.Ledger.Byron where
 
+import           Codec.CBOR.Decoding (Decoder)
+import           Codec.CBOR.Encoding (Encoding)
 import           Codec.Serialise (Serialise (..))
 import           Control.Monad.Except
 import           Crypto.Random (MonadRandom)
@@ -24,6 +26,7 @@ import           Data.FingerTree (Measured (..))
 import           Data.Foldable (find)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Maybe (fromJust)
 import qualified Data.Sequence as Seq
 import           Data.Typeable
 import           Data.Word
@@ -72,6 +75,7 @@ instance Condense (ByronBlock cfg) where
   condense = show -- TODO
 
 newtype ByronHeader = ByronHeader { unByronHeader :: CC.Block.AHeader ByteString }
+  deriving (Eq, Show)
 
 byronHeader :: ByronBlock cfg -> ByronHeader
 byronHeader (ByronBlock b) = ByronHeader (CC.Block.blockHeader b)
@@ -295,10 +299,12 @@ data ByronDemoConfig = ByronDemoConfig {
       -- | Mapping from generic keys to core node IDs
       --
       -- TODO: Think about delegation
-      pbftNodes :: Map Crypto.VerificationKey CoreNodeId
-    , protocolMagic :: Crypto.ProtocolMagic
-    , protocolVersion :: CC.Update.ProtocolVersion
-    , softwareVersion :: CC.Update.SoftwareVersion
+      pbftNodes           :: Map Crypto.VerificationKey CoreNodeId
+
+    , pbftProtocolMagic   :: Crypto.ProtocolMagic
+    , pbftProtocolVersion :: CC.Update.ProtocolVersion
+    , pbftSoftwareVersion :: CC.Update.SoftwareVersion
+    , pbftEpochSlots      :: CC.Slot.EpochSlots
     }
 
 forgeByronDemoBlock
@@ -361,3 +367,23 @@ forgeByronDemoBlock = undefined
         , CC.Block.tsBodyProof  = proof
         }
 --}
+
+{-------------------------------------------------------------------------------
+  Serialisation
+-------------------------------------------------------------------------------}
+
+encodeByronDemoHeader :: NodeConfig (ExtNodeConfig ByronDemoConfig (PBft PBftCardanoCrypto))
+                      -> ByronHeader -> Encoding
+encodeByronDemoHeader cfg =
+      CC.Block.toCBORHeader (pbftEpochSlots . encNodeConfigExt $ cfg)
+    . fmap (const ())
+    . unByronHeader
+
+decodeByronDemoHeader :: NodeConfig (ExtNodeConfig ByronDemoConfig (PBft PBftCardanoCrypto))
+                      -> Decoder s ByronHeader
+decodeByronDemoHeader cfg =
+    fmap (ByronHeader . annotate . fromJust) $
+      CC.Block.fromCBORHeader (pbftEpochSlots . encNodeConfigExt $ cfg)
+  where
+    annotate :: CC.Block.Header -> CC.Block.AHeader ByteString
+    annotate = undefined

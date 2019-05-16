@@ -34,7 +34,9 @@ module Ouroboros.Consensus.Demo (
   , HasCreator(..)
   ) where
 
-import           Codec.Serialise (Serialise)
+import           Codec.CBOR.Decoding (Decoder)
+import           Codec.CBOR.Encoding (Encoding)
+import qualified Codec.Serialise as Serialise
 import           Control.Monad.Except
 import           Crypto.Random (MonadRandom)
 import qualified Data.Bimap as Bimap
@@ -44,9 +46,11 @@ import           Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Maybe (fromJust)
 import qualified Data.Sequence as Seq
 import qualified Data.Set as Set
 
+import qualified Cardano.Binary as Cardano.Binary
 import qualified Cardano.Chain.Block as Cardano.Block
 import qualified Cardano.Chain.Genesis as Cardano.Genesis
 import qualified Cardano.Crypto as Cardano
@@ -408,7 +412,18 @@ class ( OuroborosTag p
                  -> IsLeader p
                  -> m (Block p)
 
-  demoGetHeader :: Block p -> Header p
+  demoGetHeader        :: Block p -> Header p
+
+  -- We provide context for the encoders and decoders in case they need access
+  -- to stuff like "number of slots in an epoch"
+
+  demoEncodeHeader     :: NodeConfig p -> Header p -> Encoding
+  demoEncodeHeaderHash :: NodeConfig p -> HeaderHash (Header p) -> Encoding
+  demoEncodeBlock      :: NodeConfig p -> Block p -> Encoding
+  demoDecodeHeader     :: forall s. NodeConfig p -> Decoder s (Header p)
+  demoDecodeBlock      :: forall s. NodeConfig p -> Decoder s (Block p)
+  demoDecodeHeaderHash :: forall s. NodeConfig p -> Decoder s (HeaderHash (Header p))
+
 
 runDemo :: DemoProtocol p -> Dict (RunDemo p)
 runDemo DemoBFT{}            = Dict
@@ -418,21 +433,51 @@ runDemo DemoMockPBFT{}       = Dict
 runDemo DemoRealPBFT{}       = Dict
 
 instance RunDemo DemoBFT where
-  demoForgeBlock = forgeSimpleBlock
-  demoGetHeader  = simpleHeader
+  demoForgeBlock       = forgeSimpleBlock
+  demoGetHeader        = simpleHeader
+  demoEncodeHeader     = const Serialise.encode
+  demoEncodeHeaderHash = const Serialise.encode
+  demoEncodeBlock      = const Serialise.encode
+  demoDecodeHeader     = const Serialise.decode
+  demoDecodeBlock      = const Serialise.decode
+  demoDecodeHeaderHash = const Serialise.decode
 
 instance RunDemo DemoPraos where
-  demoForgeBlock = forgeSimpleBlock
-  demoGetHeader  = simpleHeader
+  demoForgeBlock       = forgeSimpleBlock
+  demoGetHeader        = simpleHeader
+  demoEncodeHeader     = const Serialise.encode
+  demoEncodeHeaderHash = const Serialise.encode
+  demoEncodeBlock      = const Serialise.encode
+  demoDecodeHeader     = const Serialise.decode
+  demoDecodeBlock      = const Serialise.decode
+  demoDecodeHeaderHash = const Serialise.decode
 
 instance RunDemo DemoLeaderSchedule where
-  demoForgeBlock = forgeSimpleBlock
-  demoGetHeader  = simpleHeader
+  demoForgeBlock       = forgeSimpleBlock
+  demoGetHeader        = simpleHeader
+  demoEncodeHeader     = const Serialise.encode
+  demoEncodeHeaderHash = const Serialise.encode
+  demoEncodeBlock      = const Serialise.encode
+  demoDecodeHeader     = const Serialise.decode
+  demoDecodeBlock      = const Serialise.decode
+  demoDecodeHeaderHash = const Serialise.decode
 
 instance RunDemo DemoMockPBFT where
-  demoForgeBlock = forgeSimpleBlock
-  demoGetHeader  = simpleHeader
+  demoForgeBlock       = forgeSimpleBlock
+  demoGetHeader        = simpleHeader
+  demoEncodeHeader     = const Serialise.encode
+  demoEncodeHeaderHash = const Serialise.encode
+  demoEncodeBlock      = const Serialise.encode
+  demoDecodeHeader     = const Serialise.decode
+  demoDecodeBlock      = const Serialise.decode
+  demoDecodeHeaderHash = const Serialise.decode
 
 instance RunDemo DemoRealPBFT where
-  demoForgeBlock = forgeByronDemoBlock
-  demoGetHeader  = byronHeader
+  demoForgeBlock       = forgeByronDemoBlock
+  demoGetHeader        = byronHeader
+  demoEncodeHeader     = encodeByronDemoHeader
+  demoEncodeHeaderHash = undefined
+  demoEncodeBlock      = undefined
+  demoDecodeHeader     = decodeByronDemoHeader
+  demoDecodeBlock      = undefined
+  demoDecodeHeaderHash = undefined
