@@ -80,6 +80,8 @@ import           Ouroboros.Consensus.Protocol.Praos
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.Condense
 
+import qualified Test.Cardano.Chain.Genesis.Dummy as Dummy
+
 {-------------------------------------------------------------------------------
   Abstract over the various protocols
 -------------------------------------------------------------------------------}
@@ -249,12 +251,13 @@ protocolInfo (DemoRealPBFT params)
                     (fst (mkKey n), CoreNodeId n)
                     | n <- [0 .. numCoreNodes]
                     ]
-              , pbftProtocolMagic = Cardano.Genesis.configProtocolMagic gc
+              , pbftProtocolMagic   = Cardano.Genesis.configProtocolMagic gc
               , pbftProtocolVersion = Cardano.Update.ProtocolVersion 3 1 4
               , pbftSoftwareVersion = Cardano.Update.SoftwareVersion (Cardano.Update.ApplicationName "harry the hamster") 1
               , pbftGenesisHash     = coerce Cardano.Genesis.configGenesisHeaderHash gc
               , pbftEpochSlots      = Cardano.Genesis.configEpochSlots gc
               , pbftGenesisDlg      = Cardano.Genesis.configHeavyDelegation gc
+              , pbftSecrets         = Dummy.dummyGeneratedSecrets
               }
           }
       , pInfoInitLedger = ExtLedgerState {
@@ -384,19 +387,6 @@ instance HasCreator DemoRealPBFT where
              . Cardano.Block.headerSignature
              . Cardano.Block.blockHeader
              $ b
-
-
-{-
-type DemoProtocolConstraints p =
-
-demoProtocolConstraints :: DemoProtocol p -> Dict (DemoProtocolConstraints p)
-demoProtocolConstraints DemoBFT{}            = Dict
-demoProtocolConstraints DemoPraos{}          = Dict
-demoProtocolConstraints DemoLeaderSchedule{} = Dict
-demoProtocolConstraints DemoMockPBFT{}       = Dict
-demoProtocolConstraints DemoRealPBFT{}       = Dict
-
--}
 
 {-------------------------------------------------------------------------------
   Additional functions needed to run the demo

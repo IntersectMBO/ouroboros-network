@@ -66,6 +66,7 @@ import           Ouroboros.Consensus.Protocol.PBFT
 import           Ouroboros.Consensus.Util.Condense
 
 import qualified Test.Cardano.Chain.Genesis.Dummy as Dummy
+
 -- | Hard-coded number of slots per epoch in the Byron era
 byronEpochSlots :: CC.Slot.EpochSlots
 byronEpochSlots = CC.Slot.EpochSlots 21600
