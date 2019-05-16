@@ -9,6 +9,7 @@
 module Ouroboros.Network.Socket (
     -- * High level socket interface
       runNetworkNode
+    , runNetworkNode'
     , withNetworkNode
     , withConnection
 
@@ -22,7 +23,6 @@ module Ouroboros.Network.Socket (
     ) where
 
 import           Control.Concurrent.Async
-import           Control.Exception (evaluate)
 import           Control.Monad (when, void)
 -- TODO: remove this, it will not be needed when `orElse` PR will be merged.
 import qualified Control.Monad.STM as STM
@@ -47,7 +47,6 @@ import qualified Ouroboros.Network.Mux as Mx
 import qualified Ouroboros.Network.Mux.Types as Mx
 import           Ouroboros.Network.Mux.Types (MuxBearer)
 import           Ouroboros.Network.Mux.Interface ( Connection (..)
-                                                 , WithConnection
                                                  , NetworkInterface (..)
                                                  , MuxApplication
                                                  , clientApplication
@@ -149,7 +148,9 @@ withConnection
      , Bounded ptcl
      )
   => (ptcl -> Channel IO ByteString -> IO ())
-  -> WithConnection IO Socket.AddrInfo (Connection IO) r
+  -> Socket.AddrInfo
+  -> ((Connection IO) -> IO r)
+  -> IO r
 withConnection app remoteAddr kConn =
     bracket
       (Socket.socket (Socket.addrFamily remoteAddr) Socket.Stream Socket.defaultProtocol)
@@ -303,6 +304,7 @@ runNetworkNode ni@NetworkInterface {nodeAddress} acceptException mHandleConnecti
         Just (acceptConn, completeConn) ->
           bracket (mkListeningSocket True nodeAddress) Socket.close $ \sd ->
             runNetworkNode' sd ni acceptException acceptConn completeConn main st
+
 -- |
 -- Run a node using @'NetworkInterface'@ using a socket.  It will start to
 -- listen on incomming connections on the supplied @'nodeAddress'@, and returns

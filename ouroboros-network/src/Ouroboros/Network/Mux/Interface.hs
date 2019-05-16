@@ -22,10 +22,6 @@ module Ouroboros.Network.Mux.Interface
 
   -- * Run mux layer on initiated connections
   , Connection (..)
-  , WithConnection
-  , runWithConnection
-  , runWithConnectionK
-  , runWithConnectionAsync
 
   -- * Auxiliary functions
   , miniProtocolDescription
@@ -198,7 +194,7 @@ data NetworkNode addr m r = NetworkNode {
       --
       -- This function will run client side of mux version negotation and then
       -- start a the list protocols given by @'NetworkInterface'@.
-      connect :: WithConnection m addr (Connection m) r,
+      connect :: addr -> (Connection m -> m r) -> m r,
 
       -- |
       -- This will cancel the thread that is listening for new connections and
@@ -214,42 +210,6 @@ newtype Connection m = Connection {
       runConnection :: m ()
     }
 
--- |
--- CPS style for runing mux layer
---
-type WithConnection m addr conn r = addr -> (conn -> m r) -> m r
-
--- |
--- Run @'WithConnection' m addr (Connection m) ()@ in the current thread.  The
--- implemntation of @'WithConnection'@ handles resouce aquisition,
--- see @'Ouroboros.Network.Socket.withNetworkNode'@.
---
-runWithConnection :: WithConnection m addr (Connection m) () -> addr -> m ()
-runWithConnection withConn addr = withConn addr runConnection
-
--- |
--- Run @'WithConnection'@ with a supplied @addr@ and continuation.
---
-runWithConnectionK :: WithConnection m addr conn r -> addr -> (conn -> m r) -> m r
-runWithConnectionK withConn conn k = withConn conn k
-
--- |
--- Run @'WithConnectionAsync' m addr (Connection m) ()@ in another thread giving
--- acces to the @'Async' m@.  Note: when the call back @k@ will terminate the
--- connection will be teared down (by @'WithConnection'@) and the spawned thread
--- will be killed.
---
-runWithConnectionAsync :: MonadAsync m
-                    => WithConnection m addr (Connection m) r
-                    -> addr
-                    -> (Async m () -> m r)
-                    -> m r
-runWithConnectionAsync withConn addr0 k0 = runWithConnectionK (asAsync withConn) addr0 k0
-    where
-      asAsync :: MonadAsync m
-              => WithConnection m addr (Connection m) r
-              -> WithConnection m addr (Async m ()) r
-      asAsync f = \addr k -> f addr $ \conn -> withAsync (runConnection conn) k
 
 -- |
 -- Transform a @'MuxPeer'@ into @'ProtocolDescription'@ used by the
