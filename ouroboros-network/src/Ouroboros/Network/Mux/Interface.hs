@@ -11,8 +11,7 @@ module Ouroboros.Network.Mux.Interface
   (
   -- * High level interface for the multiplex layer
   -- $interface
-    NetworkInterface (..)
-  , MuxApplication (..)
+    MuxApplication (..)
   , clientApplication
   , serverApplication
   , MuxPeer (..)
@@ -166,23 +165,6 @@ simpleMuxServerApplication fn = MuxServerApplication $ \ptcl channel ->
     MuxPeerPipelined n tracer codec peer -> void $ runPipelinedPeer n tracer codec channel peer
 
 
--- |
--- Public network interface for 'ouroboros-network'.
---
-data NetworkInterface ptcl addr m = NetworkInterface {
-      -- |
-      -- Address of the node to run.  The node will bind to this address, and
-      -- listen for incoming connections.  Some bearers do not have a notion of
-      -- address.
-      --
-      nodeAddress     :: addr,
-
-      -- |
-      -- Map of protocols that we run
-      --
-      nodeApplication :: MuxApplication ptcl m
-   }
-
 -- | Low level network interface.  It can be intiatiated using a socket, pair
 -- of pipes or a pair queues.
 --
@@ -192,8 +174,7 @@ data NetworkNode addr m r = NetworkNode {
       -- will run this to connect with a given list of peer.  But it can also
       -- be used at a later stage to connect to a new peer.
       --
-      -- This function will run client side of mux version negotation and then
-      -- start a the list protocols given by @'NetworkInterface'@.
+      -- This function will run client side of mux version negotation and then run client side of @'MuxAplication@' on it.
       connect :: addr -> (Connection m -> m r) -> m r,
 
       -- |

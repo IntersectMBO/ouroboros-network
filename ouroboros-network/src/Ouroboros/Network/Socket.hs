@@ -47,7 +47,6 @@ import qualified Ouroboros.Network.Mux as Mx
 import qualified Ouroboros.Network.Mux.Types as Mx
 import           Ouroboros.Network.Mux.Types (MuxBearer)
 import           Ouroboros.Network.Mux.Interface ( Connection (..)
-                                                 , NetworkInterface (..)
                                                  , MuxApplication
                                                  , clientApplication
                                                  , NetworkNode (..)
@@ -219,19 +218,22 @@ beginConnection app acceptConn _sockAddr st = do
 
 -- Make the server listening socket
 mkListeningSocket
-    :: Bool
-    -> Socket.AddrInfo
+    :: Socket.Family
+    -> Maybe Socket.SockAddr
     -> IO Socket.Socket
-mkListeningSocket listen addr = do
-    sd <- Socket.socket (Socket.addrFamily addr) Socket.Stream Socket.defaultProtocol
-    when (Socket.addrFamily addr == Socket.AF_INET ||
-          Socket.addrFamily addr == Socket.AF_INET6) $ do
+mkListeningSocket addrFamily_ addr = do
+    sd <- Socket.socket addrFamily_ Socket.Stream Socket.defaultProtocol
+    when (addrFamily_ == Socket.AF_INET ||
+          addrFamily_ == Socket.AF_INET6) $ do
         Socket.setSocketOption sd Socket.ReuseAddr 1
 #if !defined(mingw32_HOST_OS)
         Socket.setSocketOption sd Socket.ReusePort 1
 #endif
-    Socket.bind sd (Socket.addrAddress addr)
-    when listen $ Socket.listen sd 1
+    case addr of
+      Nothing -> pure ()
+      Just addr_ -> do
+        Socket.bind sd addr_
+        Socket.listen sd 1
     pure sd
 
 
@@ -259,15 +261,15 @@ runNetworkNode'
        , Mx.MiniProtocolLimits ptcl
        )
     => Socket.Socket
-    -> NetworkInterface ptcl Socket.AddrInfo IO
+    -> MuxApplication ptcl IO
     -> (SomeException -> IO ())
     -> (st -> STM.STM (Either st st))
     -> Server.CompleteConnection st ()
     -> Server.Main st t
     -> st
     -> IO t
-runNetworkNode' sd NetworkInterface {nodeApplication} acceptException acceptConn complete main st =
-    Server.run (fromSocket sd) acceptException (beginConnection nodeApplication acceptConn) complete main st
+runNetworkNode' sd app acceptException acceptConn complete main st =
+    Server.run (fromSocket sd) acceptException (beginConnection app acceptConn) complete main st
 
 
 -- |
@@ -284,12 +286,13 @@ runNetworkNode
        , Show ptcl
        , Mx.MiniProtocolLimits ptcl
        )
-    => NetworkInterface ptcl Socket.AddrInfo IO
-    -- ^ supplies network address of this node and application run by the
-    -- multiplexing layer
+    => Socket.Family
+    -> MuxApplication ptcl IO
+    -- ^ application run by the multiplexing layer
     -> (SomeException -> IO ())
     -- ^ exception handler of @'Server.run'@
-    -> Maybe ( st -> STM.STM (Either st st)
+    -> Maybe ( Socket.SockAddr
+             , st -> STM.STM (Either st st)
              , Server.CompleteConnection st ()
              )
     -- ^ Connection handlers:
@@ -305,15 +308,15 @@ runNetworkNode
     -> st
     -- ^ initial server state
     -> IO t
-runNetworkNode ni@NetworkInterface {nodeAddress} acceptException mHandleConnection main st =
+runNetworkNode addrFamily app acceptException mHandleConnection main st =
       case mHandleConnection of
         Nothing ->
-          bracket (mkListeningSocket False nodeAddress) Socket.close $ \sd ->
-            runNetworkNode' sd ni acceptException (pure . Left) (\_ -> pure) main st
+          bracket (mkListeningSocket addrFamily Nothing) Socket.close $ \sd ->
+            runNetworkNode' sd app acceptException (pure . Left) (\_ -> pure) main st
 
-        Just (acceptConn, completeConn) ->
-          bracket (mkListeningSocket True nodeAddress) Socket.close $ \sd ->
-            runNetworkNode' sd ni acceptException acceptConn completeConn main st
+        Just (addr, acceptConn, completeConn) ->
+          bracket (mkListeningSocket addrFamily (Just addr)) Socket.close $ \sd ->
+            runNetworkNode' sd app acceptException acceptConn completeConn main st
 
 -- |
 -- Run a node using @'NetworkInterface'@ using a socket.  It will start to
@@ -330,19 +333,21 @@ withNetworkNode
        , Show ptcl
        , Mx.MiniProtocolLimits ptcl
        )
-    => NetworkInterface ptcl Socket.AddrInfo IO
+    => Socket.Family
+    -> Socket.SockAddr
+    -> MuxApplication ptcl IO
     -- ^ network interface, which supplies node address and application run by
     -- the multiplexing layer
     -> (NetworkNode Socket.AddrInfo IO r -> Async () -> IO t)
     -- ^ when the callback returns or throws an exception, the server will
     -- terminate cleaning all its resources
     -> IO t
-withNetworkNode ni@NetworkInterface {nodeAddress, nodeApplication} k =
-  bracket (mkListeningSocket True nodeAddress) Socket.close $ \sd -> do
+withNetworkNode addrFamily addr app k =
+  bracket (mkListeningSocket addrFamily (Just addr)) Socket.close $ \sd -> do
 
-    let clientApp = case clientApplication nodeApplication of
-          Just app -> app
-          Nothing  -> error "withNetworkNode: no client application"
+    let clientApp = case clientApplication app of
+          Just a -> a
+          Nothing -> error "withNetworkNode: no client application"
 
     killVar <- newEmptyTMVarM
     let main :: Server.Main () ()
@@ -354,7 +359,7 @@ withNetworkNode ni@NetworkInterface {nodeAddress, nodeApplication} k =
         node = NetworkNode { connect = withConnection clientApp, killNode }
 
     withAsync
-      (runNetworkNode' sd ni throwIO (pure . Right) complete main ())
+      (runNetworkNode' sd app throwIO (pure . Right) complete main ())
       (\aid -> k node aid)
 
   where
