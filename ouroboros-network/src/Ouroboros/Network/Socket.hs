@@ -217,9 +217,10 @@ beginConnection app acceptConn _sockAddr st = do
 
 -- Make the server listening socket
 mkListeningSocket
-    :: Socket.AddrInfo
+    :: Bool
+    -> Socket.AddrInfo
     -> IO Socket.Socket
-mkListeningSocket addr = do
+mkListeningSocket listen addr = do
     sd <- Socket.socket (Socket.addrFamily addr) Socket.Stream Socket.defaultProtocol
     when (Socket.addrFamily addr == Socket.AF_INET ||
           Socket.addrFamily addr == Socket.AF_INET6) $ do
@@ -228,7 +229,7 @@ mkListeningSocket addr = do
         Socket.setSocketOption sd Socket.ReusePort 1
 #endif
     Socket.bind sd (Socket.addrAddress addr)
-    Socket.listen sd 1
+    when listen $ Socket.listen sd 1
     pure sd
 
 
@@ -269,8 +270,8 @@ runNetworkNode' sd NetworkInterface {nodeApplication} acceptException acceptConn
 
 -- |
 -- Run a node as specified by @'NetworkInterface'@ on a TCP/Unix socket.  The
--- socket will be bound to the @'nodeAddress'@ and it will accept all
--- connections.
+-- socket will be bound to the @'nodeAddress'@. The socket will accept incoming
+-- connection if the connection handlers where defined.
 --
 runNetworkNode
     :: forall ptcl st t.
@@ -286,19 +287,31 @@ runNetworkNode
     -- multiplexing layer
     -> (SomeException -> IO ())
     -- ^ exception handler of @'Server.run'@
-    -> (st -> STM.STM (Either st st))
-    -- ^ either accept or reject a connection
-    -> Server.CompleteConnection st ()
-    -- ^ action run after a connection was terminated
+    -> Maybe ( st -> STM.STM (Either st st)
+             , Server.CompleteConnection st ()
+             )
+    -- ^ Connection handlers:
+    --
+    -- * the first one accepts or rejects a connection  and acction run after
+    -- * the second runs when connection terminated
+    --
+    -- if connection handlers are not given the socket will not listen on
+    -- incoming connections.
     -> Server.Main st t
     -- ^ main STM computation, use @'retry'@ to run a server in an infinite
     -- loop.
     -> st
     -- ^ initial server state
     -> IO t
-runNetworkNode ni@NetworkInterface {nodeAddress} acceptException acceptConn complete main st =
-    bracket (mkListeningSocket nodeAddress) Socket.close $ \sd -> runNetworkNode' sd ni acceptException acceptConn complete main st
+runNetworkNode ni@NetworkInterface {nodeAddress} acceptException mHandleConnection main st =
+      case mHandleConnection of
+        Nothing ->
+          bracket (mkListeningSocket False nodeAddress) Socket.close $ \sd ->
+            runNetworkNode' sd ni acceptException (pure . Left) (\_ -> pure) main st
 
+        Just (acceptConn, completeConn) ->
+          bracket (mkListeningSocket True nodeAddress) Socket.close $ \sd ->
+            runNetworkNode' sd ni acceptException acceptConn completeConn main st
 -- |
 -- Run a node using @'NetworkInterface'@ using a socket.  It will start to
 -- listen on incomming connections on the supplied @'nodeAddress'@, and returns
@@ -322,7 +335,7 @@ withNetworkNode
     -- terminate cleaning all its resources
     -> IO t
 withNetworkNode ni@NetworkInterface {nodeAddress, nodeApplication} k =
-  bracket (mkListeningSocket nodeAddress) Socket.close $ \sd -> do
+  bracket (mkListeningSocket True nodeAddress) Socket.close $ \sd -> do
 
     let clientApp = case clientApplication nodeApplication of
           Just app -> app
