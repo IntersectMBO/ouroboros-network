@@ -8,6 +8,7 @@
 --
 module Ouroboros.Network.Socket (
       withNetworkNode
+    , withConnection
     , socketAsMuxBearer
 
     -- * Auxiliary functions
@@ -37,6 +38,7 @@ import           Ouroboros.Network.Mux.Types (MuxBearer)
 import           Ouroboros.Network.Mux.Interface ( Connection (..)
                                                  , WithConnection
                                                  , NetworkInterface (..)
+                                                 , MuxApplication
                                                  , NetworkNode (..)
                                                  , miniProtocolDescription
                                                  )
@@ -122,6 +124,56 @@ hexDump :: BL.ByteString -> String -> IO ()
 hexDump buf out | BL.empty == buf = say out
 hexDump buf out = hexDump (BL.tail buf) (out ++ printf "0x%02x " (BL.head buf))
 
+
+-- |
+-- Connect to a remote node.  It is using bracket to enclose the underlying
+-- socket aquisition.  This implies that when the continuation exits the
+-- underlying bearer will get closed.
+withConnection
+  :: forall ptcl r.
+     Mx.ProtocolEnum ptcl
+  => Ord ptcl
+  => Enum ptcl
+  => Bounded ptcl
+  => MuxApplication ptcl IO
+  -> WithConnection IO Socket.AddrInfo (Connection IO) r
+withConnection app remoteAddr kConn =
+    bracket
+      (Socket.socket (Socket.addrFamily remoteAddr) Socket.Stream Socket.defaultProtocol)
+      Socket.close
+      (\sd -> do
+          when (Socket.addrFamily remoteAddr == Socket.AF_INET ||
+                Socket.addrFamily remoteAddr == Socket.AF_INET6) $ do
+              Socket.setSocketOption sd Socket.ReuseAddr 1
+#if !defined(mingw32_HOST_OS)
+              Socket.setSocketOption sd Socket.ReusePort 1
+#endif
+          Socket.connect sd (Socket.addrAddress remoteAddr)
+          bearer <- socketAsMuxBearer sd
+          Mx.muxBearerSetState bearer Mx.Connected
+          kConn $ Connection {
+              runConnection =
+                Mx.muxStart mpds bearer
+                `catch`
+                handleMuxError
+            }
+      )
+    where
+      mpds :: Mx.MiniProtocolDescriptions ptcl IO
+      mpds = miniProtocolDescription app
+
+      -- catch @'MuxBearerClosed'@ exception; we should ignore it and let @kConn@
+      -- finish; @connect@ will close the underlying socket.
+      --
+      -- Note: we do it only for initiated connections, not ones that the server
+      -- accepted.  The assymetry comes simply from the fact that in initiated
+      -- connections we might want to run a computation that is not interrupted
+      -- by a normal shutdown (a received terminal message throws
+      -- @'Mx.MuxBearerClosed'@ exception).
+      handleMuxError :: Mx.MuxError -> IO ()
+      handleMuxError Mx.MuxError { Mx.errorType = Mx.MuxBearerClosed } = return ()
+      handleMuxError e                                                 = throwIO e
+
 -- |
 -- Run a node using @'NetworkInterface'@ using a socket.  It will start to
 -- listen on incomming connections on the supplied @'nodeAddress'@, and returns
@@ -149,7 +201,7 @@ withNetworkNode NetworkInterface {nodeAddress, nodeApplication} k =
           killNode :: IO ()
           killNode = atomically $ putTMVar killVar ()
 
-          node = NetworkNode { connect, killNode }
+          node = NetworkNode { connect = withConnection nodeApplication, killNode }
 
       withAsync
         (Server.run (fromSocket sd) throwIO acceptConnection complete main ())
@@ -196,43 +248,3 @@ withNetworkNode NetworkInterface {nodeAddress, nodeApplication} k =
           (sd', addr) <- Socket.accept sd
           pure (addr, sd', Socket.close sd')
       }
-
-    -- Connect to a remote node.  Use bracket to close the underlying socket
-    -- when either the continuation ends or an exception is raised.
-    -- This implies that when the continuation exits the underlying bearer will
-    -- get closed.
-    connect :: WithConnection IO Socket.AddrInfo (Connection IO) r
-    connect remoteAddr kConn =
-      bracket
-        (Socket.socket (Socket.addrFamily nodeAddress) Socket.Stream Socket.defaultProtocol)
-        Socket.close
-        (\sd -> do
-            when (Socket.addrFamily nodeAddress == Socket.AF_INET ||
-                  Socket.addrFamily nodeAddress == Socket.AF_INET6) $ do
-                Socket.setSocketOption sd Socket.ReuseAddr 1
-#if !defined(mingw32_HOST_OS)
-                Socket.setSocketOption sd Socket.ReusePort 1
-#endif
-                Socket.bind sd (Socket.addrAddress nodeAddress)
-            Socket.connect sd (Socket.addrAddress remoteAddr)
-            bearer <- socketAsMuxBearer sd
-            Mx.muxBearerSetState bearer Mx.Connected
-            kConn $ Connection {
-                runConnection =
-                  Mx.muxStart mpds bearer
-                  `catch`
-                  handleMuxError
-              }
-        )
-
-    -- catch @'MuxBearerClosed'@ exception; we should ignore it and let @kConn@
-    -- finish; @connect@ will close the underlying socket.
-    --
-    -- Note: we do it only for initiated connections, not ones that the server
-    -- accepted.  The assymetry comes simply from the fact that in initiated
-    -- connections we might want to run a computation that is not interrupted
-    -- by a normal shutdown (a received terminal message throws
-    -- @'Mx.MuxBearerClosed'@ exception).
-    handleMuxError :: Mx.MuxError -> IO ()
-    handleMuxError Mx.MuxError { Mx.errorType = Mx.MuxBearerClosed } = return ()
-    handleMuxError e                                                 = throwIO e
