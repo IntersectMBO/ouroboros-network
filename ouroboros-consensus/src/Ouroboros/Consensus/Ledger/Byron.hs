@@ -22,7 +22,6 @@ import           Control.Monad.Except
 import           Crypto.Random (MonadRandom)
 import           Data.Bifunctor (bimap)
 import qualified Data.Bimap as Bimap
-import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Coerce
 import           Data.FingerTree (Measured (..))
@@ -37,8 +36,8 @@ import           Data.Typeable
 import qualified Data.Vector as V
 import           Data.Word
 
-import           Cardano.Binary (Annotated (..), ByteSpan, ToCBOR, fromCBOR,
-                     reAnnotate, serializeEncoding, slice, toCBOR)
+import           Cardano.Binary (Annotated (..), ByteSpan, fromCBOR, reAnnotate,
+                     slice, toCBOR)
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.Common as CC.Common
 import qualified Cardano.Chain.Delegation as Delegation
@@ -388,25 +387,19 @@ forgeByronDemoBlock cfg curSlot curNo prevHash txs () = do
   where
     ByronDemoConfig {..} = encNodeConfigExt cfg
 
-    toBS :: Encoding -> ByteString
-    toBS = Lazy.toStrict . serializeEncoding
+    txPayload :: CC.UTxO.TxPayload
+    txPayload = CC.UTxO.mkTxPayload $ map (elaborateTx cfg) (Map.elems txs)
 
-    txPayload :: CC.UTxO.ATxPayload ByteString
-    txPayload = CC.UTxO.ATxPayload $ map (elaborateTx cfg) (Map.elems txs)
-
-    mkBSAnn :: (Functor f, ToCBOR (f ())) => (ByteString -> f a) -> f a
-    mkBSAnn f = let x = f $ toBS $ toCBOR $ void x in x
-
-    body :: CC.Block.ABody ByteString
+    body :: CC.Block.Body
     body = CC.Block.ABody {
           CC.Block.bodyTxPayload     = txPayload
         , CC.Block.bodySscPayload    = CC.Ssc.SscPayload
-        , CC.Block.bodyDlgPayload    = mkBSAnn (Delegation.UnsafeAPayload [])
-        , CC.Block.bodyUpdatePayload = mkBSAnn (CC.Update.APayload Nothing [])
+        , CC.Block.bodyDlgPayload    = Delegation.UnsafeAPayload [] ()
+        , CC.Block.bodyUpdatePayload = CC.Update.APayload Nothing [] ()
         }
 
     proof :: CC.Block.Proof
-    proof = CC.Block.mkProof (void body)
+    proof = CC.Block.mkProof body
 
     prevHeaderHash :: CC.Block.HeaderHash
     prevHeaderHash = case prevHash of
@@ -427,13 +420,14 @@ forgeByronDemoBlock cfg curSlot curNo prevHash txs () = do
         }
 
     forgeBlock :: ByronPayload -> ByronBlock ByronDemoConfig
-    forgeBlock ouroborosPayload = ByronBlock block
+    forgeBlock ouroborosPayload =
+        ByronBlock $ annotateBlock pbftEpochSlots block
       where
-        block :: CC.Block.ABlock ByteString
+        block :: CC.Block.Block
         block = CC.Block.ABlock {
               CC.Block.blockHeader     = header
             , CC.Block.blockBody       = body
-            , CC.Block.blockAnnotation = toBS $ encodeByronDemoBlock cfg (ByronBlock block)
+            , CC.Block.blockAnnotation = ()
             }
 
         headerGenesisKey :: Crypto.VerificationKey
@@ -454,26 +448,23 @@ forgeByronDemoBlock cfg curSlot curNo prevHash txs () = do
             sig :: Crypto.Signature Encoding
             SignedDSIGN (SigCardanoDSIGN sig) = pbftSignature $ encPayloadP ouroborosPayload
 
-        header :: CC.Block.AHeader ByteString
+        header :: CC.Block.Header
         header = CC.Block.AHeader {
-              CC.Block.aHeaderProtocolMagicId = ann' (Crypto.getProtocolMagicId pbftProtocolMagic)
-            , CC.Block.aHeaderPrevHash        = ann (encodeByronDemoHeaderHash cfg) prevHeaderHash
-            , CC.Block.aHeaderSlot            = ann' (convertFlatSlotId curSlot)
-            , CC.Block.aHeaderDifficulty      = ann' (coerce curNo)
+              CC.Block.aHeaderProtocolMagicId = ann (Crypto.getProtocolMagicId pbftProtocolMagic)
+            , CC.Block.aHeaderPrevHash        = ann prevHeaderHash
+            , CC.Block.aHeaderSlot            = ann (convertFlatSlotId curSlot)
+            , CC.Block.aHeaderDifficulty      = ann (coerce curNo)
             , CC.Block.headerProtocolVersion  = pbftProtocolVersion
             , CC.Block.headerSoftwareVersion  = pbftSoftwareVersion
-            , CC.Block.aHeaderProof           = ann' proof
+            , CC.Block.aHeaderProof           = ann proof
             , CC.Block.headerGenesisKey       = headerGenesisKey
             , CC.Block.headerSignature        = headerSignature
-            , CC.Block.headerAnnotation       = toBS $ encodeByronDemoHeader cfg (ByronHeader header)
-            , CC.Block.headerExtraAnnotation  = Strict.empty
+            , CC.Block.headerAnnotation       = ()
+            , CC.Block.headerExtraAnnotation  = ()
             }
 
-        ann :: (b -> Encoding) -> b -> Annotated b ByteString
-        ann enc b = Annotated b (toBS (enc b))
-
-        ann' :: ToCBOR b => b -> Annotated b ByteString
-        ann' = ann toCBOR
+        ann :: b -> Annotated b ()
+        ann b = Annotated b ()
 
 {-------------------------------------------------------------------------------
   Elaboration from our mock transactions into transactions on the real ledger
@@ -492,8 +483,8 @@ forgeByronDemoBlock cfg curSlot curNo prevHash txs () = do
 --
 -- This is adapted from 'Test.Cardano.Chain.Elaboration.UTxO.elaborateTxWits'
 elaborateTx :: NodeConfig (ExtNodeConfig ByronDemoConfig (PBft PBftCardanoCrypto))
-            -> Mock.Tx -> CC.UTxO.ATxAux ByteString
-elaborateTx cfg (Mock.Tx ins outs) = annotateTx $ CC.UTxO.mkTxAux tx witness
+            -> Mock.Tx -> CC.UTxO.TxAux
+elaborateTx cfg (Mock.Tx ins outs) = CC.UTxO.mkTxAux tx witness
   where
     -- mockInp and mockOut in [0 .. 3] (index of rich actor)
     [(_hash, mockInp)]    = Set.toList ins
@@ -571,15 +562,19 @@ elaborateTx cfg (Mock.Tx ins outs) = annotateTx $ CC.UTxO.mkTxAux tx witness
     assumeBound (Left _err) = error "elaborateTx: too much"
     assumeBound (Right ll)  = ll
 
-annotateTx :: CC.UTxO.TxAux -> CC.UTxO.ATxAux ByteString
-annotateTx =
-      (\bs -> splice bs (CBOR.deserialiseFromBytes fromCBOR bs))
+{-------------------------------------------------------------------------------
+  Add annotation
+-------------------------------------------------------------------------------}
+
+annotateBlock :: CC.Slot.EpochSlots -> CC.Block.Block -> CC.Block.ABlock ByteString
+annotateBlock epochSlots =
+      (\bs -> splice bs (CBOR.deserialiseFromBytes (CC.Block.fromCBORABlock epochSlots) bs))
     . CBOR.toLazyByteString
-    . toCBOR
+    . CC.Block.toCBORBlock epochSlots
   where
     splice :: Lazy.ByteString
-           -> Either err (Lazy.ByteString, CC.UTxO.ATxAux ByteSpan)
-           -> CC.UTxO.ATxAux ByteString
+           -> Either err (Lazy.ByteString, CC.Block.ABlock ByteSpan)
+           -> CC.Block.ABlock ByteString
     splice _ (Left _err) =
       error "eloborateTx: serialization roundtrip failure"
     splice bs (Right (_leftover, txAux)) =
