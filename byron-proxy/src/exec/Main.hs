@@ -28,7 +28,7 @@ import qualified Cardano.Binary as Binary
 import qualified Cardano.Chain.Block as Cardano
 import qualified Cardano.Chain.Slotting as Cardano
 
-import qualified Pos.Chain.Block as CSL (Block, BlockHeader (..), HeaderHash,
+import qualified Pos.Chain.Block as CSL (Block, BlockHeader (..), GenesisBlock,
                                          genesisBlock0, headerHash)
 import qualified Pos.Chain.Lrc as CSL (genesisLeaders)
 import qualified Pos.Chain.Block as CSL (recoveryHeadersMessage, streamWindow)
@@ -71,14 +71,15 @@ import qualified Logging as Logging
 -- No exception handling is done.
 byronProxyMain
   :: Tracer IO String
-  -> CSL.HeaderHash -- ^ Of genesis, for use as checkpoint when DB is empty.
-                    -- Sadly, old Byron net API doesn't give any meaning to an
-                    -- empty checkpoint set; it'll just fall over.
+  -> CSL.GenesisBlock -- ^ For use as checkpoint when DB is empty. Also will
+                      -- be put into an empty DB.
+                      -- Sadly, old Byron net API doesn't give any meaning to an
+                      -- empty checkpoint set; it'll just fall over.
   -> Cardano.EpochSlots
   -> DB.DB IO
   -> ByronProxy
   -> IO x
-byronProxyMain tracer genesisHash epochSlots db bp = getStdGen >>= mainLoop Nothing
+byronProxyMain tracer genesisBlock epochSlots db bp = getStdGen >>= mainLoop Nothing
 
   where
 
@@ -116,7 +117,13 @@ byronProxyMain tracer genesisHash epochSlots db bp = getStdGen >>= mainLoop Noth
         -- FIXME throw exception, don't use error.
         tip <- DB.readTip db
         (isEBB, tipSlot, tipHash) <- case tip of
-          DB.TipGenesis -> pure (True, 0, genesisHash)
+          -- If the DB is empty, we use the genesis hash as our tip, but also
+          -- we need to put the genesis block into the database, because the
+          -- Byron peer _will not serve it to us_!
+          DB.TipGenesis -> do
+            DB.appendBlocks db $ \dbwrite ->
+              DB.appendBlock dbwrite (DB.LegacyBlockToWrite (Left genesisBlock))
+            pure (True, 0, CSL.headerHash genesisBlock)
           DB.TipEBB   slot hash _ -> pure (True, slot, DB.coerceHashToLegacy hash)
           DB.TipBlock slot bytes -> case Binary.decodeFullAnnotatedBytes "Block or boundary" (Cardano.fromCBORABlockOrBoundary epochSlots) (Lazy.fromStrict bytes) of
             Left decoderError -> error $ "failed to decode block: " ++ show decoderError
@@ -437,8 +444,8 @@ runClient tracer clientOptions genesisConfig epochSlots db = case clientOptions 
         genesisBlock = CSL.genesisBlock0 (CSL.configProtocolMagic genesisConfig)
                                          (CSL.configGenesisHash genesisConfig)
                                          (CSL.genesisLeaders genesisConfig)
-    withByronProxy bpc db $ \bp -> do
-      byronProxyMain stringTracer (CSL.headerHash genesisBlock) epochSlots db bp
+    withByronProxy (contramap (\(a, b) -> ("", a, b)) tracer) bpc db $ \bp -> do
+      byronProxyMain stringTracer genesisBlock epochSlots db bp
 
   where
 
