@@ -23,6 +23,7 @@ import           Data.Bifunctor (bimap)
 import qualified Data.Bimap as Bimap
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
+import           Data.ByteString.Lazy (toStrict)
 import           Data.Coerce
 import           Data.FingerTree (Measured (..))
 import           Data.Foldable (find)
@@ -33,8 +34,8 @@ import qualified Data.Sequence as Seq
 import           Data.Typeable
 import           Data.Word
 
-import           Cardano.Binary (Annotated (..), ByteSpan, fromCBOR, reAnnotate,
-                     toCBOR)
+import           Cardano.Binary (Annotated (..), ByteSpan, ToCBOR, fromCBOR,
+                     reAnnotate, serializeEncoding, toCBOR)
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.Common as CC.Common
 import qualified Cardano.Chain.Delegation as Delegation
@@ -90,7 +91,10 @@ instance Measured BlockMeasure ByronHeader where
   measure = blockMeasure
 
 convertSlot :: CC.Slot.FlatSlotId -> SlotNo
-convertSlot = fromIntegral @Word64 . coerce
+convertSlot = coerce
+
+convertFlatSlotId :: SlotNo -> CC.Slot.FlatSlotId
+convertFlatSlotId = coerce
 
 instance Typeable cfg => HasHeader (ByronBlock cfg) where
   type HeaderHash (ByronBlock cfg) = CC.Block.HeaderHash
@@ -120,7 +124,7 @@ instance HasHeader ByronHeader where
   -- I think Erik or Ru already wrote this very 'HasHeader' instance :/
   blockPrevHash (ByronHeader h) = case CC.Block.headerPrevHash h of
     h' | h' == genesisHash -> GenesisHash
-    _ -> BlockHash $ CC.Block.headerPrevHash $ h
+    _                      -> BlockHash $ CC.Block.headerPrevHash $ h
 
   blockSlot      = convertSlot . CC.Block.headerSlot . unByronHeader
   blockNo        = BlockNo . CC.Common.unChainDifficulty . CC.Block.headerDifficulty . unByronHeader
@@ -307,13 +311,23 @@ data ByronDemoConfig = ByronDemoConfig {
       -- | Mapping from generic keys to core node IDs
       --
       -- TODO: Think about delegation
-      pbftNodes           :: Map Crypto.VerificationKey CoreNodeId
+      pbftNodes           :: Map Crypto.VerificationKey CoreNodeId -- TODO Bimap
 
     , pbftProtocolMagic   :: Crypto.ProtocolMagic
     , pbftProtocolVersion :: CC.Update.ProtocolVersion
     , pbftSoftwareVersion :: CC.Update.SoftwareVersion
     , pbftEpochSlots      :: CC.Slot.EpochSlots
+
+      -- | TODO ok?
+      --
+      -- We can use 'CC.Dummy.dummyGenesisHash' for this
+    , pbftGenesisHash     :: Genesis.GenesisHash
     }
+
+type ByronPayload =
+  Payload
+    (ExtNodeConfig ByronDemoConfig (PBft PBftCardanoCrypto))
+    CC.Block.ToSign
 
 forgeByronDemoBlock
   :: ( HasNodeState_ () m  -- @()@ is the @NodeState@ of PBFT
@@ -324,57 +338,92 @@ forgeByronDemoBlock
   -> BlockNo                               -- ^ Current block number
   -> ChainHash ByronHeader                 -- ^ Previous hash
   -> Map (Hash ShortHash Mock.Tx) Mock.Tx  -- ^ Txs to add in the block
-  -> ()                                    -- Leader proof (IsLeader)
+  -> ()                                    -- ^ Leader proof (IsLeader)
   -> m (ByronBlock ByronDemoConfig)
-forgeByronDemoBlock = undefined
-{-forgeByronDemoBlock cfg curSlot curNo prevHash txs () = do
+forgeByronDemoBlock cfg curSlot curNo prevHash txs () = do
     ouroborosPayload <- mkPayload toCBOR cfg () preHeader
-    return . ByronBlock $ CC.Block.ABlock (header ouroborosPayload) body ()
+    return $ forgeBlock ouroborosPayload
   where
-    pm = protocolMagic cfg
-    pv = protocolVersion cfg
-    sv = softwareVersion cfg
+    ByronDemoConfig {..} = encNodeConfigExt cfg
 
-    -- header :: CC.Block.Header
-    header ouroborosPayload = CC.Block.AHeader
-      (Annotated pm ())
-      (Annotated prevHash ())
-      (Annotated curSlot ())
-      (Annotated (coerce curNo) ())
-      pv
-      sv
-      (Annotated proof ())
-      (pbftIssuer ouroborosPayload)
-      (pbftSignature ouroborosPayload)
-      ()
-      ()
+    toBS :: Encoding -> ByteString
+    toBS = toStrict . serializeEncoding
 
-    body :: CC.Block.Body
-    body = CC.Block.ABody
-      { CC.Block.bodyTxPayload = txPayload
-      , CC.Block.bodySscPayload = CC.Ssc.SscPayload
-      , CC.Block.bodyDlgPayload = Delegation.unsafePayload []
-      , CC.Block.bodyUpdatePayload = CC.Update.payload Nothing []
-      }
-
-    txPayload :: CC.UTxO.TxPayload
+    txPayload :: CC.UTxO.ATxPayload ByteString
     txPayload = undefined
 
-    proof = CC.Block.Proof
-          { CC.Block.proofUTxO       = CC.UTxO.mkTxProof txPayload
-          , CC.Block.proofSsc        = CC.Ssc.SscProof
-          , CC.Block.proofDelegation = hash $ CC.Block.bodyDlgPayload body
-          , CC.Block.proofUpdate     = hash $ CC.Block.bodyUpdatePayload body
-          }
+    mkBSAnn :: (Functor f, ToCBOR (f ())) => (ByteString -> f a) -> f a
+    mkBSAnn f = let x = f $ toBS $ toCBOR $ void x in x
+
+    body :: CC.Block.ABody ByteString
+    body = CC.Block.ABody {
+          CC.Block.bodyTxPayload     = txPayload
+        , CC.Block.bodySscPayload    = CC.Ssc.SscPayload
+        , CC.Block.bodyDlgPayload    = mkBSAnn (Delegation.UnsafeAPayload [])
+        , CC.Block.bodyUpdatePayload = mkBSAnn (CC.Update.APayload Nothing [])
+        }
+
+    proof :: CC.Block.Proof
+    proof = CC.Block.mkProof (void body)
+
+    prevHeaderHash :: CC.Block.HeaderHash
+    prevHeaderHash = case prevHash of
+      GenesisHash -> CC.Block.genesisHeaderHash pbftGenesisHash
+      BlockHash h -> h
+
+    slotId :: CC.Slot.SlotId
+    slotId = CC.Slot.unflattenSlotId pbftEpochSlots $ coerce curSlot
 
     preHeader :: CC.Block.ToSign
     preHeader = CC.Block.ToSign {
-          CC.Block.tsHeaderHash = prevHash
-        , CC.Block.tsSlot       = curSlot
-        , CC.Block.tsDifficulty = coerce curNo
-        , CC.Block.tsBodyProof  = proof
+          CC.Block.tsHeaderHash      = prevHeaderHash
+        , CC.Block.tsSlot            = slotId
+        , CC.Block.tsDifficulty      = coerce curNo
+        , CC.Block.tsBodyProof       = proof
+        , CC.Block.tsProtocolVersion = pbftProtocolVersion
+        , CC.Block.tsSoftwareVersion = pbftSoftwareVersion
         }
---}
+
+    forgeBlock :: ByronPayload -> ByronBlock ByronDemoConfig
+    forgeBlock ouroborosPayload = ByronBlock block
+      where
+        block :: CC.Block.ABlock ByteString
+        block = CC.Block.ABlock {
+              CC.Block.blockHeader     = header
+            , CC.Block.blockBody       = body
+            , CC.Block.blockAnnotation = toBS $ encodeByronDemoBlock cfg (ByronBlock block)
+            }
+
+        headerGenesisKey :: Crypto.VerificationKey
+        VerKeyCardanoDSIGN headerGenesisKey =
+          pbftIssuer $ encPayloadP ouroborosPayload
+
+        headerSignature :: CC.Block.BlockSignature
+        headerSignature = undefined
+          where
+            sig :: Crypto.Signature Encoding
+            SignedDSIGN (SigCardanoDSIGN sig) = pbftSignature $ encPayloadP ouroborosPayload
+
+        header :: CC.Block.AHeader ByteString
+        header = CC.Block.AHeader {
+              CC.Block.aHeaderProtocolMagicId = ann' (Crypto.getProtocolMagicId pbftProtocolMagic)
+            , CC.Block.aHeaderPrevHash        = ann (encodeByronDemoHeaderHash cfg) prevHeaderHash
+            , CC.Block.aHeaderSlot            = ann' (convertFlatSlotId curSlot)
+            , CC.Block.aHeaderDifficulty      = ann' (coerce curNo)
+            , CC.Block.headerProtocolVersion  = pbftProtocolVersion
+            , CC.Block.headerSoftwareVersion  = pbftSoftwareVersion
+            , CC.Block.aHeaderProof           = ann' proof
+            , CC.Block.headerGenesisKey       = headerGenesisKey
+            , CC.Block.headerSignature        = headerSignature
+            , CC.Block.headerAnnotation       = toBS $ encodeByronDemoHeader cfg (ByronHeader header)
+            , CC.Block.headerExtraAnnotation  = BS.empty
+            }
+
+        ann :: (b -> Encoding) -> b -> Annotated b ByteString
+        ann enc b = Annotated b (toBS (enc b))
+
+        ann' :: ToCBOR b => b -> Annotated b ByteString
+        ann' = ann toCBOR
 
 {-------------------------------------------------------------------------------
   Serialisation
