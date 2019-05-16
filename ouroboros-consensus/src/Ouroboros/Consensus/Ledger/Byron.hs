@@ -16,6 +16,7 @@ module Ouroboros.Consensus.Ledger.Byron where
 
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
+import qualified Codec.CBOR.Encoding as Encoding
 import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Write as CBOR
 import           Control.Monad.Except
@@ -570,13 +571,13 @@ annotateBlock :: CC.Slot.EpochSlots -> CC.Block.Block -> CC.Block.ABlock ByteStr
 annotateBlock epochSlots =
       (\bs -> splice bs (CBOR.deserialiseFromBytes (CC.Block.fromCBORABlock epochSlots) bs))
     . CBOR.toLazyByteString
-    . CC.Block.toCBORBlock epochSlots
+    . toCBORBlockWithoutBoundary epochSlots
   where
     splice :: Lazy.ByteString
            -> Either err (Lazy.ByteString, CC.Block.ABlock ByteSpan)
            -> CC.Block.ABlock ByteString
     splice _ (Left _err) =
-      error "eloborateTx: serialization roundtrip failure"
+      error "annotateBlock: serialization roundtrip failure"
     splice bs (Right (_leftover, txAux)) =
       (Lazy.toStrict . slice bs) <$> txAux
 
@@ -637,3 +638,14 @@ decodeByronDemoBlock cfg =
 decodeByronDemoHeaderHash :: NodeConfig (ExtNodeConfig ByronDemoConfig (PBft PBftCardanoCrypto))
                           -> Decoder s (HeaderHash (ByronHeader ByronDemoConfig))
 decodeByronDemoHeaderHash _cfg = fromCBOR
+
+{-------------------------------------------------------------------------------
+  This should be exported from -ledger
+-------------------------------------------------------------------------------}
+
+toCBORBlockWithoutBoundary :: CC.Slot.EpochSlots -> CC.Block.Block -> Encoding
+toCBORBlockWithoutBoundary epochSlots block
+  =  Encoding.encodeListLen 3
+  <> CC.Block.toCBORHeader' epochSlots (CC.Block.blockHeader block)
+  <> toCBOR (CC.Block.blockBody block)
+  <> (Encoding.encodeListLen 1 <> toCBOR (mempty :: Map Word8 Lazy.ByteString))

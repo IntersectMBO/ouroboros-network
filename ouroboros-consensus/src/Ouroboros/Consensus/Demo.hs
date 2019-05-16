@@ -42,14 +42,13 @@ import qualified Codec.Serialise as Serialise
 import           Control.Monad.Except
 import           Crypto.Random (MonadRandom)
 import qualified Data.Bimap as Bimap
-import qualified Data.ByteString as BS
 import           Data.Coerce
 import           Data.Either (fromRight)
 import           Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (fromJust) -- TODO no
+import           Data.Maybe (fromJust)
 import qualified Data.Sequence as Seq
 import qualified Data.Set as Set
 
@@ -278,7 +277,7 @@ protocolInfo (DemoRealPBFT params)
 
     mkKey :: Int -> (Cardano.VerificationKey, Cardano.SigningKey)
     mkKey n = (\x -> (Cardano.KeyGen.toVerification x, x)) . (!! n)
-              . Cardano.Genesis.gsDlgIssuersSecrets . fromJust $ Cardano.Genesis.configGeneratedSecrets gc
+              . Cardano.Genesis.gsRichSecrets . fromJust $ Cardano.Genesis.configGeneratedSecrets gc
 
 {-------------------------------------------------------------------------------
   Support for running the demos
