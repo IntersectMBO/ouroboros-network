@@ -191,6 +191,7 @@ test-suite tests
                        Test.ChainProducerState
                        Test.Ouroboros.Network.Testing.Utils
                        Test.Ouroboros.Network.BlockFetch
+                       Test.Ouroboros.Network.BlockFetch.Orphans
                        Test.Ouroboros.Network.Node
                        Test.Mux
                        Test.Mux.ReqResp
@@ -201,9 +202,11 @@ test-suite tests
                        typed-protocols,
                        io-sim-classes,
                        io-sim            >=0.1 && < 0.2,
+                       iohk-monitoring,
                        ouroboros-network-testing,
                        contra-tracer,
 
+                       aeson,
                        array,
                        async,
                        binary,
@@ -225,7 +228,9 @@ test-suite tests
                        tasty,
                        tasty-quickcheck,
                        text,
-                       time
+                       time,
+                       unordered-containers
+
 
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
