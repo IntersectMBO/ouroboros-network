@@ -19,32 +19,40 @@ import           Data.ByteString.Lazy (ByteString)
 import qualified Codec.CBOR.Encoding as CBOR (Encoding, encodeListLen, encodeWord)
 import qualified Codec.CBOR.Read     as CBOR
 import qualified Codec.CBOR.Decoding as CBOR (Decoder, decodeListLen, decodeWord)
-import           Codec.Serialise.Class (Serialise)
-import qualified Codec.Serialise.Class as CBOR
 
 import           Network.TypedProtocol.Codec
 import           Ouroboros.Network.Codec
 
-import           Ouroboros.Network.Block (HeaderHash)
+import           Ouroboros.Network.Block (HeaderHash, Point)
+import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.Protocol.BlockFetch.Type
 
 codecBlockFetch
   :: forall header body m.
      ( Monad m
      , MonadST m
-     , Serialise header
-     , Serialise body
-     , Serialise (HeaderHash header)
      )
-  => Codec (BlockFetch header body) CBOR.DeserialiseFailure m ByteString
-codecBlockFetch = mkCodecCborLazyBS encode decode
+  => (body              -> CBOR.Encoding)
+  -> (HeaderHash header -> CBOR.Encoding)
+  -> (forall s. CBOR.Decoder s body)
+  -> (forall s. CBOR.Decoder s (HeaderHash header))
+  -> Codec (BlockFetch header body) CBOR.DeserialiseFailure m ByteString
+codecBlockFetch encodeBody encodeHeaderHash
+                decodeBody decodeHeaderHash =
+    mkCodecCborLazyBS encode decode
  where
+  encodePoint' :: Point header -> CBOR.Encoding
+  encodePoint' = Block.encodePoint $ Block.encodeChainHash encodeHeaderHash
+
+  decodePoint' :: forall s. CBOR.Decoder s (Point header)
+  decodePoint' = Block.decodePoint $ Block.decodeChainHash decodeHeaderHash
+
   encode :: forall (pr :: PeerRole) st st'.
             PeerHasAgency pr st
          -> Message (BlockFetch header body) st st'
          -> CBOR.Encoding
   encode (ClientAgency TokIdle) (MsgRequestRange (ChainRange from to)) =
-    CBOR.encodeListLen 2 <> CBOR.encodeWord 0 <> CBOR.encode from <> CBOR.encode to
+    CBOR.encodeListLen 2 <> CBOR.encodeWord 0 <> encodePoint' from <> encodePoint' to
   encode (ClientAgency TokIdle) MsgClientDone =
     CBOR.encodeListLen 1 <> CBOR.encodeWord 1
   encode (ServerAgency TokBusy) MsgStartBatch =
@@ -52,7 +60,7 @@ codecBlockFetch = mkCodecCborLazyBS encode decode
   encode (ServerAgency TokBusy) MsgNoBlocks =
     CBOR.encodeListLen 1 <> CBOR.encodeWord 3
   encode (ServerAgency TokStreaming) (MsgBlock body) =
-    CBOR.encodeListLen 2 <> CBOR.encodeWord 4 <> CBOR.encode body
+    CBOR.encodeListLen 2 <> CBOR.encodeWord 4 <> encodeBody body
   encode (ServerAgency TokStreaming) MsgBatchDone =
     CBOR.encodeListLen 1 <> CBOR.encodeWord 5
 
@@ -64,13 +72,13 @@ codecBlockFetch = mkCodecCborLazyBS encode decode
     key <- CBOR.decodeWord
     case (stok, key) of
       (ClientAgency TokIdle, 0) -> do
-        from <- CBOR.decode
-        to   <- CBOR.decode
+        from <- decodePoint'
+        to   <- decodePoint'
         return $ SomeMessage $ MsgRequestRange (ChainRange from to)
       (ClientAgency TokIdle, 1) -> return $ SomeMessage MsgClientDone
       (ServerAgency TokBusy, 2) -> return $ SomeMessage MsgStartBatch
       (ServerAgency TokBusy, 3) -> return $ SomeMessage MsgNoBlocks
-      (ServerAgency TokStreaming, 4) -> SomeMessage . MsgBlock <$> CBOR.decode
+      (ServerAgency TokStreaming, 4) -> SomeMessage . MsgBlock <$> decodeBody
       (ServerAgency TokStreaming, 5) -> return $ SomeMessage MsgBatchDone
 
       -- TODO proper exceptions
