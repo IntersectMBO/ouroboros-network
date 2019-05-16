@@ -49,6 +49,7 @@ import           Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Maybe (fromJust) -- TODO no
 import qualified Data.Sequence as Seq
 import qualified Data.Set as Set
 
@@ -276,9 +277,8 @@ protocolInfo (DemoRealPBFT params)
         Cardano.Block.initialChainValidationState (pbftGenesisConfig params)
 
     mkKey :: Int -> (Cardano.VerificationKey, Cardano.SigningKey)
-    mkKey n =
-        Cardano.KeyGen.deterministicKeyGen $
-          BS.pack $ replicate 32 (fromIntegral n)
+    mkKey n = (\x -> (Cardano.KeyGen.toVerification x, x)) . (!! n)
+              . Cardano.Genesis.gsDlgIssuersSecrets . fromJust $ Cardano.Genesis.configGeneratedSecrets gc
 
 {-------------------------------------------------------------------------------
   Support for running the demos
