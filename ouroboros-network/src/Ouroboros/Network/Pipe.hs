@@ -85,7 +85,7 @@ pipeAsMuxBearer pcRead pcWrite = do
 
 runNetworkNodeWithPipe
     :: (Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl)
-    => Mx.MuxApplication ptcl IO
+    => Mx.MuxApplication appType ptcl IO
     -> Handle -- ^ read handle
     -> Handle -- ^ write handle
     -> IO ()

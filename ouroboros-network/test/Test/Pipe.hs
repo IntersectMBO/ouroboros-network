@@ -79,7 +79,7 @@ demo chain0 updates = do
     let Just expectedChain = Chain.applyChainUpdates updates chain0
         target = Chain.headPoint expectedChain
 
-        consumerApp :: Mx.MuxApplication Mxt.TestProtocols1 IO
+        consumerApp :: Mx.MuxApplication Mx.ClientApp Mxt.TestProtocols1 IO
         consumerApp = Mx.simpleMuxClientApplication $
           \Mxt.ChainSync1 ->
             Mx.MuxPeer nullTracer
@@ -88,7 +88,7 @@ demo chain0 updates = do
                           (ChainSync.chainSyncClientExample consumerVar
                             (consumerClient done target consumerVar)))
 
-        producerApp :: Mx.MuxApplication Mxt.TestProtocols1 IO
+        producerApp :: Mx.MuxApplication Mx.ServerApp Mxt.TestProtocols1 IO
         producerApp = Mx.simpleMuxServerApplication $
           \Mxt.ChainSync1 ->
             Mx.MuxPeer nullTracer
