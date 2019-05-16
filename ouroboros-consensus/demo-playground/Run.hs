@@ -10,7 +10,6 @@ module Run (
 
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
-import           Codec.Serialise (decode, encode)
 import qualified Control.Concurrent.Async as Async
 import           Control.Concurrent.STM
 import           Control.Monad
@@ -33,7 +32,6 @@ import           Ouroboros.Network.Protocol.ChainSync.Codec
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
 import           Ouroboros.Consensus.Demo
-import           Ouroboros.Consensus.Ledger.Abstract
 import qualified Ouroboros.Consensus.Ledger.Mock as Mock
 import           Ouroboros.Consensus.Node
 import           Ouroboros.Consensus.Util
