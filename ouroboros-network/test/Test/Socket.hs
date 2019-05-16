@@ -182,7 +182,7 @@ prop_socket_send_recv clientAddr serverAddr f xs = do
     res <-
       withNetworkNode serNet $ \_ _ ->
         withNetworkNode cliNet $ \cliNode _ ->
-          runWithConnectionK (connect cliNode) serverAddr $ \conn -> do
+          (connect cliNode) serverAddr $ \conn -> do
             runConnection conn
             atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
 
@@ -270,7 +270,7 @@ prop_socket_client_connect_error _ xs = ioProperty $ do
 
     (res :: Either IOException Bool)
       <- try $ withNetworkNode ni $ \nn _ ->
-                 const False <$> runWithConnection (connect nn) clientAddr
+                 const False <$> (connect nn) clientAddr runConnection
 
     -- XXX Disregarding the exact exception type
     pure $ either (const True) id res
@@ -319,18 +319,19 @@ demo chain0 updates = do
 
     withNetworkNode producerNet $ \_ _ ->
       withNetworkNode consumerNet $ \consumerNode _ ->
-        runWithConnectionAsync (connect consumerNode) (nodeAddress producerNet) $ \_connAsync -> do
-          void $ fork $ sequence_
-              [ do
-                  threadDelay 10e-4 -- just to provide interest
-                  atomically $ do
-                    p <- readTVar producerVar
-                    let Just p' = CPS.applyChainUpdate update p
-                    writeTVar producerVar p'
-              | update <- updates
-              ]
+        (connect consumerNode) (nodeAddress producerNet) $ \conn ->
+          withAsync (runConnection conn) $ \_connAsync -> do
+            void $ fork $ sequence_
+                [ do
+                    threadDelay 10e-4 -- just to provide interest
+                    atomically $ do
+                      p <- readTVar producerVar
+                      let Just p' = CPS.applyChainUpdate update p
+                      writeTVar producerVar p'
+                | update <- updates
+                ]
 
-          atomically $ takeTMVar done
+            atomically $ takeTMVar done
 
   where
     checkTip target consumerVar = atomically $ do
