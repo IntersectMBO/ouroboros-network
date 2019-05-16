@@ -495,6 +495,7 @@ elaborateTx :: NodeConfig (ExtNodeConfig ByronDemoConfig (PBft PBftCardanoCrypto
             -> Mock.Tx -> CC.UTxO.ATxAux ByteString
 elaborateTx cfg (Mock.Tx ins outs) = annotateTx $ CC.UTxO.mkTxAux tx witness
   where
+    -- mockInp and mockOut in [0 .. 3] (index of rich actor)
     [(_hash, mockInp)]    = Set.toList ins
     [(mockAddr, mockVal)] = outs
     Just mockOut          = lookup mockAddr (zip ["a", "b", "c", "d"] [0..])
@@ -509,6 +510,7 @@ elaborateTx cfg (Mock.Tx ins outs) = annotateTx $ CC.UTxO.mkTxAux tx witness
     txIn :: CC.UTxO.TxIn
     txIn = fst . fst $ initialUtxo Map.! mockInp
 
+    -- TODO: Can we reuse these special "initial balance" addresses? Not sure
     txOut :: CC.UTxO.TxOut
     txOut = CC.UTxO.TxOut {
           txOutAddress = CC.UTxO.txOutAddress $ snd . fst $ initialUtxo Map.! mockOut
