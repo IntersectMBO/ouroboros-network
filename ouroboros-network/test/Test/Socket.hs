@@ -163,10 +163,6 @@ prop_socket_send_recv clientAddr serverAddr f xs = do
             MuxPeer nullTracer
                     ReqResp.codecReqResp
                     (ReqResp.reqRespServerPeer (reqRespServerMapAccumL sv (\a -> pure . f a) 0))
-        serNet = NetworkInterface {
-            nodeAddress = serverAddr,
-            nodeApplication = serverApp
-          }
 
         -- Client Node; only req-resp client
         clientApp = simpleMuxClientApplication $
@@ -174,14 +170,10 @@ prop_socket_send_recv clientAddr serverAddr f xs = do
             MuxPeer nullTracer
                     ReqResp.codecReqResp
                     (ReqResp.reqRespClientPeer (reqRespClientMap cv xs))
-        cliNet = NetworkInterface {
-             nodeAddress = clientAddr,
-             nodeApplication = clientApp
-           }
 
     res <-
-      withNetworkNode serNet $ \_ _ ->
-        withNetworkNode cliNet $ \cliNode _ ->
+      withNetworkNode (Socket.addrFamily serverAddr) (Socket.addrAddress serverAddr) serverApp $ \_ _ ->
+        withNetworkNode (Socket.addrFamily clientAddr) (Socket.addrAddress clientAddr) clientApp $ \cliNode _ ->
           (connect cliNode) serverAddr $ \conn -> do
             runConnection conn
             atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
@@ -263,13 +255,9 @@ prop_socket_client_connect_error _ xs = ioProperty $ do
                       :: Peer (ReqResp.ReqResp Int Int) AsClient ReqResp.StIdle IO ()
                     )
 
-        ni = NetworkInterface {
-            nodeAddress = serverAddr,
-            nodeApplication = app
-          }
 
     (res :: Either IOException Bool)
-      <- try $ withNetworkNode ni $ \nn _ ->
+      <- try $ withNetworkNode (Socket.addrFamily serverAddr) (Socket.addrAddress serverAddr) app $ \nn _ ->
                  const False <$> (connect nn) clientAddr runConnection
 
     -- XXX Disregarding the exact exception type
@@ -300,11 +288,6 @@ demo chain0 updates = do
                         (ChainSync.chainSyncClientExample consumerVar
                         (consumerClient done target consumerVar)))
 
-        consumerNet = NetworkInterface {
-              nodeAddress = consumerAddress,
-              nodeApplication = consumerApp
-            }
-
         producerApp :: MuxApplication Mxt.TestProtocols1 IO
         producerApp = simpleMuxServerApplication $
           \Mxt.ChainSync1 ->
@@ -312,14 +295,9 @@ demo chain0 updates = do
                     (ChainSync.codecChainSync encode encode decode decode)
                     (ChainSync.chainSyncServerPeer (ChainSync.chainSyncServerExample () producerVar))
 
-        producerNet = NetworkInterface {
-              nodeAddress = producerAddress,
-              nodeApplication = producerApp
-            }
-
-    withNetworkNode producerNet $ \_ _ ->
-      withNetworkNode consumerNet $ \consumerNode _ ->
-        (connect consumerNode) (nodeAddress producerNet) $ \conn ->
+    withNetworkNode (Socket.addrFamily producerAddress) (Socket.addrAddress producerAddress) producerApp $ \_ _ ->
+      withNetworkNode (Socket.addrFamily consumerAddress) (Socket.addrAddress consumerAddress) consumerApp $ \consumerNode _ ->
+        (connect consumerNode) producerAddress $ \conn ->
           withAsync (runConnection conn) $ \_connAsync -> do
             void $ fork $ sequence_
                 [ do
