@@ -26,8 +26,13 @@ import           GHC.Generics (Generic)
 import           Ouroboros.Consensus.Crypto.DSIGN.Class
 import           Ouroboros.Consensus.Util.Condense
 
+import qualified Cardano.Chain.Genesis as Cardano.Genesis
+import qualified Test.Cardano.Chain.Genesis.Dummy as Dummy
+
+
+-- TODO: We need to thread this through
 pm :: ProtocolMagicId
-pm = undefined
+pm = Cardano.Genesis.gdProtocolMagicId Dummy.dummyGenesisData
 
 class HasSignTag a where
   signTag :: a -> SignTag
