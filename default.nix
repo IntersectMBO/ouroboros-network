@@ -49,7 +49,8 @@ let
   byronProxyScripts = import ./nix/byron-proxy-scripts.nix {
     inherit commonLib oldCardanoSrc byronProxy;
   };
+  tests = import ./nix/nixos/tests { pkgs = commonLib.pkgs; };
 in {
-  inherit byronProxyScripts;
+  inherit byronProxyScripts tests;
   inherit (nixTools) nix-tools;
 }
