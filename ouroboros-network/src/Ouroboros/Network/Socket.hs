@@ -1,4 +1,6 @@
 {-# LANGUAGE CPP                 #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -10,6 +12,7 @@ module Ouroboros.Network.Socket (
     -- * High level socket interface
       runNetworkNode
     , runNetworkNode'
+    , withServerNode
     , withNetworkNode
     , withConnection
 
@@ -46,7 +49,9 @@ import qualified Ouroboros.Network.Server.Socket as Server
 import qualified Ouroboros.Network.Mux as Mx
 import qualified Ouroboros.Network.Mux.Types as Mx
 import           Ouroboros.Network.Mux.Types (MuxBearer)
-import           Ouroboros.Network.Mux.Interface ( MuxApplication
+import           Ouroboros.Network.Mux.Interface ( HasClient
+                                                 , HasServer
+                                                 , MuxApplication
                                                  , clientApplication
                                                  , NetworkNode (..)
                                                  , miniProtocolDescription
@@ -148,8 +153,12 @@ withConnection
      , Mx.MiniProtocolLimits ptcl
      )
   => (ptcl -> Channel IO ByteString -> IO ())
+  -- ^ application to run over the connection
   -> Socket.AddrInfo
+  -- ^ address of the peer we want to connect to
   -> (IO () -> IO r)
+  -- ^ callback which receives application which is running over created
+  -- connection; It maybe throw @'IO'@ excpetions.
   -> IO r
 withConnection app remoteAddr kConn =
     bracket
@@ -201,7 +210,7 @@ beginConnection
        , Show ptcl
        , Mx.MiniProtocolLimits ptcl
        )
-    => MuxApplication ptcl IO
+    => MuxApplication appType ptcl IO
     -> (st -> STM.STM (Either st st)) -- either accept or reject a connection.
     -> Server.BeginConnection addr Socket.Socket st ()
 beginConnection app acceptConn _sockAddr st = do
@@ -249,7 +258,7 @@ fromSocket sd = Server.Socket
 -- Thin wrapper around @'Server.run'@.
 --
 runNetworkNode'
-    :: forall ptcl st t.
+    :: forall ptcl appType st t.
        ( Mx.ProtocolEnum ptcl
        , Ord ptcl
        , Enum ptcl
@@ -258,7 +267,7 @@ runNetworkNode'
        , Mx.MiniProtocolLimits ptcl
        )
     => Socket.Socket
-    -> MuxApplication ptcl IO
+    -> MuxApplication appType ptcl IO
     -> (SomeException -> IO ())
     -> (st -> STM.STM (Either st st))
     -> Server.CompleteConnection st ()
@@ -275,7 +284,7 @@ runNetworkNode' sd app acceptException acceptConn complete main st =
 -- connection if the connection handlers where defined.
 --
 runNetworkNode
-    :: forall ptcl st t.
+    :: forall ptcl appType st t.
        ( Mx.ProtocolEnum ptcl
        , Ord ptcl
        , Enum ptcl
@@ -284,7 +293,7 @@ runNetworkNode
        , Mx.MiniProtocolLimits ptcl
        )
     => Socket.Family
-    -> MuxApplication ptcl IO
+    -> MuxApplication appType ptcl IO
     -- ^ application run by the multiplexing layer
     -> (SomeException -> IO ())
     -- ^ exception handler of @'Server.run'@
@@ -316,35 +325,73 @@ runNetworkNode addrFamily app acceptException mHandleConnection main st =
             runNetworkNode' sd app acceptException acceptConn completeConn main st
 
 -- |
--- Run a node using @'NetworkInterface'@ using a socket.  It will start to
--- listen on incomming connections on the supplied @'nodeAddress'@, and returns
--- @'NetworkNode'@ which let one connect to other peers (by opening a new
--- TCP connection) or shut down the node.
+-- Run a server application.  It will listen on the given address for incoming
+-- connection.
 --
-withNetworkNode
-    :: forall ptcl t r.
+withServerNode
+    :: forall ptcl appType t.
        ( Mx.ProtocolEnum ptcl
        , Ord ptcl
        , Enum ptcl
        , Bounded ptcl
        , Show ptcl
        , Mx.MiniProtocolLimits ptcl
+       , HasServer appType ~ True
        )
-    => Socket.Family
-    -> Socket.SockAddr
-    -> MuxApplication ptcl IO
+    => Socket.AddrInfo
+    -> MuxApplication appType ptcl IO
+    -> (IO () -> Async () -> IO t)
+    -- ^ callback which takes @IO@ action which will terminate the server.
+    -> IO t
+withServerNode addr app k =
+    bracket (mkListeningSocket (Socket.addrFamily addr) (Just $ Socket.addrAddress addr)) Socket.close $ \sd -> do
+
+      killVar <- newEmptyTMVarM
+      let main :: Server.Main () ()
+          main _ = takeTMVar killVar
+
+          killNode :: IO ()
+          killNode = atomically $ putTMVar killVar ()
+
+      withAsync
+        (runNetworkNode' sd app throwIO (pure . Right) complete main ())
+        (\aid -> k killNode aid)
+
+    where
+      -- When a connection completes, we do nothing. State is ().
+      -- Crucially: we don't re-throw exceptions, because doing so would
+      -- bring down the server.
+      complete outcome st = case outcome of
+        Left _  -> pure st
+        Right _ -> pure st
+
+-- |
+-- Run a node using @'NetworkInterface'@ using a socket.  It will start to
+-- listen on incomming connections on the supplied @'nodeAddress'@, and returns
+-- @'NetworkNode'@ which let one connect to other peers (by opening a new
+-- TCP connection) or shut down the node.
+--
+withNetworkNode
+    :: forall ptcl appType t r.
+       ( Mx.ProtocolEnum ptcl
+       , Ord ptcl
+       , Enum ptcl
+       , Bounded ptcl
+       , Show ptcl
+       , Mx.MiniProtocolLimits ptcl
+       , HasClient appType ~ True
+       , HasServer appType ~ True
+       )
+    => Socket.AddrInfo
+    -> MuxApplication appType ptcl IO
     -- ^ network interface, which supplies node address and application run by
     -- the multiplexing layer
     -> (NetworkNode Socket.AddrInfo IO r -> Async () -> IO t)
     -- ^ when the callback returns or throws an exception, the server will
     -- terminate cleaning all its resources
     -> IO t
-withNetworkNode addrFamily addr app k =
-  bracket (mkListeningSocket addrFamily (Just addr)) Socket.close $ \sd -> do
-
-    let clientApp = case clientApplication app of
-          Just a -> a
-          Nothing -> error "withNetworkNode: no client application"
+withNetworkNode addr app k =
+  bracket (mkListeningSocket (Socket.addrFamily addr) (Just $ Socket.addrAddress addr)) Socket.close $ \sd -> do
 
     killVar <- newEmptyTMVarM
     let main :: Server.Main () ()
@@ -353,7 +400,7 @@ withNetworkNode addrFamily addr app k =
         killNode :: IO ()
         killNode = atomically $ putTMVar killVar ()
 
-        node = NetworkNode { connect = withConnection clientApp, killNode }
+        node = NetworkNode { connect = withConnection (clientApplication app), killNode }
 
     withAsync
       (runNetworkNode' sd app throwIO (pure . Right) complete main ())

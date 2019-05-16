@@ -5,13 +5,17 @@
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 -- TODO: this module should be exposed as 'Ouorboros.Network'
 module Ouroboros.Network.Mux.Interface
   (
   -- * High level interface for the multiplex layer
   -- $interface
-    MuxApplication (..)
+    AppType (..)
+  , HasClient
+  , HasServer
+  , MuxApplication (..)
   , clientApplication
   , serverApplication
   , MuxPeer (..)
@@ -54,6 +58,22 @@ import           Ouroboros.Network.Mux.Types
 --   a function that runs the mux layer on it.
 --
 
+data AppType where
+    ClientApp          :: AppType
+    ServerApp          :: AppType
+    ClientAndServerApp :: AppType
+
+
+type family HasClient (appType :: AppType) :: Bool where
+    HasClient ClientApp          = True
+    HasClient ServerApp          = False
+    HasClient ClientAndServerApp = True
+
+type family HasServer (appType :: AppType) :: Bool where
+    HasServer ClientApp          = False
+    HasServer ServerApp          = True
+    HasServer ClientAndServerApp = True
+
 -- |
 -- Application run by mux layer.
 --
@@ -68,49 +88,47 @@ import           Ouroboros.Network.Mux.Types
 --   serving downstream peers using server side of each protocol and getting
 --   updates from upstream peers using client side of each of the protocols.
 --
-data MuxApplication ptcl m where
+data MuxApplication (appType :: AppType) ptcl m  where
   MuxClientApplication
     -- Client application; most simple application will be @'runPeer'@ or
     -- @'runPipelinedPeer'@ supplied with a codec and a @'Peer'@ for each
     -- @ptcl@.  But it allows to handle resources if just application of
     -- @'runPeer'@ is not enough.  It will be run as @'muxInitiator'@.
     :: (ptcl -> Channel m ByteString ->  m ())
-    -> MuxApplication ptcl m
+    -> MuxApplication ClientApp ptcl m
 
   MuxServerApplication
     -- Server application; similarly to the @'MuxClientApplication'@ but it
     -- will be run using @'muxResponder'@.
     :: (ptcl -> Channel m ByteString ->  m ())
-    -> MuxApplication ptcl m
+    -> MuxApplication ServerApp ptcl m
 
   MuxClientAndServerApplication
     -- Client and server applications.
     :: (ptcl -> Channel m ByteString ->  m ())
     -> (ptcl -> Channel m ByteString ->  m ())
-    -> MuxApplication ptcl m
+    -> MuxApplication ClientAndServerApp ptcl m
 
 
 -- |
 -- Accessor for the client side of a @'MuxApplication'@.
 --
 clientApplication
-  :: Functor m
-  => (MuxApplication ptcl m)
-  -> Maybe (ptcl -> Channel m ByteString ->  m ())
-clientApplication (MuxClientApplication app) = Just $ \ptcl channel -> app ptcl channel
-clientApplication (MuxServerApplication _)   = Nothing
-clientApplication (MuxClientAndServerApplication app _) = Just $ \ptcl channel -> app ptcl channel
+  :: HasClient appType ~ True
+  => (MuxApplication appType ptcl m)
+  -> (ptcl -> Channel m ByteString ->  m ())
+clientApplication (MuxClientApplication app) = \ptcl channel -> app ptcl channel
+clientApplication (MuxClientAndServerApplication app _) = \ptcl channel -> app ptcl channel
 
 -- |
 -- Accessor for the client side of a @'MuxApplication'@.
 --
 serverApplication
-  :: Functor m
-  => (MuxApplication ptcl m)
-  -> Maybe (ptcl -> Channel m ByteString ->  m ())
-serverApplication (MuxServerApplication app) = Just app
-serverApplication (MuxClientApplication _)   = Nothing
-serverApplication (MuxClientAndServerApplication _ app) = Just app
+  :: HasServer appType ~ True
+  => (MuxApplication appType ptcl m)
+  -> (ptcl -> Channel m ByteString ->  m ())
+serverApplication (MuxServerApplication app) = app
+serverApplication (MuxClientAndServerApplication _ app) = app
 
 -- |
 -- This type is only necessary to use the @'simpleMuxClient'@ and
@@ -139,7 +157,7 @@ simpleMuxClientApplication
   => MonadAsync m
   => Exception failure
   => (ptcl -> MuxPeer failure m a)
-  -> MuxApplication ptcl m
+  -> MuxApplication ClientApp ptcl m
 simpleMuxClientApplication fn = MuxClientApplication $ \ptcl channel ->
   case fn ptcl of
     MuxPeer tracer codec peer -> void $ runPeer tracer codec channel peer
@@ -155,7 +173,7 @@ simpleMuxServerApplication
   => MonadAsync m
   => Exception failure
   => (ptcl -> MuxPeer failure m a)
-  -> MuxApplication ptcl m
+  -> MuxApplication ServerApp ptcl m
 simpleMuxServerApplication fn = MuxServerApplication $ \ptcl channel ->
   case fn ptcl of
     MuxPeer tracer codec peer -> void $ runPeer tracer codec channel peer
@@ -186,12 +204,12 @@ data NetworkNode addr m r = NetworkNode {
 -- multiplexing layer.
 --
 miniProtocolDescription
-  :: forall m ptcl.
+  :: forall (appType :: AppType) m ptcl.
      ( MonadAsync m
      , MonadCatch m
      , MonadThrow m
      )
-  => MuxApplication ptcl m
+  => MuxApplication appType ptcl m
   -> MiniProtocolDescriptions ptcl m
 miniProtocolDescription (MuxClientApplication client) = \ptcl ->
   MiniProtocolDescription {

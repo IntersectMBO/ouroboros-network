@@ -18,6 +18,7 @@ import           Control.Monad.Class.MonadTimer
 import           Control.Exception (IOException)
 import qualified Data.ByteString.Lazy as BL
 import           Data.List (mapAccumL)
+import           Data.Functor ((<$))
 import qualified Network.Socket as Socket
 import qualified Network.Socket.ByteString.Lazy as Socket (sendAll)
 #ifndef mingw32_HOST_OS
@@ -103,9 +104,8 @@ prop_socket_send_recv_ipv4
   -> [Int]
   -> Property
 prop_socket_send_recv_ipv4 f xs = ioProperty $ do
-    client:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
     server:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
-    prop_socket_send_recv client server f xs
+    prop_socket_send_recv server f xs
 
 
 #ifdef OUROBOROS_NETWORK_IPV6
@@ -115,9 +115,8 @@ prop_socket_send_recv_ipv6 :: (Int ->  Int -> (Int, Int))
                            -> [Int]
                            -> Property
 prop_socket_send_recv_ipv6 request response = ioProperty $ do
-    client:_ <- Socket.getAddrInfo Nothing (Just "::1") (Just "0")
     server:_ <- Socket.getAddrInfo Nothing (Just "::1") (Just "6061")
-    prop_socket_send_recv client server request response
+    prop_socket_send_recv server request response
 #endif
 
 #ifndef mingw32_HOST_OS
@@ -129,11 +128,9 @@ prop_socket_send_recv_unix request response = ioProperty $ do
     let clientName = "client_socket.test"
     cleanUp serverName
     cleanUp clientName
-    let clientAddr = Socket.AddrInfo [] Socket.AF_UNIX  Socket.Stream Socket.defaultProtocol
-                         (Socket.SockAddrUnix clientName) Nothing
-        serverAddr = Socket.AddrInfo [] Socket.AF_UNIX  Socket.Stream Socket.defaultProtocol
+    let serverAddr = Socket.AddrInfo [] Socket.AF_UNIX  Socket.Stream Socket.defaultProtocol
                          (Socket.SockAddrUnix serverName) Nothing
-    r <- prop_socket_send_recv clientAddr serverAddr request response
+    r <- prop_socket_send_recv serverAddr request response
     cleanUp serverName
     cleanUp clientName
     return $ r
@@ -148,11 +145,10 @@ prop_socket_send_recv_unix request response = ioProperty $ do
 -- over a TCP socket. Large DummyPayloads will be split into smaller segments and the
 -- testcases will verify that they are correctly reassembled into the original message.
 prop_socket_send_recv :: Socket.AddrInfo
-                      -> Socket.AddrInfo
                       -> (Int -> Int -> (Int, Int))
                       -> [Int]
                       -> IO Bool
-prop_socket_send_recv clientAddr serverAddr f xs = do
+prop_socket_send_recv serverAddr f xs = do
 
     cv <- newEmptyTMVarM
     sv <- newEmptyTMVarM
@@ -172,11 +168,10 @@ prop_socket_send_recv clientAddr serverAddr f xs = do
                     (ReqResp.reqRespClientPeer (reqRespClientMap cv xs))
 
     res <-
-      withNetworkNode (Socket.addrFamily serverAddr) (Socket.addrAddress serverAddr) serverApp $ \_ _ ->
-        withNetworkNode (Socket.addrFamily clientAddr) (Socket.addrAddress clientAddr) clientApp $ \cliNode _ ->
-          (connect cliNode) serverAddr $ \conn -> do
-            conn
-            atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
+      withServerNode serverAddr serverApp $ \_ _ ->
+        withConnection (clientApplication clientApp) serverAddr $ \conn -> do
+          conn
+          atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
 
     return (res == mapAccumL f 0 xs)
 
@@ -191,7 +186,7 @@ prop_socket_recv_close f _ = ioProperty $ do
 
     sv   <- newEmptyTMVarM
 
-    let app :: MuxApplication Mxt.TestProtocols3 IO
+    let app :: MuxApplication ServerApp Mxt.TestProtocols3 IO
         app = simpleMuxServerApplication $
           \Mxt.ReqResp1 ->
             MuxPeer nullTracer
@@ -241,24 +236,23 @@ prop_socket_client_connect_error :: (Int -> Int -> (Int, Int))
                                  -> [Int]
                                  -> Property
 prop_socket_client_connect_error _ xs = ioProperty $ do
-    clientAddr:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
     serverAddr:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
 
     cv <- newEmptyTMVarM
 
-    let app :: MuxApplication Mxt.TestProtocols3 IO
+    let app :: MuxApplication ClientApp Mxt.TestProtocols3 IO
         app = simpleMuxClientApplication $
-          \Mxt.ReqResp1 ->
-            MuxPeer nullTracer
-                    ReqResp.codecReqResp
-                    (ReqResp.reqRespClientPeer (reqRespClientMap cv xs)
-                      :: Peer (ReqResp.ReqResp Int Int) AsClient ReqResp.StIdle IO ()
-                    )
+                \Mxt.ReqResp1 ->
+                  MuxPeer nullTracer
+                          ReqResp.codecReqResp
+                          (ReqResp.reqRespClientPeer (reqRespClientMap cv xs)
+                            :: Peer (ReqResp.ReqResp Int Int) AsClient ReqResp.StIdle IO ()
+                          )
 
 
     (res :: Either IOException Bool)
-      <- try $ withNetworkNode (Socket.addrFamily serverAddr) (Socket.addrAddress serverAddr) app $ \nn _ ->
-                 const False <$> (connect nn) clientAddr id
+      <- try $ withConnection (clientApplication app) serverAddr $ \conn ->
+                 False <$ conn
 
     -- XXX Disregarding the exact exception type
     pure $ either (const True) id res
@@ -269,7 +263,6 @@ demo :: forall block .
         , Serialise block, Eq block, Show block )
      => Chain block -> [ChainUpdate block] -> IO Bool
 demo chain0 updates = do
-    consumerAddress:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
     producerAddress:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
 
     producerVar <- newTVarM (CPS.initChainProducerState chain0)
@@ -279,7 +272,7 @@ demo chain0 updates = do
     let Just expectedChain = Chain.applyChainUpdates updates chain0
         target = Chain.headPoint expectedChain
 
-        consumerApp :: MuxApplication Mxt.TestProtocols1 IO
+        consumerApp :: MuxApplication ClientApp Mxt.TestProtocols1 IO
         consumerApp = simpleMuxClientApplication $
           \Mxt.ChainSync1 ->
               MuxPeer nullTracer
@@ -288,28 +281,27 @@ demo chain0 updates = do
                         (ChainSync.chainSyncClientExample consumerVar
                         (consumerClient done target consumerVar)))
 
-        producerApp :: MuxApplication Mxt.TestProtocols1 IO
+        producerApp :: MuxApplication ServerApp Mxt.TestProtocols1 IO
         producerApp = simpleMuxServerApplication $
           \Mxt.ChainSync1 ->
             MuxPeer nullTracer
                     (ChainSync.codecChainSync encode decode encode decode)
                     (ChainSync.chainSyncServerPeer (ChainSync.chainSyncServerExample () producerVar))
 
-    withNetworkNode (Socket.addrFamily producerAddress) (Socket.addrAddress producerAddress) producerApp $ \_ _ ->
-      withNetworkNode (Socket.addrFamily consumerAddress) (Socket.addrAddress consumerAddress) consumerApp $ \consumerNode _ ->
-        (connect consumerNode) producerAddress $ \conn ->
-          withAsync conn $ \_connAsync -> do
-            void $ fork $ sequence_
-                [ do
-                    threadDelay 10e-4 -- just to provide interest
-                    atomically $ do
-                      p <- readTVar producerVar
-                      let Just p' = CPS.applyChainUpdate update p
-                      writeTVar producerVar p'
-                | update <- updates
-                ]
+    withServerNode producerAddress producerApp $ \_ _ ->
+      withConnection (clientApplication consumerApp) producerAddress $ \conn ->
+        withAsync conn $ \_connAsync -> do
+          void $ fork $ sequence_
+              [ do
+                  threadDelay 10e-4 -- just to provide interest
+                  atomically $ do
+                    p <- readTVar producerVar
+                    let Just p' = CPS.applyChainUpdate update p
+                    writeTVar producerVar p'
+              | update <- updates
+              ]
 
-            atomically $ takeTMVar done
+          atomically $ takeTMVar done
 
   where
     checkTip target consumerVar = atomically $ do
