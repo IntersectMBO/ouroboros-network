@@ -62,6 +62,7 @@ import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.PBFT
 import           Ouroboros.Consensus.Util.Condense
 
+import qualified Test.Cardano.Chain.Genesis.Dummy as Dummy
 -- | Hard-coded number of slots per epoch in the Byron era
 byronEpochSlots :: CC.Slot.EpochSlots
 byronEpochSlots = CC.Slot.EpochSlots 21600
@@ -106,7 +107,7 @@ instance Typeable cfg => HasHeader (ByronBlock cfg) where
   blockInvariant = const True
 
 genesisHash :: CC.Block.HeaderHash
-genesisHash = undefined
+genesisHash = coerce Dummy.dummyGenesisHash
 
 instance HasHeader ByronHeader where
   type HeaderHash ByronHeader = CC.Block.HeaderHash
@@ -322,6 +323,8 @@ data ByronDemoConfig = ByronDemoConfig {
       --
       -- We can use 'CC.Dummy.dummyGenesisHash' for this
     , pbftGenesisHash     :: Genesis.GenesisHash
+
+    , pbftGenesisDlg      :: Genesis.GenesisDelegation
     }
 
 type ByronPayload =
@@ -395,11 +398,19 @@ forgeByronDemoBlock cfg curSlot curNo prevHash txs () = do
             }
 
         headerGenesisKey :: Crypto.VerificationKey
-        VerKeyCardanoDSIGN headerGenesisKey =
-          pbftIssuer $ encPayloadP ouroborosPayload
+        dlgCertificate :: Delegation.Certificate
+        (headerGenesisKey, dlgCertificate) = case findDelegate of
+            Just x  -> x
+            Nothing -> error "Issuer is not a valid genesis key delegate."
+          where
+            dlgMap = Genesis.unGenesisDelegation pbftGenesisDlg
+            VerKeyCardanoDSIGN issuer = pbftIssuer . encPayloadP $ ouroborosPayload
+            findDelegate = fmap (\crt -> (Crypto.pskIssuerVK crt, crt))
+                           . find (\crt -> Crypto.pskDelegateVK crt == issuer)
+                           $ Map.elems dlgMap
 
         headerSignature :: CC.Block.BlockSignature
-        headerSignature = undefined
+        headerSignature = CC.Block.BlockSignature $ Crypto.AProxySignature dlgCertificate (coerce sig)
           where
             sig :: Crypto.Signature Encoding
             SignedDSIGN (SigCardanoDSIGN sig) = pbftSignature $ encPayloadP ouroborosPayload
