@@ -188,7 +188,7 @@ withNetworkNode
      , Enum ptcl
      , Bounded ptcl
      )
-  => NetworkInterface ptcl Socket.AddrInfo IO r
+  => NetworkInterface ptcl Socket.AddrInfo IO
   -> (NetworkNode Socket.AddrInfo IO r -> IO t)
   -> IO t
 withNetworkNode NetworkInterface {nodeAddress, nodeApplication} k =
