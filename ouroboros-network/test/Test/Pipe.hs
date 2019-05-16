@@ -6,7 +6,7 @@
 
 module Test.Pipe (tests) where
 
-import           Codec.Serialise (Serialise)
+import           Codec.Serialise (Serialise(..))
 import           Control.Monad
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
@@ -86,11 +86,11 @@ demo chain0 updates = do
         consumerPeer = ChainSync.chainSyncClientPeer
                           (ChainSync.chainSyncClientExample consumerVar
                           (consumerClient done target consumerVar))
-        consumerPeers Mxt.ChainSync1 = Mx.OnlyClient nullTracer ChainSync.codecChainSync consumerPeer
+        consumerPeers Mxt.ChainSync1 = Mx.OnlyClient nullTracer (ChainSync.codecChainSync encode encode decode decode) consumerPeer
 
         producerPeer :: Peer (ChainSync.ChainSync block (Point block)) AsServer ChainSync.StIdle IO ()
         producerPeer = ChainSync.chainSyncServerPeer (ChainSync.chainSyncServerExample () producerVar)
-        producerPeers Mxt.ChainSync1 = Mx.OnlyServer nullTracer ChainSync.codecChainSync producerPeer
+        producerPeers Mxt.ChainSync1 = Mx.OnlyServer nullTracer (ChainSync.codecChainSync encode encode decode decode) producerPeer
 
     _ <- async $ runNetworkNodeWithPipe producerPeers hndRead1 hndWrite2
     _ <- async $ runNetworkNodeWithPipe consumerPeers hndRead2 hndWrite1

@@ -52,4 +52,4 @@ instance Serialise Point where
 codec
   :: (MonadST m)
   => Codec (ChainSync Block Point) CBOR.DeserialiseFailure m Lazy.ByteString
-codec = codecChainSync
+codec = codecChainSync encode encode decode decode

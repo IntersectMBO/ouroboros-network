@@ -8,6 +8,7 @@ module Ouroboros.Network.Protocol.BlockFetch.Test (tests) where
 
 import           Control.Monad.ST (runST)
 import           Data.ByteString.Lazy (ByteString)
+import qualified Codec.Serialise as S
 
 import           Control.Monad.IOSim (runSimOrThrow)
 import           Control.Monad.Class.MonadST (MonadST)
@@ -124,7 +125,7 @@ prop_direct (TestChainAndPoints chain points) =
 
 -- | Run a pipelined block-fetch client with a server, without going via 'Peer'.
 --
--- 
+--
 --
 prop_directPipelined1 :: TestChainAndPoints -> Bool
 prop_directPipelined1 (TestChainAndPoints chain points) =
@@ -267,7 +268,7 @@ prop_channel :: (MonadAsync m, MonadCatch m, MonadST m)
 prop_channel createChannels chain points = do
     (bodies, ()) <-
       runConnectedPeers
-        createChannels nullTracer codecBlockFetch
+        createChannels nullTracer (codecBlockFetch S.encode S.encode S.decode S.decode)
         (blockFetchClientPeer (testClient chain points))
         (blockFetchServerPeer (testServer chain))
     return $ reverse bodies === concat (receivedBlockBodies chain points)
@@ -327,19 +328,19 @@ prop_codec_BlockFetch
   :: AnyMessageAndAgency (BlockFetch BlockHeader BlockBody)
   -> Bool
 prop_codec_BlockFetch msg =
-  runST (prop_codecM codecBlockFetch msg)
+  runST (prop_codecM (codecBlockFetch S.encode S.encode S.decode S.decode) msg)
 
 prop_codec_splits2_BlockFetch
   :: AnyMessageAndAgency (BlockFetch BlockHeader BlockBody)
   -> Bool
 prop_codec_splits2_BlockFetch msg =
-  runST (prop_codec_splitsM splits2 codecBlockFetch msg)
+  runST (prop_codec_splitsM splits2 (codecBlockFetch S.encode S.encode S.decode S.decode) msg)
 
 prop_codec_splits3_BlockFetch
   :: AnyMessageAndAgency (BlockFetch BlockHeader BlockBody)
   -> Bool
 prop_codec_splits3_BlockFetch msg =
-  runST (prop_codec_splitsM splits3 codecBlockFetch msg)
+  runST (prop_codec_splitsM splits3 (codecBlockFetch S.encode S.encode S.decode S.decode) msg)
 
 
 --
