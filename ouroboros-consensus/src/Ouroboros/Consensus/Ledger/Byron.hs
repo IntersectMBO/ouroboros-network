@@ -33,7 +33,8 @@ import qualified Data.Sequence as Seq
 import           Data.Typeable
 import           Data.Word
 
-import           Cardano.Binary (Annotated (..), reAnnotate, toCBOR)
+import           Cardano.Binary (Annotated (..), ByteSpan, fromCBOR, reAnnotate,
+                     toCBOR)
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.Common as CC.Common
 import qualified Cardano.Chain.Delegation as Delegation
@@ -388,14 +389,43 @@ encodeByronDemoHeader cfg =
   where
     epochSlots = pbftEpochSlots (encNodeConfigExt cfg)
 
+encodeByronDemoBlock :: NodeConfig (ExtNodeConfig ByronDemoConfig (PBft PBftCardanoCrypto))
+                     -> ByronBlock ByronDemoConfig -> Encoding
+encodeByronDemoBlock cfg =
+      CC.Block.toCBORBlock epochSlots
+    . fmap (const ())
+    . unByronBlock
+  where
+    epochSlots = pbftEpochSlots (encNodeConfigExt cfg)
+
+encodeByronDemoHeaderHash :: NodeConfig (ExtNodeConfig ByronDemoConfig (PBft PBftCardanoCrypto))
+                          -> HeaderHash ByronHeader -> Encoding
+encodeByronDemoHeaderHash _cfg = toCBOR
+
 decodeByronDemoHeader :: NodeConfig (ExtNodeConfig ByronDemoConfig (PBft PBftCardanoCrypto))
                       -> Decoder s ByronHeader
 decodeByronDemoHeader cfg =
-    fmap (ByronHeader . annotate . fromJust) $
-      CC.Block.fromCBORHeader epochSlots
+    fmap (ByronHeader . annotate) $
+      CC.Block.fromCBORAHeader epochSlots
   where
-    -- TODO: Can we avoid having to re-encode?
-    annotate :: CC.Block.Header -> CC.Block.AHeader ByteString
-    annotate h = fmap (\() -> CBOR.toStrictByteString . CC.Block.toCBORHeader epochSlots $ h) h
+    -- TODO: We should avoid re-encoding
+    annotate :: CC.Block.AHeader ByteSpan -> CC.Block.AHeader ByteString
+    annotate h = fmap (\_ -> CBOR.toStrictByteString . CC.Block.toCBORHeader epochSlots $ fmap (const ()) h) h
 
     epochSlots = pbftEpochSlots (encNodeConfigExt cfg)
+
+decodeByronDemoBlock :: NodeConfig (ExtNodeConfig ByronDemoConfig (PBft PBftCardanoCrypto))
+                     -> Decoder s (ByronBlock ByronDemoConfig)
+decodeByronDemoBlock cfg =
+    fmap (ByronBlock . annotate) $
+      CC.Block.fromCBORABlock epochSlots
+  where
+    -- TODO: Can we avoid having to re-encode?
+    annotate :: CC.Block.ABlock ByteSpan -> CC.Block.ABlock ByteString
+    annotate b = fmap (\_ -> CBOR.toStrictByteString . CC.Block.toCBORBlock epochSlots $ fmap (const ()) b) b
+
+    epochSlots = pbftEpochSlots (encNodeConfigExt cfg)
+
+decodeByronDemoHeaderHash :: NodeConfig (ExtNodeConfig ByronDemoConfig (PBft PBftCardanoCrypto))
+                          -> Decoder s (HeaderHash ByronHeader)
+decodeByronDemoHeaderHash _cfg = fromCBOR
