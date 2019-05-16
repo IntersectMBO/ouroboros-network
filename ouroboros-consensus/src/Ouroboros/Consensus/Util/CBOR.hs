@@ -258,14 +258,17 @@ readIncrementalOffsetsEBB chunkSize hasFS decoder getEBBHash fp = withLiftST $ \
        -> S.IDecode s a
        -> m ([(Word64, (Word64, a))], Maybe hash, Maybe ReadIncrementalErr)
     go liftST h !offset !deserialised !mbEBBHash !mbUnconsumed !consumed fileSize dec = case dec of
-      S.Partial k -> do
-        -- First use the unconsumed bytes from a previous read before reading
-        -- some more bytes from the file.
-        bs   <- case mbUnconsumed of
-          Just unconsumed -> return unconsumed
-          Nothing         -> hGet h chunkSize
-        dec' <- liftST $ k (checkEmpty bs)
-        go liftST h offset deserialised mbEBBHash Nothing (bs : consumed) fileSize dec'
+      S.Partial k -> case mbUnconsumed of
+        Just bs -> do
+          dec' <- liftST $ k (Just bs)
+          go liftST h offset deserialised mbEBBHash Nothing (bs : consumed) fileSize dec'
+        Nothing -> do
+          bs <- hGet h chunkSize
+          -- Use `checkEmpty` to give `Nothing`, an indication of end of stream.
+          -- NB: we don't do that for the other case `Just bs`, because lack of
+          -- unconsumed does _not_ imply end of stream.
+          dec' <- liftST $ k (checkEmpty bs)
+          go liftST h offset deserialised mbEBBHash Nothing (bs : consumed) fileSize dec'
 
       S.Done leftover size a -> do
         let nextOffset    = offset + fromIntegral size
