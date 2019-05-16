@@ -185,9 +185,12 @@ instance ( PBftCrypto c, Typeable c
       takeR :: Integral i => i -> Seq a -> Seq a
       takeR (fromIntegral -> n) s = Seq.drop (Seq.length s - n - 1) s
 
-  rewindChainState _ cs slot = case Seq.takeWhileL (\(_, s) -> s <= slot) cs of
-    _ Seq.:<| _ -> Just cs
-    _           -> Nothing
+  -- rewindChainState _ cs slot = case Seq.takeWhileL (\(_, s) -> s <= slot) cs of
+  --   _ Seq.:<| _ -> Just cs
+  --   _           -> Nothing
+
+
+  rewindChainState _ cs slot = Just $ Seq.takeWhileL (\(_, s) -> s <= slot) cs
 
 deriving instance PBftCrypto c => Show     (Payload (PBft c) ph)
 deriving instance PBftCrypto c => Eq       (Payload (PBft c) ph)
