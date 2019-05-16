@@ -421,9 +421,8 @@ class ( OuroborosTag p
   demoEncodeHeaderHash :: NodeConfig p -> HeaderHash (Header p) -> Encoding
   demoEncodeBlock      :: NodeConfig p -> Block p -> Encoding
   demoDecodeHeader     :: forall s. NodeConfig p -> Decoder s (Header p)
-  demoDecodeBlock      :: forall s. NodeConfig p -> Decoder s (Block p)
   demoDecodeHeaderHash :: forall s. NodeConfig p -> Decoder s (HeaderHash (Header p))
-
+  demoDecodeBlock      :: forall s. NodeConfig p -> Decoder s (Block p)
 
 runDemo :: DemoProtocol p -> Dict (RunDemo p)
 runDemo DemoBFT{}            = Dict
@@ -439,8 +438,8 @@ instance RunDemo DemoBFT where
   demoEncodeHeaderHash = const Serialise.encode
   demoEncodeBlock      = const Serialise.encode
   demoDecodeHeader     = const Serialise.decode
-  demoDecodeBlock      = const Serialise.decode
   demoDecodeHeaderHash = const Serialise.decode
+  demoDecodeBlock      = const Serialise.decode
 
 instance RunDemo DemoPraos where
   demoForgeBlock       = forgeSimpleBlock
@@ -449,8 +448,8 @@ instance RunDemo DemoPraos where
   demoEncodeHeaderHash = const Serialise.encode
   demoEncodeBlock      = const Serialise.encode
   demoDecodeHeader     = const Serialise.decode
-  demoDecodeBlock      = const Serialise.decode
   demoDecodeHeaderHash = const Serialise.decode
+  demoDecodeBlock      = const Serialise.decode
 
 instance RunDemo DemoLeaderSchedule where
   demoForgeBlock       = forgeSimpleBlock
@@ -459,8 +458,8 @@ instance RunDemo DemoLeaderSchedule where
   demoEncodeHeaderHash = const Serialise.encode
   demoEncodeBlock      = const Serialise.encode
   demoDecodeHeader     = const Serialise.decode
-  demoDecodeBlock      = const Serialise.decode
   demoDecodeHeaderHash = const Serialise.decode
+  demoDecodeBlock      = const Serialise.decode
 
 instance RunDemo DemoMockPBFT where
   demoForgeBlock       = forgeSimpleBlock
@@ -469,15 +468,15 @@ instance RunDemo DemoMockPBFT where
   demoEncodeHeaderHash = const Serialise.encode
   demoEncodeBlock      = const Serialise.encode
   demoDecodeHeader     = const Serialise.decode
-  demoDecodeBlock      = const Serialise.decode
   demoDecodeHeaderHash = const Serialise.decode
+  demoDecodeBlock      = const Serialise.decode
 
 instance RunDemo DemoRealPBFT where
   demoForgeBlock       = forgeByronDemoBlock
   demoGetHeader        = byronHeader
   demoEncodeHeader     = encodeByronDemoHeader
   demoEncodeHeaderHash = undefined
-  demoEncodeBlock      = undefined
+  demoEncodeBlock      = encodeByronDemoBlock
   demoDecodeHeader     = decodeByronDemoHeader
-  demoDecodeBlock      = undefined
   demoDecodeHeaderHash = undefined
+  demoDecodeBlock      = decodeByronDemoBlock
