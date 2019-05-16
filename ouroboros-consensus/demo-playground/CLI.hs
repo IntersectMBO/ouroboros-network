@@ -27,12 +27,7 @@ import           Ouroboros.Consensus.Util
 import           Mock.TxSubmission (command', parseMockTx)
 import           Topology (TopologyInfo (..))
 
--- Needed to read genesis config
-import qualified Cardano.Chain.Genesis as Genesis
-import           Cardano.Crypto.ProtocolMagic (RequiresNetworkMagic (..))
-import           Cardano.Prelude (identity, panic, runExceptT)
-import           Formatting (build, sformat)
-
+import qualified Test.Cardano.Chain.Genesis.Dummy as Dummy
 
 data CLI = CLI {
     systemStart  :: SystemStart
@@ -48,7 +43,7 @@ data Protocol =
     BFT
   | Praos
   | MockPBFT
-  | RealPBFT FilePath
+  | RealPBFT
 
 fromProtocol :: Protocol -> IO (Some DemoProtocol)
 fromProtocol BFT =
@@ -60,11 +55,10 @@ fromProtocol MockPBFT =
   where
     -- TODO: This is nasty
     genesisConfig = error "genesis config not needed when using mock ledger"
-fromProtocol (RealPBFT _fp) = do
-    -- mainnet might not be what we want: we need initial stake /and the
-    -- private keys for that initial stake/
-    genesisConfig <- readMainetCfg
-    return $ Some $ DemoMockPBFT (defaultDemoPBftParams genesisConfig)
+fromProtocol RealPBFT = do
+    return $ Some $ DemoRealPBFT (defaultDemoPBftParams genesisConfig)
+  where
+    genesisConfig = Dummy.dummyConfig
 
 parseCLI :: Parser CLI
 parseCLI = CLI
@@ -102,13 +96,10 @@ parseProtocol = asum [
           long "mock-pbft"
         , help "Use the Permissive BFT consensus algorithm using a mock ledger"
         ]
-    , (flag' RealPBFT $ mconcat [
+    , flag' RealPBFT $ mconcat [
           long "real-pbft"
         , help "Use the Permissive BFT consensus algorithm using the real ledger"
-        ]) <*> (argument str $ mconcat [
-            help "Path to JSON file with the genesis configuration"
-          , metavar "FILE"
-          ])
+        ]
     ]
 
 parseCommand :: Parser Command
@@ -139,18 +130,3 @@ parseTopologyFile =
 
 parseTopologyInfo :: Parser TopologyInfo
 parseTopologyInfo = TopologyInfo <$> parseNodeId <*> parseTopologyFile
-
-{-------------------------------------------------------------------------------
-  Read genesis
-
-  Copied from Test.Cardano.Chain.Config (not exported)
-  TODO: Export it (or use it from someplace else)
--------------------------------------------------------------------------------}
-
-readMainetCfg :: IO Genesis.Config
-readMainetCfg =
-  either
-      (panic . sformat build)
-      identity
-    <$> runExceptT
-          (Genesis.mkConfigFromFile RequiresNoMagic "mainnet-genesis.json" Nothing)
