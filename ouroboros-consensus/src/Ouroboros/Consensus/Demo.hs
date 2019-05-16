@@ -1,4 +1,5 @@
 {-# LANGUAGE ConstraintKinds         #-}
+{-# LANGUAGE DefaultSignatures       #-}
 {-# LANGUAGE FlexibleContexts        #-}
 {-# LANGUAGE FlexibleInstances       #-}
 {-# LANGUAGE GADTs                   #-}
@@ -389,6 +390,14 @@ demoProtocolConstraints DemoRealPBFT{}       = Dict
   Additional functions needed to run the demo
 -------------------------------------------------------------------------------}
 
+-- | The protocol @p@ uses simple (mock) blocks and headers
+type IsSimple p =
+  ( Block  p ~ SimpleBlock p SimpleBlockMockCrypto
+  , Header p ~ SimpleHeader p SimpleBlockMockCrypto
+  , SupportedPreHeader p ~ Empty
+  , Serialise.Serialise (Payload p (SimplePreHeader p SimpleBlockMockCrypto))
+  )
+
 class ( OuroborosTag p
       , ProtocolLedgerView (Block p)
       , HasCreator p
@@ -404,26 +413,56 @@ class ( OuroborosTag p
       , Condense (Block p)
       , Condense [Block p]
       ) => RunDemo p where
-  demoForgeBlock :: (HasNodeState p m, MonadRandom m)
-                 => NodeConfig p
-                 -> SlotNo                      -- ^ Current slot
-                 -> BlockNo                     -- ^ Current block number
-                 -> ChainHash (Header p)        -- ^ Previous hash
-                 -> Map (Hash ShortHash Tx) Tx  -- ^ Txs to add in the block
-                 -> IsLeader p
-                 -> m (Block p)
+  demoForgeBlock         :: (HasNodeState p m, MonadRandom m)
+                         => NodeConfig p
+                         -> SlotNo                      -- ^ Current slot
+                         -> BlockNo                     -- ^ Current block number
+                         -> ChainHash (Header p)        -- ^ Previous hash
+                         -> Map (Hash ShortHash Tx) Tx  -- ^ Txs to add in the block
+                         -> IsLeader p
+                         -> m (Block p)
+  default demoForgeBlock :: IsSimple p
+                         => (HasNodeState p m, MonadRandom m)
+                         => NodeConfig p
+                         -> SlotNo                      -- ^ Current slot
+                         -> BlockNo                     -- ^ Current block number
+                         -> ChainHash (Header p)        -- ^ Previous hash
+                         -> Map (Hash ShortHash Tx) Tx  -- ^ Txs to add in the block
+                         -> IsLeader p
+                         -> m (Block p)
 
-  demoGetHeader        :: Block p -> Header p
+  demoGetHeader         ::               Block p -> Header p
+  default demoGetHeader :: IsSimple p => Block p -> Header p
 
   -- We provide context for the encoders and decoders in case they need access
   -- to stuff like "number of slots in an epoch"
 
-  demoEncodeHeader     :: NodeConfig p -> Header p -> Encoding
-  demoEncodeHeaderHash :: NodeConfig p -> HeaderHash (Header p) -> Encoding
-  demoEncodeBlock      :: NodeConfig p -> Block p -> Encoding
-  demoDecodeHeader     :: forall s. NodeConfig p -> Decoder s (Header p)
-  demoDecodeHeaderHash :: forall s. NodeConfig p -> Decoder s (HeaderHash (Header p))
-  demoDecodeBlock      :: forall s. NodeConfig p -> Decoder s (Block p)
+  demoEncodeHeader             ::               NodeConfig p -> Header p -> Encoding
+  default demoEncodeHeader     :: IsSimple p => NodeConfig p -> Header p -> Encoding
+
+  demoEncodeHeaderHash         ::               NodeConfig p -> HeaderHash (Header p) -> Encoding
+  default demoEncodeHeaderHash :: IsSimple p => NodeConfig p -> HeaderHash (Header p) -> Encoding
+
+  demoEncodeBlock              ::               NodeConfig p -> Block p -> Encoding
+  default demoEncodeBlock      :: IsSimple p => NodeConfig p -> Block p -> Encoding
+
+  demoDecodeHeader             ::               forall s. NodeConfig p -> Decoder s (Header p)
+  default demoDecodeHeader     :: IsSimple p => forall s. NodeConfig p -> Decoder s (Header p)
+
+  demoDecodeHeaderHash         ::               forall s. NodeConfig p -> Decoder s (HeaderHash (Header p))
+  default demoDecodeHeaderHash :: IsSimple p => forall s. NodeConfig p -> Decoder s (HeaderHash (Header p))
+
+  demoDecodeBlock              ::               forall s. NodeConfig p -> Decoder s (Block p)
+  default demoDecodeBlock      :: IsSimple p => forall s. NodeConfig p -> Decoder s (Block p)
+
+  demoForgeBlock       = forgeSimpleBlock
+  demoGetHeader        = simpleHeader
+  demoEncodeHeader     = const Serialise.encode
+  demoEncodeHeaderHash = const Serialise.encode
+  demoEncodeBlock      = const Serialise.encode
+  demoDecodeHeader     = const Serialise.decode
+  demoDecodeHeaderHash = const Serialise.decode
+  demoDecodeBlock      = const Serialise.decode
 
 runDemo :: DemoProtocol p -> Dict (RunDemo p)
 runDemo DemoBFT{}            = Dict
@@ -432,45 +471,11 @@ runDemo DemoLeaderSchedule{} = Dict
 runDemo DemoMockPBFT{}       = Dict
 runDemo DemoRealPBFT{}       = Dict
 
-instance RunDemo DemoBFT where
-  demoForgeBlock       = forgeSimpleBlock
-  demoGetHeader        = simpleHeader
-  demoEncodeHeader     = const Serialise.encode
-  demoEncodeHeaderHash = const Serialise.encode
-  demoEncodeBlock      = const Serialise.encode
-  demoDecodeHeader     = const Serialise.decode
-  demoDecodeHeaderHash = const Serialise.decode
-  demoDecodeBlock      = const Serialise.decode
-
-instance RunDemo DemoPraos where
-  demoForgeBlock       = forgeSimpleBlock
-  demoGetHeader        = simpleHeader
-  demoEncodeHeader     = const Serialise.encode
-  demoEncodeHeaderHash = const Serialise.encode
-  demoEncodeBlock      = const Serialise.encode
-  demoDecodeHeader     = const Serialise.decode
-  demoDecodeHeaderHash = const Serialise.decode
-  demoDecodeBlock      = const Serialise.decode
-
-instance RunDemo DemoLeaderSchedule where
-  demoForgeBlock       = forgeSimpleBlock
-  demoGetHeader        = simpleHeader
-  demoEncodeHeader     = const Serialise.encode
-  demoEncodeHeaderHash = const Serialise.encode
-  demoEncodeBlock      = const Serialise.encode
-  demoDecodeHeader     = const Serialise.decode
-  demoDecodeHeaderHash = const Serialise.decode
-  demoDecodeBlock      = const Serialise.decode
-
-instance RunDemo DemoMockPBFT where
-  demoForgeBlock       = forgeSimpleBlock
-  demoGetHeader        = simpleHeader
-  demoEncodeHeader     = const Serialise.encode
-  demoEncodeHeaderHash = const Serialise.encode
-  demoEncodeBlock      = const Serialise.encode
-  demoDecodeHeader     = const Serialise.decode
-  demoDecodeHeaderHash = const Serialise.decode
-  demoDecodeBlock      = const Serialise.decode
+-- Protocols using SimpleBlock
+instance RunDemo DemoBFT
+instance RunDemo DemoPraos
+instance RunDemo DemoLeaderSchedule
+instance RunDemo DemoMockPBFT
 
 instance RunDemo DemoRealPBFT where
   demoForgeBlock       = forgeByronDemoBlock
