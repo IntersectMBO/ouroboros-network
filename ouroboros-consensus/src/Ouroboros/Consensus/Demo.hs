@@ -46,11 +46,9 @@ import           Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (fromJust)
 import qualified Data.Sequence as Seq
 import qualified Data.Set as Set
 
-import qualified Cardano.Binary as Cardano.Binary
 import qualified Cardano.Chain.Block as Cardano.Block
 import qualified Cardano.Chain.Genesis as Cardano.Genesis
 import qualified Cardano.Crypto as Cardano
@@ -475,8 +473,8 @@ instance RunDemo DemoRealPBFT where
   demoForgeBlock       = forgeByronDemoBlock
   demoGetHeader        = byronHeader
   demoEncodeHeader     = encodeByronDemoHeader
-  demoEncodeHeaderHash = undefined
+  demoEncodeHeaderHash = encodeByronDemoHeaderHash
   demoEncodeBlock      = encodeByronDemoBlock
   demoDecodeHeader     = decodeByronDemoHeader
-  demoDecodeHeaderHash = undefined
+  demoDecodeHeaderHash = decodeByronDemoHeaderHash
   demoDecodeBlock      = decodeByronDemoBlock

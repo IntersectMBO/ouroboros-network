@@ -32,7 +32,8 @@ import qualified Data.Sequence as Seq
 import           Data.Typeable
 import           Data.Word
 
-import           Cardano.Binary (Annotated (..), ByteSpan, reAnnotate, toCBOR)
+import           Cardano.Binary (Annotated (..), ByteSpan, fromCBOR, reAnnotate,
+                     toCBOR)
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.Common as CC.Common
 import qualified Cardano.Chain.Delegation as Delegation
@@ -391,6 +392,10 @@ encodeByronDemoBlock cfg =
   where
     epochSlots = pbftEpochSlots (encNodeConfigExt cfg)
 
+encodeByronDemoHeaderHash :: NodeConfig (ExtNodeConfig ByronDemoConfig (PBft PBftCardanoCrypto))
+                          -> HeaderHash ByronHeader -> Encoding
+encodeByronDemoHeaderHash _cfg = toCBOR
+
 decodeByronDemoHeader :: NodeConfig (ExtNodeConfig ByronDemoConfig (PBft PBftCardanoCrypto))
                       -> Decoder s ByronHeader
 decodeByronDemoHeader cfg =
@@ -414,3 +419,7 @@ decodeByronDemoBlock cfg =
     annotate b = fmap (\_ -> CBOR.toStrictByteString . CC.Block.toCBORBlock epochSlots $ fmap (const ()) b) b
 
     epochSlots = pbftEpochSlots (encNodeConfigExt cfg)
+
+decodeByronDemoHeaderHash :: NodeConfig (ExtNodeConfig ByronDemoConfig (PBft PBftCardanoCrypto))
+                          -> Decoder s (HeaderHash ByronHeader)
+decodeByronDemoHeaderHash _cfg = fromCBOR
