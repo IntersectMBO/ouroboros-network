@@ -329,7 +329,11 @@ withServerNode
     => Socket.AddrInfo
     -> MuxApplication appType ptcl IO
     -> (IO () -> Async () -> IO t)
-    -- ^ callback which takes @IO@ action which will terminate the server.
+    -- ^ callback which takes @IO@ action which will terminate the server, and
+    -- the @Async@ of the thread that is running it.  Note: the server thread
+    -- will terminate when the callback returns or throws an exception.
+    --
+    -- TODO: do we need to pass the terminate action?
     -> IO t
 withServerNode addr app k =
     bracket (mkListeningSocket (Socket.addrFamily addr) (Just $ Socket.addrAddress addr)) Socket.close $ \sd -> do
@@ -375,6 +379,8 @@ withNetworkNode
     -> (NetworkNode Socket.AddrInfo IO r -> Async () -> IO t)
     -- ^ when the callback returns or throws an exception, the server will
     -- terminate cleaning all its resources
+    --
+    -- TODO: do we need to pass the terminate action?
     -> IO t
 withNetworkNode addr app k =
   bracket (mkListeningSocket (Socket.addrFamily addr) (Just $ Socket.addrAddress addr)) Socket.close $ \sd -> do
