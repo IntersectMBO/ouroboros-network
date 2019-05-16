@@ -19,9 +19,6 @@ module Ouroboros.Network.Mux.Interface
   , simpleMuxServerApplication
   , NetworkNode (..)
 
-  -- * Run mux layer on initiated connections
-  , Connection (..)
-
   -- * Auxiliary functions
   , miniProtocolDescription
   ) where
@@ -175,20 +172,12 @@ data NetworkNode addr m r = NetworkNode {
       -- be used at a later stage to connect to a new peer.
       --
       -- This function will run client side of mux version negotation and then run client side of @'MuxAplication@' on it.
-      connect :: addr -> (Connection m -> m r) -> m r,
+      connect :: addr -> (m () -> m r) -> m r,
 
       -- |
       -- This will cancel the thread that is listening for new connections and
       -- close the underlaying bearer.
       killNode  :: m ()
-    }
-
-
--- |
--- Monadic computation which runs mux layer for initiated connection.
---
-newtype Connection m = Connection {
-      runConnection :: m ()
     }
 
 
