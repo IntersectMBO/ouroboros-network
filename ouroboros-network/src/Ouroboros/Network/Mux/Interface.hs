@@ -21,9 +21,9 @@ module Ouroboros.Network.Mux.Interface
   -- * Run mux layer on initiated connections
   , Connection (..)
   , WithConnection
-  , withConnection
   , runWithConnection
-  , withConnectionAsync
+  , runWithConnectionK
+  , runWithConnectionAsync
 
   -- * Auxiliary functions
   , miniProtocolDescription
@@ -201,14 +201,14 @@ type WithConnection m addr conn r = addr -> (conn -> m r) -> m r
 -- implemntation of @'WithConnection'@ handles resouce aquisition,
 -- see @'Ouroboros.Network.Socket.withNetworkNode'@.
 --
-withConnection :: WithConnection m addr (Connection m) () -> addr -> m ()
-withConnection withConn addr = withConn addr runConnection
+runWithConnection :: WithConnection m addr (Connection m) () -> addr -> m ()
+runWithConnection withConn addr = withConn addr runConnection
 
 -- |
--- Run @'WithConnection'@ with supplied @addr@ and continuation.
+-- Run @'WithConnection'@ with a supplied @addr@ and continuation.
 --
-runWithConnection :: WithConnection m addr conn r -> addr -> (conn -> m r) -> m r
-runWithConnection withConn conn k = withConn conn k
+runWithConnectionK :: WithConnection m addr conn r -> addr -> (conn -> m r) -> m r
+runWithConnectionK withConn conn k = withConn conn k
 
 -- |
 -- Run @'WithConnectionAsync' m addr (Connection m) ()@ in another thread giving
@@ -216,12 +216,12 @@ runWithConnection withConn conn k = withConn conn k
 -- connection will be teared down (by @'WithConnection'@) and the spawned thread
 -- will be killed.
 --
-withConnectionAsync :: MonadAsync m
+runWithConnectionAsync :: MonadAsync m
                     => WithConnection m addr (Connection m) r
                     -> addr
                     -> (Async m () -> m r)
                     -> m r
-withConnectionAsync withConn addr0 k0 = runWithConnection (asAsync withConn) addr0 k0
+runWithConnectionAsync withConn addr0 k0 = runWithConnectionK (asAsync withConn) addr0 k0
     where
       asAsync :: MonadAsync m
               => WithConnection m addr (Connection m) r
