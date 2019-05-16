@@ -15,27 +15,30 @@ module Ouroboros.Consensus.Ledger.Byron where
 
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
+import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Write as CBOR
 import           Codec.Serialise (Serialise (..))
 import           Control.Monad.Except
 import           Crypto.Random (MonadRandom)
 import           Data.Bifunctor (bimap)
 import qualified Data.Bimap as Bimap
-import           Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
-import           Data.ByteString.Lazy (toStrict)
+import qualified Data.ByteString as Strict
+import qualified Data.ByteString.Lazy as Lazy
 import           Data.Coerce
+import           Data.Either
 import           Data.FingerTree (Measured (..))
 import           Data.Foldable (find)
+import           Data.List.NonEmpty (NonEmpty (..))
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (fromJust)
+import           Data.Maybe (fromJust, listToMaybe)
 import qualified Data.Sequence as Seq
+import qualified Data.Set as Set
 import           Data.Typeable
 import           Data.Word
 
 import           Cardano.Binary (Annotated (..), ByteSpan, ToCBOR, fromCBOR,
-                     reAnnotate, serializeEncoding, toCBOR)
+                     reAnnotate, serializeEncoding, slice, toCBOR)
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.Common as CC.Common
 import qualified Cardano.Chain.Delegation as Delegation
@@ -323,8 +326,8 @@ data ByronDemoConfig = ByronDemoConfig {
       --
       -- We can use 'CC.Dummy.dummyGenesisHash' for this
     , pbftGenesisHash     :: Genesis.GenesisHash
-
     , pbftGenesisDlg      :: Genesis.GenesisDelegation
+    , pbftSecrets         :: Genesis.GeneratedSecrets
     }
 
 type ByronPayload =
@@ -350,10 +353,10 @@ forgeByronDemoBlock cfg curSlot curNo prevHash txs () = do
     ByronDemoConfig {..} = encNodeConfigExt cfg
 
     toBS :: Encoding -> ByteString
-    toBS = toStrict . serializeEncoding
+    toBS = Lazy.toStrict . serializeEncoding
 
     txPayload :: CC.UTxO.ATxPayload ByteString
-    txPayload = undefined
+    txPayload = CC.UTxO.ATxPayload $ map (elaborateTx cfg) (Map.elems txs)
 
     mkBSAnn :: (Functor f, ToCBOR (f ())) => (ByteString -> f a) -> f a
     mkBSAnn f = let x = f $ toBS $ toCBOR $ void x in x
@@ -427,7 +430,7 @@ forgeByronDemoBlock cfg curSlot curNo prevHash txs () = do
             , CC.Block.headerGenesisKey       = headerGenesisKey
             , CC.Block.headerSignature        = headerSignature
             , CC.Block.headerAnnotation       = toBS $ encodeByronDemoHeader cfg (ByronHeader header)
-            , CC.Block.headerExtraAnnotation  = BS.empty
+            , CC.Block.headerExtraAnnotation  = Strict.empty
             }
 
         ann :: (b -> Encoding) -> b -> Annotated b ByteString
@@ -435,6 +438,87 @@ forgeByronDemoBlock cfg curSlot curNo prevHash txs () = do
 
         ann' :: ToCBOR b => b -> Annotated b ByteString
         ann' = ann toCBOR
+
+{-------------------------------------------------------------------------------
+  Elaboration from our mock transactions into transactions on the real ledger
+-------------------------------------------------------------------------------}
+
+-- | Elaborate a mock transaction to a real one
+--
+-- For now the only thing we support are transactions of the form
+--
+-- > Tx (Set.singleton (_hash, n)) [(addr, amount)]
+--
+-- We ignore the hash, and assume it refers to the initial balance of the @n@'th
+-- rich actor. We then transfer it _to_ the @m@'s rich actor (with "a" being the
+-- first rich actor), leaving any remaining balance simply as the transaction
+-- fee.
+elaborateTx :: NodeConfig (ExtNodeConfig ByronDemoConfig (PBft PBftCardanoCrypto))
+            -> Mock.Tx -> CC.UTxO.ATxAux ByteString
+elaborateTx cfg (Mock.Tx ins outs) = annotateTx $ CC.UTxO.mkTxAux tx witness
+  where
+    [(_hash, mockInp)]          = Set.toList ins
+    [(mockOutAddr, mockOutVal)] = outs
+
+    tx :: CC.UTxO.Tx
+    tx = CC.UTxO.UnsafeTx {
+          txInputs     = txIn  :| []
+        , txOutputs    = txOut :| []
+        , txAttributes = CC.Common.mkAttributes ()
+        }
+
+    txIn :: CC.UTxO.TxIn
+    txIn = undefined
+
+    txOut :: CC.UTxO.TxOut
+    txOut = CC.UTxO.TxOut {
+          txOutAddress = undefined
+        , txOutValue   = assumeBound $
+                           CC.Common.mkLovelace (fromIntegral (mockOutVal * 1000000))
+        }
+
+    witness :: CC.UTxO.TxWitness
+    witness = undefined
+
+    initialUtxo :: [(CC.UTxO.TxIn, CC.UTxO.TxOut)]
+    initialUtxo =
+          fromCompactTxInTxOutList
+        . Map.toList
+        . CC.UTxO.unUTxO
+        . CC.UTxO.genesisUtxo
+        $ pbftGenesisConfig (pbftParams (encNodeConfigP cfg))
+
+    isRichman :: CC.UTxO.TxOut -> Maybe (Int, Crypto.SigningKey)
+    isRichman out = listToMaybe $ filter undefined richmen
+
+    richmen :: [(Int, Crypto.SigningKey)]
+    richmen =
+        zip [0..] $
+          Genesis.gsRichSecrets $ pbftSecrets (encNodeConfigExt cfg)
+
+    fromCompactTxInTxOutList :: [(CC.UTxO.CompactTxIn, CC.UTxO.CompactTxOut)]
+                             -> [(CC.UTxO.TxIn, CC.UTxO.TxOut)]
+    fromCompactTxInTxOutList =
+        map (bimap CC.UTxO.fromCompactTxIn CC.UTxO.fromCompactTxOut)
+
+    assumeBound :: Either CC.Common.LovelaceError CC.Common.Lovelace
+                -> CC.Common.Lovelace
+    assumeBound (Left _err) = error "elaborateTx: too much"
+    assumeBound (Right ll)  = ll
+
+annotateTx :: CC.UTxO.TxAux -> CC.UTxO.ATxAux ByteString
+annotateTx =
+      (\bs -> splice bs (CBOR.deserialiseFromBytes fromCBOR bs))
+    . CBOR.toLazyByteString
+    . toCBOR
+  where
+    splice :: Lazy.ByteString
+           -> Either err (Lazy.ByteString, CC.UTxO.ATxAux ByteSpan)
+           -> CC.UTxO.ATxAux ByteString
+    splice _ (Left _err) =
+      error "eloborateTx: serialization roundtrip failure"
+    splice bs (Right (_leftover, txAux)) =
+      (Lazy.toStrict . slice bs) <$> txAux
 
 {-------------------------------------------------------------------------------
   Serialisation
