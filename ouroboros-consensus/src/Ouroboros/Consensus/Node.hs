@@ -185,7 +185,6 @@ nodeKernel
        , BlockProtocol hdr ~ BlockProtocol blk
        , Ord up
        , TraceConstraints up blk hdr
-       , Serialise (PreHeader hdr)
        )
     => NodeParams m up blk hdr
     -> m (NodeKernel m up blk hdr)
@@ -246,7 +245,6 @@ initInternalState
        , BlockProtocol hdr ~ BlockProtocol blk
        , Ord up
        , TraceConstraints up blk hdr
-       , Serialise (PreHeader hdr)
        )
     => NodeParams m up blk hdr
     -> m (InternalState m up blk hdr)
@@ -268,6 +266,7 @@ initInternalState NodeParams {..} = do
         nrChainSyncClient up = chainSyncClient
           (tracePrefix "CSClient" (Just up))
           cfg
+          encoder
           btime
           maxClockSkew
           (ChainDB.getCurrentChain chainDB)
