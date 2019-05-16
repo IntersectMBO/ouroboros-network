@@ -1,5 +1,11 @@
+{-# LANGUAGE DeriveAnyClass             #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# OPTIONS_GHC -fno-warn-orphans       #-}
 
 module Test.Ouroboros.Network.BlockFetch (tests) where
 
@@ -8,16 +14,32 @@ import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 import           Test.ChainGenerators (TestChainFork(..))
 
+import           GHC.Generics (Generic)
+import           Data.Aeson
+import qualified Data.HashMap.Strict as HM
 import           Data.List
 import qualified Data.Set as Set
 import           Data.Set (Set)
 import qualified Data.Map as Map
 import           Data.Map (Map)
+import           Data.Text (pack)
 import           Data.Typeable (Typeable)
 import           Data.Dynamic (fromDynamic)
 import           Control.Monad.IOSim
 import           Control.Tracer (Tracer(Tracer), contramap)
+import           Control.Concurrent (modifyMVar_, threadDelay)
 import           Control.Exception (throw)
+
+import qualified Cardano.BM.Configuration.Model as CM
+import           Cardano.BM.Data.BackendKind (BackendKind (..))
+import           Cardano.BM.Data.LogItem (LogObject)
+import           Cardano.BM.Data.Output (ScribeDefinition (..), ScribeFormat (..), ScribeKind (..),
+                     ScribePrivacy (..))
+import           Cardano.BM.Data.Severity (Severity (..))
+import           Cardano.BM.Data.SubTrace (SubTrace (..))
+import           Cardano.BM.Data.Tracer (ToLogObject (..), ToObject (..))
+import           Cardano.BM.Setup (setupTrace)
+import           Cardano.BM.Trace (appendName)
 
 --TODO: could re-export some of the trace types from more convenient places:
 import           Ouroboros.Network.Block
@@ -31,6 +53,7 @@ import           Ouroboros.Network.Protocol.BlockFetch.Type (BlockFetch)
 import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.BlockFetch.ClientState
 import           Ouroboros.Network.BlockFetch.Examples
+import           Test.Ouroboros.Network.BlockFetch.Orphans ()
 
 
 --
@@ -41,6 +64,9 @@ tests :: TestTree
 tests = testGroup "BlockFetch"
   [ testProperty "static chains without overlap"
                  prop_blockFetchStaticNoOverlap
+
+  , testProperty "static chains without overlap IO"
+                 $ withMaxSuccess 2 blockFetchStaticNoOverlapIO
 
   , testProperty "static chains with overlap"
                  prop_blockFetchStaticWithOverlap
@@ -96,6 +122,64 @@ prop_blockFetchStaticNoOverlap (TestChainFork common fork1 fork2) =
     -- And just the extensions
     Just (_, _, fork1'', fork2'') = AnchoredFragment.intersect fork1' fork2'
 
+blockFetchStaticNoOverlapIO :: TestChainFork -> Property
+blockFetchStaticNoOverlapIO (TestChainFork common fork1 fork2) =
+    ioProperty $ do
+        c <- prepareTraceConfig
+        trace :: Tracer IO (LogObject Example1TraceEvent)
+            <- setupTrace (Right c) $ pack "block-fetch"
+        -- add names to the three tracers
+        tracerDecision       <- toLogObject <$> appendName (pack "decision")         trace
+        tracerClientState    <- toLogObject <$> appendName (pack "client-state")     trace
+        tracerClientSendRecv <- toLogObject <$> appendName (pack "client-send-recv") trace
+        blockFetchExample1
+            (contramap TraceFetchDecision       tracerDecision)
+            (contramap TraceFetchClientState    tracerClientState)
+            (contramap TraceFetchClientSendRecv tracerClientSendRecv)
+            common' forks
+        putStrLn "~~~~~~~~~~~~~~~~~~~~~~~~"
+        threadDelay 1000000
+        return True
+
+        -- For fetch reqs added and received, we observe exactly the sequence
+        -- of blocks we expect, which is the whole fork suffix.
+        -- tracePropertyBlocksRequestedAndRecievedPerPeer fork1'' fork2'' trace
+
+        -- state sanity check
+
+  where
+    -- TODO: consider making a specific generator for anchored fragment forks
+    common' = chainToAnchoredFragment common
+    fork1'  = chainToAnchoredFragment fork1
+    fork2'  = chainToAnchoredFragment fork2
+    forks   = [fork1', fork2']
+    prepareTraceConfig = do
+        c <- CM.empty
+        CM.setMinSeverity c Debug
+        CM.setSetupBackends c [KatipBK]
+        CM.setDefaultBackends c [KatipBK]
+        CM.setSetupScribes c [ ScribeDefinition {
+                                  scName = pack "stdout"
+                                , scKind = StdoutSK
+                                , scFormat = ScJson
+                                , scPrivacy = ScPublic
+                                , scRotation = Nothing
+                                }
+                             ]
+        CM.setDefaultScribes c [pack "StdoutSK::stdout"]
+        modifyMVar_ (CM.getCG c) $ \cg ->
+            return cg { CM.cgOptions = HM.insert
+                                        (pack "cfokey")
+                                        (HM.singleton (pack "value") (String (pack "blockFetch-0.0.0")))
+                                        (CM.cgOptions cg)
+                      }
+        CM.setSubTrace c (pack "#messagecounters.switchboard") $ Just NoTrace
+        CM.setSubTrace c (pack "#messagecounters.katip") $ Just NoTrace
+        return c
+
+instance ToObject [TraceLabelPeer Int (FetchDecision [Point BlockHeader])]
+instance ToObject (TraceLabelPeer Int (TraceFetchClientState BlockHeader))
+instance ToObject (TraceLabelPeer Int (TraceSendRecv (BlockFetch BlockHeader Block)))
 
 -- | In this test we have two candidates chains that are static throughout the
 -- run. The two chains share some common prefix (genesis in the degenerate
@@ -167,6 +251,10 @@ instance Show Example1TraceEvent where
   show (TraceFetchClientState    x) = show x
   show (TraceFetchClientSendRecv x) = show (fmap (\_ -> "msg") x)
 
+
+deriving instance Generic Example1TraceEvent
+deriving instance ToJSON Example1TraceEvent
+instance ToObject Example1TraceEvent
 
 -- | Check the execution trace for a particular property: we observe all the
 -- blocks in the 'FetchRequest's added by the decision logic and the blocks
