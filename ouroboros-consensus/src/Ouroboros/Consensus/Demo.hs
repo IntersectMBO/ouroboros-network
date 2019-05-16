@@ -486,14 +486,14 @@ runDemo :: DemoProtocol p -> Dict (RunDemo p)
 runDemo DemoBFT{}            = Dict
 runDemo DemoPraos{}          = Dict
 runDemo DemoLeaderSchedule{} = Dict
-runDemo DemoMockPBFT{}       = Dict
+-- runDemo DemoMockPBFT{}       = Dict
 runDemo DemoRealPBFT{}       = Dict
 
 -- Protocols using SimpleBlock
 instance RunDemo DemoBFT
 instance RunDemo DemoPraos
 instance RunDemo DemoLeaderSchedule
-instance RunDemo DemoMockPBFT
+-- instance RunDemo DemoMockPBFT
 
 instance RunDemo DemoRealPBFT where
   demoForgeBlock       = forgeByronDemoBlock

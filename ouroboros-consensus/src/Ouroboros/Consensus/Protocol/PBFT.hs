@@ -12,6 +12,8 @@
 {-# LANGUAGE TypeFamilyDependencies     #-}
 {-# LANGUAGE UndecidableInstances       #-}
 {-# LANGUAGE ViewPatterns               #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE UndecidableSuperClasses    #-}
 
 module Ouroboros.Consensus.Protocol.PBFT (
     PBft
@@ -51,6 +53,12 @@ import           Ouroboros.Consensus.Node (NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Test
 import           Ouroboros.Consensus.Util.Condense
+
+import Cardano.Binary
+import Debug.Trace
+
+class (ToCBOR a, Signable (PBftDSIGN c) a, Show a) => Foo c a
+instance (ToCBOR a, Signable (PBftDSIGN c) a, Show a) => Foo c a
 
 data PBftLedgerView c = PBftLedgerView
   -- TODO Once we have the window and threshold in the protocol parameters, we
@@ -117,7 +125,7 @@ instance ( PBftCrypto c, Typeable c
 
   type ValidationErr  (PBft c) = PBftValidationErr
   type SupportedBlock (PBft c) = HasPayload (PBft c)
-  type SupportedPreHeader (PBft c) = Signable (PBftDSIGN c)
+  type SupportedPreHeader (PBft c) = Foo c
   type NodeState      (PBft c) = ()
 
   -- | We require two things from the ledger state:
@@ -138,6 +146,9 @@ instance ( PBftCrypto c, Typeable c
 
   mkPayload toEnc PBftNodeConfig{..} _proof preheader = do
       signature <- signedDSIGN toEnc preheader pbftSignKey
+      traceM "mkPayload"
+      traceShowM  preheader
+
       return $ PBftPayload {
           pbftIssuer = pbftVerKey
         , pbftSignature = signature
@@ -155,6 +166,9 @@ instance ( PBftCrypto c, Typeable c
   applyChainState toEnc PBftNodeConfig{..} (PBftLedgerView dms) b chainState = do
       -- Check that the issuer signature verifies, and that it's a delegate of a
       -- genesis key, and that genesis key hasn't voted too many times.
+
+      traceM "applyChainState"
+      traceShowM $ blockPreHeader b
 
       unless (verifySignedDSIGN toEnc (pbftIssuer payload)
                       (blockPreHeader b)
