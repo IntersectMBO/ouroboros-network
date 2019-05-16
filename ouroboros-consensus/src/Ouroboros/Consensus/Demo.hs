@@ -58,8 +58,9 @@ import qualified Cardano.Chain.Update as Cardano.Update
 import qualified Cardano.Crypto as Cardano
 import qualified Cardano.Crypto.Signing as Cardano.KeyGen
 
-import           Ouroboros.Network.Block (BlockNo, ChainHash, HasHeader,
+import           Ouroboros.Network.Block (BlockNo, ChainHash (..), HasHeader,
                      HeaderHash, SlotNo, StandardHash)
+import           Ouroboros.Network.BlockFetch (SizeInBytes)
 
 import           Ouroboros.Consensus.Crypto.DSIGN
 import           Ouroboros.Consensus.Crypto.DSIGN.Mock (verKeyIdFromSigned)
@@ -474,6 +475,12 @@ class ( OuroborosTag p
   demoDecodeBlock              ::               forall s. NodeConfig p -> Decoder s (Block p)
   default demoDecodeBlock      :: IsSimple p => forall s. NodeConfig p -> Decoder s (Block p)
 
+  demoBlockFetchSize           ::               Header p -> SizeInBytes
+  default demoBlockFetchSize   :: IsSimple p => Header p -> SizeInBytes
+
+  demoBlockMatchesHeader         ::               Header p -> Block p -> Bool
+  default demoBlockMatchesHeader :: IsSimple p => Header p -> Block p -> Bool
+
   demoForgeBlock       = forgeSimpleBlock
   demoGetHeader        = simpleHeader
   demoEncodeHeader     = const Serialise.encode
@@ -483,6 +490,8 @@ class ( OuroborosTag p
   demoDecodeHeader     = const Serialise.decode
   demoDecodeHeaderHash = const Serialise.decode
   demoDecodeBlock      = const Serialise.decode
+  demoBlockFetchSize   = headerBlockSize . headerPreHeader
+  demoBlockMatchesHeader = blockMatchesHeader
 
 runDemo :: DemoProtocol p -> Dict (RunDemo p)
 runDemo DemoBFT{}            = Dict
@@ -507,6 +516,5 @@ instance RunDemo DemoRealPBFT where
   demoDecodeHeader     = decodeByronDemoHeader
   demoDecodeHeaderHash = decodeByronDemoHeaderHash
   demoDecodeBlock      = decodeByronDemoBlock
-
--- TODO
-instance Condense (ChainHash (ByronHeader cfg)) where
+  demoBlockFetchSize   = const 2000       -- TODO
+  demoBlockMatchesHeader _hdr _blk = True -- TODO

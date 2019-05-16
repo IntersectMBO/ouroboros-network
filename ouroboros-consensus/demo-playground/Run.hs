@@ -152,8 +152,8 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
             , btime
             , chainDB
             , callbacks
-            , blockFetchSize     = undefined -- Mock.headerBlockSize . Mock.headerPreHeader
-            , blockMatchesHeader = undefined -- Mock.blockMatchesHeader
+            , blockFetchSize     = demoBlockFetchSize
+            , blockMatchesHeader = demoBlockMatchesHeader
             }
 
       kernel <- nodeKernel nodeParams

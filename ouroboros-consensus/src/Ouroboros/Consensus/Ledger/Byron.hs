@@ -88,6 +88,9 @@ newtype ByronHeader cfg = ByronHeader { unByronHeader :: CC.Block.AHeader ByteSt
 instance Condense (ByronHeader cfg) where
   condense = show -- TODO
 
+instance Condense (ChainHash (ByronHeader cfg)) where
+  condense GenesisHash   = "genesis"
+  condense (BlockHash h) = show h
 
 byronHeader :: ByronBlock cfg -> ByronHeader cfg
 byronHeader (ByronBlock b) = ByronHeader (CC.Block.blockHeader b)
