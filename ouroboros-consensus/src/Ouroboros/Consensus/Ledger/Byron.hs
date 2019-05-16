@@ -15,6 +15,7 @@ module Ouroboros.Consensus.Ledger.Byron where
 
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
+import qualified Codec.CBOR.Write as CBOR
 import           Codec.Serialise (Serialise (..))
 import           Control.Monad.Except
 import           Crypto.Random (MonadRandom)
@@ -375,15 +376,20 @@ forgeByronDemoBlock = undefined
 encodeByronDemoHeader :: NodeConfig (ExtNodeConfig ByronDemoConfig (PBft PBftCardanoCrypto))
                       -> ByronHeader -> Encoding
 encodeByronDemoHeader cfg =
-      CC.Block.toCBORHeader (pbftEpochSlots . encNodeConfigExt $ cfg)
+      CC.Block.toCBORHeader epochSlots
     . fmap (const ())
     . unByronHeader
+  where
+    epochSlots = pbftEpochSlots (encNodeConfigExt cfg)
 
 decodeByronDemoHeader :: NodeConfig (ExtNodeConfig ByronDemoConfig (PBft PBftCardanoCrypto))
                       -> Decoder s ByronHeader
 decodeByronDemoHeader cfg =
     fmap (ByronHeader . annotate . fromJust) $
-      CC.Block.fromCBORHeader (pbftEpochSlots . encNodeConfigExt $ cfg)
+      CC.Block.fromCBORHeader epochSlots
   where
+    -- TODO: Can we avoid having to re-encode?
     annotate :: CC.Block.Header -> CC.Block.AHeader ByteString
-    annotate = undefined
+    annotate h = fmap (\() -> CBOR.toStrictByteString . CC.Block.toCBORHeader epochSlots $ h) h
+
+    epochSlots = pbftEpochSlots (encNodeConfigExt cfg)
