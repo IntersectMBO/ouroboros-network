@@ -98,10 +98,11 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
 
       let callbacks :: NodeCallbacks IO (Block p)
           callbacks = NodeCallbacks {
-              produceBlock = \proof l slot prevPoint prevBlockNo -> do
-                 undefined
-                 {-
-                 let curNo    = succ prevBlockNo
+              produceBlock = \proof _l slot prevPoint prevBlockNo -> do
+                 let curNo :: BlockNo
+                     curNo = succ prevBlockNo
+
+                     prevHash :: ChainHash (Header p)
                      prevHash = castHash (pointHash prevPoint)
 
                  -- Before generating a new block, look for incoming transactions.
@@ -109,7 +110,18 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
                  -- grab the valid new transactions and incorporate them into a
                  -- new block.
                  mp  <- lift . lift $ readTVar nodeMempool
+{-
+                 -- TODO: In the original code this was finding the transactions
+                 -- that were consistent with the ledger. Now that we abstract
+                 -- over the ledger this will no longer be possible. We will
+                 -- just try to include all of them; we'll come back to this
+                 -- once we have a proper mempool.
                  txs <- do let ts  = collect (Mock.slsUtxo . ledgerState $ l) mp
+                               mp' = mempoolRemove (M.keysSet ts) $ mp
+                           lift . lift $ writeTVar nodeMempool mp'
+                           return ts
+-}
+                 txs <- do let ts  = mempoolToMap mp
                                mp' = mempoolRemove (M.keysSet ts) $ mp
                            lift . lift $ writeTVar nodeMempool mp'
                            return ts
@@ -120,7 +132,6 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
                                 prevHash
                                 txs
                                 proof
-               -}
 
           , produceDRG      = drgNew
           }
