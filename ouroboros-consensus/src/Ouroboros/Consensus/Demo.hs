@@ -239,10 +239,10 @@ protocolInfo (DemoRealPBFT params)
                 , pbftVerKey  = VerKeyCardanoDSIGN  (fst (mkKey nid))
                 }
           , encNodeConfigExt = ByronDemoConfig {
-                pbftNodes = Map.fromList [
-                                (fst (mkKey n), CoreNodeId n)
-                              | n <- [0 .. numCoreNodes]
-                              ]
+                pbftCoreNodes = Map.fromList [
+                    (fst (mkKey n), CoreNodeId n)
+                    | n <- [0 .. numCoreNodes]
+                    ]
               }
           }
       , pInfoInitLedger = ExtLedgerState {
@@ -362,12 +362,15 @@ instance HasCreator DemoMockPBFT where
 
 instance HasCreator DemoRealPBFT where
     getCreator (EncNodeConfig _ ByronDemoConfig{..}) (ByronBlock b) =
-        Map.findWithDefault (error "getCreator: unknown key") key pbftNodes
+        Map.findWithDefault (error "getCreator: unknown key") key pbftCoreNodes
      where
        key :: Cardano.VerificationKey
-       key = Cardano.Block.headerGenesisKey
-           . Cardano.Block.blockHeader
-           $ b
+       key = Cardano.pskIssuerVK
+             . Cardano.psigPsk
+             . Cardano.Block.unBlockSignature
+             . Cardano.Block.headerSignature
+             . Cardano.Block.blockHeader
+             $ b
 
 
 {-

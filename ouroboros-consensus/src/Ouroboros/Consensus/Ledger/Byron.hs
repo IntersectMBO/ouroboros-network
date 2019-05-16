@@ -314,8 +314,9 @@ instance Typeable cfg => ProtocolLedgerView (ByronBlock cfg) where
 data ByronDemoConfig = ByronDemoConfig {
       -- | Mapping from generic keys to core node IDs
       --
-      -- TODO: Think about delegation
-      pbftNodes           :: Map Crypto.VerificationKey CoreNodeId -- TODO Bimap
+      -- The keys in this map are the verification keys of the core nodes - that
+      -- is, the delegates of the genesis keys.
+      pbftCoreNodes       :: Map Crypto.VerificationKey CoreNodeId -- TODO Bimap
 
     , pbftProtocolMagic   :: Crypto.ProtocolMagic
     , pbftProtocolVersion :: CC.Update.ProtocolVersion
