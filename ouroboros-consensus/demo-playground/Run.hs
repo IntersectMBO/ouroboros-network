@@ -141,7 +141,7 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
         demoGetHeader
 
       btime  <- realBlockchainTime registry slotDuration systemStart
-      -- let tracer = contramap ((show myNodeId <> " | ") <>) stdoutTracer
+      let tracer = contramap ((show myNodeId <> " | ") <>) stdoutTracer
       --     nodeParams = NodeParams
       --       { encoder            = demoEncodePreHeader pInfoConfig
       --       , tracer             = nullTracer
@@ -156,19 +156,17 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
       --       , blockMatchesHeader = undefined -- Mock.blockMatchesHeader
       --       }
 
-      -- kernel <- nodeKernel nodeParams
+      kernel :: NodeKernel IO NodeId (Block p) (Header p) <- undefined -- nodeKernel nodeParams
 
-      -- watchChain registry tracer chainDB
+      watchChain registry tracer chainDB
 
       -- Spawn the thread which listens to the mempool.
-      -- mempoolThread <- spawnMempoolListener tracer myNodeId nodeMempool kernel
+      mempoolThread <- spawnMempoolListener tracer myNodeId nodeMempool kernel
 
-      -- forM_ (producers nodeSetup) (addUpstream'   pInfo kernel)
-      -- forM_ (consumers nodeSetup) (addDownstream' pInfo kernel)
+      forM_ (producers nodeSetup) (addUpstream'   pInfo kernel)
+      forM_ (consumers nodeSetup) (addDownstream' pInfo kernel)
 
-      -- Async.wait mempoolThread
-
-      undefined
+      Async.wait mempoolThread
   where
       nid :: Int
       nid = case myNodeId of

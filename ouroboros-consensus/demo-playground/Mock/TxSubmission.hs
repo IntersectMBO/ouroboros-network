@@ -23,15 +23,12 @@ import           System.IO (IOMode (..))
 
 import           Ouroboros.Consensus.Crypto.Hash (ShortHash)
 import qualified Ouroboros.Consensus.Crypto.Hash as H
-import           Ouroboros.Consensus.Ledger.Abstract
 import qualified Ouroboros.Consensus.Ledger.Mock as Mock
-import           Ouroboros.Consensus.Node (NodeId (..), NodeKernel (getChainDB))
+import           Ouroboros.Consensus.Node (NodeId (..), NodeKernel)
 import           Ouroboros.Consensus.Util.CBOR (Decoder (..), initDecoderIO)
 import           Ouroboros.Consensus.Util.Condense
 
-import           Ouroboros.Storage.ChainDB (getCurrentLedger)
-
-import           Mock.Mempool (Mempool (..), consistent, mempoolInsert)
+import           Mock.Mempool (Mempool (..), mempoolInsert)
 import           NamedPipe
 import           Topology
 
@@ -102,20 +99,26 @@ submitTx n tx = do
 
 readIncomingTx :: Tracer IO String
                -> TVar IO (Mempool Mock.Tx)
-               -> NodeKernel IO NodeId (Mock.SimpleBlock p c) (Mock.SimpleHeader p c)
+               -> NodeKernel IO NodeId blk hdr
                -> Decoder IO
                -> IO ()
-readIncomingTx tracer poolVar kernel Decoder{..} = forever $ do
+readIncomingTx tracer poolVar _kernel Decoder{..} = forever $ do
     newTx    <- decodeNext
     accepted <- liftIO $ atomically $ do
-        l <- getCurrentLedger $ getChainDB kernel
+        -- TODO: We can't do a consistency check at the moment
+        -- We will need to revisit this once we have a proper mempool
         mempool <- readTVar poolVar
+        {-
+        l <- getCurrentLedger $ getChainDB kernel
         isConsistent <- runExceptT $ consistent (Mock.slsUtxo . ledgerState $ l) mempool newTx
         case isConsistent of
             Left _err -> return False
             Right ()  -> do
               writeTVar poolVar (mempoolInsert newTx mempool)
               return True
+        -}
+        writeTVar poolVar (mempoolInsert newTx mempool)
+        return True
     traceWith tracer $
       (if accepted then "Accepted" else "Rejected") <>
       " transaction: " <> show newTx
@@ -124,7 +127,7 @@ readIncomingTx tracer poolVar kernel Decoder{..} = forever $ do
 spawnMempoolListener :: Tracer IO String
                      -> NodeId
                      -> TVar IO (Mempool Mock.Tx)
-                     -> NodeKernel IO NodeId (Mock.SimpleBlock p c) (Mock.SimpleHeader p c)
+                     -> NodeKernel IO NodeId blk hdr
                      -> IO (Async.Async ())
 spawnMempoolListener tracer myNodeId poolVar kernel = do
     Async.async $ do
