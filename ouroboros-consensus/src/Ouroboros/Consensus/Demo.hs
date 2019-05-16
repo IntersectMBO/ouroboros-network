@@ -404,14 +404,19 @@ class ( OuroborosTag p
       , Condense  (Payload p (PreHeader (Block p)))
       , Eq        (Payload p (PreHeader (Block p)))
       , Show      (Payload p (PreHeader (Block p)))
-      , BlockProtocol (Block p) ~ p
+      , BlockProtocol (Block  p) ~ p
+      -- , BlockProtocol (Header p) ~ p
       , HeaderHash (Block p) ~ HeaderHash (Header p)
       , StandardHash (Header p)
       , HasHeader (Header p)
       , LedgerConfigView (Block p)
+      , SupportedBlock (BlockProtocol (Header p)) (Header p)
       , SupportedPreHeader p (PreHeader (Block p))
+      , PreHeader (Block p) ~ PreHeader (Header p)
       , Condense (Block p)
       , Condense [Block p]
+      , Condense (Header p)
+      , Condense (ChainHash (Header p))
       ) => RunDemo p where
   demoForgeBlock         :: (HasNodeState p m, MonadRandom m)
                          => NodeConfig p
@@ -443,6 +448,9 @@ class ( OuroborosTag p
   demoEncodeHeaderHash         ::               NodeConfig p -> HeaderHash (Header p) -> Encoding
   default demoEncodeHeaderHash :: IsSimple p => NodeConfig p -> HeaderHash (Header p) -> Encoding
 
+  demoEncodePreHeader          ::               NodeConfig p -> PreHeader (Block p) -> Encoding
+  default demoEncodePreHeader  :: IsSimple p => NodeConfig p -> PreHeader (Block p) -> Encoding
+
   demoEncodeBlock              ::               NodeConfig p -> Block p -> Encoding
   default demoEncodeBlock      :: IsSimple p => NodeConfig p -> Block p -> Encoding
 
@@ -459,6 +467,7 @@ class ( OuroborosTag p
   demoGetHeader        = simpleHeader
   demoEncodeHeader     = const Serialise.encode
   demoEncodeHeaderHash = const Serialise.encode
+  demoEncodePreHeader  = const Serialise.encode
   demoEncodeBlock      = const Serialise.encode
   demoDecodeHeader     = const Serialise.decode
   demoDecodeHeaderHash = const Serialise.decode
@@ -482,7 +491,16 @@ instance RunDemo DemoRealPBFT where
   demoGetHeader        = byronHeader
   demoEncodeHeader     = encodeByronDemoHeader
   demoEncodeHeaderHash = encodeByronDemoHeaderHash
+  demoEncodePreHeader  = encodeByronDemoPreHeader
   demoEncodeBlock      = encodeByronDemoBlock
   demoDecodeHeader     = decodeByronDemoHeader
   demoDecodeHeaderHash = decodeByronDemoHeaderHash
   demoDecodeBlock      = decodeByronDemoBlock
+
+-- TODO remove once SupportedBlock has been renamed to SupportedHeader and
+-- uses the BlockHeader type family
+type instance BlockProtocol ByronHeader = BlockProtocol (ByronBlock DemoRealPBFT)
+
+-- TODO
+instance Condense ByronHeader where
+instance Condense (ChainHash ByronHeader) where

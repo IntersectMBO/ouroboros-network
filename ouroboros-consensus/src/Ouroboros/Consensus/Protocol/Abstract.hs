@@ -191,6 +191,8 @@ class ( Show (ChainState    p)
                 -> m (Maybe (IsLeader p))
 
   -- | Apply a block
+  --
+  -- TODO this will only be used with headers
   applyChainState :: (SupportedBlock p b, SupportedPreHeader p (PreHeader b))
                   => (PreHeader b -> Encoding) -- Serialiser for the preheader
                   -> NodeConfig p

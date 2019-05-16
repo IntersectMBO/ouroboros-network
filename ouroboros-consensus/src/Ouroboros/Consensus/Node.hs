@@ -183,6 +183,7 @@ nodeKernel
        , SupportedBlock (BlockProtocol hdr) hdr
        , SupportedPreHeader (BlockProtocol blk) (PreHeader hdr)
        , BlockProtocol hdr ~ BlockProtocol blk
+       , PreHeader blk ~ PreHeader hdr
        , Ord up
        , TraceConstraints up blk hdr
        )
@@ -243,6 +244,7 @@ initInternalState
        , SupportedBlock (BlockProtocol hdr) hdr
        , SupportedPreHeader (BlockProtocol blk) (PreHeader hdr)
        , BlockProtocol hdr ~ BlockProtocol blk
+       , PreHeader blk ~ PreHeader hdr
        , Ord up
        , TraceConstraints up blk hdr
        )

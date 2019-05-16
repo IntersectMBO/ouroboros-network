@@ -238,6 +238,31 @@ instance Typeable cfg => HasPreHeader (ByronBlock cfg) where
   blockPreHeader = unAnnotated . CC.Block.recoverSignedBytes byronEpochSlots
                    . CC.Block.blockHeader . unByronBlock
 
+-- TODO get rid of this once we have a BlockHeader type family
+instance HasPreHeader ByronHeader where
+  type PreHeader ByronHeader = CC.Block.ToSign
+  blockPreHeader = unAnnotated . CC.Block.recoverSignedBytes byronEpochSlots
+                   . unByronHeader
+
+-- TODO get rid of this once we have a BlockHeader type family
+instance HasPayload (PBft PBftCardanoCrypto) ByronHeader where
+  blockPayload _ (ByronHeader header) = PBftPayload
+    { pbftIssuer = VerKeyCardanoDSIGN
+                   . Crypto.pskIssuerVK
+                   . Crypto.psigPsk
+                   . CC.Block.unBlockSignature
+                   . CC.Block.headerSignature
+                   $ header
+    , pbftSignature = SignedDSIGN
+                      . SigCardanoDSIGN
+                      . Crypto.Signature
+                      . Crypto.psigSig
+                      . CC.Block.unBlockSignature
+                      . CC.Block.headerSignature
+                      $ header
+    }
+
+
 instance Typeable cfg => HasPayload (PBft PBftCardanoCrypto) (ByronBlock cfg) where
   blockPayload _ (ByronBlock aBlock) = PBftPayload
     { pbftIssuer = VerKeyCardanoDSIGN

@@ -84,10 +84,8 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
     putStrLn $ "My producers are " <> show (producers nodeSetup)
     putStrLn $ "**************************************"
 
-    let ProtocolInfo{..} = protocolInfo
-                             p
-                             (NumCoreNodes (length nodeSetups))
-                             (CoreNodeId nid)
+    let pInfo@ProtocolInfo{..} =
+          protocolInfo p (NumCoreNodes (length nodeSetups)) (CoreNodeId nid)
 
     withThreadRegistry $ \registry -> do
 
@@ -127,38 +125,39 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
           , produceDRG      = drgNew
           }
 
-      chainDB :: ChainDB IO (Block p) (Header p) <-
-        ChainDB.openDB undefined pInfoConfig pInfoInitLedger demoGetHeader
+      chainDB :: ChainDB IO (Block p) (Header p) <- ChainDB.openDB
+        (demoEncodePreHeader pInfoConfig) pInfoConfig pInfoInitLedger
+        demoGetHeader
 
-      undefined
-{-
       btime  <- realBlockchainTime registry slotDuration systemStart
-      let tracer = contramap ((show myNodeId <> " | ") <>) stdoutTracer
-          nodeParams = NodeParams
-            { encoder            = encode
-            , tracer             = nullTracer
-            , threadRegistry     = registry
-            , maxClockSkew       = ClockSkew 1
-            , cfg                = pInfoConfig
-            , initState          = pInfoInitState
-            , btime
-            , chainDB
-            , callbacks
-            , blockFetchSize     = Mock.headerBlockSize . Mock.headerPreHeader
-            , blockMatchesHeader = Mock.blockMatchesHeader
-            }
-      kernel <- nodeKernel nodeParams
+      -- let tracer = contramap ((show myNodeId <> " | ") <>) stdoutTracer
+      --     nodeParams = NodeParams
+      --       { encoder            = demoEncodePreHeader pInfoConfig
+      --       , tracer             = nullTracer
+      --       , threadRegistry     = registry
+      --       , maxClockSkew       = ClockSkew 1
+      --       , cfg                = pInfoConfig
+      --       , initState          = pInfoInitState
+      --       , btime
+      --       , chainDB
+      --       , callbacks
+      --       , blockFetchSize     = undefined -- Mock.headerBlockSize . Mock.headerPreHeader
+      --       , blockMatchesHeader = undefined -- Mock.blockMatchesHeader
+      --       }
 
-      watchChain registry tracer chainDB
+      -- kernel <- nodeKernel nodeParams
+
+      -- watchChain registry tracer chainDB
 
       -- Spawn the thread which listens to the mempool.
-      mempoolThread <- spawnMempoolListener tracer myNodeId nodeMempool kernel
+      -- mempoolThread <- spawnMempoolListener tracer myNodeId nodeMempool kernel
 
-      forM_ (producers nodeSetup) (addUpstream'   kernel)
-      forM_ (consumers nodeSetup) (addDownstream' kernel)
+      -- forM_ (producers nodeSetup) (addUpstream'   pInfo kernel)
+      -- forM_ (consumers nodeSetup) (addDownstream' pInfo kernel)
 
-      Async.wait mempoolThread
--}
+      -- Async.wait mempoolThread
+
+      undefined
   where
       nid :: Int
       nid = case myNodeId of
