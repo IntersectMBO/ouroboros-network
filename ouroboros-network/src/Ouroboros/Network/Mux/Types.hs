@@ -134,6 +134,7 @@ instance (MiniProtocolLimits ptcl) => MiniProtocolLimits (MiniProtocolId ptcl) w
 -- Mini-protocol descriptions
 --
 
+
 {- | The 'MiniProtocolDescription' is used to provide
  two functions which will consume and produce messages
  for either the initiator (client) or responder (server)

@@ -13,6 +13,8 @@ module Ouroboros.Network.Mux.Interface
   -- $interface
     NetworkInterface (..)
   , MuxApplication (..)
+  , clientApplication
+  , serverApplication
   , MuxPeer (..)
   , simpleMuxClientApplication
   , simpleMuxServerApplication
@@ -60,7 +62,6 @@ import           Ouroboros.Network.Mux.Types
 --   a function that runs the mux layer on it.
 --
 
-
 -- |
 -- Application run by mux layer.
 --
@@ -81,37 +82,59 @@ data MuxApplication ptcl m where
     -- @'runPipelinedPeer'@ supplied with a codec and a @'Peer'@ for each
     -- @ptcl@.  But it allows to handle resources if just application of
     -- @'runPeer'@ is not enough.  It will be run as @'muxInitiator'@.
-    :: (ptcl -> Channel m ByteString -> m a)
+    :: (ptcl -> Channel m ByteString ->  m ())
     -> MuxApplication ptcl m
 
   MuxServerApplication
     -- Server application; similarly to the @'MuxClientApplication'@ but it
     -- will be run using @'muxResponder'@.
-    :: (ptcl -> Channel m ByteString -> m a)
+    :: (ptcl -> Channel m ByteString ->  m ())
     -> MuxApplication ptcl m
 
   MuxClientAndServerApplication
     -- Client and server applications.
-    :: (ptcl -> Channel m ByteString -> m a)
-    -> (ptcl -> Channel m ByteString -> m b)
+    :: (ptcl -> Channel m ByteString ->  m ())
+    -> (ptcl -> Channel m ByteString ->  m ())
     -> MuxApplication ptcl m
 
 
 -- |
+-- Accessor for the client side of a @'MuxApplication'@.
+--
+clientApplication
+  :: Functor m
+  => (MuxApplication ptcl m)
+  -> Maybe (ptcl -> Channel m ByteString ->  m ())
+clientApplication (MuxClientApplication app) = Just $ \ptcl channel -> app ptcl channel
+clientApplication (MuxServerApplication _)   = Nothing
+clientApplication (MuxClientAndServerApplication app _) = Just $ \ptcl channel -> app ptcl channel
+
+-- |
+-- Accessor for the client side of a @'MuxApplication'@.
+--
+serverApplication
+  :: Functor m
+  => (MuxApplication ptcl m)
+  -> Maybe (ptcl -> Channel m ByteString ->  m ())
+serverApplication (MuxServerApplication app) = Just app
+serverApplication (MuxClientApplication _)   = Nothing
+serverApplication (MuxClientAndServerApplication _ app) = Just app
+
+-- |
 -- This type is only necessary to use the @'simpleMuxClient'@ and
 -- @'simpleMuxServer'@ smart constructors.
-data MuxPeer failure m where
+data MuxPeer failure m a where
     MuxPeer :: Tracer m (TraceSendRecv ps)
             -> Codec ps failure m ByteString
             -> Peer ps pr st m a
-            -> MuxPeer failure m
+            -> MuxPeer failure m a
 
     MuxPeerPipelined
             :: Natural
             -> Tracer m (TraceSendRecv ps)
             -> Codec ps failure m ByteString
             -> PeerPipelined ps pr st m a
-            -> MuxPeer failure m
+            -> MuxPeer failure m a
 
 -- |
 -- Smart constructor for @'MuxClientApplication'@.  It is a simple client, since
@@ -123,7 +146,7 @@ simpleMuxClientApplication
   => MonadCatch m
   => MonadAsync m
   => Exception failure
-  => (ptcl -> MuxPeer failure m)
+  => (ptcl -> MuxPeer failure m a)
   -> MuxApplication ptcl m
 simpleMuxClientApplication fn = MuxClientApplication $ \ptcl channel ->
   case fn ptcl of
@@ -139,7 +162,7 @@ simpleMuxServerApplication
   => MonadCatch m
   => MonadAsync m
   => Exception failure
-  => (ptcl -> MuxPeer failure m)
+  => (ptcl -> MuxPeer failure m a)
   -> MuxApplication ptcl m
 simpleMuxServerApplication fn = MuxServerApplication $ \ptcl channel ->
   case fn ptcl of
@@ -242,7 +265,7 @@ miniProtocolDescription
   -> MiniProtocolDescriptions ptcl m
 miniProtocolDescription (MuxClientApplication client) = \ptcl ->
   MiniProtocolDescription {
-      mpdInitiator = Just (void . client ptcl),
+      mpdInitiator = Just (client ptcl),
       mpdResponder = Nothing
     }
 miniProtocolDescription (MuxServerApplication server) = \ptcl ->

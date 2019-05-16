@@ -180,8 +180,8 @@ prop_socket_send_recv clientAddr serverAddr f xs = do
            }
 
     res <-
-      withNetworkNode serNet $ \_ ->
-        withNetworkNode cliNet $ \cliNode ->
+      withNetworkNode serNet $ \_ _ ->
+        withNetworkNode cliNet $ \cliNode _ ->
           runWithConnectionK (connect cliNode) serverAddr $ \conn -> do
             runConnection conn
             atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
@@ -269,7 +269,7 @@ prop_socket_client_connect_error _ xs = ioProperty $ do
           }
 
     (res :: Either IOException Bool)
-      <- try $ withNetworkNode ni $ \nn ->
+      <- try $ withNetworkNode ni $ \nn _ ->
                  const False <$> runWithConnection (connect nn) clientAddr
 
     -- XXX Disregarding the exact exception type
@@ -317,8 +317,8 @@ demo chain0 updates = do
               nodeApplication = producerApp
             }
 
-    withNetworkNode producerNet $ \_ ->
-      withNetworkNode consumerNet $  \consumerNode ->
+    withNetworkNode producerNet $ \_ _ ->
+      withNetworkNode consumerNet $ \consumerNode _ ->
         runWithConnectionAsync (connect consumerNode) (nodeAddress producerNet) $ \_connAsync -> do
           void $ fork $ sequence_
               [ do
