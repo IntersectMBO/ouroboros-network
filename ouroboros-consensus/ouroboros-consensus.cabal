@@ -159,6 +159,10 @@ library
                        io-sim-classes,
                        contra-tracer,
 
+                       -- TODO: Ideally we'd refactor this so that this
+                       -- only needs to live in the demo-playground
+                       cardano-ledger-test,
+
                        base16-bytestring >=0.1   && <0.2,
                        bimap             >=0.3   && <0.4,
                        bytestring        >=0.10  && <0.11,
