@@ -4,6 +4,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
@@ -11,6 +12,21 @@
 {-# OPTIONS_ghc -fno-warn-orphans #-}
 
 module Ouroboros.Consensus.Ledger.Byron where
+
+import           Codec.Serialise (Serialise (..))
+import           Control.Monad.Except
+import           Crypto.Random (MonadRandom)
+import           Data.Bifunctor (bimap)
+import qualified Data.Bimap as Bimap
+import           Data.ByteString (ByteString)
+import           Data.Coerce
+import           Data.FingerTree (Measured (..))
+import           Data.Foldable (find)
+import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
+import qualified Data.Sequence as Seq
+import           Data.Typeable
+import           Data.Word
 
 import           Cardano.Binary (Annotated (..), reAnnotate)
 import qualified Cardano.Chain.Block as CC.Block
@@ -26,19 +42,9 @@ import qualified Cardano.Chain.Update.Validation.Interface as CC.UPI
 import qualified Cardano.Chain.UTxO as CC.UTxO
 import qualified Cardano.Crypto as Crypto
 import           Cardano.Prelude (panic)
-import           Control.Monad.Except
-import           Crypto.Random (MonadRandom)
-import           Data.Bifunctor (bimap)
-import qualified Data.Bimap as Bimap
-import           Data.ByteString (ByteString)
-import           Data.Coerce
-import           Data.FingerTree (Measured (..))
-import           Data.Foldable (find)
-import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
-import qualified Data.Sequence as Seq
-import           Data.Typeable
-import           Data.Word
+
+import           Ouroboros.Network.Block
+
 import           Ouroboros.Consensus.Crypto.DSIGN
 import           Ouroboros.Consensus.Crypto.Hash
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -47,7 +53,7 @@ import           Ouroboros.Consensus.Node (CoreNodeId)
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.PBFT
-import           Ouroboros.Network.Block
+import           Ouroboros.Consensus.Util.Condense
 
 -- | Hard-coded number of slots per epoch in the Byron era
 byronEpochSlots :: CC.Slot.EpochSlots
@@ -61,6 +67,9 @@ byronEpochSlots = CC.Slot.EpochSlots 21600
 -- for real as when we are running the demo.
 newtype ByronBlock cfg = ByronBlock { unByronBlock :: CC.Block.ABlock ByteString }
   deriving (Eq, Show)
+
+instance Condense (ByronBlock cfg) where
+  condense = show -- TODO
 
 newtype ByronHeader = ByronHeader { unByronHeader :: CC.Block.AHeader ByteString }
 
@@ -107,6 +116,10 @@ instance HasHeader ByronHeader where
 
 instance StandardHash (ByronBlock cfg)
 instance StandardHash ByronHeader
+
+instance Typeable cfg => LedgerConfigView (ByronBlock cfg) where
+  ledgerConfigView EncNodeConfig{..} =
+      ByronLedgerConfig $ pbftGenesisConfig (pbftParams encNodeConfigP)
 
 instance UpdateLedger (ByronBlock cfg) where
   data LedgerState (ByronBlock cfg) = ByronLedgerState

@@ -1,13 +1,14 @@
-{-# LANGUAGE ConstraintKinds        #-}
-{-# LANGUAGE FlexibleContexts       #-}
-{-# LANGUAGE FlexibleInstances      #-}
-{-# LANGUAGE GADTs                  #-}
-{-# LANGUAGE MultiParamTypeClasses  #-}
-{-# LANGUAGE RecordWildCards        #-}
-{-# LANGUAGE ScopedTypeVariables    #-}
-{-# LANGUAGE TypeFamilies           #-}
-{-# LANGUAGE TypeFamilyDependencies #-}
-{-# LANGUAGE UndecidableInstances   #-}
+{-# LANGUAGE ConstraintKinds         #-}
+{-# LANGUAGE FlexibleContexts        #-}
+{-# LANGUAGE FlexibleInstances       #-}
+{-# LANGUAGE GADTs                   #-}
+{-# LANGUAGE MultiParamTypeClasses   #-}
+{-# LANGUAGE RecordWildCards         #-}
+{-# LANGUAGE ScopedTypeVariables     #-}
+{-# LANGUAGE TypeFamilies            #-}
+{-# LANGUAGE TypeFamilyDependencies  #-}
+{-# LANGUAGE UndecidableInstances    #-}
+{-# LANGUAGE UndecidableSuperClasses #-}
 
 -- | Instantiations of the protocol stack used in tests and demos
 module Ouroboros.Consensus.Demo (
@@ -18,14 +19,13 @@ module Ouroboros.Consensus.Demo (
   , DemoLeaderSchedule
   , DemoMockPBFT
   , DemoRealPBFT
-  , RunDemo(..)
   , Block
   , Header
   , NumCoreNodes(..)
   , ProtocolInfo(..)
   , protocolInfo
-  , DemoProtocolConstraints
-  , demoProtocolConstraints
+  , RunDemo(..)
+  , runDemo
     -- * Support for runnig the demos
   , defaultSecurityParam
   , defaultDemoPraosParams
@@ -34,6 +34,7 @@ module Ouroboros.Consensus.Demo (
   , HasCreator(..)
   ) where
 
+import           Codec.Serialise (Serialise)
 import           Control.Monad.Except
 import           Crypto.Random (MonadRandom)
 import qualified Data.Bimap as Bimap
@@ -118,28 +119,6 @@ data ProtocolInfo p = ProtocolInfo {
       , pInfoInitLedger :: ExtLedgerState (Block p)
       , pInfoInitState  :: NodeState p
       }
-
-type DemoProtocolConstraints p = (
-      OuroborosTag p
-    , ProtocolLedgerView (Block p)
---    , SupportedBlock p (SimpleHeader p SimpleBlockMockCrypto)
-    , HasCreator p
-    , Condense  (Payload p (PreHeader (Block p)))
-    , Eq        (Payload p (PreHeader (Block p)))
-    , Show      (Payload p (PreHeader (Block p)))
-    , RunDemo p
-    , BlockProtocol (Block p) ~ p
-    , HeaderHash (Block p) ~ HeaderHash (Header p)
-    , StandardHash (Header p)
-    , HasHeader (Header p)
-    )
-
-demoProtocolConstraints :: DemoProtocol p -> Dict (DemoProtocolConstraints p)
-demoProtocolConstraints DemoBFT{}            = Dict
-demoProtocolConstraints DemoPraos{}          = Dict
-demoProtocolConstraints DemoLeaderSchedule{} = Dict
-demoProtocolConstraints DemoMockPBFT{}       = Dict
-demoProtocolConstraints DemoRealPBFT{}       = Dict
 
 newtype NumCoreNodes = NumCoreNodes Int
   deriving (Show)
@@ -388,11 +367,38 @@ instance HasCreator DemoRealPBFT where
            . Cardano.Block.blockHeader
            $ b
 
+
+{-
+type DemoProtocolConstraints p =
+
+demoProtocolConstraints :: DemoProtocol p -> Dict (DemoProtocolConstraints p)
+demoProtocolConstraints DemoBFT{}            = Dict
+demoProtocolConstraints DemoPraos{}          = Dict
+demoProtocolConstraints DemoLeaderSchedule{} = Dict
+demoProtocolConstraints DemoMockPBFT{}       = Dict
+demoProtocolConstraints DemoRealPBFT{}       = Dict
+
+-}
+
 {-------------------------------------------------------------------------------
   Additional functions needed to run the demo
 -------------------------------------------------------------------------------}
 
-class RunDemo p where
+class ( OuroborosTag p
+      , ProtocolLedgerView (Block p)
+      , HasCreator p
+      , Condense  (Payload p (PreHeader (Block p)))
+      , Eq        (Payload p (PreHeader (Block p)))
+      , Show      (Payload p (PreHeader (Block p)))
+      , BlockProtocol (Block p) ~ p
+      , HeaderHash (Block p) ~ HeaderHash (Header p)
+      , StandardHash (Header p)
+      , HasHeader (Header p)
+      , LedgerConfigView (Block p)
+      , SupportedPreHeader p (PreHeader (Block p))
+      , Condense (Block p)
+      , Condense [Block p]
+      ) => RunDemo p where
   demoForgeBlock :: (HasNodeState p m, MonadRandom m)
                  => NodeConfig p
                  -> SlotNo                      -- ^ Current slot
@@ -403,6 +409,13 @@ class RunDemo p where
                  -> m (Block p)
 
   demoGetHeader :: Block p -> Header p
+
+runDemo :: DemoProtocol p -> Dict (RunDemo p)
+runDemo DemoBFT{}            = Dict
+runDemo DemoPraos{}          = Dict
+runDemo DemoLeaderSchedule{} = Dict
+runDemo DemoMockPBFT{}       = Dict
+runDemo DemoRealPBFT{}       = Dict
 
 instance RunDemo DemoBFT where
   demoForgeBlock = forgeSimpleBlock

@@ -60,7 +60,9 @@ fromProtocol MockPBFT =
   where
     -- TODO: This is nasty
     genesisConfig = error "genesis config not needed when using mock ledger"
-fromProtocol (RealPBFT fp) = do
+fromProtocol (RealPBFT _fp) = do
+    -- mainnet might not be what we want: we need initial stake /and the
+    -- private keys for that initial stake/
     genesisConfig <- readMainetCfg
     return $ Some $ DemoMockPBFT (defaultDemoPBftParams genesisConfig)
 

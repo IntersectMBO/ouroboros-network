@@ -59,13 +59,13 @@ runNode cli@CLI{..} = do
         handleTxSubmission topology tx
       SimpleNode topology protocol -> do
         Some p <- fromProtocol protocol
-        case demoProtocolConstraints p of
+        case runDemo p of
           Dict -> handleSimpleNode p cli topology
 
 -- | Sets up a simple node, which will run the chain sync protocol and block
 -- fetch protocol, and, if core, will also look at the mempool when trying to
 -- create a new block.
-handleSimpleNode :: forall p. DemoProtocolConstraints p
+handleSimpleNode :: forall p. RunDemo p
                  => DemoProtocol p -> CLI -> TopologyInfo -> IO ()
 handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
     putStrLn $ "System started at " <> show systemStart
@@ -125,7 +125,7 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
           }
 
       chainDB :: ChainDB IO (Block p) (Header p) <-
-        ChainDB.openDB encode pInfoConfig pInfoInitLedger demoGetHeader
+        ChainDB.openDB undefined pInfoConfig pInfoInitLedger demoGetHeader
 
       undefined
 {-
@@ -195,7 +195,6 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
               ncCodec    = codecBlockFetch
             , ncWithChan = NamedPipe.withPipeChannel "block-fetch" direction
             }
-
 
       addDownstream' :: NodeKernel IO NodeId (Block p) (Header p)
                      -> NodeId
