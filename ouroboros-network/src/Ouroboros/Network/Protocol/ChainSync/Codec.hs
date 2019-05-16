@@ -1,9 +1,10 @@
-{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
-{-# LANGUAGE PolyKinds           #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE PolyKinds           #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Network.Protocol.ChainSync.Codec
   ( codecChainSync
@@ -22,19 +23,33 @@ import qualified Codec.CBOR.Read     as CBOR
 import qualified Codec.CBOR.Decoding as CBOR (Decoder)
 
 import Data.ByteString.Lazy (ByteString)
-import Codec.CBOR.Encoding (encodeListLen, encodeWord)
-import Codec.CBOR.Decoding (decodeListLen, decodeWord)
-import Codec.Serialise.Class (Serialise)
-import qualified Codec.Serialise.Class as CBOR
-
+import Codec.CBOR.Encoding (
+    Encoding
+  , encodeBreak
+  , encodeListLen
+  , encodeListLenIndef
+  , encodeWord
+  )
+import Codec.CBOR.Decoding (
+    Decoder
+  , decodeListLen
+  , decodeListLenOrIndef
+  , decodeSequenceLenIndef
+  , decodeSequenceLenN
+  , decodeWord
+  )
 
 -- | The main CBOR 'Codec' for the 'ChainSync' protocol.
 --
 codecChainSync :: forall header point m.
-                  (MonadST m, Serialise header, Serialise point)
-               => Codec (ChainSync header point)
+                  MonadST m
+               => (header -> Encoding)
+               -> (point  -> Encoding)
+               -> (forall s. Decoder s header)
+               -> (forall s. Decoder s point)
+               -> Codec (ChainSync header point)
                         CBOR.DeserialiseFailure m ByteString
-codecChainSync =
+codecChainSync encodeHeader encodePoint decodeHeader decodePoint =
     mkCodecCborLazyBS encode decode
   where
     encode :: forall (pr :: PeerRole) (st :: ChainSync header point) (st' :: ChainSync header point).
@@ -49,19 +64,19 @@ codecChainSync =
       encodeListLen 1 <> encodeWord 1
 
     encode (ServerAgency TokNext{}) (MsgRollForward h p) =
-      encodeListLen 3 <> encodeWord 2 <> CBOR.encode h <> CBOR.encode p
+      encodeListLen 3 <> encodeWord 2 <> encodeHeader h <> encodePoint p
 
     encode (ServerAgency TokNext{}) (MsgRollBackward p1 p2) =
-      encodeListLen 3 <> encodeWord 3 <> CBOR.encode p1 <> CBOR.encode p2
+      encodeListLen 3 <> encodeWord 3 <> encodePoint p1 <> encodePoint p2
 
     encode (ClientAgency TokIdle) (MsgFindIntersect ps) =
-      encodeListLen 2 <> encodeWord 4 <> CBOR.encode ps
+      encodeListLen 2 <> encodeWord 4 <> encodeList encodePoint ps
 
     encode (ServerAgency TokIntersect) (MsgIntersectImproved p1 p2) =
-      encodeListLen 3 <> encodeWord 5 <> CBOR.encode p1 <> CBOR.encode p2
+      encodeListLen 3 <> encodeWord 5 <> encodePoint p1 <> encodePoint p2
 
     encode (ServerAgency TokIntersect) (MsgIntersectUnchanged p) =
-      encodeListLen 2 <> encodeWord 6 <> CBOR.encode p
+      encodeListLen 2 <> encodeWord 6 <> encodePoint p
 
     encode (ClientAgency TokIdle) MsgDone =
       encodeListLen 1 <> encodeWord 7
@@ -80,26 +95,26 @@ codecChainSync =
           return (SomeMessage MsgAwaitReply)
 
         (2, 3, ServerAgency (TokNext _)) -> do
-          h <- CBOR.decode
-          p <- CBOR.decode
+          h <- decodeHeader
+          p <- decodePoint
           return (SomeMessage (MsgRollForward h p))
 
         (3, 3, ServerAgency (TokNext _)) -> do
-          p1 <- CBOR.decode
-          p2 <- CBOR.decode
+          p1 <- decodePoint
+          p2 <- decodePoint
           return (SomeMessage (MsgRollBackward p1 p2))
 
         (4, 2, ClientAgency TokIdle) -> do
-          ps <- CBOR.decode
+          ps <- decodeList decodePoint
           return (SomeMessage (MsgFindIntersect ps))
 
         (5, 3, ServerAgency TokIntersect) -> do
-          p1 <- CBOR.decode
-          p2 <- CBOR.decode
+          p1 <- decodePoint
+          p2 <- decodePoint
           return (SomeMessage (MsgIntersectImproved p1 p2))
 
         (6, 2, ServerAgency TokIntersect) -> do
-          p <- CBOR.decode
+          p <- decodePoint
           return (SomeMessage (MsgIntersectUnchanged p))
 
         (7, 1, ClientAgency TokIdle) ->
@@ -147,3 +162,21 @@ codecChainSyncId = Codec encode decode
     (ClientAgency TokIdle, Just (AnyMessage MsgDone)) -> return (DecodeDone (SomeMessage MsgDone) Nothing)
 
     (_, _) -> return $ DecodeFail (CodecFailure "codecChainSync: no matching message")
+
+{-------------------------------------------------------------------------------
+  Auxiliary
+
+  This is adapted from 'defaultEncodeList' and 'defaultDecodeList' from
+  @serialise@; they should relaly be exported.
+-------------------------------------------------------------------------------}
+
+encodeList :: (a -> Encoding) -> [a] -> Encoding
+encodeList _ [] = encodeListLen 0
+encodeList e xs = encodeListLenIndef <> Prelude.foldr (\x r -> e x <> r) encodeBreak xs
+
+decodeList :: Decoder s a -> Decoder s [a]
+decodeList d = do
+    mn <- decodeListLenOrIndef
+    case mn of
+      Nothing -> decodeSequenceLenIndef (flip (:)) [] reverse   d
+      Just n  -> decodeSequenceLenN     (flip (:)) [] reverse n d

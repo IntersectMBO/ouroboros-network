@@ -18,7 +18,7 @@ import qualified Data.Set as Set
 import           Data.Set (Set)
 import qualified Data.ByteString.Lazy as LBS
 import           Data.Functor.Contravariant (contramap)
-import           Codec.Serialise (Serialise)
+import           Codec.Serialise (Serialise(..))
 
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadST
@@ -191,7 +191,7 @@ runFetchClient :: (MonadCatch m, MonadAsync m, MonadST m, Ord peerid,
                 -> m a
 runFetchClient tracer registry peerid channel client =
     bracketFetchClient registry peerid $ \stateVars ->
-      runPipelinedPeer 10 tracer codecBlockFetch channel (client stateVars)
+      runPipelinedPeer 10 tracer (codecBlockFetch encode encode decode decode) channel (client stateVars)
 
 runFetchServer :: (MonadThrow m, MonadST m,
                    Serialise header,
@@ -202,7 +202,7 @@ runFetchServer :: (MonadThrow m, MonadST m,
                 -> BlockFetchServer header block m a
                 -> m a
 runFetchServer tracer channel server =
-    runPeer tracer codecBlockFetch channel (blockFetchServerPeer server)
+    runPeer tracer (codecBlockFetch encode encode decode decode) channel (blockFetchServerPeer server)
 
 runFetchClientAndServerAsync
                :: (MonadCatch m, MonadAsync m, MonadST m, Ord peerid,

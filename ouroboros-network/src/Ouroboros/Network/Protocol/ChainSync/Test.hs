@@ -12,6 +12,7 @@ module Ouroboros.Network.Protocol.ChainSync.Test (tests) where
 import Control.Monad (unless, void)
 import qualified Control.Monad.ST as ST
 import Data.ByteString.Lazy (ByteString)
+import qualified Codec.Serialise as S
 
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadST
@@ -68,7 +69,7 @@ testClient
   -> Point Block
   -> ChainSyncExamples.Client Block m ()
 testClient doneVar tip =
-  ChainSyncExamples.Client { 
+  ChainSyncExamples.Client {
       ChainSyncExamples.rollbackward = \point _ ->
         if point == tip
           then do
@@ -127,7 +128,7 @@ propChainSyncConnectST cps =
       chainSyncForkExperiment
         (\ser cli ->
             void $ connect (chainSyncClientPeer cli) (chainSyncServerPeer ser)
-        ) cps 
+        ) cps
 
 propChainSyncConnectIO :: ChainProducerStateForkTest -> Property
 propChainSyncConnectIO cps =
@@ -135,7 +136,7 @@ propChainSyncConnectIO cps =
       chainSyncForkExperiment
         (\ser cli ->
             void $  connect (chainSyncClientPeer cli) (chainSyncServerPeer ser)
-        ) cps 
+        ) cps
 
 instance Arbitrary (AnyMessageAndAgency (ChainSync BlockHeader (Point BlockHeader))) where
   arbitrary = oneof
@@ -189,7 +190,7 @@ prop_codec_ChainSync
   :: AnyMessageAndAgency (ChainSync BlockHeader (Point BlockHeader))
   -> Bool
 prop_codec_ChainSync msg =
-    ST.runST $ prop_codecM codecChainSync msg
+    ST.runST $ prop_codecM (codecChainSync S.encode S.encode S.decode S.decode) msg
 
 prop_codec_splits2_ChainSync
   :: AnyMessageAndAgency (ChainSync BlockHeader (Point BlockHeader))
@@ -197,7 +198,7 @@ prop_codec_splits2_ChainSync
 prop_codec_splits2_ChainSync msg =
     ST.runST $ prop_codec_splitsM
       splits2
-      codecChainSync
+      (codecChainSync S.encode S.encode S.decode S.decode)
       msg
 
 prop_codec_splits3_ChainSync
@@ -206,7 +207,7 @@ prop_codec_splits3_ChainSync
 prop_codec_splits3_ChainSync msg =
     ST.runST $ prop_codec_splitsM
       splits3
-      codecChainSync
+      (codecChainSync S.encode S.encode S.decode S.decode)
       msg
 
 chainSyncDemo
@@ -232,8 +233,8 @@ chainSyncDemo clientChan serverChan (ChainProducerStateForkTest cps chain) = do
 
       client = ChainSyncExamples.chainSyncClientExample chainVar (testClient doneVar (Chain.headPoint pchain))
 
-  void $ fork (void $ runPeer nullTracer codecChainSync serverChan (chainSyncServerPeer server))
-  void $ fork (void $ runPeer nullTracer codecChainSync clientChan (chainSyncClientPeer client))
+  void $ fork (void $ runPeer nullTracer (codecChainSync S.encode S.encode S.decode S.decode) serverChan (chainSyncServerPeer server))
+  void $ fork (void $ runPeer nullTracer (codecChainSync S.encode S.encode S.decode S.decode) clientChan (chainSyncClientPeer client))
 
   atomically $ do
     done <- readTVar doneVar

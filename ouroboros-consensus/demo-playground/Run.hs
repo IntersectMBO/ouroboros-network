@@ -8,7 +8,7 @@ module Run (
       runNode
     ) where
 
-import           Codec.Serialise (encode)
+import           Codec.Serialise (encode, decode)
 import qualified Control.Concurrent.Async as Async
 import           Control.Concurrent.STM
 import           Control.Monad
@@ -188,11 +188,11 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
         where
           direction = Upstream (producerNodeId :==>: myNodeId)
           nodeCommsCS = NodeComms {
-              ncCodec    = codecChainSync
+              ncCodec    = codecChainSync encode encode decode decode
             , ncWithChan = NamedPipe.withPipeChannel "chain-sync" direction
             }
           nodeCommsBF = NodeComms {
-              ncCodec    = codecBlockFetch
+              ncCodec    = codecBlockFetch encode encode decode decode
             , ncWithChan = NamedPipe.withPipeChannel "block-fetch" direction
             }
 
@@ -204,10 +204,10 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
         where
           direction = Downstream (myNodeId :==>: consumerNodeId)
           nodeCommsCS = NodeComms {
-              ncCodec    = codecChainSync
+              ncCodec    = codecChainSync encode encode decode decode
             , ncWithChan = NamedPipe.withPipeChannel "chain-sync" direction
             }
           nodeCommsBF = NodeComms {
-              ncCodec    = codecBlockFetch
+              ncCodec    = codecBlockFetch encode encode decode decode
             , ncWithChan = NamedPipe.withPipeChannel "block-fetch" direction
             }
