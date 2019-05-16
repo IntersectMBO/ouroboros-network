@@ -9,9 +9,9 @@
 import Control.Concurrent.Async (concurrently)
 import Control.Concurrent.STM (STM, atomically, retry)
 import Control.Monad (forM_)
-import Control.Tracer (Tracer (..), traceWith)
+import Control.Tracer (Tracer (..), contramap, traceWith)
 import qualified Data.ByteString.Lazy as Lazy (fromStrict)
-import Data.Functor.Contravariant (Op (..), contramap)
+import Data.Functor.Contravariant (Op (..))
 import Data.List (intercalate)
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE

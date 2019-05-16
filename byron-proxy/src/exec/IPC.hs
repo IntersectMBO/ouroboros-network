@@ -11,9 +11,8 @@ import Control.Monad.Class.MonadST (MonadST)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Resource (ResourceT, runResourceT)
-import Control.Tracer (Tracer (..), nullTracer, traceWith)
+import Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)
 import qualified Data.ByteString.Lazy as Lazy (ByteString, fromStrict)
-import Data.Functor.Contravariant (contramap)
 
 import Network.TypedProtocol.Channel (hoistChannel)
 import Network.TypedProtocol.Codec (hoistCodec)
@@ -27,7 +26,7 @@ import qualified Cardano.Chain.Slotting as Cardano
 
 import Ouroboros.Network.Channel (Channel, socketAsChannel)
 import qualified Ouroboros.Network.Server.Socket as Server
-import Ouroboros.Network.Server.Version (Application (..))
+import Ouroboros.Network.Protocol.Handshake.Version (Application (..))
 
 import qualified Ouroboros.Network.Protocol.ChainSync.Client as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Server as ChainSync

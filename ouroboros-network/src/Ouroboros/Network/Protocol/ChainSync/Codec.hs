@@ -160,21 +160,3 @@ codecChainSyncId = Codec encode decode
     (ClientAgency TokIdle, Just (AnyMessage MsgDone)) -> return (DecodeDone (SomeMessage MsgDone) Nothing)
 
     (_, _) -> return $ DecodeFail (CodecFailure "codecChainSync: no matching message")
-
-{-------------------------------------------------------------------------------
-  Auxiliary
-
-  This is adapted from 'defaultEncodeList' and 'defaultDecodeList' from
-  @serialise@; they should relaly be exported.
--------------------------------------------------------------------------------}
-
-encodeList :: (a -> Encoding) -> [a] -> Encoding
-encodeList _ [] = encodeListLen 0
-encodeList e xs = encodeListLenIndef <> Prelude.foldr (\x r -> e x <> r) encodeBreak xs
-
-decodeList :: Decoder s a -> Decoder s [a]
-decodeList d = do
-    mn <- decodeListLenOrIndef
-    case mn of
-      Nothing -> decodeSequenceLenIndef (flip (:)) [] reverse   d
-      Just n  -> decodeSequenceLenN     (flip (:)) [] reverse n d

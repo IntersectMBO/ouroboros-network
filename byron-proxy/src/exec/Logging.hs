@@ -68,6 +68,7 @@ defaultLoggerConfig = Monitoring.Representation
   , Monitoring.setupBackends   = [Monitoring.KatipBK]
   , Monitoring.defaultBackends = [Monitoring.KatipBK]
   , Monitoring.hasEKG          = Nothing
+  , Monitoring.hasPrometheus   = Nothing
   , Monitoring.hasGUI          = Nothing
   , Monitoring.options         = mempty
   }

@@ -1,4 +1,4 @@
-resolver: https://raw.githubusercontent.com/input-output-hk/cardano-prelude/d0d22fc64eb91908d34c69a4aeff9df3f8d0decd/snapshot.yaml
+resolver: https://raw.githubusercontent.com/input-output-hk/cardano-prelude/a136c4242b9c9f6124b811329bc8ccdfd86c514e/snapshot.yaml
 
 packages:
   - ./typed-transitions
@@ -29,15 +29,15 @@ extra-deps:
       - crypto
 
   - git: https://github.com/input-output-hk/cardano-prelude
-    commit: e1fb84b1a955b6e3e3e53d9022e8bc0f927417a2
+    commit: a136c4242b9c9f6124b811329bc8ccdfd86c514e
 
   - git: https://github.com/input-output-hk/cardano-shell
     commit: acf5b26fbf3c3a3927507e093d54e70ad521787b
 
-  - ekg-0.4.0.15
-  - libyaml-0.1.0.0
+  - git: https://github.com/input-output-hk/cardano-sl-x509
+    commit: e8bfc1294e088f90e5ae0b4aedbc82ee46ac5ee4
+
   - time-units-1.0.0
-  - ekg-json-0.1.0.6
   - ekg-prometheus-adapter-0.1.0.4
   - prometheus-2.1.1
   - containers-0.5.11.0
@@ -112,8 +112,4 @@ extra-deps:
 
 
 nix:
-  packages:
-    - zlib
-    - openssl
-    - cddl
-    - cbor-diag
+  shell-file: nix/stack-shell.nix

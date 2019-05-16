@@ -282,7 +282,7 @@ demo chain0 updates = do
         consumerPeer = ChainSync.chainSyncClientPeer
                         (ChainSync.chainSyncClientExample consumerVar
                         (consumerClient done target consumerVar))
-        consumerPeers Mxt.ChainSync1 = OnlyClient nullTracer (ChainSync.codecChainSync encode encode decode decode) consumerPeer
+        consumerPeers Mxt.ChainSync1 = OnlyClient nullTracer (ChainSync.codecChainSync encode decode encode decode) consumerPeer
         consumerNet = NetworkInterface {
               nodeAddress = consumerAddress,
               protocols   = consumerPeers
@@ -290,7 +290,7 @@ demo chain0 updates = do
 
         producerPeer :: Peer (ChainSync.ChainSync block (Point block)) AsServer ChainSync.StIdle IO ()
         producerPeer = ChainSync.chainSyncServerPeer (ChainSync.chainSyncServerExample () producerVar)
-        producerPeers Mxt.ChainSync1 = OnlyServer nullTracer (ChainSync.codecChainSync encode encode decode decode) producerPeer
+        producerPeers Mxt.ChainSync1 = OnlyServer nullTracer (ChainSync.codecChainSync encode decode encode decode) producerPeer
         producerNet = NetworkInterface {
               nodeAddress = producerAddress,
               protocols   = producerPeers

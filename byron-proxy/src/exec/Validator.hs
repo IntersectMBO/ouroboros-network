@@ -3,8 +3,7 @@
 
 import Control.Exception (bracket)
 import Control.Monad.Trans.Except (runExceptT)
-import Control.Tracer (Tracer (..), nullTracer, traceWith)
-import Data.Functor.Contravariant (contramap)
+import Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)
 import Data.Text (Text, pack)
 import qualified Options.Applicative as Opt
 

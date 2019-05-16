@@ -36,3 +36,33 @@ Usage: byron-proxy [--database-path FILEPATH] [--index-path FILEPATH]
                    [--policies FILEPATH] [--address IP:PORT] [--listen IP:PORT])
   Store and forward blocks from a Byron or Shelley server
 ```
+
+## Validator Demo
+
+This package also provides a `validator` executable, which is designed to be a
+client of `byron-proxy`. It uses the chain sync protocol to pull blocks and runs
+them through the `cardano-ledger` validation code.
+
+To run this as a demo you should launch a `byron-proxy` using
+```
+stack exec -- byron-proxy --database-path db-byron-proxy-demo-server \
+\ --index-path index-byron-proxy-demo-server \
+\ --configuration-file ../cardano-sl/lib/configuration.yaml \
+\ --configuration-key mainnet_full --server-host 127.0.0.1 --server-port 7777 \
+\ --topology ./topology.yaml
+```
+, which requires a `cardano-sl` clone in the same directory as your
+`ouroboros-network` clone and a `topology.yaml` file, containing
+```
+wallet:
+  relays: [[{ host: relays.cardano-mainnet.iohk.io }]]
+```
+You should see this syncing blocks from mainnet.
+
+Then to run the validator, run
+```
+stack exec -- validator --server-host 127.0.0.1 --server-port 7777
+```
+, which requires you to have `mainnet-genesis.json` in the current directory.
+You can run `cp ../cardano-ledger/mainnet-genesis.json .`, if you have a clone
+of `cardano-ledger` in the same directory as the `ouroboros-network` clone.

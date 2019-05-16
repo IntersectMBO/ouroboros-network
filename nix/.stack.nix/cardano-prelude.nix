@@ -26,6 +26,7 @@
           (hsPkgs.cborg)
           (hsPkgs.containers)
           (hsPkgs.formatting)
+          (hsPkgs.ghc-heap)
           (hsPkgs.ghc-prim)
           (hsPkgs.hashable)
           (hsPkgs.integer-gmp)
@@ -38,11 +39,37 @@
           (hsPkgs.vector)
           ];
         };
+      tests = {
+        "cardano-prelude-test" = {
+          depends = [
+            (hsPkgs.base)
+            (hsPkgs.aeson)
+            (hsPkgs.aeson-pretty)
+            (hsPkgs.attoparsec)
+            (hsPkgs.base16-bytestring)
+            (hsPkgs.bytestring)
+            (hsPkgs.canonical-json)
+            (hsPkgs.cardano-prelude)
+            (hsPkgs.containers)
+            (hsPkgs.cryptonite)
+            (hsPkgs.formatting)
+            (hsPkgs.ghc-heap)
+            (hsPkgs.hedgehog)
+            (hsPkgs.hspec)
+            (hsPkgs.pretty-show)
+            (hsPkgs.QuickCheck)
+            (hsPkgs.quickcheck-instances)
+            (hsPkgs.text)
+            (hsPkgs.template-haskell)
+            (hsPkgs.time)
+            ];
+          };
+        };
       };
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
       url = "https://github.com/input-output-hk/cardano-prelude";
-      rev = "e1fb84b1a955b6e3e3e53d9022e8bc0f927417a2";
-      sha256 = "0ikxxv3b5rhq56fj2vbfsdnvc3g5lj5yyfxdph05n8wccjx0bd2m";
+      rev = "a136c4242b9c9f6124b811329bc8ccdfd86c514e";
+      sha256 = "0blwf2s4z7zfra4r9mha0g4irdz1migqspa2dn1ysg9jf2cn1bwj";
       });
     }
