@@ -4,6 +4,7 @@
 {-# LANGUAGE FlexibleInstances       #-}
 {-# LANGUAGE GADTs                   #-}
 {-# LANGUAGE MultiParamTypeClasses   #-}
+{-# LANGUAGE OverloadedStrings       #-}
 {-# LANGUAGE RecordWildCards         #-}
 {-# LANGUAGE ScopedTypeVariables     #-}
 {-# LANGUAGE TypeFamilies            #-}
@@ -42,6 +43,7 @@ import           Control.Monad.Except
 import           Crypto.Random (MonadRandom)
 import qualified Data.Bimap as Bimap
 import qualified Data.ByteString as BS
+import           Data.Coerce
 import           Data.Either (fromRight)
 import           Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
@@ -52,6 +54,7 @@ import qualified Data.Set as Set
 
 import qualified Cardano.Chain.Block as Cardano.Block
 import qualified Cardano.Chain.Genesis as Cardano.Genesis
+import qualified Cardano.Chain.Update as Cardano.Update
 import qualified Cardano.Crypto as Cardano
 import qualified Cardano.Crypto.Signing as Cardano.KeyGen
 
@@ -228,6 +231,7 @@ protocolInfo (DemoMockPBFT params)
   where
     addrDist :: AddrDist
     addrDist = mkAddrDist numCoreNodes
+
 protocolInfo (DemoRealPBFT params)
              (NumCoreNodes numCoreNodes)
              (CoreNodeId nid) =
@@ -244,6 +248,12 @@ protocolInfo (DemoRealPBFT params)
                     (fst (mkKey n), CoreNodeId n)
                     | n <- [0 .. numCoreNodes]
                     ]
+              , pbftProtocolMagic = Cardano.Genesis.configProtocolMagic gc
+              , pbftProtocolVersion = Cardano.Update.ProtocolVersion 3 1 4
+              , pbftSoftwareVersion = Cardano.Update.SoftwareVersion (Cardano.Update.ApplicationName "harry the hamster") 1
+              , pbftGenesisHash     = coerce Cardano.Genesis.configGenesisHeaderHash gc
+              , pbftEpochSlots      = Cardano.Genesis.configEpochSlots gc
+              , pbftGenesisDlg      = Cardano.Genesis.configHeavyDelegation gc
               }
           }
       , pInfoInitLedger = ExtLedgerState {
@@ -256,6 +266,7 @@ protocolInfo (DemoRealPBFT params)
       , pInfoInitState  = ()
       }
   where
+    gc = pbftGenesisConfig params
     initState :: Cardano.Block.ChainValidationState
     Right initState = runExcept $
         Cardano.Block.initialChainValidationState (pbftGenesisConfig params)
