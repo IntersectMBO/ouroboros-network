@@ -6,6 +6,7 @@
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TupleSections         #-}
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 
@@ -17,7 +18,6 @@ import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Write as CBOR
-import           Codec.Serialise (Serialise (..))
 import           Control.Monad.Except
 import           Crypto.Random (MonadRandom)
 import           Data.Bifunctor (bimap)
@@ -25,16 +25,16 @@ import qualified Data.Bimap as Bimap
 import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Coerce
-import           Data.Either
 import           Data.FingerTree (Measured (..))
 import           Data.Foldable (find)
 import           Data.List.NonEmpty (NonEmpty (..))
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (fromJust, listToMaybe)
+import           Data.Maybe (listToMaybe, mapMaybe)
 import qualified Data.Sequence as Seq
 import qualified Data.Set as Set
 import           Data.Typeable
+import qualified Data.Vector as V
 import           Data.Word
 
 import           Cardano.Binary (Annotated (..), ByteSpan, ToCBOR, fromCBOR,
@@ -454,12 +454,15 @@ forgeByronDemoBlock cfg curSlot curNo prevHash txs () = do
 -- rich actor. We then transfer it _to_ the @m@'s rich actor (with "a" being the
 -- first rich actor), leaving any remaining balance simply as the transaction
 -- fee.
+--
+-- This is adapted from 'Test.Cardano.Chain.Elaboration.UTxO.elaborateTxWits'
 elaborateTx :: NodeConfig (ExtNodeConfig ByronDemoConfig (PBft PBftCardanoCrypto))
             -> Mock.Tx -> CC.UTxO.ATxAux ByteString
 elaborateTx cfg (Mock.Tx ins outs) = annotateTx $ CC.UTxO.mkTxAux tx witness
   where
-    [(_hash, mockInp)]          = Set.toList ins
-    [(mockOutAddr, mockOutVal)] = outs
+    [(_hash, mockInp)]    = Set.toList ins
+    [(mockAddr, mockVal)] = outs
+    Just mockOut          = lookup mockAddr (zip ["a", "b", "c", "d"] [0..])
 
     tx :: CC.UTxO.Tx
     tx = CC.UTxO.UnsafeTx {
@@ -469,28 +472,52 @@ elaborateTx cfg (Mock.Tx ins outs) = annotateTx $ CC.UTxO.mkTxAux tx witness
         }
 
     txIn :: CC.UTxO.TxIn
-    txIn = undefined
+    txIn = fst . fst $ initialUtxo Map.! mockInp
 
     txOut :: CC.UTxO.TxOut
     txOut = CC.UTxO.TxOut {
-          txOutAddress = undefined
+          txOutAddress = CC.UTxO.txOutAddress $ snd . fst $ initialUtxo Map.! mockOut
         , txOutValue   = assumeBound $
-                           CC.Common.mkLovelace (fromIntegral (mockOutVal * 1000000))
+                           CC.Common.mkLovelace (fromIntegral (mockVal * 1000000))
         }
 
     witness :: CC.UTxO.TxWitness
-    witness = undefined
+    witness = V.fromList [
+          CC.UTxO.VKWitness
+            (Crypto.toVerification (snd $ initialUtxo Map.! mockInp))
+            (Crypto.sign
+              (Crypto.getProtocolMagicId . pbftProtocolMagic . encNodeConfigExt $ cfg)
+              Crypto.SignTx
+              (snd $ initialUtxo Map.! mockInp)
+              (CC.UTxO.TxSigData (Crypto.hash tx))
+              )
+        ]
 
-    initialUtxo :: [(CC.UTxO.TxIn, CC.UTxO.TxOut)]
+    -- UTxO in the genesis block for the rich men
+    initialUtxo :: Map Int ((CC.UTxO.TxIn, CC.UTxO.TxOut), Crypto.SigningKey)
     initialUtxo =
-          fromCompactTxInTxOutList
+          Map.fromList
+        . mapMaybe (\(inp, out) -> mkEntry inp out <$> isRichman out)
+        . fromCompactTxInTxOutList
         . Map.toList
         . CC.UTxO.unUTxO
         . CC.UTxO.genesisUtxo
         $ pbftGenesisConfig (pbftParams (encNodeConfigP cfg))
+      where
+        mkEntry :: CC.UTxO.TxIn
+                -> CC.UTxO.TxOut
+                -> (Int, Crypto.SigningKey)
+                -> (Int, ((CC.UTxO.TxIn, CC.UTxO.TxOut), Crypto.SigningKey))
+        mkEntry inp out (richman, key) = (richman, ((inp, out), key))
 
     isRichman :: CC.UTxO.TxOut -> Maybe (Int, Crypto.SigningKey)
-    isRichman out = listToMaybe $ filter undefined richmen
+    isRichman out = listToMaybe $ filter (isValidKey . snd) richmen
+      where
+        isValidKey :: Crypto.SigningKey -> Bool
+        isValidKey key =
+            CC.Common.checkVerKeyAddress
+              (Crypto.toVerification key)
+              (CC.UTxO.txOutAddress out)
 
     richmen :: [(Int, Crypto.SigningKey)]
     richmen =
