@@ -574,6 +574,10 @@ encodeByronDemoHeaderHash :: NodeConfig (ExtNodeConfig ByronDemoConfig (PBft PBf
                           -> HeaderHash ByronHeader -> Encoding
 encodeByronDemoHeaderHash _cfg = toCBOR
 
+encodeByronDemoPreHeader :: NodeConfig (ExtNodeConfig ByronDemoConfig (PBft PBftCardanoCrypto))
+                         -> PreHeader (ByronBlock ByronDemoConfig) -> Encoding
+encodeByronDemoPreHeader _cfg = toCBOR
+
 decodeByronDemoHeader :: NodeConfig (ExtNodeConfig ByronDemoConfig (PBft PBftCardanoCrypto))
                       -> Decoder s ByronHeader
 decodeByronDemoHeader cfg =
