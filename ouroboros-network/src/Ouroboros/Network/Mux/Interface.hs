@@ -21,7 +21,6 @@ module Ouroboros.Network.Mux.Interface
   , MuxPeer (..)
   , simpleMuxClientApplication
   , simpleMuxServerApplication
-  , NetworkNode (..)
 
   -- * Auxiliary functions
   , miniProtocolDescription
@@ -178,26 +177,6 @@ simpleMuxServerApplication fn = MuxServerApplication $ \ptcl channel ->
   case fn ptcl of
     MuxPeer tracer codec peer -> void $ runPeer tracer codec channel peer
     MuxPeerPipelined n tracer codec peer -> void $ runPipelinedPeer n tracer codec channel peer
-
-
--- | Low level network interface.  It can be intiatiated using a socket, pair
--- of pipes or a pair queues.
---
-data NetworkNode addr m r = NetworkNode {
-      -- |
-      -- The way to connect ot other peers.  On startup the network interface
-      -- will run this to connect with a given list of peer.  But it can also
-      -- be used at a later stage to connect to a new peer.
-      --
-      -- This function will run client side of mux version negotation and then run client side of @'MuxAplication@' on it.
-      connect :: addr -> (m () -> m r) -> m r,
-
-      -- |
-      -- This will cancel the thread that is listening for new connections and
-      -- close the underlaying bearer.
-      killNode  :: m ()
-    }
-
 
 -- |
 -- Transform a @'MuxPeer'@ into @'ProtocolDescription'@ used by the

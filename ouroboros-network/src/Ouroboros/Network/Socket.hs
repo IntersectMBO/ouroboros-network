@@ -13,8 +13,7 @@ module Ouroboros.Network.Socket (
       runNetworkNode
     , runNetworkNode'
     , withServerNode
-    , withNetworkNode
-    , withConnection
+    , connectTo
 
     -- * Helper function for creating servers
     , socketAsMuxBearer
@@ -34,7 +33,6 @@ import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Exception (throwIO)
-import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Int
 import           Data.Word
@@ -42,20 +40,13 @@ import           GHC.Stack
 import qualified Network.Socket as Socket hiding (recv)
 import qualified Network.Socket.ByteString.Lazy as Socket (recv, sendAll)
 
-import           Network.TypedProtocol.Channel
 import           Ouroboros.Network.Time
 
 import qualified Ouroboros.Network.Server.Socket as Server
 import qualified Ouroboros.Network.Mux as Mx
 import qualified Ouroboros.Network.Mux.Types as Mx
 import           Ouroboros.Network.Mux.Types (MuxBearer)
-import           Ouroboros.Network.Mux.Interface ( HasClient
-                                                 , HasServer
-                                                 , MuxApplication
-                                                 , clientApplication
-                                                 , NetworkNode (..)
-                                                 , miniProtocolDescription
-                                                 )
+import           Ouroboros.Network.Mux.Interface
 
 import           Text.Printf
 
@@ -143,8 +134,8 @@ hexDump buf out = hexDump (BL.tail buf) (out ++ printf "0x%02x " (BL.head buf))
 -- Connect to a remote node.  It is using bracket to enclose the underlying
 -- socket acquisition.  This implies that when the continuation exits the
 -- underlying bearer will get closed.
-withConnection
-  :: forall ptcl r.
+connectTo
+  :: forall ptcl.
      ( Mx.ProtocolEnum ptcl
      , Ord ptcl
      , Enum ptcl
@@ -152,15 +143,12 @@ withConnection
      , Show ptcl
      , Mx.MiniProtocolLimits ptcl
      )
-  => (ptcl -> Channel IO ByteString -> IO ())
+  => MuxApplication ClientApp ptcl IO
   -- ^ application to run over the connection
   -> Socket.AddrInfo
   -- ^ address of the peer we want to connect to
-  -> (IO () -> IO r)
-  -- ^ callback which receives application which is running over created
-  -- connection; It maybe throw @'IO'@ excpetions.
-  -> IO r
-withConnection app remoteAddr kConn =
+  -> IO ()
+connectTo app remoteAddr =
     bracket
       (Socket.socket (Socket.addrFamily remoteAddr) Socket.Stream Socket.defaultProtocol)
       Socket.close
@@ -174,15 +162,14 @@ withConnection app remoteAddr kConn =
           Socket.connect sd (Socket.addrAddress remoteAddr)
           bearer <- socketAsMuxBearer sd
           Mx.muxBearerSetState bearer Mx.Connected
-          kConn $
-            Mx.muxStart mpds bearer
+          Mx.muxStart mpds bearer
             `catch`
             handleMuxError
       )
     where
       mpds :: Mx.MiniProtocolDescriptions ptcl IO
       mpds = \ptcl -> Mx.MiniProtocolDescription {
-          Mx.mpdInitiator = Just (fmap void $ app ptcl),
+          Mx.mpdInitiator = Just (fmap void $ clientApplication app ptcl),
           Mx.mpdResponder = Nothing
         }
 
@@ -364,52 +351,3 @@ withServerNode addr app k =
       complete outcome st = case outcome of
         Left _  -> pure st
         Right _ -> pure st
-
--- |
--- Run a node using @'NetworkInterface'@ using a socket.  It will start to
--- listen on incomming connections on the supplied @'nodeAddress'@, and returns
--- @'NetworkNode'@ which let one connect to other peers (by opening a new
--- TCP connection) or shut down the node.
---
-withNetworkNode
-    :: forall ptcl appType t r.
-       ( Mx.ProtocolEnum ptcl
-       , Ord ptcl
-       , Enum ptcl
-       , Bounded ptcl
-       , Show ptcl
-       , Mx.MiniProtocolLimits ptcl
-       , HasClient appType ~ True
-       , HasServer appType ~ True
-       )
-    => Socket.AddrInfo
-    -> MuxApplication appType ptcl IO
-    -- ^ network interface, which supplies node address and application run by
-    -- the multiplexing layer
-    -> (NetworkNode Socket.AddrInfo IO r -> Async () -> IO t)
-    -- ^ when the callback returns or throws an exception, the server will
-    -- terminate cleaning all its resources
-    -> IO t
-withNetworkNode addr app k =
-  bracket (mkListeningSocket (Socket.addrFamily addr) (Just $ Socket.addrAddress addr)) Socket.close $ \sd -> do
-
-    killVar <- newEmptyTMVarM
-    let main :: Server.Main () ()
-        main _ = takeTMVar killVar
-
-        killNode :: IO ()
-        killNode = atomically $ putTMVar killVar ()
-
-        node = NetworkNode { connect = withConnection (clientApplication app), killNode }
-
-    withAsync
-      (runNetworkNode' sd app throwIO (pure . Right) complete main ())
-      (\aid -> k node aid)
-
-  where
-    -- When a connection completes, we do nothing. State is ().
-    -- Crucially: we don't re-throw exceptions, because doing so would
-    -- bring down the server.
-    complete outcome st = case outcome of
-      Left _  -> pure st
-      Right _ -> pure st
