@@ -168,10 +168,9 @@ prop_socket_send_recv serverAddr f xs = do
                     (ReqResp.reqRespClientPeer (reqRespClientMap cv xs))
 
     res <-
-      withServerNode serverAddr serverApp $ \_ _ ->
-        withConnection clientApp serverAddr $ \conn -> do
-          conn
-          atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
+      withServerNode serverAddr serverApp $ \_ _ -> do
+        connectTo clientApp serverAddr
+        atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
 
     return (res == mapAccumL f 0 xs)
 
@@ -251,8 +250,7 @@ prop_socket_client_connect_error _ xs = ioProperty $ do
 
 
     (res :: Either IOException Bool)
-      <- try $ withConnection app serverAddr $ \conn ->
-                 False <$ conn
+      <- try $ False <$ connectTo app serverAddr
 
     -- XXX Disregarding the exact exception type
     pure $ either (const True) id res
@@ -288,20 +286,19 @@ demo chain0 updates = do
                     (ChainSync.codecChainSync encode encode decode decode)
                     (ChainSync.chainSyncServerPeer (ChainSync.chainSyncServerExample () producerVar))
 
-    withServerNode producerAddress producerApp $ \_ _ ->
-      withConnection consumerApp producerAddress $ \conn ->
-        withAsync conn $ \_connAsync -> do
-          void $ fork $ sequence_
-              [ do
-                  threadDelay 10e-3 -- just to provide interest
-                  atomically $ do
-                    p <- readTVar producerVar
-                    let Just p' = CPS.applyChainUpdate update p
-                    writeTVar producerVar p'
-              | update <- updates
-              ]
+    withServerNode producerAddress producerApp $ \_ _ -> do
+      withAsync (connectTo consumerApp producerAddress) $ \_connAsync -> do
+        void $ fork $ sequence_
+            [ do
+                threadDelay 10e-3 -- just to provide interest
+                atomically $ do
+                  p <- readTVar producerVar
+                  let Just p' = CPS.applyChainUpdate update p
+                  writeTVar producerVar p'
+            | update <- updates
+            ]
 
-          atomically $ takeTMVar done
+        atomically $ takeTMVar done
 
   where
     checkTip target consumerVar = atomically $ do
