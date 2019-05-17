@@ -1,6 +1,6 @@
 [![Build Status](https://badge.buildkite.com/3c5e581fd69202ceddd64e91351846c41baa285aaca835cdd9.svg?style=flat-square)](https://buildkite.com/input-output-hk/ouroboros-network)
 
-# IO-Sim
+# Ouroboros-Network
 
 * io-sim - `IOSim` simulator monad which supports asynchrounous exceptions,
   `STM` transactions and `async` interface, timers. 
