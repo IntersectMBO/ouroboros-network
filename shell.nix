@@ -5,7 +5,6 @@ let
 in
 default.nix-tools._raw.shellFor {
   packages    = p: map (x: p."${x}") [
-    "cabal-install"
     "io-sim"
     "io-sim-classes"
     "ouroboros-consensus"
@@ -13,4 +12,7 @@ default.nix-tools._raw.shellFor {
     "typed-transitions"
   ];
   withHoogle  = withHoogle;
+  buildInputs = with default.nix-tools._raw; [
+    cabal-install.components.exes.cabal
+  ];
 }
