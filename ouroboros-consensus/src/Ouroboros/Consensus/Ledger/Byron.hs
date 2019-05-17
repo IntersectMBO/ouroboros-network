@@ -282,7 +282,7 @@ instance Typeable cfg => HasPayload (PBft PBftCardanoCrypto) (ByronBlock cfg) wh
 -- | Override the delegation map from the ledger view
 --
 -- This is to work around a bug in cardano-ledger
--- TODO: Insert ticket number
+-- <https://github.com/input-output-hk/cardano-ledger/issues/504>
 reconstructDelegationMap :: Bimap CC.Common.StakeholderId CC.Common.StakeholderId
 reconstructDelegationMap =
     go $ Genesis.gdHeavyDelegation Dummy.dummyGenesisData
