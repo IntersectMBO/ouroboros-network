@@ -34,9 +34,11 @@ import qualified Data.Map.Strict as Map
 import           Data.Maybe (listToMaybe, mapMaybe)
 import qualified Data.Sequence as Seq
 import qualified Data.Set as Set
+import qualified Data.Text as T
 import           Data.Typeable
 import qualified Data.Vector as V
 import           Data.Word
+import           Formatting
 
 import           Cardano.Binary (Annotated (..), ByteSpan, fromCBOR, reAnnotate,
                      slice, toCBOR)
@@ -83,14 +85,28 @@ newtype ByronBlock cfg = ByronBlock { unByronBlock :: CC.Block.ABlock ByteString
 
 instance Condense (ByronBlock cfg) where
   -- TODO
-  condense = show . CC.Block.headerSignature . CC.Block.blockHeader . unByronBlock
+  condense = condense . ByronHeader . CC.Block.blockHeader . unByronBlock
 
 newtype ByronHeader cfg = ByronHeader { unByronHeader :: CC.Block.AHeader ByteString }
   deriving (Eq, Show)
 
 instance Condense (ByronHeader cfg) where
   -- TODO
-  condense = show . CC.Block.headerSignature . unByronHeader
+  condense hdr =
+      "(issuer: " <> condenseKey issuer <>
+      ", delegate: " <> condenseKey delegate <> ")"
+    where
+      psigPsk = Crypto.psigPsk
+              . CC.Block.unBlockSignature
+              . CC.Block.headerSignature
+              . unByronHeader
+              $ hdr
+      issuer   = Crypto.pskIssuerVK psigPsk
+      delegate = Crypto.pskDelegateVK psigPsk
+
+      condenseKey :: Crypto.VerificationKey -> String
+      condenseKey = T.unpack . sformat build
+
 
 instance Condense (ChainHash (ByronHeader cfg)) where
   condense GenesisHash   = "genesis"
