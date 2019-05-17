@@ -42,6 +42,7 @@ module Test.ChainGenerators
 
 import qualified Data.List as L
 import           Data.Maybe (fromJust, catMaybes)
+import qualified Data.ByteString.Char8 as BSC
 
 import           Ouroboros.Network.Testing.ConcreteBlock
 import           Ouroboros.Network.Block
@@ -118,7 +119,8 @@ newtype ArbitraryBlockBody = ArbitraryBlockBody {
   deriving (Show, Eq)
 
 instance Arbitrary ArbitraryBlockBody where
-    arbitrary = ArbitraryBlockBody . BlockBody <$> vectorOf 4 (choose ('A', 'Z'))
+    arbitrary = ArbitraryBlockBody . BlockBody . BSC.pack
+            <$> vectorOf 4 (choose ('A', 'Z'))
     -- probably no need for shrink, the content is arbitrary and opaque
     -- if we add one, it might be to shrink to an empty block
 
@@ -141,9 +143,11 @@ instance CoArbitrary SlotNo
 instance CoArbitrary BlockNo
 instance CoArbitrary BlockSigner
 instance CoArbitrary BodyHash
-instance CoArbitrary BlockBody
 instance CoArbitrary (ChainHash BlockHeader)
 instance CoArbitrary ConcreteHeaderHash
+
+instance CoArbitrary BlockBody where
+  coarbitrary (BlockBody b) = coarbitrary (BSC.unpack b)
 
 -- | The 'NonNegative' generator produces a large proportion of 0s, so we use
 -- this one instead for now.

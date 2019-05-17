@@ -47,7 +47,7 @@ module Ouroboros.Network.Testing.ConcreteBlock (
 
 import           Data.FingerTree (Measured(measure))
 import           Data.Hashable
-import qualified Data.Text as Text
+import           Data.ByteString (ByteString)
 import           Data.Word (Word64)
 import           Data.String (IsString)
 
@@ -55,12 +55,12 @@ import           Codec.Serialise (Serialise (..))
 import           Codec.CBOR.Encoding ( encodeListLen
                                      , encodeInt
                                      , encodeWord64
-                                     , encodeString
+                                     , encodeBytes
                                      )
 import           Codec.CBOR.Decoding ( decodeListLenOf
                                      , decodeInt
                                      , decodeWord64
-                                     , decodeString
+                                     , decodeBytes
                                      )
 import           GHC.Generics (Generic)
 
@@ -87,7 +87,7 @@ data Block = Block {
      }
    deriving (Show, Eq, Generic)
 
-newtype BlockBody = BlockBody String
+newtype BlockBody = BlockBody ByteString
   deriving (Show, Eq, Ord, IsString, Generic)
 
 hashBody :: BlockBody -> BodyHash
@@ -352,6 +352,6 @@ instance Serialise BlockHeader where
 
 instance Serialise BlockBody where
 
-  encode (BlockBody b) = encodeString (Text.pack b)
+  encode (BlockBody b) = encodeBytes b
 
-  decode = BlockBody . Text.unpack <$> decodeString
+  decode = fmap BlockBody decodeBytes
