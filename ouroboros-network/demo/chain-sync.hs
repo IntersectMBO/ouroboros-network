@@ -9,16 +9,16 @@
 
 module Main where
 
+import           Data.List
 import qualified Data.ByteString.Char8 as BSC
 import           Data.ByteString.Char8 (ByteString)
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import           Data.Set (Set)
-import           Data.Maybe
 
 import Control.Concurrent (threadDelay)
-import Control.Concurrent.STM (STM, atomically)
+import Control.Concurrent.STM (STM, atomically, check)
 import Control.Concurrent.STM.TVar
 import Control.Concurrent.Async
 import Control.Exception
@@ -46,8 +46,9 @@ import Ouroboros.Network.Codec (DeserialiseFailure)
 
 import Network.TypedProtocol.Channel
 import Network.TypedProtocol.Driver
-import Network.TypedProtocol.Codec (AnyMessage(..))
-import Network.TypedProtocol.PingPong.Type   as PingPong
+import Network.TypedProtocol.Pipelined
+
+--import Network.TypedProtocol.PingPong.Type   as PingPong
 import Network.TypedProtocol.PingPong.Client as PingPong
 import Network.TypedProtocol.PingPong.Server as PingPong
 import Ouroboros.Network.Protocol.PingPong.Codec
@@ -70,8 +71,12 @@ main :: IO ()
 main = do
     args <- getArgs
     case args of
-      "pingpong":"client":[] -> clientPingPong
+      "pingpong":"client":[]           -> clientPingPong False
+      "pingpong":"client-pipelined":[] -> clientPingPong True
       "pingpong":"server":[] -> serverPingPong
+
+      "pingpong2":"client":[] -> clientPingPong2
+      "pingpong2":"server":[] -> serverPingPong2
 
       "chainsync":"client":sockAddrs   -> clientChainSync sockAddrs
       "chainsync":"server":sockAddr:[] -> serverChainSync sockAddr
@@ -105,40 +110,39 @@ defaultLocalSocketAddrInfo =
 -- Ping pong demo
 --
 
-data DemoProtocol1 = PingPong
+data DemoProtocol0 = PingPong0
   deriving (Eq, Ord, Enum, Bounded, Show)
 
-instance ProtocolEnum DemoProtocol1 where
-  fromProtocolEnum PingPong = 2
-  toProtocolEnum 2 = Just PingPong
+instance ProtocolEnum DemoProtocol0 where
+  fromProtocolEnum PingPong0 = 2
+  toProtocolEnum 2 = Just PingPong0
   toProtocolEnum _ = Nothing
 
-pingPingMsgTracer :: Tracer IO (TraceSendRecv PingPong)
-pingPingMsgTracer =
-    contramap (showTraceSendRecv show) stdoutTracer
-
-showTraceSendRecv :: (AnyMessage ps -> String) 
-                  -> TraceSendRecv ps -> String
-showTraceSendRecv showMsg (TraceSendMsg msg) = "send: " ++ showMsg msg
-showTraceSendRecv showMsg (TraceRecvMsg msg) = "recv: " ++ showMsg msg
-
-clientPingPong :: IO ()
-clientPingPong =
+clientPingPong :: Bool -> IO ()
+clientPingPong pipelined =
     withConnection
       (clientApplication muxApplication)
       defaultLocalSocketAddrInfo $ \runConn ->
         runConn
   where
-    muxApplication :: MuxApplication ClientApp DemoProtocol1 IO
+    muxApplication :: MuxApplication ClientApp DemoProtocol0 IO
     muxApplication =
       simpleMuxClientApplication protocols
 
-    protocols :: DemoProtocol1 -> MuxPeer DeserialiseFailure IO ()
-    protocols PingPong =
+    protocols :: DemoProtocol0 -> MuxPeer DeserialiseFailure IO ()
+    protocols PingPong0 | pipelined =
+      MuxPeerPipelined
+        10
+        (contramap show stdoutTracer)
+        codecPingPong
+        (pingPongClientPeerPipelined (pingPongClientPipelinedMax 5))
+
+    protocols PingPong0 =
       MuxPeer
-        pingPingMsgTracer
+        (contramap show stdoutTracer)
         codecPingPong
         (pingPongClientPeer (pingPongClientCount 5))
+
 
 pingPongClientCount :: Applicative m => Int -> PingPongClient m ()
 pingPongClientCount 0 = PingPong.SendMsgDone ()
@@ -151,14 +155,14 @@ serverPingPong =
       muxApplication $ \_node serverAsync ->
         wait serverAsync   -- block until async exception
   where
-    muxApplication :: MuxApplication ServerApp DemoProtocol1 IO
+    muxApplication :: MuxApplication ServerApp DemoProtocol0 IO
     muxApplication =
       simpleMuxServerApplication protocols
 
-    protocols :: DemoProtocol1 -> MuxPeer DeserialiseFailure IO ()
-    protocols PingPong =
+    protocols :: DemoProtocol0 -> MuxPeer DeserialiseFailure IO ()
+    protocols PingPong0 =
       MuxPeer
-        pingPingMsgTracer
+        (contramap show stdoutTracer)
         codecPingPong
         (pingPongServerPeer pingPongServerStandard)
 
@@ -170,6 +174,87 @@ pingPongServerStandard =
       recvMsgPing = pure pingPongServerStandard,
       recvMsgDone = ()
     }
+
+
+--
+-- Ping pong demo2
+--
+
+data DemoProtocol1 = PingPong1 | PingPong1'
+  deriving (Eq, Ord, Enum, Bounded, Show)
+
+instance ProtocolEnum DemoProtocol1 where
+  fromProtocolEnum PingPong1  = 2
+  fromProtocolEnum PingPong1' = 3
+  toProtocolEnum 2 = Just PingPong1
+  toProtocolEnum 3 = Just PingPong1'
+  toProtocolEnum _ = Nothing
+
+clientPingPong2 :: IO ()
+clientPingPong2 =
+    withConnection
+      (clientApplication muxApplication)
+      defaultLocalSocketAddrInfo $ \runConn ->
+        runConn
+  where
+    muxApplication :: MuxApplication ClientApp DemoProtocol1 IO
+    muxApplication =
+      simpleMuxClientApplication protocols
+
+    protocols :: DemoProtocol1 -> MuxPeer DeserialiseFailure IO ()
+    protocols PingPong1 =
+      MuxPeer
+        (contramap (show . (,) (1 :: Int)) stdoutTracer)
+        codecPingPong
+        (pingPongClientPeer (pingPongClientCount 5))
+
+    protocols PingPong1' =
+      MuxPeer
+        (contramap (show . (,) (2 :: Int)) stdoutTracer)
+        codecPingPong
+        (pingPongClientPeer (pingPongClientCount 5))
+
+pingPongClientPipelinedMax
+  :: forall m. Monad m
+  => Int
+  -> PingPongClientPipelined m ()
+pingPongClientPipelinedMax c =
+    PingPongClientPipelined (go [] Zero 0)
+  where
+    go :: [Either Int Int] -> Nat o -> Int
+       -> PingPongSender o Int m ()
+    go acc o        n | n < c
+                      = SendMsgPingPipelined
+                          (return n)
+                          (go (Left n : acc) (Succ o) (succ n))
+    go _    Zero     _ = SendMsgDonePipelined ()
+    go acc (Succ o) n = CollectPipelined
+                          Nothing
+                          (\n' -> go (Right n' : acc) o n)
+
+serverPingPong2 :: IO ()
+serverPingPong2 =
+    withServerNode
+      defaultLocalSocketAddrInfo
+      muxApplication $ \_node serverAsync ->
+        wait serverAsync   -- block until async exception
+  where
+    muxApplication :: MuxApplication ServerApp DemoProtocol1 IO
+    muxApplication =
+      simpleMuxServerApplication protocols
+
+    protocols :: DemoProtocol1 -> MuxPeer DeserialiseFailure IO ()
+    protocols PingPong1 =
+      MuxPeer
+        (contramap (show . (,) (1 :: Int)) stdoutTracer)
+        codecPingPong
+        (pingPongServerPeer pingPongServerStandard)
+
+    protocols PingPong1' =
+      MuxPeer
+        (contramap (show . (,) (2 :: Int)) stdoutTracer)
+        codecPingPong
+        (pingPongServerPeer pingPongServerStandard)
 
 
 --
@@ -201,37 +286,38 @@ clientChainSync sockAddrs =
     protocols :: DemoProtocol2 -> MuxPeer DeserialiseFailure IO ()
     protocols ChainSync2 =
       MuxPeer
-        (contramap (showTraceSendRecv show) stdoutTracer)
+        (contramap show stdoutTracer)
         (codecChainSync CBOR.encode CBOR.encode CBOR.decode CBOR.decode)
         (chainSyncClientPeer chainSyncClient)
 
 
 serverChainSync :: FilePath -> IO ()
-serverChainSync sockAddr = do
-    prng <- newSMGen
-
-    let muxApplication :: MuxApplication ServerApp DemoProtocol2 IO
-        muxApplication =
-          simpleMuxServerApplication protocols
-
-        protocols :: DemoProtocol2 -> MuxPeer DeserialiseFailure IO ()
-        protocols ChainSync2 =
-          MuxPeer
-            (contramap (showTraceSendRecv show) stdoutTracer)
-            (codecChainSync CBOR.encode CBOR.encode CBOR.decode CBOR.decode)
-            (chainSyncServerPeer (chainSyncServer prng))
-
+serverChainSync sockAddr =
     withServerNode
       (mkLocalSocketAddrInfo sockAddr)
       muxApplication $ \_node serverAsync ->
         wait serverAsync   -- block until async exception
+  where
+    prng = mkSMGen 0
+
+    muxApplication :: MuxApplication ServerApp DemoProtocol2 IO
+    muxApplication =
+      simpleMuxServerApplication protocols
+
+    protocols :: DemoProtocol2 -> MuxPeer DeserialiseFailure IO ()
+    protocols ChainSync2 =
+      MuxPeer
+        (contramap show stdoutTracer)
+        (codecChainSync CBOR.encode CBOR.encode CBOR.decode CBOR.decode)
+        (chainSyncServerPeer (chainSyncServer prng))
+
 
 
 --
 -- Block fetch demo
 --
 
-data DemoProtocol3 = ChainSync3 | BlockFetch3
+data DemoProtocol3 = BlockFetch3 | ChainSync3
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 instance ProtocolEnum DemoProtocol3 where
@@ -241,10 +327,6 @@ instance ProtocolEnum DemoProtocol3 where
   toProtocolEnum 2 = Just ChainSync3
   toProtocolEnum 3 = Just BlockFetch3
   toProtocolEnum _ = Nothing
-
-showMessageBlockFetch :: (StandardHash header, Show body)
-                      => AnyMessage (BlockFetch header body) -> String
-showMessageBlockFetch (AnyMessage msg) = show msg
 
 
 clientBlockFetch :: [FilePath] -> IO ()
@@ -267,10 +349,11 @@ clientBlockFetch sockAddrs = do
         protocols peerid ChainSync3 channel =
           bracket register unregister $ \chainVar ->
           runPeer
-            (contramap (showTraceSendRecv show) stdoutTracer)
+            nullTracer -- (contramap (show . TraceLabelPeer peerid) stdoutTracer)
             (codecChainSync CBOR.encode CBOR.encode CBOR.decode CBOR.decode)
             channel
-            (chainSyncClientPeer (chainSyncClient' chainVar))
+            (chainSyncClientPeer
+              (chainSyncClient' syncTracer currentChainVar chainVar))
           where
             register     = atomically $ do
                              chainvar <- newTVar genesisChainFragment
@@ -284,18 +367,20 @@ clientBlockFetch sockAddrs = do
         protocols peerid BlockFetch3 channel =
           bracketFetchClient registry peerid $ \stateVars ->
             runPipelinedPeer 10
-              (contramap (showTraceSendRecv showMessageBlockFetch) stdoutTracer)
+              nullTracer -- (contramap (show . TraceLabelPeer peerid) stdoutTracer)
               (codecBlockFetch CBOR.encode CBOR.encode CBOR.decode CBOR.decode)
               channel
               (blockFetchClient
-                 nullTracer --TODO
+                 (contramap show stdoutTracer)
                  fetchClientPolicy
                  stateVars)
 
+        fetchClientPolicy :: FetchClientPolicy BlockHeader Block IO
         fetchClientPolicy = FetchClientPolicy {
-          blockFetchSize     = \_   -> 2000,
+          blockFetchSize     = \_   -> 1000,
           blockMatchesHeader = \_ _ -> True,
-          addFetchedBlock    = addTestFetchedBlock blockHeap
+          addFetchedBlock    = \p b -> addTestFetchedBlock blockHeap
+                                         (castPoint p) (blockHeader b)
         }
 
         blockFetchPolicy :: BlockFetchConsensusInterface FilePath
@@ -306,23 +391,52 @@ clientBlockFetch sockAddrs = do
                                        >>= traverse readTVar,
               readCurrentChain       = readTVar currentChainVar,
               readFetchMode          = return FetchModeBulkSync,
-              readFetchedBlocks      = flip Set.member <$>
+              readFetchedBlocks      = (\h p -> castPoint p `Set.member` h) <$>
                                          getTestFetchedBlocks blockHeap,
-              addFetchedBlock        = addTestFetchedBlock blockHeap,
+              addFetchedBlock        = \p b -> addTestFetchedBlock blockHeap
+                                         (castPoint p) (blockHeader b),
 
               plausibleCandidateChain,
               compareCandidateChains,
 
-              blockFetchSize         = \_ -> 2000,
+              blockFetchSize         = \_ -> 1000,
               blockMatchesHeader     = \_ _ -> True
             }
           where
             plausibleCandidateChain cur candidate =
                 AF.headBlockNo candidate > AF.headBlockNo cur
 
-            compareCandidateChains c1 c2 =
-              AF.headBlockNo c1 `compare` AF.headBlockNo c2
+        compareCandidateChains c1 c2 =
+          AF.headBlockNo c1 `compare` AF.headBlockNo c2
 
+        chainSelection fingerprint = do
+          (fingerprint', currentChain') <- atomically $ do
+            candidates <- readTVar candidateChainsVar
+                      >>= traverse readTVar
+            let fingerprint' = Map.map AF.headPoint candidates
+            check (fingerprint /= fingerprint')
+--            currentChain <- readTVar currentChainVar
+            fetched      <- getTestFetchedBlocks blockHeap
+            let currentChain' =
+                  -- So this does chain selection by taking the longest
+                  -- downloaded candidate chain
+                 --FIXME: there's something wrong here, we always get chains
+                 -- of length 1.
+                  maximumBy compareCandidateChains $
+                  [ candidateChainFetched
+                  | candidateChain <- Map.elems candidates
+                  , let candidateChainFetched =
+                          AF.mkAnchoredFragment
+                            (AF.anchorPoint candidateChain) $
+                          CF.takeWhileOldest
+                            (\b -> blockPoint b `Set.member` fetched)
+                            (AF.unanchorFragment candidateChain)
+                  ]
+            writeTVar currentChainVar currentChain'
+            return (fingerprint', currentChain')
+          traceWith chainTracer (AF.lastPoint currentChain',
+                                 AF.headPoint currentChain')
+          chainSelection fingerprint'
 
     peerAsyncs <- sequence
                     [ async $
@@ -333,40 +447,55 @@ clientBlockFetch sockAddrs = do
 
     fetchAsync <- async $
                     blockFetchLogic
-                      nullTracer -- decisionTracer
+                      (contramap show stdoutTracer) -- decisionTracer
+                      (contramap show stdoutTracer) -- state tracer
                       blockFetchPolicy
                       registry
                  >> return ()
 
-    _ <- waitAnyCancel (fetchAsync : peerAsyncs)
+    chainAsync <- async (chainSelection Map.empty)
+
+    _ <- waitAnyCancel (fetchAsync : chainAsync : peerAsyncs)
     return ()
+  where
+--    chainSyncMsgTracer  = contramap (show) stdoutTracer
+--    blockFetchMsgTracer = contramap (show) stdoutTracer
+
+--    decisionTracer      = contramap show stdoutTracer
+--    clientStateTracer   = contramap show stdoutTracer
+
+    syncTracer :: Tracer IO (Point BlockHeader, Point BlockHeader)
+    syncTracer  = contramap (\x -> "sync client: " ++ show x) stdoutTracer
+
+    chainTracer :: Tracer IO (Point BlockHeader, Point BlockHeader)
+    chainTracer = contramap (\x -> "cur chain  : " ++ show x) stdoutTracer
 
 
 serverBlockFetch :: FilePath -> IO ()
-serverBlockFetch sockAddr = do
-    prng <- newSMGen
-
-    let muxApplication :: MuxApplication ServerApp DemoProtocol3 IO
-        muxApplication =
-          simpleMuxServerApplication protocols
-
-        protocols :: DemoProtocol3 -> MuxPeer DeserialiseFailure IO ()
-        protocols ChainSync3 =
-          MuxPeer
-            (contramap (showTraceSendRecv show) stdoutTracer)
-            (codecChainSync CBOR.encode CBOR.encode CBOR.decode CBOR.decode)
-            (chainSyncServerPeer (chainSyncServer prng))
-
-        protocols BlockFetch3 =
-          MuxPeer
-            (contramap (showTraceSendRecv showMessageBlockFetch) stdoutTracer)
-            (codecBlockFetch CBOR.encode CBOR.encode CBOR.decode CBOR.decode)
-            (blockFetchServerPeer (blockFetchServer prng))
-
+serverBlockFetch sockAddr =
     withServerNode
       (mkLocalSocketAddrInfo sockAddr)
       muxApplication $ \_node serverAsync ->
         wait serverAsync   -- block until async exception
+  where
+    prng = mkSMGen 0
+
+    muxApplication :: MuxApplication ServerApp DemoProtocol3 IO
+    muxApplication =
+      simpleMuxServerApplication protocols
+
+    protocols :: DemoProtocol3 -> MuxPeer DeserialiseFailure IO ()
+    protocols ChainSync3 =
+      MuxPeer
+        (contramap show stdoutTracer)
+        (codecChainSync CBOR.encode CBOR.encode CBOR.decode CBOR.decode)
+        (chainSyncServerPeer (chainSyncServer prng))
+
+    protocols BlockFetch3 =
+      MuxPeer
+        (contramap show stdoutTracer)
+        (codecBlockFetch CBOR.encode CBOR.encode CBOR.decode CBOR.decode)
+        (blockFetchServerPeer (blockFetchServer prng))
 
 
 --
@@ -376,13 +505,16 @@ serverBlockFetch sockAddr = do
 chainSyncClient :: ChainSyncClient BlockHeader (Point BlockHeader) IO ()
 chainSyncClient =
     ChainSyncClient $ do
+      curvar   <- newTVarIO genesisChainFragment
       chainvar <- newTVarIO genesisChainFragment
-      let ChainSyncClient k = chainSyncClient' chainvar
+      let ChainSyncClient k = chainSyncClient' nullTracer curvar chainvar
       k
 
-chainSyncClient' :: TVar (AF.AnchoredFragment BlockHeader)
+chainSyncClient' :: Tracer IO (Point BlockHeader, Point BlockHeader)
+                 -> TVar (AF.AnchoredFragment BlockHeader)
+                 -> TVar (AF.AnchoredFragment BlockHeader)
                  -> ChainSyncClient BlockHeader (Point BlockHeader) IO ()
-chainSyncClient' chainvar =
+chainSyncClient' syncTracer _currentChainVar candidateChainVar =
     ChainSyncClient (return requestNext)
   where
     requestNext :: ClientStIdle BlockHeader (Point BlockHeader) IO ()
@@ -397,6 +529,9 @@ chainSyncClient' chainvar =
         recvMsgRollForward  = \header _pHead ->
           ChainSyncClient $ do
             addBlock header
+            --FIXME: the notTooFarAhead bit is not working
+            -- it seems the current chain is always of length 1.
+--            notTooFarAhead
             return requestNext
 
       , recvMsgRollBackward = \pIntersect _pHead ->
@@ -406,18 +541,29 @@ chainSyncClient' chainvar =
       }
 
     addBlock :: BlockHeader -> IO ()
-    addBlock b = atomically $ do
-        chain <- readTVar chainvar
-        let !chain' = shiftAnchoredFragment 100 b chain
-        writeTVar chainvar chain'
+    addBlock b = do
+        chain <- atomically $ do
+          chain <- readTVar candidateChainVar
+          let !chain' = shiftAnchoredFragment 50 b chain
+          writeTVar candidateChainVar chain'
+          return chain'
+        traceWith syncTracer (AF.lastPoint chain, AF.headPoint chain)
 
     rollback :: Point BlockHeader -> IO ()
     rollback p = atomically $ do
-        chain <- readTVar chainvar
+        chain <- readTVar candidateChainVar
         -- we do not handle rollback failure in this demo
         let (Just !chain') = AF.rollback p chain
-        writeTVar chainvar chain'
-
+        writeTVar candidateChainVar chain'
+{-
+    notTooFarAhead = atomically $ do
+      currentChain   <- readTVar currentChainVar
+      candidateChain <- readTVar candidateChainVar
+      check $ case (AF.headBlockNo currentChain,
+                    AF.headBlockNo candidateChain) of
+                (Just bn, Just bn') -> bn' < bn + 5
+                _                   -> True
+-}
 chainSyncServer :: RandomGen g
                 => g
                 -> ChainSyncServer BlockHeader (Point BlockHeader) IO ()
@@ -429,7 +575,7 @@ chainSyncServer seed =
               -> ServerStIdle BlockHeader (Point BlockHeader) IO ()
     idleState blocks =
       ServerStIdle {
-        recvMsgRequestNext   = do threadDelay 1000000
+        recvMsgRequestNext   = do threadDelay 500000
                                   return (Left (nextState blocks)),
         recvMsgFindIntersect = \_ -> return (intersectState blocks),
         recvMsgDoneClient    = return ()
@@ -472,12 +618,16 @@ blockFetchServer seed =
           SendMsgNoBlocks (return (idleState blocks))
 
         Just (batch, blocks') ->
-          SendMsgStartBatch (return (sendingState batch blocks'))
+          SendMsgStartBatch $ do
+            threadDelay 1000000
+            return (sendingState batch blocks')
 
     sendingState []        blocks =
       SendMsgBatchDone (return (idleState blocks))
     sendingState (b:batch) blocks =
-      SendMsgBlock b (return (sendingState batch blocks))
+      SendMsgBlock b $ do
+        threadDelay 1000000
+        return (sendingState batch blocks)
 
 selectBlockRange :: ChainRange BlockHeader
                  -> [Block]
@@ -597,8 +747,8 @@ data TestFetchedBlockHeap m block = TestFetchedBlockHeap {
 --
 -- This is suitable for examples and tests.
 --
-mkTestFetchedBlockHeap :: [Point Block]
-                       -> IO (TestFetchedBlockHeap IO Block)
+mkTestFetchedBlockHeap :: [Point BlockHeader]
+                       -> IO (TestFetchedBlockHeap IO BlockHeader)
 mkTestFetchedBlockHeap points = do
     v <- atomically (newTVar (Set.fromList points))
     return TestFetchedBlockHeap {
@@ -618,12 +768,9 @@ shiftAnchoredFragment :: HasHeader block
                      -> block
                      -> AF.AnchoredFragment block
                      -> AF.AnchoredFragment block
-shiftAnchoredFragment n b c0 =
-    (\c -> AF.mkAnchoredFragment (fromMaybe p0 (CF.lastPoint c)) c)
-  . CF.takeNewest n
-  . AF.unanchorFragment
-  . AF.addBlock b
-  $ c0
-  where
-    p0 = AF.lastPoint c0
+shiftAnchoredFragment n b af =
+  case AF.unanchorFragment af of
+    cf@(b0 CF.:< cf') | CF.length cf >= n
+      -> AF.mkAnchoredFragment (blockPoint b0) (CF.addBlock b cf')
+    _ -> AF.addBlock b af
 
