@@ -617,7 +617,7 @@ annotateBlock epochSlots =
 encodeByronDemoHeader :: NodeConfig (ExtNodeConfig ByronDemoConfig (PBft PBftCardanoCrypto))
                       -> ByronHeader ByronDemoConfig -> Encoding
 encodeByronDemoHeader cfg =
-      CC.Block.toCBORHeader epochSlots
+      CC.Block.toCBORHeader' epochSlots
     . fmap (const ())
     . unByronHeader
   where
@@ -626,7 +626,7 @@ encodeByronDemoHeader cfg =
 encodeByronDemoBlock :: NodeConfig (ExtNodeConfig ByronDemoConfig (PBft PBftCardanoCrypto))
                      -> ByronBlock ByronDemoConfig -> Encoding
 encodeByronDemoBlock cfg =
-      CC.Block.toCBORBlock epochSlots
+      toCBORBlockWithoutBoundary epochSlots
     . fmap (const ())
     . unByronBlock
   where
