@@ -13,6 +13,7 @@ import qualified Control.Lens as Lens (to)
 import Control.Monad.Class.MonadST (MonadST)
 import Control.Monad.Class.MonadThrow (MonadThrow)
 import Control.Monad.Trans.Class (lift)
+import Control.Tracer (Tracer, traceWith)
 
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Builder as Builder (byteString)
@@ -206,6 +207,9 @@ data DBError where
 
 instance Exception DBError
 
+data DBTrace where
+  DBWrite :: !SlotNo -> DBTrace
+
 -- | Blocks are written to the database in the cardano-sl `Block` `Bi` instance
 -- encoding. In theory it would be better to encode `MainBlock` for non-EBB
 -- and `GenesisBlock` for EBB, but then the epoch file parser would be more
@@ -213,13 +217,14 @@ instance Exception DBError
 mkDB
   :: ( Monad m )
   => (forall x . DBError -> m x)
+  -> Tracer m DBTrace
   -> Cardano.EpochSlots -- ^ Number of slots per epoch
                    -- (must never change in the chain stored here)
   -> Index m
   -> ImmutableDB Cardano.HeaderHash m
   -> DB m
-mkDB err epochSlots idx idb = DB
-  { appendBlocks = appendBlocksImpl err epochSlots idx idb
+mkDB err tracer epochSlots idx idb = DB
+  { appendBlocks = appendBlocksImpl err tracer epochSlots idx idb
   , readFrom     = readFromImpl err epochSlots idx idb
   , readTip      = readTipImpl err epochSlots idx idb
   }
@@ -227,14 +232,15 @@ mkDB err epochSlots idx idb = DB
 appendBlocksImpl
   :: ( Monad m )
   => (forall x . DBError -> m x)
+  -> Tracer m DBTrace
   -> Cardano.EpochSlots
   -> Index m
   -> ImmutableDB Cardano.HeaderHash m
   -> (DBAppend m -> m t)
   -> m t
-appendBlocksImpl err epochSlots idx idb k =
+appendBlocksImpl err tracer epochSlots idx idb k =
   Index.indexWrite idx $ \iwrite ->
-    k (dbAppendImpl err epochSlots iwrite idb)
+    k (dbAppendImpl err tracer epochSlots iwrite idb)
 
 -- | Append one block, assumed to be within an `Index.indexWrite`.
 -- It sets the block as the new tip in the index, then appends it to the
@@ -243,11 +249,12 @@ appendBlocksImpl err epochSlots idx idb k =
 dbAppendImpl
   :: ( Monad m )
   => (forall x . DBError -> m x)
+  -> Tracer m DBTrace
   -> Cardano.EpochSlots
   -> IndexWrite m
   -> ImmutableDB Cardano.HeaderHash m
   -> DBAppend m
-dbAppendImpl err epochSlots iwrite idb = DBAppend $ \blockToWrite ->
+dbAppendImpl err tracer epochSlots iwrite idb = DBAppend $ \blockToWrite -> do
   -- Must serialise as a `Block` rather than a `MainBlock` or `GenesisBlock`,
   -- because the epoch file parser needs to be able to discriminate them.
   let builder = case blockToWrite of
@@ -255,38 +262,45 @@ dbAppendImpl err epochSlots iwrite idb = DBAppend $ \blockToWrite ->
         -- The annotation is assumed to be the bytes from which it was decoded.
         CardanoBlockToWrite (Annotated _ bytes) ->
           Builder.byteString bytes
-  in  case blockToWrite of
-        LegacyBlockToWrite b@(Left ebb) -> do
-          -- Write the index first, so that if something goes wrong with the
-          -- `appendEBB` to the `ImmutableDB`, the transaction will quit and the
-          -- index/db will remain consistent.
-          let hash = CSL.headerHash ebb
-              epoch = ebbEpoch ebb
-          Index.updateTip iwrite hash epoch Index.EBBSlot
-          Immutable.appendEBB idb epoch (coerceHashFromLegacy hash) builder
-        LegacyBlockToWrite b@(Right blk) -> do
-          let hash = CSL.headerHash blk
-              (epoch, SlotNo wslot) = blockEpochAndRelativeSlot blk
-              slot = SlotNo $ unEpochNo epoch * Cardano.unEpochSlots epochSlots + wslot
-          Index.updateTip iwrite hash epoch (Index.RealSlot wslot)
-          Immutable.appendBinaryBlob idb slot builder
-        CardanoBlockToWrite (Annotated (Cardano.ABOBBlock blk) _) -> do
-          let hash = Cardano.blockHashAnnotated blk
-              flatSlotId = Cardano.blockSlot blk
-              slot = Cardano.unFlatSlotId flatSlotId
-              slotId = Cardano.unflattenSlotId epochSlots flatSlotId
-              Cardano.EpochIndex epoch = Cardano.siEpoch slotId
-          Index.updateTip iwrite (coerceHashToLegacy hash) (EpochNo epoch) (Index.RealSlot slot)
-          Immutable.appendBinaryBlob idb (SlotNo slot) builder
-        CardanoBlockToWrite (Annotated (Cardano.ABOBBoundary ebb) _) -> do
-          let hash = unsafeAbstractHash
-                . Lazy.fromStrict
-                . Cardano.wrapBoundaryBytes
-                . Cardano.boundaryHeaderBytes
-                $ ebb
-              epoch = EpochNo (Cardano.boundaryEpoch ebb)
-          Index.updateTip iwrite (coerceHashToLegacy hash) epoch Index.EBBSlot
-          Immutable.appendEBB idb epoch hash builder
+  slotNo <- case blockToWrite of
+    LegacyBlockToWrite b@(Left ebb) -> do
+      -- Write the index first, so that if something goes wrong with the
+      -- `appendEBB` to the `ImmutableDB`, the transaction will quit and the
+      -- index/db will remain consistent.
+      let hash = CSL.headerHash ebb
+          epoch = ebbEpoch ebb
+          slot  = SlotNo (unEpochNo epoch * Cardano.unEpochSlots epochSlots)
+      Index.updateTip iwrite hash epoch Index.EBBSlot
+      Immutable.appendEBB idb epoch (coerceHashFromLegacy hash) builder
+      pure slot
+    LegacyBlockToWrite b@(Right blk) -> do
+      let hash = CSL.headerHash blk
+          (epoch, SlotNo wslot) = blockEpochAndRelativeSlot blk
+          slot = SlotNo $ unEpochNo epoch * Cardano.unEpochSlots epochSlots + wslot
+      Index.updateTip iwrite hash epoch (Index.RealSlot wslot)
+      Immutable.appendBinaryBlob idb slot builder
+      pure slot
+    CardanoBlockToWrite (Annotated (Cardano.ABOBBlock blk) _) -> do
+      let hash = Cardano.blockHashAnnotated blk
+          flatSlotId = Cardano.blockSlot blk
+          slot = Cardano.unFlatSlotId flatSlotId
+          slotId = Cardano.unflattenSlotId epochSlots flatSlotId
+          Cardano.EpochIndex epoch = Cardano.siEpoch slotId
+      Index.updateTip iwrite (coerceHashToLegacy hash) (EpochNo epoch) (Index.RealSlot slot)
+      Immutable.appendBinaryBlob idb (SlotNo slot) builder
+      pure (SlotNo slot)
+    CardanoBlockToWrite (Annotated (Cardano.ABOBBoundary ebb) _) -> do
+      let hash = unsafeAbstractHash
+            . Lazy.fromStrict
+            . Cardano.wrapBoundaryBytes
+            . Cardano.boundaryHeaderBytes
+            $ ebb
+          epoch = EpochNo (Cardano.boundaryEpoch ebb)
+          slot  = SlotNo (unEpochNo epoch * Cardano.unEpochSlots epochSlots)
+      Index.updateTip iwrite (coerceHashToLegacy hash) epoch Index.EBBSlot
+      Immutable.appendEBB idb epoch hash builder
+      pure slot
+  traceWith tracer (DBWrite slotNo)
 
 -- | Stream from a given point, using the index to determine the start point
 -- in case the `Point` is a header hash.

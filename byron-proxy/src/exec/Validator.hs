@@ -124,7 +124,7 @@ main :: IO ()
 main = do
   opts <- Opt.execParser cliParserInfo
   Logging.withLogging (loggerConfigPath opts) "validator" $ \trace_ -> do
-    let trace = Logging.convertTrace trace_
+    let trace = Logging.convertTrace' trace_
         -- Hard-code to mainnet configuration.
         cc = mainnetConfiguration
         mainnetGenFilepath = case overrideGenesisJson opts of

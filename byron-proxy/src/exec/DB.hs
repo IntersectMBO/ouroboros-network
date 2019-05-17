@@ -7,13 +7,14 @@ import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
 
 import Control.Exception (throwIO)
+import Control.Tracer (Tracer)
 import qualified System.Directory (createDirectoryIfMissing)
 
 import qualified Cardano.Binary as Binary (fromCBOR, toCBOR)
 import qualified Cardano.Chain.Block as Cardano (HeaderHash)
 import qualified Cardano.Chain.Slotting as Cardano (EpochSlots (..))
 
-import Ouroboros.Byron.Proxy.DB (DB)
+import Ouroboros.Byron.Proxy.DB (DB, DBTrace)
 import qualified Ouroboros.Byron.Proxy.DB as DB
 import qualified Ouroboros.Byron.Proxy.Index.Sqlite as Index
 import qualified Ouroboros.Storage.Common as Immutable
@@ -41,8 +42,12 @@ data DBConfig = DBConfig
 -- | Set up and use a DB.
 --
 -- The directory at `dbFilePath` will be created if it does not exist.
-withDB :: DBConfig -> (DB IO -> IO t) -> IO t
-withDB dbOptions k = do
+withDB
+  :: DBConfig
+  -> Tracer IO DBTrace
+  -> (DB IO -> IO t)
+  -> IO t
+withDB dbOptions tracer k = do
   -- The ImmutableDB/Storage layer will not create a directory for us, we have
   -- to ensure it exists.
   System.Directory.createDirectoryIfMissing True (dbFilePath dbOptions)
@@ -63,7 +68,7 @@ withDB dbOptions k = do
         (DB.epochFileParser (slotsPerEpoch dbOptions) fs)
   Index.withDB_ (indexFilePath dbOptions) $ \idx ->
     Immutable.withDB openImmutableDB $ \idb ->
-      k (DB.mkDB throwIO (slotsPerEpoch dbOptions) idx idb)
+      k (DB.mkDB throwIO tracer (slotsPerEpoch dbOptions) idx idb)
 
 encodeHeaderHash :: Cardano.HeaderHash -> CBOR.Encoding
 encodeHeaderHash = Binary.toCBOR
