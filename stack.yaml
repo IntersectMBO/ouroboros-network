@@ -8,7 +8,6 @@ packages:
   - ./ouroboros-consensus
   - ./io-sim
   - ./io-sim-classes
-  - ./byron-proxy
 
 extra-deps:
   - git: https://github.com/input-output-hk/iohk-monitoring-framework
@@ -21,18 +20,24 @@ extra-deps:
     commit: b676160954cea07d4378ccca870a61242bc188a2
     subdirs:
       - binary
+      - binary/test
 
   - git: https://github.com/input-output-hk/cardano-ledger
-    commit: 20afe954f847281665ada871c40943bf346f6cf5
+    commit: 684195650722e4d337e90562fddcc5c2b0d17d34
     subdirs:
       - .
       - crypto
+      - crypto/test
+      - test
 
   - git: https://github.com/input-output-hk/cardano-prelude
     commit: a136c4242b9c9f6124b811329bc8ccdfd86c514e
+    subdirs:
+      - .
+      - test
 
   - git: https://github.com/input-output-hk/cardano-shell
-    commit: acf5b26fbf3c3a3927507e093d54e70ad521787b
+    commit: 5db8e79d319a86d48bea4cb70f1e904acae46de4
 
   - git: https://github.com/input-output-hk/cardano-sl-x509
     commit: e8bfc1294e088f90e5ae0b4aedbc82ee46ac5ee4

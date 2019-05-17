@@ -25,10 +25,10 @@ module Ouroboros.Consensus.Protocol.Praos (
   , Payload(..)
   ) where
 
-import           Codec.Serialise (Serialise(..))
-import qualified Codec.Serialise.Encoding as Enc
-import qualified Codec.Serialise.Decoding as Dec
 import           Codec.CBOR.Encoding (Encoding, encodeListLen)
+import           Codec.Serialise (Serialise (..))
+import qualified Codec.Serialise.Decoding as Dec
+import qualified Codec.Serialise.Encoding as Enc
 import           Control.Monad (unless)
 import           Control.Monad.Except (throwError)
 import           Data.IntMap.Strict (IntMap)
@@ -247,6 +247,21 @@ instance (Serialise (PraosExtraFields c), PraosCrypto c) => OuroborosTag (Praos 
             }
 
     return $ bi : cs
+
+  -- Rewind the chain state
+  --
+  -- At the moment, this implementation of Praos keeps the full history of the
+  -- chain state since the dawn of time (#248). For this reason rewinding is
+  -- very simple, and we can't get to a point where we can't roll back more
+  -- (unless the slot number never occurred, but that would be a bug in the
+  -- caller). Once we limit the history we keep, this function will become
+  -- more complicated.
+  --
+  -- We don't roll back to the exact slot since that slot might not have been
+  -- filled; instead we roll back the the block just before it.
+  rewindChainState PraosNodeConfig{..} cs rewindTo =
+      -- This may drop us back to the empty list if we go back to genesis
+      Just $ dropWhile (\bi -> biSlot bi > rewindTo) cs
 
   -- NOTE: We redefine `preferCandidate` but NOT `compareCandidates`
   -- NOTE: See note regarding clock skew.

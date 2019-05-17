@@ -2,6 +2,8 @@ module CLI (
     CLI(..)
   , TopologyInfo(..)
   , Command(..)
+  , Protocol(..)
+  , fromProtocol
   , parseCLI
   -- * Handy re-exports
   , execParser
@@ -25,6 +27,8 @@ import           Ouroboros.Consensus.Util
 import           Mock.TxSubmission (command', parseMockTx)
 import           Topology (TopologyInfo (..))
 
+import qualified Test.Cardano.Chain.Genesis.Dummy as Dummy
+
 data CLI = CLI {
     systemStart  :: SystemStart
   , slotDuration :: SlotLength
@@ -32,8 +36,29 @@ data CLI = CLI {
   }
 
 data Command =
-    SimpleNode  TopologyInfo (Some DemoProtocol)
+    SimpleNode  TopologyInfo Protocol
   | TxSubmitter TopologyInfo Mock.Tx
+
+data Protocol =
+    BFT
+  | Praos
+  | MockPBFT
+  | RealPBFT
+
+fromProtocol :: Protocol -> IO (Some DemoProtocol)
+fromProtocol BFT =
+    return $ Some $ DemoBFT defaultSecurityParam
+fromProtocol Praos =
+    return $ Some $ DemoPraos defaultDemoPraosParams
+fromProtocol MockPBFT =
+    return $ Some $ DemoMockPBFT (defaultDemoPBftParams genesisConfig)
+  where
+    -- TODO: This is nasty
+    genesisConfig = error "genesis config not needed when using mock ledger"
+fromProtocol RealPBFT = do
+    return $ Some $ DemoRealPBFT (defaultDemoPBftParams genesisConfig)
+  where
+    genesisConfig = Dummy.dummyConfig
 
 parseCLI :: Parser CLI
 parseCLI = CLI
@@ -57,19 +82,23 @@ parseSlotDuration = option (mkSlotLength <$> auto) $ mconcat [
     mkSlotLength :: Integer -> SlotLength
     mkSlotLength = slotLengthFromMillisec . (* 1000)
 
-parseProtocol :: Parser (Some DemoProtocol)
+parseProtocol :: Parser Protocol
 parseProtocol = asum [
-      flag' (Some (DemoBFT defaultSecurityParam)) $ mconcat [
+      flag' BFT $ mconcat [
           long "bft"
         , help "Use the BFT consensus algorithm"
         ]
-    , flag' (Some (DemoPraos defaultDemoPraosParams)) $ mconcat [
+    , flag' Praos $ mconcat [
           long "praos"
         , help "Use the Praos consensus algorithm"
         ]
-    , flag' (Some (DemoPBFT defaultDemoPBftParams)) $ mconcat [
-          long "pbft"
-        , help "Use the Permissive BFT consensus algorithm"
+    , flag' MockPBFT $ mconcat [
+          long "mock-pbft"
+        , help "Use the Permissive BFT consensus algorithm using a mock ledger"
+        ]
+    , flag' RealPBFT $ mconcat [
+          long "real-pbft"
+        , help "Use the Permissive BFT consensus algorithm using the real ledger"
         ]
     ]
 

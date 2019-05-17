@@ -1,6 +1,7 @@
 {-# LANGUAGE DerivingVia        #-}
 {-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Test.Util.Orphans.Arbitrary
@@ -132,7 +133,7 @@ instance DSIGNAlgorithm v => Arbitrary (VerKeyDSIGN v) where
     arbitrary = deriveVerKeyDSIGN <$> arbitrary
     shrink = const []
 
-instance DSIGNAlgorithm v => Arbitrary (SigDSIGN v) where
+instance (Signable v Int, DSIGNAlgorithm v) => Arbitrary (SigDSIGN v) where
 
     arbitrary = do
         a    <- arbitrary :: Gen Int

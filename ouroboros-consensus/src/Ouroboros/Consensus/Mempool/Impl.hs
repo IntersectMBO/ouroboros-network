@@ -27,9 +27,11 @@ import           Ouroboros.Consensus.Util (repeatedly)
 -------------------------------------------------------------------------------}
 
 openMempool :: (MonadSTM m, StandardHash blk, ApplyTx blk)
-            => ChainDB m blk hdr -> m (Mempool m blk)
-openMempool chainDB = do
-    env <- initMempoolEnv chainDB
+            => ChainDB m blk hdr
+            -> LedgerConfig blk
+            -> m (Mempool m blk)
+openMempool chainDB cfg = do
+    env <- initMempoolEnv chainDB cfg
     return Mempool {
         addTxs = implAddTxs env
       , getTxs = implGetTxs env
@@ -49,17 +51,21 @@ data InternalState blk = IS {
     }
 
 data MempoolEnv m blk hdr = MempoolEnv {
-      mpEnvChainDB  :: ChainDB m blk hdr
-    , mpEnvStateVar :: TVar m (InternalState blk)
+      mpEnvChainDB   :: ChainDB m blk hdr
+    , mpEnvLedgerCfg :: LedgerConfig blk
+    , mpEnvStateVar  :: TVar m (InternalState blk)
     }
 
 initInternalState :: InternalState blk
 initInternalState = IS Seq.empty Block.GenesisHash
 
-initMempoolEnv :: MonadSTM m => ChainDB m blk hdr -> m (MempoolEnv m blk hdr)
-initMempoolEnv chainDB = do
+initMempoolEnv :: MonadSTM m
+               => ChainDB m blk hdr
+               -> LedgerConfig blk
+               -> m (MempoolEnv m blk hdr)
+initMempoolEnv chainDB cfg = do
     isVar <- atomically $ newTVar initInternalState
-    return $ MempoolEnv chainDB isVar
+    return $ MempoolEnv chainDB cfg isVar
 
 {-------------------------------------------------------------------------------
   Implementation
@@ -69,7 +75,7 @@ initMempoolEnv chainDB = do
 implAddTxs :: forall m blk hdr. (MonadSTM m, StandardHash blk, ApplyTx blk)
            => MempoolEnv m blk hdr
            -> [GenTx blk]
-           -> m [(GenTx blk, LedgerError blk)]
+           -> m [(GenTx blk, ApplyTxErr blk)]
 implAddTxs mpEnv@MempoolEnv{..} txs = atomically $ do
     ValidationResult{..} <- validateNew <$> validateIS mpEnv
     writeTVar mpEnvStateVar IS { isTxs = vrValid
@@ -78,7 +84,7 @@ implAddTxs mpEnv@MempoolEnv{..} txs = atomically $ do
     return vrInvalid
   where
     validateNew :: ValidationResult blk ->  ValidationResult blk
-    validateNew = extendsVR False txs
+    validateNew = extendsVR mpEnvLedgerCfg False txs
 
 implGetTxs :: (MonadSTM m, StandardHash blk, ApplyTx blk)
            => MempoolEnv m blk hdr
@@ -111,16 +117,17 @@ data ValidationResult blk = ValidationResult {
     -- | The transactions that were invalid, along with their errors
     --
     -- Order not guaranteed
-  , vrInvalid :: [(GenTx blk, LedgerError blk)]
+  , vrInvalid :: [(GenTx blk, ApplyTxErr blk)]
   }
 
 -- | Initialize 'ValidationResult' from a ledger state and a list of
 -- transactions /known/ to be valid in that ledger state
 initVR :: forall blk. ApplyTx blk
-       => Seq (GenTx blk)
+       => LedgerConfig blk
+       -> Seq (GenTx blk)
        -> (ChainHash blk, LedgerState blk)
        -> ValidationResult blk
-initVR = \knownValid (tip, st) -> ValidationResult {
+initVR cfg = \knownValid (tip, st) -> ValidationResult {
       vrBefore  = tip
     , vrValid   = knownValid
     , vrAfter   = afterKnownValid (Foldable.toList knownValid) st
@@ -129,7 +136,7 @@ initVR = \knownValid (tip, st) -> ValidationResult {
   where
     afterKnownValid :: [GenTx blk] -> LedgerState blk -> LedgerState blk
     afterKnownValid []       = id
-    afterKnownValid (tx:txs) = afterKnownValid txs . reapplyTxSameState tx
+    afterKnownValid (tx:txs) = afterKnownValid txs . reapplyTxSameState cfg tx
 
 -- | Extend 'ValidationResult' with a transaction that may or may not be
 -- valid in this ledger state
@@ -139,12 +146,13 @@ initVR = \knownValid (tip, st) -> ValidationResult {
 -- validated this transaction, because if we have, we can skip things like
 -- cryptographic signatures.
 extendVR :: ApplyTx blk
-         => Bool -- ^ Was these transactions previously validated?
+         => LedgerConfig blk
+         -> Bool -- ^ Was these transactions previously validated?
          -> GenTx blk
          -> ValidationResult blk
          -> ValidationResult blk
-extendVR prevApplied tx ValidationResult{..} =
-    case runExcept $ (if prevApplied then reapplyTx else applyTx) tx vrAfter of
+extendVR cfg prevApplied tx ValidationResult{..} =
+    case runExcept $ (if prevApplied then reapplyTx else applyTx) cfg tx vrAfter of
       Left err  -> ValidationResult {
                        vrBefore  = vrBefore
                      , vrValid   = vrValid
@@ -160,11 +168,12 @@ extendVR prevApplied tx ValidationResult{..} =
 
 -- | Apply 'extendVR' to a list of transactions, in order
 extendsVR :: ApplyTx blk
-          => Bool -- ^ Were these transactions previously applied?
+          => LedgerConfig blk
+          -> Bool -- ^ Were these transactions previously applied?
           -> [GenTx blk]
           -> ValidationResult blk
           -> ValidationResult blk
-extendsVR prevApplied = repeatedly (extendVR prevApplied)
+extendsVR cfg prevApplied = repeatedly (extendVR cfg prevApplied)
 
 -- | Validate internal state
 validateIS :: forall m blk hdr. (MonadSTM m, StandardHash blk, ApplyTx blk)
@@ -179,6 +188,6 @@ validateIS MempoolEnv{..} =
        -> InternalState    blk
        -> ValidationResult blk
     go tip st IS{..}
-      | tip == isTip = initVR isTxs (tip, st)
-      | otherwise    = extendsVR True (Foldable.toList isTxs) $
-                         initVR Seq.empty (tip, st)
+      | tip == isTip = initVR mpEnvLedgerCfg isTxs (tip, st)
+      | otherwise    = extendsVR mpEnvLedgerCfg True (Foldable.toList isTxs) $
+                         initVR mpEnvLedgerCfg Seq.empty (tip, st)

@@ -5,6 +5,7 @@
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 -- | Mock key evolving signatures.
 module Ouroboros.Consensus.Crypto.KES.Simple
@@ -26,7 +27,12 @@ import           Ouroboros.Consensus.Util.Condense
 
 data SimpleKES d
 
-instance DSIGNAlgorithm d => KESAlgorithm (SimpleKES d) where
+instance ( DSIGNAlgorithm d
+           -- TODO We currently don't support other 'Signable' constraints for
+           -- KES. We could, but it's more stuff to do. So for the moment we fix
+           -- this here.
+         , Signable d ~ Empty
+         ) => KESAlgorithm (SimpleKES d) where
 
     newtype VerKeyKES (SimpleKES d) = VerKeySimpleKES (Vector (VerKeyDSIGN d))
         deriving Generic

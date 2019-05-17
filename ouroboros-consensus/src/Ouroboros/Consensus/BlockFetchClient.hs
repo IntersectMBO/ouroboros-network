@@ -31,7 +31,7 @@ import           Ouroboros.Consensus.Util.Condense
 -- so define it ourselves for now.
 type BlockFetchClient hdr blk m a =
   FetchClientStateVars m hdr ->
-  PeerPipelined (BlockFetch hdr blk) AsClient BFIdle m a
+  PeerPipelined (BlockFetch hdr blk) 'AsClient 'BFIdle m a
 
 -- | Block fetch client based on
 -- 'Ouroboros.Network.BlockFetch.Examples.mockedBlockFetchClient1', but using
@@ -40,14 +40,14 @@ blockFetchClient
     :: forall m up hdr blk.
        (MonadSTM m, MonadTime m, MonadThrow m,
         HasHeader blk, HasHeader hdr, HeaderHash hdr ~ HeaderHash blk,
-        Condense blk)
+        Condense blk, Show hdr, Show blk)
     => Tracer m String
     -> BlockFetchConsensusInterface up hdr blk m
     -> up -> BlockFetchClient hdr blk m ()
 blockFetchClient tracer blockFetchInterface _up clientStateVars =
    -- TODO trace and use @up@ in the output.
     BlockFetchClient.blockFetchClient
-        nullTracer
+        (contramap show tracer)
         policy
         clientStateVars
   where

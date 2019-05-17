@@ -26,14 +26,14 @@ import           Text.Show.Functions ()
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (ChainUpdate (..), Point (..))
 import qualified Ouroboros.Network.Chain as Chain
-import           Ouroboros.Network.ChainFragment (ChainFragment(..))
+import           Ouroboros.Network.ChainFragment (ChainFragment (..))
 import qualified Ouroboros.Network.ChainFragment as CF
 import           Ouroboros.Network.Testing.ConcreteBlock
 import           Ouroboros.Network.Testing.Serialise (prop_serialise)
 import           Test.Chain ()
-import           Test.ChainGenerators
-                   ( TestBlockChain (..), TestChainAndRange (..)
-                   , addSlotGap, genNonNegative, genSlotGap, mkPartialBlock)
+import           Test.ChainGenerators (TestBlockChain (..),
+                     TestChainAndRange (..), addSlotGap, genNonNegative,
+                     genSlotGap, mkPartialBlock)
 
 
 --
@@ -225,16 +225,17 @@ prop_lookupBySlot (TestChainFragmentAndPoint c p) =
             && CF.blockSlot b == slot
     Nothing -> not (CF.slotOnChainFragment slot c)
 
-prop_intersectChainFragments :: TestChainFragmentFork -> Bool
+prop_intersectChainFragments :: TestChainFragmentFork -> Property
 prop_intersectChainFragments (TestChainFragmentFork origL1 origL2 c1 c2) =
-  case CF.intersectChainFragments c1 c2 of
+  let intersection = CF.intersectChainFragments c1 c2 in
+  counterexample ("intersection: " ++ show intersection) $
+  case intersection of
     Nothing -> (CF.null origL1 || CF.null origL2)
-            && L.intersect (CF.toNewestFirst c1) (CF.toNewestFirst c2) == []
+            .&&. L.intersect (CF.toNewestFirst c1) (CF.toNewestFirst c2) === []
     Just (l1, l2, r1, r2) ->
-      l1 == origL1 && l2 == origL2 &&
-      CF.headPoint l1 == CF.headPoint l2 &&
-      CF.joinChainFragments l1 r1 == Just c1 &&
-      CF.joinChainFragments l2 r2 == Just c2
+           counterexample "headPoint" (CF.headPoint l1 === CF.headPoint l2)
+      .&&. counterexample "c1" (CF.joinChainFragments l1 r1 === Just c1)
+      .&&. counterexample "c2" (CF.joinChainFragments l2 r2 === Just c2)
 
 prop_serialise_chain :: TestBlockChainFragment -> Property
 prop_serialise_chain (TestBlockChainFragment chain) =
@@ -331,21 +332,22 @@ prop_filter :: (Block -> Bool) -> TestBlockChainFragment -> Property
 prop_filter p (TestBlockChainFragment chain) =
   let fragments = CF.filter p chain in
       cover 70 (length fragments > 1) "multiple fragments" $
+      counterexample ("fragments: " ++ show fragments) $
 
       -- The fragments contain exactly the blocks where p holds
       (   Set.fromList (L.map CF.blockPoint (L.filter p (CF.toNewestFirst chain)))
-       ==
+       ===
           Set.fromList (L.map CF.blockPoint (concatMap CF.toNewestFirst fragments))
       )
-   &&
+   .&&.
       -- The fragments are non-empty
       all (not . CF.null) fragments
-   &&
+   .&&.
       -- The fragments are in order
       (let fragmentPoints = map (\c -> (CF.blockPoint <$> CF.last c,
                                         CF.blockPoint <$> CF.head c)) fragments
         in fragmentPoints == L.sort fragmentPoints)
-   &&
+   .&&.
       -- The fragments are of maximum size
       and [ isNothing (CF.joinChainFragments a b)
           | (a,b) <- zip fragments (tail fragments) ]
@@ -501,13 +503,14 @@ genAddBlock chain = do
         b       = fixupBlock prevhash prevblockno (mkPartialBlock slot body)
     return b
 
-prop_arbitrary_TestAddBlock :: TestAddBlock -> Bool
+prop_arbitrary_TestAddBlock :: TestAddBlock -> Property
 prop_arbitrary_TestAddBlock (TestAddBlock c b) =
-    CF.valid c && CF.validExtension c b
+    CF.valid c .&&. CF.validExtension' c b === Right ()
 
-prop_shrink_TestAddBlock :: TestAddBlock -> Bool
+prop_shrink_TestAddBlock :: TestAddBlock -> Property
 prop_shrink_TestAddBlock t =
-    and [ CF.valid c && CF.validExtension c b
+    conjoin
+        [ CF.valid c .&&. CF.validExtension' c b === Right ()
         | TestAddBlock c b <- shrink t ]
 
 --
@@ -670,16 +673,16 @@ prop_shrink_TestChainFragmentAndPoint cp@(TestChainFragmentAndPoint c _) =
 -- Generator for chain forks
 --
 
--- | A test generator for two chain fragments that share some blocks (exactly
--- matching), but one of the two chain fragments can have another prefix (they
--- cannot each have a different prefix). The two chains fragment can have
--- different suffixes, i.e. they are forks.
+-- | A test generator for chain fragments of two forks of a chain.
 --
--- For example: start with a whole chain, then take a fragment of that chain.
--- Take a fragment of that fragment to obtain a second chain fragment. The two
--- fragments will share identical blocks, but one fragment may contain more
--- than the other. Now add some unique blocks to each fragment to obtain two
--- forks. These are the four fragments generated 'TestChainFragmentFork'.
+-- We return four fragments: two prefixes and two fragments that include the
+-- respective prefix and an additional suffix. The two prefixes will share
+-- identical blocks, but one prefix may contain fewer blocks than the other,
+-- i.e., by dropping some of its oldest blocks. We then add some random blocks
+-- to each prefix, leading to two forks.
+--
+-- Note that we might happen to add the same exact block(s) to both prefixes,
+-- leading to two identical chain fragments.
 --
 data TestChainFragmentFork
     = TestChainFragmentFork

@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
@@ -33,25 +34,26 @@ import           Ouroboros.Network.Chain (Chain (..))
 import qualified Ouroboros.Network.Chain as Chain
 
 import           Ouroboros.Consensus.BlockchainTime
-import           Ouroboros.Consensus.Demo (HasCreator (..))
+import           Ouroboros.Consensus.Demo (HasCreator (..), Block)
 import           Ouroboros.Consensus.Node
+import           Ouroboros.Consensus.Protocol.Abstract (NodeConfig)
 import           Ouroboros.Consensus.Protocol.LeaderSchedule
                      (LeaderSchedule (..))
 import qualified Ouroboros.Consensus.Util.Chain as Chain
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
-allEqual :: forall b. (Condense b, Eq b, HasHeader b) => [Chain b] -> Property
+allEqual :: forall b. (Condense (Block b), Eq (Block b), HasHeader (Block b)) => [Chain (Block b)] -> Property
 allEqual []             = property True
 allEqual [_]            = property True
 allEqual (x : xs@(_:_)) =
     let c = foldl' Chain.commonPrefix x xs
     in  foldl' (\prop d -> prop .&&. f c d) (property True) xs
   where
-    f :: Chain b -> Chain b -> Property
+    f :: Chain (Block b) -> Chain (Block b) -> Property
     f c d = counterexample (g c d) $ c == d
 
-    g :: Chain b -> Chain b -> String
+    g :: Chain (Block b) -> Chain (Block b) -> String
     g c d = case (Chain.lastSlot c, Chain.lastSlot d) of
         (Nothing, Nothing) -> error "impossible case"
         (Nothing, Just t)  ->    "empty intersection of non-empty chains (one reaches slot "
@@ -74,7 +76,7 @@ allEqual (x : xs@(_:_)) =
                               <> " /= "
                               <> condense d
 
-shortestLength :: Map NodeId (Chain b) -> Natural
+shortestLength :: Map NodeId (Chain (Block b)) -> Natural
 shortestLength = fromIntegral . minimum . map Chain.length . Map.elems
 
 {-------------------------------------------------------------------------------
@@ -84,8 +86,8 @@ shortestLength = fromIntegral . minimum . map Chain.length . Map.elems
 data BlockInfo b = BlockInfo
     { biSlot     :: !SlotNo
     , biCreator  :: !(Maybe CoreNodeId)
-    , biHash     :: !(ChainHash b)
-    , biPrevious :: !(Maybe (ChainHash b))
+    , biHash     :: !(ChainHash (Block b))
+    , biPrevious :: !(Maybe (ChainHash (Block b)))
     }
 
 genesisBlockInfo :: BlockInfo b
@@ -96,10 +98,10 @@ genesisBlockInfo = BlockInfo
     , biPrevious = Nothing
     }
 
-blockInfo :: (HasHeader b, HasCreator b) => b -> BlockInfo b
-blockInfo b = BlockInfo
+blockInfo :: (HasHeader (Block b), HasCreator b) => NodeConfig b -> Block b -> BlockInfo b
+blockInfo nc b = BlockInfo
     { biSlot     = blockSlot b
-    , biCreator  = Just $ getCreator b
+    , biCreator  = Just $ getCreator nc b
     , biHash     = BlockHash $ blockHash b
     , biPrevious = Just $ blockPrevHash b
     }
@@ -134,25 +136,26 @@ data EdgeLabel = EdgeLabel
 instance Labellable EdgeLabel where
     toLabelValue = const $ StrLabel Text.empty
 
-tracesToDot :: forall b. (HasHeader b, HasCreator b)
-            => Map NodeId (Chain b)
+tracesToDot :: forall b. (HasHeader (Block b), HasCreator b)
+            => NodeConfig b
+            -> Map NodeId (Chain (Block b))
             -> String
-tracesToDot traces = Text.unpack $ printDotGraph $ graphToDot quickParams graph
+tracesToDot nc traces = Text.unpack $ printDotGraph $ graphToDot quickParams graph
   where
-    chainBlockInfos :: Chain b -> Map (ChainHash b) (BlockInfo b)
+    chainBlockInfos :: Chain (Block b) -> Map (ChainHash (Block b)) (BlockInfo b)
     chainBlockInfos = Chain.foldChain f (Map.singleton GenesisHash genesisBlockInfo)
       where
-        f m b = let info = blockInfo b
+        f m b = let info = blockInfo nc b
                 in  Map.insert (biHash info) info m
 
-    blockInfos :: Map (ChainHash b) (BlockInfo b)
+    blockInfos :: Map (ChainHash (Block b)) (BlockInfo b)
     blockInfos = Map.unions $ map chainBlockInfos $ Map.elems traces
 
-    lastHash :: Chain b -> ChainHash b
+    lastHash :: Chain (Block b) -> ChainHash (Block b)
     lastHash Genesis  = GenesisHash
     lastHash (_ :> b) = BlockHash $ blockHash b
 
-    blockInfosAndBelievers :: Map (ChainHash b) (BlockInfo b, Set NodeId)
+    blockInfosAndBelievers :: Map (ChainHash (Block b)) (BlockInfo b, Set NodeId)
     blockInfosAndBelievers = Map.foldlWithKey f i traces
       where
         i = (\info -> (info, Set.empty)) <$> blockInfos
@@ -162,7 +165,7 @@ tracesToDot traces = Text.unpack $ printDotGraph $ graphToDot quickParams graph
             (lastHash chain)
             m
 
-    hashToId :: Map (ChainHash b) Node
+    hashToId :: Map (ChainHash (Block b)) Node
     hashToId = Map.fromList $ zip (Map.keys blockInfosAndBelievers) [0..]
 
     ns :: [LNode NodeLabel]
@@ -187,18 +190,19 @@ tracesToDot traces = Text.unpack $ printDotGraph $ graphToDot quickParams graph
     graph :: Gr NodeLabel EdgeLabel
     graph = mkGraph ns es
 
-leaderScheduleFromTrace :: forall b. (HasCreator b, HasHeader b)
-                        => NumSlots
-                        -> Map NodeId (Chain b)
+leaderScheduleFromTrace :: forall b. (HasCreator b, HasHeader (Block b))
+                        => NodeConfig b
+                        -> NumSlots
+                        -> Map NodeId (Chain (Block b))
                         -> LeaderSchedule
-leaderScheduleFromTrace (NumSlots numSlots) =
+leaderScheduleFromTrace nc (NumSlots numSlots) =
     LeaderSchedule . Map.foldl' (Chain.foldChain step) initial
   where
     initial :: Map SlotNo [CoreNodeId]
     initial = Map.fromList [(slot, []) | slot <- [1 .. fromIntegral numSlots]]
 
-    step :: Map SlotNo [CoreNodeId] -> b -> Map SlotNo [CoreNodeId]
-    step m b = Map.adjust (insert $ getCreator b) (blockSlot b) m
+    step :: Map SlotNo [CoreNodeId] -> Block b -> Map SlotNo [CoreNodeId]
+    step m b = Map.adjust (insert $ getCreator nc b) (blockSlot b) m
 
     insert :: CoreNodeId -> [CoreNodeId] -> [CoreNodeId]
     insert nid xs

@@ -145,7 +145,7 @@ serverId :: CoreNodeId
 serverId = CoreNodeId 1
 
 -- | Terser notation
-type ChainSyncException = ChainSyncClientException TestBlock TestBlock
+type ChainSyncException = ChainSyncClientException TestBlock
 
 -- | Using slots as times, a schedule plans updates to a chain on certain
 -- slots.
@@ -228,7 +228,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
         getLedgerState :: STM m (ExtLedgerState TestBlock)
         getLedgerState  = snd <$> readTVar varClientState
         client = chainSyncClient
-          nullTracer (nodeCfg clientId) btime maxClockSkew
+          nullTracer (nodeCfg clientId) encode btime maxClockSkew
           getCurrentChain getLedgerState
           varCandidates
           serverId

@@ -1,9 +1,9 @@
-{-# LANGUAGE NamedFieldPuns             #-}
-{-# LANGUAGE BangPatterns               #-}
-{-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE TypeFamilies               #-}
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE DeriveFunctor              #-}
+{-# LANGUAGE BangPatterns     #-}
+{-# LANGUAGE DeriveFunctor    #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE NamedFieldPuns   #-}
+{-# LANGUAGE RecordWildCards  #-}
+{-# LANGUAGE TypeFamilies     #-}
 
 module Ouroboros.Network.BlockFetch.State (
     fetchLogicIterations,
@@ -17,39 +17,27 @@ module Ouroboros.Network.BlockFetch.State (
     TraceFetchClientState(..),
   ) where
 
-import qualified Data.Map.Strict as Map
 import           Data.Map.Strict (Map)
-import qualified Data.Set as Set
+import qualified Data.Map.Strict as Map
 import           Data.Void
 
-import           Control.Monad.Class.MonadSTM
 import           Control.Exception (assert)
-import           Control.Tracer (Tracer, traceWith, contramap)
+import           Control.Monad.Class.MonadSTM
+import           Control.Tracer (Tracer, contramap, traceWith)
 
-import           Ouroboros.Network.Block
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment(..))
+import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as AnchoredFragment
-import qualified Ouroboros.Network.ChainFragment    as ChainFragment
+import           Ouroboros.Network.Block
+import qualified Ouroboros.Network.ChainFragment as ChainFragment
 
-import           Ouroboros.Network.BlockFetch.ClientState
-                   ( FetchRequest(..)
-                   , PeerFetchInFlight(..)
-                   , PeerFetchStatus(..)
-                   , FetchClientStateVars
-                   , addNewFetchRequest
-                   , readFetchClientState
-                   , TraceFetchClientState(..)
-                   )
-import           Ouroboros.Network.BlockFetch.Decision
-                   ( fetchDecisions
-                   , PeerInfo
-                   , FetchDecisionPolicy(..)
-                   , FetchMode(..)
-                   , FetchDecision
-                   , FetchDecline(..)
-                   )
-import           Ouroboros.Network.BlockFetch.DeltaQ
-                   ( PeerGSV(..) )
+import           Ouroboros.Network.BlockFetch.ClientState (FetchClientStateVars,
+                     FetchRequest (..), PeerFetchInFlight (..),
+                     PeerFetchStatus (..), TraceFetchClientState (..),
+                     addNewFetchRequest, readFetchClientState)
+import           Ouroboros.Network.BlockFetch.Decision (FetchDecision,
+                     FetchDecisionPolicy (..), FetchDecline (..),
+                     FetchMode (..), PeerInfo, fetchDecisions)
+import           Ouroboros.Network.BlockFetch.DeltaQ (PeerGSV (..))
 
 
 -- | A peer label for use in 'Tracer's. This annotates tracer output as being
@@ -186,8 +174,8 @@ fetchDecisionsForStateSnapshot
       fetchStateFetchedBlocks,
       fetchStateFetchMode
     } =
-    assert (                 Map.keysSet fetchStatePeerChains
-            `Set.isSubsetOf` Map.keysSet fetchStatePeerStates) $
+--    assert (                 Map.keysSet fetchStatePeerChains
+--            `Set.isSubsetOf` Map.keysSet fetchStatePeerStates) $
 
     assert (Map.keysSet fetchStatePeerStates
          == Map.keysSet fetchStatePeerGSVs) $
@@ -346,4 +334,3 @@ readStateVariables FetchTriggerVariables{..}
           }
 
     return (fetchStateSnapshot, fetchStateFingerprint')
-

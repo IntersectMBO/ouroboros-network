@@ -1,9 +1,8 @@
-{-# LANGUAGE DataKinds                  #-}
-{-# LANGUAGE NamedFieldPuns             #-}
-{-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE BangPatterns               #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 module Ouroboros.Network.BlockFetch.Client (
     -- * Block fetch protocol client implementation
@@ -14,32 +13,27 @@ module Ouroboros.Network.BlockFetch.Client (
     FetchClientStateVars,
   ) where
 
+import           Control.Exception (assert)
 import           Control.Monad (unless)
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
-import           Control.Exception (assert)
 import           Control.Tracer (Tracer)
 
 import           Ouroboros.Network.Block
 
-import           Ouroboros.Network.Protocol.BlockFetch.Type
 import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Pipelined
+import           Ouroboros.Network.Protocol.BlockFetch.Type
 
-import qualified Ouroboros.Network.ChainFragment as ChainFragment
-import           Ouroboros.Network.ChainFragment (ChainFragment)
-import           Ouroboros.Network.BlockFetch.ClientState
-                   ( FetchClientStateVars
-                   , FetchRequest(..)
-                   , TraceFetchClientState
-                   , acknowledgeFetchRequest
-                   , completeBlockDownload
-                   , completeFetchBatch )
+import           Ouroboros.Network.BlockFetch.ClientState (FetchClientStateVars,
+                     FetchRequest (..), TraceFetchClientState,
+                     acknowledgeFetchRequest, completeBlockDownload,
+                     completeFetchBatch)
 import           Ouroboros.Network.BlockFetch.DeltaQ
-                   ( PeerGSV(..), SizeInBytes
-                   , PeerFetchInFlightLimits(..) )
-
+                     (PeerFetchInFlightLimits (..), PeerGSV (..), SizeInBytes)
+import           Ouroboros.Network.ChainFragment (ChainFragment)
+import qualified Ouroboros.Network.ChainFragment as ChainFragment
 
 -- TODO #468 extract this from BlockFetchConsensusInterface
 data FetchClientPolicy header block m =
@@ -65,7 +59,7 @@ instance Exception BlockFetchProtocolFailure
 blockFetchClient :: forall header block m.
                     (MonadSTM m, MonadTime m, MonadThrow m,
                      HasHeader header, HasHeader block,
-                     HeaderHash header ~ HeaderHash block)
+                     HeaderHash header ~ HeaderHash block, Show block)
                  => Tracer m (TraceFetchClientState header)
                  -> FetchClientPolicy header block m
                  -> FetchClientStateVars m header
@@ -246,4 +240,3 @@ blockFetchClient tracer
 
           (MsgBlock _, []) -> ReceiverEffect $
             throwM BlockFetchProtocolFailureTooManyBlocks
-

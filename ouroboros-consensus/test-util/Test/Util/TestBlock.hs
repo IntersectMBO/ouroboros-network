@@ -125,6 +125,8 @@ instance UpdateLedger TestBlock where
         }
     deriving (Show)
 
+  data LedgerConfig TestBlock = LedgerConfig
+
   data LedgerError TestBlock =
       -- | The only error possible is that hashes don't line up
       InvalidHash {
@@ -133,20 +135,20 @@ instance UpdateLedger TestBlock where
         }
     deriving (Show)
 
-  data HeaderState TestBlock = TestHeaderState
-
-  applyLedgerState TestBlock{..} TestLedger{..} =
+  applyLedgerBlock _ TestBlock{..} TestLedger{..} =
       if tbPrevHash == lastApplied
         then return     $ TestLedger (BlockHash tbHash)
         else throwError $ InvalidHash lastApplied tbPrevHash
 
-  getHeaderState _ _ = TestHeaderState
-
-  advanceHeader  _ _ _ = return TestHeaderState
+  applyLedgerHeader _ _ = return
 
 
 instance ProtocolLedgerView TestBlock where
   protocolLedgerView _ _ = ()
+  anachronisticProtocolLedgerView _ _ _ = Just $ slotUnbounded ()
+
+instance LedgerConfigView TestBlock where
+  ledgerConfigView = const LedgerConfig
 
 testInitLedger :: LedgerState TestBlock
 testInitLedger = TestLedger GenesisHash

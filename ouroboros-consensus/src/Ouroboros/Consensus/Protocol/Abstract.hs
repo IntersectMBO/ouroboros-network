@@ -50,8 +50,12 @@ import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..))
 import           Ouroboros.Network.Chain (Chain)
 
+-- TODO Better place to put the Empty class?
+import           Ouroboros.Consensus.Crypto.DSIGN.Class (Empty)
 import qualified Ouroboros.Consensus.Util.AnchoredFragment as AF
 import           Ouroboros.Consensus.Util.Random
+
+import           GHC.Stack
 
 -- | The (open) universe of Ouroboros protocols
 --
@@ -136,10 +140,14 @@ class ( Show (ChainState    p)
   -- | Blocks that the protocol can run on
   type family SupportedBlock p :: * -> Constraint
 
+  -- | Constraints on the preheader which can be incorporated into a payload.
+  type family SupportedPreHeader p :: * -> Constraint
+  type SupportedPreHeader p = Empty
+
   -- | Construct the ouroboros-specific payload of a block
   --
   -- Gets the proof that we are the leader and the preheader as arguments.
-  mkPayload :: (HasNodeState p m, MonadRandom m)
+  mkPayload :: (SupportedPreHeader p ph, HasNodeState p m, MonadRandom m)
             => (ph -> Encoding)
             -> NodeConfig p
             -> IsLeader p
@@ -185,7 +193,9 @@ class ( Show (ChainState    p)
                 -> m (Maybe (IsLeader p))
 
   -- | Apply a block
-  applyChainState :: SupportedBlock p b
+  --
+  -- TODO this will only be used with headers
+  applyChainState :: (SupportedBlock p b, SupportedPreHeader p (PreHeader b), HasCallStack)
                   => (PreHeader b -> Encoding) -- Serialiser for the preheader
                   -> NodeConfig p
                   -> LedgerView p -- /Updated/ ledger state
@@ -195,6 +205,20 @@ class ( Show (ChainState    p)
 
   -- | We require that protocols support a @k@ security parameter
   protocolSecurityParam :: NodeConfig p -> SecurityParam
+
+  -- | We require that it's possible to reverse the chain state up to '2k'
+  -- slots.
+  --
+  -- This function should attempt to rewind the chain state to the state at some
+  -- given slot.
+  --
+  -- Implementers should take care that this function accurately reflects the
+  -- slot number, rather than the number of blocks, since naively the
+  -- 'ChainState' will be updated only on processing an actual block.
+  rewindChainState :: NodeConfig p
+                   -> ChainState p
+                   -> SlotNo -- ^ Slot to rewind to.
+                   -> Maybe (ChainState p)
 
 -- | Protocol security parameter
 --

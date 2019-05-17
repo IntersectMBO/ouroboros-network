@@ -80,6 +80,8 @@ import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.ChainFragment (ChainFragment)
 import qualified Ouroboros.Network.ChainFragment as CF
 
+import           GHC.Stack
+
 
 -- | An 'AnchoredFragment' is a 'ChainFragment' that is anchored to some
 -- 'Point': the point right before the first, leftmost block in the fragment.
@@ -149,7 +151,7 @@ viewRight (AnchoredFragment a c) = case c of
     c' CF.:> b -> ConsR (AnchoredFragment a c') b
 
 -- | \( O(1) \). Add a block to the right of the anchored fragment.
-pattern (:>) :: HasHeader block
+pattern (:>) :: (HasHeader block, HasCallStack)
              => AnchoredFragment block -> block -> AnchoredFragment block
 pattern af' :> b <- (viewRight -> ConsR af' b)
   where
@@ -620,4 +622,3 @@ mapAnchoredFragment :: (HasHeader block1, HasHeader block2,
                  -> AnchoredFragment block2
 mapAnchoredFragment f (AnchoredFragment a c) =
     AnchoredFragment (castPoint a) (CF.mapChainFragment f c)
-

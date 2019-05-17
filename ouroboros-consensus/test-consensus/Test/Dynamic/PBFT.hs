@@ -56,20 +56,21 @@ prop_simple_pbft_convergence :: SecurityParam
                              -> Property
 prop_simple_pbft_convergence sp numCoreNodes@(NumCoreNodes nn) =
     prop_simple_protocol_convergence
-      (protocolInfo (DemoPBFT params) numCoreNodes)
+      (protocolInfo (DemoMockPBFT params) numCoreNodes)
       isValid
       numCoreNodes
   where
     sigWin = fromIntegral $ nn * 10
     sigThd = (1.0 / fromIntegral nn) + 0.1
-    params = PBftParams sp (fromIntegral nn) sigWin sigThd
+    genesisConfig = error "Genesis config in PBFTParams is being accessed in Mock tests"
+    params = PBftParams sp (fromIntegral nn) sigWin sigThd genesisConfig
     isValid :: [NodeId]
-            -> Map NodeId (Chain (Block DemoPBFT))
+            -> Map NodeId (Chain (Block DemoMockPBFT))
             -> Property
     isValid nodeIds final = counterexample (show final) $
           tabulate "shortestLength" [show (rangeK sp (shortestLength final))]
      $    Map.keys final === nodeIds
      .&&. allEqual (takeChainPrefix <$> Map.elems final)
       where
-        takeChainPrefix :: Chain (Block DemoPBFT) -> Chain (Block DemoPBFT)
+        takeChainPrefix :: Chain (Block DemoMockPBFT) -> Chain (Block DemoMockPBFT)
         takeChainPrefix = id -- in PBFT, chains should indeed all be equal.

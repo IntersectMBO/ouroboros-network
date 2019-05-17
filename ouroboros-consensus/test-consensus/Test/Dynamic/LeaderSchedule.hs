@@ -80,11 +80,12 @@ prop_simple_leader_schedule_convergence numSlots numCoreNodes params seed =
                     numSlots
                     seed
   where
+    nodeConfig = error "NodeConfig required in LeaderSchedule tests"
     isValid :: [NodeId]
             -> Map NodeId (Chain (Block DemoLeaderSchedule))
             -> Property
     isValid nodeIds final =
-          counterexample (tracesToDot final)
+          counterexample (tracesToDot nodeConfig final)
      $    tabulate "shortestLength" [show (rangeK (praosSecurityParam params) (shortestLength final))]
      $    Map.keys final === nodeIds
      .&&. prop_all_common_prefix

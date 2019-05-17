@@ -32,6 +32,7 @@ tests =
 testDSIGNAlgorithm :: forall proxy v.
                      ( DSIGNAlgorithm v
                      , Serialise (VerKeyDSIGN v), Serialise (SignKeyDSIGN v), Serialise (SigDSIGN v)
+                     , Signable v Int
                      )=> proxy v -> String -> TestTree
 testDSIGNAlgorithm _ n =
     testGroup n
@@ -43,7 +44,7 @@ testDSIGNAlgorithm _ n =
         , testProperty "verify newgative (wrong message)" $ prop_dsign_verify_neg_msg @Int @v
         ]
 
-prop_dsign_verify_pos :: forall a v. (Serialise a, DSIGNAlgorithm v)
+prop_dsign_verify_pos :: forall a v. (Serialise a, DSIGNAlgorithm v, Signable v a)
                       => Seed
                       -> a
                       -> SignKeyDSIGN v
@@ -53,7 +54,7 @@ prop_dsign_verify_pos seed a sk =
         vk  = deriveVerKeyDSIGN sk
     in  verifyDSIGN encode vk a sig
 
-prop_dsign_verify_neg_key :: forall a v. (Serialise a, DSIGNAlgorithm v)
+prop_dsign_verify_neg_key :: forall a v. (Serialise a, DSIGNAlgorithm v, Signable v a)
                           => Seed
                           -> a
                           -> SignKeyDSIGN v
@@ -64,7 +65,7 @@ prop_dsign_verify_neg_key seed a sk sk' = sk /= sk' ==>
         vk  = deriveVerKeyDSIGN sk
     in  not $ verifyDSIGN encode vk a sig
 
-prop_dsign_verify_neg_msg :: forall a v. (Serialise a, Eq a, DSIGNAlgorithm v)
+prop_dsign_verify_neg_msg :: forall a v. (Serialise a, Eq a, DSIGNAlgorithm v, Signable v a)
                           => Seed
                           -> a
                           -> a
