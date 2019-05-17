@@ -120,10 +120,9 @@ instance ProtocolEnum DemoProtocol0 where
 
 clientPingPong :: Bool -> IO ()
 clientPingPong pipelined =
-    withConnection
-      (clientApplication muxApplication)
-      defaultLocalSocketAddrInfo $ \runConn ->
-        runConn
+    connectTo
+      muxApplication
+      defaultLocalSocketAddrInfo
   where
     muxApplication :: MuxApplication ClientApp DemoProtocol0 IO
     muxApplication =
@@ -192,10 +191,9 @@ instance ProtocolEnum DemoProtocol1 where
 
 clientPingPong2 :: IO ()
 clientPingPong2 =
-    withConnection
-      (clientApplication muxApplication)
-      defaultLocalSocketAddrInfo $ \runConn ->
-        runConn
+    connectTo
+      muxApplication
+      defaultLocalSocketAddrInfo
   where
     muxApplication :: MuxApplication ClientApp DemoProtocol1 IO
     muxApplication =
@@ -274,10 +272,9 @@ instance ProtocolEnum DemoProtocol2 where
 clientChainSync :: [FilePath] -> IO ()
 clientChainSync sockAddrs =
     forConcurrently_ sockAddrs $ \sockAddr ->
-      withConnection
-        (clientApplication muxApplication)
-        (mkLocalSocketAddrInfo sockAddr) $ \runConn ->
-          runConn
+      connectTo
+        muxApplication
+        (mkLocalSocketAddrInfo sockAddr)
   where
     muxApplication :: MuxApplication ClientApp DemoProtocol2 IO
     muxApplication =
@@ -440,9 +437,9 @@ clientBlockFetch sockAddrs = do
 
     peerAsyncs <- sequence
                     [ async $
-                        withConnection
-                          (clientApplication (muxApplication sockAddr))
-                          (mkLocalSocketAddrInfo sockAddr) id
+                        connectTo
+                          (muxApplication sockAddr)
+                          (mkLocalSocketAddrInfo sockAddr)
                     | sockAddr <- sockAddrs ]
 
     fetchAsync <- async $
