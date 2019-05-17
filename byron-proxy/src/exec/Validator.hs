@@ -61,9 +61,10 @@ clientFold tracer genesisConfig stopCondition cvs = Client.Fold $ pure $ Client.
 -- TODO option for genesis config provenance.
 -- currently mainnet is hard-coded.
 data Options = Options
-  { loggerConfigPath :: !(Maybe FilePath)
-  , serverHost       :: !Socket.HostName
-  , serverPort       :: !Socket.ServiceName
+  { loggerConfigPath    :: !(Maybe FilePath)
+  , serverHost          :: !Socket.HostName
+  , serverPort          :: !Socket.ServiceName
+  , overrideGenesisJson :: !(Maybe FilePath)
   }
 
 cliParser :: Opt.Parser Options
@@ -71,13 +72,14 @@ cliParser = Options
   <$> cliLoggerConfigPath
   <*> cliServerHost
   <*> cliServerPort
+  <*> cliOverrideGenesisJson
 
   where
 
   cliLoggerConfigPath = Opt.optional $ Opt.strOption $
     Opt.long "logger-config" <>
     Opt.metavar "FILEPATH"   <>
-    Opt.help "Path to logger config file."
+    Opt.help "Path to logger config file"
 
   cliServerHost = Opt.strOption $
     Opt.long "server-host" <>
@@ -88,6 +90,11 @@ cliParser = Options
     Opt.long "server-port" <>
     Opt.metavar "PORT"     <>
     Opt.help "Port of chain sync server"
+
+  cliOverrideGenesisJson = Opt.optional $ Opt.strOption $
+    Opt.long "override-genesis-json" <>
+    Opt.metavar "FILEPATH"           <>
+    Opt.help "Path to genesis JSON file"
 
 cliParserInfo :: Opt.ParserInfo Options
 cliParserInfo = Opt.info cliParser infoMod
@@ -104,9 +111,10 @@ main = do
   Logging.withLogging (loggerConfigPath opts) "validator" $ \trace_ -> do
     let trace = Logging.convertTrace trace_
         -- Hard-code to mainnet configuration.
-        -- mainnet-genesis.json file is assumed to be there.
         cc = mainnetConfiguration
-        mainnetGenFilepath = geSrc . coGenesis $ ccCore cc
+        mainnetGenFilepath = case overrideGenesisJson opts of
+          Nothing -> geSrc . coGenesis $ ccCore cc
+          Just fp -> fp
         reqNetworkMagic = parseReqNetworkMag . coRequiresNetworkMagic $ ccCore cc
     -- Copied from validate-mainnet in cardano-ledger.
     Right genesisConfig <-
