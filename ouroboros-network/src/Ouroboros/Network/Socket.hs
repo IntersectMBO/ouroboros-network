@@ -10,9 +10,7 @@
 --
 module Ouroboros.Network.Socket (
     -- * High level socket interface
-      runNetworkNode
-    , runNetworkNode'
-    , withServerNode
+      withServerNode
     , connectTo
 
     -- * Helper function for creating servers
@@ -221,7 +219,9 @@ mkListeningSocket addrFamily_ addr = do
     pure sd
 
 
+-- |
 -- Make a server-compatibile socket from a network socket.
+--
 fromSocket
     :: Socket.Socket
     -> Server.Socket Socket.SockAddr Socket.Socket
@@ -251,50 +251,6 @@ runNetworkNode'
     -> IO t
 runNetworkNode' sd app acceptException acceptConn complete main st =
     Server.run (fromSocket sd) acceptException (beginConnection app acceptConn) complete main st
-
--- |
--- Run a node as specified by @'NetworkInterface'@ on a TCP/Unix socket.  The
--- socket will be bound to the @'nodeAddress'@. The socket will accept incoming
--- connection if the connection handlers where defined.
---
-runNetworkNode
-    :: forall ptcl appType st t.
-       ( Mx.ProtocolEnum ptcl
-       , Ord ptcl
-       , Enum ptcl
-       , Bounded ptcl
-       )
-    => Socket.Family
-    -> MuxApplication appType ptcl IO
-    -- ^ application run by the multiplexing layer
-    -> (SomeException -> IO ())
-    -- ^ exception handler of @'Server.run'@
-    -> Maybe ( Socket.SockAddr
-             , st -> STM.STM (Either st st)
-             , Server.CompleteConnection st ()
-             )
-    -- ^ Connection handlers:
-    --
-    -- * the first one accepts or rejects a connection  and acction run after
-    -- * the second runs when connection terminated
-    --
-    -- if connection handlers are not given the socket will not listen on
-    -- incoming connections.
-    -> Server.Main st t
-    -- ^ main STM computation, use @'retry'@ to run a server in an infinite
-    -- loop.
-    -> st
-    -- ^ initial server state
-    -> IO t
-runNetworkNode addrFamily app acceptException mHandleConnection main st =
-      case mHandleConnection of
-        Nothing ->
-          bracket (mkListeningSocket addrFamily Nothing) Socket.close $ \sd ->
-            runNetworkNode' sd app acceptException (pure . Left) (\_ -> pure) main st
-
-        Just (addr, acceptConn, completeConn) ->
-          bracket (mkListeningSocket addrFamily (Just addr)) Socket.close $ \sd ->
-            runNetworkNode' sd app acceptException acceptConn completeConn main st
 
 -- |
 -- Run a server application.  It will listen on the given address for incoming
