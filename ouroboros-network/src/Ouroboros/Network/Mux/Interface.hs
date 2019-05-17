@@ -18,7 +18,7 @@ module Ouroboros.Network.Mux.Interface
   , MuxPeer (..)
   , simpleMuxClientApplication
   , simpleMuxServerApplication
-  , ProtocolEnum(..)
+  , ProtocolEnum (..)
   ) where
 
 import           Data.ByteString.Lazy (ByteString)
