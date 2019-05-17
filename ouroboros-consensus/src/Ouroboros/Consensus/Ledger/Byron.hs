@@ -22,6 +22,7 @@ import qualified Codec.CBOR.Write as CBOR
 import           Control.Monad.Except
 import           Crypto.Random (MonadRandom)
 import           Data.Bifunctor (bimap)
+import           Data.Bimap (Bimap)
 import qualified Data.Bimap as Bimap
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Coerce
@@ -276,14 +277,40 @@ instance Typeable cfg => HasPayload (PBft PBftCardanoCrypto) (ByronHeader cfg) w
 instance Typeable cfg => HasPayload (PBft PBftCardanoCrypto) (ByronBlock cfg) where
   blockPayload cfg = blockPayload cfg . byronHeader
 
+-- | Override the delegation map from the ledger view
+--
+-- This is to work around a bug in cardano-ledger
+-- TODO: Insert ticket number
+reconstructDelegationMap :: Bimap CC.Common.StakeholderId CC.Common.StakeholderId
+reconstructDelegationMap =
+    go $ Genesis.gdHeavyDelegation Dummy.dummyGenesisData
+  where
+    go :: Genesis.GenesisDelegation
+       -> Bimap CC.Common.StakeholderId CC.Common.StakeholderId
+    go = Bimap.fromList . map go' . Map.toList . Genesis.unGenesisDelegation
+
+    go' :: (CC.Common.StakeholderId, Delegation.Certificate)
+        -> (CC.Common.StakeholderId, CC.Common.StakeholderId)
+    go' (from, to) =
+        if issuer /= from
+          then error "reconstructDelegationMap: unexpected issuer"
+          else (from, delegate)
+      where
+        issuer, delegate :: CC.Common.StakeholderId
+        issuer   = CC.Common.mkStakeholderId $ Crypto.pskIssuerVK   to
+        delegate = CC.Common.mkStakeholderId $ Crypto.pskDelegateVK to
+
 instance Typeable cfg => ProtocolLedgerView (ByronBlock cfg) where
   protocolLedgerView _ns (ByronLedgerState ls _) = PBftLedgerView
+    reconstructDelegationMap
+{-
     -- Delegation map
     ( Delegation.unMap
       . V.Interface.delegationMap
       . CC.Block.cvsDelegationState
       $ ls
     )
+-}
 
   -- There are two cases here:
   --

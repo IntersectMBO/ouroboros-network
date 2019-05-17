@@ -4,6 +4,7 @@
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
@@ -11,9 +12,8 @@
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE TypeFamilyDependencies     #-}
 {-# LANGUAGE UndecidableInstances       #-}
-{-# LANGUAGE ViewPatterns               #-}
-{-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE UndecidableSuperClasses    #-}
+{-# LANGUAGE ViewPatterns               #-}
 
 module Ouroboros.Consensus.Protocol.PBFT (
     PBft
@@ -54,8 +54,10 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Test
 import           Ouroboros.Consensus.Util.Condense
 
-import Cardano.Binary
-import Debug.Trace
+import           Cardano.Binary
+import           Debug.Trace
+
+import qualified Test.Cardano.Chain.Genesis.Dummy as Dummy
 
 class (ToCBOR a, Signable (PBftDSIGN c) a, Show a) => Foo c a
 instance (ToCBOR a, Signable (PBftDSIGN c) a, Show a) => Foo c a
@@ -169,6 +171,10 @@ instance ( PBftCrypto c, Typeable c
 
       traceM "applyChainState"
       traceShowM $ blockPreHeader b
+      traceM "PBftLedgerView"
+      traceShowM $ dms
+      traceM "gdHeavyDelegation"
+      traceShowM $ CC.Genesis.gdHeavyDelegation Dummy.dummyGenesisData
 
       unless (verifySignedDSIGN toEnc (pbftIssuer payload)
                       (blockPreHeader b)
