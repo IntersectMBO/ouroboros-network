@@ -21,12 +21,14 @@
           (hsPkgs.aeson)
           (hsPkgs.base58-bytestring)
           (hsPkgs.base64-bytestring-type)
+          (hsPkgs.bimap)
           (hsPkgs.binary)
           (hsPkgs.bytestring)
           (hsPkgs.canonical-json)
           (hsPkgs.cardano-binary)
           (hsPkgs.cardano-crypto-wrapper)
           (hsPkgs.cardano-prelude)
+          (hsPkgs.cardano-shell)
           (hsPkgs.containers)
           (hsPkgs.concurrency)
           (hsPkgs.cryptonite)
@@ -35,7 +37,6 @@
           (hsPkgs.directory)
           (hsPkgs.filepath)
           (hsPkgs.formatting)
-          (hsPkgs.iohk-monitoring)
           (hsPkgs.memory)
           (hsPkgs.mtl)
           (hsPkgs.resourcet)
@@ -60,13 +61,13 @@
             (hsPkgs.cardano-crypto)
             (hsPkgs.cardano-crypto-test)
             (hsPkgs.cardano-crypto-wrapper)
-            (hsPkgs.cardano-mainnet-mirror)
             (hsPkgs.cardano-prelude)
             (hsPkgs.cardano-prelude-test)
             (hsPkgs.containers)
             (hsPkgs.cryptonite)
             (hsPkgs.cs-blockchain)
             (hsPkgs.cs-ledger)
+            (hsPkgs.directory)
             (hsPkgs.filepath)
             (hsPkgs.formatting)
             (hsPkgs.hedgehog)
@@ -85,7 +86,7 @@
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
       url = "https://github.com/input-output-hk/cardano-ledger";
-      rev = "9254662d3d44cfaca3deede715b17547b8571db6";
-      sha256 = "0gj6ywazidjvjp0p8bcg03rfranqlqazwdvch5ws2wdcmq1s0rv1";
+      rev = "20afe954f847281665ada871c40943bf346f6cf5";
+      sha256 = "05r6kmvkp9ygyp9yyhzwrwxz62r41yfqxlhzkk5wz7fi71lp0ia4";
       });
     }

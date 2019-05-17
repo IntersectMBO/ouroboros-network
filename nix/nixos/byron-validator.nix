@@ -1,12 +1,12 @@
 { config, pkgs, lib, options, ... }:
 with lib;
 let
-  cfg = config.services.byron-proxy;
-  name = "byron-proxy";
-  stateDir = "/var/lib/byron-proxy";
+  cfg = config.services.byron-validator;
+  name = "byron-validator";
 
+  byronProxyScripts = (import ../.. {}).byronValidatorScripts;
 in {
-  options.services.byron-proxy = {
+  options.services.byron-validator = {
     enable = mkEnableOption name;
     environment = mkOption {
       type = types.enum [ "mainnet" "staging" "testnet" ];
@@ -23,22 +23,8 @@ in {
   };
 
   config = mkIf cfg.enable {
-    users = {
-      users.byron-proxy = {
-        description     = "byron-proxy";
-        group           = "byron-proxy";
-        home            = stateDir;
-        createHome      = true;
-      };
-      groups.byron-proxy = {};
-    };
-
-    networking.firewall = {
-      allowedTCPPorts = lib.optional (cfg.proxyHost != "127.0.0.1") cfg.proxyPort;
-    };
-
-    systemd.services.byron-proxy = {
-      description   = "byron proxy service";
+    systemd.services.byron-validator = {
+      description   = "byron validator service";
       after         = [ "network.target" ];
       wantedBy = [ "multi-user.target" ];
       script = let
@@ -47,16 +33,13 @@ in {
           proxyPort = cfg.proxyPort;
         };
         byronScripts = (import ../.. { inherit customConfig; }).scripts.byron;
-      in ''${byronScripts.proxy.${cfg.environment}}'';
+      in ''${byronScripts.validator.${cfg.environment}}'';
       serviceConfig = {
-        User = "byron-proxy";
-        Group = "byron-proxy";
         Restart = "always";
         RestartSec = 30;
         StartLimitInterval = 200;
         StartLimitBurst = 5;
         KillSignal = "SIGINT";
-        WorkingDirectory = stateDir;
         PrivateTmp = true;
       };
     };
