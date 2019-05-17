@@ -1,6 +1,7 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE BangPatterns        #-}
 
 module Ouroboros.Consensus.Util.CBOR (
     -- * Incremental parsing in I/O
@@ -27,6 +28,7 @@ import           Control.Monad.ST
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import           Data.ByteString.Builder.Extra (defaultChunkSize)
+import qualified Data.ByteString.Lazy as BSL
 import           Data.IORef
 import           Data.Word (Word64)
 import           System.IO (IOMode (..))
@@ -218,9 +220,10 @@ readIncrementalOffsetsEBB :: forall m hash h a. (MonadST m, MonadThrow m)
                           => Int -- ^ Chunk size when reading bytes
                           -> HasFS m h
                           -> (forall s . CBOR.Decoder s a)
-                          -> (a -> Maybe hash)
+                          -> (BSL.ByteString -> a -> Maybe hash)
                               -- ^ In case the given @a@ is an EBB, return its
-                              -- @hash@.
+                              -- @hash@. You also get the bytes from which it
+                              -- was decoded.
                           -> FsPath
                           -> m ([(Word64, (Word64, a))],
                                 Maybe hash,
@@ -237,34 +240,42 @@ readIncrementalOffsetsEBB chunkSize hasFS decoder getEBBHash fp = withLiftST $ \
         -- If the file is empty, we will immediately get "end of input"
         then return ([], Nothing, Nothing)
         else liftST (CBOR.deserialiseIncremental decoder) >>=
-             go liftST h 0 [] Nothing Nothing fileSize
+             go liftST h 0 [] Nothing Nothing [] fileSize
   where
     HasFS{..} = hasFS
 
+    -- The incremental decoder is run in such a way that the bytes fed to it
+    -- are retained and then used (in case of `Done`) to convert the
+    -- `ByteSpan` annotation into a `ByteString` annotation.
     go :: (forall x. ST s x -> m x)
        -> h
        -> Word64                  -- ^ Offset
        -> [(Word64, (Word64, a))] -- ^ Already deserialised (reverse order)
        -> Maybe hash              -- ^ The hash of the EBB block
        -> Maybe ByteString        -- ^ Unconsumed bytes from last time
+       -> [ByteString]            -- ^ Bytes fed to the decoder so far, reverse.
        -> Word64                  -- ^ Total file size
        -> S.IDecode s a
        -> m ([(Word64, (Word64, a))], Maybe hash, Maybe ReadIncrementalErr)
-    go liftST h offset deserialised mbEBBHash mbUnconsumed fileSize dec = case dec of
-      S.Partial k -> do
-        -- First use the unconsumed bytes from a previous read before reading
-        -- some more bytes from the file.
-        bs   <- case mbUnconsumed of
-          Just unconsumed -> return unconsumed
-          Nothing         -> hGet h chunkSize
-        dec' <- liftST $ k (checkEmpty bs)
-        go liftST h offset deserialised mbEBBHash Nothing fileSize dec'
+    go liftST h !offset !deserialised !mbEBBHash !mbUnconsumed !consumed fileSize dec = case dec of
+      S.Partial k -> case mbUnconsumed of
+        Just bs -> do
+          dec' <- liftST $ k (Just bs)
+          go liftST h offset deserialised mbEBBHash Nothing (bs : consumed) fileSize dec'
+        Nothing -> do
+          bs <- hGet h chunkSize
+          -- Use `checkEmpty` to give `Nothing`, an indication of end of stream.
+          -- NB: we don't do that for the other case `Just bs`, because lack of
+          -- unconsumed does _not_ imply end of stream.
+          dec' <- liftST $ k (checkEmpty bs)
+          go liftST h offset deserialised mbEBBHash Nothing (bs : consumed) fileSize dec'
 
       S.Done leftover size a -> do
         let nextOffset    = offset + fromIntegral size
             deserialised' = (offset, (fromIntegral size, a)) : deserialised
+            consumedBytes = BSL.take size (BSL.fromChunks (reverse consumed))
             -- The EBB can only occur at the start of the file
-            mbEBBHash'    | offset == 0 = getEBBHash a
+            mbEBBHash'    | offset == 0 = getEBBHash consumedBytes a
                           | otherwise   = mbEBBHash
         case checkEmpty leftover of
           Nothing
@@ -276,7 +287,7 @@ readIncrementalOffsetsEBB chunkSize hasFS decoder getEBBHash fp = withLiftST $ \
           -- next @a@.
           mbLeftover -> do
             dec' <- liftST $ CBOR.deserialiseIncremental decoder
-            go liftST h nextOffset deserialised' mbEBBHash' mbLeftover
+            go liftST h nextOffset deserialised' mbEBBHash' mbLeftover []
                fileSize dec'
 
       S.Fail _ _ err -> return

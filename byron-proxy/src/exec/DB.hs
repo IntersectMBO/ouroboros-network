@@ -1,7 +1,6 @@
 module DB
   ( DBConfig (..)
   , withDB
-  , seedWithGenesis
   ) where
 
 import qualified Codec.CBOR.Encoding as CBOR
@@ -10,9 +9,9 @@ import qualified Codec.CBOR.Decoding as CBOR
 import Control.Exception (throwIO)
 import qualified System.Directory (createDirectoryIfMissing)
 
-import qualified Pos.Binary.Class as CSL (decode, encode)
-import qualified Pos.Chain.Block as CSL (Block, GenesisBlock, HeaderHash)
-import qualified Pos.Core as CSL (SlotCount (..))
+import qualified Cardano.Binary as Binary (fromCBOR, toCBOR)
+import qualified Cardano.Chain.Block as Cardano (HeaderHash)
+import qualified Cardano.Chain.Slotting as Cardano (EpochSlots (..))
 
 import Ouroboros.Byron.Proxy.DB (DB)
 import qualified Ouroboros.Byron.Proxy.DB as DB
@@ -34,14 +33,12 @@ data DBConfig = DBConfig
     -- ^ Directory to house the `ImmutableDB`.
   , indexFilePath :: !FilePath
     -- ^ Path to the SQLite index.
-  , slotsPerEpoch :: !CSL.SlotCount
+  , slotsPerEpoch :: !Cardano.EpochSlots
     -- ^ Number of slots per epoch. Cannot handle a chain for which this is
     -- not constant.
   }
 
--- | Set up and use a DB. You may also want to `seedWithGenesis`, which will
--- only do so if the DB is empty, because the Byron logic layer expects the
--- database to never be empty.
+-- | Set up and use a DB.
 --
 -- The directory at `dbFilePath` will be created if it does not exist.
 withDB :: DBConfig -> (DB IO -> IO t) -> IO t
@@ -54,7 +51,7 @@ withDB dbOptions k = do
       fs :: HasFS IO HandleIO
       fs = ioHasFS fsMountPoint
       getEpochSize epoch = pure $ Immutable.EpochSize $
-        fromIntegral (CSL.getSlotCount (slotsPerEpoch dbOptions))
+        fromIntegral (Cardano.unEpochSlots (slotsPerEpoch dbOptions))
   epochInfo <- Immutable.newEpochInfo getEpochSize
   let openImmutableDB = Immutable.openDB
         decodeHeaderHash
@@ -62,25 +59,14 @@ withDB dbOptions k = do
         fs
         FS.exceptions
         epochInfo
-        Immutable.ValidateMostRecentEpoch
+        Immutable.ValidateAllEpochs
         (DB.epochFileParser (slotsPerEpoch dbOptions) fs)
   Index.withDB_ (indexFilePath dbOptions) $ \idx ->
     Immutable.withDB openImmutableDB $ \idb ->
       k (DB.mkDB throwIO (slotsPerEpoch dbOptions) idx idb)
 
--- | Puts a genesis block into the database if it's empty.
--- Do not run this concurrently with any DB writes.
-seedWithGenesis :: ( Monad m ) => CSL.GenesisBlock -> DB m -> m ()
-seedWithGenesis genesisBlock db = do
-  tip <- DB.readTip db
-  case tip of
-    -- This means the database is empty, not that it _has_ a genesis block.
-    DB.TipGenesis -> DB.appendBlocks db $ \dbAppend ->
-      DB.appendBlock dbAppend (Left genesisBlock :: CSL.Block)
-    _ -> pure ()
+encodeHeaderHash :: Cardano.HeaderHash -> CBOR.Encoding
+encodeHeaderHash = Binary.toCBOR
 
-encodeHeaderHash :: CSL.HeaderHash -> CBOR.Encoding
-encodeHeaderHash = CSL.encode
-
-decodeHeaderHash :: CBOR.Decoder s CSL.HeaderHash
-decodeHeaderHash = CSL.decode
+decodeHeaderHash :: CBOR.Decoder s Cardano.HeaderHash
+decodeHeaderHash = Binary.fromCBOR

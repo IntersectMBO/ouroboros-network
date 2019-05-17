@@ -27,7 +27,6 @@
         "tests" = {
           depends = [
             (hsPkgs.base)
-            (hsPkgs.async)
             (hsPkgs.bytestring)
             (hsPkgs.contra-tracer)
             (hsPkgs.io-sim-classes)

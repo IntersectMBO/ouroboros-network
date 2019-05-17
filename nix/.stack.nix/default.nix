@@ -2,10 +2,7 @@
   extras = hackage:
     {
       packages = {
-        "ekg" = (((hackage.ekg)."0.4.0.15").revisions).default;
-        "libyaml" = (((hackage.libyaml)."0.1.0.0").revisions).default;
         "time-units" = (((hackage.time-units)."1.0.0").revisions).default;
-        "ekg-json" = (((hackage.ekg-json)."0.1.0.6").revisions).default;
         "ekg-prometheus-adapter" = (((hackage.ekg-prometheus-adapter)."0.1.0.4").revisions).default;
         "prometheus" = (((hackage.prometheus)."2.1.1").revisions).default;
         "containers" = (((hackage.containers)."0.5.11.0").revisions).default;
@@ -18,7 +15,7 @@
         "ekg-wai" = (((hackage.ekg-wai)."0.1.0.3").revisions).default;
         "lzma-clib" = (((hackage.lzma-clib)."5.2.2").revisions).default;
         "base58-bytestring" = (((hackage.base58-bytestring)."0.1.0").revisions).default;
-        "half" = (((hackage.half)."0.2.2.3").revisions).default;
+        "hedgehog" = (((hackage.hedgehog)."1.0").revisions).default;
         "micro-recursion-schemes" = (((hackage.micro-recursion-schemes)."5.0.2.2").revisions).default;
         "streaming-binary" = (((hackage.streaming-binary)."0.3.0.1").revisions).default;
         "transformers" = (((hackage.transformers)."0.5.6.2").revisions).default;
@@ -40,6 +37,8 @@
         cardano-ledger = ./cardano-ledger.nix;
         cardano-crypto-wrapper = ./cardano-crypto-wrapper.nix;
         cardano-prelude = ./cardano-prelude.nix;
+        cardano-shell = ./cardano-shell.nix;
+        cardano-sl-x509 = ./cardano-sl-x509.nix;
         cardano-sl = ./cardano-sl.nix;
         cardano-sl-binary = ./cardano-sl-binary.nix;
         cardano-sl-binary-test = ./cardano-sl-binary-test.nix;
@@ -69,7 +68,6 @@
         transformers-lift = ./transformers-lift.nix;
         cborg = ./cborg.nix;
         cardano-crypto = ./cardano-crypto.nix;
-        hedgehog = ./hedgehog.nix;
         canonical-json = ./canonical-json.nix;
         };
       compiler.version = "8.6.4";

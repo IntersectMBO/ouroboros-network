@@ -151,7 +151,6 @@ library
                        ViewPatterns
 
   build-depends:       base              >=4.9 && <4.13,
-                       cardano-ledger,
                        ouroboros-network,
                        typed-protocols,
                        io-sim-classes,
@@ -170,7 +169,6 @@ library
                        mtl               >=2.2   && <2.3,
                        pipes             >=4.3   && <4.4,
                        serialise         >=0.2   && <0.3,
-                       stm,
                        text              >=1.2   && <1.3,
                        time,
                        transformers,
@@ -205,7 +203,6 @@ executable demo-playground
                        aeson,
                        async,
                        bytestring,
-                       cborg,
                        containers,
                        cryptonite,
                        directory,
@@ -214,8 +211,7 @@ executable demo-playground
                        serialise,
                        stm,
                        string-conv,
-                       text,
-                       time
+                       text
   if os(windows)
      build-depends:    Win32
   else
@@ -248,7 +244,6 @@ test-suite test-consensus
                     io-sim-classes,
                     io-sim,
 
-                    bytestring,
                     containers,
                     contra-tracer,
                     cryptonite,
@@ -348,7 +343,6 @@ test-suite test-storage
                     quickcheck-state-machine >=0.6.0,
                     random,
                     serialise,
-                    stm,
                     tasty,
                     tasty-hunit,
                     tasty-quickcheck,

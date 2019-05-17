@@ -29,6 +29,9 @@ library
   build-depends:       base,
                        async,
                        bytestring,
+                       cardano-binary,
+                       cardano-crypto-wrapper,
+                       cardano-ledger,
                        cardano-sl,
                        cardano-sl-binary,
                        cardano-sl-chain,
@@ -36,21 +39,18 @@ library
                        cardano-sl-crypto,
                        cardano-sl-db,
                        cardano-sl-infra,
-                       cardano-sl-util,
                        cborg,
                        conduit,
                        containers,
+                       contra-tracer,
                        cryptonite,
                        directory,
-                       exceptions,
-                       free,
-                       io-sim,
                        io-sim-classes,
+                       iohk-monitoring,
                        lens,
                        memory,
                        ouroboros-consensus,
                        ouroboros-network,
-                       random,
                        resourcet,
                        sqlite-simple,
                        serialise,
@@ -67,38 +67,60 @@ library
 executable byron-proxy
   main-is:             Main.hs
   other-modules:       DB,
-                       IPC
+                       IPC,
+                       Logging
   -- other-extensions:
   build-depends:       base,
                        async,
                        byron-proxy,
                        bytestring,
+                       cardano-binary,
+                       cardano-ledger,
                        cardano-sl,
-                       cardano-sl-binary,
                        cardano-sl-chain,
-                       cardano-sl-core,
-                       cardano-sl-db,
                        cardano-sl-infra,
                        cardano-sl-util,
                        cborg,
-                       containers,
                        contra-tracer,
                        directory,
                        exceptions,
                        iohk-monitoring,
                        io-sim-classes,
-                       lens,
                        network,
                        optparse-applicative,
                        ouroboros-consensus,
                        ouroboros-network,
                        random,
                        resourcet,
-                       serialise,
                        stm,
                        text,
                        time,
-                       type-operators == 0.1.0.4,
+                       transformers,
+                       typed-protocols
+  hs-source-dirs:      src/exec
+  default-language:    Haskell2010
+  -- -threaded is needed or else the diffusion layer will crash, due to a use
+  -- of registerDelay
+  ghc-options:         -threaded
+                       -fwarn-incomplete-patterns
+                       -fwarn-unused-imports
+
+executable validator
+  main-is:             Validator.hs
+  other-modules:       Logging
+  -- other-extensions:
+  build-depends:       base,
+                       byron-proxy,
+                       cardano-binary,
+                       cardano-ledger,
+                       cardano-shell,
+                       contra-tracer,
+                       iohk-monitoring,
+                       network,
+                       optparse-applicative,
+                       ouroboros-network,
+                       text,
+                       time,
                        transformers,
                        typed-protocols
   hs-source-dirs:      src/exec

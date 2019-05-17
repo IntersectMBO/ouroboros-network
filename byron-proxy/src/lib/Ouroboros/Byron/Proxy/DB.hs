@@ -6,7 +6,6 @@
 module Ouroboros.Byron.Proxy.DB where
 
 import qualified Codec.CBOR.Decoding as CBOR
-import qualified Codec.CBOR.Read as CBOR
 
 import Control.Exception (Exception)
 import Control.Lens ((^.))
@@ -16,15 +15,22 @@ import Control.Monad.Class.MonadThrow (MonadThrow)
 import Control.Monad.Trans.Class (lift)
 
 import Data.ByteString (ByteString)
+import qualified Data.ByteString.Builder as Builder (byteString)
 import qualified Data.ByteString.Lazy as Lazy
 import Data.Conduit (ConduitT)
 import qualified Data.Conduit as Conduit
 import Data.Text (Text)
 import Data.Word (Word64)
 
-import qualified Pos.Binary as CSL (decode, serializeBuilder)
+import Cardano.Binary (Annotated (..), ByteSpan, slice)
+import Cardano.Crypto.Hashing (AbstractHash (..), unsafeAbstractHash)
+import qualified Cardano.Chain.Block as Cardano
+import qualified Cardano.Chain.Slotting as Cardano
+
+import qualified Pos.Binary as CSL (serializeBuilder)
 import qualified Pos.Chain.Block as CSL
 import qualified Pos.Core.Slotting as CSL
+import qualified Pos.Crypto.Hashing as Legacy (AbstractHash (..))
 
 import Ouroboros.Byron.Proxy.Index.Types (Index, IndexWrite)
 import qualified Ouroboros.Byron.Proxy.Index.Types as Index
@@ -37,17 +43,12 @@ import qualified Ouroboros.Storage.ImmutableDB.API as Immutable
 import Ouroboros.Storage.ImmutableDB.Util (cborEpochFileParser')
 import Ouroboros.Storage.FS.API (HasFS)
 
--- | Run a Decoder and fail if it does not consume all of the input bytes.
-decodeFull
-  :: (forall s . CBOR.Decoder s t)
-  -> Lazy.ByteString
-  -> Either CBOR.DeserialiseFailure t
-decodeFull decoder lbs = case CBOR.deserialiseFromBytesWithSize decoder lbs of
-  Left failure -> Left failure
-  Right (bs, offset, t) ->
-    if Lazy.null bs
-    then Right t
-    else Left (CBOR.DeserialiseFailure offset "decodeFull: did not consume all input")
+-- TODO: Move these functions to a compatibility module
+coerceHashToLegacy :: Cardano.HeaderHash -> CSL.HeaderHash
+coerceHashToLegacy (AbstractHash digest) = Legacy.AbstractHash digest
+
+coerceHashFromLegacy :: CSL.HeaderHash -> Cardano.HeaderHash
+coerceHashFromLegacy (Legacy.AbstractHash digest) = AbstractHash digest
 
 -- | Parser for opening the `ImmutableDB`. It uses a CBOR decoder which decodes
 -- a `Block` and returns its `Slot`, which is `epoch * epochSlots` in
@@ -57,41 +58,36 @@ decodeFull decoder lbs = case CBOR.deserialiseFromBytesWithSize decoder lbs of
 -- a main block, the main block is for slot 0 of the same epoch as the EBB
 epochFileParser
   :: ( MonadST m, MonadThrow m )
-  => CSL.SlotCount
+  => Cardano.EpochSlots
   -> HasFS m h
-  -> Immutable.EpochFileParser ReadIncrementalErr CSL.HeaderHash m (Word64, Immutable.SlotNo)
+  -> Immutable.EpochFileParser ReadIncrementalErr Cardano.HeaderHash m (Word64, Immutable.SlotNo)
 epochFileParser epochSlots hasFS =
-  fmap (\(w, block) -> (w, takeSlot block))
+  fmap (\(w, ablock) -> (w, takeSlot ablock))
        (cborEpochFileParser' hasFS decoder hashOfEBB)
   where
-  takeSlot = blockHeaderSlot epochSlots . CSL.getBlockHeader
-  -- Must use the `Bi` typeclass to get a block decoder.
-  decoder :: forall s . CBOR.Decoder s CSL.Block
-  decoder = CSL.decode
-  hashOfEBB :: CSL.Block -> Maybe CSL.HeaderHash
-  hashOfEBB block = case block of
-    -- Left is for EBBs.
-    Left _  -> Just $ CSL.headerHash block
-    Right _ -> Nothing
-
--- | The slot number relative to genesis of a block header.
--- EBBs get `epoch * slots_in_epoch`, so they share a slot with the first block
--- of that epoch. This includes the actual genesis block (at 0).
-blockHeaderSlot :: CSL.SlotCount -> CSL.BlockHeader -> SlotNo
-blockHeaderSlot epochSlots blkHeader = case blkHeader of
-  CSL.BlockHeaderMain mBlkHeader -> mBlkHeader ^.
-      CSL.gbhConsensus
-    . CSL.mcdSlot
-    -- FlatSlotId ~ Word64
-    -- so we `fromIntegral` it (hopefully it fits!)
-    . Lens.to (fromIntegral . CSL.flattenSlotId epochSlots)
-  CSL.BlockHeaderGenesis gBlkHeader -> gBlkHeader ^.
-      CSL.gbhConsensus
-    . CSL.gcdEpoch
-    . Lens.to CSL.getEpochIndex
-    . Lens.to (ebbSlot . fromIntegral)
-  where
-  ebbSlot = \ei -> ei * fromIntegral epochSlots
+  takeSlot :: Cardano.ABlockOrBoundary a -> SlotNo
+  takeSlot blk = case blk of
+    Cardano.ABOBBlock    blk -> SlotNo $ Cardano.unFlatSlotId (Cardano.blockSlot blk)
+    Cardano.ABOBBoundary ebb -> SlotNo $ Cardano.boundaryEpoch ebb * Cardano.unEpochSlots epochSlots
+  decoder :: forall s . CBOR.Decoder s (Cardano.ABlockOrBoundary ByteSpan)
+  decoder = Cardano.fromCBORABlockOrBoundary epochSlots
+  hashOfEBB :: Lazy.ByteString -> Cardano.ABlockOrBoundary ByteSpan -> Maybe Cardano.HeaderHash
+  hashOfEBB bytes blk = case blk of
+    Cardano.ABOBBlock    _   -> Nothing
+    Cardano.ABOBBoundary ebb -> Just hash
+      where
+      -- TODO make a function for this
+      -- TODO fix the toStrict/fromStrict marshalling?
+      -- Cardano.wrapBoundaryBytes should work on lazy bytestrings: if you
+      -- have a strict, getting a lazy is cheap, if you have a lazy,
+      -- going to strict is not.
+      hash = unsafeAbstractHash
+        . Lazy.fromStrict
+        . Cardano.wrapBoundaryBytes
+        . Lazy.toStrict
+        . Cardano.boundaryHeaderBytes
+        $ ebbWithBytes
+      ebbWithBytes = fmap (slice bytes) ebb
 
 -- | An iterator type quite like `Ouroboros.Storage.ImmutableDB.API.Iterator`,
 -- but without the `IteratorID`, and with explicit iterator tails in the
@@ -107,13 +103,13 @@ newtype Iterator m = Iterator
 
 data Next m where
   Done      :: Next m
-  NextBlock :: SlotNo                   -> ByteString -> Iterator m -> Next m
+  NextBlock :: SlotNo                       -> ByteString -> Iterator m -> Next m
   -- | For EBBs, the `Slot` is the same as the first block of that epoch.
-  NextEBB   :: SlotNo -> CSL.HeaderHash -> ByteString -> Iterator m -> Next m
+  NextEBB   :: SlotNo -> Cardano.HeaderHash -> ByteString -> Iterator m -> Next m
 
 data DBRead where
-  ReadEBB   :: SlotNo -> CSL.HeaderHash -> ByteString -> DBRead
-  ReadBlock :: SlotNo ->                   ByteString -> DBRead
+  ReadEBB   :: SlotNo -> Cardano.HeaderHash -> ByteString -> DBRead
+  ReadBlock :: SlotNo ->                       ByteString -> DBRead
 
 dbBytes :: DBRead -> ByteString
 dbBytes term = case term of
@@ -122,14 +118,14 @@ dbBytes term = case term of
 
 data Tip where
   TipGenesis :: Tip
-  TipEBB     :: SlotNo -> CSL.HeaderHash -> ByteString -> Tip
-  TipBlock   :: SlotNo                   -> ByteString -> Tip
+  TipEBB     :: SlotNo -> Cardano.HeaderHash -> ByteString -> Tip
+  TipBlock   :: SlotNo                       -> ByteString -> Tip
 
 -- | Make an `Iterator` from an `ImmutableDB` `Iterator`.
 fromImmutableDBIterator
   :: ( Monad m )
-  => CSL.SlotCount
-  -> Immutable.Iterator CSL.HeaderHash m ByteString
+  => Cardano.EpochSlots
+  -> Immutable.Iterator Cardano.HeaderHash m ByteString
   -> Iterator m
 fromImmutableDBIterator epochSlots idbIterator = Iterator $ do
   idbNext <- Immutable.iteratorNext idbIterator
@@ -138,7 +134,7 @@ fromImmutableDBIterator epochSlots idbIterator = Iterator $ do
     Immutable.IteratorResult    slot       bytes -> pure $ NextBlock slot      bytes recurse
     Immutable.IteratorEBB       epoch hash bytes -> pure $ NextEBB   slot hash bytes recurse
       where
-      slot = SlotNo $ fromIntegral epochSlots * unEpochNo epoch
+      slot = SlotNo $ Cardano.unEpochSlots epochSlots * unEpochNo epoch
   where
   -- The `ImmutableDB` `Iterator` is 100% effectful; getting its "tail" is
   -- just the very same recursive call.
@@ -163,8 +159,9 @@ conduitFromIterator iterator = do
 
 data Point where
   FromGenesis :: Point
+  -- CSL hash is used because hash-based indexing is for legacy support.
   FromHash    :: !CSL.HeaderHash -> Point
-  FromPoint   :: !SlotNo -> !CSL.HeaderHash -> Point
+  FromPoint   :: !SlotNo -> !Cardano.HeaderHash -> Point
 
 -- | Unified database interface which supports lookup by hash or by slot.
 -- It also gives `Slot` for EBBs, whereas the `ImmutableDB` would give `Epoch`.
@@ -187,8 +184,20 @@ data DB m = DB
   , readTip      :: m Tip
   }
 
+-- | The DB supports writes of legacy cardano-sl blocks, or new cardano-ledger
+-- block or boundary blocks. Boundary blocks in the new style must be annotated
+-- with ByteString because they do not otherwise hold enough information to
+-- re-serialise.
+data BlockToWrite where
+  LegacyBlockToWrite  :: !CSL.Block -> BlockToWrite
+  -- TODO something wrong here? Couldn't we have defined the types in such a
+  -- way that we'd write
+  --   Annotated Cardano.ABlockOrBoundary ByteString
+  -- and have the annotation part be fed through to all of the sub parts?
+  CardanoBlockToWrite :: !(Annotated (Cardano.ABlockOrBoundary ByteString) ByteString) -> BlockToWrite
+
 data DBAppend m = DBAppend
-  { appendBlock :: CSL.Block -> m ()
+  { appendBlock :: BlockToWrite -> m ()
   }
 
 data DBError where
@@ -204,10 +213,10 @@ instance Exception DBError
 mkDB
   :: ( Monad m )
   => (forall x . DBError -> m x)
-  -> CSL.SlotCount -- ^ Number of slots per epoch
+  -> Cardano.EpochSlots -- ^ Number of slots per epoch
                    -- (must never change in the chain stored here)
   -> Index m
-  -> ImmutableDB CSL.HeaderHash m
+  -> ImmutableDB Cardano.HeaderHash m
   -> DB m
 mkDB err epochSlots idx idb = DB
   { appendBlocks = appendBlocksImpl err epochSlots idx idb
@@ -218,9 +227,9 @@ mkDB err epochSlots idx idb = DB
 appendBlocksImpl
   :: ( Monad m )
   => (forall x . DBError -> m x)
-  -> CSL.SlotCount
+  -> Cardano.EpochSlots
   -> Index m
-  -> ImmutableDB CSL.HeaderHash m
+  -> ImmutableDB Cardano.HeaderHash m
   -> (DBAppend m -> m t)
   -> m t
 appendBlocksImpl err epochSlots idx idb k =
@@ -234,29 +243,50 @@ appendBlocksImpl err epochSlots idx idb k =
 dbAppendImpl
   :: ( Monad m )
   => (forall x . DBError -> m x)
-  -> CSL.SlotCount
+  -> Cardano.EpochSlots
   -> IndexWrite m
-  -> ImmutableDB CSL.HeaderHash m
+  -> ImmutableDB Cardano.HeaderHash m
   -> DBAppend m
-dbAppendImpl err epochSlots iwrite idb = DBAppend $ \cslBlock ->
+dbAppendImpl err epochSlots iwrite idb = DBAppend $ \blockToWrite ->
   -- Must serialise as a `Block` rather than a `MainBlock` or `GenesisBlock`,
   -- because the epoch file parser needs to be able to discriminate them.
-  let builder = CSL.serializeBuilder cslBlock
-  in  case cslBlock of
-        Left ebb -> do
+  let builder = case blockToWrite of
+        LegacyBlockToWrite  cslBlk -> CSL.serializeBuilder cslBlk
+        -- The annotation is assumed to be the bytes from which it was decoded.
+        CardanoBlockToWrite (Annotated _ bytes) ->
+          Builder.byteString bytes
+  in  case blockToWrite of
+        LegacyBlockToWrite b@(Left ebb) -> do
           -- Write the index first, so that if something goes wrong with the
           -- `appendEBB` to the `ImmutableDB`, the transaction will quit and the
           -- index/db will remain consistent.
           let hash = CSL.headerHash ebb
               epoch = ebbEpoch ebb
           Index.updateTip iwrite hash epoch Index.EBBSlot
-          Immutable.appendEBB idb epoch hash builder
-        Right blk -> do
+          Immutable.appendEBB idb epoch (coerceHashFromLegacy hash) builder
+        LegacyBlockToWrite b@(Right blk) -> do
           let hash = CSL.headerHash blk
               (epoch, SlotNo wslot) = blockEpochAndRelativeSlot blk
-              slot = SlotNo $ unEpochNo epoch * fromIntegral epochSlots + wslot
+              slot = SlotNo $ unEpochNo epoch * Cardano.unEpochSlots epochSlots + wslot
           Index.updateTip iwrite hash epoch (Index.RealSlot wslot)
           Immutable.appendBinaryBlob idb slot builder
+        CardanoBlockToWrite (Annotated (Cardano.ABOBBlock blk) _) -> do
+          let hash = Cardano.blockHashAnnotated blk
+              flatSlotId = Cardano.blockSlot blk
+              slot = Cardano.unFlatSlotId flatSlotId
+              slotId = Cardano.unflattenSlotId epochSlots flatSlotId
+              Cardano.EpochIndex epoch = Cardano.siEpoch slotId
+          Index.updateTip iwrite (coerceHashToLegacy hash) (EpochNo epoch) (Index.RealSlot slot)
+          Immutable.appendBinaryBlob idb (SlotNo slot) builder
+        CardanoBlockToWrite (Annotated (Cardano.ABOBBoundary ebb) _) -> do
+          let hash = unsafeAbstractHash
+                . Lazy.fromStrict
+                . Cardano.wrapBoundaryBytes
+                . Cardano.boundaryHeaderBytes
+                $ ebb
+              epoch = EpochNo (Cardano.boundaryEpoch ebb)
+          Index.updateTip iwrite (coerceHashToLegacy hash) epoch Index.EBBSlot
+          Immutable.appendEBB idb epoch hash builder
 
 -- | Stream from a given point, using the index to determine the start point
 -- in case the `Point` is a header hash.
@@ -267,9 +297,9 @@ readFromImpl
   :: forall m .
      ( Monad m )
   => (forall x . DBError -> m x)
-  -> CSL.SlotCount
+  -> Cardano.EpochSlots
   -> Index m
-  -> ImmutableDB CSL.HeaderHash m
+  -> ImmutableDB Cardano.HeaderHash m
   -> Point
   -> m (IteratorResource m)
 readFromImpl err epochSlots idx idb point = case point of
@@ -289,9 +319,9 @@ readFromImpl err epochSlots idx idb point = case point of
         }
       Just (_, epoch, indexSlot) ->
         let slot = indexToSlot epochSlots epoch indexSlot
-        in  iteratorFromSlot (Just (slot, hash))
+        in  iteratorFromSlot (Just (slot, coerceHashFromLegacy hash))
   where
-  iteratorFromSlot :: Maybe (SlotNo, CSL.HeaderHash) -> m (IteratorResource m)
+  iteratorFromSlot :: Maybe (SlotNo, Cardano.HeaderHash) -> m (IteratorResource m)
   iteratorFromSlot mStartPoint = do
     idbIterator <- Immutable.streamBinaryBlobs idb mStartPoint Nothing
     pure $ IteratorResource
@@ -312,9 +342,9 @@ readFromImpl err epochSlots idx idb point = case point of
 readTipImpl
   :: ( Monad m )
   => (forall x . DBError -> m x)
-  -> CSL.SlotCount
+  -> Cardano.EpochSlots
   -> Index m
-  -> ImmutableDB CSL.HeaderHash m
+  -> ImmutableDB Cardano.HeaderHash m
   -> m Tip
 readTipImpl err epochSlots idx idb = do
   tip <- Immutable.getTip idb
@@ -328,7 +358,7 @@ readTipImpl err epochSlots idx idb = do
         Nothing -> error "ImmutableDB bug ebb"
         Just (hash, bytes) -> pure $ TipEBB slot hash bytes
           where
-          slot = SlotNo $ fromIntegral epochSlots * unEpochNo epoch
+          slot = SlotNo $ Cardano.unEpochSlots epochSlots * unEpochNo epoch
     Immutable.Tip (Right slot) -> do
       mItem <- Immutable.getBinaryBlob idb slot
       case mItem of
@@ -363,10 +393,10 @@ isEbbSlot idxSlot = case idxSlot of
 
 -- | Put the EBBs for epoch `n` at the same slot (relative to genesis) as the
 -- first block of epoch `n`.
-indexToSlot :: CSL.SlotCount -> EpochNo -> Index.IndexSlot -> SlotNo
+indexToSlot :: Cardano.EpochSlots -> EpochNo -> Index.IndexSlot -> SlotNo
 indexToSlot epochSlots (EpochNo epoch) idxSlot = SlotNo sl
   where
-  sl = (fromIntegral epochSlots * epoch) + relative
+  sl = (Cardano.unEpochSlots epochSlots * epoch) + relative
   relative :: Word64
   relative = case idxSlot of
     Index.EBBSlot    -> 0

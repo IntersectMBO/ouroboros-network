@@ -1,7 +1,13 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module Ouroboros.Byron.Proxy.ChainSync.Types
-  ( Block (..)
+  ( Block
   , Point (..)
   , codec
+  , encodeBlock
+  , decodeBlock
+  , encodePoint
+  , decodePoint
   ) where
 
 import Control.Monad.Class.MonadST (MonadST)
@@ -9,47 +15,70 @@ import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Read as CBOR
 import Codec.Serialise (Serialise (..))
-import qualified Data.ByteString.Lazy as Lazy (ByteString)
+import Data.ByteString (ByteString)
+import qualified Data.ByteString.Lazy as Lazy (ByteString, fromStrict)
 import Network.TypedProtocol.Codec (Codec)
-import qualified Pos.Binary.Class as CSL (decode, encode)
-import qualified Pos.Chain.Block as CSL (Block, HeaderHash)
+
+import qualified Cardano.Binary as Binary
+import qualified Cardano.Chain.Block as Cardano
+import Cardano.Chain.Slotting (EpochSlots)
 
 import Ouroboros.Network.Protocol.ChainSync.Codec (codecChainSync)
 import Ouroboros.Network.Protocol.ChainSync.Type (ChainSync)
-import Ouroboros.Storage.ImmutableDB.API (SlotNo (..))
+import Ouroboros.Network.Block (SlotNo (..))
+
+type Block = Binary.Annotated (Cardano.ABlockOrBoundary ByteString) ByteString
 
 data Point = Point
   { pointSlot :: !SlotNo
-  , pointHash :: !CSL.HeaderHash
+  , pointHash :: !Cardano.HeaderHash
   }
   deriving (Show, Eq)
 
--- | A newtype for the cardano-sl `Block`, for use in this chain sync codec.
--- Needed because supporting programs use `Serialise` instances, rather than
--- `Encoding` and `Decoder` terms, in order to make codecs.
-newtype Block = Block
-  { getBlock :: CSL.Block
-  }
+-- | A `Block` has a `ByteString` annotation which is assumed to be its
+-- CBOR encoding, so we drop that into a "CBOR-in-CBOR" (tag 24).
+encodeBlock :: Block -> CBOR.Encoding
+encodeBlock = Binary.encodeUnknownCborDataItem . Lazy.fromStrict . Binary.annotation
 
--- | Rip this from the cardano-sl `Bi` class.
-instance Serialise Block where
-  encode = CSL.encode . getBlock
-  decode = Block <$> CSL.decode
+-- | FIXME length limit must be imposed. Can it be done here? I don't see any
+-- types in cborg that would make it possible.
+decodeBlock :: EpochSlots -> CBOR.Decoder s Block
+decodeBlock epochSlots = do
+  bytes <- Binary.decodeUnknownCborDataItem
+  case Binary.decodeFullAnnotatedBytes "Block or boundary" internalDecoder (Lazy.fromStrict bytes) of
+    Right it  -> pure $ Binary.Annotated it bytes
+    -- FIXME
+    --   err :: Binary.DecoderError
+    -- but AFAICT the only way to make the decoder fail is to give a `String`
+    -- to `fail`...
+    Left  err -> fail (show err)
+  where
+  internalDecoder :: Binary.Decoder s (Cardano.ABlockOrBoundary Binary.ByteSpan)
+  internalDecoder = Cardano.fromCBORABlockOrBoundary epochSlots
 
-instance Serialise Point where
-  encode point =
-       CBOR.encodeListLen 2
-    <> encode (pointSlot point)
-       -- `CSL.encode` is from the `Bi` class.
-    <> CSL.encode (pointHash point)
-  decode = do
-    n <- CBOR.decodeListLen
-    case n of
-      -- `CSL.decode` is from the `Bi` class.
-      2 -> Point <$> decode <*> CSL.decode
-      _ -> fail "Point: invalid list length"
+encodePoint :: Point -> CBOR.Encoding
+encodePoint point =
+     CBOR.encodeListLen 2
+  -- FIXME `SlotNo` encoding uses the `Serialise` class, but `ToCBOR` class
+  -- is used for `HeaderHash`.
+  <> encode (pointSlot point)
+  <> Binary.toCBOR (pointHash point)
+
+decodePoint :: CBOR.Decoder s Point
+decodePoint = do
+  n <- CBOR.decodeListLen
+  case n of
+    -- FIXME `SlotNo` decoding uses the `Serialise` class, but `ToCBOR` class
+    -- is used for `HeaderHash`.
+    2 -> Point <$> decode <*> Binary.fromCBOR
+    _ -> fail "Point: invalid list length"
 
 codec
   :: (MonadST m)
-  => Codec (ChainSync Block Point) CBOR.DeserialiseFailure m Lazy.ByteString
-codec = codecChainSync encode encode decode decode
+  => EpochSlots
+  -> Codec (ChainSync Block Point) CBOR.DeserialiseFailure m Lazy.ByteString
+codec epochSlots = codecChainSync
+  encodeBlock
+  (decodeBlock epochSlots)
+  encodePoint
+  decodePoint

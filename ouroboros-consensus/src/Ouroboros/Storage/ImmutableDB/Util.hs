@@ -29,6 +29,7 @@ import           Control.Monad.Class.MonadThrow (MonadThrow)
 
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BSL (ByteString)
 import qualified Data.ByteString.Builder as BS
 import           Data.ByteString.Builder.Extra (defaultChunkSize)
 import           Data.List.NonEmpty (NonEmpty)
@@ -264,7 +265,7 @@ cborEpochFileParser :: forall m hash h a. (MonadST m, MonadThrow m)
                     => Int  -- ^ Chunk size
                     -> HasFS m h
                     -> (forall s . CBOR.Decoder s a)
-                    -> (a -> Maybe hash)
+                    -> (BSL.ByteString -> a -> Maybe hash)
                        -- ^ In case the given @a@ is an EBB, return its
                        -- @hash@.
                     -> EpochFileParser ReadIncrementalErr hash m (Word64, a)
@@ -280,9 +281,10 @@ cborEpochFileParser chunkSize hasFS decoder getEBBHash = EpochFileParser $
 cborEpochFileParser' :: forall m hash h a. (MonadST m, MonadThrow m)
                      => HasFS m h
                      -> (forall s . CBOR.Decoder s a)
-                     -> (a -> Maybe hash)
+                     -> (BSL.ByteString -> a -> Maybe hash)
                         -- ^ In case the given @a@ is an EBB, return its
-                        -- @hash@.
+                        -- @hash@. You also get the bytes from which it was
+                        -- decoded.
                      -> EpochFileParser ReadIncrementalErr hash m (Word64, a)
                         -- ^ The 'Word' is the size in bytes of the
                         -- corresponding @a@.

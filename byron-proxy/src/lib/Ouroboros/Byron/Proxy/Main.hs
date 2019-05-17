@@ -17,6 +17,7 @@ import Control.Exception (Exception, bracket, throwIO)
 import Control.Monad (forM, void)
 import Control.Monad.Trans.Class (lift)
 import Control.Lens ((^.))
+import Control.Tracer (Tracer, traceWith)
 import Data.Conduit (ConduitT, (.|), await, mapOutput, runConduit, yield)
 import Data.List (maximumBy)
 import Data.List.NonEmpty (NonEmpty)
@@ -27,6 +28,8 @@ import Data.Proxy (Proxy (..))
 import Data.Tagged (Tagged (..), tagWith, untag)
 import Data.Text (Text)
 import Numeric.Natural (Natural)
+
+import Cardano.BM.Data.Severity (Severity (..))
 
 import Pos.Binary.Class (decodeFull')
 import Pos.Chain.Block (Block, BlockHeader, HeaderHash, MainBlockHeader,
@@ -249,10 +252,12 @@ bbsStreamBlocks db onErr hh k = bracket (DB.readFrom db (DB.FromHash hh)) DB.clo
       Nothing -> pure ()
       Just (DB.ReadEBB slot _ bytes) -> case decodeFull' bytes of
         Left err -> lift $ onErr slot err
-        Right ebb -> yield (Left ebb)  >> decode
+        Right (Right blk :: Block) -> lift $ onErr slot "block where EBB expected"
+        Right (Left ebb  :: Block) -> yield (Left ebb)  >> decode
       Just (DB.ReadBlock slot bytes) -> case decodeFull' bytes of
         Left err -> lift $ onErr slot err
-        Right blk -> yield (Right blk) >> decode
+        Right (Left ebb  :: Block) -> lift $ onErr slot "EBB where block expected"
+        Right (Right blk :: Block) -> yield (Right blk) >> decode
 
 bbsGetSerializedBlock
   :: DB IO
@@ -401,11 +406,12 @@ instance Exception EmptyDatabaseError
 -- The `DB` given must not be empty. If it is, `getTip` will throw an
 -- exception. So be sure to seed the DB with the genesis block.
 withByronProxy
-  :: ByronProxyConfig
+  :: Tracer IO (Severity, Text)
+  -> ByronProxyConfig
   -> DB IO
   -> (ByronProxy -> IO t)
   -> IO t
-withByronProxy bpc db k =
+withByronProxy trace bpc db k =
   -- Create pools for all relayed data.
   -- TODO what about for delegation certificates?
   withPool (bpcPoolRoundInterval bpc) $ \(txPool :: TxPool) ->
@@ -524,13 +530,25 @@ withByronProxy bpc db k =
           , getTip               = do
               dbTip <- DB.readTip db
               case dbTip of
-                DB.TipGenesis -> throwIO $ EmptyDatabaseError
+                DB.TipGenesis -> do
+                  traceWith trace (Error, "getTip: empty database")
+                  throwIO $ EmptyDatabaseError
                 DB.TipEBB slot hash bytes -> case decodeFull' bytes of
-                  Left cborError -> throwIO $ MalformedBlock slot cborError
-                  Right ebb      -> pure $ Left ebb
+                  Left cborError -> do
+                    traceWith trace (Error, "getTip: malformed EBB")
+                    throwIO $ MalformedBlock slot cborError
+                  Right (Right _) -> do
+                    traceWith trace (Error, "getTip: block where EBB expected")
+                    throwIO $ MalformedBlock slot "block where EBB expected"
+                  Right (Left ebb :: Block) -> pure $ Left ebb
                 DB.TipBlock slot bytes -> case decodeFull' bytes of
-                  Left cborError -> throwIO $ MalformedBlock slot cborError
-                  Right blk      -> pure $ Right blk
+                  Left cborError -> do
+                    traceWith trace (Error, "getTip: malformed block")
+                    throwIO $ MalformedBlock slot cborError
+                  Right (Left ebb) -> do
+                    traceWith trace (Error, "getTip: EBB where block expected")
+                    throwIO $ MalformedBlock slot "EBB where block expected"
+                  Right (Right blk :: Block) -> pure $ Right blk
           -- GetBlocks conversation
           , getHashesRange       = \mLimit from to -> do
               result <- bbsGetHashesRange db blockDecodeError mLimit from to
@@ -540,8 +558,18 @@ withByronProxy bpc db k =
           -- GetBlocks conversation
           , getSerializedBlock   = bbsGetSerializedBlock db
           -- StreamBlocks conversation
-          , Logic.streamBlocks   = \hh k -> bracket (DB.readFrom db (DB.FromHash hh)) (DB.closeIterator) $ \iter ->
-              k (mapOutput (Serialized . DB.dbBytes) (DB.conduitFromIterator (DB.iterator iter)))
+          --
+          -- The conduit given to the continuation must _not_ yield the block
+          -- at the given start hash! This is not documented in cardano-sl.
+          , Logic.streamBlocks   = \hh k -> bracket (DB.readFrom db (DB.FromHash hh)) (DB.closeIterator) $ \iter -> do
+              -- It's far easier to drop from the iterator than it is to drop
+              -- from a conduit (conduit is weird).
+              next <- DB.next (DB.iterator iter)
+              let conduit = case next of
+                    DB.Done -> pure ()
+                    DB.NextBlock _ _ iter' -> DB.conduitFromIterator iter'
+                    DB.NextEBB _ _ _ iter' -> DB.conduitFromIterator iter'
+              k (mapOutput (Serialized . DB.dbBytes) conduit)
           }
 
         networkConfig = bpcNetworkConfig bpc

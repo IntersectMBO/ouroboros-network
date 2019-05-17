@@ -177,7 +177,7 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
         where
           direction = Upstream (producerNodeId :==>: myNodeId)
           nodeCommsCS = NodeComms {
-              ncCodec    = codecChainSync encode encode decode decode
+              ncCodec    = codecChainSync encode decode encode decode
             , ncWithChan = NamedPipe.withPipeChannel "chain-sync" direction
             }
           nodeCommsBF = NodeComms {
@@ -194,7 +194,7 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
         where
           direction = Downstream (myNodeId :==>: consumerNodeId)
           nodeCommsCS = NodeComms {
-              ncCodec    = codecChainSync encode encode decode decode
+              ncCodec    = codecChainSync encode decode encode decode
             , ncWithChan = NamedPipe.withPipeChannel "chain-sync" direction
             }
           nodeCommsBF = NodeComms {

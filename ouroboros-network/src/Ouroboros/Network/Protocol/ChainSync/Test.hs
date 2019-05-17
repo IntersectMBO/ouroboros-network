@@ -190,7 +190,7 @@ prop_codec_ChainSync
   :: AnyMessageAndAgency (ChainSync BlockHeader (Point BlockHeader))
   -> Bool
 prop_codec_ChainSync msg =
-    ST.runST $ prop_codecM (codecChainSync S.encode S.encode S.decode S.decode) msg
+    ST.runST $ prop_codecM (codecChainSync S.encode S.decode S.encode S.decode) msg
 
 prop_codec_splits2_ChainSync
   :: AnyMessageAndAgency (ChainSync BlockHeader (Point BlockHeader))
@@ -198,7 +198,7 @@ prop_codec_splits2_ChainSync
 prop_codec_splits2_ChainSync msg =
     ST.runST $ prop_codec_splitsM
       splits2
-      (codecChainSync S.encode S.encode S.decode S.decode)
+      (codecChainSync S.encode S.decode S.encode S.decode)
       msg
 
 prop_codec_splits3_ChainSync
@@ -207,7 +207,7 @@ prop_codec_splits3_ChainSync
 prop_codec_splits3_ChainSync msg =
     ST.runST $ prop_codec_splitsM
       splits3
-      (codecChainSync S.encode S.encode S.decode S.decode)
+      (codecChainSync S.encode S.decode S.encode S.decode)
       msg
 
 chainSyncDemo
@@ -233,8 +233,8 @@ chainSyncDemo clientChan serverChan (ChainProducerStateForkTest cps chain) = do
 
       client = ChainSyncExamples.chainSyncClientExample chainVar (testClient doneVar (Chain.headPoint pchain))
 
-  void $ fork (void $ runPeer nullTracer (codecChainSync S.encode S.encode S.decode S.decode) serverChan (chainSyncServerPeer server))
-  void $ fork (void $ runPeer nullTracer (codecChainSync S.encode S.encode S.decode S.decode) clientChan (chainSyncClientPeer client))
+  void $ fork (void $ runPeer nullTracer (codecChainSync S.encode S.decode S.encode S.decode) serverChan (chainSyncServerPeer server))
+  void $ fork (void $ runPeer nullTracer (codecChainSync S.encode S.decode S.encode S.decode) clientChan (chainSyncClientPeer client))
 
   atomically $ do
     done <- readTVar doneVar

@@ -4,19 +4,19 @@
 
 module Ouroboros.Byron.Proxy.ChainSync.Server where
 
-import qualified Codec.CBOR.Decoding as CBOR
-import qualified Codec.CBOR.Read as CBOR
 import Control.Monad.Trans.Class (MonadTrans, lift)
 import Control.Monad.Trans.Resource (ResourceT, ReleaseKey, allocate, release)
 import qualified Data.ByteString.Lazy as Lazy
 import Data.Foldable (foldlM)
 import Data.List (sortBy)
 import Data.Ord (Down (..))
+import qualified Data.Text as Text (pack)
 
-import qualified Pos.Binary.Class as CSL (decode)
-import qualified Pos.Chain.Block as CSL
+import qualified Cardano.Binary as Binary
+import qualified Cardano.Chain.Block as Cardano
+import qualified Cardano.Chain.Slotting as Cardano
 
-import Ouroboros.Byron.Proxy.ChainSync.Types (Block (..), Point (..))
+import Ouroboros.Byron.Proxy.ChainSync.Types (Block, Point (..))
 import Ouroboros.Byron.Proxy.DB (DB)
 import qualified Ouroboros.Byron.Proxy.DB as DB
 import Ouroboros.Network.Protocol.ChainSync.Server
@@ -75,30 +75,35 @@ type PollT m = forall f . (Monad (f m), MonadTrans f) => Poll (f m)
 -- by the type of `allocate`: `ResourceT` uses an `IORef`, so we're stuck.
 -- It's tragic.
 chainSyncServer
-  :: (forall x . CBOR.DeserialiseFailure -> IO x)
+  :: Cardano.EpochSlots
+  -> (forall x . Binary.DecoderError -> IO x)
   -> PollT IO
   -> DB IO
   -> ChainSyncServer Block Point (ResourceT IO) ()
-chainSyncServer err poll db = chainSyncServerAt err poll db NoTip
+chainSyncServer epochSlots err poll db = chainSyncServerAt epochSlots err poll db NoTip
 
 chainSyncServerAt
-  :: (forall x . CBOR.DeserialiseFailure -> IO x)
+  :: Cardano.EpochSlots
+  -> (forall x . Binary.DecoderError -> IO x)
   -> PollT IO
   -> DB IO
   -> ServerState
   -> ChainSyncServer Block Point (ResourceT IO) ()
-chainSyncServerAt err poll db ss = ChainSyncServer $
-  pure $ chainSyncServerIdle err poll db ss
+chainSyncServerAt epochSlots err poll db ss = ChainSyncServer $
+  pure $ chainSyncServerIdle epochSlots err poll db ss
 
+-- | Periodically check the datbase until the tip is better than a given
+-- point (use `Nothing` to wait until it's non-empty).
 pollForTipChange
   :: forall m .
      ( Monad m )
-  => (forall x . CBOR.DeserialiseFailure -> m x)
+  => Cardano.EpochSlots
+  -> (forall x . Binary.DecoderError -> m x)
   -> PollT m
   -> DB m
   -> Maybe Point
   -> ResourceT m Point
-pollForTipChange err poll db mPoint = poll takePoint (lift (DB.readTip db))
+pollForTipChange epochSlots err poll db mPoint = poll takePoint (lift (DB.readTip db))
   where
   takePoint :: DB.Tip -> ResourceT m (Maybe Point)
   takePoint tip = case mPoint of
@@ -106,28 +111,32 @@ pollForTipChange err poll db mPoint = poll takePoint (lift (DB.readTip db))
     Nothing -> case tip of
       DB.TipGenesis -> pure Nothing
       DB.TipEBB slot hash _ -> pure $ Just (Point slot hash)
-      DB.TipBlock slot bytes -> case DB.decodeFull cslBlockDecoder (Lazy.fromStrict bytes) of
+      DB.TipBlock slot bytes -> case decodeBlock epochSlots (Lazy.fromStrict bytes) of
         Left cborError -> lift $ err cborError
-        Right blk      -> pure $ Just $ Point slot (CSL.headerHash blk)
+        Right ablk     -> case Binary.unAnnotated ablk of
+          Cardano.ABOBBlock blk  -> pure $ Just $ Point slot (Cardano.blockHashAnnotated blk)
+          -- FIXME deal with this better.
+          Cardano.ABOBBoundary _ -> error "Corrupt DB: EBB where block expected"
     -- Must wait for a tip better than the given point.
     -- We assume (since there are no forks by assumption) that if the new
     -- tip is not equal to this point, then it's better.
     Just point -> do
-      point' <- lift $ pickBetterTip err point tip
+      point' <- lift $ pickBetterTip epochSlots err point tip
       pure $ if point == point'
              then Nothing
              else Just point'
 
 pickBetterTip
   :: ( Applicative m )
-  => (forall x . CBOR.DeserialiseFailure -> m x)
+  => Cardano.EpochSlots
+  -> (forall x . Binary.DecoderError -> m x)
   -> Point
   -> DB.Tip
   -> m Point
 -- FIXME this case is actually an error. If we have a tip point but the
 -- DB is empty then something went horribly wrong.
-pickBetterTip _ point DB.TipGenesis = pure point
-pickBetterTip _ point (DB.TipEBB slot hash _) =
+pickBetterTip _ _ point DB.TipGenesis = pure point
+pickBetterTip _ _ point (DB.TipEBB slot hash _) =
   if pointSlot point < slot
   then pure $ Point slot hash
   else pure point
@@ -135,31 +144,35 @@ pickBetterTip _ point (DB.TipEBB slot hash _) =
 -- same but we want to pick the block.
 -- So just use a non-strict equality. Since we're only using immutable DB with
 -- no forks, it is correct.
-pickBetterTip err point (DB.TipBlock slot bytes) =
+pickBetterTip epochSlots err point (DB.TipBlock slot bytes) =
   if pointSlot point <= slot
-  then case DB.decodeFull cslBlockDecoder (Lazy.fromStrict bytes) of
+  then case decodeBlock epochSlots (Lazy.fromStrict bytes) of
     Left cborError -> err cborError
-    Right blk      -> pure $ Point slot (CSL.headerHash blk)
+    Right ablk     -> case Binary.unAnnotated ablk of
+      Cardano.ABOBBlock blk  -> pure $ Point slot (Cardano.blockHashAnnotated blk)
+      -- FIXME deal with this better.
+      Cardano.ABOBBoundary _ -> error "Corrupt DB: EBB where block expected"
   else pure point
 
 chainSyncServerIdle
-  :: (forall x . CBOR.DeserialiseFailure -> IO x)
+  :: Cardano.EpochSlots
+  -> (forall x . Binary.DecoderError -> IO x)
   -> PollT IO
   -> DB IO
   -> ServerState
   -> ServerStIdle Block Point (ResourceT IO) ()
-chainSyncServerIdle err poll db ss = case ss of
+chainSyncServerIdle epochSlots err poll db ss = case ss of
   -- If there's no tip, poll for a tip change only when a request comes in.
   NoTip -> ServerStIdle
     { recvMsgDoneClient = pure ()
     , recvMsgFindIntersect = \points -> do
-        tipPoint <- pollForTipChange err poll db Nothing
+        tipPoint <- pollForTipChange epochSlots err poll db Nothing
         let ss' = KnownTip tipPoint Nothing Nothing
-        recvMsgFindIntersect (chainSyncServerIdle err poll db ss') points
+        recvMsgFindIntersect (chainSyncServerIdle epochSlots err poll db ss') points
     , recvMsgRequestNext = do
-        tipPoint <- pollForTipChange err poll db Nothing
+        tipPoint <- pollForTipChange epochSlots err poll db Nothing
         let ss' = KnownTip tipPoint Nothing Nothing
-        recvMsgRequestNext (chainSyncServerIdle err poll db ss')
+        recvMsgRequestNext (chainSyncServerIdle epochSlots err poll db ss')
     }
 
   KnownTip tipPoint mLastKnownPoint mIterator -> ServerStIdle
@@ -176,9 +189,9 @@ chainSyncServerIdle err poll db ss = case ss of
             -- If there is a first point, that's our new spot. We can de-allocate
             -- any existing iterator and use this new one.
             checkForPoint
-              :: Maybe (SlotNo, CSL.HeaderHash, DB.Iterator IO, ReleaseKey)
+              :: Maybe (SlotNo, Cardano.HeaderHash, DB.Iterator IO, ReleaseKey)
               -> Point
-              -> ResourceT IO (Maybe (SlotNo, CSL.HeaderHash, DB.Iterator IO, ReleaseKey))
+              -> ResourceT IO (Maybe (SlotNo, Cardano.HeaderHash, DB.Iterator IO, ReleaseKey))
             checkForPoint = \found point -> case found of
               Just _  -> pure found
               Nothing -> do
@@ -200,9 +213,11 @@ chainSyncServerIdle err poll db ss = case ss of
                   -- want, we have to get its header hash, which involves
                   -- deserialising and then reserialising (via headerHash).
                   DB.NextBlock slot bytes iterator' -> do
-                    hash <- case DB.decodeFull cslBlockDecoder (Lazy.fromStrict bytes) of
+                    hash <- case decodeBlock epochSlots (Lazy.fromStrict bytes) of
                       Left cborError -> lift $ err cborError
-                      Right block    -> pure $ CSL.headerHash block
+                      Right ablk     -> case Binary.unAnnotated ablk of
+                        Cardano.ABOBBlock blk  -> pure $ Cardano.blockHashAnnotated blk
+                        Cardano.ABOBBoundary _ -> error "Corrupt DB: EBB where block expected"
                     if hash == pointHash point
                     then pure $ Just (slot, hash, iterator', releaseKey)
                     else pure Nothing
@@ -210,21 +225,21 @@ chainSyncServerIdle err poll db ss = case ss of
         -- No matter what, we have to give the current tip.
         -- FIXME why? Should only need to give it if there's a change.
         dbTip <- lift $ DB.readTip db
-        tipPoint' <- lift $ pickBetterTip err tipPoint dbTip
+        tipPoint' <- lift $ pickBetterTip epochSlots err tipPoint dbTip
         -- If there's a new point, release any existing iterator and keep the
         -- one we just made. Since we already read a block from it that the
         -- client claims to have, the iterator is now at the appropriate point.
         case mFound of
           Nothing -> do
             let ss' = KnownTip tipPoint' mLastKnownPoint mIterator
-            pure $ SendMsgIntersectUnchanged tipPoint' (chainSyncServerAt err poll db ss')
+            pure $ SendMsgIntersectUnchanged tipPoint' (chainSyncServerAt epochSlots err poll db ss')
           Just (newSlot, newHash, newIterator, newReleaseKey) -> do
             -- Release the old iterator, if any.
             maybe (pure ()) (release . snd) mIterator
             -- The new iterator is used from now on.
             let newPoint = Point newSlot newHash
                 ss' = KnownTip tipPoint' (Just newPoint) (Just (newIterator, newReleaseKey))
-            pure $ SendMsgIntersectImproved newPoint tipPoint' (chainSyncServerAt err poll db ss')
+            pure $ SendMsgIntersectImproved newPoint tipPoint' (chainSyncServerAt epochSlots err poll db ss')
 
     , recvMsgRequestNext = case mIterator of
         -- There's no iterator. Bring one up beginning at least from the next
@@ -235,7 +250,7 @@ chainSyncServerIdle err poll db ss = case ss of
             -- Last known point remains Nothing because we haven't yet served
             -- a block.
             let ss' = KnownTip tipPoint Nothing (Just (DB.iterator iteratorResource, releaseKey))
-            recvMsgRequestNext (chainSyncServerIdle err poll db ss')
+            recvMsgRequestNext (chainSyncServerIdle epochSlots err poll db ss')
           Just point -> do
             (releaseKey, iteratorResource) <- allocate (DB.readFrom db (DB.FromPoint (pointSlot point) (pointHash point))) DB.closeIterator
             -- Iterator starts from that point, so we have to pass over it
@@ -248,7 +263,7 @@ chainSyncServerIdle err poll db ss = case ss of
               DB.NextEBB _ _ _ iterator' -> pure iterator'
               DB.NextBlock _ _ iterator' -> pure iterator'
             let ss' = KnownTip tipPoint mLastKnownPoint (Just (iterator', releaseKey))
-            recvMsgRequestNext (chainSyncServerIdle err poll db ss')
+            recvMsgRequestNext (chainSyncServerIdle epochSlots err poll db ss')
         Just (iterator, releaseKey) -> do
           next <- lift $ DB.next iterator
           case next of
@@ -260,23 +275,35 @@ chainSyncServerIdle err poll db ss = case ss of
                   condition term = pure $ case term of
                     Left serverNext -> Just serverNext
                     Right _ -> Nothing
-              poll condition (recvMsgRequestNext (chainSyncServerIdle err poll db ss'))
-            DB.NextEBB slot hash bytes iterator' -> case DB.decodeFull cslBlockDecoder (Lazy.fromStrict bytes) of
+              poll condition (recvMsgRequestNext (chainSyncServerIdle epochSlots err poll db ss'))
+            DB.NextEBB slot hash bytes iterator' -> case decodeBlock epochSlots (Lazy.fromStrict bytes) of
               Left cborError -> lift $ err cborError
-              Right ebb -> do
-                dbTip <- lift $ DB.readTip db
-                tipPoint' <- lift $ pickBetterTip err tipPoint dbTip
-                let ss' = KnownTip tipPoint' (Just (Point slot hash)) (Just (iterator', releaseKey))
-                pure $ Left $ SendMsgRollForward (Block ebb) tipPoint (chainSyncServerAt err poll db ss')
-            DB.NextBlock slot bytes iterator' -> case DB.decodeFull cslBlockDecoder (Lazy.fromStrict bytes) of
+              Right ablk -> case Binary.unAnnotated ablk of
+                Cardano.ABOBBlock _ -> error "Corrupt DB: block where EBB expected"
+                Cardano.ABOBBoundary ebb -> do
+                  dbTip <- lift $ DB.readTip db
+                  tipPoint' <- lift $ pickBetterTip epochSlots err tipPoint dbTip
+                  let ss' = KnownTip tipPoint' (Just (Point slot hash)) (Just (iterator', releaseKey))
+                  pure $ Left $ SendMsgRollForward ablk tipPoint (chainSyncServerAt epochSlots err poll db ss')
+            DB.NextBlock slot bytes iterator' -> case decodeBlock epochSlots (Lazy.fromStrict bytes) of
               Left cborError -> lift $ err cborError
-              Right blk -> do
-                dbTip <- lift $ DB.readTip db
-                tipPoint' <- lift $ pickBetterTip err tipPoint dbTip
-                let hash = CSL.headerHash blk
-                    ss' = KnownTip tipPoint' (Just (Point slot hash)) (Just (iterator', releaseKey))
-                pure $ Left $ SendMsgRollForward (Block blk) tipPoint (chainSyncServerAt err poll db ss')
+              Right ablk -> case Binary.unAnnotated ablk of
+                Cardano.ABOBBoundary _ -> error "Corrupt DB: EBB where block expected"
+                Cardano.ABOBBlock blk -> do
+                  dbTip <- lift $ DB.readTip db
+                  tipPoint' <- lift $ pickBetterTip epochSlots err tipPoint dbTip
+                  let hash = Cardano.blockHashAnnotated blk
+                      ss' = KnownTip tipPoint' (Just (Point slot hash)) (Just (iterator', releaseKey))
+                  pure $ Left $ SendMsgRollForward ablk tipPoint (chainSyncServerAt epochSlots err poll db ss')
     }
 
-cslBlockDecoder :: CBOR.Decoder s CSL.Block
-cslBlockDecoder = CSL.decode
+-- FIXME better/more concise/more efficient way to do this?
+decodeBlock
+  :: Cardano.EpochSlots
+  -> Lazy.ByteString
+  -> Either Binary.DecoderError Block
+decodeBlock epochSlots lbs = fmap (flip Binary.Annotated (Lazy.toStrict lbs)) $
+  Binary.decodeFullAnnotatedBytes
+    (Text.pack "Block or boundary")
+    (Cardano.fromCBORABlockOrBoundary epochSlots)
+    lbs

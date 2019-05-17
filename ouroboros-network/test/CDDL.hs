@@ -114,7 +114,7 @@ decodeMsg (tag, input) = case tag of
              -> PeerHasAgency pr st -> IO Bool
         run codec state = runCodec ((decode codec) state) input
 
-        runCS = run (codecChainSync :: MonoCodec CS)
+        runCS = run (codecChainSync Serialise.encode Serialise.decode Serialise.encode Serialise.decode :: MonoCodec CS)
         chainSyncParsers = [
               runCS (ClientAgency CS.TokIdle)
             , runCS (ServerAgency (CS.TokNext TokCanAwait))
@@ -135,7 +135,7 @@ decodeMsg (tag, input) = case tag of
             , runPingPong (ServerAgency PingPong.TokBusy)
             ]
 
-        runBlockFetch = run (codecBlockFetch :: MonoCodec BF)
+        runBlockFetch = run (codecBlockFetch Serialise.encode Serialise.encode Serialise.decode Serialise.decode :: MonoCodec BF)
         blockFetchParsers = [
               runBlockFetch (ClientAgency BlockFetch.TokIdle)
             , runBlockFetch (ServerAgency BlockFetch.TokBusy)
