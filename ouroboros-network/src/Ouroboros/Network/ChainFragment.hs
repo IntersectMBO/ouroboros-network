@@ -40,6 +40,7 @@ module Ouroboros.Network.ChainFragment (
   takeOldest,
   takeWhileNewest,
   dropWhileNewest,
+  takeWhileOldest,
   length,
   null,
 
@@ -335,6 +336,16 @@ dropWhileNewest _ Empty       = Empty
 dropWhileNewest p c@(c' :> b)
                   | p b       = dropWhileNewest p c'
                   | otherwise = c
+
+takeWhileOldest :: HasHeader block
+                => (block -> Bool)
+                -> ChainFragment block
+                -> ChainFragment block
+takeWhileOldest _ Empty    = Empty
+takeWhileOldest p (b :< c)
+               | p b       = b :< takeWhileOldest p c
+               | otherwise = Empty
+
 
 -- | \( O(1) \).
 length :: HasHeader block => ChainFragment block -> Int
