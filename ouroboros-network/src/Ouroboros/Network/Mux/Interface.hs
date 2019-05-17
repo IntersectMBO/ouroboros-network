@@ -22,6 +22,7 @@ module Ouroboros.Network.Mux.Interface
   , simpleMuxClientApplication
   , simpleMuxServerApplication
   , NetworkNode (..)
+  , ProtocolEnum(..)
 
   -- * Auxiliary functions
   , miniProtocolDescription
