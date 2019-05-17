@@ -28,3 +28,6 @@ TAGS
 
 .stack-work/
 *.tix
+
+db-byron-proxy-*
+index-byron-proxy-*
