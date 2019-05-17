@@ -13,7 +13,7 @@ module Ouroboros.Network.Socket (
       runNetworkNode
     , runNetworkNode'
     , withServerNode
-    , withConnection
+    , connectTo
 
     -- * Helper function for creating servers
     , socketAsMuxBearer
@@ -136,8 +136,8 @@ hexDump buf out = hexDump (BL.tail buf) (out ++ printf "0x%02x " (BL.head buf))
 -- Connect to a remote node.  It is using bracket to enclose the underlying
 -- socket aquisition.  This implies that when the continuation exits the
 -- underlying bearer will get closed.
-withConnection
-  :: forall ptcl r.
+connectTo
+  :: forall ptcl.
      ( Mx.ProtocolEnum ptcl
      , Ord ptcl
      , Enum ptcl
@@ -147,11 +147,8 @@ withConnection
   -- ^ application to run over the connection
   -> Socket.AddrInfo
   -- ^ address of the peer we want to connect to
-  -> (IO () -> IO r)
-  -- ^ callback which receives application which is running over created
-  -- connection; It maybe throw @'IO'@ excpetions.
-  -> IO r
-withConnection app remoteAddr kConn =
+  -> IO ()
+connectTo app remoteAddr =
     bracket
       (Socket.socket (Socket.addrFamily remoteAddr) Socket.Stream Socket.defaultProtocol)
       Socket.close
@@ -165,8 +162,7 @@ withConnection app remoteAddr kConn =
           Socket.connect sd (Socket.addrAddress remoteAddr)
           bearer <- socketAsMuxBearer sd
           Mx.muxBearerSetState bearer Mx.Connected
-          kConn $
-            Mx.muxStart app bearer
+          Mx.muxStart app bearer
             `catch`
             handleMuxError
       )
