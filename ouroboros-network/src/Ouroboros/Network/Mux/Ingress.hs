@@ -11,7 +11,6 @@ module Ouroboros.Network.Mux.Ingress (
 
 import           Control.Monad
 import qualified Data.Binary.Get as Bin
-import           Data.Bits
 import           Data.Word
 import qualified Data.ByteString.Lazy as BL
 import           Data.Array
@@ -21,10 +20,6 @@ import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM
 
 import           Ouroboros.Network.Mux.Types
-
-negMiniProtocolMode :: MiniProtocolMode -> MiniProtocolMode
-negMiniProtocolMode ModeInitiator = ModeResponder
-negMiniProtocolMode ModeResponder = ModeInitiator
 
 -- $ingress
 -- = Ingress Path
@@ -74,14 +69,11 @@ decodeMuxSDUHeader buf =
     case Bin.runGetOrFail dec buf of
          Left  (_, _, e)  -> Left $ MuxError MuxDecodeError e callStack
          Right (_, _, ph) ->
-             let mode  = getMode $ mshIdAndMode ph
-                 mid_m = getId $ mshIdAndMode ph .&. 0x7fff in
-             case mid_m of
+             case getId $ mshId ph of
                   Left  e   -> Left  $ MuxError MuxUnknownMiniProtocol ("id = " ++ show e) callStack
                   Right mid -> Right $ MuxSDU {
                         msTimestamp = mshTimestamp ph
                       , msId = mid
-                      , msMode = mode
                       , msLength = mshLength ph
                       , msBlob = BL.empty
                       }
@@ -91,10 +83,6 @@ decodeMuxSDUHeader buf =
         mid <- Bin.getWord16be
         len <- Bin.getWord16be
         return $ MuxSDUHeader (RemoteClockModel ts) mid len
-
-    getMode mid =
-        if mid .&. 0x8000 == 0 then ModeInitiator
-                               else ModeResponder
 
     getId :: ProtocolEnum ptcl => Word16 -> Either Word16 (MiniProtocolId ptcl)
     getId n | Just ptcl <- toProtocolEnum n
@@ -112,18 +100,16 @@ demux pmss = forever $ do
     -- this happens @'Ouroboros.Network.Socket.socketAsMuxBearer'@ throws an
     -- exception.
     (sdu, _) <- Ouroboros.Network.Mux.Types.read $ bearer pmss
-    --say $ printf "demuxing sdu on mid %s mode %s" (show $ msId sdu) (show $ msMode sdu)
+    --say $ printf "demuxing sdu on mid %s mode %s" (show $ msId sdu)
     -- Notice the mode reversal, ModeResponder is delivered to ModeInitiator and vice versa.
-    atomically $ writeTBQueue (ingressQueue (dispatchTable pmss) (msId sdu) (negMiniProtocolMode $ msMode sdu)) (msBlob sdu)
+    atomically $ writeTBQueue (ingressQueue (dispatchTable pmss) (msId sdu)) (msBlob sdu)
 
 -- | Return the ingress queueu for a given 'MiniProtocolId' and 'MiniProtocolMode'.
 ingressQueue :: (MonadSTM m, Ord ptcl, Enum ptcl)
              => MiniProtocolDispatch ptcl m
              -> MiniProtocolId ptcl
-             -> MiniProtocolMode
              -> TBQueue m BL.ByteString
-ingressQueue (MiniProtocolDispatch tbl) dis mode =
-    tbl ! (dis, mode)
+ingressQueue (MiniProtocolDispatch tbl) dis = tbl ! dis
     -- We can use array indexing here, because we constructed the dispatch
     -- table to cover the full range of the type given by 'MiniProtocolId ptcl'
 

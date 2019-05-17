@@ -13,7 +13,6 @@ module Ouroboros.Network.Socket (
       runNetworkNode
     , runNetworkNode'
     , withServerNode
-    , withNetworkNode
     , withConnection
 
     -- * Helper function for creating servers
@@ -26,7 +25,7 @@ module Ouroboros.Network.Socket (
     ) where
 
 import           Control.Concurrent.Async
-import           Control.Monad (when, void)
+import           Control.Monad (when)
 -- TODO: remove this, it will not be needed when `orElse` PR will be merged.
 import qualified Control.Monad.STM as STM
 import           Control.Monad.Class.MonadSTM
@@ -34,7 +33,6 @@ import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Exception (throwIO)
-import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Int
 import           Data.Word
@@ -42,19 +40,14 @@ import           GHC.Stack
 import qualified Network.Socket as Socket hiding (recv)
 import qualified Network.Socket.ByteString.Lazy as Socket (recv, sendAll)
 
-import           Network.TypedProtocol.Channel
 import           Ouroboros.Network.Time
 
 import qualified Ouroboros.Network.Server.Socket as Server
 import qualified Ouroboros.Network.Mux as Mx
 import qualified Ouroboros.Network.Mux.Types as Mx
 import           Ouroboros.Network.Mux.Types (MuxBearer)
-import           Ouroboros.Network.Mux.Interface ( HasClient
-                                                 , HasServer
-                                                 , MuxApplication
-                                                 , clientApplication
-                                                 , NetworkNode (..)
-                                                 , miniProtocolDescription
+import           Ouroboros.Network.Mux.Interface ( MuxApplication
+                                                 , AppType (..)
                                                  )
 
 import           Text.Printf
@@ -150,7 +143,7 @@ withConnection
      , Enum ptcl
      , Bounded ptcl
      )
-  => (ptcl -> Channel IO ByteString -> IO ())
+  => MuxApplication ClientApp ptcl IO
   -- ^ application to run over the connection
   -> Socket.AddrInfo
   -- ^ address of the peer we want to connect to
@@ -173,18 +166,11 @@ withConnection app remoteAddr kConn =
           bearer <- socketAsMuxBearer sd
           Mx.muxBearerSetState bearer Mx.Connected
           kConn $
-            Mx.muxStart mpds bearer
+            Mx.muxStart app bearer
             `catch`
             handleMuxError
       )
     where
-      mpds :: Mx.MiniProtocolDescriptions ptcl IO
-      mpds = \ptcl -> Mx.MiniProtocolDescription {
-          Mx.mpdInitiator = Just (fmap void $ app ptcl),
-          Mx.mpdResponder = Nothing
-        }
-
-
       -- catch @'MuxBearerClosed'@ exception; we should ignore it and let @kConn@
       -- finish; @connect@ will close the underlying socket.
       --
@@ -215,7 +201,7 @@ beginConnection app acceptConn _sockAddr st = do
       Right st' -> pure $ Server.Accept st' $ \sd -> do
         bearer <- socketAsMuxBearer sd
         Mx.muxBearerSetState bearer Mx.Connected
-        Mx.muxStart (miniProtocolDescription app) bearer
+        Mx.muxStart app bearer
       Left st' -> pure $ Server.Reject st'
 
 -- Make the server listening socket
@@ -319,15 +305,14 @@ runNetworkNode addrFamily app acceptException mHandleConnection main st =
 -- connection.
 --
 withServerNode
-    :: forall ptcl appType t.
+    :: forall ptcl t.
        ( Mx.ProtocolEnum ptcl
        , Ord ptcl
        , Enum ptcl
        , Bounded ptcl
-       , HasServer appType ~ True
        )
     => Socket.AddrInfo
-    -> MuxApplication appType ptcl IO
+    -> MuxApplication ServerApp ptcl IO
     -> (IO () -> Async () -> IO t)
     -- ^ callback which takes @IO@ action which will terminate the server, and
     -- the @Async@ of the thread that is running it.  Note: the server thread
@@ -356,52 +341,3 @@ withServerNode addr app k =
       complete outcome st = case outcome of
         Left _  -> pure st
         Right _ -> pure st
-
--- |
--- Run a node using @'NetworkInterface'@ using a socket.  It will start to
--- listen on incomming connections on the supplied @'nodeAddress'@, and returns
--- @'NetworkNode'@ which let one connect to other peers (by opening a new
--- TCP connection) or shut down the node.
---
-withNetworkNode
-    :: forall ptcl appType t r.
-       ( Mx.ProtocolEnum ptcl
-       , Ord ptcl
-       , Enum ptcl
-       , Bounded ptcl
-       , HasClient appType ~ True
-       , HasServer appType ~ True
-       )
-    => Socket.AddrInfo
-    -> MuxApplication appType ptcl IO
-    -- ^ network interface, which supplies node address and application run by
-    -- the multiplexing layer
-    -> (NetworkNode Socket.AddrInfo IO r -> Async () -> IO t)
-    -- ^ when the callback returns or throws an exception, the server will
-    -- terminate cleaning all its resources
-    --
-    -- TODO: do we need to pass the terminate action?
-    -> IO t
-withNetworkNode addr app k =
-  bracket (mkListeningSocket (Socket.addrFamily addr) (Just $ Socket.addrAddress addr)) Socket.close $ \sd -> do
-
-    killVar <- newEmptyTMVarM
-    let main :: Server.Main () ()
-        main _ = takeTMVar killVar
-
-        killNode :: IO ()
-        killNode = atomically $ putTMVar killVar ()
-
-        node = NetworkNode { connect = withConnection (clientApplication app), killNode }
-
-    withAsync
-      (runNetworkNode' sd app throwIO (pure . Right) complete main ())
-      (\aid -> k node aid)
-
-  where
-    -- When a connection completes, we do nothing. State is ().
-    -- Crucially: we don't re-throw exceptions, because doing so would
-    -- bring down the server.
-    complete outcome st = case outcome of
-      Left _  -> pure st
-      Right _ -> pure st

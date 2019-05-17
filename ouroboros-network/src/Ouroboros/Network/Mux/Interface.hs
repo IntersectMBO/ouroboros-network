@@ -13,19 +13,12 @@ module Ouroboros.Network.Mux.Interface
   -- * High level interface for the multiplex layer
   -- $interface
     AppType (..)
-  , HasClient
-  , HasServer
   , MuxApplication (..)
-  , clientApplication
-  , serverApplication
+  , runMuxApplication
   , MuxPeer (..)
   , simpleMuxClientApplication
   , simpleMuxServerApplication
-  , NetworkNode (..)
   , ProtocolEnum(..)
-
-  -- * Auxiliary functions
-  , miniProtocolDescription
   ) where
 
 import           Data.ByteString.Lazy (ByteString)
@@ -46,7 +39,8 @@ import           Network.TypedProtocol.Channel
 import           Network.TypedProtocol.Driver
 import           Network.TypedProtocol.Pipelined
 
-import           Ouroboros.Network.Mux.Types
+import           Ouroboros.Network.Mux.Types (ProtocolEnum (..))
+
 
 -- $interface
 --
@@ -60,20 +54,8 @@ import           Ouroboros.Network.Mux.Types
 --
 
 data AppType where
-    ClientApp          :: AppType
-    ServerApp          :: AppType
-    ClientAndServerApp :: AppType
-
-
-type family HasClient (appType :: AppType) :: Bool where
-    HasClient ClientApp          = True
-    HasClient ServerApp          = False
-    HasClient ClientAndServerApp = True
-
-type family HasServer (appType :: AppType) :: Bool where
-    HasServer ClientApp          = False
-    HasServer ServerApp          = True
-    HasServer ClientAndServerApp = True
+    ClientApp :: AppType
+    ServerApp :: AppType
 
 -- |
 -- Application run by mux layer.
@@ -82,58 +64,34 @@ type family HasServer (appType :: AppType) :: Bool where
 --   with a node using ChainSync and TxSubmission protocols; this only requires
 --   to run client side of each protocol.
 --
--- * enumeration of server applications: this application type is mostly useful
---   tests.
---
--- * enumeration of both client and server applications, e.g. a full node
---   serving downstream peers using server side of each protocol and getting
---   updates from upstream peers using client side of each of the protocols.
+-- * enumeration of server applications, this is useful for running a server
+-- side of a multiplexing layer.
 --
 data MuxApplication (appType :: AppType) ptcl m  where
   MuxClientApplication
     -- Client application; most simple application will be @'runPeer'@ or
     -- @'runPipelinedPeer'@ supplied with a codec and a @'Peer'@ for each
     -- @ptcl@.  But it allows to handle resources if just application of
-    -- @'runPeer'@ is not enough.  It will be run as @'muxInitiator'@.
+    -- @'runPeer'@ is not enough.
     :: (ptcl -> Channel m ByteString ->  m ())
     -> MuxApplication ClientApp ptcl m
 
   MuxServerApplication
-    -- Server application; similarly to the @'MuxClientApplication'@ but it
-    -- will be run using @'muxResponder'@.
+    -- Server application; similarly to the @'MuxClientApplication'@.
     :: (ptcl -> Channel m ByteString ->  m ())
     -> MuxApplication ServerApp ptcl m
 
-  MuxClientAndServerApplication
-    -- Client and server applications.
-    :: (ptcl -> Channel m ByteString ->  m ())
-    -> (ptcl -> Channel m ByteString ->  m ())
-    -> MuxApplication ClientAndServerApp ptcl m
-
 
 -- |
--- Accessor for the client side of a @'MuxApplication'@.
+-- Unwrap @'MuxApplication'@.
 --
-clientApplication
-  :: ( Functor m
-     , HasClient appType ~ True
-     )
-  => (MuxApplication appType ptcl m)
-  -> (ptcl -> Channel m ByteString ->  m ())
-clientApplication (MuxClientApplication app) = \ptcl channel -> app ptcl channel
-clientApplication (MuxClientAndServerApplication app _) = \ptcl channel -> app ptcl channel
-
--- |
--- Accessor for the client side of a @'MuxApplication'@.
---
-serverApplication
-  :: ( Functor m
-     , HasServer appType ~ True
-     )
-  => (MuxApplication appType ptcl m)
-  -> (ptcl -> Channel m ByteString ->  m ())
-serverApplication (MuxServerApplication app) = app
-serverApplication (MuxClientAndServerApplication _ app) = app
+runMuxApplication
+  :: MuxApplication appType ptcl m
+  -> ptcl
+  -> Channel m ByteString
+  -> m ()
+runMuxApplication (MuxClientApplication app) = app
+runMuxApplication (MuxServerApplication app) = app
 
 -- |
 -- This type is only necessary to use the @'simpleMuxClient'@ and
@@ -183,51 +141,3 @@ simpleMuxServerApplication fn = MuxServerApplication $ \ptcl channel ->
   case fn ptcl of
     MuxPeer tracer codec peer -> void $ runPeer tracer codec channel peer
     MuxPeerPipelined n tracer codec peer -> void $ runPipelinedPeer n tracer codec channel peer
-
-
--- | Low level network interface.  It can be intiatiated using a socket, pair
--- of pipes or a pair queues.
---
-data NetworkNode addr m r = NetworkNode {
-      -- |
-      -- The way to connect ot other peers.  On startup the network interface
-      -- will run this to connect with a given list of peer.  But it can also
-      -- be used at a later stage to connect to a new peer.
-      --
-      -- This function will run client side of mux version negotation and then run client side of @'MuxAplication@' on it.
-      connect :: addr -> (m () -> m r) -> m r,
-
-      -- |
-      -- This will cancel the thread that is listening for new connections and
-      -- close the underlaying bearer.
-      killNode  :: m ()
-    }
-
-
--- |
--- Transform a @'MuxPeer'@ into @'ProtocolDescription'@ used by the
--- multiplexing layer.
---
-miniProtocolDescription
-  :: forall (appType :: AppType) m ptcl.
-     ( MonadAsync m
-     , MonadCatch m
-     , MonadThrow m
-     )
-  => MuxApplication appType ptcl m
-  -> MiniProtocolDescriptions ptcl m
-miniProtocolDescription (MuxClientApplication client) = \ptcl ->
-  MiniProtocolDescription {
-      mpdInitiator = Just (client ptcl),
-      mpdResponder = Nothing
-    }
-miniProtocolDescription (MuxServerApplication server) = \ptcl ->
-  MiniProtocolDescription {
-      mpdInitiator = Nothing,
-      mpdResponder = Just (void . server ptcl)
-    }
-miniProtocolDescription (MuxClientAndServerApplication client server) = \ptcl ->
-  MiniProtocolDescription {
-      mpdInitiator = Just (void . client ptcl),
-      mpdResponder = Just (void . server ptcl)
-    }
