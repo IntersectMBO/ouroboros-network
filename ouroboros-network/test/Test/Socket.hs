@@ -169,7 +169,7 @@ prop_socket_send_recv serverAddr f xs = do
 
     res <-
       withServerNode serverAddr serverApp $ \_ _ ->
-        withConnection (clientApplication clientApp) serverAddr $ \conn -> do
+        withConnection clientApp serverAddr $ \conn -> do
           conn
           atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
 
@@ -212,7 +212,7 @@ prop_socket_recv_close f _ = ioProperty $ do
                 $ \(sd',_) -> do
                   bearer <- socketAsMuxBearer sd'
                   Mx.muxBearerSetState bearer Mx.Connected
-                  Mx.muxStart (miniProtocolDescription app) bearer
+                  Mx.muxStart app bearer
           )
           $ \muxAsync -> do
 
@@ -251,7 +251,7 @@ prop_socket_client_connect_error _ xs = ioProperty $ do
 
 
     (res :: Either IOException Bool)
-      <- try $ withConnection (clientApplication app) serverAddr $ \conn ->
+      <- try $ withConnection app serverAddr $ \conn ->
                  False <$ conn
 
     -- XXX Disregarding the exact exception type
@@ -289,7 +289,7 @@ demo chain0 updates = do
                     (ChainSync.chainSyncServerPeer (ChainSync.chainSyncServerExample () producerVar))
 
     withServerNode producerAddress producerApp $ \_ _ ->
-      withConnection (clientApplication consumerApp) producerAddress $ \conn ->
+      withConnection consumerApp producerAddress $ \conn ->
         withAsync conn $ \_connAsync -> do
           void $ fork $ sequence_
               [ do

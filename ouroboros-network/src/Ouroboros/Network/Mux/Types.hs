@@ -4,8 +4,7 @@
 {-# LANGUAGE TypeFamilies          #-}
 
 module Ouroboros.Network.Mux.Types (
-      MiniProtocolDescription (..)
-    , MiniProtocolDescriptions
+      MiniProtocolDescriptions
     , MiniProtocolDispatch (..)
     , ProtocolEnum (..)
     , MiniProtocolId (..)
@@ -32,7 +31,9 @@ import           Text.Printf
 
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
-import           Ouroboros.Network.Channel
+
+import           Network.TypedProtocol.Channel
+
 
 newtype RemoteClockModel = RemoteClockModel { unRemoteClockModel :: Word32 } deriving Eq
 
@@ -117,29 +118,14 @@ instance Bounded ptcl => Bounded (MiniProtocolId ptcl) where
 --
 
 
-{- | The 'MiniProtocolDescription' is used to provide
- two functions which will consume and produce messages
- for either the initiator (client) or responder (server)
- side of the given miniprotocol.
- The functions will execute in their own threads and should
- any of them exit the underlying Mux Bearer will be torn down
- along with all other miniprotocols.
- -}
-data MiniProtocolDescription ptcl m = MiniProtocolDescription {
-    -- | Initiator function, consumes and produces messages related to the initiator side.
-      mpdInitiator :: Maybe (Channel m BL.ByteString -> m ())
-    -- | Responder function, consumes and produces messages related to the responder side.
-    , mpdResponder :: Maybe (Channel m BL.ByteString -> m ())
-    }
-
-type MiniProtocolDescriptions ptcl m = ptcl -> MiniProtocolDescription ptcl m
+type MiniProtocolDescriptions ptcl m = ptcl -> Channel m BL.ByteString -> m ()
 
 --
 -- Mux internal types
 --
 
 newtype MiniProtocolDispatch ptcl m =
-        MiniProtocolDispatch (Array (MiniProtocolId ptcl, MiniProtocolMode)
+        MiniProtocolDispatch (Array (MiniProtocolId ptcl)
                                     (TBQueue m BL.ByteString))
 
 data MiniProtocolMode = ModeInitiator | ModeResponder
@@ -148,14 +134,13 @@ data MiniProtocolMode = ModeInitiator | ModeResponder
 data MuxSDU ptcl = MuxSDU {
       msTimestamp :: !RemoteClockModel
     , msId        :: !(MiniProtocolId ptcl)
-    , msMode      :: !MiniProtocolMode
     , msLength    :: !Word16
     , msBlob      :: !BL.ByteString
     }
 
 data MuxSDUHeader = MuxSDUHeader {
       mshTimestamp :: !RemoteClockModel
-    , mshIdAndMode :: !Word16
+    , mshId        :: !Word16
     , mshLength    :: !Word16
     }
 
@@ -165,7 +150,7 @@ data MuxSDUHeader = MuxSDUHeader {
 --  responsible for the segmentation of concrete representation into
 --  appropriate SDU's for onward transmission.
 data TranslocationServiceRequest ptcl m
-  = TLSRDemand (MiniProtocolId ptcl) MiniProtocolMode (Wanton m)
+  = TLSRDemand (MiniProtocolId ptcl) (Wanton m)
 
 -- | A Wanton represent the concrete data to be translocated, note that the
 --  TMVar becoming empty indicates -- that the last fragment of the data has

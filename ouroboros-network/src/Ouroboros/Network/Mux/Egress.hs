@@ -11,9 +11,7 @@ module Ouroboros.Network.Mux.Egress (
 
 import           Control.Monad
 import qualified Data.Binary.Put as Bin
-import           Data.Bits
 import qualified Data.ByteString.Lazy as BL
-import           Data.Word
 
 import           Control.Monad.Class.MonadSTM
 
@@ -27,25 +25,18 @@ import           Ouroboros.Network.Mux.Types
 -- > +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 -- > |              transmission time                                |
 -- > +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
--- > |M|    conversation id          |              length           |
+-- > |      conversation id          |              length           |
 -- > +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 --
 -- All fields are in big endian byteorder.
 encodeMuxSDU :: ProtocolEnum ptcl => MuxSDU ptcl -> BL.ByteString
-encodeMuxSDU sdu =
-  let hdr = Bin.runPut enc in
-  BL.append hdr $ msBlob sdu
+encodeMuxSDU sdu = BL.append (Bin.runPut enc) $ msBlob sdu
   where
+    enc :: Bin.PutM ()
     enc = do
         Bin.putWord32be $ unRemoteClockModel $ msTimestamp sdu
-        putId (msId sdu) (putMode $ msMode sdu)
+        Bin.putWord16be $ fromProtocolEnum (msId sdu)
         Bin.putWord16be $ fromIntegral $ BL.length $ msBlob sdu
-
-    putId ptcl mode = Bin.putWord16be $ fromProtocolEnum ptcl .|. mode
-
-    putMode :: MiniProtocolMode -> Word16
-    putMode ModeInitiator = 0
-    putMode ModeResponder = 0x8000
 
 -- $servicingsSemantics
 -- = Desired Servicing Semantics
@@ -141,7 +132,7 @@ mux :: (MonadSTM m)
 mux cnt pmss = do
     w <- atomically $ readTBQueue $ tsrQueue pmss
     case w of
-         TLSRDemand mid md d -> processSingleWanton pmss mid md d cnt >> mux cnt pmss
+         TLSRDemand mid d -> processSingleWanton pmss mid d cnt >> mux cnt pmss
 
 -- | Pull a `maxSDU`s worth of data out out the `Wanton` - if there is
 -- data remaining requeue the `TranslocationServiceRequest` (this
@@ -150,11 +141,10 @@ mux cnt pmss = do
 processSingleWanton :: MonadSTM m
                     => PerMuxSharedState ptcl m
                     -> MiniProtocolId ptcl
-                    -> MiniProtocolMode
                     -> Wanton m
                     -> TVar m Int
                     -> m ()
-processSingleWanton pmss mpi md wanton cnt = do
+processSingleWanton pmss mpi wanton cnt = do
     maxSDU <- sduSize $ bearer pmss
     blob <- atomically $ do
       -- extract next SDU
@@ -166,11 +156,11 @@ processSingleWanton pmss mpi md wanton cnt = do
         -- miniprotocol the takeTMVar and putTMVar operations
         -- must be inside the same STM transaction.
         do putTMVar (want wanton) rest
-           writeTBQueue (tsrQueue pmss) (TLSRDemand mpi md wanton)
+           writeTBQueue (tsrQueue pmss) (TLSRDemand mpi wanton)
            modifyTVar' cnt (+ 1)
       -- return data to send
       pure frag
-    let sdu = MuxSDU (RemoteClockModel 0) mpi md (fromIntegral $ BL.length blob) blob
+    let sdu = MuxSDU (RemoteClockModel 0) mpi (fromIntegral $ BL.length blob) blob
     void $ write (bearer pmss) sdu
     atomically $ modifyTVar' cnt (\a -> a - 1)
     --paceTransmission tNow
