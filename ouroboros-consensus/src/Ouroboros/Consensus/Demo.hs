@@ -241,7 +241,11 @@ protocolInfo (DemoRealPBFT params)
     ProtocolInfo {
         pInfoConfig = EncNodeConfig {
             encNodeConfigP = PBftNodeConfig {
-                  pbftParams  = params {pbftNumNodes = fromIntegral numCoreNodes}
+                  pbftParams  = params
+                    { pbftNumNodes = fromIntegral numCoreNodes
+                      -- Set the signature window to be short for the demo.
+                    , pbftSignatureWindow = 6
+                    }
                 , pbftNodeId  = CoreId nid
                 , pbftSignKey = SignKeyCardanoDSIGN (snd (mkKey nid))
                 , pbftVerKey  = VerKeyCardanoDSIGN  (fst (mkKey nid))
