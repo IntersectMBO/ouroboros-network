@@ -82,13 +82,15 @@ newtype ByronBlock cfg = ByronBlock { unByronBlock :: CC.Block.ABlock ByteString
   deriving (Eq, Show)
 
 instance Condense (ByronBlock cfg) where
-  condense = show -- TODO
+  -- TODO
+  condense = show . CC.Block.headerSignature . CC.Block.blockHeader . unByronBlock
 
 newtype ByronHeader cfg = ByronHeader { unByronHeader :: CC.Block.AHeader ByteString }
   deriving (Eq, Show)
 
 instance Condense (ByronHeader cfg) where
-  condense = show -- TODO
+  -- TODO
+  condense = show . CC.Block.headerSignature . unByronHeader
 
 instance Condense (ChainHash (ByronHeader cfg)) where
   condense GenesisHash   = "genesis"
