@@ -193,7 +193,8 @@ nodeKernel params@NodeParams { threadRegistry } = do
     -- Run the block fetch logic in the background. This will call
     -- 'addFetchedBlock' whenever a new block is downloaded.
     void $ forkLinked threadRegistry $ blockFetchLogic
-        nullTracer
+        nullTracer            -- fetch decision tracer
+        nullTracer            -- fetch client state tracer
         blockFetchInterface
         fetchClientRegistry
 

@@ -9,7 +9,6 @@ module Ouroboros.Network.BlockFetch.Examples (
     blockFetchExample1,
     mockBlockFetchServer1,
     exampleFixedPeerGSVs,
-    TraceLabelPeer(..),
   ) where
 
 import qualified Data.Map.Strict as Map
@@ -66,9 +65,10 @@ import           Ouroboros.Network.Testing.ConcreteBlock
 --
 blockFetchExample1 :: forall m. (MonadSTM m, MonadST m, MonadAsync m,
                                  MonadCatch m, MonadTime m)
-                   => Tracer m [FetchDecision [Point BlockHeader]]
+                   => Tracer m [TraceLabelPeer Int
+                                 (FetchDecision [Point BlockHeader])]
                    -> Tracer m (TraceLabelPeer Int
-                                 (TraceFetchClientEvent BlockHeader))
+                                 (TraceFetchClientState BlockHeader))
                    -> Tracer m (TraceLabelPeer Int
                                  (TraceSendRecv (BlockFetch BlockHeader Block)))
                    -> AnchoredFragment Block   -- ^ Fixed current chain
@@ -122,7 +122,7 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
                -> m ()
     blockFetch registry blockHeap =
         blockFetchLogic
-          decisionTracer
+          decisionTracer clientStateTracer
           (sampleBlockFetchPolicy1 blockHeap currentChainHeaders candidateChainHeaders)
           registry
         >> return ()
@@ -172,9 +172,6 @@ sampleBlockFetchPolicy1 blockHeap currentChain candidateChains =
 --
 -- Utils to run fetch clients and servers
 --
-
-data TraceLabelPeer peerid a = TraceLabelPeer peerid a
-  deriving Show
 
 runFetchClient :: (MonadCatch m, MonadAsync m, MonadST m, Ord peerid,
                    Serialise header,
@@ -244,7 +241,7 @@ runFetchClientAndServerAsync clientTracer serverTracer
 mockedBlockFetchClient1 :: (MonadSTM m, MonadTime m, MonadThrow m,
                             HasHeader header, HasHeader block,
                             HeaderHash header ~ HeaderHash block)
-                        => Tracer m (TraceFetchClientEvent header)
+                        => Tracer m (TraceFetchClientState header)
                         -> TestFetchedBlockHeap m block
                         -> FetchClientStateVars m header
                         -> PeerPipelined (BlockFetch header block)

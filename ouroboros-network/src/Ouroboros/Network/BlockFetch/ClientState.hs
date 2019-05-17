@@ -15,6 +15,7 @@ module Ouroboros.Network.BlockFetch.ClientState (
     acknowledgeFetchRequest,
     completeBlockDownload,
     completeFetchBatch,
+    TraceFetchClientState(..),
   ) where
 
 import qualified Data.Set as Set
@@ -24,6 +25,7 @@ import           Data.Semigroup (Semigroup, Last(..))
 import           Control.Monad (when)
 import           Control.Monad.Class.MonadSTM
 import           Control.Exception (assert)
+import           Control.Tracer (Tracer, traceWith)
 
 import           Ouroboros.Network.Block (Point, blockPoint, HasHeader)
 import qualified Ouroboros.Network.ChainFragment as CF
@@ -225,6 +227,30 @@ instance HasHeader header => Semigroup (FetchRequest header) where
   FetchRequest afs <> FetchRequest bfs
     = FetchRequest (afs ++ bfs)
 
+
+-- | Tracing types for the various events that change the state
+-- (i.e. 'FetchClientStateVars') for a block fetch client.
+--
+-- Note that while these are all state changes, the 'AddedFetchRequest' occurs
+-- in the decision thread while the other state changes occur in the block
+-- fetch client threads.
+--
+data TraceFetchClientState header =
+       AddedFetchRequest
+         (FetchRequest header)
+         (PeerFetchInFlight header)
+          PeerFetchInFlightLimits
+         (PeerFetchStatus header)
+     | AcknowledgedFetchRequest
+         (FetchRequest header)
+     | CompletedBlockFetch
+         (Point header)
+         (PeerFetchInFlight header)
+          PeerFetchInFlightLimits
+         (PeerFetchStatus header)
+  deriving Show
+
+
 -- | Add a new fetch request for a single peer. This is used by the fetch
 -- decision logic thread to add new fetch requests.
 --
@@ -236,16 +262,15 @@ instance HasHeader header => Semigroup (FetchRequest header) where
 -- fetch decision logic thread.
 --
 addNewFetchRequest :: (MonadSTM m, HasHeader header)
-                   => (header -> SizeInBytes)
+                   => Tracer m (TraceFetchClientState header)
+                   -> (header -> SizeInBytes)
                    -> FetchClientStateVars m header
                    -> FetchRequest header
                    -> PeerGSV
                    -> m (PeerFetchStatus header)
-addNewFetchRequest blockFetchSize FetchClientStateVars{..} request gsvs =
-    atomically $ do
-      let inflightlimits = calculatePeerFetchInFlightLimits gsvs
-      --TODO: if recalculating the limits here is expensive we can pass them
-      -- along with the fetch request and the gsvs
+addNewFetchRequest tracer blockFetchSize
+                   FetchClientStateVars{..} request gsvs = do
+    (inflight', currentStatus') <- atomically $ do
 
       -- Update our in-flight stats
       inflight <- readTVar fetchClientInFlightVar
@@ -269,29 +294,45 @@ addNewFetchRequest blockFetchSize FetchClientStateVars{..} request gsvs =
       -- Add a new fetch request, or extend the current unacknowledged one.
       writeTFetchRequestVar fetchClientRequestVar request gsvs inflightlimits
 
-      return currentStatus'
+      return (inflight', currentStatus')
+
+    traceWith tracer $
+      AddedFetchRequest
+        request
+        inflight' inflightlimits
+        currentStatus'
+    return currentStatus'
+  where
+    inflightlimits = calculatePeerFetchInFlightLimits gsvs
+    --TODO: if recalculating the limits here is expensive we can pass them
+    -- along with the fetch request and the gsvs
 
 
 -- | This is used by the fetch client threads.
 --
 acknowledgeFetchRequest :: (MonadSTM m, HasHeader header)
-                        => FetchClientStateVars m header
+                        => Tracer m (TraceFetchClientState header)
+                        -> FetchClientStateVars m header
                         -> m ( FetchRequest header
                              , PeerGSV
                              , PeerFetchInFlightLimits )
-acknowledgeFetchRequest FetchClientStateVars {..} =
-    atomically $ takeTFetchRequestVar fetchClientRequestVar
+acknowledgeFetchRequest tracer FetchClientStateVars {..} = do
+    result@(request, _, _) <-
+      atomically $ takeTFetchRequestVar fetchClientRequestVar
+    traceWith tracer (AcknowledgedFetchRequest request)
+    return result
 
 completeBlockDownload :: (MonadSTM m, HasHeader header)
-                      => (header -> SizeInBytes)
+                      => Tracer m (TraceFetchClientState header)
+                      -> (header -> SizeInBytes)
                       -> PeerFetchInFlightLimits
                       -> header
                       -> FetchClientStateVars m header
-                      -> m (PeerFetchInFlight header, PeerFetchStatus header)
+                      -> m ()
 
-completeBlockDownload blockFetchSize inflightlimits
-                      header FetchClientStateVars {..} =
-    atomically $ do
+completeBlockDownload tracer blockFetchSize inflightlimits
+                      header FetchClientStateVars {..} = do
+    (inflight', currentStatus') <- atomically $ do
       inflight <- readTVar fetchClientInFlightVar
       let !inflight' = deleteHeaderInFlight blockFetchSize header inflight
       writeTVar fetchClientInFlightVar inflight'
@@ -312,6 +353,13 @@ completeBlockDownload blockFetchSize inflightlimits
     -- to PeerFetchStatusReady/Busy?
 
       return (inflight', currentStatus')
+
+    traceWith tracer $
+      CompletedBlockFetch
+        (blockPoint header)
+        inflight' inflightlimits
+        currentStatus'
+
 
 completeFetchBatch :: MonadSTM m
                    => FetchClientStateVars m header

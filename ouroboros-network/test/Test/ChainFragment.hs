@@ -690,18 +690,28 @@ instance Arbitrary TestChainFragmentFork where
       else do
         n1 <- genNonNegative
         n2 <- genNonNegative
-        c1 <- genAddBlocks n1 l1
-        c2 <- genAddBlocks n2 l2
+        c1 <- genAddBlocks n1 l1 Nothing
+        let ex1 = L.drop (CF.length l1) (CF.toOldestFirst c1)
+        c2 <- genAddBlocks n2 l2 (listToMaybe ex1)
         return (c1, c2)
     return (TestChainFragmentFork l1 l2 c1 c2)
     where
       genAddBlocks :: Int
                    -> ChainFragment Block
+                   -> Maybe Block
                    -> Gen (ChainFragment Block)
-      genAddBlocks 0 c = return c
-      genAddBlocks n c = do
+      genAddBlocks 0 c _       = return c
+      genAddBlocks n c Nothing = do
           b <- genAddBlock c
-          genAddBlocks (n-1) (CF.addBlock b c)
+          genAddBlocks (n-1) (CF.addBlock b c) Nothing
+
+      -- But we want to avoid the extensions starting off equal which would
+      -- mean the longest common prefix was not the declared common prefix.
+      -- So we optionally take the first block to avoid and use that in the
+      -- second fork we generate.
+      genAddBlocks n c (Just forbiddenBlock) = do
+          b <- genAddBlock c `suchThat` (/= forbiddenBlock)
+          genAddBlocks (n-1) (CF.addBlock b c) Nothing
 
   shrink (TestChainFragmentFork l1 l2 c1 c2) =
     -- shrink the prefixes
@@ -711,8 +721,8 @@ instance Arbitrary TestChainFragmentFork where
           if CF.length l1 > CF.length l2
           then (l1, l2) else (l2, l1)
         toDrop = CF.length longestPrefix - CF.length shortestPrefix
-        ex1 = extensionFragment c1 l1
-        ex2 = extensionFragment c2 l2 in
+        ex1 = extensionFragment l1 c1
+        ex2 = extensionFragment l2 c2 in
     [ TestChainFragmentFork
         (fixupChainFragment fixupBlock longestPrefix')
         (fixupChainFragment fixupBlock shortestPrefix')
@@ -724,16 +734,28 @@ instance Arbitrary TestChainFragmentFork where
     -- shrink the first fork
    ++ [ TestChainFragmentFork l1 l2 c1' c2
       | ex1' <- shrinkList (const []) ex1
+        -- FIXME: this fixup is broken, it should fixup the extension, not l1
       , let c1' = fixupChainFragment fixupBlock (ex1' ++ CF.toNewestFirst l1)
+      , isLongestCommonPrefix c1' c2
       ]
     -- shrink the second fork
    ++ [ TestChainFragmentFork l1 l2 c1 c2'
       | ex2' <- shrinkList (const []) ex2
+        -- FIXME: this fixup is broken, it should fixup the extension, not l2
       , let c2' = fixupChainFragment fixupBlock (ex2' ++ CF.toNewestFirst l2)
+      , isLongestCommonPrefix c1 c2'
       ]
     where
       extensionFragment :: ChainFragment Block -> ChainFragment Block -> [Block]
       extensionFragment c = reverse . L.drop (CF.length c) . CF.toOldestFirst
+
+      -- Need to make sure that when we shrink that we don't make the longest
+      -- common prefix be a strict extension of the original common prefix.
+      isLongestCommonPrefix c1' c2' =
+        case (CF.dropOldest (CF.length l1) c1',
+              CF.dropOldest (CF.length l2) c2') of
+          (c1head CF.:< _, c2head CF.:< _) -> c1head /= c2head
+          _                                -> True
 
 prop_arbitrary_TestChainFragmentFork_cover :: TestChainFragmentFork -> Property
 prop_arbitrary_TestChainFragmentFork_cover t@(TestChainFragmentFork l1 l2 c1 c2) =
@@ -753,6 +775,12 @@ prop_arbitrary_TestChainFragmentFork (TestChainFragmentFork l1 l2 c1 c2) =
     && let l1l = map (headerSlot . blockHeader) $ CF.toNewestFirst l1
            l2l = map (headerSlot . blockHeader) $ CF.toNewestFirst l2
        in  (l1l `L.isPrefixOf` l2l || l2l `L.isPrefixOf` l1l)
+
+       -- the common prefix should be maximal, so next blocks not equal
+    && case (CF.dropOldest (CF.length l1) c1,
+             CF.dropOldest (CF.length l2) c2) of
+         (c1head CF.:< _, c2head CF.:< _) -> c1head /= c2head
+         _                                -> True
 
 prop_shrink_TestChainFragmentFork :: TestChainFragmentFork -> Bool
 prop_shrink_TestChainFragmentFork forks =

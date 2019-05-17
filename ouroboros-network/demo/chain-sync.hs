@@ -334,6 +334,7 @@ clientBlockFetch sockAddrs = do
     fetchAsync <- async $
                     blockFetchLogic
                       nullTracer -- decisionTracer
+                      nullTracer
                       blockFetchPolicy
                       registry
                  >> return ()
