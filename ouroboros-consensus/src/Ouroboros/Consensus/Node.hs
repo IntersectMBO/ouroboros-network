@@ -388,16 +388,11 @@ forkBlockProduction IS{..} =
           Just proof -> do
             (prevPoint, prevNo) <- prevPointAndBlockNo currentSlot <$>
               ChainDB.getCurrentChain chainDB
-            traceWith debugTracer $
-              "As leader of slot " <> condense currentSlot <>
-              " I'll produce a block "
             newBlock <- runProtocol varDRG $
               produceBlock proof l currentSlot (castPoint prevPoint) prevNo
-            traceWith debugTracer "Whaaat"
             return $ Just newBlock
 
       whenJust mNewBlock $ \newBlock -> do
-        traceWith tracer $ "Hi!"
         traceWith debugTracer $
           "As leader of slot " <> condense currentSlot <> " I produce: " <>
           condense newBlock

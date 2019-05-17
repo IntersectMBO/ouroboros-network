@@ -55,7 +55,6 @@ import           Ouroboros.Consensus.Protocol.Test
 import           Ouroboros.Consensus.Util.Condense
 
 import           Cardano.Binary
-import           Debug.Trace
 
 import qualified Test.Cardano.Chain.Genesis.Dummy as Dummy
 
@@ -148,9 +147,6 @@ instance ( PBftCrypto c, Typeable c
 
   mkPayload toEnc PBftNodeConfig{..} _proof preheader = do
       signature <- signedDSIGN toEnc preheader pbftSignKey
-      traceM "mkPayload"
-      traceShowM  preheader
-
       return $ PBftPayload {
           pbftIssuer = pbftVerKey
         , pbftSignature = signature
@@ -168,14 +164,6 @@ instance ( PBftCrypto c, Typeable c
   applyChainState toEnc PBftNodeConfig{..} (PBftLedgerView dms) b chainState = do
       -- Check that the issuer signature verifies, and that it's a delegate of a
       -- genesis key, and that genesis key hasn't voted too many times.
-
-      traceM "applyChainState"
-      traceShowM $ blockPreHeader b
-      traceM "PBftLedgerView"
-      traceShowM $ dms
-      traceM "gdHeavyDelegation"
-      traceShowM $ CC.Genesis.gdHeavyDelegation Dummy.dummyGenesisData
-
       unless (verifySignedDSIGN toEnc (pbftIssuer payload)
                       (blockPreHeader b)
                       (pbftSignature payload))
