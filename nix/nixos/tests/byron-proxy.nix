@@ -9,8 +9,8 @@
       ];
       services.byron-proxy = {
         enable = true;
-        serverHost = "0.0.0.0";
-        serverPort = 7777;
+        proxyHost = "0.0.0.0";
+        proxyPort = 7777;
       };
     };
   };

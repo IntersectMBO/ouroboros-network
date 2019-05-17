@@ -130,3 +130,16 @@ executable validator
   ghc-options:         -threaded
                        -fwarn-incomplete-patterns
                        -fwarn-unused-imports
+executable parse-genesis
+  main-is:             ParseGenesis.hs
+  -- other-extensions:
+  build-depends:       base,
+                       bytestring,
+                       canonical-json
+  hs-source-dirs:      src/exec
+  default-language:    Haskell2010
+  -- -threaded is needed or else the diffusion layer will crash, due to a use
+  -- of registerDelay
+  ghc-options:         -threaded
+                       -fwarn-incomplete-patterns
+                       -fwarn-unused-imports

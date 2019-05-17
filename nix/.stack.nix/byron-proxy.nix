@@ -102,6 +102,13 @@
             (hsPkgs.typed-protocols)
             ];
           };
+        "parse-genesis" = {
+          depends = [
+            (hsPkgs.base)
+            (hsPkgs.bytestring)
+            (hsPkgs.canonical-json)
+            ];
+          };
         };
       };
     } // rec { src = (pkgs.lib).mkDefault ../../././byron-proxy; }

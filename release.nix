@@ -1,5 +1,6 @@
 let
   commonLib = import ./nix/iohk-common.nix;
+  tests = (import ./. {}).tests;
   # Path of nix-tools jobs that we want to evict from release.nix:
   disabled = [
     # FIXME: those tests freeze on darwin hydra agents:
@@ -11,7 +12,7 @@ commonLib.pkgs.lib.mapAttrsRecursiveCond
 (as: !(as ? "type" && as.type == "derivation"))
 (path: v: if (builtins.elem path disabled) then null else v)
 (commonLib.nix-tools.release-nix {
-  package-set-path = ./.;
+  package-set-path = ./nix/nix-tools.nix;
 
   # packages from our stack.yaml or plan file (via nix/pkgs.nix) we
   # are interested in building on CI via nix-tools.
@@ -69,5 +70,7 @@ commonLib.pkgs.lib.mapAttrsRecursiveCond
 
     jobs.nix-tools.exes.ouroboros-consensus.x86_64-linux
     jobs.nix-tools.exes.byron-proxy.x86_64-linux
+    tests.byronProxy.x86_64-linux
+    tests.byronProxyValidator.x86_64-linux
   ];
 } args)
