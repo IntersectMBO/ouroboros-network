@@ -106,6 +106,7 @@ tests = testGroup "ChainFragment"
   , testProperty "(:<)"                                      prop_prepend
   , testProperty "fromChain/toChain"                         prop_fromChain_toChain
   , testProperty "toChain/fromChain"                         prop_toChain_fromChain
+  , testProperty "fixupBlockPrim"                            prop_fixupBlock'
   ]
 
 --
@@ -372,6 +373,9 @@ prop_toChain_fromChain :: TestBlockChain -> Property
 prop_toChain_fromChain (TestBlockChain c) =
     CF.toChain (CF.fromChain c) === c
 
+prop_fixupBlock' :: TestBlockChainFragment -> Bool
+prop_fixupBlock' (TestBlockChainFragment chain) =
+  fixupChainFragment fixupBlock' (CF.toNewestFirst chain) == chain
 
 --
 -- Generators for chains
@@ -731,18 +735,16 @@ instance Arbitrary TestChainFragmentFork where
     | longestPrefix' <- shrinkList (const []) (CF.toNewestFirst longestPrefix)
     , let shortestPrefix' = reverse $ drop toDrop $ reverse longestPrefix'
     ]
-    -- shrink the first fork
+   -- shrink the first fork
    ++ [ TestChainFragmentFork l1 l2 c1' c2
       | ex1' <- shrinkList (const []) ex1
-        -- FIXME: this fixup is broken, it should fixup the extension, not l1
-      , let c1' = fixupChainFragment fixupBlock (ex1' ++ CF.toNewestFirst l1)
+      , let c1' = fixupChainFragment fixupBlock' (ex1' ++ CF.toNewestFirst l1)
       , isLongestCommonPrefix c1' c2
       ]
-    -- shrink the second fork
+   -- shrink the second fork
    ++ [ TestChainFragmentFork l1 l2 c1 c2'
       | ex2' <- shrinkList (const []) ex2
-        -- FIXME: this fixup is broken, it should fixup the extension, not l2
-      , let c2' = fixupChainFragment fixupBlock (ex2' ++ CF.toNewestFirst l2)
+      , let c2' = fixupChainFragment fixupBlock' (ex2' ++ CF.toNewestFirst l2)
       , isLongestCommonPrefix c1 c2'
       ]
     where
