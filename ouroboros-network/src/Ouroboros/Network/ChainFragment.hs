@@ -5,8 +5,7 @@
 
 module Ouroboros.Network.ChainFragment (
   -- * ChainFragment type and fundamental operations
-  ChainFragment(Empty, (:>), (:<)),
-  ChainFragment(..),
+  ChainFragment(.., Empty, (:>), (:<)),
   valid,
   validExtension,
   isValidSuccessorOf,
