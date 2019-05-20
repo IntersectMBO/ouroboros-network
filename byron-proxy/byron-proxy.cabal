@@ -112,6 +112,7 @@ executable validator
   build-depends:       base,
                        byron-proxy,
                        cardano-binary,
+                       cardano-crypto-wrapper,
                        cardano-ledger,
                        cardano-shell,
                        contra-tracer,
