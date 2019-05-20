@@ -10,7 +10,8 @@
 --
 module Ouroboros.Network.Socket (
     -- * High level socket interface
-      withServerNode
+      serverNode
+    , withServerNode
     , connectTo
 
     -- * Helper function for creating servers
@@ -253,10 +254,42 @@ runNetworkNode' sd app acceptException acceptConn complete main st =
     Server.run (fromSocket sd) acceptException (beginConnection app acceptConn) complete main st
 
 -- |
+-- Creates a socket and runs a server in the current thread.   It will accept
+-- connections in a new thread using given @MuxApplication@.
+--
+serverNode
+    :: forall ptcl.
+       ( Mx.ProtocolEnum ptcl
+       , Ord ptcl
+       , Enum ptcl
+       , Bounded ptcl
+       )
+    => Socket.AddrInfo
+    -> MuxApplication ServerApp ptcl IO
+    -> IO ()
+serverNode addr app =
+  bracket (mkListeningSocket (Socket.addrFamily addr) (Just $ Socket.addrAddress addr)) Socket.close $ \sd ->
+    runNetworkNode' sd app throwIO (pure . Right) complete  main ()
+    where
+      main :: Server.Main () ()
+      main _ = retry
+
+      -- When a connection completes, we do nothing. State is ().
+      -- Crucially: we don't re-throw exceptions, because doing so would
+      -- bring down the server.
+      complete outcome st = case outcome of
+        Left _  -> pure st
+        Right _ -> pure st
+
+
+-- |
 -- Run a server application.  It will listen on the given address for incoming
 -- connection.  The server thread runs using @withAsync@ function, which means
 -- that it will terminate when the callback terminates or throws an exception.
 --
+-- Note: it will open a socket in the current thread and pass it to the spawned
+-- thread which runs the server.  This makes it useful for testing, where we
+-- need to guarantee that a socket is open before we try to connect to it.
 withServerNode
     :: forall ptcl t.
        ( Mx.ProtocolEnum ptcl
