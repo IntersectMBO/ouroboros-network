@@ -8,34 +8,23 @@ module Ouroboros.Storage.IO (
     , write
     , close
     , getSize
-    , isHandleClosedException
     ) where
 
 import           Prelude hiding (read, truncate)
 
-import           Control.Concurrent.MVar
-import           Control.Exception (IOException, throwIO)
 import           Control.Monad (void)
 import           Data.ByteString (ByteString)
 import           Data.ByteString.Internal as Internal
-
 import           Data.Int (Int64)
 import           Data.Word (Word32, Word64, Word8)
 import           Foreign (Ptr)
 import           System.IO (IOMode (..), SeekMode (..))
-import qualified System.IO.Error as IO
 import           System.Posix (Fd)
 import qualified System.Posix as Posix
 
--- | Opaque wrapper around a POSIX 'Fd'
---
--- The 'MVar' is used to implement 'close'; the 'FilePath' is used to
--- improve error messages.
-data FHandle = FHandle FilePath (MVar (Maybe Fd))
-  deriving Eq
+import           Ouroboros.Storage.FS.Handle
 
-instance Show FHandle where
-  show (FHandle fp _) = "<FHandle " ++ fp ++ ">"
+type FHandle = HandleOS Fd
 
 -- | Some sensible defaults for the 'OpenFileFlags'.
 --
@@ -55,10 +44,9 @@ defaultFileFlags = Posix.OpenFileFlags {
     }
 
 -- | Opens a file from disk.
-open :: FilePath -> IOMode -> IO FHandle
-open fp ioMode = do
-    fd <- Posix.openFd fp openMode fileMode fileFlags
-    FHandle fp <$> newMVar (Just fd)
+open :: FilePath -> IOMode -> IO Fd
+open fp ioMode =
+  Posix.openFd fp openMode fileMode fileFlags
   where
     (openMode, fileMode, fileFlags)
       | ioMode == ReadMode   = ( Posix.ReadOnly
@@ -104,10 +92,7 @@ truncate h sz = withOpenHandle "truncate" h $ \fd ->
 --
 -- This is a no-op when the handle is already closed.
 close :: FHandle -> IO ()
-close (FHandle _ fdVar) =
-    modifyMVar fdVar $ \case
-        Nothing -> return (Nothing, ())
-        Just fd -> Posix.closeFd fd >> return (Nothing, ())
+close h = closeHandleOS h Posix.closeFd
 
 -- | File size of the given file pointer
 --
@@ -116,27 +101,3 @@ close (FHandle _ fdVar) =
 getSize :: FHandle -> IO Word64
 getSize h = withOpenHandle "getSize" h $ \fd ->
      fromIntegral . Posix.fileSize <$> Posix.getFdStatus fd
-
-{-------------------------------------------------------------------------------
-  Exceptions
--------------------------------------------------------------------------------}
-
-withOpenHandle :: String -> FHandle -> (Fd -> IO a) -> IO a
-withOpenHandle label (FHandle fp fdVar) k =
-    withMVar fdVar $ \case
-        Nothing -> throwIO (handleClosedException fp label)
-        Just fd -> k fd
-
-isHandleClosedException :: IOException -> Bool
-isHandleClosedException ioErr =
-    IO.isUserErrorType (IO.ioeGetErrorType ioErr)
-
-{-------------------------------------------------------------------------------
-  Internal auxiliary
--------------------------------------------------------------------------------}
-
-handleClosedException :: FilePath -> String -> IOException
-handleClosedException fp label =
-      flip IO.ioeSetErrorType IO.illegalOperationErrorType
-    $ flip IO.ioeSetFileName fp
-    $ userError (label ++ ": FHandle closed")
