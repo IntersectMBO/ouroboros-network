@@ -44,8 +44,10 @@
             (hsPkgs.typed-protocols)
             (hsPkgs.io-sim-classes)
             (hsPkgs.io-sim)
+            (hsPkgs.iohk-monitoring)
             (hsPkgs.ouroboros-network-testing)
             (hsPkgs.contra-tracer)
+            (hsPkgs.aeson)
             (hsPkgs.array)
             (hsPkgs.async)
             (hsPkgs.binary)
@@ -67,6 +69,7 @@
             (hsPkgs.tasty-quickcheck)
             (hsPkgs.text)
             (hsPkgs.time)
+            (hsPkgs.unordered-containers)
             ];
           };
         "cddl" = {
