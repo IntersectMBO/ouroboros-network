@@ -88,11 +88,6 @@ socketAsMuxBearer sd = do
       recvLen' l bufs = do
           buf <- Socket.recv sd l
           if BL.null buf
-              -- @'Ouroboros.Network.Mux.Ingress.demux'@ will read even after
-              -- receiving the terminal message.  In this case,
-              -- indeterministically, this exception it thrown.  The
-              -- indeterminism kicks since server might kill mux threads
-              -- before it tries to read data.
               then throwM $ Mx.MuxError Mx.MuxBearerClosed (show sd ++ " closed when reading data") callStack
               else recvLen' (l - fromIntegral (BL.length buf)) (buf : bufs)
 
@@ -162,21 +157,7 @@ connectTo app remoteAddr =
           bearer <- socketAsMuxBearer sd
           Mx.muxBearerSetState bearer Mx.Connected
           Mx.muxStart app bearer
-            `catch`
-            handleMuxError
       )
-    where
-      -- catch @'MuxBearerClosed'@ exception; we should ignore it and let @kConn@
-      -- finish; @connect@ will close the underlying socket.
-      --
-      -- Note: we do it only for initiated connections, not ones that the server
-      -- accepted.  The assymetry comes simply from the fact that in initiated
-      -- connections we might want to run a computation that is not interrupted
-      -- by a normal shutdown (a received terminal message throws
-      -- @'Mx.MuxBearerClosed'@ exception).
-      handleMuxError :: Mx.MuxError -> IO ()
-      handleMuxError Mx.MuxError { Mx.errorType = Mx.MuxBearerClosed } = return ()
-      handleMuxError e                                                 = throwIO e
 
 
 -- Accept every incoming connection and use the socket as a mux bearer

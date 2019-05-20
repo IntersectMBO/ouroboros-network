@@ -94,11 +94,6 @@ decodeMuxSDUHeader buf =
 demux :: (MonadSTM m, MonadSay m, Ord ptcl, Enum ptcl)
       => PerMuxSharedState ptcl m -> m ()
 demux pmss = forever $ do
-    -- Note:
-    -- This reads in an infinite loop, which causes an error when a terminating
-    -- message is received, since we'll try to read after receiving it.  When
-    -- this happens @'Ouroboros.Network.Socket.socketAsMuxBearer'@ throws an
-    -- exception.
     (sdu, _) <- Ouroboros.Network.Mux.Types.read $ bearer pmss
     --say $ printf "demuxing sdu on mid %s mode %s" (show $ msId sdu)
     -- Notice the mode reversal, ModeResponder is delivered to ModeInitiator and vice versa.
