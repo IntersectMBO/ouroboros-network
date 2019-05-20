@@ -50,6 +50,9 @@ library
                        Ouroboros.Consensus.Demo
                        Ouroboros.Consensus.Ledger.Abstract
                        Ouroboros.Consensus.Ledger.Mock
+                       Ouroboros.Consensus.Mempool
+                       Ouroboros.Consensus.Mempool.API
+                       Ouroboros.Consensus.Mempool.Impl
                        Ouroboros.Consensus.Node
                        Ouroboros.Consensus.Protocol.Abstract
                        Ouroboros.Consensus.Protocol.BFT
