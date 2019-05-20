@@ -14,9 +14,9 @@ import Cardano.BM.Data.Severity (Severity (Info))
 import qualified Cardano.Binary as Binary (unAnnotated)
 import Cardano.Chain.Block (ChainValidationError, ChainValidationState (..))
 import qualified Cardano.Chain.Block as Block
-import Cardano.Chain.Common (parseReqNetworkMag)
 import qualified Cardano.Chain.Genesis as Genesis
 import Cardano.Chain.Slotting (FlatSlotId(..))
+import Cardano.Crypto (RequiresNetworkMagic(..))
 
 import Cardano.Shell.Constants.Types (CardanoConfiguration (..), Core (..), Genesis (..))
 import Cardano.Shell.Presets (mainnetConfiguration)
@@ -61,10 +61,11 @@ clientFold tracer genesisConfig stopCondition cvs = Client.Fold $ pure $ Client.
 -- TODO option for genesis config provenance.
 -- currently mainnet is hard-coded.
 data Options = Options
-  { loggerConfigPath    :: !(Maybe FilePath)
-  , serverHost          :: !Socket.HostName
-  , serverPort          :: !Socket.ServiceName
-  , overrideGenesisJson :: !(Maybe FilePath)
+  { loggerConfigPath     :: !(Maybe FilePath)
+  , serverHost           :: !Socket.HostName
+  , serverPort           :: !Socket.ServiceName
+  , overrideGenesisJson  :: !(Maybe FilePath)
+  , requiresNetworkMagic :: !RequiresNetworkMagic
   }
 
 cliParser :: Opt.Parser Options
@@ -73,6 +74,7 @@ cliParser = Options
   <*> cliServerHost
   <*> cliServerPort
   <*> cliOverrideGenesisJson
+  <*> cliRequiresNetworkMagic
 
   where
 
@@ -96,6 +98,10 @@ cliParser = Options
     Opt.metavar "FILEPATH"           <>
     Opt.help "Path to genesis JSON file"
 
+  cliRequiresNetworkMagic = Opt.flag RequiresNoMagic RequiresMagic $
+    Opt.long "requires-network-magic" <>
+    Opt.help "Flag to require network magic"
+
 cliParserInfo :: Opt.ParserInfo Options
 cliParserInfo = Opt.info cliParser infoMod
   where
@@ -115,10 +121,10 @@ main = do
         mainnetGenFilepath = case overrideGenesisJson opts of
           Nothing -> geSrc . coGenesis $ ccCore cc
           Just fp -> fp
-        reqNetworkMagic = parseReqNetworkMag . coRequiresNetworkMagic $ ccCore cc
+        rnm = requiresNetworkMagic opts
     -- Copied from validate-mainnet in cardano-ledger.
     Right genesisConfig <-
-      runExceptT (Genesis.mkConfigFromFile reqNetworkMagic mainnetGenFilepath Nothing)
+      runExceptT (Genesis.mkConfigFromFile rnm mainnetGenFilepath Nothing)
     Right cvs <- runExceptT $ Block.initialChainValidationState genesisConfig
     genesisConfig `seq` cvs `seq` pure ()
     addrInfo : _ <- Socket.getAddrInfo
