@@ -89,6 +89,7 @@
             (hsPkgs.base)
             (hsPkgs.byron-proxy)
             (hsPkgs.cardano-binary)
+            (hsPkgs.cardano-crypto-wrapper)
             (hsPkgs.cardano-ledger)
             (hsPkgs.cardano-shell)
             (hsPkgs.contra-tracer)
