@@ -3,6 +3,7 @@
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE DeriveFunctor              #-}
 
 module Ouroboros.Network.BlockFetch.State (
     fetchLogicIterations,
@@ -11,7 +12,9 @@ module Ouroboros.Network.BlockFetch.State (
     FetchNonTriggerVariables(..),
     FetchDecision,
     FetchDecline(..),
-    FetchMode(..)
+    FetchMode(..),
+    TraceLabelPeer(..),
+    TraceFetchClientState(..),
   ) where
 
 import qualified Data.Map.Strict as Map
@@ -21,7 +24,7 @@ import           Data.Void
 
 import           Control.Monad.Class.MonadSTM
 import           Control.Exception (assert)
-import           Control.Tracer (Tracer, traceWith)
+import           Control.Tracer (Tracer, traceWith, contramap)
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment(..))
@@ -35,6 +38,7 @@ import           Ouroboros.Network.BlockFetch.ClientState
                    , FetchClientStateVars
                    , addNewFetchRequest
                    , readFetchClientState
+                   , TraceFetchClientState(..)
                    )
 import           Ouroboros.Network.BlockFetch.Decision
                    ( fetchDecisions
@@ -48,16 +52,24 @@ import           Ouroboros.Network.BlockFetch.DeltaQ
                    ( PeerGSV(..) )
 
 
+-- | A peer label for use in 'Tracer's. This annotates tracer output as being
+-- associated with a given peer identifier.
+--
+data TraceLabelPeer peerid a = TraceLabelPeer peerid a
+  deriving (Eq, Functor, Show)
+
+
 fetchLogicIterations
   :: (MonadSTM m, Ord peer,
       HasHeader header, HasHeader block,
       HeaderHash header ~ HeaderHash block)
-  => Tracer m [FetchDecision [Point header]]
+  => Tracer m [TraceLabelPeer peer (FetchDecision [Point header])]
+  -> Tracer m (TraceLabelPeer peer (TraceFetchClientState header))
   -> FetchDecisionPolicy header
   -> FetchTriggerVariables peer header m
   -> FetchNonTriggerVariables peer header block m
   -> m Void
-fetchLogicIterations decisionTracer
+fetchLogicIterations decisionTracer clientStateTracer
                      fetchDecisionPolicy
                      fetchTriggerVariables
                      fetchNonTriggerVariables =
@@ -70,7 +82,7 @@ fetchLogicIterations decisionTracer
       -- + act on those decisions
 
       fetchLogicIteration
-        decisionTracer
+        decisionTracer clientStateTracer
         fetchDecisionPolicy
         fetchTriggerVariables
         fetchNonTriggerVariables
@@ -93,13 +105,14 @@ fetchLogicIteration
   :: (MonadSTM m, Ord peer,
       HasHeader header, HasHeader block,
       HeaderHash header ~ HeaderHash block)
-  => Tracer m [FetchDecision [Point header]]
+  => Tracer m [TraceLabelPeer peer (FetchDecision [Point header])]
+  -> Tracer m (TraceLabelPeer peer (TraceFetchClientState header))
   -> FetchDecisionPolicy header
   -> FetchTriggerVariables peer header m
   -> FetchNonTriggerVariables peer header block m
   -> FetchStateFingerprint peer header block
   -> m (FetchStateFingerprint peer header block)
-fetchLogicIteration decisionTracer
+fetchLogicIteration decisionTracer clientStateTracer
                     fetchDecisionPolicy
                     fetchTriggerVariables
                     fetchNonTriggerVariables
@@ -128,10 +141,13 @@ fetchLogicIteration decisionTracer
     -- _ <- evaluate (force decisions)
 
     -- Trace the batch of fetch decisions
-    traceWith decisionTracer (map (fmap fetchRequestPoints . fst) decisions)
+    traceWith decisionTracer
+      [ TraceLabelPeer peer (fmap fetchRequestPoints decision)
+      | (decision, (_, _, _, (_, peer))) <- decisions ]
 
     -- Tell the fetch clients to act on our decisions
-    statusUpdates <- fetchLogicIterationAct fetchDecisionPolicy
+    statusUpdates <- fetchLogicIterationAct clientStateTracer
+                                            fetchDecisionPolicy
                                             (map swizzleReqVar decisions)
     let !stateFingerprint'' =
           updateFetchStateFingerprintPeerStatus statusUpdates stateFingerprint'
@@ -198,15 +214,20 @@ fetchDecisionsForStateSnapshot
 -- protocol with each peer.
 --
 fetchLogicIterationAct :: (MonadSTM m, HasHeader header)
-                       => FetchDecisionPolicy header
+                       => Tracer m (TraceLabelPeer peer (TraceFetchClientState header))
+                       -> FetchDecisionPolicy header
                        -> [(FetchDecision (FetchRequest header),
                             PeerGSV,
                             FetchClientStateVars m header,
                             peer)]
                        -> m [(peer, PeerFetchStatus header)]
-fetchLogicIterationAct FetchDecisionPolicy{blockFetchSize} decisions =
+fetchLogicIterationAct clientStateTracer FetchDecisionPolicy{blockFetchSize}
+                       decisions =
     sequence
-      [ (,) peer <$> addNewFetchRequest blockFetchSize stateVars request gsvs
+      [ (,) peer <$> addNewFetchRequest
+                       (contramap (TraceLabelPeer peer) clientStateTracer)
+                       blockFetchSize
+                       stateVars request gsvs
       | (Right request, gsvs, stateVars, peer) <- decisions ]
 
 

@@ -39,7 +39,9 @@ module Ouroboros.Network.Testing.ConcreteBlock (
   , mkPartialBlock
   , mkPartialBlockHeader
   , fixupBlock
+  , fixupBlock'
   , fixupBlockHeader
+  , fixupBlockHeader'
   , fixupChain
   , fixupChainFragment
   , fixupAnchoredFragment
@@ -198,6 +200,8 @@ mkChain = fixupChain fixupBlock
 mkChainSimple :: [BlockBody] -> Chain Block
 mkChainSimple = mkChain . zip [1..]
 
+-- TODO: this generator will generate only chain fragments which start with
+-- @BlockNo 0@ and @GenesisHash@ in @prevHeaderHash@.
 mkChainFragment :: [(SlotNo, BlockBody)] -> ChainFragment Block
 mkChainFragment = fixupChainFragment fixupBlock
                 . map (uncurry mkPartialBlock)
@@ -270,6 +274,38 @@ fixupBlockHeader pb b = b'
       headerSigner   = headerSigner b, -- and signer
       headerBlockNo  = maybe (BlockNo 1) (succ . blockNo) pb,
       headerBodyHash = headerBodyHash b
+    }
+
+-- |
+-- Like @'fixupBlock'@ but it will preserve the first block instead of using
+-- @GenesisHash@ and @BlockNo 1@.
+--
+fixupBlockHeader' :: (HasHeader block, HeaderHash block ~ HeaderHash Block)
+                 => Maybe block -> BlockHeader -> BlockHeader
+fixupBlockHeader' pb b = b'
+  where
+    b' = BlockHeader {
+      headerHash     = hashHeader b',
+      headerPrevHash = maybe (headerPrevHash b) (BlockHash . blockHash) pb,
+                                       -- keep the prev hash of the first header
+      headerSlot     = headerSlot b,   -- keep the existing slot number
+      headerSigner   = headerSigner b, -- and signer
+      headerBlockNo  = maybe (blockNo b) (succ . blockNo) pb,
+                                       -- keep the block number of the first
+                                       -- header
+      headerBodyHash = headerBodyHash b
+    }
+
+-- |
+-- Like @'fixupBlock'@ but using @'fixupBlockHeader''@.
+--
+fixupBlock' :: (HasHeader block, HeaderHash block ~ HeaderHash Block)
+           => Maybe block -> Block -> Block
+fixupBlock' pb b@Block{blockBody, blockHeader} =
+    b {
+      blockHeader = (fixupBlockHeader' pb blockHeader) {
+                      headerBodyHash = hashBody blockBody
+                    }
     }
 
 fixupBlocks :: (c -> b -> c)
