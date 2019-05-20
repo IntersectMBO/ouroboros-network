@@ -254,7 +254,8 @@ runNetworkNode' sd app acceptException acceptConn complete main st =
 
 -- |
 -- Run a server application.  It will listen on the given address for incoming
--- connection.
+-- connection.  The server thread runs using @withAsync@ function, which means
+-- that it will terminate when the callback terminates or throws an exception.
 --
 withServerNode
     :: forall ptcl t.
@@ -265,26 +266,19 @@ withServerNode
        )
     => Socket.AddrInfo
     -> MuxApplication ServerApp ptcl IO
-    -> (IO () -> Async () -> IO t)
-    -- ^ callback which takes @IO@ action which will terminate the server, and
-    -- the @Async@ of the thread that is running it.  Note: the server thread
-    -- will terminate when the callback returns or throws an exception.
-    --
-    -- TODO: do we need to pass the terminate action?
+    -> (Async () -> IO t)
+    -- ^ callback which takes the @Async@ of the thread that is running the server.
+    -- Note: the server thread will terminate when the callback returns or
+    -- throws an exception.
     -> IO t
 withServerNode addr app k =
     bracket (mkListeningSocket (Socket.addrFamily addr) (Just $ Socket.addrAddress addr)) Socket.close $ \sd -> do
 
-      killVar <- newEmptyTMVarM
       let main :: Server.Main () ()
-          main _ = takeTMVar killVar
-
-          killNode :: IO ()
-          killNode = atomically $ putTMVar killVar ()
+          main _ = retry
 
       withAsync
-        (runNetworkNode' sd app throwIO (pure . Right) complete main ())
-        (\aid -> k killNode aid)
+        (runNetworkNode' sd app throwIO (pure . Right) complete main ()) k
 
     where
       -- When a connection completes, we do nothing. State is ().
