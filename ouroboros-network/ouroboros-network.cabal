@@ -48,6 +48,7 @@ library
                        Ouroboros.Network.BlockFetch.State
                        Ouroboros.Network.ChainFragment
                        Ouroboros.Network.Channel
+                       Ouroboros.Network.ByteChannel
                        Ouroboros.Network.Codec
                        Ouroboros.Network.DeltaQ
                        Ouroboros.Network.Mux
