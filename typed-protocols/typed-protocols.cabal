@@ -20,6 +20,7 @@ library
                    , Network.TypedProtocol.Core
                    , Network.TypedProtocol.Pipelined
                    , Network.TypedProtocol.Channel
+                   , Network.TypedProtocol.ByteChannel
                    , Network.TypedProtocol.Codec
                    , Network.TypedProtocol.Driver
                    , Network.TypedProtocol.Proofs
