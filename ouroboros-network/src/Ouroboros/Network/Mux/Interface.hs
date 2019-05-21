@@ -22,6 +22,13 @@ module Ouroboros.Network.Mux.Interface
   , runMuxPeer
   , simpleMuxInitiatorApplication
   , simpleMuxResponderApplication
+
+  -- * Version data
+  , Versions (..)
+  , simpleSingletonVersions
+  , Sigma (..)
+  , Version
+  , DictVersion (..)
   ) where
 
 import           Data.ByteString.Lazy (ByteString)
@@ -41,6 +48,8 @@ import           Network.TypedProtocol.Codec
 import           Network.TypedProtocol.Channel
 import           Network.TypedProtocol.Driver
 import           Network.TypedProtocol.Pipelined
+
+import           Ouroboros.Network.Protocol.Handshake.Version
 
 
 -- $interface

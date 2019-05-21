@@ -47,7 +47,6 @@ import qualified Ouroboros.Network.Protocol.ChainSync.Codec    as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Examples as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Server   as ChainSync
 import           Ouroboros.Network.Protocol.Handshake.Type
-import           Ouroboros.Network.Protocol.Handshake.Version
 import           Ouroboros.Network.NodeToNode
 import           Ouroboros.Network.Testing.Serialise
 
