@@ -27,6 +27,7 @@ module Ouroboros.Network.Protocol.Handshake.Type
   -- ** Handshake server
   , handshakeServerPeer
   , Accept (..)
+  , acceptEq
 
   -- ** Tests
   , pureHandshake
@@ -35,6 +36,7 @@ module Ouroboros.Network.Protocol.Handshake.Type
 
 
 import           Data.Text (Text)
+import qualified Data.Text as T
 import           Data.Typeable (Typeable, cast)
 import           Data.List (intersect)
 import           Data.Map (Map)
@@ -204,8 +206,22 @@ handshakeClientPeer encodeData decodeData versions =
 --
 data Accept
   = Accept
-  | Refuse Text
+  | Refuse !Text
   deriving (Eq, Show)
+
+
+-- |
+-- Accept version fields when they are equal.
+--
+acceptEq
+    :: ( Eq v
+       , Show v
+       )
+    => v
+    -> v
+    -> Accept
+acceptEq v1 v2 | v1 == v2 = Accept
+               | otherwise = Refuse $ T.pack $ "version data mismatch: " ++ show v1 ++ " /= " ++ show v2
 
 -- |
 -- Server following the handshake protocol; it accepts highest version offered
