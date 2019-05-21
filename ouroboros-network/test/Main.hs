@@ -24,19 +24,27 @@ main = defaultMain tests
 tests :: TestTree
 tests =
   testGroup "ouroboros-network"
-  [ Test.AnchoredFragment.tests
-  , Test.ChainGenerators.tests
+
+    -- data structures
+  [ Test.ChainGenerators.tests
   , Test.Chain.tests
   , Test.ChainFragment.tests
+  , Test.AnchoredFragment.tests
   , Test.ChainProducerState.tests
-  , Test.Mux.tests
-  , Test.Pipe.tests
-  , Test.Socket.tests
-  , Test.Ouroboros.Network.Node.tests
-  , Test.Ouroboros.Network.BlockFetch.tests
+
+    -- protocols
   , Ouroboros.Network.Protocol.ChainSync.Test.tests
   , Ouroboros.Network.Protocol.BlockFetch.Test.tests
   , Ouroboros.Network.Protocol.PingPong.Test.tests
   , Ouroboros.Network.Protocol.ReqResp.Test.tests
   , Ouroboros.Network.Protocol.Handshake.Test.tests
+
+    -- network logic
+  , Test.Mux.tests
+  , Test.Pipe.tests
+  , Test.Socket.tests
+  , Test.Ouroboros.Network.BlockFetch.tests
+
+    -- pseudo system-level
+  , Test.Ouroboros.Network.Node.tests
   ]
