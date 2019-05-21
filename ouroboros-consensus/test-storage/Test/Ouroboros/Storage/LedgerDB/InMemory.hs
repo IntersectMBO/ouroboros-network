@@ -24,6 +24,8 @@ import           Ouroboros.Consensus.Util
 
 import           Ouroboros.Network.Testing.Serialise (prop_serialise)
 
+import           Ouroboros.Storage.Common
+
 import           Ouroboros.Storage.LedgerDB.Conf
 import           Ouroboros.Storage.LedgerDB.InMemory
 import           Ouroboros.Storage.LedgerDB.MemPolicy
@@ -121,7 +123,7 @@ prop_pushIncrementsLength setup@ChainSetup{..} =
           ledgerDbChainLength (ledgerDbPush' callbacks blockInfo csPushed)
       === ledgerDbChainLength csPushed + 1
   where
-    blockInfo = BlockRef NotPrevApplied (Block maxBound 0)
+    blockInfo = Block maxBound 0
 
 prop_lengthMatchesNumBlocks :: ChainSetup 'Unsaturated -> Property
 prop_lengthMatchesNumBlocks setup@ChainSetup{..} =
@@ -141,7 +143,7 @@ prop_pushPreservesShape setup@ChainSetup{..} =
           snapshotsShape (ledgerDbPush' callbacks blockInfo csPushed)
       === snapshotsShape csPushed
   where
-    blockInfo = BlockRef NotPrevApplied (Block maxBound 0)
+    blockInfo = Block maxBound 0
 
 prop_pushMatchesPolicy :: ChainSetup 'Saturated -> Property
 prop_pushMatchesPolicy setup@ChainSetup{..} =
@@ -205,7 +207,7 @@ prop_switchSameChain setup@SwitchSetup{..} =
       === csPushed
   where
     ChainSetup{..} = ssChainSetup
-    blockInfo      = map (BlockRef PrevApplied) ssRemoved
+    blockInfo      = ssRemoved
 
 prop_switchExpectedLedger :: SwitchSetup 'Unsaturated -> Property
 prop_switchExpectedLedger setup@SwitchSetup{..} =
@@ -298,8 +300,7 @@ mkTestSetup csPolicy csNumBlocks =
   where
     csGenSnaps = ledgerDbFromGenesis csPolicy initLedger
     csChain    = mkChain csNumBlocks 0
-    blockInfo  = map (BlockRef NotPrevApplied) csChain
-    csPushed   = ledgerDbPushMany' callbacks blockInfo csGenSnaps
+    csPushed   = ledgerDbPushMany' callbacks csChain csGenSnaps
 
 mkRollbackSetup :: ChainSetup s -> Word64 -> Word64 -> SwitchSetup s
 mkRollbackSetup ssChainSetup ssNumRollback ssNumNew =
@@ -315,8 +316,7 @@ mkRollbackSetup ssChainSetup ssNumRollback ssNumNew =
                          take (fromIntegral (csNumBlocks - ssNumRollback)) csChain
                        , ssNewBlocks
                        ]
-    blockInfo   = map (BlockRef NotPrevApplied) ssNewBlocks
-    ssSwitched  = ledgerDbSwitch' callbacks ssNumRollback blockInfo csPushed
+    ssSwitched  = ledgerDbSwitch' callbacks ssNumRollback ssNewBlocks csPushed
 
 instance Arbitrary (ChainSetup 'Unsaturated) where
   arbitrary = sized $ \n -> do

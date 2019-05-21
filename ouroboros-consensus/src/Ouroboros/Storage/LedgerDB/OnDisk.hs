@@ -44,6 +44,7 @@ import           Control.Monad.Class.MonadThrow
 import           Ouroboros.Consensus.Util.CBOR (ReadIncrementalErr,
                      readIncremental)
 
+import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types
 
@@ -165,7 +166,7 @@ initLedgerDB hasFS decLedger decRef policy conf streamAPI = do
                    -> m (InitLog r, LedgerDB l r)
     tryNewestFirst acc [] = do
         -- We're out of snapshots. Start at genesis
-        initDb <- ledgerDbFromGenesis policy <$> ledgerDbGenesis conf
+        initDb <- ledgerDbFromGenesis policy <$> ldbConfGenesis conf
         ml     <- runExceptT $ initStartingWith conf streamAPI initDb
         case ml of
           Left _  -> error "invariant violation: invalid current chain"
@@ -206,7 +207,7 @@ data InitFailure r =
 -- If the chain DB or ledger layer reports an error, the whole thing is aborted
 -- and an error is returned. This should not throw any errors itself (ignoring
 -- unexpected exceptions such as asynchronous exceptions, of course).
-initFromSnapshot :: forall m h l r b e. (MonadST m, MonadThrow m, HasCallStack)
+initFromSnapshot :: forall m h l r b e. (MonadST m, MonadThrow m)
                  => HasFS m h
                  -> (forall s. Decoder s l)
                  -> (forall s. Decoder s r)
@@ -222,7 +223,7 @@ initFromSnapshot hasFS decLedger decRef policy conf streamAPI ss = do
     return (csTip initSS, initDB)
 
 -- | Attempt to initialize the ledger DB starting from the given ledger DB
-initStartingWith :: forall m l r b e. (Monad m, HasCallStack)
+initStartingWith :: forall m l r b e. Monad m
                  => LedgerDbConf m l r b e
                  -> StreamAPI m r b
                  -> LedgerDB l r
@@ -234,18 +235,7 @@ initStartingWith conf@LedgerDbConf{..} streamAPI initDb = do
       push
   where
     push :: (r, b) -> LedgerDB l r -> m (LedgerDB l r)
-    push b db = mustBeValid <$> ledgerDbPush conf (BlockVal NotPrevApplied b) db
-
-    mustBeValid :: Either e (LedgerDB l r) -> LedgerDB l r
-    mustBeValid (Left _)   = error invalidChain
-    mustBeValid (Right db) = db
-
-    invalidChain :: String
-    invalidChain = concat [
-          "initStartingWith: "
-        , "invariant vaiolation: "
-        , "ChainDB selected invalid chain"
-        ]
+    push (r, b) db = ledgerDbReapply conf (Val r b) db
 
 {-------------------------------------------------------------------------------
   Write to disk
