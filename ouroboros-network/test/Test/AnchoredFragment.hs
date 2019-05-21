@@ -18,7 +18,7 @@ import           Test.Tasty.QuickCheck (testProperty)
 import           Text.Show.Functions ()
 
 import           Ouroboros.Network.AnchoredFragment
-                     (AnchoredFragment ((:>), Empty))
+                     (AnchoredFragment(..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block
 import qualified Ouroboros.Network.Chain as Chain
@@ -367,11 +367,14 @@ instance Arbitrary TestAddBlock where
     ]
 
 prop_arbitrary_TestAddBlock :: TestAddBlock -> Bool
-prop_arbitrary_TestAddBlock (TestAddBlock c b) = AF.valid (c :> b)
+prop_arbitrary_TestAddBlock (TestAddBlock c b) =
+    AF.valid c && AF.validExtension c b
 
 prop_shrink_TestAddBlock :: TestAddBlock -> Bool
 prop_shrink_TestAddBlock t =
-    and [ AF.valid (c :> b) | TestAddBlock c b <- shrink t ]
+    and [ AF.valid c && AF.validExtension c b
+        | TestAddBlock c b <- shrink t ]
+
 
 --
 -- Generator for chain and single point on the chain
