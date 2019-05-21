@@ -32,6 +32,7 @@ import           Codec.Serialise (Serialise)
 import           Control.Monad (void)
 import           Crypto.Random (ChaChaDRG)
 import           Data.Map.Strict (Map)
+import           Data.Sequence (Seq)
 import           Data.Void (Void)
 
 import           Control.Monad.Class.MonadAsync
@@ -64,6 +65,7 @@ import           Ouroboros.Consensus.BlockFetchServer
 import           Ouroboros.Consensus.ChainSyncClient
 import           Ouroboros.Consensus.ChainSyncServer
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.Condense
@@ -131,7 +133,7 @@ data NodeKernel m up blk hdr = NodeKernel {
 -- | Monad that we run protocol specific functions in
 type ProtocolM blk m = NodeStateT (BlockProtocol blk) (ChaChaT (STM m))
 
--- | Callbacks required when initializing the node
+-- | Callbacks required when running the node
 data NodeCallbacks m blk = NodeCallbacks {
       -- | Produce a block
       produceBlock :: IsLeader (BlockProtocol blk) -- Proof we are leader
@@ -139,6 +141,7 @@ data NodeCallbacks m blk = NodeCallbacks {
                    -> SlotNo             -- Current slot
                    -> Point blk          -- Previous point
                    -> BlockNo            -- Previous block number
+                   -> Seq (GenTx blk)    -- Transactions to be included
                    -> ProtocolM blk m blk
 
       -- | Produce a random seed
@@ -180,6 +183,7 @@ nodeKernel
        , BlockProtocol hdr ~ BlockProtocol blk
        , Ord up
        , TraceConstraints up blk hdr
+       , ApplyTx blk
        )
     => NodeParams m up blk hdr
     -> m (NodeKernel m up blk hdr)
@@ -224,6 +228,7 @@ data InternalState m up blk hdr = IS {
     , varCandidates       :: TVar m (Map up (TVar m (CandidateState blk hdr)))
     , varState            :: TVar m (NodeState (BlockProtocol blk))
     , tracer              :: Tracer m String
+    , mempool             :: Mempool m blk
     }
 
 initInternalState
@@ -239,12 +244,14 @@ initInternalState
        , BlockProtocol hdr ~ BlockProtocol blk
        , Ord up
        , TraceConstraints up blk hdr
+       , ApplyTx blk
        )
     => NodeParams m up blk hdr
     -> m (InternalState m up blk hdr)
 initInternalState NodeParams {..} = do
-    varCandidates   <- atomically $ newTVar mempty
-    varState        <- atomically $ newTVar initState
+    varCandidates  <- atomically $ newTVar mempty
+    varState       <- atomically $ newTVar initState
+    mempool        <- openMempool chainDB
 
     fetchClientRegistry <- newFetchClientRegistry
 
@@ -378,9 +385,16 @@ forkBlockProduction IS{..} =
           Nothing    -> return Nothing
           Just proof -> do
             (prevPoint, prevNo) <- prevPointAndBlockNo currentSlot <$>
-              ChainDB.getCurrentChain chainDB
-            newBlock <- runProtocol varDRG $
-              produceBlock proof l currentSlot (castPoint prevPoint) prevNo
+                                     ChainDB.getCurrentChain chainDB
+            txs                 <- getTxs mempool
+            newBlock            <- runProtocol varDRG $
+                                     produceBlock
+                                       proof
+                                       l
+                                       currentSlot
+                                       (castPoint prevPoint)
+                                       prevNo
+                                       txs
             return $ Just newBlock
 
       whenJust mNewBlock $ \newBlock -> do

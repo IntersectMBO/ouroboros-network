@@ -65,6 +65,7 @@ import           Ouroboros.Consensus.Crypto.Hash.Class
 import           Ouroboros.Consensus.Crypto.Hash.MD5 (MD5)
 import           Ouroboros.Consensus.Crypto.Hash.Short (ShortHash)
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Node (NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
@@ -406,15 +407,35 @@ instance OuroborosTag p => UpdateLedger (SimpleBlock p c) where
   data HeaderState (SimpleBlock p c) = SimpleHeaderState
 
   -- Apply a block to the ledger state
-  applyLedgerState b (SimpleLedgerState u c) = do
-      u' <- withExceptT LedgerErrorInvalidInputs $ updateUtxo b u
-      return $ SimpleLedgerState u' (c `Set.union` confirmed b)
-
-  getHeaderState _ _ = SimpleHeaderState
-
+  applyLedgerState     = updateSimpleLedgerState
+  getHeaderState _ _   = SimpleHeaderState
   advanceHeader  _ _ _ = return SimpleHeaderState
 
 deriving instance OuroborosTag p => Show (LedgerState (SimpleBlock p c))
+
+updateSimpleLedgerState :: (Monad m, HasUtxo a)
+                        => a
+                        -> LedgerState (SimpleBlock p c)
+                        -> ExceptT (LedgerError (SimpleBlock p c))
+                                   m
+                                   (LedgerState (SimpleBlock p c))
+updateSimpleLedgerState b (SimpleLedgerState u c) = do
+    u' <- withExceptT LedgerErrorInvalidInputs $ updateUtxo b u
+    return $ SimpleLedgerState u' (c `Set.union` confirmed b)
+
+{-------------------------------------------------------------------------------
+  Applying transactions
+-------------------------------------------------------------------------------}
+
+instance OuroborosTag p => ApplyTx (SimpleBlock p c) where
+  type GenTx (SimpleBlock p c) = Tx
+
+  applyTx            = updateSimpleLedgerState
+  reapplyTx          = updateSimpleLedgerState
+  reapplyTxSameState = (mustSucceed . runExcept) .: updateSimpleLedgerState
+    where
+      mustSucceed (Left  _)  = error "reapplyTxSameState: unexpected error"
+      mustSucceed (Right st) = st
 
 {-------------------------------------------------------------------------------
   Support for various consensus algorithms

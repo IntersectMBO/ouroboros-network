@@ -3,11 +3,13 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
+{-# OPTIONS_GHC -Wno-simplifiable-class-constraints #-}
+
 module Run (
       runNode
     ) where
 
-import           Codec.Serialise (encode, decode)
+import           Codec.Serialise (decode, encode)
 import qualified Control.Concurrent.Async as Async
 import           Control.Concurrent.STM
 import           Control.Monad
@@ -95,7 +97,7 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
 
       let callbacks :: NodeCallbacks IO (Block p)
           callbacks = NodeCallbacks {
-              produceBlock = \proof l slot prevPoint prevBlockNo -> do
+              produceBlock = \proof l slot prevPoint prevBlockNo _txs -> do
                  let curNo    = succ prevBlockNo
                      prevHash = castHash (pointHash prevPoint)
 

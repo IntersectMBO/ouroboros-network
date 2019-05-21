@@ -48,6 +48,7 @@ import           Ouroboros.Consensus.Crypto.KES
 import           Ouroboros.Consensus.Crypto.VRF
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Mock
+import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Node (CoreNodeId (..), NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
@@ -96,6 +97,7 @@ type DemoProtocolConstraints p = (
   , Eq        (Payload p (SimplePreHeader p SimpleBlockMockCrypto))
   , Serialise (Payload p (SimplePreHeader p SimpleBlockMockCrypto))
   , Show      (Payload p (SimplePreHeader p SimpleBlockMockCrypto))
+  , ApplyTx (Block p)
   )
 
 demoProtocolConstraints :: DemoProtocol p -> Dict (DemoProtocolConstraints p)

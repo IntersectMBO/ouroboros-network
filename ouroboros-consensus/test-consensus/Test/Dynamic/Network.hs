@@ -102,11 +102,12 @@ broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots = do
 
       let callbacks :: NodeCallbacks m blk
           callbacks = NodeCallbacks {
-              produceBlock = \proof l slot prevPoint prevNo -> do
+              produceBlock = \proof l slot prevPoint prevNo _txs -> do
                 let prevHash  = castHash (Chain.pointHash prevPoint)
                     curNo     = succ prevNo
 
-                -- Produce some random transactions
+                -- We ignore the transactions from the mempool (which will be
+                -- empty), and instead produce some random transactions
                 txs <- genTxs addrs (getUtxo l)
                 forgeBlock pInfoConfig
                            slot
