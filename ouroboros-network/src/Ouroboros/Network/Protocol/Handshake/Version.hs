@@ -19,6 +19,8 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Typeable ((:~:)(Refl), Typeable, eqT)
 
+import Codec.SerialiseTerm
+
 -- Description of versions.
 --
 -- - Each particular version is a function from a pair of version data

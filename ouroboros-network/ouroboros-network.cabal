@@ -36,6 +36,7 @@ library
   -- At this experiment/prototype stage everything is exposed.
   -- This has to be tidied up once the design becomes clear.
   exposed-modules:
+                       Codec.SerialiseTerm
                        Ouroboros.Network.AnchoredFragment
                        Ouroboros.Network.Block
                        Ouroboros.Network.BlockFetch
@@ -133,7 +134,8 @@ test-suite tests
   type:                exitcode-stdio-1.0
   hs-source-dirs:      test src
   main-is:             Main.hs
-  other-modules:       Ouroboros.Network.AnchoredFragment
+  other-modules:       Codec.SerialiseTerm
+                       Ouroboros.Network.AnchoredFragment
                        Ouroboros.Network.Testing.ConcreteBlock
                        Ouroboros.Network.Block
                        Ouroboros.Network.BlockFetch

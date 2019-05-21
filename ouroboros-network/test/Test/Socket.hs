@@ -16,6 +16,7 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
 import           Control.Exception (IOException)
+import           Codec.SerialiseTerm (SerialiseTerm (..))
 import qualified Data.ByteString.Lazy as BL
 import           Data.List (mapAccumL)
 import           Data.Functor ((<$))
