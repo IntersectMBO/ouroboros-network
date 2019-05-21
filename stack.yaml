@@ -18,12 +18,12 @@ extra-deps:
       - contra-tracer
 
   - git: https://github.com/input-output-hk/cardano-base
-    commit: 577162e98ba2fbe42c1b6042a9a0a15bbc4956d0
+    commit: b676160954cea07d4378ccca870a61242bc188a2
     subdirs:
       - binary
 
   - git: https://github.com/input-output-hk/cardano-ledger
-    commit: 9254662d3d44cfaca3deede715b17547b8571db6
+    commit: 20afe954f847281665ada871c40943bf346f6cf5
     subdirs:
       - .
       - crypto
@@ -36,6 +36,9 @@ extra-deps:
 
   - git: https://github.com/input-output-hk/cardano-sl-x509
     commit: e8bfc1294e088f90e5ae0b4aedbc82ee46ac5ee4
+
+  - git: https://github.com/joelwilliamson/bimap
+    commit: 997fbb38b08dec14d225d064dac05b0a85f4ceae
 
   - time-units-1.0.0
   - ekg-prometheus-adapter-0.1.0.4

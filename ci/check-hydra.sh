@@ -2,11 +2,14 @@
 #!nix-shell -p jq hydra -i bash -I nixpkgs=https://github.com/NixOS/nixpkgs/archive/09195057114a0a8d112c847a9a8f52957420857d.tar.gz
 
 echo '~~~ Evaluating release.nix'
+export HYDRA_CONFIG=$(mktemp hydra.conf.XXX)
+echo evaluator_max_heap_size=$((2 * 1024 * 1024 * 1024)) > $HYDRA_CONFIG
 command time --format '%e' -o eval-time.txt \
     hydra-eval-jobs \
     --option allowed-uris "https://github.com/NixOS https://github.com/input-output-hk" \
     -I . release.nix \
     --arg supportedSystems '["x86_64-linux"]' > eval.json
+rm $HYDRA_CONFIG
 EVAL_EXIT_CODE="$?"
 if [ "$EVAL_EXIT_CODE" != 0 ]
 then

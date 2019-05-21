@@ -1,17 +1,19 @@
 let
   commonLib = import ./nix/iohk-common.nix;
+  tests = (import ./. {}).tests;
   # Path of nix-tools jobs that we want to evict from release.nix:
   disabled = [
     # FIXME: those tests freeze on darwin hydra agents:
     ["nix-tools" "tests" "ouroboros-consensus" "test-storage" "x86_64-darwin"]
   ];
 in
-{ ... }@args:
+{ ouroboros-network ? { outPath = ./.; rev = "acdef"; }, ... }@args:
 commonLib.pkgs.lib.mapAttrsRecursiveCond
 (as: !(as ? "type" && as.type == "derivation"))
 (path: v: if (builtins.elem path disabled) then null else v)
 (commonLib.nix-tools.release-nix {
-  package-set-path = ./.;
+  package-set-path = ./nix/nix-tools.nix;
+  _this = ouroboros-network;
 
   # packages from our stack.yaml or plan file (via nix/pkgs.nix) we
   # are interested in building on CI via nix-tools.
@@ -58,6 +60,9 @@ commonLib.pkgs.lib.mapAttrsRecursiveCond
 
   # The required jobs that must pass for ci not to fail:
   required-name = "ouroboros-network-required-checks";
+  extraBuilds = {
+    inherit tests;
+  };
   required-targets = jobs: [
     # targets are specified using above nomenclature:
     jobs.nix-tools.tests.ouroboros-consensus.test-consensus.x86_64-linux
@@ -69,5 +74,6 @@ commonLib.pkgs.lib.mapAttrsRecursiveCond
 
     jobs.nix-tools.exes.ouroboros-consensus.x86_64-linux
     jobs.nix-tools.exes.byron-proxy.x86_64-linux
+    (builtins.concatLists (map builtins.attrValues (builtins.attrValues jobs.tests)))
   ];
-} args)
+} (builtins.removeAttrs args ["ouroboros-network"]))

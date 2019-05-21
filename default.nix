@@ -1,14 +1,13 @@
-{ ... }@args:
+{ customConfig ? {}, ... }:
 #
-# The defaul.nix file. This will generate targets for all
+# The default.nix file. This will generate targets for all
 # buildables (see release.nix for nomenclature, excluding
 # the "build machine" last part, specific to release.nix), eg.:
 #
 # - nix build -f default.nix nix-tools.tests.io-sim # All `io-sim` tests
 # - nix build -f default.nix nix-tools.tests.ouroboros-consensus.test-consensus
 #
-# Generated targets include anything from stack.yaml (via
-# nix-tools:stack-to-nix and the nix/regenerate.sh script)
+# Generated targets include anything from stack.yaml (via nix-tools:stack-to-nix and the nix/regenerate.sh script)
 # or cabal.project (via nix-tools:plan-to-nix), including all
 # version overrides specified there.
 #
@@ -38,19 +37,19 @@ let
 # important so that the release.nix file can properly
 # parameterize this file when targetting different
 # hosts.
-  nixTools = commonLib.nix-tools.default-nix ./nix/pkgs.nix args;
-  # TODO: remove when proxy and old cardano configs no
-  # longer required.
-  oldCardanoSrc = import ./nix/old-cardano.nix {
-    inherit commonLib;
-  };
-  byronProxy = nixTools.nix-tools.exes.byron-proxy;
+  nixTools = import ./nix/nix-tools.nix {};
   # TODO: move scripts to cardano-shell at some point.
-  byronProxyScripts = import ./nix/byron-proxy-scripts.nix {
-    inherit commonLib oldCardanoSrc byronProxy;
+  # Usage:
+  # nix-build -A scripts.byron.proxy.mainnet -o proxy
+  # nix-build -A scripts.byron.validator.mainnet -o validator
+  # ./proxy
+  # ./validator
+  scripts = import ./nix/scripts.nix {
+    inherit commonLib nixTools;
+    inherit customConfig;
   };
-  tests = import ./nix/nixos/tests { pkgs = commonLib.pkgs; };
+  tests = import ./nix/nixos/tests { inherit (commonLib) pkgs; };
 in {
-  inherit byronProxyScripts tests;
+  inherit scripts tests;
   inherit (nixTools) nix-tools;
 }

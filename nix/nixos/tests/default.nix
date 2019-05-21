@@ -15,4 +15,5 @@ with pkgs.lib;
 in rec {
   # TODO: tests of images
   byronProxy = callTest ./byron-proxy.nix {};
+  byronProxyValidator = callTest ./byron-proxy-validator.nix {};
 }

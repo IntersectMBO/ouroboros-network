@@ -14,9 +14,9 @@ import Cardano.BM.Data.Severity (Severity (Info))
 import qualified Cardano.Binary as Binary (unAnnotated)
 import Cardano.Chain.Block (ChainValidationError, ChainValidationState (..))
 import qualified Cardano.Chain.Block as Block
-import Cardano.Chain.Common (parseReqNetworkMag)
 import qualified Cardano.Chain.Genesis as Genesis
 import Cardano.Chain.Slotting (FlatSlotId(..))
+import Cardano.Crypto (RequiresNetworkMagic(..))
 
 import Cardano.Shell.Constants.Types (CardanoConfiguration (..), Core (..), Genesis (..))
 import Cardano.Shell.Presets (mainnetConfiguration)
@@ -61,9 +61,11 @@ clientFold tracer genesisConfig stopCondition cvs = Client.Fold $ pure $ Client.
 -- TODO option for genesis config provenance.
 -- currently mainnet is hard-coded.
 data Options = Options
-  { loggerConfigPath :: !(Maybe FilePath)
-  , serverHost       :: !Socket.HostName
-  , serverPort       :: !Socket.ServiceName
+  { loggerConfigPath     :: !(Maybe FilePath)
+  , serverHost           :: !Socket.HostName
+  , serverPort           :: !Socket.ServiceName
+  , overrideGenesisJson  :: !(Maybe FilePath)
+  , requiresNetworkMagic :: !RequiresNetworkMagic
   }
 
 cliParser :: Opt.Parser Options
@@ -71,13 +73,15 @@ cliParser = Options
   <$> cliLoggerConfigPath
   <*> cliServerHost
   <*> cliServerPort
+  <*> cliOverrideGenesisJson
+  <*> cliRequiresNetworkMagic
 
   where
 
   cliLoggerConfigPath = Opt.optional $ Opt.strOption $
     Opt.long "logger-config" <>
     Opt.metavar "FILEPATH"   <>
-    Opt.help "Path to logger config file."
+    Opt.help "Path to logger config file"
 
   cliServerHost = Opt.strOption $
     Opt.long "server-host" <>
@@ -88,6 +92,15 @@ cliParser = Options
     Opt.long "server-port" <>
     Opt.metavar "PORT"     <>
     Opt.help "Port of chain sync server"
+
+  cliOverrideGenesisJson = Opt.optional $ Opt.strOption $
+    Opt.long "override-genesis-json" <>
+    Opt.metavar "FILEPATH"           <>
+    Opt.help "Path to genesis JSON file"
+
+  cliRequiresNetworkMagic = Opt.flag RequiresNoMagic RequiresMagic $
+    Opt.long "requires-network-magic" <>
+    Opt.help "Flag to require network magic"
 
 cliParserInfo :: Opt.ParserInfo Options
 cliParserInfo = Opt.info cliParser infoMod
@@ -104,13 +117,14 @@ main = do
   Logging.withLogging (loggerConfigPath opts) "validator" $ \trace_ -> do
     let trace = Logging.convertTrace trace_
         -- Hard-code to mainnet configuration.
-        -- mainnet-genesis.json file is assumed to be there.
         cc = mainnetConfiguration
-        mainnetGenFilepath = geSrc . coGenesis $ ccCore cc
-        reqNetworkMagic = parseReqNetworkMag . coRequiresNetworkMagic $ ccCore cc
+        mainnetGenFilepath = case overrideGenesisJson opts of
+          Nothing -> geSrc . coGenesis $ ccCore cc
+          Just fp -> fp
+        rnm = requiresNetworkMagic opts
     -- Copied from validate-mainnet in cardano-ledger.
     Right genesisConfig <-
-      runExceptT (Genesis.mkConfigFromFile reqNetworkMagic mainnetGenFilepath Nothing)
+      runExceptT (Genesis.mkConfigFromFile rnm mainnetGenFilepath Nothing)
     Right cvs <- runExceptT $ Block.initialChainValidationState genesisConfig
     genesisConfig `seq` cvs `seq` pure ()
     addrInfo : _ <- Socket.getAddrInfo
