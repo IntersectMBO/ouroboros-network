@@ -1,16 +1,17 @@
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 module Ouroboros.Storage.LedgerDB.InMemory (
      -- * Chain summary
-     Tip(..)
-   , tipIsGenesis
-   , ChainSummary(..)
-   , genesisChainSummary
+     ChainSummary(..)
      -- * LedgerDB proper
    , LedgerDB
    , ledgerDbFromChain
@@ -24,22 +25,21 @@ module Ouroboros.Storage.LedgerDB.InMemory (
    , ledgerDbIsSaturated
    , ledgerDbTail
      -- ** Updates
-   , BlockInfo(..)
+   , Apply(..)
+   , Err
+   , RefOrVal(..)
    , ledgerDbPush
-   , ledgerDbPushMany
+   , ledgerDbReapply
    , ledgerDbSwitch
-     -- * Rollback
+     -- * Low-level rollback support (primarily for property testing)
    , Suffix -- opaque
    , toSuffix
-   , fromSuffix
-   , rollback
-   , rollbackMany
+   , fromSuffix'
      -- * Pure wrappers (primarily for property testing)
    , ledgerDbComputeCurrent'
    , ledgerDbPush'
    , ledgerDbPushMany'
    , ledgerDbSwitch'
-   , fromSuffix'
      -- * Shape of the snapshots
    , Shape(..)
    , memPolicyShape
@@ -57,7 +57,8 @@ import qualified Codec.Serialise.Decoding as Dec
 import           Codec.Serialise.Encoding (Encoding)
 import qualified Codec.Serialise.Encoding as Enc
 import           Control.Exception (Exception, throw)
-import           Control.Monad.Except
+import           Control.Monad.Except (Except, ExceptT (..), lift, runExcept,
+                     runExceptT, throwError)
 import           Data.Functor.Identity
 import           Data.Typeable (Typeable)
 import           Data.Void
@@ -76,14 +77,45 @@ import           Ouroboros.Storage.LedgerDB.Offsets
   Block info
 -------------------------------------------------------------------------------}
 
-data BlockInfo r b =
-    -- | Block passed by reference
-    BlockRef PrevApplied r
-
-    -- | Block passed by value
+-- | Has a block previously been applied?
+--
+-- In addition to the term level value, we also reflect at the type level
+-- whether the block has been previously applied. This allows us to be more
+-- precise when we apply blocks: re-applying previously applied blocks cannot
+-- result in ledger errors.
+data Apply :: Bool -> * where
+    -- | This block was previously applied
     --
-    -- For convenience we also require the reference to this block
-  | BlockVal PrevApplied (r, b)
+    -- If we reapply a previously applied block, we /must/ reapply it to the
+    -- very same state. This means that we cannot have any errors.
+    --
+    -- This constructor is polymorphic: this allows us to be conservative at
+    -- the type level ("this may result in a ledger error") whilst still marking
+    -- a block as previously applied ("don't bother checking for errors"). This
+    -- is useful for example when we have a bunch of blocks, some of which have
+    -- been previously applied and some of which have not. Applying all of them
+    -- could definitely result in a ledger error, even if we skip checks for
+    -- some of them.
+    Reapply :: Apply pa
+
+    -- | Not previously applied
+    --
+    -- All checks must be performed
+    Apply :: Apply False
+
+-- | Error we get from applying a block
+--
+-- If the block was previously applied, we can't get any errors.
+type family Err (ap :: Bool) (e :: *) :: * where
+  Err True  e = Void
+  Err False e = e
+
+-- | Pass a block by value or by reference
+data RefOrVal r b = Ref r | Val r b
+
+ref :: RefOrVal r b -> r
+ref (Ref r  ) = r
+ref (Val r _) = r
 
 {-------------------------------------------------------------------------------
   Chain summary
@@ -155,27 +187,24 @@ ledgerDbFromGenesis policy = ledgerDbFromChain policy . genesisChainSummary
   Internal: derived functions in terms of 'BlockInfo'
 -------------------------------------------------------------------------------}
 
--- | Block that we've seen before
-blockOld :: r -> BlockInfo r b
-blockOld = BlockRef PrevApplied
-
-blockRef :: BlockInfo r b -> r
-blockRef (BlockRef _ r)      = r
-blockRef (BlockVal _ (r, _)) = r
-
-applyBlock :: Monad m
+applyBlock :: forall m l r b e ap. Monad m
            => LedgerDbConf m l r b e
-           -> BlockInfo r b -> l -> m (Either e l)
-applyBlock LedgerDbConf{..} (BlockVal pa (_r, b)) l = do
-    return $ ledgerDbApply pa b l
-applyBlock LedgerDbConf{..} (BlockRef pa r) l = do
-    (\b -> ledgerDbApply pa b l) <$> ledgerDbResolve r
+           -> (Apply ap, RefOrVal r b)
+           -> l -> ExceptT (Err ap e) m l
+applyBlock LedgerDbConf{..} (pa, rb) l = ExceptT $
+    case rb of
+      Ref  r   -> apply pa <$> ldbConfResolve r
+      Val _r b -> return $ apply pa b
+  where
+    apply :: Apply ap -> b -> Either (Err ap e) l
+    apply Apply   b =         ldbConfApply   b l
+    apply Reapply b = Right $ ldbConfReapply b l
 
-snap :: BlockInfo r b -> l -> LedgerDB l r -> LedgerDB l r
-snap = Snap . blockRef
-
-skip :: BlockInfo r b -> LedgerDB l r -> LedgerDB l r
-skip = Skip . blockRef
+reapplyBlock :: forall m l r b e. Monad m
+             => LedgerDbConf m l r b e -> RefOrVal r b -> l -> m l
+reapplyBlock cfg b = fmap mustBeRight
+                   . runExceptT
+                   . applyBlock cfg (Reapply @True, b)
 
 {-------------------------------------------------------------------------------
   Queries
@@ -243,51 +272,54 @@ ledgerDbTail (Tail _ cs)   = cs
   Updates
 -------------------------------------------------------------------------------}
 
--- | Push a block
-ledgerDbPush :: forall m l r b e. Monad m
-             => LedgerDbConf m l r b e
-             -> BlockInfo r b
-             -> LedgerDB l r
-             -> m (Either e (LedgerDB l r))
-ledgerDbPush cfg = runExceptT .: go
-  where
-    app = ExceptT .: applyBlock cfg
-
-    go :: BlockInfo r b -> LedgerDB l r -> ExceptT e m (LedgerDB l r)
-    go b' (Snap r l ss) = snap b' <$> app b' l <*> go (blockOld r) ss
-    go b' (Skip r   ss) = skip b' <$>              go (blockOld r) ss
-    go b' (Tail os cs)
-      | []    <- os     = Tail [] <$> goCS b' cs
+ledgerDbPush :: forall m l r b e ap. Monad m
+              => LedgerDbConf m l r b e
+              -> (Apply ap, RefOrVal r b)
+              -> LedgerDB l r
+              -> m (Either (Err ap e) (LedgerDB l r))
+ledgerDbPush cfg (pa, new) ldb = runExceptT $
+    case ldb of
+      Snap r l ss -> Snap (ref new) <$> appNew l <*> reapp r ss
+      Skip r   ss -> Skip (ref new) <$>              reapp r ss
+      Tail os cs
+        | []    <- os -> Tail [] <$> goCS cs
       -- Create new snapshots when we need to
       -- For the very last snapshot we use the 'End' constructor itself.
-      | [0]   <- os     = Tail [] <$> goCS b' cs
-      | 0:os' <- os     = snap b' <$> app b' l <*> pure (Tail      os'  cs)
-      | o:os' <- os     = skip b' <$>              pure (Tail (o-1:os') cs)
-      where
-        l = csLedger cs
+        | [0]   <- os -> Tail [] <$> goCS cs
+        | 0:os' <- os -> Snap (ref new) <$> appNew l <*> pure (Tail      os'  cs)
+        | o:os' <- os -> Skip (ref new) <$>              pure (Tail (o-1:os') cs)
+        where
+          l = csLedger cs
+  where
+    appNew  = applyBlock cfg (pa, new)
+    reapp r = lift . ledgerDbReapply cfg (Ref r)
 
-    goCS :: BlockInfo r b -> ChainSummary l r -> ExceptT e m (ChainSummary l r)
-    goCS b' ChainSummary{..} = do
-        csLedger' <- app b' csLedger
+    goCS :: ChainSummary l r -> ExceptT (Err ap e) m (ChainSummary l r)
+    goCS ChainSummary{..} = do
+        csLedger' <- appNew csLedger
         return ChainSummary{
-            csTip    = Tip (blockRef b')
+            csTip    = Tip (ref new)
           , csLength = csLength + 1
           , csLedger = csLedger'
           }
 
+ledgerDbReapply :: Monad m
+                => LedgerDbConf m l r b e
+                -> RefOrVal r b -> LedgerDB l r -> m (LedgerDB l r)
+ledgerDbReapply cfg b = fmap mustBeRight . ledgerDbPush cfg (Reapply @True, b)
+
 -- | Push a bunch of blocks (oldest first)
 ledgerDbPushMany :: Monad m
                  => LedgerDbConf m l r b e
-                 -> [BlockInfo r b]
+                 -> [(Apply ap, RefOrVal r b)]
                  -> LedgerDB l r
-                 -> m (Either e (LedgerDB l r))
-ledgerDbPushMany conf = runExceptT .: repeatedlyM (ExceptT .: ledgerDbPush conf)
+                 -> m (Either (Err ap e) (LedgerDB l r))
+ledgerDbPushMany cfg = runExceptT .: repeatedlyM (ExceptT .: ledgerDbPush cfg)
 
 -- | Switch to a fork
 --
 -- PRE: Must have at least as many new blocks as we are rolling back.
-ledgerDbSwitch :: forall m l r b e. (
-                    Monad m
+ledgerDbSwitch :: ( Monad m
                   , HasCallStack
                   , Show l
                   , Show r
@@ -295,10 +327,10 @@ ledgerDbSwitch :: forall m l r b e. (
                   , Typeable r
                   )
                => LedgerDbConf m l r b e
-               -> Word64              -- ^ How many blocks to roll back
-               -> [BlockInfo r b]   -- ^ New blocks to apply
+               -> Word64                      -- ^ How many blocks to roll back
+               -> [(Apply ap, RefOrVal r b)]  -- ^ New blocks to apply
                -> LedgerDB l r
-               -> m (Either e (LedgerDB l r))
+               -> m (Either (Err ap e) (LedgerDB l r))
 ledgerDbSwitch cfg numRollbacks newBlocks ss =
     case runExcept $ rollbackMany numRollbacks (toSuffix ss) of
       Right suffix -> fromSuffix cfg newBlocks suffix
@@ -336,36 +368,40 @@ toSuffix ss = Suffix { suffixRemaining = ss, suffixStripped = SNone }
 -- This will be O(1) /provided/ that we store the most recent snapshot
 -- (see also 'ledgerDbGetCurrent').
 ledgerDbComputeCurrent :: forall m l r b e. Monad m
-                       => LedgerDbConf m l r b e
-                       -> LedgerDB l r
-                       -> m (Either e l)
-ledgerDbComputeCurrent cfg = runExceptT . go
+                       => LedgerDbConf m l r b e -> LedgerDB l r -> m l
+ledgerDbComputeCurrent cfg = go
   where
-    go :: LedgerDB l r -> ExceptT e m l
+    go :: LedgerDB l r -> m l
     go (Snap _ l _)  = return l
-    go (Skip r   ss) = go ss >>= ExceptT . applyBlock cfg (blockOld r)
+    go (Skip r   ss) = go ss >>= reapplyBlock cfg (Ref r)
     go (Tail _ cs)   = return (csLedger cs)
 
-fromSuffix :: forall m l r b e. Monad m
+fromSuffix :: forall m l r b e ap. Monad m
            => LedgerDbConf m l r b e
-           -> [BlockInfo r b]
+           -> [(Apply ap, RefOrVal r b)]
            -> Suffix l r
-           -> m (Either e (LedgerDB l r))
+           -> m (Either (Err ap e) (LedgerDB l r))
 fromSuffix cfg = \bs suffix -> runExceptT $ do
     -- Here we /must/ call 'ledgerDbComputeCurrent', not 'ledgerDbGetCurrent':
     -- only if we are /very/ lucky would we roll back to a point where we happen
     -- to store a snapshot.
-    l <- ExceptT $ ledgerDbComputeCurrent cfg (suffixRemaining suffix)
+    l <- lift $ ledgerDbComputeCurrent cfg (suffixRemaining suffix)
     go bs suffix l
   where
-    go :: [BlockInfo r b] -> Suffix l r -> l -> ExceptT e m (LedgerDB l r)
-    go bs     (Suffix ss SNone) _     = ExceptT $ ledgerDbPushMany cfg bs ss
-    go (b:bs) (Suffix ss (SSnap m)) l = do l' <- ExceptT $ applyBlock cfg b l
-                                           go bs (Suffix (snap b l' ss) m) l'
-    go (b:bs) (Suffix ss (SSkip m)) l = do l' <- ExceptT $ applyBlock cfg b l
-                                           go bs (Suffix (skip b ss) m) l'
-    go []     (Suffix _  (SSnap _)) _ = error "fromSuffix: too few blocks"
-    go []     (Suffix _  (SSkip _)) _ = error "fromSuffix: too few blocks"
+    go :: [(Apply ap, RefOrVal r b)]
+       -> Suffix l r -> l -> ExceptT (Err ap e) m (LedgerDB l r)
+    go bs (Suffix ss SNone) _ =
+        ExceptT $ ledgerDbPushMany cfg bs ss
+    go ((ap,b):bs) (Suffix ss (SSnap m)) l = do
+        l' <- applyBlock cfg (ap, b) l
+        go bs (Suffix (Snap (ref b) l' ss) m) l'
+    go ((ap,b):bs) (Suffix ss (SSkip m)) l = do
+        l' <- applyBlock cfg (ap, b) l
+        go bs (Suffix (Skip (ref b) ss) m) l'
+    go [] (Suffix _  (SSnap _)) _ =
+        error "fromSuffix: too few blocks"
+    go [] (Suffix _  (SSkip _)) _ =
+        error "fromSuffix: too few blocks"
 
 rollback :: Suffix l r -> Except String (Suffix l r)
 rollback (Suffix (Snap _ _ ss) missing) = return $ Suffix ss (SSnap missing)
@@ -404,26 +440,25 @@ instance (Typeable l, Typeable r, Show r, Show l)
 fromIdentity :: Identity (Either Void l) -> l
 fromIdentity = mustBeRight . runIdentity
 
-ledgerDbComputeCurrent' :: PureLedgerDbConf l b
-                        -> LedgerDB l b -> l
-ledgerDbComputeCurrent' f = fromIdentity . ledgerDbComputeCurrent f
+pureBlock :: b -> (Apply 'False, RefOrVal b b)
+pureBlock b = (Apply, Val b b)
 
-ledgerDbPush' :: PureLedgerDbConf l b
-              -> BlockInfo b b -> LedgerDB l b -> LedgerDB l b
-ledgerDbPush' f = fromIdentity .: ledgerDbPush f
+ledgerDbComputeCurrent' :: PureLedgerDbConf l b -> LedgerDB l b -> l
+ledgerDbComputeCurrent' cfg = runIdentity . ledgerDbComputeCurrent cfg
 
-ledgerDbPushMany' :: PureLedgerDbConf l b
-                  -> [BlockInfo b b] -> LedgerDB l b -> LedgerDB l b
-ledgerDbPushMany' f = fromIdentity .: ledgerDbPushMany f
+ledgerDbPush' :: PureLedgerDbConf l b -> b -> LedgerDB l b -> LedgerDB l b
+ledgerDbPush' cfg b = fromIdentity . ledgerDbPush cfg (pureBlock b)
+
+ledgerDbPushMany' :: PureLedgerDbConf l b -> [b] -> LedgerDB l b -> LedgerDB l b
+ledgerDbPushMany' cfg bs = fromIdentity . ledgerDbPushMany cfg (map pureBlock bs)
 
 ledgerDbSwitch' :: (HasCallStack, Show l, Show b, Typeable l, Typeable b)
                 => PureLedgerDbConf l b
-                -> Word64 -> [BlockInfo b b] -> LedgerDB l b -> LedgerDB l b
-ledgerDbSwitch' f n = fromIdentity .: ledgerDbSwitch f n
+                -> Word64 -> [b] -> LedgerDB l b -> LedgerDB l b
+ledgerDbSwitch' cfg n bs = fromIdentity . ledgerDbSwitch cfg n (map pureBlock bs)
 
-fromSuffix' :: PureLedgerDbConf l b
-            -> [BlockInfo b b] -> Suffix l b -> LedgerDB l b
-fromSuffix' f = fromIdentity .: fromSuffix f
+fromSuffix' :: PureLedgerDbConf l b -> [b] -> Suffix l b -> LedgerDB l b
+fromSuffix' cfg bs = fromIdentity . fromSuffix cfg (map pureBlock bs)
 
 {-------------------------------------------------------------------------------
   Shape
@@ -499,11 +534,14 @@ newtype DemoErr    = DE (Int, Int)    deriving (Show)
 
 demoConf :: LedgerDbConf Identity DemoLedger DemoRef DemoBlock DemoErr
 demoConf = LedgerDbConf {
-      ledgerDbGenesis = Identity $ DL ('a', 0)
-    , ledgerDbApply   = \_prevApplied (DB r@(_, n)) (DL (_, l)) ->
-                          if n > l then Right $ DL r
-                                   else Left  $ DE (n, l)
-    , ledgerDbResolve = \(DR b) -> Identity (DB b)
+      ldbConfGenesis = Identity $ DL ('a', 0)
+    , ldbConfResolve = \(DR b) -> Identity (DB b)
+    , ldbConfApply   = \(DB r@(_, n)) (DL (_, l)) ->
+        if n > l then Right $ DL r
+                 else Left  $ DE (n, l)
+    , ldbConfReapply = \(DB r@(_, n)) (DL (_, l)) ->
+        if n > l then DL r
+                 else error "ledgerDbReapply: block applied in wrong state"
     }
 
 demoPolicy :: MemPolicy
@@ -518,12 +556,12 @@ demo = db0 : go 1 8 db0
     go :: Int -> Int -> LedgerDB DemoLedger DemoRef -> [LedgerDB DemoLedger DemoRef]
     go n m db =
       if n > m then
-        let blockInfos = [ BlockVal NotPrevApplied (DR ('b', n-1), DB ('b', n-1))
-                         , BlockVal NotPrevApplied (DR ('b', n-0), DB ('b', n-0))
+        let blockInfos = [ (Apply, Val (DR ('b', n-1)) (DB ('b', n-1)))
+                         , (Apply, Val (DR ('b', n-0)) (DB ('b', n-0)))
                          ]
             Identity (Right db') = ledgerDbSwitch demoConf 1 blockInfos db
         in [db']
       else
-        let blockInfo = BlockVal NotPrevApplied (DR ('a', n), DB ('a', n))
+        let blockInfo = (Apply, Val (DR ('a', n)) (DB ('a', n)))
             Identity (Right db') = ledgerDbPush demoConf blockInfo db
         in db' : go (n + 1) m db'

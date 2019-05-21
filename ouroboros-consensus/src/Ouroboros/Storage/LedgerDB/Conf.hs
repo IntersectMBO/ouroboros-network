@@ -2,7 +2,6 @@
 
 module Ouroboros.Storage.LedgerDB.Conf (
     LedgerDbConf(..)
-  , PrevApplied(..)
     -- * Support for tests
   , PureLedgerDbConf
   , pureLedgerDbConf
@@ -23,10 +22,23 @@ data LedgerDbConf m l r b e = LedgerDbConf {
       --
       -- This is monadic because constructing the ledger state involves reading
       -- configuration files etc. It is also rarely called.
-      ledgerDbGenesis :: m l
+      ldbConfGenesis :: m l
 
       -- | Apply a block (passed by value)
-    , ledgerDbApply   :: PrevApplied -> b -> l -> Either e l
+    , ldbConfApply   :: b -> l -> Either e l
+
+      -- | Apply a previously applied block
+      --
+      -- Since a block can only be applied to a single, specific, ledger state,
+      -- if we apply a previously applied block again it will be applied in the
+      -- very same ledger state, and therefore can't possibly fail.
+      --
+      -- NOTE: During testing it might be useful to implement 'ledgerDbReapply'
+      -- using the code that /does/ do all checks, and throw an exception if
+      -- any of them fail (as this would indicate a bug in the code somewhere).
+      -- We do not have sufficient context in the ledger DB to /verify/ that
+      -- when we reapply a block we are applying it to the correct ledger.
+    , ldbConfReapply :: b -> l -> l
 
       -- | Resolve a block
       --
@@ -38,22 +50,8 @@ data LedgerDbConf m l r b e = LedgerDbConf {
       -- must exist. If the 'ChainDB' is unable to fulfill the request, data
       -- corruption must have happened and the 'ChainStateDB' should trigger
       -- validation mode.
-    , ledgerDbResolve :: r -> m b
+    , ldbConfResolve :: r -> m b
     }
-
--- | Have we previously successfully applied this block to a ledger state?
-data PrevApplied =
-    -- | This block was previously applied
-    --
-    -- If we re-apply it to compute a new ledger state, expensive checks such as
-    -- the verification of cryptographic primitives can be skipped. Indeed,
-    -- a previously verified block /cannot/ result in a validation error.
-    PrevApplied
-
-    -- | Not previously applied
-    --
-    -- All checks must be performed
-  | NotPrevApplied
 
 {-------------------------------------------------------------------------------
   Support for tests
@@ -64,7 +62,8 @@ type PureLedgerDbConf l b = LedgerDbConf Identity l b b Void
 
 pureLedgerDbConf :: l -> (b -> l -> l) -> PureLedgerDbConf l b
 pureLedgerDbConf l f = LedgerDbConf {
-      ledgerDbGenesis = Identity l
-    , ledgerDbResolve = Identity
-    , ledgerDbApply   = \_pa -> Right .: f
+      ldbConfGenesis = Identity l
+    , ldbConfResolve = Identity
+    , ldbConfApply   = Right .: f
+    , ldbConfReapply = f
     }

@@ -68,6 +68,7 @@ import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 import           Ouroboros.Consensus.Util
 import qualified Ouroboros.Consensus.Util.Classify as C
 
+import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API
 import qualified Ouroboros.Storage.FS.Sim.MockFS as MockFS
 import           Ouroboros.Storage.FS.Sim.STM
@@ -151,7 +152,7 @@ type LedgerDbConf' m t = LedgerDbConf m (LedgerSt t) (BlockRef t) (BlockVal t) (
 type LedgerDB'       t = LedgerDB       (LedgerSt t) (BlockRef t)
 type StreamAPI'    m t = StreamAPI    m              (BlockRef t) (BlockVal t)
 type NextBlock'      t = NextBlock                   (BlockRef t) (BlockVal t)
-type BlockInfo'      t = BlockInfo                   (BlockRef t) (BlockVal t)
+type BlockInfo'      t = (Apply 'False,     RefOrVal (BlockRef t) (BlockVal t))
 type Tip'            t = Tip                         (BlockRef t)
 
 {-------------------------------------------------------------------------------
@@ -542,9 +543,12 @@ dbConf :: forall m t. (MonadSTM m, LUT t)
        => StandaloneDB m t -> LedgerDbConf' m t
 dbConf DB{..} = LedgerDbConf {..}
   where
-    ledgerDbGenesis = return ledgerGenesis
-    ledgerDbApply   = const  ledgerApply
-    ledgerDbResolve = \r -> atomically $ getBlock r <$> readTVar dbBlocks
+    ldbConfGenesis = return ledgerGenesis
+    ldbConfApply   = ledgerApply
+    ldbConfReapply = \b l -> case ledgerApply b l of
+                               Left err -> error $ unexpectedLedgerError err
+                               Right l' -> l'
+    ldbConfResolve = \r -> atomically $ getBlock r <$> readTVar dbBlocks
 
     getBlock :: BlockRef t -> Map (BlockRef t) (BlockVal t) -> BlockVal t
     getBlock = Map.findWithDefault (error blockNotFound)
@@ -555,6 +559,13 @@ dbConf DB{..} = LedgerDbConf {..}
         , "invariant violation: "
         , "block in dbChain not in dbBlocks, "
         , "or LedgerDB not re-initialized after chain truncation"
+        ]
+
+    unexpectedLedgerError :: Show e => e -> String
+    unexpectedLedgerError err = concat [
+          "dbConf: "
+        , "unexpected ledger state error in ldbConfReapply: "
+        , show err
         ]
 
 dbStreamAPI :: forall m t. (MonadSTM m, LUT t)
@@ -662,7 +673,7 @@ runDB standalone@DB{..} cmd =
     switch n bs = switch 0 bs . drop (fromIntegral n)
 
     new :: BlockVal t -> BlockInfo' t
-    new = BlockVal NotPrevApplied . refValPair
+    new b = (Apply, uncurry Val (refValPair b))
 
     upd :: ([BlockRef t] -> [BlockRef t])
         -> (LedgerDB' t -> m (Either (LedgerErr t) (LedgerDB' t)))
