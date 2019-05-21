@@ -5,11 +5,12 @@
 -- | IO implementation of the 'HasFS' class
 module Ouroboros.Storage.FS.IO (
     -- * IO implementation & monad
-      HandleIO(..)
+      HandleIO
     , ioHasFS
     ) where
 
 import qualified Control.Exception as E
+import           Control.Concurrent.MVar
 import           Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder.Extra as BS
 import qualified Data.ByteString.Unsafe as BS
@@ -22,6 +23,7 @@ import qualified System.Directory as Dir
 
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types
+import           Ouroboros.Storage.FS.Handle
 import qualified Ouroboros.Storage.IO as F
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
@@ -32,30 +34,30 @@ import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 -- | File handlers for the IO instance for HasFS
 --
 -- We store the path the handle points to for better error messages
-data HandleIO = HandleIO {
-      handlePath :: FsPath
-    , handleIO   :: F.FHandle
-    }
-  deriving (Eq)
+type HandleIO = F.FHandle
 
 ioHasFS :: MountPoint -> HasFS IO HandleIO
 ioHasFS mount = HasFS {
       -- TODO(adn) Might be useful to implement this properly by reading all
       -- the stuff available at the 'MountPoint'.
       dumpState = return "<dumpState@IO>"
-    , hOpen = \fp ioMode -> rethrowFsError fp $
-        HandleIO fp <$> F.open (root fp) ioMode
-    , hClose = \(HandleIO fp h) -> rethrowFsError fp $
+    , hOpen = \fp ioMode -> do
+        let path = root fp
+        osHandle <- rethrowFsError fp $
+            F.open path ioMode
+        hVar <- newMVar $ Just osHandle
+        return $ Handle fp path hVar
+    , hClose = \h -> rethrowFsError (handlePath h) $
         F.close h
-    , hSeek = \(HandleIO fp h) mode o -> rethrowFsError fp $
+    , hSeek = \h mode o -> rethrowFsError (handlePath h) $
         F.seek h mode o
-    , hGet = \(HandleIO fp h) n -> rethrowFsError fp $
+    , hGet = \h n -> rethrowFsError (handlePath h) $
         F.read h n
-    , hTruncate = \(HandleIO fp h) sz -> rethrowFsError fp $
+    , hTruncate = \h sz -> rethrowFsError (handlePath h) $
         F.truncate h sz
-    , hGetSize = \(HandleIO fp h) -> rethrowFsError fp $
+    , hGetSize = \h -> rethrowFsError (handlePath h) $
         F.getSize h
-    , hPut = \(HandleIO fp h) builder -> rethrowFsError fp $ do
+    , hPut = \h builder -> rethrowFsError (handlePath h) $ do
         buf0 <- newBufferIO BS.defaultChunkSize
         hPutBufferIO h buf0 builder
     , createDirectory = \fp -> rethrowFsError fp $
