@@ -94,6 +94,27 @@ tests = testGroup "Chain"
   ]
 
 
+instance Arbitrary BlockNo where
+  arbitrary = BlockNo <$>
+                ((getPositive <$> arbitrary)
+                   `suchThat`
+                 (\n -> n < maxBound - 2^(32 :: Int)))
+               -- need some room, we're assuming we'll never wrap around 64bits
+
+  shrink (BlockNo n) = [ BlockNo n' | n' <- shrink n, n' > 0 ]
+
+instance Arbitrary SlotNo where
+  arbitrary = SlotNo <$>
+                ((getPositive <$> arbitrary)
+                   `suchThat`
+                 (\n -> n < maxBound - 2^(32 :: Int)))
+               -- need some room, we're assuming we'll never wrap around 64bits
+
+  shrink (SlotNo n) = [ SlotNo n' | n' <- shrink n, n' > 0 ]
+
+instance Arbitrary ConcreteHeaderHash where
+  arbitrary = HeaderHash <$> arbitrary
+
 newtype ArbitraryPoint = ArbitraryPoint {
     getArbitraryPoint :: Point BlockHeader
   }
@@ -101,7 +122,7 @@ newtype ArbitraryPoint = ArbitraryPoint {
 
 instance Arbitrary ArbitraryPoint where
   arbitrary = do
-    slot <- SlotNo <$> arbitrary
+    slot <- arbitrary
     hash <- HeaderHash <$> arbitrary
     return $ ArbitraryPoint $ Point slot (BlockHash hash)
 
@@ -399,7 +420,8 @@ genPointOnChain chain =
     len = Chain.length chain
 
 genPoint :: Gen (Point Block)
-genPoint = (\s h -> Point (SlotNo s) (BlockHash (HeaderHash h))) <$> arbitrary <*> arbitrary
+genPoint = Point <$> arbitrary
+                 <*> ((BlockHash . HeaderHash) <$> arbitrary)
 
 fixupPoint :: HasHeader block => Chain block -> Point block -> Point block
 fixupPoint c p =
