@@ -29,7 +29,7 @@ import           Text.Show.Functions ()
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (ChainUpdate (..), Point (..))
 import qualified Ouroboros.Network.Chain as Chain
-import           Ouroboros.Network.ChainFragment (ChainFragment ((:>), Empty))
+import           Ouroboros.Network.ChainFragment (ChainFragment(..))
 import qualified Ouroboros.Network.ChainFragment as CF
 import           Ouroboros.Network.Testing.ConcreteBlock
 import           Ouroboros.Network.Testing.Serialise (prop_serialise)
@@ -480,11 +480,12 @@ genAddBlock chain = do
 
 prop_arbitrary_TestAddBlock :: TestAddBlock -> Bool
 prop_arbitrary_TestAddBlock (TestAddBlock c b) =
-    CF.valid (c :> b)
+    CF.valid c && CF.validExtension c b
 
 prop_shrink_TestAddBlock :: TestAddBlock -> Bool
 prop_shrink_TestAddBlock t =
-    and [ CF.valid (c :> b) | TestAddBlock c b <- shrink t ]
+    and [ CF.valid c && CF.validExtension c b
+        | TestAddBlock c b <- shrink t ]
 
 --
 -- Generator for chain updates
