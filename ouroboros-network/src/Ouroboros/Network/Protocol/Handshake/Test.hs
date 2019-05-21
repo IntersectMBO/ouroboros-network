@@ -159,14 +159,6 @@ instance Arbitrary Data_2 where
 
 instance CoArbitrary Data_2 where
 
-data DictVersion vData where
-     DictVersion :: ( Typeable vData
-                    , Eq vData
-                    , SerialiseTerm vData
-                    , Show vData
-                    )
-                 => DictVersion vData
-
 --
 -- ProtocolVersion generators
 --
