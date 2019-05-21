@@ -19,8 +19,12 @@ module Ouroboros.Network.Mux.Interface
   , simpleMuxClientApplication
   , simpleMuxServerApplication
 
-  , DictVersion (..)
+  -- * Version data
+  , Versions (..)
   , simpleSingletonVersions
+  , Sigma (..)
+  , Version
+  , DictVersion (..)
   ) where
 
 import           Data.ByteString.Lazy (ByteString)
@@ -41,9 +45,7 @@ import           Network.TypedProtocol.Channel
 import           Network.TypedProtocol.Driver
 import           Network.TypedProtocol.Pipelined
 
-import           Ouroboros.Network.Protocol.Handshake.Version ( DictVersion (..)
-                                                              , simpleSingletonVersions
-                                                              )
+import           Ouroboros.Network.Protocol.Handshake.Version
 
 
 -- $interface
