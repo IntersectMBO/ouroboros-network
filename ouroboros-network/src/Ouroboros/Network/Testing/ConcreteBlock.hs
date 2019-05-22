@@ -170,7 +170,10 @@ instance HasHeader BlockHeader where
 
     -- | The header invariant is that the cached header hash is correct.
     --
-    blockInvariant = \b -> hashHeader b == headerHash b
+    blockInvariant b =
+        hashHeader b == headerHash b
+     && blockNo    b >  BlockNo 0  -- we reserve 0 for genesis
+     && blockSlot  b >  SlotNo  0  -- we reserve 0 for genesis
 
 instance HasHeader Block where
     type HeaderHash Block = ConcreteHeaderHash
@@ -183,8 +186,9 @@ instance HasHeader Block where
     -- | The block invariant is just that the actual block body hash matches the
     -- body hash listed in the header.
     --
-    blockInvariant Block { blockBody, blockHeader = BlockHeader {headerBodyHash} } =
-        headerBodyHash == hashBody blockBody
+    blockInvariant Block { blockBody, blockHeader } =
+        blockInvariant blockHeader
+     && headerBodyHash blockHeader == hashBody blockBody
 
 {-------------------------------------------------------------------------------
   Constructing sample chains
