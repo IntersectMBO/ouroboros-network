@@ -397,7 +397,7 @@ instance Arbitrary TestChainAndPoint where
     return (TestChainAndPoint chain point)
 
   shrink (TestChainAndPoint c p) =
-    [ TestChainAndPoint c' (fixupPoint c' p)
+    [ TestChainAndPoint c' (if p `Chain.pointOnChain` c then fixupPoint c' p else p)
     | TestBlockChain c' <- shrink (TestBlockChain c) ]
 
 genPointOnChain :: HasHeader block => Chain block -> Gen (Point block)
@@ -455,7 +455,10 @@ instance Arbitrary TestChainAndRange where
     return (TestChainAndRange chain point1 point2)
 
   shrink (TestChainAndRange c p1 p2) =
-    [ TestChainAndRange c' (fixupPoint c' p1) (fixupPoint c' p2)
+    [ TestChainAndRange
+        c'
+        (if p1 `Chain.pointOnChain` c then fixupPoint c' p1 else p1)
+        (if p2 `Chain.pointOnChain` c then fixupPoint c' p2 else p2)
     | TestBlockChain c' <- shrink (TestBlockChain c) ]
 
 genRangeOnChain :: HasHeader block
