@@ -40,7 +40,6 @@ import           Ouroboros.Network.Protocol.ChainSync.Type
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
-import           Ouroboros.Consensus.Crypto.Hash hiding (ByteString)
 import           Ouroboros.Consensus.Demo
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Mock
@@ -113,7 +112,7 @@ broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots = do
                            slot
                            curNo
                            prevHash
-                           (Map.fromList [(hash t, t) | t <- txs])
+                           txs
                            proof
 
             , produceDRG      = atomically $ simChaChaT varRNG id $ drgNew

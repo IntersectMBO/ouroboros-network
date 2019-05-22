@@ -31,8 +31,8 @@ module Ouroboros.Consensus.Node (
 import           Codec.Serialise (Serialise)
 import           Control.Monad (void)
 import           Crypto.Random (ChaChaDRG)
+import qualified Data.Foldable as Foldable
 import           Data.Map.Strict (Map)
-import           Data.Sequence (Seq)
 import           Data.Void (Void)
 
 import           Control.Monad.Class.MonadAsync
@@ -106,7 +106,10 @@ fromCoreNodeId (CoreNodeId n) = CoreId n
 -- | Interface against running relay node
 data NodeKernel m up blk hdr = NodeKernel {
       -- | The 'ChainDB' of the node
-      getChainDB   :: ChainDB m blk hdr
+      getChainDB :: ChainDB m blk hdr
+
+      -- | The node's mempool
+    , getMempool :: Mempool m blk
 
       -- | Notify network layer of new upstream node
       --
@@ -136,12 +139,18 @@ type ProtocolM blk m = NodeStateT (BlockProtocol blk) (ChaChaT (STM m))
 -- | Callbacks required when running the node
 data NodeCallbacks m blk = NodeCallbacks {
       -- | Produce a block
+      --
+      -- The function is passed the contents of the mempool; this is a set of
+      -- transactions that is guaranteed to be consistent with the ledger state
+      -- (also provided as an argument) and with each other (when applied in
+      -- order). In principle /all/ of them could be included in the block (up
+      -- to maximum block size).
       produceBlock :: IsLeader (BlockProtocol blk) -- Proof we are leader
                    -> ExtLedgerState blk -- Current ledger state
                    -> SlotNo             -- Current slot
                    -> Point blk          -- Previous point
                    -> BlockNo            -- Previous block number
-                   -> Seq (GenTx blk)    -- Transactions to be included
+                   -> [GenTx blk]        -- Contents of the mempool
                    -> ProtocolM blk m blk
 
       -- | Produce a random seed
@@ -192,7 +201,7 @@ nodeKernel params@NodeParams { threadRegistry } = do
 
     forkBlockProduction st
 
-    let IS { blockFetchInterface, fetchClientRegistry, chainDB } = st
+    let IS { blockFetchInterface, fetchClientRegistry, chainDB, mempool } = st
 
     -- Run the block fetch logic in the background. This will call
     -- 'addFetchedBlock' whenever a new block is downloaded.
@@ -204,6 +213,7 @@ nodeKernel params@NodeParams { threadRegistry } = do
 
     return NodeKernel {
         getChainDB    = chainDB
+      , getMempool    = mempool
       , addUpstream   = npAddUpstream   (networkLayer st)
       , addDownstream = npAddDownstream (networkLayer st)
       }
@@ -394,7 +404,7 @@ forkBlockProduction IS{..} =
                                        currentSlot
                                        (castPoint prevPoint)
                                        prevNo
-                                       txs
+                                       (Foldable.toList txs)
             return $ Just newBlock
 
       whenJust mNewBlock $ \newBlock -> do

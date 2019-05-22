@@ -232,7 +232,7 @@ data SimplePreHeader p c = SimplePreHeader {
 instance (Typeable p, SimpleBlockCrypto c) => Condense (SimplePreHeader p c) where
     condense = show
 
-data SimpleBody = SimpleBody { getSimpleBody :: Map (Hash ShortHash Tx) Tx }
+data SimpleBody = SimpleBody { getSimpleBody :: [Tx] }
   deriving (Generic, Show, Eq, Ord)
 
 data SimpleBlock p c = SimpleBlock {
@@ -324,10 +324,10 @@ forgeBlock :: forall m p c.
               , Serialise (Payload p (SimplePreHeader p c))
               )
            => NodeConfig p
-           -> SlotNo                          -- ^ Current slot
-           -> BlockNo                         -- ^ Current block number
+           -> SlotNo                       -- ^ Current slot
+           -> BlockNo                      -- ^ Current block number
            -> ChainHash (SimpleHeader p c) -- ^ Previous hash
-           -> Map (Hash ShortHash Tx) Tx      -- ^ Txs to add in the block
+           -> [Tx]                         -- ^ Txs to add in the block
            -> IsLeader p
            -> m (SimpleBlock p c)
 forgeBlock cfg curSlot curNo prevHash txs proof = do
