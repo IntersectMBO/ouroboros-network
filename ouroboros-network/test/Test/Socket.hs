@@ -170,7 +170,7 @@ prop_socket_send_recv serverAddr f xs = do
                     (ReqResp.reqRespClientPeer (reqRespClientMap cv xs))
 
     res <-
-      withServerNode serverAddr serverApp $ \_ -> do
+      withSimpleServerNode serverAddr serverApp $ \_ -> do
         connectTo clientApp serverAddr
         atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
 
@@ -288,7 +288,7 @@ demo chain0 updates = do
                     (ChainSync.codecChainSync encode decode encode decode)
                     (ChainSync.chainSyncServerPeer (ChainSync.chainSyncServerExample () producerVar))
 
-    withServerNode producerAddress producerApp $ \_ -> do
+    withSimpleServerNode producerAddress producerApp $ \_ -> do
       withAsync (connectTo consumerApp producerAddress) $ \_connAsync -> do
         void $ fork $ sequence_
             [ do
