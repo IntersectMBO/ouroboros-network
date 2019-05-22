@@ -21,9 +21,6 @@ module Ouroboros.Network.Mux.Interface
   , MuxPeer (..)
   , simpleMuxClientApplication
   , simpleMuxServerApplication
-
-  -- * Auxiliary functions
-  , miniProtocolDescription
   ) where
 
 import           Data.ByteString.Lazy (ByteString)
@@ -44,7 +41,6 @@ import           Network.TypedProtocol.Channel
 import           Network.TypedProtocol.Driver
 import           Network.TypedProtocol.Pipelined
 
-import           Ouroboros.Network.Mux.Types
 
 -- $interface
 --
@@ -107,7 +103,6 @@ data MuxApplication (appType :: AppType) ptcl m  where
     :: (ptcl -> Channel m ByteString ->  m ())
     -> (ptcl -> Channel m ByteString ->  m ())
     -> MuxApplication ClientAndServerApp ptcl m
-
 
 -- |
 -- Accessor for the client side of a @'MuxApplication'@.
@@ -177,31 +172,3 @@ simpleMuxServerApplication fn = MuxServerApplication $ \ptcl channel ->
   case fn ptcl of
     MuxPeer tracer codec peer -> void $ runPeer tracer codec channel peer
     MuxPeerPipelined n tracer codec peer -> void $ runPipelinedPeer n tracer codec channel peer
-
--- |
--- Transform a @'MuxPeer'@ into @'ProtocolDescription'@ used by the
--- multiplexing layer.
---
-miniProtocolDescription
-  :: forall (appType :: AppType) m ptcl.
-     ( MonadAsync m
-     , MonadCatch m
-     , MonadThrow m
-     )
-  => MuxApplication appType ptcl m
-  -> MiniProtocolDescriptions ptcl m
-miniProtocolDescription (MuxClientApplication client) = \ptcl ->
-  MiniProtocolDescription {
-      mpdInitiator = Just (client ptcl),
-      mpdResponder = Nothing
-    }
-miniProtocolDescription (MuxServerApplication server) = \ptcl ->
-  MiniProtocolDescription {
-      mpdInitiator = Nothing,
-      mpdResponder = Just (void . server ptcl)
-    }
-miniProtocolDescription (MuxClientAndServerApplication client server) = \ptcl ->
-  MiniProtocolDescription {
-      mpdInitiator = Just (void . client ptcl),
-      mpdResponder = Just (void . server ptcl)
-    }

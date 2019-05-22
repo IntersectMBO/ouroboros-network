@@ -40,10 +40,11 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
-import           Control.Tracer (nullTracer)
 import           Control.Monad.IOSim (runSimStrictShutdown)
-import           Network.TypedProtocol.Channel (recv)
+import           Control.Tracer (nullTracer)
+
 import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Channel
 import           Network.TypedProtocol.Driver
 import           Network.TypedProtocol.ReqResp.Client
 import           Network.TypedProtocol.ReqResp.Server
@@ -56,6 +57,7 @@ import qualified Ouroboros.Network.Protocol.ChainSync.Client   as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Codec    as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Examples as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Server   as ChainSync
+
 import qualified Ouroboros.Network.Mux as Mx
 import qualified Ouroboros.Network.Mux.Interface as Mx
 import           Ouroboros.Network.Mux.Types (MuxBearer)
@@ -255,21 +257,21 @@ instance Arbitrary Mx.MuxBearerState where
                           , Mx.Dead
                           ]
 
+
 startMuxSTM :: ( MonadAsync m, MonadCatch m, MonadMask m, MonadSay m, MonadSTM m
                , MonadThrow m , MonadThrow (STM m), MonadTime m , MonadTimer m, Ord ptcl
                , Enum ptcl, Bounded ptcl , Mx.ProtocolEnum ptcl , Show ptcl
                , Mx.MiniProtocolLimits ptcl)
-            => Mx.MiniProtocolDescriptions ptcl m
+            => Mx.MuxApplication appType ptcl m
             -> TBQueue m BL.ByteString
             -> TBQueue m BL.ByteString
             -> Word16
             -> Maybe (TBQueue m (Mx.MiniProtocolId ptcl, Mx.MiniProtocolMode, Time m))
             -> m (Async m (Maybe SomeException))
-startMuxSTM mpds wq rq mtu trace = async spawn
-
+startMuxSTM app wq rq mtu trace = async spawn
   where
     spawn = bracket (queuesAsMuxBearer wq rq mtu trace) Mx.close $ \bearer -> do
-        res_e <- try $ Mx.muxStart mpds bearer
+        res_e <- try $ Mx.muxStart app bearer
         case res_e of
              Left  e -> return (Just e)
              Right _ -> return Nothing
@@ -341,11 +343,11 @@ prop_mux_snd_recv request response = ioProperty $ do
     let server_w = client_r
         server_r = client_w
 
-    (verify, client_mp, server_mp) <- setupMiniReqRsp
+    (verify, clientApp, serverApp) <- setupMiniReqRsp
                                         (return ()) endMpsVar request response
 
-    clientAsync <- startMuxSTM (\ChainSync1 -> client_mp) client_w client_r sduLen Nothing
-    serverAsync <- startMuxSTM (\ChainSync1 -> server_mp) server_w server_r sduLen Nothing
+    clientAsync <- startMuxSTM (Mx.MuxClientApplication $ \ReqResp1 -> clientApp) client_w client_r sduLen Nothing
+    serverAsync <- startMuxSTM (Mx.MuxServerApplication $ \ReqResp1 -> serverApp) server_w server_r sduLen Nothing
 
     r <- waitBoth clientAsync serverAsync
     case r of
@@ -359,17 +361,15 @@ setupMiniReqRsp :: IO ()        -- | Action performed by responder before proces
                 -> TVar IO Int  -- | Total number of miniprotocols.
                 -> DummyPayload -- | Request, sent from initiator.
                 -> DummyPayload -- | Response, sent from responder after receive the request.
-                -> IO (IO Bool
-                      , Mx.MiniProtocolDescription ptcl IO
-                      , Mx.MiniProtocolDescription ptcl IO)
+                -> IO ( IO Bool
+                      , Channel IO BL.ByteString -> IO ()
+                      , Channel IO BL.ByteString -> IO ()
+                      )
 setupMiniReqRsp serverAction mpsEndVar request response = do
     serverResultVar <- newEmptyTMVarM
     clientResultVar <- newEmptyTMVarM
 
-    let client_mp = Mx.MiniProtocolDescription (Just $ clientInit clientResultVar) Nothing
-        server_mp = Mx.MiniProtocolDescription Nothing (Just $ serverRsp serverResultVar)
-
-    return (verifyCallback serverResultVar clientResultVar, client_mp, server_mp)
+    return (verifyCallback serverResultVar clientResultVar, clientApp clientResultVar, serverApp serverResultVar)
   where
     verifyCallback serverResultVar clientResultVar =
         atomically $ (&&) <$> takeTMVar serverResultVar <*> takeTMVar clientResultVar
@@ -389,12 +389,12 @@ setupMiniReqRsp serverAction mpsEndVar request response = do
     serverPeer = reqRespServerPeer (plainServer [])
     clientPeer = reqRespClientPeer (plainClient [request])
 
-    clientInit clientResultVar clientChan = do
+    clientApp clientResultVar clientChan = do
         result <- runPeer nullTracer codecReqResp clientChan clientPeer
         atomically (putTMVar clientResultVar result)
         end
 
-    serverRsp serverResultVar serverChan = do
+    serverApp serverResultVar serverChan = do
         result <- runPeer nullTracer codecReqResp serverChan serverPeer
         atomically (putTMVar serverResultVar result)
         end
@@ -437,14 +437,14 @@ prop_mux_2_minis request0 response0 response1 request1 = ioProperty $ do
     (verify_1, client_mp1, server_mp1) <-
         setupMiniReqRsp (return ()) endMpsVar request1 response1
 
-    let client_mps ChainSync2  = client_mp0
-        client_mps BlockFetch2 = client_mp1
+    let clientApp ChainSync2  = client_mp0
+        clientApp BlockFetch2 = client_mp1
 
-        server_mps ChainSync2  = server_mp0
-        server_mps BlockFetch2 = server_mp1
+        serverApp ChainSync2  = server_mp0
+        serverApp BlockFetch2 = server_mp1
 
-    clientAsync <- startMuxSTM client_mps client_w client_r sduLen Nothing
-    serverAsync <- startMuxSTM server_mps server_w server_r sduLen Nothing
+    clientAsync <- startMuxSTM (Mx.MuxClientApplication clientApp) client_w client_r sduLen Nothing
+    serverAsync <- startMuxSTM (Mx.MuxServerApplication serverApp) server_w server_r sduLen Nothing
 
 
     r <- waitBoth clientAsync serverAsync
@@ -487,14 +487,14 @@ prop_mux_starvation response0 response1 =
         setupMiniReqRsp (waitOnAllClients activeMpsVar 2)
                         endMpsVar request response1
 
-    let client_mps BlockFetch2 = client_short
-        client_mps ChainSync2  = client_long
+    let clientApp BlockFetch2 = client_short
+        clientApp ChainSync2  = client_long
 
-        server_mps BlockFetch2 = server_short
-        server_mps ChainSync2  = server_long
+        serverApp BlockFetch2 = server_short
+        serverApp ChainSync2  = server_long
 
-    clientAsync <- startMuxSTM client_mps client_w client_r sduLen (Just traceQueueVar)
-    serverAsync <- startMuxSTM server_mps server_w server_r sduLen Nothing
+    clientAsync <- startMuxSTM (Mx.MuxClientApplication clientApp) client_w client_r sduLen (Just traceQueueVar)
+    serverAsync <- startMuxSTM (Mx.MuxServerApplication serverApp) server_w server_r sduLen Nothing
 
     -- First verify that all messages where received correctly
     r <- waitBoth clientAsync serverAsync
@@ -563,13 +563,12 @@ prop_demux_sdu a = do
     run (ArbitraryValidSDU sdu state (Just Mx.MuxIngressQueueOverRun)) = do
         stopVar <- newEmptyTMVarM
 
-        let server_mp = Mx.MiniProtocolDescription Nothing (Just $ serverRsp stopVar)
         -- To trigger MuxIngressQueueOverRun we use a special test protocol with
         -- an ingress queue which is less than 0xffff so that it can be triggered by a
         -- single segment.
-        let server_small ChainSyncSmall = server_mp
+        let server_mps = Mx.MuxServerApplication (\ChainSyncSmall -> serverRsp stopVar)
 
-        (client_w, said) <- plainServer server_small
+        (client_w, said) <- plainServer server_mps
         setup state client_w
 
         writeSdu client_w $! unDummyPayload sdu
@@ -587,9 +586,9 @@ prop_demux_sdu a = do
     run (ArbitraryValidSDU sdu state err_m) = do
         stopVar <- newEmptyTMVarM
 
-        let server_std ChainSync1 = Mx.MiniProtocolDescription Nothing (Just $ serverRsp stopVar)
+        let server_mps = Mx.MuxServerApplication (\ChainSync1 -> serverRsp stopVar)
 
-        (client_w, said) <- plainServer server_std
+        (client_w, said) <- plainServer server_mps
 
         setup state client_w
 
@@ -609,10 +608,9 @@ prop_demux_sdu a = do
     run (ArbitraryInvalidSDU badSdu state err) = do
         stopVar <- newEmptyTMVarM
 
-        let server_mp = Mx.MiniProtocolDescription Nothing (Just $ serverRsp stopVar)
-        let server_std ChainSync1 = server_mp
+        let server_mps = Mx.MuxServerApplication (\ChainSync1 -> serverRsp stopVar)
 
-        (client_w, said) <- plainServer server_std
+        (client_w, said) <- plainServer server_mps
 
         setup state client_w
         atomically $ writeTBQueue client_w $ BL.take (isRealLength badSdu) $ encodeInvalidMuxSDU badSdu
@@ -732,14 +730,24 @@ demo chain0 updates delay = do
         consumerPeer = ChainSync.chainSyncClientPeer
                           (ChainSync.chainSyncClientExample consumerVar
                           (consumerClient done target consumerVar))
-        consumerPeers ChainSync1 = Mx.OnlyClient nullTracer (ChainSync.codecChainSync encode decode encode decode) consumerPeer
+        consumerApp = Mx.simpleMuxClientApplication
+                        (\ChainSync1 ->
+                            Mx.MuxPeer
+                              nullTracer
+                              (ChainSync.codecChainSync encode decode encode decode)
+                              (consumerPeer))
 
         producerPeer :: Peer (ChainSync.ChainSync block (Point block)) AsServer ChainSync.StIdle m ()
         producerPeer = ChainSync.chainSyncServerPeer (ChainSync.chainSyncServerExample () producerVar)
-        producerPeers ChainSync1 = Mx.OnlyServer nullTracer (ChainSync.codecChainSync encode decode encode decode) producerPeer
+        producerApp = Mx.simpleMuxServerApplication
+                        (\ChainSync1 ->
+                            Mx.MuxPeer
+                              nullTracer
+                              (ChainSync.codecChainSync encode decode encode decode)
+                              producerPeer)
 
-    clientAsync <- startMuxSTM (Mx.miniProtocolDescription . consumerPeers) client_w client_r sduLen Nothing
-    serverAsync <- startMuxSTM (Mx.miniProtocolDescription . producerPeers) server_w server_r sduLen Nothing
+    clientAsync <- startMuxSTM consumerApp client_w client_r sduLen Nothing
+    serverAsync <- startMuxSTM producerApp server_w server_r sduLen Nothing
 
     updateAid <- async $ sequence_
         [ do threadDelay delay -- X milliseconds, just to provide interest
@@ -796,4 +804,3 @@ prop_mux_demo_sim (TestBlockChainAndUpdates chain updates) =
     case runSimStrictShutdown $ demo chain updates 10e-3 of
          Left  _ -> property  False
          Right r -> r
-

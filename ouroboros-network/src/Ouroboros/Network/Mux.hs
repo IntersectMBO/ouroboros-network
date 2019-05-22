@@ -5,9 +5,7 @@
 {-# LANGUAGE TypeFamilies        #-}
 
 module Ouroboros.Network.Mux (
-      MiniProtocolDescription (..)
-    , MiniProtocolDescriptions
-    , MiniProtocolLimits (..)
+      MiniProtocolLimits (..)
     , ProtocolEnum (..)
     , MiniProtocolId (..)
     , MiniProtocolMode (..)
@@ -29,25 +27,26 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Data.Array
 import qualified Data.ByteString.Lazy as BL
-import           Data.Maybe (catMaybes)
 import           GHC.Stack
 import           Text.Printf
 
 import           Ouroboros.Network.Channel
+import           Ouroboros.Network.Mux.Interface
 import           Ouroboros.Network.Mux.Egress
 import           Ouroboros.Network.Mux.Ingress
 import           Ouroboros.Network.Mux.Types
 
+
 -- | muxStart starts a mux bearer for the specified protocols corresponding to
 -- one of the provided Versions.
 -- TODO: replace MonadSay with iohk-monitoring-framework.
-muxStart :: forall m ptcl.
+muxStart :: forall m appType ptcl.
             ( MonadAsync m, MonadSay m, MonadSTM m, MonadThrow m, MonadThrow (STM m)
             , MonadMask m , Ord ptcl, Enum ptcl, Bounded ptcl, Show ptcl, MiniProtocolLimits ptcl)
-         => MiniProtocolDescriptions ptcl m
+         => MuxApplication appType ptcl m
          -> MuxBearer ptcl m
          -> m ()
-muxStart udesc bearer = do
+muxStart app bearer = do
     tbl <- setupTbl
     tq <- atomically $ newTBQueue 100
     cnt <- newTVarM 0
@@ -78,13 +77,14 @@ muxStart udesc bearer = do
                         | ptcl <- [minBound..maxBound]
                         , mode <- [ModeInitiator, ModeResponder] ]
 
+
     mpsJob
       :: TVar m Int
       -> PerMuxSharedState ptcl m
       -> ptcl
       -> m [m ()]
     mpsJob cnt pmss mpdId = do
-        let mpd = udesc mpdId
+
         w_i <- atomically newEmptyTMVar
         w_r <- atomically newEmptyTMVar
 
@@ -100,11 +100,13 @@ muxStart udesc bearer = do
                                 ModeResponder
                                 w_r cnt
 
-        return $ map (>> mpsJobExit cnt) $ catMaybes
-          [ mpdInitiator mpd <*> Just initiatorChannel
-                
-          , mpdResponder mpd <*> Just responderChannel
-          ]
+        return $ case app of
+          MuxClientApplication initiator -> [ initiator mpdId initiatorChannel >> mpsJobExit cnt ]
+          MuxServerApplication responder -> [ responder mpdId responderChannel >> mpsJobExit cnt ]
+          MuxClientAndServerApplication initiator responder
+                                          -> [ initiator mpdId initiatorChannel >> mpsJobExit cnt
+                                             , responder mpdId responderChannel >> mpsJobExit cnt
+                                             ]
 
     -- cnt represent the number of SDUs that are queued but not yet sent.  Job
     -- threads will be prevented from exiting until all SDUs have been

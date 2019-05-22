@@ -4,9 +4,7 @@
 {-# LANGUAGE TypeFamilies          #-}
 
 module Ouroboros.Network.Mux.Types (
-      MiniProtocolDescription (..)
-    , MiniProtocolDescriptions
-    , MiniProtocolDispatch (..)
+      MiniProtocolDispatch (..)
     , MiniProtocolLimits (..)
     , ProtocolEnum (..)
     , MiniProtocolId (..)
@@ -34,7 +32,6 @@ import           Text.Printf
 
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
-import           Ouroboros.Network.Channel
 
 newtype RemoteClockModel = RemoteClockModel { unRemoteClockModel :: Word32 } deriving Eq
 
@@ -129,28 +126,6 @@ instance (MiniProtocolLimits ptcl) => MiniProtocolLimits (MiniProtocolId ptcl) w
     maximumIngressQueue Muxcontrol = 0xffff
     maximumIngressQueue DeltaQ     = 0xffff
     maximumIngressQueue (AppProtocolId pid) = maximumIngressQueue pid
-
---
--- Mini-protocol descriptions
---
-
-
-{- | The 'MiniProtocolDescription' is used to provide
- two functions which will consume and produce messages
- for either the initiator (client) or responder (server)
- side of the given miniprotocol.
- The functions will execute in their own threads and should
- any of them exit the underlying Mux Bearer will be torn down
- along with all other miniprotocols.
- -}
-data MiniProtocolDescription ptcl m = MiniProtocolDescription {
-    -- | Initiator function, consumes and produces messages related to the initiator side.
-      mpdInitiator :: Maybe (Channel m BL.ByteString -> m ())
-    -- | Responder function, consumes and produces messages related to the responder side.
-    , mpdResponder :: Maybe (Channel m BL.ByteString -> m ())
-    }
-
-type MiniProtocolDescriptions ptcl m = ptcl -> MiniProtocolDescription ptcl m
 
 --
 -- Mux internal types

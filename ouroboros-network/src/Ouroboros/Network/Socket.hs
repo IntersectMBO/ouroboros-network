@@ -23,7 +23,7 @@ module Ouroboros.Network.Socket (
     ) where
 
 import           Control.Concurrent.Async
-import           Control.Monad (when, void)
+import           Control.Monad (when)
 -- TODO: remove this, it will not be needed when `orElse` PR will be merged.
 import qualified Control.Monad.STM as STM
 import           Control.Monad.Class.MonadSTM
@@ -155,14 +155,8 @@ connectTo app remoteAddr =
           Socket.connect sd (Socket.addrAddress remoteAddr)
           bearer <- socketAsMuxBearer sd
           Mx.muxBearerSetState bearer Mx.Connected
-          Mx.muxStart mpds bearer
+          Mx.muxStart app bearer
       )
-    where
-      mpds :: Mx.MiniProtocolDescriptions ptcl IO
-      mpds = \ptcl -> Mx.MiniProtocolDescription {
-          Mx.mpdInitiator = Just (fmap void $ clientApplication app ptcl),
-          Mx.mpdResponder = Nothing
-        }
 
 
 -- Accept every incoming connection and use the socket as a mux bearer
@@ -184,7 +178,7 @@ beginConnection app acceptConn _sockAddr st = do
       Right st' -> pure $ Server.Accept st' $ \sd -> do
         bearer <- socketAsMuxBearer sd
         Mx.muxBearerSetState bearer Mx.Connected
-        Mx.muxStart (miniProtocolDescription app) bearer
+        Mx.muxStart app bearer
       Left st' -> pure $ Server.Reject st'
 
 -- Make the server listening socket

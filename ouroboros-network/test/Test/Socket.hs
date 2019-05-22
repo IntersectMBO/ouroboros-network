@@ -213,7 +213,7 @@ prop_socket_recv_close f _ = ioProperty $ do
                 $ \(sd',_) -> do
                   bearer <- socketAsMuxBearer sd'
                   Mx.muxBearerSetState bearer Mx.Connected
-                  Mx.muxStart (miniProtocolDescription app) bearer
+                  Mx.muxStart app bearer
           )
           $ \muxAsync -> do
 

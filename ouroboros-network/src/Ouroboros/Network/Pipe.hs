@@ -91,7 +91,6 @@ runNetworkNodeWithPipe
     -> Handle -- ^ write handle
     -> IO ()
 runNetworkNodeWithPipe app pcRead pcWrite = do
-    let  mpds = Mx.miniProtocolDescription app
     bearer <- pipeAsMuxBearer pcRead pcWrite
-    Mx.muxStart mpds bearer
+    Mx.muxStart app bearer
 
