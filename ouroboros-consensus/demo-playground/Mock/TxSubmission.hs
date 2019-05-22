@@ -1,6 +1,7 @@
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE RecordWildCards  #-}
-{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 
 module Mock.TxSubmission (
       command'
@@ -10,9 +11,7 @@ module Mock.TxSubmission (
     ) where
 
 import           Codec.Serialise (hPutSerialise)
-import           Control.Concurrent (threadDelay)
 import qualified Control.Concurrent.Async as Async
-import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Except
 import           Control.Tracer
 import qualified Data.ByteString as BS
@@ -23,15 +22,12 @@ import           System.IO (IOMode (..))
 
 import           Ouroboros.Consensus.Crypto.Hash (ShortHash)
 import qualified Ouroboros.Consensus.Crypto.Hash as H
-import           Ouroboros.Consensus.Ledger.Abstract
 import qualified Ouroboros.Consensus.Ledger.Mock as Mock
-import           Ouroboros.Consensus.Node (NodeId (..), NodeKernel (getChainDB))
+import           Ouroboros.Consensus.Mempool
+import           Ouroboros.Consensus.Node (NodeId (..), NodeKernel (..))
 import           Ouroboros.Consensus.Util.CBOR (Decoder (..), initDecoderIO)
 import           Ouroboros.Consensus.Util.Condense
 
-import           Ouroboros.Storage.ChainDB (getCurrentLedger)
-
-import           Mock.Mempool (Mempool (..), consistent, mempoolInsert)
 import           NamedPipe
 import           Topology
 
@@ -100,37 +96,28 @@ submitTx n tx = do
     withTxPipe n WriteMode False $ \h -> hPutSerialise h tx
     putStrLn $ "The Id for this transaction is: " <> condense (H.hash @ShortHash tx)
 
+-- | Auxiliary to 'spawnMempoolListener'
 readIncomingTx :: Tracer IO String
-               -> TVar IO (Mempool Mock.Tx)
                -> NodeKernel IO NodeId (Mock.SimpleBlock p c) (Mock.SimpleHeader p c)
                -> Decoder IO
                -> IO ()
-readIncomingTx tracer poolVar kernel Decoder{..} = forever $ do
-    newTx    <- decodeNext
-    accepted <- liftIO $ atomically $ do
-        l <- getCurrentLedger $ getChainDB kernel
-        mempool <- readTVar poolVar
-        isConsistent <- runExceptT $ consistent (Mock.slsUtxo . ledgerState $ l) mempool newTx
-        case isConsistent of
-            Left _err -> return False
-            Right ()  -> do
-              writeTVar poolVar (mempoolInsert newTx mempool)
-              return True
+readIncomingTx tracer kernel Decoder{..} = forever $ do
+    newTx :: Mock.Tx <- decodeNext
+    rejected <- addTxs (getMempool kernel) [newTx]
     traceWith tracer $
-      (if accepted then "Accepted" else "Rejected") <>
+      (if null rejected then "Accepted" else "Rejected") <>
       " transaction: " <> show newTx
-    liftIO $ threadDelay 1000
 
+-- | Listen for transactions coming a named pipe and add them to the mempool
 spawnMempoolListener :: Tracer IO String
                      -> NodeId
-                     -> TVar IO (Mempool Mock.Tx)
                      -> NodeKernel IO NodeId (Mock.SimpleBlock p c) (Mock.SimpleHeader p c)
                      -> IO (Async.Async ())
-spawnMempoolListener tracer myNodeId poolVar kernel = do
+spawnMempoolListener tracer myNodeId kernel = do
     Async.async $ do
         -- Apparently I have to pass 'ReadWriteMode' here, otherwise the
         -- node will die prematurely with a (DeserialiseFailure 0 "end of input")
         -- error.
         withTxPipe myNodeId ReadWriteMode True $ \h -> do
             let getChunk = BS.hGetSome h 1024
-            readIncomingTx tracer poolVar kernel =<< initDecoderIO getChunk
+            readIncomingTx tracer kernel =<< initDecoderIO getChunk

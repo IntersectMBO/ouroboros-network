@@ -328,7 +328,6 @@ createInvalidFileModel file = do
     put $ db {parseError = Just $ InvalidFilename file}
 
 duplicateBlockModel :: forall blockId m. MonadState (DBModel blockId) m
-                    => Ord blockId
                     => (String, blockId)
                     -> m ()
 duplicateBlockModel (file, bid) = do

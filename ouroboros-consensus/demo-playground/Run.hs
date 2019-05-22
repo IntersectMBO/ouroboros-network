@@ -3,15 +3,15 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
+{-# OPTIONS_GHC -Wno-simplifiable-class-constraints #-}
+
 module Run (
       runNode
     ) where
 
-import           Codec.Serialise (encode, decode)
+import           Codec.Serialise (decode, encode)
 import qualified Control.Concurrent.Async as Async
-import           Control.Concurrent.STM
 import           Control.Monad
-import           Control.Monad.Trans
 import           Control.Tracer
 import           Crypto.Random
 import qualified Data.Map.Strict as M
@@ -28,7 +28,6 @@ import           Ouroboros.Network.Protocol.ChainSync.Codec
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
 import           Ouroboros.Consensus.Demo
-import           Ouroboros.Consensus.Ledger.Abstract
 import qualified Ouroboros.Consensus.Ledger.Mock as Mock
 import           Ouroboros.Consensus.Node
 import           Ouroboros.Consensus.Util
@@ -42,7 +41,6 @@ import qualified Ouroboros.Storage.ChainDB as ChainDB
 import qualified Ouroboros.Storage.ChainDB.Mock as ChainDB
 
 import           CLI
-import           Mock.Mempool
 import           Mock.TxSubmission
 import           NamedPipe (DataFlow (..), NodeMapping ((:==>:)))
 import qualified NamedPipe
@@ -86,36 +84,25 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
 
     withThreadRegistry $ \registry -> do
 
-      let initialPool :: Mempool Mock.Tx
-          initialPool = mempty
-
-      -- Each node has a mempool, regardless from its consumer
-      -- and producer threads.
-      nodeMempool <- atomically $ newTVar initialPool
-
       let callbacks :: NodeCallbacks IO (Block p)
           callbacks = NodeCallbacks {
-              produceBlock = \proof l slot prevPoint prevBlockNo -> do
-                 let curNo    = succ prevBlockNo
+              produceDRG   = drgNew
+            , produceBlock = \proof _l slot prevPoint prevBlockNo txs -> do
+                 let curNo :: BlockNo
+                     curNo = succ prevBlockNo
+
+                     prevHash :: ChainHash (Header p)
                      prevHash = castHash (pointHash prevPoint)
 
-                 -- Before generating a new block, look for incoming transactions.
-                 -- If there are, check if the mempool is consistent and, if it is,
-                 -- grab the valid new transactions and incorporate them into a
-                 -- new block.
-                 mp  <- lift . lift $ readTVar nodeMempool
-                 txs <- do let ts  = collect (Mock.slsUtxo . ledgerState $ l) mp
-                               mp' = mempoolRemove (M.keysSet ts) $ mp
-                           lift . lift $ writeTVar nodeMempool mp'
-                           return ts
-
+                 -- The transactions we get are consistent; the only reason not
+                 -- to include all of them would be maximum block size, which
+                 -- we ignore for now.
                  Mock.forgeBlock pInfoConfig
                                  slot
                                  curNo
                                  prevHash
                                  txs
                                  proof
-          , produceDRG      = drgNew
           }
 
       chainDB <- ChainDB.openDB encode pInfoConfig pInfoInitLedger Mock.simpleHeader
@@ -139,7 +126,7 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
       watchChain registry tracer chainDB
 
       -- Spawn the thread which listens to the mempool.
-      mempoolThread <- spawnMempoolListener tracer myNodeId nodeMempool kernel
+      mempoolThread <- spawnMempoolListener tracer myNodeId kernel
 
       forM_ (producers nodeSetup) (addUpstream'   kernel)
       forM_ (consumers nodeSetup) (addDownstream' kernel)

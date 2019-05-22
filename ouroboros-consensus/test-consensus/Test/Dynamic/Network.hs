@@ -40,7 +40,6 @@ import           Ouroboros.Network.Protocol.ChainSync.Type
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
-import           Ouroboros.Consensus.Crypto.Hash hiding (ByteString)
 import           Ouroboros.Consensus.Demo
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Mock
@@ -102,17 +101,18 @@ broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots = do
 
       let callbacks :: NodeCallbacks m blk
           callbacks = NodeCallbacks {
-              produceBlock = \proof l slot prevPoint prevNo -> do
+              produceBlock = \proof l slot prevPoint prevNo _txs -> do
                 let prevHash  = castHash (Chain.pointHash prevPoint)
                     curNo     = succ prevNo
 
-                -- Produce some random transactions
+                -- We ignore the transactions from the mempool (which will be
+                -- empty), and instead produce some random transactions
                 txs <- genTxs addrs (getUtxo l)
                 forgeBlock pInfoConfig
                            slot
                            curNo
                            prevHash
-                           (Map.fromList [(hash t, t) | t <- txs])
+                           txs
                            proof
 
             , produceDRG      = atomically $ simChaChaT varRNG id $ drgNew
