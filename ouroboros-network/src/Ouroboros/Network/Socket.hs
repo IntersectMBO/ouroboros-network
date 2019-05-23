@@ -140,9 +140,11 @@ connectTo
   => MuxApplication InitiatorApp ptcl IO
   -- ^ application to run over the connection
   -> Socket.AddrInfo
-  -- ^ address of the peer we want to connect to
+  -- ^ local address; the created socket will bind to it
+  -> Socket.AddrInfo
+  -- ^ remote address
   -> IO ()
-connectTo app remoteAddr =
+connectTo app localAddr remoteAddr =
     bracket
       (Socket.socket (Socket.addrFamily remoteAddr) Socket.Stream Socket.defaultProtocol)
       Socket.close
@@ -153,6 +155,7 @@ connectTo app remoteAddr =
 #if !defined(mingw32_HOST_OS)
               Socket.setSocketOption sd Socket.ReusePort 1
 #endif
+          Socket.bind sd (Socket.addrAddress localAddr)
           Socket.connect sd (Socket.addrAddress remoteAddr)
           bearer <- socketAsMuxBearer sd
           Mx.muxBearerSetState bearer Mx.Connected

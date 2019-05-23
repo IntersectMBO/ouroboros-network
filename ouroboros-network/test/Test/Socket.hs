@@ -105,7 +105,8 @@ prop_socket_send_recv_ipv4
   -> Property
 prop_socket_send_recv_ipv4 f xs = ioProperty $ do
     server:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
-    prop_socket_send_recv server f xs
+    client:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
+    prop_socket_send_recv client server f xs
 
 
 #ifdef OUROBOROS_NETWORK_IPV6
@@ -116,7 +117,8 @@ prop_socket_send_recv_ipv6 :: (Int ->  Int -> (Int, Int))
                            -> Property
 prop_socket_send_recv_ipv6 request response = ioProperty $ do
     server:_ <- Socket.getAddrInfo Nothing (Just "::1") (Just "6061")
-    prop_socket_send_recv server request response
+    client:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
+    prop_socket_send_recv client server request response
 #endif
 
 #ifndef mingw32_HOST_OS
@@ -128,9 +130,11 @@ prop_socket_send_recv_unix request response = ioProperty $ do
     let clientName = "client_socket.test"
     cleanUp serverName
     cleanUp clientName
-    let serverAddr = Socket.AddrInfo [] Socket.AF_UNIX  Socket.Stream Socket.defaultProtocol
+    let serverAddr = Socket.AddrInfo [] Socket.AF_UNIX Socket.Stream Socket.defaultProtocol
                          (Socket.SockAddrUnix serverName) Nothing
-    r <- prop_socket_send_recv serverAddr request response
+        clientAddr = Socket.AddrInfo [] Socket.AF_UNIX Socket.Stream Socket.defaultProtocol
+                         (Socket.SockAddrUnix clientName) Nothing
+    r <- prop_socket_send_recv clientAddr serverAddr request response
     cleanUp serverName
     cleanUp clientName
     return $ r
@@ -145,10 +149,11 @@ prop_socket_send_recv_unix request response = ioProperty $ do
 -- over a TCP socket. Large DummyPayloads will be split into smaller segments and the
 -- testcases will verify that they are correctly reassembled into the original message.
 prop_socket_send_recv :: Socket.AddrInfo
+                      -> Socket.AddrInfo
                       -> (Int -> Int -> (Int, Int))
                       -> [Int]
                       -> IO Bool
-prop_socket_send_recv responderAddr f xs = do
+prop_socket_send_recv initiatorAddr responderAddr f xs = do
 
     cv <- newEmptyTMVarM
     sv <- newEmptyTMVarM
@@ -171,7 +176,7 @@ prop_socket_send_recv responderAddr f xs = do
 
     res <-
       withSimpleServerNode responderAddr responderApp $ \_ -> do
-        connectTo initiatorApp responderAddr
+        connectTo initiatorApp initiatorAddr responderAddr
         atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
 
     return (res == mapAccumL f 0 xs)
@@ -238,6 +243,7 @@ prop_socket_client_connect_error :: (Int -> Int -> (Int, Int))
                                  -> Property
 prop_socket_client_connect_error _ xs = ioProperty $ do
     serverAddr:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
+    clientAddr:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
 
     cv <- newEmptyTMVarM
 
@@ -252,7 +258,7 @@ prop_socket_client_connect_error _ xs = ioProperty $ do
 
 
     (res :: Either IOException Bool)
-      <- try $ False <$ connectTo app serverAddr
+      <- try $ False <$ connectTo app clientAddr serverAddr
 
     -- XXX Disregarding the exact exception type
     pure $ either (const True) id res
@@ -264,6 +270,7 @@ demo :: forall block .
      => Chain block -> [ChainUpdate block] -> IO Bool
 demo chain0 updates = do
     producerAddress:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
+    consumerAddress:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
 
     producerVar <- newTVarM (CPS.initChainProducerState chain0)
     consumerVar <- newTVarM chain0
@@ -289,7 +296,7 @@ demo chain0 updates = do
                     (ChainSync.chainSyncServerPeer (ChainSync.chainSyncServerExample () producerVar))
 
     withSimpleServerNode producerAddress responderApp $ \_ -> do
-      withAsync (connectTo initiatorApp producerAddress) $ \_connAsync -> do
+      withAsync (connectTo initiatorApp consumerAddress producerAddress) $ \_connAsync -> do
         void $ fork $ sequence_
             [ do
                 threadDelay 10e-4 -- just to provide interest
