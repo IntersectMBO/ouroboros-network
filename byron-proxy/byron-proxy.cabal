@@ -81,6 +81,7 @@ executable byron-proxy
                        cardano-sl-infra,
                        cardano-sl-util,
                        cborg,
+                       containers,
                        contra-tracer,
                        directory,
                        exceptions,

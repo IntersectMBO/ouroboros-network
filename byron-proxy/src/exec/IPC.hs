@@ -4,6 +4,7 @@
 
 module IPC where
 
+import qualified Codec.CBOR.Term as CBOR
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.STM (STM)
 import Control.Exception (SomeException, bracket, catch, throwIO)
@@ -13,6 +14,9 @@ import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Resource (ResourceT, runResourceT)
 import Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)
 import qualified Data.ByteString.Lazy as Lazy (ByteString)
+import qualified Data.Map as Map
+import Data.Text (Text)
+import Data.Word (Word16)
 
 import Network.TypedProtocol.Channel (hoistChannel)
 import Network.TypedProtocol.Codec (hoistCodec)
@@ -26,7 +30,9 @@ import qualified Cardano.Chain.Slotting as Cardano
 
 import Ouroboros.Network.Channel (Channel, socketAsChannel)
 import qualified Ouroboros.Network.Server.Socket as Server
-import Ouroboros.Network.Protocol.Handshake.Version (Application (..))
+import Ouroboros.Network.Protocol.Handshake.Codec (codecHandshake)
+import Ouroboros.Network.Protocol.Handshake.Type
+import Ouroboros.Network.Protocol.Handshake.Version
 
 import qualified Ouroboros.Network.Protocol.ChainSync.Client as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Server as ChainSync
@@ -38,6 +44,79 @@ import qualified Ouroboros.Byron.Proxy.DB as DB
 
 import qualified Control.Monad.Class.MonadThrow as NonStandard
 import qualified Control.Monad.Catch as Standard
+
+type VersionNumber = Word16
+
+data CBORTerm t = CBORTerm
+  { encodeTerm :: t -> CBOR.Term
+  , decodeTerm :: CBOR.Term -> Either Text t
+  }
+
+unitCBORTerm :: CBORTerm ()
+unitCBORTerm = CBORTer
+  { encodeTerm = const CBOR.TNull
+  , decodeTerm = \term -> case term of
+      CBOR.TNull -> Right ()
+      _          -> Left "expected TNull"
+  }
+
+clientVersions
+  :: ( Monad m, MonadST m, NonStandard.MonadThrow m )
+  => Tracer m String
+  -> Cardano.EpochSlots
+  -> DB.DB m
+  -> Versions VersionNumber CBORTerm (Channel m Lazy.ByteString -> m ())
+clientVersions tracer epochSlots db = Versions $ Map.fromList
+  [ (0, sigmaClientVersion0 tracer epochSlots db)
+  ]
+
+serverVersions
+  :: Tracer IO String
+  -> Cardano.EpochSlots
+  -> Int
+  -> DB.DB IO
+  -> Versions VersionNumber CBORTerm (Channel IO Lazy.ByteString -> IO ())
+serverVersions tracer epochSlots usPoll db = Versions $ Map.fromList
+  [ (0, sigmaServerVersion0 tracer epochSlots usPoll db)
+  ]
+
+sigmaClientVersion0
+  :: ( Monad m, MonadST m, NonStandard.MonadThrow m )
+  => Tracer m String
+  -> Cardano.EpochSlots
+  -> DB.DB m
+  -> Sigma (Version CBORTerm (Channel m Lazy.ByteString -> m ()))
+sigmaClientVersion0 tracer epochSlots db = Sigma () (clientVersion0 tracer epochSlots db)
+
+sigmaServerVersion0
+  :: Tracer IO String
+  -> Cardano.EpochSlots
+  -> Int
+  -> DB.DB IO
+  -> Sigma (Version CBORTerm (Channel IO Lazy.ByteString -> IO ()))
+sigmaServerVersion0 tracer epochSlots usPoll db = Sigma () (serverVersion0 tracer epochSlots usPoll db)
+
+clientVersion0
+  :: ( Monad m, MonadST m, NonStandard.MonadThrow m )
+  => Tracer m String
+  -> Cardano.EpochSlots
+  -> DB.DB m
+  -> Version CBORTerm (Channel m Lazy.ByteString -> m ()) ()
+clientVersion0 tracer epochSlots db = Version
+  { versionApplication = clientApplication tracer epochSlots db
+  , versionExtra = unitCBORTerm
+  }
+
+serverVersion0
+  :: Tracer IO String
+  -> Cardano.EpochSlots
+  -> Int
+  -> DB.DB IO  
+  -> Version CBORTerm (Channel IO Lazy.ByteString -> IO ()) ()
+serverVersion0 tracer epochSlots usPoll db = Version
+  { versionApplication = serverApplication tracer epochSlots usPoll db
+  , versionExtra = unitCBORTerm
+  }
 
 clientApplication
   :: ( Monad m, MonadST m, NonStandard.MonadThrow m )
@@ -51,13 +130,12 @@ clientApplication tracer epochSlots db = Application $ \_ _ channel ->
   peer = ChainSync.chainSyncClientPeer (chainSyncClient (contramap chainSyncShow tracer) epochSlots db)
 
 serverApplication
-  :: String -- ^ Description of the peer, for logging.
-  -> Tracer IO String
+  :: Tracer IO String
   -> Cardano.EpochSlots
   -> Int
   -> DB.DB IO
   -> Application (Channel IO Lazy.ByteString -> IO ()) a
-serverApplication peerStr tracer epochSlots usPoll db = Application $ \_ _ channel -> do
+serverApplication tracer epochSlots usPoll db = Application $ \_ _ channel -> do
   let peer = ChainSync.chainSyncServerPeer (chainSyncServer epochSlots usPoll db)
       -- `peer` is in ResourceT`, so we must hoist channel and codec into
       -- `ResourceT`
@@ -65,16 +143,7 @@ serverApplication peerStr tracer epochSlots usPoll db = Application $ \_ _ chann
       inResourceT = liftIO
       codec' = hoistCodec inResourceT (ChainSync.codec epochSlots)
       channel' = hoistChannel inResourceT channel
-  (runResourceT $ runPeer nullTracer codec' channel' peer) `catch` (\(e :: SomeException) -> do
-    traceWith tracer $ mconcat
-      [ "Version 1 connection from ", peerStr, " terminated with exception "
-      , show e
-      ]
-    throwIO e
-    )
-  traceWith tracer $ mconcat
-    [ "Version 1 connection from ", peerStr, " terminated normally"
-    ]
+  runResourceT $ runPeer nullTracer codec' channel' peer
 
 -- | This chain sync client will first try to improve the read pointer to
 -- the tip of the database, and then will roll forward forever, stopping
@@ -197,7 +266,11 @@ runServer addrInfo tracer epochSlots closeTx usPoll db = bracket mkSocket Socket
       [ "Got connection from "
       , show sockAddr
       ]
-    runApplication (serverApplication (show sockAddr) tracer epochSlots usPoll db) () () channel
+    let versionPeer = handshakeServerPeer encodeTerm decodeTerm (\_ _ _ -> Accept) (serverVersions tracer epochSlots usPoll db)
+    versionOutcome <- runPeer nullTracer codecHandshake channel versionPeer
+    case versionOutcome of
+      Left _ -> undefined
+      Right app -> app channel
   -- When a connection completes, we do nothing. State is ().
   -- Crucially: we don't re-throw exceptions, because doing so would
   -- bring down the server.
@@ -239,7 +312,11 @@ runClient
 runClient addrInfo tracer epochSlots db = bracket mkSocket Socket.close $ \socket -> do
   _ <- Socket.connect socket (Socket.addrAddress addrInfo)
   let channel = socketAsChannel socket
-  runApplication (clientApplication tracer epochSlots db) () () channel
+      versionPeer = handshakeClientPeer encodeTerm decodeTerm (clientVersions tracer epochSlots db)
+  versionOutcome <- runPeer nullTracer codecHandshake channel versionPeer
+  case versionOutcome of
+    Left _ -> undefined
+    Right app -> app channel
   where
   mkSocket = do
     socket <- Socket.socket

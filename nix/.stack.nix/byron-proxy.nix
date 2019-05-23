@@ -66,6 +66,7 @@
             (hsPkgs.cardano-sl-infra)
             (hsPkgs.cardano-sl-util)
             (hsPkgs.cborg)
+            (hsPkgs.containers)
             (hsPkgs.contra-tracer)
             (hsPkgs.directory)
             (hsPkgs.exceptions)
