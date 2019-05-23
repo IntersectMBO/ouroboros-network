@@ -47,6 +47,10 @@ tests = testGroup "ChainFragment"
       -- It's important we don't generate too many trivial test cases here
       -- so check the coverage to enforce it.
       checkCoverage prop_arbitrary_TestBlockChainFragment
+
+      -- All our shrinkers rely on fixupBlock, so lets test that first
+    , testProperty "fixupBlock"                              prop_fixupBlock
+
     , testProperty "shrink for TestBlockChainFragment"       prop_shrink_TestBlockChainFragment
 
     , testProperty "arbitrary for TestHeaderChainFragment"   prop_arbitrary_TestHeaderChainFragment
@@ -103,7 +107,6 @@ tests = testGroup "ChainFragment"
   , testProperty "(:<)"                                      prop_prepend
   , testProperty "fromChain/toChain"                         prop_fromChain_toChain
   , testProperty "toChain/fromChain"                         prop_toChain_fromChain
-  , testProperty "fixupBlockPrim"                            prop_fixupBlock
   ]
 
 --
