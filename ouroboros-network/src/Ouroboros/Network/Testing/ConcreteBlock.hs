@@ -209,29 +209,31 @@ mkChain =
 mkChainSimple :: [BlockBody] -> Chain Block
 mkChainSimple = mkChain . zip [1..]
 
--- TODO: this generator will generate only chain fragments which start with
--- @BlockNo 0@ and @GenesisHash@ in @prevHeaderHash@.
-mkChainFragment :: [(SlotNo, BlockBody)] -> ChainFragment Block
-mkChainFragment =
-    fixupChainFragmentFromGenesis fixupBlock
+mkChainFragment :: ChainHash Block
+                -> BlockNo
+                -> [(SlotNo, BlockBody)]
+                -> ChainFragment Block
+mkChainFragment anchorhash anchorblockno =
+    fixupChainFragmentFrom anchorhash anchorblockno fixupBlock
   . map (uncurry mkPartialBlock)
   . reverse
 
 mkChainFragmentSimple :: [BlockBody] -> ChainFragment Block
 mkChainFragmentSimple =
-    mkChainFragment . zip [1..]
+    mkChainFragment GenesisHash (BlockNo 0) . zip [1..]
 
 mkAnchoredFragment :: Point Block
+                   -> BlockNo
                    -> [(SlotNo, BlockBody)]
                    -> AnchoredFragment Block
-mkAnchoredFragment anchor =
-    fixupAnchoredFragmentFrom anchor fixupBlock
+mkAnchoredFragment anchorpoint anchorblockno =
+    fixupAnchoredFragmentFrom anchorpoint anchorblockno fixupBlock
   . map (uncurry mkPartialBlock)
   . reverse
 
 mkAnchoredFragmentSimple :: [BlockBody] -> AnchoredFragment Block
 mkAnchoredFragmentSimple =
-    mkAnchoredFragment (Point 0 GenesisHash) . zip [1..]
+    mkAnchoredFragment (Point 0 GenesisHash) (BlockNo 0) . zip [1..]
 
 
 mkPartialBlock :: SlotNo -> BlockBody -> Block
@@ -341,11 +343,11 @@ fixupChainFragmentFrom :: HasHeader b
                        -> BlockNo
                        -> (ChainHash b -> BlockNo -> b -> b)
                        -> [b] -> ChainFragment b
-fixupChainFragmentFrom prevhash prevblockno =
+fixupChainFragmentFrom anchorhash anchorblockno =
     fixupBlocks
       (CF.:>) CF.Empty
-      (Just prevhash)
-      (Just prevblockno)
+      (Just anchorhash)
+      (Just anchorblockno)
 
 fixupChainFragmentFromGenesis :: HasHeader b
                               => (ChainHash b -> BlockNo -> b -> b)
@@ -367,23 +369,24 @@ fixupChainFragmentFromSame =
 
 fixupAnchoredFragmentFrom :: HasHeader b
                           => Point b
+                          -> BlockNo
                           -> (ChainHash b -> BlockNo -> b -> b)
                           -> [b] -> AnchoredFragment b
-fixupAnchoredFragmentFrom anchor =
+fixupAnchoredFragmentFrom anchorpoint anchorblockno =
     fixupBlocks
-      (AF.:>) (AF.Empty anchor)
-      (Just (pointHash anchor))
-      (Just (BlockNo 0))
+      (AF.:>) (AF.Empty anchorpoint)
+      (Just (pointHash anchorpoint))
+      (Just anchorblockno)
 
 fixupAnchoredFragmentFromSame :: HasHeader b
                               => Point b
                               -> (ChainHash b -> BlockNo -> b -> b)
                               -> [b] -> AnchoredFragment b
-fixupAnchoredFragmentFromSame anchor =
+fixupAnchoredFragmentFromSame anchorpoint =
     fixupBlocks
-      (AF.:>) (AF.Empty anchor)
-      (Just (pointHash anchor))  -- fixup the hash
-      Nothing                    -- but keep the first block number
+      (AF.:>) (AF.Empty anchorpoint)
+      (Just (pointHash anchorpoint))  -- fixup the hash
+      Nothing                         -- but keep the first block number
 
 
 {-------------------------------------------------------------------------------

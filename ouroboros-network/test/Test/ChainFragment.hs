@@ -393,14 +393,19 @@ newtype TestHeaderChainFragment = TestHeaderChainFragment (ChainFragment BlockHe
 
 instance Arbitrary TestBlockChainFragment where
     arbitrary = do
+        let prevhash  = GenesisHash
+            prevblock = BlockNo 0
+            prevslot  = SlotNo 0
         n <- genNonNegative
         bodies <- vector n
-        slots  <- mkSlots <$> vectorOf n genSlotGap
-        let chain = mkChainFragment (zip slots bodies)
+        slots  <- mkSlots prevslot <$> vectorOf n genSlotGap
+        let chain = mkChainFragment prevhash prevblock (zip slots bodies)
         return (TestBlockChainFragment chain)
       where
-        mkSlots :: [Int] -> [SlotNo]
-        mkSlots = map toEnum . tail . scanl (+) 0
+        mkSlots :: SlotNo -> [Int] -> [SlotNo]
+        mkSlots (SlotNo prevslot) =
+            map SlotNo . tail
+          . scanl (\slot gap -> slot + fromIntegral gap) prevslot
 
     shrink (TestBlockChainFragment c) =
         [ TestBlockChainFragment (fixupChainFragmentFromGenesis fixupBlock c')
