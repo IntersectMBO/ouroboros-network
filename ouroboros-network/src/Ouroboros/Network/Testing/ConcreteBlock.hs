@@ -43,8 +43,8 @@ module Ouroboros.Network.Testing.ConcreteBlock (
   , fixupBlockHeader
   , fixupBlockHeader'
   , fixupChain
-  , fixupChainFragment
-  , fixupAnchoredFragment
+  , fixupChainFragmentFromGenesis
+  , fixupAnchoredFragmentFrom
   ) where
 
 import           Data.FingerTree (Measured(measure))
@@ -210,7 +210,7 @@ mkChainSimple = mkChain . zip [1..]
 -- @BlockNo 0@ and @GenesisHash@ in @prevHeaderHash@.
 mkChainFragment :: [(SlotNo, BlockBody)] -> ChainFragment Block
 mkChainFragment =
-    fixupChainFragment fixupBlock
+    fixupChainFragmentFromGenesis fixupBlock
   . map (uncurry mkPartialBlock)
   . reverse
 
@@ -222,7 +222,7 @@ mkAnchoredFragment :: Point Block
                    -> [(SlotNo, BlockBody)]
                    -> AnchoredFragment Block
 mkAnchoredFragment anchor =
-    fixupAnchoredFragment anchor fixupBlock
+    fixupAnchoredFragmentFrom anchor fixupBlock
   . map (uncurry mkPartialBlock)
   . reverse
 
@@ -332,18 +332,18 @@ fixupChain :: (Maybe b -> b -> b)
            -> [b] -> Chain b
 fixupChain = fixupBlocks (C.:>) C.Genesis
 
-fixupChainFragment :: HasHeader b
-                   => (Maybe b -> b -> b)
-                   -> [b] -> ChainFragment b
-fixupChainFragment =
+fixupChainFragmentFromGenesis :: HasHeader b
+                              => (Maybe b -> b -> b)
+                              -> [b] -> ChainFragment b
+fixupChainFragmentFromGenesis =
     fixupBlocks
       (CF.:>) CF.Empty
 
-fixupAnchoredFragment :: HasHeader b
-                      => Point b
-                      -> (Maybe b -> b -> b)
-                      -> [b] -> AnchoredFragment b
-fixupAnchoredFragment anchor =
+fixupAnchoredFragmentFrom :: HasHeader b
+                          => Point b
+                          -> (Maybe b -> b -> b)
+                          -> [b] -> AnchoredFragment b
+fixupAnchoredFragmentFrom anchor =
     fixupBlocks
       (AF.:>) (AF.Empty anchor)
 

@@ -372,7 +372,7 @@ prop_toChain_fromChain (TestBlockChain c) =
 
 prop_fixupBlock' :: TestBlockChainFragment -> Bool
 prop_fixupBlock' (TestBlockChainFragment chain) =
-  fixupChainFragment fixupBlock' (CF.toNewestFirst chain) == chain
+  fixupChainFragmentFromGenesis fixupBlock' (CF.toNewestFirst chain) == chain
 
 --
 -- Generators for chains
@@ -400,7 +400,7 @@ instance Arbitrary TestBlockChainFragment where
         mkSlots = map toEnum . tail . scanl (+) 0
 
     shrink (TestBlockChainFragment c) =
-        [ TestBlockChainFragment (fixupChainFragment fixupBlock c')
+        [ TestBlockChainFragment (fixupChainFragmentFromGenesis fixupBlock c')
         | c' <- shrinkList (const []) (CF.toNewestFirst c) ]
 
 instance Arbitrary TestHeaderChainFragment where
@@ -410,7 +410,7 @@ instance Arbitrary TestHeaderChainFragment where
         return (TestHeaderChainFragment headerchain)
 
     shrink (TestHeaderChainFragment c) =
-        [ TestHeaderChainFragment (fixupChainFragment fixupBlockHeader c')
+        [ TestHeaderChainFragment (fixupChainFragmentFromGenesis fixupBlockHeader c')
         | c' <- shrinkList (const []) (CF.toNewestFirst c) ]
 
 prop_arbitrary_TestBlockChainFragment :: TestBlockChainFragment -> Property
@@ -721,23 +721,23 @@ instance Arbitrary TestChainFragmentFork where
         ex1 = extensionFragment l1 c1
         ex2 = extensionFragment l2 c2 in
     [ TestChainFragmentFork
-        (fixupChainFragment fixupBlock longestPrefix')
-        (fixupChainFragment fixupBlock shortestPrefix')
-        (fixupChainFragment fixupBlock (ex1 ++ longestPrefix'))
-        (fixupChainFragment fixupBlock (ex2 ++ shortestPrefix'))
+        (fixupChainFragmentFromGenesis fixupBlock longestPrefix')
+        (fixupChainFragmentFromGenesis fixupBlock shortestPrefix')
+        (fixupChainFragmentFromGenesis fixupBlock (ex1 ++ longestPrefix'))
+        (fixupChainFragmentFromGenesis fixupBlock (ex2 ++ shortestPrefix'))
     | longestPrefix' <- shrinkList (const []) (CF.toNewestFirst longestPrefix)
     , let shortestPrefix' = reverse $ drop toDrop $ reverse longestPrefix'
     ]
    -- shrink the first fork
    ++ [ TestChainFragmentFork l1 l2 c1' c2
       | ex1' <- shrinkList (const []) ex1
-      , let c1' = fixupChainFragment fixupBlock' (ex1' ++ CF.toNewestFirst l1)
+      , let c1' = fixupChainFragmentFromGenesis fixupBlock' (ex1' ++ CF.toNewestFirst l1)
       , isLongestCommonPrefix c1' c2
       ]
    -- shrink the second fork
    ++ [ TestChainFragmentFork l1 l2 c1 c2'
       | ex2' <- shrinkList (const []) ex2
-      , let c2' = fixupChainFragment fixupBlock' (ex2' ++ CF.toNewestFirst l2)
+      , let c2' = fixupChainFragmentFromGenesis fixupBlock' (ex2' ++ CF.toNewestFirst l2)
       , isLongestCommonPrefix c1 c2'
       ]
     where
