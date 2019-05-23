@@ -101,12 +101,12 @@ muxStart app bearer = do
                                 w_r cnt
 
         return $ case app of
-          MuxClientApplication initiator -> [ initiator mpdId initiatorChannel >> mpsJobExit cnt ]
-          MuxServerApplication responder -> [ responder mpdId responderChannel >> mpsJobExit cnt ]
-          MuxClientAndServerApplication initiator responder
-                                          -> [ initiator mpdId initiatorChannel >> mpsJobExit cnt
-                                             , responder mpdId responderChannel >> mpsJobExit cnt
-                                             ]
+          MuxInitiatorApplication initiator -> [ initiator mpdId initiatorChannel >> mpsJobExit cnt ]
+          MuxResponderApplication responder -> [ responder mpdId responderChannel >> mpsJobExit cnt ]
+          MuxInitiatorAndResponderApplication initiator responder
+                                            -> [ initiator mpdId initiatorChannel >> mpsJobExit cnt
+                                               , responder mpdId responderChannel >> mpsJobExit cnt
+                                               ]
 
     -- cnt represent the number of SDUs that are queued but not yet sent.  Job
     -- threads will be prevented from exiting until all SDUs have been

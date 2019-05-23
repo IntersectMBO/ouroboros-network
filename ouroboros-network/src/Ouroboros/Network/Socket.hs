@@ -137,7 +137,7 @@ connectTo
      , Show ptcl
      , Mx.MiniProtocolLimits ptcl
      )
-  => MuxApplication ClientApp ptcl IO
+  => MuxApplication InitiatorApp ptcl IO
   -- ^ application to run over the connection
   -> Socket.AddrInfo
   -- ^ address of the peer we want to connect to
@@ -162,8 +162,8 @@ connectTo app remoteAddr =
 -- |
 -- A mux application which has a server component.
 --
-data AnyMuxServerApp ptcl m where
-      AnyMuxServerApp :: forall appType ptcl m. HasServer appType ~ True => MuxApplication appType ptcl m -> AnyMuxServerApp ptcl m
+data AnyMuxResponderApp ptcl m where
+      AnyMuxResponderApp :: forall appType ptcl m. HasResponder appType ~ True => MuxApplication appType ptcl m -> AnyMuxResponderApp ptcl m
 
 
 -- |
@@ -178,7 +178,7 @@ data AnyMuxServerApp ptcl m where
 -- admissible in this scenario: leave the server thread running and let only
 -- the client thread to die.
 data AcceptConnection st ptcl m where
-    AcceptConnection :: !st -> AnyMuxServerApp ptcl m -> AcceptConnection st ptcl m
+    AcceptConnection :: !st -> AnyMuxResponderApp ptcl m -> AcceptConnection st ptcl m
     RejectConnection :: !st -> AcceptConnection st ptcl m
 
 
@@ -203,7 +203,7 @@ beginConnection fn addr st = do
     case accept of
       AcceptConnection st' anyApp -> pure $ Server.Accept st' $ \sd ->
         case anyApp of
-          AnyMuxServerApp app -> do
+          AnyMuxResponderApp app -> do
             bearer <- socketAsMuxBearer sd
             Mx.muxBearerSetState bearer Mx.Connected
             Mx.muxStart app bearer
@@ -285,7 +285,7 @@ withServerNode
        , Mx.MiniProtocolLimits ptcl
        )
     => Socket.AddrInfo
-    -> AnyMuxServerApp ptcl IO
+    -> AnyMuxResponderApp ptcl IO
     -- ^ The mux application that will be run on each incoming connection from
     -- a given address.  Note that if @'MuxClientAndServerApplication'@ is
     -- returned, the connection will run a full duplex set of mini-protocols.
@@ -331,7 +331,7 @@ withSimpleServerNode
        , Mx.MiniProtocolLimits ptcl
        )
     => Socket.AddrInfo
-    -> MuxApplication ServerApp ptcl IO
+    -> MuxApplication ResponderApp ptcl IO
     -- ^ The mux server application that will be run on each incoming
     -- connection.
     -> (Async () -> IO t)
@@ -339,4 +339,4 @@ withSimpleServerNode
     -- Note: the server thread will terminate when the callback returns or
     -- throws an exception.
     -> IO t
-withSimpleServerNode addr app k = withServerNode addr (AnyMuxServerApp app) k
+withSimpleServerNode addr app k = withServerNode addr (AnyMuxResponderApp app) k

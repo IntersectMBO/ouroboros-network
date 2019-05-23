@@ -148,30 +148,30 @@ prop_socket_send_recv :: Socket.AddrInfo
                       -> (Int -> Int -> (Int, Int))
                       -> [Int]
                       -> IO Bool
-prop_socket_send_recv serverAddr f xs = do
+prop_socket_send_recv responderAddr f xs = do
 
     cv <- newEmptyTMVarM
     sv <- newEmptyTMVarM
 
     let -- Server Node; only req-resp server
-        serverApp :: MuxApplication ServerApp Mxt.TestProtocols3 IO
-        serverApp = simpleMuxServerApplication $
+        responderApp :: MuxApplication ResponderApp Mxt.TestProtocols3 IO
+        responderApp = simpleMuxResponderApplication $
           \Mxt.ReqResp1 ->
             MuxPeer nullTracer
                     ReqResp.codecReqResp
                     (ReqResp.reqRespServerPeer (reqRespServerMapAccumL sv (\a -> pure . f a) 0))
 
         -- Client Node; only req-resp client
-        clientApp :: MuxApplication ClientApp Mxt.TestProtocols3 IO
-        clientApp = simpleMuxClientApplication $
+        initiatorApp :: MuxApplication InitiatorApp Mxt.TestProtocols3 IO
+        initiatorApp = simpleMuxInitiatorApplication $
           \Mxt.ReqResp1 ->
             MuxPeer nullTracer
                     ReqResp.codecReqResp
                     (ReqResp.reqRespClientPeer (reqRespClientMap cv xs))
 
     res <-
-      withSimpleServerNode serverAddr serverApp $ \_ -> do
-        connectTo clientApp serverAddr
+      withSimpleServerNode responderAddr responderApp $ \_ -> do
+        connectTo initiatorApp responderAddr
         atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
 
     return (res == mapAccumL f 0 xs)
@@ -187,8 +187,8 @@ prop_socket_recv_close f _ = ioProperty $ do
 
     sv   <- newEmptyTMVarM
 
-    let app :: MuxApplication ServerApp Mxt.TestProtocols3 IO
-        app = simpleMuxServerApplication $
+    let app :: MuxApplication ResponderApp Mxt.TestProtocols3 IO
+        app = simpleMuxResponderApplication $
           \Mxt.ReqResp1 ->
             MuxPeer nullTracer
                     ReqResp.codecReqResp
@@ -241,8 +241,8 @@ prop_socket_client_connect_error _ xs = ioProperty $ do
 
     cv <- newEmptyTMVarM
 
-    let app :: MuxApplication ClientApp Mxt.TestProtocols3 IO
-        app = simpleMuxClientApplication $
+    let app :: MuxApplication InitiatorApp Mxt.TestProtocols3 IO
+        app = simpleMuxInitiatorApplication $
                 \Mxt.ReqResp1 ->
                   MuxPeer nullTracer
                           ReqResp.codecReqResp
@@ -272,8 +272,8 @@ demo chain0 updates = do
     let Just expectedChain = Chain.applyChainUpdates updates chain0
         target = Chain.headPoint expectedChain
 
-        consumerApp :: MuxApplication ClientApp Mxt.TestProtocols1 IO
-        consumerApp = simpleMuxClientApplication $
+        initiatorApp :: MuxApplication InitiatorApp Mxt.TestProtocols1 IO
+        initiatorApp = simpleMuxInitiatorApplication $
           \Mxt.ChainSync1 ->
               MuxPeer nullTracer
                       (ChainSync.codecChainSync encode decode encode decode)
@@ -281,15 +281,15 @@ demo chain0 updates = do
                         (ChainSync.chainSyncClientExample consumerVar
                         (consumerClient done target consumerVar)))
 
-        producerApp :: MuxApplication ServerApp Mxt.TestProtocols1 IO
-        producerApp = simpleMuxServerApplication $
+        responderApp :: MuxApplication ResponderApp Mxt.TestProtocols1 IO
+        responderApp = simpleMuxResponderApplication $
           \Mxt.ChainSync1 ->
             MuxPeer nullTracer
                     (ChainSync.codecChainSync encode decode encode decode)
                     (ChainSync.chainSyncServerPeer (ChainSync.chainSyncServerExample () producerVar))
 
-    withSimpleServerNode producerAddress producerApp $ \_ -> do
-      withAsync (connectTo consumerApp producerAddress) $ \_connAsync -> do
+    withSimpleServerNode producerAddress responderApp $ \_ -> do
+      withAsync (connectTo initiatorApp producerAddress) $ \_connAsync -> do
         void $ fork $ sequence_
             [ do
                 threadDelay 10e-4 -- just to provide interest

@@ -346,8 +346,8 @@ prop_mux_snd_recv request response = ioProperty $ do
     (verify, clientApp, serverApp) <- setupMiniReqRsp
                                         (return ()) endMpsVar request response
 
-    clientAsync <- startMuxSTM (Mx.MuxClientApplication $ \ReqResp1 -> clientApp) client_w client_r sduLen Nothing
-    serverAsync <- startMuxSTM (Mx.MuxServerApplication $ \ReqResp1 -> serverApp) server_w server_r sduLen Nothing
+    clientAsync <- startMuxSTM (Mx.MuxInitiatorApplication $ \ReqResp1 -> clientApp) client_w client_r sduLen Nothing
+    serverAsync <- startMuxSTM (Mx.MuxResponderApplication $ \ReqResp1 -> serverApp) server_w server_r sduLen Nothing
 
     r <- waitBoth clientAsync serverAsync
     case r of
@@ -443,8 +443,8 @@ prop_mux_2_minis request0 response0 response1 request1 = ioProperty $ do
         serverApp ChainSync2  = server_mp0
         serverApp BlockFetch2 = server_mp1
 
-    clientAsync <- startMuxSTM (Mx.MuxClientApplication clientApp) client_w client_r sduLen Nothing
-    serverAsync <- startMuxSTM (Mx.MuxServerApplication serverApp) server_w server_r sduLen Nothing
+    clientAsync <- startMuxSTM (Mx.MuxInitiatorApplication clientApp) client_w client_r sduLen Nothing
+    serverAsync <- startMuxSTM (Mx.MuxResponderApplication serverApp) server_w server_r sduLen Nothing
 
 
     r <- waitBoth clientAsync serverAsync
@@ -493,8 +493,8 @@ prop_mux_starvation response0 response1 =
         serverApp BlockFetch2 = server_short
         serverApp ChainSync2  = server_long
 
-    clientAsync <- startMuxSTM (Mx.MuxClientApplication clientApp) client_w client_r sduLen (Just traceQueueVar)
-    serverAsync <- startMuxSTM (Mx.MuxServerApplication serverApp) server_w server_r sduLen Nothing
+    clientAsync <- startMuxSTM (Mx.MuxInitiatorApplication clientApp) client_w client_r sduLen (Just traceQueueVar)
+    serverAsync <- startMuxSTM (Mx.MuxResponderApplication serverApp) server_w server_r sduLen Nothing
 
     -- First verify that all messages where received correctly
     r <- waitBoth clientAsync serverAsync
@@ -566,7 +566,7 @@ prop_demux_sdu a = do
         -- To trigger MuxIngressQueueOverRun we use a special test protocol with
         -- an ingress queue which is less than 0xffff so that it can be triggered by a
         -- single segment.
-        let server_mps = Mx.MuxServerApplication (\ChainSyncSmall -> serverRsp stopVar)
+        let server_mps = Mx.MuxResponderApplication (\ChainSyncSmall -> serverRsp stopVar)
 
         (client_w, said) <- plainServer server_mps
         setup state client_w
@@ -586,7 +586,7 @@ prop_demux_sdu a = do
     run (ArbitraryValidSDU sdu state err_m) = do
         stopVar <- newEmptyTMVarM
 
-        let server_mps = Mx.MuxServerApplication (\ChainSync1 -> serverRsp stopVar)
+        let server_mps = Mx.MuxResponderApplication (\ChainSync1 -> serverRsp stopVar)
 
         (client_w, said) <- plainServer server_mps
 
@@ -608,7 +608,7 @@ prop_demux_sdu a = do
     run (ArbitraryInvalidSDU badSdu state err) = do
         stopVar <- newEmptyTMVarM
 
-        let server_mps = Mx.MuxServerApplication (\ChainSync1 -> serverRsp stopVar)
+        let server_mps = Mx.MuxResponderApplication (\ChainSync1 -> serverRsp stopVar)
 
         (client_w, said) <- plainServer server_mps
 
@@ -730,7 +730,7 @@ demo chain0 updates delay = do
         consumerPeer = ChainSync.chainSyncClientPeer
                           (ChainSync.chainSyncClientExample consumerVar
                           (consumerClient done target consumerVar))
-        consumerApp = Mx.simpleMuxClientApplication
+        consumerApp = Mx.simpleMuxInitiatorApplication
                         (\ChainSync1 ->
                             Mx.MuxPeer
                               nullTracer
@@ -739,7 +739,7 @@ demo chain0 updates delay = do
 
         producerPeer :: Peer (ChainSync.ChainSync block (Point block)) AsServer ChainSync.StIdle m ()
         producerPeer = ChainSync.chainSyncServerPeer (ChainSync.chainSyncServerExample () producerVar)
-        producerApp = Mx.simpleMuxServerApplication
+        producerApp = Mx.simpleMuxResponderApplication
                         (\ChainSync1 ->
                             Mx.MuxPeer
                               nullTracer
