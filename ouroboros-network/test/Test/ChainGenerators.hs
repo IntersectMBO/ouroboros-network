@@ -6,18 +6,11 @@
 -- | Arbitrary generators for chains, headers and blocks
 --
 module Test.ChainGenerators
-  ( -- * Arbitrary Point BlockBody and BlockHeader
-    -- These instances are useful for testing codec.
-    ArbitraryPoint (..)
-  , ArbitraryChainRange (..)
-  , ArbitraryBlockBody (..)
-  , ArbitraryBlockHeader (..)
-
-    -- * Arbitrary chains generators
+  ( -- * Arbitrary chains generators
     -- These generators are used to test various scenarios that require
     -- a chain: e.g. appending a block to chain, arbitrary updates
     -- (rollforwards \/ backwards), chain forks.
-  , TestAddBlock (..)
+    TestAddBlock (..)
   , TestBlockChainAndUpdates (..)
   , TestBlockChain (..)
   , TestHeaderChain (..)
@@ -33,7 +26,6 @@ module Test.ChainGenerators
   , genHeaderChain
   , mkPartialBlock
   , mkRollbackPoint
-  , genPoint
 
     -- * Tests of the generators
   , tests
@@ -115,45 +107,44 @@ instance Arbitrary SlotNo where
 instance Arbitrary ConcreteHeaderHash where
   arbitrary = HeaderHash <$> arbitrary
 
-newtype ArbitraryPoint = ArbitraryPoint {
-    getArbitraryPoint :: Point BlockHeader
-  }
-  deriving (Show, Eq)
+instance Arbitrary (Point BlockHeader) where
+  arbitrary =
+      -- Sometimes pick the genesis point
+      frequency [ (1, pure (Point (SlotNo 0) GenesisHash))
+                , (4, Point <$> arbitrary <*> (BlockHash <$> arbitrary)) ]
+  shrink (Point _ GenesisHash)   = []
+  shrink (Point s (BlockHash h)) =
+      Point (SlotNo 0) GenesisHash
+    : [ Point s' (BlockHash h') | (s', h') <- shrink (s, h), s > SlotNo 0 ]
 
-instance Arbitrary ArbitraryPoint where
+instance Arbitrary (Point Block) where
+  arbitrary = (castPoint :: Point BlockHeader -> Point Block) <$> arbitrary
+
+  shrink = map (castPoint :: Point BlockHeader -> Point Block)
+         . shrink
+         .     (castPoint :: Point Block -> Point BlockHeader)
+
+instance Arbitrary (ChainRange BlockHeader) where
   arbitrary = do
-    slot <- arbitrary
-    hash <- HeaderHash <$> arbitrary
-    return $ ArbitraryPoint $ Point slot (BlockHash hash)
+    low  <- arbitrary
+    high <- arbitrary `suchThat` (\high -> pointSlot low <= pointSlot high)
+    return (ChainRange low high)
 
-newtype ArbitraryChainRange = ArbitraryChainRange {
-    getArbitraryChainRange :: ChainRange BlockHeader
-  }
+  shrink (ChainRange low high) = [ ChainRange low' high'
+                                 | (low', high') <- shrink (low, high)
+                                 , pointSlot low <= pointSlot high ]
 
-instance Arbitrary ArbitraryChainRange where
-  arbitrary = fmap ArbitraryChainRange . ChainRange  <$> (getArbitraryPoint <$> arbitrary) <*> (getArbitraryPoint <$> arbitrary)
-
-newtype ArbitraryBlockBody = ArbitraryBlockBody {
-    getArbitraryBlockBody :: BlockBody
-  }
-  deriving (Show, Eq)
-
-instance Arbitrary ArbitraryBlockBody where
+instance Arbitrary BlockBody where
     arbitrary =
-      ArbitraryBlockBody . BlockBody <$>
+      BlockBody <$>
         -- Sometimes pick a common block so some are equal
         frequency [ (1, pure "EMPTY")
                   , (4, vectorOf 4 (choose ('A', 'Z'))) ]
     -- probably no need for shrink, the content is arbitrary and opaque
     -- if we add one, it might be to shrink to an empty block
 
-newtype ArbitraryBlockHeader = ArbitraryBlockHeader {
-    getArbitraryBlockHeader :: BlockHeader
-  }
-  deriving (Show, Eq)
-
-instance Arbitrary ArbitraryBlockHeader where
-  arbitrary = ArbitraryBlockHeader . blockHeader . fromJust . Chain.head <$> genBlockChain 1
+instance Arbitrary BlockHeader where
+  arbitrary = blockHeader . fromJust . Chain.head <$> genBlockChain 1
 
 -- Note that we do not provide any instance Arbitrary Block
 -- because it's of little help with making chains.
@@ -180,7 +171,7 @@ genNonNegative = (abs <$> arbitrary) `suchThat` (>= 0)
 
 genBlockChain :: Int -> Gen (Chain Block)
 genBlockChain n = do
-    bodies <- map getArbitraryBlockBody <$> vector n
+    bodies <- vector n
     slots  <- mkSlots <$> vectorOf n genSlotGap
     return (mkChain (zip slots bodies))
   where
@@ -227,7 +218,7 @@ genAddBlock :: (HasHeader block, HeaderHash block ~ ConcreteHeaderHash)
             => Chain block -> Gen Block
 genAddBlock chain = do
     slotGap <- genSlotGap
-    body    <- getArbitraryBlockBody <$> arbitrary
+    body    <- arbitrary
     let pb = mkPartialBlock (addSlotGap slotGap (Chain.headSlot chain)) body
         b  = fixupBlock (Chain.head chain) pb
     return b
@@ -402,7 +393,7 @@ instance Arbitrary TestChainAndPoint where
   arbitrary = do
     TestBlockChain chain <- arbitrary
     -- either choose point from the chain or a few off the chain!
-    point <- frequency [ (10, genPointOnChain chain), (1, genPoint) ]
+    point <- frequency [ (10, genPointOnChain chain), (1, arbitrary) ]
     return (TestChainAndPoint chain point)
 
   shrink (TestChainAndPoint c p) =
@@ -418,10 +409,6 @@ genPointOnChain chain =
       ]
   where
     len = Chain.length chain
-
-genPoint :: Gen (Point Block)
-genPoint = Point <$> arbitrary
-                 <*> ((BlockHash . HeaderHash) <$> arbitrary)
 
 fixupPoint :: HasHeader block => Chain block -> Point block -> Point block
 fixupPoint c p =
@@ -464,7 +451,7 @@ instance Arbitrary TestChainAndRange where
     TestBlockChain chain <- arbitrary
     -- either choose range from the chain or a few off the chain!
     (point1, point2) <- frequency [ (10, genRangeOnChain chain)
-                                  , (1, (,) <$> genPoint <*> genPoint) ]
+                                  , (1, (,) <$> arbitrary <*> arbitrary) ]
     return (TestChainAndRange chain point1 point2)
 
   shrink (TestChainAndRange c p1 p2) =
@@ -517,7 +504,7 @@ instance Arbitrary TestChainAndPoints where
     TestBlockChain chain <- arbitrary
     let fn p = frequency
           [ (4, return $ Just p)
-          , (1, Just <$> genPoint)
+          , (1, Just <$> arbitrary)
           , (5, return Nothing)
           ]
         points = map Chain.blockPoint (Chain.chainToList chain)

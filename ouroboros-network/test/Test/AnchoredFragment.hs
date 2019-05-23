@@ -29,7 +29,7 @@ import           Test.ChainFragment (TestBlockChainFragment (..),
                      TestChainFragmentAndPoint (..),
                      TestChainFragmentFork (..))
 import qualified Test.ChainFragment as CF
-import           Test.ChainGenerators (TestBlockChain (..), genPoint)
+import           Test.ChainGenerators (TestBlockChain (..))
 
 
 --
@@ -413,7 +413,7 @@ instance Arbitrary TestAnchoredFragmentAndPoint where
       , (if AF.null chain then 0 else 7,
          blockPoint <$> elements (AF.toNewestFirst chain))
       -- A few points off the chain!
-      , (1, genPoint)
+      , (1, arbitrary)
       ]
     return (TestAnchoredFragmentAndPoint_ taf point)
 
