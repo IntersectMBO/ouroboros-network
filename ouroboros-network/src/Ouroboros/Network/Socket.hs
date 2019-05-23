@@ -135,6 +135,8 @@ withNetworkNode
      , Ord ptcl
      , Enum ptcl
      , Bounded ptcl
+     , Show ptcl
+     , Mx.MiniProtocolLimits ptcl
      )
   => NetworkInterface ptcl Socket.AddrInfo IO r
   -> (NetworkNode Socket.AddrInfo IO r -> IO t)

@@ -12,6 +12,7 @@ import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTimer
+import           Data.Int
 import           System.Process (createPipe)
 import           System.Info (os)
 import           Test.ChainGenerators (TestBlockChainAndUpdates (..))
@@ -65,16 +66,22 @@ prop_pipe_demo :: TestBlockChainAndUpdates -> Property
 prop_pipe_demo (TestBlockChainAndUpdates chain updates) =
     ioProperty $ demo chain updates
 
+defaultMiniProtocolLimit :: Int64
+defaultMiniProtocolLimit = 3000000
 
 -- | The enumeration of all mini-protocols in our demo protocol.
 data DemoProtocols = ChainSync
-  deriving (Eq, Ord, Enum, Bounded)
+  deriving (Eq, Ord, Enum, Bounded, Show)
 
 instance Mx.ProtocolEnum DemoProtocols where
   fromProtocolEnum ChainSync = 2
 
   toProtocolEnum 2 = Just ChainSync
   toProtocolEnum _ = Nothing
+
+instance Mx.MiniProtocolLimits DemoProtocols where
+  maximumMessageSize ChainSync  = defaultMiniProtocolLimit
+  maximumIngressQueue ChainSync = defaultMiniProtocolLimit
 
 -- | A demonstration that we can run the simple chain consumer protocol
 -- over a pipe with full message serialisation, framing etc.
@@ -108,7 +115,7 @@ demo chain0 updates = do
     _ <- async $ runNetworkNodeWithPipe consumerPeers hndRead2 hndWrite1
 
     void $ fork $ sequence_
-        [ do threadDelay 10e-3 -- 10 milliseconds, just to provide interest
+        [ do threadDelay 10e-4 -- 1 milliseconds, just to provide interest
              atomically $ do
                  p <- readTVar producerVar
                  let Just p' = CPS.applyChainUpdate update p

@@ -301,7 +301,7 @@ demo chain0 updates = do
         withConnectionAsync (connect consumerNode) (nodeAddress producerNet) $ \_connAsync -> do
           void $ fork $ sequence_
               [ do
-                  threadDelay 10e-3 -- just to provide interest
+                  threadDelay 10e-4 -- just to provide interest
                   atomically $ do
                     p <- readTVar producerVar
                     let Just p' = CPS.applyChainUpdate update p
