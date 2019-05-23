@@ -35,6 +35,7 @@ module Ouroboros.Network.Protocol.Handshake.Type
   where
 
 
+import           Control.Exception
 import           Data.Text (Text)
 import qualified Data.Text as T
 import           Data.Typeable (Typeable, cast)
@@ -76,6 +77,8 @@ data RefuseReason vNumber
   -- The server refused to run the proposed version parameters
   | Refused vNumber Text
   deriving (Eq, Show)
+
+instance (Typeable vNumber, Show vNumber) => Exception (RefuseReason vNumber)
 
 instance Serialise vNumber => Serialise (RefuseReason vNumber) where
     encode (VersionMismatch vs) =
@@ -165,6 +168,8 @@ data ClientProtocolError vNumber
   = HandshakeError (RefuseReason vNumber)
   | NotRecognisedVersion vNumber
   deriving (Eq, Show)
+
+instance (Typeable vNumber, Show vNumber) => Exception (ClientProtocolError vNumber)
 
 -- |
 -- Handshake client which offers @'Versions' vNumber vData@ to the

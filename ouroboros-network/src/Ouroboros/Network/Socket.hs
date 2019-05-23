@@ -10,7 +10,8 @@
 --
 module Ouroboros.Network.Socket (
     -- * High level socket interface
-      withServerNode
+      AnyMuxResponderApp (..)
+    , withServerNode
     , withSimpleServerNode
     , connectTo
 
@@ -32,6 +33,10 @@ import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Exception (throwIO)
+import qualified Codec.CBOR.Term     as CBOR
+import           Codec.Serialise (Serialise)
+import           Data.Text (Text)
+import           Data.Typeable (Typeable)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Int
 import           Data.Word
@@ -39,7 +44,15 @@ import           GHC.Stack
 import qualified Network.Socket as Socket hiding (recv)
 import qualified Network.Socket.ByteString.Lazy as Socket (recv, sendAll)
 
+import           Control.Tracer (nullTracer)
+
+import           Network.TypedProtocol.Driver.ByteLimit
+
 import           Ouroboros.Network.Time
+import           Ouroboros.Network.Protocol.Handshake.Type
+import           Ouroboros.Network.Protocol.Handshake.Version
+import           Ouroboros.Network.Protocol.Handshake.Codec
+import           Ouroboros.Network.Channel
 
 import qualified Ouroboros.Network.Server.Socket as Server
 import qualified Ouroboros.Network.Mux as Mx
@@ -48,6 +61,15 @@ import           Ouroboros.Network.Mux.Types (MuxBearer)
 import           Ouroboros.Network.Mux.Interface
 
 import           Text.Printf
+
+-- |
+-- We assume that a TCP segment size of 1440 bytes with initial window of size
+-- 4.  This sets upper limit of 5760 bytes on each message of handshake
+-- protocol.  If the limit is exceeded, then @'TooMuchInput'@ exception will
+-- be thrown.
+--
+maxTransmissionUnit :: Int64
+maxTransmissionUnit = 4 * 1440
 
 -- |
 -- Create @'MuxBearer'@ from a socket.
@@ -119,34 +141,44 @@ socketAsMuxBearer sd = do
                     return $ fromIntegral $ max (1260 - 8) (min 0xffff (15 * mss - 8))
 #endif
 
+
 hexDump :: BL.ByteString -> String -> IO ()
 hexDump buf out | BL.empty == buf = say out
 hexDump buf out = hexDump (BL.tail buf) (out ++ printf "0x%02x " (BL.head buf))
-
 
 -- |
 -- Connect to a remote node.  It is using bracket to enclose the underlying
 -- socket acquisition.  This implies that when the continuation exits the
 -- underlying bearer will get closed.
 --
+-- The connection will start with handshake protocol sending @Versions@ to the
+-- remote peer.  It must fit into @'maxTransmissionUnit'@ (~5k bytes).
+--
 -- Exceptions thrown by @'MuxApplication'@ are rethrown by @'connectTo'@.
 connectTo
-  :: forall ptcl.
+  :: forall ptcl vNumber extra.
      ( Mx.ProtocolEnum ptcl
      , Ord ptcl
      , Enum ptcl
      , Bounded ptcl
+     , Ord vNumber
+     , Enum vNumber
+     , Serialise vNumber
+     , Typeable vNumber
+     , Show vNumber
      , Show ptcl
      , Mx.MiniProtocolLimits ptcl
      )
-  => MuxApplication InitiatorApp ptcl IO
+  => (forall vData. extra vData -> vData -> CBOR.Term)
+  -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
+  -> Versions vNumber extra (MuxApplication InitiatorApp ptcl IO)
   -- ^ application to run over the connection
   -> Socket.AddrInfo
   -- ^ local address; the created socket will bind to it
   -> Socket.AddrInfo
   -- ^ remote address
   -> IO ()
-connectTo app localAddr remoteAddr =
+connectTo encodeData decodeData versions localAddr remoteAddr =
     bracket
       (Socket.socket (Socket.addrFamily remoteAddr) Socket.Stream Socket.defaultProtocol)
       Socket.close
@@ -159,9 +191,19 @@ connectTo app localAddr remoteAddr =
 #endif
           Socket.bind sd (Socket.addrAddress localAddr)
           Socket.connect sd (Socket.addrAddress remoteAddr)
-          bearer <- socketAsMuxBearer sd
-          Mx.muxBearerSetState bearer Mx.Connected
-          Mx.muxStart app bearer
+          mapp <- runPeerWithByteLimit
+                    maxTransmissionUnit
+                    BL.length
+                    nullTracer
+                    codecHandshake
+                    (socketAsChannel sd)
+                    (handshakeClientPeer encodeData decodeData versions)
+          case mapp of
+            Left err -> throwIO err
+            Right app -> do
+              bearer <- socketAsMuxBearer sd
+              Mx.muxBearerSetState bearer Mx.Connected
+              Mx.muxStart app bearer
       )
 
 -- |
@@ -182,9 +224,16 @@ data AnyMuxResponderApp ptcl m where
 -- connection, the whole connection will terminate.  We might want to be more
 -- admissible in this scenario: leave the server thread running and let only
 -- the client thread to die.
-data AcceptConnection st ptcl m where
-    AcceptConnection :: !st -> AnyMuxResponderApp ptcl m -> AcceptConnection st ptcl m
-    RejectConnection :: !st -> AcceptConnection st ptcl m
+data AcceptConnection st vNumber extra ptcl m where
+
+    AcceptConnection
+      :: !st
+      -> Versions vNumber extra (AnyMuxResponderApp ptcl m)
+      -> AcceptConnection st vNumber extra ptcl m
+
+    RejectConnection
+      :: !st
+      -> AcceptConnection st vNumber extra ptcl m
 
 
 -- |
@@ -192,23 +241,39 @@ data AcceptConnection st ptcl m where
 -- of the incoming connection.
 --
 beginConnection
-    :: forall ptcl addr st.
+    :: forall ptcl vNumber extra addr st.
        ( Mx.ProtocolEnum ptcl
        , Ord ptcl
        , Enum ptcl
        , Bounded ptcl
        , Show ptcl
        , Mx.MiniProtocolLimits ptcl
+       , Ord vNumber
+       , Enum vNumber
+       , Serialise vNumber
+       , Typeable vNumber
+       , Show vNumber
        )
-    => (addr -> st -> STM.STM (AcceptConnection st ptcl IO))
+    => (forall vData. extra vData -> vData -> CBOR.Term)
+    -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
+    -> (forall vData. extra vData -> vData -> vData -> Accept)
+    -> (addr -> st -> STM.STM (AcceptConnection st vNumber extra ptcl IO))
     -- ^ either accept or reject a connection.
     -> Server.BeginConnection addr Socket.Socket st ()
-beginConnection fn addr st = do
+beginConnection encodeData decodeData acceptVersion fn addr st = do
     accept <- fn addr st
     case accept of
-      AcceptConnection st' anyApp -> pure $ Server.Accept st' $ \sd ->
-        case anyApp of
-          AnyMuxResponderApp app -> do
+      AcceptConnection st' versions -> pure $ Server.Accept st' $ \sd -> do
+        mapp <- runPeerWithByteLimit
+                maxTransmissionUnit
+                BL.length
+                nullTracer
+                codecHandshake
+                (socketAsChannel sd)
+                (handshakeServerPeer encodeData decodeData acceptVersion versions)
+        case mapp of
+          Left err -> throwIO err
+          Right (AnyMuxResponderApp app) -> do
             bearer <- socketAsMuxBearer sd
             Mx.muxBearerSetState bearer Mx.Connected
             Mx.muxStart app bearer
@@ -253,23 +318,32 @@ fromSocket sd = Server.Socket
 -- Thin wrapper around @'Server.run'@.
 --
 runNetworkNode'
-    :: forall ptcl st t.
+    :: forall ptcl st vNumber extra t.
        ( Mx.ProtocolEnum ptcl
        , Ord ptcl
        , Enum ptcl
        , Bounded ptcl
        , Show ptcl
        , Mx.MiniProtocolLimits ptcl
+       , Ord vNumber
+       , Enum vNumber
+       , Serialise vNumber
+       , Typeable vNumber
+       , Show vNumber
        )
     => Socket.Socket
+    -> (forall vData. extra vData -> vData -> CBOR.Term)
+    -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
+    -> (forall vData. extra vData -> vData -> vData -> Accept)
+    -- -> Versions vNumber extra (MuxApplication ServerApp ptcl IO)
     -> (SomeException -> IO ())
-    -> (Socket.SockAddr -> st -> STM.STM (AcceptConnection st ptcl IO))
+    -> (Socket.SockAddr -> st -> STM.STM (AcceptConnection st vNumber extra ptcl IO))
     -> Server.CompleteConnection st ()
     -> Server.Main st t
     -> st
     -> IO t
-runNetworkNode' sd acceptException acceptConn complete main st =
-    Server.run (fromSocket sd) acceptException (beginConnection acceptConn) complete main st
+runNetworkNode' sd encodeData decodeData acceptVersion acceptException acceptConn complete main st =
+    Server.run (fromSocket sd) acceptException (beginConnection encodeData decodeData acceptVersion acceptConn) complete main st
 
 
 -- |
@@ -280,17 +354,33 @@ runNetworkNode' sd acceptException acceptConn complete main st =
 -- TODO: we should track connections in the state and refuse connections from
 -- peers we are already connected to.  This is also the right place to ban
 -- connection from peers which missbehaved.
+--
+-- The server will run handshake protocol on each incoming connection.  We
+-- assume that each versin negotiation message should fit into
+-- @'maxTransmissionUnit'@ (~5k bytes).
+--
+-- Note: it will open a socket in the current thread and pass it to the spawned
+-- thread which runs the server.  This makes it useful for testing, where we
+-- need to guarantee that a socket is open before we try to connect to it.
 withServerNode
-    :: forall ptcl t.
+    :: forall ptcl vNumber extra t.
        ( Mx.ProtocolEnum ptcl
        , Ord ptcl
        , Enum ptcl
        , Bounded ptcl
        , Show ptcl
        , Mx.MiniProtocolLimits ptcl
+       , Ord vNumber
+       , Enum vNumber
+       , Serialise vNumber
+       , Typeable vNumber
+       , Show vNumber
        )
     => Socket.AddrInfo
-    -> AnyMuxResponderApp ptcl IO
+    -> (forall vData. extra vData -> vData -> CBOR.Term)
+    -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
+    -> (forall vData. extra vData -> vData -> vData -> Accept)
+    -> Versions vNumber extra (AnyMuxResponderApp ptcl IO)
     -- ^ The mux application that will be run on each incoming connection from
     -- a given address.  Note that if @'MuxClientAndServerApplication'@ is
     -- returned, the connection will run a full duplex set of mini-protocols.
@@ -299,22 +389,25 @@ withServerNode
     -- Note: the server thread will terminate when the callback returns or
     -- throws an exception.
     -> IO t
-withServerNode addr app k =
-    bracket (mkListeningSocket (Socket.addrFamily addr) (Just $ Socket.addrAddress addr)) Socket.close $ \sd -> do
-
-      let main :: Server.Main () ()
-          main _ = retry
-
+withServerNode addr encodeData decodeData acceptVersion versions k =
+    bracket (mkListeningSocket (Socket.addrFamily addr) (Just $ Socket.addrAddress addr)) Socket.close $ \sd ->
       withAsync
         (runNetworkNode'
-          sd throwIO
-          (\_connAddr st -> pure $ AcceptConnection st app)
+          sd
+          encodeData
+          decodeData
+          acceptVersion
+          throwIO
+          (\_connAddr st -> pure $ AcceptConnection st versions)
           complete
           main
           ()) k
 
     where
       -- When a connection completes, we do nothing. State is ().
+      main :: Server.Main () ()
+      main _ = retry
+
       -- Crucially: we don't re-throw exceptions, because doing so would
       -- bring down the server.
       complete outcome st = case outcome of
@@ -327,16 +420,24 @@ withServerNode addr app k =
 -- connection.
 --
 withSimpleServerNode
-    :: forall ptcl t.
+    :: forall ptcl vNumber extra t.
        ( Mx.ProtocolEnum ptcl
        , Ord ptcl
        , Enum ptcl
        , Bounded ptcl
        , Show ptcl
        , Mx.MiniProtocolLimits ptcl
+       , Ord vNumber
+       , Enum vNumber
+       , Serialise vNumber
+       , Typeable vNumber
+       , Show vNumber
        )
     => Socket.AddrInfo
-    -> MuxApplication ResponderApp ptcl IO
+    -> (forall vData. extra vData -> vData -> CBOR.Term)
+    -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
+    -> (forall vData. extra vData -> vData -> vData -> Accept)
+    -> Versions vNumber extra (MuxApplication ResponderApp ptcl IO)
     -- ^ The mux server application that will be run on each incoming
     -- connection.
     -> (Async () -> IO t)
@@ -344,4 +445,4 @@ withSimpleServerNode
     -- Note: the server thread will terminate when the callback returns or
     -- throws an exception.
     -> IO t
-withSimpleServerNode addr app k = withServerNode addr (AnyMuxResponderApp app) k
+withSimpleServerNode addr encodeData decodeData acceptVersion versions k = withServerNode addr encodeData decodeData acceptVersion (AnyMuxResponderApp <$> versions) k
