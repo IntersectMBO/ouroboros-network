@@ -211,7 +211,8 @@ instance Arbitrary TestAddBlock where
   shrink (TestAddBlock c b) =
     [ TestAddBlock c' b'
     | TestBlockChain c' <- shrink (TestBlockChain c)
-    , let b' = fixupBlock (Chain.head c') b
+    , let b' = fixupBlock (Chain.headHash c')
+                          (Chain.headBlockNo c') b
     ]
 
 genAddBlock :: (HasHeader block, HeaderHash block ~ ConcreteHeaderHash)
@@ -220,7 +221,8 @@ genAddBlock chain = do
     slotGap <- genSlotGap
     body    <- arbitrary
     let pb = mkPartialBlock (addSlotGap slotGap (Chain.headSlot chain)) body
-        b  = fixupBlock (Chain.head chain) pb
+        b  = fixupBlock (Chain.headHash chain)
+                        (Chain.headBlockNo chain) pb
     return b
 
 prop_arbitrary_TestAddBlock :: TestAddBlock -> Bool
