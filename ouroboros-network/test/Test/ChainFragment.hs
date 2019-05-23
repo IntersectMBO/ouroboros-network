@@ -103,7 +103,7 @@ tests = testGroup "ChainFragment"
   , testProperty "(:<)"                                      prop_prepend
   , testProperty "fromChain/toChain"                         prop_fromChain_toChain
   , testProperty "toChain/fromChain"                         prop_toChain_fromChain
-  , testProperty "fixupBlockPrim"                            prop_fixupBlock'
+  , testProperty "fixupBlockPrim"                            prop_fixupBlock
   ]
 
 --
@@ -370,9 +370,9 @@ prop_toChain_fromChain :: TestBlockChain -> Property
 prop_toChain_fromChain (TestBlockChain c) =
     CF.toChain (CF.fromChain c) === c
 
-prop_fixupBlock' :: TestBlockChainFragment -> Bool
-prop_fixupBlock' (TestBlockChainFragment chain) =
-  fixupChainFragmentFromGenesis fixupBlock' (CF.toNewestFirst chain) == chain
+prop_fixupBlock :: TestBlockChainFragment -> Bool
+prop_fixupBlock (TestBlockChainFragment chain) =
+  fixupChainFragmentFromGenesis fixupBlock (CF.toNewestFirst chain) == chain
 
 --
 -- Generators for chains
@@ -456,18 +456,24 @@ instance Arbitrary TestAddBlock where
   shrink (TestAddBlock c b) =
     [ TestAddBlock c' b'
     | TestBlockChainFragment c' <- shrink (TestBlockChainFragment c)
-    , let b' = fixupBlock (CF.head c') b
+    , let b' = maybe b (`fixupBlockAfterBlock` b) (CF.head c')
     ]
 
 genAddBlock :: (HasHeader block, HeaderHash block ~ ConcreteHeaderHash)
             => ChainFragment block -> Gen Block
 genAddBlock chain = do
-    slotGap <- genSlotGap
     body    <- arbitrary
-    let pb = mkPartialBlock (addSlotGap slotGap
-                                        (fromMaybe (SlotNo 0) $ CF.headSlot chain))
-                                        body
-        b  = fixupBlock (CF.head chain) pb
+    slotGap <- genSlotGap
+    let prevhash :: ChainHash Block
+        (prevhash, prevblockno, prevslot) = case chain of
+          _ CF.:> chead -> ( BlockHash (blockHash chead)
+                           , blockNo chead
+                           , blockSlot chead )
+          CF.Empty      -> ( GenesisHash
+                           , BlockNo 0
+                           , SlotNo 0 )
+    let slot    = addSlotGap slotGap prevslot
+        b       = fixupBlock prevhash prevblockno (mkPartialBlock slot body)
     return b
 
 prop_arbitrary_TestAddBlock :: TestAddBlock -> Bool
@@ -721,23 +727,23 @@ instance Arbitrary TestChainFragmentFork where
         ex1 = extensionFragment l1 c1
         ex2 = extensionFragment l2 c2 in
     [ TestChainFragmentFork
-        (fixupChainFragmentFromGenesis fixupBlock longestPrefix')
-        (fixupChainFragmentFromGenesis fixupBlock shortestPrefix')
-        (fixupChainFragmentFromGenesis fixupBlock (ex1 ++ longestPrefix'))
-        (fixupChainFragmentFromGenesis fixupBlock (ex2 ++ shortestPrefix'))
+        (fixupChainFragmentFromSame fixupBlock longestPrefix')
+        (fixupChainFragmentFromSame fixupBlock shortestPrefix')
+        (fixupChainFragmentFromSame fixupBlock (ex1 ++ longestPrefix'))
+        (fixupChainFragmentFromSame fixupBlock (ex2 ++ shortestPrefix'))
     | longestPrefix' <- shrinkList (const []) (CF.toNewestFirst longestPrefix)
     , let shortestPrefix' = reverse $ drop toDrop $ reverse longestPrefix'
     ]
    -- shrink the first fork
    ++ [ TestChainFragmentFork l1 l2 c1' c2
       | ex1' <- shrinkList (const []) ex1
-      , let c1' = fixupChainFragmentFromGenesis fixupBlock' (ex1' ++ CF.toNewestFirst l1)
+      , let c1' = fixupChainFragmentFromSame fixupBlock (ex1' ++ CF.toNewestFirst l1)
       , isLongestCommonPrefix c1' c2
       ]
    -- shrink the second fork
    ++ [ TestChainFragmentFork l1 l2 c1 c2'
       | ex2' <- shrinkList (const []) ex2
-      , let c2' = fixupChainFragmentFromGenesis fixupBlock' (ex2' ++ CF.toNewestFirst l2)
+      , let c2' = fixupChainFragmentFromSame fixupBlock (ex2' ++ CF.toNewestFirst l2)
       , isLongestCommonPrefix c1 c2'
       ]
     where

@@ -388,5 +388,11 @@ coreNode :: forall m.
      -> m (TVar m (ChainProducerState Block))
 coreNode nid slotDuration gchain chans = do
   cpsVar <- relayNode nid Genesis chans
-  forkCoreKernel slotDuration gchain (Concrete.fixupBlock . Chain.head) cpsVar
+  forkCoreKernel slotDuration gchain fixupBlock cpsVar
   return cpsVar
+  where
+    fixupBlock :: Chain Block -> Block -> Block
+    fixupBlock c =
+      Concrete.fixupBlock
+        (Chain.headHash c)
+        (Chain.headBlockNo c)

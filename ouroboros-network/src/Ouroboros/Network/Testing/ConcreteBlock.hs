@@ -39,11 +39,11 @@ module Ouroboros.Network.Testing.ConcreteBlock (
   , mkPartialBlock
   , mkPartialBlockHeader
   , fixupBlock
-  , fixupBlock'
   , fixupBlockHeader
-  , fixupBlockHeader'
+  , fixupBlockAfterBlock
   , fixupChain
   , fixupChainFragmentFromGenesis
+  , fixupChainFragmentFromSame
   , fixupAnchoredFragmentFrom
   ) where
 
@@ -53,6 +53,7 @@ import qualified Data.Text as Text
 import           Data.Word (Word64)
 import           Data.String (IsString)
 import           Data.Function (fix)
+import           Data.Maybe (fromMaybe)
 
 import           Codec.Serialise (Serialise (..))
 import           Codec.CBOR.Encoding ( encodeListLen
@@ -262,11 +263,11 @@ mkPartialBlockHeader sl body =
 -- | Fixup block so to fit it on top of a chain.  Only block number, previous
 -- hash and block hash are updated; slot number and signers are kept intact.
 --
-fixupBlock :: (HasHeader block, HeaderHash block ~ HeaderHash Block)
-           => Maybe block -> Block -> Block
-fixupBlock pb b@Block{blockBody, blockHeader} =
+fixupBlock :: (HeaderHash block ~ HeaderHash BlockHeader)
+           => ChainHash block -> BlockNo -> Block -> Block
+fixupBlock prevhash prevblockno b@Block{blockBody, blockHeader} =
     b {
-      blockHeader = (fixupBlockHeader pb blockHeader) {
+      blockHeader = (fixupBlockHeader prevhash prevblockno blockHeader) {
                       headerBodyHash = hashBody blockBody
                     }
     }
@@ -274,78 +275,91 @@ fixupBlock pb b@Block{blockBody, blockHeader} =
 -- | Fixup block header to fit it on top of a chain.  Only block number and
 -- previous hash are updated; the slot and signer are kept unchanged.
 --
-fixupBlockHeader :: (HasHeader block, HeaderHash block ~ HeaderHash Block)
-                 => Maybe block -> BlockHeader -> BlockHeader
-fixupBlockHeader pb b =
+fixupBlockHeader :: (HeaderHash block ~ HeaderHash BlockHeader)
+                 => ChainHash block -> BlockNo -> BlockHeader -> BlockHeader
+fixupBlockHeader prevhash prevblockno b =
     fix $ \b' ->
     b {
       headerHash     = hashHeader b',
-      headerPrevHash = maybe GenesisHash (BlockHash . blockHash) pb,
-      headerBlockNo  = maybe (BlockNo 1) (succ . blockNo) pb
+      headerPrevHash = castHash prevhash,
+      headerBlockNo  = succ prevblockno
     }
 
--- |
--- Like @'fixupBlock'@ but it will preserve the first block instead of using
--- @GenesisHash@ and @BlockNo 1@.
+
+-- | Fixup a block so to fit it on top of a given previous block.
+
+-- Like 'fixupBlock' but it takes the info from a given block.
 --
-fixupBlockHeader' :: (HasHeader block, HeaderHash block ~ HeaderHash Block)
-                 => Maybe block -> BlockHeader -> BlockHeader
-fixupBlockHeader' pb b = b'
+fixupBlockAfterBlock :: Block -> Block -> Block
+fixupBlockAfterBlock prev =
+    fixupBlock prevhash prevblockno
   where
-    b' = BlockHeader {
-      headerHash     = hashHeader b',
-      headerPrevHash = maybe (headerPrevHash b) (BlockHash . blockHash) pb,
-                                       -- keep the prev hash of the first header
-      headerSlot     = headerSlot b,   -- keep the existing slot number
-      headerSigner   = headerSigner b, -- and signer
-      headerBlockNo  = maybe (blockNo b) (succ . blockNo) pb,
-                                       -- keep the block number of the first
-                                       -- header
-      headerBodyHash = headerBodyHash b
-    }
+    prevhash :: ChainHash Block
+    prevhash     = BlockHash (blockHash prev)
+    prevblockno  = blockNo prev
 
--- |
--- Like @'fixupBlock'@ but using @'fixupBlockHeader''@.
---
-fixupBlock' :: (HasHeader block, HeaderHash block ~ HeaderHash Block)
-           => Maybe block -> Block -> Block
-fixupBlock' pb b@Block{blockBody, blockHeader} =
-    b {
-      blockHeader = (fixupBlockHeader' pb blockHeader) {
-                      headerBodyHash = hashBody blockBody
-                    }
-    }
-
-fixupBlocks :: (c -> b -> c)
+fixupBlocks :: HasHeader b
+            => (c -> b -> c)
             -> c
-            -> (Maybe b -> b -> b)
+            -> (Maybe (ChainHash b))  -- ^ optionally set anchor hash
+            -> (Maybe BlockNo)        -- ^ optionally set anchor block number
+            -> (ChainHash b -> BlockNo -> b -> b)
             -> [b] -> c
-fixupBlocks f z fixup = fst . go
+fixupBlocks _f z _ _ _fixup []      = z
+fixupBlocks  f z anchorHash anchorBlockNo fixup (b0:c0) =
+    fst (go b0 c0)
   where
-    go []      = (z, Nothing)
-    go (b : c) = (c' `f` b', Just b')
+    go b [] = (z `f` b', b')
       where
-        (c', chead) = go c
-        b'          = fixup chead b
+        b' = fixup (fromMaybe (blockPrevHash b)  anchorHash)
+                   (fromMaybe (pred (blockNo b)) anchorBlockNo)
+                   b
 
-fixupChain :: (Maybe b -> b -> b)
+    go b (b1:c1) = (c' `f` b', b')
+      where
+        (c', b1') = go b1 c1
+        b'        = fixup (BlockHash (blockHash b1')) (blockNo b1') b
+
+-- | Fix up the block number and hashes of a 'Chain'. This also fixes up the
+-- first block to chain-on from genesis, since by construction the 'Chain' type
+-- starts from genesis.
+--
+fixupChain :: HasHeader b
+           => (ChainHash b -> BlockNo -> b -> b)
            -> [b] -> Chain b
-fixupChain = fixupBlocks (C.:>) C.Genesis
+fixupChain =
+    fixupBlocks
+      (C.:>) C.Genesis
+      (Just GenesisHash)
+      (Just (BlockNo 0))
 
 fixupChainFragmentFromGenesis :: HasHeader b
-                              => (Maybe b -> b -> b)
+                              => (ChainHash b -> BlockNo -> b -> b)
                               -> [b] -> ChainFragment b
 fixupChainFragmentFromGenesis =
     fixupBlocks
       (CF.:>) CF.Empty
+      (Just GenesisHash)
+      (Just (BlockNo 0))
+
+fixupChainFragmentFromSame :: HasHeader b
+                           => (ChainHash b -> BlockNo -> b -> b)
+                           -> [b] -> ChainFragment b
+fixupChainFragmentFromSame =
+    fixupBlocks
+      (CF.:>) CF.Empty
+      Nothing
+      Nothing
 
 fixupAnchoredFragmentFrom :: HasHeader b
                           => Point b
-                          -> (Maybe b -> b -> b)
+                          -> (ChainHash b -> BlockNo -> b -> b)
                           -> [b] -> AnchoredFragment b
 fixupAnchoredFragmentFrom anchor =
     fixupBlocks
       (AF.:>) (AF.Empty anchor)
+      (Just (pointHash anchor))
+      (Just (BlockNo 0))
 
 
 {-------------------------------------------------------------------------------
