@@ -60,6 +60,7 @@
             (hsPkgs.pipes)
             (hsPkgs.process)
             (hsPkgs.QuickCheck)
+            (hsPkgs.splitmix)
             (hsPkgs.serialise)
             (hsPkgs.stm)
             (hsPkgs.tasty)
