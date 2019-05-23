@@ -31,7 +31,6 @@ import           Data.Bifunctor
 import qualified Data.Bifunctor.TH as TH
 import           Data.Bitraversable
 import           Data.ByteString (ByteString)
-import qualified Data.ByteString.Builder as BL
 import qualified Data.ByteString.Lazy as BL
 import           Data.Functor.Classes
 import           Data.Int (Int64)
@@ -167,7 +166,7 @@ run HasFS{..} = go
     go (Close    h             ) = Unit       <$> hClose    h
     go (Seek     h mode sz     ) = Unit       <$> hSeek     h mode sz
     go (Get      h n           ) = ByteString <$> hGetSome  h n
-    go (Put      h bs          ) = Word64     <$> hPut      h (BL.lazyByteString bs)
+    go (Put      h bs          ) = Word64     <$> hPutSome h (BL.toStrict bs)
     go (Truncate h sz          ) = Unit       <$> hTruncate h sz
     go (GetSize  h             ) = Word64     <$> hGetSize  h
     go (ListDirectory      pe  ) = withPE pe (const Strings) $ listDirectory

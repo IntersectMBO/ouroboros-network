@@ -34,7 +34,7 @@ test_hOpenWriteInvalid :: Assertion
 test_hOpenWriteInvalid = apiEquivalenceFs (expectFsError FsInvalidArgument) $ \HasFS{..} _err -> do
     _  <- hOpen ["foo.txt"] IO.WriteMode
     h2 <- hOpen ["foo.txt"] IO.ReadMode
-    hPut h2 "haskell-is-nice"
+    hPutSome h2 "haskell-is-nice"
 
 test_example :: Assertion
 test_example = apiEquivalenceFs (expectFsResult (@?= ["test", "block"])) $ \hasFS@HasFS{..} _err -> do

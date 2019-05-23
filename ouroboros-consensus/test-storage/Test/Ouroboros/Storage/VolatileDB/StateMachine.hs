@@ -534,7 +534,7 @@ knownLimitation model (At cmd) = case cmd of
         isLimitation (Just slot') slot = slot' >  slot
 
 prop_sequential :: Property
-prop_sequential = withMaxSuccess 1000 $
+prop_sequential = withMaxSuccess 50000 $
     forAllCommands smUnused Nothing $ \cmds -> monadicIO $ do
         let test :: TVar IO Errors
                  -> HasFS IO h

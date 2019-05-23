@@ -670,7 +670,7 @@ appendBinaryBlobImpl dbEnv@ImmutableDBEnv{..} slot builder =
       -- Append to the end of the epoch file.
       bytesWritten <- lift $ onException hasFsErr _dbErr
         (hClose _currentEpochWriteHandle)
-        (hPut _currentEpochWriteHandle builder)
+        (hPut hasFS _currentEpochWriteHandle builder)
         -- In 'modifyOpenState': when an exception occurs, we close the handle
         -- if there is one in the initial open state. However, we might have
         -- opened a new one when we called 'startNewEpoch', and this handle
@@ -777,7 +777,7 @@ appendEBBImpl dbEnv@ImmutableDBEnv{..} epoch hash builder =
       -- Append to the epoch file.
       bytesWritten <- lift $ onException hasFsErr _dbErr
         (hClose _currentEpochWriteHandle)
-        (hPut _currentEpochWriteHandle builder)
+        (hPut hasFS _currentEpochWriteHandle builder)
         -- In 'modifyOpenState': when an exception occurs, we close the handle
         -- if there is one in the initial open state. However, we might have
         -- opened a new one when we called 'startNewEpoch', and this handle

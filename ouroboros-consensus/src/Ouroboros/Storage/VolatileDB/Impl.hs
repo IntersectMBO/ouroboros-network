@@ -260,7 +260,7 @@ putBlockImpl env@VolatileDBEnv{..} BlockInfo{..} builder = do
                 let FileInfo {..} = fromMaybe
                         (error "Volatile db invariant violation: Current write file not found in Index.")
                         (Map.lookup _currentWritePath _currentMap)
-                bytesWritten <- hPut _currentWriteHandle builder
+                bytesWritten <- hPut hasFS _currentWriteHandle builder
                 let fileMp' = Map.insert _currentWriteOffset (fromIntegral bytesWritten, bbid) fContents
                     nBlocks' = fNBlocks + 1
                     fileInfo' = FileInfo {
@@ -272,7 +272,7 @@ putBlockImpl env@VolatileDBEnv{..} BlockInfo{..} builder = do
                     internalBlockInfo' = InternalBlockInfo {
                           ibFile       = _currentWritePath
                         , ibSlotOffset = _currentWriteOffset
-                        , ibBlockSize  = fromIntegral bytesWritten
+                        , ibBlockSize  = bytesWritten
                         , ibSlot       = bslot
                         , ibPreBid     = bpreBid
                     }

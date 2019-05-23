@@ -26,12 +26,12 @@ import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 example :: (HasCallStack, Monad m) => HasFS m h -> m [ByteString]
 example HasFS{..} = do
     h1 <- hOpen ["cardano.txt"] IO.ReadWriteMode
-    _  <- hPut h1 "test"
+    _  <- hPutSome h1 "test"
     _  <- hSeek h1 IO.AbsoluteSeek 0
     r1 <- hGetSome h1 4
-    _  <- hPut h1 "ing"
+    _  <- hPutSome h1 "ing"
     h2 <- hOpen ["bar.txt"] IO.ReadWriteMode
-    _  <- hPut h2 "blockchain"
+    _  <- hPutSome h2 "blockchain"
     _  <- hSeek h2 IO.AbsoluteSeek 0
     r2 <- hGetSome h2 5
     _  <- listDirectory []

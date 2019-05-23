@@ -11,13 +11,9 @@ module Ouroboros.Storage.FS.IO (
 
 import qualified Control.Exception as E
 import           Control.Concurrent.MVar
-import           Data.ByteString.Builder (Builder)
-import qualified Data.ByteString.Builder.Extra as BS
 import qualified Data.ByteString.Unsafe as BS
 import qualified Data.Set as Set
-import           Data.Word (Word64, Word8)
-import           Foreign (ForeignPtr, Ptr, castPtr, withForeignPtr)
-import           GHC.ForeignPtr (mallocPlainForeignPtrBytes)
+import           Foreign (castPtr)
 import           GHC.Stack
 import qualified System.Directory as Dir
 
@@ -57,9 +53,9 @@ ioHasFS mount = HasFS {
         F.truncate h sz
     , hGetSize = \h -> rethrowFsError (handlePath h) $
         F.getSize h
-    , hPut = \h builder -> rethrowFsError (handlePath h) $ do
-        buf0 <- newBufferIO BS.defaultChunkSize
-        hPutBufferIO h buf0 builder
+    , hPutSome = \h bs -> rethrowFsError (handlePath h) $ do
+        BS.unsafeUseAsCStringLen bs $ \(ptr, len) ->
+            fromIntegral <$> F.write h (castPtr ptr) (fromIntegral len)
     , createDirectory = \fp -> rethrowFsError fp $
         Dir.createDirectory (root fp)
     , listDirectory = \fp -> rethrowFsError fp $
@@ -93,51 +89,3 @@ rethrowFsError fp action = do
       case ioToFsError fp ioErr of
         Left  unexpected -> E.throwIO unexpected
         Right err        -> E.throwIO err
-
-{-------------------------------------------------------------------------------
-  Auxiliary: buffers
--------------------------------------------------------------------------------}
-
-data BufferIO = BufferIO !(ForeignPtr Word8) !Int
-
-bufferSize :: BufferIO -> Int
-bufferSize (BufferIO _fptr len) = len
-
-newBufferIO :: Int -> IO BufferIO
-newBufferIO len = do
-    fptr <- mallocPlainForeignPtrBytes len
-    return $! BufferIO fptr len
-
-withBuffer :: BufferIO
-           -> (Ptr Word8 -> Int -> IO a)
-           -> IO a
-withBuffer (BufferIO fptr len) action =
-    withForeignPtr fptr $ \ptr -> action ptr len
-
-hPutBufferIO :: F.FHandle -> BufferIO -> Builder -> IO Word64
-hPutBufferIO hnd buf0 = go 0 buf0 . BS.runBuilder
-  where
-    go :: Word64
-       -> BufferIO
-       -> BS.BufferWriter
-       -> IO Word64
-    go !bytesWritten buf write = do
-      (bytesCount, next) <- withBuffer buf $ \ptr sz -> do
-        -- run the builder, writing into our buffer
-        (n, next) <- write ptr sz
-        -- so now our buffer contains 'n' bytes
-        -- write it all out to the handle leaving our buffer empty
-        bytesCount <- F.write hnd ptr (fromIntegral n)
-        return (bytesCount, next)
-      case next of
-        BS.Done -> return (bytesWritten + fromIntegral bytesCount)
-        BS.More minSize write' | bufferSize buf < minSize -> do
-          -- very unlikely given our strategy of flushing our buffer every time
-          buf' <- newBufferIO minSize
-          go (bytesWritten + fromIntegral bytesCount) buf' write'
-        BS.More _minSize write' ->
-          go (bytesWritten + fromIntegral bytesCount) buf write'
-        BS.Chunk chunk   write' -> do
-          n <- BS.unsafeUseAsCStringLen chunk $ \(ptr, len) ->
-                   F.write hnd (castPtr ptr) (fromIntegral len)
-          go (bytesWritten + fromIntegral n + fromIntegral bytesCount) buf write'

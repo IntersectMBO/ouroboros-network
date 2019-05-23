@@ -350,8 +350,8 @@ test_cborEpochFileParser = forM_ ["junk", ""] $ \junk -> runFS $ \hasFS -> do
 
     withFile hasFS fp IO.AppendMode $ \h -> do
       forM_ blocks $ \block ->
-        hPut h (S.serialiseIncremental block)
-      void $ hPut h (BS.string8 junk)
+        hPut hasFS h (S.serialiseIncremental block)
+      void $ hPut hasFS h (BS.string8 junk)
 
     (offsetsAndSizesAndBlocks', ebbHash, mbErr) <-
       runEpochFileParser (cborEpochFileParser' hasFS S.decode (const getEBBHash)) fp

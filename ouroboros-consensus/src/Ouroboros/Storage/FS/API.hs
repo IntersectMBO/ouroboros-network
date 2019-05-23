@@ -7,12 +7,16 @@ module Ouroboros.Storage.FS.API (
       HasFS(..)
     , hGetExactly
     , hGetLenient
+    , hPut
+    , hPutAll
+    , hPutAllStrict
     , withFile
     ) where
 
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
 import           Data.ByteString.Builder (Builder)
+import qualified Data.ByteString.Builder as BS
 import           Data.Int (Int64)
 import           Data.Set (Set)
 import           Data.Word (Word64)
@@ -54,7 +58,7 @@ data HasFS m h = HasFS {
   , hGetSome                 :: HasCallStack => h -> Int -> m BS.ByteString
 
     -- | Write to a handle
-  , hPut                     :: HasCallStack => h -> Builder -> m Word64
+  , hPutSome                 :: HasCallStack => h -> BS.ByteString -> m Word64
 
     -- | Truncate the file to the specified size
     --
@@ -138,3 +142,41 @@ hGetLenient hasFS h n = go n []
       if BS.null bs then
         go 0 acc
       else go (remainingBytes - BS.length bs) (bs : acc)
+
+-- | This function makes sure that the whole ByteString is flushed.
+hPutAllStrict :: forall m h
+              .  (HasCallStack, Monad m)
+              => HasFS m h
+              -> h
+              -> BS.ByteString
+              -> m Word64
+hPutAllStrict hasFS h bs = go 0 bs
+    where
+      go :: Word64 -> BS.ByteString -> m Word64
+      go counter bs' = do
+        n <- hPutSome hasFS h bs'
+        let bs'' = BS.drop (fromIntegral n) bs'
+        let counter' = counter + (fromIntegral n)
+        if not $ BS.null bs''
+           then go counter' bs''
+           else return counter'
+
+
+-- | This function makes sure that the whole Lazy ByteString is flushed.
+hPutAll :: forall m h
+        .  (HasCallStack, Monad m)
+        => HasFS m h
+        -> h
+        -> BL.ByteString
+        -> m Word64
+hPutAll hasFS h bs =
+  BL.foldrChunks (\c rest -> hPutAllStrict hasFS h c >>= \n -> fmap (+n) rest) (return 0) bs
+
+-- | This function makes sure that the whole Builder is flushed.
+hPut :: forall m h
+     .  (HasCallStack, Monad m)
+     => HasFS m h
+     -> h
+     -> Builder
+     -> m Word64
+hPut hasFS g = hPutAll hasFS g . BS.toLazyByteString

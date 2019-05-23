@@ -51,7 +51,7 @@ import           GHC.Stack (HasCallStack, callStack)
 
 import           System.IO (IOMode (..))
 
-import           Ouroboros.Storage.FS.API (HasFS (..), withFile)
+import           Ouroboros.Storage.FS.API (HasFS (..), hPut, hPutAll, withFile)
 
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.Util (decodeIndexEntryAt, encodeIndexEntry)
@@ -148,9 +148,9 @@ writeIndex hashEncoder hasFS@HasFS{..} epoch (MkIndex offsets ebbHash) = do
       -- just overwrite part of the data stored in the index file.
       void $ hTruncate iHnd 0
       -- TODO efficient enough?
-      void $ hPut iHnd $ V.foldl'
+      void $ hPut hasFS iHnd $ V.foldl'
         (\acc offset -> acc <> encodeIndexEntry offset) mempty offsets
-      void $ hPut iHnd $ BS.lazyByteString $ serialiseHash hashEncoder ebbHash
+      void $ hPutAll hasFS iHnd $ serialiseHash hashEncoder ebbHash
 
 -- | Write a non-empty list of 'SlotOffset's to an index file.
 writeSlotOffsets :: (MonadThrow m)
@@ -167,8 +167,8 @@ writeSlotOffsets hashEncoder hasFS@HasFS{..} epoch sos ebbHash = do
       -- just overwrite part of the data stored in the index file.
       void $ hTruncate iHnd 0
       -- TODO efficient enough?
-      void $ hPut iHnd (foldMap encodeIndexEntry (NE.reverse sos))
-      void $ hPut iHnd $ BS.lazyByteString $ serialiseHash hashEncoder ebbHash
+      void $ hPut hasFS iHnd (foldMap encodeIndexEntry (NE.reverse sos))
+      void $ hPutAll hasFS iHnd $ serialiseHash hashEncoder ebbHash
 
 -- | Create an 'Index' from the given non-empty list of 'SlotOffset's.
 --

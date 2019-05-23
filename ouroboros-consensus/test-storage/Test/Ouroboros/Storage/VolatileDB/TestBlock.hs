@@ -22,7 +22,7 @@ import           Test.QuickCheck
 
 import           Ouroboros.Consensus.Util (SomePair (..))
 import           Ouroboros.Storage.Common
-import           Ouroboros.Storage.FS.API (HasFS (..), hGetLenient, withFile)
+import           Ouroboros.Storage.FS.API (HasFS (..), hGetLenient, hPut, withFile)
 import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.VolatileDB (Parser (..), SlotNo (..))
 import           Ouroboros.Storage.VolatileDB
@@ -132,7 +132,7 @@ corruptFile hasFS@HasFS{..} corr file = case corr of
     AppendBytes n -> withFile hasFS [file] IO.AppendMode $ \hnd -> do
         fileSize <- hGetSize hnd
         let newFileSize = fileSize + (fromIntegral n)
-        _ <- hPut hnd (BB.byteString $ BS.replicate n 0)
+        _ <- hPut hasFS hnd (BB.byteString $ BS.replicate n 0)
         return $ fileSize /= newFileSize
 
 

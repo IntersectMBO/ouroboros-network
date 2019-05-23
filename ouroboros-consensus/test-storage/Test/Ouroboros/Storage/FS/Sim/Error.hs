@@ -21,7 +21,7 @@ module Test.Ouroboros.Storage.FS.Sim.Error
   , always
   , mkStreamGen
   , ErrorStream
-    -- * Generating corruption for 'hPut'
+    -- * Generating corruption for 'hPutSome'
   , PutCorruption(..)
   , corrupt
     -- * Error streams for 'HasFS'
@@ -39,9 +39,6 @@ import           Control.Monad.Class.MonadSTM (MonadSTM (..))
 import           Control.Monad.Except (runExceptT)
 
 import qualified Data.ByteString as BS
-import           Data.ByteString.Builder (Builder)
-import qualified Data.ByteString.Builder as BS
-import qualified Data.ByteString.Lazy as BL
 import           Data.List (dropWhileEnd, intercalate)
 import           Data.Maybe (catMaybes, isNothing)
 import           Data.Word (Word64)
@@ -147,7 +144,7 @@ type ErrorStream = Stream FsErrorType
   Generating corruption for hPut
 -------------------------------------------------------------------------------}
 
--- | Model possible corruptions that could happen to a 'hPut' call.
+-- | Model possible corruptions that could happen to a 'hPutSome' call.
 data PutCorruption
     = SubstituteWithJunk Blob
       -- ^ The blob to write is substituted with corrupt junk
@@ -170,16 +167,15 @@ instance Arbitrary PutCorruption where
   shrink (DropRatioLastBytes tenths) =
       [DropRatioLastBytes tenths' | tenths' <- shrink tenths, tenths' > 0]
 
--- | Apply the 'PutCorruption' to the 'Builder'.
-corrupt :: Builder -> PutCorruption -> Builder
-corrupt bld pc = case pc of
+-- | Apply the 'PutCorruption' to the 'BS.ByteString'.
+corrupt :: BS.ByteString -> PutCorruption -> BS.ByteString
+corrupt bs pc = case pc of
     SubstituteWithJunk blob   -> getBlob blob
-    DropRatioLastBytes tenths -> BS.lazyByteString bs'
+    DropRatioLastBytes tenths -> bs'
       where
-        bs = BS.toLazyByteString bld
         toTake :: Double
-        toTake = fromIntegral (BL.length bs) * fromIntegral (10 - tenths) / 10.0
-        bs' = BL.take (round toTake) bs
+        toTake = fromIntegral (BS.length bs) * fromIntegral (10 - tenths) / 10.0
+        bs' = BS.take (round toTake) bs
 
 -- | 'ErrorStream' with possible 'PutCorruption'.
 --
@@ -229,7 +225,7 @@ type ErrorStreamWithPartialGet = Stream (Either FsErrorType PartialGet)
 -- This 'ErrorStream' will be used to generate potential errors that will be
 -- thrown by the corresponding method.
 --
--- For 'hPut', an 'ErrorStreamWithCorruption' is provided to simulate
+-- For 'hPutSome', an 'ErrorStreamWithCorruption' is provided to simulate
 -- corruption.
 --
 -- An 'ErrorStreams' is used in conjunction with 'SimErrorFS', which is a layer
@@ -328,7 +324,7 @@ instance Monoid Errors where
   mempty = simpleErrors mempty
 
 -- | Use the given 'ErrorStream' for each field/method. No corruption of
--- 'hPut'.
+-- 'hPutSome'.
 simpleErrors :: ErrorStream -> Errors
 simpleErrors es = Errors
     { _dumpState                = es
@@ -435,7 +431,7 @@ mkSimErrorHasFS err fsVar errorsVar =
             withErr' err fsVar errorsVar h (hSeek h m n) "hSeek"
             _hSeek (\e es -> es { _hSeek = e })
         , hGetSome   = hGetSome' err fsVar errorsVar hGetSome
-        , hPut       = hPut' err fsVar errorsVar hPut
+        , hPutSome   = hPutSome' err fsVar errorsVar hPutSome
         , hTruncate  = \h w ->
             withErr' err fsVar errorsVar h (hTruncate h w) "hTruncate"
             _hTruncate (\e es -> es { _hTruncate = e })
@@ -551,24 +547,24 @@ withErr' err fsVar errorsVar handle action msg getter setter = do
     mockFS <- atomically $ readTVar fsVar
     withErr err errorsVar (handleFsPath mockFS handle) action msg getter setter
 
--- | Execute the wrapped 'hPut' or throw an error and apply possible
+-- | Execute the wrapped 'hPutSome' or throw an error and apply possible
 -- corruption to the blob to write, depending on the corresponding
 -- 'ErrorStreamWithCorruption' (see 'nextError').
-hPut'  :: (MonadSTM m, HasCallStack)
+hPutSome'  :: (MonadSTM m, HasCallStack)
        => ErrorHandling FsError m
        -> TVar m MockFS
        -> TVar m Errors
-       -> (Handle -> Builder -> m Word64)  -- ^ Wrapped 'hPut'
-       -> Handle -> Builder -> m Word64
-hPut' ErrorHandling{..} fsVar errorsVar hPutWrapped handle bld = do
+       -> (Handle -> BS.ByteString -> m Word64)  -- ^ Wrapped 'hPutSome'
+       -> Handle -> BS.ByteString -> m Word64
+hPutSome' ErrorHandling{..} fsVar errorsVar hPutWrapped handle bs = do
     mockFS <- atomically $ readTVar fsVar
     let path = handleFsPath mockFS handle
     mbErrMbCorr <- next errorsVar _hPut (\e es -> es { _hPut = e })
     case mbErrMbCorr of
-      Nothing      -> hPutWrapped handle bld
+      Nothing      -> hPutWrapped handle bs
       Just (errType, mbCorr) -> do
         whenJust mbCorr $ \corr ->
-          void $ hPutWrapped handle (corrupt bld corr)
+          void $ hPutWrapped handle (corrupt bs corr)
         throwError FsError
           { fsErrorType   = errType
           , fsErrorPath   = path
