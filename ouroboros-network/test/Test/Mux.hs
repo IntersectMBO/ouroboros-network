@@ -1,12 +1,13 @@
-{-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE TypeFamilies        #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE BangPatterns               #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TypeApplications           #-}
 
-{-# OPTIONS_GHC -Wno-orphans     #-}
+{-# OPTIONS_GHC -Wno-orphans            #-}
 
 module Test.Mux
     ( TestProtocols1 (..)
@@ -29,9 +30,11 @@ import           Data.Int
 import           Data.Word
 import           Test.ChainGenerators (TestBlockChainAndUpdates (..))
 import           Test.QuickCheck
+import           Test.QuickCheck.Gen
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 import           Text.Printf
+import qualified System.Random.SplitMix as SM
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSay
@@ -73,6 +76,10 @@ tests =
   , testProperty "demuxing (IO)"        prop_demux_sdu_io
   , testProperty "ChainSync Demo (IO)"  prop_mux_demo_io
   , testProperty "ChainSync Demo (Sim)" prop_mux_demo_sim
+  , testGroup "Generators"
+    [ testProperty "genByteString"      prop_arbitrary_genByteString
+    , testProperty "genLargeByteString" prop_arbitrary_genLargeByteString
+    ]
   ]
 
 defaultMiniProtocolLimit :: Int64
@@ -148,6 +155,50 @@ newtype DummyPayload = DummyPayload {
 instance Show DummyPayload where
     show d = printf "DummyPayload %d\n" (BL.length $ unDummyPayload d)
 
+-- |
+-- Generate a byte string of a given size.
+--
+genByteString :: Int64 -> Gen BL.ByteString
+genByteString size = do
+    g0 <- return . SM.mkSMGen =<< chooseAny
+    return $ BL.unfoldr gen (size, g0)
+  where
+    gen :: (Int64, SM.SMGen) -> Maybe (Word8, (Int64, SM.SMGen))
+    gen (!i, !g)
+        | i <= 0    = Nothing
+        | otherwise = Just (fromIntegral w64, (i - 1, g'))
+      where
+        !(w64, g') = SM.nextWord64 g
+
+prop_arbitrary_genByteString :: (NonNegative (Small Int64)) -> Property
+prop_arbitrary_genByteString (NonNegative (Small size)) = ioProperty $ do
+  bs <- generate $ genByteString size
+  return $ size == BL.length bs
+
+genLargeByteString :: Int64 -> Int64 -> Gen BL.ByteString
+genLargeByteString chunkSize  size | chunkSize < size = do
+  chunk <- genByteString chunkSize
+  return $ BL.concat $
+        replicate (fromIntegral $ size `div` chunkSize) chunk
+      ++
+        [BL.take (size `mod` chunkSize) chunk]
+genLargeByteString _chunkSize size = genByteString size
+
+-- |
+-- Large Int64 values, but not too large, up to @1024*1024@.
+--
+newtype LargeInt64 = LargeInt64 Int64
+  deriving (Eq, Ord, Num, Show)
+
+instance Arbitrary LargeInt64 where
+    arbitrary = LargeInt64 <$> choose (1, 1024*1024)
+    shrink (LargeInt64 n) = map LargeInt64 $ shrink n
+
+prop_arbitrary_genLargeByteString :: NonNegative LargeInt64 -> Property
+prop_arbitrary_genLargeByteString (NonNegative (LargeInt64 size)) = ioProperty $ do
+  bs <- generate $ genLargeByteString 1024 size
+  return $ size == BL.length bs
+
 instance Arbitrary DummyPayload where
     arbitrary = do
         n <- choose (1, 128)
@@ -157,14 +208,7 @@ instance Arbitrary DummyPayload where
                      ]
         -- Generating a completly arbitrary bytestring is too costly so it is only
         -- done for short bytestrings.
-        if len <= 128
-            then do
-                pl <- BL8.pack <$> replicateM (fromIntegral len) arbitrary
-                return $ DummyPayload pl
-            else do
-                p <- arbitrary
-                let blob = BL.replicate len p
-                return $ DummyPayload blob
+        DummyPayload <$> genLargeByteString 1024 len
       where
         cborOverhead = 7 -- XXX Bytes needed by CBOR to encode the dummy payload
 

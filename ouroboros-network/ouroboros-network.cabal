@@ -217,6 +217,7 @@ test-suite tests
                        pipes,
                        process,
                        QuickCheck,
+                       splitmix,
                        serialise,
                        stm,
                        tasty,
