@@ -36,9 +36,7 @@ import           Ouroboros.Network.Protocol.BlockFetch.Direct
 import           Ouroboros.Network.Protocol.BlockFetch.Examples
 import           Ouroboros.Network.Protocol.BlockFetch.Codec
 
-import           Test.ChainGenerators ( TestChainAndPoints (..)
-                                      , ArbitraryChainRange (..)
-                                      , ArbitraryBlockBody (..))
+import           Test.ChainGenerators ( TestChainAndPoints (..) )
 import           Test.Ouroboros.Network.Testing.Utils (splits2, splits3)
 
 import           Test.QuickCheck
@@ -302,11 +300,11 @@ prop_pipe_IO (TestChainAndPoints chain points) =
 instance Arbitrary (AnyMessageAndAgency (BlockFetch BlockHeader BlockBody)) where
   arbitrary = oneof
     [ AnyMessageAndAgency (ClientAgency TokIdle) <$>
-        MsgRequestRange <$> (getArbitraryChainRange <$> arbitrary)
+        MsgRequestRange <$> arbitrary
     , return $ AnyMessageAndAgency (ServerAgency TokBusy) MsgStartBatch
     , return $ AnyMessageAndAgency (ServerAgency TokBusy) MsgNoBlocks
     , AnyMessageAndAgency (ServerAgency TokStreaming) <$>
-        MsgBlock <$> getArbitraryBlockBody <$> arbitrary
+        MsgBlock <$> arbitrary
     , return $ AnyMessageAndAgency (ServerAgency TokStreaming) MsgBatchDone
     , return $ AnyMessageAndAgency (ClientAgency TokIdle) MsgClientDone
     ]

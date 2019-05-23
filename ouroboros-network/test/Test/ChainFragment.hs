@@ -34,9 +34,9 @@ import qualified Ouroboros.Network.ChainFragment as CF
 import           Ouroboros.Network.Testing.ConcreteBlock
 import           Ouroboros.Network.Testing.Serialise (prop_serialise)
 import           Test.Chain ()
-import           Test.ChainGenerators (ArbitraryBlockBody (..),
-                     TestBlockChain (..), TestChainAndRange (..), addSlotGap,
-                     genNonNegative, genPoint, genSlotGap, mkPartialBlock)
+import           Test.ChainGenerators
+                   ( TestBlockChain (..), TestChainAndRange (..)
+                   , addSlotGap, genNonNegative, genSlotGap, mkPartialBlock)
 
 
 --
@@ -430,7 +430,7 @@ prop_shrink_TestHeaderChainFragment c =
 
 genBlockChainFragment :: Int -> Gen (ChainFragment Block)
 genBlockChainFragment n = do
-    bodies <- map getArbitraryBlockBody <$> vector n
+    bodies <- vector n
     slots  <- mkSlots <$> vectorOf n genSlotGap
     return (mkChainFragment (zip slots bodies))
   where
@@ -471,7 +471,7 @@ genAddBlock :: (HasHeader block, HeaderHash block ~ ConcreteHeaderHash)
             => ChainFragment block -> Gen Block
 genAddBlock chain = do
     slotGap <- genSlotGap
-    body    <- getArbitraryBlockBody <$> arbitrary
+    body    <- arbitrary
     let pb = mkPartialBlock (addSlotGap slotGap
                                         (fromMaybe (SlotNo 0) $ CF.headSlot chain))
                                         body
@@ -604,13 +604,13 @@ instance Arbitrary TestChainFragmentAndPoint where
       [ (2, return (CF.headPoint chain))
       , (8, mkRollbackPoint chain <$> choose (1, len - 1))
       -- or a few off the chain!
-      , (1, Just <$> genPoint)
+      , (1, Just <$> arbitrary)
       ]
     -- If 'mbPoint' yielded Nothing, just generate one off the chain fragment,
     -- as the chain fragment is probably empty anyway.
     point <- case mbPoint of
                Just p  -> return p
-               Nothing -> genPoint
+               Nothing -> arbitrary
     return (TestChainFragmentAndPoint chain point)
 
   shrink (TestChainFragmentAndPoint c p)

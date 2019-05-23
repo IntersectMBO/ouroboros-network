@@ -39,7 +39,7 @@ import Ouroboros.Network.Protocol.ChainSync.Codec
 import qualified Ouroboros.Network.Protocol.ChainSync.Examples as ChainSyncExamples
 
 import Ouroboros.Network.Testing.ConcreteBlock (Block (..), BlockHeader (..))
-import Test.ChainGenerators ( ArbitraryPoint (..), ArbitraryBlockHeader (..))
+import Test.ChainGenerators ()
 import Test.Ouroboros.Network.Testing.Utils (splits2, splits3)
 import Test.ChainProducerState (ChainProducerStateForkTest (..))
 
@@ -144,30 +144,30 @@ instance Arbitrary (AnyMessageAndAgency (ChainSync BlockHeader (Point BlockHeade
     , return $ AnyMessageAndAgency (ServerAgency (TokNext TokCanAwait)) MsgAwaitReply
 
     , AnyMessageAndAgency (ServerAgency (TokNext TokCanAwait))
-        <$> (MsgRollForward <$> (getArbitraryBlockHeader <$> arbitrary)
-        <*> (getArbitraryPoint <$> arbitrary))
+        <$> (MsgRollForward <$> arbitrary
+                            <*> arbitrary)
 
     , AnyMessageAndAgency (ServerAgency (TokNext TokMustReply))
-        <$> (MsgRollForward <$> (getArbitraryBlockHeader <$> arbitrary)
-        <*> (getArbitraryPoint <$> arbitrary))
+        <$> (MsgRollForward <$> arbitrary
+                            <*> arbitrary)
 
     , AnyMessageAndAgency (ServerAgency (TokNext TokCanAwait))
-        <$> (MsgRollBackward <$> (getArbitraryPoint <$> arbitrary)
-        <*> (getArbitraryPoint <$> arbitrary))
+        <$> (MsgRollBackward <$> arbitrary
+                             <*> arbitrary)
 
     , AnyMessageAndAgency (ServerAgency (TokNext TokMustReply))
-        <$> (MsgRollBackward <$> (getArbitraryPoint <$> arbitrary)
-        <*> (getArbitraryPoint <$> arbitrary))
+        <$> (MsgRollBackward <$> arbitrary
+                             <*> arbitrary)
 
     , AnyMessageAndAgency (ClientAgency TokIdle) . MsgFindIntersect
-        <$> (map getArbitraryPoint <$> arbitrary)
+        <$> arbitrary
 
     , AnyMessageAndAgency (ServerAgency TokIntersect)
-        <$> (MsgIntersectImproved <$> (getArbitraryPoint <$> arbitrary)
-        <*> (getArbitraryPoint <$> arbitrary))
+        <$> (MsgIntersectImproved <$> arbitrary
+                                  <*> arbitrary)
 
     , AnyMessageAndAgency (ServerAgency TokIntersect) . MsgIntersectUnchanged
-        <$> (getArbitraryPoint <$> arbitrary)
+        <$> arbitrary
 
     , return $ AnyMessageAndAgency (ClientAgency TokIdle) MsgDone
     ]
