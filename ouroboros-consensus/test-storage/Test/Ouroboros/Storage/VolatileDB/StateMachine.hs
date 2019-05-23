@@ -411,12 +411,15 @@ generatorImpl mkErr terminatingCmd m@Model {..} = do
         let err = erasePutCorruptions err'
         return $ At $ CmdErr cmd err
     where
-        -- This doesn't reduce the power of tests. This is because we have partial
-        -- writes as part of file Corruption and not as part of simulated errors.
-        eraseCorruptions str = (\(fsErr, _) -> (fsErr, Nothing)) <$> str
+        -- This doesn't reduce the power of tests. Writing random junks could result
+        -- in them being ransomly parsed, without the model knowing it. We do test
+        -- writing junk, but this is done in a controllable way as part of file
+        -- Corruption, so that the result cannot be parsed.
+        dontSubstituteWithJunk (a, Just (SubstituteWithJunk _)) = (a, Nothing)
+        dontSubstituteWithJunk x = x
+        eraseCorruptions str = dontSubstituteWithJunk <$> str
         erasePutCorruptions mErr = do
             err <- mErr
-            -- we don't use corruptions as part of simulated errors.
             return err {_hPut = eraseCorruptions $ _hPut err}
         noErrorFor GetBlock {}          = False
         noErrorFor GetBlockIds          = False
@@ -534,7 +537,7 @@ knownLimitation model (At cmd) = case cmd of
         isLimitation (Just slot') slot = slot' >  slot
 
 prop_sequential :: Property
-prop_sequential = withMaxSuccess 50000 $
+prop_sequential = withMaxSuccess 100 $
     forAllCommands smUnused Nothing $ \cmds -> monadicIO $ do
         let test :: TVar IO Errors
                  -> HasFS IO h

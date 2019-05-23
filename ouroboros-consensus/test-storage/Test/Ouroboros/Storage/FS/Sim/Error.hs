@@ -363,7 +363,7 @@ instance Arbitrary Errors where
     _hSeek      <- streamGen 3 [ FsReachedEOF ]
     _hGetSome   <- mkStreamGen 5 $ QC.frequency
       [ (1, return $ Left FsReachedEOF)
-      , (3, Right . SubtractRatioRequestedBytes <$> arbitrary) ]
+      , (3, Right <$> arbitrary) ]
     _hPut       <- mkStreamGen 2 $ (,) <$> return FsDeviceFull <*> arbitrary
     _hPutBuffer <- streamGen 3 [ FsDeviceFull ]
     _hGetSize   <- streamGen 2 [ FsResourceDoesNotExist ]
