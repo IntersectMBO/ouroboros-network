@@ -52,6 +52,7 @@ import           Data.Hashable
 import qualified Data.Text as Text
 import           Data.Word (Word64)
 import           Data.String (IsString)
+import           Data.Function (fix)
 
 import           Codec.Serialise (Serialise (..))
 import           Codec.CBOR.Encoding ( encodeListLen
@@ -197,9 +198,10 @@ instance HasHeader Block where
 -- | This takes the blocks in order from /oldest to newest/.
 --
 mkChain :: [(SlotNo, BlockBody)] -> Chain Block
-mkChain = fixupChain fixupBlock
-        . map (uncurry mkPartialBlock)
-        . reverse
+mkChain =
+    fixupChain fixupBlock
+  . map (uncurry mkPartialBlock)
+  . reverse
 
 mkChainSimple :: [BlockBody] -> Chain Block
 mkChainSimple = mkChain . zip [1..]
@@ -207,21 +209,26 @@ mkChainSimple = mkChain . zip [1..]
 -- TODO: this generator will generate only chain fragments which start with
 -- @BlockNo 0@ and @GenesisHash@ in @prevHeaderHash@.
 mkChainFragment :: [(SlotNo, BlockBody)] -> ChainFragment Block
-mkChainFragment = fixupChainFragment fixupBlock
-                . map (uncurry mkPartialBlock)
-                . reverse
+mkChainFragment =
+    fixupChainFragment fixupBlock
+  . map (uncurry mkPartialBlock)
+  . reverse
 
 mkChainFragmentSimple :: [BlockBody] -> ChainFragment Block
-mkChainFragmentSimple = mkChainFragment . zip [1..]
+mkChainFragmentSimple =
+    mkChainFragment . zip [1..]
 
-mkAnchoredFragment :: Point Block -> [(SlotNo, BlockBody)]
+mkAnchoredFragment :: Point Block
+                   -> [(SlotNo, BlockBody)]
                    -> AnchoredFragment Block
-mkAnchoredFragment anchor = fixupAnchoredFragment anchor fixupBlock
-                          . map (uncurry mkPartialBlock)
-                          . reverse
+mkAnchoredFragment anchor =
+    fixupAnchoredFragment anchor fixupBlock
+  . map (uncurry mkPartialBlock)
+  . reverse
 
 mkAnchoredFragmentSimple :: [BlockBody] -> AnchoredFragment Block
-mkAnchoredFragmentSimple = mkAnchoredFragment (Point 0 GenesisHash) . zip [1..]
+mkAnchoredFragmentSimple =
+    mkAnchoredFragment (Point 0 GenesisHash) . zip [1..]
 
 
 mkPartialBlock :: SlotNo -> BlockBody -> Block
@@ -269,15 +276,12 @@ fixupBlock pb b@Block{blockBody, blockHeader} =
 --
 fixupBlockHeader :: (HasHeader block, HeaderHash block ~ HeaderHash Block)
                  => Maybe block -> BlockHeader -> BlockHeader
-fixupBlockHeader pb b = b'
-  where
-    b' = BlockHeader {
+fixupBlockHeader pb b =
+    fix $ \b' ->
+    b {
       headerHash     = hashHeader b',
       headerPrevHash = maybe GenesisHash (BlockHash . blockHash) pb,
-      headerSlot     = headerSlot b,   -- keep the existing slot number
-      headerSigner   = headerSigner b, -- and signer
-      headerBlockNo  = maybe (BlockNo 1) (succ . blockNo) pb,
-      headerBodyHash = headerBodyHash b
+      headerBlockNo  = maybe (BlockNo 1) (succ . blockNo) pb
     }
 
 -- |
@@ -331,13 +335,17 @@ fixupChain = fixupBlocks (C.:>) C.Genesis
 fixupChainFragment :: HasHeader b
                    => (Maybe b -> b -> b)
                    -> [b] -> ChainFragment b
-fixupChainFragment = fixupBlocks (CF.:>) CF.Empty
+fixupChainFragment =
+    fixupBlocks
+      (CF.:>) CF.Empty
 
 fixupAnchoredFragment :: HasHeader b
                       => Point b
                       -> (Maybe b -> b -> b)
                       -> [b] -> AnchoredFragment b
-fixupAnchoredFragment anchor = fixupBlocks (AF.:>) (AF.Empty anchor)
+fixupAnchoredFragment anchor =
+    fixupBlocks
+      (AF.:>) (AF.Empty anchor)
 
 
 {-------------------------------------------------------------------------------
