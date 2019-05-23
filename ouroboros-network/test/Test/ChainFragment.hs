@@ -11,9 +11,6 @@ module Test.ChainFragment
   , TestChainFragmentAndPoint (..)
   , TestChainFragmentFork(..)
   , TestAddBlock(..)
-  , mkRollbackPoint
-  , genBlockChainFragment
-  , genHeaderChainFragment
   ) where
 
 import qualified Data.List as L
@@ -394,7 +391,13 @@ newtype TestHeaderChainFragment = TestHeaderChainFragment (ChainFragment BlockHe
 instance Arbitrary TestBlockChainFragment where
     arbitrary = do
         n <- genNonNegative
-        TestBlockChainFragment <$> genBlockChainFragment n
+        bodies <- vector n
+        slots  <- mkSlots <$> vectorOf n genSlotGap
+        let chain = mkChainFragment (zip slots bodies)
+        return (TestBlockChainFragment chain)
+      where
+        mkSlots :: [Int] -> [SlotNo]
+        mkSlots = map toEnum . tail . scanl (+) 0
 
     shrink (TestBlockChainFragment c) =
         [ TestBlockChainFragment (fixupChainFragment fixupBlock c')
@@ -402,8 +405,9 @@ instance Arbitrary TestBlockChainFragment where
 
 instance Arbitrary TestHeaderChainFragment where
     arbitrary = do
-        n <- genNonNegative
-        TestHeaderChainFragment <$> genHeaderChainFragment n
+        TestBlockChainFragment blockchain <- arbitrary
+        let headerchain = CF.mapChainFragment blockHeader blockchain
+        return (TestHeaderChainFragment headerchain)
 
     shrink (TestHeaderChainFragment c) =
         [ TestHeaderChainFragment (fixupChainFragment fixupBlockHeader c')
@@ -427,18 +431,6 @@ prop_shrink_TestBlockChainFragment c =
 prop_shrink_TestHeaderChainFragment :: TestHeaderChainFragment -> Bool
 prop_shrink_TestHeaderChainFragment c =
     and [ CF.valid c' | TestHeaderChainFragment c' <- shrink c ]
-
-genBlockChainFragment :: Int -> Gen (ChainFragment Block)
-genBlockChainFragment n = do
-    bodies <- vector n
-    slots  <- mkSlots <$> vectorOf n genSlotGap
-    return (mkChainFragment (zip slots bodies))
-  where
-    mkSlots :: [Int] -> [SlotNo]
-    mkSlots = map toEnum . tail . scanl (+) 0
-
-genHeaderChainFragment :: Int -> Gen (ChainFragment BlockHeader)
-genHeaderChainFragment = fmap (CF.mapChainFragment blockHeader) . genBlockChainFragment
 
 
 -- | The Ouroboros K paramater. This is also the maximum rollback length.
