@@ -165,8 +165,6 @@ import           Data.Word
 
 import           GHC.Stack (HasCallStack, callStack)
 
-import           System.IO (IOMode (..), SeekMode (..))
-
 import           Ouroboros.Consensus.Util (SomePair (..))
 
 import           Ouroboros.Storage.Common
@@ -441,7 +439,7 @@ deleteAfterImpl dbEnv tip = modifyOpenState dbEnv $ \hasFS@HasFS{..} -> do
         go epoch index
           | Just relSlot <- lastFilledSlot index = do
             let truncatedIndex = truncateIndex relSlot index
-            withFile hasFS (renderFile "epoch" epoch) AppendMode $ \eHnd ->
+            withFile hasFS (renderFile "epoch" epoch) (AppendMode AllowExisting) $ \eHnd ->
               hTruncate eHnd (lastSlotOffset truncatedIndex)
             removeIndex epoch
             removeFilesStartingFrom hasFS (succ epoch)
@@ -1244,7 +1242,7 @@ mkOpenState HasFS{..} epoch epochInfo nextIteratorID tip index = do
     let epochFile     = renderFile "epoch" epoch
         epochOffsets  = indexToSlotOffsets index
 
-    eHnd <- hOpen epochFile AppendMode
+    eHnd <- hOpen epochFile (AppendMode AllowExisting)
 
     return OpenState
       { _currentEpoch            = epoch
@@ -1258,7 +1256,7 @@ mkOpenState HasFS{..} epoch epochInfo nextIteratorID tip index = do
 
 -- | Create the internal open state for a new empty epoch.
 --
--- Open the epoch file for appending.
+-- Create the epoch file for appending.
 mkOpenStateNewEpoch :: (HasCallStack, MonadThrow m)
                     => HasFS m h
                     -> EpochNo
@@ -1270,8 +1268,7 @@ mkOpenStateNewEpoch HasFS{..} epoch epochInfo nextIteratorID tip = do
     let epochFile    = renderFile "epoch" epoch
         epochOffsets = 0 NE.:| []
 
-    eHnd <- hOpen epochFile AppendMode
-    -- TODO Use new O_EXCL create when we expect it to be empty, see #292
+    eHnd <- hOpen epochFile (AppendMode MustBeNew)
 
     return OpenState
       { _currentEpoch            = epoch
@@ -1716,7 +1713,7 @@ validate hashDecoder hashEncoder hasFS@HasFS{..} err epochInfo valPol epochFileP
           case mbErr of
             -- If there was an error parsing the epoch file, truncate it
             Just _ ->
-              withFile hasFS epochFile AppendMode $ \eHnd ->
+              withFile hasFS epochFile (AppendMode AllowExisting) $ \eHnd ->
                 hTruncate eHnd (lastSlotOffset reconstructedIndex)
             -- If not, check that the last offset matches the epoch file size.
             -- If it does not, it means the 'EpochFileParser' is incorrect. We

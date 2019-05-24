@@ -49,9 +49,9 @@ import           Data.Word (Word64)
 
 import           GHC.Stack (HasCallStack, callStack)
 
-import           System.IO (IOMode (..))
-
 import           Ouroboros.Storage.FS.API (HasFS (..), hPut, hPutAll, withFile)
+import           Ouroboros.Storage.FS.API.Types (AllowExisting (..),
+                     OpenMode (..))
 
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.Util (decodeIndexEntryAt, encodeIndexEntry)
@@ -143,7 +143,7 @@ writeIndex :: (MonadThrow m)
            -> m ()
 writeIndex hashEncoder hasFS@HasFS{..} epoch (MkIndex offsets ebbHash) = do
     let indexFile = renderFile "index" epoch
-    withFile hasFS indexFile AppendMode $ \iHnd -> do
+    withFile hasFS indexFile (AppendMode AllowExisting) $ \iHnd -> do
       -- NOTE: open it in AppendMode and truncate it first, otherwise we might
       -- just overwrite part of the data stored in the index file.
       void $ hTruncate iHnd 0
@@ -162,7 +162,7 @@ writeSlotOffsets :: (MonadThrow m)
                  -> m ()
 writeSlotOffsets hashEncoder hasFS@HasFS{..} epoch sos ebbHash = do
     let indexFile = renderFile "index" epoch
-    withFile hasFS indexFile AppendMode $ \iHnd -> do
+    withFile hasFS indexFile (AppendMode AllowExisting) $ \iHnd -> do
       -- NOTE: open it in AppendMode and truncate it first, otherwise we might
       -- just overwrite part of the data stored in the index file.
       void $ hTruncate iHnd 0

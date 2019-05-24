@@ -17,7 +17,6 @@ import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import           Data.Serialize
 import           Data.Word (Word64)
-import qualified System.IO as IO
 import           Test.QuickCheck
 
 import           Ouroboros.Consensus.Util (SomePair (..))
@@ -71,7 +70,7 @@ parseImpl :: forall m h. (MonadThrow m)
           -> FsPath
           -> m ([(SlotOffset, (BlockSize, BlockInfo BlockId))], Maybe ())
 parseImpl hasFS@HasFS{..} path =
-    withFile hasFS path IO.ReadMode $ \hndl -> do
+    withFile hasFS path ReadMode $ \hndl -> do
         let go :: [(SlotOffset, (BlockSize, BlockInfo BlockId))]
                -> Word64
                -> m ([(SlotOffset, (BlockSize, BlockInfo BlockId))], Maybe ())
@@ -128,12 +127,12 @@ generateCorruptions allFiles = sized $ \n -> do
 corruptFile :: MonadThrow m => HasFS m h -> FileCorruption -> String -> m Bool
 corruptFile hasFS@HasFS{..} corr file = case corr of
     DeleteFile -> removeFile [file] >> return True
-    DropLastBytes n -> withFile hasFS [file] IO.AppendMode $ \hnd -> do
+    DropLastBytes n -> withFile hasFS [file] (AppendMode AllowExisting) $ \hnd -> do
         fileSize <- hGetSize hnd
         let newFileSize = if n >= fileSize then 0 else fileSize - n
         hTruncate hnd newFileSize
         return $ fileSize /= newFileSize
-    AppendBytes n -> withFile hasFS [file] IO.AppendMode $ \hnd -> do
+    AppendBytes n -> withFile hasFS [file] (AppendMode AllowExisting) $ \hnd -> do
         fileSize <- hGetSize hnd
         let newFileSize = fileSize + (fromIntegral n)
         _ <- hPut hasFS hnd (BB.byteString $ BS.replicate n 0)
@@ -148,6 +147,6 @@ createFileImpl hasFS env = do
     SomePair _stHasFS st <- Internal.getInternalState env
     let nextFd = Internal._nextNewFileId st
     let path = Internal.filePath nextFd
-    withFile hasFS [path] IO.AppendMode $ \_hndl -> do
+    withFile hasFS [path] (AppendMode MustBeNew) $ \_hndl -> do
         return ()
     return ()

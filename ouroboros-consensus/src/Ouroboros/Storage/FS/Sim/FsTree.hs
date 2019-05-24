@@ -21,7 +21,7 @@ module Ouroboros.Storage.FS.Sim.FsTree (
   , getFile
   , getDir
     -- * File system operations
-  , touch
+  , openFile
   , replace
   , createDirIfMissing
   , createDirWithParents
@@ -87,12 +87,16 @@ data FsTreeError =
     --
     -- We record both the full path and the missing suffix.
   | FsMissing FsPath (NonEmpty String)
+
+    -- | A file was opened with the O_EXCL flag, but it already existed.
+  | FsExists FsPath
   deriving (Show)
 
 setFsTreeErrorPath :: FsPath -> FsTreeError -> FsTreeError
 setFsTreeErrorPath fp (FsExpectedDir  _ suffix) = FsExpectedDir  fp suffix
 setFsTreeErrorPath fp (FsExpectedFile _)        = FsExpectedFile fp
 setFsTreeErrorPath fp (FsMissing      _ suffix) = FsMissing      fp suffix
+setFsTreeErrorPath fp (FsExists _)              = FsExists       fp
 
 {-------------------------------------------------------------------------------
   Altering
@@ -188,9 +192,14 @@ getDir fp = getConst . alterDir fp (Const . Left) errNotExist (Const . Right)
   Specific file system functions
 -------------------------------------------------------------------------------}
 
--- | Make sure the specified file exists; create it if necessary.
-touch :: Monoid a => FsPath -> FsTree a -> Either FsTreeError (FsTree a)
-touch fp = alterFile fp Left (Right mempty) Right
+-- | Open a file: create it if necessary or throw an error if it existed
+-- already wile we were supposed to create it from scratch (when passed
+-- 'MustBeNew').
+openFile :: Monoid a
+         => FsPath -> AllowExisting -> FsTree a -> Either FsTreeError (FsTree a)
+openFile fp ex = alterFile fp Left (Right mempty) $ \a -> case ex of
+    AllowExisting -> Right a
+    MustBeNew     -> Left (FsExists fp)
 
 -- | Replace the contents of the specified file (which must exist)
 replace :: FsPath -> a -> FsTree a -> Either FsTreeError (FsTree a)

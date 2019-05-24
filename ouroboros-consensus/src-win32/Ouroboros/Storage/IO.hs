@@ -1,4 +1,3 @@
-{-# LANGUAGE LambdaCase #-}
 module Ouroboros.Storage.IO (
       FHandle
     , open
@@ -11,43 +10,48 @@ module Ouroboros.Storage.IO (
     ) where
 
 import           Prelude hiding (read, truncate)
+
 import           Control.Monad (void, when)
+import           Data.Bits ((.|.))
 import           Data.ByteString
 import           Data.ByteString.Internal as Internal
-import           Data.Word (Word32, Word8, Word64)
-import           Foreign (Ptr, Int64)
-import           System.IO
+import           Data.Word (Word32, Word64, Word8)
+import           Foreign (Int64, Ptr)
 import           System.Win32
-import           Ouroboros.Storage.Seek (setFilePointerEx)
+
+import           Ouroboros.Storage.FS.API.Types (AllowExisting (..),
+                     OpenMode (..), SeekMode (..))
 import           Ouroboros.Storage.FS.Handle
-import           Data.Bits((.|.))
+import           Ouroboros.Storage.Seek (setFilePointerEx)
 
 type FHandle = HandleOS HANDLE
 
-open :: FilePath -> IOMode -> IO HANDLE
-open filename ioMode = do
-    let accessMode
-         | ioMode == ReadMode   = gENERIC_READ
-         | ioMode == AppendMode = gENERIC_WRITE
-         | otherwise            = gENERIC_READ .|. gENERIC_WRITE
-        creationDisposition = case ioMode of
-          ReadMode -> oPEN_EXISTING
-          _        -> oPEN_ALWAYS
+open :: FilePath -> OpenMode -> IO HANDLE
+open filename openMode = do
     h <- createFile filename
-                              accessMode
-                              (fILE_SHARE_READ .|. fILE_SHARE_WRITE)
-                              Nothing
-                              -- TODO(kde) we can use cREATE_NEW for Issue #292.
-                              creationDisposition
-                              fILE_ATTRIBUTE_NORMAL
-                              Nothing
-    -- There is not AppendMode in Windows, so we manually seek to the end of the file.
-    -- For now we don't need to carry a flag that this is on AppendMode, but we may do
-    -- if we add more commands (read and seek are disabled on AppendMode and truncate only
-    -- works on AppendMode. write moves the file offset on all modes).
-    when (ioMode == AppendMode) $
+                    accessMode
+                    (fILE_SHARE_READ .|. fILE_SHARE_WRITE)
+                    Nothing
+                    creationDisposition
+                    fILE_ATTRIBUTE_NORMAL
+                    Nothing
+    -- There is no AppendMode in Windows, so we manually seek to the end of
+    -- the file. For now we don't need to carry a flag that this handle is in
+    -- AppendMode, but we may need to if we add more commands (read and seek
+    -- are disabled in AppendMode and truncate only works in AppendMode, write
+    -- moves the file offset in all modes).
+    when isAppend $
       void $ setFilePointerEx h 0 fILE_END
     return h
+  where
+    (isAppend, accessMode, creationDisposition) = case openMode of
+      ReadMode         -> (False, gENERIC_READ,                   oPEN_EXISTING)
+      AppendMode    ex -> (True,                   gENERIC_WRITE, createNew ex)
+      WriteMode     ex -> (True,  gENERIC_READ .|. gENERIC_WRITE, createNew ex)
+      ReadWriteMode ex -> (True,  gENERIC_READ .|. gENERIC_WRITE, createNew ex)
+    createNew AllowExisting = oPEN_ALWAYS
+    createNew MustBeNew     = cREATE_NEW
+
 
 write :: FHandle -> Ptr Word8 -> Int64 -> IO Word32
 write fh data' bytes = withOpenHandle "write" fh $ \h ->
@@ -76,7 +80,7 @@ truncate fh size =  withOpenHandle "truncate" fh $ \h -> do
 
 close :: FHandle -> IO ()
 close fh = closeHandleOS fh closeHandle
-  
+
 getSize :: FHandle -> IO Word64
 getSize fh = withOpenHandle "getSize" fh $ \h -> do
   fromIntegral . bhfiSize <$>  getFileInformationByHandle h

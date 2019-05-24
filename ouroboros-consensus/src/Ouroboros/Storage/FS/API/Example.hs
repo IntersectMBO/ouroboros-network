@@ -10,7 +10,6 @@ import           Control.Exception (try)
 import           Data.ByteString.Lazy (ByteString)
 import qualified Data.Set as Set
 import           GHC.Stack
-import qualified System.IO as IO
 
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Storage.FS.API
@@ -25,14 +24,14 @@ import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
 example :: (HasCallStack, Monad m) => HasFS m h -> m [ByteString]
 example hasFS@HasFS{..} = do
-    h1 <- hOpen ["cardano.txt"] IO.ReadWriteMode
+    h1 <- hOpen ["cardano.txt"] (ReadWriteMode MustBeNew)
     _  <- hPut hasFS h1 "test"
-    _  <- hSeek h1 IO.AbsoluteSeek 0
+    _  <- hSeek h1 AbsoluteSeek 0
     r1 <- hGetExactly hasFS h1 4
     _  <- hPut hasFS h1 "ing"
-    h2 <- hOpen ["bar.txt"] IO.ReadWriteMode
+    h2 <- hOpen ["bar.txt"] (ReadWriteMode MustBeNew)
     _  <- hPut hasFS h2 "blockchain"
-    _  <- hSeek h2 IO.AbsoluteSeek 0
+    _  <- hSeek h2 AbsoluteSeek 0
     r2 <- hGetExactly hasFS h2 5
     _  <- listDirectory []
     _  <- listDirectory ["var"]

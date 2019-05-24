@@ -21,8 +21,6 @@ import qualified Data.List.NonEmpty as NE
 import           Data.Maybe (isJust, isNothing, maybeToList)
 import           Data.Word (Word64)
 
-import qualified System.IO as IO
-
 import qualified Test.Ouroboros.Storage.ImmutableDB.CumulEpochSizes as CumulEpochSizes
 import qualified Test.Ouroboros.Storage.ImmutableDB.StateMachine as StateMachine
 import           Test.Ouroboros.Storage.ImmutableDB.TestBlock hiding (tests)
@@ -133,8 +131,8 @@ test_openDBEmptyIndexFileEquivalence :: Assertion
 test_openDBEmptyIndexFileEquivalence =
     apiEquivalenceImmDB (expectImmDBResult (@?= TipGen)) $ \hasFS@HasFS{..} err -> do
       -- Create an empty index file
-      h1 <- hOpen ["epoch-000.dat"] IO.WriteMode
-      h2 <- hOpen ["index-000.dat"] IO.WriteMode
+      h1 <- hOpen ["epoch-000.dat"] (WriteMode MustBeNew)
+      h2 <- hOpen ["index-000.dat"] (WriteMode MustBeNew)
       hClose h1
       hClose h2
 
@@ -348,7 +346,7 @@ test_cborEpochFileParser = forM_ ["junk", ""] $ \junk -> runFS $ \hasFS -> do
     -- Test once with junk at the end and once without
     let HasFS{..} = hasFS
 
-    withFile hasFS fp IO.AppendMode $ \h -> do
+    withFile hasFS fp (AppendMode MustBeNew) $ \h -> do
       forM_ blocks $ \block ->
         hPut hasFS h (S.serialiseIncremental block)
       void $ hPut hasFS h (BS.string8 junk)

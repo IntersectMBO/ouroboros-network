@@ -20,7 +20,7 @@ module Ouroboros.Storage.FS.Sim.MockFS (
   , empty
   , example
   , pretty
-  , handleIOMode
+  , handleIsOpen
   , handleFsPath
   , numOpenHandles
     -- * Debugging
@@ -63,8 +63,6 @@ import qualified Data.Set as S
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           GHC.Stack
-import           System.IO (IOMode, SeekMode)
-import qualified System.IO as IO
 
 import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.FS.Sim.FsTree (FsTree (..), FsTreeError (..))
@@ -143,24 +141,16 @@ example = empty { mockFiles = FS.example }
   Auxiliary
 -------------------------------------------------------------------------------}
 
--- | The IO mode associated with this handle
+-- | Return 'True' iff the handle is open.
 --
--- Returns 'Nothing' if the handle is closed.
 -- Throws an exception if the handle is unknown.
-handleIOMode :: MockFS -> Handle -> Maybe IOMode
-handleIOMode MockFS{..} h =
+handleIsOpen :: MockFS -> Handle -> Bool
+handleIsOpen MockFS{..} h =
     case M.lookup h mockHandles of
       Nothing ->
         error "handleIOMode: unknown handle"
-      Just (HandleOpen OpenHandle{..}) ->
-        case openPtr of
-          RW True  False _ -> Just IO.ReadMode
-          RW False True  _ -> Just IO.WriteMode
-          RW True  True  _ -> Just IO.ReadWriteMode
-          RW False False _ -> error "handleIOMode: invalid handle"
-          Append           -> Just IO.AppendMode
-      Just (HandleClosed _) ->
-        Nothing
+      Just (HandleOpen OpenHandle{}) -> True
+      Just (HandleClosed _)          -> False
 
 -- | The file path associated with this handle
 --
@@ -216,24 +206,24 @@ seekFilePtr err@ErrorHandling{..} MockFS{..} h seekMode o = do
         file <- checkFsTree err $ FS.getFile openFilePath mockFiles
         let fsize = fromIntegral (BS.length file) :: Word64
         case (openPtr, seekMode, sign64 o) of
-          (RW r w _cur, IO.AbsoluteSeek, Positive o') -> do
+          (RW r w _cur, AbsoluteSeek, Positive o') -> do
             when (o' > fsize) $ throwError (errPastEnd openFilePath)
             return $ RW r w o'
-          (_, IO.AbsoluteSeek, Negative _) ->
+          (_, AbsoluteSeek, Negative _) ->
             throwError $ errNegative openFilePath
-          (RW r w cur, IO.RelativeSeek, Positive o') -> do
+          (RW r w cur, RelativeSeek, Positive o') -> do
             let cur' = cur + o'
             when (cur' > fsize) $ throwError (errPastEnd openFilePath)
             return $ RW r w cur'
-          (RW r w cur, IO.RelativeSeek, Negative o') -> do
+          (RW r w cur, RelativeSeek, Negative o') -> do
             when (o' > cur) $ throwError (errNegative openFilePath)
             let cur' = cur - o'
             return $ RW r w cur'
-          (RW r w _cur, IO.SeekFromEnd, Positive 0) ->
+          (RW r w _cur, SeekFromEnd, Positive 0) ->
             return $ RW r w fsize
-          (RW _ _ _, IO.SeekFromEnd, Positive _) ->
+          (RW _ _ _, SeekFromEnd, Positive _) ->
             throwError (errPastEnd openFilePath)
-          (RW r w _, IO.SeekFromEnd, Negative o') -> do
+          (RW r w _, SeekFromEnd, Negative o') -> do
             when (o' > fsize) $ throwError (errNegative openFilePath)
             let cur' = fsize - o'
             return $ RW r w cur'
@@ -394,6 +384,14 @@ checkFsTree' ErrorHandling{..} = go
           }
     go (Left (FsMissing fp _)) =
         return (Left fp)
+    go (Left (FsExists fp)) =
+        throwError FsError {
+            fsErrorType   = FsResourceAlreadyExist
+          , fsErrorPath   = fp
+          , fsErrorString = "file exists"
+          , fsErrorStack  = callStack
+          , fsLimitation  = False
+          }
     go (Right a) =
         return (Right a)
 
@@ -451,8 +449,9 @@ newHandle fs hs = (
 -- * We do not support opening directories.
 -- * We do not support more than one concurrent writer
 --   (we do however allow a writer and multiple concurrent readers)
-hOpen :: CanSimFS m => ErrorHandling FsError m -> FsPath -> IOMode -> m Handle
-hOpen err@ErrorHandling{..} fp ioMode = do
+-- * We do not support create file on ReadMode.
+hOpen :: CanSimFS m => ErrorHandling FsError m -> FsPath -> OpenMode -> m Handle
+hOpen err@ErrorHandling{..} fp openMode = do
     dirExists <- doesDirectoryExist err fp
     when dirExists $ throwError FsError {
         fsErrorType   = FsResourceInappropriateType
@@ -465,7 +464,7 @@ hOpen err@ErrorHandling{..} fp ioMode = do
       let alreadyHasWriter =
             any (\hs -> openFilePath hs == fp && isWriteHandle hs) $
             openHandles fs
-      when (ioMode /= IO.ReadMode && alreadyHasWriter) $
+      when (openMode /= ReadMode && alreadyHasWriter) $
         throwError FsError {
             fsErrorType   = FsInvalidArgument
           , fsErrorPath   = fp
@@ -473,17 +472,20 @@ hOpen err@ErrorHandling{..} fp ioMode = do
           , fsErrorStack  = callStack
           , fsLimitation  = True
           }
-      when (ioMode == IO.ReadMode) $ void $
+      when (openMode == ReadMode) $ void $
         checkFsTree err $ FS.getFile fp (mockFiles fs)
-      files' <- checkFsTree err $ FS.touch fp (mockFiles fs)
+      files' <- checkFsTree err $ FS.openFile fp ex (mockFiles fs)
       return $ newHandle (fs { mockFiles = files' })
-                         (OpenHandle fp (filePtr ioMode))
+                         (OpenHandle fp (filePtr openMode))
   where
-    filePtr :: IOMode -> FilePtr
-    filePtr IO.ReadMode      = RW True  False 0
-    filePtr IO.WriteMode     = RW False True  0
-    filePtr IO.ReadWriteMode = RW True  True  0
-    filePtr IO.AppendMode    = Append
+    ex :: AllowExisting
+    ex = allowExisting openMode
+
+    filePtr :: OpenMode -> FilePtr
+    filePtr ReadMode          = RW True  False 0
+    filePtr (WriteMode     _) = RW False True  0
+    filePtr (ReadWriteMode _) = RW True  True  0
+    filePtr (AppendMode    _) = Append
 
 -- | Mock implementation of 'hClose'
 hClose :: CanSimFS m => ErrorHandling FsError m -> Handle -> m ()

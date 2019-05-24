@@ -1,7 +1,7 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE BangPatterns        #-}
 
 module Ouroboros.Consensus.Util.CBOR (
     -- * Incremental parsing in I/O
@@ -31,7 +31,6 @@ import           Data.ByteString.Builder.Extra (defaultChunkSize)
 import qualified Data.ByteString.Lazy as BSL
 import           Data.IORef
 import           Data.Word (Word64)
-import           System.IO (IOMode (..))
 
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadThrow

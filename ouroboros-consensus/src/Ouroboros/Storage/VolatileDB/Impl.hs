@@ -101,11 +101,11 @@ import qualified Data.Set as Set
 import           Data.Typeable
 import           Data.Word (Word64)
 import           GHC.Stack
-import qualified System.IO as IO
 
 import           Ouroboros.Consensus.Util (SomePair (..))
 
 import           Ouroboros.Storage.FS.API
+import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..),
                      ThrowCantCatch (..))
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
@@ -230,8 +230,8 @@ getBlockImpl env@VolatileDBEnv{..} slot = do
         case Map.lookup slot _currentRevMap of
             Nothing -> return (st, Nothing)
             Just InternalBlockInfo {..} ->  do
-                bs <- withFile hasFS [ibFile] IO.ReadMode $ \hndl -> do
-                        _ <- hSeek hndl IO.AbsoluteSeek (fromIntegral ibSlotOffset)
+                bs <- withFile hasFS [ibFile] ReadMode $ \hndl -> do
+                        _ <- hSeek hndl AbsoluteSeek (fromIntegral ibSlotOffset)
                         toStrict <$> hGetExactly hasFS hndl (fromIntegral ibBlockSize)
                 return (st, Just bs)
 
@@ -416,8 +416,7 @@ nextFile HasFS{..} _err VolatileDBEnv{..} st = do
     case _nextWriteFiles st of
         [] -> do
             let file = filePath $ _nextNewFileId st
-            -- TODO(kde) check if file exists already. Issue #292
-            hndl <- hOpen [file] IO.AppendMode
+            hndl <- hOpen [file] (AppendMode MustBeNew)
             return $ st {
                   _currentWriteHandle = hndl
                 , _currentWritePath   = file
@@ -426,8 +425,7 @@ nextFile HasFS{..} _err VolatileDBEnv{..} st = do
                 , _currentMap         = Map.insert file (FileInfo Nothing 0 Map.empty) (_currentMap st)
             }
         (file, size) : rest -> do
-            -- This file should already exist, so it does not fall under issue 292
-            hndl <- hOpen [file] IO.AppendMode
+            hndl <- hOpen [file] (AppendMode AllowExisting)
             return $ st {
                   _currentWriteHandle = hndl
                 , _currentWritePath   = file
@@ -502,8 +500,7 @@ mkInternalState hasFS@HasFS{..} err parser n files = wrapFsError err $ do
                                 -- If it's not the last file, we just ignore it and open a
                                 -- new one.
                                 return (filePath fd', [], lst + 2, Map.insert (filePath fd') (FileInfo Nothing 0 Map.empty) mp, 0)
-                -- TODO(kde) note that this file may or may not exist. Issue #292
-                hndl <- hOpen [fileToWrite] IO.AppendMode
+                hndl <- hOpen [fileToWrite] (AppendMode AllowExisting)
                 return $ InternalState {
                       _currentWriteHandle = hndl
                     , _currentWritePath   = fileToWrite
@@ -531,7 +528,7 @@ mkInternalState hasFS@HasFS{..} err parser n files = wrapFsError err $ do
                         -- concurrent writers, which is not allowed.
 
                         -- TODO(kde) we should add a Warning log here.
-                        withFile hasFS path IO.AppendMode $ \hndl ->
+                        withFile hasFS path (AppendMode AllowExisting) $ \hndl ->
                             hTruncate hndl (fromIntegral offset)
                         return ()
                 let fileMpNoPred = sizeAndId <$> fileMp
