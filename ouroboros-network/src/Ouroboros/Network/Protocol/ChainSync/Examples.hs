@@ -46,11 +46,11 @@ chainSyncClientExample :: forall header m a.
                           (HasHeader header, MonadSTM m)
                        => TVar m (Chain header)
                        -> Client header m a
-                       -> ChainSyncClient header (Point header) m a
+                       -> ChainSyncClient header m a
 chainSyncClientExample chainvar client = ChainSyncClient $
     initialise <$> getChainPoints
   where
-    initialise :: ([Point header], Client header m a) -> ClientStIdle header (Point header) m a
+    initialise :: ([Point header], Client header m a) -> ClientStIdle header m a
     initialise (points, client') =
       SendMsgFindIntersect points $
       -- In this consumer example, we do not care about whether the server
@@ -65,7 +65,7 @@ chainSyncClientExample chainvar client = ChainSyncClient $
         recvMsgIntersectUnchanged = \  _ -> ChainSyncClient (return (requestNext client'))
       }
 
-    requestNext :: Client header m a -> ClientStIdle header (Point header) m a
+    requestNext :: Client header m a -> ClientStIdle header m a
     requestNext client' =
       SendMsgRequestNext
         (handleNext client')
@@ -73,7 +73,7 @@ chainSyncClientExample chainvar client = ChainSyncClient $
         -- something. In this example we don't take up that opportunity.
         (return (handleNext client'))
 
-    handleNext :: Client header m a -> ClientStNext header (Point header) m a
+    handleNext :: Client header m a -> ClientStNext header m a
     handleNext client' =
       ClientStNext {
         recvMsgRollForward  = \header _pHead -> ChainSyncClient $ do
@@ -128,11 +128,11 @@ chainSyncServerExample :: forall header m a.
                           (HasHeader header, MonadSTM m)
                        => a
                        -> TVar m (ChainProducerState header)
-                       -> ChainSyncServer header (Point header) m a
+                       -> ChainSyncServer header m a
 chainSyncServerExample recvMsgDoneClient chainvar = ChainSyncServer $
     idle <$> newReader
   where
-    idle :: ReaderId -> ServerStIdle header (Point header) m a
+    idle :: ReaderId -> ServerStIdle header m a
     idle r =
       ServerStIdle {
         recvMsgRequestNext   = handleRequestNext r,
@@ -140,12 +140,12 @@ chainSyncServerExample recvMsgDoneClient chainvar = ChainSyncServer $
         recvMsgDoneClient    = pure recvMsgDoneClient
       }
 
-    idle' :: ReaderId -> ChainSyncServer header (Point header) m a
+    idle' :: ReaderId -> ChainSyncServer header m a
     idle' = ChainSyncServer . pure . idle
 
     handleRequestNext :: ReaderId
-                      -> m (Either (ServerStNext header (Point header) m a)
-                                (m (ServerStNext header (Point header) m a)))
+                      -> m (Either (ServerStNext header m a)
+                                (m (ServerStNext header m a)))
     handleRequestNext r = do
       mupdate <- tryReadChainUpdate r
       case mupdate of
@@ -156,13 +156,13 @@ chainSyncServerExample recvMsgDoneClient chainvar = ChainSyncServer $
 
     sendNext :: ReaderId
              -> (Point header, ChainUpdate header)
-             -> ServerStNext header (Point header) m a
+             -> ServerStNext header m a
     sendNext r (tip, AddBlock b) = SendMsgRollForward  b tip (idle' r)
     sendNext r (tip, RollBack p) = SendMsgRollBackward p tip (idle' r)
 
     handleFindIntersect :: ReaderId
                         -> [Point header]
-                        -> m (ServerStIntersect header (Point header) m a)
+                        -> m (ServerStIntersect header m a)
     handleFindIntersect r points = do
       -- TODO: guard number of points
       -- Find the first point that is on our chain
@@ -178,7 +178,8 @@ chainSyncServerExample recvMsgDoneClient chainvar = ChainSyncServer $
       writeTVar chainvar cps'
       return rid
 
-    improveReadPoint :: ReaderId -> [Point header] -> m (Maybe (Point header), Point header)
+    improveReadPoint :: ReaderId -> [Point header]
+                     -> m (Maybe (Point header), Point header)
     improveReadPoint rid points =
       atomically $ do
         cps <- readTVar chainvar

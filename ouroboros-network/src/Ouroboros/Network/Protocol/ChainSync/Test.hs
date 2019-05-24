@@ -27,7 +27,7 @@ import           Network.TypedProtocol.Proofs (connect)
 import           Network.TypedProtocol.Codec
 import           Ouroboros.Network.Channel
 
-import           Ouroboros.Network.Chain (Point)
+import           Ouroboros.Network.Block (StandardHash)
 import qualified Ouroboros.Network.Chain as Chain
 import qualified Ouroboros.Network.ChainProducerState as ChainProducerState
 
@@ -93,9 +93,9 @@ chainSyncForkExperiment
      ( MonadST m
      , MonadSTM m
      )
-  => (forall a b. ChainSyncServer Block (Point Block) m a
-      -> ChainSyncClient Block (Point Block) m b
-      -> m ())
+  => (forall a b. ChainSyncServer Block m a
+               -> ChainSyncClient Block m b
+               -> m ())
   -> ChainProducerStateForkTest
   -> m Property
 chainSyncForkExperiment run (ChainProducerStateForkTest cps chain) = do
@@ -138,7 +138,7 @@ propChainSyncConnectIO cps =
             void $  connect (chainSyncClientPeer cli) (chainSyncServerPeer ser)
         ) cps
 
-instance Arbitrary (AnyMessageAndAgency (ChainSync BlockHeader (Point BlockHeader))) where
+instance Arbitrary (AnyMessageAndAgency (ChainSync BlockHeader)) where
   arbitrary = oneof
     [ return $ AnyMessageAndAgency (ClientAgency TokIdle) MsgRequestNext
     , return $ AnyMessageAndAgency (ServerAgency (TokNext TokCanAwait)) MsgAwaitReply
@@ -172,10 +172,12 @@ instance Arbitrary (AnyMessageAndAgency (ChainSync BlockHeader (Point BlockHeade
     , return $ AnyMessageAndAgency (ClientAgency TokIdle) MsgDone
     ]
 
-instance (Show header, Show point) => Show (AnyMessageAndAgency (ChainSync header point)) where
+instance (Show header, StandardHash header)
+      => Show (AnyMessageAndAgency (ChainSync header)) where
   show (AnyMessageAndAgency _ msg) = show msg
 
-instance (Eq header, Eq point) => Eq (AnyMessage (ChainSync header point)) where
+instance (Eq header, StandardHash header)
+      => Eq (AnyMessage (ChainSync header)) where
   AnyMessage MsgRequestNext               == AnyMessage MsgRequestNext               = True
   AnyMessage MsgAwaitReply                == AnyMessage MsgAwaitReply                = True
   AnyMessage (MsgRollForward h1 p1)       == AnyMessage (MsgRollForward h2 p2)       = h1 == h2 && p1 == p2
@@ -187,13 +189,13 @@ instance (Eq header, Eq point) => Eq (AnyMessage (ChainSync header point)) where
   _                                       == _                                       = False
 
 prop_codec_ChainSync
-  :: AnyMessageAndAgency (ChainSync BlockHeader (Point BlockHeader))
+  :: AnyMessageAndAgency (ChainSync BlockHeader)
   -> Bool
 prop_codec_ChainSync msg =
     ST.runST $ prop_codecM (codecChainSync S.encode S.decode S.encode S.decode) msg
 
 prop_codec_splits2_ChainSync
-  :: AnyMessageAndAgency (ChainSync BlockHeader (Point BlockHeader))
+  :: AnyMessageAndAgency (ChainSync BlockHeader)
   -> Bool
 prop_codec_splits2_ChainSync msg =
     ST.runST $ prop_codec_splitsM
@@ -202,7 +204,7 @@ prop_codec_splits2_ChainSync msg =
       msg
 
 prop_codec_splits3_ChainSync
-  :: AnyMessageAndAgency (ChainSync BlockHeader (Point BlockHeader))
+  :: AnyMessageAndAgency (ChainSync BlockHeader)
   -> Bool
 prop_codec_splits3_ChainSync msg =
     ST.runST $ prop_codec_splitsM

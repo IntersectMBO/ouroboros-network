@@ -198,7 +198,7 @@ broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots = do
 -------------------------------------------------------------------------------}
 
 -- | Communication channel used for the Chain Sync protocol
-type ChainSyncChannel m hdr = Channel m (AnyMessage (ChainSync hdr (Point hdr)))
+type ChainSyncChannel m hdr = Channel m (AnyMessage (ChainSync hdr))
 
 -- | Communication channel used for the Block Fetch protocol
 type BlockFetchChannel m blk hdr = Channel m (AnyMessage (BlockFetch hdr blk))

@@ -118,7 +118,7 @@ data NodeKernel m up blk hdr = NodeKernel {
     , addUpstream   :: forall eCS eBF bytesCS bytesBF.
                        (Exception eCS, Exception eBF)
                     => up
-                    -> NodeComms m (ChainSync hdr (Point hdr)) eCS bytesCS
+                    -> NodeComms m (ChainSync hdr) eCS bytesCS
                     -> NodeComms m (BlockFetch hdr blk)        eBF bytesBF
                     -> m ()
 
@@ -128,7 +128,7 @@ data NodeKernel m up blk hdr = NodeKernel {
       -- itself to register and deregister peers.
     , addDownstream :: forall eCS eBF bytesCS bytesBF.
                        (Exception eCS, Exception eBF)
-                    => NodeComms m (ChainSync hdr (Point hdr)) eCS bytesCS
+                    => NodeComms m (ChainSync hdr) eCS bytesCS
                     -> NodeComms m (BlockFetch hdr blk)        eBF bytesBF
                     -> m ()
     }
@@ -284,7 +284,7 @@ initInternalState NodeParams {..} = do
           varCandidates
           up
 
-        nrChainSyncServer :: ChainSyncServer hdr (Point hdr) m ()
+        nrChainSyncServer :: ChainSyncServer hdr m ()
         nrChainSyncServer =
           chainSyncServer (tracePrefix "CSServer" Nothing) chainDB
 
@@ -450,10 +450,10 @@ forkBlockProduction IS{..} =
 data NetworkRequires m up blk hdr = NetworkRequires {
       -- | Start a chain sync client that communicates with the given upstream
       -- node.
-      nrChainSyncClient     :: up -> ChainSyncClient hdr (Point hdr) m Void
+      nrChainSyncClient     :: up -> ChainSyncClient hdr m Void
 
       -- | Start a chain sync server.
-    , nrChainSyncServer     :: ChainSyncServer hdr (Point hdr) m ()
+    , nrChainSyncServer     :: ChainSyncServer hdr m ()
 
       -- | Start a block fetch client that communicates with the given
       -- upstream node.
@@ -487,7 +487,7 @@ data NetworkProvides m up blk hdr = NetworkProvides {
       npAddUpstream   :: forall eCS eBF bytesCS bytesBF.
                          (Exception eCS, Exception eBF)
                       => up
-                      -> NodeComms m (ChainSync hdr (Point hdr)) eCS bytesCS
+                      -> NodeComms m (ChainSync hdr) eCS bytesCS
                          -- Communication for the Chain Sync protocol
                       -> NodeComms m (BlockFetch hdr blk)        eBF bytesBF
                          -- Communication for the Block Fetch protocol
@@ -499,7 +499,7 @@ data NetworkProvides m up blk hdr = NetworkProvides {
       -- itself to register and deregister peers.p
     , npAddDownstream :: forall eCS eBF bytesCS bytesBF.
                          (Exception eCS, Exception eBF)
-                      => NodeComms m (ChainSync hdr (Point hdr)) eCS bytesCS
+                      => NodeComms m (ChainSync hdr) eCS bytesCS
                          -- Communication for the Chain Sync protocol
                       -> NodeComms m (BlockFetch hdr blk)        eBF bytesBF
                          -- Communication for the Block Fetch protocol
@@ -522,7 +522,7 @@ initNetworkLayer
 initNetworkLayer _tracer registry NetworkRequires{..} = NetworkProvides {..}
   where
     npAddDownstream :: (Exception eCS, Exception eBF)
-                    => NodeComms m (ChainSync hdr (Point hdr)) eCS bytesCS
+                    => NodeComms m (ChainSync hdr) eCS bytesCS
                     -> NodeComms m (BlockFetch hdr blk)        eBF bytesBF
                     -> m ()
     npAddDownstream ncCS ncBF = do
@@ -538,7 +538,7 @@ initNetworkLayer _tracer registry NetworkRequires{..} = NetworkProvides {..}
 
     npAddUpstream :: (Exception eCS, Exception eBF)
                   => up
-                  -> NodeComms m (ChainSync hdr (Point hdr)) eCS bytesCS
+                  -> NodeComms m (ChainSync hdr) eCS bytesCS
                   -> NodeComms m (BlockFetch hdr blk)        eBF bytesBF
                   -> m ()
     npAddUpstream up ncCS ncBF = do
