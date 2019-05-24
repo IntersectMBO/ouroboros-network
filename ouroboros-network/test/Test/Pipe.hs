@@ -102,7 +102,7 @@ demo chain0 updates = do
         consumerApp = Mx.simpleMuxInitiatorApplication $
           \Mxt.ChainSync1 ->
             Mx.MuxPeer nullTracer
-                       (ChainSync.codecChainSync encode decode encode decode)
+                       codec
                        (ChainSync.chainSyncClientPeer
                           (ChainSync.chainSyncClientExample consumerVar
                             (consumerClient done target consumerVar)))
@@ -111,9 +111,12 @@ demo chain0 updates = do
         producerApp = Mx.simpleMuxResponderApplication $
           \Mxt.ChainSync1 ->
             Mx.MuxPeer nullTracer
-                       (ChainSync.codecChainSync encode decode encode decode)
+                       codec
                        (ChainSync.chainSyncServerPeer
                          (ChainSync.chainSyncServerExample () producerVar))
+
+        codec = ChainSync.codecChainSync encode (const decode)
+                                         encode        decode
 
     _ <- async $ runNetworkNodeWithPipe producerApp hndRead1 hndWrite2
     _ <- async $ runNetworkNodeWithPipe consumerApp hndRead2 hndWrite1

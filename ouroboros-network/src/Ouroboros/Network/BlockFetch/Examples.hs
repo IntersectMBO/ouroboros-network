@@ -16,7 +16,8 @@ import           Data.Map (Map)
 import qualified Data.Set as Set
 import           Data.Set (Set)
 import qualified Data.ByteString.Lazy as LBS
-import           Codec.Serialise (Serialise(..))
+import qualified Codec.Serialise as S (Serialise(encode, decode))
+import           Codec.Serialise      (Serialise)
 
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadST
@@ -195,7 +196,7 @@ runFetchClient tracer registry peerid channel client =
       runPipelinedPeer 10 tracer codec channel $
         client clientCtx
   where
-    codec = codecBlockFetch encode encode decode decode
+    codec = codecBlockFetch S.encode (const S.decode) S.encode S.decode
 
 runFetchServer :: (MonadThrow m, MonadST m,
                    Serialise block,
@@ -208,7 +209,7 @@ runFetchServer tracer channel server =
     runPeer tracer codec channel $
       blockFetchServerPeer server
   where
-    codec = codecBlockFetch encode encode decode decode
+    codec = codecBlockFetch S.encode (const S.decode) S.encode S.decode
 
 runFetchClientAndServerAsync
                :: (MonadCatch m, MonadAsync m, MonadST m, Ord peerid,

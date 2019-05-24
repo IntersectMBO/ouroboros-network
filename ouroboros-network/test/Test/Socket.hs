@@ -302,7 +302,7 @@ demo chain0 updates = do
         initiatorApp = simpleMuxInitiatorApplication $
           \Mxt.ChainSync1 ->
               MuxPeer nullTracer
-                      (ChainSync.codecChainSync encode decode encode decode)
+                      codecChainSync
                       (ChainSync.chainSyncClientPeer
                         (ChainSync.chainSyncClientExample consumerVar
                         (consumerClient done target consumerVar)))
@@ -311,8 +311,11 @@ demo chain0 updates = do
         responderApp = simpleMuxResponderApplication $
           \Mxt.ChainSync1 ->
             MuxPeer nullTracer
-                    (ChainSync.codecChainSync encode decode encode decode)
+                    codecChainSync
                     (ChainSync.chainSyncServerPeer (ChainSync.chainSyncServerExample () producerVar))
+
+        codecChainSync = ChainSync.codecChainSync encode (const decode)
+                                         encode        decode
 
     withSimpleServerNode
       producerAddress

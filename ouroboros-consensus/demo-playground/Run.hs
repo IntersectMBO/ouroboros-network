@@ -169,17 +169,17 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
           direction = Upstream (producerNodeId :==>: myNodeId)
           nodeCommsCS = NodeComms {
               ncCodec    = codecChainSync
-                             (demoEncodeHeader     pInfoConfig)
-                             (demoDecodeHeader     pInfoConfig)
-                             (encodePoint'         pInfo)
-                             (decodePoint'         pInfo)
+                             (      demoEncodeHeader pInfoConfig)
+                             (\_ -> demoDecodeHeader pInfoConfig)
+                             (encodePoint'           pInfo)
+                             (decodePoint'           pInfo)
             , ncWithChan = NamedPipe.withPipeChannel "chain-sync" direction
             }
           nodeCommsBF = NodeComms {
               ncCodec    = codecBlockFetch
-                             (demoEncodeBlock pInfoConfig)
+                             (      demoEncodeBlock pInfoConfig)
+                             (\_ -> demoDecodeBlock pInfoConfig)
                              demoEncodeHeaderHash
-                             (demoDecodeBlock pInfoConfig)
                              demoDecodeHeaderHash
             , ncWithChan = NamedPipe.withPipeChannel "block-fetch" direction
             }
@@ -194,17 +194,17 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
           direction = Downstream (myNodeId :==>: consumerNodeId)
           nodeCommsCS = NodeComms {
               ncCodec    = codecChainSync
-                             (demoEncodeHeader     pInfoConfig)
-                             (demoDecodeHeader     pInfoConfig)
-                             (encodePoint'         pInfo)
-                             (decodePoint'         pInfo)
+                             (      demoEncodeHeader pInfoConfig)
+                             (\_ -> demoDecodeHeader pInfoConfig)
+                             (encodePoint'           pInfo)
+                             (decodePoint'           pInfo)
             , ncWithChan = NamedPipe.withPipeChannel "chain-sync" direction
             }
           nodeCommsBF = NodeComms {
               ncCodec    = codecBlockFetch
-                             (demoEncodeBlock pInfoConfig)
+                             (      demoEncodeBlock pInfoConfig)
+                             (\_ -> demoDecodeBlock pInfoConfig)
                              demoEncodeHeaderHash
-                             (demoDecodeBlock pInfoConfig)
                              demoDecodeHeaderHash
             , ncWithChan = NamedPipe.withPipeChannel "block-fetch" direction
             }
