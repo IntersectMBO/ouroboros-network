@@ -28,28 +28,28 @@ import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.Protocol.BlockFetch.Type
 
 codecBlockFetch
-  :: forall header body m.
+  :: forall block m.
      ( Monad m
      , MonadST m
      )
-  => (body              -> CBOR.Encoding)
-  -> (HeaderHash header -> CBOR.Encoding)
-  -> (forall s. CBOR.Decoder s body)
-  -> (forall s. CBOR.Decoder s (HeaderHash header))
-  -> Codec (BlockFetch header body) CBOR.DeserialiseFailure m ByteString
+  => (block            -> CBOR.Encoding)
+  -> (HeaderHash block -> CBOR.Encoding)
+  -> (forall s. CBOR.Decoder s block)
+  -> (forall s. CBOR.Decoder s (HeaderHash block))
+  -> Codec (BlockFetch block) CBOR.DeserialiseFailure m ByteString
 codecBlockFetch encodeBody encodeHeaderHash
                 decodeBody decodeHeaderHash =
     mkCodecCborLazyBS encode decode
  where
-  encodePoint' :: Point header -> CBOR.Encoding
+  encodePoint' :: Point block -> CBOR.Encoding
   encodePoint' = Block.encodePoint $ Block.encodeChainHash encodeHeaderHash
 
-  decodePoint' :: forall s. CBOR.Decoder s (Point header)
+  decodePoint' :: forall s. CBOR.Decoder s (Point block)
   decodePoint' = Block.decodePoint $ Block.decodeChainHash decodeHeaderHash
 
   encode :: forall (pr :: PeerRole) st st'.
             PeerHasAgency pr st
-         -> Message (BlockFetch header body) st st'
+         -> Message (BlockFetch block) st st'
          -> CBOR.Encoding
   encode (ClientAgency TokIdle) (MsgRequestRange (ChainRange from to)) =
     CBOR.encodeListLen 2 <> CBOR.encodeWord 0 <> encodePoint' from <> encodePoint' to
@@ -64,7 +64,7 @@ codecBlockFetch encodeBody encodeHeaderHash
   encode (ServerAgency TokStreaming) MsgBatchDone =
     CBOR.encodeListLen 1 <> CBOR.encodeWord 5
 
-  decode :: forall (pr :: PeerRole) s (st :: BlockFetch header body).
+  decode :: forall (pr :: PeerRole) s (st :: BlockFetch block).
             PeerHasAgency pr st
          -> CBOR.Decoder s (SomeMessage st)
   decode stok = do
@@ -88,19 +88,19 @@ codecBlockFetch encodeBody encodeHeaderHash
 
 
 codecBlockFetchId
-  :: forall header body m. Monad m
-  => Codec (BlockFetch header body) CodecFailure m (AnyMessage (BlockFetch header body))
+  :: forall block m. Monad m
+  => Codec (BlockFetch block) CodecFailure m (AnyMessage (BlockFetch block))
 codecBlockFetchId = Codec encode decode
  where
   encode :: forall (pr :: PeerRole) st st'.
             PeerHasAgency pr st
-         -> Message (BlockFetch header body) st st'
-         -> AnyMessage (BlockFetch header body)
+         -> Message (BlockFetch block) st st'
+         -> AnyMessage (BlockFetch block)
   encode _ = AnyMessage
 
   decode :: forall (pr :: PeerRole) st.
             PeerHasAgency pr st
-         -> m (DecodeStep (AnyMessage (BlockFetch header body))
+         -> m (DecodeStep (AnyMessage (BlockFetch block))
                           CodecFailure m (SomeMessage st))
   decode stok = return $ DecodePartial $ \bytes -> case (stok, bytes) of
     (_, Nothing) -> return $ DecodeFail CodecFailureOutOfInput

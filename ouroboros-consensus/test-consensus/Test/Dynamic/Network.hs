@@ -201,14 +201,14 @@ broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots = do
 type ChainSyncChannel m hdr = Channel m (AnyMessage (ChainSync hdr))
 
 -- | Communication channel used for the Block Fetch protocol
-type BlockFetchChannel m blk hdr = Channel m (AnyMessage (BlockFetch hdr blk))
+type BlockFetchChannel m blk = Channel m (AnyMessage (BlockFetch blk))
 
 -- | The communication channels from and to each node
 data NodeChan m blk hdr = NodeChan
-  { chainSyncConsumer  :: ChainSyncChannel  m     hdr
-  , chainSyncProducer  :: ChainSyncChannel  m     hdr
-  , blockFetchConsumer :: BlockFetchChannel m blk hdr
-  , blockFetchProducer :: BlockFetchChannel m blk hdr
+  { chainSyncConsumer  :: ChainSyncChannel  m hdr
+  , chainSyncProducer  :: ChainSyncChannel  m hdr
+  , blockFetchConsumer :: BlockFetchChannel m blk
+  , blockFetchProducer :: BlockFetchChannel m blk
   }
 
 -- | All connections between all nodes

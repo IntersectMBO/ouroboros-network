@@ -12,69 +12,78 @@ import Network.TypedProtocol.Core
 import Ouroboros.Network.Protocol.BlockFetch.Type
 
 
-data BlockFetchServer header body m a where
+data BlockFetchServer block m a where
   BlockFetchServer
-    :: (ChainRange header -> m (BlockFetchBlockSender header body m a))
+    :: (ChainRange block -> m (BlockFetchBlockSender block m a))
     -> a
-    -> BlockFetchServer header body m a
+    -> BlockFetchServer block m a
 
 -- | Send batches of blocks, when a batch is sent loop using
 -- @'BlockFetchServer'@.
 --
-data BlockFetchBlockSender header body m a where
+data BlockFetchBlockSender block m a where
 
   -- | Initiate a batch of blocks.
   SendMsgStartBatch
-    :: m (BlockFetchSendBlocks header body m a)
-    -> BlockFetchBlockSender header body m a
+    :: m (BlockFetchSendBlocks block m a)
+    -> BlockFetchBlockSender block m a
 
   SendMsgNoBlocks
-    :: m (BlockFetchServer header body m a)
-    -> BlockFetchBlockSender header body m a
+    :: m (BlockFetchServer block m a)
+    -> BlockFetchBlockSender block m a
 
 -- | Stream batch of blocks
 --
-data BlockFetchSendBlocks header body m a where
+data BlockFetchSendBlocks block m a where
 
-  -- | Send a single block body and recurse.
+  -- | Send a single block and recurse.
   --
   SendMsgBlock
-    :: body
-    -> m (BlockFetchSendBlocks header body m a)
-    -> BlockFetchSendBlocks header body m a
+    :: block
+    -> m (BlockFetchSendBlocks block m a)
+    -> BlockFetchSendBlocks block m a
 
   -- | End of the stream of block bodies.
   --
   SendMsgBatchDone
-    :: m (BlockFetchServer header body m a)
-    -> BlockFetchSendBlocks header body m a
+    :: m (BlockFetchServer block m a)
+    -> BlockFetchSendBlocks block m a
 
 blockFetchServerPeer
-  :: forall header body m a.
+  :: forall block m a.
      Functor m
-  => BlockFetchServer header body m a
-  -> Peer (BlockFetch header body) AsServer BFIdle m a
-blockFetchServerPeer (BlockFetchServer requestHandler result) = Await (ClientAgency TokIdle) $ \msg -> case msg of
-  MsgRequestRange range -> Effect $ sendBatch <$> requestHandler range
-  MsgClientDone         -> Done TokDone result
+  => BlockFetchServer block m a
+  -> Peer (BlockFetch block) AsServer BFIdle m a
+blockFetchServerPeer (BlockFetchServer requestHandler result) =
+    Await (ClientAgency TokIdle) $ \msg -> case msg of
+      MsgRequestRange range -> Effect $ sendBatch <$> requestHandler range
+      MsgClientDone         -> Done TokDone result
  where
   sendBatch
-    :: BlockFetchBlockSender header body m a
-    -> Peer (BlockFetch header body) AsServer BFBusy m a
+    :: BlockFetchBlockSender block m a
+    -> Peer (BlockFetch block) AsServer BFBusy m a
 
   sendBatch (SendMsgStartBatch mblocks) =
-    Yield (ServerAgency TokBusy) MsgStartBatch (Effect $ sendBlocks <$> mblocks)
+    Yield (ServerAgency TokBusy) MsgStartBatch $
+    Effect $
+      sendBlocks <$> mblocks
 
   sendBatch (SendMsgNoBlocks next) =
-    Yield (ServerAgency TokBusy) MsgNoBlocks (Effect $ blockFetchServerPeer <$> next)
+    Yield (ServerAgency TokBusy) MsgNoBlocks $
+    Effect $
+      blockFetchServerPeer <$> next
 
 
   sendBlocks
-    :: BlockFetchSendBlocks header body m a
-    -> Peer (BlockFetch header body) AsServer BFStreaming m a
+    :: BlockFetchSendBlocks block m a
+    -> Peer (BlockFetch block) AsServer BFStreaming m a
 
-  sendBlocks (SendMsgBlock body next') =
-    Yield (ServerAgency TokStreaming) (MsgBlock body) (Effect $ sendBlocks <$> next')
+  sendBlocks (SendMsgBlock block next') =
+    Yield (ServerAgency TokStreaming) (MsgBlock block) $
+    Effect $
+      sendBlocks <$> next'
 
   sendBlocks (SendMsgBatchDone next) =
-    Yield (ServerAgency TokStreaming) MsgBatchDone (Effect $ blockFetchServerPeer <$> next)
+    Yield (ServerAgency TokStreaming) MsgBatchDone $
+    Effect $
+      blockFetchServerPeer <$> next

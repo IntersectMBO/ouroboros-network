@@ -25,9 +25,7 @@ import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Block (StandardHash)
 import           Ouroboros.Network.Chain (Chain, Point)
 import qualified Ouroboros.Network.Chain as Chain
-import           Ouroboros.Network.Testing.ConcreteBlock
-                   (Block, BlockHeader, BlockBody)
-import qualified Ouroboros.Network.Testing.ConcreteBlock as ConcreteBlock
+import           Ouroboros.Network.Testing.ConcreteBlock (Block)
 
 import           Ouroboros.Network.Protocol.BlockFetch.Type
 import           Ouroboros.Network.Protocol.BlockFetch.Client
@@ -70,18 +68,17 @@ tests =
 -- Block fetch client and server used in many subsequent tests.
 --
 
-type TestClient m = BlockFetchClient Block BlockBody m [BlockBody]
-type TestServer m = BlockFetchServer Block BlockBody m ()
+type TestClient m = BlockFetchClient Block m [Block]
+type TestServer m = BlockFetchServer Block m ()
 type TestClientPipelined m =
-       BlockFetchClientPipelined Block BlockBody m
-                                 [Either (ChainRange Block) [BlockBody]]
+       BlockFetchClientPipelined Block m
+                                 [Either (ChainRange Block) [Block]]
 
 testClient :: MonadSTM m => Chain Block -> [Point Block] -> TestClient m
 testClient chain points = blockFetchClientMap (pointsToRanges chain points)
 
 testServer :: MonadSTM m => Chain Block -> TestServer m
-testServer chain = blockFetchServer (ConcreteBlock.blockBody <$>
-                                       rangeRequestsFromChain chain)
+testServer chain = blockFetchServer (rangeRequestsFromChain chain)
 
 testClientPipelinedMax,
   testClientPipelinedMin
@@ -171,7 +168,7 @@ connect_pipelined :: MonadSTM m
                   => TestClientPipelined m
                   -> Chain Block
                   -> [Bool]
-                  -> m [Either (ChainRange Block) [BlockBody]]
+                  -> m [Either (ChainRange Block) [Block]]
 connect_pipelined client chain cs = do
     (res, _, TerminalStates TokDone TokDone)
       <- connectPipelined cs
@@ -297,7 +294,7 @@ prop_pipe_IO (TestChainAndPoints chain points) =
 -- Codec properties
 --
 
-instance Arbitrary (AnyMessageAndAgency (BlockFetch BlockHeader BlockBody)) where
+instance Arbitrary (AnyMessageAndAgency (BlockFetch Block)) where
   arbitrary = oneof
     [ AnyMessageAndAgency (ClientAgency TokIdle) <$>
         MsgRequestRange <$> arbitrary
@@ -309,11 +306,11 @@ instance Arbitrary (AnyMessageAndAgency (BlockFetch BlockHeader BlockBody)) wher
     , return $ AnyMessageAndAgency (ClientAgency TokIdle) MsgClientDone
     ]
 
-instance Show (AnyMessageAndAgency (BlockFetch BlockHeader BlockBody)) where
+instance Show (AnyMessageAndAgency (BlockFetch Block)) where
   show (AnyMessageAndAgency _ msg) = show msg
 
-instance (StandardHash header, Eq body) =>
-         Eq (AnyMessage (BlockFetch header body)) where
+instance (StandardHash block, Eq block) =>
+         Eq (AnyMessage (BlockFetch block)) where
   AnyMessage (MsgRequestRange r1) == AnyMessage (MsgRequestRange r2) = r1 == r2
   AnyMessage MsgStartBatch        == AnyMessage MsgStartBatch        = True
   AnyMessage MsgNoBlocks          == AnyMessage MsgNoBlocks          = True
@@ -323,19 +320,19 @@ instance (StandardHash header, Eq body) =>
   _                               ==                  _              = False
 
 prop_codec_BlockFetch
-  :: AnyMessageAndAgency (BlockFetch BlockHeader BlockBody)
+  :: AnyMessageAndAgency (BlockFetch Block)
   -> Bool
 prop_codec_BlockFetch msg =
   runST (prop_codecM (codecBlockFetch S.encode S.encode S.decode S.decode) msg)
 
 prop_codec_splits2_BlockFetch
-  :: AnyMessageAndAgency (BlockFetch BlockHeader BlockBody)
+  :: AnyMessageAndAgency (BlockFetch Block)
   -> Bool
 prop_codec_splits2_BlockFetch msg =
   runST (prop_codec_splitsM splits2 (codecBlockFetch S.encode S.encode S.decode S.decode) msg)
 
 prop_codec_splits3_BlockFetch
-  :: AnyMessageAndAgency (BlockFetch BlockHeader BlockBody)
+  :: AnyMessageAndAgency (BlockFetch Block)
   -> Bool
 prop_codec_splits3_BlockFetch msg =
   runST (prop_codec_splitsM splits3 (codecBlockFetch S.encode S.encode S.decode S.decode) msg)
@@ -375,11 +372,11 @@ pointsToRanges chain points =
 receivedBlockBodies
   :: Chain Block
   -> [Point Block]
-  -> [[BlockBody]]
+  -> [[Block]]
 receivedBlockBodies chain points =
     map f (pointsToRanges chain points)
  where
     f (ChainRange from to) =
       case Chain.selectBlockRange chain from to of
         Nothing -> []
-        Just bs -> map ConcreteBlock.blockBody bs
+        Just bs -> bs

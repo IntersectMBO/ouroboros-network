@@ -69,7 +69,7 @@ blockFetchClient :: forall header block m.
                  => Tracer m (TraceFetchClientState header)
                  -> FetchClientPolicy header block m
                  -> FetchClientStateVars m header
-                 -> PeerPipelined (BlockFetch header block) AsClient BFIdle m ()
+                 -> PeerPipelined (BlockFetch block) AsClient BFIdle m ()
 blockFetchClient tracer
                  FetchClientPolicy {
                    blockFetchSize,
@@ -81,7 +81,7 @@ blockFetchClient tracer
   where
     senderIdle :: forall n.
                   Nat n
-               -> PeerSender (BlockFetch header block) AsClient
+               -> PeerSender (BlockFetch block) AsClient
                              BFIdle n () m ()
 
     -- We have no requests to send. Check if we have any pending pipelined
@@ -97,7 +97,7 @@ blockFetchClient tracer
 
     senderAwait :: forall n.
                    Nat n
-                -> PeerSender (BlockFetch header block) AsClient
+                -> PeerSender (BlockFetch block) AsClient
                               BFIdle n () m ()
     senderAwait outstanding =
       SenderEffect $ do
@@ -122,7 +122,7 @@ blockFetchClient tracer
                  -> PeerGSV
                  -> PeerFetchInFlightLimits
                  -> [ChainFragment header]
-                 -> PeerSender (BlockFetch header block) AsClient
+                 -> PeerSender (BlockFetch block) AsClient
                                BFIdle n () m ()
 
     -- We now do have some requests that we have accepted but have yet to
@@ -146,9 +146,10 @@ blockFetchClient tracer
           when fired $
             atomically (writeTVar _ PeerFetchStatusAberrant)
 -}
-        let range = assert (not (ChainFragment.null fragment)) $
-                    ChainRange (blockPoint lower)
-                               (blockPoint upper)
+        let range :: ChainRange block
+            range = assert (not (ChainFragment.null fragment)) $
+                    ChainRange (castPoint (blockPoint lower))
+                               (castPoint (blockPoint upper))
               where
                 Just lower = ChainFragment.last fragment
                 Just upper = ChainFragment.head fragment
@@ -166,7 +167,7 @@ blockFetchClient tracer
 
     receiverBusy :: [header]
                  -> PeerFetchInFlightLimits
-                 -> PeerReceiver (BlockFetch header block) AsClient
+                 -> PeerReceiver (BlockFetch block) AsClient
                                  BFBusy BFIdle m ()
     receiverBusy headers inflightlimits =
       ReceiverAwait
@@ -189,7 +190,7 @@ blockFetchClient tracer
 
     receiverStreaming :: PeerFetchInFlightLimits
                       -> [header]
-                      -> PeerReceiver (BlockFetch header block) AsClient
+                      -> PeerReceiver (BlockFetch block) AsClient
                                       BFStreaming BFIdle m ()
     receiverStreaming inflightlimits headers =
       ReceiverAwait

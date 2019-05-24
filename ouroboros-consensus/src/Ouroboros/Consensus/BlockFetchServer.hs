@@ -8,7 +8,7 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer (Tracer)
 
-import           Ouroboros.Network.Block (HeaderHash, castPoint)
+import           Ouroboros.Network.Block (HeaderHash)
 import           Ouroboros.Network.Protocol.BlockFetch.Server
                      (BlockFetchBlockSender (..), BlockFetchSendBlocks (..),
                      BlockFetchServer (..))
@@ -26,14 +26,14 @@ blockFetchServer
        (MonadSTM m, MonadThrow m, HeaderHash hdr ~ HeaderHash blk)
     => Tracer m String
     -> ChainDB m blk hdr
-    -> BlockFetchServer hdr blk m ()
+    -> BlockFetchServer blk m ()
 blockFetchServer _tracer chainDB = senderSide
   where
-    senderSide :: BlockFetchServer hdr blk m ()
+    senderSide :: BlockFetchServer blk m ()
     senderSide = BlockFetchServer receiveReq ()
 
-    receiveReq :: ChainRange hdr
-               -> m (BlockFetchBlockSender hdr blk m ())
+    receiveReq :: ChainRange blk
+               -> m (BlockFetchBlockSender blk m ())
     receiveReq chainRange = withIter chainRange $ \it ->
       -- When we got an iterator, it will stream at least one block since its
       -- bounds are inclusive (when the bounds are invalid, we won't get an
@@ -44,19 +44,19 @@ blockFetchServer _tracer chainDB = senderSide
 
 
     sendBlocks :: ChainDB.Iterator m blk
-               -> m (BlockFetchSendBlocks hdr blk m ())
+               -> m (BlockFetchSendBlocks blk m ())
     sendBlocks it = do
       next <- ChainDB.iteratorNext it
       return $ case next of
         ChainDB.IteratorExhausted  -> SendMsgBatchDone (return senderSide)
         ChainDB.IteratorResult blk -> SendMsgBlock blk (sendBlocks it)
 
-    withIter :: ChainRange hdr -> (ChainDB.Iterator m blk -> m a) -> m a
+    withIter :: ChainRange blk -> (ChainDB.Iterator m blk -> m a) -> m a
     withIter (ChainRange start end) = bracket
       -- TODO when streamBlocks throws an exception, we should return
       -- SendMsgNoBlocks. Which exception will the ChainDB throw?
         (ChainDB.streamBlocks
           chainDB
-          (ChainDB.StreamFromInclusive (castPoint start))
-          (ChainDB.StreamToInclusive   (castPoint end)))
+          (ChainDB.StreamFromInclusive start)
+          (ChainDB.StreamToInclusive   end))
         ChainDB.iteratorClose
