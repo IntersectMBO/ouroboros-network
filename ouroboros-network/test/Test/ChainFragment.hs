@@ -367,7 +367,12 @@ prop_prepend (TestBlockChainFragment c) = case c of
 
 prop_fromChain_toChain :: TestBlockChainFragment -> Property
 prop_fromChain_toChain (TestBlockChainFragment c) =
+    startsFromGenesis ==>
     CF.fromChain (CF.toChain c) === c
+  where
+    startsFromGenesis = case c of
+      CF.Empty  -> True
+      b CF.:< _ -> blockPrevHash b == GenesisHash
 
 prop_toChain_fromChain :: TestBlockChain -> Property
 prop_toChain_fromChain (TestBlockChain c) =
@@ -375,7 +380,8 @@ prop_toChain_fromChain (TestBlockChain c) =
 
 prop_fixupBlock :: TestBlockChainFragment -> Bool
 prop_fixupBlock (TestBlockChainFragment chain) =
-  fixupChainFragmentFromGenesis fixupBlock (CF.toNewestFirst chain) == chain
+  fixupChainFragmentFromSame fixupBlock (CF.toNewestFirst chain) == chain
+
 
 --
 -- Generators for chains
@@ -393,9 +399,7 @@ newtype TestHeaderChainFragment = TestHeaderChainFragment (ChainFragment BlockHe
 
 instance Arbitrary TestBlockChainFragment where
     arbitrary = do
-        let prevhash  = GenesisHash
-            prevblock = BlockNo 0
-            prevslot  = SlotNo 0
+        (prevhash, prevblock, prevslot) <- genChainAnchor
         n <- genNonNegative
         bodies <- vector n
         slots  <- mkSlots prevslot <$> vectorOf n genSlotGap
@@ -408,7 +412,7 @@ instance Arbitrary TestBlockChainFragment where
           . scanl (\slot gap -> slot + fromIntegral gap) prevslot
 
     shrink (TestBlockChainFragment c) =
-        [ TestBlockChainFragment (fixupChainFragmentFromGenesis fixupBlock c')
+        [ TestBlockChainFragment (fixupChainFragmentFromSame fixupBlock c')
         | c' <- shrinkList (const []) (CF.toNewestFirst c) ]
 
 instance Arbitrary TestHeaderChainFragment where
@@ -418,7 +422,7 @@ instance Arbitrary TestHeaderChainFragment where
         return (TestHeaderChainFragment headerchain)
 
     shrink (TestHeaderChainFragment c) =
-        [ TestHeaderChainFragment (fixupChainFragmentFromGenesis fixupBlockHeader c')
+        [ TestHeaderChainFragment (fixupChainFragmentFromSame fixupBlockHeader c')
         | c' <- shrinkList (const []) (CF.toNewestFirst c) ]
 
 prop_arbitrary_TestBlockChainFragment :: TestBlockChainFragment -> Property
@@ -439,6 +443,22 @@ prop_shrink_TestBlockChainFragment c =
 prop_shrink_TestHeaderChainFragment :: TestHeaderChainFragment -> Bool
 prop_shrink_TestHeaderChainFragment c =
     and [ CF.valid c' | TestHeaderChainFragment c' <- shrink c ]
+
+
+-- | A starting point for a chain fragment: either the 'genesisAnchor' or
+-- an arbitrary point.
+--
+genChainAnchor :: Gen (ChainHash Block, BlockNo, SlotNo)
+genChainAnchor = oneof [ pure genesisAnchor, genArbitraryChainAnchor ]
+
+genArbitraryChainAnchor :: Gen (ChainHash Block, BlockNo, SlotNo)
+genArbitraryChainAnchor =
+    (,,) <$> (BlockHash <$> arbitrary)
+         <*> arbitrary
+         <*> arbitrary
+
+genesisAnchor :: (ChainHash b, BlockNo, SlotNo)
+genesisAnchor = (GenesisHash, BlockNo 0, SlotNo 0)
 
 
 -- | The Ouroboros K paramater. This is also the maximum rollback length.
@@ -472,14 +492,11 @@ genAddBlock :: (HasHeader block, HeaderHash block ~ ConcreteHeaderHash)
 genAddBlock chain = do
     body    <- arbitrary
     slotGap <- genSlotGap
-    let prevhash :: ChainHash Block
-        (prevhash, prevblockno, prevslot) = case chain of
-          _ CF.:> chead -> ( BlockHash (blockHash chead)
-                           , blockNo chead
-                           , blockSlot chead )
-          CF.Empty      -> ( GenesisHash
-                           , BlockNo 0
-                           , SlotNo 0 )
+    (prevhash, prevblockno, prevslot) <- case chain of
+      _ CF.:> chead -> pure ( BlockHash (blockHash chead)
+                            , blockNo chead
+                            , blockSlot chead )
+      CF.Empty      -> genChainAnchor
     let slot    = addSlotGap slotGap prevslot
         b       = fixupBlock prevhash prevblockno (mkPartialBlock slot body)
     return b
@@ -587,8 +604,9 @@ countChainFragmentUpdateNetProgress = go 0
     go n c  (u:us) = go n' c' us
       where
         Just c' = CF.applyChainUpdate u c
-        n'      = n + (maybe 0 fromEnum $ CF.headBlockNo c')
-                    - (maybe 0 fromEnum $ CF.headBlockNo c)
+        n'      = n + fromIntegral
+                        ((maybe 0 (toInteger . unBlockNo) (CF.headBlockNo c'))
+                       - (maybe 0 (toInteger . unBlockNo) (CF.headBlockNo c)))
 
 --
 -- Generator for chain and single point on the chain
