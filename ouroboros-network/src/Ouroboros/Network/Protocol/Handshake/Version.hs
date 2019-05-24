@@ -38,6 +38,11 @@ newtype Versions vNum extra r = Versions
   { getVersions :: Map vNum (Sigma (Version extra r))
   }
 
+instance Functor (Versions vNum extra) where
+    fmap f (Versions vs) = Versions $ Map.map fmapSigma vs
+      where
+        fmapSigma (Sigma t (Version (Application app) extra)) = Sigma t (Version (Application $ \x y -> f (app x y)) extra)
+
 -- | Singleton smart constructor for @'Versions'@.
 --
 simpleSingletonVersions
