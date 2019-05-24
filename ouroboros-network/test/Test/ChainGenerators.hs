@@ -24,7 +24,6 @@ module Test.ChainGenerators
   , genSlotGap
   , addSlotGap
   , genChainAnchor
-  , genHeaderChain
   , mkPartialBlock
   , mkRollbackPoint
 
@@ -153,20 +152,11 @@ instance Arbitrary Block where
           b       = fixupBlock prevhash prevblockno (mkPartialBlock slot body)
       return b
 
-instance Arbitrary BlockHeader where
-    arbitrary = blockHeader <$> arbitrary
+genSlotGap :: Gen Int
+genSlotGap = frequency [(25, pure 1), (5, pure 2), (1, pure 3)]
 
--- We provide CoArbitrary instances, for (Block -> _) functions
--- We use default implementations using generics.
-instance CoArbitrary Block
-instance CoArbitrary BlockHeader
-instance CoArbitrary SlotNo
-instance CoArbitrary BlockNo
-instance CoArbitrary BlockSigner
-instance CoArbitrary BodyHash
-instance CoArbitrary BlockBody
-instance CoArbitrary (ChainHash BlockHeader)
-instance CoArbitrary ConcreteHeaderHash
+addSlotGap :: Int -> SlotNo -> SlotNo
+addSlotGap g (SlotNo n) = SlotNo (n + fromIntegral g)
 
 -- | A starting point for a chain fragment: either the 'genesisAnchor' or
 -- an arbitrary point.
@@ -183,6 +173,21 @@ genArbitraryChainAnchor =
 genesisAnchor :: (ChainHash b, BlockNo, SlotNo)
 genesisAnchor = (GenesisHash, BlockNo 0, SlotNo 0)
 
+instance Arbitrary BlockHeader where
+    arbitrary = blockHeader <$> arbitrary
+
+-- We provide CoArbitrary instances, for (Block -> _) functions
+-- We use default implementations using generics.
+instance CoArbitrary Block
+instance CoArbitrary BlockHeader
+instance CoArbitrary SlotNo
+instance CoArbitrary BlockNo
+instance CoArbitrary BlockSigner
+instance CoArbitrary BodyHash
+instance CoArbitrary BlockBody
+instance CoArbitrary (ChainHash BlockHeader)
+instance CoArbitrary ConcreteHeaderHash
+
 -- | The 'NonNegative' generator produces a large proportion of 0s, so we use
 -- this one instead for now.
 --
@@ -191,29 +196,65 @@ genesisAnchor = (GenesisHash, BlockNo 0, SlotNo 0)
 genNonNegative :: Gen Int
 genNonNegative = (abs <$> arbitrary) `suchThat` (>= 0)
 
-genBlockChain :: Int -> Gen (Chain Block)
-genBlockChain n = do
-    bodies <- vector n
-    slots  <- mkSlots <$> vectorOf n genSlotGap
-    return (mkChain (zip slots bodies))
-  where
-    mkSlots :: [Int] -> [SlotNo]
-    mkSlots = map toEnum . tail . scanl (+) 0
 
-genSlotGap :: Gen Int
-genSlotGap = frequency [(25, pure 1), (5, pure 2), (1, pure 3)]
-
-addSlotGap :: Int -> SlotNo -> SlotNo
-addSlotGap g (SlotNo n) = SlotNo (n + fromIntegral g)
-
-genHeaderChain :: Int -> Gen (Chain BlockHeader)
-genHeaderChain = fmap (fmap blockHeader) . genBlockChain
-
-
--- | The Ouroboros K paramater. This is also the maximum rollback length.
 --
-k :: Int
-k = 5
+-- Generators for chains
+--
+
+-- | A test generator for a valid chain of blocks.
+--
+newtype TestBlockChain = TestBlockChain { getTestBlockChain :: Chain Block }
+    deriving (Eq, Show)
+
+-- | A test generator for a valid chain of block headers.
+--
+newtype TestHeaderChain = TestHeaderChain (Chain BlockHeader)
+    deriving (Eq, Show)
+
+instance Arbitrary TestBlockChain where
+    arbitrary = do
+        n <- genNonNegative
+        bodies <- vector n
+        slots  <- mkSlots <$> vectorOf n genSlotGap
+        let chain = mkChain (zip slots bodies)
+        return (TestBlockChain chain)
+      where
+        mkSlots :: [Int] -> [SlotNo]
+        mkSlots = map toEnum . tail . scanl (+) 0
+
+    shrink (TestBlockChain c) =
+        [ TestBlockChain (fixupChain fixupBlock c')
+        | c' <- shrinkList (const []) (Chain.toNewestFirst c) ]
+
+instance Arbitrary TestHeaderChain where
+    arbitrary = do
+        TestBlockChain chain <- arbitrary
+        let headerchain = fmap blockHeader chain
+        return (TestHeaderChain headerchain)
+
+    shrink (TestHeaderChain c) =
+        [ TestHeaderChain (fixupChain fixupBlockHeader c')
+        | c' <- shrinkList (const []) (Chain.toNewestFirst c) ]
+
+prop_arbitrary_TestBlockChain :: TestBlockChain -> Property
+prop_arbitrary_TestBlockChain (TestBlockChain c) =
+    -- check we get some but not too many zero-length chains
+    cover 95   (not (Chain.null c)) "non-null" $
+    cover 1.5       (Chain.null c)  "null"     $
+    Chain.valid c
+
+prop_arbitrary_TestHeaderChain :: TestHeaderChain -> Bool
+prop_arbitrary_TestHeaderChain (TestHeaderChain c) =
+    Chain.valid c
+
+prop_shrink_TestBlockChain :: TestBlockChain -> Bool
+prop_shrink_TestBlockChain c =
+    and [ Chain.valid c' | TestBlockChain c' <- shrink c ]
+
+prop_shrink_TestHeaderChain :: TestHeaderChain -> Bool
+prop_shrink_TestHeaderChain c =
+    and [ Chain.valid c' | TestHeaderChain c' <- shrink c ]
+
 
 --
 -- Generator for chain and single block
@@ -259,6 +300,11 @@ prop_shrink_TestAddBlock t =
 --
 -- Generator for chain updates
 --
+
+-- | The Ouroboros K paramater. This is also the maximum rollback length.
+--
+k :: Int
+k = 5
 
 -- | A test generator for a chain and a sequence of updates that can be applied
 -- to it.
@@ -348,58 +394,6 @@ countChainUpdateNetProgress = go 0
         Just c' = Chain.applyChainUpdate u c
         n'      = n + fromEnum (Chain.headBlockNo c')
                     - fromEnum (Chain.headBlockNo c)
-
-
---
--- Generators for chains
---
-
--- | A test generator for a valid chain of blocks.
---
-newtype TestBlockChain = TestBlockChain { getTestBlockChain :: Chain Block }
-    deriving (Eq, Show)
-
--- | A test generator for a valid chain of block headers.
---
-newtype TestHeaderChain = TestHeaderChain (Chain BlockHeader)
-    deriving (Eq, Show)
-
-instance Arbitrary TestBlockChain where
-    arbitrary = do
-        n <- genNonNegative
-        TestBlockChain <$> genBlockChain n
-
-    shrink (TestBlockChain c) =
-        [ TestBlockChain (fixupChain fixupBlock c')
-        | c' <- shrinkList (const []) (Chain.toNewestFirst c) ]
-
-instance Arbitrary TestHeaderChain where
-    arbitrary = do
-        n <- genNonNegative
-        TestHeaderChain <$> genHeaderChain n
-
-    shrink (TestHeaderChain c) =
-        [ TestHeaderChain (fixupChain fixupBlockHeader c')
-        | c' <- shrinkList (const []) (Chain.toNewestFirst c) ]
-
-prop_arbitrary_TestBlockChain :: TestBlockChain -> Property
-prop_arbitrary_TestBlockChain (TestBlockChain c) =
-    -- check we get some but not too many zero-length chains
-    cover 95   (not (Chain.null c)) "non-null" $
-    cover 1.5       (Chain.null c)  "null"     $
-    Chain.valid c
-
-prop_arbitrary_TestHeaderChain :: TestHeaderChain -> Bool
-prop_arbitrary_TestHeaderChain (TestHeaderChain c) =
-    Chain.valid c
-
-prop_shrink_TestBlockChain :: TestBlockChain -> Bool
-prop_shrink_TestBlockChain c =
-    and [ Chain.valid c' | TestBlockChain c' <- shrink c ]
-
-prop_shrink_TestHeaderChain :: TestHeaderChain -> Bool
-prop_shrink_TestHeaderChain c =
-    and [ Chain.valid c' | TestHeaderChain c' <- shrink c ]
 
 
 --
