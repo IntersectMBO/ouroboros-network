@@ -111,6 +111,7 @@ data Cmd it
   | StreamBinaryBlobs (Maybe (SlotNo, Hash)) (Maybe (SlotNo, Hash))
   | IteratorNext      it
   | IteratorPeek      it
+  | IteratorHasNext   it
   | IteratorClose     it
   | Reopen            ValidationPolicy
   | DeleteAfter       ImmTip
@@ -164,6 +165,7 @@ data Success it
   | EpochNo      EpochNo
   | Iter         it
   | IterResult   (IteratorResult Hash ByteString)
+  | IterHasNext  Bool
   | Tip          ImmTip
   deriving (Eq, Show, Functor, Foldable, Traversable)
 
@@ -176,14 +178,15 @@ run :: (HasCallStack, Monad m)
     -> Cmd (Iterator Hash m ByteString)
     -> m (Success (Iterator Hash m ByteString))
 run runCorruption its db cmd = case cmd of
-  GetBinaryBlob     s   -> Blob       <$> getBinaryBlob db s
-  GetEBB            e   -> EBB        <$> getEBB db e
-  AppendBinaryBlob  s b -> Unit       <$> appendBinaryBlob db s (testBlockToBuilder b)
-  AppendEBB       e h b -> Unit       <$> appendEBB db e h (testBlockToBuilder b)
-  StreamBinaryBlobs s e -> Iter       <$> streamBinaryBlobs db s e
-  IteratorNext  it      -> IterResult <$> iteratorNext it
-  IteratorPeek  it      -> IterResult <$> iteratorPeek it
-  IteratorClose it      -> Unit       <$> iteratorClose it
+  GetBinaryBlob     s   -> Blob        <$> getBinaryBlob db s
+  GetEBB            e   -> EBB         <$> getEBB db e
+  AppendBinaryBlob  s b -> Unit        <$> appendBinaryBlob db s (testBlockToBuilder b)
+  AppendEBB       e h b -> Unit        <$> appendEBB db e h (testBlockToBuilder b)
+  StreamBinaryBlobs s e -> Iter        <$> streamBinaryBlobs db s e
+  IteratorNext    it    -> IterResult  <$> iteratorNext    it
+  IteratorPeek    it    -> IterResult  <$> iteratorPeek    it
+  IteratorHasNext it    -> IterHasNext <$> iteratorHasNext it
+  IteratorClose   it    -> Unit        <$> iteratorClose   it
   DeleteAfter tip       -> do
     mapM_ iteratorClose its
     Unit <$> deleteAfter db tip
@@ -465,9 +468,10 @@ generateCmd Model {..} = At <$> frequency
       -- them.
     , (if Map.null dbmIterators then 0 else 4, do
          iter <- elements $ RE.keys knownIters
-         frequency [ (4, return $ IteratorNext  iter)
-                   , (4, return $ IteratorPeek  iter)
-                   , (1, return $ IteratorClose iter) ])
+         frequency [ (4, return $ IteratorNext    iter)
+                   , (4, return $ IteratorPeek    iter)
+                   , (4, return $ IteratorHasNext iter)
+                   , (1, return $ IteratorClose   iter) ])
     , (1, Reopen <$> genValPol)
 
     , (1, DeleteAfter <$> genTip)
@@ -584,9 +588,10 @@ shrinkCmd Model {..} (At cmd) = fmap At $ case cmd of
       [GetBinaryBlob slot' | slot' <- shrink slot]
     GetEBB epoch                    ->
       [GetEBB epoch' | epoch' <- shrink epoch]
-    IteratorNext  {}                -> []
-    IteratorPeek  {}                -> []
-    IteratorClose {}                -> []
+    IteratorNext    {}              -> []
+    IteratorPeek    {}              -> []
+    IteratorHasNext {}              -> []
+    IteratorClose   {}              -> []
     DeleteAfter tip                 ->
       [DeleteAfter tip' | tip' <- shrinkTip tip]
     Reopen {}                       -> []

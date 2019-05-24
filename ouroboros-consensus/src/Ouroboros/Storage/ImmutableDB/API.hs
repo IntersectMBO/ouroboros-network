@@ -223,7 +223,7 @@ data Iterator hash m a = Iterator
     -- The iterator is automatically closed when exhausted
     -- ('IteratorExhausted'), and can be prematurely closed with
     -- 'iteratorClose'.
-    iteratorNext  :: HasCallStack => m (IteratorResult hash a)
+    iteratorNext    :: HasCallStack => m (IteratorResult hash a)
 
     -- | Read the blob the 'Iterator' is currently pointing.
     --
@@ -233,27 +233,34 @@ data Iterator hash m a = Iterator
     -- be returned.
     --
     -- Throws a 'ClosedDBError' if the database is closed.
-  , iteratorPeek  :: HasCallStack => m (IteratorResult hash a)
+  , iteratorPeek    :: HasCallStack => m (IteratorResult hash a)
+
+    -- | Return 'True' if there is a next blob to return. Return 'False' if
+    -- not.
+    --
+    -- This operation is idempotent.
+  , iteratorHasNext :: HasCallStack => m Bool
 
     -- | Dispose of the 'Iterator' by closing any open handles.
     --
     -- Idempotent operation.
-  , iteratorClose :: HasCallStack => m ()
+  , iteratorClose   :: HasCallStack => m ()
 
     -- | A identifier for the 'Iterator' that is unique for @m@.
     --
     -- This used for the 'Eq' instance, which is needed for testing.
     --
     -- TODO how can we avoid this abstraction leak?
-  , iteratorID    :: IteratorID
+  , iteratorID      :: IteratorID
   }
 
 instance Functor m => Functor (Iterator hash m) where
   fmap f itr = Iterator{
-        iteratorNext  = fmap f <$> iteratorNext itr
-      , iteratorPeek  = fmap f <$> iteratorPeek itr
-      , iteratorClose = iteratorClose itr
-      , iteratorID    = DerivedIteratorID $ iteratorID itr
+        iteratorNext    = fmap f <$> iteratorNext itr
+      , iteratorPeek    = fmap f <$> iteratorPeek itr
+      , iteratorHasNext = iteratorHasNext itr
+      , iteratorClose   = iteratorClose itr
+      , iteratorID      = DerivedIteratorID $ iteratorID itr
       }
 
 -- | Create an iterator from the given 'ImmutableDB' using
