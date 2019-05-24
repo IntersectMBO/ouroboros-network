@@ -31,8 +31,8 @@ import Ouroboros.Network.Protocol.ChainSync.Type
 
 -- | A chain sync protocol server, on top of some effect 'm'.
 --
-newtype ChainSyncServer header point m a = ChainSyncServer {
-    runChainSyncServer :: m (ServerStIdle header point m a)
+newtype ChainSyncServer header m a = ChainSyncServer {
+    runChainSyncServer :: m (ServerStIdle header m a)
   }
 
 
@@ -45,13 +45,13 @@ newtype ChainSyncServer header point m a = ChainSyncServer {
 --
 -- It must be prepared to handle either.
 --
-data ServerStIdle header point m a = ServerStIdle {
+data ServerStIdle header m a = ServerStIdle {
 
-       recvMsgRequestNext   :: m (Either (ServerStNext header point m a)
-                                      (m (ServerStNext header point m a))),
+       recvMsgRequestNext   :: m (Either (ServerStNext header m a)
+                                      (m (ServerStNext header m a))),
 
-       recvMsgFindIntersect :: [point]
-                            -> m (ServerStIntersect header point m a),
+       recvMsgFindIntersect :: [Point header]
+                            -> m (ServerStIntersect header m a),
 
        recvMsgDoneClient :: m a
      }
@@ -62,14 +62,14 @@ data ServerStIdle header point m a = ServerStIdle {
 --  * a roll back message
 --  * a termination message
 --
-data ServerStNext header point m a where
-  SendMsgRollForward  :: header -> point
-                      -> ChainSyncServer header point m a
-                      -> ServerStNext header point m a
+data ServerStNext header m a where
+  SendMsgRollForward  :: header -> Point header
+                      -> ChainSyncServer header m a
+                      -> ServerStNext header m a
 
-  SendMsgRollBackward :: point -> point
-                      -> ChainSyncServer header point m a
-                      -> ServerStNext header point m a
+  SendMsgRollBackward :: Point header -> Point header
+                      -> ChainSyncServer header m a
+                      -> ServerStNext header m a
 
 -- | In the 'StIntersect' protocol state, the server has agency and must send
 -- either:
@@ -78,14 +78,14 @@ data ServerStNext header point m a where
 --  * unchanged message,
 --  * termination message
 --
-data ServerStIntersect header point m a where
-  SendMsgIntersectImproved  :: point -> point
-                            -> ChainSyncServer header point m a
-                            -> ServerStIntersect header point m a
+data ServerStIntersect header m a where
+  SendMsgIntersectImproved  :: Point header -> Point header
+                            -> ChainSyncServer header m a
+                            -> ServerStIntersect header m a
 
-  SendMsgIntersectUnchanged :: point
-                            -> ChainSyncServer header point m a
-                            -> ServerStIntersect header point m a
+  SendMsgIntersectUnchanged :: Point header
+                            -> ChainSyncServer header m a
+                            -> ServerStIntersect header m a
 
 
 -- | Interpret a 'ChainSyncServer' action sequence as a 'Peer' on the server
@@ -93,8 +93,8 @@ data ServerStIntersect header point m a where
 --
 chainSyncServerPeer
   :: Monad m
-  => ChainSyncServer header point m a
-  -> Peer (ChainSync header point) AsServer StIdle m a
+  => ChainSyncServer header m a
+  -> Peer (ChainSync header) AsServer StIdle m a
 chainSyncServerPeer (ChainSyncServer mterm) = Effect $ mterm >>=
     \(ServerStIdle{recvMsgRequestNext, recvMsgFindIntersect, recvMsgDoneClient}) ->
 

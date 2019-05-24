@@ -30,15 +30,15 @@ import Ouroboros.Network.Protocol.ChainSync.Type
 
 -- | A chain sync protocol client, on top of some effect 'm'.
 -- The first choice of request is within that 'm'.
-newtype ChainSyncClient header point m a = ChainSyncClient {
-    runChainSyncClient :: m (ClientStIdle header point m a)
+newtype ChainSyncClient header m a = ChainSyncClient {
+    runChainSyncClient :: m (ClientStIdle header m a)
   }
 
 
 -- | In the 'StIdle' protocol state, the server does not have agency and can choose to
 -- send a request next, or a find intersection message.
 --
-data ClientStIdle header point m a where
+data ClientStIdle header m a where
 
   -- | Send the 'MsgRequestNext', with handlers for the replies.
   --
@@ -50,22 +50,22 @@ data ClientStIdle header point m a where
   -- In the waiting case, the client gets the chance to take a local action.
   --
   SendMsgRequestNext
-    ::    ClientStNext header point m a
-    -> m (ClientStNext header point m a) -- after MsgAwaitReply
-    -> ClientStIdle header point m a
+    ::    ClientStNext header m a
+    -> m (ClientStNext header m a) -- after MsgAwaitReply
+    -> ClientStIdle header m a
 
   -- | Send the 'MsgFindIntersect', with handlers for the replies.
   --
   SendMsgFindIntersect
-    :: [point]
-    -> ClientStIntersect header point m a
-    -> ClientStIdle header point m a
+    :: [Point header]
+    -> ClientStIntersect header m a
+    -> ClientStIdle header m a
 
   -- | The client decided to end the protocol.
   --
   SendMsgDone
     :: a
-    -> ClientStIdle header point m a
+    -> ClientStIdle header m a
 
 -- | In the 'StNext' protocol state, the client does not have agency and is
 -- waiting to receive either
@@ -76,10 +76,13 @@ data ClientStIdle header point m a where
 --
 -- It must be prepared to handle any of these.
 --
-data ClientStNext header point m a =
+data ClientStNext header m a =
      ClientStNext {
-       recvMsgRollForward  :: header -> point -> ChainSyncClient header point m a,
-       recvMsgRollBackward :: point  -> point -> ChainSyncClient header point m a
+       recvMsgRollForward  :: header       -> Point header
+                           -> ChainSyncClient header m a,
+
+       recvMsgRollBackward :: Point header -> Point header
+                           -> ChainSyncClient header m a
      }
 
 -- | In the 'StIntersect' protocol state, the client does not have agency and
@@ -91,10 +94,12 @@ data ClientStNext header point m a =
 --
 -- It must be prepared to handle any of these.
 --
-data ClientStIntersect header point m a =
+data ClientStIntersect header m a =
      ClientStIntersect {
-       recvMsgIntersectImproved  :: point -> point -> ChainSyncClient header point m a,
-       recvMsgIntersectUnchanged ::          point -> ChainSyncClient header point m a
+       recvMsgIntersectImproved  :: Point header -> Point header
+                                 -> ChainSyncClient header  m a,
+       recvMsgIntersectUnchanged ::                 Point header
+                                 -> ChainSyncClient header m a
      }
 
 
@@ -102,16 +107,16 @@ data ClientStIntersect header point m a =
 -- side of the 'ChainSyncProtocol'.
 --
 chainSyncClientPeer
-  :: forall header point m a .
+  :: forall header m a .
      Monad m
-  => ChainSyncClient header point m a
-  -> Peer (ChainSync header point) AsClient StIdle m a
+  => ChainSyncClient header m a
+  -> Peer (ChainSync header) AsClient StIdle m a
 chainSyncClientPeer (ChainSyncClient mclient) =
     Effect $ fmap chainSyncClientPeer_ mclient
   where
     chainSyncClientPeer_
-      :: ClientStIdle header point m a
-      -> Peer (ChainSync header point) AsClient StIdle m a
+      :: ClientStIdle header m a
+      -> Peer (ChainSync header) AsClient StIdle m a
     chainSyncClientPeer_ (SendMsgRequestNext stNext stAwait) =
         Yield (ClientAgency TokIdle) MsgRequestNext $
         Await (ServerAgency (TokNext TokCanAwait)) $ \resp ->
