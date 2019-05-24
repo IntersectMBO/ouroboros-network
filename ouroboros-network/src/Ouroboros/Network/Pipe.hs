@@ -86,12 +86,11 @@ pipeAsMuxBearer pcRead pcWrite = do
 runNetworkNodeWithPipe
     :: ( Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl, Show ptcl
        , Mx.MiniProtocolLimits ptcl)
-    => (ptcl -> Mx.MuxPeer IO)
+    => Mx.MuxApplication appType ptcl IO
     -> Handle -- ^ read handle
     -> Handle -- ^ write handle
     -> IO ()
-runNetworkNodeWithPipe protocols pcRead pcWrite = do
-    let  mpds = Mx.miniProtocolDescription . protocols
+runNetworkNodeWithPipe app pcRead pcWrite = do
     bearer <- pipeAsMuxBearer pcRead pcWrite
-    Mx.muxStart mpds bearer
+    Mx.muxStart app bearer
 

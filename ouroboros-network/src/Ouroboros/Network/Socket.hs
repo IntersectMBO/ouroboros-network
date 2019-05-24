@@ -1,4 +1,6 @@
 {-# LANGUAGE CPP                 #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -7,8 +9,15 @@
 -- Module exports interface for running a node over a socket over TCP \/ IP.
 --
 module Ouroboros.Network.Socket (
-      withNetworkNode
+    -- * High level socket interface
+      withServerNode
+    , withSimpleServerNode
+    , connectTo
+
+    -- * Helper function for creating servers
     , socketAsMuxBearer
+    , fromSocket
+    , beginConnection
 
     -- * Auxiliary functions
     , hexDump
@@ -16,6 +25,8 @@ module Ouroboros.Network.Socket (
 
 import           Control.Concurrent.Async
 import           Control.Monad (when)
+-- TODO: remove this, it will not be needed when `orElse` PR will be merged.
+import qualified Control.Monad.STM as STM
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadThrow
@@ -34,12 +45,7 @@ import qualified Ouroboros.Network.Server.Socket as Server
 import qualified Ouroboros.Network.Mux as Mx
 import qualified Ouroboros.Network.Mux.Types as Mx
 import           Ouroboros.Network.Mux.Types (MuxBearer)
-import           Ouroboros.Network.Mux.Interface ( Connection (..)
-                                                 , WithConnection
-                                                 , NetworkInterface (..)
-                                                 , NetworkNode (..)
-                                                 , miniProtocolDescription
-                                                 )
+import           Ouroboros.Network.Mux.Interface
 
 import           Text.Printf
 
@@ -80,11 +86,6 @@ socketAsMuxBearer sd = do
       recvLen' l bufs = do
           buf <- Socket.recv sd l
           if BL.null buf
-              -- @'Ouroboros.Network.Mux.Ingress.demux'@ will read even after
-              -- receiving the terminal message.  In this case,
-              -- indeterministically, this exception it thrown.  The
-              -- indeterminism kicks since server might kill mux threads
-              -- before it tries to read data.
               then throwM $ Mx.MuxError Mx.MuxBearerClosed (show sd ++ " closed when reading data") callStack
               else recvLen' (l - fromIntegral (BL.length buf)) (buf : bufs)
 
@@ -122,15 +123,15 @@ hexDump :: BL.ByteString -> String -> IO ()
 hexDump buf out | BL.empty == buf = say out
 hexDump buf out = hexDump (BL.tail buf) (out ++ printf "0x%02x " (BL.head buf))
 
+
 -- |
--- Run a node using @'NetworkInterface'@ using a socket.  It will start to
--- listen on incomming connections on the supplied @'nodeAddress'@, and returns
--- @'NetworkNode'@ which let one connect to other peers (by opening a new
--- TCP connection) or shut down the node.
+-- Connect to a remote node.  It is using bracket to enclose the underlying
+-- socket acquisition.  This implies that when the continuation exits the
+-- underlying bearer will get closed.
 --
--- When connecting to a remote node using @connectTo@ th
-withNetworkNode
-  :: forall ptcl t r.
+-- Exceptions thrown by @'MuxApplication'@ are rethrown by @'connectTo'@.
+connectTo
+  :: forall ptcl.
      ( Mx.ProtocolEnum ptcl
      , Ord ptcl
      , Enum ptcl
@@ -138,103 +139,209 @@ withNetworkNode
      , Show ptcl
      , Mx.MiniProtocolLimits ptcl
      )
-  => NetworkInterface ptcl Socket.AddrInfo IO r
-  -> (NetworkNode Socket.AddrInfo IO r -> IO t)
-  -> IO t
-withNetworkNode NetworkInterface {nodeAddress, protocols} k =
-    bracket mkSocket Socket.close $ \sd -> do
-
-      killVar <- newEmptyTMVarM
-      let main :: Server.Main () ()
-          main _ = takeTMVar killVar
-
-          killNode :: IO ()
-          killNode = atomically $ putTMVar killVar ()
-
-          node = NetworkNode { connect, killNode }
-
-      withAsync
-        (Server.run (fromSocket sd) throwIO acceptConnection complete main ())
-        (\_ -> k node)
-
-  where
-
-    mpds :: Mx.MiniProtocolDescriptions ptcl IO
-    mpds = miniProtocolDescription . protocols
-
-    -- Make the server listening socket
-    mkSocket :: IO Socket.Socket
-    mkSocket = do
-      sd <- Socket.socket (Socket.addrFamily nodeAddress) Socket.Stream Socket.defaultProtocol
-      when (Socket.addrFamily nodeAddress == Socket.AF_INET ||
-            Socket.addrFamily nodeAddress == Socket.AF_INET6) $ do
-          Socket.setSocketOption sd Socket.ReuseAddr 1
+  => MuxApplication InitiatorApp ptcl IO
+  -- ^ application to run over the connection
+  -> Socket.AddrInfo
+  -- ^ local address; the created socket will bind to it
+  -> Socket.AddrInfo
+  -- ^ remote address
+  -> IO ()
+connectTo app localAddr remoteAddr =
+    bracket
+      (Socket.socket (Socket.addrFamily remoteAddr) Socket.Stream Socket.defaultProtocol)
+      Socket.close
+      (\sd -> do
+          when (Socket.addrFamily remoteAddr == Socket.AF_INET ||
+                Socket.addrFamily remoteAddr == Socket.AF_INET6) $ do
+              Socket.setSocketOption sd Socket.ReuseAddr 1
 #if !defined(mingw32_HOST_OS)
-          Socket.setSocketOption sd Socket.ReusePort 1
+              Socket.setSocketOption sd Socket.ReusePort 1
 #endif
-      Socket.bind sd (Socket.addrAddress nodeAddress)
-      Socket.listen sd 1
-      pure sd
+          Socket.bind sd (Socket.addrAddress localAddr)
+          Socket.connect sd (Socket.addrAddress remoteAddr)
+          bearer <- socketAsMuxBearer sd
+          Mx.muxBearerSetState bearer Mx.Connected
+          Mx.muxStart app bearer
+      )
 
-    -- Accept every incoming connection and use the socket as a mux bearer
-    -- to run the mini protocols.
-    acceptConnection :: Server.BeginConnection addr Socket.Socket () ()
-    acceptConnection _sockAddr st = pure $ Server.Accept st $ \sd -> do
-      bearer <- socketAsMuxBearer sd
-      Mx.muxBearerSetState bearer Mx.Connected
-      Mx.muxStart mpds bearer
+-- |
+-- A mux application which has a server component.
+--
+data AnyMuxResponderApp ptcl m where
+      AnyMuxResponderApp :: forall appType ptcl m. HasResponder appType ~ True => MuxApplication appType ptcl m -> AnyMuxResponderApp ptcl m
 
-    -- When a connection completes, we do nothing. State is ().
-    -- Crucially: we don't re-throw exceptions, because doing so would
-    -- bring down the server.
-    complete outcome st = case outcome of
-      Left _  -> pure st
-      Right _ -> pure st
 
-    -- Make a server-compatibile socket from a network socket.
-    fromSocket :: Socket.Socket -> Server.Socket Socket.SockAddr Socket.Socket
-    fromSocket sd = Server.Socket
-      { Server.acceptConnection = do
-          (sd', addr) <- Socket.accept sd
-          pure (addr, sd', Socket.close sd')
-      }
+-- |
+-- Accept or reject an incoming connection.  Each record contains the new state
+-- after accepting / rejecting a connection.  When accepting a connection one
+-- has to give a mux application which necessarily has the server side, and
+-- optionally has the client side.
+--
+-- TODO:
+-- If the other side will not allow us to run the client side on the incoming
+-- connection, the whole connection will terminate.  We might want to be more
+-- admissible in this scenario: leave the server thread running and let only
+-- the client thread to die.
+data AcceptConnection st ptcl m where
+    AcceptConnection :: !st -> AnyMuxResponderApp ptcl m -> AcceptConnection st ptcl m
+    RejectConnection :: !st -> AcceptConnection st ptcl m
 
-    -- Connect to a remote node.  Use bracket to close the underlying socket
-    -- when either the continuation ends or an exception is raised.
-    -- This implies that when the continuation exits the underlying bearer will
-    -- get closed.
-    connect :: WithConnection IO Socket.AddrInfo (Connection IO) r
-    connect remoteAddr kConn =
-      bracket
-        (Socket.socket (Socket.addrFamily nodeAddress) Socket.Stream Socket.defaultProtocol)
-        Socket.close
-        (\sd -> do
-            when (Socket.addrFamily nodeAddress == Socket.AF_INET ||
-                  Socket.addrFamily nodeAddress == Socket.AF_INET6) $ do
-                Socket.setSocketOption sd Socket.ReuseAddr 1
-#if !defined(mingw32_HOST_OS)
-                Socket.setSocketOption sd Socket.ReusePort 1
-#endif
-                Socket.bind sd (Socket.addrAddress nodeAddress)
-            Socket.connect sd (Socket.addrAddress remoteAddr)
+
+-- |
+-- Accept or reject incoming connection based on the current state and address
+-- of the incoming connection.
+--
+beginConnection
+    :: forall ptcl addr st.
+       ( Mx.ProtocolEnum ptcl
+       , Ord ptcl
+       , Enum ptcl
+       , Bounded ptcl
+       , Show ptcl
+       , Mx.MiniProtocolLimits ptcl
+       )
+    => (addr -> st -> STM.STM (AcceptConnection st ptcl IO))
+    -- ^ either accept or reject a connection.
+    -> Server.BeginConnection addr Socket.Socket st ()
+beginConnection fn addr st = do
+    accept <- fn addr st
+    case accept of
+      AcceptConnection st' anyApp -> pure $ Server.Accept st' $ \sd ->
+        case anyApp of
+          AnyMuxResponderApp app -> do
             bearer <- socketAsMuxBearer sd
             Mx.muxBearerSetState bearer Mx.Connected
-            kConn $ Connection {
-                runConnection =
-                  Mx.muxStart mpds bearer
-                  `catch`
-                  handleMuxError
-              }
-        )
+            Mx.muxStart app bearer
+      RejectConnection st' -> pure $ Server.Reject st'
 
-    -- catch @'MuxBearerClosed'@ exception; we should ignore it and let @kConn@
-    -- finish; @connect@ will close the underlying socket.
-    --
-    -- Note: we do it only for initiated connections, not ones that the server
-    -- accepted.  The assymetry comes simply from the fact that in initiated
-    -- connections we might want to run a computation that is not interrupted
-    -- by a normal shutdown (a received terminal message throws
-    -- @'Mx.MuxBearerClosed'@ exception).
-    handleMuxError :: Mx.MuxError -> IO ()
-    handleMuxError Mx.MuxError { Mx.errorType = Mx.MuxBearerClosed } = return ()
-    handleMuxError e                                                 = throwIO e
+
+-- Make the server listening socket
+mkListeningSocket
+    :: Socket.Family
+    -> Maybe Socket.SockAddr
+    -> IO Socket.Socket
+mkListeningSocket addrFamily_ addr = do
+    sd <- Socket.socket addrFamily_ Socket.Stream Socket.defaultProtocol
+    when (addrFamily_ == Socket.AF_INET ||
+          addrFamily_ == Socket.AF_INET6) $ do
+        Socket.setSocketOption sd Socket.ReuseAddr 1
+#if !defined(mingw32_HOST_OS)
+        Socket.setSocketOption sd Socket.ReusePort 1
+#endif
+    case addr of
+      Nothing -> pure ()
+      Just addr_ -> do
+        Socket.bind sd addr_
+        Socket.listen sd 1
+    pure sd
+
+
+-- |
+-- Make a server-compatible socket from a network socket.
+--
+fromSocket
+    :: Socket.Socket
+    -> Server.Socket Socket.SockAddr Socket.Socket
+fromSocket sd = Server.Socket
+    { Server.acceptConnection = do
+        (sd', addr) <- Socket.accept sd
+        pure (addr, sd', Socket.close sd')
+    }
+
+
+-- |
+-- Thin wrapper around @'Server.run'@.
+--
+runNetworkNode'
+    :: forall ptcl st t.
+       ( Mx.ProtocolEnum ptcl
+       , Ord ptcl
+       , Enum ptcl
+       , Bounded ptcl
+       , Show ptcl
+       , Mx.MiniProtocolLimits ptcl
+       )
+    => Socket.Socket
+    -> (SomeException -> IO ())
+    -> (Socket.SockAddr -> st -> STM.STM (AcceptConnection st ptcl IO))
+    -> Server.CompleteConnection st ()
+    -> Server.Main st t
+    -> st
+    -> IO t
+runNetworkNode' sd acceptException acceptConn complete main st =
+    Server.run (fromSocket sd) acceptException (beginConnection acceptConn) complete main st
+
+
+-- |
+-- Run a server application.  It will listen on the given address for incoming
+-- connection.  The server thread runs using @withAsync@ function, which means
+-- that it will terminate when the callback terminates or throws an exception.
+--
+-- TODO: we should track connections in the state and refuse connections from
+-- peers we are already connected to.  This is also the right place to ban
+-- connection from peers which missbehaved.
+withServerNode
+    :: forall ptcl t.
+       ( Mx.ProtocolEnum ptcl
+       , Ord ptcl
+       , Enum ptcl
+       , Bounded ptcl
+       , Show ptcl
+       , Mx.MiniProtocolLimits ptcl
+       )
+    => Socket.AddrInfo
+    -> AnyMuxResponderApp ptcl IO
+    -- ^ The mux application that will be run on each incoming connection from
+    -- a given address.  Note that if @'MuxClientAndServerApplication'@ is
+    -- returned, the connection will run a full duplex set of mini-protocols.
+    -> (Async () -> IO t)
+    -- ^ callback which takes the @Async@ of the thread that is running the server.
+    -- Note: the server thread will terminate when the callback returns or
+    -- throws an exception.
+    -> IO t
+withServerNode addr app k =
+    bracket (mkListeningSocket (Socket.addrFamily addr) (Just $ Socket.addrAddress addr)) Socket.close $ \sd -> do
+
+      let main :: Server.Main () ()
+          main _ = retry
+
+      withAsync
+        (runNetworkNode'
+          sd throwIO
+          (\_connAddr st -> pure $ AcceptConnection st app)
+          complete
+          main
+          ()) k
+
+    where
+      -- When a connection completes, we do nothing. State is ().
+      -- Crucially: we don't re-throw exceptions, because doing so would
+      -- bring down the server.
+      complete outcome st = case outcome of
+        Left _  -> pure st
+        Right _ -> pure st
+
+
+-- |
+-- Like @'withServerNode'@ but always runs only server side on an incoming
+-- connection.
+--
+withSimpleServerNode
+    :: forall ptcl t.
+       ( Mx.ProtocolEnum ptcl
+       , Ord ptcl
+       , Enum ptcl
+       , Bounded ptcl
+       , Show ptcl
+       , Mx.MiniProtocolLimits ptcl
+       )
+    => Socket.AddrInfo
+    -> MuxApplication ResponderApp ptcl IO
+    -- ^ The mux server application that will be run on each incoming
+    -- connection.
+    -> (Async () -> IO t)
+    -- ^ callback which takes the @Async@ of the thread that is running the server.
+    -- Note: the server thread will terminate when the callback returns or
+    -- throws an exception.
+    -> IO t
+withSimpleServerNode addr app k = withServerNode addr (AnyMuxResponderApp app) k

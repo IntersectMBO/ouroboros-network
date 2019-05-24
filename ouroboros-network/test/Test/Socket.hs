@@ -18,6 +18,7 @@ import           Control.Monad.Class.MonadTimer
 import           Control.Exception (IOException)
 import qualified Data.ByteString.Lazy as BL
 import           Data.List (mapAccumL)
+import           Data.Functor ((<$))
 import qualified Network.Socket as Socket
 import qualified Network.Socket.ByteString.Lazy as Socket (sendAll)
 #ifndef mingw32_HOST_OS
@@ -40,7 +41,6 @@ import           Ouroboros.Network.Socket
 import           Ouroboros.Network.Chain (Chain, ChainUpdate, Point)
 import qualified Ouroboros.Network.Chain as Chain
 import qualified Ouroboros.Network.ChainProducerState as CPS
-import qualified Ouroboros.Network.Protocol.ChainSync.Type     as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Client   as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Codec    as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Examples as ChainSync
@@ -104,8 +104,8 @@ prop_socket_send_recv_ipv4
   -> [Int]
   -> Property
 prop_socket_send_recv_ipv4 f xs = ioProperty $ do
-    client:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
     server:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
+    client:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
     prop_socket_send_recv client server f xs
 
 
@@ -116,8 +116,8 @@ prop_socket_send_recv_ipv6 :: (Int ->  Int -> (Int, Int))
                            -> [Int]
                            -> Property
 prop_socket_send_recv_ipv6 request response = ioProperty $ do
-    client:_ <- Socket.getAddrInfo Nothing (Just "::1") (Just "0")
     server:_ <- Socket.getAddrInfo Nothing (Just "::1") (Just "6061")
+    client:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
     prop_socket_send_recv client server request response
 #endif
 
@@ -130,10 +130,10 @@ prop_socket_send_recv_unix request response = ioProperty $ do
     let clientName = "client_socket.test"
     cleanUp serverName
     cleanUp clientName
-    let clientAddr = Socket.AddrInfo [] Socket.AF_UNIX  Socket.Stream Socket.defaultProtocol
-                         (Socket.SockAddrUnix clientName) Nothing
-        serverAddr = Socket.AddrInfo [] Socket.AF_UNIX  Socket.Stream Socket.defaultProtocol
+    let serverAddr = Socket.AddrInfo [] Socket.AF_UNIX Socket.Stream Socket.defaultProtocol
                          (Socket.SockAddrUnix serverName) Nothing
+        clientAddr = Socket.AddrInfo [] Socket.AF_UNIX Socket.Stream Socket.defaultProtocol
+                         (Socket.SockAddrUnix clientName) Nothing
     r <- prop_socket_send_recv clientAddr serverAddr request response
     cleanUp serverName
     cleanUp clientName
@@ -153,35 +153,31 @@ prop_socket_send_recv :: Socket.AddrInfo
                       -> (Int -> Int -> (Int, Int))
                       -> [Int]
                       -> IO Bool
-prop_socket_send_recv clientAddr serverAddr f xs = do
+prop_socket_send_recv initiatorAddr responderAddr f xs = do
 
     cv <- newEmptyTMVarM
     sv <- newEmptyTMVarM
 
     let -- Server Node; only req-resp server
-        srvPeer :: Peer (ReqResp.ReqResp Int Int) AsServer ReqResp.StIdle IO ()
-        srvPeer = ReqResp.reqRespServerPeer (reqRespServerMapAccumL sv (\a -> pure . f a) 0)
-        srvPeers Mxt.ReqResp1 = OnlyServer nullTracer ReqResp.codecReqResp srvPeer
-        serNet = NetworkInterface {
-            nodeAddress = serverAddr,
-            protocols   = srvPeers
-          }
+        responderApp :: MuxApplication ResponderApp Mxt.TestProtocols3 IO
+        responderApp = simpleMuxResponderApplication $
+          \Mxt.ReqResp1 ->
+            MuxPeer nullTracer
+                    ReqResp.codecReqResp
+                    (ReqResp.reqRespServerPeer (reqRespServerMapAccumL sv (\a -> pure . f a) 0))
 
         -- Client Node; only req-resp client
-        cliPeer :: Peer (ReqResp.ReqResp Int Int) AsClient ReqResp.StIdle IO ()
-        cliPeer = ReqResp.reqRespClientPeer (reqRespClientMap cv xs)
-        cliPeers Mxt.ReqResp1 = OnlyClient nullTracer ReqResp.codecReqResp cliPeer
-        cliNet = NetworkInterface {
-             nodeAddress = clientAddr,
-             protocols   = cliPeers
-           }
+        initiatorApp :: MuxApplication InitiatorApp Mxt.TestProtocols3 IO
+        initiatorApp = simpleMuxInitiatorApplication $
+          \Mxt.ReqResp1 ->
+            MuxPeer nullTracer
+                    ReqResp.codecReqResp
+                    (ReqResp.reqRespClientPeer (reqRespClientMap cv xs))
 
     res <-
-      withNetworkNode serNet $ \_ ->
-        withNetworkNode cliNet $ \cliNode ->
-          runWithConnection (connect cliNode) serverAddr $ \conn -> do
-            runConnection conn
-            atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
+      withSimpleServerNode responderAddr responderApp $ \_ -> do
+        connectTo initiatorApp initiatorAddr responderAddr
+        atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
 
     return (res == mapAccumL f 0 xs)
 
@@ -196,9 +192,12 @@ prop_socket_recv_close f _ = ioProperty $ do
 
     sv   <- newEmptyTMVarM
 
-    let srvPeer :: Peer (ReqResp.ReqResp Int Int) AsServer ReqResp.StIdle IO ()
-        srvPeer = ReqResp.reqRespServerPeer (reqRespServerMapAccumL sv (\a -> pure . f a) 0)
-        srvPeers Mxt.ReqResp1 = OnlyServer nullTracer ReqResp.codecReqResp srvPeer
+    let app :: MuxApplication ResponderApp Mxt.TestProtocols3 IO
+        app = simpleMuxResponderApplication $
+          \Mxt.ReqResp1 ->
+            MuxPeer nullTracer
+                    ReqResp.codecReqResp
+                    (ReqResp.reqRespServerPeer (reqRespServerMapAccumL sv (\a -> pure . f a) 0))
 
     bracket
       (Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol)
@@ -219,7 +218,7 @@ prop_socket_recv_close f _ = ioProperty $ do
                 $ \(sd',_) -> do
                   bearer <- socketAsMuxBearer sd'
                   Mx.muxBearerSetState bearer Mx.Connected
-                  Mx.muxStart (miniProtocolDescription . srvPeers) bearer
+                  Mx.muxStart app bearer
           )
           $ \muxAsync -> do
 
@@ -243,22 +242,23 @@ prop_socket_client_connect_error :: (Int -> Int -> (Int, Int))
                                  -> [Int]
                                  -> Property
 prop_socket_client_connect_error _ xs = ioProperty $ do
-    clientAddr:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
     serverAddr:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
+    clientAddr:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
 
     cv <- newEmptyTMVarM
 
-    let cliPeer :: Peer (ReqResp.ReqResp Int Int) AsClient ReqResp.StIdle IO ()
-        cliPeer = ReqResp.reqRespClientPeer (reqRespClientMap cv xs)
-        cliPeers Mxt.ReqResp1 = OnlyClient nullTracer ReqResp.codecReqResp cliPeer
-        ni = NetworkInterface {
-            nodeAddress = serverAddr,
-            protocols   = cliPeers
-          }
+    let app :: MuxApplication InitiatorApp Mxt.TestProtocols3 IO
+        app = simpleMuxInitiatorApplication $
+                \Mxt.ReqResp1 ->
+                  MuxPeer nullTracer
+                          ReqResp.codecReqResp
+                          (ReqResp.reqRespClientPeer (reqRespClientMap cv xs)
+                            :: Peer (ReqResp.ReqResp Int Int) AsClient ReqResp.StIdle IO ()
+                          )
+
 
     (res :: Either IOException Bool)
-      <- try $ withNetworkNode ni $ \nn ->
-                 const False <$> withConnection (connect nn) clientAddr
+      <- try $ False <$ connectTo app clientAddr serverAddr
 
     -- XXX Disregarding the exact exception type
     pure $ either (const True) id res
@@ -269,8 +269,8 @@ demo :: forall block .
         , Serialise block, Eq block, Show block )
      => Chain block -> [ChainUpdate block] -> IO Bool
 demo chain0 updates = do
-    consumerAddress:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
     producerAddress:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
+    consumerAddress:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
 
     producerVar <- newTVarM (CPS.initChainProducerState chain0)
     consumerVar <- newTVarM chain0
@@ -278,38 +278,36 @@ demo chain0 updates = do
 
     let Just expectedChain = Chain.applyChainUpdates updates chain0
         target = Chain.headPoint expectedChain
-        consumerPeer :: Peer (ChainSync.ChainSync block (Point block)) AsClient ChainSync.StIdle IO ()
-        consumerPeer = ChainSync.chainSyncClientPeer
+
+        initiatorApp :: MuxApplication InitiatorApp Mxt.TestProtocols1 IO
+        initiatorApp = simpleMuxInitiatorApplication $
+          \Mxt.ChainSync1 ->
+              MuxPeer nullTracer
+                      (ChainSync.codecChainSync encode decode encode decode)
+                      (ChainSync.chainSyncClientPeer
                         (ChainSync.chainSyncClientExample consumerVar
-                        (consumerClient done target consumerVar))
-        consumerPeers Mxt.ChainSync1 = OnlyClient nullTracer (ChainSync.codecChainSync encode decode encode decode) consumerPeer
-        consumerNet = NetworkInterface {
-              nodeAddress = consumerAddress,
-              protocols   = consumerPeers
-            }
+                        (consumerClient done target consumerVar)))
 
-        producerPeer :: Peer (ChainSync.ChainSync block (Point block)) AsServer ChainSync.StIdle IO ()
-        producerPeer = ChainSync.chainSyncServerPeer (ChainSync.chainSyncServerExample () producerVar)
-        producerPeers Mxt.ChainSync1 = OnlyServer nullTracer (ChainSync.codecChainSync encode decode encode decode) producerPeer
-        producerNet = NetworkInterface {
-              nodeAddress = producerAddress,
-              protocols   = producerPeers
-            }
+        responderApp :: MuxApplication ResponderApp Mxt.TestProtocols1 IO
+        responderApp = simpleMuxResponderApplication $
+          \Mxt.ChainSync1 ->
+            MuxPeer nullTracer
+                    (ChainSync.codecChainSync encode decode encode decode)
+                    (ChainSync.chainSyncServerPeer (ChainSync.chainSyncServerExample () producerVar))
 
-    withNetworkNode producerNet $ \_ ->
-      withNetworkNode consumerNet $  \consumerNode ->
-        withConnectionAsync (connect consumerNode) (nodeAddress producerNet) $ \_connAsync -> do
-          void $ fork $ sequence_
-              [ do
-                  threadDelay 10e-4 -- just to provide interest
-                  atomically $ do
-                    p <- readTVar producerVar
-                    let Just p' = CPS.applyChainUpdate update p
-                    writeTVar producerVar p'
-              | update <- updates
-              ]
+    withSimpleServerNode producerAddress responderApp $ \_ -> do
+      withAsync (connectTo initiatorApp consumerAddress producerAddress) $ \_connAsync -> do
+        void $ fork $ sequence_
+            [ do
+                threadDelay 10e-4 -- just to provide interest
+                atomically $ do
+                  p <- readTVar producerVar
+                  let Just p' = CPS.applyChainUpdate update p
+                  writeTVar producerVar p'
+            | update <- updates
+            ]
 
-          atomically $ takeTMVar done
+        atomically $ takeTMVar done
 
   where
     checkTip target consumerVar = atomically $ do
