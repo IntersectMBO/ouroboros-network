@@ -7,6 +7,7 @@ module Ouroboros.Storage.IO (
     , write
     , close
     , getSize
+    , sameError
     ) where
 
 import           Prelude hiding (read, truncate)
@@ -20,8 +21,8 @@ import           Foreign (Ptr)
 import           System.Posix (Fd)
 import qualified System.Posix as Posix
 
-import           Ouroboros.Storage.FS.API.Types (AllowExisting (..),
-                     OpenMode (..), SeekMode (..))
+import           Ouroboros.Storage.FS.API.Types (AllowExisting (..), FsError,
+                     OpenMode (..), SeekMode (..), sameFsError)
 import           Ouroboros.Storage.FS.Handle
 
 type FHandle = HandleOS Fd
@@ -109,3 +110,6 @@ close h = closeHandleOS h Posix.closeFd
 getSize :: FHandle -> IO Word64
 getSize h = withOpenHandle "getSize" h $ \fd ->
      fromIntegral . Posix.fileSize <$> Posix.getFdStatus fd
+
+sameError :: FsError -> FsError -> Bool
+sameError = sameFsError

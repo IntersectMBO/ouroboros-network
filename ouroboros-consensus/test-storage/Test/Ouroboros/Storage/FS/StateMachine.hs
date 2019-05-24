@@ -241,10 +241,9 @@ hPutSomeChecked HasFS{..} h bytes = do
 newtype Resp fp h = Resp { getResp :: Either FsError (Success fp h) }
   deriving (Show, Functor, Foldable)
 
--- | The 'Eq' instance for 'Resp' uses 'sameFsError'
+-- | The 'Eq' instance for 'Resp' uses 'F.sameError'
 instance (Eq fp, Eq h) => Eq (Resp fp h) where
-  -- TODO(532) True should be reverted to sameFsError.
-  Resp (Left  _) == Resp (Left  _)  = True
+  Resp (Left  e) == Resp (Left  e') = F.sameError e e'
   Resp (Right a) == Resp (Right a') = a == a'
   _              == _               = False
 

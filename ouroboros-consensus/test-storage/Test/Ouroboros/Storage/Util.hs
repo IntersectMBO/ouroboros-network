@@ -36,6 +36,7 @@ import qualified Ouroboros.Storage.FS.Sim.STM as Sim
 import           Ouroboros.Storage.ImmutableDB (ImmutableDBError (..),
                      prettyImmutableDBError, sameImmutableDBError)
 import qualified Ouroboros.Storage.ImmutableDB as Immutable
+import           Ouroboros.Storage.IO (sameError)
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 import           Ouroboros.Storage.VolatileDB (VolatileDBError (..),
@@ -133,7 +134,7 @@ apiEquivalence :: (HasCallStack, Eq a, Show a, Exception e)
                -> (Either e a -> Assertion)
                -> (forall h. HasFS IO h -> ErrorHandling e IO -> IO a)
                -> Assertion
-apiEquivalence tryE prettyError sameError resAssert m = do
+apiEquivalence tryE prettyError sameErr resAssert m = do
     sysTmpDir <- getTemporaryDirectory
     withTempDirectory sysTmpDir "cardano." $ \tmpDir -> do
         r1 <- tryE $ Sim.runSimFS EH.exceptions Mock.empty (flip m EH.exceptions)
@@ -143,7 +144,7 @@ apiEquivalence tryE prettyError sameError resAssert m = do
             assertBool ("SimFS & IOFS didn't return the same error:" <>
                         "\nSimFS returned: " <> prettyError e1 <>
                         "\nIOFS  returned: " <> prettyError e2)
-                       (e1 `sameError` e2)
+                       (e1 `sameErr` e2)
             -- Doesn't matter if is e1 or e2, as they are equal
             resAssert (Left e1)
           (Right (x1, _fs'), Right x2) -> do
@@ -156,7 +157,7 @@ apiEquivalence tryE prettyError sameError resAssert m = do
           (Left e, Right r) ->
             fail $ "SimFS failed with: "
                 <> prettyError e
-                <> "\nIO succeeded with: " 
+                <> "\nIO succeeded with: "
                 <> show r
                 <> ".\n\n"
           (Right (_, fs'), Left e) ->
@@ -170,8 +171,7 @@ apiEquivalenceFs :: (HasCallStack, Eq a, Show a)
                  => (Either FsError a -> Assertion)
                  -> (forall h. HasFS IO h -> ErrorHandling FsError IO -> IO a)
                  -> Assertion
-  -- TODO(532) True should be reverted to sameFsError.
-apiEquivalenceFs = apiEquivalence tryFS prettyFsError (\_ _ -> True)
+apiEquivalenceFs = apiEquivalence tryFS prettyFsError sameError
 
 apiEquivalenceImmDB :: (HasCallStack, Eq a, Show a)
                     => (Either ImmutableDBError a -> Assertion)
