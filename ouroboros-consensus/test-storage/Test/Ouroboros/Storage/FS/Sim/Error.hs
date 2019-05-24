@@ -349,7 +349,6 @@ instance Arbitrary Errors where
         -- TODO which errors are possible for these operations below (that
         -- have dummy for now)?
         dummy = streamGen 2 [ FsInsufficientPermissions ]
-    _newBuffer          <- dummy
     _dumpState          <- dummy
     -- TODO let this one fail:
     let _hClose = mkStream []
@@ -365,7 +364,6 @@ instance Arbitrary Errors where
       [ (1, return $ Left FsReachedEOF)
       , (3, Right <$> arbitrary) ]
     _hPutSome   <- mkStreamGen 2 $ (,) <$> return FsDeviceFull <*> arbitrary
-    _hPutBuffer <- streamGen 3 [ FsDeviceFull ]
     _hGetSize   <- streamGen 2 [ FsResourceDoesNotExist ]
     _createDirectory <- streamGen 3
       [ FsInsufficientPermissions, FsResourceInappropriateType

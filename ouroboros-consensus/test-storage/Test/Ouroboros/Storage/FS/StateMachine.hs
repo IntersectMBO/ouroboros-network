@@ -99,8 +99,6 @@ evalPathExpr (PExpParentOf fp) = init fp
 
 {-------------------------------------------------------------------------------
   Abstract model
-
-  TODO: This does not currently test newBuffer/hPutBuffer.
 -------------------------------------------------------------------------------}
 
 -- | Commands
