@@ -49,6 +49,7 @@ pureHasFS err = HasFS {
     , doesDirectoryExist       = Mock.doesDirectoryExist       err'
     , doesFileExist            = Mock.doesFileExist            err'
     , removeFile               = Mock.removeFile               err'
+    , handlePath               = gets . flip Mock.handleFsPath
     , hasFsErr                 = err'
     }
   where

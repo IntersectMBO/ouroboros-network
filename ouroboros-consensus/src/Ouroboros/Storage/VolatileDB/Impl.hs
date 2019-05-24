@@ -232,7 +232,7 @@ getBlockImpl env@VolatileDBEnv{..} slot = do
             Just InternalBlockInfo {..} ->  do
                 bs <- withFile hasFS [ibFile] IO.ReadMode $ \hndl -> do
                         _ <- hSeek hndl IO.AbsoluteSeek (fromIntegral ibSlotOffset)
-                        toStrict <$> hGetExactly hasFS [ibFile] hndl (fromIntegral ibBlockSize)
+                        toStrict <$> hGetExactly hasFS hndl (fromIntegral ibBlockSize)
                 return (st, Just bs)
 
 -- This function follows the approach:

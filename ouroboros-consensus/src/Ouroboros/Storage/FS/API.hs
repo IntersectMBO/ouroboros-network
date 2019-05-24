@@ -93,6 +93,13 @@ data HasFS m h = HasFS {
     -- | Remove the file (which must exist)
   , removeFile               :: HasCallStack => FsPath -> m ()
 
+    -- | Return the path corresponding to the handle
+    --
+    -- Useful for error reporting.
+    --
+    -- TODO make this a pure function
+  , handlePath               :: HasCallStack => h -> m FsPath
+
     -- | Error handling
   , hasFsErr                 :: ErrorHandling FsError m
   }
@@ -106,25 +113,25 @@ withFile HasFS{..} fp ioMode = bracket (hOpen fp ioMode) hClose
 hGetExactly :: forall m h
             . (HasCallStack, Monad m)
             => HasFS m h
-            -> FsPath
             -> h
             -> Int
             -> m BL.ByteString
-hGetExactly hasFS path h n = go n []
-    where
-      go :: Int -> [BS.ByteString] -> m BL.ByteString
-      go 0 bss = return $ BL.fromChunks $ reverse bss
-      go remainingBytes acc = do
-        bs <- hGetSome hasFS h remainingBytes
-        if BS.null bs then
-          throwError (hasFsErr hasFS) FsError {
-              fsErrorType   = FsReachedEOF
-            , fsErrorPath   = path
-            , fsErrorString = "hGetExactly found eof before reading " ++ show n ++ " bytes"
-            , fsErrorStack  = callStack
-            , fsLimitation  = False
-            }
-        else go (remainingBytes - BS.length bs) (bs : acc)
+hGetExactly hasFS h n = go n []
+  where
+    go :: Int -> [BS.ByteString] -> m BL.ByteString
+    go 0 bss = return $ BL.fromChunks $ reverse bss
+    go remainingBytes acc = do
+      bs <- hGetSome hasFS h remainingBytes
+      if BS.null bs then do
+        path <- handlePath hasFS h
+        throwError (hasFsErr hasFS) FsError {
+            fsErrorType   = FsReachedEOF
+          , fsErrorPath   = path
+          , fsErrorString = "hGetExactly found eof before reading " ++ show n ++ " bytes"
+          , fsErrorStack  = callStack
+          , fsLimitation  = False
+          }
+      else go (remainingBytes - BS.length bs) (bs : acc)
 
 -- | Like hGetExactly, but it does not throw an exception if eof is found.
 hGetLenient :: forall m h

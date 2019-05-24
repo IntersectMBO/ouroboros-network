@@ -1,7 +1,3 @@
-{-# LANGUAGE BangPatterns      #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE TupleSections     #-}
-
 -- | IO implementation of the 'HasFS' class
 module Ouroboros.Storage.FS.IO (
     -- * IO implementation & monad
@@ -9,8 +5,8 @@ module Ouroboros.Storage.FS.IO (
     , ioHasFS
     ) where
 
-import qualified Control.Exception as E
 import           Control.Concurrent.MVar
+import qualified Control.Exception as E
 import qualified Data.ByteString.Unsafe as BS
 import qualified Data.Set as Set
 import           Foreign (castPtr)
@@ -19,7 +15,7 @@ import qualified System.Directory as Dir
 
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types
-import           Ouroboros.Storage.FS.Handle
+import qualified Ouroboros.Storage.FS.Handle as H
 import qualified Ouroboros.Storage.IO as F
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
@@ -42,18 +38,18 @@ ioHasFS mount = HasFS {
         osHandle <- rethrowFsError fp $
             F.open path ioMode
         hVar <- newMVar $ Just osHandle
-        return $ Handle fp path hVar
-    , hClose = \h -> rethrowFsError (handlePath h) $
+        return $ H.Handle fp path hVar
+    , hClose = \h -> rethrowFsError (H.handlePath h) $
         F.close h
-    , hSeek = \h mode o -> rethrowFsError (handlePath h) $
+    , hSeek = \h mode o -> rethrowFsError (H.handlePath h) $
         F.seek h mode o
-    , hGetSome = \h n -> rethrowFsError (handlePath h) $
+    , hGetSome = \h n -> rethrowFsError (H.handlePath h) $
         F.read h n
-    , hTruncate = \h sz -> rethrowFsError (handlePath h) $
+    , hTruncate = \h sz -> rethrowFsError (H.handlePath h) $
         F.truncate h sz
-    , hGetSize = \h -> rethrowFsError (handlePath h) $
+    , hGetSize = \h -> rethrowFsError (H.handlePath h) $
         F.getSize h
-    , hPutSome = \h bs -> rethrowFsError (handlePath h) $ do
+    , hPutSome = \h bs -> rethrowFsError (H.handlePath h) $ do
         BS.unsafeUseAsCStringLen bs $ \(ptr, len) ->
             fromIntegral <$> F.write h (castPtr ptr) (fromIntegral len)
     , createDirectory = \fp -> rethrowFsError fp $
@@ -68,6 +64,7 @@ ioHasFS mount = HasFS {
         Dir.createDirectoryIfMissing createParent (root fp)
     , removeFile = \fp -> rethrowFsError fp $
         Dir.removeFile (root fp)
+    , handlePath = return . H.handlePath
     , hasFsErr = EH.exceptions
     }
   where

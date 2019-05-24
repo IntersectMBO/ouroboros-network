@@ -574,7 +574,7 @@ getEpochSlot _dbHasFS hashDecoder OpenState {..} _dbErr epochSlot = do
         -- Note the use of hGetExactly: we must get enough bytes from the
         -- index file, otherwise 'decodeIndexEntry' (and its variant) would
         -- fail.
-        bytes <- toStrict <$> hGetExactly _dbHasFS indexFile iHnd nbBytesToGet
+        bytes <- toStrict <$> hGetExactly _dbHasFS iHnd nbBytesToGet
         let !start = decodeIndexEntry   bytes
             !end   = decodeIndexEntryAt indexEntrySizeBytes bytes
 
@@ -601,7 +601,7 @@ getEpochSlot _dbHasFS hashDecoder OpenState {..} _dbErr epochSlot = do
       _ -> withFile _dbHasFS epochFile ReadMode $ \eHnd -> do
         -- Seek in the epoch file
         hSeek eHnd AbsoluteSeek (fromIntegral blobOffset)
-        Just . toStrict <$> hGetExactly _dbHasFS epochFile eHnd (fromIntegral blobSize)
+        Just . toStrict <$> hGetExactly _dbHasFS eHnd (fromIntegral blobSize)
 
     return (mbEBBHash, mbBlob)
   where
@@ -1087,16 +1087,14 @@ iteratorNextImpl dbEnv it@IteratorHandle {_it_hasFS = hasFS :: HasFS m h, ..} st
 
     readNext :: IteratorState hash h -> m ByteString
     readNext IteratorState { _it_epoch_handle = eHnd
-                           , _it_next = EpochSlot epoch relSlot
+                           , _it_next = EpochSlot _ relSlot
                            , _it_epoch_index = index } = do
       -- Grab the blob size from the cached index
       let blobSize = sizeOfSlot index relSlot
 
       -- Read from the epoch file. No need for seeking: as we are streaming,
       -- we are already positioned at the correct place (Invariant 4).
-      let epochFile = renderFile "epoch" epoch
-
-      toStrict <$> hGetExactly hasFS epochFile eHnd (fromIntegral blobSize)
+      toStrict <$> hGetExactly hasFS eHnd (fromIntegral blobSize)
         `finally`
         -- Seek to the previous position if we shouldn't step to the next.
         unless step (hSeek eHnd RelativeSeek (negate (fromIntegral blobSize)))

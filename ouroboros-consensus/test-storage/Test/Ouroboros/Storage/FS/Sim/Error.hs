@@ -457,6 +457,7 @@ mkSimErrorHasFS err fsVar errorsVar =
         , removeFile               = \p ->
             withErr err errorsVar p (removeFile p) "removeFile"
             _removeFile (\e es -> es { _removeFile = e })
+        , handlePath = handlePath
         , hasFsErr = err
         }
 
