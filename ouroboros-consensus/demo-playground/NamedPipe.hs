@@ -2,8 +2,10 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module NamedPipe (
   -- * Sending & receiving txs
-    withTxPipe
+    withNamedPipe
+  , withTxPipe
   , withPipeChannel
+  , namedTxPipeFor
   , DataFlow(..)
   , NodeMapping((:==>:))
   ) where
@@ -19,7 +21,6 @@ import           System.Posix.Files (createNamedPipe, otherReadMode,
 
 import           Ouroboros.Network.Channel (Channel, handlesAsChannel)
 import           Ouroboros.Consensus.NodeId (NodeId(..))
-
 
 data NodeMapping src tgt = src :==>: tgt
 
@@ -69,25 +70,16 @@ withPipeChannel ident dataflow action = do
                , "upstream-"   <> ident <> "-" <> src <> "-" <> tgt
                )
 
--- | Given a 'NodeId', it dashifies it.
-dashify :: NodeId -> String
-dashify (CoreId n)  = "core-node-"  <> show n
-dashify (RelayId n) = "relay-node-" <> show n
-
--- | Given a 'NodeId', it yields a predictable name which can be used to
--- read transactions out of band.
-namedTxPipeFor :: NodeId -> String
-namedTxPipeFor n = "ouroboros-" <> dashify n <> "-tx-pipe"
-
--- | Creates a unidirectional pipe for Tx transmission.
-withTxPipe :: NodeId
+withNamedPipe
+           :: (NodeId -> String)
+           -> NodeId
            -> IOMode
            -> Bool
            -- ^ Whether or not to destroy the pipe at teardown.
            -> (Handle -> IO a)
            -> IO a
-withTxPipe node ioMode destroyAfterUse action = do
-    let pipeName = namedTxPipeFor node
+withNamedPipe pipeNameSchema node ioMode destroyAfterUse action = do
+    let pipeName = pipeNameSchema node
     bracket (do createNamedPipe pipeName (unionFileModes ownerModes otherWriteMode)
                     `catch` (\(_ :: SomeException) -> pure ())
                 openFile pipeName ioMode
@@ -99,3 +91,17 @@ withTxPipe node ioMode destroyAfterUse action = do
                     `catch` (\(_ :: SomeException) -> pure ())
                 )
             action
+
+-- | Given a 'NodeId', it dashifies it.
+dashify :: NodeId -> String
+dashify (CoreId n)  = "core-node-"  <> show n
+dashify (RelayId n) = "relay-node-" <> show n
+
+-- | Given a 'NodeId', it yields a predictable name which can be used to
+-- read transactions out of band.
+namedTxPipeFor :: NodeId -> String
+namedTxPipeFor n = "ouroboros-" <> dashify n <> "-tx-pipe"
+
+-- | Creates a unidirectional pipe for Tx transmission.
+withTxPipe :: NodeId -> IOMode -> Bool -> (Handle -> IO a) -> IO a
+withTxPipe = withNamedPipe namedTxPipeFor
