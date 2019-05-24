@@ -141,7 +141,7 @@ type ErrorStream = Stream FsErrorType
 
 
 {-------------------------------------------------------------------------------
-  Generating corruption for hPut
+  Generating corruption for hPutSome
 -------------------------------------------------------------------------------}
 
 -- | Model possible corruptions that could happen to a 'hPutSome' call.
@@ -238,7 +238,7 @@ data Errors = Errors
   , _hClose                   :: ErrorStream
   , _hSeek                    :: ErrorStream
   , _hGetSome                 :: ErrorStreamWithPartialGet
-  , _hPut                     :: ErrorStreamWithCorruption
+  , _hPutSome                 :: ErrorStreamWithCorruption
   , _hTruncate                :: ErrorStream
   , _hGetSize                 :: ErrorStream
 
@@ -258,7 +258,7 @@ allNull Errors {..} = null _dumpState
                    && null _hClose
                    && null _hSeek
                    && null _hGetSome
-                   && null _hPut
+                   && null _hPutSome
                    && null _hTruncate
                    && null _hGetSize
                    && null _createDirectory
@@ -287,7 +287,7 @@ instance Show Errors where
         , s "_hClose"                   _hClose
         , s "_hSeek"                    _hSeek
         , s "_hGetSome"                 _hGetSome
-        , s "_hPut"                     _hPut
+        , s "_hPutSome"                 _hPutSome
         , s "_hTruncate"                _hTruncate
         , s "_hGetSize"                 _hGetSize
         , s "_createDirectory"          _createDirectory
@@ -305,7 +305,7 @@ instance Semigroup Errors where
       , _hClose                   = combine _hClose
       , _hSeek                    = combine _hSeek
       , _hGetSome                 = combine _hGetSome
-      , _hPut                     = combine _hPut
+      , _hPutSome                 = combine _hPutSome
       , _hTruncate                = combine _hTruncate
       , _hGetSize                 = combine _hGetSize
       , _createDirectory          = combine _createDirectory
@@ -332,7 +332,7 @@ simpleErrors es = Errors
     , _hClose                   = es
     , _hSeek                    = es
     , _hGetSome                 = fmap Left        es
-    , _hPut                     = fmap (, Nothing) es
+    , _hPutSome                 = fmap (, Nothing) es
     , _hTruncate                = es
     , _hGetSize                 = es
     , _createDirectory          = es
@@ -364,7 +364,7 @@ instance Arbitrary Errors where
     _hGetSome   <- mkStreamGen 5 $ QC.frequency
       [ (1, return $ Left FsReachedEOF)
       , (3, Right <$> arbitrary) ]
-    _hPut       <- mkStreamGen 2 $ (,) <$> return FsDeviceFull <*> arbitrary
+    _hPutSome   <- mkStreamGen 2 $ (,) <$> return FsDeviceFull <*> arbitrary
     _hPutBuffer <- streamGen 3 [ FsDeviceFull ]
     _hGetSize   <- streamGen 2 [ FsResourceDoesNotExist ]
     _createDirectory <- streamGen 3
@@ -388,7 +388,7 @@ instance Arbitrary Errors where
       , (\s' -> err { _hSeek = s' })                    <$> dropLast _hSeek
       , (\s' -> err { _hGetSome = s' })                 <$> dropLast _hGetSome
         -- TODO shrink the PutCorruption
-      , (\s' -> err { _hPut = s' })                     <$> dropLast _hPut
+      , (\s' -> err { _hPutSome = s' })                 <$> dropLast _hPutSome
       , (\s' -> err { _hTruncate = s' })                <$> dropLast _hTruncate
       , (\s' -> err { _hGetSize = s' })                 <$> dropLast _hGetSize
       , (\s' -> err { _createDirectory = s' })          <$> dropLast _createDirectory
@@ -560,7 +560,7 @@ hPutSome'  :: (MonadSTM m, HasCallStack)
 hPutSome' ErrorHandling{..} fsVar errorsVar hPutWrapped handle bs = do
     mockFS <- atomically $ readTVar fsVar
     let path = handleFsPath mockFS handle
-    mbErrMbCorr <- next errorsVar _hPut (\e es -> es { _hPut = e })
+    mbErrMbCorr <- next errorsVar _hPutSome (\e es -> es { _hPutSome = e })
     case mbErrMbCorr of
       Nothing      -> hPutWrapped handle bs
       Just (errType, mbCorr) -> do
@@ -569,7 +569,7 @@ hPutSome' ErrorHandling{..} fsVar errorsVar hPutWrapped handle bs = do
         throwError FsError
           { fsErrorType   = errType
           , fsErrorPath   = path
-          , fsErrorString = "simulated error: hPut" <> case mbCorr of
+          , fsErrorString = "simulated error: hPutSome" <> case mbCorr of
               Nothing   -> ""
               Just corr -> " with corruption: " <> show corr
           , fsErrorStack  = callStack

@@ -114,7 +114,7 @@ putBlockModel err cmdErr BlockInfo{..} bs = do
     -- If anything changes there, then this wil also need change.
     let managesToPut errors = do
             errs <- errors
-            (mErr, _rest) <- uncons $ getStream (_hPut errs)
+            (mErr, _rest) <- uncons $ getStream (_hPutSome errs)
             (fsErr, _mCorr) <- mErr
             return fsErr
     dbm@DBModel {..} <- get

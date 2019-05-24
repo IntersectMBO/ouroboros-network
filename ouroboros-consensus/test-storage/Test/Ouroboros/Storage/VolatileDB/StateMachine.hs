@@ -420,7 +420,7 @@ generatorImpl mkErr terminatingCmd m@Model {..} = do
         eraseCorruptions str = dontSubstituteWithJunk <$> str
         erasePutCorruptions mErr = do
             err <- mErr
-            return err {_hPut = eraseCorruptions $ _hPut err}
+            return err {_hPutSome = eraseCorruptions $ _hPutSome err}
         noErrorFor GetBlock {}          = False
         noErrorFor GetBlockIds          = False
         noErrorFor ReOpen {}            = False
