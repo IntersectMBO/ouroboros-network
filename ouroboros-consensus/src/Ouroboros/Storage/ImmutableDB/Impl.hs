@@ -157,7 +157,7 @@ import           Data.Either (isRight)
 import           Data.Functor (($>), (<&>))
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
-import           Data.Maybe (fromMaybe)
+import           Data.Maybe (fromMaybe, isJust)
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Word
@@ -1019,10 +1019,11 @@ streamBinaryBlobsImpl dbEnv mbStart mbEnd = withOpenState dbEnv $ \hasFS st -> d
         -- Safely increment '_nextIteratorID' in the 'OpenState'.
         modifyOpenState dbEnv $ \_hasFS -> state $ \st'@OpenState {..} ->
           let it = Iterator
-                { iteratorNext  = iteratorNextImpl  dbEnv ith True
-                , iteratorPeek  = iteratorNextImpl  dbEnv ith False
-                , iteratorClose = iteratorCloseImpl       ith
-                , iteratorID    = BaseIteratorID _nextIteratorID
+                { iteratorNext    = iteratorNextImpl  dbEnv ith True
+                , iteratorPeek    = iteratorNextImpl  dbEnv ith False
+                , iteratorHasNext = iteratorHasNextImpl     ith
+                , iteratorClose   = iteratorCloseImpl       ith
+                , iteratorID      = BaseIteratorID _nextIteratorID
                 }
           in (it, st' { _nextIteratorID = succ _nextIteratorID })
   where
@@ -1030,10 +1031,11 @@ streamBinaryBlobsImpl dbEnv mbStart mbEnd = withOpenState dbEnv $ \hasFS st -> d
     mkEmptyIterator =
       modifyOpenState dbEnv $ \_hasFS -> state $ \st@OpenState {..} ->
         let it = Iterator
-              { iteratorNext  = return IteratorExhausted
-              , iteratorPeek  = return IteratorExhausted
-              , iteratorClose = return ()
-              , iteratorID    = BaseIteratorID _nextIteratorID
+              { iteratorNext    = return IteratorExhausted
+              , iteratorPeek    = return IteratorExhausted
+              , iteratorHasNext = return False
+              , iteratorClose   = return ()
+              , iteratorID      = BaseIteratorID _nextIteratorID
               }
         in (it, st { _nextIteratorID = succ _nextIteratorID })
 
@@ -1164,6 +1166,12 @@ iteratorNextImpl dbEnv it@IteratorHandle {_it_hasFS = hasFS :: HasFS m h, ..} st
                 , _it_epoch_handle = eHnd
                 , _it_epoch_index = index
                 }
+
+iteratorHasNextImpl :: (HasCallStack, MonadSTM m)
+                    => IteratorHandle hash m
+                    -> m Bool
+iteratorHasNextImpl IteratorHandle { _it_state } =
+    fmap isJust $ atomically $ readTVar _it_state
 
 iteratorCloseImpl :: (HasCallStack, MonadSTM m)
                   => IteratorHandle hash m

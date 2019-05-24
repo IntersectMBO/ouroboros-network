@@ -471,10 +471,11 @@ streamBinaryBlobsModel err mbStart mbEnd = do
       , dbmIterators    = Map.insert itID itm dbmIterators
       }
     return Iterator
-      { iteratorNext  = iteratorNextModel  itID
-      , iteratorPeek  = iteratorPeekModel  itID
-      , iteratorClose = iteratorCloseModel itID
-      , iteratorID    = itID
+      { iteratorNext    = iteratorNextModel    itID
+      , iteratorPeek    = iteratorPeekModel    itID
+      , iteratorHasNext = iteratorHasNextModel itID
+      , iteratorClose   = iteratorCloseModel   itID
+      , iteratorID      = itID
       }
   where
     iteratorResults dbm@DBModel {..} =
@@ -552,6 +553,15 @@ iteratorPeekModel itID = do
       Nothing                      -> return IteratorExhausted
       Just (IteratorModel [])      -> return IteratorExhausted
       Just (IteratorModel (res:_)) -> return res
+
+iteratorHasNextModel :: MonadState (DBModel hash) m
+                     => IteratorID
+                     -> m Bool
+iteratorHasNextModel itID = do
+    next <- iteratorPeekModel itID
+    return $ case next of
+      IteratorExhausted -> False
+      _                 -> True
 
 iteratorCloseModel :: MonadState (DBModel hash) m
                    => IteratorID -> m ()
