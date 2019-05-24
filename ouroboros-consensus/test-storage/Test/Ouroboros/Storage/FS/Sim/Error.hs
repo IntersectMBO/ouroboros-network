@@ -33,6 +33,7 @@ module Test.Ouroboros.Storage.FS.Sim.Error
   , corrupt
     -- * Error streams for 'HasFS'
   , Errors(..)
+  , genErrors
   , allNull
   , simpleErrors
     -- * Testing examples
@@ -350,8 +351,14 @@ simpleErrors es = Errors
     , _removeFile               = es
     }
 
-instance Arbitrary Errors where
-  arbitrary = do
+-- | Generator for 'Errors' that allows some things to be disabled.
+--
+-- This is needed by the VolatileDB state machine tests, which try to predict
+-- what should happen based on the 'Errors', which is too complex sometimes.
+genErrors :: Bool  -- ^ 'True' -> generate partial writes
+          -> Bool  -- ^ 'True' -> generate 'SubstituteWithJunk' corruptions
+          -> Gen Errors
+genErrors genPartialWrites genSubstituteWithJunk = do
     let streamGen l = mkStreamGen l . QC.elements
         -- TODO which errors are possible for these operations below (that
         -- have dummy for now)?
@@ -371,8 +378,13 @@ instance Arbitrary Errors where
       [ (1, return $ Left FsReachedEOF)
       , (3, Right <$> arbitrary) ]
     _hPutSome   <- mkStreamGen 5 $ QC.frequency
-      [ (1, Left . (FsDeviceFull, ) <$> arbitrary)
-      , (3, Right <$> arbitrary) ]
+      [ (1, Left . (FsDeviceFull, ) <$> QC.frequency
+            [ (2, return Nothing)
+            , (1, Just . DropRatioLastBytes <$> arbitrary)
+            , (if genSubstituteWithJunk then 1 else 0,
+               Just . SubstituteWithJunk <$> arbitrary)
+            ])
+      , (if genPartialWrites then 3 else 0, Right <$> arbitrary) ]
     _hGetSize   <- streamGen 2 [ FsResourceDoesNotExist ]
     _createDirectory <- streamGen 3
       [ FsInsufficientPermissions, FsResourceInappropriateType
@@ -387,6 +399,9 @@ instance Arbitrary Errors where
       [ FsInsufficientPermissions, FsResourceAlreadyInUse
       , FsResourceDoesNotExist, FsResourceInappropriateType ]
     return Errors {..}
+
+instance Arbitrary Errors where
+  arbitrary = genErrors True True
 
   shrink err@Errors {..} = filter (not . allNull) $ catMaybes
       [ (\s' -> err { _dumpState = s' })                <$> dropLast _dumpState

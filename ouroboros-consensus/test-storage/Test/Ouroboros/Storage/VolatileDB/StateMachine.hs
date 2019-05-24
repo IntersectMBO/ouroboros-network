@@ -404,23 +404,16 @@ generatorImpl mkErr terminatingCmd m@Model {..} = do
     genCmd <- generatorCmdImpl terminatingCmd m
     Just $ do
         At cmd <- genCmd
-        err' <- if noErrorFor cmd then return Nothing
+        err <- if noErrorFor cmd then return Nothing
            else frequency
                 [ (8, return Nothing)
-                , (if mkErr then 1 else 0, Just <$> arbitrary)]
-        let err = erasePutCorruptions err'
+                  -- TODO use the full generator for 'Errors', i.e.
+                  -- 'arbitrary'. Now we disable partial writes and
+                  -- 'SubstituteWithJunk' corruptions because we cannot
+                  -- predict what the model should do with those.
+                , (if mkErr then 1 else 0, Just <$> genErrors False False)]
         return $ At $ CmdErr cmd err
     where
-        -- This doesn't reduce the power of tests. Writing random junks could result
-        -- in them being ransomly parsed, without the model knowing it. We do test
-        -- writing junk, but this is done in a controllable way as part of file
-        -- Corruption, so that the result cannot be parsed.
-        dontSubstituteWithJunk (Left (a, Just (SubstituteWithJunk _))) = Left (a, Nothing)
-        dontSubstituteWithJunk x                                       = x
-        eraseCorruptions str = dontSubstituteWithJunk <$> str
-        erasePutCorruptions mErr = do
-            err <- mErr
-            return err {_hPutSome = eraseCorruptions $ _hPutSome err}
         noErrorFor GetBlock {}          = False
         noErrorFor GetBlockIds          = False
         noErrorFor ReOpen {}            = False
