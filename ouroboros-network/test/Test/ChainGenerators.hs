@@ -23,6 +23,7 @@ module Test.ChainGenerators
   , genNonNegative
   , genSlotGap
   , addSlotGap
+  , genChainAnchor
   , genHeaderChain
   , mkPartialBlock
   , mkRollbackPoint
@@ -33,7 +34,7 @@ module Test.ChainGenerators
   where
 
 import qualified Data.List as L
-import           Data.Maybe (fromJust, catMaybes, listToMaybe)
+import           Data.Maybe (catMaybes, listToMaybe)
 
 import           Ouroboros.Network.Testing.ConcreteBlock
 import           Ouroboros.Network.Block
@@ -143,13 +144,19 @@ instance Arbitrary BlockBody where
     -- probably no need for shrink, the content is arbitrary and opaque
     -- if we add one, it might be to shrink to an empty block
 
+instance Arbitrary Block where
+    arbitrary = do
+      body    <- arbitrary
+      slotGap <- genSlotGap
+      (prevhash, prevblockno, prevslot) <- genChainAnchor
+      let slot    = addSlotGap slotGap prevslot
+          b       = fixupBlock prevhash prevblockno (mkPartialBlock slot body)
+      return b
+
 instance Arbitrary BlockHeader where
-  arbitrary = blockHeader . fromJust . Chain.head <$> genBlockChain 1
+    arbitrary = blockHeader <$> arbitrary
 
--- Note that we do not provide any instance Arbitrary Block
--- because it's of little help with making chains.
-
--- We do provide CoArbitrary instances however, for (Block -> _) functions
+-- We provide CoArbitrary instances, for (Block -> _) functions
 -- We use default implementations using generics.
 instance CoArbitrary Block
 instance CoArbitrary BlockHeader
@@ -160,6 +167,21 @@ instance CoArbitrary BodyHash
 instance CoArbitrary BlockBody
 instance CoArbitrary (ChainHash BlockHeader)
 instance CoArbitrary ConcreteHeaderHash
+
+-- | A starting point for a chain fragment: either the 'genesisAnchor' or
+-- an arbitrary point.
+--
+genChainAnchor :: Gen (ChainHash Block, BlockNo, SlotNo)
+genChainAnchor = oneof [ pure genesisAnchor, genArbitraryChainAnchor ]
+
+genArbitraryChainAnchor :: Gen (ChainHash Block, BlockNo, SlotNo)
+genArbitraryChainAnchor =
+    (,,) <$> (BlockHash <$> arbitrary)
+         <*> arbitrary
+         <*> arbitrary
+
+genesisAnchor :: (ChainHash b, BlockNo, SlotNo)
+genesisAnchor = (GenesisHash, BlockNo 0, SlotNo 0)
 
 -- | The 'NonNegative' generator produces a large proportion of 0s, so we use
 -- this one instead for now.

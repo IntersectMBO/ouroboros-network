@@ -33,7 +33,8 @@ import           Ouroboros.Network.Testing.Serialise (prop_serialise)
 import           Test.Chain ()
 import           Test.ChainGenerators
                    ( TestBlockChain (..), TestChainAndRange (..)
-                   , addSlotGap, genNonNegative, genSlotGap, mkPartialBlock)
+                   , genNonNegative, genChainAnchor, mkPartialBlock
+                   , addSlotGap, genSlotGap)
 
 
 --
@@ -443,22 +444,6 @@ prop_shrink_TestBlockChainFragment c =
 prop_shrink_TestHeaderChainFragment :: TestHeaderChainFragment -> Bool
 prop_shrink_TestHeaderChainFragment c =
     and [ CF.valid c' | TestHeaderChainFragment c' <- shrink c ]
-
-
--- | A starting point for a chain fragment: either the 'genesisAnchor' or
--- an arbitrary point.
---
-genChainAnchor :: Gen (ChainHash Block, BlockNo, SlotNo)
-genChainAnchor = oneof [ pure genesisAnchor, genArbitraryChainAnchor ]
-
-genArbitraryChainAnchor :: Gen (ChainHash Block, BlockNo, SlotNo)
-genArbitraryChainAnchor =
-    (,,) <$> (BlockHash <$> arbitrary)
-         <*> arbitrary
-         <*> arbitrary
-
-genesisAnchor :: (ChainHash b, BlockNo, SlotNo)
-genesisAnchor = (GenesisHash, BlockNo 0, SlotNo 0)
 
 
 -- | The Ouroboros K paramater. This is also the maximum rollback length.
