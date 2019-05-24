@@ -115,8 +115,10 @@ putBlockModel err cmdErr BlockInfo{..} bs = do
     let managesToPut errors = do
             errs <- errors
             (mErr, _rest) <- uncons $ getStream (_hPutSome errs)
-            (fsErr, _mCorr) <- mErr
-            return fsErr
+            errOrPartial <- mErr
+            case errOrPartial of
+              Left (fsErr, _mCorr) -> return fsErr
+              Right _              -> Nothing
     dbm@DBModel {..} <- get
     if not open then EH.throwError' err $ UserError ClosedDBError
     else case Map.lookup bbid mp of

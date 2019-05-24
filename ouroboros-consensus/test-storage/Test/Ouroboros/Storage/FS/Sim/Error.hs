@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
@@ -21,6 +22,12 @@ module Test.Ouroboros.Storage.FS.Sim.Error
   , always
   , mkStreamGen
   , ErrorStream
+  , ErrorStreamGetSome
+  , ErrorStreamPutSome
+    -- * Generating partial reads/writes
+  , Partial (..)
+  , hGetSomePartial
+  , hPutSomePartial
     -- * Generating corruption for 'hPutSome'
   , PutCorruption(..)
   , corrupt
@@ -139,6 +146,48 @@ null _           = False
 -- construct the actual 'FsError'.
 type ErrorStream = Stream FsErrorType
 
+{-------------------------------------------------------------------------------
+  Generating partial reads/writes for hGetSome and hPutSome
+-------------------------------------------------------------------------------}
+
+-- | To make a call to 'hGetSome' or 'hPutSome' partial, we do the following:
+--
+-- * 'hGetSome': we substract a number from the number of requested bytes.
+-- * 'hPutSome': we drop a number of bytes from the end of the bytestring to
+--   write (by taking from the front).
+--
+-- As we don't know how many bytes will be requested or how long the
+-- bytestring to write will be, using an absolute number makes less sense, as
+-- we might end up reducing the number of bytes to 0, which is invalid, as all
+-- 'hGetSome' and 'hPutSome' calls must request or write > 0 bytes.
+--
+-- Instead, we work with a simple ratio: an 'Int' @n@ in the interval @[1, 9]@
+-- indicates that @n/10@ of the total number of bytes must be subtracted.
+newtype Partial = DropRatioBytes Int
+    deriving (Show)
+
+instance Arbitrary Partial where
+  arbitrary = DropRatioBytes <$> QC.choose (1, 9)
+  shrink (DropRatioBytes tenths) =
+    [DropRatioBytes tenths' | tenths' <- [1..tenths]]
+
+hGetSomePartial :: Partial -> Int -> Int
+hGetSomePartial (DropRatioBytes tenths) requestedBytes = toRequest
+  where
+    toRequest :: Int
+    toRequest = max 1 (requestedBytes - round toSubtract)
+    toSubtract :: Double
+    toSubtract = fromIntegral requestedBytes * fromIntegral tenths / 10.0
+
+hPutSomePartial :: Partial -> BS.ByteString -> BS.ByteString
+hPutSomePartial (DropRatioBytes tenths) bs =
+    BS.take (round toTake) bs
+  where
+    toTake :: Double
+    toTake = fromIntegral (BS.length bs) * fromIntegral (10 - tenths) / 10.0
+
+-- | 'ErrorStream' for 'hGetSome': an error or a partial get.
+type ErrorStreamGetSome = Stream (Either FsErrorType Partial)
 
 {-------------------------------------------------------------------------------
   Generating corruption for hPutSome
@@ -148,72 +197,30 @@ type ErrorStream = Stream FsErrorType
 data PutCorruption
     = SubstituteWithJunk Blob
       -- ^ The blob to write is substituted with corrupt junk
-    | DropRatioLastBytes Int
-      -- ^ Drop a number of bytes from the end of a blob where the number is
-      -- @n/10@ of the total number bytes the blob is long.
-      --
-      -- As we don't know how long the blobs will be, using an absolute number
-      -- makes less sense, as we might end up dropping everything from each
-      -- blob.
+    | DropRatioLastBytes Partial
+      -- ^ Drop a number of bytes from the end of a blob.
     deriving (Show)
 
 instance Arbitrary PutCorruption where
   arbitrary = QC.oneof
       [ SubstituteWithJunk <$> arbitrary
-      , DropRatioLastBytes <$> QC.choose (1, 10)
+      , DropRatioLastBytes <$> arbitrary
       ]
   shrink (SubstituteWithJunk blob) =
       [SubstituteWithJunk blob' | blob' <- shrink blob]
-  shrink (DropRatioLastBytes tenths) =
-      [DropRatioLastBytes tenths' | tenths' <- shrink tenths, tenths' > 0]
+  shrink (DropRatioLastBytes partial) =
+      [DropRatioLastBytes partial' | partial' <- shrink partial]
 
 -- | Apply the 'PutCorruption' to the 'BS.ByteString'.
 corrupt :: BS.ByteString -> PutCorruption -> BS.ByteString
 corrupt bs pc = case pc of
-    SubstituteWithJunk blob   -> getBlob blob
-    DropRatioLastBytes tenths -> bs'
-      where
-        toTake :: Double
-        toTake = fromIntegral (BS.length bs) * fromIntegral (10 - tenths) / 10.0
-        bs' = BS.take (round toTake) bs
+    SubstituteWithJunk blob    -> getBlob blob
+    DropRatioLastBytes partial -> hPutSomePartial partial bs
 
--- | 'ErrorStream' with possible 'PutCorruption'.
---
--- We use a @Maybe@ because not every error needs to be accompanied with data
--- corruption.
-type ErrorStreamWithCorruption = Stream (FsErrorType, Maybe PutCorruption)
-
-
-{-------------------------------------------------------------------------------
-  Generating partial reads for hGetSome
--------------------------------------------------------------------------------}
-
-data PartialGet
-    = SubtractRatioRequestedBytes Int
-      -- ^ Subtract a number from the number of requested bytes where the
-      -- number is @n/10@ of the total number of requested bytes.
-      --
-      -- As we don't know how many bytes will be requested, using an absolute
-      -- number makes less sense, as we might end up reducing the number of
-      -- bytes to 0, which is invalid, as all 'hGetSome' calls must request >
-      -- 0 bytes.
-    deriving (Show)
-
-instance Arbitrary PartialGet where
-  arbitrary = SubtractRatioRequestedBytes <$> QC.choose (1, 9)
-  shrink (SubtractRatioRequestedBytes tenths) =
-    [SubtractRatioRequestedBytes tenths' | tenths' <- [1..tenths]]
-
-makePartial :: Int -> PartialGet -> Int
-makePartial requestedBytes (SubtractRatioRequestedBytes tenths) = toRequest
-  where
-    toRequest :: Int
-    toRequest = max 1 (requestedBytes - round toSubtract)
-    toSubtract :: Double
-    toSubtract = fromIntegral requestedBytes * fromIntegral tenths / 10.0
-
--- | 'ErrorStream' that can be an error or a partial get
-type ErrorStreamWithPartialGet = Stream (Either FsErrorType PartialGet)
+-- | 'ErrorStream' for 'hPutSome': an error and possibly some corruption, or a
+-- partial write.
+type ErrorStreamPutSome =
+  Stream (Either (FsErrorType, Maybe PutCorruption) Partial)
 
 {-------------------------------------------------------------------------------
   Simulated errors
@@ -228,8 +235,8 @@ type ErrorStreamWithPartialGet = Stream (Either FsErrorType PartialGet)
 -- For 'hPutSome', an 'ErrorStreamWithCorruption' is provided to simulate
 -- corruption.
 --
--- An 'ErrorStreams' is used in conjunction with 'SimErrorFS', which is a layer
--- on top of 'SimFS' that simulates methods throwing 'FsError's.
+-- An 'Errors' is used in conjunction with 'SimErrorFS', which is a layer on
+-- top of 'SimFS' that simulates methods throwing 'FsError's.
 data Errors = Errors
   { _dumpState                :: ErrorStream
 
@@ -237,8 +244,8 @@ data Errors = Errors
   , _hOpen                    :: ErrorStream
   , _hClose                   :: ErrorStream
   , _hSeek                    :: ErrorStream
-  , _hGetSome                 :: ErrorStreamWithPartialGet
-  , _hPutSome                 :: ErrorStreamWithCorruption
+  , _hGetSome                 :: ErrorStreamGetSome
+  , _hPutSome                 :: ErrorStreamPutSome
   , _hTruncate                :: ErrorStream
   , _hGetSize                 :: ErrorStream
 
@@ -331,8 +338,8 @@ simpleErrors es = Errors
     , _hOpen                    = es
     , _hClose                   = es
     , _hSeek                    = es
-    , _hGetSome                 = fmap Left        es
-    , _hPutSome                 = fmap (, Nothing) es
+    , _hGetSome                 =  Left                <$> es
+    , _hPutSome                 = (Left . (, Nothing)) <$> es
     , _hTruncate                = es
     , _hGetSize                 = es
     , _createDirectory          = es
@@ -363,7 +370,9 @@ instance Arbitrary Errors where
     _hGetSome   <- mkStreamGen 5 $ QC.frequency
       [ (1, return $ Left FsReachedEOF)
       , (3, Right <$> arbitrary) ]
-    _hPutSome   <- mkStreamGen 2 $ (,) <$> return FsDeviceFull <*> arbitrary
+    _hPutSome   <- mkStreamGen 5 $ QC.frequency
+      [ (1, Left . (FsDeviceFull, ) <$> arbitrary)
+      , (3, Right <$> arbitrary) ]
     _hGetSize   <- streamGen 2 [ FsResourceDoesNotExist ]
     _createDirectory <- streamGen 3
       [ FsInsufficientPermissions, FsResourceInappropriateType
@@ -385,7 +394,6 @@ instance Arbitrary Errors where
       , (\s' -> err { _hClose = s' })                   <$> dropLast _hClose
       , (\s' -> err { _hSeek = s' })                    <$> dropLast _hSeek
       , (\s' -> err { _hGetSome = s' })                 <$> dropLast _hGetSome
-        -- TODO shrink the PutCorruption
       , (\s' -> err { _hPutSome = s' })                 <$> dropLast _hPutSome
       , (\s' -> err { _hTruncate = s' })                <$> dropLast _hTruncate
       , (\s' -> err { _hGetSize = s' })                 <$> dropLast _hGetSize
@@ -546,36 +554,8 @@ withErr' err fsVar errorsVar handle action msg getter setter = do
     mockFS <- atomically $ readTVar fsVar
     withErr err errorsVar (handleFsPath mockFS handle) action msg getter setter
 
--- | Execute the wrapped 'hPutSome' or throw an error and apply possible
--- corruption to the blob to write, depending on the corresponding
--- 'ErrorStreamWithCorruption' (see 'nextError').
-hPutSome'  :: (MonadSTM m, HasCallStack)
-       => ErrorHandling FsError m
-       -> TVar m MockFS
-       -> TVar m Errors
-       -> (Handle -> BS.ByteString -> m Word64)  -- ^ Wrapped 'hPutSome'
-       -> Handle -> BS.ByteString -> m Word64
-hPutSome' ErrorHandling{..} fsVar errorsVar hPutWrapped handle bs = do
-    mockFS <- atomically $ readTVar fsVar
-    let path = handleFsPath mockFS handle
-    mbErrMbCorr <- next errorsVar _hPutSome (\e es -> es { _hPutSome = e })
-    case mbErrMbCorr of
-      Nothing      -> hPutWrapped handle bs
-      Just (errType, mbCorr) -> do
-        whenJust mbCorr $ \corr ->
-          void $ hPutWrapped handle (corrupt bs corr)
-        throwError FsError
-          { fsErrorType   = errType
-          , fsErrorPath   = path
-          , fsErrorString = "simulated error: hPutSome" <> case mbCorr of
-              Nothing   -> ""
-              Just corr -> " with corruption: " <> show corr
-          , fsErrorStack  = callStack
-          , fsLimitation  = False
-          }
-
--- | Execute the wrapped 'hGetSome', make the read partial, or throw an error,
--- depending on the corresponding 'ErrorStreamWithPartialGet' (see
+-- | Execute the wrapped 'hGetSome', throw an error, or simulate a partial
+-- read, depending on the corresponding 'ErrorStreamGetSome' (see
 -- 'nextError').
 hGetSome'  :: (MonadSTM m, HasCallStack)
            => ErrorHandling FsError m
@@ -585,19 +565,45 @@ hGetSome'  :: (MonadSTM m, HasCallStack)
            -> Handle -> Int -> m BS.ByteString
 hGetSome' ErrorHandling{..} fsVar errorsVar hGetSomeWrapped handle n = do
     mockFS <- atomically $ readTVar fsVar
-    let path = handleFsPath mockFS handle
-    mbErrOrPartial <- next errorsVar _hGetSome (\e es -> es { _hGetSome = e })
-    case mbErrOrPartial of
-      Nothing      -> hGetSomeWrapped handle n
+    next errorsVar _hGetSome (\e es -> es { _hGetSome = e }) >>= \case
+      Nothing             -> hGetSomeWrapped handle n
       Just (Left errType) -> throwError FsError
         { fsErrorType   = errType
-        , fsErrorPath   = path
+        , fsErrorPath   = handleFsPath mockFS handle
         , fsErrorString = "simulated error: hGetSome"
         , fsErrorStack  = callStack
         , fsLimitation  = False
         }
       Just (Right partial) ->
-        hGetSomeWrapped handle (makePartial n partial)
+        hGetSomeWrapped handle (hGetSomePartial partial n)
+
+-- | Execute the wrapped 'hPutSome', throw an error and apply possible
+-- corruption to the blob to write, or simulate a partial write, depending on
+-- the corresponding 'ErrorStreamPutSome' (see 'nextError').
+hPutSome' :: (MonadSTM m, HasCallStack)
+          => ErrorHandling FsError m
+          -> TVar m MockFS
+          -> TVar m Errors
+          -> (Handle -> BS.ByteString -> m Word64)  -- ^ Wrapped 'hPutSome'
+          -> Handle -> BS.ByteString -> m Word64
+hPutSome' ErrorHandling{..} fsVar errorsVar hPutSomeWrapped handle bs = do
+    mockFS <- atomically $ readTVar fsVar
+    next errorsVar _hPutSome (\e es -> es { _hPutSome = e }) >>= \case
+      Nothing                       -> hPutSomeWrapped handle bs
+      Just (Left (errType, mbCorr)) -> do
+        whenJust mbCorr $ \corr ->
+          void $ hPutSomeWrapped handle (corrupt bs corr)
+        throwError FsError
+          { fsErrorType   = errType
+          , fsErrorPath   = handleFsPath mockFS handle
+          , fsErrorString = "simulated error: hPutSome" <> case mbCorr of
+              Nothing   -> ""
+              Just corr -> " with corruption: " <> show corr
+          , fsErrorStack  = callStack
+          , fsLimitation  = False
+          }
+      Just (Right partial)          ->
+        hPutSomeWrapped handle (hPutSomePartial partial bs)
 
 
 {-------------------------------------------------------------------------------

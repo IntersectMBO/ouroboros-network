@@ -415,8 +415,8 @@ generatorImpl mkErr terminatingCmd m@Model {..} = do
         -- in them being ransomly parsed, without the model knowing it. We do test
         -- writing junk, but this is done in a controllable way as part of file
         -- Corruption, so that the result cannot be parsed.
-        dontSubstituteWithJunk (a, Just (SubstituteWithJunk _)) = (a, Nothing)
-        dontSubstituteWithJunk x                                = x
+        dontSubstituteWithJunk (Left (a, Just (SubstituteWithJunk _))) = Left (a, Nothing)
+        dontSubstituteWithJunk x                                       = x
         eraseCorruptions str = dontSubstituteWithJunk <$> str
         erasePutCorruptions mErr = do
             err <- mErr
