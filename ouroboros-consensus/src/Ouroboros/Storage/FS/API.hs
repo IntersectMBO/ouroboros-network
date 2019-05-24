@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -13,10 +14,11 @@ module Ouroboros.Storage.FS.API (
     , withFile
     ) where
 
+import           Control.Monad (foldM)
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as BL
 import           Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as BS
+import qualified Data.ByteString.Lazy as BL
 import           Data.Int (Int64)
 import           Data.Set (Set)
 import           Data.Word (Word64)
@@ -26,7 +28,8 @@ import           System.IO (IOMode, SeekMode)
 import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Storage.FS.API.Types
-import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling, throwError)
+import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling,
+                     throwError)
 
 {------------------------------------------------------------------------------
  Typeclass which abstracts over the filesystem
@@ -55,9 +58,24 @@ data HasFS m h = HasFS {
   , hSeek                    :: HasCallStack => h -> SeekMode -> Int64 -> m ()
 
     -- | Try to read @n@ bytes from a handle
+    --
+    -- The returned bytestring will typically have length @n@, but may be
+    -- shorter in case of a partial read, see #277.
+    --
+    -- If nothing can be read at all, an exception will be thrown.
+    --
+    -- Postcondition: the length of the returned bytestring <= @n@ and > 0.
   , hGetSome                 :: HasCallStack => h -> Int -> m BS.ByteString
 
     -- | Write to a handle
+    --
+    -- The return value indicates the number of bytes written and will
+    -- typically be equal to @l@, the length of the bytestring, but may be
+    -- shorter in case of a partial write, see #277.
+    --
+    -- If nothing can be written at all, an exception will be thrown.
+    --
+    -- Postcondition: the return value <= @l@ and > 0.
   , hPutSome                 :: HasCallStack => h -> BS.ByteString -> m Word64
 
     -- | Truncate the file to the specified size
@@ -150,36 +168,43 @@ hGetLenient hasFS h n = go n []
         go 0 acc
       else go (remainingBytes - BS.length bs) (bs : acc)
 
--- | This function makes sure that the whole ByteString is flushed.
+-- | This function makes sure that the whole 'BS.ByteString' is written.
 hPutAllStrict :: forall m h
               .  (HasCallStack, Monad m)
               => HasFS m h
               -> h
               -> BS.ByteString
               -> m Word64
-hPutAllStrict hasFS h bs = go 0 bs
-    where
-      go :: Word64 -> BS.ByteString -> m Word64
-      go counter bs' = do
-        n <- hPutSome hasFS h bs'
-        let bs'' = BS.drop (fromIntegral n) bs'
-        let counter' = counter + (fromIntegral n)
-        if not $ BS.null bs''
-           then go counter' bs''
-           else return counter'
+hPutAllStrict hasFS h = go 0
+  where
+    go :: Word64 -> BS.ByteString -> m Word64
+    go !written bs = do
+      n <- hPutSome hasFS h bs
+      let bs'      = BS.drop (fromIntegral n) bs
+          written' = written + fromIntegral n
+      if BS.null bs'
+        then return written'
+        else go written' bs'
 
 
--- | This function makes sure that the whole Lazy ByteString is flushed.
+-- | This function makes sure that the whole 'BL.ByteString' is written.
 hPutAll :: forall m h
         .  (HasCallStack, Monad m)
         => HasFS m h
         -> h
         -> BL.ByteString
         -> m Word64
-hPutAll hasFS h bs =
-  BL.foldrChunks (\c rest -> hPutAllStrict hasFS h c >>= \n -> fmap (+n) rest) (return 0) bs
+hPutAll hasFS h = foldM putChunk 0 . BL.toChunks
+  where
+    putChunk :: Word64 -> BS.ByteString -> m Word64
+    putChunk written chunk = do
+      written' <- hPutAllStrict hasFS h chunk
+      return $! written + written'
 
--- | This function makes sure that the whole Builder is flushed.
+-- | This function makes sure that the whole 'Builder' is written.
+--
+-- The chunk size of the resulting 'BL.ByteString' determines how much memory
+-- will be used while writing to the handle.
 hPut :: forall m h
      .  (HasCallStack, Monad m)
      => HasFS m h

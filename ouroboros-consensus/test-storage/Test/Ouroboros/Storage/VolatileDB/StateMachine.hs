@@ -416,7 +416,7 @@ generatorImpl mkErr terminatingCmd m@Model {..} = do
         -- writing junk, but this is done in a controllable way as part of file
         -- Corruption, so that the result cannot be parsed.
         dontSubstituteWithJunk (a, Just (SubstituteWithJunk _)) = (a, Nothing)
-        dontSubstituteWithJunk x = x
+        dontSubstituteWithJunk x                                = x
         eraseCorruptions str = dontSubstituteWithJunk <$> str
         erasePutCorruptions mErr = do
             err <- mErr
@@ -537,7 +537,7 @@ knownLimitation model (At cmd) = case cmd of
         isLimitation (Just slot') slot = slot' >  slot
 
 prop_sequential :: Property
-prop_sequential = withMaxSuccess 100 $
+prop_sequential =
     forAllCommands smUnused Nothing $ \cmds -> monadicIO $ do
         let test :: TVar IO Errors
                  -> HasFS IO h

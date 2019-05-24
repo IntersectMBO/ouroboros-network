@@ -22,7 +22,8 @@ import           Test.QuickCheck
 
 import           Ouroboros.Consensus.Util (SomePair (..))
 import           Ouroboros.Storage.Common
-import           Ouroboros.Storage.FS.API (HasFS (..), hGetLenient, hPut, withFile)
+import           Ouroboros.Storage.FS.API (HasFS (..), hGetLenient, hPut,
+                     withFile)
 import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.VolatileDB (Parser (..), SlotNo (..))
 import           Ouroboros.Storage.VolatileDB
@@ -75,6 +76,9 @@ parseImpl hasFS@HasFS{..} path =
                -> Word64
                -> m ([(SlotOffset, (BlockSize, BlockInfo BlockId))], Maybe ())
             go ls n = do
+                -- We are using 'hGetLenient' instead of 'hGetExactly' as a
+                -- proxy for detcting eof: either we get binarySize or we get
+                -- 0 bytes.
                 bs <- BL.toStrict <$> hGetLenient hasFS hndl binarySize
                 if BS.length bs == 0 then return (reverse ls, Nothing)
                 else case fromBinary bs of
