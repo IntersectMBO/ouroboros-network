@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 
-now=`date "+%Y-%m-%d 00:00:00"`
+. $(dirname $0)/common-config.sh
 
 set -x
 cabal new-run demo-playground -- \
-    --system-start "$now" --slot-duration 2 \
-    submit -t demo-playground/simple-topology.json \
-           $@
+      --system-start "$now" \
+      --slot-duration ${slot_duration} \
+      submit \
+      --topology "${topology}" \
+      $@
