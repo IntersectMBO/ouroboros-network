@@ -124,7 +124,7 @@ data NodeKernel m up blk hdr = NodeKernel {
                        (Exception eCS, Exception eBF)
                     => up
                     -> NodeComms m (ChainSync hdr (Point hdr)) eCS bytesCS
-                    -> NodeComms m (BlockFetch hdr blk)        eBF bytesBF
+                    -> NodeComms m (BlockFetch blk)            eBF bytesBF
                     -> m ()
 
       -- | Notify network layer of a new downstream node
@@ -134,7 +134,7 @@ data NodeKernel m up blk hdr = NodeKernel {
     , addDownstream :: forall eCS eBF bytesCS bytesBF.
                        (Exception eCS, Exception eBF)
                     => NodeComms m (ChainSync hdr (Point hdr)) eCS bytesCS
-                    -> NodeComms m (BlockFetch hdr blk)        eBF bytesBF
+                    -> NodeComms m (BlockFetch blk)            eBF bytesBF
                     -> m ()
     }
 
@@ -305,7 +305,7 @@ initInternalState NodeParams {..} = do
           -- is passed to the blockFetchLogic.
           -- The message level tracer is passed to runPipelinedPeer.
 
-        nrBlockFetchServer :: BlockFetchServer hdr blk m ()
+        nrBlockFetchServer :: BlockFetchServer blk m ()
         nrBlockFetchServer =
           blockFetchServer (tracePrefix "BFServer" Nothing) chainDB
 
@@ -477,7 +477,7 @@ data NetworkRequires m up blk hdr = NetworkRequires {
     , nrBlockFetchClient    :: BlockFetchClient hdr blk m ()
 
       -- | Start a block fetch server server.
-    , nrBlockFetchServer    :: BlockFetchServer hdr blk m ()
+    , nrBlockFetchServer    :: BlockFetchServer blk m ()
 
       -- | The fetch client registry, used by the block fetch client.
     , nrFetchClientRegistry :: FetchClientRegistry up hdr blk m
@@ -506,7 +506,7 @@ data NetworkProvides m up blk hdr = NetworkProvides {
                       => up
                       -> NodeComms m (ChainSync hdr (Point hdr)) eCS bytesCS
                          -- Communication for the Chain Sync protocol
-                      -> NodeComms m (BlockFetch hdr blk)        eBF bytesBF
+                      -> NodeComms m (BlockFetch blk) eBF bytesBF
                          -- Communication for the Block Fetch protocol
                       -> m ()
 
@@ -518,7 +518,7 @@ data NetworkProvides m up blk hdr = NetworkProvides {
                          (Exception eCS, Exception eBF)
                       => NodeComms m (ChainSync hdr (Point hdr)) eCS bytesCS
                          -- Communication for the Chain Sync protocol
-                      -> NodeComms m (BlockFetch hdr blk)        eBF bytesBF
+                      -> NodeComms m (BlockFetch blk) eBF bytesBF
                          -- Communication for the Block Fetch protocol
                       -> m ()
     }
@@ -540,7 +540,7 @@ initNetworkLayer _tracer registry NetworkRequires{..} = NetworkProvides {..}
   where
     npAddDownstream :: (Exception eCS, Exception eBF)
                     => NodeComms m (ChainSync hdr (Point hdr)) eCS bytesCS
-                    -> NodeComms m (BlockFetch hdr blk)        eBF bytesBF
+                    -> NodeComms m (BlockFetch blk)            eBF bytesBF
                     -> m ()
     npAddDownstream ncCS ncBF = do
       -- TODO use subregistry here?
@@ -556,7 +556,7 @@ initNetworkLayer _tracer registry NetworkRequires{..} = NetworkProvides {..}
     npAddUpstream :: (Exception eCS, Exception eBF)
                   => up
                   -> NodeComms m (ChainSync hdr (Point hdr)) eCS bytesCS
-                  -> NodeComms m (BlockFetch hdr blk)        eBF bytesBF
+                  -> NodeComms m (BlockFetch blk)            eBF bytesBF
                   -> m ()
     npAddUpstream up ncCS ncBF = do
       -- TODO use subregistry here?

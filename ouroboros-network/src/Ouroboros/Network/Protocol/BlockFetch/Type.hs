@@ -14,42 +14,42 @@ import           Data.Void (Void)
 import           Ouroboros.Network.Block (StandardHash, Point)
 import           Network.TypedProtocol.Core (Protocol (..))
 
--- | Range of headers, defined by a lower and upper point, inclusive.
+-- | Range of blocks, defined by a lower and upper point, inclusive.
 --
-data ChainRange header = ChainRange !(Point header) !(Point header)
+data ChainRange block = ChainRange !(Point block) !(Point block)
   deriving (Show, Eq, Ord)
 
-data BlockFetch header body where
-  BFIdle      :: BlockFetch header body
-  BFBusy      :: BlockFetch header body
-  BFStreaming :: BlockFetch header body
-  BFDone      :: BlockFetch header body
+data BlockFetch block where
+  BFIdle      :: BlockFetch block
+  BFBusy      :: BlockFetch block
+  BFStreaming :: BlockFetch block
+  BFDone      :: BlockFetch block
 
 
-instance Protocol (BlockFetch header body) where
+instance Protocol (BlockFetch block) where
 
-  data Message (BlockFetch header body) from to where
+  data Message (BlockFetch block) from to where
     -- | request range of blocks
     MsgRequestRange
-      :: ChainRange header
-      -> Message (BlockFetch header body) BFIdle BFBusy
+      :: ChainRange block
+      -> Message (BlockFetch block) BFIdle BFBusy
     -- | start block streaming
     MsgStartBatch
-      :: Message (BlockFetch header body) BFBusy BFStreaming
+      :: Message (BlockFetch block) BFBusy BFStreaming
     -- | respond that there are no blocks
     MsgNoBlocks
-      :: Message (BlockFetch header body) BFBusy BFIdle
+      :: Message (BlockFetch block) BFBusy BFIdle
     -- | stream a single block
     MsgBlock
-      :: body
-      -> Message (BlockFetch header body) BFStreaming BFStreaming
+      :: block
+      -> Message (BlockFetch block) BFStreaming BFStreaming
     -- | end of block streaming
     MsgBatchDone
-      :: Message (BlockFetch header body) BFStreaming BFIdle
+      :: Message (BlockFetch block) BFStreaming BFIdle
 
     -- | client termination message
     MsgClientDone
-      :: Message (BlockFetch header body) BFIdle BFDone
+      :: Message (BlockFetch block) BFIdle BFDone
 
   data ClientHasAgency ps where
     TokIdle :: ClientHasAgency BFIdle
@@ -62,27 +62,28 @@ instance Protocol (BlockFetch header body) where
     TokDone :: NobodyHasAgency BFDone
 
   exclusionLemma_ClientAndServerHaveAgency
-    :: forall (st :: BlockFetch header body).
+    :: forall (st :: BlockFetch block).
        ClientHasAgency st
     -> ServerHasAgency st
     -> Void
   exclusionLemma_ClientAndServerHaveAgency = \TokIdle x -> case x of {}
 
   exclusionLemma_NobodyAndClientHaveAgency
-    :: forall (st :: BlockFetch header body).
+    :: forall (st :: BlockFetch block).
        NobodyHasAgency st
     -> ClientHasAgency st
     -> Void
   exclusionLemma_NobodyAndClientHaveAgency = \TokDone x -> case x of {}
 
   exclusionLemma_NobodyAndServerHaveAgency
-    :: forall (st :: BlockFetch header body).
+    :: forall (st :: BlockFetch block).
        NobodyHasAgency st
     -> ServerHasAgency st
     -> Void
   exclusionLemma_NobodyAndServerHaveAgency = \TokDone x -> case x of {}
 
-instance (StandardHash header, Show body) => Show (Message (BlockFetch header body) from to) where
+instance (Show block, StandardHash block)
+      => Show (Message (BlockFetch block) from to) where
   show (MsgRequestRange range) = "MsgRequestRange" ++ show range
   show MsgStartBatch           = "MsgStartBatch"
   show (MsgBlock block)        = "MsgBlock " ++ show block

@@ -124,7 +124,7 @@ instance Arbitrary (Point Block) where
          . shrink
          .     (castPoint :: Point Block -> Point BlockHeader)
 
-instance Arbitrary (ChainRange BlockHeader) where
+instance Arbitrary (ChainRange Block) where
   arbitrary = do
     low  <- arbitrary
     high <- arbitrary `suchThat` (\high -> pointSlot low <= pointSlot high)

@@ -52,9 +52,12 @@ data BlockFetchProtocolFailure =
 instance Exception BlockFetchProtocolFailure
 
 
-type BlockFetchClient hdr blk m a =
-  FetchClientContext hdr blk m ->
-  PeerPipelined (BlockFetch hdr blk) AsClient BFIdle m a
+-- | TODO: use a fetch client wrapper type rather than the raw
+--         PeerPipelined, and eliminate this alias. It is only here
+--         to avoid large types leaking into the consensus layer.
+type BlockFetchClient header block m a =
+  FetchClientContext header block m ->
+  PeerPipelined (BlockFetch block) AsClient BFIdle m a
 
 -- | The implementation of the client side of block fetch protocol designed to
 -- work in conjunction with our fetch logic.
@@ -63,7 +66,8 @@ blockFetchClient :: forall header block m.
                     (MonadSTM m, MonadTime m, MonadThrow m,
                      HasHeader header, HasHeader block,
                      HeaderHash header ~ HeaderHash block)
-                 => BlockFetchClient header block m ()
+                 => FetchClientContext header block m
+                 -> PeerPipelined (BlockFetch block) AsClient BFIdle m ()
 blockFetchClient FetchClientContext {
                    fetchClientCtxTracer    = tracer,
                    fetchClientCtxPolicy    = FetchClientPolicy {
@@ -77,7 +81,7 @@ blockFetchClient FetchClientContext {
   where
     senderIdle :: forall n.
                   Nat n
-               -> PeerSender (BlockFetch header block) AsClient
+               -> PeerSender (BlockFetch block) AsClient
                              BFIdle n () m ()
 
     -- We have no requests to send. Check if we have any pending pipelined
@@ -93,7 +97,7 @@ blockFetchClient FetchClientContext {
 
     senderAwait :: forall n.
                    Nat n
-                -> PeerSender (BlockFetch header block) AsClient
+                -> PeerSender (BlockFetch block) AsClient
                               BFIdle n () m ()
     senderAwait outstanding =
       SenderEffect $ do
@@ -118,7 +122,7 @@ blockFetchClient FetchClientContext {
                  -> PeerGSV
                  -> PeerFetchInFlightLimits
                  -> [ChainFragment header]
-                 -> PeerSender (BlockFetch header block) AsClient
+                 -> PeerSender (BlockFetch block) AsClient
                                BFIdle n () m ()
 
     -- We now do have some requests that we have accepted but have yet to
@@ -142,9 +146,10 @@ blockFetchClient FetchClientContext {
           when fired $
             atomically (writeTVar _ PeerFetchStatusAberrant)
 -}
-        let range = assert (not (ChainFragment.null fragment)) $
-                    ChainRange (blockPoint lower)
-                               (blockPoint upper)
+        let range :: ChainRange block
+            range = assert (not (ChainFragment.null fragment)) $
+                    ChainRange (castPoint (blockPoint lower))
+                               (castPoint (blockPoint upper))
               where
                 Just lower = ChainFragment.last fragment
                 Just upper = ChainFragment.head fragment
@@ -162,7 +167,7 @@ blockFetchClient FetchClientContext {
 
     receiverBusy :: [header]
                  -> PeerFetchInFlightLimits
-                 -> PeerReceiver (BlockFetch header block) AsClient
+                 -> PeerReceiver (BlockFetch block) AsClient
                                  BFBusy BFIdle m ()
     receiverBusy headers inflightlimits =
       ReceiverAwait
@@ -185,7 +190,7 @@ blockFetchClient FetchClientContext {
 
     receiverStreaming :: PeerFetchInFlightLimits
                       -> [header]
-                      -> PeerReceiver (BlockFetch header block) AsClient
+                      -> PeerReceiver (BlockFetch block) AsClient
                                       BFStreaming BFIdle m ()
     receiverStreaming inflightlimits headers =
       ReceiverAwait
