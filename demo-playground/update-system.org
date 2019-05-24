@@ -1,0 +1,388 @@
+* Duncan
+  - Fri Jun  7 18:06:40 MSK 2019
+    - @serge.kosyrev In particular, lets think about and document all the things
+      we want to trace about changes in the ledger, not just the update system,
+      since it'll probably all be handled in the same way.
+* Update system logging requirements
+# Principles
+
+The update system machinery mediates evolution of the blockchain, and so importance of visibility of its operation appears hard to overstate.  For this reason we chose to trace the entire scope of update system state changes and auxiliary messaging.
+
+# What to log
+
+  1. Client-to-node submission of a proposal/vote, including node's validity assessment.
+  2. Node signing of a proposal/vote and their admission into mempool.
+  3. Node transmission/receipt of proposals/votes via inter-node mempool-sync protocol.
+  4. Minting of a proposal/vote into a block.
+  5. Node's update system state transitions:
+     1. proposal/vote registration, including details of validity assessment
+     2. proposal confirmation
+     3. proposal endorsement
+     4. proposal exceeding their TTL
+  6. Turn-of-epoch changes taking effect due to endorsed proposals.
+  7. Periodic update system state printouts, for human inspection purposes
+     (hourly?):
+     - outstanding votes and proposals, with remaining TTL.
+
+# Open questions
+  1. Should we take effort to deanonymise clients submitting the proposals/votes -- at least in the logs?
+* Questions
+
+1. What is "update proposal size"? Mentions: f. 20, pp. 19, 20. It is used in
+   rules, but its calculation is not specified (its meaning could be sort-of
+   deduced from context, but that seems unreliable). What is "script version"?
+   Mentions: f. 21, pp. 19, 20.  Also used in rules, similarly not seemingly
+   specified.
+
+2. Page 19: "This implies that a proposal is uniquely determined by the protocol
+   version it proposes" -- which generally doesn't seem to be true, in sight of
+   application-version-only proposals.
+
+3. While it's unlikely to be a problem in the federated setting, where the voters
+   are all trusted not to be malicious, the version-uniqueness constraint in rules
+   20 and 21 presents a potential for a denial-of-upgrade in later settings,
+   whereby the attacker could spam the namespace of potential points in version
+   namespaces.  The recourses to this attack seem to be social (revocation of
+   delegation), and not immediately effective, which might be crucial in case of
+   necessity for an urgent update (i.e. a security issue fix).  Note that because
+   protocol versions are not necessarily contiguous (for the reasons explaned in
+   section 6.5.2), their "clobber" space is arbitrarily large, so the problem is
+   less acute, but for application versions it's just a single point (for every
+   particular application), since we enforce N+1 application version increments.
+
+4. We seem to be set up for using different delegation schemes for Shelley slot
+   leadership computation and Shelley update proposal voting -- and so are we
+   keeping/relying on the legacy delegation certificates from Byron era for the
+   latter?  The implication seems to be that Shelley decentralisation (post-OBFT)
+   will only affect slot leadership, and not updates.  Or are we set up for an
+   update mechanism revision due in time for OBFT deprecation?
+
+   Section 6.5 seems to suggest that the simplified setting that allows using OBFT
+   consensus with federated genesis key holder is what underpins the described
+   update mechanism, so this sheds some light on this question, but not enough.
+
+5. The update proposal endorsement phase seems to be intended to be applied only
+   to protocol version updates. Is that because those are deemed to be risky, and
+   so need to go through the "stabilisation" period?
+
+   In this context, it's worth noting that in the Byron Legacy code base,
+   application version updates also have a period before they become activated (24
+   hours), but this aspect doesn't seem to be modeled.
+
+6. In rule 29, we're using lexicographic-< as version validation, but not
+   pvCanFollow -- is this intended?
+
+7. An addendum to section 6.5.3 -- in a non-federated setting, one could imagine
+   an attack based on exploiting the implicit agreement rule, where the attacker
+   would attempt to DoS the parts of network that are likely to affect a proposal
+   in a way that is undesirable for the attacker.  Thus the explicit agreement
+   seems to be a safer option.
+
+8. Section 6.5.6 says we don't need to group/model application names and versions
+   -- but we do (fig. 22) model them as a map keyed by application names (and so
+   they're also grouped).
+
+9. Section 6.5.0 mentions modeling of sofware-only/protocol-only updates -- and
+   it's modeled (and I assume, implemented, as it was in Byron Legacy) -- so there
+   doesn't seem to be a disagreement between spec and implementation on this point.
+
+10. Section 6.5.10 says: "A consequence of enforcing the update rules in Figure 33
+    is that a block that is endorsing an unconfirmed proposal gets accepted", but:
+
+    1. the figure 33 doesn't cause any state changes, so it's not clear what
+       notion of acceptance is used
+    2. "unconfirmed proposal" is not necessarily true, because figure 33 uses a
+       harsher constraint than just acceptance -- it uses a notion of acceptance
+       that is no more recent than 2k blocks.
+
+12. Are we going to use in Shelley different delegation schemes for the purposes of
+    post-BFT slot leadership schedule computation and update proposal voting?
+
+    Byron, naturally, specifies its US voting in terms of (simplified) Byron's
+    delegation scheme, and so vote tally is essentially counting the # of genesis
+    keys that were behind delegate's votes for particular UPId's -- so it's a
+    purely federated model.
+
+    Shelley, though, introduces the stake pools, which necessitates a different,
+    decentralised delegation model, and so stake pools are now being delegated
+    fractions of genesis's voting power, that's determined by stake ownership.  So
+    at least for slot leadership we're using a notion of delegation that simply
+    cannot be based.
+* Byron notes
+
+the only unknown that will remain, which i think is in your ballpark (but i can help out), is how to actually do a proposal
+￼￼￼￼￼
+19:49
+https://github.com/input-output-hk/cardano-sl/blob/develop/script-runner/common/AutomatedTestRunner.hs#L402-L413
+script-runner/common/AutomatedTestRunner.hs:402-413
+  withSafeSigners skeys (pure emptyPassphrase) $ \ss -> do
+    unless (length skeys == length ss) $ error $ sformat errmsg (length ss) (length skeys)
+    let
+      publisherSS = ss !! if not voteAll then 0 else keyIndex
+      updateProposal = mkUpdateProposalWSign pm blockVersion blockVersionModifier softwareVersion updateData def publisherSS
+￼Show more
+input-output-hk/cardano-slAdded by GitHub
+19:49
+https://github.com/input-output-hk/cardano-sl/blob/develop/auxx/src/Command/Update.hs#L76-L97
+auxx/src/Command/Update.hs:76-97
+    withSafeSigners skeys (pure emptyPassphrase) $ \ss -> do
+        unless (length skeys == length ss) $
+            reportFatalError $ "Number of safe signers: " <> show (length ss) <>
+                               ", expected " <> show (length skeys)
+        let publisherSS = ss !! if not puVoteAll then 0 else puSecretKeyIdx
+￼Show more
+input-output-hk/cardano-slAdded by GitHub
+this is how auxx and script-runner did proposals
+it required being ran inside a "full node" (but the chain sync job could be left offline)
+it would sign something, and fire it out to a relay
+to finish the proposal UI up, we need a way to do that in the shelly codebase
+https://github.com/input-output-hk/cardano-sl/blob/develop/script-runner/common/AutomatedTestRunner.hs#L388-L392
+updateData here is a hashmap from systemtag to a set of 4 hashes (only 1 is ever used)
+script-runner/common/AutomatedTestRunner.hs:388-392
+    --tag = SystemTag "win64"
+    updateData :: HM.HashMap SystemTag UpdateData
+    updateData = HM.fromList [
+        --(tag, UpdateData dummyHash dummyHash dummyHash dummyHash)
+      ]
+￼Show more
+
+script-runner is the result of my investigating auxx and re-implementing parts of it
+19:54
+https://github.com/input-output-hk/cardano-sl/blob/develop/script-runner/common/AutomatedTestRunner.hs#L397-L401
+this part for example, checks if you should be voting with 1 key or all, and then returns either all, or the key at keyIndex
+script-runner/common/AutomatedTestRunner.hs:397-401
+  skeys <- if voteAll then
+      getSecretKeysPlain
+    else do
+      skey <- (!! keyIndex) <$> getSecretKeysPlain
+      pure [ skey ]
+￼Show more
+input-output-hk/cardano-slAdded by GitHub
+
+publisherSS = ss !! if not voteAll then 0 else keyIndex
+that gets the signing secret of the corenode that is publishing the proposal
+19:55
+and its passed to mkUpdateProposalWSign
+19:55
+submitUpdateProposal pm diffusion ss updateProposal
+and ss may be a list of many keys, that are all voting yes
+* US Steps
+  1. Proposal Registration
+     - env:
+       - ProtVer
+       - PParams
+       - ApName -> ApVer x Slot x Metadata
+       - VKeyG -> VKey
+     - state:
+       - UpId -> ProtVer x PParams
+       - UpId -> ApName x ApVer x Metadata
+     - S x UpdateProposal x S'
+  2. Voting
+     - env:
+       - P UpId
+       - VKeyG 7→ VKey
+       - Slot
+       - Q -- confirmation threshold
+     - state:
+       - P (UpId × VKeyG)
+       - UpId 7→ Slot
+       - P (UpId × VKeyG)
+     - S x Vote x S'
+  3. Proposal Endorsement
+     - env:
+       - Slot
+       - Q
+       - VKeyG 7→ VKey
+       - UpId 7→ Slot
+       - UpId 7→ (ProtVer × PParams)
+     - state:
+       - (Slot × (ProtVer × PParams))
+       - P (ProtVer × VKeyG)
+     - S x (ProtVer × VKey) x S'
+* Key points
+  - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Demo/Ledger/Byron.hs::protocolInfoByron%20(NumCoreNodes%20numCoreNodes)%20(CoreNodeId%20nid)%20params%20gc%20=][protocolInfoByron]] :: NumCoreNodes -> CoreNodeId -> PBftParams -> Cardano.Genesis.Config
+                      -> ProtocolInfo (ByronBlock ByronDemoConfig)
+* Node kernel
+- [[file:iohk/ouroboros-network/ouroboros-consensus/demo-playground/Run.hs::handleSimpleNode%20::%20forall%20p.%20RunDemo%20p][handleSimpleNode]]
+  - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Node.hs::nodeKernel%20params@NodeParams%20{%20threadRegistry,%20cfg%20}%20=%20do][nodeKernel]] :: O/Consensus/Node.hs
+    - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Node.hs::initInternalState%20NodeParams%20{..}%20=%20do][initInternalState]]
+      - tracer from tracePrefix from NodeParames
+      - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Node.hs::nrBlockFetchClient%20up%20=][nrBlockFetchClient]] = [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/BlockFetchClient.hs::blockFetchClient%20tracer%20blockFetchInterface%20_up%20clientStateVars%20=][blockFetchClient]] :: O/Consensus/BlockFetchClient.hs
+        - [[file:iohk/ouroboros-network/ouroboros-network/src/Ouroboros/Network/BlockFetch/Client.hs::blockFetchClient%20::%20forall%20header%20block%20m.][blockFetchClient]] :: O/Network/BlockFetch/Client.hs
+          - [[file:iohk/ouroboros-network/ouroboros-network/src/Ouroboros/Network/BlockFetch/Client.hs::senderAwait%20::%20forall%20n.][senderAwait]]
+            - [[file:iohk/ouroboros-network/ouroboros-network/src/Ouroboros/Network/BlockFetch/Client.hs::senderActive%20::%20forall%20n.][senderActive]]
+              - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/BlockFetchClient.hs::addFetchedBlock%20=%20\pt%20blk%20->%20do][addFetchedBlock]]
+                - tracer captured from arg passed into blockFetchClient
+                - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/BlockFetchClient.hs::traceWith%20tracer%20$%20"Downloaded%20block:%20"%20<>%20condense%20blk][traceWith]] "Downloaded block: " <> condense blk
+      - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Node.hs::networkLayer%20=%20initNetworkLayer][networkLayer]] = [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Node.hs::initNetworkLayer%20_tracer%20registry%20NetworkRequires{..}%20=%20NetworkProvides%20{..}][initNetworkLayer]] :: O/Consensus/Node.hs
+        - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Node.hs::npAddUpstream%20up%20ncCS%20ncBF%20=%20do][npAddUpstream]] :: O/Consensus/Node.hs
+          - [[file:iohk/ouroboros-network/ouroboros-network/src/Ouroboros/Network/Protocol/ChainSync/Client.hs::chainSyncClientPeer%20(ChainSyncClient%20mclient)%20=][chainSyncClientPeer]] :: O/N/Protocol/ChainSync/Client.hs, [[file:iohk/ouroboros-network/ouroboros-network/src/Ouroboros/Network/Protocol/ChainSync/Direct.hs::direct_%20ServerStIdle{recvMsgRequestNext}][direct_]]
+          - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Node.hs::networkLayer%20=%20initNetworkLayer][networkLayer]] = initNetworkLayer networkRequires
+            - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Node.hs::networkRequires%20=%20NetworkRequires%20{..}][networkRequires]] =. [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Node.hs::nrChainSyncClient%20::%20up%20->%20Consensus%20ChainSyncClient%20hdr%20m][nrChainSyncClient]] ::
+              - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/ChainSyncClient.hs::chainSyncClient%20tracer%20cfg%20toEnc%20btime%20(ClockSkew%20maxSkew)%20getCurrentChain][chainSyncClient]] :: O/N/Protocol/ChainSyncClient.hs
+                - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/ChainSyncClient.hs::{%20recvMsgRollForward%20=%20\hdr%20theirHead%20->%20ChainSyncClient%20$%20do][recvMsgRollForward]] from data [[file:iohk/ouroboros-network/ouroboros-network/src/Ouroboros/Network/Protocol/ChainSync/Client.hs::data%20ClientStNext%20header%20point%20m%20a%20=][ClientStNext]]
+                  - tracer captured from arg passed into chainSyncClient
+                  - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/ChainSyncClient.hs::traceWith%20tracer%20$%20"Downloaded%20header:%20"%20<>%20condense%20hdr][traceWith]] "Downloaded header: "<> condense hdr
+      - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Node.hs::networkRequires%20=%20NetworkRequires%20{..}][networkRequires]]
+        - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Node.hs::blockFetchClient%20(tracePrefix%20"BFClient"%20(Just%20up))%20blockFetchInterface%20up][blockFetchClient]]
+          - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Node.hs::blockFetchInterface%20=%20initBlockFetchConsensusInterface][blockFetchInterface]]
+            - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Node.hs::initBlockFetchConsensusInterface%20cfg%20chainDB%20getCandidates%20blockFetchSize][initBlockFetchConsensusInterface]]:[[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Node.hs::addFetchedBlock%20_pt%20=%20ChainDB.addBlock%20chainDB][addFetchedBlock]]
+    - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Node.hs::forkBlockProduction%20IS{..}%20=][forkBlockProduction]]
+      - tracer from data [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Node.hs::,%20tracer%20::%20Tracer%20m%20String][IS]]
+      - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/BlockchainTime.hs::realBlockchainTime%20registry%20slotLen%20start%20=%20do][realBlockchainTime]]
+        - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/BlockchainTime.hs::,%20onSlotChange%20=%20onEachChange%20registry%20id%20first%20(readTVar%20slotVar)][onSlotChange]]
+          - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Util/STM.hs::onEachChange%20registry%20f%20initB%20getA%20notify%20=%20void%20$%20forkLinked%20registry%20$%20go%20initB][onEachChange]]
+            - forkLinked registry
+      - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Node.hs::drg%20<-%20produceDRG][produceDRG]]
+      - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Node.hs::"As%20leader%20of%20slot%20"%20<>%20condense%20currentSlot%20<>%20"%20I%20produce:%20"%20<>][traceWith]] "As leader of slot " <> condense currentSlot <> " I produce: " <>
+      - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Node.hs::produceBlock][produceBlock]]
+        - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Node.hs::forkBlockProduction%20IS{..}%20=][forkBlockProduction]] :: Ouroboros/Consensus/Node.hs; [[file:iohk/ouroboros-network/ouroboros-consensus/demo-playground/Run.hs::handleSimpleNode%20p%20CLI{..}%20(TopologyInfo%20myNodeId%20topologyFile)%20submitUP%20=%20do][handleSimpleNode]] :: demo-playground/Run.hs
+          - NodeCallbacks.[[file:iohk/ouroboros-network/ouroboros-consensus/demo-playground/Run.hs::,%20produceBlock%20=%20\proof%20_l%20slot%20prevPoint%20prevBlockNo%20txs%20->%20do][produceBlock]] :: demo-playground/Run.hs
+            - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Demo.hs::demoForgeBlock%20=%20forgeByronDemoBlock][demoForgeBlock]] :: instance [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Demo.hs::instance%20(%20Given%20Cardano.ProtocolMagicId][RunDemo]] @ O/C/Demo.hs (class [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Demo.hs::)%20=>%20RunDemo%20p%20where][RunDemo]])
+              - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Ledger/Byron.hs::forgeByronDemoBlock%20cfg%20els%20curSlot%20curNo%20prevHash%20txs%20ussargs%20()%20=%20do][forgeByronDemoBlock]] :: O/C/Ledger/Byron.hs
+                - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Protocol/Abstract.hs::mkPayload%20::%20(SupportedPreHeader%20p%20ph,%20HasNodeState%20p%20m,%20MonadRandom%20m)][mkPayload]] :: (ph -> Encoding) -> ph -> m (Payload p ph)
+                  - PBftNodeConfig{..} -> pbftSignKey
+                  - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Protocol/PBFT.hs::signature%20<-%20signedDSIGN%20toEnc%20preheader%20pbftSignKey][signature]] <- signedDSIGN toEnc preheader pbftSignKey
+                    - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Protocol/PBFT.hs::data%20Payload%20(PBft%20c)%20ph%20=%20PBftPayload%20{][Payload]] (PBft c) ph = PBftPayload
+                      - pbftIssuer    :: VerKeyDSIGN (PBftDSIGN c)
+                      - pbftSignature :: [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Crypto/DSIGN/Class.hs::newtype%20SignedDSIGN%20v%20a%20=%20SignedDSIGN%20(SigDSIGN%20v)][SignedDSIGN]] (PBftDSIGN c) ph
+                        - newtype [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Crypto/DSIGN/Class.hs::newtype%20SignedDSIGN%20v%20a%20=%20SignedDSIGN%20(SigDSIGN%20v)][SignedDSIGN]] v a = SignedDSIGN ([[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Crypto/DSIGN/Class.hs::data%20SigDSIGN%20v%20::%20*][SigDSIGN]] v)
+      - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Node.hs::initBlockFetchConsensusInterface%20cfg%20chainDB%20getCandidates%20blockFetchSize][initBlockFetchConsensusInterface]]:[[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Node.hs::addFetchedBlock%20_pt%20=%20ChainDB.addBlock%20chainDB][addFetchedBlock]], [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Node.hs::forkBlockProduction%20IS{..}%20=][forkBlockProduction]], [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Storage/ChainDB/API.hs::fromChain%20openDB%20chain%20=%20do][fromChain]] (Support for tests)
+        - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Storage/ChainDB/Model.hs::addBlock%20toEnc%20cfg%20blk%20m%20=%20Model%20{][addBlock]] :: O/S/ChainDB/Model.hs
+          - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Storage/ChainDB/Model.hs::validate%20toEnc%20cfg%20initLedger%20chain%20=][validate]] :: O/S/ChainDB/Model.hs, [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Ledger/Abstract.hs::verifyChain%20toEnc%20cfg%20initSt%20c%20=][verifyChain]] :: O/C/Ledger/Abstract.hs
+            - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Ledger/Abstract.hs::chainExtLedgerState%20toEnc%20cfg%20=%20foldExtLedgerState%20toEnc%20cfg%20.%20toOldestFirst][chainExtLedgerState]]-[[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Ledger/Abstract.hs::foldExtLedgerState%20toEnc%20=%20repeatedlyM%20.%20applyExtLedgerState%20toEnc][foldExtLedgerState]]-[[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Ledger/Abstract.hs::applyExtLedgerState%20toEnc%20cfg%20b%20ExtLedgerState{..}%20=%20do][applyExtLedgerState]] :: O/C/Ledger/Abstract.hs
+              - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Ledger/Byron.hs::applyLedgerBlock%20(ByronLedgerConfig%20cfg)%20(ByronBlock%20block)%20(ByronLedgerState%20state%20snapshots)][applyLedgerBlock]], [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Ledger/Byron.hs::applyLedgerHeader%20(ByronLedgerConfig%20cfg)%20(ByronBlock%20block)%20(ByronLedgerState%20state%20snapshots)][applyLedgerHeader]] :: O/C/Ledger/Byron.hs
+                - state' <- updateState <- updateBody <- bodyState <- BLS.ByronLedgerState
+                - [[file:iohk/cardano-ledger/src/Cardano/Chain/Block/Validation.hs::updateBody%20env%20bs%20b%20=%20do][updateBody]] :: C/C/B/Validation.hs
+                  - constructs UPI.[[file:iohk/cardano-ledger/src/Cardano/Chain/Block/Validation.hs::updateEnv%20=%20UPI.Environment][Environment]]
+                  - [[file:iohk/cardano-ledger/src/Cardano/Chain/Update/Validation/Interface.hs::registerUpdate%20env%20st%20Signal%20{%20proposal,%20votes,%20endorsement%20}%20=%20do][registerUpdate]] :: C/C/Update/Validation/Interface.hs
+                    - [[file:iohk/cardano-ledger/src/Cardano/Chain/Update/Validation/Interface.hs::registerProposal%20env%20st%20proposal%20=%20do][registerProposal]]    :: Environment -> State -> AProposal ByteString -> m State
+                    - [[file:iohk/cardano-ledger/src/Cardano/Chain/Update/Validation/Interface.hs::registerVote%20env%20st%20vote%20=%20do][registerVote]]        :: Environment -> State -> AVote ByteString     -> m State
+                    - [[file:iohk/cardano-ledger/src/Cardano/Chain/Update/Validation/Interface.hs::registerEndorsement%20env%20st%20endorsement%20=%20do][registerEndorsement]] :: Environment -> State -> Endorsement          -> m State
+                    - [[file:iohk/cardano-ledger/src/Cardano/Chain/Update/Validation/Interface.hs::registerEpoch%20env%20st%20lastSeenEpoch%20=%20do][registerEpoch]]       :: Environment -> State -> EpochIndex           -> m State
+  - [[file:iohk/ouroboros-network/ouroboros-consensus/demo-playground/Run.hs::watchChain%20registry%20tracer%20chainDB%20=%20onEachChange][watchChain]]
+    - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Util/STM.hs::onEachChange%20registry%20f%20initB%20getA%20notify%20=%20void%20$%20forkLinked%20registry%20$%20go%20initB][onEachChange]]
+      - [[file:iohk/ouroboros-network/ouroboros-consensus/demo-playground/Run.hs::logFullChain%20=%20do][logFullChain]]
+        - traceWith tracer $ "Updated chain: " <> condense (Chain.toOldestFirst chain)
+* Types
+  - data [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Node.hs::data%20InternalState%20m%20up%20blk%20hdr%20=%20IS%20{][InternalState]] = IS
+  - data [[file:iohk/cardano-ledger/src/Cardano/Chain/Block/Block.hs::data%20ABlock%20a%20=%20ABlock][ABlock]] -- [[file:iohk/cardano-ledger/src/Cardano/Chain/Block/Block.hs::toCBORBlock%20::%20EpochSlots%20->%20Block%20->%20Encoding][toCBORBlock]] :: EpochSlots -> Block -> Encoding
+    - data [[file:iohk/cardano-ledger/src/Cardano/Chain/Block/Body.hs::data%20ABody%20a%20=%20ABody][ABody]] -- [[file:iohk/cardano-ledger/src/Cardano/Chain/Block/Body.hs::instance%20ToCBOR%20Body%20where][instance ToCBOR Body]]
+      - data Update.[[file:iohk/cardano-ledger/src/Cardano/Chain/Update/Payload.hs::data%20APayload%20a%20=%20APayload][APayload]] -- [[file:iohk/cardano-ledger/src/Cardano/Chain/Update/Payload.hs::instance%20ToCBOR%20Payload%20where][instance ToCBOR Payload]]
+        - data [[file:iohk/cardano-ledger/src/Cardano/Chain/Update/Proposal.hs::data%20AProposal%20a%20=%20AProposal][AProposal]] -- [[file:iohk/cardano-ledger/src/Cardano/Chain/Update/Proposal.hs::instance%20ToCBOR%20Proposal%20where][instance ToCBOR Proposal]]
+  - data [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Ledger/Byron.hs::data%20LedgerState%20(ByronBlock%20cfg)%20=%20ByronLedgerState][LedgerState]] = ByronLedgerState
+    - blsCurrent = data [[file:iohk/cardano-ledger/src/Cardano/Chain/Block/Validation.hs::data%20ChainValidationState%20=%20ChainValidationState][ChainValidationState]]
+      - { cvsLastSlot        :: !FlatSlotId
+        , cvsSigningHistory  :: !SigningHistory
+        , cvsPreviousHash    :: !(Either GenesisHash HeaderHash)
+        , cvsUtxo            :: !UTxO
+        , cvsUpdateState     :: !UPI.[[file:iohk/cardano-ledger/src/Cardano/Chain/Update/Validation/Interface.hs::data%20State%20=%20State][State]]
+        , cvsDelegationState :: !DI.State }
+  - data [[file:iohk/cardano-ledger/src/Cardano/Chain/Update/SoftforkRule.hs::data%20SoftforkRule%20=%20SoftforkRule][SoftforkRule]]
+    - srInitThd      :: !LovelacePortion
+    - srMinThd       :: !LovelacePortion
+    - srThdDecrement :: !LovelacePortion
+  - data [[file:iohk/cardano-ledger/src/Cardano/Chain/Common/TxFeePolicy.hs::data%20TxFeePolicy][TxFeePolicy]] = TxFeePolicyTxSizeLinear !TxSizeLinear
+    - data [[file:iohk/cardano-ledger/src/Cardano/Chain/Common/TxSizeLinear.hs::data%20TxSizeLinear%20=][TxSizeLinear]] = TxSizeLinear !Lovelace !Lovelace
+  - data [[file:iohk/cardano-ledger/src/Cardano/Chain/Update/Validation/Interface.hs::data%20Signal%20=%20Signal][Signal]] ::
+    - data [[file:iohk/cardano-ledger/src/Cardano/Chain/Update/Validation/Endorsement.hs::data%20Endorsement%20=%20Endorsement][Endorsement]] ::
+      - endorsementProtocolVersion :: !ProtocolVersion
+      - endorsementStakeholder     :: !StakeholderId
+    - data [[file:iohk/cardano-ledger/src/Cardano/Chain/Update/Payload.hs::data%20APayload%20a%20=%20APayload][APayload]] ::
+      - payloadProposal   :: !(Maybe (AProposal a)) -- data [[file:iohk/cardano-ledger/src/Cardano/Chain/Update/Proposal.hs::data%20AProposal%20a%20=%20AProposal][AProposal]]
+        - body :: data [[file:iohk/cardano-ledger/src/Cardano/Chain/Update/Proposal.hs::data%20ProposalBody%20=%20ProposalBody][ProposalBody]]
+          - protocolVersion          :: ![[file:iohk/cardano-ledger/src/Cardano/Chain/Update/ProtocolVersion.hs::data%20ProtocolVersion%20=%20ProtocolVersion][ProtocolVersion]]
+            - pvMajor :: !Word16
+            - pvMinor :: !Word16
+            - pvAlt   :: !Word8
+          - protocolParametersUpdate :: ![[file:iohk/cardano-ledger/src/Cardano/Chain/Update/ProtocolParametersUpdate.hs::data%20ProtocolParametersUpdate%20=%20ProtocolParametersUpdate][ProtocolParametersUpdate]]
+          - softwareVersion          :: ![[file:iohk/cardano-ledger/src/Cardano/Chain/Update/SoftwareVersion.hs::data%20SoftwareVersion%20=%20SoftwareVersion][SoftwareVersion]]
+            - svAppName :: ![[file:iohk/cardano-ledger/src/Cardano/Chain/Update/ApplicationName.hs::newtype%20ApplicationName%20=%20ApplicationName][ApplicationName]]
+            - svNumber  :: ![[file:iohk/cardano-ledger/src/Cardano/Chain/Update/SoftwareVersion.hs::type%20NumSoftwareVersion%20=%20Word32][NumSoftwareVersion]]
+          - metadata                 :: !(Map SystemTag InstallerHash)
+        - issuer :: newtype [[file:iohk/cardano-ledger/crypto/src/Cardano/Crypto/Signing/VerificationKey.hs::newtype%20VerificationKey%20=][VerificationKey]]  :: VerificationKey Cardano.Crypto.Wallet.XPub
+        - signature :: newtype [[file:iohk/cardano-ledger/crypto/src/Cardano/Crypto/Signing/Signature.hs::newtype%20Signature%20a%20=][Signature]]        :: Signature Cardano.Crypto.Wallet.XSignature
+          - newtype [[file:iohk/cardano-ledger/crypto/src/Cardano/Crypto/Signing/Signature.hs::newtype%20Signature%20a%20=][Signature]] a = Signature Cardano.Crypto.Wallet.[[file:iohk/cardano-crypto/src/Cardano/Crypto/Wallet.hs::newtype%20XSignature%20=%20XSignature][XSignature]]
+            - newtype [[file:iohk/cardano-crypto/src/Cardano/Crypto/Wallet.hs::newtype%20XSignature%20=%20XSignature][XSignature]] = XSignature { unXSignature :: ByteString
+              - [[file:iohk/cardano-crypto/src/Cardano/Crypto/Wallet.hs::sign%20passphrase%20(XPrv%20ekey)%20ba%20=][sign]] :: passPhrase -> [[file:~/iohk/cardano-crypto/src/Cardano/Crypto/Wallet.hs::newtype%20XPrv%20=%20XPrv%20EncryptedKey][XPrv]] -> msg -> [[file:iohk/cardano-crypto/src/Cardano/Crypto/Wallet.hs::newtype%20XSignature%20=%20XSignature][XSignature]]
+                - newtype [[file:~/iohk/cardano-crypto/src/Cardano/Crypto/Wallet.hs::newtype%20XPrv%20=%20XPrv%20EncryptedKey][XPrv]] = XPrv [[file:~/iohk/cardano-crypto/src/Cardano/Crypto/Wallet/Encrypted.hs::newtype%20EncryptedKey%20=%20EncryptedKey%20ByteString][EncryptedKey]]
+          - [[file:iohk/cardano-ledger/crypto/src/Cardano/Crypto/Signing/Signature.hs::sign%20pm%20tag%20sk%20=%20signEncoded%20pm%20tag%20sk%20.%20toCBOR][sign]] :: ProtocolMagicId -> [[file:iohk/cardano-ledger/crypto/src/Cardano/Crypto/Signing/Tag.hs::data%20SignTag][SignTag]] -> [[file:iohk/cardano-ledger/crypto/src/Cardano/Crypto/Signing/SigningKey.hs::newtype%20SigningKey%20=%20SigningKey%20CC.XPrv][SigningKey]] -> a -> [[file:iohk/cardano-ledger/crypto/src/Cardano/Crypto/Signing/Signature.hs::newtype%20Signature%20a%20=][Signature]] a
+          - [[file:iohk/cardano-ledger/crypto/src/Cardano/Crypto/Signing/Signature.hs::signEncoded%20pm%20tag%20sk%20=%20coerce%20.%20signRaw%20pm%20(Just%20tag)%20sk%20.%20BSL.toStrict%20.%20serializeEncoding][signEncoded]] :: ProtocolMagicId -> [[file:iohk/cardano-ledger/crypto/src/Cardano/Crypto/Signing/Tag.hs::data%20SignTag][SignTag]] -> [[file:iohk/cardano-ledger/crypto/src/Cardano/Crypto/Signing/SigningKey.hs::newtype%20SigningKey%20=%20SigningKey%20CC.XPrv][SigningKey]] -> Encoding -> [[file:iohk/cardano-ledger/crypto/src/Cardano/Crypto/Signing/Signature.hs::newtype%20Signature%20a%20=][Signature]] a
+          - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Crypto/DSIGN/Class.hs::signDSIGN%20::%20(MonadRandom%20m,%20Signable%20v%20a)%20=>%20(a%20->%20Encoding)%20->%20a%20->%20SignKeyDSIGN%20v%20->%20m%20(SigDSIGN%20v)][signDSIGN]] :: (a -> Encoding) -> a -> SignKeyDSIGN v -> m ([[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Crypto/DSIGN/Cardano.hs::newtype%20SigDSIGN%20CardanoDSIGN%20=%20SigCardanoDSIGN%20(Signature%20Encoding)][SigDSIGN]] v)
+            - = [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Crypto/DSIGN/Cardano.hs::return%20$%20SigCardanoDSIGN%20$%20signEncoded%20given%20(signTag%20a)%20sk%20(toEnc%20a)][return]] SigCardanoDSIGN $ signEncoded given (signTag a) sk (toEnc a)
+            - newtype [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Crypto/DSIGN/Cardano.hs::newtype%20SigDSIGN%20CardanoDSIGN%20=%20SigCardanoDSIGN%20(Signature%20Encoding)][SigDSIGN]] CardanoDSIGN = SigCardanoDSIGN (Signature Encoding)
+        - annotation :: a
+      - payloadVotes      :: ![AVote a] -- data [[file:iohk/cardano-ledger/src/Cardano/Chain/Update/Vote.hs::data%20AVote%20a%20=%20UnsafeVote][AVote]] :: [[file:iohk/cardano-ledger/src/Cardano/Chain/Update/Vote.hs::mkVote%20pm%20sk%20upId%20decision%20=%20UnsafeVote][mkVote]]
+        - voterVK           :: !VerificationKey -- ^ Verification key of stakeholder, who votes
+        - aProposalId       :: !(Annotated [[file:iohk/cardano-ledger/src/Cardano/Chain/Update/Proposal.hs::type%20UpId%20=%20Hash%20Proposal][UpId]] a) -- ^ Proposal to which this vote applies
+          - type [[file:iohk/cardano-ledger/src/Cardano/Chain/Update/Proposal.hs::type%20UpId%20=%20Hash%20Proposal][UpId]] = [[file:iohk/cardano-ledger/crypto/src/Cardano/Crypto/Hashing.hs::type%20Hash%20=%20AbstractHash%20Blake2b_256][Hash]] Proposal
+            - type [[file:iohk/cardano-ledger/crypto/src/Cardano/Crypto/Hashing.hs::type%20Hash%20=%20AbstractHash%20Blake2b_256][Hash]] = [[file:iohk/cardano-ledger/crypto/src/Cardano/Crypto/Hashing.hs::newtype%20AbstractHash%20algo%20a%20=][AbstractHash]] Blake2b_256
+              - newtype [[file:iohk/cardano-ledger/crypto/src/Cardano/Crypto/Hashing.hs::newtype%20AbstractHash%20algo%20a%20=][AbstractHash]] algo a = AbstractHash (Digest algo)
+        - signature         :: !(Signature (UpId, Bool))
+  - data [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Ledger/Byron.hs::data%20ByronDemoConfig%20=%20ByronDemoConfig%20{][ByronDemoConfig]]
+  - data [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Demo.hs::data%20ProtocolInfo%20p%20=%20ProtocolInfo%20{][ProtocolInfo]]
+     pInfoConfig     :: [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Protocol/PBFT.hs::data%20NodeConfig%20(PBft%20c)%20=%20PBftNodeConfig%20{][NodeConfig]] (PBft c)
+   , pInfoInitLedger :: ExtLedgerState (Block p)
+   , pInfoInitState  :: NodeState p
+  - data [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Protocol/ExtNodeConfig.hs::data%20NodeConfig%20(ExtNodeConfig%20cfg%20p)%20=%20EncNodeConfig%20{][NodeConfig]]
+    - encNodeConfigP   :: NodeConfig p
+    - encNodeConfigExt :: cfg
+  - data [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Protocol/PBFT.hs::data%20NodeConfig%20(PBft%20c)%20=%20PBftNodeConfig%20{][NodeConfig]] (PBft c)
+    - pbftParams   :: [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Protocol/PBFT.hs::data%20PBftParams%20=%20PBftParams%20{][PBftParams]]
+      - pbftGenesisConfig      :: CC.Genesis.[[file:iohk/cardano-ledger/src/Cardano/Chain/Genesis/Config.hs::data%20Config%20=%20Config][Config]]
+        - configProtocolMagicId :: Config -> ProtocolMagicId
+    - pbftNodeId   :: NodeId
+    - pbftSignKey  :: SignKeyDSIGN (PBftDSIGN c)
+    - pbftVerKey   :: VerKeyDSIGN (PBftDSIGN c)
+* Assorti
+  - logging
+    - [[file:iohk/iohk-monitoring-framework/contra-tracer/src/Control/Tracer.lhs::stdoutTracer%20::%20(MonadIO%20m)%20=>%20Tracer%20m%20String][stdoutTracer]] :: Tracer m String
+    - [[file:iohk/iohk-monitoring-framework/contra-tracer/src/Control/Tracer.lhs::traceWith%20::%20Tracer%20m%20a%20->%20a%20->%20m%20()][traceWith]] :: Tracer m a -> a -> m ()
+    - [[file:iohk/iohk-monitoring-framework/iohk-monitoring/src/Cardano/BM/Setup.lhs::setupTrace%20::%20(MonadIO%20m,%20ToObject%20a)%20=>%20Either%20FilePath%20Config.Configuration%20->%20Text%20->%20m%20(Trace%20m%20a)][setupTrace]] :: Either FilePath Config.Configuration -> Text -> m (Trace m a)
+    - Logging.[[file:iohk/ouroboros-network/byron-proxy/src/exec/Logging.hs::withLogging%20mLoggerConfig%20name%20k%20=%20do][withLogging]] (loggerConfigPath opts) "validator" $ \trace_ -> do
+      - [[file:iohk/ouroboros-network/byron-proxy/src/exec/Logging.hs::loggerConfig'%20<-%20Monitoring.setupFromRepresentation%20loggerConfig][loggerConfig' <- Monitoring.setupFromRepresentation loggerConfig]]
+        - [[file:iohk/iohk-monitoring-framework/iohk-monitoring/src/Cardano/BM/Configuration/Model.lhs::setupFromRepresentation%20::%20R.Representation%20->%20IO%20Configuration][setupFromRepresentation]] :: R.Representation -> IO Configuration
+      - [[file:iohk/ouroboros-network/byron-proxy/src/exec/Logging.hs::Monitoring.withTrace%20loggerConfig'%20name%20k][Monitoring.withTrace loggerConfig' name k]]
+        - [[file:iohk/iohk-monitoring-framework/iohk-monitoring/src/Cardano/BM/Setup.lhs::withTrace%20cfg%20name%20action%20=][withTrace]] :: Config.Configuration -> Text -> (Trace m a -> m t) -> m t
+          - [[file:iohk/iohk-monitoring-framework/iohk-monitoring/src/Cardano/BM/Setup.lhs::setupTrace_%20::%20(MonadIO%20m,%20ToObject%20a)%20=>%20Config.Configuration%20->%20Text%20->%20m%20(Trace%20m%20a,%20Switchboard.Switchboard%20a)][setupTrace_]] :: Config.Configuration -> Text -> m (Trace m a, Switchboard.Switchboard a)
+  cliLoggerConfigPath = Opt.optional $ Opt.strOption $
+    Opt.long "logger-config" <>
+    Opt.metavar "FILEPATH"   <>
+    Opt.help "Path to the logger config file."
+
+  - newtype [[file:iohk/cardano-ledger/src/Cardano/Chain/Common/LovelacePortion.hs::newtype%20LovelacePortion%20=%20LovelacePortion][LovelacePortion]] = Word64
+  - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Demo.hs::protocolInfo%20(DemoRealPBFT%20params)][protocolInfo]]
+  - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Ledger/Byron.hs::data%20LedgerState%20(ByronBlock%20cfg)%20=%20ByronLedgerState][ByronLedgerState]]
+    - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Ledger/Byron.hs::applyLedgerBlock%20(ByronLedgerConfig%20cfg)%20(ByronBlock%20block)%20(ByronLedgerState%20state%20snapshots)][applyLedgerBlock]], [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Ledger/Byron.hs::applyLedgerHeader%20(ByronLedgerConfig%20cfg)%20(ByronBlock%20block)%20(ByronLedgerState%20state%20snapshots)][applyLedgerHeader]] :: instance [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Ledger/Byron.hs::instance%20UpdateLedger%20(ByronBlock%20cfg)%20where][UpdateLedger]] @ O/C/Ledger/Byron.hs
+    - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Ledger/Byron.hs::protocolLedgerView%20_ns%20(ByronLedgerState%20ls%20_)%20=%20PBftLedgerView][protocolLedgerView]], [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Ledger/Byron.hs::anachronisticProtocolLedgerView%20cfg%20(ByronLedgerState%20ls%20ss)%20slot%20=][anachronisticProtocolLedgerView]] :: instance [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Ledger/Byron.hs::)%20=>%20ProtocolLedgerView%20(ByronBlock%20cfg)%20where][ProtocolLedgerView]] @ O/C/Ledger/Byron.hs
+    - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Ledger/Byron.hs::applyByronGenTx%20_reapply%20(ByronLedgerConfig%20cfg)%20=%20\genTx%20st@ByronLedgerState{..}%20->][applyByronGenTx]] :: O/C/Ledger/Byron.hs
+      - from [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Ledger/Byron.hs::applyTx%20=%20applyByronGenTx%20False][applyTx]], [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Ledger/Byron.hs::reapplyTx%20=%20applyByronGenTx%20True][reapplyTx]], [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Ledger/Byron.hs::reapplyTxSameState%20=%20\cfg%20tx%20st%20->][reapplyTxSameState]] :: instance [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Ledger/Byron.hs::instance%20ApplyTx%20(ByronBlock%20cfg)%20where][ApplyTx]] @ O/C/L/Byron.hs
+  3. Tx submission
+     - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Node.hs::,%20getUSQueue%20::%20Mempool%20m%20blk][getUSSQueue]]
+     - [[file:iohk/ouroboros-network/ouroboros-consensus/demo-playground/CLI.hs::parseCommand%20::%20Parser%20Command][parseCommand]], [[file:iohk/ouroboros-network/ouroboros-consensus/demo-playground/CLI.hs::parseProposalBodyProto%20=%20MProposalBody][parseProposalBodyProto]], [[file:iohk/ouroboros-network/ouroboros-consensus/demo-playground/CLI.hs::parseProposalBodySoft%20=%20(ProposeSoftware%20<$>)%20$%20MProposalBody][parseProposalBodySoft]], [[file:iohk/ouroboros-network/ouroboros-consensus/demo-playground/CLI.hs::parseVote%20::%20Parser%20USStimulus][parseVote]]
+     - [[file:iohk/ouroboros-network/ouroboros-consensus/demo-playground/Run.hs::runNode%20cli@CLI{..}%20=%20do][runNode]] | TxSubmitter
+       - [[file:iohk/ouroboros-network/ouroboros-consensus/demo-playground/Mock/TxSubmission.hs::handleTxSubmission%20tinfo%20tx%20=%20do][handleTxSubmission]] :: demo-playground/Mock/TxSubmission.hs
+         - [[file:iohk/ouroboros-network/ouroboros-consensus/demo-playground/Mock/TxSubmission.hs::submitTx%20n%20tx%20=%20do][submitTx]] :: demo-playground/Mock/TxSubmission.hs
+           - [[file:iohk/ouroboros-network/ouroboros-consensus/demo-playground/NamedPipe.hs::withTxPipe%20::%20NodeId%20->%20IOMode%20->%20Bool%20->%20(Handle%20->%20IO%20a)%20->%20IO%20a][withTxPipe]] hPutSerialize
+       - [[file:iohk/ouroboros-network/ouroboros-consensus/demo-playground/Mock/TxSubmission.hs::handleUSSubmission%20::%20TopologyInfo%20->%20USStimulus%20->%20IO%20()][handleUSSubmission]] ::
+     - [[file:iohk/ouroboros-network/ouroboros-consensus/demo-playground/Run.hs::handleSimpleNode%20p%20CLI{..}%20(TopologyInfo%20myNodeId%20topologyFile)%20=%20do][handleSimpleNode]]
+       - [[file:iohk/ouroboros-network/ouroboros-consensus/demo-playground/Run.hs::watchChain%20registry%20tracer%20chainDB%20=%20onEachChange][watchChain]] :: demo-playground/Run.hs
+         - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Util/STM.hs::onEachChange%20::%20forall%20m%20a%20b.%20(MonadAsync%20m,%20MonadMask%20m,%20MonadFork%20m,%20Eq%20b)][onEachChange]] O/C/Util/STM.hs
+           - [[file:iohk/ouroboros-network/ouroboros-consensus/demo-playground/Run.hs::logFullChain%20=%20do][logFullChain]]
+             - [[file:iohk/ouroboros-network/ouroboros-consensus/demo-playground/Run.hs::let%20tracer%20=%20contramap%20((show%20myNodeId%20<>%20"%20|%20")%20<>)%20stdoutTracer][tracer]] made from stdoutTracer, stuffed into [[file:iohk/ouroboros-network/ouroboros-consensus/demo-playground/Run.hs::nodeParams%20=%20NodeParams][NodeParams]]
+             - [[file:iohk/ouroboros-network/ouroboros-consensus/demo-playground/Run.hs::traceWith%20tracer%20$][traceWith]] "Updated chain: " <> condense (Chain.toOldestFirst chain)
+       - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Demo.hs::protocolInfo%20(DemoRealPBFT%20params)][protocolInfo]]
+         - [[file:iohk/cardano-ledger/src/Cardano/Chain/Block/Validation.hs::initialChainValidationState][initialChainValidationState]] :: C/C/Block/Validation.hs
+           - [[file:iohk/cardano-ledger/src/Cardano/Chain/Block/Validation.hs::,%20cvsUpdateState%20=%20UPI.initialState%20config][cvsUpdateState]] = UPI.initialState config
+       - [[file:iohk/ouroboros-network/ouroboros-consensus/demo-playground/Mock/TxSubmission.hs::spawnListener%20tracer%20myNodeId%20kernel%20process%20=%20do][spawnListener]]
+         - [[file:iohk/ouroboros-network/ouroboros-consensus/demo-playground/NamedPipe.hs::withTxPipe%20::%20NodeId%20->%20IOMode%20->%20Bool%20->%20(Handle%20->%20IO%20a)%20->%20IO%20a][withTxPipe]]
+         - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Util/CBOR.hs::initDecoderIO%20::%20IO%20ByteString%20->%20IO%20(Decoder%20IO)][initDecoderIO]]
+         - [[file:iohk/ouroboros-network/ouroboros-consensus/demo-playground/Mock/TxSubmission.hs::readIncomingTx%20tracer%20kernel%20Decoder{..}%20=%20forever%20$%20do][readIncomingTx]]
+           - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Mempool/Impl.hs::openMempool%20chainDB%20cfg%20=%20do][openMempool]]
+             - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Mempool/Impl.hs::addTxs%20=%20implAddTxs%20env][addTxs]]
+               - [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Mempool/Impl.hs::implAddTxs%20mpEnv@MempoolEnv{..}%20txs%20=%20atomically%20$%20do][implAddTxs]]
+         - [[file:iohk/ouroboros-network/ouroboros-consensus/demo-playground/Mock/TxSubmission.hs::readIncomingUSStimulus%20tracer%20kernel%20Decoder{..}%20=%20forever%20$%20do][readIncomingUSStimulus]]
+           - [[file:iohk/ouroboros-network/ouroboros-consensus/demo-playground/Update.hs::handleUSS%20act%20nkern%20uss%20=%20do][handleUSS]]
+     - data [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Update.hs::data%20USStimulus][USStimulus]]
+     - data [[file:iohk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Update.hs::data%20MProposalBody%20=%20MProposalBody][MProposalBody]]
+     - [[file:iohk/ouroboros-network/ouroboros-consensus/demo-playground/NamedPipe.hs::withUSSPipe%20::%20USStimulus%20->%20NodeId%20->%20IOMode%20->%20Bool%20->%20(Handle%20->%20IO%20a)%20->%20IO%20a][withUSSPipe]]
