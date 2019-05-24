@@ -51,8 +51,8 @@ import           Ouroboros.Consensus.Util.SlotBounded as SB
 newtype ClockSkew = ClockSkew { unClockSkew :: Word64 }
   deriving (Eq, Ord, Enum, Bounded, Show, Num)
 
-type Consensus (client :: * -> * -> (* -> *) -> * -> *) hdr m =
-   client hdr (Point hdr) m Void
+type Consensus (client :: * -> (* -> *) -> * -> *) hdr m =
+   client hdr m Void
 
 data ChainSyncClientException hdr =
       -- | The header we received was for a slot too far in the future.

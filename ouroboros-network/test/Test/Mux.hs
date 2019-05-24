@@ -770,7 +770,7 @@ demo chain0 updates delay = do
     let Just expectedChain = Chain.applyChainUpdates updates chain0
         target = Chain.headPoint expectedChain
 
-        consumerPeer :: Peer (ChainSync.ChainSync block (Point block)) AsClient ChainSync.StIdle m ()
+        consumerPeer :: Peer (ChainSync.ChainSync block) AsClient ChainSync.StIdle m ()
         consumerPeer = ChainSync.chainSyncClientPeer
                           (ChainSync.chainSyncClientExample consumerVar
                           (consumerClient done target consumerVar))
@@ -781,7 +781,7 @@ demo chain0 updates delay = do
                               (ChainSync.codecChainSync encode decode encode decode)
                               (consumerPeer))
 
-        producerPeer :: Peer (ChainSync.ChainSync block (Point block)) AsServer ChainSync.StIdle m ()
+        producerPeer :: Peer (ChainSync.ChainSync block) AsServer ChainSync.StIdle m ()
         producerPeer = ChainSync.chainSyncServerPeer (ChainSync.chainSyncServerExample () producerVar)
         producerApp = Mx.simpleMuxResponderApplication
                         (\ChainSync1 ->

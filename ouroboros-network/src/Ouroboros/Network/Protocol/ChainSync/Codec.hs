@@ -28,20 +28,22 @@ import Codec.CBOR.Decoding (decodeListLen, decodeWord)
 
 -- | The main CBOR 'Codec' for the 'ChainSync' protocol.
 --
-codecChainSync :: forall header point m.
+codecChainSync :: forall header m.
                   (MonadST m)
                => (header -> CBOR.Encoding)
                -> (forall s . CBOR.Decoder s header)
-               -> (point -> CBOR.Encoding)
-               -> (forall s . CBOR.Decoder s point)
-               -> Codec (ChainSync header point)
+               -> (Point header -> CBOR.Encoding)
+               -> (forall s . CBOR.Decoder s (Point header))
+               -> Codec (ChainSync header)
                         CBOR.DeserialiseFailure m ByteString
 codecChainSync encodeHeader decodeHeader encodePoint decodePoint =
     mkCodecCborLazyBS encode decode
   where
-    encode :: forall (pr :: PeerRole) (st :: ChainSync header point) (st' :: ChainSync header point).
+    encode :: forall (pr  :: PeerRole)
+                     (st  :: ChainSync header)
+                     (st' :: ChainSync header).
               PeerHasAgency pr st
-           -> Message (ChainSync header point) st st'
+           -> Message (ChainSync header) st st'
            -> CBOR.Encoding
 
     encode (ClientAgency TokIdle) MsgRequestNext =
@@ -68,7 +70,7 @@ codecChainSync encodeHeader decodeHeader encodePoint decodePoint =
     encode (ClientAgency TokIdle) MsgDone =
       encodeListLen 1 <> encodeWord 7
 
-    decode :: forall (pr :: PeerRole) (st :: ChainSync header point) s.
+    decode :: forall (pr :: PeerRole) (st :: ChainSync header) s.
               PeerHasAgency pr st
            -> CBOR.Decoder s (SomeMessage st)
     decode stok = do
@@ -124,20 +126,20 @@ decodeList dec = do
 -- | An identity 'Codec' for the 'ChainSync' protocol. It does not do any
 -- serialisation. It keeps the typed messages, wrapped in 'AnyMessage'.
 --
-codecChainSyncId :: forall header point m. Monad m
-                 => Codec (ChainSync header point)
-                          CodecFailure m (AnyMessage (ChainSync header point))
+codecChainSyncId :: forall header m. Monad m
+                 => Codec (ChainSync header)
+                          CodecFailure m (AnyMessage (ChainSync header))
 codecChainSyncId = Codec encode decode
  where
   encode :: forall (pr :: PeerRole) st st'.
             PeerHasAgency pr st
-         -> Message (ChainSync header point) st st'
-         -> AnyMessage (ChainSync header point)
+         -> Message (ChainSync header) st st'
+         -> AnyMessage (ChainSync header)
   encode _ = AnyMessage
 
   decode :: forall (pr :: PeerRole) st.
             PeerHasAgency pr st
-         -> m (DecodeStep (AnyMessage (ChainSync header point))
+         -> m (DecodeStep (AnyMessage (ChainSync header))
                           CodecFailure m (SomeMessage st))
   decode stok = return $ DecodePartial $ \bytes -> case (stok, bytes) of
 
