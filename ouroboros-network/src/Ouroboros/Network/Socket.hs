@@ -128,6 +128,8 @@ hexDump buf out = hexDump (BL.tail buf) (out ++ printf "0x%02x " (BL.head buf))
 -- Connect to a remote node.  It is using bracket to enclose the underlying
 -- socket acquisition.  This implies that when the continuation exits the
 -- underlying bearer will get closed.
+--
+-- Exceptions thrown by @'MuxApplication'@ are rethrown by @'connectTo'@.
 connectTo
   :: forall ptcl.
      ( Mx.ProtocolEnum ptcl
