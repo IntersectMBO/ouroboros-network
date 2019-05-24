@@ -19,6 +19,7 @@ module Ouroboros.Network.Mux.Interface
   , initiatorApplication
   , responderApplication
   , MuxPeer (..)
+  , runMuxPeer
   , simpleMuxInitiatorApplication
   , simpleMuxResponderApplication
   ) where
@@ -139,6 +140,22 @@ data MuxPeer failure m a where
             -> PeerPipelined ps pr st m a
             -> MuxPeer failure m a
 
+
+-- |
+-- Run a @'MuxPeer'@ using either @'runPeer'@ or @'runPipelinedPeer'@.
+--
+runMuxPeer
+  :: ( MonadThrow m
+     , MonadCatch m
+     , MonadAsync m
+     , Exception failure
+     )
+  => MuxPeer failure m a
+  -> Channel m ByteString
+  -> m a
+runMuxPeer (MuxPeer tracer codec peer) channel = runPeer tracer codec channel peer
+runMuxPeer (MuxPeerPipelined n tracer codec peer) channel = runPipelinedPeer n tracer codec channel peer
+
 -- |
 -- Smart constructor for @'MuxInitiatorApplication'@.  It is a simple client, since
 -- none of the applications requires resource handling to run in the monad @m@.
@@ -152,9 +169,7 @@ simpleMuxInitiatorApplication
   => (ptcl -> MuxPeer failure m a)
   -> MuxApplication InitiatorApp ptcl m
 simpleMuxInitiatorApplication fn = MuxInitiatorApplication $ \ptcl channel ->
-  case fn ptcl of
-    MuxPeer tracer codec peer -> void $ runPeer tracer codec channel peer
-    MuxPeerPipelined n tracer codec peer -> void $ runPipelinedPeer n tracer codec channel peer
+  void $ runMuxPeer (fn ptcl) channel
 
 
 -- |
@@ -168,6 +183,4 @@ simpleMuxResponderApplication
   => (ptcl -> MuxPeer failure m a)
   -> MuxApplication ResponderApp ptcl m
 simpleMuxResponderApplication fn = MuxResponderApplication $ \ptcl channel ->
-  case fn ptcl of
-    MuxPeer tracer codec peer -> void $ runPeer tracer codec channel peer
-    MuxPeerPipelined n tracer codec peer -> void $ runPipelinedPeer n tracer codec channel peer
+  void $ runMuxPeer (fn ptcl) channel
