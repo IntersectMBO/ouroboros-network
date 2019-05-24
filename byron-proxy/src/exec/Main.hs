@@ -4,11 +4,16 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE ApplicativeDo #-}
 
-import Control.Concurrent.Async (concurrently)
+import Control.Concurrent (threadDelay)
+import Control.Concurrent.Async (wait, concurrently)
 import Control.Concurrent.STM (STM, atomically, retry)
+import Control.Exception (throwIO)
 import Control.Monad (forM_)
+import Control.Monad.Trans.Class (lift)
+import Control.Monad.Trans.Resource (ResourceT)
 import Control.Tracer (Tracer (..), contramap, traceWith)
 import Data.Functor.Contravariant (Op (..))
 import Data.List (intercalate)
@@ -56,11 +61,21 @@ import qualified Pos.Util.Wlog as Wlog
 
 import qualified Network.Socket as Network
 
+import Ouroboros.Network.Socket
+import Ouroboros.Network.Protocol.Handshake.Type (Accept (..))
+
+import qualified Ouroboros.Byron.Proxy.ChainSync.Client as Client
+import qualified Ouroboros.Byron.Proxy.ChainSync.Server as Server
+import qualified Ouroboros.Byron.Proxy.ChainSync.Types as ChainSync
 import qualified Ouroboros.Byron.Proxy.DB as DB
 import Ouroboros.Byron.Proxy.Main
+import Ouroboros.Byron.Proxy.Network.Protocol
+
+-- For orphan instances
+import qualified Control.Monad.Class.MonadThrow as NonStandard
+import qualified Control.Monad.Catch as Standard
 
 import DB (DBConfig (..), withDB)
-import qualified IPC as IPC (runClient, runServer)
 import qualified Logging as Logging
 
 -- | The main action using the proxy, index, and immutable database: download
@@ -366,23 +381,37 @@ runServer tracer serverOptions epochSlots db = do
   addrInfos <- Network.getAddrInfo (Just addrInfoHints) (Just host) (Just port)
   case addrInfos of
     [] -> error "no getAddrInfo"
-    (addrInfo : _) -> IPC.runServer addrInfo stringTracer epochSlots mainTx usPoll db
+    (addrInfo : _) -> withServerNode
+      addrInfo
+      encodeTerm
+      decodeTerm
+      (\_ _ _ -> Accept)
+      (\_ -> fmap AnyMuxResponderApp (responderVersions epochSlots chainSyncServer))
+      wait
 
   where
   host = soHostName serverOptions
   port = soServiceName serverOptions
   addrInfoHints = Network.defaultHints
 
+  chainSyncServer = Server.chainSyncServer epochSlots err poll db
+  err =  throwIO
+  poll :: Server.PollT IO
+  poll p m = do
+    s <- m
+    mbT <- p s
+    case mbT of
+      Nothing -> lift (threadDelay usPoll) >> poll p m
+      Just t  -> pure t
+
   -- TODO configure this
   -- microsecond polling time of the DB. Needed until there is a proper
   -- storage layer.
   usPoll = 1000000
-  mainTx :: STM ()
-  mainTx = retry
 
-  stringTracer :: Tracer IO String
+  stringTracer :: Tracer IO Text
   stringTracer = contramap
-    (\str -> (Text.pack "main.server", Monitoring.Info, Text.pack str))
+    (\txt -> (Text.pack "main.server", Monitoring.Info, txt))
     tracer
 
 -- | The reflections constraints are needed for the cardano-sl configuration
@@ -401,15 +430,95 @@ runClient tracer clientOptions genesisConfig epochSlots db = case clientOptions 
   Nothing -> pure ()
 
   Just (Left shelleyClientOptions) -> do
-    addrInfos <- Network.getAddrInfo (Just addrInfoHints) (Just host) (Just port)
-    case addrInfos of
-      [] -> error "no getAddrInfo"
-      (addrInfo : _) -> IPC.runClient addrInfo stringTracer epochSlots db
+    addrInfosLocal  <- Network.getAddrInfo (Just addrInfoHints) (Just "127.0.0.1") (Just "0")
+    addrInfosRemote <- Network.getAddrInfo (Just addrInfoHints) (Just host) (Just port)
+    case (addrInfosLocal, addrInfosRemote) of
+      (addrInfoLocal : _, addrInfoRemote : _) -> connectTo
+        encodeTerm
+        decodeTerm
+        (initiatorVersions epochSlots chainSyncClient)
+        addrInfoLocal
+        addrInfoRemote
+      _ -> error "no getAddrInfo"
     where
 
     host = scoHostName shelleyClientOptions
     port = scoServiceName shelleyClientOptions
     addrInfoHints = Network.defaultHints
+    -- | This chain sync client will first try to improve the read pointer to
+    -- the tip of the database, and then will roll forward forever, stopping
+    -- if there is a roll-back.
+    -- It makes sense given that we only have an immutable database and one
+    -- source for blocks: one read pointer improve is always enough.
+    {-chainSyncClient
+      :: forall m x .
+         ( Monad m )
+      => Tracer m (Either ChainSync.Point ChainSync.Block, ChainSync.Point)
+      -> ChainSyncClient ChainSync.Block ChainSync.Point m x -}
+    chainSyncClient = Client.chainSyncClient fold
+      where
+      fold :: Client.Fold (ResourceT IO) x
+      fold = Client.Fold $ do
+        tip <- lift $ DB.readTip db
+        mPoint <- case tip of
+          -- DB is empty. Can go without improving read pointer.
+          DB.TipGenesis -> pure Nothing
+          -- EBB is nice because we already have the header hash.
+          DB.TipEBB   slotNo hhash _     -> pure $ Just $ ChainSync.Point
+            { ChainSync.pointSlot = slotNo
+            , ChainSync.pointHash = hhash
+            }
+          DB.TipBlock slotNo       bytes -> pure $ Just $ ChainSync.Point
+            { ChainSync.pointSlot = slotNo
+            , ChainSync.pointHash = hhash
+            }
+            where
+            hhash = case Binary.decodeFullAnnotatedBytes "Block or boundary" (Cardano.fromCBORABlockOrBoundary epochSlots) (Lazy.fromStrict bytes) of
+              Left cborError -> error "failed to decode block"
+              Right blk -> case blk of
+                Cardano.ABOBBoundary _ -> error "Corrupt DB: expected block but got EBB"
+                Cardano.ABOBBlock blk  -> Cardano.blockHashAnnotated blk
+        case mPoint of
+          Nothing -> Client.runFold roll
+          -- We don't need to do anything with the result; the point is that
+          -- the server now knows the proper read pointer.
+          Just point -> pure $ Client.Improve [point] $ \_ _ -> roll
+      roll :: Client.Fold (ResourceT IO) x
+      roll = Client.Fold $ pure $ Client.Continue forward backward
+      forward :: ChainSync.Block -> ChainSync.Point -> Client.Fold (ResourceT IO) x
+      forward blk point = Client.Fold $ do
+        lift $ traceWith (contramap chainSyncShow stringTracer) (Right blk, point)
+        -- FIXME
+        -- Write one block at a time. CPS doesn't mix well with the typed
+        -- protocol style.
+        -- This will give terrible performance for the SQLite index as it is
+        -- currently defined. As a workaround, the SQLite index is set to use
+        -- non-synchronous writes (per connection).
+        -- Possible solution: do the batching automatically, within the index
+        -- itself?
+        lift $ DB.appendBlocks db $ \dbAppend ->
+          DB.appendBlock dbAppend (DB.CardanoBlockToWrite blk)
+        Client.runFold roll
+      backward :: ChainSync.Point -> ChainSync.Point -> Client.Fold (ResourceT IO) x
+      backward point1 point2 = Client.Fold $ do
+        lift $ traceWith (contramap chainSyncShow stringTracer) (Left point1, point2)
+        Client.runFold roll
+
+    chainSyncShow
+      :: (Either ChainSync.Point ChainSync.Block, ChainSync.Point)
+      -> String
+    chainSyncShow = \(roll, _tip) -> case roll of
+      Left  back    -> mconcat
+        [ "Roll back to "
+        , show back
+        ]
+      Right forward -> mconcat
+        [ "Roll forward to "
+        , case Binary.unAnnotated forward of
+            Cardano.ABOBBoundary ebb -> show ebb
+            -- TODO Cardano.renderBlock
+            Cardano.ABOBBlock    blk -> show blk
+        ]
 
   Just (Right byronClientOptions) -> do
     let cslTrace = mkCSLTrace tracer
@@ -480,3 +589,19 @@ main = do
             client = runClient (Logging.convertTrace trace) (bpoClientOptions bpo) genesisConfig epochSlots db
         _ <- concurrently server client
         pure ()
+
+-- Orphans, forced upon me because of the IO sim stuff.
+-- Required because we use ResourceT in the chain sync server.
+
+instance NonStandard.MonadThrow (ResourceT IO) where
+  throwM = Standard.throwM
+
+-- Non-standard MonadThrow includes bracket... we can get it for free if we
+-- give a non-standard MonadCatch
+
+instance NonStandard.MonadCatch (ResourceT IO) where
+  catch = Standard.catch
+
+instance NonStandard.MonadMask (ResourceT IO) where
+  mask = Standard.mask
+  uninterruptibleMask = Standard.uninterruptibleMask

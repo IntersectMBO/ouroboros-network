@@ -50,6 +50,7 @@
           (hsPkgs.text)
           (hsPkgs.transformers)
           (hsPkgs.typed-protocols)
+          (hsPkgs.unliftio-core)
           ];
         };
       exes = {
@@ -94,10 +95,13 @@
             (hsPkgs.cardano-ledger)
             (hsPkgs.cardano-shell)
             (hsPkgs.contra-tracer)
+            (hsPkgs.exceptions)
+            (hsPkgs.io-sim-classes)
             (hsPkgs.iohk-monitoring)
             (hsPkgs.network)
             (hsPkgs.optparse-applicative)
             (hsPkgs.ouroboros-network)
+            (hsPkgs.resourcet)
             (hsPkgs.text)
             (hsPkgs.time)
             (hsPkgs.transformers)
