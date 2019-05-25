@@ -16,8 +16,6 @@ import           Data.Fixed (Micro)
 import           Data.Functor (void)
 import           Data.Graph
 import           Data.List (foldl')
-import           Data.List.NonEmpty (NonEmpty)
-import qualified Data.List.NonEmpty as NE
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (isNothing, listToMaybe)
@@ -38,16 +36,13 @@ import qualified Control.Monad.IOSim as Sim
 
 import           Ouroboros.Network.Time (microsecondsToDiffTime)
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Chain (Chain (..), chainToList)
+import           Ouroboros.Network.Chain (Chain (..))
 import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.ChainProducerState (ChainProducerState (..))
 import           Ouroboros.Network.Node
 import           Ouroboros.Network.Testing.ConcreteBlock as ConcreteBlock
 
-import           Test.ChainGenerators
-                  ( TestBlockChain (..)
-                  , genNonNegative
-                  )
+import           Test.ChainGenerators (TestBlockChain (..))
 
 
 tests :: TestTree
