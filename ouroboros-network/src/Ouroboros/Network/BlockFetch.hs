@@ -111,9 +111,10 @@ import           Ouroboros.Network.DeltaQ
 
 import           Ouroboros.Network.BlockFetch.State
 import           Ouroboros.Network.BlockFetch.ClientRegistry
-                   ( FetchClientRegistry, newFetchClientRegistry
+                   ( FetchClientPolicy(..)
+                   , FetchClientRegistry, newFetchClientRegistry
                    , readFetchClientsStatus, readFetchClientsStateVars
-                   , bracketFetchClient )
+                   , bracketFetchClient, setFetchClientContext )
 
 
 -- | The consensus layer functionality that the block fetch logic requires.
@@ -205,17 +206,27 @@ blockFetchLogic :: forall peer header block m.
                 => Tracer m [TraceLabelPeer peer (FetchDecision [Point header])]
                 -> Tracer m (TraceLabelPeer peer (TraceFetchClientState header))
                 -> BlockFetchConsensusInterface peer header block m
-                -> FetchClientRegistry peer header m
+                -> FetchClientRegistry peer header block m
                 -> m Void
 blockFetchLogic decisionTracer clientStateTracer
                 BlockFetchConsensusInterface{..}
-                registry =
+                registry = do
+
+    setFetchClientContext registry clientStateTracer fetchClientPolicy
+
     fetchLogicIterations
       decisionTracer clientStateTracer
       fetchDecisionPolicy
       fetchTriggerVariables
       fetchNonTriggerVariables
   where
+    fetchClientPolicy :: FetchClientPolicy header block m
+    fetchClientPolicy = FetchClientPolicy {
+                          blockFetchSize,
+                          blockMatchesHeader,
+                          addFetchedBlock
+                        }
+
     fetchDecisionPolicy :: FetchDecisionPolicy header
     fetchDecisionPolicy =
       FetchDecisionPolicy {

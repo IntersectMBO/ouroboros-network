@@ -85,13 +85,11 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
                         clientMsgTracer'
                         serverMsgTracer
                         registry peerno
-                        (mockedBlockFetchClient1 clientStateTracer' blockHeap)
+                        blockFetchClient
                         (mockBlockFetchServer1 (unanchorFragment candidateChain))
                     | (peerno, candidateChain) <- zip [1..] candidateChains
                     , let clientMsgTracer'   = contramap (TraceLabelPeer peerno)
                                                          clientMsgTracer
-                          clientStateTracer' = contramap (TraceLabelPeer peerno)
-                                                         clientStateTracer
                     ]
     fetchAsync  <- async $ blockFetch registry blockHeap
     driverAsync <- async $ driver blockHeap
@@ -117,7 +115,7 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
     anchoredChainPoints c = anchorPoint c
                           : map blockPoint (AnchoredFragment.toOldestFirst c)
 
-    blockFetch :: FetchClientRegistry Int BlockHeader m
+    blockFetch :: FetchClientRegistry Int BlockHeader Block m
                -> TestFetchedBlockHeap m Block
                -> m ()
     blockFetch registry blockHeap =
@@ -167,6 +165,15 @@ sampleBlockFetchPolicy1 blockHeap currentChain candidateChains =
     compareCandidateChains c1 c2 =
       AnchoredFragment.headBlockNo c1 `compare` AnchoredFragment.headBlockNo c2
 
+-- | Roughly 10ms ping time and 1MBit\/s bandwidth, leads to ~2200 bytes in
+-- flight minimum.
+--
+exampleFixedPeerGSVs :: PeerGSV
+exampleFixedPeerGSVs =
+    PeerGSV{outboundGSV, inboundGSV}
+  where
+    inboundGSV  = ballisticGSV 10e-3 10e-6 (degenerateDistribution 0)
+    outboundGSV = inboundGSV
 
 
 --
@@ -178,16 +185,19 @@ runFetchClient :: (MonadCatch m, MonadAsync m, MonadST m, Ord peerid,
                    Serialise block,
                    Serialise (HeaderHash header))
                 => Tracer m (TraceSendRecv (BlockFetch header block))
-                -> FetchClientRegistry peerid header m
+                -> FetchClientRegistry peerid header block m
                 -> peerid
                 -> Channel m LBS.ByteString
-                -> (  FetchClientStateVars m header
+                -> (  FetchClientContext header block m
                    -> PeerPipelined (BlockFetch header block)
                                     AsClient BFIdle m a)
                 -> m a
 runFetchClient tracer registry peerid channel client =
-    bracketFetchClient registry peerid $ \stateVars ->
-      runPipelinedPeer 10 tracer (codecBlockFetch encode encode decode decode) channel (client stateVars)
+    bracketFetchClient registry peerid $ \clientCtx ->
+      runPipelinedPeer 10 tracer codec channel $
+        client clientCtx
+  where
+    codec = codecBlockFetch encode encode decode decode
 
 runFetchServer :: (MonadThrow m, MonadST m,
                    Serialise header,
@@ -198,7 +208,10 @@ runFetchServer :: (MonadThrow m, MonadST m,
                 -> BlockFetchServer header block m a
                 -> m a
 runFetchServer tracer channel server =
-    runPeer tracer (codecBlockFetch encode encode decode decode) channel (blockFetchServerPeer server)
+    runPeer tracer codec channel $
+      blockFetchServerPeer server
+  where
+    codec = codecBlockFetch encode encode decode decode
 
 runFetchClientAndServerAsync
                :: (MonadCatch m, MonadAsync m, MonadST m, Ord peerid,
@@ -207,9 +220,9 @@ runFetchClientAndServerAsync
                    Serialise (HeaderHash header))
                 => Tracer m (TraceSendRecv (BlockFetch header block))
                 -> Tracer m (TraceSendRecv (BlockFetch header block))
-                -> FetchClientRegistry peerid header m
+                -> FetchClientRegistry peerid header block m
                 -> peerid
-                -> (  FetchClientStateVars m header
+                -> (  FetchClientContext header block m
                    -> PeerPipelined (BlockFetch header block)
                                     AsClient BFIdle m a)
                 -> BlockFetchServer header block m b
@@ -228,48 +241,6 @@ runFetchClientAndServerAsync clientTracer serverTracer
                              serverChannel server
 
     return (clientAsync, serverAsync)
-
-
---
--- Block fetch clients with example policies and connected to mock block heaps
---
-
--- | An instantiation of the 'blockFetchClient' with a 'FetchClientPolicy'
--- using a 'TestFetchedBlockHeap' and simplistic example choices
--- for size and validation.
---
-mockedBlockFetchClient1 :: (MonadSTM m, MonadTime m, MonadThrow m,
-                            HasHeader header, HasHeader block,
-                            HeaderHash header ~ HeaderHash block)
-                        => Tracer m (TraceFetchClientState header)
-                        -> TestFetchedBlockHeap m block
-                        -> FetchClientStateVars m header
-                        -> PeerPipelined (BlockFetch header block)
-                                         AsClient BFIdle m ()
-mockedBlockFetchClient1 clientStateTracer blockHeap clientStateVars =
-    blockFetchClient
-      clientStateTracer
-      (mockFetchClientPolicy1 blockHeap)
-      clientStateVars
-
-mockFetchClientPolicy1 :: TestFetchedBlockHeap m block
-                       -> FetchClientPolicy header block m
-mockFetchClientPolicy1 blockHeap =
-    FetchClientPolicy {
-      blockFetchSize     = \_   -> 2000,
-      blockMatchesHeader = \_ _ -> True,
-      addFetchedBlock    = addTestFetchedBlock blockHeap
-    }
-
--- | Roughly 10ms ping time and 1MBit\/s bandwidth, leads to ~2200 bytes in
--- flight minimum.
---
-exampleFixedPeerGSVs :: PeerGSV
-exampleFixedPeerGSVs =
-    PeerGSV{outboundGSV, inboundGSV}
-  where
-    inboundGSV  = ballisticGSV 10e-3 10e-6 (degenerateDistribution 0)
-    outboundGSV = inboundGSV
 
 
 --
