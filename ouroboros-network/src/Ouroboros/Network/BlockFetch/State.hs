@@ -3,7 +3,6 @@
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE DeriveFunctor              #-}
 
 module Ouroboros.Network.BlockFetch.State (
     fetchLogicIterations,
@@ -39,6 +38,7 @@ import           Ouroboros.Network.BlockFetch.ClientState
                    , addNewFetchRequest
                    , readFetchClientState
                    , TraceFetchClientState(..)
+                   , TraceLabelPeer(..)
                    )
 import           Ouroboros.Network.BlockFetch.Decision
                    ( fetchDecisions
@@ -50,13 +50,6 @@ import           Ouroboros.Network.BlockFetch.Decision
                    )
 import           Ouroboros.Network.BlockFetch.DeltaQ
                    ( PeerGSV(..) )
-
-
--- | A peer label for use in 'Tracer's. This annotates tracer output as being
--- associated with a given peer identifier.
---
-data TraceLabelPeer peerid a = TraceLabelPeer peerid a
-  deriving (Eq, Functor, Show)
 
 
 fetchLogicIterations

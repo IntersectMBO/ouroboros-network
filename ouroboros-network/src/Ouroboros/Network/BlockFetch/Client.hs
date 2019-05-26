@@ -8,7 +8,7 @@
 module Ouroboros.Network.BlockFetch.Client (
     -- * Block fetch protocol client implementation
     blockFetchClient,
-    FetchClientPolicy(..),
+    FetchClientContext,
     TraceFetchClientState,
     FetchRequest(..),
     FetchClientStateVars,
@@ -19,7 +19,6 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Exception (assert)
-import           Control.Tracer (Tracer)
 
 import           Ouroboros.Network.Block
 
@@ -30,24 +29,16 @@ import           Network.TypedProtocol.Pipelined
 import qualified Ouroboros.Network.ChainFragment as ChainFragment
 import           Ouroboros.Network.ChainFragment (ChainFragment)
 import           Ouroboros.Network.BlockFetch.ClientState
-                   ( FetchClientStateVars
+                   ( FetchClientContext(..)
+                   , FetchClientPolicy(..)
+                   , FetchClientStateVars
                    , FetchRequest(..)
                    , TraceFetchClientState
                    , acknowledgeFetchRequest
                    , completeBlockDownload
                    , completeFetchBatch )
 import           Ouroboros.Network.BlockFetch.DeltaQ
-                   ( PeerGSV(..), SizeInBytes
-                   , PeerFetchInFlightLimits(..) )
-
-
--- TODO #468 extract this from BlockFetchConsensusInterface
-data FetchClientPolicy header block m =
-     FetchClientPolicy {
-       blockFetchSize     :: header -> SizeInBytes,
-       blockMatchesHeader :: header -> block -> Bool,
-       addFetchedBlock    :: Point block -> block -> m ()
-     }
+                   ( PeerGSV(..), PeerFetchInFlightLimits(..) )
 
 
 data BlockFetchProtocolFailure =
@@ -66,17 +57,17 @@ blockFetchClient :: forall header block m.
                     (MonadSTM m, MonadTime m, MonadThrow m,
                      HasHeader header, HasHeader block,
                      HeaderHash header ~ HeaderHash block)
-                 => Tracer m (TraceFetchClientState header)
-                 -> FetchClientPolicy header block m
-                 -> FetchClientStateVars m header
+                 => FetchClientContext header block m
                  -> PeerPipelined (BlockFetch header block) AsClient BFIdle m ()
-blockFetchClient tracer
-                 FetchClientPolicy {
-                   blockFetchSize,
-                   blockMatchesHeader,
-                   addFetchedBlock
-                 }
-                 stateVars =
+blockFetchClient FetchClientContext {
+                   fetchClientCtxTracer    = tracer,
+                   fetchClientCtxPolicy    = FetchClientPolicy {
+                                               blockFetchSize,
+                                               blockMatchesHeader,
+                                               addFetchedBlock
+                                             },
+                   fetchClientCtxStateVars = stateVars
+                 } =
     PeerPipelined (senderAwait Zero)
   where
     senderIdle :: forall n.

@@ -1,9 +1,12 @@
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE BangPatterns               #-}
 
 module Ouroboros.Network.BlockFetch.ClientState (
+    FetchClientContext(..),
+    FetchClientPolicy(..),
     FetchClientStateVars(..),
     newFetchClientStateVars,
     readFetchClientState,
@@ -16,6 +19,7 @@ module Ouroboros.Network.BlockFetch.ClientState (
     completeBlockDownload,
     completeFetchBatch,
     TraceFetchClientState(..),
+    TraceLabelPeer(..),
   ) where
 
 import qualified Data.Set as Set
@@ -34,6 +38,27 @@ import           Ouroboros.Network.BlockFetch.DeltaQ
                    ( PeerFetchInFlightLimits(..)
                    , calculatePeerFetchInFlightLimits
                    , SizeInBytes, PeerGSV )
+
+-- | The context that is passed into the block fetch protocol client when it
+-- is started.
+--
+data FetchClientContext header block m =
+     FetchClientContext {
+       fetchClientCtxTracer    :: Tracer m (TraceFetchClientState header),
+       fetchClientCtxPolicy    :: FetchClientPolicy header block m,
+       fetchClientCtxStateVars :: FetchClientStateVars m header
+     }
+
+
+-- | The policy used by the fetch clients. It is set by the central block fetch
+-- logic, and passed to them via the 'FetchClientRegistry'.
+--
+data FetchClientPolicy header block m =
+     FetchClientPolicy {
+       blockFetchSize     :: header -> SizeInBytes,
+       blockMatchesHeader :: header -> block -> Bool,
+       addFetchedBlock    :: Point block -> block -> m ()
+     }
 
 -- | A set of variables shared between the block fetch logic thread and each
 -- thread executing the client side of the block fetch protocol. That is, these
@@ -249,6 +274,12 @@ data TraceFetchClientState header =
           PeerFetchInFlightLimits
          (PeerFetchStatus header)
   deriving Show
+
+-- | A peer label for use in 'Tracer's. This annotates tracer output as being
+-- associated with a given peer identifier.
+--
+data TraceLabelPeer peerid a = TraceLabelPeer peerid a
+  deriving (Eq, Functor, Show)
 
 
 -- | Add a new fetch request for a single peer. This is used by the fetch

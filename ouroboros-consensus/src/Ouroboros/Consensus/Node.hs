@@ -234,7 +234,7 @@ data InternalState m up blk hdr = IS {
     , networkLayer        :: NetworkProvides m up blk hdr
     , chainDB             :: ChainDB m blk hdr
     , blockFetchInterface :: BlockFetchConsensusInterface up hdr blk m
-    , fetchClientRegistry :: FetchClientRegistry up hdr m
+    , fetchClientRegistry :: FetchClientRegistry up hdr blk m
     , varCandidates       :: TVar m (Map up (TVar m (CandidateState blk hdr)))
     , varState            :: TVar m (NodeState (BlockProtocol blk))
     , tracer              :: Tracer m String
@@ -290,7 +290,7 @@ initInternalState NodeParams {..} = do
 
         nrBlockFetchClient :: up -> BlockFetchClient hdr blk m ()
         nrBlockFetchClient up =
-          blockFetchClient (tracePrefix "BFClient" (Just up)) blockFetchInterface up
+          blockFetchClient (tracePrefix "BFClient" (Just up)) up
 
         nrBlockFetchServer :: BlockFetchServer hdr blk m ()
         nrBlockFetchServer =
@@ -463,7 +463,7 @@ data NetworkRequires m up blk hdr = NetworkRequires {
     , nrBlockFetchServer    :: BlockFetchServer hdr blk m ()
 
       -- | The fetch client registry, used by the block fetch client.
-    , nrFetchClientRegistry :: FetchClientRegistry up hdr m
+    , nrFetchClientRegistry :: FetchClientRegistry up hdr blk m
     }
 
 -- | Required by the network layer to initiate comms to a new node
@@ -549,12 +549,12 @@ initNetworkLayer _tracer registry NetworkRequires{..} = NetworkProvides {..}
       clientRegistered <- newEmptyTMVarM
 
       void $ forkLinked registry $ bfWithChan $ \chan ->
-        bracketFetchClient nrFetchClientRegistry up $ \stateVars -> do
+        bracketFetchClient nrFetchClientRegistry up $ \clientCtx -> do
           atomically $ putTMVar clientRegistered ()
           -- TODO make 10 a parameter. Or encapsulate the pipelining
           -- stuff
           runPipelinedPeer 10 nullTracer bfCodec chan $
-            nrBlockFetchClient up stateVars
+            nrBlockFetchClient up clientCtx
 
       -- The block fetch logic thread in the background wants there to be a
       -- block fetch client thread for each chain sync candidate it sees. So
