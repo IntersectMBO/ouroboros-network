@@ -271,6 +271,7 @@ initInternalState NodeParams {..} = do
 
         blockFetchInterface :: BlockFetchConsensusInterface up hdr blk m
         blockFetchInterface = initBlockFetchConsensusInterface
+          (tracePrefix "ChainDB" Nothing)
           cfg chainDB getCandidates blockFetchSize blockMatchesHeader btime
 
         nrChainSyncClient :: up -> Consensus ChainSyncClient hdr m
@@ -288,9 +289,11 @@ initInternalState NodeParams {..} = do
         nrChainSyncServer =
           chainSyncServer (tracePrefix "CSServer" Nothing) chainDB
 
-        nrBlockFetchClient :: up -> BlockFetchClient hdr blk m ()
-        nrBlockFetchClient up =
-          blockFetchClient (tracePrefix "BFClient" (Just up)) up
+        nrBlockFetchClient :: BlockFetchClient hdr blk m ()
+        nrBlockFetchClient = blockFetchClient
+          -- Note the tracer for the changes in the fetch client state
+          -- is passed to the blockFetchLogic.
+          -- The message level tracer is passed to runPipelinedPeer.
 
         nrBlockFetchServer :: BlockFetchServer hdr blk m ()
         nrBlockFetchServer =
@@ -320,15 +323,17 @@ initBlockFetchConsensusInterface
        ( MonadSTM m
        , OuroborosTag (BlockProtocol blk)
        , HasHeader hdr
+       , TraceConstraints up blk hdr
        )
-    => NodeConfig (BlockProtocol blk)
+    => Tracer m String
+    -> NodeConfig (BlockProtocol blk)
     -> ChainDB m blk hdr
     -> STM m (Map up (AnchoredFragment hdr))
     -> (hdr -> SizeInBytes)
     -> (hdr -> blk -> Bool)
     -> BlockchainTime m
     -> BlockFetchConsensusInterface up hdr blk m
-initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize
+initBlockFetchConsensusInterface tracer cfg chainDB getCandidates blockFetchSize
     blockMatchesHeader btime = BlockFetchConsensusInterface {..}
   where
     readCandidateChains :: STM m (Map up (AnchoredFragment hdr))
@@ -357,7 +362,9 @@ initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize
     readFetchedBlocks = ChainDB.getIsFetched chainDB
 
     addFetchedBlock :: Point blk -> blk -> m ()
-    addFetchedBlock _pt = ChainDB.addBlock chainDB
+    addFetchedBlock _pt blk = do
+      ChainDB.addBlock chainDB blk
+      traceWith tracer $ "Downloaded block: " <> condense blk
 
     plausibleCandidateChain :: AnchoredFragment hdr
                             -> AnchoredFragment hdr
@@ -457,7 +464,7 @@ data NetworkRequires m up blk hdr = NetworkRequires {
 
       -- | Start a block fetch client that communicates with the given
       -- upstream node.
-    , nrBlockFetchClient    :: up -> BlockFetchClient hdr blk m ()
+    , nrBlockFetchClient    :: BlockFetchClient hdr blk m ()
 
       -- | Start a block fetch server server.
     , nrBlockFetchServer    :: BlockFetchServer hdr blk m ()
@@ -554,7 +561,7 @@ initNetworkLayer _tracer registry NetworkRequires{..} = NetworkProvides {..}
           -- TODO make 10 a parameter. Or encapsulate the pipelining
           -- stuff
           runPipelinedPeer 10 nullTracer bfCodec chan $
-            nrBlockFetchClient up clientCtx
+            nrBlockFetchClient clientCtx
 
       -- The block fetch logic thread in the background wants there to be a
       -- block fetch client thread for each chain sync candidate it sees. So
