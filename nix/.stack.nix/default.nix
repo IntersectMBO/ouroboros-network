@@ -35,9 +35,13 @@
         iohk-monitoring = ./iohk-monitoring.nix;
         contra-tracer = ./contra-tracer.nix;
         cardano-binary = ./cardano-binary.nix;
+        cardano-binary-test = ./cardano-binary-test.nix;
         cardano-ledger = ./cardano-ledger.nix;
         cardano-crypto-wrapper = ./cardano-crypto-wrapper.nix;
+        cardano-crypto-test = ./cardano-crypto-test.nix;
+        cardano-ledger-test = ./cardano-ledger-test.nix;
         cardano-prelude = ./cardano-prelude.nix;
+        cardano-prelude-test = ./cardano-prelude-test.nix;
         cardano-shell = ./cardano-shell.nix;
         cardano-sl-x509 = ./cardano-sl-x509.nix;
         bimap = ./bimap.nix;

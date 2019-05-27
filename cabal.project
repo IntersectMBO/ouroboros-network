@@ -32,25 +32,50 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-base
-  tag: 2f33cbf9101dfee1cb488271ec96e210329eec96
+  tag: b676160954cea07d4378ccca870a61242bc188a2
   subdir: binary
 
 source-repository-package
   type: git
+  location: https://github.com/input-output-hk/cardano-base
+  tag: b676160954cea07d4378ccca870a61242bc188a2
+  subdir: binary/test
+
+source-repository-package
+  type: git
   location: https://github.com/input-output-hk/cardano-ledger
-  tag: 595cfb5b20863fca869550423a4e27aab8e68aed
+  tag: 684195650722e4d337e90562fddcc5c2b0d17d34
   subdir: .
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger
-  tag: 595cfb5b20863fca869550423a4e27aab8e68aed
+  tag: 684195650722e4d337e90562fddcc5c2b0d17d34
   subdir: crypto
 
 source-repository-package
   type: git
+  location: https://github.com/input-output-hk/cardano-ledger
+  tag: 684195650722e4d337e90562fddcc5c2b0d17d34
+  subdir: test
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/cardano-ledger
+  tag: 684195650722e4d337e90562fddcc5c2b0d17d34
+  subdir: crypto/test
+
+source-repository-package
+  type: git
   location: https://github.com/input-output-hk/cardano-prelude
-  tag: e1fb84b1a955b6e3e3e53d9022e8bc0f927417a2
+  tag: a136c4242b9c9f6124b811329bc8ccdfd86c514e
+  subdir: .
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/cardano-prelude
+  tag: a136c4242b9c9f6124b811329bc8ccdfd86c514e
+  subdir: test
 
 source-repository-package
   type: git
@@ -59,9 +84,27 @@ source-repository-package
 
 source-repository-package
   type: git
+  location: https://github.com/input-output-hk/cardano-shell
+  tag: 5db8e79d319a86d48bea4cb70f1e904acae46de4
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/cardano-sl-x509
+  tag: e8bfc1294e088f90e5ae0b4aedbc82ee46ac5ee4
+
+source-repository-package
+  type: git
   location: https://github.com/well-typed/cborg
   tag: 80fbe0ee5e67a5622e2cb9eaa9d8594a2214322d
   subdir: cborg
 
+source-repository-package
+  type: git
+  location: https://github.com/joelwilliamson/bimap
+  tag: 997fbb38b08dec14d225d064dac05b0a85f4ceae
+
 package contra-tracer
   tests: False
+
+constraints:
+  ip < 1.5
