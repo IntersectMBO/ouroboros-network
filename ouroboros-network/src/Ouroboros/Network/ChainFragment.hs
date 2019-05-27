@@ -8,7 +8,9 @@ module Ouroboros.Network.ChainFragment (
   ChainFragment(Empty, (:>), (:<)),
   valid,
   validExtension,
+  validExtension',
   isValidSuccessorOf,
+  isValidSuccessorOf',
   foldChainFragment,
   mapChainFragment,
 
@@ -86,11 +88,13 @@ module Ouroboros.Network.ChainFragment (
 import           Prelude hiding (drop, head, last, length, null, filter)
 
 import           Control.Exception (assert)
+import           Data.Either (isRight)
 import           Data.FingerTree (FingerTree)
 import qualified Data.FingerTree as FT
 import qualified Data.Foldable as Foldable
 import qualified Data.List as L
 import           Data.Maybe (isJust)
+import           GHC.Stack
 import           Codec.Serialise (Serialise (..))
 import           Codec.CBOR.Encoding (encodeListLen)
 import           Codec.CBOR.Decoding (decodeListLen)
@@ -136,7 +140,7 @@ pattern Empty <- (viewRight -> FT.EmptyR) where
   Empty = ChainFragment FT.empty
 
 -- | \( O(1) \). Add a block to the right of the chain fragment.
-pattern (:>) :: HasHeader block
+pattern (:>) :: (HasHeader block, HasCallStack)
              => ChainFragment block -> block -> ChainFragment block
 pattern c :> b <- (viewRight -> (c FT.:> b)) where
   ChainFragment c :> b = assert (validExtension (ChainFragment c) b) $
@@ -201,25 +205,64 @@ valid (c :> b) = valid c && validExtension c b
 --
 -- This function does not check whether any of the two blocks satisfy
 -- 'blockInvariant'.
-isValidSuccessorOf :: HasHeader block
+isValidSuccessorOf :: (HasCallStack, HasHeader block)
                    => block  -- ^ @bSucc@
                    -> block  -- ^ @b@
                    -> Bool
-isValidSuccessorOf bSucc b =
-    pointHash p == blockPrevHash bSucc
- && pointSlot p <  blockSlot bSucc
- && blockNo   b == pred (blockNo bSucc)
+isValidSuccessorOf bSucc b = isRight $ isValidSuccessorOf' bSucc b
+
+-- | Variation on 'isValidSuccessorOf' that provides more information
+isValidSuccessorOf' :: (HasCallStack, HasHeader block)
+                    => block  -- ^ @bSucc@
+                    -> block  -- ^ @b@
+                    -> Either String ()
+isValidSuccessorOf' bSucc b
+  | pointHash p /= blockPrevHash bSucc
+  = Left $ concat [
+        "prevHash ("
+      , show (blockPrevHash bSucc)
+      , ") doesn't match hash of tip ("
+      , show (pointHash p)
+      , ") at "
+      , prettyCallStack callStack
+      ]
+  | pointSlot p >= blockSlot bSucc
+  = Left $ concat [
+        "Slot of tip ("
+      , show (pointSlot p)
+      , ") >= slot ("
+      , show (blockSlot bSucc)
+      , ")"
+      ]
+  | blockNo b /= pred (blockNo bSucc)
+  = Left $ concat [
+        "BlockNo ("
+      , show (blockNo bSucc)
+      , ") is not BlockNo of tip ("
+      , show (blockNo   b)
+      , ") + 1"
+      ]
+  | otherwise
+  = Right ()
   where
     p = blockPoint b
 
 -- | \( O(1) \).
-validExtension ::  HasHeader block => ChainFragment block -> block -> Bool
-validExtension c bSucc =
-    blockInvariant bSucc
- && blockSlot bSucc /= SlotNo 0
- && case head c of
-      Nothing -> True
-      Just b  -> bSucc `isValidSuccessorOf` b
+validExtension :: (HasHeader block, HasCallStack) => ChainFragment block -> block -> Bool
+validExtension c bSucc = isRight $ validExtension' c bSucc
+
+-- | Variation on 'validExtension' that provides more information
+validExtension' :: (HasHeader block, HasCallStack)
+                => ChainFragment block -> block -> Either String ()
+validExtension' c bSucc
+  | not (blockInvariant bSucc)
+  = Left $ "blockInvariant failed for bSucc"
+  | blockSlot bSucc == SlotNo 0
+  = Left $ "blockSlot was 0"
+  | otherwise
+  = case head c of
+      Nothing -> Right ()
+      Just b  -> bSucc `isValidSuccessorOf'` b
 
 -- | \( O(1) \).
 head :: HasHeader block => ChainFragment block -> Maybe block
@@ -743,4 +786,3 @@ instance (HasHeader block, Serialise block)
       go c 0 = return c
       go c n = do b <- decode
                   go (c :> b) (n-1)
-
