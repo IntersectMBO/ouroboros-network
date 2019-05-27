@@ -18,9 +18,10 @@ module Ouroboros.Network.Protocol.Handshake.Version
   ) where
 
 import Data.Map (Map)
+import Data.Text (Text)
 import qualified Data.Map as Map
 import Data.Typeable ((:~:)(Refl), Typeable, eqT)
-import Codec.SerialiseTerm (SerialiseTerm)
+import Codec.SerialiseTerm
 
 -- Description of versions.
 --
@@ -79,10 +80,10 @@ data Dict constraint thing where
 data DictVersion vData where
      DictVersion :: ( Typeable vData
                     , Eq vData
-                    , SerialiseTerm vData
                     , Show vData
                     )
-                 => DictVersion vData
+                 => CodecCBORTerm Text vData
+                 -> DictVersion vData
 
 -- | Pick the version with the highest version number (by `Ord vNum`) common
 -- in both maps.

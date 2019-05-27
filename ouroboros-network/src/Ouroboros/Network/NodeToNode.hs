@@ -12,8 +12,10 @@ module Ouroboros.Network.NodeToNode (
   , NodeToNodeVersion (..)
   , NodeToNodeVersionData (..)
   , DictVersion (..)
+  , nodeToNodeCodecCBORTerm
   ) where
 
+import           Data.Text (Text)
 import qualified Data.Text as T
 import           Data.Typeable (Typeable)
 import           Data.Word
@@ -21,7 +23,7 @@ import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Term as CBOR
 import           Codec.Serialise (Serialise (..))
-import           Codec.SerialiseTerm (SerialiseTerm (..))
+import           Codec.SerialiseTerm
 
 import           Ouroboros.Network.Protocol.Handshake.Version
 import           Ouroboros.Network.Mux.Types (ProtocolEnum(..))
@@ -82,10 +84,14 @@ newtype NodeToNodeVersionData = NodeToNodeVersionData
   { networkMagic :: Word16 }
   deriving (Eq, Show, Typeable)
 
-instance SerialiseTerm NodeToNodeVersionData where
-    encodeTerm NodeToNodeVersionData { networkMagic } =
-      CBOR.TInt (fromIntegral networkMagic)
+nodeToNodeCodecCBORTerm :: CodecCBORTerm Text NodeToNodeVersionData
+nodeToNodeCodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
+    where
+      encodeTerm :: NodeToNodeVersionData -> CBOR.Term
+      encodeTerm NodeToNodeVersionData { networkMagic } =
+        CBOR.TInt (fromIntegral networkMagic)
 
-    decodeTerm (CBOR.TInt x) | x >= 0 && x <= 0xffff = Right (NodeToNodeVersionData $ fromIntegral x)
-                             | otherwise             = Left $ T.pack $ "networkMagic out of bound: " <> show x
-    decodeTerm t             = Left $ T.pack $ "unknown encoding: " ++ show t
+      decodeTerm :: CBOR.Term -> Either Text NodeToNodeVersionData
+      decodeTerm (CBOR.TInt x) | x >= 0 && x <= 0xffff = Right (NodeToNodeVersionData $ fromIntegral x)
+                               | otherwise             = Left $ T.pack $ "networkMagic out of bound: " <> show x
+      decodeTerm t             = Left $ T.pack $ "unknown encoding: " ++ show t

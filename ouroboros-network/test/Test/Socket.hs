@@ -33,7 +33,7 @@ import qualified Network.TypedProtocol.ReqResp.Server     as ReqResp
 import qualified Ouroboros.Network.Protocol.ReqResp.Codec as ReqResp
 
 import           Control.Tracer
-import           Codec.SerialiseTerm (SerialiseTerm (..))
+import           Codec.SerialiseTerm
 
 import qualified Ouroboros.Network.Mux as Mx
 import           Ouroboros.Network.Mux.Interface
@@ -180,15 +180,15 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
     res <-
       withSimpleServerNode
         responderAddr
-        (\DictVersion -> encodeTerm)
-        (\DictVersion -> decodeTerm)
-        (\DictVersion -> acceptEq)
-        (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) DictVersion responderApp)
+        (\(DictVersion codec) -> encodeTerm codec)
+        (\(DictVersion codec) -> decodeTerm codec)
+        (\(DictVersion _) -> acceptEq)
+        (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) responderApp)
         $ \_ -> do
           connectTo
-            (\DictVersion -> encodeTerm)
-            (\DictVersion -> decodeTerm)
-            (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) DictVersion initiatorApp)
+            (\(DictVersion codec) -> encodeTerm codec)
+            (\(DictVersion codec) -> decodeTerm codec)
+            (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) initiatorApp)
             initiatorAddr
             responderAddr
           atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
@@ -273,9 +273,9 @@ prop_socket_client_connect_error _ xs = ioProperty $ do
 
     (res :: Either IOException Bool)
       <- try $ False <$ connectTo
-        (\DictVersion -> encodeTerm)
-        (\DictVersion -> decodeTerm)
-        (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) DictVersion app)
+        (\(DictVersion codec) -> encodeTerm codec)
+        (\(DictVersion codec) -> decodeTerm codec)
+        (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) app)
         clientAddr
         serverAddr
 
@@ -316,23 +316,30 @@ demo chain0 updates = do
 
     withSimpleServerNode
       producerAddress
-      (\DictVersion -> encodeTerm)
-      (\DictVersion -> decodeTerm)
-      (\DictVersion -> acceptEq)
-      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) DictVersion $ responderApp)
+      (\(DictVersion codec)-> encodeTerm codec)
+      (\(DictVersion codec)-> decodeTerm codec)
+      (\(DictVersion _) -> acceptEq)
+      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm)$ responderApp)
       $ \_ -> do
-      withAsync (connectTo (\DictVersion -> encodeTerm) (\DictVersion -> decodeTerm) (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) DictVersion initiatorApp) consumerAddress producerAddress) $ \_connAsync -> do
-        void $ fork $ sequence_
-            [ do
-                threadDelay 10e-4 -- just to provide interest
-                atomically $ do
-                  p <- readTVar producerVar
-                  let Just p' = CPS.applyChainUpdate update p
-                  writeTVar producerVar p'
-            | update <- updates
-            ]
+      withAsync
+        (connectTo
+          (\(DictVersion codec) -> encodeTerm codec)
+          (\(DictVersion codec) -> decodeTerm codec)
+          (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) initiatorApp)
+          consumerAddress
+          producerAddress)
+        $ \_connAsync -> do
+          void $ fork $ sequence_
+              [ do
+                  threadDelay 10e-4 -- just to provide interest
+                  atomically $ do
+                    p <- readTVar producerVar
+                    let Just p' = CPS.applyChainUpdate update p
+                    writeTVar producerVar p'
+              | update <- updates
+              ]
 
-        atomically $ takeTMVar done
+          atomically $ takeTMVar done
 
   where
     checkTip target consumerVar = atomically $ do
