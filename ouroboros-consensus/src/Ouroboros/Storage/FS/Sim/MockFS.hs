@@ -29,9 +29,8 @@ module Ouroboros.Storage.FS.Sim.MockFS (
   , hOpen
   , hClose
   , hSeek
-  , hGet
-  , hPut
-  , hPutBuffer
+  , hGetSome
+  , hPutSome
   , hTruncate
   , hGetSize
     -- * Operations on directories
@@ -55,9 +54,6 @@ import           Data.Bifunctor
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base16 as B16
-import           Data.ByteString.Builder (Builder)
-import qualified Data.ByteString.Builder as Builder
-import qualified Data.ByteString.Lazy as BL
 import           Data.Int (Int64)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as M
@@ -514,9 +510,9 @@ hSeek err h seekMode o = withOpenHandleRead err h $ \fs hs -> do
 
 -- | Get bytes from handle
 --
--- NOTE: Unlike real I/O, we disallow 'hGet' on a handle in append mode.
-hGet :: CanSimFS m => ErrorHandling FsError m -> Handle -> Int -> m ByteString
-hGet err@ErrorHandling{..} h n =
+-- NOTE: Unlike real I/O, we disallow 'hGetSome' on a handle in append mode.
+hGetSome :: CanSimFS m => ErrorHandling FsError m -> Handle -> Int -> m ByteString
+hGetSome err@ErrorHandling{..} h n =
     withOpenHandleRead err h $ \fs hs@OpenHandle{..} -> do
       file <- checkFsTree err $ FS.getFile openFilePath (mockFiles fs)
       case openPtr of
@@ -527,13 +523,13 @@ hGet err@ErrorHandling{..} h n =
           throwError FsError {
               fsErrorType   = FsInvalidArgument
             , fsErrorPath   = openFilePath
-            , fsErrorString = "cannot hGet in append mode"
+            , fsErrorString = "cannot hGetSome in append mode"
             , fsErrorStack  = callStack
             , fsLimitation  = True
             }
 
-hPut :: CanSimFS m => ErrorHandling FsError m -> Handle -> Builder -> m Word64
-hPut err@ErrorHandling{..} h builder =
+hPutSome :: CanSimFS m => ErrorHandling FsError m -> Handle -> ByteString -> m Word64
+hPutSome err@ErrorHandling{..} h toWrite =
     withOpenHandleModify err h $ \fs hs@OpenHandle{..} -> do
       case openPtr of
         RW r w o -> do
@@ -548,7 +544,6 @@ hPut err@ErrorHandling{..} h builder =
           files' <- checkFsTree err $ FS.replace openFilePath file' (mockFiles fs)
           return (written, (files', hs))
   where
-    toWrite = BL.toStrict . Builder.toLazyByteString $ builder
     written = toEnum $ BS.length toWrite
 
     errReadOnly fp = FsError {
@@ -588,10 +583,6 @@ hPut err@ErrorHandling{..} h builder =
       where
         (a, bc) = BS.splitAt (fromIntegral n) bs
         c       = BS.drop m bc
-
-hPutBuffer :: CanSimFS m
-           => ErrorHandling FsError m -> Handle -> buf -> Builder -> m Word64
-hPutBuffer err hnd _buf builder = hPut err hnd builder
 
 -- | Truncate a file
 --

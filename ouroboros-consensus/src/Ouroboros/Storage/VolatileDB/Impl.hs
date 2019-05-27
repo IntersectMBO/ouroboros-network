@@ -91,6 +91,7 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString.Builder as BS
+import           Data.ByteString.Lazy (toStrict)
 import           Data.List (sortOn)
 import           Data.Map (Map)
 import qualified Data.Map as Map
@@ -231,7 +232,7 @@ getBlockImpl env@VolatileDBEnv{..} slot = do
             Just InternalBlockInfo {..} ->  do
                 bs <- withFile hasFS [ibFile] IO.ReadMode $ \hndl -> do
                         _ <- hSeek hndl IO.AbsoluteSeek (fromIntegral ibSlotOffset)
-                        hGet hndl (fromIntegral ibBlockSize)
+                        toStrict <$> hGetExactly hasFS hndl (fromIntegral ibBlockSize)
                 return (st, Just bs)
 
 -- This function follows the approach:
@@ -259,7 +260,7 @@ putBlockImpl env@VolatileDBEnv{..} BlockInfo{..} builder = do
                 let FileInfo {..} = fromMaybe
                         (error "Volatile db invariant violation: Current write file not found in Index.")
                         (Map.lookup _currentWritePath _currentMap)
-                bytesWritten <- hPut _currentWriteHandle builder
+                bytesWritten <- hPut hasFS _currentWriteHandle builder
                 let fileMp' = Map.insert _currentWriteOffset (fromIntegral bytesWritten, bbid) fContents
                     nBlocks' = fNBlocks + 1
                     fileInfo' = FileInfo {
@@ -271,7 +272,7 @@ putBlockImpl env@VolatileDBEnv{..} BlockInfo{..} builder = do
                     internalBlockInfo' = InternalBlockInfo {
                           ibFile       = _currentWritePath
                         , ibSlotOffset = _currentWriteOffset
-                        , ibBlockSize  = fromIntegral bytesWritten
+                        , ibBlockSize  = bytesWritten
                         , ibSlot       = bslot
                         , ibPreBid     = bpreBid
                     }

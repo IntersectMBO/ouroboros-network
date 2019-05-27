@@ -153,6 +153,7 @@ import           Control.Monad.State.Strict (StateT (..), get, lift, modify,
 import           Data.ByteString (ByteString)
 import           Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as BS
+import           Data.ByteString.Lazy (toStrict)
 import           Data.Either (isRight)
 import           Data.Functor (($>), (<&>))
 import           Data.List.NonEmpty (NonEmpty)
@@ -570,10 +571,10 @@ getEpochSlot _dbHasFS hashDecoder OpenState {..} _dbErr epochSlot = do
         hSeek iHnd AbsoluteSeek indexSeekPosition
         -- Compute the offset on disk and the blob size.
         let nbBytesToGet = indexEntrySizeBytes * 2
-        -- Note the use of hGetRightSize: we must get enough bytes from the
+        -- Note the use of hGetExactly: we must get enough bytes from the
         -- index file, otherwise 'decodeIndexEntry' (and its variant) would
         -- fail.
-        bytes <- hGetRightSize _dbHasFS iHnd nbBytesToGet indexFile
+        bytes <- toStrict <$> hGetExactly _dbHasFS iHnd nbBytesToGet
         let !start = decodeIndexEntry   bytes
             !end   = decodeIndexEntryAt indexEntrySizeBytes bytes
 
@@ -600,7 +601,7 @@ getEpochSlot _dbHasFS hashDecoder OpenState {..} _dbErr epochSlot = do
       _ -> withFile _dbHasFS epochFile ReadMode $ \eHnd -> do
         -- Seek in the epoch file
         hSeek eHnd AbsoluteSeek (fromIntegral blobOffset)
-        Just <$> hGetRightSize _dbHasFS eHnd (fromIntegral blobSize) epochFile
+        Just . toStrict <$> hGetExactly _dbHasFS eHnd (fromIntegral blobSize)
 
     return (mbEBBHash, mbBlob)
   where
@@ -669,7 +670,7 @@ appendBinaryBlobImpl dbEnv@ImmutableDBEnv{..} slot builder =
       -- Append to the end of the epoch file.
       bytesWritten <- lift $ onException hasFsErr _dbErr
         (hClose _currentEpochWriteHandle)
-        (hPut _currentEpochWriteHandle builder)
+        (hPut hasFS _currentEpochWriteHandle builder)
         -- In 'modifyOpenState': when an exception occurs, we close the handle
         -- if there is one in the initial open state. However, we might have
         -- opened a new one when we called 'startNewEpoch', and this handle
@@ -776,7 +777,7 @@ appendEBBImpl dbEnv@ImmutableDBEnv{..} epoch hash builder =
       -- Append to the epoch file.
       bytesWritten <- lift $ onException hasFsErr _dbErr
         (hClose _currentEpochWriteHandle)
-        (hPut _currentEpochWriteHandle builder)
+        (hPut hasFS _currentEpochWriteHandle builder)
         -- In 'modifyOpenState': when an exception occurs, we close the handle
         -- if there is one in the initial open state. However, we might have
         -- opened a new one when we called 'startNewEpoch', and this handle
@@ -1088,19 +1089,17 @@ iteratorNextImpl dbEnv it@IteratorHandle {_it_hasFS = hasFS :: HasFS m h, ..} st
 
     readNext :: IteratorState hash h -> m ByteString
     readNext IteratorState { _it_epoch_handle = eHnd
-                           , _it_next = EpochSlot epoch relSlot
+                           , _it_next = EpochSlot _ relSlot
                            , _it_epoch_index = index } = do
       -- Grab the blob size from the cached index
       let blobSize = sizeOfSlot index relSlot
 
       -- Read from the epoch file. No need for seeking: as we are streaming,
       -- we are already positioned at the correct place (Invariant 4).
-      let epochFile = renderFile "epoch" epoch
-      hGetRightSize hasFS eHnd (fromIntegral blobSize) epochFile
+      toStrict <$> hGetExactly hasFS eHnd (fromIntegral blobSize)
         `finally`
         -- Seek to the previous position if we shouldn't step to the next.
         unless step (hSeek eHnd RelativeSeek (negate (fromIntegral blobSize)))
-
     -- Move the iterator to the next position that can be read from, advancing
     -- epochs if necessary. If no next position can be found, the iterator is
     -- closed.

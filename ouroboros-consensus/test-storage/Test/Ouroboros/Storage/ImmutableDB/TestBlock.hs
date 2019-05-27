@@ -48,7 +48,7 @@ import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
 import           Ouroboros.Storage.Common
-import           Ouroboros.Storage.FS.API (HasFS (..), withFile)
+import           Ouroboros.Storage.FS.API (HasFS (..), hPut, withFile)
 import           Ouroboros.Storage.FS.API.Types (FsPath)
 import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
 import           Ouroboros.Storage.FS.Sim.STM (runSimFS)
@@ -222,7 +222,7 @@ prop_testBlockEpochFileParser (TestBlocks mbEBB regularBlocks) = QCM.monadicIO $
     writeBlocks :: HasFS IO Mock.Handle -> IO ()
     writeBlocks hasFS@HasFS{..} = do
       let bld = foldMap testBlockToBuilder blocks
-      withFile hasFS file AppendMode $ \eHnd -> void $ hPut eHnd bld
+      withFile hasFS file AppendMode $ \eHnd -> void $ hPut hasFS eHnd bld
 
     readBlocks :: HasFS IO Mock.Handle
                -> IO ([(SlotOffset, TestBlock)], Maybe TestBlock, Maybe String)
@@ -279,7 +279,7 @@ prop_testBlockCborEpochFileParser (TestBlocks mbEBB regularBlocks) = QCM.monadic
     writeBlocks :: HasFS IO Mock.Handle -> IO ()
     writeBlocks hasFS@HasFS{..} = do
       let bld = foldMap serialiseIncremental blocks
-      withFile hasFS file AppendMode $ \eHnd -> void $ hPut eHnd bld
+      withFile hasFS file AppendMode $ \eHnd -> void $ hPut hasFS eHnd bld
 
     readBlocks :: HasFS IO Mock.Handle
                -> IO ( [(SlotOffset, (Word64, TestBlock))]

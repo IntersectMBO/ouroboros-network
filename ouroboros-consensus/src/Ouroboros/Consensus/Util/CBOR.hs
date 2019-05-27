@@ -132,7 +132,7 @@ readIncremental hasFS@HasFS{..} decoder fp = withLiftST $ \liftST -> do
        -> S.IDecode s a
        -> m (Either ReadIncrementalErr a)
     go liftST h (S.Partial k) = do
-        bs   <- hGet h defaultChunkSize
+        bs   <- hGetSome h defaultChunkSize
         dec' <- liftST $ k (checkEmpty bs)
         go liftST h dec'
     go _ _ (S.Done leftover _ a) =
@@ -185,7 +185,7 @@ readIncrementalOffsets hasFS@HasFS{..} decoder fp = withLiftST $ \liftST ->
         -- some more bytes from the file.
         bs   <- case mbUnconsumed of
           Just unconsumed -> return unconsumed
-          Nothing         -> hGet h defaultChunkSize
+          Nothing         -> hGetSome h defaultChunkSize
         dec' <- liftST $ k (checkEmpty bs)
         go liftST h offset deserialised Nothing fileSize dec'
 
@@ -263,7 +263,7 @@ readIncrementalOffsetsEBB chunkSize hasFS decoder getEBBHash fp = withLiftST $ \
           dec' <- liftST $ k (Just bs)
           go liftST h offset deserialised mbEBBHash Nothing (bs : consumed) fileSize dec'
         Nothing -> do
-          bs <- hGet h chunkSize
+          bs <- hGetSome h chunkSize
           -- Use `checkEmpty` to give `Nothing`, an indication of end of stream.
           -- NB: we don't do that for the other case `Just bs`, because lack of
           -- unconsumed does _not_ imply end of stream.

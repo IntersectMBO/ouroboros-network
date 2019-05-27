@@ -30,8 +30,6 @@ import           Data.Bifoldable
 import           Data.Bifunctor
 import qualified Data.Bifunctor.TH as TH
 import           Data.Bitraversable
-import           Data.ByteString (ByteString)
-import qualified Data.ByteString.Builder as BL
 import qualified Data.ByteString.Lazy as BL
 import           Data.Functor.Classes
 import           Data.Int (Int64)
@@ -101,8 +99,6 @@ evalPathExpr (PExpParentOf fp) = init fp
 
 {-------------------------------------------------------------------------------
   Abstract model
-
-  TODO: This does not currently test newBuffer/hPutBuffer.
 -------------------------------------------------------------------------------}
 
 -- | Commands
@@ -144,7 +140,7 @@ data Success fp h =
   | Unit       ()
   | Path       fp ()
   | Word64     Word64
-  | ByteString ByteString
+  | ByteString BL.ByteString
   | Strings    (Set String)
   | Bool       Bool
   deriving (Eq, Show, Functor, Foldable)
@@ -154,7 +150,7 @@ run :: forall m h. Monad m
     => HasFS m h
     -> Cmd FsPath h
     -> m (Success FsPath h)
-run HasFS{..} = go
+run hasFS@HasFS{..} = go
   where
     go :: Cmd FsPath h -> m (Success FsPath h)
     go (Open pe mode) =
@@ -166,8 +162,11 @@ run HasFS{..} = go
     go (CreateDirIfMissing b pe) = withPE pe Path   $ createDirectoryIfMissing b
     go (Close    h             ) = Unit       <$> hClose    h
     go (Seek     h mode sz     ) = Unit       <$> hSeek     h mode sz
-    go (Get      h n           ) = ByteString <$> hGet      h n
-    go (Put      h bs          ) = Word64     <$> hPut      h (BL.lazyByteString bs)
+    -- Note: we're not using 'hGetSome' and 'hPutSome' that may produce
+    -- partial reads/writes, but wrappers around them that handle partial
+    -- reads/writes, see #502.
+    go (Get      h n           ) = ByteString <$> hGetExactly hasFS h n
+    go (Put      h bs          ) = Word64     <$> hPutAll     hasFS h bs
     go (Truncate h sz          ) = Unit       <$> hTruncate h sz
     go (GetSize  h             ) = Word64     <$> hGetSize  h
     go (ListDirectory      pe  ) = withPE pe (const Strings) $ listDirectory

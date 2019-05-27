@@ -49,8 +49,8 @@ simHasFS err var = HasFS {
     , hOpen                    = sim  .: Mock.hOpen                    err'
     , hClose                   = sim  .  Mock.hClose                   err'
     , hSeek                    = sim ..: Mock.hSeek                    err'
-    , hGet                     = sim  .: Mock.hGet                     err'
-    , hPut                     = sim  .: Mock.hPut                     err'
+    , hGetSome                 = sim  .: Mock.hGetSome                 err'
+    , hPutSome                 = sim  .: Mock.hPutSome                 err'
     , hTruncate                = sim  .: Mock.hTruncate                err'
     , hGetSize                 = sim  .  Mock.hGetSize                 err'
     , createDirectory          = sim  .  Mock.createDirectory          err'
@@ -59,6 +59,7 @@ simHasFS err var = HasFS {
     , doesDirectoryExist       = sim  .  Mock.doesDirectoryExist       err'
     , doesFileExist            = sim  .  Mock.doesFileExist            err'
     , removeFile               = sim  .  Mock.removeFile               err'
+    , handlePath               = sim  .  gets . flip Mock.handleFsPath
     , hasFsErr                 = err
     }
   where

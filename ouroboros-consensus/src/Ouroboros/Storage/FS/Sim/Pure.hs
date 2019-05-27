@@ -39,8 +39,8 @@ pureHasFS err = HasFS {
     , hOpen                    = Mock.hOpen                    err'
     , hClose                   = Mock.hClose                   err'
     , hSeek                    = Mock.hSeek                    err'
-    , hGet                     = Mock.hGet                     err'
-    , hPut                     = Mock.hPut                     err'
+    , hGetSome                 = Mock.hGetSome                 err'
+    , hPutSome                 = Mock.hPutSome                 err'
     , hTruncate                = Mock.hTruncate                err'
     , hGetSize                 = Mock.hGetSize                 err'
     , createDirectory          = Mock.createDirectory          err'
@@ -49,6 +49,7 @@ pureHasFS err = HasFS {
     , doesDirectoryExist       = Mock.doesDirectoryExist       err'
     , doesFileExist            = Mock.doesFileExist            err'
     , removeFile               = Mock.removeFile               err'
+    , handlePath               = gets . flip Mock.handleFsPath
     , hasFsErr                 = err'
     }
   where

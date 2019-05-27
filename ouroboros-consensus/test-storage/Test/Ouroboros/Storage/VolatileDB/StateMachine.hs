@@ -404,20 +404,16 @@ generatorImpl mkErr terminatingCmd m@Model {..} = do
     genCmd <- generatorCmdImpl terminatingCmd m
     Just $ do
         At cmd <- genCmd
-        err' <- if noErrorFor cmd then return Nothing
+        err <- if noErrorFor cmd then return Nothing
            else frequency
                 [ (8, return Nothing)
-                , (if mkErr then 1 else 0, Just <$> arbitrary)]
-        let err = erasePutCorruptions err'
+                  -- TODO use the full generator for 'Errors', i.e.
+                  -- 'arbitrary'. Now we disable partial writes and
+                  -- 'SubstituteWithJunk' corruptions because we cannot
+                  -- predict what the model should do with those.
+                , (if mkErr then 1 else 0, Just <$> genErrors False False)]
         return $ At $ CmdErr cmd err
     where
-        -- This doesn't reduce the power of tests. This is because we have partial
-        -- writes as part of file Corruption and not as part of simulated errors.
-        eraseCorruptions str = (\(fsErr, _) -> (fsErr, Nothing)) <$> str
-        erasePutCorruptions mErr = do
-            err <- mErr
-            -- we don't use corruptions as part of simulated errors.
-            return err {_hPut = eraseCorruptions $ _hPut err}
         noErrorFor GetBlock {}          = False
         noErrorFor GetBlockIds          = False
         noErrorFor ReOpen {}            = False
@@ -534,7 +530,7 @@ knownLimitation model (At cmd) = case cmd of
         isLimitation (Just slot') slot = slot' >  slot
 
 prop_sequential :: Property
-prop_sequential = withMaxSuccess 1000 $
+prop_sequential =
     forAllCommands smUnused Nothing $ \cmds -> monadicIO $ do
         let test :: TVar IO Errors
                  -> HasFS IO h
