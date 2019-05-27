@@ -1,5 +1,5 @@
-{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
@@ -21,10 +21,9 @@ import           Test.QuickCheck
 
 import           Ouroboros.Consensus.Util (SomePair (..))
 import           Ouroboros.Storage.Common
-import           Ouroboros.Storage.FS.API (HasFS (..), hGetLenient, hPut,
+import           Ouroboros.Storage.FS.API (HasFS (..), hGetExactly, hPut,
                      withFile)
 import           Ouroboros.Storage.FS.API.Types
-import           Ouroboros.Storage.VolatileDB (Parser (..), SlotNo (..))
 import           Ouroboros.Storage.VolatileDB
 import qualified Ouroboros.Storage.VolatileDB.Impl as Internal hiding (openDB)
 
@@ -60,7 +59,7 @@ binarySize = 25
 
 myParser :: (MonadThrow m)
          => HasFS m h
-         -> Parser () m BlockId
+         -> Parser String m BlockId
 myParser hasFs = Parser {
     parse = parseImpl hasFs
     }
@@ -68,31 +67,34 @@ myParser hasFs = Parser {
 parseImpl :: forall m h. (MonadThrow m)
           => HasFS m h
           -> FsPath
-          -> m ([(SlotOffset, (BlockSize, BlockInfo BlockId))], Maybe ())
+          -> m ([(SlotOffset, (BlockSize, BlockInfo BlockId))], Maybe String)
 parseImpl hasFS@HasFS{..} path =
     withFile hasFS path ReadMode $ \hndl -> do
-        let go :: [(SlotOffset, (BlockSize, BlockInfo BlockId))]
-               -> Word64
-               -> m ([(SlotOffset, (BlockSize, BlockInfo BlockId))], Maybe ())
-            go ls n = do
-                -- We are using 'hGetLenient' instead of 'hGetExactly' as a
-                -- proxy for detcting eof: either we get binarySize or we get
-                -- 0 bytes.
-                bs <- BL.toStrict <$> hGetLenient hasFS hndl binarySize
-                if BS.length bs == 0 then return (reverse ls, Nothing)
-                else case fromBinary bs of
-                    Left _ ->
-                        return (reverse ls, Just ())
-                    Right (bid, prebid) ->
-                        let blockInfo =
-                                BlockInfo {
-                                      bbid    = bid
-                                    , bslot   = guessSlot bid
-                                    , bpreBid = prebid
-                                }
-                            ls' = (n, (fromIntegral binarySize, blockInfo)) : ls
-                        in go ls' (n + fromIntegral binarySize)
-        go [] 0
+      fileSize <- hGetSize hndl
+      go hndl [] 0 fileSize
+  where
+    go :: h
+       -> [(SlotOffset, (BlockSize, BlockInfo BlockId))]
+       -> Word64  -- ^ Offset where we will read from next
+       -> Word64  -- ^ File size, i.e. the max offset
+       -> m ([(SlotOffset, (BlockSize, BlockInfo BlockId))], Maybe String)
+    go hndl ls offset maxOffset
+      | offset >= maxOffset
+      = return (reverse ls, Nothing)
+      | maxOffset - offset < fromIntegral binarySize
+      = return (reverse ls, Just "partial block at the end")
+      | otherwise
+      = fromBinary . BL.toStrict <$> hGetExactly hasFS hndl binarySize >>= \case
+          Left e              -> return (reverse ls, Just e)
+          Right (bid, prebid) ->
+              go hndl ls' (offset + fromIntegral binarySize) maxOffset
+            where
+              ls' = (offset, (fromIntegral binarySize, blockInfo)) : ls
+              blockInfo = BlockInfo
+                { bbid    = bid
+                , bslot   = guessSlot bid
+                , bpreBid = prebid
+                }
 
 
 {-------------------------------------------------------------------------------

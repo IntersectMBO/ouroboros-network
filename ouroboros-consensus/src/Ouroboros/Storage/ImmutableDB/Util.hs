@@ -2,7 +2,6 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 module Ouroboros.Storage.ImmutableDB.Util
@@ -12,7 +11,6 @@ module Ouroboros.Storage.ImmutableDB.Util
   , throwUserError
   , throwUnexpectedError
   , parseDBFile
-  , readAll
   , validateIteratorRange
   , reconstructSlotOffsets
   , indexBackfill
@@ -26,10 +24,8 @@ import           Control.Monad (when)
 import           Control.Monad.Class.MonadST (MonadST)
 import           Control.Monad.Class.MonadThrow (MonadThrow)
 
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as BSL (ByteString)
-import qualified Data.ByteString.Builder as BS
 import           Data.ByteString.Builder.Extra (defaultChunkSize)
+import qualified Data.ByteString.Lazy as BSL (ByteString)
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Text as T
@@ -95,20 +91,6 @@ parseDBFile :: String -> Maybe (String, EpochNo)
 parseDBFile s = case T.splitOn "-" . fst . T.breakOn "." . T.pack $ s of
     [prefix, n] -> (T.unpack prefix,) . EpochNo <$> readMaybe (T.unpack n)
     _           -> Nothing
-
--- | Read all the data from the given file handle 64kB at a time.
---
--- TODO move to Ouroboros.Storage.FS.Class?
-readAll :: Monad m => HasFS m h -> h -> m BS.Builder
-readAll HasFS{..} hnd = go mempty
-  where
-    bufferSize = 64 * 1024
-    go acc = do
-      bytesRead <- hGetSome hnd bufferSize
-      let acc' = acc <> BS.byteString bytesRead
-      case BS.length bytesRead < bufferSize of
-        True  -> return acc'
-        False -> go acc'
 
 -- | Check whether the given iterator range is valid.
 --

@@ -39,7 +39,6 @@ import           Control.Monad (void, when)
 import           Control.Monad.Class.MonadThrow
 
 import           Data.Bifunctor (second)
-import qualified Data.ByteString.Builder as BS
 import qualified Data.ByteString.Lazy as BL
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
@@ -49,7 +48,8 @@ import           Data.Word (Word64)
 
 import           GHC.Stack (HasCallStack, callStack)
 
-import           Ouroboros.Storage.FS.API (HasFS (..), hPut, hPutAll, withFile)
+import           Ouroboros.Storage.FS.API (HasFS (..), hGetAll, hPut, hPutAll,
+                     withFile)
 import           Ouroboros.Storage.FS.API.Types (AllowExisting (..),
                      OpenMode (..))
 
@@ -60,7 +60,7 @@ import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
 import           Ouroboros.Storage.ImmutableDB.Layout
 import           Ouroboros.Storage.ImmutableDB.Types (ImmutableDBError,
                      UnexpectedError (DeserialisationError, InvalidFileError))
-import           Ouroboros.Storage.ImmutableDB.Util (readAll, renderFile,
+import           Ouroboros.Storage.ImmutableDB.Util (renderFile,
                      throwUnexpectedError)
 
 {------------------------------------------------------------------------------
@@ -107,7 +107,7 @@ loadIndex hashDecoder hasFS err epoch indexSize = do
           expectedOffsets * indexEntrySizeBytes
 
     withFile hasFS indexFile ReadMode $ \hnd -> do
-      bl <- BS.toLazyByteString <$> readAll hasFS hnd
+      bl <- hGetAll hasFS hnd
       let (offsetsBL, ebbHashBL) = BL.splitAt expectedBytes bl
       when (BL.length offsetsBL /= expectedBytes) $
         throwUnexpectedError err $ InvalidFileError indexFile callStack

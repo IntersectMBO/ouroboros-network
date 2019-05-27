@@ -151,7 +151,6 @@ import           Control.Monad.State.Strict (StateT (..), get, lift, modify,
                      put, runStateT, state)
 
 import           Data.ByteString.Builder (Builder)
-import qualified Data.ByteString.Builder as BS
 import           Data.ByteString.Lazy (ByteString, toStrict)
 import           Data.Either (isRight)
 import           Data.Functor (($>), (<&>))
@@ -581,7 +580,7 @@ getEpochSlot _dbHasFS hashDecoder OpenState {..} _dbErr epochSlot = do
             epochSize <- epochInfoSize _epochInfo epoch
             let hashOffset = (fromIntegral epochSize + 2) * indexEntrySizeBytes
             hSeek iHnd AbsoluteSeek (fromIntegral hashOffset)
-            deserialiseHash' =<< readAll _dbHasFS iHnd
+            deserialiseHash' =<< hGetAll _dbHasFS iHnd
           else return Nothing
 
         return (start, end - start, mbEBBHash)
@@ -605,8 +604,8 @@ getEpochSlot _dbHasFS hashDecoder OpenState {..} _dbErr epochSlot = do
     HasFS{..}                    = _dbHasFS
     EpochSlot epoch relativeSlot = epochSlot
 
-    deserialiseHash' :: HasCallStack => Builder -> m (Maybe hash)
-    deserialiseHash' bld = case deserialiseHash hashDecoder (BS.toLazyByteString bld) of
+    deserialiseHash' :: HasCallStack => ByteString -> m (Maybe hash)
+    deserialiseHash' bs = case deserialiseHash hashDecoder bs of
       Right (_, hash) -> return hash
       Left df         -> throwUnexpectedError _dbErr $
         DeserialisationError df callStack
