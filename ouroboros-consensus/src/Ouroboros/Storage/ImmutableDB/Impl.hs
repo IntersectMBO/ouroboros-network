@@ -1627,7 +1627,10 @@ validate hashDecoder hashEncoder hasFS@HasFS{..} err epochInfo valPol epochFileP
               removeFilesStartingFrom hasFS (succ epoch)
               continueIfPossible Nothing
             Incomplete index -> do
-              removeFilesStartingFrom hasFS (succ epoch)
+              case firstFilledSlot index of
+                -- If the index is empty, remove the index and epoch file too
+                Nothing -> removeFilesStartingFrom hasFS epoch
+                Just _  -> removeFilesStartingFrom hasFS (succ epoch)
               let lastValid' = lastFilledSlot index <&> \lastRelativeSlot ->
                     (EpochSlot epoch lastRelativeSlot, index)
               continueIfPossible lastValid'
