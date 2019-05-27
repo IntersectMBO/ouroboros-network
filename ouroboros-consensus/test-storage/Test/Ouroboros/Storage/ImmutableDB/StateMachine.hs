@@ -28,7 +28,7 @@ import           Control.Monad.State.Strict (MonadState, State, evalState, gets,
 import           Data.Functor.Identity
 
 import           Data.Bifunctor (first)
-import           Data.ByteString (ByteString)
+import           Data.ByteString.Lazy (ByteString)
 import           Data.Coerce (Coercible, coerce)
 import           Data.Foldable (toList)
 import           Data.Function (on)

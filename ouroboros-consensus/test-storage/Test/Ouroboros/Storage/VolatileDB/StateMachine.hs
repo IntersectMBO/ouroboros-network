@@ -28,8 +28,8 @@ import           Control.Monad.Except
 import           Control.Monad.State
 import           Data.Bifunctor (bimap)
 import qualified Data.Binary as Binary
-import           Data.ByteString (ByteString)
 import qualified Data.ByteString.Builder as BL
+import           Data.ByteString.Lazy (ByteString)
 import           Data.Functor.Classes
 import           Data.Kind (Type)
 import qualified Data.List.NonEmpty as NE

@@ -28,9 +28,8 @@ module Test.Ouroboros.Storage.VolatileDB.Model
 
 import           Control.Monad
 import           Control.Monad.State (MonadState, get, modify, put)
-import           Data.ByteString (ByteString)
 import           Data.ByteString.Builder
-import           Data.ByteString.Lazy (toStrict)
+import           Data.ByteString.Lazy (ByteString)
 import           Data.Either
 import           Data.List (find, sortOn, splitAt, uncons)
 import           Data.Map (Map)
@@ -133,7 +132,7 @@ putBlockModel err cmdErr BlockInfo{..} bs = do
                     , fsLimitation = False
                 }
             Nothing -> do
-                let mp' = Map.insert bbid (toStrict $ toLazyByteString bs) mp
+                let mp' = Map.insert bbid (toLazyByteString bs) mp
                     (mbid, n, bids) = fromMaybe
                         (error "current file does not exist in index")
                         (Map.lookup currentFile index)

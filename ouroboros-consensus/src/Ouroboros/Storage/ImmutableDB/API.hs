@@ -15,8 +15,8 @@ module Ouroboros.Storage.ImmutableDB.API
 
 import           Control.Monad.Class.MonadThrow
 
-import           Data.ByteString (ByteString)
 import           Data.ByteString.Builder (Builder)
+import           Data.ByteString.Lazy (ByteString)
 import           Data.Function (on)
 
 import           GHC.Generics (Generic)

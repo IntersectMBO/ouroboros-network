@@ -23,10 +23,8 @@ module Test.Ouroboros.Storage.ImmutableDB.Model
 import           Control.Monad (when)
 import           Control.Monad.State.Strict (MonadState, get, gets, modify, put)
 
-import           Data.ByteString (ByteString)
-import           Data.ByteString.Builder (Builder)
-import qualified Data.ByteString.Builder as BS
-import qualified Data.ByteString.Lazy as BL
+import           Data.ByteString.Builder (Builder, toLazyByteString)
+import           Data.ByteString.Lazy (ByteString)
 import           Data.Function ((&))
 import           Data.Functor.Identity
 import           Data.List.NonEmpty (NonEmpty)
@@ -416,7 +414,7 @@ appendBinaryBlobModel err slot bld = do
     when inThePast $
       throwUserError err $ AppendToSlotInThePastError slot dbmTip
 
-    let blob  = BL.toStrict $ BS.toLazyByteString bld
+    let blob  = toLazyByteString bld
         toPad = fromIntegral (unSlotNo slot) - length dbmChain
 
     -- TODO snoc list?
@@ -441,7 +439,7 @@ appendEBBModel err epoch hash bld = do
     when inThePast $
       throwUserError err $ AppendToEBBInThePastError epoch currentEpoch
 
-    let blob         = BL.toStrict $ BS.toLazyByteString bld
+    let blob         = toLazyByteString bld
         ebbEpochSlot = EpochSlot epoch 0
         ebbSlot      = epochSlotToSlot dbm ebbEpochSlot
         toPad        = fromIntegral (unSlotNo ebbSlot) - length dbmChain
