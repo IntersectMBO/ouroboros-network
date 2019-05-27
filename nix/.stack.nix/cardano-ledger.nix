@@ -86,7 +86,7 @@
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
       url = "https://github.com/input-output-hk/cardano-ledger";
-      rev = "20afe954f847281665ada871c40943bf346f6cf5";
-      sha256 = "05r6kmvkp9ygyp9yyhzwrwxz62r41yfqxlhzkk5wz7fi71lp0ia4";
+      rev = "684195650722e4d337e90562fddcc5c2b0d17d34";
+      sha256 = "17qmjcg2l1a31vmp6xs37prlqzq57rz9mly3s9xn5nbygzm2dgny";
       });
     }
