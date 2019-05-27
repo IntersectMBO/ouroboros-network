@@ -1,6 +1,5 @@
-{-# LANGUAGE LambdaCase #-}
 module Ouroboros.Storage.IO (
-      FHandle --opaque
+      FHandle
     , open
     , truncate
     , seek
@@ -18,10 +17,11 @@ import           Data.ByteString.Internal as Internal
 import           Data.Int (Int64)
 import           Data.Word (Word32, Word64, Word8)
 import           Foreign (Ptr)
-import           System.IO (IOMode (..), SeekMode (..))
 import           System.Posix (Fd)
 import qualified System.Posix as Posix
 
+import           Ouroboros.Storage.FS.API.Types (AllowExisting (..),
+                     OpenMode (..), SeekMode (..))
 import           Ouroboros.Storage.FS.Handle
 
 type FHandle = HandleOS Fd
@@ -44,23 +44,31 @@ defaultFileFlags = Posix.OpenFileFlags {
     }
 
 -- | Opens a file from disk.
-open :: FilePath -> IOMode -> IO Fd
-open fp ioMode =
-  Posix.openFd fp openMode fileMode fileFlags
+open :: FilePath -> OpenMode -> IO Fd
+open fp openMode = Posix.openFd fp posixOpenMode fileMode fileFlags
   where
-    (openMode, fileMode, fileFlags)
-      | ioMode == ReadMode   = ( Posix.ReadOnly
-                               , Nothing
-                               , defaultFileFlags
-                               )
-      | ioMode == AppendMode = ( Posix.WriteOnly
-                               , Just Posix.stdFileMode
-                               , defaultFileFlags { Posix.append = True }
-                               )
-      | otherwise            = ( Posix.ReadWrite
-                               , Just Posix.stdFileMode
-                               , defaultFileFlags
-                               )
+    (posixOpenMode, fileMode, fileFlags) = case openMode of
+      ReadMode         -> ( Posix.ReadOnly
+                          , Nothing
+                          , defaultFileFlags
+                          )
+      AppendMode    ex -> ( Posix.WriteOnly
+                          , Just Posix.stdFileMode
+                          , defaultFileFlags { Posix.append = True
+                                             , Posix.exclusive = isExcl ex }
+                          )
+      ReadWriteMode ex -> ( Posix.ReadWrite
+                          , Just Posix.stdFileMode
+                          , defaultFileFlags { Posix.exclusive = isExcl ex }
+                          )
+      WriteMode     ex -> ( Posix.ReadWrite
+                          , Just Posix.stdFileMode
+                          , defaultFileFlags { Posix.exclusive = isExcl ex }
+                          )
+
+    isExcl AllowExisting = False
+    isExcl MustBeNew     = True
+
 
 -- | Writes the data pointed by the input 'Ptr Word8' into the input 'FHandle'.
 write :: FHandle -> Ptr Word8 -> Int64 -> IO Word32

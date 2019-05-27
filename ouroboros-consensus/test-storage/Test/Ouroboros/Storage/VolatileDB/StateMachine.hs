@@ -40,7 +40,6 @@ import qualified Data.Set as S
 import           Data.TreeDiff (ToExpr)
 import           GHC.Generics
 import           GHC.Stack
-import qualified System.IO as IO
 import           System.Random (getStdRandom, randomR)
 import           Test.QuickCheck
 import           Test.QuickCheck.Monadic
@@ -56,7 +55,7 @@ import           Text.Show.Pretty (ppShow)
 import           Ouroboros.Consensus.Util (SomePair (..))
 import qualified Ouroboros.Consensus.Util.Classify as C
 import           Ouroboros.Storage.FS.API
-import           Ouroboros.Storage.FS.API (HasFS (..))
+import           Ouroboros.Storage.FS.API.Types
 import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 import           Ouroboros.Storage.VolatileDB.API
@@ -489,7 +488,7 @@ semanticsRestCmd hasFS env db cmd = case cmd of
         return $ Unit ()
     CreateInvalidFile -> do
         closeDB db
-        withFile hasFS ["invalidFileName.dat"] IO.AppendMode $ \_hndl -> do
+        withFile hasFS ["invalidFileName.dat"] (AppendMode MustBeNew) $ \_hndl -> do
             return ()
         reOpenDB db
         return $ Unit ()

@@ -19,11 +19,13 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Word
 import           Numeric.Natural
-import qualified System.IO as IO
 import           Text.Printf (printf)
 
 import           Ouroboros.Consensus.Util.HList (All, HList (..))
 import qualified Ouroboros.Consensus.Util.HList as HList
+
+import           Ouroboros.Storage.FS.API.Types (AllowExisting (..),
+                     OpenMode (..), SeekMode (..))
 
 -- | Condensed but human-readable output
 class Condense a where
@@ -93,16 +95,21 @@ instance (Condense a, Condense b, Condense c, Condense d, Condense e) => Condens
 instance (Condense k, Condense a) => Condense (Map k a) where
   condense = condense . Map.toList
 
-instance Condense IO.SeekMode where
-  condense IO.RelativeSeek = "r"
-  condense IO.AbsoluteSeek = "a"
-  condense IO.SeekFromEnd  = "e"
+instance Condense SeekMode where
+  condense RelativeSeek = "r"
+  condense AbsoluteSeek = "a"
+  condense SeekFromEnd  = "e"
 
-instance Condense IO.IOMode where
-  condense IO.ReadMode      = "r"
-  condense IO.WriteMode     = "w"
-  condense IO.ReadWriteMode = "rw"
-  condense IO.AppendMode    = "a"
+instance Condense AllowExisting where
+  condense AllowExisting = ""
+  condense MustBeNew     = "!"
+
+instance Condense OpenMode where
+    condense ReadMode           = "r"
+    condense (WriteMode     ex) = "w"  ++ condense ex
+    condense (ReadWriteMode ex) = "rw" ++ condense ex
+    condense (AppendMode    ex) = "a"  ++ condense ex
+
 
 instance Condense BS.Strict.ByteString where
   condense bs = show bs ++ "<" ++ show (BS.Strict.length bs) ++ "b>"

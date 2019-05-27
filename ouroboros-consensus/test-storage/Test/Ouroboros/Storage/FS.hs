@@ -5,9 +5,6 @@ module Test.Ouroboros.Storage.FS
   ( tests
   ) where
 
-
-import qualified System.IO as IO
-
 import qualified Test.Ouroboros.Storage.FS.StateMachine as StateMachine
 import           Test.Ouroboros.Storage.Util
 import           Test.Tasty (TestTree, testGroup)
@@ -32,13 +29,13 @@ tests tmpDir = testGroup "HasFS"
 
 test_hOpenWriteInvalid :: Assertion
 test_hOpenWriteInvalid = apiEquivalenceFs (expectFsError FsInvalidArgument) $ \hasFS@HasFS{..} _err -> do
-    _  <- hOpen ["foo.txt"] IO.WriteMode
-    h2 <- hOpen ["foo.txt"] IO.ReadMode
+    _  <- hOpen ["foo.txt"] (WriteMode MustBeNew)
+    h2 <- hOpen ["foo.txt"] ReadMode
     hPut hasFS h2 "haskell-is-nice"
 
 test_example :: Assertion
 test_example = apiEquivalenceFs (expectFsResult (@?= ["test", "block"])) $ \hasFS@HasFS{..} _err -> do
     -- The example assumes the presence of some files and dirs.
     createDirectoryIfMissing True ["var", "tmp"]
-    withFile hasFS ["var", "tmp", "foo.txt"] IO.WriteMode $ \_ -> return ()
+    withFile hasFS ["var", "tmp", "foo.txt"] (WriteMode MustBeNew) $ \_ -> return ()
     FS.API.Example.example hasFS

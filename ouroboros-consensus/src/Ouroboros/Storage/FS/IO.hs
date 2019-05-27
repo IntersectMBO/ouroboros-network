@@ -33,10 +33,10 @@ ioHasFS mount = HasFS {
       -- TODO(adn) Might be useful to implement this properly by reading all
       -- the stuff available at the 'MountPoint'.
       dumpState = return "<dumpState@IO>"
-    , hOpen = \fp ioMode -> do
+    , hOpen = \fp openMode -> do
         let path = root fp
         osHandle <- rethrowFsError fp $
-            F.open path ioMode
+            F.open path openMode
         hVar <- newMVar $ Just osHandle
         return $ H.Handle fp path hVar
     , hClose = \h -> rethrowFsError (H.handlePath h) $

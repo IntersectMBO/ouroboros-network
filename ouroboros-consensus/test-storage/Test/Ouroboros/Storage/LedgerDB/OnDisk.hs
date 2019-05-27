@@ -47,7 +47,6 @@ import           Data.TreeDiff (ToExpr (..))
 import           Data.Typeable (Typeable)
 import           Data.Word
 import           GHC.Generics (Generic)
-import           System.IO (IOMode (..))
 import           System.Random (getStdRandom, randomR)
 
 import           Control.Monad.Class.MonadST
@@ -70,6 +69,7 @@ import qualified Ouroboros.Consensus.Util.Classify as C
 
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API
+import           Ouroboros.Storage.FS.API.Types
 import qualified Ouroboros.Storage.FS.Sim.MockFS as MockFS
 import           Ouroboros.Storage.FS.Sim.STM
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
@@ -690,7 +690,7 @@ runDB standalone@DB{..} cmd =
 
     truncateSnapshot :: HasFS m fh -> DiskSnapshot -> m ()
     truncateSnapshot hasFS@HasFS{..} ss =
-        withFile hasFS (snapshotToPath ss) AppendMode $ \h ->
+        withFile hasFS (snapshotToPath ss) (AppendMode AllowExisting) $ \h ->
           hTruncate h 0
 
 {-------------------------------------------------------------------------------

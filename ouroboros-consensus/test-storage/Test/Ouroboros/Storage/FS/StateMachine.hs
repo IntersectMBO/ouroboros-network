@@ -36,7 +36,6 @@ import           Data.Int (Int64)
 import qualified Data.List as L
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (isJust)
 import           Data.Proxy
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -46,8 +45,6 @@ import qualified Generics.SOP as SOP
 import           GHC.Generics
 import           GHC.Stack
 import           System.Directory (removeDirectoryRecursive)
-import           System.IO (IOMode, SeekMode)
-import qualified System.IO as IO
 import           System.IO.Temp (createTempDirectory)
 import           System.Random (getStdRandom, randomR)
 import           Text.Read (readMaybe)
@@ -115,7 +112,7 @@ evalPathExpr (PExpParentOf fp) = init fp
 -- TODO: Program such as "copy what you read" is currently not expressible
 -- in our language. Does this matter?
 data Cmd fp h =
-    Open               (PathExpr fp) IOMode
+    Open               (PathExpr fp) OpenMode
   | Close              h
   | Seek               h SeekMode Int64
   | Get                h Int
@@ -155,8 +152,8 @@ run hasFS@HasFS{..} = go
     go :: Cmd FsPath h -> m (Success FsPath h)
     go (Open pe mode) =
         case mode of
-          IO.ReadMode -> withPE pe (\_ -> RHandle) $ \fp -> hOpen fp mode
-          _otherwise  -> withPE pe WHandle         $ \fp -> hOpen fp mode
+          ReadMode   -> withPE pe (\_ -> RHandle) $ \fp -> hOpen fp mode
+          _otherwise -> withPE pe WHandle         $ \fp -> hOpen fp mode
 
     go (CreateDir            pe) = withPE pe Path   $ createDirectory
     go (CreateDirIfMissing b pe) = withPE pe Path   $ createDirectoryIfMissing b
@@ -284,7 +281,7 @@ openHandles Model{..} =
     map (resolveHandle mockFS) $ filter isOpen (RE.elems knownHandles)
   where
     isOpen :: Mock.Handle -> Bool
-    isOpen h = isJust $ Mock.handleIOMode mockFS h
+    isOpen = Mock.handleIsOpen mockFS
 
 {-------------------------------------------------------------------------------
   Wrapping in quickcheck-state-machine references
@@ -412,19 +409,22 @@ generator Model{..} = oneof $ concat [
     genHandle :: Gen (HandleRef Symbolic)
     genHandle = elements (RE.keys knownHandles)
 
-    genMode :: Gen IOMode
-    genMode = elements [
-          IO.ReadMode
-        , IO.WriteMode
-        , IO.AppendMode
-        , IO.ReadWriteMode
+    genMode :: Gen OpenMode
+    genMode = oneof [
+          return ReadMode
+        , WriteMode     <$> genAllowExisting
+        , AppendMode    <$> genAllowExisting
+        , ReadWriteMode <$> genAllowExisting
         ]
+
+    genAllowExisting :: Gen AllowExisting
+    genAllowExisting = elements [AllowExisting, MustBeNew]
 
     genSeekMode :: Gen SeekMode
     genSeekMode = elements [
-          IO.AbsoluteSeek
-        , IO.RelativeSeek
-        , IO.SeekFromEnd
+          AbsoluteSeek
+        , RelativeSeek
+        , SeekFromEnd
         ]
 
     genOffset :: Gen Int64
@@ -473,13 +473,13 @@ shrinker Model{..} (At cmd) =
                   $ shrinkTempFile n
               Nothing ->
                 let mode' = case mode of
-                             IO.ReadMode -> IO.ReadWriteMode
-                             _otherwise  -> mode
+                             ReadMode   -> ReadWriteMode AllowExisting
+                             _otherwise -> mode
                 in [At $ Open (tempToExpr (TempFile numTempFiles)) mode']
           , case mode of
-              IO.ReadWriteMode -> [
-                  At $ Open pe IO.ReadMode
-                , At $ Open pe IO.WriteMode
+              ReadWriteMode ex -> [
+                  At $ Open pe ReadMode
+                , At $ Open pe (WriteMode ex)
                 ]
               _otherwise ->
                 []
@@ -759,6 +759,13 @@ data Tag =
   -- > Seek .. (negative)
   -- > Get ..
   | TagPutSeekNegGet
+
+  -- Open with MustBeNew (O_EXCL flag), but the file already existed.
+  --
+  -- > h <- Open fp (AppendMode _)
+  -- > Close h
+  -- > Open fp (AppendMode MustBeNew)
+  | TagExclusiveFail
   deriving (Show, Eq)
 
 -- | Predicate on events
@@ -806,6 +813,7 @@ tag = C.classify [
     , tagWriteInvalid Set.empty
     , tagPutSeekGet Set.empty Set.empty
     , tagPutSeekNegGet Set.empty Set.empty
+    , tagExclusiveFail
     ]
   where
     tagCreateDirThenListDir :: Set FsPath -> EventPred
@@ -945,18 +953,18 @@ tag = C.classify [
     tagOpenReadThenWrite :: Set FsPath -> EventPred
     tagOpenReadThenWrite readOpen = successful $ \ev@Event{..} _ ->
       case eventMockCmd ev of
-        Open (PExpPath fp) IO.ReadMode ->
+        Open (PExpPath fp) ReadMode ->
           Right $ tagOpenReadThenWrite $ Set.insert fp readOpen
-        Open (PExpPath fp) IO.WriteMode | Set.member fp readOpen ->
+        Open (PExpPath fp) (WriteMode _) | Set.member fp readOpen ->
           Left TagOpenReadThenWrite
         _otherwise -> Right $ tagOpenReadThenWrite readOpen
 
     tagOpenReadThenRead :: Set FsPath -> EventPred
     tagOpenReadThenRead readOpen = successful $ \ev@Event{..} _ ->
       case eventMockCmd ev of
-        Open (PExpPath fp) IO.ReadMode | Set.member fp readOpen ->
+        Open (PExpPath fp) ReadMode | Set.member fp readOpen ->
           Left TagOpenReadThenRead
-        Open (PExpPath fp) IO.ReadMode ->
+        Open (PExpPath fp) ReadMode ->
           Right $ tagOpenReadThenRead $ Set.insert fp readOpen
         _otherwise -> Right $ tagOpenReadThenRead readOpen
 
@@ -1001,8 +1009,8 @@ tag = C.classify [
     tagSeekFromEnd :: EventPred
     tagSeekFromEnd = successful $ \ev@Event{..} _ ->
       case eventMockCmd ev of
-        Seek _ IO.SeekFromEnd n | n < 0 -> Left TagSeekFromEnd
-        _otherwise                      -> Right tagSeekFromEnd
+        Seek _ SeekFromEnd n | n < 0 -> Left TagSeekFromEnd
+        _otherwise                   -> Right tagSeekFromEnd
 
     tagCreateDirectory :: EventPred
     tagCreateDirectory = successful $ \ev@Event{..} _ ->
@@ -1061,7 +1069,7 @@ tag = C.classify [
     tagReadInvalid :: Set Mock.Handle -> EventPred
     tagReadInvalid openAppend = C.predicate $ \ev ->
       case (eventMockCmd ev, eventMockResp ev) of
-        (Open _ IO.AppendMode, Resp (Right (WHandle _ h))) ->
+        (Open _ (AppendMode _), Resp (Right (WHandle _ h))) ->
           Right $ tagReadInvalid $ Set.insert h openAppend
         (Close h, Resp (Right _)) ->
           Right $ tagReadInvalid $ Set.delete h openAppend
@@ -1073,7 +1081,7 @@ tag = C.classify [
     tagWriteInvalid :: Set Mock.Handle -> EventPred
     tagWriteInvalid openRead = C.predicate $ \ev ->
       case (eventMockCmd ev, eventMockResp ev) of
-        (Open _ IO.ReadMode, Resp (Right (WHandle _ h))) ->
+        (Open _ ReadMode, Resp (Right (WHandle _ h))) ->
           Right $ tagWriteInvalid $ Set.insert h openRead
         (Close h, Resp (Right _)) ->
           Right $ tagWriteInvalid $ Set.delete h openRead
@@ -1086,7 +1094,7 @@ tag = C.classify [
       case eventMockCmd ev of
         Put h bs | BL.length bs > 0 ->
           Right $ tagPutSeekGet (Set.insert h put) seek
-        Seek h IO.RelativeSeek n | n > 0 && Set.member h put->
+        Seek h RelativeSeek n | n > 0 && Set.member h put ->
           Right $ tagPutSeekGet put (Set.insert h seek)
         Get h n | n > 0 && Set.member h seek ->
           Left TagPutSeekGet
@@ -1097,11 +1105,20 @@ tag = C.classify [
       case eventMockCmd ev of
         Put h bs | BL.length bs > 0 ->
           Right $ tagPutSeekNegGet (Set.insert h put) seek
-        Seek h IO.RelativeSeek n | n < 0 && Set.member h put->
+        Seek h RelativeSeek n | n < 0 && Set.member h put ->
           Right $ tagPutSeekNegGet put (Set.insert h seek)
         Get h n | n > 0 && Set.member h seek ->
           Left TagPutSeekNegGet
         _otherwise -> Right $ tagPutSeekNegGet put seek
+
+    tagExclusiveFail :: EventPred
+    tagExclusiveFail = C.predicate $ \ev ->
+      case (eventMockCmd ev, eventMockResp ev) of
+        (Open _ mode, Resp (Left fsError))
+          | MustBeNew <- allowExisting mode
+          , fsErrorType fsError == FsResourceAlreadyExist ->
+            Left TagExclusiveFail
+        _otherwise -> Right tagExclusiveFail
 
 -- | Step the model using a 'QSM.Command' (i.e., a command associated with
 -- an explicit set of variables)

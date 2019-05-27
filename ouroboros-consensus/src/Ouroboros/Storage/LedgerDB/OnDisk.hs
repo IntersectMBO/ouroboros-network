@@ -35,7 +35,6 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           GHC.Generics (Generic)
 import           GHC.Stack
-import           System.IO (IOMode (..))
 import           Text.Read (readMaybe)
 
 import           Control.Monad.Class.MonadST
@@ -301,7 +300,7 @@ writeSnapshot :: forall m l r h. MonadThrow m
               -> (r -> Encoding)
               -> DiskSnapshot -> ChainSummary l r -> m ()
 writeSnapshot hasFS@HasFS{..} encLedger encRef ss cs = do
-    withFile hasFS (snapshotToPath ss) WriteMode $ \h ->
+    withFile hasFS (snapshotToPath ss) (WriteMode MustBeNew) $ \h ->
       void $ hPut hasFS h $ CBOR.toBuilder (encode cs)
   where
     encode :: ChainSummary l r -> Encoding

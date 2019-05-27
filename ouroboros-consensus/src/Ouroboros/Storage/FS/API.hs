@@ -23,7 +23,6 @@ import           Data.Int (Int64)
 import           Data.Set (Set)
 import           Data.Word (Word64)
 import           GHC.Stack
-import           System.IO (IOMode, SeekMode)
 
 import           Control.Monad.Class.MonadThrow
 
@@ -42,7 +41,7 @@ data HasFS m h = HasFS {
     -- Operations of files
 
     -- | Open a file
-  , hOpen                    :: HasCallStack => FsPath -> IOMode -> m h
+  , hOpen                    :: HasCallStack => FsPath -> OpenMode -> m h
 
     -- | Close a file
   , hClose                   :: HasCallStack => h -> m ()
@@ -123,8 +122,8 @@ data HasFS m h = HasFS {
   }
 
 withFile :: (HasCallStack, MonadThrow m)
-         => HasFS m h -> FsPath -> IOMode -> (h -> m a) -> m a
-withFile HasFS{..} fp ioMode = bracket (hOpen fp ioMode) hClose
+         => HasFS m h -> FsPath -> OpenMode -> (h -> m a) -> m a
+withFile HasFS{..} fp openMode = bracket (hOpen fp openMode) hClose
 
 -- | Makes sure it reads all requested bytes.
 -- If eof is found before all bytes are read, it throws an exception.

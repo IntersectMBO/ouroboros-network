@@ -1,8 +1,13 @@
 {-# LANGUAGE RecordWildCards #-}
 
 module Ouroboros.Storage.FS.API.Types (
+    -- * Modes
+    OpenMode(..)
+  , AllowExisting(..)
+  , allowExisting
+  , SeekMode(..)
     -- * Paths
-    FsPath
+  , FsPath
   , MountPoint(..)
   , fsToFilePath
   , fsFromFilePath
@@ -22,7 +27,38 @@ import           Data.List (stripPrefix)
 import qualified GHC.IO.Exception as GHC
 import           GHC.Stack
 import           System.FilePath
+import           System.IO (SeekMode (..))
 import qualified System.IO.Error as IO
+
+
+{-------------------------------------------------------------------------------
+  Modes
+-------------------------------------------------------------------------------}
+
+-- | How to 'hOpen' a new file.
+data OpenMode
+  = ReadMode
+  | WriteMode     AllowExisting
+  | AppendMode    AllowExisting
+  | ReadWriteMode AllowExisting
+  deriving (Eq, Show)
+
+-- | When 'hOpen'ing a file:
+data AllowExisting
+  = AllowExisting
+    -- ^ The file may already exist. If it does, it is reopened. If it
+    -- doesn't, it is created.
+  | MustBeNew
+    -- ^ The file may not yet exist. If it does, an error
+    -- ('FsResourceAlreadyExist') is thrown.
+  deriving (Eq, Show)
+
+allowExisting :: OpenMode -> AllowExisting
+allowExisting openMode = case openMode of
+  ReadMode         -> AllowExisting
+  WriteMode     ex -> ex
+  AppendMode    ex -> ex
+  ReadWriteMode ex -> ex
 
 {-------------------------------------------------------------------------------
   Paths
