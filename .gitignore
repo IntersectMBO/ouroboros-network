@@ -23,8 +23,8 @@ dist/
 *~
 *_flymake.hs
 result*
-tags
-TAGS
+**/tags
+**/TAGS
 
 .stack-work/
 *.tix
