@@ -1,5 +1,7 @@
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
 {-# LANGUAGE TypeFamilies        #-}
@@ -8,17 +10,24 @@
 module Ouroboros.Consensus.Crypto.DSIGN.Class
     ( DSIGNAlgorithm (..)
     , SignedDSIGN (..)
+    , Empty
     , signedDSIGN
     , verifySignedDSIGN
     , encodeSignedDSIGN
     , decodeSignedDSIGN
     ) where
 
-import           Codec.Serialise.Encoding (Encoding)
 import           Codec.CBOR.Decoding (Decoder)
+import           Codec.Serialise.Encoding (Encoding)
 import           Crypto.Random (MonadRandom)
+import           GHC.Exts (Constraint)
 import           GHC.Generics (Generic)
+import           GHC.Stack
+
 import           Ouroboros.Consensus.Util.Condense
+
+class Empty a
+instance Empty a
 
 class ( Show (VerKeyDSIGN v)
       , Ord (VerKeyDSIGN v)
@@ -34,17 +43,25 @@ class ( Show (VerKeyDSIGN v)
     data SignKeyDSIGN v :: *
     data SigDSIGN v :: *
 
-    encodeVerKeyDSIGN :: VerKeyDSIGN v -> Encoding
-    decodeVerKeyDSIGN :: Decoder s (VerKeyDSIGN v)
+    type Signable v :: * -> Constraint
+    type Signable c = Empty
+
+    encodeVerKeyDSIGN  :: VerKeyDSIGN  v -> Encoding
     encodeSignKeyDSIGN :: SignKeyDSIGN v -> Encoding
+    encodeSigDSIGN     :: SigDSIGN     v -> Encoding
+
+    decodeVerKeyDSIGN  :: Decoder s (VerKeyDSIGN  v)
     decodeSignKeyDSIGN :: Decoder s (SignKeyDSIGN v)
-    encodeSigDSIGN :: SigDSIGN v -> Encoding
-    decodeSigDSIGN :: Decoder s (SigDSIGN v)
+    decodeSigDSIGN     :: Decoder s (SigDSIGN     v)
 
     genKeyDSIGN :: MonadRandom m => m (SignKeyDSIGN v)
     deriveVerKeyDSIGN :: SignKeyDSIGN v -> VerKeyDSIGN v
-    signDSIGN :: MonadRandom m => (a -> Encoding) -> a -> SignKeyDSIGN v -> m (SigDSIGN v)
-    verifyDSIGN :: (a -> Encoding) -> VerKeyDSIGN v -> a -> SigDSIGN v -> Bool
+    signDSIGN :: (MonadRandom m, Signable v a)
+              => (a -> Encoding)
+              -> a -> SignKeyDSIGN v -> m (SigDSIGN v)
+    verifyDSIGN :: (Signable v a, HasCallStack)
+                => (a -> Encoding)
+                -> VerKeyDSIGN v -> a -> SigDSIGN v -> Either String ()
 
 newtype SignedDSIGN v a = SignedDSIGN (SigDSIGN v)
   deriving (Generic)
@@ -56,12 +73,14 @@ deriving instance DSIGNAlgorithm v => Ord  (SignedDSIGN v a)
 instance Condense (SigDSIGN v) => Condense (SignedDSIGN v a) where
     condense (SignedDSIGN sig) = condense sig
 
-signedDSIGN :: (DSIGNAlgorithm v, MonadRandom m)
-            => (a -> Encoding) -> a -> SignKeyDSIGN v -> m (SignedDSIGN v a)
+signedDSIGN :: (DSIGNAlgorithm v, MonadRandom m, Signable v a)
+            => (a -> Encoding)
+            -> a -> SignKeyDSIGN v -> m (SignedDSIGN v a)
 signedDSIGN encoder a key = SignedDSIGN <$> signDSIGN encoder a key
 
-verifySignedDSIGN :: DSIGNAlgorithm v
-                  => (a -> Encoding) -> VerKeyDSIGN v -> a -> SignedDSIGN v a -> Bool
+verifySignedDSIGN :: (DSIGNAlgorithm v, Signable v a, HasCallStack)
+                  => (a -> Encoding)
+                  -> VerKeyDSIGN v  -> a  -> SignedDSIGN v a -> Either String ()
 verifySignedDSIGN encoder key a (SignedDSIGN s) = verifyDSIGN encoder key a s
 
 encodeSignedDSIGN :: DSIGNAlgorithm v => SignedDSIGN v a -> Encoding

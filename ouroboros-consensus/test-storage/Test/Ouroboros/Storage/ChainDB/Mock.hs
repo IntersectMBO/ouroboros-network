@@ -2,7 +2,7 @@
 
 module Test.Ouroboros.Storage.ChainDB.Mock (tests) where
 
-import           Codec.Serialise (Serialise(encode))
+import           Codec.Serialise (Serialise (encode))
 import           Control.Exception (Exception)
 import           Control.Monad
 import           Test.QuickCheck
@@ -85,4 +85,4 @@ instance Exception InvalidUpdate
 -------------------------------------------------------------------------------}
 
 openDB :: forall s. SimM s (ChainDB (SimM s) TestBlock TestBlock)
-openDB = Mock.openDB encode testConfig testInitExtLedger id
+openDB = Mock.openDB encode singleNodeTestConfig testInitExtLedger id

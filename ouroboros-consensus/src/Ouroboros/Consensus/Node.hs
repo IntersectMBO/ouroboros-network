@@ -28,10 +28,12 @@ module Ouroboros.Consensus.Node (
   , Network.loggingChannel
   ) where
 
+import           Codec.CBOR.Encoding (Encoding)
 import           Codec.Serialise (Serialise)
 import           Control.Monad (void)
 import           Crypto.Random (ChaChaDRG)
 import qualified Data.Foldable as Foldable
+import           Data.Functor.Contravariant (contramap)
 import           Data.Map.Strict (Map)
 import           Data.Void (Void)
 
@@ -50,6 +52,8 @@ import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..),
                      headSlot)
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.BlockFetch
+import           Ouroboros.Network.BlockFetch.Client (BlockFetchClient,
+                     blockFetchClient)
 import           Ouroboros.Network.BlockFetch.State (FetchMode (..))
 import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.Protocol.BlockFetch.Server
@@ -60,7 +64,6 @@ import           Ouroboros.Network.Protocol.ChainSync.Server
 import           Ouroboros.Network.Protocol.ChainSync.Type
 
 import           Ouroboros.Consensus.BlockchainTime
-import           Ouroboros.Consensus.BlockFetchClient
 import           Ouroboros.Consensus.BlockFetchServer
 import           Ouroboros.Consensus.ChainSyncClient
 import           Ouroboros.Consensus.ChainSyncServer
@@ -110,6 +113,9 @@ data NodeKernel m up blk hdr = NodeKernel {
 
       -- | The node's mempool
     , getMempool :: Mempool m blk
+
+      -- | The node's static configuration
+    , getNodeConfig :: NodeConfig (BlockProtocol blk)
 
       -- | Notify network layer of new upstream node
       --
@@ -167,7 +173,8 @@ data NodeCallbacks m blk = NodeCallbacks {
 
 -- | Parameters required when initializing a node
 data NodeParams m up blk hdr = NodeParams {
-      tracer             :: Tracer m String
+      encoder            :: PreHeader blk -> Encoding
+    , tracer             :: Tracer m String
     , threadRegistry     :: ThreadRegistry m
     , maxClockSkew       :: ClockSkew
     , cfg                :: NodeConfig (BlockProtocol blk)
@@ -187,16 +194,20 @@ nodeKernel
        , MonadTime  m
        , MonadThrow (STM m)
        , ProtocolLedgerView blk
+       , LedgerConfigView blk
        , HasHeader hdr
        , HeaderHash hdr ~ HeaderHash blk
+       , SupportedBlock (BlockProtocol hdr) hdr
+       , SupportedPreHeader (BlockProtocol blk) (PreHeader hdr)
        , BlockProtocol hdr ~ BlockProtocol blk
+       , PreHeader blk ~ PreHeader hdr
        , Ord up
        , TraceConstraints up blk hdr
        , ApplyTx blk
        )
     => NodeParams m up blk hdr
     -> m (NodeKernel m up blk hdr)
-nodeKernel params@NodeParams { threadRegistry } = do
+nodeKernel params@NodeParams { threadRegistry, cfg } = do
     st <- initInternalState params
 
     forkBlockProduction st
@@ -214,6 +225,7 @@ nodeKernel params@NodeParams { threadRegistry } = do
     return NodeKernel {
         getChainDB    = chainDB
       , getMempool    = mempool
+      , getNodeConfig = cfg
       , addUpstream   = npAddUpstream   (networkLayer st)
       , addDownstream = npAddDownstream (networkLayer st)
       }
@@ -235,7 +247,7 @@ data InternalState m up blk hdr = IS {
     , chainDB             :: ChainDB m blk hdr
     , blockFetchInterface :: BlockFetchConsensusInterface up hdr blk m
     , fetchClientRegistry :: FetchClientRegistry up hdr blk m
-    , varCandidates       :: TVar m (Map up (TVar m (CandidateState blk hdr)))
+    , varCandidates       :: TVar m (Map up (TVar m (CandidateState hdr)))
     , varState            :: TVar m (NodeState (BlockProtocol blk))
     , tracer              :: Tracer m String
     , mempool             :: Mempool m blk
@@ -251,7 +263,11 @@ initInternalState
        , HasHeader hdr
        , HeaderHash hdr ~ HeaderHash blk
        , ProtocolLedgerView blk
+       , LedgerConfigView blk
+       , SupportedBlock (BlockProtocol hdr) hdr
+       , SupportedPreHeader (BlockProtocol blk) (PreHeader hdr)
        , BlockProtocol hdr ~ BlockProtocol blk
+       , PreHeader blk ~ PreHeader hdr
        , Ord up
        , TraceConstraints up blk hdr
        , ApplyTx blk
@@ -261,7 +277,7 @@ initInternalState
 initInternalState NodeParams {..} = do
     varCandidates  <- atomically $ newTVar mempty
     varState       <- atomically $ newTVar initState
-    mempool        <- openMempool chainDB
+    mempool        <- openMempool chainDB (ledgerConfigView cfg)
 
     fetchClientRegistry <- newFetchClientRegistry
 
@@ -278,6 +294,7 @@ initInternalState NodeParams {..} = do
         nrChainSyncClient up = chainSyncClient
           (tracePrefix "CSClient" (Just up))
           cfg
+          encoder
           btime
           maxClockSkew
           (ChainDB.getCurrentChain chainDB)

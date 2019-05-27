@@ -49,7 +49,10 @@ instance DSIGNAlgorithm Ed448DSIGN where
             bs = toBS $ toEnc a
         return $ SigEd448DSIGN $ sign sk vk bs
 
-    verifyDSIGN toEnc (VerKeyEd448DSIGN vk) a (SigEd448DSIGN sig) = verify vk (toBS $ toEnc a) sig
+    verifyDSIGN toEnc (VerKeyEd448DSIGN vk) a (SigEd448DSIGN sig) =
+        if verify vk (toBS $ toEnc a) sig
+          then Right ()
+          else Left "Verification failed"
 
 instance Ord (VerKeyDSIGN Ed448DSIGN) where
     compare = compare `on` show

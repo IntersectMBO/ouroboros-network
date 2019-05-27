@@ -1,14 +1,19 @@
+{-# LANGUAGE AllowAmbiguousTypes        #-}
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE TypeFamilyDependencies     #-}
 {-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE UndecidableSuperClasses    #-}
+{-# LANGUAGE ViewPatterns               #-}
 
 module Ouroboros.Consensus.Protocol.PBFT (
     PBft
@@ -16,8 +21,8 @@ module Ouroboros.Consensus.Protocol.PBFT (
   , PBftParams(..)
     -- * Classes
   , PBftCrypto(..)
-  , PBftStandardCrypto
   , PBftMockCrypto
+  , PBftCardanoCrypto
     -- * Type instances
   , NodeConfig(..)
   , Payload(..)
@@ -27,40 +32,28 @@ import           Codec.Serialise (Serialise (..))
 import qualified Codec.Serialise.Decoding as Dec
 import qualified Codec.Serialise.Encoding as Enc
 import           Control.Monad.Except
-import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
+import           Data.Bimap (Bimap)
+import qualified Data.Bimap as Bimap
+import           Data.Reflection (Given (..))
 import           Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
-import           Data.Tuple (swap)
 import           Data.Typeable (Typeable)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
+import qualified Cardano.Chain.Common as CC.Common
+import qualified Cardano.Chain.Genesis as CC.Genesis
+import           Cardano.Crypto (ProtocolMagicId)
+
 import           Ouroboros.Network.Block
 
+import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
 import           Ouroboros.Consensus.Crypto.DSIGN.Class
-import           Ouroboros.Consensus.Crypto.DSIGN.Ed448 (Ed448DSIGN)
 import           Ouroboros.Consensus.Crypto.DSIGN.Mock (MockDSIGN)
 import           Ouroboros.Consensus.Node (NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Test
 import           Ouroboros.Consensus.Util.Condense
-
--- | Invert a map which we assert to be a bijection.
---   If this map is not a bijection, the behaviour is not guaranteed.
---
---   Examples:
---
---   >>> invertBijection (Map.fromList [('a', 1 :: Int), ('b', 2), ('c', 3)])
---   fromList [(1,'a'),(2,'b'),(3,'c')]
-invertBijection
-  :: Ord v
-  => Map k v
-  -> Map v k
-invertBijection
-  = Map.fromListWith const
-  . fmap swap
-  . Map.toList
 
 data PBftLedgerView c = PBftLedgerView
   -- TODO Once we have the window and threshold in the protocol parameters, we
@@ -68,7 +61,10 @@ data PBftLedgerView c = PBftLedgerView
 
   -- ProtocolParameters Map from genesis to delegate keys.
   -- Note that this map is injective by construction.
-  (Map (VerKeyDSIGN (PBftDSIGN c)) (VerKeyDSIGN (PBftDSIGN c)))
+  -- TODO Use BiMap here
+  (Bimap (PBftVerKeyHash c) (PBftVerKeyHash c))
+
+deriving instance (Show (PBftVerKeyHash c)) => Show (PBftLedgerView c)
 
 {-------------------------------------------------------------------------------
   Protocol proper
@@ -99,9 +95,16 @@ data PBftParams = PBftParams {
       -- | Signature threshold. This represents the proportion of blocks in a
       -- pbftSignatureWindow-sized window which may be signed by any single key.
     , pbftSignatureThreshold :: Double
+
+      -- | Genesis config
+      --
+      -- TODO: This doesn't really belong here; PBFT the consensus algorithm
+      -- does not require it.
+    , pbftGenesisConfig      :: CC.Genesis.Config
     }
 
-instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
+instance ( PBftCrypto c, Typeable c
+         ) => OuroborosTag (PBft c) where
   -- | The BFT payload is just the issuer and signature
   data Payload (PBft c) ph = PBftPayload {
         pbftIssuer    :: VerKeyDSIGN (PBftDSIGN c)
@@ -117,8 +120,9 @@ instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
       , pbftVerKey   :: VerKeyDSIGN (PBftDSIGN c)
       }
 
-  type ValidationErr  (PBft c) = PBftValidationErr
+  type ValidationErr  (PBft c) = PBftValidationErr c
   type SupportedBlock (PBft c) = HasPayload (PBft c)
+  type SupportedPreHeader (PBft c) = Signable (PBftDSIGN c)
   type NodeState      (PBft c) = ()
 
   -- | We require two things from the ledger state:
@@ -133,10 +137,7 @@ instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
   --   - a list of the last 'pbftSignatureWindow' signatures.
   --   - The last seen block slot
   type ChainState     (PBft c) =
-    ( Seq (VerKeyDSIGN (PBftDSIGN c))
-      -- Last seen block slot.
-    , SlotNo
-    )
+    Seq (PBftVerKeyHash c, SlotNo)
 
   protocolSecurityParam = pbftSecurityParam . pbftParams
 
@@ -156,31 +157,45 @@ instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
     where
       PBftParams{..}  = pbftParams
 
-  applyChainState toEnc cfg@PBftNodeConfig{..} (PBftLedgerView dms) b (signers, lastSlot) = do
+  applyChainState toEnc cfg@PBftNodeConfig{..} lv@(PBftLedgerView dms) b chainState = do
       -- Check that the issuer signature verifies, and that it's a delegate of a
       -- genesis key, and that genesis key hasn't voted too many times.
+      case verifySignedDSIGN
+             toEnc
+             (pbftIssuer payload)
+             (blockPreHeader b)
+             (pbftSignature payload) of
+        Right () -> return ()
+        Left err -> throwError $ PBftInvalidSignature err
 
-      unless (verifySignedDSIGN toEnc (pbftIssuer payload)
-                      (blockPreHeader b)
-                      (pbftSignature payload))
-        $ throwError PBftInvalidSignature
+      let (signers, lastSlot) = ( takeR winSize $ fst <$> chainState
+                                , maybe (SlotNo 0) snd $ Seq.lookup (Seq.length chainState) chainState
+                                )
 
       unless (blockSlot b > lastSlot)
         $ throwError PBftInvalidSlot
 
-      case Map.lookup (pbftIssuer payload) $ invertBijection dms of
-        Nothing -> throwError PBftNotGenesisDelegate
+      case Bimap.lookup (hashVerKey $ pbftIssuer payload) $ Bimap.twist dms of
+        Nothing -> throwError $ PBftNotGenesisDelegate (hashVerKey $ pbftIssuer payload) lv
         Just gk -> do
           when (Seq.length signers >= winSize
-                && Seq.length (Seq.filter (== gk) signers) >= wt)
-            $ throwError PBftExceededSignThreshold
-          let signers' = Seq.drop (Seq.length signers - winSize - 1) signers Seq.|> gk
-          return (signers', blockSlot b)
+                && Seq.length (Seq.filter (== gk) signers) > wt)
+            $ do throwError PBftExceededSignThreshold
+          return $! takeR (winSize + 2*k) chainState Seq.|> (gk, blockSlot b)
     where
       PBftParams{..}  = pbftParams
       payload = blockPayload cfg b
       winSize = fromIntegral pbftSignatureWindow
+      SecurityParam (fromIntegral -> k) = pbftSecurityParam
       wt = floor $ pbftSignatureThreshold * fromIntegral winSize
+      -- Take the rightmost n elements of a sequence
+      takeR :: Integral i => i -> Seq a -> Seq a
+      takeR (fromIntegral -> n) s = Seq.drop (Seq.length s - n - 1) s
+
+  rewindChainState _ cs slot = if slot == SlotNo 0 then Just Seq.empty else
+    case Seq.takeWhileL (\(_, s) -> s <= slot) cs of
+        _ Seq.:<| _ -> Just cs
+        _           -> Nothing
 
 
 deriving instance PBftCrypto c => Show     (Payload (PBft c) ph)
@@ -203,26 +218,48 @@ instance (DSIGNAlgorithm (PBftDSIGN c)) => Serialise (Payload (PBft c) ph) where
   BFT specific types
 -------------------------------------------------------------------------------}
 
-data PBftValidationErr
-  = PBftInvalidSignature
-  | PBftNotGenesisDelegate
+data PBftValidationErr c
+  = PBftInvalidSignature String
+  | PBftNotGenesisDelegate (PBftVerKeyHash c) (PBftLedgerView c)
   | PBftExceededSignThreshold
   | PBftInvalidSlot
-  deriving (Show)
+
+deriving instance (Show (PBftLedgerView c), PBftCrypto c) => Show (PBftValidationErr c)
 
 {-------------------------------------------------------------------------------
   Crypto models
 -------------------------------------------------------------------------------}
 
 -- | Crypto primitives required by BFT
-class (Typeable c, DSIGNAlgorithm (PBftDSIGN c)) => PBftCrypto c where
+class ( Typeable c
+      , DSIGNAlgorithm (PBftDSIGN c)
+      , Show (PBftVerKeyHash c)
+      , Ord (PBftVerKeyHash c)
+      , Eq (PBftVerKeyHash c)
+      , Show (PBftVerKeyHash c)
+      ) => PBftCrypto c where
   type family PBftDSIGN c :: *
 
-data PBftStandardCrypto
+  -- Cardano stores a map of stakeholder IDs rather than the verification key
+  -- directly. We make this family injective for convenience - whilst it's
+  -- _possible_ that there could be non-injective instances, the chances of there
+  -- being more than the two instances here are basically non-existent.
+  type family PBftVerKeyHash c = (d :: *) | d -> c
+
+  hashVerKey :: VerKeyDSIGN (PBftDSIGN c) -> PBftVerKeyHash c
+
 data PBftMockCrypto
 
-instance PBftCrypto PBftStandardCrypto where
-  type PBftDSIGN PBftStandardCrypto = Ed448DSIGN
-
-instance PBftCrypto PBftMockCrypto where
+instance (Signable MockDSIGN ~ Empty) => PBftCrypto PBftMockCrypto where
   type PBftDSIGN PBftMockCrypto = MockDSIGN
+  type PBftVerKeyHash PBftMockCrypto = VerKeyDSIGN MockDSIGN
+
+  hashVerKey = id
+
+data PBftCardanoCrypto
+
+instance (Given ProtocolMagicId, Signable CardanoDSIGN ~ HasSignTag) => PBftCrypto PBftCardanoCrypto where
+  type PBftDSIGN PBftCardanoCrypto = CardanoDSIGN
+  type PBftVerKeyHash PBftCardanoCrypto = CC.Common.StakeholderId
+
+  hashVerKey (VerKeyCardanoDSIGN pk)= CC.Common.mkStakeholderId pk

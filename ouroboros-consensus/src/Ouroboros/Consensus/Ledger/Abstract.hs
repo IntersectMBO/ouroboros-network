@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveFunctor           #-}
 {-# LANGUAGE FlexibleContexts        #-}
 {-# LANGUAGE KindSignatures          #-}
 {-# LANGUAGE MultiParamTypeClasses   #-}
@@ -10,10 +11,15 @@
 
 -- | Interface to the ledger layer
 module Ouroboros.Consensus.Ledger.Abstract (
+    SlotBounded(sbLower, sbUpper)
+  , slotUnbounded
+  , atSlot
+  , slotBounded
     -- * Interaction with the ledger layer
-    UpdateLedger(..)
+  , UpdateLedger(..)
   , BlockProtocol
   , ProtocolLedgerView(..)
+  , LedgerConfigView(..)
     -- * Extended ledger state
   , ExtLedgerState(..)
   , ExtValidationError(..)
@@ -30,12 +36,34 @@ import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Control.Monad.Except
 
-import           Data.Word (Word64)
-
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util (repeatedlyM)
-import           Ouroboros.Network.Block (HasHeader (..))
+import           Ouroboros.Network.Block (HasHeader (..), Point, SlotNo)
 import           Ouroboros.Network.Chain (Chain, toOldestFirst)
+
+import           GHC.Stack
+
+-- | An item bounded to be valid within particular slots
+data SlotBounded a = SlotBounded
+  { sbLower   :: !SlotNo
+  , sbUpper   :: !SlotNo
+  , sbContent :: !a
+  } deriving (Eq, Functor, Show)
+
+-- | Construct a slot bounded item.
+--
+--   We choose not to validate that the slot bounds are reasonable here.
+slotBounded :: SlotNo -> SlotNo -> a -> SlotBounded a
+slotBounded = SlotBounded
+
+slotUnbounded :: a -> SlotBounded a
+slotUnbounded = SlotBounded minBound maxBound
+
+atSlot :: SlotNo -> SlotBounded a -> Maybe a
+atSlot slot sb =
+  if (slot <= sbUpper sb && slot >= sbLower sb)
+  then Just $ sbContent sb
+  else Nothing
 
 {-------------------------------------------------------------------------------
   Interaction with the ledger layer
@@ -47,45 +75,37 @@ class ( Show (LedgerState b)
       ) => UpdateLedger (b :: *) where
   data family LedgerState b :: *
   data family LedgerError b :: *
-  -- | The 'HeaderState' can be used to verify the headers of blocks using
-  -- 'advanceHeader'.
-  data family HeaderState b :: *
+
+  data family LedgerConfig b :: *
+
+  -- | Apply a block header to the ledger state.
+  --
+  -- Used in 'applyExtLedgerState' to update the ledger state in 3 steps:
+  --
+  -- 1. 'applyLedgerHeader' updates the ledger with information from the header
+  -- 2. 'applyChainState' updates the the consensus-specific chain state
+  --    This gets passed the updated ledger from step (1) as an argument
+  -- 3. 'applyLedgerBlock' updates the ledger with information from the body
+  --
+  -- TODO: Explain why this ordering is correct and why we need the split;
+  -- (3) does not seem to rely on (2), and so we could do (1), (3), (2), and if
+  -- that is indeed possible, we could just combine (1) and (3) into a single
+  -- step..?
+  applyLedgerHeader :: LedgerConfig b
+                    -> b
+                    -> LedgerState b
+                    -> Except (LedgerError b) (LedgerState b)
 
   -- | Apply a block to the ledger state
-  --
-  -- TODO: We need to support rollback, so this probably won't be a pure
-  -- function but rather something that lives in a monad with some actions
-  -- that we can compute a "running diff" so that we can go back in time.
-  applyLedgerState :: b
+  applyLedgerBlock :: LedgerConfig b
+                   -> b
                    -> LedgerState b
                    -> Except (LedgerError b) (LedgerState b)
 
-  -- | Obtain from the given 'LedgerState' a 'HeaderState' corresponding to
-  -- some block in the past (relative to the given 'LedgerState').
-  getHeaderState :: LedgerState b
-                 -> Word64  -- ^ How many blocks in the past, max 2k slots
-                 -> HeaderState b
-
-  -- | Validate the given header and return the updated 'HeaderState', or, in
-  -- case of an invalid header, a 'LedgerError'.
+  -- | Point of the most recently applied block
   --
-  -- For Ouroboros Classic, a 'HeaderState' can only be used for a window of
-  -- 2k slots forward and 2k slots backwards. So after advancing a
-  -- 'HeaderState' beyond the window, a new 'HeaderState' must be obtained
-  -- from the 'LedgerState'. Instead of burdening the user with this
-  -- responsibility, it is shifted to the __implementors__ of this method:
-  -- when the given 'HeaderState' is no longer valid (the user has advanced it
-  -- beyond the valid window), it must be ignored and a new 'HeaderState' must
-  -- be obtained from the 'LedgerState' and used to validate the header (and
-  -- returned).
-  advanceHeader :: HasHeader hdr
-                => LedgerState b
-                -> hdr
-                -> HeaderState b
-                -> Except (LedgerError b) (HeaderState b)
-  -- TODO make hdr a type parameter or a data/type family?
-
-
+  -- Should be 'genesisPoint' when no blocks have been applied yet
+  ledgerTipPoint :: LedgerState b -> Point b
 
 -- | Link blocks to their unique protocol
 type family BlockProtocol b :: *
@@ -99,6 +119,57 @@ class ( OuroborosTag (BlockProtocol b)
   protocolLedgerView :: NodeConfig (BlockProtocol b)
                      -> LedgerState b
                      -> LedgerView (BlockProtocol b)
+
+  -- | Get a ledger view for a specific slot
+  --
+  -- Suppose @k = 4@, i.e., we can roll back 4 blocks
+  --
+  -- >             /-----------\
+  -- >             |           ^
+  -- >             v           |
+  -- >     --*--*--*--*--*--*--*--
+  -- >          |  A           B
+  -- >          |
+  -- >          \- A'
+  --
+  -- In other words, this means that we can roll back from point B to point A,
+  -- and then roll forward to any block on any fork from A. Note that we can
+  -- /not/ roll back to any siblings of A (such as A'), as that would require
+  -- us to roll back at least @k + 1@ blocks, which we can't (by definition).
+  --
+  -- Given a ledger state at point B, we should be able to verify any of the
+  -- headers (corresponding to the blocks) at point A or any of its successors
+  -- on any fork, up to some maximum distance from A. This distance can be
+  -- determined by the ledger, though must be at least @k@: we must be able to
+  -- validate any of these past headers, since otherwise we would not be able to
+  -- switch to a fork. It is not essential that the maximum distance extends
+  -- into the future (@> k@), though it is helpful: it means that in the chain
+  -- sync client we can download and validate headers even if they don't fit
+  -- directly onto the tip of our chain.
+  --
+  -- The anachronistic ledger state at point B is precisely the ledger state
+  -- that can be used to validate this set of headers. The bounds (in terms of
+  -- slots) are a hint about its valid range: how far into the past can we look
+  -- (at least @k@) and how far into the future (depending on the maximum
+  -- distance supported by the ledger). It is however important to realize that
+  -- this is not a full specification: after all, blocks @A@ and @A'@ have the
+  -- same slot number, but @A@ can be validated using the anachronistic ledger
+  -- view at @B@ whereas @A'@ can not.
+  --
+  -- Invariant: when calling this function with slot @s@ yields a
+  -- 'SlotBounded' @sb@, then @'atSlot' sb@ yields a 'Just'.
+  anachronisticProtocolLedgerView
+    :: NodeConfig (BlockProtocol b)
+    -> LedgerState b
+    -> SlotNo -- ^ Slot for which you would like a ledger view
+    -> Maybe (SlotBounded (LedgerView (BlockProtocol b)))
+
+-- | Extract the ledger environment from the node config
+class ( UpdateLedger b
+      , OuroborosTag (BlockProtocol b)
+      ) => LedgerConfigView b where
+  ledgerConfigView :: NodeConfig (BlockProtocol b)
+                   -> LedgerConfig b
 
 {-------------------------------------------------------------------------------
   Extended ledger state
@@ -121,7 +192,11 @@ data ExtValidationError b =
 
 deriving instance ProtocolLedgerView b => Show (ExtValidationError b)
 
-applyExtLedgerState :: ProtocolLedgerView b
+applyExtLedgerState :: ( LedgerConfigView b
+                       , ProtocolLedgerView b
+                       , SupportedPreHeader (BlockProtocol b) (PreHeader b)
+                       , HasCallStack
+                       )
                     => (PreHeader b -> Encoding) -- Serialiser for the preheader
                     -> NodeConfig (BlockProtocol b)
                     -> b
@@ -129,7 +204,7 @@ applyExtLedgerState :: ProtocolLedgerView b
                     -> Except (ExtValidationError b) (ExtLedgerState b)
 applyExtLedgerState toEnc cfg b ExtLedgerState{..} = do
     ledgerState'         <- withExcept ExtValidationErrorLedger $
-                              applyLedgerState b ledgerState
+                              applyLedgerHeader (ledgerConfigView cfg) b ledgerState
     ouroborosChainState' <- withExcept ExtValidationErrorOuroboros $
                               applyChainState
                                 toEnc
@@ -137,9 +212,15 @@ applyExtLedgerState toEnc cfg b ExtLedgerState{..} = do
                                 (protocolLedgerView cfg ledgerState')
                                 b
                                 ouroborosChainState
-    return $ ExtLedgerState ledgerState' ouroborosChainState'
+    ledgerState''        <- withExcept ExtValidationErrorLedger $
+                              applyLedgerBlock (ledgerConfigView cfg) b ledgerState'
+    return $ ExtLedgerState ledgerState'' ouroborosChainState'
 
-foldExtLedgerState :: ProtocolLedgerView b
+foldExtLedgerState :: ( LedgerConfigView b
+                      , ProtocolLedgerView b
+                      , SupportedPreHeader (BlockProtocol b) (PreHeader b)
+                      , HasCallStack
+                      )
                    => (PreHeader b -> Encoding) -- Serialiser for the preheader
                    -> NodeConfig (BlockProtocol b)
                    -> [b] -- ^ Blocks to apply, oldest first
@@ -148,7 +229,11 @@ foldExtLedgerState :: ProtocolLedgerView b
 foldExtLedgerState toEnc = repeatedlyM . applyExtLedgerState toEnc
 
 -- TODO: This should check stuff like backpointers also
-chainExtLedgerState :: ProtocolLedgerView b
+chainExtLedgerState :: ( LedgerConfigView b
+                       , ProtocolLedgerView b
+                       , SupportedPreHeader (BlockProtocol b) (PreHeader b)
+                       , HasCallStack
+                       )
                     => (PreHeader b -> Encoding) -- Serialiser for the preheader
                     -> NodeConfig (BlockProtocol b)
                     -> Chain b
@@ -157,7 +242,10 @@ chainExtLedgerState :: ProtocolLedgerView b
 chainExtLedgerState toEnc cfg = foldExtLedgerState toEnc cfg . toOldestFirst
 
 -- | Validation of an entire chain
-verifyChain :: ProtocolLedgerView b
+verifyChain :: ( LedgerConfigView b
+               , ProtocolLedgerView b
+               , SupportedPreHeader (BlockProtocol b) (PreHeader b)
+               )
             => (PreHeader b -> Encoding) -- Serialiser for the preheader
             -> NodeConfig (BlockProtocol b)
             -> ExtLedgerState b

@@ -117,7 +117,10 @@ empty initLedger = Model {
     , iterators     = Map.empty
     }
 
-addBlock :: forall blk. ProtocolLedgerView blk
+addBlock :: forall blk. ( ProtocolLedgerView blk
+                        , LedgerConfigView blk
+                        , SupportedPreHeader (BlockProtocol blk) (PreHeader blk)
+                        )
          => (PreHeader blk -> Encoding)
          -> NodeConfig (BlockProtocol blk)
          -> blk -> Model blk -> Model blk
@@ -140,7 +143,10 @@ addBlock toEnc cfg blk m = Model {
     (newChain, newLedger) = fromMaybe (currentChain m, currentLedger m) $
                                selectChain cfg (currentChain m) candidates
 
-addBlocks :: forall blk. ProtocolLedgerView blk
+addBlocks :: forall blk. ( ProtocolLedgerView blk
+                         , LedgerConfigView blk
+                         , SupportedPreHeader (BlockProtocol blk) (PreHeader blk)
+                         )
           => (PreHeader blk -> Encoding)
           -> NodeConfig (BlockProtocol blk)
           -> [blk] -> Model blk -> Model blk
@@ -217,16 +223,26 @@ notGenesis p =
       GenesisHash -> error "Ouroboros.Storage.ChainDB.Model: notGenesis"
       BlockHash h -> h
 
-validate :: ProtocolLedgerView blk
+validate :: forall blk.
+           ( ProtocolLedgerView blk
+           , LedgerConfigView blk
+           , SupportedPreHeader (BlockProtocol blk) (PreHeader blk)
+           )
          => (PreHeader blk -> Encoding)
          -> NodeConfig (BlockProtocol blk)
          -> ExtLedgerState blk
          -> Chain blk
          -> Maybe (Chain blk, ExtLedgerState blk)
 validate toEnc cfg initLedger chain =
-      either (const Nothing) (\ledger -> Just (chain, ledger))
+      -- either (const Nothing) (\ledger -> Just (chain, ledger))
+      fromEither
     . runExcept
     $ chainExtLedgerState toEnc cfg chain initLedger
+  where
+    fromEither :: Either (ExtValidationError blk) (ExtLedgerState blk)
+               -> Maybe (Chain blk, ExtLedgerState blk)
+    fromEither (Left _err) = Nothing
+    fromEither (Right l)  = Just (chain, l)
 
 chains :: forall blk. (HasHeader blk)
        => Map (HeaderHash blk) blk -> [Chain blk]

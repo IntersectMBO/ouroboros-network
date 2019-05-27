@@ -63,7 +63,9 @@ instance DSIGNAlgorithm RSAPSSDSIGN where
             Right sig -> return $ SigRSAPSSDSIGN sig
 
     verifyDSIGN toEnc (VerKeyRSAPSSDSIGN vk) a (SigRSAPSSDSIGN sig) =
-        verify defaultPSSParamsSHA1 vk (toBS $ toEnc a) sig
+        if verify defaultPSSParamsSHA1 vk (toBS $ toEnc a) sig
+          then Right ()
+          else Left "Verification failed"
 
 instance Ord (VerKeyDSIGN RSAPSSDSIGN) where
     compare = compare `on` show

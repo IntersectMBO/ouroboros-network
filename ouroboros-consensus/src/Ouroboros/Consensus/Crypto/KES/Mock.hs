@@ -57,9 +57,11 @@ instance KESAlgorithm MockKES where
         | otherwise       = return Nothing
 
     verifyKES toEnc vk j a (SigMockKES h (SignKeyMockKES (vk', j', _))) =
-        j == j' &&
-        vk == vk' &&
-        fromHash (hashWithSerialiser @H toEnc a) == h
+        if    j  == j'
+           && vk == vk'
+           && fromHash (hashWithSerialiser @H toEnc a) == h
+          then Right ()
+          else Left "KES verification failed"
 
 instance Serialise (SigKES MockKES) where
 

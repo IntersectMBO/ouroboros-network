@@ -101,14 +101,14 @@ data Apply :: Bool -> * where
     -- | Not previously applied
     --
     -- All checks must be performed
-    Apply :: Apply False
+    Apply :: Apply 'False
 
 -- | Error we get from applying a block
 --
 -- If the block was previously applied, we can't get any errors.
 type family Err (ap :: Bool) (e :: *) :: * where
-  Err True  e = Void
-  Err False e = e
+  Err 'True  e = Void
+  Err 'False e = e
 
 -- | Pass a block by value or by reference
 data RefOrVal r b = Ref r | Val r b
@@ -204,7 +204,7 @@ reapplyBlock :: forall m l r b e. Monad m
              => LedgerDbConf m l r b e -> RefOrVal r b -> l -> m l
 reapplyBlock cfg b = fmap mustBeRight
                    . runExceptT
-                   . applyBlock cfg (Reapply @True, b)
+                   . applyBlock cfg (Reapply @'True, b)
 
 {-------------------------------------------------------------------------------
   Queries
@@ -306,7 +306,7 @@ ledgerDbPush cfg (pa, new) ldb = runExceptT $
 ledgerDbReapply :: Monad m
                 => LedgerDbConf m l r b e
                 -> RefOrVal r b -> LedgerDB l r -> m (LedgerDB l r)
-ledgerDbReapply cfg b = fmap mustBeRight . ledgerDbPush cfg (Reapply @True, b)
+ledgerDbReapply cfg b = fmap mustBeRight . ledgerDbPush cfg (Reapply @'True, b)
 
 -- | Push a bunch of blocks (oldest first)
 ledgerDbPushMany :: Monad m

@@ -95,10 +95,15 @@ prop_simple_praos_convergence params numCoreNodes numSlots =
             -> Map NodeId (Chain (Block DemoPraos))
             -> Property
     isValid nodeIds final = counterexample (show final) $
-      let schedule = leaderScheduleFromTrace numSlots final
+      -- Oh dear, oh dear. This node config isn't used except in the RealPBFT
+      -- case, and it's not available here, so we leave it undefined. But this
+      -- isn't especially nice, since there's nothing stopping somebody changing
+      -- things later to use it. All of this only exists in test code, though.
+      let nc       = error "Node config missing for Praos protocol"
+          schedule = leaderScheduleFromTrace nc numSlots final
           longest  = longestCrowdedRun schedule
           crowded  = crowdedRunLength longest
-      in    counterexample (tracesToDot final)
+      in    counterexample (tracesToDot nc final)
           $ counterexample (condense schedule)
           $ counterexample (show longest)
           $ label ("longest crowded run " <> show crowded)

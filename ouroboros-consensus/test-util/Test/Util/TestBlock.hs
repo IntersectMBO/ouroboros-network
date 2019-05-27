@@ -23,7 +23,7 @@ module Test.Util.TestBlock (
   , treePreferredChain
     -- * Ledger infrastructure
   , testInitExtLedger
-  , testConfig
+  , singleNodeTestConfig
     -- * Support for tests
   , Permutation(..)
   , permute
@@ -44,7 +44,7 @@ import           Test.QuickCheck
 
 import           Ouroboros.Network.Block (ChainHash (..))
 import qualified Ouroboros.Network.Block as Block
-import           Ouroboros.Network.Chain (Chain (..))
+import           Ouroboros.Network.Chain (Chain (..), Point)
 import qualified Ouroboros.Network.Chain as Chain
 
 import           Ouroboros.Consensus.Crypto.DSIGN
@@ -133,9 +133,11 @@ instance UpdateLedger TestBlock where
   data LedgerState TestBlock =
       TestLedger {
           -- The ledger state simply consists of the last applied block
-          lastApplied :: ChainHash TestBlock
+          lastApplied :: (Point TestBlock, ChainHash TestBlock)
         }
     deriving (Show)
+
+  data LedgerConfig TestBlock = LedgerConfig
 
   data LedgerError TestBlock =
       -- | The only error possible is that hashes don't line up
@@ -145,23 +147,24 @@ instance UpdateLedger TestBlock where
         }
     deriving (Show)
 
-  data HeaderState TestBlock = TestHeaderState
+  applyLedgerBlock _ tb@TestBlock{..} TestLedger{..} =
+      if tbPrevHash == snd lastApplied
+        then return     $ TestLedger (Chain.blockPoint tb, BlockHash tbHash)
+        else throwError $ InvalidHash (snd lastApplied) tbPrevHash
 
-  applyLedgerState TestBlock{..} TestLedger{..} =
-      if tbPrevHash == lastApplied
-        then return     $ TestLedger (BlockHash tbHash)
-        else throwError $ InvalidHash lastApplied tbPrevHash
+  applyLedgerHeader _ _ = return
 
-  getHeaderState _ _ = TestHeaderState
-
-  advanceHeader  _ _ _ = return TestHeaderState
-
+  ledgerTipPoint = fst . lastApplied
 
 instance ProtocolLedgerView TestBlock where
   protocolLedgerView _ _ = ()
+  anachronisticProtocolLedgerView _ _ _ = Just $ slotUnbounded ()
+
+instance LedgerConfigView TestBlock where
+  ledgerConfigView = const LedgerConfig
 
 testInitLedger :: LedgerState TestBlock
-testInitLedger = TestLedger GenesisHash
+testInitLedger = TestLedger (Chain.genesisPoint, GenesisHash)
 
 testInitExtLedger :: ExtLedgerState TestBlock
 testInitExtLedger = ExtLedgerState {
@@ -170,8 +173,8 @@ testInitExtLedger = ExtLedgerState {
     }
 
 -- | Trivial test configuration with a single core node
-testConfig :: NodeConfig (Bft BftMockCrypto)
-testConfig = BftNodeConfig {
+singleNodeTestConfig :: NodeConfig (Bft BftMockCrypto)
+singleNodeTestConfig = BftNodeConfig {
       bftParams   = BftParams { bftSecurityParam = k
                               , bftNumNodes      = 1
                               }
@@ -239,12 +242,11 @@ treeToBlocks = Tree.flatten . blockTree
 treeToChains :: BlockTree -> [Chain TestBlock]
 treeToChains = map Chain.fromOldestFirst . allPaths . blockTree
 
-treePreferredChain :: BlockTree -> Chain TestBlock
-treePreferredChain = fromMaybe Genesis
-                   . selectUnvalidatedChain
-                       testConfig
-                       Genesis
-                   . treeToChains
+treePreferredChain :: NodeConfig (Bft BftMockCrypto)
+                   -> BlockTree -> Chain TestBlock
+treePreferredChain cfg = fromMaybe Genesis
+                       . selectUnvalidatedChain cfg Genesis
+                       . treeToChains
 
 instance Show BlockTree where
   show (BlockTree t) = Tree.drawTree (fmap show t)

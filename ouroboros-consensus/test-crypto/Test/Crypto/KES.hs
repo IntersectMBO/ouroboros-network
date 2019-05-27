@@ -81,7 +81,9 @@ prop_KES_verify_pos _ d seed =
     let vk = getFirstVerKey d
     in  case withSeed seed $ trySign d of
             Left e   -> counterexample e False
-            Right xs -> conjoin [verifyKES encode vk j a sig | (j, a, sig) <- xs]
+            Right xs -> conjoin [ verifyKES encode vk j a sig === Right ()
+                                | (j, a, sig) <- xs
+                                ]
 
 prop_KES_verify_neg_key :: KESAlgorithm v
                         => proxy v
@@ -91,8 +93,9 @@ prop_KES_verify_neg_key :: KESAlgorithm v
 prop_KES_verify_neg_key _ d seed = getDuration d > 0 ==>
     case withSeed seed $ trySign d of
         Left e   -> counterexample e False
-        Right xs -> conjoin [ not $ verifyKES encode (getSecondVerKey d) j a sig
-                            | (j, a, sig) <- xs]
+        Right xs -> conjoin [ verifyKES encode (getSecondVerKey d) j a sig =/= Right ()
+                            | (j, a, sig) <- xs
+                            ]
 
 prop_KES_verify_neg_msg :: KESAlgorithm v
                         => proxy v
@@ -104,7 +107,9 @@ prop_KES_verify_neg_msg _ d a seed =
     let vk = getFirstVerKey d
     in  case withSeed seed $ trySign d of
             Left e   -> counterexample e False
-            Right xs -> conjoin [a /= a' ==> not $ verifyKES encode vk j a sig | (j, a', sig) <- xs]
+            Right xs -> conjoin [ a /= a' ==> verifyKES encode vk j a sig =/= Right ()
+                                | (j, a', sig) <- xs
+                                ]
 
 prop_KES_verify_neg_time :: KESAlgorithm v
                          => proxy v
@@ -117,7 +122,9 @@ prop_KES_verify_neg_time _ d i =
         t    = fromIntegral $ abs i
     in  case withSeed seed $ trySign d of
             Left e   -> counterexample e False
-            Right xs -> conjoin [t /= j ==> not $ verifyKES encode vk t a sig | (j, a, sig) <- xs]
+            Right xs -> conjoin [ t /= j ==> verifyKES encode vk t a sig =/= Right ()
+                                | (j, a, sig) <- xs
+                                ]
 
 getDuration :: Duration_Seed_SK_Times v a -> Natural
 getDuration d = case d of

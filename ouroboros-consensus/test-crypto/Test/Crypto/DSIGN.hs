@@ -7,7 +7,7 @@ module Test.Crypto.DSIGN
     ) where
 
 import           Data.Proxy (Proxy (..))
-import           Test.QuickCheck (Property, (==>))
+import           Test.QuickCheck (Property, (==>), (===), (=/=))
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
@@ -32,6 +32,7 @@ tests =
 testDSIGNAlgorithm :: forall proxy v.
                      ( DSIGNAlgorithm v
                      , Serialise (VerKeyDSIGN v), Serialise (SignKeyDSIGN v), Serialise (SigDSIGN v)
+                     , Signable v Int
                      )=> proxy v -> String -> TestTree
 testDSIGNAlgorithm _ n =
     testGroup n
@@ -43,17 +44,17 @@ testDSIGNAlgorithm _ n =
         , testProperty "verify newgative (wrong message)" $ prop_dsign_verify_neg_msg @Int @v
         ]
 
-prop_dsign_verify_pos :: forall a v. (Serialise a, DSIGNAlgorithm v)
+prop_dsign_verify_pos :: forall a v. (Serialise a, DSIGNAlgorithm v, Signable v a)
                       => Seed
                       -> a
                       -> SignKeyDSIGN v
-                      -> Bool
+                      -> Property
 prop_dsign_verify_pos seed a sk =
     let sig = withSeed seed $ signDSIGN encode a sk
         vk  = deriveVerKeyDSIGN sk
-    in  verifyDSIGN encode vk a sig
+    in  verifyDSIGN encode vk a sig === Right ()
 
-prop_dsign_verify_neg_key :: forall a v. (Serialise a, DSIGNAlgorithm v)
+prop_dsign_verify_neg_key :: forall a v. (Serialise a, DSIGNAlgorithm v, Signable v a)
                           => Seed
                           -> a
                           -> SignKeyDSIGN v
@@ -62,9 +63,9 @@ prop_dsign_verify_neg_key :: forall a v. (Serialise a, DSIGNAlgorithm v)
 prop_dsign_verify_neg_key seed a sk sk' = sk /= sk' ==>
     let sig = withSeed seed $ signDSIGN encode a sk'
         vk  = deriveVerKeyDSIGN sk
-    in  not $ verifyDSIGN encode vk a sig
+    in  verifyDSIGN encode vk a sig =/= Right ()
 
-prop_dsign_verify_neg_msg :: forall a v. (Serialise a, Eq a, DSIGNAlgorithm v)
+prop_dsign_verify_neg_msg :: forall a v. (Serialise a, Eq a, DSIGNAlgorithm v, Signable v a)
                           => Seed
                           -> a
                           -> a
@@ -73,4 +74,4 @@ prop_dsign_verify_neg_msg :: forall a v. (Serialise a, Eq a, DSIGNAlgorithm v)
 prop_dsign_verify_neg_msg seed a a' sk = a /= a' ==>
     let sig = withSeed seed $ signDSIGN encode a sk
         vk  = deriveVerKeyDSIGN sk
-    in  not $ verifyDSIGN encode vk a' sig
+    in  verifyDSIGN encode vk a' sig =/= Right ()

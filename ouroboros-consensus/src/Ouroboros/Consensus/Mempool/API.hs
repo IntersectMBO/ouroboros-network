@@ -20,26 +20,35 @@ class UpdateLedger b => ApplyTx b where
   -- also other kinds of things such as update proposals, delegations, etc.
   type family GenTx b :: *
 
+  -- | Updating the ledger with a single transaction may result in a different
+  -- error type as when updating it with a block
+  type family ApplyTxErr b :: *
+
   -- | Apply transaction we have not previously seen before
-  applyTx :: GenTx b
+  applyTx :: LedgerConfig b
+          -> GenTx b
           -> LedgerState b
-          -> Except (LedgerError b) (LedgerState b)
+          -> Except (ApplyTxErr b) (LedgerState b)
 
   -- | Re-apply a transaction
   --
   -- When we re-apply a transaction to a potentially different ledger state
   -- expensive checks such as cryptographic hashes can be skipped, but other
   -- checks (such as checking for double spending) must still be done.
-  reapplyTx :: GenTx b
+  reapplyTx :: LedgerConfig b
+            -> GenTx b
             -> LedgerState b
-            -> Except (LedgerError b) (LedgerState b)
+            -> Except (ApplyTxErr b) (LedgerState b)
 
   -- | Re-apply a transaction to the very same state it was applied in before
   --
   -- In this case no error can occur.
   --
   -- See also 'ldbConfReapply' for comments on implementing this function.
-  reapplyTxSameState :: GenTx b -> LedgerState b -> LedgerState b
+  reapplyTxSameState :: LedgerConfig b
+                     -> GenTx b
+                     -> LedgerState b
+                     -> LedgerState b
 
 -- | Mempool
 --
@@ -85,7 +94,7 @@ data Mempool m blk = Mempool {
       -- they have already been included. (Distinguishing between these two
       -- cases can be done in theory, but it is expensive unless we have an
       -- index of transaction hashes that have been included on the blockchain.)
-      addTxs :: [GenTx blk] -> m [(GenTx blk, LedgerError blk)]
+      addTxs :: [GenTx blk] -> m [(GenTx blk, ApplyTxErr blk)]
 
       -- | Get all transactions in the mempool (oldest to newest)
       --

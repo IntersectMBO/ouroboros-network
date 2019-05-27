@@ -101,12 +101,13 @@ prop_chainSync ChainSyncClientSetup {..} =
         label "InvalidRollBack" $
         counterexample ("InvalidRollBack intersection: " <> ppPoint intersection) $
         not (AF.withinFragmentBounds intersection synchedChain)
-      Just e              -> counterexample (displayException e) False
-      Nothing             -> synchedChain `isSuffix` serverChain .&&.
-                             -- TODO in the future we might strengthen this
-                             -- to: must fork at most k blocks back from the
-                             -- current tip
-                             synchedChain `intersects` clientChain
+      Just e ->
+        counterexample ("Exception: " ++ displayException e) False
+      Nothing ->
+        synchedChain `isSuffix` serverChain .&&.
+        -- TODO in the future we might strengthen this to: must fork at most k
+        -- blocks back from the current tip
+        synchedChain `intersects` clientChain
   where
     k = maxRollbacks securityParam
 
@@ -145,7 +146,7 @@ serverId :: CoreNodeId
 serverId = CoreNodeId 1
 
 -- | Terser notation
-type ChainSyncException = ChainSyncClientException TestBlock TestBlock
+type ChainSyncException = ChainSyncClientException TestBlock
 
 -- | Using slots as times, a schedule plans updates to a chain on certain
 -- slots.
@@ -228,7 +229,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
         getLedgerState :: STM m (ExtLedgerState TestBlock)
         getLedgerState  = snd <$> readTVar varClientState
         client = chainSyncClient
-          nullTracer (nodeCfg clientId) btime maxClockSkew
+          nullTracer (nodeCfg clientId) encode btime maxClockSkew
           getCurrentChain getLedgerState
           varCandidates
           serverId
@@ -370,7 +371,6 @@ updateClientState cfg chain ledgerState chainUpdates =
     runValidate m = case runExcept m of
       Left  _ -> error "Client ledger validation error"
       Right x -> x
-
 
 {-------------------------------------------------------------------------------
   ChainSyncClientSetup

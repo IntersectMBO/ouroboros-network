@@ -50,7 +50,8 @@ class ( Show (VerKeyKES v)
             -> a
             -> SignKeyKES v
             -> m (Maybe (SigKES v, SignKeyKES v))
-    verifyKES :: (a -> Encoding) -> VerKeyKES v -> Natural -> a -> SigKES v -> Bool
+    verifyKES :: (a -> Encoding)
+              -> VerKeyKES v -> Natural -> a -> SigKES v -> Either String ()
 
 newtype SignedKES v a = SignedKES {getSig :: SigKES v}
   deriving (Generic)
@@ -71,5 +72,6 @@ signedKES toEnc time a key = do
         Just (sig, key') -> Just (SignedKES sig, key')
 
 verifySignedKES :: (KESAlgorithm v)
-                => (a -> Encoding) -> VerKeyKES v -> Natural -> a -> SignedKES v a -> Bool
+                => (a -> Encoding)
+                -> VerKeyKES v -> Natural -> a -> SignedKES v a -> Either String ()
 verifySignedKES toEnc vk j a (SignedKES sig) = verifyKES toEnc vk j a sig

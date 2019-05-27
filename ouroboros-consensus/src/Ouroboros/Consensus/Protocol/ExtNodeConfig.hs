@@ -43,6 +43,7 @@ instance (Typeable cfg, OuroborosTag p) => OuroborosTag (ExtNodeConfig cfg p) wh
   type ValidationErr  (ExtNodeConfig cfg p) = ValidationErr  p
   type IsLeader       (ExtNodeConfig cfg p) = IsLeader       p
   type SupportedBlock (ExtNodeConfig cfg p) = SupportedBlock p
+  type SupportedPreHeader (ExtNodeConfig cfg p) = SupportedPreHeader p
 
   --
   -- Only type that changes is the node config
@@ -64,6 +65,7 @@ instance (Typeable cfg, OuroborosTag p) => OuroborosTag (ExtNodeConfig cfg p) wh
   compareCandidates     (EncNodeConfig cfg _) = compareCandidates     cfg
   checkIsLeader         (EncNodeConfig cfg _) = checkIsLeader         cfg
   applyChainState toEnc (EncNodeConfig cfg _) = applyChainState toEnc cfg
+  rewindChainState      (EncNodeConfig cfg _) = rewindChainState      cfg
   protocolSecurityParam (EncNodeConfig cfg _) = protocolSecurityParam cfg
 
 deriving instance Eq       (Payload p ph) => Eq       (Payload (ExtNodeConfig cfg p) ph)

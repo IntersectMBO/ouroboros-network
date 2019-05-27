@@ -93,7 +93,7 @@ data PraosProof c = PraosProof {
 data PraosValidationError c =
       PraosInvalidSlot SlotNo SlotNo
     | PraosUnknownCoreId Int
-    | PraosInvalidSig (VerKeyKES (PraosKES c)) Natural (SigKES (PraosKES c))
+    | PraosInvalidSig String (VerKeyKES (PraosKES c)) Natural (SigKES (PraosKES c))
     | PraosInvalidCert (VerKeyVRF (PraosVRF c)) Encoding Natural (CertVRF (PraosVRF c))
     | PraosInsufficientStake Double Natural
 
@@ -208,13 +208,18 @@ instance (Serialise (PraosExtraFields c), PraosCrypto c) => OuroborosTag (Praos 
         Just vks -> return vks
 
     -- verify block signature
-    unless (verifySignedKES
-                (\(x,y) -> encodeListLen 2 <> toEnc x <> encode y)
-                vkKES
-                (fromIntegral $ unSlotNo slot)
-                (ph, praosExtraFields)
-                praosSignature) $
-        throwError $ PraosInvalidSig vkKES (fromIntegral $ unSlotNo slot) (getSig praosSignature)
+    case verifySignedKES
+           (\(x,y) -> encodeListLen 2 <> toEnc x <> encode y)
+           vkKES
+           (fromIntegral $ unSlotNo slot)
+           (ph, praosExtraFields)
+           praosSignature of
+       Right () -> return ()
+       Left err -> throwError $ PraosInvalidSig
+                                  err
+                                  vkKES
+                                  (fromIntegral $ unSlotNo slot)
+                                  (getSig praosSignature)
 
     let (rho', y', t) = rhoYT cfg cs slot nid
         rho           = praosRho praosExtraFields
@@ -247,6 +252,21 @@ instance (Serialise (PraosExtraFields c), PraosCrypto c) => OuroborosTag (Praos 
             }
 
     return $ bi : cs
+
+  -- Rewind the chain state
+  --
+  -- At the moment, this implementation of Praos keeps the full history of the
+  -- chain state since the dawn of time (#248). For this reason rewinding is
+  -- very simple, and we can't get to a point where we can't roll back more
+  -- (unless the slot number never occurred, but that would be a bug in the
+  -- caller). Once we limit the history we keep, this function will become
+  -- more complicated.
+  --
+  -- We don't roll back to the exact slot since that slot might not have been
+  -- filled; instead we roll back the the block just before it.
+  rewindChainState PraosNodeConfig{..} cs rewindTo =
+      -- This may drop us back to the empty list if we go back to genesis
+      Just $ dropWhile (\bi -> biSlot bi > rewindTo) cs
 
   -- NOTE: We redefine `preferCandidate` but NOT `compareCandidates`
   -- NOTE: See note regarding clock skew.
