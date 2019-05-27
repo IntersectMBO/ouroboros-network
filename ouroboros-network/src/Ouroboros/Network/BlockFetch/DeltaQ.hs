@@ -10,6 +10,8 @@ module Ouroboros.Network.BlockFetch.DeltaQ (
     SizeInBytes,
     PeerFetchInFlightLimits(..),
     calculatePeerFetchInFlightLimits,
+    estimateResponseDeadlineProbability,
+    estimateExpectedResponseDuration,
 --    estimateBlockFetchResponse,
 --    blockArrivalShedule,
   ) where
@@ -77,6 +79,49 @@ calculatePeerFetchInFlightLimits PeerGSV {
     -- asking for lots of small requests very frequently.
     inFlightBytesHighWatermark = inFlightBytesLowWatermark * 2
 
+
+-- | Given the 'PeerGSV', the bytes already in flight and the size of new
+-- blocks to download, estimate the probability of the download completing
+-- within the deadline.
+--
+-- This is an appropriate estimator to use in a situation where meeting a
+-- known deadline is the goal.
+--
+estimateResponseDeadlineProbability :: PeerGSV
+                                    -> SizeInBytes
+                                    -> SizeInBytes
+                                    -> DiffTime
+                                    -> Double
+estimateResponseDeadlineProbability PeerGSV{outboundGSV, inboundGSV}
+                                    bytesInFlight bytesRequested deadline =
+    deltaqProbabilityMassBeforeDeadline deadline $
+        gsvTrailingEdgeArrive outboundGSV reqSize
+     <> gsvTrailingEdgeArrive inboundGSV respSize
+  where
+    reqSize  = 100 -- TODO not exact, but it's small
+    respSize = bytesInFlight + bytesRequested
+
+
+-- | Given the 'PeerGSV', the bytes already in flight and the size of new
+-- blocks to download, estimate the expected (mean) time to complete the
+-- download.
+--
+-- This is an appropriate estimator to use when trying to minimising the
+-- expected overall download time case in the long run (rather than optimising
+-- for the worst case in the short term).
+--
+estimateExpectedResponseDuration :: PeerGSV
+                                 -> SizeInBytes -- ^ Request size
+                                 -> SizeInBytes -- ^ Expected response size
+                                 -> DiffTime
+estimateExpectedResponseDuration PeerGSV{outboundGSV, inboundGSV}
+                           bytesInFlight bytesRequested =
+    deltaqQ50thPercentile $
+        gsvTrailingEdgeArrive outboundGSV reqSize
+     <> gsvTrailingEdgeArrive inboundGSV respSize
+  where
+    reqSize  = 100 -- TODO not exact, but it's small
+    respSize = bytesInFlight + bytesRequested
 
 {-
 estimateBlockFetchResponse :: PeerGSV

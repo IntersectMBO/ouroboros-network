@@ -11,6 +11,7 @@ module Ouroboros.Network.DeltaQ (
     -- * DeltaQ
     DeltaQ(..),
     deltaqQ99thPercentile,
+    deltaqQ50thPercentile,
     deltaqProbabilityMassBeforeDeadline,
 
     -- * GSV
@@ -69,6 +70,9 @@ deriving instance Semigroup DeltaQ
 deltaqQ99thPercentile :: DeltaQ -> DiffTime
 deltaqQ99thPercentile (DeltaQ (DegenerateDistribution t)) = t
 
+deltaqQ50thPercentile :: DeltaQ -> DiffTime
+deltaqQ50thPercentile (DeltaQ (DegenerateDistribution t)) = t
+
 -- | This is another way of looking at a 𝚫Q distribution. Instead of giving
 -- a fraction of the probability mass (like 99%) and asking how long we would
 -- have to wait, we can say how long we are prepared to wait and ask what
@@ -78,12 +82,12 @@ deltaqQ99thPercentile (DeltaQ (DegenerateDistribution t)) = t
 -- are prepared to wait. This is useful for evaluating different options for
 -- which has the greatest probability of success within a deadline.
 --
-deltaqProbabilityMassBeforeDeadline :: DeltaQ
-                                    -> DiffTime
+deltaqProbabilityMassBeforeDeadline :: DiffTime
+                                    -> DeltaQ
                                     -> Double
-deltaqProbabilityMassBeforeDeadline (DeltaQ (DegenerateDistribution t)) d
-  | t < d     = 1
-  | otherwise = 0
+deltaqProbabilityMassBeforeDeadline deadline (DeltaQ (DegenerateDistribution t))
+  | t < deadline = 1
+  | otherwise    = 0
 
 
 --
