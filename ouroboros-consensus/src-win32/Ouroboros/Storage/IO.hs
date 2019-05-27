@@ -17,7 +17,7 @@ import           Data.ByteString
 import           Data.ByteString.Internal as Internal
 import           Data.Word (Word32, Word64, Word8)
 import           Foreign (Int64, Ptr)
-import           System.Win32
+import           System.Win32 hiding (setFilePointerEx)
 
 import           Ouroboros.Storage.FS.API.Types (AllowExisting (..),
                      OpenMode (..), SeekMode (..))

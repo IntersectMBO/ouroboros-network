@@ -9,7 +9,7 @@ module Ouroboros.Storage.Seek where
 #include <windows.h>
 
 import           System.Win32.Types
-import           System.Win32.File
+import           System.Win32.File (FilePtrDirection)
 import           Foreign (Ptr, alloca, peek)
 
 setFilePointerEx :: HANDLE -> LARGE_INTEGER -> FilePtrDirection -> IO LARGE_INTEGER
