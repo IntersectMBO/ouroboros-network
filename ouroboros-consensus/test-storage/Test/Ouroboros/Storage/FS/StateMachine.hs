@@ -30,7 +30,8 @@ import           Data.Bifoldable
 import           Data.Bifunctor
 import qualified Data.Bifunctor.TH as TH
 import           Data.Bitraversable
-import qualified Data.ByteString.Lazy as BL
+import           Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
 import           Data.Functor.Classes
 import           Data.Int (Int64)
 import qualified Data.List as L
@@ -61,7 +62,7 @@ import qualified Test.StateMachine.Types.Rank2 as Rank2
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck
 
-import           Ouroboros.Storage.FS.API
+import           Ouroboros.Storage.FS.API (HasFS (..))
 import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.FS.IO
 import           Ouroboros.Storage.FS.Sim.FsTree (FsTree (..))
@@ -116,7 +117,7 @@ data Cmd fp h =
   | Close              h
   | Seek               h SeekMode Int64
   | Get                h Word64
-  | Put                h BL.ByteString
+  | Put                h ByteString
   | Truncate           h Word64
   | GetSize            h
   | CreateDir          (PathExpr fp)
@@ -137,7 +138,7 @@ data Success fp h =
   | Unit       ()
   | Path       fp ()
   | Word64     Word64
-  | ByteString BL.ByteString
+  | ByteString ByteString
   | Strings    (Set String)
   | Bool       Bool
   deriving (Eq, Show, Functor, Foldable)
@@ -162,8 +163,8 @@ run hasFS@HasFS{..} = go
     -- Note: we're not using 'hGetSome' and 'hPutSome' that may produce
     -- partial reads/writes, but wrappers around them that handle partial
     -- reads/writes, see #502.
-    go (Get      h n           ) = ByteString <$> hGetExactly hasFS h n
-    go (Put      h bs          ) = Word64     <$> hPutAll     hasFS h bs
+    go (Get      h n           ) = ByteString <$> hGetSomeChecked hasFS h n
+    go (Put      h bs          ) = Word64     <$> hPutSomeChecked hasFS h bs
     go (Truncate h sz          ) = Unit       <$> hTruncate h sz
     go (GetSize  h             ) = Word64     <$> hGetSize  h
     go (ListDirectory      pe  ) = withPE pe (const Strings) $ listDirectory
@@ -176,6 +177,61 @@ run hasFS@HasFS{..} = go
            -> (FsPath -> m a)
            -> m (Success FsPath h)
     withPE pe r f = let fp = evalPathExpr pe in r fp <$> f fp
+
+
+{-------------------------------------------------------------------------------
+  Detecting partial reads/writes of the tested IO implementation
+-------------------------------------------------------------------------------}
+
+-- The function 'hGetSome' and 'hPutSome' might perform partial reads/writes,
+-- depending on the underlying implementation, see #277. While the model will
+-- always perform complete reads/writes, the real IO implementation we are
+-- testing /might/ actually perform partial reads/writes. This testsuite will
+-- fail when such a partial read or write is performed in the real IO
+-- implementation, as these are undeterministic and the model will no longer
+-- correspond to the real implementation. See #502 were we track this issue.
+--
+-- So far, on all systems the tests have been run on, no partial reads/writes
+-- have ever been noticed. However, we cannot be sure that the tests will
+-- never be run on a system or file-system that might result in partial
+-- reads/writes. Therefore, we use checked variants of 'hGetSome' and
+-- 'hPutSome' that detect partial reads/writes and that will signal an error
+-- so that the developer noticing the failing test doesn't waste any time
+-- debugging the implementation while the failing test was actually due to an
+-- unexpected partial read/write.
+--
+-- While using the wrappers 'hGetExactly' and 'hPutAll' instead of 'hGetSome'
+-- and 'hPut' in the implementation of 'run' will opaquely handle any
+-- potential partial reads/writes, it is not a good solution. The problem is
+-- that to run a single 'Cmd', we now have to run multiple primitive 'HasFS'
+-- functions. Each of those primitive functions might update the state of the
+-- model and the real world. Now when the second, third, ..., or n-th
+-- primitive functions fails (while running a single 'Cmd'), the whole 'Cmd'
+-- failed and the model is not updated. This means that we continue with the
+-- model as it was /before/ running the 'Cmd'. However, these primitive
+-- functions might have changed the model /and/ the state of the real
+-- implementation. In that case, we can no longer guarantee that the model and
+-- the real implementation are in sync.
+
+hGetSomeChecked :: (Monad m, HasCallStack)
+                => HasFS m h -> h -> Word64 -> m ByteString
+hGetSomeChecked HasFS{..} h n = do
+    bytes <- hGetSome h n
+    when (fromIntegral (BS.length bytes) /= n) $ do
+      moreBytes <- hGetSome h 1
+      -- If we can actually read more bytes, the last read was partial. If we
+      -- cannot, we really were at EOF.
+      unless (BS.null moreBytes) $
+        error "Unsupported partial read detected, see #502"
+    return bytes
+
+hPutSomeChecked :: (Monad m, HasCallStack)
+                => HasFS m h -> h -> ByteString -> m Word64
+hPutSomeChecked HasFS{..} h bytes = do
+    n <- hPutSome h bytes
+    if fromIntegral (BS.length bytes) /= n
+      then error "Unsupported partial write detected, see #502"
+      else return n
 
 {-------------------------------------------------------------------------------
   Instantiating the semantics
@@ -390,7 +446,7 @@ generator Model{..} = oneof $ concat [
           fmap At $ Close    <$> genHandle
         , fmap At $ Seek     <$> genHandle <*> genSeekMode <*> genOffset
         , fmap At $ Get      <$> genHandle <*> (getSmall <$> arbitrary)
-        , fmap At $ Put      <$> genHandle <*> (BL.pack <$> arbitrary)
+        , fmap At $ Put      <$> genHandle <*> (BS.pack <$> arbitrary)
         , fmap At $ Truncate <$> genHandle <*> (getSmall . getNonNegative <$> arbitrary)
         , fmap At $ GetSize  <$> genHandle
         ]
@@ -529,8 +585,8 @@ shrinker Model{..} (At cmd) =
     shrinkTempFile :: TempFile -> [TempFile]
     shrinkTempFile (TempFile n) = TempFile . getPositive <$> shrink (Positive n)
 
-    shrinkBytes :: BL.ByteString -> [BL.ByteString]
-    shrinkBytes = map BL.pack . shrink . BL.unpack
+    shrinkBytes :: ByteString -> [ByteString]
+    shrinkBytes = map BS.pack . shrink . BS.unpack
 
     numTempFiles :: Int
     numTempFiles = 100
@@ -877,15 +933,15 @@ tag = C.classify [
         countOpen :: Model r -> Int
         countOpen = Mock.numOpenHandles . mockFS
 
-    tagPutTruncateGet :: Map (Mock.Handle, FsPath) Int64
+    tagPutTruncateGet :: Map (Mock.Handle, FsPath) Int
                       -> Set (Mock.Handle, FsPath)
                       -> EventPred
     tagPutTruncateGet put truncated = successful $ \ev _ ->
       case resolveCmd  ev of
-        Put (h, fp) bs | BL.length bs /= 0 ->
+        Put (h, fp) bs | BS.length bs /= 0 ->
           let
-              f Nothing  = Just $ BL.length bs
-              f (Just n) = Just $ (BL.length bs) + n
+              f Nothing  = Just $ BS.length bs
+              f (Just n) = Just $ (BS.length bs) + n
               put' = Map.alter f (h, fp) put
           in Right $ tagPutTruncateGet put' truncated
         Truncate (h, fp) sz | sz > 0 -> case Map.lookup (h, fp) put of
@@ -897,13 +953,13 @@ tag = C.classify [
               Left TagPutTruncateGet
         _otherwise -> Right $ tagPutTruncateGet put truncated
 
-    tagPutTruncatePut :: Map Mock.Handle BL.ByteString
-                      -> Map Mock.Handle BL.ByteString
-                      -> Map Mock.Handle BL.ByteString
+    tagPutTruncatePut :: Map Mock.Handle ByteString
+                      -> Map Mock.Handle ByteString
+                      -> Map Mock.Handle ByteString
                       -> EventPred
     tagPutTruncatePut before truncated after = successful $ \ev _ ->
         case eventMockCmd ev of
-          Put h bs | BL.length bs /= 0 ->
+          Put h bs | BS.length bs /= 0 ->
             case Map.lookup h truncated of
               Nothing -> -- not yet truncated
                 let before' = Map.alter (appTo bs) h before in
@@ -911,12 +967,12 @@ tag = C.classify [
               Just deleted ->
                 let putAfter = Map.findWithDefault mempty h after <> bs
                     after'   = Map.insert h putAfter after in
-                if deleted /= BL.take (BL.length deleted) putAfter
+                if deleted /= BS.take (BS.length deleted) putAfter
                   then Left  $ TagPutTruncatePut
                   else Right $ tagPutTruncatePut before truncated after'
           Truncate h sz | sz > 0 ->
             let putBefore  = Map.findWithDefault mempty h before
-                (putBefore', deleted) = BL.splitAt (fromIntegral sz) putBefore
+                (putBefore', deleted) = BS.splitAt (fromIntegral sz) putBefore
                 before'    = Map.insert h putBefore' before
                 truncated' = Map.insert h deleted    truncated
                 after'     = Map.delete h            after
@@ -931,7 +987,7 @@ tag = C.classify [
     tagConcurrentWriterReader :: Map Mock.Handle (Set Mock.Handle) -> EventPred
     tagConcurrentWriterReader put = successful $ \ev@Event{..} _ ->
         case resolveCmd ev of
-          Put (h, fp) bs | BL.length bs > 0 ->
+          Put (h, fp) bs | BS.length bs > 0 ->
             -- Remember the other handles to the same file open at this time
             let readHs :: Set Mock.Handle
                 readHs = Set.fromList
@@ -971,7 +1027,7 @@ tag = C.classify [
     tagWriteWriteRead :: Map (Mock.Handle, FsPath) Int -> EventPred
     tagWriteWriteRead wr = successful $ \ev@Event{..} _ ->
       case resolveCmd ev of
-        Put (h, fp) bs | BL.length bs > 0 ->
+        Put (h, fp) bs | BS.length bs > 0 ->
           let f Nothing  = Just 0
               f (Just x) = Just $ x + 1
           in Right $ tagWriteWriteRead $ Map.alter f (h, fp) wr
@@ -1002,7 +1058,7 @@ tag = C.classify [
     tagWrite :: EventPred
     tagWrite = successful $ \ev@Event{..} _ ->
       case eventMockCmd ev of
-        Put _ bs | BL.length bs > 0 ->
+        Put _ bs | BS.length bs > 0 ->
           Left TagWrite
         _otherwise -> Right tagWrite
 
@@ -1092,7 +1148,7 @@ tag = C.classify [
     tagPutSeekGet :: Set Mock.Handle -> Set Mock.Handle -> EventPred
     tagPutSeekGet put seek = successful $ \ev@Event{..} _suc ->
       case eventMockCmd ev of
-        Put h bs | BL.length bs > 0 ->
+        Put h bs | BS.length bs > 0 ->
           Right $ tagPutSeekGet (Set.insert h put) seek
         Seek h RelativeSeek n | n > 0 && Set.member h put ->
           Right $ tagPutSeekGet put (Set.insert h seek)
@@ -1103,7 +1159,7 @@ tag = C.classify [
     tagPutSeekNegGet :: Set Mock.Handle -> Set Mock.Handle -> EventPred
     tagPutSeekNegGet put seek = successful $ \ev@Event{..} _suc ->
       case eventMockCmd ev of
-        Put h bs | BL.length bs > 0 ->
+        Put h bs | BS.length bs > 0 ->
           Right $ tagPutSeekNegGet (Set.insert h put) seek
         Seek h RelativeSeek n | n < 0 && Set.member h put ->
           Right $ tagPutSeekNegGet put (Set.insert h seek)
