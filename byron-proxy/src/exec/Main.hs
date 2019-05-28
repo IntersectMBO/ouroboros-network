@@ -12,7 +12,8 @@ import Control.Concurrent (threadDelay)
 import Control.Concurrent.Async (wait, concurrently)
 import Control.Concurrent.STM (STM, atomically, retry)
 import Control.Exception (throwIO)
-import Control.Monad (forM_)
+import Control.Lens ((^.))
+import Control.Monad (forM_, unless, void)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Resource (ResourceT)
 import Control.Tracer (Tracer (..), contramap, traceWith)
@@ -35,7 +36,9 @@ import qualified Cardano.Binary as Binary
 import qualified Cardano.Chain.Block as Cardano
 import qualified Cardano.Chain.Slotting as Cardano
 
+import qualified Pos.Binary.Class as CSL (decodeFull)
 import qualified Pos.Chain.Block as CSL (Block, BlockHeader (..), GenesisBlock,
+                                         HeaderHash, MainBlock, gbHeader,
                                          genesisBlock0, headerHash)
 import qualified Pos.Chain.Lrc as CSL (genesisLeaders)
 import qualified Pos.Chain.Block as CSL (recoveryHeadersMessage, streamWindow)
@@ -52,6 +55,8 @@ import qualified Pos.Infra.Network.CLI as CSL (NetworkConfigOpts (..),
                                                externalNetworkAddressOption,
                                                intNetworkConfigOpts,
                                                listenNetworkAddressOption)
+import Pos.Infra.Network.Types (NetworkConfig (..))
+import qualified Pos.Infra.Network.Policy as Policy
 import qualified Pos.Launcher.Configuration as CSL (ConfigurationOptions (..),
                                                     HasConfigurations,
                                                     withConfigurations)
@@ -82,12 +87,11 @@ import qualified Control.Monad.Catch as Standard
 import DB (DBConfig (..), withDB)
 import qualified Logging as Logging
 
--- | The main action using the proxy, index, and immutable database: download
--- the best known chain from the proxy and put it into the database, over and
--- over again.
+-- | Download the best available chain from Byron peers and write to the
+-- database, over and over again.
 --
 -- No exception handling is done.
-byronProxyMain
+byronProxyDownload
   :: Tracer IO Text.Builder
   -> CSL.GenesisBlock -- ^ For use as checkpoint when DB is empty. Also will
                       -- be put into an empty DB.
@@ -97,7 +101,7 @@ byronProxyMain
   -> DB.DB IO
   -> ByronProxy
   -> IO x
-byronProxyMain tracer genesisBlock epochSlots db bp = getStdGen >>= mainLoop Nothing
+byronProxyDownload tracer genesisBlock epochSlots db bp = getStdGen >>= mainLoop Nothing
 
   where
 
@@ -192,6 +196,38 @@ byronProxyMain tracer genesisBlock epochSlots db bp = getStdGen >>= mainLoop Not
   pickRandom rndGen ne =
     let (idx, rndGen') = randomR (0, NE.length ne - 1) rndGen
     in  (ne NE.!! idx, rndGen')
+
+-- | Repeatedly check the database for the latest block, and announce it
+-- whenever it changes.
+-- NB: only proper main blocks can be announced, not EBBs.
+-- The poll interval is hard-coded to 10 seconds.
+-- FIXME polling won't be needed, once we have a DB layer that can notify on
+-- tip change.
+-- No exception handling is done.
+byronProxyAnnounce
+  :: Tracer IO Text.Builder
+  -> Maybe CSL.HeaderHash -- ^ Of block most recently announced.
+  -> DB.DB IO
+  -> ByronProxy
+  -> IO x
+byronProxyAnnounce tracer mHashOfLatest db bp = do
+  tip <- DB.readTip db
+  mHashOfLatest' <- case tip of
+    -- Genesis means empty database. Announce nothing.
+    DB.TipGenesis         -> pure mHashOfLatest
+    -- EBBs are not announced.
+    DB.TipEBB   _ _ _     -> pure mHashOfLatest
+    -- Main blocks must be decoded to CSL blocks.
+    DB.TipBlock _   bytes -> case CSL.decodeFull bytes of
+      Left txt                               -> error "byronProxyAnnounce: could not decode block"
+      Right (Left (ebb :: CSL.GenesisBlock)) -> error "byronProxyAnnounce: ebb where block expected"
+      Right (Right (blk :: CSL.MainBlock))   -> do
+        let header = blk ^. CSL.gbHeader
+            hash   = Just (CSL.headerHash header)
+        unless (hash == mHashOfLatest) (announceChain bp header)
+        pure hash
+  threadDelay 10000000
+  byronProxyAnnounce tracer mHashOfLatest' db bp
 
 -- | `Tracer` comes from the `contra-tracer` package, but cardano-sl still
 -- works with the cardano-sl-util definition of the same thing.
@@ -531,6 +567,12 @@ runClient tracer clientOptions genesisConfig epochSlots db = case clientOptions 
           { bpcAdoptedBVData = CSL.configBlockVersionData genesisConfig
             -- ^ Hopefully that never needs to change.
           , bpcNetworkConfig = networkConfig
+              { ncEnqueuePolicy = Policy.defaultEnqueuePolicyRelay
+              , ncDequeuePolicy = Policy.defaultDequeuePolicyRelay
+              }
+            -- ^ These default relay policies should do what we want.
+            -- If not, could give a --policy option and use yaml files as in
+            -- cardano-sl
           , bpcDiffusionConfig = CSL.FullDiffusionConfiguration
               { CSL.fdcProtocolMagic = CSL.configProtocolMagic genesisConfig
               , CSL.fdcProtocolConstants = CSL.configProtocolConstants genesisConfig
@@ -548,12 +590,13 @@ runClient tracer clientOptions genesisConfig epochSlots db = case clientOptions 
           , bpcSendQueueSize     = 1
           , bpcRecvQueueSize     = 1
           }
-
         genesisBlock = CSL.genesisBlock0 (CSL.configProtocolMagic genesisConfig)
                                          (CSL.configGenesisHash genesisConfig)
                                          (CSL.genesisLeaders genesisConfig)
-    withByronProxy (contramap (\(a, b) -> ("", a, b)) tracer) bpc db $ \bp -> do
-      byronProxyMain textTracer genesisBlock epochSlots db bp
+    withByronProxy (contramap (\(a, b) -> ("", a, b)) tracer) bpc db $ \bp -> void $
+      concurrently
+        (byronProxyDownload textTracer genesisBlock epochSlots db bp)
+        (byronProxyAnnounce textTracer Nothing                 db bp)
 
   where
 
