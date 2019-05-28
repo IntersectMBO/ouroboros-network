@@ -117,7 +117,7 @@ prop_socket_send_recv_ipv6 :: (Int ->  Int -> (Int, Int))
                            -> Property
 prop_socket_send_recv_ipv6 request response = ioProperty $ do
     server:_ <- Socket.getAddrInfo Nothing (Just "::1") (Just "6061")
-    client:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
+    client:_ <- Socket.getAddrInfo Nothing (Just "::1") (Just "0")
     prop_socket_send_recv client server request response
 #endif
 
