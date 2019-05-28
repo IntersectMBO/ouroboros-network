@@ -519,16 +519,18 @@ hGetSome err@ErrorHandling{..} h n =
       file <- checkFsTree err $ FS.getFile openFilePath (mockFiles fs)
       case openPtr of
         RW r w o -> do
+          unless r $ throwError (errNoReadAccess openFilePath "write")
           let bs = BS.take (fromIntegral n) . BS.drop (fromIntegral o) $ file
-          return (bs, hs { openPtr = RW r w (o + fromIntegral (BS.length bs)) })
-        Append -> do
-          throwError FsError {
-              fsErrorType   = FsInvalidArgument
-            , fsErrorPath   = openFilePath
-            , fsErrorString = "cannot hGetSome in append mode"
-            , fsErrorStack  = callStack
-            , fsLimitation  = True
-            }
+          return (bs, hs { openPtr = RW True w (o + fromIntegral (BS.length bs)) })
+        Append -> throwError (errNoReadAccess openFilePath "append")
+  where
+    errNoReadAccess fp mode = FsError {
+        fsErrorType   = FsInvalidArgument
+      , fsErrorPath   = fp
+      , fsErrorString = "cannot hGetSome in " <> mode <> " mode"
+      , fsErrorStack  = callStack
+      , fsLimitation  = True
+      }
 
 hPutSome :: CanSimFS m => ErrorHandling FsError m -> Handle -> ByteString -> m Word64
 hPutSome err@ErrorHandling{..} h toWrite =
