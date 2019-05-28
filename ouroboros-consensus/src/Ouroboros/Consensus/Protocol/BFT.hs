@@ -21,11 +21,10 @@ module Ouroboros.Consensus.Protocol.BFT (
   , Payload(..)
   ) where
 
-import           Codec.Serialise (Serialise(..))
+import           Codec.Serialise (Serialise (..))
 import           Control.Monad.Except
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Proxy
 import           Data.Typeable (Typeable)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
@@ -105,11 +104,11 @@ instance BftCrypto c => OuroborosTag (Bft c) where
     where
       BftParams{..}  = bftParams
 
-  applyChainState toEnc BftNodeConfig{..} _l b _cs = do
+  applyChainState toEnc cfg@BftNodeConfig{..} _l b _cs = do
       -- TODO: Should deal with unknown node IDs
       if verifySignedDSIGN toEnc (bftVerKeys Map.! expectedLeader)
                       (blockPreHeader b)
-                      (bftSignature (blockPayload (Proxy @(Bft c)) b))
+                      (bftSignature (blockPayload cfg b))
         then return ()
         else throwError BftInvalidSignature
     where

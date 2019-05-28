@@ -219,7 +219,7 @@ class (HasHeader b) => HasPreHeader b where
 -- blocks can be defined to have payloads for multiple protocols. This is
 -- important for protocol combinators.
 class HasPreHeader b => HasPayload p b where
-  blockPayload :: proxy p -> b -> Payload p (PreHeader b)
+  blockPayload :: NodeConfig p -> b -> Payload p (PreHeader b)
 
 {-------------------------------------------------------------------------------
   Chain selection
