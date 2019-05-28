@@ -111,7 +111,7 @@ pollForTipChange epochSlots err poll db mPoint = poll takePoint (lift (DB.readTi
     Nothing -> case tip of
       DB.TipGenesis -> pure Nothing
       DB.TipEBB slot hash _ -> pure $ Just (Point slot hash)
-      DB.TipBlock slot bytes -> case decodeBlock epochSlots (Lazy.fromStrict bytes) of
+      DB.TipBlock slot bytes -> case decodeBlock epochSlots bytes of
         Left cborError -> lift $ err cborError
         Right ablk     -> case Binary.unAnnotated ablk of
           Cardano.ABOBBlock blk  -> pure $ Just $ Point slot (Cardano.blockHashAnnotated blk)
@@ -146,7 +146,7 @@ pickBetterTip _ _ point (DB.TipEBB slot hash _) =
 -- no forks, it is correct.
 pickBetterTip epochSlots err point (DB.TipBlock slot bytes) =
   if pointSlot point <= slot
-  then case decodeBlock epochSlots (Lazy.fromStrict bytes) of
+  then case decodeBlock epochSlots bytes of
     Left cborError -> err cborError
     Right ablk     -> case Binary.unAnnotated ablk of
       Cardano.ABOBBlock blk  -> pure $ Point slot (Cardano.blockHashAnnotated blk)
@@ -213,7 +213,7 @@ chainSyncServerIdle epochSlots err poll db ss = case ss of
                   -- want, we have to get its header hash, which involves
                   -- deserialising and then reserialising (via headerHash).
                   DB.NextBlock slot bytes iterator' -> do
-                    hash <- case decodeBlock epochSlots (Lazy.fromStrict bytes) of
+                    hash <- case decodeBlock epochSlots bytes of
                       Left cborError -> lift $ err cborError
                       Right ablk     -> case Binary.unAnnotated ablk of
                         Cardano.ABOBBlock blk  -> pure $ Cardano.blockHashAnnotated blk
@@ -276,7 +276,7 @@ chainSyncServerIdle epochSlots err poll db ss = case ss of
                     Left serverNext -> Just serverNext
                     Right _ -> Nothing
               poll condition (recvMsgRequestNext (chainSyncServerIdle epochSlots err poll db ss'))
-            DB.NextEBB slot hash bytes iterator' -> case decodeBlock epochSlots (Lazy.fromStrict bytes) of
+            DB.NextEBB slot hash bytes iterator' -> case decodeBlock epochSlots bytes of
               Left cborError -> lift $ err cborError
               Right ablk -> case Binary.unAnnotated ablk of
                 Cardano.ABOBBlock _ -> error "Corrupt DB: block where EBB expected"
@@ -285,7 +285,7 @@ chainSyncServerIdle epochSlots err poll db ss = case ss of
                   tipPoint' <- lift $ pickBetterTip epochSlots err tipPoint dbTip
                   let ss' = KnownTip tipPoint' (Just (Point slot hash)) (Just (iterator', releaseKey))
                   pure $ Left $ SendMsgRollForward ablk tipPoint (chainSyncServerAt epochSlots err poll db ss')
-            DB.NextBlock slot bytes iterator' -> case decodeBlock epochSlots (Lazy.fromStrict bytes) of
+            DB.NextBlock slot bytes iterator' -> case decodeBlock epochSlots bytes of
               Left cborError -> lift $ err cborError
               Right ablk -> case Binary.unAnnotated ablk of
                 Cardano.ABOBBoundary _ -> error "Corrupt DB: EBB where block expected"

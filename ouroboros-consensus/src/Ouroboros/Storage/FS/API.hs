@@ -7,7 +7,7 @@
 module Ouroboros.Storage.FS.API (
       HasFS(..)
     , hGetExactly
-    , hGetLenient
+    , hGetAll
     , hPut
     , hPutAll
     , hPutAllStrict
@@ -58,13 +58,15 @@ data HasFS m h = HasFS {
 
     -- | Try to read @n@ bytes from a handle
     --
+    -- When at the end of the file, an empty bytestring will be returned.
+    --
     -- The returned bytestring will typically have length @n@, but may be
-    -- shorter in case of a partial read, see #277.
+    -- shorter in case of a partial read, see #277. However, a partial read
+    -- will always return at least 1 byte, as returning 0 bytes would mean
+    -- that we have reached EOF.
     --
-    -- If nothing can be read at all, an exception will be thrown.
-    --
-    -- Postcondition: the length of the returned bytestring <= @n@ and > 0.
-  , hGetSome                 :: HasCallStack => h -> Int -> m BS.ByteString
+    -- Postcondition: the length of the returned bytestring <= @n@ and >= 0.
+  , hGetSome                 :: HasCallStack => h -> Word64 -> m BS.ByteString
 
     -- | Write to a handle
     --
@@ -74,7 +76,8 @@ data HasFS m h = HasFS {
     --
     -- If nothing can be written at all, an exception will be thrown.
     --
-    -- Postcondition: the return value <= @l@ and > 0.
+    -- Postcondition: the return value <= @l@ and > 0, unless the given
+    -- bytestring is empty, in which case the return value can be 0.
   , hPutSome                 :: HasCallStack => h -> BS.ByteString -> m Word64
 
     -- | Truncate the file to the specified size
@@ -131,41 +134,40 @@ hGetExactly :: forall m h
             . (HasCallStack, Monad m)
             => HasFS m h
             -> h
-            -> Int
+            -> Word64
             -> m BL.ByteString
 hGetExactly hasFS h n = go n []
   where
-    go :: Int -> [BS.ByteString] -> m BL.ByteString
-    go 0 bss = return $ BL.fromChunks $ reverse bss
-    go remainingBytes acc = do
-      bs <- hGetSome hasFS h remainingBytes
-      if BS.null bs then do
-        path <- handlePath hasFS h
-        throwError (hasFsErr hasFS) FsError {
-            fsErrorType   = FsReachedEOF
-          , fsErrorPath   = path
-          , fsErrorString = "hGetExactly found eof before reading " ++ show n ++ " bytes"
-          , fsErrorStack  = callStack
-          , fsLimitation  = False
-          }
-      else go (remainingBytes - BS.length bs) (bs : acc)
+    go :: Word64 -> [BS.ByteString] -> m BL.ByteString
+    go remainingBytes acc
+      | remainingBytes == 0 = return $ BL.fromChunks $ reverse acc
+      | otherwise           = do
+        bs <- hGetSome hasFS h remainingBytes
+        if BS.null bs then do
+          path <- handlePath hasFS h
+          throwError (hasFsErr hasFS) FsError {
+              fsErrorType   = FsReachedEOF
+            , fsErrorPath   = path
+            , fsErrorString = "hGetExactly found eof before reading " ++ show n ++ " bytes"
+            , fsErrorStack  = callStack
+            , fsLimitation  = False
+            }
+        -- We know the length <= remainingBytes, so this can't underflow
+        else go (remainingBytes - fromIntegral (BS.length bs)) (bs : acc)
 
--- | Like hGetExactly, but it does not throw an exception if eof is found.
-hGetLenient :: forall m h
-            . (HasCallStack, Monad m)
-            => HasFS m h
-            -> h
-            -> Int
-            -> m BL.ByteString
-hGetLenient hasFS h n = go n []
+-- | Read all the data from the given file handle 64kB at a time.
+--
+-- Stops when EOF is reached.
+hGetAll :: Monad m => HasFS m h -> h -> m BL.ByteString
+hGetAll HasFS{..} hnd = go mempty
   where
-    go :: Int -> [BS.ByteString] -> m BL.ByteString
-    go 0 bss = return $ BL.fromChunks $ reverse bss
-    go remainingBytes acc = do
-      bs <- hGetSome hasFS h remainingBytes
-      if BS.null bs then
-        go 0 acc
-      else go (remainingBytes - BS.length bs) (bs : acc)
+    bufferSize = 64 * 1024
+    go acc = do
+      chunk <- hGetSome hnd bufferSize
+      let acc' = chunk : acc
+      if BS.null chunk
+        then return $ BL.fromChunks $ reverse acc'
+        else go acc'
 
 -- | This function makes sure that the whole 'BS.ByteString' is written.
 hPutAllStrict :: forall m h

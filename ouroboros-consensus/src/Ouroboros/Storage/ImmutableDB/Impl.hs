@@ -150,10 +150,8 @@ import           Control.Monad.Class.MonadThrow (ExitCase (..),
 import           Control.Monad.State.Strict (StateT (..), get, lift, modify,
                      put, runStateT, state)
 
-import           Data.ByteString (ByteString)
 import           Data.ByteString.Builder (Builder)
-import qualified Data.ByteString.Builder as BS
-import           Data.ByteString.Lazy (toStrict)
+import           Data.ByteString.Lazy (ByteString, toStrict)
 import           Data.Either (isRight)
 import           Data.Functor (($>), (<&>))
 import           Data.List.NonEmpty (NonEmpty)
@@ -568,7 +566,7 @@ getEpochSlot _dbHasFS hashDecoder OpenState {..} _dbErr epochSlot = do
               fromIntegral indexEntrySizeBytes
         hSeek iHnd AbsoluteSeek indexSeekPosition
         -- Compute the offset on disk and the blob size.
-        let nbBytesToGet = indexEntrySizeBytes * 2
+        let nbBytesToGet = fromIntegral indexEntrySizeBytes * 2
         -- Note the use of hGetExactly: we must get enough bytes from the
         -- index file, otherwise 'decodeIndexEntry' (and its variant) would
         -- fail.
@@ -582,7 +580,7 @@ getEpochSlot _dbHasFS hashDecoder OpenState {..} _dbErr epochSlot = do
             epochSize <- epochInfoSize _epochInfo epoch
             let hashOffset = (fromIntegral epochSize + 2) * indexEntrySizeBytes
             hSeek iHnd AbsoluteSeek (fromIntegral hashOffset)
-            deserialiseHash' =<< readAll _dbHasFS iHnd
+            deserialiseHash' =<< hGetAll _dbHasFS iHnd
           else return Nothing
 
         return (start, end - start, mbEBBHash)
@@ -599,15 +597,15 @@ getEpochSlot _dbHasFS hashDecoder OpenState {..} _dbErr epochSlot = do
       _ -> withFile _dbHasFS epochFile ReadMode $ \eHnd -> do
         -- Seek in the epoch file
         hSeek eHnd AbsoluteSeek (fromIntegral blobOffset)
-        Just . toStrict <$> hGetExactly _dbHasFS eHnd (fromIntegral blobSize)
+        Just <$> hGetExactly _dbHasFS eHnd (fromIntegral blobSize)
 
     return (mbEBBHash, mbBlob)
   where
     HasFS{..}                    = _dbHasFS
     EpochSlot epoch relativeSlot = epochSlot
 
-    deserialiseHash' :: HasCallStack => Builder -> m (Maybe hash)
-    deserialiseHash' bld = case deserialiseHash hashDecoder (BS.toLazyByteString bld) of
+    deserialiseHash' :: HasCallStack => ByteString -> m (Maybe hash)
+    deserialiseHash' bs = case deserialiseHash hashDecoder bs of
       Right (_, hash) -> return hash
       Left df         -> throwUnexpectedError _dbErr $
         DeserialisationError df callStack
@@ -1094,7 +1092,7 @@ iteratorNextImpl dbEnv it@IteratorHandle {_it_hasFS = hasFS :: HasFS m h, ..} st
 
       -- Read from the epoch file. No need for seeking: as we are streaming,
       -- we are already positioned at the correct place (Invariant 4).
-      toStrict <$> hGetExactly hasFS eHnd (fromIntegral blobSize)
+      hGetExactly hasFS eHnd (fromIntegral blobSize)
         `finally`
         -- Seek to the previous position if we shouldn't step to the next.
         unless step (hSeek eHnd RelativeSeek (negate (fromIntegral blobSize)))

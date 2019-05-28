@@ -103,29 +103,29 @@ newtype Iterator m = Iterator
 
 data Next m where
   Done      :: Next m
-  NextBlock :: SlotNo                       -> ByteString -> Iterator m -> Next m
+  NextBlock :: SlotNo                       -> Lazy.ByteString -> Iterator m -> Next m
   -- | For EBBs, the `Slot` is the same as the first block of that epoch.
-  NextEBB   :: SlotNo -> Cardano.HeaderHash -> ByteString -> Iterator m -> Next m
+  NextEBB   :: SlotNo -> Cardano.HeaderHash -> Lazy.ByteString -> Iterator m -> Next m
 
 data DBRead where
-  ReadEBB   :: SlotNo -> Cardano.HeaderHash -> ByteString -> DBRead
-  ReadBlock :: SlotNo ->                       ByteString -> DBRead
+  ReadEBB   :: SlotNo -> Cardano.HeaderHash -> Lazy.ByteString -> DBRead
+  ReadBlock :: SlotNo ->                       Lazy.ByteString -> DBRead
 
 dbBytes :: DBRead -> ByteString
-dbBytes term = case term of
+dbBytes term = Lazy.toStrict $ case term of
   ReadEBB _ _ bytes -> bytes
   ReadBlock _ bytes -> bytes
 
 data Tip where
   TipGenesis :: Tip
-  TipEBB     :: SlotNo -> Cardano.HeaderHash -> ByteString -> Tip
-  TipBlock   :: SlotNo                       -> ByteString -> Tip
+  TipEBB     :: SlotNo -> Cardano.HeaderHash -> Lazy.ByteString -> Tip
+  TipBlock   :: SlotNo                       -> Lazy.ByteString -> Tip
 
 -- | Make an `Iterator` from an `ImmutableDB` `Iterator`.
 fromImmutableDBIterator
   :: ( Monad m )
   => Cardano.EpochSlots
-  -> Immutable.Iterator Cardano.HeaderHash m ByteString
+  -> Immutable.Iterator Cardano.HeaderHash m Lazy.ByteString
   -> Iterator m
 fromImmutableDBIterator epochSlots idbIterator = Iterator $ do
   idbNext <- Immutable.iteratorNext idbIterator

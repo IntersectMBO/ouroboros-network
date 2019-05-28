@@ -10,8 +10,8 @@ module Ouroboros.Storage.VolatileDB.API
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 
-import           Data.ByteString (ByteString)
 import           Data.ByteString.Builder (Builder)
+import           Data.ByteString.Lazy (ByteString)
 import           Data.Set (Set)
 import           GHC.Stack (HasCallStack)
 

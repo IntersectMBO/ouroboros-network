@@ -89,9 +89,8 @@ module Ouroboros.Storage.VolatileDB.Impl
 import           Control.Monad
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
-import           Data.ByteString (ByteString)
 import qualified Data.ByteString.Builder as BS
-import           Data.ByteString.Lazy (toStrict)
+import           Data.ByteString.Lazy (ByteString)
 import           Data.List (sortOn)
 import           Data.Map (Map)
 import qualified Data.Map as Map
@@ -232,7 +231,7 @@ getBlockImpl env@VolatileDBEnv{..} slot = do
             Just InternalBlockInfo {..} ->  do
                 bs <- withFile hasFS [ibFile] ReadMode $ \hndl -> do
                         _ <- hSeek hndl AbsoluteSeek (fromIntegral ibSlotOffset)
-                        toStrict <$> hGetExactly hasFS hndl (fromIntegral ibBlockSize)
+                        hGetExactly hasFS hndl (fromIntegral ibBlockSize)
                 return (st, Just bs)
 
 -- This function follows the approach:

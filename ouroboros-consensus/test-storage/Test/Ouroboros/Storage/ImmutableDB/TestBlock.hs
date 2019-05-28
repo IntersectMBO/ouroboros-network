@@ -46,13 +46,12 @@ import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
 import           Ouroboros.Storage.Common
-import           Ouroboros.Storage.FS.API (HasFS (..), hPut, withFile)
+import           Ouroboros.Storage.FS.API (HasFS (..), hGetAll, hPut, withFile)
 import           Ouroboros.Storage.FS.API.Types
 import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
 import           Ouroboros.Storage.FS.Sim.STM (runSimFS)
 import           Ouroboros.Storage.ImmutableDB.Types
-import           Ouroboros.Storage.ImmutableDB.Util (cborEpochFileParser,
-                     readAll)
+import           Ouroboros.Storage.ImmutableDB.Util (cborEpochFileParser)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
 import           Ouroboros.Consensus.Util.CBOR (ReadIncrementalErr)
@@ -168,8 +167,7 @@ binaryEpochFileParser :: forall b m hash h. (MonadThrow m, Bin.Binary b)
 binaryEpochFileParser hasFS@HasFS{..} isEBB getHash = EpochFileParser $ \fsPath ->
     withFile hasFS fsPath ReadMode $ \eHnd -> do
       bytesInFile <- hGetSize eHnd
-      parse bytesInFile 0 [] Nothing . BS.toLazyByteString <$>
-        readAll hasFS eHnd
+      parse bytesInFile 0 [] Nothing <$> hGetAll hasFS eHnd
   where
     parse :: SlotOffset
           -> SlotOffset

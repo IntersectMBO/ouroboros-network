@@ -10,7 +10,6 @@ import Control.Concurrent.Async (concurrently)
 import Control.Concurrent.STM (STM, atomically, retry)
 import Control.Monad (forM_)
 import Control.Tracer (Tracer (..), contramap, traceWith)
-import qualified Data.ByteString.Lazy as Lazy (fromStrict)
 import Data.Functor.Contravariant (Op (..))
 import Data.List (intercalate)
 import Data.List.NonEmpty (NonEmpty)
@@ -125,7 +124,7 @@ byronProxyMain tracer genesisBlock epochSlots db bp = getStdGen >>= mainLoop Not
               DB.appendBlock dbwrite (DB.LegacyBlockToWrite (Left genesisBlock))
             pure (True, 0, CSL.headerHash genesisBlock)
           DB.TipEBB   slot hash _ -> pure (True, slot, DB.coerceHashToLegacy hash)
-          DB.TipBlock slot bytes -> case Binary.decodeFullAnnotatedBytes "Block or boundary" (Cardano.fromCBORABlockOrBoundary epochSlots) (Lazy.fromStrict bytes) of
+          DB.TipBlock slot bytes -> case Binary.decodeFullAnnotatedBytes "Block or boundary" (Cardano.fromCBORABlockOrBoundary epochSlots) bytes of
             Left decoderError -> error $ "failed to decode block: " ++ show decoderError
             Right (Cardano.ABOBBoundary _) -> error $ "Corrput DB: got EBB where block expected"
             -- We have a cardano-ledger `HeaderHash` but we need a cardano-sl

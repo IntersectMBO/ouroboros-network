@@ -28,7 +28,7 @@ import           Control.Monad.State.Strict (MonadState, State, evalState, gets,
 import           Data.Functor.Identity
 
 import           Data.Bifunctor (first)
-import           Data.ByteString (ByteString)
+import           Data.ByteString.Lazy (ByteString)
 import           Data.Coerce (Coercible, coerce)
 import           Data.Foldable (toList)
 import           Data.Function (on)
@@ -413,9 +413,7 @@ generator m@Model {..} = do
     -- Don't simulate an error during corruption, because we don't want an
     -- error to happen while we corrupt a file.
     errorFor Corruption {} = False
-    errorFor Reopen {}     = False
     errorFor _             = True
-    -- TODO simulate errors during recovery?
 
 
 -- | Generate a 'Cmd'.

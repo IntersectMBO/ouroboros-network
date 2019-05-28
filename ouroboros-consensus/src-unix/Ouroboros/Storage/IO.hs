@@ -86,9 +86,9 @@ seek h seekMode offset = withOpenHandle "seek" h $ \fd ->
     void $ Posix.fdSeek fd seekMode (fromIntegral offset)
 
 -- | Reads a given number of bytes from the input 'FHandle'.
-read :: FHandle -> Int -> IO ByteString
+read :: FHandle -> Word64 -> IO ByteString
 read h bytes = withOpenHandle "read" h $ \fd ->
-    Internal.createUptoN bytes $ \ptr ->
+    Internal.createUptoN (fromIntegral bytes) $ \ptr ->
       fromIntegral <$> Posix.fdReadBuf fd ptr (fromIntegral bytes)
 
 -- | Truncates the file managed by the input 'FHandle' to the input size.
