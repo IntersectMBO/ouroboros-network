@@ -69,7 +69,6 @@
             (hsPkgs.tasty-quickcheck)
             (hsPkgs.text)
             (hsPkgs.time)
-            (hsPkgs.unordered-containers)
             ];
           };
         "cddl" = {

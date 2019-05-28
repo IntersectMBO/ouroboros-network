@@ -16,7 +16,6 @@ import           Test.ChainGenerators (TestChainFork(..))
 
 import           GHC.Generics (Generic)
 import           Data.Aeson
-import qualified Data.HashMap.Strict as HM
 import           Data.List
 import qualified Data.Set as Set
 import           Data.Set (Set)
@@ -27,16 +26,9 @@ import           Data.Typeable (Typeable)
 import           Data.Dynamic (fromDynamic)
 import           Control.Monad.IOSim
 import           Control.Tracer (Tracer(Tracer), contramap)
-import           Control.Concurrent (modifyMVar_, threadDelay)
 import           Control.Exception (throw)
 
-import qualified Cardano.BM.Configuration.Model as CM
-import           Cardano.BM.Data.BackendKind (BackendKind (..))
 import           Cardano.BM.Data.LogItem (LogObject)
-import           Cardano.BM.Data.Output (ScribeDefinition (..), ScribeFormat (..), ScribeKind (..),
-                     ScribePrivacy (..))
-import           Cardano.BM.Data.Severity (Severity (..))
-import           Cardano.BM.Data.SubTrace (SubTrace (..))
 import           Cardano.BM.Data.Tracer (ToLogObject (..), ToObject (..))
 import           Cardano.BM.Setup (setupTrace)
 import           Cardano.BM.Trace (appendName)
@@ -125,9 +117,9 @@ prop_blockFetchStaticNoOverlap (TestChainFork common fork1 fork2) =
 blockFetchStaticNoOverlapIO :: TestChainFork -> Property
 blockFetchStaticNoOverlapIO (TestChainFork common fork1 fork2) =
     ioProperty $ do
-        c <- prepareTraceConfig
+        let configFile = "ouroboros-network/cfg/test-logging.yaml"
         trace :: Tracer IO (LogObject Example1TraceEvent)
-            <- setupTrace (Right c) $ pack "block-fetch"
+            <- setupTrace (Left configFile) $ pack "block-fetch"
         -- add names to the three tracers
         tracerDecision       <- toLogObject <$> appendName (pack "decision")         trace
         tracerClientState    <- toLogObject <$> appendName (pack "client-state")     trace
@@ -138,7 +130,6 @@ blockFetchStaticNoOverlapIO (TestChainFork common fork1 fork2) =
             (contramap TraceFetchClientSendRecv tracerClientSendRecv)
             common' forks
         putStrLn "~~~~~~~~~~~~~~~~~~~~~~~~"
-        threadDelay 1000000
         return True
 
         -- For fetch reqs added and received, we observe exactly the sequence
@@ -153,29 +144,6 @@ blockFetchStaticNoOverlapIO (TestChainFork common fork1 fork2) =
     fork1'  = chainToAnchoredFragment fork1
     fork2'  = chainToAnchoredFragment fork2
     forks   = [fork1', fork2']
-    prepareTraceConfig = do
-        c <- CM.empty
-        CM.setMinSeverity c Debug
-        CM.setSetupBackends c [KatipBK]
-        CM.setDefaultBackends c [KatipBK]
-        CM.setSetupScribes c [ ScribeDefinition {
-                                  scName = pack "stdout"
-                                , scKind = StdoutSK
-                                , scFormat = ScJson
-                                , scPrivacy = ScPublic
-                                , scRotation = Nothing
-                                }
-                             ]
-        CM.setDefaultScribes c [pack "StdoutSK::stdout"]
-        modifyMVar_ (CM.getCG c) $ \cg ->
-            return cg { CM.cgOptions = HM.insert
-                                        (pack "cfokey")
-                                        (HM.singleton (pack "value") (String (pack "blockFetch-0.0.0")))
-                                        (CM.cgOptions cg)
-                      }
-        CM.setSubTrace c (pack "#messagecounters.switchboard") $ Just NoTrace
-        CM.setSubTrace c (pack "#messagecounters.katip") $ Just NoTrace
-        return c
 
 instance ToObject [TraceLabelPeer Int (FetchDecision [Point BlockHeader])]
 instance ToObject (TraceLabelPeer Int (TraceFetchClientState BlockHeader))

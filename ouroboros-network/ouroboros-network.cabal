@@ -226,8 +226,7 @@ test-suite tests
                        tasty,
                        tasty-quickcheck,
                        text,
-                       time,
-                       unordered-containers
+                       time
 
 
   ghc-options:         -Wall
