@@ -61,6 +61,7 @@ test-suite tests
                    , Network.TypedProtocol.Codec
                    , Network.TypedProtocol.Core
                    , Network.TypedProtocol.Driver
+                   , Network.TypedProtocol.Driver.ByteLimit
                    , Network.TypedProtocol.PingPong.Client
                    , Network.TypedProtocol.PingPong.Codec
                    , Network.TypedProtocol.PingPong.Examples
