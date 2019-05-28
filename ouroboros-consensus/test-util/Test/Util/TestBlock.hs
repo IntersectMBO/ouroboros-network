@@ -113,9 +113,21 @@ instance HasPreHeader TestBlock where
   blockPreHeader _ = ()
 
 instance HasPayload (Bft BftMockCrypto) TestBlock where
-  blockPayload _ _ = BftPayload {
-        bftSignature = SignedDSIGN (mockSign encode () (SignKeyMockDSIGN 0))
+  blockPayload = \cfg tb -> BftPayload {
+        bftSignature = SignedDSIGN $
+                         mockSign
+                           encode
+                           ()
+                           (signKey cfg (tbSlot tb))
       }
+    where
+      -- We don't want /our/ signing key, but rather the signing key of the
+      -- node that produced the block
+      signKey :: NodeConfig (Bft BftMockCrypto)
+              -> Block.SlotNo
+              -> SignKeyDSIGN MockDSIGN
+      signKey BftNodeConfig{bftParams = BftParams{..}} (Block.SlotNo n) =
+          SignKeyMockDSIGN $ fromIntegral (n `mod` bftNumNodes)
 
 instance UpdateLedger TestBlock where
   data LedgerState TestBlock =

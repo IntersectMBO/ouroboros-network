@@ -23,13 +23,12 @@ module Ouroboros.Consensus.Protocol.PBFT (
   , Payload(..)
   ) where
 
-import           Codec.Serialise (Serialise(..))
-import qualified Codec.Serialise.Encoding as Enc
+import           Codec.Serialise (Serialise (..))
 import qualified Codec.Serialise.Decoding as Dec
+import qualified Codec.Serialise.Encoding as Enc
 import           Control.Monad.Except
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Proxy
 import           Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import           Data.Tuple (swap)
@@ -157,7 +156,7 @@ instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
     where
       PBftParams{..}  = pbftParams
 
-  applyChainState toEnc PBftNodeConfig{..} (PBftLedgerView dms) b (signers, lastSlot) = do
+  applyChainState toEnc cfg@PBftNodeConfig{..} (PBftLedgerView dms) b (signers, lastSlot) = do
       -- Check that the issuer signature verifies, and that it's a delegate of a
       -- genesis key, and that genesis key hasn't voted too many times.
 
@@ -179,7 +178,7 @@ instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
           return (signers', blockSlot b)
     where
       PBftParams{..}  = pbftParams
-      payload = blockPayload (Proxy @(PBft c)) b
+      payload = blockPayload cfg b
       winSize = fromIntegral pbftSignatureWindow
       wt = floor $ pbftSignatureThreshold * fromIntegral winSize
 

@@ -25,10 +25,10 @@ module Ouroboros.Consensus.Protocol.Praos (
   , Payload(..)
   ) where
 
-import           Codec.Serialise (Serialise(..))
-import qualified Codec.Serialise.Encoding as Enc
-import qualified Codec.Serialise.Decoding as Dec
 import           Codec.CBOR.Encoding (Encoding, encodeListLen)
+import           Codec.Serialise (Serialise (..))
+import qualified Codec.Serialise.Decoding as Dec
+import qualified Codec.Serialise.Encoding as Enc
 import           Control.Monad (unless)
 import           Control.Monad.Except (throwError)
 import           Data.IntMap.Strict (IntMap)
@@ -191,7 +191,7 @@ instance (Serialise (PraosExtraFields c), PraosCrypto c) => OuroborosTag (Praos 
               else Nothing
 
   applyChainState toEnc cfg@PraosNodeConfig{..} sd b cs = do
-    let PraosPayload{..} = blockPayload (Proxy :: Proxy (Praos c)) b
+    let PraosPayload{..} = blockPayload cfg b
         ph               = blockPreHeader b
         slot             = blockSlot b
         CoreNodeId nid   = praosCreator praosExtraFields
