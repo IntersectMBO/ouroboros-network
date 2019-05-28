@@ -1136,8 +1136,8 @@ execAtomically mytid = go [] (NilSt []) 0
                                   -- running next stm transaction we will use
                                   -- @finaliseRetry@ (which we must do).  This
                                   -- is just an optimisation.  Also note that
-                                  -- @finaliseRetry@ is effectively idempotent
-                                  -- with resepect to @read@ tvars.
+                                  -- @finaliseRetry@ is idempotent with
+                                  -- resepect to @read@ tvars.
                                   goRetry (acc ++ wrt) nextWritten (pred d')
                                 LeftSt wrt nextAction nextWritten -> do
                                   _ <- finaliseRetry read (acc ++ wrt) d'
@@ -1166,8 +1166,9 @@ execAtomically mytid = go [] (NilSt []) 0
 
     blockOnTVar :: TVar s a -> ST s ()
     blockOnTVar (TVar _vid _vcur _vorElse blocked) =
-      --TODO: avoid duplicates!
-      modifySTRef blocked (mytid:)
+      modifySTRef blocked (\tids -> if mytid `elem` tids
+                                      then tids
+                                      else mytid : tids)
 
 
 execAtomically' :: forall s. StmA s () -> ST s [(ThreadId, [TVarId])]
