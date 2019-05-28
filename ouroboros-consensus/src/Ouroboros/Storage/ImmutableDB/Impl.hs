@@ -566,7 +566,7 @@ getEpochSlot _dbHasFS hashDecoder OpenState {..} _dbErr epochSlot = do
               fromIntegral indexEntrySizeBytes
         hSeek iHnd AbsoluteSeek indexSeekPosition
         -- Compute the offset on disk and the blob size.
-        let nbBytesToGet = indexEntrySizeBytes * 2
+        let nbBytesToGet = fromIntegral indexEntrySizeBytes * 2
         -- Note the use of hGetExactly: we must get enough bytes from the
         -- index file, otherwise 'decodeIndexEntry' (and its variant) would
         -- fail.

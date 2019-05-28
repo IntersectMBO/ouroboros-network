@@ -66,7 +66,7 @@ data HasFS m h = HasFS {
     -- that we have reached EOF.
     --
     -- Postcondition: the length of the returned bytestring <= @n@ and >= 0.
-  , hGetSome                 :: HasCallStack => h -> Int -> m BS.ByteString
+  , hGetSome                 :: HasCallStack => h -> Word64 -> m BS.ByteString
 
     -- | Write to a handle
     --
@@ -76,7 +76,8 @@ data HasFS m h = HasFS {
     --
     -- If nothing can be written at all, an exception will be thrown.
     --
-    -- Postcondition: the return value <= @l@ and > 0.
+    -- Postcondition: the return value <= @l@ and > 0, unless the given
+    -- bytestring is empty, in which case the return value can be 0.
   , hPutSome                 :: HasCallStack => h -> BS.ByteString -> m Word64
 
     -- | Truncate the file to the specified size
@@ -133,13 +134,13 @@ hGetExactly :: forall m h
             . (HasCallStack, Monad m)
             => HasFS m h
             -> h
-            -> Int
+            -> Word64
             -> m BL.ByteString
 hGetExactly hasFS h n = go n []
   where
-    go :: Int -> [BS.ByteString] -> m BL.ByteString
+    go :: Word64 -> [BS.ByteString] -> m BL.ByteString
     go remainingBytes acc
-      | remainingBytes <= 0 = return $ BL.fromChunks $ reverse acc
+      | remainingBytes == 0 = return $ BL.fromChunks $ reverse acc
       | otherwise           = do
         bs <- hGetSome hasFS h remainingBytes
         if BS.null bs then do
@@ -151,7 +152,8 @@ hGetExactly hasFS h n = go n []
             , fsErrorStack  = callStack
             , fsLimitation  = False
             }
-        else go (remainingBytes - BS.length bs) (bs : acc)
+        -- We know the length <= remainingBytes, so this can't underflow
+        else go (remainingBytes - fromIntegral (BS.length bs)) (bs : acc)
 
 -- | Read all the data from the given file handle 64kB at a time.
 --

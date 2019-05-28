@@ -54,7 +54,7 @@ fromBlock :: TestBlock -> BlockTestInfo
 fromBlock (bid, pbid, 1) = (bid, pbid)
 fromBlock _              = error "wrong payload"
 
-binarySize :: Int
+binarySize :: Word64
 binarySize = 25
 
 myParser :: (MonadThrow m)
@@ -81,15 +81,15 @@ parseImpl hasFS@HasFS{..} path =
     go hndl ls offset maxOffset
       | offset >= maxOffset
       = return (reverse ls, Nothing)
-      | maxOffset - offset < fromIntegral binarySize
+      | maxOffset - offset < binarySize
       = return (reverse ls, Just "partial block at the end")
       | otherwise
       = fromBinary . BL.toStrict <$> hGetExactly hasFS hndl binarySize >>= \case
           Left e              -> return (reverse ls, Just e)
           Right (bid, prebid) ->
-              go hndl ls' (offset + fromIntegral binarySize) maxOffset
+              go hndl ls' (offset + binarySize) maxOffset
             where
-              ls' = (offset, (fromIntegral binarySize, blockInfo)) : ls
+              ls' = (offset, (binarySize, blockInfo)) : ls
               blockInfo = BlockInfo
                 { bbid    = bid
                 , bslot   = guessSlot bid

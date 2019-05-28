@@ -131,7 +131,7 @@ readIncremental hasFS@HasFS{..} decoder fp = withLiftST $ \liftST -> do
        -> S.IDecode s a
        -> m (Either ReadIncrementalErr a)
     go liftST h (S.Partial k) = do
-        bs   <- hGetSome h defaultChunkSize
+        bs   <- hGetSome h (fromIntegral defaultChunkSize)
         dec' <- liftST $ k (checkEmpty bs)
         go liftST h dec'
     go _ _ (S.Done leftover _ a) =
@@ -184,7 +184,7 @@ readIncrementalOffsets hasFS@HasFS{..} decoder fp = withLiftST $ \liftST ->
         -- some more bytes from the file.
         bs   <- case mbUnconsumed of
           Just unconsumed -> return unconsumed
-          Nothing         -> hGetSome h defaultChunkSize
+          Nothing         -> hGetSome h (fromIntegral defaultChunkSize)
         dec' <- liftST $ k (checkEmpty bs)
         go liftST h offset deserialised Nothing fileSize dec'
 
@@ -216,7 +216,7 @@ readIncrementalOffsets hasFS@HasFS{..} decoder fp = withLiftST $ \liftST ->
 -- 'Ouroboros.Storage.ImmutableDB.Util.cborEpochFileParser'', the ChainDB will
 -- extract the EBB hash for us.
 readIncrementalOffsetsEBB :: forall m hash h a. (MonadST m, MonadThrow m)
-                          => Int -- ^ Chunk size when reading bytes
+                          => Word64 -- ^ Chunk size when reading bytes
                           -> HasFS m h
                           -> (forall s . CBOR.Decoder s a)
                           -> (BSL.ByteString -> a -> Maybe hash)

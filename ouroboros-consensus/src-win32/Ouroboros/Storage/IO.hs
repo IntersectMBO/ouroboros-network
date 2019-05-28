@@ -66,9 +66,9 @@ fromSeekMode AbsoluteSeek = fILE_BEGIN
 fromSeekMode RelativeSeek = fILE_CURRENT
 fromSeekMode SeekFromEnd  = fILE_END
 
-read :: FHandle -> Int -> IO ByteString
+read :: FHandle -> Word64 -> IO ByteString
 read fh bytes = withOpenHandle "read" fh $ \h ->
-  Internal.createUptoN bytes $ \ptr ->
+  Internal.createUptoN (fromIntegral bytes) $ \ptr ->
     fromIntegral <$> win32_ReadFile h ptr (fromIntegral bytes) Nothing
 
 -- We only allow truncate in AppendMode, but Windows do not support it, so we manually seek to the end.

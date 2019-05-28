@@ -216,7 +216,7 @@ indexBackfill (RelativeSlot slot) (RelativeSlot nextExpected) lastOffset =
 --
 -- TODO remove this function when the ChainDB is available.
 cborEpochFileParser :: forall m hash h a. (MonadST m, MonadThrow m)
-                    => Int  -- ^ Chunk size
+                    => Word64  -- ^ Chunk size
                     -> HasFS m h
                     -> (forall s . CBOR.Decoder s a)
                     -> (BSL.ByteString -> a -> Maybe hash)
@@ -242,4 +242,4 @@ cborEpochFileParser' :: forall m hash h a. (MonadST m, MonadThrow m)
                      -> EpochFileParser ReadIncrementalErr hash m (Word64, a)
                         -- ^ The 'Word' is the size in bytes of the
                         -- corresponding @a@.
-cborEpochFileParser' = cborEpochFileParser defaultChunkSize
+cborEpochFileParser' = cborEpochFileParser (fromIntegral defaultChunkSize)

@@ -155,11 +155,14 @@ type ErrorStream = Stream FsErrorType
 -- to 'hGetSome' or 'hPutSome' partial:
 --
 -- * 'hGetSome': we subtract @p@ from the number of requested bytes. If that
---    would result in 0 requested bytes or less, we request 1 byte.
+--    would result in 0 requested bytes or less, we request 1 byte. If the
+--    number of requested bytes was already 0, leave it untouched, as we can't
+--    simulate a partial read in this case.
 -- * 'hPutSome': we drop the last @p@ bytes from the bytestring. If that would
 --   result in an empty bytestring, just take the first byte of the
---   bytestring.
-newtype Partial = Partial Word
+--   bytestring. If the bytestring was already empty, leave it untouched, as
+--   we can't simulate a partial write in this case.
+newtype Partial = Partial Word64
     deriving (Show)
 
 instance Arbitrary Partial where
@@ -167,16 +170,19 @@ instance Arbitrary Partial where
   shrink (Partial p) =
     [Partial p' | p' <- [1..p]]
 
-hGetSomePartial :: Partial -> Int -> Int
-hGetSomePartial (Partial p) n = max (p' - n) 1
-  where
-    p' = fromIntegral p
+hGetSomePartial :: Partial -> Word64 -> Word64
+hGetSomePartial (Partial p) n
+    | 0 <- n    = 0
+    | p >= n    = 1
+    | otherwise = n - p
 
 hPutSomePartial :: Partial -> BS.ByteString -> BS.ByteString
-hPutSomePartial (Partial p) bs = BS.take (max (len - p') 1) bs
+hPutSomePartial (Partial p) bs
+    | 0 <- len  = bs
+    | p >= len  = BS.take 1 bs
+    | otherwise = BS.take (fromIntegral (len - p)) bs
   where
-    p'  = fromIntegral p
-    len = BS.length bs
+    len = fromIntegral (BS.length bs)
 
 -- | 'ErrorStream' for 'hGetSome': an error or a partial get.
 type ErrorStreamGetSome = Stream (Either FsErrorType Partial)
@@ -567,8 +573,8 @@ hGetSome'  :: (MonadSTM m, HasCallStack)
            => ErrorHandling FsError m
            -> TVar m MockFS
            -> TVar m Errors
-           -> (Handle -> Int -> m BS.ByteString)  -- ^ Wrapped 'hGetSome'
-           -> Handle -> Int -> m BS.ByteString
+           -> (Handle -> Word64 -> m BS.ByteString)  -- ^ Wrapped 'hGetSome'
+           -> Handle -> Word64 -> m BS.ByteString
 hGetSome' ErrorHandling{..} fsVar errorsVar hGetSomeWrapped handle n = do
     mockFS <- atomically $ readTVar fsVar
     next errorsVar _hGetSome (\e es -> es { _hGetSome = e }) >>= \case

@@ -513,13 +513,13 @@ hSeek err h seekMode o = withOpenHandleRead err h $ \fs hs -> do
 -- | Get bytes from handle
 --
 -- NOTE: Unlike real I/O, we disallow 'hGetSome' on a handle in append mode.
-hGetSome :: CanSimFS m => ErrorHandling FsError m -> Handle -> Int -> m ByteString
+hGetSome :: CanSimFS m => ErrorHandling FsError m -> Handle -> Word64 -> m ByteString
 hGetSome err@ErrorHandling{..} h n =
     withOpenHandleRead err h $ \fs hs@OpenHandle{..} -> do
       file <- checkFsTree err $ FS.getFile openFilePath (mockFiles fs)
       case openPtr of
         RW r w o -> do
-          let bs = BS.take n . BS.drop (fromIntegral o) $ file
+          let bs = BS.take (fromIntegral n) . BS.drop (fromIntegral o) $ file
           return (bs, hs { openPtr = RW r w (o + fromIntegral (BS.length bs)) })
         Append -> do
           throwError FsError {

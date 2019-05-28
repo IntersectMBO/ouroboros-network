@@ -115,7 +115,7 @@ data Cmd fp h =
     Open               (PathExpr fp) OpenMode
   | Close              h
   | Seek               h SeekMode Int64
-  | Get                h Int
+  | Get                h Word64
   | Put                h BL.ByteString
   | Truncate           h Word64
   | GetSize            h
@@ -389,7 +389,7 @@ generator Model{..} = oneof $ concat [
     withHandle = [
           fmap At $ Close    <$> genHandle
         , fmap At $ Seek     <$> genHandle <*> genSeekMode <*> genOffset
-        , fmap At $ Get      <$> genHandle <*> (getNonNegative <$> arbitrary)
+        , fmap At $ Get      <$> genHandle <*> (getSmall <$> arbitrary)
         , fmap At $ Put      <$> genHandle <*> (BL.pack <$> arbitrary)
         , fmap At $ Truncate <$> genHandle <*> (getSmall . getNonNegative <$> arbitrary)
         , fmap At $ GetSize  <$> genHandle
