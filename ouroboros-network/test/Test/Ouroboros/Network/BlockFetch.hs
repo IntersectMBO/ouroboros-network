@@ -117,7 +117,7 @@ prop_blockFetchStaticNoOverlap (TestChainFork common fork1 fork2) =
 blockFetchStaticNoOverlapIO :: TestChainFork -> Property
 blockFetchStaticNoOverlapIO (TestChainFork common fork1 fork2) =
     ioProperty $ do
-        let configFile = "ouroboros-network/cfg/test-logging.yaml"
+        let configFile = "cfg/test-logging.yaml"
         trace :: Tracer IO (LogObject Example1TraceEvent)
             <- setupTrace (Left configFile) $ pack "block-fetch"
         -- add names to the three tracers
