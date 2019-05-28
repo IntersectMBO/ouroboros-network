@@ -12,7 +12,7 @@ import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Resource (ResourceT, runResourceT)
 import Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)
-import qualified Data.ByteString.Lazy as Lazy (ByteString, fromStrict)
+import qualified Data.ByteString.Lazy as Lazy (ByteString)
 
 import Network.TypedProtocol.Channel (hoistChannel)
 import Network.TypedProtocol.Codec (hoistCodec)
@@ -106,7 +106,7 @@ chainSyncClient trace epochSlots db = Client.chainSyncClient fold
         , ChainSync.pointHash = hhash
         }
         where
-        hhash = case Binary.decodeFullAnnotatedBytes "Block or boundary" (Cardano.fromCBORABlockOrBoundary epochSlots) (Lazy.fromStrict bytes) of
+        hhash = case Binary.decodeFullAnnotatedBytes "Block or boundary" (Cardano.fromCBORABlockOrBoundary epochSlots) bytes of
           Left cborError -> error "failed to decode block"
           Right blk -> case blk of
             Cardano.ABOBBoundary _ -> error "Corrupt DB: expected block but got EBB"

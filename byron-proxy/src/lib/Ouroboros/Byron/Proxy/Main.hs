@@ -31,7 +31,7 @@ import Numeric.Natural (Natural)
 
 import Cardano.BM.Data.Severity (Severity (..))
 
-import Pos.Binary.Class (decodeFull')
+import Pos.Binary.Class (decodeFull)
 import Pos.Chain.Block (Block, BlockHeader, HeaderHash, MainBlockHeader,
                         getBlockHeader, headerHash)
 import Pos.Chain.Delegation (ProxySKHeavy)
@@ -250,11 +250,11 @@ bbsStreamBlocks db onErr hh k = bracket (DB.readFrom db (DB.FromHash hh)) DB.clo
     mRead <- await
     case mRead of
       Nothing -> pure ()
-      Just (DB.ReadEBB slot _ bytes) -> case decodeFull' bytes of
+      Just (DB.ReadEBB slot _ bytes) -> case decodeFull bytes of
         Left err -> lift $ onErr slot err
         Right (Right blk :: Block) -> lift $ onErr slot "block where EBB expected"
         Right (Left ebb  :: Block) -> yield (Left ebb)  >> decode
-      Just (DB.ReadBlock slot bytes) -> case decodeFull' bytes of
+      Just (DB.ReadBlock slot bytes) -> case decodeFull bytes of
         Left err -> lift $ onErr slot err
         Right (Left ebb  :: Block) -> lift $ onErr slot "EBB where block expected"
         Right (Right blk :: Block) -> yield (Right blk) >> decode
@@ -533,7 +533,7 @@ withByronProxy trace bpc db k =
                 DB.TipGenesis -> do
                   traceWith trace (Error, "getTip: empty database")
                   throwIO $ EmptyDatabaseError
-                DB.TipEBB slot hash bytes -> case decodeFull' bytes of
+                DB.TipEBB slot hash bytes -> case decodeFull bytes of
                   Left cborError -> do
                     traceWith trace (Error, "getTip: malformed EBB")
                     throwIO $ MalformedBlock slot cborError
@@ -541,7 +541,7 @@ withByronProxy trace bpc db k =
                     traceWith trace (Error, "getTip: block where EBB expected")
                     throwIO $ MalformedBlock slot "block where EBB expected"
                   Right (Left ebb :: Block) -> pure $ Left ebb
-                DB.TipBlock slot bytes -> case decodeFull' bytes of
+                DB.TipBlock slot bytes -> case decodeFull bytes of
                   Left cborError -> do
                     traceWith trace (Error, "getTip: malformed block")
                     throwIO $ MalformedBlock slot cborError
