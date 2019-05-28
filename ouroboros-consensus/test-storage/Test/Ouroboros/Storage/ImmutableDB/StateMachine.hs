@@ -413,9 +413,7 @@ generator m@Model {..} = do
     -- Don't simulate an error during corruption, because we don't want an
     -- error to happen while we corrupt a file.
     errorFor Corruption {} = False
-    errorFor Reopen {}     = False
     errorFor _             = True
-    -- TODO simulate errors during recovery?
 
 
 -- | Generate a 'Cmd'.

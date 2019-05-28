@@ -151,41 +151,32 @@ type ErrorStream = Stream FsErrorType
   Generating partial reads/writes for hGetSome and hPutSome
 -------------------------------------------------------------------------------}
 
--- | To make a call to 'hGetSome' or 'hPutSome' partial, we do the following:
+-- | Given a @'Partial' p@ where @p > 0@, we do the following to make a call
+-- to 'hGetSome' or 'hPutSome' partial:
 --
--- * 'hGetSome': we substract a number from the number of requested bytes.
--- * 'hPutSome': we drop a number of bytes from the end of the bytestring to
---   write (by taking from the front).
---
--- As we don't know how many bytes will be requested or how long the
--- bytestring to write will be, using an absolute number makes less sense, as
--- we might end up reducing the number of bytes to 0, which is invalid, as all
--- 'hGetSome' and 'hPutSome' calls must request or write > 0 bytes.
---
--- Instead, we work with a simple ratio: an 'Int' @n@ in the interval @[1, 9]@
--- indicates that @n/10@ of the total number of bytes must be subtracted.
-newtype Partial = DropRatioBytes Int
+-- * 'hGetSome': we subtract @p@ from the number of requested bytes. If that
+--    would result in 0 requested bytes or less, we request 1 byte.
+-- * 'hPutSome': we drop the last @p@ bytes from the bytestring. If that would
+--   result in an empty bytestring, just take the first byte of the
+--   bytestring.
+newtype Partial = Partial Word
     deriving (Show)
 
 instance Arbitrary Partial where
-  arbitrary = DropRatioBytes <$> QC.choose (1, 9)
-  shrink (DropRatioBytes tenths) =
-    [DropRatioBytes tenths' | tenths' <- [1..tenths]]
+  arbitrary = Partial <$> QC.choose (1, 100)
+  shrink (Partial p) =
+    [Partial p' | p' <- [1..p]]
 
 hGetSomePartial :: Partial -> Int -> Int
-hGetSomePartial (DropRatioBytes tenths) requestedBytes = toRequest
+hGetSomePartial (Partial p) n = max (p' - n) 1
   where
-    toRequest :: Int
-    toRequest = max 1 (requestedBytes - round toSubtract)
-    toSubtract :: Double
-    toSubtract = fromIntegral requestedBytes * fromIntegral tenths / 10.0
+    p' = fromIntegral p
 
 hPutSomePartial :: Partial -> BS.ByteString -> BS.ByteString
-hPutSomePartial (DropRatioBytes tenths) bs =
-    BS.take (round toTake) bs
+hPutSomePartial (Partial p) bs = BS.take (max (len - p') 1) bs
   where
-    toTake :: Double
-    toTake = fromIntegral (BS.length bs) * fromIntegral (10 - tenths) / 10.0
+    p'  = fromIntegral p
+    len = BS.length bs
 
 -- | 'ErrorStream' for 'hGetSome': an error or a partial get.
 type ErrorStreamGetSome = Stream (Either FsErrorType Partial)
@@ -198,25 +189,25 @@ type ErrorStreamGetSome = Stream (Either FsErrorType Partial)
 data PutCorruption
     = SubstituteWithJunk Blob
       -- ^ The blob to write is substituted with corrupt junk
-    | DropRatioLastBytes Partial
-      -- ^ Drop a number of bytes from the end of a blob.
+    | PartialWrite Partial
+      -- ^ Only perform the write partially
     deriving (Show)
 
 instance Arbitrary PutCorruption where
   arbitrary = QC.oneof
       [ SubstituteWithJunk <$> arbitrary
-      , DropRatioLastBytes <$> arbitrary
+      , PartialWrite <$> arbitrary
       ]
   shrink (SubstituteWithJunk blob) =
       [SubstituteWithJunk blob' | blob' <- shrink blob]
-  shrink (DropRatioLastBytes partial) =
-      [DropRatioLastBytes partial' | partial' <- shrink partial]
+  shrink (PartialWrite partial) =
+      [PartialWrite partial' | partial' <- shrink partial]
 
 -- | Apply the 'PutCorruption' to the 'BS.ByteString'.
 corrupt :: BS.ByteString -> PutCorruption -> BS.ByteString
 corrupt bs pc = case pc of
-    SubstituteWithJunk blob    -> getBlob blob
-    DropRatioLastBytes partial -> hPutSomePartial partial bs
+    SubstituteWithJunk blob -> getBlob blob
+    PartialWrite partial    -> hPutSomePartial partial bs
 
 -- | 'ErrorStream' for 'hPutSome': an error and possibly some corruption, or a
 -- partial write.
@@ -239,7 +230,7 @@ type ErrorStreamPutSome =
 -- An 'Errors' is used in conjunction with 'SimErrorFS', which is a layer on
 -- top of 'SimFS' that simulates methods throwing 'FsError's.
 data Errors = Errors
-  { _dumpState                :: ErrorStream
+  { _dumpState                :: ErrorStream -- TODO remove
 
     -- Operations on files
   , _hOpen                    :: ErrorStream
@@ -374,13 +365,13 @@ genErrors genPartialWrites genSubstituteWithJunk = do
       , FsResourceAlreadyInUse, FsResourceAlreadyExist
       , FsInsufficientPermissions ]
     _hSeek      <- streamGen 3 [ FsReachedEOF ]
-    _hGetSome   <- mkStreamGen 5 $ QC.frequency
+    _hGetSome   <- mkStreamGen 20 $ QC.frequency
       [ (1, return $ Left FsReachedEOF)
       , (3, Right <$> arbitrary) ]
     _hPutSome   <- mkStreamGen 5 $ QC.frequency
       [ (1, Left . (FsDeviceFull, ) <$> QC.frequency
             [ (2, return Nothing)
-            , (1, Just . DropRatioLastBytes <$> arbitrary)
+            , (1, Just . PartialWrite <$> arbitrary)
             , (if genSubstituteWithJunk then 1 else 0,
                Just . SubstituteWithJunk <$> arbitrary)
             ])
