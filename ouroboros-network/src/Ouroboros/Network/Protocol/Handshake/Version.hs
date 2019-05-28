@@ -6,18 +6,22 @@
 
 module Ouroboros.Network.Protocol.Handshake.Version
   ( Versions (..)
+  , simpleSingletonVersions
   , Application (..)
   , Version (..)
   , Sigma (..)
 
   , Dict (..)
+  , DictVersion (..)
   , pickVersions
   , VersionMismatch (..)
   ) where
 
 import Data.Map (Map)
+import Data.Text (Text)
 import qualified Data.Map as Map
 import Data.Typeable ((:~:)(Refl), Typeable, eqT)
+import Codec.SerialiseTerm
 
 -- Description of versions.
 --
@@ -34,6 +38,24 @@ import Data.Typeable ((:~:)(Refl), Typeable, eqT)
 newtype Versions vNum extra r = Versions
   { getVersions :: Map vNum (Sigma (Version extra r))
   }
+
+instance Functor (Versions vNum extra) where
+    fmap f (Versions vs) = Versions $ Map.map fmapSigma vs
+      where
+        fmapSigma (Sigma t (Version (Application app) extra)) = Sigma t (Version (Application $ \x y -> f (app x y)) extra)
+
+-- | Singleton smart constructor for @'Versions'@.
+--
+simpleSingletonVersions
+  :: vNum
+  -> vData
+  -> extra vData
+  -> r
+  -> Versions vNum extra r
+simpleSingletonVersions vNum vData extra r =
+  Versions
+    $ Map.singleton vNum
+        (Sigma vData (Version (Application $ \_ _ -> r) extra))
 
 data Sigma f where
   Sigma :: t -> f t -> Sigma f
@@ -54,6 +76,14 @@ data VersionMismatch vNum where
 
 data Dict constraint thing where
   Dict :: constraint thing => Dict constraint thing
+
+data DictVersion vData where
+     DictVersion :: ( Typeable vData
+                    , Eq vData
+                    , Show vData
+                    )
+                 => CodecCBORTerm Text vData
+                 -> DictVersion vData
 
 -- | Pick the version with the highest version number (by `Ord vNum`) common
 -- in both maps.

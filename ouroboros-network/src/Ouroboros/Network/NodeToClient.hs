@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds      #-}
 {-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE TypeFamilies   #-}
 
 -- | This is the starting point for a module that will bring together the
@@ -7,9 +8,25 @@
 --
 module Ouroboros.Network.NodeToClient (
     NodeToClientProtocols(..)
+  , NodeToClientVersion (..)
+  , NodeToClientVersionData (..)
+  , DictVersion (..)
+  , nodeToClientCodecCBORTerm
   ) where
 
+import           Data.Text (Text)
+import qualified Data.Text as T
+import           Data.Typeable (Typeable)
+import           Data.Word
+import qualified Codec.CBOR.Encoding as CBOR
+import qualified Codec.CBOR.Decoding as CBOR
+import qualified Codec.CBOR.Term as CBOR
+import           Codec.Serialise (Serialise (..))
+import           Codec.SerialiseTerm
+
 import           Ouroboros.Network.Mux.Types (ProtocolEnum(..))
+
+import           Ouroboros.Network.NodeToNode (DictVersion (..))
 
 
 -- | An index type used with the mux to enumerate all the mini-protocols that
@@ -32,3 +49,36 @@ instance ProtocolEnum NodeToClientProtocols where
 
   toProtocolEnum 5 = Just ChainSyncWithBlocks
   toProtocolEnum _ = Nothing
+
+-- |
+-- Enumeration of node to client protocol versions.
+--
+data NodeToClientVersion = NodeToClientV_1
+  deriving (Eq, Ord, Enum, Show, Typeable)
+
+instance Serialise NodeToClientVersion where
+    encode NodeToClientV_1 = CBOR.encodeWord 1
+    decode = do
+      tag <- CBOR.decodeWord
+      case tag of
+        1 -> return NodeToClientV_1
+        _ -> fail "decode NodeToNodeVersion: unknown tag"
+
+-- |
+-- Version data for NodeToClient protocol v1
+--
+newtype NodeToClientVersionData = NodeToClientVersionData
+  { networkMagic :: Word16 }
+  deriving (Eq, Show, Typeable)
+
+nodeToClientCodecCBORTerm :: CodecCBORTerm Text NodeToClientVersionData
+nodeToClientCodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
+    where
+      encodeTerm :: NodeToClientVersionData -> CBOR.Term
+      encodeTerm NodeToClientVersionData { networkMagic } =
+        CBOR.TInt (fromIntegral networkMagic)
+
+      decodeTerm :: CBOR.Term -> Either Text NodeToClientVersionData
+      decodeTerm (CBOR.TInt x) | x >= 0 && x <= 0xffff = Right (NodeToClientVersionData $ fromIntegral x)
+                               | otherwise             = Left $ T.pack $ "networkMagic out of bound: " <> show x
+      decodeTerm t             = Left $ T.pack $ "unknown encoding: " ++ show t

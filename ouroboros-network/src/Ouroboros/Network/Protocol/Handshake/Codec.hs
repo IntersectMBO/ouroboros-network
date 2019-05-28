@@ -8,12 +8,10 @@
 
 module Ouroboros.Network.Protocol.Handshake.Codec
   ( codecHandshake
-  , SerialiseTerm (..)
   ) where
 
 import           Control.Monad.Class.MonadST
 import           Control.Monad (unless)
-import           Data.Text (Text)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Map (Map)
 import qualified Data.Map as Map
@@ -29,18 +27,6 @@ import           Network.TypedProtocol.Codec hiding (encode, decode)
 import           Ouroboros.Network.Codec (mkCodecCborLazyBS)
 
 import           Ouroboros.Network.Protocol.Handshake.Type
-
-
--- |
--- Decoding proposed version is done in two stages.  First decode
--- a @'CBOR.Term'@, this is done by @'codecHandshake'@, the second
--- phase is handled by interface defined in this type class and it is used by
--- @'handshakeClientPeer'@ and @'handshakeServerPeer'@.
---
--- todo: find a better place for this class
-class SerialiseTerm a where
-  encodeTerm :: a -> CBOR.Term
-  decodeTerm :: CBOR.Term -> Either Text a
 
 -- |
 -- @'Handshake'@ codec.  The @'MsgProposeVersions'@ encodes proposed map in

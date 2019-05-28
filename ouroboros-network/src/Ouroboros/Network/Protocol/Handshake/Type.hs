@@ -27,6 +27,7 @@ module Ouroboros.Network.Protocol.Handshake.Type
   -- ** Handshake server
   , handshakeServerPeer
   , Accept (..)
+  , acceptEq
 
   -- ** Tests
   , pureHandshake
@@ -34,7 +35,9 @@ module Ouroboros.Network.Protocol.Handshake.Type
   where
 
 
+import           Control.Exception
 import           Data.Text (Text)
+import qualified Data.Text as T
 import           Data.Typeable (Typeable, cast)
 import           Data.List (intersect)
 import           Data.Map (Map)
@@ -74,6 +77,8 @@ data RefuseReason vNumber
   -- The server refused to run the proposed version parameters
   | Refused vNumber Text
   deriving (Eq, Show)
+
+instance (Typeable vNumber, Show vNumber) => Exception (RefuseReason vNumber)
 
 instance Serialise vNumber => Serialise (RefuseReason vNumber) where
     encode (VersionMismatch vs) =
@@ -164,6 +169,8 @@ data ClientProtocolError vNumber
   | NotRecognisedVersion vNumber
   deriving (Eq, Show)
 
+instance (Typeable vNumber, Show vNumber) => Exception (ClientProtocolError vNumber)
+
 -- |
 -- Handshake client which offers @'Versions' vNumber vData@ to the
 -- remote peer.
@@ -204,8 +211,22 @@ handshakeClientPeer encodeData decodeData versions =
 --
 data Accept
   = Accept
-  | Refuse Text
+  | Refuse !Text
   deriving (Eq, Show)
+
+
+-- |
+-- Accept version fields when they are equal.
+--
+acceptEq
+    :: ( Eq v
+       , Show v
+       )
+    => v
+    -> v
+    -> Accept
+acceptEq v1 v2 | v1 == v2 = Accept
+               | otherwise = Refuse $ T.pack $ "version data mismatch: " ++ show v1 ++ " /= " ++ show v2
 
 -- |
 -- Server following the handshake protocol; it accepts highest version offered

@@ -33,6 +33,7 @@ import qualified Network.TypedProtocol.ReqResp.Server     as ReqResp
 import qualified Ouroboros.Network.Protocol.ReqResp.Codec as ReqResp
 
 import           Control.Tracer
+import           Codec.SerialiseTerm
 
 import qualified Ouroboros.Network.Mux as Mx
 import           Ouroboros.Network.Mux.Interface
@@ -45,6 +46,8 @@ import qualified Ouroboros.Network.Protocol.ChainSync.Client   as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Codec    as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Examples as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Server   as ChainSync
+import           Ouroboros.Network.Protocol.Handshake.Type
+import           Ouroboros.Network.NodeToNode
 import           Ouroboros.Network.Testing.Serialise
 
 import           Test.ChainGenerators (TestBlockChainAndUpdates (..))
@@ -175,9 +178,20 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
                     (ReqResp.reqRespClientPeer (reqRespClientMap cv xs))
 
     res <-
-      withSimpleServerNode responderAddr responderApp $ \_ -> do
-        connectTo initiatorApp initiatorAddr responderAddr
-        atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
+      withSimpleServerNode
+        responderAddr
+        (\(DictVersion codec) -> encodeTerm codec)
+        (\(DictVersion codec) -> decodeTerm codec)
+        (\(DictVersion _) -> acceptEq)
+        (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) responderApp)
+        $ \_ -> do
+          connectTo
+            (\(DictVersion codec) -> encodeTerm codec)
+            (\(DictVersion codec) -> decodeTerm codec)
+            (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) initiatorApp)
+            initiatorAddr
+            responderAddr
+          atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
 
     return (res == mapAccumL f 0 xs)
 
@@ -258,7 +272,12 @@ prop_socket_client_connect_error _ xs = ioProperty $ do
 
 
     (res :: Either IOException Bool)
-      <- try $ False <$ connectTo app clientAddr serverAddr
+      <- try $ False <$ connectTo
+        (\(DictVersion codec) -> encodeTerm codec)
+        (\(DictVersion codec) -> decodeTerm codec)
+        (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) app)
+        clientAddr
+        serverAddr
 
     -- XXX Disregarding the exact exception type
     pure $ either (const True) id res
@@ -295,19 +314,32 @@ demo chain0 updates = do
                     (ChainSync.codecChainSync encode decode encode decode)
                     (ChainSync.chainSyncServerPeer (ChainSync.chainSyncServerExample () producerVar))
 
-    withSimpleServerNode producerAddress responderApp $ \_ -> do
-      withAsync (connectTo initiatorApp consumerAddress producerAddress) $ \_connAsync -> do
-        void $ fork $ sequence_
-            [ do
-                threadDelay 10e-4 -- just to provide interest
-                atomically $ do
-                  p <- readTVar producerVar
-                  let Just p' = CPS.applyChainUpdate update p
-                  writeTVar producerVar p'
-            | update <- updates
-            ]
+    withSimpleServerNode
+      producerAddress
+      (\(DictVersion codec)-> encodeTerm codec)
+      (\(DictVersion codec)-> decodeTerm codec)
+      (\(DictVersion _) -> acceptEq)
+      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm)$ responderApp)
+      $ \_ -> do
+      withAsync
+        (connectTo
+          (\(DictVersion codec) -> encodeTerm codec)
+          (\(DictVersion codec) -> decodeTerm codec)
+          (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) initiatorApp)
+          consumerAddress
+          producerAddress)
+        $ \_connAsync -> do
+          void $ fork $ sequence_
+              [ do
+                  threadDelay 10e-4 -- just to provide interest
+                  atomically $ do
+                    p <- readTVar producerVar
+                    let Just p' = CPS.applyChainUpdate update p
+                    writeTVar producerVar p'
+              | update <- updates
+              ]
 
-        atomically $ takeTMVar done
+          atomically $ takeTMVar done
 
   where
     checkTip target consumerVar = atomically $ do
