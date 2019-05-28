@@ -8,7 +8,8 @@
 {-# LANGUAGE RecordWildCards           #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
 
-{-# OPTIONS_GHC -Wredundant-constraints #-}
+{-# OPTIONS_GHC -Wredundant-constraints -Wno-unused-top-binds -Wno-redundant-constraints #-}
+
 -- | Immutable on-disk database of binary blobs
 --
 -- = Internal format
@@ -279,7 +280,7 @@ openDB
   -> ValidationPolicy
   -> EpochFileParser e hash m (Word64, SlotNo)
   -> m (ImmutableDB hash m)
-openDB = openDBImpl
+openDB _ = error "UHOH! BUGGGGY!"
 
 {------------------------------------------------------------------------------
   ImmutableDB Implementation
