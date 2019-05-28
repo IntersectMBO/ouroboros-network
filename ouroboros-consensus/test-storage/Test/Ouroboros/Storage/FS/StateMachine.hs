@@ -822,6 +822,13 @@ data Tag =
   -- > Close h
   -- > Open fp (AppendMode MustBeNew)
   | TagExclusiveFail
+
+
+  -- Reading returns an empty bytestring when EOF
+  --
+  -- > h <- open fp ReadMode
+  -- > Get h 1 == ""
+  | TagReadEOF
   deriving (Show, Eq)
 
 -- | Predicate on events
@@ -870,6 +877,7 @@ tag = C.classify [
     , tagPutSeekGet Set.empty Set.empty
     , tagPutSeekNegGet Set.empty Set.empty
     , tagExclusiveFail
+    , tagReadEOF
     ]
   where
     tagCreateDirThenListDir :: Set FsPath -> EventPred
@@ -1175,6 +1183,13 @@ tag = C.classify [
           , fsErrorType fsError == FsResourceAlreadyExist ->
             Left TagExclusiveFail
         _otherwise -> Right tagExclusiveFail
+
+    tagReadEOF :: EventPred
+    tagReadEOF = successful $ \ev@Event{..} suc ->
+      case (eventMockCmd ev, suc) of
+        (Get _ n, ByteString bl)
+          | n > 0, BS.null bl -> Left  TagReadEOF
+        _otherwise            -> Right tagReadEOF
 
 -- | Step the model using a 'QSM.Command' (i.e., a command associated with
 -- an explicit set of variables)
