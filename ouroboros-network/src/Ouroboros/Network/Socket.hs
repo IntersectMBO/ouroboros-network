@@ -404,10 +404,10 @@ withServerNode addr encodeData decodeData acceptVersion versions k =
           ()) k
 
     where
-      -- When a connection completes, we do nothing. State is ().
       main :: Server.Main () ()
       main _ = retry
 
+      -- When a connection completes, we do nothing. State is ().
       -- Crucially: we don't re-throw exceptions, because doing so would
       -- bring down the server.
       complete outcome st = case outcome of
