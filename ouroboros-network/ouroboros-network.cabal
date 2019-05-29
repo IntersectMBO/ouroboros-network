@@ -276,6 +276,7 @@ executable demo-chain-sync
   hs-source-dirs:      demo
   main-is:             chain-sync.hs
   build-depends:       base,
+                       directory,
                        ouroboros-network,
                        typed-protocols,
 

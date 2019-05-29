@@ -19,10 +19,12 @@ import Control.Concurrent (threadDelay)
 import Control.Concurrent.STM (STM, atomically, check)
 import Control.Concurrent.STM.TVar
 import Control.Concurrent.Async
+import Control.Monad (when)
 import Control.Exception
 import Control.Tracer
 
 import System.IO
+import System.Directory
 import System.Environment
 import System.Exit
 import System.Random
@@ -73,10 +75,14 @@ main = do
     case args of
       "pingpong":"client":[]           -> clientPingPong False
       "pingpong":"client-pipelined":[] -> clientPingPong True
-      "pingpong":"server":[] -> serverPingPong
+      "pingpong":"server":[] -> do
+        rmDefaultLocalSocketAddr
+        serverPingPong
 
       "pingpong2":"client":[] -> clientPingPong2
-      "pingpong2":"server":[] -> serverPingPong2
+      "pingpong2":"server":[] -> do
+        rmDefaultLocalSocketAddr
+        serverPingPong2
 
       "chainsync":"client":sockAddrs   -> clientChainSync sockAddrs
       "chainsync":"server":sockAddr:[] -> serverChainSync sockAddr
@@ -101,10 +107,17 @@ mkLocalSocketAddrInfo socketPath =
       (Socket.SockAddrUnix socketPath)
       Nothing
 
+defaultLocalSocketAddrPath :: FilePath
+defaultLocalSocketAddrPath =  "./demo-chain-sync.sock"
+
 defaultLocalSocketAddrInfo :: Socket.AddrInfo
 defaultLocalSocketAddrInfo = 
-    mkLocalSocketAddrInfo "./demo-chain-sync.sock"
+    mkLocalSocketAddrInfo defaultLocalSocketAddrPath
 
+rmDefaultLocalSocketAddr :: IO ()
+rmDefaultLocalSocketAddr = do
+  b <- doesFileExist defaultLocalSocketAddrPath
+  when b (removeFile defaultLocalSocketAddrPath)
 
 --
 -- Ping pong demo
