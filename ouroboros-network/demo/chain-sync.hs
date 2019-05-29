@@ -398,23 +398,12 @@ clientBlockFetch sockAddrs = do
                                          (Map.delete peerid)
 
         protocols peerid BlockFetch3 channel =
-          bracketFetchClient registry peerid $ \stateVars ->
+          bracketFetchClient registry peerid $ \clientCtx ->
             runPipelinedPeer 10
               nullTracer -- (contramap (show . TraceLabelPeer peerid) stdoutTracer)
               (codecBlockFetch CBOR.encode CBOR.encode CBOR.decode CBOR.decode)
               channel
-              (blockFetchClient
-                 (contramap show stdoutTracer)
-                 fetchClientPolicy
-                 stateVars)
-
-        fetchClientPolicy :: FetchClientPolicy BlockHeader Block IO
-        fetchClientPolicy = FetchClientPolicy {
-          blockFetchSize     = \_   -> 1000,
-          blockMatchesHeader = \_ _ -> True,
-          addFetchedBlock    = \p b -> addTestFetchedBlock blockHeap
-                                         (castPoint p) (blockHeader b)
-        }
+              (blockFetchClient clientCtx)
 
         blockFetchPolicy :: BlockFetchConsensusInterface FilePath
                               BlockHeader Block IO
