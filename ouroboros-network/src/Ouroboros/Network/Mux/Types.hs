@@ -53,6 +53,9 @@ newtype RemoteClockModel = RemoteClockModel { unRemoteClockModel :: Word32 } der
 -- reusing 'Enum'. This also covers unrecognised protocol numbers on the
 -- decoding side.
 --
+-- Note: the values @0@ and @1@ are reserved for 'Muxcontrol' and 'DeltaQ'
+-- messages.
+--
 class ProtocolEnum ptcl where
 
     fromProtocolEnum :: ptcl -> Word16
@@ -70,6 +73,8 @@ class ProtocolEnum ptcl where
 -- >   deriving (Eq, Ord, Enum, Bounded, Show)
 --
 data MiniProtocolId ptcl = Muxcontrol
+                         -- ^ indicates 'MuxSDU's which belong to initial
+                         -- handshake using the 'Hanshake' protocol.
                          | DeltaQ
                          | AppProtocolId ptcl
                     deriving (Eq, Ord, Show)
@@ -184,20 +189,36 @@ data PerMuxSharedState ptcl m = PerMuxSS {
   , bearer        :: MuxBearer ptcl m
   }
 
-data MuxBearerState = Larval    -- Newly created MuxBearer.
-                    | Connected -- MuxBearer is connected to a peer.
-                    | Mature    -- MuxBearer has successufully completed verison negotiation.
-                    | Dying     -- MuxBearer is in the process of beeing torn down, requests may fail.
-                    | Dead      -- MuxBearer is dead and the underlying bearer has been closed.
+data MuxBearerState = Larval
+                    -- ^ Newly created MuxBearer.
+                    | Connected
+                    -- ^ MuxBearer is connected to a peer.
+                    | Mature
+                    -- ^ MuxBearer has successufully completed the handshake.
+                    | Dying
+                    -- ^ MuxBearer is in the process of beeing torn down,
+                    -- requests may fail.
+                    | Dead
+                    -- ^ MuxBearer is dead and the underlying bearer has been
+                    -- closed.
                     deriving (Eq, Show)
 
+
+-- | Low level access to underlying socket or pipe.  There are three smart
+-- constructors:
+--
+-- * 'Ouroboros.Network.Socket.socketAsMuxBearer'
+-- * 'Ouroboros.Network.Pipe.pipeAsMuxBearer'
+-- * @Test.Mux.queuesAsMuxBearer@
+--
 data MuxBearer ptcl m = MuxBearer {
-    -- | Timestamp and send MuxSDU
+    -- | Timestamp and send MuxSDU.
       write   :: MuxSDU ptcl -> m (Time m)
     -- | Read a MuxSDU
     , read    :: m (MuxSDU ptcl, Time m)
-    -- | Return a suitable MuxSDU payload size
+    -- | Return a suitable MuxSDU payload size.
     , sduSize :: m Word16
+    -- | Close underlying socket.
     , close   :: m ()
     , state   :: TVar m MuxBearerState
     }
@@ -232,18 +253,32 @@ muxBearerAsControlChannel bearer mode = Channel {
           }
 
 
+-- | Error type used in accross the mux layer.
+--
 data MuxError = MuxError {
       errorType  :: !MuxErrorType
     , errorMsg   :: !String
     , errorStack :: !CallStack
     } deriving Show
 
+
+-- | Enumeration of error conditions.
+--
 data MuxErrorType = MuxUnknownMiniProtocol
+                  -- ^ returned by 'decodeMuxSDUHeader', thrown by 'MuxBearer'.
                   | MuxDecodeError
+                  -- ^ return by 'decodeMuxSDUHeader', thrown by 'MuxBearer'.
                   | MuxBearerClosed
+                  -- ^ thrown by 'MuxBearer' when received a null byte.
                   | MuxIngressQueueOverRun
+                  -- ^ thrown by 'demux' when violating 'maximumIngressQueue'
+                  -- byte limit.
                   | MuxControlProtocolError
+                  -- ^ thrown by 'muxControl' (mux control thread), when
+                  -- received a 'Muxcontrol' message on a mature 'MuxBearer'.
                   |  MuxTooLargeMessage
+                  -- ^ thrown by 'muxChannel' when violationg
+                  -- 'maximumMessageSize' byte limit.
                   deriving (Show, Eq)
 
 instance Exception MuxError where
