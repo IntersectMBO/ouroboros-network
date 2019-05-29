@@ -5,6 +5,7 @@
 module Network.TypedProtocol.Channel
   ( Channel (..)
   , hoistChannel
+  , isoKleisliChannel
   , fixedInputChannel
   , mvarsAsChannel
   , handlesAsChannel
@@ -14,6 +15,7 @@ module Network.TypedProtocol.Channel
   , channelEffect
   ) where
 
+import           Control.Monad ((>=>))
 import qualified Data.ByteString      as BS
 import qualified Data.ByteString.Lazy as LBS
 import           Data.ByteString.Lazy.Internal (smallChunkSize)
@@ -47,6 +49,22 @@ data Channel m a = Channel {
        --
        recv :: m (Maybe a)
      }
+
+
+-- | Given an isomorphism between @a@ and @b@ (in Kleisli category), transform
+-- a @'Channel' m a@ into @'Channel' m b@.
+--
+isoKleisliChannel
+  :: forall a b m. Monad m
+  => (a -> m b)
+  -> (b -> m a)
+  -> Channel m a
+  -> Channel m b
+isoKleisliChannel f finv Channel{send, recv} = Channel {
+    send = finv >=> send,
+    recv = recv >>= traverse f
+  }
+
 
 hoistChannel
   :: (forall x . m x -> n x)
