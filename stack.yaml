@@ -54,6 +54,9 @@ extra-deps:
   - quickcheck-state-machine-0.6.0@sha256:3e4f8df0f6b5d415e3c8840dc75034a63e37f56f5f8cfa1035ded16345235ac4
   - splitmix-0.0.2
 
+  # Windows only
+  - Win32-2.5.4.1
+
   # The following are required only for byron-proxy
   # They will be removed when that package is factored out to its own
   # repository.
