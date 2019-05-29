@@ -10,6 +10,7 @@ module Ouroboros.Network.Mux.Types (
     , MiniProtocolId (..)
     , MiniProtocolMode (..)
     , MuxBearer (..)
+    , muxBearerAsControlChannel
     , MuxBearerState (..)
     , MuxError (..)
     , MuxErrorType (..)
@@ -21,9 +22,12 @@ module Ouroboros.Network.Mux.Types (
     , Wanton (..)
     ) where
 
+import           Prelude hiding (read)
+
 import           Control.Exception
 import           Data.Array
 import qualified Data.ByteString.Lazy as BL
+import           Data.Functor (void)
 import           Data.Int
 import           Data.Ix (Ix (..))
 import           Data.Word
@@ -32,6 +36,9 @@ import           Text.Printf
 
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
+
+import           Network.TypedProtocol.Channel (Channel(Channel))
+import qualified Network.TypedProtocol.Channel as Channel
 
 newtype RemoteClockModel = RemoteClockModel { unRemoteClockModel :: Word32 } deriving Eq
 
@@ -194,6 +201,36 @@ data MuxBearer ptcl m = MuxBearer {
     , close   :: m ()
     , state   :: TVar m MuxBearerState
     }
+
+
+-- | A channel which wraps each message as an 'MuxSDU', each sdu is send as
+-- 'Mx.Muxcontrol'.
+--
+muxBearerAsControlChannel
+  :: forall ptcl.
+     ProtocolEnum ptcl
+  => MuxBearer ptcl IO
+  -> MiniProtocolMode
+  -> Channel IO BL.ByteString
+muxBearerAsControlChannel bearer mode = Channel {
+        Channel.send = send,
+        Channel.recv = recv
+      }
+    where
+      send blob = void $ write bearer (wrap blob)
+      recv = Just . msBlob . fst <$> read bearer
+
+      -- wrap a 'ByteString' as 'MuxSDU'
+      wrap :: BL.ByteString -> MuxSDU ptcl
+      wrap blob = MuxSDU {
+            -- it will be filled when the 'MuxSDU' is send by the 'bearer'
+            msTimestamp = RemoteClockModel 0,
+            msId = Muxcontrol,
+            msMode = mode,
+            msLength = fromIntegral $ BL.length blob,
+            msBlob = blob
+          }
+
 
 data MuxError = MuxError {
       errorType  :: !MuxErrorType
