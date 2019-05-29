@@ -1,6 +1,6 @@
 let
   commonLib = import ./nix/iohk-common.nix;
-  tests = (import ./. {}).tests;
+  default = import ./default.nix {};
   # Path of nix-tools jobs that we want to evict from release.nix:
   disabled = [
     # FIXME: those tests freeze on darwin hydra agents:
@@ -61,7 +61,8 @@ commonLib.pkgs.lib.mapAttrsRecursiveCond
   # The required jobs that must pass for ci not to fail:
   required-name = "ouroboros-network-required-checks";
   extraBuilds = {
-    inherit tests;
+    tests = default.tests;
+    network-pdf = default.network-pdf;
   };
   required-targets = jobs: [
     # targets are specified using above nomenclature:
@@ -74,6 +75,7 @@ commonLib.pkgs.lib.mapAttrsRecursiveCond
 
     jobs.nix-tools.exes.ouroboros-consensus.x86_64-linux
     jobs.nix-tools.exes.byron-proxy.x86_64-linux
+    jobs.network-pdf
     (builtins.concatLists (map builtins.attrValues (builtins.attrValues jobs.tests)))
   ];
 } (builtins.removeAttrs args ["ouroboros-network"]))
