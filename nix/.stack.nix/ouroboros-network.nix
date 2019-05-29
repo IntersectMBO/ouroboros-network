@@ -41,6 +41,7 @@
         "demo-chain-sync" = {
           depends = [
             (hsPkgs.base)
+            (hsPkgs.directory)
             (hsPkgs.ouroboros-network)
             (hsPkgs.typed-protocols)
             (hsPkgs.async)
@@ -55,7 +56,7 @@
             (hsPkgs.QuickCheck)
             ];
           };
-      };
+        };
       tests = {
         "tests" = {
           depends = [
