@@ -386,7 +386,7 @@ runServer tracer serverOptions epochSlots db = do
       encodeTerm
       decodeTerm
       (\_ _ _ -> Accept)
-      (\_ -> fmap AnyMuxResponderApp (responderVersions epochSlots chainSyncServer))
+      (fmap AnyMuxResponderApp (responderVersions epochSlots chainSyncServer))
       wait
 
   where
@@ -450,11 +450,6 @@ runClient tracer clientOptions genesisConfig epochSlots db = case clientOptions 
     -- if there is a roll-back.
     -- It makes sense given that we only have an immutable database and one
     -- source for blocks: one read pointer improve is always enough.
-    {-chainSyncClient
-      :: forall m x .
-         ( Monad m )
-      => Tracer m (Either ChainSync.Point ChainSync.Block, ChainSync.Point)
-      -> ChainSyncClient ChainSync.Block ChainSync.Point m x -}
     chainSyncClient = Client.chainSyncClient fold
       where
       fold :: Client.Fold (ResourceT IO) x
@@ -473,7 +468,7 @@ runClient tracer clientOptions genesisConfig epochSlots db = case clientOptions 
             , ChainSync.pointHash = hhash
             }
             where
-            hhash = case Binary.decodeFullAnnotatedBytes "Block or boundary" (Cardano.fromCBORABlockOrBoundary epochSlots) (Lazy.fromStrict bytes) of
+            hhash = case Binary.decodeFullAnnotatedBytes "Block or boundary" (Cardano.fromCBORABlockOrBoundary epochSlots) bytes of
               Left cborError -> error "failed to decode block"
               Right blk -> case blk of
                 Cardano.ABOBBoundary _ -> error "Corrupt DB: expected block but got EBB"
