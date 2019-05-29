@@ -239,8 +239,7 @@ connectToNode' encodeData decodeData peeridFn versions sd = do
     bearer <- Mx.socketAsMuxBearer sd
     Mx.muxBearerSetState bearer Mx.Connected
     mapp <- runPeerWithByteLimit
-              maxTransmissionUnit
-              BL.length
+              (ByteLimit maxTransmissionUnit BL.length)
               nullTracer
               codecHandshake
               peerid
@@ -319,8 +318,7 @@ beginConnection encodeData decodeData acceptVersion fn addr st = do
         (bearer :: MuxBearer ptcl IO) <- Mx.socketAsMuxBearer sd
         Mx.muxBearerSetState bearer Mx.Connected
         mapp <- runPeerWithByteLimit
-                maxTransmissionUnit
-                BL.length
+                (ByteLimit maxTransmissionUnit BL.length)
                 nullTracer
                 codecHandshake
                 peerid

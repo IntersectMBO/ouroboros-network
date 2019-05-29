@@ -200,7 +200,7 @@ prop_runPeerWithByteLimit limit reqPayloads = do
       (c1, c2) <- createConnectedChannels
 
       res <- try $
-        runPeerWithByteLimit limit (fromIntegral . length) nullTracer codecReqResp "receiver" c1 recvPeer
+        runPeerWithByteLimit (ByteLimit limit (fromIntegral . length)) nullTracer codecReqResp "receiver" c1 recvPeer
           `concurrently`
         void (runPeer nullTracer codecReqResp "sender" c2 sendPeer)
 

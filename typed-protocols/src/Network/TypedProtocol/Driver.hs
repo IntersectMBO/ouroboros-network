@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE RankNTypes #-}
@@ -24,6 +25,7 @@ module Network.TypedProtocol.Driver (
 
   -- * Normal peers
   runPeer,
+  runPeerWith,
   TraceSendRecv(..),
 
   -- * Pipelined peers
@@ -34,7 +36,6 @@ module Network.TypedProtocol.Driver (
   runConnectedPeersPipelined,
 
   -- * Driver utilities
-  -- | This may be useful if you want to write your own driver.
   runDecoderWithChannel,
   ) where
 
@@ -116,21 +117,27 @@ instance ( Show peerid
 -- Driver for normal peers
 --
 
--- | Run a peer with the given channel via the given codec.
+-- | Run 'Peer' with a given channel and codec using a supplied callback that
+-- drives reading from a channel and decoding.
 --
--- This runs the peer to completion (if the protocol allows for termination).
---
-runPeer
-  :: forall ps (st :: ps) pr peerid failure bytes m a .
-     (MonadThrow m, Exception failure)
-  => Tracer m (TraceSendRecv ps peerid failure)
+runPeerWith
+  :: forall ps (st :: ps) pr peerid failure err bytes m a .
+     ( MonadThrow m
+     , Exception err
+     )
+  => Tracer m (TraceSendRecv ps peerid err)
   -> Codec ps failure m bytes
   -> peerid
   -> Channel m bytes
+  -> (forall (st' :: ps) pr' x .
+           PeerHasAgency pr' st'
+        -> Channel m bytes
+        -> Maybe bytes
+        -> DecodeStep bytes failure m x
+        -> m (Either err (x, Maybe bytes)))
   -> Peer ps pr st m a
   -> m a
-
-runPeer tr Codec{encode, decode} peerid channel@Channel{send} =
+runPeerWith tr Codec{encode, decode} peerid channel@Channel{send} fn =
     go Nothing
   where
     go :: forall st'.
@@ -153,7 +160,7 @@ runPeer tr Codec{encode, decode} peerid channel@Channel{send} =
 
     go trailing (Await stok k) = do
       decoder <- decode stok
-      res <- runDecoderWithChannel channel trailing decoder
+      res <- fn stok channel trailing decoder
       case res of
         Right (SomeMessage msg, trailing') -> do
           traceWith tr (TraceRecvMsg peerid (AnyMessage msg))
@@ -174,6 +181,21 @@ runPeer tr Codec{encode, decode} peerid channel@Channel{send} =
     -- of the next protocol arrives in the same data chunk as the final
     -- message of the previous protocol.
 
+-- | Run a peer with the given channel via the given codec.
+--
+-- This runs the peer to completion (if the protocol allows for termination).
+--
+runPeer
+  :: forall ps (st :: ps) pr peerid failure bytes m a .
+     (MonadThrow m, Exception failure)
+  => Tracer m (TraceSendRecv ps peerid failure)
+  -> Codec ps failure m bytes
+  -> peerid
+  -> Channel m bytes
+  -> Peer ps pr st m a
+  -> m a
+
+runPeer tr codec peerid channel = runPeerWith tr codec peerid channel (\_stok -> runDecoderWithChannel)
 
 --
 -- Driver for pipelined peers
