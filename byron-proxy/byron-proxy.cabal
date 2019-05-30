@@ -23,7 +23,9 @@ library
 
                        Ouroboros.Byron.Proxy.ChainSync.Client,
                        Ouroboros.Byron.Proxy.ChainSync.Server,
-                       Ouroboros.Byron.Proxy.ChainSync.Types
+                       Ouroboros.Byron.Proxy.ChainSync.Types,
+
+                       Ouroboros.Byron.Proxy.Network.Protocol
   -- other-modules:
   -- other-extensions:
   build-depends:       base,
@@ -58,7 +60,8 @@ library
                        tagged,
                        text,
                        transformers,
-                       typed-protocols
+                       typed-protocols,
+                       unliftio-core
   hs-source-dirs:      src/lib
   default-language:    Haskell2010
   ghc-options:         -fwarn-incomplete-patterns
@@ -67,7 +70,6 @@ library
 executable byron-proxy
   main-is:             Main.hs
   other-modules:       DB,
-                       IPC,
                        Logging
   -- other-extensions:
   build-depends:       base,
@@ -81,6 +83,7 @@ executable byron-proxy
                        cardano-sl-infra,
                        cardano-sl-util,
                        cborg,
+                       containers,
                        contra-tracer,
                        directory,
                        exceptions,
@@ -116,10 +119,13 @@ executable validator
                        cardano-ledger,
                        cardano-shell,
                        contra-tracer,
+                       exceptions,
+                       io-sim-classes,
                        iohk-monitoring,
                        network,
                        optparse-applicative,
                        ouroboros-network,
+                       resourcet,
                        text,
                        time,
                        transformers,

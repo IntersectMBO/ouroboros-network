@@ -1,18 +1,20 @@
 {-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE FlexibleInstances #-}
 
-import Control.Exception (bracket)
+import Codec.SerialiseTerm (CodecCBORTerm (..))
 import Control.Monad.Trans.Except (runExceptT)
-import Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)
+import Control.Tracer (Tracer (..), contramap, traceWith)
+import Control.Monad.Trans.Class (lift)
+import Control.Monad.Trans.Resource (ResourceT)
 import Data.Text (Text, pack)
 import qualified Options.Applicative as Opt
 
 import qualified Network.Socket as Socket
-import Network.TypedProtocol.Driver (runPeer)
 
 import Cardano.BM.Data.Severity (Severity (Info))
 import qualified Cardano.Binary as Binary (unAnnotated)
-import Cardano.Chain.Block (ChainValidationError, ChainValidationState (..))
+import Cardano.Chain.Block (ChainValidationState (..))
 import qualified Cardano.Chain.Block as Block
 import qualified Cardano.Chain.Genesis as Genesis
 import Cardano.Chain.Slotting (FlatSlotId(..))
@@ -22,9 +24,14 @@ import Cardano.Shell.Constants.Types (CardanoConfiguration (..), Core (..), Gene
 import Cardano.Shell.Presets (mainnetConfiguration)
 
 import qualified Ouroboros.Byron.Proxy.ChainSync.Client as Client
-import Ouroboros.Byron.Proxy.ChainSync.Types as ChainSync (Block, codec)
-import Ouroboros.Network.Channel (socketAsChannel)
-import qualified Ouroboros.Network.Protocol.ChainSync.Client as Client
+import Ouroboros.Byron.Proxy.ChainSync.Types as ChainSync (Block)
+
+import Ouroboros.Network.Socket
+import Ouroboros.Byron.Proxy.Network.Protocol
+
+-- For orphan instances
+import qualified Control.Monad.Class.MonadThrow as NonStandard
+import qualified Control.Monad.Catch as Standard
 
 import qualified Logging
 
@@ -34,26 +41,28 @@ import qualified Logging
 --
 -- If the stop condition gives `Just`, then the client stops _after_ validating
 -- that block.
+--
+-- Can't give a return value other than (), by constraint of the mux interface.
 clientFold
   :: Tracer IO Text
   -> Genesis.Config
   -> (Block -> IO (Maybe t)) -- ^ Stop condition
   -> ChainValidationState
-  -> Client.Fold IO (Either ChainValidationError (t, ChainValidationState))
+  -> Client.Fold (ResourceT IO) () -- Either ChainValidationError (t, ChainValidationState))
 clientFold tracer genesisConfig stopCondition cvs = Client.Fold $ pure $ Client.Continue
   (\block _ -> Client.Fold $ do
-    outcome <- runExceptT (Block.updateChainBlockOrBoundary genesisConfig cvs (Binary.unAnnotated block))
+    outcome <- lift $ runExceptT (Block.updateChainBlockOrBoundary genesisConfig cvs (Binary.unAnnotated block))
     case outcome of
       Left err   -> do
         let msg = pack $ mconcat ["Validation failed: ", show err]
-        traceWith tracer msg
-        pure $ Client.Stop $ Left err
+        lift $ traceWith tracer msg
+        pure $ Client.Stop ()
       Right cvs' -> do
         let msg = pack $ mconcat ["Validated block at slot ", show (unFlatSlotId $ cvsLastSlot cvs')]
-        traceWith tracer msg
-        maybeStop <- stopCondition block
+        lift $ traceWith tracer msg
+        maybeStop <- lift $ stopCondition block
         case maybeStop of
-          Just t -> pure $ Client.Stop $ Right (t, cvs')
+          Just t -> pure $ Client.Stop ()
           Nothing -> Client.runFold $ clientFold tracer genesisConfig stopCondition cvs'
   )
   (\_ _ -> error "got rollback")
@@ -127,7 +136,11 @@ main = do
       runExceptT (Genesis.mkConfigFromFile rnm mainnetGenFilepath Nothing)
     Right cvs <- runExceptT $ Block.initialChainValidationState genesisConfig
     genesisConfig `seq` cvs `seq` pure ()
-    addrInfo : _ <- Socket.getAddrInfo
+    addrInfoLocal  : _ <- Socket.getAddrInfo
+      (Just Socket.defaultHints)
+      (Just "127.0.0.1")
+      (Just "0")
+    addrInfoRemote : _ <- Socket.getAddrInfo
       (Just Socket.defaultHints)
       (Just (serverHost opts))
       (Just (serverPort opts))
@@ -136,15 +149,23 @@ main = do
         stopCondition = const (pure Nothing)
         tracer = contramap (\txt -> ("", Info, txt)) trace
         client  = Client.chainSyncClient (clientFold tracer genesisConfig stopCondition cvs)
-        peer    = Client.chainSyncClientPeer client
-        codec   = ChainSync.codec epochSlots
-        action  = \socket -> runPeer nullTracer codec (socketAsChannel socket) peer
-        mkSocket = Socket.socket
-          (Socket.addrFamily addrInfo)
-          (Socket.addrSocketType addrInfo)
-          (Socket.addrProtocol addrInfo)
-    outcome <- bracket mkSocket Socket.close $ \socket -> do
-      _ <- Socket.connect socket (Socket.addrAddress addrInfo)
-      action socket
-    -- TODO print the outcome?
-    pure ()
+    connectTo
+      encodeTerm
+      decodeTerm
+      (initiatorVersions epochSlots client)
+      addrInfoLocal
+      addrInfoRemote
+
+-- Orphan, forced upon me because of the IO sim stuff.
+-- Required because we use ResourceT in the chain sync server, and `runPeer`
+-- demands this non-standard `MonadThrow`. That could be fixed by returning
+-- the failure reason rather than throwing it...
+
+instance NonStandard.MonadThrow (ResourceT IO) where
+  throwM = Standard.throwM
+  -- There's a default definition fo this which requires
+  -- NonStandard.MonadCatch (ResourceT IO). To avoid having to give those,
+  -- we'll just use the standard definition.
+  -- NB: it's weird huh? This implementation uses the _standard_ MonadMask
+  -- constraint, but the non-standard one is not defined.
+  bracket = Standard.bracket
