@@ -163,7 +163,7 @@ instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
       unless (blockSlot b > lastSlot)
         $ throwError PBftInvalidSlot
 
-      case Bimap.lookup (hashVerKey $ pbftIssuer payload) $ Bimap.twist dms of
+      case Bimap.lookupR (hashVerKey $ pbftIssuer payload) dms of
         Nothing -> throwError $ PBftNotGenesisDelegate (hashVerKey $ pbftIssuer payload) lv
         Just gk -> do
           when (Seq.length signers >= winSize
