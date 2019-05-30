@@ -56,13 +56,16 @@ prop_simple_bft_convergence k numCoreNodes =
       numCoreNodes
   where
     isValid :: [NodeId]
-            -> Map NodeId (Chain (SimpleBlock DemoBFT SimpleBlockMockCrypto))
+            -> Map NodeId ( NodeConfig DemoBFT
+                          , Chain (SimpleBlock DemoBFT SimpleBlockMockCrypto))
             -> Property
-    isValid nodeIds final = counterexample (show final) $
-          tabulate "shortestLength" [show (rangeK k (shortestLength final))]
+    isValid nodeIds final = counterexample (show final') $
+          tabulate "shortestLength" [show (rangeK k (shortestLength final'))]
      $    Map.keys final === nodeIds
-     .&&. allEqual (takeChainPrefix <$> Map.elems final)
+     .&&. allEqual (takeChainPrefix <$> Map.elems final')
       where
+        -- Without the 'NodeConfig's
+        final' = snd <$> final
         takeChainPrefix :: Chain (SimpleBlock DemoBFT SimpleBlockMockCrypto)
                         -> Chain (SimpleBlock DemoBFT SimpleBlockMockCrypto)
         takeChainPrefix = id -- in BFT, chains should indeed all be equal.

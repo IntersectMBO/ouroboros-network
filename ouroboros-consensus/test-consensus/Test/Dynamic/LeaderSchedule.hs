@@ -81,17 +81,21 @@ prop_simple_leader_schedule_convergence numSlots numCoreNodes params seed =
                     numSlots
                     seed
   where
-    nodeConfig = error "NodeConfig required in LeaderSchedule tests"
     isValid :: [NodeId]
-            -> Map NodeId (Chain (SimpleBlock DemoLeaderSchedule SimpleBlockMockCrypto))
+            -> Map NodeId ( NodeConfig DemoLeaderSchedule
+                          , Chain (SimpleBlock DemoLeaderSchedule SimpleBlockMockCrypto))
             -> Property
     isValid nodeIds final =
-          counterexample (tracesToDot nodeConfig final)
-     $    tabulate "shortestLength" [show (rangeK (praosSecurityParam params) (shortestLength final))]
-     $    Map.keys final === nodeIds
-     .&&. prop_all_common_prefix
-            (maxRollbacks $ praosSecurityParam params)
-            (Map.elems final)
+            counterexample (tracesToDot final)
+       $    tabulate "shortestLength"
+            [show (rangeK (praosSecurityParam params) (shortestLength final'))]
+       $    Map.keys final === nodeIds
+       .&&. prop_all_common_prefix
+              (maxRollbacks $ praosSecurityParam params)
+              (Map.elems final')
+      where
+        -- Without the 'NodeConfig's
+        final' = snd <$> final
 
 {-------------------------------------------------------------------------------
   Dependent generation and shrinking of leader schedules

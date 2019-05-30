@@ -31,6 +31,7 @@ import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Demo
 import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Node
+import           Ouroboros.Consensus.Protocol.Abstract (NodeConfig)
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Consensus.Util.ThreadRegistry
@@ -43,7 +44,7 @@ prop_simple_protocol_convergence :: forall p c.
                                    )
                                  => (CoreNodeId -> ProtocolInfo (SimpleBlock p c))
                                  -> (   [NodeId]
-                                     -> Map NodeId (Chain (SimpleBlock p c))
+                                     -> Map NodeId (NodeConfig p, Chain (SimpleBlock p c))
                                      -> Property)
                                  -> NumCoreNodes
                                  -> NumSlots
@@ -67,7 +68,7 @@ test_simple_protocol_convergence :: forall m p c.
                                     )
                                  => (CoreNodeId -> ProtocolInfo (SimpleBlock p c))
                                  -> (   [NodeId]
-                                     -> Map NodeId (Chain (SimpleBlock p c))
+                                     -> Map NodeId (NodeConfig p, Chain (SimpleBlock p c))
                                      -> Property)
                                  -> NumCoreNodes
                                  -> NumSlots

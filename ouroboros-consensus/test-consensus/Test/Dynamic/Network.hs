@@ -43,6 +43,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Mock
 import qualified Ouroboros.Consensus.Ledger.Mock as Mock
 import           Ouroboros.Consensus.Node
+import           Ouroboros.Consensus.Protocol.Abstract (NodeConfig)
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random
@@ -75,7 +76,7 @@ broadcastNetwork :: forall m p c.
                  -> (CoreNodeId -> ProtocolInfo (SimpleBlock p c))
                  -> ChaChaDRG
                  -> NumSlots
-                 -> m (Map NodeId (Chain (SimpleBlock p c)))
+                 -> m (Map NodeId (NodeConfig p, Chain (SimpleBlock p c)))
 broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots = do
 
     -- all known addresses
@@ -161,7 +162,7 @@ broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots = do
           (mkCommsUp   chainSyncProducer  codecChainSyncId)
           (mkCommsUp   blockFetchProducer codecBlockFetchId)
 
-      return (us, node)
+      return (coreNodeId, node)
 
     -- STM variable to record the final chains of the nodes
     varRes <- atomically $ newTVar Nothing
@@ -170,8 +171,9 @@ broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots = do
       -- Wait a random amount of time after the final slot for the block fetch
       -- and chain sync to finish
       threadDelay 2000
-      res <- fmap Map.fromList $ forM nodes $ \(us, node) ->
-        (us, ) <$> ChainDB.toChain (getChainDB node)
+      res <- fmap Map.fromList $ forM nodes $ \(cid, node) ->
+        (\ch -> (fromCoreNodeId cid, (pInfoConfig (pInfo cid), ch))) <$>
+        ChainDB.toChain (getChainDB node)
       atomically $ writeTVar varRes (Just res)
 
     atomically $ blockUntilJust (readTVar varRes)

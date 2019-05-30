@@ -65,13 +65,16 @@ prop_simple_pbft_convergence sp numCoreNodes@(NumCoreNodes nn) =
     sigThd = (1.0 / fromIntegral nn) + 0.1
     params = PBftParams sp (fromIntegral nn) sigWin sigThd
     isValid :: [NodeId]
-            -> Map NodeId (Chain (SimpleBlock DemoMockPBFT SimpleBlockMockCrypto))
+            -> Map NodeId ( NodeConfig DemoMockPBFT
+                          , Chain (SimpleBlock DemoMockPBFT SimpleBlockMockCrypto))
             -> Property
-    isValid nodeIds final = counterexample (show final) $
-          tabulate "shortestLength" [show (rangeK sp (shortestLength final))]
+    isValid nodeIds final = counterexample (show final') $
+          tabulate "shortestLength" [show (rangeK sp (shortestLength final'))]
      $    Map.keys final === nodeIds
-     .&&. allEqual (takeChainPrefix <$> Map.elems final)
+     .&&. allEqual (takeChainPrefix <$> Map.elems final')
       where
+        -- Without the 'NodeConfig's
+        final' = snd <$> final
         takeChainPrefix :: Chain (SimpleBlock DemoMockPBFT SimpleBlockMockCrypto)
                         -> Chain (SimpleBlock DemoMockPBFT SimpleBlockMockCrypto)
         takeChainPrefix = id -- in PBFT, chains should indeed all be equal.

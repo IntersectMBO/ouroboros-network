@@ -141,19 +141,19 @@ instance Labellable EdgeLabel where
     toLabelValue = const $ StrLabel Text.empty
 
 tracesToDot :: forall b. (HasHeader b, HasCreator b)
-            => NodeConfig (BlockProtocol b)
-            -> Map NodeId (Chain b)
+            => Map NodeId (NodeConfig (BlockProtocol b), Chain b)
             -> String
-tracesToDot nc traces = Text.unpack $ printDotGraph $ graphToDot quickParams graph
+tracesToDot traces = Text.unpack $ printDotGraph $ graphToDot quickParams graph
   where
-    chainBlockInfos :: Chain b -> Map (ChainHash b) (BlockInfo b)
-    chainBlockInfos = Chain.foldChain f (Map.singleton GenesisHash genesisBlockInfo)
+    chainBlockInfos :: NodeConfig (BlockProtocol b) -> Chain b
+                    -> Map (ChainHash b) (BlockInfo b)
+    chainBlockInfos nc = Chain.foldChain f (Map.singleton GenesisHash genesisBlockInfo)
       where
         f m b = let info = blockInfo nc b
                 in  Map.insert (biHash info) info m
 
     blockInfos :: Map (ChainHash b) (BlockInfo b)
-    blockInfos = Map.unions $ map chainBlockInfos $ Map.elems traces
+    blockInfos = Map.unions $ map (uncurry chainBlockInfos) $ Map.elems traces
 
     lastHash :: Chain b -> ChainHash b
     lastHash Genesis  = GenesisHash
@@ -164,8 +164,9 @@ tracesToDot nc traces = Text.unpack $ printDotGraph $ graphToDot quickParams gra
       where
         i = (\info -> (info, Set.empty)) <$> blockInfos
 
-        f m nid chain = Map.adjust
-            (\(info, believers) -> (info, Set.insert nid believers))
+        f m nid (_, chain) = Map.adjust
+            (\(info, believers) ->
+              (info, Set.insert nid believers))
             (lastHash chain)
             m
 
@@ -195,18 +196,20 @@ tracesToDot nc traces = Text.unpack $ printDotGraph $ graphToDot quickParams gra
     graph = mkGraph ns es
 
 leaderScheduleFromTrace :: forall b. (HasCreator b, HasHeader b)
-                        => NodeConfig (BlockProtocol b)
-                        -> NumSlots
-                        -> Map NodeId (Chain b)
+                        => NumSlots
+                        -> Map NodeId (NodeConfig (BlockProtocol b), Chain b)
                         -> LeaderSchedule
-leaderScheduleFromTrace nc (NumSlots numSlots) =
-    LeaderSchedule . Map.foldl' (Chain.foldChain step) initial
+leaderScheduleFromTrace (NumSlots numSlots) = LeaderSchedule .
+    Map.foldl' (\m (nc, c) -> Chain.foldChain (step nc) m c) initial
   where
     initial :: Map SlotNo [CoreNodeId]
     initial = Map.fromList [(slot, []) | slot <- [1 .. fromIntegral numSlots]]
 
-    step :: Map SlotNo [CoreNodeId] -> b -> Map SlotNo [CoreNodeId]
-    step m b = Map.adjust (insert $ getCreator nc b) (blockSlot b) m
+    step :: NodeConfig (BlockProtocol b)
+         -> Map SlotNo [CoreNodeId]
+         -> b
+         -> Map SlotNo [CoreNodeId]
+    step nc m b = Map.adjust (insert $ getCreator nc b) (blockSlot b) m
 
     insert :: CoreNodeId -> [CoreNodeId] -> [CoreNodeId]
     insert nid xs
