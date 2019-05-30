@@ -257,12 +257,12 @@ protocolInfo (DemoRealPBFT params)
                     , pbftSignatureWindow = 7
                     }
                 , pbftNodeId  = CoreId nid
-                , pbftSignKey = SignKeyCardanoDSIGN (snd (mkKey nid))
-                , pbftVerKey  = VerKeyCardanoDSIGN  (fst (mkKey nid))
+                , pbftSignKey = SignKeyCardanoDSIGN (snd (lookupKey nid))
+                , pbftVerKey  = VerKeyCardanoDSIGN  (fst (lookupKey nid))
                 }
           , encNodeConfigExt = ByronDemo.Config {
                 pbftCoreNodes = Bimap.fromList [
-                    (fst (mkKey n), CoreNodeId n)
+                    (fst (lookupKey n), CoreNodeId n)
                     | n <- [0 .. numCoreNodes]
                     ]
               , pbftProtocolMagic   = Cardano.Genesis.configProtocolMagic gc
@@ -289,9 +289,12 @@ protocolInfo (DemoRealPBFT params)
     Right initState = runExcept $
         Cardano.Block.initialChainValidationState (pbftGenesisConfig params)
 
-    mkKey :: Int -> (Cardano.VerificationKey, Cardano.SigningKey)
-    mkKey n = (\x -> (Cardano.KeyGen.toVerification x, x)) . (!! n)
-              . Cardano.Genesis.gsRichSecrets . fromJust $ Cardano.Genesis.configGeneratedSecrets gc
+    lookupKey :: Int -> (Cardano.VerificationKey, Cardano.SigningKey)
+    lookupKey n = (\x -> (Cardano.KeyGen.toVerification x, x))
+                . (!! n)
+                . Cardano.Genesis.gsRichSecrets
+                . fromJust
+                $ Cardano.Genesis.configGeneratedSecrets gc
 
 {-------------------------------------------------------------------------------
   Support for running the demos
