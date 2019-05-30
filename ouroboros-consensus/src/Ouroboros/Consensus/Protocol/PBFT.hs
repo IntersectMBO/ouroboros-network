@@ -51,14 +51,10 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Test
 import           Ouroboros.Consensus.Util.Condense
 
-data PBftLedgerView c = PBftLedgerView
-  -- TODO Once we have the window and threshold in the protocol parameters, we
-  -- will use them here and remove the parameters from 'PBftParams' below.
-
-  -- ProtocolParameters Map from genesis to delegate keys.
-  -- Note that this map is injective by construction.
-  -- TODO Use BiMap here
-  (Bimap (PBftVerKeyHash c) (PBftVerKeyHash c))
+data PBftLedgerView c = PBftLedgerView {
+    -- | ProtocolParameters: map from genesis to delegate keys.
+    pbftDelegates :: Bimap (PBftVerKeyHash c) (PBftVerKeyHash c)
+  }
 
 deriving instance (Show (PBftVerKeyHash c)) => Show (PBftLedgerView c)
 
