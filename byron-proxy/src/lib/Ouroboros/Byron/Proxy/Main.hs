@@ -3,6 +3,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE BangPatterns #-}
 
 {-# OPTIONS_GHC "-fwarn-incomplete-patterns" #-}
 
@@ -329,6 +330,9 @@ bbsGetHashesRange db onErr mLimit from to = bbsStreamBlocks db onErr from $ \con
 --
 -- One difference: we demand a tip (no 'Maybe HeaderHash'). We'll fill that
 -- in at the logic layer using getTip.
+--
+-- The checkpoint itself is not included inthe result. That's how cardano-sl
+-- does it, so it's the de facto contract.
 bbsGetBlockHeaders
   :: DB IO
   -> (forall a . SlotNo -> Text -> IO a)
@@ -345,48 +349,49 @@ bbsGetBlockHeaders db onErr mLimit checkpoints mTip = do
     _ : _ -> bbsStreamBlocks db onErr (headerHash newestCheckpoint) $ \producer ->
       runConduit $
            mapOutput Pos.Chain.Block.getBlockHeader producer
-        .| consumer (fromMaybe maxBound mLimit) []
+        .| consumer 0 (fromMaybe maxBound mLimit) []
   where
-  consumer :: Word
+  consumer :: Word -- Limit
+           -> Word -- Counted so far
            -> [BlockHeader]
            -> ConduitT BlockHeader x IO (Maybe (NewestFirst NonEmpty BlockHeader))
-  consumer 0 _   = pure Nothing
-  consumer n acc = do
-    next <- await
-    case next of
-      Nothing        -> pure Nothing
-      Just blkHeader ->
-        if maybe False ((==) (headerHash blkHeader)) mTip
-        then pure $ Just $ NewestFirst $ blkHeader NE.:| acc
-        else consumer (n-1) (blkHeader : acc)
+  consumer limit 0 acc = do
+    -- Drop the first one.
+    _ <- await
+    consumer limit 1 acc
+  consumer limit n acc =
+    if n >= limit
+    then pure Nothing
+    else do
+      next <- await
+      case next of
+        -- We give Just if we eventually reach the tip.
+        Nothing        -> pure Nothing
+        Just blkHeader ->
+          if maybe False ((==) (headerHash blkHeader)) mTip
+          then pure $ Just $ NewestFirst $ blkHeader NE.:| acc
+          else consumer limit (n+1) (blkHeader : acc)
 
 -- | See Logic.getLcaMainChain
--- This is done by reading from the start of the input list, and stopping once
--- we find a hash which does not match the corresponding one in the input list.
+--
+-- Although it's assumed the input list is oldest-first, it's _not_ necessarily
+-- a contiguous chain. It _is_ assumed that if an earlier entry is not in
+-- the database, then no later entries are (they are a monotonic subset of a
+-- chain), but it's _not_ assumed that the next element is the child of the
+-- previous.
 bbsGetLcaMainChain
   :: DB IO
   -> (forall a . SlotNo -> Text -> IO a)
   -> OldestFirst [] HeaderHash
   -> IO (NewestFirst [] HeaderHash, OldestFirst [] HeaderHash)
-bbsGetLcaMainChain db onErr (OldestFirst otherChain) = case otherChain of
-  -- No starting point, but the answer is obvious.
-  [] -> pure (NewestFirst [], OldestFirst [])
-  -- Begin producing from the oldest point.
-  -- The consumer will pull the next hash and compare it to the expectation.
-  (oldest : others) -> bbsStreamBlocks db onErr oldest $ \producer ->
-    runConduit (mapOutput headerHash producer .| consumer (oldest : others) [])
+bbsGetLcaMainChain db onErr (OldestFirst otherChain) = go [] otherChain
   where
-  consumer :: [HeaderHash] -- The rest of the input chain (oldest first)
-           -> [HeaderHash] -- Those which we've confirmed to be in the db
-           -> ConduitT HeaderHash x IO (NewestFirst [] HeaderHash, OldestFirst [] HeaderHash)
-  consumer []          acc = pure (NewestFirst acc, OldestFirst [])
-  consumer (hh : rest) acc = do
-    mHh <- await
-    case mHh of
-      Nothing  -> pure (NewestFirst acc, OldestFirst (hh : rest))
-      Just hh' -> if hh == hh'
-                  then consumer rest (hh : acc)
-                  else pure (NewestFirst acc, OldestFirst (hh : otherChain))
+  go !acc [] = pure (NewestFirst acc, OldestFirst [])
+  go !acc (hh:older) = do
+    inMain <- bbsGetBlockHeader db onErr hh
+    case inMain of
+      Nothing -> pure (NewestFirst acc, OldestFirst (hh:older))
+      Just _  -> go (hh:acc) older
 
 data BlockDecodeError where
   MalformedBlock :: !SlotNo -> !Text -> BlockDecodeError
