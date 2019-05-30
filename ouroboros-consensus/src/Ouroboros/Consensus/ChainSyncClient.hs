@@ -434,6 +434,15 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew) getCurrentChain
           -- would have to roll back to might have been much further back than
           -- @k@ blocks (> @k@ + the number of blocks we have advanced since
           -- starting syncing).
+          --
+          -- INVARIANT: a candidate fragment contains @>=k@ headers (unless
+          -- near genesis, in which case we mean the total number of blocks in
+          -- the fragment) minus @r@ headers where @r <= k@. This ghost
+          -- variable @r@ indicates the number of headers we temporarily
+          -- rolled back. Such a rollback must always be followed by rolling
+          -- forward @s@ new headers where @s >= r@.
+          --
+          -- Thus, @k - r + s >= k@.
           Nothing              -> disconnect $
             InvalidRollBack intersection theirHead
 
