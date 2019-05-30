@@ -506,11 +506,11 @@ runClient tracer clientOptions genesisConfig epochSlots db = case clientOptions 
       -> Text.Builder
     chainSyncShow = \(roll, _tip) -> case roll of
       Left  back    -> mconcat
-        [ "Roll back to "
+        [ "Roll back to\n"
         , Text.fromString (show back)
         ]
       Right forward -> mconcat
-        [ "Roll forward to "
+        [ "Roll forward to\n"
         , case Binary.unAnnotated forward of
             Cardano.ABOBBoundary ebb -> Text.fromString (show ebb)
             Cardano.ABOBBlock    blk -> Cardano.renderHeader
