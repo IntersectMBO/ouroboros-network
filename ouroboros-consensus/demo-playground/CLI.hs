@@ -63,14 +63,12 @@ fromProtocol MockPBFT =
     case runDemo p of
       Dict -> return $ SomeProtocol p
   where
-    p = DemoMockPBFT (defaultDemoPBftParams genesisConfig)
-    -- TODO: This is nasty
-    genesisConfig = error "genesis config not needed when using mock ledger"
+    p = DemoMockPBFT defaultDemoPBftParams
 fromProtocol RealPBFT =
     case runDemo p of
       Dict -> return $ SomeProtocol p
   where
-    p = DemoRealPBFT (defaultDemoPBftParams genesisConfig)
+    p = DemoRealPBFT defaultDemoPBftParams genesisConfig
     genesisConfig = Dummy.dummyConfig
 
 {-------------------------------------------------------------------------------

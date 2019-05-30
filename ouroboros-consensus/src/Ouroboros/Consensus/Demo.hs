@@ -128,6 +128,7 @@ data DemoProtocol blk hdr where
   -- | Run PBFT against the real ledger
   DemoRealPBFT
     :: PBftParams
+    -> Cardano.Genesis.Config
     -> DemoProtocol (ByronBlock  ByronDemo.Config)
                     (ByronHeader ByronDemo.Config)
 
@@ -245,7 +246,7 @@ protocolInfo (DemoMockPBFT params)
     addrDist :: Mock.AddrDist
     addrDist = Mock.mkAddrDist numCoreNodes
 
-protocolInfo (DemoRealPBFT params)
+protocolInfo (DemoRealPBFT params gc)
              (NumCoreNodes numCoreNodes)
              (CoreNodeId nid) =
     ProtocolInfo {
@@ -266,8 +267,9 @@ protocolInfo (DemoRealPBFT params)
                     | n <- [0 .. numCoreNodes]
                     ]
               , pbftProtocolMagic   = Cardano.Genesis.configProtocolMagic gc
-              , pbftProtocolVersion = Cardano.Update.ProtocolVersion 3 1 4
-              , pbftSoftwareVersion = Cardano.Update.SoftwareVersion (Cardano.Update.ApplicationName "harry the hamster") 1
+              , pbftProtocolVersion = Cardano.Update.ProtocolVersion 1 0 0
+              , pbftSoftwareVersion = Cardano.Update.SoftwareVersion (Cardano.Update.ApplicationName "Cardano Demo") 1
+              , pbftGenesisConfig   = gc
               , pbftGenesisHash     = coerce Cardano.Genesis.configGenesisHeaderHash gc
               , pbftEpochSlots      = Cardano.Genesis.configEpochSlots gc
               , pbftGenesisDlg      = Cardano.Genesis.configHeavyDelegation gc
@@ -284,10 +286,8 @@ protocolInfo (DemoRealPBFT params)
       , pInfoInitState  = ()
       }
   where
-    gc = pbftGenesisConfig params
     initState :: Cardano.Block.ChainValidationState
-    Right initState = runExcept $
-        Cardano.Block.initialChainValidationState (pbftGenesisConfig params)
+    Right initState = runExcept $ Cardano.Block.initialChainValidationState gc
 
     lookupKey :: Int -> (Cardano.VerificationKey, Cardano.SigningKey)
     lookupKey n = (\x -> (Cardano.KeyGen.toVerification x, x))
@@ -311,13 +311,12 @@ defaultDemoPraosParams = PraosParams {
     , praosLifetimeKES   = 1000000
     }
 
-defaultDemoPBftParams :: Cardano.Genesis.Config -> PBftParams
-defaultDemoPBftParams genesisConfig = PBftParams {
+defaultDemoPBftParams :: PBftParams
+defaultDemoPBftParams = PBftParams {
       pbftSecurityParam      = defaultSecurityParam
     , pbftNumNodes           = nn
     , pbftSignatureWindow    = fromIntegral $ nn * 10
     , pbftSignatureThreshold = (1.0 / fromIntegral nn) + 0.1
-    , pbftGenesisConfig      = genesisConfig
     }
   where
     nn = 3

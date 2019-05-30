@@ -63,8 +63,7 @@ prop_simple_pbft_convergence sp numCoreNodes@(NumCoreNodes nn) =
   where
     sigWin = fromIntegral $ nn * 10
     sigThd = (1.0 / fromIntegral nn) + 0.1
-    genesisConfig = error "Genesis config in PBFTParams is being accessed in Mock tests"
-    params = PBftParams sp (fromIntegral nn) sigWin sigThd genesisConfig
+    params = PBftParams sp (fromIntegral nn) sigWin sigThd
     isValid :: [NodeId]
             -> Map NodeId (Chain (SimpleBlock DemoMockPBFT SimpleBlockMockCrypto))
             -> Property

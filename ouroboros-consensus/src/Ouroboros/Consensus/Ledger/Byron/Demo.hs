@@ -61,6 +61,7 @@ import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.Crypto.DSIGN
 import           Ouroboros.Consensus.Crypto.Hash
+import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Byron
 import qualified Ouroboros.Consensus.Ledger.Mock as Mock
 import           Ouroboros.Consensus.Node (CoreNodeId)
@@ -86,12 +87,18 @@ data Config = Config {
     , pbftProtocolVersion :: CC.Update.ProtocolVersion
     , pbftSoftwareVersion :: CC.Update.SoftwareVersion
     , pbftEpochSlots      :: CC.Slot.EpochSlots
+    , pbftGenesisConfig   :: CC.Genesis.Config
     , pbftGenesisHash     :: CC.Genesis.GenesisHash
     , pbftGenesisDlg      :: CC.Genesis.GenesisDelegation
     , pbftSecrets         :: CC.Genesis.GeneratedSecrets
     }
 
 type ByronExtNodeConfig = ExtNodeConfig Config (PBft PBftCardanoCrypto)
+
+instance (Given Crypto.ProtocolMagicId)
+      => LedgerConfigView (ByronBlock Config) where
+  ledgerConfigView EncNodeConfig{..} = ByronLedgerConfig $
+    pbftGenesisConfig encNodeConfigExt
 
 {-------------------------------------------------------------------------------
   Forging a new block
@@ -269,7 +276,7 @@ elaborateTx cfg (Mock.Tx ins outs) =
         . Map.toList
         . CC.UTxO.unUTxO
         . CC.UTxO.genesisUtxo
-        $ pbftGenesisConfig (pbftParams (encNodeConfigP cfg))
+        $ pbftGenesisConfig (encNodeConfigExt cfg)
       where
         mkEntry :: CC.UTxO.TxIn
                 -> CC.UTxO.TxOut

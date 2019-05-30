@@ -38,7 +38,6 @@ import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
 import qualified Cardano.Chain.Common as CC.Common
-import qualified Cardano.Chain.Genesis as CC.Genesis
 import           Cardano.Crypto (ProtocolMagicId)
 
 import           Ouroboros.Network.Block
@@ -87,12 +86,6 @@ data PBftParams = PBftParams {
       -- | Signature threshold. This represents the proportion of blocks in a
       -- pbftSignatureWindow-sized window which may be signed by any single key.
     , pbftSignatureThreshold :: Double
-
-      -- | Genesis config
-      --
-      -- TODO: This doesn't really belong here; PBFT the consensus algorithm
-      -- does not require it.
-    , pbftGenesisConfig      :: CC.Genesis.Config
     }
 
 class ( HasPayload (PBft c) b

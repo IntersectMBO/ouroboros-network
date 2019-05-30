@@ -17,6 +17,7 @@ module Ouroboros.Consensus.Ledger.Byron
   , GenTx (..)
     -- * Ledger
   , LedgerState (..)
+  , LedgerConfig (..)
   ) where
 
 import           Control.Monad.Except
@@ -145,11 +146,6 @@ instance StandardHash (ByronHeader cfg)
 {-------------------------------------------------------------------------------
   Ledger
 -------------------------------------------------------------------------------}
-
-instance (Given Crypto.ProtocolMagicId, Typeable cfg)
-      => LedgerConfigView (ByronBlock cfg) where
-  ledgerConfigView EncNodeConfig{..} = ByronLedgerConfig $
-    pbftGenesisConfig (pbftParams encNodeConfigP)
 
 instance UpdateLedger (ByronBlock cfg) where
 
