@@ -74,6 +74,7 @@ import           Ouroboros.Consensus.Crypto.KES
 import           Ouroboros.Consensus.Crypto.VRF
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Byron
+import qualified Ouroboros.Consensus.Ledger.Byron.Demo as ByronDemo
 import           Ouroboros.Consensus.Ledger.Mock (SimpleBlock,
                      SimpleBlockMockCrypto, SimpleHeader, SimplePreHeader)
 import qualified Ouroboros.Consensus.Ledger.Mock as Mock
@@ -98,7 +99,7 @@ type DemoBFT            = Bft BftMockCrypto
 type DemoPraos          = ExtNodeConfig Mock.AddrDist (Praos PraosMockCrypto)
 type DemoLeaderSchedule = WithLeaderSchedule (Praos PraosMockCrypto)
 type DemoMockPBFT       = ExtNodeConfig (PBftLedgerView PBftMockCrypto) (PBft PBftMockCrypto)
-type DemoRealPBFT       = ExtNodeConfig ByronDemoConfig (PBft PBftCardanoCrypto)
+type DemoRealPBFT       = ExtNodeConfig ByronDemo.Config (PBft PBftCardanoCrypto)
 
 -- | Consensus protocol to use
 data DemoProtocol blk hdr where
@@ -130,8 +131,8 @@ data DemoProtocol blk hdr where
   -- | Run PBFT against the real ledger
   DemoRealPBFT
     :: PBftParams
-    -> DemoProtocol (ByronBlock  ByronDemoConfig)
-                    (ByronHeader ByronDemoConfig)
+    -> DemoProtocol (ByronBlock  ByronDemo.Config)
+                    (ByronHeader ByronDemo.Config)
 
 -- | Data required to run the specified protocol.
 data ProtocolInfo b = ProtocolInfo {
@@ -262,7 +263,7 @@ protocolInfo (DemoRealPBFT params)
                 , pbftSignKey = SignKeyCardanoDSIGN (snd (mkKey nid))
                 , pbftVerKey  = VerKeyCardanoDSIGN  (fst (mkKey nid))
                 }
-          , encNodeConfigExt = ByronDemoConfig {
+          , encNodeConfigExt = ByronDemo.Config {
                 pbftCoreNodes = Bimap.fromList [
                     (fst (mkKey n), CoreNodeId n)
                     | n <- [0 .. numCoreNodes]
@@ -392,8 +393,8 @@ instance HasCreator (SimpleBlock DemoMockPBFT c) where
                  . Mock.headerOuroboros
                  . Mock.simpleHeader
 
-instance HasCreator (ByronBlock ByronDemoConfig) where
-    getCreator (EncNodeConfig _ ByronDemoConfig{..}) (ByronBlock b) =
+instance HasCreator (ByronBlock ByronDemo.Config) where
+    getCreator (EncNodeConfig _ ByronDemo.Config{..}) (ByronBlock b) =
         fromMaybe (error "getCreator: unknown key") $ Bimap.lookup key pbftCoreNodes
      where
        key :: Cardano.VerificationKey
@@ -500,30 +501,30 @@ instance ( OuroborosTag p
 -------------------------------------------------------------------------------}
 
 instance DemoHeaderHash Cardano.Block.HeaderHash where
-  demoEncodeHeaderHash = encodeByronDemoHeaderHash
-  demoDecodeHeaderHash = decodeByronDemoHeaderHash
+  demoEncodeHeaderHash = ByronDemo.encodeHeaderHash
+  demoDecodeHeaderHash = ByronDemo.decodeHeaderHash
 
 instance ( Given Cardano.Block.HeaderHash
          , Given Cardano.Slot.EpochSlots
-         ) => DemoHeader (ByronHeader ByronDemoConfig) where
-  demoEncodeHeader   = encodeByronDemoHeader
-  demoDecodeHeader   = decodeByronDemoHeader
+         ) => DemoHeader (ByronHeader ByronDemo.Config) where
+  demoEncodeHeader   = ByronDemo.encodeHeader
+  demoDecodeHeader   = ByronDemo.decodeHeader
   demoBlockFetchSize = const 2000 -- TODO
 
 instance ( Given Cardano.Block.HeaderHash
          , Given Cardano.ProtocolMagicId
          , Given Cardano.Slot.EpochSlots
-         ) => DemoBlock (ByronBlock ByronDemoConfig) where
-  demoEncodeBlock = encodeByronDemoBlock
-  demoDecodeBlock = decodeByronDemoBlock
-  demoMockTx      = elaborateByronTx
+         ) => DemoBlock (ByronBlock ByronDemo.Config) where
+  demoEncodeBlock = ByronDemo.encodeBlock
+  demoDecodeBlock = ByronDemo.decodeBlock
+  demoMockTx      = ByronDemo.elaborateTx
 
 instance ( Given Cardano.Block.HeaderHash
          , Given Cardano.ProtocolMagicId
          , Given Cardano.Slot.EpochSlots
-         ) => RunDemo (ByronBlock  ByronDemoConfig)
-                      (ByronHeader ByronDemoConfig) where
-  demoForgeBlock         = forgeByronDemoBlock
+         ) => RunDemo (ByronBlock  ByronDemo.Config)
+                      (ByronHeader ByronDemo.Config) where
+  demoForgeBlock         = ByronDemo.forgeBlock
   demoGetHeader          = byronHeader
   demoBlockMatchesHeader = \_hdr _blk -> True -- TODO
 

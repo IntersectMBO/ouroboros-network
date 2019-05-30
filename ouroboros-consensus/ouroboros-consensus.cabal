@@ -50,6 +50,7 @@ library
                        Ouroboros.Consensus.Demo
                        Ouroboros.Consensus.Ledger.Abstract
                        Ouroboros.Consensus.Ledger.Byron
+                       Ouroboros.Consensus.Ledger.Byron.Demo
                        Ouroboros.Consensus.Ledger.Mock
                        Ouroboros.Consensus.Mempool
                        Ouroboros.Consensus.Mempool.API
