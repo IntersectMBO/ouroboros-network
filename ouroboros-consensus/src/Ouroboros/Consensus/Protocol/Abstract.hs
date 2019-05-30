@@ -199,8 +199,8 @@ class ( Show (ChainState    p)
   -- | We require that protocols support a @k@ security parameter
   protocolSecurityParam :: NodeConfig p -> SecurityParam
 
-  -- | We require that it's possible to reverse the chain state up to '2k'
-  -- slots.
+  -- | We require that it's possible to reverse the chain state up to @k@
+  -- blocks.
   --
   -- This function should attempt to rewind the chain state to the state at some
   -- given slot.
@@ -208,6 +208,19 @@ class ( Show (ChainState    p)
   -- Implementers should take care that this function accurately reflects the
   -- slot number, rather than the number of blocks, since naively the
   -- 'ChainState' will be updated only on processing an actual block.
+  --
+  -- Rewinding the chain state is intended to be used when switching to a
+  -- fork, longer or equally long to the chain to which the current chain
+  -- state corresponds. So each rewinding should be followed by rolling
+  -- forward (using 'applyChainState') at least as many blocks that we have
+  -- rewound.
+  --
+  -- Note that repeatedly rewinding a chain state does not make it possible to
+  -- rewind it all the way to genesis (this would mean that the whole
+  -- historical chain state is accumulated or derivable from the current chain
+  -- state). For example, rewinding a chain state by @i@ blocks and then
+  -- rewinding that chain state again by @j@ where @i + j > k@ is not possible
+  -- and will yield 'Nothing'.
   rewindChainState :: NodeConfig p
                    -> ChainState p
                    -> SlotNo -- ^ Slot to rewind to.
