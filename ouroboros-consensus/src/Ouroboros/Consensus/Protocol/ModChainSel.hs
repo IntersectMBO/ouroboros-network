@@ -61,10 +61,11 @@ instance (Typeable p, Typeable s, ChainSelection p s) => OuroborosTag (ModChainS
     type    ValidationErr  (ModChainSel p s)    = ValidationErr p
     type    SupportedBlock (ModChainSel p s)    = SupportedBlock p
 
-    mkPayload toEnc        (McsNodeConfig cfg) proof ph = McsPayload <$> mkPayload toEnc cfg proof ph
+    mkPayload proxy       (McsNodeConfig cfg) proof ph = McsPayload <$> mkPayload proxy cfg proof ph
 
     checkIsLeader         (McsNodeConfig cfg) = checkIsLeader         cfg
-    applyChainState toEnc (McsNodeConfig cfg) = applyChainState toEnc cfg
+    applyChainState       (McsNodeConfig cfg) = applyChainState       cfg
+    rewindChainState      (McsNodeConfig cfg) = rewindChainState      cfg
     protocolSecurityParam (McsNodeConfig cfg) = protocolSecurityParam cfg
 
     preferCandidate   (McsNodeConfig cfg) = preferCandidate'   (Proxy :: Proxy s) cfg

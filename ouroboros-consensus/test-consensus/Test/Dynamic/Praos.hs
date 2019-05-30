@@ -35,6 +35,7 @@ import qualified Ouroboros.Network.Chain as Chain
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Demo
+import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Node (NodeId)
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Praos
@@ -92,24 +93,30 @@ prop_simple_praos_convergence params numCoreNodes numSlots =
     PraosParams{..} = params
 
     isValid :: [NodeId]
-            -> Map NodeId (Chain (Block DemoPraos))
+            -> Map NodeId ( NodeConfig DemoPraos
+                          , Chain (SimpleBlock DemoPraos SimpleBlockMockCrypto))
             -> Property
-    isValid nodeIds final = counterexample (show final) $
-      let schedule = leaderScheduleFromTrace numSlots final
-          longest  = longestCrowdedRun schedule
-          crowded  = crowdedRunLength longest
-      in    counterexample (tracesToDot final)
-          $ counterexample (condense schedule)
-          $ counterexample (show longest)
-          $ label ("longest crowded run " <> show crowded)
-          $ tabulate "shortestLength" [show (rangeK praosSecurityParam (shortestLength final))]
-          $ (Map.keys final === nodeIds)
-            .&&. if crowded > maxRollbacks praosSecurityParam
-                  then label "too crowded"     $ property True
-                  else label "not too crowded" $
-                          prop_all_common_prefix
-                            (maxRollbacks praosSecurityParam)
-                            (Map.elems final)
+    isValid nodeIds final
+       = counterexample (show final')
+       $ counterexample (tracesToDot final)
+       $ counterexample (condense schedule)
+       $ counterexample (show longest)
+       $ label ("longest crowded run " <> show crowded)
+       $ tabulate "shortestLength"
+         [show (rangeK praosSecurityParam (shortestLength final'))]
+       $ (Map.keys final === nodeIds)
+         .&&. if crowded > maxRollbacks praosSecurityParam
+               then label "too crowded"     $ property True
+               else label "not too crowded" $
+                       prop_all_common_prefix
+                         (maxRollbacks praosSecurityParam)
+                         (Map.elems final')
+      where
+        -- Without the 'NodeConfig's
+        final'   = snd <$> final
+        schedule = leaderScheduleFromTrace numSlots final
+        longest  = longestCrowdedRun schedule
+        crowded  = crowdedRunLength longest
 
 prop_all_common_prefix :: (HasHeader b, Condense b, Eq b)
                        => Word64 -> [Chain b] -> Property

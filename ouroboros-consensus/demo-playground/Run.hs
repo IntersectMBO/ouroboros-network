@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -9,17 +10,20 @@ module Run (
       runNode
     ) where
 
-import           Codec.Serialise (decode, encode)
+import           Codec.CBOR.Decoding (Decoder)
+import           Codec.CBOR.Encoding (Encoding)
 import qualified Control.Concurrent.Async as Async
 import           Control.Monad
 import           Control.Tracer
 import           Crypto.Random
+import           Data.Functor.Contravariant (contramap)
 import qualified Data.Map.Strict as M
 import           Data.Maybe
 import           Data.Semigroup ((<>))
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block
+import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.Chain (genesisPoint, pointHash)
 import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.Protocol.BlockFetch.Codec
@@ -28,9 +32,7 @@ import           Ouroboros.Network.Protocol.ChainSync.Codec
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
 import           Ouroboros.Consensus.Demo
-import qualified Ouroboros.Consensus.Ledger.Mock as Mock
 import           Ouroboros.Consensus.Node
-import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.STM
@@ -53,16 +55,15 @@ runNode cli@CLI{..} = do
     case command of
       TxSubmitter topology tx ->
         handleTxSubmission topology tx
-      SimpleNode topology protocol ->
-        case protocol of
-          Some p -> case demoProtocolConstraints p of
-                      Dict -> handleSimpleNode p cli topology
+      SimpleNode topology protocol -> do
+        SomeProtocol p <- fromProtocol protocol
+        handleSimpleNode p cli topology
 
 -- | Sets up a simple node, which will run the chain sync protocol and block
 -- fetch protocol, and, if core, will also look at the mempool when trying to
 -- create a new block.
-handleSimpleNode :: forall p. DemoProtocolConstraints p
-                 => DemoProtocol p -> CLI -> TopologyInfo -> IO ()
+handleSimpleNode :: forall blk hdr. RunDemo blk hdr
+                 => DemoProtocol blk hdr -> CLI -> TopologyInfo -> IO ()
 handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
     putStrLn $ "System started at " <> show systemStart
     t@(NetworkTopology nodeSetups) <-
@@ -77,40 +78,41 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
     putStrLn $ "My producers are " <> show (producers nodeSetup)
     putStrLn $ "**************************************"
 
-    let ProtocolInfo{..} = protocolInfo
-                             p
-                             (NumCoreNodes (length nodeSetups))
-                             (CoreNodeId nid)
+    let pInfo@ProtocolInfo{..} =
+          protocolInfo p (NumCoreNodes (length nodeSetups)) (CoreNodeId nid)
 
     withThreadRegistry $ \registry -> do
 
-      let callbacks :: NodeCallbacks IO (Block p)
+      let callbacks :: NodeCallbacks IO blk
           callbacks = NodeCallbacks {
               produceDRG   = drgNew
             , produceBlock = \proof _l slot prevPoint prevBlockNo txs -> do
-                 let curNo :: BlockNo
-                     curNo = succ prevBlockNo
+                let curNo :: BlockNo
+                    curNo = succ prevBlockNo
 
-                     prevHash :: ChainHash (Header p)
-                     prevHash = castHash (pointHash prevPoint)
+                    prevHash :: ChainHash hdr
+                    prevHash = castHash (pointHash prevPoint)
 
                  -- The transactions we get are consistent; the only reason not
                  -- to include all of them would be maximum block size, which
                  -- we ignore for now.
-                 Mock.forgeBlock pInfoConfig
-                                 slot
-                                 curNo
-                                 prevHash
-                                 txs
-                                 proof
+                demoForgeBlock pInfoConfig
+                               slot
+                               curNo
+                               prevHash
+                               txs
+                               proof
           }
 
-      chainDB <- ChainDB.openDB encode pInfoConfig pInfoInitLedger Mock.simpleHeader
+      chainDB :: ChainDB IO blk hdr <- ChainDB.openDB
+                                         pInfoConfig
+                                         pInfoInitLedger
+                                         demoGetHeader
 
       btime  <- realBlockchainTime registry slotDuration systemStart
       let tracer = contramap ((show myNodeId <> " | ") <>) stdoutTracer
           nodeParams = NodeParams
-            { tracer
+            { tracer             = tracer
             , threadRegistry     = registry
             , maxClockSkew       = ClockSkew 1
             , cfg                = pInfoConfig
@@ -118,9 +120,10 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
             , btime
             , chainDB
             , callbacks
-            , blockFetchSize     = Mock.headerBlockSize . Mock.headerPreHeader
-            , blockMatchesHeader = Mock.blockMatchesHeader
+            , blockFetchSize     = demoBlockFetchSize
+            , blockMatchesHeader = demoBlockMatchesHeader
             }
+
       kernel <- nodeKernel nodeParams
 
       watchChain registry tracer chainDB
@@ -128,8 +131,8 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
       -- Spawn the thread which listens to the mempool.
       mempoolThread <- spawnMempoolListener tracer myNodeId kernel
 
-      forM_ (producers nodeSetup) (addUpstream'   kernel)
-      forM_ (consumers nodeSetup) (addDownstream' kernel)
+      forM_ (producers nodeSetup) (addUpstream'   pInfo kernel)
+      forM_ (consumers nodeSetup) (addDownstream' pInfo kernel)
 
       Async.wait mempoolThread
   where
@@ -140,7 +143,7 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
 
       watchChain :: ThreadRegistry IO
                  -> Tracer IO String
-                 -> ChainDB IO (Block p) (Header p)
+                 -> ChainDB IO blk hdr
                  -> IO ()
       watchChain registry tracer chainDB = onEachChange
           registry fingerprint initFingerprint
@@ -156,35 +159,60 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
       -- We need to make sure that both nodes read from the same file
       -- We therefore use the convention to distinguish between
       -- upstream and downstream from the perspective of the "lower numbered" node
-      addUpstream' :: NodeKernel IO NodeId (Block p) (Header p)
+      addUpstream' :: ProtocolInfo blk
+                   -> NodeKernel IO NodeId blk hdr
                    -> NodeId
                    -> IO ()
-      addUpstream' kernel producerNodeId =
+      addUpstream' pInfo@ProtocolInfo{..} kernel producerNodeId =
           addUpstream kernel producerNodeId nodeCommsCS nodeCommsBF
         where
           direction = Upstream (producerNodeId :==>: myNodeId)
           nodeCommsCS = NodeComms {
-              ncCodec    = codecChainSync encode decode encode decode
+              ncCodec    = codecChainSync
+                             (demoEncodeHeader     pInfoConfig)
+                             (demoDecodeHeader     pInfoConfig)
+                             (encodePoint'         pInfo)
+                             (decodePoint'         pInfo)
             , ncWithChan = NamedPipe.withPipeChannel "chain-sync" direction
             }
           nodeCommsBF = NodeComms {
-              ncCodec    = codecBlockFetch encode encode decode decode
+              ncCodec    = codecBlockFetch
+                             (demoEncodeBlock pInfoConfig)
+                             demoEncodeHeaderHash
+                             (demoDecodeBlock pInfoConfig)
+                             demoDecodeHeaderHash
             , ncWithChan = NamedPipe.withPipeChannel "block-fetch" direction
             }
 
-
-      addDownstream' :: NodeKernel IO NodeId (Block p) (Header p)
+      addDownstream' :: ProtocolInfo blk
+                     -> NodeKernel IO NodeId blk hdr
                      -> NodeId
                      -> IO ()
-      addDownstream' kernel consumerNodeId =
+      addDownstream' pInfo@ProtocolInfo{..} kernel consumerNodeId =
           addDownstream kernel nodeCommsCS nodeCommsBF
         where
           direction = Downstream (myNodeId :==>: consumerNodeId)
           nodeCommsCS = NodeComms {
-              ncCodec    = codecChainSync encode decode encode decode
+              ncCodec    = codecChainSync
+                             (demoEncodeHeader     pInfoConfig)
+                             (demoDecodeHeader     pInfoConfig)
+                             (encodePoint'         pInfo)
+                             (decodePoint'         pInfo)
             , ncWithChan = NamedPipe.withPipeChannel "chain-sync" direction
             }
           nodeCommsBF = NodeComms {
-              ncCodec    = codecBlockFetch encode encode decode decode
+              ncCodec    = codecBlockFetch
+                             (demoEncodeBlock pInfoConfig)
+                             demoEncodeHeaderHash
+                             (demoDecodeBlock pInfoConfig)
+                             demoDecodeHeaderHash
             , ncWithChan = NamedPipe.withPipeChannel "block-fetch" direction
             }
+
+      encodePoint' :: ProtocolInfo blk -> Point hdr -> Encoding
+      encodePoint' ProtocolInfo{..} =
+          Block.encodePoint $ Block.encodeChainHash demoEncodeHeaderHash
+
+      decodePoint' :: forall s. ProtocolInfo blk -> Decoder s (Point hdr)
+      decodePoint' ProtocolInfo{..} =
+          Block.decodePoint $ Block.decodeChainHash demoDecodeHeaderHash

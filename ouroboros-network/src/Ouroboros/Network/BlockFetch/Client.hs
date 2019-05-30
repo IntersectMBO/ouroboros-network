@@ -8,6 +8,7 @@
 module Ouroboros.Network.BlockFetch.Client (
     -- * Block fetch protocol client implementation
     blockFetchClient,
+    BlockFetchClient,
     FetchClientContext,
     TraceFetchClientState,
     FetchRequest(..),
@@ -50,6 +51,11 @@ data BlockFetchProtocolFailure =
 
 instance Exception BlockFetchProtocolFailure
 
+
+type BlockFetchClient hdr blk m a =
+  FetchClientContext hdr blk m ->
+  PeerPipelined (BlockFetch hdr blk) AsClient BFIdle m a
+
 -- | The implementation of the client side of block fetch protocol designed to
 -- work in conjunction with our fetch logic.
 --
@@ -57,8 +63,7 @@ blockFetchClient :: forall header block m.
                     (MonadSTM m, MonadTime m, MonadThrow m,
                      HasHeader header, HasHeader block,
                      HeaderHash header ~ HeaderHash block)
-                 => FetchClientContext header block m
-                 -> PeerPipelined (BlockFetch header block) AsClient BFIdle m ()
+                 => BlockFetchClient header block m ()
 blockFetchClient FetchClientContext {
                    fetchClientCtxTracer    = tracer,
                    fetchClientCtxPolicy    = FetchClientPolicy {

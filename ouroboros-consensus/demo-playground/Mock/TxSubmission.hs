@@ -1,4 +1,6 @@
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
@@ -10,7 +12,7 @@ module Mock.TxSubmission (
     , spawnMempoolListener
     ) where
 
-import           Codec.Serialise (hPutSerialise)
+import           Codec.Serialise (decode, hPutSerialise)
 import qualified Control.Concurrent.Async as Async
 import           Control.Monad.Except
 import           Control.Tracer
@@ -22,6 +24,7 @@ import           System.IO (IOMode (..))
 
 import           Ouroboros.Consensus.Crypto.Hash (ShortHash)
 import qualified Ouroboros.Consensus.Crypto.Hash as H
+import           Ouroboros.Consensus.Demo
 import qualified Ouroboros.Consensus.Ledger.Mock as Mock
 import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Node (NodeId (..), NodeKernel (..))
@@ -80,7 +83,6 @@ command' c descr p =
   Main logic
 -------------------------------------------------------------------------------}
 
-
 handleTxSubmission :: TopologyInfo -> Mock.Tx -> IO ()
 handleTxSubmission tinfo tx = do
     topoE <- readTopologyFile (topologyFile tinfo)
@@ -97,21 +99,23 @@ submitTx n tx = do
     putStrLn $ "The Id for this transaction is: " <> condense (H.hash @ShortHash tx)
 
 -- | Auxiliary to 'spawnMempoolListener'
-readIncomingTx :: Tracer IO String
-               -> NodeKernel IO NodeId (Mock.SimpleBlock p c) (Mock.SimpleHeader p c)
+readIncomingTx :: RunDemo blk hdr
+               => Tracer IO String
+               -> NodeKernel IO NodeId blk hdr
                -> Decoder IO
                -> IO ()
 readIncomingTx tracer kernel Decoder{..} = forever $ do
-    newTx :: Mock.Tx <- decodeNext
-    rejected <- addTxs (getMempool kernel) [newTx]
+    newTx :: Mock.Tx <- decodeNext decode
+    rejected <- addTxs (getMempool kernel) [demoMockTx (getNodeConfig kernel) newTx]
     traceWith tracer $
       (if null rejected then "Accepted" else "Rejected") <>
       " transaction: " <> show newTx
 
 -- | Listen for transactions coming a named pipe and add them to the mempool
-spawnMempoolListener :: Tracer IO String
+spawnMempoolListener :: RunDemo blk hdr
+                     => Tracer IO String
                      -> NodeId
-                     -> NodeKernel IO NodeId (Mock.SimpleBlock p c) (Mock.SimpleHeader p c)
+                     -> NodeKernel IO NodeId blk hdr
                      -> IO (Async.Async ())
 spawnMempoolListener tracer myNodeId kernel = do
     Async.async $ do

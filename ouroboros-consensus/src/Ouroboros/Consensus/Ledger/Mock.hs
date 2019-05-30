@@ -31,14 +31,21 @@ module Ouroboros.Consensus.Ledger.Mock (
   , SimpleHeader(..)
   , SimplePreHeader(..)
   , SimpleBody(..)
-  , forgeBlock
+  , forgeSimpleBlock
   , blockMatchesHeader
+    -- * Mempool
+  , GenTx(..)
     -- * Updating the Ledger state
   , LedgerState(..)
-  , HeaderState(..)
   , AddrDist
   , relativeStakes
   , totalStakes
+    -- * Compute protocol parameters
+  , mkAddrDist
+  , genesisTx
+  , genesisUtxo
+  , genesisLedgerState
+  , genesisStakeDist
   ) where
 
 import           Codec.CBOR.Decoding (decodeListLenOf)
@@ -47,6 +54,7 @@ import           Codec.Serialise
 import           Control.Monad.Except
 import           Crypto.Random (MonadRandom)
 import qualified Data.ByteString.Lazy as BL
+import           Data.Either (fromRight)
 import           Data.FingerTree (Measured (measure))
 import qualified Data.IntMap.Strict as IntMap
 import           Data.Map (Map)
@@ -59,7 +67,7 @@ import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Chain (Chain, toOldestFirst)
+import           Ouroboros.Network.Chain (Chain, genesisPoint, toOldestFirst)
 
 import           Ouroboros.Consensus.Crypto.Hash.Class
 import           Ouroboros.Consensus.Crypto.Hash.MD5 (MD5)
@@ -77,10 +85,10 @@ import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.HList (All, HList)
 import qualified Ouroboros.Consensus.Util.HList as HList
+import qualified Ouroboros.Consensus.Util.SlotBounded as SB
 
 {-------------------------------------------------------------------------------
   Basic definitions
-
 -------------------------------------------------------------------------------}
 
 data Tx = Tx (Set TxIn) [TxOut]
@@ -316,29 +324,30 @@ instance (Typeable p, SimpleBlockCrypto c) => StandardHash (SimpleBlock  p c)
   Creating blocks
 -------------------------------------------------------------------------------}
 
-forgeBlock :: forall m p c.
-              ( HasNodeState p m
-              , MonadRandom m
-              , OuroborosTag p
-              , SimpleBlockCrypto c
-              , Serialise (Payload p (SimplePreHeader p c))
-              )
-           => NodeConfig p
-           -> SlotNo                       -- ^ Current slot
-           -> BlockNo                      -- ^ Current block number
-           -> ChainHash (SimpleHeader p c) -- ^ Previous hash
-           -> [Tx]                         -- ^ Txs to add in the block
-           -> IsLeader p
-           -> m (SimpleBlock p c)
-forgeBlock cfg curSlot curNo prevHash txs proof = do
-    ouroborosPayload <- mkPayload encode cfg proof preHeader
+forgeSimpleBlock :: forall m p c.
+                    ( HasNodeState p m
+                    , MonadRandom m
+                    , OuroborosTag p
+                    , SimpleBlockCrypto c
+                    , Serialise (Payload p (SimplePreHeader p c))
+                    , SupportedBlock p (SimpleBlock p c)
+                    )
+                 => NodeConfig p
+                 -> SlotNo                          -- ^ Current slot
+                 -> BlockNo                         -- ^ Current block number
+                 -> ChainHash (SimpleHeader p c)    -- ^ Previous hash
+                 -> [GenTx (SimpleBlock p c)]       -- ^ Txs to add in the block
+                 -> IsLeader p
+                 -> m (SimpleBlock p c)
+forgeSimpleBlock cfg curSlot curNo prevHash txs proof = do
+    ouroborosPayload <- mkPayload (Proxy @(SimpleBlock p c)) cfg proof preHeader
     return $ SimpleBlock {
         simpleHeader = mkSimpleHeader preHeader ouroborosPayload
       , simpleBody   = body
       }
   where
     body :: SimpleBody
-    body = SimpleBody txs
+    body = SimpleBody (map simpleGenTx txs)
 
     -- We use the size of the body, not of the whole block (= header + body),
     -- since the header size is fixed and this size is only used for
@@ -368,12 +377,26 @@ type instance BlockProtocol (SimpleBlock p c) = p
 
 type instance BlockProtocol (SimpleHeader p c) = p
 
+instance (SimpleBlockCrypto c, OuroborosTag p, Serialise (Payload p (SimplePreHeader p c)))
+      => HasPreHeader (SimpleHeader p c) where
+  type PreHeader (SimpleHeader p c) = SimplePreHeader p c
+
+  blockPreHeader  = headerPreHeader
+  encodePreHeader = const encode
 
 instance (SimpleBlockCrypto c, OuroborosTag p, Serialise (Payload p (SimplePreHeader p c)))
       => HasPreHeader (SimpleBlock p c) where
   type PreHeader (SimpleBlock p c) = SimplePreHeader p c
 
-  blockPreHeader = headerPreHeader . simpleHeader
+  blockPreHeader  = headerPreHeader . simpleHeader
+  encodePreHeader = const encode
+
+instance ( SimpleBlockCrypto c
+         , OuroborosTag p
+         , Serialise (Payload p (SimplePreHeader p c))
+         )
+      => HasPayload p (SimpleHeader p c) where
+  blockPayload _  = headerOuroboros
 
 instance ( SimpleBlockCrypto c
          , OuroborosTag p
@@ -388,30 +411,45 @@ instance ( OuroborosTag p
          , Serialise (Payload p (SimplePreHeader (ExtNodeConfig cfg p) c))
          , Typeable cfg
          )
+      => HasPayload p (SimpleHeader (ExtNodeConfig cfg p) c) where
+  blockPayload _ = encPayloadP . headerOuroboros
+
+-- TODO: This instance is ugly.. can we avoid it?
+instance ( OuroborosTag p
+         , SimpleBlockCrypto c
+         , Serialise (Payload p (SimplePreHeader (ExtNodeConfig cfg p) c))
+         , Typeable cfg
+         )
       => HasPayload p (SimpleBlock (ExtNodeConfig cfg p) c) where
   blockPayload _ = encPayloadP . headerOuroboros . simpleHeader
 
-instance OuroborosTag p => UpdateLedger (SimpleBlock p c) where
+instance ( OuroborosTag p
+         , SimpleBlockCrypto c
+         , Serialise (Payload p (SimplePreHeader p c))
+         ) => UpdateLedger (SimpleBlock p c) where
   data LedgerState (SimpleBlock p c) =
       SimpleLedgerState {
           slsUtxo      :: Utxo
         , slsConfirmed :: Set (Hash ShortHash Tx)
+        , slsTip       :: Point (SimpleBlock p c)
         }
 
   data LedgerError (SimpleBlock p c) = LedgerErrorInvalidInputs InvalidInputs
     deriving (Show)
+  data LedgerConfig (SimpleBlock p c) = MockLedgerConfig
 
-  -- | For the mock implementation, we don't need any state for header
-  -- validation at all, after all, we validate blocks /anyway/. The only thing
-  -- we do need to know is that the hash in the 'Point' matches the block.
-  data HeaderState (SimpleBlock p c) = SimpleHeaderState
+  applyLedgerHeader _ _ = pure
+  applyLedgerBlock  _   = \blk -> fmap (updateTip blk)
+                                . updateSimpleLedgerState blk
+    where
+     updateTip :: SimpleBlock p c
+               -> LedgerState (SimpleBlock p c)
+               -> LedgerState (SimpleBlock p c)
+     updateTip b st = st { slsTip = blockPoint b }
 
-  -- Apply a block to the ledger state
-  applyLedgerState     = updateSimpleLedgerState
-  getHeaderState _ _   = SimpleHeaderState
-  advanceHeader  _ _ _ = return SimpleHeaderState
+  ledgerTipPoint = slsTip
 
-deriving instance OuroborosTag p => Show (LedgerState (SimpleBlock p c))
+deriving instance (OuroborosTag p, SimpleBlockCrypto c) => Show (LedgerState (SimpleBlock p c))
 
 updateSimpleLedgerState :: (Monad m, HasUtxo a)
                         => a
@@ -419,23 +457,39 @@ updateSimpleLedgerState :: (Monad m, HasUtxo a)
                         -> ExceptT (LedgerError (SimpleBlock p c))
                                    m
                                    (LedgerState (SimpleBlock p c))
-updateSimpleLedgerState b (SimpleLedgerState u c) = do
+updateSimpleLedgerState b (SimpleLedgerState u c t) = do
     u' <- withExceptT LedgerErrorInvalidInputs $ updateUtxo b u
-    return $ SimpleLedgerState u' (c `Set.union` confirmed b)
+    return $ SimpleLedgerState u' (c `Set.union` confirmed b) t
+
+instance ( OuroborosTag p
+         , SimpleBlockCrypto c
+         , Serialise (Payload p (SimplePreHeader p c))
+         ) => LedgerConfigView (SimpleBlock p c) where
+  ledgerConfigView = const MockLedgerConfig
 
 {-------------------------------------------------------------------------------
   Applying transactions
 -------------------------------------------------------------------------------}
 
-instance OuroborosTag p => ApplyTx (SimpleBlock p c) where
-  type GenTx (SimpleBlock p c) = Tx
+instance ( OuroborosTag p
+         , SimpleBlockCrypto c
+         , Serialise (Payload p (SimplePreHeader p c))
+         ) => ApplyTx (SimpleBlock p c) where
+  newtype GenTx   (SimpleBlock p c) = SimpleGenTx { simpleGenTx :: Tx }
+  type ApplyTxErr (SimpleBlock p c) = LedgerError (SimpleBlock p c)
 
-  applyTx            = updateSimpleLedgerState
-  reapplyTx          = updateSimpleLedgerState
-  reapplyTxSameState = (mustSucceed . runExcept) .: updateSimpleLedgerState
+  applyTx            = \_ -> updateSimpleLedgerState
+  reapplyTx          = \_ -> updateSimpleLedgerState
+  reapplyTxSameState = \_ -> (mustSucceed . runExcept) .: updateSimpleLedgerState
     where
       mustSucceed (Left  _)  = error "reapplyTxSameState: unexpected error"
       mustSucceed (Right st) = st
+
+instance HasUtxo (GenTx (SimpleBlock p c)) where
+  txIns      = txIns      . simpleGenTx
+  txOuts     = txOuts     . simpleGenTx
+  confirmed  = confirmed  . simpleGenTx
+  updateUtxo = updateUtxo . simpleGenTx
 
 {-------------------------------------------------------------------------------
   Support for various consensus algorithms
@@ -449,13 +503,30 @@ type AddrDist = Map Addr NodeId
 instance (BftCrypto c, SimpleBlockCrypto c')
       => ProtocolLedgerView (SimpleBlock (Bft c) c') where
   protocolLedgerView _ _ = ()
+  anachronisticProtocolLedgerView _ _ _ = Just $ SB.unbounded ()
+
+instance (SimpleBlockCrypto c')
+  => BlockSupportsPBft PBftMockCrypto (SimpleBlock (ExtNodeConfig (PBftLedgerView PBftMockCrypto) (PBft PBftMockCrypto)) c')
+
+instance (SimpleBlockCrypto c')
+  => BlockSupportsPBft PBftMockCrypto (SimpleHeader (ExtNodeConfig (PBftLedgerView PBftMockCrypto) (PBft PBftMockCrypto)) c')
 
 -- | Mock ledger is capable of running PBFT, but we simply assume the delegation
 -- map and the protocol parameters can be found statically in the node
 -- configuration.
-instance (PBftCrypto c, SimpleBlockCrypto c')
-  => ProtocolLedgerView (SimpleBlock (ExtNodeConfig (PBftLedgerView c) (PBft c)) c') where
+instance (SimpleBlockCrypto c')
+  => ProtocolLedgerView (SimpleBlock (ExtNodeConfig (PBftLedgerView PBftMockCrypto) (PBft PBftMockCrypto)) c') where
   protocolLedgerView (EncNodeConfig _ pbftParams) _ls = pbftParams
+  -- This instance is correct, because the delegation map doesn't change in the
+  -- node configuration.
+  anachronisticProtocolLedgerView (EncNodeConfig _ pbftParams) _ _
+    = Just $ SB.unbounded pbftParams
+
+instance (PraosCrypto c, SimpleBlockCrypto c')
+  => (BlockSupportsPraos c (SimpleBlock (ExtNodeConfig AddrDist (Praos c)) c'))
+
+instance (PraosCrypto c, SimpleBlockCrypto c')
+  => (BlockSupportsPraos c (SimpleHeader (ExtNodeConfig AddrDist (Praos c)) c'))
 
 -- | Praos needs a ledger that can give it the "active stake distribution"
 --
@@ -469,19 +540,23 @@ instance ( PraosCrypto c, SimpleBlockCrypto c')
       => ProtocolLedgerView (SimpleBlock (ExtNodeConfig AddrDist (Praos c)) c') where
   protocolLedgerView (EncNodeConfig _ addrDist) _ =
       equalStakeDistr addrDist
-    where
-      equalStakeDistr :: AddrDist -> StakeDist
-      equalStakeDistr = IntMap.fromList
-                      . mapMaybe (nodeStake . snd)
-                      . Map.toList
 
-      nodeStake :: NodeId -> Maybe (Int, Rational)
-      nodeStake (RelayId _) = Nothing
-      nodeStake (CoreId i)  = Just (i, 1)
+  anachronisticProtocolLedgerView (EncNodeConfig _ addrDist) _ _ =
+      Just $ SB.unbounded $ equalStakeDistr addrDist
+
+nodeStake :: NodeId -> Maybe (Int, Rational)
+nodeStake (RelayId _) = Nothing
+nodeStake (CoreId i)  = Just (i, 1)
+
+equalStakeDistr :: AddrDist -> StakeDist
+equalStakeDistr = IntMap.fromList
+                . mapMaybe (nodeStake . snd)
+                . Map.toList
 
 instance (PraosCrypto c, SimpleBlockCrypto c')
       => ProtocolLedgerView (SimpleBlock (WithLeaderSchedule (Praos c)) c') where
   protocolLedgerView _ _ = ()
+  anachronisticProtocolLedgerView _ _ _ = Just $ SB.unbounded ()
 
 {-------------------------------------------------------------------------------
   Compute relative stake
@@ -513,6 +588,38 @@ totalStakes addrDist = foldl f Map.empty
    f m (a, stake) = case Map.lookup a addrDist of
        Just (CoreId nid) -> Map.insertWith (+) (StakeCore nid)    stake m
        _                 -> Map.insertWith (+) StakeEverybodyElse stake m
+
+{-------------------------------------------------------------------------------
+  Compute protocol parameters
+-------------------------------------------------------------------------------}
+
+-- | Construct address to node ID mapping
+mkAddrDist :: Int -- ^ Number of nodes
+           -> AddrDist
+mkAddrDist numCoreNodes =
+    Map.fromList $ zip [[addr]   | addr <- ['a'..]]
+                       [CoreId n | n    <- [0  .. numCoreNodes - 1]]
+
+-- | Transaction giving initial stake to the nodes
+genesisTx :: AddrDist -> Tx
+genesisTx addrDist = Tx mempty [(addr, 1000) | addr <- Map.keys addrDist]
+
+genesisUtxo :: AddrDist -> Utxo
+genesisUtxo addrDist =
+    fromRight (error "genesisLedger: invalid genesis tx") $
+      runExcept (utxo (genesisTx addrDist))
+
+genesisLedgerState :: AddrDist -> LedgerState (SimpleBlock p c)
+genesisLedgerState addrDist = SimpleLedgerState {
+      slsUtxo      = genesisUtxo addrDist
+    , slsConfirmed = Set.singleton (hash (genesisTx addrDist))
+    , slsTip       = genesisPoint
+    }
+
+-- | Genesis stake distribution
+genesisStakeDist :: AddrDist -> StakeDist
+genesisStakeDist addrDist =
+    relativeStakes (totalStakes addrDist (genesisUtxo addrDist))
 
 {-------------------------------------------------------------------------------
   Serialisation

@@ -4,7 +4,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Test.Consensus.ChainSyncClient ( tests ) where
 
-import           Codec.Serialise (encode)
 import           Control.Monad (replicateM_, void)
 import           Control.Monad.Except (runExcept)
 import           Control.Monad.State.Strict
@@ -101,12 +100,13 @@ prop_chainSync ChainSyncClientSetup {..} =
         label "InvalidRollBack" $
         counterexample ("InvalidRollBack intersection: " <> ppPoint intersection) $
         not (AF.withinFragmentBounds intersection synchedChain)
-      Just e              -> counterexample (displayException e) False
-      Nothing             -> synchedChain `isSuffix` serverChain .&&.
-                             -- TODO in the future we might strengthen this
-                             -- to: must fork at most k blocks back from the
-                             -- current tip
-                             synchedChain `intersects` clientChain
+      Just e ->
+        counterexample ("Exception: " ++ displayException e) False
+      Nothing ->
+        synchedChain `isSuffix` serverChain .&&.
+        -- TODO in the future we might strengthen this to: must fork at most k
+        -- blocks back from the current tip
+        synchedChain `intersects` clientChain
   where
     k = maxRollbacks securityParam
 
@@ -145,7 +145,7 @@ serverId :: CoreNodeId
 serverId = CoreNodeId 1
 
 -- | Terser notation
-type ChainSyncException = ChainSyncClientException TestBlock TestBlock
+type ChainSyncException = ChainSyncClientException TestBlock
 
 -- | Using slots as times, a schedule plans updates to a chain on certain
 -- slots.
@@ -353,13 +353,13 @@ updateClientState cfg chain ledgerState chainUpdates =
         where
           chain'       = foldl' (flip Chain.addBlock) chain bs
           ledgerState' = runValidate $
-            foldExtLedgerState encode cfg bs ledgerState
+            foldExtLedgerState cfg bs ledgerState
       Nothing
       -- There was a roll back in the updates, so validate the chain from
       -- scratch
         | Just chain' <- Chain.applyChainUpdates chainUpdates chain
         -> let ledgerState' = runValidate $
-                 chainExtLedgerState encode cfg chain' testInitExtLedger
+                 chainExtLedgerState cfg chain' testInitExtLedger
            in (chain', ledgerState')
         | otherwise
         -> error "Client chain update failed"
@@ -370,7 +370,6 @@ updateClientState cfg chain ledgerState chainUpdates =
     runValidate m = case runExcept m of
       Left  _ -> error "Client ledger validation error"
       Right x -> x
-
 
 {-------------------------------------------------------------------------------
   ChainSyncClientSetup

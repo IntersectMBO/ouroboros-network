@@ -23,6 +23,7 @@ module Ouroboros.Consensus.Protocol.BFT (
 
 import           Codec.Serialise (Serialise (..))
 import           Control.Monad.Except
+import           Data.Functor.Identity
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Typeable (Typeable)
@@ -37,6 +38,7 @@ import           Ouroboros.Consensus.Crypto.DSIGN.Mock (MockDSIGN)
 import           Ouroboros.Consensus.Node (NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Test
+import           Ouroboros.Consensus.Util (Empty)
 import           Ouroboros.Consensus.Util.Condense
 
 {-------------------------------------------------------------------------------
@@ -65,7 +67,7 @@ data BftParams = BftParams {
     , bftNumNodes      :: Word64
     }
 
-instance BftCrypto c => OuroborosTag (Bft c) where
+instance (BftCrypto c) => OuroborosTag (Bft c) where
   -- | The BFT payload is just the signature
   newtype Payload (Bft c) ph = BftPayload {
         bftSignature :: SignedDSIGN (BftDSIGN c) ph
@@ -89,8 +91,8 @@ instance BftCrypto c => OuroborosTag (Bft c) where
 
   protocolSecurityParam = bftSecurityParam . bftParams
 
-  mkPayload toEnc BftNodeConfig{..} _proof preheader = do
-      signature <- signedDSIGN toEnc preheader bftSignKey
+  mkPayload proxy BftNodeConfig{..} _proof preheader = do
+      signature <- signedDSIGN (encodePreHeader proxy) preheader bftSignKey
       return $ BftPayload {
           bftSignature = signature
         }
@@ -104,18 +106,22 @@ instance BftCrypto c => OuroborosTag (Bft c) where
     where
       BftParams{..}  = bftParams
 
-  applyChainState toEnc cfg@BftNodeConfig{..} _l b _cs = do
+  applyChainState cfg@BftNodeConfig{..} _l b _cs = do
       -- TODO: Should deal with unknown node IDs
-      if verifySignedDSIGN toEnc (bftVerKeys Map.! expectedLeader)
-                      (blockPreHeader b)
-                      (bftSignature (blockPayload cfg b))
-        then return ()
-        else throwError BftInvalidSignature
+      let proxy = Identity b
+      case verifySignedDSIGN
+           (encodePreHeader proxy)
+           (bftVerKeys Map.! expectedLeader)
+           (blockPreHeader b)
+           (bftSignature (blockPayload cfg b)) of
+        Right () -> return ()
+        Left err -> throwError $ BftInvalidSignature err
     where
       BftParams{..}  = bftParams
       SlotNo n       = blockSlot b
       expectedLeader = CoreId $ fromIntegral (n `mod` bftNumNodes)
 
+  rewindChainState _ _ _ = Just ()
 
 deriving instance BftCrypto c => Show     (Payload (Bft c) ph)
 deriving instance BftCrypto c => Eq       (Payload (Bft c) ph)
@@ -130,15 +136,19 @@ instance (DSIGNAlgorithm (BftDSIGN c)) => Serialise (Payload (Bft c) ph) where
   BFT specific types
 -------------------------------------------------------------------------------}
 
-data BftValidationErr = BftInvalidSignature
+data BftValidationErr = BftInvalidSignature String
   deriving (Show)
 
 {-------------------------------------------------------------------------------
   Crypto models
 -------------------------------------------------------------------------------}
 
+
+-- The equality constraint here is slightly weird; we need it to force GHC to
+-- partially apply this constraint in `OuroborosTag` and thus conclude that it
+-- can satisfy it universally.
 -- | Crypto primitives required by BFT
-class (Typeable c, DSIGNAlgorithm (BftDSIGN c)) => BftCrypto c where
+class (Typeable c, DSIGNAlgorithm (BftDSIGN c), Signable (BftDSIGN c) ~ Empty) => BftCrypto c where
   type family BftDSIGN c :: *
 
 data BftStandardCrypto

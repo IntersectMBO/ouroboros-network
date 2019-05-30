@@ -33,6 +33,7 @@ import           Ouroboros.Network.Chain (Chain)
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Demo
+import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Node
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.LeaderSchedule
@@ -81,15 +82,20 @@ prop_simple_leader_schedule_convergence numSlots numCoreNodes params seed =
                     seed
   where
     isValid :: [NodeId]
-            -> Map NodeId (Chain (Block DemoLeaderSchedule))
+            -> Map NodeId ( NodeConfig DemoLeaderSchedule
+                          , Chain (SimpleBlock DemoLeaderSchedule SimpleBlockMockCrypto))
             -> Property
     isValid nodeIds final =
-          counterexample (tracesToDot final)
-     $    tabulate "shortestLength" [show (rangeK (praosSecurityParam params) (shortestLength final))]
-     $    Map.keys final === nodeIds
-     .&&. prop_all_common_prefix
-            (maxRollbacks $ praosSecurityParam params)
-            (Map.elems final)
+            counterexample (tracesToDot final)
+       $    tabulate "shortestLength"
+            [show (rangeK (praosSecurityParam params) (shortestLength final'))]
+       $    Map.keys final === nodeIds
+       .&&. prop_all_common_prefix
+              (maxRollbacks $ praosSecurityParam params)
+              (Map.elems final')
+      where
+        -- Without the 'NodeConfig's
+        final' = snd <$> final
 
 {-------------------------------------------------------------------------------
   Dependent generation and shrinking of leader schedules

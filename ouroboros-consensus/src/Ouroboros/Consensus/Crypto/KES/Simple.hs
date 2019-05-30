@@ -5,15 +5,16 @@
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 -- | Mock key evolving signatures.
 module Ouroboros.Consensus.Crypto.KES.Simple
     ( SimpleKES
     ) where
 
-import           Codec.Serialise (Serialise(..))
-import qualified Codec.Serialise.Encoding as Enc
+import           Codec.Serialise (Serialise (..))
 import qualified Codec.Serialise.Decoding as Dec
+import qualified Codec.Serialise.Encoding as Enc
 import           Control.Monad (replicateM)
 import           Data.Vector (Vector, fromList, (!?))
 import qualified Data.Vector as Vec
@@ -21,12 +22,13 @@ import           GHC.Generics (Generic)
 import           Numeric.Natural (Natural)
 
 import           Ouroboros.Consensus.Crypto.DSIGN
+import qualified Ouroboros.Consensus.Crypto.DSIGN as DSIGN
 import           Ouroboros.Consensus.Crypto.KES.Class
 import           Ouroboros.Consensus.Util.Condense
 
 data SimpleKES d
 
-instance DSIGNAlgorithm d => KESAlgorithm (SimpleKES d) where
+instance (DSIGNAlgorithm d) => KESAlgorithm (SimpleKES d) where
 
     newtype VerKeyKES (SimpleKES d) = VerKeySimpleKES (Vector (VerKeyDSIGN d))
         deriving Generic
@@ -37,6 +39,8 @@ instance DSIGNAlgorithm d => KESAlgorithm (SimpleKES d) where
 
     newtype SigKES (SimpleKES d) = SigSimpleKES (SigDSIGN d)
         deriving Generic
+
+    type Signable (SimpleKES d) = DSIGN.Signable d
 
     encodeVerKeyKES = encode
     encodeSignKeyKES = encode
@@ -61,7 +65,7 @@ instance DSIGNAlgorithm d => KESAlgorithm (SimpleKES d) where
 
     verifyKES toEnc (VerKeySimpleKES vks) j a (SigSimpleKES sig) =
         case vks !? fromIntegral j of
-            Nothing -> False
+            Nothing -> Left "KES verification failed: out of range"
             Just vk -> verifyDSIGN toEnc vk a sig
 
 deriving instance DSIGNAlgorithm d => Show (VerKeyKES (SimpleKES d))

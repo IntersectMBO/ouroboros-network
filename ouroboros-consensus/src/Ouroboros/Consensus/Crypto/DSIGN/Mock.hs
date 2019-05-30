@@ -1,3 +1,4 @@
+{-# LANGUAGE ConstraintKinds   #-}
 {-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeApplications  #-}
@@ -12,9 +13,10 @@ module Ouroboros.Consensus.Crypto.DSIGN.Mock
     , mockSign
     ) where
 
-import           Codec.Serialise (Serialise(..))
 import           Codec.CBOR.Encoding (Encoding)
+import           Codec.Serialise (Serialise (..))
 import           GHC.Generics (Generic)
+import           GHC.Stack
 
 import           Ouroboros.Consensus.Crypto.DSIGN.Class
 import           Ouroboros.Consensus.Crypto.Hash
@@ -34,13 +36,13 @@ instance DSIGNAlgorithm MockDSIGN where
     data SigDSIGN MockDSIGN = SigMockDSIGN ByteString Int
         deriving (Show, Eq, Ord, Generic)
 
-    encodeVerKeyDSIGN = encode
+    encodeVerKeyDSIGN  = encode
     encodeSignKeyDSIGN = encode
-    encodeSigDSIGN = encode
+    encodeSigDSIGN     = encode
 
-    decodeVerKeyDSIGN = decode
+    decodeVerKeyDSIGN  = decode
     decodeSignKeyDSIGN = decode
-    decodeSigDSIGN = decode
+    decodeSigDSIGN     = decode
 
     genKeyDSIGN = SignKeyMockDSIGN <$> nonNegIntR
 
@@ -48,7 +50,25 @@ instance DSIGNAlgorithm MockDSIGN where
 
     signDSIGN toEnc a sk = return $ mockSign toEnc a sk
 
-    verifyDSIGN toEnc (VerKeyMockDSIGN n) a s = s == mockSign toEnc a (SignKeyMockDSIGN n)
+    verifyDSIGN toEnc (VerKeyMockDSIGN n) a s =
+      if s == mockSign toEnc a (SignKeyMockDSIGN n)
+        then Right ()
+        else Left $ show $ MockVerificationFailure {
+                 vErrVerKey    = VerKeyMockDSIGN n
+               , vErrSignature = s
+               , vErrCallStack = prettyCallStack callStack
+               }
+
+-- | Debugging: provide information about the verification failure
+--
+-- We don't include the actual value here as that would require propagating a
+-- 'Show' constraint.
+data VerificationFailure = MockVerificationFailure {
+      vErrVerKey    :: VerKeyDSIGN MockDSIGN
+    , vErrSignature :: SigDSIGN    MockDSIGN
+    , vErrCallStack :: String
+    }
+  deriving (Show)
 
 mockSign :: (a -> Encoding) -> a -> SignKeyDSIGN MockDSIGN -> SigDSIGN MockDSIGN
 mockSign toEnc a (SignKeyMockDSIGN n) = SigMockDSIGN (getHash $ hashWithSerialiser @ShortHash toEnc a) n

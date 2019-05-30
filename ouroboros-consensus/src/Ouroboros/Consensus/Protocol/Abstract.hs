@@ -53,6 +53,8 @@ import           Ouroboros.Network.Chain (Chain)
 import qualified Ouroboros.Consensus.Util.AnchoredFragment as AF
 import           Ouroboros.Consensus.Util.Random
 
+import           GHC.Stack
+
 -- | The (open) universe of Ouroboros protocols
 --
 -- This class encodes the part that is independent from any particular
@@ -139,12 +141,12 @@ class ( Show (ChainState    p)
   -- | Construct the ouroboros-specific payload of a block
   --
   -- Gets the proof that we are the leader and the preheader as arguments.
-  mkPayload :: (HasNodeState p m, MonadRandom m)
-            => (ph -> Encoding)
+  mkPayload :: (SupportedBlock p b, HasNodeState p m, MonadRandom m)
+            => proxy b
             -> NodeConfig p
             -> IsLeader p
-            -> ph
-            -> m (Payload p ph)
+            -> PreHeader b
+            -> m (Payload p (PreHeader b))
 
   -- | Do we prefer the candidate chain over ours?
   --
@@ -185,9 +187,10 @@ class ( Show (ChainState    p)
                 -> m (Maybe (IsLeader p))
 
   -- | Apply a block
-  applyChainState :: SupportedBlock p b
-                  => (PreHeader b -> Encoding) -- Serialiser for the preheader
-                  -> NodeConfig p
+  --
+  -- TODO this will only be used with headers
+  applyChainState :: (SupportedBlock p b, HasCallStack)
+                  => NodeConfig p
                   -> LedgerView p -- /Updated/ ledger state
                   -> b
                   -> ChainState p -- /Previous/ Ouroboros state
@@ -195,6 +198,33 @@ class ( Show (ChainState    p)
 
   -- | We require that protocols support a @k@ security parameter
   protocolSecurityParam :: NodeConfig p -> SecurityParam
+
+  -- | We require that it's possible to reverse the chain state up to @k@
+  -- blocks.
+  --
+  -- This function should attempt to rewind the chain state to the state at some
+  -- given slot.
+  --
+  -- Implementers should take care that this function accurately reflects the
+  -- slot number, rather than the number of blocks, since naively the
+  -- 'ChainState' will be updated only on processing an actual block.
+  --
+  -- Rewinding the chain state is intended to be used when switching to a
+  -- fork, longer or equally long to the chain to which the current chain
+  -- state corresponds. So each rewinding should be followed by rolling
+  -- forward (using 'applyChainState') at least as many blocks that we have
+  -- rewound.
+  --
+  -- Note that repeatedly rewinding a chain state does not make it possible to
+  -- rewind it all the way to genesis (this would mean that the whole
+  -- historical chain state is accumulated or derivable from the current chain
+  -- state). For example, rewinding a chain state by @i@ blocks and then
+  -- rewinding that chain state again by @j@ where @i + j > k@ is not possible
+  -- and will yield 'Nothing'.
+  rewindChainState :: NodeConfig p
+                   -> ChainState p
+                   -> SlotNo -- ^ Slot to rewind to.
+                   -> Maybe (ChainState p)
 
 -- | Protocol security parameter
 --
@@ -211,7 +241,8 @@ newtype SecurityParam = SecurityParam { maxRollbacks :: Word64 }
 -- | Extract the pre-header from a block
 class (HasHeader b) => HasPreHeader b where
   type family PreHeader b :: *
-  blockPreHeader :: b -> PreHeader b
+  blockPreHeader  :: b -> PreHeader b
+  encodePreHeader :: proxy b -> PreHeader b -> Encoding
 
 -- | Blocks that contain the ouroboros payload
 --

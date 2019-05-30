@@ -13,11 +13,13 @@ module Ouroboros.Consensus.Crypto.KES.Class
     , verifySignedKES
     ) where
 
-import           Codec.Serialise.Encoding (Encoding)
 import           Codec.CBOR.Decoding (Decoder)
+import           Codec.Serialise.Encoding (Encoding)
+import           GHC.Exts (Constraint)
 import           GHC.Generics (Generic)
 import           Numeric.Natural (Natural)
 
+import           Ouroboros.Consensus.Util (Empty)
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Random
 
@@ -35,6 +37,9 @@ class ( Show (VerKeyKES v)
     data SignKeyKES v :: *
     data SigKES v :: *
 
+    type Signable v :: * -> Constraint
+    type Signable c = Empty
+
     encodeVerKeyKES :: VerKeyKES v -> Encoding
     decodeVerKeyKES :: Decoder s (VerKeyKES v)
     encodeSignKeyKES :: SignKeyKES v -> Encoding
@@ -44,13 +49,15 @@ class ( Show (VerKeyKES v)
 
     genKeyKES :: MonadRandom m => Natural -> m (SignKeyKES v)
     deriveVerKeyKES :: SignKeyKES v -> VerKeyKES v
-    signKES :: (MonadRandom m)
+    signKES :: (MonadRandom m, Signable v a)
             => (a -> Encoding)
             -> Natural
             -> a
             -> SignKeyKES v
             -> m (Maybe (SigKES v, SignKeyKES v))
-    verifyKES :: (a -> Encoding) -> VerKeyKES v -> Natural -> a -> SigKES v -> Bool
+    verifyKES :: Signable v a
+              => (a -> Encoding)
+              -> VerKeyKES v -> Natural -> a -> SigKES v -> Either String ()
 
 newtype SignedKES v a = SignedKES {getSig :: SigKES v}
   deriving (Generic)
@@ -62,7 +69,7 @@ deriving instance KESAlgorithm v => Ord  (SignedKES v a)
 instance Condense (SigKES v) => Condense (SignedKES v a) where
     condense (SignedKES sig) = condense sig
 
-signedKES :: (KESAlgorithm v, MonadRandom m)
+signedKES :: (KESAlgorithm v, MonadRandom m, Signable v a)
           => (a -> Encoding) -> Natural -> a -> SignKeyKES v -> m (Maybe (SignedKES v a, SignKeyKES v))
 signedKES toEnc time a key = do
     m <- signKES toEnc time a key
@@ -70,6 +77,7 @@ signedKES toEnc time a key = do
         Nothing          -> Nothing
         Just (sig, key') -> Just (SignedKES sig, key')
 
-verifySignedKES :: (KESAlgorithm v)
-                => (a -> Encoding) -> VerKeyKES v -> Natural -> a -> SignedKES v a -> Bool
+verifySignedKES :: (KESAlgorithm v, Signable v a)
+                => (a -> Encoding)
+                -> VerKeyKES v -> Natural -> a -> SignedKES v a -> Either String ()
 verifySignedKES toEnc vk j a (SignedKES sig) = verifyKES toEnc vk j a sig

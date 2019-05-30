@@ -31,7 +31,6 @@ module Ouroboros.Storage.ChainDB.Model (
   , readerForward
   ) where
 
-import           Codec.CBOR.Encoding (Encoding)
 import           Control.Monad.Except (runExcept)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -117,11 +116,9 @@ empty initLedger = Model {
     , iterators     = Map.empty
     }
 
-addBlock :: forall blk. ProtocolLedgerView blk
-         => (PreHeader blk -> Encoding)
-         -> NodeConfig (BlockProtocol blk)
-         -> blk -> Model blk -> Model blk
-addBlock toEnc cfg blk m = Model {
+addBlock :: forall blk. (ProtocolLedgerView blk, LedgerConfigView blk)
+         => NodeConfig (BlockProtocol blk) -> blk -> Model blk -> Model blk
+addBlock cfg blk m = Model {
       blocks        = blocks'
     , cps           = CPS.switchFork newChain (cps m)
     , currentLedger = newLedger
@@ -133,18 +130,16 @@ addBlock toEnc cfg blk m = Model {
     blocks' = Map.insert (Block.blockHash blk) blk (blocks m)
 
     candidates :: [(Chain blk, ExtLedgerState blk)]
-    candidates = mapMaybe (validate toEnc cfg (initLedger m)) $ chains blocks'
+    candidates = mapMaybe (validate cfg (initLedger m)) $ chains blocks'
 
     newChain  :: Chain blk
     newLedger :: ExtLedgerState blk
     (newChain, newLedger) = fromMaybe (currentChain m, currentLedger m) $
                                selectChain cfg (currentChain m) candidates
 
-addBlocks :: forall blk. ProtocolLedgerView blk
-          => (PreHeader blk -> Encoding)
-          -> NodeConfig (BlockProtocol blk)
-          -> [blk] -> Model blk -> Model blk
-addBlocks toEnc cfg = repeatedly (addBlock toEnc cfg)
+addBlocks :: forall blk. (ProtocolLedgerView blk, LedgerConfigView blk)
+          => NodeConfig (BlockProtocol blk) -> [blk] -> Model blk -> Model blk
+addBlocks cfg = repeatedly (addBlock cfg)
 
 {-------------------------------------------------------------------------------
   Iterators
@@ -217,16 +212,23 @@ notGenesis p =
       GenesisHash -> error "Ouroboros.Storage.ChainDB.Model: notGenesis"
       BlockHash h -> h
 
-validate :: ProtocolLedgerView blk
-         => (PreHeader blk -> Encoding)
-         -> NodeConfig (BlockProtocol blk)
+validate :: forall blk.
+           ( ProtocolLedgerView blk
+           , LedgerConfigView blk
+           )
+         => NodeConfig (BlockProtocol blk)
          -> ExtLedgerState blk
          -> Chain blk
          -> Maybe (Chain blk, ExtLedgerState blk)
-validate toEnc cfg initLedger chain =
-      either (const Nothing) (\ledger -> Just (chain, ledger))
+validate cfg initLedger chain =
+      fromEither
     . runExcept
-    $ chainExtLedgerState toEnc cfg chain initLedger
+    $ chainExtLedgerState cfg chain initLedger
+  where
+    fromEither :: Either (ExtValidationError blk) (ExtLedgerState blk)
+               -> Maybe (Chain blk, ExtLedgerState blk)
+    fromEither (Left _err) = Nothing
+    fromEither (Right l)   = Just (chain, l)
 
 chains :: forall blk. (HasHeader blk)
        => Map (HeaderHash blk) blk -> [Chain blk]

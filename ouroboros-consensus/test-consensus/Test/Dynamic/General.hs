@@ -29,17 +29,22 @@ import           Ouroboros.Network.Chain
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Demo
+import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Node
+import           Ouroboros.Consensus.Protocol.Abstract (NodeConfig)
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Consensus.Util.ThreadRegistry
 
 import           Test.Dynamic.Network
 
-prop_simple_protocol_convergence :: forall p. DemoProtocolConstraints p
-                                 => (CoreNodeId -> ProtocolInfo p)
+prop_simple_protocol_convergence :: forall p c.
+                                   ( RunDemo (SimpleBlock p c) (SimpleHeader p c)
+                                   , SimpleBlockCrypto c
+                                   )
+                                 => (CoreNodeId -> ProtocolInfo (SimpleBlock p c))
                                  -> (   [NodeId]
-                                     -> Map NodeId (Chain (Block p))
+                                     -> Map NodeId (NodeConfig p, Chain (SimpleBlock p c))
                                      -> Property)
                                  -> NumCoreNodes
                                  -> NumSlots
@@ -50,7 +55,7 @@ prop_simple_protocol_convergence pInfo isValid numCoreNodes numSlots seed =
       test_simple_protocol_convergence pInfo isValid numCoreNodes numSlots seed
 
 -- Run protocol on the broadcast network, and check resulting chains on all nodes.
-test_simple_protocol_convergence :: forall m p.
+test_simple_protocol_convergence :: forall m p c.
                                     ( MonadAsync m
                                     , MonadFork  m
                                     , MonadMask  m
@@ -58,11 +63,12 @@ test_simple_protocol_convergence :: forall m p.
                                     , MonadTime  m
                                     , MonadTimer m
                                     , MonadThrow (STM m)
-                                    , DemoProtocolConstraints p
+                                    , RunDemo (SimpleBlock p c) (SimpleHeader p c)
+                                    , SimpleBlockCrypto c
                                     )
-                                 => (CoreNodeId -> ProtocolInfo p)
+                                 => (CoreNodeId -> ProtocolInfo (SimpleBlock p c))
                                  -> (   [NodeId]
-                                     -> Map NodeId (Chain (Block p))
+                                     -> Map NodeId (NodeConfig p, Chain (SimpleBlock p c))
                                      -> Property)
                                  -> NumCoreNodes
                                  -> NumSlots

@@ -10,7 +10,6 @@ module Test.Dynamic.Network (
     broadcastNetwork
   ) where
 
-import           Codec.Serialise (Serialise (encode))
 import           Control.Monad
 import           Control.Tracer (nullTracer)
 import           Crypto.Number.Generate (generateBetween)
@@ -32,7 +31,6 @@ import           Ouroboros.Network.Codec (AnyMessage, Codec)
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain
-import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.Protocol.BlockFetch.Codec
 import           Ouroboros.Network.Protocol.BlockFetch.Type
 import           Ouroboros.Network.Protocol.ChainSync.Codec
@@ -45,6 +43,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Mock
 import qualified Ouroboros.Consensus.Ledger.Mock as Mock
 import           Ouroboros.Consensus.Node
+import           Ouroboros.Consensus.Protocol.Abstract (NodeConfig)
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random
@@ -60,7 +59,7 @@ import qualified Ouroboros.Storage.ChainDB.Mock as ChainDB
 --
 -- We run for the specified number of blocks, then return the final state of
 -- each node.
-broadcastNetwork :: forall m p blk hdr.
+broadcastNetwork :: forall m p c.
                     ( MonadAsync m
                     , MonadFork  m
                     , MonadMask  m
@@ -68,17 +67,16 @@ broadcastNetwork :: forall m p blk hdr.
                     , MonadTime  m
                     , MonadTimer m
                     , MonadThrow (STM m)
-                    , DemoProtocolConstraints p
-                    , blk ~ Block p
-                    , hdr ~ Header p
+                    , RunDemo (SimpleBlock p c) (SimpleHeader p c)
+                    , SimpleBlockCrypto c
                     )
                  => ThreadRegistry m
                  -> BlockchainTime m
                  -> NumCoreNodes
-                 -> (CoreNodeId -> ProtocolInfo p)
+                 -> (CoreNodeId -> ProtocolInfo (SimpleBlock p c))
                  -> ChaChaDRG
                  -> NumSlots
-                 -> m (Map NodeId (Chain blk))
+                 -> m (Map NodeId (NodeConfig p, Chain (SimpleBlock p c)))
 broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots = do
 
     -- all known addresses
@@ -91,7 +89,7 @@ broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots = do
                       nodeAddrs  = map fst (Map.elems nodeUtxo)
                 ]
 
-    chans :: NodeChans m blk hdr <- createCommunicationChannels
+    chans :: NodeChans m (SimpleBlock p c) (SimpleHeader p c) <- createCommunicationChannels
 
     varRNG <- atomically $ newTVar initRNG
 
@@ -99,26 +97,29 @@ broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots = do
       let us               = fromCoreNodeId coreNodeId
           ProtocolInfo{..} = pInfo coreNodeId
 
-      let callbacks :: NodeCallbacks m blk
+      let callbacks :: NodeCallbacks m (SimpleBlock p c)
           callbacks = NodeCallbacks {
               produceBlock = \proof l slot prevPoint prevNo _txs -> do
-                let prevHash  = castHash (Chain.pointHash prevPoint)
-                    curNo     = succ prevNo
+                let curNo :: BlockNo
+                    curNo = succ prevNo
+
+                let prevHash :: ChainHash (SimpleHeader p c)
+                    prevHash = castHash (pointHash prevPoint)
 
                 -- We ignore the transactions from the mempool (which will be
                 -- empty), and instead produce some random transactions
                 txs <- genTxs addrs (getUtxo l)
-                forgeBlock pInfoConfig
-                           slot
-                           curNo
-                           prevHash
-                           txs
-                           proof
+                demoForgeBlock pInfoConfig
+                               slot
+                               curNo
+                               prevHash
+                               (map SimpleGenTx txs)
+                               proof
 
             , produceDRG      = atomically $ simChaChaT varRNG id $ drgNew
             }
 
-      chainDB <- ChainDB.openDB encode pInfoConfig pInfoInitLedger simpleHeader
+      chainDB <- ChainDB.openDB pInfoConfig pInfoInitLedger simpleHeader
 
       let nodeParams = NodeParams
             { tracer             = nullTracer
@@ -137,7 +138,7 @@ broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots = do
 
       forM_ (filter (/= us) nodeIds) $ \them -> do
         let mkCommsDown :: Show bytes
-                        => (NodeChan m blk hdr -> Channel m bytes)
+                        => (NodeChan m (SimpleBlock p c) (SimpleHeader p c) -> Channel m bytes)
                         -> Codec ps e m bytes -> NodeComms m ps e bytes
             mkCommsDown getChan codec = NodeComms {
                 ncCodec    = codec
@@ -146,7 +147,7 @@ broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots = do
                     getChan (chans Map.! us Map.! them)
               }
             mkCommsUp :: Show bytes
-                      => (NodeChan m blk hdr -> Channel m bytes)
+                      => (NodeChan m (SimpleBlock p c) (SimpleHeader p c) -> Channel m bytes)
                       -> Codec ps e m bytes -> NodeComms m ps e bytes
             mkCommsUp getChan codec = NodeComms {
                 ncCodec    = codec
@@ -161,7 +162,7 @@ broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots = do
           (mkCommsUp   chainSyncProducer  codecChainSyncId)
           (mkCommsUp   blockFetchProducer codecBlockFetchId)
 
-      return (us, node)
+      return (coreNodeId, node)
 
     -- STM variable to record the final chains of the nodes
     varRes <- atomically $ newTVar Nothing
@@ -170,8 +171,9 @@ broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots = do
       -- Wait a random amount of time after the final slot for the block fetch
       -- and chain sync to finish
       threadDelay 2000
-      res <- fmap Map.fromList $ forM nodes $ \(us, node) ->
-        (us, ) <$> ChainDB.toChain (getChainDB node)
+      res <- fmap Map.fromList $ forM nodes $ \(cid, node) ->
+        (\ch -> (fromCoreNodeId cid, (pInfoConfig (pInfo cid), ch))) <$>
+        ChainDB.toChain (getChainDB node)
       atomically $ writeTVar varRes (Just res)
 
     atomically $ blockUntilJust (readTVar varRes)
@@ -182,10 +184,10 @@ broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots = do
     coreNodeIds :: [CoreNodeId]
     coreNodeIds = enumCoreNodes numCoreNodes
 
-    getUtxo :: ExtLedgerState blk -> Utxo
+    getUtxo :: ExtLedgerState (SimpleBlock p c) -> Utxo
     getUtxo = slsUtxo . ledgerState
 
-    createCommunicationChannels :: m (NodeChans m blk hdr)
+    createCommunicationChannels :: m (NodeChans m (SimpleBlock p c) (SimpleHeader p c))
     createCommunicationChannels = fmap Map.fromList $ forM nodeIds $ \us ->
       fmap ((us, ) . Map.fromList) $ forM (filter (/= us) nodeIds) $ \them -> do
         (chainSyncConsumer,  chainSyncProducer)  <- createConnectedChannels

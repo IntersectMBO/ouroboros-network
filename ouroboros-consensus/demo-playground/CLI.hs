@@ -1,5 +1,12 @@
+{-# LANGUAGE GADTs #-}
+
 module CLI (
-    CLI(..)
+    -- * Untyped/typed protocol boundary
+    Protocol(..)
+  , SomeProtocol(..)
+  , fromProtocol
+    -- * CLI
+  , CLI(..)
   , TopologyInfo(..)
   , Command(..)
   , parseCLI
@@ -25,6 +32,49 @@ import           Ouroboros.Consensus.Util
 import           Mock.TxSubmission (command', parseMockTx)
 import           Topology (TopologyInfo (..))
 
+import qualified Test.Cardano.Chain.Genesis.Dummy as Dummy
+
+{-------------------------------------------------------------------------------
+  Untyped/typed protocol boundary
+-------------------------------------------------------------------------------}
+
+data Protocol =
+    BFT
+  | Praos
+  | MockPBFT
+  | RealPBFT
+
+
+data SomeProtocol where
+  SomeProtocol :: RunDemo blk hdr => DemoProtocol blk hdr -> SomeProtocol
+
+fromProtocol :: Protocol -> IO SomeProtocol
+fromProtocol BFT =
+    case runDemo p of
+      Dict -> return $ SomeProtocol p
+  where
+    p = DemoBFT defaultSecurityParam
+fromProtocol Praos =
+    case runDemo p of
+      Dict -> return $ SomeProtocol p
+  where
+    p = DemoPraos defaultDemoPraosParams
+fromProtocol MockPBFT =
+    case runDemo p of
+      Dict -> return $ SomeProtocol p
+  where
+    p = DemoMockPBFT defaultDemoPBftParams
+fromProtocol RealPBFT =
+    case runDemo p of
+      Dict -> return $ SomeProtocol p
+  where
+    p = DemoRealPBFT defaultDemoPBftParams genesisConfig
+    genesisConfig = Dummy.dummyConfig
+
+{-------------------------------------------------------------------------------
+  Command line arguments
+-------------------------------------------------------------------------------}
+
 data CLI = CLI {
     systemStart  :: SystemStart
   , slotDuration :: SlotLength
@@ -32,7 +82,7 @@ data CLI = CLI {
   }
 
 data Command =
-    SimpleNode  TopologyInfo (Some DemoProtocol)
+    SimpleNode  TopologyInfo Protocol
   | TxSubmitter TopologyInfo Mock.Tx
 
 parseCLI :: Parser CLI
@@ -57,19 +107,23 @@ parseSlotDuration = option (mkSlotLength <$> auto) $ mconcat [
     mkSlotLength :: Integer -> SlotLength
     mkSlotLength = slotLengthFromMillisec . (* 1000)
 
-parseProtocol :: Parser (Some DemoProtocol)
+parseProtocol :: Parser Protocol
 parseProtocol = asum [
-      flag' (Some (DemoBFT defaultSecurityParam)) $ mconcat [
+      flag' BFT $ mconcat [
           long "bft"
         , help "Use the BFT consensus algorithm"
         ]
-    , flag' (Some (DemoPraos defaultDemoPraosParams)) $ mconcat [
+    , flag' Praos $ mconcat [
           long "praos"
         , help "Use the Praos consensus algorithm"
         ]
-    , flag' (Some (DemoPBFT defaultDemoPBftParams)) $ mconcat [
-          long "pbft"
-        , help "Use the Permissive BFT consensus algorithm"
+    , flag' MockPBFT $ mconcat [
+          long "mock-pbft"
+        , help "Use the Permissive BFT consensus algorithm using a mock ledger"
+        ]
+    , flag' RealPBFT $ mconcat [
+          long "real-pbft"
+        , help "Use the Permissive BFT consensus algorithm using the real ledger"
         ]
     ]
 
