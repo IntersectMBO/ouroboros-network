@@ -7,6 +7,7 @@ module Ouroboros.Consensus.Mempool.API (
 
 import           Control.Monad.Except
 import           Data.Sequence (Seq)
+import           GHC.Stack (HasCallStack)
 
 import           Control.Monad.Class.MonadSTM
 
@@ -35,7 +36,8 @@ class UpdateLedger b => ApplyTx b where
   -- When we re-apply a transaction to a potentially different ledger state
   -- expensive checks such as cryptographic hashes can be skipped, but other
   -- checks (such as checking for double spending) must still be done.
-  reapplyTx :: LedgerConfig b
+  reapplyTx :: HasCallStack
+            => LedgerConfig b
             -> GenTx b
             -> LedgerState b
             -> Except (ApplyTxErr b) (LedgerState b)
@@ -45,7 +47,8 @@ class UpdateLedger b => ApplyTx b where
   -- In this case no error can occur.
   --
   -- See also 'ldbConfReapply' for comments on implementing this function.
-  reapplyTxSameState :: LedgerConfig b
+  reapplyTxSameState :: HasCallStack
+                     => LedgerConfig b
                      -> GenTx b
                      -> LedgerState b
                      -> LedgerState b
