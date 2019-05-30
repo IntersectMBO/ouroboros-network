@@ -7,7 +7,7 @@ import Control.Monad.Trans.Except (runExceptT)
 import Control.Tracer (Tracer (..), contramap, traceWith)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Resource (ResourceT)
-import Data.Text (Text, pack)
+import qualified Data.Text.Lazy.Builder as Text (Builder, fromString)
 import qualified Options.Applicative as Opt
 
 import qualified Network.Socket as Socket
@@ -17,7 +17,6 @@ import qualified Cardano.Binary as Binary (unAnnotated)
 import Cardano.Chain.Block (ChainValidationState (..))
 import qualified Cardano.Chain.Block as Block
 import qualified Cardano.Chain.Genesis as Genesis
-import Cardano.Chain.Slotting (FlatSlotId(..))
 import Cardano.Crypto (RequiresNetworkMagic(..))
 
 import Cardano.Shell.Constants.Types (CardanoConfiguration (..), Core (..), Genesis (..))
@@ -44,22 +43,26 @@ import qualified Logging
 --
 -- Can't give a return value other than (), by constraint of the mux interface.
 clientFold
-  :: Tracer IO Text
+  :: Tracer IO Text.Builder
   -> Genesis.Config
   -> (Block -> IO (Maybe t)) -- ^ Stop condition
   -> ChainValidationState
   -> Client.Fold (ResourceT IO) () -- Either ChainValidationError (t, ChainValidationState))
 clientFold tracer genesisConfig stopCondition cvs = Client.Fold $ pure $ Client.Continue
   (\block _ -> Client.Fold $ do
+    lift $ traceWith tracer $ case Binary.unAnnotated block of
+      Block.ABOBBlock    blk -> mconcat
+        [ "Validating block"
+        , Block.renderBlock (Genesis.configEpochSlots genesisConfig) (fmap (const ()) blk)
+        ]
+      Block.ABOBBoundary _   -> "Validating boundary block"
     outcome <- lift $ runExceptT (Block.updateChainBlockOrBoundary genesisConfig cvs (Binary.unAnnotated block))
     case outcome of
       Left err   -> do
-        let msg = pack $ mconcat ["Validation failed: ", show err]
+        let msg = mconcat ["Validation failed: ", Text.fromString (show err)]
         lift $ traceWith tracer msg
         pure $ Client.Stop ()
       Right cvs' -> do
-        let msg = pack $ mconcat ["Validated block at slot ", show (unFlatSlotId $ cvsLastSlot cvs')]
-        lift $ traceWith tracer msg
         maybeStop <- lift $ stopCondition block
         case maybeStop of
           Just t -> pure $ Client.Stop ()
@@ -147,7 +150,7 @@ main = do
     let epochSlots = Genesis.configEpochSlots genesisConfig
         stopCondition :: Block -> IO (Maybe t)
         stopCondition = const (pure Nothing)
-        tracer = contramap (\txt -> ("", Info, txt)) trace
+        tracer = contramap (\tbuilder -> ("", Info, tbuilder)) trace
         client  = Client.chainSyncClient (clientFold tracer genesisConfig stopCondition cvs)
     connectTo
       encodeTerm
