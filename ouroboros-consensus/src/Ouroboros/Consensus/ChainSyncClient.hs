@@ -32,7 +32,7 @@ import           Control.Monad.Class.MonadThrow
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Chain (genesisPoint)
+import           Ouroboros.Network.Chain (genesisPoint, genesisSlotNo)
 import           Ouroboros.Network.Protocol.ChainSync.Client
 
 import           Ouroboros.Consensus.BlockchainTime
@@ -101,7 +101,7 @@ instance ( Typeable hdr, StandardHash hdr
 data CandidateState hdr = CandidateState
     { candidateChain      :: !(AnchoredFragment hdr)
     , candidateChainState :: !(ChainState (BlockProtocol hdr))
-      -- ^ 'HeaderState' corresponding to the tip (most recent block) of the
+      -- ^ 'ChainState' corresponding to the tip (most recent block) of the
       -- 'candidateChain'.
     }
 
@@ -150,7 +150,7 @@ chainSyncClient tracer cfg toEnc btime (ClockSkew maxSkew) getCurrentChain
     -- selection.
     --
     -- We also validate the headers of a candidate chain by advancing the
-    -- 'HeaderState' with the headers, which returns an error when validation
+    -- 'ChainState' with the headers, which returns an error when validation
     -- failed. Thus, in addition to the chain fragment of each candidate, we
     -- also store a 'ChainState' corresponding to the head of the candidate
     -- chain.
@@ -176,10 +176,9 @@ chainSyncClient tracer cfg toEnc btime (ClockSkew maxSkew) getCurrentChain
     -- this invariant cannot be maintained, the upstream node is on a fork that
     -- is too distant and we should disconnect.
     --
-    -- TODO #465 Simplification for now: we don't monitor our current chain in
-    -- order to reject candidates that are no longer eligible (fork off more
-    -- than @k@ blocks in the past) or to find a better intersection point.
-    -- TODO #472 is this alright for the 'HeaderState', won't it get stale?
+    -- TODO #579 Simplification for now: we don't maintain the above invariant
+    -- yet. Additionally, we don't monitor our current chain in order to find
+    -- a better intersection point either.
     --
     -- TODO #465 Simplification for now: we don't trim candidate chains, so
     -- they might grow indefinitely.
@@ -231,7 +230,8 @@ chainSyncClient tracer cfg toEnc btime (ClockSkew maxSkew) getCurrentChain
             ChainSyncClient .  intersectUnchanged varCandidate
         }
 
-    -- One of the points we sent intersected our chain
+    -- One of the points we sent intersected our chain. This intersection
+    -- point will become the new tip of the candidate chain.
     intersectImproved :: TVar m (CandidateState hdr)
                       -> Point hdr -> Point hdr
                       -> m (Consensus ClientStIdle hdr m)
@@ -239,6 +239,21 @@ chainSyncClient tracer cfg toEnc btime (ClockSkew maxSkew) getCurrentChain
 
       CandidateState { candidateChain, candidateChainState } <- readTVar varCandidate
       -- Roll back the candidate to the @intersection@.
+      --
+      -- While the primitives in the ChainSync protocol are "roll back", "roll
+      -- forward (apply block)", etc. The /real/ primitive is "switch to
+      -- fork", which means that a roll back is always followed by applying at
+      -- least as many blocks that we rolled back.
+      --
+      -- This is important for 'rewindChainState', which can only roll back up
+      -- to @k@ blocks, /once/, i.e., we cannot keep rolling back the same
+      -- chain state multiple times, because that would mean that we store the
+      -- chain state for the /whole chain/, all the way to genesis.
+      --
+      -- So the rewind below is fine when we are switching to a fork (i.e. it
+      -- is followed by rolling forward again), but we need some guarantees
+      -- that the ChainSync protocol /does/ in fact give us a switch-to-fork
+      -- instead of a true rollback.
       (candidateChain', candidateChainState') <-
         case (,) <$> AF.rollback intersection candidateChain
                  <*> rewindChainState cfg candidateChainState (pointSlot intersection)
@@ -253,7 +268,7 @@ chainSyncClient tracer cfg toEnc btime (ClockSkew maxSkew) getCurrentChain
       -- hang on to the entire ledger state. This applies to everywhere we
       -- update the header state.
       writeTVar varCandidate CandidateState
-        { candidateChain       = candidateChain'
+        { candidateChain      = candidateChain'
         , candidateChainState = candidateChainState'
         }
       return $ requestNext varCandidate
@@ -282,10 +297,9 @@ chainSyncClient tracer cfg toEnc btime (ClockSkew maxSkew) getCurrentChain
       unless (AF.withinFragmentBounds genesisPoint candidateChain) $
         disconnect $ ForkTooDeep genesisPoint theirHead
 
-      -- Get the 'HeaderState' at genesis (0).
+      -- Get the 'ChainState' at genesis.
       let candidateChain' = Empty genesisPoint
-
-      candidateChainState' <- case rewindChainState cfg curChainState (SlotNo 0) of
+      candidateChainState' <- case rewindChainState cfg curChainState genesisSlotNo of
         Nothing -> disconnect $ ForkTooDeep genesisPoint theirHead
         Just c  -> pure c
 
@@ -394,7 +408,7 @@ chainSyncClient tracer cfg toEnc btime (ClockSkew maxSkew) getCurrentChain
           Right candidateChainState' -> return candidateChainState'
 
       writeTVar varCandidate CandidateState
-        { candidateChain       = candidateChain :> hdr
+        { candidateChain      = candidateChain :> hdr
         , candidateChainState = candidateChainState'
         }
       return $ requestNext varCandidate
@@ -427,7 +441,7 @@ chainSyncClient tracer cfg toEnc btime (ClockSkew maxSkew) getCurrentChain
             InvalidRollBack intersection theirHead
 
       writeTVar varCandidate CandidateState
-        { candidateChain       = candidateChain'
+        { candidateChain      = candidateChain'
         , candidateChainState = candidateChainState'
         }
       return $ requestNext varCandidate
