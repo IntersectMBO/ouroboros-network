@@ -251,12 +251,6 @@ mkCSLTrace tracer = case tracer of
     Wlog.Warning -> Monitoring.Warning
     Wlog.Error   -> Monitoring.Error
 
--- Problem: optparse-applicative doesn't seem to allow for choices of options
--- (due to its applicative nature). Ideally we'd have core options, then a
--- set of required options for Byron source, and required options for Shelley
--- source, which must be exclusive.
--- Can't `Alternative` do this?
-
 data ByronProxyOptions = ByronProxyOptions
   { bpoDatabasePath                :: !FilePath
   , bpoIndexPath                   :: !FilePath
@@ -264,7 +258,7 @@ data ByronProxyOptions = ByronProxyOptions
     -- ^ Optional file path; will use default configuration if none given.
   , bpoCardanoConfigurationOptions :: !CSL.ConfigurationOptions
   , bpoServerOptions               :: !ServerOptions
-  , bpoClientOptions               :: !(Maybe ClientOptions)
+  , bpoClientOptions               :: !ClientOptions
   }
 
 data ServerOptions = ServerOptions
@@ -272,7 +266,18 @@ data ServerOptions = ServerOptions
   , soServiceName :: !Network.ServiceName
   }
 
-type ClientOptions = Either ShelleyClientOptions ByronClientOptions
+-- | Until we have a storage layer which can deal with multiple sources, a
+-- Shelley source for blocks will supercede a Byron source. You can still run
+-- both a Byron server and a Shelley server (must run a Shelley server) but if
+-- a Shelley client is given, blocks will not be downloaded from Byron.
+--
+-- NB: it's confusing/bad nomenclature: in order to get a Byron _server_ you
+-- need to give Byron client options. That's because the diffusion layer for
+-- Byron bundles both of these.
+data ClientOptions = ClientOptions
+  { coShelley :: !(Maybe ShelleyClientOptions)
+  , coByron   :: !(Maybe ByronClientOptions)
+  }
 
 data ByronClientOptions = ByronClientOptions
   { bcoCardanoNetworkOptions       :: !CSL.NetworkConfigOpts
@@ -332,11 +337,15 @@ cliParser = ByronProxyOptions
     Opt.metavar "PORT" <>
     Opt.help "Port"
 
-  cliClientOptions :: Opt.Parser (Maybe ClientOptions)
-  cliClientOptions = Opt.optional $
-    (Left <$> cliShelleyClient) Opt.<|> (Right . ByronClientOptions <$> cliNetworkConfig)
+  cliClientOptions :: Opt.Parser ClientOptions
+  cliClientOptions = ClientOptions <$> cliShelleyClientOptions <*> cliByronClientOptions
 
-  cliShelleyClient = ShelleyClientOptions
+  cliByronClientOptions :: Opt.Parser (Maybe ByronClientOptions)
+  cliByronClientOptions = Opt.optional $
+    ByronClientOptions <$> cliNetworkConfig
+
+  cliShelleyClientOptions :: Opt.Parser (Maybe ShelleyClientOptions)
+  cliShelleyClientOptions = Opt.optional $ ShelleyClientOptions
     <$> cliHostName ["remote"]
     <*> cliServiceName ["remote"]
 
@@ -460,145 +469,159 @@ runServer tracer serverOptions epochSlots db = do
 runClient
   :: ( CSL.HasConfigurations )
   => Tracer IO (Monitoring.LoggerName, Monitoring.Severity, Text.Builder)
-  -> Maybe ClientOptions
+  -> ClientOptions
   -> CSL.Genesis.Config
   -> Cardano.EpochSlots
   -> DB.DB IO
   -> IO ()
-runClient tracer clientOptions genesisConfig epochSlots db = case clientOptions of
+runClient tracer clientOptions genesisConfig epochSlots db =
 
-  Nothing -> pure ()
+  case coByron clientOptions of
 
-  Just (Left shelleyClientOptions) -> do
-    addrInfosLocal  <- Network.getAddrInfo (Just addrInfoHints) (Just "127.0.0.1") (Just "0")
-    addrInfosRemote <- Network.getAddrInfo (Just addrInfoHints) (Just host) (Just port)
-    case (addrInfosLocal, addrInfosRemote) of
-      (addrInfoLocal : _, addrInfoRemote : _) -> connectToNode
-        encodeTerm
-        decodeTerm
-        (initiatorVersions epochSlots chainSyncClient)
-        (Just addrInfoLocal)
-        addrInfoRemote
-      _ -> error "no getAddrInfo"
-    where
+    -- If there's no Byron client, then there's also no Byron server, so we
+    -- just run the Shelley client, which may also be nothing (`pure ()`).
+    Nothing -> shelleyClient
 
-    host = scoHostName shelleyClientOptions
-    port = scoServiceName shelleyClientOptions
-    addrInfoHints = Network.defaultHints
-    -- | This chain sync client will first try to improve the read pointer to
-    -- the tip of the database, and then will roll forward forever, stopping
-    -- if there is a roll-back.
-    -- It makes sense given that we only have an immutable database and one
-    -- source for blocks: one read pointer improve is always enough.
-    chainSyncClient = Client.chainSyncClient fold
-      where
-      fold :: Client.Fold (ResourceT IO) ()
-      fold = Client.Fold $ do
-        tip <- lift $ DB.readTip db
-        mPoint <- case tip of
-          -- DB is empty. Can go without improving read pointer.
-          DB.TipGenesis -> pure Nothing
-          -- EBB is nice because we already have the header hash.
-          DB.TipEBB   slotNo hhash _     -> pure $ Just $ ChainSync.Point
-            { ChainSync.pointSlot = slotNo
-            , ChainSync.pointHash = hhash
+    -- If there is a Byron client, then there's also a Byron server, so we
+    -- run that, and then within the continuation decide whether to download
+    -- from Byron or Shelley depending on whether a Shelley client is defined.
+    Just byronClientOptions -> do
+      let cslTrace = mkCSLTrace tracer
+      -- Get the `NetworkConfig` from the options
+      networkConfig <- CSL.intNetworkConfigOpts
+        (Trace.named cslTrace)
+        (bcoCardanoNetworkOptions byronClientOptions)
+      let bpc :: ByronProxyConfig
+          bpc = ByronProxyConfig
+            { bpcAdoptedBVData = CSL.configBlockVersionData genesisConfig
+              -- ^ Hopefully that never needs to change.
+            , bpcNetworkConfig = networkConfig
+                { ncEnqueuePolicy = Policy.defaultEnqueuePolicyRelay
+                , ncDequeuePolicy = Policy.defaultDequeuePolicyRelay
+                }
+              -- ^ These default relay policies should do what we want.
+              -- If not, could give a --policy option and use yaml files as in
+              -- cardano-sl
+            , bpcDiffusionConfig = CSL.FullDiffusionConfiguration
+                { CSL.fdcProtocolMagic = CSL.configProtocolMagic genesisConfig
+                , CSL.fdcProtocolConstants = CSL.configProtocolConstants genesisConfig
+                , CSL.fdcRecoveryHeadersMessage = CSL.recoveryHeadersMessage
+                , CSL.fdcLastKnownBlockVersion = CSL.lastKnownBlockVersion CSL.updateConfiguration
+                , CSL.fdcConvEstablishTimeout = CSL.networkConnectionTimeout
+                -- Diffusion layer logs will have "diffusion" in their names.
+                , CSL.fdcTrace = Trace.appendName "diffusion" cslTrace
+                , CSL.fdcStreamWindow = CSL.streamWindow
+                , CSL.fdcBatchSize    = 64
+                }
+              -- 40 seconds.
+              -- TODO configurable for these 3.
+            , bpcPoolRoundInterval = 40000000
+            , bpcSendQueueSize     = 1
+            , bpcRecvQueueSize     = 1
             }
-          DB.TipBlock slotNo       bytes -> pure $ Just $ ChainSync.Point
-            { ChainSync.pointSlot = slotNo
-            , ChainSync.pointHash = hhash
-            }
-            where
-            hhash = case Binary.decodeFullAnnotatedBytes "Block or boundary" (Cardano.fromCBORABlockOrBoundary epochSlots) bytes of
-              Left cborError -> error "failed to decode block"
-              Right blk -> case blk of
-                Cardano.ABOBBoundary _ -> error "Corrupt DB: expected block but got EBB"
-                Cardano.ABOBBlock blk  -> Cardano.blockHashAnnotated blk
-        case mPoint of
-          Nothing -> Client.runFold roll
-          -- We don't need to do anything with the result; the point is that
-          -- the server now knows the proper read pointer.
-          Just point -> pure $ Client.Improve [point] $ \_ _ -> roll
-      roll :: Client.Fold (ResourceT IO) ()
-      roll = Client.Fold $ pure $ Client.Continue forward backward
-      forward :: ChainSync.Block -> ChainSync.Point -> Client.Fold (ResourceT IO) ()
-      forward blk point = Client.Fold $ do
-        lift $ traceWith (contramap chainSyncShow textTracer) (Right blk, point)
-        -- FIXME
-        -- Write one block at a time. CPS doesn't mix well with the typed
-        -- protocol style.
-        -- This will give terrible performance for the SQLite index as it is
-        -- currently defined. As a workaround, the SQLite index is set to use
-        -- non-synchronous writes (per connection).
-        -- Possible solution: do the batching automatically, within the index
-        -- itself?
-        lift $ DB.appendBlocks db $ \dbAppend ->
-          DB.appendBlock dbAppend (DB.CardanoBlockToWrite blk)
-        Client.runFold roll
-      backward :: ChainSync.Point -> ChainSync.Point -> Client.Fold (ResourceT IO) ()
-      backward point1 point2 = Client.Fold $ do
-        lift $ traceWith (contramap chainSyncShow textTracer) (Left point1, point2)
-        pure $ Client.Stop ()
-
-    chainSyncShow
-      :: (Either ChainSync.Point ChainSync.Block, ChainSync.Point)
-      -> Text.Builder
-    chainSyncShow = \(roll, _tip) -> case roll of
-      Left  back    -> mconcat
-        [ "Roll back to\n"
-        , Text.fromString (show back)
-        ]
-      Right forward -> mconcat
-        [ "Roll forward to\n"
-        , case Binary.unAnnotated forward of
-            Cardano.ABOBBoundary ebb -> Text.fromString (show ebb)
-            Cardano.ABOBBlock    blk -> Cardano.renderHeader
-              epochSlots
-              (Cardano.blockHeader (fmap (const ()) blk))
-        ]
-
-  Just (Right byronClientOptions) -> do
-    let cslTrace = mkCSLTrace tracer
-    -- Get the `NetworkConfig` from the options
-    networkConfig <- CSL.intNetworkConfigOpts
-      (Trace.named cslTrace)
-      (bcoCardanoNetworkOptions byronClientOptions)
-    let bpc :: ByronProxyConfig
-        bpc = ByronProxyConfig
-          { bpcAdoptedBVData = CSL.configBlockVersionData genesisConfig
-            -- ^ Hopefully that never needs to change.
-          , bpcNetworkConfig = networkConfig
-              { ncEnqueuePolicy = Policy.defaultEnqueuePolicyRelay
-              , ncDequeuePolicy = Policy.defaultDequeuePolicyRelay
-              }
-            -- ^ These default relay policies should do what we want.
-            -- If not, could give a --policy option and use yaml files as in
-            -- cardano-sl
-          , bpcDiffusionConfig = CSL.FullDiffusionConfiguration
-              { CSL.fdcProtocolMagic = CSL.configProtocolMagic genesisConfig
-              , CSL.fdcProtocolConstants = CSL.configProtocolConstants genesisConfig
-              , CSL.fdcRecoveryHeadersMessage = CSL.recoveryHeadersMessage
-              , CSL.fdcLastKnownBlockVersion = CSL.lastKnownBlockVersion CSL.updateConfiguration
-              , CSL.fdcConvEstablishTimeout = CSL.networkConnectionTimeout
-              -- Diffusion layer logs will have "diffusion" in their names.
-              , CSL.fdcTrace = Trace.appendName "diffusion" cslTrace
-              , CSL.fdcStreamWindow = CSL.streamWindow
-              , CSL.fdcBatchSize    = 64
-              }
-            -- 40 seconds.
-            -- TODO configurable for these 3.
-          , bpcPoolRoundInterval = 40000000
-          , bpcSendQueueSize     = 1
-          , bpcRecvQueueSize     = 1
-          }
-        genesisBlock = CSL.genesisBlock0 (CSL.configProtocolMagic genesisConfig)
-                                         (CSL.configGenesisHash genesisConfig)
-                                         (CSL.genesisLeaders genesisConfig)
-    withByronProxy (contramap (\(a, b) -> ("", a, b)) tracer) bpc db $ \bp -> void $
-      concurrently
-        (byronProxyDownload textTracer genesisBlock epochSlots db bp)
-        (byronProxyAnnounce textTracer Nothing                 db bp)
+          genesisBlock = CSL.genesisBlock0 (CSL.configProtocolMagic genesisConfig)
+                                           (CSL.configGenesisHash genesisConfig)
+                                           (CSL.genesisLeaders genesisConfig)
+      withByronProxy (contramap (\(a, b) -> ("", a, b)) tracer) bpc db $ \bp -> void $
+        concurrently (byronClient genesisBlock bp) shelleyClient
 
   where
+
+  -- Download from Byron only if there is no Shelley client.
+  -- Always announce the header to Byron peers.
+  byronClient genesisBlock bp = case coShelley clientOptions of
+    Nothing -> void $ concurrently
+      (byronProxyDownload textTracer genesisBlock epochSlots db bp)
+      (byronProxyAnnounce textTracer Nothing                 db bp)
+    Just _  -> byronProxyAnnounce textTracer Nothing db bp
+
+  shelleyClient = case coShelley clientOptions of
+    Nothing -> pure ()
+    Just shelleyClientOptions -> do
+      addrInfosLocal  <- Network.getAddrInfo (Just addrInfoHints) (Just "127.0.0.1") (Just "0")
+      addrInfosRemote <- Network.getAddrInfo (Just addrInfoHints) (Just host) (Just port)
+      case (addrInfosLocal, addrInfosRemote) of
+        (addrInfoLocal : _, addrInfoRemote : _) -> connectTo
+          encodeTerm
+          decodeTerm
+          (initiatorVersions epochSlots chainSyncClient)
+          addrInfoLocal
+          addrInfoRemote
+        _ -> error "no getAddrInfo"
+      where
+      host = scoHostName shelleyClientOptions
+      port = scoServiceName shelleyClientOptions
+      addrInfoHints = Network.defaultHints
+      -- | This chain sync client will first try to improve the read pointer to
+      -- the tip of the database, and then will roll forward forever, stopping
+      -- if there is a roll-back.
+      -- It makes sense given that we only have an immutable database and one
+      -- source for blocks: one read pointer improve is always enough.
+      chainSyncClient = Client.chainSyncClient fold
+        where
+        fold :: Client.Fold (ResourceT IO) ()
+        fold = Client.Fold $ do
+          tip <- lift $ DB.readTip db
+          mPoint <- case tip of
+            -- DB is empty. Can go without improving read pointer.
+            DB.TipGenesis -> pure Nothing
+            -- EBB is nice because we already have the header hash.
+            DB.TipEBB   slotNo hhash _     -> pure $ Just $ ChainSync.Point
+              { ChainSync.pointSlot = slotNo
+              , ChainSync.pointHash = hhash
+              }
+            DB.TipBlock slotNo       bytes -> pure $ Just $ ChainSync.Point
+              { ChainSync.pointSlot = slotNo
+              , ChainSync.pointHash = hhash
+              }
+              where
+              hhash = case Binary.decodeFullAnnotatedBytes "Block or boundary" (Cardano.fromCBORABlockOrBoundary epochSlots) bytes of
+                Left cborError -> error "failed to decode block"
+                Right blk -> case blk of
+                  Cardano.ABOBBoundary _ -> error "Corrupt DB: expected block but got EBB"
+                  Cardano.ABOBBlock blk  -> Cardano.blockHashAnnotated blk
+          case mPoint of
+            Nothing -> Client.runFold roll
+            -- We don't need to do anything with the result; the point is that
+            -- the server now knows the proper read pointer.
+            Just point -> pure $ Client.Improve [point] $ \_ _ -> roll
+        roll :: Client.Fold (ResourceT IO) ()
+        roll = Client.Fold $ pure $ Client.Continue forward backward
+        forward :: ChainSync.Block -> ChainSync.Point -> Client.Fold (ResourceT IO) ()
+        forward blk point = Client.Fold $ do
+          lift $ traceWith (contramap chainSyncShow textTracer) (Right blk, point)
+          -- FIXME
+          -- Write one block at a time. CPS doesn't mix well with the typed
+          -- protocol style.
+          -- This will give terrible performance for the SQLite index as it is
+          -- currently defined. As a workaround, the SQLite index is set to use
+          -- non-synchronous writes (per connection).
+          -- Possible solution: do the batching automatically, within the index
+          -- itself?
+          lift $ DB.appendBlocks db $ \dbAppend ->
+            DB.appendBlock dbAppend (DB.CardanoBlockToWrite blk)
+          Client.runFold roll
+        backward :: ChainSync.Point -> ChainSync.Point -> Client.Fold (ResourceT IO) ()
+        backward point1 point2 = Client.Fold $ do
+          lift $ traceWith (contramap chainSyncShow textTracer) (Left point1, point2)
+          pure $ Client.Stop ()
+
+  chainSyncShow
+    :: (Either ChainSync.Point ChainSync.Block, ChainSync.Point)
+    -> Text.Builder
+  chainSyncShow = \(roll, _tip) -> case roll of
+    Left  back    -> mconcat
+      [ "Roll back to\n"
+      , Text.fromString (show back)
+      ]
+    Right forward -> mconcat
+      [ "Roll forward to\n"
+      , case Binary.unAnnotated forward of
+          Cardano.ABOBBoundary ebb -> Text.fromString (show ebb)
+          Cardano.ABOBBlock    blk -> Cardano.renderHeader
+            epochSlots
+            (Cardano.blockHeader (fmap (const ()) blk))
+      ]
 
   textTracer :: Tracer IO Text.Builder
   textTracer = contramap
