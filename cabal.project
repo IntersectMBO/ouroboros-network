@@ -21,13 +21,13 @@ source-repository-package
   type: git
   location: https://github.com/input-output-hk/iohk-monitoring-framework
   subdir: iohk-monitoring
-  tag: cbe7ab32354f3838dc8c95c64109904c8f503347
+  tag: f1c4ceef7d7ea6fb4425484c2b19b84048a3549d
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/iohk-monitoring-framework
   subdir:   contra-tracer
-  tag: cbe7ab32354f3838dc8c95c64109904c8f503347
+  tag: f1c4ceef7d7ea6fb4425484c2b19b84048a3549d
 
 source-repository-package
   type: git
@@ -44,25 +44,25 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger
-  tag: 684195650722e4d337e90562fddcc5c2b0d17d34
+  tag: 761feffb241c2db934c599dc330131ddee034322
   subdir: .
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger
-  tag: 684195650722e4d337e90562fddcc5c2b0d17d34
+  tag: 761feffb241c2db934c599dc330131ddee034322
   subdir: crypto
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger
-  tag: 684195650722e4d337e90562fddcc5c2b0d17d34
+  tag: 761feffb241c2db934c599dc330131ddee034322
   subdir: test
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger
-  tag: 684195650722e4d337e90562fddcc5c2b0d17d34
+  tag: 761feffb241c2db934c599dc330131ddee034322
   subdir: crypto/test
 
 source-repository-package
@@ -85,7 +85,7 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-shell
-  tag: 5db8e79d319a86d48bea4cb70f1e904acae46de4
+  tag: 4e9651df29752d1205719028e288ce9e0478a373
 
 source-repository-package
   type: git

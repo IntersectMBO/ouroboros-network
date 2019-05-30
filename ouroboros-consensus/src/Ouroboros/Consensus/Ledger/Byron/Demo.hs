@@ -25,7 +25,6 @@ module Ouroboros.Consensus.Ledger.Byron.Demo
 
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
-import qualified Codec.CBOR.Encoding as Encoding
 import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Write as CBOR
 import           Control.Monad (void)
@@ -43,7 +42,6 @@ import           Data.Reflection (Given (..))
 import qualified Data.Set as Set
 import           Data.Typeable
 import qualified Data.Vector as V
-import           Data.Word (Word8)
 
 import           GHC.Stack (HasCallStack)
 
@@ -311,7 +309,7 @@ annotateBlock :: CC.Slot.EpochSlots -> CC.Block.Block -> CC.Block.ABlock ByteStr
 annotateBlock epochSlots =
       (\bs -> splice bs (CBOR.deserialiseFromBytes (CC.Block.fromCBORABlock epochSlots) bs))
     . CBOR.toLazyByteString
-    . toCBORBlockWithoutBoundary epochSlots
+    . CC.Block.toCBORBlock epochSlots
   where
     splice :: Lazy.ByteString
            -> Either err (Lazy.ByteString, CC.Block.ABlock ByteSpan)
@@ -325,7 +323,7 @@ annotateHeader :: CC.Slot.EpochSlots -> CC.Block.Header -> CC.Block.AHeader Byte
 annotateHeader epochSlots =
       (\bs -> splice bs (CBOR.deserialiseFromBytes (CC.Block.fromCBORAHeader epochSlots) bs))
     . CBOR.toLazyByteString
-    . CC.Block.toCBORHeader' epochSlots
+    . CC.Block.toCBORHeader epochSlots
   where
     splice :: Lazy.ByteString
            -> Either err (Lazy.ByteString, CC.Block.AHeader ByteSpan)
@@ -342,7 +340,7 @@ annotateHeader epochSlots =
 encodeHeader :: NodeConfig ByronExtNodeConfig
              -> ByronHeader Config -> Encoding
 encodeHeader cfg =
-      CC.Block.toCBORHeader' epochSlots
+      CC.Block.toCBORHeader epochSlots
     . void
     . unByronHeader
   where
@@ -351,7 +349,7 @@ encodeHeader cfg =
 encodeBlock :: NodeConfig ByronExtNodeConfig
             -> ByronBlock Config -> Encoding
 encodeBlock cfg =
-      toCBORBlockWithoutBoundary epochSlots
+      CC.Block.toCBORBlock epochSlots
     . void
     . unByronBlock
   where
@@ -388,14 +386,3 @@ decodeBlock cfg =
 
 decodeHeaderHash :: Decoder s (HeaderHash (ByronHeader Config))
 decodeHeaderHash = fromCBOR
-
-{-------------------------------------------------------------------------------
-  This should be exported from cardano-ledger
--------------------------------------------------------------------------------}
-
-toCBORBlockWithoutBoundary :: CC.Slot.EpochSlots -> CC.Block.Block -> Encoding
-toCBORBlockWithoutBoundary epochSlots block
-  =  Encoding.encodeListLen 3
-  <> CC.Block.toCBORHeader' epochSlots (CC.Block.blockHeader block)
-  <> toCBOR (CC.Block.blockBody block)
-  <> (Encoding.encodeListLen 1 <> toCBOR (mempty :: Map Word8 Lazy.ByteString))

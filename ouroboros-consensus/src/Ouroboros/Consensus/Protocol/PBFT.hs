@@ -265,6 +265,6 @@ data PBftCardanoCrypto
 
 instance (Given ProtocolMagicId, Signable CardanoDSIGN ~ HasSignTag) => PBftCrypto PBftCardanoCrypto where
   type PBftDSIGN PBftCardanoCrypto = CardanoDSIGN
-  type PBftVerKeyHash PBftCardanoCrypto = CC.Common.StakeholderId
+  type PBftVerKeyHash PBftCardanoCrypto = CC.Common.KeyHash
 
-  hashVerKey (VerKeyCardanoDSIGN pk)= CC.Common.mkStakeholderId pk
+  hashVerKey (VerKeyCardanoDSIGN pk)= CC.Common.hashKey pk

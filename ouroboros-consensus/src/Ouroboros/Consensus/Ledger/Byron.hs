@@ -25,12 +25,12 @@ import qualified Data.Bimap as Bimap
 import           Data.Coerce (coerce)
 import           Data.FingerTree (Measured (..))
 import           Data.Foldable (find, foldl')
-import           Data.Map (Map)
 import           Data.Reflection (Given (..))
 import qualified Data.Sequence as Seq
+import           Data.Set (Set)
 import qualified Data.Text as T
 import           Data.Typeable
-import           Data.Word (Word16, Word8)
+import           Data.Word (Word8)
 import           Formatting
 
 import           Cardano.Binary (Annotated (..), reAnnotate, toCBOR)
@@ -256,9 +256,9 @@ numGenKeys cfg = case length genKeys of
       | otherwise
       -> fromIntegral n
   where
-    genKeys :: Map CC.Common.StakeholderId Word16
-    genKeys = CC.Genesis.unGenesisWStakeholders
-            . CC.Genesis.configBootStakeholders
+    genKeys :: Set CC.Common.KeyHash
+    genKeys = CC.Genesis.unGenesisKeyHashes
+            . CC.Genesis.configGenesisKeyHashes
             $ cfg
 
 {-------------------------------------------------------------------------------
