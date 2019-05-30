@@ -18,7 +18,7 @@ class UpdateLedger b => ApplyTx b where
   -- The mempool (and, accordingly, blocks) consist of "generalized
   -- transactions"; this could be "proper" transactions (transferring funds) but
   -- also other kinds of things such as update proposals, delegations, etc.
-  type family GenTx b :: *
+  data family GenTx b :: *
 
   -- | Updating the ledger with a single transaction may result in a different
   -- error type as when updating it with a block

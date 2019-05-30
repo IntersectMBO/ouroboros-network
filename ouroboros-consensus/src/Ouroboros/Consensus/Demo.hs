@@ -22,12 +22,13 @@ module Ouroboros.Consensus.Demo (
   , DemoLeaderSchedule
   , DemoMockPBFT
   , DemoRealPBFT
-  , Block
-  , Header
   , NumCoreNodes(..)
   , ProtocolInfo(..)
   , protocolInfo
   , RunDemo(..)
+  , DemoBlock(..)
+  , DemoHeader(..)
+  , DemoHeaderHash(..)
   , runDemo
     -- * Support for runnig the demos
   , defaultSecurityParam
@@ -39,6 +40,7 @@ module Ouroboros.Consensus.Demo (
 
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
+import           Codec.Serialise (Serialise)
 import qualified Codec.Serialise as Serialise
 import           Control.Monad.Except
 import           Crypto.Random (MonadRandom)
@@ -61,7 +63,7 @@ import qualified Cardano.Crypto as Cardano
 import qualified Cardano.Crypto.Signing as Cardano.KeyGen
 
 import           Ouroboros.Network.Block (BlockNo, ChainHash (..), HasHeader,
-                     HeaderHash, SlotNo, StandardHash)
+                     HeaderHash, SlotNo)
 import           Ouroboros.Network.BlockFetch (SizeInBytes)
 import           Ouroboros.Network.Chain (genesisPoint)
 
@@ -99,47 +101,51 @@ type DemoMockPBFT       = ExtNodeConfig (PBftLedgerView PBftMockCrypto) (PBft PB
 type DemoRealPBFT       = ExtNodeConfig ByronDemoConfig (PBft PBftCardanoCrypto)
 
 -- | Consensus protocol to use
-data DemoProtocol p where
+data DemoProtocol blk hdr where
   -- | Run BFT against the mock ledger
-  DemoBFT            :: SecurityParam -> DemoProtocol DemoBFT
+  DemoBFT
+    :: SecurityParam
+    -> DemoProtocol (SimpleBlock  DemoBFT SimpleBlockMockCrypto)
+                    (SimpleHeader DemoBFT SimpleBlockMockCrypto)
 
   -- | Run Praos against the mock ledger
-  DemoPraos          :: PraosParams -> DemoProtocol DemoPraos
+  DemoPraos
+    :: PraosParams
+    -> DemoProtocol (SimpleBlock  DemoPraos SimpleBlockMockCrypto)
+                    (SimpleHeader DemoPraos SimpleBlockMockCrypto)
 
   -- | Run Praos against the mock ledger but with an explicit leader schedule
-  DemoLeaderSchedule :: LeaderSchedule -> PraosParams -> DemoProtocol DemoLeaderSchedule
+  DemoLeaderSchedule
+    :: LeaderSchedule
+    -> PraosParams
+    -> DemoProtocol (SimpleBlock  DemoLeaderSchedule SimpleBlockMockCrypto)
+                    (SimpleHeader DemoLeaderSchedule SimpleBlockMockCrypto)
 
   -- | Run PBFT against the mock ledger
-  DemoMockPBFT       :: PBftParams -> DemoProtocol DemoMockPBFT
+  DemoMockPBFT
+    :: PBftParams
+    -> DemoProtocol (SimpleBlock  DemoMockPBFT SimpleBlockMockCrypto)
+                    (SimpleHeader DemoMockPBFT SimpleBlockMockCrypto)
 
   -- | Run PBFT against the real ledger
-  DemoRealPBFT       :: PBftParams -> DemoProtocol DemoRealPBFT
-
-type family Block p = b | b -> p where
-  Block DemoRealPBFT = ByronBlock ByronDemoConfig
-
-  -- Demos using mock ledger/block
-  Block p = SimpleBlock p SimpleBlockMockCrypto
-
-type family Header p :: * where
-  Header DemoRealPBFT = ByronHeader ByronDemoConfig
-
-  -- Demos using mock ledger/block
-  Header p = SimpleHeader p SimpleBlockMockCrypto
+  DemoRealPBFT
+    :: PBftParams
+    -> DemoProtocol (ByronBlock  ByronDemoConfig)
+                    (ByronHeader ByronDemoConfig)
 
 -- | Data required to run the specified protocol.
-data ProtocolInfo p = ProtocolInfo {
-        pInfoConfig     :: NodeConfig p
+data ProtocolInfo b = ProtocolInfo {
+        pInfoConfig     :: NodeConfig (BlockProtocol b)
+      , pInfoInitState  :: NodeState  (BlockProtocol b)
         -- | The ledger state at genesis
-      , pInfoInitLedger :: ExtLedgerState (Block p)
-      , pInfoInitState  :: NodeState p
+      , pInfoInitLedger :: ExtLedgerState b
       }
 
 newtype NumCoreNodes = NumCoreNodes Int
   deriving (Show)
 
 -- | Info needed to run the selected protocol
-protocolInfo :: DemoProtocol p -> NumCoreNodes -> CoreNodeId -> ProtocolInfo p
+protocolInfo :: DemoProtocol blk hdr -> NumCoreNodes -> CoreNodeId -> ProtocolInfo blk
 protocolInfo (DemoBFT securityParam) (NumCoreNodes numCoreNodes) (CoreNodeId nid) =
     ProtocolInfo {
         pInfoConfig = BftNodeConfig {
@@ -356,29 +362,29 @@ genesisStakeDist addrDist =
   Who created a block?
 -------------------------------------------------------------------------------}
 
-class HasCreator p where
-    getCreator :: NodeConfig p -> Block p -> CoreNodeId
+class HasCreator b where
+    getCreator :: NodeConfig (BlockProtocol b) -> b -> CoreNodeId
 
-instance HasCreator DemoBFT where
+instance HasCreator (SimpleBlock DemoBFT c) where
     getCreator _ = CoreNodeId
                  . verKeyIdFromSigned
                  . bftSignature
                  . Mock.headerOuroboros
                  . Mock.simpleHeader
 
-instance HasCreator DemoPraos where
+instance HasCreator (SimpleBlock DemoPraos c) where
     getCreator _ = praosCreator
                  . praosExtraFields
                  . encPayloadP
                  . Mock.headerOuroboros
                  . Mock.simpleHeader
 
-instance HasCreator DemoLeaderSchedule where
+instance HasCreator (SimpleBlock DemoLeaderSchedule c) where
     getCreator _ = getWLSPayload
                  . Mock.headerOuroboros
                  . Mock.simpleHeader
 
-instance HasCreator DemoMockPBFT where
+instance HasCreator (SimpleBlock DemoMockPBFT c) where
     getCreator _ = CoreNodeId
                  . verKeyIdFromSigned
                  . pbftSignature
@@ -386,7 +392,7 @@ instance HasCreator DemoMockPBFT where
                  . Mock.headerOuroboros
                  . Mock.simpleHeader
 
-instance HasCreator DemoRealPBFT where
+instance HasCreator (ByronBlock ByronDemoConfig) where
     getCreator (EncNodeConfig _ ByronDemoConfig{..}) (ByronBlock b) =
         fromMaybe (error "getCreator: unknown key") $ Bimap.lookup key pbftCoreNodes
      where
@@ -402,83 +408,29 @@ instance HasCreator DemoRealPBFT where
   Additional functions needed to run the demo
 -------------------------------------------------------------------------------}
 
--- | The protocol @p@ uses simple (mock) blocks and headers
-type IsSimple p =
-  ( Block  p ~ SimpleBlock p SimpleBlockMockCrypto
-  , Header p ~ SimpleHeader p SimpleBlockMockCrypto
-  , Serialise.Serialise (Payload p (SimplePreHeader p SimpleBlockMockCrypto))
-  )
+class DemoHeaderHash hh where
+  demoEncodeHeaderHash :: hh -> Encoding
+  demoDecodeHeaderHash :: Decoder s hh
 
-class ( OuroborosTag p
-      , ProtocolLedgerView (Block p)
-      , HasCreator p
-      , Condense  (Payload p (PreHeader (Block p)))
-      , Eq        (Payload p (PreHeader (Block p)))
-      , Show      (Payload p (PreHeader (Block p)))
-      , BlockProtocol (Block  p) ~ p
-      , BlockProtocol (Header p) ~ p
-      , HeaderHash (Block p) ~ HeaderHash (Header p)
-      , StandardHash (Header p)
-      , HasHeader (Header p)
-      , LedgerConfigView (Block p)
-      , SupportedBlock (BlockProtocol (Header p)) (Header p)
-      , PreHeader (Block p) ~ PreHeader (Header p)
-      , Condense (Block p)
-      , Condense [Block p]
-      , Condense (Header p)
-      , Condense (ChainHash (Header p))
-      , ApplyTx (Block p)
-      , Show (Block p)
-      , Show (Header p)
-      ) => RunDemo p where
+class ( DemoHeaderHash (HeaderHash hdr)
+      , SupportedBlock (BlockProtocol hdr) hdr
+      , HasHeader hdr
+      , Condense hdr
+      , Condense (ChainHash hdr)
+      ) => DemoHeader hdr where
+  demoEncodeHeader   :: NodeConfig (BlockProtocol hdr) -> hdr -> Encoding
+  demoDecodeHeader   :: NodeConfig (BlockProtocol hdr) -> Decoder s hdr
+  demoBlockFetchSize :: hdr -> SizeInBytes
 
-  demoForgeBlock         :: (HasNodeState p m, MonadRandom m)
-                         => NodeConfig p
-                         -> SlotNo               -- ^ Current slot
-                         -> BlockNo              -- ^ Current block number
-                         -> ChainHash (Header p) -- ^ Previous hash
-                         -> [GenTx (Block p)]    -- ^ Txs to add in the block
-                         -> IsLeader p
-                         -> m (Block p)
-  default demoForgeBlock :: IsSimple p
-                         => (HasNodeState p m, MonadRandom m)
-                         => NodeConfig p
-                         -> SlotNo               -- ^ Current slot
-                         -> BlockNo              -- ^ Current block number
-                         -> ChainHash (Header p) -- ^ Previous hash
-                         -> [GenTx (Block p)]    -- ^ Txs to add in the block
-                         -> IsLeader p
-                         -> m (Block p)
-
-  demoGetHeader         ::               Block p -> Header p
-  default demoGetHeader :: IsSimple p => Block p -> Header p
-
-  -- We provide context for the encoders and decoders in case they need access
-  -- to stuff like "number of slots in an epoch"
-
-  demoEncodeHeader             ::               NodeConfig p -> Header p -> Encoding
-  default demoEncodeHeader     :: IsSimple p => NodeConfig p -> Header p -> Encoding
-
-  demoEncodeHeaderHash         ::               NodeConfig p -> HeaderHash (Header p) -> Encoding
-  default demoEncodeHeaderHash :: IsSimple p => NodeConfig p -> HeaderHash (Header p) -> Encoding
-
-  demoEncodeBlock              ::               NodeConfig p -> Block p -> Encoding
-  default demoEncodeBlock      :: IsSimple p => NodeConfig p -> Block p -> Encoding
-
-  demoDecodeHeader             ::               forall s. NodeConfig p -> Decoder s (Header p)
-  default demoDecodeHeader     :: IsSimple p => forall s. NodeConfig p -> Decoder s (Header p)
-
-  demoDecodeHeaderHash         ::               forall s. NodeConfig p -> Decoder s (HeaderHash (Header p))
-  default demoDecodeHeaderHash :: IsSimple p => forall s. NodeConfig p -> Decoder s (HeaderHash (Header p))
-
-  demoDecodeBlock              ::               forall s. NodeConfig p -> Decoder s (Block p)
-  default demoDecodeBlock      :: IsSimple p => forall s. NodeConfig p -> Decoder s (Block p)
-
-  demoBlockFetchSize           ::               Header p -> SizeInBytes
-  default demoBlockFetchSize   :: IsSimple p => Header p -> SizeInBytes
-
-  demoBlockMatchesHeader         ::               Header p -> Block p -> Bool
-  default demoBlockMatchesHeader :: IsSimple p => Header p -> Block p -> Bool
+class ( ProtocolLedgerView blk
+      , LedgerConfigView   blk
+      , Condense           blk
+      , Condense          [blk]
+      , ApplyTx            blk
+      , Show (Payload (BlockProtocol blk) (PreHeader blk))
+      ) => DemoBlock blk where
+  demoEncodeBlock :: NodeConfig (BlockProtocol blk) -> blk -> Encoding
+  demoDecodeBlock :: forall s. NodeConfig (BlockProtocol blk) -> Decoder s blk
 
   -- | Construct transaction from mock transaction
   --
@@ -486,22 +438,100 @@ class ( OuroborosTag p
   -- the command line. These then need to be translated to "real" transactions
   -- for the ledger that we are running. Of course, this translation will
   -- necessarily be limited and will rely on things like 'generatedSecrets'.
-  demoMockTx         ::               NodeConfig p -> Mock.Tx -> GenTx (Block p)
-  default demoMockTx :: IsSimple p => NodeConfig p -> Mock.Tx -> GenTx (Block p)
+  demoMockTx :: NodeConfig (BlockProtocol blk) -> Mock.Tx -> GenTx blk
 
+class ( DemoHeader hdr
+      , DemoBlock blk
+      , BlockProtocol blk ~ BlockProtocol hdr
+      , HeaderHash    blk ~ HeaderHash    hdr
+      ) => RunDemo blk hdr where
+  demoForgeBlock         :: (HasNodeState (BlockProtocol blk) m, MonadRandom m)
+                         => NodeConfig (BlockProtocol blk)
+                         -> SlotNo         -- ^ Current slot
+                         -> BlockNo        -- ^ Current block number
+                         -> ChainHash hdr  -- ^ Previous hash
+                         -> [GenTx blk]    -- ^ Txs to add in the block
+                         -> IsLeader (BlockProtocol blk)
+                         -> m blk
+  demoGetHeader          :: blk -> hdr
+  demoBlockMatchesHeader :: hdr -> blk -> Bool
+
+{-------------------------------------------------------------------------------
+  RunDemo instance for the mock ledger
+-------------------------------------------------------------------------------}
+
+instance HashAlgorithm h => DemoHeaderHash (Hash h a) where
+  demoEncodeHeaderHash = Serialise.encode
+  demoDecodeHeaderHash = Serialise.decode
+
+instance ( OuroborosTag p
+         , SupportedBlock p (SimpleHeader p SimpleBlockMockCrypto)
+         , Serialise (Payload p (SimplePreHeader p SimpleBlockMockCrypto))
+         , Condense  (Payload p (SimplePreHeader p SimpleBlockMockCrypto))
+         ) => DemoHeader (SimpleHeader p SimpleBlockMockCrypto) where
+  demoEncodeHeader   = const Serialise.encode
+  demoDecodeHeader   = const Serialise.decode
+  demoBlockFetchSize = Mock.headerBlockSize . Mock.headerPreHeader
+
+instance ( OuroborosTag p
+         , ProtocolLedgerView (SimpleBlock p SimpleBlockMockCrypto)
+         , Condense  (Payload p (SimplePreHeader p SimpleBlockMockCrypto))
+         , Serialise (Payload p (SimplePreHeader p SimpleBlockMockCrypto))
+         , Show      (Payload p (SimplePreHeader p SimpleBlockMockCrypto))
+         ) => DemoBlock (SimpleBlock p SimpleBlockMockCrypto) where
+  demoEncodeBlock = const Serialise.encode
+  demoDecodeBlock = const Serialise.decode
+  demoMockTx      = \_ -> Mock.SimpleGenTx
+
+instance ( OuroborosTag p
+         , ProtocolLedgerView (SimpleBlock  p SimpleBlockMockCrypto)
+         , SupportedBlock p   (SimpleHeader p SimpleBlockMockCrypto)
+         , Condense  (Payload p (SimplePreHeader p SimpleBlockMockCrypto))
+         , Serialise (Payload p (SimplePreHeader p SimpleBlockMockCrypto))
+         , Show      (Payload p (SimplePreHeader p SimpleBlockMockCrypto))
+         ) => RunDemo (SimpleBlock  p SimpleBlockMockCrypto)
+                      (SimpleHeader p SimpleBlockMockCrypto) where
   demoForgeBlock         = Mock.forgeSimpleBlock
   demoGetHeader          = Mock.simpleHeader
-  demoEncodeHeader       = const Serialise.encode
-  demoEncodeHeaderHash   = const Serialise.encode
-  demoEncodeBlock        = const Serialise.encode
-  demoDecodeHeader       = const Serialise.decode
-  demoDecodeHeaderHash   = const Serialise.decode
-  demoDecodeBlock        = const Serialise.decode
-  demoBlockFetchSize     = Mock.headerBlockSize . Mock.headerPreHeader
   demoBlockMatchesHeader = Mock.blockMatchesHeader
-  demoMockTx             = \_ -> id
 
-runDemo :: DemoProtocol p -> Dict (RunDemo p)
+{-------------------------------------------------------------------------------
+  RunDemo instance for PBFT with the real ledger
+-------------------------------------------------------------------------------}
+
+instance DemoHeaderHash Cardano.Block.HeaderHash where
+  demoEncodeHeaderHash = encodeByronDemoHeaderHash
+  demoDecodeHeaderHash = decodeByronDemoHeaderHash
+
+instance ( Given Cardano.Block.HeaderHash
+         , Given Cardano.Slot.EpochSlots
+         ) => DemoHeader (ByronHeader ByronDemoConfig) where
+  demoEncodeHeader   = encodeByronDemoHeader
+  demoDecodeHeader   = decodeByronDemoHeader
+  demoBlockFetchSize = const 2000 -- TODO
+
+instance ( Given Cardano.Block.HeaderHash
+         , Given Cardano.ProtocolMagicId
+         , Given Cardano.Slot.EpochSlots
+         ) => DemoBlock (ByronBlock ByronDemoConfig) where
+  demoEncodeBlock = encodeByronDemoBlock
+  demoDecodeBlock = decodeByronDemoBlock
+  demoMockTx      = elaborateByronTx
+
+instance ( Given Cardano.Block.HeaderHash
+         , Given Cardano.ProtocolMagicId
+         , Given Cardano.Slot.EpochSlots
+         ) => RunDemo (ByronBlock  ByronDemoConfig)
+                      (ByronHeader ByronDemoConfig) where
+  demoForgeBlock         = forgeByronDemoBlock
+  demoGetHeader          = byronHeader
+  demoBlockMatchesHeader = \_hdr _blk -> True -- TODO
+
+{-------------------------------------------------------------------------------
+  Evidence that we can run all the supported demos
+-------------------------------------------------------------------------------}
+
+runDemo :: DemoProtocol blk hdr -> Dict (RunDemo blk hdr)
 runDemo DemoBFT{}            = Dict
 runDemo DemoPraos{}          = Dict
 runDemo DemoLeaderSchedule{} = Dict
@@ -510,26 +540,3 @@ runDemo DemoRealPBFT{}       = give (Dummy.dummyEpochSlots)
                              $ give (Cardano.Genesis.gdProtocolMagicId Dummy.dummyGenesisData)
                              $ give (coerce @_ @Cardano.Block.HeaderHash Dummy.dummyGenesisHash)
                              $ Dict
-
--- Protocols using SimpleBlock
-instance RunDemo DemoBFT
-instance RunDemo DemoPraos
-instance RunDemo DemoLeaderSchedule
-instance RunDemo DemoMockPBFT
-
-instance ( Given Cardano.ProtocolMagicId
-         , Given Cardano.Slot.EpochSlots
-         , Given Cardano.Block.HeaderHash
-         ) => RunDemo DemoRealPBFT where
-
-  demoForgeBlock       = forgeByronDemoBlock
-  demoGetHeader        = byronHeader
-  demoEncodeHeader     = encodeByronDemoHeader
-  demoEncodeHeaderHash = encodeByronDemoHeaderHash
-  demoEncodeBlock      = encodeByronDemoBlock
-  demoDecodeHeader     = decodeByronDemoHeader
-  demoDecodeHeaderHash = decodeByronDemoHeaderHash
-  demoDecodeBlock      = decodeByronDemoBlock
-  demoBlockFetchSize   = const 2000       -- TODO
-  demoBlockMatchesHeader _hdr _blk = True -- TODO
-  demoMockTx           =  elaborateByronTx

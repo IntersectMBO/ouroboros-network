@@ -33,7 +33,6 @@ import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
 import           Ouroboros.Consensus.Demo
 import           Ouroboros.Consensus.Node
-import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.STM
@@ -57,15 +56,14 @@ runNode cli@CLI{..} = do
       TxSubmitter topology tx ->
         handleTxSubmission topology tx
       SimpleNode topology protocol -> do
-        Some p <- fromProtocol protocol
-        case runDemo p of
-          Dict -> handleSimpleNode p cli topology
+        SomeProtocol p <- fromProtocol protocol
+        handleSimpleNode p cli topology
 
 -- | Sets up a simple node, which will run the chain sync protocol and block
 -- fetch protocol, and, if core, will also look at the mempool when trying to
 -- create a new block.
-handleSimpleNode :: forall p. RunDemo p
-                 => DemoProtocol p -> CLI -> TopologyInfo -> IO ()
+handleSimpleNode :: forall blk hdr. RunDemo blk hdr
+                 => DemoProtocol blk hdr -> CLI -> TopologyInfo -> IO ()
 handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
     putStrLn $ "System started at " <> show systemStart
     t@(NetworkTopology nodeSetups) <-
@@ -85,14 +83,14 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
 
     withThreadRegistry $ \registry -> do
 
-      let callbacks :: NodeCallbacks IO (Block p)
+      let callbacks :: NodeCallbacks IO blk
           callbacks = NodeCallbacks {
               produceDRG   = drgNew
             , produceBlock = \proof _l slot prevPoint prevBlockNo txs -> do
                 let curNo :: BlockNo
                     curNo = succ prevBlockNo
 
-                    prevHash :: ChainHash (Header p)
+                    prevHash :: ChainHash hdr
                     prevHash = castHash (pointHash prevPoint)
 
                  -- The transactions we get are consistent; the only reason not
@@ -106,9 +104,10 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
                                proof
           }
 
-      chainDB :: ChainDB IO (Block p) (Header p) <- ChainDB.openDB
-        pInfoConfig pInfoInitLedger
-        demoGetHeader
+      chainDB :: ChainDB IO blk hdr <- ChainDB.openDB
+                                         pInfoConfig
+                                         pInfoInitLedger
+                                         demoGetHeader
 
       btime  <- realBlockchainTime registry slotDuration systemStart
       let tracer = contramap ((show myNodeId <> " | ") <>) stdoutTracer
@@ -144,7 +143,7 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
 
       watchChain :: ThreadRegistry IO
                  -> Tracer IO String
-                 -> ChainDB IO (Block p) (Header p)
+                 -> ChainDB IO blk hdr
                  -> IO ()
       watchChain registry tracer chainDB = onEachChange
           registry fingerprint initFingerprint
@@ -160,8 +159,8 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
       -- We need to make sure that both nodes read from the same file
       -- We therefore use the convention to distinguish between
       -- upstream and downstream from the perspective of the "lower numbered" node
-      addUpstream' :: ProtocolInfo p
-                   -> NodeKernel IO NodeId (Block p) (Header p)
+      addUpstream' :: ProtocolInfo blk
+                   -> NodeKernel IO NodeId blk hdr
                    -> NodeId
                    -> IO ()
       addUpstream' pInfo@ProtocolInfo{..} kernel producerNodeId =
@@ -178,15 +177,15 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
             }
           nodeCommsBF = NodeComms {
               ncCodec    = codecBlockFetch
-                             (demoEncodeBlock      pInfoConfig)
-                             (demoEncodeHeaderHash pInfoConfig)
-                             (demoDecodeBlock      pInfoConfig)
-                             (demoDecodeHeaderHash pInfoConfig)
+                             (demoEncodeBlock pInfoConfig)
+                             demoEncodeHeaderHash
+                             (demoDecodeBlock pInfoConfig)
+                             demoDecodeHeaderHash
             , ncWithChan = NamedPipe.withPipeChannel "block-fetch" direction
             }
 
-      addDownstream' :: ProtocolInfo p
-                     -> NodeKernel IO NodeId (Block p) (Header p)
+      addDownstream' :: ProtocolInfo blk
+                     -> NodeKernel IO NodeId blk hdr
                      -> NodeId
                      -> IO ()
       addDownstream' pInfo@ProtocolInfo{..} kernel consumerNodeId =
@@ -203,17 +202,17 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
             }
           nodeCommsBF = NodeComms {
               ncCodec    = codecBlockFetch
-                             (demoEncodeBlock      pInfoConfig)
-                             (demoEncodeHeaderHash pInfoConfig)
-                             (demoDecodeBlock      pInfoConfig)
-                             (demoDecodeHeaderHash pInfoConfig)
+                             (demoEncodeBlock pInfoConfig)
+                             demoEncodeHeaderHash
+                             (demoDecodeBlock pInfoConfig)
+                             demoDecodeHeaderHash
             , ncWithChan = NamedPipe.withPipeChannel "block-fetch" direction
             }
 
-      encodePoint' :: ProtocolInfo p -> Point (Header p) -> Encoding
+      encodePoint' :: ProtocolInfo blk -> Point hdr -> Encoding
       encodePoint' ProtocolInfo{..} =
-          Block.encodePoint $ Block.encodeChainHash (demoEncodeHeaderHash pInfoConfig)
+          Block.encodePoint $ Block.encodeChainHash demoEncodeHeaderHash
 
-      decodePoint' :: forall s. ProtocolInfo p -> Decoder s (Point (Header p))
+      decodePoint' :: forall s. ProtocolInfo blk -> Decoder s (Point hdr)
       decodePoint' ProtocolInfo{..} =
-          Block.decodePoint $ Block.decodeChainHash (demoDecodeHeaderHash pInfoConfig)
+          Block.decodePoint $ Block.decodeChainHash demoDecodeHeaderHash

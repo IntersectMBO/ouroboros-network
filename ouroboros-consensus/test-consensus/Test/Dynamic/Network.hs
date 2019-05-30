@@ -10,7 +10,6 @@ module Test.Dynamic.Network (
     broadcastNetwork
   ) where
 
-import           Codec.Serialise (Serialise)
 import           Control.Monad
 import           Control.Tracer (nullTracer)
 import           Crypto.Number.Generate (generateBetween)
@@ -32,7 +31,6 @@ import           Ouroboros.Network.Codec (AnyMessage, Codec)
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain
-import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.Protocol.BlockFetch.Codec
 import           Ouroboros.Network.Protocol.BlockFetch.Type
 import           Ouroboros.Network.Protocol.ChainSync.Codec
@@ -45,7 +43,6 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Mock
 import qualified Ouroboros.Consensus.Ledger.Mock as Mock
 import           Ouroboros.Consensus.Node
-import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random
@@ -69,16 +66,13 @@ broadcastNetwork :: forall m p c.
                     , MonadTime  m
                     , MonadTimer m
                     , MonadThrow (STM m)
-                    , RunDemo p
+                    , RunDemo (SimpleBlock p c) (SimpleHeader p c)
                     , SimpleBlockCrypto c
-                    , Block p ~ SimpleBlock p c
-                    , SupportedBlock p (SimpleHeader p c)
-                    , Serialise (Payload p (SimplePreHeader p c))
                     )
                  => ThreadRegistry m
                  -> BlockchainTime m
                  -> NumCoreNodes
-                 -> (CoreNodeId -> ProtocolInfo p)
+                 -> (CoreNodeId -> ProtocolInfo (SimpleBlock p c))
                  -> ChaChaDRG
                  -> NumSlots
                  -> m (Map NodeId (Chain (SimpleBlock p c)))
@@ -105,18 +99,21 @@ broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots = do
       let callbacks :: NodeCallbacks m (SimpleBlock p c)
           callbacks = NodeCallbacks {
               produceBlock = \proof l slot prevPoint prevNo _txs -> do
-                let prevHash  = castHash (Chain.pointHash prevPoint)
-                    curNo     = succ prevNo
+                let curNo :: BlockNo
+                    curNo = succ prevNo
+
+                let prevHash :: ChainHash (SimpleHeader p c)
+                    prevHash = castHash (pointHash prevPoint)
 
                 -- We ignore the transactions from the mempool (which will be
                 -- empty), and instead produce some random transactions
                 txs <- genTxs addrs (getUtxo l)
                 demoForgeBlock pInfoConfig
-                           slot
-                           curNo
-                           prevHash
-                           txs
-                           proof
+                               slot
+                               curNo
+                               prevHash
+                               (map SimpleGenTx txs)
+                               proof
 
             , produceDRG      = atomically $ simChaChaT varRNG id $ drgNew
             }

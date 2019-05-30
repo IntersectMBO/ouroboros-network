@@ -35,6 +35,7 @@ import qualified Ouroboros.Network.Chain as Chain
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Demo
+import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Node (NodeId)
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Praos
@@ -92,7 +93,7 @@ prop_simple_praos_convergence params numCoreNodes numSlots =
     PraosParams{..} = params
 
     isValid :: [NodeId]
-            -> Map NodeId (Chain (Block DemoPraos))
+            -> Map NodeId (Chain (SimpleBlock DemoPraos SimpleBlockMockCrypto))
             -> Property
     isValid nodeIds final = counterexample (show final) $
       -- Oh dear, oh dear. This node config isn't used except in the RealPBFT

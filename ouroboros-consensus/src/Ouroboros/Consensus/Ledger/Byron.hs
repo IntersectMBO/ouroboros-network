@@ -418,14 +418,12 @@ instance ( Given Crypto.ProtocolMagicId
   Mempool integration
 -------------------------------------------------------------------------------}
 
--- | Generalized transactions in Byron
---
--- TODO: This is still missing the other cases (this shouldn't be a newtype)
--- TODO: Should this use ATxAux instead?
-newtype ByronGenTx = ByronTx { unByronTx :: CC.UTxO.ATxAux ByteString }
-
 instance ApplyTx (ByronBlock cfg) where
-  type GenTx      (ByronBlock cfg) = ByronGenTx
+  -- | Generalized transactions in Byron
+  --
+  -- TODO: This is still missing the other cases (this shouldn't be a newtype)
+  data GenTx (ByronBlock cfg) = ByronTx { unByronTx :: CC.UTxO.ATxAux ByteString }
+
   type ApplyTxErr (ByronBlock cfg) = CC.UTxO.UTxOValidationError
 
   applyTx   = applyByronGenTx False
@@ -441,14 +439,14 @@ instance ApplyTx (ByronBlock cfg) where
 
 applyByronGenTx :: Bool -- ^ Have we verified this transaction previously?
                 -> LedgerConfig (ByronBlock cfg)
-                -> ByronGenTx
+                -> GenTx (ByronBlock cfg)
                 -> LedgerState (ByronBlock cfg)
                 -> Except CC.UTxO.UTxOValidationError
                           (LedgerState (ByronBlock cfg))
 applyByronGenTx _reapply (ByronLedgerConfig cfg) = \genTx st@ByronLedgerState{..} ->
     (\x -> st { blsCurrent = x }) <$> go genTx blsCurrent
   where
-    go :: ByronGenTx
+    go :: GenTx (ByronBlock cfg)
        -> CC.Block.ChainValidationState
        -> Except CC.UTxO.UTxOValidationError CC.Block.ChainValidationState
     go (ByronTx tx) cvs = wrapCVS <$> CC.UTxO.updateUTxO env utxo [tx]
@@ -509,7 +507,7 @@ forgeByronDemoBlock
   -> SlotNo                                -- ^ Current slot
   -> BlockNo                               -- ^ Current block number
   -> ChainHash (ByronHeader cfg)           -- ^ Previous hash
-  -> [ByronGenTx]                          -- ^ Txs to add in the block
+  -> [GenTx (ByronBlock cfg)]              -- ^ Txs to add in the block
   -> ()                                    -- ^ Leader proof (IsLeader)
   -> m (ByronBlock ByronDemoConfig)
 forgeByronDemoBlock cfg curSlot curNo prevHash txs () = do
@@ -615,7 +613,7 @@ forgeByronDemoBlock cfg curSlot curNo prevHash txs () = do
 --
 -- This is adapted from 'Test.Cardano.Chain.Elaboration.UTxO.elaborateTxWits'
 elaborateByronTx :: NodeConfig (ExtNodeConfig ByronDemoConfig (PBft PBftCardanoCrypto))
-                 -> Mock.Tx -> ByronGenTx
+                 -> Mock.Tx -> GenTx (ByronBlock cfg)
 elaborateByronTx cfg (Mock.Tx ins outs) =
     ByronTx $ CC.UTxO.ATxAux (annotate tx) (annotate witness)
   where
@@ -754,9 +752,8 @@ encodeByronDemoBlock cfg =
   where
     epochSlots = pbftEpochSlots (encNodeConfigExt cfg)
 
-encodeByronDemoHeaderHash :: NodeConfig (ExtNodeConfig ByronDemoConfig (PBft PBftCardanoCrypto))
-                          -> HeaderHash (ByronHeader ByronDemoConfig) -> Encoding
-encodeByronDemoHeaderHash _cfg = toCBOR
+encodeByronDemoHeaderHash :: HeaderHash (ByronHeader ByronDemoConfig) -> Encoding
+encodeByronDemoHeaderHash = toCBOR
 
 encodeByronDemoPreHeader :: PreHeader (ByronBlock ByronDemoConfig) -> Encoding
 encodeByronDemoPreHeader = toCBOR
@@ -787,9 +784,8 @@ decodeByronDemoBlock cfg =
 
     epochSlots = pbftEpochSlots (encNodeConfigExt cfg)
 
-decodeByronDemoHeaderHash :: NodeConfig (ExtNodeConfig ByronDemoConfig (PBft PBftCardanoCrypto))
-                          -> Decoder s (HeaderHash (ByronHeader ByronDemoConfig))
-decodeByronDemoHeaderHash _cfg = fromCBOR
+decodeByronDemoHeaderHash :: Decoder s (HeaderHash (ByronHeader ByronDemoConfig))
+decodeByronDemoHeaderHash = fromCBOR
 
 {-------------------------------------------------------------------------------
   This should be exported from -ledger

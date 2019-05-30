@@ -1,9 +1,14 @@
+{-# LANGUAGE GADTs #-}
+
 module CLI (
-    CLI(..)
+    -- * Untyped/typed protocol boundary
+    Protocol(..)
+  , SomeProtocol(..)
+  , fromProtocol
+    -- * CLI
+  , CLI(..)
   , TopologyInfo(..)
   , Command(..)
-  , Protocol(..)
-  , fromProtocol
   , parseCLI
   -- * Handy re-exports
   , execParser
@@ -29,6 +34,49 @@ import           Topology (TopologyInfo (..))
 
 import qualified Test.Cardano.Chain.Genesis.Dummy as Dummy
 
+{-------------------------------------------------------------------------------
+  Untyped/typed protocol boundary
+-------------------------------------------------------------------------------}
+
+data Protocol =
+    BFT
+  | Praos
+  | MockPBFT
+  | RealPBFT
+
+
+data SomeProtocol where
+  SomeProtocol :: RunDemo blk hdr => DemoProtocol blk hdr -> SomeProtocol
+
+fromProtocol :: Protocol -> IO SomeProtocol
+fromProtocol BFT =
+    case runDemo p of
+      Dict -> return $ SomeProtocol p
+  where
+    p = DemoBFT defaultSecurityParam
+fromProtocol Praos =
+    case runDemo p of
+      Dict -> return $ SomeProtocol p
+  where
+    p = DemoPraos defaultDemoPraosParams
+fromProtocol MockPBFT =
+    case runDemo p of
+      Dict -> return $ SomeProtocol p
+  where
+    p = DemoMockPBFT (defaultDemoPBftParams genesisConfig)
+    -- TODO: This is nasty
+    genesisConfig = error "genesis config not needed when using mock ledger"
+fromProtocol RealPBFT =
+    case runDemo p of
+      Dict -> return $ SomeProtocol p
+  where
+    p = DemoRealPBFT (defaultDemoPBftParams genesisConfig)
+    genesisConfig = Dummy.dummyConfig
+
+{-------------------------------------------------------------------------------
+  Command line arguments
+-------------------------------------------------------------------------------}
+
 data CLI = CLI {
     systemStart  :: SystemStart
   , slotDuration :: SlotLength
@@ -38,27 +86,6 @@ data CLI = CLI {
 data Command =
     SimpleNode  TopologyInfo Protocol
   | TxSubmitter TopologyInfo Mock.Tx
-
-data Protocol =
-    BFT
-  | Praos
-  | MockPBFT
-  | RealPBFT
-
-fromProtocol :: Protocol -> IO (Some DemoProtocol)
-fromProtocol BFT =
-    return $ Some $ DemoBFT defaultSecurityParam
-fromProtocol Praos =
-    return $ Some $ DemoPraos defaultDemoPraosParams
-fromProtocol MockPBFT =
-    return $ Some $ DemoMockPBFT (defaultDemoPBftParams genesisConfig)
-  where
-    -- TODO: This is nasty
-    genesisConfig = error "genesis config not needed when using mock ledger"
-fromProtocol RealPBFT = do
-    return $ Some $ DemoRealPBFT (defaultDemoPBftParams genesisConfig)
-  where
-    genesisConfig = Dummy.dummyConfig
 
 parseCLI :: Parser CLI
 parseCLI = CLI

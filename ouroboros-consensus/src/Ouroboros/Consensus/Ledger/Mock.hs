@@ -33,6 +33,8 @@ module Ouroboros.Consensus.Ledger.Mock (
   , SimpleBody(..)
   , forgeSimpleBlock
   , blockMatchesHeader
+    -- * Mempool
+  , GenTx(..)
     -- * Updating the Ledger state
   , LedgerState(..)
   , AddrDist
@@ -327,7 +329,7 @@ forgeSimpleBlock :: forall m p c.
                  -> SlotNo                          -- ^ Current slot
                  -> BlockNo                         -- ^ Current block number
                  -> ChainHash (SimpleHeader p c)    -- ^ Previous hash
-                 -> [Tx]                            -- ^ Txs to add in the block
+                 -> [GenTx (SimpleBlock p c)]       -- ^ Txs to add in the block
                  -> IsLeader p
                  -> m (SimpleBlock p c)
 forgeSimpleBlock cfg curSlot curNo prevHash txs proof = do
@@ -338,7 +340,7 @@ forgeSimpleBlock cfg curSlot curNo prevHash txs proof = do
       }
   where
     body :: SimpleBody
-    body = SimpleBody txs
+    body = SimpleBody (map simpleGenTx txs)
 
     -- We use the size of the body, not of the whole block (= header + body),
     -- since the header size is fixed and this size is only used for
@@ -466,7 +468,7 @@ instance ( OuroborosTag p
          , SimpleBlockCrypto c
          , Serialise (Payload p (SimplePreHeader p c))
          ) => ApplyTx (SimpleBlock p c) where
-  type GenTx      (SimpleBlock p c) = Tx
+  newtype GenTx   (SimpleBlock p c) = SimpleGenTx { simpleGenTx :: Tx }
   type ApplyTxErr (SimpleBlock p c) = LedgerError (SimpleBlock p c)
 
   applyTx            = \_ -> updateSimpleLedgerState
@@ -475,6 +477,12 @@ instance ( OuroborosTag p
     where
       mustSucceed (Left  _)  = error "reapplyTxSameState: unexpected error"
       mustSucceed (Right st) = st
+
+instance HasUtxo (GenTx (SimpleBlock p c)) where
+  txIns      = txIns      . simpleGenTx
+  txOuts     = txOuts     . simpleGenTx
+  confirmed  = confirmed  . simpleGenTx
+  updateUtxo = updateUtxo . simpleGenTx
 
 {-------------------------------------------------------------------------------
   Support for various consensus algorithms

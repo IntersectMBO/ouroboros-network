@@ -2,6 +2,7 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 module Test.Dynamic.Util (
     allEqual
@@ -34,7 +35,8 @@ import           Ouroboros.Network.Chain (Chain (..))
 import qualified Ouroboros.Network.Chain as Chain
 
 import           Ouroboros.Consensus.BlockchainTime
-import           Ouroboros.Consensus.Demo (HasCreator (..), Block)
+import           Ouroboros.Consensus.Demo (HasCreator (..))
+import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Node
 import           Ouroboros.Consensus.Protocol.Abstract (NodeConfig)
 import           Ouroboros.Consensus.Protocol.LeaderSchedule
@@ -43,17 +45,17 @@ import qualified Ouroboros.Consensus.Util.Chain as Chain
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
-allEqual :: forall b. (Condense (Block b), Eq (Block b), HasHeader (Block b)) => [Chain (Block b)] -> Property
+allEqual :: forall b. (Condense b, Eq b, HasHeader b) => [Chain b] -> Property
 allEqual []             = property True
 allEqual [_]            = property True
 allEqual (x : xs@(_:_)) =
     let c = foldl' Chain.commonPrefix x xs
     in  foldl' (\prop d -> prop .&&. f c d) (property True) xs
   where
-    f :: Chain (Block b) -> Chain (Block b) -> Property
+    f :: Chain b -> Chain b -> Property
     f c d = counterexample (g c d) $ c == d
 
-    g :: Chain (Block b) -> Chain (Block b) -> String
+    g :: Chain b -> Chain b -> String
     g c d = case (Chain.lastSlot c, Chain.lastSlot d) of
         (Nothing, Nothing) -> error "impossible case"
         (Nothing, Just t)  ->    "empty intersection of non-empty chains (one reaches slot "
@@ -76,7 +78,7 @@ allEqual (x : xs@(_:_)) =
                               <> " /= "
                               <> condense d
 
-shortestLength :: Map NodeId (Chain (Block b)) -> Natural
+shortestLength :: Map NodeId (Chain b) -> Natural
 shortestLength = fromIntegral . minimum . map Chain.length . Map.elems
 
 {-------------------------------------------------------------------------------
@@ -86,8 +88,8 @@ shortestLength = fromIntegral . minimum . map Chain.length . Map.elems
 data BlockInfo b = BlockInfo
     { biSlot     :: !SlotNo
     , biCreator  :: !(Maybe CoreNodeId)
-    , biHash     :: !(ChainHash (Block b))
-    , biPrevious :: !(Maybe (ChainHash (Block b)))
+    , biHash     :: !(ChainHash b)
+    , biPrevious :: !(Maybe (ChainHash b))
     }
 
 genesisBlockInfo :: BlockInfo b
@@ -98,7 +100,9 @@ genesisBlockInfo = BlockInfo
     , biPrevious = Nothing
     }
 
-blockInfo :: (HasHeader (Block b), HasCreator b) => NodeConfig b -> Block b -> BlockInfo b
+
+blockInfo :: (HasHeader b, HasCreator b)
+          => NodeConfig (BlockProtocol b) -> b -> BlockInfo b
 blockInfo nc b = BlockInfo
     { biSlot     = blockSlot b
     , biCreator  = Just $ getCreator nc b
@@ -136,26 +140,26 @@ data EdgeLabel = EdgeLabel
 instance Labellable EdgeLabel where
     toLabelValue = const $ StrLabel Text.empty
 
-tracesToDot :: forall b. (HasHeader (Block b), HasCreator b)
-            => NodeConfig b
-            -> Map NodeId (Chain (Block b))
+tracesToDot :: forall b. (HasHeader b, HasCreator b)
+            => NodeConfig (BlockProtocol b)
+            -> Map NodeId (Chain b)
             -> String
 tracesToDot nc traces = Text.unpack $ printDotGraph $ graphToDot quickParams graph
   where
-    chainBlockInfos :: Chain (Block b) -> Map (ChainHash (Block b)) (BlockInfo b)
+    chainBlockInfos :: Chain b -> Map (ChainHash b) (BlockInfo b)
     chainBlockInfos = Chain.foldChain f (Map.singleton GenesisHash genesisBlockInfo)
       where
         f m b = let info = blockInfo nc b
                 in  Map.insert (biHash info) info m
 
-    blockInfos :: Map (ChainHash (Block b)) (BlockInfo b)
+    blockInfos :: Map (ChainHash b) (BlockInfo b)
     blockInfos = Map.unions $ map chainBlockInfos $ Map.elems traces
 
-    lastHash :: Chain (Block b) -> ChainHash (Block b)
+    lastHash :: Chain b -> ChainHash b
     lastHash Genesis  = GenesisHash
     lastHash (_ :> b) = BlockHash $ blockHash b
 
-    blockInfosAndBelievers :: Map (ChainHash (Block b)) (BlockInfo b, Set NodeId)
+    blockInfosAndBelievers :: Map (ChainHash b) (BlockInfo b, Set NodeId)
     blockInfosAndBelievers = Map.foldlWithKey f i traces
       where
         i = (\info -> (info, Set.empty)) <$> blockInfos
@@ -165,7 +169,7 @@ tracesToDot nc traces = Text.unpack $ printDotGraph $ graphToDot quickParams gra
             (lastHash chain)
             m
 
-    hashToId :: Map (ChainHash (Block b)) Node
+    hashToId :: Map (ChainHash b) Node
     hashToId = Map.fromList $ zip (Map.keys blockInfosAndBelievers) [0..]
 
     ns :: [LNode NodeLabel]
@@ -190,10 +194,10 @@ tracesToDot nc traces = Text.unpack $ printDotGraph $ graphToDot quickParams gra
     graph :: Gr NodeLabel EdgeLabel
     graph = mkGraph ns es
 
-leaderScheduleFromTrace :: forall b. (HasCreator b, HasHeader (Block b))
-                        => NodeConfig b
+leaderScheduleFromTrace :: forall b. (HasCreator b, HasHeader b)
+                        => NodeConfig (BlockProtocol b)
                         -> NumSlots
-                        -> Map NodeId (Chain (Block b))
+                        -> Map NodeId (Chain b)
                         -> LeaderSchedule
 leaderScheduleFromTrace nc (NumSlots numSlots) =
     LeaderSchedule . Map.foldl' (Chain.foldChain step) initial
@@ -201,7 +205,7 @@ leaderScheduleFromTrace nc (NumSlots numSlots) =
     initial :: Map SlotNo [CoreNodeId]
     initial = Map.fromList [(slot, []) | slot <- [1 .. fromIntegral numSlots]]
 
-    step :: Map SlotNo [CoreNodeId] -> Block b -> Map SlotNo [CoreNodeId]
+    step :: Map SlotNo [CoreNodeId] -> b -> Map SlotNo [CoreNodeId]
     step m b = Map.adjust (insert $ getCreator nc b) (blockSlot b) m
 
     insert :: CoreNodeId -> [CoreNodeId] -> [CoreNodeId]

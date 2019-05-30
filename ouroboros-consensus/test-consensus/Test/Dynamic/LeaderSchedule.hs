@@ -33,6 +33,7 @@ import           Ouroboros.Network.Chain (Chain)
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Demo
+import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Node
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.LeaderSchedule
@@ -82,7 +83,7 @@ prop_simple_leader_schedule_convergence numSlots numCoreNodes params seed =
   where
     nodeConfig = error "NodeConfig required in LeaderSchedule tests"
     isValid :: [NodeId]
-            -> Map NodeId (Chain (Block DemoLeaderSchedule))
+            -> Map NodeId (Chain (SimpleBlock DemoLeaderSchedule SimpleBlockMockCrypto))
             -> Property
     isValid nodeIds final =
           counterexample (tracesToDot nodeConfig final)

@@ -24,6 +24,7 @@ import           Test.Tasty.QuickCheck
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Demo
+import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Node
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.Random
@@ -55,12 +56,13 @@ prop_simple_bft_convergence k numCoreNodes =
       numCoreNodes
   where
     isValid :: [NodeId]
-            -> Map NodeId (Chain (Block DemoBFT))
+            -> Map NodeId (Chain (SimpleBlock DemoBFT SimpleBlockMockCrypto))
             -> Property
     isValid nodeIds final = counterexample (show final) $
           tabulate "shortestLength" [show (rangeK k (shortestLength final))]
      $    Map.keys final === nodeIds
      .&&. allEqual (takeChainPrefix <$> Map.elems final)
       where
-        takeChainPrefix :: Chain (Block DemoBFT) -> Chain (Block DemoBFT)
+        takeChainPrefix :: Chain (SimpleBlock DemoBFT SimpleBlockMockCrypto)
+                        -> Chain (SimpleBlock DemoBFT SimpleBlockMockCrypto)
         takeChainPrefix = id -- in BFT, chains should indeed all be equal.
