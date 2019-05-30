@@ -8,6 +8,7 @@ module Ouroboros.Byron.Proxy.Network.Protocol where
 
 import qualified Codec.CBOR.Term as CBOR
 import Codec.Serialise (Serialise)
+import Codec.SerialiseTerm (CodecCBORTerm (..))
 import Control.Monad.Class.MonadST (MonadST)
 import Control.Monad.Class.MonadThrow (MonadThrow)
 import Control.Monad.IO.Unlift (MonadUnliftIO)
@@ -38,13 +39,7 @@ newtype VNumber = VNumber
   { getVNumber :: Word16
   } deriving (Show, Eq, Ord, Enum, Serialise)
 
--- | For versioning: how to encode/decode a CBOR term.
-data CodecCBORTerm t = CodecCBORTerm
-  { encodeTerm :: t -> CBOR.Term
-  , decodeTerm :: CBOR.Term -> Either Text t
-  }
-
-unitCodecCBORTerm :: CodecCBORTerm ()
+unitCodecCBORTerm :: CodecCBORTerm Text ()
 unitCodecCBORTerm = CodecCBORTerm
   { encodeTerm = const CBOR.TNull
   , decodeTerm = \term -> case term of
@@ -73,7 +68,7 @@ initiatorVersions
   :: ( Monad m, MonadST m, MonadUnliftIO m, MonadThrow m, MonadThrow (ResourceT m) )
   => Cardano.EpochSlots -- ^ Needed for the codec, sadly
   -> ChainSyncClient Block Point (ResourceT m) ()
-  -> Versions VNumber CodecCBORTerm (MuxApplication InitiatorApp Ptcl m)
+  -> Versions VNumber (CodecCBORTerm Text) (MuxApplication InitiatorApp Ptcl m)
 initiatorVersions epochSlots client = Versions $ Map.fromList
   [ (VNumber 0, Sigma () (Version clientMuxApp unitCodecCBORTerm))
   ]
@@ -87,7 +82,7 @@ responderVersions
   :: ( Monad m, MonadST m, MonadUnliftIO m, MonadThrow m, MonadThrow (ResourceT m) )
   => Cardano.EpochSlots -- ^ Needed for the codec; must match that of the initiator.
   -> ChainSyncServer Block Point (ResourceT m) ()
-  -> Versions VNumber CodecCBORTerm (MuxApplication ResponderApp Ptcl m)
+  -> Versions VNumber (CodecCBORTerm Text) (MuxApplication ResponderApp Ptcl m)
 responderVersions epochSlots server = Versions $ Map.fromList
   [ (VNumber 0, Sigma () (Version serverMuxApp unitCodecCBORTerm))
   ]

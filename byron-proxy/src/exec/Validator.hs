@@ -2,6 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleInstances #-}
 
+import Codec.SerialiseTerm (CodecCBORTerm (..))
 import Control.Monad.Trans.Except (runExceptT)
 import Control.Tracer (Tracer (..), contramap, traceWith)
 import Control.Monad.Trans.Class (lift)

@@ -7,6 +7,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE ApplicativeDo #-}
 
+import Codec.SerialiseTerm (CodecCBORTerm (..))
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.Async (wait, concurrently)
 import Control.Concurrent.STM (STM, atomically, retry)
