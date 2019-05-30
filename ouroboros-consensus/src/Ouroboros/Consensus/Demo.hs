@@ -476,7 +476,7 @@ instance ( Given Cardano.Block.HeaderHash
          ) => DemoHeader (ByronHeader ByronDemo.Config) where
   demoEncodeHeader   = ByronDemo.encodeHeader
   demoDecodeHeader   = ByronDemo.decodeHeader
-  demoBlockFetchSize = const 2000 -- TODO
+  demoBlockFetchSize = const 2000 -- TODO #593
 
 instance ( Given Cardano.Block.HeaderHash
          , Given Cardano.ProtocolMagicId
@@ -493,7 +493,7 @@ instance ( Given Cardano.Block.HeaderHash
                       (ByronHeader ByronDemo.Config) where
   demoForgeBlock         = ByronDemo.forgeBlock
   demoGetHeader          = byronHeader
-  demoBlockMatchesHeader = \_hdr _blk -> True -- TODO
+  demoBlockMatchesHeader = \_hdr _blk -> True -- TODO #595
 
 {-------------------------------------------------------------------------------
   Evidence that we can run all the supported demos
