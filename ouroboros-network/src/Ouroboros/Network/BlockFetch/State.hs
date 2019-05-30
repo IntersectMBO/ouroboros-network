@@ -16,6 +16,7 @@ module Ouroboros.Network.BlockFetch.State (
     TraceFetchClientState(..),
   ) where
 
+import           Data.Functor.Contravariant (contramap)
 import qualified Data.Map.Strict as Map
 import           Data.Map.Strict (Map)
 import qualified Data.Set as Set
@@ -23,7 +24,7 @@ import           Data.Void
 
 import           Control.Monad.Class.MonadSTM
 import           Control.Exception (assert)
-import           Control.Tracer (Tracer, traceWith, contramap)
+import           Control.Tracer (Tracer, traceWith)
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment(..))

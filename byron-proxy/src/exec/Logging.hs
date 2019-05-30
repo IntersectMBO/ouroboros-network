@@ -5,6 +5,8 @@ module Logging where
 import Control.Concurrent (myThreadId)
 import Control.Tracer (Tracer (..))
 import Data.Text (Text, pack)
+import qualified Data.Text.Lazy as Text (toStrict)
+import qualified Data.Text.Lazy.Builder as Text
 import Data.Time.Clock.POSIX (getCurrentTime)
 
 import qualified Cardano.BM.Configuration.Model as Monitoring (setupFromRepresentation)
@@ -41,9 +43,9 @@ withLogging mLoggerConfig name k = do
 -- the current time.
 convertTrace
   :: Monitoring.Trace IO Text
-  -> Tracer IO (Monitoring.LoggerName, Monitoring.Severity, Text)
+  -> Tracer IO (Monitoring.LoggerName, Monitoring.Severity, Text.Builder)
 convertTrace trace = case trace of
-  Tracer f -> Tracer $ \(name, sev, text) -> do
+  Tracer f -> Tracer $ \(name, sev, tbuilder) -> do
     tid <- pack . show <$> myThreadId
     now <- getCurrentTime
     let logMeta    = Monitoring.LOMeta
@@ -52,6 +54,7 @@ convertTrace trace = case trace of
                        , Monitoring.severity = sev
                        , Monitoring.privacy = Monitoring.Public
                        }
+        text       = Text.toStrict (Text.toLazyText tbuilder)
         logContent = Monitoring.LogMessage text
         logObject  = Monitoring.LogObject name logMeta logContent
     f logObject

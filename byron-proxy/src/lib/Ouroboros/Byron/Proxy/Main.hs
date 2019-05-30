@@ -27,6 +27,7 @@ import Data.Ord (comparing)
 import Data.Proxy (Proxy (..))
 import Data.Tagged (Tagged (..), tagWith, untag)
 import Data.Text (Text)
+import qualified Data.Text.Lazy.Builder as Text (Builder)
 import Numeric.Natural (Natural)
 
 import Cardano.BM.Data.Severity (Severity (..))
@@ -406,7 +407,7 @@ instance Exception EmptyDatabaseError
 -- The `DB` given must not be empty. If it is, `getTip` will throw an
 -- exception. So be sure to seed the DB with the genesis block.
 withByronProxy
-  :: Tracer IO (Severity, Text)
+  :: Tracer IO (Severity, Text.Builder)
   -> ByronProxyConfig
   -> DB IO
   -> (ByronProxy -> IO t)

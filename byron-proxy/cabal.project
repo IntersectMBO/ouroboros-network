@@ -9,13 +9,13 @@ packages: byron-proxy.cabal
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/iohk-monitoring-framework
-  tag: cbe7ab32354f3838dc8c95c64109904c8f503347
+  tag: f1c4ceef7d7ea6fb4425484c2b19b84048a3549d
   subdir: iohk-monitoring
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/iohk-monitoring-framework
-  tag: cbe7ab32354f3838dc8c95c64109904c8f503347
+  tag: f1c4ceef7d7ea6fb4425484c2b19b84048a3549d
   subdir: contra-tracer
 
 --
@@ -198,13 +198,13 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger
-  tag: 595cfb5b20863fca869550423a4e27aab8e68aed
+  tag: 761feffb241c2db934c599dc330131ddee034322
   subdir: .
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger
-  tag: 595cfb5b20863fca869550423a4e27aab8e68aed
+  tag: 761feffb241c2db934c599dc330131ddee034322
   subdir: crypto
 
 source-repository-package

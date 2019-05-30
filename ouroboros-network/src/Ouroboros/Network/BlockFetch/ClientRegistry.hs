@@ -14,6 +14,7 @@ module Ouroboros.Network.BlockFetch.ClientRegistry (
     readFetchClientsStateVars,
   ) where
 
+import           Data.Functor.Contravariant (contramap)
 import qualified Data.Map as Map
 import           Data.Map (Map)
 
@@ -21,7 +22,7 @@ import           Control.Monad (unless)
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Exception (assert)
-import           Control.Tracer (Tracer, contramap)
+import           Control.Tracer (Tracer)
 
 import           Ouroboros.Network.BlockFetch.ClientState
 
