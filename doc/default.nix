@@ -35,6 +35,10 @@ stdenv.mkDerivation {
      cd doc
      latexmk -view=pdf network;
   '';
-  installPhase = "install -Dt $out network.pdf";
+  installPhase = ''
+    install -Dt $out network.pdf
+    mkdir $out/nix-support
+    echo "doc-pdf $out/network.pdf" >> $out/nix-support/hydra-build-products
+  '';
 }
 
