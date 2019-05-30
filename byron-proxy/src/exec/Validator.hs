@@ -55,10 +55,10 @@ clientFold tracer genesisConfig stopCondition cvs = Client.Fold $ pure $ Client.
   (\block _ -> Client.Fold $ do
     lift $ traceWith tracer $ case Binary.unAnnotated block of
       Block.ABOBBlock    blk -> mconcat
-        [ "Validating block"
+        [ "Validating block\n"
         , Block.renderBlock (Genesis.configEpochSlots genesisConfig) (fmap (const ()) blk)
         ]
-      Block.ABOBBoundary _   -> "Validating boundary block"
+      Block.ABOBBoundary _   -> "Validating boundary block\n"
     let validationMode = fromBlockValidationMode Block.BlockValidation
     outcome <- lift $ (`runReaderT` validationMode) $ runExceptT
       (Block.updateChainBlockOrBoundary genesisConfig cvs (Binary.unAnnotated block))
