@@ -29,7 +29,9 @@ data PeerPipelined ps (pr :: PeerRole) (st :: ps) m a where
 -- In particular it has two extra type arguments:
 --
 --  * @(n :: 'Outstanding')@ records the number of outstanding pipelined
---    responses.
+--    responses. Note that when this is 'Z' then we have no such outstanding
+--    responses, and we are in an equivalent situation to a normal
+--    non-pipelined 'Peer'
 --
 --  * @c@ records the internal type of the pipelined responses.
 --
@@ -44,15 +46,31 @@ data PeerSender ps (pr :: PeerRole) (st :: ps) (n :: Outstanding) c m a where
                  -> a
                  -> PeerSender ps pr st Z c m a
 
-  -- | A normal non-pipelined 'Yield'. Note that this can only be used for
-  -- messages that keep agency (or terminal messages), not for ones that
-  -- give away agency, since the 'PeerSender' has no equivalent of 'Await'.
-  -- The only way to await is via a pipelined yield: 'SenderPipeline'.
+  -- | A normal non-pipelined 'Yield'.
+  --
+  -- Note that we cannot mix pipelined and normal synchronous syle, so this
+  -- can only be used when there are no outstanding pipelined responses.
+  --
+  -- The @n ~ 'Z'@ constraint provides the type level guarantees that there
+  -- are no outstanding pipelined responses.
   --
   SenderYield    :: !(WeHaveAgency pr st)
-                 -> Message ps st st'
-                 -> PeerSender   ps pr (st' :: ps) n c m a
-                 -> PeerSender   ps pr (st  :: ps) n c m a
+                 -> Message    ps st st'
+                 -> PeerSender ps pr st' Z c m a
+                 -> PeerSender ps pr st  Z c m a
+
+  -- | A normal non-pipelined 'Await'. Note that this can only be used .
+  --
+  -- Note that we cannot mix pipelined and normal synchronous syle, so this
+  -- can only be used when there are no outstanding pipelined responses.
+  --
+  -- The @n ~ 'Z'@ constraint provides the type level guarantees that there
+  -- are no outstanding pipelined responses.
+  --
+  SenderAwait    :: !(TheyHaveAgency pr st)
+                 -> (forall st'. Message    ps st st'
+                              -> PeerSender ps pr st' Z c m a)
+                 -> PeerSender              ps pr st  Z c m a
 
   -- | A pipelined equivalent of 'Yield'. The key difference is that instead
   -- of moving into the immediate next state @st'@, the sender jumps directly
@@ -80,9 +98,9 @@ data PeerSender ps (pr :: PeerRole) (st :: ps) (n :: Outstanding) c m a where
   -- Since presenting the first choice is optional, this allows expressing
   -- both a blocking collect and a non-blocking collect. This allows
   -- implementations to express policies such as sending a short sequence
-  -- of messages and then waiting for all replies, but also a maximum pipelining
-  -- policy that keeps a large number of messages in flight but collects results
-  -- eagerly.
+  -- of messages and then waiting for all replies, but also a maximum
+  -- pipelining policy that keeps a large number of messages in flight but
+  -- collects results eagerly.
   --
   -- The type records the fact that when collecting a response, the number of
   -- outstanding pipelined responses decreases by one. The type also guarantees
@@ -95,8 +113,9 @@ data PeerSender ps (pr :: PeerRole) (st :: ps) (n :: Outstanding) c m a where
 
 -- | Type level count of the number of outstanding pipelined yields for which
 -- we have not yet collected a receiver result. Used in 'PeerSender' to ensure
--- 'SenderCollect' and 'SenderDone' are only used when there are, and
--- respectively are not, outstanding results to collect.
+-- 'SenderCollect' is only used when there are outstanding results to collect,
+-- and to ensure 'SenderYield', 'SenderAwait' and 'SenderDone' are only used
+-- when there are none.
 --
 type Outstanding = N
 

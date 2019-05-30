@@ -179,6 +179,7 @@ connectPipelined cs0 (PeerPipelined peerA) peerB =
     goSender cs q a        (Effect b) = b >>= \b' -> goSender cs q a  b'
 
     goSender cs q (SenderYield _ msg a) (Await _ b) = goSender cs q a (b msg)
+    goSender cs q (SenderAwait _ a) (Yield _ msg b) = goSender cs q (a msg) b
 
     -- This does the receiver effects immediately, as if there were no
     -- pipelining.
@@ -218,6 +219,18 @@ connectPipelined cs0 (PeerPipelined peerA) peerB =
       absurd (exclusionLemma_ClientAndServerHaveAgency stA stB)
 
     goSender _ _ (SenderYield (ServerAgency stA) _ _) (Yield (ClientAgency stB) _ _) =
+      absurd (exclusionLemma_ClientAndServerHaveAgency stB stA)
+
+    goSender _ _ (SenderAwait (ClientAgency stA) _) (Done stB _) =
+      absurd (exclusionLemma_NobodyAndClientHaveAgency stB stA)
+
+    goSender _ _ (SenderAwait (ServerAgency stA) _) (Done stB _) =
+      absurd (exclusionLemma_NobodyAndServerHaveAgency stB stA)
+
+    goSender _ _ (SenderAwait (ClientAgency stA) _) (Await (ServerAgency stB) _) =
+      absurd (exclusionLemma_ClientAndServerHaveAgency stA stB)
+
+    goSender _ _ (SenderAwait (ServerAgency stA) _) (Await (ClientAgency stB) _) =
       absurd (exclusionLemma_ClientAndServerHaveAgency stB stA)
 
     goSender _ _ (SenderPipeline (ClientAgency stA) _ _ _) (Done stB _) =
@@ -278,6 +291,7 @@ forgetPipelined (PeerPipelined peer) = goSender EmptyQ peer
     goSender EmptyQ (SenderDone     st     k) = Done st k
     goSender q      (SenderEffect          k) = Effect (goSender q <$> k)
     goSender q      (SenderYield    st m   k) = Yield st m (goSender q k)
+    goSender q      (SenderAwait    st     k) = Await st   (goSender q <$> k)
     goSender q      (SenderPipeline st m r k) = Yield st m (goReceiver q k r)
     goSender (ConsQ x q) (SenderCollect  _ k) = goSender q (k x)
     -- Here by picking the second continuation in Collect we resolve the

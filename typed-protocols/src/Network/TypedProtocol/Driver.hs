@@ -87,6 +87,7 @@ instance Show (AnyMessage ps) => Show (TraceSendRecv ps) where
   show (TraceSendMsg msg) = "Send " ++ show msg
   show (TraceRecvMsg msg) = "Recv " ++ show msg
 
+
 --
 -- Driver for normal peers
 --
@@ -111,8 +112,14 @@ runPeer tr Codec{encode, decode} channel@Channel{send} =
           Maybe bytes
        -> Peer ps pr st' m a
        -> m a
-    go trailing (Effect k) = k >>= go trailing
-    go _        (Done _ x) = return x
+    go  trailing (Effect k) = k >>= go trailing
+    go _trailing (Done _ x) = return x
+    -- TODO: we should return the trailing here to allow for one protocols to
+    -- be run after another on the same channel. It could be the case that the
+    -- opening message of the next protocol arrives in the same data chunk as
+    -- the final message of the previous protocol. This would also mean we
+    -- would need to pass in any trailing data as an input. Alternatively we
+    -- would need to move to a Channel type that can push back trailing data.
 
     go trailing (Yield stok msg k) = do
       traceWith tr (TraceSendMsg (AnyMessage msg))
@@ -129,6 +136,19 @@ runPeer tr Codec{encode, decode} channel@Channel{send} =
         Left failure ->
           throwM failure
 
+    -- Note that we do not complain about trailing data in any case, neither
+    -- the 'Await' nor 'Done' cases.
+    --
+    -- We want to be able to use a non-pipelined peer in communication with
+    -- a pipelined peer, and in that case the non-pipelined peer will in
+    -- general see trailing data after an 'Await' which is the next incoming
+    -- message.
+    --
+    -- Likewise for 'Done', we want to allow for one protocols to be run after
+    -- another on the same channel. It would be legal for the opening message
+    -- of the next protocol arrives in the same data chunk as the final
+    -- message of the previous protocol.
+
 
 --
 -- Driver for pipelined peers
@@ -143,7 +163,7 @@ runPeer tr Codec{encode, decode} channel@Channel{send} =
 --
 runPipelinedPeer
   :: forall ps (st :: ps) pr failure bytes m a.
-     (MonadSTM m, MonadAsync m, MonadCatch m, Exception failure)
+     (MonadSTM m, MonadAsync m, MonadThrow m, Exception failure)
   => Natural
   -> Tracer m (TraceSendRecv ps)
   -> Codec ps failure m bytes
@@ -169,48 +189,115 @@ runPipelinedPeer maxOutstanding tr codec channel (PeerPipelined peer) = do
         Left v  -> case v of {}
         Right a -> return a
 
-data ReceiveHandler ps pr m c where
-     ReceiveHandler :: PeerReceiver ps pr (st :: ps) (st' :: ps) m c
-                    -> ReceiveHandler ps pr m c
+data ReceiveHandler bytes ps pr m c where
+     ReceiveHandler :: MaybeTrailing bytes n
+                    -> PeerReceiver ps pr (st :: ps) (st' :: ps) m c
+                    -> ReceiveHandler bytes ps pr m c
+
+-- | The handling of trailing data here is quite subtle. Trailing data is data
+-- we have read from the channel but the decoder has told us that it comes
+-- after the message we decoded. So it potentially belongs to the next message
+-- to decode.
+--
+-- We read from the channel on both the 'runPipelinedPeerSender' and the
+-- 'runPipelinedPeerReceiver', and we synchronise our use of trailing data
+-- between the two. The scheme for the sender and receiver threads using the
+-- channel ensures that only one can use it at once:
+--
+-- * When there are zero outstanding pipelined receiver handlers then the
+--   sending side is allowed to access the channel directly (to do synchronous
+--   yield\/awaits). Correspondingly the receiver side is idle and not
+--   accessing the channel.
+-- * When there are non-zero outstanding pipelined receiver handlers then
+--   the receiver side can access the channel, but the sending side is not
+--   permitted to do operations that access the channel.
+--
+-- So the only times we need to synchronise the trailing data are the times
+-- when the right to access the channel passes from one side to the other.
+--
+-- The transitions are as follows:
+--
+-- * There having been Zero outstanding pipelined requests there is now a
+--   new pipelined yield. In this case we must pass the trailing data from
+--   the sender thread to the receiver thread. We pass it with the
+--   'ReceiveHandler'.
+--
+-- * When the last pipelined request is collected. In this case we must pass
+--   the trailing data from the receiver thread to the sender thread. We pass
+--   it with the collected result.
+--
+-- Note that the receiver thread cannot know what the last pipelined request
+-- is, that is tracked on the sender side. So the receiver thread always
+-- returns the trailing data with every collected result. It is for the sender
+-- thread to decide if it needs to use it. For the same reason, the receiver
+-- thread ends up retaining the last trailing data (as well as passing it to
+-- the sender). So correspondingly when new trailing data is passed to the
+-- receiver thread, it simply overrides any trailing data it already had, since
+-- we now know that copy to be stale.
+--
+data MaybeTrailing bytes (n :: N) where
+     MaybeTrailing :: Maybe bytes -> MaybeTrailing bytes Z
+     NoTrailing    ::                MaybeTrailing bytes (S n)
 
 
 runPipelinedPeerSender
   :: forall ps (st :: ps) pr failure bytes c m a.
-     MonadSTM m
+     (MonadSTM m, MonadThrow m, Exception failure)
   => Tracer m (TraceSendRecv ps)
-  -> TBQueue m (ReceiveHandler ps pr m c)
-  -> TBQueue m c
+  -> TBQueue m (ReceiveHandler bytes ps pr m c)
+  -> TBQueue m (c, Maybe bytes)
   -> Codec ps failure m bytes
   -> Channel m bytes
   -> PeerSender ps pr st Z c m a
   -> m a
-runPipelinedPeerSender tr receiveQueue collectQueue Codec{encode} Channel{send} =
-    go Zero
+runPipelinedPeerSender tr receiveQueue collectQueue
+                       Codec{encode, decode} channel@Channel{send} =
+    go Zero (MaybeTrailing Nothing)
   where
-    go :: forall st' n. Nat n -> PeerSender ps pr st' n c m a -> m a
-    go n    (SenderEffect k) = k >>= go n
-    go Zero (SenderDone _ x) = return x
+    go :: forall st' n.
+          Nat n
+       -> MaybeTrailing bytes n
+       -> PeerSender ps pr st' n c m a
+       -> m a
+    go n     trailing (SenderEffect k) = k >>= go n trailing
+    go Zero _trailing (SenderDone _ x) = return x
+    --TODO: same issue with trailing as the 'Done' case for 'runPeer' above.
 
-    go n (SenderYield stok msg k) = do
+    go Zero trailing (SenderYield stok msg k) = do
       traceWith tr (TraceSendMsg (AnyMessage msg))
       send (encode stok msg)
-      go n k
+      go Zero trailing k
 
-    go n (SenderPipeline stok msg receiver k) = do
-      atomically (writeTBQueue receiveQueue (ReceiveHandler receiver))
+    go Zero (MaybeTrailing trailing) (SenderAwait stok k) = do
+      decoder <- decode stok
+      res <- runDecoderWithChannel channel trailing decoder
+      case res of
+        Right (SomeMessage msg, trailing') -> do
+          traceWith tr (TraceRecvMsg (AnyMessage msg))
+          go Zero (MaybeTrailing trailing') (k msg)
+        Left failure ->
+          throwM failure
+
+    go n trailing (SenderPipeline stok msg receiver k) = do
+      atomically (writeTBQueue receiveQueue (ReceiveHandler trailing receiver))
       traceWith tr (TraceSendMsg (AnyMessage msg))
       send (encode stok msg)
-      go (Succ n) k
+      go (Succ n) NoTrailing k
 
-    go (Succ n) (SenderCollect Nothing k) = do
-      c <- atomically (readTBQueue collectQueue)
-      go n (k c)
+    go (Succ n) NoTrailing (SenderCollect Nothing k) = do
+      (c, trailing) <- atomically (readTBQueue collectQueue)
+      case n of
+        Zero    -> go Zero      (MaybeTrailing trailing) (k c)
+        Succ n' -> go (Succ n')  NoTrailing              (k c)
 
-    go (Succ n) (SenderCollect (Just k') k) = do
+    go (Succ n) NoTrailing (SenderCollect (Just k') k) = do
       mc <- atomically (tryReadTBQueue collectQueue)
       case mc of
-        Nothing -> go (Succ n) k'
-        Just c  -> go n (k c)
+        Nothing  -> go (Succ n) NoTrailing  k'
+        Just (c, trailing) ->
+          case n of
+            Zero    -> go Zero      (MaybeTrailing trailing) (k c)
+            Succ n' -> go (Succ n')  NoTrailing              (k c)
 
 
 -- NOTE: @'runPipelinedPeer'@ assumes that @'runPipelinedPeerReceiverQueue'@ is
@@ -219,8 +306,8 @@ runPipelinedPeerReceiverQueue
   :: forall ps pr failure bytes m c.
      (MonadSTM m, MonadThrow m, Exception failure)
   => Tracer m (TraceSendRecv ps)
-  -> TBQueue m (ReceiveHandler ps pr m c)
-  -> TBQueue m c
+  -> TBQueue m (ReceiveHandler bytes ps pr m c)
+  -> TBQueue m (c, Maybe bytes)
   -> Codec ps failure m bytes
   -> Channel m bytes
   -> m Void
@@ -228,10 +315,14 @@ runPipelinedPeerReceiverQueue tr receiveQueue collectQueue codec channel =
     go Nothing
   where
     go :: Maybe bytes -> m Void
-    go trailing = do
-      ReceiveHandler receiver <- atomically (readTBQueue receiveQueue)
+    go receiverTrailing = do
+      ReceiveHandler senderTrailing receiver
+        <- atomically (readTBQueue receiveQueue)
+      let trailing = case (senderTrailing, receiverTrailing) of
+                       (MaybeTrailing t, _) -> t
+                       (NoTrailing,      t) -> t
       (c, trailing') <- runPipelinedPeerReceiver tr codec channel trailing receiver
-      atomically (writeTBQueue collectQueue c)
+      atomically (writeTBQueue collectQueue (c, trailing'))
       go trailing'
 
 
