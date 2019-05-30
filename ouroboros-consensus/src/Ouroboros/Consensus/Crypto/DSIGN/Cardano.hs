@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 
@@ -22,7 +23,8 @@ import           Cardano.Crypto (ProtocolMagicId, ProxyVerificationKey,
                      keyGen, signEncoded, toVerification, verifySignature)
 import           Data.Coerce (coerce)
 import           Data.Function (on)
-import           Data.Reflection (Given(..))
+import           Data.Proxy (Proxy (..))
+import           Data.Reflection (Given (..))
 import           GHC.Generics (Generic)
 
 import           Ouroboros.Consensus.Crypto.DSIGN.Class
@@ -30,7 +32,10 @@ import           Ouroboros.Consensus.Util.Condense
 
 
 class HasSignTag a where
-  signTag :: a -> SignTag
+  signTag :: proxy a -> SignTag
+
+signTagFor :: forall a. HasSignTag a => a -> SignTag
+signTagFor _ = signTag (Proxy @a)
 
 instance HasSignTag CC.UTxO.TxSigData where
   signTag = const SignTx
@@ -70,10 +75,10 @@ instance Given ProtocolMagicId => DSIGNAlgorithm CardanoDSIGN where
     deriveVerKeyDSIGN (SignKeyCardanoDSIGN sk) = VerKeyCardanoDSIGN $ toVerification sk
 
     signDSIGN toEnc a (SignKeyCardanoDSIGN sk) = do
-        return $ SigCardanoDSIGN $ signEncoded given (signTag a) sk (toEnc a)
+        return $ SigCardanoDSIGN $ signEncoded given (signTagFor a) sk (toEnc a)
 
     verifyDSIGN toEnc (VerKeyCardanoDSIGN vk) a (SigCardanoDSIGN sig) =
-        if verifySignature toEnc given (signTag a) vk a $ coerce sig
+        if verifySignature toEnc given (signTagFor a) vk a $ coerce sig
           then Right ()
           else Left "Verification failed"
 
