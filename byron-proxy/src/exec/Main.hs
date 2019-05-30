@@ -23,6 +23,7 @@ import qualified Data.List.NonEmpty as NE
 import Data.String (fromString)
 import Data.Text (Text)
 import qualified Data.Text as Text
+import qualified Data.Text.Lazy.Builder as Text
 import qualified Options.Applicative as Opt
 import System.Random (StdGen, getStdGen, randomR)
 
@@ -87,7 +88,7 @@ import qualified Logging as Logging
 --
 -- No exception handling is done.
 byronProxyMain
-  :: Tracer IO String
+  :: Tracer IO Text.Builder
   -> CSL.GenesisBlock -- ^ For use as checkpoint when DB is empty. Also will
                       -- be put into an empty DB.
                       -- Sadly, old Byron net API doesn't give any meaning to an
@@ -125,7 +126,7 @@ byronProxyMain tracer genesisBlock epochSlots db bp = getStdGen >>= mainLoop Not
       Right atom -> do
         traceWith tracer $ mconcat
           [ "Got atom: "
-          , show atom
+          , Text.fromString (show atom)
           ]
         mainLoop mBt rndGen
       Left bt -> do
@@ -155,16 +156,16 @@ byronProxyMain tracer genesisBlock epochSlots db bp = getStdGen >>= mainLoop Not
         let (peer, rndGen') = pickRandom rndGen (btPeers bt)
         traceWith tracer $ mconcat
           [ "Using tip with hash "
-          , show tipHash
+          , Text.fromString (show tipHash)
           , " at slot "
-          , show tipSlot
+          , Text.fromString (show tipSlot)
           , if isEBB then " (EBB)" else ""
           ]
         traceWith tracer $ mconcat
           [ "Downloading the chain with tip hash "
-          , show tipHash
+          , Text.fromString (show tipHash)
           , " from "
-          , show peer
+          , Text.fromString (show peer)
           ]
         _ <- downloadChain
               bp
@@ -195,13 +196,13 @@ byronProxyMain tracer genesisBlock epochSlots db bp = getStdGen >>= mainLoop Not
 -- | `Tracer` comes from the `contra-tracer` package, but cardano-sl still
 -- works with the cardano-sl-util definition of the same thing.
 mkCSLTrace
-  :: Tracer IO (Monitoring.LoggerName, Monitoring.Severity, Text)
+  :: Tracer IO (Monitoring.LoggerName, Monitoring.Severity, Text.Builder)
   -> Trace IO (Trace.LogNamed (Wlog.Severity, Text))
 mkCSLTrace tracer = case tracer of
   Tracer f -> Pos.Util.Trace.Trace $ Op $ \namedI ->
     let logName    = Text.intercalate (Text.pack ".") (Trace.lnName namedI)
         (sev, txt) = Trace.lnItem namedI
-    in  f (logName, convertSeverity sev, txt)
+    in  f (logName, convertSeverity sev, Text.fromText txt)
 
   where
 
@@ -375,7 +376,7 @@ cliParserInfo = Opt.info cliParser infoMod
     <> Opt.fullDesc
 
 runServer
-  :: Tracer IO (Monitoring.LoggerName, Monitoring.Severity, Text)
+  :: Tracer IO (Monitoring.LoggerName, Monitoring.Severity, Text.Builder)
   -> ServerOptions
   -> Cardano.EpochSlots
   -> DB.DB IO
@@ -412,9 +413,9 @@ runServer tracer serverOptions epochSlots db = do
   -- storage layer.
   usPoll = 1000000
 
-  stringTracer :: Tracer IO Text
-  stringTracer = contramap
-    (\txt -> (Text.pack "main.server", Monitoring.Info, txt))
+  textTracer :: Tracer IO Text.Builder
+  textTracer = contramap
+    (\tbuilder -> (Text.pack "main.server", Monitoring.Info, tbuilder))
     tracer
 
 -- | The reflections constraints are needed for the cardano-sl configuration
@@ -422,7 +423,7 @@ runServer tracer serverOptions epochSlots db = do
 -- and diffusion layer. This is OK: run it under a `withConfigurations`.
 runClient
   :: ( CSL.HasConfigurations )
-  => Tracer IO (Monitoring.LoggerName, Monitoring.Severity, Text)
+  => Tracer IO (Monitoring.LoggerName, Monitoring.Severity, Text.Builder)
   -> Maybe ClientOptions
   -> CSL.Genesis.Config
   -> Cardano.EpochSlots
@@ -485,7 +486,7 @@ runClient tracer clientOptions genesisConfig epochSlots db = case clientOptions 
       roll = Client.Fold $ pure $ Client.Continue forward backward
       forward :: ChainSync.Block -> ChainSync.Point -> Client.Fold (ResourceT IO) ()
       forward blk point = Client.Fold $ do
-        lift $ traceWith (contramap chainSyncShow stringTracer) (Right blk, point)
+        lift $ traceWith (contramap chainSyncShow textTracer) (Right blk, point)
         -- FIXME
         -- Write one block at a time. CPS doesn't mix well with the typed
         -- protocol style.
@@ -499,23 +500,24 @@ runClient tracer clientOptions genesisConfig epochSlots db = case clientOptions 
         Client.runFold roll
       backward :: ChainSync.Point -> ChainSync.Point -> Client.Fold (ResourceT IO) ()
       backward point1 point2 = Client.Fold $ do
-        lift $ traceWith (contramap chainSyncShow stringTracer) (Left point1, point2)
+        lift $ traceWith (contramap chainSyncShow textTracer) (Left point1, point2)
         pure $ Client.Stop ()
 
     chainSyncShow
       :: (Either ChainSync.Point ChainSync.Block, ChainSync.Point)
-      -> String
+      -> Text.Builder
     chainSyncShow = \(roll, _tip) -> case roll of
       Left  back    -> mconcat
         [ "Roll back to "
-        , show back
+        , Text.fromString (show back)
         ]
       Right forward -> mconcat
         [ "Roll forward to "
         , case Binary.unAnnotated forward of
-            Cardano.ABOBBoundary ebb -> show ebb
-            -- TODO Cardano.renderBlock
-            Cardano.ABOBBlock    blk -> show blk
+            Cardano.ABOBBoundary ebb -> Text.fromString (show ebb)
+            Cardano.ABOBBlock    blk -> Cardano.renderHeader
+              epochSlots
+              (Cardano.blockHeader (fmap (const ()) blk))
         ]
 
   Just (Right byronClientOptions) -> do
@@ -551,13 +553,13 @@ runClient tracer clientOptions genesisConfig epochSlots db = case clientOptions 
                                          (CSL.configGenesisHash genesisConfig)
                                          (CSL.genesisLeaders genesisConfig)
     withByronProxy (contramap (\(a, b) -> ("", a, b)) tracer) bpc db $ \bp -> do
-      byronProxyMain stringTracer genesisBlock epochSlots db bp
+      byronProxyMain textTracer genesisBlock epochSlots db bp
 
   where
 
-  stringTracer :: Tracer IO String
-  stringTracer = contramap
-    (\str -> (Text.pack "main.client", Monitoring.Info, Text.pack str))
+  textTracer :: Tracer IO Text.Builder
+  textTracer = contramap
+    (\tbuilder -> (Text.pack "main.client", Monitoring.Info, tbuilder))
     tracer
 
 main :: IO ()
