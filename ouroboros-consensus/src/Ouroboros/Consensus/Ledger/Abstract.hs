@@ -13,12 +13,8 @@
 
 -- | Interface to the ledger layer
 module Ouroboros.Consensus.Ledger.Abstract (
-    SlotBounded(sbLower, sbUpper)
-  , slotUnbounded
-  , atSlot
-  , slotBounded
     -- * Interaction with the ledger layer
-  , UpdateLedger(..)
+    UpdateLedger(..)
   , BlockProtocol
   , ProtocolLedgerView(..)
   , LedgerConfigView(..)
@@ -37,35 +33,13 @@ module Ouroboros.Consensus.Ledger.Abstract (
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Control.Monad.Except
+import           GHC.Stack
 
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util (repeatedlyM)
+import           Ouroboros.Consensus.Util.SlotBounded (SlotBounded)
 import           Ouroboros.Network.Block (HasHeader (..), Point, SlotNo)
 import           Ouroboros.Network.Chain (Chain, toOldestFirst)
-
-import           GHC.Stack
-
--- | An item bounded to be valid within particular slots
-data SlotBounded a = SlotBounded
-  { sbLower   :: !SlotNo
-  , sbUpper   :: !SlotNo
-  , sbContent :: !a
-  } deriving (Eq, Functor, Show)
-
--- | Construct a slot bounded item.
---
---   We choose not to validate that the slot bounds are reasonable here.
-slotBounded :: SlotNo -> SlotNo -> a -> SlotBounded a
-slotBounded = SlotBounded
-
-slotUnbounded :: a -> SlotBounded a
-slotUnbounded = SlotBounded minBound maxBound
-
-atSlot :: SlotNo -> SlotBounded a -> Maybe a
-atSlot slot sb =
-  if (slot <= sbUpper sb && slot >= sbLower sb)
-  then Just $ sbContent sb
-  else Nothing
 
 {-------------------------------------------------------------------------------
   Interaction with the ledger layer

@@ -85,10 +85,10 @@ import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.HList (All, HList)
 import qualified Ouroboros.Consensus.Util.HList as HList
+import qualified Ouroboros.Consensus.Util.SlotBounded as SB
 
 {-------------------------------------------------------------------------------
   Basic definitions
-
 -------------------------------------------------------------------------------}
 
 data Tx = Tx (Set TxIn) [TxOut]
@@ -503,7 +503,7 @@ type AddrDist = Map Addr NodeId
 instance (BftCrypto c, SimpleBlockCrypto c')
       => ProtocolLedgerView (SimpleBlock (Bft c) c') where
   protocolLedgerView _ _ = ()
-  anachronisticProtocolLedgerView _ _ _ = Just $ slotUnbounded ()
+  anachronisticProtocolLedgerView _ _ _ = Just $ SB.unbounded ()
 
 instance (SimpleBlockCrypto c')
   => BlockSupportsPBft PBftMockCrypto (SimpleBlock (ExtNodeConfig (PBftLedgerView PBftMockCrypto) (PBft PBftMockCrypto)) c')
@@ -520,7 +520,7 @@ instance (SimpleBlockCrypto c')
   -- This instance is correct, because the delegation map doesn't change in the
   -- node configuration.
   anachronisticProtocolLedgerView (EncNodeConfig _ pbftParams) _ _
-    = Just $ slotUnbounded pbftParams
+    = Just $ SB.unbounded pbftParams
 
 instance (PraosCrypto c, SimpleBlockCrypto c')
   => (BlockSupportsPraos c (SimpleBlock (ExtNodeConfig AddrDist (Praos c)) c'))
@@ -542,7 +542,7 @@ instance ( PraosCrypto c, SimpleBlockCrypto c')
       equalStakeDistr addrDist
 
   anachronisticProtocolLedgerView (EncNodeConfig _ addrDist) _ _ =
-      Just $ slotUnbounded $ equalStakeDistr addrDist
+      Just $ SB.unbounded $ equalStakeDistr addrDist
 
 nodeStake :: NodeId -> Maybe (Int, Rational)
 nodeStake (RelayId _) = Nothing
@@ -556,7 +556,8 @@ equalStakeDistr = IntMap.fromList
 instance (PraosCrypto c, SimpleBlockCrypto c')
       => ProtocolLedgerView (SimpleBlock (WithLeaderSchedule (Praos c)) c') where
   protocolLedgerView _ _ = ()
-  anachronisticProtocolLedgerView _ _ _ = Just $ slotUnbounded ()
+  anachronisticProtocolLedgerView _ _ _ = Just $ SB.unbounded ()
+
 {-------------------------------------------------------------------------------
   Compute relative stake
 -------------------------------------------------------------------------------}

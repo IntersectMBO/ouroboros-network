@@ -57,7 +57,8 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.PBFT
 import           Ouroboros.Consensus.Util.Condense
-
+import           Ouroboros.Consensus.Util.SlotBounded (SlotBounded (..))
+import qualified Ouroboros.Consensus.Util.SlotBounded as SB
 
 {-------------------------------------------------------------------------------
   Byron blocks and headers
@@ -180,7 +181,7 @@ instance UpdateLedger (ByronBlock cfg) where
                  CC.Block.cvsDelegationState state
               = snapshots
               | otherwise
-              = snapshots Seq.|> slotBounded startOfSnapshot slot state'
+              = snapshots Seq.|> SB.bounded startOfSnapshot slot state'
             where
               startOfSnapshot = case snapshots of
                 _ Seq.:|> a -> sbUpper a
@@ -351,9 +352,9 @@ instance ( Given Crypto.ProtocolMagicId
                 -- No updates to apply. So the current ledger state is valid
                 -- from the end of the last snapshot to the first scheduled
                 -- update.
-               Seq.Empty              -> slotBounded lb ub dsNow
+               Seq.Empty              -> SB.bounded lb ub dsNow
                toApply@(_ Seq.:|> la) ->
-                 slotBounded lb (convertSlot . V.Scheduling.sdSlot $ la) $
+                 SB.bounded lb (convertSlot . V.Scheduling.sdSlot $ la) $
                  foldl'
                    (\acc x -> Bimap.insert (V.Scheduling.sdDelegator x)
                                            (V.Scheduling.sdDelegate x)

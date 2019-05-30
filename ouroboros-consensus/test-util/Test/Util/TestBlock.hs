@@ -53,6 +53,7 @@ import           Ouroboros.Consensus.Node (NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Util.Condense
+import qualified Ouroboros.Consensus.Util.SlotBounded as SB
 
 {-------------------------------------------------------------------------------
   Test infrastructure: test block
@@ -159,7 +160,7 @@ instance UpdateLedger TestBlock where
 
 instance ProtocolLedgerView TestBlock where
   protocolLedgerView _ _ = ()
-  anachronisticProtocolLedgerView _ _ _ = Just $ slotUnbounded ()
+  anachronisticProtocolLedgerView _ _ _ = Just $ SB.unbounded ()
 
 instance LedgerConfigView TestBlock where
   ledgerConfigView = const LedgerConfig

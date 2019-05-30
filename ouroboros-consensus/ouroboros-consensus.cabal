@@ -75,6 +75,7 @@ library
                        Ouroboros.Consensus.Util.Random
                        Ouroboros.Consensus.Util.Serialise
                        Ouroboros.Consensus.Util.Singletons
+                       Ouroboros.Consensus.Util.SlotBounded
                        Ouroboros.Consensus.Util.STM
                        Ouroboros.Consensus.Util.ThreadRegistry
 

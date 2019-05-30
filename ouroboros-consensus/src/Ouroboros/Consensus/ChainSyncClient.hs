@@ -40,6 +40,7 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
+import           Ouroboros.Consensus.Util.SlotBounded as SB
 
 
 -- | Clock skew: the number of slots the chain of an upstream node may be
@@ -388,7 +389,7 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew) getCurrentChain
           -- TODO: Chain sync Client: Reuse anachronistic ledger view? #581
           case anachronisticProtocolLedgerView cfg curLedger (pointSlot hdrPoint) of
             Nothing   -> retry
-            Just view -> case atSlot (pointSlot hdrPoint) view of
+            Just view -> case view `SB.at` pointSlot hdrPoint of
               Nothing -> error "anachronisticProtocolLedgerView invariant violated"
               Just lv -> return lv
 
