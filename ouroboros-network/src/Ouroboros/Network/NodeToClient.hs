@@ -24,7 +24,9 @@ import qualified Codec.CBOR.Term as CBOR
 import           Codec.Serialise (Serialise (..))
 import           Codec.SerialiseTerm
 
-import           Ouroboros.Network.Mux.Types (ProtocolEnum(..))
+import           Ouroboros.Network.Mux.Types ( MiniProtocolLimits (..)
+                                             , ProtocolEnum(..)
+                                             )
 
 import           Ouroboros.Network.NodeToNode (DictVersion (..))
 
@@ -51,6 +53,12 @@ instance ProtocolEnum NodeToClientProtocols where
   toProtocolEnum 5 = Just ChainSyncWithBlocks
   toProtocolEnum 6 = Just LocalTxSubmission
   toProtocolEnum _ = Nothing
+
+instance MiniProtocolLimits NodeToClientProtocols where
+  -- TODO: provide sensible limits
+  -- https://github.com/input-output-hk/ouroboros-network/issues/575
+  maximumMessageSize  _ = 0xffffffff
+  maximumIngressQueue _ = 0xffffffff
 
 -- |
 -- Enumeration of node to client protocol versions.
