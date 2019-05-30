@@ -23,6 +23,7 @@ module Ouroboros.Consensus.Protocol.BFT (
 
 import           Codec.Serialise (Serialise (..))
 import           Control.Monad.Except
+import           Data.Functor.Identity
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Typeable (Typeable)
@@ -89,8 +90,8 @@ instance (BftCrypto c) => OuroborosTag (Bft c) where
 
   protocolSecurityParam = bftSecurityParam . bftParams
 
-  mkPayload toEnc BftNodeConfig{..} _proof preheader = do
-      signature <- signedDSIGN toEnc preheader bftSignKey
+  mkPayload proxy BftNodeConfig{..} _proof preheader = do
+      signature <- signedDSIGN (encodePreHeader proxy) preheader bftSignKey
       return $ BftPayload {
           bftSignature = signature
         }
@@ -104,10 +105,11 @@ instance (BftCrypto c) => OuroborosTag (Bft c) where
     where
       BftParams{..}  = bftParams
 
-  applyChainState toEnc cfg@BftNodeConfig{..} _l b _cs = do
+  applyChainState cfg@BftNodeConfig{..} _l b _cs = do
       -- TODO: Should deal with unknown node IDs
+      let proxy = Identity b
       case verifySignedDSIGN
-           toEnc
+           (encodePreHeader proxy)
            (bftVerKeys Map.! expectedLeader)
            (blockPreHeader b)
            (bftSignature (blockPayload cfg b)) of

@@ -50,8 +50,6 @@ import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..))
 import           Ouroboros.Network.Chain (Chain)
 
--- TODO Better place to put the Empty class?
-import           Ouroboros.Consensus.Crypto.DSIGN.Class (Empty)
 import qualified Ouroboros.Consensus.Util.AnchoredFragment as AF
 import           Ouroboros.Consensus.Util.Random
 
@@ -140,19 +138,15 @@ class ( Show (ChainState    p)
   -- | Blocks that the protocol can run on
   type family SupportedBlock p :: * -> Constraint
 
-  -- | Constraints on the preheader which can be incorporated into a payload.
-  type family SupportedPreHeader p :: * -> Constraint
-  type SupportedPreHeader p = Empty
-
   -- | Construct the ouroboros-specific payload of a block
   --
   -- Gets the proof that we are the leader and the preheader as arguments.
-  mkPayload :: (SupportedPreHeader p ph, HasNodeState p m, MonadRandom m)
-            => (ph -> Encoding)
+  mkPayload :: (SupportedBlock p b, HasNodeState p m, MonadRandom m)
+            => proxy b
             -> NodeConfig p
             -> IsLeader p
-            -> ph
-            -> m (Payload p ph)
+            -> PreHeader b
+            -> m (Payload p (PreHeader b))
 
   -- | Do we prefer the candidate chain over ours?
   --
@@ -195,9 +189,8 @@ class ( Show (ChainState    p)
   -- | Apply a block
   --
   -- TODO this will only be used with headers
-  applyChainState :: (SupportedBlock p b, SupportedPreHeader p (PreHeader b), HasCallStack)
-                  => (PreHeader b -> Encoding) -- Serialiser for the preheader
-                  -> NodeConfig p
+  applyChainState :: (SupportedBlock p b, HasCallStack)
+                  => NodeConfig p
                   -> LedgerView p -- /Updated/ ledger state
                   -> b
                   -> ChainState p -- /Previous/ Ouroboros state
@@ -235,7 +228,8 @@ newtype SecurityParam = SecurityParam { maxRollbacks :: Word64 }
 -- | Extract the pre-header from a block
 class (HasHeader b) => HasPreHeader b where
   type family PreHeader b :: *
-  blockPreHeader :: b -> PreHeader b
+  blockPreHeader  :: b -> PreHeader b
+  encodePreHeader :: proxy b -> PreHeader b -> Encoding
 
 -- | Blocks that contain the ouroboros payload
 --

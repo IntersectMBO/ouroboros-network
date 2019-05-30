@@ -16,7 +16,6 @@ module Ouroboros.Consensus.ChainSyncClient (
   , CandidateState (..)
   ) where
 
-import           Codec.CBOR.Encoding (Encoding)
 import           Control.Monad
 import           Control.Monad.Except
 import           Control.Tracer
@@ -122,11 +121,9 @@ chainSyncClient
        , Condense hdr, Condense (ChainHash hdr)
        , BlockProtocol blk ~ BlockProtocol hdr
        , HeaderHash blk ~ HeaderHash hdr
-       , SupportedPreHeader (BlockProtocol hdr) (PreHeader hdr)
        )
     => Tracer m String
     -> NodeConfig (BlockProtocol hdr)
-    -> (PreHeader hdr -> Encoding)
     -> BlockchainTime m
     -> ClockSkew                     -- ^ Maximum clock skew
     -> STM m (AnchoredFragment hdr)  -- ^ Get the current chain
@@ -135,7 +132,7 @@ chainSyncClient
        -- ^ The candidate chains, we need the whole map because we
        -- (de)register nodes (@up@).
     -> up -> Consensus ChainSyncClient hdr m
-chainSyncClient tracer cfg toEnc btime (ClockSkew maxSkew) getCurrentChain
+chainSyncClient tracer cfg btime (ClockSkew maxSkew) getCurrentChain
                 getCurrentLedger varCandidates up =
     ChainSyncClient initialise
   where
@@ -403,7 +400,7 @@ chainSyncClient tracer cfg toEnc btime (ClockSkew maxSkew) getCurrentChain
       -- Validate header
       CandidateState {..} <- readTVar varCandidate
       candidateChainState' <-
-        case runExcept $ applyChainState toEnc cfg ledgerView hdr candidateChainState of
+        case runExcept $ applyChainState cfg ledgerView hdr candidateChainState of
           Left vErr                  -> disconnect $ ChainError vErr
           Right candidateChainState' -> return candidateChainState'
 

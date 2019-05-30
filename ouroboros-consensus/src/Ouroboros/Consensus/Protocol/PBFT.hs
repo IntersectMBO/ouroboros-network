@@ -23,6 +23,7 @@ module Ouroboros.Consensus.Protocol.PBFT (
   , PBftCrypto(..)
   , PBftMockCrypto
   , PBftCardanoCrypto
+  , BlockSupportsPBft
     -- * Type instances
   , NodeConfig(..)
   , Payload(..)
@@ -34,6 +35,7 @@ import qualified Codec.Serialise.Encoding as Enc
 import           Control.Monad.Except
 import           Data.Bimap (Bimap)
 import qualified Data.Bimap as Bimap
+import           Data.Functor.Identity
 import           Data.Reflection (Given (..))
 import           Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
@@ -103,8 +105,11 @@ data PBftParams = PBftParams {
     , pbftGenesisConfig      :: CC.Genesis.Config
     }
 
-instance ( PBftCrypto c, Typeable c
-         ) => OuroborosTag (PBft c) where
+class ( HasPayload (PBft c) b
+      , Signable (PBftDSIGN c) (PreHeader b)
+      ) => BlockSupportsPBft c b where
+
+instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
   -- | The BFT payload is just the issuer and signature
   data Payload (PBft c) ph = PBftPayload {
         pbftIssuer    :: VerKeyDSIGN (PBftDSIGN c)
@@ -121,8 +126,7 @@ instance ( PBftCrypto c, Typeable c
       }
 
   type ValidationErr  (PBft c) = PBftValidationErr c
-  type SupportedBlock (PBft c) = HasPayload (PBft c)
-  type SupportedPreHeader (PBft c) = Signable (PBftDSIGN c)
+  type SupportedBlock (PBft c) = BlockSupportsPBft c
   type NodeState      (PBft c) = ()
 
   -- | We require two things from the ledger state:
@@ -141,8 +145,8 @@ instance ( PBftCrypto c, Typeable c
 
   protocolSecurityParam = pbftSecurityParam . pbftParams
 
-  mkPayload toEnc PBftNodeConfig{..} _proof preheader = do
-      signature <- signedDSIGN toEnc preheader pbftSignKey
+  mkPayload proxy PBftNodeConfig{..} _proof preheader = do
+      signature <- signedDSIGN (encodePreHeader proxy) preheader pbftSignKey
       return $ PBftPayload {
           pbftIssuer = pbftVerKey
         , pbftSignature = signature
@@ -157,11 +161,12 @@ instance ( PBftCrypto c, Typeable c
     where
       PBftParams{..}  = pbftParams
 
-  applyChainState toEnc cfg@PBftNodeConfig{..} lv@(PBftLedgerView dms) b chainState = do
+  applyChainState cfg@PBftNodeConfig{..} lv@(PBftLedgerView dms) b chainState = do
       -- Check that the issuer signature verifies, and that it's a delegate of a
       -- genesis key, and that genesis key hasn't voted too many times.
+      let proxy = Identity b
       case verifySignedDSIGN
-             toEnc
+             (encodePreHeader proxy)
              (pbftIssuer payload)
              (blockPreHeader b)
              (pbftSignature payload) of

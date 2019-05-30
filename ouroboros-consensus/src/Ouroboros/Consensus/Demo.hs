@@ -406,7 +406,6 @@ instance HasCreator DemoRealPBFT where
 type IsSimple p =
   ( Block  p ~ SimpleBlock p SimpleBlockMockCrypto
   , Header p ~ SimpleHeader p SimpleBlockMockCrypto
-  , SupportedPreHeader p ~ Empty
   , Serialise.Serialise (Payload p (SimplePreHeader p SimpleBlockMockCrypto))
   )
 
@@ -423,7 +422,6 @@ class ( OuroborosTag p
       , HasHeader (Header p)
       , LedgerConfigView (Block p)
       , SupportedBlock (BlockProtocol (Header p)) (Header p)
-      , SupportedPreHeader p (PreHeader (Block p))
       , PreHeader (Block p) ~ PreHeader (Header p)
       , Condense (Block p)
       , Condense [Block p]
@@ -464,9 +462,6 @@ class ( OuroborosTag p
   demoEncodeHeaderHash         ::               NodeConfig p -> HeaderHash (Header p) -> Encoding
   default demoEncodeHeaderHash :: IsSimple p => NodeConfig p -> HeaderHash (Header p) -> Encoding
 
-  demoEncodePreHeader          ::               NodeConfig p -> PreHeader (Block p) -> Encoding
-  default demoEncodePreHeader  :: IsSimple p => NodeConfig p -> PreHeader (Block p) -> Encoding
-
   demoEncodeBlock              ::               NodeConfig p -> Block p -> Encoding
   default demoEncodeBlock      :: IsSimple p => NodeConfig p -> Block p -> Encoding
 
@@ -498,7 +493,6 @@ class ( OuroborosTag p
   demoGetHeader          = Mock.simpleHeader
   demoEncodeHeader       = const Serialise.encode
   demoEncodeHeaderHash   = const Serialise.encode
-  demoEncodePreHeader    = const Serialise.encode
   demoEncodeBlock        = const Serialise.encode
   demoDecodeHeader       = const Serialise.decode
   demoDecodeHeaderHash   = const Serialise.decode
@@ -532,7 +526,6 @@ instance ( Given Cardano.ProtocolMagicId
   demoGetHeader        = byronHeader
   demoEncodeHeader     = encodeByronDemoHeader
   demoEncodeHeaderHash = encodeByronDemoHeaderHash
-  demoEncodePreHeader  = encodeByronDemoPreHeader
   demoEncodeBlock      = encodeByronDemoBlock
   demoDecodeHeader     = decodeByronDemoHeader
   demoDecodeHeaderHash = decodeByronDemoHeaderHash

@@ -60,7 +60,6 @@ import           GHC.Generics (Generic)
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (Chain, toOldestFirst)
 
-import           Ouroboros.Consensus.Crypto.DSIGN.Class (Empty)
 import           Ouroboros.Consensus.Crypto.Hash.Class
 import           Ouroboros.Consensus.Crypto.Hash.MD5 (MD5)
 import           Ouroboros.Consensus.Crypto.Hash.Short (ShortHash)
@@ -322,8 +321,7 @@ forgeSimpleBlock :: forall m p c.
                     , OuroborosTag p
                     , SimpleBlockCrypto c
                     , Serialise (Payload p (SimplePreHeader p c))
-                      -- TODO Decide whether we want to fix this constraint here.
-                    , SupportedPreHeader p ~ Empty
+                    , SupportedBlock p (SimpleBlock p c)
                     )
                  => NodeConfig p
                  -> SlotNo                          -- ^ Current slot
@@ -333,7 +331,7 @@ forgeSimpleBlock :: forall m p c.
                  -> IsLeader p
                  -> m (SimpleBlock p c)
 forgeSimpleBlock cfg curSlot curNo prevHash txs proof = do
-    ouroborosPayload <- mkPayload encode cfg proof preHeader
+    ouroborosPayload <- mkPayload (Proxy @(SimpleBlock p c)) cfg proof preHeader
     return $ SimpleBlock {
         simpleHeader = mkSimpleHeader preHeader ouroborosPayload
       , simpleBody   = body
@@ -374,20 +372,22 @@ instance (SimpleBlockCrypto c, OuroborosTag p, Serialise (Payload p (SimplePreHe
       => HasPreHeader (SimpleHeader p c) where
   type PreHeader (SimpleHeader p c) = SimplePreHeader p c
 
-  blockPreHeader = headerPreHeader
+  blockPreHeader  = headerPreHeader
+  encodePreHeader = const encode
 
 instance (SimpleBlockCrypto c, OuroborosTag p, Serialise (Payload p (SimplePreHeader p c)))
       => HasPreHeader (SimpleBlock p c) where
   type PreHeader (SimpleBlock p c) = SimplePreHeader p c
 
-  blockPreHeader = headerPreHeader . simpleHeader
+  blockPreHeader  = headerPreHeader . simpleHeader
+  encodePreHeader = const encode
 
 instance ( SimpleBlockCrypto c
          , OuroborosTag p
          , Serialise (Payload p (SimplePreHeader p c))
          )
       => HasPayload p (SimpleHeader p c) where
-  blockPayload _ = headerOuroboros
+  blockPayload _  = headerOuroboros
 
 instance ( SimpleBlockCrypto c
          , OuroborosTag p
@@ -489,6 +489,12 @@ instance (BftCrypto c, SimpleBlockCrypto c')
       => ProtocolLedgerView (SimpleBlock (Bft c) c') where
   protocolLedgerView _ _ = ()
   anachronisticProtocolLedgerView _ _ _ = Just $ slotUnbounded ()
+
+instance (SimpleBlockCrypto c')
+  => BlockSupportsPBft PBftMockCrypto (SimpleBlock (ExtNodeConfig (PBftLedgerView PBftMockCrypto) (PBft PBftMockCrypto)) c')
+
+instance (SimpleBlockCrypto c')
+  => BlockSupportsPBft PBftMockCrypto (SimpleHeader (ExtNodeConfig (PBftLedgerView PBftMockCrypto) (PBft PBftMockCrypto)) c')
 
 -- | Mock ledger is capable of running PBFT, but we simply assume the delegation
 -- map and the protocol parameters can be found statically in the node

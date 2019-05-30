@@ -10,7 +10,6 @@ module Test.Ouroboros.Storage.ChainDB.Model (
     tests
   ) where
 
-import           Codec.Serialise (Serialise (encode))
 import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
@@ -30,18 +29,18 @@ tests = testGroup "Model" [
 
 prop_getBlock_addBlock :: BlockTree -> Permutation -> Property
 prop_getBlock_addBlock bt p =
-        M.getBlock (blockHash newBlock) (M.addBlock encode singleNodeTestConfig newBlock model)
+        M.getBlock (blockHash newBlock) (M.addBlock singleNodeTestConfig newBlock model)
     === Just newBlock
   where
     (newBlock:initBlocks) = permute p $ treeToBlocks bt
-    model = M.addBlocks encode singleNodeTestConfig initBlocks (M.empty testInitExtLedger)
+    model = M.addBlocks singleNodeTestConfig initBlocks (M.empty testInitExtLedger)
 
 prop_getChain_addChain :: BlockChain -> Property
 prop_getChain_addChain bc =
     blockChain bc === M.currentChain model
   where
     blocks = chainToBlocks bc
-    model  = M.addBlocks encode singleNodeTestConfig blocks (M.empty testInitExtLedger)
+    model  = M.addBlocks singleNodeTestConfig blocks (M.empty testInitExtLedger)
 
 prop_alwaysPickPreferredChain :: BlockTree -> Permutation -> Property
 prop_alwaysPickPreferredChain bt p =
@@ -51,5 +50,5 @@ prop_alwaysPickPreferredChain bt p =
       ]
   where
     blocks  = permute p $ treeToBlocks bt
-    model   = M.addBlocks encode singleNodeTestConfig blocks (M.empty testInitExtLedger)
+    model   = M.addBlocks singleNodeTestConfig blocks (M.empty testInitExtLedger)
     current = M.currentChain model

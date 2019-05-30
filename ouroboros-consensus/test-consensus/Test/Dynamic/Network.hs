@@ -10,7 +10,7 @@ module Test.Dynamic.Network (
     broadcastNetwork
   ) where
 
-import           Codec.Serialise (Serialise (encode))
+import           Codec.Serialise (Serialise)
 import           Control.Monad
 import           Control.Tracer (nullTracer)
 import           Crypto.Number.Generate (generateBetween)
@@ -121,11 +121,10 @@ broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots = do
             , produceDRG      = atomically $ simChaChaT varRNG id $ drgNew
             }
 
-      chainDB <- ChainDB.openDB encode pInfoConfig pInfoInitLedger simpleHeader
+      chainDB <- ChainDB.openDB pInfoConfig pInfoInitLedger simpleHeader
 
       let nodeParams = NodeParams
             { tracer             = nullTracer
-            , encoder            = encode
             , threadRegistry     = registry
             , maxClockSkew       = ClockSkew 1
             , cfg                = pInfoConfig

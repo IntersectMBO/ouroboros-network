@@ -111,6 +111,7 @@ type instance BlockProtocol TestBlock = Bft BftMockCrypto
 instance HasPreHeader TestBlock where
   type PreHeader TestBlock = ()
   blockPreHeader _ = ()
+  encodePreHeader  = const encode
 
 instance HasPayload (Bft BftMockCrypto) TestBlock where
   blockPayload = \cfg tb -> BftPayload {

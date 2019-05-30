@@ -107,14 +107,13 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
           }
 
       chainDB :: ChainDB IO (Block p) (Header p) <- ChainDB.openDB
-        (demoEncodePreHeader pInfoConfig) pInfoConfig pInfoInitLedger
+        pInfoConfig pInfoInitLedger
         demoGetHeader
 
       btime  <- realBlockchainTime registry slotDuration systemStart
       let tracer = contramap ((show myNodeId <> " | ") <>) stdoutTracer
           nodeParams = NodeParams
-            { encoder            = demoEncodePreHeader pInfoConfig
-            , tracer             = tracer
+            { tracer             = tracer
             , threadRegistry     = registry
             , maxClockSkew       = ClockSkew 1
             , cfg                = pInfoConfig

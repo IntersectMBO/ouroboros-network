@@ -60,12 +60,11 @@ instance (Typeable p, Typeable s, ChainSelection p s) => OuroborosTag (ModChainS
     type    LedgerView     (ModChainSel p s)    = LedgerView p
     type    ValidationErr  (ModChainSel p s)    = ValidationErr p
     type    SupportedBlock (ModChainSel p s)    = SupportedBlock p
-    type    SupportedPreHeader (ModChainSel p s) = SupportedPreHeader p
 
-    mkPayload toEnc        (McsNodeConfig cfg) proof ph = McsPayload <$> mkPayload toEnc cfg proof ph
+    mkPayload proxy       (McsNodeConfig cfg) proof ph = McsPayload <$> mkPayload proxy cfg proof ph
 
     checkIsLeader         (McsNodeConfig cfg) = checkIsLeader         cfg
-    applyChainState toEnc (McsNodeConfig cfg) = applyChainState toEnc cfg
+    applyChainState       (McsNodeConfig cfg) = applyChainState       cfg
     rewindChainState      (McsNodeConfig cfg) = rewindChainState      cfg
     protocolSecurityParam (McsNodeConfig cfg) = protocolSecurityParam cfg
 

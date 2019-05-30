@@ -9,7 +9,6 @@ module Ouroboros.Storage.ChainDB.Mock (
 import           Data.Bifunctor (first)
 import qualified Data.Set as Set
 
-import           Codec.CBOR.Encoding (Encoding)
 import           Control.Monad.Class.MonadSTM
 
 import           Ouroboros.Network.Block (ChainUpdate (..), HasHeader (..),
@@ -32,14 +31,12 @@ openDB :: forall m blk hdr.
           , HeaderHash blk ~ HeaderHash hdr
           , ProtocolLedgerView blk
           , LedgerConfigView blk
-          , SupportedPreHeader (BlockProtocol blk) (PreHeader blk)
           )
-       => (PreHeader blk -> Encoding)
-       -> NodeConfig (BlockProtocol blk)
+       => NodeConfig (BlockProtocol blk)
        -> ExtLedgerState blk
        -> (blk -> hdr)
        -> m (ChainDB m blk hdr)
-openDB toEnc cfg initLedger blockHeader = do
+openDB cfg initLedger blockHeader = do
     db :: TVar m (Model blk) <- atomically $ newTVar (Model.empty initLedger)
 
     let query :: (Model blk -> a) -> STM m a
@@ -93,7 +90,7 @@ openDB toEnc cfg initLedger blockHeader = do
                 . Model.readerForward rdrId (map Block.castPoint ps)
 
     return ChainDB {
-        addBlock            = update_ . Model.addBlock toEnc cfg
+        addBlock            = update_ . Model.addBlock cfg
       , getCurrentChain     = query   $ Model.lastK k blockHeader
       , getCurrentLedger    = query   $ Model.currentLedger
       , getBlock            = query'  . Model.getBlockByPoint

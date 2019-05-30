@@ -4,7 +4,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Test.Consensus.ChainSyncClient ( tests ) where
 
-import           Codec.Serialise (encode)
 import           Control.Monad (replicateM_, void)
 import           Control.Monad.Except (runExcept)
 import           Control.Monad.State.Strict
@@ -229,7 +228,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
         getLedgerState :: STM m (ExtLedgerState TestBlock)
         getLedgerState  = snd <$> readTVar varClientState
         client = chainSyncClient
-          nullTracer (nodeCfg clientId) encode btime maxClockSkew
+          nullTracer (nodeCfg clientId) btime maxClockSkew
           getCurrentChain getLedgerState
           varCandidates
           serverId
@@ -354,13 +353,13 @@ updateClientState cfg chain ledgerState chainUpdates =
         where
           chain'       = foldl' (flip Chain.addBlock) chain bs
           ledgerState' = runValidate $
-            foldExtLedgerState encode cfg bs ledgerState
+            foldExtLedgerState cfg bs ledgerState
       Nothing
       -- There was a roll back in the updates, so validate the chain from
       -- scratch
         | Just chain' <- Chain.applyChainUpdates chainUpdates chain
         -> let ledgerState' = runValidate $
-                 chainExtLedgerState encode cfg chain' testInitExtLedger
+                 chainExtLedgerState cfg chain' testInitExtLedger
            in (chain', ledgerState')
         | otherwise
         -> error "Client chain update failed"

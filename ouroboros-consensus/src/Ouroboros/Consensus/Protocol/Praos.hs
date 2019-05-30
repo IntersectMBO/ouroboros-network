@@ -31,6 +31,7 @@ import qualified Codec.Serialise.Decoding as Dec
 import qualified Codec.Serialise.Encoding as Enc
 import           Control.Monad (unless)
 import           Control.Monad.Except (throwError)
+import           Data.Functor.Identity
 import           Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import           Data.Proxy (Proxy (..))
@@ -153,7 +154,7 @@ instance (Serialise (PraosExtraFields c), PraosCrypto c) => OuroborosTag (Praos 
   type SupportedBlock (Praos c) = HasPayload (Praos c)
   type ChainState     (Praos c) = [BlockInfo c]
 
-  mkPayload toEnc PraosNodeConfig{..} PraosProof{..} preheader = do
+  mkPayload proxy PraosNodeConfig{..} PraosProof{..} preheader = do
       keyKES <- getNodeState
       let extraFields = PraosExtraFields {
             praosCreator = praosLeader
@@ -161,7 +162,7 @@ instance (Serialise (PraosExtraFields c), PraosCrypto c) => OuroborosTag (Praos 
           , praosY       = praosProofY
           }
       m <- signedKES
-        (\(a,b) -> encodeListLen 2 <> toEnc a <> encode b)
+        (\(a,b) -> encodeListLen 2 <> encodePreHeader proxy a <> encode b)
         (fromIntegral (unSlotNo praosProofSlot))
         (preheader, extraFields)
         keyKES
@@ -190,7 +191,7 @@ instance (Serialise (PraosExtraFields c), PraosCrypto c) => OuroborosTag (Praos 
                      }
               else Nothing
 
-  applyChainState toEnc cfg@PraosNodeConfig{..} sd b cs = do
+  applyChainState cfg@PraosNodeConfig{..} sd b cs = do
     let PraosPayload{..} = blockPayload cfg b
         ph               = blockPreHeader b
         slot             = blockSlot b
@@ -208,8 +209,9 @@ instance (Serialise (PraosExtraFields c), PraosCrypto c) => OuroborosTag (Praos 
         Just vks -> return vks
 
     -- verify block signature
+    let proxy = Identity b
     case verifySignedKES
-           (\(x,y) -> encodeListLen 2 <> toEnc x <> encode y)
+           (\(x,y) -> encodeListLen 2 <> encodePreHeader proxy x <> encode y)
            vkKES
            (fromIntegral $ unSlotNo slot)
            (ph, praosExtraFields)

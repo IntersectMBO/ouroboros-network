@@ -4,7 +4,9 @@
 {-# LANGUAGE MultiParamTypeClasses   #-}
 {-# LANGUAGE RankNTypes              #-}
 {-# LANGUAGE RecordWildCards         #-}
+{-# LANGUAGE ScopedTypeVariables     #-}
 {-# LANGUAGE StandaloneDeriving      #-}
+{-# LANGUAGE TypeApplications        #-}
 {-# LANGUAGE TypeFamilies            #-}
 {-# LANGUAGE UndecidableInstances    #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
@@ -188,26 +190,23 @@ deriving instance ProtocolLedgerView b => Show (ExtLedgerState b)
 data ExtValidationError b =
     ExtValidationErrorLedger (LedgerError b)
   | ExtValidationErrorOuroboros (ValidationErr (BlockProtocol b))
-  | ExtValidationErrorEnvelope -- TODO (check back pointers etc)
 
 deriving instance ProtocolLedgerView b => Show (ExtValidationError b)
 
-applyExtLedgerState :: ( LedgerConfigView b
+applyExtLedgerState :: forall b.
+                       ( LedgerConfigView b
                        , ProtocolLedgerView b
-                       , SupportedPreHeader (BlockProtocol b) (PreHeader b)
                        , HasCallStack
                        )
-                    => (PreHeader b -> Encoding) -- Serialiser for the preheader
-                    -> NodeConfig (BlockProtocol b)
+                    => NodeConfig (BlockProtocol b)
                     -> b
                     -> ExtLedgerState b
                     -> Except (ExtValidationError b) (ExtLedgerState b)
-applyExtLedgerState toEnc cfg b ExtLedgerState{..} = do
+applyExtLedgerState cfg b ExtLedgerState{..} = do
     ledgerState'         <- withExcept ExtValidationErrorLedger $
                               applyLedgerHeader (ledgerConfigView cfg) b ledgerState
     ouroborosChainState' <- withExcept ExtValidationErrorOuroboros $
                               applyChainState
-                                toEnc
                                 cfg
                                 (protocolLedgerView cfg ledgerState')
                                 b
@@ -218,41 +217,34 @@ applyExtLedgerState toEnc cfg b ExtLedgerState{..} = do
 
 foldExtLedgerState :: ( LedgerConfigView b
                       , ProtocolLedgerView b
-                      , SupportedPreHeader (BlockProtocol b) (PreHeader b)
                       , HasCallStack
                       )
-                   => (PreHeader b -> Encoding) -- Serialiser for the preheader
-                   -> NodeConfig (BlockProtocol b)
+                   => NodeConfig (BlockProtocol b)
                    -> [b] -- ^ Blocks to apply, oldest first
                    -> ExtLedgerState b
                    -> Except (ExtValidationError b) (ExtLedgerState b)
-foldExtLedgerState toEnc = repeatedlyM . applyExtLedgerState toEnc
+foldExtLedgerState = repeatedlyM . applyExtLedgerState
 
--- TODO: This should check stuff like backpointers also
 chainExtLedgerState :: ( LedgerConfigView b
                        , ProtocolLedgerView b
-                       , SupportedPreHeader (BlockProtocol b) (PreHeader b)
                        , HasCallStack
                        )
-                    => (PreHeader b -> Encoding) -- Serialiser for the preheader
-                    -> NodeConfig (BlockProtocol b)
+                    => NodeConfig (BlockProtocol b)
                     -> Chain b
                     -> ExtLedgerState b
                     -> Except (ExtValidationError b) (ExtLedgerState b)
-chainExtLedgerState toEnc cfg = foldExtLedgerState toEnc cfg . toOldestFirst
+chainExtLedgerState cfg = foldExtLedgerState cfg . toOldestFirst
 
 -- | Validation of an entire chain
 verifyChain :: ( LedgerConfigView b
                , ProtocolLedgerView b
-               , SupportedPreHeader (BlockProtocol b) (PreHeader b)
                )
-            => (PreHeader b -> Encoding) -- Serialiser for the preheader
-            -> NodeConfig (BlockProtocol b)
+            => NodeConfig (BlockProtocol b)
             -> ExtLedgerState b
             -> Chain b
             -> Bool
-verifyChain toEnc cfg initSt c =
-    case runExcept (chainExtLedgerState toEnc cfg c initSt) of
+verifyChain cfg initSt c =
+    case runExcept (chainExtLedgerState cfg c initSt) of
       Left  _err -> False
       Right _st' -> True
 

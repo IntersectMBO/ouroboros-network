@@ -288,20 +288,24 @@ instance UpdateLedger (ByronBlock cfg) where
   Support for PBFT consensus algorithm
 -------------------------------------------------------------------------------}
 
+instance (Given CC.Block.HeaderHash, Given CC.Slot.EpochSlots, Typeable cfg) => BlockSupportsPBft PBftCardanoCrypto (ByronBlock cfg)
+
 type instance BlockProtocol (ByronBlock cfg) = ExtNodeConfig cfg (PBft PBftCardanoCrypto)
 
 type instance BlockProtocol (ByronHeader cfg) = ExtNodeConfig cfg (PBft PBftCardanoCrypto)
 
 instance (Given CC.Slot.EpochSlots, Given CC.Block.HeaderHash, Typeable cfg) => HasPreHeader (ByronBlock cfg) where
   type PreHeader (ByronBlock cfg) = CC.Block.ToSign
-  blockPreHeader = unAnnotated . CC.Block.recoverSignedBytes given
-                   . CC.Block.blockHeader . unByronBlock
+  blockPreHeader  = unAnnotated . CC.Block.recoverSignedBytes given
+                    . CC.Block.blockHeader . unByronBlock
+  encodePreHeader = const encodeByronDemoPreHeader
 
 -- TODO get rid of this once we have a BlockHeader type family
 instance (Given CC.Slot.EpochSlots, Given CC.Block.HeaderHash, Typeable cfg) => HasPreHeader (ByronHeader cfg) where
   type PreHeader (ByronHeader cfg) = CC.Block.ToSign
-  blockPreHeader = unAnnotated . CC.Block.recoverSignedBytes given
-                   . unByronHeader
+  blockPreHeader  = unAnnotated . CC.Block.recoverSignedBytes given
+                    . unByronHeader
+  encodePreHeader = const encodeByronDemoPreHeader
 
 -- TODO get rid of this once we have a BlockHeader type family
 instance (Given CC.Slot.EpochSlots, Given CC.Block.HeaderHash, Typeable cfg) => HasPayload (PBft PBftCardanoCrypto) (ByronHeader cfg) where
@@ -412,35 +416,6 @@ instance ( Given Crypto.ProtocolMagicId
 
 {-------------------------------------------------------------------------------
   Mempool integration
-
-class UpdateLedger b => ApplyTx b where
-  -- | Generalized transaction
-  --
-  -- The mempool (and, accordingly, blocks) consist of "generalized
-  -- transactions"; this could be "proper" transactions (transferring funds) but
-  -- also other kinds of things such as update proposals, delegations, etc.
-  type family GenTx b :: *
-
-  -- | Apply transaction we have not previously seen before
-  applyTx :: GenTx b
-          -> LedgerState b
-          -> Except (LedgerError b) (LedgerState b)
-
-  -- | Re-apply a transaction
-  --
-  -- When we re-apply a transaction to a potentially different ledger state
-  -- expensive checks such as cryptographic hashes can be skipped, but other
-  -- checks (such as checking for double spending) must still be done.
-  reapplyTx :: GenTx b
-            -> LedgerState b
-            -> Except (LedgerError b) (LedgerState b)
-
-  -- | Re-apply a transaction to the very same state it was applied in before
-  --
-  -- In this case no error can occur.
-  --
-  -- See also 'ldbConfReapply' for comments on implementing this function.
-  reapplyTxSameState :: GenTx b -> LedgerState b -> LedgerState b
 -------------------------------------------------------------------------------}
 
 -- | Generalized transactions in Byron
@@ -492,6 +467,9 @@ applyByronGenTx _reapply (ByronLedgerConfig cfg) = \genTx st@ByronLedgerState{..
   Running Byron in the demo
 -------------------------------------------------------------------------------}
 
+instance (Given CC.Block.HeaderHash, Given CC.Slot.EpochSlots)
+  => BlockSupportsPBft PBftCardanoCrypto (ByronHeader ByronDemoConfig)
+
 -- Extended configuration we need for the demo
 data ByronDemoConfig = ByronDemoConfig {
       -- | Mapping from generic keys to core node IDs
@@ -519,9 +497,13 @@ type ByronPayload =
     CC.Block.ToSign
 
 forgeByronDemoBlock
-  :: ( HasNodeState_ () m  -- @()@ is the @NodeState@ of PBFT
+  :: forall m cfg.
+     ( HasNodeState_ () m  -- @()@ is the @NodeState@ of PBFT
      , MonadRandom m
      , Given Crypto.ProtocolMagicId
+     , Given CC.Block.HeaderHash
+     , Given CC.Slot.EpochSlots
+     , Typeable cfg
      )
   => NodeConfig (ExtNodeConfig ByronDemoConfig (PBft PBftCardanoCrypto))
   -> SlotNo                                -- ^ Current slot
@@ -531,7 +513,7 @@ forgeByronDemoBlock
   -> ()                                    -- ^ Leader proof (IsLeader)
   -> m (ByronBlock ByronDemoConfig)
 forgeByronDemoBlock cfg curSlot curNo prevHash txs () = do
-    ouroborosPayload <- mkPayload toCBOR cfg () preHeader
+    ouroborosPayload <- mkPayload (Proxy @(ByronBlock cfg)) cfg () preHeader
 --    traceM $ "Forge block: " ++ show (forgeBlock ouroborosPayload)
     return $ forgeBlock ouroborosPayload
   where
@@ -776,9 +758,8 @@ encodeByronDemoHeaderHash :: NodeConfig (ExtNodeConfig ByronDemoConfig (PBft PBf
                           -> HeaderHash (ByronHeader ByronDemoConfig) -> Encoding
 encodeByronDemoHeaderHash _cfg = toCBOR
 
-encodeByronDemoPreHeader :: NodeConfig (ExtNodeConfig ByronDemoConfig (PBft PBftCardanoCrypto))
-                         -> PreHeader (ByronBlock ByronDemoConfig) -> Encoding
-encodeByronDemoPreHeader _cfg = toCBOR
+encodeByronDemoPreHeader :: PreHeader (ByronBlock ByronDemoConfig) -> Encoding
+encodeByronDemoPreHeader = toCBOR
 
 decodeByronDemoHeader :: NodeConfig (ExtNodeConfig ByronDemoConfig (PBft PBftCardanoCrypto))
                       -> Decoder s (ByronHeader ByronDemoConfig)

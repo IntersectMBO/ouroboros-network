@@ -70,8 +70,8 @@ instance OuroborosTag p => OuroborosTag (WithLeaderSchedule p) where
             | lsNodeConfigNodeId `elem` nids -> Just ()
             | otherwise                      -> Nothing
 
-  applyChainState _ _ _ _ _ = return ()
-  rewindChainState _ _ _    = Just ()
+  applyChainState _ _ _ _ = return ()
+  rewindChainState _ _ _  = Just ()
 
 deriving instance Eq   (Payload (WithLeaderSchedule p) ph)
 deriving instance Ord  (Payload (WithLeaderSchedule p) ph)

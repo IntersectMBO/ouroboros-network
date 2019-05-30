@@ -28,7 +28,6 @@ module Ouroboros.Consensus.Node (
   , Network.loggingChannel
   ) where
 
-import           Codec.CBOR.Encoding (Encoding)
 import           Codec.Serialise (Serialise)
 import           Control.Monad (void)
 import           Crypto.Random (ChaChaDRG)
@@ -173,8 +172,7 @@ data NodeCallbacks m blk = NodeCallbacks {
 
 -- | Parameters required when initializing a node
 data NodeParams m up blk hdr = NodeParams {
-      encoder            :: PreHeader blk -> Encoding
-    , tracer             :: Tracer m String
+      tracer             :: Tracer m String
     , threadRegistry     :: ThreadRegistry m
     , maxClockSkew       :: ClockSkew
     , cfg                :: NodeConfig (BlockProtocol blk)
@@ -198,9 +196,7 @@ nodeKernel
        , HasHeader hdr
        , HeaderHash hdr ~ HeaderHash blk
        , SupportedBlock (BlockProtocol hdr) hdr
-       , SupportedPreHeader (BlockProtocol blk) (PreHeader hdr)
        , BlockProtocol hdr ~ BlockProtocol blk
-       , PreHeader blk ~ PreHeader hdr
        , Ord up
        , TraceConstraints up blk hdr
        , ApplyTx blk
@@ -265,9 +261,7 @@ initInternalState
        , ProtocolLedgerView blk
        , LedgerConfigView blk
        , SupportedBlock (BlockProtocol hdr) hdr
-       , SupportedPreHeader (BlockProtocol blk) (PreHeader hdr)
        , BlockProtocol hdr ~ BlockProtocol blk
-       , PreHeader blk ~ PreHeader hdr
        , Ord up
        , TraceConstraints up blk hdr
        , ApplyTx blk
@@ -294,7 +288,6 @@ initInternalState NodeParams {..} = do
         nrChainSyncClient up = chainSyncClient
           (tracePrefix "CSClient" (Just up))
           cfg
-          encoder
           btime
           maxClockSkew
           (ChainDB.getCurrentChain chainDB)
