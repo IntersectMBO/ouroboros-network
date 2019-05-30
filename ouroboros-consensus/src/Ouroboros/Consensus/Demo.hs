@@ -46,14 +46,12 @@ import           Control.Monad.Except
 import           Crypto.Random (MonadRandom)
 import qualified Data.Bimap as Bimap
 import           Data.Coerce
-import           Data.Either (fromRight)
 import           Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromJust, fromMaybe)
 import           Data.Reflection (Given (..), give)
 import qualified Data.Sequence as Seq
-import qualified Data.Set as Set
 
 import qualified Cardano.Chain.Block as Cardano.Block
 import qualified Cardano.Chain.Genesis as Cardano.Genesis
@@ -65,7 +63,6 @@ import qualified Cardano.Crypto.Signing as Cardano.KeyGen
 import           Ouroboros.Network.Block (BlockNo, ChainHash (..), HasHeader,
                      HeaderHash, SlotNo)
 import           Ouroboros.Network.BlockFetch (SizeInBytes)
-import           Ouroboros.Network.Chain (genesisPoint)
 
 import           Ouroboros.Consensus.Crypto.DSIGN
 import           Ouroboros.Consensus.Crypto.DSIGN.Mock (verKeyIdFromSigned)
@@ -161,12 +158,12 @@ protocolInfo (DemoBFT securityParam) (NumCoreNodes numCoreNodes) (CoreNodeId nid
               | n <- [0 .. numCoreNodes - 1]
               ]
           }
-      , pInfoInitLedger = ExtLedgerState (genesisLedgerState addrDist) ()
+      , pInfoInitLedger = ExtLedgerState (Mock.genesisLedgerState addrDist) ()
       , pInfoInitState  = ()
       }
   where
     addrDist :: Mock.AddrDist
-    addrDist = mkAddrDist numCoreNodes
+    addrDist = Mock.mkAddrDist numCoreNodes
 protocolInfo (DemoPraos params) (NumCoreNodes numCoreNodes) (CoreNodeId nid) =
     ProtocolInfo {
         pInfoConfig = EncNodeConfig {
@@ -175,13 +172,13 @@ protocolInfo (DemoPraos params) (NumCoreNodes numCoreNodes) (CoreNodeId nid) =
               , praosNodeId        = CoreId nid
               , praosSignKeyVRF    = SignKeyMockVRF nid
               , praosInitialEta    = 0
-              , praosInitialStake  = genesisStakeDist addrDist
+              , praosInitialStake  = Mock.genesisStakeDist addrDist
               , praosVerKeys       = verKeys
               }
           , encNodeConfigExt = addrDist
           }
       , pInfoInitLedger = ExtLedgerState {
-            ledgerState         = genesisLedgerState addrDist
+            ledgerState         = Mock.genesisLedgerState addrDist
           , ouroborosChainState = []
           }
       , pInfoInitState = SignKeyMockKES (
@@ -192,7 +189,7 @@ protocolInfo (DemoPraos params) (NumCoreNodes numCoreNodes) (CoreNodeId nid) =
       }
   where
     addrDist :: Mock.AddrDist
-    addrDist = mkAddrDist numCoreNodes
+    addrDist = Mock.mkAddrDist numCoreNodes
 
     verKeys :: IntMap (VerKeyKES MockKES, VerKeyVRF MockVRF)
     verKeys = IntMap.fromList [ (nd, (VerKeyMockKES nd, VerKeyMockVRF nd))
@@ -209,19 +206,19 @@ protocolInfo (DemoLeaderSchedule schedule params)
             , praosNodeId       = CoreId nid
             , praosSignKeyVRF   = SignKeyMockVRF nid
             , praosInitialEta   = 0
-            , praosInitialStake = genesisStakeDist addrDist
+            , praosInitialStake = Mock.genesisStakeDist addrDist
             , praosVerKeys      = verKeys
             }
         , lsNodeConfigNodeId   = CoreNodeId nid
         }
     , pInfoInitLedger = ExtLedgerState
-        { ledgerState         = genesisLedgerState addrDist
+        { ledgerState         = Mock.genesisLedgerState addrDist
         , ouroborosChainState = ()
         }
     , pInfoInitState  = ()
     }
   where
-    addrDist = mkAddrDist numCoreNodes
+    addrDist = Mock.mkAddrDist numCoreNodes
 
     verKeys :: IntMap (VerKeyKES MockKES, VerKeyVRF MockVRF)
     verKeys = IntMap.fromList [ (nd, (VerKeyMockKES nd, VerKeyMockVRF nd))
@@ -241,12 +238,12 @@ protocolInfo (DemoMockPBFT params)
             , encNodeConfigExt = PBftLedgerView
                 (Bimap.fromList [(VerKeyMockDSIGN n, VerKeyMockDSIGN n) | n <- [0 .. numCoreNodes - 1]])
           }
-      , pInfoInitLedger = ExtLedgerState (genesisLedgerState addrDist) Seq.empty
+      , pInfoInitLedger = ExtLedgerState (Mock.genesisLedgerState addrDist) Seq.empty
       , pInfoInitState  = ()
       }
   where
     addrDist :: Mock.AddrDist
-    addrDist = mkAddrDist numCoreNodes
+    addrDist = Mock.mkAddrDist numCoreNodes
 
 protocolInfo (DemoRealPBFT params)
              (NumCoreNodes numCoreNodes)
@@ -326,38 +323,6 @@ enumCoreNodes :: NumCoreNodes -> [CoreNodeId]
 enumCoreNodes (NumCoreNodes numNodes) = [ CoreNodeId n
                                         | n <- [0 .. numNodes - 1]
                                         ]
-
-{-------------------------------------------------------------------------------
-  Parameters common to all protocols
--------------------------------------------------------------------------------}
-
--- | Construct address to node ID mapping
-mkAddrDist :: Int -- ^ Number of nodes
-           -> Mock.AddrDist
-mkAddrDist numCoreNodes =
-    Map.fromList $ zip [[addr]   | addr <- ['a'..]]
-                       [CoreId n | n    <- [0  .. numCoreNodes - 1]]
-
--- | Transaction giving initial stake to the nodes
-genesisTx :: Mock.AddrDist -> Mock.Tx
-genesisTx addrDist = Mock.Tx mempty [(addr, 1000) | addr <- Map.keys addrDist]
-
-genesisUtxo :: Mock.AddrDist -> Mock.Utxo
-genesisUtxo addrDist =
-    fromRight (error "genesisLedger: invalid genesis tx") $
-      runExcept (Mock.utxo (genesisTx addrDist))
-
-genesisLedgerState :: Mock.AddrDist -> LedgerState (SimpleBlock p c)
-genesisLedgerState addrDist = Mock.SimpleLedgerState {
-      slsUtxo      = genesisUtxo addrDist
-    , slsConfirmed = Set.singleton (hash (genesisTx addrDist))
-    , slsTip       = genesisPoint
-    }
-
--- | Genesis stake distribution
-genesisStakeDist :: Mock.AddrDist -> StakeDist
-genesisStakeDist addrDist =
-    Mock.relativeStakes (Mock.totalStakes addrDist (genesisUtxo addrDist))
 
 {-------------------------------------------------------------------------------
   Who created a block?

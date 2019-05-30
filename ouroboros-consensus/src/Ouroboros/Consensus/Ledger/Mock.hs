@@ -40,6 +40,12 @@ module Ouroboros.Consensus.Ledger.Mock (
   , AddrDist
   , relativeStakes
   , totalStakes
+    -- * Compute protocol parameters
+  , mkAddrDist
+  , genesisTx
+  , genesisUtxo
+  , genesisLedgerState
+  , genesisStakeDist
   ) where
 
 import           Codec.CBOR.Decoding (decodeListLenOf)
@@ -48,6 +54,7 @@ import           Codec.Serialise
 import           Control.Monad.Except
 import           Crypto.Random (MonadRandom)
 import qualified Data.ByteString.Lazy as BL
+import           Data.Either (fromRight)
 import           Data.FingerTree (Measured (measure))
 import qualified Data.IntMap.Strict as IntMap
 import           Data.Map (Map)
@@ -60,7 +67,7 @@ import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Chain (Chain, toOldestFirst)
+import           Ouroboros.Network.Chain (Chain, genesisPoint, toOldestFirst)
 
 import           Ouroboros.Consensus.Crypto.Hash.Class
 import           Ouroboros.Consensus.Crypto.Hash.MD5 (MD5)
@@ -574,6 +581,38 @@ totalStakes addrDist = foldl f Map.empty
    f m (a, stake) = case Map.lookup a addrDist of
        Just (CoreId nid) -> Map.insertWith (+) (StakeCore nid)    stake m
        _                 -> Map.insertWith (+) StakeEverybodyElse stake m
+
+{-------------------------------------------------------------------------------
+  Compute protocol parameters
+-------------------------------------------------------------------------------}
+
+-- | Construct address to node ID mapping
+mkAddrDist :: Int -- ^ Number of nodes
+           -> AddrDist
+mkAddrDist numCoreNodes =
+    Map.fromList $ zip [[addr]   | addr <- ['a'..]]
+                       [CoreId n | n    <- [0  .. numCoreNodes - 1]]
+
+-- | Transaction giving initial stake to the nodes
+genesisTx :: AddrDist -> Tx
+genesisTx addrDist = Tx mempty [(addr, 1000) | addr <- Map.keys addrDist]
+
+genesisUtxo :: AddrDist -> Utxo
+genesisUtxo addrDist =
+    fromRight (error "genesisLedger: invalid genesis tx") $
+      runExcept (utxo (genesisTx addrDist))
+
+genesisLedgerState :: AddrDist -> LedgerState (SimpleBlock p c)
+genesisLedgerState addrDist = SimpleLedgerState {
+      slsUtxo      = genesisUtxo addrDist
+    , slsConfirmed = Set.singleton (hash (genesisTx addrDist))
+    , slsTip       = genesisPoint
+    }
+
+-- | Genesis stake distribution
+genesisStakeDist :: AddrDist -> StakeDist
+genesisStakeDist addrDist =
+    relativeStakes (totalStakes addrDist (genesisUtxo addrDist))
 
 {-------------------------------------------------------------------------------
   Serialisation
