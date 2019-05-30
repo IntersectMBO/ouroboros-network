@@ -10,7 +10,6 @@
 module Ouroboros.Consensus.Crypto.DSIGN.Class
     ( DSIGNAlgorithm (..)
     , SignedDSIGN (..)
-    , Empty
     , signedDSIGN
     , verifySignedDSIGN
     , encodeSignedDSIGN
@@ -24,10 +23,8 @@ import           GHC.Exts (Constraint)
 import           GHC.Generics (Generic)
 import           GHC.Stack
 
+import           Ouroboros.Consensus.Util (Empty)
 import           Ouroboros.Consensus.Util.Condense
-
-class Empty a
-instance Empty a
 
 class ( Show (VerKeyDSIGN v)
       , Ord (VerKeyDSIGN v)

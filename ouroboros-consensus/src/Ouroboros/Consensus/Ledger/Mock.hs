@@ -522,6 +522,12 @@ instance (SimpleBlockCrypto c')
   anachronisticProtocolLedgerView (EncNodeConfig _ pbftParams) _ _
     = Just $ slotUnbounded pbftParams
 
+instance (PraosCrypto c, SimpleBlockCrypto c')
+  => (BlockSupportsPraos c (SimpleBlock (ExtNodeConfig AddrDist (Praos c)) c'))
+
+instance (PraosCrypto c, SimpleBlockCrypto c')
+  => (BlockSupportsPraos c (SimpleHeader (ExtNodeConfig AddrDist (Praos c)) c'))
+
 -- | Praos needs a ledger that can give it the "active stake distribution"
 --
 -- TODO: Currently our mock ledger does not do this, and just assumes that all

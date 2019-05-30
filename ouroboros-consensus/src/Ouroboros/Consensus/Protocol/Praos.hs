@@ -10,6 +10,7 @@
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE UndecidableSuperClasses    #-}
 
 module Ouroboros.Consensus.Protocol.Praos (
     StakeDist
@@ -20,6 +21,7 @@ module Ouroboros.Consensus.Protocol.Praos (
   , PraosCrypto(..)
   , PraosStandardCrypto
   , PraosMockCrypto
+  , BlockSupportsPraos
     -- * Type instances
   , NodeConfig(..)
   , Payload(..)
@@ -56,6 +58,7 @@ import           Ouroboros.Consensus.Crypto.VRF.Simple (SimpleVRF)
 import           Ouroboros.Consensus.Node (CoreNodeId (..), NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Test
+import           Ouroboros.Consensus.Util (Empty)
 import qualified Ouroboros.Consensus.Util.AnchoredFragment as AF
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.HList (HList (..))
@@ -128,6 +131,10 @@ data PraosParams = PraosParams {
     , praosLifetimeKES   :: Natural
     }
 
+class ( HasPayload (Praos c) b
+      , Signable (PraosKES c) (PreHeader b, PraosExtraFields c)
+      ) => BlockSupportsPraos c b where
+
 instance (Serialise (PraosExtraFields c), PraosCrypto c) => OuroborosTag (Praos c) where
 
   data Payload (Praos c) ph = PraosPayload {
@@ -151,7 +158,7 @@ instance (Serialise (PraosExtraFields c), PraosCrypto c) => OuroborosTag (Praos 
   type LedgerView     (Praos c) = StakeDist
   type IsLeader       (Praos c) = PraosProof c
   type ValidationErr  (Praos c) = PraosValidationError c
-  type SupportedBlock (Praos c) = HasPayload (Praos c)
+  type SupportedBlock (Praos c) = BlockSupportsPraos c
   type ChainState     (Praos c) = [BlockInfo c]
 
   mkPayload proxy PraosNodeConfig{..} PraosProof{..} preheader = do
@@ -387,6 +394,8 @@ class ( KESAlgorithm  (PraosKES  c)
       , VRFAlgorithm  (PraosVRF  c)
       , HashAlgorithm (PraosHash c)
       , Typeable c
+        -- TODO: For now we insist that everything must be signable
+      , Signable (PraosKES c) ~ Empty
       ) => PraosCrypto (c :: *) where
   type family PraosKES c  :: *
   type family PraosVRF c  :: *

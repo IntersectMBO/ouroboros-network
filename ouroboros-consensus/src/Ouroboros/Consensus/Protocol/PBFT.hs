@@ -249,16 +249,16 @@ class ( Typeable c
 
 data PBftMockCrypto
 
-instance (Signable MockDSIGN ~ Empty) => PBftCrypto PBftMockCrypto where
-  type PBftDSIGN PBftMockCrypto = MockDSIGN
+instance PBftCrypto PBftMockCrypto where
+  type PBftDSIGN      PBftMockCrypto = MockDSIGN
   type PBftVerKeyHash PBftMockCrypto = VerKeyDSIGN MockDSIGN
 
   hashVerKey = id
 
 data PBftCardanoCrypto
 
-instance (Given ProtocolMagicId, Signable CardanoDSIGN ~ HasSignTag) => PBftCrypto PBftCardanoCrypto where
-  type PBftDSIGN PBftCardanoCrypto = CardanoDSIGN
+instance (Given ProtocolMagicId) => PBftCrypto PBftCardanoCrypto where
+  type PBftDSIGN PBftCardanoCrypto      = CardanoDSIGN
   type PBftVerKeyHash PBftCardanoCrypto = CC.Common.KeyHash
 
-  hashVerKey (VerKeyCardanoDSIGN pk)= CC.Common.hashKey pk
+  hashVerKey (VerKeyCardanoDSIGN pk) = CC.Common.hashKey pk

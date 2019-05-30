@@ -1,12 +1,14 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE ConstraintKinds     #-}
+{-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- | Miscellaneous utilities
 module Ouroboros.Consensus.Util (
-    Dict(..)
+    Empty
+  , Dict(..)
   , Some(..)
   , SomePair(..)
   , foldlM'
@@ -41,6 +43,9 @@ import qualified Data.Set as Set
 import           Data.Void
 import           Data.Word (Word64)
 import           GHC.Stack
+
+class Empty a
+instance Empty a
 
 data Dict (a :: Constraint) where
     Dict :: a => Dict a
