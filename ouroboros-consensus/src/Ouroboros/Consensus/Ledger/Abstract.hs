@@ -52,6 +52,7 @@ class ( Show (LedgerState b)
   data family LedgerState b :: *
   data family LedgerError b :: *
 
+  -- | Static environment required for the ledger
   data family LedgerConfig b :: *
 
   -- | Apply a block header to the ledger state.
@@ -67,6 +68,7 @@ class ( Show (LedgerState b)
   -- (3) does not seem to rely on (2), and so we could do (1), (3), (2), and if
   -- that is indeed possible, we could just combine (1) and (3) into a single
   -- step..?
+  -- <https://github.com/input-output-hk/ouroboros-network/issues/596>
   applyLedgerHeader :: LedgerConfig b
                     -> b
                     -> LedgerState b
