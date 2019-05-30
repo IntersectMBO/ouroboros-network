@@ -453,7 +453,7 @@ runClient tracer clientOptions genesisConfig epochSlots db = case clientOptions 
     -- source for blocks: one read pointer improve is always enough.
     chainSyncClient = Client.chainSyncClient fold
       where
-      fold :: Client.Fold (ResourceT IO) x
+      fold :: Client.Fold (ResourceT IO) ()
       fold = Client.Fold $ do
         tip <- lift $ DB.readTip db
         mPoint <- case tip of
@@ -479,9 +479,9 @@ runClient tracer clientOptions genesisConfig epochSlots db = case clientOptions 
           -- We don't need to do anything with the result; the point is that
           -- the server now knows the proper read pointer.
           Just point -> pure $ Client.Improve [point] $ \_ _ -> roll
-      roll :: Client.Fold (ResourceT IO) x
+      roll :: Client.Fold (ResourceT IO) ()
       roll = Client.Fold $ pure $ Client.Continue forward backward
-      forward :: ChainSync.Block -> ChainSync.Point -> Client.Fold (ResourceT IO) x
+      forward :: ChainSync.Block -> ChainSync.Point -> Client.Fold (ResourceT IO) ()
       forward blk point = Client.Fold $ do
         lift $ traceWith (contramap chainSyncShow stringTracer) (Right blk, point)
         -- FIXME
@@ -495,10 +495,10 @@ runClient tracer clientOptions genesisConfig epochSlots db = case clientOptions 
         lift $ DB.appendBlocks db $ \dbAppend ->
           DB.appendBlock dbAppend (DB.CardanoBlockToWrite blk)
         Client.runFold roll
-      backward :: ChainSync.Point -> ChainSync.Point -> Client.Fold (ResourceT IO) x
+      backward :: ChainSync.Point -> ChainSync.Point -> Client.Fold (ResourceT IO) ()
       backward point1 point2 = Client.Fold $ do
         lift $ traceWith (contramap chainSyncShow stringTracer) (Left point1, point2)
-        Client.runFold roll
+        pure $ Client.Stop ()
 
     chainSyncShow
       :: (Either ChainSync.Point ChainSync.Block, ChainSync.Point)
