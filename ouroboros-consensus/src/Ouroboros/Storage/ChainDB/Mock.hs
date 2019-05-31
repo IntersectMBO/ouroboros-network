@@ -74,8 +74,8 @@ openDB cfg initLedger blockHeader = do
 
         iterator :: IteratorId -> Iterator m blk
         iterator itrId = Iterator {
-              iteratorNext  = update $ Model.iteratorNext itrId
-            , iteratorClose = return () -- TODO: Should we do something here?
+              iteratorNext  = update  $ Model.iteratorNext  itrId
+            , iteratorClose = update_ $ Model.iteratorClose itrId
             , iteratorId    = itrId
             }
 
