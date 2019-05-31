@@ -34,7 +34,7 @@ data MockState blk = MockState {
     , mockConfirmed :: Set TxId
     , mockTip       :: Point blk
     }
-  deriving (Show)
+  deriving (Show, Eq)
 
 data MockError blk =
     MockInvalidInputs InvalidInputs

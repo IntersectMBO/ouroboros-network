@@ -39,7 +39,7 @@ data StakeHolder =
 -------------------------------------------------------------------------------}
 
 newtype StakeDist = StakeDist { stakeDistToIntMap :: IntMap Rational }
-  deriving (Show)
+  deriving (Show, Eq)
 
 stakeWithDefault :: Rational -> Int -> StakeDist -> Rational
 stakeWithDefault d n = IntMap.findWithDefault d n . stakeDistToIntMap

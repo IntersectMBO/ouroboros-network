@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveAnyClass             #-}
+{-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -45,6 +47,7 @@ import           Data.Maybe (fromMaybe)
 import           Data.Tree (Tree (..))
 import qualified Data.Tree as Tree
 import           Data.Word
+import           GHC.Generics (Generic)
 import qualified System.Random as R
 import           Test.QuickCheck
 
@@ -74,6 +77,7 @@ import           Test.Util.TestTx (TestTx (..), TestTxId)
 -------------------------------------------------------------------------------}
 
 newtype TestHash = TestHash Word64
+  deriving stock   (Generic)
   deriving newtype (Show, Eq, Ord, Serialise, Num, Condense)
 
 data TestBlock = TestBlock {
@@ -83,11 +87,12 @@ data TestBlock = TestBlock {
     , tbSlot     :: Block.SlotNo
     , tbTxs      :: [TestTx]
     }
-  deriving (Show, Eq)
+  deriving stock    (Show, Eq, Generic)
+  deriving anyclass (Serialise)
 
 instance GetHeader TestBlock where
   newtype Header TestBlock = TestHeader { testHeader :: TestBlock }
-    deriving (Show)
+    deriving (Eq, Show)
   getHeader = TestHeader
 
 type instance HeaderHash TestBlock = TestHash
@@ -175,7 +180,7 @@ instance UpdateLedger TestBlock where
           -- The ledger state simply consists of the last applied block
           lastApplied :: (Point TestBlock, ChainHash TestBlock)
         }
-    deriving (Show)
+    deriving (Show, Eq, Generic, Serialise)
 
   data LedgerConfig TestBlock = LedgerConfig
   type LedgerError  TestBlock = InvalidHash

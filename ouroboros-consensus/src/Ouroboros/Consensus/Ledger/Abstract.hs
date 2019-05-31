@@ -26,6 +26,7 @@ import           Ouroboros.Consensus.Util.SlotBounded (SlotBounded)
 class ( SupportedBlock blk
       , Show (LedgerState blk)
       , Show (LedgerError blk)
+      , Eq   (LedgerState blk)
       ) => UpdateLedger blk where
   data family LedgerState blk :: *
   type family LedgerError blk :: *
