@@ -29,6 +29,8 @@ module Ouroboros.Storage.ChainDB.Model (
   , readBlocks
   , readerInstruction
   , readerForward
+    -- * Exported for testing purposes
+  , blocks
   ) where
 
 import           Control.Monad (unless)
