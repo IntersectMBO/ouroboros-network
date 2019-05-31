@@ -1,6 +1,10 @@
-{-# LANGUAGE RecordWildCards     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE DeriveGeneric        #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE RecordWildCards      #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE StandaloneDeriving   #-}
+{-# LANGUAGE TypeFamilies         #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 -- | Model implementation of the chain DB
 --
@@ -48,6 +52,7 @@ import           Control.Monad.Except (runExcept)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe, isJust, mapMaybe)
+import           GHC.Generics (Generic)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as Fragment
@@ -81,7 +86,14 @@ data Model blk = Model {
       -- ChainDB that wraps this model will throw a 'ClosedDBError' whenever
       -- it is used while closed.
     }
-  deriving (Show)
+  deriving (Generic)
+
+deriving instance
+  ( OuroborosTag (BlockProtocol blk)
+  , ProtocolLedgerView          blk
+  , Block.StandardHash          blk
+  , Show                        blk
+  ) => Show (Model blk)
 
 {-------------------------------------------------------------------------------
   Queries

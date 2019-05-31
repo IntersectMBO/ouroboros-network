@@ -1,10 +1,16 @@
+{-# LANGUAGE DeriveAnyClass             #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Test.Util.TestTx (
     -- * Transactions
     TestTxId
   , TestTx (..)
   ) where
 
+import           Codec.Serialise (Serialise)
 import           Data.Word (Word64)
+import           GHC.Generics (Generic)
 import           Test.QuickCheck (Arbitrary (..), oneof)
 
 {-------------------------------------------------------------------------------
@@ -13,7 +19,8 @@ import           Test.QuickCheck (Arbitrary (..), oneof)
 
 -- | A simple transaction identifier used in testing 'Mempool' support.
 newtype TestTxId = TestTxId Word64
-  deriving (Show, Eq, Ord)
+  deriving stock   (Show, Eq, Ord, Generic)
+  deriving newtype (Serialise)
 
 instance Arbitrary TestTxId where
   arbitrary           = TestTxId <$> arbitrary
@@ -37,7 +44,8 @@ instance Arbitrary TestTxId where
 -- already been spent with respect to the current ledger state.
 data TestTx = ValidTestTx !TestTxId
             | InvalidTestTx !TestTxId
-  deriving (Show, Eq, Ord)
+  deriving stock    (Show, Eq, Ord, Generic)
+  deriving anyclass (Serialise)
 
 instance Arbitrary TestTx where
   arbitrary = oneof

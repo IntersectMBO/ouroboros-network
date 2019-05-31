@@ -3,7 +3,9 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE PatternSynonyms            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 module Ouroboros.Storage.ChainDB.API (
     -- * Main ChainDB API
@@ -308,6 +310,9 @@ data IteratorResult blk =
     -- the VolatileDB, but not added to the ImmutableDB.
     --
     -- This will only happen when streaming very old forks very slowly.
+
+deriving instance (Eq   blk, Eq   (HeaderHash blk)) => Eq   (IteratorResult blk)
+deriving instance (Show blk, Show (HeaderHash blk)) => Show (IteratorResult blk)
 
 data UnknownRange blk =
     -- | The block at the given point was not found in the ChainDB.

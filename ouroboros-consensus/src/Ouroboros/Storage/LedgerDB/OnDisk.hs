@@ -125,7 +125,7 @@ data InitLog r =
     --
     -- NOTE: We should /only/ see this if data corrupted occurred.
   | InitFailure DiskSnapshot (InitFailure r) (InitLog r)
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic)
 
 -- | Initialize the ledger DB from the most recent snapshot on disk
 --
@@ -198,7 +198,7 @@ data InitFailure r =
 
     -- | This snapshot is too recent (ahead of the tip of the chain)
   | InitFailureTooRecent (Tip r)
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic)
 
 -- | Attempt to initialize the ledger DB from the given snapshot
 --

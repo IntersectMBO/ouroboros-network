@@ -1,6 +1,8 @@
-{-# LANGUAGE RankNTypes         #-}
-{-# LANGUAGE RecordWildCards    #-}
-{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE RankNTypes           #-}
+{-# LANGUAGE RecordWildCards      #-}
+{-# LANGUAGE StandaloneDeriving   #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Ouroboros.Consensus.Ledger.Extended (
     -- * Extended ledger state
@@ -45,6 +47,9 @@ data ExtValidationError blk =
 
 deriving instance ProtocolLedgerView blk => Show (ExtLedgerState     blk)
 deriving instance ProtocolLedgerView blk => Show (ExtValidationError blk)
+
+deriving instance (ProtocolLedgerView blk, Eq (ChainState (BlockProtocol blk)))
+               => Eq (ExtLedgerState blk)
 
 applyExtLedgerState :: ( UpdateLedger blk
                        , ProtocolLedgerView blk
