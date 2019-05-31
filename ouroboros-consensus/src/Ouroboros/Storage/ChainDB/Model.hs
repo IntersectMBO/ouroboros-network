@@ -24,6 +24,7 @@ module Ouroboros.Storage.ChainDB.Model (
     -- * Iterators
   , streamBlocks
   , iteratorNext
+  , iteratorClose
     -- * Readers
   , readBlocks
   , readerInstruction
@@ -177,6 +178,11 @@ iteratorNext itrId m =
                      , m { iterators = Map.insert itrId bs (iterators m) }
                      )
       Nothing      -> error "iteratorNext: unknown iterator ID"
+
+-- We never delete iterators such that we can use the size of the map as the
+-- next iterator id.
+iteratorClose :: IteratorId -> Model blk -> Model blk
+iteratorClose itrId m = m { iterators = Map.insert itrId [] (iterators m) }
 
 {-------------------------------------------------------------------------------
   Readers
