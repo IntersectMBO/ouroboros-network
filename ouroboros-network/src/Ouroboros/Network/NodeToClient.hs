@@ -119,14 +119,20 @@ connectTo =
 -- | A specialised version of @'Ouroboros.Network.Socket.withServerNode'@
 --
 withServer
-  :: Socket.AddrInfo
+  :: ConnectionTable
+  -> Socket.AddrInfo
   -> (forall vData. DictVersion vData -> vData -> vData -> Accept)
   -> Versions NodeToClientVersion DictVersion
               (AnyMuxResponderApp NodeToClientProtocols IO BL.ByteString)
   -> (Async () -> IO t)
   -> IO t
-withServer addr =
+withServer tbl addr acceptVersion versions k =
   withServerNode
+    tbl
     addr
     (\(DictVersion codec) -> encodeTerm codec)
     (\(DictVersion codec) -> decodeTerm codec)
+    acceptVersion
+    versions
+    (\_ -> k)
+
