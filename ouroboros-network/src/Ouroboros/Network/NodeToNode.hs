@@ -120,7 +120,9 @@ nodeToNodeCodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
 -- A specialised version of @'Ouroboros.Network.Socket.connectTo'@.
 --
 nodeToNodeConnectTo
-  :: Versions NodeToNodeVersion DictVersion (MuxApplication InitiatorApp NodeToNodeProtocols IO)
+  :: Versions NodeToNodeVersion
+              DictVersion
+              (MuxApplication InitiatorApp NodeToNodeProtocols IO a b)
   -> Maybe Socket.AddrInfo
   -> Socket.AddrInfo
   -> IO ()

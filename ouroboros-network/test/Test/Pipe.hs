@@ -13,6 +13,7 @@ import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTimer
 import           Data.Int
+import           Data.Void (Void)
 import           System.Info (os)
 import           System.Process (createPipe)
 import           Test.ChainGenerators (TestBlockChainAndUpdates (..))
@@ -98,7 +99,7 @@ demo chain0 updates = do
     let Just expectedChain = Chain.applyChainUpdates updates chain0
         target = Chain.headPoint expectedChain
 
-        consumerApp :: Mx.MuxApplication Mx.InitiatorApp Mxt.TestProtocols1 IO
+        consumerApp :: Mx.MuxApplication Mx.InitiatorApp Mxt.TestProtocols1 IO () Void
         consumerApp = Mx.simpleMuxInitiatorApplication $
           \Mxt.ChainSync1 ->
             Mx.MuxPeer nullTracer
@@ -110,7 +111,7 @@ demo chain0 updates = do
         server :: ChainSyncServer block (Point block) IO ()
         server = ChainSync.chainSyncServerExample () producerVar
 
-        producerApp :: Mx.MuxApplication Mx.ResponderApp Mxt.TestProtocols1 IO
+        producerApp :: Mx.MuxApplication Mx.ResponderApp Mxt.TestProtocols1 IO Void ()
         producerApp = Mx.simpleMuxResponderApplication $
           \Mxt.ChainSync1 ->
             Mx.MuxPeer nullTracer

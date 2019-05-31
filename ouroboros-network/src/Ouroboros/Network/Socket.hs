@@ -155,7 +155,7 @@ hexDump buf out = hexDump (BL.tail buf) (out ++ printf "0x%02x " (BL.head buf))
 --
 -- Exceptions thrown by @'MuxApplication'@ are rethrown by @'connectTo'@.
 connectTo
-  :: forall ptcl vNumber extra.
+  :: forall ptcl vNumber extra a b.
      ( Mx.ProtocolEnum ptcl
      , Ord ptcl
      , Enum ptcl
@@ -170,7 +170,7 @@ connectTo
      )
   => (forall vData. extra vData -> vData -> CBOR.Term)
   -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
-  -> Versions vNumber extra (MuxApplication InitiatorApp ptcl IO)
+  -> Versions vNumber extra (MuxApplication InitiatorApp ptcl IO a b)
   -- ^ application to run over the connection
   -> Maybe Socket.AddrInfo
   -- ^ local address; the created socket will bind to it
@@ -212,7 +212,7 @@ connectTo encodeData decodeData versions localAddr remoteAddr =
 -- A mux application which has a server component.
 --
 data AnyMuxResponderApp ptcl m where
-      AnyMuxResponderApp :: forall appType ptcl m. HasResponder appType ~ True => MuxApplication appType ptcl m -> AnyMuxResponderApp ptcl m
+      AnyMuxResponderApp :: forall appType ptcl m a b. HasResponder appType ~ True => MuxApplication appType ptcl m a b -> AnyMuxResponderApp ptcl m
 
 
 -- |
@@ -423,7 +423,7 @@ withServerNode addr encodeData decodeData acceptVersion versions k =
 -- connection.
 --
 withSimpleServerNode
-    :: forall ptcl vNumber extra t.
+    :: forall ptcl vNumber extra t a b.
        ( Mx.ProtocolEnum ptcl
        , Ord ptcl
        , Enum ptcl
@@ -440,7 +440,7 @@ withSimpleServerNode
     -> (forall vData. extra vData -> vData -> CBOR.Term)
     -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
     -> (forall vData. extra vData -> vData -> vData -> Accept)
-    -> Versions vNumber extra (MuxApplication ResponderApp ptcl IO)
+    -> Versions vNumber extra (MuxApplication ResponderApp ptcl IO a b)
     -- ^ The mux server application that will be run on each incoming
     -- connection.
     -> (Async () -> IO t)

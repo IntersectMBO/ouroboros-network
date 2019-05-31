@@ -14,6 +14,7 @@ import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import           Data.Set (Set)
+import           Data.Void (Void)
 
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.STM (STM, atomically, check)
@@ -145,7 +146,7 @@ clientPingPong pipelined =
       Nothing
       defaultLocalSocketAddrInfo
   where
-    muxApplication :: MuxApplication InitiatorApp DemoProtocol0 IO
+    muxApplication :: MuxApplication InitiatorApp DemoProtocol0 IO () Void
     muxApplication =
       simpleMuxInitiatorApplication protocols
 
@@ -177,7 +178,7 @@ serverPingPong =
       (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) muxApplication) $ \serverAsync ->
         wait serverAsync   -- block until async exception
   where
-    muxApplication :: MuxApplication ResponderApp DemoProtocol0 IO
+    muxApplication :: MuxApplication ResponderApp DemoProtocol0 IO Void ()
     muxApplication =
       simpleMuxResponderApplication protocols
 
@@ -226,7 +227,7 @@ clientPingPong2 =
       Nothing
       defaultLocalSocketAddrInfo
   where
-    muxApplication :: MuxApplication InitiatorApp DemoProtocol1 IO
+    muxApplication :: MuxApplication InitiatorApp DemoProtocol1 IO () Void
     muxApplication =
       simpleMuxInitiatorApplication protocols
 
@@ -271,7 +272,7 @@ serverPingPong2 =
       (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) muxApplication) $ \serverAsync ->
         wait serverAsync   -- block until async exception
   where
-    muxApplication :: MuxApplication ResponderApp DemoProtocol1 IO
+    muxApplication :: MuxApplication ResponderApp DemoProtocol1 IO Void ()
     muxApplication =
       simpleMuxResponderApplication protocols
 
@@ -317,7 +318,7 @@ clientChainSync sockAddrs =
         Nothing
         (mkLocalSocketAddrInfo sockAddr)
   where
-    muxApplication :: MuxApplication InitiatorApp DemoProtocol2 IO
+    muxApplication :: MuxApplication InitiatorApp DemoProtocol2 IO () Void
     muxApplication =
       simpleMuxInitiatorApplication protocols
 
@@ -341,7 +342,7 @@ serverChainSync sockAddr =
   where
     prng = mkSMGen 0
 
-    muxApplication :: MuxApplication ResponderApp DemoProtocol2 IO
+    muxApplication :: MuxApplication ResponderApp DemoProtocol2 IO Void ()
     muxApplication =
       simpleMuxResponderApplication protocols
 
@@ -383,7 +384,7 @@ clientBlockFetch sockAddrs = do
     currentChainVar    <- newTVarIO genesisChainFragment
 
     let muxApplication :: FilePath
-                       -> MuxApplication InitiatorApp DemoProtocol3 IO
+                       -> MuxApplication InitiatorApp DemoProtocol3 IO () Void
         muxApplication peerid =
           MuxInitiatorApplication (protocols peerid)
 
@@ -520,7 +521,7 @@ serverBlockFetch sockAddr =
   where
     prng = mkSMGen 0
 
-    muxApplication :: MuxApplication ResponderApp DemoProtocol3 IO
+    muxApplication :: MuxApplication ResponderApp DemoProtocol3 IO Void ()
     muxApplication =
       simpleMuxResponderApplication protocols
 
