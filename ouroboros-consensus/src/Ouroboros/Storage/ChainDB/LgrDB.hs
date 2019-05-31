@@ -51,7 +51,7 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util ((.:))
 
 import           Ouroboros.Storage.Common
-import           Ouroboros.Storage.FS.API (HasFS)
+import           Ouroboros.Storage.FS.API (HasFS, createDirectoryIfMissing)
 import           Ouroboros.Storage.FS.API.Types (MountPoint (..))
 import           Ouroboros.Storage.FS.IO (ioHasFS)
 
@@ -140,6 +140,7 @@ openDB :: forall m blk.
        -- DB does not know where the boundary is at any given point.
        -> m (LgrDB m blk)
 openDB LgrDbArgs{..} immDB getBlock = do
+    createDirectoryIfMissing lgrHasFS True []
     (_initLog, db) <-
       LedgerDB.initLedgerDB
         lgrHasFS
