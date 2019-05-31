@@ -26,7 +26,7 @@ data MockState b = MockState {
     , mockConfirmed :: Set (Hash ShortHash Tx)
     , mockTip       :: Point b
     }
-  deriving (Show)
+  deriving (Show, Eq)
 
 updateMockState :: (Monad m, HasUtxo a)
                 => a

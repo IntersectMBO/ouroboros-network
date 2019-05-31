@@ -49,6 +49,7 @@ import           Ouroboros.Consensus.Util.SlotBounded (SlotBounded)
 -- | Interaction with the ledger layer
 class ( Show (LedgerState b)
       , Show (LedgerError b)
+      , Eq   (LedgerState b)
       ) => UpdateLedger (b :: *) where
   data family LedgerState b :: *
   type family LedgerError b :: *
@@ -160,7 +161,11 @@ data ExtLedgerState b = ExtLedgerState {
     , ouroborosChainState :: ChainState (BlockProtocol b)
     }
 
-deriving instance ProtocolLedgerView b => Show (ExtLedgerState b)
+deriving instance (OuroborosTag (BlockProtocol b), UpdateLedger b)
+               => Eq (ExtLedgerState b)
+
+deriving instance (OuroborosTag (BlockProtocol b), UpdateLedger b)
+               => Show (ExtLedgerState b)
 
 data ExtValidationError b =
     ExtValidationErrorLedger (LedgerError b)

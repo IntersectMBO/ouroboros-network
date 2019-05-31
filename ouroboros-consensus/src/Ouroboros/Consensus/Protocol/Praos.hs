@@ -165,6 +165,7 @@ data BlockInfo c = BlockInfo
     }
 
 deriving instance PraosCrypto c => Show (BlockInfo c)
+deriving instance PraosCrypto c => Eq   (BlockInfo c)
 
 {-------------------------------------------------------------------------------
   Protocol proper

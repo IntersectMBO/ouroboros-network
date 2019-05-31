@@ -1,9 +1,11 @@
 {-# LANGUAGE DeriveFunctor              #-}
+{-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 module Ouroboros.Storage.ChainDB.API (
     -- * Main ChainDB API
@@ -305,6 +307,9 @@ data IteratorResult blk =
     --
     -- This will only happen when streaming very old forks.
 
+deriving instance (Eq   blk, Eq   (HeaderHash blk)) => Eq   (IteratorResult blk)
+deriving instance (Show blk, Show (HeaderHash blk)) => Show (IteratorResult blk)
+
 data UnknownRange blk =
     -- | The block at the given point was not found in the ChainDB.
     MissingBlock (Point blk)
@@ -504,7 +509,6 @@ data ChainDbError blk =
     -- * The bounds don't make sense, e.g., the lower bound starts after the
     --   upper bound, or the lower bound starts from genesis, /inclusive/.
   | InvalidIteratorRange (StreamFrom blk) (StreamTo blk)
-
-deriving instance StandardHash blk => Show (ChainDbError blk)
+  deriving (Eq, Show, Typeable)
 
 instance (StandardHash blk, Typeable blk) => Exception (ChainDbError blk)

@@ -206,7 +206,7 @@ instance (SimpleCrypto c, Typeable ext)
   newtype LedgerState (SimpleBlock c ext) = SimpleLedgerState {
         simpleLedgerState :: MockState (SimpleBlock c ext)
       }
-    deriving (Show)
+    deriving (Show, Eq)
 
   data LedgerConfig (SimpleBlock c ext) =
       SimpleLedgerConfig

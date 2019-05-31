@@ -59,6 +59,7 @@ import           GHC.Stack
 -- block representation.
 class ( Show (ChainState    p)
       , Show (ValidationErr p)
+      , Eq   (ChainState    p)
       , Typeable p -- so that p can appear in exceptions
       ) => OuroborosTag p where
 
