@@ -88,6 +88,9 @@ openDB cfg initLedger = do
       , streamBlocks        = update .: (first iterator ..: Model.streamBlocks)
       , newBlockReader      = update  $ (first reader . Model.readBlocks)
       , newHeaderReader     = update  $ (first (fmap getHeader . reader) . Model.readBlocks)
+        -- A no-op
+      , closeDB             = return ()
+      , isOpen              = return True
       }
   where
     k = protocolSecurityParam cfg

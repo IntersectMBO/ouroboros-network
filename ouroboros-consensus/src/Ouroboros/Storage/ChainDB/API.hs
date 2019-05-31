@@ -196,6 +196,18 @@ data ChainDB m blk = ChainDB {
 
       -- | Known to be invalid blocks
     , knownInvalidBlocks :: STM m (Set (Point blk))
+
+      -- | Close the ChainDB
+      --
+      -- Idempotent.
+      --
+      -- Should only be called on shutdown.
+    , closeDB            :: m ()
+
+      -- | Return 'True' when the database is open.
+      --
+      -- 'False' when the database is closed.
+    , isOpen             :: STM m Bool
     }
 
 {-------------------------------------------------------------------------------
@@ -389,6 +401,12 @@ data ChainDbError blk =
     -- it does not actually exist other than as a concept; we cannot read and
     -- return it.
     NoGenesisBlock
+
+    -- | The ChainDB is closed.
+    --
+    -- This will be thrown when performing any operation on the ChainDB except
+    -- for 'isOpen' and 'closeDB'.
+  | ClosedDBError
   deriving (Eq, Show, Typeable)
 
 instance (StandardHash blk, Typeable blk) => Exception (ChainDbError blk)
