@@ -22,6 +22,8 @@ module Ouroboros.Storage.ChainDB.ImmDB (
     -- * Streaming
   , streamBlocks
   , streamBlobs
+    -- * Wrappers
+  , closeDB
     -- * Re-exports
   , Iterator(..)
   , IteratorResult(..)
@@ -415,3 +417,10 @@ parse dec epochOrSlot =
       | Lazy.null bs = Right b
       | otherwise    = Left $ ImmDbTrailingData epochOrSlot bs
     aux (Left err)   = Left $ ImmDbParseFailure epochOrSlot err
+
+{-------------------------------------------------------------------------------
+  Wrappers
+-------------------------------------------------------------------------------}
+
+closeDB :: (MonadCatch m, HasHeader blk) => ImmDB m blk -> m ()
+closeDB db = withDB db ImmDB.closeDB

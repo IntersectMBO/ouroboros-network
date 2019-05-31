@@ -231,6 +231,7 @@ openDB args = do
       , readBlocks         = undefined
       , readHeaders        = undefined
       , knownInvalidBlocks = cdbKnownInvalidBlocks env
+      , closeDB            = cdbCloseDB            env
       }
   where
     (argsImmDb, argsVolDb, argsLgrDb) = fromChainDbArgs args
@@ -238,6 +239,12 @@ openDB args = do
 {-------------------------------------------------------------------------------
   Implementation
 -------------------------------------------------------------------------------}
+
+cdbCloseDB :: (MonadCatch m, HasHeader blk) => ChainDbEnv m blk hdr -> m ()
+cdbCloseDB CDB{..} = do
+    -- TODO
+    ImmDB.closeDB cdbImmDB
+    VolDB.closeDB cdbVolDB
 
 cdbGetIsFetched :: forall m blk hdr. MonadSTM m
                 => ChainDbEnv m blk hdr

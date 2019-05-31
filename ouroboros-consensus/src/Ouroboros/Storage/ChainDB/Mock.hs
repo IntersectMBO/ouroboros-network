@@ -100,6 +100,7 @@ openDB cfg initLedger blockHeader = do
       , streamBlocks        = update .: (first iterator ..: Model.streamBlocks)
       , readBlocks          = update  $ (first reader . Model.readBlocks)
       , readHeaders         = update  $ (first (fmap blockHeader . reader) . Model.readBlocks)
+      , closeDB             = return () -- TODO
       }
   where
     k = protocolSecurityParam cfg

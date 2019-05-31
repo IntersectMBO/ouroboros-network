@@ -20,6 +20,7 @@ module Ouroboros.Storage.ChainDB.VolDB (
   , getBlock
     -- * Wrappers
   , getIsMember
+  , closeDB
     -- * Re-exports
   , VolatileDBError
   ) where
@@ -112,6 +113,9 @@ openDB args@VolDbArgs{..} = do
 
 getIsMember :: VolDB m blk hdr -> STM m (HeaderHash blk -> Bool)
 getIsMember db = withSTM db VolDB.getIsMember
+
+closeDB :: (MonadCatch m, HasHeader blk) => VolDB m blk hdr -> m ()
+closeDB db = withDB db VolDB.closeDB
 
 {-------------------------------------------------------------------------------
   Compute candidates

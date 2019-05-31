@@ -202,6 +202,9 @@ data ChainDB m blk hdr =
 
       -- | Known to be invalid blocks
     , knownInvalidBlocks :: STM m (Set (Point blk))
+
+      -- | TODO Close the ChainDB
+    , closeDB            :: m ()
     }
 
 {-------------------------------------------------------------------------------
