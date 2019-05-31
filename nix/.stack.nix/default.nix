@@ -7,6 +7,7 @@
         "prometheus" = (((hackage.prometheus)."2.1.1").revisions).default;
         "containers" = (((hackage.containers)."0.5.11.0").revisions).default;
         "splitmix" = (((hackage.splitmix)."0.0.2").revisions).default;
+        "libsystemd-journal" = (((hackage.libsystemd-journal)."1.4.4").revisions).default;
         "Win32" = (((hackage.Win32)."2.5.4.1").revisions).default;
         "aeson-options" = (((hackage.aeson-options)."0.1.0").revisions).default;
         "pvss" = (((hackage.pvss)."0.2.0").revisions).default;

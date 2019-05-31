@@ -16,7 +16,7 @@ extra-deps:
 - graphviz-2999.20.0.3
 - quickcheck-state-machine-0.6.0
 - git: https://github.com/input-output-hk/iohk-monitoring-framework
-  commit: cbe7ab32354f3838dc8c95c64109904c8f503347
+  commit: 3222ee56a08a5f041824b6e1026cd3751133a1fd
   subdirs:
     - iohk-monitoring
     - contra-tracer
