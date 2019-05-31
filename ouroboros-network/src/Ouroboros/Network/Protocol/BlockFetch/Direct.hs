@@ -22,15 +22,15 @@ import           Ouroboros.Network.Protocol.BlockFetch.Server
 -- return the result of client and the server.
 --
 direct
-  :: forall header body m a b.
+  :: forall block m a b.
      Monad m
-  => BlockFetchClient header body m a
-  -> BlockFetchServer header body m b
+  => BlockFetchClient block m a
+  -> BlockFetchServer block m b
   -> m (a, b)
 direct (BlockFetchClient mclient) server = mclient >>= flip go server
  where
-  go :: BlockFetchRequest header body m a
-     -> BlockFetchServer header body m b
+  go :: BlockFetchRequest block m a
+     -> BlockFetchServer block m b
      -> m (a, b)
 
   go (SendMsgRequestRange range resp client) (BlockFetchServer requestHandler _b) =
@@ -40,9 +40,9 @@ direct (BlockFetchClient mclient) server = mclient >>= flip go server
 
 
   sendBatch
-    :: BlockFetchClient header body m a
-    -> BlockFetchResponse header body m a
-    -> BlockFetchBlockSender header body m b
+    :: BlockFetchClient block m a
+    -> BlockFetchResponse block m a
+    -> BlockFetchBlockSender block m b
     -> m (a, b)
   sendBatch client BlockFetchResponse {handleStartBatch} (SendMsgStartBatch mblock ) =
     join $ sendBlocks client <$> handleStartBatch <*> mblock
@@ -52,13 +52,13 @@ direct (BlockFetchClient mclient) server = mclient >>= flip go server
 
 
   sendBlocks
-    :: BlockFetchClient header body m a
-    -> BlockFetchReceiver header body m
-    -> BlockFetchSendBlocks header body m b
+    :: BlockFetchClient block m a
+    -> BlockFetchReceiver block m
+    -> BlockFetchSendBlocks block m b
     -> m (a, b)
 
-  sendBlocks client BlockFetchReceiver {handleBlock} (SendMsgBlock body mblock) =
-    join $ sendBlocks client <$> handleBlock body <*> mblock
+  sendBlocks client BlockFetchReceiver {handleBlock} (SendMsgBlock block mblock) =
+    join $ sendBlocks client <$> handleBlock block <*> mblock
 
   sendBlocks client BlockFetchReceiver {handleBatchDone} (SendMsgBatchDone mserver) =
     handleBatchDone >> mserver >>= direct client
@@ -68,16 +68,16 @@ direct (BlockFetchClient mclient) server = mclient >>= flip go server
 -- both client and the server.
 --
 directPipelined
-  :: forall header body m a b. Monad m
-  => BlockFetchClientPipelined header body m a
-  -> BlockFetchServer header body m b
+  :: forall block m a b. Monad m
+  => BlockFetchClientPipelined block m a
+  -> BlockFetchServer block m b
   -> m (a, b)
 directPipelined (BlockFetchClientPipelined client0) server =
   go EmptyQ client0 server
  where
   go :: Queue n c
-     -> BlockFetchSender n c header body m a
-     -> BlockFetchServer     header body m b
+     -> BlockFetchSender n c block m a
+     -> BlockFetchServer     block m b
      -> m (a, b)
 
   go q (SendMsgRequestRangePipelined range c receive next) (BlockFetchServer requestHandler _) =
@@ -97,9 +97,9 @@ directPipelined (BlockFetchClientPipelined client0) server =
   sendBatch
     :: Queue n c
     -> c
-    -> (Maybe body -> c -> m c)
-    -> BlockFetchSender (S n) c header body m a
-    -> BlockFetchBlockSender    header body m b
+    -> (Maybe block -> c -> m c)
+    -> BlockFetchSender (S n) c block m a
+    -> BlockFetchBlockSender    block m b
     -> m (a, b)
   sendBatch q c  receive client (SendMsgStartBatch next) =
     next >>= sendBlocks q c receive client
@@ -114,9 +114,9 @@ directPipelined (BlockFetchClientPipelined client0) server =
   sendBlocks
     :: Queue n c
     -> c
-    -> (Maybe body -> c -> m c)
-    -> BlockFetchSender (S n) c header body m a
-    -> BlockFetchSendBlocks     header body m b
+    -> (Maybe block -> c -> m c)
+    -> BlockFetchSender (S n) c block m a
+    -> BlockFetchSendBlocks     block m b
     -> m (a, b)
 
   sendBlocks q c receive  client (SendMsgBlock b next) = do

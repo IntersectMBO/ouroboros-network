@@ -70,7 +70,7 @@ blockFetchExample1 :: forall m. (MonadSTM m, MonadST m, MonadAsync m,
                    -> Tracer m (TraceLabelPeer Int
                                  (TraceFetchClientState BlockHeader))
                    -> Tracer m (TraceLabelPeer Int
-                                 (TraceSendRecv (BlockFetch BlockHeader Block)))
+                                 (TraceSendRecv (BlockFetch Block)))
                    -> AnchoredFragment Block   -- ^ Fixed current chain
                    -> [AnchoredFragment Block] -- ^ Fixed candidate chains
                    -> m ()
@@ -181,16 +181,14 @@ exampleFixedPeerGSVs =
 --
 
 runFetchClient :: (MonadCatch m, MonadAsync m, MonadST m, Ord peerid,
-                   Serialise header,
                    Serialise block,
-                   Serialise (HeaderHash header))
-                => Tracer m (TraceSendRecv (BlockFetch header block))
+                   Serialise (HeaderHash block))
+                => Tracer m (TraceSendRecv (BlockFetch block))
                 -> FetchClientRegistry peerid header block m
                 -> peerid
                 -> Channel m LBS.ByteString
                 -> (  FetchClientContext header block m
-                   -> PeerPipelined (BlockFetch header block)
-                                    AsClient BFIdle m a)
+                   -> PeerPipelined (BlockFetch block) AsClient BFIdle m a)
                 -> m a
 runFetchClient tracer registry peerid channel client =
     bracketFetchClient registry peerid $ \clientCtx ->
@@ -200,12 +198,11 @@ runFetchClient tracer registry peerid channel client =
     codec = codecBlockFetch encode encode decode decode
 
 runFetchServer :: (MonadThrow m, MonadST m,
-                   Serialise header,
                    Serialise block,
-                   Serialise (HeaderHash header))
-                => Tracer m (TraceSendRecv (BlockFetch header block))
+                   Serialise (HeaderHash block))
+                => Tracer m (TraceSendRecv (BlockFetch block))
                 -> Channel m LBS.ByteString
-                -> BlockFetchServer header block m a
+                -> BlockFetchServer block m a
                 -> m a
 runFetchServer tracer channel server =
     runPeer tracer codec channel $
@@ -217,15 +214,14 @@ runFetchClientAndServerAsync
                :: (MonadCatch m, MonadAsync m, MonadST m, Ord peerid,
                    Serialise header,
                    Serialise block,
-                   Serialise (HeaderHash header))
-                => Tracer m (TraceSendRecv (BlockFetch header block))
-                -> Tracer m (TraceSendRecv (BlockFetch header block))
+                   Serialise (HeaderHash block))
+                => Tracer m (TraceSendRecv (BlockFetch block))
+                -> Tracer m (TraceSendRecv (BlockFetch block))
                 -> FetchClientRegistry peerid header block m
                 -> peerid
                 -> (  FetchClientContext header block m
-                   -> PeerPipelined (BlockFetch header block)
-                                    AsClient BFIdle m a)
-                -> BlockFetchServer header block m b
+                   -> PeerPipelined (BlockFetch block) AsClient BFIdle m a)
+                -> BlockFetchServer block m b
                 -> m (Async m a, Async m b)
 runFetchClientAndServerAsync clientTracer serverTracer
                              registry peerid client server = do
@@ -252,30 +248,28 @@ runFetchClientAndServerAsync clientTracer serverTracer
 -- It serves up ranges on a single given 'ChainFragment'. It does not simulate
 -- any delays, so is not suitable for timing-accurate simulations.
 --
-mockBlockFetchServer1 :: forall header block m.
-                        (MonadSTM m, HasHeader block,
-                         HeaderHash header ~ HeaderHash block)
+mockBlockFetchServer1 :: forall block m.
+                        (MonadSTM m, HasHeader block)
                       => ChainFragment block
-                      -> BlockFetchServer header block m ()
+                      -> BlockFetchServer block m ()
 mockBlockFetchServer1 chain =
     senderSide
   where
-    senderSide :: BlockFetchServer header block m ()
+    senderSide :: BlockFetchServer block m ()
     senderSide = BlockFetchServer receiveReq ()
 
-    receiveReq :: ChainRange header
-               -> m (BlockFetchBlockSender header block m ())
+    receiveReq :: ChainRange block
+               -> m (BlockFetchBlockSender block m ())
     receiveReq (ChainRange lpoint upoint) =
       -- We can only assert this for tests, not for the real thing.
       assert (pointSlot lpoint <= pointSlot upoint) $
-      case ChainFragment.sliceRange chain
-             (castPoint lpoint) (castPoint upoint) of
+      case ChainFragment.sliceRange chain lpoint upoint of
         Nothing     -> return $ SendMsgNoBlocks (return senderSide)
         Just chain' -> return $ SendMsgStartBatch (sendBlocks blocks)
           where blocks = ChainFragment.toOldestFirst chain'
 
 
-    sendBlocks :: [block] -> m (BlockFetchSendBlocks header block m ())
+    sendBlocks :: [block] -> m (BlockFetchSendBlocks block m ())
     sendBlocks []     = return $ SendMsgBatchDone (return senderSide)
     sendBlocks (b:bs) = return $ SendMsgBlock b (sendBlocks bs)
 

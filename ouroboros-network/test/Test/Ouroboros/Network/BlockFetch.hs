@@ -160,7 +160,7 @@ data Example1TraceEvent =
    | TraceFetchClientState    (TraceLabelPeer Int
                                 (TraceFetchClientState BlockHeader))
    | TraceFetchClientSendRecv (TraceLabelPeer Int
-                                (TraceSendRecv (BlockFetch BlockHeader Block)))
+                                (TraceSendRecv (BlockFetch Block)))
 
 instance Show Example1TraceEvent where
   show (TraceFetchDecision       x) = "TraceFetchDecision " ++ show x
