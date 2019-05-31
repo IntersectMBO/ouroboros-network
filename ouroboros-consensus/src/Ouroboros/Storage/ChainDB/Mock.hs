@@ -10,6 +10,7 @@ import           Data.Bifunctor (first)
 import qualified Data.Set as Set
 
 import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.Block (HasHeader (..), HeaderHash,
                      Point (..))
@@ -26,7 +27,8 @@ import           Ouroboros.Storage.ChainDB.Model (Model)
 import qualified Ouroboros.Storage.ChainDB.Model as Model
 
 openDB :: forall m blk hdr.
-          ( MonadSTM m
+          ( MonadSTM   m
+          , MonadThrow m
           , HasHeader hdr
           , HeaderHash blk ~ HeaderHash hdr
           , ProtocolLedgerView blk
@@ -44,6 +46,9 @@ openDB cfg initLedger blockHeader = do
 
         query' :: (Model blk -> a) -> m a
         query' = atomically . query
+
+        queryE' :: (Model blk -> Either (ChainDbError blk) a) -> m a
+        queryE' f = query' f >>= either throwM return
 
         updateSTM :: (Model blk -> (a, Model blk)) -> STM m a
         updateSTM f = do
@@ -91,7 +96,7 @@ openDB cfg initLedger blockHeader = do
         addBlock            = update_ . Model.addBlock cfg
       , getCurrentChain     = query   $ Model.lastK k blockHeader
       , getCurrentLedger    = query   $ Model.currentLedger
-      , getBlock            = query'  . Model.getBlockByPoint
+      , getBlock            = queryE' . Model.getBlockByPoint
       , getTipBlock         = query'  $ Model.tipBlock
       , getTipHeader        = query'  $ (fmap blockHeader . Model.tipBlock)
       , getTipPoint         = query   $ Model.tipPoint
