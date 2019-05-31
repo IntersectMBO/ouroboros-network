@@ -40,7 +40,6 @@ import           Control.Monad.Except (runExcept)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe, isJust, mapMaybe)
-import           GHC.Stack (HasCallStack)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as Fragment
@@ -84,13 +83,18 @@ getBlock hash Model{..} = Map.lookup hash blocks
 hasBlock :: HasHeader blk => HeaderHash blk -> Model blk -> Bool
 hasBlock hash = isJust . getBlock hash
 
-getBlockByPoint :: (HasHeader blk, HasCallStack)
-                => Point blk -> Model blk -> Maybe blk
-getBlockByPoint = getBlock . notGenesis
+getBlockByPoint :: HasHeader blk
+                => Point blk -> Model blk
+                -> Either (ChainDbError blk) (Maybe blk)
+getBlockByPoint pt = case Chain.pointHash pt of
+    GenesisHash    -> const $ Left NoGenesisBlock
+    BlockHash hash -> Right . getBlock hash
 
-hasBlockByPoint :: (HasHeader blk, HasCallStack)
+hasBlockByPoint :: HasHeader blk
                 => Point blk -> Model blk -> Bool
-hasBlockByPoint = hasBlock . notGenesis
+hasBlockByPoint pt = case Chain.pointHash pt of
+    GenesisHash    -> const False
+    BlockHash hash -> hasBlock hash
 
 tipBlock :: Model blk -> Maybe blk
 tipBlock = Chain.head . currentChain
@@ -220,12 +224,6 @@ readerForward rdrId points m =
 {-------------------------------------------------------------------------------
   Internal auxiliary
 -------------------------------------------------------------------------------}
-
-notGenesis :: HasCallStack => Point blk -> HeaderHash blk
-notGenesis p =
-    case Block.pointHash p of
-      GenesisHash -> error "Ouroboros.Storage.ChainDB.Model: notGenesis"
-      BlockHash h -> h
 
 validate :: forall blk. ProtocolLedgerView blk
          => NodeConfig (BlockProtocol blk)

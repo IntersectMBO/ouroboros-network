@@ -44,6 +44,9 @@ openDB cfg initLedger = do
         query' :: (Model blk -> a) -> m a
         query' = atomically . query
 
+        queryE' :: (Model blk -> Either (ChainDbError blk) a) -> m a
+        queryE' f = query' f >>= either throwM return
+
         updateSTM :: (Model blk -> (a, Model blk)) -> STM m a
         updateSTM f = do
             (a, m') <- f <$> readTVar db
@@ -91,7 +94,7 @@ openDB cfg initLedger = do
         addBlock            = update_ . Model.addBlock cfg
       , getCurrentChain     = query   $ Model.lastK k getHeader
       , getCurrentLedger    = query   $ Model.currentLedger
-      , getBlock            = query'  . Model.getBlockByPoint
+      , getBlock            = queryE' . Model.getBlockByPoint
       , getTipBlock         = query'  $ Model.tipBlock
       , getTipHeader        = query'  $ (fmap getHeader . Model.tipBlock)
       , getTipPoint         = query   $ Model.tipPoint
