@@ -24,9 +24,11 @@ import           Test.Tasty.QuickCheck
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Demo
+import           Ouroboros.Consensus.Demo.Run
 import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Node
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Network.Chain (Chain)
 
@@ -51,13 +53,14 @@ prop_simple_bft_convergence :: SecurityParam
                             -> Property
 prop_simple_bft_convergence k numCoreNodes =
     prop_simple_protocol_convergence
-      (protocolInfo (DemoBFT k) numCoreNodes)
+      (\nid -> protocolInfo numCoreNodes nid (DemoBFT k))
       isValid
       numCoreNodes
   where
     isValid :: [NodeId]
             -> Map NodeId ( NodeConfig DemoBFT
-                          , Chain (SimpleBlock DemoBFT SimpleBlockMockCrypto))
+                          , Chain (SimpleBftBlock SimpleMockCrypto BftMockCrypto)
+                          )
             -> Property
     isValid nodeIds final = counterexample (show final') $
           tabulate "shortestLength" [show (rangeK k (shortestLength final'))]
@@ -66,6 +69,6 @@ prop_simple_bft_convergence k numCoreNodes =
       where
         -- Without the 'NodeConfig's
         final' = snd <$> final
-        takeChainPrefix :: Chain (SimpleBlock DemoBFT SimpleBlockMockCrypto)
-                        -> Chain (SimpleBlock DemoBFT SimpleBlockMockCrypto)
+        takeChainPrefix :: Chain (SimpleBftBlock SimpleMockCrypto BftMockCrypto)
+                        -> Chain (SimpleBftBlock SimpleMockCrypto BftMockCrypto)
         takeChainPrefix = id -- in BFT, chains should indeed all be equal.

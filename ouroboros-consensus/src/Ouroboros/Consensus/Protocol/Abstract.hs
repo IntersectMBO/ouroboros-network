@@ -13,8 +13,6 @@
 module Ouroboros.Consensus.Protocol.Abstract (
     -- * Abstract definition of the Ouroboros protocl
     OuroborosTag(..)
-  , HasPreHeader(..)
-  , HasPayload(..)
   , SecurityParam(..)
   , selectChain
   , selectUnvalidatedChain
@@ -30,7 +28,6 @@ module Ouroboros.Consensus.Protocol.Abstract (
   , evalNodeState
   ) where
 
-import           Codec.Serialise.Encoding (Encoding)
 import           Control.Monad.Except
 import           Control.Monad.State
 import           Crypto.Random (MonadRandom (..))
@@ -73,17 +70,6 @@ class ( Show (ChainState    p)
 
   -- | State of the node required to run the protocol
   type family NodeState p :: *
-
-  -- | The protocol specific part that should included in the block
-  --
-  -- The type argument is the type of the block header /without/ the
-  -- Ouroboros specific part
-  --
-  -- This is a data family because of limitations in GHC's support for
-  -- quantified constraints; see
-  -- <https://ghc.haskell.org/trac/ghc/ticket/14860>
-  -- <https://ghc.haskell.org/trac/ghc/ticket/15347>
-  data family Payload p :: * -> *
 
   -- | Blockchain dependent protocol-specific state
   type family ChainState p :: *
@@ -137,16 +123,6 @@ class ( Show (ChainState    p)
 
   -- | Blocks that the protocol can run on
   type family SupportedBlock p :: * -> Constraint
-
-  -- | Construct the ouroboros-specific payload of a block
-  --
-  -- Gets the proof that we are the leader and the preheader as arguments.
-  mkPayload :: (SupportedBlock p b, HasNodeState p m, MonadRandom m)
-            => proxy b
-            -> NodeConfig p
-            -> IsLeader p
-            -> PreHeader b
-            -> m (Payload p (PreHeader b))
 
   -- | Do we prefer the candidate chain over ours?
   --
@@ -237,20 +213,6 @@ class ( Show (ChainState    p)
 -- the number of /slots/.
 newtype SecurityParam = SecurityParam { maxRollbacks :: Word64 }
   deriving (Eq)
-
--- | Extract the pre-header from a block
-class (HasHeader b) => HasPreHeader b where
-  type family PreHeader b :: *
-  blockPreHeader  :: b -> PreHeader b
-  encodePreHeader :: proxy b -> PreHeader b -> Encoding
-
--- | Blocks that contain the ouroboros payload
---
--- We do /not/ impose a functional dependency here, so that in principle
--- blocks can be defined to have payloads for multiple protocols. This is
--- important for protocol combinators.
-class HasPreHeader b => HasPayload p b where
-  blockPayload :: NodeConfig p -> b -> Payload p (PreHeader b)
 
 {-------------------------------------------------------------------------------
   Chain selection

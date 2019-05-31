@@ -14,6 +14,7 @@ module Test.Dynamic.General (
   ) where
 
 import           Data.Map.Strict (Map)
+import           Data.Typeable (Typeable)
 import           Test.QuickCheck
 
 import           Control.Monad.Class.MonadAsync
@@ -29,6 +30,8 @@ import           Ouroboros.Network.Chain
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Demo
+import           Ouroboros.Consensus.Demo.Run
+import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Node
 import           Ouroboros.Consensus.Protocol.Abstract (NodeConfig)
@@ -38,13 +41,17 @@ import           Ouroboros.Consensus.Util.ThreadRegistry
 
 import           Test.Dynamic.Network
 
-prop_simple_protocol_convergence :: forall p c.
-                                   ( RunDemo (SimpleBlock p c) (SimpleHeader p c)
-                                   , SimpleBlockCrypto c
+prop_simple_protocol_convergence :: forall c ext.
+                                   ( RunDemo (SimpleBlock c ext) (SimpleHeader c ext)
+                                   , SimpleCrypto c
+                                   , Show ext
+                                   , Typeable ext
                                    )
-                                 => (CoreNodeId -> ProtocolInfo (SimpleBlock p c))
+                                 => (CoreNodeId -> ProtocolInfo (SimpleBlock c ext))
                                  -> (   [NodeId]
-                                     -> Map NodeId (NodeConfig p, Chain (SimpleBlock p c))
+                                     -> Map NodeId ( NodeConfig (BlockProtocol (SimpleBlock c ext))
+                                                   , Chain (SimpleBlock c ext)
+                                                   )
                                      -> Property)
                                  -> NumCoreNodes
                                  -> NumSlots
@@ -55,7 +62,7 @@ prop_simple_protocol_convergence pInfo isValid numCoreNodes numSlots seed =
       test_simple_protocol_convergence pInfo isValid numCoreNodes numSlots seed
 
 -- Run protocol on the broadcast network, and check resulting chains on all nodes.
-test_simple_protocol_convergence :: forall m p c.
+test_simple_protocol_convergence :: forall m c ext.
                                     ( MonadAsync m
                                     , MonadFork  m
                                     , MonadMask  m
@@ -63,12 +70,16 @@ test_simple_protocol_convergence :: forall m p c.
                                     , MonadTime  m
                                     , MonadTimer m
                                     , MonadThrow (STM m)
-                                    , RunDemo (SimpleBlock p c) (SimpleHeader p c)
-                                    , SimpleBlockCrypto c
+                                    , RunDemo (SimpleBlock c ext) (SimpleHeader c ext)
+                                    , SimpleCrypto c
+                                    , Show ext
+                                    , Typeable ext
                                     )
-                                 => (CoreNodeId -> ProtocolInfo (SimpleBlock p c))
+                                 => (CoreNodeId -> ProtocolInfo (SimpleBlock c ext))
                                  -> (   [NodeId]
-                                     -> Map NodeId (NodeConfig p, Chain (SimpleBlock p c))
+                                     -> Map NodeId ( NodeConfig (BlockProtocol (SimpleBlock c ext))
+                                                   , Chain (SimpleBlock c ext)
+                                                   )
                                      -> Property)
                                  -> NumCoreNodes
                                  -> NumSlots

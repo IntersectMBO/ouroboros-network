@@ -5,6 +5,7 @@
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
@@ -13,15 +14,12 @@ module Ouroboros.Consensus.Protocol.ExtNodeConfig (
     ExtNodeConfig
     -- * Type family instances
   , NodeConfig(..)
-  , Payload(..)
+  , mapExtNodeConfig
   ) where
 
-import           Codec.Serialise (Serialise)
 import           Data.Typeable (Typeable)
-import           GHC.Generics (Generic)
 
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util.Condense
 
 -- | Extension of protocol @p@ by additional static node configuration @cfg@.
 data ExtNodeConfig cfg p
@@ -31,11 +29,6 @@ instance (Typeable cfg, OuroborosTag p) => OuroborosTag (ExtNodeConfig cfg p) wh
   --
   -- Most types remain the same
   --
-
-  newtype Payload (ExtNodeConfig cfg p) ph = EncPayload {
-        encPayloadP :: Payload p ph
-      }
-    deriving (Generic)
 
   type ChainState     (ExtNodeConfig cfg p) = ChainState     p
   type NodeState      (ExtNodeConfig cfg p) = NodeState      p
@@ -57,9 +50,6 @@ instance (Typeable cfg, OuroborosTag p) => OuroborosTag (ExtNodeConfig cfg p) wh
   -- Propagate changes
   --
 
-  mkPayload proxy (EncNodeConfig cfg _) proof ph =
-      EncPayload <$> mkPayload proxy cfg proof ph
-
   preferCandidate       (EncNodeConfig cfg _) = preferCandidate       cfg
   compareCandidates     (EncNodeConfig cfg _) = compareCandidates     cfg
   checkIsLeader         (EncNodeConfig cfg _) = checkIsLeader         cfg
@@ -67,10 +57,10 @@ instance (Typeable cfg, OuroborosTag p) => OuroborosTag (ExtNodeConfig cfg p) wh
   rewindChainState      (EncNodeConfig cfg _) = rewindChainState      cfg
   protocolSecurityParam (EncNodeConfig cfg _) = protocolSecurityParam cfg
 
-deriving instance Eq       (Payload p ph) => Eq       (Payload (ExtNodeConfig cfg p) ph)
-deriving instance Ord      (Payload p ph) => Ord      (Payload (ExtNodeConfig cfg p) ph)
-deriving instance Show     (Payload p ph) => Show     (Payload (ExtNodeConfig cfg p) ph)
-deriving instance Condense (Payload p ph) => Condense (Payload (ExtNodeConfig cfg p) ph)
-
-instance Serialise (Payload p ph) => Serialise (Payload (ExtNodeConfig cfg p) ph) where
-  -- use Generic instance
+mapExtNodeConfig :: (a -> b)
+                 -> NodeConfig (ExtNodeConfig a p)
+                 -> NodeConfig (ExtNodeConfig b p)
+mapExtNodeConfig f EncNodeConfig{..} = EncNodeConfig {
+      encNodeConfigP   =   encNodeConfigP
+    , encNodeConfigExt = f encNodeConfigExt
+    }

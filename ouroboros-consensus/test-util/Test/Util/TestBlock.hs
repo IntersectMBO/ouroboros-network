@@ -42,7 +42,7 @@ import           Data.Word
 import qualified System.Random as R
 import           Test.QuickCheck
 
-import           Ouroboros.Network.Block (ChainHash (..))
+import           Ouroboros.Network.Block (ChainHash (..), HeaderHash)
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.Chain (Chain (..), Point)
 import qualified Ouroboros.Network.Chain as Chain
@@ -52,6 +52,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Node (NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
+import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
 import qualified Ouroboros.Consensus.Util.SlotBounded as SB
 
@@ -62,7 +63,6 @@ import qualified Ouroboros.Consensus.Util.SlotBounded as SB
 newtype TestHash = TestHash Word64
   deriving newtype (Show, Eq, Ord, Serialise, Num, Condense)
 
-
 data TestBlock = TestBlock {
       tbHash     :: TestHash
     , tbPrevHash :: ChainHash TestBlock
@@ -71,9 +71,9 @@ data TestBlock = TestBlock {
     }
   deriving (Show, Eq)
 
-instance Block.HasHeader TestBlock where
-  type HeaderHash TestBlock = TestHash
+type instance HeaderHash TestBlock = TestHash
 
+instance Block.HasHeader TestBlock where
   blockHash      = tbHash
   blockPrevHash  = tbPrevHash
   blockSlot      = tbSlot
@@ -109,13 +109,13 @@ instance Condense (ChainHash TestBlock) where
 
 type instance BlockProtocol TestBlock = Bft BftMockCrypto
 
-instance HasPreHeader TestBlock where
-  type PreHeader TestBlock = ()
-  blockPreHeader _ = ()
-  encodePreHeader  = const encode
+instance SignedBlock TestBlock where
+  type Signed TestBlock = ()
+  blockSigned  _ = ()
+  encodeSigned _ = encode
 
-instance HasPayload (Bft BftMockCrypto) TestBlock where
-  blockPayload = \cfg tb -> BftPayload {
+instance BlockSupportsBft BftMockCrypto TestBlock where
+  blockBftFields cfg tb = BftFields {
         bftSignature = SignedDSIGN $
                          mockSign
                            encode
@@ -131,6 +131,14 @@ instance HasPayload (Bft BftMockCrypto) TestBlock where
       signKey BftNodeConfig{bftParams = BftParams{..}} (Block.SlotNo n) =
           SignKeyMockDSIGN $ fromIntegral (n `mod` bftNumNodes)
 
+
+-- | The only error possible is that hashes don't line up
+data InvalidHash = InvalidHash {
+      expectedHash :: ChainHash TestBlock
+    , invalidHash  :: ChainHash TestBlock
+    }
+  deriving (Show)
+
 instance UpdateLedger TestBlock where
   data LedgerState TestBlock =
       TestLedger {
@@ -140,14 +148,7 @@ instance UpdateLedger TestBlock where
     deriving (Show)
 
   data LedgerConfig TestBlock = LedgerConfig
-
-  data LedgerError TestBlock =
-      -- | The only error possible is that hashes don't line up
-      InvalidHash {
-          expectedHash :: ChainHash TestBlock
-        , invalidHash  :: ChainHash TestBlock
-        }
-    deriving (Show)
+  type LedgerError  TestBlock = InvalidHash
 
   applyLedgerBlock _ tb@TestBlock{..} TestLedger{..} =
       if tbPrevHash == snd lastApplied

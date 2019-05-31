@@ -1,8 +1,8 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
@@ -49,34 +49,28 @@ module Ouroboros.Network.Testing.ConcreteBlock (
   , fixupAnchoredFragmentFromSame
   ) where
 
-import           Data.FingerTree (Measured(measure))
+import           Data.FingerTree (Measured (measure))
+import           Data.Function (fix)
 import           Data.Hashable
+import           Data.Maybe (fromMaybe)
+import           Data.String (IsString)
 import qualified Data.Text as Text
 import           Data.Word (Word64)
-import           Data.String (IsString)
-import           Data.Function (fix)
-import           Data.Maybe (fromMaybe)
 
+import           Codec.CBOR.Decoding (decodeInt, decodeListLenOf, decodeString,
+                     decodeWord64)
+import           Codec.CBOR.Encoding (encodeInt, encodeListLen, encodeString,
+                     encodeWord64)
 import           Codec.Serialise (Serialise (..))
-import           Codec.CBOR.Encoding ( encodeListLen
-                                     , encodeInt
-                                     , encodeWord64
-                                     , encodeString
-                                     )
-import           Codec.CBOR.Decoding ( decodeListLenOf
-                                     , decodeInt
-                                     , decodeWord64
-                                     , decodeString
-                                     )
 import           GHC.Generics (Generic)
 
-import           Ouroboros.Network.Block
-import qualified Ouroboros.Network.Chain as C
-import           Ouroboros.Network.Chain (Chain)
-import qualified Ouroboros.Network.ChainFragment as CF
-import           Ouroboros.Network.ChainFragment (ChainFragment)
-import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
+import qualified Ouroboros.Network.AnchoredFragment as AF
+import           Ouroboros.Network.Block
+import           Ouroboros.Network.Chain (Chain)
+import qualified Ouroboros.Network.Chain as C
+import           Ouroboros.Network.ChainFragment (ChainFragment)
+import qualified Ouroboros.Network.ChainFragment as CF
 
 {-------------------------------------------------------------------------------
   Concrete block shape used currently in the network layer
@@ -164,9 +158,10 @@ instance Measured BlockMeasure BlockHeader where
 instance Measured BlockMeasure Block where
   measure = blockMeasure
 
-instance HasHeader BlockHeader where
-    type HeaderHash BlockHeader = ConcreteHeaderHash
+type instance HeaderHash BlockHeader = ConcreteHeaderHash
+type instance HeaderHash Block       = ConcreteHeaderHash
 
+instance HasHeader BlockHeader where
     blockHash      = headerHash
     blockPrevHash  = headerPrevHash
     blockSlot      = headerSlot
@@ -180,8 +175,6 @@ instance HasHeader BlockHeader where
      && blockSlot  b >  SlotNo  0  -- we reserve 0 for genesis
 
 instance HasHeader Block where
-    type HeaderHash Block = ConcreteHeaderHash
-
     blockHash      =            headerHash     . blockHeader
     blockPrevHash  = castHash . headerPrevHash . blockHeader
     blockSlot      =            headerSlot     . blockHeader

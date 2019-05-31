@@ -24,7 +24,7 @@ import           Ouroboros.Consensus.Crypto.DSIGN.Class (DSIGNAlgorithm (..))
 import           Ouroboros.Consensus.Crypto.Hash.Class (Hash,
                      HashAlgorithm (..), hash)
 import           Ouroboros.Consensus.Crypto.VRF.Class (VRFAlgorithm (..))
-import           Ouroboros.Consensus.Demo
+import           Ouroboros.Consensus.Demo.Run
 import           Ouroboros.Consensus.Util.Random (Seed (..), withSeed)
 
 import           Ouroboros.Storage.ImmutableDB.Layout

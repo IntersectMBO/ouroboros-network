@@ -35,11 +35,12 @@ import           Codec.CBOR.Encoding (Encoding)
 import           Control.Monad.Except
 import           GHC.Stack
 
+import           Ouroboros.Network.Block (HasHeader (..), Point, SlotNo)
+import           Ouroboros.Network.Chain (Chain, toOldestFirst)
+
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util (repeatedlyM)
 import           Ouroboros.Consensus.Util.SlotBounded (SlotBounded)
-import           Ouroboros.Network.Block (HasHeader (..), Point, SlotNo)
-import           Ouroboros.Network.Chain (Chain, toOldestFirst)
 
 {-------------------------------------------------------------------------------
   Interaction with the ledger layer
@@ -50,7 +51,7 @@ class ( Show (LedgerState b)
       , Show (LedgerError b)
       ) => UpdateLedger (b :: *) where
   data family LedgerState b :: *
-  data family LedgerError b :: *
+  type family LedgerError b :: *
 
   -- | Static environment required for the ledger
   data family LedgerConfig b :: *
@@ -143,9 +144,7 @@ class ( OuroborosTag (BlockProtocol b)
     -> Maybe (SlotBounded (LedgerView (BlockProtocol b)))
 
 -- | Extract the ledger environment from the node config
-class ( UpdateLedger b
-      , OuroborosTag (BlockProtocol b)
-      ) => LedgerConfigView b where
+class UpdateLedger b => LedgerConfigView b where
   ledgerConfigView :: NodeConfig (BlockProtocol b)
                    -> LedgerConfig b
 

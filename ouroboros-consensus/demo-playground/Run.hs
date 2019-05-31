@@ -32,6 +32,7 @@ import           Ouroboros.Network.Protocol.ChainSync.Codec
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
 import           Ouroboros.Consensus.Demo
+import           Ouroboros.Consensus.Demo.Run
 import           Ouroboros.Consensus.Node
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
@@ -79,7 +80,7 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
     putStrLn $ "**************************************"
 
     let pInfo@ProtocolInfo{..} =
-          protocolInfo p (NumCoreNodes (length nodeSetups)) (CoreNodeId nid)
+          protocolInfo (NumCoreNodes (length nodeSetups)) (CoreNodeId nid) p
 
     withThreadRegistry $ \registry -> do
 

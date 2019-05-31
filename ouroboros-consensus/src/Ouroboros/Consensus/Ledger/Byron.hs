@@ -13,16 +13,28 @@ module Ouroboros.Consensus.Ledger.Byron
     ByronBlock (..)
   , ByronHeader (..)
   , byronHeader
+  , annotateByronBlock
     -- * Mempool integration
   , GenTx (..)
     -- * Ledger
   , LedgerState (..)
   , LedgerConfig (..)
+    -- * Serialisation
+  , encodeByronHeader
+  , encodeByronBlock
+  , encodeByronHeaderHash
+  , decodeByronHeader
+  , decodeByronBlock
+  , decodeByronHeaderHash
   ) where
 
+import           Codec.CBOR.Decoding (Decoder)
+import           Codec.CBOR.Encoding (Encoding)
+import qualified Codec.CBOR.Read as CBOR
+import qualified Codec.CBOR.Write as CBOR
 import           Control.Monad.Except
-import           Data.Bifunctor (bimap, first)
 import qualified Data.Bimap as Bimap
+import qualified Data.ByteString.Lazy as Lazy
 import           Data.Coerce (coerce)
 import           Data.FingerTree (Measured (..))
 import           Data.Foldable (find, foldl')
@@ -34,7 +46,8 @@ import           Data.Typeable
 import           Data.Word (Word8)
 import           Formatting
 
-import           Cardano.Binary (Annotated (..), reAnnotate, toCBOR)
+import           Cardano.Binary (Annotated (..), ByteSpan, fromCBOR, reAnnotate,
+                     slice, toCBOR)
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.Common as CC.Common
 import qualified Cardano.Chain.Delegation as CC.Delegation
@@ -56,6 +69,7 @@ import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.PBFT
+import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.SlotBounded (SlotBounded (..))
 import qualified Ouroboros.Consensus.Util.SlotBounded as SB
@@ -75,24 +89,25 @@ newtype ByronBlock cfg = ByronBlock
   }
   deriving (Eq, Show)
 
-
 newtype ByronHeader cfg = ByronHeader
   { unByronHeader :: CC.Block.AHeader ByteString
   } deriving (Eq, Show)
 
-
 byronHeader :: ByronBlock cfg -> ByronHeader cfg
 byronHeader (ByronBlock b) = ByronHeader (CC.Block.blockHeader b)
 
+annotateByronBlock :: CC.Slot.EpochSlots -> CC.Block.Block -> ByronBlock cfg
+annotateByronBlock epochSlots = ByronBlock . annotateBlock epochSlots
 
 {-------------------------------------------------------------------------------
   HasHeader instances
 -------------------------------------------------------------------------------}
 
+type instance HeaderHash (ByronBlock  cfg) = CC.Block.HeaderHash
+type instance HeaderHash (ByronHeader cfg) = CC.Block.HeaderHash
+
 instance (Given CC.Block.HeaderHash, Typeable cfg)
       => HasHeader (ByronBlock cfg) where
-  type HeaderHash (ByronBlock cfg) = CC.Block.HeaderHash
-
   blockHash      =            blockHash     . byronHeader
   blockPrevHash  = castHash . blockPrevHash . byronHeader
   blockSlot      =            blockSlot     . byronHeader
@@ -101,8 +116,6 @@ instance (Given CC.Block.HeaderHash, Typeable cfg)
 
 instance (Given CC.Block.HeaderHash, Typeable cfg)
       => HasHeader (ByronHeader cfg) where
-  type HeaderHash (ByronHeader cfg) = CC.Block.HeaderHash
-
   -- Implementation of 'blockHash' derived from
   --
   -- > blockHashAnnotated :: ABlock ByteString -> HeaderHash
@@ -132,7 +145,6 @@ instance (Given CC.Block.HeaderHash, Typeable cfg)
                  . unByronHeader
   blockInvariant = const True
 
-
 instance (Given CC.Block.HeaderHash, Typeable cfg)
       => Measured BlockMeasure (ByronBlock cfg) where
   measure = blockMeasure
@@ -157,15 +169,12 @@ instance UpdateLedger (ByronBlock cfg) where
       }
     deriving (Eq, Show)
 
-  newtype LedgerError (ByronBlock cfg)
-      = ByronLedgerError CC.Block.ChainValidationError
-    deriving (Eq, Show)
+  type LedgerError (ByronBlock cfg) = CC.Block.ChainValidationError
 
   newtype LedgerConfig (ByronBlock cfg) = ByronLedgerConfig CC.Genesis.Config
 
   applyLedgerBlock (ByronLedgerConfig cfg) (ByronBlock block)
-                   (ByronLedgerState state snapshots) =
-    mapExcept (first ByronLedgerError) $ do
+                   (ByronLedgerState state snapshots) = do
       CC.Block.BodyState { CC.Block.utxo, CC.Block.updateState
                          , CC.Block.delegationState }
         <- CC.Block.updateBody bodyEnv bodyState block
@@ -216,7 +225,7 @@ instance UpdateLedger (ByronBlock cfg) where
 
   applyLedgerHeader (ByronLedgerConfig cfg) (ByronBlock block)
                     (ByronLedgerState state snapshots) =
-      mapExcept (bimap ByronLedgerError (\i -> ByronLedgerState i snapshots)) $ do
+      mapExcept (fmap (\i -> ByronLedgerState i snapshots)) $ do
         updateState <- CC.Block.updateHeader
           headerEnv
           (CC.Block.cvsUpdateState state)
@@ -262,55 +271,45 @@ numGenKeys cfg = case length genKeys of
   Support for PBFT consensus algorithm
 -------------------------------------------------------------------------------}
 
+instance Given CC.Slot.EpochSlots => SignedBlock (ByronHeader cfg) where
+  type Signed (ByronHeader cfg) = CC.Block.ToSign
+  encodeSigned = const toCBOR
+  blockSigned  = unAnnotated
+               . CC.Block.recoverSignedBytes given
+               . unByronHeader
+
+instance Given CC.Slot.EpochSlots => SignedBlock (ByronBlock cfg) where
+  type Signed (ByronBlock cfg) = CC.Block.ToSign
+  encodeSigned = const toCBOR
+  blockSigned  = blockSigned . byronHeader
+
 instance (Given CC.Block.HeaderHash, Given CC.Slot.EpochSlots, Typeable cfg)
-      => BlockSupportsPBft PBftCardanoCrypto (ByronBlock cfg)
+      => BlockSupportsPBft PBftCardanoCrypto (ByronHeader cfg) where
+  blockPBftFields _ (ByronHeader hdr) = PBftFields {
+        pbftIssuer    = VerKeyCardanoDSIGN
+                      . Crypto.pskDelegateVK
+                      . Crypto.psigPsk
+                      . CC.Block.unBlockSignature
+                      . CC.Block.headerSignature
+                      $ hdr
+      , pbftSignature = SignedDSIGN
+                      . SigCardanoDSIGN
+                      . Crypto.Signature
+                      . Crypto.psigSig
+                      . CC.Block.unBlockSignature
+                      . CC.Block.headerSignature
+                      $ hdr
+      }
+
+instance (Given CC.Block.HeaderHash, Given CC.Slot.EpochSlots, Typeable cfg)
+      => BlockSupportsPBft PBftCardanoCrypto (ByronBlock cfg) where
+  blockPBftFields p = blockPBftFields p . byronHeader
 
 type instance BlockProtocol (ByronBlock cfg) =
   ExtNodeConfig cfg (PBft PBftCardanoCrypto)
 
 type instance BlockProtocol (ByronHeader cfg) =
   ExtNodeConfig cfg (PBft PBftCardanoCrypto)
-
-instance (Given CC.Slot.EpochSlots, Given CC.Block.HeaderHash, Typeable cfg)
-      => HasPreHeader (ByronBlock cfg) where
-  type PreHeader (ByronBlock cfg) = CC.Block.ToSign
-  blockPreHeader  = unAnnotated
-                  . CC.Block.recoverSignedBytes given
-                  . CC.Block.blockHeader
-                  . unByronBlock
-  encodePreHeader = const toCBOR
-
--- TODO get rid of this once we have a BlockHeader type family
-instance (Given CC.Slot.EpochSlots, Given CC.Block.HeaderHash, Typeable cfg)
-      => HasPreHeader (ByronHeader cfg) where
-  type PreHeader (ByronHeader cfg) = CC.Block.ToSign
-  blockPreHeader  = unAnnotated
-                  . CC.Block.recoverSignedBytes given
-                  . unByronHeader
-  encodePreHeader = const toCBOR
-
--- TODO get rid of this once we have a BlockHeader type family
-instance (Given CC.Slot.EpochSlots, Given CC.Block.HeaderHash, Typeable cfg)
-      => HasPayload (PBft PBftCardanoCrypto) (ByronHeader cfg) where
-  blockPayload _ (ByronHeader header) = PBftPayload
-    { pbftIssuer = VerKeyCardanoDSIGN
-                 . Crypto.pskDelegateVK
-                 . Crypto.psigPsk
-                 . CC.Block.unBlockSignature
-                 . CC.Block.headerSignature
-                 $ header
-    , pbftSignature = SignedDSIGN
-                    . SigCardanoDSIGN
-                    . Crypto.Signature
-                    . Crypto.psigSig
-                    . CC.Block.unBlockSignature
-                    . CC.Block.headerSignature
-                    $ header
-    }
-
-instance (Given CC.Slot.EpochSlots, Given CC.Block.HeaderHash, Typeable cfg)
-      => HasPayload (PBft PBftCardanoCrypto) (ByronBlock cfg) where
-  blockPayload cfg = blockPayload cfg . byronHeader
 
 instance ( Given Crypto.ProtocolMagicId
          , Given CC.Slot.EpochSlots
@@ -511,3 +510,83 @@ instance Condense (ByronHeader cfg) where
 instance Condense (ChainHash (ByronHeader cfg)) where
   condense GenesisHash   = "genesis"
   condense (BlockHash h) = show h
+
+{-------------------------------------------------------------------------------
+  Serialisation
+-------------------------------------------------------------------------------}
+
+encodeByronHeader :: CC.Slot.EpochSlots -> ByronHeader cfg -> Encoding
+encodeByronHeader epochSlots =
+    CC.Block.toCBORHeader epochSlots . void . unByronHeader
+
+encodeByronBlock :: CC.Slot.EpochSlots -> ByronBlock cfg -> Encoding
+encodeByronBlock epochSlots =
+    CC.Block.toCBORBlock epochSlots . void . unByronBlock
+
+encodeByronHeaderHash :: HeaderHash (ByronHeader cfg) -> Encoding
+encodeByronHeaderHash = toCBOR
+
+decodeByronHeader :: CC.Slot.EpochSlots -> Decoder s (ByronHeader cfg)
+decodeByronHeader epochSlots =
+    ByronHeader . annotate <$> CC.Block.fromCBORAHeader epochSlots
+  where
+    -- TODO #560: Re-annotation can be done but requires some rearranging in
+    -- the codecs Original ByteSpan's refer to bytestring we don't have, so
+    -- we'll ignore them
+    annotate :: CC.Block.AHeader a -> CC.Block.AHeader ByteString
+    annotate = annotateHeader epochSlots . void
+
+decodeByronBlock :: CC.Slot.EpochSlots -> Decoder s (ByronBlock cfg)
+decodeByronBlock epochSlots =
+    ByronBlock . annotate <$> CC.Block.fromCBORABlock epochSlots
+  where
+    -- TODO #560: Re-annotation can be done but requires some rearranging in
+    -- the codecs Original ByteSpan's refer to bytestring we don't have, so
+    -- we'll ignore them
+    annotate :: CC.Block.ABlock a -> CC.Block.ABlock ByteString
+    annotate = annotateBlock epochSlots . void
+
+decodeByronHeaderHash :: Decoder s (HeaderHash (ByronHeader cfg))
+decodeByronHeaderHash = fromCBOR
+
+{-------------------------------------------------------------------------------
+  Internal auxiliary
+
+  TODO: This should leave in cardano-chain instead
+-------------------------------------------------------------------------------}
+
+annotateBlock :: CC.Slot.EpochSlots
+              -> CC.Block.ABlock ()
+              -> CC.Block.ABlock ByteString
+annotateBlock epochSlots =
+      (\bs -> splice bs (CBOR.deserialiseFromBytes
+                           (CC.Block.fromCBORABlock epochSlots)
+                           bs))
+    . CBOR.toLazyByteString
+    . CC.Block.toCBORBlock epochSlots
+  where
+    splice :: Lazy.ByteString
+           -> Either err (Lazy.ByteString, CC.Block.ABlock ByteSpan)
+           -> CC.Block.ABlock ByteString
+    splice _ (Left _err) =
+      error "annotateBlock: serialization roundtrip failure"
+    splice bs (Right (_leftover, txAux)) =
+      (Lazy.toStrict . slice bs) <$> txAux
+
+annotateHeader :: CC.Slot.EpochSlots
+               -> CC.Block.AHeader ()
+               -> CC.Block.AHeader ByteString
+annotateHeader epochSlots =
+      (\bs -> splice bs (CBOR.deserialiseFromBytes
+                           (CC.Block.fromCBORAHeader epochSlots)
+                           bs))
+    . CBOR.toLazyByteString
+    . CC.Block.toCBORHeader epochSlots
+  where
+    splice :: Lazy.ByteString
+           -> Either err (Lazy.ByteString, CC.Block.AHeader ByteSpan)
+           -> CC.Block.AHeader ByteString
+    splice _ (Left _err) =
+      error "annotateBlock: serialization roundtrip failure"
+    splice bs (Right (_leftover, txAux)) =
+      (Lazy.toStrict . slice bs) <$> txAux

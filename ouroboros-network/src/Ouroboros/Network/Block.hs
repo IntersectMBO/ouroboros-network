@@ -13,6 +13,7 @@
 module Ouroboros.Network.Block (
     SlotNo(..)
   , BlockNo(..)
+  , HeaderHash
   , HasHeader(..)
   , StandardHash
   , ChainHash(..)
@@ -50,15 +51,11 @@ newtype SlotNo = SlotNo { unSlotNo :: Word64 }
 newtype BlockNo = BlockNo { unBlockNo :: Word64 }
   deriving (Show, Eq, Ord, Enum, Bounded, Num, Serialise, Generic)
 
+-- | Header hash
+type family HeaderHash b :: *
+
 -- | Abstract over the shape of blocks (or indeed just block headers)
 class (StandardHash b, Measured BlockMeasure b, Typeable b) => HasHeader b where
-    -- TODO: I /think/ we should be able to make this injective, but I'd have
-    -- to check after the redesign of the block abstraction (which will live
-    -- in the consensus layer), to make sure injectivity is compatible with that
-    -- design (and compatible with the concrete instantiation used in the
-    -- network layer tests).
-    type HeaderHash b :: *
-
     blockHash      :: b -> HeaderHash b
     blockPrevHash  :: b -> ChainHash b
     blockSlot      :: b -> SlotNo
