@@ -16,6 +16,7 @@ module Network.TypedProtocol.Codec (
     -- * Defining and using Codecs
     Codec(..)
   , hoistCodec
+  , isoCodec
     -- ** Related types
   , PeerRole(..)
   , PeerHasAgency(..)
@@ -135,6 +136,17 @@ hoistCodec nat codec = codec
   { decode = fmap (hoistDecodeStep nat) . nat . decode codec
   }
 
+isoCodec :: Functor m
+         => (bytes -> bytes')
+         -> (bytes' -> bytes)
+         -> Codec ps failure m bytes
+         -> Codec ps failure m bytes'
+isoCodec f finv Codec {encode, decode} = Codec {
+      encode = \tok msg -> f $ encode tok msg,
+      decode = \tok -> isoDecodeStep f finv <$> decode tok
+    }
+
+
 -- The types here are pretty fancy. The decode is polymorphic in the protocol
 -- state, but only for kinds that are the same kind as the protocol state.
 -- The TheyHaveAgency is a type family that resolves to a singleton, and the
@@ -171,6 +183,16 @@ data DecodeStep bytes failure m a =
     -- | The decoder ran into an error. The decoder either used
     -- @'fail'@ or was not provided enough input.
   | DecodeFail failure
+
+isoDecodeStep
+  :: Functor m
+  => (bytes -> bytes')
+  -> (bytes' -> bytes)
+  -> DecodeStep bytes failure m a
+  -> DecodeStep bytes' failure m a
+isoDecodeStep f  finv  (DecodePartial g)    = DecodePartial (fmap (isoDecodeStep f finv) . g . fmap finv)
+isoDecodeStep f  _finv (DecodeDone a bytes) = DecodeDone a (fmap f bytes)
+isoDecodeStep _f _finv (DecodeFail failure) = DecodeFail failure
 
 hoistDecodeStep
   :: ( Functor n )
