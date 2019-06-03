@@ -14,7 +14,7 @@
 ## Design Specification
 
 The network design is documented
-[here](https://hydra.iohk.io/build/847155/download/1/network.pdf).  It includes
+[here](https://hydra.iohk.io/job/Cardano/ouroboros-network/network-pdf/latest/download-by-type/doc-pdf/network).  It includes
 high level overview and requirements, description of communication protocols,
 design of the multiplexing layer, wire protocl (binary encoding of messages).
 It is a self contained document, written for implementors who wish to
