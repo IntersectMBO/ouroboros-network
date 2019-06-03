@@ -380,9 +380,7 @@ getSuccessorsImpl VolatileDBEnv{..} = do
     case mSt of
         Nothing -> EH.throwError' _dbErrSTM $ UserError ClosedDBError
         Just st -> return $ \blockId ->
-            fromMaybe (error msg) (Map.lookup blockId (_currentSuccMap st))
-  where
-    msg = "precondition violated: block not member of the VolatileDB"
+            fromMaybe Set.empty (Map.lookup blockId (_currentSuccMap st))
 
 getPredecessorImpl :: forall m blockId. (MonadSTM m, Ord blockId, HasCallStack)
                    => VolatileDBEnv m blockId
