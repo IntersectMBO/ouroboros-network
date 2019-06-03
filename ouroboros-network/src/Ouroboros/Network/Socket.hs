@@ -52,7 +52,6 @@ import           Ouroboros.Network.Time
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
 import           Ouroboros.Network.Protocol.Handshake.Codec
-import           Ouroboros.Network.Channel
 
 import qualified Ouroboros.Network.Server.Socket as Server
 import qualified Ouroboros.Network.Mux as Mx
@@ -189,20 +188,21 @@ connectTo encodeData decodeData versions localAddr remoteAddr =
 #if !defined(mingw32_HOST_OS)
               Socket.setSocketOption sd Socket.ReusePort 1
 #endif
+          bearer <- socketAsMuxBearer sd
           Socket.bind sd (Socket.addrAddress localAddr)
           Socket.connect sd (Socket.addrAddress remoteAddr)
+          Mx.muxBearerSetState bearer Mx.Connected
           mapp <- runPeerWithByteLimit
                     maxTransmissionUnit
                     BL.length
                     nullTracer
                     codecHandshake
-                    (socketAsChannel sd)
+                    (Mx.muxBearerAsControlChannel bearer Mx.ModeInitiator)
                     (handshakeClientPeer encodeData decodeData versions)
           case mapp of
             Left err -> throwIO err
             Right app -> do
-              bearer <- socketAsMuxBearer sd
-              Mx.muxBearerSetState bearer Mx.Connected
+              Mx.muxBearerSetState bearer Mx.Mature
               Mx.muxStart app bearer
       )
 
@@ -264,18 +264,19 @@ beginConnection encodeData decodeData acceptVersion fn addr st = do
     accept <- fn addr st
     case accept of
       AcceptConnection st' versions -> pure $ Server.Accept st' $ \sd -> do
+        (bearer :: MuxBearer ptcl IO) <- socketAsMuxBearer sd
+        Mx.muxBearerSetState bearer Mx.Connected
         mapp <- runPeerWithByteLimit
                 maxTransmissionUnit
                 BL.length
                 nullTracer
                 codecHandshake
-                (socketAsChannel sd)
+                (Mx.muxBearerAsControlChannel bearer Mx.ModeResponder)
                 (handshakeServerPeer encodeData decodeData acceptVersion versions)
         case mapp of
           Left err -> throwIO err
           Right (AnyMuxResponderApp app) -> do
-            bearer <- socketAsMuxBearer sd
-            Mx.muxBearerSetState bearer Mx.Connected
+            Mx.muxBearerSetState bearer Mx.Mature
             Mx.muxStart app bearer
       RejectConnection st' -> pure $ Server.Reject st'
 
