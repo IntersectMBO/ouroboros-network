@@ -4,6 +4,7 @@ module Logging where
 
 import Control.Concurrent (myThreadId)
 import Control.Tracer (Tracer (..))
+import Data.Functor.Contravariant (contramap)
 import Data.Text (Text, pack)
 import Data.Time.Clock.POSIX (getCurrentTime)
 
@@ -40,10 +41,10 @@ withLogging mLoggerConfig name k = do
 -- It's not a contramap, because it requires grabbing the thread id and
 -- the current time.
 convertTrace
-  :: Monitoring.Trace IO Text
-  -> Tracer IO (Monitoring.LoggerName, Monitoring.Severity, Text)
+  :: Monitoring.Trace IO a
+  -> Tracer IO (Monitoring.LoggerName, Monitoring.Severity, Monitoring.LOContent a)
 convertTrace trace = case trace of
-  Tracer f -> Tracer $ \(name, sev, text) -> do
+  Tracer f -> Tracer $ \(name, sev, content) -> do
     tid <- pack . show <$> myThreadId
     now <- getCurrentTime
     let logMeta    = Monitoring.LOMeta
@@ -52,9 +53,17 @@ convertTrace trace = case trace of
                        , Monitoring.severity = sev
                        , Monitoring.privacy = Monitoring.Public
                        }
-        logContent = Monitoring.LogMessage text
+        logContent = content
         logObject  = Monitoring.LogObject name logMeta logContent
     f logObject
+
+convertTrace'
+  :: Monitoring.Trace IO a
+  -> Tracer IO (Monitoring.LoggerName, Monitoring.Severity, a)
+convertTrace' = contramap f . convertTrace
+  where
+  f (a, b, c) = (a, b, Monitoring.LogMessage c)
+
 
 -- | It's called `Representation` but is closely related to the `Configuration`
 -- from iohk-monitoring. The latter has to do with `MVar`s. It's all very

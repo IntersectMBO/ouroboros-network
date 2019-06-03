@@ -8,7 +8,6 @@ setupBackends:
 
 # if not indicated otherwise, then messages are passed to these backends:
 defaultBackends:
-  - EKGViewBK
   - KatipBK
 
 # if wanted, the GUI is listening on this port:
@@ -38,3 +37,6 @@ options:
       subtrace: NoTrace
     '#messagecounters.ekgview':
       subtrace: NoTrace
+  mapBackends:
+    'byron-proxy.db.block count':
+      - EKGViewBK

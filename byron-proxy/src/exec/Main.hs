@@ -26,6 +26,7 @@ import qualified Data.Text as Text
 import qualified Options.Applicative as Opt
 import System.Random (StdGen, getStdGen, randomR)
 
+import qualified Cardano.BM.Data.Aggregated as Monitoring
 import qualified Cardano.BM.Data.LogItem as Monitoring
 import qualified Cardano.BM.Data.Severity as Monitoring
 
@@ -62,6 +63,7 @@ import qualified Pos.Util.Wlog as Wlog
 
 import qualified Network.Socket as Network
 
+import Ouroboros.Network.Block (SlotNo (..))
 import Ouroboros.Network.Socket
 import Ouroboros.Network.Protocol.Handshake.Type (Accept (..))
 
@@ -567,7 +569,7 @@ main = do
     -- configuration comes from: slots-per-epoch in particular.
     -- We'll use the tracer that was just set up to give debug output. That
     -- requires converting the iohk-monitoring trace to the one used in CSL.
-    let cslTrace = mkCSLTrace (Logging.convertTrace trace)
+    let cslTrace = mkCSLTrace (Logging.convertTrace' trace)
         infoTrace = contramap ((,) Wlog.Info) (Trace.named cslTrace)
         confOpts = bpoCardanoConfigurationOptions bpo
     CSL.withConfigurations infoTrace Nothing Nothing False confOpts $ \genesisConfig _ _ _ -> do
@@ -580,9 +582,12 @@ main = do
             , indexFilePath = bpoIndexPath bpo
             , slotsPerEpoch = epochSlots
             }
-      withDB dbc $ \db -> do
-        let server = runServer (Logging.convertTrace trace) (bpoServerOptions bpo) epochSlots db
-            client = runClient (Logging.convertTrace trace) (bpoClientOptions bpo) genesisConfig epochSlots db
+          -- Trace DB writes in such a way that they appear in EKG.
+          dbTracer = flip contramap (Logging.convertTrace trace) $ \(DB.DBWrite (SlotNo count)) ->
+            ("db", Monitoring.Info, Monitoring.LogValue "block count" (Monitoring.PureI (fromIntegral count)))
+      withDB dbc dbTracer $ \db -> do
+        let server = runServer (Logging.convertTrace' trace) (bpoServerOptions bpo) epochSlots db
+            client = runClient (Logging.convertTrace' trace) (bpoClientOptions bpo) genesisConfig epochSlots db
         _ <- concurrently server client
         pure ()
 
