@@ -38,8 +38,8 @@ data VolatileDB blockId m = VolatileDB {
       -- | Return a function that returns the successors of the block with the
       -- given @blockId@ where 'Nothing' stands for Genesis.
       --
-      -- PRECONDITION: the block (if not Genesis) must be a member of the
-      -- VolatileDB, you can use 'getIsMember' to check this.
+      -- This function will return a non-empty set for any block of which a
+      -- predecessor has been added to the VolatileDB.
     , getSuccessors  :: HasCallStack => STM m (Maybe blockId -> Set blockId)
       -- | Return a function that returns the predecessor of the block with
       -- the given @blockId@. In case the predecessor is Genesis, 'Nothing' is
