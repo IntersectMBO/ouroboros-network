@@ -162,7 +162,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
     sv <- newEmptyTMVarM
 
     let -- Server Node; only req-resp server
-        responderApp :: MuxApplication ResponderApp Mxt.TestProtocols3 IO Void ()
+        responderApp :: MuxApplication ResponderApp Mxt.TestProtocols3 IO BL.ByteString Void ()
         responderApp = simpleMuxResponderApplication $
           \Mxt.ReqResp1 ->
             MuxPeer nullTracer
@@ -170,7 +170,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
                     (ReqResp.reqRespServerPeer (reqRespServerMapAccumL sv (\a -> pure . f a) 0))
 
         -- Client Node; only req-resp client
-        initiatorApp :: MuxApplication InitiatorApp Mxt.TestProtocols3 IO () Void
+        initiatorApp :: MuxApplication InitiatorApp Mxt.TestProtocols3 IO BL.ByteString () Void
         initiatorApp = simpleMuxInitiatorApplication $
           \Mxt.ReqResp1 ->
             MuxPeer nullTracer
@@ -206,7 +206,7 @@ prop_socket_recv_close f _ = ioProperty $ do
 
     sv   <- newEmptyTMVarM
 
-    let app :: MuxApplication ResponderApp Mxt.TestProtocols3 IO Void ()
+    let app :: MuxApplication ResponderApp Mxt.TestProtocols3 IO BL.ByteString Void ()
         app = simpleMuxResponderApplication $
           \Mxt.ReqResp1 ->
             MuxPeer nullTracer
@@ -261,7 +261,7 @@ prop_socket_client_connect_error _ xs = ioProperty $ do
 
     cv <- newEmptyTMVarM
 
-    let app :: MuxApplication InitiatorApp Mxt.TestProtocols3 IO () Void
+    let app :: MuxApplication InitiatorApp Mxt.TestProtocols3 IO BL.ByteString () Void
         app = simpleMuxInitiatorApplication $
                 \Mxt.ReqResp1 ->
                   MuxPeer nullTracer
@@ -298,7 +298,7 @@ demo chain0 updates = do
     let Just expectedChain = Chain.applyChainUpdates updates chain0
         target = Chain.headPoint expectedChain
 
-        initiatorApp :: MuxApplication InitiatorApp Mxt.TestProtocols1 IO () Void
+        initiatorApp :: MuxApplication InitiatorApp Mxt.TestProtocols1 IO BL.ByteString () Void
         initiatorApp = simpleMuxInitiatorApplication $
           \Mxt.ChainSync1 ->
               MuxPeer nullTracer
@@ -310,7 +310,7 @@ demo chain0 updates = do
         server :: ChainSync.ChainSyncServer block (Point block) IO ()
         server = ChainSync.chainSyncServerExample () producerVar
 
-        responderApp :: MuxApplication ResponderApp Mxt.TestProtocols1 IO Void ()
+        responderApp :: MuxApplication ResponderApp Mxt.TestProtocols1 IO BL.ByteString Void ()
         responderApp = simpleMuxResponderApplication $
           \Mxt.ChainSync1 ->
             MuxPeer nullTracer

@@ -306,7 +306,7 @@ startMuxSTM :: ( MonadAsync m, MonadCatch m, MonadMask m, MonadSay m, MonadSTM m
                , MonadThrow m , MonadThrow (STM m), MonadTime m , MonadTimer m, Ord ptcl
                , Enum ptcl, Bounded ptcl , Mx.ProtocolEnum ptcl , Show ptcl
                , Mx.MiniProtocolLimits ptcl)
-            => Mx.MuxApplication appType ptcl m a b
+            => Mx.MuxApplication appType ptcl m BL.ByteString a b
             -> TBQueue m BL.ByteString
             -> TBQueue m BL.ByteString
             -> Word16

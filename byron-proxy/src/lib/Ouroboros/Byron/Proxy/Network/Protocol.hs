@@ -15,9 +15,11 @@ import Control.Monad.IO.Unlift (MonadUnliftIO)
 import Control.Monad.Trans.Resource (ResourceT, runResourceT)
 import Control.Monad.Trans.Class (lift)
 import Control.Tracer (nullTracer)
+import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Map as Map
 import Data.Text (Text)
 import Data.Word (Word16)
+import Data.Void (Void)
 
 import qualified Cardano.Chain.Slotting as Cardano
 
@@ -68,7 +70,7 @@ initiatorVersions
   :: ( Monad m, MonadST m, MonadUnliftIO m, MonadThrow m, MonadThrow (ResourceT m) )
   => Cardano.EpochSlots -- ^ Needed for the codec, sadly
   -> ChainSyncClient Block Point (ResourceT m) ()
-  -> Versions VNumber (CodecCBORTerm Text) (MuxApplication InitiatorApp Ptcl m () Void)
+  -> Versions VNumber (CodecCBORTerm Text) (MuxApplication InitiatorApp Ptcl m LBS.ByteString () Void)
 initiatorVersions epochSlots client = Versions $ Map.fromList
   [ (VNumber 0, Sigma () (Version clientMuxApp unitCodecCBORTerm))
   ]
@@ -82,7 +84,7 @@ responderVersions
   :: ( Monad m, MonadST m, MonadUnliftIO m, MonadThrow m, MonadThrow (ResourceT m) )
   => Cardano.EpochSlots -- ^ Needed for the codec; must match that of the initiator.
   -> ChainSyncServer Block Point (ResourceT m) ()
-  -> Versions VNumber (CodecCBORTerm Text) (MuxApplication ResponderApp Ptcl m Void ())
+  -> Versions VNumber (CodecCBORTerm Text) (MuxApplication ResponderApp Ptcl m LBS.ByteString Void ())
 responderVersions epochSlots server = Versions $ Map.fromList
   [ (VNumber 0, Sigma () (Version serverMuxApp unitCodecCBORTerm))
   ]

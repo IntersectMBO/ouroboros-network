@@ -23,6 +23,7 @@ module Ouroboros.Network.NodeToNode (
   ) where
 
 import           Control.Concurrent.Async (Async)
+import qualified Data.ByteString.Lazy as BL
 import           Data.Text (Text)
 import qualified Data.Text as T
 import           Data.Typeable (Typeable)
@@ -122,7 +123,7 @@ nodeToNodeCodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
 nodeToNodeConnectTo
   :: Versions NodeToNodeVersion
               DictVersion
-              (MuxApplication InitiatorApp NodeToNodeProtocols IO a b)
+              (MuxApplication InitiatorApp NodeToNodeProtocols IO BL.ByteString a b)
   -> Maybe Socket.AddrInfo
   -> Socket.AddrInfo
   -> IO ()
@@ -137,7 +138,7 @@ nodeToNodeConnectTo =
 withServerNodeToNode
   :: Socket.AddrInfo
   -> (forall vData. DictVersion vData -> vData -> vData -> Accept)
-  -> Versions NodeToNodeVersion DictVersion (AnyMuxResponderApp NodeToNodeProtocols IO)
+  -> Versions NodeToNodeVersion DictVersion (AnyMuxResponderApp NodeToNodeProtocols IO BL.ByteString)
   -> (Async () -> IO t)
   -> IO t
 withServerNodeToNode addr =

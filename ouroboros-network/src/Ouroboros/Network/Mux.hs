@@ -44,7 +44,7 @@ import           Ouroboros.Network.Mux.Types
 muxStart :: forall m appType ptcl a b.
             ( MonadAsync m, MonadSay m, MonadSTM m, MonadThrow m, MonadThrow (STM m)
             , MonadMask m , Ord ptcl, Enum ptcl, Bounded ptcl, Show ptcl, MiniProtocolLimits ptcl)
-         => MuxApplication appType ptcl m a b
+         => MuxApplication appType ptcl m BL.ByteString a b
          -> MuxBearer ptcl m
          -> m ()
 muxStart app bearer = do
