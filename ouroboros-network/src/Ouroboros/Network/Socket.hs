@@ -172,7 +172,7 @@ connectTo
   -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
   -> Versions vNumber extra (MuxApplication InitiatorApp ptcl IO)
   -- ^ application to run over the connection
-  -> Socket.AddrInfo
+  -> Maybe Socket.AddrInfo
   -- ^ local address; the created socket will bind to it
   -> Socket.AddrInfo
   -- ^ remote address
@@ -189,7 +189,9 @@ connectTo encodeData decodeData versions localAddr remoteAddr =
               Socket.setSocketOption sd Socket.ReusePort 1
 #endif
           bearer <- socketAsMuxBearer sd
-          Socket.bind sd (Socket.addrAddress localAddr)
+          case localAddr of
+            Just addr -> Socket.bind sd (Socket.addrAddress addr)
+            Nothing   -> return ()
           Socket.connect sd (Socket.addrAddress remoteAddr)
           Mx.muxBearerSetState bearer Mx.Connected
           mapp <- runPeerWithByteLimit

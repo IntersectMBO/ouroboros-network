@@ -46,7 +46,6 @@ import qualified Ouroboros.Network.Protocol.ChainSync.Client   as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Codec    as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Examples as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Server   as ChainSync
-import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.NodeToNode
 import           Ouroboros.Network.Testing.Serialise
 
@@ -189,7 +188,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
             (\(DictVersion codec) -> encodeTerm codec)
             (\(DictVersion codec) -> decodeTerm codec)
             (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) initiatorApp)
-            initiatorAddr
+            (Just initiatorAddr)
             responderAddr
           atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
 
@@ -276,7 +275,7 @@ prop_socket_client_connect_error _ xs = ioProperty $ do
         (\(DictVersion codec) -> encodeTerm codec)
         (\(DictVersion codec) -> decodeTerm codec)
         (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) app)
-        clientAddr
+        (Just clientAddr)
         serverAddr
 
     -- XXX Disregarding the exact exception type
@@ -319,14 +318,14 @@ demo chain0 updates = do
       (\(DictVersion codec)-> encodeTerm codec)
       (\(DictVersion codec)-> decodeTerm codec)
       (\(DictVersion _) -> acceptEq)
-      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm)$ responderApp)
+      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) responderApp)
       $ \_ -> do
       withAsync
         (connectTo
           (\(DictVersion codec) -> encodeTerm codec)
           (\(DictVersion codec) -> decodeTerm codec)
           (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) initiatorApp)
-          consumerAddress
+          (Just consumerAddress)
           producerAddress)
         $ \_connAsync -> do
           void $ fork $ sequence_

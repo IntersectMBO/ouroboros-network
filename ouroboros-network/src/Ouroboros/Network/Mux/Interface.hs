@@ -22,10 +22,13 @@ module Ouroboros.Network.Mux.Interface
   , runMuxPeer
   , simpleMuxInitiatorApplication
   , simpleMuxResponderApplication
+  , ProtocolEnum (..)
+  , MiniProtocolLimits (..)
 
   -- * Version data
   , Versions (..)
   , simpleSingletonVersions
+  , acceptEq
   , Sigma (..)
   , Version
   , DictVersion (..)
@@ -49,7 +52,11 @@ import           Network.TypedProtocol.Channel
 import           Network.TypedProtocol.Driver
 import           Network.TypedProtocol.Pipelined
 
+import           Ouroboros.Network.Protocol.Handshake.Type (acceptEq)
 import           Ouroboros.Network.Protocol.Handshake.Version
+import           Ouroboros.Network.Mux.Types ( MiniProtocolLimits (..)
+                                             , ProtocolEnum (..)
+                                             )
 
 
 -- $interface

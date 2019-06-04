@@ -440,7 +440,7 @@ runClient tracer clientOptions genesisConfig epochSlots db = case clientOptions 
         encodeTerm
         decodeTerm
         (initiatorVersions epochSlots chainSyncClient)
-        addrInfoLocal
+        (Just addrInfoLocal)
         addrInfoRemote
       _ -> error "no getAddrInfo"
     where

@@ -37,6 +37,26 @@
           (hsPkgs.text)
           ];
         };
+      exes = {
+        "demo-chain-sync" = {
+          depends = [
+            (hsPkgs.base)
+            (hsPkgs.directory)
+            (hsPkgs.ouroboros-network)
+            (hsPkgs.typed-protocols)
+            (hsPkgs.async)
+            (hsPkgs.bytestring)
+            (hsPkgs.containers)
+            (hsPkgs.contra-tracer)
+            (hsPkgs.network)
+            (hsPkgs.random)
+            (hsPkgs.serialise)
+            (hsPkgs.splitmix)
+            (hsPkgs.stm)
+            (hsPkgs.QuickCheck)
+            ];
+          };
+        };
       tests = {
         "tests" = {
           depends = [
