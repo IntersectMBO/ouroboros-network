@@ -72,6 +72,7 @@ Issues organized by milestone.
 - [X] #368 Unify the Tip of the ImmutableDB with the Tip of the LedgerDB
 
 - [ ] #367 Ledger DB: Thread for writing snapshots
+- [ ] #626 Ledger DB: test with invalid blocks
 
 ## Chain DB
 
@@ -82,6 +83,7 @@ Issues organized by milestone.
 - [ ] #246 Chain DB: q-s-m tests
 - [ ] #380 Chain DB: Audit memory footprint
 - [ ] #445 Chain DB: Protect against unintended file deletion
+- [ ] #625 Chain DB: Test with invalid blocks
 
 ### Improvements
 
@@ -113,6 +115,7 @@ Issues organized by milestone.
 
 - [ ] #250 Run tests with real real blocks
 - [ ] #440 Introduce "already validated" flag for ledger layer and use it
+- [ ] #539 Ledger integration - incorporate epoch boundary blocks.
 - [ ] #590 Avoid using show to implement Ord for keys
 - [ ] #591 Review Byron implementation with formal spec team
 - [ ] #592 Extend definition of generalized transaction for Byron
@@ -147,12 +150,16 @@ Issues organized by milestone.
 
 - [X] #265 Implement mempool
 
+- [ ] #621 Mempool: impose maximum capacity
+- [ ] #622 Mempool: expire transactions
+
 # Standalone Node
 
 - [X] #223 Fix cleanup of named pipes in demo
 - [X] #280 Deal correctly with time
 
 - [ ] #267 Ongoing: integrate features implemented elsewhere into standalone node
+- [ ] #624 Demo: add initial stake to mock ledger
 
 # Testing
 
@@ -220,13 +227,14 @@ and partly the ledger team:
 
 # Clean up technical debt
 
+- [X] #224 Reintroduce `QuantifiedConstraints` [WONTFIX]
 - [X] #227 Replace remaining unit tests for the mock file system
+- [X] #587 Technical debt: reintroduce quantified constraints [DUP]
 
 - [ ] #322 Take advantage of new async infrastructure
 - [ ] #254 Generalize q-s-m framework
-- [ ] #224 Reintroduce `QuantifiedConstraints`
 - [ ] #225 Replace remaining unit tests for immutable DB
 - [ ] #483 Clean up test blocks
-- [ ] #587 Technical debt: reintroduce quantified constraints
 - [ ] #588 Technical debt: be consistent with `hdr blk` versus `blk hdr`
 - [ ] #589 Technical debt: introduce `Header` type family
+- [ ] #612 Technical debt: move `Ouroboros.Consensus.Demo.*` to separate package
