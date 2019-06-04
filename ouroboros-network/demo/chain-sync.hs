@@ -72,19 +72,23 @@ main = do
       "pingpong":"client":[]           -> clientPingPong False
       "pingpong":"client-pipelined":[] -> clientPingPong True
       "pingpong":"server":[] -> do
-        rmDefaultLocalSocketAddr
+        rmIfExists defaultLocalSocketAddrPath
         serverPingPong
 
       "pingpong2":"client":[] -> clientPingPong2
       "pingpong2":"server":[] -> do
-        rmDefaultLocalSocketAddr
+        rmIfExists defaultLocalSocketAddrPath
         serverPingPong2
 
       "chainsync":"client":sockAddrs   -> clientChainSync sockAddrs
-      "chainsync":"server":sockAddr:[] -> serverChainSync sockAddr
+      "chainsync":"server":sockAddr:[] -> do
+        rmIfExists sockAddr
+        serverChainSync sockAddr
 
       "blockfetch":"client":sockAddrs   -> clientBlockFetch sockAddrs
-      "blockfetch":"server":sockAddr:[] -> serverBlockFetch sockAddr
+      "blockfetch":"server":sockAddr:[] -> do
+        rmIfExists sockAddr
+        serverBlockFetch sockAddr
 
       _          -> usage
 
@@ -110,10 +114,10 @@ defaultLocalSocketAddrInfo :: Socket.AddrInfo
 defaultLocalSocketAddrInfo = 
     mkLocalSocketAddrInfo defaultLocalSocketAddrPath
 
-rmDefaultLocalSocketAddr :: IO ()
-rmDefaultLocalSocketAddr = do
-  b <- doesFileExist defaultLocalSocketAddrPath
-  when b (removeFile defaultLocalSocketAddrPath)
+rmIfExists :: FilePath -> IO ()
+rmIfExists path = do
+  b <- doesFileExist path
+  when b (removeFile path)
 
 --
 -- Ping pong demo
