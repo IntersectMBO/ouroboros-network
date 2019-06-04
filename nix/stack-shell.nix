@@ -7,6 +7,6 @@ let
 
 in haskell.lib.buildStackProject {
   name = "ouroboros-network-env";
-  buildInputs = [ zlib openssl lzma rocksdb cddl cbor-diag git ];
+  buildInputs = [ zlib openssl lzma rocksdb cddl cbor-diag git systemd ];
   ghc = haskell.packages.${compiler}.ghc;
 }
