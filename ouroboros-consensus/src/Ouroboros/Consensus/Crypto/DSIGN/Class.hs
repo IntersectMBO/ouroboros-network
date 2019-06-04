@@ -53,7 +53,7 @@ class ( Show (VerKeyDSIGN v)
 
     genKeyDSIGN :: MonadRandom m => m (SignKeyDSIGN v)
     deriveVerKeyDSIGN :: SignKeyDSIGN v -> VerKeyDSIGN v
-    signDSIGN :: (MonadRandom m, Signable v a)
+    signDSIGN :: (MonadRandom m, Signable v a, HasCallStack)
               => (a -> Encoding)
               -> a -> SignKeyDSIGN v -> m (SigDSIGN v)
     verifyDSIGN :: (Signable v a, HasCallStack)

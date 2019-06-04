@@ -19,6 +19,7 @@ import           Codec.CBOR.Decoding (Decoder)
 import           Codec.Serialise.Encoding (Encoding)
 import           GHC.Exts (Constraint)
 import           GHC.Generics (Generic)
+import           GHC.Stack
 import           Numeric.Natural (Natural)
 
 import           Ouroboros.Consensus.Util (Empty)
@@ -52,13 +53,13 @@ class ( Show (VerKeyKES v)
 
     genKeyKES :: MonadRandom m => Natural -> m (SignKeyKES v)
     deriveVerKeyKES :: SignKeyKES v -> VerKeyKES v
-    signKES :: (MonadRandom m, Signable v a)
+    signKES :: (MonadRandom m, Signable v a, HasCallStack)
             => (a -> Encoding)
             -> Natural
             -> a
             -> SignKeyKES v
             -> m (Maybe (SigKES v, SignKeyKES v))
-    verifyKES :: Signable v a
+    verifyKES :: (Signable v a, HasCallStack)
               => (a -> Encoding)
               -> VerKeyKES v -> Natural -> a -> SigKES v -> Either String ()
 

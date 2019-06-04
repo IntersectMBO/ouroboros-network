@@ -76,7 +76,7 @@ prop_simple_leader_schedule_convergence numSlots numCoreNodes params seed =
             in    counterexample ("schedule: " <> condense schedule <> "\n" <> show longest)
                 $ label ("longest crowded run " <> show (crowdedRunLength longest))
                 $ prop_simple_protocol_convergence
-                    (\nid -> protocolInfo numCoreNodes nid (DemoLeaderSchedule schedule params))
+                    (\nid -> protocolInfo numCoreNodes nid (DemoLeaderSchedule params schedule))
                     isValid
                     numCoreNodes
                     numSlots

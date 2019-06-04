@@ -206,25 +206,6 @@ instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
         _ Seq.:<| _ -> Just cs
         _           -> Nothing
 
-
-{-
-deriving instance PBftCrypto c => Show     (Payload (PBft c) ph)
-deriving instance PBftCrypto c => Eq       (Payload (PBft c) ph)
-deriving instance PBftCrypto c => Ord      (Payload (PBft c) ph)
-instance PBftCrypto c => Condense (Payload (PBft c) ph) where
-    condense (PBftPayload _ sig) = condense sig
-
-instance (DSIGNAlgorithm (PBftDSIGN c)) => Serialise (Payload (PBft c) ph) where
-  encode (PBftPayload issuer sig) = mconcat
-    [ Enc.encodeListLen 2
-    , encodeVerKeyDSIGN issuer
-    , encodeSignedDSIGN sig
-    ]
-  decode = do
-    Dec.decodeListLenOf 2
-    PBftPayload <$> decodeVerKeyDSIGN <*> decodeSignedDSIGN
--}
-
 {-------------------------------------------------------------------------------
   PBFT specific types
 -------------------------------------------------------------------------------}

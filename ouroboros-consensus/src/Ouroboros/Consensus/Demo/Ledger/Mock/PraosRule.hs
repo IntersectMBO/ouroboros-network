@@ -1,3 +1,4 @@
+-- | Test the Praos chain selection rule but with explicit leader schedule
 module Ouroboros.Consensus.Demo.Ledger.Mock.PraosRule (
     protocolInfoPraosRule
   ) where

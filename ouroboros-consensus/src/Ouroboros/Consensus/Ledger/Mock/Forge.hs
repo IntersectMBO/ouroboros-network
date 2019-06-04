@@ -11,6 +11,7 @@ module Ouroboros.Consensus.Ledger.Mock.Forge (
 import           Codec.Serialise (Serialise (..), serialise)
 import           Crypto.Random (MonadRandom)
 import qualified Data.ByteString.Lazy as Lazy
+import           Data.Word
 
 import           Ouroboros.Network.Block (BlockNo, ChainHash, SlotNo)
 
@@ -60,5 +61,5 @@ forgeSimple cfg curSlot curBlock prevHash txs proof = do
     -- We use the size of the body, not of the whole block (= header + body),
     -- since the header size is fixed and this size is only used for
     -- prioritisation.
-    bodySize :: Word
+    bodySize :: Word64
     bodySize = fromIntegral $ Lazy.length $ serialise body
