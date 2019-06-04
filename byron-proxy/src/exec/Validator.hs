@@ -153,7 +153,7 @@ main = do
       encodeTerm
       decodeTerm
       (initiatorVersions epochSlots client)
-      addrInfoLocal
+      (Just addrInfoLocal)
       addrInfoRemote
 
 -- Orphan, forced upon me because of the IO sim stuff.
