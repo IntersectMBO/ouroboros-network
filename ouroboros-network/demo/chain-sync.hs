@@ -94,7 +94,7 @@ main = do
 
 usage :: IO ()
 usage = do
-    hPutStrLn stderr "usage: demo-chain-sync {client|server} [pingpong]"
+    hPutStrLn stderr "usage: demo-chain-sync [pingpong|pingpong2|chainsync|blockfetch] {client|server} [addr]"
     exitFailure
 
 mkLocalSocketAddrInfo :: FilePath -> Socket.AddrInfo
