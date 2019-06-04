@@ -33,6 +33,9 @@ import qualified Ouroboros.Consensus.Util.SlotBounded as SB
 -------------------------------------------------------------------------------}
 
 -- | Simple block extended with the fields required for PBFT
+--
+-- @c@  is crypto used for the block itself
+-- @c'@ is crypto used for the consensus protocol
 type SimplePBftBlock c c' = SimpleBlock c (SimplePBftExt c c')
 
 -- | Header for PBFT

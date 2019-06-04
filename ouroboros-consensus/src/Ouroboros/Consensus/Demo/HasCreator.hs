@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE RecordWildCards   #-}
 
 -- | In tests and the demo we want to be able to map a block to the core
 -- node that produced it
@@ -6,13 +7,22 @@ module Ouroboros.Consensus.Demo.HasCreator (
     HasCreator(..)
   ) where
 
+import qualified Data.Bimap as Bimap
+import           Data.Maybe (fromMaybe)
+
+import qualified Cardano.Chain.Block as CC.Block
+import qualified Cardano.Crypto as Cardano
+
 import           Ouroboros.Consensus.Node (CoreNodeId (..))
 
 import           Ouroboros.Consensus.Crypto.DSIGN
+import           Ouroboros.Consensus.Demo.Ledger.Byron.Config
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Byron
 import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
+import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.PBFT
 import           Ouroboros.Consensus.Protocol.Praos
 
@@ -47,16 +57,15 @@ instance HasCreator (SimplePraosRuleBlock c) where
                  . simpleHeaderExt
                  . simpleHeader
 
-{-
-instance HasCreator (ByronBlock ByronDemo.Config) where
-    getCreator (EncNodeConfig _ ByronDemo.Config{..}) (ByronBlock b) =
-        fromMaybe (error "getCreator: unknown key") $ Bimap.lookup key pbftCoreNodes
-     where
-       key :: Cardano.VerificationKey
-       key = Cardano.pskIssuerVK
-             . Cardano.psigPsk
-             . Cardano.Block.unBlockSignature
-             . Cardano.Block.headerSignature
-             . Cardano.Block.blockHeader
-             $ b
--}
+instance HasCreator (ByronBlock ByronDemoConfig) where
+    getCreator (EncNodeConfig _ ByronDemoConfig{..}) (ByronBlock b) =
+        fromMaybe (error "getCreator: unknown key") $
+          Bimap.lookup key pbftCoreNodes
+      where
+        key :: Cardano.VerificationKey
+        key = Cardano.pskIssuerVK
+            . Cardano.psigPsk
+            . CC.Block.unBlockSignature
+            . CC.Block.headerSignature
+            . CC.Block.blockHeader
+            $ b

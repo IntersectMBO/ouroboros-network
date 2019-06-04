@@ -13,10 +13,11 @@ module Ouroboros.Consensus.Crypto.VRF.Class
   , verifyCertified
   ) where
 
-import           Codec.Serialise (Serialise(..))
+import           Codec.Serialise (Serialise (..))
 import           Codec.Serialise.Encoding (Encoding)
 import           Crypto.Random (MonadRandom)
 import           GHC.Generics (Generic)
+import           GHC.Stack
 import           Numeric.Natural
 
 class ( Show (VerKeyVRF v)
@@ -36,8 +37,10 @@ class ( Show (VerKeyVRF v)
     maxVRF :: proxy v -> Natural
     genKeyVRF :: MonadRandom m => m (SignKeyVRF v)
     deriveVerKeyVRF :: SignKeyVRF v -> VerKeyVRF v
-    evalVRF :: (MonadRandom m) => (a -> Encoding) -> a -> SignKeyVRF v -> m (Natural, CertVRF v)
-    verifyVRF :: (a -> Encoding) -> VerKeyVRF v -> a -> (Natural, CertVRF v) -> Bool
+    evalVRF :: (MonadRandom m, HasCallStack)
+            => (a -> Encoding) -> a -> SignKeyVRF v -> m (Natural, CertVRF v)
+    verifyVRF :: HasCallStack
+              => (a -> Encoding) -> VerKeyVRF v -> a -> (Natural, CertVRF v) -> Bool
 
 data CertifiedVRF v a = CertifiedVRF {
       certifiedNatural :: Natural

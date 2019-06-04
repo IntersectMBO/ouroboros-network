@@ -109,4 +109,5 @@ package contra-tracer
 constraints:
   ip < 1.5,
   ekg-prometheus-adapter >= 0.1.0.4,
-  hedgehog >= 1.0
+  hedgehog >= 1.0,
+  libsystemd-journal >= 1.4.4

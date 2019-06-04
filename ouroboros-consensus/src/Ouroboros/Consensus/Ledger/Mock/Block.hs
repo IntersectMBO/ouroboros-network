@@ -44,6 +44,7 @@ import           Codec.Serialise (Serialise (..))
 import           Control.Monad.Except
 import           Data.FingerTree (Measured (..))
 import           Data.Typeable (Typeable)
+import           Data.Word
 import           GHC.Generics (Generic)
 
 import           Ouroboros.Network.Block
@@ -99,7 +100,7 @@ data SimpleStdHeader c ext = SimpleStdHeader {
     , simpleSlotNo    :: SlotNo
     , simpleBlockNo   :: BlockNo
     , simpleBodyHash  :: Hash (SimpleHash c) SimpleBody
-    , simpleBlockSize :: Word
+    , simpleBlockSize :: Word64
     }
   deriving (Generic, Show, Eq)
 

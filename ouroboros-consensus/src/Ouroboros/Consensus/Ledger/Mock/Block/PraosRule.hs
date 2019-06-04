@@ -34,6 +34,11 @@ import qualified Ouroboros.Consensus.Util.SlotBounded as SB
 -------------------------------------------------------------------------------}
 
 -- | Simple block extended with the fields required for Praos
+--
+-- @c@ is crypto used for the block itself
+-- With an explicit leader schedule we need no crypto for the consensus protocol.
+--
+-- This is an example of a block which is /not/ an instance of 'SignedBlock'.
 type SimplePraosRuleBlock c = SimpleBlock c SimplePraosRuleExt
 
 -- | Header for Proas

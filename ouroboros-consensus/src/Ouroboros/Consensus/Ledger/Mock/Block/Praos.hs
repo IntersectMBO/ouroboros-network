@@ -37,6 +37,9 @@ import qualified Ouroboros.Consensus.Util.SlotBounded as SB
 -------------------------------------------------------------------------------}
 
 -- | Simple block extended with the fields required for Praos
+--
+-- @c@  is crypto used for the block itself
+-- @c'@ is crypto used for the consensus protocol
 type SimplePraosBlock c c' = SimpleBlock c (SimplePraosExt c c')
 
 -- | Header for Proas
@@ -59,7 +62,7 @@ data SignedSimplePraos c c' = SignedSimplePraos {
     , signedPraosFields :: PraosExtraFields c'
     }
 
--- | PBFT requires the ledger view; for the mock ledger, this is constant
+-- | See 'ProtocolLedgerView' instance for why we need the 'AddrDist'
 type instance BlockProtocol (SimplePraosBlock c c') =
   ExtNodeConfig AddrDist (Praos c')
 

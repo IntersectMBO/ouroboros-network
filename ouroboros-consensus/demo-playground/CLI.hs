@@ -45,7 +45,6 @@ data Protocol =
   | MockPBFT
   | RealPBFT
 
-
 data SomeProtocol where
   SomeProtocol :: RunDemo blk hdr => DemoProtocol blk hdr -> SomeProtocol
 

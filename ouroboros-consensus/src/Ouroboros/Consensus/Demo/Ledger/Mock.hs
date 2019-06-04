@@ -35,7 +35,7 @@ instance ( SupportedBlock (BlockProtocol (SimpleHeader SimpleMockCrypto ext))
          ) => DemoHeader (SimpleHeader SimpleMockCrypto ext) where
   demoEncodeHeader   = const Serialise.encode
   demoDecodeHeader   = const Serialise.decode
-  demoBlockFetchSize = simpleBlockSize . simpleHeaderStd
+  demoBlockFetchSize = fromIntegral . simpleBlockSize . simpleHeaderStd
 
 instance ( ProtocolLedgerView (SimpleBlock SimpleMockCrypto ext)
          , Typeable ext

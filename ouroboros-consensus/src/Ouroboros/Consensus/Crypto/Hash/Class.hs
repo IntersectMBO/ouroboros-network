@@ -14,10 +14,10 @@ module Ouroboros.Consensus.Crypto.Hash.Class
     , fromHash
     ) where
 
-import           Codec.Serialise.Encoding (Encoding)
 import           Codec.CBOR.Decoding (decodeBytes)
 import           Codec.CBOR.Write (toLazyByteString)
 import           Codec.Serialise (Serialise (..))
+import           Codec.Serialise.Encoding (Encoding)
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as SB
 import qualified Data.ByteString.Base16 as B16
@@ -28,13 +28,14 @@ import           Data.Proxy (Proxy (..))
 import           Data.String (IsString (..))
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
+import           GHC.Stack
 import           Numeric.Natural
 
 import           Ouroboros.Consensus.Util.Condense
 
 class Typeable h => HashAlgorithm h where
     byteCount :: proxy h -> Natural
-    digest :: proxy h -> ByteString -> ByteString
+    digest :: HasCallStack => proxy h -> ByteString -> ByteString
 
 newtype Hash h a = Hash {getHash :: ByteString}
     deriving (Eq, Ord, Generic, Typeable)

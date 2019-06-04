@@ -89,8 +89,8 @@ data DemoProtocol blk hdr where
 
   -- | Run Praos against the mock ledger but with an explicit leader schedule
   DemoLeaderSchedule
-    :: LeaderSchedule
-    -> PraosParams
+    :: PraosParams
+    -> LeaderSchedule
     -> DemoProtocol (SimplePraosRuleBlock  SimpleMockCrypto)
                     (SimplePraosRuleHeader SimpleMockCrypto)
 
@@ -114,11 +114,11 @@ protocolInfo :: NumCoreNodes
              -> ProtocolInfo blk
 protocolInfo nodes nid demoProtocol =
     case demoProtocol of
-      DemoBFT params                     -> protocolInfoBft       nodes nid params
-      DemoPraos params                   -> protocolInfoPraos     nodes nid params
-      DemoLeaderSchedule schedule params -> protocolInfoPraosRule nodes nid params schedule
-      DemoMockPBFT params                -> protocolInfoMockPBFT  nodes nid params
-      DemoRealPBFT params gc             -> protocolInfoByron     nodes nid params gc
+      DemoBFT            params          -> protocolInfoBft       nodes nid params
+      DemoPraos          params          -> protocolInfoPraos     nodes nid params
+      DemoLeaderSchedule params schedule -> protocolInfoPraosRule nodes nid params schedule
+      DemoMockPBFT       params          -> protocolInfoMockPBFT  nodes nid params
+      DemoRealPBFT       params gc       -> protocolInfoByron     nodes nid params gc
 
 {-------------------------------------------------------------------------------
   Support for running the demos

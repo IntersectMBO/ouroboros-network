@@ -96,6 +96,10 @@ newtype ByronHeader cfg = ByronHeader
 byronHeader :: ByronBlock cfg -> ByronHeader cfg
 byronHeader (ByronBlock b) = ByronHeader (CC.Block.blockHeader b)
 
+-- | Construct Byron block from unannotated 'CC.Block.Block'
+--
+-- This should be used only when forging blocks (not when receiving blocks
+-- over the wire).
 annotateByronBlock :: CC.Slot.EpochSlots -> CC.Block.Block -> ByronBlock cfg
 annotateByronBlock epochSlots = ByronBlock . annotateBlock epochSlots
 
@@ -552,7 +556,7 @@ decodeByronHeaderHash = fromCBOR
 {-------------------------------------------------------------------------------
   Internal auxiliary
 
-  TODO: This should leave in cardano-chain instead
+  TODO: This should live in an upstream repo instead.
 -------------------------------------------------------------------------------}
 
 annotateBlock :: CC.Slot.EpochSlots
