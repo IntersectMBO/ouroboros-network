@@ -2,6 +2,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE TypeFamilies #-}
 module Main
 where
 
@@ -24,14 +25,14 @@ import Ouroboros.Network.Protocol.PingPong.Codec (codecPingPong)
 import Network.TypedProtocol.PingPong.Type as PingPong
 import Ouroboros.Network.Protocol.BlockFetch.Codec (codecBlockFetch)
 import Ouroboros.Network.Protocol.BlockFetch.Type as BlockFetch
-import Ouroboros.Network.Testing.ConcreteBlock
+import Ouroboros.Network.Block (HeaderHash)
 
 import Network.TypedProtocol.Codec
 
 -- the concrete types used for the test
 type CS = ChainSync DummyBytes DummyBytes
 type RR = ReqResp DummyBytes DummyBytes
-type BF = BlockFetch BlockHeader BlockBody
+type BF = BlockFetch DummyBytes
 
 main :: IO ()
 main = generateAndDecode "cddl" "diag2cbor.rb" "test/messages.cddl" 100
@@ -68,6 +69,7 @@ data DummyBytes = DummyBytes
 instance Serialise.Serialise DummyBytes where
     encode _ = error "encode Serialise DummyBytes"
     decode = decodeBytes >> return DummyBytes
+type instance HeaderHash DummyBytes = ()
 
 type MonoCodec x = Codec x Codec.CBOR.Read.DeserialiseFailure IO ByteString
 

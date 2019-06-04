@@ -70,6 +70,7 @@ commonLib.pkgs.lib.mapAttrsRecursiveCond
     jobs.nix-tools.tests.ouroboros-consensus.test-crypto.x86_64-linux
     jobs.nix-tools.tests.ouroboros-consensus.test-storage.x86_64-linux
     jobs.nix-tools.tests.ouroboros-network.tests.x86_64-linux
+    jobs.nix-tools.tests.ouroboros-network.cddl.x86_64-linux
     jobs.nix-tools.tests.typed-protocols.tests.x86_64-linux
     jobs.nix-tools.tests.io-sim.tests.x86_64-linux
 

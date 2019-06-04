@@ -75,7 +75,7 @@ blockFetchMessage
      / msgStartBatch
      / msgNoBlocks
      / msgBlock
-     /msgBatchDone
+     / msgBatchDone
 
 msgRequestRange = [0, bfPoint, bfPoint]
 msgClientDone   = [1]
@@ -84,11 +84,13 @@ msgNoBlocks     = [3]
 msgBlock        = [4, bfBody]
 msgBatchDone    = [5]
 
-bfPoint           = [slotNo, chainHash]
+bfPoint         = [slotNo, chainHash]
 slotNo          = uint ; word64
-chainHash       = [0]  ; this is the representation of the GenesisHash
-
-bfBody         = tstr
+chainHash       = blockHash / genesisHash
+genesisHash     = []
+blockHash       = [dummyBlockHash]
+dummyBlockHash  = null
+bfBody          = bytes .cbor any
 
 
 ; Transaction Submission Protocol
