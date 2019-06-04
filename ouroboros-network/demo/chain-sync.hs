@@ -643,7 +643,7 @@ chainSyncServer seed =
 
 blockFetchServer :: RandomGen g
                  => g
-                 -> BlockFetchServer BlockHeader Block IO ()
+                 -> BlockFetchServer Block IO ()
 blockFetchServer seed =
     let blocks = chainGenerator seed in
     idleState blocks
@@ -670,7 +670,7 @@ blockFetchServer seed =
         threadDelay 1000000
         return (sendingState batch blocks)
 
-selectBlockRange :: ChainRange BlockHeader
+selectBlockRange :: ChainRange Block
                  -> [Block]
                  -> Maybe ([Block], [Block])
 selectBlockRange (ChainRange lower upper) blocks0 = do
@@ -678,7 +678,7 @@ selectBlockRange (ChainRange lower upper) blocks0 = do
     (bs, b:remaining) <- splitBeforePoint upper blocks1
     return (bs ++ [b], remaining)
 
-splitBeforePoint :: Point BlockHeader -> [Block] -> Maybe ([Block], [Block])
+splitBeforePoint :: Point Block -> [Block] -> Maybe ([Block], [Block])
 splitBeforePoint pt = go []
   where
     go acc (b:bs) =
