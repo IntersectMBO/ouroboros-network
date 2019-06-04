@@ -85,6 +85,7 @@ tests = testGroup "ChainFragment"
   , testProperty "dropOldest"                                prop_dropOldest
   , testProperty "takeNewest"                                prop_takeNewest
   , testProperty "takeOldest"                                prop_takeOldest
+  , testProperty "takeWhileOldest"                           prop_takeWhileOldest
   , testProperty "takeWhileNewest"                           prop_takeWhileNewest
   , testProperty "dropWhileNewest"                           prop_dropWhileNewest
   , testProperty "addBlock"                                  prop_addBlock
@@ -165,6 +166,11 @@ prop_takeOldest (TestBlockChainFragment chain) =
     let blocks = CF.toOldestFirst chain in
     and [ CF.takeOldest n chain == CF.fromOldestFirst (L.take n blocks)
         | n <- [0..Prelude.length blocks] ]
+
+prop_takeWhileOldest :: (Block -> Bool) -> TestBlockChainFragment -> Bool
+prop_takeWhileOldest p (TestBlockChainFragment chain) =
+    CF.takeWhileOldest p chain
+ == (CF.fromOldestFirst . L.takeWhile p . CF.toOldestFirst) chain
 
 prop_takeWhileNewest :: (Block -> Bool) -> TestBlockChainFragment -> Bool
 prop_takeWhileNewest p (TestBlockChainFragment chain) =

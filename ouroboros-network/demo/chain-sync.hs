@@ -35,7 +35,6 @@ import           Codec.SerialiseTerm
 
 import qualified Network.Socket as Socket
 
---import Ouroboros.Network.NodeToNode
 import Ouroboros.Network.Block
 import qualified Ouroboros.Network.Chain as Chain
 import qualified Ouroboros.Network.ChainFragment as CF
@@ -50,12 +49,10 @@ import Network.TypedProtocol.Channel
 import Network.TypedProtocol.Driver
 import Network.TypedProtocol.Pipelined
 
---import Network.TypedProtocol.PingPong.Type   as PingPong
 import Network.TypedProtocol.PingPong.Client as PingPong
 import Network.TypedProtocol.PingPong.Server as PingPong
 import Ouroboros.Network.Protocol.PingPong.Codec
 
---import Ouroboros.Network.Protocol.ChainSync.Type   as ChainSync
 import Ouroboros.Network.Protocol.ChainSync.Codec  as ChainSync
 import Ouroboros.Network.Protocol.ChainSync.Server as ChainSync
 import Ouroboros.Network.Protocol.ChainSync.Client as ChainSync
@@ -63,7 +60,6 @@ import Ouroboros.Network.Protocol.ChainSync.Client as ChainSync
 import Ouroboros.Network.Protocol.BlockFetch.Type   as BlockFetch
 import Ouroboros.Network.Protocol.BlockFetch.Codec  as BlockFetch
 import Ouroboros.Network.Protocol.BlockFetch.Server as BlockFetch
---import Ouroboros.Network.Protocol.BlockFetch.Client as BlockFetch
 
 import Ouroboros.Network.BlockFetch
 import Ouroboros.Network.BlockFetch.Client
@@ -805,9 +801,9 @@ genesisChainFragment = AF.Empty (Point 0 GenesisHash)
 
 shiftAnchoredFragment :: HasHeader block
                       => Int
-                     -> block
-                     -> AF.AnchoredFragment block
-                     -> AF.AnchoredFragment block
+                      -> block
+                      -> AF.AnchoredFragment block
+                      -> AF.AnchoredFragment block
 shiftAnchoredFragment n b af =
   case AF.unanchorFragment af of
     cf@(b0 CF.:< cf') | CF.length cf >= n
