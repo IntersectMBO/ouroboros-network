@@ -2,33 +2,37 @@
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE UndecidableSuperClasses    #-}
 
 module Ouroboros.Consensus.Protocol.BFT (
     Bft
+  , BftFields(..)
   , BftParams(..)
+  , forgeBftFields
     -- * Classes
   , BftCrypto(..)
   , BftStandardCrypto
   , BftMockCrypto
+  , BlockSupportsBft(..)
     -- * Type instances
   , NodeConfig(..)
-  , Payload(..)
   ) where
 
-import           Codec.Serialise (Serialise (..))
+import           Codec.CBOR.Encoding (Encoding)
 import           Control.Monad.Except
+import           Crypto.Random (MonadRandom)
 import           Data.Functor.Identity
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Typeable (Typeable)
 import           Data.Word (Word64)
-import           GHC.Generics (Generic)
 
 import           Ouroboros.Network.Block
 
@@ -37,9 +41,39 @@ import           Ouroboros.Consensus.Crypto.DSIGN.Ed448 (Ed448DSIGN)
 import           Ouroboros.Consensus.Crypto.DSIGN.Mock (MockDSIGN)
 import           Ouroboros.Consensus.Node (NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Protocol.Test
-import           Ouroboros.Consensus.Util (Empty)
+import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
+
+{-------------------------------------------------------------------------------
+  Fields BFT requires in a block
+-------------------------------------------------------------------------------}
+
+data BftFields c toSign = BftFields {
+      bftSignature :: SignedDSIGN (BftDSIGN c) toSign
+    }
+
+deriving instance BftCrypto c => Show (BftFields c toSIgn)
+deriving instance BftCrypto c => Eq   (BftFields c toSign)
+
+class ( HasHeader b
+      , SignedBlock b
+      , Signable (BftDSIGN c) (Signed b)
+      ) => BlockSupportsBft c b where
+  blockBftFields :: NodeConfig (Bft c) -> b -> BftFields c (Signed b)
+
+forgeBftFields :: ( MonadRandom m
+                  , BftCrypto c
+                  , Signable (BftDSIGN c) toSign
+                  )
+               => NodeConfig (Bft c)
+               -> (toSign -> Encoding)
+               -> toSign
+               -> m (BftFields c toSign)
+forgeBftFields BftNodeConfig{..} encodeToSign toSign = do
+      signature <- signedDSIGN encodeToSign toSign bftSignKey
+      return $ BftFields {
+          bftSignature = signature
+        }
 
 {-------------------------------------------------------------------------------
   Protocol proper
@@ -67,13 +101,7 @@ data BftParams = BftParams {
     , bftNumNodes      :: Word64
     }
 
-instance (BftCrypto c) => OuroborosTag (Bft c) where
-  -- | The BFT payload is just the signature
-  newtype Payload (Bft c) ph = BftPayload {
-        bftSignature :: SignedDSIGN (BftDSIGN c) ph
-      }
-    deriving (Generic)
-
+instance BftCrypto c => OuroborosTag (Bft c) where
   -- | (Static) node configuration
   data NodeConfig (Bft c) = BftNodeConfig {
         bftParams   :: BftParams
@@ -83,19 +111,13 @@ instance (BftCrypto c) => OuroborosTag (Bft c) where
       }
 
   type ValidationErr  (Bft c) = BftValidationErr
-  type SupportedBlock (Bft c) = HasPayload (Bft c)
+  type SupportedBlock (Bft c) = BlockSupportsBft c
   type NodeState      (Bft c) = ()
   type LedgerView     (Bft c) = ()
   type IsLeader       (Bft c) = ()
   type ChainState     (Bft c) = ()
 
   protocolSecurityParam = bftSecurityParam . bftParams
-
-  mkPayload proxy BftNodeConfig{..} _proof preheader = do
-      signature <- signedDSIGN (encodePreHeader proxy) preheader bftSignKey
-      return $ BftPayload {
-          bftSignature = signature
-        }
 
   checkIsLeader BftNodeConfig{..} (SlotNo n) _l _cs = do
       return $ case bftNodeId of
@@ -110,27 +132,19 @@ instance (BftCrypto c) => OuroborosTag (Bft c) where
       -- TODO: Should deal with unknown node IDs
       let proxy = Identity b
       case verifySignedDSIGN
-           (encodePreHeader proxy)
+           (encodeSigned proxy)
            (bftVerKeys Map.! expectedLeader)
-           (blockPreHeader b)
-           (bftSignature (blockPayload cfg b)) of
+           (blockSigned b)
+           bftSignature of
         Right () -> return ()
         Left err -> throwError $ BftInvalidSignature err
     where
       BftParams{..}  = bftParams
+      BftFields{..}  = blockBftFields cfg b
       SlotNo n       = blockSlot b
       expectedLeader = CoreId $ fromIntegral (n `mod` bftNumNodes)
 
   rewindChainState _ _ _ = Just ()
-
-deriving instance BftCrypto c => Show     (Payload (Bft c) ph)
-deriving instance BftCrypto c => Eq       (Payload (Bft c) ph)
-deriving instance BftCrypto c => Ord      (Payload (Bft c) ph)
-deriving instance BftCrypto c => Condense (Payload (Bft c) ph)
-
-instance (DSIGNAlgorithm (BftDSIGN c)) => Serialise (Payload (Bft c) ph) where
-  encode (BftPayload sig) = encodeSignedDSIGN sig
-  decode = BftPayload <$> decodeSignedDSIGN
 
 {-------------------------------------------------------------------------------
   BFT specific types
@@ -143,12 +157,8 @@ data BftValidationErr = BftInvalidSignature String
   Crypto models
 -------------------------------------------------------------------------------}
 
-
--- The equality constraint here is slightly weird; we need it to force GHC to
--- partially apply this constraint in `OuroborosTag` and thus conclude that it
--- can satisfy it universally.
 -- | Crypto primitives required by BFT
-class (Typeable c, DSIGNAlgorithm (BftDSIGN c), Signable (BftDSIGN c) ~ Empty) => BftCrypto c where
+class (Typeable c, DSIGNAlgorithm (BftDSIGN c)) => BftCrypto c where
   type family BftDSIGN c :: *
 
 data BftStandardCrypto
@@ -159,3 +169,10 @@ instance BftCrypto BftStandardCrypto where
 
 instance BftCrypto BftMockCrypto where
   type BftDSIGN BftMockCrypto = MockDSIGN
+
+{-------------------------------------------------------------------------------
+  Condense
+-------------------------------------------------------------------------------}
+
+instance BftCrypto c => Condense (BftFields c toSign) where
+  condense BftFields{..} = condense bftSignature

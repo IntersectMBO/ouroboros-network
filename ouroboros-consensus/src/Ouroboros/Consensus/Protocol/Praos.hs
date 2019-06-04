@@ -12,27 +12,28 @@
 {-# LANGUAGE UndecidableInstances       #-}
 {-# LANGUAGE UndecidableSuperClasses    #-}
 
+-- | Proof of concept implementation of Praos
 module Ouroboros.Consensus.Protocol.Praos (
-    StakeDist
-  , Praos
+    Praos
+  , PraosFields(..)
   , PraosExtraFields(..)
   , PraosParams(..)
+  , forgePraosFields
     -- * Tags
   , PraosCrypto(..)
   , PraosStandardCrypto
   , PraosMockCrypto
-  , BlockSupportsPraos
+  , BlockSupportsPraos(..)
     -- * Type instances
   , NodeConfig(..)
-  , Payload(..)
+--  , Payload(..)
   ) where
 
-import           Codec.CBOR.Encoding (Encoding, encodeListLen)
+import           Codec.CBOR.Encoding (Encoding)
 import           Codec.Serialise (Serialise (..))
-import qualified Codec.Serialise.Decoding as Dec
-import qualified Codec.Serialise.Encoding as Enc
 import           Control.Monad (unless)
 import           Control.Monad.Except (throwError)
+import           Crypto.Random (MonadRandom)
 import           Data.Functor.Identity
 import           Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
@@ -57,11 +58,67 @@ import           Ouroboros.Consensus.Crypto.VRF.Mock (MockVRF)
 import           Ouroboros.Consensus.Crypto.VRF.Simple (SimpleVRF)
 import           Ouroboros.Consensus.Node (CoreNodeId (..), NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Protocol.Test
+import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util (Empty)
 import qualified Ouroboros.Consensus.Util.AnchoredFragment as AF
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.HList (HList (..))
+
+import           Ouroboros.Consensus.Ledger.Mock.Stake
+
+{-------------------------------------------------------------------------------
+  Fields required by Praos in the header
+-------------------------------------------------------------------------------}
+
+-- | The fields that Praos required in the header
+data PraosFields c toSign = PraosFields {
+      praosSignature   :: SignedKES (PraosKES c) toSign
+    , praosExtraFields :: PraosExtraFields c
+    }
+  deriving Generic
+
+-- | Fields that should be included in the signature
+data PraosExtraFields c = PraosExtraFields {
+      praosCreator   :: CoreNodeId
+    , praosRho       :: CertifiedVRF (PraosVRF c) (HList [Natural, SlotNo, VRFType])
+    , praosY         :: CertifiedVRF (PraosVRF c) (HList [Natural, SlotNo, VRFType])
+    }
+
+class ( HasHeader b
+      , SignedBlock b
+      , Signable (PraosKES c) (Signed b)
+      ) => BlockSupportsPraos c b where
+  blockPraosFields :: proxy (Praos c) -> b -> PraosFields c (Signed b)
+
+forgePraosFields :: ( HasNodeState (Praos c) m
+                    , MonadRandom m
+                    , PraosCrypto c
+                    )
+                 => NodeConfig (Praos c)
+                 -> PraosProof c
+                 -> (toSign -> Encoding)
+                 -> (PraosExtraFields c -> toSign)
+                 -> m (PraosFields c toSign)
+forgePraosFields PraosNodeConfig{..} PraosProof{..} encodeToSign mkToSign = do
+    keyKES <- getNodeState
+    let signedFields = PraosExtraFields {
+          praosCreator = praosLeader
+        , praosRho     = praosProofRho
+        , praosY       = praosProofY
+        }
+    m <- signedKES
+           encodeToSign
+           (fromIntegral (unSlotNo praosProofSlot))
+           (mkToSign signedFields)
+           keyKES
+    case m of
+      Nothing                  -> error "mkOutoborosPayload: signedKES failed"
+      Just (signature, newKey) -> do
+        putNodeState newKey
+        return $ PraosFields {
+            praosSignature    = signature
+          , praosExtraFields = signedFields
+          }
 
 {-------------------------------------------------------------------------------
   Praos specific types
@@ -73,19 +130,13 @@ data VRFType = NONCE | TEST
 instance Serialise VRFType
   -- use generic instance
 
-data PraosExtraFields c = PraosExtraFields {
-      praosCreator :: CoreNodeId
-    , praosRho     :: CertifiedVRF (PraosVRF c) (HList [Natural, SlotNo, VRFType])
-    , praosY       :: CertifiedVRF (PraosVRF c) (HList [Natural, SlotNo, VRFType])
-    }
-  deriving Generic
-
 deriving instance PraosCrypto c => Show (PraosExtraFields c)
 deriving instance PraosCrypto c => Eq   (PraosExtraFields c)
 deriving instance PraosCrypto c => Ord  (PraosExtraFields c)
 
-instance VRFAlgorithm (PraosVRF c) => Serialise (PraosExtraFields c)
-  -- Use Generic instance for now
+deriving instance PraosCrypto c => Show (PraosFields c toSign)
+deriving instance PraosCrypto c => Eq   (PraosFields c toSign)
+deriving instance PraosCrypto c => Ord  (PraosFields c toSign)
 
 data PraosProof c = PraosProof {
       praosProofRho  :: CertifiedVRF (PraosVRF c) (HList [Natural, SlotNo, VRFType])
@@ -106,8 +157,6 @@ deriving instance PraosCrypto c => Show (PraosValidationError c)
 -- TODO: This type definition belongs elsewhere.
 newtype EpochNo = EpochNo { unEpochNo :: Word64 }
     deriving (Eq, Num, Ord, Serialise)
-
-type StakeDist = IntMap Rational
 
 data BlockInfo c = BlockInfo
     { biSlot  :: SlotNo
@@ -131,18 +180,7 @@ data PraosParams = PraosParams {
     , praosLifetimeKES   :: Natural
     }
 
-class ( HasPayload (Praos c) b
-      , Signable (PraosKES c) (PreHeader b, PraosExtraFields c)
-      ) => BlockSupportsPraos c b where
-
-instance (Serialise (PraosExtraFields c), PraosCrypto c) => OuroborosTag (Praos c) where
-
-  data Payload (Praos c) ph = PraosPayload {
-        praosSignature   :: SignedKES (PraosKES c) (ph, PraosExtraFields c)
-      , praosExtraFields :: PraosExtraFields c
-      }
-    deriving (Generic)
-
+instance PraosCrypto c => OuroborosTag (Praos c) where
   data NodeConfig (Praos c) = PraosNodeConfig
     { praosParams        :: PraosParams
     , praosInitialEta    :: Natural
@@ -161,27 +199,6 @@ instance (Serialise (PraosExtraFields c), PraosCrypto c) => OuroborosTag (Praos 
   type SupportedBlock (Praos c) = BlockSupportsPraos c
   type ChainState     (Praos c) = [BlockInfo c]
 
-  mkPayload proxy PraosNodeConfig{..} PraosProof{..} preheader = do
-      keyKES <- getNodeState
-      let extraFields = PraosExtraFields {
-            praosCreator = praosLeader
-          , praosRho     = praosProofRho
-          , praosY       = praosProofY
-          }
-      m <- signedKES
-        (\(a,b) -> encodeListLen 2 <> encodePreHeader proxy a <> encode b)
-        (fromIntegral (unSlotNo praosProofSlot))
-        (preheader, extraFields)
-        keyKES
-      case m of
-        Nothing               -> error "mkOutoborosPayload: signedKES failed"
-        Just (signed, newKey) -> do
-          putNodeState newKey
-          return $ PraosPayload {
-              praosSignature   = signed
-            , praosExtraFields = extraFields
-            }
-
   checkIsLeader cfg@PraosNodeConfig{..} slot _u cs =
     case praosNodeId of
         RelayId _  -> return Nothing
@@ -199,10 +216,11 @@ instance (Serialise (PraosExtraFields c), PraosCrypto c) => OuroborosTag (Praos 
               else Nothing
 
   applyChainState cfg@PraosNodeConfig{..} sd b cs = do
-    let PraosPayload{..} = blockPayload cfg b
-        ph               = blockPreHeader b
-        slot             = blockSlot b
-        CoreNodeId nid   = praosCreator praosExtraFields
+    let PraosFields{..}      = blockPraosFields cfg b
+        PraosExtraFields{..} = praosExtraFields
+        toSign               = blockSigned b
+        slot                 = blockSlot b
+        CoreNodeId nid       = praosCreator
 
     -- check that the new block advances time
     case cs of
@@ -218,10 +236,10 @@ instance (Serialise (PraosExtraFields c), PraosCrypto c) => OuroborosTag (Praos 
     -- verify block signature
     let proxy = Identity b
     case verifySignedKES
-           (\(x,y) -> encodeListLen 2 <> encodePreHeader proxy x <> encode y)
+           (encodeSigned proxy)
            vkKES
            (fromIntegral $ unSlotNo slot)
-           (ph, praosExtraFields)
+           toSign
            praosSignature of
        Right () -> return ()
        Left err -> throwError $ PraosInvalidSig
@@ -231,32 +249,30 @@ instance (Serialise (PraosExtraFields c), PraosCrypto c) => OuroborosTag (Praos 
                                   (getSig praosSignature)
 
     let (rho', y', t) = rhoYT cfg cs slot nid
-        rho           = praosRho praosExtraFields
-        y             = praosY   praosExtraFields
 
     -- verify rho proof
-    unless (verifyCertified encode vkVRF rho' rho) $
+    unless (verifyCertified encode vkVRF rho' praosRho) $
         throwError $ PraosInvalidCert
             vkVRF
             (encode rho')
-            (certifiedNatural rho)
-            (certifiedProof rho)
+            (certifiedNatural praosRho)
+            (certifiedProof praosRho)
 
     -- verify y proof
-    unless (verifyCertified encode vkVRF y' y) $
+    unless (verifyCertified encode vkVRF y' praosY) $
         throwError $ PraosInvalidCert
             vkVRF
             (encode y')
-            (certifiedNatural y)
-            (certifiedProof y)
+            (certifiedNatural praosY)
+            (certifiedProof praosY)
 
     -- verify stake
-    unless (fromIntegral (certifiedNatural y) < t) $
-        throwError $ PraosInsufficientStake t $ certifiedNatural y
+    unless (fromIntegral (certifiedNatural praosY) < t) $
+        throwError $ PraosInsufficientStake t $ certifiedNatural praosY
 
     let bi = BlockInfo
             { biSlot  = blockSlot b
-            , biRho   = praosRho praosExtraFields
+            , biRho   = praosRho
             , biStake = sd
             }
 
@@ -287,27 +303,6 @@ instance (Serialise (PraosExtraFields c), PraosCrypto c) => OuroborosTag (Praos 
 
       k :: Word64
       k = maxRollbacks praosSecurityParam
-
-
-deriving instance PraosCrypto c => Show (Payload (Praos c) ph)
-deriving instance PraosCrypto c => Eq   (Payload (Praos c) ph)
-deriving instance PraosCrypto c => Ord  (Payload (Praos c) ph)
-
-instance (KESAlgorithm (PraosKES c), VRFAlgorithm (PraosVRF c))
-    => Serialise (Payload (Praos c) ph) where
-  encode (PraosPayload (SignedKES sig) ef) = mconcat
-    [ Enc.encodeListLen 2
-    , encodeSigKES sig
-    , encode ef
-    ]
-  decode = do
-    Dec.decodeListLenOf 2
-    PraosPayload
-      <$> (SignedKES <$> decodeSigKES)
-      <*> decode
-
-instance PraosCrypto c => Condense (Payload (Praos c) ph) where
-    condense (PraosPayload sig _) = condense sig
 
 slotEpoch :: NodeConfig (Praos c) -> SlotNo -> EpochNo
 slotEpoch PraosNodeConfig{..} s =
@@ -366,7 +361,7 @@ leaderThreshold :: forall c. PraosCrypto c
                 -> Int
                 -> Double
 leaderThreshold st xs s n =
-    let a = IntMap.findWithDefault 0 n $ infosStake st xs (slotEpoch st s)
+    let a = stakeWithDefault 0 n $ infosStake st xs (slotEpoch st s)
     in  2 ^ (byteCount (Proxy :: Proxy (PraosHash c)) * 8) * phi st a
 
 rhoYT :: PraosCrypto c
@@ -397,8 +392,8 @@ class ( KESAlgorithm  (PraosKES  c)
         -- TODO: For now we insist that everything must be signable
       , Signable (PraosKES c) ~ Empty
       ) => PraosCrypto (c :: *) where
-  type family PraosKES c  :: *
-  type family PraosVRF c  :: *
+  type family PraosKES  c :: *
+  type family PraosVRF  c :: *
   type family PraosHash c :: *
 
 data PraosStandardCrypto
@@ -413,3 +408,10 @@ instance PraosCrypto PraosMockCrypto where
   type PraosKES  PraosMockCrypto = MockKES
   type PraosVRF  PraosMockCrypto = MockVRF
   type PraosHash PraosMockCrypto = MD5
+
+{-------------------------------------------------------------------------------
+  Condense
+-------------------------------------------------------------------------------}
+
+instance PraosCrypto c => Condense (PraosFields c toSign) where
+   condense PraosFields{..} = condense praosSignature

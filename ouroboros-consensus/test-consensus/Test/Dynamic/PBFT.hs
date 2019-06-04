@@ -29,6 +29,7 @@ import           Test.Tasty.QuickCheck
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Demo
+import           Ouroboros.Consensus.Demo.Run
 import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Node
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -57,7 +58,7 @@ prop_simple_pbft_convergence :: SecurityParam
                              -> Property
 prop_simple_pbft_convergence sp numCoreNodes@(NumCoreNodes nn) =
     prop_simple_protocol_convergence
-      (protocolInfo (DemoMockPBFT params) numCoreNodes)
+      (\nid -> protocolInfo numCoreNodes nid (DemoMockPBFT params))
       isValid
       numCoreNodes
   where
@@ -66,7 +67,8 @@ prop_simple_pbft_convergence sp numCoreNodes@(NumCoreNodes nn) =
     params = PBftParams sp (fromIntegral nn) sigWin sigThd
     isValid :: [NodeId]
             -> Map NodeId ( NodeConfig DemoMockPBFT
-                          , Chain (SimpleBlock DemoMockPBFT SimpleBlockMockCrypto))
+                          , Chain (SimplePBftBlock SimpleMockCrypto PBftMockCrypto)
+                          )
             -> Property
     isValid nodeIds final = counterexample (show final') $
           tabulate "shortestLength" [show (rangeK sp (shortestLength final'))]
@@ -75,6 +77,6 @@ prop_simple_pbft_convergence sp numCoreNodes@(NumCoreNodes nn) =
       where
         -- Without the 'NodeConfig's
         final' = snd <$> final
-        takeChainPrefix :: Chain (SimpleBlock DemoMockPBFT SimpleBlockMockCrypto)
-                        -> Chain (SimpleBlock DemoMockPBFT SimpleBlockMockCrypto)
+        takeChainPrefix :: Chain (SimplePBftBlock SimpleMockCrypto PBftMockCrypto)
+                        -> Chain (SimplePBftBlock SimpleMockCrypto PBftMockCrypto)
         takeChainPrefix = id -- in PBFT, chains should indeed all be equal.

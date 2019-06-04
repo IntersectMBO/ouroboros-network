@@ -33,6 +33,7 @@ import           Ouroboros.Network.Chain (Chain)
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Demo
+import           Ouroboros.Consensus.Demo.Run
 import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Node
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -75,7 +76,7 @@ prop_simple_leader_schedule_convergence numSlots numCoreNodes params seed =
             in    counterexample ("schedule: " <> condense schedule <> "\n" <> show longest)
                 $ label ("longest crowded run " <> show (crowdedRunLength longest))
                 $ prop_simple_protocol_convergence
-                    (protocolInfo (DemoLeaderSchedule schedule params) numCoreNodes)
+                    (\nid -> protocolInfo numCoreNodes nid (DemoLeaderSchedule schedule params))
                     isValid
                     numCoreNodes
                     numSlots
@@ -83,7 +84,8 @@ prop_simple_leader_schedule_convergence numSlots numCoreNodes params seed =
   where
     isValid :: [NodeId]
             -> Map NodeId ( NodeConfig DemoLeaderSchedule
-                          , Chain (SimpleBlock DemoLeaderSchedule SimpleBlockMockCrypto))
+                          , Chain (SimplePraosRuleBlock SimpleMockCrypto)
+                          )
             -> Property
     isValid nodeIds final =
             counterexample (tracesToDot final)

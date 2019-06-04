@@ -1,10 +1,10 @@
 -- | Verifiable random functions.
 module Ouroboros.Consensus.Crypto.VRF
-    ( module Class
-    , module Mock
-    , module Simple
+    ( module X
     ) where
 
-import           Ouroboros.Consensus.Crypto.VRF.Class as Class
-import           Ouroboros.Consensus.Crypto.VRF.Mock as Mock
-import           Ouroboros.Consensus.Crypto.VRF.Simple as Simple
+import           Ouroboros.Consensus.Crypto.VRF.Class as X
+
+import           Ouroboros.Consensus.Crypto.VRF.Mock as X
+import           Ouroboros.Consensus.Crypto.VRF.NeverUsed as X
+import           Ouroboros.Consensus.Crypto.VRF.Simple as X

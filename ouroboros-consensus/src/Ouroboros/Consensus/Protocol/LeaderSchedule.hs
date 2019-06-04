@@ -8,19 +8,17 @@
 module Ouroboros.Consensus.Protocol.LeaderSchedule (
     LeaderSchedule (..)
   , WithLeaderSchedule
-  , Payload (..)
   , NodeConfig (..)
   ) where
 
-import           Codec.Serialise (Serialise)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           GHC.Generics (Generic)
 
 import           Ouroboros.Network.Block (SlotNo (..))
 
 import           Ouroboros.Consensus.Node (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Util (Empty)
 import           Ouroboros.Consensus.Util.Condense (Condense (..))
 
 newtype LeaderSchedule = LeaderSchedule {getLeaderSchedule :: Map SlotNo [CoreNodeId]}
@@ -35,29 +33,20 @@ instance Condense LeaderSchedule where
 -- | Extension of protocol @p@ by a static leader schedule.
 data WithLeaderSchedule p
 
-class NoConstraint a
-instance NoConstraint a
-
 instance OuroborosTag p => OuroborosTag (WithLeaderSchedule p) where
-
-  -- | The payload is just the id of the block creator (just for testing).
-  newtype Payload (WithLeaderSchedule p) ph = WLSPayload {getWLSPayload :: CoreNodeId}
-    deriving (Generic, Condense)
 
   type ChainState     (WithLeaderSchedule p) = ()
   type NodeState      (WithLeaderSchedule p) = ()
   type LedgerView     (WithLeaderSchedule p) = ()
   type ValidationErr  (WithLeaderSchedule p) = ()
   type IsLeader       (WithLeaderSchedule p) = ()
-  type SupportedBlock (WithLeaderSchedule p) = NoConstraint
+  type SupportedBlock (WithLeaderSchedule p) = Empty
 
   data NodeConfig (WithLeaderSchedule p) = WLSNodeConfig
     { lsNodeConfigSchedule :: LeaderSchedule
     , lsNodeConfigP        :: NodeConfig p
     , lsNodeConfigNodeId   :: CoreNodeId
     }
-
-  mkPayload _ cfg () _ph = return $ WLSPayload $ lsNodeConfigNodeId cfg
 
   preferCandidate       WLSNodeConfig{..} = preferCandidate       lsNodeConfigP
   compareCandidates     WLSNodeConfig{..} = compareCandidates     lsNodeConfigP
@@ -72,10 +61,3 @@ instance OuroborosTag p => OuroborosTag (WithLeaderSchedule p) where
 
   applyChainState _ _ _ _ = return ()
   rewindChainState _ _ _  = Just ()
-
-deriving instance Eq   (Payload (WithLeaderSchedule p) ph)
-deriving instance Ord  (Payload (WithLeaderSchedule p) ph)
-deriving instance Show (Payload (WithLeaderSchedule p) ph)
-
-instance Serialise (Payload (WithLeaderSchedule p) ph) where
-  -- use Generic instance

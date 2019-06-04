@@ -11,6 +11,8 @@ module Ouroboros.Consensus.Crypto.KES.Class
     , SignedKES (..)
     , signedKES
     , verifySignedKES
+    , encodeSignedKES
+    , decodeSignedKES
     ) where
 
 import           Codec.CBOR.Decoding (Decoder)
@@ -40,12 +42,13 @@ class ( Show (VerKeyKES v)
     type Signable v :: * -> Constraint
     type Signable c = Empty
 
-    encodeVerKeyKES :: VerKeyKES v -> Encoding
-    decodeVerKeyKES :: Decoder s (VerKeyKES v)
+    encodeVerKeyKES  :: VerKeyKES v -> Encoding
     encodeSignKeyKES :: SignKeyKES v -> Encoding
+    encodeSigKES     :: SigKES v -> Encoding
+
+    decodeVerKeyKES  :: Decoder s (VerKeyKES v)
     decodeSignKeyKES :: Decoder s (SignKeyKES v)
-    encodeSigKES :: SigKES v -> Encoding
-    decodeSigKES :: Decoder s (SigKES v)
+    decodeSigKES     :: Decoder s (SigKES v)
 
     genKeyKES :: MonadRandom m => Natural -> m (SignKeyKES v)
     deriveVerKeyKES :: SignKeyKES v -> VerKeyKES v
@@ -81,3 +84,9 @@ verifySignedKES :: (KESAlgorithm v, Signable v a)
                 => (a -> Encoding)
                 -> VerKeyKES v -> Natural -> a -> SignedKES v a -> Either String ()
 verifySignedKES toEnc vk j a (SignedKES sig) = verifyKES toEnc vk j a sig
+
+encodeSignedKES :: KESAlgorithm v => SignedKES v a -> Encoding
+encodeSignedKES (SignedKES s) = encodeSigKES s
+
+decodeSignedKES :: KESAlgorithm v => Decoder s (SignedKES v a)
+decodeSignedKES = SignedKES <$> decodeSigKES

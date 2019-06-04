@@ -11,7 +11,7 @@ module Ouroboros.Consensus.Crypto.KES.Mock
     , SignKeyKES(..)
     ) where
 
-import           Codec.Serialise (Serialise(..))
+import           Codec.Serialise (Serialise (..))
 import           GHC.Generics (Generic)
 import           Numeric.Natural (Natural)
 

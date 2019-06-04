@@ -14,7 +14,6 @@ module Ouroboros.Consensus.Protocol.ModChainSel (
   , ModChainSel
     -- * Type family instances
   , NodeConfig (..)
-  , Payload (..)
   , NodeState
   , ChainState
   , IsLeader
@@ -23,7 +22,6 @@ module Ouroboros.Consensus.Protocol.ModChainSel (
   , SupportedBlock
   ) where
 
-import           Codec.Serialise (Serialise)
 import           Data.Proxy (Proxy (..))
 import           Data.Typeable (Typeable)
 
@@ -31,17 +29,14 @@ import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import           Ouroboros.Network.Block (HasHeader)
 
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util.Condense
 
 class OuroborosTag p => ChainSelection p s where
-
   preferCandidate' :: HasHeader b
                    => proxy s
                    -> NodeConfig p
                    -> AnchoredFragment b      -- ^ Our chain
                    -> AnchoredFragment b      -- ^ Candidate
                    -> Bool
-
   compareCandidates' :: HasHeader b
                      => proxy s
                      -> NodeConfig p
@@ -52,16 +47,12 @@ data ModChainSel p s
 instance (Typeable p, Typeable s, ChainSelection p s) => OuroborosTag (ModChainSel p s) where
 
     newtype NodeConfig     (ModChainSel p s)    = McsNodeConfig (NodeConfig p)
-    newtype Payload        (ModChainSel p s) ph = McsPayload (Payload p ph)
-
     type    NodeState      (ModChainSel p s)    = NodeState p
     type    ChainState     (ModChainSel p s)    = ChainState p
     type    IsLeader       (ModChainSel p s)    = IsLeader p
     type    LedgerView     (ModChainSel p s)    = LedgerView p
     type    ValidationErr  (ModChainSel p s)    = ValidationErr p
     type    SupportedBlock (ModChainSel p s)    = SupportedBlock p
-
-    mkPayload proxy       (McsNodeConfig cfg) proof ph = McsPayload <$> mkPayload proxy cfg proof ph
 
     checkIsLeader         (McsNodeConfig cfg) = checkIsLeader         cfg
     applyChainState       (McsNodeConfig cfg) = applyChainState       cfg
@@ -70,9 +61,3 @@ instance (Typeable p, Typeable s, ChainSelection p s) => OuroborosTag (ModChainS
 
     preferCandidate   (McsNodeConfig cfg) = preferCandidate'   (Proxy :: Proxy s) cfg
     compareCandidates (McsNodeConfig cfg) = compareCandidates' (Proxy :: Proxy s) cfg
-
-deriving instance Show      (Payload p ph) => Show      (Payload (ModChainSel p s) ph)
-deriving instance Eq        (Payload p ph) => Eq        (Payload (ModChainSel p s) ph)
-deriving instance Ord       (Payload p ph) => Ord       (Payload (ModChainSel p s) ph)
-deriving instance Condense  (Payload p ph) => Condense  (Payload (ModChainSel p s) ph)
-deriving instance Serialise (Payload p ph) => Serialise (Payload (ModChainSel p s) ph)

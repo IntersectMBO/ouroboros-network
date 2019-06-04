@@ -24,7 +24,7 @@ import           System.IO (IOMode (..))
 
 import           Ouroboros.Consensus.Crypto.Hash (ShortHash)
 import qualified Ouroboros.Consensus.Crypto.Hash as H
-import           Ouroboros.Consensus.Demo
+import           Ouroboros.Consensus.Demo.Run
 import qualified Ouroboros.Consensus.Ledger.Mock as Mock
 import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Node (NodeId (..), NodeKernel (..))

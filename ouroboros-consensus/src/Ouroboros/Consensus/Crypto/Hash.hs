@@ -1,12 +1,11 @@
 -- | Hashing functionality.
 module Ouroboros.Consensus.Crypto.Hash
-    ( module Class
-    , module MD5
-    , module SHA256
-    , module Short
+    ( module X
     ) where
 
-import           Ouroboros.Consensus.Crypto.Hash.Class as Class
-import           Ouroboros.Consensus.Crypto.Hash.MD5 as MD5
-import           Ouroboros.Consensus.Crypto.Hash.SHA256 as SHA256
-import           Ouroboros.Consensus.Crypto.Hash.Short as Short
+import           Ouroboros.Consensus.Crypto.Hash.Class as X
+
+import           Ouroboros.Consensus.Crypto.Hash.MD5 as X
+import           Ouroboros.Consensus.Crypto.Hash.NeverUsed as X
+import           Ouroboros.Consensus.Crypto.Hash.SHA256 as X
+import           Ouroboros.Consensus.Crypto.Hash.Short as X

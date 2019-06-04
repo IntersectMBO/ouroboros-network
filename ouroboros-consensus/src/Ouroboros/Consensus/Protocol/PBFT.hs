@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveAnyClass          #-}
 {-# LANGUAGE DeriveGeneric           #-}
 {-# LANGUAGE FlexibleContexts        #-}
 {-# LANGUAGE FlexibleInstances       #-}
@@ -12,21 +13,21 @@
 module Ouroboros.Consensus.Protocol.PBFT (
     PBft
   , PBftLedgerView(..)
+  , PBftFields(..)
   , PBftParams(..)
+  , forgePBftFields
     -- * Classes
   , PBftCrypto(..)
   , PBftMockCrypto
   , PBftCardanoCrypto
-  , BlockSupportsPBft
+  , BlockSupportsPBft(..)
     -- * Type instances
   , NodeConfig(..)
-  , Payload(..)
   ) where
 
-import           Codec.Serialise (Serialise (..))
-import qualified Codec.Serialise.Decoding as Dec
-import qualified Codec.Serialise.Encoding as Enc
+import           Codec.CBOR.Encoding (Encoding)
 import           Control.Monad.Except
+import           Crypto.Random (MonadRandom)
 import           Data.Bimap (Bimap)
 import qualified Data.Bimap as Bimap
 import           Data.Functor.Identity
@@ -47,8 +48,46 @@ import           Ouroboros.Consensus.Crypto.DSIGN.Class
 import           Ouroboros.Consensus.Crypto.DSIGN.Mock (MockDSIGN)
 import           Ouroboros.Consensus.Node (NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Protocol.Test
+import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
+
+{-------------------------------------------------------------------------------
+  Fields that PBFT requires present in a block
+-------------------------------------------------------------------------------}
+
+data PBftFields c toSign = PBftFields {
+      pbftIssuer    :: VerKeyDSIGN (PBftDSIGN c)
+    , pbftSignature :: SignedDSIGN (PBftDSIGN c) toSign
+    }
+  deriving (Generic)
+
+deriving instance PBftCrypto c => Show (PBftFields c toSign)
+deriving instance PBftCrypto c => Eq   (PBftFields c toSign)
+
+class ( HasHeader b
+      , SignedBlock b
+      , Signable (PBftDSIGN c) (Signed b)
+      ) => BlockSupportsPBft c b where
+  blockPBftFields :: proxy (PBft c) -> b -> PBftFields c (Signed b)
+
+forgePBftFields :: ( MonadRandom m
+                   , PBftCrypto c
+                   , Signable (PBftDSIGN c) toSign
+                   )
+                => NodeConfig (PBft c)
+                -> (toSign -> Encoding)
+                -> toSign
+                -> m (PBftFields c toSign)
+forgePBftFields PBftNodeConfig{..} encodeToSign toSign = do
+    signature <- signedDSIGN encodeToSign toSign pbftSignKey
+    return $ PBftFields {
+        pbftIssuer    = pbftVerKey
+      , pbftSignature = signature
+      }
+
+{-------------------------------------------------------------------------------
+  Information PBFT requires from the ledger
+-------------------------------------------------------------------------------}
 
 data PBftLedgerView c = PBftLedgerView {
     -- | ProtocolParameters: map from genesis to delegate keys.
@@ -88,18 +127,7 @@ data PBftParams = PBftParams {
     , pbftSignatureThreshold :: Double
     }
 
-class ( HasPayload (PBft c) b
-      , Signable (PBftDSIGN c) (PreHeader b)
-      ) => BlockSupportsPBft c b where
-
 instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
-  -- | The BFT payload is just the issuer and signature
-  data Payload (PBft c) ph = PBftPayload {
-        pbftIssuer    :: VerKeyDSIGN (PBftDSIGN c)
-      , pbftSignature :: SignedDSIGN (PBftDSIGN c) ph
-      }
-    deriving (Generic)
-
   -- | (Static) node configuration
   data NodeConfig (PBft c) = PBftNodeConfig {
         pbftParams   :: PBftParams
@@ -128,13 +156,6 @@ instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
 
   protocolSecurityParam = pbftSecurityParam . pbftParams
 
-  mkPayload proxy PBftNodeConfig{..} _proof preheader = do
-      signature <- signedDSIGN (encodePreHeader proxy) preheader pbftSignKey
-      return $ PBftPayload {
-          pbftIssuer = pbftVerKey
-        , pbftSignature = signature
-        }
-
   checkIsLeader PBftNodeConfig{..} (SlotNo n) _l _cs = do
       return $ case pbftNodeId of
                  RelayId _ -> Nothing -- relays are never leaders
@@ -149,10 +170,10 @@ instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
       -- genesis key, and that genesis key hasn't voted too many times.
       let proxy = Identity b
       case verifySignedDSIGN
-             (encodePreHeader proxy)
-             (pbftIssuer payload)
-             (blockPreHeader b)
-             (pbftSignature payload) of
+             (encodeSigned proxy)
+             pbftIssuer
+             (blockSigned b)
+             pbftSignature of
         Right () -> return ()
         Left err -> throwError $ PBftInvalidSignature err
 
@@ -163,16 +184,16 @@ instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
       unless (blockSlot b > lastSlot)
         $ throwError PBftInvalidSlot
 
-      case Bimap.lookupR (hashVerKey $ pbftIssuer payload) dms of
-        Nothing -> throwError $ PBftNotGenesisDelegate (hashVerKey $ pbftIssuer payload) lv
+      case Bimap.lookupR (hashVerKey pbftIssuer) dms of
+        Nothing -> throwError $ PBftNotGenesisDelegate (hashVerKey pbftIssuer) lv
         Just gk -> do
           when (Seq.length signers >= winSize
                 && Seq.length (Seq.filter (== gk) signers) > wt)
             $ do throwError PBftExceededSignThreshold
           return $! takeR (winSize + 2*k) chainState Seq.|> (gk, blockSlot b)
     where
-      PBftParams{..}  = pbftParams
-      payload = blockPayload cfg b
+      PBftParams{..} = pbftParams
+      PBftFields{..} = blockPBftFields cfg b
       winSize = fromIntegral pbftSignatureWindow
       SecurityParam (fromIntegral -> k) = pbftSecurityParam
       wt = floor $ pbftSignatureThreshold * fromIntegral winSize
@@ -186,6 +207,7 @@ instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
         _           -> Nothing
 
 
+{-
 deriving instance PBftCrypto c => Show     (Payload (PBft c) ph)
 deriving instance PBftCrypto c => Eq       (Payload (PBft c) ph)
 deriving instance PBftCrypto c => Ord      (Payload (PBft c) ph)
@@ -201,9 +223,10 @@ instance (DSIGNAlgorithm (PBftDSIGN c)) => Serialise (Payload (PBft c) ph) where
   decode = do
     Dec.decodeListLenOf 2
     PBftPayload <$> decodeVerKeyDSIGN <*> decodeSignedDSIGN
+-}
 
 {-------------------------------------------------------------------------------
-  BFT specific types
+  PBFT specific types
 -------------------------------------------------------------------------------}
 
 data PBftValidationErr c
@@ -251,3 +274,10 @@ instance (Given ProtocolMagicId) => PBftCrypto PBftCardanoCrypto where
   type PBftVerKeyHash PBftCardanoCrypto = CC.Common.KeyHash
 
   hashVerKey (VerKeyCardanoDSIGN pk) = CC.Common.hashKey pk
+
+{-------------------------------------------------------------------------------
+  Condense
+-------------------------------------------------------------------------------}
+
+instance PBftCrypto c => Condense (PBftFields c toSign) where
+  condense PBftFields{..} = condense pbftSignature

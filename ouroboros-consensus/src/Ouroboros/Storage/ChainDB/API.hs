@@ -34,7 +34,7 @@ import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import           Ouroboros.Network.Block (ChainUpdate (..), HasHeader (..),
-                     SlotNo, StandardHash)
+                     HeaderHash, SlotNo, StandardHash)
 import           Ouroboros.Network.Chain (Chain (..), Point (..))
 import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.ChainProducerState (ReaderId)

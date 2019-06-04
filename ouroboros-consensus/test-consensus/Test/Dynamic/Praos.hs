@@ -35,6 +35,7 @@ import qualified Ouroboros.Network.Chain as Chain
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Demo
+import           Ouroboros.Consensus.Demo.Run
 import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Node (NodeId)
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -85,7 +86,7 @@ prop_simple_praos_convergence :: PraosParams
                               -> Property
 prop_simple_praos_convergence params numCoreNodes numSlots =
     prop_simple_protocol_convergence
-      (protocolInfo (DemoPraos params) numCoreNodes)
+      (\nid -> protocolInfo numCoreNodes nid (DemoPraos params))
       isValid
       numCoreNodes
       numSlots
@@ -94,7 +95,8 @@ prop_simple_praos_convergence params numCoreNodes numSlots =
 
     isValid :: [NodeId]
             -> Map NodeId ( NodeConfig DemoPraos
-                          , Chain (SimpleBlock DemoPraos SimpleBlockMockCrypto))
+                          , Chain (SimplePraosBlock SimpleMockCrypto PraosMockCrypto)
+                          )
             -> Property
     isValid nodeIds final
        = counterexample (show final')

@@ -17,6 +17,7 @@ import           Crypto.Random (ChaChaDRG, drgNew)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
+import           Data.Typeable (Typeable)
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork (MonadFork)
@@ -39,9 +40,9 @@ import           Ouroboros.Network.Protocol.ChainSync.Type
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
 import           Ouroboros.Consensus.Demo
+import           Ouroboros.Consensus.Demo.Run
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Mock
-import qualified Ouroboros.Consensus.Ledger.Mock as Mock
 import           Ouroboros.Consensus.Node
 import           Ouroboros.Consensus.Protocol.Abstract (NodeConfig)
 import           Ouroboros.Consensus.Util.Condense
@@ -59,7 +60,7 @@ import qualified Ouroboros.Storage.ChainDB.Mock as ChainDB
 --
 -- We run for the specified number of blocks, then return the final state of
 -- each node.
-broadcastNetwork :: forall m p c.
+broadcastNetwork :: forall m c ext.
                     ( MonadAsync m
                     , MonadFork  m
                     , MonadMask  m
@@ -67,16 +68,20 @@ broadcastNetwork :: forall m p c.
                     , MonadTime  m
                     , MonadTimer m
                     , MonadThrow (STM m)
-                    , RunDemo (SimpleBlock p c) (SimpleHeader p c)
-                    , SimpleBlockCrypto c
+                    , RunDemo (SimpleBlock c ext) (SimpleHeader c ext)
+                    , SimpleCrypto c
+                    , Show ext
+                    , Typeable ext
                     )
                  => ThreadRegistry m
                  -> BlockchainTime m
                  -> NumCoreNodes
-                 -> (CoreNodeId -> ProtocolInfo (SimpleBlock p c))
+                 -> (CoreNodeId -> ProtocolInfo (SimpleBlock c ext))
                  -> ChaChaDRG
                  -> NumSlots
-                 -> m (Map NodeId (NodeConfig p, Chain (SimpleBlock p c)))
+                 -> m (Map NodeId ( NodeConfig (BlockProtocol (SimpleBlock c ext))
+                                  , Chain (SimpleBlock c ext)
+                                  ))
 broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots = do
 
     -- all known addresses
@@ -89,7 +94,8 @@ broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots = do
                       nodeAddrs  = map fst (Map.elems nodeUtxo)
                 ]
 
-    chans :: NodeChans m (SimpleBlock p c) (SimpleHeader p c) <- createCommunicationChannels
+    chans :: NodeChans m (SimpleBlock c ext) (SimpleHeader c ext) <-
+      createCommunicationChannels
 
     varRNG <- atomically $ newTVar initRNG
 
@@ -97,13 +103,13 @@ broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots = do
       let us               = fromCoreNodeId coreNodeId
           ProtocolInfo{..} = pInfo coreNodeId
 
-      let callbacks :: NodeCallbacks m (SimpleBlock p c)
+      let callbacks :: NodeCallbacks m (SimpleBlock c ext)
           callbacks = NodeCallbacks {
               produceBlock = \proof l slot prevPoint prevNo _txs -> do
                 let curNo :: BlockNo
                     curNo = succ prevNo
 
-                let prevHash :: ChainHash (SimpleHeader p c)
+                let prevHash :: ChainHash (SimpleHeader c ext)
                     prevHash = castHash (pointHash prevPoint)
 
                 -- We ignore the transactions from the mempool (which will be
@@ -130,15 +136,17 @@ broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots = do
             , btime
             , chainDB
             , callbacks
-            , blockFetchSize     = headerBlockSize . headerPreHeader
-            , blockMatchesHeader = Mock.blockMatchesHeader
+            , blockFetchSize     = simpleBlockSize . simpleHeaderStd
+            , blockMatchesHeader = matchesSimpleHeader
             }
 
       node <- nodeKernel nodeParams
 
       forM_ (filter (/= us) nodeIds) $ \them -> do
         let mkCommsDown :: Show bytes
-                        => (NodeChan m (SimpleBlock p c) (SimpleHeader p c) -> Channel m bytes)
+                        => (   NodeChan m (SimpleBlock c ext) (SimpleHeader c ext)
+                            -> Channel m bytes
+                           )
                         -> Codec ps e m bytes -> NodeComms m ps e bytes
             mkCommsDown getChan codec = NodeComms {
                 ncCodec    = codec
@@ -147,7 +155,9 @@ broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots = do
                     getChan (chans Map.! us Map.! them)
               }
             mkCommsUp :: Show bytes
-                      => (NodeChan m (SimpleBlock p c) (SimpleHeader p c) -> Channel m bytes)
+                      => (   NodeChan m (SimpleBlock c ext) (SimpleHeader c ext)
+                          -> Channel m bytes
+                         )
                       -> Codec ps e m bytes -> NodeComms m ps e bytes
             mkCommsUp getChan codec = NodeComms {
                 ncCodec    = codec
@@ -184,10 +194,10 @@ broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots = do
     coreNodeIds :: [CoreNodeId]
     coreNodeIds = enumCoreNodes numCoreNodes
 
-    getUtxo :: ExtLedgerState (SimpleBlock p c) -> Utxo
-    getUtxo = slsUtxo . ledgerState
+    getUtxo :: ExtLedgerState (SimpleBlock c ext) -> Utxo
+    getUtxo = mockUtxo . simpleLedgerState . ledgerState
 
-    createCommunicationChannels :: m (NodeChans m (SimpleBlock p c) (SimpleHeader p c))
+    createCommunicationChannels :: m (NodeChans m (SimpleBlock c ext) (SimpleHeader c ext))
     createCommunicationChannels = fmap Map.fromList $ forM nodeIds $ \us ->
       fmap ((us, ) . Map.fromList) $ forM (filter (/= us) nodeIds) $ \them -> do
         (chainSyncConsumer,  chainSyncProducer)  <- createConnectedChannels

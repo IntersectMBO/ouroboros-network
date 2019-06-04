@@ -1,10 +1,10 @@
 -- | Key evolving signatures.
 module Ouroboros.Consensus.Crypto.KES
-    ( module Ouroboros.Consensus.Crypto.KES.Class
-    , module Ouroboros.Consensus.Crypto.KES.Mock
-    , module Ouroboros.Consensus.Crypto.KES.Simple
+    ( module X
     ) where
 
-import           Ouroboros.Consensus.Crypto.KES.Class
-import           Ouroboros.Consensus.Crypto.KES.Mock
-import           Ouroboros.Consensus.Crypto.KES.Simple
+import           Ouroboros.Consensus.Crypto.KES.Class as X
+
+import           Ouroboros.Consensus.Crypto.KES.Mock as X
+import           Ouroboros.Consensus.Crypto.KES.NeverUsed as X
+import           Ouroboros.Consensus.Crypto.KES.Simple as X

@@ -16,6 +16,7 @@ module Ouroboros.Network.Chain (
 
   -- ** Block re-exports
   HasHeader(..),
+  HeaderHash,
 
   -- * Point type
   Point(..),
