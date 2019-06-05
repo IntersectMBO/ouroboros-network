@@ -30,6 +30,7 @@ module Network.TypedProtocol.Driver (
 
   -- * Pipelined peers
   runPipelinedPeer,
+  runPipelinedPeerWith,
 
   -- * Connected peers
   runConnectedPeers,
@@ -165,8 +166,9 @@ runPeerWith tr Codec{encode, decode} peerid channel@Channel{send} fn =
         Right (SomeMessage msg, trailing') -> do
           traceWith tr (TraceRecvMsg peerid (AnyMessage msg))
           go trailing' (k msg)
-        Left failure ->
-          throwM failure
+        Left err -> do
+          traceWith tr (TraceDecoderFailure peerid stok err)
+          throwM err
 
     -- Note that we do not complain about trailing data in any case, neither
     -- the 'Await' nor 'Done' cases.
@@ -208,23 +210,29 @@ runPeer tr codec peerid channel = runPeerWith tr codec peerid channel (\_stok ->
 -- Unlike normal peers, running pipelined peers rely on concurrency, hence the
 -- 'MonadSTM' constraint.
 --
-runPipelinedPeer
-  :: forall ps (st :: ps) pr peerid failure bytes m a.
-     (MonadSTM m, MonadAsync m, MonadThrow m, Exception failure)
-  => Tracer m (TraceSendRecv ps peerid failure)
+runPipelinedPeerWith
+  :: forall ps (st :: ps) pr peerid failure err bytes m a.
+     (MonadSTM m, MonadAsync m, MonadThrow m, Exception err)
+  => Tracer m (TraceSendRecv ps peerid err)
   -> Codec ps failure m bytes
   -> peerid
   -> Channel m bytes
+  -> (forall (st' :: ps) pr' x .
+           PeerHasAgency pr' st'
+        -> Channel m bytes
+        -> Maybe bytes
+        -> DecodeStep bytes failure m x
+        -> m (Either err (x, Maybe bytes)))
   -> PeerPipelined ps pr st m a
   -> m a
-runPipelinedPeer tr codec peerid channel (PeerPipelined peer) = do
+runPipelinedPeerWith tr codec peerid channel fn (PeerPipelined peer) = do
     receiveQueue <- atomically newTQueue
     collectQueue <- atomically newTQueue
     a <- runPipelinedPeerReceiverQueue tr receiveQueue collectQueue
-                                          codec peerid channel
+                                          codec peerid channel fn
            `withAsyncLoop`
          runPipelinedPeerSender        tr receiveQueue collectQueue
-                                          codec peerid channel peer
+                                          codec peerid channel fn peer
     return a
 
   where
@@ -235,6 +243,28 @@ runPipelinedPeer tr codec peerid channel (PeerPipelined peer) = do
       case res of
         Left v  -> case v of {}
         Right a -> return a
+
+
+-- | Run a pipelined peer with the given channel via the given codec.
+--
+-- This runs the peer to completion (if the protocol allows for termination).
+--
+-- Unlike normal peers, running pipelined peers rely on concurrency, hence the
+-- 'MonadSTM' constraint.
+--
+runPipelinedPeer
+  :: forall ps (st :: ps) pr peerid failure bytes m a.
+     (MonadSTM m, MonadAsync m, MonadCatch m, Exception failure)
+  => Tracer m (TraceSendRecv ps peerid failure)
+  -> Codec ps failure m bytes
+  -> peerid
+  -> Channel m bytes
+  -> PeerPipelined ps pr st m a
+  -> m a
+
+runPipelinedPeer tr codec peerid channel peer =
+    runPipelinedPeerWith tr codec peerid channel (\_stok -> runDecoderWithChannel) peer
+
 
 data ReceiveHandler bytes ps pr m c where
      ReceiveHandler :: MaybeTrailing bytes n
@@ -288,18 +318,24 @@ data MaybeTrailing bytes (n :: N) where
 
 
 runPipelinedPeerSender
-  :: forall ps (st :: ps) pr peerid failure bytes c m a.
-     (MonadSTM m, MonadThrow m, Exception failure)
-  => Tracer m (TraceSendRecv ps peerid failure)
+  :: forall ps (st :: ps) pr peerid failure err bytes c m a.
+     (MonadSTM m, MonadThrow m, Exception err)
+  => Tracer m (TraceSendRecv ps peerid err)
   -> TQueue m (ReceiveHandler bytes ps pr m c)
   -> TQueue m (c, Maybe bytes)
   -> Codec ps failure m bytes
   -> peerid
   -> Channel m bytes
+  -> (forall (st' :: ps) pr' x .
+           PeerHasAgency pr' st'
+        -> Channel m bytes
+        -> Maybe bytes
+        -> DecodeStep bytes failure m x
+        -> m (Either err (x, Maybe bytes)))
   -> PeerSender ps pr st Z c m a
   -> m a
 runPipelinedPeerSender tr receiveQueue collectQueue
-                       Codec{encode, decode} peerid channel@Channel{send} =
+                       Codec{encode, decode} peerid channel@Channel{send} fn =
     go Zero (MaybeTrailing Nothing)
   where
     go :: forall st' n.
@@ -318,14 +354,14 @@ runPipelinedPeerSender tr receiveQueue collectQueue
 
     go Zero (MaybeTrailing trailing) (SenderAwait stok k) = do
       decoder <- decode stok
-      res <- runDecoderWithChannel channel trailing decoder
+      res <- fn stok channel trailing decoder
       case res of
         Right (SomeMessage msg, trailing') -> do
           traceWith tr (TraceRecvMsg peerid (AnyMessage msg))
           go Zero (MaybeTrailing trailing') (k msg)
-        Left failure -> do
-          traceWith tr (TraceDecoderFailure peerid stok failure)
-          throwM failure
+        Left err -> do
+          traceWith tr (TraceDecoderFailure peerid stok err)
+          throwM err
 
     go n trailing (SenderPipeline stok msg receiver k) = do
       atomically (writeTQueue receiveQueue (ReceiveHandler trailing receiver))
@@ -352,16 +388,22 @@ runPipelinedPeerSender tr receiveQueue collectQueue
 -- NOTE: @'runPipelinedPeer'@ assumes that @'runPipelinedPeerReceiverQueue'@ is
 -- an infinite loop which never returns.
 runPipelinedPeerReceiverQueue
-  :: forall ps pr peerid failure bytes m c.
-     (MonadSTM m, MonadThrow m, Exception failure)
-  => Tracer m (TraceSendRecv ps peerid failure)
+  :: forall ps pr peerid failure err bytes m c.
+     (MonadSTM m, MonadThrow m, Exception err)
+  => Tracer m (TraceSendRecv ps peerid err)
   -> TQueue m (ReceiveHandler bytes ps pr m c)
   -> TQueue m (c, Maybe bytes)
   -> Codec ps failure m bytes
   -> peerid
   -> Channel m bytes
+  -> (forall (st' :: ps) pr' x .
+           PeerHasAgency pr' st'
+        -> Channel m bytes
+        -> Maybe bytes
+        -> DecodeStep bytes failure m x
+        -> m (Either err (x, Maybe bytes)))
   -> m Void
-runPipelinedPeerReceiverQueue tr receiveQueue collectQueue codec peerid channel =
+runPipelinedPeerReceiverQueue tr receiveQueue collectQueue codec peerid channel fn =
     go Nothing
   where
     go :: Maybe bytes -> m Void
@@ -371,22 +413,28 @@ runPipelinedPeerReceiverQueue tr receiveQueue collectQueue codec peerid channel 
       let trailing = case (senderTrailing, receiverTrailing) of
                        (MaybeTrailing t, _) -> t
                        (NoTrailing,      t) -> t
-      (c, trailing') <- runPipelinedPeerReceiver tr codec peerid channel trailing receiver
+      (c, trailing') <- runPipelinedPeerReceiver tr codec peerid channel fn trailing receiver
       atomically (writeTQueue collectQueue (c, trailing'))
       go trailing'
 
 
 runPipelinedPeerReceiver
-  :: forall ps (st :: ps) (stdone :: ps) pr peerid failure bytes m c.
-     (MonadThrow m, Exception failure)
-  => Tracer m (TraceSendRecv ps peerid failure)
+  :: forall ps (st :: ps) (stdone :: ps) pr peerid failure err bytes m c.
+     (MonadThrow m, Exception err)
+  => Tracer m (TraceSendRecv ps peerid err)
   -> Codec ps failure m bytes
   -> peerid
   -> Channel m bytes
+  -> (forall (st' :: ps) pr' x .
+           PeerHasAgency pr' st'
+        -> Channel m bytes
+        -> Maybe bytes
+        -> DecodeStep bytes failure m x
+        -> m (Either err (x, Maybe bytes)))
   -> Maybe bytes
   -> PeerReceiver ps pr (st :: ps) (stdone :: ps) m c
   -> m (c, Maybe bytes)
-runPipelinedPeerReceiver tr Codec{decode} peerid channel = go
+runPipelinedPeerReceiver tr Codec{decode} peerid channel fn = go
   where
     go :: forall st' st''.
           Maybe bytes
@@ -398,13 +446,14 @@ runPipelinedPeerReceiver tr Codec{decode} peerid channel = go
 
     go trailing (ReceiverAwait stok k) = do
       decoder <- decode stok
-      res <- runDecoderWithChannel channel trailing decoder
+      res <- fn stok channel trailing decoder
       case res of
         Right (SomeMessage msg, trailing') -> do
           traceWith tr (TraceRecvMsg peerid (AnyMessage msg))
           go trailing' (k msg)
-        Left failure ->
-          throwM failure
+        Left err -> do
+          traceWith tr (TraceDecoderFailure peerid stok err)
+          throwM err
 
 
 --

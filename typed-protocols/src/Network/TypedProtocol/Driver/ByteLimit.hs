@@ -9,6 +9,7 @@ module Network.TypedProtocol.Driver.ByteLimit
   ( runPeerWithByteLimit
   , ByteLimit (..)
   , DecoderFailureOrTooMuchInput (..)
+  , runDecoderWithByteLimit
   ) where
 
 import           Control.Exception
