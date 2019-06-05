@@ -17,8 +17,7 @@ import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 import           Text.Show.Functions ()
 
-import           Ouroboros.Network.AnchoredFragment
-                     (AnchoredFragment(..))
+import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block
 import qualified Ouroboros.Network.Chain as Chain
@@ -246,13 +245,13 @@ prop_toChain_fromChain :: TestBlockChain -> Property
 prop_toChain_fromChain (TestBlockChain ch) =
     AF.toChain (AF.fromChain ch) === Just ch
 
-prop_anchorNewest :: NonNegative Int -> TestBlockChain -> Property
-prop_anchorNewest (NonNegative n') (TestBlockChain ch) =
-    AF.length af === min (Chain.length ch) (fromIntegral n) .&&.
-    take n1 (map blockPoint (Chain.toNewestFirst ch) ++ [Chain.genesisPoint]) ===
-             map blockPoint (AF.toNewestFirst af)    ++ [AF.anchorPoint af]
+prop_anchorNewest :: NonNegative Int -> TestBlockAnchoredFragment -> Property
+prop_anchorNewest (NonNegative n') (TestBlockAnchoredFragment c) =
+    AF.length c' === min (AF.length c) (fromIntegral n) .&&.
+             map blockPoint (AF.toNewestFirst c') ++ [anchorPoint c'] ===
+    take n1 (map blockPoint (AF.toNewestFirst c)  ++ [anchorPoint c])
   where
-    af = AF.anchorNewest n ch
+    c' = AF.anchorNewest n c
 
     -- For testing purposes, we take a @'NonNegative' 'Int'@ instead of a
     -- 'Word64' because large 'Word64's can't be converted to 'Int', which we
@@ -260,8 +259,8 @@ prop_anchorNewest (NonNegative n') (TestBlockChain ch) =
     n :: Word64
     n = fromIntegral n'
 
-    -- Avoid an overflow in n' + 1 by just using n', as the chain will never
-    -- be that long in the tests.
+    -- Avoid an overflow in n' + 1 by just using n', as the fragment will
+    -- never be that long in the tests.
     n1 = if n' == maxBound then n' else n' + 1
 
 

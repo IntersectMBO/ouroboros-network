@@ -102,6 +102,7 @@ lastK :: HasHeader a
       -> AnchoredFragment a
 lastK (SecurityParam k) f =
       Fragment.anchorNewest k
+    . Fragment.fromChain
     . fmap f
     . currentChain
 
