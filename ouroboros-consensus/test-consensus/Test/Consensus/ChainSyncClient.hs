@@ -115,7 +115,7 @@ prop_chainSync ChainSyncClientSetup {..} =
       runChainSync securityParam maxClockSkew clientUpdates serverUpdates
                    startSlot
 
-    clientFragment = AF.anchorNewest k clientChain
+    clientFragment = AF.anchorNewest k $ AF.fromChain clientChain
 
 -- | Check whether the anchored fragment is a suffix of the chain.
 isSuffix :: AnchoredFragment TestBlock -> Chain TestBlock -> Property
@@ -229,7 +229,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
 
     let getCurrentChain :: STM m (AnchoredFragment TestBlock)
         getCurrentChain =
-          AF.anchorNewest k . fst <$>
+          AF.anchorNewest k . AF.fromChain . fst <$>
           readTVar varClientState
         getLedgerState :: STM m (ExtLedgerState TestBlock)
         getLedgerState  = snd <$> readTVar varClientState

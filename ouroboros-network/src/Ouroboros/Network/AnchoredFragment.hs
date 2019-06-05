@@ -417,23 +417,27 @@ toChain af@(AnchoredFragment a _)
     | otherwise
     = Nothing
 
--- | Take the @n@ newest blocks from the chain and turn them into an
--- 'AnchoredFragment'.
+-- | Take the @n@ newest blocks from the fragment.
 --
--- When the chain itself is shorter than @n@ blocks, the fragment will also be
--- shorter than @n@ blocks (and anchored at genesis).
+-- WARNING: this may change the anchor of the fragment!
+--
+-- When the fragment itself is shorter than @n@ blocks, the fragment will be
+-- returned unmodified.
 anchorNewest :: forall block. HasHeader block
              => Word64  -- ^ @n@
-             -> Chain block
              -> AnchoredFragment block
-anchorNewest = go CF.Empty
+             -> AnchoredFragment block
+anchorNewest n c = case c of
+    Empty _       -> c
+    _ | n >= len  -> c
+      | otherwise -> dropOldest (len - n) c
   where
-    -- Walk back over the chain, building up a chain fragment until k = 0 or
-    -- we encountered genesis, then anchor the built-up chain fragment
-    go :: ChainFragment block -> Word64 -> Chain block -> AnchoredFragment block
-    go cf _ Chain.Genesis   = mkAnchoredFragment Chain.genesisPoint cf
-    go cf 0 (_  Chain.:> b) = mkAnchoredFragment (blockPoint b)     cf
-    go cf n (ch Chain.:> b) = go (b CF.:< cf) (n - 1) ch
+    len = fromIntegral $ length c
+
+    dropOldest :: Word64 -> AnchoredFragment block -> AnchoredFragment block
+    dropOldest _ (Empty a) = Empty a
+    dropOldest 0 c'        = c'
+    dropOldest m (_ :< c') = dropOldest (m - 1) c'
 
 -- | \( O(\max(n_1, n_2)) \). Check whether the first anchored fragment is a
 -- prefix of the second.
