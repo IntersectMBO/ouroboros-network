@@ -29,6 +29,7 @@ library
                    , Network.TypedProtocol.PingPong.Client
                    , Network.TypedProtocol.PingPong.Server
                    , Network.TypedProtocol.PingPong.Codec
+                   , Network.TypedProtocol.PingPong.Examples
 
                    , Network.TypedProtocol.ReqResp.Type
                    , Network.TypedProtocol.ReqResp.Client
