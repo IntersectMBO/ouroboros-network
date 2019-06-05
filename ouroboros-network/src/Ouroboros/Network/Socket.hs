@@ -50,8 +50,6 @@ import qualified Network.Socket as Socket hiding (recv)
 
 import           Control.Tracer (nullTracer)
 
-import           Network.TypedProtocol.Driver.ByteLimit
-
 import qualified Network.Mux as Mx
 import qualified Network.Mux.Types as Mx
 import           Network.Mux.Types (MuxBearer)
@@ -61,6 +59,8 @@ import qualified Network.Mux.Bearer.Socket as Mx
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
 import           Ouroboros.Network.Protocol.Handshake.Codec
+import           Ouroboros.Network.Driver
+
 import qualified Ouroboros.Network.Server.Socket as Server
 
 

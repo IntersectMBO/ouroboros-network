@@ -476,7 +476,6 @@ runDecoderWithChannel Channel{recv} = go
     go Nothing         (DecodePartial k) = recv >>= k        >>= go Nothing
     go (Just trailing) (DecodePartial k) = k (Just trailing) >>= go Nothing
 
-
 -- | Run two 'Peer's via a pair of connected 'Channel's and a common 'Codec'.
 --
 -- This is useful for tests and quick experiments.

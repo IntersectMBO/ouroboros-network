@@ -48,6 +48,7 @@ library
                        Ouroboros.Network.BlockFetch.State
                        Ouroboros.Network.ChainFragment
                        Ouroboros.Network.DeltaQ
+                       Ouroboros.Network.Driver
                        Ouroboros.Network.NodeToNode
                        Ouroboros.Network.NodeToClient
                        Ouroboros.Network.Point
@@ -157,6 +158,7 @@ test-suite tests
                        Ouroboros.Network.Chain
                        Ouroboros.Network.ChainFragment
                        Ouroboros.Network.ChainProducerState
+                       Ouroboros.Network.Driver
                        Ouroboros.Network.DeltaQ
                        Ouroboros.Network.Node
                        Ouroboros.Network.NodeToNode
@@ -206,6 +208,7 @@ test-suite tests
                        Test.ChainGenerators
                        Test.ChainFragment
                        Test.ChainProducerState
+                       Test.Driver
                        Test.Ouroboros.Network.Testing.Utils
                        Test.Ouroboros.Network.BlockFetch
                        Test.Ouroboros.Network.Node

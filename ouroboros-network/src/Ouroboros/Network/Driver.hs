@@ -1,27 +1,30 @@
-
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE KindSignatures      #-}
-{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE PolyKinds           #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Network.TypedProtocol.Driver.ByteLimit
+module Ouroboros.Network.Driver
   ( runPeerWithByteLimit
-  , ByteLimit (..)
-  , DecoderFailureOrTooMuchInput (..)
-  , runDecoderWithByteLimit
-  ) where
+  , runPipelinedPeerWithByteLimit
 
-import           Control.Exception
+  , DecoderFailureOrTooMuchInput (..)
+  , ByteLimit (..)
+  , runDecoderWithChannelByteLimits
+  )where
+
+import           Control.Exception (Exception)
 import           Data.Int (Int64)
 
-import           Control.Monad.Class.MonadThrow (MonadThrow (..))
+import           Control.Monad.Class.MonadThrow
+import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadSTM
 import           Control.Tracer (Tracer)
 
-
 import           Network.TypedProtocol.Core
-import           Network.TypedProtocol.Codec
 import           Network.TypedProtocol.Channel
+import           Network.TypedProtocol.Codec
+import           Network.TypedProtocol.Pipelined
 import           Network.TypedProtocol.Driver
 
 
@@ -37,14 +40,18 @@ data DecoderFailureOrTooMuchInput failure
 
 instance Exception failure => Exception (DecoderFailureOrTooMuchInput failure)
 
-runDecoderWithByteLimit
+-- | Run a codec incremental decoder 'DecodeStep' against a channel. It also
+-- takes any extra input data and returns any unused trailing data.
+--
+runDecoderWithChannelByteLimits
     :: forall m bytes failure a. Monad m
     => ByteLimit bytes
     -> Channel m bytes
     -> Maybe bytes
     -> DecodeStep bytes failure m a
     -> m (Either (DecoderFailureOrTooMuchInput failure) (a, Maybe bytes))
-runDecoderWithByteLimit ByteLimit {byteLimit, byteLength} Channel{recv} mbytes = go 0 mbytes
+
+runDecoderWithChannelByteLimits ByteLimit {byteLimit, byteLength} Channel{recv} mbytes = go 0 mbytes
     where
       go :: Int64
          -- ^ length of consumed input
@@ -52,10 +59,13 @@ runDecoderWithByteLimit ByteLimit {byteLimit, byteLength} Channel{recv} mbytes =
          -> DecodeStep bytes failure m a
          -> m (Either (DecoderFailureOrTooMuchInput failure) (a, Maybe bytes))
       -- we decoded the data, but we might be over the limit
-      go !l _  (DecodeDone x trailing) | l - maybe 0 byteLength trailing > byteLimit = return (Left TooMuchInput)
-                                       | otherwise                       = return (Right (x, trailing))
+      go !l _  (DecodeDone x trailing) | l - maybe 0 byteLength trailing > byteLimit
+                                       = return (Left TooMuchInput)
+                                       | otherwise
+                                       = return (Right (x, trailing))
       -- we run over the limit, return @TooMuchInput@ error
-      go !l _  _                       | l > byteLimit = return (Left TooMuchInput)
+      go !l _  _                       | l > byteLimit
+                                       = return (Left TooMuchInput)
       go !_ _  (DecodeFail failure)    = return (Left (DecoderFailure failure))
 
       go !l Nothing         (DecodePartial k) =
@@ -80,4 +90,19 @@ runPeerWithByteLimit
   -> m a
 
 runPeerWithByteLimit limit tr codec peerid channel =
-  runPeerWith tr codec peerid channel (\_stok -> runDecoderWithByteLimit limit)
+  runPeerWith tr codec peerid channel (\_stok -> runDecoderWithChannelByteLimits limit)
+
+
+runPipelinedPeerWithByteLimit
+  :: forall ps (st :: ps) pr peerid failure bytes m a.
+     (MonadSTM m, MonadAsync m, MonadCatch m, Exception failure)
+  => ByteLimit bytes
+  -> Tracer m (TraceSendRecv ps peerid (DecoderFailureOrTooMuchInput failure))
+  -> Codec ps failure m bytes
+  -> peerid
+  -> Channel m bytes
+  -> PeerPipelined ps pr st m a
+  -> m a
+
+runPipelinedPeerWithByteLimit limit tr codec peerid channel =
+  runPipelinedPeerWith tr codec peerid channel (\_stok -> runDecoderWithChannelByteLimits limit)
