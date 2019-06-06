@@ -229,10 +229,13 @@ data ChainDB m blk hdr =
 toChain :: forall m blk hdr.
            (MonadThrow m, HasHeader blk, MonadSTM m)
         => ChainDB m blk hdr -> m (Chain blk)
-toChain chainDB = bracket streamAll iteratorClose (go Genesis)
+toChain chainDB = do
+  tip <- atomically $ getTipPoint chainDB
+  if tip == genesisPoint
+    then return Genesis
+    else bracket (streamAll tip) iteratorClose (go Genesis)
   where
-    streamAll = do
-      tip   <- atomically $ getTipPoint chainDB
+    streamAll tip = do
       errIt <- streamBlocks chainDB (StreamFromExclusive genesisPoint)
                                     (StreamToInclusive tip)
       case errIt of
