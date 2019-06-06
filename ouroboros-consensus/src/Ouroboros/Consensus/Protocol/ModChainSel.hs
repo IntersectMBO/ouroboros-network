@@ -14,12 +14,6 @@ module Ouroboros.Consensus.Protocol.ModChainSel (
   , ModChainSel
     -- * Type family instances
   , NodeConfig (..)
-  , NodeState
-  , ChainState
-  , IsLeader
-  , LedgerView
-  , ValidationErr
-  , SupportedBlock
   ) where
 
 import           Data.Proxy (Proxy (..))
@@ -46,13 +40,13 @@ data ModChainSel p s
 
 instance (Typeable p, Typeable s, ChainSelection p s) => OuroborosTag (ModChainSel p s) where
 
-    newtype NodeConfig     (ModChainSel p s)    = McsNodeConfig (NodeConfig p)
-    type    NodeState      (ModChainSel p s)    = NodeState p
-    type    ChainState     (ModChainSel p s)    = ChainState p
-    type    IsLeader       (ModChainSel p s)    = IsLeader p
-    type    LedgerView     (ModChainSel p s)    = LedgerView p
-    type    ValidationErr  (ModChainSel p s)    = ValidationErr p
-    type    SupportedBlock (ModChainSel p s)    = SupportedBlock p
+    newtype NodeConfig      (ModChainSel p s)    = McsNodeConfig (NodeConfig p)
+    type    NodeState       (ModChainSel p s)    = NodeState p
+    type    ChainState      (ModChainSel p s)    = ChainState p
+    type    IsLeader        (ModChainSel p s)    = IsLeader p
+    type    LedgerView      (ModChainSel p s)    = LedgerView p
+    type    ValidationErr   (ModChainSel p s)    = ValidationErr p
+    type    SupportedHeader (ModChainSel p s)    = SupportedHeader p
 
     checkIsLeader         (McsNodeConfig cfg) = checkIsLeader         cfg
     applyChainState       (McsNodeConfig cfg) = applyChainState       cfg

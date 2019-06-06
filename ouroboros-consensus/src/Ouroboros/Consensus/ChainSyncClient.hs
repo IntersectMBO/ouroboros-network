@@ -21,7 +21,6 @@ import           Control.Monad.Except
 import           Control.Tracer
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Typeable (Typeable)
 import           Data.Void (Void)
 import           Data.Word (Word64)
 
@@ -34,8 +33,10 @@ import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (genesisPoint, genesisSlotNo)
 import           Ouroboros.Network.Protocol.ChainSync.Client
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.Condense
@@ -51,10 +52,10 @@ import           Ouroboros.Consensus.Util.SlotBounded as SB
 newtype ClockSkew = ClockSkew { unClockSkew :: Word64 }
   deriving (Eq, Ord, Enum, Bounded, Show, Num)
 
-type Consensus (client :: * -> * -> (* -> *) -> * -> *) hdr m =
-   client hdr (Point hdr) m Void
+type Consensus (client :: * -> * -> (* -> *) -> * -> *) blk m =
+   client (Header blk) (Point blk) m Void
 
-data ChainSyncClientException hdr =
+data ChainSyncClientException blk =
       -- | The header we received was for a slot too far in the future.
       --
       -- I.e., the slot of the received header was > current slot (according
@@ -62,49 +63,41 @@ data ChainSyncClientException hdr =
       --
       -- The first 'Point' argument is the point of the received header, the
       -- second 'SlotId' argument is the current slot (by wall clock).
-      HeaderExceedsClockSkew (Point hdr) SlotNo
+      HeaderExceedsClockSkew (Point blk) SlotNo
 
       -- | The server we're connecting to forked more than @k@ blocks ago.
       --
       -- The first 'Point' is the intersection point with the server that was
       -- too far in the past, the second 'Point' is the head of the server.
-    | ForkTooDeep (Point hdr) (Point hdr)
+    | ForkTooDeep (Point blk) (Point blk)
 
       -- | The chain validation threw an error.
-    | ChainError (ValidationErr (BlockProtocol hdr))
+    | ChainError (ValidationErr (BlockProtocol blk))
 
       -- | The upstream node rolled back more than @k@ blocks.
       --
       -- We store the requested intersection point and head point from the
       -- upstream node.
-    | InvalidRollBack (Point hdr) (Point hdr)
+    | InvalidRollBack (Point blk) (Point blk)
 
     -- | We send the upstream node a bunch of points from a chain fragment and
     -- the upstream node responded with an intersection point that is not on
     -- our chain fragment, and thus not among the points we sent.
     --
     -- We store the intersection piont the upstream node sent us.
-    | InvalidIntersection (Point hdr)
+    | InvalidIntersection (Point blk)
 
+deriving instance SupportedBlock blk => Show (ChainSyncClientException blk)
 
-deriving instance ( StandardHash hdr
-                  , OuroborosTag (BlockProtocol hdr)
-                  )
-    => Show (ChainSyncClientException hdr)
-
-instance ( Typeable hdr, StandardHash hdr
-         , OuroborosTag (BlockProtocol hdr)
-         )
-    => Exception (ChainSyncClientException hdr)
+instance SupportedBlock blk => Exception (ChainSyncClientException blk)
 
 -- | The state of the candidate chain synched with an upstream node.
-data CandidateState hdr = CandidateState
-    { candidateChain      :: !(AnchoredFragment hdr)
-    , candidateChainState :: !(ChainState (BlockProtocol hdr))
+data CandidateState blk = CandidateState
+    { candidateChain      :: !(AnchoredFragment (Header blk))
+    , candidateChainState :: !(ChainState (BlockProtocol blk))
       -- ^ 'ChainState' corresponding to the tip (most recent block) of the
       -- 'candidateChain'.
     }
-
 
 -- | Chain sync client
 --
@@ -112,27 +105,24 @@ data CandidateState hdr = CandidateState
 -- is thrown. The network layer classifies exception such that the
 -- corresponding peer will never be chosen again.
 chainSyncClient
-    :: forall m up blk hdr.
+    :: forall m up blk.
        ( MonadSTM m
        , MonadThrow (STM m)
        , ProtocolLedgerView blk
-       , SupportedBlock (BlockProtocol hdr) hdr
-       , HasHeader hdr
        , Ord up
-       , Condense hdr, Condense (ChainHash hdr)
-       , BlockProtocol blk ~ BlockProtocol hdr
-       , HeaderHash blk ~ HeaderHash hdr
+       , Condense (Header blk)
+       , Condense (ChainHash blk)
        )
     => Tracer m String
-    -> NodeConfig (BlockProtocol hdr)
+    -> NodeConfig (BlockProtocol blk)
     -> BlockchainTime m
-    -> ClockSkew                     -- ^ Maximum clock skew
-    -> STM m (AnchoredFragment hdr)  -- ^ Get the current chain
-    -> STM m (ExtLedgerState blk)    -- ^ Get the current ledger state
-    -> TVar m (Map up (TVar m (CandidateState hdr)))
+    -> ClockSkew                                   -- ^ Maximum clock skew
+    -> STM m (AnchoredFragment (Header blk))       -- ^ Get the current chain
+    -> STM m (ExtLedgerState blk)                  -- ^ Get the current ledger state
+    -> TVar m (Map up (TVar m (CandidateState blk)))
        -- ^ The candidate chains, we need the whole map because we
        -- (de)register nodes (@up@).
-    -> up -> Consensus ChainSyncClient hdr m
+    -> up -> Consensus ChainSyncClient blk m
 chainSyncClient tracer cfg btime (ClockSkew maxSkew) getCurrentChain
                 getCurrentLedger varCandidates up =
     ChainSyncClient initialise
@@ -196,7 +186,7 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew) getCurrentChain
     --
     -- TODO split in two parts: one requiring only the @TVar@ for the
     -- candidate instead of the whole map.
-    initialise :: m (Consensus ClientStIdle hdr m)
+    initialise :: m (Consensus ClientStIdle blk m)
     initialise = do
       (curChain, varCandidate) <- atomically $ do
         curChain  <- getCurrentChain
@@ -220,8 +210,7 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew) getCurrentChain
       -- that the intersection is now more than @k@ blocks in the past, which
       -- means the candidate is no longer eligible after all.
       let points = AF.selectPoints (map fromIntegral offsets) curChain
-
-      return $ SendMsgFindIntersect points $ ClientStIntersect
+      return $ SendMsgFindIntersect (map castPoint points) $ ClientStIntersect
         { recvMsgIntersectImproved  =
             ChainSyncClient .: intersectImproved  varCandidate
         , recvMsgIntersectUnchanged =
@@ -230,9 +219,9 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew) getCurrentChain
 
     -- One of the points we sent intersected our chain. This intersection
     -- point will become the new tip of the candidate chain.
-    intersectImproved :: TVar m (CandidateState hdr)
-                      -> Point hdr -> Point hdr
-                      -> m (Consensus ClientStIdle hdr m)
+    intersectImproved :: TVar m (CandidateState blk)
+                      -> Point blk -> Point blk
+                      -> m (Consensus ClientStIdle blk m)
     intersectImproved varCandidate intersection _theirHead = atomically $ do
 
       CandidateState { candidateChain, candidateChainState } <- readTVar varCandidate
@@ -253,7 +242,7 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew) getCurrentChain
       -- that the ChainSync protocol /does/ in fact give us a switch-to-fork
       -- instead of a true rollback.
       (candidateChain', candidateChainState') <-
-        case (,) <$> AF.rollback intersection candidateChain
+        case (,) <$> AF.rollback (castPoint intersection) candidateChain
                  <*> rewindChainState cfg candidateChainState (pointSlot intersection)
         of
           Just (c,d) -> return (c,d)
@@ -271,7 +260,6 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew) getCurrentChain
         }
       return $ requestNext varCandidate
 
-
     -- If the intersection point is unchanged, this means that the best
     -- intersection point was the initial assumption: genesis.
     --
@@ -279,9 +267,9 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew) getCurrentChain
     -- we later optimise this client to also find intersections after
     -- start-up, this code will have to be adapted, as it assumes it is only
     -- called at start-up.
-    intersectUnchanged :: TVar m (CandidateState hdr)
-                       -> Point hdr
-                       -> m (Consensus ClientStIdle hdr m)
+    intersectUnchanged :: TVar m (CandidateState blk)
+                       -> Point blk
+                       -> m (Consensus ClientStIdle blk m)
     intersectUnchanged varCandidate theirHead = atomically $ do
       curChainState <- ouroborosChainState <$> getCurrentLedger
 
@@ -307,14 +295,14 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew) getCurrentChain
         }
       return $ requestNext varCandidate
 
-    requestNext :: TVar m (CandidateState hdr)
-                -> Consensus ClientStIdle hdr m
+    requestNext :: TVar m (CandidateState blk)
+                -> Consensus ClientStIdle blk m
     requestNext varCandidate = SendMsgRequestNext
       (handleNext varCandidate)
       (return (handleNext varCandidate)) -- when we have to wait
 
-    handleNext :: TVar m (CandidateState hdr)
-               -> Consensus ClientStNext hdr m
+    handleNext :: TVar m (CandidateState blk)
+               -> Consensus ClientStNext blk m
     handleNext varCandidate = ClientStNext
       { recvMsgRollForward  = \hdr theirHead -> ChainSyncClient $ do
           traceWith tracer $ "Downloaded header: " <> condense hdr
@@ -324,9 +312,9 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew) getCurrentChain
           rollBackward varCandidate intersection theirHead
       }
 
-    rollForward :: TVar m (CandidateState hdr)
-                -> hdr -> Point hdr
-                -> m (Consensus ClientStIdle hdr m)
+    rollForward :: TVar m (CandidateState blk)
+                -> Header blk -> Point blk
+                -> m (Consensus ClientStIdle blk m)
     rollForward varCandidate hdr _theirHead = atomically $ do
       -- To validate the block, we need the consensus chain state (updated using
       -- headers only, and kept as part of the candidate state) and the
@@ -335,9 +323,9 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew) getCurrentChain
       -- ledger state is too far behind the upstream peer (see below).
       curLedger <- ledgerState <$> getCurrentLedger
 
-      let hdrPoint, ourTip :: Point hdr
-          hdrPoint = blockPoint hdr
-          ourTip   = castPoint $ ledgerTipPoint curLedger
+      let hdrPoint, ourTip :: Point blk
+          hdrPoint = headerPoint hdr
+          ourTip   = ledgerTipPoint curLedger
 
       -- NOTE: Low density chains
       --
@@ -377,7 +365,7 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew) getCurrentChain
       -- we will not be able to verify it and so we will not be able to switch
       -- to this fork.
       ledgerView <-
-        if blockPrevHash hdr == pointHash ourTip then
+        if headerPrevHash hdr == pointHash ourTip then
           -- Special case mentioned above
           return $ protocolLedgerView cfg curLedger
         else
@@ -411,14 +399,14 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew) getCurrentChain
         }
       return $ requestNext varCandidate
 
-    rollBackward :: TVar m (CandidateState hdr)
-                 -> Point hdr -> Point hdr
-                 -> m (Consensus ClientStIdle hdr m)
+    rollBackward :: TVar m (CandidateState blk)
+                 -> Point blk -> Point blk
+                 -> m (Consensus ClientStIdle blk m)
     rollBackward varCandidate intersection theirHead = atomically $ do
       CandidateState {..} <- readTVar varCandidate
 
       (candidateChain', candidateChainState') <-
-        case (,) <$> AF.rollback intersection candidateChain
+        case (,) <$> AF.rollback (castPoint intersection) candidateChain
                  <*> rewindChainState cfg candidateChainState (pointSlot intersection)
         of
           Just (c,d)  -> return (c,d)
@@ -455,7 +443,7 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew) getCurrentChain
 
     -- | Disconnect from the upstream node by throwing the given exception and
     -- removing its candidate from the map of candidates.
-    disconnect :: ChainSyncClientException hdr -> STM m a
+    disconnect :: ChainSyncClientException blk -> STM m a
     disconnect ex = do
       modifyTVar' varCandidates $ Map.delete up
       throwM ex
@@ -481,8 +469,6 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew) getCurrentChain
 
     k :: Word64
     k = maxRollbacks $ protocolSecurityParam cfg
-
-
 
 {-------------------------------------------------------------------------------
   TODO #221: Implement genesis

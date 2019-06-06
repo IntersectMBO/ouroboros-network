@@ -46,7 +46,7 @@ forgeBlock
   => NodeConfig ByronExtNodeConfig
   -> SlotNo                       -- ^ Current slot
   -> BlockNo                      -- ^ Current block number
-  -> ChainHash (ByronHeader cfg)  -- ^ Previous hash
+  -> ChainHash (ByronBlock cfg)   -- ^ Previous hash
   -> [GenTx (ByronBlock cfg)]     -- ^ Txs to add in the block
   -> ()                           -- ^ Leader proof ('IsLeader')
   -> m (ByronBlock ByronDemoConfig)
@@ -57,6 +57,8 @@ forgeBlock cfg curSlot curNo prevHash txs () = do
     -- TODO: If we reconsider 'ByronDemoConfig', we can probably move this whole
     -- function to the real Byron module (instead of the demo). None of the
     -- fields here are demo specific.
+    --
+    -- TODO: Might be sufficient to add 'ConfigContainsGenesis' constraint.
     ByronDemoConfig { pbftGenesisHash
                     , pbftEpochSlots
                     , pbftProtocolVersion

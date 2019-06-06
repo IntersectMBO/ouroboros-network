@@ -99,9 +99,9 @@ submitTx n tx = do
     putStrLn $ "The Id for this transaction is: " <> condense (H.hash @ShortHash tx)
 
 -- | Auxiliary to 'spawnMempoolListener'
-readIncomingTx :: RunDemo blk hdr
+readIncomingTx :: RunDemo blk
                => Tracer IO String
-               -> NodeKernel IO NodeId blk hdr
+               -> NodeKernel IO NodeId blk
                -> Decoder IO
                -> IO ()
 readIncomingTx tracer kernel Decoder{..} = forever $ do
@@ -112,10 +112,10 @@ readIncomingTx tracer kernel Decoder{..} = forever $ do
       " transaction: " <> show newTx
 
 -- | Listen for transactions coming a named pipe and add them to the mempool
-spawnMempoolListener :: RunDemo blk hdr
+spawnMempoolListener :: RunDemo blk
                      => Tracer IO String
                      -> NodeId
-                     -> NodeKernel IO NodeId blk hdr
+                     -> NodeKernel IO NodeId blk
                      -> IO (Async.Async ())
 spawnMempoolListener tracer myNodeId kernel = do
     Async.async $ do

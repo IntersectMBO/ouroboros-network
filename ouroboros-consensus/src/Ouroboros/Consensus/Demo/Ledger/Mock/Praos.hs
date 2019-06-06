@@ -8,7 +8,7 @@ import qualified Data.IntMap as IntMap
 import           Ouroboros.Consensus.Crypto.KES
 import           Ouroboros.Consensus.Crypto.VRF
 import           Ouroboros.Consensus.Demo.Run
-import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Node (CoreNodeId (..), NodeId (..))
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig

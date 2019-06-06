@@ -46,7 +46,7 @@ data Protocol =
   | RealPBFT
 
 data SomeProtocol where
-  SomeProtocol :: RunDemo blk hdr => DemoProtocol blk hdr -> SomeProtocol
+  SomeProtocol :: RunDemo blk => DemoProtocol blk -> SomeProtocol
 
 fromProtocol :: Protocol -> IO SomeProtocol
 fromProtocol BFT =

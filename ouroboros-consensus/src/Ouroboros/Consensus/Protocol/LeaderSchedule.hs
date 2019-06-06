@@ -35,12 +35,12 @@ data WithLeaderSchedule p
 
 instance OuroborosTag p => OuroborosTag (WithLeaderSchedule p) where
 
-  type ChainState     (WithLeaderSchedule p) = ()
-  type NodeState      (WithLeaderSchedule p) = ()
-  type LedgerView     (WithLeaderSchedule p) = ()
-  type ValidationErr  (WithLeaderSchedule p) = ()
-  type IsLeader       (WithLeaderSchedule p) = ()
-  type SupportedBlock (WithLeaderSchedule p) = Empty
+  type ChainState      (WithLeaderSchedule p) = ()
+  type NodeState       (WithLeaderSchedule p) = ()
+  type LedgerView      (WithLeaderSchedule p) = ()
+  type ValidationErr   (WithLeaderSchedule p) = ()
+  type IsLeader        (WithLeaderSchedule p) = ()
+  type SupportedHeader (WithLeaderSchedule p) = Empty
 
   data NodeConfig (WithLeaderSchedule p) = WLSNodeConfig
     { lsNodeConfigSchedule :: LeaderSchedule

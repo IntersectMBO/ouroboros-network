@@ -3,22 +3,22 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE TypeApplications    #-}
 
 {-# OPTIONS_GHC -Wno-orphans     #-}
 module Test.Socket (tests) where
 
+import           Control.Exception (IOException)
 import           Control.Monad
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
-import           Control.Exception (IOException)
 import qualified Data.ByteString.Lazy as BL
-import           Data.List (mapAccumL)
 import           Data.Functor ((<$))
+import           Data.List (mapAccumL)
 import qualified Network.Socket as Socket
 import qualified Network.Socket.ByteString.Lazy as Socket (sendAll)
 #ifndef mingw32_HOST_OS
@@ -27,13 +27,13 @@ import           System.IO.Error
 #endif
 
 import           Network.TypedProtocol.Core
-import qualified Network.TypedProtocol.ReqResp.Type       as ReqResp
-import qualified Network.TypedProtocol.ReqResp.Client     as ReqResp
-import qualified Network.TypedProtocol.ReqResp.Server     as ReqResp
+import qualified Network.TypedProtocol.ReqResp.Client as ReqResp
+import qualified Network.TypedProtocol.ReqResp.Server as ReqResp
+import qualified Network.TypedProtocol.ReqResp.Type as ReqResp
 import qualified Ouroboros.Network.Protocol.ReqResp.Codec as ReqResp
 
-import           Control.Tracer
 import           Codec.SerialiseTerm
+import           Control.Tracer
 
 import qualified Ouroboros.Network.Mux as Mx
 import           Ouroboros.Network.Mux.Interface
@@ -42,11 +42,11 @@ import           Ouroboros.Network.Socket
 import           Ouroboros.Network.Chain (Chain, ChainUpdate, Point)
 import qualified Ouroboros.Network.Chain as Chain
 import qualified Ouroboros.Network.ChainProducerState as CPS
-import qualified Ouroboros.Network.Protocol.ChainSync.Client   as ChainSync
-import qualified Ouroboros.Network.Protocol.ChainSync.Codec    as ChainSync
-import qualified Ouroboros.Network.Protocol.ChainSync.Examples as ChainSync
-import qualified Ouroboros.Network.Protocol.ChainSync.Server   as ChainSync
 import           Ouroboros.Network.NodeToNode
+import qualified Ouroboros.Network.Protocol.ChainSync.Client as ChainSync
+import qualified Ouroboros.Network.Protocol.ChainSync.Codec as ChainSync
+import qualified Ouroboros.Network.Protocol.ChainSync.Examples as ChainSync
+import qualified Ouroboros.Network.Protocol.ChainSync.Server as ChainSync
 import           Ouroboros.Network.Testing.Serialise
 
 import           Test.ChainGenerators (TestBlockChainAndUpdates (..))
@@ -54,9 +54,9 @@ import qualified Test.Mux as Mxt
 import           Test.Mux.ReqResp
 
 import           Test.QuickCheck
-import           Text.Show.Functions ()
-import           Test.Tasty (TestTree, testGroup, after, DependencyType(..))
+import           Test.Tasty (DependencyType (..), TestTree, after, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
+import           Text.Show.Functions ()
 
 {-
  - The travis build hosts does not support IPv6 so those test cases are hidden
@@ -306,12 +306,15 @@ demo chain0 updates = do
                         (ChainSync.chainSyncClientExample consumerVar
                         (consumerClient done target consumerVar)))
 
+        server :: ChainSync.ChainSyncServer block (Point block) IO ()
+        server = ChainSync.chainSyncServerExample () producerVar
+
         responderApp :: MuxApplication ResponderApp Mxt.TestProtocols1 IO
         responderApp = simpleMuxResponderApplication $
           \Mxt.ChainSync1 ->
             MuxPeer nullTracer
                     (ChainSync.codecChainSync encode decode encode decode)
-                    (ChainSync.chainSyncServerPeer (ChainSync.chainSyncServerExample () producerVar))
+                    (ChainSync.chainSyncServerPeer server)
 
     withSimpleServerNode
       producerAddress

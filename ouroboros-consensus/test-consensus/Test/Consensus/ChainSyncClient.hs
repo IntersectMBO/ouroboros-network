@@ -8,6 +8,7 @@ import           Control.Monad (replicateM_, void)
 import           Control.Monad.Except (runExcept)
 import           Control.Monad.State.Strict
 import           Control.Tracer (nullTracer)
+import           Data.Coerce (coerce)
 import           Data.Foldable (foldl')
 import           Data.List (intercalate, span, unfoldr)
 import           Data.List.NonEmpty (NonEmpty)
@@ -47,7 +48,7 @@ import           Ouroboros.Network.Protocol.ChainSync.Server
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.ChainSyncClient
 import           Ouroboros.Consensus.Crypto.DSIGN.Mock
-import           Ouroboros.Consensus.Ledger.Abstract hiding (ledgerState)
+import           Ouroboros.Consensus.Ledger.Extended hiding (ledgerState)
 import           Ouroboros.Consensus.Node (CoreNodeId (..), NodeId (..),
                      fromCoreNodeId)
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -229,13 +230,15 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
         getLedgerState  = snd <$> readTVar varClientState
         client = chainSyncClient
           nullTracer (nodeCfg clientId) btime maxClockSkew
-          getCurrentChain getLedgerState
+          (AF.mapAnchoredFragment coerce <$> getCurrentChain)
+          getLedgerState
           varCandidates
           serverId
 
     -- Set up the server
     varChainProducerState <- newTVarM $ initChainProducerState Genesis
-    let server = chainSyncServerExample () varChainProducerState
+    let server :: ChainSyncServer (Header TestBlock) (Point TestBlock) m ()
+        server = chainSyncServerExample () varChainProducerState
 
     -- Schedule updates of the client and server chains
     varLastUpdate <- newTVarM 0
@@ -256,7 +259,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
         whenJust (Map.lookup slot serverUpdates) $ \chainUpdates ->
           atomically $ do
             chainProducerState <- readTVar varChainProducerState
-            case CPS.applyChainUpdates chainUpdates chainProducerState of
+            case CPS.applyChainUpdates (map (mapChainUpdate TestHeader) chainUpdates) chainProducerState of
               Just chainProducerState' ->
                 writeTVar varChainProducerState chainProducerState'
               Nothing                  ->
@@ -306,7 +309,12 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
       serverChain       <- chainState <$> readTVar varChainProducerState
       candidateFragment <- blockUntilJust $ readTVar varCandidateChain
       clientException   <- readTVar varClientException
-      return (clientChain, serverChain, candidateFragment, clientException)
+      return (
+          clientChain
+        , fmap testHeader serverChain
+        , AF.mapAnchoredFragment testHeader candidateFragment
+        , clientException
+        )
   where
     k = maxRollbacks securityParam
 

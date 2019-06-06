@@ -1,20 +1,20 @@
 {-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 {-# OPTIONS_GHC -Wno-orphans     #-}
 
 module Test.Pipe (tests) where
 
-import           Codec.Serialise (Serialise(..))
+import           Codec.Serialise (Serialise (..))
 import           Control.Monad
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTimer
 import           Data.Int
-import           System.Process (createPipe)
 import           System.Info (os)
+import           System.Process (createPipe)
 import           Test.ChainGenerators (TestBlockChainAndUpdates (..))
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
@@ -28,10 +28,10 @@ import qualified Ouroboros.Network.ChainProducerState as CPS
 import qualified Ouroboros.Network.Mux as Mx
 import qualified Ouroboros.Network.Mux.Interface as Mx
 import           Ouroboros.Network.Pipe
-import           Ouroboros.Network.Protocol.ChainSync.Client   as ChainSync
-import           Ouroboros.Network.Protocol.ChainSync.Codec    as ChainSync
+import           Ouroboros.Network.Protocol.ChainSync.Client as ChainSync
+import           Ouroboros.Network.Protocol.ChainSync.Codec as ChainSync
 import           Ouroboros.Network.Protocol.ChainSync.Examples as ChainSync
-import           Ouroboros.Network.Protocol.ChainSync.Server   as ChainSync
+import           Ouroboros.Network.Protocol.ChainSync.Server as ChainSync
 import qualified Test.Mux as Mxt
 
 --
@@ -107,13 +107,15 @@ demo chain0 updates = do
                           (ChainSync.chainSyncClientExample consumerVar
                             (consumerClient done target consumerVar)))
 
+        server :: ChainSyncServer block (Point block) IO ()
+        server = ChainSync.chainSyncServerExample () producerVar
+
         producerApp :: Mx.MuxApplication Mx.ResponderApp Mxt.TestProtocols1 IO
         producerApp = Mx.simpleMuxResponderApplication $
           \Mxt.ChainSync1 ->
             Mx.MuxPeer nullTracer
                        (ChainSync.codecChainSync encode decode encode decode)
-                       (ChainSync.chainSyncServerPeer
-                         (ChainSync.chainSyncServerExample () producerVar))
+                       (ChainSync.chainSyncServerPeer server)
 
     _ <- async $ runNetworkNodeWithPipe producerApp hndRead1 hndWrite2
     _ <- async $ runNetworkNodeWithPipe consumerApp hndRead2 hndWrite1

@@ -1,14 +1,5 @@
-{-# LANGUAGE DeriveFunctor           #-}
 {-# LANGUAGE FlexibleContexts        #-}
-{-# LANGUAGE KindSignatures          #-}
-{-# LANGUAGE MultiParamTypeClasses   #-}
-{-# LANGUAGE RankNTypes              #-}
-{-# LANGUAGE RecordWildCards         #-}
-{-# LANGUAGE ScopedTypeVariables     #-}
-{-# LANGUAGE StandaloneDeriving      #-}
-{-# LANGUAGE TypeApplications        #-}
 {-# LANGUAGE TypeFamilies            #-}
-{-# LANGUAGE UndecidableInstances    #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
 
 -- | Interface to the ledger layer
@@ -17,29 +8,14 @@ module Ouroboros.Consensus.Ledger.Abstract (
     UpdateLedger(..)
   , BlockProtocol
   , ProtocolLedgerView(..)
-  , LedgerConfigView(..)
-    -- * Extended ledger state
-  , ExtLedgerState(..)
-  , ExtValidationError(..)
-  , applyExtLedgerState
-  , foldExtLedgerState
-  , chainExtLedgerState
-  , verifyChain
-    -- * Serialisation
-  , encodeExtLedgerState
-  , decodeExtLedgerState
   ) where
 
-import           Codec.CBOR.Decoding (Decoder)
-import           Codec.CBOR.Encoding (Encoding)
 import           Control.Monad.Except
-import           GHC.Stack
 
-import           Ouroboros.Network.Block (HasHeader (..), Point, SlotNo)
-import           Ouroboros.Network.Chain (Chain, toOldestFirst)
+import           Ouroboros.Network.Block (Point, SlotNo)
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util (repeatedlyM)
 import           Ouroboros.Consensus.Util.SlotBounded (SlotBounded)
 
 {-------------------------------------------------------------------------------
@@ -47,14 +23,19 @@ import           Ouroboros.Consensus.Util.SlotBounded (SlotBounded)
 -------------------------------------------------------------------------------}
 
 -- | Interaction with the ledger layer
-class ( Show (LedgerState b)
-      , Show (LedgerError b)
-      ) => UpdateLedger (b :: *) where
-  data family LedgerState b :: *
-  type family LedgerError b :: *
+class ( SupportedBlock blk
+      , Show (LedgerState blk)
+      , Show (LedgerError blk)
+      ) => UpdateLedger blk where
+  data family LedgerState blk :: *
+  type family LedgerError blk :: *
 
   -- | Static environment required for the ledger
-  data family LedgerConfig b :: *
+  data family LedgerConfig blk :: *
+
+  -- | Extract the ledger environment from the node config
+  ledgerConfigView :: NodeConfig (BlockProtocol blk)
+                   -> LedgerConfig blk
 
   -- | Apply a block header to the ledger state.
   --
@@ -70,34 +51,27 @@ class ( Show (LedgerState b)
   -- that is indeed possible, we could just combine (1) and (3) into a single
   -- step..?
   -- <https://github.com/input-output-hk/ouroboros-network/issues/596>
-  applyLedgerHeader :: LedgerConfig b
-                    -> b
-                    -> LedgerState b
-                    -> Except (LedgerError b) (LedgerState b)
+  applyLedgerHeader :: LedgerConfig blk
+                    -> Header blk
+                    -> LedgerState blk
+                    -> Except (LedgerError blk) (LedgerState blk)
 
   -- | Apply a block to the ledger state
-  applyLedgerBlock :: LedgerConfig b
-                   -> b
-                   -> LedgerState b
-                   -> Except (LedgerError b) (LedgerState b)
+  applyLedgerBlock :: LedgerConfig blk
+                   -> blk
+                   -> LedgerState blk
+                   -> Except (LedgerError blk) (LedgerState blk)
 
   -- | Point of the most recently applied block
   --
   -- Should be 'genesisPoint' when no blocks have been applied yet
-  ledgerTipPoint :: LedgerState b -> Point b
-
--- | Link blocks to their unique protocol
-type family BlockProtocol b :: *
+  ledgerTipPoint :: LedgerState blk -> Point blk
 
 -- | Link protocol to ledger
-class ( OuroborosTag (BlockProtocol b)
-      , UpdateLedger b
-      , HasHeader b
-      , SupportedBlock (BlockProtocol b) b
-      ) => ProtocolLedgerView b where
-  protocolLedgerView :: NodeConfig (BlockProtocol b)
-                     -> LedgerState b
-                     -> LedgerView (BlockProtocol b)
+class UpdateLedger blk => ProtocolLedgerView blk where
+  protocolLedgerView :: NodeConfig (BlockProtocol blk)
+                     -> LedgerState blk
+                     -> LedgerView (BlockProtocol blk)
 
   -- | Get a ledger view for a specific slot
   --
@@ -138,109 +112,7 @@ class ( OuroborosTag (BlockProtocol b)
   -- Invariant: when calling this function with slot @s@ yields a
   -- 'SlotBounded' @sb@, then @'atSlot' sb@ yields a 'Just'.
   anachronisticProtocolLedgerView
-    :: NodeConfig (BlockProtocol b)
-    -> LedgerState b
+    :: NodeConfig (BlockProtocol blk)
+    -> LedgerState blk
     -> SlotNo -- ^ Slot for which you would like a ledger view
-    -> Maybe (SlotBounded (LedgerView (BlockProtocol b)))
-
--- | Extract the ledger environment from the node config
-class UpdateLedger b => LedgerConfigView b where
-  ledgerConfigView :: NodeConfig (BlockProtocol b)
-                   -> LedgerConfig b
-
-{-------------------------------------------------------------------------------
-  Extended ledger state
--------------------------------------------------------------------------------}
-
--- | Extended ledger state
---
--- This is the combination of the ouroboros state and the ledger state proper.
-data ExtLedgerState b = ExtLedgerState {
-      ledgerState         :: LedgerState b
-    , ouroborosChainState :: ChainState (BlockProtocol b)
-    }
-
-deriving instance ProtocolLedgerView b => Show (ExtLedgerState b)
-
-data ExtValidationError b =
-    ExtValidationErrorLedger (LedgerError b)
-  | ExtValidationErrorOuroboros (ValidationErr (BlockProtocol b))
-
-deriving instance ProtocolLedgerView b => Show (ExtValidationError b)
-
-applyExtLedgerState :: forall b.
-                       ( LedgerConfigView b
-                       , ProtocolLedgerView b
-                       , HasCallStack
-                       )
-                    => NodeConfig (BlockProtocol b)
-                    -> b
-                    -> ExtLedgerState b
-                    -> Except (ExtValidationError b) (ExtLedgerState b)
-applyExtLedgerState cfg b ExtLedgerState{..} = do
-    ledgerState'         <- withExcept ExtValidationErrorLedger $
-                              applyLedgerHeader (ledgerConfigView cfg) b ledgerState
-    ouroborosChainState' <- withExcept ExtValidationErrorOuroboros $
-                              applyChainState
-                                cfg
-                                (protocolLedgerView cfg ledgerState')
-                                b
-                                ouroborosChainState
-    ledgerState''        <- withExcept ExtValidationErrorLedger $
-                              applyLedgerBlock (ledgerConfigView cfg) b ledgerState'
-    return $ ExtLedgerState ledgerState'' ouroborosChainState'
-
-foldExtLedgerState :: ( LedgerConfigView b
-                      , ProtocolLedgerView b
-                      , HasCallStack
-                      )
-                   => NodeConfig (BlockProtocol b)
-                   -> [b] -- ^ Blocks to apply, oldest first
-                   -> ExtLedgerState b
-                   -> Except (ExtValidationError b) (ExtLedgerState b)
-foldExtLedgerState = repeatedlyM . applyExtLedgerState
-
-chainExtLedgerState :: ( LedgerConfigView b
-                       , ProtocolLedgerView b
-                       , HasCallStack
-                       )
-                    => NodeConfig (BlockProtocol b)
-                    -> Chain b
-                    -> ExtLedgerState b
-                    -> Except (ExtValidationError b) (ExtLedgerState b)
-chainExtLedgerState cfg = foldExtLedgerState cfg . toOldestFirst
-
--- | Validation of an entire chain
-verifyChain :: ( LedgerConfigView b
-               , ProtocolLedgerView b
-               )
-            => NodeConfig (BlockProtocol b)
-            -> ExtLedgerState b
-            -> Chain b
-            -> Bool
-verifyChain cfg initSt c =
-    case runExcept (chainExtLedgerState cfg c initSt) of
-      Left  _err -> False
-      Right _st' -> True
-
-{-------------------------------------------------------------------------------
-  Serialisation
--------------------------------------------------------------------------------}
-
-encodeExtLedgerState :: (LedgerState b -> Encoding)
-                     -> (ChainState (BlockProtocol b) -> Encoding)
-                     -> ExtLedgerState b -> Encoding
-encodeExtLedgerState encodeLedger
-                     encodeChainState
-                     ExtLedgerState{..} = mconcat [
-      encodeLedger     ledgerState
-    , encodeChainState ouroborosChainState
-    ]
-
-decodeExtLedgerState :: (forall s. Decoder s (LedgerState b))
-                     -> (forall s. Decoder s (ChainState (BlockProtocol b)))
-                     -> forall s. Decoder s (ExtLedgerState b)
-decodeExtLedgerState decodeLedger decodeChainState = do
-    ledgerState         <- decodeLedger
-    ouroborosChainState <- decodeChainState
-    return ExtLedgerState{..}
+    -> Maybe (SlotBounded (LedgerView (BlockProtocol blk)))

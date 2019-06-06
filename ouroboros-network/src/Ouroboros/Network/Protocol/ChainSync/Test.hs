@@ -1,51 +1,52 @@
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Ouroboros.Network.Protocol.ChainSync.Test (tests) where
 
-import Control.Monad (unless, void)
-import qualified Control.Monad.ST as ST
-import Data.ByteString.Lazy (ByteString)
 import qualified Codec.Serialise as S
+import           Control.Monad (unless, void)
+import qualified Control.Monad.ST as ST
+import           Data.ByteString.Lazy (ByteString)
 
-import Control.Monad.Class.MonadFork
-import Control.Monad.Class.MonadST
-import Control.Monad.Class.MonadSTM
-import Control.Monad.Class.MonadThrow
-import Control.Tracer (nullTracer)
+import           Control.Monad.Class.MonadFork
+import           Control.Monad.Class.MonadST
+import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadThrow
+import           Control.Tracer (nullTracer)
 
-import Control.Monad.IOSim (runSimOrThrow)
+import           Control.Monad.IOSim (runSimOrThrow)
 
+import           Network.TypedProtocol.Codec
 import           Network.TypedProtocol.Driver
 import           Network.TypedProtocol.Proofs (connect)
-import           Network.TypedProtocol.Codec
 import           Ouroboros.Network.Channel
 
 import           Ouroboros.Network.Chain (Point)
 import qualified Ouroboros.Network.Chain as Chain
 import qualified Ouroboros.Network.ChainProducerState as ChainProducerState
 
-import Ouroboros.Network.Protocol.ChainSync.Type
-import Ouroboros.Network.Protocol.ChainSync.Client
-import Ouroboros.Network.Protocol.ChainSync.Server
-import Ouroboros.Network.Protocol.ChainSync.Direct
-import Ouroboros.Network.Protocol.ChainSync.Codec
+import           Ouroboros.Network.Protocol.ChainSync.Client
+import           Ouroboros.Network.Protocol.ChainSync.Codec
+import           Ouroboros.Network.Protocol.ChainSync.Direct
 import qualified Ouroboros.Network.Protocol.ChainSync.Examples as ChainSyncExamples
+import           Ouroboros.Network.Protocol.ChainSync.Server
+import           Ouroboros.Network.Protocol.ChainSync.Type
 
-import Ouroboros.Network.Testing.ConcreteBlock (Block (..), BlockHeader (..))
-import Test.ChainGenerators ()
-import Test.Ouroboros.Network.Testing.Utils (splits2, splits3)
-import Test.ChainProducerState (ChainProducerStateForkTest (..))
+import           Ouroboros.Network.Testing.ConcreteBlock (Block (..),
+                     BlockHeader (..))
+import           Test.ChainGenerators ()
+import           Test.ChainProducerState (ChainProducerStateForkTest (..))
+import           Test.Ouroboros.Network.Testing.Utils (splits2, splits3)
 
-import Test.QuickCheck hiding (Result)
-import Test.Tasty (TestTree, testGroup)
-import Test.Tasty.QuickCheck (testProperty)
+import           Test.QuickCheck hiding (Result)
+import           Test.Tasty (TestTree, testGroup)
+import           Test.Tasty.QuickCheck (testProperty)
 
 tests :: TestTree
 tests = testGroup "Ouroboros.Network.Protocol.ChainSyncProtocol"
@@ -227,7 +228,8 @@ chainSyncDemo clientChan serverChan (ChainProducerStateForkTest cps chain) = do
   chainVar <- atomically $ newTVar chain
   doneVar  <- atomically $ newTVar False
 
-  let server = ChainSyncExamples.chainSyncServerExample
+  let server :: ChainSyncServer Block (Point Block) m a
+      server = ChainSyncExamples.chainSyncServerExample
         (error "chainSyncServerExample: lazy in the result type")
         cpsVar
 

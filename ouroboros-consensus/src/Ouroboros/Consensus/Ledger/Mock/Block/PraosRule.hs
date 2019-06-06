@@ -17,6 +17,7 @@ module Ouroboros.Consensus.Ledger.Mock.Block.PraosRule (
 import           Codec.Serialise (Serialise (..))
 import           GHC.Generics (Generic)
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Crypto.Hash
 import           Ouroboros.Consensus.Crypto.KES
 import           Ouroboros.Consensus.Crypto.VRF
@@ -56,8 +57,6 @@ newtype SimplePraosRuleExt = SimplePraosRuleExt {
 
 type instance BlockProtocol (SimplePraosRuleBlock c) =
    WithLeaderSchedule (Praos PraosCryptoUnused)
-type instance BlockProtocol (SimplePraosRuleHeader c) =
-  BlockProtocol (SimplePraosRuleBlock c)
 
 -- | Sanity check that block and header type synonyms agree
 _simplePraosRuleHeader :: SimplePraosRuleBlock c -> SimplePraosRuleHeader c
@@ -77,6 +76,9 @@ instance SimpleCrypto c
         }
     where
       SimpleHeader{..} = simpleHeader
+
+instance SimpleCrypto c
+      => SupportedBlock (SimpleBlock c SimplePraosRuleExt)
 
 instance SimpleCrypto c
       => ProtocolLedgerView (SimplePraosRuleBlock c) where

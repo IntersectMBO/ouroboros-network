@@ -1,4 +1,5 @@
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeFamilies            #-}
+{-# LANGUAGE UndecidableSuperClasses #-}
 
 module Ouroboros.Consensus.Mempool.API (
     Mempool(..)
@@ -13,23 +14,23 @@ import           Control.Monad.Class.MonadSTM
 
 import           Ouroboros.Consensus.Ledger.Abstract
 
-class UpdateLedger b => ApplyTx b where
+class UpdateLedger blk => ApplyTx blk where
   -- | Generalized transaction
   --
   -- The mempool (and, accordingly, blocks) consist of "generalized
   -- transactions"; this could be "proper" transactions (transferring funds) but
   -- also other kinds of things such as update proposals, delegations, etc.
-  data family GenTx b :: *
+  data family GenTx blk :: *
 
   -- | Updating the ledger with a single transaction may result in a different
   -- error type as when updating it with a block
-  type family ApplyTxErr b :: *
+  type family ApplyTxErr blk :: *
 
   -- | Apply transaction we have not previously seen before
-  applyTx :: LedgerConfig b
-          -> GenTx b
-          -> LedgerState b
-          -> Except (ApplyTxErr b) (LedgerState b)
+  applyTx :: LedgerConfig blk
+          -> GenTx blk
+          -> LedgerState blk
+          -> Except (ApplyTxErr blk) (LedgerState blk)
 
   -- | Re-apply a transaction
   --
@@ -37,10 +38,10 @@ class UpdateLedger b => ApplyTx b where
   -- expensive checks such as cryptographic hashes can be skipped, but other
   -- checks (such as checking for double spending) must still be done.
   reapplyTx :: HasCallStack
-            => LedgerConfig b
-            -> GenTx b
-            -> LedgerState b
-            -> Except (ApplyTxErr b) (LedgerState b)
+            => LedgerConfig blk
+            -> GenTx blk
+            -> LedgerState blk
+            -> Except (ApplyTxErr blk) (LedgerState blk)
 
   -- | Re-apply a transaction to the very same state it was applied in before
   --
@@ -48,10 +49,10 @@ class UpdateLedger b => ApplyTx b where
   --
   -- See also 'ldbConfReapply' for comments on implementing this function.
   reapplyTxSameState :: HasCallStack
-                     => LedgerConfig b
-                     -> GenTx b
-                     -> LedgerState b
-                     -> LedgerState b
+                     => LedgerConfig blk
+                     -> GenTx blk
+                     -> LedgerState blk
+                     -> LedgerState blk
 
 -- | Mempool
 --

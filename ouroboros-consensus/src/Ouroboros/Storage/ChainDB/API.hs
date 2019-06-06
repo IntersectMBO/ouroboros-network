@@ -39,7 +39,7 @@ import           Ouroboros.Network.Chain (Chain (..), Point (..))
 import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.ChainProducerState (ReaderId)
 
-import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Extended
 
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API.Types (FsError)

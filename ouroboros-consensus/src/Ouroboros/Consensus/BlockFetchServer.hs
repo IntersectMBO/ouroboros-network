@@ -8,7 +8,6 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer (Tracer)
 
-import           Ouroboros.Network.Block (HeaderHash)
 import           Ouroboros.Network.Protocol.BlockFetch.Server
                      (BlockFetchBlockSender (..), BlockFetchSendBlocks (..),
                      BlockFetchServer (..))
@@ -22,8 +21,7 @@ import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 -- 'Ouroboros.Network.BlockFetch.Examples.mockBlockFetchServer1', but using
 -- the 'ChainDB'.
 blockFetchServer
-    :: forall m hdr blk.
-       (MonadSTM m, MonadThrow m, HeaderHash hdr ~ HeaderHash blk)
+    :: forall m hdr blk. (MonadSTM m, MonadThrow m)
     => Tracer m String
     -> ChainDB m blk hdr
     -> BlockFetchServer blk m ()

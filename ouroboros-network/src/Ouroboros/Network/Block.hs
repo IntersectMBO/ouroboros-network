@@ -22,6 +22,7 @@ module Ouroboros.Network.Block (
   , castPoint
   , blockPoint
   , ChainUpdate(..)
+  , mapChainUpdate
   , BlockMeasure(..)
   , blockMeasure
     -- * Serialisation
@@ -140,6 +141,10 @@ data ChainUpdate block = AddBlock block
                        | RollBack (Point block)
   deriving (Eq, Show)
 
+mapChainUpdate :: HeaderHash a ~ HeaderHash b
+               => (a -> b) -> ChainUpdate a -> ChainUpdate b
+mapChainUpdate f (AddBlock b) = AddBlock $ f b
+mapChainUpdate _ (RollBack p) = RollBack $ castPoint p
 
 {-------------------------------------------------------------------------------
   Serialisation

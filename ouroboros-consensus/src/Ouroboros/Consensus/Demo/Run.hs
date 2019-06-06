@@ -14,8 +14,6 @@ module Ouroboros.Consensus.Demo.Run (
   , NumCoreNodes(..)
     -- * Constraints required to run the demo
   , DemoHeaderHash(..)
-  , DemoHeader(..)
-  , DemoBlock(..)
   , RunDemo(..)
   ) where
 
@@ -23,12 +21,14 @@ import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Crypto.Random (MonadRandom)
 
-import           Ouroboros.Network.Block (BlockNo, ChainHash (..), HasHeader,
-                     HeaderHash, SlotNo)
+import           Ouroboros.Network.Block (BlockNo, ChainHash (..), HeaderHash,
+                     SlotNo)
 import           Ouroboros.Network.BlockFetch (SizeInBytes)
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Byron
+import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -57,24 +57,32 @@ class DemoHeaderHash hh where
   demoEncodeHeaderHash :: hh -> Encoding
   demoDecodeHeaderHash :: Decoder s hh
 
-class ( DemoHeaderHash (HeaderHash hdr)
-      , SupportedBlock (BlockProtocol hdr) hdr
-      , HasHeader hdr
-      , Condense hdr
-      , Condense (ChainHash hdr)
-      ) => DemoHeader hdr where
-  demoEncodeHeader   :: NodeConfig (BlockProtocol hdr) -> hdr -> Encoding
-  demoDecodeHeader   :: NodeConfig (BlockProtocol hdr) -> Decoder s hdr
-  demoBlockFetchSize :: hdr -> SizeInBytes
-
 class ( ProtocolLedgerView blk
-      , LedgerConfigView   blk
-      , Condense           blk
-      , Condense          [blk]
-      , ApplyTx            blk
-      ) => DemoBlock blk where
-  demoEncodeBlock :: NodeConfig (BlockProtocol blk) -> blk -> Encoding
-  demoDecodeBlock :: forall s. NodeConfig (BlockProtocol blk) -> Decoder s blk
+      , DemoHeaderHash (HeaderHash blk)
+      , Condense (Header blk)
+      , Condense (ChainHash blk)
+      , Condense blk
+      , Condense [blk]
+      , ApplyTx blk
+      ) => RunDemo blk where
+  demoForgeBlock         :: (HasNodeState (BlockProtocol blk) m, MonadRandom m)
+                         => NodeConfig (BlockProtocol blk)
+                         -> SlotNo         -- ^ Current slot
+                         -> BlockNo        -- ^ Current block number
+                         -> ChainHash blk  -- ^ Previous hash
+                         -> [GenTx blk]    -- ^ Txs to add in the block
+                         -> IsLeader (BlockProtocol blk)
+                         -> m blk
+  demoBlockMatchesHeader :: Header blk -> blk -> Bool
+  demoBlockFetchSize     :: Header blk -> SizeInBytes
+
+  -- Encoders
+  demoEncodeBlock  :: NodeConfig (BlockProtocol blk) -> blk -> Encoding
+  demoEncodeHeader :: NodeConfig (BlockProtocol blk) -> Header blk -> Encoding
+
+  -- Decoders
+  demoDecodeHeader :: forall s. NodeConfig (BlockProtocol blk) -> Decoder s (Header blk)
+  demoDecodeBlock  :: forall s. NodeConfig (BlockProtocol blk) -> Decoder s blk
 
   -- | Construct transaction from mock transaction
   --
@@ -83,19 +91,3 @@ class ( ProtocolLedgerView blk
   -- for the ledger that we are running. Of course, this translation will
   -- necessarily be limited and will rely on things like 'generatedSecrets'.
   demoMockTx :: NodeConfig (BlockProtocol blk) -> Tx -> GenTx blk
-
-class ( DemoHeader hdr
-      , DemoBlock blk
-      , BlockProtocol blk ~ BlockProtocol hdr
-      , HeaderHash    blk ~ HeaderHash    hdr
-      ) => RunDemo blk hdr where
-  demoForgeBlock         :: (HasNodeState (BlockProtocol blk) m, MonadRandom m)
-                         => NodeConfig (BlockProtocol blk)
-                         -> SlotNo         -- ^ Current slot
-                         -> BlockNo        -- ^ Current block number
-                         -> ChainHash hdr  -- ^ Previous hash
-                         -> [GenTx blk]    -- ^ Txs to add in the block
-                         -> IsLeader (BlockProtocol blk)
-                         -> m blk
-  demoGetHeader          :: blk -> hdr
-  demoBlockMatchesHeader :: hdr -> blk -> Bool

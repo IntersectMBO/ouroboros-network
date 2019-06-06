@@ -121,8 +121,8 @@ class ( Show (ChainState    p)
   -- | Validation errors
   type family ValidationErr p :: *
 
-  -- | Blocks that the protocol can run on
-  type family SupportedBlock p :: * -> Constraint
+  -- | Headers of blocks that the protocol can run on
+  type family SupportedHeader p :: * -> Constraint
 
   -- | Do we prefer the candidate chain over ours?
   --
@@ -134,10 +134,10 @@ class ( Show (ChainState    p)
   --
   -- Note: we do not assume that the candidate fragments fork less than @k@
   -- blocks back.
-  preferCandidate :: HasHeader b
+  preferCandidate :: HasHeader hdr
                   => NodeConfig p
-                  -> AnchoredFragment b      -- ^ Our chain
-                  -> AnchoredFragment b      -- ^ Candidate
+                  -> AnchoredFragment hdr      -- ^ Our chain
+                  -> AnchoredFragment hdr      -- ^ Candidate
                   -> Bool
   preferCandidate _ ours cand =
     AF.compareHeadBlockNo cand ours == GT
@@ -149,9 +149,9 @@ class ( Show (ChainState    p)
   --
   -- Note: we do not assume that the candidate fragments fork less than @k@
   -- blocks back.
-  compareCandidates :: HasHeader b
+  compareCandidates :: HasHeader hdr
                     => NodeConfig p
-                    -> AnchoredFragment b -> AnchoredFragment b -> Ordering
+                    -> AnchoredFragment hdr -> AnchoredFragment hdr -> Ordering
   compareCandidates _ = AF.compareHeadBlockNo
 
   -- | Check if a node is the leader
@@ -162,13 +162,11 @@ class ( Show (ChainState    p)
                 -> ChainState p
                 -> m (Maybe (IsLeader p))
 
-  -- | Apply a block
-  --
-  -- TODO this will only be used with headers
-  applyChainState :: (SupportedBlock p b, HasCallStack)
+  -- | Apply a header
+  applyChainState :: (SupportedHeader p hdr, HasCallStack)
                   => NodeConfig p
                   -> LedgerView p -- /Updated/ ledger state
-                  -> b
+                  -> hdr
                   -> ChainState p -- /Previous/ Ouroboros state
                   -> Except (ValidationErr p) (ChainState p)
 
@@ -230,20 +228,20 @@ newtype SecurityParam = SecurityParam { maxRollbacks :: Word64 }
 -- somehow fail if the selected chain turns out to be invalid.)
 --
 -- Returns 'Nothing' if we stick with our current chain.
-selectChain :: forall p b l. (OuroborosTag p, HasHeader b)
+selectChain :: forall p hdr l. (OuroborosTag p, HasHeader hdr)
             => NodeConfig p
-            -> Chain b           -- ^ Our chain
-            -> [(Chain b, l)]    -- ^ Upstream chains
-            -> Maybe (Chain b, l)
+            -> Chain hdr           -- ^ Our chain
+            -> [(Chain hdr, l)]    -- ^ Upstream chains
+            -> Maybe (Chain hdr, l)
 selectChain cfg ours' candidates' =
     fmap (first toChain) $ listToMaybe $
     sortBy (flip (compareCandidates cfg `on` fst)) preferred
   where
     ours       = AF.fromChain ours'
     candidates = map (first AF.fromChain) candidates'
-    preferred :: [(AnchoredFragment b, l)]
+    preferred :: [(AnchoredFragment hdr, l)]
     preferred = filter (preferCandidate cfg ours . fst) candidates
-    toChain :: AnchoredFragment b -> Chain b
+    toChain :: AnchoredFragment hdr -> Chain hdr
     toChain af
       | Just c <- AF.toChain af
       = c
@@ -251,11 +249,11 @@ selectChain cfg ours' candidates' =
       = error "impossible: fragment was anchored at genesis"
 
 -- | Chain selection on unvalidated chains
-selectUnvalidatedChain :: forall p b. (OuroborosTag p, HasHeader b)
+selectUnvalidatedChain :: forall p hdr. (OuroborosTag p, HasHeader hdr)
                        => NodeConfig p
-                       -> Chain b
-                       -> [Chain b]
-                       -> Maybe (Chain b)
+                       -> Chain hdr
+                       -> [Chain hdr]
+                       -> Maybe (Chain hdr)
 selectUnvalidatedChain cfg ours = fmap fst . selectChain cfg ours . map (, ())
 
 {-------------------------------------------------------------------------------
