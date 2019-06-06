@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
@@ -29,6 +30,7 @@ import qualified Ouroboros.Storage.ChainDB.Model as Model
 openDB :: forall m blk hdr.
           ( MonadSTM   m
           , MonadThrow m
+          , MonadThrow (STM m)
           , HasHeader hdr
           , HeaderHash blk ~ HeaderHash hdr
           , ProtocolLedgerView blk
@@ -58,6 +60,14 @@ openDB cfg initLedger blockHeader = do
 
         update :: (Model blk -> (a, Model blk)) -> m a
         update = atomically . updateSTM
+
+        updateE :: (Model blk -> (Either (ChainDbError blk) (a, Model blk)))
+                -> m a
+        updateE f = atomically $ do
+            err <- f <$> readTVar db
+            case err of
+              Left e        -> throwM e
+              Right (a, m') -> writeTVar db m' >> return a
 
         update_ :: (Model blk -> Model blk) -> m ()
         update_ f = update (\m -> ((), f m))
@@ -102,7 +112,7 @@ openDB cfg initLedger blockHeader = do
       , getTipPoint         = query   $ Model.tipPoint
       , getIsFetched        = query   $ flip Model.hasBlockByPoint
       , knownInvalidBlocks  = query   $ const Set.empty -- TODO
-      , streamBlocks        = update .: (first (fmap iterator) ..: Model.streamBlocks)
+      , streamBlocks        = updateE .: (fmap (first (fmap iterator)) ..: Model.streamBlocks k)
       , readBlocks          = update  $ (first reader . Model.readBlocks)
       , readHeaders         = update  $ (first (fmap blockHeader . reader) . Model.readBlocks)
       , closeDB             = return () -- TODO

@@ -18,6 +18,7 @@ module Ouroboros.Storage.ChainDB.API (
   , IteratorId(..)
   , IteratorResult(..)
   , UnknownRange(..)
+  , validBounds
     -- * Readers
   , ChainUpdate(..)
   , fromNetworkChainUpdate
@@ -40,8 +41,8 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
-import           Ouroboros.Network.Block (HasHeader (..), HeaderHash, SlotNo,
-                     StandardHash)
+import           Ouroboros.Network.Block (ChainHash (..), HasHeader (..),
+                     HeaderHash, SlotNo, StandardHash)
 import           Ouroboros.Network.Chain (Chain (..), Point (..), genesisPoint)
 import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.ChainProducerState (ReaderId)
@@ -165,10 +166,16 @@ data ChainDB m blk hdr =
 
       -- | Stream blocks
       --
-      -- Streaming is not restricted to the current fork, but there must be
-      -- an unbroken path from the starting point to the end point /at the time
+      -- Streaming is not restricted to the current fork, but there must be an
+      -- unbroken path from the starting point to the end point /at the time
       -- of initialization/ of the iterator. Once the iterator has been
-      -- initialized, it will not be affected by subsequent calls to 'addBlock'.
+      -- initialized, it will not be affected by subsequent calls to
+      -- 'addBlock'.
+      --
+      -- Streaming blocks older than @k@ is permitted, but only when they are
+      -- part of the current fork (at the time of initialization). Streaming a
+      -- fork that forks off more than @k@ blocks in the past is not permitted
+      -- and an 'UnknownRange' error will be returned in that case.
       --
       -- The iterator /does/ have a limited lifetime, however. The chain DB
       -- internally partitions the chain into an " immutable " part and a
@@ -184,6 +191,12 @@ data ChainDB m blk hdr =
       -- then the first block on that fork will become unavailable as soon as
       -- another block is pushed to the current chain and the subsequent
       -- time delay expires.
+      --
+      -- When the given bounds are nonsensical, an 'InvalidIteratorRange' is
+      -- thrown.
+      --
+      -- When the given bounds are not part of the chain DB, an 'UnknownRange'
+      -- error is returned.
       --
       -- TODO: How should iterators respond to corruption? (Readers can roll
       -- back, but iterators cannot.)
@@ -296,6 +309,24 @@ data UnknownRange blk =
     -- fit on the tip of the ImmutableDB.
   | ForkTooOld (StreamFrom blk)
   deriving (Show, Eq)
+
+-- | Check whether the bounds make sense
+--
+-- An example of bounds that don't make sense:
+--
+-- > StreamFromExclusive (Point { pointSlot = SlotNo 3 , .. }
+-- > StreamToInclusive   (Point { pointSlot = SlotNo 3 , .. }
+validBounds :: StreamFrom blk -> StreamTo blk -> Bool
+validBounds from to = case from of
+  StreamFromInclusive (Point { pointHash = GenesisHash }) -> False
+
+  StreamFromInclusive (Point { pointSlot = sfrom }) -> case to of
+    StreamToInclusive (Point { pointSlot = sto }) -> sfrom <= sto
+    StreamToExclusive (Point { pointSlot = sto }) -> sfrom <  sto
+
+  StreamFromExclusive (Point { pointSlot = sfrom }) -> case to of
+    StreamToInclusive (Point { pointSlot = sto }) -> sfrom <  sto
+    StreamToExclusive (Point { pointSlot = sto }) -> sfrom <  sto
 
 {-------------------------------------------------------------------------------
   Chain updates

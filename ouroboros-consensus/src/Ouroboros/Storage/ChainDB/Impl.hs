@@ -583,25 +583,6 @@ implStreamBlocks immDB volDB makeNewIteratorId from to = do
       InVolDB {}             ->
         atomically $ writeTVar varItState Closed
 
--- | Check whether the bounds make sense
---
--- An example of bounds that don't make sense:
---
--- > StreamFromExclusive (Point { pointSlot = SlotNo 3 , .. }
--- > StreamToInclusive   (Point { pointSlot = SlotNo 3 , .. }
-validBounds :: StreamFrom blk -> StreamTo blk -> Bool
-validBounds from to = case from of
-  StreamFromInclusive (Point { pointHash = GenesisHash }) -> False
-
-  StreamFromInclusive (Point { pointSlot = sfrom }) -> case to of
-    StreamToInclusive (Point { pointSlot = sto }) -> sfrom <= sto
-    StreamToExclusive (Point { pointSlot = sto }) -> sfrom <  sto
-
-  StreamFromExclusive (Point { pointSlot = sfrom }) -> case to of
-    StreamToInclusive (Point { pointSlot = sto }) -> sfrom <  sto
-    StreamToExclusive (Point { pointSlot = sto }) -> sfrom <  sto
-
-
 -- | Possible states of an iterator.
 --
 -- When streaming solely from the ImmutableDB ('InImmDB' where 'InImmDBEnd' is
