@@ -1,11 +1,14 @@
 {-# LANGUAGE GADTSyntax #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE BangPatterns #-}
 
 module Ouroboros.Byron.Proxy.ChainSync.Server where
 
+import Control.Exception (mask)
 import Control.Monad.Trans.Class (MonadTrans, lift)
-import Control.Monad.Trans.Resource (ResourceT, ReleaseKey, allocate, release)
+import Control.Monad.Trans.Resource (ReleaseKey, release)
+import Control.Monad.Trans.Resource.Internal (ResourceT (..), register')
 import qualified Data.ByteString.Lazy as Lazy
 import Data.Foldable (foldlM)
 import Data.List (sortBy)
@@ -154,6 +157,26 @@ pickBetterTip epochSlots err point (DB.TipBlock slot bytes) =
       Cardano.ABOBBoundary _ -> error "Corrupt DB: EBB where block expected"
   else pure point
 
+-- | Allocate a database iterator in `ResourceT IO`.
+--
+-- Compare at the simpler, recommended definition using `allocate`:
+--
+--   allocateIterator db readPoint = (fmap . fmap) DB.iterator
+--     (allocate (DB.readFrom db readPoint) DB.closeIterator)
+--
+-- This is no good because the allocated IteratorResource (from DB.iterator)
+-- retains the entire iterator stream from the start. But we don't need that
+-- in order to close the iterator! Solution: force the result of
+-- `DB.closeIterator` on it before registering it with the `ResourceT`
+-- internal resource structure.
+allocateIterator :: DB IO -> DB.Point -> ResourceT IO (ReleaseKey, DB.Iterator IO)
+allocateIterator db readPoint = ResourceT $ \istate -> mask $ \_ -> do
+  itr <- DB.readFrom db readPoint
+  let !rel  = DB.closeIterator itr
+      !iter = DB.iterator itr
+  key <- register' istate rel
+  pure (key, iter)
+
 chainSyncServerIdle
   :: Cardano.EpochSlots
   -> (forall x . Binary.DecoderError -> IO x)
@@ -195,10 +218,9 @@ chainSyncServerIdle epochSlots err poll db ss = case ss of
             checkForPoint = \found point -> case found of
               Just _  -> pure found
               Nothing -> do
-                (releaseKey, iteratorResource) <- allocate
-                  (DB.readFrom db (DB.FromPoint (pointSlot point) (pointHash point)))
-                  DB.closeIterator
-                next <- lift $ DB.next (DB.iterator iteratorResource)
+                (releaseKey, iterator) <- allocateIterator db
+                  (DB.FromPoint (pointSlot point) (pointHash point))
+                next <- lift $ DB.next iterator
                 case next of
                   DB.Done -> do
                     release releaseKey
@@ -220,7 +242,7 @@ chainSyncServerIdle epochSlots err poll db ss = case ss of
                         Cardano.ABOBBoundary _ -> error "Corrupt DB: EBB where block expected"
                     if hash == pointHash point
                     then pure $ Just (slot, hash, iterator', releaseKey)
-                    else pure Nothing
+                    else release releaseKey >> pure Nothing
         mFound <- foldlM checkForPoint Nothing orderedPoints
         -- No matter what, we have to give the current tip.
         -- FIXME why? Should only need to give it if there's a change.
@@ -246,16 +268,17 @@ chainSyncServerIdle epochSlots err poll db ss = case ss of
         -- slot, using `ResourceT` to ensure it gets de-allocated.
         Nothing -> case mLastKnownPoint of
           Nothing -> do
-            (releaseKey, iteratorResource) <- allocate (DB.readFrom db DB.FromGenesis) DB.closeIterator
+            (releaseKey, iterator) <- allocateIterator db DB.FromGenesis
             -- Last known point remains Nothing because we haven't yet served
             -- a block.
-            let ss' = KnownTip tipPoint Nothing (Just (DB.iterator iteratorResource, releaseKey))
+            let ss' = KnownTip tipPoint Nothing (Just (iterator, releaseKey))
             recvMsgRequestNext (chainSyncServerIdle epochSlots err poll db ss')
           Just point -> do
-            (releaseKey, iteratorResource) <- allocate (DB.readFrom db (DB.FromPoint (pointSlot point) (pointHash point))) DB.closeIterator
+            (releaseKey, iterator) <- allocateIterator db
+              (DB.FromPoint (pointSlot point) (pointHash point))
             -- Iterator starts from that point, so we have to pass over it
             -- before recursing.
-            next <- lift $ DB.next (DB.iterator iteratorResource)
+            next <- lift $ DB.next iterator
             iterator' <- case next of
               -- We served them the block at this point. How could we all of
               -- a sudden not have it? DB is immutable.
