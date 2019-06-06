@@ -63,7 +63,9 @@ import qualified Ouroboros.Consensus.Util.SlotBounded as SB
   Test infrastructure: test block
 -------------------------------------------------------------------------------}
 
-newtype TestHash = TestHash Word64
+newtype TestHash = TestHash {
+      unTestHash :: Word64
+    }
   deriving stock   (Generic)
   deriving newtype (Show, Eq, Ord, Serialise, Num, Condense)
 
