@@ -206,6 +206,18 @@ data ChainDbEnv m blk hdr = CDB {
     , cdbVolDB          :: VolDB m blk hdr
     , cdbLgrDB          :: LgrDB m blk
     , cdbChain          :: TVar m (AnchoredFragment hdr)
+      -- ^ Contains the current chain fragment.
+      --
+      -- INVARIANT: the anchor point of this fragment is the tip of the
+      -- ImmutableDB.
+      --
+      -- Note that this fragment might be shorter than @k@ headers when the
+      -- whole chain is shorter than @k@ or in case of corruption of the
+      -- VolatileDB.
+      --
+      -- Note that this fragment might also be /longer/ than @k@ headers,
+      -- because the oldest blocks from the fragment might not yet have been
+      -- copied from the VolatileDB to the ImmutableDB.
     , cdbConfig         :: NodeConfig (BlockProtocol blk)
     , cdbInvalid        :: TVar m (Set (Point blk))
     , cdbHeader         :: blk -> hdr
@@ -290,10 +302,18 @@ cdbGetIsFetched CDB{..} = basedOnHash <$> VolDB.getIsMember cdbVolDB
           BlockHash hash -> f hash
           GenesisHash    -> False
 
-cdbGetCurrentChain :: MonadSTM m
+cdbGetCurrentChain :: ( MonadSTM m
+                      , HasHeader hdr
+                      , OuroborosTag (BlockProtocol blk)
+                      )
                    => ChainDbEnv m blk hdr
                    -> STM m (AnchoredFragment hdr)
-cdbGetCurrentChain CDB{..} = readTVar cdbChain
+cdbGetCurrentChain CDB{..} =
+    -- Note that we can't simply return the fragment as is, because it might
+    -- be longer than @k@.
+    Fragment.anchorNewest k <$> readTVar cdbChain
+  where
+    SecurityParam k = protocolSecurityParam cdbConfig
 
 cdbGetCurrentLedger :: MonadSTM m
                     => ChainDbEnv m blk hdr
@@ -306,8 +326,8 @@ cdbGetTipPoint :: ( MonadSTM m
                   )
                => ChainDbEnv m blk hdr
                -> STM m (Point blk)
-cdbGetTipPoint = fmap (Block.castPoint . Fragment.headPoint)
-               . cdbGetCurrentChain
+cdbGetTipPoint CDB{..} =
+    (Block.castPoint . Fragment.headPoint) <$> readTVar cdbChain
 
 cdbGetTipBlock :: ( MonadCatch m
                   , MonadSTM m
