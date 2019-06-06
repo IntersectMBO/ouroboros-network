@@ -1,29 +1,49 @@
+{-# LANGUAGE DataKinds                 #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE RecordWildCards           #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE TypeFamilies              #-}
 
 module Ouroboros.Storage.ChainDB.LgrDB (
     LgrDB -- opaque
+  , LedgerDB
     -- * Initialization
   , LgrDbArgs(..)
   , defaultArgs
   , openDB
+    -- * Wrappers
+  , getCurrent
+  , setCurrent
+  , getCurrentState
+  , currentPoint
+    -- * Validation
+  , validate
+  , revalidate
+  , ValidateResult
+  , RevalidateResult
     -- * Re-exports
   , MemPolicy
+  , LedgerDB.SwitchResult (..)
+  , LedgerDB.PushManyResult (..)
   ) where
 
 import           Codec.Serialise.Decoding (Decoder)
 import           Control.Monad.Except (runExcept)
 import           Data.Functor ((<&>))
+import           Data.Set (Set)
+import qualified Data.Set as Set
+import           Data.Word (Word64)
+import           GHC.Stack (HasCallStack)
 import           System.FilePath ((</>))
 
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 
-import           Ouroboros.Network.Block (HasHeader (..), HeaderHash, Point)
+import           Ouroboros.Network.Block (HasHeader (..), HeaderHash, Point,
+                     blockPoint, castPoint)
 import qualified Ouroboros.Network.Block as Block
 
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -36,6 +56,7 @@ import           Ouroboros.Storage.FS.API.Types (MountPoint (..))
 import           Ouroboros.Storage.FS.IO (ioHasFS)
 
 import           Ouroboros.Storage.LedgerDB.Conf
+import           Ouroboros.Storage.LedgerDB.InMemory (Apply (..), RefOrVal (..))
 import qualified Ouroboros.Storage.LedgerDB.InMemory as LedgerDB
 import           Ouroboros.Storage.LedgerDB.MemPolicy (MemPolicy)
 import           Ouroboros.Storage.LedgerDB.OnDisk (NextBlock (..),
@@ -46,10 +67,18 @@ import           Ouroboros.Storage.ChainDB.ImmDB (ImmDB)
 import qualified Ouroboros.Storage.ChainDB.ImmDB as ImmDB
 
 -- | Thin wrapper around the ledger database
-data LgrDB m blk = LedgerDB {
-      nodeConfig :: NodeConfig (BlockProtocol blk)
-    , varDB      :: TVar m (LedgerDB.LedgerDB (ExtLedgerState blk) (Point blk))
+data LgrDB m blk = LgrDB {
+      conf           :: Conf m blk
+    , varDB          :: TVar m (LedgerDB blk)
+    , varPrevApplied :: TVar m (Set (HeaderHash blk))
     }
+
+-- | Shorter synonym for the instantiated 'LedgerDB.LedgerDB'.
+type LedgerDB blk = LedgerDB.LedgerDB (ExtLedgerState blk) (Point blk)
+
+-- | Shorter synonym for the instantiated 'LedgerDbConf'.
+type Conf m blk =
+  LedgerDbConf m (ExtLedgerState blk) (Point blk) blk (ExtValidationError blk)
 
 {-------------------------------------------------------------------------------
   Initialization
@@ -120,8 +149,13 @@ openDB LgrDbArgs{..} immDB getBlock = do
         lgrDbConf
         (streamAPI immDB)
     -- TODO: Do something with the init log (log warnings/errors)
-    varDB <- atomically $ newTVar db
-    return $ LedgerDB lgrNodeConfig varDB
+    (varDB, varPrevApplied) <- atomically $
+      (,) <$> newTVar db <*> newTVar Set.empty
+    return LgrDB {
+        conf           = lgrDbConf
+      , varDB          = varDB
+      , varPrevApplied = varPrevApplied
+      }
   where
     apply :: blk
           -> ExtLedgerState blk
@@ -141,6 +175,78 @@ openDB LgrDbArgs{..} immDB getBlock = do
       , ldbConfReapply = reapply
       , ldbConfResolve = getBlock
       }
+
+{-------------------------------------------------------------------------------
+  Wrappers
+-------------------------------------------------------------------------------}
+
+getCurrent :: MonadSTM m
+           => LgrDB m blk -> STM m (LedgerDB blk)
+getCurrent LgrDB{..} = readTVar varDB
+
+getCurrentState :: MonadSTM m
+                => LgrDB m blk -> STM m (ExtLedgerState blk)
+getCurrentState LgrDB{..} = LedgerDB.ledgerDbCurrent <$> readTVar varDB
+
+setCurrent :: MonadSTM m
+           => LgrDB m blk -> LedgerDB blk -> STM m ()
+setCurrent LgrDB{..} = writeTVar varDB
+
+currentPoint :: UpdateLedger blk
+             => LedgerDB blk -> Point blk
+currentPoint = ledgerTipPoint
+             . ledgerState
+             . LedgerDB.ledgerDbCurrent
+
+{-------------------------------------------------------------------------------
+  Validation
+-------------------------------------------------------------------------------}
+
+type ValidateResult blk =
+  LedgerDB.SwitchResult (ExtValidationError blk) (ExtLedgerState blk) (Point blk) 'False
+
+type RevalidateResult blk =
+  LedgerDB.SwitchResult (ExtValidationError blk) (ExtLedgerState blk) (Point blk) 'True
+
+validate :: ( Monad m
+            , ProtocolLedgerView blk
+            , HasHeader hdr
+            , HeaderHash blk ~ HeaderHash hdr
+            , HasCallStack
+            )
+         => LgrDB m blk
+         -> LedgerDB blk
+            -- ^ This is used as the starting point for validation, not the one
+            -- in the 'LgrDB'.
+         -> Word64  -- ^ How many blocks to roll back
+         -> [Either hdr blk]
+            -- ^ A @hdr@ is passed by-reference, a @blk@ by-value.
+         -> m (ValidateResult blk)
+validate LgrDB {..} ledgerDB numRollbacks hdrOrBlks =
+    -- TODO look in the varPrevApplied and update after validation
+    LedgerDB.ledgerDbSwitch conf numRollbacks bs ledgerDB
+  where
+    bs = [(Apply, toRefOrVal hdrOrBlk) | hdrOrBlk <- hdrOrBlks]
+
+revalidate :: ( Monad m
+              , ProtocolLedgerView blk
+              , HasHeader hdr
+              , HeaderHash blk ~ HeaderHash hdr
+              , HasCallStack
+              )
+          => LgrDB m blk
+          -> LedgerDB blk
+             -- ^ This is used as the starting point for validation, not the one
+             -- in the 'LgrDB'.
+          -> Word64  -- ^ How many blocks to roll back
+          -> [Either hdr blk]
+             -- ^ A @hdr@ is passed by-reference, a @blk@ by-value.
+          -> m (RevalidateResult blk)
+revalidate LgrDB {..} ledgerDB numRollbacks hdrOrBlks =
+    -- TODO check with varPrevApplied?
+    LedgerDB.ledgerDbSwitch conf numRollbacks bs ledgerDB
+  where
+    bs = [(Reapply, toRefOrVal hdrOrBlk) | hdrOrBlk <- hdrOrBlks]
 
 {-------------------------------------------------------------------------------
   Stream API to the immutable DB
@@ -168,3 +274,16 @@ streamAPI immDB = StreamAPI streamAfter
       ImmDB.IteratorExhausted    -> NoMoreBlocks
       ImmDB.IteratorResult _ blk -> NextBlock (Block.blockPoint blk, blk)
       ImmDB.IteratorEBB  _ _ blk -> NextBlock (Block.blockPoint blk, blk)
+
+
+{-------------------------------------------------------------------------------
+  Auxiliary
+-------------------------------------------------------------------------------}
+
+toRefOrVal :: ( HasHeader hdr
+              , HasHeader blk
+              , HeaderHash blk ~ HeaderHash hdr
+              )
+           => Either hdr blk -> RefOrVal (Point blk) blk
+toRefOrVal (Left  hdr) = Ref (castPoint (blockPoint hdr))
+toRefOrVal (Right blk) = Val (blockPoint blk) blk
