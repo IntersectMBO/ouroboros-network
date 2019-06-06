@@ -1,7 +1,6 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 module Test.Ouroboros.Storage.Util where
 -- TODO Move to Test.Util.Storage?
@@ -20,10 +19,11 @@ import           System.Directory (getTemporaryDirectory)
 import           System.IO.Temp (withTempDirectory)
 
 import           Test.QuickCheck (ASCIIString (..), Arbitrary (..), Property,
-                     collect, suchThat)
+                     collect, counterexample, suchThat)
 import           Test.Tasty.HUnit
 
 import           Ouroboros.Consensus.Util (repeatedly)
+import           Ouroboros.Consensus.Util.Condense (Condense, condense)
 
 import           Ouroboros.Storage.FS.API (HasFS (..))
 import           Ouroboros.Storage.FS.API.Types
@@ -201,7 +201,15 @@ tryFS = E.try
 collects :: Show a => [a] -> Property -> Property
 collects = repeatedly collect
 
-
+-- | Like '===', but uses 'Condense' instead of 'Show' when it fails.
+infix 4 =:=
+(=:=) :: (Eq a, Condense a) => a -> a -> Property
+x =:= y =
+    counterexample (condense x ++ interpret res ++ condense y) res
+  where
+    res = x == y
+    interpret True  = " == "
+    interpret False = " /= "
 
 {------------------------------------------------------------------------------
   Blob
