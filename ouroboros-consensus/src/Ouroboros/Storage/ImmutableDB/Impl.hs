@@ -1038,7 +1038,7 @@ streamBinaryBlobsImpl dbEnv mbStart mbEnd = withOpenState dbEnv $ \hasFS st -> d
 
 
 iteratorNextImpl :: forall m hash.
-                    (HasCallStack, MonadSTM m, MonadCatch m, Eq hash)
+                    (MonadSTM m, MonadCatch m, Eq hash)
                  => ImmutableDBEnv m hash
                  -> IteratorHandle hash m
                  -> Bool  -- ^ Step the iterator after reading iff True
