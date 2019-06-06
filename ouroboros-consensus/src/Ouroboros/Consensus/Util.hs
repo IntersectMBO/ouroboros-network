@@ -24,6 +24,7 @@ module Ouroboros.Consensus.Util (
   , pickOne
   , markLast
   , lastMaybe
+  , mapMaybeM
   , fib
   , allDisjoint
   , (.:)
@@ -35,9 +36,11 @@ module Ouroboros.Consensus.Util (
 
 import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Lazy as Lazy
+import           Data.Foldable (foldrM)
 import           Data.Functor.Identity
 import           Data.Kind (Constraint)
 import           Data.List (foldl')
+import           Data.Maybe (maybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Void
@@ -132,6 +135,12 @@ lastMaybe :: [a] -> Maybe a
 lastMaybe []     = Nothing
 lastMaybe [x]    = Just x
 lastMaybe (_:xs) = lastMaybe xs
+
+mapMaybeM :: forall a b m. Monad m => (a -> m (Maybe b)) -> [a] -> m [b]
+mapMaybeM p = foldrM f []
+  where
+    f :: a -> [b] -> m [b]
+    f a bs = maybe bs (:bs) <$> p a
 
 -- | Fast Fibonacci computation, using Binet's formula
 fib :: Word64 -> Word64

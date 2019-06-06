@@ -16,6 +16,7 @@ module Ouroboros.Consensus.Protocol.Abstract (
   , SecurityParam(..)
   , selectChain
   , selectUnvalidatedChain
+  , selectFragment
     -- * State monad for Ouroboros state
   , HasNodeState
   , HasNodeState_(..)
@@ -257,6 +258,23 @@ selectUnvalidatedChain :: forall p b. (OuroborosTag p, HasHeader b)
                        -> [Chain b]
                        -> Maybe (Chain b)
 selectUnvalidatedChain cfg ours = fmap fst . selectChain cfg ours . map (, ())
+
+
+-- | Chain selection using fragments.
+--
+-- POSTCONDITION: the returned fragment is preferred over our current chain
+-- ('preferCandidate') and preferred over all other candidates or at least
+-- equally preferable ('compareCandidates').
+selectFragment :: forall p b. (OuroborosTag p, HasHeader b)
+               => NodeConfig p
+               -> AnchoredFragment b    -- ^ Our chain
+               -> [AnchoredFragment b]  -- ^ Upstream chains
+               -> Maybe (AnchoredFragment b)
+selectFragment cfg ours candidates =
+    listToMaybe $ sortBy (flip (compareCandidates cfg)) preferred
+  where
+    preferred :: [AnchoredFragment b]
+    preferred = filter (preferCandidate cfg ours) candidates
 
 {-------------------------------------------------------------------------------
   State monad

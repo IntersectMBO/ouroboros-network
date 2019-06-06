@@ -4,7 +4,6 @@
 {-# LANGUAGE RecordWildCards           #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE StandaloneDeriving        #-}
-{-# LANGUAGE TypeApplications          #-}
 {-# LANGUAGE TypeFamilies              #-}
 {-# LANGUAGE UndecidableInstances      #-}
 
@@ -17,6 +16,8 @@ module Ouroboros.Storage.ChainDB.VolDB (
   , openDB
     -- * Candidates
   , candidates
+  , isReachable
+  , isReachableSTM
     -- * Paths
   , Path(..)
   , computePath
@@ -28,25 +29,32 @@ module Ouroboros.Storage.ChainDB.VolDB (
   , getBlock
     -- * Wrappers
   , getIsMember
+  , getPredecessor
+  , getSuccessors
+  , putBlock
   , closeDB
     -- * Re-exports
   , VolatileDBError
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
+import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Read as CBOR
+import qualified Codec.CBOR.Write as CBOR
 import qualified Data.ByteString.Lazy as Lazy
+import           Data.List.NonEmpty (NonEmpty)
+import qualified Data.List.NonEmpty as NE
+import           Data.Maybe (mapMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Typeable (Typeable)
+import           GHC.Stack (HasCallStack)
 import           System.FilePath ((</>))
 
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
-import qualified Ouroboros.Network.AnchoredFragment as Fragment
 import           Ouroboros.Network.Block (ChainHash (..), HasHeader (..),
                      HeaderHash, Point (..), StandardHash)
 import qualified Ouroboros.Network.Block as Block
@@ -71,6 +79,7 @@ import qualified Ouroboros.Storage.VolatileDB as VolDB
 data VolDB m blk hdr = VolDB {
       volDB    :: VolatileDB (HeaderHash blk) m
     , decBlock :: forall s. Decoder s blk
+    , encBlock :: blk -> Encoding
     , header   :: blk -> hdr
     }
 
@@ -84,6 +93,7 @@ data VolDbArgs m blk hdr = forall h. VolDbArgs {
     , volErrSTM        :: ThrowCantCatch (VolatileDBError (HeaderHash blk)) (STM m)
     , volBlocksPerFile :: Int
     , volDecodeBlock   :: forall s. Decoder s blk
+    , volEncodeBlock   :: blk -> Encoding
     , volGetHeader     :: blk -> hdr
     }
 
@@ -102,6 +112,7 @@ defaultArgs fp = VolDbArgs {
       -- Fields without a default
     , volBlocksPerFile = error "no default for volBlocksPerFile"
     , volDecodeBlock   = error "no default for volDecodeBlock"
+    , volEncodeBlock   = error "no default for volEncodeBlock"
     , volGetHeader     = error "no default for volGetHeader"
     }
 
@@ -114,7 +125,7 @@ openDB args@VolDbArgs{..} = do
                volErrSTM
                (blockFileParser args)
                volBlocksPerFile
-    return $ VolDB volDB volDecodeBlock volGetHeader
+    return $ VolDB volDB volDecodeBlock volEncodeBlock volGetHeader
 
 {-------------------------------------------------------------------------------
   Wrappers
@@ -122,6 +133,18 @@ openDB args@VolDbArgs{..} = do
 
 getIsMember :: VolDB m blk hdr -> STM m (HeaderHash blk -> Bool)
 getIsMember db = withSTM db VolDB.getIsMember
+
+getPredecessor :: VolDB m blk hdr
+               -> STM m (HeaderHash blk -> Maybe (HeaderHash blk))
+getPredecessor db = withSTM db VolDB.getPredecessor
+
+getSuccessors :: VolDB m blk hdr
+              -> STM m (Maybe (HeaderHash blk) -> Set (HeaderHash blk))
+getSuccessors db = withSTM db VolDB.getSuccessors
+
+putBlock :: (MonadCatch m, HasHeader blk) => VolDB m blk hdr -> blk -> m ()
+putBlock db@VolDB{..} b = withDB db $ \vol ->
+    VolDB.putBlock vol (extractInfo b) (CBOR.toBuilder (encBlock b))
 
 closeDB :: (MonadCatch m, HasHeader blk) => VolDB m blk hdr -> m ()
 closeDB db = withDB db VolDB.closeDB
@@ -132,69 +155,74 @@ closeDB db = withDB db VolDB.closeDB
 
 -- | Compute all candidates starting at the specified hash
 --
--- The fragments returned will be /anchored/ at the specified hash, but not
--- contain it.
+-- PRECONDITION: the block to which the given point corresponds is part of the
+-- VolatileDB.
 --
--- Although the volatile DB keeps a \"successors\" map in memory, telling us the
--- hashes of the known successors of any block, it does not keep /headers/ in
--- memory. This means that in order to construct the fragments, we need to
--- read the blocks from disk and extract their headers. Under normal
--- circumstances this does not matter too much; although this function gets
--- called every time we add a block, the expected number of successors is very
--- small:
+-- The first element in each list of hashes is the hash /after/ the specified
+-- hash. Thus, when building fragments from these lists of hashes, they
+-- fragments must be /anchored/ at the specified hash, but not contain it.
 --
--- * None if we stay on the current chain and this is just the next block
--- * A handful if we stay on the current chain and the block we just received
---   was a missing block and we already received some of its successors
--- * A handful if we switch to a short fork
---
--- This is expensive only
---
--- * on startup: in this case we need to read at least @k@ blocks from the
---   volatile DB, and possibly more if there are some other chains in the
---   volatile DB starting from the tip of the immutable DB
--- * when we switch to a distant fork
---
--- This cost is currently deemed acceptable.
---
--- TODO: It might be possible with some low-level hackery to avoid reading
--- the whole block and read only the header directly.
---
--- TODO: We might want to add some microbenchmarking here to measure the cost.
-candidates :: forall m blk hdr.
-              ( MonadCatch m
-              , MonadSTM   m
-              , HasHeader blk
-              , HasHeader hdr
-              , HeaderHash blk ~ HeaderHash hdr
-              )
-           => VolDB m blk hdr -> Point blk -> m [AnchoredFragment hdr]
-candidates db start = do
-    hashFragments <- atomically $ withSTM db $ \vol ->
-                       flip hashes (Block.pointHash start) <$>
-                         VolDB.getSuccessors vol
-    mapM mkFragments hashFragments
+-- NOTE: it is possible that no candidates are found, but don't forget that
+-- the chain (fragment) ending with @B@ is also a potential candidate.
+candidates
+  :: forall blk.
+     (Maybe (HeaderHash blk) -> Set (HeaderHash blk)) -- ^ @getSuccessors@
+  -> Point blk                                        -- ^ @B@
+  -> [NonEmpty (HeaderHash blk)]
+     -- ^ Each element in the list is a list of hashes from which we can
+     -- construct a fragment anchored at the point @B@.
+candidates succsOf b = mapMaybe NE.nonEmpty $ go (fromChainHash (pointHash b))
   where
-    -- Construct chain fragments from just the hashes
-    --
-    -- This reads blocks (see cost justification, above).
-    mkFragments :: [HeaderHash blk] -> m (AnchoredFragment hdr)
-    mkFragments = fmap (Fragment.fromOldestFirst (Block.castPoint start))
-                . mapM (getKnownHeader db)
+    go :: Maybe (HeaderHash blk) -> [[HeaderHash blk]]
+    go mbHash = case Set.toList $ succsOf mbHash of
+      []    -> [[]]
+      succs -> [ next : candidate
+               | next <- succs
+               , candidate <- go (Just next)
+               ]
 
-    -- List of hashes starting from (but not including) the specified point
-    --
-    -- We do this as a first step since this is pure function
-    hashes :: (Maybe (HeaderHash blk) -> Set (HeaderHash blk))
-           -> ChainHash blk
-           -> [[HeaderHash blk]]
-    hashes succsOf = go
-      where
-        go :: ChainHash blk -> [[HeaderHash blk]]
-        go prev = do
-          next <- Set.toList $ succsOf (fromChainHash prev)
-          rest <- go (BlockHash next)
-          return $ next : rest
+-- | Variant of 'isReachable' that obtains its arguments in the same 'STM'
+-- transaction.
+isReachableSTM :: (MonadSTM m, HasHeader blk)
+               => VolDB m blk hdr
+               -> STM m (Point blk) -- ^ The tip of the ImmutableDB (@I@).
+               -> Point blk         -- ^ The point of the block (@B@) to check
+                                    -- the reachability of
+               -> STM m (Maybe (NonEmpty (HeaderHash blk)))
+isReachableSTM volDB getI b = do
+    (predecessor, isMember, i) <- withSTM volDB $ \db ->
+      (,,) <$> VolDB.getPredecessor db <*> VolDB.getIsMember db <*> getI
+    return $ isReachable predecessor isMember i b
+
+-- | Check whether the given point, corresponding to a block @B@, is reachable
+-- from the tip of the ImmutableDB (@I@) by chasing the predecessors.
+--
+-- Returns a path (of hashes) from @I@ (excluded) to @B@ (included).
+--
+-- PRECONDITION: @B ∈ V@, i.e. @B@ is part of the VolatileDB.
+--
+-- 'True' <=> for all transitive predecessors @B'@ of @B@ we have @B' ∈ V@ or
+-- @B' = I@.
+isReachable :: forall blk. (HasHeader blk, HasCallStack)
+            => (HeaderHash blk -> Maybe (HeaderHash blk))  -- ^ @getPredecessor@
+            -> (HeaderHash blk -> Bool)                    -- ^ @isMember@
+            -> Point blk                                   -- ^ @I@
+            -> Point blk                                   -- ^ @B@
+            -> Maybe (NonEmpty (HeaderHash blk))
+isReachable predecessor isMember i b =
+    case computePath predecessor isMember from to of
+      Nothing   -> error "impossible: invalid bounds"
+      Just path -> case path of
+        CompletelyInVolDB hashes -> case NE.nonEmpty hashes of
+          Just hashes' -> Just hashes'
+          Nothing      ->
+            error "impossible: empty list of hashes with an inclusive bound"
+        PartiallyInVolDB  {}     -> Nothing
+        NotInVolDB        _      ->
+          error "impossible: block just added to VolatileDB missing"
+  where
+    from = StreamFromExclusive i
+    to   = StreamToInclusive   b
 
 {-------------------------------------------------------------------------------
   Compute paths
@@ -367,13 +395,6 @@ blockFileParser VolDbArgs{..} =
     decoder' :: forall s. Decoder s (VolDB.BlockInfo (HeaderHash blk))
     decoder' = extractInfo <$> volDecodeBlock
 
-    extractInfo :: blk -> VolDB.BlockInfo (HeaderHash blk)
-    extractInfo b = VolDB.BlockInfo {
-          bbid    = blockHash b
-        , bslot   = blockSlot b
-        , bpreBid = fromChainHash (blockPrevHash b)
-        }
-
 {-------------------------------------------------------------------------------
   Error handling
 -------------------------------------------------------------------------------}
@@ -431,3 +452,10 @@ parse dec hash =
 fromChainHash :: ChainHash blk -> Maybe (HeaderHash blk)
 fromChainHash GenesisHash      = Nothing
 fromChainHash (BlockHash hash) = Just hash
+
+extractInfo :: HasHeader blk => blk -> VolDB.BlockInfo (HeaderHash blk)
+extractInfo b = VolDB.BlockInfo {
+      bbid    = blockHash b
+    , bslot   = blockSlot b
+    , bpreBid = fromChainHash (blockPrevHash b)
+    }

@@ -1,11 +1,14 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE LambdaCase                #-}
+{-# LANGUAGE MultiWayIf                #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE RecordWildCards           #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE TypeApplications          #-}
 {-# LANGUAGE TypeFamilies              #-}
+
+{-# OPTIONS_GHC -Wredundant-constraints #-}
 
 module Ouroboros.Storage.ChainDB.Impl (
     -- * Initialization
@@ -16,26 +19,38 @@ module Ouroboros.Storage.ChainDB.Impl (
 
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
+import           Control.Exception (assert)
 import           Control.Monad (unless)
 import           Control.Monad.Except
+import           Control.Monad.Trans.State.Strict
+import           Data.Foldable (foldl')
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
+import           Data.Map (Map)
+import qualified Data.Map as Map
+import           Data.Maybe (fromMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
+import           Data.Word (Word64)
+import           GHC.Stack (HasCallStack)
 
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 
+import           Control.Tracer
+
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as Fragment
-import           Ouroboros.Network.Block (ChainHash (..), HasHeader (..),
-                     HeaderHash, Point (..), StandardHash, blockPoint)
+import           Ouroboros.Network.Block (BlockNo, ChainHash (..),
+                     HasHeader (..), HeaderHash, Point (..), StandardHash,
+                     blockPoint, castPoint)
 import qualified Ouroboros.Network.Block as Block
-import           Ouroboros.Network.Chain (genesisPoint)
+import           Ouroboros.Network.Chain (genesisBlockNo, genesisPoint)
 
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Util (mapMaybeM)
 
 import           Ouroboros.Storage.ChainDB.API
 import           Ouroboros.Storage.Common
@@ -65,6 +80,7 @@ data ChainDbArgs m blk hdr = forall h1 h2 h3. ChainDbArgs {
 
       -- Encoders
 
+    , cdbEncodeBlock      :: blk -> Encoding
     , cdbEncodeHash       :: HeaderHash blk -> Encoding
 
       -- Error handling
@@ -126,6 +142,7 @@ fromChainDbArgs ChainDbArgs{..} = (
         , volErr              = cdbErrVolDb
         , volErrSTM           = cdbErrVolDbSTM
         , volBlocksPerFile    = cdbBlocksPerFile
+        , volEncodeBlock      = cdbEncodeBlock
         , volDecodeBlock      = cdbDecodeBlock
         , volGetHeader        = cdbGetHeader
         }
@@ -158,6 +175,7 @@ toChainDbArgs ( ImmDB.ImmDbArgs{..}
     , cdbDecodeLedger     = lgrDecodeLedger
     , cdbDecodeChainState = lgrDecodeChainState
       -- Encoders
+    , cdbEncodeBlock      = volEncodeBlock
     , cdbEncodeHash       = immEncodeHash
       -- Error handling
     , cdbErrImmDb         = immErr
@@ -188,6 +206,7 @@ data ChainDbEnv m blk hdr = CDB {
     , cdbVolDB          :: VolDB m blk hdr
     , cdbLgrDB          :: LgrDB m blk
     , cdbChain          :: TVar m (AnchoredFragment hdr)
+    , cdbConfig         :: NodeConfig (BlockProtocol blk)
     , cdbInvalid        :: TVar m (Set (Point blk))
     , cdbHeader         :: blk -> hdr
     , cdbNextIteratorId :: TVar m IteratorId
@@ -206,6 +225,8 @@ openDB :: forall m blk hdr.
           , HeaderHash hdr ~ HeaderHash blk
           , ProtocolLedgerView blk
           , LedgerConfigView   blk
+
+          , Show hdr
           )
        => ChainDbArgs m blk hdr -> m (ChainDB m blk hdr)
 openDB args = do
@@ -222,14 +243,15 @@ openDB args = do
                   , cdbVolDB          = volDB
                   , cdbLgrDB          = lgrDB
                   , cdbChain          = chain
+                  , cdbConfig         = cdbNodeConfig args
                   , cdbInvalid        = invalid
                   , cdbHeader         = cdbGetHeader args
                   , cdbNextIteratorId = nextIteratorId
                   }
     return ChainDB {
-        addBlock           = undefined
+        addBlock           = cdbAddBlock           env
       , getCurrentChain    = cdbGetCurrentChain    env
-      , getCurrentLedger   = undefined
+      , getCurrentLedger   = cdbGetCurrentLedger   env
       , getTipBlock        = cdbGetTipBlock        env
       , getTipHeader       = cdbGetTipHeader       env
       , getTipPoint        = cdbGetTipPoint        env
@@ -272,6 +294,11 @@ cdbGetCurrentChain :: MonadSTM m
                    => ChainDbEnv m blk hdr
                    -> STM m (AnchoredFragment hdr)
 cdbGetCurrentChain CDB{..} = readTVar cdbChain
+
+cdbGetCurrentLedger :: MonadSTM m
+                    => ChainDbEnv m blk hdr
+                    -> STM m (ExtLedgerState blk)
+cdbGetCurrentLedger CDB{..} = LgrDB.getCurrentState cdbLgrDB
 
 cdbGetTipPoint :: ( MonadSTM m
                   , HasHeader hdr
@@ -332,6 +359,441 @@ cdbStreamBlocks CDB{..} = implStreamBlocks cdbImmDB cdbVolDB makeNewIteratorId
       newIteratorId <- readTVar cdbNextIteratorId
       modifyTVar' cdbNextIteratorId succ
       return newIteratorId
+
+-- | Auxiliary data type for 'cdbAddBlock' for a chain with a ledger that
+-- corresponds to it.
+--
+-- INVARIANT:
+-- > for (x :: ChainAndLedger blk hdr),
+-- >   Fragment.headPoint (_chain x) == LgrDB.currentPoint (_ledger x)
+data ChainAndLedger blk hdr = ChainAndLedger
+  { _chain  :: !(AnchoredFragment hdr)
+    -- ^ Chain fragment
+  , _ledger :: !(LgrDB.LedgerDB blk)
+    -- ^ Ledger corresponding to '_chain'
+  }
+
+mkChainAndLedger
+    :: ( HasHeader blk
+       , HasHeader hdr
+       , HeaderHash blk ~ HeaderHash hdr
+       , UpdateLedger blk
+       )
+    => AnchoredFragment hdr -> LgrDB.LedgerDB blk
+    -> ChainAndLedger blk hdr
+mkChainAndLedger c l =
+    assert (castPoint (Fragment.headPoint c) == LgrDB.currentPoint l) $
+    ChainAndLedger c l
+
+
+-- | TODO
+--
+-- TODO add @blockSlot b <= currentSlot@ as a precondition (guaranteed by the
+-- ChainSyncClient)
+-- TODO ^ incorporate ClockSkew
+--
+--
+-- = Constructing candidate fragments
+--
+-- The VolatileDB keeps a \"successors\" map in memory, telling us the hashes
+-- of the known successors of any block, but it does not keep /headers/ in
+-- memory, which are needed to construct candidate fargments. We try to reuse
+-- the headers from the current chain fragment where possible, but it will not
+-- contain all needed headers. This means that we will need to read some
+-- blocks from disk and extract their headers. Under normal circumstances this
+-- does not matter too much; although this will be done every time we add a
+-- block, the expected number of headers to read from disk is very small:
+--
+-- * None if we stay on the current chain and this is just the next block
+-- * A handful if we stay on the current chain and the block we just received
+--   was a missing block and we already received some of its successors
+-- * A handful if we switch to a short fork
+--
+-- This is expensive only
+--
+-- * on startup: in this case we need to read at least @k@ blocks from the
+--   VolatileDB, and possibly more if there are some other chains in the
+--   VolatileDB starting from the tip of the ImmutableDB
+-- * when we switch to a distant fork
+--
+-- This cost is currently deemed acceptable.
+--
+-- TODO: It might be possible with some low-level hackery to avoid reading the
+-- whole block and read only the header directly.
+--
+-- TODO: We might want to add some microbenchmarking here to measure the cost.
+cdbAddBlock :: forall m blk hdr.
+               ( MonadSTM   m
+               , MonadCatch m
+               , HasHeader blk
+               , HasHeader hdr
+               , HeaderHash hdr ~ HeaderHash blk
+               , ProtocolLedgerView blk
+
+               , Show hdr
+               )
+            => ChainDbEnv m blk hdr
+            -> blk -> m ()
+cdbAddBlock cdb@CDB{..} b = do
+    -- TODO check that we don't get an invalid block (cdbInvalid)?
+
+    (isMember, curChain, tipPoint, ledgerDB) <- atomically $
+      (,,,) <$> VolDB.getIsMember    cdbVolDB
+            <*> cdbGetCurrentChain   cdb
+            <*> cdbGetTipPoint       cdb
+            <*> LgrDB.getCurrent     cdbLgrDB
+    let blockNoAtImmDBTip = getBlockNoAtImmDBTip curChain
+        curChainAndLedger = mkChainAndLedger curChain ledgerDB
+
+    -- We follow the steps from section "## Adding a block" in ChainDB.md
+
+    -- ### Ignore
+    unless (blockNo b <= blockNoAtImmDBTip || isMember (blockHash b)) $ do
+
+      -- Write the block to the VolatileDB in all other cases
+      VolDB.putBlock cdbVolDB b
+
+      trace $ "Added " <> show (blockPoint b) <> " to the VolatileDB"
+
+      -- We need to get these after adding the block to the VolatileDB
+      (isMember', predecessor, succsOf) <- atomically $
+         (,,) <$> VolDB.getIsMember    cdbVolDB
+              <*> VolDB.getPredecessor cdbVolDB
+              <*> VolDB.getSuccessors  cdbVolDB
+
+      -- The block @b@ fits onto the end of our current chain
+      if | pointHash tipPoint == blockPrevHash b ->
+           -- ### Add to current chain
+           addToCurrentChain succsOf curChainAndLedger
+
+         | Just hashes <- VolDB.isReachable predecessor isMember'
+             (getPointAtImmDBTip curChain) (blockPoint b) ->
+           -- ### Switch to a fork
+           switchToAFork succsOf curChainAndLedger hashes
+
+         | otherwise ->
+           -- ### Store but don't change the current chain
+
+           -- We have already stored the block in the VolatileDB
+           trace "Store but don't change"
+
+      -- TODO Note that we may have extended the chain, but have not trimmed
+      -- it to @k@ blocks/headers. That is the job of the background thread,
+      -- which will first copy the blocks/headers to trim (from the end of the
+      -- fragment) from the VolatileDB to the ImmutableDB.
+
+  where
+    trace :: String -> m ()
+    trace = traceWith nullTracer
+
+    -- | The BlockNo of the first header (the oldest) on the current chain
+    -- fragment is the BlockNo of the ImmutableDB tip + 1, so we just subtract
+    -- 1. If the current chain is empty, use the BlockNo of Genesis.
+    --
+    -- TODO what if the VolatileDB was corrupted?
+    getBlockNoAtImmDBTip :: AnchoredFragment hdr -> BlockNo
+    getBlockNoAtImmDBTip =
+      either (const genesisBlockNo) (pred . blockNo) . Fragment.last
+
+    getPointAtImmDBTip :: AnchoredFragment hdr -> Point blk
+    getPointAtImmDBTip = castPoint . Fragment.anchorPoint
+
+    -- | PRECONDITION: the header @hdr@ (and block @b@) fit onto the end of
+    -- the current chain.
+    addToCurrentChain :: HasCallStack
+                      => (Maybe (HeaderHash blk) -> Set (HeaderHash blk))
+                      -> ChainAndLedger blk hdr
+                         -- ^ The current chain and ledger
+                      -> m ()
+    addToCurrentChain succsOf curChainAndLedger@(ChainAndLedger curChain _) =
+        assert (Fragment.validExtension curChain hdr) $ do
+          trace "Adding to the current chain"
+          let suffixesAfterB = VolDB.candidates succsOf (blockPoint b)
+
+          candidates <- case NE.nonEmpty suffixesAfterB of
+            -- If there are no suffixes after @b@, just use the fragment
+            -- that ends in @b@ as the sole candidate.
+            Nothing              -> return $ (curChain :> hdr) NE.:| []
+            Just suffixesAfterB' -> do
+              let initCache =
+                    Map.insert (blockHash b) hdr (cacheHeaders curChain)
+              flip evalStateT initCache $ forM suffixesAfterB' $ \hashes -> do
+                hdrs <- mapM getKnownHeaderThroughCache $ NE.toList hashes
+                let suffixChain = Fragment.fromOldestFirst
+                      (Fragment.headPoint curChain) (hdr : hdrs)
+                return $ joinSuffix curChain suffixChain
+
+          chainSelection curChainAndLedger candidates $ \case
+            Nothing                -> return ()
+            Just newChainAndLedger -> do
+              _updated <- atomically $ trySwitchTo newChainAndLedger
+              -- TODO what should we do when the chain has changed in the
+              -- meantime and this fails? If we call 'cdbAddBlock' again, we
+              -- will end up in Ignore.
+              return ()
+      where
+        hdr = cdbHeader b
+        joinSuffix prefix suffix = fromMaybe (error "invalid suffix")
+                                 $ Fragment.join prefix suffix
+
+    -- | TODO
+    switchToAFork :: HasCallStack
+                  => (Maybe (HeaderHash blk) -> Set (HeaderHash blk))
+                  -> ChainAndLedger blk hdr
+                     -- ^ The current chain (anchored at @i@) and ledger
+                  -> NonEmpty (HeaderHash blk)
+                     -- ^ An uninterrupted path of hashes @(i,b]@.
+                  -> m ()
+    switchToAFork succsOf curChainAndLedger@(ChainAndLedger curChain _) hashes = do
+        trace "Switching to a fork"
+        let suffixesAfterB = VolDB.candidates succsOf (blockPoint b)
+            i              = castPoint $ getPointAtImmDBTip curChain
+            initCache      = Map.insert (blockHash b) hdr (cacheHeaders curChain)
+        candidates <- flip evalStateT initCache $
+          case NE.nonEmpty suffixesAfterB of
+            -- If there are no suffixes after @b@, just use the fragment that
+            -- ends in @b@ as the sole candidate.
+            Nothing              -> (NE.:| []) <$> constructFork i hashes []
+            Just suffixesAfterB' -> mapM (constructFork i hashes . NE.toList)
+                                         suffixesAfterB'
+
+        chainSelection curChainAndLedger candidates $ \case
+          Nothing                -> return ()
+          Just newChainAndLedger -> do
+            _updated <- atomically $ trySwitchTo newChainAndLedger
+            -- TODO what should we do when the chain has changed in the
+            -- meantime and this fails? If we call 'cdbAddBlock' again, we
+            -- will end up in Ignore.
+            return ()
+      where
+        hdr = cdbHeader b
+
+    -- | Try to swap the current (chain) fragment with the given candidate
+    -- fragment. The 'LgrDB.LedgerDB' is updated in the same transaction.
+    --
+    -- Note that the current chain might have changed in the meantime. We only
+    -- switch when the new chain is preferred over the current chain, in which
+    -- case we return 'True'.
+    trySwitchTo :: ChainAndLedger blk hdr  -- ^ Chain and ledger to switch to
+                -> STM m Bool
+    trySwitchTo (ChainAndLedger newChain newLedger) = do
+      curChain <- readTVar cdbChain
+      if preferCandidate cdbConfig curChain newChain
+        then do
+          -- The current chain might be longer than @k@ headers because it
+          -- might still contain some old headers that have not yet been
+          -- written to the ImmutableDB. We must make sure to prepend these
+          -- headers to the new chain so that we still know what the full
+          -- chain is.
+          let (p1, _p2, _s1, s2) = fromMaybe
+                (error "new chain doesn't intersect with the current chain") $
+                Fragment.intersect curChain newChain
+              newChain' = fromMaybe
+                (error "postcondition of intersect violated") $
+                Fragment.join p1 s2
+          writeTVar cdbChain newChain'
+          LgrDB.setCurrent cdbLgrDB newLedger
+          return True
+        else
+          return False
+
+    -- | TODO
+    --
+    -- PRECONDITION: the candidates must be anchored at the same point as the
+    -- current chain.
+    chainSelection
+        :: HasCallStack
+        => ChainAndLedger blk hdr           -- ^ The current chain and ledger
+        -> NonEmpty (AnchoredFragment hdr)  -- ^ Candidates
+        -> (Maybe (ChainAndLedger blk hdr) -> m r)
+           -- ^ Called with the (valid) chain and corresponding LedgerDB that
+           -- was selected, or 'Nothing' if there is no valid chain preferred
+           -- over the current chain.
+        -> m r
+    chainSelection curChainAndLedger@(ChainAndLedger curChain _) candidates k =
+        assert (all ((== Fragment.anchorPoint curChain) . Fragment.anchorPoint)
+                    candidates) $
+        trace ("Candidates: " <> show candidates) >>
+        -- First filter so that only candidates preferred over our current
+        -- chain remain. This filtering is much cheaper than validation so
+        -- doing it before validation makes sense. This is safe because two
+        -- filtering operations permute.
+        case NE.nonEmpty $
+             NE.filter (preferCandidate cdbConfig curChain) candidates of
+          -- No candidates preferred over our current chain
+          Nothing -> k Nothing
+
+          -- If there's only one candidate. We can remember the validated
+          -- ledger state.
+          Just (cand NE.:| []) ->
+            validateCandidate curChainAndLedger cand >>= \case
+              Nothing                -> k Nothing  -- TODO trace something?
+              Just newChainAndLedger -> k (Just newChainAndLedger)
+
+          -- If there are multiple candidates, validate them, but don't remember
+          -- the resulting ledger states, because that would take too much
+          -- memory. Instead, after choosing a candidate, revalidate again. This
+          -- time it will be faster, as some checks can be omitted.
+          --
+          Just cands -> do
+            -- Note that we're extracting the validated chains, which might be
+            -- shorter than the given chains. E.g., when the last block of a
+            -- candidate chain is invalid, the chain without the last block is
+            -- returned.
+            validCands <- mapMaybeM
+              (fmap (fmap _chain) . validateCandidate curChainAndLedger)
+              (NE.toList cands)
+            -- Now select the "best" among the candidate fragments. Important:
+            -- in 'selectFragment', we first filter out candidate fragments
+            -- that are not preferred over the current chain, because
+            -- validation might have trimmed some chains. TODO only do this
+            -- for trimmed chains?
+            case selectFragment cdbConfig curChain validCands of
+              Nothing   -> k Nothing
+              Just cand -> revalidateChain curChainAndLedger cand >>= (k . Just)
+
+    -- | Validate a fragment and return a 'ChainAndLedger' for it, i.e. a
+    -- validated fragment along with a ledger corresponding to its tip (most
+    -- recent block).
+    --
+    -- PRECONDITION: the candidate fragment must have the same anchor point as
+    -- the current chain fragment.
+    --
+    -- PRECONDITION: the candidate fragment must contain as least as many
+    -- blocks as the current chain fragment.
+    --
+    -- If all blocks in the fragment are valid, then the fragment in the
+    -- returned 'ChainAndLedger' is the same as the given candidate fragment.
+    --
+    -- If a block in the fragment is invalid, then the fragment in the
+    -- returned 'ChainAndLedger' is a prefix of the given candidate fragment
+    -- (upto the last valid block), if that fragment is still preferred
+    -- ('preferCandidate') over the current chain, if not, 'Nothing' is
+    -- returned.
+    validateCandidate :: HasCallStack
+                      => ChainAndLedger blk hdr  -- ^ Current chain and ledger
+                      -> AnchoredFragment hdr    -- ^ Candidate fragment
+                      -> m (Maybe (ChainAndLedger blk hdr))
+    validateCandidate (ChainAndLedger curChain curLedger) candidate =
+      LgrDB.validate cdbLgrDB curLedger rollback newBlocks >>= \case
+        LgrDB.InvalidBlockInPrefix _e pt -> do
+          -- TODO trace
+          atomically $ modifyTVar' cdbInvalid (Set.insert pt)
+          return Nothing
+        LgrDB.PushSuffix (LgrDB.InvalidBlock _e pt ledger') -> do
+          -- TODO trace
+          atomically $ modifyTVar' cdbInvalid (Set.insert pt)
+          let lastValid  = castPoint $ LgrDB.currentPoint ledger'
+              candidate' = fromMaybe
+                (error "cannot rollback to point on fragment") $
+                Fragment.rollback lastValid candidate
+          assert (preferCandidate cdbConfig curChain candidate' ) $
+            return $ Just $ mkChainAndLedger candidate' ledger'
+        LgrDB.PushSuffix (LgrDB.ValidBlocks ledger') ->
+          return $ Just $ mkChainAndLedger candidate ledger'
+      where
+        (rollback, candSuffix) = candidateRollbackAndSuffix curChain candidate
+        newBlocks = map toHdrOrBlk (Fragment.toOldestFirst candSuffix)
+
+    -- | Variant of 'validateCandidate' for when the chain fragment already
+    -- has been validated with 'validateCandidate'.
+    --
+    -- The same preconditions apply as for 'validateCandidate'.
+    revalidateChain :: HasCallStack
+                    => ChainAndLedger blk hdr  -- ^ Current chain and ledger
+                    -> AnchoredFragment hdr    -- ^ Candidate fragment
+                    -> m (ChainAndLedger blk hdr)
+    revalidateChain (ChainAndLedger curChain curLedger) candidate =
+        LgrDB.revalidate cdbLgrDB curLedger rollback newBlocks >>= \case
+          LgrDB.PushSuffix (LgrDB.ValidBlocks ledger') ->
+            return $ mkChainAndLedger candidate ledger'
+      where
+        (rollback, candSuffix) = candidateRollbackAndSuffix curChain candidate
+        newBlocks = map toHdrOrBlk (Fragment.toOldestFirst candSuffix)
+
+    -- | Find the intersection point between the current chain and the
+    -- candidate fragment. Return the number of blocks to roll the /current
+    -- chain/ back and the suffix of the candidate fragment.
+    --
+    -- PRECONDITION: the candidate fragment must have the same anchor point as
+    -- the current chain fragment.
+    --
+    -- PRECONDITION: the candidate fragment must contain as least as many
+    -- blocks as the current chain fragment.
+    --
+    -- POSTCONDITION: @(n, suffix)@: rolling back the current chain (dropping
+    -- the newest @n@) and then joining the resulting fragment and the
+    -- @suffix@ will be equal to the given candidate fragment.
+    candidateRollbackAndSuffix
+      :: AnchoredFragment hdr  -- ^ Current chain
+      -> AnchoredFragment hdr  -- ^ Candidate chain
+      -> (Word64, AnchoredFragment hdr)
+         -- ^ How many blocks to roll back and the candidate suffix
+    candidateRollbackAndSuffix curChain candChain =
+      case Fragment.intersect curChain candChain of
+        Just (curChainPrefix, candPrefix, curChainSuffix, candSuffix)
+          | Fragment.anchorPoint curChainPrefix ==
+            Fragment.anchorPoint candPrefix
+          , let rollback = Fragment.length curChainSuffix
+          , Fragment.length candSuffix >= rollback
+          -> (fromIntegral rollback, candSuffix)
+        -- Precondition violated.
+        _ -> error $ "invalid candidate fragment: " <> show candChain
+
+    -- | In case the @hdr@ matches the block we're adding (@b@), return that,
+    -- so we avoid reading it from disk again (when passed to
+    -- 'LgrDB.validate').
+    toHdrOrBlk :: hdr -> Either hdr blk
+    toHdrOrBlk hdr
+      | castPoint (blockPoint hdr) == blockPoint b = Right b
+      | otherwise                                  = Left  hdr
+
+    -- | Build a cache from the headers in the fragment.
+    cacheHeaders :: AnchoredFragment hdr -> Map (HeaderHash blk) hdr
+    cacheHeaders =
+      foldl' (\m hdr -> Map.insert (blockHash hdr) hdr m) Map.empty .
+      Fragment.toNewestFirst
+
+    -- | Check whether the header for the hash is in the cache, if not, get
+    -- the corresponding header from the VolatileDB and store it in the cache.
+    -- The header (block) must exist in the VolatileDB.
+    getKnownHeaderThroughCache :: HeaderHash blk
+                               -> StateT (Map (HeaderHash blk) hdr) m hdr
+    getKnownHeaderThroughCache hash = gets (Map.lookup hash) >>= \case
+      Just hdr -> return hdr
+      Nothing  -> do
+        hdr <- lift $ VolDB.getKnownHeader cdbVolDB hash
+        modify (Map.insert hash hdr)
+        return hdr
+
+    -- | We have a new block @b@ that doesn't fit onto the current chain, but
+    -- there is an unbroken path from the tip of the ImmutableDB (@i@ = the
+    -- anchor point of the current chain) to @b@. We also have a suffix @s@ of
+    -- hashes that starts after @b@.
+    --
+    -- We will try to construct a fragment @f@ for the fork such that:
+    -- * @f@ is anchored at @i@
+    -- * @f@ starts with the headers corresponding to the hashes of @(i,b]@
+    -- * The next header in @f@ is the header for @b@
+    -- * Finally, @f@ ends with the headers corresponding to the hashes
+    --   @(b,?]@ of the suffix @s@.
+    --
+    -- Note that we need to read the headers corresponding to the hashes
+    -- @(i,b]@ and @(b,?]@ from disk. It is likely that many of these headers
+    -- are actually on the current chain, so when possible, we reuse these
+    -- headers instead of reading them from disk.
+    constructFork
+      :: Point hdr                  -- ^ Tip of ImmutableDB @i@
+      -> NonEmpty (HeaderHash blk)  -- ^ Hashes of @(i,b]@
+      -> [HeaderHash blk]           -- ^ Suffix @s@, hashes of @(b,?]@
+      -> StateT (Map (HeaderHash blk) hdr)
+                 m (AnchoredFragment hdr)
+         -- ^ Fork, anchored at @i@, contains (the header of) @b@ and ends
+         -- with the suffix @s@.
+    constructFork i hashes suffixHashes
+      = fmap (Fragment.fromOldestFirst i)
+      $ mapM getKnownHeaderThroughCache
+      $ NE.toList hashes <> suffixHashes
 
 {-------------------------------------------------------------------------------
   Lower level functionality
