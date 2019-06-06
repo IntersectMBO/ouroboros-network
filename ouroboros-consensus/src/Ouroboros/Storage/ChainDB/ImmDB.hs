@@ -41,6 +41,7 @@ import           Data.Bifunctor (first)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Proxy
 import           Data.Word
+import           GHC.Stack (HasCallStack)
 import           System.FilePath ((</>))
 
 import           Control.Monad.Class.MonadST
@@ -139,7 +140,7 @@ openDB args@ImmDbArgs{..} = do
 --
 -- If we have a block at the slot of the point, but its hash differs, we
 -- return 'Nothing'.
-getBlockWithPoint :: (MonadCatch m, HasHeader blk)
+getBlockWithPoint :: (MonadCatch m, HasHeader blk, HasCallStack)
                   => ImmDB m blk -> Point blk -> m (Maybe blk)
 getBlockWithPoint db Point{..} = do
     -- Unfortunately a point does not give us enough information to determine
@@ -167,7 +168,7 @@ getBlockWithPoint db Point{..} = do
       Just block | BlockHash (blockHash block) == hash -> return $ Just block
       _                                                -> return $ Nothing
 
-getBlockAtTip :: (MonadCatch m, HasHeader blk)
+getBlockAtTip :: (MonadCatch m, HasHeader blk, HasCallStack)
               => ImmDB m blk -> m (Maybe blk)
 getBlockAtTip db = do
     immTip <- withDB db $ \imm -> ImmDB.getTip imm
@@ -190,7 +191,7 @@ getSlotNoAtTip db = do
 -- | Get known block from the immutable DB that we know should exist
 --
 -- If it does not exist, we are dealing with data corruption.
-getKnownBlock :: (MonadCatch m, HasHeader blk)
+getKnownBlock :: (MonadCatch m, HasHeader blk, HasCallStack)
               => ImmDB m blk -> Either EpochNo SlotNo -> m blk
 getKnownBlock db epochOrSlot = do
     mBlock <- mustExist epochOrSlot <$> getBlock db epochOrSlot
@@ -199,7 +200,7 @@ getKnownBlock db epochOrSlot = do
       Left err -> throwM err
 
 -- | Get block from the immutable DB
-getBlock :: (MonadCatch m, HasHeader blk)
+getBlock :: (MonadCatch m, HasHeader blk, HasCallStack)
          => ImmDB m blk -> Either EpochNo SlotNo -> m (Maybe blk)
 getBlock db epochOrSlot = do
     mBlob <- fmap (parse (decBlock db) epochOrSlot) <$> getBlob db epochOrSlot
@@ -208,7 +209,7 @@ getBlock db epochOrSlot = do
       Just (Right b)  -> return $ Just b
       Just (Left err) -> throwM $ err
 
-getBlob :: (MonadCatch m, HasHeader blk)
+getBlob :: (MonadCatch m, HasHeader blk, HasCallStack)
         => ImmDB m blk -> Either EpochNo SlotNo -> m (Maybe Lazy.ByteString)
 getBlob db epochOrSlot = withDB db $ \imm ->
     case epochOrSlot of

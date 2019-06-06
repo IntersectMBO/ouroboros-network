@@ -949,6 +949,7 @@ implStreamBlocks :: forall m blk hdr.
                     , MonadSTM   m
                     , MonadThrow (STM m)
                     , HasHeader blk
+                    , HasCallStack
                     )
                  => ImmDB m blk
                  -> VolDB m blk hdr
@@ -960,7 +961,7 @@ implStreamBlocks immDB volDB makeNewIteratorId from to = do
       throwM $ InvalidIteratorRange from to
     runExceptT start
   where
-    start :: ExceptT (UnknownRange blk) m (Iterator m blk)
+    start :: HasCallStack => ExceptT (UnknownRange blk) m (Iterator m blk)
     start = do
       path <- lift $ atomically $ VolDB.computePathSTM volDB from to
       case path of
@@ -973,10 +974,12 @@ implStreamBlocks immDB volDB makeNewIteratorId from to = do
     streamFromVolDB :: NonEmpty (HeaderHash blk) -> m (Iterator m blk)
     streamFromVolDB = createIterator . InVolDB from
 
-    streamFromImmDB :: ExceptT (UnknownRange blk) m (Iterator m blk)
+    streamFromImmDB :: HasCallStack
+                    => ExceptT (UnknownRange blk) m (Iterator m blk)
     streamFromImmDB = streamFromImmDBHelper True
 
-    streamFromImmDBHelper :: Bool -- ^ Check the hash of the upper bound
+    streamFromImmDBHelper :: HasCallStack
+                          => Bool -- ^ Check the hash of the upper bound
                           -> ExceptT (UnknownRange blk) m (Iterator m blk)
     streamFromImmDBHelper checkUpperBound = do
         -- First check whether the block in the ImmDB at the end bound has the
@@ -1000,7 +1003,8 @@ implStreamBlocks immDB volDB makeNewIteratorId from to = do
     -- fork that forks off more than @k@ blocks in the past, in which case the
     -- risk of blocks going missing due to GC increases. So we refuse such a
     -- stream.
-    streamFromBoth :: HeaderHash blk
+    streamFromBoth :: HasCallStack
+                   => HeaderHash blk
                    -> [HeaderHash blk]
                    -> ExceptT (UnknownRange blk) m (Iterator m blk)
     streamFromBoth predHash hashes = lift (ImmDB.getBlockAtTip immDB) >>= \case
