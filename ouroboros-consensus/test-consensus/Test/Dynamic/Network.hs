@@ -42,6 +42,7 @@ import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
 import           Ouroboros.Consensus.Demo
 import           Ouroboros.Consensus.Demo.Run
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Node
 import           Ouroboros.Consensus.Protocol.Abstract (NodeConfig)
@@ -68,7 +69,7 @@ broadcastNetwork :: forall m c ext.
                     , MonadTime  m
                     , MonadTimer m
                     , MonadThrow (STM m)
-                    , RunDemo (SimpleBlock c ext) (SimpleHeader c ext)
+                    , RunDemo (SimpleBlock c ext)
                     , SimpleCrypto c
                     , Show ext
                     , Typeable ext
@@ -94,8 +95,7 @@ broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots = do
                       nodeAddrs  = map fst (Map.elems nodeUtxo)
                 ]
 
-    chans :: NodeChans m (SimpleBlock c ext) (SimpleHeader c ext) <-
-      createCommunicationChannels
+    chans :: NodeChans m (SimpleBlock c ext) <- createCommunicationChannels
 
     varRNG <- atomically $ newTVar initRNG
 
@@ -109,7 +109,7 @@ broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots = do
                 let curNo :: BlockNo
                     curNo = succ prevNo
 
-                let prevHash :: ChainHash (SimpleHeader c ext)
+                let prevHash :: ChainHash (SimpleBlock c ext)
                     prevHash = castHash (pointHash prevPoint)
 
                 -- We ignore the transactions from the mempool (which will be
@@ -144,9 +144,7 @@ broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots = do
 
       forM_ (filter (/= us) nodeIds) $ \them -> do
         let mkCommsDown :: Show bytes
-                        => (   NodeChan m (SimpleBlock c ext) (SimpleHeader c ext)
-                            -> Channel m bytes
-                           )
+                        => (NodeChan m (SimpleBlock c ext) -> Channel m bytes)
                         -> Codec ps e m bytes -> NodeComms m ps e bytes
             mkCommsDown getChan codec = NodeComms {
                 ncCodec    = codec
@@ -155,9 +153,7 @@ broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots = do
                     getChan (chans Map.! us Map.! them)
               }
             mkCommsUp :: Show bytes
-                      => (   NodeChan m (SimpleBlock c ext) (SimpleHeader c ext)
-                          -> Channel m bytes
-                         )
+                      => (NodeChan m (SimpleBlock c ext) -> Channel m bytes)
                       -> Codec ps e m bytes -> NodeComms m ps e bytes
             mkCommsUp getChan codec = NodeComms {
                 ncCodec    = codec
@@ -197,7 +193,7 @@ broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots = do
     getUtxo :: ExtLedgerState (SimpleBlock c ext) -> Utxo
     getUtxo = mockUtxo . simpleLedgerState . ledgerState
 
-    createCommunicationChannels :: m (NodeChans m (SimpleBlock c ext) (SimpleHeader c ext))
+    createCommunicationChannels :: m (NodeChans m (SimpleBlock c ext))
     createCommunicationChannels = fmap Map.fromList $ forM nodeIds $ \us ->
       fmap ((us, ) . Map.fromList) $ forM (filter (/= us) nodeIds) $ \them -> do
         (chainSyncConsumer,  chainSyncProducer)  <- createConnectedChannels
@@ -210,21 +206,21 @@ broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots = do
 -------------------------------------------------------------------------------}
 
 -- | Communication channel used for the Chain Sync protocol
-type ChainSyncChannel m hdr = Channel m (AnyMessage (ChainSync hdr (Point hdr)))
+type ChainSyncChannel m blk = Channel m (AnyMessage (ChainSync (Header blk) (Point blk)))
 
 -- | Communication channel used for the Block Fetch protocol
 type BlockFetchChannel m blk = Channel m (AnyMessage (BlockFetch blk))
 
 -- | The communication channels from and to each node
-data NodeChan m blk hdr = NodeChan
-  { chainSyncConsumer  :: ChainSyncChannel  m hdr
-  , chainSyncProducer  :: ChainSyncChannel  m hdr
+data NodeChan m blk = NodeChan
+  { chainSyncConsumer  :: ChainSyncChannel  m blk
+  , chainSyncProducer  :: ChainSyncChannel  m blk
   , blockFetchConsumer :: BlockFetchChannel m blk
   , blockFetchProducer :: BlockFetchChannel m blk
   }
 
 -- | All connections between all nodes
-type NodeChans m blk hdr = Map NodeId (Map NodeId (NodeChan m blk hdr))
+type NodeChans m blk = Map NodeId (Map NodeId (NodeChan m blk))
 
 
 {-------------------------------------------------------------------------------

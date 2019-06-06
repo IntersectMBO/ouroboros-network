@@ -24,6 +24,7 @@ library
      hs-source-dirs:   src-unix/
 
   exposed-modules:
+                       Ouroboros.Consensus.Block
                        Ouroboros.Consensus.BlockchainTime
                        Ouroboros.Consensus.BlockFetchServer
                        Ouroboros.Consensus.ChainSyncClient
@@ -65,6 +66,7 @@ library
                        Ouroboros.Consensus.Demo.Run
                        Ouroboros.Consensus.Ledger.Abstract
                        Ouroboros.Consensus.Ledger.Byron
+                       Ouroboros.Consensus.Ledger.Extended
                        Ouroboros.Consensus.Ledger.Mock
                        Ouroboros.Consensus.Ledger.Mock.Address
                        Ouroboros.Consensus.Ledger.Mock.Block

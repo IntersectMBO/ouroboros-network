@@ -20,7 +20,7 @@ module Ouroboros.Consensus.Protocol.PBFT (
   , PBftCrypto(..)
   , PBftMockCrypto
   , PBftCardanoCrypto
-  , BlockSupportsPBft(..)
+  , HeaderSupportsPBft(..)
     -- * Type instances
   , NodeConfig(..)
   ) where
@@ -64,11 +64,11 @@ data PBftFields c toSign = PBftFields {
 deriving instance PBftCrypto c => Show (PBftFields c toSign)
 deriving instance PBftCrypto c => Eq   (PBftFields c toSign)
 
-class ( HasHeader b
-      , SignedBlock b
-      , Signable (PBftDSIGN c) (Signed b)
-      ) => BlockSupportsPBft c b where
-  blockPBftFields :: proxy (PBft c) -> b -> PBftFields c (Signed b)
+class ( HasHeader hdr
+      , SignedHeader hdr
+      , Signable (PBftDSIGN c) (Signed hdr)
+      ) => HeaderSupportsPBft c hdr where
+  headerPBftFields :: proxy (PBft c) -> hdr -> PBftFields c (Signed hdr)
 
 forgePBftFields :: ( MonadRandom m
                    , PBftCrypto c
@@ -136,9 +136,9 @@ instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
       , pbftVerKey   :: VerKeyDSIGN (PBftDSIGN c)
       }
 
-  type ValidationErr  (PBft c) = PBftValidationErr c
-  type SupportedBlock (PBft c) = BlockSupportsPBft c
-  type NodeState      (PBft c) = ()
+  type ValidationErr   (PBft c) = PBftValidationErr c
+  type SupportedHeader (PBft c) = HeaderSupportsPBft c
+  type NodeState       (PBft c) = ()
 
   -- | We require two things from the ledger state:
   --
@@ -172,7 +172,7 @@ instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
       case verifySignedDSIGN
              (encodeSigned proxy)
              pbftIssuer
-             (blockSigned b)
+             (headerSigned b)
              pbftSignature of
         Right () -> return ()
         Left err -> throwError $ PBftInvalidSignature err
@@ -193,7 +193,7 @@ instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
           return $! takeR (winSize + 2*k) chainState Seq.|> (gk, blockSlot b)
     where
       PBftParams{..} = pbftParams
-      PBftFields{..} = blockPBftFields cfg b
+      PBftFields{..} = headerPBftFields cfg b
       winSize = fromIntegral pbftSignatureWindow
       SecurityParam (fromIntegral -> k) = pbftSecurityParam
       wt = floor $ pbftSignatureThreshold * fromIntegral winSize

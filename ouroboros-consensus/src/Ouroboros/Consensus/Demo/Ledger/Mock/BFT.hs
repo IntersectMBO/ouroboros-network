@@ -6,7 +6,7 @@ import qualified Data.Map as Map
 
 import           Ouroboros.Consensus.Crypto.DSIGN
 import           Ouroboros.Consensus.Demo.Run
-import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Node (CoreNodeId (..), NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract

@@ -17,6 +17,7 @@ module Ouroboros.Consensus.Ledger.Mock.Block.PBFT (
 import           Codec.Serialise (Serialise (..))
 import           GHC.Generics (Generic)
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Crypto.DSIGN
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Mock.Block
@@ -63,9 +64,6 @@ data SignedSimplePBft c c' = SignedSimplePBft {
 type instance BlockProtocol (SimplePBftBlock c c') =
   ExtNodeConfig (PBftLedgerView c') (PBft c')
 
-type instance BlockProtocol (SimplePBftHeader c c') =
-  BlockProtocol (SimplePBftBlock c c')
-
 -- | Sanity check that block and header type synonyms agree
 _simplePBftHeader :: SimplePBftBlock c c' -> SimplePBftHeader c c'
 _simplePBftHeader = simpleHeader
@@ -74,29 +72,17 @@ _simplePBftHeader = simpleHeader
   Evidence that SimpleBlock can support PBFT
 -------------------------------------------------------------------------------}
 
-instance SimpleCrypto c => SignedBlock (SimplePBftHeader c c') where
+instance SimpleCrypto c => SignedHeader (SimplePBftHeader c c') where
   type Signed (SimplePBftHeader c c') = SignedSimplePBft c c'
 
-  blockSigned  = SignedSimplePBft . simpleHeaderStd
-  encodeSigned = const encode
-
-instance SimpleCrypto c => SignedBlock (SimplePBftBlock c c') where
-  type Signed (SimplePBftBlock c c') = SignedSimplePBft c c'
-
-  blockSigned  = blockSigned . simpleHeader
+  headerSigned = SignedSimplePBft . simpleHeaderStd
   encodeSigned = const encode
 
 instance ( SimpleCrypto c
          , PBftCrypto c'
          , Signable (PBftDSIGN c') ~ Empty
-         ) => BlockSupportsPBft c' (SimplePBftHeader c c') where
-  blockPBftFields _ = simplePBftExt . simpleHeaderExt
-
-instance ( SimpleCrypto c
-         , PBftCrypto c'
-         , Signable (PBftDSIGN c') ~ Empty
-         ) => BlockSupportsPBft c' (SimplePBftBlock c c') where
-  blockPBftFields p = blockPBftFields p . simpleHeader
+         ) => HeaderSupportsPBft c' (SimplePBftHeader c c') where
+  headerPBftFields _ = simplePBftExt . simpleHeaderExt
 
 instance ( SimpleCrypto c
          , PBftCrypto c'
@@ -116,6 +102,11 @@ instance ( SimpleCrypto c
         }
     where
       SimpleHeader{..} = simpleHeader
+
+instance ( SimpleCrypto c
+         , PBftCrypto c'
+         , Signable (PBftDSIGN c') ~ Empty
+         ) => SupportedBlock (SimplePBftBlock c c')
 
 -- | The ledger view is constant for the mock instantiation of PBFT
 -- (mock blocks cannot change delegation)

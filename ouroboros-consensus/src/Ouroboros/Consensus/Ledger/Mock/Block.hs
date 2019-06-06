@@ -7,6 +7,7 @@
 {-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE UndecidableInstances  #-}
 
 -- | Simple block to go with the mock ledger
 --
@@ -14,9 +15,9 @@
 -- specific consensus protocols.
 module Ouroboros.Consensus.Ledger.Mock.Block (
     SimpleBlock
-  , SimpleBlock'(..)
   , SimpleHeader
-  , SimpleHeader'(..)
+  , SimpleBlock'(..)
+  , Header(..)
   , SimpleStdHeader(..)
   , SimpleBody(..)
     -- * Working with 'SimpleBlock'
@@ -49,6 +50,7 @@ import           GHC.Generics (Generic)
 
 import           Ouroboros.Network.Block
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Crypto.Hash
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Mock.Address
@@ -66,37 +68,40 @@ import           Ouroboros.Consensus.Util.Condense
 -------------------------------------------------------------------------------}
 
 type SimpleBlock  c ext = SimpleBlock'  c ext ext
-type SimpleHeader c ext = SimpleHeader' c ext ext
+type SimpleHeader c ext = Header (SimpleBlock c ext)
 
 data SimpleBlock' c ext ext' = SimpleBlock {
-      simpleHeader :: SimpleHeader' c ext ext'
+      simpleHeader :: Header (SimpleBlock' c ext ext')
     , simpleBody   :: SimpleBody
     }
   deriving (Generic, Show, Eq)
 
-data SimpleHeader' c ext ext' = SimpleHeader {
-      -- | The header hash
-      --
-      -- This is the hash of the header itself. This is a bit unpleasant,
-      -- because it makes the hash look self-referential (when computing the
-      -- hash we must ignore the 'simpleHeaderHash' field). However, the benefit
-      -- is that we can give a 'HasHeader' instance that does not require
-      -- a (static) 'Serialise' instance.
-      simpleHeaderHash :: HeaderHash (SimpleHeader' c ext ext')
+instance GetHeader (SimpleBlock' c ext ext') where
+  data Header (SimpleBlock' c ext ext') = SimpleHeader {
+        -- | The header hash
+        --
+        -- This is the hash of the header itself. This is a bit unpleasant,
+        -- because it makes the hash look self-referential (when computing the
+        -- hash we must ignore the 'simpleHeaderHash' field). However, the benefit
+        -- is that we can give a 'HasHeader' instance that does not require
+        -- a (static) 'Serialise' instance.
+        simpleHeaderHash :: HeaderHash (SimpleBlock' c ext ext')
 
-      -- | Fields required for the 'HasHeader' instance
-    , simpleHeaderStd  :: SimpleStdHeader c ext
+        -- | Fields required for the 'HasHeader' instance
+      , simpleHeaderStd  :: SimpleStdHeader c ext
 
-      -- | Header extension
-      --
-      -- This extension will be required when using 'SimpleBlock' for specific
-      -- consensus protocols.
-    , simpleHeaderExt  :: ext'
-    }
-  deriving (Generic, Show, Eq)
+        -- | Header extension
+        --
+        -- This extension will be required when using 'SimpleBlock' for specific
+        -- consensus protocols.
+      , simpleHeaderExt  :: ext'
+      }
+    deriving (Generic, Show, Eq)
+
+  getHeader = simpleHeader
 
 data SimpleStdHeader c ext = SimpleStdHeader {
-      simplePrev      :: ChainHash (SimpleHeader c ext)
+      simplePrev      :: ChainHash (SimpleBlock c ext)
     , simpleSlotNo    :: SlotNo
     , simpleBlockNo   :: BlockNo
     , simpleBodyHash  :: Hash (SimpleHash c) SimpleBody
@@ -117,7 +122,7 @@ mkSimpleHeader :: SimpleCrypto c
                => (ext' -> CBOR.Encoding)
                -> SimpleStdHeader c ext
                -> ext'
-               -> SimpleHeader' c ext ext'
+               -> Header (SimpleBlock' c ext ext')
 mkSimpleHeader encodeExt std ext =
     headerWithoutHash {
         simpleHeaderHash = hashWithSerialiser
@@ -133,7 +138,7 @@ mkSimpleHeader encodeExt std ext =
 
 -- | Check whether the block matches the header
 matchesSimpleHeader :: SimpleCrypto c
-                    => SimpleHeader' c ext ext'
+                    => Header (SimpleBlock' c ext ext')
                     -> SimpleBlock'  c ext ext''
                     -> Bool
 matchesSimpleHeader SimpleHeader{..} SimpleBlock {..} =
@@ -145,28 +150,19 @@ matchesSimpleHeader SimpleHeader{..} SimpleBlock {..} =
   HasHeader instance for SimpleHeader
 -------------------------------------------------------------------------------}
 
-type instance HeaderHash (SimpleHeader' c ext ext') =
-  Hash (SimpleHash c) (SimpleHeader' c ext ext')
-
-instance (SimpleCrypto c, Typeable ext)
-      => Measured BlockMeasure (SimpleHeader c ext) where
-  measure = blockMeasure
-
 instance (SimpleCrypto c, Typeable ext) => HasHeader (SimpleHeader c ext) where
-  blockHash      = simpleHeaderHash
-  blockPrevHash  = simplePrev    . simpleHeaderStd
-  blockSlot      = simpleSlotNo  . simpleHeaderStd
-  blockNo        = simpleBlockNo . simpleHeaderStd
+  blockHash      =            simpleHeaderHash
+  blockPrevHash  = castHash . simplePrev    . simpleHeaderStd
+  blockSlot      =            simpleSlotNo  . simpleHeaderStd
+  blockNo        =            simpleBlockNo . simpleHeaderStd
   blockInvariant = const True
-
-instance (SimpleCrypto c, Typeable ext) => StandardHash (SimpleHeader c ext)
 
 {-------------------------------------------------------------------------------
   HasHeader insatnce for SimpleBlock
 -------------------------------------------------------------------------------}
 
 type instance HeaderHash (SimpleBlock' c ext ext') =
-  Hash (SimpleHash c) (SimpleHeader' c ext ext')
+  Hash (SimpleHash c) (Header (SimpleBlock' c ext ext'))
 
 instance (SimpleCrypto c, Typeable ext)
       => Measured BlockMeasure (SimpleBlock c ext) where
@@ -201,7 +197,7 @@ instance HasUtxo SimpleBody where
   Update the ledger
 -------------------------------------------------------------------------------}
 
-instance (SimpleCrypto c, Typeable ext)
+instance (SimpleCrypto c, Typeable ext, SupportedBlock (SimpleBlock c ext))
       => UpdateLedger (SimpleBlock c ext) where
   newtype LedgerState (SimpleBlock c ext) = SimpleLedgerState {
         simpleLedgerState :: MockState (SimpleBlock c ext)
@@ -212,23 +208,18 @@ instance (SimpleCrypto c, Typeable ext)
       SimpleLedgerConfig
     deriving (Show)
 
-  type LedgerError  (SimpleBlock c ext) = InvalidInputs
+  type LedgerError (SimpleBlock c ext) = MockError (SimpleBlock c ext)
 
-  applyLedgerHeader _cfg =
-      updateSimpleLedgerState
-  applyLedgerBlock  _cfg b (SimpleLedgerState st) =
-      SimpleLedgerState <$> updateMockState b st
-  ledgerTipPoint (SimpleLedgerState st) =
-      mockTip st
-
-instance (SimpleCrypto c, Typeable ext)
-      => LedgerConfigView (SimpleBlock c ext) where
+  applyLedgerHeader _cfg hdr (SimpleLedgerState st) =
+      SimpleLedgerState <$> updateMockTip hdr st
+  applyLedgerBlock  _cfg = updateSimpleLedgerState
+  ledgerTipPoint (SimpleLedgerState st) = mockTip st
   ledgerConfigView _ = SimpleLedgerConfig
 
 updateSimpleLedgerState :: (Monad m, HasUtxo a)
                         => a
                         -> LedgerState (SimpleBlock c ext)
-                        -> ExceptT InvalidInputs
+                        -> ExceptT (MockError (SimpleBlock c ext))
                                    m
                                    (LedgerState (SimpleBlock c ext))
 updateSimpleLedgerState b (SimpleLedgerState st) =
@@ -241,10 +232,10 @@ genesisSimpleLedgerState = SimpleLedgerState . genesisMockState
   Support for the mempool
 -------------------------------------------------------------------------------}
 
-instance (SimpleCrypto c, Typeable ext)
+instance (SimpleCrypto c, Typeable ext, SupportedBlock (SimpleBlock c ext))
       => ApplyTx (SimpleBlock c ext) where
   newtype GenTx   (SimpleBlock c ext) = SimpleGenTx { simpleGenTx :: Tx }
-  type ApplyTxErr (SimpleBlock c ext) = InvalidInputs
+  type ApplyTxErr (SimpleBlock c ext) = MockError (SimpleBlock c ext)
 
   applyTx            = \_ -> updateSimpleLedgerState
   reapplyTx          = \_ -> updateSimpleLedgerState
@@ -279,7 +270,7 @@ instance SimpleCrypto SimpleMockCrypto where
   Condense instances
 -------------------------------------------------------------------------------}
 
-instance Condense ext' => Condense (SimpleHeader' c ext ext') where
+instance Condense ext' => Condense (Header (SimpleBlock' c ext ext')) where
   condense SimpleHeader{..} = mconcat [
         "("
       , condense simplePrev
@@ -313,7 +304,7 @@ instance Condense ext' => Condense (SimpleBlock' c ext ext') where
       SimpleStdHeader{..} = simpleHeaderStd
       SimpleBody{..}      = simpleBody
 
-instance Condense (ChainHash (SimpleHeader' c ext ext')) where
+instance Condense (ChainHash (SimpleBlock' c ext ext')) where
   condense GenesisHash     = "genesis"
   condense (BlockHash hdr) = show hdr
 
@@ -327,7 +318,8 @@ instance Serialise SimpleBody
 
 encodeSimpleHeader :: SimpleCrypto c
                    => (ext' -> CBOR.Encoding)
-                   -> SimpleHeader' c ext ext' -> CBOR.Encoding
+                   -> Header (SimpleBlock' c ext ext')
+                   -> CBOR.Encoding
 encodeSimpleHeader encodeExt SimpleHeader{..} =  mconcat [
       CBOR.encodeListLen 2
     , encode simpleHeaderStd
@@ -337,13 +329,13 @@ encodeSimpleHeader encodeExt SimpleHeader{..} =  mconcat [
 decodeSimpleHeader :: SimpleCrypto c
                    => (ext' -> CBOR.Encoding)
                    -> (forall s. CBOR.Decoder s ext')
-                   -> forall s. CBOR.Decoder s (SimpleHeader' c ext ext')
+                   -> forall s. CBOR.Decoder s (Header (SimpleBlock' c ext ext'))
 decodeSimpleHeader encodeExt decodeExt = do
     CBOR.decodeListLenOf 2
     mkSimpleHeader encodeExt <$> decode <*> decodeExt
 
 -- | Custom 'Serialise' instance that doesn't serialise the hash
 instance (SimpleCrypto c, Serialise ext')
-      => Serialise (SimpleHeader' c ext ext') where
+      => Serialise (Header (SimpleBlock' c ext ext')) where
   encode = encodeSimpleHeader encode
   decode = decodeSimpleHeader encode decode

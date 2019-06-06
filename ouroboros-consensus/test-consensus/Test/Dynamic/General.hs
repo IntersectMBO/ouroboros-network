@@ -42,7 +42,7 @@ import           Ouroboros.Consensus.Util.ThreadRegistry
 import           Test.Dynamic.Network
 
 prop_simple_protocol_convergence :: forall c ext.
-                                   ( RunDemo (SimpleBlock c ext) (SimpleHeader c ext)
+                                   ( RunDemo (SimpleBlock c ext)
                                    , SimpleCrypto c
                                    , Show ext
                                    , Typeable ext
@@ -70,7 +70,7 @@ test_simple_protocol_convergence :: forall m c ext.
                                     , MonadTime  m
                                     , MonadTimer m
                                     , MonadThrow (STM m)
-                                    , RunDemo (SimpleBlock c ext) (SimpleHeader c ext)
+                                    , RunDemo (SimpleBlock c ext)
                                     , SimpleCrypto c
                                     , Show ext
                                     , Typeable ext

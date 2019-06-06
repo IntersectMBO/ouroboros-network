@@ -11,6 +11,7 @@ module Test.Util.TestBlock (
     -- * Blocks
     TestHash(..)
   , TestBlock(..)
+  , Header(..)
     -- * Chain
   , BlockChain(..)
   , blockChain
@@ -47,8 +48,10 @@ import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.Chain (Chain (..), Point)
 import qualified Ouroboros.Network.Chain as Chain
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Crypto.DSIGN
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Node (NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
@@ -71,6 +74,11 @@ data TestBlock = TestBlock {
     }
   deriving (Show, Eq)
 
+instance GetHeader TestBlock where
+  newtype Header TestBlock = TestHeader { testHeader :: TestBlock }
+    deriving (Show)
+  getHeader = TestHeader
+
 type instance HeaderHash TestBlock = TestHash
 
 instance Block.HasHeader TestBlock where
@@ -78,6 +86,13 @@ instance Block.HasHeader TestBlock where
   blockPrevHash  = tbPrevHash
   blockSlot      = tbSlot
   blockNo        = tbNo
+  blockInvariant = const True
+
+instance Block.HasHeader (Header TestBlock) where
+  blockHash      =                  Block.blockHash     . testHeader
+  blockPrevHash  = Block.castHash . Block.blockPrevHash . testHeader
+  blockSlot      =                  Block.blockSlot     . testHeader
+  blockNo        =                  Block.blockNo       . testHeader
   blockInvariant = const True
 
 instance Block.StandardHash TestBlock
@@ -98,6 +113,9 @@ instance Condense TestBlock where
       , ")"
       ]
 
+instance Condense (Header TestBlock) where
+  condense = condense . testHeader
+
 instance Condense (ChainHash TestBlock) where
   condense GenesisHash   = "genesis"
   condense (BlockHash h) = show h
@@ -109,13 +127,13 @@ instance Condense (ChainHash TestBlock) where
 
 type instance BlockProtocol TestBlock = Bft BftMockCrypto
 
-instance SignedBlock TestBlock where
-  type Signed TestBlock = ()
-  blockSigned  _ = ()
+instance SignedHeader (Header TestBlock) where
+  type Signed (Header TestBlock) = ()
+  headerSigned _ = ()
   encodeSigned _ = encode
 
-instance BlockSupportsBft BftMockCrypto TestBlock where
-  blockBftFields cfg tb = BftFields {
+instance HeaderSupportsBft BftMockCrypto (Header TestBlock) where
+  headerBftFields cfg (TestHeader tb) = BftFields {
         bftSignature = SignedDSIGN $
                          mockSign
                            encode
@@ -131,13 +149,14 @@ instance BlockSupportsBft BftMockCrypto TestBlock where
       signKey BftNodeConfig{bftParams = BftParams{..}} (Block.SlotNo n) =
           SignKeyMockDSIGN $ fromIntegral (n `mod` bftNumNodes)
 
-
 -- | The only error possible is that hashes don't line up
 data InvalidHash = InvalidHash {
       expectedHash :: ChainHash TestBlock
     , invalidHash  :: ChainHash TestBlock
     }
   deriving (Show)
+
+instance SupportedBlock TestBlock
 
 instance UpdateLedger TestBlock where
   data LedgerState TestBlock =
@@ -149,6 +168,8 @@ instance UpdateLedger TestBlock where
 
   data LedgerConfig TestBlock = LedgerConfig
   type LedgerError  TestBlock = InvalidHash
+
+  ledgerConfigView _ = LedgerConfig
 
   applyLedgerBlock _ tb@TestBlock{..} TestLedger{..} =
       if tbPrevHash == snd lastApplied
@@ -162,9 +183,6 @@ instance UpdateLedger TestBlock where
 instance ProtocolLedgerView TestBlock where
   protocolLedgerView _ _ = ()
   anachronisticProtocolLedgerView _ _ _ = Just $ SB.unbounded ()
-
-instance LedgerConfigView TestBlock where
-  ledgerConfigView = const LedgerConfig
 
 testInitLedger :: LedgerState TestBlock
 testInitLedger = TestLedger (Chain.genesisPoint, GenesisHash)

@@ -19,6 +19,7 @@ import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (Serialise (..))
 import           GHC.Generics (Generic)
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Crypto.KES
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Mock.Address
@@ -66,9 +67,6 @@ data SignedSimplePraos c c' = SignedSimplePraos {
 type instance BlockProtocol (SimplePraosBlock c c') =
   ExtNodeConfig AddrDist (Praos c')
 
-type instance BlockProtocol (SimplePraosHeader c c') =
-  BlockProtocol (SimplePraosBlock c c')
-
 -- | Sanity check that block and header type synonyms agree
 _simplePraosHeader :: SimplePraosBlock c c' -> SimplePraosHeader c c'
 _simplePraosHeader = simpleHeader
@@ -78,34 +76,21 @@ _simplePraosHeader = simpleHeader
 -------------------------------------------------------------------------------}
 
 instance (SimpleCrypto c, PraosCrypto c')
-      => SignedBlock (SimplePraosHeader c c') where
+      => SignedHeader (SimplePraosHeader c c') where
   type Signed (SimplePraosHeader c c') = SignedSimplePraos c c'
 
-  blockSigned SimpleHeader{..} = SignedSimplePraos {
+  headerSigned SimpleHeader{..} = SignedSimplePraos {
         signedSimplePraos = simpleHeaderStd
       , signedPraosFields = praosExtraFields (simplePraosExt simpleHeaderExt)
       }
 
   encodeSigned = const encodeSignedSimplePraos
 
-instance (SimpleCrypto c, PraosCrypto c')
-      => SignedBlock (SimplePraosBlock c c') where
-  type Signed (SimplePraosBlock c c') = SignedSimplePraos c c'
-
-  blockSigned  = blockSigned . simpleHeader
-  encodeSigned = const encodeSignedSimplePraos
-
 instance ( SimpleCrypto c
          , PraosCrypto c'
          , Signable (PraosKES c') ~ Empty
-         ) => BlockSupportsPraos c' (SimplePraosHeader c c') where
-  blockPraosFields _ = simplePraosExt . simpleHeaderExt
-
-instance ( SimpleCrypto c
-         , PraosCrypto c'
-         , Signable (PraosKES c') ~ Empty
-         ) => BlockSupportsPraos c' (SimplePraosBlock c c') where
-  blockPraosFields p = blockPraosFields p . simpleHeader
+         ) => HeaderSupportsPraos c' (SimplePraosHeader c c') where
+  headerPraosFields _ = simplePraosExt . simpleHeaderExt
 
 instance ( SimpleCrypto c
          , PraosCrypto c'
@@ -125,6 +110,10 @@ instance ( SimpleCrypto c
         }
     where
       SimpleHeader{..} = simpleHeader
+
+instance ( SimpleCrypto c
+         , PraosCrypto c'
+         ) => SupportedBlock (SimpleBlock c (SimplePraosExt c c'))
 
 -- | Praos needs a ledger that can give it the "active stake distribution"
 --

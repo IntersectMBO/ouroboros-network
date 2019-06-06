@@ -62,11 +62,13 @@ import           Ouroboros.Network.Protocol.ChainSync.Client
 import           Ouroboros.Network.Protocol.ChainSync.Server
 import           Ouroboros.Network.Protocol.ChainSync.Type
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.BlockFetchServer
 import           Ouroboros.Consensus.ChainSyncClient
 import           Ouroboros.Consensus.ChainSyncServer
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util
@@ -106,9 +108,9 @@ fromCoreNodeId (CoreNodeId n) = CoreId n
 -------------------------------------------------------------------------------}
 
 -- | Interface against running relay node
-data NodeKernel m up blk hdr = NodeKernel {
+data NodeKernel m up blk = NodeKernel {
       -- | The 'ChainDB' of the node
-      getChainDB :: ChainDB m blk hdr
+      getChainDB :: ChainDB m blk (Header blk)
 
       -- | The node's mempool
     , getMempool :: Mempool m blk
@@ -123,8 +125,8 @@ data NodeKernel m up blk hdr = NodeKernel {
     , addUpstream   :: forall eCS eBF bytesCS bytesBF.
                        (Exception eCS, Exception eBF)
                     => up
-                    -> NodeComms m (ChainSync hdr (Point hdr)) eCS bytesCS
-                    -> NodeComms m (BlockFetch blk)            eBF bytesBF
+                    -> NodeComms m (ChainSync (Header blk) (Point blk)) eCS bytesCS
+                    -> NodeComms m (BlockFetch blk)                     eBF bytesBF
                     -> m ()
 
       -- | Notify network layer of a new downstream node
@@ -133,8 +135,8 @@ data NodeKernel m up blk hdr = NodeKernel {
       -- itself to register and deregister peers.
     , addDownstream :: forall eCS eBF bytesCS bytesBF.
                        (Exception eCS, Exception eBF)
-                    => NodeComms m (ChainSync hdr (Point hdr)) eCS bytesCS
-                    -> NodeComms m (BlockFetch blk)            eBF bytesBF
+                    => NodeComms m (ChainSync (Header blk) (Point blk)) eCS bytesCS
+                    -> NodeComms m (BlockFetch blk)                     eBF bytesBF
                     -> m ()
     }
 
@@ -171,38 +173,33 @@ data NodeCallbacks m blk = NodeCallbacks {
     }
 
 -- | Parameters required when initializing a node
-data NodeParams m up blk hdr = NodeParams {
+data NodeParams m up blk = NodeParams {
       tracer             :: Tracer m String
     , threadRegistry     :: ThreadRegistry m
     , maxClockSkew       :: ClockSkew
     , cfg                :: NodeConfig (BlockProtocol blk)
     , initState          :: NodeState (BlockProtocol blk)
     , btime              :: BlockchainTime m
-    , chainDB            :: ChainDB m blk hdr
+    , chainDB            :: ChainDB m blk (Header blk)
     , callbacks          :: NodeCallbacks m blk
-    , blockFetchSize     :: hdr -> SizeInBytes
-    , blockMatchesHeader :: hdr -> blk -> Bool
+    , blockFetchSize     :: Header blk -> SizeInBytes
+    , blockMatchesHeader :: Header blk -> blk -> Bool
     }
 
 nodeKernel
-    :: forall m up blk hdr.
+    :: forall m up blk.
        ( MonadAsync m
        , MonadFork  m
        , MonadMask  m
        , MonadTime  m
        , MonadThrow (STM m)
        , ProtocolLedgerView blk
-       , LedgerConfigView blk
-       , HasHeader hdr
-       , HeaderHash hdr ~ HeaderHash blk
-       , SupportedBlock (BlockProtocol hdr) hdr
-       , BlockProtocol hdr ~ BlockProtocol blk
        , Ord up
-       , TraceConstraints up blk hdr
+       , TraceConstraints up blk
        , ApplyTx blk
        )
-    => NodeParams m up blk hdr
-    -> m (NodeKernel m up blk hdr)
+    => NodeParams m up blk
+    -> m (NodeKernel m up blk)
 nodeKernel params@NodeParams { threadRegistry, cfg } = do
     st <- initInternalState params
 
@@ -231,43 +228,42 @@ nodeKernel params@NodeParams { threadRegistry, cfg } = do
 -------------------------------------------------------------------------------}
 
 -- | Constraints required to trace nodes, block, headers, etc.
-type TraceConstraints up blk hdr =
-  (Condense up, Condense blk, Condense hdr, Condense (ChainHash hdr))
+type TraceConstraints up blk =
+  ( Condense up
+  , Condense blk
+  , Condense (ChainHash blk)
+  , Condense (Header blk)
+  )
 
-data InternalState m up blk hdr = IS {
+data InternalState m up blk = IS {
       cfg                 :: NodeConfig (BlockProtocol blk)
     , threadRegistry      :: ThreadRegistry m
     , btime               :: BlockchainTime m
     , callbacks           :: NodeCallbacks m blk
-    , networkLayer        :: NetworkProvides m up blk hdr
-    , chainDB             :: ChainDB m blk hdr
-    , blockFetchInterface :: BlockFetchConsensusInterface up hdr blk m
-    , fetchClientRegistry :: FetchClientRegistry up hdr blk m
-    , varCandidates       :: TVar m (Map up (TVar m (CandidateState hdr)))
+    , networkLayer        :: NetworkProvides m up blk
+    , chainDB             :: ChainDB m blk (Header blk)
+    , blockFetchInterface :: BlockFetchConsensusInterface up (Header blk) blk m
+    , fetchClientRegistry :: FetchClientRegistry up (Header blk) blk m
+    , varCandidates       :: TVar m (Map up (TVar m (CandidateState blk)))
     , varState            :: TVar m (NodeState (BlockProtocol blk))
     , tracer              :: Tracer m String
     , mempool             :: Mempool m blk
     }
 
 initInternalState
-    :: forall m up blk hdr.
+    :: forall m up blk.
        ( MonadAsync m
        , MonadFork  m
        , MonadMask  m
        , MonadTime  m
        , MonadThrow (STM m)
-       , HasHeader hdr
-       , HeaderHash hdr ~ HeaderHash blk
        , ProtocolLedgerView blk
-       , LedgerConfigView blk
-       , SupportedBlock (BlockProtocol hdr) hdr
-       , BlockProtocol hdr ~ BlockProtocol blk
        , Ord up
-       , TraceConstraints up blk hdr
+       , TraceConstraints up blk
        , ApplyTx blk
        )
-    => NodeParams m up blk hdr
-    -> m (InternalState m up blk hdr)
+    => NodeParams m up blk
+    -> m (InternalState m up blk)
 initInternalState NodeParams {..} = do
     varCandidates  <- atomically $ newTVar mempty
     varState       <- atomically $ newTVar initState
@@ -275,16 +271,16 @@ initInternalState NodeParams {..} = do
 
     fetchClientRegistry <- newFetchClientRegistry
 
-    let getCandidates :: STM m (Map up (AnchoredFragment hdr))
+    let getCandidates :: STM m (Map up (AnchoredFragment (Header blk)))
         getCandidates = readTVar varCandidates >>=
                         traverse (fmap candidateChain . readTVar)
 
-        blockFetchInterface :: BlockFetchConsensusInterface up hdr blk m
+        blockFetchInterface :: BlockFetchConsensusInterface up (Header blk) blk m
         blockFetchInterface = initBlockFetchConsensusInterface
           (tracePrefix "ChainDB" Nothing)
           cfg chainDB getCandidates blockFetchSize blockMatchesHeader btime
 
-        nrChainSyncClient :: up -> Consensus ChainSyncClient hdr m
+        nrChainSyncClient :: up -> Consensus ChainSyncClient blk m
         nrChainSyncClient up = chainSyncClient
           (tracePrefix "CSClient" (Just up))
           cfg
@@ -295,11 +291,11 @@ initInternalState NodeParams {..} = do
           varCandidates
           up
 
-        nrChainSyncServer :: ChainSyncServer hdr (Point hdr) m ()
+        nrChainSyncServer :: ChainSyncServer (Header blk) (Point blk) m ()
         nrChainSyncServer =
           chainSyncServer (tracePrefix "CSServer" Nothing) chainDB
 
-        nrBlockFetchClient :: BlockFetchClient hdr blk m ()
+        nrBlockFetchClient :: BlockFetchClient (Header blk) blk m ()
         nrBlockFetchClient = blockFetchClient
           -- Note the tracer for the changes in the fetch client state
           -- is passed to the blockFetchLogic.
@@ -311,10 +307,10 @@ initInternalState NodeParams {..} = do
 
         nrFetchClientRegistry = fetchClientRegistry
 
-        networkRequires :: NetworkRequires m up blk hdr
+        networkRequires :: NetworkRequires m up blk
         networkRequires = NetworkRequires {..}
 
-        networkLayer :: NetworkProvides m up blk hdr
+        networkLayer :: NetworkProvides m up blk
         networkLayer = initNetworkLayer
           (contramap ("BlockFetch | " <>) tracer)
           threadRegistry
@@ -327,29 +323,27 @@ initInternalState NodeParams {..} = do
       let prefix = p <> maybe "" ((" " <>) . condense) mbUp <> " | "
       in contramap (prefix <>) tracer
 
-
 initBlockFetchConsensusInterface
-    :: forall m up blk hdr.
+    :: forall m up blk.
        ( MonadSTM m
-       , OuroborosTag (BlockProtocol blk)
-       , HasHeader hdr
-       , TraceConstraints up blk hdr
+       , TraceConstraints up blk
+       , SupportedBlock blk
        )
     => Tracer m String
     -> NodeConfig (BlockProtocol blk)
-    -> ChainDB m blk hdr
-    -> STM m (Map up (AnchoredFragment hdr))
-    -> (hdr -> SizeInBytes)
-    -> (hdr -> blk -> Bool)
+    -> ChainDB m blk (Header blk)
+    -> STM m (Map up (AnchoredFragment (Header blk)))
+    -> (Header blk -> SizeInBytes)
+    -> (Header blk -> blk -> Bool)
     -> BlockchainTime m
-    -> BlockFetchConsensusInterface up hdr blk m
+    -> BlockFetchConsensusInterface up (Header blk) blk m
 initBlockFetchConsensusInterface tracer cfg chainDB getCandidates blockFetchSize
     blockMatchesHeader btime = BlockFetchConsensusInterface {..}
   where
-    readCandidateChains :: STM m (Map up (AnchoredFragment hdr))
+    readCandidateChains :: STM m (Map up (AnchoredFragment (Header blk)))
     readCandidateChains = getCandidates
 
-    readCurrentChain :: STM m (AnchoredFragment hdr)
+    readCurrentChain :: STM m (AnchoredFragment (Header blk))
     readCurrentChain = ChainDB.getCurrentChain chainDB
 
     readFetchMode :: STM m FetchMode
@@ -376,25 +370,23 @@ initBlockFetchConsensusInterface tracer cfg chainDB getCandidates blockFetchSize
       ChainDB.addBlock chainDB blk
       traceWith tracer $ "Downloaded block: " <> condense blk
 
-    plausibleCandidateChain :: AnchoredFragment hdr
-                            -> AnchoredFragment hdr
+    plausibleCandidateChain :: AnchoredFragment (Header blk)
+                            -> AnchoredFragment (Header blk)
                             -> Bool
     plausibleCandidateChain = preferCandidate cfg
 
-    compareCandidateChains :: AnchoredFragment hdr
-                           -> AnchoredFragment hdr
+    compareCandidateChains :: AnchoredFragment (Header blk)
+                           -> AnchoredFragment (Header blk)
                            -> Ordering
     compareCandidateChains = compareCandidates cfg
 
 forkBlockProduction
-    :: forall m up blk hdr.
+    :: forall m up blk.
        ( MonadAsync m
        , ProtocolLedgerView blk
-       , HasHeader hdr
-       , HeaderHash hdr ~ HeaderHash blk
-       , TraceConstraints up blk hdr
+       , TraceConstraints up blk
        )
-    => InternalState m up blk hdr -> m ()
+    => InternalState m up blk -> m ()
 forkBlockProduction IS{..} =
     onSlotChange btime $ \currentSlot -> do
       drg  <- produceDRG
@@ -438,19 +430,19 @@ forkBlockProduction IS{..} =
     -- another node was also elected leader and managed to produce a block
     -- before us, the header right before the one at the tip of the chain.
     prevPointAndBlockNo :: SlotNo
-                        -> AnchoredFragment hdr
-                        -> (Point hdr, BlockNo)
+                        -> AnchoredFragment (Header blk)
+                        -> (Point blk, BlockNo)
     prevPointAndBlockNo slot c = case c of
         Empty _   -> (Chain.genesisPoint, Chain.genesisBlockNo)
         c' :> hdr -> case blockSlot hdr `compare` slot of
-          LT -> (blockPoint hdr, blockNo hdr)
+          LT -> (headerPoint hdr, blockNo hdr)
           -- The block at the tip of our chain has a slot that lies in the
           -- future.
           GT -> error "prevPointAndBlockNo: block in future"
           -- The block at the tip has the same slot as the block we're going
           -- to produce (@slot@), so look at the block before it.
           EQ | _ :> hdr' <- c'
-             -> (blockPoint hdr', blockNo hdr')
+             -> (headerPoint hdr', blockNo hdr')
              | otherwise
                -- If there is no block before it, so use genesis.
              -> (Chain.genesisPoint, Chain.genesisBlockNo)
@@ -464,23 +456,23 @@ forkBlockProduction IS{..} =
   New network layer
 -------------------------------------------------------------------------------}
 
-data NetworkRequires m up blk hdr = NetworkRequires {
+data NetworkRequires m up blk = NetworkRequires {
       -- | Start a chain sync client that communicates with the given upstream
       -- node.
-      nrChainSyncClient     :: up -> ChainSyncClient hdr (Point hdr) m Void
+      nrChainSyncClient     :: up -> ChainSyncClient (Header blk) (Point blk) m Void
 
       -- | Start a chain sync server.
-    , nrChainSyncServer     :: ChainSyncServer hdr (Point hdr) m ()
+    , nrChainSyncServer     :: ChainSyncServer (Header blk) (Point blk) m ()
 
       -- | Start a block fetch client that communicates with the given
       -- upstream node.
-    , nrBlockFetchClient    :: BlockFetchClient hdr blk m ()
+    , nrBlockFetchClient    :: BlockFetchClient (Header blk) blk m ()
 
       -- | Start a block fetch server server.
     , nrBlockFetchServer    :: BlockFetchServer blk m ()
 
       -- | The fetch client registry, used by the block fetch client.
-    , nrFetchClientRegistry :: FetchClientRegistry up hdr blk m
+    , nrFetchClientRegistry :: FetchClientRegistry up (Header blk) blk m
     }
 
 -- | Required by the network layer to initiate comms to a new node
@@ -496,7 +488,7 @@ data NodeComms m ps e bytes = NodeComms {
 
 -- TODO something nicer than eCS, eBF, bytesCS, and bytesBF. Mux them over one
 -- channel.
-data NetworkProvides m up blk hdr = NetworkProvides {
+data NetworkProvides m up blk = NetworkProvides {
       -- | Notify network layer of new upstream node
       --
       -- NOTE: Eventually it will be the responsibility of the network layer
@@ -504,9 +496,9 @@ data NetworkProvides m up blk hdr = NetworkProvides {
       npAddUpstream   :: forall eCS eBF bytesCS bytesBF.
                          (Exception eCS, Exception eBF)
                       => up
-                      -> NodeComms m (ChainSync hdr (Point hdr)) eCS bytesCS
+                      -> NodeComms m (ChainSync (Header blk) (Point blk)) eCS bytesCS
                          -- Communication for the Chain Sync protocol
-                      -> NodeComms m (BlockFetch blk) eBF bytesBF
+                      -> NodeComms m (BlockFetch blk)                     eBF bytesBF
                          -- Communication for the Block Fetch protocol
                       -> m ()
 
@@ -516,15 +508,15 @@ data NetworkProvides m up blk hdr = NetworkProvides {
       -- itself to register and deregister peers.p
     , npAddDownstream :: forall eCS eBF bytesCS bytesBF.
                          (Exception eCS, Exception eBF)
-                      => NodeComms m (ChainSync hdr (Point hdr)) eCS bytesCS
+                      => NodeComms m (ChainSync (Header blk) (Point blk)) eCS bytesCS
                          -- Communication for the Chain Sync protocol
-                      -> NodeComms m (BlockFetch blk) eBF bytesBF
+                      -> NodeComms m (BlockFetch blk)                     eBF bytesBF
                          -- Communication for the Block Fetch protocol
                       -> m ()
     }
 
 initNetworkLayer
-    :: forall m up hdr blk.
+    :: forall m up blk.
        ( MonadSTM   m
        , MonadAsync m
        , MonadFork  m
@@ -534,13 +526,13 @@ initNetworkLayer
        )
     => Tracer m String
     -> ThreadRegistry m
-    -> NetworkRequires m up blk hdr
-    -> NetworkProvides m up blk hdr
+    -> NetworkRequires m up blk
+    -> NetworkProvides m up blk
 initNetworkLayer _tracer registry NetworkRequires{..} = NetworkProvides {..}
   where
     npAddDownstream :: (Exception eCS, Exception eBF)
-                    => NodeComms m (ChainSync hdr (Point hdr)) eCS bytesCS
-                    -> NodeComms m (BlockFetch blk)            eBF bytesBF
+                    => NodeComms m (ChainSync (Header blk) (Point blk)) eCS bytesCS
+                    -> NodeComms m (BlockFetch blk)                     eBF bytesBF
                     -> m ()
     npAddDownstream ncCS ncBF = do
       -- TODO use subregistry here?
@@ -555,8 +547,8 @@ initNetworkLayer _tracer registry NetworkRequires{..} = NetworkProvides {..}
 
     npAddUpstream :: (Exception eCS, Exception eBF)
                   => up
-                  -> NodeComms m (ChainSync hdr (Point hdr)) eCS bytesCS
-                  -> NodeComms m (BlockFetch blk)            eBF bytesBF
+                  -> NodeComms m (ChainSync (Header blk) (Point blk)) eCS bytesCS
+                  -> NodeComms m (BlockFetch blk)                     eBF bytesBF
                   -> m ()
     npAddUpstream up ncCS ncBF = do
       -- TODO use subregistry here?

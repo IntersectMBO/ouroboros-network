@@ -74,43 +74,38 @@ type DemoRealPBFT       = ExtNodeConfig ByronDemoConfig (PBft PBftCardanoCrypto)
 -------------------------------------------------------------------------------}
 
 -- | Consensus protocol to use
-data DemoProtocol blk hdr where
+data DemoProtocol blk where
   -- | Run BFT against the mock ledger
   DemoBFT
     :: SecurityParam
-    -> DemoProtocol (SimpleBftBlock  SimpleMockCrypto BftMockCrypto)
-                    (SimpleBftHeader SimpleMockCrypto BftMockCrypto)
+    -> DemoProtocol (SimpleBftBlock SimpleMockCrypto BftMockCrypto)
 
   -- | Run Praos against the mock ledger
   DemoPraos
     :: PraosParams
-    -> DemoProtocol (SimplePraosBlock  SimpleMockCrypto PraosMockCrypto)
-                    (SimplePraosHeader SimpleMockCrypto PraosMockCrypto)
+    -> DemoProtocol (SimplePraosBlock SimpleMockCrypto PraosMockCrypto)
 
   -- | Run Praos against the mock ledger but with an explicit leader schedule
   DemoLeaderSchedule
     :: PraosParams
     -> LeaderSchedule
-    -> DemoProtocol (SimplePraosRuleBlock  SimpleMockCrypto)
-                    (SimplePraosRuleHeader SimpleMockCrypto)
+    -> DemoProtocol (SimplePraosRuleBlock SimpleMockCrypto)
 
   -- | Run PBFT against the mock ledger
   DemoMockPBFT
     :: PBftParams
-    -> DemoProtocol (SimplePBftBlock  SimpleMockCrypto PBftMockCrypto)
-                    (SimplePBftHeader SimpleMockCrypto PBftMockCrypto)
+    -> DemoProtocol (SimplePBftBlock SimpleMockCrypto PBftMockCrypto)
 
   -- | Run PBFT against the real ledger
   DemoRealPBFT
     :: PBftParams
     -> Cardano.Genesis.Config
-    -> DemoProtocol (ByronBlock  ByronDemoConfig)
-                    (ByronHeader ByronDemoConfig)
+    -> DemoProtocol (ByronBlock ByronDemoConfig)
 
 -- | Info needed to run the selected protocol
 protocolInfo :: NumCoreNodes
              -> CoreNodeId
-             -> DemoProtocol blk hdr
+             -> DemoProtocol blk
              -> ProtocolInfo blk
 protocolInfo nodes nid demoProtocol =
     case demoProtocol of
@@ -154,7 +149,7 @@ enumCoreNodes (NumCoreNodes numNodes) = [ CoreNodeId n
   Evidence that we can run all the supported demos
 -------------------------------------------------------------------------------}
 
-runDemo :: DemoProtocol blk hdr -> Dict (RunDemo blk hdr)
+runDemo :: DemoProtocol blk -> Dict (RunDemo blk)
 runDemo DemoBFT{}            = Dict
 runDemo DemoPraos{}          = Dict
 runDemo DemoLeaderSchedule{} = Dict

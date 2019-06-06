@@ -17,6 +17,7 @@ import qualified Ouroboros.Network.Block as Block
 import qualified Ouroboros.Network.ChainProducerState as CPS
 
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util ((..:), (.:))
 import           Ouroboros.Consensus.Util.STM (blockUntilJust)
@@ -30,7 +31,6 @@ openDB :: forall m blk hdr.
           , HasHeader hdr
           , HeaderHash blk ~ HeaderHash hdr
           , ProtocolLedgerView blk
-          , LedgerConfigView blk
           )
        => NodeConfig (BlockProtocol blk)
        -> ExtLedgerState blk

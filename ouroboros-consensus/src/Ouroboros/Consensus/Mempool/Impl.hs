@@ -13,12 +13,13 @@ import qualified Data.Sequence as Seq
 
 import           Control.Monad.Class.MonadSTM
 
-import           Ouroboros.Network.Block (ChainHash, StandardHash)
+import           Ouroboros.Network.Block (ChainHash)
 import qualified Ouroboros.Network.Block as Block
 
 import           Ouroboros.Storage.ChainDB.API
 
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Util (repeatedly)
 
@@ -26,7 +27,7 @@ import           Ouroboros.Consensus.Util (repeatedly)
   Top-level API
 -------------------------------------------------------------------------------}
 
-openMempool :: (MonadSTM m, StandardHash blk, ApplyTx blk)
+openMempool :: (MonadSTM m, ApplyTx blk)
             => ChainDB m blk hdr
             -> LedgerConfig blk
             -> m (Mempool m blk)
@@ -72,7 +73,7 @@ initMempoolEnv chainDB cfg = do
 -------------------------------------------------------------------------------}
 
 -- TODO: This may return some transactions as invalid that aren't new. Remove?
-implAddTxs :: forall m blk hdr. (MonadSTM m, StandardHash blk, ApplyTx blk)
+implAddTxs :: forall m blk hdr. (MonadSTM m, ApplyTx blk)
            => MempoolEnv m blk hdr
            -> [GenTx blk]
            -> m [(GenTx blk, ApplyTxErr blk)]
@@ -86,7 +87,7 @@ implAddTxs mpEnv@MempoolEnv{..} txs = atomically $ do
     validateNew :: ValidationResult blk ->  ValidationResult blk
     validateNew = extendsVR mpEnvLedgerCfg False txs
 
-implGetTxs :: (MonadSTM m, StandardHash blk, ApplyTx blk)
+implGetTxs :: (MonadSTM m, ApplyTx blk)
            => MempoolEnv m blk hdr
            -> STM m (Seq (GenTx blk ))
 implGetTxs mpEnv@MempoolEnv{..} = do
@@ -176,7 +177,7 @@ extendsVR :: ApplyTx blk
 extendsVR cfg prevApplied = repeatedly (extendVR cfg prevApplied)
 
 -- | Validate internal state
-validateIS :: forall m blk hdr. (MonadSTM m, StandardHash blk, ApplyTx blk)
+validateIS :: forall m blk hdr. (MonadSTM m, ApplyTx blk)
            => MempoolEnv m blk hdr -> STM m (ValidationResult blk)
 validateIS MempoolEnv{..} =
     go <$> (Block.pointHash <$> getTipPoint      mpEnvChainDB)

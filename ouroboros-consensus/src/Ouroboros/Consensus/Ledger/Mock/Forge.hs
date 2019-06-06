@@ -36,7 +36,7 @@ forgeSimple :: forall p c m ext.
             => NodeConfig p
             -> SlotNo                         -- ^ Current slot
             -> BlockNo                        -- ^ Current block number
-            -> ChainHash (SimpleHeader c ext) -- ^ Previous hash
+            -> ChainHash (SimpleBlock c ext)  -- ^ Previous hash
             -> [GenTx (SimpleBlock c ext)]    -- ^ Txs to add in the block
             -> IsLeader p                     -- ^ Proof we are slot leader
             -> m (SimpleBlock c ext)

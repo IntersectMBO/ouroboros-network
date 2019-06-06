@@ -23,7 +23,7 @@ module Ouroboros.Consensus.Protocol.Praos (
   , PraosCrypto(..)
   , PraosStandardCrypto
   , PraosMockCrypto
-  , BlockSupportsPraos(..)
+  , HeaderSupportsPraos(..)
     -- * Type instances
   , NodeConfig(..)
 --  , Payload(..)
@@ -84,11 +84,11 @@ data PraosExtraFields c = PraosExtraFields {
     , praosY         :: CertifiedVRF (PraosVRF c) (HList [Natural, SlotNo, VRFType])
     }
 
-class ( HasHeader b
-      , SignedBlock b
-      , Signable (PraosKES c) (Signed b)
-      ) => BlockSupportsPraos c b where
-  blockPraosFields :: proxy (Praos c) -> b -> PraosFields c (Signed b)
+class ( HasHeader hdr
+      , SignedHeader hdr
+      , Signable (PraosKES c) (Signed hdr)
+      ) => HeaderSupportsPraos c hdr where
+  headerPraosFields :: proxy (Praos c) -> hdr -> PraosFields c (Signed hdr)
 
 forgePraosFields :: ( HasNodeState (Praos c) m
                     , MonadRandom m
@@ -192,12 +192,12 @@ instance PraosCrypto c => OuroborosTag (Praos c) where
 
   protocolSecurityParam = praosSecurityParam . praosParams
 
-  type NodeState      (Praos c) = SignKeyKES (PraosKES c)
-  type LedgerView     (Praos c) = StakeDist
-  type IsLeader       (Praos c) = PraosProof c
-  type ValidationErr  (Praos c) = PraosValidationError c
-  type SupportedBlock (Praos c) = BlockSupportsPraos c
-  type ChainState     (Praos c) = [BlockInfo c]
+  type NodeState       (Praos c) = SignKeyKES (PraosKES c)
+  type LedgerView      (Praos c) = StakeDist
+  type IsLeader        (Praos c) = PraosProof c
+  type ValidationErr   (Praos c) = PraosValidationError c
+  type SupportedHeader (Praos c) = HeaderSupportsPraos c
+  type ChainState      (Praos c) = [BlockInfo c]
 
   checkIsLeader cfg@PraosNodeConfig{..} slot _u cs =
     case praosNodeId of
@@ -216,9 +216,9 @@ instance PraosCrypto c => OuroborosTag (Praos c) where
               else Nothing
 
   applyChainState cfg@PraosNodeConfig{..} sd b cs = do
-    let PraosFields{..}      = blockPraosFields cfg b
+    let PraosFields{..}      = headerPraosFields cfg b
         PraosExtraFields{..} = praosExtraFields
-        toSign               = blockSigned b
+        toSign               = headerSigned b
         slot                 = blockSlot b
         CoreNodeId nid       = praosCreator
 

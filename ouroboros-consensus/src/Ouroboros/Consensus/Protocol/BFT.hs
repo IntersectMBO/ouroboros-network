@@ -20,7 +20,7 @@ module Ouroboros.Consensus.Protocol.BFT (
   , BftCrypto(..)
   , BftStandardCrypto
   , BftMockCrypto
-  , BlockSupportsBft(..)
+  , HeaderSupportsBft(..)
     -- * Type instances
   , NodeConfig(..)
   ) where
@@ -55,11 +55,11 @@ data BftFields c toSign = BftFields {
 deriving instance BftCrypto c => Show (BftFields c toSIgn)
 deriving instance BftCrypto c => Eq   (BftFields c toSign)
 
-class ( HasHeader b
-      , SignedBlock b
-      , Signable (BftDSIGN c) (Signed b)
-      ) => BlockSupportsBft c b where
-  blockBftFields :: NodeConfig (Bft c) -> b -> BftFields c (Signed b)
+class ( HasHeader hdr
+      , SignedHeader hdr
+      , Signable (BftDSIGN c) (Signed hdr)
+      ) => HeaderSupportsBft c hdr where
+  headerBftFields :: NodeConfig (Bft c) -> hdr -> BftFields c (Signed hdr)
 
 forgeBftFields :: ( MonadRandom m
                   , BftCrypto c
@@ -110,12 +110,12 @@ instance BftCrypto c => OuroborosTag (Bft c) where
       , bftVerKeys  :: Map NodeId (VerKeyDSIGN (BftDSIGN c))
       }
 
-  type ValidationErr  (Bft c) = BftValidationErr
-  type SupportedBlock (Bft c) = BlockSupportsBft c
-  type NodeState      (Bft c) = ()
-  type LedgerView     (Bft c) = ()
-  type IsLeader       (Bft c) = ()
-  type ChainState     (Bft c) = ()
+  type ValidationErr   (Bft c) = BftValidationErr
+  type SupportedHeader (Bft c) = HeaderSupportsBft c
+  type NodeState       (Bft c) = ()
+  type LedgerView      (Bft c) = ()
+  type IsLeader        (Bft c) = ()
+  type ChainState      (Bft c) = ()
 
   protocolSecurityParam = bftSecurityParam . bftParams
 
@@ -134,13 +134,13 @@ instance BftCrypto c => OuroborosTag (Bft c) where
       case verifySignedDSIGN
            (encodeSigned proxy)
            (bftVerKeys Map.! expectedLeader)
-           (blockSigned b)
+           (headerSigned b)
            bftSignature of
         Right () -> return ()
         Left err -> throwError $ BftInvalidSignature err
     where
       BftParams{..}  = bftParams
-      BftFields{..}  = blockBftFields cfg b
+      BftFields{..}  = headerBftFields cfg b
       SlotNo n       = blockSlot b
       expectedLeader = CoreId $ fromIntegral (n `mod` bftNumNodes)
 

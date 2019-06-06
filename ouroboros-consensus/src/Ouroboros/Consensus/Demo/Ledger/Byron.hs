@@ -15,20 +15,18 @@ import           Control.Monad.Except
 import qualified Data.Bimap as Bimap
 import           Data.Coerce
 import           Data.Maybe (fromJust)
-import           Data.Reflection (Given (..))
 import qualified Data.Sequence as Seq
 
 import qualified Cardano.Chain.Block as Cardano.Block
 import qualified Cardano.Chain.Genesis as Cardano.Genesis
-import qualified Cardano.Chain.Slotting as Cardano.Slot
 import qualified Cardano.Chain.Update as Cardano.Update
 import qualified Cardano.Crypto as Cardano
 import qualified Cardano.Crypto.Signing as Cardano.KeyGen
 
 import           Ouroboros.Consensus.Crypto.DSIGN
 import           Ouroboros.Consensus.Demo.Run
-import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Byron
+import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Node (CoreNodeId (..), NodeId (..))
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.PBFT
@@ -104,26 +102,12 @@ instance DemoHeaderHash Cardano.Block.HeaderHash where
   demoEncodeHeaderHash = encodeByronHeaderHash
   demoDecodeHeaderHash = decodeByronHeaderHash
 
-instance ( Given Cardano.Block.HeaderHash
-         , Given Cardano.Slot.EpochSlots
-         ) => DemoHeader (ByronHeader ByronDemoConfig) where
-  demoEncodeHeader   = encodeByronHeader . pbftEpochSlots . encNodeConfigExt
-  demoDecodeHeader   = decodeByronHeader . pbftEpochSlots . encNodeConfigExt
-  demoBlockFetchSize = const 2000 -- TODO #593
-
-instance ( Given Cardano.Block.HeaderHash
-         , Given Cardano.ProtocolMagicId
-         , Given Cardano.Slot.EpochSlots
-         ) => DemoBlock (ByronBlock ByronDemoConfig) where
-  demoEncodeBlock = encodeByronBlock . pbftEpochSlots . encNodeConfigExt
-  demoDecodeBlock = decodeByronBlock . pbftEpochSlots . encNodeConfigExt
-  demoMockTx      = elaborateTx
-
-instance ( Given Cardano.Block.HeaderHash
-         , Given Cardano.ProtocolMagicId
-         , Given Cardano.Slot.EpochSlots
-         ) => RunDemo (ByronBlock  ByronDemoConfig)
-                      (ByronHeader ByronDemoConfig) where
+instance ByronGiven => RunDemo (ByronBlock ByronDemoConfig) where
   demoForgeBlock         = forgeBlock
-  demoGetHeader          = byronHeader
   demoBlockMatchesHeader = \_hdr _blk -> True -- TODO #595
+  demoBlockFetchSize     = const 2000 -- TODO #593
+  demoEncodeBlock        = encodeByronBlock  . pbftEpochSlots . encNodeConfigExt
+  demoEncodeHeader       = encodeByronHeader . pbftEpochSlots . encNodeConfigExt
+  demoDecodeBlock        = decodeByronBlock  . pbftEpochSlots . encNodeConfigExt
+  demoDecodeHeader       = decodeByronHeader . pbftEpochSlots . encNodeConfigExt
+  demoMockTx             = elaborateTx

@@ -47,6 +47,7 @@ import qualified Ouroboros.Network.Chain as Chain
 import qualified Ouroboros.Network.ChainProducerState as CPS
 
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util (repeatedly)
 
@@ -116,7 +117,7 @@ empty initLedger = Model {
     , iterators     = Map.empty
     }
 
-addBlock :: forall blk. (ProtocolLedgerView blk, LedgerConfigView blk)
+addBlock :: forall blk. ProtocolLedgerView blk
          => NodeConfig (BlockProtocol blk) -> blk -> Model blk -> Model blk
 addBlock cfg blk m = Model {
       blocks        = blocks'
@@ -137,7 +138,7 @@ addBlock cfg blk m = Model {
     (newChain, newLedger) = fromMaybe (currentChain m, currentLedger m) $
                                selectChain cfg (currentChain m) candidates
 
-addBlocks :: forall blk. (ProtocolLedgerView blk, LedgerConfigView blk)
+addBlocks :: ProtocolLedgerView blk
           => NodeConfig (BlockProtocol blk) -> [blk] -> Model blk -> Model blk
 addBlocks cfg = repeatedly (addBlock cfg)
 
@@ -212,10 +213,7 @@ notGenesis p =
       GenesisHash -> error "Ouroboros.Storage.ChainDB.Model: notGenesis"
       BlockHash h -> h
 
-validate :: forall blk.
-           ( ProtocolLedgerView blk
-           , LedgerConfigView blk
-           )
+validate :: forall blk. ProtocolLedgerView blk
          => NodeConfig (BlockProtocol blk)
          -> ExtLedgerState blk
          -> Chain blk

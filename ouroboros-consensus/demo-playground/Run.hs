@@ -29,6 +29,7 @@ import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.Protocol.BlockFetch.Codec
 import           Ouroboros.Network.Protocol.ChainSync.Codec
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
 import           Ouroboros.Consensus.Demo
@@ -63,8 +64,8 @@ runNode cli@CLI{..} = do
 -- | Sets up a simple node, which will run the chain sync protocol and block
 -- fetch protocol, and, if core, will also look at the mempool when trying to
 -- create a new block.
-handleSimpleNode :: forall blk hdr. RunDemo blk hdr
-                 => DemoProtocol blk hdr -> CLI -> TopologyInfo -> IO ()
+handleSimpleNode :: forall blk. RunDemo blk
+                 => DemoProtocol blk -> CLI -> TopologyInfo -> IO ()
 handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
     putStrLn $ "System started at " <> show systemStart
     t@(NetworkTopology nodeSetups) <-
@@ -91,7 +92,7 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
                 let curNo :: BlockNo
                     curNo = succ prevBlockNo
 
-                    prevHash :: ChainHash hdr
+                    prevHash :: ChainHash blk
                     prevHash = castHash (pointHash prevPoint)
 
                  -- The transactions we get are consistent; the only reason not
@@ -105,10 +106,11 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
                                proof
           }
 
-      chainDB :: ChainDB IO blk hdr <- ChainDB.openDB
-                                         pInfoConfig
-                                         pInfoInitLedger
-                                         demoGetHeader
+      chainDB :: ChainDB IO blk (Header blk) <-
+        ChainDB.openDB
+          pInfoConfig
+          pInfoInitLedger
+          getHeader
 
       btime  <- realBlockchainTime registry slotDuration systemStart
       let tracer = contramap ((show myNodeId <> " | ") <>) stdoutTracer
@@ -144,7 +146,7 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
 
       watchChain :: ThreadRegistry IO
                  -> Tracer IO String
-                 -> ChainDB IO blk hdr
+                 -> ChainDB IO blk (Header blk)
                  -> IO ()
       watchChain registry tracer chainDB = onEachChange
           registry fingerprint initFingerprint
@@ -161,7 +163,7 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
       -- We therefore use the convention to distinguish between
       -- upstream and downstream from the perspective of the "lower numbered" node
       addUpstream' :: ProtocolInfo blk
-                   -> NodeKernel IO NodeId blk hdr
+                   -> NodeKernel IO NodeId blk
                    -> NodeId
                    -> IO ()
       addUpstream' pInfo@ProtocolInfo{..} kernel producerNodeId =
@@ -186,7 +188,7 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
             }
 
       addDownstream' :: ProtocolInfo blk
-                     -> NodeKernel IO NodeId blk hdr
+                     -> NodeKernel IO NodeId blk
                      -> NodeId
                      -> IO ()
       addDownstream' pInfo@ProtocolInfo{..} kernel consumerNodeId =
@@ -210,10 +212,10 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
             , ncWithChan = NamedPipe.withPipeChannel "block-fetch" direction
             }
 
-      encodePoint' :: ProtocolInfo blk -> Point hdr -> Encoding
+      encodePoint' :: ProtocolInfo blk -> Point blk -> Encoding
       encodePoint' ProtocolInfo{..} =
           Block.encodePoint $ Block.encodeChainHash demoEncodeHeaderHash
 
-      decodePoint' :: forall s. ProtocolInfo blk -> Decoder s (Point hdr)
+      decodePoint' :: forall s. ProtocolInfo blk -> Decoder s (Point blk)
       decodePoint' ProtocolInfo{..} =
           Block.decodePoint $ Block.decodeChainHash demoDecodeHeaderHash

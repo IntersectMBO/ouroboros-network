@@ -17,6 +17,7 @@ module Ouroboros.Consensus.Ledger.Mock.Block.BFT (
 import           Codec.Serialise (Serialise (..))
 import           GHC.Generics (Generic)
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Crypto.DSIGN
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Mock.Block
@@ -54,8 +55,6 @@ data SignedSimpleBft c c' = SignedSimpleBft {
 
 type instance BlockProtocol (SimpleBftBlock c c') =
   Bft c'
-type instance BlockProtocol (SimpleBftHeader c c') =
-  BlockProtocol (SimpleBftBlock c c')
 
 -- | Sanity check that block and header type synonyms agree
 _simpleBFtHeader :: SimpleBftBlock c c' -> SimpleBftHeader c c'
@@ -65,29 +64,17 @@ _simpleBFtHeader = simpleHeader
   Evidence that SimpleBlock can support BFT
 -------------------------------------------------------------------------------}
 
-instance SimpleCrypto c => SignedBlock (SimpleBftHeader c c') where
+instance SimpleCrypto c => SignedHeader (SimpleBftHeader c c') where
   type Signed (SimpleBftHeader c c') = SignedSimpleBft c c'
 
-  blockSigned  = SignedSimpleBft . simpleHeaderStd
-  encodeSigned = const encode
-
-instance SimpleCrypto c => SignedBlock (SimpleBftBlock c c') where
-  type Signed (SimpleBftBlock c c') = SignedSimpleBft c c'
-
-  blockSigned  = blockSigned . simpleHeader
+  headerSigned = SignedSimpleBft . simpleHeaderStd
   encodeSigned = const encode
 
 instance ( SimpleCrypto c
          , BftCrypto c'
          , Signable (BftDSIGN c') ~ Empty
-         ) => BlockSupportsBft c' (SimpleBftHeader c c') where
-  blockBftFields _ = simpleBftExt . simpleHeaderExt
-
-instance ( SimpleCrypto c
-         , BftCrypto c'
-         , Signable (BftDSIGN c') ~ Empty
-         ) => BlockSupportsBft c' (SimpleBftBlock c c') where
-  blockBftFields p = blockBftFields p . simpleHeader
+         ) => HeaderSupportsBft c' (SimpleBftHeader c c') where
+  headerBftFields _ = simpleBftExt . simpleHeaderExt
 
 instance ( SimpleCrypto c
          , BftCrypto c'
@@ -106,6 +93,11 @@ instance ( SimpleCrypto c
         }
     where
       SimpleHeader{..} = simpleHeader
+
+instance ( SimpleCrypto c
+         , BftCrypto c'
+         , Signable (BftDSIGN c') ~ Empty
+         ) => SupportedBlock (SimpleBftBlock c c')
 
 instance ( SimpleCrypto c
          , BftCrypto c'
