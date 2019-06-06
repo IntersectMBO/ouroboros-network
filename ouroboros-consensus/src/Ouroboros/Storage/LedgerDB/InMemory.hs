@@ -243,8 +243,6 @@ ledgerDbCurrent (Skip   _ _) = error "ledgerDbCurrent: not stored"
 ledgerDbCurrent (Tail _ cs)  = csLedger cs
 
 -- | Reference to the block at the tip of the chain
---
--- Returns 'Nothing' if genesis
 ledgerDbTip :: LedgerDB l r -> Tip r
 ledgerDbTip (Snap r _ _) = Tip r
 ledgerDbTip (Skip r   _) = Tip r
