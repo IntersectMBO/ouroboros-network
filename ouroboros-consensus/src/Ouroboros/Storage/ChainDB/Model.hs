@@ -237,6 +237,7 @@ validate cfg initLedger chain =
     . runExcept
     $ chainExtLedgerState cfg chain initLedger
   where
+    -- TODO remember the invalid blocks
     fromEither :: Either (ExtValidationError blk) (ExtLedgerState blk)
                -> Maybe (Chain blk, ExtLedgerState blk)
     fromEither (Left _err) = Nothing
