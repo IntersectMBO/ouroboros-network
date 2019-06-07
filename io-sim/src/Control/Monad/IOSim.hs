@@ -25,6 +25,10 @@ module Control.Monad.IOSim (
   TraceEvent(..),
   traceEvents,
   traceResult,
+  selectTraceEvents,
+  selectTraceEventsDynamic,
+  selectTraceEventsSay,
+  printTraceEventsSay,
   ) where
 
 import           Prelude hiding (read)
@@ -38,8 +42,9 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import           Data.Typeable (Typeable)
-import           Data.Dynamic (Dynamic, toDyn)
+import           Data.Dynamic (Dynamic, toDyn, fromDynamic)
 
+import           Control.Monad (mapM_)
 import           Control.Exception
                    ( Exception(..), SomeException
                    , ErrorCall(..), throw, assert
@@ -434,6 +439,49 @@ data TraceEvent
   | EventTimerCancelled TimeoutId
   | EventTimerExpired   TimeoutId
   deriving Show
+
+selectTraceEvents
+    :: (TraceEvent -> Maybe b)
+    -> Trace a
+    -> [b]
+selectTraceEvents fn = go
+  where
+    go (Trace _ _ ev trace) = case fn ev of
+      Just x  -> x : go trace
+      Nothing ->     go trace
+    go (TraceMainException _ e _) = throw (FailureException e)
+    go (TraceDeadlock      _   _) = throw FailureDeadlock
+    go (TraceMainReturn    _ _ _) = []
+
+-- | Select all the traced values matching the expected type. This relies on
+-- the sim's dynamic trace facility.
+--
+-- For convenience, this throws exceptions for abnormal sim termination.
+--
+selectTraceEventsDynamic :: forall a b. Typeable b => Trace a -> [b]
+selectTraceEventsDynamic = selectTraceEvents fn
+  where
+    fn :: TraceEvent -> Maybe b
+    fn (EventLog dyn) = fromDynamic dyn
+    fn _              = Nothing
+
+-- | Get a trace of 'EventSay'.
+--
+-- For convenience, this throws exceptions for abnormal sim termination.
+--
+selectTraceEventsSay :: Trace a -> [String]
+selectTraceEventsSay = selectTraceEvents fn
+  where
+    fn :: TraceEvent -> Maybe String
+    fn (EventSay s) = Just s
+    fn _            = Nothing
+
+-- | Print all 'EventSay' to the console.
+--
+-- For convenience, this throws exceptions for abnormal sim termination.
+--
+printTraceEventsSay :: Trace a -> IO ()
+printTraceEventsSay = mapM_ print . selectTraceEventsSay
 
 -- | Simulation termination with failure
 --
