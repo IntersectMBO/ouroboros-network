@@ -14,10 +14,8 @@ import           Data.Set (Set)
 import qualified Data.Map as Map
 import           Data.Map (Map)
 import           Data.Typeable (Typeable)
-import           Data.Dynamic (fromDynamic)
 import           Control.Monad.IOSim
 import           Control.Tracer (Tracer(Tracer), contramap)
-import           Control.Exception (throw)
 
 --TODO: could re-export some of the trace types from more convenient places:
 import           Ouroboros.Network.Block
@@ -70,7 +68,7 @@ tests = testGroup "BlockFetch"
 --
 prop_blockFetchStaticNoOverlap :: TestChainFork -> Property
 prop_blockFetchStaticNoOverlap (TestChainFork common fork1 fork2) =
-    let trace = selectTraceDynamic $
+    let trace = selectTraceEventsDynamic $
                 runSimTrace $
                   blockFetchExample1
                     (contramap TraceFetchDecision       dynamicTracer)
@@ -117,7 +115,7 @@ prop_blockFetchStaticNoOverlap (TestChainFork common fork1 fork2) =
 --
 prop_blockFetchStaticWithOverlap :: TestChainFork -> Property
 prop_blockFetchStaticWithOverlap (TestChainFork _common fork1 fork2) =
-    let trace = selectTraceDynamic $
+    let trace = selectTraceEventsDynamic $
                 runSimTrace $
                   blockFetchExample1
                     (contramap TraceFetchDecision       dynamicTracer)
@@ -350,20 +348,3 @@ tracePropertyClientStateSanity es =
 
 dynamicTracer :: Typeable a => Tracer (SimM s) a
 dynamicTracer = Tracer traceM
-
--- | Select all the traced values matching the expected type. This relies on
--- the sim's dynamic trace facility.
---
--- For convenience, this throws exceptions for abnormal sim termination.
---
-selectTraceDynamic :: Typeable b => Trace a -> [b]
-selectTraceDynamic = go
-  where
-    go (Trace _ _ (EventLog dyn) trace) = case fromDynamic dyn of
-                                            Just x  -> x : go trace
-                                            Nothing ->     go trace
-    go (Trace _ _ _              trace) = go trace
-    go (TraceMainException _ e _)       = throw (FailureException e)
-    go (TraceDeadlock      _   _)       = throw FailureDeadlock
-    go (TraceMainReturn    _ _ _)       = []
-
