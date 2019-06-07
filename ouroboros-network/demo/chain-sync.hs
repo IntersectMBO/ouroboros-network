@@ -152,7 +152,6 @@ clientPingPong pipelined =
     protocols :: DemoProtocol0 -> MuxPeer DeserialiseFailure IO ()
     protocols PingPong0 | pipelined =
       MuxPeerPipelined
-        10
         (contramap show stdoutTracer)
         codecPingPong
         (pingPongClientPeerPipelined (pingPongClientPipelinedMax 5))
@@ -412,7 +411,7 @@ clientBlockFetch sockAddrs = do
 
         protocols peerid BlockFetch3 channel =
           bracketFetchClient registry peerid $ \clientCtx ->
-            runPipelinedPeer 10
+            runPipelinedPeer
               nullTracer -- (contramap (show . TraceLabelPeer peerid) stdoutTracer)
               (codecBlockFetch CBOR.encode CBOR.encode CBOR.decode CBOR.decode)
               channel
