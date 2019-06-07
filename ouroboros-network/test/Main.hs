@@ -16,6 +16,7 @@ import qualified Ouroboros.Network.Protocol.BlockFetch.Test (tests)
 import qualified Ouroboros.Network.Protocol.PingPong.Test (tests)
 import qualified Ouroboros.Network.Protocol.ReqResp.Test (tests)
 import qualified Ouroboros.Network.Protocol.Handshake.Test (tests)
+import qualified Ouroboros.Network.Protocol.LocalTxSubmission.Test (tests)
 import qualified Test.Socket (tests)
 
 main :: IO ()
@@ -33,10 +34,11 @@ tests =
   , Test.ChainProducerState.tests
 
     -- protocols
-  , Ouroboros.Network.Protocol.ChainSync.Test.tests
-  , Ouroboros.Network.Protocol.BlockFetch.Test.tests
   , Ouroboros.Network.Protocol.PingPong.Test.tests
   , Ouroboros.Network.Protocol.ReqResp.Test.tests
+  , Ouroboros.Network.Protocol.ChainSync.Test.tests
+  , Ouroboros.Network.Protocol.BlockFetch.Test.tests
+  , Ouroboros.Network.Protocol.LocalTxSubmission.Test.tests
   , Ouroboros.Network.Protocol.Handshake.Test.tests
 
     -- network logic
