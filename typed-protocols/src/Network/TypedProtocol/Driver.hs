@@ -49,8 +49,6 @@ import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
 import Control.Tracer (Tracer (..), traceWith)
 
-import Numeric.Natural (Natural)
-
 
 -- $intro
 --
@@ -164,15 +162,14 @@ runPeer tr Codec{encode, decode} channel@Channel{send} =
 runPipelinedPeer
   :: forall ps (st :: ps) pr failure bytes m a.
      (MonadSTM m, MonadAsync m, MonadThrow m, Exception failure)
-  => Natural
-  -> Tracer m (TraceSendRecv ps)
+  => Tracer m (TraceSendRecv ps)
   -> Codec ps failure m bytes
   -> Channel m bytes
   -> PeerPipelined ps pr st m a
   -> m a
-runPipelinedPeer maxOutstanding tr codec channel (PeerPipelined peer) = do
-    receiveQueue <- atomically $ newTBQueue maxOutstanding
-    collectQueue <- atomically $ newTBQueue maxOutstanding
+runPipelinedPeer tr codec channel (PeerPipelined peer) = do
+    receiveQueue <- atomically newTQueue
+    collectQueue <- atomically newTQueue
     a <- runPipelinedPeerReceiverQueue tr receiveQueue collectQueue
                                           codec channel
            `withAsyncLoop`
@@ -244,8 +241,8 @@ runPipelinedPeerSender
   :: forall ps (st :: ps) pr failure bytes c m a.
      (MonadSTM m, MonadThrow m, Exception failure)
   => Tracer m (TraceSendRecv ps)
-  -> TBQueue m (ReceiveHandler bytes ps pr m c)
-  -> TBQueue m (c, Maybe bytes)
+  -> TQueue m (ReceiveHandler bytes ps pr m c)
+  -> TQueue m (c, Maybe bytes)
   -> Codec ps failure m bytes
   -> Channel m bytes
   -> PeerSender ps pr st Z c m a
@@ -279,19 +276,19 @@ runPipelinedPeerSender tr receiveQueue collectQueue
           throwM failure
 
     go n trailing (SenderPipeline stok msg receiver k) = do
-      atomically (writeTBQueue receiveQueue (ReceiveHandler trailing receiver))
+      atomically (writeTQueue receiveQueue (ReceiveHandler trailing receiver))
       traceWith tr (TraceSendMsg (AnyMessage msg))
       send (encode stok msg)
       go (Succ n) NoTrailing k
 
     go (Succ n) NoTrailing (SenderCollect Nothing k) = do
-      (c, trailing) <- atomically (readTBQueue collectQueue)
+      (c, trailing) <- atomically (readTQueue collectQueue)
       case n of
         Zero    -> go Zero      (MaybeTrailing trailing) (k c)
         Succ n' -> go (Succ n')  NoTrailing              (k c)
 
     go (Succ n) NoTrailing (SenderCollect (Just k') k) = do
-      mc <- atomically (tryReadTBQueue collectQueue)
+      mc <- atomically (tryReadTQueue collectQueue)
       case mc of
         Nothing  -> go (Succ n) NoTrailing  k'
         Just (c, trailing) ->
@@ -306,8 +303,8 @@ runPipelinedPeerReceiverQueue
   :: forall ps pr failure bytes m c.
      (MonadSTM m, MonadThrow m, Exception failure)
   => Tracer m (TraceSendRecv ps)
-  -> TBQueue m (ReceiveHandler bytes ps pr m c)
-  -> TBQueue m (c, Maybe bytes)
+  -> TQueue m (ReceiveHandler bytes ps pr m c)
+  -> TQueue m (c, Maybe bytes)
   -> Codec ps failure m bytes
   -> Channel m bytes
   -> m Void
@@ -317,12 +314,12 @@ runPipelinedPeerReceiverQueue tr receiveQueue collectQueue codec channel =
     go :: Maybe bytes -> m Void
     go receiverTrailing = do
       ReceiveHandler senderTrailing receiver
-        <- atomically (readTBQueue receiveQueue)
+        <- atomically (readTQueue receiveQueue)
       let trailing = case (senderTrailing, receiverTrailing) of
                        (MaybeTrailing t, _) -> t
                        (NoTrailing,      t) -> t
       (c, trailing') <- runPipelinedPeerReceiver tr codec channel trailing receiver
-      atomically (writeTBQueue collectQueue (c, trailing'))
+      atomically (writeTQueue collectQueue (c, trailing'))
       go trailing'
 
 
@@ -405,14 +402,13 @@ runConnectedPeersPipelined :: (MonadSTM m, MonadAsync m, MonadCatch m,
                            => m (Channel m bytes, Channel m bytes)
                            -> Tracer m (TraceSendRecv ps)
                            -> Codec ps failure m bytes
-                           -> Natural
                            -> PeerPipelined ps pr st m a
                            -> Peer          ps (FlipAgency pr) st m b
                            -> m (a, b)
-runConnectedPeersPipelined createChannels tr codec maxOutstanding client server =
+runConnectedPeersPipelined createChannels tr codec client server =
     createChannels >>= \(clientChannel, serverChannel) ->
 
-    runPipelinedPeer maxOutstanding tr codec clientChannel client
+    runPipelinedPeer tr codec clientChannel client
       `concurrently`
-    runPeer                         tr codec serverChannel server
+    runPeer          tr codec serverChannel server
 

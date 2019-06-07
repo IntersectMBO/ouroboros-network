@@ -192,7 +192,7 @@ runFetchClient :: (MonadCatch m, MonadAsync m, MonadST m, Ord peerid,
                 -> m a
 runFetchClient tracer registry peerid channel client =
     bracketFetchClient registry peerid $ \clientCtx ->
-      runPipelinedPeer 10 tracer codec channel $
+      runPipelinedPeer tracer codec channel $
         client clientCtx
   where
     codec = codecBlockFetch encode encode decode decode

@@ -534,9 +534,7 @@ initNetworkLayer _tracer registry NetworkRequires{..} = NetworkProvides {..}
       void $ forkLinked registry $ bfWithChan $ \chan ->
         bracketFetchClient nrFetchClientRegistry up $ \clientCtx -> do
           atomically $ putTMVar clientRegistered ()
-          -- TODO make 10 a parameter. Or encapsulate the pipelining
-          -- stuff
-          runPipelinedPeer 10 nullTracer bfCodec chan $
+          runPipelinedPeer nullTracer bfCodec chan $
             nrBlockFetchClient clientCtx
 
       -- The block fetch logic thread in the background wants there to be a

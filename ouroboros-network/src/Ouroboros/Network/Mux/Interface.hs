@@ -36,7 +36,6 @@ module Ouroboros.Network.Mux.Interface
 
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Functor (void)
-import           Numeric.Natural (Natural)
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadThrow ( MonadCatch
@@ -150,8 +149,7 @@ data MuxPeer failure m a where
             -> MuxPeer failure m a
 
     MuxPeerPipelined
-            :: Natural
-            -> Tracer m (TraceSendRecv ps)
+            :: Tracer m (TraceSendRecv ps)
             -> Codec ps failure m ByteString
             -> PeerPipelined ps pr st m a
             -> MuxPeer failure m a
@@ -169,8 +167,12 @@ runMuxPeer
   => MuxPeer failure m a
   -> Channel m ByteString
   -> m a
-runMuxPeer (MuxPeer tracer codec peer) channel = runPeer tracer codec channel peer
-runMuxPeer (MuxPeerPipelined n tracer codec peer) channel = runPipelinedPeer n tracer codec channel peer
+runMuxPeer (MuxPeer tracer codec peer) channel =
+    runPeer tracer codec channel peer
+
+runMuxPeer (MuxPeerPipelined tracer codec peer) channel =
+    runPipelinedPeer tracer codec channel peer
+
 
 -- |
 -- Smart constructor for @'MuxInitiatorApplication'@.  It is a simple client, since
