@@ -138,10 +138,12 @@ mux :: (MonadSTM m)
      => TVar m Int
      -> PerMuxSharedState ptcl m
      -> m ()
-mux cnt pmss = do
+mux cnt pmss = go
+  where
+  go = do
     w <- atomically $ readTBQueue $ tsrQueue pmss
     case w of
-         TLSRDemand mid md d -> processSingleWanton pmss mid md d cnt >> mux cnt pmss
+         TLSRDemand mid md d -> processSingleWanton pmss mid md d cnt >> go
 
 -- | Pull a `maxSDU`s worth of data out out the `Wanton` - if there is
 -- data remaining requeue the `TranslocationServiceRequest` (this
