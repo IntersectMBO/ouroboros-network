@@ -69,6 +69,7 @@ tests = testGroup "AnchoredFragment"
   , testProperty "pointOnFragment"                    prop_pointOnFragment
   , testProperty "selectPoints"                       prop_selectPoints
   , testProperty "splitAfterPoint"                    prop_splitAfterPoint
+  , testProperty "splitBeforePoint"                   prop_splitBeforePoint
   , testProperty "join"                               prop_join
   , testProperty "intersect"                          prop_intersect
   , testProperty "intersect when within bounds"       prop_intersect_bounds
@@ -207,6 +208,15 @@ prop_splitAfterPoint (TestAnchoredFragmentAndPoint c pt) =
       .&&. AF.headPoint   s === AF.headPoint c
       .&&. AF.join p s      === Just c
     Nothing -> property $ not $ AF.withinFragmentBounds pt c
+
+prop_splitBeforePoint :: TestAnchoredFragmentAndPoint -> Property
+prop_splitBeforePoint (TestAnchoredFragmentAndPoint c pt) =
+  case AF.splitBeforePoint c pt of
+    Just (p, s) ->
+         AF.pointOnFragment pt c
+      .&&. (blockPoint <$> AF.last s) === Right pt
+      .&&. AF.join p s                === Just c
+    Nothing -> property $ not $ AF.pointOnFragment pt c
 
 prop_join :: TestJoinableAnchoredFragments -> Property
 prop_join t@(TestJoinableAnchoredFragments c1 c2) = case AF.join c1 c2 of

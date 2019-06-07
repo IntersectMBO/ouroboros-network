@@ -54,6 +54,7 @@ module Ouroboros.Network.AnchoredFragment (
   selectPoints,
   isPrefixOf,
   splitAfterPoint,
+  splitBeforePoint,
   join,
   intersect,
   intersectionPoint,
@@ -71,6 +72,7 @@ module Ouroboros.Network.AnchoredFragment (
 import           Prelude hiding (head, last, length, null)
 
 import           Control.Exception (assert)
+import           Data.Functor ((<&>))
 import           Data.List (find)
 import           Data.Word (Word64)
 import           GHC.Stack
@@ -471,6 +473,30 @@ splitAfterPoint c pt = case CF.splitAfterPoint (unanchorFragment c) pt of
      -> Just (mkAnchoredFragment (anchorPoint c) CF.Empty, c)
      | otherwise
      -> Nothing
+
+-- | \( O(\log(\min(i,n-i)) \). Split the 'AnchoredFragment' before the given
+--  'Point'. Return 'Nothing' if given 'Point' is not on the fragment
+--  ('pointOnFragment').
+--
+-- This means that 'Nothing' is returned if the given 'Point' is the anchor
+-- point of the fragment.
+--
+-- POSTCONDITION: joining ('join') the two fragments gives back the original
+-- fragment.
+--
+-- POSTCONDITION: the last block (oldest) on the second fragment corresponds
+-- to the given point.
+splitBeforePoint
+   :: forall block1 block2.
+      (HasHeader block1, HasHeader block2, HeaderHash block1 ~ HeaderHash block2)
+   => AnchoredFragment block1
+   -> Point block2
+   -> Maybe (AnchoredFragment block1, AnchoredFragment block1)
+splitBeforePoint (AnchoredFragment ap cf) pt =
+    CF.splitBeforePoint cf pt <&> \(cp, cs) ->
+      let before = mkAnchoredFragment ap                 cp
+          after  = mkAnchoredFragment (headPoint before) cs
+      in (before, after)
 
 -- | \( O(\log(\min(n_1, n_2))) \). Join two anchored fragments if the anchor
 -- of the second fragment is the head (newest block) of the first fragment.
