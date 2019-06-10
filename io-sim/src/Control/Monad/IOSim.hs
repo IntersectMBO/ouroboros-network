@@ -11,7 +11,9 @@
 {-# OPTIONS_GHC -Wno-orphans            #-}
 
 module Control.Monad.IOSim (
+  -- * Simulation monad
   SimM,
+  -- ** Run simulation
   runSim,
   runSimOrThrow,
   runSimStrictShutdown,
@@ -20,7 +22,9 @@ module Control.Monad.IOSim (
   runSimTraceST,
   liftST,
   traceM,
+  -- * Simulation time
   VTime(..),
+  -- * Simulation trace
   Trace(..),
   TraceEvent(..),
   traceEvents,
