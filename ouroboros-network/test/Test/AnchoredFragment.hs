@@ -147,7 +147,7 @@ prop_dropWhileNewest p (TestBlockAnchoredFragment chain) =
 prop_addBlock :: TestAddBlock -> Bool
 prop_addBlock (TestAddBlock c b) =
     -- after adding a block, that block is at the head
-    curHead == AF.blockPoint b
+    curHead == Point (AF.blockPoint b)
     -- chain is still valid
     && AF.valid c'
     -- removing the block gives the original
@@ -162,13 +162,13 @@ prop_addBlock (TestAddBlock c b) =
 
 prop_rollback :: TestAnchoredFragmentAndPoint -> Bool
 prop_rollback (TestAnchoredFragmentAndPoint c p) =
-    case AF.rollback p c of
-      Nothing -> not (AF.withinFragmentBounds p c)
+    case AF.rollback (Point p) c of
+      Nothing -> not (AF.withinFragmentBounds (Point p) c)
       Just c' ->
         -- chain is a prefix of original
            AF.isPrefixOf c' c
         -- chain head point is the rollback point
-        && AF.headPoint c' == p
+        && AF.headPoint c' == Point p
 
 prop_rollback_head :: TestBlockAnchoredFragment -> Bool
 prop_rollback_head (TestBlockAnchoredFragment c) =
@@ -176,23 +176,23 @@ prop_rollback_head (TestBlockAnchoredFragment c) =
 
 prop_successorBlock :: TestAnchoredFragmentAndPoint -> Property
 prop_successorBlock (TestAnchoredFragmentAndPoint c p) =
-  AF.withinFragmentBounds p c ==>
-  case AF.successorBlock p c of
-    Nothing -> AF.headPoint c === p
-    Just b  -> property $ AF.withinFragmentBounds (AF.blockPoint b) c
-          .&&. blockPrevHash b === pointHash p
+  AF.withinFragmentBounds (Point p) c ==>
+  case AF.successorBlock (Point p) c of
+    Nothing -> AF.headPoint c === Point p
+    Just b  -> property $ AF.withinFragmentBounds (Point (AF.blockPoint b)) c
+          .&&. blockPrevHash b === BlockHash (pointHash p)
 
 prop_pointOnFragment :: TestAnchoredFragmentAndPoint -> Bool
 prop_pointOnFragment (TestAnchoredFragmentAndPoint c p) =
-    AF.pointOnFragment p c == spec
+    AF.pointOnFragment (Point p) c == spec
   where
     spec = CF.pointOnChainFragmentSpec p (AF.unanchorFragment c)
 
 prop_selectPoints :: TestBlockAnchoredFragment -> Property
 prop_selectPoints taf@(TestBlockAnchoredFragment c) =
-    AF.selectPoints offsets c === CF.selectPointsSpec offsets cf .&&.
-    AF.selectPoints []      c === CF.selectPointsSpec []      cf .&&.
-    AF.selectPoints [1,1]   c === CF.selectPointsSpec [1,1]   cf
+    AF.selectPoints offsets c === fmap Point (CF.selectPointsSpec offsets cf) .&&.
+    AF.selectPoints []      c === fmap Point (CF.selectPointsSpec []      cf) .&&.
+    AF.selectPoints [1,1]   c === fmap Point (CF.selectPointsSpec [1,1]   cf)
   where
     offsets = [0,1,2,3,5,8,13,21,34,55,89,144,233,377,610,987,1597,2584]
     cf      = toChainFragment taf
@@ -201,13 +201,13 @@ prop_splitAfterPoint :: TestAnchoredFragmentAndPoint -> Property
 prop_splitAfterPoint (TestAnchoredFragmentAndPoint c pt) =
   case AF.splitAfterPoint c pt of
     Just (p, s) ->
-         AF.withinFragmentBounds pt c
+         AF.withinFragmentBounds (Point pt) c
       .&&. AF.anchorPoint p === AF.anchorPoint c
-      .&&. AF.headPoint   p === pt
-      .&&. AF.anchorPoint s === pt
+      .&&. AF.headPoint   p === Point pt
+      .&&. AF.anchorPoint s === Point pt
       .&&. AF.headPoint   s === AF.headPoint c
       .&&. AF.join p s      === Just c
-    Nothing -> property $ not $ AF.withinFragmentBounds pt c
+    Nothing -> property $ not $ AF.withinFragmentBounds (Point pt) c
 
 prop_join :: TestJoinableAnchoredFragments -> Property
 prop_join t@(TestJoinableAnchoredFragments c1 c2) = case AF.join c1 c2 of
@@ -233,7 +233,7 @@ prop_intersect (TestAnchoredFragmentFork origP1 origP2 c1 c2) =
       AF.anchorPoint s1 === AF.headPoint   p1 .&&.
       AF.anchorPoint s2 === AF.headPoint   p2
   where
-    pointsList c = AF.anchorPoint c : map blockPoint (AF.toOldestFirst c)
+    pointsList c = AF.anchorPoint c : map (Point . blockPoint) (AF.toOldestFirst c)
 
 prop_intersect_bounds :: TestAnchoredFragmentFork -> Property
 prop_intersect_bounds (TestAnchoredFragmentFork _ _ c1 c2) =
@@ -249,8 +249,8 @@ prop_toChain_fromChain (TestBlockChain ch) =
 prop_anchorNewest :: NonNegative Int -> TestBlockChain -> Property
 prop_anchorNewest (NonNegative n') (TestBlockChain ch) =
     AF.length af === min (Chain.length ch) (fromIntegral n) .&&.
-    take n1 (map blockPoint (Chain.toNewestFirst ch) ++ [Chain.genesisPoint]) ===
-             map blockPoint (AF.toNewestFirst af)    ++ [AF.anchorPoint af]
+    take n1 (map (Point . blockPoint) (Chain.toNewestFirst ch) ++ [Chain.genesisPoint]) ===
+             map (Point . blockPoint) (AF.toNewestFirst af)    ++ [AF.anchorPoint af]
   where
     af = AF.anchorNewest n ch
 
@@ -304,7 +304,7 @@ toTestBlockAnchoredFragment :: ChainFragment Block
 toTestBlockAnchoredFragment c = case c of
     CF.Empty   -> Nothing
     b CF.:< c' -> Just $
-        TestBlockAnchoredFragment_ b (AF.mkAnchoredFragment (blockPoint b) c')
+        TestBlockAnchoredFragment_ b (AF.mkAnchoredFragment (Point (blockPoint b)) c')
 
 toChainFragment :: TestBlockAnchoredFragment
                 -> ChainFragment Block
@@ -386,7 +386,7 @@ prop_shrink_TestAddBlock t =
 -- the anchored fragment nor the anchor point.
 --
 data TestAnchoredFragmentAndPoint =
-    TestAnchoredFragmentAndPoint_ TestBlockAnchoredFragment (Point Block)
+    TestAnchoredFragmentAndPoint_ TestBlockAnchoredFragment (BlockPoint Block)
 
 instance Show TestAnchoredFragmentAndPoint where
   show (TestAnchoredFragmentAndPoint c pt) =
@@ -397,7 +397,7 @@ instance Show TestAnchoredFragmentAndPoint where
       nl = "\n"
 
 pattern TestAnchoredFragmentAndPoint :: AnchoredFragment Block
-                                     -> Point Block
+                                     -> BlockPoint Block
                                      -> TestAnchoredFragmentAndPoint
 pattern TestAnchoredFragmentAndPoint c pt <-
         TestAnchoredFragmentAndPoint_ (TestBlockAnchoredFragment c) pt
@@ -408,9 +408,11 @@ instance Arbitrary TestAnchoredFragmentAndPoint where
   arbitrary = do
     taf <- arbitrary
     let chain = getTestAnchoredFragment taf
-    point <- frequency
-      [ (2, return (AF.anchorPoint chain))
-      , (if AF.null chain then 0 else 7,
+        freqAnchorPoint = case AF.anchorPoint chain of
+          Origin  -> []
+          Point p -> [(2, pure p)]
+    point <- frequency $ freqAnchorPoint ++
+      [ (if AF.null chain then 0 else 7,
          blockPoint <$> elements (AF.toNewestFirst chain))
       -- A few points off the chain!
       , (1, arbitrary)
@@ -418,13 +420,13 @@ instance Arbitrary TestAnchoredFragmentAndPoint where
     return (TestAnchoredFragmentAndPoint_ taf point)
 
   shrink (TestAnchoredFragmentAndPoint_ taf p)
-    | AF.withinFragmentBounds p (getTestAnchoredFragment taf)
+    | AF.withinFragmentBounds (Point p) (getTestAnchoredFragment taf)
       -- If the point is within the fragment bounds, shrink the fragment and
       -- return all the points within the bounds
     = [ TestAnchoredFragmentAndPoint_ taf' p'
       | taf' <- shrink taf
       , let chain' = getTestAnchoredFragment taf'
-      , p' <- AF.anchorPoint chain' : map blockPoint (AF.toNewestFirst chain')
+      , p' <- map blockPoint (AF.toNewestFirst chain')
       ]
     | otherwise
       -- If the point is not within the bounds, just shrink the fragment and
@@ -434,8 +436,8 @@ instance Arbitrary TestAnchoredFragmentAndPoint where
 
 prop_arbitrary_TestAnchoredFragmentAndPoint :: TestAnchoredFragmentAndPoint -> Property
 prop_arbitrary_TestAnchoredFragmentAndPoint (TestAnchoredFragmentAndPoint c p) =
-  let onAnchoredFragment = AF.pointOnFragment p c
-      isAnchor           = AF.anchorPoint c == p
+  let onAnchoredFragment = AF.pointOnFragment (Point p) c
+      isAnchor           = AF.anchorPoint c == (Point p)
       neither            = not onAnchoredFragment && not isAnchor in
   cover 65 onAnchoredFragment "point on fragment"                $
   cover 15 isAnchor           "anchor point"                     $
@@ -444,8 +446,8 @@ prop_arbitrary_TestAnchoredFragmentAndPoint (TestAnchoredFragmentAndPoint c p) =
 
 prop_shrink_TestAnchoredFragmentAndPoint :: TestAnchoredFragmentAndPoint -> Bool
 prop_shrink_TestAnchoredFragmentAndPoint t@(TestAnchoredFragmentAndPoint c _) =
-  and [ AF.valid c' && (not (AF.withinFragmentBounds p c) ||
-                        AF.withinFragmentBounds p c')
+  and [ AF.valid c' && (not (AF.withinFragmentBounds (Point p) c) ||
+                        AF.withinFragmentBounds (Point p) c')
       | TestAnchoredFragmentAndPoint c' p <- shrink t ]
 
 

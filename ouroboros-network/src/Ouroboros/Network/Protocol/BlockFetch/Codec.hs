@@ -19,6 +19,7 @@ import           Data.ByteString.Lazy (ByteString)
 import qualified Codec.CBOR.Encoding as CBOR (Encoding, encodeListLen, encodeWord)
 import qualified Codec.CBOR.Read     as CBOR
 import qualified Codec.CBOR.Decoding as CBOR (Decoder, decodeListLen, decodeWord)
+import qualified Codec.Serialise as Serialise (encode, decode)
 
 import           Network.TypedProtocol.Codec
 import           Network.TypedProtocol.Codec.Cbor
@@ -41,11 +42,12 @@ codecBlockFetch encodeBody encodeHeaderHash
                 decodeBody decodeHeaderHash =
     mkCodecCborLazyBS encode decode
  where
+  -- FIXME Serialise.encode is used for SlotNo. Should take that as a parameter.
   encodePoint' :: Point block -> CBOR.Encoding
-  encodePoint' = Block.encodePoint $ Block.encodeChainHash encodeHeaderHash
+  encodePoint' = Block.encodeTPoint (Block.encodeTBlockPoint Serialise.encode encodeHeaderHash)
 
   decodePoint' :: forall s. CBOR.Decoder s (Point block)
-  decodePoint' = Block.decodePoint $ Block.decodeChainHash decodeHeaderHash
+  decodePoint' = Block.decodeTPoint (Block.decodeTBlockPoint Serialise.decode decodeHeaderHash)
 
   encode :: forall (pr :: PeerRole) st st'.
             PeerHasAgency pr st

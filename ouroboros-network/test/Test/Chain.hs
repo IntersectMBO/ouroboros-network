@@ -14,8 +14,9 @@ import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
-import           Ouroboros.Network.Block (blockPrevHash)
-import           Ouroboros.Network.Chain (Chain (..), Point (..), genesisPoint)
+import           Ouroboros.Network.Block (ChainHash (..), TPoint (..),
+                   blockPrevHash, fromTPoint, pointHash, pointSlot)
+import           Ouroboros.Network.Chain (Chain (..))
 import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.Testing.Serialise (prop_serialise)
 
@@ -73,7 +74,7 @@ prop_addBlock :: TestAddBlock -> Bool
 prop_addBlock (TestAddBlock c b) =
  let c' = Chain.addBlock b c in
     -- after adding a block, that block is at the head
-    Chain.headPoint c' == Chain.blockPoint b
+    Chain.headPoint c' == Point (Chain.blockPoint b)
     -- chain is still valid
  && Chain.valid c'
     -- removing the block gives the original
@@ -101,22 +102,22 @@ prop_successorBlock (TestChainAndPoint c p) =
   Chain.pointOnChain p c ==>
   case Chain.successorBlock p c of
     Nothing -> Chain.headPoint c === p
-    Just b  -> property $ Chain.pointOnChain (Chain.blockPoint b) c
+    Just b  -> property $ Chain.pointOnChain (Point (Chain.blockPoint b)) c
 
 prop_lookupBySlot :: TestChainAndPoint -> Bool
-prop_lookupBySlot (TestChainAndPoint c p) =
-  case Chain.lookupBySlot c (pointSlot p) of
-    Just b  -> Chain.pointOnChain (Chain.blockPoint b) c
-    Nothing | p == genesisPoint -> True
-            | otherwise         -> not (Chain.pointOnChain p c)
+prop_lookupBySlot (TestChainAndPoint c p) = case p of
+  Origin -> True
+  Point bp -> case Chain.lookupBySlot c (pointSlot bp) of
+    Just b  -> Chain.pointOnChain (Point (Chain.blockPoint b)) c
+    Nothing -> not (Chain.pointOnChain p c)
 
 prop_selectBlockRange :: TestChainAndRange -> Bool
 prop_selectBlockRange (TestChainAndRange c p1 p2) =
   case Chain.selectBlockRange c p1 p2 of
     Just [] -> p1 == p2 && Chain.pointOnChain p1 c
 
-    Just bs@(b:_) -> blockPrevHash b == pointHash p1
-                  && Chain.blockPoint (last bs) == p2
+    Just bs@(b:_) -> blockPrevHash b == fromTPoint GenesisHash (BlockHash . pointHash) p1
+                  && Point (Chain.blockPoint (last bs)) == p2
 
     Nothing -> not (Chain.pointOnChain p1 c)
             || not (Chain.pointOnChain p2 c)
@@ -124,10 +125,10 @@ prop_selectBlockRange (TestChainAndRange c p1 p2) =
 prop_intersectChains :: TestChainFork -> Bool
 prop_intersectChains (TestChainFork c l r) =
   case Chain.intersectChains l r of
-    Nothing -> c == Genesis && L.intersect (Chain.toNewestFirst l) (Chain.toNewestFirst r) == []
-    Just p  -> Chain.headPoint c == p
-            && Chain.pointOnChain p l
-            && Chain.pointOnChain p r
+    Origin   -> c == Genesis && L.intersect (Chain.toNewestFirst l) (Chain.toNewestFirst r) == []
+    Point bp -> Chain.headPoint c == Point bp
+             && Chain.pointOnChain (Point bp) l
+             && Chain.pointOnChain (Point bp) r
 
 prop_serialise_chain :: TestBlockChain -> Property
 prop_serialise_chain (TestBlockChain chain) =

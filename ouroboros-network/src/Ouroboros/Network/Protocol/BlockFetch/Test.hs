@@ -359,7 +359,7 @@ pointsToRanges chain points =
          -- otherwise `Chain.successorBlock` will error
         then case Chain.successorBlock x chain of
           Nothing -> ChainRange x y : go (y : ys)
-          Just x' -> ChainRange (Chain.blockPoint x') y : go (y : ys)
+          Just x' -> ChainRange (Chain.Point (Chain.blockPoint x')) y : go (y : ys)
         else ChainRange x y : go (y : ys)
     go [x] = [ChainRange Chain.genesisPoint x]
     go []  = []

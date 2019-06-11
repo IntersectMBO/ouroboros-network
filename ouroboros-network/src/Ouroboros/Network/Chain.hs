@@ -19,14 +19,16 @@ module Ouroboros.Network.Chain (
   HeaderHash,
 
   -- * Point type
-  Point(..),
+  TBlockPoint(..),
+  BlockPoint,
+  TPoint(..),
+  Point,
   blockPoint,
 
   -- * Chain construction and inspection
   -- ** Genesis
   genesis,
   genesisPoint,
-  genesisSlotNo,
 --  genesisHash, -- TODO: currently (temporarily) exported by HasHeader
   genesisBlockNo,
 
@@ -102,38 +104,38 @@ prettyPrintChain nl ppBlock = foldChain (\s b -> s ++ nl ++ "    " ++ ppBlock b)
 genesis :: Chain b
 genesis = Genesis
 
-genesisSlotNo :: SlotNo
-genesisSlotNo = SlotNo 0
-
 genesisBlockNo :: BlockNo
 genesisBlockNo = BlockNo 0
 
-genesisPoint :: Point block
-genesisPoint = Point genesisSlotNo GenesisHash
+genesisPoint :: TPoint anything
+genesisPoint = Origin
 
 valid :: HasHeader block => Chain block -> Bool
 valid Genesis  = True
 valid (c :> b) = valid c && validExtension c b
 
 validExtension ::  HasHeader block => Chain block -> block -> Bool
-validExtension c b = blockInvariant b
-                  && headHash c == blockPrevHash b
-                  && headSlot c <  blockSlot b
-                  && headBlockNo c == pred (blockNo b)
+validExtension Genesis b  = blockInvariant b
+                         && blockPrevHash b == GenesisHash
+                         && blockNo b == succ genesisBlockNo -- i.e. 1
+validExtension (_ :> h) b = blockInvariant b
+                         && blockPrevHash b == BlockHash (blockHash h)
+                         && blockSlot b > blockSlot h
+                         && blockNo b == succ (blockNo h)
 
 head :: Chain b -> Maybe b
 head Genesis  = Nothing
 head (_ :> b) = Just b
 
 headPoint :: HasHeader block => Chain block -> Point block
-headPoint Genesis  = genesisPoint
-headPoint (_ :> b) = blockPoint b
+headPoint Genesis  = Origin
+headPoint (_ :> b) = Point (blockPoint b)
 
-headSlot :: HasHeader block => Chain block -> SlotNo
-headSlot = pointSlot . headPoint
+headSlot :: HasHeader block => Chain block -> TPoint SlotNo
+headSlot = fmap pointSlot . headPoint
 
-headHash :: HasHeader block => Chain block -> ChainHash block
-headHash = pointHash . headPoint
+headHash :: HasHeader block => Chain block -> TPoint (HeaderHash block)
+headHash = fmap pointHash . headPoint
 
 headBlockNo :: HasHeader block => Chain block -> BlockNo
 headBlockNo Genesis  = genesisBlockNo
@@ -179,25 +181,27 @@ addBlock b c = assert (validExtension c b) $
                c :> b
 
 pointOnChain :: HasHeader block => Point block -> Chain block -> Bool
-pointOnChain p Genesis        = p == genesisPoint
-pointOnChain p (c :> b)
-  | pointSlot p >  blockSlot b = False
-  | pointSlot p == blockSlot b = pointHash p == BlockHash (blockHash b)
-  | otherwise                  = pointOnChain p c
+pointOnChain Origin       _        = True
+pointOnChain _            Genesis  = False
+pointOnChain p@(Point bp) (c :> b)
+  | pointSlot bp >  blockSlot b  = False
+  | pointSlot bp == blockSlot b  = pointHash bp == blockHash b
+  | otherwise                    = pointOnChain p c
 
 rollback :: HasHeader block => Point block -> Chain block -> Maybe (Chain block)
-rollback p (c :> b) | blockPoint b == p = Just (c :> b)
-                    | otherwise         = rollback p c
-rollback p Genesis  | p == genesisPoint = Just Genesis
+rollback p (c :> b) | Point (blockPoint b) == p = Just (c :> b)
+                    | otherwise                 = rollback p c
+rollback p Genesis  | p == Origin       = Just Genesis
                     | otherwise         = Nothing
 
 successorBlock :: HasHeader block => Point block -> Chain block -> Maybe block
 successorBlock p c0 | headPoint c0 == p = Nothing
 successorBlock p c0 = go c0
   where
-    go (c :> b' :> b) | blockPoint b' == p = Just b
-                      | otherwise          = go (c :> b')
-    go (Genesis :> b) | p == genesisPoint  = Just b
+    go (c :> b' :> b) | Point (blockPoint b') == p = Just b
+                      | otherwise                  = go (c :> b')
+    go (Genesis :> b) | p == Origin                = Just b
+    -- FIXME don't error; use a different return type.
     go _ = error "successorBlock: point not on chain"
 
 selectChain
@@ -277,8 +281,8 @@ selectBlockRange c from to
   , pointOnChain to c
   =   Just
     . reverse
-    . takeWhile (\b -> blockPoint b /= from)
-    . dropWhile (\b -> blockPoint b /= to)
+    . takeWhile (\b -> Point (blockPoint b) /= from)
+    . dropWhile (\b -> Point (blockPoint b) /= to)
     . toNewestFirst
     $ c
 
@@ -289,22 +293,23 @@ findFirstPoint
   :: HasHeader block
   => [Point block]
   -> Chain block
-  -> Maybe (Point block)
-findFirstPoint [] _     = Nothing
+  -> Point block
+findFirstPoint [] _     = Origin
 findFirstPoint (p:ps) c
-  | pointOnChain p c    = Just p
+  | pointOnChain p c    = p
   | otherwise           = findFirstPoint ps c
 
 intersectChains
   :: HasHeader block
   => Chain block
   -> Chain block
-  -> Maybe (Point block)
-intersectChains _ Genesis   = Nothing
-intersectChains c (bs :> b) =
-  let p = blockPoint b
-  in if pointOnChain (blockPoint b) c
-       then Just p
+  -> Point block
+intersectChains _       Genesis   = Origin
+intersectChains Genesis _         = Origin
+intersectChains c       (bs :> b) =
+  let p = Point (blockPoint b)
+  in if pointOnChain p c
+       then p
        else intersectChains c bs
 
 

@@ -5,6 +5,8 @@
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE GADTSyntax                 #-}
+{-# LANGUAGE StandaloneDeriving         #-}
 
 -- | Abstract view over blocks
 --
@@ -18,17 +20,23 @@ module Ouroboros.Network.Block (
   , StandardHash
   , ChainHash(..)
   , castHash
-  , Point(..)
-  , castPoint
+  , TBlockPoint (..)
+  , TPoint(..)
+  , fromTPoint
+  , BlockPoint
+  , Point
   , blockPoint
+  , chainHashFromPoint
   , ChainUpdate(..)
   , mapChainUpdate
   , BlockMeasure(..)
   , blockMeasure
     -- * Serialisation
-  , encodePoint
+  , encodeTBlockPoint
+  , encodeTPoint
   , encodeChainHash
-  , decodePoint
+  , decodeTBlockPoint
+  , decodeTPoint
   , decodeChainHash
   ) where
 
@@ -108,27 +116,37 @@ castHash (BlockHash b) = BlockHash b
   Point on a chain
 -------------------------------------------------------------------------------}
 
--- | A point on the chain is identified by its 'Slot' and 'HeaderHash'.
---
--- The 'Slot' tells us where to look and the 'HeaderHash' either simply serves
--- as a check, or in some contexts it disambiguates blocks from different forks
--- that were in the same slot.
---
-data Point block = Point {
-       pointSlot :: SlotNo,
-       pointHash :: ChainHash block
-     }
-   deriving (Eq, Ord, Show)
+-- | A block is identified by a slot and a hash.
+data TBlockPoint slot hash = TBlockPoint
+  { pointSlot :: slot
+  , pointHash :: hash
+  }
+  deriving (Eq, Ord, Show)
 
-castPoint :: (HeaderHash a ~ HeaderHash b) => Point a -> Point b
-castPoint (Point a b) = Point a (castHash b)
+type BlockPoint block = TBlockPoint SlotNo (HeaderHash block)
 
-blockPoint :: HasHeader block => block -> Point block
-blockPoint b =
-    Point {
-      pointSlot = blockSlot b,
-      pointHash = BlockHash (blockHash b)
-    }
+-- | `BlockPoint` with an origin point.
+data TPoint t where
+  Origin :: TPoint t
+  Point  :: t -> TPoint t
+  deriving (Eq, Ord, Show)
+
+instance Functor TPoint where
+  fmap _ Origin    = Origin
+  fmap f (Point t) = Point (f t)
+
+fromTPoint :: r -> (t -> r) -> TPoint t -> r
+fromTPoint r _ Origin    = r
+fromTPoint _ f (Point t) = f t
+
+type Point block = TPoint (BlockPoint block)
+
+blockPoint :: HasHeader block => block -> BlockPoint block
+blockPoint b = TBlockPoint (blockSlot b) (blockHash b)
+
+chainHashFromPoint :: Point block -> ChainHash block
+chainHashFromPoint Origin     = GenesisHash
+chainHashFromPoint (Point bp) = BlockHash (pointHash bp)
 
 {-------------------------------------------------------------------------------
   ChainUpdate type
@@ -139,12 +157,14 @@ blockPoint b =
 --
 data ChainUpdate block = AddBlock block
                        | RollBack (Point block)
-  deriving (Eq, Show)
+
+deriving instance (Show block, Show (HeaderHash block)) => Show (ChainUpdate block)
+deriving instance (Eq block, Eq (HeaderHash block)) => Eq (ChainUpdate block)
 
 mapChainUpdate :: HeaderHash a ~ HeaderHash b
                => (a -> b) -> ChainUpdate a -> ChainUpdate b
 mapChainUpdate f (AddBlock b) = AddBlock $ f b
-mapChainUpdate _ (RollBack p) = RollBack $ castPoint p
+mapChainUpdate _ (RollBack p) = RollBack $ p
 
 {-------------------------------------------------------------------------------
   Serialisation
@@ -155,9 +175,13 @@ instance Serialise (HeaderHash b) => Serialise (ChainHash b) where
   encode = encodeChainHash encode
   decode = decodeChainHash decode
 
-instance Serialise (HeaderHash block) => Serialise (Point block) where
-  encode = encodePoint encode
-  decode = decodePoint decode
+instance (Serialise slot, Serialise hash) => Serialise (TBlockPoint slot hash) where
+  encode = encodeTBlockPoint encode encode
+  decode = decodeTBlockPoint decode decode
+
+instance (Serialise t) => Serialise (TPoint t) where
+  encode = encodeTPoint encode
+  decode = decodeTPoint decode
 
 encodeChainHash :: (HeaderHash block -> Encoding)
                 -> (ChainHash  block -> Encoding)
@@ -175,19 +199,37 @@ decodeChainHash decodeHash = do
       1 -> BlockHash <$> decodeHash
       _ -> fail "decodeChainHash: invalid tag"
 
-encodePoint :: (ChainHash block -> Encoding)
-            -> (Point     block -> Encoding)
-encodePoint encodeHash Point { pointSlot = s, pointHash = h } =
+encodeTBlockPoint :: (slot -> Encoding)
+                  -> (hash -> Encoding)
+                  -> (TBlockPoint slot hash -> Encoding)
+encodeTBlockPoint encodeSlot encodeHash bpoint =
        Enc.encodeListLen 2
-    <> encode s
-    <> encodeHash h
+    <> encodeSlot (pointSlot bpoint)
+    <> encodeHash (pointHash bpoint)
 
-decodePoint :: (forall s. Decoder s (ChainHash block))
-            -> (forall s. Decoder s (Point     block))
-decodePoint decodeHash = do
-      Dec.decodeListLenOf 2
-      Point <$> decode
-            <*> decodeHash
+decodeTBlockPoint :: (forall s. Decoder s slot)
+                  -> (forall s. Decoder s hash)
+                  -> (forall s. Decoder s (TBlockPoint slot hash))
+decodeTBlockPoint decodeSlot decodeHash = do
+    tag <- Dec.decodeListLen
+    case tag of
+      2 -> TBlockPoint <$> decodeSlot <*> decodeHash
+      _ -> fail "decodeTPoint: invalid tag"
+
+encodeTPoint :: (t -> Encoding)
+             -> (TPoint t -> Encoding)
+encodeTPoint encodet tpoint = case tpoint of
+    Origin  -> Enc.encodeListLen 0
+    Point t -> Enc.encodeListLen 1 <> encodet t
+
+decodeTPoint :: (forall s. Decoder s t)
+             -> (forall s. Decoder s (TPoint t))
+decodeTPoint decodet = do
+    tag <- Dec.decodeListLen
+    case tag of
+      0 -> return Origin
+      1 -> Point <$> decodet
+      _ -> fail "decodeTPoint: invalid tag"
 
 {-------------------------------------------------------------------------------
   Finger Tree Measure

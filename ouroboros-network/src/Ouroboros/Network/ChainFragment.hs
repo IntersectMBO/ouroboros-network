@@ -16,8 +16,10 @@ module Ouroboros.Network.ChainFragment (
 
   -- ** Block re-exports
   HasHeader(..),
-  Point(..),
-  castPoint,
+  TBlockPoint(..),
+  BlockPoint,
+  TPoint(..),
+  Point,
   blockPoint,
 
   -- * ChainFragment construction and inspection
@@ -218,7 +220,7 @@ isValidSuccessorOf' :: (HasCallStack, HasHeader block)
                     -> block  -- ^ @b@
                     -> Either String ()
 isValidSuccessorOf' bSucc b
-  | pointHash p /= blockPrevHash bSucc
+  | BlockHash (pointHash p) /= blockPrevHash bSucc
   = Left $ concat [
         "prevHash ("
       , show (blockPrevHash bSucc)
@@ -271,7 +273,7 @@ head (_ :> b) = Just b
 head Empty    = Nothing
 
 -- | \( O(1) \).
-headPoint :: HasHeader block => ChainFragment block -> Maybe (Point block)
+headPoint :: HasHeader block => ChainFragment block -> Maybe (BlockPoint block)
 headPoint = fmap blockPoint . head
 
 -- | \( O(1) \).
@@ -292,7 +294,7 @@ last (b :< _) = Just b
 last Empty    = Nothing
 
 -- | \( O(1) \).
-lastPoint :: HasHeader block => ChainFragment block -> Maybe (Point block)
+lastPoint :: HasHeader block => ChainFragment block -> Maybe (BlockPoint block)
 lastPoint = fmap blockPoint . last
 
 -- | \( O(1) \).
@@ -412,7 +414,11 @@ addBlock b c = c :> b
 -- 'ChainFragment', return 'Nothing'.
 rollback :: HasHeader block
          => Point block -> ChainFragment block -> Maybe (ChainFragment block)
-rollback p c = fst <$> splitAfterPoint c p
+-- the origin is apparently never in a chain fragment. But how then can we
+-- rollback to origin (i.e. clear the chain)? I guess we never actually want
+-- to do that?
+rollback Origin     _ = Nothing
+rollback (Point bp) c = fst <$> splitAfterPoint c bp
 
 -- | \( O(\log(\min(i,n-i)) \). Internal variant of 'lookupBySlot' that
 -- returns a 'FT.SearchResult'.
@@ -482,7 +488,7 @@ filter p = go [] Empty
 -- Only for offsets within the bounds of the chain fragment, will there be
 -- points in the returned list.
 selectPoints :: HasHeader block
-             => [Int] -> ChainFragment block -> [Point block]
+             => [Int] -> ChainFragment block -> [BlockPoint block]
 selectPoints offsets = go relativeOffsets
   where
     relativeOffsets = zipWith (-) offsets (0:offsets)
@@ -498,7 +504,7 @@ selectPoints offsets = go relativeOffsets
 --
 -- This function is used to verify whether 'selectPoints' behaves as expected.
 selectPointsSpec :: HasHeader block
-                => [Int] -> ChainFragment block -> [Point block]
+                => [Int] -> ChainFragment block -> [BlockPoint block]
 selectPointsSpec offsets c =
     [ blockPoint (bs !! offset)
     | let bs = toNewestFirst c
@@ -508,7 +514,7 @@ selectPointsSpec offsets c =
 
 -- | \( O(\log(\min(i,n-i)) \). Find the block after the given point.
 successorBlock :: HasHeader block
-               => Point block -> ChainFragment block -> Maybe block
+               => BlockPoint block -> ChainFragment block -> Maybe block
 successorBlock p c = case lookupBySlotFT c (pointSlot p) of
   FT.Position _ b ft'
     | blockPoint b == p
@@ -536,15 +542,14 @@ splitAfterSlot (ChainFragment t) s = (ChainFragment l, ChainFragment r)
 --
 -- If the chain fragment contained a block at the given 'Point', it will be
 -- the (newest\/rightmost) block of the first returned chain.
-splitAfterPoint :: (HasHeader block1, HasHeader block2,
-                    HeaderHash block1 ~ HeaderHash block2)
-                => ChainFragment block1
-                -> Point block2
-                -> Maybe (ChainFragment block1, ChainFragment block1)
+splitAfterPoint :: (HasHeader block)
+                => ChainFragment block
+                -> TBlockPoint SlotNo (HeaderHash block)
+                -> Maybe (ChainFragment block, ChainFragment block)
 splitAfterPoint c p
   | (l@(ChainFragment lt), r) <- splitAfterSlot c (pointSlot p)
   , _ FT.:> b <- FT.viewr lt  -- O(1)
-  , blockPoint b == castPoint p
+  , blockPoint b == p
   = Just (l, r)
   | otherwise
   = Nothing
@@ -563,15 +568,14 @@ splitBeforeSlot (ChainFragment t) s = (ChainFragment l, ChainFragment r)
   where
    (l, r) = FT.split (\v -> bmMaxSlot v >= s) t
 
-splitBeforePoint :: (HasHeader block1, HasHeader block2,
-                    HeaderHash block1 ~ HeaderHash block2)
-                 => ChainFragment block1
-                 -> Point block2
-                 -> Maybe (ChainFragment block1, ChainFragment block1)
+splitBeforePoint :: (HasHeader block)
+                 => ChainFragment block
+                 -> TBlockPoint SlotNo (HeaderHash block)
+                 -> Maybe (ChainFragment block, ChainFragment block)
 splitBeforePoint c p
   | (l, r@(ChainFragment rt)) <- splitBeforeSlot c (pointSlot p)
   , b FT.:< _ <- FT.viewl rt  -- O(1)
-  , blockPoint b == castPoint p
+  , blockPoint b == p
   = Just (l, r)
   | otherwise
   = Nothing
@@ -583,8 +587,8 @@ splitBeforePoint c p
 --
 sliceRange :: HasHeader block
            => ChainFragment block
-           -> Point block
-           -> Point block
+           -> BlockPoint block
+           -> BlockPoint block
            -> Maybe (ChainFragment block)
 sliceRange c from to
   | Just (_, c') <- splitBeforePoint c  from
@@ -600,9 +604,9 @@ sliceRange c from to
 -- on the 'ChainFragment'. TODO test?
 findFirstPoint
   :: HasHeader block
-  => [Point block]
+  => [BlockPoint block]
   -> ChainFragment block
-  -> Maybe (Point block)
+  -> Maybe (BlockPoint block)
 findFirstPoint ps c = L.find (`pointOnChainFragment` c) ps
 
 -- | \( O(\log(\min(i,n-i)) \).
@@ -624,7 +628,7 @@ slotOnChainFragmentSpec slot = go
                  | otherwise           = go c'
 
 -- | \( O(\log(\min(i,n-i)) \).
-pointOnChainFragment :: HasHeader block => Point block -> ChainFragment block -> Bool
+pointOnChainFragment :: HasHeader block => BlockPoint block -> ChainFragment block -> Bool
 pointOnChainFragment p c = case lookupBySlot c (pointSlot p) of
   Just b | blockPoint b == p -> True
   _                          -> False
@@ -636,7 +640,7 @@ pointOnChainFragment p c = case lookupBySlot c (pointSlot p) of
 -- This function is used to verify whether 'pointOnChainFragment' behaves as
 -- expected.
 pointOnChainFragmentSpec :: HasHeader block
-                         => Point block -> ChainFragment block -> Bool
+                         => BlockPoint block -> ChainFragment block -> Bool
 pointOnChainFragmentSpec p = go
     where
     -- Recursively search the fingertree from the right

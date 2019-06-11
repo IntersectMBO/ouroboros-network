@@ -2,6 +2,8 @@
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE BangPatterns               #-}
+{-# LANGUAGE AllowAmbiguousTypes        #-}
+{-# LANGUAGE TypeApplications           #-}
 
 module Ouroboros.Network.BlockFetch.Decision (
     -- * Deciding what to fetch
@@ -118,7 +120,9 @@ type CandidateFragments header = (ChainSuffix header, [ChainFragment header])
 
 
 fetchDecisions
-  :: (HasHeader header, HasHeader block,
+  :: forall header block extra .
+     (Eq header,
+      HasHeader header, HasHeader block,
       HeaderHash header ~ HeaderHash block)
   => FetchDecisionPolicy header
   -> FetchMode
@@ -157,7 +161,7 @@ fetchDecisions fetchDecisionPolicy@FetchDecisionPolicy {
   . map swizzleI
 
     -- Filter to keep blocks that have not already been downloaded.
-  . filterNotAlreadyFetched
+  . filterNotAlreadyFetched @header @block
       fetchedBlocks
 
     -- Select the suffix up to the intersection with the current chain.
@@ -439,7 +443,8 @@ of individual blocks without their relationship to each other.
 -- the general case we can get a bunch of discontiguous chain fragments.
 --
 filterNotAlreadyFetched
-  :: (HasHeader header, HeaderHash header ~ HeaderHash block)
+  :: forall header block peerinfo .
+     (HasHeader header, HeaderHash header ~ HeaderHash block)
   => (Point block -> Bool)
   -> [(FetchDecision (ChainSuffix        header), peerinfo)]
   -> [(FetchDecision (CandidateFragments header), peerinfo)]
@@ -456,7 +461,7 @@ filterNotAlreadyFetched alreadyDownloaded chains =
             return (candidate, fragments)
     ]
   where
-    notAlreadyFetched = not . alreadyDownloaded . castPoint . blockPoint
+    notAlreadyFetched = not . alreadyDownloaded . Point . blockPoint
 
 
 filterNotAlreadyInFlightWithPeer
@@ -477,7 +482,7 @@ filterNotAlreadyInFlightWithPeer chains =
     ]
   where
     notAlreadyInFlight inflight b =
-      blockPoint b `Set.notMember` peerFetchBlocksInFlight inflight
+      Point (blockPoint b) `Set.notMember` peerFetchBlocksInFlight inflight
 
 
 -- | A penultimate step of filtering, but this time across peers, rather than
@@ -512,7 +517,7 @@ filterNotAlreadyInFlightWithOtherPeers FetchModeBulkSync chains =
     ]
   where
     notAlreadyInFlight b =
-      blockPoint b `Set.notMember` blocksInFlightWithOtherPeers
+      Point (blockPoint b) `Set.notMember` blocksInFlightWithOtherPeers
 
    -- All the blocks that are already in-flight with all peers
     blocksInFlightWithOtherPeers =
@@ -559,7 +564,7 @@ obviously take that into account when considering later peer chains.
 
 
 fetchRequestDecisions
-  :: HasHeader header
+  :: ( HasHeader header, Eq header )
   => FetchDecisionPolicy header
   -> FetchMode
   -> [(FetchDecision [ChainFragment header], PeerFetchStatus header,
@@ -631,7 +636,7 @@ fetchRequestDecisions fetchDecisionPolicy fetchMode chains =
 
 
 fetchRequestDecision
-  :: HasHeader header
+  :: ( HasHeader header, Eq header )
   => FetchDecisionPolicy header
   -> FetchMode
   -> Word

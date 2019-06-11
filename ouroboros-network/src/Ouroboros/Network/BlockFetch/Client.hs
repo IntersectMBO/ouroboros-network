@@ -64,6 +64,7 @@ type BlockFetchClient header block m a =
 --
 blockFetchClient :: forall header block m.
                     (MonadSTM m, MonadTime m, MonadThrow m,
+                     Eq header,
                      HasHeader header, HasHeader block,
                      HeaderHash header ~ HeaderHash block)
                  => FetchClientContext header block m
@@ -148,8 +149,8 @@ blockFetchClient FetchClientContext {
 -}
         let range :: ChainRange block
             range = assert (not (ChainFragment.null fragment)) $
-                    ChainRange (castPoint (blockPoint lower))
-                               (castPoint (blockPoint upper))
+                    ChainRange (Point (blockPoint lower))
+                               (Point (blockPoint upper))
               where
                 Just lower = ChainFragment.last fragment
                 Just upper = ChainFragment.head fragment
@@ -213,7 +214,7 @@ blockFetchClient FetchClientContext {
             updateTimeout timeout (diffTime now )
 -}
 
-            unless (blockPoint header == castPoint (blockPoint block)) $
+            unless (blockPoint header == blockPoint block) $
               throwM BlockFetchProtocolFailureWrongBlock
 
             -- This is moderately expensive.
@@ -228,7 +229,7 @@ blockFetchClient FetchClientContext {
             -- interleaving
 
             -- Add the block to the chain DB, notifying of any new chains.
-            addFetchedBlock (castPoint (blockPoint header)) block
+            addFetchedBlock (Point (blockPoint header)) block
 
             -- Note that we add the block to the chain DB /before/ updating our
             -- current status and in-flight stats. Otherwise blocks will

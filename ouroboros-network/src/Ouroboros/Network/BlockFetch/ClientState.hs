@@ -3,6 +3,8 @@
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE BangPatterns               #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 module Ouroboros.Network.BlockFetch.ClientState (
     FetchClientContext(..),
@@ -31,7 +33,7 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Exception (assert)
 import           Control.Tracer (Tracer, traceWith)
 
-import           Ouroboros.Network.Block (Point, blockPoint, HasHeader)
+import           Ouroboros.Network.Block (Point, TPoint (Point), blockPoint, HasHeader, HeaderHash)
 import qualified Ouroboros.Network.ChainFragment as CF
 import           Ouroboros.Network.ChainFragment (ChainFragment)
 import           Ouroboros.Network.BlockFetch.DeltaQ
@@ -152,8 +154,9 @@ data PeerFetchStatus header =
        -- considered ready to accept new requests.
        --
      | PeerFetchStatusReady (Set (Point header))
-  deriving (Eq, Show)
 
+deriving instance (Eq header, Eq (HeaderHash header)) => Eq (PeerFetchStatus header)
+deriving instance (Show header, Show (HeaderHash header)) => Show (PeerFetchStatus header)
 
 -- | The number of requests in-flight and the amount of data in-flight with a
 -- peer. This is maintained by fetch protocol threads and used in the block
@@ -188,7 +191,9 @@ data PeerFetchInFlight header = PeerFetchInFlight {
        --
        peerFetchBlocksInFlight :: Set (Point header)
      }
-  deriving (Eq, Show)
+
+deriving instance (Eq header, Eq (HeaderHash header)) => Eq (PeerFetchInFlight header)
+deriving instance (Show header, Show (HeaderHash header)) => Show (PeerFetchInFlight header)
 
 initialPeerFetchInFlight :: PeerFetchInFlight header
 initialPeerFetchInFlight =
@@ -204,7 +209,7 @@ addHeadersInFlight :: HasHeader header
                    -> PeerFetchInFlight header
                    -> PeerFetchInFlight header
 addHeadersInFlight blockFetchSize (FetchRequest fragments) inflight =
-    assert (and [ blockPoint header `Set.notMember` peerFetchBlocksInFlight inflight
+    assert (and [ Point (blockPoint header) `Set.notMember` peerFetchBlocksInFlight inflight
                 | fragment <- fragments
                 , header   <- CF.toOldestFirst fragment ]) $
     PeerFetchInFlight {
@@ -218,7 +223,7 @@ addHeadersInFlight blockFetchSize (FetchRequest fragments) inflight =
 
       peerFetchBlocksInFlight = peerFetchBlocksInFlight inflight
                     `Set.union` Set.fromList
-                                  [ blockPoint header
+                                  [ Point (blockPoint header)
                                   | fragment <- fragments
                                   , header   <- CF.toOldestFirst fragment ]
     }
@@ -230,12 +235,12 @@ deleteHeaderInFlight :: HasHeader header
                      -> PeerFetchInFlight header
 deleteHeaderInFlight blockFetchSize header inflight =
     assert (peerFetchBytesInFlight inflight >= blockFetchSize header) $
-    assert (blockPoint header `Set.member` peerFetchBlocksInFlight inflight) $
+    assert (Point (blockPoint header) `Set.member` peerFetchBlocksInFlight inflight) $
     inflight {
       peerFetchBytesInFlight  = peerFetchBytesInFlight inflight
                               - blockFetchSize header,
 
-      peerFetchBlocksInFlight = blockPoint header
+      peerFetchBlocksInFlight = Point (blockPoint header)
                    `Set.delete` peerFetchBlocksInFlight inflight
     }
 
@@ -273,7 +278,8 @@ data TraceFetchClientState header =
          (PeerFetchInFlight header)
           PeerFetchInFlightLimits
          (PeerFetchStatus header)
-  deriving Show
+
+deriving instance (Show header, Show (HeaderHash header)) => Show (TraceFetchClientState header)
 
 -- | A peer label for use in 'Tracer's. This annotates tracer output as being
 -- associated with a given peer identifier.
@@ -292,7 +298,7 @@ data TraceLabelPeer peerid a = TraceLabelPeer peerid a
 -- only operation that grows the in-flight blocks, and is only used by the
 -- fetch decision logic thread.
 --
-addNewFetchRequest :: (MonadSTM m, HasHeader header)
+addNewFetchRequest :: (MonadSTM m, HasHeader header, Eq header)
                    => Tracer m (TraceFetchClientState header)
                    -> (header -> SizeInBytes)
                    -> FetchClientStateVars m header
@@ -353,7 +359,7 @@ acknowledgeFetchRequest tracer FetchClientStateVars {..} = do
     traceWith tracer (AcknowledgedFetchRequest request)
     return result
 
-completeBlockDownload :: (MonadSTM m, HasHeader header)
+completeBlockDownload :: (MonadSTM m, HasHeader header, Eq header)
                       => Tracer m (TraceFetchClientState header)
                       -> (header -> SizeInBytes)
                       -> PeerFetchInFlightLimits
@@ -387,7 +393,7 @@ completeBlockDownload tracer blockFetchSize inflightlimits
 
     traceWith tracer $
       CompletedBlockFetch
-        (blockPoint header)
+        (Point (blockPoint header))
         inflight' inflightlimits
         currentStatus'
 

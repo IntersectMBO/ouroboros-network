@@ -1,15 +1,17 @@
 {-# LANGUAGE NamedFieldPuns  #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Ouroboros.Network.ChainProducerState where
 
 import           Ouroboros.Network.Chain (Chain, ChainUpdate (..), HasHeader,
-                     Point (..), blockPoint, genesisPoint, pointOnChain)
+                     Point, blockPoint, pointOnChain)
 import qualified Ouroboros.Network.Chain as Chain
 
 import           Control.Exception (assert)
 import           Data.List (find, group, sort)
-import           Data.Maybe (fromMaybe)
 
 
 
@@ -19,7 +21,9 @@ data ChainProducerState block = ChainProducerState {
        chainState   :: Chain block,
        chainReaders :: ReaderStates block
      }
-  deriving (Eq, Show)
+
+deriving instance (Eq block, Eq (Chain.HeaderHash block)) => Eq (ChainProducerState block)
+deriving instance (Show block, Show (Chain.HeaderHash block)) => Show (ChainProducerState block)
 
 -- | Readers are represented here as a relation.
 --
@@ -75,7 +79,9 @@ data ReaderState block = ReaderState {
        -- | A unique tag per reader, to distinguish different readers.
        readerId    :: ReaderId
      }
-  deriving (Eq, Show)
+
+deriving instance (Eq (Chain.HeaderHash block)) => Eq (ReaderState block)
+deriving instance (Show (Chain.HeaderHash block)) => Show (ReaderState block)
 
 data ReaderNext = ReaderBackTo | ReaderForwardFrom
   deriving (Eq, Show)
@@ -126,10 +132,12 @@ lookupReader (ChainProducerState _ rs) rid =
 producerChain :: ChainProducerState block -> Chain block
 producerChain (ChainProducerState c _) = c
 
+-- | If none of the poitns are on the chain, you get Origin, the point common
+-- to every chain.
 findFirstPoint :: HasHeader block
                => [Point block]
                -> ChainProducerState block
-               -> Maybe (Point block)
+               -> Point block
 findFirstPoint ps = Chain.findFirstPoint ps . producerChain
 
 
@@ -187,7 +195,7 @@ switchFork :: HasHeader block
 switchFork c (ChainProducerState c' rs) =
     ChainProducerState c (map update rs)
   where
-    ipoint = fromMaybe genesisPoint $ Chain.intersectChains c c'
+    ipoint = Chain.intersectChains c c'
 
     update r@ReaderState{readerPoint} =
       if pointOnChain readerPoint c
@@ -216,7 +224,7 @@ readerInstruction rid cps@(ChainProducerState c rs) =
               where
                 cps' = ChainProducerState c (map setPoint rs)
                 setPoint r
-                  | readerId r == rid = r { readerPoint = blockPoint b }
+                  | readerId r == rid = r { readerPoint = Chain.Point (blockPoint b) }
                   | otherwise         = r
 
       ReaderBackTo -> Just (RollBack readerPoint, cps')
@@ -248,11 +256,14 @@ rollback p (ChainProducerState c rs) =
     ChainProducerState <$> Chain.rollback p c
                        <*> pure rs'
   where
-    rs' = [ if pointSlot p' > pointSlot p
+    rs' = [ if betterPoint p' p
               then r { readerPoint = p, readerNext = ReaderBackTo }
               else r
           | r@ReaderState { readerPoint = p' } <- rs ]
-
+    betterPoint Chain.Origin _ = False
+    betterPoint _ Chain.Origin = True
+    betterPoint (Chain.Point p') (Chain.Point p'') =
+      Chain.pointSlot p' > Chain.pointSlot p''
 
 -- | Convenient function which combines both @'addBlock'@ and @'rollback'@.
 --

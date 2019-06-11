@@ -202,7 +202,7 @@ data BlockFetchConsensusInterface peer header block m =
 -- This runs forever and should be shut down using mechanisms such as async.
 --
 blockFetchLogic :: forall peer header block m.
-                   (MonadSTM m, Ord peer,
+                   (MonadSTM m, Ord peer, Eq header,
                     HasHeader header, HasHeader block,
                     HeaderHash header ~ HeaderHash block)
                 => Tracer m [TraceLabelPeer peer (FetchDecision [Point header])]

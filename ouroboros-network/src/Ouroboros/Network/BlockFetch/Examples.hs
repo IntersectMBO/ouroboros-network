@@ -118,7 +118,7 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
       map (AnchoredFragment.mapAnchoredFragment blockHeader) candidateChains
 
     anchoredChainPoints c = anchorPoint c
-                          : map blockPoint (AnchoredFragment.toOldestFirst c)
+                          : map (Point . blockPoint) (AnchoredFragment.toOldestFirst c)
 
     blockFetch :: FetchClientRegistry Int BlockHeader Block m
                -> TestFetchedBlockHeap m Block
@@ -268,14 +268,24 @@ mockBlockFetchServer1 chain =
 
     receiveReq :: ChainRange block
                -> m (BlockFetchBlockSender block m ())
-    receiveReq (ChainRange lpoint upoint) =
+    receiveReq (ChainRange Origin Origin) =
+      return $ SendMsgNoBlocks (return senderSide)
+    receiveReq (ChainRange Origin (Point bp)) =
+      case ChainFragment.splitAfterPoint chain bp of
+        Nothing          -> return $ SendMsgNoBlocks (return senderSide)
+        Just (chain', _) -> return $ SendMsgStartBatch (sendBlocks blocks)
+          where blocks = ChainFragment.toOldestFirst chain'
+    receiveReq (ChainRange (Point bp) (Point bp')) =
       -- We can only assert this for tests, not for the real thing.
-      assert (pointSlot lpoint <= pointSlot upoint) $
-      case ChainFragment.sliceRange chain lpoint upoint of
+      assert (pointSlot bp <= pointSlot bp') $
+      case ChainFragment.sliceRange chain bp bp' of
         Nothing     -> return $ SendMsgNoBlocks (return senderSide)
         Just chain' -> return $ SendMsgStartBatch (sendBlocks blocks)
           where blocks = ChainFragment.toOldestFirst chain'
-
+    -- FIXME error because there's a similar thing for the case of
+    -- a reversed interval (second point after first point in slot count)
+    -- Really though you'd think we should just give "no blocks"...
+    receiveReq (ChainRange (Point _) Origin) = error "bad interval"
 
     sendBlocks :: [block] -> m (BlockFetchSendBlocks block m ())
     sendBlocks []     = return $ SendMsgBatchDone (return senderSide)

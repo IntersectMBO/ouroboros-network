@@ -165,7 +165,7 @@ chainToAnchoredFragment =
 
 -- TODO: move elsewhere and generalise
 chainPoints :: AnchoredFragment Block -> [Point BlockHeader]
-chainPoints = map (castPoint . blockPoint)
+chainPoints = map (Point . blockPoint)
             . AnchoredFragment.toOldestFirst
 
 data Example1TraceEvent =
@@ -216,7 +216,7 @@ tracePropertyBlocksRequestedAndRecievedPerPeer fork1 fork2 es =
     requestedFetchPoints :: Map Int [Point BlockHeader]
     requestedFetchPoints =
       Map.fromListWith (flip (++))
-        [ (peer, map blockPoint (ChainFragment.toOldestFirst fragment))
+        [ (peer, map (Point . blockPoint) (ChainFragment.toOldestFirst fragment))
         | TraceFetchClientState
             (TraceLabelPeer peer
               (AddedFetchRequest
@@ -259,7 +259,7 @@ tracePropertyBlocksRequestedAndRecievedAllPeers fork1 fork2 es =
     requestedFetchPoints :: Set (Point BlockHeader)
     requestedFetchPoints =
       Set.fromList
-        [ blockPoint block
+        [ Point (blockPoint block)
         | TraceFetchClientState
             (TraceLabelPeer _
               (AddedFetchRequest
@@ -317,7 +317,7 @@ tracePropertyNoDuplicateBlocksBetweenPeers fork1 fork2 es =
               (AddedFetchRequest
                 (FetchRequest fragments) _ _ _)) <- es
         , fragment <- fragments
-        , let points = Set.fromList . map blockPoint
+        , let points = Set.fromList . map (Point . blockPoint)
                      . ChainFragment.toOldestFirst
         ]
 

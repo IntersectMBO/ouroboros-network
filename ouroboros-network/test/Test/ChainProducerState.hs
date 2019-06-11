@@ -15,7 +15,9 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
-import           Ouroboros.Network.Chain (Chain, ChainUpdate (..), Point (..),
+import           Ouroboros.Network.Block (Point, TPoint(..), TBlockPoint, SlotNo(..))
+import qualified Ouroboros.Network.Block as Block (pointSlot)
+import           Ouroboros.Network.Chain (Chain, ChainUpdate (..),
                      genesisPoint, headPoint, pointOnChain)
 import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.ChainProducerState
@@ -46,6 +48,11 @@ tests =
   , testProperty "switch fork" prop_switchFork
   ]
 
+-- This is dishonest (the Origin is not slot 0) but it will work for our
+-- purposes in this module.
+pointSlot :: TPoint (TBlockPoint SlotNo x) -> SlotNo
+pointSlot Origin = SlotNo 0
+pointSlot (Point bp) = Block.pointSlot bp
 
 --
 -- Properties

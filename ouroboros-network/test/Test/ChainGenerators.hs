@@ -107,32 +107,27 @@ instance Arbitrary SlotNo where
 instance Arbitrary ConcreteHeaderHash where
   arbitrary = HeaderHash <$> arbitrary
 
-instance Arbitrary (Point BlockHeader) where
+instance (Arbitrary slot, Arbitrary hash) => Arbitrary (TBlockPoint slot hash) where
+  arbitrary = TBlockPoint <$> arbitrary <*> arbitrary
+  shrink (TBlockPoint s h) = [ TBlockPoint s' h' | (s', h') <- shrink (s, h) ]
+
+instance Arbitrary t => Arbitrary (TPoint t) where
   arbitrary =
       -- Sometimes pick the genesis point
-      frequency [ (1, pure (Point (SlotNo 0) GenesisHash))
-                , (4, Point <$> arbitrary <*> (BlockHash <$> arbitrary)) ]
-  shrink (Point _ GenesisHash)   = []
-  shrink (Point s (BlockHash h)) =
-      Point (SlotNo 0) GenesisHash
-    : [ Point s' (BlockHash h') | (s', h') <- shrink (s, h), s > SlotNo 0 ]
-
-instance Arbitrary (Point Block) where
-  arbitrary = (castPoint :: Point BlockHeader -> Point Block) <$> arbitrary
-
-  shrink = map (castPoint :: Point BlockHeader -> Point Block)
-         . shrink
-         .     (castPoint :: Point Block -> Point BlockHeader)
+      frequency [ (1, pure Origin)
+                , (4, Point <$> arbitrary) ]
+  shrink Origin      = []
+  shrink (Point t) = Origin : (Point <$> shrink t)
 
 instance Arbitrary (ChainRange Block) where
   arbitrary = do
     low  <- arbitrary
-    high <- arbitrary `suchThat` (\high -> pointSlot low <= pointSlot high)
+    high <- arbitrary `suchThat` (\high -> fromTPoint (SlotNo 0) pointSlot low <= fromTPoint (SlotNo 0) pointSlot high)
     return (ChainRange low high)
 
   shrink (ChainRange low high) = [ ChainRange low' high'
                                  | (low', high') <- shrink (low, high)
-                                 , pointSlot low <= pointSlot high ]
+                                 , fromTPoint (SlotNo 0) pointSlot low <= fromTPoint (SlotNo 0) pointSlot high ]
 
 instance Arbitrary BlockBody where
     arbitrary =
@@ -274,7 +269,7 @@ instance Arbitrary TestAddBlock where
   shrink (TestAddBlock c b) =
     [ TestAddBlock c' b'
     | TestBlockChain c' <- shrink (TestBlockChain c)
-    , let b' = fixupBlock (Chain.headHash c')
+    , let b' = fixupBlock (fromTPoint GenesisHash BlockHash (Chain.headHash c') :: ChainHash Block)
                           (Chain.headBlockNo c') b
     ]
 
@@ -283,8 +278,10 @@ genAddBlock :: (HasHeader block, HeaderHash block ~ ConcreteHeaderHash)
 genAddBlock chain = do
     slotGap <- genSlotGap
     body    <- arbitrary
-    let pb = mkPartialBlock (addSlotGap slotGap (Chain.headSlot chain)) body
-        b  = fixupBlock (Chain.headHash chain)
+    -- If Chain.headSlot chain is Origin (i.e. the chain is empty) we can
+    -- just use SlotNo 0, it'll be fine.
+    let pb = mkPartialBlock (addSlotGap slotGap (fromTPoint (SlotNo 0) id (Chain.headSlot chain))) body
+        b  = fixupBlock (fromTPoint GenesisHash BlockHash (Chain.headHash chain) :: ChainHash Block)
                         (Chain.headBlockNo chain) pb
     return b
 
@@ -429,9 +426,10 @@ genPointOnChain chain =
     len = Chain.length chain
 
 fixupPoint :: HasHeader block => Chain block -> Point block -> Point block
-fixupPoint c p =
-  case Chain.lookupBySlot c (pointSlot p) of
-    Just b  -> Chain.blockPoint b
+fixupPoint _ Origin     = Origin
+fixupPoint c (Point bp) =
+  case Chain.lookupBySlot c (pointSlot bp) of
+    Just b  -> Point (Chain.blockPoint b)
     Nothing -> Chain.headPoint c
 
 prop_arbitrary_TestChainAndPoint :: TestChainAndPoint -> Property
@@ -495,12 +493,17 @@ genRangeOnChain chain = do
 
 prop_arbitrary_TestChainAndRange :: TestChainAndRange -> Property
 prop_arbitrary_TestChainAndRange (TestChainAndRange c p1 p2) =
-  let onChain = Chain.pointOnChain p1 c && Chain.pointOnChain p2 c in
-  cover 85 onChain               "points on chain" $
-  cover  5 (onChain && p1 == p2) "empty range" $
-  cover  5 (not onChain)         "points not on chain" $
-    Chain.valid c
- && onChain `implies` pointSlot p2 >= pointSlot p1
+  let onChain = Chain.pointOnChain p1 c && Chain.pointOnChain p2 c
+      greaterThanOrEqual = case (p1, p2) of
+        (Origin,  Origin)  -> True
+        (Origin,  Point _) -> True
+        (Point _, Origin)  -> False
+        (Point bp1, Point bp2) -> pointSlot bp2 >= pointSlot bp1
+  in  cover 85 onChain               "points on chain" $
+      cover  5 (onChain && p1 == p2) "empty range" $
+      cover  5 (not onChain)         "points not on chain" $
+         Chain.valid c
+      && onChain `implies` greaterThanOrEqual
 
 prop_shrink_TestChainAndRange :: TestChainAndRange -> Bool
 prop_shrink_TestChainAndRange cp@(TestChainAndRange c _ _) =
@@ -528,8 +531,8 @@ instance Arbitrary TestChainAndPoints where
           , (1, Just <$> arbitrary)
           , (5, return Nothing)
           ]
-        points = map Chain.blockPoint (Chain.chainToList chain)
-                  ++ [Chain.genesisPoint]
+        points = map (Point . Chain.blockPoint) (Chain.chainToList chain)
+                  ++ [Origin]
     points' <- catMaybes <$> mapM fn points
     return $ TestChainAndPoints chain points'
 

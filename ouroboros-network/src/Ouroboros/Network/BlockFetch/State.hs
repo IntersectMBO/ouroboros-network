@@ -3,6 +3,11 @@
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 
 module Ouroboros.Network.BlockFetch.State (
     fetchLogicIterations,
@@ -54,7 +59,7 @@ import           Ouroboros.Network.BlockFetch.DeltaQ
 
 
 fetchLogicIterations
-  :: (MonadSTM m, Ord peer,
+  :: (MonadSTM m, Ord peer, Eq header,
       HasHeader header, HasHeader block,
       HeaderHash header ~ HeaderHash block)
   => Tracer m [TraceLabelPeer peer (FetchDecision [Point header])]
@@ -96,7 +101,7 @@ iterateForever x0 m = go x0 where go x = m x >>= go
 -- * deciding for each peer if we will initiate a new fetch request
 --
 fetchLogicIteration
-  :: (MonadSTM m, Ord peer,
+  :: (MonadSTM m, Ord peer, Eq header,
       HasHeader header, HasHeader block,
       HeaderHash header ~ HeaderHash block)
   => Tracer m [TraceLabelPeer peer (FetchDecision [Point header])]
@@ -153,7 +158,7 @@ fetchLogicIteration decisionTracer clientStateTracer
     fetchRequestPoints :: HasHeader hdr => FetchRequest hdr -> [Point hdr]
     fetchRequestPoints (FetchRequest headerss) =
       -- Flatten multiple fragments and trace points, not full headers
-      [ blockPoint header
+      [ Point (blockPoint header)
       | headers <- headerss
       , header  <- ChainFragment.toOldestFirst headers ]
 
@@ -161,9 +166,10 @@ fetchLogicIteration decisionTracer clientStateTracer
 -- real work.
 --
 fetchDecisionsForStateSnapshot
-  :: (HasHeader header, HasHeader block,
+  :: forall header block peer m .
+     (HasHeader header, HasHeader block,
       HeaderHash header ~ HeaderHash block,
-      Ord peer)
+      Ord peer, Eq header)
   => FetchDecisionPolicy header
   -> FetchStateSnapshot peer header block m
   -> [( FetchDecision (FetchRequest header),
@@ -186,7 +192,7 @@ fetchDecisionsForStateSnapshot
     assert (Map.keysSet fetchStatePeerStates
          == Map.keysSet fetchStatePeerGSVs) $
 
-    fetchDecisions
+    fetchDecisions @header @block
       fetchDecisionPolicy
       fetchStateFetchMode
       fetchStateCurrentChain
@@ -207,7 +213,7 @@ fetchDecisionsForStateSnapshot
 -- request variables that are shared with the threads running the block fetch
 -- protocol with each peer.
 --
-fetchLogicIterationAct :: (MonadSTM m, HasHeader header)
+fetchLogicIterationAct :: (MonadSTM m, HasHeader header, Eq header)
                        => Tracer m (TraceLabelPeer peer (TraceFetchClientState header))
                        -> FetchDecisionPolicy header
                        -> [(FetchDecision (FetchRequest header),
@@ -258,7 +264,8 @@ data FetchStateFingerprint peer header block =
        !(Maybe (Point block))
        !(Map peer (Point header))
        !(Map peer (PeerFetchStatus header))
-  deriving Eq
+
+deriving instance (Ord peer, Eq header, Eq (HeaderHash header), Eq (HeaderHash block)) => Eq (FetchStateFingerprint peer header block)
 
 initialFetchStateFingerprint :: FetchStateFingerprint peer header block
 initialFetchStateFingerprint =
@@ -294,7 +301,7 @@ data FetchStateSnapshot peer header block m = FetchStateSnapshot {
        fetchStateFetchMode     :: FetchMode
      }
 
-readStateVariables :: (MonadSTM m, Eq peer,
+readStateVariables :: (MonadSTM m, Ord peer, Eq header,
                        HasHeader header, HasHeader block,
                        HeaderHash header ~ HeaderHash block)
                    => FetchTriggerVariables peer header m
@@ -314,7 +321,7 @@ readStateVariables FetchTriggerVariables{..}
     -- Construct the change detection fingerprint
     let !fetchStateFingerprint' =
           FetchStateFingerprint
-            (Just (castPoint (AnchoredFragment.headPoint fetchStateCurrentChain)))
+            (Just (AnchoredFragment.headPoint fetchStateCurrentChain))
             (Map.map AnchoredFragment.headPoint fetchStatePeerChains)
             fetchStatePeerStatus
 

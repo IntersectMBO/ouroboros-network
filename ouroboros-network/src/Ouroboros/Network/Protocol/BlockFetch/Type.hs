@@ -7,17 +7,23 @@
 {-# LANGUAGE PolyKinds             #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE ExplicitForAll        #-}
+{-# LANGUAGE StandaloneDeriving    #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE UndecidableInstances  #-}
 module Ouroboros.Network.Protocol.BlockFetch.Type where
 
 import           Data.Void (Void)
 
-import           Ouroboros.Network.Block (StandardHash, Point)
+import           Ouroboros.Network.Block (StandardHash, Point, HeaderHash)
 import           Network.TypedProtocol.Core (Protocol (..))
 
 -- | Range of blocks, defined by a lower and upper point, inclusive.
 --
 data ChainRange block = ChainRange !(Point block) !(Point block)
-  deriving (Show, Eq, Ord)
+
+deriving instance (Show (HeaderHash block)) => Show (ChainRange block)
+deriving instance (Eq (HeaderHash block)) => Eq (ChainRange block)
+deriving instance (Ord (HeaderHash block)) => Ord (ChainRange block)
 
 data BlockFetch block where
   BFIdle      :: BlockFetch block

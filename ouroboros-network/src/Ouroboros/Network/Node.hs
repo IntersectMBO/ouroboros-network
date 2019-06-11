@@ -283,7 +283,8 @@ relayNode nid initChain chans = do
   forkRelayKernel upstream cpsVar
 
   -- producers which share @'ChainProducerState'@
-  let producer = chainSyncServerPeer (chainSyncServerExample () cpsVar)
+  let producer :: Peer (ChainSync block (Point block)) 'AsServer 'StIdle m ()
+      producer = chainSyncServerPeer (chainSyncServerExample () cpsVar)
   mapM_ (uncurry $ startProducer producer) (zip [0..] (producerChans chans))
 
   return cpsVar
@@ -358,7 +359,7 @@ forkCoreKernel slotDuration gchain fixupBlock cpsVar = do
 
     addBlock :: Chain block -> block -> Chain block
     addBlock c b =
-      case blockSlot b `compare` Chain.headSlot c of
+      case blockSlot b `compare` fromTPoint (SlotNo 0) id (Chain.headSlot c) of
         -- the block is OK
         GT -> let r = Chain.addBlock (fixupBlock c b) c in
               assert (Chain.valid r) r
@@ -395,5 +396,5 @@ coreNode nid slotDuration gchain chans = do
     fixupBlock :: Chain Block -> Block -> Block
     fixupBlock c =
       Concrete.fixupBlock
-        (Chain.headHash c)
+        (fromTPoint GenesisHash BlockHash (Chain.headHash c) :: ChainHash Block)
         (Chain.headBlockNo c)

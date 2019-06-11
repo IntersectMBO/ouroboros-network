@@ -226,7 +226,7 @@ mkAnchoredFragment anchorpoint anchorblockno =
 
 mkAnchoredFragmentSimple :: [BlockBody] -> AnchoredFragment Block
 mkAnchoredFragmentSimple =
-    mkAnchoredFragment (Point 0 GenesisHash) (BlockNo 0) . zip [1..]
+    mkAnchoredFragment Origin (BlockNo 0) . zip [1..]
 
 
 mkPartialBlock :: SlotNo -> BlockBody -> Block
@@ -368,7 +368,7 @@ fixupAnchoredFragmentFrom :: HasHeader b
 fixupAnchoredFragmentFrom anchorpoint anchorblockno =
     fixupBlocks
       (AF.:>) (AF.Empty anchorpoint)
-      (Just (pointHash anchorpoint))
+      (Just (chainHashFromPoint anchorpoint))
       (Just anchorblockno)
 
 fixupAnchoredFragmentFromSame :: HasHeader b
@@ -378,8 +378,8 @@ fixupAnchoredFragmentFromSame :: HasHeader b
 fixupAnchoredFragmentFromSame anchorpoint =
     fixupBlocks
       (AF.:>) (AF.Empty anchorpoint)
-      (Just (pointHash anchorpoint))  -- fixup the hash
-      Nothing                         -- but keep the first block number
+      (Just (chainHashFromPoint anchorpoint))  -- fixup the hash
+      Nothing                                  -- but keep the first block number
 
 
 {-------------------------------------------------------------------------------

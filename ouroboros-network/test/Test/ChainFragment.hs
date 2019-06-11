@@ -24,7 +24,7 @@ import           Test.Tasty.QuickCheck (testProperty)
 import           Text.Show.Functions ()
 
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Chain (ChainUpdate (..), Point (..))
+import           Ouroboros.Network.Chain (ChainUpdate (..))
 import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.ChainFragment (ChainFragment(..))
 import qualified Ouroboros.Network.ChainFragment as CF
@@ -195,14 +195,14 @@ prop_addBlock (TestAddBlock c b) =
       -- removing the block gives the original
       && case CF.headPoint c of
            Nothing      -> True
-           Just headPnt -> CF.rollback headPnt c' == Just c
+           Just headPnt -> CF.rollback (Point headPnt) c' == Just c
       && CF.dropNewest 1 c' == c
       -- chain is one longer
       && CF.length c' == CF.length c + 1
 
 prop_rollback :: TestChainFragmentAndPoint -> Bool
 prop_rollback (TestChainFragmentAndPoint c p) =
-    case CF.rollback p c of
+    case CF.rollback (Point p) c of
       Nothing -> not (CF.pointOnChainFragment p c)
       Just c' ->
         -- chain is a prefix of original
@@ -214,7 +214,7 @@ prop_rollback_head :: TestBlockChainFragment -> Bool
 prop_rollback_head (TestBlockChainFragment c) =
   case CF.headPoint c of
     Nothing      -> True
-    Just headPnt -> CF.rollback headPnt c == Just c
+    Just headPnt -> CF.rollback (Point headPnt) c == Just c
 
 prop_successorBlock :: TestChainFragmentAndPoint -> Property
 prop_successorBlock (TestChainFragmentAndPoint c p) =
@@ -222,7 +222,7 @@ prop_successorBlock (TestChainFragmentAndPoint c p) =
   case CF.successorBlock p c of
     Nothing -> CF.headPoint c === Just p
     Just b  -> property $ CF.pointOnChainFragment (CF.blockPoint b) c
-          .&&. blockPrevHash b === pointHash p
+          .&&. blockPrevHash b === BlockHash (pointHash p)
 
 prop_lookupBySlot :: TestChainFragmentAndPoint -> Bool
 prop_lookupBySlot (TestChainFragmentAndPoint c p) =
@@ -310,7 +310,12 @@ prop_splitBeforePoint (TestChainFragmentAndPoint c p) =
     slots = map blockSlot . CF.toOldestFirst
 
 prop_sliceRange :: TestChainAndRange -> Bool
-prop_sliceRange (TestChainAndRange c p1 p2) =
+-- These 2 cases make no sense
+-- FIXME uses a different type: one that uses `BlockPoints`s rather than
+-- `Point`s.
+prop_sliceRange (TestChainAndRange _ Origin _     ) = True
+prop_sliceRange (TestChainAndRange _ _      Origin) = True
+prop_sliceRange (TestChainAndRange c (Point p1) (Point p2)) =
     case CF.sliceRange c' p1 p2 of
       Just slice ->
           CF.valid slice
@@ -532,7 +537,7 @@ genChainFragmentUpdate chain =
       -- progress. We slightly arbitrarily weight 2:1 for forward progress.
       [ (expectedRollbackLength * 2, AddBlock <$> genAddBlock chain) ]
    ++ L.take (CF.length chain)
-        [ (freq, pure (RollBack (fromJust (mkRollbackPoint chain len))))
+        [ (freq, pure (RollBack (Point (fromJust (mkRollbackPoint chain len)))))
         | (freq, len) <- rollbackLengthDistribution
         ]
   where
@@ -550,7 +555,7 @@ genChainFragmentUpdate chain =
       | n <- [1..k] ]
 
 mkRollbackPoint :: HasHeader block
-                => ChainFragment block -> Int -> Maybe (Point block)
+                => ChainFragment block -> Int -> Maybe (BlockPoint block)
 mkRollbackPoint chain n = CF.headPoint $ CF.dropNewest n chain
 
 genChainFragmentUpdates :: ChainFragment Block
@@ -610,7 +615,7 @@ countChainFragmentUpdateNetProgress = go 0
 -- on the chain, but it also covers at least 5% of cases where the point is
 -- not on the chain.
 --
-data TestChainFragmentAndPoint = TestChainFragmentAndPoint (ChainFragment Block) (Point Block)
+data TestChainFragmentAndPoint = TestChainFragmentAndPoint (ChainFragment Block) (BlockPoint Block)
   deriving Show
 
 instance Arbitrary TestChainFragmentAndPoint where
@@ -641,7 +646,7 @@ instance Arbitrary TestChainFragmentAndPoint where
       | TestBlockChainFragment c' <- shrink (TestBlockChainFragment c) ]
 
 fixupPoint :: HasHeader block
-           => ChainFragment block -> Point block -> Maybe (Point block)
+           => ChainFragment block -> BlockPoint block -> Maybe (BlockPoint block)
 fixupPoint c p =
   case CF.lookupBySlot c (pointSlot p) of
     Just b  -> Just (CF.blockPoint b)
