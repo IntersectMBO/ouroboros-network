@@ -20,7 +20,7 @@ import           Data.Maybe (mapMaybe)
 
 import           Ouroboros.Consensus.Ledger.Mock.Address
 import           Ouroboros.Consensus.Ledger.Mock.UTxO
-import           Ouroboros.Consensus.Node (NodeId (..))
+import           Ouroboros.Consensus.NodeId (NodeId (..))
 
 {-------------------------------------------------------------------------------
   Stakeholders

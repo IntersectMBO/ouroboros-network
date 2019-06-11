@@ -27,7 +27,7 @@ import           Ouroboros.Consensus.Crypto.DSIGN
 import           Ouroboros.Consensus.Demo.Run
 import           Ouroboros.Consensus.Ledger.Byron
 import           Ouroboros.Consensus.Ledger.Extended
-import           Ouroboros.Consensus.Node (CoreNodeId (..), NodeId (..))
+import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.PBFT
 

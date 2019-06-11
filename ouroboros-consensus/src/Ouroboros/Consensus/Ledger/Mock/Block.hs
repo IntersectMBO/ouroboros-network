@@ -59,6 +59,7 @@ import           Ouroboros.Consensus.Ledger.Mock.UTxO
 import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Util ((.:))
 import           Ouroboros.Consensus.Util.Condense
+import           Ouroboros.Consensus.Util.Orphans ()
 
 {-------------------------------------------------------------------------------
   Definition of a block

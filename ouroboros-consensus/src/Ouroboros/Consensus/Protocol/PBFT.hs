@@ -46,7 +46,7 @@ import           Ouroboros.Network.Block
 import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
 import           Ouroboros.Consensus.Crypto.DSIGN.Class
 import           Ouroboros.Consensus.Crypto.DSIGN.Mock (MockDSIGN)
-import           Ouroboros.Consensus.Node (NodeId (..))
+import           Ouroboros.Consensus.NodeId (NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense

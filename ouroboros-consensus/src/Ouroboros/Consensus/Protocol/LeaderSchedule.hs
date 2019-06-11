@@ -16,7 +16,7 @@ import qualified Data.Map.Strict as Map
 
 import           Ouroboros.Network.Block (SlotNo (..))
 
-import           Ouroboros.Consensus.Node (CoreNodeId (..))
+import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util (Empty)
 import           Ouroboros.Consensus.Util.Condense (Condense (..))

@@ -13,7 +13,7 @@ import           Data.Maybe (fromMaybe)
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Crypto as Cardano
 
-import           Ouroboros.Consensus.Node (CoreNodeId (..))
+import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 
 import           Ouroboros.Consensus.Crypto.DSIGN
 import           Ouroboros.Consensus.Demo.Ledger.Byron.Config

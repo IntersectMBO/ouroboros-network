@@ -14,7 +14,7 @@ import qualified Cardano.Chain.Update as CC.Update
 import qualified Cardano.Crypto as Crypto
 
 import           Ouroboros.Consensus.Ledger.Byron
-import           Ouroboros.Consensus.Node (CoreNodeId)
+import           Ouroboros.Consensus.NodeId (CoreNodeId)
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.PBFT
 

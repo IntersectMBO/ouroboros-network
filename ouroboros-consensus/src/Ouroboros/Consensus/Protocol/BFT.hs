@@ -39,7 +39,7 @@ import           Ouroboros.Network.Block
 import           Ouroboros.Consensus.Crypto.DSIGN.Class
 import           Ouroboros.Consensus.Crypto.DSIGN.Ed448 (Ed448DSIGN)
 import           Ouroboros.Consensus.Crypto.DSIGN.Mock (MockDSIGN)
-import           Ouroboros.Consensus.Node (NodeId (..))
+import           Ouroboros.Consensus.NodeId (NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense

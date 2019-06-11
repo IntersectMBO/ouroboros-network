@@ -7,7 +7,7 @@ module Ouroboros.Consensus.Ledger.Mock.Address (
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 
-import           Ouroboros.Consensus.Node (NodeId (..))
+import           Ouroboros.Consensus.NodeId (NodeId (..))
 
 -- | Mock address
 type Addr = String

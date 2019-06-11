@@ -24,7 +24,7 @@ import           Ouroboros.Consensus.Crypto.VRF
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Mock.Block
 import           Ouroboros.Consensus.Ledger.Mock.Forge
-import           Ouroboros.Consensus.Node (CoreNodeId)
+import           Ouroboros.Consensus.NodeId (CoreNodeId)
 import           Ouroboros.Consensus.Protocol.LeaderSchedule
 import           Ouroboros.Consensus.Protocol.Praos
 import           Ouroboros.Consensus.Util.Condense

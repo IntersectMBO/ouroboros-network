@@ -56,7 +56,7 @@ import           Ouroboros.Consensus.Crypto.KES.Simple
 import           Ouroboros.Consensus.Crypto.VRF.Class
 import           Ouroboros.Consensus.Crypto.VRF.Mock (MockVRF)
 import           Ouroboros.Consensus.Crypto.VRF.Simple (SimpleVRF)
-import           Ouroboros.Consensus.Node (CoreNodeId (..), NodeId (..))
+import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util (Empty)

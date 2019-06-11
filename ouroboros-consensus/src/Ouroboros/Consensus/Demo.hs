@@ -48,7 +48,7 @@ import           Ouroboros.Consensus.Demo.Ledger.Mock.PraosRule
 import           Ouroboros.Consensus.Demo.Run
 import           Ouroboros.Consensus.Ledger.Byron
 import           Ouroboros.Consensus.Ledger.Mock
-import           Ouroboros.Consensus.Node (CoreNodeId (..))
+import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
