@@ -33,7 +33,7 @@ import           Ouroboros.Network.NodeToNode (DictVersion (..))
 -- make up the overall node-to-client protocol.
 --
 data NodeToClientProtocols = ChainSyncWithBlocks
-                          -- ClientRPC -- will probably need something like this
+                           | LocalTxSubmission
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 -- | These are the actual wire format protocol numbers.
@@ -46,8 +46,10 @@ data NodeToClientProtocols = ChainSyncWithBlocks
 instance ProtocolEnum NodeToClientProtocols where
 
   fromProtocolEnum ChainSyncWithBlocks = 5
+  fromProtocolEnum LocalTxSubmission   = 6
 
   toProtocolEnum 5 = Just ChainSyncWithBlocks
+  toProtocolEnum 6 = Just LocalTxSubmission
   toProtocolEnum _ = Nothing
 
 -- |
