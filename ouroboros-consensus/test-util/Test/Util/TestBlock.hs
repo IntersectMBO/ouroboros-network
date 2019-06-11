@@ -52,11 +52,12 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Crypto.DSIGN
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
-import           Ouroboros.Consensus.Node (NodeId (..))
+import           Ouroboros.Consensus.NodeId (NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
+import           Ouroboros.Consensus.Util.Orphans ()
 import qualified Ouroboros.Consensus.Util.SlotBounded as SB
 
 {-------------------------------------------------------------------------------

@@ -27,7 +27,7 @@ import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Demo
 import           Ouroboros.Consensus.Demo.Run
 import qualified Ouroboros.Consensus.Ledger.Mock as Mock
-import           Ouroboros.Consensus.Node (NodeId (..))
+import           Ouroboros.Consensus.NodeId (NodeId (..))
 import           Ouroboros.Consensus.Util
 
 import           Mock.TxSubmission (command', parseMockTx)

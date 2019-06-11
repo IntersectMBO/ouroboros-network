@@ -27,7 +27,8 @@ import qualified Ouroboros.Consensus.Crypto.Hash as H
 import           Ouroboros.Consensus.Demo.Run
 import qualified Ouroboros.Consensus.Ledger.Mock as Mock
 import           Ouroboros.Consensus.Mempool
-import           Ouroboros.Consensus.Node (NodeId (..), NodeKernel (..))
+import           Ouroboros.Consensus.NodeId (NodeId (..))
+import           Ouroboros.Consensus.Node   (NodeKernel (..))
 import           Ouroboros.Consensus.Util.CBOR (Decoder (..), initDecoderIO)
 import           Ouroboros.Consensus.Util.Condense
 

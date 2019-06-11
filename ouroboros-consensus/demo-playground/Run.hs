@@ -34,6 +34,7 @@ import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
 import           Ouroboros.Consensus.Demo
 import           Ouroboros.Consensus.Demo.Run
+import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Node
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()

@@ -37,7 +37,7 @@ import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Demo
 import           Ouroboros.Consensus.Demo.Run
 import           Ouroboros.Consensus.Ledger.Mock
-import           Ouroboros.Consensus.Node (NodeId)
+import           Ouroboros.Consensus.NodeId (NodeId)
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Praos
 import           Ouroboros.Consensus.Util.Chain (dropLastBlocks, lastSlot)

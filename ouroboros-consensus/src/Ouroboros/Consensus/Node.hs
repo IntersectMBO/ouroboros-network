@@ -12,12 +12,8 @@
 {-# OPTIONS_GHC -Wredundant-constraints -Werror=missing-fields #-}
 
 module Ouroboros.Consensus.Node (
-    -- * Node IDs
-    NodeId (..)
-  , CoreNodeId (..)
-  , fromCoreNodeId
     -- * Node
-  , NodeKernel (..)
+    NodeKernel (..)
   , NodeCallbacks (..)
   , NodeComms (..)
   , NodeParams (..)
@@ -28,7 +24,6 @@ module Ouroboros.Consensus.Node (
   , Network.loggingChannel
   ) where
 
-import           Codec.Serialise (Serialise)
 import           Control.Monad (void)
 import           Crypto.Random (ChaChaDRG)
 import qualified Data.Foldable as Foldable
@@ -81,27 +76,6 @@ import           Ouroboros.Consensus.Util.ThreadRegistry
 import           Ouroboros.Storage.ChainDB.API (ChainDB)
 import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 
-
-{-------------------------------------------------------------------------------
-  Node IDs
--------------------------------------------------------------------------------}
-
--- TODO: This was moved here from the network layer Node module. We should
--- review this and make sure it makes sense here.
-data NodeId = CoreId Int
-            | RelayId Int
-  deriving (Eq, Ord, Show)
-
-instance Condense NodeId where
-  condense (CoreId  i) = "c" ++ show i
-  condense (RelayId i) = "r" ++ show i
-
--- | Core node ID
-newtype CoreNodeId = CoreNodeId Int
-  deriving (Show, Eq, Ord, Condense, Serialise)
-
-fromCoreNodeId :: CoreNodeId -> NodeId
-fromCoreNodeId (CoreNodeId n) = CoreId n
 
 {-------------------------------------------------------------------------------
   Relay node

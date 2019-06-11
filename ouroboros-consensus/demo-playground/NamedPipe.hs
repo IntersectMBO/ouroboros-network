@@ -18,7 +18,7 @@ import           System.Posix.Files (createNamedPipe, otherReadMode,
                      otherWriteMode, ownerModes, unionFileModes)
 
 import           Ouroboros.Network.Channel (Channel, handlesAsChannel)
-import           Ouroboros.Consensus.Node (NodeId(..))
+import           Ouroboros.Consensus.NodeId (NodeId(..))
 
 
 data NodeMapping src tgt = src :==>: tgt
