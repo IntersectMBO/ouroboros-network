@@ -17,6 +17,9 @@ module Ouroboros.Network.NodeToNode (
 
   , nodeToNodeConnectTo
   , withServerNodeToNode
+
+  -- * Re-exports
+  , AnyMuxResponderApp (..)
   ) where
 
 import           Control.Concurrent.Async (Async)
