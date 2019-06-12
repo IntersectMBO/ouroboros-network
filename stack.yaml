@@ -1,4 +1,4 @@
-resolver: https://raw.githubusercontent.com/input-output-hk/cardano-prelude/a136c4242b9c9f6124b811329bc8ccdfd86c514e/snapshot.yaml
+resolver: https://raw.githubusercontent.com/input-output-hk/cardano-prelude/68648612f916e8adaf6c9ca5fe39bc6712470a6a/snapshot.yaml
 
 packages:
   - ./typed-transitions
@@ -24,21 +24,21 @@ extra-deps:
       - binary/test
 
   - git: https://github.com/input-output-hk/cardano-ledger
-    commit: 761feffb241c2db934c599dc330131ddee034322
+    commit: 7f5263eac329d73a0626fc0d9603dec2cd51d352
     subdirs:
-      - .
+      - cardano-ledger
+      - cardano-ledger/test
       - crypto
       - crypto/test
-      - test
 
   - git: https://github.com/input-output-hk/cardano-prelude
-    commit: a136c4242b9c9f6124b811329bc8ccdfd86c514e
+    commit: 68648612f916e8adaf6c9ca5fe39bc6712470a6a
     subdirs:
       - .
       - test
 
   - git: https://github.com/input-output-hk/cardano-shell
-    commit: 4e9651df29752d1205719028e288ce9e0478a373
+    commit: de45bf135fc0c575753613ee157378a28f9261e2
 
   - git: https://github.com/input-output-hk/cardano-sl-x509
     commit: e8bfc1294e088f90e5ae0b4aedbc82ee46ac5ee4
@@ -54,6 +54,7 @@ extra-deps:
   - quickcheck-state-machine-0.6.0@sha256:3e4f8df0f6b5d415e3c8840dc75034a63e37f56f5f8cfa1035ded16345235ac4
   - splitmix-0.0.2
   - libsystemd-journal-1.4.4
+  - tasty-hedgehog-1.0.0.1
 
   # Windows only
   - Win32-2.5.4.1

@@ -37,6 +37,7 @@
           (hsPkgs.directory)
           (hsPkgs.filepath)
           (hsPkgs.formatting)
+          (hsPkgs.megaparsec)
           (hsPkgs.memory)
           (hsPkgs.mtl)
           (hsPkgs.resourcet)
@@ -72,6 +73,7 @@
             (hsPkgs.formatting)
             (hsPkgs.hedgehog)
             (hsPkgs.lens)
+            (hsPkgs.mtl)
             (hsPkgs.optparse-applicative)
             (hsPkgs.resourcet)
             (hsPkgs.small-steps)
@@ -88,7 +90,8 @@
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
       url = "https://github.com/input-output-hk/cardano-ledger";
-      rev = "761feffb241c2db934c599dc330131ddee034322";
-      sha256 = "0lgbmm1caikrds0wdqjl22wzr85d2hcvd0ppll3vbnfnk9dh6k6b";
+      rev = "3a62c8c9d42a89d14ce471363d3a12d4fae03c27";
+      sha256 = "10ipg81b0hkg93w23xqw08f6c5m33p9whdkgxzpn3msim9va9zmx";
       });
+    postUnpack = "sourceRoot+=/cardano-ledger; echo source root reset to \$sourceRoot";
     }

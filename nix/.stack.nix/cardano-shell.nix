@@ -71,6 +71,7 @@
             (hsPkgs.filepath)
             (hsPkgs.formatting)
             (hsPkgs.safe-exceptions)
+            (hsPkgs.turtle)
             ] ++ (if system.isWindows
             then [ (hsPkgs.Win32) ]
             else [ (hsPkgs.unix) ]);
@@ -86,6 +87,9 @@
             (hsPkgs.dhall)
             (hsPkgs.safe-exceptions)
             (hsPkgs.QuickCheck)
+            (hsPkgs.quickcheck-state-machine)
+            (hsPkgs.tree-diff)
+            (hsPkgs.pretty-show)
             (hsPkgs.hspec)
             (hsPkgs.hspec-contrib)
             (hsPkgs.concurrency)
@@ -98,7 +102,7 @@
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
       url = "https://github.com/input-output-hk/cardano-shell";
-      rev = "4e9651df29752d1205719028e288ce9e0478a373";
-      sha256 = "0avipzd1i18vn4sznsaisnrybg1n0pf00vzxhygx9idb91ws6bl0";
+      rev = "de45bf135fc0c575753613ee157378a28f9261e2";
+      sha256 = "0j3imc9c80904ybhbrl4mb0v6h9j3c7c9l6pij6idg3adh0rla9z";
       });
     }
