@@ -436,7 +436,7 @@ runClient tracer clientOptions genesisConfig epochSlots db = case clientOptions 
     addrInfosLocal  <- Network.getAddrInfo (Just addrInfoHints) (Just "127.0.0.1") (Just "0")
     addrInfosRemote <- Network.getAddrInfo (Just addrInfoHints) (Just host) (Just port)
     case (addrInfosLocal, addrInfosRemote) of
-      (addrInfoLocal : _, addrInfoRemote : _) -> connectTo
+      (addrInfoLocal : _, addrInfoRemote : _) -> connectToNode
         encodeTerm
         decodeTerm
         (initiatorVersions epochSlots chainSyncClient)

@@ -13,7 +13,7 @@ module Ouroboros.Network.Socket (
       AnyMuxResponderApp (..)
     , withServerNode
     , withSimpleServerNode
-    , connectTo
+    , connectToNode
 
     -- * Helper function for creating servers
     , socketAsMuxBearer
@@ -154,7 +154,7 @@ hexDump buf out = hexDump (BL.tail buf) (out ++ printf "0x%02x " (BL.head buf))
 -- remote peer.  It must fit into @'maxTransmissionUnit'@ (~5k bytes).
 --
 -- Exceptions thrown by @'MuxApplication'@ are rethrown by @'connectTo'@.
-connectTo
+connectToNode
   :: forall ptcl vNumber extra a b.
      ( Mx.ProtocolEnum ptcl
      , Ord ptcl
@@ -177,7 +177,7 @@ connectTo
   -> Socket.AddrInfo
   -- ^ remote address
   -> IO ()
-connectTo encodeData decodeData versions localAddr remoteAddr =
+connectToNode encodeData decodeData versions localAddr remoteAddr =
     bracket
       (Socket.socket (Socket.addrFamily remoteAddr) Socket.Stream Socket.defaultProtocol)
       Socket.close

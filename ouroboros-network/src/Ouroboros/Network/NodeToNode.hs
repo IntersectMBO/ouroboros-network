@@ -15,8 +15,8 @@ module Ouroboros.Network.NodeToNode (
   , DictVersion (..)
   , nodeToNodeCodecCBORTerm
 
-  , nodeToNodeConnectTo
-  , withServerNodeToNode
+  , connectTo
+  , withServer
 
   -- * Re-exports
   , AnyMuxResponderApp (..)
@@ -118,30 +118,30 @@ nodeToNodeCodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
 
 
 -- |
--- A specialised version of @'Ouroboros.Network.Socket.connectTo'@.
+-- A specialised version of @'Ouroboros.Network.Socket.connectToNode'@.
 --
-nodeToNodeConnectTo
+connectTo
   :: Versions NodeToNodeVersion
               DictVersion
               (MuxApplication InitiatorApp NodeToNodeProtocols IO BL.ByteString a b)
   -> Maybe Socket.AddrInfo
   -> Socket.AddrInfo
   -> IO ()
-nodeToNodeConnectTo =
-  connectTo
+connectTo =
+  connectToNode
     (\(DictVersion codec) -> encodeTerm codec)
     (\(DictVersion codec) -> decodeTerm codec)
 
 -- |
 -- A specialised version of @'Ouroboros.Network.Socket.withServerNode'@
 --
-withServerNodeToNode
+withServer
   :: Socket.AddrInfo
   -> (forall vData. DictVersion vData -> vData -> vData -> Accept)
   -> Versions NodeToNodeVersion DictVersion (AnyMuxResponderApp NodeToNodeProtocols IO BL.ByteString)
   -> (Async () -> IO t)
   -> IO t
-withServerNodeToNode addr =
+withServer addr =
   withServerNode
     addr 
     (\(DictVersion codec) -> encodeTerm codec)

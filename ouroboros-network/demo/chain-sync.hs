@@ -139,7 +139,7 @@ instance MiniProtocolLimits DemoProtocol0 where
 
 clientPingPong :: Bool -> IO ()
 clientPingPong pipelined =
-    connectTo
+    connectToNode
       (\(DictVersion codec) -> encodeTerm codec)
       (\(DictVersion codec) -> decodeTerm codec)
       (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) muxApplication)
@@ -220,7 +220,7 @@ instance MiniProtocolLimits DemoProtocol1 where
 
 clientPingPong2 :: IO ()
 clientPingPong2 =
-    connectTo
+    connectToNode
       (\(DictVersion codec) -> encodeTerm codec)
       (\(DictVersion codec) -> decodeTerm codec)
       (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) muxApplication)
@@ -311,7 +311,7 @@ instance MiniProtocolLimits DemoProtocol2 where
 clientChainSync :: [FilePath] -> IO ()
 clientChainSync sockAddrs =
     forConcurrently_ sockAddrs $ \sockAddr ->
-      connectTo
+      connectToNode
         (\(DictVersion codec) -> encodeTerm codec)
         (\(DictVersion codec) -> decodeTerm codec)
         (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) muxApplication)
@@ -475,7 +475,7 @@ clientBlockFetch sockAddrs = do
 
     peerAsyncs <- sequence
                     [ async $
-                        connectTo
+                        connectToNode
                           (\(DictVersion codec) -> encodeTerm codec)
                           (\(DictVersion codec) -> decodeTerm codec)
                           (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) (muxApplication sockAddr))
