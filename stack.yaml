@@ -123,8 +123,9 @@ extra-deps:
   - ekg-wai-0.1.0.3
   - lzma-clib-5.2.2
   # End of byron-proxy-induced dependencies.
-
-
+  - ihaskell-0.10.0.0
+  - ghc-parser-0.2.0.3
+  - ipython-kernel-0.10.0.0
 
 nix:
   shell-file: nix/stack-shell.nix
