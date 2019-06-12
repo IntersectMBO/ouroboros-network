@@ -60,8 +60,7 @@ instance MiniProtocolLimits NodeToClientProtocols where
   maximumMessageSize  _ = 0xffffffff
   maximumIngressQueue _ = 0xffffffff
 
--- |
--- Enumeration of node to client protocol versions.
+-- | Enumeration of node to client protocol versions.
 --
 data NodeToClientVersion = NodeToClientV_1
   deriving (Eq, Ord, Enum, Show, Typeable)
@@ -74,8 +73,7 @@ instance Serialise NodeToClientVersion where
         1 -> return NodeToClientV_1
         _ -> fail "decode NodeToNodeVersion: unknown tag"
 
--- |
--- Version data for NodeToClient protocol v1
+-- | Version data for NodeToClient protocol v1
 --
 newtype NodeToClientVersionData = NodeToClientVersionData
   { networkMagic :: Word16 }

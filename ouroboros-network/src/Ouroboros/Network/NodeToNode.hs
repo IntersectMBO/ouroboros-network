@@ -83,8 +83,7 @@ instance MiniProtocolLimits NodeToNodeProtocols where
   maximumMessageSize  _ = 0xffffffff
   maximumIngressQueue _ = 0xffffffff
 
--- |
--- Enumeration of node to node protocol versions.
+-- | Enumeration of node to node protocol versions.
 --
 data NodeToNodeVersion = NodeToNodeV_1
   deriving (Eq, Ord, Enum, Show, Typeable)
@@ -97,8 +96,7 @@ instance Serialise NodeToNodeVersion where
         1 -> return NodeToNodeV_1
         _ -> fail "decode NodeToNodeVersion: unknown tag"
 
--- |
--- Version data for NodeToNode protocol v1
+-- | Version data for NodeToNode protocol v1
 --
 newtype NodeToNodeVersionData = NodeToNodeVersionData
   { networkMagic :: Word16 }
@@ -117,8 +115,7 @@ nodeToNodeCodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
       decodeTerm t             = Left $ T.pack $ "unknown encoding: " ++ show t
 
 
--- |
--- A specialised version of @'Ouroboros.Network.Socket.connectToNode'@.
+-- | A specialised version of @'Ouroboros.Network.Socket.connectToNode'@.
 --
 connectTo
   :: Versions NodeToNodeVersion
@@ -132,8 +129,7 @@ connectTo =
     (\(DictVersion codec) -> encodeTerm codec)
     (\(DictVersion codec) -> decodeTerm codec)
 
--- |
--- A specialised version of @'Ouroboros.Network.Socket.withServerNode'@
+-- | A specialised version of @'Ouroboros.Network.Socket.withServerNode'@
 --
 withServer
   :: Socket.AddrInfo
