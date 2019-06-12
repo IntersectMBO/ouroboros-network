@@ -46,9 +46,9 @@ import           Ouroboros.Network.Socket
 -- | An index type used with the mux to enumerate all the mini-protocols that
 -- make up the overall node-to-node protocol.
 --
-data NodeToNodeProtocols = ChainSyncWithHeaders
-                         | BlockFetch
-                         -- TxSubmission
+data NodeToNodeProtocols = ChainSyncWithHeadersPtcl
+                         | BlockFetchPtcl
+                         -- TxSubmissionPtcl
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 -- These protocol numbers end up in the wire format so it is vital that they
@@ -68,13 +68,13 @@ data NodeToNodeProtocols = ChainSyncWithHeaders
 --
 instance ProtocolEnum NodeToNodeProtocols where
 
-  fromProtocolEnum ChainSyncWithHeaders = 2
-  fromProtocolEnum BlockFetch           = 3
-  -- fromProtocolEnum TxSubmission         = 4
+  fromProtocolEnum ChainSyncWithHeadersPtcl = 2
+  fromProtocolEnum BlockFetchPtcl           = 3
+  -- fromProtocolEnum TxSubmissionPtcl         = 4
 
-  toProtocolEnum 2 = Just ChainSyncWithHeaders
-  toProtocolEnum 3 = Just BlockFetch
-  -- toProtocolEnum 4 = Just TxSubmission
+  toProtocolEnum 2 = Just ChainSyncWithHeadersPtcl
+  toProtocolEnum 3 = Just BlockFetchPtcl
+  -- toProtocolEnum 4 = Just TxSubmissionPtcl
   toProtocolEnum _ = Nothing
 
 instance MiniProtocolLimits NodeToNodeProtocols where
