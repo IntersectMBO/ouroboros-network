@@ -92,6 +92,12 @@ data NodeKernel m up blk = NodeKernel {
       -- | The node's static configuration
     , getNodeConfig :: NodeConfig (BlockProtocol blk)
 
+      -- | The fetch client registry, used for the block fetch clients.
+    , getFetchClientRegistry :: FetchClientRegistry up (Header blk) blk m
+
+      -- | Read the current candidates
+    , getNodeCandidates :: TVar m (Map up (TVar m (CandidateState blk)))
+
       -- | Notify network layer of new upstream node
       --
       -- NOTE: Eventually it will be the responsibility of the network layer
@@ -179,7 +185,8 @@ nodeKernel params@NodeParams { threadRegistry, cfg } = do
 
     forkBlockProduction st
 
-    let IS { blockFetchInterface, fetchClientRegistry, chainDB, mempool } = st
+    let IS { blockFetchInterface, fetchClientRegistry, varCandidates,
+             chainDB, mempool } = st
 
     -- Run the block fetch logic in the background. This will call
     -- 'addFetchedBlock' whenever a new block is downloaded.
@@ -193,6 +200,8 @@ nodeKernel params@NodeParams { threadRegistry, cfg } = do
         getChainDB    = chainDB
       , getMempool    = mempool
       , getNodeConfig = cfg
+      , getFetchClientRegistry = fetchClientRegistry
+      , getNodeCandidates      = varCandidates
       , addUpstream   = npAddUpstream   (networkLayer st)
       , addDownstream = npAddDownstream (networkLayer st)
       }
