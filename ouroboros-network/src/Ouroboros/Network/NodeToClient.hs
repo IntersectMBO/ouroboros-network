@@ -34,8 +34,8 @@ import           Ouroboros.Network.NodeToNode (DictVersion (..))
 -- | An index type used with the mux to enumerate all the mini-protocols that
 -- make up the overall node-to-client protocol.
 --
-data NodeToClientProtocols = ChainSyncWithBlocks
-                           | LocalTxSubmission
+data NodeToClientProtocols = ChainSyncWithBlocksPtcl
+                           | LocalTxSubmissionPtcl
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 -- | These are the actual wire format protocol numbers.
@@ -47,11 +47,11 @@ data NodeToClientProtocols = ChainSyncWithBlocks
 --
 instance ProtocolEnum NodeToClientProtocols where
 
-  fromProtocolEnum ChainSyncWithBlocks = 5
-  fromProtocolEnum LocalTxSubmission   = 6
+  fromProtocolEnum ChainSyncWithBlocksPtcl = 5
+  fromProtocolEnum LocalTxSubmissionPtcl   = 6
 
-  toProtocolEnum 5 = Just ChainSyncWithBlocks
-  toProtocolEnum 6 = Just LocalTxSubmission
+  toProtocolEnum 5 = Just ChainSyncWithBlocksPtcl
+  toProtocolEnum 6 = Just LocalTxSubmissionPtcl
   toProtocolEnum _ = Nothing
 
 instance MiniProtocolLimits NodeToClientProtocols where
