@@ -46,6 +46,7 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Node
+import           Ouroboros.Consensus.NodeNetwork
 import           Ouroboros.Consensus.Protocol.Abstract (NodeConfig)
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
@@ -142,6 +143,7 @@ broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots = do
             }
 
       node <- nodeKernel nodeParams
+      let network = initNetworkLayer nodeParams node
 
       forM_ (filter (/= us) nodeIds) $ \them -> do
         let mkCommsDown :: Show bytes
@@ -162,10 +164,10 @@ broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots = do
                   loggingChannel (TalkingToProducer us them) $
                     getChan (chans Map.! them Map.! us)
               }
-        addDownstream node
+        addDownstream network
           (mkCommsDown chainSyncConsumer  codecChainSyncId)
           (mkCommsDown blockFetchConsumer codecBlockFetchId)
-        addUpstream node them
+        addUpstream network them
           (mkCommsUp   chainSyncProducer  codecChainSyncId)
           (mkCommsUp   blockFetchProducer codecBlockFetchId)
 
