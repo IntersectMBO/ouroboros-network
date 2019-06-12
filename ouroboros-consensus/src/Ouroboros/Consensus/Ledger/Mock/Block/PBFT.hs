@@ -79,9 +79,8 @@ instance SimpleCrypto c => SignedHeader (SimplePBftHeader c c') where
   encodeSigned = const encode
 
 instance ( SimpleCrypto c
-         , PBftCrypto c'
-         , Signable (PBftDSIGN c') ~ Empty
-         ) => HeaderSupportsPBft c' (SimplePBftHeader c c') where
+         , Signable MockDSIGN ~ Empty
+         ) => HeaderSupportsPBft PBftMockCrypto (SimplePBftHeader c PBftMockCrypto) where
   headerPBftFields _ = simplePBftExt . simpleHeaderExt
 
 instance ( SimpleCrypto c
@@ -104,16 +103,14 @@ instance ( SimpleCrypto c
       SimpleHeader{..} = simpleHeader
 
 instance ( SimpleCrypto c
-         , PBftCrypto c'
-         , Signable (PBftDSIGN c') ~ Empty
-         ) => SupportedBlock (SimplePBftBlock c c')
+         , Signable MockDSIGN ~ Empty
+         ) => SupportedBlock (SimplePBftBlock c PBftMockCrypto)
 
 -- | The ledger view is constant for the mock instantiation of PBFT
 -- (mock blocks cannot change delegation)
 instance ( SimpleCrypto c
-         , PBftCrypto c'
-         , Signable (PBftDSIGN c') ~ Empty
-         ) => ProtocolLedgerView (SimplePBftBlock c c') where
+         , Signable MockDSIGN ~ Empty
+         ) => ProtocolLedgerView (SimplePBftBlock c PBftMockCrypto) where
   protocolLedgerView (EncNodeConfig _ pbftParams) _ls =
       pbftParams
   anachronisticProtocolLedgerView (EncNodeConfig _ pbftParams) _ _ =

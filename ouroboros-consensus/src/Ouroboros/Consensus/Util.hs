@@ -2,8 +2,10 @@
 {-# LANGUAGE ConstraintKinds     #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeOperators       #-}
 
 -- | Miscellaneous utilities
 module Ouroboros.Consensus.Util (
@@ -35,8 +37,8 @@ module Ouroboros.Consensus.Util (
 
 import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Lazy as Lazy
+import           Data.Constraint
 import           Data.Functor.Identity
-import           Data.Kind (Constraint)
 import           Data.List (foldl')
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -47,8 +49,9 @@ import           GHC.Stack
 class Empty a
 instance Empty a
 
-data Dict (a :: Constraint) where
-    Dict :: a => Dict a
+-- | We can derive the empty constraint from top
+instance () :=> Empty b where
+  ins = Sub Dict
 
 data Some (f :: k -> *) where
     Some :: f a -> Some f

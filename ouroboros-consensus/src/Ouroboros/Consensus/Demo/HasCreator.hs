@@ -64,8 +64,7 @@ instance HasCreator (ByronBlock ByronDemoConfig) where
       where
         key :: Cardano.VerificationKey
         key = Cardano.pskIssuerVK
-            . Cardano.psigPsk
-            . CC.Block.unBlockSignature
+            . CC.Block.delegationCertificate
             . CC.Block.headerSignature
             . CC.Block.blockHeader
             $ b
