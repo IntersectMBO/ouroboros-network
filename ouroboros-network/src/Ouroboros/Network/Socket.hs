@@ -13,7 +13,7 @@ module Ouroboros.Network.Socket (
       AnyMuxResponderApp (..)
     , withServerNode
     , withSimpleServerNode
-    , connectTo
+    , connectToNode
 
     -- * Helper function for creating servers
     , socketAsMuxBearer
@@ -154,8 +154,8 @@ hexDump buf out = hexDump (BL.tail buf) (out ++ printf "0x%02x " (BL.head buf))
 -- remote peer.  It must fit into @'maxTransmissionUnit'@ (~5k bytes).
 --
 -- Exceptions thrown by @'MuxApplication'@ are rethrown by @'connectTo'@.
-connectTo
-  :: forall ptcl vNumber extra.
+connectToNode
+  :: forall ptcl vNumber extra a b.
      ( Mx.ProtocolEnum ptcl
      , Ord ptcl
      , Enum ptcl
@@ -170,14 +170,14 @@ connectTo
      )
   => (forall vData. extra vData -> vData -> CBOR.Term)
   -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
-  -> Versions vNumber extra (MuxApplication InitiatorApp ptcl IO)
+  -> Versions vNumber extra (MuxApplication InitiatorApp ptcl IO BL.ByteString a b)
   -- ^ application to run over the connection
   -> Maybe Socket.AddrInfo
   -- ^ local address; the created socket will bind to it
   -> Socket.AddrInfo
   -- ^ remote address
   -> IO ()
-connectTo encodeData decodeData versions localAddr remoteAddr =
+connectToNode encodeData decodeData versions localAddr remoteAddr =
     bracket
       (Socket.socket (Socket.addrFamily remoteAddr) Socket.Stream Socket.defaultProtocol)
       Socket.close
@@ -211,8 +211,8 @@ connectTo encodeData decodeData versions localAddr remoteAddr =
 -- |
 -- A mux application which has a server component.
 --
-data AnyMuxResponderApp ptcl m where
-      AnyMuxResponderApp :: forall appType ptcl m. HasResponder appType ~ True => MuxApplication appType ptcl m -> AnyMuxResponderApp ptcl m
+data AnyMuxResponderApp ptcl m bytes where
+      AnyMuxResponderApp :: forall appType ptcl m bytes a b. HasResponder appType ~ True => MuxApplication appType ptcl m bytes a b -> AnyMuxResponderApp ptcl m bytes
 
 
 -- |
@@ -226,16 +226,16 @@ data AnyMuxResponderApp ptcl m where
 -- connection, the whole connection will terminate.  We might want to be more
 -- admissible in this scenario: leave the server thread running and let only
 -- the client thread to die.
-data AcceptConnection st vNumber extra ptcl m where
+data AcceptConnection st vNumber extra ptcl m bytes where
 
     AcceptConnection
       :: !st
-      -> Versions vNumber extra (AnyMuxResponderApp ptcl m)
-      -> AcceptConnection st vNumber extra ptcl m
+      -> Versions vNumber extra (AnyMuxResponderApp ptcl m bytes)
+      -> AcceptConnection st vNumber extra ptcl m bytes
 
     RejectConnection
       :: !st
-      -> AcceptConnection st vNumber extra ptcl m
+      -> AcceptConnection st vNumber extra ptcl m bytes
 
 
 -- |
@@ -259,7 +259,7 @@ beginConnection
     => (forall vData. extra vData -> vData -> CBOR.Term)
     -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
     -> (forall vData. extra vData -> vData -> vData -> Accept)
-    -> (addr -> st -> STM.STM (AcceptConnection st vNumber extra ptcl IO))
+    -> (addr -> st -> STM.STM (AcceptConnection st vNumber extra ptcl IO BL.ByteString))
     -- ^ either accept or reject a connection.
     -> Server.BeginConnection addr Socket.Socket st ()
 beginConnection encodeData decodeData acceptVersion fn addr st = do
@@ -340,7 +340,7 @@ runNetworkNode'
     -> (forall vData. extra vData -> vData -> vData -> Accept)
     -- -> Versions vNumber extra (MuxApplication ServerApp ptcl IO)
     -> (SomeException -> IO ())
-    -> (Socket.SockAddr -> st -> STM.STM (AcceptConnection st vNumber extra ptcl IO))
+    -> (Socket.SockAddr -> st -> STM.STM (AcceptConnection st vNumber extra ptcl IO BL.ByteString))
     -> Server.CompleteConnection st ()
     -> Server.Main st t
     -> st
@@ -383,7 +383,7 @@ withServerNode
     -> (forall vData. extra vData -> vData -> CBOR.Term)
     -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
     -> (forall vData. extra vData -> vData -> vData -> Accept)
-    -> Versions vNumber extra (AnyMuxResponderApp ptcl IO)
+    -> Versions vNumber extra (AnyMuxResponderApp ptcl IO BL.ByteString)
     -- ^ The mux application that will be run on each incoming connection from
     -- a given address.  Note that if @'MuxClientAndServerApplication'@ is
     -- returned, the connection will run a full duplex set of mini-protocols.
@@ -423,7 +423,7 @@ withServerNode addr encodeData decodeData acceptVersion versions k =
 -- connection.
 --
 withSimpleServerNode
-    :: forall ptcl vNumber extra t.
+    :: forall ptcl vNumber extra t a b.
        ( Mx.ProtocolEnum ptcl
        , Ord ptcl
        , Enum ptcl
@@ -440,7 +440,7 @@ withSimpleServerNode
     -> (forall vData. extra vData -> vData -> CBOR.Term)
     -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
     -> (forall vData. extra vData -> vData -> vData -> Accept)
-    -> Versions vNumber extra (MuxApplication ResponderApp ptcl IO)
+    -> Versions vNumber extra (MuxApplication ResponderApp ptcl IO BL.ByteString a b)
     -- ^ The mux server application that will be run on each incoming
     -- connection.
     -> (Async () -> IO t)

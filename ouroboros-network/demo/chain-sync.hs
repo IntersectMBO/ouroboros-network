@@ -14,6 +14,7 @@ import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import           Data.Set (Set)
+import           Data.Void (Void)
 
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.STM (STM, atomically, check)
@@ -138,18 +139,18 @@ instance MiniProtocolLimits DemoProtocol0 where
 
 clientPingPong :: Bool -> IO ()
 clientPingPong pipelined =
-    connectTo
+    connectToNode
       (\(DictVersion codec) -> encodeTerm codec)
       (\(DictVersion codec) -> decodeTerm codec)
       (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) muxApplication)
       Nothing
       defaultLocalSocketAddrInfo
   where
-    muxApplication :: MuxApplication InitiatorApp DemoProtocol0 IO
+    muxApplication :: MuxApplication InitiatorApp DemoProtocol0 IO LBS.ByteString () Void
     muxApplication =
       simpleMuxInitiatorApplication protocols
 
-    protocols :: DemoProtocol0 -> MuxPeer DeserialiseFailure IO ()
+    protocols :: DemoProtocol0 -> MuxPeer DeserialiseFailure IO LBS.ByteString ()
     protocols PingPong0 | pipelined =
       MuxPeerPipelined
         (contramap show stdoutTracer)
@@ -177,11 +178,11 @@ serverPingPong =
       (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) muxApplication) $ \serverAsync ->
         wait serverAsync   -- block until async exception
   where
-    muxApplication :: MuxApplication ResponderApp DemoProtocol0 IO
+    muxApplication :: MuxApplication ResponderApp DemoProtocol0 IO LBS.ByteString Void ()
     muxApplication =
       simpleMuxResponderApplication protocols
 
-    protocols :: DemoProtocol0 -> MuxPeer DeserialiseFailure IO ()
+    protocols :: DemoProtocol0 -> MuxPeer DeserialiseFailure IO LBS.ByteString ()
     protocols PingPong0 =
       MuxPeer
         (contramap show stdoutTracer)
@@ -219,18 +220,18 @@ instance MiniProtocolLimits DemoProtocol1 where
 
 clientPingPong2 :: IO ()
 clientPingPong2 =
-    connectTo
+    connectToNode
       (\(DictVersion codec) -> encodeTerm codec)
       (\(DictVersion codec) -> decodeTerm codec)
       (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) muxApplication)
       Nothing
       defaultLocalSocketAddrInfo
   where
-    muxApplication :: MuxApplication InitiatorApp DemoProtocol1 IO
+    muxApplication :: MuxApplication InitiatorApp DemoProtocol1 IO LBS.ByteString () Void
     muxApplication =
       simpleMuxInitiatorApplication protocols
 
-    protocols :: DemoProtocol1 -> MuxPeer DeserialiseFailure IO ()
+    protocols :: DemoProtocol1 -> MuxPeer DeserialiseFailure IO LBS.ByteString ()
     protocols PingPong1 =
       MuxPeer
         (contramap (show . (,) (1 :: Int)) stdoutTracer)
@@ -271,11 +272,11 @@ serverPingPong2 =
       (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) muxApplication) $ \serverAsync ->
         wait serverAsync   -- block until async exception
   where
-    muxApplication :: MuxApplication ResponderApp DemoProtocol1 IO
+    muxApplication :: MuxApplication ResponderApp DemoProtocol1 IO LBS.ByteString Void ()
     muxApplication =
       simpleMuxResponderApplication protocols
 
-    protocols :: DemoProtocol1 -> MuxPeer DeserialiseFailure IO ()
+    protocols :: DemoProtocol1 -> MuxPeer DeserialiseFailure IO LBS.ByteString ()
     protocols PingPong1 =
       MuxPeer
         (contramap (show . (,) (1 :: Int)) stdoutTracer)
@@ -310,18 +311,18 @@ instance MiniProtocolLimits DemoProtocol2 where
 clientChainSync :: [FilePath] -> IO ()
 clientChainSync sockAddrs =
     forConcurrently_ sockAddrs $ \sockAddr ->
-      connectTo
+      connectToNode
         (\(DictVersion codec) -> encodeTerm codec)
         (\(DictVersion codec) -> decodeTerm codec)
         (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) muxApplication)
         Nothing
         (mkLocalSocketAddrInfo sockAddr)
   where
-    muxApplication :: MuxApplication InitiatorApp DemoProtocol2 IO
+    muxApplication :: MuxApplication InitiatorApp DemoProtocol2 IO LBS.ByteString () Void
     muxApplication =
       simpleMuxInitiatorApplication protocols
 
-    protocols :: DemoProtocol2 -> MuxPeer DeserialiseFailure IO ()
+    protocols :: DemoProtocol2 -> MuxPeer DeserialiseFailure IO LBS.ByteString ()
     protocols ChainSync2 =
       MuxPeer
         (contramap show stdoutTracer)
@@ -341,11 +342,11 @@ serverChainSync sockAddr =
   where
     prng = mkSMGen 0
 
-    muxApplication :: MuxApplication ResponderApp DemoProtocol2 IO
+    muxApplication :: MuxApplication ResponderApp DemoProtocol2 IO LBS.ByteString Void ()
     muxApplication =
       simpleMuxResponderApplication protocols
 
-    protocols :: DemoProtocol2 -> MuxPeer DeserialiseFailure IO ()
+    protocols :: DemoProtocol2 -> MuxPeer DeserialiseFailure IO LBS.ByteString ()
     protocols ChainSync2 =
       MuxPeer
         (contramap show stdoutTracer)
@@ -383,7 +384,7 @@ clientBlockFetch sockAddrs = do
     currentChainVar    <- newTVarIO genesisChainFragment
 
     let muxApplication :: FilePath
-                       -> MuxApplication InitiatorApp DemoProtocol3 IO
+                       -> MuxApplication InitiatorApp DemoProtocol3 IO LBS.ByteString () Void
         muxApplication peerid =
           MuxInitiatorApplication (protocols peerid)
 
@@ -474,7 +475,7 @@ clientBlockFetch sockAddrs = do
 
     peerAsyncs <- sequence
                     [ async $
-                        connectTo
+                        connectToNode
                           (\(DictVersion codec) -> encodeTerm codec)
                           (\(DictVersion codec) -> decodeTerm codec)
                           (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) (muxApplication sockAddr))
@@ -520,11 +521,11 @@ serverBlockFetch sockAddr =
   where
     prng = mkSMGen 0
 
-    muxApplication :: MuxApplication ResponderApp DemoProtocol3 IO
+    muxApplication :: MuxApplication ResponderApp DemoProtocol3 IO LBS.ByteString Void ()
     muxApplication =
       simpleMuxResponderApplication protocols
 
-    protocols :: DemoProtocol3 -> MuxPeer DeserialiseFailure IO ()
+    protocols :: DemoProtocol3 -> MuxPeer DeserialiseFailure IO LBS.ByteString ()
     protocols ChainSync3 =
       MuxPeer
         (contramap show stdoutTracer)

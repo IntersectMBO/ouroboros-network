@@ -149,7 +149,7 @@ main = do
         stopCondition = const (pure Nothing)
         tracer = contramap (\txt -> ("", Info, txt)) trace
         client  = Client.chainSyncClient (clientFold tracer genesisConfig stopCondition cvs)
-    connectTo
+    connectToNode
       encodeTerm
       decodeTerm
       (initiatorVersions epochSlots client)

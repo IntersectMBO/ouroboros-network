@@ -24,7 +24,9 @@ import qualified Codec.CBOR.Term as CBOR
 import           Codec.Serialise (Serialise (..))
 import           Codec.SerialiseTerm
 
-import           Ouroboros.Network.Mux.Types (ProtocolEnum(..))
+import           Ouroboros.Network.Mux.Types ( MiniProtocolLimits (..)
+                                             , ProtocolEnum(..)
+                                             )
 
 import           Ouroboros.Network.NodeToNode (DictVersion (..))
 
@@ -52,8 +54,13 @@ instance ProtocolEnum NodeToClientProtocols where
   toProtocolEnum 6 = Just LocalTxSubmission
   toProtocolEnum _ = Nothing
 
--- |
--- Enumeration of node to client protocol versions.
+instance MiniProtocolLimits NodeToClientProtocols where
+  -- TODO: provide sensible limits
+  -- https://github.com/input-output-hk/ouroboros-network/issues/575
+  maximumMessageSize  _ = 0xffffffff
+  maximumIngressQueue _ = 0xffffffff
+
+-- | Enumeration of node to client protocol versions.
 --
 data NodeToClientVersion = NodeToClientV_1
   deriving (Eq, Ord, Enum, Show, Typeable)
@@ -66,8 +73,7 @@ instance Serialise NodeToClientVersion where
         1 -> return NodeToClientV_1
         _ -> fail "decode NodeToNodeVersion: unknown tag"
 
--- |
--- Version data for NodeToClient protocol v1
+-- | Version data for NodeToClient protocol v1
 --
 newtype NodeToClientVersionData = NodeToClientVersionData
   { networkMagic :: Word16 }

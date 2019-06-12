@@ -19,6 +19,7 @@ import           Control.Monad.Class.MonadTimer
 import qualified Data.ByteString.Lazy as BL
 import           Data.Functor ((<$))
 import           Data.List (mapAccumL)
+import           Data.Void (Void)
 import qualified Network.Socket as Socket
 import qualified Network.Socket.ByteString.Lazy as Socket (sendAll)
 #ifndef mingw32_HOST_OS
@@ -161,7 +162,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
     sv <- newEmptyTMVarM
 
     let -- Server Node; only req-resp server
-        responderApp :: MuxApplication ResponderApp Mxt.TestProtocols3 IO
+        responderApp :: MuxApplication ResponderApp Mxt.TestProtocols3 IO BL.ByteString Void ()
         responderApp = simpleMuxResponderApplication $
           \Mxt.ReqResp1 ->
             MuxPeer nullTracer
@@ -169,7 +170,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
                     (ReqResp.reqRespServerPeer (reqRespServerMapAccumL sv (\a -> pure . f a) 0))
 
         -- Client Node; only req-resp client
-        initiatorApp :: MuxApplication InitiatorApp Mxt.TestProtocols3 IO
+        initiatorApp :: MuxApplication InitiatorApp Mxt.TestProtocols3 IO BL.ByteString () Void
         initiatorApp = simpleMuxInitiatorApplication $
           \Mxt.ReqResp1 ->
             MuxPeer nullTracer
@@ -184,7 +185,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
         (\(DictVersion _) -> acceptEq)
         (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) responderApp)
         $ \_ -> do
-          connectTo
+          connectToNode
             (\(DictVersion codec) -> encodeTerm codec)
             (\(DictVersion codec) -> decodeTerm codec)
             (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) initiatorApp)
@@ -205,7 +206,7 @@ prop_socket_recv_close f _ = ioProperty $ do
 
     sv   <- newEmptyTMVarM
 
-    let app :: MuxApplication ResponderApp Mxt.TestProtocols3 IO
+    let app :: MuxApplication ResponderApp Mxt.TestProtocols3 IO BL.ByteString Void ()
         app = simpleMuxResponderApplication $
           \Mxt.ReqResp1 ->
             MuxPeer nullTracer
@@ -260,7 +261,7 @@ prop_socket_client_connect_error _ xs = ioProperty $ do
 
     cv <- newEmptyTMVarM
 
-    let app :: MuxApplication InitiatorApp Mxt.TestProtocols3 IO
+    let app :: MuxApplication InitiatorApp Mxt.TestProtocols3 IO BL.ByteString () Void
         app = simpleMuxInitiatorApplication $
                 \Mxt.ReqResp1 ->
                   MuxPeer nullTracer
@@ -271,7 +272,7 @@ prop_socket_client_connect_error _ xs = ioProperty $ do
 
 
     (res :: Either IOException Bool)
-      <- try $ False <$ connectTo
+      <- try $ False <$ connectToNode
         (\(DictVersion codec) -> encodeTerm codec)
         (\(DictVersion codec) -> decodeTerm codec)
         (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) app)
@@ -297,7 +298,7 @@ demo chain0 updates = do
     let Just expectedChain = Chain.applyChainUpdates updates chain0
         target = Chain.headPoint expectedChain
 
-        initiatorApp :: MuxApplication InitiatorApp Mxt.TestProtocols1 IO
+        initiatorApp :: MuxApplication InitiatorApp Mxt.TestProtocols1 IO BL.ByteString () Void
         initiatorApp = simpleMuxInitiatorApplication $
           \Mxt.ChainSync1 ->
               MuxPeer nullTracer
@@ -309,7 +310,7 @@ demo chain0 updates = do
         server :: ChainSync.ChainSyncServer block (Point block) IO ()
         server = ChainSync.chainSyncServerExample () producerVar
 
-        responderApp :: MuxApplication ResponderApp Mxt.TestProtocols1 IO
+        responderApp :: MuxApplication ResponderApp Mxt.TestProtocols1 IO BL.ByteString Void ()
         responderApp = simpleMuxResponderApplication $
           \Mxt.ChainSync1 ->
             MuxPeer nullTracer
@@ -324,7 +325,7 @@ demo chain0 updates = do
       (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) responderApp)
       $ \_ -> do
       withAsync
-        (connectTo
+        (connectToNode
           (\(DictVersion codec) -> encodeTerm codec)
           (\(DictVersion codec) -> decodeTerm codec)
           (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) initiatorApp)

@@ -34,8 +34,7 @@ module Ouroboros.Network.Mux.Interface
   , DictVersion (..)
   ) where
 
-import           Data.ByteString.Lazy (ByteString)
-import           Data.Functor (void)
+import           Data.Void (Void)
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadThrow ( MonadCatch
@@ -98,34 +97,34 @@ type family HasResponder (appType :: AppType) :: Bool where
 --   serving downstream peers using server side of each protocol and getting
 --   updates from upstream peers using client side of each of the protocols.
 --
-data MuxApplication (appType :: AppType) ptcl m  where
+data MuxApplication (appType :: AppType) ptcl m bytes a b where
   MuxInitiatorApplication
     -- Initiator application; most simple application will be @'runPeer'@ or
     -- @'runPipelinedPeer'@ supplied with a codec and a @'Peer'@ for each
     -- @ptcl@.  But it allows to handle resources if just application of
     -- @'runPeer'@ is not enough.  It will be run as @'ModeInitiator'@.
-    :: (ptcl -> Channel m ByteString ->  m ())
-    -> MuxApplication InitiatorApp ptcl m
+    :: (ptcl -> Channel m bytes ->  m a)
+    -> MuxApplication InitiatorApp ptcl m bytes a Void
 
   MuxResponderApplication
     -- Responder application; similarly to the @'MuxInitiatorApplication'@ but it
     -- will be run using @'ModeResponder'@.
-    :: (ptcl -> Channel m ByteString ->  m ())
-    -> MuxApplication ResponderApp ptcl m
+    :: (ptcl -> Channel m bytes ->  m a)
+    -> MuxApplication ResponderApp ptcl m bytes Void a
 
   MuxInitiatorAndResponderApplication
     -- Initiator and server applications.
-    :: (ptcl -> Channel m ByteString ->  m ())
-    -> (ptcl -> Channel m ByteString ->  m ())
-    -> MuxApplication InitiatorAndResponderApp ptcl m
+    :: (ptcl -> Channel m bytes ->  m a)
+    -> (ptcl -> Channel m bytes ->  m b)
+    -> MuxApplication InitiatorAndResponderApp ptcl m bytes a b
 
 -- |
 -- Accessor for the client side of a @'MuxApplication'@.
 --
 initiatorApplication
   :: HasInitiator appType ~ True
-  => (MuxApplication appType ptcl m)
-  -> (ptcl -> Channel m ByteString ->  m ())
+  => MuxApplication appType ptcl m bytes a b
+  -> (ptcl -> Channel m bytes ->  m a)
 initiatorApplication (MuxInitiatorApplication app) = \ptcl channel -> app ptcl channel
 initiatorApplication (MuxInitiatorAndResponderApplication app _) = \ptcl channel -> app ptcl channel
 
@@ -134,25 +133,25 @@ initiatorApplication (MuxInitiatorAndResponderApplication app _) = \ptcl channel
 --
 responderApplication
   :: HasResponder appType ~ True
-  => (MuxApplication appType ptcl m)
-  -> (ptcl -> Channel m ByteString ->  m ())
+  => MuxApplication appType ptcl m bytes a b
+  -> (ptcl -> Channel m bytes ->  m b)
 responderApplication (MuxResponderApplication app) = app
 responderApplication (MuxInitiatorAndResponderApplication _ app) = app
 
 -- |
 -- This type is only necessary to use the @'simpleMuxClient'@ and
 -- @'simpleMuxServer'@ smart constructors.
-data MuxPeer failure m a where
+data MuxPeer failure m bytes a where
     MuxPeer :: Tracer m (TraceSendRecv ps)
-            -> Codec ps failure m ByteString
+            -> Codec ps failure m bytes
             -> Peer ps pr st m a
-            -> MuxPeer failure m a
+            -> MuxPeer failure m bytes a
 
     MuxPeerPipelined
             :: Tracer m (TraceSendRecv ps)
-            -> Codec ps failure m ByteString
+            -> Codec ps failure m bytes
             -> PeerPipelined ps pr st m a
-            -> MuxPeer failure m a
+            -> MuxPeer failure m bytes a
 
 
 -- |
@@ -164,8 +163,8 @@ runMuxPeer
      , MonadAsync m
      , Exception failure
      )
-  => MuxPeer failure m a
-  -> Channel m ByteString
+  => MuxPeer failure m bytes a
+  -> Channel m bytes
   -> m a
 runMuxPeer (MuxPeer tracer codec peer) channel =
     runPeer tracer codec channel peer
@@ -184,10 +183,10 @@ simpleMuxInitiatorApplication
   => MonadCatch m
   => MonadAsync m
   => Exception failure
-  => (ptcl -> MuxPeer failure m a)
-  -> MuxApplication InitiatorApp ptcl m
+  => (ptcl -> MuxPeer failure m bytes a)
+  -> MuxApplication InitiatorApp ptcl m bytes a Void
 simpleMuxInitiatorApplication fn = MuxInitiatorApplication $ \ptcl channel ->
-  void $ runMuxPeer (fn ptcl) channel
+  runMuxPeer (fn ptcl) channel
 
 
 -- |
@@ -198,7 +197,7 @@ simpleMuxResponderApplication
   => MonadCatch m
   => MonadAsync m
   => Exception failure
-  => (ptcl -> MuxPeer failure m a)
-  -> MuxApplication ResponderApp ptcl m
+  => (ptcl -> MuxPeer failure m bytes a)
+  -> MuxApplication ResponderApp ptcl m bytes Void a
 simpleMuxResponderApplication fn = MuxResponderApplication $ \ptcl channel ->
-  void $ runMuxPeer (fn ptcl) channel
+  runMuxPeer (fn ptcl) channel

@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
 
@@ -40,10 +41,10 @@ import           Ouroboros.Network.Mux.Types
 -- | muxStart starts a mux bearer for the specified protocols corresponding to
 -- one of the provided Versions.
 -- TODO: replace MonadSay with iohk-monitoring-framework.
-muxStart :: forall m appType ptcl.
+muxStart :: forall m appType ptcl a b.
             ( MonadAsync m, MonadSay m, MonadSTM m, MonadThrow m, MonadThrow (STM m)
             , MonadMask m , Ord ptcl, Enum ptcl, Bounded ptcl, Show ptcl, MiniProtocolLimits ptcl)
-         => MuxApplication appType ptcl m
+         => MuxApplication appType ptcl m BL.ByteString a b
          -> MuxBearer ptcl m
          -> m ()
 muxStart app bearer = do
