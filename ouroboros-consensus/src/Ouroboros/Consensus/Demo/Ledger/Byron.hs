@@ -58,6 +58,7 @@ protocolInfoByron (NumCoreNodes numCoreNodes) (CoreNodeId nid) params gc =
                 , pbftNodeId  = CoreId nid
                 , pbftSignKey = SignKeyCardanoDSIGN (snd (lookupKey nid))
                 , pbftVerKey  = VerKeyCardanoDSIGN  (fst (lookupKey nid))
+                , pbftGenVerKey = VerKeyCardanoDSIGN (lookupGenKey nid)
                 }
           , encNodeConfigExt = ByronDemoConfig {
                 pbftCoreNodes = Bimap.fromList [
@@ -93,6 +94,14 @@ protocolInfoByron (NumCoreNodes numCoreNodes) (CoreNodeId nid) params gc =
                 . Cardano.Genesis.gsRichSecrets
                 . fromJust
                 $ Cardano.Genesis.configGeneratedSecrets gc
+
+    lookupGenKey :: Int -> Cardano.VerificationKey
+    lookupGenKey n = Cardano.KeyGen.toVerification
+                   . (!! n)
+                   . Cardano.Genesis.gsDlgIssuersSecrets
+                   . fromJust
+                   $ Cardano.Genesis.configGeneratedSecrets gc
+
 
 {-------------------------------------------------------------------------------
   RunDemo instance

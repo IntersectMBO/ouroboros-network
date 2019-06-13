@@ -137,6 +137,9 @@ instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
       , pbftNodeId   :: NodeId
       , pbftSignKey  :: SignKeyDSIGN (PBftDSIGN c)
       , pbftVerKey   :: VerKeyDSIGN (PBftDSIGN c)
+        -- Verification key for the genesis stakeholder
+        -- This is unfortunately needed during the Byron era
+      , pbftGenVerKey :: VerKeyDSIGN (PBftDSIGN c)
       }
 
   type ValidationErr   (PBft c) = PBftValidationErr c
@@ -174,7 +177,7 @@ instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
       let proxy = Identity b
       case verifyPBftSigned
              (Proxy :: Proxy (c, hdr))
-             pbftIssuer -- TODO genesis
+             pbftGenVerKey
              (encodeSigned proxy)
              pbftIssuer
              (headerSigned b)

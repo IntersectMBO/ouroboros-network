@@ -55,6 +55,7 @@ extra-deps:
   - splitmix-0.0.2
   - libsystemd-journal-1.4.4
   - tasty-hedgehog-1.0.0.1
+  - pretty-show-1.9.5
 
   # Windows only
   - Win32-2.5.4.1
