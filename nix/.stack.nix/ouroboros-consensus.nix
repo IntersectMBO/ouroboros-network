@@ -72,6 +72,7 @@
             (hsPkgs.directory)
             (hsPkgs.formatting)
             (hsPkgs.mtl)
+            (hsPkgs.network)
             (hsPkgs.optparse-applicative)
             (hsPkgs.serialise)
             (hsPkgs.stm)
