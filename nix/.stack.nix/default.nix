@@ -9,6 +9,7 @@
         "splitmix" = (((hackage.splitmix)."0.0.2").revisions).default;
         "libsystemd-journal" = (((hackage.libsystemd-journal)."1.4.4").revisions).default;
         "tasty-hedgehog" = (((hackage.tasty-hedgehog)."1.0.0.1").revisions).default;
+        "pretty-show" = (((hackage.pretty-show)."1.9.5").revisions).default;
         "Win32" = (((hackage.Win32)."2.5.4.1").revisions).default;
         "aeson-options" = (((hackage.aeson-options)."0.1.0").revisions).default;
         "pvss" = (((hackage.pvss)."0.2.0").revisions).default;

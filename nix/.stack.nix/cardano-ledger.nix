@@ -1,6 +1,6 @@
 { system, compiler, flags, pkgs, hsPkgs, pkgconfPkgs, ... }:
   {
-    flags = { development = false; };
+    flags = { development = false; test-normal-form = false; };
     package = {
       specVersion = "1.10";
       identifier = { name = "cardano-ledger"; version = "0.1.0.0"; };
@@ -85,13 +85,36 @@
             (hsPkgs.vector)
             ];
           };
+        "epoch-validation-normal-form-test" = {
+          depends = [
+            (hsPkgs.base)
+            (hsPkgs.bytestring)
+            (hsPkgs.cardano-binary)
+            (hsPkgs.cardano-ledger)
+            (hsPkgs.cardano-crypto-test)
+            (hsPkgs.cardano-crypto-wrapper)
+            (hsPkgs.cardano-prelude)
+            (hsPkgs.cardano-prelude-test)
+            (hsPkgs.containers)
+            (hsPkgs.directory)
+            (hsPkgs.filepath)
+            (hsPkgs.formatting)
+            (hsPkgs.hedgehog)
+            (hsPkgs.optparse-applicative)
+            (hsPkgs.resourcet)
+            (hsPkgs.silently)
+            (hsPkgs.streaming)
+            (hsPkgs.tasty)
+            (hsPkgs.tasty-hedgehog)
+            ];
+          };
         };
       };
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
       url = "https://github.com/input-output-hk/cardano-ledger";
-      rev = "3a62c8c9d42a89d14ce471363d3a12d4fae03c27";
-      sha256 = "10ipg81b0hkg93w23xqw08f6c5m33p9whdkgxzpn3msim9va9zmx";
+      rev = "7f5263eac329d73a0626fc0d9603dec2cd51d352";
+      sha256 = "01nzpcmddrxzvm8jqiv7gm94cm3wixn8vsvvc77fxv94gc3bzzap";
       });
     postUnpack = "sourceRoot+=/cardano-ledger; echo source root reset to \$sourceRoot";
     }

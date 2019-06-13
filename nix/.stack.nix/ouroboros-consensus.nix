@@ -31,6 +31,7 @@
           (hsPkgs.cardano-ledger)
           (hsPkgs.cardano-prelude)
           (hsPkgs.cborg)
+          (hsPkgs.constraints)
           (hsPkgs.containers)
           (hsPkgs.cryptonite)
           (hsPkgs.directory)
