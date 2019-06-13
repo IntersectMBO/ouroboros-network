@@ -18,6 +18,8 @@ module Ouroboros.Consensus.Node (
   , NodeParams (..)
   , TraceConstraints
   , nodeKernel
+    -- * Auxiliary functions
+  , tracePrefix
   ) where
 
 import           Control.Monad (void)
@@ -210,15 +212,19 @@ initInternalState NodeParams {..} = do
 
         blockFetchInterface :: BlockFetchConsensusInterface up (Header blk) blk m
         blockFetchInterface = initBlockFetchConsensusInterface
-          (tracePrefix "ChainDB" Nothing)
+          (tracePrefix "ChainDB" (Nothing :: Maybe up) tracer)
           cfg chainDB getCandidates blockFetchSize blockMatchesHeader btime
 
     return IS {..}
-  where
-    tracePrefix :: String -> Maybe up -> Tracer m String
-    tracePrefix p mbUp =
-      let prefix = p <> maybe "" ((" " <>) . condense) mbUp <> " | "
-      in contramap (prefix <>) tracer
+
+tracePrefix :: Condense up
+            => String
+            -> Maybe up
+            -> Tracer m String
+            -> Tracer m String
+tracePrefix p mbUp tr =
+  let prefix = p <> maybe "" ((" " <>) . condense) mbUp <> " | "
+  in contramap (prefix <>) tr
 
 initBlockFetchConsensusInterface
     :: forall m up blk.
