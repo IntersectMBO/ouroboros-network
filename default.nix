@@ -56,6 +56,7 @@ let
   };
   tests = import ./nix/nixos/tests { inherit (commonLib) pkgs; };
   documents = import ./doc/default.nix {inherit commonLib; };
+  ihaskell-notebook = import ./nix/ihaskell-notebook.nix {inherit commonLib; inherit nixTools;};
 in {
   inherit scripts tests;
   inherit (nixTools) nix-tools;
