@@ -7,7 +7,7 @@ allMessages =
     / [2,pingPongMessage]
     / [3,blockFetchMessage]
     / [4,txSubmissionMessage]
-    / [5,muxControlMessage]
+    / [5, handshakeMessage]
 
 ; Chain Sync Protocol
 ; reference implementation of the codec in
@@ -113,12 +113,48 @@ txSubmissionMsgDone = [4]
 txHash        = bytes .cbor any
 transaction   = bytes .cbor any
 
+; ToDo
 ; MuxControl Protocol
 ; reference implementation of the codec in
 ; ouroboros-network/src/Ouroboros/Network/Mux/Control.hs
+; muxControlMessage = msgInitReq / msgInitRsp / msgInitFail
+; msgInitReq  = [0]
+; msgInitRsp  = [1]
+; msgInitFail = [2]
+; Handshake Protocol
+; reference implementation of the codec in
+; ouroboros-network/src/Ouroboros/Network/Protocol/Handshake/Codec.hs
 
-muxControlMessage = msgInitReq / msgInitRsp / msgInitFail
+versionNumber = uint .size 4
+handshakeMessage =
+       msgProposeVersions
+     / msgAcceptVersion
+     / msgRefuse
 
-msgInitReq  = [0] ; ToDo
-msgInitRsp  = [1]
-msgInitFail = [2]
+msgProposeVersions = [0 , versionTable]
+
+; CDDL is not expressive enough to describe the all possible values of proposeVersions.
+; proposeVersions is a tables that maps version numbers to version parameters.
+; The codec requires that the keys are unique and in ascending order.
+; This specification only enumerates version numbers from 1..4.
+
+params = any
+extraParams = any
+versionTable =
+    { ? 1 => params
+    , ? 2 => params
+    , ? 3 => params
+    , ? 4 => params
+    }
+
+msgAcceptVersion   = [1, versionNumber, extraParams]
+msgRefuse          = [2, refuseReason ]
+
+refuseReason
+    = refuseReasonVersionMismatch
+    / refuseReasonHandshakeDecodeError
+    / refuseReasonRefused
+
+refuseReasonVersionMismatch      = [0 , [ versionNumber] ]
+refuseReasonHandshakeDecodeError = [1 , versionNumber, tstr]
+refuseReasonRefused              = [2 , versionNumber, tstr]

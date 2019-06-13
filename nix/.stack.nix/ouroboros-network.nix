@@ -94,6 +94,7 @@
             (hsPkgs.base)
             (hsPkgs.bytestring)
             (hsPkgs.cborg)
+            (hsPkgs.containers)
             (hsPkgs.fingertree)
             (hsPkgs.hashable)
             (hsPkgs.process-extras)

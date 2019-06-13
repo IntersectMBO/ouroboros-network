@@ -262,16 +262,21 @@ test-suite cddl
                        Ouroboros.Network.Protocol.BlockFetch.Type
                        Ouroboros.Network.Protocol.ChainSync.Codec
                        Ouroboros.Network.Protocol.ChainSync.Type
+                       Ouroboros.Network.Protocol.Handshake.Codec
+                       Ouroboros.Network.Protocol.Handshake.Type
+                       Ouroboros.Network.Protocol.Handshake.Version
                        Ouroboros.Network.Protocol.PingPong.Codec
                        Ouroboros.Network.Protocol.ReqResp.Codec
                        Ouroboros.Network.Testing.ConcreteBlock
                        Ouroboros.Network.Block
                        Ouroboros.Network.Chain
                        Ouroboros.Network.Codec
+                       Codec.SerialiseTerm
   default-language:    Haskell2010
   build-depends:       base,
                        bytestring,
                        cborg,
+                       containers,
                        fingertree,
                        hashable,
                        process-extras,
