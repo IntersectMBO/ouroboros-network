@@ -14,6 +14,7 @@ import           Data.Coerce (coerce)
 import           Data.Foldable (find)
 import qualified Data.Map.Strict as Map
 import           Data.Reflection (Given (..))
+import           Debug.Trace (trace)
 
 import           Cardano.Binary (Annotated (..), toCBOR)
 import qualified Cardano.Chain.Block as CC.Block
@@ -51,7 +52,7 @@ forgeBlock
   -> ()                           -- ^ Leader proof ('IsLeader')
   -> m (ByronBlock ByronDemoConfig)
 forgeBlock cfg curSlot curNo prevHash txs () = do
-    ouroborosPayload <- forgePBftFields (encNodeConfigP cfg) toCBOR toSign
+    ouroborosPayload <- trace ("forging @ slot " <> show curSlot) $ forgePBftFields (encNodeConfigP cfg) toCBOR toSign
     return $ forge ouroborosPayload
   where
     -- TODO: If we reconsider 'ByronDemoConfig', we can probably move this whole
