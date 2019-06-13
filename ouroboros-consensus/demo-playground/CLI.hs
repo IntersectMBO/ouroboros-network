@@ -21,6 +21,7 @@ module CLI (
 
 import           Data.Foldable (asum)
 import           Data.Semigroup ((<>))
+import           Data.Maybe (fromMaybe)
 import           Options.Applicative
 
 import           Ouroboros.Consensus.BlockchainTime
@@ -33,7 +34,11 @@ import           Ouroboros.Consensus.Util
 import           Mock.TxSubmission (command', parseMockTx)
 import           Topology (TopologyInfo (..), NodeAddress (..))
 
+import qualified Cardano.BM.Data.Severity as Monitoring
+
+import qualified Cardano.Crypto.Hashing as Crypto
 import qualified Test.Cardano.Chain.Genesis.Dummy as Dummy
+
 
 {-------------------------------------------------------------------------------
   Untyped/typed protocol boundary
@@ -78,6 +83,8 @@ fromProtocol RealPBFT =
 data CLI = CLI {
     systemStart  :: SystemStart
   , slotDuration :: SlotLength
+  , loggerConfig :: Maybe FilePath
+  , loggerMinSev :: Monitoring.Severity
   , command      :: Command
   }
 
@@ -89,7 +96,21 @@ parseCLI :: Parser CLI
 parseCLI = CLI
     <$> parseSystemStart
     <*> parseSlotDuration
+    <*> parseLoggerConfig
+    <*> parseMinSev
     <*> parseCommand
+
+parseMinSev :: Parser Monitoring.Severity
+parseMinSev = (fromMaybe Monitoring.Debug <$>) $ optional $ asum
+  [ flag' Monitoring.Debug     (long "minsev-debug")
+  , flag' Monitoring.Info      (long "minsev-info")
+  , flag' Monitoring.Notice    (long "minsev-notice")
+  , flag' Monitoring.Warning   (long "minsev-warning")
+  , flag' Monitoring.Error     (long "minsev-error")
+  , flag' Monitoring.Critical  (long "minsev-critical")
+  , flag' Monitoring.Alert     (long "minsev-alert")
+  , flag' Monitoring.Emergency (long "minsev-emergency")
+  ]
 
 parseSystemStart :: Parser SystemStart
 parseSystemStart = option (SystemStart <$> auto) $ mconcat [
@@ -106,6 +127,12 @@ parseSlotDuration = option (mkSlotLength <$> auto) $ mconcat [
   where
     mkSlotLength :: Integer -> SlotLength
     mkSlotLength = slotLengthFromMillisec . (* 1000)
+
+parseLoggerConfig :: Parser (Maybe FilePath)
+parseLoggerConfig = optional $ strOption $
+  long "logger-config" <>
+  metavar "FILEPATH"   <>
+  help "Path to the logger config file."
 
 parseProtocol :: Parser Protocol
 parseProtocol = asum [

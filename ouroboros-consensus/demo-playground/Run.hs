@@ -2,6 +2,7 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE NumericUnderscores  #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -23,6 +24,7 @@ import           Data.Functor.Contravariant (contramap)
 import qualified Data.Map.Strict as M
 import           Data.Maybe
 import           Data.Semigroup ((<>))
+import qualified Data.Text as T
 
 import           Control.Monad.Class.MonadAsync
 
@@ -56,6 +58,14 @@ import           Ouroboros.Storage.ChainDB (ChainDB)
 import qualified Ouroboros.Storage.ChainDB as ChainDB
 import qualified Ouroboros.Storage.ChainDB.Mock as ChainDB
 
+import qualified Cardano.BM.Configuration.Model as Monitoring (setupFromRepresentation)
+import qualified Cardano.BM.Data.BackendKind as Monitoring
+import qualified Cardano.BM.Data.Configuration as Monitoring (Representation (..), parseRepresentation)
+import qualified Cardano.BM.Data.Output as Monitoring
+import qualified Cardano.BM.Data.Severity as Monitoring
+import qualified Cardano.BM.Data.Tracer as Monitoring (toLogObject)
+import qualified Cardano.BM.Setup as Monitoring (withTrace)
+
 import           CLI
 import           Mock.TxSubmission
 import           Topology
@@ -70,6 +80,32 @@ runNode cli@CLI{..} = do
       SimpleNode topology myNodeAddress protocol -> do
         SomeProtocol p <- fromProtocol protocol
         handleSimpleNode p cli myNodeAddress topology
+-- Inlined byron-proxy/src/exec/Logging.hs:defaultLoggerConfig, so as to avoid
+-- introducing merge conflicts due to refactoring.  Should be factored after merges.
+-- | It's called `Representation` but is closely related to the `Configuration`
+-- from iohk-monitoring. The latter has to do with `MVar`s. It's all very
+-- weird.
+defaultLoggerConfig :: Monitoring.Representation
+defaultLoggerConfig = Monitoring.Representation
+  { Monitoring.minSeverity     = Monitoring.Debug
+  , Monitoring.rotation        = Nothing
+  , Monitoring.setupScribes    = [stdoutScribe]
+  , Monitoring.defaultScribes  = [(Monitoring.StdoutSK, "stdout")]
+  , Monitoring.setupBackends   = [Monitoring.KatipBK]
+  , Monitoring.defaultBackends = [Monitoring.KatipBK]
+  , Monitoring.hasEKG          = Nothing
+  , Monitoring.hasPrometheus   = Nothing
+  , Monitoring.hasGUI          = Nothing
+  , Monitoring.options         = mempty
+  }
+  where
+  stdoutScribe = Monitoring.ScribeDefinition
+    { Monitoring.scKind     = Monitoring.StdoutSK
+    , Monitoring.scFormat   = Monitoring.ScText
+    , Monitoring.scName     = "stdout"
+    , Monitoring.scPrivacy  = Monitoring.ScPublic
+    , Monitoring.scRotation = Nothing
+    }
 
 -- | Sets up a simple node, which will run the chain sync protocol and block
 -- fetch protocol, and, if core, will also look at the mempool when trying to
@@ -121,82 +157,91 @@ handleSimpleNode p CLI{..} myNodeAddress (TopologyInfo myNodeId topologyFile) = 
           pInfoInitLedger
           getHeader
 
-      btime  <- realBlockchainTime registry slotDuration systemStart
-      let tracer = contramap ((show myNodeId <> " | ") <>) stdoutTracer
+      -- Inlined (almost) byron-proxy/src/exec/Logging.hs:withLogging, so as to avoid
+      -- introducing merge conflicts due to refactoring.Should be factored after merges.
+      logConf <- case loggerConfig of
+        Nothing -> pure defaultLoggerConfig
+        Just fp -> Monitoring.parseRepresentation fp
+      loggerConfig' <- Monitoring.setupFromRepresentation $
+        logConf { Monitoring.minSeverity = loggerMinSev }
+      Monitoring.withTrace loggerConfig' (T.pack $ show myNodeId) $ \baseTracer -> do
 
-          nodeParams :: NodeParams IO NodeAddress blk
-          nodeParams = NodeParams
-            { tracer             = tracer
-            , threadRegistry     = registry
-            , maxClockSkew       = ClockSkew 1
-            , cfg                = pInfoConfig
-            , initState          = pInfoInitState
-            , btime
-            , chainDB
-            , callbacks
-            , blockFetchSize     = demoBlockFetchSize
-            , blockMatchesHeader = demoBlockMatchesHeader
-            }
+        btime  <- realBlockchainTime registry slotDuration systemStart
+        let tracer = contramap ((show myNodeId <> " | ") <>)
+                               (Monitoring.toLogObject baseTracer)
+            nodeParams :: NodeParams IO NodeAddress blk
+            nodeParams = NodeParams
+              { tracer             = tracer
+              , threadRegistry     = registry
+              , maxClockSkew       = ClockSkew 1
+              , cfg                = pInfoConfig
+              , initState          = pInfoInitState
+              , btime
+              , chainDB
+              , callbacks
+              , blockFetchSize     = demoBlockFetchSize
+              , blockMatchesHeader = demoBlockMatchesHeader
+              }
 
-      kernel <- nodeKernel nodeParams
+        kernel <- nodeKernel nodeParams
 
-      let networkApp =
-            simpleSingletonVersions
-                NodeToNodeV_1
-                (NodeToNodeVersionData { networkMagic = 0 })
-                (DictVersion nodeToNodeCodecCBORTerm)
-            <$> consensusNetworkApps
-                  nullTracer
-                  nullTracer
-                  (codecChainSync
-                    (demoEncodeHeader pInfoConfig)
-                    (demoDecodeHeader pInfoConfig)
-                    (encodePoint'         pInfo)
-                    (decodePoint'         pInfo))
-                  (codecBlockFetch
-                    (demoEncodeBlock pInfoConfig)
-                    demoEncodeHeaderHash
-                    (demoDecodeBlock pInfoConfig)
-                    demoDecodeHeaderHash)
-                  nodeParams
-                  kernel
+        let networkApp =
+              simpleSingletonVersions
+                  NodeToNodeV_1
+                  (NodeToNodeVersionData { networkMagic = 0 })
+                  (DictVersion nodeToNodeCodecCBORTerm)
+              <$> consensusNetworkApps
+                    nullTracer
+                    nullTracer
+                    (codecChainSync
+                      (demoEncodeHeader pInfoConfig)
+                      (demoDecodeHeader pInfoConfig)
+                      (encodePoint'         pInfo)
+                      (decodePoint'         pInfo))
+                    (codecBlockFetch
+                      (demoEncodeBlock pInfoConfig)
+                      demoEncodeHeaderHash
+                      (demoDecodeBlock pInfoConfig)
+                      demoDecodeHeaderHash)
+                    nodeParams
+                    kernel
+        
+        watchChain registry tracer chainDB
 
-      watchChain registry tracer chainDB
+        -- Spawn the thread which listens to the mempool.
+        mempoolThread <- spawnMempoolListener tracer myNodeId kernel
 
-      -- Spawn the thread which listens to the mempool.
-      mempoolThread <- spawnMempoolListener tracer myNodeId kernel
+        myAddr:_ <- case myNodeAddress of
+          NodeAddress host port -> getAddrInfo Nothing (Just host) (Just port)
+        
+        -- TODO: cheap subscription managment, a proper one is on the way.  The
+        -- point is that it only requires 'NetworkApplications' which is a thin
+        -- layer around 'MuxApplication'.
+        
+        -- serve downstream nodes
+        _ <- forkLinked registry $ do
+          versions <- runSharedState networkApp
+          (withServer myAddr (\(DictVersion _) -> acceptEq) (muxResponderNetworkApplication <$> versions) wait)
+        
+        -- connect to upstream nodes
+        forM_ (producers nodeSetup) $ \na@(NodeAddress host port) ->
+          forkLinked registry $ do
+        
+            let io = do
+                  addr:_ <- getAddrInfo Nothing (Just host) (Just port)
+                  versions <- runSharedState networkApp
+                  connectTo
+                        (muxInitiatorNetworkApplication na <$> versions)
+                        -- Do not bind to a local port, use ephemeral
+                        -- one.  We cannot bind to port on which the server is
+                        -- already accepting connections.
+                        Nothing
+                        addr
+                    `catch` \(_ :: IOException) -> threadDelay 250_000 >> io
+        
+            io
 
-      myAddr:_ <- case myNodeAddress of
-        NodeAddress host port -> getAddrInfo Nothing (Just host) (Just port)
-
-      -- TODO: cheap subscription managment, a proper one is on the way.  The
-      -- point is that it only requires 'NetworkApplications' which is a thin
-      -- layer around 'MuxApplication'.
-
-      -- serve downstream nodes
-      _ <- forkLinked registry $ do
-        versions <- runSharedState networkApp
-        (withServer myAddr (\(DictVersion _) -> acceptEq) (muxResponderNetworkApplication <$> versions) wait)
-
-      -- connect to upstream nodes
-      forM_ (producers nodeSetup) $ \na@(NodeAddress host port) ->
-        forkLinked registry $ do
-
-          let io = do
-                addr:_ <- getAddrInfo Nothing (Just host) (Just port)
-                versions <- runSharedState networkApp
-                connectTo
-                      (muxInitiatorNetworkApplication na <$> versions)
-                      -- Do not bind to a local port, use ephemeral
-                      -- one.  We cannot bind to port on which the server is
-                      -- already accepting connections.
-                      Nothing
-                      addr
-                  `catch` \(_ :: IOException) -> threadDelay 250_000 >> io
-
-          io
-
-      Async.wait mempoolThread
+        Async.wait mempoolThread
   where
       nid :: Int
       nid = case myNodeId of
