@@ -262,6 +262,7 @@ executable demo-playground
                        directory,
                        formatting,
                        mtl,
+                       network,
                        optparse-applicative,
                        serialise,
                        stm,
