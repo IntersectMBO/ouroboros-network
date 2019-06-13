@@ -188,9 +188,3 @@ initNetworkLayer NodeParams {..} NodeKernel{..} = NetworkProvides {..}
     nrBlockFetchServer :: BlockFetchServer blk m ()
     nrBlockFetchServer =
       blockFetchServer (tracePrefix "BFServer" Nothing) chainDB
-
-    tracePrefix :: String -> Maybe up -> Tracer m String
-    tracePrefix p mbUp =
-      let prefix = p <> maybe "" ((" " <>) . condense) mbUp <> " | "
-      in contramap (prefix <>) tracer
-
