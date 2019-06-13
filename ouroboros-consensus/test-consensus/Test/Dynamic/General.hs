@@ -20,6 +20,7 @@ import           Test.QuickCheck
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork (MonadFork)
 import           Control.Monad.Class.MonadSay
+import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
@@ -67,6 +68,7 @@ test_simple_protocol_convergence :: forall m c ext.
                                     , MonadFork  m
                                     , MonadMask  m
                                     , MonadSay   m
+                                    , MonadST    m
                                     , MonadTime  m
                                     , MonadTimer m
                                     , MonadThrow (STM m)
