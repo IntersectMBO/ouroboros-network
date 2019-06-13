@@ -1,4 +1,4 @@
-resolver: https://raw.githubusercontent.com/input-output-hk/cardano-prelude/68648612f916e8adaf6c9ca5fe39bc6712470a6a/snapshot.yaml
+resolver: https://raw.githubusercontent.com/input-output-hk/cardano-prelude/a21f83d9407b2955fbaea4ce8a79b262361112aa/snapshot.yaml
 
 packages:
   - ./typed-transitions
@@ -32,7 +32,7 @@ extra-deps:
       - crypto/test
 
   - git: https://github.com/input-output-hk/cardano-prelude
-    commit: 68648612f916e8adaf6c9ca5fe39bc6712470a6a
+    commit: a21f83d9407b2955fbaea4ce8a79b262361112aa
     subdirs:
       - .
       - test
@@ -55,7 +55,6 @@ extra-deps:
   - splitmix-0.0.2
   - libsystemd-journal-1.4.4
   - tasty-hedgehog-1.0.0.1
-  - pretty-show-1.9.5
 
   # Windows only
   - Win32-2.5.4.1

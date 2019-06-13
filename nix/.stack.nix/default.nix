@@ -9,7 +9,6 @@
         "splitmix" = (((hackage.splitmix)."0.0.2").revisions).default;
         "libsystemd-journal" = (((hackage.libsystemd-journal)."1.4.4").revisions).default;
         "tasty-hedgehog" = (((hackage.tasty-hedgehog)."1.0.0.1").revisions).default;
-        "pretty-show" = (((hackage.pretty-show)."1.9.5").revisions).default;
         "Win32" = (((hackage.Win32)."2.5.4.1").revisions).default;
         "aeson-options" = (((hackage.aeson-options)."0.1.0").revisions).default;
         "pvss" = (((hackage.pvss)."0.2.0").revisions).default;
@@ -23,7 +22,6 @@
         "hedgehog" = (((hackage.hedgehog)."1.0").revisions).default;
         "micro-recursion-schemes" = (((hackage.micro-recursion-schemes)."5.0.2.2").revisions).default;
         "streaming-binary" = (((hackage.streaming-binary)."0.3.0.1").revisions).default;
-        "pretty-show" = (((hackage.pretty-show)."1.8.2").revisions).default;
         "graphviz" = (((hackage.graphviz)."2999.20.0.3").revisions)."cde383c356bc41136ed53cd27e0800f46dbd2185600dd0de18d66d5c49739d94";
         "quickcheck-state-machine" = (((hackage.quickcheck-state-machine)."0.6.0").revisions)."3e4f8df0f6b5d415e3c8840dc75034a63e37f56f5f8cfa1035ded16345235ac4";
         } // {
