@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -15,6 +16,7 @@ module Mock.TxSubmission (
 import           Codec.Serialise (decode, hPutSerialise)
 import qualified Control.Concurrent.Async as Async
 import           Control.Monad.Except
+import           Control.Monad.Class.MonadSTM
 import           Control.Tracer
 import qualified Data.ByteString as BS
 import qualified Data.Map.Strict as M
@@ -84,15 +86,23 @@ command' c descr p =
   Main logic
 -------------------------------------------------------------------------------}
 
-handleTxSubmission :: TopologyInfo -> Mock.Tx -> IO ()
-handleTxSubmission tinfo tx = do
+withValidatedNode :: TopologyInfo -> (TopologyInfo -> IO a) -> IO a
+withValidatedNode tinfo act = do
     topoE <- readTopologyFile (topologyFile tinfo)
     case topoE of
          Left e  -> error e
          Right t ->
              case M.lookup (node tinfo) (toNetworkMap t) of
                   Nothing -> error "Target node not found."
-                  Just _  -> submitTx (node tinfo) tx
+                  Just _  -> act tinfo
+
+{-------------------------------------------------------------------------------
+  Tx smuggling
+-------------------------------------------------------------------------------}
+handleTxSubmission :: TopologyInfo -> Mock.Tx -> IO ()
+handleTxSubmission tinfo tx =
+  withValidatedNode tinfo $ \_ ->
+  submitTx (node tinfo) tx
 
 submitTx :: NodeId -> Mock.Tx -> IO ()
 submitTx n tx = do
@@ -112,17 +122,31 @@ readIncomingTx tracer kernel Decoder{..} = forever $ do
       (if null rejected then "Accepted" else "Rejected") <>
       " transaction: " <> show newTx
 
--- | Listen for transactions coming a named pipe and add them to the mempool
-spawnMempoolListener :: RunDemo blk
-                     => Tracer IO String
-                     -> NodeId
-                     -> NodeKernel IO peer blk
-                     -> IO (Async.Async ())
-spawnMempoolListener tracer myNodeId kernel = do
+{-------------------------------------------------------------------------------
+  Listeners
+-------------------------------------------------------------------------------}
+-- | Listen for objects coming down a named pipe and process them
+spawnListener :: RunDemo blk
+              => (NodeId -> String)
+              -> (Tracer IO String -> NodeKernel IO peer blk -> Decoder IO -> IO ())
+              -> Tracer IO String
+              -> NodeId
+              -> NodeKernel IO peer blk
+              -> IO (Async.Async ())
+spawnListener pipeSchema process tracer myNodeId kernel = do
     Async.async $ do
         -- Apparently I have to pass 'ReadWriteMode' here, otherwise the
         -- node will die prematurely with a (DeserialiseFailure 0 "end of input")
         -- error.
-        withTxPipe myNodeId ReadWriteMode True $ \h -> do
+        withNamedPipe pipeSchema myNodeId ReadWriteMode True $ \h -> do
             let getChunk = BS.hGetSome h 1024
-            readIncomingTx tracer kernel =<< initDecoderIO getChunk
+            decoder <- initDecoderIO getChunk
+            process tracer kernel decoder
+
+spawnMempoolListener
+              :: RunDemo blk
+              => Tracer IO String
+              -> NodeId
+              -> NodeKernel IO peer blk
+              -> IO (Async.Async ())
+spawnMempoolListener = spawnListener namedTxPipeFor readIncomingTx
