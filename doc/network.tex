@@ -80,7 +80,6 @@
          \newcommand{\wip}[1]{\color{magenta}{#1}\color{black}}
          \newcommand{\hide}[1]{}
        }
-
 \newcommand{\trans}[1]{\texttt{#1}}
 \newcommand{\state}[1]{\texttt{#1}}
 \newcommand{\msg}[1]{\texttt{#1}}
@@ -125,7 +124,7 @@
 \begin{document}
 
 \title{Data Diffusion and Peer Networking in Shelley\\
-       {\small (Version 0.9)} \\
+       {\small (Version 0.10)} \\
        {\large \sc An IOHK technical report}}
 \author{Duncan Coutts \\ {\small \texttt{duncan@well-typed.com}} \\
                          {\small \texttt{duncan.coutts@iohk.io}}
@@ -153,6 +152,7 @@
 \item[Version 0.1, Dec 20, 2018 Draft of the table of contents.]
 \item[Version 0.2, Jan 08, 2019 Structure and outline.]
 \item[Version 0.9, Apr 03, 2019 Clean-up todos and WIP remarks]
+\item[Version 0.10, Jun 07, 2019 Add handshake protocol]
 \end{description}
 
 \chapter{Overview}
@@ -200,11 +200,11 @@ This Chapter contains an overview of the content and scope of this document and 
 are being discussed.
 
 \wip{
-\subparagraph{Software assurance}
+\subsubsection{Software assurance}
 Software assurance
 }
 
-\subparagraph{Layered Protocols}
+\subsubsection{Layered Protocols}
 Traditionally network protocols are presented as a stack of layers where
 upper layers build on services provided by lower layers and lower layers
 are independent of the implementation of the upper layers.
@@ -224,7 +224,7 @@ apply to the Ouroboros family of protocols.
 
 %\missingfigure[figwidth=6cm]{Testing a long text string}
 
-\subparagraph{Performance of the Ouroboros Network}
+\subsubsection{Performance of the Ouroboros Network}
 In computer science, Byzantine Fault Tolerance is a property of a distributed algorithm, which states
 that it works for the honest participants
 under the assumption that a certain proportion of the participants are indeed honest.
@@ -241,7 +241,7 @@ factors that determine the performance of the network.
 This document discusses the high level functional and performance requirements for Ourobors and the
 assumptions made about the structure of the underlying P2P network.
 
-\subparagraph{Protocol vs Implementation}
+\subsubsection{Protocol vs Implementation}
 Network Protocols are written at different levels of abstraction.
 To be useful, a protocol description must be precise enough to be implemented.
 A protocol description should also be abstract enough to allow alternative implementations of the protocol
@@ -444,7 +444,6 @@ green & otherwise.
 
 This assumes that the slot time remains 20 seconds, or at least that the average time
 between production of new blocks is 20 seconds.
-
 
 \paragraph{Transaction Latency}
 
@@ -780,7 +779,7 @@ Back Pressure is a strategy for congestion control for push based buffered chann
 }
 
 \begin{figure}[ht]
-  \pgfdeclareimage[height=10cm]{node-diagram-chains-state}{node-diagram-concurrency.pdf}
+  \pgfdeclareimage[height=10cm]{node-diagram-chains-state}{figure/node-diagram-concurrency.pdf}
   \begin{center}
     \pgfuseimage{node-diagram-chains-state}
   \end{center}
@@ -1016,6 +1015,53 @@ following pieces of information:
   mini protocols.
 
 \end{description}
+\section{Overview of all implemented Mini Protocols}
+
+\newcommand{\miniEntry}[4]{
+    \hline
+    #1 & Section \ref{#2} \\
+    \multicolumn{2}{|l|} {#3} \\
+    \multicolumn{2}{|l|} {\hsref{#4}}\\ \hline
+    \multicolumn{2}{l} {} \\
+}
+
+\begin{tabular}{|lr|}
+  \miniEntry
+      {Ping Pong Protocol}
+      {ping-pong-protocol}
+      {A simple ping-pong protocol for testing.}
+      {typed-protocols/src/Network/TypedProtocol/PingPong/Type.hs}
+
+  \miniEntry
+      {Request Response Protocol}
+      {request-response-protocol}
+      {A protocol similar to ping pong but which exchanges data.}
+      {} % no Haskell source ?
+
+  \miniEntry
+      {Single Phase Chain Synchronisation Protocol}
+      {chain-sync-protocol}
+      {}
+      {ouroboros-network/src/Ouroboros/Network/Protocol/ChainSync/Type.hs}
+
+  \miniEntry
+      {Block Fetch Protocol}
+      {block-fetching-protocol}
+      {The block fetching mechanism enables a node to download a range of blocks.}
+      {ouroboros-network/src/Ouroboros/Network/Protocol/BlockFetch/Type.hs}
+
+  \miniEntry
+      {Local Transaction Submission Mini Protocol}
+      {local-tx-submission-protocol}
+      {Transmitting Transactions for a wallet to a core node}
+      {src/Ouroboros/Network/Protocol/LocalTxSubmission/Type.hs}
+
+  \miniEntry
+      {Handshake Mini Protocol}
+      {handshake-protocol}
+      {This protocol is used for version negotiation.}
+      {src/Ouroboros/Network/Protocol/Handshake/Type.hs}
+\end{tabular}
 
 \section{Ping-Pong Protocol}
 \label{ping-pong-protocol}
@@ -1031,8 +1077,6 @@ It uses the same framework for state machines as the other protocols,
 but because the protocol is so simple,
 the description of the protocol is also very simple and slightly
 different from descriptions of other protocols.
-None the less the reader might
-find it useful to get familiar with the protocol description we present in this report.
 
 \subsection{State Machine}
 
@@ -1086,11 +1130,7 @@ The messages of the Ping-Pong protocol do not carry any data.
 \subsection{Description}
 The request response protocol is polymorphic in the request and response data that is being transmitted.
 This means that there are different possible applications of this protocol and the
-application of the protocol determines the type of the requests and responses.
-
-This is just an example protocol which does not currently need to be supported, but it
-may be useful in the future.  It's also useful as a simple example of
-a protocol description.
+application of the protocol determines the types of the requests and responses.
 
 \subsection{State machine}
 \hsref{ouroboros-network/src/Ouroboros/Network/Protocol/ReqResp/Type.hs}
@@ -1101,7 +1141,7 @@ a protocol description.
   Client has Agency & \Idle \\  \hline
   Server has Agency & \Busy \\ \hline
 \end{tabular}
-
+{\vskip 10pt}
 \begin{tikzpicture}[->,>=stealth',shorten >=1pt,auto,node distance=4.5cm, semithick]
   \tikzstyle{every state}=[fill=red,draw=none,text=white]
   \node[state, green, initial]                                   (Idle)      {\Idle};
@@ -1111,7 +1151,7 @@ a protocol description.
   \draw (Idle)         edge[]      node{\Request}           (Busy);
   \draw (Busy)         edge[]      node{\Response}          (Done);
 \end{tikzpicture}
-
+{\vskip 10pt}
 \begin{tabular}{|l|l|l|l|} \hline
 \multicolumn{4}{|c|}{Transition table} \\ \hline
   from         & message            & parameters             & to       \\ \hline\hline
@@ -1182,7 +1222,6 @@ The protocol uses the following messages:
 \begin{description}
 \item [\RequestNext]
       Request the next update from the producer.
-      The response can be a roll forward, a roll back or wait.
 \item [\AwaitReply]
       Acknowledge the request but require the consumer to wait for the next update.
       This means that the consumer is synced with the producer, and
@@ -1273,7 +1312,7 @@ The \RollForward{} message contains the next block and also the head-point of th
 The protocol follows this pattern until the $read~pointer$ reaches the end of its chain.
 
 \begin{figure}[ht]
-\pgfdeclareimage[height=7cm]{read-pointer-consumer-driver}{read-pointer-consumer-driven.pdf}
+\pgfdeclareimage[height=7cm]{read-pointer-consumer-driver}{figure/read-pointer-consumer-driven.pdf}
 \begin{center}
 \pgfuseimage{read-pointer-consumer-driver}
 \end{center}
@@ -1291,7 +1330,7 @@ The \AwaitReply{} switches from a consumer driven phase to a producer driven pha
 
 The producer waits until new data becomes available.
 When a new block is available, the producer will
-sned a \RollForward{} message and give agency back to the consumer.
+send a \RollForward{} message and give agency back to the consumer.
 The producer can also get unblocked when its node switches to a new chain fork.
 
 \subparagraph{Producer switches to a new fork}
@@ -1312,7 +1351,7 @@ of a \RollForward.
 Finally the producer thread must unblock if it is in the \MustReply{} state.
 
 \begin{figure}[h]
-\pgfdeclareimage[height=5cm]{read-pointer-rollback}{read-pointer-rollback.pdf}
+\pgfdeclareimage[height=5cm]{read-pointer-rollback}{figure/read-pointer-rollback.pdf}
 \begin{center}
 \pgfuseimage{read-pointer-rollback}
 \end{center}
@@ -1425,13 +1464,13 @@ The block fetching mechanism enables a node to download a range of blocks.
 \end{tikzpicture}
 
 \begin{description}
-\item [\RequestRange{} {\boldmath $range$}]
+\item [\RequestRange{} {\boldmath $(range)$}]
   The client requests a {\boldmath $range$} of blocks from the server.
 \item [\NoBlocks]
   The server tells the client that it does not have blocks.
 \item [\StartBatch]
   The server starts block streaming.
-\item [\Block{} {\boldmath $body$}]
+\item [\Block{} {\boldmath $(body)$}]
   Stream a single block's body.
 \item [\BatchDone]
   The server ends block streaming.
@@ -1453,89 +1492,182 @@ Transition table:
   \Streaming   & \BatchDone          &                        & \Idle       \\ \hline
 \end{tabular}
 
-\section{Transaction Submission Mini Protocol}
-\hsref{src/Ouroboros/Network/Protocol/TxSubmission/Type.hs in branch coot/tx-submission}
-\label{tx-submission-protocol}
-\newcommand{\SendTx}{\state{SendTx}}
-\newcommand{\SendHashes}{\state{SendHashes}}
-\newcommand{\GetTx}{\state{GetTx}}
-\newcommand{\GetHashes}{\state{GetHashes}}
-\newcommand{\Tx}{\state{Tx}}
+\section{Local Transaction Submission Mini Protocol}
+\hsref{src/Ouroboros/Network/Protocol/LocalTxSubmission/Type.hs}
+\label{local-tx-submission-protocol}
+\subsection{Description}
+The local transaction submission mini protocol is used by local clients,
+for example wallets or CLI tools, to submit transactions to a local node.
+The protocol is {\bf not} used to forward transactions from one core node to an other.
+
+The protocol follows a simple request-response pattern:
+\begin{enumerate}
+\item The client sends a request with a single transaction.
+\item The Server either accepts the transaction (returning a confirmation) or rejects it (returning the
+  reason).
+\end{enumerate}
+Note, that the local transaction submission protocol is a push bases protocol where the client
+creates a workload for the server.
+This is acceptable because is protocol is only for use between a node and local client.
+\newcommand{\SubmitTx}{\trans{SubmitTx}}
+\newcommand{\AcceptTx}{\trans{AcceptTx}}
+\newcommand{\RejectTx}{\trans{RejectTx}}
+\subsection{State machine}
+
+\begin{tabular}{|l|l|}
+  \hline
+  \multicolumn{2}{|c|}{Agency} \\ \hline
+  Client has Agency & \Idle \\ \hline
+  Server has Agency & \Busy \\  \hline
+\end{tabular}
+
+\begin{tikzpicture}[->,>=stealth',shorten >=1pt,auto,node distance=4cm, semithick]
+  \tikzstyle{every state}=[fill=red,draw=none,text=white]
+  \node[state, blue, initial]                                     (Idle)       {\Idle};
+  \node[state, right of=Idle]                                     (Done)       {\Done};
+  \node[state, green, above of=Idle]                              (Busy)     {\Busy};
+
+  \draw (Idle)         edge[]                          node{\MsgDone}           (Done);
+  \draw (Idle)         edge[right, bend right=45]      node{\SubmitTx}          (Busy);
+  \draw (Busy)         edge[left, bend right=45]       node[below = 3mm]{\AcceptTx}          (Idle);
+  \draw (Busy)         edge[left, bend right=80]       node[above = 3mm]{\RejectTx}          (Idle);
+\end{tikzpicture}
+
+Messages of the protocol:
+\begin{description}
+\item [\SubmitTx{} {\boldmath $(t)$}]
+      The client submits a transaction.
+\item [\AcceptTx]
+      The server accepts the transaction.
+\item [\RejectTx{} {\boldmath $(reason)$}]
+      The server rejects the transactions and replies with the $reason$.
+\item [\MsgDone]
+      The client terminates the mini protocol.
+\end{description}
+
+\section{Handshake Mini Protocol}
+\hsref{src/Ouroboros/Network/Protocol/Handshake/Type.hs}
+\label{handshake-protocol}
+\newcommand{\Propose}{\state{Propose}}
+\newcommand{\Confirm}{\state{Confirm}}
+\newcommand{\ProposeVersions}{\msg{ProposeVersions}}
+\newcommand{\AcceptVersion}{\msg{AcceptVersion}}
+\newcommand{\Refuse}{\msg{Refuse}}
+
+\newcommand{\VersionMismatch}{\msg{VersionMismatch}}
+\newcommand{\HandshakeDecodeError}{\msg{HandshakeDecodeError}}
+\newcommand{\Refused}{\msg{Refused}}
 
 \subsection{Description}
-A core node uses the transaction submission protocol to retrieve transactions from
-a wallet.
-The node runs the client instance of the transaction submission protocol and the wallet runs
-the server instance.
-Note, that the protocol is {\bf not} used to forward transactions from one core node to an other.
+The handshake mini protocol is used to negotiate the protocol version
+and the protocol parameters that are used by the client and the server.
+It is run exactly once when a new connection is initialized
+and consists of a single request from the client and a single reply from the server.
+Section \ref{peer-setup-section} explains the live cycle of a connection and the role of
+the handshake mini protocol in more detail.
+
+The handshake mini protocol is a generic protocol that can negotiate any kind protocol parameters.
+It only assumes that protocol parameters can be encoded to, and decoded from, CBOR terms.
+A node, that runs the handshake protocol, must instantiate it with the set of
+supported protocol versions and callback functions for handling the protocol parameters.
+These callback functions are specific for the supported protocol versions.
 
 \subsection{State machine}
 
 \begin{tabular}{|l|l|}
   \hline
   \multicolumn{2}{|c|}{Agency} \\ \hline
-  Client has Agency & \Idle \\  \hline
-  Server has Agency & \SendHashes, \SendTx \\ \hline
+  Client has Agency & \Propose \\ \hline
+  Server has Agency & \Confirm \\  \hline
 \end{tabular}
 
-\begin{tikzpicture}[->,>=stealth',shorten >=1pt,auto,node distance=4cm, semithick]
+\begin{tikzpicture}[->,>=stealth',shorten >=1pt,auto,node distance=5cm, semithick]
   \tikzstyle{every state}=[fill=red,draw=none,text=white]
-  \node[state, green, initial]                                   (Idle)       {\Idle};
-  \node[state, right of=Idle]                                    (Done)       {\Done};
-  \node[state, blue, above of=Idle]                              (SendTx)     {\SendTx};
-  \node[state, blue, below of=Idle]                              (SendHashes) {\SendHashes};
+  \node[state, green, initial]                                     (Propose)    {\Propose};
+  \node[state, blue, right of=Propose]                             (Confirm)    {\Confirm};
+  \node[state, right of=Confirm]                                   (Done)       {\Done};
 
-  \draw (Idle)         edge[]      node{\MsgDone}           (Done);
-  \draw (Idle)         edge[right, bend right=45]      node{\GetTx}               (SendTx);
-  \draw (Idle)         edge[left, bend right=45]       node{\GetHashes}           (SendHashes);
-  \draw (SendTx)       edge[left, bend right=45]      node{\Tx}            (Idle);
-  \draw (SendHashes)   edge[right, bend right=45]       node{\SendHashes}    (Idle);
+  \draw (Propose)      edge[]      node{\ProposeVersions}          (Confirm);
+  \draw (Confirm)      edge[above, bend left]       node{\AcceptVersion}     (Done);
+  \draw (Confirm)      edge[below, bend right]      node{\Refuse}            (Done);
 
 \end{tikzpicture}
 
 Messages of the protocol:
 \begin{description}
-\item [\GetHashes{} {\boldmath $n$}]
-      The client asks for transaction hashes from the server.
-      $n$ is the maximum number of hashes it will accept.
-\item [\SendHashes{} {\boldmath $hashes$}]
-      The server replies with a list of $hashes$.
-\item [\GetTx{} {\boldmath $hash$}]
-      The client requests the transaction with $hash$.
-      The client must only send \GetTx~messages with hashes it has received
-      in a \SendHashes~message from the this server.
-\item [\Tx{} {\boldmath $tx$}]
-      The server sends transaction $tx$ to the client.
-\item [\MsgDone]
-      The client terminates the mini protocol.
+\item [\ProposeVersions{} {\boldmath $(versionTable)$}]
+      The client proposes a number of possible versions and protocol parameters.
+\item [\AcceptVersion{} {\boldmath $(versionNumber,extraParameters)$}]
+      The server accepts $versionNumber$ and returns possible extra protocol parameters.
+\item [\Refuse{} {\boldmath $(reason)$}]
+      The server refuses the proposed versions.
 \end{description}
 
 \begin{tabular}{|l|l|l|l|} \hline
 \multicolumn{4}{|c|}{Transition table} \\ \hline
-  from        & message/event      & parameters            & to          \\ \hline\hline
-  \Idle       & \GetHashes         & $n$                   & \SendHashes  \\ \hline
-  \SendHashes & \SendHashes        & $hashes$              & \Idle \\ \hline
-  \Idle       & \GetTx             & $hash$                & \SendTx \\ \hline
-  \SendTx     & \Tx                & $tx$                  & \Idle \\ \hline
-  \Idle       & \MsgDone           &                       & \Done\\ \hline
+  from        & message/event      & parameters                   & to          \\ \hline\hline
+  \Propose    & \ProposeVersions   & $versionTable$              & \Confirm    \\ \hline
+  \Confirm    & \AcceptVersion     & $(versionNumber,extraParameters)$ & \Done \\ \hline
+  \Confirm    & \Refuse            & $reason$                     & \Done \\ \hline
 \end{tabular}
 
 \subsection{Client and Server Implementation}
-The transaction submission protocol is strictly only used
-by a (core) node to retrieve transactions from a wallet (or a similar source of transactions).
-It is {\bf not} used to relay transactions from node to node.
-It is important to note that core nodes only ever run client instances of the protocol,
-while the server instance is implemented by the wallet.
-Therefore only the client instance of the protocol has to be safe a against an adversarial server
-and not the other way around.
+Section~\ref{included-cddl} contains the CDDL-specification of the binary format of the handshake messages.
+The version table is encoded as a CBOR table with the version number as key
+and the protocol parameters as value.
+The handshake protocol requires that the version numbers ( i.e. the keys) in the version table are unique
+and appear in ascending order.
+(Note, that CDDL is not expressive enough to precisely specify that requirement on the keys of the CBOR
+table. Therefor the CDDL-specification uses a table with keys from 1 to 4 as an example.)
 
-A client can use the \GetHashes~$n$ message to request a limited number transaction hashes from the server
-and, after that, downloads the transactions one after the other.
-When a new transaction arrives (within a \Tx~message), the client uses the consensus layer to
-validate the transaction.
-If the transaction is valid, the node puts it in the mempool and otherwise it is discarded.
-Depending on the rate of incoming transactions and on the frequency of invalid transactions,
-a client can implement a suitable policy to throttle down a server or to disconnect altogether.
+In a run of the handshake mini protocol the peers exchange only two messages:
+The client requests to connect with a \ProposeVersions{} message that contains information about
+all protocol versions it wants to support.
+The server replies either with an \AcceptVersion{} message containing the negotiated
+version number and extra parameters or a \Refuse{} message.
+The \Refuse{} message contains one of three alternative refuse reasons:
+\VersionMismatch{}, \HandshakeDecodeError{} or just \Refused{}.
+
+When a server receives a \ProposeVersions{} message it uses the following algorithm to
+compute the response:
+\begin{enumerate}
+\item
+  Compute the intersection of the set of protocol version numbers that the server support
+  and the version numbers requested by the client.
+\item
+  If the intersection is empty:
+  Reply with \Refuse(\VersionMismatch) and the list of protocol numbers the server supports.
+\item
+  Otherwise:
+  Select the protocol with the highest version number in the intersection.
+\item
+  Run the protocol specific decoder on the CBOR term that contains the protocol parameters.
+\item
+  If the decoder fails:
+  Reply with \Refuse(\HandshakeDecodeError), the selected version number and an error message.
+\item
+  Otherwise: Test the proposed protocol parameters of the selected protocol version
+\item
+  If the test refuses the parameters:
+  Reply with \Refuse(\Refused), the selected version number and an error message.
+\item
+  Otherwise:
+  Encode the extra parameters and
+  reply with \AcceptVersion, the selected version number and the extra parameters.
+\end{enumerate}
+Note, that in step 4), 6) and 8) the handshake protocol uses the callback functions that are specific
+for set of protocols that the server supports.
+The handshake protocol is designed,
+such that a server can allways handle requests for protocol versions that it does not support.
+The server simply ignores the CBOR terms that represent the protocol parameters of unsupported
+version.
+
+\wip{
+see in the code if this is still true:
+The handshake mini protocol runs before the MUX/DEMUX itself is initialized.
+Each message is transmitted within a single MUX segment, i.e. with a proper segment header,
+but, as the MUX/DEMUX is not yet running the messages must not be split into multiple segments.
+}
 
 \section{Pipelining of Mini Protocols}
 \label{pipelining}
@@ -1579,7 +1711,6 @@ to the messages of other mini protocols.
 
 \chapter{Connection Management}
 \label{connection-management}
-\hide[inline]{Add a section which describes version negotiation protocol.}
 
 \section{The Multiplexing Layer}
 \label{multiplexing-section}
@@ -1592,7 +1723,7 @@ There is a fixed pairing of the mini protocol instances, i.e. each mini protocol
 communicates with its dual instance.
 
 \begin{figure}[ht]
-\pgfdeclareimage[height=5cm]{mux-diagram}{mux-diagram.pdf}
+\pgfdeclareimage[height=5cm]{mux-diagram}{figure/mux-diagram.pdf}
 \begin{center}
 \pgfuseimage{mux-diagram}
 \end{center}
@@ -1702,7 +1833,8 @@ This section describes the protocol and sketches a possible implementation.
 Roughly the implementation performs the following tasks:
 \begin{itemize}
 \item Open a socket/ acquire resources from the OS.
-\item Verify protocol Versions.
+\item Negotiate the protocol version with the handshake mini protocol
+      (Section \ref{handshake-mini-protocol}.
 \item Spawn the threads that run the mini protocols.
 \item Measure transmission times and amount of in-flight data.
 \item Catch exceptions that are thrown by the mini protocols.
@@ -1733,8 +1865,6 @@ Roughly the implementation performs the following tasks:
          (Dead);
 \end{tikzpicture}
 
-
-
 A connection passes through several stages during its life cycle.
 \begin{description}
 \item[\Larval]    The connection exists but nothing has been initialised yet.
@@ -1747,23 +1877,6 @@ A connection passes through several stages during its life cycle.
 \newcommand{\InitReq}{\msg{InitReq}}
 \newcommand{\InitRsp}{\msg{InitRsp}}
 \newcommand{\InitFail}{\msg{InitFail}}
-
-\subsection{Setup of a Connection with the Mux-Control Protocol}
-The Mux-Control protocol is used to negotiate the versions of the mini
-protocols that are used by the client and the server.
-It is run exactly once after the connection enters the \Connected-state and before
-any of the mini protocols is initialised.
-
-In a run of the version negotiation within the Mux-Control protocol
-the peers exchange only two messages:
-The client requests to connect with a \InitReq~message that contains a map of all supported
-protocol versions
-and the server replies either with a \InitRsp~message containing the negotiated version
-or a \InitFail~message.
-
-Section~\ref{included-cddl} contains the CDDL-specification of the binary format of the messages.
-Each message is transmitted within single MUX segment, i.e. with a proper segment header,
-but, as the MUX/DEMUX is not yet running the messages must not be split into multiple segments.
 
 \noindent\hsref{ouroboros-network/src/Ouroboros/Network/Mux/Types.hs}
 \newline\hsref{ouroboros-network/src/Ouroboros/Network/NodeToNode.hs}
