@@ -102,7 +102,7 @@ submitTx n tx = do
 -- | Auxiliary to 'spawnMempoolListener'
 readIncomingTx :: RunDemo blk
                => Tracer IO String
-               -> NodeKernel IO NodeId blk
+               -> NodeKernel IO nodeId blk
                -> Decoder IO
                -> IO ()
 readIncomingTx tracer kernel Decoder{..} = forever $ do
@@ -116,7 +116,7 @@ readIncomingTx tracer kernel Decoder{..} = forever $ do
 spawnMempoolListener :: RunDemo blk
                      => Tracer IO String
                      -> NodeId
-                     -> NodeKernel IO NodeId blk
+                     -> NodeKernel IO nodeId blk
                      -> IO (Async.Async ())
 spawnMempoolListener tracer myNodeId kernel = do
     Async.async $ do
