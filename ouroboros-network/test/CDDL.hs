@@ -13,8 +13,10 @@ import Control.Exception.Base (throw)
 import qualified Data.ByteString.Lazy as BS
 import Data.ByteString.Lazy (ByteString)
 import Data.ByteString.Lazy.Char8 as Char8 (putStrLn, unpack, lines)
+import Data.Word (Word32)
 import qualified Codec.Serialise.Class as Serialise
 import Codec.CBOR.Decoding (decodeWord, decodeListLenOf, decodeBytes)
+import qualified Codec.CBOR.Term as CBOR (Term)
 import Codec.CBOR.Read
 
 import Ouroboros.Network.Protocol.ChainSync.Type as CS
@@ -25,6 +27,8 @@ import Ouroboros.Network.Protocol.PingPong.Codec (codecPingPong)
 import Network.TypedProtocol.PingPong.Type as PingPong
 import Ouroboros.Network.Protocol.BlockFetch.Codec (codecBlockFetch)
 import Ouroboros.Network.Protocol.BlockFetch.Type as BlockFetch
+import Ouroboros.Network.Protocol.Handshake.Codec (codecHandshake)
+import Ouroboros.Network.Protocol.Handshake.Type as Handshake
 import Ouroboros.Network.Block (HeaderHash)
 
 import Network.TypedProtocol.Codec
@@ -33,6 +37,7 @@ import Network.TypedProtocol.Codec
 type CS = ChainSync DummyBytes DummyBytes
 type RR = ReqResp DummyBytes DummyBytes
 type BF = BlockFetch DummyBytes
+type HS = Handshake Word32 CBOR.Term
 
 main :: IO ()
 main = generateAndDecode "cddl" "diag2cbor.rb" "test/messages.cddl" 100
@@ -88,7 +93,7 @@ decodeMsg (tag, input) = case tag of
     2 -> tryParsers "pingPong"   pingPongParsers
     3 -> tryParsers "blockFetch" blockFetchParsers
     4 -> return () -- "txSubmissionMessage" in branch
-    5 -> return () -- error "muxControlMessage" in branch
+    5 -> tryParsers "handshake"  handshakeParsers
     _ -> error "unkown tag"
     where
         tryParsers :: String -> [IO Bool] -> IO ()
@@ -142,4 +147,10 @@ decodeMsg (tag, input) = case tag of
               runBlockFetch (ClientAgency BlockFetch.TokIdle)
             , runBlockFetch (ServerAgency BlockFetch.TokBusy)
             , runBlockFetch (ServerAgency BlockFetch.TokStreaming)
+            ]
+
+        runHandshake = run (codecHandshake :: MonoCodec HS)
+        handshakeParsers = [
+              runHandshake (ClientAgency TokPropose)
+            , runHandshake (ServerAgency TokConfirm)
             ]
