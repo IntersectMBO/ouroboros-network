@@ -48,6 +48,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Update
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
@@ -79,6 +80,9 @@ data NodeKernel m peer blk = NodeKernel {
 
       -- | Read the current candidates
     , getNodeCandidates :: TVar m (Map peer (TVar m (CandidateState blk)))
+
+      -- | The update system stimulus argument submission queue (bypassing mempool for now)
+    , getUSSAQueue :: TQueue m USSArgs
     }
 
 -- | Monad that we run protocol specific functions in
@@ -99,6 +103,7 @@ data NodeCallbacks m blk = NodeCallbacks {
                    -> Point blk          -- Previous point
                    -> BlockNo            -- Previous block number
                    -> [GenTx blk]        -- Contents of the mempool
+                   -> [USSArgs]          -- Update system stimuli args
                    -> ProtocolM blk m blk
 
       -- | Produce a random seed
@@ -145,7 +150,7 @@ nodeKernel params@NodeParams { threadRegistry, cfg } = do
     forkBlockProduction st
 
     let IS { blockFetchInterface, fetchClientRegistry, varCandidates,
-             chainDB, mempool } = st
+             chainDB, mempool, ussaQueue } = st
 
     -- Run the block fetch logic in the background. This will call
     -- 'addFetchedBlock' whenever a new block is downloaded.
@@ -158,6 +163,7 @@ nodeKernel params@NodeParams { threadRegistry, cfg } = do
     return NodeKernel {
         getChainDB    = chainDB
       , getMempool    = mempool
+      , getUSSAQueue  = ussaQueue
       , getNodeConfig = cfg
       , getFetchClientRegistry = fetchClientRegistry
       , getNodeCandidates      = varCandidates
@@ -187,6 +193,7 @@ data InternalState m peer blk = IS {
     , varState            :: TVar m (NodeState (BlockProtocol blk))
     , tracer              :: Tracer m String
     , mempool             :: Mempool m blk
+    , ussaQueue           :: TQueue m USSArgs
     }
 
 initInternalState
@@ -203,6 +210,7 @@ initInternalState NodeParams {..} = do
     varCandidates  <- atomically $ newTVar mempty
     varState       <- atomically $ newTVar initState
     mempool        <- openMempool chainDB (ledgerConfigView cfg)
+    ussaQueue      <- atomically $ newTQueue
 
     fetchClientRegistry <- newFetchClientRegistry
 
@@ -309,6 +317,7 @@ forkBlockProduction IS{..} =
             (prevPoint, prevNo) <- prevPointAndBlockNo currentSlot <$>
                                      ChainDB.getCurrentChain chainDB
             txs                 <- getTxs mempool
+            ussArgs             <- flushTQueue ussaQueue
             newBlock            <- runProtocol varDRG $
                                      produceBlock
                                        proof
@@ -317,6 +326,7 @@ forkBlockProduction IS{..} =
                                        (castPoint prevPoint)
                                        prevNo
                                        (Foldable.toList txs)
+                                       ussArgs
             return $ Just newBlock
 
       whenJust mNewBlock $ \newBlock -> do
@@ -325,6 +335,13 @@ forkBlockProduction IS{..} =
           condense newBlock
         ChainDB.addBlock chainDB newBlock
   where
+    flushTQueue tq = doFlushTQueue []
+      where doFlushTQueue acc = do
+              mx <- tryReadTQueue tq
+              case mx of
+                Nothing -> pure $ reverse acc
+                Just x -> doFlushTQueue (x:acc)
+
     NodeCallbacks{..} = callbacks
 
     -- Return the point and block number of the most recent block in the

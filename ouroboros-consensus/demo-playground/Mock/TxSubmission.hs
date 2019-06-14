@@ -10,7 +10,9 @@ module Mock.TxSubmission (
       command'
     , parseMockTx
     , handleTxSubmission
+    , handleUSSASubmission
     , spawnMempoolListener
+    , spawnUSSAListener
     ) where
 
 import           Codec.Serialise (decode, hPutSerialise)
@@ -31,6 +33,7 @@ import qualified Ouroboros.Consensus.Ledger.Mock as Mock
 import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.NodeId (NodeId (..))
 import           Ouroboros.Consensus.Node   (NodeKernel (..))
+import           Ouroboros.Consensus.Update
 import           Ouroboros.Consensus.Util.CBOR (Decoder (..), initDecoderIO)
 import           Ouroboros.Consensus.Util.Condense
 
@@ -97,6 +100,57 @@ withValidatedNode tinfo act = do
                   Just _  -> act tinfo
 
 {-------------------------------------------------------------------------------
+  USSA (Update System Stimulus Args) smuggling
+-------------------------------------------------------------------------------}
+-- | Very roughly validate US stimulus args.
+basicValidateUSSA :: USSArgs -> Maybe String
+
+basicValidateUSSA (SubmitVote _upid _forAgainst) = Nothing
+
+basicValidateUSSA (ProposeSoftware mprop) =
+  case mprop of
+    MProposalBody Nothing Nothing (Just _) hashes ->
+      if M.null hashes
+      then Just "software proposal mentions no payloads"
+      else Nothing
+    MProposalBody _ _ (Just _) _ -> Just "software proposal has protocol elements"
+    MProposalBody _ _ Nothing  _ -> Just "software proposal missing software version"
+
+basicValidateUSSA (ProposeProtocol mprop) =
+  case mprop of
+    MProposalBody (Just _) (Just _) Nothing _ -> Nothing
+    MProposalBody (Just _) (Just _) _ _ -> Just "protocol proposal has software elements"
+    MProposalBody Nothing  (Just _) _ _ -> Just "protocol proposal missing protocol version"
+    MProposalBody _        Nothing  _ _ -> Just "protocol proposal missing protocol parameters update"
+
+-- | Submission side.
+handleUSSASubmission :: TopologyInfo -> USSArgs -> IO ()
+handleUSSASubmission tinfo ussa =
+  withValidatedNode tinfo $ \_ -> do
+    case basicValidateUSSA ussa of
+      Nothing -> withUSSAPipe (node tinfo) WriteMode False $ \h -> do
+        hPutSerialise h ussa
+      Just err ->
+        error $ "Update system stimulus malformed: " <> err <> ".  Stimulus: " <> show ussa
+
+-- | Node side.
+readIncomingUSSArgs
+               :: RunDemo blk
+               => Tracer IO String
+               -> NodeKernel IO peer blk
+               -> Decoder IO
+               -> IO ()
+readIncomingUSSArgs tracer kernel Decoder{..} = forever $ do
+    ussa :: USSArgs <- decodeNext decode
+    let mErr = basicValidateUSSA ussa
+    case mErr of
+      Just err ->
+        traceWith tracer $ "Update system stimulus malformed: " <> err <> ".  Stimulus: " <> show ussa
+      Nothing  -> do
+        traceWith tracer $ "Locally submitted update system stimulus not obviously malformed, processing: " <> show ussa
+        atomically $ writeTQueue (getUSSAQueue kernel) ussa
+
+{-------------------------------------------------------------------------------
   Tx smuggling
 -------------------------------------------------------------------------------}
 handleTxSubmission :: TopologyInfo -> Mock.Tx -> IO ()
@@ -150,3 +204,11 @@ spawnMempoolListener
               -> NodeKernel IO peer blk
               -> IO (Async.Async ())
 spawnMempoolListener = spawnListener namedTxPipeFor readIncomingTx
+
+spawnUSSAListener
+              :: RunDemo blk
+              => Tracer IO String
+              -> NodeId
+              -> NodeKernel IO peer blk
+              -> IO (Async.Async ())
+spawnUSSAListener = spawnListener namedUSSAPipeFor readIncomingUSSArgs

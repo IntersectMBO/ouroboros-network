@@ -4,8 +4,10 @@ module NamedPipe (
   -- * Sending & receiving txs
     withNamedPipe
   , withTxPipe
+  , withUSSAPipe
   , withPipeChannel
   , namedTxPipeFor
+  , namedUSSAPipeFor
   , DataFlow(..)
   , NodeMapping((:==>:))
   ) where
@@ -102,6 +104,15 @@ dashify (RelayId n) = "relay-node-" <> show n
 namedTxPipeFor :: NodeId -> String
 namedTxPipeFor n = "ouroboros-" <> dashify n <> "-tx-pipe"
 
+-- | Given an USS and a 'NodeId', yield a predictable name which can be used to
+-- I/O US stimuli of a particular kind.
+namedUSSAPipeFor :: NodeId -> String
+namedUSSAPipeFor nid = "ouroboros-update-" <> dashify nid
+
 -- | Creates a unidirectional pipe for Tx transmission.
 withTxPipe :: NodeId -> IOMode -> Bool -> (Handle -> IO a) -> IO a
 withTxPipe = withNamedPipe namedTxPipeFor
+
+-- | Creates a unidirectional pipe for Update System Stimulus transmission.
+withUSSAPipe :: NodeId -> IOMode -> Bool -> (Handle -> IO a) -> IO a
+withUSSAPipe = withNamedPipe namedUSSAPipeFor

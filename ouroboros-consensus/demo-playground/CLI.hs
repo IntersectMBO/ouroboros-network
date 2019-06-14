@@ -9,6 +9,7 @@ module CLI (
   , CLI(..)
   , TopologyInfo(..)
   , Command(..)
+  , USSArgs(..)
   , parseCLI
   -- * Handy re-exports
   , execParser
@@ -19,9 +20,13 @@ module CLI (
   , progDesc
   ) where
 
+import           Data.Either (either)
 import           Data.Foldable (asum)
 import           Data.Semigroup ((<>))
 import           Data.Maybe (fromMaybe)
+import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
+import           Data.Word (Word64)
 import           Options.Applicative
 
 import           Ouroboros.Consensus.BlockchainTime
@@ -29,6 +34,7 @@ import           Ouroboros.Consensus.Demo
 import           Ouroboros.Consensus.Demo.Run
 import qualified Ouroboros.Consensus.Ledger.Mock as Mock
 import           Ouroboros.Consensus.NodeId (NodeId (..))
+import           Ouroboros.Consensus.Update
 import           Ouroboros.Consensus.Util
 
 import           Mock.TxSubmission (command', parseMockTx)
@@ -37,6 +43,10 @@ import           Topology (TopologyInfo (..), NodeAddress (..))
 import qualified Cardano.BM.Data.Severity as Monitoring
 
 import qualified Cardano.Crypto.Hashing as Crypto
+import qualified Cardano.Chain.Update as Update
+import qualified Cardano.Chain.Common as Chain
+import qualified Cardano.Chain.Slotting as Chain
+
 import qualified Test.Cardano.Chain.Genesis.Dummy as Dummy
 
 
@@ -89,8 +99,11 @@ data CLI = CLI {
   }
 
 data Command =
-    SimpleNode  TopologyInfo NodeAddress Protocol
-  | TxSubmitter TopologyInfo Mock.Tx
+    SimpleNode       TopologyInfo NodeAddress Protocol
+  | TxSubmitter      TopologyInfo Mock.Tx
+  | ProtoProposer    TopologyInfo USSArgs
+  | SoftProposer     TopologyInfo USSArgs
+  | Voter            TopologyInfo USSArgs
 
 parseCLI :: Parser CLI
 parseCLI = CLI
@@ -160,7 +173,104 @@ parseCommand = subparser $ mconcat [
       SimpleNode <$> parseTopologyInfo <*> parseNodeAddress <*> parseProtocol
   , command' "submit" "Submit a transaction." $
       TxSubmitter <$> parseTopologyInfo <*> parseMockTx
+  , command' "propose-protocol" "Submit a protocol-only update proposal." $
+      ProtoProposer <$> parseTopologyInfo <*> (ProposeProtocol <$> parseProposalBodyProto)
+  , command' "propose-software" "Submit a software-only update proposal." $
+      SoftProposer <$> parseTopologyInfo <*> (ProposeSoftware <$> parseProposalBodySoft)
+  , command' "vote" "Submit a vote." $
+      Voter <$> parseTopologyInfo <*> parseVote
   ]
+
+parseProposalBodyProto :: Parser MProposalBody
+parseProposalBodyProto = MProposalBody
+    <$> (Just <$> parseProtocolVersion)
+    <*> (Just <$> parseProtocolParametersUpdate)
+    <*> pure Nothing
+    <*> pure mempty
+
+parseProtocolVersion :: Parser Update.ProtocolVersion
+parseProtocolVersion = Update.ProtocolVersion
+    <$> option auto (long "major")
+    <*> option auto (long "minor")
+    <*> option auto (long "alt")
+
+parseProtocolParametersUpdate :: Parser Update.ProtocolParametersUpdate
+parseProtocolParametersUpdate = Update.ProtocolParametersUpdate
+    <$> optional (option auto (
+            long "script-version"))
+    <*> optional (option (undefined) ( -- XXX
+            long "slot-duration"))
+    <*> optional (option auto (
+            long "max-block-size"))
+    <*> optional (option auto (
+            long "max-header-size"))
+    <*> optional (option auto (
+            long "max-tx-size"))
+    <*> optional (option auto (
+            long "max-proposal-size"))
+    <*> optional (option (Chain.LovelacePortion <$> auto) (
+            long "mpc-thd"))
+    <*> optional (option (Chain.LovelacePortion <$> auto) (
+            long "heavy-del-thd"))
+    <*> optional (option (Chain.LovelacePortion <$> auto) (
+            long "update-vote-thd"))
+    <*> optional (option (Chain.LovelacePortion <$> auto) (
+            long "update-proposal-thd"))
+    <*> optional (option (Chain.FlatSlotId <$> auto) (
+            long "update-implicit"))
+    <*> optional parseSoftforkRule
+    <*> optional parseTxFeePolicy
+    <*> optional (option (Chain.EpochIndex <$> auto) (
+            long "unlock-stake-epoch"))
+
+parseTxFeePolicy :: Parser Chain.TxFeePolicy
+parseTxFeePolicy = (Chain.TxFeePolicyTxSizeLinear <$>) $ Chain.TxSizeLinear
+    <$> (option (mkLovelace <$> auto) (long "txfee-policy-a"))
+    <*> (option (mkLovelace <$> auto) (long "txfee-policy-b"))
+  where mkLovelace :: Word64 -> Chain.Lovelace
+        mkLovelace = either (\err -> error (show err)) id . Chain.mkLovelace
+
+parseSoftforkRule :: Parser Update.SoftforkRule
+parseSoftforkRule = Update.SoftforkRule
+    <$> option (Chain.LovelacePortion <$> auto) (long "init-thd")
+    <*> option (Chain.LovelacePortion <$> auto) (long "min-thd")
+    <*> option (Chain.LovelacePortion <$> auto) (long "thd-decrement")
+
+parseProposalBodySoft :: Parser MProposalBody
+parseProposalBodySoft = MProposalBody
+    <$> pure Nothing
+    <*> pure Nothing
+    <*> (Just <$> parseSoftwareVersion)
+    <*> (interpretPairs <$> many parseSystemTagAppHash)
+  where
+    parseSoftwareVersion :: Parser Update.SoftwareVersion
+    parseSoftwareVersion = Update.SoftwareVersion
+      <$> option (Update.ApplicationName <$> auto) (long "app-name")
+      <*> option (auto) (long "version")
+    parseSystemTagAppHash :: Parser (Update.SystemTag, Update.InstallerHash)
+    parseSystemTagAppHash = (,) <$> parseSystemTag <*> parseInstallerHash
+    parseSystemTag        = option (Update.SystemTag     <$> auto) (long "system-tag")
+    parseInstallerHash    = option (Update.InstallerHash <$> auto) (long "installer-hash")
+    interpretPairs :: [(Update.SystemTag, Update.InstallerHash)]
+                   -> Map Update.SystemTag Update.InstallerHash
+    interpretPairs = Map.fromList
+
+parseVote :: Parser USSArgs
+parseVote = SubmitVote
+  <$> parseUpId
+  <*> asum [ flag' True $ mconcat [
+               long "accept"
+               , help "Vote for the proposal"
+               ]
+           , flag' False $ mconcat [
+               long "reject"
+               , help "Vote against the proposal"
+               ]]
+
+parseUpId :: Parser Update.UpId
+parseUpId = option (decodeHash <$> auto)
+            (long "proposal-id")
+  where decodeHash = either (\err -> error (show err)) id . Crypto.decodeHash
 
 parseNodeId :: Parser NodeId
 parseNodeId =

@@ -32,6 +32,7 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Update
 import           Ouroboros.Consensus.Util.Condense
 
 {-------------------------------------------------------------------------------
@@ -67,10 +68,12 @@ class ( ProtocolLedgerView blk
       ) => RunDemo blk where
   demoForgeBlock         :: (HasNodeState (BlockProtocol blk) m, MonadRandom m)
                          => NodeConfig (BlockProtocol blk)
+                         -> ExtLedgerState blk -- Current ledger state
                          -> SlotNo         -- ^ Current slot
                          -> BlockNo        -- ^ Current block number
                          -> ChainHash blk  -- ^ Previous hash
                          -> [GenTx blk]    -- ^ Txs to add in the block
+                         -> [USSArgs]
                          -> IsLeader (BlockProtocol blk)
                          -> m blk
   demoBlockMatchesHeader :: Header blk -> blk -> Bool
