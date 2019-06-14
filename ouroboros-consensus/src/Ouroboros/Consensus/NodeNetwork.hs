@@ -82,17 +82,17 @@ runSharedState (SharedState ms f) = ms >>= pure . f
 -- useful for running different encoding on each channel in tests (identity
 -- codecs).
 --
-data NetworkApplication m up bytesCS bytesBF a = NetworkApplication {
+data NetworkApplication m peer bytesCS bytesBF a = NetworkApplication {
       -- | Start a chain sync client that communicates with the given upstream
       -- node.
-      naChainSyncClient  :: up -> Channel m bytesCS -> m a
+      naChainSyncClient  :: peer -> Channel m bytesCS -> m a
 
       -- | Start a chain sync server.
     , naChainSyncServer  :: Channel m bytesCS -> m a
 
       -- | Start a block fetch client that communicates with the given
       -- upstream node.
-    , naBlockFetchClient :: up -> Channel m bytesBF -> m a
+    , naBlockFetchClient :: peer -> Channel m bytesBF -> m a
 
       -- | Start a block fetch server server.
     , naBlockFetchServer :: Channel m bytesBF -> m a
@@ -102,18 +102,18 @@ data NetworkApplication m up bytesCS bytesBF a = NetworkApplication {
 -- | A projection from 'NetworkApplication' to 'MuxApplication'.
 --
 muxInitiatorNetworkApplication
-  :: up
-  -> NetworkApplication m up bytes bytes a
+  :: peer
+  -> NetworkApplication m peer bytes bytes a
   -> MuxApplication InitiatorApp NodeToNodeProtocols m bytes a Void
-muxInitiatorNetworkApplication up NetworkApplication {..} =
+muxInitiatorNetworkApplication them NetworkApplication {..} =
     MuxInitiatorApplication $ \ptcl -> case ptcl of
-      ChainSyncWithHeadersPtcl -> naChainSyncClient up
-      BlockFetchPtcl           -> naBlockFetchClient up
+      ChainSyncWithHeadersPtcl -> naChainSyncClient them
+      BlockFetchPtcl           -> naBlockFetchClient them
 
 -- | A project from 'NetworkApplication' to 'MuxApplication'.
 --
 muxResponderNetworkApplication
-  :: NetworkApplication m up bytes bytes a
+  :: NetworkApplication m peer bytes bytes a
   -> AnyMuxResponderApp NodeToNodeProtocols m bytes
 muxResponderNetworkApplication NetworkApplication {..} =
     AnyMuxResponderApp $ MuxResponderApplication $ \ptcl -> case ptcl of
@@ -126,7 +126,7 @@ muxResponderNetworkApplication NetworkApplication {..} =
 -- 'NodeToNodeVersions'.
 --
 consensusNetworkApps
-    :: forall m up blk failure bytesCS bytesBF.
+    :: forall m peer blk failure bytesCS bytesBF.
        ( MonadAsync m
        , MonadCatch m
        , MonadThrow (STM m)
@@ -134,16 +134,16 @@ consensusNetworkApps
        , ProtocolLedgerView blk
        , Condense (Header blk)
        , Condense (ChainHash blk)
-       , Ord up
-       , Condense up
+       , Ord peer
+       , Condense peer
        , Exception failure
        )
     => Tracer m (TraceSendRecv (ChainSync (Header blk) (Point blk)))
     -> Tracer m (TraceSendRecv (BlockFetch blk))
     -> Codec (ChainSync (Header blk) (Point blk)) failure m bytesCS
     -> Codec (BlockFetch blk) failure m bytesBF
-    -> NodeParams m up blk
-    -> NodeKernel m up blk
+    -> NodeParams m peer blk
+    -> NodeKernel m peer blk
     -- TODO: SharedState is created before version negotiation starts
     -- (which allocates resources early) and is consumed after mux started,
     -- this is not ideal.  Currently mux layer does not support custom monadic
@@ -153,7 +153,7 @@ consensusNetworkApps
     -- from singletons we need to use the left biased semigroup instance of
     -- 'SharedState'.
     -> SharedState m (TMVar m ())
-        (NetworkApplication m up bytesCS bytesBF ())
+        (NetworkApplication m peer bytesCS bytesBF ())
 
 consensusNetworkApps traceChainSync traceBlockFetch codecChainSync codecBlockFetch NodeParams {..} kernel =
     SharedState @m newEmptyTMVarM
@@ -167,10 +167,10 @@ consensusNetworkApps traceChainSync traceBlockFetch codecChainSync codecBlockFet
   where
     naChainSyncClient
       :: TMVar m ()
-      -> up
+      -> peer
       -> Channel m bytesCS
       -> m ()
-    naChainSyncClient clientRegistered up channel = do
+    naChainSyncClient clientRegistered them channel = do
       -- The block fetch logic thread in the background wants there to be a
       -- block fetch client thread for each chain sync candidate it sees. So
       -- start the chain sync client after the block fetch thread was
@@ -184,14 +184,14 @@ consensusNetworkApps traceChainSync traceBlockFetch codecChainSync codecBlockFet
         channel
         $ chainSyncClientPeer
         $ chainSyncClient
-            (tracePrefix "CSClient" (Just up) tracer)
+            (tracePrefix "CSClient" (Just them) tracer)
             cfg
             btime
             maxClockSkew
             (ChainDB.getCurrentChain chainDB)
             (ChainDB.getCurrentLedger chainDB)
             (getNodeCandidates kernel)
-            up
+            them
 
     naChainSyncServer
       :: Channel m bytesCS
@@ -203,16 +203,16 @@ consensusNetworkApps traceChainSync traceBlockFetch codecChainSync codecBlockFet
         channel
         $ chainSyncServerPeer
         $ chainSyncServer
-          (tracePrefix "CSServer" (Nothing :: Maybe up) tracer)
+          (tracePrefix "CSServer" (Nothing :: Maybe peer) tracer)
           chainDB
 
     naBlockFetchClient
       :: TMVar m ()
-      -> up
+      -> peer
       -> Channel m bytesBF
       -> m ()
-    naBlockFetchClient clientRegistered up channel =
-      bracketFetchClient (getFetchClientRegistry kernel) up $ \clientCtx -> do
+    naBlockFetchClient clientRegistered them channel =
+      bracketFetchClient (getFetchClientRegistry kernel) them $ \clientCtx -> do
         atomically $ putTMVar clientRegistered ()
 
         runPipelinedPeer
@@ -231,5 +231,5 @@ consensusNetworkApps traceChainSync traceBlockFetch codecChainSync codecBlockFet
         channel
         $ blockFetchServerPeer
         $ blockFetchServer
-          (tracePrefix "BFServer" (Nothing :: Maybe up) tracer)
+          (tracePrefix "BFServer" (Nothing :: Maybe peer) tracer)
           chainDB

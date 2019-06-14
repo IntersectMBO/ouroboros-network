@@ -68,10 +68,10 @@ import qualified Ouroboros.Storage.ChainDB.Mock as ChainDB
 -- 'ouroboros-network' only provides this interface in 'IO' backed by sockets,
 -- we cook up here one using 'NodeChans'.
 --
-data NetworkInterface m up = NetworkInterface {
+data NetworkInterface m peer = NetworkInterface {
       -- | Like 'Ouroboros.Network.NodeToNode.nodeToNodeConnectTo'
       --
-      niConnectTo :: up -> m ()
+      niConnectTo :: peer -> m ()
 
       -- | Like 'Ouroboros.Network.NodeToNode.withServerNodeToNode'
       --
@@ -83,7 +83,7 @@ data NetworkInterface m up = NetworkInterface {
 -- TODO: move this function to 'ouroboros-network'.
 --
 createNetworkInterface
-    :: forall m nodeId blk.
+    :: forall m peer blk.
        ( MonadAsync m
        , MonadFork  m
        , MonadMask  m
@@ -91,17 +91,17 @@ createNetworkInterface
        , StandardHash blk
        , Show blk
        , Show (Header blk)
-       , Ord nodeId
-       , Show nodeId
+       , Ord peer
+       , Show peer
        )
-    => NodeChans m nodeId blk -- ^ map of channels between nodes
-    -> [nodeId]               -- ^ list of nodes which we want to serve
-    -> nodeId                 -- ^ our nodeId
+    => NodeChans m peer blk -- ^ map of channels between nodes
+    -> [peer]               -- ^ list of nodes which we want to serve
+    -> peer                 -- ^ our peer
     -> SharedState m (TMVar m ())
-        (NetworkApplication m nodeId
+        (NetworkApplication m peer
           (AnyMessage (ChainSync (Header blk) (Point blk)))
           (AnyMessage (BlockFetch blk)) ())
-    -> NetworkInterface m nodeId
+    -> NetworkInterface m peer
 createNetworkInterface chans nodeIds us na = NetworkInterface
     { niConnectTo = \them -> do
         NetworkApplication {naChainSyncClient, naBlockFetchClient} <- runSharedState na
@@ -289,7 +289,7 @@ data NodeChan m blk = NodeChan
   }
 
 -- | All connections between all nodes
-type NodeChans m nodeId blk = Map nodeId (Map nodeId (NodeChan m blk))
+type NodeChans m peer blk = Map peer (Map peer (NodeChan m blk))
 
 
 {-------------------------------------------------------------------------------
@@ -331,21 +331,21 @@ genTx addrs u = do
 -------------------------------------------------------------------------------}
 
 -- | Message sent by or to a producer
-data TalkingToProducer nodeId pid = TalkingToProducer {
-      producerUs   :: nodeId
+data TalkingToProducer peer pid = TalkingToProducer {
+      producerUs   :: peer
     , producerThem :: pid
     }
   deriving (Show)
 
 -- | Message sent by or to a consumer
-data TalkingToConsumer nodeId cid = TalkingToConsumer {
-      consumerUs   :: nodeId
+data TalkingToConsumer peer cid = TalkingToConsumer {
+      consumerUs   :: peer
     , consumerThem :: cid
     }
   deriving (Show)
 
-instance (Condense nodeId, Condense pid) => Condense (TalkingToProducer nodeId pid) where
+instance (Condense peer, Condense pid) => Condense (TalkingToProducer peer pid) where
   condense TalkingToProducer{..} = condense (producerUs, producerThem)
 
-instance (Condense nodeId, Condense pid) => Condense (TalkingToConsumer nodeId pid) where
+instance (Condense peer, Condense pid) => Condense (TalkingToConsumer peer pid) where
   condense TalkingToConsumer{..} = condense (consumerUs, consumerThem)

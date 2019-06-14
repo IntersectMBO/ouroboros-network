@@ -64,7 +64,7 @@ import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 -------------------------------------------------------------------------------}
 
 -- | Interface against running relay node
-data NodeKernel m up blk = NodeKernel {
+data NodeKernel m peer blk = NodeKernel {
       -- | The 'ChainDB' of the node
       getChainDB :: ChainDB m blk (Header blk)
 
@@ -75,10 +75,10 @@ data NodeKernel m up blk = NodeKernel {
     , getNodeConfig :: NodeConfig (BlockProtocol blk)
 
       -- | The fetch client registry, used for the block fetch clients.
-    , getFetchClientRegistry :: FetchClientRegistry up (Header blk) blk m
+    , getFetchClientRegistry :: FetchClientRegistry peer (Header blk) blk m
 
       -- | Read the current candidates
-    , getNodeCandidates :: TVar m (Map up (TVar m (CandidateState blk)))
+    , getNodeCandidates :: TVar m (Map peer (TVar m (CandidateState blk)))
     }
 
 -- | Monad that we run protocol specific functions in
@@ -114,7 +114,7 @@ data NodeCallbacks m blk = NodeCallbacks {
     }
 
 -- | Parameters required when initializing a node
-data NodeParams m up blk = NodeParams {
+data NodeParams m peer blk = NodeParams {
       tracer             :: Tracer m String
     , threadRegistry     :: ThreadRegistry m
     , maxClockSkew       :: ClockSkew
@@ -128,17 +128,17 @@ data NodeParams m up blk = NodeParams {
     }
 
 nodeKernel
-    :: forall m up blk.
+    :: forall m peer blk.
        ( MonadAsync m
        , MonadFork  m
        , MonadMask  m
        , ProtocolLedgerView blk
-       , Ord up
-       , TraceConstraints up blk
+       , Ord peer
+       , TraceConstraints peer blk
        , ApplyTx blk
        )
-    => NodeParams m up blk
-    -> m (NodeKernel m up blk)
+    => NodeParams m peer blk
+    -> m (NodeKernel m peer blk)
 nodeKernel params@NodeParams { threadRegistry, cfg } = do
     st <- initInternalState params
 
@@ -168,37 +168,37 @@ nodeKernel params@NodeParams { threadRegistry, cfg } = do
 -------------------------------------------------------------------------------}
 
 -- | Constraints required to trace nodes, block, headers, etc.
-type TraceConstraints up blk =
-  ( Condense up
+type TraceConstraints peer blk =
+  ( Condense peer
   , Condense blk
   , Condense (ChainHash blk)
   , Condense (Header blk)
   )
 
-data InternalState m up blk = IS {
+data InternalState m peer blk = IS {
       cfg                 :: NodeConfig (BlockProtocol blk)
     , threadRegistry      :: ThreadRegistry m
     , btime               :: BlockchainTime m
     , callbacks           :: NodeCallbacks m blk
     , chainDB             :: ChainDB m blk (Header blk)
-    , blockFetchInterface :: BlockFetchConsensusInterface up (Header blk) blk m
-    , fetchClientRegistry :: FetchClientRegistry up (Header blk) blk m
-    , varCandidates       :: TVar m (Map up (TVar m (CandidateState blk)))
+    , blockFetchInterface :: BlockFetchConsensusInterface peer (Header blk) blk m
+    , fetchClientRegistry :: FetchClientRegistry peer (Header blk) blk m
+    , varCandidates       :: TVar m (Map peer (TVar m (CandidateState blk)))
     , varState            :: TVar m (NodeState (BlockProtocol blk))
     , tracer              :: Tracer m String
     , mempool             :: Mempool m blk
     }
 
 initInternalState
-    :: forall m up blk.
+    :: forall m peer blk.
        ( MonadAsync m
        , ProtocolLedgerView blk
-       , Ord up
-       , TraceConstraints up blk
+       , Ord peer
+       , TraceConstraints peer blk
        , ApplyTx blk
        )
-    => NodeParams m up blk
-    -> m (InternalState m up blk)
+    => NodeParams m peer blk
+    -> m (InternalState m peer blk)
 initInternalState NodeParams {..} = do
     varCandidates  <- atomically $ newTVar mempty
     varState       <- atomically $ newTVar initState
@@ -206,20 +206,20 @@ initInternalState NodeParams {..} = do
 
     fetchClientRegistry <- newFetchClientRegistry
 
-    let getCandidates :: STM m (Map up (AnchoredFragment (Header blk)))
+    let getCandidates :: STM m (Map peer (AnchoredFragment (Header blk)))
         getCandidates = readTVar varCandidates >>=
                         traverse (fmap candidateChain . readTVar)
 
-        blockFetchInterface :: BlockFetchConsensusInterface up (Header blk) blk m
+        blockFetchInterface :: BlockFetchConsensusInterface peer (Header blk) blk m
         blockFetchInterface = initBlockFetchConsensusInterface
-          (tracePrefix "ChainDB" (Nothing :: Maybe up) tracer)
+          (tracePrefix "ChainDB" (Nothing :: Maybe peer) tracer)
           cfg chainDB getCandidates blockFetchSize blockMatchesHeader btime
 
     return IS {..}
 
-tracePrefix :: Condense up
+tracePrefix :: Condense peer
             => String
-            -> Maybe up
+            -> Maybe peer
             -> Tracer m String
             -> Tracer m String
 tracePrefix p mbUp tr =
@@ -227,23 +227,23 @@ tracePrefix p mbUp tr =
   in contramap (prefix <>) tr
 
 initBlockFetchConsensusInterface
-    :: forall m up blk.
+    :: forall m peer blk.
        ( MonadSTM m
-       , TraceConstraints up blk
+       , TraceConstraints peer blk
        , SupportedBlock blk
        )
     => Tracer m String
     -> NodeConfig (BlockProtocol blk)
     -> ChainDB m blk (Header blk)
-    -> STM m (Map up (AnchoredFragment (Header blk)))
+    -> STM m (Map peer (AnchoredFragment (Header blk)))
     -> (Header blk -> SizeInBytes)
     -> (Header blk -> blk -> Bool)
     -> BlockchainTime m
-    -> BlockFetchConsensusInterface up (Header blk) blk m
+    -> BlockFetchConsensusInterface peer (Header blk) blk m
 initBlockFetchConsensusInterface tracer cfg chainDB getCandidates blockFetchSize
     blockMatchesHeader btime = BlockFetchConsensusInterface {..}
   where
-    readCandidateChains :: STM m (Map up (AnchoredFragment (Header blk)))
+    readCandidateChains :: STM m (Map peer (AnchoredFragment (Header blk)))
     readCandidateChains = getCandidates
 
     readCurrentChain :: STM m (AnchoredFragment (Header blk))
@@ -284,12 +284,12 @@ initBlockFetchConsensusInterface tracer cfg chainDB getCandidates blockFetchSize
     compareCandidateChains = compareCandidates cfg
 
 forkBlockProduction
-    :: forall m up blk.
+    :: forall m peer blk.
        ( MonadAsync m
        , ProtocolLedgerView blk
-       , TraceConstraints up blk
+       , TraceConstraints peer blk
        )
-    => InternalState m up blk -> m ()
+    => InternalState m peer blk -> m ()
 forkBlockProduction IS{..} =
     onSlotChange btime $ \currentSlot -> do
       drg  <- produceDRG
