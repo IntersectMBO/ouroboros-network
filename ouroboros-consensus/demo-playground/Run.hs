@@ -140,25 +140,27 @@ handleSimpleNode p CLI{..} myNodeAddress (TopologyInfo myNodeId topologyFile) = 
             }
 
       kernel <- nodeKernel nodeParams
-      let networkApp = consensusNetworkApps
-            (simpleSingletonVersions
-              NodeToNodeV_1
-              (NodeToNodeVersionData { networkMagic = 0 })
-              (DictVersion nodeToNodeCodecCBORTerm))
-            nullTracer
-            nullTracer
-            (codecChainSync
-              (demoEncodeHeader pInfoConfig)
-              (demoDecodeHeader pInfoConfig)
-              (encodePoint'         pInfo)
-              (decodePoint'         pInfo))
-            (codecBlockFetch
-              (demoEncodeBlock pInfoConfig)
-              demoEncodeHeaderHash
-              (demoDecodeBlock pInfoConfig)
-              demoDecodeHeaderHash)
-            nodeParams
-            kernel
+
+      let networkApp =
+            simpleSingletonVersions
+                NodeToNodeV_1
+                (NodeToNodeVersionData { networkMagic = 0 })
+                (DictVersion nodeToNodeCodecCBORTerm)
+            <$> consensusNetworkApps
+                  nullTracer
+                  nullTracer
+                  (codecChainSync
+                    (demoEncodeHeader pInfoConfig)
+                    (demoDecodeHeader pInfoConfig)
+                    (encodePoint'         pInfo)
+                    (decodePoint'         pInfo))
+                  (codecBlockFetch
+                    (demoEncodeBlock pInfoConfig)
+                    demoEncodeHeaderHash
+                    (demoDecodeBlock pInfoConfig)
+                    demoDecodeHeaderHash)
+                  nodeParams
+                  kernel
 
       watchChain registry tracer chainDB
 
