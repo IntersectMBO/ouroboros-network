@@ -33,17 +33,12 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 
-import           Network.TypedProtocol.Core
-import           Network.TypedProtocol.Codec (Codec, CodecFailure, isoCodec)
-
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Codec (AnyMessage (..))
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain
 import           Ouroboros.Network.Protocol.ChainSync.Codec
-import           Ouroboros.Network.Mux.Interface
-import           Ouroboros.Network.NodeToNode
 
 import           Ouroboros.Network.Protocol.ChainSync.Type
 import           Ouroboros.Network.Protocol.BlockFetch.Type
@@ -69,51 +64,6 @@ import           Ouroboros.Consensus.Util.ThreadRegistry
 import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 import qualified Ouroboros.Storage.ChainDB.Mock as ChainDB
 
-
--- | Existential wrapper which let us encode / decode using identity
--- codecs.
---
-data AnyProtocolMessage blk where
-     ChainSyncMsg :: Message (ChainSync (Header blk) (Point blk)) st st' -> AnyProtocolMessage blk
-     BlockFetchMsg :: Message (BlockFetch blk) st st' -> AnyProtocolMessage blk
-
--- This instance constraint is no smaller than the instance head, and thus
--- @UndecidableInstances@ extension is required
---
-instance ( Show blk
-         , Show (Header blk)
-         , StandardHash blk
-         ) => Show (AnyProtocolMessage blk) where
-    show (ChainSyncMsg msg) = show msg
-    show (BlockFetchMsg msg) = show msg
-
-
-codecChainSyncId_ :: forall blk m. Monad m
-                  => Codec (ChainSync (Header blk) (Point blk))
-                           CodecFailure m (AnyProtocolMessage blk)
-codecChainSyncId_ = isoCodec fromAnyChainSyncMessage toAnyChainSyncMessage codecChainSyncId
-    where
-      fromAnyChainSyncMessage :: AnyMessage (ChainSync (Header blk) (Point blk)) -> AnyProtocolMessage blk
-      fromAnyChainSyncMessage (AnyMessage msg) = ChainSyncMsg msg
-
-      toAnyChainSyncMessage :: AnyProtocolMessage blk -> AnyMessage (ChainSync (Header blk) (Point blk))
-      toAnyChainSyncMessage (ChainSyncMsg msg) = AnyMessage msg
-      -- it means we sent a message through wrong channel
-      toAnyChainSyncMessage _                  = error "toAnyChainSyncMessage: message type missmatch"
-
-
-codecBlockFetchId_ :: forall blk m. Monad m
-                   => Codec (BlockFetch blk)
-                            CodecFailure m (AnyProtocolMessage blk)
-codecBlockFetchId_ = isoCodec fromAnyBlockFetchMessage toAnyBlockFetchMessage codecBlockFetchId
-    where
-      fromAnyBlockFetchMessage :: AnyMessage (BlockFetch blk) -> AnyProtocolMessage blk
-      fromAnyBlockFetchMessage (AnyMessage msg) = BlockFetchMsg msg
-
-      toAnyBlockFetchMessage :: AnyProtocolMessage blk -> AnyMessage (BlockFetch blk)
-      toAnyBlockFetchMessage (BlockFetchMsg msg) = AnyMessage msg
-      -- it means we sent a message through wrong channel
-      toAnyBlockFetchMessage _                   = error "toAnyBlockFetchMessage: message type missmatch"
 
 -- | Interface provided by 'ouroboros-network'.  At the moment
 -- 'ouroboros-network' only provides this interface in 'IO' backed by sockets,
@@ -148,47 +98,41 @@ createNetworkInterface
     => NodeChans m nodeId blk -- ^ map of channels between nodes
     -> [nodeId]               -- ^ list of nodes which we want to serve
     -> nodeId                 -- ^ our nodeId
-    -> NetworkApplication m Identity nodeId blk (AnyProtocolMessage blk) () ()
+    -> SharedState m (TMVar m ())
+        (Identity
+          (NetworkApplication m nodeId
+            (AnyMessage (ChainSync (Header blk) (Point blk)))
+            (AnyMessage (BlockFetch blk)) ()))
     -> NetworkInterface m nodeId
-createNetworkInterface chans nodeIds us NetworkApplication {naMuxInitiatorApp, naMuxResponderApp} = NetworkInterface
+createNetworkInterface chans nodeIds us na = NetworkInterface
     { niConnectTo = \them -> do
-        Identity app <- runSharedState $ naMuxInitiatorApp them
-        case app of
-          MuxInitiatorApplication f -> do
-            let nodeChan = chans Map.! them Map.! us
+        Identity (NetworkApplication {naChainSyncClient, naBlockFetchClient}) <- runSharedState na
+        let nodeChan = chans Map.! them Map.! us
 
-                fn ptcl@ChainSyncWithHeadersPtcl =
-                  void $ f ptcl
-                       $ loggingChannel (TalkingToProducer us them)
-                       $ chainSyncProducer nodeChan
-                fn ptcl@BlockFetchPtcl =
-                  void $ f ptcl
-                       $ loggingChannel (TalkingToProducer us them)
-                       $ blockFetchProducer nodeChan
-
-            as <- traverse (async . fn) [minBound .. maxBound]
-            -- wait for all the threads, if any throws an exception, cancel all
-            -- of them; this is consistent with
-            -- 'Ouroboros.Network.Socket.connectTo'.
-            void $ waitAnyCancel as
+        aCS <- async $ void $ naChainSyncClient them
+                     $ loggingChannel (TalkingToProducer us them)
+                     $ chainSyncProducer nodeChan
+        aBF <- async $ void $ naBlockFetchClient them
+                     $ loggingChannel (TalkingToProducer us them)
+                     $ blockFetchProducer nodeChan
+        -- wait for all the threads, if any throws an exception, cancel all
+        -- of them; this is consistent with
+        -- 'Ouroboros.Network.Socket.connectTo'.
+        void $ waitAnyCancel [aCS, aBF]
 
     , niWithServerNode = \k -> do
         ts :: [Async m ()] <- fmap concat $ forM (filter (/= us) nodeIds) $ \them -> do
+          Identity (NetworkApplication {naChainSyncServer, naBlockFetchServer}) <- runSharedState na
           let nodeChan = chans Map.! us Map.! them
-              fn :: NodeToNodeProtocols -> m ()
-              fn ptcl@ChainSyncWithHeadersPtcl = do
-                case runIdentity naMuxResponderApp of
-                  MuxResponderApplication f -> do
-                    void $ f ptcl
-                         $ loggingChannel (TalkingToConsumer us them)
-                         $ chainSyncConsumer nodeChan
-              fn ptcl@BlockFetchPtcl =
-                case runIdentity naMuxResponderApp of
-                  MuxResponderApplication f -> do
-                    void $ f ptcl
-                         $ loggingChannel (TalkingToConsumer us them)
-                         $ blockFetchConsumer nodeChan
-          forM [minBound .. maxBound] (async . fn)
+
+          aCS <- async $ void $ naChainSyncServer
+                       $ loggingChannel (TalkingToConsumer us them)
+                       $ chainSyncConsumer nodeChan
+          aBF <- async $ void $ naBlockFetchServer
+                       $ loggingChannel (TalkingToConsumer us them)
+                       $ blockFetchConsumer nodeChan
+
+          return [aCS, aBF]
 
         -- if any thread raises an exception, we kill all of them
         waitAnyCancel ts >>= k . fst
@@ -285,8 +229,8 @@ broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots = do
                   Identity
                   nullTracer
                   nullTracer
-                  codecChainSyncId_
-                  codecBlockFetchId_
+                  codecChainSyncId
+                  codecBlockFetchId
                   nodeParams
                   node
 
@@ -333,12 +277,18 @@ broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots = do
   Internal auxiliary
 -------------------------------------------------------------------------------}
 
+-- | Communication channel used for the Chain Sync protocol
+type ChainSyncChannel m blk = Channel m (AnyMessage (ChainSync (Header blk) (Point blk)))
+
+-- | Communication channel used for the Block Fetch protocol
+type BlockFetchChannel m blk = Channel m (AnyMessage (BlockFetch blk))
+
 -- | The communication channels from and to each node
 data NodeChan m blk = NodeChan
-  { chainSyncConsumer  :: Channel m (AnyProtocolMessage blk)
-  , chainSyncProducer  :: Channel m (AnyProtocolMessage blk)
-  , blockFetchConsumer :: Channel m (AnyProtocolMessage blk)
-  , blockFetchProducer :: Channel m (AnyProtocolMessage blk)
+  { chainSyncConsumer  :: ChainSyncChannel  m blk
+  , chainSyncProducer  :: ChainSyncChannel  m blk
+  , blockFetchConsumer :: BlockFetchChannel m blk
+  , blockFetchProducer :: BlockFetchChannel m blk
   }
 
 -- | All connections between all nodes
