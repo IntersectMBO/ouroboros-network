@@ -12,8 +12,7 @@ import qualified Data.Set as Set
 import           Control.Monad.Class.MonadSTM
 
 import           Ouroboros.Network.Block (ChainUpdate (..), HasHeader (..),
-                     HeaderHash, Point (..))
-import qualified Ouroboros.Network.Block as Block
+                     HeaderHash, Point)
 import qualified Ouroboros.Network.ChainProducerState as CPS
 
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -97,9 +96,9 @@ openDB cfg initLedger blockHeader = do
             readerForward' :: [Point hdr]
                            -> Model blk
                            -> (Maybe (Point hdr), Model blk)
-            readerForward' ps =
-                  first (fmap Block.castPoint)
-                . Model.readerForward rdrId (map Block.castPoint ps)
+            readerForward' ps = Model.readerForward rdrId ps
+                --   first (fmap Block.castPoint)
+                -- . Model.readerForward rdrId (map Block.castPoint ps)
 
     return ChainDB {
         addBlock            = update_ . Model.addBlock cfg
@@ -120,5 +119,5 @@ openDB cfg initLedger blockHeader = do
     k = protocolSecurityParam cfg
 
     castUpdate :: ChainUpdate blk -> ChainUpdate hdr
-    castUpdate (RollBack p) = RollBack (Block.castPoint p)
+    castUpdate (RollBack p) = RollBack p
     castUpdate (AddBlock b) = AddBlock (blockHeader b)

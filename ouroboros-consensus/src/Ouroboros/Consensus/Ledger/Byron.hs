@@ -70,7 +70,6 @@ import           Cardano.Crypto.DSIGN
 import           Cardano.Crypto.Hash
 
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Chain (genesisSlotNo)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
@@ -207,12 +206,12 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
                  CC.Block.cvsDelegationState state
               = snapshots
               | otherwise
-              = snapshots Seq.|> SB.bounded startOfSnapshot slot state'
+              = snapshots Seq.|> SB.SlotBounded startOfSnapshot slot state'
             where
               startOfSnapshot = case snapshots of
                 _ Seq.:|> a -> sbUpper a
-                Seq.Empty   -> SlotNo 0
-              slot = convertSlot $ CC.Block.blockSlot block
+                Seq.Empty   -> Origin
+              slot = Point $ convertSlot $ CC.Block.blockSlot block
       return $ ByronLedgerState state' (trimSnapshots snapshots')
     where
       bodyState = CC.Block.BodyState
@@ -238,7 +237,7 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
       k = CC.Genesis.configK cfg
 
       trimSnapshots = Seq.dropWhileL $ \ss ->
-        sbUpper ss < convertSlot (CC.Block.blockSlot block) - 2 * coerce k
+        sbUpper ss < Point (convertSlot (CC.Block.blockSlot block) - 2 * coerce k)
 
   applyLedgerHeader (ByronLedgerConfig cfg) (ByronHeader hdr)
                     (ByronLedgerState state snapshots) =
@@ -264,12 +263,14 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
 
       fixPMI pmi = reAnnotate $ Annotated pmi ()
 
-  ledgerTipPoint (ByronLedgerState state _) = Point
-    { pointSlot = convertSlot (CC.Block.cvsLastSlot state)
-    , pointHash = case CC.Block.cvsPreviousHash state of
-                    Left _genHash -> GenesisHash
-                    Right hdrHash -> BlockHash hdrHash
-    }
+  ledgerTipPoint (ByronLedgerState state _) = case CC.Block.cvsPreviousHash state of
+    -- The previous hash is the "genesis hash" iff it's the initial validation
+    -- state (no blocks).
+    Left _genHash -> Origin
+    Right hdrHash -> Point $ TBlockPoint
+      { pointSlot = convertSlot (CC.Block.cvsLastSlot state)
+      , pointHash = hdrHash
+      }
 
 numGenKeys :: CC.Genesis.Config -> Word8
 numGenKeys cfg = case length genKeys of
@@ -347,14 +348,14 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
           | slot >= lvLB && slot <= lvUB
           -> Just $ PBftLedgerView <$>
              case Seq.takeWhileL
-                    (\sd -> convertSlot (V.Scheduling.sdSlot sd) <= slot)
+                    (\sd -> Point (convertSlot (V.Scheduling.sdSlot sd)) <= slot)
                     dsScheduled of
                 -- No updates to apply. So the current ledger state is valid
                 -- from the end of the last snapshot to the first scheduled
                 -- update.
-               Seq.Empty              -> SB.bounded lb ub dsNow
+               Seq.Empty              -> SB.SlotBounded lb ub dsNow
                toApply@(_ Seq.:|> la) ->
-                 SB.bounded lb (convertSlot . V.Scheduling.sdSlot $ la) $
+                 SB.SlotBounded lb (Point . convertSlot . V.Scheduling.sdSlot $ la) $
                  foldl'
                    (\acc x -> Bimap.insert (V.Scheduling.sdDelegator x)
                                            (V.Scheduling.sdDelegate x)
@@ -367,17 +368,17 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
         _ Seq.:|> s -> max lvLB (sbUpper s)
         Seq.Empty   -> lvLB
       ub = case dsScheduled of
-        s Seq.:<| _ -> min lvUB (convertSlot $ V.Scheduling.sdSlot s)
+        s Seq.:<| _ -> min lvUB (Point $ convertSlot $ V.Scheduling.sdSlot s)
         Seq.Empty   -> lvUB
 
       SecurityParam paramK = pbftSecurityParam . pbftParams . encNodeConfigP $ cfg
 
-      lvUB = SlotNo $ unSlotNo currentSlot + (2 * paramK)
+      lvUB = Point $ SlotNo $ unSlotNo currentSlot + (2 * paramK)
       lvLB
         | 2 * paramK > unSlotNo currentSlot
-        = genesisSlotNo
+        = Origin
         | otherwise
-        = SlotNo $ unSlotNo currentSlot - (2 * paramK)
+        = Point $ SlotNo $ unSlotNo currentSlot - (2 * paramK)
 
       dsNow = CC.Delegation.unMap
             . V.Interface.delegationMap

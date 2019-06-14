@@ -172,6 +172,7 @@ broadcastNetwork :: forall m c ext.
                     , RunDemo (SimpleBlock c ext)
                     , SimpleCrypto c
                     , Show ext
+                    , Eq ext
                     , Typeable ext
                     )
                  => ThreadRegistry m
@@ -210,7 +211,7 @@ broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots = do
                     curNo = succ prevNo
 
                 let prevHash :: ChainHash (SimpleBlock c ext)
-                    prevHash = castHash (pointHash prevPoint)
+                    prevHash = fromTPoint GenesisHash (BlockHash . pointHash) prevPoint
 
                 -- We ignore the transactions from the mempool (which will be
                 -- empty), and instead produce some random transactions

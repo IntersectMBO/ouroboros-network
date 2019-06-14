@@ -46,6 +46,7 @@ prop_simple_protocol_convergence :: forall c ext.
                                    ( RunDemo (SimpleBlock c ext)
                                    , SimpleCrypto c
                                    , Show ext
+                                   , Eq ext
                                    , Typeable ext
                                    )
                                  => (CoreNodeId -> ProtocolInfo (SimpleBlock c ext))
@@ -75,6 +76,7 @@ test_simple_protocol_convergence :: forall m c ext.
                                     , RunDemo (SimpleBlock c ext)
                                     , SimpleCrypto c
                                     , Show ext
+                                    , Eq ext
                                     , Typeable ext
                                     )
                                  => (CoreNodeId -> ProtocolInfo (SimpleBlock c ext))

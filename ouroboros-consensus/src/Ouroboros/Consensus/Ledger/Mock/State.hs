@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleContexts   #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Ouroboros.Consensus.Ledger.Mock.State (
     -- * State of the mock ledger
@@ -17,8 +18,8 @@ import qualified Data.Set as Set
 
 import           Cardano.Crypto.Hash
 
-import           Ouroboros.Network.Block (ChainHash, HasHeader, Point (..),
-                     StandardHash)
+import           Ouroboros.Network.Block (ChainHash (..), HasHeader, HeaderHash,
+                     Point, StandardHash, fromTPoint, pointHash)
 import           Ouroboros.Network.Chain (genesisPoint)
 
 import           Ouroboros.Consensus.Block
@@ -34,7 +35,8 @@ data MockState blk = MockState {
     , mockConfirmed :: Set TxId
     , mockTip       :: Point blk
     }
-  deriving (Show)
+
+deriving instance Show (HeaderHash blk) => Show (MockState blk)
 
 data MockError blk =
     MockInvalidInputs InvalidInputs
@@ -55,9 +57,11 @@ updateMockTip :: (Monad m, HasHeader (Header blk), StandardHash blk)
               -> MockState blk
               -> ExceptT (MockError blk) m (MockState blk)
 updateMockTip hdr (MockState u c t) = ExceptT $ return $
-    if headerPrevHash hdr == pointHash t
+    if headerPrevHash hdr == tHash
       then Right $ MockState u c (headerPoint hdr)
-      else Left  $ MockInvalidHash (headerPrevHash hdr) (pointHash t)
+      else Left  $ MockInvalidHash (headerPrevHash hdr) tHash
+  where
+  tHash = fromTPoint GenesisHash (BlockHash . pointHash) t
 
 {-------------------------------------------------------------------------------
   Genesis

@@ -31,7 +31,7 @@ import           Control.Monad.Class.MonadThrow
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Chain (genesisPoint, genesisSlotNo)
+import           Ouroboros.Network.Chain (genesisPoint)
 import           Ouroboros.Network.Protocol.ChainSync.Client
 
 import           Ouroboros.Consensus.Block
@@ -143,7 +143,7 @@ chainSyncClient
        , MonadThrow (STM m)
        , ProtocolLedgerView blk
        , Condense (Header blk)
-       , Condense (ChainHash blk)
+       , Condense (HeaderHash blk)
        )
     => Tracer m String
     -> NodeConfig (BlockProtocol blk)
@@ -229,7 +229,7 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew)
       -- that the intersection is now more than @k@ blocks in the past, which
       -- means the candidate is no longer eligible after all.
       let points = AF.selectPoints (map fromIntegral offsets) curChain
-      return $ SendMsgFindIntersect (map castPoint points) $ ClientStIntersect
+      return $ SendMsgFindIntersect points $ ClientStIntersect
         { recvMsgIntersectImproved  =
             ChainSyncClient .: intersectImproved
         , recvMsgIntersectUnchanged =
@@ -260,8 +260,8 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew)
       -- that the ChainSync protocol /does/ in fact give us a switch-to-fork
       -- instead of a true rollback.
       (candidateChain', candidateChainState') <-
-        case (,) <$> AF.rollback (castPoint intersection) candidateChain
-                 <*> rewindChainState cfg candidateChainState (pointSlot intersection)
+        case (,) <$> AF.rollback intersection candidateChain
+                 <*> rewindChainState cfg candidateChainState (fmap pointSlot intersection)
         of
           Just (c,d) -> return (c,d)
           -- The @intersection@ is not on the candidate chain, even though we
@@ -302,7 +302,7 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew)
 
       -- Get the 'ChainState' at genesis.
       let candidateChain' = Empty genesisPoint
-      candidateChainState' <- case rewindChainState cfg curChainState genesisSlotNo of
+      candidateChainState' <- case rewindChainState cfg curChainState Origin of
         Nothing -> disconnect $ ForkTooDeep genesisPoint theirHead
         Just c  -> pure c
 
@@ -379,7 +379,7 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew)
       -- we will not be able to verify it and so we will not be able to switch
       -- to this fork.
       ledgerView <-
-        if headerPrevHash hdr == pointHash ourTip then
+        if headerPrevHash hdr == fromTPoint GenesisHash (BlockHash . pointHash) ourTip then
           -- Special case mentioned above
           return $ protocolLedgerView cfg curLedger
         else
@@ -389,15 +389,18 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew)
           -- too far /ahead/ of us. In this case we must simply wait
 
           -- TODO: Chain sync Client: Reuse anachronistic ledger view? #581
-          case anachronisticProtocolLedgerView cfg curLedger (pointSlot hdrPoint) of
+          case anachronisticProtocolLedgerView cfg curLedger (fmap pointSlot hdrPoint) of
             Nothing   -> retry
-            Just view -> case view `SB.at` pointSlot hdrPoint of
+            Just view -> case view `SB.at` fmap pointSlot hdrPoint of
               Nothing -> error "anachronisticProtocolLedgerView invariant violated"
               Just lv -> return lv
 
       -- Check for clock skew
       wallclock <- getCurrentSlot btime
-      when (unSlotNo (pointSlot hdrPoint) > unSlotNo wallclock + maxSkew) $
+      -- What if the header point is the origin (we have no chain)?
+      -- Just use SlotNo 0? Even though it's wrong?
+      let hdrSlotNo = unSlotNo (fromTPoint (SlotNo 0) pointSlot hdrPoint)
+      when (hdrSlotNo > unSlotNo wallclock + maxSkew) $
         disconnect $ HeaderExceedsClockSkew hdrPoint wallclock
 
       -- Validate header
@@ -419,8 +422,8 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew)
       CandidateState {..} <- readTVar varCandidate
 
       (candidateChain', candidateChainState') <-
-        case (,) <$> AF.rollback (castPoint intersection) candidateChain
-                 <*> rewindChainState cfg candidateChainState (pointSlot intersection)
+        case (,) <$> AF.rollback intersection candidateChain
+                 <*> rewindChainState cfg candidateChainState (fmap pointSlot intersection)
         of
           Just (c,d)  -> return (c,d)
           -- Remember that we use our current chain fragment as the starting

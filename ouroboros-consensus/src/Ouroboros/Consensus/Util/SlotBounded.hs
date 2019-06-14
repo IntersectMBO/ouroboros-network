@@ -8,12 +8,12 @@ module Ouroboros.Consensus.Util.SlotBounded (
   , at
   ) where
 
-import           Ouroboros.Network.Block (SlotNo)
+import           Ouroboros.Network.Block (SlotNo, TPoint (..))
 
--- | An item bounded to be valid within particular slots
+-- | An item bounded to be valid within particular slots (inclusive)
 data SlotBounded a = SlotBounded
-  { sbLower   :: !SlotNo
-  , sbUpper   :: !SlotNo
+  { sbLower   :: !(TPoint SlotNo)
+  , sbUpper   :: !(TPoint SlotNo)
   , sbContent :: !a
   } deriving (Eq, Functor, Show)
 
@@ -21,12 +21,12 @@ data SlotBounded a = SlotBounded
 --
 --   We choose not to validate that the slot bounds are reasonable here.
 bounded :: SlotNo -> SlotNo -> a -> SlotBounded a
-bounded = SlotBounded
+bounded l r = SlotBounded (Point l) (Point r)
 
 unbounded :: a -> SlotBounded a
-unbounded = SlotBounded minBound maxBound
+unbounded = SlotBounded Origin (Point maxBound)
 
-at :: SlotBounded a -> SlotNo -> Maybe a
+at :: SlotBounded a -> TPoint SlotNo -> Maybe a
 sb `at` slot =
   if (slot <= sbUpper sb && slot >= sbLower sb)
   then Just $ sbContent sb

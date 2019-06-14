@@ -175,7 +175,7 @@ instance UpdateLedger TestBlock where
 
   applyLedgerBlock _ tb@TestBlock{..} TestLedger{..} =
       if tbPrevHash == snd lastApplied
-        then return     $ TestLedger (Chain.blockPoint tb, BlockHash tbHash)
+        then return     $ TestLedger (Chain.Point (Chain.blockPoint tb), BlockHash tbHash)
         else throwError $ InvalidHash (snd lastApplied) tbPrevHash
 
   applyLedgerHeader _ _ = return

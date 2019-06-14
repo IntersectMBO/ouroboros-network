@@ -137,7 +137,7 @@ producerChain (ChainProducerState c _) = c
 findFirstPoint :: HasHeader block
                => [Point block]
                -> ChainProducerState block
-               -> Point block
+               -> Maybe (Point block)
 findFirstPoint ps = Chain.findFirstPoint ps . producerChain
 
 

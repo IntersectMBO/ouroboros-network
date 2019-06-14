@@ -12,8 +12,8 @@ import           Cardano.Crypto.Hash (Hash)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (ChainHash, HasHeader, Point (..),
-                     SlotNo (..))
+import           Ouroboros.Network.Block (HeaderHash, HasHeader, SlotNo (..),
+                                          TBlockPoint (..), TPoint (..))
 import           Ouroboros.Network.Chain (Chain (..))
 
 import           Ouroboros.Consensus.Util.Condense
@@ -25,15 +25,18 @@ import           Ouroboros.Consensus.Util.Condense
 instance Condense SlotNo where
   condense (SlotNo n) = condense n
 
-instance Condense (ChainHash block) => Condense (Point block) where
-    condense (Point ptSlot ptHash) =
-      "(Point " <> condense ptSlot <> ", " <> condense ptHash <> ")"
+instance Condense t => Condense (TPoint t) where
+    condense Origin = "(Origin)"
+    condense (Point p) = "(Point " <> condense p <> ")"
+
+instance (Condense slot, Condense hash) => Condense (TBlockPoint slot hash) where
+  condense p = condense (pointSlot p) <> ", " <> condense (pointHash p)
 
 instance Condense block => Condense (Chain block) where
     condense Genesis   = "Genesis"
     condense (cs :> b) = condense cs <> " :> " <> condense b
 
-instance (Condense block, HasHeader block, Condense (ChainHash block))
+instance (Condense block, HasHeader block, Condense (HeaderHash block))
     => Condense (AnchoredFragment block) where
     condense (AF.Empty pt) = "EmptyAnchor " <> condense pt
     condense (cs AF.:> b)  = condense cs <> " :> " <> condense b

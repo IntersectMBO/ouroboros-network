@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE GADTs               #-}
 module Test.Consensus.ChainSyncClient ( tests ) where
 
 import           Control.Monad (replicateM_, void)
@@ -623,7 +624,8 @@ genChainUpdates securityParam n =
 
     genAddBlock = do
       cus@ChainUpdateState { _currentChain = chain } <- get
-      block <- case getSuccessors (Chain.headHash chain) cus of
+      let tipHash = fromTPoint GenesisHash BlockHash (Chain.headHash chain)
+      block <- case getSuccessors tipHash cus of
         Nothing    -> makeBlock chain
         Just succs -> frequency'
           [ (1, lift $ elements (NE.toList succs))
@@ -653,8 +655,10 @@ genChainUpdates securityParam n =
         modify (addBlock b)
         return b
       where
-        prevHash = Chain.headHash chain
-        slot     = succ (Chain.headSlot chain)
+        prevHash = fromTPoint GenesisHash BlockHash (Chain.headHash chain)
+        slot     = case Chain.headSlot chain of
+          Origin   -> SlotNo 0
+          Point sl -> succ sl
 
 -- | Variant of 'frequency' that allows for transformers of 'Gen'
 frequency' :: (MonadTrans t, Monad (t Gen)) => [(Int, t Gen a)] -> t Gen a
@@ -682,7 +686,8 @@ ppBlock TestBlock { tbSlot = SlotNo s, tbHash = h, tbPrevHash = p } =
       BlockHash hash -> show hash
 
 ppPoint :: Point TestBlock -> String
-ppPoint Point { pointSlot = SlotNo s, pointHash = h } =
+ppPoint Origin = "Origin"
+ppPoint (Point (TBlockPoint { pointSlot = SlotNo s, pointHash = h })) =
     "(S:" <> show s <> "; H:" <> show h <> ")"
 
 

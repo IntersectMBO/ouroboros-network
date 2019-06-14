@@ -189,11 +189,11 @@ chainSyncServerExample recvMsgDoneClient chainvar = ChainSyncServer $
       atomically $ do
         cps <- readTVar chainvar
         case ChainProducerState.findFirstPoint points cps of
-          Chain.Origin      -> pure (Nothing, Chain.headPoint (ChainProducerState.chainState cps))
-          Chain.Point ipoint -> do
-            let !cps' = ChainProducerState.updateReader rid (Chain.Point ipoint) cps
+          Nothing     -> pure (Nothing, Chain.headPoint (ChainProducerState.chainState cps))
+          Just ipoint -> do
+            let !cps' = ChainProducerState.updateReader rid ipoint cps
             writeTVar chainvar cps'
-            pure (Just (Chain.Point ipoint), Chain.headPoint (ChainProducerState.chainState cps'))
+            pure (Just ipoint, Chain.headPoint (ChainProducerState.chainState cps'))
 
     tryReadChainUpdate :: ReaderId -> m (Maybe (Point header, ChainUpdate header))
     tryReadChainUpdate rid =

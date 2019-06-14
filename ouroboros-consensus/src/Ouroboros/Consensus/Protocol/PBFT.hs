@@ -211,10 +211,11 @@ instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
       takeR :: Integral i => i -> Seq a -> Seq a
       takeR (fromIntegral -> n) s = Seq.drop (Seq.length s - n - 1) s
 
-  rewindChainState _ cs slot = if slot == SlotNo 0 then Just Seq.empty else
-    case Seq.takeWhileL (\(_, s) -> s <= slot) cs of
-        _ Seq.:<| _ -> Just cs
-        _           -> Nothing
+  rewindChainState _ cs pslot = case pslot of
+    Origin     -> Just Seq.empty
+    Point slot -> case Seq.takeWhileL (\(_, s) -> s <= slot) cs of
+      _  Seq.:<| _ -> Just cs
+      _           -> Nothing
 
 {-------------------------------------------------------------------------------
   PBFT specific types

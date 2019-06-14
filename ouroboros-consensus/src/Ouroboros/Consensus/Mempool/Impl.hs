@@ -247,7 +247,7 @@ extendsVR cfg prevApplied = repeatedly (extendVR cfg prevApplied)
 validateIS :: forall m blk hdr. (MonadSTM m, ApplyTx blk)
            => MempoolEnv m blk hdr -> STM m (ValidationResult blk)
 validateIS MempoolEnv{mpEnvChainDB, mpEnvLedgerCfg, mpEnvStateVar} =
-    go <$> (Block.pointHash <$> getTipPoint      mpEnvChainDB)
+    go <$> (getChainHash <$> getTipPoint      mpEnvChainDB)
        <*> (ledgerState     <$> getCurrentLedger mpEnvChainDB)
        <*> readTVar mpEnvStateVar
   where
@@ -259,3 +259,6 @@ validateIS MempoolEnv{mpEnvChainDB, mpEnvLedgerCfg, mpEnvStateVar} =
       | tip == isTip = initVR mpEnvLedgerCfg isTxs (tip, st)
       | otherwise    = extendsVR mpEnvLedgerCfg True (Foldable.toList isTxs) $
                          initVR mpEnvLedgerCfg TxSeq.Empty (tip, st)
+
+    getChainHash :: Block.Point blk -> ChainHash blk
+    getChainHash = Block.fromTPoint Block.GenesisHash (Block.BlockHash . Block.pointHash)

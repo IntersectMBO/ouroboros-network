@@ -67,7 +67,7 @@ headerPrevHash :: HasHeader (Header blk) => Header blk -> ChainHash blk
 headerPrevHash = castHash . blockPrevHash
 
 headerPoint :: HasHeader (Header blk) => Header blk -> Point blk
-headerPoint = castPoint . blockPoint
+headerPoint = Point . blockPoint
 
 {-------------------------------------------------------------------------------
   Supported blocks

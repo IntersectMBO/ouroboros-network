@@ -40,7 +40,7 @@ import           GHC.Stack (HasCallStack)
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as Fragment
 import           Ouroboros.Network.Block (ChainHash (..), ChainUpdate (..),
-                     HasHeader, HeaderHash, Point)
+                     HasHeader, HeaderHash, Point, TPoint (..), pointHash, fromTPoint)
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.Chain (Chain (..))
 import qualified Ouroboros.Network.Chain as Chain
@@ -89,7 +89,7 @@ tipBlock :: Model blk -> Maybe blk
 tipBlock = Chain.head . currentChain
 
 tipPoint :: HasHeader blk => Model blk -> Point blk
-tipPoint = maybe Chain.genesisPoint Block.blockPoint . tipBlock
+tipPoint = maybe Chain.genesisPoint (Point . Block.blockPoint) . tipBlock
 
 lastK :: HasHeader a
       => SecurityParam
@@ -191,6 +191,10 @@ readerInstruction rdrId m =
     rewrap Nothing            = (Nothing, m)
     rewrap (Just (upd, cps')) = (Just upd, m { cps = cps' })
 
+-- Here's a problem: we really do need to distinguish between the case when
+-- none of the points are on the chain, and when the origin was actually given
+-- in the list of points, so we can say whether we should roll back to the
+-- origin.
 readerForward :: HasHeader blk
               => CPS.ReaderId
               -> [Point blk]
@@ -201,17 +205,16 @@ readerForward rdrId points m =
       Nothing     -> (Nothing, m)
       Just ipoint -> (Just ipoint, m { cps = cps' })
         where
+          -- 
           cps' = CPS.updateReader rdrId ipoint (cps m)
 
 {-------------------------------------------------------------------------------
   Internal auxiliary
 -------------------------------------------------------------------------------}
 
-notGenesis :: HasCallStack => Point blk -> HeaderHash blk
-notGenesis p =
-    case Block.pointHash p of
-      GenesisHash -> error "Ouroboros.Storage.ChainDB.Model: notGenesis"
-      BlockHash h -> h
+notGenesis :: HasCallStack => Block.TPoint (Block.TBlockPoint slot hash) -> hash
+notGenesis Block.Origin = error "Ouroboros.Storage.ChainDB.Model: notGenesis"
+notGenesis (Block.Point p) = pointHash p
 
 validate :: forall blk. ProtocolLedgerView blk
          => NodeConfig (BlockProtocol blk)
@@ -244,7 +247,7 @@ chains bs = go Chain.Genesis
 
         succs :: [blk]
         succs = Map.elems $
-          Map.findWithDefault Map.empty (Chain.headHash ch) fwd
+          Map.findWithDefault Map.empty (fromTPoint GenesisHash BlockHash (Chain.headHash ch)) fwd
 
     fwd :: Map (ChainHash blk) (Map (HeaderHash blk) blk)
     fwd = successors (Map.elems bs)
@@ -280,4 +283,4 @@ between from to =
     dropAfterTo (StreamToExclusive p) = tail . dropWhile (isNot p)
 
     isNot :: Point blk -> blk -> Bool
-    p `isNot` b = p /= Block.blockPoint b
+    p `isNot` b = p /= Point (Block.blockPoint b)

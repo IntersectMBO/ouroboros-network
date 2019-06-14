@@ -138,6 +138,8 @@ nodeKernel
        , Ord peer
        , TraceConstraints peer blk
        , ApplyTx blk
+       , Eq (Header blk)
+       , Condense (HeaderHash blk)
        )
     => NodeParams m peer blk
     -> m (NodeKernel m peer blk)
@@ -201,6 +203,8 @@ initInternalState
        , Ord peer
        , TraceConstraints peer blk
        , ApplyTx blk
+       , Eq (Header blk)
+       , Condense (HeaderHash blk)
        )
     => NodeParams m peer blk
     -> m (InternalState m peer blk)
@@ -257,8 +261,11 @@ initBlockFetchConsensusInterface tracer cfg chainDB getCandidates blockFetchSize
     readFetchMode :: STM m FetchMode
     readFetchMode = do
       curSlot      <- getCurrentSlot btime
+      -- FIXME an empty chain doesn't really have a current slot.
+      -- We use SlotNo 0 in this case. Hopefully that's ok.
       curChainSlot <- headSlot <$> ChainDB.getCurrentChain chainDB
-      let slotsBehind = unSlotNo curSlot - unSlotNo curChainSlot
+      let curChainSlot' = fromTPoint 0 unSlotNo curChainSlot
+          slotsBehind = unSlotNo curSlot - curChainSlot'
           maxBlocksBehind = 5
           -- Convert from blocks to slots. This is more or less the @f@
           -- parameter, the frequency of blocks. TODO should be 10 for Praos,
@@ -329,7 +336,7 @@ forkBlockProduction IS{..} =
                                        proof
                                        l
                                        currentSlot
-                                       (castPoint prevPoint)
+                                       prevPoint
                                        prevNo
                                        txs
             return $ Just newBlock

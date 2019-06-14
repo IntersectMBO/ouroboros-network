@@ -11,7 +11,7 @@ module Ouroboros.Consensus.ChainSyncServer
 import           Control.Monad.Class.MonadSTM
 import           Control.Tracer
 
-import           Ouroboros.Network.Block (Point (..), castPoint, HeaderHash)
+import           Ouroboros.Network.Block (Point, HeaderHash)
 import           Ouroboros.Network.Chain (ChainUpdate (..))
 import           Ouroboros.Network.Protocol.ChainSync.Server
 
@@ -89,7 +89,7 @@ chainSyncServerForReader _tracer chainDB rdr =
                                 (m (ServerStNext b (Point blk) m ())))
     handleRequestNext = do
       mupdate <- ChainDB.readerInstruction rdr
-      tip     <- atomically $ castPoint <$> ChainDB.getTipPoint chainDB
+      tip     <- atomically $ ChainDB.getTipPoint chainDB
       return $ case mupdate of
         Just update -> Left  $ sendNext tip update
         Nothing     -> Right $ sendNext tip <$>
@@ -98,18 +98,18 @@ chainSyncServerForReader _tracer chainDB rdr =
                        -- the producer's state to change.
 
     sendNext :: Point blk
-             -> ChainUpdate b
-             -> ServerStNext b (Point blk) m ()
+             -> ChainUpdate (Header blk)
+             -> ServerStNext (Header blk) (Point blk) m ()
     sendNext tip update = case update of
-      AddBlock hdr -> SendMsgRollForward   hdr           tip idle'
-      RollBack pt  -> SendMsgRollBackward (castPoint pt) tip idle'
+      AddBlock hdr -> SendMsgRollForward  hdr tip idle'
+      RollBack pt  -> SendMsgRollBackward pt  tip idle'
 
     handleFindIntersect :: [Point blk]
                         -> m (ServerStIntersect b (Point blk) m ())
     handleFindIntersect points = do
       -- TODO guard number of points
-      changed <- ChainDB.readerForward rdr (map castPoint points)
-      tip     <- atomically $ castPoint <$> ChainDB.getTipPoint chainDB
+      changed <- ChainDB.readerForward rdr points
+      tip     <- atomically $ ChainDB.getTipPoint chainDB
       return $ case changed of
-        Just pt -> SendMsgIntersectImproved (castPoint pt) tip idle'
-        Nothing -> SendMsgIntersectUnchanged               tip idle'
+        Just pt -> SendMsgIntersectImproved  pt tip idle'
+        Nothing -> SendMsgIntersectUnchanged    tip idle'

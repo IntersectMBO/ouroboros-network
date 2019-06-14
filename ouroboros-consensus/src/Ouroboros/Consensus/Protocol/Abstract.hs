@@ -44,7 +44,7 @@ import           Control.Monad.Class.MonadSay
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..))
+import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..), TPoint (..))
 import           Ouroboros.Network.Chain (Chain)
 
 import qualified Ouroboros.Consensus.Util.AnchoredFragment as AF
@@ -197,7 +197,7 @@ class ( Show (ChainState    p)
   -- and will yield 'Nothing'.
   rewindChainState :: NodeConfig p
                    -> ChainState p
-                   -> SlotNo -- ^ Slot to rewind to.
+                   -> TPoint SlotNo -- ^ Slot to rewind to.
                    -> Maybe (ChainState p)
 
 -- | Protocol security parameter

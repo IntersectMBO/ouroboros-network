@@ -293,10 +293,10 @@ findFirstPoint
   :: HasHeader block
   => [Point block]
   -> Chain block
-  -> Point block
-findFirstPoint [] _     = Origin
+  -> Maybe (Point block)
+findFirstPoint [] _     = Nothing
 findFirstPoint (p:ps) c
-  | pointOnChain p c    = p
+  | pointOnChain p c    = Just p
   | otherwise           = findFirstPoint ps c
 
 intersectChains
