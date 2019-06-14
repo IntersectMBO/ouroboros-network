@@ -36,6 +36,7 @@ import           Ouroboros.Consensus.Demo
 import           Ouroboros.Consensus.Demo.Run
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Node
+import           Ouroboros.Consensus.NodeNetwork
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.STM
@@ -129,14 +130,15 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
             }
 
       kernel <- nodeKernel nodeParams
+      let network = initNetworkLayer nodeParams kernel
 
       watchChain registry tracer chainDB
 
       -- Spawn the thread which listens to the mempool.
       mempoolThread <- spawnMempoolListener tracer myNodeId kernel
 
-      forM_ (producers nodeSetup) (addUpstream'   pInfo kernel)
-      forM_ (consumers nodeSetup) (addDownstream' pInfo kernel)
+      forM_ (producers nodeSetup) (addUpstream'   pInfo network)
+      forM_ (consumers nodeSetup) (addDownstream' pInfo network)
 
       Async.wait mempoolThread
   where
@@ -164,11 +166,12 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
       -- We therefore use the convention to distinguish between
       -- upstream and downstream from the perspective of the "lower numbered" node
       addUpstream' :: ProtocolInfo blk
-                   -> NodeKernel IO NodeId blk
+                   -> NetworkProvides IO NodeId blk
                    -> NodeId
                    -> IO ()
-      addUpstream' pInfo@ProtocolInfo{..} kernel producerNodeId =
-          addUpstream kernel producerNodeId nodeCommsCS nodeCommsBF
+      addUpstream' pInfo@ProtocolInfo{..} NetworkProvides{addUpstream}
+                   producerNodeId =
+          addUpstream producerNodeId nodeCommsCS nodeCommsBF
         where
           direction = Upstream (producerNodeId :==>: myNodeId)
           nodeCommsCS = NodeComms {
@@ -189,11 +192,12 @@ handleSimpleNode p CLI{..} (TopologyInfo myNodeId topologyFile) = do
             }
 
       addDownstream' :: ProtocolInfo blk
-                     -> NodeKernel IO NodeId blk
+                     -> NetworkProvides IO NodeId blk
                      -> NodeId
                      -> IO ()
-      addDownstream' pInfo@ProtocolInfo{..} kernel consumerNodeId =
-          addDownstream kernel nodeCommsCS nodeCommsBF
+      addDownstream' pInfo@ProtocolInfo{..} NetworkProvides{addDownstream}
+                     consumerNodeId =
+          addDownstream nodeCommsCS nodeCommsBF
         where
           direction = Downstream (myNodeId :==>: consumerNodeId)
           nodeCommsCS = NodeComms {
