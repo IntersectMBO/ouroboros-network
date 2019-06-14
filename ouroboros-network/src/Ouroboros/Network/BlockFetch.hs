@@ -156,12 +156,12 @@ data BlockFetchConsensusInterface peer header block m =
        readFetchMode          :: STM m FetchMode,
 
        -- | Recent, only within last K
-       readFetchedBlocks      :: STM m (Point block -> Bool),
+       readFetchedBlocks      :: STM m (BlockPoint block -> Bool),
 
        -- | This and 'readFetchedBlocks' are required to be linked. Upon
        -- successful completion of 'addFetchedBlock' it must be the case that
        -- 'readFetchedBlocks' reports the block.
-       addFetchedBlock        :: Point block -> block -> m (),
+       addFetchedBlock        :: BlockPoint block -> block -> m (),
 
        -- | Given the current chain, is the given chain plausible as a
        -- candidate chain. Classically for Ouroboros this would simply

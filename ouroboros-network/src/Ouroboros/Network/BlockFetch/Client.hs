@@ -229,7 +229,7 @@ blockFetchClient FetchClientContext {
             -- interleaving
 
             -- Add the block to the chain DB, notifying of any new chains.
-            addFetchedBlock (Point (blockPoint header)) block
+            addFetchedBlock (blockPoint header) block
 
             -- Note that we add the block to the chain DB /before/ updating our
             -- current status and in-flight stats. Otherwise blocks will

@@ -33,7 +33,8 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Exception (assert)
 import           Control.Tracer (Tracer, traceWith)
 
-import           Ouroboros.Network.Block (Point, TPoint (Point), blockPoint, HasHeader, HeaderHash)
+import           Ouroboros.Network.Block (BlockPoint, Point, TPoint (Point),
+                   blockPoint, HasHeader, HeaderHash)
 import qualified Ouroboros.Network.ChainFragment as CF
 import           Ouroboros.Network.ChainFragment (ChainFragment)
 import           Ouroboros.Network.BlockFetch.DeltaQ
@@ -59,7 +60,7 @@ data FetchClientPolicy header block m =
      FetchClientPolicy {
        blockFetchSize     :: header -> SizeInBytes,
        blockMatchesHeader :: header -> block -> Bool,
-       addFetchedBlock    :: Point block -> block -> m ()
+       addFetchedBlock    :: BlockPoint block -> block -> m ()
      }
 
 -- | A set of variables shared between the block fetch logic thread and each

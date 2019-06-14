@@ -429,10 +429,10 @@ clientBlockFetch sockAddrs = do
                                        >>= traverse readTVar,
               readCurrentChain       = readTVar currentChainVar,
               readFetchMode          = return FetchModeBulkSync,
-              readFetchedBlocks      = (\h p -> castPoint p `Set.member` h) <$>
+              readFetchedBlocks      = (\h p -> p `Set.member` h) <$>
                                          getTestFetchedBlocks blockHeap,
               addFetchedBlock        = \p b -> addTestFetchedBlock blockHeap
-                                         (castPoint p) (blockHeader b),
+                                         p (blockHeader b),
 
               plausibleCandidateChain,
               compareCandidateChains,
@@ -632,7 +632,7 @@ chainSyncServer seed =
       SendMsgRollForward
         (blockHeader block)
          -- pretend chain head is next one:
-        (blockPoint (blockHeader (head blocks)))
+        (Point (blockPoint (blockHeader (head blocks))))
         (ChainSyncServer (return (idleState blocks)))
 
     intersectState :: [Block]
@@ -640,7 +640,7 @@ chainSyncServer seed =
     intersectState blocks =
       SendMsgIntersectUnchanged
          -- pretend chain head is next one:
-        (blockPoint (blockHeader (head blocks)))
+        (Point (blockPoint (blockHeader (head blocks))))
         (ChainSyncServer (return (idleState blocks)))
 
 
@@ -673,21 +673,34 @@ blockFetchServer seed =
         threadDelay 1000000
         return (sendingState batch blocks)
 
+-- Both endpoints of the ChainRange must be  in the list of blocks.
+-- In particular: if either one is Origin, you get Nothing.
+-- FIXME seems wrong though.
 selectBlockRange :: ChainRange Block
                  -> [Block]
                  -> Maybe ([Block], [Block])
-selectBlockRange (ChainRange lower upper) blocks0 = do
+selectBlockRange (ChainRange Origin        _)             _       = Nothing
+selectBlockRange (ChainRange _             Origin)        _       = Nothing
+selectBlockRange (ChainRange (Point lower) (Point upper)) blocks0 = do
     (_,  blocks1)     <- splitBeforePoint lower blocks0
     (bs, b:remaining) <- splitBeforePoint upper blocks1
     return (bs ++ [b], remaining)
 
-splitBeforePoint :: Point Block -> [Block] -> Maybe ([Block], [Block])
+-- | All blocks with slot less than the point are in the first list, and the
+-- block with the same hash and slot as the point, followed by the remainder of
+-- the list, is the second component. Concatenation of those components is
+-- the original list. It's `Nothing` if there is no block in the list which
+-- has the same slot and hash as the point.
+splitBeforePoint
+  :: TBlockPoint SlotNo (HeaderHash Block)
+  -> [Block]
+  -> Maybe ([Block], [Block])
 splitBeforePoint pt = go []
   where
     go acc (b:bs) =
       case compare (blockSlot b) (pointSlot pt) of
         LT -> go (b:acc) bs
-        EQ | pt == castPoint (blockPoint b)
+        EQ | pt == blockPoint b
            -> Just (reverse acc, b:bs)
         _  -> Nothing
     go _ [] = Nothing
@@ -781,8 +794,8 @@ doloremIpsum =
 -- The interface is enough to use in examples and tests.
 --
 data TestFetchedBlockHeap m block = TestFetchedBlockHeap {
-       getTestFetchedBlocks  :: STM (Set (Point block)),
-       addTestFetchedBlock   :: Point block -> block -> m ()
+       getTestFetchedBlocks  :: STM (Set (BlockPoint block)),
+       addTestFetchedBlock   :: BlockPoint block -> block -> m ()
      }
 
 -- | Make a 'TestFetchedBlockHeap' using a simple in-memory 'Map', stored in an
@@ -790,7 +803,7 @@ data TestFetchedBlockHeap m block = TestFetchedBlockHeap {
 --
 -- This is suitable for examples and tests.
 --
-mkTestFetchedBlockHeap :: [Point BlockHeader]
+mkTestFetchedBlockHeap :: [BlockPoint BlockHeader]
                        -> IO (TestFetchedBlockHeap IO BlockHeader)
 mkTestFetchedBlockHeap points = do
     v <- atomically (newTVar (Set.fromList points))
@@ -804,7 +817,7 @@ mkTestFetchedBlockHeap points = do
 --
 
 genesisChainFragment :: AF.AnchoredFragment BlockHeader
-genesisChainFragment = AF.Empty (Point 0 GenesisHash)
+genesisChainFragment = AF.Empty Origin
 
 shiftAnchoredFragment :: HasHeader block
                       => Int
@@ -814,6 +827,6 @@ shiftAnchoredFragment :: HasHeader block
 shiftAnchoredFragment n b af =
   case AF.unanchorFragment af of
     cf@(b0 CF.:< cf') | CF.length cf >= n
-      -> AF.mkAnchoredFragment (blockPoint b0) (CF.addBlock b cf')
+      -> AF.mkAnchoredFragment (Point (blockPoint b0)) (CF.addBlock b cf')
     _ -> AF.addBlock b af
 

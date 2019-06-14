@@ -127,7 +127,7 @@ fetchDecisions
   => FetchDecisionPolicy header
   -> FetchMode
   -> AnchoredFragment header
-  -> (Point block -> Bool)
+  -> (BlockPoint block -> Bool)
   -> [(AnchoredFragment header, PeerInfo header extra)]
   -> [(FetchDecision (FetchRequest header), PeerInfo header extra)]
 fetchDecisions fetchDecisionPolicy@FetchDecisionPolicy {
@@ -445,7 +445,7 @@ of individual blocks without their relationship to each other.
 filterNotAlreadyFetched
   :: forall header block peerinfo .
      (HasHeader header, HeaderHash header ~ HeaderHash block)
-  => (Point block -> Bool)
+  => (BlockPoint block -> Bool)
   -> [(FetchDecision (ChainSuffix        header), peerinfo)]
   -> [(FetchDecision (CandidateFragments header), peerinfo)]
 filterNotAlreadyFetched alreadyDownloaded chains =
@@ -461,7 +461,7 @@ filterNotAlreadyFetched alreadyDownloaded chains =
             return (candidate, fragments)
     ]
   where
-    notAlreadyFetched = not . alreadyDownloaded . Point . blockPoint
+    notAlreadyFetched = not . alreadyDownloaded . blockPoint
 
 
 filterNotAlreadyInFlightWithPeer

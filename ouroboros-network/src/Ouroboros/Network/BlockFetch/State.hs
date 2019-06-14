@@ -252,7 +252,7 @@ data FetchTriggerVariables peer header m = FetchTriggerVariables {
 -- necessary to re-evaluate when these variables change.
 --
 data FetchNonTriggerVariables peer header block m = FetchNonTriggerVariables {
-       readStateFetchedBlocks :: STM m (Point block -> Bool),
+       readStateFetchedBlocks :: STM m (BlockPoint block -> Bool),
        readStatePeerStateVars :: STM m (Map peer (FetchClientStateVars m header)),
        readStatePeerGSVs      :: STM m (Map peer PeerGSV),
        readStateFetchMode     :: STM m FetchMode
@@ -297,7 +297,7 @@ data FetchStateSnapshot peer header block m = FetchStateSnapshot {
                                             PeerFetchInFlight header,
                                             FetchClientStateVars m header),
        fetchStatePeerGSVs      :: Map peer PeerGSV,
-       fetchStateFetchedBlocks :: Point block -> Bool,
+       fetchStateFetchedBlocks :: BlockPoint block -> Bool,
        fetchStateFetchMode     :: FetchMode
      }
 
