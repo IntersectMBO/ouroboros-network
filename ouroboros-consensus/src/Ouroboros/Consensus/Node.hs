@@ -27,6 +27,7 @@ import           Crypto.Random (ChaChaDRG)
 import qualified Data.Foldable as Foldable
 import           Data.Functor.Contravariant (contramap)
 import           Data.Map.Strict (Map)
+import           Debug.Trace (trace)
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork (MonadFork)
@@ -301,6 +302,7 @@ forkBlockProduction
 forkBlockProduction IS{..} =
     onSlotChange btime $ \currentSlot -> do
       drg  <- produceDRG
+      traceWith tracer ("onSlotChange " <> show currentSlot)
       mNewBlock <- atomically $ do
         varDRG <- newTVar drg
         l@ExtLedgerState{..} <- ChainDB.getCurrentLedger chainDB
@@ -314,11 +316,11 @@ forkBlockProduction IS{..} =
         case mIsLeader of
           Nothing    -> return Nothing
           Just proof -> do
-            (prevPoint, prevNo) <- prevPointAndBlockNo currentSlot <$>
+            (prevPoint, prevNo) <- trace "--------------------------------- before flushTQueue" $ prevPointAndBlockNo currentSlot <$>
                                      ChainDB.getCurrentChain chainDB
             txs                 <- getTxs mempool
-            ussArgs             <- flushTQueue ussaQueue
-            newBlock            <- runProtocol varDRG $
+            ussArgs             <- trace "????????????????????????????????? flushTQueue" $ flushTQueue ussaQueue
+            newBlock            <- trace "================================= after flushTQueue" $ runProtocol varDRG $
                                      produceBlock
                                        proof
                                        l

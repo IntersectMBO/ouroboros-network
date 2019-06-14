@@ -22,6 +22,7 @@ import           Control.Monad.State
 import           Control.Monad.Writer
 
 import           Data.Void (Void)
+import           Debug.Trace (trace)
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork (MonadFork)
@@ -55,8 +56,8 @@ onEachChange registry f initB getA notify = void $ forkLinked registry $ go init
     go :: b -> m Void
     go b = do
       (a, b') <- atomically $ blockUntilChanged f b getA
-      notify a
-      go b'
+      notify $ trace ".................%...%...%..............onEachChange waking up" a
+      go $ trace "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% onEachChange after action" b'
 
 blockUntilJust :: MonadSTM m => STM m (Maybe a) -> STM m a
 blockUntilJust getMaybeA = do

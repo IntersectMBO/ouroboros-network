@@ -31,6 +31,7 @@ import           Control.Monad (forever, replicateM_, void, when)
 import           Data.Fixed
 import           Data.Time
 import           Data.Word (Word64)
+import           Debug.Trace (trace)
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork (MonadFork)
@@ -119,8 +120,8 @@ realBlockchainTime registry slotLen start = do
     void $ forkLinked registry $ forever $ do
       -- In each iteration of the loop, we recompute how long to wait until
       -- the next slot. This minimizes clock skew.
-      next <- waitUntilNextSlotIO slotLen start
-      atomically $ writeTVar slotVar next
+      next <- waitUntilNextSlotIO slotLen $ start
+      atomically $ trace ("####################################### woke up @ " <> show next)  $ writeTVar slotVar next
     return BlockchainTime {
         getCurrentSlot = readTVar slotVar
       , onSlotChange   = onEachChange registry id first (readTVar slotVar)

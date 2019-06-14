@@ -61,7 +61,7 @@ forgeBlock
   -> ()                           -- ^ Leader proof ('IsLeader')
   -> m (ByronBlock ByronDemoConfig)
 forgeBlock cfg els curSlot curNo prevHash txs ussargs () = do
-    ouroborosPayload <- trace ("forging @ slot " <> show curSlot) $ forgePBftFields (encNodeConfigP cfg) toCBOR toSign
+    ouroborosPayload <- trace ("forging @ slot " <> show curSlot <> ", ussargs: " <> show ussargs) $ forgePBftFields (encNodeConfigP cfg) toCBOR toSign
     return $ forge ouroborosPayload
   where
     -- TODO: If we reconsider 'ByronDemoConfig', we can probably move this whole
@@ -83,10 +83,12 @@ forgeBlock cfg els curSlot curNo prevHash txs ussargs () = do
     CC.Block.ChainValidationState {..} = blsCurrent
 
     usStimuli = promoteUSSArgs cvsUpdateState <$> ussargs
-    votes     = lefts usStimuli
+    votes     = lefts usStimuli & \xs->
+                                    if null xs then xs
+                                    else trace ("votes: " <> show votes) xs
     mProposal = case rights usStimuli of
                   []  -> Nothing
-                  [p] -> Just p
+                  [p] -> Just $ trace ("proposal: " <> show p) $ p
                   _   -> error "XXX: unhandled -- multiple pending proposals for block."
 
     completeProposalBody :: CC.UPI.State -> USSArgs -> CC.Update.ProposalBody
@@ -128,7 +130,7 @@ forgeBlock cfg els curSlot curNo prevHash txs ussargs () = do
           CC.Block.bodyTxPayload     = txPayload
         , CC.Block.bodySscPayload    = CC.Ssc.SscPayload
         , CC.Block.bodyDlgPayload    = CC.Delegation.UnsafeAPayload [] ()
-        , CC.Block.bodyUpdatePayload = CC.Update.APayload mProposal votes ()
+        , CC.Block.bodyUpdatePayload = trace "US payload" $ CC.Update.APayload mProposal votes ()
         }
 
     proof :: CC.Block.Proof
