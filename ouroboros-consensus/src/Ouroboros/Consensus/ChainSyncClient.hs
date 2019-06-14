@@ -105,11 +105,11 @@ data CandidateState blk = CandidateState
 -- is thrown. The network layer classifies exception such that the
 -- corresponding peer will never be chosen again.
 chainSyncClient
-    :: forall m up blk.
+    :: forall m peer blk.
        ( MonadSTM m
        , MonadThrow (STM m)
        , ProtocolLedgerView blk
-       , Ord up
+       , Ord peer
        , Condense (Header blk)
        , Condense (ChainHash blk)
        )
@@ -119,12 +119,12 @@ chainSyncClient
     -> ClockSkew                                   -- ^ Maximum clock skew
     -> STM m (AnchoredFragment (Header blk))       -- ^ Get the current chain
     -> STM m (ExtLedgerState blk)                  -- ^ Get the current ledger state
-    -> TVar m (Map up (TVar m (CandidateState blk)))
+    -> TVar m (Map peer (TVar m (CandidateState blk)))
        -- ^ The candidate chains, we need the whole map because we
-       -- (de)register nodes (@up@).
-    -> up -> Consensus ChainSyncClient blk m
+       -- (de)register nodes (@peer@).
+    -> peer -> Consensus ChainSyncClient blk m
 chainSyncClient tracer cfg btime (ClockSkew maxSkew) getCurrentChain
-                getCurrentLedger varCandidates up =
+                getCurrentLedger varCandidates peer =
     ChainSyncClient initialise
   where
     -- Our task: after connecting to an upstream node, try to maintain an
@@ -197,7 +197,7 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew) getCurrentChain
           { candidateChain       = curChain
           , candidateChainState  = curChainState
           }
-        modifyTVar' varCandidates $ Map.insert up varCandidate
+        modifyTVar' varCandidates $ Map.insert peer varCandidate
         return (curChain, varCandidate)
 
       -- We select points from the last @k@ headers of our current chain. This
@@ -445,7 +445,7 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew) getCurrentChain
     -- removing its candidate from the map of candidates.
     disconnect :: ChainSyncClientException blk -> STM m a
     disconnect ex = do
-      modifyTVar' varCandidates $ Map.delete up
+      modifyTVar' varCandidates $ Map.delete peer
       throwM ex
 
     -- Recent offsets
