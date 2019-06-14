@@ -9,6 +9,7 @@
 {-# LANGUAGE UndecidableInstances  #-}
 
 {-# OPTIONS_GHC -Wredundant-constraints #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Ouroboros.Consensus.Ledger.Byron
   ( -- * Byron blocks and headers
@@ -516,9 +517,8 @@ instance Condense (Header (ByronBlock cfg)) where
         . unByronHeader
         $ hdr
 
-instance Condense (ChainHash (ByronBlock cfg)) where
-  condense GenesisHash   = "genesis"
-  condense (BlockHash h) = show h
+instance Condense CC.Block.HeaderHash where
+  condense = show
 
 instance Condense (GenTx (ByronBlock cfg)) where
     condense (ByronTx tx) =

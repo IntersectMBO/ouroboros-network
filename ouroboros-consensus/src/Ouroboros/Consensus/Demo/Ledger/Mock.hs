@@ -39,6 +39,7 @@ instance ( ProtocolLedgerView (SimpleBlock SimpleMockCrypto ext)
          , ForgeExt (BlockProtocol (SimpleBlock SimpleMockCrypto ext))
                     SimpleMockCrypto
                     ext
+         , Eq ext
          ) => RunDemo (SimpleBlock  SimpleMockCrypto ext) where
   demoForgeBlock         = forgeSimple
   demoBlockMatchesHeader = matchesSimpleHeader

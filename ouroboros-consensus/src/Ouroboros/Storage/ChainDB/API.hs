@@ -35,7 +35,7 @@ import           Control.Monad.Class.MonadThrow
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import           Ouroboros.Network.Block (ChainUpdate (..), HasHeader (..),
                      HeaderHash, SlotNo, StandardHash)
-import           Ouroboros.Network.Chain (Chain (..), Point)
+import           Ouroboros.Network.Chain (BlockPoint, Chain (..), Point)
 import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.ChainProducerState (ReaderId)
 
@@ -118,14 +118,14 @@ data ChainDB m blk hdr =
     , getTipPoint        :: STM m (Point blk)
 
       -- | Get block at the specified point (if it exists)
-    , getBlock           :: Point blk -> m (Maybe blk)
+    , getBlock           :: BlockPoint blk -> m (Maybe blk)
 
       -- | Return membership check function for recent blocks
       --
       -- This check is only reliable for blocks up to @k@ away from the tip.
       -- For blocks older than that the results should be regarded as
       -- non-deterministic.
-    , getIsFetched       :: STM m (Point blk -> Bool)
+    , getIsFetched       :: STM m (BlockPoint blk -> Bool)
 
       -- | Stream blocks
       --
@@ -176,13 +176,13 @@ data ChainDB m blk hdr =
     , newBlockReader     :: m (Reader m blk)
 
       -- | Known to be invalid blocks
-    , knownInvalidBlocks :: STM m (Set (Point blk))
+    , knownInvalidBlocks :: STM m (Set (BlockPoint blk))
 
       -- | Check if the specified point is on the current chain
       --
       -- This lives in @m@, not @STM m@, because if the point is not on the
       -- current chain fragment, it might have to query the immutable DB.
-    , pointOnChain       :: Point blk -> m Bool
+    , pointOnChain       :: BlockPoint blk -> m Bool
     }
 
 {-------------------------------------------------------------------------------

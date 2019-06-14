@@ -139,7 +139,6 @@ nodeKernel
        , TraceConstraints peer blk
        , ApplyTx blk
        , Eq (Header blk)
-       , Condense (HeaderHash blk)
        )
     => NodeParams m peer blk
     -> m (NodeKernel m peer blk)
@@ -175,7 +174,7 @@ nodeKernel params@NodeParams { threadRegistry, cfg } = do
 type TraceConstraints peer blk =
   ( Condense peer
   , Condense blk
-  , Condense (ChainHash blk)
+  , Condense (HeaderHash blk)
   , Condense (Header blk)
   )
 
@@ -204,7 +203,6 @@ initInternalState
        , TraceConstraints peer blk
        , ApplyTx blk
        , Eq (Header blk)
-       , Condense (HeaderHash blk)
        )
     => NodeParams m peer blk
     -> m (InternalState m peer blk)
@@ -277,10 +275,10 @@ initBlockFetchConsensusInterface tracer cfg chainDB getCandidates blockFetchSize
         then FetchModeDeadline
         else FetchModeBulkSync
 
-    readFetchedBlocks :: STM m (Point blk -> Bool)
+    readFetchedBlocks :: STM m (BlockPoint blk -> Bool)
     readFetchedBlocks = ChainDB.getIsFetched chainDB
 
-    addFetchedBlock :: Point blk -> blk -> m ()
+    addFetchedBlock :: BlockPoint blk -> blk -> m ()
     addFetchedBlock _pt blk = do
       ChainDB.addBlock chainDB blk
       traceWith tracer $ "Downloaded block: " <> condense blk

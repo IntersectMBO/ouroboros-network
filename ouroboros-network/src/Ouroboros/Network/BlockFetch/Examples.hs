@@ -117,8 +117,8 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
       Map.fromList $ zip [1..] $
       map (AnchoredFragment.mapAnchoredFragment blockHeader) candidateChains
 
-    anchoredChainPoints c = anchorPoint c
-                          : map (Point . blockPoint) (AnchoredFragment.toOldestFirst c)
+    anchoredChainPoints c = (fromTPoint [] pure (anchorPoint c))
+                         ++ map blockPoint (AnchoredFragment.toOldestFirst c)
 
     blockFetch :: FetchClientRegistry Int BlockHeader Block m
                -> TestFetchedBlockHeap m Block
@@ -134,9 +134,13 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
     driver blockHeap = do
       atomically $ do
         heap <- getTestFetchedBlocks blockHeap
-        check $
+        check $ flip all candidateChains $ \c -> case AnchoredFragment.headPoint c of
+          -- The origin is always "fetched"
+          Origin  -> True
+          Point p -> p `Set.member` heap
+          {-
           all (\c -> AnchoredFragment.headPoint c `Set.member` heap)
-              candidateChains
+              candidateChains -}
 
 
 --
@@ -303,8 +307,8 @@ mockBlockFetchServer1 chain =
 -- The interface is enough to use in examples and tests.
 --
 data TestFetchedBlockHeap m block = TestFetchedBlockHeap {
-       getTestFetchedBlocks  :: STM m (Set (Point block)),
-       addTestFetchedBlock   :: Point block -> block -> m ()
+       getTestFetchedBlocks  :: STM m (Set (BlockPoint block)),
+       addTestFetchedBlock   :: BlockPoint block -> block -> m ()
      }
 
 -- | Make a 'TestFetchedBlockHeap' using a simple in-memory 'Map', stored in an
@@ -312,8 +316,8 @@ data TestFetchedBlockHeap m block = TestFetchedBlockHeap {
 --
 -- This is suitable for examples and tests.
 --
-mkTestFetchedBlockHeap :: (MonadSTM m, Ord (Point block))
-                       => [Point block]
+mkTestFetchedBlockHeap :: (MonadSTM m, Ord (BlockPoint block))
+                       => [BlockPoint block]
                        -> m (TestFetchedBlockHeap m block)
 mkTestFetchedBlockHeap points = do
     v <- atomically (newTVar (Set.fromList points))

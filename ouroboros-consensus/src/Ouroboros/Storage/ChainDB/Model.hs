@@ -39,7 +39,7 @@ import           GHC.Stack (HasCallStack)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as Fragment
-import           Ouroboros.Network.Block (ChainHash (..), ChainUpdate (..),
+import           Ouroboros.Network.Block (BlockPoint, ChainHash (..), ChainUpdate (..),
                      HasHeader, HeaderHash, Point, TPoint (..), pointHash, fromTPoint)
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.Chain (Chain (..))
@@ -78,12 +78,12 @@ hasBlock :: HasHeader blk => HeaderHash blk -> Model blk -> Bool
 hasBlock hash = isJust . getBlock hash
 
 getBlockByPoint :: (HasHeader blk, HasCallStack)
-                => Point blk -> Model blk -> Maybe blk
-getBlockByPoint = getBlock . notGenesis
+                => BlockPoint blk -> Model blk -> Maybe blk
+getBlockByPoint bp = getBlock (pointHash bp)
 
 hasBlockByPoint :: (HasHeader blk, HasCallStack)
-                => Point blk -> Model blk -> Bool
-hasBlockByPoint = hasBlock . notGenesis
+                => BlockPoint blk -> Model blk -> Bool
+hasBlockByPoint bp = hasBlock (pointHash bp)
 
 tipBlock :: Model blk -> Maybe blk
 tipBlock = Chain.head . currentChain
@@ -101,8 +101,8 @@ lastK (SecurityParam k) f =
     . fmap f
     . currentChain
 
-pointOnChain :: HasHeader blk => Model blk -> Point blk -> Bool
-pointOnChain m p = Chain.pointOnChain p (currentChain m)
+pointOnChain :: HasHeader blk => Model blk -> BlockPoint blk -> Bool
+pointOnChain m p = Chain.pointOnChain (Point p) (currentChain m)
 
 {-------------------------------------------------------------------------------
   Construction
@@ -211,10 +211,6 @@ readerForward rdrId points m =
 {-------------------------------------------------------------------------------
   Internal auxiliary
 -------------------------------------------------------------------------------}
-
-notGenesis :: HasCallStack => Block.TPoint (Block.TBlockPoint slot hash) -> hash
-notGenesis Block.Origin = error "Ouroboros.Storage.ChainDB.Model: notGenesis"
-notGenesis (Block.Point p) = pointHash p
 
 validate :: forall blk. ProtocolLedgerView blk
          => NodeConfig (BlockProtocol blk)

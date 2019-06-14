@@ -60,12 +60,13 @@ class DemoHeaderHash hh where
 class ( ProtocolLedgerView blk
       , DemoHeaderHash (HeaderHash blk)
       , Condense (Header blk)
-      , Condense (ChainHash blk)
+      , Condense (HeaderHash blk)
       , Condense blk
       , Condense [blk]
       , ApplyTx blk
       , Show (ApplyTxErr blk)
       , Condense (GenTx blk)
+      , Eq (Header blk)
       ) => RunDemo blk where
   demoForgeBlock         :: (HasNodeState (BlockProtocol blk) m, MonadRandom m)
                          => NodeConfig (BlockProtocol blk)
