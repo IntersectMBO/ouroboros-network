@@ -73,6 +73,7 @@ library
                        Ouroboros.Consensus.Protocol.Praos
                        Ouroboros.Consensus.Protocol.Signed
                        Ouroboros.Consensus.TxSubmission
+                       Ouroboros.Consensus.Update
                        Ouroboros.Consensus.Util
                        Ouroboros.Consensus.Util.AnchoredFragment
                        Ouroboros.Consensus.Util.CBOR

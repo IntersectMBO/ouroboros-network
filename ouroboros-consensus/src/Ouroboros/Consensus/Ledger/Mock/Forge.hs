@@ -17,8 +17,10 @@ import           Cardano.Crypto.Hash
 
 import           Ouroboros.Network.Block (BlockNo, ChainHash, SlotNo)
 
+import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Mock.Block
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Update
 
 class ForgeExt p c ext where
   -- | Construct the protocol specific part of the block
@@ -35,13 +37,16 @@ forgeSimple :: forall p c m ext.
                , ForgeExt p c ext
                )
             => NodeConfig p
+            -> ExtLedgerState (SimpleBlock c ext)
+                                              -- ^ Current ledger state
             -> SlotNo                         -- ^ Current slot
             -> BlockNo                        -- ^ Current block number
             -> ChainHash (SimpleBlock c ext)  -- ^ Previous hash
             -> [GenTx (SimpleBlock c ext)]    -- ^ Txs to add in the block
+            -> [USSArgs]                      -- ^ Update system stimulus args
             -> IsLeader p                     -- ^ Proof we are slot leader
             -> m (SimpleBlock c ext)
-forgeSimple cfg curSlot curBlock prevHash txs proof = do
+forgeSimple cfg _els curSlot curBlock prevHash txs _ussa proof = do
     forgeExt cfg proof $ SimpleBlock {
         simpleHeader = mkSimpleHeader encode stdHeader ()
       , simpleBody   = body
