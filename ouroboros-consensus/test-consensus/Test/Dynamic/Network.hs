@@ -22,7 +22,6 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import           Data.Typeable (Typeable)
-import           Data.Functor.Identity
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork (MonadFork)
@@ -99,14 +98,13 @@ createNetworkInterface
     -> [nodeId]               -- ^ list of nodes which we want to serve
     -> nodeId                 -- ^ our nodeId
     -> SharedState m (TMVar m ())
-        (Identity
-          (NetworkApplication m nodeId
-            (AnyMessage (ChainSync (Header blk) (Point blk)))
-            (AnyMessage (BlockFetch blk)) ()))
+        (NetworkApplication m nodeId
+          (AnyMessage (ChainSync (Header blk) (Point blk)))
+          (AnyMessage (BlockFetch blk)) ())
     -> NetworkInterface m nodeId
 createNetworkInterface chans nodeIds us na = NetworkInterface
     { niConnectTo = \them -> do
-        Identity (NetworkApplication {naChainSyncClient, naBlockFetchClient}) <- runSharedState na
+        NetworkApplication {naChainSyncClient, naBlockFetchClient} <- runSharedState na
         let nodeChan = chans Map.! them Map.! us
 
         aCS <- async $ void $ naChainSyncClient them
@@ -122,7 +120,7 @@ createNetworkInterface chans nodeIds us na = NetworkInterface
 
     , niWithServerNode = \k -> do
         ts :: [Async m ()] <- fmap concat $ forM (filter (/= us) nodeIds) $ \them -> do
-          Identity (NetworkApplication {naChainSyncServer, naBlockFetchServer}) <- runSharedState na
+          NetworkApplication {naChainSyncServer, naBlockFetchServer} <- runSharedState na
           let nodeChan = chans Map.! us Map.! them
 
           aCS <- async $ void $ naChainSyncServer
@@ -226,7 +224,6 @@ broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots = do
 
       node <- nodeKernel nodeParams
       let app = consensusNetworkApps
-                  Identity
                   nullTracer
                   nullTracer
                   codecChainSyncId

@@ -126,7 +126,7 @@ muxResponderNetworkApplication NetworkApplication {..} =
 -- 'NodeToNodeVersions'.
 --
 consensusNetworkApps
-    :: forall m versions up blk failure bytesCS bytesBF.
+    :: forall m up blk failure bytesCS bytesBF.
        ( MonadAsync m
        , MonadCatch m
        , MonadThrow (STM m)
@@ -138,8 +138,7 @@ consensusNetworkApps
        , Condense up
        , Exception failure
        )
-    => (forall a. a -> versions a)
-    -> Tracer m (TraceSendRecv (ChainSync (Header blk) (Point blk)))
+    => Tracer m (TraceSendRecv (ChainSync (Header blk) (Point blk)))
     -> Tracer m (TraceSendRecv (BlockFetch blk))
     -> Codec (ChainSync (Header blk) (Point blk)) failure m bytesCS
     -> Codec (BlockFetch blk) failure m bytesBF
@@ -154,19 +153,17 @@ consensusNetworkApps
     -- from singletons we need to use the left biased semigroup instance of
     -- 'SharedState'.
     -> SharedState m (TMVar m ())
-        (versions
-          (NetworkApplication m up bytesCS bytesBF ()))
+        (NetworkApplication m up bytesCS bytesBF ())
 
-consensusNetworkApps singletonV traceChainSync traceBlockFetch codecChainSync codecBlockFetch NodeParams {..} kernel =
+consensusNetworkApps traceChainSync traceBlockFetch codecChainSync codecBlockFetch NodeParams {..} kernel =
     SharedState @m newEmptyTMVarM
       $ \clientRegistered ->
-          singletonV $
-            NetworkApplication {
-                naChainSyncClient = naChainSyncClient clientRegistered,
-                naChainSyncServer,
-                naBlockFetchClient = naBlockFetchClient clientRegistered,
-                naBlockFetchServer
-              }
+          NetworkApplication {
+              naChainSyncClient = naChainSyncClient clientRegistered,
+              naChainSyncServer,
+              naBlockFetchClient = naBlockFetchClient clientRegistered,
+              naBlockFetchServer
+            }
   where
     naChainSyncClient
       :: TMVar m ()
