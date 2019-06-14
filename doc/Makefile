@@ -1,4 +1,4 @@
-# See `./latexmkrc` for latexmk configuration
+# See `./latexmkrc` and `~/.latexmkrc` for latexmk configuration
 LATEX	= latexmk
 PVC	= -pvc
 

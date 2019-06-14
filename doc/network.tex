@@ -1,4 +1,7 @@
 \documentclass{report}
+\usepackage{etoolbox}
+\newbool{isRelease}
+\IfFileExists{.isRelease}{\booltrue{isRelease}}{\boolfalse{isRelease}}
 \usepackage[margin=2.5cm]{geometry}
 \usepackage{amsmath, amssymb, stmaryrd, latexsym, amsthm, mathtools}
 \usepackage{mathpazo, times}
@@ -8,8 +11,10 @@
 \usepackage{natbib}
 % \usepackage{parskip} % very ugly with lemmas, invariants, etc without intervening text
 
-\usepackage{todonotes}
-% \usepackage[disable]{todonotes}
+\ifbool{isRelease}
+    {\usepackage[disable]{todonotes}}
+    {\usepackage{todonotes}}
+
 \usepackage{slashed}
 \usepackage{tikz}
 \usetikzlibrary{automata, positioning, arrows}
@@ -62,13 +67,20 @@
 \newcommand{\subtractdom}{\mathbin{\slashed{\restrictdom}}}
 \newcommand{\restrictrange}{\rhd}
 
-% add reference to the relevant Haskell source (as comment)
-%\newcommand{\hsref}[1]{}  should be hidden in the final document
-\newcommand{\hsref}[1]{}
-%\newcommand{\hsref}[1]{\href{https://github.com/input-output-hk/ouroboros-network/blob/master/#1}{\emph{Haskell source: #1}}}
-%\newcommand{\wip}[1]{\color{magenta}{#1}\color{black}}
-\newcommand{\wip}[1]{}
-\newcommand{\hide}[1]{}
+\ifbool{isRelease}
+       {
+         \newcommand{\hsref}[1]{}
+         \newcommand{\wip}[1]{}
+         \newcommand{\hide}[1]{}
+       }
+       {
+         \newcommand{\hsref}[1]
+                    {\href{https://github.com/input-output-hk/ouroboros-network/blob/master/#1}
+                      {\emph{Haskell source: #1}}}
+         \newcommand{\wip}[1]{\color{magenta}{#1}\color{black}}
+         \newcommand{\hide}[1]{}
+       }
+
 \newcommand{\trans}[1]{\texttt{#1}}
 \newcommand{\state}[1]{\texttt{#1}}
 \newcommand{\msg}[1]{\texttt{#1}}

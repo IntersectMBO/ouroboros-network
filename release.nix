@@ -62,6 +62,7 @@ commonLib.pkgs.lib.mapAttrsRecursiveCond
   required-name = "ouroboros-network-required-checks";
   extraBuilds = {
     tests = default.tests;
+    network-pdf-wip = default.network-pdf-wip;
     network-pdf = default.network-pdf;
   };
   required-targets = jobs: [
