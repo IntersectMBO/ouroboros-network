@@ -49,10 +49,10 @@ let
     inherit customConfig;
   };
   tests = import ./nix/nixos/tests { inherit (commonLib) pkgs; };
-  network-pdf-wip = import ./doc/default.nix {inherit commonLib; isRelease=false; };
-  network-pdf     = import ./doc/default.nix {inherit commonLib; isRelease=true; };
+  documents = import ./doc/default.nix {inherit commonLib; };
 in {
   inherit scripts tests;
   inherit (nixTools) nix-tools;
-  inherit network-pdf network-pdf-wip;
+  network-pdf-wip = documents.network-pdf-wip;
+  network-pdf = documents.network-pdf;
 }
