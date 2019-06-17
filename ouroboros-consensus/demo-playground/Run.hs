@@ -34,11 +34,10 @@ import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.Chain (genesisPoint, pointHash)
 import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.NodeToNode
+import           Ouroboros.Network.Mux.Interface
 
 import           Ouroboros.Network.Protocol.BlockFetch.Codec
 import           Ouroboros.Network.Protocol.ChainSync.Codec
-import           Ouroboros.Network.Protocol.Handshake.Type
-import           Ouroboros.Network.Protocol.Handshake.Version
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime

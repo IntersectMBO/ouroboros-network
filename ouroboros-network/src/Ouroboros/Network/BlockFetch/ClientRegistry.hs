@@ -49,10 +49,11 @@ newFetchClientRegistry = FetchClientRegistry <$> newEmptyTMVarM
 
 bracketFetchClient :: (MonadThrow m, MonadSTM m, Ord peer)
                    => FetchClientRegistry peer header block m
+                   -> (peer -> STM m ())
                    -> peer
                    -> (FetchClientContext header block m -> m a)
                    -> m a
-bracketFetchClient (FetchClientRegistry ctxVar registry) peer =
+bracketFetchClient (FetchClientRegistry ctxVar registry) prunePeerSTM peer =
     bracket register unregister
   where
     register = atomically $ do
@@ -73,6 +74,7 @@ bracketFetchClient (FetchClientRegistry ctxVar registry) peer =
         modifyTVar' registry $ \m ->
           assert (peer `Map.member` m) $
           Map.delete peer m
+        prunePeerSTM peer
 
 setFetchClientContext :: MonadSTM m
                       => FetchClientRegistry peer header block m

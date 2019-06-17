@@ -22,6 +22,7 @@ module Ouroboros.Consensus.NodeNetwork (
 
 import           Control.Monad (void)
 import           Data.Void (Void)
+import qualified Data.Map.Strict as Map
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM
@@ -205,13 +206,19 @@ consensusNetworkApps traceChainSync traceBlockFetch codecChainSync codecBlockFet
           (tracePrefix "CSServer" (Nothing :: Maybe peer) tracer)
           chainDB
 
+    prunePeerSTM
+      :: peer
+      -> STM m ()
+    prunePeerSTM peer =
+      modifyTVar' (getNodeCandidates kernel) (Map.delete peer)
+
     naBlockFetchClient
       :: TMVar m ()
       -> peer
       -> Channel m bytesBF
       -> m ()
     naBlockFetchClient clientRegistered them channel =
-      bracketFetchClient (getFetchClientRegistry kernel) them $ \clientCtx -> do
+      bracketFetchClient (getFetchClientRegistry kernel) prunePeerSTM them $ \clientCtx -> do
         atomically $ putTMVar clientRegistered ()
 
         runPipelinedPeer

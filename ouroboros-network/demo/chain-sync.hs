@@ -388,6 +388,10 @@ clientBlockFetch sockAddrs = do
         muxApplication peerid =
           MuxInitiatorApplication (protocols peerid)
 
+        prunePeerSTM :: FilePath -> STM ()
+        prunePeerSTM peerid =
+          modifyTVar' candidateChainsVar (Map.delete peerid)
+
         protocols :: FilePath
                   -> DemoProtocol3
                   -> Channel IO LBS.ByteString
@@ -411,7 +415,7 @@ clientBlockFetch sockAddrs = do
                                          (Map.delete peerid)
 
         protocols peerid BlockFetch3 channel =
-          bracketFetchClient registry peerid $ \clientCtx ->
+          bracketFetchClient registry prunePeerSTM peerid $ \clientCtx ->
             runPipelinedPeer
               nullTracer -- (contramap (show . TraceLabelPeer peerid) stdoutTracer)
               (codecBlockFetch CBOR.encode CBOR.encode CBOR.decode CBOR.decode)
