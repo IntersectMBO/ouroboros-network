@@ -49,10 +49,6 @@ import           GHC.Stack
 class Empty a
 instance Empty a
 
--- | We can derive the empty constraint from top
-instance () :=> Empty b where
-  ins = Sub Dict
-
 data Some (f :: k -> *) where
     Some :: f a -> Some f
 
