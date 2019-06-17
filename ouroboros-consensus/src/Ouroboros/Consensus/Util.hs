@@ -1,11 +1,11 @@
-{-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE ConstraintKinds     #-}
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE PolyKinds           #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeOperators       #-}
+ {-# LANGUAGE BangPatterns          #-}
+ {-# LANGUAGE ConstraintKinds       #-}
+ {-# LANGUAGE FlexibleInstances     #-}
+ {-# LANGUAGE GADTs                 #-}
+ {-# LANGUAGE MultiParamTypeClasses #-}
+ {-# LANGUAGE PolyKinds             #-}
+ {-# LANGUAGE ScopedTypeVariables   #-}
+ {-# LANGUAGE TypeOperators         #-}
 
 -- | Miscellaneous utilities
 module Ouroboros.Consensus.Util (
