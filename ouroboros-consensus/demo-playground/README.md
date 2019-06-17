@@ -6,18 +6,38 @@ consumers and producers run on named pipes and the communication happens out-of-
 
 ## Running the demo
 
-You have to specify your network topology in a json file. There is an
-example inside `demo-playground` called `simple-topology.json`. By default,
-there are 3 core nodes and they all follow each other.
-For example, to setup a minimal example, runs in three separate terminal (in this order):
+There are two options:
 
-```
-./demo-playground/start-node.sh --bft -n 0 --host 127.0.0.1 --port 3000
-./demo-playground/start-node.sh --bft -n 1 --host 127.0.0.1 --port 3001
-./demo-playground/start-node.sh --bft -n 2 --host 127.0.0.1 --port 3002
-```
+  - using an example cluster with a fully-connected three-node topology,
+  - specifying your own.
+
+### Using an example cluster
+
+Simply launch `demo-playground/start-demo-cluster.sh`, optionally passing it a cluster type,
+which defaults to `--real-pbft` (the other options including `--praos`, `--bft` and `--mock-bft`).
 
 You will see that the three nodes syncs with each other and agree on a common chain.
+
+The topology file used in this cluster is `demo-playground/simple-topology.json`.
+The 3 core nodes defined in this topology file all follow each other.
+
+The script also takes care of shutting down nodes.
+
+### Rolling your own
+
+If you want to to specify your own network topology, you'll have to edit the aforementioned example cluster topology json file and start up the nodes accordingly.
+
+The node startup part must correspond to the topology file, but this is mostly handled
+by the `start-node.sh` script, which only really needs to know the node ID,
+which is passed as the first argument, and also the cluster type:
+
+```
+./demo-playground/start-node.sh 0 --bft
+./demo-playground/start-node.sh 1 --bft
+./demo-playground/start-node.sh 2 --bft
+```
+
+You'll have to take care of shutting down the nodes.
 
 ## Submitting transactions
 

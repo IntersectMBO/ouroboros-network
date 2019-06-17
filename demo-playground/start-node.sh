@@ -3,4 +3,4 @@
 . $(dirname $0)/common-config.sh
 
 set -x
-start-node 0 "$@"
+start-node "$@"
