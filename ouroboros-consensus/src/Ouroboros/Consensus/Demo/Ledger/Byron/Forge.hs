@@ -43,6 +43,46 @@ import           Ouroboros.Consensus.Update
 
 import           Ouroboros.Consensus.Demo.Ledger.Byron.Config
 
+completeProposalBody
+  :: CC.UPI.State
+  -> USSArgs
+  -> CC.Update.ProposalBody
+
+completeProposalBody state (ProposeSoftware (MProposalBody{softwareVersion=Just ver, metadata})) =
+  CC.Update.ProposalBody (CC.UPI.adoptedProtocolVersion state) emptyPPU ver metadata
+  -- XXX: export 'empty' in cardano-ledger
+  where emptyPPU = CC.Update.ProtocolParametersUpdate
+                   Nothing Nothing Nothing Nothing Nothing Nothing Nothing
+                   Nothing Nothing Nothing Nothing Nothing Nothing Nothing
+
+completeProposalBody _ (ProposeProtocol (MProposalBody{protocolVersion=Just ver, protocolParametersUpdate=Just params})) =
+  CC.Update.ProposalBody ver params softVerMemptyish mempty
+  where softVerMemptyish =
+          CC.Update.SoftwareVersion (CC.Update.ApplicationName "") 0
+
+completeProposalBody _ _ = error "Invariant failed: non-proposal in completeProposalBody."
+
+promoteUSSArgs
+  :: CC.Genesis.Config
+  -> SignKeyDSIGN (PBftDSIGN PBftCardanoCrypto)
+  -> CC.UPI.State
+  -> USSArgs
+  -> Either CC.Update.Vote CC.Update.Proposal
+promoteUSSArgs genCfg (SignKeyCardanoDSIGN key) state ussa =
+  let safeSigner = Crypto.noPassSafeSigner key
+  in case ussa of
+       SubmitVote upid forAgainst -> Left $
+         CC.Update.mkVoteSafe
+         (CC.Genesis.configProtocolMagicId genCfg)
+         safeSigner
+         upid
+         forAgainst
+       _ -> Right $
+         CC.Update.signProposal
+         (CC.Genesis.configProtocolMagicId genCfg)
+         (completeProposalBody state ussa)
+         safeSigner
+
 forgeBlock
   :: forall m cfg.
      ( HasNodeState_ () m  -- @()@ is the @NodeState@ of PBFT
@@ -78,11 +118,11 @@ forgeBlock cfg els curSlot curNo prevHash txs ussargs () = do
                     , pbftGenesisConfig
                     } = encNodeConfigExt cfg
 
-    PBftNodeConfig {..}                = encNodeConfigP   cfg
     ByronLedgerState {..}              = ledgerState els
     CC.Block.ChainValidationState {..} = blsCurrent
 
-    usStimuli = promoteUSSArgs cvsUpdateState <$> ussargs
+    usStimuli = promoteUSSArgs pbftGenesisConfig (pbftSignKey $ encNodeConfigP cfg) cvsUpdateState
+                <$> ussargs
     votes     = lefts usStimuli & \xs->
                                     if null xs then xs
                                     else trace ("votes: " <> show votes) xs
@@ -90,37 +130,6 @@ forgeBlock cfg els curSlot curNo prevHash txs ussargs () = do
                   []  -> Nothing
                   [p] -> Just $ trace ("proposal: " <> show p) $ p
                   _   -> error "XXX: unhandled -- multiple pending proposals for block."
-
-    completeProposalBody :: CC.UPI.State -> USSArgs -> CC.Update.ProposalBody
-    completeProposalBody state (ProposeSoftware (MProposalBody{softwareVersion=Just ver, metadata})) =
-      CC.Update.ProposalBody (CC.UPI.adoptedProtocolVersion state) emptyPPU ver metadata
-      -- XXX: export 'empty' in cardano-ledger
-      where emptyPPU = CC.Update.ProtocolParametersUpdate
-                       Nothing Nothing Nothing Nothing Nothing Nothing Nothing
-                       Nothing Nothing Nothing Nothing Nothing Nothing Nothing
-
-    completeProposalBody _ (ProposeProtocol (MProposalBody{protocolVersion=Just ver, protocolParametersUpdate=Just params})) =
-      CC.Update.ProposalBody ver params softVerMemptyish mempty
-      where softVerMemptyish =
-              CC.Update.SoftwareVersion (CC.Update.ApplicationName "") 0
-
-    completeProposalBody _ _ = error "Invariant failed: non-proposal in completeProposalBody."
-
-    safeSigner = Crypto.noPassSafeSigner key
-      where SignKeyCardanoDSIGN key = pbftSignKey
-
-    promoteUSSArgs :: CC.UPI.State -> USSArgs -> Either CC.Update.Vote CC.Update.Proposal
-    promoteUSSArgs _ (SubmitVote upid forAgainst) = Left $
-      CC.Update.mkVoteSafe
-      (CC.Genesis.configProtocolMagicId pbftGenesisConfig)
-      safeSigner
-      upid
-      forAgainst
-    promoteUSSArgs state ussa = Right $
-      CC.Update.signProposal
-      (CC.Genesis.configProtocolMagicId pbftGenesisConfig)
-      (completeProposalBody state ussa)
-      safeSigner
 
     txPayload :: CC.UTxO.TxPayload
     txPayload = CC.UTxO.mkTxPayload (map (void . unByronTx) txs)
