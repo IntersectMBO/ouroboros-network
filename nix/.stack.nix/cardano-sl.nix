@@ -3,7 +3,7 @@
     flags = {};
     package = {
       specVersion = "1.10";
-      identifier = { name = "cardano-sl"; version = "3.0.0"; };
+      identifier = { name = "cardano-sl"; version = "3.0.2"; };
       license = "MIT";
       copyright = "2016 IOHK";
       maintainer = "Serokell <hi@serokell.io>";
@@ -107,7 +107,9 @@
           (hsPkgs.yaml)
           (hsPkgs.cborg)
           ] ++ (pkgs.lib).optional (!system.isWindows) (hsPkgs.unix)) ++ (pkgs.lib).optional (!system.isWindows && !system.isFreebsd) (hsPkgs.systemd);
-        build-tools = [ ((hsPkgs.buildPackages).cpphs) ];
+        build-tools = [
+          (hsPkgs.buildPackages.cpphs or (pkgs.buildPackages.cpphs))
+          ];
         };
       tests = {
         "cardano-test" = {
@@ -158,8 +160,8 @@
             (hsPkgs.unordered-containers)
             ];
           build-tools = [
-            ((hsPkgs.buildPackages).hspec-discover)
-            ((hsPkgs.buildPackages).cpphs)
+            (hsPkgs.buildPackages.hspec-discover or (pkgs.buildPackages.hspec-discover))
+            (hsPkgs.buildPackages.cpphs or (pkgs.buildPackages.cpphs))
             ];
           };
         };
@@ -190,15 +192,17 @@
             (hsPkgs.optparse-applicative)
             (hsPkgs.universum)
             ];
-          build-tools = [ ((hsPkgs.buildPackages).cpphs) ];
+          build-tools = [
+            (hsPkgs.buildPackages.cpphs or (pkgs.buildPackages.cpphs))
+            ];
           };
         };
       };
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
       url = "https://github.com/input-output-hk/cardano-sl";
-      rev = "f96f3fe04719bd3b0cedc1bbaf80fa6927e937f3";
-      sha256 = "0wq3vqmb9r0g76zdx691gymvk7rdqdqxh5vgrfs8f5wpfwkhcxsi";
+      rev = "16f5095cbf5d1128e379b44c10ff4114253cefb9";
+      sha256 = "1qhrf2mmnmmjvl325ha8vghc6mnm72q9vab0x0df70sxcknhv5ay";
       });
     postUnpack = "sourceRoot+=/lib; echo source root reset to \$sourceRoot";
     }

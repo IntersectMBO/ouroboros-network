@@ -63,7 +63,7 @@ extra-deps:
   # They will be removed when that package is factored out to its own
   # repository.
   - git: https://github.com/input-output-hk/cardano-sl
-    commit: f96f3fe04719bd3b0cedc1bbaf80fa6927e937f3
+    commit: 16f5095cbf5d1128e379b44c10ff4114253cefb9
     subdirs:
       - lib
       - binary

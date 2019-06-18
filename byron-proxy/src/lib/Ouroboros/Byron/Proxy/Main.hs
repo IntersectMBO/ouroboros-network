@@ -315,7 +315,7 @@ bbsGetHashesRange db onErr mLimit from to = bbsStreamBlocks db onErr from $ \con
 
 -- Find the first checkpoint that's in the database and then stream from
 -- there.
--- 
+--
 -- we're supposed to give 'Either GetHeadersFromManyToError' but will fill that
 -- in later at the use site.
 --
@@ -370,7 +370,7 @@ bbsGetLcaMainChain
 bbsGetLcaMainChain db onErr (OldestFirst otherChain) = case otherChain of
   -- No starting point, but the answer is obvious.
   [] -> pure (NewestFirst [], OldestFirst [])
-  -- Begin producing from the oldest point. 
+  -- Begin producing from the oldest point.
   -- The consumer will pull the next hash and compare it to the expectation.
   (oldest : others) -> bbsStreamBlocks db onErr oldest $ \producer ->
     runConduit (mapOutput headerHash producer .| consumer (oldest : others) [])
