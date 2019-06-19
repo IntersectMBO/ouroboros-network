@@ -2,9 +2,12 @@
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE TypeOperators              #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 -- | Cardano digital signatures.
 module Ouroboros.Consensus.Crypto.DSIGN.Cardano
@@ -21,6 +24,7 @@ import qualified Cardano.Chain.UTxO as CC.UTxO
 import           Cardano.Crypto (ProtocolMagicId, ProxyVerificationKey,
                      SignTag (..), Signature, SigningKey, VerificationKey,
                      keyGen, signEncoded, toVerification, verifySignature)
+import           Data.Constraint
 import           Data.Coerce (coerce)
 import           Data.Function (on)
 import           Data.Proxy (Proxy (..))
@@ -40,8 +44,26 @@ signTagFor _ = signTag (Proxy @a)
 instance HasSignTag CC.UTxO.TxSigData where
   signTag = const SignTx
 
-instance HasSignTag CC.Block.ToSign where
-  signTag = const SignMainBlock
+-- Unfortunately, the sign tag for a block also incorporates extra information
+-- related to the hybrid lightweight/heavyweight delegation scheme used in the
+-- Byron era. Specifically, when signing a block, we also include the
+-- verification key of the genesis stakeholder of which the signing node is a delegate.
+--
+-- In order to avoid this specific case requiring a redesign of the whole system,
+-- we do some annoying trickery to make this available:
+--
+-- - Require a given constraint here containing the relevant verification key
+-- - Use a class reifying this instance head/body relationship to propagate this constraint.
+instance Given (VerKeyDSIGN CardanoDSIGN) => HasSignTag CC.Block.ToSign where
+  signTag = const $ SignBlock vk
+    where VerKeyCardanoDSIGN vk = given
+
+-- See https://hackage.haskell.org/package/constraints-0.10.1/docs/Data-Constraint.html#t::-61--62-
+--
+-- This instance reflects the instance head/body relationship, and allows us to
+-- reconstruct the `HasSignTag` constraint using the relevant `Given` constraint.
+instance Given (VerKeyDSIGN CardanoDSIGN) :=> HasSignTag CC.Block.ToSign where
+  ins = Sub Dict
 
 instance HasSignTag (ProxyVerificationKey w) where
   signTag = const SignProxyVK
@@ -56,7 +78,7 @@ instance Given ProtocolMagicId => DSIGNAlgorithm CardanoDSIGN where
     newtype SignKeyDSIGN CardanoDSIGN = SignKeyCardanoDSIGN SigningKey
         deriving (Show, Eq, Generic)
 
-    newtype SigDSIGN CardanoDSIGN = SigCardanoDSIGN (Signature Encoding)
+    newtype SigDSIGN CardanoDSIGN = SigCardanoDSIGN (Signature CC.Block.ToSign)
         deriving (Show, Eq, Generic)
 
     type Signable CardanoDSIGN = HasSignTag

@@ -7,13 +7,12 @@ module Ouroboros.Consensus.Demo.Ledger.Byron.Forge (
     forgeBlock
   ) where
 
-import           Codec.CBOR.Encoding (Encoding)
 import           Control.Monad (void)
 import           Crypto.Random (MonadRandom)
 import           Data.Coerce (coerce)
 import           Data.Foldable (find)
 import qualified Data.Map.Strict as Map
-import           Data.Reflection (Given (..))
+import           Data.Reflection (Given (..), give)
 
 import           Cardano.Binary (Annotated (..), toCBOR)
 import qualified Cardano.Chain.Block as CC.Block
@@ -51,7 +50,8 @@ forgeBlock
   -> ()                           -- ^ Leader proof ('IsLeader')
   -> m (ByronBlock ByronDemoConfig)
 forgeBlock cfg curSlot curNo prevHash txs () = do
-    ouroborosPayload <- forgePBftFields (encNodeConfigP cfg) toCBOR toSign
+    ouroborosPayload <- give (VerKeyCardanoDSIGN headerGenesisKey)
+      $ forgePBftFields (encNodeConfigP cfg) toCBOR toSign
     return $ forge ouroborosPayload
   where
     -- TODO: If we reconsider 'ByronDemoConfig', we can probably move this whole
@@ -99,6 +99,18 @@ forgeBlock cfg curSlot curNo prevHash txs () = do
         , CC.Block.tsSoftwareVersion = pbftSoftwareVersion
         }
 
+    headerGenesisKey :: Crypto.VerificationKey
+    dlgCertificate :: CC.Delegation.Certificate
+    (headerGenesisKey, dlgCertificate) = case findDelegate of
+        Just x  -> x
+        Nothing -> error "Issuer is not a valid genesis key delegate."
+      where
+        dlgMap = CC.Genesis.unGenesisDelegation pbftGenesisDlg
+        VerKeyCardanoDSIGN issuer = pbftVerKey $ encNodeConfigP cfg
+        findDelegate = fmap (\crt -> (Crypto.pskIssuerVK crt, crt))
+                      . find (\crt -> Crypto.pskDelegateVK crt == issuer)
+                      $ Map.elems dlgMap
+
     forge :: PBftFields PBftCardanoCrypto CC.Block.ToSign
           -> ByronBlock ByronDemoConfig
     forge ouroborosPayload =
@@ -111,23 +123,10 @@ forgeBlock cfg curSlot curNo prevHash txs () = do
             , CC.Block.blockAnnotation = ()
             }
 
-        headerGenesisKey :: Crypto.VerificationKey
-        dlgCertificate :: CC.Delegation.Certificate
-        (headerGenesisKey, dlgCertificate) = case findDelegate of
-            Just x  -> x
-            Nothing -> error "Issuer is not a valid genesis key delegate."
-          where
-            dlgMap = CC.Genesis.unGenesisDelegation pbftGenesisDlg
-            VerKeyCardanoDSIGN issuer = pbftIssuer ouroborosPayload
-            findDelegate = fmap (\crt -> (Crypto.pskIssuerVK crt, crt))
-                         . find (\crt -> Crypto.pskDelegateVK crt == issuer)
-                         $ Map.elems dlgMap
-
         headerSignature :: CC.Block.BlockSignature
-        headerSignature = CC.Block.BlockSignature
-                        $ Crypto.AProxySignature dlgCertificate (coerce sig)
+        headerSignature = CC.Block.ABlockSignature dlgCertificate (coerce sig)
           where
-            sig :: Crypto.Signature Encoding
+            sig :: Crypto.Signature CC.Block.ToSign
             SignedDSIGN (SigCardanoDSIGN sig) = pbftSignature ouroborosPayload
 
         header :: CC.Block.Header

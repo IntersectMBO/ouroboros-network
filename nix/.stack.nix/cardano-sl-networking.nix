@@ -3,7 +3,7 @@
     flags = { benchmarks = false; };
     package = {
       specVersion = "1.20";
-      identifier = { name = "cardano-sl-networking"; version = "3.0.0"; };
+      identifier = { name = "cardano-sl-networking"; version = "3.0.2"; };
       license = "MIT";
       copyright = "";
       maintainer = "";
@@ -138,7 +138,9 @@
             (hsPkgs.stm)
             (hsPkgs.time-units)
             ];
-          build-tools = [ ((hsPkgs.buildPackages).hspec-discover) ];
+          build-tools = [
+            (hsPkgs.buildPackages.hspec-discover or (pkgs.buildPackages.hspec-discover))
+            ];
           };
         };
       benchmarks = {
@@ -161,8 +163,8 @@
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
       url = "https://github.com/input-output-hk/cardano-sl";
-      rev = "f96f3fe04719bd3b0cedc1bbaf80fa6927e937f3";
-      sha256 = "0wq3vqmb9r0g76zdx691gymvk7rdqdqxh5vgrfs8f5wpfwkhcxsi";
+      rev = "16f5095cbf5d1128e379b44c10ff4114253cefb9";
+      sha256 = "1qhrf2mmnmmjvl325ha8vghc6mnm72q9vab0x0df70sxcknhv5ay";
       });
     postUnpack = "sourceRoot+=/networking; echo source root reset to \$sourceRoot";
     }

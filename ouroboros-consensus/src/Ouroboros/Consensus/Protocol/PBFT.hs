@@ -4,8 +4,10 @@
 {-# LANGUAGE FlexibleInstances       #-}
 {-# LANGUAGE MultiParamTypeClasses   #-}
 {-# LANGUAGE RecordWildCards         #-}
+{-# LANGUAGE ScopedTypeVariables     #-}
 {-# LANGUAGE StandaloneDeriving      #-}
 {-# LANGUAGE TypeFamilyDependencies  #-}
+{-# LANGUAGE TypeOperators           #-}
 {-# LANGUAGE UndecidableInstances    #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
 {-# LANGUAGE ViewPatterns            #-}
@@ -30,11 +32,12 @@ import           Control.Monad.Except
 import           Crypto.Random (MonadRandom)
 import           Data.Bimap (Bimap)
 import qualified Data.Bimap as Bimap
+import           Data.Constraint
 import           Data.Functor.Identity
-import           Data.Reflection (Given (..))
+import           Data.Reflection (Given (..), give)
 import           Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
-import           Data.Typeable (Typeable)
+import           Data.Typeable (Proxy(..), Typeable)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
@@ -66,7 +69,7 @@ deriving instance PBftCrypto c => Eq   (PBftFields c toSign)
 
 class ( HasHeader hdr
       , SignedHeader hdr
-      , Signable (PBftDSIGN c) (Signed hdr)
+      , PBftSigningConstraints c hdr
       ) => HeaderSupportsPBft c hdr where
   headerPBftFields :: proxy (PBft c) -> hdr -> PBftFields c (Signed hdr)
 
@@ -134,6 +137,9 @@ instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
       , pbftNodeId   :: NodeId
       , pbftSignKey  :: SignKeyDSIGN (PBftDSIGN c)
       , pbftVerKey   :: VerKeyDSIGN (PBftDSIGN c)
+        -- Verification key for the genesis stakeholder
+        -- This is unfortunately needed during the Byron era
+      , pbftGenVerKey :: VerKeyDSIGN (PBftDSIGN c)
       }
 
   type ValidationErr   (PBft c) = PBftValidationErr c
@@ -165,11 +171,13 @@ instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
     where
       PBftParams{..}  = pbftParams
 
-  applyChainState cfg@PBftNodeConfig{..} lv@(PBftLedgerView dms) b chainState = do
+  applyChainState cfg@PBftNodeConfig{..} lv@(PBftLedgerView dms) (b :: hdr) chainState = do
       -- Check that the issuer signature verifies, and that it's a delegate of a
       -- genesis key, and that genesis key hasn't voted too many times.
       let proxy = Identity b
-      case verifySignedDSIGN
+      case verifyPBftSigned
+             (Proxy :: Proxy (c, hdr))
+             pbftGenVerKey
              (encodeSigned proxy)
              pbftIssuer
              (headerSigned b)
@@ -238,7 +246,22 @@ class ( Typeable c
   -- being more than the two instances here are basically non-existent.
   type family PBftVerKeyHash c = (d :: *) | d -> c
 
+  type family PBftSigningConstraints c hdr :: Constraint
+
   hashVerKey :: VerKeyDSIGN (PBftDSIGN c) -> PBftVerKeyHash c
+
+  -- Abstracted version of `verifySignedDSIGN`
+  --
+  -- Since our signing constraints differ, we abstract this here such that we can
+  -- correctly assemble the constraints in the real crypto case. See the
+  -- documentation in Crypto/DSIGN/Cardano for more details.
+  verifyPBftSigned :: forall hdr proxy. (PBftSigningConstraints c hdr)
+                   => proxy (c, hdr)
+                   -> VerKeyDSIGN (PBftDSIGN c) -- Genesis key - only used in the real impl
+                   -> (Signed hdr -> Encoding)
+                   -> VerKeyDSIGN (PBftDSIGN c)
+                   -> Signed hdr
+                   -> SignedDSIGN (PBftDSIGN c) (Signed hdr) -> Either String ()
 
 data PBftMockCrypto
 
@@ -246,7 +269,11 @@ instance PBftCrypto PBftMockCrypto where
   type PBftDSIGN      PBftMockCrypto = MockDSIGN
   type PBftVerKeyHash PBftMockCrypto = VerKeyDSIGN MockDSIGN
 
+  type PBftSigningConstraints PBftMockCrypto hdr = Signable MockDSIGN (Signed hdr)
+
   hashVerKey = id
+
+  verifyPBftSigned _ _ = verifySignedDSIGN
 
 data PBftCardanoCrypto
 
@@ -254,7 +281,26 @@ instance (Given ProtocolMagicId) => PBftCrypto PBftCardanoCrypto where
   type PBftDSIGN PBftCardanoCrypto      = CardanoDSIGN
   type PBftVerKeyHash PBftCardanoCrypto = CC.Common.KeyHash
 
+  type PBftSigningConstraints PBftCardanoCrypto hdr
+    = Given (VerKeyDSIGN CardanoDSIGN) :=> Signable CardanoDSIGN (Signed hdr)
+
   hashVerKey (VerKeyCardanoDSIGN pk) = CC.Common.hashKey pk
+
+  -- This uses some hackery from the 'constraints' package to assemble a
+  -- `HasSignTag` constraint from a `Given` constraint and a reified instance of
+  -- the instance head/body relationship between the two.
+  --
+  -- See
+  -- https://hackage.haskell.org/package/constraints-0.10.1/docs/Data-Constraint.html#v:-92--92-
+  -- for details.
+  verifyPBftSigned (_ :: proxy (PBftCardanoCrypto, hdr)) gkVerKey pSig issuer hSig sig
+    = give gkVerKey $
+      (verifySignedDSIGN
+        pSig
+        issuer
+        hSig
+        sig \\
+        (ins :: Given (VerKeyDSIGN CardanoDSIGN) :- Signable CardanoDSIGN (Signed hdr) ))
 
 {-------------------------------------------------------------------------------
   Condense

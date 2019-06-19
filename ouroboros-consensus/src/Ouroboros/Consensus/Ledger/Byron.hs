@@ -5,6 +5,7 @@
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE TypeOperators         #-}
 {-# LANGUAGE UndecidableInstances  #-}
 
 {-# OPTIONS_GHC -Wredundant-constraints #-}
@@ -290,15 +291,12 @@ instance (ByronGiven, Typeable cfg)
   headerPBftFields _ (ByronHeader hdr) = PBftFields {
         pbftIssuer    = VerKeyCardanoDSIGN
                       . Crypto.pskDelegateVK
-                      . Crypto.psigPsk
-                      . CC.Block.unBlockSignature
+                      . CC.Block.delegationCertificate
                       . CC.Block.headerSignature
                       $ hdr
       , pbftSignature = SignedDSIGN
                       . SigCardanoDSIGN
-                      . Crypto.Signature
-                      . Crypto.psigSig
-                      . CC.Block.unBlockSignature
+                      . CC.Block.signature
                       . CC.Block.headerSignature
                       $ hdr
       }
@@ -467,8 +465,7 @@ instance Condense (Header (ByronBlock cfg)) where
       ", delegate: "     <> condenseKey delegate <>
       ")"
     where
-      psigPsk = Crypto.psigPsk
-              . CC.Block.unBlockSignature
+      psigPsk = CC.Block.delegationCertificate
               . CC.Block.headerSignature
               . unByronHeader
               $ hdr

@@ -26,6 +26,8 @@ protocolInfoMockPBFT (NumCoreNodes numCoreNodes) (CoreNodeId nid) params =
               , pbftNodeId   = CoreId nid
               , pbftSignKey  = SignKeyMockDSIGN nid
               , pbftVerKey   = VerKeyMockDSIGN nid
+                -- For Mock PBFT, we use our key as the genesis key.
+              , pbftGenVerKey = VerKeyMockDSIGN nid
               }
             , encNodeConfigExt = PBftLedgerView $
                 Bimap.fromList [ (VerKeyMockDSIGN n, VerKeyMockDSIGN n)
