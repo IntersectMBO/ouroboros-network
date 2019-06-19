@@ -287,6 +287,7 @@ test-suite test-storage
   other-modules:
                     Test.Ouroboros.Storage
                     Test.Ouroboros.Storage.ChainDB
+                    Test.Ouroboros.Storage.ChainDB.AddBlock
                     Test.Ouroboros.Storage.ChainDB.Mock
                     Test.Ouroboros.Storage.ChainDB.Model
                     Test.Ouroboros.Storage.ChainDB.StateMachine
