@@ -20,10 +20,9 @@ module Ouroboros.Consensus.Util.ThreadRegistry
 
 import           Control.Exception (asyncExceptionFromException,
                      asyncExceptionToException)
-import           Control.Monad (forM, forM_, liftM, unless)
+import           Control.Monad (forM, forM_, liftM)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Proxy (Proxy (..))
 import           Data.Void (Void)
 import           Data.Word (Word64)
 
@@ -105,8 +104,10 @@ forkLinked :: forall m a. (MonadAsync m, MonadFork m, MonadMask m)
 forkLinked threadRegistry action = do
     me <- myThreadId
     fork threadRegistry $
-      action `catch` \(e :: SomeException) -> do
-        unless (isCancel (Proxy @m) e) $ throwTo me e
+      action `catch` \e -> do
+        case fromException e of
+          Just AsyncCancelled{} -> return ()
+          Nothing               -> throwTo me e
         throwM e
 
 -- | Variant of 'forkLinked' intented to fork a new thread that will run a
