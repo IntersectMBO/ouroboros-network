@@ -51,9 +51,7 @@ import           Data.Dynamic (Dynamic, toDyn, fromDynamic)
 import           Control.Monad (mapM_)
 import           Control.Exception
                    ( Exception(..), SomeException
-                   , ErrorCall(..), throw, assert
-                   , asyncExceptionToException
-                   , asyncExceptionFromException )
+                   , ErrorCall(..), throw, assert )
 import qualified System.IO.Error as IO.Error (userError)
 
 import           Control.Monad.ST.Lazy
@@ -325,13 +323,6 @@ instance MonadSTM (SimM s) where
 
 data Async s a = Async !ThreadId (TMVar (SimM s) (Either SomeException a))
 
-data AsyncCancelled = AsyncCancelled
-  deriving Show
-
-instance Exception AsyncCancelled where
-  fromException = asyncExceptionFromException
-  toException   = asyncExceptionToException
-
 instance MonadAsync (SimM s) where
   type Async (SimM s) = Async s
 
@@ -342,10 +333,6 @@ instance MonadAsync (SimM s) where
     return (Async tid var)
 
   cancel a@(Async tid _) = throwTo tid AsyncCancelled <* waitCatch a
-
-  isCancel _ e
-    | Just AsyncCancelled <- fromException e = True
-    | otherwise                              = False
 
   waitCatchSTM (Async _ var) = readTMVar var
   pollSTM      (Async _ var) = tryReadTMVar var

@@ -4,20 +4,20 @@
 
 module Control.Monad.Class.MonadAsync
   ( MonadAsync (..)
+  , AsyncCancelled(..)
   ) where
 
 import           Prelude hiding (read)
-
-import           Data.Proxy (Proxy)
 
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Exception (SomeException)
 import qualified Control.Concurrent.Async as Async
+import           Control.Concurrent.Async (AsyncCancelled(..))
 
 class MonadSTM m => MonadAsync m where
 
-  {-# MINIMAL async, cancel, isCancel, waitCatchSTM, pollSTM #-}
+  {-# MINIMAL async, cancel, waitCatchSTM, pollSTM #-}
 
   -- | An asynchronous action
   type Async m :: * -> *
@@ -30,7 +30,6 @@ class MonadSTM m => MonadAsync m where
   waitCatch             :: Async m a -> m (Either SomeException a)
   cancel                :: Async m a -> m ()
   uninterruptibleCancel :: Async m a -> m ()
-  isCancel              :: Proxy m -> SomeException -> Bool
 
   waitSTM               :: Async m a -> STM m a
   pollSTM               :: Async m a -> STM m (Maybe (Either SomeException a))
@@ -229,9 +228,6 @@ instance MonadAsync IO where
   waitCatch             = Async.waitCatch
   cancel                = Async.cancel
   uninterruptibleCancel = Async.uninterruptibleCancel
-  isCancel _ e
-    | Just Async.AsyncCancelled <- fromException e = True
-    | otherwise                                    = False
 
   waitSTM               = Async.waitSTM
   pollSTM               = Async.pollSTM
