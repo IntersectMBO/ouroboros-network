@@ -1,9 +1,8 @@
-{-# LANGUAGE DerivingStrategies         #-}
-{-# LANGUAGE FlexibleInstances          #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE MultiParamTypeClasses      #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE DerivingStrategies    #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeFamilies          #-}
 
 module Test.Ouroboros.Storage.ChainDB.Model (
     tests
@@ -14,6 +13,7 @@ import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
 import           Ouroboros.Consensus.Protocol.Abstract
+import qualified Ouroboros.Consensus.Util.AnchoredFragment as AF
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (HasHeader (..))
 import           Ouroboros.Network.Chain (genesisPoint)
@@ -32,10 +32,13 @@ tests = testGroup "Model" [
 prop_getBlock_addBlock :: BlockTree -> Permutation -> Property
 prop_getBlock_addBlock bt p =
         M.getBlock (blockHash newBlock) (M.addBlock singleNodeTestConfig newBlock model)
-    === Just newBlock
+    === if blockNo newBlock > M.immutableBlockNo secParam model
+        then Just newBlock
+        else Nothing
   where
     (newBlock:initBlocks) = permute p $ treeToBlocks bt
     model = M.addBlocks singleNodeTestConfig initBlocks (M.empty testInitExtLedger)
+    secParam = protocolSecurityParam singleNodeTestConfig
 
 prop_getChain_addChain :: BlockChain -> Property
 prop_getChain_addChain bc =
@@ -47,7 +50,7 @@ prop_getChain_addChain bc =
 prop_alwaysPickPreferredChain :: BlockTree -> Permutation -> Property
 prop_alwaysPickPreferredChain bt p =
     conjoin [
-        not $ preferCandidate singleNodeTestConfig (AF.fromChain current) (AF.fromChain candidate)
+        not $ preferCandidate' candidate
       | candidate <- treeToChains bt
       ]
   where

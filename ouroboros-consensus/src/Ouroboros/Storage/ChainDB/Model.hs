@@ -21,6 +21,7 @@ module Ouroboros.Storage.ChainDB.Model (
   , getBlockByPoint
   , hasBlock
   , hasBlockByPoint
+  , immutableBlockNo
     -- * Iterators
   , streamBlocks
   , iteratorNext
@@ -113,6 +114,18 @@ lastK (SecurityParam k) f =
     . fmap f
     . currentChain
 
+-- | The block number of the most recent \"immutable\" block, i.e. the oldest
+-- block we can roll back to. We cannot roll back the block itself.
+--
+-- In the real implementation this will correspond to the block number of the
+-- block at the tip of the Immutable DB.
+immutableBlockNo :: HasHeader blk
+                 => SecurityParam -> Model blk -> Block.BlockNo
+immutableBlockNo (SecurityParam k) =
+        Chain.headBlockNo
+      . Chain.drop (fromIntegral k)
+      . currentChain
+
 {-------------------------------------------------------------------------------
   Construction
 -------------------------------------------------------------------------------}
@@ -128,7 +141,11 @@ empty initLedger = Model {
 
 addBlock :: forall blk. ProtocolLedgerView blk
          => NodeConfig (BlockProtocol blk) -> blk -> Model blk -> Model blk
-addBlock cfg blk m = Model {
+addBlock cfg blk m
+    -- If the block is as old as the tip of the ImmutableDB, i.e. older than
+    -- @k@, we ignore it, as we can never switch to it.
+  | Block.blockNo blk <= immutableBlockNo secParam m = m
+  | otherwise = Model {
       blocks        = blocks'
     , cps           = CPS.switchFork newChain (cps m)
     , currentLedger = newLedger
@@ -136,6 +153,8 @@ addBlock cfg blk m = Model {
     , iterators     = iterators  m
     }
   where
+    secParam = protocolSecurityParam cfg
+
     blocks' :: Map (HeaderHash blk) blk
     blocks' = Map.insert (Block.blockHash blk) blk (blocks m)
 
