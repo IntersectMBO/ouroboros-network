@@ -85,6 +85,7 @@
             (hsPkgs.stm)
             (hsPkgs.tasty)
             (hsPkgs.tasty-quickcheck)
+            (hsPkgs.tasty-hunit)
             (hsPkgs.text)
             (hsPkgs.time)
             ];

@@ -18,11 +18,14 @@ import           Data.Set (Set)
 import qualified Data.ByteString.Lazy as LBS
 import           Codec.Serialise (Serialise(..))
 
+import           Control.Monad (forever)
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTimer
 import           Control.Tracer (Tracer, contramap, nullTracer)
 import           Control.Exception (assert)
 
@@ -63,8 +66,9 @@ import           Ouroboros.Network.Testing.ConcreteBlock
 -- all the candidates do intersect the current chain, and are longer, so we
 -- will be interested in downloading them all.
 --
-blockFetchExample1 :: forall m. (MonadSTM m, MonadST m, MonadAsync m,
-                                 MonadCatch m, MonadTime m)
+blockFetchExample1 :: forall m.
+                      (MonadSTM m, MonadST m, MonadAsync m, MonadFork m,
+                       MonadCatch m, MonadTime m, MonadTimer m)
                    => Tracer m [TraceLabelPeer Int
                                  (FetchDecision [Point BlockHeader])]
                    -> Tracer m (TraceLabelPeer Int
@@ -98,8 +102,8 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
     -- fetch thread before the peer threads.
     _ <- waitAnyCancel $ [ fetchAsync, driverAsync ]
                       ++ [ peerAsync
-                         | (client, server) <- peerAsyncs
-                         , peerAsync <- [client, server] ]
+                         | (client, server, sync) <- peerAsyncs
+                         , peerAsync <- [client, server, sync] ]
     return ()
 
   where
@@ -180,9 +184,8 @@ exampleFixedPeerGSVs =
 -- Utils to run fetch clients and servers
 --
 
-runFetchClient :: (MonadCatch m, MonadAsync m, MonadST m, Ord peerid,
-                   Serialise block,
-                   Serialise (HeaderHash block))
+runFetchClient :: (MonadCatch m, MonadAsync m, MonadFork m, MonadST m,
+                   Ord peerid, Serialise block, Serialise (HeaderHash block))
                 => Tracer m (TraceSendRecv (BlockFetch block))
                 -> FetchClientRegistry peerid header block m
                 -> peerid
@@ -211,9 +214,9 @@ runFetchServer tracer channel server =
     codec = codecBlockFetch encode encode decode decode
 
 runFetchClientAndServerAsync
-               :: (MonadCatch m, MonadAsync m, MonadST m, Ord peerid,
-                   Serialise header,
-                   Serialise block,
+               :: (MonadCatch m, MonadAsync m, MonadFork m, MonadTimer m,
+                   MonadST m, Ord peerid,
+                   Serialise header, Serialise block,
                    Serialise (HeaderHash block))
                 => Tracer m (TraceSendRecv (BlockFetch block))
                 -> Tracer m (TraceSendRecv (BlockFetch block))
@@ -222,7 +225,7 @@ runFetchClientAndServerAsync
                 -> (  FetchClientContext header block m
                    -> PeerPipelined (BlockFetch block) AsClient BFIdle m a)
                 -> BlockFetchServer block m b
-                -> m (Async m a, Async m b)
+                -> m (Async m a, Async m b, Async m ())
 runFetchClientAndServerAsync clientTracer serverTracer
                              registry peerid client server = do
     (clientChannel, serverChannel) <- createConnectedChannels
@@ -236,7 +239,11 @@ runFetchClientAndServerAsync clientTracer serverTracer
                              serverTracer
                              serverChannel server
 
-    return (clientAsync, serverAsync)
+    syncClientAsync <- async $ bracketSyncWithFetchClient
+                                 registry peerid
+                                 (forever (threadDelay 1000) >> return ())
+
+    return (clientAsync, serverAsync, syncClientAsync)
 
 
 --

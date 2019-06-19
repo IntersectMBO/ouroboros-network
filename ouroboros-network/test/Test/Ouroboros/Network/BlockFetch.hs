@@ -1,10 +1,14 @@
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE RankNTypes                 #-}
 
 module Test.Ouroboros.Network.BlockFetch (tests) where
 
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
+import           Test.Tasty.HUnit
 import           Test.Tasty.QuickCheck (testProperty)
 import           Test.ChainGenerators (TestChainFork(..))
 
@@ -14,8 +18,16 @@ import           Data.Set (Set)
 import qualified Data.Map as Map
 import           Data.Map (Map)
 import           Data.Typeable (Typeable)
+
+import           Control.Monad (unless)
 import           Control.Monad.IOSim
-import           Control.Tracer (Tracer(Tracer), contramap)
+import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadFork
+import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadThrow
+import           Control.Monad.Class.MonadTimer
+import           Control.Tracer (Tracer(Tracer), contramap, nullTracer)
+import           Control.Exception (SomeException, AssertionFailed(..))
 
 --TODO: could re-export some of the trace types from more convenient places:
 import           Ouroboros.Network.Block
@@ -28,6 +40,7 @@ import           Ouroboros.Network.Testing.ConcreteBlock
 import           Ouroboros.Network.Protocol.BlockFetch.Type (BlockFetch)
 import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.BlockFetch.ClientState
+import           Ouroboros.Network.BlockFetch.ClientRegistry
 import           Ouroboros.Network.BlockFetch.Examples
 
 
@@ -42,6 +55,9 @@ tests = testGroup "BlockFetch"
 
   , testProperty "static chains with overlap"
                  prop_blockFetchStaticWithOverlap
+
+  , testCaseSteps "bracketSyncWithFetchClient"
+                  unit_bracketSyncWithFetchClient
   ]
 
 
@@ -340,6 +356,116 @@ tracePropertyClientStateSanity es =
 -- whether there's any concise and robust way of expressing this.
 --
 -- tracePropertyDecisions _fork1 _fork2 _es = True
+
+
+--
+-- Unit tests
+--
+
+unit_bracketSyncWithFetchClient :: (String -> IO ()) -> Assertion
+unit_bracketSyncWithFetchClient step = do
+
+    step "Starting fetch before sync"
+    checkResult =<< testSkeleton
+      (\action -> threadDelay 0.01 >> action (threadDelay 0.02))
+      (\action -> threadDelay 0.02 >> action (threadDelay 0.02))
+
+    step "Starting sync before fetch"
+    checkResult =<< testSkeleton
+      (\action -> threadDelay 0.02 >> action (threadDelay 0.02))
+      (\action -> threadDelay 0.01 >> action (threadDelay 0.02))
+
+    step "Stopping fetch before sync"
+    checkResult =<< testSkeleton
+      (\action -> action (threadDelay 0.01))
+      (\action -> action (threadDelay 0.02))
+
+    step "Stopping sync before fetch"
+    checkResult =<< testSkeleton
+      (\action -> action (threadDelay 0.02))
+      (\action -> action (threadDelay 0.01))
+
+    step "Exception in fetch"
+    Left (Left _) <- testSkeleton
+      (\action -> action (threadDelay 0.01 >> throwM AsyncCancelled))
+      (\action -> action (threadDelay 0.02))
+
+    step "Exception in sync"
+    Right (Left _) <- testSkeleton
+      (\action -> action (threadDelay 0.02))
+      (\action -> action (threadDelay 0.01 >> throwM AsyncCancelled))
+
+    return ()
+
+  where
+    checkResult (Left  (Right _)) = return ()
+    checkResult (Right (Right _)) = return ()
+    checkResult _                 = assertFailure "unexpected result"
+
+    testSkeleton :: forall m a b.
+                    (MonadAsync m, MonadFork m, MonadSTM m, MonadTimer m,
+                     MonadThrow m, MonadThrow (STM m))
+                 => ((forall c. m c -> m c) -> m a)
+                 -> ((forall c. m c -> m c) -> m b)
+                 -> m (Either (Either SomeException a)
+                              (Either SomeException b))
+    testSkeleton withFetchTestAction withSyncTestAction = do
+      registry <- newFetchClientRegistry
+      setFetchClientContext registry nullTracer (error "no policy")
+
+      fetchStatePeerChainsVar <- newTVarM Map.empty
+
+      let peer  = "thepeer"
+          fetch :: m a
+          fetch = withFetchTestAction $ \body ->
+                    bracketFetchClient registry peer $ \_ ->
+                      body
+
+          sync :: m b
+          sync  = withSyncTestAction $ \body ->
+                    bracketSyncWithFetchClient registry peer $
+                      bracket_
+                        (atomically (modifyTVar' fetchStatePeerChainsVar
+                                                 (Map.insert peer ())))
+                        (atomically (modifyTVar' fetchStatePeerChainsVar
+                                                 (Map.delete peer)))
+                        body
+
+          logic :: (Map String (PeerFetchStatus BlockHeader), Map String ())
+                -> m ()
+          logic fingerprint = do
+            fingerprint' <- atomically $ do
+              fetchStatePeerStates <- readFetchClientsStatus registry
+              fetchStatePeerChains <- readTVar fetchStatePeerChainsVar
+              let fingerprint' = (fetchStatePeerStates, fetchStatePeerChains)
+              check (fingerprint' /= fingerprint)
+              return fingerprint'
+
+            let (fetchStatePeerStates, fetchStatePeerChains) = fingerprint'
+            unless (                 Map.keysSet fetchStatePeerChains
+                    `Set.isSubsetOf` Map.keysSet fetchStatePeerStates) $
+              throwM (AssertionFailed "detected state mismatch")
+
+            logic fingerprint'
+
+      withAsync     fetch $ \fetchAsync ->
+        withAsync   sync  $ \syncAsync  ->
+          withAsync (logic (Map.empty, Map.empty)) $ \logicAsync -> do
+            res <- atomically $ do
+              res <- pollSTM logicAsync
+              case res of
+                Nothing         -> waitEitherCatchSTM fetchAsync syncAsync
+                Just (Left  e)  -> throwM e
+                Just (Right ()) -> error "impossible"
+
+            threadDelay 0.01
+            -- give the logic thread a chance to detect any final problems
+            atomically $ do
+              x <- pollSTM logicAsync
+              case x of
+                Just (Left e) -> throwM e
+                _             -> return ()
+            return res
 
 
 --

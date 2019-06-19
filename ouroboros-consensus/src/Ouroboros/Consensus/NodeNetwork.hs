@@ -28,6 +28,7 @@ import           Control.Monad (void)
 import           Data.Void (Void)
 
 import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
@@ -207,6 +208,7 @@ muxResponderNetworkApplication NetworkApplication {..} =
 consensusNetworkApps
     :: forall m peer blk failure bytesCS bytesBF.
        ( MonadAsync m
+       , MonadFork m
        , MonadCatch m
        , Ord peer
        , Exception failure
