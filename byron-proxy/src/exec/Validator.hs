@@ -18,7 +18,7 @@ import Cardano.Chain.Block (ChainValidationState (..))
 import qualified Cardano.Chain.Block as Block
 import qualified Cardano.Chain.Genesis as Genesis
 import Cardano.Chain.Slotting (FlatSlotId(..))
-import Cardano.Crypto (RequiresNetworkMagic(..))
+import Cardano.Crypto (RequiresNetworkMagic(..), decodeAbstractHash)
 
 import Cardano.Shell.Constants.Types (CardanoConfiguration (..), Core (..), Genesis (..))
 import Cardano.Shell.Presets (mainnetConfiguration)
@@ -132,8 +132,13 @@ main = do
           Just fp -> fp
         rnm = requiresNetworkMagic opts
     -- Copied from validate-mainnet in cardano-ledger.
+    let (Right genHash) = decodeAbstractHash
+                          . geGenesisHash
+                          . coGenesis
+                          . ccCore
+                          $ cc
     Right genesisConfig <-
-      runExceptT (Genesis.mkConfigFromFile rnm mainnetGenFilepath Nothing)
+      runExceptT (Genesis.mkConfigFromFile rnm mainnetGenFilepath genHash)
     Right cvs <- runExceptT $ Block.initialChainValidationState genesisConfig
     genesisConfig `seq` cvs `seq` pure ()
     addrInfoLocal  : _ <- Socket.getAddrInfo
