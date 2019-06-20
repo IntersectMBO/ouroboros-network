@@ -12,8 +12,13 @@
 module Test.Util.TestBlock (
     -- * Blocks
     TestHash(..)
+  , mkTestHash
   , TestBlock(..)
   , Header(..)
+  , firstBlock
+  , successorBlock
+  , modifyFork
+  , forkBlock
     -- * Chain
   , BlockChain(..)
   , blockChain
@@ -42,6 +47,8 @@ import           Control.Monad.Except (throwError)
 import           Data.FingerTree (Measured (..))
 import           Data.Int
 import           Data.List (transpose)
+import           Data.List.NonEmpty (NonEmpty)
+import qualified Data.List.NonEmpty as NE
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe)
 import           Data.Tree (Tree (..))
@@ -76,16 +83,64 @@ import           Test.Util.TestTx (TestTx (..), TestTxId)
   Test infrastructure: test block
 -------------------------------------------------------------------------------}
 
-newtype TestHash = TestHash Word64
+-- The hash represents a path through a tree (of forks) as a list of
+-- 'Word64's: @[0, 1, 0]@ means we forked off at the first block.
+--
+-- The following tree is just a small subset of the actual tree, which allows
+-- multiple forks at /each/ node:
+--
+-- > G--A--B--C
+-- > \  \--B"-C"
+-- >  \-A'-B'-C'
+--
+-- Some examples:
+--
+-- > []      = G = Genesis
+-- > [0]     = A
+-- > [1]     = A'
+-- > [0,0]   = B
+-- > [0,0,0] = C
+-- > [0,1]   = B"
+-- > [0,1,0] = C"
+-- > [1,0]   = B'
+-- > [1,0,0] = C'
+-- > ...
+--
+-- Since the empty list represents Genesis, which does not correspond to an
+-- actual block, we use a NonEmpty list.
+--
+-- As it is easier to prepend to and access the front of a (NonEmpty) list, we
+-- store the list in reverse order, e.g., @C'@ is stored as @[0,0,1]@, but we
+-- print ('Show' and 'Condense') it as @[1,0,0]@.
+--
+-- The predecessor (parent in the tree) can be obtained by dropping the last
+-- (in the printed representation) element in the list (or the head in the
+-- in-memory representation).
+--
+-- The 'BlockNo' of the corresponding block is just the length of the list.
+newtype TestHash = TestHash {
+      unTestHash :: NonEmpty Word64
+    }
   deriving stock   (Generic)
-  deriving newtype (Show, Eq, Ord, Serialise, Num, Condense)
+  deriving newtype (Eq, Ord, Serialise)
+
+mkTestHash :: [Word64] -> TestHash
+mkTestHash = TestHash . NE.fromList . reverse
+
+instance Show TestHash where
+  show (TestHash h) = "(mkTestHash " <> show (reverse (NE.toList h)) <> ")"
+
+instance Condense TestHash where
+  condense = condense . reverse . NE.toList . unTestHash
 
 data TestBlock = TestBlock {
-      tbHash     :: TestHash
-    , tbPrevHash :: ChainHash TestBlock
-    , tbNo       :: Block.BlockNo
-    , tbSlot     :: Block.SlotNo
-    , tbTxs      :: [TestTx]
+      tbHash :: TestHash
+    , tbSlot :: Block.SlotNo
+      -- ^ We store a separate 'Block.SlotNo', as slots can have gaps between
+      -- them, unlike block numbers.
+      --
+      -- Note that when generating a 'TestBlock', you must make sure that
+      -- blocks with the same 'TestHash' have the same slot number.
     }
   deriving stock    (Show, Eq, Generic)
   deriving anyclass (Serialise)
@@ -99,9 +154,11 @@ type instance HeaderHash TestBlock = TestHash
 
 instance Block.HasHeader TestBlock where
   blockHash      = tbHash
-  blockPrevHash  = tbPrevHash
+  blockPrevHash b = case NE.nonEmpty . NE.tail . unTestHash . tbHash $ b of
+    Nothing       -> GenesisHash
+    Just prevHash -> BlockHash (TestHash prevHash)
   blockSlot      = tbSlot
-  blockNo        = tbNo
+  blockNo        = fromIntegral . NE.length . unTestHash . tbHash
   blockInvariant = const True
 
 instance Block.HasHeader (Header TestBlock) where
@@ -117,15 +174,13 @@ instance Measured Block.BlockMeasure TestBlock where
   measure = Block.blockMeasure
 
 instance Condense TestBlock where
-  condense TestBlock{..} = mconcat [
-        "("
-      , condense tbPrevHash
-      , "->"
-      , condense tbHash
-      , ","
-      , condense tbSlot
-      , ","
-      , condense (Block.unBlockNo tbNo)
+  condense b = mconcat [
+        "(H:"
+      , condense (Block.blockHash b)
+      , ",S:"
+      , condense (Block.blockSlot b)
+      , ",B:"
+      , condense (Block.unBlockNo (Block.blockNo b))
       , ")"
       ]
 
@@ -188,9 +243,9 @@ instance UpdateLedger TestBlock where
   ledgerConfigView _ = LedgerConfig
 
   applyLedgerBlock _ tb@TestBlock{..} TestLedger{..} =
-      if tbPrevHash == snd lastApplied
-        then return     $ TestLedger (Chain.blockPoint tb, BlockHash tbHash)
-        else throwError $ InvalidHash (snd lastApplied) tbPrevHash
+      if Block.blockPrevHash tb == snd lastApplied
+        then return     $ TestLedger (Chain.blockPoint tb, BlockHash (Block.blockHash tb))
+        else throwError $ InvalidHash (snd lastApplied) (Block.blockPrevHash tb)
 
   applyLedgerHeader _ _ = return
 
@@ -252,74 +307,74 @@ instance ApplyTx TestBlock where
 
   reapplyTxSameState = \_ _ st -> st
 
-instance Arbitrary (Chain TestBlock) where
-  arbitrary = sized $ \n ->
-    pure $ Chain.fromOldestFirst $
-      go 1 GenesisHash (map TestHash [1 .. fromIntegral n])
-   where
-    go :: Word64 -> ChainHash TestBlock -> [TestHash] -> [TestBlock]
-    go _ _    []          = []
-    go n prev (this:rest) = b : go (n + 1) (BlockHash this) rest
-      where
-        b :: TestBlock
-        b = TestBlock { tbHash     = this
-                      , tbPrevHash = prev
-                      , tbNo       = Block.BlockNo n
-                      , tbSlot     = Block.SlotNo  n
-                      , tbTxs      = []
-                      }
-
 {-------------------------------------------------------------------------------
   Chain of blocks
 -------------------------------------------------------------------------------}
 
-newtype BlockChain = BlockChain [TestHash]
+newtype BlockChain = BlockChain Word64
   deriving (Show)
 
 blockChain :: BlockChain -> Chain TestBlock
 blockChain = Chain.fromOldestFirst . chainToBlocks
 
 chainToBlocks :: BlockChain -> [TestBlock]
-chainToBlocks (BlockChain c) = go 1 GenesisHash c
-  where
-    go :: Word64 -> ChainHash TestBlock -> [TestHash] -> [TestBlock]
-    go _ _    []          = []
-    go n prev (this:rest) = b : go (n + 1) (BlockHash this) rest
-      where
-        b :: TestBlock
-        b = TestBlock { tbHash     = this
-                      , tbPrevHash = prev
-                      , tbNo       = Block.BlockNo n
-                      , tbSlot     = Block.SlotNo  n
-                      , tbTxs      = []
-                      }
+chainToBlocks (BlockChain c) =
+    take (fromIntegral c) $ iterate successorBlock (firstBlock 0)
 
 instance Arbitrary BlockChain where
-  arbitrary = sized $ \n ->
-    BlockChain <$> return (map TestHash [1 .. fromIntegral n])
-  shrink (BlockChain c) =
-    BlockChain <$> shrinkList (const []) c
+  arbitrary = BlockChain <$> choose (0, 30)
+  shrink (BlockChain c) = BlockChain <$> shrink c
+
+-- Create the first block in the given fork: @[fork]@
+-- The 'SlotNo' will be 1.
+firstBlock :: Word64 -> TestBlock
+firstBlock forkNo = TestBlock
+    { tbHash = TestHash (forkNo NE.:| [])
+    , tbSlot = 1
+    }
+
+-- Create the successor of the given block without forking:
+-- @b -> b ++ [0]@ (in the printed representation)
+-- The 'SlotNo' is increased by 1.
+--
+-- In Zipper parlance, this corresponds to going down in a tree.
+successorBlock :: TestBlock -> TestBlock
+successorBlock TestBlock{..} = TestBlock
+    { tbHash = TestHash (NE.cons 0 (unTestHash tbHash))
+    , tbSlot = succ tbSlot
+    }
+
+-- Modify the (last) fork number of the given block:
+-- @g@ -> @[.., f]@ -> @[.., g f]@
+-- The 'SlotNo' is left unchanged.
+modifyFork :: (Word64 -> Word64) -> TestBlock -> TestBlock
+modifyFork g tb@TestBlock{ tbHash = TestHash (f NE.:| h) } = tb
+    { tbHash = TestHash (g f NE.:| h)
+    }
+
+-- Increase the fork number of the given block:
+-- @[.., f]@ -> @[.., f+1]@
+-- The 'SlotNo' is left unchanged.
+--
+-- In Zipper parlance, this corresponds to going right in a tree.
+forkBlock :: TestBlock -> TestBlock
+forkBlock = modifyFork succ
 
 {-------------------------------------------------------------------------------
   Tree of blocks
 -------------------------------------------------------------------------------}
 
-newtype BlockTree = BlockTree (Tree TestHash)
+newtype BlockTree = BlockTree (Tree ())
 
 blockTree :: BlockTree -> Tree TestBlock
-blockTree (BlockTree t) = go 1 GenesisHash t
+blockTree (BlockTree t) = go (firstBlock 0) t
   where
-    go :: Word64 -> ChainHash TestBlock -> Tree TestHash -> Tree TestBlock
-    go n prev (Node this ts) =
-        Node b $ map (go (n + 1) (BlockHash this)) ts
+    go :: TestBlock -> Tree () -> Tree TestBlock
+    go b (Node () ts) = Node b (zipWith go bs ts)
       where
-        b :: TestBlock
-        b = TestBlock { tbHash     = this
-                      , tbPrevHash = prev
-                      , tbNo       = Block.BlockNo n
-                      , tbSlot     = Block.SlotNo  n
-                      , tbTxs      = []
-                      }
+        -- The first child of a node is the sucessor of b ("go down"), each
+        -- subsequent child is a "fork" ("go right")
+        bs = iterate forkBlock (successorBlock b)
 
 treeToBlocks :: BlockTree -> [TestBlock]
 treeToBlocks = Tree.flatten . blockTree
@@ -338,7 +393,7 @@ instance Show BlockTree where
 
 instance Arbitrary BlockTree where
   arbitrary = sized $ \n ->
-      BlockTree <$> mkTree 0.2 (map TestHash [1 .. max 1 (fromIntegral n)])
+      BlockTree <$> mkTree 0.2 (replicate (max 1 n) ())
   shrink (BlockTree t) =
       BlockTree <$> shrinkTree t
 

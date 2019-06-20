@@ -23,20 +23,21 @@ import           Control.Tracer (Tracer (..), nullTracer)
 import           Data.Maybe (isJust)
 import           Data.Typeable (Typeable)
 
+import qualified Ouroboros.Network.Chain as Chain
+
 import           Ouroboros.Consensus.Ledger.Abstract (ledgerConfigView)
 import           Ouroboros.Consensus.Mempool (Mempool (..),
                      MempoolSnapshot (..), TraceEventMempool (..), openMempool)
 import           Ouroboros.Consensus.Mempool.TxSeq as TxSeq
 import           Ouroboros.Consensus.Util.ThreadRegistry (withThreadRegistry)
 
-import           Ouroboros.Network.Chain (Chain (..))
-
 import           Ouroboros.Storage.ChainDB.API (ChainDB)
 import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 import qualified Ouroboros.Storage.ChainDB.Mock as Mock
 
-import           Test.Util.TestBlock (GenTx (..), GenTxId (..), TestBlock,
-                     computeGenTxId, singleNodeTestConfig, testInitExtLedger)
+import           Test.Util.TestBlock (BlockChain, GenTx (..), GenTxId (..),
+                     TestBlock, chainToBlocks, computeGenTxId,
+                     singleNodeTestConfig, testInitExtLedger)
 import           Test.Util.TestTx (TestTx (..))
 
 
@@ -57,7 +58,7 @@ tests = testGroup "Mempool"
 -------------------------------------------------------------------------------}
 
 -- | Test that @getTxs == getTxsAfter zeroIdx@.
-prop_Mempool_getTxs_getTxsAfter :: Chain TestBlock
+prop_Mempool_getTxs_getTxsAfter :: BlockChain
                                 -> [TestTx]
                                 -> Property
 prop_Mempool_getTxs_getTxsAfter bc txs =
@@ -75,7 +76,7 @@ prop_Mempool_getTxs_getTxsAfter bc txs =
 -- assert that those transactions are /specifically/ equal to the /valid/
 -- transactions that we attempted to add (the invalid ones should have been
 -- dropped).
-prop_Mempool_addTxs_getTxs :: Chain TestBlock
+prop_Mempool_addTxs_getTxs :: BlockChain
                            -> [TestTx]
                            -> Property
 prop_Mempool_addTxs_getTxs bc txs =
@@ -98,7 +99,7 @@ prop_Mempool_addTxs_getTxs bc txs =
 -- n.b. In this test, we add an arbitrary list of transactions to an initially
 -- empty 'Mempool', retrieve all of the transactions from the 'Mempool', and
 -- assert that none of those transactions are invalid.
-prop_Mempool_InvalidTxsNeverAdded :: Chain TestBlock
+prop_Mempool_InvalidTxsNeverAdded :: BlockChain
                                   -> [TestTx]
                                   -> Property
 prop_Mempool_InvalidTxsNeverAdded bc txs =
@@ -114,7 +115,7 @@ prop_Mempool_InvalidTxsNeverAdded bc txs =
 
 -- | Test that all valid transactions added to a 'Mempool' via 'addTxs' are
 -- appropriately represented in the trace of events.
-prop_Mempool_TraceValidTxs :: Chain TestBlock
+prop_Mempool_TraceValidTxs :: BlockChain
                            -> [TestTx]
                            -> Property
 prop_Mempool_TraceValidTxs bc txs =
@@ -138,7 +139,7 @@ prop_Mempool_TraceValidTxs bc txs =
 
 -- | Test that all invalid rejected transactions returned from 'addTxs' are
 -- appropriately represented in the trace of events.
-prop_Mempool_TraceRejectedTxs :: Chain TestBlock
+prop_Mempool_TraceRejectedTxs :: BlockChain
                               -> [TestTx]
                               -> Property
 prop_Mempool_TraceRejectedTxs bc txs =
@@ -180,7 +181,7 @@ testTxToGenTxPair tx = (computeGenTxId genTx, genTx)
 
 testAddTxsWithMempoolAndSnapshot
   :: Testable prop
-  => Chain TestBlock
+  => BlockChain
   -> [TestTx]
   -> (   forall m.
          Mempool m TestBlock TicketNo
@@ -207,7 +208,7 @@ testAddTxsWithMempoolAndSnapshot bc txs prop =
 
 testAddTxsWithTrace
   :: Testable prop
-  => Chain TestBlock
+  => BlockChain
   -> [TestTx]
   -> ([GenTx TestBlock] -> [TraceEventMempool TestBlock] -> prop)
   -> Property
@@ -239,12 +240,12 @@ withOpenMempool :: ( MonadSTM m
                    , MonadThrow (STM m)
                    , MonadAsync m
                    )
-                => Chain TestBlock
+                => BlockChain
                 -> Tracer m (TraceEventMempool TestBlock)
                 -> (Mempool m TestBlock TicketNo -> m a)
                 -> m a
 withOpenMempool bc tracer action = do
-  chainDb <- ChainDB.fromChain openDB bc
+  chainDb <- ChainDB.fromChain openDB (Chain.fromOldestFirst (chainToBlocks bc))
   withThreadRegistry $ \registry -> do
     let cfg = ledgerConfigView singleNodeTestConfig
     action =<< openMempool registry chainDb cfg tracer

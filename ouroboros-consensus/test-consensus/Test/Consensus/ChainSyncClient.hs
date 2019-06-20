@@ -11,8 +11,6 @@ import           Control.Tracer (nullTracer)
 import           Data.Coerce (coerce)
 import           Data.Foldable (foldl')
 import           Data.List (intercalate, span, unfoldr)
-import           Data.List.NonEmpty (NonEmpty)
-import qualified Data.List.NonEmpty as NE
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe, isJust, maybe)
@@ -29,8 +27,8 @@ import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Monad.IOSim (runSimOrThrow)
 
-import           Network.TypedProtocol.Driver
 import           Network.Mux.Channel
+import           Network.TypedProtocol.Driver
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
@@ -56,6 +54,7 @@ import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Util (whenJust)
+import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.STM
 import           Ouroboros.Consensus.Util.ThreadRegistry
 
@@ -414,12 +413,12 @@ instance Arbitrary ChainSyncClientSetup where
   arbitrary = do
     securityParam <- SecurityParam <$> choose (2, 5)
     maxClockSkew  <- arbitrary
-    (clientUpdates,  cus)  <- runStateT
+    clientUpdates <- evalStateT
       (ClientUpdates <$> genUpdateSchedule securityParam maxClockSkew)
       emptyUpdateState
-    (serverUpdates, _cus) <- runStateT
+    serverUpdates <- evalStateT
       (ServerUpdates <$> genUpdateSchedule securityParam maxClockSkew)
-      (newChain cus)
+      emptyUpdateState
     let maxStartSlot = unSlotNo $ maximum
           [ 1
           , lastSlot (getClientUpdates clientUpdates) - 1
@@ -552,15 +551,6 @@ data ChainUpdateState = ChainUpdateState
   { _currentChain :: !(Chain TestBlock)
     -- ^ The current chain, obtained by applying all the '_updates' in reverse
     -- order.
-  , _successors   :: !(Map (ChainHash TestBlock) (NonEmpty TestBlock))
-    -- ^ When generating an update that adds a block to the chain, we can look
-    -- here for already generated blocks that are a successor of the block
-    -- with a given hash (or Genesis).
-  , _blocks       :: !(Map SlotNo (NonEmpty TestBlock))
-    -- ^ The blocks that have already been generated. When generating another
-    -- block for some slot, this map is used to make sure we give the new
-    -- block a hash different from the hashes of the existing blocks generated
-    -- for the same slot.
   , _updates      :: ![ChainUpdate TestBlock]
     -- ^ The updates that have been generated so far, in reverse order: the
     -- first update in the list is the last update to apply.
@@ -569,22 +559,11 @@ data ChainUpdateState = ChainUpdateState
 emptyUpdateState :: ChainUpdateState
 emptyUpdateState = ChainUpdateState
   { _currentChain = Genesis
-  , _successors   = Map.empty
-  , _blocks       = Map.empty
   , _updates      = []
   }
 
 getChainUpdates :: ChainUpdateState -> [ChainUpdate TestBlock]
 getChainUpdates = reverse . _updates
-
--- | Use the same blocks to generate a new chain and chain updates. Note that
--- it is important that after generating the client updates, the same blocks
--- are used to generate the server updates (or vice versa).
-newChain :: ChainUpdateState -> ChainUpdateState
-newChain cus = cus
-  { _currentChain = Genesis
-  , _updates      = []
-  }
 
 -- | Test that applying the generated updates gives us the same chain as
 -- '_currentChain'.
@@ -601,19 +580,9 @@ genChainUpdates :: SecurityParam
 genChainUpdates securityParam n =
     execStateT (replicateM_ n genChainUpdate)
   where
-    -- Get something from the state
-    getSuccessors   h = Map.lookup h . _successors
-    getBlocksInSlot s = Map.lookup s . _blocks
-
     -- Modify the state
     addUpdate    u cus = cus { _updates = u : _updates cus }
     setChain     c cus = cus { _currentChain = c }
-    addBlock     b cus = cus
-      { _blocks     = Map.unionWith (<>) (_blocks cus)
-          (Map.singleton (tbSlot b)     (b NE.:| []))
-      , _successors = Map.unionWith (<>) (_successors cus)
-          (Map.singleton (tbPrevHash b) (b NE.:| []))
-      }
 
     k = fromIntegral $ maxRollbacks securityParam
 
@@ -624,14 +593,18 @@ genChainUpdates securityParam n =
         , (if Chain.null chain then 0 else 1, genSwitchFork)
         ]
 
+    genForkNo = frequency
+      [ (1, return 0)
+      , (1, choose (1, 2))
+      ]
+
     genAddBlock = do
-      cus@ChainUpdateState { _currentChain = chain } <- get
-      block <- case getSuccessors (Chain.headHash chain) cus of
-        Nothing    -> makeBlock chain
-        Just succs -> frequency'
-          [ (1, lift $ elements (NE.toList succs))
-          , (1, makeBlock chain)
-          ]
+      ChainUpdateState { _currentChain = chain } <- get
+      block <- lift $ case Chain.head chain of
+        Nothing   -> firstBlock <$> genForkNo
+        Just curHead -> do
+          forkNo <- genForkNo
+          return $ modifyFork (const forkNo) (successorBlock curHead)
       modify $ addUpdate (AddBlock block) . setChain (Chain.addBlock block chain)
 
     genSwitchFork  = do
@@ -643,22 +616,6 @@ genChainUpdates securityParam n =
       -- Rolling back x blocks must always be followed by adding y blocks
       -- where y >= x
       replicateM_ (rollBackBlocks + rollForwardExtraBlocks) genAddBlock
-
-    makeBlock chain = do
-        existingBlocksInSlot <- gets $
-          maybe 0 (fromIntegral . length) . getBlocksInSlot slot
-        let b = TestBlock
-              { tbHash     = TestHash (100000 * existingBlocksInSlot + unSlotNo slot)
-              , tbPrevHash = prevHash
-              , tbNo       = succ (Chain.headBlockNo chain)
-              , tbSlot     = slot
-              , tbTxs      = []
-              }
-        modify (addBlock b)
-        return b
-      where
-        prevHash = Chain.headHash chain
-        slot     = succ (Chain.headSlot chain)
 
 -- | Variant of 'frequency' that allows for transformers of 'Gen'
 frequency' :: (MonadTrans t, Monad (t Gen)) => [(Int, t Gen a)] -> t Gen a
@@ -678,12 +635,7 @@ frequency' xs0 = lift (choose (1, tot)) >>= (`pick` xs0)
 -------------------------------------------------------------------------------}
 
 ppBlock :: TestBlock -> String
-ppBlock TestBlock { tbSlot = SlotNo s, tbHash = h, tbPrevHash = p } =
-    "(S:" <> show s <> "; H:" <> show h <> "; P:" <> p' <> ")"
-  where
-    p' = case p of
-      GenesisHash    -> "Gen"
-      BlockHash hash -> show hash
+ppBlock = condense
 
 ppPoint :: Point TestBlock -> String
 ppPoint (Point Origin)   = "Origin"
@@ -692,7 +644,6 @@ ppPoint (Point (At blk)) =
   where
     SlotNo s = blockPointSlot blk
     h        = blockPointHash blk
-
 
 ppChain :: Chain TestBlock -> String
 ppChain = ppBlocks Chain.genesisPoint . Chain.toOldestFirst
