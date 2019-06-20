@@ -44,6 +44,7 @@ import           Ouroboros.Network.BlockFetch.Client (BlockFetchClient, blockFet
 import           Ouroboros.Network.Protocol.BlockFetch.Server (BlockFetchServer, blockFetchServerPeer)
 import           Ouroboros.Network.Protocol.BlockFetch.Type (BlockFetch (..))
 import           Ouroboros.Network.Protocol.BlockFetch.Codec (codecBlockFetchId)
+import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import           Ouroboros.Network.Protocol.ChainSync.Client
 import           Ouroboros.Network.Protocol.ChainSync.Server
 import           Ouroboros.Network.Protocol.ChainSync.Type
@@ -66,8 +67,13 @@ import           Ouroboros.Consensus.Node
 --
 data ProtocolHandlers m peer blk = ProtocolHandlers {
       phChainSyncClient
-        :: peer
+        :: TVar m (CandidateState blk)
+        -> AnchoredFragment (Header blk)
         -> ChainSyncClient (Header blk) (Point blk) m Void
+        -- TODO: we should consider either bundling these context paramaters
+        -- into a record, or extending the protocol handler representation
+        -- to support bracket-style initialisation so that we could have the
+        -- closure include these and not need to be explicit about them here.
 
     , phChainSyncServer
         :: ChainSyncServer (Header blk) (Point blk) m ()
@@ -87,7 +93,6 @@ protocolHandlers
        , MonadTime  m
        , MonadThrow m
        , ProtocolLedgerView blk
-       , Ord peer
        , Condense (Header blk)
        , Condense (ChainHash blk)
        , Condense peer
@@ -95,17 +100,19 @@ protocolHandlers
     => NodeParams m peer blk
     -> NodeKernel m peer blk
     -> ProtocolHandlers m peer blk
-protocolHandlers NodeParams {..} kernel = ProtocolHandlers {
-      phChainSyncClient = \them ->
+protocolHandlers NodeParams {..} _kernel =
+    --TODO: bundle needed NodeParams into the NodeKernel
+    -- so we do not have to pass it separately
+    --TODO: need to review the use of the peer id in the tracers.
+    -- Curently it is not available here to use.
+    ProtocolHandlers {
+      phChainSyncClient =
         chainSyncClient
-          (tracePrefix "CSClient" (Just them) tracer)
+          (tracePrefix "CSClient" (Nothing :: Maybe peer) tracer)
           cfg
           btime
           maxClockSkew
-          (ChainDB.getCurrentChain chainDB)
           (ChainDB.getCurrentLedger chainDB)
-          (getNodeCandidates kernel)
-          them
     , phChainSyncServer =
         chainSyncServer
           (tracePrefix "CSServer" (Nothing :: Maybe peer) tracer)
@@ -214,12 +221,25 @@ consensusNetworkApps traceChainSync traceBlockFetch kernel
       -> Channel m bytesCS
       -> m ()
     naChainSyncClient them channel =
-      void $ runPeer
-        traceChainSync
-        pcChainSyncCodec
-        channel
-        $ chainSyncClientPeer
-        $ phChainSyncClient them
+      void $
+      -- Note that it is crucial that we sync with the fetch client "outside"
+      -- of registering the state for the sync client. This is needed to
+      -- maintain a state invariant required by the block fetch logic: that for
+      -- each candidate chain there is a corresponding block fetch client that
+      -- can be used to fetch blocks for that chain.
+      bracketSyncWithFetchClient
+        (getFetchClientRegistry kernel) them $
+      bracketChainSyncClient
+          (ChainDB.getCurrentChain  (getChainDB kernel))
+          (ChainDB.getCurrentLedger (getChainDB kernel))
+          (getNodeCandidates kernel)
+          them $ \varCandidate curChain ->
+        runPeer
+          traceChainSync
+          pcChainSyncCodec
+          channel
+          $ chainSyncClientPeer
+          $ phChainSyncClient varCandidate curChain
 
     naChainSyncServer
       :: Channel m bytesCS

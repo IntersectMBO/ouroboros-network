@@ -11,6 +11,7 @@
 module Ouroboros.Consensus.ChainSyncClient (
     Consensus
   , chainSyncClient
+  , bracketChainSyncClient
   , ChainSyncClientException (..)
   , ClockSkew (..)
   , CandidateState (..)
@@ -99,17 +100,54 @@ data CandidateState blk = CandidateState
       -- 'candidateChain'.
     }
 
+bracketChainSyncClient
+    :: ( MonadSTM m
+       , MonadThrow m
+       , Ord peer
+       )
+    => STM m (AnchoredFragment (Header blk))  -- ^ Get the current chain
+    -> STM m (ExtLedgerState blk)             -- ^ Get the current ledger state
+    -> TVar m (Map peer (TVar m (CandidateState blk)))
+       -- ^ The candidate chains, we need the whole map because we
+       -- (de)register nodes (@peer@).
+    -> peer
+    -> (TVar m (CandidateState blk) -> AnchoredFragment (Header blk) -> m a)
+    -> m a
+bracketChainSyncClient getCurrentChain getCurrentLedger
+                       varCandidates peer body =
+    bracket register unregister (uncurry body)
+  where
+    register = atomically $ do
+      curChain      <- getCurrentChain
+      curChainState <- ouroborosChainState <$> getCurrentLedger
+      -- We use our current chain, which contains the last @k@ headers, as
+      -- the initial chain for the candidate.
+      varCandidate <- newTVar CandidateState
+        { candidateChain       = curChain
+        , candidateChainState  = curChainState
+        }
+      modifyTVar' varCandidates $ Map.insert peer varCandidate
+      return (varCandidate, curChain)
+
+{-
+    unregister _ = atomically $
+      modifyTVar' varCandidates $ Map.delete peer
+-}
+    --FIXME: currently the chain sync client test relies on the variable still
+    -- being in the map after the sync client finishes. This is clearly wrong
+    -- but we need to fix that test before we can do this cleanup properly.
+    unregister _ = return ()
+
 -- | Chain sync client
 --
 -- This never terminates. In case of a failure, a 'ChainSyncClientException'
 -- is thrown. The network layer classifies exception such that the
 -- corresponding peer will never be chosen again.
 chainSyncClient
-    :: forall m peer blk.
+    :: forall m blk.
        ( MonadSTM m
        , MonadThrow (STM m)
        , ProtocolLedgerView blk
-       , Ord peer
        , Condense (Header blk)
        , Condense (ChainHash blk)
        )
@@ -117,15 +155,13 @@ chainSyncClient
     -> NodeConfig (BlockProtocol blk)
     -> BlockchainTime m
     -> ClockSkew                                   -- ^ Maximum clock skew
-    -> STM m (AnchoredFragment (Header blk))       -- ^ Get the current chain
     -> STM m (ExtLedgerState blk)                  -- ^ Get the current ledger state
-    -> TVar m (Map peer (TVar m (CandidateState blk)))
-       -- ^ The candidate chains, we need the whole map because we
-       -- (de)register nodes (@peer@).
-    -> peer -> Consensus ChainSyncClient blk m
-chainSyncClient tracer cfg btime (ClockSkew maxSkew) getCurrentChain
-                getCurrentLedger varCandidates peer =
-    ChainSyncClient initialise
+    -> TVar m (CandidateState blk)                 -- ^ Our peer's state var
+    -> AnchoredFragment (Header blk)               -- ^ The current chain
+    -> Consensus ChainSyncClient blk m
+chainSyncClient tracer cfg btime (ClockSkew maxSkew)
+                getCurrentLedger varCandidate =
+    \curChain -> ChainSyncClient (initialise curChain)
   where
     -- Our task: after connecting to an upstream node, try to maintain an
     -- up-to-date header-only fragment representing their chain. We maintain
@@ -186,20 +222,9 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew) getCurrentChain
     --
     -- TODO split in two parts: one requiring only the @TVar@ for the
     -- candidate instead of the whole map.
-    initialise :: m (Consensus ClientStIdle blk m)
-    initialise = do
-      (curChain, varCandidate) <- atomically $ do
-        curChain  <- getCurrentChain
-        curChainState <- ouroborosChainState <$> getCurrentLedger
-        -- We use our current chain, which contains the last @k@ headers, as
-        -- the initial chain for the candidate.
-        varCandidate <- newTVar CandidateState
-          { candidateChain       = curChain
-          , candidateChainState  = curChainState
-          }
-        modifyTVar' varCandidates $ Map.insert peer varCandidate
-        return (curChain, varCandidate)
-
+    initialise :: AnchoredFragment (Header blk)
+               -> m (Consensus ClientStIdle blk m)
+    initialise curChain = do
       -- We select points from the last @k@ headers of our current chain. This
       -- means that if an intersection is found for one of these points, it
       -- was an intersection within the last @k@ blocks of our current chain.
@@ -212,17 +237,16 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew) getCurrentChain
       let points = AF.selectPoints (map fromIntegral offsets) curChain
       return $ SendMsgFindIntersect (map castPoint points) $ ClientStIntersect
         { recvMsgIntersectImproved  =
-            ChainSyncClient .: intersectImproved  varCandidate
+            ChainSyncClient .: intersectImproved
         , recvMsgIntersectUnchanged =
-            ChainSyncClient .  intersectUnchanged varCandidate
+            ChainSyncClient .  intersectUnchanged
         }
 
     -- One of the points we sent intersected our chain. This intersection
     -- point will become the new tip of the candidate chain.
-    intersectImproved :: TVar m (CandidateState blk)
-                      -> Point blk -> Point blk
+    intersectImproved :: Point blk -> Point blk
                       -> m (Consensus ClientStIdle blk m)
-    intersectImproved varCandidate intersection _theirHead = atomically $ do
+    intersectImproved intersection _theirHead = atomically $ do
 
       CandidateState { candidateChain, candidateChainState } <- readTVar varCandidate
       -- Roll back the candidate to the @intersection@.
@@ -258,7 +282,7 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew) getCurrentChain
         { candidateChain      = candidateChain'
         , candidateChainState = candidateChainState'
         }
-      return $ requestNext varCandidate
+      return requestNext
 
     -- If the intersection point is unchanged, this means that the best
     -- intersection point was the initial assumption: genesis.
@@ -267,10 +291,9 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew) getCurrentChain
     -- we later optimise this client to also find intersections after
     -- start-up, this code will have to be adapted, as it assumes it is only
     -- called at start-up.
-    intersectUnchanged :: TVar m (CandidateState blk)
-                       -> Point blk
+    intersectUnchanged :: Point blk
                        -> m (Consensus ClientStIdle blk m)
-    intersectUnchanged varCandidate theirHead = atomically $ do
+    intersectUnchanged theirHead = atomically $ do
       curChainState <- ouroborosChainState <$> getCurrentLedger
 
       CandidateState { candidateChain } <- readTVar varCandidate
@@ -293,29 +316,26 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew) getCurrentChain
         { candidateChain       = candidateChain'
         , candidateChainState  = candidateChainState'
         }
-      return $ requestNext varCandidate
+      return requestNext
 
-    requestNext :: TVar m (CandidateState blk)
-                -> Consensus ClientStIdle blk m
-    requestNext varCandidate = SendMsgRequestNext
-      (handleNext varCandidate)
-      (return (handleNext varCandidate)) -- when we have to wait
+    requestNext :: Consensus ClientStIdle blk m
+    requestNext = SendMsgRequestNext
+      handleNext
+      (return handleNext) -- when we have to wait
 
-    handleNext :: TVar m (CandidateState blk)
-               -> Consensus ClientStNext blk m
-    handleNext varCandidate = ClientStNext
+    handleNext :: Consensus ClientStNext blk m
+    handleNext = ClientStNext
       { recvMsgRollForward  = \hdr theirHead -> ChainSyncClient $ do
           traceWith tracer $ "Downloaded header: " <> condense hdr
-          rollForward varCandidate hdr theirHead
+          rollForward hdr theirHead
       , recvMsgRollBackward = \intersection theirHead -> ChainSyncClient $ do
           traceWith tracer $ "Rolling back to: " <> condense intersection
-          rollBackward varCandidate intersection theirHead
+          rollBackward intersection theirHead
       }
 
-    rollForward :: TVar m (CandidateState blk)
-                -> Header blk -> Point blk
+    rollForward :: Header blk -> Point blk
                 -> m (Consensus ClientStIdle blk m)
-    rollForward varCandidate hdr _theirHead = atomically $ do
+    rollForward hdr _theirHead = atomically $ do
       -- To validate the block, we need the consensus chain state (updated using
       -- headers only, and kept as part of the candidate state) and the
       -- (anachronistic) ledger view. We read the latter as the first thing in
@@ -397,12 +417,11 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew) getCurrentChain
         { candidateChain      = candidateChain :> hdr
         , candidateChainState = candidateChainState'
         }
-      return $ requestNext varCandidate
+      return requestNext
 
-    rollBackward :: TVar m (CandidateState blk)
-                 -> Point blk -> Point blk
+    rollBackward :: Point blk -> Point blk
                  -> m (Consensus ClientStIdle blk m)
-    rollBackward varCandidate intersection theirHead = atomically $ do
+    rollBackward intersection theirHead = atomically $ do
       CandidateState {..} <- readTVar varCandidate
 
       (candidateChain', candidateChainState') <-
@@ -439,14 +458,12 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew) getCurrentChain
         { candidateChain      = candidateChain'
         , candidateChainState = candidateChainState'
         }
-      return $ requestNext varCandidate
+      return requestNext
 
-    -- | Disconnect from the upstream node by throwing the given exception and
-    -- removing its candidate from the map of candidates.
+    -- | Disconnect from the upstream node by throwing the given exception.
+    -- The cleanup is handled in 'bracketChainSyncClient'.
     disconnect :: ChainSyncClientException blk -> STM m a
-    disconnect ex = do
-      modifyTVar' varCandidates $ Map.delete peer
-      throwM ex
+    disconnect = throwM
 
     -- Recent offsets
     --
