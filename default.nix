@@ -57,10 +57,11 @@ let
   tests = import ./nix/nixos/tests { inherit (commonLib) pkgs; };
   documents = import ./doc/default.nix {inherit commonLib; };
   ihaskell-notebook = import ./nix/ihaskell-notebook.nix {inherit commonLib; inherit nixTools;};
+  jupyterlab = import ./nix/jupyterlab.nix {inherit commonLib; inherit nixTools;};
 in {
   inherit scripts tests;
   inherit (nixTools) nix-tools;
   network-pdf-wip = documents.network-pdf-wip;
   network-pdf = documents.network-pdf;
-  inherit ihaskell-notebook;
+  inherit ihaskell-notebook jupyterlab;
 }
