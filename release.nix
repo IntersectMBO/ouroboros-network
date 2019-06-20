@@ -65,6 +65,7 @@ commonLib.pkgs.lib.mapAttrsRecursiveCond
     network-pdf-wip = default.network-pdf-wip;
     network-pdf = default.network-pdf;
     ihaskell-notebook = default.ihaskell-notebook;
+    jupyterlab = default.jupyterlab;
   };
   required-targets = jobs: [
     # targets are specified using above nomenclature:
