@@ -154,10 +154,26 @@ data ChainDB m blk hdr =
       --
       -- A chain reader is an iterator that tracks the state of the /current/
       -- chain: calling @next@ on the iterator will either give you the next
-      -- block, or (if we have switched to a fork) the instruction to rollback.
+      -- block header, or (if we have switched to a fork) the instruction to
+      -- rollback.
       --
       -- The tracking iterator starts at genesis (see also 'trackForward').
-    , newReader          :: m (Reader m hdr)
+      --
+      -- This is intended for use by chain consumers to /reliably/ follow a
+      -- chain, desipite the chain being volatile.
+      --
+      -- Examples of users include the server side of the chain sync
+      -- mini-protocol for the node-to-node protocol.
+      --
+    , newHeaderReader    :: m (Reader m hdr)
+
+      -- | This is the same as the reader 'newHeaderReader' but it provides a
+      -- reader for /whole blocks/ rather than headers.
+      --
+      -- Examples of users include the server side of the chain sync
+      -- mini-protocol for the node-to-client protocol.
+      --
+    , newBlockReader     :: m (Reader m blk)
 
       -- | Known to be invalid blocks
     , knownInvalidBlocks :: STM m (Set (Point blk))
