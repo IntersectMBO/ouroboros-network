@@ -14,10 +14,12 @@ module Mock.TxSubmission (
 
 import           Codec.Serialise (decode, hPutSerialise)
 import qualified Control.Concurrent.Async as Async
+import qualified Control.Concurrent.STM as STM
 import           Control.Monad.Except
 import           Control.Tracer
 import qualified Data.ByteString as BS
 import qualified Data.Map.Strict as M
+import qualified Data.Sequence as Seq
 import qualified Data.Set as Set
 import           Options.Applicative
 import           System.IO (IOMode (..))
@@ -27,8 +29,8 @@ import qualified Ouroboros.Consensus.Crypto.Hash as H
 import           Ouroboros.Consensus.Demo.Run
 import qualified Ouroboros.Consensus.Ledger.Mock as Mock
 import           Ouroboros.Consensus.Mempool
+import           Ouroboros.Consensus.Node (NodeKernel (..))
 import           Ouroboros.Consensus.NodeId (NodeId (..))
-import           Ouroboros.Consensus.Node   (NodeKernel (..))
 import           Ouroboros.Consensus.Util.CBOR (Decoder (..), initDecoderIO)
 import           Ouroboros.Consensus.Util.Condense
 
@@ -107,7 +109,11 @@ readIncomingTx :: RunDemo blk
                -> IO ()
 readIncomingTx tracer kernel Decoder{..} = forever $ do
     newTx :: Mock.Tx <- decodeNext decode
-    rejected <- addTxs (getMempool kernel) [demoMockTx (getNodeConfig kernel) newTx]
+    let memPool = getMempool kernel
+    rejected <- addTxs memPool [demoMockTx (getNodeConfig kernel) newTx]
+    txs <- STM.atomically $ getTxs memPool
+    traceWith tracer $
+      "New incoming tx, txs number in a mempool: " <> show (Seq.length txs)
     traceWith tracer $
       (if null rejected then "Accepted" else "Rejected") <>
       " transaction: " <> show newTx

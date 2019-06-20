@@ -27,6 +27,7 @@ import           Crypto.Random (ChaChaDRG)
 import qualified Data.Foldable as Foldable
 import           Data.Functor.Contravariant (contramap)
 import           Data.Map.Strict (Map)
+import qualified Data.Sequence as Seq
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork (MonadFork)
@@ -320,6 +321,9 @@ forkBlockProduction IS{..} =
             return $ Just newBlock
 
       whenJust mNewBlock $ \newBlock -> do
+        txs <- atomically $ getTxs mempool
+        traceWith tracer $
+          "Current number of transactions in a mempool: " <> show (Seq.length txs)
         traceWith tracer $
           "As leader of slot " <> condense currentSlot <> " I produce: " <>
           condense newBlock
