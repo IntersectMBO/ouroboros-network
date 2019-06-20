@@ -3,14 +3,15 @@
 
 {-# OPTIONS_GHC -Wredundant-constraints #-}
 module Ouroboros.Consensus.ChainSyncServer
-  ( chainSyncServer
+  ( chainSyncHeadersServer
+  , chainSyncBlocksServer
   ) where
 
 
 import           Control.Monad.Class.MonadSTM
 import           Control.Tracer
 
-import           Ouroboros.Network.Block (Point (..), castPoint)
+import           Ouroboros.Network.Block (Point (..), castPoint, HeaderHash)
 import           Ouroboros.Network.Chain (ChainUpdate (..))
 import           Ouroboros.Network.Protocol.ChainSync.Server
 
@@ -20,63 +21,95 @@ import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 import           Ouroboros.Consensus.Block
 
 
--- | Chain Sync Server
+-- | Chain Sync Server for block headers for a given a 'ChainDB'.
 --
--- This is a version of
--- 'Ouroboros.Network.Protocol.ChainSync.Examples.chainSyncServerExample' that
--- uses the 'ChainDB' instead of
--- 'Ourboros.Network.ChainProducerState.ChainProducerState'.
+-- The node-to-node protocol uses the chain sync mini-protocol with chain
+-- headers (and fetches blocks separately with the block fetch mini-protocol).
 --
--- All the hard work is done by the 'Reader's provided by the
--- 'ChainDB'.
-chainSyncServer
+chainSyncHeadersServer
     :: forall m blk. MonadSTM m
     => Tracer m String
     -> ChainDB m blk (Header blk)
     -> ChainSyncServer (Header blk) (Point blk) m ()
-chainSyncServer _tracer chainDB = ChainSyncServer $
-    idle <$> ChainDB.newHeaderReader chainDB
+chainSyncHeadersServer tracer chainDB =
+    ChainSyncServer $ do
+      rdr <- ChainDB.newHeaderReader chainDB
+      let ChainSyncServer server = chainSyncServerForReader tracer chainDB rdr
+      server
+
+-- | Chain Sync Server for blocks for a given a 'ChainDB'.
+--
+-- The local node-to-client protocol uses the chain sync mini-protocol with
+-- chains of full blocks (rather than a header \/ body split).
+--
+chainSyncBlocksServer
+    :: forall m blk. MonadSTM m
+    => Tracer m String
+    -> ChainDB m blk (Header blk)
+    -> ChainSyncServer blk (Point blk) m ()
+chainSyncBlocksServer tracer chainDB =
+    ChainSyncServer $ do
+      rdr <- ChainDB.newBlockReader chainDB
+      let ChainSyncServer server = chainSyncServerForReader tracer chainDB rdr
+      server
+
+
+-- | A chain sync server.
+--
+-- This is a version of
+-- 'Ouroboros.Network.Protocol.ChainSync.Examples.chainSyncServerExample' that
+-- uses a 'chainDB' and a 'Reader' instead of
+-- 'Ourboros.Network.ChainProducerState.ChainProducerState'.
+--
+-- All the hard work is done by the 'Reader's provided by the 'ChainDB'.
+--
+chainSyncServerForReader
+    :: forall m blk hdr b.
+       MonadSTM m
+    => HeaderHash blk ~ HeaderHash b -- b is used at either type blk or hdr
+    => Tracer m String
+    -> ChainDB m blk hdr
+    -> Reader  m b
+    -> ChainSyncServer b (Point blk) m ()
+chainSyncServerForReader _tracer chainDB rdr =
+    idle'
   where
-    idle :: Reader m (Header blk)
-         -> ServerStIdle (Header blk) (Point blk) m ()
-    idle rdr =
+    idle :: ServerStIdle b (Point blk) m ()
+    idle =
       ServerStIdle {
-        recvMsgRequestNext   = handleRequestNext rdr,
-        recvMsgFindIntersect = handleFindIntersect rdr,
+        recvMsgRequestNext   = handleRequestNext,
+        recvMsgFindIntersect = handleFindIntersect,
         recvMsgDoneClient    = return ()
       }
 
-    idle' :: Reader m (Header blk)
-          -> ChainSyncServer (Header blk) (Point blk) m ()
-    idle' = ChainSyncServer . return . idle
+    idle' :: ChainSyncServer b (Point blk) m ()
+    idle' = ChainSyncServer (return idle)
 
-    handleRequestNext :: Reader m (Header blk)
-                      -> m (Either (ServerStNext (Header blk) (Point blk) m ())
-                                (m (ServerStNext (Header blk) (Point blk) m ())))
-    handleRequestNext rdr = do
+    handleRequestNext :: m (Either (ServerStNext b (Point blk) m ())
+                                (m (ServerStNext b (Point blk) m ())))
+    handleRequestNext = do
       mupdate <- ChainDB.readerInstruction rdr
-      tip     <- atomically $ ChainDB.getTipPoint chainDB
+      tip     <- atomically $ castPoint <$> ChainDB.getTipPoint chainDB
       return $ case mupdate of
-        Just update -> Left  $ sendNext rdr tip update
-        Nothing     -> Right $ sendNext rdr tip <$> ChainDB.readerInstructionBlocking rdr
+        Just update -> Left  $ sendNext tip update
+        Nothing     -> Right $ sendNext tip <$>
+                                 ChainDB.readerInstructionBlocking rdr
                        -- Reader is at the head, have to block and wait for
                        -- the producer's state to change.
 
-    sendNext :: Reader m (Header blk)
-             -> Point blk
-             -> ChainUpdate (Header blk)
-             -> ServerStNext (Header blk) (Point blk) m ()
-    sendNext rdr tip update = case update of
-      AddBlock hdr -> SendMsgRollForward  hdr            tip (idle' rdr)
-      RollBack pt  -> SendMsgRollBackward (castPoint pt) tip (idle' rdr)
+    sendNext :: Point blk
+             -> ChainUpdate b
+             -> ServerStNext b (Point blk) m ()
+    sendNext tip update = case update of
+      AddBlock hdr -> SendMsgRollForward   hdr           tip idle'
+      RollBack pt  -> SendMsgRollBackward (castPoint pt) tip idle'
 
-    handleFindIntersect :: Reader m (Header blk)
-                        -> [Point blk]
-                        -> m (ServerStIntersect (Header blk) (Point blk) m ())
-    handleFindIntersect rdr points = do
+    handleFindIntersect :: [Point blk]
+                        -> m (ServerStIntersect b (Point blk) m ())
+    handleFindIntersect points = do
       -- TODO guard number of points
       changed <- ChainDB.readerForward rdr (map castPoint points)
-      tip     <- atomically $ ChainDB.getTipPoint chainDB
+      tip     <- atomically $ castPoint <$> ChainDB.getTipPoint chainDB
       return $ case changed of
-        Just pt -> SendMsgIntersectImproved (castPoint pt) tip (idle' rdr)
-        Nothing -> SendMsgIntersectUnchanged               tip (idle' rdr)
+        Just pt -> SendMsgIntersectImproved (castPoint pt) tip idle'
+        Nothing -> SendMsgIntersectUnchanged               tip idle'
