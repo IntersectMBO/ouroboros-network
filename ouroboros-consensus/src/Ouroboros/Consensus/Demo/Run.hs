@@ -47,5 +47,5 @@ instance ( ProtocolLedgerView (SimpleBlock SimpleMockCrypto ext)
          ) => RunDemo (SimpleBlock SimpleMockCrypto ext) where
   demoMockTx _ = SimpleGenTx
 
-instance ByronGiven => RunDemo (ByronBlock ByronConfig) where
+instance ByronGiven => RunDemo (ByronBlockOrEBB ByronConfig) where
   demoMockTx = Byron.elaborateTx

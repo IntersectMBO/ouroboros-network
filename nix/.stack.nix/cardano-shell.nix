@@ -37,6 +37,7 @@
           (hsPkgs.stm)
           (hsPkgs.text)
           (hsPkgs.transformers)
+          (hsPkgs.generic-monoid)
           ];
         };
       exes = {
@@ -102,7 +103,7 @@
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
       url = "https://github.com/input-output-hk/cardano-shell";
-      rev = "92e6b42167d1399971df788b691423222722c2f6";
-      sha256 = "059m0hd1hjf96g9l1qzh7imawvgwc813l0xggwlb5n47cab2dvhd";
+      rev = "c0c55abd52058514a3d272e913e6c91dbc951a86";
+      sha256 = "18d0p0vfasf6imjq6cvfkxn2r4nn2vv54ywbnl5chx2crmrywd7y";
       });
     }

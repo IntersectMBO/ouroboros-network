@@ -30,6 +30,7 @@ import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.PBFT
+import           Ouroboros.Consensus.Protocol.WithEBBs
 
 import           Ouroboros.Consensus.Ledger.Byron.Config
 
@@ -45,10 +46,10 @@ protocolInfoByron :: NumCoreNodes
                   -> CoreNodeId
                   -> PBftParams
                   -> Cardano.Genesis.Config
-                  -> ProtocolInfo (ByronBlock ByronConfig)
+                  -> ProtocolInfo (ByronBlockOrEBB ByronConfig)
 protocolInfoByron (NumCoreNodes numCoreNodes) (CoreNodeId nid) params gc =
     ProtocolInfo {
-        pInfoConfig = EncNodeConfig {
+        pInfoConfig = WithEBBNodeConfig $ EncNodeConfig {
             encNodeConfigP = PBftNodeConfig {
                   pbftParams  = params
                     { pbftNumNodes = fromIntegral numCoreNodes
@@ -76,7 +77,7 @@ protocolInfoByron (NumCoreNodes numCoreNodes) (CoreNodeId nid) params gc =
               }
           }
       , pInfoInitLedger = ExtLedgerState {
-            ledgerState = ByronLedgerState {
+            ledgerState = ByronEBBLedgerState $ ByronLedgerState {
                 blsCurrent   = initState
               , blsSnapshots = Seq.empty
               }

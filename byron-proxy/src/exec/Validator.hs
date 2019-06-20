@@ -21,6 +21,7 @@ import qualified Cardano.Chain.Genesis as Genesis
 import Cardano.Chain.ValidationMode (fromBlockValidationMode)
 import Cardano.Crypto (RequiresNetworkMagic(..), decodeAbstractHash)
 
+import Cardano.Shell.Configuration.Lib (finaliseCardanoConfiguration)
 import Cardano.Shell.Constants.Types (CardanoConfiguration (..), Core (..), Genesis (..))
 import Cardano.Shell.Presets (mainnetConfiguration)
 
@@ -133,7 +134,7 @@ main = do
   Logging.withLogging (loggerConfigPath opts) "validator" $ \trace_ -> do
     let trace = Logging.convertTrace' trace_
         -- Hard-code to mainnet configuration.
-        cc = mainnetConfiguration
+        Right cc = finaliseCardanoConfiguration mainnetConfiguration
         mainnetGenFilepath = case overrideGenesisJson opts of
           Nothing -> geSrc . coGenesis $ ccCore cc
           Just fp -> fp

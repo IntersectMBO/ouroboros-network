@@ -261,7 +261,7 @@ data NetworkApplication m peer
 --
 muxInitiatorNetworkApplication
   :: NetworkApplication m peer bytes bytes bytes bytes bytes a
-  -> MuxApplication InitiatorApp peer NodeToNodeProtocols m bytes a Void
+  -> MuxApplication 'InitiatorApp peer NodeToNodeProtocols m bytes a Void
 muxInitiatorNetworkApplication NetworkApplication {..} =
     MuxInitiatorApplication $ \them ptcl -> case ptcl of
       ChainSyncWithHeadersPtcl -> naChainSyncClient them
@@ -436,4 +436,3 @@ consensusNetworkApps traceChainSync traceBlockFetch kernel
         them
         channel
         (localTxSubmissionServerPeer (pure phLocalTxSubmissionServer))
-

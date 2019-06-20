@@ -79,7 +79,7 @@ data Protocol blk where
   ProtocolRealPBFT
     :: PBftParams
     -> Cardano.Genesis.Config
-    -> Protocol (ByronBlock ByronConfig)
+    -> Protocol (ByronBlockOrEBB ByronConfig)
 
 {-------------------------------------------------------------------------------
   Evidence that we can run all the supported protocols

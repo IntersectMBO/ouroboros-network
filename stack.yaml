@@ -27,7 +27,7 @@ extra-deps:
       - cardano-crypto-class
 
   - git: https://github.com/input-output-hk/cardano-ledger
-    commit: 5241971fe563c90ea82b20af344116d46d672835
+    commit: b4881612b9bccb28a486c84f2d2f150e617e0df4
     subdirs:
       - cardano-ledger
       - cardano-ledger/test
@@ -41,14 +41,16 @@ extra-deps:
       - test
 
   - git: https://github.com/input-output-hk/cardano-shell
-    commit: 92e6b42167d1399971df788b691423222722c2f6
+    commit: c0c55abd52058514a3d272e913e6c91dbc951a86
 
   - git: https://github.com/input-output-hk/cardano-sl-x509
     commit: ec96c64c665b741c17b4e38f611315bae9b0b054
 
   - bimap-0.4.0
+  - binary-0.8.7.0
   - time-units-1.0.0
   - ekg-prometheus-adapter-0.1.0.4
+  - generic-monoid-0.1.0.0
   - prometheus-2.1.1
   - containers-0.5.11.0
   - graphviz-2999.20.0.3@sha256:cde383c356bc41136ed53cd27e0800f46dbd2185600dd0de18d66d5c49739d94
