@@ -8,6 +8,7 @@
 
 module Ouroboros.Network.Protocol.LocalTxSubmission.Codec (
     codecLocalTxSubmission
+  , codecLocalTxSubmissionId
   ) where
 
 import           Control.Monad.Class.MonadST
@@ -82,3 +83,31 @@ codecLocalTxSubmission encodeTx decodeTx encodeReject decodeReject =
         (ServerAgency TokBusy, _, _) ->
           fail "codecLocalTxSubmission.Busy: unexpected key"
 
+codecLocalTxSubmissionId
+  :: forall tx reject m.
+     Monad m
+  => Codec (LocalTxSubmission tx reject)
+            CodecFailure m
+           (AnyMessage (LocalTxSubmission tx reject))
+codecLocalTxSubmissionId =
+    Codec encode decode
+  where
+    encode :: forall (pr :: PeerRole) st st'.
+              PeerHasAgency pr st
+           -> Message (LocalTxSubmission tx reject) st st'
+           -> AnyMessage (LocalTxSubmission tx reject)
+    encode _ = AnyMessage
+
+    decode :: forall (pr :: PeerRole) st.
+              PeerHasAgency pr st
+           -> m (DecodeStep (AnyMessage (LocalTxSubmission tx reject))
+                            CodecFailure m (SomeMessage st))
+    decode stok = return $ DecodePartial $ \bytes -> case (stok, bytes) of
+      (ClientAgency TokIdle, Just (AnyMessage msg@(MsgSubmitTx{}))) -> res msg
+      (ServerAgency TokBusy, Just (AnyMessage msg@(MsgAcceptTx{}))) -> res msg
+      (ServerAgency TokBusy, Just (AnyMessage msg@(MsgRejectTx{}))) -> res msg
+      (ClientAgency TokIdle, Just (AnyMessage msg@(MsgDone{})))     -> res msg
+      (_, Nothing) -> return (DecodeFail CodecFailureOutOfInput)
+      (_, _)       -> return (DecodeFail (CodecFailure failmsg))
+    res msg = return (DecodeDone (SomeMessage msg) Nothing)
+    failmsg = "codecLocalTxSubmissionId: no matching message"
