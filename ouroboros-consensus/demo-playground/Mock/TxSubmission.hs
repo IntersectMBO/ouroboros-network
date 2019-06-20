@@ -29,7 +29,7 @@ import qualified Ouroboros.Consensus.Crypto.Hash as H
 import           Ouroboros.Consensus.Demo.Run
 import qualified Ouroboros.Consensus.Ledger.Mock as Mock
 import           Ouroboros.Consensus.Mempool
-import           Ouroboros.Consensus.Node (NodeKernel (..))
+import           Ouroboros.Consensus.Node (NodeKernel (..), MemPoolSize (..))
 import           Ouroboros.Consensus.NodeId (NodeId (..))
 import           Ouroboros.Consensus.Util.CBOR (Decoder (..), initDecoderIO)
 import           Ouroboros.Consensus.Util.Condense
@@ -104,16 +104,18 @@ submitTx n tx = do
 -- | Auxiliary to 'spawnMempoolListener'
 readIncomingTx :: RunDemo blk
                => Tracer IO String
+               -> Tracer IO MemPoolSize
                -> NodeKernel IO peer blk
                -> Decoder IO
                -> IO ()
-readIncomingTx tracer kernel Decoder{..} = forever $ do
+readIncomingTx tracer mempoolTracer kernel Decoder{..} = forever $ do
     newTx :: Mock.Tx <- decodeNext decode
     let memPool = getMempool kernel
     rejected <- addTxs memPool [demoMockTx (getNodeConfig kernel) newTx]
     txs <- STM.atomically $ getTxs memPool
     traceWith tracer $
       "New incoming tx, txs number in a mempool: " <> show (Seq.length txs)
+    traceWith mempoolTracer $ AfterAddTxs $ Seq.length txs
     traceWith tracer $
       (if null rejected then "Accepted" else "Rejected") <>
       " transaction: " <> show newTx
@@ -121,14 +123,15 @@ readIncomingTx tracer kernel Decoder{..} = forever $ do
 -- | Listen for transactions coming a named pipe and add them to the mempool
 spawnMempoolListener :: RunDemo blk
                      => Tracer IO String
+                     -> Tracer IO MemPoolSize
                      -> NodeId
                      -> NodeKernel IO peer blk
                      -> IO (Async.Async ())
-spawnMempoolListener tracer myNodeId kernel = do
+spawnMempoolListener tracer mempoolTracer myNodeId kernel = do
     Async.async $ do
         -- Apparently I have to pass 'ReadWriteMode' here, otherwise the
         -- node will die prematurely with a (DeserialiseFailure 0 "end of input")
         -- error.
         withTxPipe myNodeId ReadWriteMode True $ \h -> do
             let getChunk = BS.hGetSome h 1024
-            readIncomingTx tracer kernel =<< initDecoderIO getChunk
+            readIncomingTx tracer mempoolTracer kernel =<< initDecoderIO getChunk

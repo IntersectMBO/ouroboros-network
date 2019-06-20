@@ -124,10 +124,12 @@ handleSimpleNode p CLI{..} myNodeAddress (TopologyInfo myNodeId topologyFile) = 
 
       btime  <- realBlockchainTime registry slotDuration systemStart
       let tracer = contramap ((show myNodeId <> " | ") <>) stdoutTracer
+          mempoolTracer = nullTracer
 
           nodeParams :: NodeParams IO NodeAddress blk
           nodeParams = NodeParams
             { tracer             = tracer
+            , mempoolTracer      = mempoolTracer
             , threadRegistry     = registry
             , maxClockSkew       = ClockSkew 1
             , cfg                = pInfoConfig
@@ -169,7 +171,7 @@ handleSimpleNode p CLI{..} myNodeAddress (TopologyInfo myNodeId topologyFile) = 
       watchChain registry tracer chainDB
 
       -- Spawn the thread which listens to the mempool.
-      mempoolThread <- spawnMempoolListener tracer myNodeId kernel
+      mempoolThread <- spawnMempoolListener tracer mempoolTracer myNodeId kernel
 
       myAddr:_ <- case myNodeAddress of
         NodeAddress host port -> getAddrInfo Nothing (Just host) (Just port)

@@ -19,6 +19,7 @@ module Ouroboros.Consensus.Node (
   , TraceConstraints
   , nodeKernel
     -- * Auxiliary functions
+  , MemPoolSize (..)
   , tracePrefix
   ) where
 
@@ -117,6 +118,7 @@ data NodeCallbacks m blk = NodeCallbacks {
 -- | Parameters required when initializing a node
 data NodeParams m peer blk = NodeParams {
       tracer             :: Tracer m String
+    , mempoolTracer      :: Tracer m MemPoolSize
     , threadRegistry     :: ThreadRegistry m
     , maxClockSkew       :: ClockSkew
     , cfg                :: NodeConfig (BlockProtocol blk)
@@ -187,6 +189,7 @@ data InternalState m peer blk = IS {
     , varCandidates       :: TVar m (Map peer (TVar m (CandidateState blk)))
     , varState            :: TVar m (NodeState (BlockProtocol blk))
     , tracer              :: Tracer m String
+    , mempoolTracer       :: Tracer m MemPoolSize
     , mempool             :: Mempool m blk
     }
 
@@ -226,6 +229,9 @@ tracePrefix :: Condense peer
 tracePrefix p mbUp tr =
   let prefix = p <> maybe "" ((" " <>) . condense) mbUp <> " | "
   in contramap (prefix <>) tr
+
+data MemPoolSize = AfterNewBlock Int
+                 | AfterAddTxs   Int
 
 initBlockFetchConsensusInterface
     :: forall m peer blk.
@@ -324,6 +330,7 @@ forkBlockProduction IS{..} =
         txs <- atomically $ getTxs mempool
         traceWith tracer $
           "Current number of transactions in a mempool: " <> show (Seq.length txs)
+        traceWith mempoolTracer $ AfterNewBlock $ Seq.length txs
         traceWith tracer $
           "As leader of slot " <> condense currentSlot <> " I produce: " <>
           condense newBlock
