@@ -155,9 +155,17 @@ protocolHandlers NodeParams {btime, maxClockSkew, tracer}
 
 -- | Protocol codecs needed to run 'ProtocolHandlers'.
 --
-data ProtocolCodecs blk failure m bytesCS bytesBF = ProtocolCodecs {
-    pcChainSyncCodec  :: Codec (ChainSync (Header blk) (Point blk)) failure m bytesCS
-  , pcBlockFetchCodec :: Codec (BlockFetch blk) failure m bytesBF
+data ProtocolCodecs blk failure m
+                    bytesCS bytesBF
+                    bytesLCS bytesTX = ProtocolCodecs {
+    pcChainSyncCodec         :: Codec (ChainSync (Header blk) (Point blk))
+                                      failure m bytesCS
+  , pcBlockFetchCodec        :: Codec (BlockFetch blk)
+                                      failure m bytesBF
+  , pcLocalChainSyncCodec    :: Codec (ChainSync blk (Point blk))
+                                      failure m bytesLCS
+  , pcLocalTxSubmissionCodec :: Codec (LocalTxSubmission (GenTx blk) String)
+                                      failure m bytesTX
   }
 
 -- | Id codecs used in tests.
@@ -166,9 +174,13 @@ protocolCodecsId :: Monad m
                  => ProtocolCodecs blk CodecFailure m
                       (AnyMessage (ChainSync (Header blk) (Point blk)))
                       (AnyMessage (BlockFetch blk))
+                      (AnyMessage (ChainSync blk (Point blk)))
+                      (AnyMessage (LocalTxSubmission (GenTx blk) String))
 protocolCodecsId = ProtocolCodecs {
-      pcChainSyncCodec = codecChainSyncId
-    , pcBlockFetchCodec = codecBlockFetchId
+      pcChainSyncCodec         = codecChainSyncId
+    , pcBlockFetchCodec        = codecBlockFetchId
+    , pcLocalChainSyncCodec    = codecChainSyncId
+    , pcLocalTxSubmissionCodec = codecLocalTxSubmissionId
     }
 
 -- | Consensus provides a chains sync, block fetch applications.  This data
@@ -221,7 +233,7 @@ muxResponderNetworkApplication NetworkApplication {..} =
 -- 'NodeToNodeVersions'.
 --
 consensusNetworkApps
-    :: forall m peer blk failure bytesCS bytesBF.
+    :: forall m peer blk failure bytesCS bytesBF bytesLCS bytesTX.
        ( MonadAsync m
        , MonadFork m
        , MonadCatch m
@@ -231,7 +243,7 @@ consensusNetworkApps
     => Tracer m (TraceSendRecv (ChainSync (Header blk) (Point blk)))
     -> Tracer m (TraceSendRecv (BlockFetch blk))
     -> NodeKernel m peer blk
-    -> ProtocolCodecs blk failure m bytesCS bytesBF
+    -> ProtocolCodecs blk failure m bytesCS bytesBF bytesLCS bytesTX
     -> ProtocolHandlers m peer blk
     -> NetworkApplication m peer bytesCS bytesBF ()
 
