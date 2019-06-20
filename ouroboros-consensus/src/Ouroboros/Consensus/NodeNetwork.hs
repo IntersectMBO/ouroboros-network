@@ -97,10 +97,11 @@ protocolHandlers
        , Condense (ChainHash blk)
        , Condense peer
        )
-    => NodeParams m peer blk
+    => NodeParams m peer blk  --TODO eliminate, merge relevant into NodeKernel
     -> NodeKernel m peer blk
     -> ProtocolHandlers m peer blk
-protocolHandlers NodeParams {..} _kernel =
+protocolHandlers NodeParams {btime, maxClockSkew, tracer}
+                 NodeKernel {getChainDB, getMempool, getNodeConfig} =
     --TODO: bundle needed NodeParams into the NodeKernel
     -- so we do not have to pass it separately
     --TODO: need to review the use of the peer id in the tracers.
@@ -109,19 +110,19 @@ protocolHandlers NodeParams {..} _kernel =
       phChainSyncClient =
         chainSyncClient
           (tracePrefix "CSClient" (Nothing :: Maybe peer) tracer)
-          cfg
+          getNodeConfig
           btime
           maxClockSkew
-          (ChainDB.getCurrentLedger chainDB)
+          (ChainDB.getCurrentLedger getChainDB)
     , phChainSyncServer =
         chainSyncHeadersServer
           (tracePrefix "CSServer" (Nothing :: Maybe peer) tracer)
-          chainDB
+          getChainDB
     , phBlockFetchClient = blockFetchClient
     , phBlockFetchServer =
         blockFetchServer
           (tracePrefix "BFServer" (Nothing :: Maybe peer) tracer)
-          chainDB
+          getChainDB
     }
 
 
