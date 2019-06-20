@@ -43,9 +43,7 @@ extra-deps:
   - git: https://github.com/input-output-hk/cardano-sl-x509
     commit: e8bfc1294e088f90e5ae0b4aedbc82ee46ac5ee4
 
-  - git: https://github.com/joelwilliamson/bimap
-    commit: 997fbb38b08dec14d225d064dac05b0a85f4ceae
-
+  - bimap-0.4.0
   - time-units-1.0.0
   - ekg-prometheus-adapter-0.1.0.4
   - prometheus-2.1.1

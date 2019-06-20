@@ -198,7 +198,7 @@ library
                        cardano-ledger-test,
 
                        base16-bytestring >=0.1   && <0.2,
-                       bimap             >=0.3   && <0.4,
+                       bimap             >=0.3   && <0.5,
                        bytestring        >=0.10  && <0.11,
                        cardano-binary,
                        cardano-crypto-wrapper,

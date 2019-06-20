@@ -2,6 +2,7 @@
   extras = hackage:
     {
       packages = {
+        "bimap" = (((hackage.bimap)."0.4.0").revisions).default;
         "time-units" = (((hackage.time-units)."1.0.0").revisions).default;
         "ekg-prometheus-adapter" = (((hackage.ekg-prometheus-adapter)."0.1.0.4").revisions).default;
         "prometheus" = (((hackage.prometheus)."2.1.1").revisions).default;
@@ -45,7 +46,6 @@
         cardano-prelude-test = ./cardano-prelude-test.nix;
         cardano-shell = ./cardano-shell.nix;
         cardano-sl-x509 = ./cardano-sl-x509.nix;
-        bimap = ./bimap.nix;
         cardano-sl = ./cardano-sl.nix;
         cardano-sl-binary = ./cardano-sl-binary.nix;
         cardano-sl-binary-test = ./cardano-sl-binary-test.nix;
