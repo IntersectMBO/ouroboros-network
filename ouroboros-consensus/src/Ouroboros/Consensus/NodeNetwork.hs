@@ -114,7 +114,7 @@ protocolHandlers NodeParams {..} _kernel =
           maxClockSkew
           (ChainDB.getCurrentLedger chainDB)
     , phChainSyncServer =
-        chainSyncServer
+        chainSyncHeadersServer
           (tracePrefix "CSServer" (Nothing :: Maybe peer) tracer)
           chainDB
     , phBlockFetchClient = blockFetchClient
