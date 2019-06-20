@@ -228,11 +228,11 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
         getLedgerState :: STM m (ExtLedgerState TestBlock)
         getLedgerState  = snd <$> readTVar varClientState
         client = chainSyncClient
-          nullTracer (nodeCfg clientId) btime maxClockSkew
-          (AF.mapAnchoredFragment coerce <$> getCurrentChain)
-          getLedgerState
-          varCandidates
-          serverId
+                   nullTracer
+                   (nodeCfg clientId)
+                   btime
+                   maxClockSkew
+                   getLedgerState
 
     -- Set up the server
     varChainProducerState <- newTVarM $ initChainProducerState Genesis
@@ -281,8 +281,13 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
       -- in the main thread), just catch the exception and store it, because
       -- we want a "regular ending".
       void $ fork registry $
-        (runPeer nullTracer codecChainSyncId clientChannel
-                (chainSyncClientPeer client))
+        (bracketChainSyncClient
+           (AF.mapAnchoredFragment coerce <$> getCurrentChain)
+           getLedgerState
+           varCandidates
+           serverId $ \varCandidate curChain -> do
+             runPeer nullTracer codecChainSyncId clientChannel
+                    (chainSyncClientPeer (client varCandidate curChain)))
         `catch` \(e :: ChainSyncException) -> do
           atomically $ writeTVar varClientException (Just e)
           -- Rethrow, but it will be ignored anyway.
