@@ -64,8 +64,20 @@ openDB cfg initLedger blockHeader = do
             , iteratorId    = itrId
             }
 
-        reader :: CPS.ReaderId -> Reader m hdr
-        reader rdrId = Reader {
+        blkReader :: CPS.ReaderId -> Reader m blk
+        blkReader rdrId = Reader {
+              readerInstruction = atomically $
+                updateSTM (Model.readerInstruction rdrId)
+            , readerInstructionBlocking = atomically $
+                blockUntilJust $ updateSTM (Model.readerInstruction rdrId)
+            , readerForward = \ps -> atomically $
+                updateSTM $ Model.readerForward rdrId ps
+            , readerId =
+                rdrId
+            }
+
+        hdrReader :: CPS.ReaderId -> Reader m hdr
+        hdrReader rdrId = Reader {
               readerInstruction = atomically $
                 updateSTM readerInstruction'
             , readerInstructionBlocking = atomically $
@@ -101,7 +113,8 @@ openDB cfg initLedger blockHeader = do
       , knownInvalidBlocks  = query   $ const Set.empty -- TODO
       , pointOnChain        = query'  . flip Model.pointOnChain
       , streamBlocks        = update .: (first iterator ..: Model.streamBlocks)
-      , newReader           = update  $ (first reader     . Model.newReader)
+      , newHeaderReader     = update  $ (first hdrReader  . Model.newReader)
+      , newBlockReader      = update  $ (first blkReader  . Model.newReader)
       }
   where
     k = protocolSecurityParam cfg

@@ -46,7 +46,7 @@ prop_reader bt p = runSimOrThrow test
     test :: forall s. SimM s Property
     test = do
         db       <- openDB
-        reader   <- ChainDB.newReader db
+        reader   <- ChainDB.newHeaderReader db
         chainVar <- atomically $ newTVar Genesis
 
         -- Fork a thread that applies all instructions from the reader

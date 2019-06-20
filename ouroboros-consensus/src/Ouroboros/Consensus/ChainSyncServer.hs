@@ -35,7 +35,7 @@ chainSyncServer
     -> ChainDB m blk (Header blk)
     -> ChainSyncServer (Header blk) (Point blk) m ()
 chainSyncServer _tracer chainDB = ChainSyncServer $
-    idle <$> ChainDB.newReader chainDB
+    idle <$> ChainDB.newHeaderReader chainDB
   where
     idle :: Reader m (Header blk)
          -> ServerStIdle (Header blk) (Point blk) m ()
