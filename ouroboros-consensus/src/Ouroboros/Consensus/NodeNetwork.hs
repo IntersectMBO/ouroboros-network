@@ -49,12 +49,17 @@ import           Ouroboros.Network.Protocol.ChainSync.Client
 import           Ouroboros.Network.Protocol.ChainSync.Server
 import           Ouroboros.Network.Protocol.ChainSync.Type
 import           Ouroboros.Network.Protocol.ChainSync.Codec (codecChainSyncId)
+import           Ouroboros.Network.Protocol.LocalTxSubmission.Type
+import           Ouroboros.Network.Protocol.LocalTxSubmission.Server
+import           Ouroboros.Network.Protocol.LocalTxSubmission.Codec
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockFetchServer
 import           Ouroboros.Consensus.ChainSyncClient
 import           Ouroboros.Consensus.ChainSyncServer
+import           Ouroboros.Consensus.TxSubmission
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
@@ -63,7 +68,12 @@ import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 import           Ouroboros.Consensus.Node
 
 
--- | Protocol handlers as provided by the consensus.
+-- | The collection of all the mini-protocol handlers provided by the consensus
+-- layer.
+--
+-- These are used to construct the server (responder) and client (initiator)
+-- sides of the node-to-node protocol bundle, and the node-to-client protocol
+-- bundle.
 --
 data ProtocolHandlers m peer blk = ProtocolHandlers {
       phChainSyncClient
@@ -84,6 +94,14 @@ data ProtocolHandlers m peer blk = ProtocolHandlers {
 
     , phBlockFetchServer
         :: BlockFetchServer blk m ()
+
+     -- Handlers for the local node-to-client bundle of mini-protocols
+
+    , phLocalChainSyncServer
+        :: ChainSyncServer blk (Point blk) m ()
+
+    , phLocalTxSubmissionServer
+        :: LocalTxSubmissionServer (GenTx blk) String m ()
     }
 
 protocolHandlers
@@ -96,6 +114,7 @@ protocolHandlers
        , Condense (Header blk)
        , Condense (ChainHash blk)
        , Condense peer
+       , Show (ApplyTxErr blk)  --TODO: consider using condense
        )
     => NodeParams m peer blk  --TODO eliminate, merge relevant into NodeKernel
     -> NodeKernel m peer blk
@@ -123,6 +142,14 @@ protocolHandlers NodeParams {btime, maxClockSkew, tracer}
         blockFetchServer
           (tracePrefix "BFServer" (Nothing :: Maybe peer) tracer)
           getChainDB
+    , phLocalChainSyncServer =
+        chainSyncBlocksServer
+          (tracePrefix "CSLocalServer" (Nothing :: Maybe peer) tracer)
+          getChainDB
+    , phLocalTxSubmissionServer =
+        localTxSubmissionServer
+          (tracePrefix "TxSubmitServer" (Nothing :: Maybe peer) tracer)
+          getMempool
     }
 
 
