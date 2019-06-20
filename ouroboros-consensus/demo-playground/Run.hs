@@ -146,7 +146,7 @@ handleSimpleNode p CLI{..} myNodeAddress (TopologyInfo myNodeId topologyFile) = 
                 NodeToNodeV_1
                 (NodeToNodeVersionData { networkMagic = 0 })
                 (DictVersion nodeToNodeCodecCBORTerm)
-            <$> consensusNetworkApps
+              $ consensusNetworkApps
                   nullTracer
                   nullTracer
                   kernel
@@ -179,9 +179,10 @@ handleSimpleNode p CLI{..} myNodeAddress (TopologyInfo myNodeId topologyFile) = 
       -- layer around 'MuxApplication'.
 
       -- serve downstream nodes
-      _ <- forkLinked registry $ do
-        versions <- runSharedState networkApp
-        (withServer myAddr (\(DictVersion _) -> acceptEq) (muxResponderNetworkApplication <$> versions) wait)
+      _ <- forkLinked registry $
+             withServer myAddr (\(DictVersion _) -> acceptEq)
+                        (muxResponderNetworkApplication <$> networkApp)
+                        wait
 
       -- connect to upstream nodes
       forM_ (producers nodeSetup) $ \na@(NodeAddress host port) ->
@@ -189,9 +190,8 @@ handleSimpleNode p CLI{..} myNodeAddress (TopologyInfo myNodeId topologyFile) = 
 
           let io = do
                 addr:_ <- getAddrInfo Nothing (Just host) (Just port)
-                versions <- runSharedState networkApp
                 connectTo
-                      (muxInitiatorNetworkApplication na <$> versions)
+                      (muxInitiatorNetworkApplication na <$> networkApp)
                       -- Do not bind to a local port, use ephemeral
                       -- one.  We cannot bind to port on which the server is
                       -- already accepting connections.

@@ -96,14 +96,19 @@ createNetworkInterface
     => NodeChans m peer blk -- ^ map of channels between nodes
     -> [peer]               -- ^ list of nodes which we want to serve
     -> peer                 -- ^ our peer
-    -> SharedState m (TMVar m ())
-        (NetworkApplication m peer
-          (AnyMessage (ChainSync (Header blk) (Point blk)))
-          (AnyMessage (BlockFetch blk)) ())
+    -> NetworkApplication m peer
+        (AnyMessage (ChainSync (Header blk) (Point blk)))
+        (AnyMessage (BlockFetch blk)) ()
     -> NetworkInterface m peer
-createNetworkInterface chans nodeIds us na = NetworkInterface
+createNetworkInterface chans nodeIds us
+                       NetworkApplication {
+                         naChainSyncClient,
+                         naChainSyncServer,
+                         naBlockFetchClient,
+                         naBlockFetchServer
+                       } =
+  NetworkInterface
     { niConnectTo = \them -> do
-        NetworkApplication {naChainSyncClient, naBlockFetchClient} <- runSharedState na
         let nodeChan = chans Map.! them Map.! us
 
         -- 'withAsync' guarantees that when 'waitAny' below receives an
@@ -125,7 +130,6 @@ createNetworkInterface chans nodeIds us na = NetworkInterface
 
       , niWithServerNode = \k -> mask $ \unmask -> do
         ts :: [Async m ()] <- fmap concat $ forM (filter (/= us) nodeIds) $ \them -> do
-              NetworkApplication {naChainSyncServer, naBlockFetchServer} <- runSharedState na
               let nodeChan = chans Map.! us Map.! them
 
               aCS <- async $ unmask

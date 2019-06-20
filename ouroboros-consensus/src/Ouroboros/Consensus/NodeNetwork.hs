@@ -20,8 +20,6 @@ module Ouroboros.Consensus.NodeNetwork (
   , consensusNetworkApps
   , muxInitiatorNetworkApplication
   , muxResponderNetworkApplication
-  , SharedState (..)
-  , runSharedState
   ) where
 
 import           Control.Monad (void)
@@ -62,24 +60,6 @@ import           Ouroboros.Consensus.Util.Orphans ()
 import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 
 import           Ouroboros.Consensus.Node
-
-
-data SharedState m s a = SharedState (m s) (s -> a)
-
-instance Functor m => Functor (SharedState m s) where
-    fmap f (SharedState ms g) = SharedState ms (f . g)
-
--- A left biased semigroup instance.
---
--- TODO: needing this instance is another sign that we should either fix
--- consensus client applications or generalise mux.  It is lawful, but it
--- brings the arbitrary choice of being left biased.
---
-instance Semigroup a => Semigroup (SharedState m s a) where
-    SharedState ms f <> SharedState _ g = SharedState ms (f <> g)
-
-runSharedState :: Monad m => SharedState m s a -> m a
-runSharedState (SharedState ms f) = ms >>= pure . f
 
 
 -- | Protocol handlers as provided by the consensus.
@@ -218,40 +198,22 @@ consensusNetworkApps
     -> NodeKernel m peer blk
     -> ProtocolCodecs blk failure m bytesCS bytesBF
     -> ProtocolHandlers m peer blk
-    -- TODO: SharedState is created before version negotiation starts
-    -- (which allocates resources early) and is consumed after mux started,
-    -- this is not ideal.  Currently mux layer does not support custom monadic
-    -- expression before it starts; we either need to fix the client side of
-    -- block fetch & chain sync protocols or generalise mux.  SharedState here
-    -- makes additional problem: to build version dictionary
-    -- from singletons we need to use the left biased semigroup instance of
-    -- 'SharedState'.
-    -> SharedState m (TMVar m ())
-          (NetworkApplication m peer bytesCS bytesBF ())
+    -> NetworkApplication m peer bytesCS bytesBF ()
 
-consensusNetworkApps traceChainSync traceBlockFetch kernel ProtocolCodecs {..} ProtocolHandlers {..} =
-    SharedState newEmptyTMVarM
-      $ \clientRegistered ->
-          NetworkApplication {
-              naChainSyncClient = naChainSyncClient clientRegistered,
-              naChainSyncServer,
-              naBlockFetchClient = naBlockFetchClient clientRegistered,
-              naBlockFetchServer
-            }
+consensusNetworkApps traceChainSync traceBlockFetch kernel
+                     ProtocolCodecs {..} ProtocolHandlers {..} =
+    NetworkApplication {
+      naChainSyncClient = naChainSyncClient,
+      naChainSyncServer,
+      naBlockFetchClient = naBlockFetchClient,
+      naBlockFetchServer
+    }
   where
     naChainSyncClient
-      :: TMVar m ()
-      -> peer
+      :: peer
       -> Channel m bytesCS
       -> m ()
-    naChainSyncClient clientRegistered them channel = do
-      -- The block fetch logic thread in the background wants there to be a
-      -- block fetch client thread for each chain sync candidate it sees. So
-      -- start the chain sync client after the block fetch thread was
-      -- registered to make sure it never sees a chain sync candidate without
-      -- a corresponding block fetch client thread.
-      atomically $ takeTMVar clientRegistered
-
+    naChainSyncClient them channel =
       void $ runPeer
         traceChainSync
         pcChainSyncCodec
@@ -271,14 +233,11 @@ consensusNetworkApps traceChainSync traceBlockFetch kernel ProtocolCodecs {..} P
         $ phChainSyncServer
 
     naBlockFetchClient
-      :: TMVar m ()
-      -> peer
+      :: peer
       -> Channel m bytesBF
       -> m ()
-    naBlockFetchClient clientRegistered them channel =
-      bracketFetchClient (getFetchClientRegistry kernel) them $ \clientCtx -> do
-        atomically $ putTMVar clientRegistered ()
-
+    naBlockFetchClient them channel =
+      bracketFetchClient (getFetchClientRegistry kernel) them $ \clientCtx ->
         runPipelinedPeer
           traceBlockFetch
           pcBlockFetchCodec
