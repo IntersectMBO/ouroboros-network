@@ -30,7 +30,7 @@ import qualified Ouroboros.Consensus.Ledger.Mock as Mock
 import           Ouroboros.Consensus.NodeId (NodeId (..))
 import           Ouroboros.Consensus.Util
 
-import           Mock.TxSubmission (command', parseMockTx)
+import           TxSubmission (command', parseMockTx)
 import           Topology (TopologyInfo (..), NodeAddress (..))
 
 import qualified Test.Cardano.Chain.Genesis.Dummy as Dummy

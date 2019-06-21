@@ -5,7 +5,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 
-module Mock.TxSubmission (
+module TxSubmission (
       command'
     , parseMockTx
     , handleTxSubmission

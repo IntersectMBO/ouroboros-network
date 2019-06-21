@@ -64,7 +64,7 @@ import qualified Ouroboros.Storage.ChainDB as ChainDB
 import qualified Ouroboros.Storage.ChainDB.Mock as ChainDB
 
 import           CLI
-import           Mock.TxSubmission
+import           TxSubmission
 import           Topology
 
 runNode :: CLI -> IO ()
