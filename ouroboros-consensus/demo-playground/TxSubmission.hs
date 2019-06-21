@@ -9,11 +9,17 @@ module TxSubmission (
       command'
     , parseMockTx
     , handleTxSubmission
+
+    , localSocketFilePath
+    , localSocketAddrInfo
     ) where
 
 import qualified Data.Set as Set
 import           Options.Applicative
 
+import           Network.Socket as Socket
+
+import           Ouroboros.Consensus.NodeId
 import qualified Ouroboros.Consensus.Ledger.Mock as Mock
 
 import           Topology
@@ -69,3 +75,17 @@ command' c descr p =
 
 handleTxSubmission :: TopologyInfo -> Mock.Tx -> IO ()
 handleTxSubmission _ _ = fail "TODO: redo handleTxSubmission"
+
+localSocketFilePath :: NodeId -> FilePath
+localSocketFilePath (CoreId  n) = "node-core-" ++ show n ++ ".socket"
+localSocketFilePath (RelayId n) = "node-relay-" ++ show n ++ ".socket"
+
+localSocketAddrInfo :: FilePath -> Socket.AddrInfo
+localSocketAddrInfo socketPath =
+    Socket.AddrInfo
+      []
+      Socket.AF_UNIX
+      Socket.Stream
+      Socket.defaultProtocol
+      (Socket.SockAddrUnix socketPath)
+      Nothing

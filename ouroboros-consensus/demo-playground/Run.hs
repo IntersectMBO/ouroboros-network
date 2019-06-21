@@ -221,7 +221,9 @@ handleSimpleNode p CLI{..} myNodeAddress (TopologyInfo myNodeId topologyFile) = 
       myAddr:_ <- case myNodeAddress of
         NodeAddress host port -> getAddrInfo Nothing (Just host) (Just port)
 
-      myLocalAddr <- mkLocalSocketAddrInfo myNodeId
+      let myLocalSockPath = localSocketFilePath myNodeId
+          myLocalAddr     = localSocketAddrInfo myLocalSockPath
+      removeStaleLocalSocket myLocalSockPath
 
       -- TODO: cheap subscription managment, a proper one is on the way.  The
       -- point is that it only requires 'NetworkApplications' which is a thin
@@ -295,21 +297,11 @@ handleSimpleNode p CLI{..} myNodeAddress (TopologyInfo myNodeId topologyFile) = 
           Block.decodePoint $ Block.decodeChainHash demoDecodeHeaderHash
 
 
-mkLocalSocketAddrInfo :: NodeId -> IO Socket.AddrInfo
-mkLocalSocketAddrInfo nodeId = do
+removeStaleLocalSocket :: FilePath -> IO ()
+removeStaleLocalSocket socketPath =
     removeFile socketPath
-      `catch` \e -> if isDoesNotExistError e then return () else throwIO e
-    return addrInfo
-  where
-    socketPath = "node-"
-              ++ show (case nodeId of
-                         CoreId  n -> n
-                         RelayId n -> n)
-              ++ ".socket"
-    addrInfo   = Socket.AddrInfo
-                  []
-                  Socket.AF_UNIX
-                  Socket.Stream
-                  Socket.defaultProtocol
-                  (Socket.SockAddrUnix socketPath)
-                  Nothing
+      `catch` \e ->
+        if isDoesNotExistError e
+          then return ()
+          else throwIO e
+
