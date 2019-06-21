@@ -123,10 +123,12 @@ instance ( SimpleCrypto c
 instance PBftCrypto c' => Serialise (SimplePBftExt c c') where
   encode (SimplePBftExt PBftFields{..}) = mconcat [
         encodeVerKeyDSIGN pbftIssuer
+      , encodeVerKeyDSIGN pbftGenKey
       , encodeSignedDSIGN pbftSignature
       ]
   decode = do
       pbftIssuer    <- decodeVerKeyDSIGN
+      pbftGenKey    <- decodeVerKeyDSIGN
       pbftSignature <- decodeSignedDSIGN
       return $ SimplePBftExt PBftFields{..}
 
