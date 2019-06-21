@@ -57,6 +57,7 @@
           depends = [
             (hsPkgs.base)
             (hsPkgs.contra-tracer)
+            (hsPkgs.typed-protocols)
             (hsPkgs.ouroboros-network)
             (hsPkgs.ouroboros-consensus)
             (hsPkgs.io-sim-classes)
