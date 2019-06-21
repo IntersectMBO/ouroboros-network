@@ -25,7 +25,7 @@ import           Options.Applicative
 import qualified Codec.Serialise as Serialise (encode, decode)
 import           Network.Socket as Socket
 
-import           Control.Monad (forever)
+import           Control.Monad (forever, unless)
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
@@ -110,25 +110,29 @@ handleTxSubmission :: forall blk.
                    -> TopologyInfo
                    -> Mock.Tx
                    -> IO ()
-handleTxSubmission p tinfo mocktx = do
+handleTxSubmission ptcl tinfo mocktx = do
     topoE <- readTopologyFile (topologyFile tinfo)
-    case topoE of
-         Left e  -> error e
-         Right t@(NetworkTopology nodeSetups) -> do
+    t@(NetworkTopology nodeSetups) <-
+      case topoE of
+        Left e  -> fail e
+        Right t -> return t
 
-             case M.lookup (node tinfo) (toNetworkMap t) of
-                  Nothing -> fail "Target node not found."
-                  Just _  -> return ()
+    unless (node tinfo `M.member` toNetworkMap t) $
+      fail "Target node not found."
 
-             let CoreId nid = node tinfo
-                 ProtocolInfo{pInfoConfig} =
-                   protocolInfo (NumCoreNodes (length nodeSetups))
-                                (CoreNodeId nid) p
+    nid <- case node tinfo of
+      CoreId nid -> return nid
+      RelayId{}  -> fail "Only core nodes are supported targets"
 
-             let tx :: GenTx blk
-                 tx = demoMockTx pInfoConfig mocktx
+    let ProtocolInfo{pInfoConfig} =
+          protocolInfo (NumCoreNodes (length nodeSetups))
+                       (CoreNodeId nid)
+                       ptcl
 
-             submitTx pInfoConfig (node tinfo) tx
+        tx :: GenTx blk
+        tx = demoMockTx pInfoConfig mocktx
+
+    submitTx pInfoConfig (node tinfo) tx
 
 
 submitTx :: RunDemo blk
