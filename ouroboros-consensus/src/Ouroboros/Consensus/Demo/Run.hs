@@ -64,6 +64,7 @@ class ( ProtocolLedgerView blk
       , Condense blk
       , Condense [blk]
       , ApplyTx blk
+      , Show (ApplyTxErr blk)
       ) => RunDemo blk where
   demoForgeBlock         :: (HasNodeState (BlockProtocol blk) m, MonadRandom m)
                          => NodeConfig (BlockProtocol blk)
@@ -79,10 +80,12 @@ class ( ProtocolLedgerView blk
   -- Encoders
   demoEncodeBlock  :: NodeConfig (BlockProtocol blk) -> blk -> Encoding
   demoEncodeHeader :: NodeConfig (BlockProtocol blk) -> Header blk -> Encoding
+  demoEncodeGenTx  ::                                   GenTx  blk -> Encoding
 
   -- Decoders
   demoDecodeHeader :: forall s. NodeConfig (BlockProtocol blk) -> Decoder s (Header blk)
   demoDecodeBlock  :: forall s. NodeConfig (BlockProtocol blk) -> Decoder s blk
+  demoDecodeGenTx  :: forall s.                                   Decoder s (GenTx blk)
 
   -- | Construct transaction from mock transaction
   --
