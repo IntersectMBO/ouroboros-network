@@ -252,6 +252,9 @@ instance HasUtxo (GenTx (SimpleBlock p c)) where
   confirmed  = confirmed  . simpleGenTx
   updateUtxo = updateUtxo . simpleGenTx
 
+instance Condense (GenTx (SimpleBlock p c)) where
+    condense (SimpleGenTx tx) = condense tx
+
 {-------------------------------------------------------------------------------
   Crypto needed for simple blocks
 -------------------------------------------------------------------------------}

@@ -506,6 +506,12 @@ instance Condense (ChainHash (ByronBlock cfg)) where
   condense GenesisHash   = "genesis"
   condense (BlockHash h) = show h
 
+instance Condense (GenTx (ByronBlock cfg)) where
+    condense (ByronTx tx) =
+      "(tx: "       <> show (CC.UTxO.aTaTx tx) <>
+      ", witness: " <> show (CC.UTxO.aTaWitness tx) <>
+      ")"
+
 {-------------------------------------------------------------------------------
   Serialisation
 -------------------------------------------------------------------------------}
