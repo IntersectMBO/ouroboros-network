@@ -72,8 +72,9 @@ runNode cli@CLI{..} = do
     -- If the user asked to submit a transaction, we don't have to spin up a
     -- full node, we simply transmit it and exit.
     case command of
-      TxSubmitter topology tx ->
-        handleTxSubmission topology tx
+      TxSubmitter topology tx protocol -> do
+        SomeProtocol p <- fromProtocol protocol
+        handleTxSubmission p topology tx
       SimpleNode topology myNodeAddress protocol -> do
         SomeProtocol p <- fromProtocol protocol
         handleSimpleNode p cli myNodeAddress topology

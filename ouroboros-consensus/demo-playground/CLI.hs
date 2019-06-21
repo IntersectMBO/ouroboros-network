@@ -83,7 +83,7 @@ data CLI = CLI {
 
 data Command =
     SimpleNode  TopologyInfo NodeAddress Protocol
-  | TxSubmitter TopologyInfo Mock.Tx
+  | TxSubmitter TopologyInfo Mock.Tx     Protocol
 
 parseCLI :: Parser CLI
 parseCLI = CLI
@@ -132,7 +132,7 @@ parseCommand = subparser $ mconcat [
     command' "node" "Run a node." $
       SimpleNode <$> parseTopologyInfo <*> parseNodeAddress <*> parseProtocol
   , command' "submit" "Submit a transaction." $
-      TxSubmitter <$> parseTopologyInfo <*> parseMockTx
+      TxSubmitter <$> parseTopologyInfo <*> parseMockTx <*> parseProtocol
   ]
 
 parseNodeId :: Parser NodeId

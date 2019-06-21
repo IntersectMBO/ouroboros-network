@@ -1,7 +1,9 @@
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 
@@ -14,13 +16,42 @@ module TxSubmission (
     , localSocketAddrInfo
     ) where
 
+import           Data.Void (Void)
+import           Data.ByteString.Lazy (ByteString)
+import qualified Data.Map.Strict as M
 import qualified Data.Set as Set
 import           Options.Applicative
 
+import qualified Codec.Serialise as Serialise (encode, decode)
 import           Network.Socket as Socket
 
-import           Ouroboros.Consensus.NodeId
+import           Control.Monad (forever)
+import           Control.Monad.Class.MonadST
+import           Control.Monad.Class.MonadThrow
+import           Control.Monad.Class.MonadTimer
+import           Control.Tracer
+
+import           Ouroboros.Consensus.Demo
+import           Ouroboros.Consensus.Demo.Run
 import qualified Ouroboros.Consensus.Ledger.Mock as Mock
+import           Ouroboros.Consensus.Mempool
+import           Ouroboros.Consensus.NodeId
+import           Ouroboros.Consensus.Protocol.Abstract (NodeConfig)
+import           Ouroboros.Consensus.Block (BlockProtocol)
+
+import           Network.TypedProtocol.Driver
+import           Ouroboros.Network.Block (Point)
+import qualified Ouroboros.Network.Block as Block
+import           Ouroboros.Network.Codec
+import           Ouroboros.Network.Mux.Interface
+import           Ouroboros.Network.Protocol.LocalTxSubmission.Type
+import           Ouroboros.Network.Protocol.LocalTxSubmission.Client
+import           Ouroboros.Network.Protocol.LocalTxSubmission.Codec
+import           Ouroboros.Network.Protocol.ChainSync.Type (ChainSync)
+import           Ouroboros.Network.Protocol.ChainSync.Client
+                   (ChainSyncClient(..), chainSyncClientPeer)
+import           Ouroboros.Network.Protocol.ChainSync.Codec
+import           Ouroboros.Network.NodeToClient
 
 import           Topology
 
@@ -73,8 +104,126 @@ command' c descr p =
   Main logic
 -------------------------------------------------------------------------------}
 
-handleTxSubmission :: TopologyInfo -> Mock.Tx -> IO ()
-handleTxSubmission _ _ = fail "TODO: redo handleTxSubmission"
+handleTxSubmission :: forall blk.
+                      RunDemo blk
+                   => DemoProtocol blk
+                   -> TopologyInfo
+                   -> Mock.Tx
+                   -> IO ()
+handleTxSubmission p tinfo mocktx = do
+    topoE <- readTopologyFile (topologyFile tinfo)
+    case topoE of
+         Left e  -> error e
+         Right t@(NetworkTopology nodeSetups) -> do
+
+             case M.lookup (node tinfo) (toNetworkMap t) of
+                  Nothing -> fail "Target node not found."
+                  Just _  -> return ()
+
+             let CoreId nid = node tinfo
+                 ProtocolInfo{pInfoConfig} =
+                   protocolInfo (NumCoreNodes (length nodeSetups))
+                                (CoreNodeId nid) p
+
+             let tx :: GenTx blk
+                 tx = demoMockTx pInfoConfig mocktx
+
+             submitTx pInfoConfig (node tinfo) tx
+
+
+submitTx :: RunDemo blk
+         => NodeConfig (BlockProtocol blk)
+         -> NodeId
+         -> GenTx blk
+         -> IO ()
+submitTx pInfoConfig nodeId tx =
+    connectTo
+      (muxLocalInitiatorNetworkApplication tracer pInfoConfig tx)
+      Nothing
+      addr
+  where
+    addr   = localSocketAddrInfo (localSocketFilePath nodeId)
+    tracer = stdoutTracer
+
+muxLocalInitiatorNetworkApplication
+  :: forall blk m.
+     (RunDemo blk, MonadST m, MonadThrow m, MonadTimer m)
+  => Tracer m String
+  -> NodeConfig (BlockProtocol blk)
+  -> GenTx blk
+  -> Versions NodeToClientVersion DictVersion
+              (MuxApplication InitiatorApp NodeToClientProtocols
+                              m ByteString () Void)
+muxLocalInitiatorNetworkApplication tracer pInfoConfig tx =
+    simpleSingletonVersions
+      NodeToClientV_1
+      (NodeToClientVersionData { networkMagic = 0 })
+      (DictVersion nodeToClientCodecCBORTerm)
+
+  $ MuxInitiatorApplication $ \ptcl -> case ptcl of
+      LocalTxSubmissionPtcl -> \channel -> do
+        traceWith tracer ("Submitting transaction: " {-++ show tx-})
+        result <- runPeer
+                    nullTracer -- (contramap show tracer)
+                    localTxSubmissionCodec
+                    channel
+                    (localTxSubmissionClientPeer
+                       (pure (txSubmissionClientSingle tx)))
+        case result of
+          Nothing  -> traceWith tracer "Transaction accepted"
+          Just msg -> traceWith tracer ("Transaction rejected: " ++ msg)
+
+      ChainSyncWithBlocksPtcl -> \channel ->
+        runPeer
+          nullTracer
+          (localChainSyncCodec @blk pInfoConfig)
+          channel
+          (chainSyncClientPeer chainSyncClientNull)
+
+
+-- | A 'LocalTxSubmissionClient' that submits exactly one transaction, and then
+-- disconnects, returning the confirmation or rejection.
+--
+txSubmissionClientSingle
+  :: forall tx reject m.
+     Applicative m
+  => tx
+  -> LocalTxSubmissionClient tx reject m (Maybe reject)
+txSubmissionClientSingle tx =
+    SendMsgSubmitTx tx $ \mreject ->
+      pure (SendMsgDone mreject)
+
+chainSyncClientNull
+  :: MonadTimer m
+  => ChainSyncClient blk (Point blk) m a
+chainSyncClientNull =
+    ChainSyncClient blockForever
+  where
+    blockForever = forever (threadDelay 3600)
+
+localTxSubmissionCodec
+  :: (RunDemo blk, MonadST m)
+  => Codec (LocalTxSubmission (GenTx blk) String)
+           DeserialiseFailure m ByteString
+localTxSubmissionCodec =
+  codecLocalTxSubmission
+    demoEncodeGenTx
+    demoDecodeGenTx
+    Serialise.encode
+    Serialise.decode
+
+localChainSyncCodec 
+  :: (RunDemo blk, MonadST m)
+  => NodeConfig (BlockProtocol blk)
+  -> Codec (ChainSync blk (Point blk))
+           DeserialiseFailure m ByteString
+localChainSyncCodec pInfoConfig =
+    codecChainSync
+      (demoEncodeBlock pInfoConfig)
+      (demoDecodeBlock pInfoConfig)
+      (Block.encodePoint (Block.encodeChainHash demoEncodeHeaderHash))
+      (Block.decodePoint (Block.decodeChainHash demoDecodeHeaderHash))
+
 
 localSocketFilePath :: NodeId -> FilePath
 localSocketFilePath (CoreId  n) = "node-core-" ++ show n ++ ".socket"

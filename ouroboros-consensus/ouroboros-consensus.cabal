@@ -249,6 +249,7 @@ executable demo-playground
                        Topology
   build-depends:       base,
                        contra-tracer,
+                       typed-protocols,
                        ouroboros-network,
                        ouroboros-consensus,
                        io-sim-classes,
