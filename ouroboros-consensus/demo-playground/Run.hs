@@ -96,7 +96,7 @@ handleSimpleNode p CLI{..} myNodeAddress (TopologyInfo myNodeId topologyFile) = 
     putStrLn $ "My producers are " <> show (producers nodeSetup)
     putStrLn $ "**************************************"
 
-    let pInfo@ProtocolInfo{..} =
+    let ProtocolInfo{pInfoConfig, pInfoInitLedger, pInfoInitState} =
           protocolInfo (NumCoreNodes (length nodeSetups)) (CoreNodeId nid) p
 
     withThreadRegistry $ \registry -> do
@@ -158,11 +158,11 @@ handleSimpleNode p CLI{..} myNodeAddress (TopologyInfo myNodeId topologyFile) = 
               kernel
               ProtocolCodecs
                 { pcChainSyncCodec =
-                    (codecChainSync
+                    codecChainSync
                       (demoEncodeHeader pInfoConfig)
                       (demoDecodeHeader pInfoConfig)
-                      (encodePoint'     pInfo)
-                      (decodePoint'     pInfo))
+                       encodePoint'
+                       decodePoint'
 
                 , pcBlockFetchCodec =
                     codecBlockFetch
@@ -172,18 +172,18 @@ handleSimpleNode p CLI{..} myNodeAddress (TopologyInfo myNodeId topologyFile) = 
                       demoDecodeHeaderHash
 
                 , pcLocalChainSyncCodec =
-                    (codecChainSync
+                    codecChainSync
                       (demoEncodeBlock pInfoConfig)
                       (demoDecodeBlock pInfoConfig)
-                      (encodePoint'    pInfo)
-                      (decodePoint'    pInfo))
+                       encodePoint'
+                       decodePoint'
 
                 , pcLocalTxSubmissionCodec =
-                    (codecLocalTxSubmission
+                    codecLocalTxSubmission
                       demoEncodeGenTx
                       demoDecodeGenTx
                       Serialise.encode
-                      Serialise.decode)
+                      Serialise.decode
 
                 }
               (protocolHandlers nodeParams kernel)
@@ -289,12 +289,12 @@ handleSimpleNode p CLI{..} myNodeAddress (TopologyInfo myNodeId topologyFile) = 
             traceWith tracer $
               "Updated chain: " <> condense (Chain.toOldestFirst chain)
 
-      encodePoint' :: ProtocolInfo blk -> Point blk -> Encoding
-      encodePoint' ProtocolInfo{..} =
+      encodePoint' ::  Point blk -> Encoding
+      encodePoint' =
           Block.encodePoint $ Block.encodeChainHash demoEncodeHeaderHash
 
-      decodePoint' :: forall s. ProtocolInfo blk -> Decoder s (Point blk)
-      decodePoint' ProtocolInfo{..} =
+      decodePoint' :: forall s. Decoder s (Point blk)
+      decodePoint' =
           Block.decodePoint $ Block.decodeChainHash demoDecodeHeaderHash
 
 
