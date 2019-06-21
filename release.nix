@@ -76,7 +76,6 @@ commonLib.pkgs.lib.mapAttrsRecursiveCond
     jobs.nix-tools.tests.io-sim.tests.x86_64-linux
 
     jobs.nix-tools.exes.ouroboros-network.x86_64-linux
-    jobs.nix-tools.exes.ouroboros-consensus.x86_64-linux
     jobs.nix-tools.exes.byron-proxy.x86_64-linux
     jobs.network-pdf
     (builtins.concatLists (map builtins.attrValues (builtins.attrValues jobs.tests)))

@@ -195,7 +195,7 @@ library
                        contra-tracer,
 
                        -- TODO: Ideally we'd refactor this so that this
-                       -- only needs to live in the demo-playground
+                       -- only needs to live in cardano-node
                        cardano-ledger-test,
 
                        base16-bytestring >=0.1   && <0.2,
@@ -234,49 +234,6 @@ library
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
                        -fno-ignore-asserts
-
-executable demo-playground
-  hs-source-dirs:      demo-playground
-  main-is:             Main.hs
-  default-language:    Haskell2010
-  ghc-options:         -threaded
-                       -Wall
-                       -Wno-unticked-promoted-constructors
-                       -fno-ignore-asserts
-  other-modules:       CLI
-                       TxSubmission
-                       Run
-                       Topology
-  build-depends:       base,
-                       contra-tracer,
-                       typed-protocols,
-                       ouroboros-network,
-                       ouroboros-consensus,
-                       io-sim-classes,
-                       cardano-crypto-wrapper,
-                       cardano-ledger,
-                       cardano-ledger-test,
-                       cardano-prelude,
-
-                       aeson,
-                       async,
-                       bytestring,
-                       cborg,
-                       containers,
-                       cryptonite,
-                       directory,
-                       formatting,
-                       mtl,
-                       network,
-                       optparse-applicative,
-                       serialise,
-                       stm,
-                       string-conv,
-                       text
-  if os(windows)
-     build-depends:    Win32
-  else
-     build-depends:    unix
 
 test-suite test-consensus
   type:             exitcode-stdio-1.0
