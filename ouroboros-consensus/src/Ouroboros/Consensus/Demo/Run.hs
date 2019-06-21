@@ -65,6 +65,7 @@ class ( ProtocolLedgerView blk
       , Condense [blk]
       , ApplyTx blk
       , Show (ApplyTxErr blk)
+      , Condense (GenTx blk)
       ) => RunDemo blk where
   demoForgeBlock         :: (HasNodeState (BlockProtocol blk) m, MonadRandom m)
                          => NodeConfig (BlockProtocol blk)
