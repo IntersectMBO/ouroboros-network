@@ -296,6 +296,9 @@ instance (ByronGiven, Typeable cfg)
                       . CC.Block.delegationCertificate
                       . CC.Block.headerSignature
                       $ hdr
+      , pbftGenKey    = VerKeyCardanoDSIGN
+                      . CC.Block.headerIssuer
+                      $ hdr
       , pbftSignature = SignedDSIGN
                       . SigCardanoDSIGN
                       . CC.Block.signature

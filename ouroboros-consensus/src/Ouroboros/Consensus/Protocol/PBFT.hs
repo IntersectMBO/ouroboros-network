@@ -60,6 +60,7 @@ import           Ouroboros.Consensus.Util.Condense
 
 data PBftFields c toSign = PBftFields {
       pbftIssuer    :: VerKeyDSIGN (PBftDSIGN c)
+    , pbftGenKey    :: VerKeyDSIGN (PBftDSIGN c)
     , pbftSignature :: SignedDSIGN (PBftDSIGN c) toSign
     }
   deriving (Generic)
@@ -85,6 +86,7 @@ forgePBftFields PBftNodeConfig{..} encodeToSign toSign = do
     signature <- signedDSIGN encodeToSign toSign pbftSignKey
     return $ PBftFields {
         pbftIssuer    = pbftVerKey
+      , pbftGenKey    = pbftGenVerKey
       , pbftSignature = signature
       }
 
@@ -177,7 +179,7 @@ instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
       let proxy = Identity b
       case verifyPBftSigned
              (Proxy :: Proxy (c, hdr))
-             pbftGenVerKey
+             pbftGenKey
              (encodeSigned proxy)
              pbftIssuer
              (headerSigned b)
