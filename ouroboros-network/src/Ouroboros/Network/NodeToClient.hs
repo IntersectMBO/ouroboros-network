@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds      #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE RankNTypes     #-}
 {-# LANGUAGE TypeFamilies   #-}
 
 -- | This is the starting point for a module that will bring together the
@@ -12,8 +13,16 @@ module Ouroboros.Network.NodeToClient (
   , NodeToClientVersionData (..)
   , DictVersion (..)
   , nodeToClientCodecCBORTerm
+
+  , connectTo
+  , withServer
+
+  -- * Re-exports
+  , AnyMuxResponderApp (..)
   ) where
 
+import           Control.Concurrent.Async (Async)
+import qualified Data.ByteString.Lazy as BL
 import           Data.Text (Text)
 import qualified Data.Text as T
 import           Data.Typeable (Typeable)
@@ -24,11 +33,13 @@ import qualified Codec.CBOR.Term as CBOR
 import           Codec.Serialise (Serialise (..))
 import           Codec.SerialiseTerm
 
-import           Ouroboros.Network.Mux.Types ( MiniProtocolLimits (..)
-                                             , ProtocolEnum(..)
-                                             )
+import qualified Network.Socket as Socket
 
-import           Ouroboros.Network.NodeToNode (DictVersion (..))
+import           Ouroboros.Network.Protocol.Handshake.Type
+import           Ouroboros.Network.Protocol.Handshake.Version
+import           Ouroboros.Network.Mux.Types (ProtocolEnum(..), MiniProtocolLimits (..))
+import           Ouroboros.Network.Mux.Interface
+import           Ouroboros.Network.Socket
 
 
 -- | An index type used with the mux to enumerate all the mini-protocols that
@@ -71,7 +82,7 @@ instance Serialise NodeToClientVersion where
       tag <- CBOR.decodeWord
       case tag of
         1 -> return NodeToClientV_1
-        _ -> fail "decode NodeToNodeVersion: unknown tag"
+        _ -> fail "decode NodeToClientVersion: unknown tag"
 
 -- | Version data for NodeToClient protocol v1
 --
@@ -90,3 +101,32 @@ nodeToClientCodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
       decodeTerm (CBOR.TInt x) | x >= 0 && x <= 0xffff = Right (NodeToClientVersionData $ fromIntegral x)
                                | otherwise             = Left $ T.pack $ "networkMagic out of bound: " <> show x
       decodeTerm t             = Left $ T.pack $ "unknown encoding: " ++ show t
+
+-- | A specialised version of @'Ouroboros.Network.Socket.connectToNode'@.
+--
+connectTo
+  :: Versions NodeToClientVersion
+              DictVersion
+              (MuxApplication InitiatorApp NodeToClientProtocols IO BL.ByteString a b)
+  -> Maybe Socket.AddrInfo
+  -> Socket.AddrInfo
+  -> IO ()
+connectTo =
+  connectToNode
+    (\(DictVersion codec) -> encodeTerm codec)
+    (\(DictVersion codec) -> decodeTerm codec)
+
+-- | A specialised version of @'Ouroboros.Network.Socket.withServerNode'@
+--
+withServer
+  :: Socket.AddrInfo
+  -> (forall vData. DictVersion vData -> vData -> vData -> Accept)
+  -> Versions NodeToClientVersion DictVersion
+              (AnyMuxResponderApp NodeToClientProtocols IO BL.ByteString)
+  -> (Async () -> IO t)
+  -> IO t
+withServer addr =
+  withServerNode
+    addr
+    (\(DictVersion codec) -> encodeTerm codec)
+    (\(DictVersion codec) -> decodeTerm codec)
