@@ -220,6 +220,11 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
     varCandidates      <- newTVarM Map.empty
     varClientState     <- newTVarM (Genesis, testInitExtLedger)
     varClientException <- newTVarM Nothing
+    -- Candidates are removed from the candidates map when disconnecting, so
+    -- we lose access to them. Therefore, store the candidate 'TVar's in a
+    -- separate map too, one that isn't emptied. We can use this map to look
+    -- at the final state of each candidate.
+    varFinalCandidates <- newTVarM Map.empty
 
     let getCurrentChain :: STM m (AnchoredFragment TestBlock)
         getCurrentChain =
@@ -281,13 +286,15 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
       -- in the main thread), just catch the exception and store it, because
       -- we want a "regular ending".
       void $ fork registry $
-        (bracketChainSyncClient
+        bracketChainSyncClient
            (AF.mapAnchoredFragment coerce <$> getCurrentChain)
            getLedgerState
            varCandidates
            serverId $ \varCandidate curChain -> do
+             atomically $ modifyTVar' varFinalCandidates $
+               Map.insert serverId varCandidate
              runPeer nullTracer codecChainSyncId clientChannel
-                    (chainSyncClientPeer (client varCandidate curChain)))
+                    (chainSyncClientPeer (client varCandidate curChain))
         `catch` \(e :: ChainSyncException) -> do
           atomically $ writeTVar varClientException (Just e)
           -- Rethrow, but it will be ignored anyway.
@@ -304,7 +311,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
       -- to finish
       threadDelay 2000
       atomically $ do
-        candidate <- readTVar varCandidates >>= readTVar . (Map.! serverId)
+        candidate <- readTVar varFinalCandidates >>= readTVar . (Map.! serverId)
         writeTVar varCandidateChain $ Just (candidateChain candidate)
 
     -- Collect the return values

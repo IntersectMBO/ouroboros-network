@@ -129,14 +129,8 @@ bracketChainSyncClient getCurrentChain getCurrentLedger
       modifyTVar' varCandidates $ Map.insert peer varCandidate
       return (varCandidate, curChain)
 
-{-
     unregister _ = atomically $
       modifyTVar' varCandidates $ Map.delete peer
--}
-    --FIXME: currently the chain sync client test relies on the variable still
-    -- being in the map after the sync client finishes. This is clearly wrong
-    -- but we need to fix that test before we can do this cleanup properly.
-    unregister _ = return ()
 
 -- | Chain sync client
 --
