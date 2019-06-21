@@ -242,7 +242,6 @@ executable demo-playground
   ghc-options:         -threaded -Wall -O2 "-with-rtsopts=-N"
   other-modules:       CLI
                        Mock.TxSubmission
-                       NamedPipe
                        Run
                        Topology
   build-depends:       base,

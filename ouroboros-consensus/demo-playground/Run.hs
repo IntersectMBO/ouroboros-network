@@ -218,9 +218,6 @@ handleSimpleNode p CLI{..} myNodeAddress (TopologyInfo myNodeId topologyFile) = 
 
       watchChain registry tracer chainDB
 
-      -- Spawn the thread which listens to the mempool.
-      mempoolThread <- spawnMempoolListener tracer myNodeId kernel
-
       myAddr:_ <- case myNodeAddress of
         NodeAddress host port -> getAddrInfo Nothing (Just host) (Just port)
 
@@ -266,7 +263,7 @@ handleSimpleNode p CLI{..} myNodeAddress (TopologyInfo myNodeId topologyFile) = 
 
           io
 
-      _ <- Async.waitAny [localServer, peerServer, mempoolThread]
+      _ <- Async.waitAny [localServer, peerServer]
       return ()
   where
       nid :: Int
