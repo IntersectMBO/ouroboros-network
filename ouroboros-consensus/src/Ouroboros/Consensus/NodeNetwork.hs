@@ -20,6 +20,7 @@ module Ouroboros.Consensus.NodeNetwork (
   , consensusNetworkApps
   , muxInitiatorNetworkApplication
   , muxResponderNetworkApplication
+  , muxLocalResponderNetworkApplication
   ) where
 
 import           Control.Monad (void)
@@ -37,6 +38,7 @@ import           Network.TypedProtocol.Driver
 import           Ouroboros.Network.Codec
 import           Ouroboros.Network.Mux.Interface
 import           Ouroboros.Network.NodeToNode
+import           Ouroboros.Network.NodeToClient
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.BlockFetch
@@ -189,7 +191,9 @@ protocolCodecsId = ProtocolCodecs {
 -- useful for running different encoding on each channel in tests (identity
 -- codecs).
 --
-data NetworkApplication m peer bytesCS bytesBF a = NetworkApplication {
+data NetworkApplication m peer
+                        bytesCS bytesBF
+                        bytesLCS bytesTX a = NetworkApplication {
       -- | Start a chain sync client that communicates with the given upstream
       -- node.
       naChainSyncClient  :: peer -> Channel m bytesCS -> m a
@@ -203,29 +207,48 @@ data NetworkApplication m peer bytesCS bytesBF a = NetworkApplication {
 
       -- | Start a block fetch server server.
     , naBlockFetchServer :: Channel m bytesBF -> m a
+
+      -- | Start a local chain sync server.
+    , naLocalChainSyncServer    :: Channel m bytesLCS -> m a
+
+      -- | Start a local transaction submission server.
+    , naLocalTxSubmissionServer :: Channel m bytesTX -> m a
     }
 
 
--- | A projection from 'NetworkApplication' to 'MuxApplication'.
+-- | A projection from 'NetworkApplication' to a client-side 'MuxApplication'
+-- for the 'NodeToNodeProtocols'.
 --
 muxInitiatorNetworkApplication
   :: peer
-  -> NetworkApplication m peer bytes bytes a
+  -> NetworkApplication m peer bytes bytes bytes bytes a
   -> MuxApplication InitiatorApp NodeToNodeProtocols m bytes a Void
 muxInitiatorNetworkApplication them NetworkApplication {..} =
     MuxInitiatorApplication $ \ptcl -> case ptcl of
       ChainSyncWithHeadersPtcl -> naChainSyncClient them
       BlockFetchPtcl           -> naBlockFetchClient them
 
--- | A project from 'NetworkApplication' to 'MuxApplication'.
+-- | A projection from 'NetworkApplication' to a server-side 'MuxApplication'
+-- for the 'NodeToNodeProtocols'.
 --
 muxResponderNetworkApplication
-  :: NetworkApplication m peer bytes bytes a
+  :: NetworkApplication m peer bytes bytes bytes bytes a
   -> AnyMuxResponderApp NodeToNodeProtocols m bytes
 muxResponderNetworkApplication NetworkApplication {..} =
     AnyMuxResponderApp $ MuxResponderApplication $ \ptcl -> case ptcl of
       ChainSyncWithHeadersPtcl -> naChainSyncServer
       BlockFetchPtcl           -> naBlockFetchServer
+
+-- | A projection from 'NetworkApplication' to a server-side 'MuxApplication'
+-- for the 'NodeToClientProtocols'.
+--
+muxLocalResponderNetworkApplication
+  :: NetworkApplication m peer bytes bytes bytes bytes a
+  -> AnyMuxResponderApp NodeToClientProtocols m bytes
+muxLocalResponderNetworkApplication NetworkApplication {..} =
+    AnyMuxResponderApp $ MuxResponderApplication $ \ptcl -> case ptcl of
+      ChainSyncWithBlocksPtcl -> naLocalChainSyncServer
+      LocalTxSubmissionPtcl   -> naLocalTxSubmissionServer
 
 
 -- | Example function which creates consensus mux applications, this is useful
@@ -245,15 +268,17 @@ consensusNetworkApps
     -> NodeKernel m peer blk
     -> ProtocolCodecs blk failure m bytesCS bytesBF bytesLCS bytesTX
     -> ProtocolHandlers m peer blk
-    -> NetworkApplication m peer bytesCS bytesBF ()
+    -> NetworkApplication m peer bytesCS bytesBF bytesLCS bytesTX ()
 
 consensusNetworkApps traceChainSync traceBlockFetch kernel
                      ProtocolCodecs {..} ProtocolHandlers {..} =
     NetworkApplication {
-      naChainSyncClient = naChainSyncClient,
+      naChainSyncClient,
       naChainSyncServer,
-      naBlockFetchClient = naBlockFetchClient,
-      naBlockFetchServer
+      naBlockFetchClient,
+      naBlockFetchServer,
+      naLocalChainSyncServer,
+      naLocalTxSubmissionServer
     }
   where
     naChainSyncClient
@@ -314,3 +339,22 @@ consensusNetworkApps traceChainSync traceBlockFetch kernel
         channel
         $ blockFetchServerPeer
         $ phBlockFetchServer
+
+    naLocalChainSyncServer
+      :: Channel m bytesLCS -> m ()
+    naLocalChainSyncServer channel =
+      runPeer
+        nullTracer  --TODO
+        pcLocalChainSyncCodec
+        channel
+        (chainSyncServerPeer phLocalChainSyncServer)
+
+    naLocalTxSubmissionServer
+      :: Channel m bytesTX -> m ()
+    naLocalTxSubmissionServer channel =
+      runPeer
+        nullTracer  --TODO
+        pcLocalTxSubmissionCodec
+        channel
+        (localTxSubmissionServerPeer (pure phLocalTxSubmissionServer))
+

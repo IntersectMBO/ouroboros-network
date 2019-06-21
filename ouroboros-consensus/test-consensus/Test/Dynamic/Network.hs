@@ -82,7 +82,7 @@ data NetworkInterface m peer = NetworkInterface {
 -- TODO: move this function to 'ouroboros-network'.
 --
 createNetworkInterface
-    :: forall m peer blk.
+    :: forall m peer blk unused1 unused2.
        ( MonadAsync m
        , MonadFork  m
        , MonadMask  m
@@ -98,7 +98,10 @@ createNetworkInterface
     -> peer                 -- ^ our peer
     -> NetworkApplication m peer
         (AnyMessage (ChainSync (Header blk) (Point blk)))
-        (AnyMessage (BlockFetch blk)) ()
+        (AnyMessage (BlockFetch blk))
+        unused1 -- the local node-to-client channel types
+        unused2
+        ()
     -> NetworkInterface m peer
 createNetworkInterface chans nodeIds us
                        NetworkApplication {
@@ -106,6 +109,9 @@ createNetworkInterface chans nodeIds us
                          naChainSyncServer,
                          naBlockFetchClient,
                          naBlockFetchServer
+                         -- Note that this test is not intended to cover the
+                         -- mini-protocols in the node-to-client bundle, so
+                         -- we don't pull those handlers out here.
                        } =
   NetworkInterface
     { niConnectTo = \them -> do
