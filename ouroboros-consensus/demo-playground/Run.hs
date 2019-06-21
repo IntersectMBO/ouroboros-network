@@ -64,7 +64,7 @@ import qualified Ouroboros.Storage.ChainDB as ChainDB
 import qualified Ouroboros.Storage.ChainDB.Mock as ChainDB
 
 import           CLI
-import           Mock.TxSubmission
+import           TxSubmission
 import           Topology
 
 runNode :: CLI -> IO ()
@@ -72,8 +72,9 @@ runNode cli@CLI{..} = do
     -- If the user asked to submit a transaction, we don't have to spin up a
     -- full node, we simply transmit it and exit.
     case command of
-      TxSubmitter topology tx ->
-        handleTxSubmission topology tx
+      TxSubmitter topology tx protocol -> do
+        SomeProtocol p <- fromProtocol protocol
+        handleTxSubmission p topology tx
       SimpleNode topology myNodeAddress protocol -> do
         SomeProtocol p <- fromProtocol protocol
         handleSimpleNode p cli myNodeAddress topology
@@ -96,7 +97,7 @@ handleSimpleNode p CLI{..} myNodeAddress (TopologyInfo myNodeId topologyFile) = 
     putStrLn $ "My producers are " <> show (producers nodeSetup)
     putStrLn $ "**************************************"
 
-    let pInfo@ProtocolInfo{..} =
+    let ProtocolInfo{pInfoConfig, pInfoInitLedger, pInfoInitState} =
           protocolInfo (NumCoreNodes (length nodeSetups)) (CoreNodeId nid) p
 
     withThreadRegistry $ \registry -> do
@@ -158,11 +159,11 @@ handleSimpleNode p CLI{..} myNodeAddress (TopologyInfo myNodeId topologyFile) = 
               kernel
               ProtocolCodecs
                 { pcChainSyncCodec =
-                    (codecChainSync
+                    codecChainSync
                       (demoEncodeHeader pInfoConfig)
                       (demoDecodeHeader pInfoConfig)
-                      (encodePoint'     pInfo)
-                      (decodePoint'     pInfo))
+                       encodePoint'
+                       decodePoint'
 
                 , pcBlockFetchCodec =
                     codecBlockFetch
@@ -172,18 +173,18 @@ handleSimpleNode p CLI{..} myNodeAddress (TopologyInfo myNodeId topologyFile) = 
                       demoDecodeHeaderHash
 
                 , pcLocalChainSyncCodec =
-                    (codecChainSync
+                    codecChainSync
                       (demoEncodeBlock pInfoConfig)
                       (demoDecodeBlock pInfoConfig)
-                      (encodePoint'    pInfo)
-                      (decodePoint'    pInfo))
+                       encodePoint'
+                       decodePoint'
 
                 , pcLocalTxSubmissionCodec =
-                    (codecLocalTxSubmission
+                    codecLocalTxSubmission
                       demoEncodeGenTx
                       demoDecodeGenTx
                       Serialise.encode
-                      Serialise.decode)
+                      Serialise.decode
 
                 }
               (protocolHandlers nodeParams kernel)
@@ -218,13 +219,12 @@ handleSimpleNode p CLI{..} myNodeAddress (TopologyInfo myNodeId topologyFile) = 
 
       watchChain registry tracer chainDB
 
-      -- Spawn the thread which listens to the mempool.
-      mempoolThread <- spawnMempoolListener tracer myNodeId kernel
-
       myAddr:_ <- case myNodeAddress of
         NodeAddress host port -> getAddrInfo Nothing (Just host) (Just port)
 
-      myLocalAddr <- mkLocalSocketAddrInfo myNodeId
+      let myLocalSockPath = localSocketFilePath myNodeId
+          myLocalAddr     = localSocketAddrInfo myLocalSockPath
+      removeStaleLocalSocket myLocalSockPath
 
       -- TODO: cheap subscription managment, a proper one is on the way.  The
       -- point is that it only requires 'NetworkApplications' which is a thin
@@ -266,7 +266,7 @@ handleSimpleNode p CLI{..} myNodeAddress (TopologyInfo myNodeId topologyFile) = 
 
           io
 
-      _ <- Async.waitAny [localServer, peerServer, mempoolThread]
+      _ <- Async.waitAny [localServer, peerServer]
       return ()
   where
       nid :: Int
@@ -289,30 +289,20 @@ handleSimpleNode p CLI{..} myNodeAddress (TopologyInfo myNodeId topologyFile) = 
             traceWith tracer $
               "Updated chain: " <> condense (Chain.toOldestFirst chain)
 
-      encodePoint' :: ProtocolInfo blk -> Point blk -> Encoding
-      encodePoint' ProtocolInfo{..} =
+      encodePoint' ::  Point blk -> Encoding
+      encodePoint' =
           Block.encodePoint $ Block.encodeChainHash demoEncodeHeaderHash
 
-      decodePoint' :: forall s. ProtocolInfo blk -> Decoder s (Point blk)
-      decodePoint' ProtocolInfo{..} =
+      decodePoint' :: forall s. Decoder s (Point blk)
+      decodePoint' =
           Block.decodePoint $ Block.decodeChainHash demoDecodeHeaderHash
 
 
-mkLocalSocketAddrInfo :: NodeId -> IO Socket.AddrInfo
-mkLocalSocketAddrInfo nodeId = do
+removeStaleLocalSocket :: FilePath -> IO ()
+removeStaleLocalSocket socketPath =
     removeFile socketPath
-      `catch` \e -> if isDoesNotExistError e then return () else throwIO e
-    return addrInfo
-  where
-    socketPath = "node-"
-              ++ show (case nodeId of
-                         CoreId  n -> n
-                         RelayId n -> n)
-              ++ ".socket"
-    addrInfo   = Socket.AddrInfo
-                  []
-                  Socket.AF_UNIX
-                  Socket.Stream
-                  Socket.defaultProtocol
-                  (Socket.SockAddrUnix socketPath)
-                  Nothing
+      `catch` \e ->
+        if isDoesNotExistError e
+          then return ()
+          else throwIO e
+
