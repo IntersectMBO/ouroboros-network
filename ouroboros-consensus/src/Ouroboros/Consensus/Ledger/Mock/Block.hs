@@ -8,6 +8,7 @@
 {-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE UndecidableInstances  #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 -- | Simple block to go with the mock ledger
 --
@@ -316,6 +317,7 @@ instance Condense (ChainHash (SimpleBlock' c ext ext')) where
 instance (SimpleCrypto c, Serialise ext') => Serialise (SimpleBlock' c ext ext')
 instance (SimpleCrypto c) => Serialise (SimpleStdHeader c ext)
 instance Serialise SimpleBody
+deriving instance Serialise (GenTx (SimpleBlock p c))
 
 encodeSimpleHeader :: SimpleCrypto c
                    => (ext' -> CBOR.Encoding)

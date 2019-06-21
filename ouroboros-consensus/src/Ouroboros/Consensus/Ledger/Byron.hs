@@ -25,9 +25,11 @@ module Ouroboros.Consensus.Ledger.Byron
   , encodeByronHeader
   , encodeByronBlock
   , encodeByronHeaderHash
+  , encodeByronGenTx
   , decodeByronHeader
   , decodeByronBlock
   , decodeByronHeaderHash
+  , decodeByronGenTx
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
@@ -516,6 +518,9 @@ encodeByronBlock epochSlots =
 encodeByronHeaderHash :: HeaderHash (ByronBlock cfg) -> Encoding
 encodeByronHeaderHash = toCBOR
 
+encodeByronGenTx :: GenTx (ByronBlock cfg) -> Encoding
+encodeByronGenTx (ByronTx tx) = toCBOR (void tx)
+
 decodeByronHeader :: CC.Slot.EpochSlots -> Decoder s (Header (ByronBlock cfg))
 decodeByronHeader epochSlots =
     ByronHeader . annotate <$> CC.Block.fromCBORAHeader epochSlots
@@ -538,6 +543,20 @@ decodeByronBlock epochSlots =
 
 decodeByronHeaderHash :: Decoder s (HeaderHash (ByronBlock cfg))
 decodeByronHeaderHash = fromCBOR
+
+decodeByronGenTx :: Decoder s (GenTx (ByronBlock cfg))
+decodeByronGenTx =
+    ByronTx . annotate <$> fromCBOR
+  where
+    -- TODO #560: Re-annotation can be done but requires some rearranging in
+    -- the codecs Original ByteSpan's refer to bytestring we don't have, so
+    -- we'll ignore them
+    annotate :: CC.UTxO.ATxAux ByteSpan -> CC.UTxO.ATxAux ByteString
+    annotate CC.UTxO.ATxAux{aTaTx, aTaWitness} =
+      CC.UTxO.ATxAux{
+        aTaTx      = reAnnotate aTaTx,
+        aTaWitness = reAnnotate aTaWitness
+      }
 
 {-------------------------------------------------------------------------------
   Internal auxiliary

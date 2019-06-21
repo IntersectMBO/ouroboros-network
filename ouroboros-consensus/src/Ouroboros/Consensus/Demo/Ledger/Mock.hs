@@ -44,6 +44,8 @@ instance ( ProtocolLedgerView (SimpleBlock SimpleMockCrypto ext)
   demoBlockFetchSize     = fromIntegral . simpleBlockSize . simpleHeaderStd
   demoEncodeBlock        = const Serialise.encode
   demoEncodeHeader       = const Serialise.encode
+  demoEncodeGenTx        =       Serialise.encode
   demoDecodeBlock        = const Serialise.decode
   demoDecodeHeader       = const Serialise.decode
+  demoDecodeGenTx        =       Serialise.decode
   demoMockTx             = \_ -> SimpleGenTx
