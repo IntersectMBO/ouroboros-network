@@ -14,11 +14,13 @@ let
     name = "haskell";
     packages = p: with p; [ 
 #    ihaskell-charts
-     ihaskell-plot
+#     ihaskell-plot
 #     ihaskell-hatex
 #     ihaskell-diagrams ihaskell-graphviz ihaskell-magic
 #     ihaskell-aeson ihaskell-gnuplot ihaskell-widgets
 #    formatting hvega
+   (callPackage  ./packages/DeltaQIllustration {})
+
    ];
   };
 
