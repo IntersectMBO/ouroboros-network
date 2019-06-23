@@ -13,6 +13,7 @@ import qualified Test.Ouroboros.Network.BlockFetch (tests)
 import qualified Ouroboros.Network.Protocol.ChainSync.Test (tests)
 import qualified Ouroboros.Network.Protocol.BlockFetch.Test (tests)
 import qualified Ouroboros.Network.Protocol.Handshake.Test (tests)
+import qualified Ouroboros.Network.Protocol.TxSubmission.Test (tests)
 import qualified Ouroboros.Network.Protocol.LocalTxSubmission.Test (tests)
 import qualified Test.Socket (tests)
 
@@ -34,6 +35,7 @@ tests =
   , Ouroboros.Network.Protocol.ChainSync.Test.tests
   , Ouroboros.Network.Protocol.BlockFetch.Test.tests
   , Ouroboros.Network.Protocol.LocalTxSubmission.Test.tests
+  , Ouroboros.Network.Protocol.TxSubmission.Test.tests
   , Ouroboros.Network.Protocol.Handshake.Test.tests
 
     -- network logic
