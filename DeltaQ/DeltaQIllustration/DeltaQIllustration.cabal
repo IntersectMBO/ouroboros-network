@@ -1,0 +1,80 @@
+name:           DeltaQIllustration
+version:        0.1.5
+cabal-version:  >= 1.10
+build-type:     Simple
+author:         Neil Davies
+license:        BSD3
+copyright:      Predictable Network Solutions Limited, 2011-2019
+
+library
+  exposed-modules:    DeltaQ.Algebra
+                    , DeltaQ.Algebra.Class
+                    , DeltaQ.Algebra.DelayModel.SimpleUniform
+                    , DeltaQ.Algebra.Simplification
+                    , DeltaQ.Algebra.Type
+                    , DeltaQ.GSV
+                    , DeltaQ.GSV.Ethernet
+                    , DeltaQ.GSV.ATM
+                    , DeltaQ.Numeric.CDF
+                    , DeltaQ.Numeric.CDF.Types
+                    , DeltaQ.Numeric.FirstToFinish
+                    , DeltaQ.QTA.Support
+                    , DeltaQ.RationalProbabilityDoubleDelay
+                    , DeltaQ.Visualisation.ChartPlot
+  build-depends:      base >= 4
+                    , Chart
+                    , containers
+                    , data-default
+                    , ieee754
+                    , lens
+                    , mtl
+                    , mwc-random
+                    , primitive
+                    , statistics
+  default-language:   Haskell2010
+  hs-source-dirs:     lib
+  ghc-options:        -Wall
+  default-extensions: UnicodeSyntax
+  other-extensions:   KindSignatures
+                    , GADTs
+                    , MultiParamTypeClasses
+                    , FlexibleContexts
+                    , FlexibleInstances
+
+test-suite DQ-canonicalisation
+  type:               detailed-0.9
+  hs-source-dirs:     tests
+  test-module:        DQCanonicalisation
+  build-depends:      base
+                    , DeltaQIllustration
+                    , Cabal
+                    , QuickCheck
+                    , random
+  ghc-options:        -Wall -rtsopts -threaded
+  default-language:   Haskell2010
+  default-extensions: StandaloneDeriving
+                    , TypeSynonymInstances
+
+-- test-suite dq-numeric-tests
+--   type:               detailed-0.9
+--   hs-source-dirs:     tests
+--   test-module:        NumericAspects
+--   build-depends:      base
+--                     , DeltaQ
+--   ghc-options:        -Wall -rtsopts -threaded
+--   default-language:   Haskell2010
+
+executable          plot-test
+  main-is:          plot-test.hs
+  build-depends:    base >4.6 && <5
+                  , Chart
+                  , Chart-cairo
+                  , DeltaQIllustration
+                  , data-default-class
+                  , mwc-random
+                  , mtl
+                  , lens
+
+  hs-source-dirs:   tests
+  default-language: Haskell2010
+  GHC-options: -threaded -rtsopts -Wall
