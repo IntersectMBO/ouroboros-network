@@ -52,39 +52,6 @@
           then [ (hsPkgs.Win32) ]
           else [ (hsPkgs.unix) ]);
         };
-      exes = {
-        "demo-playground" = {
-          depends = [
-            (hsPkgs.base)
-            (hsPkgs.contra-tracer)
-            (hsPkgs.typed-protocols)
-            (hsPkgs.ouroboros-network)
-            (hsPkgs.ouroboros-consensus)
-            (hsPkgs.io-sim-classes)
-            (hsPkgs.cardano-crypto-wrapper)
-            (hsPkgs.cardano-ledger)
-            (hsPkgs.cardano-ledger-test)
-            (hsPkgs.cardano-prelude)
-            (hsPkgs.aeson)
-            (hsPkgs.async)
-            (hsPkgs.bytestring)
-            (hsPkgs.cborg)
-            (hsPkgs.containers)
-            (hsPkgs.cryptonite)
-            (hsPkgs.directory)
-            (hsPkgs.formatting)
-            (hsPkgs.mtl)
-            (hsPkgs.network)
-            (hsPkgs.optparse-applicative)
-            (hsPkgs.serialise)
-            (hsPkgs.stm)
-            (hsPkgs.string-conv)
-            (hsPkgs.text)
-            ] ++ (if system.isWindows
-            then [ (hsPkgs.Win32) ]
-            else [ (hsPkgs.unix) ]);
-          };
-        };
       tests = {
         "test-consensus" = {
           depends = [
