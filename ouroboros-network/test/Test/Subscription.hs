@@ -1,7 +1,7 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE RecordWildCards     #-}
 
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DataKinds           #-}
@@ -13,8 +13,7 @@
 
 module Test.Subscription (tests) where
 
-import qualified Codec.CBOR.Term as CBOR
-import           Codec.Serialise (Serialise)
+import           Control.Concurrent hiding (threadDelay)
 import           Control.Monad (replicateM, unless, when)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSay
@@ -29,8 +28,7 @@ import           Data.Functor (void)
 import qualified Data.IP as IP
 import           Data.List as L
 import qualified Data.Map as M
-import           Data.Text (Text)
-import           Data.Typeable (Typeable)
+import           Data.Time.Clock
 import           Data.Void (Void)
 import           Data.Word
 import qualified Network.DNS as DNS
@@ -48,7 +46,6 @@ import qualified Ouroboros.Network.Protocol.ReqResp.Codec as ReqResp
 
 import           Codec.SerialiseTerm
 import           Ouroboros.Network.Mux.Interface
-import qualified Ouroboros.Network.Mux as Mx
 import           Ouroboros.Network.NodeToNode
 import           Ouroboros.Network.Socket
 import           Ouroboros.Network.Subscription.Common
@@ -59,6 +56,10 @@ import           Ouroboros.Network.Time
 import qualified Test.Mux as Mxt
 import           Test.Mux.ReqResp
 
+
+activeTracer :: Show a => Tracer IO a
+activeTracer = nullTracer
+--activeTracer = _verboseTracer -- Dump log messages to stdout.
 
 --
 -- The list of all tests
@@ -247,8 +248,8 @@ prop_resolv :: forall m.
 prop_resolv lr =  do
     --say $ printf "%s" $ show lr
     let resolver = mockResolver lr
-    x <- dnsResolve resolver $ DnsSubscriptionTarget "shelley-1.iohk.example" 1 2
-    !res <- checkResult <$> dumpResult x []
+    x <- dnsResolve nullTracer resolver $ DnsSubscriptionTarget "shelley-1.iohk.example" 1 2
+    !res <- checkResult <$> extractResult x []
 
     {-
      - We wait 100ms here so that the resolveAAAA and resolveA thread have time to
@@ -304,17 +305,14 @@ prop_resolv lr =  do
             then (cntB == 0) && alternateFamily sas fa False (cntA - 1) cntB
             else alternateFamily sas (sockAddrFamily sa) False (cntB - 1) cntA
 
-    dumpResult :: SubscriptionTarget m Socket.SockAddr -> [Socket.SockAddr] -> m [Socket.SockAddr]
-    dumpResult targets addrs = do
+    extractResult :: SubscriptionTarget m Socket.SockAddr -> [Socket.SockAddr] -> m [Socket.SockAddr]
+    extractResult targets addrs = do
         target_m <- getSubscriptionTarget targets
         case target_m of
              Just (addr, nextTargets) -> do
-                 --say $ printf "%s" $ show addr
                  threadDelay (connectionRtt lr)
-                 dumpResult nextTargets (addr:addrs)
-             Nothing -> do
-                 --say $ printf "done"
-                 return $ reverse addrs
+                 extractResult nextTargets (addr:addrs)
+             Nothing -> return $ reverse addrs
 
     resolvLabel :: String
     resolvLabel =
@@ -341,7 +339,6 @@ _prop_resolv_io lr = ioProperty $ prop_resolv lr
 prop_sub_io :: LookupResultIO
             -> Property
 prop_sub_io lr = ioProperty $ do
-    --printf "prop_sub_io: %s\n" (show lr)
     let serverIdsv4 = case lrioIpv4Result lr of
                            Left  _ -> []
                            Right r -> zip (repeat Socket.AF_INET) r
@@ -370,35 +367,29 @@ prop_sub_io lr = ioProperty $ do
                         observerdConnectionOrderVar serverWaitVar ) $
                            zip (serverIdsv4 ++ serverIdsv6) $ ipv4Servers ++ ipv6Servers
 
-    --printf "waiting on servers\n"
     atomically $ do
         c <- readTVar serverCountVar
         when (c > 0) retry
 
     serverPortMap <- atomically $ readTVar serverPortMapVar
-    --printf "server ports %s\n" $ show serverPortMap
-    workerAid <- async $ dnsSubscriptionWorker' (mockResolverIO firstDoneVar serverPortMap lr)
+    workerAid <- async $ dnsSubscriptionWorker' activeTracer activeTracer
+            (mockResolverIO firstDoneVar serverPortMap lr)
             0
             (\_ -> Just minConnectionAttemptDelay)
             (DnsSubscriptionTarget "shelley-0.iohk.example" 6062 (lrioValency lr))
             (initiatorCallback clientCountVar)
 
-    --printf "waiting on clients\n"
     atomically $ do
         c <- readTVar clientCountVar
         when (c > 0) retry
 
-    --printf "cancelling worker\n"
     cancel workerAid
     atomically $ writeTVar serverWaitVar True
 
-    --printf "waiting on servers\n"
     mapM_ wait serverAids
-    --printf "done\n"
 
     observerdConnectionOrder <- fmap reverse $ atomically $ readTVar observerdConnectionOrderVar
 
-    --printf "%s\n" $ show observerdConnectionOrder
     return $ property $ verifyOrder observerdConnectionOrder
 
   where
@@ -423,9 +414,7 @@ prop_sub_io lr = ioProperty $ do
         :: TVar IO Int
         -> Socket.Socket
         -> IO ()
-    initiatorCallback clientCountVar _ = do
-        c <- atomically $ readTVar clientCountVar
-        --printf "client count %d\n" c
+    initiatorCallback clientCountVar _ =
         atomically $ do
             clientsLeft <- readTVar clientCountVar
             case clientsLeft of
@@ -438,8 +427,6 @@ prop_sub_io lr = ioProperty $ do
             (Socket.socket (Socket.addrFamily addr) Socket.Stream Socket.defaultProtocol)
             Socket.close
             (\sd -> do
-                --printf "%s server hello\n" $ show sid
-                -- bind the socket
                 Socket.setSocketOption sd Socket.ReuseAddr 1
                 Socket.bind sd (Socket.addrAddress addr)
                 localPort <- Socket.socketPort sd
@@ -450,14 +437,10 @@ prop_sub_io lr = ioProperty $ do
                     (Socket.accept sd)
                     (\(sd',_) -> Socket.close sd')
                     (\(_,_) -> do
-                        now <- getMonotonicTime
-                        --printf "%s %s client connected\n" (show sid) (show now)
-                        --printf "%s client connected\n" (show sid)
                         atomically $ modifyTVar' traceVar (\sids -> sid:sids)
                         atomically $ do
                             doneWaiting <- readTVar stopVar
                             unless doneWaiting retry
-                        --printf "%s server done waiting\n" $ show sid
                     )
              )
 
@@ -510,6 +493,7 @@ prop_send_recv f xs first = ioProperty $ do
         (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) responderApp)
         $ \_ -> do
           worker <- async $ dnsSubscriptionWorker'
+            activeTracer activeTracer
             (mockResolverIO firstDoneVar serverPortMap lr)
             0
             (\_ -> Just minConnectionAttemptDelay)
@@ -564,7 +548,7 @@ _demo = ioProperty $ do
     spawnServer server6 100
     spawnServer server6' 45
 
-    _ <- async $ dnsSubscriptionWorker 6061
+    _ <- async $ dnsSubscriptionWorker activeTracer activeTracer 6061
             (\_ -> Just minConnectionAttemptDelay)
             [ DnsSubscriptionTarget "shelley-0.iohk.example" 6064 1
             , DnsSubscriptionTarget "shelley-1.iohk.example" 6062 2
@@ -596,4 +580,24 @@ _demo = ioProperty $ do
 
     appReq = MuxInitiatorApplication (\Mxt.ChainSync1 -> error "req fail")
     appRsp = MuxResponderApplication (\Mxt.ChainSync1 -> error "rsp fail")
+
+
+data WithThreadAndTime a = WithThreadAndTime {
+      wtatOccuredAt    :: !UTCTime
+    , wtatWithinThread :: !ThreadId
+    , wtatEvent        :: !a
+    }
+
+instance (Show a) => Show (WithThreadAndTime a) where
+    show WithThreadAndTime {..} =
+        printf "%s: %s: %s" (show wtatOccuredAt) (show wtatWithinThread) (show wtatEvent)
+
+_verboseTracer :: Show a => Tracer IO a
+_verboseTracer = threadAndTimeTracer $ showTracing stdoutTracer
+
+threadAndTimeTracer :: Tracer IO (WithThreadAndTime a) -> Tracer IO a
+threadAndTimeTracer tr = Tracer $ \s -> do
+    !now <- getCurrentTime
+    !tid <- myThreadId
+    traceWith tr $ WithThreadAndTime now tid s
 

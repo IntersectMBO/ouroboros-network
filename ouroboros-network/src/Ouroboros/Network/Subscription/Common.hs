@@ -9,6 +9,7 @@ module Ouroboros.Network.Subscription.Common
     , sockAddrFamily
     , minConnectionAttemptDelay
     , SubscriberError (..)
+    , SubscriptionTrace
     ) where
 
 import           Control.Concurrent hiding (threadDelay)
@@ -19,6 +20,7 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
+import           Control.Tracer
 import           Data.List (delete)
 import           Data.Word
 import           GHC.Stack
@@ -50,17 +52,18 @@ sockAddrFamily _                              = Socket.AF_UNSPEC
 data ConnectResult = ConnectSuccess
                    | ConnectSuccessLast
                    | ConnectFail
-                   deriving (Eq, Ord)
+                   deriving (Eq, Ord, Show)
 
 subscribeTo
     :: HasCallStack
-    => Socket.PortNumber
+    => Tracer IO SubscriptionTrace
+    -> Socket.PortNumber
     -> (Socket.SockAddr -> Maybe DiffTime)
     -> TVar IO Word16
     -> (Socket.Socket -> IO ())
     -> SubscriptionTarget IO Socket.SockAddr
     -> IO ()
-subscribeTo localPort connectionAttemptDelay valencyVar k ts = do
+subscribeTo tracer localPort connectionAttemptDelay valencyVar k ts = do
      x <- newTVarM []
      doSubscribeTo x ts
 
@@ -73,7 +76,6 @@ subscribeTo localPort connectionAttemptDelay valencyVar k ts = do
                 valencyLeft <- atomically $ readTVar valencyVar
                 if valencyLeft > 0
                     then do
-                        --printf "going to subscribe to %s\n" (show target)
                         caid <- async $ doConnect conThreads target
                         atomically $ modifyTVar' conThreads (\t -> asyncThreadId caid:t)
 
@@ -84,13 +86,16 @@ subscribeTo localPort connectionAttemptDelay valencyVar k ts = do
                                          Just d  -> min maxConnectionAttemptDelay $
                                                         max minConnectionAttemptDelay d
                                          Nothing -> defaultConnectionAttemptDelay
+                        traceWith tracer $ SubscriptionTraceSubscriptionWaitingNewConnection delay
                         threadDelay delay
                         doSubscribeTo conThreads nextTargets
                     else do
-                        --printf "successfully started required subscriptions\n"
+                        traceWith tracer SubscriptionTraceSubscriptionRunning
                         return ()
             Nothing -> do
-                --printf "out of targets, waiting on active connections\n"
+                len <- fmap length $ atomically $ readTVar conThreads
+                when (len > 0) $
+                    traceWith tracer $ SubscriptionTraceSubscriptionWaiting len
 
                 -- We wait on the list of active connection threads instead of using an async wait
                 -- function since some of the connections may succed and then should be left
@@ -98,8 +103,11 @@ subscribeTo localPort connectionAttemptDelay valencyVar k ts = do
                 atomically $ do
                     activeCons  <- readTVar conThreads
                     unless (null activeCons) retry
-                --printf "done waiting on active connections\n"
-                return ()
+
+                valencyLeft <- atomically $ readTVar valencyVar
+                if valencyLeft == 0
+                   then traceWith tracer SubscriptionTraceSubscriptionRunning
+                   else traceWith tracer SubscriptionTraceSubscriptionFailed
 
 
     doConnect conThreads remoteAddr =
@@ -111,10 +119,10 @@ subscribeTo localPort connectionAttemptDelay valencyVar k ts = do
                 return (sd, hasRefVar)
             )
             (\(sd,hasRefVar) -> do
-                tid <- myThreadId
-                --printf "%s: dc bracket cleaning\n" $ show tid
+                traceWith tracer $ SubscriptionTraceConnectCleanup remoteAddr
                 Socket.close sd
 
+                tid <- myThreadId
                 atomically $ modifyTVar' conThreads (delete tid)
                 hasRef <- atomically $ readTVar hasRefVar
                 when hasRef $
@@ -128,18 +136,15 @@ subscribeTo localPort connectionAttemptDelay valencyVar k ts = do
                 let localAddr = case sockAddrFamily remoteAddr of
                                      Socket.AF_INET6 -> Socket.SockAddrInet6 localPort 0 (0,0,0,0) 0
                                      _  -> Socket.SockAddrInet localPort 0
-                -- printf "ready to bind\n"
                 Socket.bind sd localAddr
                 tid <- myThreadId
-                conStart <- getMonotonicTime
-                --printf "%s %s connecting too %s\n" (show tid) (show conStart) (show remoteAddr)
+                traceWith tracer $ SubscriptionTraceConnectStart remoteAddr
                 res <- try $ Socket.connect sd remoteAddr
-                conEnd <- getMonotonicTime
-                --printf "%s %s %s connected\n" (show tid) (show conEnd) (show $ diffTime conEnd conStart)
                 case res of
-                        Left (e :: SomeException) ->
-                            {- printf "connected failed with %s\n" (show res) >> -} throwM e
-                        Right _ -> return () --printf "%s connected\n" $ show tid
+                        Left (e :: SomeException) -> do
+                            traceWith tracer $ SubscriptionTraceConnectException remoteAddr e
+                            throwM e
+                        Right _ -> return ()
 
                 -- We successfully connected, increase valency and start the app
                 result <- atomically $ do
@@ -151,25 +156,19 @@ subscribeTo localPort connectionAttemptDelay valencyVar k ts = do
                                     if v == 1 then return ConnectSuccessLast
                                               else return ConnectSuccess
                                 else return ConnectFail
-                left <- atomically $ readTVar valencyVar
-                --printf "%s connected to %s, left %d\n" (show tid) (show remoteAddr)  left
+                traceWith tracer $ SubscriptionTraceConnectEnd remoteAddr result
                 case result of
                     ConnectSuccess -> k sd
-
                     ConnectSuccessLast -> do
                             outstandingConThreads <- atomically $ readTVar conThreads
-                            --printf "%s killing of %s\n" (show tid) (show outstandingConThreads)
                             mapM_ (\a -> throwTo a
                                    (SubscriberError SubscriberParrallelConnectionCancelled
                                     "Parrallel connection cancelled"
                                     callStack)) outstandingConThreads
                             k sd
-                    ConnectFail -> do
-                        --printf "%s too slow when connecting to %s\n" (show tid) (show remoteAddr)
-                        return ()
+                    ConnectFail -> return ()
 
             )
-
 
 data SubscriberError = SubscriberError {
       seType    :: !SubscriberErrorType
@@ -187,4 +186,32 @@ instance Exception SubscriberError where
          (show seType)
          (show seMessage)
          (prettyCallStack seStack)
+
+data SubscriptionTrace =
+      SubscriptionTraceConnectStart Socket.SockAddr
+    | SubscriptionTraceConnectEnd Socket.SockAddr ConnectResult
+    | SubscriptionTraceConnectException Socket.SockAddr SomeException
+    | SubscriptionTraceConnectCleanup Socket.SockAddr
+    | SubscriptionTraceSubscriptionRunning
+    | SubscriptionTraceSubscriptionWaiting Int
+    | SubscriptionTraceSubscriptionFailed
+    | SubscriptionTraceSubscriptionWaitingNewConnection DiffTime
+
+instance Show SubscriptionTrace where
+    show (SubscriptionTraceConnectStart dst) =
+        "Connection Attempt Start, destination " ++ show dst
+    show (SubscriptionTraceConnectEnd dst res) =
+        "Connection Attemt End, destination " ++ show dst ++ " outcome: " ++ show res
+    show (SubscriptionTraceConnectException dst e) =
+        "Connection Attemt Exception, destination " ++ show dst ++ " exception: " ++ show e
+    show (SubscriptionTraceConnectCleanup dst) =
+        "Connection Cleanup, destination " ++ show dst
+    show SubscriptionTraceSubscriptionRunning =
+        "Required subscriptions started"
+    show (SubscriptionTraceSubscriptionWaiting d) =
+        "Waiting on " ++ show d ++ " active connections"
+    show SubscriptionTraceSubscriptionFailed =
+        "Failed to start all required subscriptions"
+    show (SubscriptionTraceSubscriptionWaitingNewConnection delay) =
+        "Waiting " ++ show delay ++ " before attempting a new connection"
 

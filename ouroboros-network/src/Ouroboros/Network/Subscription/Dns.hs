@@ -1,6 +1,7 @@
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
 
@@ -21,6 +22,7 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
+import           Control.Tracer
 import           Data.Functor (void)
 import qualified Data.IP as IP
 import           Data.Word
@@ -58,10 +60,11 @@ dnsResolve :: forall m.
      , MonadTimer m
      , MonadThrow m
      )
-    => Resolver m
+    => Tracer m DnsTrace
+    -> Resolver m
     -> DnsSubscriptionTarget
     -> m (SubscriptionTarget m Socket.SockAddr)
-dnsResolve resolver (DnsSubscriptionTarget domain _ _) = do
+dnsResolve tracer resolver (DnsSubscriptionTarget domain _ _) = do
     ipv6Rsps <- newEmptyTMVarM
     ipv4Rsps <- newEmptyTMVarM
     gotIpv6Rsp <- newTVarM False
@@ -74,22 +77,28 @@ dnsResolve resolver (DnsSubscriptionTarget domain _ _) = do
          Left r_ipv6 -> -- AAAA lookup finished first
              case r_ipv6 of
                   Left e_ipv6 -> do -- AAAA lookup failed
-                      --say $ printf "AAAA lookup failed with %s\n" (show e_ipv6)
+                      traceWith tracer $ DnsTraceLookupException e_ipv6
                       return $ SubscriptionTarget $ listTargets (Right ipv4Rsps) (Left [])
                   Right _ -> do
                       -- Try to use IPv6 result first.
+                      traceWith tracer DnsTraceLookupIPv6First
                       ipv6Res <- atomically $ takeTMVar ipv6Rsps
                       return $ SubscriptionTarget $ listTargets (Left ipv6Res) (Right ipv4Rsps)
          Right r_ipv4 ->
               case r_ipv4 of
                   Left e_ipv4 -> do -- A lookup failed
-                      --say $ printf "A lookup failed with %s\n" (show e_ipv4)
+                      traceWith tracer $ DnsTraceLookupException e_ipv4
                       return $ SubscriptionTarget $ listTargets (Right ipv6Rsps) (Left [])
-                  Right _ ->
+                  Right _ -> do
+                      traceWith tracer DnsTraceLookupIPv4First
                       return $ SubscriptionTarget $ listTargets (Right ipv4Rsps) (Right ipv6Rsps)
 
   where
 
+    {-
+     - Returns a series of SockAddr, where the address family will alternate
+     - between IPv4 and IPv6 as soon as the corresponding lookup call has completed.
+     -}
     listTargets :: Either [Socket.SockAddr] (TMVar m [Socket.SockAddr])
                 -> Either [Socket.SockAddr] (TMVar m [Socket.SockAddr])
                 -> m (Maybe (Socket.SockAddr, SubscriptionTarget m Socket.SockAddr))
@@ -132,15 +141,17 @@ dnsResolve resolver (DnsSubscriptionTarget domain _ _) = do
              Just addrs -> listTargets (Left addrs) (Left a)
              Nothing    -> listTargets (Left a) (Right addrsVar)
 
-
     resolveAAAA gotIpv6RspVar rspsVar = do
         r_e <- lookupAAAA resolver domain
         case r_e of
              Left e  -> do
                  atomically $ putTMVar rspsVar []
                  atomically $ writeTVar gotIpv6RspVar True
+                 traceWith tracer $ DnsTraceLookupAAAAError e
                  return $ Just e
              Right r -> do
+                 traceWith tracer $ DnsTraceLookupAAAAResult r
+
                  -- XXX Addresses should be sorted here based on DeltaQueue.
                  atomically $ putTMVar rspsVar r
                  atomically $ writeTVar gotIpv6RspVar True
@@ -152,8 +163,11 @@ dnsResolve resolver (DnsSubscriptionTarget domain _ _) = do
         case r_e of
              Left e  -> do
                  atomically $ putTMVar rspsVar []
+                 traceWith tracer $ DnsTraceLookupAError e
                  return $ Just e
              Right r -> do
+                 traceWith tracer $ DnsTraceLookupAResult r
+
                  {- From RFC8305.
                   - If a positive A response is received first due to reordering, the client
                   - SHOULD wait a short time for the AAAA response to ensure that preference is
@@ -170,50 +184,54 @@ dnsResolve resolver (DnsSubscriptionTarget domain _ _) = do
                  return Nothing
 
 dnsSubscriptionWorker'
-    :: Resolver IO
+    :: Tracer IO (WithDomainName SubscriptionTrace)
+    -> Tracer IO (WithDomainName DnsTrace)
+    -> Resolver IO
     -> Socket.PortNumber
     -> (Socket.SockAddr -> Maybe DiffTime)
     -> DnsSubscriptionTarget
     -> (Socket.Socket -> IO ())
     -> IO ()
-dnsSubscriptionWorker' resolver localPort connectionAttemptDelay dst k = do
+dnsSubscriptionWorker' subTracer dnsTracer resolver localPort connectionAttemptDelay dst k = do
         valencyVar <- newTVarM (dstValeny dst)
+        let subTracer' = domainNameTracer (dstDomain dst) subTracer
+        let dnsTracer' = domainNameTracer (dstDomain dst) dnsTracer
+        traceWith dnsTracer' $ DnsTraceStart (dstValeny dst)
         forever $ do
             start <- getMonotonicTime
-            targets <- dnsResolve resolver dst
-            subscribeTo localPort connectionAttemptDelay valencyVar k targets
-            valency <- atomically $ do
+            targets <- dnsResolve dnsTracer' resolver dst
+            subscribeTo subTracer' localPort connectionAttemptDelay valencyVar k targets
+            atomically $ do
                 v <- readTVar valencyVar
-                if v == 0 then retry
-                          else return v
+                when (v == 0)
+                    retry
             end <- getMonotonicTime
-            let duration = diffTime end start
-            --printf "%s duration %s valency at %d, connecting to more hosts\n" (show $ dstDomain dst)
-            --    (show duration) valency
 
-            -- We allways wait at least 1s between calls to dnsResolve. This means that if we loose
-            -- connecton to multiple targets around the same time we will retry with a desired valancy
-            -- that is higher then 1.
+            -- We allways wait at least dnsRetryDelay seconds between calls to dnsResolve, and
+            -- before trying resovlve the domain name and restart the subscriptions we
+            -- also wait 1 second so that if multiple subscription targets fail around
+            -- the same time we will try to restart with a valency higher than 1.
             threadDelay 1
-            valency' <- atomically $ readTVar valencyVar
-            --printf "%s valency after sleep %d\n" (show $ dstDomain dst) valency'
-            when (duration < dnsRetryDelay - 1) $ do
-                --printf "%s sleeping an additional %s\n" (show $ dstDomain dst)
-                --    (show $ dnsRetryDelay - 1 - duration)
-                threadDelay $ dnsRetryDelay - 1 - duration
+            let duration = diffTime end start
+            valency <- atomically $ readTVar valencyVar
+            traceWith dnsTracer' $ DnsTraceRestart duration (dstValeny dst)
+                (dstValeny dst - valency)
+            when (duration < dnsRetryDelay) $
+                threadDelay $ dnsRetryDelay - duration
 
 dnsSubscriptionWorker
-    :: Socket.PortNumber
+    :: Tracer IO (WithDomainName SubscriptionTrace)
+    -> Tracer IO (WithDomainName DnsTrace)
+    -> Socket.PortNumber
     -> (Socket.SockAddr -> Maybe DiffTime)
     -> [DnsSubscriptionTarget]
     -> (Socket.Socket -> IO ())
     -> IO ()
-dnsSubscriptionWorker localPort connectionAttemptDelay dsts k = do
+dnsSubscriptionWorker subTracer dnsTracer localPort connectionAttemptDelay dsts k = do
     rs <- DNS.makeResolvSeed DNS.defaultResolvConf
 
     void $ DNS.withResolver rs $ \dnsResolver ->
         mask $ \unmask -> do
-
             workers <- traverse (async . unmask . spawnResolver dnsResolver) dsts
             unmask (void $ waitAnyCancel workers)
   where
@@ -221,8 +239,7 @@ dnsSubscriptionWorker localPort connectionAttemptDelay dsts k = do
     spawnResolver dnsResolver dst =
         let resolver = Resolver (ipv4ToSockAddr (dstPort dst) dnsResolver)
                                 (ipv6ToSockAddr (dstPort dst) dnsResolver) in
-        dnsSubscriptionWorker' resolver localPort connectionAttemptDelay dst k
-
+        dnsSubscriptionWorker' subTracer dnsTracer resolver localPort connectionAttemptDelay dst k
 
     ipv4ToSockAddr port dnsResolver dst = do
         r <- DNS.lookupA dnsResolver dst
@@ -237,4 +254,38 @@ dnsSubscriptionWorker localPort connectionAttemptDelay dsts k = do
              (Right ips) -> return $ Right $ map (\ip -> Socket.SockAddrInet6 (fromIntegral port) 0 (IP.toHostAddress6 ip) 0) ips
              (Left e)    -> return $ Left e
 
+data WithDomainName a = WithDomainName {
+      wdnDomain :: !DNS.Domain
+    , wdnEvent  :: !a
+    }
+
+instance (Show a) => Show (WithDomainName a) where
+    show WithDomainName {..} = printf  "Domain: %s %s" (show wdnDomain) (show wdnEvent)
+
+domainNameTracer :: DNS.Domain -> Tracer IO (WithDomainName a) -> Tracer IO a
+domainNameTracer domain tr = Tracer $ \s -> traceWith tr $ WithDomainName domain s
+
+data DnsTrace =
+      DnsTraceLookupException SomeException
+    | DnsTraceLookupAError DNS.DNSError
+    | DnsTraceLookupAAAAError DNS.DNSError
+    | DnsTraceLookupIPv6First
+    | DnsTraceLookupIPv4First
+    | DnsTraceLookupAResult [Socket.SockAddr]
+    | DnsTraceLookupAAAAResult [Socket.SockAddr]
+    | DnsTraceStart Word16
+    | DnsTraceRestart DiffTime Word16 Word16
+
+instance Show DnsTrace where
+    show (DnsTraceLookupException e) = "lookup exception " ++ show e
+    show (DnsTraceLookupAError e) = "A lookup failed with " ++ show e
+    show (DnsTraceLookupAAAAError e) = "AAAA lookup failed with " ++ show e
+    show DnsTraceLookupIPv4First = "Returning IPv4 address first"
+    show DnsTraceLookupIPv6First = "Returning IPv6 address first"
+    show (DnsTraceLookupAResult as) = "Lookup A result: " ++ show as
+    show (DnsTraceLookupAAAAResult as) = "Lookup AAAAA result: " ++ show as
+    show (DnsTraceStart val) = "Starting Dns Subscription Worker, valency " ++ show val
+    show (DnsTraceRestart duration desiredVal currentVal) =
+        "Restarting Dns Subscription after " ++ show duration ++ " desired valency " ++
+        show desiredVal ++ " current valency " ++ show currentVal
 
