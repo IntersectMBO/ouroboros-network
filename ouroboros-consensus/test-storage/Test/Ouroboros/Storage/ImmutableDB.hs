@@ -46,7 +46,7 @@ import           Ouroboros.Storage.ImmutableDB
 import           Ouroboros.Storage.ImmutableDB.Index
 import           Ouroboros.Storage.ImmutableDB.Layout
 import           Ouroboros.Storage.ImmutableDB.Util (cborEpochFileParser',
-                     reconstructSlotOffsets)
+                     reconstructSlotOffsets, tryImmDB)
 import           Ouroboros.Storage.Util (decodeIndexEntryAt)
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
@@ -185,7 +185,7 @@ byteStringToWord64s bs = go 0
          | otherwise    = []
 
 test_startNewEpochPadsTheIndexFile :: Assertion
-test_startNewEpochPadsTheIndexFile = withMockFS tryImmDB assrt $ \hasFS err ->
+test_startNewEpochPadsTheIndexFile = withMockFS try assrt $ \hasFS err ->
     withTestDB hasFS err $ \db -> do
       appendBinaryBlob db 0 "a"
       appendBinaryBlob db 1 "bravo"
@@ -193,6 +193,8 @@ test_startNewEpochPadsTheIndexFile = withMockFS tryImmDB assrt $ \hasFS err ->
       -- Skip epoch 1, now in epoch 2
       appendBinaryBlob db 21 "c"
   where
+    try = tryImmDB EH.exceptions EH.exceptions
+
     assrt (Left _)        = assertFailure "Unexpected error"
     assrt (Right (_, fs)) = do
       getIndexContents fs ["index-000.dat"] @?= [0, 0, 1, 6, 6, 6, 13, 13, 13, 13, 13, 13]

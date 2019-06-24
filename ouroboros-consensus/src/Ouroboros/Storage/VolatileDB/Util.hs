@@ -63,14 +63,12 @@ modifyTMVar m action =
             ExitCaseAbort                -> putTMVar m oldState
        ) action
 
-wrapFsError :: (MonadCatch m, Show blockId, Typeable blockId)
-            => ErrorHandling (VolatileDBError blockId) m -> m a -> m a
-wrapFsError err action = do
-    mr <- try . try $ action
-    case mr of
-        Left fsError    -> throwError err $ UnexpectedError $ FileSystemError fsError
-        Right (Right a) -> return a
-        Right (Left e)  -> throwError err e
+wrapFsError :: (Monad m, Show blockId, Typeable blockId)
+            => ErrorHandling FsError                   m
+            -> ErrorHandling (VolatileDBError blockId) m
+            -> m a -> m a
+wrapFsError fsErr volDBErr action =
+    tryVolDB fsErr volDBErr action >>= either (throwError volDBErr) return
 
 -- Throws an error if one of the given file names does not parse.
 findLastFd :: forall blockId.
@@ -93,15 +91,23 @@ filePath fd = "blocks-" ++ show fd ++ ".dat"
 sizeAndId :: (BlockSize, BlockInfo blockId) -> (BlockSize, blockId)
 sizeAndId (size, bInfo) = (size, bbid bInfo)
 
-tryVolDB :: forall m blockId a
-         .  (MonadCatch m, Show blockId, Typeable blockId)
-         => m a -> m (Either (VolatileDBError blockId) a)
-tryVolDB = fmap squash . try . try
+-- | Execute an action and catch the 'VolatileDBError' and 'FsError' that can
+-- be thrown by it, and wrap the 'FsError' in an 'VolatileDBError' using the
+-- 'FileSystemError' constructor.
+--
+-- This should be used whenever you want to run an action on the VolatileDB
+-- and catch the 'VolatileDBError' and the 'FsError' (wrapped in the former)
+-- it may thrown.
+tryVolDB :: forall m blockId a. (Monad m, Show blockId)
+         => ErrorHandling FsError                   m
+         -> ErrorHandling (VolatileDBError blockId) m
+         -> m a -> m (Either (VolatileDBError blockId) a)
+tryVolDB fsErr volDBErr = fmap squash . EH.try fsErr . EH.try volDBErr
     where
         fromFS = UnexpectedError . FileSystemError
 
-        squash :: Either FsError (Either (VolatileDBError blockId) x)
-               -> Either (VolatileDBError blockId) x
+        squash :: Either FsError (Either (VolatileDBError blockId) a)
+               -> Either (VolatileDBError blockId) a
         squash = either (Left . fromFS) id
 
 {------------------------------------------------------------------------------

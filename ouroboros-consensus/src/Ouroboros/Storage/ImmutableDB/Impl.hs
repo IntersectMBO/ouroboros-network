@@ -1317,7 +1317,7 @@ modifyOpenState :: forall m hash r. (HasCallStack, MonadSTM m, MonadCatch m)
                 -> (forall h. HasFS m h -> StateT (OpenState m hash h) m r)
                 -> m r
 modifyOpenState ImmutableDBEnv {_dbHasFS = hasFS :: HasFS m h, ..} action = do
-    (mr, ()) <- generalBracket open close (EH.try _dbErr . mutation)
+    (mr, ()) <- generalBracket open close (tryImmDB hasFsErr _dbErr . mutation)
     case mr of
       Left  e      -> throwError e
       Right (r, _) -> return r
@@ -1338,8 +1338,7 @@ modifyOpenState ImmutableDBEnv {_dbHasFS = hasFS :: HasFS m h, ..} action = do
     close !st ec = case ec of
       -- Restore the original state in case of an abort
       ExitCaseAbort         -> atomically $ putTMVar _dbInternalState st
-      -- In case of an exception, most likely at the HasFS layer, close the DB
-      -- for safety.
+      -- In case of an exception, close the DB for safety.
       ExitCaseException _ex -> do
         let !cst = closedStateFromInternalState st
         atomically $ putTMVar _dbInternalState (Left cst)
@@ -1380,7 +1379,7 @@ withOpenState :: forall m hash r. (HasCallStack, MonadSTM m, MonadCatch m)
               -> (forall h. HasFS m h -> OpenState m hash h -> m r)
               -> m r
 withOpenState ImmutableDBEnv {_dbHasFS = hasFS :: HasFS m h, ..} action = do
-    (mr, ()) <- generalBracket open (const close) (EH.try _dbErr . access)
+    (mr, ()) <- generalBracket open (const close) (tryImmDB hasFsErr _dbErr . access)
     case mr of
       Left  e -> throwError e
       Right r -> return r
@@ -1399,8 +1398,7 @@ withOpenState ImmutableDBEnv {_dbHasFS = hasFS :: HasFS m h, ..} action = do
           -> m ()
     close ec = case ec of
       ExitCaseAbort         -> return ()
-      -- In case of an exception, most likely at the HasFS layer, close the DB
-      -- for safety.
+      -- In case of an exception, close the DB for safety.
       ExitCaseException _ex -> do
         st <- atomically $ do
           st <- takeTMVar _dbInternalState
