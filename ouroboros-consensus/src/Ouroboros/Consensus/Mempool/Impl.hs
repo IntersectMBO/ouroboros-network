@@ -1,4 +1,4 @@
-{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 
@@ -77,12 +77,17 @@ implAddTxs :: forall m blk hdr. (MonadSTM m, ApplyTx blk)
            => MempoolEnv m blk hdr
            -> [GenTx blk]
            -> m [(GenTx blk, ApplyTxErr blk)]
-implAddTxs mpEnv@MempoolEnv{..} txs = atomically $ do
-    ValidationResult{..} <- validateNew <$> validateIS mpEnv
-    writeTVar mpEnvStateVar IS { isTxs = vrValid
-                               , isTip = vrBefore
-                               }
-    return vrInvalid
+implAddTxs mpEnv@MempoolEnv{mpEnvStateVar, mpEnvLedgerCfg} txs =
+    atomically $ do
+      ValidationResult {
+        vrBefore,
+        vrValid,
+        vrInvalid
+      } <- validateNew <$> validateIS mpEnv
+      writeTVar mpEnvStateVar IS { isTxs = vrValid
+                                 , isTip = vrBefore
+                                 }
+      return vrInvalid
   where
     validateNew :: ValidationResult blk ->  ValidationResult blk
     validateNew = extendsVR mpEnvLedgerCfg False txs
@@ -90,8 +95,11 @@ implAddTxs mpEnv@MempoolEnv{..} txs = atomically $ do
 implGetTxs :: (MonadSTM m, ApplyTx blk)
            => MempoolEnv m blk hdr
            -> STM m (Seq (GenTx blk ))
-implGetTxs mpEnv@MempoolEnv{..} = do
-    ValidationResult{..} <- validateIS mpEnv
+implGetTxs mpEnv@MempoolEnv{mpEnvStateVar} = do
+    ValidationResult {
+      vrBefore,
+      vrValid
+    } <- validateIS mpEnv
     -- TODO (maybe): log the transactions that we silently discard
     writeTVar mpEnvStateVar IS { isTxs = vrValid
                                , isTip = vrBefore
@@ -148,24 +156,18 @@ initVR cfg = \knownValid (tip, st) -> ValidationResult {
 -- cryptographic signatures.
 extendVR :: ApplyTx blk
          => LedgerConfig blk
-         -> Bool -- ^ Was these transactions previously validated?
+         -> Bool -- ^ Were these transactions previously validated?
          -> GenTx blk
          -> ValidationResult blk
          -> ValidationResult blk
-extendVR cfg prevApplied tx ValidationResult{..} =
-    case runExcept $ (if prevApplied then reapplyTx else applyTx) cfg tx vrAfter of
-      Left err  -> ValidationResult {
-                       vrBefore  = vrBefore
-                     , vrValid   = vrValid
-                     , vrAfter   = vrAfter
-                     , vrInvalid = (tx, err) : vrInvalid
-                     }
-      Right st' -> ValidationResult {
-                       vrBefore  = vrBefore
-                     , vrValid   = vrValid :|> tx
-                     , vrAfter   = st'
-                     , vrInvalid = vrInvalid
-                     }
+extendVR cfg prevApplied tx
+         vr@ValidationResult{vrValid, vrAfter, vrInvalid} =
+    let apply | prevApplied = reapplyTx
+              | otherwise   = applyTx in
+    case runExcept (apply cfg tx vrAfter) of
+      Left err  -> vr { vrInvalid = (tx, err) : vrInvalid }
+      Right st' -> vr { vrValid   = vrValid :|> tx
+                      , vrAfter   = st' }
 
 -- | Apply 'extendVR' to a list of transactions, in order
 extendsVR :: ApplyTx blk
@@ -179,7 +181,7 @@ extendsVR cfg prevApplied = repeatedly (extendVR cfg prevApplied)
 -- | Validate internal state
 validateIS :: forall m blk hdr. (MonadSTM m, ApplyTx blk)
            => MempoolEnv m blk hdr -> STM m (ValidationResult blk)
-validateIS MempoolEnv{..} =
+validateIS MempoolEnv{mpEnvChainDB, mpEnvLedgerCfg, mpEnvStateVar} =
     go <$> (Block.pointHash <$> getTipPoint      mpEnvChainDB)
        <*> (ledgerState     <$> getCurrentLedger mpEnvChainDB)
        <*> readTVar mpEnvStateVar
@@ -188,7 +190,7 @@ validateIS MempoolEnv{..} =
        -> LedgerState      blk
        -> InternalState    blk
        -> ValidationResult blk
-    go tip st IS{..}
+    go tip st IS{isTxs, isTip}
       | tip == isTip = initVR mpEnvLedgerCfg isTxs (tip, st)
       | otherwise    = extendsVR mpEnvLedgerCfg True (Foldable.toList isTxs) $
                          initVR mpEnvLedgerCfg Seq.empty (tip, st)
